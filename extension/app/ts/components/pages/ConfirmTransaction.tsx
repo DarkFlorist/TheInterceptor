@@ -122,7 +122,7 @@ export function ConfirmTransaction() {
 											{ simulationAndVisualisationResults.simulationMode ? 'Simulate!' :
 												<SignerLogoText {...{
 													signerName,
-													text: `Sign in ${ getSignerName(signerName) }`
+													text: `Sign with ${ getSignerName(signerName) }`
 												}} />
 											}
 										</button>
