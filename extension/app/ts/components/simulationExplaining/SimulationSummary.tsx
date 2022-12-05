@@ -220,16 +220,16 @@ export function SummarizeAddress(
 		simulationAndVisualisationResults: SimulationAndVisualisationResults
 	}
 ) {
-	const isFromAddresBook = param.simulationAndVisualisationResults.addressMetadata.get(param.address)?.metadataSource === 'addressBook'
-	const positiveNegativeColors = isFromAddresBook ? {
+	const isOwnAddress = param.simulationAndVisualisationResults.addressMetadata.get(param.address)?.metadataSource === 'addressBook' || BigInt(param.address) === param.simulationAndVisualisationResults.activeAddress
+	const positiveNegativeColors = isOwnAddress ? {
 		textColor: 'var(--text-color)',
-		negativeColor: 'FFFFFF'
+		negativeColor: 'var(--text-color)'
 	} : {
 		textColor: 'var(--disabled-text-color)',
-		negativeColor: 'rgba(246, 104, 94, 0.5)'
+		negativeColor: 'var(--negative-dim-color)'
 	}
 	return <>
-		{ isFromAddresBook ?
+		{ isOwnAddress ?
 			<BigAddress
 				address = { BigInt(param.address) }
 				title = { param.simulationAndVisualisationResults.addressMetadata.get(param.address)?.name }
@@ -246,7 +246,7 @@ export function SummarizeAddress(
 			<EtherChange
 				textColor = { positiveNegativeColors.textColor }
 				negativeColor = { positiveNegativeColors.negativeColor }
-				isImportant = { isFromAddresBook }
+				isImportant = { isOwnAddress }
 				etherResults =  { param.balanceSummary.etherResults }
 				chain = { param.simulationAndVisualisationResults.chain }
 			/>
@@ -255,7 +255,7 @@ export function SummarizeAddress(
 				tokenBalanceChanges = { param.balanceSummary.tokenBalanceChanges }
 				textColor = { positiveNegativeColors.textColor }
 				negativeColor = { positiveNegativeColors.negativeColor }
-				isImportant = { isFromAddresBook }
+				isImportant = { isOwnAddress }
 				tokenPriceEstimates = { param.simulationAndVisualisationResults.tokenPrices }
 				chain = { param.simulationAndVisualisationResults.chain }
 			/>
@@ -264,28 +264,28 @@ export function SummarizeAddress(
 				tokenApprovalChanges = { param.balanceSummary.tokenApprovalChanges }
 				textColor = { positiveNegativeColors.textColor }
 				negativeColor = { positiveNegativeColors.negativeColor }
-				isImportant = { isFromAddresBook }
+				isImportant = { isOwnAddress }
 			/>
 			<ERC721TokenChanges
 				addressMetadata = { param.simulationAndVisualisationResults.addressMetadata }
 				ERC721TokenBalanceChanges = { param.balanceSummary.ERC721TokenBalanceChanges }
 				textColor = { positiveNegativeColors.textColor }
 				negativeColor = { positiveNegativeColors.negativeColor }
-				isImportant = { isFromAddresBook }
+				isImportant = { isOwnAddress }
 			/>
 			<ERC721OperatorChanges
 				addressMetadata = { param.simulationAndVisualisationResults.addressMetadata }
 				ERC721OperatorChanges = { param.balanceSummary.ERC721OperatorChanges }
 				textColor = { positiveNegativeColors.textColor }
 				negativeColor = { positiveNegativeColors.negativeColor }
-				isImportant = { isFromAddresBook }
+				isImportant = { isOwnAddress }
 			/>
 			<ERC721TokenIdApprovalChanges
 				addressMetadata = { param.simulationAndVisualisationResults.addressMetadata }
 				ERC721TokenIdApprovalChanges = { param.balanceSummary.ERC721TokenIdApprovalChanges }
 				textColor = { positiveNegativeColors.textColor }
 				negativeColor = { positiveNegativeColors.negativeColor }
-				isImportant = { isFromAddresBook }
+				isImportant = { isOwnAddress }
 			/>
 		</div>
 	</>
@@ -338,11 +338,11 @@ export function SimulationSummary(
 	const logSummarizer = new LogSummarizer( VisResults )
 	const summary = logSummarizer.getSummary()
 
-	const addressBookEntries =  Array.from(summary.entries()).filter( ([address, _balanceSummary]) =>
-		param.simulationAndVisualisationResults.addressMetadata.get(address)?.metadataSource === 'addressBook'
+	const ownAddresses = Array.from(summary.entries()).filter( ([address, _balanceSummary]) =>
+		param.simulationAndVisualisationResults.addressMetadata.get(address)?.metadataSource === 'addressBook' || BigInt(address) === param.simulationAndVisualisationResults.activeAddress
 	)
-	const nonAddressBookEntries =  Array.from(summary.entries()).filter( ([address, _balanceSummary]) =>
-		param.simulationAndVisualisationResults.addressMetadata.get(address)?.metadataSource !== 'addressBook'
+	const notOwnAddresses = Array.from(summary.entries()).filter( ([address, _balanceSummary]) =>
+		param.simulationAndVisualisationResults.addressMetadata.get(address)?.metadataSource !== 'addressBook' && BigInt(address) !== param.simulationAndVisualisationResults.activeAddress
 	)
 
 	function resetSimulation() {
@@ -369,21 +369,21 @@ export function SimulationSummary(
 					<div class = 'card-content'>
 						<div class = 'container'>
 							<div class = 'notification' style = 'background-color: var(--unimportant-text-color); padding: 10px; margin-bottom: 10px; color: var(--text-color)'>
-								{ addressBookEntries.length == 0 ? <p> No changes to your accounts </p>
-									: addressBookEntries.map( ([address, balanceSummary], index) => (
+								{ ownAddresses.length == 0 ? <p> No changes to your accounts </p>
+									: ownAddresses.map( ([address, balanceSummary], index) => (
 										<>
 											<SummarizeAddress
 												address = { address }
 												balanceSummary = { balanceSummary }
 												simulationAndVisualisationResults = { param.simulationAndVisualisationResults }
 											/>
-											{ index + 1 !== addressBookEntries.length ? <div class = 'is-divider' style = 'margin-top: 8px; margin-bottom: 8px'/> : <></> }
+											{ index + 1 !== ownAddresses.length ? <div class = 'is-divider' style = 'margin-top: 8px; margin-bottom: 8px'/> : <></> }
 										</>
 								)) }
 							</div>
 						</div>
-						{ nonAddressBookEntries.length == 0 ? <p> No token or NFT changes to other accounts</p>
-							: nonAddressBookEntries.map( ([address, balanceSummary]) => (
+						{ notOwnAddresses.length == 0 ? <p> No token or NFT changes to other accounts</p>
+							: notOwnAddresses.map( ([address, balanceSummary]) => (
 							<>
 								<SummarizeAddress
 									address = { address }
