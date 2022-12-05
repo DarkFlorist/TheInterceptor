@@ -43,5 +43,5 @@ jobs:
         with:
           upload_url: ${{ steps.create_release.outputs.upload_url }}
           asset_path: ./extension/interceptor.zip
-          asset_name: interceptor-${{ steps.derive_tag.outputs.tag }}.zip
+          asset_name: interceptor-${{ steps.derive_tag.outputs.TAG }}.zip
           asset_content_type: application/zip
