@@ -16,7 +16,7 @@ jobs:
           VERSION_FILE=extension/app/ts/version.ts
           TAG=$(basename "${{ github.ref }}")
           GIT_COMMIT_SHA="${{ github.sha }}"
-          echo "tag=$tag" >> $GITHUB_OUTPUT
+          echo "TAG=$TAG" >> $GITHUB_OUTPUT
           echo export const gitCommitSha = \"$GIT_COMMIT_SHA\" > $VERSION_FILE
           echo export const version = \"${TAG#v}\" >> $VERSION_FILE
       - name: Build Extension
@@ -32,8 +32,8 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          tag_name: ${{ steps.derive_tag.outputs.tag }}
-          release_name: ${{ steps.derive_tag.outputs.tag }}
+          tag_name: ${{ steps.derive_tag.outputs.TAG }}
+          release_name: ${{ steps.derive_tag.outputs.TAG }}
           draft: false
           prerelease: false
       - name: Upload Extension to Release
