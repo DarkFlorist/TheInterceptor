@@ -23,6 +23,8 @@ Some good DApps to try first are [Uniswap](https://1-104-1.uniswap-uncensored.et
 
 ## Setup
 
+Browse to the `/extension` folder and then:
+
 Install:
 `npm ci --ignore-scripts`
 
