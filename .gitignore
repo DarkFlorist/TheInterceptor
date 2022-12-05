@@ -1,0 +1,7 @@
+/**/node_modules/
+/**/output*/*
+**/dist/
+.*.swp
+.env
+.env.test
+.env.json

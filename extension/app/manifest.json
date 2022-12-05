@@ -1,0 +1,38 @@
+{
+	"name": "Interceptor",
+	"description": "Interceptor",
+	"version": "0.0.0",
+	"manifest_version": 2,
+	"browser_action": {
+		"default_popup": "html/popup.html",
+		"default_icon": {
+			"128": "img/head-not-active.png"
+		}
+	},
+	"background": {
+		"page": "html/background.html"
+	},
+	"icons": {
+		"128": "img/head.png",
+		"400": "img/LOGOA_400x400.png"
+	},
+	"permissions": [
+		"activeTab",
+		"<all_urls>",
+		"storage",
+		"webNavigation"
+	],
+	"web_accessible_resources": ["vendor/*", "js/*", "inpage/*"],
+	"content_security_policy": "script-src 'self' blob: 'unsafe-eval'; object-src 'self';",
+	"content_scripts": [
+		{
+			"matches": ["file://*/*", "http://*/*", "https://*/*"],
+			"run_at": "document_start",
+			"js": [
+				"/vendor/webextension-polyfill/browser-polyfill.js",
+				"/inpage/output/injected_document_start.js"
+			],
+			"all_frames": true
+		}
+	]
+}

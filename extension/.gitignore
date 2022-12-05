@@ -1,0 +1,6 @@
+/app/js/
+/app/vendor/
+node_modules/
+/app/inpage/build/
+/app/inpage/js/
+!/app/inpage/output/injected_document_start.js

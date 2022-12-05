@@ -1,0 +1,333 @@
+/*! @creativebulma/bulma-badge v1.0.1 | (c) 2020 Gaetan | MIT License | https://github.com/CreativeBulma/bulma-badge */
+@-webkit-keyframes spinAround {
+	from {
+		transform: rotate(0deg);
+	}
+	to {
+		transform: rotate(359deg);
+	}
+}
+
+@keyframes spinAround {
+	from {
+		transform: rotate(0deg);
+	}
+	to {
+		transform: rotate(359deg);
+	}
+}
+
+/* line 72, src/sass/app.sass */
+.badge {
+	background-color: var(--primary-color);
+	border: 2px solid transparent;
+	border-radius: 14px;
+	box-shadow: 0 0 0 2px white;
+	color: white;
+	font-size: 0.65rem;
+	height: 14px;
+	line-height: calc(7px + 1px);
+	min-width: 14px;
+	overflow: hidden;
+	padding: 0.05rem 0.15rem;
+	position: absolute;
+	right: 0;
+	text-overflow: ellipsis;
+	top: 0;
+	transform: translate(50%, -50%);
+	white-space: nowrap;
+}
+
+/* line 91, src/sass/app.sass */
+.badge.is-outlined {
+	background-color: white;
+	border-color: var(--primary-color);
+	color: var(--primary-color);
+}
+
+/* line 16, src/sass/app.sass */
+.badge.is-left {
+	bottom: 0;
+	left: 0;
+	right: auto;
+	top: 50%;
+	transform: translate(-50%, -50%);
+}
+
+/* line 23, src/sass/app.sass */
+.badge.is-right {
+bottom: auto;
+left: auto;
+right: 0;
+top: 50%;
+transform: translate(50%, -50%);
+}
+
+/* line 30, src/sass/app.sass */
+.badge.is-top {
+	bottom: auto;
+	left: 50%;
+	right: auto;
+	top: 0;
+	transform: translate(-50%, -50%);
+}
+
+/* line 37, src/sass/app.sass */
+.badge.is-top-left {
+	bottom: auto;
+	left: 0;
+	right: auto;
+	top: 0;
+	transform: translate(-50%, -50%);
+}
+
+/* line 44, src/sass/app.sass */
+	.badge.is-top-right {
+	bottom: auto;
+	left: auto;
+	right: 0;
+	top: 0;
+	transform: translate(50%, -50%);
+}
+
+/* line 51, src/sass/app.sass */
+.badge.is-bottom {
+	bottom: 0;
+	left: 50%;
+	right: auto;
+	top: auto;
+	transform: translate(-50%, 50%);
+}
+
+/* line 58, src/sass/app.sass */
+.badge.is-bottom-left {
+	bottom: 0;
+	left: 0;
+	right: auto;
+	top: auto;
+	transform: translate(-50%, 50%);
+}
+
+/* line 65, src/sass/app.sass */
+.badge.is-bottom-right {
+	bottom: 0;
+	left: auto;
+	right: 0;
+	top: auto;
+	transform: translate(50%, 50%);
+}
+
+/* line 103, src/sass/app.sass */
+.badge.is-white:not(.is-outlined) {
+	background-color: white;
+	color: #0a0a0a;
+}
+
+/* line 107, src/sass/app.sass */
+.badge.is-white.is-outlined {
+	border-color: white;
+	color: white;
+}
+
+/* line 103, src/sass/app.sass */
+.badge.is-black:not(.is-outlined) {
+	background-color: #0a0a0a;
+	color: white;
+}
+
+/* line 107, src/sass/app.sass */
+.badge.is-black.is-outlined {
+	border-color: #0a0a0a;
+	color: #0a0a0a;
+}
+
+/* line 103, src/sass/app.sass */
+.badge.is-light:not(.is-outlined) {
+	background-color: whitesmoke;
+	color: rgba(0, 0, 0, 0.7);
+}
+
+/* line 107, src/sass/app.sass */
+.badge.is-light.is-outlined {
+	border-color: whitesmoke;
+	color: whitesmoke;
+}
+
+/* line 103, src/sass/app.sass */
+.badge.is-dark:not(.is-outlined) {
+	background-color: #363636;
+	color: #fff;
+}
+
+/* line 107, src/sass/app.sass */
+.badge.is-dark.is-outlined {
+	border-color: #363636;
+	color: #363636;
+}
+
+/* line 103, src/sass/app.sass */
+.badge.is-primary:not(.is-outlined) {
+	background-color: var(--primary-color);
+	color: #fff;
+}
+
+/* line 107, src/sass/app.sass */
+.badge.is-primary.is-outlined {
+	border-color: var(--primary-color);
+	color: var(--primary-color);
+}
+
+/* line 115, src/sass/app.sass */
+.badge.is-primary.is-light {
+	color: #00947e;
+}
+
+/* line 117, src/sass/app.sass */
+.badge.is-primary.is-light:not(.is-outlined) {
+	background-color: #ebfffc;
+}
+
+/* line 119, src/sass/app.sass */
+.badge.is-primary.is-light.is-outlined {
+	border-color: var(--primary-color);
+}
+
+/* line 103, src/sass/app.sass */
+.badge.is-link:not(.is-outlined) {
+	background-color: #3273dc;
+	color: #fff;
+}
+
+/* line 107, src/sass/app.sass */
+.badge.is-link.is-outlined {
+	border-color: #3273dc;
+	color: #3273dc;
+}
+
+/* line 115, src/sass/app.sass */
+.badge.is-link.is-light {
+	color: #2160c4;
+}
+
+/* line 117, src/sass/app.sass */
+.badge.is-link.is-light:not(.is-outlined) {
+	background-color: #eef3fc;
+}
+
+/* line 119, src/sass/app.sass */
+.badge.is-link.is-light.is-outlined {
+	border-color: #3273dc;
+}
+
+/* line 103, src/sass/app.sass */
+.badge.is-info:not(.is-outlined) {
+	background-color: #3298dc;
+	color: #fff;
+}
+
+/* line 107, src/sass/app.sass */
+.badge.is-info.is-outlined {
+	border-color: #3298dc;
+	color: #3298dc;
+}
+
+/* line 115, src/sass/app.sass */
+.badge.is-info.is-light {
+	color: #1d72aa;
+}
+
+/* line 117, src/sass/app.sass */
+.badge.is-info.is-light:not(.is-outlined) {
+	background-color: #eef6fc;
+}
+
+/* line 119, src/sass/app.sass */
+.badge.is-info.is-light.is-outlined {
+	border-color: #3298dc;
+}
+
+/* line 103, src/sass/app.sass */
+.badge.is-success:not(.is-outlined) {
+	background-color: #48c774;
+	color: #fff;
+}
+
+/* line 107, src/sass/app.sass */
+.badge.is-success.is-outlined {
+	border-color: #48c774;
+	color: #48c774;
+}
+
+/* line 115, src/sass/app.sass */
+.badge.is-success.is-light {
+	color: #257942;
+}
+
+/* line 117, src/sass/app.sass */
+.badge.is-success.is-light:not(.is-outlined) {
+	background-color: #effaf3;
+}
+
+/* line 119, src/sass/app.sass */
+.badge.is-success.is-light.is-outlined {
+	border-color: #48c774;
+}
+
+/* line 103, src/sass/app.sass */
+.badge.is-warning:not(.is-outlined) {
+	background-color: #ffdd57;
+	color: rgba(0, 0, 0, 0.7);
+}
+
+/* line 107, src/sass/app.sass */
+.badge.is-warning.is-outlined {
+	border-color: #ffdd57;
+	color: #ffdd57;
+}
+
+/* line 115, src/sass/app.sass */
+.badge.is-warning.is-light {
+	color: #947600;
+}
+
+/* line 117, src/sass/app.sass */
+.badge.is-warning.is-light:not(.is-outlined) {
+	background-color: #fffbeb;
+}
+
+/* line 119, src/sass/app.sass */
+.badge.is-warning.is-light.is-outlined {
+	border-color: #ffdd57;
+}
+
+/* line 103, src/sass/app.sass */
+.badge.is-danger:not(.is-outlined) {
+	background-color: #f14668;
+	color: #fff;
+}
+
+/* line 107, src/sass/app.sass */
+.badge.is-danger.is-outlined {
+	border-color: #f14668;
+	color: #f14668;
+}
+
+/* line 115, src/sass/app.sass */
+.badge.is-danger.is-light {
+	color: #cc0f35;
+}
+
+/* line 117, src/sass/app.sass */
+.badge.is-danger.is-light:not(.is-outlined) {
+	background-color: #feecf0;
+}
+
+/* line 119, src/sass/app.sass */
+.badge.is-danger.is-light.is-outlined {
+	border-color: #f14668;
+}
+
+/* line 124, src/sass/app.sass */
+.tabs li {
+	position: relative;
+}

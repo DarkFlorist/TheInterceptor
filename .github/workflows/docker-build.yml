@@ -1,0 +1,20 @@
+name: Docker Image Build
+
+on:
+  pull_request:
+    branches: [ main ]
+jobs:
+  job:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v2.4.2
+        with:
+          fetch-depth: 0
+      - name: Build Extension
+        working-directory: ./extension
+        run: |
+          docker image build --tag interceptor-extension .
+          docker container create --name temp interceptor-extension
+          docker container cp temp:/extension/interceptor.zip .
+          docker container rm temp

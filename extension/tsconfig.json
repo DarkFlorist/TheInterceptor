@@ -1,0 +1,26 @@
+{
+	"compilerOptions": {
+		"target": "ES2021",
+		"module": "ES2020",
+		"moduleResolution": "node",
+		"rootDir": "app/ts",
+		"outDir": "app/js",
+		"sourceMap": true,
+		"inlineSources": true,
+		"declaration": true,
+		"declarationMap": true,
+		"strict": true,
+		"noUnusedLocals": true,
+		"noUnusedParameters": true,
+		"noImplicitReturns": true,
+		"noImplicitThis": true,
+		"jsx": "react-jsx",
+		"jsxImportSource": "preact",
+		"lib": ["ES2021", "DOM"],
+		"plugins": [ { "transform": "@zoltu/typescript-transformer-append-js-extension/output/index.js", "after": true, } ]
+	},
+	"include": [
+		"./app/ts/**/*.ts",
+		"./app/ts/**/*.tsx",
+	],
+}

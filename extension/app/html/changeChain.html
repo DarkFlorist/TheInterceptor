@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html style = 'background-color: var(--bg-color);overflow-y: inherit;'>
+	<head>
+		<meta charset = 'utf-8'>
+		<link rel = 'icon' type = 'image/x-icon' href = 'favicon.ico'>
+	</head>
+	<body style = 'width: 520px; height: 400px; background-color: var(--bg-color); max-width: 520px; margin: auto;'>
+		<meta name = 'viewport' content = 'width = device-width, initial-scale = 1' />
+		<link rel = 'stylesheet' type = 'text/css' href = '../css/bulma.css' />
+		<link rel = 'stylesheet' type = 'text/css' href = '../css/bulma-divider.css' />
+		<link rel = 'stylesheet' type = 'text/css' href = '../css/interceptor.css' />
+		<script src = '../vendor/webextension-polyfill/browser-polyfill.js'></script>
+		<script async type = 'module' src = '../vendor/es-module-shims/es-module-shims.wasm.js'></script>
+		<script type = 'importmap'>
+		{
+			"imports": {
+				"ethers": "../vendor/ethers/ethers.esm.js",
+				"webextension-polyfill": "../vendor/webextension-polyfill/browser-polyfill.js",
+				"es-module-shims": "../vendor/es-module-shims/es-module-shims.js",
+				"preact": "../vendor/preact/preact.module.js",
+				"preact/jsx-runtime": "../vendor/preact/jsx-runtime/jsxRuntime.module.js",
+				"preact/hooks": "../vendor/preact/hooks/hooks.module.js",
+				"funtypes": "../vendor/funtypes/index.mjs",
+				"node-fetch": "../vendor/node-fetch/index.mjs",
+				"@zoltu/ethereum-abi-encoder": "../vendor/@zoltu/ethereum-abi-encoder/index.js",
+				"@zoltu/ethereum-crypto": "../vendor/@zoltu/ethereum-crypto/index.js",
+				"@zoltu/rlp-encoder": "../vendor/@zoltu/rlp-encoder/index.js",
+				"@darkflorist/address-metadata": "../vendor/@darkflorist/address-metadata/index.js"
+			}
+		}
+	</script>
+
+		<main>Loading...</main>
+
+		<script type = 'module' src = '../js/changeChain.js'></script>
+	</body>
+</html>

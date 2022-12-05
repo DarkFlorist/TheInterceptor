@@ -1,0 +1,506 @@
+:root {
+	--bg-color: #303030;
+	--card-bg-color: #424242;
+	--card-content-bg-color: #484848;
+	--window-header-bg-color: #606060;
+
+	--disabled-card-color: rgba(10, 10, 10, 0.6);
+	--primary-color: #58a5b3;
+	--highlighted-primary-color: #79b7c2;
+	--disabled-primary-color: #3d737d;
+
+	--positive-color: #4caf50;
+	--negative-color: #f6685e;
+
+	--error-box-color:#FFB6B6;
+	--error-box-text: #000000;
+
+	--highlighted-negative-color: #f77f76;
+	--warning-color: #FFC107;
+	--negative-dim-color: rgba(246, 104, 94, 0.5);
+
+	--text-color: #ffffff;
+	--subtitle-text-color: rgba(255, 255, 255, 0.7);
+	--disabled-text-color: rgba(255, 255, 255, 0.5);
+	--unimportant-text-color: rgba(255, 255, 255, 0.2);
+
+	--modal-background-color: rgba(10, 10, 10, .7)
+}
+
+button {
+	background-color: var(--primary-color);
+}
+
+button:hover {
+	background-color: var(--highlighted-primary-color);
+}
+
+button:disabled, button[disabled]{
+	background-color: var(--disabled-primary-color);
+	border-color: transparent;
+}
+
+.form-control {
+	line-height: 1.1;
+	display: grid;
+	grid-template-columns: 1em auto;
+	gap: 0.5em;
+	color: var(--text-color);
+	font-size: 0.8em;
+}
+
+input[type = 'checkbox'] {
+	appearance: none;
+	background-color: #fff;
+	margin: 0;
+	font: inherit;
+	color: currentColor;
+	width: 1.15em;
+	height: 1.15em;
+	display: grid;
+	place-content: center;
+	border-radius: 3px;
+	background-color: var(--unimportant-text-color);
+}
+
+input[type = 'checkbox']::before {
+	content: '';
+	width: 1.15em;
+	height: 1.15em;
+	transform: scale(0);
+	border-radius: 3px;
+	transition: 120ms transform ease-in-out;
+	box-shadow: inset 1em 1em var(--primary-color);
+}
+
+input[type = 'checkbox']:checked::before {
+	transform: scale(1.0);
+}
+
+.preact-hint {
+	position: absolute;
+	z-index: 9999;
+	cursor: default;
+	border: 1px solid white;
+	background-color: var(--card-bg-color);
+	max-width: 20em;
+}
+
+.preact-hint__content {
+	padding: 2px;
+	border-radius: 1px;
+	color: var(--text-color);
+	display: block;
+	white-space: normal;
+	max-width: 20em;
+	word-break: break-word;
+}
+
+.noselect {
+	-webkit-touch-callout: none; /* iOS Safari */
+	-webkit-user-select: none; /* Safari */
+	-khtml-user-select: none; /* Konqueror HTML */
+	-moz-user-select: none; /* Old versions of Firefox */
+	-ms-user-select: none; /* Internet Explorer/Edge */
+	user-select: none; /* Non-prefixed version, currently supported by Chrome, Edge, Opera and Firefox */
+}
+.nopointer {
+	pointer-events: none;
+}
+
+.title {
+	overflow: hidden;
+	color:var(--text-color);
+	white-space: unset;
+}
+
+.paragraph {
+	color:var(--text-color);
+}
+
+.subtitle {
+	white-space: nowrap;
+	overflow: hidden;
+	color:var(--text-color);
+}
+
+html, body {
+	height: 100%;
+}
+
+.input::placeholder {
+	color: var(--disabled-text-color)
+}
+
+.media.media {
+	border-top: unset;
+	padding-top: unset;
+}
+.card .media:not(:last-child) {
+	margin-bottom: unset;
+}
+
+.hoverable:hover {
+	background-color: var(--highlighted-primary-color)
+}
+
+.interceptorInput {
+	background: rgba(0, 0, 0, 0);
+	color: var(--text-color);
+	padding: 0px;
+	height: unset;
+	border: unset;
+	border-radius: unset;
+	border-bottom: 2px solid white;
+	box-shadow: none;
+	font-size: 13px;
+}
+
+.interceptorInput:hover {
+	border: unset;
+	color: var(--text-color);
+	border-bottom: 2px solid var(--highlighted-primary-color);
+	box-shadow: none;
+}
+
+.interceptorInput:focus {
+	border: unset;
+	color: var(--text-color);
+	border-radius: unset;
+	border-bottom: 2px solid var(--primary-color);
+	box-shadow: none;
+ }
+
+.button.is-focused:not(:active), .button:focus:not(:active) {
+	box-shadow: none;
+}
+.modal-background {
+	background-color: var(--modal-background-color);
+}
+
+.interceptor-modal-head {
+	padding: 0px;
+	background-color: var(--card-bg-color);
+	border-top-left-radius: unset;
+	border-top-right-radius: unset;
+	border-bottom: unset;
+}
+
+.modal-card {
+	width: 90%;
+}
+
+.modal-card-body {
+	background-color: var(--bg-color);
+	padding: 0px;
+}
+
+li {
+	margin: 10px;
+}
+
+.card {
+	background-color: var(--card-bg-color);
+}
+
+.card-content {
+	padding: 10px;
+	background-color: var(--card-content-bg-color);
+}
+
+.card-header {
+	background-color: var(--card-bg-color);
+}
+
+.card-header.window-header {
+	background-color: var(--window-header-bg-color);
+}
+.window-header {
+	background-color: var(--window-header-bg-color);
+}
+.modal-card-foot.window-header {
+	background-color: var(--window-header-bg-color);
+}
+
+.window-footer {
+	background-color: var(--window-header-bg-color);
+	display: block;
+}
+
+.h1 {
+	color: var(--text-color);
+}
+
+.h2 {
+	color: var(--text-color);
+}
+
+.vertical-center {
+	display: -ms-flexbox;
+	display: -webkit-flex;
+	display: flex;
+	-ms-flex-align: center;
+	-webkit-align-items: center;
+	-webkit-box-align: center;
+	align-items: center;
+}
+
+.token-box {
+	padding: 4px;
+	background-color: var(--highlighted-primary-color);
+	box-shadow: unset;
+	margin-bottom: 5px;
+	margin-top: 5px;
+}
+
+.content p:not(:last-child), .content dl:not(:last-child), .content ol:not(:last-child), .content ul:not(:last-child), .content blockquote:not(:last-child), .content pre:not(:last-child), .content table:not(:last-child) {
+	margin-bottom: 10px;
+}
+
+.tokentext {
+	margin-bottom: 0px;
+}
+
+.log-column {
+	padding-right: 5px;
+	padding-left: 5px;
+}
+
+.positive-box {
+	background-color: var(--positive-color);
+	color: var(--text-color);
+}
+
+.negative-box {
+	background-color: var(--negative-color);
+	color: var(--text-color);
+}
+
+.importance-box-content {
+	overflow-y: hidden;
+	margin-bottom: 0px;
+	align-items: center;
+	justify-content: center;
+	display: flex;
+	flex-direction: column;
+}
+
+.toggleContainer {
+	position: relative;
+	display: grid;
+	grid-template-columns: repeat(2, 1fr);
+	width: fit-content;
+	border-radius: 4px;
+	font-weight: bold;
+	color: white;
+	cursor: pointer;
+}
+.toggleContainer::before {
+	content: '';
+	position: absolute;
+	width: 50%;
+	height: 100%;
+	left: 0%;
+	background: var(--primary-color);
+	border-radius: 4px;
+}
+.toggleCheckbox:checked + .toggleContainer::before {
+	left: 50%;
+}
+.toggleContainer div {
+	padding: 6px;
+	text-align: center;
+	z-index: 1;
+}
+.toggleCheckbox {
+	display: none;
+}
+
+.toggleCheckbox:checked + .toggleContainer div:first-child {
+	border-style: dotted;
+	border-width: 1px;
+	border-right: unset;
+	border-top-left-radius: 4px;
+	border-bottom-left-radius: 4px;
+}
+
+.toggleCheckbox:not(:checked) + .toggleContainer div:last-child {
+	border-style: dotted;
+	border-width: 1px;
+	border-left: unset;
+	border-top-right-radius: 4px;
+	border-bottom-right-radius: 4px;
+}
+
+.toggleCheckbox:checked + .toggleContainer::before {
+	border-top-left-radius: 0px;
+	border-bottom-left-radius: 0px;
+}
+
+.toggleCheckbox:not(:checked) + .toggleContainer::before {
+	border-top-right-radius: 0px;
+	border-bottom-right-radius: 0px;
+}
+
+.dropdown-content {
+	background-color: var(--card-content-bg-color);
+	box-shadow: 0px 8px 16px 0px rgb(0 0 0 / 20%);
+}
+
+.dropdown-item {
+	color: var(--text-color);
+}
+
+a.dropdown-item.is-active, button.dropdown-item.is-active {
+	background-color: var(--primary-color);
+}
+
+.card-header-icon {
+	padding: unset;
+	padding-left: 0.75rem;
+	padding-right: 0.75rem;
+}
+
+.unset-cursor {
+	cursor: unset
+}
+
+svg.spinner {
+	animation: 2s linear infinite svg-animation;
+	max-width: 100px;
+}
+
+@keyframes svg-animation {
+	0% { transform: rotateZ(0deg); }
+	100% { transform: rotateZ(360deg); }
+}
+
+svg.spinner > circle {
+	animation: 1.4s ease-in-out infinite both circle-animation;
+	display: block;
+	fill: transparent;
+	stroke: var(--primary-color);
+	stroke-linecap: round;
+	stroke-dasharray: 283;
+	stroke-dashoffset: 280;
+	stroke-width: 10px;
+	transform-origin: 50% 50%;
+}
+
+@keyframes circle-animation {
+	0%,
+	25% { stroke-dashoffset: 280; transform: rotate(0); }
+	50%,
+	75% { stroke-dashoffset: 75; transform: rotate(45deg); }
+	100% { stroke-dashoffset: 280; transform: rotate(360deg); }
+}
+
+.center-to-page {
+	position: absolute;
+	top: 50%;
+	left: 50%;
+	margin-right: -50%;
+	transform: translate(-50%, -50%);
+}
+/* Scrollbar */
+
+:root {
+	scrollbar-color: var(--window-header-bg-color) var(--card-bg-color) !important;
+}
+
+::-webkit-scrollbar {
+    width: 16px;
+    height: 16px;
+}
+
+::-webkit-scrollbar-corner, ::-webkit-scrollbar-track {
+    background-color: var(--card-bg-color);
+}
+
+::-webkit-scrollbar-thumb {
+    background-color: var(--window-header-bg-color);
+    background-clip: padding-box;
+    border: 2px solid transparent;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background-color: rgb(112, 112, 112);
+}
+
+::-webkit-scrollbar-thumb:active {
+    background-color: var(--window-header-bg-color);
+}
+
+/* Buttons */
+::-webkit-scrollbar-button:single-button {
+    background-color: var(--card-bg-color);
+
+    display: block;
+    background-size: 10px;
+    background-repeat: no-repeat;
+}
+
+/* Up */
+::-webkit-scrollbar-button:single-button:vertical:decrement {
+    height: 12px;
+    width: 16px;
+    background-position: center 4px;
+    background-image: url("data:image/svg+xml;utf8, <svg xmlns = 'http://www.w3.org/2000/svg' width = '100' height = '100' fill = 'var(--card-content-bg-color)'><polygon points = '50,00 0,50 100,50'/></svg>");
+}
+
+::-webkit-scrollbar-button:single-button:vertical:decrement:hover {
+    background-image: url("data:image/svg+xml;utf8, <svg xmlns = 'http://www.w3.org/2000/svg' width = '100' height = '100' fill = 'rgb(112, 112, 112)'><polygon points = '50,00 0,50 100,50'/></svg>");
+}
+
+::-webkit-scrollbar-button:single-button:vertical:decrement:active {
+    background-image: url("data:image/svg+xml;utf8, <svg xmlns = 'http://www.w3.org/2000/svg' width = '100' height = '100' fill = 'var(--window-header-bg-color)'><polygon points = '50,00 0,50 100,50'/></svg>");
+}
+
+/* Down */
+::-webkit-scrollbar-button:single-button:vertical:increment {
+    height: 12px;
+    width: 16px;
+    background-position: center 2px;
+    background-image: url("data:image/svg+xml;utf8, <svg xmlns = 'http://www.w3.org/2000/svg' width = '100' height = '100' fill = 'var(--card-content-bg-color)'><polygon points = '0,0 100,0 50,50'/></svg>");
+}
+
+::-webkit-scrollbar-button:single-button:vertical:increment:hover {
+    background-image: url("data:image/svg+xml;utf8, <svg xmlns = 'http://www.w3.org/2000/svg' width = '100' height = '100' fill = 'rgb(112, 112, 112)'><polygon points = '0,0 100,0 50,50'/></svg>");
+}
+
+::-webkit-scrollbar-button:single-button:vertical:increment:active {
+    background-image: url("data:image/svg+xml;utf8, <svg xmlns = 'http://www.w3.org/2000/svg' width = '100' height = '100' fill = 'var(--window-header-bg-color)'><polygon points = '0,0 100,0 50,50'/></svg>");
+}
+
+/* Left */
+::-webkit-scrollbar-button:single-button:horizontal:decrement {
+    height: 12px;
+    width: 12px;
+    background-position: 3px 3px;
+    background-image: url("data:image/svg+xml;utf8, <svg xmlns = 'http://www.w3.org/2000/svg' width = '100' height = '100' fill = 'var(--card-content-bg-color)'><polygon points = '0,50 50,100 50,0'/></svg>");
+
+}
+
+::-webkit-scrollbar-button:single-button:horizontal:decrement:hover {
+    background-image: url("data:image/svg+xml;utf8, <svg xmlns = 'http://www.w3.org/2000/svg' width = '100' height = '100' fill = 'rgb(112, 112, 112)'><polygon points = '0,50 50,100 50,0'/></svg>");
+}
+
+::-webkit-scrollbar-button:single-button:horizontal:decrement:active {
+    background-image: url("data:image/svg+xml;utf8, <svg xmlns = 'http://www.w3.org/2000/svg' width = '100' height = '100' fill = 'var(--window-header-bg-color)'><polygon points = '0,50 50,100 50,0'/></svg>");
+}
+
+/* Right */
+::-webkit-scrollbar-button:single-button:horizontal:increment {
+    height: 12px;
+    width: 12px;
+    background-position: 3px 3px;
+    background-image: url("data:image/svg+xml;utf8, <svg xmlns = 'http://www.w3.org/2000/svg' width = '100' height = '100' fill = 'var(--card-content-bg-color)'><polygon points = '0,0 0,100 50,50'/></svg>");
+}
+
+::-webkit-scrollbar-button:single-button:horizontal:increment:hover {
+    background-image: url("data:image/svg+xml;utf8, <svg xmlns = 'http://www.w3.org/2000/svg' width = '100' height = '100' fill = 'rgb(112, 112, 112)'><polygon points = '0,0 0,100 50,50'/></svg>");
+}
+
+::-webkit-scrollbar-button:single-button:horizontal:increment:active {
+    background-image: url("data:image/svg+xml;utf8, <svg xmlns = 'http://www.w3.org/2000/svg' width = '100' height = '100' fill = 'var(--window-header-bg-color)'><polygon points = '0,0 0,100 50,50'/></svg>");
+}

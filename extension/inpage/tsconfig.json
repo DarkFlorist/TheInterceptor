@@ -1,0 +1,26 @@
+{
+	"compilerOptions": {
+		"target": "ES2021",
+		"module": "ES2020",
+		"moduleResolution": "node",
+		"outDir": "../app/inpage/js/",
+		"rootDir": "../app/inpage/ts/",
+		"sourceMap": true,
+		"inlineSources": true,
+		"declaration": true,
+		"declarationMap": true,
+		"strict": true,
+		"noUnusedLocals": true,
+		"noUnusedParameters": true,
+		"noImplicitReturns": true,
+		"noImplicitThis": true,
+		"lib": ["ES2021", "DOM"],
+		"plugins": [ { "transform": "@zoltu/typescript-transformer-append-js-extension/output/index.js", "after": true, } ]
+	},
+	"include": [
+		"../app/inpage/ts/*.ts"
+	],
+	"ts-node": {
+		"esm": true,
+	}
+}
