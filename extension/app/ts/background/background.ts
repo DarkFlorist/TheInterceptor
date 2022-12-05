@@ -189,7 +189,7 @@ export async function refreshConfirmTransactionSimulation() {
 	const newSimulator = simulator.simulationModeNode.copy()
 	const currentRequestId = window.interceptor.confirmTransactionDialog.requestToConfirm.requestId
 	window.interceptor.confirmTransactionDialog.isComputingSimulation = true
-	sendPopupMessageToOpenWindows('popup_confirm_transaction_simulation_started' );
+	sendPopupMessageToOpenWindows('popup_confirm_transaction_simulation_started' )
 	const appended = await newSimulator.appendTransaction(EthereumUnsignedTransaction.parse(window.interceptor.confirmTransactionDialog.transactionToSimulate))
 	const transactions = appended.simulationState.simulatedTransactions.map(x => x.unsignedTransaction)
 	const visualizerResult = await simulator.visualizeTransactionChain(transactions, appended.simulationState.blockNumber, appended.simulationState.simulatedTransactions.map( x => x.multicallResponse))
@@ -346,12 +346,12 @@ export async function changeActiveAddressAndChainAndResetSimulation(activeAddres
 	if ( simulator === undefined ) return
 
 	let chainChanged = false
-	if ( window.interceptor.settings.activeChain !== activeChain && activeChain !== 'noActiveChainChange') {
+	if ( await simulator.ethereum.getChainId() !== activeChain && activeChain !== 'noActiveChainChange') {
 
 		window.interceptor.settings.activeChain = activeChain
 		saveActiveChain(activeChain)
 		const chainString = activeChain.toString()
-		if (isSupportedChain(chainString) && window.interceptor.settings.simulationMode) {
+		if (isSupportedChain(chainString)) {
 			const isPolling = simulator.ethereum.isBlockPolling()
 			window.interceptor.currentBlockNumber = undefined
 			simulator.cleanup()
@@ -373,7 +373,7 @@ export async function changeActiveAddressAndChainAndResetSimulation(activeAddres
 	}
 	updateWebsiteApprovalAccesses()
 
-	if (window.interceptor.settings.simulationMode && !await updatePrependMode(true)) {// update prepend mode as our active address has changed, so we need to be sure the rich modes money is sent to right address
+	if (!await updatePrependMode(true)) {// update prepend mode as our active address has changed, so we need to be sure the rich modes money is sent to right address
 		await updateSimulationState(async () => await simulator?.simulationModeNode.resetSimulation())
 	}
 

@@ -135,12 +135,12 @@ export function InterceptorAccess() {
 				</div>
 			}
 
-			<div className = 'block' style = 'padding: 10px; margin: 10px;'>
-				<div class = 'window-footer' style = 'overflow: auto; display: flex; justify-content: space-around; width: 100%; height: 40px;'>
+			<div className = 'block' style = 'padding: 10px; margin: 10px; background-color: var(--card-bg-color)'>
+				<div style = 'overflow: auto; display: flex; justify-content: space-around; width: 100%; height: 40px;'>
 					<button className = 'button is-primary' style = 'flex-grow: 1; margin-left: 5px; margin-right: 5px;' onClick = { approve } >
 						Grant Access
 					</button>
-					<button className = 'button is-primary' style = 'flex-grow: 1; margin-left: 5px; margin-right: 5px; background-color: var(--negative-color)' onClick = { reject } >
+					<button className = 'button is-primary is-danger' style = 'flex-grow: 1; margin-left: 5px; margin-right: 5px;' onClick = { reject } >
 						Deny Access
 					</button>
 				</div>

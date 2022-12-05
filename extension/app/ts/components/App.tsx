@@ -16,6 +16,7 @@ import { NotificationCenter } from './pages/NotificationCenter'
 import { ICON_NOT_ACTIVE } from '../utils/constants'
 import { SignerName } from '../utils/interceptor-messages'
 import { EthereumQuantity } from '../utils/wire-types'
+import { version, gitCommitSha } from '../version'
 
 export function App() {
 	const [appPage, setAppPage] = useState(Page.Home)
@@ -177,7 +178,7 @@ export function App() {
 							<a class = 'navbar-item' style = 'cursor: unset'>
 								<img src = '../img/LOGOA.svg' alt = 'Logo' width = '32'/>
 								<p style = 'color: #FFFFFF; padding-left: 5px;'>THE INTERCEPTOR
-									<span style = 'color: var(--unimportant-text-color);' > { ` alpha` } </span>
+									<span style = 'color: var(--unimportant-text-color);' > { ` alpha ${ version } - ${ gitCommitSha.slice(0, 8) }`  } </span>
 								</p>
 							</a>
 							<a class = 'navbar-item' style = 'margin-left: auto; margin-right: 0;'>
