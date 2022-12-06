@@ -22,6 +22,7 @@
 	--text-color: #ffffff;
 	--subtitle-text-color: rgba(255, 255, 255, 0.7);
 	--disabled-text-color: rgba(255, 255, 255, 0.5);
+	--disabled-negative-text-color: rgba(246, 104, 94, 0.5);
 	--unimportant-text-color: rgba(255, 255, 255, 0.2);
 
 	--modal-background-color: rgba(10, 10, 10, .7)
