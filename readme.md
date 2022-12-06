@@ -6,7 +6,7 @@ The Interceptor is a browser extension that explains what kind of Ethereum trans
 ![Example](/transaction_outcome.png)
 
 # Privacy
-We value your privacy highly. The Interceptor is designed to minimize privacy leakage: We don't query external sites for anything. However, The Interceptor Alpha is currently connecting to Ethereum RPC nodes operated by Green House. This is going to change in the future. Currently, users are not able to switch RPC nodes, as The Interceptor requires a non-standard Ethereum RPC feature to be able to simulate transactions.
+We value your privacy highly. The Interceptor is designed to minimize privacy leakage: We don't query external sites for anything. However, The Interceptor Alpha is currently connecting to Ethereum RPC nodes operated by Dark Florists (us) because we utilize some custom tooling on the backend. Work is underway to get our custom tooling standardized across clients so Interceptor will work with any standards compliant Ethereum client.
 
 # Installation
 Download [The Interceptor](https://github.com/DarkFlorist/TheInterceptor/releases/latest) and depending on your browser:
