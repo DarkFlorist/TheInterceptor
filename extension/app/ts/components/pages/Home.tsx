@@ -34,17 +34,13 @@ function FirstCard(param: FirstCardParams) {
 						<img src = { param.tabIcon } />
 					</span>
 				</div>
-				<div class = 'card-header-title'>
-					<input type = 'checkbox' id = 'toggle' style = 'display: none;' checked = { !param.simulationMode } class = 'toggleCheckbox' onInput = { e => { if (e.target instanceof HTMLInputElement && e.target !== null) { param.enableSimulationMode(!e.target.checked) } } } />
-					<label for = 'toggle' class = 'toggleContainer'>
-						<div style = 'font-weight: normal' >Simulating</div>
-						<div style = 'font-weight: normal;' >
-							<SignerLogoText
-								signerName = { param.signerName }
-								text = { 'Signing' }
-							/>
-						</div>
-					</label>
+				<div class = 'card-header-title px-0 is-justify-content-center'>
+					<div class='buttons has-addons'>
+						<button class={ `button is-primary${ param.simulationMode ? '' : ' is-outlined'}` } onClick={ () => param.enableSimulationMode(true) }>Simulating</button>
+						<button class={ `button is-primary${ param.simulationMode ? ' is-outlined' : ''}` } onClick={ () => param.enableSimulationMode(false) }>
+							<SignerLogoText signerName = { param.signerName } text = { 'Signing' } />
+						</button>
+					</div>
 				</div>
 				<div class = 'card-header-icon unset-cursor'>
 					<ChainSelector currentChain = { param.activeChain } changeChain = { (chainId: bigint) => { param.changeActiveChain(chainId) } }/>
