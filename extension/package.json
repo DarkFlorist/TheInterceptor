@@ -4,9 +4,8 @@
 	"type": "module",
 	"scripts": {
 		"build": "ttsc",
-		"inpage": "cd inpage && npm ci && npm run build",
-		"vendor": "cd build && npm ci && npm run vendor",
-		"addressData": "cd addressData && npm ci && npm run process"
+		"inpage": "cd inpage && npm ci --ignore-scripts && npm run build",
+		"vendor": "cd build && npm ci --ignore-scripts && npm run vendor"
 	},
 	"dependencies": {
 		"@types/node-fetch": "2.6.1",
