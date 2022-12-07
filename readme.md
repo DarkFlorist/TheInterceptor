@@ -11,9 +11,9 @@ We value your privacy highly. The Interceptor is designed to minimize privacy le
 # Installation
 Download [The Interceptor](https://github.com/DarkFlorist/TheInterceptor/releases/latest) and depending on your browser:
 
-- Chrome: Browse to `chrome://extensions/` and click `Load unpacked` and select the zip.
-- Firefox: Browse to `about:debugging` and click `Load Temporary Add-on` and select the zip.
-- Brave: Browse to `brave://extensions/` and click `Load unpacked` and select the zip.
+- Chrome: Unzip The Interceptor zip to a folder, browse to `chrome://extensions/` and click `Load unpacked` and select the folder.
+- Firefox: Browse to `about:debugging` and click `Load Temporary Add-on` and select the zip. You need to re-add the extension every time you restart Firefox.
+- Brave: Unzip The Interceptor zip to a folder, browse to `brave://extensions/` and click `Load unpacked` and select the folder.
 
 Next you should click your extensions from the top right corner and pin it for easy access! If you have some DApps already open, refresh the page to get The Interceptor injected. You are now good to go and ready to intercept!
 
