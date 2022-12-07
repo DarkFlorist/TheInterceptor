@@ -36,5 +36,11 @@ Then depending on your browser:
 - Firefox: Browse to `about:debugging` and click `Load Temporary Add-on` and point to `\extension\app\manifest.json`.
 - Brave: Browse to `brave://extensions/` and click `Load unpacked` and point to `\extension\app\manifest.json`.
 
+### Inpage
+
+The Interceptor injects an inpage script to websites to be able to give websites access to `window.ethereum`. This inpage script (`app/inpage/ts/inpage.ts`) is compiled and packaged using command:
+`npm run inpage` 
+You'll need to run this script if you need to modify the injected script.
+
 # Contact Us!
 You can reach us via [Discord](https://discord.gg/b66SwRZAbu) and twitter [@DarkFlorist](https://twitter.com/DarkFlorist)!
