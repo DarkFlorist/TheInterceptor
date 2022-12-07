@@ -20,12 +20,6 @@ function FirstCard(param: FirstCardParams) {
 		browser.runtime.sendMessage( { method: 'popup_requestAccountsFromSigner', options: true } );
 	}
 
-	function changeSimulationModeIfNotTheSameAlready(enabled: boolean) {
-		if (param.simulationMode !== enabled) {
-			param.enableSimulationMode(enabled)
-		}
-	}
-
 	return <>
 		{ !isSupportedChain(param.activeChain.toString()) ?
 			<div style = 'padding-bottom: 10px; background-color: var(--bg-color);'>
@@ -41,17 +35,19 @@ function FirstCard(param: FirstCardParams) {
 					</span>
 				</div>
 				<div class = 'card-header-title px-0 is-justify-content-center'>
-					<div class = 'buttons has-addons'>
+					<div class = 'buttons has-addons' style = 'border-style: solid; border-color: var(--primary-color); border-radius: 4px; padding: 1px; border-width: 1px; margin-bottom: 0px' >
 						<button
 							class = { `button is-primary ${ param.simulationMode ? '' : 'is-outlined' }` }
-							onClick = { () => changeSimulationModeIfNotTheSameAlready(true) }
-							style = { `padding: 6px; box-shadow: none; ${ param.simulationMode ? '' : 'border-style: dotted; color: var(--text-color); border-color: var(--text-color); border-right: unset;' }` }>
+							style = { `margin-bottom: 0px; ${ param.simulationMode ? 'opacity: 1;' : 'border-style: none;' }` }
+							disabled = { param.simulationMode }
+							onClick = { () => param.enableSimulationMode(true) }>
 							Simulating
 						</button>
 						<button
 							class = { `button is-primary ${ param.simulationMode ? 'is-outlined' : ''}` }
-							onClick = { () => changeSimulationModeIfNotTheSameAlready(false) }
-							style = { `padding: 6px; box-shadow: none; ${ param.simulationMode ? 'border-style: dotted; color: var(--text-color); border-color: var(--text-color); border-left: unset;' : '' }` }>
+							style = { `margin-bottom: 0px; ${ param.simulationMode ? 'border-style: none;' : 'opacity: 1;' }` }
+							disabled = { !param.simulationMode }
+							onClick = { () => param.enableSimulationMode(false) }>
 							<SignerLogoText signerName = { param.signerName } text = { 'Signing' } />
 						</button>
 					</div>
