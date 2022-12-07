@@ -20,6 +20,12 @@ function FirstCard(param: FirstCardParams) {
 		browser.runtime.sendMessage( { method: 'popup_requestAccountsFromSigner', options: true } );
 	}
 
+	function changeSimulationModeIfNotTheSameAlready(enabled: boolean) {
+		if (param.simulationMode !== enabled) {
+			param.enableSimulationMode(enabled)
+		}
+	}
+
 	return <>
 		{ !isSupportedChain(param.activeChain.toString()) ?
 			<div style = 'padding-bottom: 10px; background-color: var(--bg-color);'>
@@ -35,9 +41,17 @@ function FirstCard(param: FirstCardParams) {
 					</span>
 				</div>
 				<div class = 'card-header-title px-0 is-justify-content-center'>
-					<div class='buttons has-addons'>
-						<button class={ `button is-primary${ param.simulationMode ? '' : ' is-outlined'}` } onClick={ () => param.enableSimulationMode(true) }>Simulating</button>
-						<button class={ `button is-primary${ param.simulationMode ? ' is-outlined' : ''}` } onClick={ () => param.enableSimulationMode(false) }>
+					<div class = 'buttons has-addons'>
+						<button
+							class = { `button is-primary ${ param.simulationMode ? '' : 'is-outlined' }` }
+							onClick = { () => changeSimulationModeIfNotTheSameAlready(true) }
+							style = { `padding: 6px; box-shadow: none; ${ param.simulationMode ? '' : 'border-style: dotted; color: var(--text-color); border-color: var(--text-color); border-right: unset;' }` }>
+							Simulating
+						</button>
+						<button
+							class = { `button is-primary ${ param.simulationMode ? 'is-outlined' : ''}` }
+							onClick = { () => changeSimulationModeIfNotTheSameAlready(false) }
+							style = { `padding: 6px; box-shadow: none; ${ param.simulationMode ? 'border-style: dotted; color: var(--text-color); border-color: var(--text-color); border-left: unset;' : '' }` }>
 							<SignerLogoText signerName = { param.signerName } text = { 'Signing' } />
 						</button>
 					</div>
