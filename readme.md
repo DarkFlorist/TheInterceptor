@@ -33,7 +33,7 @@ Build:
 
 Then depending on your browser:
 - Chrome: Browse to `chrome://extensions/` and click `Load unpacked` and point to `\extension\app\manifest.json`.
-- Firefox: Browse to `about:debugging` and click `Load Temporary Add-on` and point to `\extension\app\manifest.json`.
+- Firefox: Browse to `about:debugging` and click `Load Temporary Add-on` and point to `\extension\app\manifest.json`. You need to re-add the extension every time you restart Firefox.
 - Brave: Browse to `brave://extensions/` and click `Load unpacked` and point to `\extension\app\manifest.json`.
 
 # Contact Us!
