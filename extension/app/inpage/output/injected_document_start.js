@@ -16,6 +16,12 @@ function listenInContentScript() {
         }
         catch (error) {
             // CONSIDER: should we catch data clone error and then do `extensionPort.postMessage({data:JSON.parse(JSON.stringify(messageEvent.data))})`?
+            if (error instanceof Error) {
+                if (error.message?.includes('Extension context invalidated.')) {
+                    // this error happens when the extension is refreshed and the page cannot reach The Interceptor anymore
+                    return;
+                }
+            }
             console.error(error);
         }
     });
