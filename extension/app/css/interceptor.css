@@ -128,7 +128,7 @@ input[type = 'checkbox']:checked::before {
 }
 
 html, body {
-	height: 100%;
+	height: fit-content
 }
 
 .input::placeholder {

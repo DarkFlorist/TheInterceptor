@@ -86,7 +86,7 @@ export function PersonalSign() {
 	return (
 		<main>
 			<Hint>
-				<div className = 'block' style = 'margin-bottom: 0px'>
+				<div className = 'block' style = 'margin: 10px; margin-bottom: 0px'>
 					{ signRequest === undefined ? <></> : <>
 						<header class = 'card-header'>
 							{ signRequest.simulationMode ? <>
