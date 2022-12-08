@@ -29,7 +29,7 @@ Install:
 `npm ci --ignore-scripts`
 
 Build:
-`npm run vendor && npm run build`
+`npm run setup`
 
 Then depending on your browser:
 - Chrome: Browse to `chrome://extensions/` and click `Load unpacked` and point to `\extension\app\manifest.json`.

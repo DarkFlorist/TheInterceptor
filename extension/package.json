@@ -3,6 +3,7 @@
 	"private": true,
 	"type": "module",
 	"scripts": {
+		"setup": "npm run vendor && npm run inpage && npm run build",
 		"build": "ttsc",
 		"inpage": "cd inpage && npm ci --ignore-scripts && npm run build",
 		"vendor": "cd build && npm ci --ignore-scripts && npm run vendor"
