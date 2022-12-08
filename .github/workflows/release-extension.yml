@@ -14,11 +14,14 @@ jobs:
         id: derive_tag
         run: |
           VERSION_FILE=extension/app/ts/version.ts
-          TAG=$(basename "${{ github.ref }}")
+          MANIFEST_FILE=extension/app/manifest.json
           GIT_COMMIT_SHA="${{ github.sha }}"
+          TAG=$(basename "${{ github.ref }}")
+          VERSION=${TAG#v}
           echo "TAG=$TAG" >> $GITHUB_OUTPUT
           echo export const gitCommitSha = \"$GIT_COMMIT_SHA\" > $VERSION_FILE
-          echo export const version = \"${TAG#v}\" >> $VERSION_FILE
+          echo export const version = \"$VERSION\" >> $VERSION_FILE
+          sed -i '/"version"/c\\t"version": "'$VERSION'",' $MANIFEST_FILE
       - name: Build Extension
         working-directory: ./extension
         run: |
