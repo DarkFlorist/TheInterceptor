@@ -14,7 +14,13 @@ function listenInContentScript() {
 			extensionPort.postMessage({data: messageEvent.data})
 		} catch (error) {
 			// CONSIDER: should we catch data clone error and then do `extensionPort.postMessage({data:JSON.parse(JSON.stringify(messageEvent.data))})`?
-			console.error(error)
+			if (error instanceof Error) {
+				if (error.message?.includes('Extension context invalidated.')) {
+					// this error happens when the extension is refreshed and the page cannot reach The Interceptor anymore
+					return
+				}
+			}
+			throw error
 		}
 	})
 
