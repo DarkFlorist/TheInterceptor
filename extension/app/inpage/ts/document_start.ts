@@ -20,7 +20,7 @@ function listenInContentScript() {
 					return
 				}
 			}
-			console.error(error)
+			throw error
 		}
 	})
 
