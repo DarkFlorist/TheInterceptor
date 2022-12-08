@@ -2,6 +2,7 @@ import * as path from 'path'
 import * as url from 'url'
 import { promises as fs } from 'fs'
 import { recursiveDirectoryCopy } from '@zoltu/file-copier'
+import { createHash } from 'node:crypto'
 
 const directoryOfThisFile = path.dirname(url.fileURLToPath(import.meta.url))
 
@@ -27,18 +28,27 @@ async function vendorDependencies(files: string[]) {
 		await recursiveDirectoryCopy(sourceDirectoryPath, destinationDirectoryPath, undefined, rewriteSourceMapSourcePath.bind(undefined, packageName))
 	}
 
+	const importmap = dependencyPaths.reduce((importmap, { packageName, entrypointFile }) => {
+		importmap.imports[packageName] = `../${path.join('.', 'vendor', packageName, entrypointFile).replace(/\\/g, '/') }`
+		return importmap
+	}, { imports: {} as Record<string, string> })
+	const importmapJson = `\n${JSON.stringify(importmap, undefined, '\t')
+		.replace(/^/mg, '\t\t')}\n\t\t`
+
+	// replace in files
 	for ( const file of files ) {
 		const indexHtmlPath = path.join(directoryOfThisFile, '..', 'app', file)
 		const oldIndexHtml = await fs.readFile(indexHtmlPath, 'utf8')
-		const importmap = dependencyPaths.reduce((importmap, { packageName, entrypointFile }) => {
-			importmap.imports[packageName] = `../${path.join('.', 'vendor', packageName, entrypointFile).replace(/\\/g, '/')}`
-			return importmap
-		}, { imports: {} as Record<string, string> })
-		const importmapJson = JSON.stringify(importmap, undefined, '\t')
-			.replace(/^/mg, '\t\t')
-		const newIndexHtml = oldIndexHtml.replace(/<script type='importmap'>[\s\S]*?<\/script>/m, `<script type='importmap'>\n${importmapJson}\n\t</script>`)
+		const newIndexHtml = oldIndexHtml.replace(/<script type = 'importmap'>[\s\S]*?<\/script>/m, `<script type = 'importmap'>${ importmapJson }</script>`)
 		await fs.writeFile(indexHtmlPath, newIndexHtml)
 	}
+
+	// update the new hash to manifest.json
+	const base64EncodedSHA256 = createHash('sha256').update(importmapJson).digest('base64')
+	const manifestLocation = path.join(directoryOfThisFile, '..', 'app', 'manifest.json')
+	const oldManifest = await fs.readFile(manifestLocation, 'utf8')
+	const newManifest = oldManifest.replace(/sha256-[\s\S]*?'/m, `sha256-${ base64EncodedSHA256 }'`)
+	await fs.writeFile(manifestLocation, newManifest)
 }
 
 // rewrite the source paths in sourcemap files so they show up in the debugger in a reasonable location and if two source maps refer to the same (relative) path, we end up with them distinguished in the browser debugger
