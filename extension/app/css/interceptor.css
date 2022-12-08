@@ -84,7 +84,8 @@ input[type = 'checkbox']:checked::before {
 	cursor: default;
 	border: 1px solid white;
 	background-color: var(--card-bg-color);
-	max-width: 20em;
+	max-width: 100%;
+	font-size: 0.75rem;
 }
 
 .preact-hint__content {
@@ -93,8 +94,9 @@ input[type = 'checkbox']:checked::before {
 	color: var(--text-color);
 	display: block;
 	white-space: normal;
-	max-width: 20em;
+	max-width: 100%;
 	word-break: break-word;
+	font-size: 0.75rem;
 }
 
 .noselect {
