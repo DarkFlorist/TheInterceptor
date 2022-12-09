@@ -12,7 +12,7 @@ function listenInContentScript() {
 		try {
 			// we only want the data element, if it exists, and postMessage will fail if it can't clone the object fully (and it cannot clone a MessageEvent)
 			if (!('data' in messageEvent)) return
-			if(connected) extensionPort.postMessage({ data: messageEvent.data })
+			if (connected) extensionPort.postMessage({ data: messageEvent.data })
 		} catch (error) {
 			// CONSIDER: should we catch data clone error and then do `extensionPort.postMessage({data:JSON.parse(JSON.stringify(messageEvent.data))})`?
 			if (error instanceof Error) {
