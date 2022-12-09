@@ -59,7 +59,7 @@ class EthereumJsonRpcError extends Error {
 interface InterceptedRequestForward {
 	readonly interceptorApproved: boolean,
 	readonly usingInterceptorWithoutSigner?: boolean,
-	readonly requestId: number,
+	readonly requestId?: number,
 	options:  {
 		readonly method: string,
 		readonly params?: unknown[]
@@ -137,7 +137,6 @@ function startListeningForMessages() {
 		if ( Array.isArray(reply) ) {
 			window.postMessage({
 				interceptorRequest: true,
-				requestId: -1,
 				options: {
 					method: 'eth_accounts_reply',
 					params: reply,
@@ -153,7 +152,6 @@ function startListeningForMessages() {
 		if ( typeof reply === 'string') {
 			window.postMessage({
 				interceptorRequest: true,
-				requestId: -1,
 				options: {
 					method: 'signer_chainChanged',
 					params: [ reply ],
@@ -179,7 +177,6 @@ function startListeningForMessages() {
 			if ( reply === null) {
 				window.postMessage({
 					interceptorRequest: true,
-					requestId: -1,
 					options: {
 						method: 'wallet_switchEthereumChain_reply',
 						params: [ { accept: true, chainId: chainId } ],
@@ -191,7 +188,6 @@ function startListeningForMessages() {
 			if( checkErrorForCode(error) && ( error.code === METAMASK_ERROR_USER_REJECTED_REQUEST || error.code === METAMASK_ERROR_CHAIN_NOT_ADDED_TO_METAMASK ) ) {
 				return window.postMessage({
 					interceptorRequest: true,
-					requestId: -1,
 					options: {
 						method: 'wallet_switchEthereumChain_reply',
 						params: [ { accept: false, chainId: chainId  } ],
@@ -213,10 +209,10 @@ function startListeningForMessages() {
 			|| !('interceptorApproved' in messageEvent.data)
 		) return
 		if (!('ethereum' in window) || !window.ethereum) throw 'window.ethereum changed'
-		if (!('requestId' in messageEvent.data || 'options' in messageEvent.data || 'method' in messageEvent.data.options || 'params' in messageEvent.data.options)) throw 'missing fields'
+		if (!('options' in messageEvent.data || 'method' in messageEvent.data.options || 'params' in messageEvent.data.options)) throw 'missing fields'
 		const forwardRequest = messageEvent.data as InterceptedRequestForward //use "as" here as we don't want to inject funtypes here
 		if (forwardRequest.error !== undefined) {
-			if (!window.interceptor.outstandingRequests.has(forwardRequest.requestId)) throw new EthereumJsonRpcError(forwardRequest.error.code, forwardRequest.error.message)
+			if (forwardRequest.requestId === undefined || !window.interceptor.outstandingRequests.has(forwardRequest.requestId)) throw new EthereumJsonRpcError(forwardRequest.error.code, forwardRequest.error.message)
 			return window.interceptor.outstandingRequests.get(forwardRequest.requestId)!.reject(new EthereumJsonRpcError(forwardRequest.error.code, forwardRequest.error.message))
 		}
 		if (forwardRequest.result !== undefined) {
@@ -249,6 +245,7 @@ function startListeningForMessages() {
 			if (forwardRequest.options.method === 'request_signer_chainId') {
 				return await requestChainId()
 			}
+			if ( forwardRequest.requestId === undefined) return
 			return window.interceptor.outstandingRequests.get(forwardRequest.requestId)!.resolve(forwardRequest.result)
 		}
 
@@ -256,21 +253,22 @@ function startListeningForMessages() {
 			if ( window.ethereum.usingInterceptorWithoutSigner ) throw 'Interceptor is in wallet mode and should not forward to an external wallet'
 			if ( window.ethereum.oldRequest === undefined) throw 'Old provider missing'
 			const reply = await window.ethereum.oldRequest(forwardRequest.options)
+
+			if ( forwardRequest.requestId === undefined) return
 			window.interceptor.outstandingRequests.get(forwardRequest.requestId)!.resolve(reply)
 		} catch (error) {
 			// if it is an Error, add context to it if context doesn't already exist
 			console.log(error)
 			console.log(messageEvent)
+			if (forwardRequest.requestId === undefined) throw error
 			if (error instanceof Error) {
 				if (!('code' in error)) (error as any).code = -32603
 				if (!('data' in error) || (error as any).data === undefined || (error as any).data === null) (error as any).data = { request: forwardRequest.options }
 				else if (!('request' in (error as any).data)) (error as any).data.request = forwardRequest.options
-				window.interceptor.outstandingRequests.get(forwardRequest.requestId)!.reject(error)
-				return
+				return window.interceptor.outstandingRequests.get(forwardRequest.requestId)!.reject(error)
 			}
 			if ((error as any).code !== undefined && (error as any).message !== undefined) {
-				window.interceptor.outstandingRequests.get(forwardRequest.requestId)!.reject(new EthereumJsonRpcError((error as any).code, (error as any).message, { request: forwardRequest.options }))
-				return
+				return window.interceptor.outstandingRequests.get(forwardRequest.requestId)!.reject(new EthereumJsonRpcError((error as any).code, (error as any).message, { request: forwardRequest.options }))
 			}
 			// if the signer we are connected threw something besides an Error, wrap it up in an error
 			window.interceptor.outstandingRequests.get(forwardRequest.requestId)!.reject(new EthereumJsonRpcError(-32603, `Unexpected thrown value.`, { error: error, request: forwardRequest.options }))
@@ -365,7 +363,6 @@ function injectEthereumIntoWindow() {
 		if( !('ethereum' in window) || !window.ethereum) return
 		window.postMessage({
 			interceptorRequest: true,
-			requestId: -1,
 			options: {
 				method: 'connected_to_signer',
 				params: [signerName],

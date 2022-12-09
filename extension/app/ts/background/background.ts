@@ -454,7 +454,6 @@ async function onContentScriptConnected(port: browser.runtime.Port) {
 				console.log('send connect!')
 				port.postMessage({
 					interceptorApproved: true,
-					requestId: -1,
 					options: { method: 'connect' },
 					result: [EthereumQuantity.serialize(window.interceptor.settings.activeChain)]
 				})
@@ -466,13 +465,11 @@ async function onContentScriptConnected(port: browser.runtime.Port) {
 					if ( window.interceptor.websiteTabSignerStates.get(port.sender.tab.id) === undefined) {
 						port.postMessage({
 							interceptorApproved: true,
-							requestId: -1,
 							options: { method: 'request_signer_to_eth_requestAccounts' },
 							result: []
 						})
 						port.postMessage({
 							interceptorApproved: true,
-							requestId: -1,
 							options: { method: 'request_signer_chainId' },
 							result: []
 						})

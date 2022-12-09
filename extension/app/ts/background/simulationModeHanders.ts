@@ -137,7 +137,6 @@ export async function subscribe(simulator: Simulator, port: browser.runtime.Port
 	const result = await simulator.simulationModeNode.createSubscription(params, (subscriptionId: string, reply: JsonRpcNewHeadsNotification) => {
 		return port.postMessage({
 			interceptorApproved: true,
-			requestId: -1,
 			options: request.options,
 			result: NewHeadsSubscriptionData.serialize(reply.params),
 			subscription: subscriptionId

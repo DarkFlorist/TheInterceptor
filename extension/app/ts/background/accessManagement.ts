@@ -90,7 +90,6 @@ export function sendMessageToApprovedWebsitePorts(method: string, data: unknown)
 		if ( !connection.approved ) continue
 		port.postMessage({
 			interceptorApproved: true,
-			requestId: -1,
 			options: { method: method },
 			result: data
 		})
@@ -104,7 +103,6 @@ export function sendActiveAccountChangeToApprovedWebsitePorts() {
 		const activeAddress = getActiveAddressForDomain(window.interceptor.settings.websiteAccess, connection.origin)
 		port.postMessage({
 			interceptorApproved: true,
-			requestId: -1,
 			options: { method: 'accountsChanged' },
 			result: activeAddress !== undefined ? [EthereumAddress.serialize(activeAddress)] : []
 		})
@@ -221,7 +219,6 @@ function connectToPort(port: browser.runtime.Port, origin: string): true {
 
 	port.postMessage({
 		interceptorApproved: true,
-		requestId: -1,
 		options: { method: 'connect' },
 		result: [EthereumQuantity.serialize(window.interceptor.settings.activeChain)]
 	})
@@ -230,14 +227,12 @@ function connectToPort(port: browser.runtime.Port, origin: string): true {
 	const activeAddress = getActiveAddressForDomain(window.interceptor.settings.websiteAccess, origin)
 	port.postMessage({
 		interceptorApproved: true,
-		requestId: -1,
 		options: { method: 'accountsChanged' },
 		result: activeAddress !== undefined ? [EthereumAddress.serialize(activeAddress)] : []
 	})
 
 	port.postMessage({
 		interceptorApproved: true,
-		requestId: -1,
 		options: { method: 'chainChanged' },
 		result: EthereumQuantity.serialize(window.interceptor.settings.activeChain)
 	})
@@ -250,7 +245,6 @@ function disconnectFromPort(port: browser.runtime.Port, origin: string): false {
 
 	port.postMessage({
 		interceptorApproved: true,
-		requestId: -1,
 		options: { method: 'disconnect' },
 		result: { code: METAMASK_ERROR_USER_REJECTED_REQUEST, message: 'User refused access to the wallet' }
 	})

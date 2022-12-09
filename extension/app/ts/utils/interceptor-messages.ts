@@ -3,17 +3,21 @@ import { AddressInfo } from './user-interface-types'
 import { EthereumAddress, EthereumQuantity } from './wire-types'
 
 export type InterceptedRequest = funtypes.Static<typeof InterceptedRequest>
-export const InterceptedRequest = funtypes.Object({
-	interceptorRequest: funtypes.Boolean,
-	usingInterceptorWithoutSigner: funtypes.Boolean,
-	requestId: funtypes.Number,
-	options: funtypes.Union(
-		funtypes.Object({
-			method: funtypes.String,
-			params: funtypes.Union(funtypes.Array(funtypes.Unknown), funtypes.Undefined)
-		}).asReadonly(), funtypes.Object({ method: funtypes.String }).asReadonly()
-	),
-}).asReadonly()
+export const InterceptedRequest = funtypes.Intersect(
+	funtypes.Object({
+		interceptorRequest: funtypes.Boolean,
+		usingInterceptorWithoutSigner: funtypes.Boolean,
+		options: funtypes.Union(
+			funtypes.Object({
+				method: funtypes.String,
+				params: funtypes.Union(funtypes.Array(funtypes.Unknown), funtypes.Undefined)
+			}).asReadonly(), funtypes.Object({ method: funtypes.String }).asReadonly()
+		),
+	}).asReadonly(),
+	funtypes.Partial({
+		requestId: funtypes.Number,
+	}).asReadonly()
+)
 
 export type TransactionConfirmation = funtypes.Static<typeof TransactionConfirmation>
 export const TransactionConfirmation = funtypes.Object({
