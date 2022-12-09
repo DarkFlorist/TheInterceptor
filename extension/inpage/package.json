@@ -6,6 +6,6 @@
 		"typescript": "4.9.3"
 	},
 	"scripts": {
-		"build": "ttsc --project tsconfig.json && npx ts-node --project ./tsconfig.json ../app/inpage/ts/prepare.ts && ttsc --project output_tsconfig.json"
+		"build": "tsc --project tsconfig.json && npx ts-node --project ./tsconfig.json ../app/inpage/ts/prepare.ts && ttsc --project output_tsconfig.json"
 	}
 }
