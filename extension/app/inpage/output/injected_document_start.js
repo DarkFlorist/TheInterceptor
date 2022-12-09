@@ -6,13 +6,15 @@ function listenInContentScript() {
     */
     // the content script is a very thin proxy between the background script and the page script
     const extensionPort = browser.runtime.connect();
+    let connected = true;
     // forward all message events to the background script, which will then filter and process them
     window.addEventListener('message', messageEvent => {
         try {
             // we only want the data element, if it exists, and postMessage will fail if it can't clone the object fully (and it cannot clone a MessageEvent)
             if (!('data' in messageEvent))
                 return;
-            extensionPort.postMessage({ data: messageEvent.data });
+            if (connected)
+                extensionPort.postMessage({ data: messageEvent.data });
         }
         catch (error) {
             // CONSIDER: should we catch data clone error and then do `extensionPort.postMessage({data:JSON.parse(JSON.stringify(messageEvent.data))})`?
@@ -22,17 +24,21 @@ function listenInContentScript() {
                     return;
                 }
             }
-            console.error(error);
+            throw error;
         }
     });
     // forward all messages we get from the background script to the window so the page script can filter and process them
     extensionPort.onMessage.addListener(response => {
         try {
-            window.postMessage(response, '*');
+            if (connected)
+                window.postMessage(response, '*');
         }
         catch (error) {
             console.error(error);
         }
+    });
+    extensionPort.onDisconnect.addListener(() => {
+        connected = false;
     });
 }
 function injectScript(content) {
