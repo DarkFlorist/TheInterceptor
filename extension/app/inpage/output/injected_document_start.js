@@ -22,7 +22,7 @@ function listenInContentScript() {
                     return;
                 }
             }
-            console.error(error);
+            throw error;
         }
     });
     // forward all messages we get from the background script to the window so the page script can filter and process them

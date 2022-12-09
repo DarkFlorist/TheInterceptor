@@ -18,6 +18,6 @@ export async function commonTokenOops(transaction: EthereumUnsignedTransaction, 
 	const transferInfo = getTransferInfoFromTx(transaction)
 	if (transferInfo === undefined) return
 	if (transaction.to === null) return
-	if (!BAD_TRANSFER_TARGETS.has(transaction.to)) return
+	if (!BAD_TRANSFER_TARGETS.has(transferInfo.to)) return
 	return 'ERC20_UNINTENDED_CONTRACT'
 }
