@@ -1,11 +1,11 @@
-import { addressString } from '../utils/bigint'
-import { AddressInfo } from '../utils/user-interface-types'
-import { AddressMetadata, SimulationState, VisualizerResult } from '../utils/visualizer-types'
+import { addressString } from '../utils/bigint.js'
+import { AddressInfo } from '../utils/user-interface-types.js'
+import { AddressMetadata, SimulationState, VisualizerResult } from '../utils/visualizer-types.js'
 import { nftMetadata, tokenMetadata, contractMetadata } from '@darkflorist/address-metadata'
-import { ethers } from 'ethers';
-import { Simulator } from '../simulation/simulator';
-import { MOCK_ADDRESS } from '../utils/constants';
-const LOGO_URI_PREFIX = `../vendor/@darkflorist/address-metadata`;
+import { ethers } from 'ethers'
+import { Simulator } from '../simulation/simulator.js'
+import { MOCK_ADDRESS } from '../utils/constants.js'
+const LOGO_URI_PREFIX = `../vendor/@darkflorist/address-metadata`
 
 export function getAddressMetaData(address: bigint, addressInfos: readonly AddressInfo[] | undefined) : AddressMetadata {
 	if ( address === MOCK_ADDRESS) {

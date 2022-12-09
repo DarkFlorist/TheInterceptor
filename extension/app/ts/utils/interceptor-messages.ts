@@ -1,6 +1,6 @@
 import * as funtypes from 'funtypes'
-import { AddressInfo } from './user-interface-types'
-import { EthereumAddress, EthereumQuantity } from './wire-types'
+import { AddressInfo } from './user-interface-types.js'
+import { EthereumAddress, EthereumQuantity } from './wire-types.js'
 
 export type InterceptedRequest = funtypes.Static<typeof InterceptedRequest>
 export const InterceptedRequest = funtypes.Object({

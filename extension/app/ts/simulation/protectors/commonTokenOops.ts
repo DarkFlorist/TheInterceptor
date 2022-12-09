@@ -1,7 +1,7 @@
-import { WETH, USDC, USDT, DAI, WBTC, UNISWAP_V2_ROUTER_ADDRESS, SUSHISWAP_V2_ROUTER_ADDRESS, UNISWAP_V3_ROUTER } from "../../utils/constants"
-import { Simulator } from '../simulator'
-import { EthereumUnsignedTransaction } from "../../utils/wire-types"
-import { getTransferInfoFromTx } from "../../utils/calldata"
+import { WETH, USDC, USDT, DAI, WBTC, UNISWAP_V2_ROUTER_ADDRESS, SUSHISWAP_V2_ROUTER_ADDRESS, UNISWAP_V3_ROUTER } from '../../utils/constants.js'
+import { Simulator } from '../simulator.js'
+import { EthereumUnsignedTransaction } from '../../utils/wire-types.js'
+import { getTransferInfoFromTx } from '../../utils/calldata.js'
 
 export const BAD_TRANSFER_TARGETS = new Set<bigint>([
 	WETH,

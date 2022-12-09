@@ -1,8 +1,8 @@
-import { ConnectedToSigner, InterceptedRequest, WalletSwitchEthereumChainReply } from '../utils/interceptor-messages'
-import { EthereumAccountsReply, EthereumChainReply } from '../utils/wire-types'
-import { changeActiveAddressAndChainAndResetSimulation } from './background'
-import { sendPopupMessageToOpenWindows } from './backgroundUtils'
-import { resolveSignerChainChange } from './windows/changeChain'
+import { ConnectedToSigner, InterceptedRequest, WalletSwitchEthereumChainReply } from '../utils/interceptor-messages.js'
+import { EthereumAccountsReply, EthereumChainReply } from '../utils/wire-types.js'
+import { changeActiveAddressAndChainAndResetSimulation } from './background.js'
+import { sendPopupMessageToOpenWindows } from './backgroundUtils.js'
+import { resolveSignerChainChange } from './windows/changeChain.js'
 
 export function ethAccountsReply(port: browser.runtime.Port, request: InterceptedRequest) {
 	if (!('params' in request.options)) return

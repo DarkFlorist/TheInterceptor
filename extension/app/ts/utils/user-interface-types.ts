@@ -1,11 +1,11 @@
 import { StateUpdater } from 'preact/hooks'
 import * as funtypes from 'funtypes'
-import { EthereumAccountsReply, EthereumAddress, EthereumQuantity, LiteralConverterParserFactory } from './wire-types'
-import { AddressMetadata, SimulatedAndVisualizedTransaction, SimulationAndVisualisationResults } from './visualizer-types'
-import { WebsiteAccess } from '../background/settings'
-import { IdentifiedSwap } from '../components/simulationExplaining/SwapTransactions'
-import { CHAINS } from './constants'
-import { SignerName } from './interceptor-messages'
+import { EthereumAccountsReply, EthereumAddress, EthereumQuantity, LiteralConverterParserFactory } from './wire-types.js'
+import { AddressMetadata, SimulatedAndVisualizedTransaction, SimulationAndVisualisationResults } from './visualizer-types.js'
+import { WebsiteAccess } from '../background/settings.js'
+import { IdentifiedSwap } from '../components/simulationExplaining/SwapTransactions.js'
+import { CHAINS } from './constants.js'
+import { SignerName } from './interceptor-messages.js'
 
 export type CHAIN = keyof typeof CHAINS
 export const CHAIN = funtypes.Union(funtypes.Literal('1'), funtypes.Literal('5'))

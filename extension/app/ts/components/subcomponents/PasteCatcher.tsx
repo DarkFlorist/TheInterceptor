@@ -1,4 +1,4 @@
-import { useEffect } from 'preact/hooks';
+import { useEffect } from 'preact/hooks'
 
 interface PasteProps {
     onPaste: (text: string) => void,

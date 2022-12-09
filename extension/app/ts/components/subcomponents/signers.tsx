@@ -1,5 +1,5 @@
-import { BRAVE_LOGO, METAMASK_LOGO } from "../../utils/constants"
-import { SignerName } from "../../utils/interceptor-messages"
+import { BRAVE_LOGO, METAMASK_LOGO } from '../../utils/constants.js'
+import { SignerName } from '../../utils/interceptor-messages.js'
 
 const signerLogos = {
 	'MetaMask': METAMASK_LOGO,

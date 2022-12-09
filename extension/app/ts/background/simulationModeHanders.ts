@@ -1,11 +1,11 @@
-import { Simulator } from '../simulation/simulator'
-import { bytes32String } from '../utils/bigint'
-import { InterceptedRequest } from '../utils/interceptor-messages'
-import { EstimateGasParams, EthBalanceParams, EthBlockByNumberParams, EthCallParams, EthereumAddress, EthereumData, EthereumQuantity, EthereumSignedTransactionWithBlockData, EthSubscribeParams, EthTransactionReceiptResponse, EthUnSubscribeParams, GetBlockReturn, GetCode, JsonRpcNewHeadsNotification, NewHeadsSubscriptionData, PersonalSignParams, RequestPermissions, SendTransactionParams, SignTypedDataV4Params, SwitchEthereumChainParams, TransactionByHashParams, TransactionReceiptParams } from '../utils/wire-types'
-import { WebsiteAccess } from './settings'
-import { openChangeChainDialog } from './windows/changeChain'
-import { openConfirmTransactionDialog } from './windows/confirmTransaction'
-import { openPersonalSignDialog } from './windows/personalSign'
+import { Simulator } from '../simulation/simulator.js'
+import { bytes32String } from '../utils/bigint.js'
+import { InterceptedRequest } from '../utils/interceptor-messages.js'
+import { EstimateGasParams, EthBalanceParams, EthBlockByNumberParams, EthCallParams, EthereumAddress, EthereumData, EthereumQuantity, EthereumSignedTransactionWithBlockData, EthSubscribeParams, EthTransactionReceiptResponse, EthUnSubscribeParams, GetBlockReturn, GetCode, JsonRpcNewHeadsNotification, NewHeadsSubscriptionData, PersonalSignParams, RequestPermissions, SendTransactionParams, SignTypedDataV4Params, SwitchEthereumChainParams, TransactionByHashParams, TransactionReceiptParams } from '../utils/wire-types.js'
+import { WebsiteAccess } from './settings.js'
+import { openChangeChainDialog } from './windows/changeChain.js'
+import { openConfirmTransactionDialog } from './windows/confirmTransaction.js'
+import { openPersonalSignDialog } from './windows/personalSign.js'
 
 const defaultCallAddress = 0x1n
 

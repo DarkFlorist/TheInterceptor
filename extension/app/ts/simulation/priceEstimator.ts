@@ -1,9 +1,9 @@
 import { decodeParameters, encodeMethod } from '@zoltu/ethereum-abi-encoder'
 import { keccak256 } from '@zoltu/ethereum-crypto'
-import { CHAINS, isSupportedChain, UNISWAP_V2_ROUTER_ADDRESS } from '../utils/constants'
-import { EthereumClientService } from './services/EthereumClientService'
-import { TokenPriceEstimate } from '../utils/visualizer-types'
-import { addressString } from '../utils/bigint'
+import { CHAINS, isSupportedChain, UNISWAP_V2_ROUTER_ADDRESS } from '../utils/constants.js'
+import { EthereumClientService } from './services/EthereumClientService.js'
+import { TokenPriceEstimate } from '../utils/visualizer-types.js'
+import { addressString } from '../utils/bigint.js'
 
 interface TokenDecimals {
 	token: bigint,

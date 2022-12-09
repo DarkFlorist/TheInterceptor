@@ -1,10 +1,10 @@
-import Blockies from '../subcomponents/PreactBlocky'
-import { AddressInfo, AddressListParams, Page } from '../../utils/user-interface-types'
-import { addressString } from '../../utils/bigint'
+import Blockies from '../subcomponents/PreactBlocky.js'
+import { AddressInfo, AddressListParams, Page } from '../../utils/user-interface-types.js'
+import { addressString } from '../../utils/bigint.js'
 import { ethers } from 'ethers'
 import { useEffect, useState } from 'preact/hooks'
-import { Notice } from '../subcomponents/Error'
-import { getIssueWithAddressString } from '../ui-utils'
+import { Notice } from '../subcomponents/Error.js'
+import { getIssueWithAddressString } from '../ui-utils.js'
 
 interface AddressInfoTemporaryState {
 	originalAddressInfo: AddressInfo,

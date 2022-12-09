@@ -1,6 +1,6 @@
 import { useRef, useState } from 'preact/hooks'
-import { CHAINS, getChainName, isSupportedChain } from '../../utils/constants'
-import { clickOutsideAlerter } from '../ui-utils'
+import { CHAINS, getChainName, isSupportedChain } from '../../utils/constants.js'
+import { clickOutsideAlerter } from '../ui-utils.js'
 
 interface ChainSelectorParams {
 	currentChain: bigint,

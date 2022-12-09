@@ -1,12 +1,12 @@
 import { useState, useEffect } from 'preact/hooks'
-import { InterceptedRequest, SignerName } from '../../utils/interceptor-messages'
-import { SimulatedAndVisualizedTransaction, SimulationAndVisualisationResults } from '../../utils/visualizer-types'
-import { ErrorCheckBox } from '../subcomponents/Error'
-import Hint from '../subcomponents/Hint'
-import { SimulationSummary } from '../simulationExplaining/SimulationSummary'
-import { Transactions } from '../simulationExplaining/Transactions'
-import { Spinner } from '../subcomponents/Spinner'
-import { getSignerName, SignerLogoText } from '../subcomponents/signers'
+import { InterceptedRequest, SignerName } from '../../utils/interceptor-messages.js'
+import { SimulatedAndVisualizedTransaction, SimulationAndVisualisationResults } from '../../utils/visualizer-types.js'
+import { ErrorCheckBox } from '../subcomponents/Error.js'
+import Hint from '../subcomponents/Hint.js'
+import { SimulationSummary } from '../simulationExplaining/SimulationSummary.js'
+import { Transactions } from '../simulationExplaining/Transactions.js'
+import { Spinner } from '../subcomponents/Spinner.js'
+import { getSignerName, SignerLogoText } from '../subcomponents/signers.js'
 
 export function ConfirmTransaction() {
 	const [requestToConfirm, setRequestToConfirm] = useState<InterceptedRequest | undefined>(undefined)

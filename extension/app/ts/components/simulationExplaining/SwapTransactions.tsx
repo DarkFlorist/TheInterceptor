@@ -1,9 +1,9 @@
-import { AddressMetadata, SimulatedAndVisualizedTransaction, TokenVisualizerResult } from '../../utils/visualizer-types'
+import { AddressMetadata, SimulatedAndVisualizedTransaction, TokenVisualizerResult } from '../../utils/visualizer-types.js'
 import * as funtypes from 'funtypes'
-import { EthereumAddress, EthereumQuantity } from '../../utils/wire-types'
-import { abs, addressString } from '../../utils/bigint'
-import { ERC721Token, Ether, getTokenData, Token } from '../subcomponents/coins'
-import { CHAIN } from '../../utils/user-interface-types'
+import { EthereumAddress, EthereumQuantity } from '../../utils/wire-types.js'
+import { abs, addressString } from '../../utils/bigint.js'
+import { ERC721Token, Ether, getTokenData, Token } from '../subcomponents/coins.js'
+import { CHAIN } from '../../utils/user-interface-types.js'
 
 export type IdentifiedSwap = funtypes.Static<typeof IdentifiedSwap>
 export const IdentifiedSwap = funtypes.Union(

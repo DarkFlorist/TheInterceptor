@@ -1,6 +1,6 @@
-import { Simulator } from '../simulator'
-import { EthereumUnsignedTransaction } from "../../utils/wire-types"
-import { getTransferInfoFromTx } from "../../utils/calldata"
+import { Simulator } from '../simulator.js'
+import { EthereumUnsignedTransaction } from '../../utils/wire-types.js'
+import { getTransferInfoFromTx } from '../../utils/calldata.js'
 
 export async function tokenToContract(transaction: EthereumUnsignedTransaction, simulator: Simulator) {
 	const transferInfo = getTransferInfoFromTx(transaction)

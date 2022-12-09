@@ -1,9 +1,9 @@
 
-import { IUnsignedTransaction } from './ethereum'
-import { EthBalanceChanges, EthereumAddress, EthereumQuantity, EthereumTransactionSignature, EthereumUnsignedTransaction, SingleMulticallResponse } from './wire-types'
+import { IUnsignedTransaction } from './ethereum.js'
+import { EthBalanceChanges, EthereumAddress, EthereumQuantity, EthereumTransactionSignature, EthereumUnsignedTransaction, SingleMulticallResponse } from './wire-types.js'
 import * as funtypes from 'funtypes'
-import { QUARANTINE_CODE } from '../simulation/protectors/quarantine-codes'
-import { CHAIN } from './user-interface-types'
+import { QUARANTINE_CODE } from '../simulation/protectors/quarantine-codes.js'
+import { CHAIN } from './user-interface-types.js'
 
 export type TokenVisualizerResult = funtypes.Static<typeof TokenVisualizerResult>
 export const TokenVisualizerResult = funtypes.Intersect(

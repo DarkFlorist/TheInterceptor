@@ -1,9 +1,9 @@
 import { keccak256, secp256k1 } from '@zoltu/ethereum-crypto'
 import { rlpEncode } from '@zoltu/rlp-encoder'
-import { bigintToUint8Array, dataString } from './bigint'
-import { stripLeadingZeros } from './typed-arrays'
-import { assertNever } from './typescript'
-import { EthereumUnsignedTransaction } from './wire-types'
+import { bigintToUint8Array, dataString } from './bigint.js'
+import { stripLeadingZeros } from './typed-arrays.js'
+import { assertNever } from './typescript.js'
+import { EthereumUnsignedTransaction } from './wire-types.js'
 
 export interface IUnsignedTransactionLegacy {
 	readonly type: 'legacy'

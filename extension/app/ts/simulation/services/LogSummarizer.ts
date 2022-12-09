@@ -1,6 +1,6 @@
 
-import { addressString } from "../../utils/bigint"
-import { BalanceChangeSummary, TokenVisualizerResult, VisualizerResult } from "../../utils/visualizer-types"
+import { addressString } from '../../utils/bigint.js'
+import { BalanceChangeSummary, TokenVisualizerResult, VisualizerResult } from '../../utils/visualizer-types.js'
 
 export class LogSummarizer {
 	private summary = new Map<string, BalanceChangeSummary>()

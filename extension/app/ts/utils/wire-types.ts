@@ -1,6 +1,6 @@
 import * as t from 'funtypes'
-import { UnionToIntersection, assertNever } from './typescript'
-import { IUnsignedTransaction } from './ethereum'
+import { UnionToIntersection, assertNever } from './typescript.js'
+import { IUnsignedTransaction } from './ethereum.js'
 
 const BigIntParser: t.ParsedValue<t.String, bigint>['config'] = {
 	parse: value => {

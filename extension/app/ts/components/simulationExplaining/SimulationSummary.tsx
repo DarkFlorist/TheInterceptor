@@ -1,11 +1,11 @@
-import { LogSummarizer } from '../../simulation/services/LogSummarizer'
-import { CHAIN, SimulationStateParam } from '../../utils/user-interface-types'
-import { AddressMetadata, BalanceChangeSummary, SimulationAndVisualisationResults, TokenPriceEstimate } from '../../utils/visualizer-types'
-import { BigAddress, SmallAddress } from '../subcomponents/address'
-import { ERC721Token, Ether, Token, TokenPrice, TokenSymbol } from '../subcomponents/coins'
-import { Transactions } from './Transactions'
-import { CopyToClipboard } from '../subcomponents/CopyToClipboard'
-import { SomeTimeAgo } from '../subcomponents/SomeTimeAgo'
+import { LogSummarizer } from '../../simulation/services/LogSummarizer.js'
+import { CHAIN, SimulationStateParam } from '../../utils/user-interface-types.js'
+import { AddressMetadata, BalanceChangeSummary, SimulationAndVisualisationResults, TokenPriceEstimate } from '../../utils/visualizer-types.js'
+import { BigAddress, SmallAddress } from '../subcomponents/address.js'
+import { ERC721Token, Ether, Token, TokenPrice, TokenSymbol } from '../subcomponents/coins.js'
+import { Transactions } from './Transactions.js'
+import { CopyToClipboard } from '../subcomponents/CopyToClipboard.js'
+import { SomeTimeAgo } from '../subcomponents/SomeTimeAgo.js'
 
 function EtherChange(
 	param: {

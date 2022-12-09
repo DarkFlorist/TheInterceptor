@@ -1,7 +1,7 @@
-import { useEffect, useState } from "preact/hooks"
-import { NotificationCenterParams, Page, PendingAccessRequest } from "../../utils/user-interface-types"
-import { AddressMetadata } from "../../utils/visualizer-types"
-import { BigAddress } from "../subcomponents/address"
+import { useEffect, useState } from 'preact/hooks'
+import { NotificationCenterParams, Page, PendingAccessRequest } from '../../utils/user-interface-types.js'
+import { AddressMetadata } from '../../utils/visualizer-types.js'
+import { BigAddress } from '../subcomponents/address.js'
 
 export function NotificationCenter(param: NotificationCenterParams) {
 

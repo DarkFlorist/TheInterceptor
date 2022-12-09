@@ -1,4 +1,4 @@
-import { clipboardCopy } from './clipboardcopy'
+import { clipboardCopy } from './clipboardcopy.js'
 
 interface Props {
 	children: preact.VNode
