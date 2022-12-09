@@ -509,15 +509,17 @@ async function onContentScriptConnected(port: browser.runtime.Port) {
 				options: request.options
 			})
 		} catch(error) {
-			postMessageIfStillConnected({
-				interceptorApproved: false,
-				requestId: request.requestId,
-				options: request.options,
-				error: {
-					code: 123456,
-					message: JSON.stringify(error)
-				}
-			})
+			if (error instanceof Error) {
+				postMessageIfStillConnected({
+					interceptorApproved: false,
+					requestId: request.requestId,
+					options: request.options,
+					error: {
+						code: 123456,
+						message: error.message
+					}
+				})
+			}
 		}
 	})
 }
