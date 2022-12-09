@@ -122,8 +122,8 @@ function SendOrReceiveTokensImportanceBox(param: { sending: boolean, tokenVisual
 
 						<p style = { `color: ${ param.textColor }; margin-bottom: 0px; margin-right: 8px` }> to </p>
 						<SmallAddress
-							address = { tokenEvent.tokenAddress }
-							addressMetaData = { param.addressMetadata.get(addressString(tokenEvent.tokenAddress)) }
+							address = { tokenEvent.to }
+							addressMetaData = { param.addressMetadata.get(addressString(tokenEvent.to)) }
 							textColor = { param.textColor }
 							downScale = { true }
 						/>
