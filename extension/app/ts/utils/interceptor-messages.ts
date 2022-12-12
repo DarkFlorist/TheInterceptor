@@ -19,6 +19,38 @@ export const InterceptedRequest = funtypes.Intersect(
 	}).asReadonly()
 )
 
+export type InterceptedRequestForward = funtypes.Static<typeof InterceptedRequestForward>
+export const InterceptedRequestForward = funtypes.Intersect(
+	funtypes.Object({
+		interceptorApproved: funtypes.Boolean,
+		options: funtypes.Union(
+			funtypes.Object({
+				method: funtypes.String,
+				params: funtypes.Union(funtypes.Array(funtypes.Unknown), funtypes.Undefined)
+			}).asReadonly(),
+			funtypes.Object({
+				method: funtypes.String
+			}).asReadonly()
+		),
+	}).asReadonly(),
+	funtypes.Union(
+		funtypes.Object({
+			result: funtypes.Unknown,
+		}),
+		funtypes.Object({
+			error: funtypes.Object({
+				code: funtypes.Number,
+				message: funtypes.String
+			}).asReadonly(),
+		}).asReadonly(),
+		funtypes.Object({ })
+	),
+	funtypes.Partial({
+		subscription: funtypes.String,
+		usingInterceptorWithoutSigner: funtypes.Boolean,
+		requestId: funtypes.Number}).asReadonly()
+)
+
 export type TransactionConfirmation = funtypes.Static<typeof TransactionConfirmation>
 export const TransactionConfirmation = funtypes.Object({
 	method: funtypes.Literal('popup_confirmDialog'),

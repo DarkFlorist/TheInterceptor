@@ -1,7 +1,7 @@
 import { METAMASK_ERROR_USER_REJECTED_REQUEST } from '../../utils/constants.js'
 import { Future } from '../../utils/future.js'
 import { ChainChangeConfirmation, InterceptedRequest, } from '../../utils/interceptor-messages.js'
-import { changeActiveChain } from '../background.js'
+import { changeActiveChain, postMessageIfStillConnected } from '../background.js'
 
 let pendForUserReply: Future<ChainChangeConfirmation> | undefined = undefined
 let pendForSignerReply: Future<ChainChangeConfirmation> | undefined = undefined
@@ -82,7 +82,7 @@ export async function openChangeChainDialog(port: browser.runtime.Port, request:
 		pendForSignerReply = new Future<ChainChangeConfirmation>() // we need to get reply from the signer too, if we are using signer, if signer is not used, interceptor replies to this
 		const signerReply = await pendForSignerReply
 		if (signerReply.options.accept) {
-			return port.postMessage({
+			return postMessageIfStillConnected(port, {
 				interceptorApproved: true,
 				requestId: request.requestId,
 				options: request.options,
@@ -90,7 +90,7 @@ export async function openChangeChainDialog(port: browser.runtime.Port, request:
 			})
 		}
 	}
-	return port.postMessage({
+	return postMessageIfStillConnected(port, {
 		interceptorApproved: false,
 		requestId: request.requestId,
 		options: request.options,

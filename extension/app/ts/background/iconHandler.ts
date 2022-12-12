@@ -4,7 +4,7 @@ import { getActiveAddressForDomain, hasAddressAccess } from './accessManagement.
 import { getActiveAddress, sendPopupMessageToOpenWindows } from './backgroundUtils.js'
 
 function setIcon(tabId: number, icon: string) {
-	window.interceptor.websiteTabIcons.set(tabId, icon )
+	window.interceptor.websiteTabConnection.set(tabId, icon)
 	sendPopupMessageToOpenWindows('popup_websiteIconChanged');
 	return browser.browserAction.setIcon({
 		path: { 128: icon },

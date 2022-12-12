@@ -2,6 +2,7 @@ import { Simulator } from '../simulation/simulator.js'
 import { bytes32String } from '../utils/bigint.js'
 import { InterceptedRequest } from '../utils/interceptor-messages.js'
 import { EstimateGasParams, EthBalanceParams, EthBlockByNumberParams, EthCallParams, EthereumAddress, EthereumData, EthereumQuantity, EthereumSignedTransactionWithBlockData, EthSubscribeParams, EthTransactionReceiptResponse, EthUnSubscribeParams, GetBlockReturn, GetCode, JsonRpcNewHeadsNotification, NewHeadsSubscriptionData, PersonalSignParams, RequestPermissions, SendTransactionParams, SignTypedDataV4Params, SwitchEthereumChainParams, TransactionByHashParams, TransactionReceiptParams } from '../utils/wire-types.js'
+import { postMessageIfStillConnected } from './background.js'
 import { WebsiteAccess } from './settings.js'
 import { openChangeChainDialog } from './windows/changeChain.js'
 import { openConfirmTransactionDialog } from './windows/confirmTransaction.js'
@@ -12,7 +13,7 @@ const defaultCallAddress = 0x1n
 export async function getBlockByNumber(simulator: Simulator, port: browser.runtime.Port, request: InterceptedRequest) {
 	const balanceParams = EthBlockByNumberParams.parse(request.options)
 	const block = await simulator.simulationModeNode.getBlock(balanceParams.params[0], balanceParams.params[1])
-	return port.postMessage({
+	return postMessageIfStillConnected(port, {
 		interceptorApproved: true,
 		requestId: request.requestId,
 		options: request.options,
@@ -21,7 +22,7 @@ export async function getBlockByNumber(simulator: Simulator, port: browser.runti
 }
 export async function getBalance(simulator: Simulator, port: browser.runtime.Port, request: InterceptedRequest) {
 	const balanceParams = EthBalanceParams.parse(request.options)
-	return port.postMessage({
+	return postMessageIfStillConnected(port, {
 		interceptorApproved: true,
 		requestId: request.requestId,
 		options: request.options,
@@ -32,14 +33,14 @@ export async function getTransactionByHash(simulator: Simulator, port: browser.r
 	const hashParams = TransactionByHashParams.parse(request.options)
 	const result = await simulator.simulationModeNode.getTransactionByHash(hashParams.params[0])
 	if(result === undefined) {
-		return port.postMessage({
+		return postMessageIfStillConnected(port, {
 			interceptorApproved: true,
 			requestId: request.requestId,
 			options: request.options,
 			result: undefined
 		})
 	}
-	return port.postMessage({
+	return postMessageIfStillConnected(port, {
 		interceptorApproved: true,
 		requestId: request.requestId,
 		options: request.options,
@@ -48,7 +49,7 @@ export async function getTransactionByHash(simulator: Simulator, port: browser.r
 }
 export async function getTransactionReceipt(simulator: Simulator, port: browser.runtime.Port, request: InterceptedRequest) {
 	const receiptRequest = TransactionReceiptParams.parse(request.options)
-	return port.postMessage({
+	return postMessageIfStillConnected(port, {
 		interceptorApproved: true,
 		requestId: request.requestId,
 		options: request.options,
@@ -105,7 +106,7 @@ export async function call(simulator: Simulator, port: browser.runtime.Port, req
 		accessList: []
 	}
 	const result = params.params.length > 1 ? await simulator.simulationModeNode.call(transaction, params.params[1]) : await simulator.simulationModeNode.call(transaction)
-	return port.postMessage({
+	return postMessageIfStillConnected(port, {
 		interceptorApproved: true,
 		requestId: request.requestId,
 		options: request.options,
@@ -114,7 +115,7 @@ export async function call(simulator: Simulator, port: browser.runtime.Port, req
 }
 export async function blockNumber(simulator: Simulator, port: browser.runtime.Port, request: InterceptedRequest) {
 	const block = await simulator.simulationModeNode.getBlockNumber()
-	return port.postMessage({
+	return postMessageIfStillConnected(port, {
 		interceptorApproved: true,
 		requestId: request.requestId,
 		options: request.options,
@@ -124,7 +125,7 @@ export async function blockNumber(simulator: Simulator, port: browser.runtime.Po
 
 export async function estimateGas(simulator: Simulator, port: browser.runtime.Port, request: InterceptedRequest) {
 	const gasParams = EstimateGasParams.parse(request.options)
-	return port.postMessage({
+	return postMessageIfStillConnected(port, {
 		interceptorApproved: true,
 		requestId: request.requestId,
 		options: request.options,
@@ -135,7 +136,7 @@ export async function estimateGas(simulator: Simulator, port: browser.runtime.Po
 export async function subscribe(simulator: Simulator, port: browser.runtime.Port, request: InterceptedRequest) {
 	const params = EthSubscribeParams.parse(request.options)
 	const result = await simulator.simulationModeNode.createSubscription(params, (subscriptionId: string, reply: JsonRpcNewHeadsNotification) => {
-		return port.postMessage({
+		return postMessageIfStillConnected(port, {
 			interceptorApproved: true,
 			options: request.options,
 			result: NewHeadsSubscriptionData.serialize(reply.params),
@@ -145,7 +146,7 @@ export async function subscribe(simulator: Simulator, port: browser.runtime.Port
 
 	if (result === undefined) throw ('failed to create subscription')
 
-	return port.postMessage({
+	return postMessageIfStillConnected(port, {
 		interceptorApproved: true,
 		requestId: request.requestId,
 		options: request.options,
@@ -155,7 +156,7 @@ export async function subscribe(simulator: Simulator, port: browser.runtime.Port
 
 export async function unsubscribe(simulator: Simulator, port: browser.runtime.Port, request: InterceptedRequest) {
 	const params = EthUnSubscribeParams.parse(request.options)
-	return port.postMessage({
+	return postMessageIfStillConnected(port, {
 		interceptorApproved: true,
 		requestId: request.requestId,
 		options: request.options,
@@ -166,7 +167,7 @@ export async function unsubscribe(simulator: Simulator, port: browser.runtime.Po
 export async function getAccounts(getActiveAddressForDomain: (websiteAccess: readonly WebsiteAccess[], origin: string) => bigint | undefined, _simulator: Simulator, port: browser.runtime.Port, request: InterceptedRequest) {
 	const connection = window.interceptor.websitePortApprovals.get(port)
 	if (connection === undefined || window.interceptor.settings === undefined) {
-		return port.postMessage({
+		return postMessageIfStillConnected(port, {
 			interceptorApproved: true,
 			requestId: request.requestId,
 			options: request.options,
@@ -175,7 +176,7 @@ export async function getAccounts(getActiveAddressForDomain: (websiteAccess: rea
 	}
 	const account = getActiveAddressForDomain(window.interceptor.settings.websiteAccess, connection.origin)
 	if (account === undefined) {
-		return port.postMessage({
+		return postMessageIfStillConnected(port, {
 			interceptorApproved: true,
 			requestId: request.requestId,
 			options: request.options,
@@ -183,7 +184,7 @@ export async function getAccounts(getActiveAddressForDomain: (websiteAccess: rea
 		})
 	}
 
-	return port.postMessage({
+	return postMessageIfStillConnected(port, {
 		interceptorApproved: true,
 		requestId: request.requestId,
 		options: request.options,
@@ -192,7 +193,7 @@ export async function getAccounts(getActiveAddressForDomain: (websiteAccess: rea
 }
 
 export async function chainId(simulator: Simulator, port: browser.runtime.Port, request: InterceptedRequest) {
-	return port.postMessage({
+	return postMessageIfStillConnected(port, {
 		interceptorApproved: true,
 		requestId: request.requestId,
 		options: request.options,
@@ -201,7 +202,7 @@ export async function chainId(simulator: Simulator, port: browser.runtime.Port, 
 }
 
 export async function gasPrice(simulator: Simulator, port: browser.runtime.Port, request: InterceptedRequest) {
-	return port.postMessage({
+	return postMessageIfStillConnected(port, {
 		interceptorApproved: true,
 		requestId: request.requestId,
 		options: request.options,
@@ -228,7 +229,7 @@ export async function switchEthereumChain(_simulator: Simulator, port: browser.r
 export async function getCode(simulator: Simulator, port: browser.runtime.Port, request: InterceptedRequest) {
 	const params = GetCode.parse(request.options)
 
-	return port.postMessage({
+	return postMessageIfStillConnected(port, {
 		interceptorApproved: true,
 		requestId: request.requestId,
 		options: request.options,
@@ -242,7 +243,7 @@ export async function requestPermissions(getActiveAddressForDomain: (websiteAcce
 }
 
 export async function getPermissions(_simulator: Simulator, port: browser.runtime.Port, request: InterceptedRequest) {
-	return port.postMessage({
+	return postMessageIfStillConnected(port, {
 		interceptorApproved: true,
 		requestId: request.requestId,
 		options: request.options,

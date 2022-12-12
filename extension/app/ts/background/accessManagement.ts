@@ -1,7 +1,7 @@
 import { addressString } from '../utils/bigint.js'
 import { AddressMetadata } from '../utils/visualizer-types.js'
 import { EthereumAddress } from '../utils/wire-types.js'
-import { handlers, setEthereumNodeBlockPolling } from './background.js'
+import { handlers, postMessageIfStillConnected, setEthereumNodeBlockPolling } from './background.js'
 import { getActiveAddress } from './backgroundUtils.js'
 import { getAddressMetaData } from './metadataUtils.js'
 import { Settings, WebsiteAccess, WebsiteAddressAccess } from './settings.js'
@@ -88,7 +88,7 @@ export function sendMessageToApprovedWebsitePorts(method: string, data: unknown)
 	// inform all the tabs about the address change
 	for (const [port, connection] of window.interceptor.websitePortApprovals.entries() ) {
 		if ( !connection.approved ) continue
-		port.postMessage({
+		postMessageIfStillConnected(port, {
 			interceptorApproved: true,
 			options: { method: method },
 			result: data
@@ -101,7 +101,7 @@ export function sendActiveAccountChangeToApprovedWebsitePorts() {
 	for (const [port, connection] of window.interceptor.websitePortApprovals.entries() ) {
 		if ( !connection.approved ) continue
 		const activeAddress = getActiveAddressForDomain(window.interceptor.settings.websiteAccess, connection.origin)
-		port.postMessage({
+		postMessageIfStillConnected(port, {
 			interceptorApproved: true,
 			options: { method: 'accountsChanged' },
 			result: activeAddress !== undefined ? [EthereumAddress.serialize(activeAddress)] : []
@@ -217,7 +217,7 @@ function connectToPort(port: browser.runtime.Port, origin: string): true {
 	if (window.interceptor.settings === undefined) return true
 	if (window.interceptor.settings.activeChain === undefined) return true
 
-	port.postMessage({
+	postMessageIfStillConnected(port, {
 		interceptorApproved: true,
 		options: { method: 'connect' },
 		result: [EthereumQuantity.serialize(window.interceptor.settings.activeChain)]
@@ -225,13 +225,13 @@ function connectToPort(port: browser.runtime.Port, origin: string): true {
 
 	// seems like dapps also want to get account changed and chain changed events after we connect again, so let's send them too
 	const activeAddress = getActiveAddressForDomain(window.interceptor.settings.websiteAccess, origin)
-	port.postMessage({
+	postMessageIfStillConnected(port, {
 		interceptorApproved: true,
 		options: { method: 'accountsChanged' },
 		result: activeAddress !== undefined ? [EthereumAddress.serialize(activeAddress)] : []
 	})
 
-	port.postMessage({
+	postMessageIfStillConnected(port, {
 		interceptorApproved: true,
 		options: { method: 'chainChanged' },
 		result: EthereumQuantity.serialize(window.interceptor.settings.activeChain)
@@ -243,7 +243,7 @@ function disconnectFromPort(port: browser.runtime.Port, origin: string): false {
 	setWebsitePortApproval(port, origin, false)
 	updateExtensionIcon(port)
 
-	port.postMessage({
+	postMessageIfStillConnected(port, {
 		interceptorApproved: true,
 		options: { method: 'disconnect' },
 		result: { code: METAMASK_ERROR_USER_REJECTED_REQUEST, message: 'User refused access to the wallet' }
