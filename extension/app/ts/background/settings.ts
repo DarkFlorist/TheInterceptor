@@ -61,7 +61,7 @@ export async function getSettings() : Promise<Settings> {
 		activeSigningAddress: results.activeSigningAddress !== undefined && !isEmpty(results.activeSigningAddress) ? EthereumAddress.parse(results.activeSigningAddress) : undefined,
 		addressInfos: results.addressInfos !== undefined && !isEmpty(results.addressInfos) ? results.addressInfos.map( (x: AddressInfo) => AddressInfo.parse(x)) : defaultAddresses,
 		page: results.page !== undefined && !isEmpty(results.page) ? parseInt(results.page) : Page.Home,
-		makeMeRich: results.makeMeRich !== undefined ? results.makeMeRich : true,
+		makeMeRich: results.makeMeRich !== undefined ? results.makeMeRich : false,
 		useSignersAddressAsActiveAddress: results.useSignersAddressAsActiveAddress !== undefined ? results.useSignersAddressAsActiveAddress : false,
 		websiteAccess: results.websiteAccess !== undefined ? results.websiteAccess : [],
 		activeChain: results.activeChain !== undefined ? parseActiveChain(results.activeChain) : 1n,
