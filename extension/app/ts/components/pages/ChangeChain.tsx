@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'preact/hooks'
-import { getChainName, isSupportedChain } from '../../utils/constants'
-import { Error, ErrorCheckBox } from '../subcomponents/Error';
+import { getChainName, isSupportedChain } from '../../utils/constants.js'
+import { Error, ErrorCheckBox } from '../subcomponents/Error.js'
 
 interface InterceptorChainChangeRequest {
 	isInterceptorSupport: boolean,

@@ -1,7 +1,7 @@
 
-import { Page, ChangeActiveAddressParam } from '../../utils/user-interface-types'
-import { BigAddress } from '../subcomponents/address'
-import { getSignerLogo, getSignerName, SignerLogoText } from '../subcomponents/signers'
+import { Page, ChangeActiveAddressParam } from '../../utils/user-interface-types.js'
+import { BigAddress } from '../subcomponents/address.js'
+import { getSignerLogo, getSignerName, SignerLogoText } from '../subcomponents/signers.js'
 
 export function ChangeActiveAddress(param: ChangeActiveAddressParam) {
 	function ChangeAndStoreActiveAddress(activeAddress: bigint | 'signer') {

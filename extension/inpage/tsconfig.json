@@ -14,8 +14,7 @@
 		"noUnusedParameters": true,
 		"noImplicitReturns": true,
 		"noImplicitThis": true,
-		"lib": ["ES2021", "DOM"],
-		"plugins": [ { "transform": "@zoltu/typescript-transformer-append-js-extension/output/index.js", "after": true, } ]
+		"lib": ["ES2021", "DOM"]
 	},
 	"include": [
 		"../app/inpage/ts/*.ts"

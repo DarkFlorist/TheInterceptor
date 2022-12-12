@@ -1,5 +1,5 @@
-import { Simulator } from '../simulator'
-import { JsonRpcRequest } from "../../utils/wire-types"
+import { Simulator } from '../simulator.js'
+import { JsonRpcRequest } from '../../utils/wire-types.js'
 
 export async function defaultHandler(_request: JsonRpcRequest, _simulator: Simulator) {
 	return {

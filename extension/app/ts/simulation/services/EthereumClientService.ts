@@ -1,10 +1,10 @@
 import { encodeMethod } from '@zoltu/ethereum-abi-encoder'
 import { keccak256 } from '@zoltu/ethereum-crypto'
-import { EthGetLogsResponse, JsonRpcResponse, MulticallRequestParameters, MulticallResponse, serializeUnsignedTransactionToJson, EthereumUnsignedTransaction, EthereumSignedTransactionWithBlockData, EthGetStorageAtResponse, serialize, EthGetStorageAtRequestParameters, EthereumAddress, EthereumQuantity, EthereumBlockTag, EthTransactionReceiptResponse, EthereumBytes32, EthereumData, EthGetLogsRequest, EthereumBlockHeader, EstimateGasParamsVariables, EthereumBlockHeaderWithTransactionHashes } from "../../utils/wire-types"
-import { IUnsignedTransaction } from "../../utils/ethereum"
+import { EthGetLogsResponse, JsonRpcResponse, MulticallRequestParameters, MulticallResponse, serializeUnsignedTransactionToJson, EthereumUnsignedTransaction, EthereumSignedTransactionWithBlockData, EthGetStorageAtResponse, serialize, EthGetStorageAtRequestParameters, EthereumAddress, EthereumQuantity, EthereumBlockTag, EthTransactionReceiptResponse, EthereumBytes32, EthereumData, EthGetLogsRequest, EthereumBlockHeader, EstimateGasParamsVariables, EthereumBlockHeaderWithTransactionHashes } from '../../utils/wire-types.js'
+import { IUnsignedTransaction } from '../../utils/ethereum.js'
 
-import { TIME_BETWEEN_BLOCKS, CHAINS, MOCK_ADDRESS } from "../../utils/constants"
-import { CHAIN } from '../../utils/user-interface-types'
+import { TIME_BETWEEN_BLOCKS, CHAINS, MOCK_ADDRESS } from '../../utils/constants.js'
+import { CHAIN } from '../../utils/user-interface-types.js'
 
 export type IEthereumClientService = Pick<EthereumClientService, keyof EthereumClientService>
 export class EthereumClientService {

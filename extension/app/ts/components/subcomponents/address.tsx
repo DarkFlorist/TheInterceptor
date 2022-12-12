@@ -1,10 +1,10 @@
 import { ethers } from 'ethers'
-import { addressString } from '../../utils/bigint'
-import { AddressMetadata } from '../../utils/visualizer-types'
-import Blockie from './PreactBlocky'
-import { AddressInfo } from '../../utils/user-interface-types'
-import { CopyToClipboard } from './CopyToClipboard'
-import { ChainSelector } from './ChainSelector'
+import { addressString } from '../../utils/bigint.js'
+import { AddressMetadata } from '../../utils/visualizer-types.js'
+import Blockie from './PreactBlocky.js'
+import { AddressInfo } from '../../utils/user-interface-types.js'
+import { CopyToClipboard } from './CopyToClipboard.js'
+import { ChainSelector } from './ChainSelector.js'
 
 export function findAddressInfo(addressToFind: bigint, addressInfos: readonly AddressInfo[]) {
 	for (const info of addressInfos) {

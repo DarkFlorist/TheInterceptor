@@ -1,4 +1,4 @@
-import { JsonRpcErrorResponse } from './wire-types'
+import { JsonRpcErrorResponse } from './wire-types.js'
 
 export class ErrorWithData extends Error {
 	public constructor(message: string, public data: unknown) {

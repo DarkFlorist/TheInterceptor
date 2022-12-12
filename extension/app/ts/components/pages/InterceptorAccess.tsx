@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'preact/hooks'
-import { AddressMetadata } from '../../utils/visualizer-types';
-import { BigAddress } from '../subcomponents/address';
+import { AddressMetadata } from '../../utils/visualizer-types.js'
+import { BigAddress } from '../subcomponents/address.js'
 
 interface InterceptorAccessRequest {
 	origin: string,

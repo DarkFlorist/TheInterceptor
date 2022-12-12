@@ -1,10 +1,10 @@
-import { ethers } from "ethers"
-import { getTokenAmountsWorth } from "../../simulation/priceEstimator"
-import { abs, addressString, bigintToDecimalString, bigintToRoundedPrettyDecimalString } from "../../utils/bigint"
-import { CHAINS } from "../../utils/constants"
-import { CHAIN } from "../../utils/user-interface-types"
-import { AddressMetadata, TokenPriceEstimate, TokenVisualizerResult } from "../../utils/visualizer-types"
-import { CopyToClipboard } from "./CopyToClipboard"
+import { ethers } from 'ethers'
+import { getTokenAmountsWorth } from '../../simulation/priceEstimator.js'
+import { abs, addressString, bigintToDecimalString, bigintToRoundedPrettyDecimalString } from '../../utils/bigint.js'
+import { CHAINS } from '../../utils/constants.js'
+import { CHAIN } from '../../utils/user-interface-types.js'
+import { AddressMetadata, TokenPriceEstimate, TokenVisualizerResult } from '../../utils/visualizer-types.js'
+import { CopyToClipboard } from './CopyToClipboard.js'
 
 export type EtherParams = {
 	amount: bigint

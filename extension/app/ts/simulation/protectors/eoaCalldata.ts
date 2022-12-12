@@ -1,5 +1,5 @@
-import { Simulator } from '../simulator'
-import { EthereumUnsignedTransaction } from "../../utils/wire-types"
+import { Simulator } from '../simulator.js'
+import { EthereumUnsignedTransaction } from '../../utils/wire-types.js'
 
 export async function eoaCalldata(transaction: EthereumUnsignedTransaction, simulator: Simulator) {
 	if (transaction.to === null) return

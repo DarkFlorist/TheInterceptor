@@ -1,13 +1,13 @@
 import { useState, useEffect, useRef } from 'preact/hooks'
-import { bigintToRoundedPrettyDecimalString, stringToUint8Array } from '../../utils/bigint'
-import { InterceptedRequest } from '../../utils/interceptor-messages'
-import { EthereumAddress } from '../../utils/wire-types'
-import { BigAddress, findAddressInfo } from '../subcomponents/address'
-import { AddressInfo } from '../../utils/user-interface-types'
-import Hint from '../subcomponents/Hint'
-import { Error as ErrorComponent} from '../subcomponents/Error'
-import { getAddressMetaData } from '../../background/metadataUtils'
-import { getChainName } from '../../utils/constants'
+import { bigintToRoundedPrettyDecimalString, stringToUint8Array } from '../../utils/bigint.js'
+import { InterceptedRequest } from '../../utils/interceptor-messages.js'
+import { EthereumAddress } from '../../utils/wire-types.js'
+import { BigAddress, findAddressInfo } from '../subcomponents/address.js'
+import { AddressInfo } from '../../utils/user-interface-types.js'
+import Hint from '../subcomponents/Hint.js'
+import { Error as ErrorComponent} from '../subcomponents/Error.js'
+import { getAddressMetaData } from '../../background/metadataUtils.js'
+import { getChainName } from '../../utils/constants.js'
 
 interface SignRequest {
 	simulationMode: boolean,

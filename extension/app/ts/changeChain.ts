@@ -1,5 +1,5 @@
 import * as preact from 'preact'
-import { ChangeChain } from './components/pages/ChangeChain'
+import { ChangeChain } from './components/pages/ChangeChain.js'
 
 function rerender() {
 	const element = preact.createElement(ChangeChain, {})

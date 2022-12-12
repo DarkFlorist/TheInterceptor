@@ -1,7 +1,7 @@
-import { get4Byte } from "../../utils/calldata";
-import { CHAINS, FourByteExplanations, isSupportedChain, MAKE_YOU_RICH_TRANSACTION } from "../../utils/constants";
-import { AddressMetadata, SimulatedAndVisualizedTransaction } from "../../utils/visualizer-types";
-import { getSwapName, identifySwap } from "./SwapTransactions";
+import { get4Byte } from '../../utils/calldata.js'
+import { CHAINS, FourByteExplanations, isSupportedChain, MAKE_YOU_RICH_TRANSACTION } from '../../utils/constants.js'
+import { AddressMetadata, SimulatedAndVisualizedTransaction } from '../../utils/visualizer-types.js'
+import { getSwapName, identifySwap } from './SwapTransactions.js'
 
 type TRANSACTION_TYPE = 'MakeYouRichTransaction' | 'NormalTransaction'
 

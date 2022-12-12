@@ -1,5 +1,5 @@
-import { Simulator } from '../simulator'
-import { EthereumUnsignedTransaction } from "../../utils/wire-types"
+import { Simulator } from '../simulator.js'
+import { EthereumUnsignedTransaction } from '../../utils/wire-types.js'
 
 const MAX_FEE = 2000n * 10n**9n
 

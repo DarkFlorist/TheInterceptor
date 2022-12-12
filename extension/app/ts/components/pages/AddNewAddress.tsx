@@ -1,10 +1,10 @@
 import { ethers } from 'ethers'
 import { useEffect, useState } from 'preact/hooks'
-import { EthereumAddress } from '../../utils/wire-types'
-import { Page, AddAddressParam, AddressInfo } from '../../utils/user-interface-types'
-import Blockie from '../subcomponents/PreactBlocky'
-import { Notice } from '../subcomponents/Error'
-import { getIssueWithAddressString } from '../ui-utils'
+import { EthereumAddress } from '../../utils/wire-types.js'
+import { Page, AddAddressParam, AddressInfo } from '../../utils/user-interface-types.js'
+import Blockie from '../subcomponents/PreactBlocky.js'
+import { Notice } from '../subcomponents/Error.js'
+import { getIssueWithAddressString } from '../ui-utils.js'
 
 export function AddNewAddress(param: AddAddressParam) {
 	const [addressInput, setAddressInput] = useState<string | undefined>(undefined)

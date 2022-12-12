@@ -1,5 +1,5 @@
-import { AddressInfo, Page, PendingAccessRequest } from '../utils/user-interface-types'
-import { EthereumAddress, EthereumQuantity } from '../utils/wire-types'
+import { AddressInfo, Page, PendingAccessRequest } from '../utils/user-interface-types.js'
+import { EthereumAddress, EthereumQuantity } from '../utils/wire-types.js'
 
 export const defaultAddresses = [
 	{

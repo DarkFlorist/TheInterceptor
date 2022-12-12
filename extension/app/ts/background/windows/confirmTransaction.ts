@@ -1,10 +1,10 @@
-import { bytes32String } from "../../utils/bigint"
-import { METAMASK_ERROR_NOT_CONNECTED_TO_CHAIN, METAMASK_ERROR_USER_REJECTED_REQUEST } from "../../utils/constants"
-import { Future } from "../../utils/future"
-import { InterceptedRequest } from "../../utils/interceptor-messages"
-import { EthereumUnsignedTransaction } from "../../utils/wire-types"
-import { getActiveAddressForDomain } from "../accessManagement"
-import { appendTransactionToSimulator, refreshConfirmTransactionSimulation } from "../background"
+import { bytes32String } from '../../utils/bigint.js'
+import { METAMASK_ERROR_NOT_CONNECTED_TO_CHAIN, METAMASK_ERROR_USER_REJECTED_REQUEST } from '../../utils/constants.js'
+import { Future } from '../../utils/future.js'
+import { InterceptedRequest } from '../../utils/interceptor-messages.js'
+import { EthereumUnsignedTransaction } from '../../utils/wire-types.js'
+import { getActiveAddressForDomain } from '../accessManagement.js'
+import { appendTransactionToSimulator, refreshConfirmTransactionSimulation } from '../background.js'
 
 export type Confirmation = 'Approved' | 'Rejected' | 'NoResponse'
 let openedConfirmTransactionDialogWindow: browser.windows.Window | null = null

@@ -1,7 +1,7 @@
-import { METAMASK_ERROR_USER_REJECTED_REQUEST } from '../../utils/constants'
-import { Future } from '../../utils/future'
-import { ChainChangeConfirmation, InterceptedRequest, } from '../../utils/interceptor-messages'
-import { changeActiveChain } from '../background'
+import { METAMASK_ERROR_USER_REJECTED_REQUEST } from '../../utils/constants.js'
+import { Future } from '../../utils/future.js'
+import { ChainChangeConfirmation, InterceptedRequest, } from '../../utils/interceptor-messages.js'
+import { changeActiveChain } from '../background.js'
 
 let pendForUserReply: Future<ChainChangeConfirmation> | undefined = undefined
 let pendForSignerReply: Future<ChainChangeConfirmation> | undefined = undefined

@@ -4,7 +4,7 @@
 	"type": "module",
 	"scripts": {
 		"setup": "npm run vendor && npm run inpage && npm run build",
-		"build": "ttsc",
+		"build": "tsc",
 		"inpage": "cd inpage && npm ci --ignore-scripts && npm run build",
 		"vendor": "cd build && npm ci --ignore-scripts && npm run vendor"
 	},
@@ -23,10 +23,8 @@
 	},
 	"devDependencies": {
 		"@types/firefox-webext-browser": "94.0.1",
-		"@types/node": "16.11.40",
 		"@zoltu/typescript-transformer-append-js-extension": "1.0.1",
 		"node-fetch": "^2.6.7",
-		"ttypescript": "1.5.13",
-		"typescript": "4.7.3"
+		"typescript": "4.9.3"
 	}
 }

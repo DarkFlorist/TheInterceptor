@@ -1,9 +1,9 @@
-import { InterceptorAccessListParams, Page } from '../../utils/user-interface-types'
+import { InterceptorAccessListParams, Page } from '../../utils/user-interface-types.js'
 import { useEffect, useState } from 'preact/hooks'
-import { WebsiteAccess, WebsiteAddressAccess } from '../../background/settings'
-import { AddressMetadata } from '../../utils/visualizer-types'
-import { SmallAddress } from '../subcomponents/address'
-import { CopyToClipboard } from '../subcomponents/CopyToClipboard'
+import { WebsiteAccess, WebsiteAddressAccess } from '../../background/settings.js'
+import { AddressMetadata } from '../../utils/visualizer-types.js'
+import { SmallAddress } from '../subcomponents/address.js'
+import { CopyToClipboard } from '../subcomponents/CopyToClipboard.js'
 
 interface ModifiedAddressAccess {
 	address: string,

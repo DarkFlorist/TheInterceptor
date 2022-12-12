@@ -1,12 +1,12 @@
-import { addressString } from "../../utils/bigint"
-import { METAMASK_ERROR_USER_REJECTED_REQUEST } from "../../utils/constants"
-import { Future } from "../../utils/future"
-import { InterceptedRequest, PersonalSign } from "../../utils/interceptor-messages"
-import { AddressInfo } from "../../utils/user-interface-types"
-import { AddressMetadata } from "../../utils/visualizer-types"
-import { EIP2612Message, EthereumAddress } from "../../utils/wire-types"
-import { personalSignWithSimulator } from "../background"
-import { getAddressMetaData } from "../metadataUtils"
+import { addressString } from '../../utils/bigint.js'
+import { METAMASK_ERROR_USER_REJECTED_REQUEST } from '../../utils/constants.js'
+import { Future } from '../../utils/future.js'
+import { InterceptedRequest, PersonalSign } from '../../utils/interceptor-messages.js'
+import { AddressInfo } from '../../utils/user-interface-types.js'
+import { AddressMetadata } from '../../utils/visualizer-types.js'
+import { EIP2612Message, EthereumAddress } from '../../utils/wire-types.js'
+import { personalSignWithSimulator } from '../background.js'
+import { getAddressMetaData } from '../metadataUtils.js'
 
 let pendingPersonalSign: Future<PersonalSign> | undefined = undefined
 

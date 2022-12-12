@@ -1,7 +1,7 @@
-import { addressString } from "../../utils/bigint"
-import { TransactionVisualizationParameters } from "../../utils/visualizer-types"
-import { Ether } from "../subcomponents/coins"
-import { nameTransaction } from "./identifyTransaction"
+import { addressString } from '../../utils/bigint.js'
+import { TransactionVisualizationParameters } from '../../utils/visualizer-types.js'
+import { Ether } from '../subcomponents/coins.js'
+import { nameTransaction } from './identifyTransaction.js'
 
 export const transactionExplainers = new Map<string, [string, string]>([
 	['0', ['Airdropping you', '🚁']],

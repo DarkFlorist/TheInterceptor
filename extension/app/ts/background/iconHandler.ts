@@ -1,7 +1,7 @@
-import { addressString } from "../utils/bigint"
-import { ICON_ACCESS_DENIED, ICON_NOT_ACTIVE, ICON_SIGNING, ICON_SIGNING_NOT_SUPPORTED, ICON_SIMULATING, isSupportedChain } from "../utils/constants"
-import { getActiveAddressForDomain, hasAddressAccess } from "./accessManagement"
-import { getActiveAddress, sendPopupMessageToOpenWindows } from "./backgroundUtils"
+import { addressString } from '../utils/bigint.js'
+import { ICON_ACCESS_DENIED, ICON_NOT_ACTIVE, ICON_SIGNING, ICON_SIGNING_NOT_SUPPORTED, ICON_SIMULATING, isSupportedChain } from '../utils/constants.js'
+import { getActiveAddressForDomain, hasAddressAccess } from './accessManagement.js'
+import { getActiveAddress, sendPopupMessageToOpenWindows } from './backgroundUtils.js'
 
 function setIcon(tabId: number, icon: string) {
 	window.interceptor.websiteTabIcons.set(tabId, icon )
