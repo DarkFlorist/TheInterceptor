@@ -5,7 +5,7 @@ import { InterceptedRequest, PersonalSign } from '../../utils/interceptor-messag
 import { AddressInfo } from '../../utils/user-interface-types.js'
 import { AddressMetadata } from '../../utils/visualizer-types.js'
 import { EIP2612Message, EthereumAddress } from '../../utils/wire-types.js'
-import { personalSignWithSimulator } from '../background.js'
+import { personalSignWithSimulator, postMessageIfStillConnected } from '../background.js'
 import { getAddressMetaData } from '../metadataUtils.js'
 
 let pendingPersonalSign: Future<PersonalSign> | undefined = undefined
@@ -96,7 +96,7 @@ export async function openPersonalSignDialog(port: browser.runtime.Port, request
 	if(reply.options.accept) {
 		if (simulationMode) {
 			const result = await personalSignWithSimulator(message, account)
-			if (result === undefined) return port.postMessage({
+			if (result === undefined) return postMessageIfStillConnected(port, {
 				interceptorApproved: false,
 				requestId: request.requestId,
 				options: request.options,
@@ -106,20 +106,20 @@ export async function openPersonalSignDialog(port: browser.runtime.Port, request
 				}
 			})
 
-			return port.postMessage({
+			return postMessageIfStillConnected(port, {
 				interceptorApproved: true,
 				requestId: request.requestId,
 				options: request.options,
 				result: result
 			})
 		}
-		return port.postMessage({
+		return postMessageIfStillConnected(port, {
 			interceptorApproved: true,
 			requestId: request.requestId,
 			options: request.options
 		})
 	}
-	return port.postMessage({
+	return postMessageIfStillConnected(port, {
 		interceptorApproved: false,
 		requestId: request.requestId,
 		options: request.options,

@@ -79,7 +79,7 @@ declare global {
 			websiteTabSignerStates: Map<number, SignerState>,
 			websitePortApprovals: Map<browser.runtime.Port, WebsiteApproval>, // map of ports that are either approved or not-approved by interceptor
 			websiteTabApprovals: Map<number, WebsiteApproval>,
-			websiteTabIcons: Map<number, string>, // icon for each tab
+			websiteTabConnection: Map<number, string>, // icon for each tab
 			settings: Settings | undefined,
 			currentBlockNumber: bigint | undefined,
 		}
@@ -97,7 +97,7 @@ window.interceptor = {
 	settings: undefined,
 	websitePortApprovals: new Map(),
 	websiteTabApprovals: new Map(),
-	websiteTabIcons: new Map(),
+	websiteTabConnection: new Map(),
 	simulation: {
 		simulationId: 0,
 		simulationState: undefined,
@@ -408,11 +408,21 @@ const providerHandlers = new Map<string, ProviderHandler >([
 	['connected_to_signer', connectedToSigner]
 ])
 
+export function postMessageIfStillConnected(port: browser.runtime.Port, message: InterceptedRequestForward) {
+	const tabId = port.sender?.tab?.id
+	if ( tabId === undefined ) return
+	if (!window.interceptor.websiteTabConnection.has(tabId)) return
+	port.postMessage(message)
+}
+
 async function onContentScriptConnected(port: browser.runtime.Port) {
 	console.log('content script connected')
 	let connectionStatus: 'connected' | 'disconnected' | 'notInitialized' = 'notInitialized'
 	port.onDisconnect.addListener(() => {
 		connectionStatus = 'disconnected'
+		const tabId = port.sender?.tab?.id
+		if ( tabId === undefined ) return
+		window.interceptor.websiteTabConnection.delete(tabId)
 	})
 	port.onMessage.addListener(async (payload) => {
 		if (connectionStatus === 'disconnected') return
@@ -430,16 +440,8 @@ async function onContentScriptConnected(port: browser.runtime.Port) {
 		const tabId = port.sender?.tab?.id
 		if ( tabId === undefined ) return
 
-		if (!window.interceptor.websiteTabIcons.has(tabId)) {
+		if (!window.interceptor.websiteTabConnection.has(tabId)) {
 			updateExtensionIcon(port)
-			port.onDisconnect.addListener(() => {
-				window.interceptor.websiteTabIcons.delete(tabId)
-			})
-		}
-
-		function postMessageIfStillConnected(message: InterceptedRequestForward) {
-			if (connectionStatus === 'disconnected') return
-			port.postMessage(message)
 		}
 
 		try {
@@ -449,7 +451,7 @@ async function onContentScriptConnected(port: browser.runtime.Port) {
 			}
 
 			if (!(await verifyAccess(port, request.options.method))) {
-				return postMessageIfStillConnected({
+				return postMessageIfStillConnected(port, {
 					interceptorApproved: false,
 					requestId: request.requestId,
 					options: request.options,
@@ -461,7 +463,7 @@ async function onContentScriptConnected(port: browser.runtime.Port) {
 			}
 			if (connectionStatus === 'notInitialized' && window.interceptor.settings?.activeChain !== undefined) {
 				console.log('send connect!')
-				postMessageIfStillConnected({
+				postMessageIfStillConnected(port, {
 					interceptorApproved: true,
 					requestId: -1,
 					options: { method: 'connect' },
@@ -473,13 +475,13 @@ async function onContentScriptConnected(port: browser.runtime.Port) {
 				// request info (chain and accounts) from the connection right away after the user has approved connection
 				if (port.sender?.tab?.id !== undefined) {
 					if ( window.interceptor.websiteTabSignerStates.get(port.sender.tab.id) === undefined) {
-						postMessageIfStillConnected({
+						postMessageIfStillConnected(port, {
 							interceptorApproved: true,
 							requestId: -1,
 							options: { method: 'request_signer_to_eth_requestAccounts' },
 							result: []
 						})
-						postMessageIfStillConnected({
+						postMessageIfStillConnected(port, {
 							interceptorApproved: true,
 							requestId: -1,
 							options: { method: 'request_signer_chainId' },
@@ -503,23 +505,22 @@ async function onContentScriptConnected(port: browser.runtime.Port) {
 				if (request.options.method === 'eth_sendTransaction') return sendTransaction(simulator, port, request, false)
 			}
 
-			return postMessageIfStillConnected({
+			return postMessageIfStillConnected(port, {
 				interceptorApproved: true,
 				requestId: request.requestId,
 				options: request.options
 			})
 		} catch(error) {
-			if (error instanceof Error) {
-				postMessageIfStillConnected({
-					interceptorApproved: false,
-					requestId: request.requestId,
-					options: request.options,
-					error: {
-						code: 123456,
-						message: error.message
-					}
-				})
-			}
+			postMessageIfStillConnected(port, {
+				interceptorApproved: false,
+				requestId: request.requestId,
+				options: request.options,
+				error: {
+					code: 123456,
+					message: 'Unknown error'
+				}
+			})
+			throw error
 		}
 	})
 }
