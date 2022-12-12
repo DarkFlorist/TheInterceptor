@@ -121,7 +121,7 @@ export function App() {
 		if (tabs.length === 0 || tabs[0].id === undefined ) return
 		const signerState = backgroundPage.interceptor.websiteTabSignerStates.get(tabs[0].id)
 		if (signerState) setSignerAccounts(signerState.signerAccounts)
-		const conn = backgroundPage.interceptor.websiteTabIcons.get(tabs[0].id)
+		const conn = backgroundPage.interceptor.websiteTabConnection.get(tabs[0].id)
 		if ( conn ) setTabIcon(conn)
 		setTabApproved(backgroundPage.interceptor.websiteTabApprovals.get(tabs[0].id)?.approved === true)
 		setIsSettingsLoaded(true)

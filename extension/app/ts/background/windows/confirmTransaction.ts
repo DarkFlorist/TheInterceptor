@@ -4,7 +4,7 @@ import { Future } from '../../utils/future.js'
 import { InterceptedRequest } from '../../utils/interceptor-messages.js'
 import { EthereumUnsignedTransaction } from '../../utils/wire-types.js'
 import { getActiveAddressForDomain } from '../accessManagement.js'
-import { appendTransactionToSimulator, refreshConfirmTransactionSimulation } from '../background.js'
+import { appendTransactionToSimulator, postMessageIfStillConnected, refreshConfirmTransactionSimulation } from '../background.js'
 
 export type Confirmation = 'Approved' | 'Rejected' | 'NoResponse'
 let openedConfirmTransactionDialogWindow: browser.windows.Window | null = null
@@ -42,7 +42,7 @@ export async function openConfirmTransactionDialog(
 	if (activeAddress === undefined) return
 
 	const reject = function() {
-		return port.postMessage({
+		return postMessageIfStillConnected(port, {
 			interceptorApproved: false,
 			requestId: request.requestId,
 			options: request.options,
@@ -100,7 +100,7 @@ export async function openConfirmTransactionDialog(
 		if (simulationMode) {
 			const appended = await appendTransactionToSimulator(transactionToSimulate)
 			if (appended === undefined) {
-				return port.postMessage({
+				return postMessageIfStillConnected(port, {
 					interceptorApproved: false,
 					requestId: request.requestId,
 					options: request.options,
@@ -110,14 +110,14 @@ export async function openConfirmTransactionDialog(
 					}
 				})
 			}
-			return port.postMessage({
+			return postMessageIfStillConnected(port, {
 				interceptorApproved: true,
 				requestId: request.requestId,
 				options: request.options,
 				result: bytes32String(appended.signed.hash)
 			})
 		}
-		return port.postMessage({
+		return postMessageIfStillConnected(port, {
 			interceptorApproved: true,
 			requestId: request.requestId,
 			options: request.options

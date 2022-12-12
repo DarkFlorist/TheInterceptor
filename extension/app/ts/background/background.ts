@@ -1,4 +1,4 @@
-import { InterceptedRequest, PopupMessage, SignerName } from '../utils/interceptor-messages.js'
+import { InterceptedRequest, InterceptedRequestForward, PopupMessage, SignerName } from '../utils/interceptor-messages.js'
 import 'webextension-polyfill'
 import { Simulator } from '../simulation/simulator.js'
 import { EIP2612Message, EthereumAddress, EthereumQuantity, EthereumUnsignedTransaction } from '../utils/wire-types.js'
@@ -79,7 +79,7 @@ declare global {
 			websiteTabSignerStates: Map<number, SignerState>,
 			websitePortApprovals: Map<browser.runtime.Port, WebsiteApproval>, // map of ports that are either approved or not-approved by interceptor
 			websiteTabApprovals: Map<number, WebsiteApproval>,
-			websiteTabIcons: Map<number, string>, // icon for each tab
+			websiteTabConnection: Map<number, string>, // icon for each tab
 			settings: Settings | undefined,
 			currentBlockNumber: bigint | undefined,
 		}
@@ -97,7 +97,7 @@ window.interceptor = {
 	settings: undefined,
 	websitePortApprovals: new Map(),
 	websiteTabApprovals: new Map(),
-	websiteTabIcons: new Map(),
+	websiteTabConnection: new Map(),
 	simulation: {
 		simulationId: 0,
 		simulationState: undefined,
@@ -408,10 +408,25 @@ const providerHandlers = new Map<string, ProviderHandler >([
 	['connected_to_signer', connectedToSigner]
 ])
 
+export function postMessageIfStillConnected(port: browser.runtime.Port, message: InterceptedRequestForward) {
+	const tabId = port.sender?.tab?.id
+	if ( tabId === undefined ) return
+	if (!window.interceptor.websiteTabConnection.has(tabId)) return
+	port.postMessage(message)
+}
+
 async function onContentScriptConnected(port: browser.runtime.Port) {
 	console.log('content script connected')
-	let connected = false
-	port.onMessage.addListener(async function(payload: any) {
+	let connectionStatus: 'connected' | 'disconnected' | 'notInitialized' = 'notInitialized'
+	port.onDisconnect.addListener(() => {
+		connectionStatus = 'disconnected'
+		const tabId = port.sender?.tab?.id
+		if ( tabId === undefined ) return
+		window.interceptor.websiteTabConnection.delete(tabId)
+	})
+	port.onMessage.addListener(async (payload) => {
+		if (connectionStatus === 'disconnected') return
+
 		if(!(
 			'data' in payload
 			&& typeof payload.data === 'object'
@@ -425,12 +440,8 @@ async function onContentScriptConnected(port: browser.runtime.Port) {
 		const tabId = port.sender?.tab?.id
 		if ( tabId === undefined ) return
 
-		if (!window.interceptor.websiteTabIcons.has(tabId)) {
+		if (!window.interceptor.websiteTabConnection.has(tabId)) {
 			updateExtensionIcon(port)
-			port.onDisconnect.addListener(() => {
-				updateExtensionIcon(port)
-				window.interceptor.websiteTabIcons.delete(tabId)
-			})
 		}
 
 		try {
@@ -440,7 +451,7 @@ async function onContentScriptConnected(port: browser.runtime.Port) {
 			}
 
 			if (!(await verifyAccess(port, request.options.method))) {
-				return port.postMessage({
+				return postMessageIfStillConnected(port, {
 					interceptorApproved: false,
 					requestId: request.requestId,
 					options: request.options,
@@ -450,27 +461,27 @@ async function onContentScriptConnected(port: browser.runtime.Port) {
 					}
 				})
 			}
-			if (!connected && window.interceptor.settings?.activeChain !== undefined) {
+			if (connectionStatus === 'notInitialized' && window.interceptor.settings?.activeChain !== undefined) {
 				console.log('send connect!')
-				port.postMessage({
+				postMessageIfStillConnected(port, {
 					interceptorApproved: true,
 					requestId: -1,
 					options: { method: 'connect' },
 					result: [EthereumQuantity.serialize(window.interceptor.settings.activeChain)]
 				})
-				connected = true
+				connectionStatus = 'connected'
 			}
 			if (!window.interceptor.settings?.simulationMode || window.interceptor.settings?.useSignersAddressAsActiveAddress) {
 				// request info (chain and accounts) from the connection right away after the user has approved connection
 				if (port.sender?.tab?.id !== undefined) {
 					if ( window.interceptor.websiteTabSignerStates.get(port.sender.tab.id) === undefined) {
-						port.postMessage({
+						postMessageIfStillConnected(port, {
 							interceptorApproved: true,
 							requestId: -1,
 							options: { method: 'request_signer_to_eth_requestAccounts' },
 							result: []
 						})
-						port.postMessage({
+						postMessageIfStillConnected(port, {
 							interceptorApproved: true,
 							requestId: -1,
 							options: { method: 'request_signer_chainId' },
@@ -494,23 +505,22 @@ async function onContentScriptConnected(port: browser.runtime.Port) {
 				if (request.options.method === 'eth_sendTransaction') return sendTransaction(simulator, port, request, false)
 			}
 
-			return port.postMessage({
+			return postMessageIfStillConnected(port, {
 				interceptorApproved: true,
 				requestId: request.requestId,
 				options: request.options
 			})
 		} catch(error) {
-			console.log('errored!')
-			console.log(error)
-			port.postMessage({
+			postMessageIfStillConnected(port, {
 				interceptorApproved: false,
 				requestId: request.requestId,
 				options: request.options,
 				error: {
 					code: 123456,
-					message: error
+					message: 'Unknown error'
 				}
 			})
+			throw error
 		}
 	})
 }
