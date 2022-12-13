@@ -62,7 +62,7 @@ function EtherTransferEvent(param: { valueSent: bigint, totalReceived: bigint, t
 	return <>
 		{ param.valueSent === 0n ? <></> :
 			<div class = 'vertical-center'>
-				<div class = 'box token-box negative-box vertical-center' >
+				<div class = 'box token-box negative-box vertical-center' style = 'display: inline-block'>
 					<p style = {`color: ${ param.textColor }; margin-bottom: 0px`}> Send </p>
 					<Ether
 						amount = { param.valueSent }
@@ -76,7 +76,7 @@ function EtherTransferEvent(param: { valueSent: bigint, totalReceived: bigint, t
 		}
 		{ param.totalReceived <= 0n ? <></> :
 			<div class = 'vertical-center'>
-				<div class = 'box token-box positive-box vertical-center'>
+				<div class = 'box token-box positive-box vertical-center' style = 'display: inline-block'>
 					<p style = {`color: ${ param.textColor }; margin-bottom: 0px`}> Receive </p>
 					<Ether
 						amount = { param.totalReceived }
@@ -97,67 +97,68 @@ function SendOrReceiveTokensImportanceBox(param: { sending: boolean, tokenVisual
 		{ param.tokenVisualizerResults.map( (tokenEvent) => (
 			tokenEvent.isApproval ? <></> : <div class = 'vertical-center'>
 				{ param.sending ?
-					<div class = 'box token-box negative-box vertical-center'  >
-						<p  style = {`color: ${ param.textColor }; margin-bottom: 0px`}> Send </p>
-						{ tokenEvent.is721 ?
-							<ERC721Token
-								tokenId = { tokenEvent.tokenId }
-								token = { tokenEvent.tokenAddress }
-								addressMetadata = { param.addressMetadata.get(addressString(tokenEvent.tokenAddress)) }
+					<div class = 'box token-box negative-box vertical-center' style = 'display: inline-block'>
+						<p style = { `color: ${ param.textColor }; margin-bottom: 0px; display: inline-block` }>
+							Send
+							{ tokenEvent.is721 ?
+								<ERC721Token
+									tokenId = { tokenEvent.tokenId }
+									token = { tokenEvent.tokenAddress }
+									addressMetadata = { param.addressMetadata.get(addressString(tokenEvent.tokenAddress)) }
+									textColor = { param.textColor }
+									useFullTokenName = { false }
+									received = { false }
+									showSign = { false }
+								/> :
+								<Token
+									amount = { tokenEvent.amount }
+									token = { tokenEvent.tokenAddress }
+									showSign = { false }
+									addressMetadata = { param.addressMetadata.get(addressString(tokenEvent.tokenAddress)) }
+									textColor = { param.textColor }
+									negativeColor = { param.textColor }
+									useFullTokenName = { false }
+								/>
+							}
+							to&nbsp;
+							<SmallAddress
+								address = { tokenEvent.to }
+								addressMetaData = { param.addressMetadata.get(addressString(tokenEvent.to)) }
 								textColor = { param.textColor }
-								useFullTokenName = { false }
-								received = { false }
-								showSign = { false }
-							/> :
-							<Token
-								amount = { tokenEvent.amount }
-								token = { tokenEvent.tokenAddress }
-								showSign = { false }
-								addressMetadata = { param.addressMetadata.get(addressString(tokenEvent.tokenAddress)) }
-								textColor = { param.textColor }
-								negativeColor = { param.textColor }
-								useFullTokenName = { false }
 							/>
-						}
-
-						<p style = { `color: ${ param.textColor }; margin-bottom: 0px; margin-right: 8px` }> to </p>
-						<SmallAddress
-							address = { tokenEvent.to }
-							addressMetaData = { param.addressMetadata.get(addressString(tokenEvent.to)) }
-							textColor = { param.textColor }
-							downScale = { true }
-						/>
+						</p>
 					</div>
 					:
-					<div class = 'box token-box positive-box vertical-center'>
-						<p style = { `color: ${ param.textColor }; margin-bottom: 0px;` }> Receive </p>
-						{ tokenEvent.is721 ?
-							<ERC721Token
-								tokenId = { tokenEvent.tokenId }
-								token = { tokenEvent.tokenAddress }
-								addressMetadata = { param.addressMetadata.get(addressString(tokenEvent.tokenAddress)) }
+					<div class = 'box token-box positive-box vertical-center' style = 'display: inline-block'>
+						<p style = {`color: ${ param.textColor }; margin-bottom: 0px; display: inline-block`}>
+							Receive
+							{ tokenEvent.is721 ?
+								<ERC721Token
+									tokenId = { tokenEvent.tokenId }
+									token = { tokenEvent.tokenAddress }
+									addressMetadata = { param.addressMetadata.get(addressString(tokenEvent.tokenAddress)) }
+									textColor = { param.textColor }
+									useFullTokenName = { false }
+									received = { true }
+									showSign = { false }
+								/> :
+								<Token
+									amount = { tokenEvent.amount }
+									token = { tokenEvent.tokenAddress }
+									showSign = { false }
+									addressMetadata = { param.addressMetadata.get(addressString(tokenEvent.tokenAddress)) }
+									textColor = { param.textColor }
+									negativeColor = { param.textColor }
+									useFullTokenName = { false }
+								/>
+							}
+							from&nbsp;
+							<SmallAddress
+								address = { tokenEvent.tokenAddress }
+								addressMetaData = { param.addressMetadata.get(addressString(tokenEvent.tokenAddress)) }
 								textColor = { param.textColor }
-								useFullTokenName = { false }
-								received = { true }
-								showSign = { false }
-							/> :
-							<Token
-								amount = { tokenEvent.amount }
-								token = { tokenEvent.tokenAddress }
-								showSign = { false }
-								addressMetadata = { param.addressMetadata.get(addressString(tokenEvent.tokenAddress)) }
-								textColor = { param.textColor }
-								negativeColor = { param.textColor }
-								useFullTokenName = { false }
 							/>
-						}
-						<p style = { `color: ${ param.textColor }; margin-bottom: 0px; margin-right: 8px` }> from </p>
-						<SmallAddress
-							address = { tokenEvent.tokenAddress }
-							addressMetaData = { param.addressMetadata.get(addressString(tokenEvent.tokenAddress)) }
-							textColor = { param.textColor }
-							downScale = { true }
-						/>
+						</p>
 					</div>
 				}
 				</div>
@@ -279,7 +280,6 @@ function normalTransaction(param: TransactionVisualizationParameters) {
 								to = { param.tx.signedTransaction.to }
 								fromAddressMetadata = { param.simulationAndVisualisationResults.addressMetadata.get(addressString(param.tx.signedTransaction.from)) }
 								toAddressMetadata = { param.simulationAndVisualisationResults.addressMetadata.get(addressString(param.tx.signedTransaction.to)) }
-								downScale = { false }
 								isApproval = { false }
 							/>
 							<div class = 'content importance-box-content' >
@@ -308,13 +308,13 @@ function normalTransaction(param: TransactionVisualizationParameters) {
 				</> : <></> }
 				{ param.tx.multicallResponse.statusCode !== 'success' ? <Error text = { `The transaction fails with error '${param.tx.multicallResponse.error}'` } /> : <></>}
 				{ param.tx.realizedGasPrice > 0n ?
-					<p className = 'paragraph vertical-center' style = 'color: var(--subtitle-text-color); flex-direction: row-reverse;'>
+					<p className = 'paragraph vertical-center' style = 'color: var(--subtitle-text-color); text-align: right; width: 100%;'>
+						Gas fee:
 						<Ether
 							amount = { param.tx.multicallResponse.gasSpent * param.tx.realizedGasPrice }
 							textColor = { 'var(--subtitle-text-color)' }
 							chain = { param.simulationAndVisualisationResults.chain }
 						/>
-						Gas fee:
 					</p> : <></>
 				}
 			</div>
@@ -388,44 +388,24 @@ export function TokenLogEvent(params: TokenLogEventParams ) {
 		textColor: 'var(--disabled-text-color)',
 		negativeColor: 'var(--negative-dim-color)'
 	}
+
+	const brigtherColors = {
+		textColor: 'var(--dim-text-color)',
+		negativeColor: 'var(--negative-dim-color)'
+	}
 	const isNegativelog = params.tokenVisualizerResult.isApproval
 		|| ('amount' in params.tokenVisualizerResult && params.tokenVisualizerResult.amount < 0n)
 		|| ('isApproval' in params.tokenVisualizerResult && params.tokenVisualizerResult.isApproval )
-	const textColor = isNegativelog ? colors.negativeColor : colors.textColor
+	const brigtherTextColor = isNegativelog ? brigtherColors.negativeColor : brigtherColors.textColor
 
-	return <div class = 'columns is-mobile' style = 'margin-bottom: 0px;'>
-		<div class = 'column log-column'>
-			<SmallAddress
-				address = { params.tokenVisualizerResult.from }
-				addressMetaData = { params.addressMetadata.get(addressString(params.tokenVisualizerResult.from)) }
-				downScale = { true }
-				textColor = { textColor }
-			/>
-		</div>
-		{ params.tokenVisualizerResult.isApproval ?
-			<div class = 'column log-column' style = 'flex-basis: unset; flex-grow: unset;'>
-				<p class = 'vertical-center' style = {`color: ${ colors.negativeColor };`}> Approve </p>
-			</div>
-			:
-			<div class = 'column log-column' style = 'padding-right: 0px; padding-left: 0px; flex: none; align-self: center;'>
-				<svg style = '' width = '24' height = '24' viewBox = '0 0 24 24'> <path fill = { colors.textColor } d = 'M13 7v-6l11 11-11 11v-6h-13v-10z'/> </svg>
-			</div>
-		}
-		<div class = 'column log-column'>
-			<SmallAddress
-				address = { params.tokenVisualizerResult.to }
-				addressMetaData = { params.addressMetadata.get(addressString(params.tokenVisualizerResult.to)) }
-				downScale = { true}
-				textColor = { textColor }
-				/>
-		</div>
-		<div class = 'column log-column is-narrow'>
+	return <div class = 'vertical-center' style = 'padding-bottom: 0.5em; line-height: 1;'>
+		<p style = {`color: ${ colors.textColor }; display: inline-block`}>
 			{ params.tokenVisualizerResult.is721 ?
 				<TokenText721
 					visResult = { params.tokenVisualizerResult }
 					addressMetadata = { params.addressMetadata.get(addressString(params.tokenVisualizerResult.tokenAddress)) }
-					textColor = { colors.textColor }
-					negativeColor = { colors.negativeColor }
+					textColor = { brigtherColors.textColor }
+					negativeColor = { brigtherColors.negativeColor }
 					useFullTokenName = { false }
 				/>
 				: <TokenText
@@ -433,12 +413,28 @@ export function TokenLogEvent(params: TokenLogEventParams ) {
 					amount = { params.tokenVisualizerResult.amount }
 					tokenAddress = { params.tokenVisualizerResult.tokenAddress }
 					addressMetadata = { params.addressMetadata.get(addressString(params.tokenVisualizerResult.tokenAddress)) }
-					textColor = { colors.textColor }
-					negativeColor = { colors.negativeColor }
+					textColor = { brigtherColors.textColor }
+					negativeColor = { brigtherColors.negativeColor }
 					useFullTokenName = { false }
 				/>
 			}
-		</div>
+			&nbsp;&nbsp;
+			<SmallAddress
+				address = { params.tokenVisualizerResult.from }
+				addressMetaData = { params.addressMetadata.get(addressString(params.tokenVisualizerResult.from)) }
+				textColor = { brigtherTextColor }
+			/>
+			{ params.tokenVisualizerResult.isApproval ?
+				<>&nbsp;Approve&nbsp;</>
+				:
+				<>&nbsp;<svg style = 'vertical-align: middle;' width = '24' height = '24' viewBox = '0 0 24 24'> <path fill = 'var(--text-color)' d = 'M13 7v-6l11 11-11 11v-6h-13v-10z'/> </svg>&nbsp;</>
+			}
+			<SmallAddress
+				address = { params.tokenVisualizerResult.to }
+				addressMetaData = { params.addressMetadata.get(addressString(params.tokenVisualizerResult.to)) }
+				textColor = { brigtherTextColor }
+			/>
+		</p>
 	</div>
 }
 

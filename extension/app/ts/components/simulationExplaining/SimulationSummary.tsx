@@ -22,8 +22,8 @@ function EtherChange(
 	if ( param.etherResults === undefined ) return <></>
 
 	const boxColor = param.etherResults.balanceAfter - param.etherResults.balanceBefore < 0n ? 'negative-box' : 'positive-box'
-	return <div class = 'vertical-center'>
-		<div class = { param.isImportant ? `box token-box ${ boxColor }`: '' }>
+	return <div class = 'vertical-center' style = 'display: flex'>
+		<div class = { param.isImportant ? `box token-box ${ boxColor }`: '' } style = 'display: flex'>
 			<Ether
 				amount = { param.etherResults.balanceAfter - param.etherResults.balanceBefore }
 				textColor = { param.textColor }
@@ -50,7 +50,7 @@ function Erc20BalanceChange(
 	if ( param.tokenBalanceChanges.size === 0 ) return <></>
 	return <>
 		{ Array.from(param.tokenBalanceChanges).map( ([tokenAddress, change]) => (
-			<div class = 'vertical-center'>
+			<div class = 'vertical-center' style = 'display: flex'>
 				<div class = { param.isImportant ? `box token-box ${ change < 0n ? 'negative-box' : 'positive-box' }`: '' } style = 'display: flex' >
 					<Token
 						amount = { change }
@@ -79,15 +79,14 @@ export function Erc20ApprovalChanges(param: { tokenApprovalChanges: Map<string, 
 	return <>
 		{ Array.from(param.tokenApprovalChanges).map( ([tokenAddress, approvals]) => (
 			Array.from(approvals).map( ([addressToApprove, change]) => (
-				<div class = 'vertical-center'>
-					<div class = { param.isImportant ? 'box token-box negative-box': '' } >
+				<div class = 'vertical-center' style = 'display: flex'>
+					<div class = { param.isImportant ? 'box token-box negative-box': '' } style = 'display: flex'>
 						<div class = 'vertical-center'>
 							<p class = 'vertical-center' style = {`color: ${ param.negativeColor }; margin-bottom: 0px; margin-right: 8px; white-space: nowrap;`}> Approve </p>
 							<SmallAddress
 								address = { BigInt(addressToApprove) }
 								addressMetaData = { param.addressMetadata.get(addressToApprove) }
 								textColor = { param.negativeColor }
-								downScale = { true }
 							/>
 							{ change > 2n ** 100n ?
 								<>
@@ -124,8 +123,8 @@ function ERC721TokenChanges(param: { ERC721TokenBalanceChanges: Map<string, Map<
 	return <> { param.ERC721TokenBalanceChanges.size > 0 ? <>
 			{ Array.from(param.ERC721TokenBalanceChanges).map( ([tokenAddress, tokenIds]) => (
 				Array.from(tokenIds).map( ([tokenId, received]) => (
-					<div class = 'vertical-center'>
-						<div class = { param.isImportant ? `box token-box ${ !received ? 'negative-box' : 'positive-box' }`: '' } >
+					<div class = 'vertical-center' style = 'display: flex'>
+						<div class = { param.isImportant ? `box token-box ${ !received ? 'negative-box' : 'positive-box' }`: '' } style = 'display: flex'>
 							<ERC721Token
 								tokenId = { BigInt(tokenId) }
 								token = { BigInt(tokenAddress) }
@@ -148,15 +147,14 @@ export function ERC721OperatorChanges(param: { ERC721OperatorChanges: Map<string
 	if (param.ERC721OperatorChanges.size === 0) return <></>
 	return <>
 		{ Array.from(param.ERC721OperatorChanges).map( ([tokenAddress, operator]) => (
-			<div class = 'vertical-center'>
+			<div class = 'vertical-center' style = 'display: flex'>
 				{ operator !== undefined ? <>
-					<div class = { param.isImportant ? 'box token-box negative-box': '' }>
+					<div class = { param.isImportant ? 'box token-box negative-box': '' } style = 'display: flex'>
 						<p style = { `color: ${ param.negativeColor } margin-right: 8px` }> Set </p>
 							<SmallAddress
 								address = { BigInt(operator) }
 								addressMetaData = { param.addressMetadata.get(operator) }
 								textColor = { param.negativeColor }
-								downScale = { true }
 							/>
 						<p style = { `color: ${ param.negativeColor } margin-bottom: 0px; margin-right: 8px` }> as Operator for </p>
 						<TokenSymbol
@@ -187,14 +185,13 @@ export function ERC721TokenIdApprovalChanges(param: { ERC721TokenIdApprovalChang
 		<>
 			{ Array.from(param.ERC721TokenIdApprovalChanges).map( ([tokenAddress, approvals]) => (
 				Array.from(approvals).map( ([tokenId, approvedAddress]) => (
-					<div class = 'vertical-center'>
-						<div class = { param.isImportant ? 'box token-box negative-box': '' } >
+					<div class = 'vertical-center' style = 'display: flex'>
+						<div class = { param.isImportant ? 'box token-box negative-box': '' } style = 'display: flex'>
 							<p style = {`color: ${ param.negativeColor } margin-right: 8px` }> Approve </p>
 							<SmallAddress
 								address = { BigInt(approvedAddress) }
 								addressMetaData = { param.addressMetadata.get(approvedAddress) }
 								textColor = { param.negativeColor }
-								downScale = { true }
 							/>
 							<p style = {`color: ${ param.negativeColor } margin-bottom: 0px; margin-right: 8px` }> for </p>
 							<ERC721Token
@@ -228,7 +225,7 @@ export function SummarizeAddress(
 		textColor: 'var(--disabled-text-color)',
 		negativeColor: 'var(--negative-dim-color)'
 	}
-	return <>
+	return <div>
 		{ isOwnAddress ?
 			<BigAddress
 				address = { BigInt(param.address) }
@@ -238,7 +235,6 @@ export function SummarizeAddress(
 				textColor = { positiveNegativeColors.textColor }
 				address = { BigInt(param.address) }
 				addressMetaData = { param.simulationAndVisualisationResults.addressMetadata.get(param.address)}
-				downScale = { true }
 			/>
 		}
 
@@ -288,7 +284,7 @@ export function SummarizeAddress(
 				isImportant = { isOwnAddress }
 			/>
 		</div>
-	</>
+	</div>
 }
 
 export function SimulationResults(param: SimulationStateParam) {

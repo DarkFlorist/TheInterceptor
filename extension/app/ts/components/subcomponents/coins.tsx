@@ -65,13 +65,13 @@ export function Ether(param: EtherParams) {
 	const negativeColor = param.negativeColor ? param.negativeColor : positiveColor
 	const color = param.amount >= 0 ? positiveColor : negativeColor
 	const sign = param.showSign ? (param.amount >= 0 ? ' + ' : ' - ') : ''
-	return <div class = 'vertical-center'>
+	return <>
 		<CopyToClipboard content = { bigintToDecimalString(abs(param.amount), 18n) } copyMessage = { `${ CHAINS[param.chain].currencyName } amount copied!` } >
-			<p class = 'noselect nopointer tokentext' style = {`color: ${ color }; margin-right: 4px; margin-left: 4px;`}> {`${ sign }${ bigintToRoundedPrettyDecimalString(abs(param.amount), 18n) }` } </p>
+			<p class = 'noselect nopointer' style = {`color: ${ color }; margin-right: 4px; margin-left: 4px;`}> {`${ sign }${ bigintToRoundedPrettyDecimalString(abs(param.amount), 18n) }` } </p>
 		</CopyToClipboard>
-		<img class = 'noselect nopointer vertical-center tokentext' style = 'height: 25px; width: 16px; margin-left: 4px;' src = '../../img/coins/ethereum.png'/>
-		<p class = 'noselect nopointer vertical-center tokentext'  style = { `color: ${ color };` }> { param.useFullTokenName ? CHAINS[param.chain].currencyName : CHAINS[param.chain].currencyTicker } </p>
-	</div>
+		<img class = 'noselect nopointer vertical-center' style = 'height: 25px; width: 16px; margin-left: 4px; display: inline-block' src = '../../img/coins/ethereum.png'/>
+		<p class = 'noselect nopointer'  style = { `color: ${ color }; display: inline-block` }> { param.useFullTokenName ? CHAINS[param.chain].currencyName : CHAINS[param.chain].currencyTicker } </p>
+	</>
 }
 
 export function TokenPrice(
@@ -88,37 +88,36 @@ export function TokenPrice(
 	const negativeColor = param.negativeColor ? param.negativeColor : positiveColor
 	const color = param.amount >= 0 ? positiveColor : negativeColor
 	const value = getTokenAmountsWorth(param.amount, param.tokenPriceEstimate)
-	return <div class = 'vertical-center'>
+	return <>
 		<CopyToClipboard content = { bigintToDecimalString(abs(value), 18n) } copyMessage = { `${ CHAINS[param.chain].currencyName } amount copied!` } >
-			<p class = 'noselect nopointer tokentext' style = {`color: ${ color }; margin-right: 4px; margin-left: 4px;`}> {`(${ bigintToRoundedPrettyDecimalString(abs(value), 18n) }` } </p>
+			<p class = 'noselect nopointer' style = {`color: ${ color }; margin-right: 4px; margin-left: 4px;`}> {`(${ bigintToRoundedPrettyDecimalString(abs(value), 18n) }` } </p>
 		</CopyToClipboard>
-		<img class = 'noselect nopointer vertical-center tokentext' style = 'max-height: 25px; margin-left: 4px;' src = '../../img/coins/ethereum.png'/>
-		<p class = 'noselect nopointer vertical-center tokentext'  style = { `color: ${ color };` }>
+		<img class = 'noselect nopointer vertical-center' style = 'max-height: 25px; margin-left: 4px;' src = '../../img/coins/ethereum.png'/>
+		<p class = 'noselect nopointer' style = { `color: ${ color };` }>
 			{ `${CHAINS[param.chain].currencyTicker})` }
 		</p>
-	</div>
+	</>
 }
-
 
 export function TokenSymbol(param: { token: bigint, textColor?: string, addressMetadata: AddressMetadata | undefined, useFullTokenName: boolean | undefined }) {
 	const tokenData = getTokenData(param.token, param.addressMetadata)
 	const tokenString = ethers.utils.getAddress(addressString(param.token))
-	return <div class = 'vertical-center'>
+	return <>
 		<CopyToClipboard content = { tokenString } copyMessage = 'Token address copied!' >
-			<img class = 'noselect nopointer vertical-center tokentext' style = 'max-height: 25px; max-width: 25px; margin-left: 4px;' src = { tokenData.logoURI }/>
+			<img class = 'noselect nopointer vertical-center' style = 'max-height: 25px; max-width: 25px; margin-left: 4px;' src = { tokenData.logoURI }/>
 		</CopyToClipboard>
 		<CopyToClipboard content = { tokenString } copyMessage = 'Token address copied!' >
 			{ param.useFullTokenName ?
-				<p class = 'noselect nopointer vertical-center tokentext' style = { `color: ${ param.textColor ? param.textColor : 'var(--text-color)' }; margin-right: 4px; word-break: break-word;` }>
-					{ tokenData.name }
+				<p class = 'noselect nopointer' style = { `color: ${ param.textColor ? param.textColor : 'var(--text-color)' }; display: inline-block` }>
+					{ `${ tokenData.name }` }&nbsp;
 				</p>
 			:
-				<p class = 'noselect nopointer vertical-center tokentext' style = { `color: ${ param.textColor ? param.textColor : 'var(--text-color)' }; margin-right: 4px; white-space: nowrap;` }>
-					{ tokenData.symbol }
+				<p class = 'noselect nopointer' style = { `color: ${ param.textColor ? param.textColor : 'var(--text-color)' }; display: inline-block` }>
+					{ `${ tokenData.symbol }` }&nbsp;
 				</p>
 			}
 		</CopyToClipboard>
-	</div>
+	</>
 }
 
 export function Token(param: TokenParams) {
@@ -129,17 +128,17 @@ export function Token(param: TokenParams) {
 	const sign = param.showSign ? (param.amount >= 0 ? ' + ' : ' - '): ''
 
 	if(decimals === undefined) {
-		return <div class = 'vertical-center'>
-			<p class = 'vertical-center tokentext' style = {`display: inline; color: ${ color }; margin-right: 4px; margin-left: 4px; white-space: nowrap;`}> Unknown Amount </p>
+		return <>
+			<p class = 'noselect nopointer' style = {`display: inline-block; color: ${ color };`}> &nbsp;Unknown Amount&nbsp; </p>
 			<TokenSymbol token = { param.token } addressMetadata = { param.addressMetadata } textColor = { color } useFullTokenName = { param.useFullTokenName }/>
-		</div>
+		</>
 	}
-	return <div class = 'vertical-center'>
+	return <>
 		<CopyToClipboard content = { bigintToDecimalString(abs(param.amount), decimals) } copyMessage = 'Token amount copied!' >
-			<p class = 'vertical-center noselect nopointer tokentext' style = { `display: inline; color: ${ color }; margin-right: 4px; margin-left: 4px; white-space: nowrap;`}> { `${ sign }${ bigintToRoundedPrettyDecimalString(abs(param.amount), decimals ) }` } </p>
+			<p class = 'noselect nopointer' style = { `display: inline-block; color: ${ color };`}>{ `${ sign }${ bigintToRoundedPrettyDecimalString(abs(param.amount), decimals ) }` }&nbsp; </p>
 		</CopyToClipboard>
 		<TokenSymbol token = { param.token } addressMetadata = { param.addressMetadata } textColor = { color } useFullTokenName = { param.useFullTokenName }/>
-	</div>
+	</>
 }
 
 function truncate(str: string, n: number){
@@ -151,9 +150,9 @@ export function ERC721Token(param: ERC72TokenParams) {
 	const negativeColor = param.sentTextColor ? param.sentTextColor : positiveColor
 	const color = param.received ? positiveColor : negativeColor
 	const sign = param.showSign ? (param.received ? ' + ' : ' - ') : ''
-	return <div class = 'vertical-center'>
+	return <div class = 'vertical-center' style = 'display: inline-block;'>
 		<CopyToClipboard content = { param.tokenId.toString() } copyMessage = 'Token ID copied!' >
-			<p class = 'vertical-center noselect nopointer tokentext' style = {`display: inline; color: ${ color }; margin-right: 4px; margin-left: 4px; white-space: nowrap;`}>
+			<p class = 'vertical-center noselect nopointer tokentext' style = {`display: inline; color: ${ color }; margin-right: 4px; margin-left: 4px;`}>
 				{`${ sign } NFT #${ truncate(param.tokenId.toString(), 9) }`}
 			</p>
 		</CopyToClipboard>
@@ -162,29 +161,30 @@ export function ERC721Token(param: ERC72TokenParams) {
 }
 
 export function TokenText(param: { useFullTokenName: boolean, isApproval: boolean, amount: bigint, tokenAddress: bigint, addressMetadata: AddressMetadata | undefined, textColor: string, negativeColor: string }) {
-	return <>
-		{ param.isApproval ? (
-			param.amount > 2n ** 100n ?
-					<p class = 'vertical-center tokentext' style = { `display: inline-flex; margin-bottom: 0px; color: ${ param.negativeColor }; white-space: nowrap;` } >
-						for ALL
-						<TokenSymbol token = { param.tokenAddress } addressMetadata = { param.addressMetadata } textColor = { param.negativeColor }  useFullTokenName = { param.useFullTokenName }/>
-					</p>
-				: <p class = 'vertical-center tokentext' style = { `display: inline-flex; margin-bottom: 0px; color: ${ param.negativeColor }; white-space: nowrap;` } >
-					for
-					<Token amount = { param.amount } token = { param.tokenAddress } addressMetadata = { param.addressMetadata } textColor = { param.negativeColor } useFullTokenName = { param.useFullTokenName }/>
-				</p>
-			) : <p class = 'vertical-center tokentext' style = { `display: inline-flex; margin-bottom: 0px; color: ${ param.textColor }; white-space: nowrap;` } >
-				for
-				<Token amount = { param.amount } token = { param.tokenAddress } addressMetadata = { param.addressMetadata } textColor = { param.textColor } useFullTokenName = { param.useFullTokenName }/>
-			</p>
-		}
-	</>
+	if (param.isApproval && param.amount > 2n ** 100n) {
+		return <>
+			<p style = { `display: inline-block; color: ${ param.negativeColor };` } > ALL </p>
+			<TokenSymbol token = { param.tokenAddress } addressMetadata = { param.addressMetadata } textColor = { param.negativeColor }  useFullTokenName = { param.useFullTokenName }/>
+		</>
+	}
+	if (param.isApproval) {
+		return <p style = { `display: inline-block; color: ${ param.negativeColor };` } >
+			<Token amount = { param.amount } token = { param.tokenAddress } addressMetadata = { param.addressMetadata } textColor = { param.negativeColor } useFullTokenName = { param.useFullTokenName }/>
+		</p>
+	}
+	return <Token
+		amount = { param.amount }
+		token = { param.tokenAddress }
+		addressMetadata = { param.addressMetadata }
+		textColor = { param.textColor }
+		useFullTokenName = { param.useFullTokenName }
+	/>
 }
 export function TokenText721(param: { useFullTokenName: boolean, visResult: TokenVisualizerResult, addressMetadata: AddressMetadata | undefined, textColor: string, negativeColor: string } ) {
 	if (param.visResult.is721 !== true) throw `needs to be erc721`
 
-	return <div class = 'vertical-center'>
-		<p class = 'vertical-center tokentext' style = { `color: ${ param.visResult.isApproval ? param.negativeColor : param.textColor };` } > { param.visResult.isApproval ? (
+	return <div>
+		<p style = { `color: ${ param.visResult.isApproval ? param.negativeColor : param.textColor };` } > { param.visResult.isApproval ? (
 				'isAllApproval' in param.visResult ? ( param.visResult.allApprovalAdded ? `Set as Operator` : `Remove Operator`)
 					: `Approve NFT #${ truncate(param.visResult.tokenId.toString(), 9) }`
 				) : `for NFT #${ truncate(param.visResult.tokenId.toString(), 9) }`
