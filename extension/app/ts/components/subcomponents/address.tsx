@@ -162,14 +162,18 @@ export function SmallAddress(params: SmallAddressParams) {
 	const name = getAddressName(params.address, params.addressMetaData)
 	const textColor = params.textColor === undefined ? 'var(--text-color)' : params.textColor
 
-	return <>
-		<span class = 'vertical-center' style = 'margin-right: 5px'>
-			<Blockie seed = { addressString(params.address).toLowerCase() } size = { 8 } scale = { 3 } />
-		</span>
-		<span style = { `color: ${ textColor }; overflow: hidden; text-overflow: ellipsis;` } >
-			{ name }
-		</span>
-	</>
+	return <div style = 'display: contents'>
+		<CopyToClipboard content = { ethers.utils.getAddress(addressString(params.address)) } copyMessage = 'Address copied!'>
+			<span class = 'vertical-center noselect nopointer' style = 'margin-right: 5px'>
+				<Blockie seed = { addressString(params.address).toLowerCase() } size = { 8 } scale = { 3 } />
+			</span>
+		</CopyToClipboard>
+		<CopyToClipboard content = { ethers.utils.getAddress(addressString(params.address)) } copyMessage = 'Address copied!'>
+			<span class = 'noselect nopointer' style = { `color: ${ textColor }; overflow: hidden; text-overflow: ellipsis;` } >
+				{ name }
+			</span>
+		</CopyToClipboard>
+	</div>
 }
 
 export type FromAddressToAddressParams = {

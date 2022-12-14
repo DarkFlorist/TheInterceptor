@@ -24,14 +24,14 @@ function EtherChange(
 	const boxColor = param.etherResults.balanceAfter - param.etherResults.balanceBefore < 0n ? 'negative-box' : 'positive-box'
 	return <div class = 'vertical-center' style = 'display: flex'>
 		<div class = { param.isImportant ? `box token-box ${ boxColor }`: '' } style = 'display: flex'>
-			<Ether
-				amount = { param.etherResults.balanceAfter - param.etherResults.balanceBefore }
-				textColor = { param.textColor }
-				negativeColor = { param.negativeColor }
-				showSign = { true }
-				useFullTokenName = { true }
-				chain = { param.chain }
-			/>
+				<Ether
+					amount = { param.etherResults.balanceAfter - param.etherResults.balanceBefore }
+					textColor = { param.textColor }
+					negativeColor = { param.negativeColor }
+					showSign = { true }
+					useFullTokenName = { true }
+					chain = { param.chain }
+				/>
 		</div>
 	</div>
 }
@@ -96,7 +96,7 @@ export function Erc20ApprovalChanges(param: { tokenApprovalChanges: Map<string, 
 						</div>
 						<div class = 'log-cell' style = 'justify-content: right;'>
 							{ change > 2n ** 100n ?
-								<p class = 'ellipsis' style = {`color: ${ param.negativeColor };` }> ALL&nbsp;</p>
+								<p class = 'ellipsis' style = {`color: ${ param.negativeColor };` }> <b>ALL</b>&nbsp;</p>
 								:
 								<TokenAmount
 									amount = { change }
@@ -383,18 +383,20 @@ export function SimulationSummary(
 								)) }
 							</div>
 						</div>
-						{ notOwnAddresses.length == 0 ? <p> No token or NFT changes to other accounts</p>
-							: notOwnAddresses.map( ([address, balanceSummary]) => (
-							<>
-								<SummarizeAddress
-									address = { address }
-									balanceSummary = { balanceSummary }
-									simulationAndVisualisationResults = { param.simulationAndVisualisationResults }
-								/>
-								<div class = 'is-divider' style = 'margin-top: 8px; margin-bottom: 8px'/>
-							</>
-						)) }
-							<p style = 'color: var(--subtitle-text-color); text-align: right; line-height: 28px;'>
+						<div class = 'container'>
+							{ notOwnAddresses.length == 0 ? <p> No token or NFT changes to other accounts</p>
+								: notOwnAddresses.map( ([address, balanceSummary]) => (
+								<>
+									<SummarizeAddress
+										address = { address }
+										balanceSummary = { balanceSummary }
+										simulationAndVisualisationResults = { param.simulationAndVisualisationResults }
+									/>
+									<div class = 'is-divider' style = 'margin-top: 8px; margin-bottom: 8px'/>
+								</>
+							)) }
+						</div>
+							<p style = 'color: var(--subtitle-text-color); line-height: 28px; display: flex; margin: 0 0 0 auto; width: fit-content;'>
 								<CopyToClipboard
 									content = { param.simulationAndVisualisationResults.blockNumber.toString() }
 									contentDisplayOverride = { `Simulated in block number ${ param.simulationAndVisualisationResults.blockNumber }` }

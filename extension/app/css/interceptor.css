@@ -256,8 +256,12 @@ li {
 	margin-top: 5px;
 }
 
-.content p:not(:last-child), .content dl:not(:last-child), .content ol:not(:last-child), .content ul:not(:last-child), .content blockquote:not(:last-child), .content pre:not(:last-child), .content table:not(:last-child) {
+.content p:not(:last-child), .content dl:not(:last-child), .content ol:not(:last-child), .content ul:not(:last-child), .content blockquote:not(:last-child), .content pre:not(:last-child) {
 	margin-bottom: 10px;
+}
+
+.content p:not(:last-child), .content table:not(:last-child) {
+	margin-bottom: 0px;
 }
 
 .tokentext {
@@ -453,7 +457,17 @@ svg.spinner > circle {
 
 .log-table {
 	display: grid;
-	grid-template-columns: auto auto auto auto auto;
+	grid-template-columns: max-content auto auto auto auto;
+	width: 100%;
+}
+.log-table-2 {
+	display: grid;
+	grid-template-columns: max-content auto;
+	width: 100%;
+}
+.log-table-3 {
+	display: grid;
+	grid-template-columns: max-content auto auto;
 	width: 100%;
 }
 

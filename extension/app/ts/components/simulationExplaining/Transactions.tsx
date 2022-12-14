@@ -1,7 +1,7 @@
 import { addressString } from '../../utils/bigint.js'
 import { AddressMetadata, SimulatedAndVisualizedTransaction, SimulationAndVisualisationResults, TokenVisualizerResult, TransactionVisualizationParameters } from '../../utils/visualizer-types.js'
 import { FromAddressToAddress, SmallAddress } from '../subcomponents/address.js'
-import { Ether, Token, TokenText721, ERC721Token, TokenSymbol, TokenAmount } from '../subcomponents/coins.js'
+import { EtherSymbol, Token, ERC721Token, TokenSymbol, TokenAmount, EtherAmount, Token721AmountField, Token721ActionField } from '../subcomponents/coins.js'
 import { CHAIN, LogAnalysisParams } from '../../utils/user-interface-types.js'
 import { QUARANTINE_CODES_DICT } from '../../simulation/protectors/quarantine-codes.js'
 import { Error } from '../subcomponents/Error.js'
@@ -63,28 +63,56 @@ function EtherTransferEvent(param: { valueSent: bigint, totalReceived: bigint, t
 		{ param.valueSent === 0n ? <></> :
 			<div class = 'vertical-center'>
 				<div class = 'box token-box negative-box vertical-center' style = 'display: inline-block'>
-					<p style = {`color: ${ param.textColor }; margin-bottom: 0px`}> Send </p>
-					<Ether
-						amount = { param.valueSent }
-						showSign = { false }
-						textColor = { param.textColor }
-						negativeColor = { param.textColor }
-						chain = { param.chain }
-					/>
+					<table class = 'log-table-3'>
+						<div class = 'log-cell'>
+							<p style = {`color: ${ param.textColor }; margin-bottom: 0px`}> Send </p>
+						</div>
+						<div class = 'log-cell' style = 'justify-content: right;'>
+							<EtherAmount
+								amount = { param.valueSent }
+								textColor = { param.textColor }
+								negativeColor = { param.textColor }
+								chain = { param.chain }
+							/>
+						</div>
+						<div class = 'log-cell'>
+							<EtherSymbol
+								amount = { param.valueSent }
+								showSign = { false }
+								textColor = { param.textColor }
+								negativeColor = { param.textColor }
+								chain = { param.chain }
+							/>
+						</div>
+					</table>
 				</div>
 			</div>
 		}
 		{ param.totalReceived <= 0n ? <></> :
 			<div class = 'vertical-center'>
 				<div class = 'box token-box positive-box vertical-center' style = 'display: inline-block'>
-					<p style = {`color: ${ param.textColor }; margin-bottom: 0px`}> Receive </p>
-					<Ether
-						amount = { param.totalReceived }
-						showSign = { false }
-						textColor = { param.textColor }
-						negativeColor = { param.textColor }
-						chain = { param.chain }
-					/>
+					<table class = 'log-table-3'>
+						<div class = 'log-cell'>
+							<p style = {`color: ${ param.textColor }; margin-bottom: 0px`}> Receive </p>
+						</div>
+						<div class = 'log-cell' style = 'justify-content: right;'>
+							<EtherAmount
+								amount = { param.totalReceived }
+								textColor = { param.textColor }
+								negativeColor = { param.textColor }
+								chain = { param.chain }
+							/>
+						</div>
+						<div class = 'log-cell'>
+							<EtherSymbol
+								amount = { param.totalReceived }
+								showSign = { false }
+								textColor = { param.textColor }
+								negativeColor = { param.textColor }
+								chain = { param.chain }
+							/>
+						</div>
+					</table>
 				</div>
 			</div>
 		}
@@ -308,14 +336,29 @@ function normalTransaction(param: TransactionVisualizationParameters) {
 				</> : <></> }
 				{ param.tx.multicallResponse.statusCode !== 'success' ? <Error text = { `The transaction fails with error '${param.tx.multicallResponse.error}'` } /> : <></>}
 				{ param.tx.realizedGasPrice > 0n ?
-					<p className = 'paragraph vertical-center' style = 'color: var(--subtitle-text-color); text-align: right; width: 100%;'>
-						Gas fee:
-						<Ether
-							amount = { param.tx.multicallResponse.gasSpent * param.tx.realizedGasPrice }
-							textColor = { 'var(--subtitle-text-color)' }
-							chain = { param.simulationAndVisualisationResults.chain }
-						/>
-					</p> : <></>
+					<table class = 'log-table-3' style = 'width: fit-content; margin: 0 0 0 auto;'>
+						<div class = 'log-cell'>
+							<p style = {`color: var(--subtitle-text-color); margin-bottom: 0px`}> Gas fee:&nbsp;</p>
+						</div>
+						<div class = 'log-cell' style = 'justify-content: right;'>
+							<EtherAmount
+								amount = { param.tx.multicallResponse.gasSpent * param.tx.realizedGasPrice  }
+								textColor = { 'var(--subtitle-text-color)' }
+								negativeColor = { 'var(--subtitle-text-color)' }
+								chain = { param.simulationAndVisualisationResults.chain }
+							/>
+						</div>
+						<div class = 'log-cell'>
+							<EtherSymbol
+								amount = { param.tx.multicallResponse.gasSpent * param.tx.realizedGasPrice  }
+								showSign = { false }
+								textColor = { 'var(--subtitle-text-color)' }
+								negativeColor = { 'var(--subtitle-text-color)' }
+								chain = { param.simulationAndVisualisationResults.chain }
+							/>
+						</div>
+					</table>
+					: <></>
 				}
 			</div>
 		</div>
@@ -394,44 +437,36 @@ export function TokenLogEvent(params: TokenLogEventParams ) {
 	const brigtherTextColor = isNegativelog ? brigtherColors.negativeColor : brigtherColors.textColor
 
 	return <>
-			{ params.tokenVisualizerResult.is721 ? <>
-					<div class = 'log-cell'>
-						1
-					</div>
-					<div class = 'log-cell'>
-						<TokenText721
-							visResult = { params.tokenVisualizerResult }
-							addressMetadata = { params.addressMetadata.get(addressString(params.tokenVisualizerResult.tokenAddress)) }
-							textColor = { brigtherColors.textColor }
-							negativeColor = { brigtherColors.negativeColor }
-							useFullTokenName = { false }
-						/>
-					</div>
-				</>
-				: <>
-					<div class = 'log-cell' style = 'justify-content: right;'>
-						{ params.tokenVisualizerResult.amount  > 2n ** 100n && params.tokenVisualizerResult.isApproval ?
-							<p class = 'ellipsis' style = { `color: ${ brigtherTextColor }` }>ALL</p>
-						:
-							<TokenAmount
-								amount = { params.tokenVisualizerResult.amount }
-								token = { params.tokenVisualizerResult.tokenAddress }
-								addressMetadata = { params.addressMetadata.get(addressString(params.tokenVisualizerResult.tokenAddress)) }
-								textColor = { brigtherTextColor }
-								useFullTokenName = { false }
-							/>
-						}
-					</div>
-					<div class = 'log-cell'>
-						<TokenSymbol
+			<div class = 'log-cell' style = 'justify-content: right;'>
+				{ params.tokenVisualizerResult.is721 ?
+					<Token721AmountField
+						visResult = { params.tokenVisualizerResult }
+						addressMetadata = { params.addressMetadata.get(addressString(params.tokenVisualizerResult.tokenAddress)) }
+						textColor = { brigtherColors.textColor }
+						negativeColor = { brigtherColors.negativeColor }
+						useFullTokenName = { false }
+					/>
+				: <> { params.tokenVisualizerResult.amount > 2n ** 100n && params.tokenVisualizerResult.isApproval ?
+						<p class = 'ellipsis' style = { `color: ${ brigtherTextColor }` }><b>ALL</b></p>
+					:
+						<TokenAmount
+							amount = { params.tokenVisualizerResult.amount }
 							token = { params.tokenVisualizerResult.tokenAddress }
 							addressMetadata = { params.addressMetadata.get(addressString(params.tokenVisualizerResult.tokenAddress)) }
 							textColor = { brigtherTextColor }
 							useFullTokenName = { false }
 						/>
-					</div>
-				</>
-			}
+					} </>
+				}
+			</div>
+			<div class = 'log-cell'>
+				<TokenSymbol
+					token = { params.tokenVisualizerResult.tokenAddress }
+					addressMetadata = { params.addressMetadata.get(addressString(params.tokenVisualizerResult.tokenAddress)) }
+					textColor = { brigtherTextColor }
+					useFullTokenName = { false }
+				/>
+			</div>
 			<div class = 'log-cell'>
 				<SmallAddress
 					address = { params.tokenVisualizerResult.from }
@@ -439,10 +474,21 @@ export function TokenLogEvent(params: TokenLogEventParams ) {
 					textColor = { brigtherTextColor }
 				/>
 			</div>
-			<div class = 'log-cell'>
+			<div class = 'log-cell' style = 'justify-content: center;'>
 				{ params.tokenVisualizerResult.isApproval ?
-					<p class = 'ellipsis' style = { `color: ${ brigtherTextColor }` }>Approves</p>
-					:
+					<> { params.tokenVisualizerResult.is721 ?
+						<Token721ActionField
+							visResult = { params.tokenVisualizerResult }
+							addressMetadata = { params.addressMetadata.get(addressString(params.tokenVisualizerResult.tokenAddress)) }
+							textColor = { brigtherColors.textColor }
+							negativeColor = { brigtherColors.negativeColor }
+							useFullTokenName = { false }
+						/> :
+							<p class = 'ellipsis' style = { `color: ${ brigtherTextColor }` }>
+								Approves
+							</p>
+					} </>
+				:
 					<><svg style = 'vertical-align: middle;' width = '24' height = '24' viewBox = '0 0 24 24'> <path fill = { brigtherTextColor } d = 'M13 7v-6l11 11-11 11v-6h-13v-10z'/> </svg></>
 				}
 			</div>

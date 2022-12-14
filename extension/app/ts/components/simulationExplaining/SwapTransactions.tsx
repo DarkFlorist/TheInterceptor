@@ -316,7 +316,10 @@ export function SwapVisualization(param: SwapVisualizationParams) {
 							addressMetadata = { param.addressMetadata.get(addressString(param.identifiedSwap.tokenAddressSent)) }
 							useFullTokenName = { false }
 						/>
-				: <Ether amount = { param.identifiedSwap.ethAmountSent } chain = { param.chain } />
+				: <Ether
+					amount = { param.identifiedSwap.ethAmountSent }
+					chain = { param.chain }
+				/>
 				}
 			</div>
 			&nbsp;for&nbsp;
@@ -337,7 +340,10 @@ export function SwapVisualization(param: SwapVisualizationParams) {
 							addressMetadata = { param.addressMetadata.get(addressString(param.identifiedSwap.tokenAddressReceived)) }
 							useFullTokenName = { false }
 						/>
-				: <Ether amount = { param.identifiedSwap.ethAmountReceived } chain = { param.chain } />
+				: <Ether
+					amount = { param.identifiedSwap.ethAmountReceived }
+					chain = { param.chain }
+				/>
 				}
 			</div>
 		</p>
