@@ -103,9 +103,11 @@ export function TokenSymbol(param: { token: bigint, textColor?: string, addressM
 	const tokenData = getTokenData(param.token, param.addressMetadata)
 	const tokenString = ethers.utils.getAddress(addressString(param.token))
 	return <>
-		<CopyToClipboard content = { tokenString } copyMessage = 'Token address copied!' >
-			<img class = 'noselect nopointer vertical-center' style = 'max-height: 25px; max-width: 25px; margin-left: 4px;' src = { tokenData.logoURI }/>
-		</CopyToClipboard>
+		<div style = 'overflow: initial'>
+			<CopyToClipboard content = { tokenString } copyMessage = 'Token address copied!' >
+				<img class = 'noselect nopointer vertical-center' style = 'max-height: 25px; max-width: 25px; margin-left: 4px;' src = { tokenData.logoURI }/>
+			</CopyToClipboard>
+		</div>
 		<CopyToClipboard content = { tokenString } copyMessage = 'Token address copied!' >
 			{ param.useFullTokenName ?
 				<p class = 'noselect nopointer' style = { `color: ${ param.textColor ? param.textColor : 'var(--text-color)' }; display: inline-block; overflow: hidden; text-overflow: ellipsis;` }>

@@ -463,3 +463,7 @@ svg.spinner > circle {
 	white-space: nowrap;
 	display: flex;
 }
+.ellipsis {
+	text-overflow: ellipsis;
+    overflow: hidden;
+}

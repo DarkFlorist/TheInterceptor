@@ -411,7 +411,7 @@ export function TokenLogEvent(params: TokenLogEventParams ) {
 				: <>
 					<div class = 'log-cell' style = 'justify-content: right;'>
 						{ params.tokenVisualizerResult.amount  > 2n ** 100n && params.tokenVisualizerResult.isApproval ?
-							<p style = { `color: ${ brigtherTextColor }` }>ALL</p>
+							<p class = 'ellipsis' style = { `color: ${ brigtherTextColor }` }>ALL</p>
 						:
 							<TokenAmount
 								amount = { params.tokenVisualizerResult.amount }
@@ -441,7 +441,7 @@ export function TokenLogEvent(params: TokenLogEventParams ) {
 			</div>
 			<div class = 'log-cell'>
 				{ params.tokenVisualizerResult.isApproval ?
-					<p style = { `color: ${ brigtherTextColor }` }>Approves</p>
+					<p class = 'ellipsis' style = { `color: ${ brigtherTextColor }` }>Approves</p>
 					:
 					<><svg style = 'vertical-align: middle;' width = '24' height = '24' viewBox = '0 0 24 24'> <path fill = { brigtherTextColor } d = 'M13 7v-6l11 11-11 11v-6h-13v-10z'/> </svg></>
 				}

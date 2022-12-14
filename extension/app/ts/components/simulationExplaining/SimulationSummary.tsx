@@ -82,7 +82,7 @@ export function Erc20ApprovalChanges(param: { tokenApprovalChanges: Map<string, 
 				<div class = { param.isImportant ? 'box token-box negative-box': '' } style = 'display: inline-flex'>
 					<table class = 'log-table'>
 						<div class = 'log-cell'>
-							<p style = {`color: ${ param.negativeColor };` }> Approve&nbsp;</p>
+							<p class = 'ellipsis' style = {`color: ${ param.negativeColor };` }> Approve&nbsp;</p>
 						</div>
 						<div class = 'log-cell'>
 							<SmallAddress
@@ -95,7 +95,9 @@ export function Erc20ApprovalChanges(param: { tokenApprovalChanges: Map<string, 
 							<p style = {`color: ${ param.negativeColor };` }> &nbsp;for&nbsp; </p>
 						</div>
 						<div class = 'log-cell' style = 'justify-content: right;'>
-							{ change > 2n ** 100n ? <>All</> :
+							{ change > 2n ** 100n ?
+								<p class = 'ellipsis' style = {`color: ${ param.negativeColor };` }> ALL&nbsp;</p>
+								:
 								<TokenAmount
 									amount = { change }
 									token = { BigInt(tokenAddress) }
@@ -241,7 +243,7 @@ export function SummarizeAddress(
 			/>
 		}
 
-		<div class = 'content' style = 'overflow-y: hidden; margin-bottom: 0px;'>
+		<div class = 'content' style = 'margin-bottom: 0px;'>
 			<EtherChange
 				textColor = { positiveNegativeColors.textColor }
 				negativeColor = { positiveNegativeColors.negativeColor }
