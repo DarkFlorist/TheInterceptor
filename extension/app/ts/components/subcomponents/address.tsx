@@ -166,7 +166,7 @@ export function SmallAddress(params: SmallAddressParams) {
 		<span class = 'vertical-center' style = 'margin-right: 5px'>
 			<Blockie seed = { addressString(params.address).toLowerCase() } size = { 8 } scale = { 3 } />
 		</span>
-		<span style = { `color: ${ textColor };` } >
+		<span style = { `color: ${ textColor }; overflow: hidden; text-overflow: ellipsis;` } >
 			{ name }
 		</span>
 	</>

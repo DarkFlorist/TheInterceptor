@@ -2,7 +2,7 @@ import { LogSummarizer } from '../../simulation/services/LogSummarizer.js'
 import { CHAIN, SimulationStateParam } from '../../utils/user-interface-types.js'
 import { AddressMetadata, BalanceChangeSummary, SimulationAndVisualisationResults, TokenPriceEstimate } from '../../utils/visualizer-types.js'
 import { BigAddress, SmallAddress } from '../subcomponents/address.js'
-import { ERC721Token, Ether, Token, TokenPrice, TokenSymbol } from '../subcomponents/coins.js'
+import { ERC721Token, Ether, Token, TokenAmount, TokenPrice, TokenSymbol } from '../subcomponents/coins.js'
 import { Transactions } from './Transactions.js'
 import { CopyToClipboard } from '../subcomponents/CopyToClipboard.js'
 import { SomeTimeAgo } from '../subcomponents/SomeTimeAgo.js'
@@ -79,38 +79,41 @@ export function Erc20ApprovalChanges(param: { tokenApprovalChanges: Map<string, 
 	return <>
 		{ Array.from(param.tokenApprovalChanges).map( ([tokenAddress, approvals]) => (
 			Array.from(approvals).map( ([addressToApprove, change]) => (
-				<div class = 'vertical-center' style = 'display: flex'>
-					<div class = { param.isImportant ? 'box token-box negative-box': '' } style = 'display: flex'>
-						<div class = 'vertical-center'>
-							<p class = 'vertical-center' style = {`color: ${ param.negativeColor }; margin-bottom: 0px; margin-right: 8px; white-space: nowrap;`}> Approve </p>
+				<div class = { param.isImportant ? 'box token-box negative-box': '' } style = 'display: inline-flex'>
+					<table class = 'log-table'>
+						<div class = 'log-cell'>
+							<p style = {`color: ${ param.negativeColor };` }> Approve&nbsp;</p>
+						</div>
+						<div class = 'log-cell'>
 							<SmallAddress
 								address = { BigInt(addressToApprove) }
 								addressMetaData = { param.addressMetadata.get(addressToApprove) }
 								textColor = { param.negativeColor }
 							/>
-							{ change > 2n ** 100n ?
-								<>
-									<p class = 'vertical-center' style = { `color: ${ param.negativeColor }; margin-bottom: 0px; margin-right: 8px; white-space: nowrap;` }> for ALL </p>
-									<TokenSymbol
-										token = { BigInt(tokenAddress) }
-										addressMetadata = { param.addressMetadata.get(tokenAddress) }
-										textColor = { param.negativeColor }
-										useFullTokenName = { true }
-									/>
-								</> : <>
-									<p class = 'vertical-center' style = { `color: ${ param.negativeColor }; margin-bottom: 0px; margin-right: 8px; white-space: nowrap;` }> for </p>
-									<Token
-										amount = { change }
-										token = { BigInt(tokenAddress) }
-										showSign = { false }
-										addressMetadata = { param.addressMetadata.get(tokenAddress) }
-										textColor = { param.negativeColor }
-										useFullTokenName = { true }
-									/>
-								</>
+						</div>
+						<div class = 'log-cell'>
+							<p style = {`color: ${ param.negativeColor };` }> &nbsp;for&nbsp; </p>
+						</div>
+						<div class = 'log-cell' style = 'justify-content: right;'>
+							{ change > 2n ** 100n ? <>All</> :
+								<TokenAmount
+									amount = { change }
+									token = { BigInt(tokenAddress) }
+									addressMetadata = { param.addressMetadata.get(tokenAddress)}
+									textColor = { param.negativeColor }
+									useFullTokenName = { false }
+								/>
 							}
 						</div>
-					</div>
+						<div class = 'log-cell'>
+							<TokenSymbol
+								token = { BigInt(tokenAddress) }
+								addressMetadata = { param.addressMetadata.get(tokenAddress) }
+								textColor = { param.negativeColor }
+								useFullTokenName = { true }
+							/>
+						</div>
+					</table>
 				</div>
 			))
 		)) }

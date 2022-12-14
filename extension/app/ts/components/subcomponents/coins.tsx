@@ -108,16 +108,36 @@ export function TokenSymbol(param: { token: bigint, textColor?: string, addressM
 		</CopyToClipboard>
 		<CopyToClipboard content = { tokenString } copyMessage = 'Token address copied!' >
 			{ param.useFullTokenName ?
-				<p class = 'noselect nopointer' style = { `color: ${ param.textColor ? param.textColor : 'var(--text-color)' }; display: inline-block` }>
-					{ `${ tokenData.name }` }&nbsp;
+				<p class = 'noselect nopointer' style = { `color: ${ param.textColor ? param.textColor : 'var(--text-color)' }; display: inline-block; overflow: hidden; text-overflow: ellipsis;` }>
+					{ `${ tokenData.name }` }
 				</p>
 			:
-				<p class = 'noselect nopointer' style = { `color: ${ param.textColor ? param.textColor : 'var(--text-color)' }; display: inline-block` }>
-					{ `${ tokenData.symbol }` }&nbsp;
+				<p class = 'noselect nopointer' style = { `color: ${ param.textColor ? param.textColor : 'var(--text-color)' }; display: inline-block; overflow: hidden; text-overflow: ellipsis;` }>
+					{ `${ tokenData.symbol }` }
 				</p>
 			}
 		</CopyToClipboard>
 	</>
+}
+
+export function TokenAmount(param: TokenParams) {
+	const positiveColor = param.textColor ? param.textColor : 'var(--text-color)'
+	const negativeColor = param.negativeColor ? param.negativeColor : positiveColor
+	const decimals = param.addressMetadata && 'decimals' in param.addressMetadata ? param.addressMetadata.decimals : undefined
+	const color = param.amount >= 0 ? positiveColor : negativeColor
+	const sign = param.showSign ? (param.amount >= 0 ? ' + ' : ' - '): ''
+
+	if(decimals === undefined) {
+		return <>
+			<p class = 'noselect nopointer' style = { `overflow: hidden; text-overflow: ellipsis; display: inline-block; color: ${ color };` }> &nbsp;Unknown Amount&nbsp; </p>
+		</>
+	}
+	return <>
+		<CopyToClipboard content = { bigintToDecimalString(abs(param.amount), decimals) } copyMessage = 'Token amount copied!' >
+			<p class = 'noselect nopointer' style = { `overflow: hidden; text-overflow: ellipsis; display: inline-block; color: ${ color };` }>{ `${ sign }${ bigintToRoundedPrettyDecimalString(abs(param.amount), decimals ) }` }&nbsp; </p>
+		</CopyToClipboard>
+	</>
+
 }
 
 export function Token(param: TokenParams) {
@@ -129,13 +149,13 @@ export function Token(param: TokenParams) {
 
 	if(decimals === undefined) {
 		return <>
-			<p class = 'noselect nopointer' style = {`display: inline-block; color: ${ color };`}> &nbsp;Unknown Amount&nbsp; </p>
+			<p class = 'noselect nopointer' style = { `display: inline-block; color: ${ color };` }> &nbsp;Unknown Amount&nbsp; </p>
 			<TokenSymbol token = { param.token } addressMetadata = { param.addressMetadata } textColor = { color } useFullTokenName = { param.useFullTokenName }/>
 		</>
 	}
 	return <>
 		<CopyToClipboard content = { bigintToDecimalString(abs(param.amount), decimals) } copyMessage = 'Token amount copied!' >
-			<p class = 'noselect nopointer' style = { `display: inline-block; color: ${ color };`}>{ `${ sign }${ bigintToRoundedPrettyDecimalString(abs(param.amount), decimals ) }` }&nbsp; </p>
+			<p class = 'noselect nopointer' style = { `display: inline-block; color: ${ color };` }>{ `${ sign }${ bigintToRoundedPrettyDecimalString(abs(param.amount), decimals ) }` }&nbsp; </p>
 		</CopyToClipboard>
 		<TokenSymbol token = { param.token } addressMetadata = { param.addressMetadata } textColor = { color } useFullTokenName = { param.useFullTokenName }/>
 	</>

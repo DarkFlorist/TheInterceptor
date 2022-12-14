@@ -1,7 +1,7 @@
 import { addressString } from '../../utils/bigint.js'
 import { AddressMetadata, SimulatedAndVisualizedTransaction, SimulationAndVisualisationResults, TokenVisualizerResult, TransactionVisualizationParameters } from '../../utils/visualizer-types.js'
 import { FromAddressToAddress, SmallAddress } from '../subcomponents/address.js'
-import { Ether, Token, TokenText, TokenText721, ERC721Token } from '../subcomponents/coins.js'
+import { Ether, Token, TokenText721, ERC721Token, TokenSymbol, TokenAmount } from '../subcomponents/coins.js'
 import { CHAIN, LogAnalysisParams } from '../../utils/user-interface-types.js'
 import { QUARANTINE_CODES_DICT } from '../../simulation/protectors/quarantine-codes.js'
 import { Error } from '../subcomponents/Error.js'
@@ -384,11 +384,6 @@ export type TokenLogEventParams = {
 	addressMetadata: Map<string, AddressMetadata>
 }
 export function TokenLogEvent(params: TokenLogEventParams ) {
-	const colors = {
-		textColor: 'var(--disabled-text-color)',
-		negativeColor: 'var(--negative-dim-color)'
-	}
-
 	const brigtherColors = {
 		textColor: 'var(--dim-text-color)',
 		negativeColor: 'var(--negative-dim-color)'
@@ -398,51 +393,74 @@ export function TokenLogEvent(params: TokenLogEventParams ) {
 		|| ('isApproval' in params.tokenVisualizerResult && params.tokenVisualizerResult.isApproval )
 	const brigtherTextColor = isNegativelog ? brigtherColors.negativeColor : brigtherColors.textColor
 
-	return <div class = 'vertical-center' style = 'padding-bottom: 0.5em; line-height: 1;'>
-		<p style = {`color: ${ colors.textColor }; display: inline-block`}>
-			{ params.tokenVisualizerResult.is721 ?
-				<TokenText721
-					visResult = { params.tokenVisualizerResult }
-					addressMetadata = { params.addressMetadata.get(addressString(params.tokenVisualizerResult.tokenAddress)) }
-					textColor = { brigtherColors.textColor }
-					negativeColor = { brigtherColors.negativeColor }
-					useFullTokenName = { false }
-				/>
-				: <TokenText
-					isApproval = { params.tokenVisualizerResult.isApproval }
-					amount = { params.tokenVisualizerResult.amount }
-					tokenAddress = { params.tokenVisualizerResult.tokenAddress }
-					addressMetadata = { params.addressMetadata.get(addressString(params.tokenVisualizerResult.tokenAddress)) }
-					textColor = { brigtherColors.textColor }
-					negativeColor = { brigtherColors.negativeColor }
-					useFullTokenName = { false }
-				/>
+	return <>
+			{ params.tokenVisualizerResult.is721 ? <>
+					<div class = 'log-cell'>
+						1
+					</div>
+					<div class = 'log-cell'>
+						<TokenText721
+							visResult = { params.tokenVisualizerResult }
+							addressMetadata = { params.addressMetadata.get(addressString(params.tokenVisualizerResult.tokenAddress)) }
+							textColor = { brigtherColors.textColor }
+							negativeColor = { brigtherColors.negativeColor }
+							useFullTokenName = { false }
+						/>
+					</div>
+				</>
+				: <>
+					<div class = 'log-cell' style = 'justify-content: right;'>
+						{ params.tokenVisualizerResult.amount  > 2n ** 100n && params.tokenVisualizerResult.isApproval ?
+							<p style = { `color: ${ brigtherTextColor }` }>ALL</p>
+						:
+							<TokenAmount
+								amount = { params.tokenVisualizerResult.amount }
+								token = { params.tokenVisualizerResult.tokenAddress }
+								addressMetadata = { params.addressMetadata.get(addressString(params.tokenVisualizerResult.tokenAddress)) }
+								textColor = { brigtherTextColor }
+								useFullTokenName = { false }
+							/>
+						}
+					</div>
+					<div class = 'log-cell'>
+						<TokenSymbol
+							token = { params.tokenVisualizerResult.tokenAddress }
+							addressMetadata = { params.addressMetadata.get(addressString(params.tokenVisualizerResult.tokenAddress)) }
+							textColor = { brigtherTextColor }
+							useFullTokenName = { false }
+						/>
+					</div>
+				</>
 			}
-			&nbsp;&nbsp;
-			<SmallAddress
-				address = { params.tokenVisualizerResult.from }
-				addressMetaData = { params.addressMetadata.get(addressString(params.tokenVisualizerResult.from)) }
-				textColor = { brigtherTextColor }
-			/>
-			{ params.tokenVisualizerResult.isApproval ?
-				<>&nbsp;Approve&nbsp;</>
-				:
-				<>&nbsp;<svg style = 'vertical-align: middle;' width = '24' height = '24' viewBox = '0 0 24 24'> <path fill = 'var(--text-color)' d = 'M13 7v-6l11 11-11 11v-6h-13v-10z'/> </svg>&nbsp;</>
-			}
-			<SmallAddress
-				address = { params.tokenVisualizerResult.to }
-				addressMetaData = { params.addressMetadata.get(addressString(params.tokenVisualizerResult.to)) }
-				textColor = { brigtherTextColor }
-			/>
-		</p>
-	</div>
+			<div class = 'log-cell'>
+				<SmallAddress
+					address = { params.tokenVisualizerResult.from }
+					addressMetaData = { params.addressMetadata.get(addressString(params.tokenVisualizerResult.from)) }
+					textColor = { brigtherTextColor }
+				/>
+			</div>
+			<div class = 'log-cell'>
+				{ params.tokenVisualizerResult.isApproval ?
+					<p style = { `color: ${ brigtherTextColor }` }>Approves</p>
+					:
+					<><svg style = 'vertical-align: middle;' width = '24' height = '24' viewBox = '0 0 24 24'> <path fill = { brigtherTextColor } d = 'M13 7v-6l11 11-11 11v-6h-13v-10z'/> </svg></>
+				}
+			</div>
+			<div class = 'log-cell'>
+				<SmallAddress
+					address = { params.tokenVisualizerResult.to }
+					addressMetaData = { params.addressMetadata.get(addressString(params.tokenVisualizerResult.to)) }
+					textColor = { brigtherTextColor }
+				/>
+			</div>
+	</>
 }
 
 function LogAnalysis(param: LogAnalysisParams) {
 	if ( param.simulatedAndVisualizedTransaction?.simResults?.visualizerResults === undefined ) return <></>
 	if ( param.simulatedAndVisualizedTransaction.simResults.visualizerResults.tokenResults.length === 0 ) return <></>
 	const routes = identifyRoutes(param.simulatedAndVisualizedTransaction, param.identifiedSwap)
-	return <> { routes ?
+	return <table class = 'log-table'> { routes ?
 		routes.map( (tokenVisualizerResult) => (
 			<TokenLogEvent
 				tokenVisualizerResult = { tokenVisualizerResult }
@@ -456,5 +474,5 @@ function LogAnalysis(param: LogAnalysisParams) {
 				addressMetadata = { param.addressMetadata }
 			/>
 		))
-	} </>
+	} </table>
 }
