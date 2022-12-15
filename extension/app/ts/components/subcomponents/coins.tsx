@@ -1,7 +1,7 @@
 import { ethers } from 'ethers'
 import { getTokenAmountsWorth } from '../../simulation/priceEstimator.js'
 import { abs, addressString, bigintToDecimalString, bigintToRoundedPrettyDecimalString } from '../../utils/bigint.js'
-import { CHAINS, QUESTION_MARK } from '../../utils/constants.js'
+import { CHAINS } from '../../utils/constants.js'
 import { CHAIN } from '../../utils/user-interface-types.js'
 import { AddressMetadata, TokenPriceEstimate, TokenVisualizerResult } from '../../utils/visualizer-types.js'
 import { CopyToClipboard } from './CopyToClipboard.js'
@@ -41,7 +41,7 @@ export type TokenData = {
 	decimals: bigint | undefined
 	name: string
 	symbol: string
-	logoURI: string
+	logoURI: string | undefined
 }
 
 export function getTokenData(token: bigint, metadata: AddressMetadata | undefined) : TokenData {
@@ -50,14 +50,14 @@ export function getTokenData(token: bigint, metadata: AddressMetadata | undefine
 			decimals: undefined,
 			name: `Token (${ ethers.utils.getAddress(addressString(token)) })`,
 			symbol: '???',
-			logoURI: QUESTION_MARK
+			logoURI: undefined
 		}
 	}
 	return {
 		decimals: 'decimals' in metadata ? metadata.decimals : undefined,
 		name: metadata.name,
 		symbol: 'symbol' in metadata ? metadata.symbol : '???',
-		logoURI: 'logoURI' in metadata && metadata.logoURI !== undefined ? metadata.logoURI : QUESTION_MARK
+		logoURI: 'logoURI' in metadata && metadata.logoURI !== undefined ? metadata.logoURI : undefined
 	}
 }
 
@@ -141,7 +141,7 @@ export function TokenSymbol(param: { token: bigint, textColor?: string, addressM
 	return <>
 		<div style = 'overflow: initial; height: 28px;'>
 			<CopyToClipboard content = { tokenString } copyMessage = 'Token address copied!' >
-				{ tokenData.logoURI == QUESTION_MARK ?
+				{ tokenData.logoURI === undefined ?
 					<Blockie
 						seed = { tokenString.toLowerCase() }
 						size = { 8 }
