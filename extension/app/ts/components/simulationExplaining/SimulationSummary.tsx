@@ -20,14 +20,13 @@ type EtherChangeParams = {
 
 function EtherChange(param: EtherChangeParams) {
 	if ( param.etherResults === undefined ) return <></>
-
-	const boxColor = param.etherResults.balanceAfter - param.etherResults.balanceBefore < 0n ? 'negative-box' : 'positive-box'
+	const amount = param.etherResults.balanceAfter - param.etherResults.balanceBefore
+	const boxColor = amount < 0n ? 'negative-box' : 'positive-box'
 	return <div class = 'vertical-center' style = 'display: flex'>
 		<div class = { param.isImportant ? `box token-box ${ boxColor }`: '' } style = 'display: flex'>
 			<Ether
-				amount = { param.etherResults.balanceAfter - param.etherResults.balanceBefore }
-				textColor = { param.textColor }
-				negativeColor = { param.negativeColor }
+				amount = { amount }
+				textColor = { amount >= 0 ? param.textColor : param.negativeColor }
 				showSign = { true }
 				useFullTokenName = { true }
 				chain = { param.chain }
@@ -57,15 +56,13 @@ function Erc20BalanceChange(param: Erc20BalanceChangeParams) {
 						token = { BigInt(tokenAddress) }
 						showSign = { true }
 						addressMetadata = { param.addressMetadata.get(tokenAddress) }
-						textColor = { param.textColor }
-						negativeColor = { param.negativeColor }
+						textColor = { change > 0n ? param.textColor : param.negativeColor }
 						useFullTokenName = { true }
 					/>
 					<TokenPrice
 						amount = { change }
 						tokenPriceEstimate = { param.tokenPriceEstimates.find( (x) => x.token === tokenAddress ) }
-						textColor = { param.textColor }
-						negativeColor = { param.negativeColor }
+						textColor = { change > 0n ? param.textColor : param.negativeColor }
 						chain = { param.chain }
 					/>
 				</div>

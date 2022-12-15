@@ -35,7 +35,6 @@ type EtherParams = {
 	amount: bigint
 	showSign?: boolean
 	textColor?: string
-	negativeColor?: string
 	useFullTokenName?: boolean
 	chain: CHAIN
 }
@@ -46,7 +45,6 @@ export function Ether(param: EtherParams) {
 			<EtherAmount
 				amount = { param.amount }
 				textColor = { param.textColor }
-				negativeColor = { param.negativeColor }
 				showSign = { param.showSign }
 			/>
 		</div>
@@ -54,7 +52,6 @@ export function Ether(param: EtherParams) {
 			<EtherSymbol
 				amount = { param.amount }
 				textColor = { param.textColor }
-				negativeColor = { param.negativeColor }
 				useFullTokenName = { param.useFullTokenName }
 				chain = { param.chain }
 			/>
@@ -65,13 +62,10 @@ type EtherAmountParams = {
 	amount: bigint
 	showSign?: boolean
 	textColor?: string
-	negativeColor?: string
 }
 
 export function EtherAmount(param: EtherAmountParams) {
-	const positiveColor = param.textColor ? param.textColor : 'var(--text-color)'
-	const negativeColor = param.negativeColor ? param.negativeColor : positiveColor
-	const color = param.amount >= 0 ? positiveColor : negativeColor
+	const color = param.textColor ? param.textColor : 'var(--text-color)'
 	const sign = param.showSign ? (param.amount >= 0 ? ' + ' : ' - '): ''
 
 	return <>
@@ -84,15 +78,12 @@ export function EtherAmount(param: EtherAmountParams) {
 type EtherSymbolParams = {
 	amount: bigint
 	textColor?: string
-	negativeColor?: string
 	useFullTokenName?: boolean
 	chain: CHAIN
 }
 
 export function EtherSymbol(param: EtherSymbolParams) {
-	const positiveColor = param.textColor ? param.textColor : 'var(--text-color)'
-	const negativeColor = param.negativeColor ? param.negativeColor : positiveColor
-	const color = param.amount >= 0 ? positiveColor : negativeColor
+	const color = param.textColor ? param.textColor : 'var(--text-color)'
 	return <>
 		<img class = 'noselect nopointer vertical-center' style = 'height: 25px; width: 16px; display: inline-block' src = '../../img/coins/ethereum.png'/>
 		<p class = 'noselect nopointer'  style = { `color: ${ color }; display: inline-block` }> { param.useFullTokenName ? CHAINS[param.chain].currencyName : CHAINS[param.chain].currencyTicker } </p>
@@ -101,7 +92,6 @@ export function EtherSymbol(param: EtherSymbolParams) {
 
 type TokenPriceParams = {
 	textColor?: string,
-	negativeColor?: string,
 	amount: bigint,
 	chain: CHAIN,
 	tokenPriceEstimate: TokenPriceEstimate | undefined
@@ -110,9 +100,7 @@ type TokenPriceParams = {
 export function TokenPrice(param: TokenPriceParams) {
 	if ( param.tokenPriceEstimate === undefined ) return <></>
 	const value = getTokenAmountsWorth(param.amount, param.tokenPriceEstimate)
-	const positiveColor = param.textColor ? param.textColor : 'var(--text-color)'
-	const negativeColor = param.negativeColor ? param.negativeColor : positiveColor
-	const color = param.amount >= 0 ? positiveColor : negativeColor
+	const color = param.textColor ? param.textColor : 'var(--text-color)'
 	return <>
 		<p style = { `color: ${ color }` }>&nbsp;(</p>
 		<Ether
@@ -134,6 +122,7 @@ type TokenSymbolParams = {
 export function TokenSymbol(param: TokenSymbolParams) {
 	const tokenData = getTokenData(param.token, param.addressMetadata)
 	const tokenString = ethers.utils.getAddress(addressString(param.token))
+	const color = param.textColor ? param.textColor : 'var(--text-color)'
 	return <>
 		<div style = 'overflow: initial; height: 28px;'>
 			<CopyToClipboard content = { tokenString } copyMessage = 'Token address copied!' >
@@ -151,11 +140,11 @@ export function TokenSymbol(param: TokenSymbolParams) {
 		</div>
 		<CopyToClipboard content = { tokenString } copyMessage = 'Token address copied!' >
 			{ param.useFullTokenName ?
-				<p class = 'noselect nopointer' style = { `color: ${ param.textColor ? param.textColor : 'var(--text-color)' }; display: inline-block; overflow: hidden; text-overflow: ellipsis;` }>
+				<p class = 'noselect nopointer' style = { `color: ${ color }; display: inline-block; overflow: hidden; text-overflow: ellipsis;` }>
 					{ `${ tokenData.name }` }
 				</p>
 			:
-				<p class = 'noselect nopointer' style = { `color: ${ param.textColor ? param.textColor : 'var(--text-color)' }; display: inline-block; overflow: hidden; text-overflow: ellipsis;` }>
+				<p class = 'noselect nopointer' style = { `color: ${ color }; display: inline-block; overflow: hidden; text-overflow: ellipsis;` }>
 					{ `${ tokenData.symbol }` }
 				</p>
 			}
@@ -167,14 +156,11 @@ type TokenAmountParams = {
 	amount: bigint
 	showSign?: boolean
 	textColor?: string
-	negativeColor?: string
 	addressMetadata: AddressMetadata | undefined
 }
 
 export function TokenAmount(param: TokenAmountParams) {
-	const positiveColor = param.textColor ? param.textColor : 'var(--text-color)'
-	const negativeColor = param.negativeColor ? param.negativeColor : positiveColor
-	const color = param.amount >= 0 ? positiveColor : negativeColor
+	const color = param.textColor ? param.textColor : 'var(--text-color)'
 	const decimals = param.addressMetadata && 'decimals' in param.addressMetadata ? param.addressMetadata.decimals : undefined
 	const sign = param.showSign ? (param.amount >= 0 ? ' + ' : ' - '): ''
 
@@ -196,22 +182,17 @@ type TokenParams = {
 	token: bigint
 	showSign?: boolean
 	textColor?: string
-	negativeColor?: string
 	addressMetadata: AddressMetadata | undefined
 	useFullTokenName: boolean
 }
 
 export function Token(param: TokenParams) {
-	const positiveColor = param.textColor ? param.textColor : 'var(--text-color)'
-	const negativeColor = param.negativeColor ? param.negativeColor : positiveColor
-	const color = param.amount >= 0 ? positiveColor : negativeColor
 	return <table class = 'log-table-2' style = 'width: fit-content'>
 		<div class = 'log-cell' style = 'justify-content: right;'>
 			<TokenAmount
 				amount = { param.amount }
 				showSign = { param.showSign }
 				textColor = { param.textColor }
-				negativeColor = { param.negativeColor }
 				addressMetadata = { param.addressMetadata }
 			/>
 		</div>
@@ -219,7 +200,7 @@ export function Token(param: TokenParams) {
 			<TokenSymbol
 				token = { param.token }
 				addressMetadata = { param.addressMetadata }
-				textColor = { color }
+				textColor = { param.textColor }
 				useFullTokenName = { param.useFullTokenName }
 			/>
 		</div>
@@ -312,15 +293,14 @@ export function TokenText(param: TokenTextParams) {
 type Token721AmountFieldParams = {
 	visResult: TokenVisualizerResult,
 	textColor: string,
-	negativeColor: string
 }
 
 export function Token721AmountField(param: Token721AmountFieldParams ) {
 	if (param.visResult.is721 !== true) throw `needs to be erc721`
-	const color = param.visResult.isApproval ? param.negativeColor : param.textColor
+	const color = param.textColor ? param.textColor : 'var(--text-color)'
 	if (!param.visResult.isApproval || !('isAllApproval' in param.visResult)) {
 		return <p style = { `color: ${ color }` }>{ `NFT #${ truncate(param.visResult.tokenId.toString(), 9) }` }</p>
 	}
-	if (!param.visResult.allApprovalAdded) return <p style = { `color: ${ param.textColor }` }><b>NONE</b></p>
+	if (!param.visResult.allApprovalAdded) return <p style = { `color: ${ color }` }><b>NONE</b></p>
 	return <p style = { `color: ${ color }` }><b>ALL</b></p>
 }

@@ -89,14 +89,12 @@ function EtherTransferEvent(param: { valueSent: bigint, totalReceived: bigint, t
 							<EtherAmount
 								amount = { param.valueSent }
 								textColor = { param.textColor }
-								negativeColor = { param.textColor }
 							/>
 						</div>
 						<div class = 'log-cell'>
 							<EtherSymbol
 								amount = { param.valueSent }
 								textColor = { param.textColor }
-								negativeColor = { param.textColor }
 								chain = { param.chain }
 							/>
 						</div>
@@ -115,14 +113,12 @@ function EtherTransferEvent(param: { valueSent: bigint, totalReceived: bigint, t
 							<EtherAmount
 								amount = { param.totalReceived }
 								textColor = { param.textColor }
-								negativeColor = { param.textColor }
 							/>
 						</div>
 						<div class = 'log-cell'>
 							<EtherSymbol
 								amount = { param.totalReceived }
 								textColor = { param.textColor }
-								negativeColor = { param.textColor }
 								chain = { param.chain }
 							/>
 						</div>
@@ -158,7 +154,6 @@ function SendOrReceiveTokensImportanceBox(param: { sending: boolean, tokenVisual
 									showSign = { false }
 									addressMetadata = { param.addressMetadata.get(addressString(tokenEvent.tokenAddress)) }
 									textColor = { param.textColor }
-									negativeColor = { param.textColor }
 									useFullTokenName = { false }
 								/>
 							}
@@ -190,7 +185,6 @@ function SendOrReceiveTokensImportanceBox(param: { sending: boolean, tokenVisual
 									showSign = { false }
 									addressMetadata = { param.addressMetadata.get(addressString(tokenEvent.tokenAddress)) }
 									textColor = { param.textColor }
-									negativeColor = { param.textColor }
 									useFullTokenName = { false }
 								/>
 							}
@@ -358,14 +352,12 @@ function normalTransaction(param: TransactionVisualizationParameters) {
 							<EtherAmount
 								amount = { param.tx.multicallResponse.gasSpent * param.tx.realizedGasPrice  }
 								textColor = { 'var(--subtitle-text-color)' }
-								negativeColor = { 'var(--subtitle-text-color)' }
 							/>
 						</div>
 						<div class = 'log-cell'>
 							<EtherSymbol
 								amount = { param.tx.multicallResponse.gasSpent * param.tx.realizedGasPrice  }
 								textColor = { 'var(--subtitle-text-color)' }
-								negativeColor = { 'var(--subtitle-text-color)' }
 								chain = { param.simulationAndVisualisationResults.chain }
 							/>
 						</div>
@@ -449,7 +441,6 @@ export function TokenLogEvent(params: TokenLogEventParams ) {
 					<Token721AmountField
 						visResult = { params.tokenVisualizerResult }
 						textColor = { textColor }
-						negativeColor = { textColor }
 					/>
 				: <> { params.tokenVisualizerResult.amount > 2n ** 100n && params.tokenVisualizerResult.isApproval ?
 						<p class = 'ellipsis' style = { `color: ${ textColor }` }><b>ALL</b></p>

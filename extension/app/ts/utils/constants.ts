@@ -193,4 +193,3 @@ export const CHAIN_NAMES = new Map<string, string>( [
 ] )
 
 export function getChainName(chainId: bigint) { return CHAIN_NAMES.get(chainId.toString()) || `Chain: ${chainId.toString()}` }
-
