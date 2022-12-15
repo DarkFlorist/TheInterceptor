@@ -1,7 +1,7 @@
 import { addressString } from '../../utils/bigint.js'
 import { AddressMetadata, SimulatedAndVisualizedTransaction, SimulationAndVisualisationResults, TokenVisualizerResult, TransactionVisualizationParameters } from '../../utils/visualizer-types.js'
 import { FromAddressToAddress, SmallAddress } from '../subcomponents/address.js'
-import { EtherSymbol, Token, ERC721Token, TokenSymbol, TokenAmount, EtherAmount, Token721AmountField } from '../subcomponents/coins.js'
+import { EtherSymbol, TokenSymbol, TokenAmount, EtherAmount, Token721AmountField, ERC721TokenNumber } from '../subcomponents/coins.js'
 import { CHAIN, LogAnalysisParams } from '../../utils/user-interface-types.js'
 import { QUARANTINE_CODES_DICT } from '../../simulation/protectors/quarantine-codes.js'
 import { Error } from '../subcomponents/Error.js'
@@ -90,10 +90,10 @@ function EtherTransferEvent(param: EtherTransferEventParams) {
 	return <>
 		{ param.valueSent === 0n ? <></> :
 			<div class = 'vertical-center'>
-				<div class = 'box token-box negative-box vertical-center' style = 'display: inline-block'>
+				<div class = { `box token-box negative-box vertical-center` } style = 'display: inline-block'>
 					<table class = 'log-table'>
 						<div class = 'log-cell'>
-							<p class = 'ellipsis' style = {`color: ${ param.textColor }; margin-bottom: 0px`}> Send </p>
+							<p class = 'ellipsis' style = {`color: ${ param.textColor }; margin-bottom: 0px`}> Send&nbsp; </p>
 						</div>
 						<div class = 'log-cell' style = 'justify-content: right;'>
 							<EtherAmount
@@ -117,7 +117,7 @@ function EtherTransferEvent(param: EtherTransferEventParams) {
 				<div class = 'box token-box positive-box vertical-center' style = 'display: inline-block'>
 					<table class = 'log-table'>
 						<div class = 'log-cell'>
-							<p class = 'ellipsis' style = {`color: ${ param.textColor }; margin-bottom: 0px`}> Receive </p>
+							<p class = 'ellipsis' style = {`color: ${ param.textColor }; margin-bottom: 0px`}> Receive&nbsp; </p>
 						</div>
 						<div class = 'log-cell' style = 'justify-content: right;'>
 							<EtherAmount
@@ -151,72 +151,53 @@ function SendOrReceiveTokensImportanceBox(param: SendOrReceiveTokensImportanceBo
 	return <>
 		{ param.tokenVisualizerResults.map( (tokenEvent) => (
 			tokenEvent.isApproval ? <></> : <div class = 'vertical-center'>
-				{ param.sending ?
-					<div class = 'box token-box negative-box vertical-center' style = 'display: inline-block'>
-						<p style = { `color: ${ param.textColor }; margin-bottom: 0px; display: inline-block` }>
-							Send
+				<div class = { `box token-box ${ param.sending ? 'negative-box' : 'positive-box' } vertical-center` } style = 'display: inline-block'>
+					<table class = 'log-table'>
+						<div class = 'log-cell'>
+							<p class = 'ellipsis' style = { `color: ${ param.textColor }; margin-bottom: 0px; display: inline-block` }>
+								{ param.sending ? 'Send' : 'Receive' }&nbsp;
+							</p>
+						</div>
+						<div class = 'log-cell'>
 							{ tokenEvent.is721 ?
-								<ERC721Token
+								<ERC721TokenNumber
 									tokenId = { tokenEvent.tokenId }
-									token = { tokenEvent.tokenAddress }
-									addressMetadata = { param.addressMetadata.get(addressString(tokenEvent.tokenAddress)) }
+									received = { !param.sending }
 									textColor = { param.textColor }
-									useFullTokenName = { false }
-									received = { false }
 									showSign = { false }
-								/> :
-								<Token
+								/>
+							:
+								<TokenAmount
 									amount = { tokenEvent.amount }
-									token = { tokenEvent.tokenAddress }
-									showSign = { false }
 									addressMetadata = { param.addressMetadata.get(addressString(tokenEvent.tokenAddress)) }
 									textColor = { param.textColor }
-									useFullTokenName = { false }
 								/>
 							}
-							to&nbsp;
+						</div>
+						<div class = 'log-cell'>
+							<TokenSymbol
+								token = { tokenEvent.tokenAddress }
+								addressMetadata = { param.addressMetadata.get(addressString(tokenEvent.tokenAddress)) }
+								textColor = { param.textColor }
+								useFullTokenName = { false }
+							/>&nbsp;
+						</div>
+						<div class = 'log-cell'>
+							<p class = 'ellipsis' style = { `color: ${ param.textColor }; margin-bottom: 0px; display: inline-block` }>
+								&nbsp;{ param.sending ? 'to' : 'from' }&nbsp;
+							</p>
+						</div>
+						<div class = 'log-cell'>
 							<SmallAddress
 								address = { tokenEvent.to }
 								addressMetaData = { param.addressMetadata.get(addressString(tokenEvent.to)) }
 								textColor = { param.textColor }
 							/>
-						</p>
-					</div>
-					:
-					<div class = 'box token-box positive-box vertical-center' style = 'display: inline-block'>
-						<p style = {`color: ${ param.textColor }; margin-bottom: 0px; display: inline-block`}>
-							Receive
-							{ tokenEvent.is721 ?
-								<ERC721Token
-									tokenId = { tokenEvent.tokenId }
-									token = { tokenEvent.tokenAddress }
-									addressMetadata = { param.addressMetadata.get(addressString(tokenEvent.tokenAddress)) }
-									textColor = { param.textColor }
-									useFullTokenName = { false }
-									received = { true }
-									showSign = { false }
-								/> :
-								<Token
-									amount = { tokenEvent.amount }
-									token = { tokenEvent.tokenAddress }
-									showSign = { false }
-									addressMetadata = { param.addressMetadata.get(addressString(tokenEvent.tokenAddress)) }
-									textColor = { param.textColor }
-									useFullTokenName = { false }
-								/>
-							}
-							from&nbsp;
-							<SmallAddress
-								address = { tokenEvent.tokenAddress }
-								addressMetaData = { param.addressMetadata.get(addressString(tokenEvent.tokenAddress)) }
-								textColor = { param.textColor }
-							/>
-						</p>
-					</div>
-				}
+						</div>
+					</table>
 				</div>
-			))
-		}
+			</div>
+		) ) }
 	</>
 }
 
