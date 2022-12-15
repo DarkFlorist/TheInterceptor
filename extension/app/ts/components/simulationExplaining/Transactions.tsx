@@ -13,29 +13,32 @@ import { JSXInternal } from 'preact/src/jsx'
 import { ApproveIcon, ArrowIcon } from '../subcomponents/icons.js'
 
 function isPositiveEvent(visResult: TokenVisualizerResult, ourAddressInReferenceFrame: bigint) {
-	if(!visResult.is721) {
-		if(!visResult.isApproval) {
-			return visResult.amount >= 0 //transfer
+	if (!visResult.is721) {
+		if (!visResult.isApproval) {
+			return visResult.amount >= 0 // simple transfer
 		}
-		return visResult.amount === 0n //approve (zero is only positive case)
+		return visResult.amount === 0n // zero is only positive approve event
 	}
 
-	if ('isAllApproval' in visResult) {
+	// nfts
+	if ('isAllApproval' in visResult) { // all approval is only positive if someone all approves us, or all approval is removed from us
 		return (visResult.allApprovalAdded && visResult.to === ourAddressInReferenceFrame) || (!visResult.allApprovalAdded && visResult.from === ourAddressInReferenceFrame)
 	}
+
 	if (visResult.isApproval) {
-		return visResult.to === ourAddressInReferenceFrame
+		return visResult.to === ourAddressInReferenceFrame // approval is only positive if we are getting approved
 	}
-	return visResult.from !== ourAddressInReferenceFrame
+
+	return visResult.to === ourAddressInReferenceFrame // send is positive if we are receiving
 }
 
-function TransactionAggregate(
-	param: {
-		txs: SimulatedAndVisualizedTransaction[],
-		simulationAndVisualisationResults: SimulationAndVisualisationResults,
-		activeAddress: bigint,
-	}
-) {
+type TransactionAggregateParam = {
+	txs: SimulatedAndVisualizedTransaction[],
+	simulationAndVisualisationResults: SimulationAndVisualisationResults,
+	activeAddress: bigint,
+}
+
+function TransactionAggregate(param: TransactionAggregateParam) {
 	return ( <> {
 		param.txs.map((tx, _index) => (
 			<li>
@@ -76,14 +79,21 @@ function areThereImportantEventsToHighlight(tx: SimulatedAndVisualizedTransactio
 	return tx.simResults.visualizerResults.tokenResults.filter( (x) => x.from === msgSender || x.to === msgSender ).length > 0
 }
 
-function EtherTransferEvent(param: { valueSent: bigint, totalReceived: bigint, textColor: string, chain: CHAIN } ) {
+type EtherTransferEventParams = {
+	valueSent: bigint,
+	totalReceived: bigint,
+	textColor: string,
+	chain: CHAIN,
+}
+
+function EtherTransferEvent(param: EtherTransferEventParams) {
 	return <>
 		{ param.valueSent === 0n ? <></> :
 			<div class = 'vertical-center'>
 				<div class = 'box token-box negative-box vertical-center' style = 'display: inline-block'>
 					<table class = 'log-table'>
 						<div class = 'log-cell'>
-							<p style = {`color: ${ param.textColor }; margin-bottom: 0px`}> Send </p>
+							<p class = 'ellipsis' style = {`color: ${ param.textColor }; margin-bottom: 0px`}> Send </p>
 						</div>
 						<div class = 'log-cell' style = 'justify-content: right;'>
 							<EtherAmount
@@ -107,7 +117,7 @@ function EtherTransferEvent(param: { valueSent: bigint, totalReceived: bigint, t
 				<div class = 'box token-box positive-box vertical-center' style = 'display: inline-block'>
 					<table class = 'log-table'>
 						<div class = 'log-cell'>
-							<p style = {`color: ${ param.textColor }; margin-bottom: 0px`}> Receive </p>
+							<p class = 'ellipsis' style = {`color: ${ param.textColor }; margin-bottom: 0px`}> Receive </p>
 						</div>
 						<div class = 'log-cell' style = 'justify-content: right;'>
 							<EtherAmount
@@ -129,7 +139,14 @@ function EtherTransferEvent(param: { valueSent: bigint, totalReceived: bigint, t
 	</>
 }
 
-function SendOrReceiveTokensImportanceBox(param: { sending: boolean, tokenVisualizerResults: TokenVisualizerResult[] | undefined, addressMetadata: Map<string, AddressMetadata>, textColor: string } ) {
+type SendOrReceiveTokensImportanceBoxParams = {
+	sending: boolean,
+	tokenVisualizerResults: TokenVisualizerResult[] | undefined,
+	addressMetadata: Map<string, AddressMetadata>,
+	textColor: string,
+}
+
+function SendOrReceiveTokensImportanceBox(param: SendOrReceiveTokensImportanceBoxParams ) {
 	if (param.tokenVisualizerResults === undefined) return <></>
 	return <>
 		{ param.tokenVisualizerResults.map( (tokenEvent) => (
@@ -203,8 +220,13 @@ function SendOrReceiveTokensImportanceBox(param: { sending: boolean, tokenVisual
 	</>
 }
 
+type TransactionImportanceBlockParams = {
+	tx: SimulatedAndVisualizedTransaction,
+	simulationAndVisualisationResults: SimulationAndVisualisationResults,
+}
+
 // showcases the most important things the transaction does
-function TransactionImportanceBlock( param: { tx: SimulatedAndVisualizedTransaction, simulationAndVisualisationResults: SimulationAndVisualisationResults } ) {
+function TransactionImportanceBlock( param: TransactionImportanceBlockParams ) {
 	if ( param.tx.multicallResponse.statusCode === 'failure') return <></>
 	const identifiedSwap = identifySwap(param.tx)
 	const textColor =  'var(--text-color)'
@@ -346,7 +368,7 @@ function normalTransaction(param: TransactionVisualizationParameters) {
 				{ param.tx.realizedGasPrice > 0n ?
 					<table class = 'log-table' style = 'width: fit-content; margin: 0 0 0 auto;'>
 						<div class = 'log-cell'>
-							<p style = {`color: var(--subtitle-text-color); margin-bottom: 0px`}> Gas fee:&nbsp;</p>
+							<p class = 'ellipsis' style = {`color: var(--subtitle-text-color); margin-bottom: 0px`}> Gas fee:&nbsp;</p>
 						</div>
 						<div class = 'log-cell' style = 'justify-content: right;'>
 							<EtherAmount
@@ -382,14 +404,14 @@ function Transaction(param: TransactionVisualizationParameters) {
 	return handler(param)
 }
 
-export function Transactions(
-	param: {
-		simulationAndVisualisationResults: SimulationAndVisualisationResults,
-		removeTransaction: (hash: bigint) => void,
-		showOnlyOneAndAggregateRest?: boolean,
-		activeAddress: bigint,
-	}
-) {
+type TransactionsParams = {
+	simulationAndVisualisationResults: SimulationAndVisualisationResults,
+	removeTransaction: (hash: bigint) => void,
+	showOnlyOneAndAggregateRest?: boolean,
+	activeAddress: bigint,
+}
+
+export function Transactions(param: TransactionsParams) {
 	if(param.showOnlyOneAndAggregateRest) {
 		if (param.simulationAndVisualisationResults.simulatedAndVisualizedTransactions.length === 0) return <></>
 		return (
@@ -426,7 +448,7 @@ export function Transactions(
 	</ul>
 }
 
-export type TokenLogEventParams = {
+type TokenLogEventParams = {
 	tokenVisualizerResult: TokenVisualizerResult
 	addressMetadata: Map<string, AddressMetadata>
 	ourAddressInReferenceFrame: bigint,
@@ -469,15 +491,7 @@ export function TokenLogEvent(params: TokenLogEventParams ) {
 				/>
 			</div>
 			<div class = 'log-cell'>
-				{ params.tokenVisualizerResult.isApproval ?
-					<> { params.tokenVisualizerResult.is721 ?
-							<ApproveIcon color = { textColor } />
-						:
-							<ApproveIcon color = { textColor } />
-					} </>
-				:
-					<ArrowIcon color = { textColor }/>
-				}
+				{ params.tokenVisualizerResult.isApproval ? <ApproveIcon color = { textColor } /> : <ArrowIcon color = { textColor } /> }
 			</div>
 			<div class = 'log-cell'>
 				<SmallAddress

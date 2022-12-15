@@ -164,17 +164,14 @@ export function TokenAmount(param: TokenAmountParams) {
 	const decimals = param.addressMetadata && 'decimals' in param.addressMetadata ? param.addressMetadata.decimals : undefined
 	const sign = param.showSign ? (param.amount >= 0 ? ' + ' : ' - '): ''
 
-	if(decimals === undefined) {
-		return <>
-			<p class = 'noselect nopointer' style = { `overflow: hidden; text-overflow: ellipsis; display: inline-block; color: ${ color };` }> &nbsp;Unknown Amount&nbsp; </p>
-		</>
+	if (decimals === undefined) {
+		return <p class = 'noselect nopointer ellipsis' style = { `display: inline-block; color: ${ color };` }> &nbsp;Unknown Amount&nbsp; </p>
 	}
 	return <>
 		<CopyToClipboard content = { bigintToDecimalString(abs(param.amount), decimals) } copyMessage = 'Token amount copied!' >
-			<p class = 'noselect nopointer' style = { `overflow: hidden; text-overflow: ellipsis; display: inline-block; color: ${ color };` }>{ `${ sign }${ bigintToRoundedPrettyDecimalString(abs(param.amount), decimals ) }` }&nbsp; </p>
+			<p class = 'noselect nopointer' style = { `display: inline-block; color: ${ color };` }>{ `${ sign }${ bigintToRoundedPrettyDecimalString(abs(param.amount), decimals ) }` }&nbsp; </p>
 		</CopyToClipboard>
 	</>
-
 }
 
 type TokenParams = {

@@ -98,7 +98,7 @@ export function Erc20ApprovalChange(param: Erc20ApprovalChangeParams) {
 				/>
 			</div>
 			<div class = 'log-cell'>
-				<p style = {`color: ${ textColor };` }> &nbsp;to spend&nbsp; </p>
+				<p class = 'ellipsis' style = {`color: ${ textColor };` }> &nbsp;to spend&nbsp; </p>
 			</div>
 			<div class = 'log-cell' style = 'justify-content: right;'>
 				{ param.change > 2n ** 100n ?
@@ -136,15 +136,15 @@ export function Erc20ApprovalChanges(param: Erc20ApprovalChangesParams ) {
 	return <>
 		{ Array.from(param.tokenApprovalChanges).map( ([tokenAddress, approvals]) => (
 			Array.from(approvals).map( ([addressToApprove, change]) => (
-				<Erc20ApprovalChange
-					addressToApprove = { addressToApprove }
-					change = { change }
-					tokenAddress = { tokenAddress }
-					addressMetadata = { param.addressMetadata }
-					textColor = { param.textColor }
-					negativeColor = { param.negativeColor }
-					isImportant = { param.isImportant }
-				/>
+				<Erc20ApprovalChange { ... {
+					addressToApprove,
+					change,
+					tokenAddress,
+					addressMetadata: param.addressMetadata,
+					textColor: param.textColor,
+					negativeColor: param.negativeColor,
+					isImportant: param.isImportant
+				} } />
 			))
 		)) }
 	</>
@@ -296,7 +296,7 @@ export function ERC721TokenIdApprovalChanges(param: ERC721TokenIdApprovalChanges
 type SummarizeAddressParams = {
 	address: string,
 	balanceSummary: BalanceChangeSummary,
-	simulationAndVisualisationResults: SimulationAndVisualisationResults
+	simulationAndVisualisationResults: SimulationAndVisualisationResults,
 }
 
 export function SummarizeAddress(param: SummarizeAddressParams) {
