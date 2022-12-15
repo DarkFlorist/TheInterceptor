@@ -7,37 +7,7 @@ import { AddressMetadata, TokenPriceEstimate, TokenVisualizerResult } from '../.
 import { CopyToClipboard } from './CopyToClipboard.js'
 import Blockie from './PreactBlocky.js'
 
-export type EtherParams = {
-	amount: bigint
-	showSign?: boolean
-	textColor?: string
-	negativeColor?: string
-	useFullTokenName?: boolean
-	chain: CHAIN
-}
-
-export type TokenParams = {
-	amount: bigint
-	token: bigint
-	showSign?: boolean
-	textColor?: string
-	negativeColor?: string
-	addressMetadata: AddressMetadata | undefined
-	useFullTokenName: boolean
-}
-
-export type ERC72TokenParams = {
-	tokenId: bigint
-	token: bigint
-	received: boolean
-	textColor?: string
-	sentTextColor?: string
-	addressMetadata: AddressMetadata | undefined
-	useFullTokenName: boolean
-	showSign?: boolean
-}
-
-export type TokenData = {
+type TokenData = {
 	decimals: bigint | undefined
 	name: string
 	symbol: string
@@ -61,6 +31,15 @@ export function getTokenData(token: bigint, metadata: AddressMetadata | undefine
 	}
 }
 
+type EtherParams = {
+	amount: bigint
+	showSign?: boolean
+	textColor?: string
+	negativeColor?: string
+	useFullTokenName?: boolean
+	chain: CHAIN
+}
+
 export function Ether(param: EtherParams) {
 	return <table class = 'log-table-2' style = 'width: fit-content'>
 		<div class = 'log-cell' style = 'justify-content: right;'>
@@ -69,8 +48,6 @@ export function Ether(param: EtherParams) {
 				textColor = { param.textColor }
 				negativeColor = { param.negativeColor }
 				showSign = { param.showSign }
-				useFullTokenName = { param.useFullTokenName }
-				chain = { param.chain }
 			/>
 		</div>
 		<div class = 'log-cell'>
@@ -78,15 +55,20 @@ export function Ether(param: EtherParams) {
 				amount = { param.amount }
 				textColor = { param.textColor }
 				negativeColor = { param.negativeColor }
-				showSign = { param.showSign }
 				useFullTokenName = { param.useFullTokenName }
 				chain = { param.chain }
 			/>
 		</div>
 	</table>
 }
+type EtherAmountParams = {
+	amount: bigint
+	showSign?: boolean
+	textColor?: string
+	negativeColor?: string
+}
 
-export function EtherAmount(param: EtherParams) {
+export function EtherAmount(param: EtherAmountParams) {
 	const positiveColor = param.textColor ? param.textColor : 'var(--text-color)'
 	const negativeColor = param.negativeColor ? param.negativeColor : positiveColor
 	const color = param.amount >= 0 ? positiveColor : negativeColor
@@ -99,8 +81,15 @@ export function EtherAmount(param: EtherParams) {
 	</>
 }
 
+type EtherSymbolParams = {
+	amount: bigint
+	textColor?: string
+	negativeColor?: string
+	useFullTokenName?: boolean
+	chain: CHAIN
+}
 
-export function EtherSymbol(param: EtherParams) {
+export function EtherSymbol(param: EtherSymbolParams) {
 	const positiveColor = param.textColor ? param.textColor : 'var(--text-color)'
 	const negativeColor = param.negativeColor ? param.negativeColor : positiveColor
 	const color = param.amount >= 0 ? positiveColor : negativeColor
@@ -110,15 +99,15 @@ export function EtherSymbol(param: EtherParams) {
 	</>
 }
 
-export function TokenPrice(
-	param: {
-		textColor?: string,
-		negativeColor?: string,
-		amount: bigint,
-		chain: CHAIN,
-		tokenPriceEstimate: TokenPriceEstimate | undefined
-	}
-) {
+type TokenPriceParams = {
+	textColor?: string,
+	negativeColor?: string,
+	amount: bigint,
+	chain: CHAIN,
+	tokenPriceEstimate: TokenPriceEstimate | undefined
+}
+
+export function TokenPrice(param: TokenPriceParams) {
 	if ( param.tokenPriceEstimate === undefined ) return <></>
 	const value = getTokenAmountsWorth(param.amount, param.tokenPriceEstimate)
 	const positiveColor = param.textColor ? param.textColor : 'var(--text-color)'
@@ -135,7 +124,14 @@ export function TokenPrice(
 	</>
 }
 
-export function TokenSymbol(param: { token: bigint, textColor?: string, addressMetadata: AddressMetadata | undefined, useFullTokenName: boolean | undefined }) {
+type TokenSymbolParams = {
+	token: bigint,
+	textColor?: string,
+	addressMetadata: AddressMetadata | undefined,
+	useFullTokenName: boolean | undefined
+}
+
+export function TokenSymbol(param: TokenSymbolParams) {
 	const tokenData = getTokenData(param.token, param.addressMetadata)
 	const tokenString = ethers.utils.getAddress(addressString(param.token))
 	return <>
@@ -167,7 +163,15 @@ export function TokenSymbol(param: { token: bigint, textColor?: string, addressM
 	</>
 }
 
-export function TokenAmount(param: TokenParams) {
+type TokenAmountParams = {
+	amount: bigint
+	showSign?: boolean
+	textColor?: string
+	negativeColor?: string
+	addressMetadata: AddressMetadata | undefined
+}
+
+export function TokenAmount(param: TokenAmountParams) {
 	const positiveColor = param.textColor ? param.textColor : 'var(--text-color)'
 	const negativeColor = param.negativeColor ? param.negativeColor : positiveColor
 	const color = param.amount >= 0 ? positiveColor : negativeColor
@@ -187,13 +191,29 @@ export function TokenAmount(param: TokenParams) {
 
 }
 
+type TokenParams = {
+	amount: bigint
+	token: bigint
+	showSign?: boolean
+	textColor?: string
+	negativeColor?: string
+	addressMetadata: AddressMetadata | undefined
+	useFullTokenName: boolean
+}
+
 export function Token(param: TokenParams) {
 	const positiveColor = param.textColor ? param.textColor : 'var(--text-color)'
 	const negativeColor = param.negativeColor ? param.negativeColor : positiveColor
 	const color = param.amount >= 0 ? positiveColor : negativeColor
 	return <table class = 'log-table-2' style = 'width: fit-content'>
 		<div class = 'log-cell' style = 'justify-content: right;'>
-			<TokenAmount { ...param }/>
+			<TokenAmount
+				amount = { param.amount }
+				showSign = { param.showSign }
+				textColor = { param.textColor }
+				negativeColor = { param.negativeColor }
+				addressMetadata = { param.addressMetadata }
+			/>
 		</div>
 		<div class = 'log-cell'>
 			<TokenSymbol
@@ -209,7 +229,15 @@ export function Token(param: TokenParams) {
 function truncate(str: string, n: number){
 	return (str.length > n) ? `${str.slice(0, n-1)}…` : str;
 }
-export function ERC721TokenNumber(param: ERC72TokenParams) {
+
+type ERC721TokenNumberParams = {
+	tokenId: bigint
+	received: boolean
+	textColor?: string
+	showSign?: boolean
+}
+
+export function ERC721TokenNumber(param: ERC721TokenNumberParams) {
 	const sign = param.showSign ? (param.received ? ' + ' : ' - ') : ''
 
 	return <CopyToClipboard content = { param.tokenId.toString() } copyMessage = 'Token ID copied!' >
@@ -219,10 +247,25 @@ export function ERC721TokenNumber(param: ERC72TokenParams) {
 	</CopyToClipboard>
 }
 
+type ERC72TokenParams = {
+	tokenId: bigint
+	token: bigint
+	received: boolean
+	textColor?: string
+	addressMetadata: AddressMetadata | undefined
+	useFullTokenName: boolean
+	showSign?: boolean
+}
+
 export function ERC721Token(param: ERC72TokenParams) {
 	return <table class = 'log-table-2'>
 		<div class = 'log-cell' style = 'justify-content: right;'>
-			<ERC721TokenNumber { ...param } />
+			<ERC721TokenNumber
+				tokenId = { param.tokenId }
+				received = { param.received }
+				textColor = { param.textColor }
+				showSign = { param.showSign }
+			/>
 		</div>
 		<div class = 'log-cell'>
 			<TokenSymbol
@@ -235,7 +278,17 @@ export function ERC721Token(param: ERC72TokenParams) {
 	</table>
 }
 
-export function TokenText(param: { useFullTokenName: boolean, isApproval: boolean, amount: bigint, tokenAddress: bigint, addressMetadata: AddressMetadata | undefined, textColor: string, negativeColor: string }) {
+type TokenTextParams = {
+	useFullTokenName: boolean,
+	isApproval: boolean,
+	amount: bigint,
+	tokenAddress: bigint,
+	addressMetadata: AddressMetadata | undefined,
+	textColor: string,
+	negativeColor: string
+}
+
+export function TokenText(param: TokenTextParams) {
 	if (param.isApproval && param.amount > 2n ** 100n) {
 		return <>
 			<p style = { `display: inline-block; color: ${ param.negativeColor };` } > <b>ALL</b> </p>
@@ -255,7 +308,14 @@ export function TokenText(param: { useFullTokenName: boolean, isApproval: boolea
 		useFullTokenName = { param.useFullTokenName }
 	/>
 }
-export function Token721AmountField(param: { useFullTokenName: boolean, visResult: TokenVisualizerResult, addressMetadata: AddressMetadata | undefined, textColor: string, negativeColor: string } ) {
+
+type Token721AmountFieldParams = {
+	visResult: TokenVisualizerResult,
+	textColor: string,
+	negativeColor: string
+}
+
+export function Token721AmountField(param: Token721AmountFieldParams ) {
 	if (param.visResult.is721 !== true) throw `needs to be erc721`
 	const color = param.visResult.isApproval ? param.negativeColor : param.textColor
 	if (!param.visResult.isApproval || !('isAllApproval' in param.visResult)) {

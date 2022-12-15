@@ -479,5 +479,5 @@ svg.spinner > circle {
 }
 .ellipsis {
 	text-overflow: ellipsis;
-    overflow: hidden;
+	overflow: hidden;
 }

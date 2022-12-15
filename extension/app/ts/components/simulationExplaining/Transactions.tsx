@@ -90,13 +90,11 @@ function EtherTransferEvent(param: { valueSent: bigint, totalReceived: bigint, t
 								amount = { param.valueSent }
 								textColor = { param.textColor }
 								negativeColor = { param.textColor }
-								chain = { param.chain }
 							/>
 						</div>
 						<div class = 'log-cell'>
 							<EtherSymbol
 								amount = { param.valueSent }
-								showSign = { false }
 								textColor = { param.textColor }
 								negativeColor = { param.textColor }
 								chain = { param.chain }
@@ -118,13 +116,11 @@ function EtherTransferEvent(param: { valueSent: bigint, totalReceived: bigint, t
 								amount = { param.totalReceived }
 								textColor = { param.textColor }
 								negativeColor = { param.textColor }
-								chain = { param.chain }
 							/>
 						</div>
 						<div class = 'log-cell'>
 							<EtherSymbol
 								amount = { param.totalReceived }
-								showSign = { false }
 								textColor = { param.textColor }
 								negativeColor = { param.textColor }
 								chain = { param.chain }
@@ -363,13 +359,11 @@ function normalTransaction(param: TransactionVisualizationParameters) {
 								amount = { param.tx.multicallResponse.gasSpent * param.tx.realizedGasPrice  }
 								textColor = { 'var(--subtitle-text-color)' }
 								negativeColor = { 'var(--subtitle-text-color)' }
-								chain = { param.simulationAndVisualisationResults.chain }
 							/>
 						</div>
 						<div class = 'log-cell'>
 							<EtherSymbol
 								amount = { param.tx.multicallResponse.gasSpent * param.tx.realizedGasPrice  }
-								showSign = { false }
 								textColor = { 'var(--subtitle-text-color)' }
 								negativeColor = { 'var(--subtitle-text-color)' }
 								chain = { param.simulationAndVisualisationResults.chain }
@@ -454,20 +448,16 @@ export function TokenLogEvent(params: TokenLogEventParams ) {
 				{ params.tokenVisualizerResult.is721 ?
 					<Token721AmountField
 						visResult = { params.tokenVisualizerResult }
-						addressMetadata = { params.addressMetadata.get(addressString(params.tokenVisualizerResult.tokenAddress)) }
 						textColor = { textColor }
 						negativeColor = { textColor }
-						useFullTokenName = { false }
 					/>
 				: <> { params.tokenVisualizerResult.amount > 2n ** 100n && params.tokenVisualizerResult.isApproval ?
 						<p class = 'ellipsis' style = { `color: ${ textColor }` }><b>ALL</b></p>
 					:
 						<TokenAmount
 							amount = { params.tokenVisualizerResult.amount }
-							token = { params.tokenVisualizerResult.tokenAddress }
 							addressMetadata = { params.addressMetadata.get(addressString(params.tokenVisualizerResult.tokenAddress)) }
 							textColor = { textColor }
-							useFullTokenName = { false }
 						/>
 					} </>
 				}

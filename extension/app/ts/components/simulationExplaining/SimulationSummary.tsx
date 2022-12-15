@@ -7,46 +7,46 @@ import { Transactions } from './Transactions.js'
 import { CopyToClipboard } from '../subcomponents/CopyToClipboard.js'
 import { SomeTimeAgo } from '../subcomponents/SomeTimeAgo.js'
 
-function EtherChange(
-	param: {
-		textColor: string,
-		negativeColor: string,
-		isImportant: boolean,
-		etherResults: {
-			balanceBefore: bigint;
-			balanceAfter: bigint;
-		} | undefined,
-		chain: CHAIN
-	}
-) {
+type EtherChangeParams = {
+	textColor: string,
+	negativeColor: string,
+	isImportant: boolean,
+	etherResults: {
+		balanceBefore: bigint;
+		balanceAfter: bigint;
+	} | undefined,
+	chain: CHAIN,
+}
+
+function EtherChange(param: EtherChangeParams) {
 	if ( param.etherResults === undefined ) return <></>
 
 	const boxColor = param.etherResults.balanceAfter - param.etherResults.balanceBefore < 0n ? 'negative-box' : 'positive-box'
 	return <div class = 'vertical-center' style = 'display: flex'>
 		<div class = { param.isImportant ? `box token-box ${ boxColor }`: '' } style = 'display: flex'>
-				<Ether
-					amount = { param.etherResults.balanceAfter - param.etherResults.balanceBefore }
-					textColor = { param.textColor }
-					negativeColor = { param.negativeColor }
-					showSign = { true }
-					useFullTokenName = { true }
-					chain = { param.chain }
-				/>
+			<Ether
+				amount = { param.etherResults.balanceAfter - param.etherResults.balanceBefore }
+				textColor = { param.textColor }
+				negativeColor = { param.negativeColor }
+				showSign = { true }
+				useFullTokenName = { true }
+				chain = { param.chain }
+			/>
 		</div>
 	</div>
 }
 
-function Erc20BalanceChange(
-	param: {
-		addressMetadata: Map<string, AddressMetadata>,
-		tokenBalanceChanges: Map<string, bigint>,
-		textColor: string,
-		negativeColor: string,
-		isImportant: boolean,
-		tokenPriceEstimates: TokenPriceEstimate[],
-		chain: CHAIN,
-	}
-) {
+type Erc20BalanceChangeParams = {
+	addressMetadata: Map<string, AddressMetadata>,
+	tokenBalanceChanges: Map<string, bigint>,
+	textColor: string,
+	negativeColor: string,
+	isImportant: boolean,
+	tokenPriceEstimates: TokenPriceEstimate[],
+	chain: CHAIN,
+}
+
+function Erc20BalanceChange(param: Erc20BalanceChangeParams) {
 	if ( param.tokenBalanceChanges.size === 0 ) return <></>
 	return <>
 		{ Array.from(param.tokenBalanceChanges).map( ([tokenAddress, change]) => (
@@ -74,7 +74,7 @@ function Erc20BalanceChange(
 	</>
 }
 
-export type Erc20ApprovalChangeParams = {
+type Erc20ApprovalChangeParams = {
 	change: bigint,
 	addressToApprove: string,
 	tokenAddress: string,
@@ -109,10 +109,8 @@ export function Erc20ApprovalChange(param: Erc20ApprovalChangeParams) {
 					:
 					<TokenAmount
 						amount = { param.change }
-						token = { BigInt(param.tokenAddress) }
 						addressMetadata = { param.addressMetadata.get(param.tokenAddress)}
 						textColor = { textColor }
-						useFullTokenName = { false }
 					/>
 				}
 			</div>
@@ -126,9 +124,17 @@ export function Erc20ApprovalChange(param: Erc20ApprovalChangeParams) {
 			</div>
 		</table>
 	</div>
-
 }
-export function Erc20ApprovalChanges(param: { tokenApprovalChanges: Map<string, Map<string, bigint > >, addressMetadata: Map<string, AddressMetadata>, textColor: string, negativeColor: string, isImportant: boolean } ) {
+
+type Erc20ApprovalChangesParams = {
+	tokenApprovalChanges: Map<string, Map<string, bigint > >,
+	addressMetadata: Map<string, AddressMetadata>,
+	textColor: string,
+	negativeColor: string,
+	isImportant: boolean,
+}
+
+export function Erc20ApprovalChanges(param: Erc20ApprovalChangesParams ) {
 	if ( param.tokenApprovalChanges.size === 0 ) return <></>
 	return <>
 		{ Array.from(param.tokenApprovalChanges).map( ([tokenAddress, approvals]) => (
@@ -147,7 +153,15 @@ export function Erc20ApprovalChanges(param: { tokenApprovalChanges: Map<string, 
 	</>
 }
 
-function ERC721TokenChanges(param: { ERC721TokenBalanceChanges: Map<string, Map<string, boolean > >, addressMetadata: Map<string, AddressMetadata>, textColor: string, negativeColor: string, isImportant: boolean } ) {
+type ERC721TokenChangesParams = {
+	ERC721TokenBalanceChanges: Map<string, Map<string, boolean > >,
+	addressMetadata: Map<string, AddressMetadata>,
+	textColor: string,
+	negativeColor: string,
+	isImportant: boolean,
+}
+
+function ERC721TokenChanges(param: ERC721TokenChangesParams ) {
 	if ( param.ERC721TokenBalanceChanges.size == 0 ) return <></>
 
 	return <> { param.ERC721TokenBalanceChanges.size > 0 ? <>
@@ -161,7 +175,6 @@ function ERC721TokenChanges(param: { ERC721TokenBalanceChanges: Map<string, Map<
 								received = { received }
 								addressMetadata = { param.addressMetadata.get(tokenAddress) }
 								textColor = { param.textColor }
-								sentTextColor = { param.negativeColor }
 								useFullTokenName = { true }
 								showSign = { true }
 							/>
@@ -173,7 +186,15 @@ function ERC721TokenChanges(param: { ERC721TokenBalanceChanges: Map<string, Map<
 	: <></> } </>
 }
 
-export function ERC721OperatorChanges(param: { ERC721OperatorChanges: Map<string, string | undefined>, addressMetadata: Map<string, AddressMetadata>, textColor: string, negativeColor: string, isImportant: boolean } ) {
+type ERC721OperatorChangesParams = {
+	ERC721OperatorChanges: Map<string, string | undefined>,
+	addressMetadata: Map<string, AddressMetadata>,
+	textColor: string,
+	negativeColor: string,
+	isImportant: boolean,
+}
+
+export function ERC721OperatorChanges(param: ERC721OperatorChangesParams) {
 	if (param.ERC721OperatorChanges.size === 0) return <></>
 	return <>
 		{ Array.from(param.ERC721OperatorChanges).map( ([tokenAddress, operator]) => (
@@ -226,7 +247,15 @@ export function ERC721OperatorChanges(param: { ERC721OperatorChanges: Map<string
 	</>
 }
 
-export function ERC721TokenIdApprovalChanges(param: { ERC721TokenIdApprovalChanges: Map<string, Map<string, string > >, addressMetadata: Map<string, AddressMetadata>, textColor: string, negativeColor: string, isImportant: boolean } ) {
+type ERC721TokenIdApprovalChangesParams = {
+	ERC721TokenIdApprovalChanges: Map<string, Map<string, string > >,
+	addressMetadata: Map<string, AddressMetadata>,
+	textColor: string,
+	negativeColor: string,
+	isImportant: boolean,
+}
+
+export function ERC721TokenIdApprovalChanges(param: ERC721TokenIdApprovalChangesParams ) {
 	return <> { param.ERC721TokenIdApprovalChanges.size > 0 ?
 		<>
 			{ Array.from(param.ERC721TokenIdApprovalChanges).map( ([tokenAddress, approvals]) => (
@@ -266,13 +295,14 @@ export function ERC721TokenIdApprovalChanges(param: { ERC721TokenIdApprovalChang
 	: <></> } </>
 }
 
-export function SummarizeAddress(
-	param: {
-		address: string,
-		balanceSummary: BalanceChangeSummary,
-		simulationAndVisualisationResults: SimulationAndVisualisationResults
-	}
-) {
+
+type SummarizeAddressParams = {
+	address: string,
+	balanceSummary: BalanceChangeSummary,
+	simulationAndVisualisationResults: SimulationAndVisualisationResults
+}
+
+export function SummarizeAddress(param: SummarizeAddressParams) {
 	const isOwnAddress = param.simulationAndVisualisationResults.addressMetadata.get(param.address)?.metadataSource === 'addressBook' || BigInt(param.address) === param.simulationAndVisualisationResults.activeAddress
 	const positiveNegativeColors = isOwnAddress ? {
 		textColor: 'var(--text-color)',
@@ -372,15 +402,15 @@ export function SimulationResults(param: SimulationStateParam) {
 	</div>)
 }
 
-export function SimulationSummary(
-	param: {
-		simulationAndVisualisationResults: SimulationAndVisualisationResults,
-		summarizeOnlyLastTransaction?: boolean,
-		resetButton: boolean,
-		refreshSimulation: () => void,
-		currentBlockNumber: bigint | undefined,
-	}
-) {
+type SimulationSummaryParams = {
+	simulationAndVisualisationResults: SimulationAndVisualisationResults,
+	summarizeOnlyLastTransaction?: boolean,
+	resetButton: boolean,
+	refreshSimulation: () => void,
+	currentBlockNumber: bigint | undefined,
+}
+
+export function SimulationSummary(param: SimulationSummaryParams) {
 	if (param.simulationAndVisualisationResults === undefined) return <></>
 
 	const VisResults = param.summarizeOnlyLastTransaction && param.simulationAndVisualisationResults.simulatedAndVisualizedTransactions.length > 0 ?
