@@ -40,7 +40,7 @@ type EtherParams = {
 }
 
 export function Ether(param: EtherParams) {
-	return <table class = 'log-table-2' style = 'width: fit-content'>
+	return <table class = 'log-table' style = 'width: fit-content'>
 		<div class = 'log-cell' style = 'justify-content: right;'>
 			<EtherAmount
 				amount = { param.amount }
@@ -187,7 +187,7 @@ type TokenParams = {
 }
 
 export function Token(param: TokenParams) {
-	return <table class = 'log-table-2' style = 'width: fit-content'>
+	return <table class = 'log-table' style = 'width: fit-content'>
 		<div class = 'log-cell' style = 'justify-content: right;'>
 			<TokenAmount
 				amount = { param.amount }
@@ -239,7 +239,7 @@ type ERC72TokenParams = {
 }
 
 export function ERC721Token(param: ERC72TokenParams) {
-	return <table class = 'log-table-2'>
+	return <table class = 'log-table'>
 		<div class = 'log-cell' style = 'justify-content: right;'>
 			<ERC721TokenNumber
 				tokenId = { param.tokenId }

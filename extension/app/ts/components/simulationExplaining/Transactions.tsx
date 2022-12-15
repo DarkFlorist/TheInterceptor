@@ -81,7 +81,7 @@ function EtherTransferEvent(param: { valueSent: bigint, totalReceived: bigint, t
 		{ param.valueSent === 0n ? <></> :
 			<div class = 'vertical-center'>
 				<div class = 'box token-box negative-box vertical-center' style = 'display: inline-block'>
-					<table class = 'log-table-3'>
+					<table class = 'log-table'>
 						<div class = 'log-cell'>
 							<p style = {`color: ${ param.textColor }; margin-bottom: 0px`}> Send </p>
 						</div>
@@ -105,7 +105,7 @@ function EtherTransferEvent(param: { valueSent: bigint, totalReceived: bigint, t
 		{ param.totalReceived <= 0n ? <></> :
 			<div class = 'vertical-center'>
 				<div class = 'box token-box positive-box vertical-center' style = 'display: inline-block'>
-					<table class = 'log-table-3'>
+					<table class = 'log-table'>
 						<div class = 'log-cell'>
 							<p style = {`color: ${ param.textColor }; margin-bottom: 0px`}> Receive </p>
 						</div>
@@ -344,7 +344,7 @@ function normalTransaction(param: TransactionVisualizationParameters) {
 				</> : <></> }
 				{ param.tx.multicallResponse.statusCode !== 'success' ? <Error text = { `The transaction fails with error '${param.tx.multicallResponse.error}'` } /> : <></>}
 				{ param.tx.realizedGasPrice > 0n ?
-					<table class = 'log-table-3' style = 'width: fit-content; margin: 0 0 0 auto;'>
+					<table class = 'log-table' style = 'width: fit-content; margin: 0 0 0 auto;'>
 						<div class = 'log-cell'>
 							<p style = {`color: var(--subtitle-text-color); margin-bottom: 0px`}> Gas fee:&nbsp;</p>
 						</div>
