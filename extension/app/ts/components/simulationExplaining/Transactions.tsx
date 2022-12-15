@@ -1,7 +1,7 @@
 import { addressString } from '../../utils/bigint.js'
 import { AddressMetadata, SimulatedAndVisualizedTransaction, SimulationAndVisualisationResults, TokenVisualizerResult, TransactionVisualizationParameters } from '../../utils/visualizer-types.js'
 import { FromAddressToAddress, SmallAddress } from '../subcomponents/address.js'
-import { EtherSymbol, Token, ERC721Token, TokenSymbol, TokenAmount, EtherAmount, Token721AmountField, Token721ActionField } from '../subcomponents/coins.js'
+import { EtherSymbol, Token, ERC721Token, TokenSymbol, TokenAmount, EtherAmount, Token721AmountField } from '../subcomponents/coins.js'
 import { CHAIN, LogAnalysisParams } from '../../utils/user-interface-types.js'
 import { QUARANTINE_CODES_DICT } from '../../simulation/protectors/quarantine-codes.js'
 import { Error } from '../subcomponents/Error.js'
@@ -10,6 +10,24 @@ import { Erc20ApprovalChanges, ERC721OperatorChanges, ERC721TokenIdApprovalChang
 import { identifyTransaction, nameTransaction } from './identifyTransaction.js'
 import { makeYouRichTransaction } from './transactionExplainers.js'
 import { JSXInternal } from 'preact/src/jsx'
+import { ApproveIcon, ArrowIcon } from '../subcomponents/icons.js'
+
+function isPositiveEvent(visResult: TokenVisualizerResult, ourAddressInReferenceFrame: bigint) {
+	if(!visResult.is721) {
+		if(!visResult.isApproval) {
+			return visResult.amount >= 0 //transfer
+		}
+		return visResult.amount === 0n //approve (zero is only positive case)
+	}
+
+	if ('isAllApproval' in visResult) {
+		return (visResult.allApprovalAdded && visResult.to === ourAddressInReferenceFrame) || (!visResult.allApprovalAdded && visResult.from === ourAddressInReferenceFrame)
+	}
+	if (visResult.isApproval) {
+		return visResult.to === ourAddressInReferenceFrame
+	}
+	return visResult.from !== ourAddressInReferenceFrame
+}
 
 function TransactionAggregate(
 	param: {
@@ -425,16 +443,11 @@ export function Transactions(
 export type TokenLogEventParams = {
 	tokenVisualizerResult: TokenVisualizerResult
 	addressMetadata: Map<string, AddressMetadata>
+	ourAddressInReferenceFrame: bigint,
 }
+
 export function TokenLogEvent(params: TokenLogEventParams ) {
-	const brigtherColors = {
-		textColor: 'var(--dim-text-color)',
-		negativeColor: 'var(--negative-dim-color)'
-	}
-	const isNegativelog = params.tokenVisualizerResult.isApproval
-		|| ('amount' in params.tokenVisualizerResult && params.tokenVisualizerResult.amount < 0n)
-		|| ('isApproval' in params.tokenVisualizerResult && params.tokenVisualizerResult.isApproval )
-	const brigtherTextColor = isNegativelog ? brigtherColors.negativeColor : brigtherColors.textColor
+	const textColor = isPositiveEvent(params.tokenVisualizerResult, params.ourAddressInReferenceFrame) ? 'var(--dim-text-color)' : 'var(--negative-dim-color)'
 
 	return <>
 			<div class = 'log-cell' style = 'justify-content: right;'>
@@ -442,18 +455,18 @@ export function TokenLogEvent(params: TokenLogEventParams ) {
 					<Token721AmountField
 						visResult = { params.tokenVisualizerResult }
 						addressMetadata = { params.addressMetadata.get(addressString(params.tokenVisualizerResult.tokenAddress)) }
-						textColor = { brigtherColors.textColor }
-						negativeColor = { brigtherColors.negativeColor }
+						textColor = { textColor }
+						negativeColor = { textColor }
 						useFullTokenName = { false }
 					/>
 				: <> { params.tokenVisualizerResult.amount > 2n ** 100n && params.tokenVisualizerResult.isApproval ?
-						<p class = 'ellipsis' style = { `color: ${ brigtherTextColor }` }><b>ALL</b></p>
+						<p class = 'ellipsis' style = { `color: ${ textColor }` }><b>ALL</b></p>
 					:
 						<TokenAmount
 							amount = { params.tokenVisualizerResult.amount }
 							token = { params.tokenVisualizerResult.tokenAddress }
 							addressMetadata = { params.addressMetadata.get(addressString(params.tokenVisualizerResult.tokenAddress)) }
-							textColor = { brigtherTextColor }
+							textColor = { textColor }
 							useFullTokenName = { false }
 						/>
 					} </>
@@ -463,40 +476,33 @@ export function TokenLogEvent(params: TokenLogEventParams ) {
 				<TokenSymbol
 					token = { params.tokenVisualizerResult.tokenAddress }
 					addressMetadata = { params.addressMetadata.get(addressString(params.tokenVisualizerResult.tokenAddress)) }
-					textColor = { brigtherTextColor }
+					textColor = { textColor }
 					useFullTokenName = { false }
-				/>
+				/>&nbsp;
 			</div>
 			<div class = 'log-cell'>
 				<SmallAddress
 					address = { params.tokenVisualizerResult.from }
 					addressMetaData = { params.addressMetadata.get(addressString(params.tokenVisualizerResult.from)) }
-					textColor = { brigtherTextColor }
+					textColor = { textColor }
 				/>
 			</div>
-			<div class = 'log-cell' style = 'justify-content: center;'>
+			<div class = 'log-cell'>
 				{ params.tokenVisualizerResult.isApproval ?
 					<> { params.tokenVisualizerResult.is721 ?
-						<Token721ActionField
-							visResult = { params.tokenVisualizerResult }
-							addressMetadata = { params.addressMetadata.get(addressString(params.tokenVisualizerResult.tokenAddress)) }
-							textColor = { brigtherColors.textColor }
-							negativeColor = { brigtherColors.negativeColor }
-							useFullTokenName = { false }
-						/> :
-							<p class = 'ellipsis' style = { `color: ${ brigtherTextColor }` }>
-								Approves
-							</p>
+							<ApproveIcon color = { textColor } />
+						:
+							<ApproveIcon color = { textColor } />
 					} </>
 				:
-					<><svg style = 'vertical-align: middle;' width = '24' height = '24' viewBox = '0 0 24 24'> <path fill = { brigtherTextColor } d = 'M13 7v-6l11 11-11 11v-6h-13v-10z'/> </svg></>
+					<ArrowIcon color = { textColor }/>
 				}
 			</div>
 			<div class = 'log-cell'>
 				<SmallAddress
 					address = { params.tokenVisualizerResult.to }
 					addressMetaData = { params.addressMetadata.get(addressString(params.tokenVisualizerResult.to)) }
-					textColor = { brigtherTextColor }
+					textColor = { textColor }
 				/>
 			</div>
 	</>
@@ -511,6 +517,7 @@ function LogAnalysis(param: LogAnalysisParams) {
 			<TokenLogEvent
 				tokenVisualizerResult = { tokenVisualizerResult }
 				addressMetadata = { param.addressMetadata }
+				ourAddressInReferenceFrame = { param.simulatedAndVisualizedTransaction.unsignedTransaction.from }
 			/>
 		))
 	:
@@ -518,6 +525,7 @@ function LogAnalysis(param: LogAnalysisParams) {
 			<TokenLogEvent
 				tokenVisualizerResult = { tokenVisualizerResult }
 				addressMetadata = { param.addressMetadata }
+				ourAddressInReferenceFrame = { param.simulatedAndVisualizedTransaction.unsignedTransaction.from }
 			/>
 		))
 	} </table>

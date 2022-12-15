@@ -5,6 +5,7 @@ import Blockie from './PreactBlocky.js'
 import { AddressInfo } from '../../utils/user-interface-types.js'
 import { CopyToClipboard } from './CopyToClipboard.js'
 import { ChainSelector } from './ChainSelector.js'
+import { ApproveIcon, ArrowIcon } from '../subcomponents/icons.js'
 
 export function findAddressInfo(addressToFind: bigint, addressInfos: readonly AddressInfo[]) {
 	for (const info of addressInfos) {
@@ -162,18 +163,16 @@ export function SmallAddress(params: SmallAddressParams) {
 	const name = getAddressName(params.address, params.addressMetaData)
 	const textColor = params.textColor === undefined ? 'var(--text-color)' : params.textColor
 
-	return <div style = 'display: contents'>
-		<CopyToClipboard content = { ethers.utils.getAddress(addressString(params.address)) } copyMessage = 'Address copied!'>
+	return	<CopyToClipboard content = { ethers.utils.getAddress(addressString(params.address)) } copyMessage = 'Address copied!'>
+		<div style = 'display: contents'>
 			<span class = 'vertical-center noselect nopointer' style = 'margin-right: 5px'>
 				<Blockie seed = { addressString(params.address).toLowerCase() } size = { 8 } scale = { 3 } />
 			</span>
-		</CopyToClipboard>
-		<CopyToClipboard content = { ethers.utils.getAddress(addressString(params.address)) } copyMessage = 'Address copied!'>
 			<span class = 'noselect nopointer' style = { `color: ${ textColor }; overflow: hidden; text-overflow: ellipsis;` } >
 				{ name }
 			</span>
-		</CopyToClipboard>
-	</div>
+		</div>
+	</CopyToClipboard>
 }
 
 export type FromAddressToAddressParams = {
@@ -190,8 +189,8 @@ export function FromAddressToAddress(params: FromAddressToAddressParams ) {
 			<BigAddress address = { params.from } title = { params.fromAddressMetadata?.name }/>
 		</div>
 		<div class = 'column' style = 'width: 5%; padding: 0px; align-self: center; flex: none;'>
-			{ params.isApproval ? <img width = '24' src = { '../../img/access-hand-key-icon.svg' }></img> :
-				<svg style = '' width = '24' height = '24' viewBox = '0 0 24 24'> <path fill = 'var(--text-color)' d = 'M13 7v-6l11 11-11 11v-6h-13v-10z'/> </svg>
+			{ params.isApproval ? <ApproveIcon color = { 'var(--text-color)' }/> :
+				<ArrowIcon color = { 'var(--text-color)' }/>
 			}
 		</div>
 		<div class = 'column' style = 'width: 47.5%; flex: none; padding-bottom: 0px;'>

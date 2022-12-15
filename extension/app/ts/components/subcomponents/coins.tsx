@@ -1,10 +1,11 @@
 import { ethers } from 'ethers'
 import { getTokenAmountsWorth } from '../../simulation/priceEstimator.js'
 import { abs, addressString, bigintToDecimalString, bigintToRoundedPrettyDecimalString } from '../../utils/bigint.js'
-import { CHAINS } from '../../utils/constants.js'
+import { CHAINS, QUESTION_MARK } from '../../utils/constants.js'
 import { CHAIN } from '../../utils/user-interface-types.js'
 import { AddressMetadata, TokenPriceEstimate, TokenVisualizerResult } from '../../utils/visualizer-types.js'
 import { CopyToClipboard } from './CopyToClipboard.js'
+import Blockie from './PreactBlocky.js'
 
 export type EtherParams = {
 	amount: bigint
@@ -49,14 +50,14 @@ export function getTokenData(token: bigint, metadata: AddressMetadata | undefine
 			decimals: undefined,
 			name: `Token (${ ethers.utils.getAddress(addressString(token)) })`,
 			symbol: '???',
-			logoURI: '../../img/question-mark-sign.svg'
+			logoURI: QUESTION_MARK
 		}
 	}
 	return {
 		decimals: 'decimals' in metadata ? metadata.decimals : undefined,
 		name: metadata.name,
 		symbol: 'symbol' in metadata ? metadata.symbol : '???',
-		logoURI: 'logoURI' in metadata && metadata.logoURI !== undefined ? metadata.logoURI : '../../img/question-mark-sign.svg'
+		logoURI: 'logoURI' in metadata && metadata.logoURI !== undefined ? metadata.logoURI : QUESTION_MARK
 	}
 }
 
@@ -138,9 +139,18 @@ export function TokenSymbol(param: { token: bigint, textColor?: string, addressM
 	const tokenData = getTokenData(param.token, param.addressMetadata)
 	const tokenString = ethers.utils.getAddress(addressString(param.token))
 	return <>
-		<div style = 'overflow: initial'>
+		<div style = 'overflow: initial; height: 28px;'>
 			<CopyToClipboard content = { tokenString } copyMessage = 'Token address copied!' >
+				{ tokenData.logoURI == QUESTION_MARK ?
+					<Blockie
+						seed = { tokenString.toLowerCase() }
+						size = { 8 }
+						scale = { 3 }
+						rounded = { true }
+					/>
+				:
 				<img class = 'noselect nopointer vertical-center' style = 'max-height: 25px; max-width: 25px;' src = { tokenData.logoURI }/>
+				}
 			</CopyToClipboard>
 		</div>
 		<CopyToClipboard content = { tokenString } copyMessage = 'Token address copied!' >
@@ -247,22 +257,10 @@ export function TokenText(param: { useFullTokenName: boolean, isApproval: boolea
 }
 export function Token721AmountField(param: { useFullTokenName: boolean, visResult: TokenVisualizerResult, addressMetadata: AddressMetadata | undefined, textColor: string, negativeColor: string } ) {
 	if (param.visResult.is721 !== true) throw `needs to be erc721`
-
-	return <p style = { `color: ${ param.visResult.isApproval ? param.negativeColor : param.textColor };` } > { param.visResult.isApproval ? (
-				'isAllApproval' in param.visResult ? ( param.visResult.allApprovalAdded ? `Operator` : `Operator`)
-					: `NFT #${ truncate(param.visResult.tokenId.toString(), 9) }`
-				) : `NFT #${ truncate(param.visResult.tokenId.toString(), 9) }`
-		}
-		</p>
-}
-
-export function Token721ActionField(param: { useFullTokenName: boolean, visResult: TokenVisualizerResult, addressMetadata: AddressMetadata | undefined, textColor: string, negativeColor: string } ) {
-	if (param.visResult.is721 !== true) throw `needs to be erc721`
-
-	return <p style = { `color: ${ param.visResult.isApproval ? param.negativeColor : param.textColor };` } > { param.visResult.isApproval ? (
-				'isAllApproval' in param.visResult ? ( param.visResult.allApprovalAdded ? `Remove` : `Add`)
-					: `Approves`
-				) : `Transfer`
-		}
-		</p>
+	const color = param.visResult.isApproval ? param.negativeColor : param.textColor
+	if (!param.visResult.isApproval || !('isAllApproval' in param.visResult)) {
+		return <p style = { `color: ${ color }` }>{ `NFT #${ truncate(param.visResult.tokenId.toString(), 9) }` }</p>
+	}
+	if (!param.visResult.allApprovalAdded) return <p style = { `color: ${ param.textColor }` }><b>NONE</b></p>
+	return <p style = { `color: ${ color }` }><b>ALL</b></p>
 }

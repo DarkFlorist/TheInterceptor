@@ -74,49 +74,74 @@ function Erc20BalanceChange(
 	</>
 }
 
+export type Erc20ApprovalChangeParams = {
+	change: bigint,
+	addressToApprove: string,
+	tokenAddress: string,
+	addressMetadata: Map<string, AddressMetadata>,
+	textColor: string,
+	negativeColor: string,
+	isImportant: boolean,
+}
+
+export function Erc20ApprovalChange(param: Erc20ApprovalChangeParams) {
+
+	const textColor = param.change > 0 ? param.negativeColor : param.textColor
+
+	return <div class = { param.isImportant ? `box token-box ${ param.change > 0 ? 'negative-box' : 'positive-box' }`: '' } style = 'display: inline-flex'>
+		<table class = 'log-table'>
+			<div class = 'log-cell'>
+				<p class = 'ellipsis' style = {`color: ${ textColor };` }> Allow&nbsp;</p>
+			</div>
+			<div class = 'log-cell'>
+				<SmallAddress
+					address = { BigInt(param.addressToApprove) }
+					addressMetaData = { param.addressMetadata.get(param.addressToApprove) }
+					textColor = { textColor }
+				/>
+			</div>
+			<div class = 'log-cell'>
+				<p style = {`color: ${ textColor };` }> &nbsp;to spend&nbsp; </p>
+			</div>
+			<div class = 'log-cell' style = 'justify-content: right;'>
+				{ param.change > 2n ** 100n ?
+					<p class = 'ellipsis' style = {`color: ${ textColor };` }> <b>ALL</b>&nbsp;</p>
+					:
+					<TokenAmount
+						amount = { param.change }
+						token = { BigInt(param.tokenAddress) }
+						addressMetadata = { param.addressMetadata.get(param.tokenAddress)}
+						textColor = { textColor }
+						useFullTokenName = { false }
+					/>
+				}
+			</div>
+			<div class = 'log-cell'>
+				<TokenSymbol
+					token = { BigInt(param.tokenAddress) }
+					addressMetadata = { param.addressMetadata.get(param.tokenAddress) }
+					textColor = { textColor }
+					useFullTokenName = { true }
+				/>
+			</div>
+		</table>
+	</div>
+
+}
 export function Erc20ApprovalChanges(param: { tokenApprovalChanges: Map<string, Map<string, bigint > >, addressMetadata: Map<string, AddressMetadata>, textColor: string, negativeColor: string, isImportant: boolean } ) {
 	if ( param.tokenApprovalChanges.size === 0 ) return <></>
 	return <>
 		{ Array.from(param.tokenApprovalChanges).map( ([tokenAddress, approvals]) => (
 			Array.from(approvals).map( ([addressToApprove, change]) => (
-				<div class = { param.isImportant ? 'box token-box negative-box': '' } style = 'display: inline-flex'>
-					<table class = 'log-table'>
-						<div class = 'log-cell'>
-							<p class = 'ellipsis' style = {`color: ${ param.negativeColor };` }> Approve&nbsp;</p>
-						</div>
-						<div class = 'log-cell'>
-							<SmallAddress
-								address = { BigInt(addressToApprove) }
-								addressMetaData = { param.addressMetadata.get(addressToApprove) }
-								textColor = { param.negativeColor }
-							/>
-						</div>
-						<div class = 'log-cell'>
-							<p style = {`color: ${ param.negativeColor };` }> &nbsp;for&nbsp; </p>
-						</div>
-						<div class = 'log-cell' style = 'justify-content: right;'>
-							{ change > 2n ** 100n ?
-								<p class = 'ellipsis' style = {`color: ${ param.negativeColor };` }> <b>ALL</b>&nbsp;</p>
-								:
-								<TokenAmount
-									amount = { change }
-									token = { BigInt(tokenAddress) }
-									addressMetadata = { param.addressMetadata.get(tokenAddress)}
-									textColor = { param.negativeColor }
-									useFullTokenName = { false }
-								/>
-							}
-						</div>
-						<div class = 'log-cell'>
-							<TokenSymbol
-								token = { BigInt(tokenAddress) }
-								addressMetadata = { param.addressMetadata.get(tokenAddress) }
-								textColor = { param.negativeColor }
-								useFullTokenName = { true }
-							/>
-						</div>
-					</table>
-				</div>
+				<Erc20ApprovalChange
+					addressToApprove = { addressToApprove }
+					change = { change }
+					tokenAddress = { tokenAddress }
+					addressMetadata = { param.addressMetadata }
+					textColor = { param.textColor }
+					negativeColor = { param.negativeColor }
+					isImportant = { param.isImportant }
+				/>
 			))
 		)) }
 	</>
@@ -153,31 +178,47 @@ export function ERC721OperatorChanges(param: { ERC721OperatorChanges: Map<string
 	return <>
 		{ Array.from(param.ERC721OperatorChanges).map( ([tokenAddress, operator]) => (
 			<div class = 'vertical-center' style = 'display: flex'>
-				{ operator !== undefined ? <>
+				{ operator !== undefined ?
 					<div class = { param.isImportant ? 'box token-box negative-box': '' } style = 'display: flex'>
-						<p style = { `color: ${ param.negativeColor } margin-right: 8px` }> Set </p>
-							<SmallAddress
-								address = { BigInt(operator) }
-								addressMetaData = { param.addressMetadata.get(operator) }
-								textColor = { param.negativeColor }
-							/>
-						<p style = { `color: ${ param.negativeColor } margin-bottom: 0px; margin-right: 8px` }> as Operator for </p>
-						<TokenSymbol
-							token = { BigInt(tokenAddress) }
-							addressMetadata = { param.addressMetadata.get(tokenAddress) }
-							textColor = { param.negativeColor }
-							useFullTokenName = { true }
-						/>
+						<table class = 'log-table'>
+							<div class = 'log-cell'>
+								<p class = 'ellipsis' style = { `color: ${ param.negativeColor }` }> Allow&nbsp;</p>
+							</div>
+							<div class = 'log-cell'>
+								<SmallAddress
+									address = { BigInt(operator) }
+									addressMetaData = { param.addressMetadata.get(operator) }
+									textColor = { param.negativeColor }
+								/>
+							</div>
+							<div class = 'log-cell'>
+								<p class = 'ellipsis'  style = { `color: ${ param.negativeColor }` }>&nbsp;to spend <b>ALL</b>&nbsp;</p>
+							</div>
+							<div class = 'log-cell'>
+								<TokenSymbol
+									token = { BigInt(tokenAddress) }
+									addressMetadata = { param.addressMetadata.get(tokenAddress) }
+									textColor = { param.negativeColor }
+									useFullTokenName = { true }
+								/>
+							</div>
+						</table>
 					</div>
-				</> :
+				:
 					<div class = { param.isImportant ? 'box token-box positive-box': '' } >
-						<p style = { `color: ${ param.textColor }; margin-bottom: 0px; margin-right: 8px` }> Operator removed for </p>
-						<TokenSymbol
-							token = { BigInt(tokenAddress) }
-							addressMetadata = { param.addressMetadata.get(tokenAddress) }
-							textColor = { param.textColor }
-							useFullTokenName = { true }
-						/>
+						<table class = 'log-table'>
+							<div class = 'log-cell'>
+								<p class = 'ellipsis' style = { `color: ${ param.textColor };` }> to NOT spend ANY&nbsp;</p>
+							</div>
+							<div class = 'log-cell'>
+								<TokenSymbol
+									token = { BigInt(tokenAddress) }
+									addressMetadata = { param.addressMetadata.get(tokenAddress) }
+									textColor = { param.textColor }
+									useFullTokenName = { true }
+								/>
+							</div>
+						</table>
 					</div>
 				}
 			</div>
@@ -192,21 +233,31 @@ export function ERC721TokenIdApprovalChanges(param: { ERC721TokenIdApprovalChang
 				Array.from(approvals).map( ([tokenId, approvedAddress]) => (
 					<div class = 'vertical-center' style = 'display: flex'>
 						<div class = { param.isImportant ? 'box token-box negative-box': '' } style = 'display: flex'>
-							<p style = {`color: ${ param.negativeColor } margin-right: 8px` }> Approve </p>
-							<SmallAddress
-								address = { BigInt(approvedAddress) }
-								addressMetaData = { param.addressMetadata.get(approvedAddress) }
-								textColor = { param.negativeColor }
-							/>
-							<p style = {`color: ${ param.negativeColor } margin-bottom: 0px; margin-right: 8px` }> for </p>
-							<ERC721Token
-								tokenId = { BigInt(tokenId) }
-								received = { true }
-								token = { BigInt(tokenAddress) }
-								addressMetadata = { param.addressMetadata.get(tokenAddress) }
-								textColor = { param.negativeColor }
-								useFullTokenName = { true }
-							/>
+							<table class = 'log-table'>
+								<div class = 'log-cell'>
+									<p class = 'ellipsis' style = {`color: ${ param.negativeColor }` }> Approve&nbsp;</p>
+								</div>
+								<div class = 'log-cell'>
+									<SmallAddress
+										address = { BigInt(approvedAddress) }
+										addressMetaData = { param.addressMetadata.get(approvedAddress) }
+										textColor = { param.negativeColor }
+									/>
+								</div>
+								<div class = 'log-cell'>
+									<p class = 'ellipsis' style = {`color: ${ param.negativeColor }` }>&nbsp;for&nbsp;</p>
+								</div>
+								<div class = 'log-cell'>
+									<ERC721Token
+										tokenId = { BigInt(tokenId) }
+										received = { true }
+										token = { BigInt(tokenAddress) }
+										addressMetadata = { param.addressMetadata.get(tokenAddress) }
+										textColor = { param.negativeColor }
+										useFullTokenName = { true }
+									/>
+								</div>
+							</table>
 						</div>
 					</div>
 				))
