@@ -93,11 +93,11 @@ window.interceptor = {
     connected: false,
     requestId: 0,
     outstandingRequests: new Map(),
-    onMessageCallBack: (_message) => { },
-    onConnectCallBack: (_connectInfo) => { },
-    onAccountsChangedCallBack: (_accounts) => { },
-    onDisconnectCallBack: (_error) => { },
-    onChainChangedCallBack: (_chainId) => { },
+    onMessageCallBacks: new Set(),
+    onConnectCallBacks: new Set(),
+    onAccountsChangedCallBacks: new Set(),
+    onDisconnectCallBacks: new Set(),
+    onChainChangedCallBacks: new Set(),
 };
 function startListeningForMessages() {
     async function requestAccounts() {
@@ -192,22 +192,22 @@ function startListeningForMessages() {
         if (forwardRequest.result !== undefined) {
             // if interceptor direclty sent us the result, just forward that to the dapp, otherwise ask the signer for the result
             if (forwardRequest.subscription !== undefined) {
-                return window.interceptor.onMessageCallBack({ type: 'eth_subscription', data: forwardRequest.result });
+                return window.interceptor.onMessageCallBacks.forEach((f) => f({ type: 'eth_subscription', data: forwardRequest.result }));
             }
             if (forwardRequest.options.method === 'accountsChanged') {
-                return window.interceptor.onAccountsChangedCallBack(forwardRequest.result);
+                return window.interceptor.onAccountsChangedCallBacks.forEach((f) => f(forwardRequest.result));
             }
             if (forwardRequest.options.method === 'connect') {
                 window.interceptor.connected = true;
-                return window.interceptor.onConnectCallBack({ chainId: forwardRequest.result });
+                return window.interceptor.onConnectCallBacks.forEach((f) => f({ chainId: forwardRequest.result }));
             }
             if (forwardRequest.options.method === 'disconnect') {
                 window.interceptor.connected = false;
                 const resultArray = forwardRequest.result;
-                return window.interceptor.onDisconnectCallBack({ name: 'disconnect', ...resultArray });
+                return window.interceptor.onDisconnectCallBacks.forEach((f) => f({ name: 'disconnect', ...resultArray }));
             }
             if (forwardRequest.options.method === 'chainChanged') {
-                return window.interceptor.onChainChangedCallBack(forwardRequest.result);
+                return window.interceptor.onChainChangedCallBacks.forEach((f) => f(forwardRequest.result));
             }
             if (forwardRequest.options.method === 'request_signer_to_eth_requestAccounts') {
                 // when dapp requsts eth_requestAccounts, interceptor needs to reply to it, but we also need to try to sign to the signer
@@ -313,25 +313,47 @@ function injectEthereumIntoWindow() {
             .catch(error => callback({ jsonrpc: '2.0', id: payload.id, error: { code: error.code, message: error.message, data: { ...error.data, stack: error.stack } } }, null));
     };
     const on = async (kind, callback) => {
-        console.log(\`set on: \${kind}\`);
         switch (kind) {
             case 'accountsChanged':
-                window.interceptor.onAccountsChangedCallBack = callback;
+                window.interceptor.onAccountsChangedCallBacks.add(callback);
                 return;
             case 'message':
-                window.interceptor.onMessageCallBack = callback;
+                window.interceptor.onMessageCallBacks.add(callback);
                 return;
             case 'connect':
-                window.interceptor.onConnectCallBack = callback;
+                window.interceptor.onConnectCallBacks.add(callback);
                 return;
             case 'close': //close is deprecated on eip-1193 by disconnect but its still used by dapps (MyEtherWallet)
-                window.interceptor.onDisconnectCallBack = callback;
+                window.interceptor.onDisconnectCallBacks.add(callback);
                 return;
             case 'disconnect':
-                window.interceptor.onDisconnectCallBack = callback;
+                window.interceptor.onDisconnectCallBacks.add(callback);
                 return;
             case 'chainChanged':
-                window.interceptor.onChainChangedCallBack = callback;
+                window.interceptor.onChainChangedCallBacks.add(callback);
+                return;
+            default:
+        }
+    };
+    const removeListener = async (kind, callback) => {
+        switch (kind) {
+            case 'accountsChanged':
+                window.interceptor.onAccountsChangedCallBacks.delete(callback);
+                return;
+            case 'message':
+                window.interceptor.onMessageCallBacks.delete(callback);
+                return;
+            case 'connect':
+                window.interceptor.onConnectCallBacks.delete(callback);
+                return;
+            case 'close': //close is deprecated on eip-1193 by disconnect but its still used by dapps (MyEtherWallet)
+                window.interceptor.onDisconnectCallBacks.delete(callback);
+                return;
+            case 'disconnect':
+                window.interceptor.onDisconnectCallBacks.delete(callback);
+                return;
+            case 'chainChanged':
+                window.interceptor.onChainChangedCallBacks.delete(callback);
                 return;
             default:
         }
@@ -356,6 +378,7 @@ function injectEthereumIntoWindow() {
         window.ethereum = {
             request: request,
             on: on,
+            removeListener: removeListener,
             send: send,
             sendAsync: sendAsync,
             usingInterceptorWithoutSigner: true,
@@ -376,6 +399,7 @@ function injectEthereumIntoWindow() {
             oldOn: window.ethereum.on,
             request: request,
             on: on,
+            removeListener: removeListener,
             send: send,
             sendAsync: sendAsync,
             usingInterceptorWithoutSigner: false,
@@ -390,6 +414,7 @@ function injectEthereumIntoWindow() {
         window.ethereum.oldOn = window.ethereum.on; // store the on object to access the signer later on
         window.ethereum.request = request;
         window.ethereum.on = on;
+        window.ethereum.removeListener = removeListener;
         window.ethereum.send = send;
         window.ethereum.sendAsync = sendAsync;
         window.ethereum.usingInterceptorWithoutSigner = false;

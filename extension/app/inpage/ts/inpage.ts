@@ -87,16 +87,23 @@ interface ProviderMessage {
 	readonly data: unknown
 }
 
+type AnyCallBack =  ((message: ProviderMessage) => void)
+	| ( (connectInfo: ProviderConnectInfo) => void )
+	| ( (accounts: string[]) => void )
+	| ( (error: ProviderRpcError) => void )
+	| ( (chainId: string) => void )
+
 interface Window {
 	dispatchEvent: any,
 	ethereum?: {
-		request?: (options: { readonly method: string, readonly params?: unknown[] }) => Promise<unknown>,
-		send?: unknown,
-		sendAsync?: unknown,
-		on?: (kind: OnMessage, callback: any) => Promise<void>,
+		request: (options: { readonly method: string, readonly params?: unknown[] }) => Promise<unknown>,
+		send: unknown,
+		sendAsync: unknown,
+		on: (kind: OnMessage, callback: AnyCallBack) => Promise<void>,
+		removeListener: (kind: OnMessage, callback: AnyCallBack) => Promise<void>,
 		usingInterceptorWithoutSigner?: boolean, // are we using Interceptor as a wallet instead of an external signer
 		oldRequest?: (options: { readonly method: string, readonly params?: unknown[] }) => Promise<unknown>,
-		oldOn?: (kind: OnMessage, callback: any) => Promise<void>,
+		oldOn?: (kind: OnMessage, callback: AnyCallBack) => Promise<void>,
 		enable: () => void,
 		isBraveWallet?: boolean,
 		isMetaMask?: boolean,
@@ -107,11 +114,11 @@ interface Window {
 		connected: boolean,
 		requestId: number,
 		outstandingRequests: Map<number, InterceptorFuture<unknown> >,
-		onMessageCallBack: ((message: ProviderMessage) => void),
-		onConnectCallBack: ((connectInfo: ProviderConnectInfo) => void)
-		onAccountsChangedCallBack: ((accounts: string[]) => void),
-		onDisconnectCallBack: ((error: ProviderRpcError) => void),
-		onChainChangedCallBack: ((chainId: string) => void),
+		onMessageCallBacks: Set<((message: ProviderMessage) => void)>,
+		onConnectCallBacks: Set<((connectInfo: ProviderConnectInfo) => void)>
+		onAccountsChangedCallBacks: Set<((accounts: string[]) => void)>,
+		onDisconnectCallBacks: Set<((error: ProviderRpcError) => void)>,
+		onChainChangedCallBacks: Set<((chainId: string) => void)>,
 	}
 }
 
@@ -120,11 +127,11 @@ window.interceptor = {
 	connected: false,
 	requestId: 0,
 	outstandingRequests: new Map(),
-	onMessageCallBack: (_message: ProviderMessage) => {},
-	onConnectCallBack: (_connectInfo: ProviderConnectInfo) => {},
-	onAccountsChangedCallBack: (_accounts: string[]) => {},
-	onDisconnectCallBack: (_error: ProviderRpcError) => {},
-	onChainChangedCallBack: (_chainId: string) => {},
+	onMessageCallBacks: new Set(),
+	onConnectCallBacks: new Set(),
+	onAccountsChangedCallBacks: new Set(),
+	onDisconnectCallBacks: new Set(),
+	onChainChangedCallBacks: new Set(),
 }
 
 type OnMessage = "accountsChanged" | "message" | "connect" | "error" | "close" | "disconnect" | "chainChanged"
@@ -218,22 +225,22 @@ function startListeningForMessages() {
 		if (forwardRequest.result !== undefined) {
 			// if interceptor direclty sent us the result, just forward that to the dapp, otherwise ask the signer for the result
 			if (forwardRequest.subscription !== undefined) {
-				return window.interceptor.onMessageCallBack( { type: 'eth_subscription', data: forwardRequest.result } )
+				return window.interceptor.onMessageCallBacks.forEach( (f) => f( { type: 'eth_subscription', data: forwardRequest.result } ))
 			}
 			if (forwardRequest.options.method === 'accountsChanged') {
-				return window.interceptor.onAccountsChangedCallBack( forwardRequest.result as string[] )
+				return window.interceptor.onAccountsChangedCallBacks.forEach( (f) => f( forwardRequest.result as string[] ) )
 			}
 			if (forwardRequest.options.method === 'connect') {
 				window.interceptor.connected = true
-				return window.interceptor.onConnectCallBack( { chainId: forwardRequest.result as string } )
+				return window.interceptor.onConnectCallBacks.forEach( (f) => f( { chainId: forwardRequest.result as string } ) )
 			}
 			if (forwardRequest.options.method === 'disconnect') {
 				window.interceptor.connected = false
 				const resultArray = forwardRequest.result as { code: number, message: string }
-				return window.interceptor.onDisconnectCallBack( { name: 'disconnect', ...resultArray } )
+				return window.interceptor.onDisconnectCallBacks.forEach( (f) => f( { name: 'disconnect', ...resultArray } ) )
 			}
 			if (forwardRequest.options.method === 'chainChanged') {
-				return window.interceptor.onChainChangedCallBack( forwardRequest.result as string )
+				return window.interceptor.onChainChangedCallBacks.forEach( (f) => f( forwardRequest.result as string ) )
 			}
 			if (forwardRequest.options.method === 'request_signer_to_eth_requestAccounts') {
 				// when dapp requsts eth_requestAccounts, interceptor needs to reply to it, but we also need to try to sign to the signer
@@ -330,26 +337,49 @@ function injectEthereumIntoWindow() {
 			.catch(error => callback({ jsonrpc: '2.0', id: payload.id, error: { code: error.code, message: error.message, data: { ...error.data, stack: error.stack } } }, null))
 	}
 
-	const on = async (kind: OnMessage, callback: any) => {
-		console.log(`set on: ${kind}`)
+	const on = async (kind: OnMessage, callback: AnyCallBack) => {
 		switch (kind) {
 			case 'accountsChanged':
-				window.interceptor.onAccountsChangedCallBack = callback as (accounts: string[]) => void
+				window.interceptor.onAccountsChangedCallBacks.add( callback as (accounts: string[]) => void )
 				return
 			case 'message':
-				window.interceptor.onMessageCallBack = callback as (message: ProviderMessage) => void
+				window.interceptor.onMessageCallBacks.add(callback as (message: ProviderMessage) => void)
 				return
 			case 'connect':
-				window.interceptor.onConnectCallBack = callback as (connectInfo: ProviderConnectInfo) => void
+				window.interceptor.onConnectCallBacks.add(callback as (connectInfo: ProviderConnectInfo) => void)
 				return
 			case 'close': //close is deprecated on eip-1193 by disconnect but its still used by dapps (MyEtherWallet)
-				window.interceptor.onDisconnectCallBack = callback as (error: ProviderRpcError) => void
+				window.interceptor.onDisconnectCallBacks.add(callback as (error: ProviderRpcError) => void)
 				return
 			case 'disconnect':
-				window.interceptor.onDisconnectCallBack = callback as (error: ProviderRpcError) => void
+				window.interceptor.onDisconnectCallBacks.add(callback as (error: ProviderRpcError) => void)
 				return
 			case 'chainChanged':
-				window.interceptor.onChainChangedCallBack = callback as (chainId: string) => void
+				window.interceptor.onChainChangedCallBacks.add(callback as (chainId: string) => void)
+				return
+			default:
+		}
+	}
+
+	const removeListener = async (kind: OnMessage, callback: AnyCallBack) => {
+		switch (kind) {
+			case 'accountsChanged':
+				window.interceptor.onAccountsChangedCallBacks.delete(callback as (accounts: string[]) => void)
+				return
+			case 'message':
+				window.interceptor.onMessageCallBacks.delete(callback as (message: ProviderMessage) => void)
+				return
+			case 'connect':
+				window.interceptor.onConnectCallBacks.delete(callback as (connectInfo: ProviderConnectInfo) => void)
+				return
+			case 'close': //close is deprecated on eip-1193 by disconnect but its still used by dapps (MyEtherWallet)
+				window.interceptor.onDisconnectCallBacks.delete(callback as (error: ProviderRpcError) => void)
+				return
+			case 'disconnect':
+				window.interceptor.onDisconnectCallBacks.delete(callback as (error: ProviderRpcError) => void)
+				return
+			case 'chainChanged':
+				window.interceptor.onChainChangedCallBacks.delete(callback as (chainId: string) => void)
 				return
 			default:
 		}
@@ -376,6 +406,7 @@ function injectEthereumIntoWindow() {
 		window.ethereum = {
 			request: request,
 			on: on,
+			removeListener: removeListener,
 			send: send,
 			sendAsync: sendAsync,
 			usingInterceptorWithoutSigner: true,
@@ -397,6 +428,7 @@ function injectEthereumIntoWindow() {
 			oldOn: window.ethereum.on, // store the on object to access Brave Wallet later on
 			request: request,
 			on: on,
+			removeListener: removeListener,
 			send: send,
 			sendAsync: sendAsync,
 			usingInterceptorWithoutSigner: false,
@@ -410,6 +442,7 @@ function injectEthereumIntoWindow() {
 		window.ethereum.oldOn = window.ethereum.on // store the on object to access the signer later on
 		window.ethereum.request = request
 		window.ethereum.on = on
+		window.ethereum.removeListener = removeListener
 		window.ethereum.send = send
 		window.ethereum.sendAsync = sendAsync
 		window.ethereum.usingInterceptorWithoutSigner = false
