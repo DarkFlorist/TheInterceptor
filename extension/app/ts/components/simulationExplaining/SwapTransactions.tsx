@@ -297,51 +297,55 @@ export function getSwapName(identifiedSwap: IdentifiedSwap, addressMetaData: Map
 export function SwapVisualization(param: SwapVisualizationParams) {
 	if ( param.identifiedSwap === false ) return <></>
 	return <div class = 'vertical-center' style = 'color: var(--text-color); padding-top: 5px; justify-content: center;' >
-		<p class = 'vertical-center' style = 'color: var(--text-color); margin-right: 4px; margin-bottom: 0px' >
-			Swap
+		<p style = { `color: var(--text-color); display: inline-block` }>
+			Swap&nbsp;
+			<div class = 'box' style = 'padding: 4px; background-color: var(--highlighted-primary-color); box-shadow: unset; margin-bottom: 0px; display: inherit;'>
+				{ param.identifiedSwap.type === 'TokenToToken' || param.identifiedSwap.type === 'TokenToETH' ?
+					'tokenIdSent' in param.identifiedSwap ?
+						<ERC721Token
+							tokenId = { param.identifiedSwap.tokenIdSent }
+							token = { param.identifiedSwap.tokenAddressSent }
+							addressMetadata = { param.addressMetadata.get(addressString(param.identifiedSwap.tokenAddressSent)) }
+							useFullTokenName = { false }
+							received = { false }
+						/>
+						:
+						<Token
+							amount = { param.identifiedSwap.tokenAmountSent }
+							token = { param.identifiedSwap.tokenAddressSent }
+							addressMetadata = { param.addressMetadata.get(addressString(param.identifiedSwap.tokenAddressSent)) }
+							useFullTokenName = { false }
+						/>
+				: <Ether
+					amount = { param.identifiedSwap.ethAmountSent }
+					chain = { param.chain }
+				/>
+				}
+			</div>
+			&nbsp;for&nbsp;
+			<div class = 'box' style = 'padding: 4px; background-color: var(--highlighted-primary-color); box-shadow: unset; display: inherit;'>
+				{ param.identifiedSwap.type === 'TokenToToken' || param.identifiedSwap.type === 'ETHToToken' ?
+					'tokenIdReceived' in param.identifiedSwap ?
+						<ERC721Token
+							tokenId = { param.identifiedSwap.tokenIdReceived }
+							token = { param.identifiedSwap.tokenAddressReceived }
+							addressMetadata = { param.addressMetadata.get(addressString(param.identifiedSwap.tokenAddressReceived)) }
+							useFullTokenName = { false }
+							received = { false }
+						/>
+						:
+						<Token
+							amount = { param.identifiedSwap.tokenAmountReceived }
+							token = { param.identifiedSwap.tokenAddressReceived }
+							addressMetadata = { param.addressMetadata.get(addressString(param.identifiedSwap.tokenAddressReceived)) }
+							useFullTokenName = { false }
+						/>
+				: <Ether
+					amount = { param.identifiedSwap.ethAmountReceived }
+					chain = { param.chain }
+				/>
+				}
+			</div>
 		</p>
-		<div class = 'box' style = 'padding: 4px; background-color: var(--highlighted-primary-color); box-shadow: unset; margin-bottom: 0px'>
-			{ param.identifiedSwap.type === 'TokenToToken' || param.identifiedSwap.type === 'TokenToETH' ?
-				'tokenIdSent' in param.identifiedSwap ?
-					<ERC721Token
-						tokenId = { param.identifiedSwap.tokenIdSent }
-						token = { param.identifiedSwap.tokenAddressSent }
-						addressMetadata = { param.addressMetadata.get(addressString(param.identifiedSwap.tokenAddressSent)) }
-						useFullTokenName = { false }
-						received = { false }
-					/>
-					:
-					<Token
-						amount = { param.identifiedSwap.tokenAmountSent }
-						token = { param.identifiedSwap.tokenAddressSent }
-						addressMetadata = { param.addressMetadata.get(addressString(param.identifiedSwap.tokenAddressSent)) }
-						useFullTokenName = { false }
-					/>
-			: <Ether amount = { param.identifiedSwap.ethAmountSent } chain = { param.chain } />
-			}
-		</div>
-		<p class = 'vertical-center' style = 'color: var(--text-color); margin-left: 4px; margin-right: 4px; margin-bottom: 0px;' >
-			for
-		</p>
-		<div class = 'box' style = 'padding: 4px; background-color: var(--highlighted-primary-color); box-shadow: unset'>
-			{ param.identifiedSwap.type === 'TokenToToken' || param.identifiedSwap.type === 'ETHToToken' ?
-				'tokenIdReceived' in param.identifiedSwap ?
-					<ERC721Token
-						tokenId = { param.identifiedSwap.tokenIdReceived }
-						token = { param.identifiedSwap.tokenAddressReceived }
-						addressMetadata = { param.addressMetadata.get(addressString(param.identifiedSwap.tokenAddressReceived)) }
-						useFullTokenName = { false }
-						received = { false }
-					/>
-					:
-					<Token
-						amount = { param.identifiedSwap.tokenAmountReceived }
-						token = { param.identifiedSwap.tokenAddressReceived }
-						addressMetadata = { param.addressMetadata.get(addressString(param.identifiedSwap.tokenAddressReceived)) }
-						useFullTokenName = { false }
-					/>
-			: <Ether amount = { param.identifiedSwap.ethAmountReceived } chain = { param.chain } />
-			}
-		</div>
 	</div>
 }

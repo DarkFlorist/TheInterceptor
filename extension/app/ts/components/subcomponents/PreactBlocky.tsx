@@ -6,7 +6,8 @@ interface BlockieProps {
 	scale?: number,
 	color?: string,
 	bgColor?: string,
-	spotColor?: string
+	spotColor?: string,
+	rounded?: true,
 }
 
 function generateIdenticon(options: BlockieProps, canvasRef: HTMLCanvasElement) {
@@ -131,6 +132,12 @@ export default function Blockie(props: BlockieProps) {
 	const dimension = (props.size || 8) * (props.scale || 4)
 	return <canvas
 		ref = { canvasRef }
-		style = { { width: `${ dimension }px`, height: `${ dimension }px` } }
+		style = {
+			{
+				width: `${ dimension }px`,
+				height: `${ dimension }px`,
+				borderRadius: props.rounded ? '50%' : '0%',
+			}
+		}
 	/>
 }

@@ -24,6 +24,7 @@
 	--disabled-text-color: rgba(255, 255, 255, 0.5);
 	--disabled-negative-text-color: rgba(246, 104, 94, 0.5);
 	--unimportant-text-color: rgba(255, 255, 255, 0.2);
+	--dim-text-color: rgba(255, 255, 255, 0.8);
 
 	--modal-background-color: rgba(10, 10, 10, .7)
 }
@@ -239,13 +240,12 @@ li {
 }
 
 .vertical-center {
-	display: -ms-flexbox;
-	display: -webkit-flex;
-	display: flex;
+	display: inline-block;
 	-ms-flex-align: center;
 	-webkit-align-items: center;
 	-webkit-box-align: center;
 	align-items: center;
+	vertical-align: middle;
 }
 
 .token-box {
@@ -256,8 +256,12 @@ li {
 	margin-top: 5px;
 }
 
-.content p:not(:last-child), .content dl:not(:last-child), .content ol:not(:last-child), .content ul:not(:last-child), .content blockquote:not(:last-child), .content pre:not(:last-child), .content table:not(:last-child) {
+.content p:not(:last-child), .content dl:not(:last-child), .content ol:not(:last-child), .content ul:not(:last-child), .content blockquote:not(:last-child), .content pre:not(:last-child) {
 	margin-bottom: 10px;
+}
+
+.content p:not(:last-child), .content table:not(:last-child) {
+	margin-bottom: 0px;
 }
 
 .tokentext {
@@ -449,4 +453,21 @@ svg.spinner > circle {
 
 ::-webkit-scrollbar-button:single-button:horizontal:increment:active {
     background-image: url("data:image/svg+xml;utf8, <svg xmlns = 'http://www.w3.org/2000/svg' width = '100' height = '100' fill = 'var(--window-header-bg-color)'><polygon points = '0,0 0,100 50,50'/></svg>");
+}
+
+.log-table {
+	display: grid;
+	grid-template-columns: max-content auto auto auto auto;
+	width: 100%;
+}
+
+.log-cell {
+	text-overflow: ellipsis;
+	overflow: hidden;
+	white-space: nowrap;
+	display: flex;
+}
+.ellipsis {
+	text-overflow: ellipsis;
+	overflow: hidden;
 }

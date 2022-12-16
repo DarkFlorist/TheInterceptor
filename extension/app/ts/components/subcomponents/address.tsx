@@ -5,6 +5,7 @@ import Blockie from './PreactBlocky.js'
 import { AddressInfo } from '../../utils/user-interface-types.js'
 import { CopyToClipboard } from './CopyToClipboard.js'
 import { ChainSelector } from './ChainSelector.js'
+import { ApproveIcon, ArrowIcon } from '../subcomponents/icons.js'
 
 export function findAddressInfo(addressToFind: bigint, addressInfos: readonly AddressInfo[]) {
 	for (const info of addressInfos) {
@@ -77,26 +78,26 @@ export function BigAddress(params: BigAddressParams) {
 			}
 		</div>
 
-		<div class = 'media-content' style = 'overflow-y: hidden;'>
+		<div class = 'media-content' style = 'overflow-y: hidden; overflow-x: clip; display: block;'>
 			{ !params.noCopying ?
 				<CopyToClipboard content = { ethers.utils.getAddress(addressString(params.address)) } copyMessage = 'Address copied!'>
-					<p class = 'title is-5 noselect nopointer'>
+					<p class = 'title is-5 noselect nopointer' style = 'text-overflow: ellipsis; white-space: nowrap;'>
 						{ title }
 					</p>
 				</CopyToClipboard>
 			:
-				<p class = 'title is-5 noselect nopointer'>
+				<p class = 'title is-5 noselect nopointer' style = 'text-overflow: ellipsis; white-space: nowrap;'>
 					{ title }
 				</p>
 			}
 			{ !params.noCopying ?
 				<CopyToClipboard content = { ethers.utils.getAddress(addressString(params.address)) } copyMessage = 'Address copied!'>
-					<p class = 'subtitle is-7 noselect nopointer'>
+					<p class = 'subtitle is-7 noselect nopointer' style = 'text-overflow: ellipsis; white-space: nowrap;'>
 						{ subTitle === undefined ? '' : subTitle }
 					</p>
 				</CopyToClipboard>
 			:
-				<p class = 'subtitle is-7 noselect nopointer'>
+				<p class = 'subtitle is-7 noselect nopointer' style = 'text-overflow: ellipsis; white-space: nowrap;'>
 					{ subTitle === undefined ? '' : subTitle }
 				</p>
 			}
@@ -150,7 +151,6 @@ export function ActiveAddress(params: ActiveAddressParams) {
 export type SmallAddressParams = {
 	address: bigint,
 	addressMetaData: AddressMetadata | undefined,
-	downScale?: boolean,
 	textColor?: string,
 }
 
@@ -161,33 +161,18 @@ export function getAddressName(address: bigint, metadata: AddressMetadata | unde
 
 export function SmallAddress(params: SmallAddressParams) {
 	const name = getAddressName(params.address, params.addressMetaData)
-	const isAddr = ethers.utils.isAddress(name)
-	const subTitle = isAddr ? undefined : addressString(params.address)
 	const textColor = params.textColor === undefined ? 'var(--text-color)' : params.textColor
 
-	return <div class = 'media' style = 'border-top: 0px; margin-top: 0px; padding-top: 0px; margin-right: 5px'>
-		<div class = 'media-left' style = 'margin-right: 5px'>
-			<CopyToClipboard content = { ethers.utils.getAddress(addressString(params.address)) } copyMessage = 'Address copied!' >
-				<figure class = 'image noselect nopointer' style = 'margin: 0px'>
-					<Blockie seed = { addressString(params.address).toLowerCase() } size = { 8 } scale = { params.downScale ? 3 : 5 } />
-				</figure>
-			</CopyToClipboard>
-		</div>
-		<div class = 'media-content' style = 'overflow-y: hidden;'>
-			<CopyToClipboard content = { ethers.utils.getAddress(addressString(params.address)) } copyMessage = 'Address copied!'>
-				<p class = 'title is-7 noselect nopointer' style = { `color: ${textColor};` } >
+	return	<CopyToClipboard content = { ethers.utils.getAddress(addressString(params.address)) } copyMessage = 'Address copied!'>
+		<div style = 'display: contents'>
+			<span class = 'vertical-center noselect nopointer' style = 'margin-right: 5px'>
+				<Blockie seed = { addressString(params.address).toLowerCase() } size = { 8 } scale = { 3 } />
+			</span>
+			<span class = 'noselect nopointer' style = { `color: ${ textColor }; overflow: hidden; text-overflow: ellipsis;` } >
 				{ name }
-				</p>
-			</CopyToClipboard>
-			{ !params.downScale ?
-				<CopyToClipboard content = { ethers.utils.getAddress(addressString(params.address)) } copyMessage = 'Address copied!'>
-					<p class = 'subtitle is-7 noselect nopointer' style = { `color: ${textColor}` }>
-						{ subTitle === undefined ? '' : subTitle }
-					</p>
-				</CopyToClipboard>
-			: <></>}
+			</span>
 		</div>
-	</div>
+	</CopyToClipboard>
 }
 
 export type FromAddressToAddressParams = {
@@ -195,22 +180,19 @@ export type FromAddressToAddressParams = {
 	to: bigint
 	fromAddressMetadata: AddressMetadata | undefined
 	toAddressMetadata: AddressMetadata | undefined
-	downScale: boolean
 	isApproval: boolean
 }
 
 export function FromAddressToAddress(params: FromAddressToAddressParams ) {
-	return  <div class = 'columns is-mobile' style = 'margin-bottom: 0px;'>
+	return  <div class = 'columns is-mobile' style = 'margin-bottom: 0px; color: var(--text-color);'>
 		<div class = 'column' style = 'width: 47.5%; flex: none; padding-bottom: 0px;'>
-			<SmallAddress address = { params.from } addressMetaData = { params.fromAddressMetadata } downScale = { params.downScale }/>
+			<BigAddress address = { params.from } title = { params.fromAddressMetadata?.name }/>
 		</div>
 		<div class = 'column' style = 'width: 5%; padding: 0px; align-self: center; flex: none;'>
-			{ params.isApproval ? <img width = '24' src = { '../../img/access-hand-key-icon.svg' }></img> :
-				<svg style = '' width = '24' height = '24' viewBox = '0 0 24 24'> <path fill = 'var(--text-color)' d = 'M13 7v-6l11 11-11 11v-6h-13v-10z'/> </svg>
-			}
+			{ params.isApproval ? <ApproveIcon color = { 'var(--text-color)' }/> : <ArrowIcon color = { 'var(--text-color)' }/> }
 		</div>
 		<div class = 'column' style = 'width: 47.5%; flex: none; padding-bottom: 0px;'>
-			<SmallAddress address = { params.to } addressMetaData = { params.toAddressMetadata } downScale = { params.downScale }/>
+			<BigAddress address = { params.to } title = { params.toAddressMetadata?.name }/>
 		</div>
 	</div>
 }

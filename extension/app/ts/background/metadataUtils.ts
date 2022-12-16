@@ -93,7 +93,7 @@ async function getTokenMetadata(simulator: Simulator, address: bigint) : Promise
 		name: ethers.utils.getAddress(addrString),
 		symbol: '???',
 		protocol: undefined,
-		logoURI: '../../img/question-mark-sign.svg',
+		logoURI: undefined,
 		metadataSource: 'imputed' as const,
 		decimals
 	}

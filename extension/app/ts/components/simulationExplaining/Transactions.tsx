@@ -1,7 +1,7 @@
 import { addressString } from '../../utils/bigint.js'
 import { AddressMetadata, SimulatedAndVisualizedTransaction, SimulationAndVisualisationResults, TokenVisualizerResult, TransactionVisualizationParameters } from '../../utils/visualizer-types.js'
 import { FromAddressToAddress, SmallAddress } from '../subcomponents/address.js'
-import { Ether, Token, TokenText, TokenText721, ERC721Token } from '../subcomponents/coins.js'
+import { EtherSymbol, TokenSymbol, TokenAmount, EtherAmount, Token721AmountField, ERC721TokenNumber } from '../subcomponents/coins.js'
 import { CHAIN, LogAnalysisParams } from '../../utils/user-interface-types.js'
 import { QUARANTINE_CODES_DICT } from '../../simulation/protectors/quarantine-codes.js'
 import { Error } from '../subcomponents/Error.js'
@@ -10,14 +10,35 @@ import { Erc20ApprovalChanges, ERC721OperatorChanges, ERC721TokenIdApprovalChang
 import { identifyTransaction, nameTransaction } from './identifyTransaction.js'
 import { makeYouRichTransaction } from './transactionExplainers.js'
 import { JSXInternal } from 'preact/src/jsx'
+import { ApproveIcon, ArrowIcon } from '../subcomponents/icons.js'
 
-function TransactionAggregate(
-	param: {
-		txs: SimulatedAndVisualizedTransaction[],
-		simulationAndVisualisationResults: SimulationAndVisualisationResults,
-		activeAddress: bigint,
+function isPositiveEvent(visResult: TokenVisualizerResult, ourAddressInReferenceFrame: bigint) {
+	if (!visResult.is721) {
+		if (!visResult.isApproval) {
+			return visResult.amount >= 0 // simple transfer
+		}
+		return visResult.amount === 0n // zero is only positive approve event
 	}
-) {
+
+	// nfts
+	if ('isAllApproval' in visResult) { // all approval is only positive if someone all approves us, or all approval is removed from us
+		return (visResult.allApprovalAdded && visResult.to === ourAddressInReferenceFrame) || (!visResult.allApprovalAdded && visResult.from === ourAddressInReferenceFrame)
+	}
+
+	if (visResult.isApproval) {
+		return visResult.to === ourAddressInReferenceFrame // approval is only positive if we are getting approved
+	}
+
+	return visResult.to === ourAddressInReferenceFrame // send is positive if we are receiving
+}
+
+type TransactionAggregateParam = {
+	txs: SimulatedAndVisualizedTransaction[],
+	simulationAndVisualisationResults: SimulationAndVisualisationResults,
+	activeAddress: bigint,
+}
+
+function TransactionAggregate(param: TransactionAggregateParam) {
 	return ( <> {
 		param.txs.map((tx, _index) => (
 			<li>
@@ -58,116 +79,135 @@ function areThereImportantEventsToHighlight(tx: SimulatedAndVisualizedTransactio
 	return tx.simResults.visualizerResults.tokenResults.filter( (x) => x.from === msgSender || x.to === msgSender ).length > 0
 }
 
-function EtherTransferEvent(param: { valueSent: bigint, totalReceived: bigint, textColor: string, chain: CHAIN } ) {
+type EtherTransferEventParams = {
+	valueSent: bigint,
+	totalReceived: bigint,
+	textColor: string,
+	chain: CHAIN,
+}
+
+function EtherTransferEvent(param: EtherTransferEventParams) {
 	return <>
 		{ param.valueSent === 0n ? <></> :
 			<div class = 'vertical-center'>
-				<div class = 'box token-box negative-box vertical-center' >
-					<p style = {`color: ${ param.textColor }; margin-bottom: 0px`}> Send </p>
-					<Ether
-						amount = { param.valueSent }
-						showSign = { false }
-						textColor = { param.textColor }
-						negativeColor = { param.textColor }
-						chain = { param.chain }
-					/>
+				<div class = { `box token-box negative-box vertical-center` } style = 'display: inline-block'>
+					<table class = 'log-table'>
+						<div class = 'log-cell'>
+							<p class = 'ellipsis' style = {`color: ${ param.textColor }; margin-bottom: 0px`}> Send&nbsp; </p>
+						</div>
+						<div class = 'log-cell' style = 'justify-content: right;'>
+							<EtherAmount
+								amount = { param.valueSent }
+								textColor = { param.textColor }
+							/>
+						</div>
+						<div class = 'log-cell'>
+							<EtherSymbol
+								amount = { param.valueSent }
+								textColor = { param.textColor }
+								chain = { param.chain }
+							/>
+						</div>
+					</table>
 				</div>
 			</div>
 		}
 		{ param.totalReceived <= 0n ? <></> :
 			<div class = 'vertical-center'>
-				<div class = 'box token-box positive-box vertical-center'>
-					<p style = {`color: ${ param.textColor }; margin-bottom: 0px`}> Receive </p>
-					<Ether
-						amount = { param.totalReceived }
-						showSign = { false }
-						textColor = { param.textColor }
-						negativeColor = { param.textColor }
-						chain = { param.chain }
-					/>
+				<div class = 'box token-box positive-box vertical-center' style = 'display: inline-block'>
+					<table class = 'log-table'>
+						<div class = 'log-cell'>
+							<p class = 'ellipsis' style = {`color: ${ param.textColor }; margin-bottom: 0px`}> Receive&nbsp; </p>
+						</div>
+						<div class = 'log-cell' style = 'justify-content: right;'>
+							<EtherAmount
+								amount = { param.totalReceived }
+								textColor = { param.textColor }
+							/>
+						</div>
+						<div class = 'log-cell'>
+							<EtherSymbol
+								amount = { param.totalReceived }
+								textColor = { param.textColor }
+								chain = { param.chain }
+							/>
+						</div>
+					</table>
 				</div>
 			</div>
 		}
 	</>
 }
 
-function SendOrReceiveTokensImportanceBox(param: { sending: boolean, tokenVisualizerResults: TokenVisualizerResult[] | undefined, addressMetadata: Map<string, AddressMetadata>, textColor: string } ) {
+type SendOrReceiveTokensImportanceBoxParams = {
+	sending: boolean,
+	tokenVisualizerResults: TokenVisualizerResult[] | undefined,
+	addressMetadata: Map<string, AddressMetadata>,
+	textColor: string,
+}
+
+function SendOrReceiveTokensImportanceBox(param: SendOrReceiveTokensImportanceBoxParams ) {
 	if (param.tokenVisualizerResults === undefined) return <></>
 	return <>
 		{ param.tokenVisualizerResults.map( (tokenEvent) => (
 			tokenEvent.isApproval ? <></> : <div class = 'vertical-center'>
-				{ param.sending ?
-					<div class = 'box token-box negative-box vertical-center'  >
-						<p  style = {`color: ${ param.textColor }; margin-bottom: 0px`}> Send </p>
-						{ tokenEvent.is721 ?
-							<ERC721Token
-								tokenId = { tokenEvent.tokenId }
+				<div class = { `box token-box ${ param.sending ? 'negative-box' : 'positive-box' } vertical-center` } style = 'display: inline-block'>
+					<table class = 'log-table'>
+						<div class = 'log-cell'>
+							<p class = 'ellipsis' style = { `color: ${ param.textColor }; margin-bottom: 0px; display: inline-block` }>
+								{ param.sending ? 'Send' : 'Receive' }&nbsp;
+							</p>
+						</div>
+						<div class = 'log-cell'>
+							{ tokenEvent.is721 ?
+								<ERC721TokenNumber
+									tokenId = { tokenEvent.tokenId }
+									received = { !param.sending }
+									textColor = { param.textColor }
+									showSign = { false }
+								/>
+							:
+								<TokenAmount
+									amount = { tokenEvent.amount }
+									addressMetadata = { param.addressMetadata.get(addressString(tokenEvent.tokenAddress)) }
+									textColor = { param.textColor }
+								/>
+							}
+						</div>
+						<div class = 'log-cell' style = 'padding-right: 0.2em'>
+							<TokenSymbol
 								token = { tokenEvent.tokenAddress }
 								addressMetadata = { param.addressMetadata.get(addressString(tokenEvent.tokenAddress)) }
 								textColor = { param.textColor }
-								useFullTokenName = { false }
-								received = { false }
-								showSign = { false }
-							/> :
-							<Token
-								amount = { tokenEvent.amount }
-								token = { tokenEvent.tokenAddress }
-								showSign = { false }
-								addressMetadata = { param.addressMetadata.get(addressString(tokenEvent.tokenAddress)) }
-								textColor = { param.textColor }
-								negativeColor = { param.textColor }
 								useFullTokenName = { false }
 							/>
-						}
-
-						<p style = { `color: ${ param.textColor }; margin-bottom: 0px; margin-right: 8px` }> to </p>
-						<SmallAddress
-							address = { tokenEvent.to }
-							addressMetaData = { param.addressMetadata.get(addressString(tokenEvent.to)) }
-							textColor = { param.textColor }
-							downScale = { true }
-						/>
-					</div>
-					:
-					<div class = 'box token-box positive-box vertical-center'>
-						<p style = { `color: ${ param.textColor }; margin-bottom: 0px;` }> Receive </p>
-						{ tokenEvent.is721 ?
-							<ERC721Token
-								tokenId = { tokenEvent.tokenId }
-								token = { tokenEvent.tokenAddress }
-								addressMetadata = { param.addressMetadata.get(addressString(tokenEvent.tokenAddress)) }
+						</div>
+						<div class = 'log-cell'>
+							<p class = 'ellipsis' style = { `color: ${ param.textColor }; margin-bottom: 0px; display: inline-block` }>
+								&nbsp;{ param.sending ? 'to' : 'from' }&nbsp;
+							</p>
+						</div>
+						<div class = 'log-cell'>
+							<SmallAddress
+								address = { tokenEvent.to }
+								addressMetaData = { param.addressMetadata.get(addressString(tokenEvent.to)) }
 								textColor = { param.textColor }
-								useFullTokenName = { false }
-								received = { true }
-								showSign = { false }
-							/> :
-							<Token
-								amount = { tokenEvent.amount }
-								token = { tokenEvent.tokenAddress }
-								showSign = { false }
-								addressMetadata = { param.addressMetadata.get(addressString(tokenEvent.tokenAddress)) }
-								textColor = { param.textColor }
-								negativeColor = { param.textColor }
-								useFullTokenName = { false }
 							/>
-						}
-						<p style = { `color: ${ param.textColor }; margin-bottom: 0px; margin-right: 8px` }> from </p>
-						<SmallAddress
-							address = { tokenEvent.tokenAddress }
-							addressMetaData = { param.addressMetadata.get(addressString(tokenEvent.tokenAddress)) }
-							textColor = { param.textColor }
-							downScale = { true }
-						/>
-					</div>
-				}
+						</div>
+					</table>
 				</div>
-			))
-		}
+			</div>
+		) ) }
 	</>
 }
 
+type TransactionImportanceBlockParams = {
+	tx: SimulatedAndVisualizedTransaction,
+	simulationAndVisualisationResults: SimulationAndVisualisationResults,
+}
+
 // showcases the most important things the transaction does
-function TransactionImportanceBlock( param: { tx: SimulatedAndVisualizedTransaction, simulationAndVisualisationResults: SimulationAndVisualisationResults } ) {
+function TransactionImportanceBlock( param: TransactionImportanceBlockParams ) {
 	if ( param.tx.multicallResponse.statusCode === 'failure') return <></>
 	const identifiedSwap = identifySwap(param.tx)
 	const textColor =  'var(--text-color)'
@@ -279,7 +319,6 @@ function normalTransaction(param: TransactionVisualizationParameters) {
 								to = { param.tx.signedTransaction.to }
 								fromAddressMetadata = { param.simulationAndVisualisationResults.addressMetadata.get(addressString(param.tx.signedTransaction.from)) }
 								toAddressMetadata = { param.simulationAndVisualisationResults.addressMetadata.get(addressString(param.tx.signedTransaction.to)) }
-								downScale = { false }
 								isApproval = { false }
 							/>
 							<div class = 'content importance-box-content' >
@@ -308,14 +347,25 @@ function normalTransaction(param: TransactionVisualizationParameters) {
 				</> : <></> }
 				{ param.tx.multicallResponse.statusCode !== 'success' ? <Error text = { `The transaction fails with error '${param.tx.multicallResponse.error}'` } /> : <></>}
 				{ param.tx.realizedGasPrice > 0n ?
-					<p className = 'paragraph vertical-center' style = 'color: var(--subtitle-text-color); flex-direction: row-reverse;'>
-						<Ether
-							amount = { param.tx.multicallResponse.gasSpent * param.tx.realizedGasPrice }
-							textColor = { 'var(--subtitle-text-color)' }
-							chain = { param.simulationAndVisualisationResults.chain }
-						/>
-						Gas fee:
-					</p> : <></>
+					<table class = 'log-table' style = 'width: fit-content; margin: 0 0 0 auto;'>
+						<div class = 'log-cell'>
+							<p class = 'ellipsis' style = {`color: var(--subtitle-text-color); margin-bottom: 0px`}> Gas fee:&nbsp;</p>
+						</div>
+						<div class = 'log-cell' style = 'justify-content: right;'>
+							<EtherAmount
+								amount = { param.tx.multicallResponse.gasSpent * param.tx.realizedGasPrice  }
+								textColor = { 'var(--subtitle-text-color)' }
+							/>
+						</div>
+						<div class = 'log-cell'>
+							<EtherSymbol
+								amount = { param.tx.multicallResponse.gasSpent * param.tx.realizedGasPrice  }
+								textColor = { 'var(--subtitle-text-color)' }
+								chain = { param.simulationAndVisualisationResults.chain }
+							/>
+						</div>
+					</table>
+					: <></>
 				}
 			</div>
 		</div>
@@ -335,14 +385,14 @@ function Transaction(param: TransactionVisualizationParameters) {
 	return handler(param)
 }
 
-export function Transactions(
-	param: {
-		simulationAndVisualisationResults: SimulationAndVisualisationResults,
-		removeTransaction: (hash: bigint) => void,
-		showOnlyOneAndAggregateRest?: boolean,
-		activeAddress: bigint,
-	}
-) {
+type TransactionsParams = {
+	simulationAndVisualisationResults: SimulationAndVisualisationResults,
+	removeTransaction: (hash: bigint) => void,
+	showOnlyOneAndAggregateRest?: boolean,
+	activeAddress: bigint,
+}
+
+export function Transactions(param: TransactionsParams) {
 	if(param.showOnlyOneAndAggregateRest) {
 		if (param.simulationAndVisualisationResults.simulatedAndVisualizedTransactions.length === 0) return <></>
 		return (
@@ -379,78 +429,71 @@ export function Transactions(
 	</ul>
 }
 
-export type TokenLogEventParams = {
+type TokenLogEventParams = {
 	tokenVisualizerResult: TokenVisualizerResult
 	addressMetadata: Map<string, AddressMetadata>
+	ourAddressInReferenceFrame: bigint,
 }
-export function TokenLogEvent(params: TokenLogEventParams ) {
-	const colors = {
-		textColor: 'var(--disabled-text-color)',
-		negativeColor: 'var(--negative-dim-color)'
-	}
-	const isNegativelog = params.tokenVisualizerResult.isApproval
-		|| ('amount' in params.tokenVisualizerResult && params.tokenVisualizerResult.amount < 0n)
-		|| ('isApproval' in params.tokenVisualizerResult && params.tokenVisualizerResult.isApproval )
-	const textColor = isNegativelog ? colors.negativeColor : colors.textColor
 
-	return <div class = 'columns is-mobile' style = 'margin-bottom: 0px;'>
-		<div class = 'column log-column'>
-			<SmallAddress
-				address = { params.tokenVisualizerResult.from }
-				addressMetaData = { params.addressMetadata.get(addressString(params.tokenVisualizerResult.from)) }
-				downScale = { true }
-				textColor = { textColor }
-			/>
-		</div>
-		{ params.tokenVisualizerResult.isApproval ?
-			<div class = 'column log-column' style = 'flex-basis: unset; flex-grow: unset;'>
-				<p class = 'vertical-center' style = {`color: ${ colors.negativeColor };`}> Approve </p>
+export function TokenLogEvent(params: TokenLogEventParams ) {
+	const textColor = isPositiveEvent(params.tokenVisualizerResult, params.ourAddressInReferenceFrame) ? 'var(--dim-text-color)' : 'var(--negative-dim-color)'
+
+	return <>
+			<div class = 'log-cell' style = 'justify-content: right;'>
+				{ params.tokenVisualizerResult.is721 ?
+					<Token721AmountField
+						visResult = { params.tokenVisualizerResult }
+						textColor = { textColor }
+					/>
+				: <> { params.tokenVisualizerResult.amount > 2n ** 100n && params.tokenVisualizerResult.isApproval ?
+						<p class = 'ellipsis' style = { `color: ${ textColor }` }><b>ALL</b></p>
+					:
+						<TokenAmount
+							amount = { params.tokenVisualizerResult.amount }
+							addressMetadata = { params.addressMetadata.get(addressString(params.tokenVisualizerResult.tokenAddress)) }
+							textColor = { textColor }
+						/>
+					} </>
+				}
 			</div>
-			:
-			<div class = 'column log-column' style = 'padding-right: 0px; padding-left: 0px; flex: none; align-self: center;'>
-				<svg style = '' width = '24' height = '24' viewBox = '0 0 24 24'> <path fill = { colors.textColor } d = 'M13 7v-6l11 11-11 11v-6h-13v-10z'/> </svg>
-			</div>
-		}
-		<div class = 'column log-column'>
-			<SmallAddress
-				address = { params.tokenVisualizerResult.to }
-				addressMetaData = { params.addressMetadata.get(addressString(params.tokenVisualizerResult.to)) }
-				downScale = { true}
-				textColor = { textColor }
-				/>
-		</div>
-		<div class = 'column log-column is-narrow'>
-			{ params.tokenVisualizerResult.is721 ?
-				<TokenText721
-					visResult = { params.tokenVisualizerResult }
+			<div class = 'log-cell' style = 'padding-right: 0.2em'>
+				<TokenSymbol
+					token = { params.tokenVisualizerResult.tokenAddress }
 					addressMetadata = { params.addressMetadata.get(addressString(params.tokenVisualizerResult.tokenAddress)) }
-					textColor = { colors.textColor }
-					negativeColor = { colors.negativeColor }
+					textColor = { textColor }
 					useFullTokenName = { false }
 				/>
-				: <TokenText
-					isApproval = { params.tokenVisualizerResult.isApproval }
-					amount = { params.tokenVisualizerResult.amount }
-					tokenAddress = { params.tokenVisualizerResult.tokenAddress }
-					addressMetadata = { params.addressMetadata.get(addressString(params.tokenVisualizerResult.tokenAddress)) }
-					textColor = { colors.textColor }
-					negativeColor = { colors.negativeColor }
-					useFullTokenName = { false }
+			</div>
+			<div class = 'log-cell'>
+				<SmallAddress
+					address = { params.tokenVisualizerResult.from }
+					addressMetaData = { params.addressMetadata.get(addressString(params.tokenVisualizerResult.from)) }
+					textColor = { textColor }
 				/>
-			}
-		</div>
-	</div>
+			</div>
+			<div class = 'log-cell' style = 'padding-right: 0.2em; padding-left: 0.2em'>
+				{ params.tokenVisualizerResult.isApproval ? <ApproveIcon color = { textColor } /> : <ArrowIcon color = { textColor } /> }
+			</div>
+			<div class = 'log-cell'>
+				<SmallAddress
+					address = { params.tokenVisualizerResult.to }
+					addressMetaData = { params.addressMetadata.get(addressString(params.tokenVisualizerResult.to)) }
+					textColor = { textColor }
+				/>
+			</div>
+	</>
 }
 
 function LogAnalysis(param: LogAnalysisParams) {
 	if ( param.simulatedAndVisualizedTransaction?.simResults?.visualizerResults === undefined ) return <></>
 	if ( param.simulatedAndVisualizedTransaction.simResults.visualizerResults.tokenResults.length === 0 ) return <></>
 	const routes = identifyRoutes(param.simulatedAndVisualizedTransaction, param.identifiedSwap)
-	return <> { routes ?
+	return <table class = 'log-table' style = 'justify-content: center; column-gap: 5px;'> { routes ?
 		routes.map( (tokenVisualizerResult) => (
 			<TokenLogEvent
 				tokenVisualizerResult = { tokenVisualizerResult }
 				addressMetadata = { param.addressMetadata }
+				ourAddressInReferenceFrame = { param.simulatedAndVisualizedTransaction.unsignedTransaction.from }
 			/>
 		))
 	:
@@ -458,7 +501,8 @@ function LogAnalysis(param: LogAnalysisParams) {
 			<TokenLogEvent
 				tokenVisualizerResult = { tokenVisualizerResult }
 				addressMetadata = { param.addressMetadata }
+				ourAddressInReferenceFrame = { param.simulatedAndVisualizedTransaction.unsignedTransaction.from }
 			/>
 		))
-	} </>
+	} </table>
 }

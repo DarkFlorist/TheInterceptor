@@ -197,7 +197,7 @@ export function InterceptorAccessList(param: InterceptorAccessListParams) {
 													{ websiteAccessAddress.removed ? <p style = 'color: var(--negative-color)' > { `Forgot ${ websiteAccessAddress.address }`} </p> :
 														<div class = 'media'>
 															<div class = 'media-content' style = 'overflow-y: visible; overflow-x: unset; flex-basis: min-content;'>
-																<SmallAddress address = { BigInt(websiteAccessAddress.address) } addressMetaData = { metadata.get(websiteAccessAddress.address) } downScale = { true }/>
+																<SmallAddress address = { BigInt(websiteAccessAddress.address) } addressMetaData = { metadata.get(websiteAccessAddress.address) }/>
 															</div>
 															<label class = 'form-control' style = 'width: 8em'>
 																<input type = 'checkbox' checked = { websiteAccessAddress.access } onInput = { e => { if (e.target instanceof HTMLInputElement && e.target !== null) { setAddressAccess(accessListIndex, addressIndex, e.target.checked, undefined) } } } />
