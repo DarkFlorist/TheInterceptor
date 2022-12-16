@@ -1,13 +1,11 @@
 <!DOCTYPE html>
 <html>
 	<body>
-		<script async src = '../vendor/es-module-shims/es-module-shims.wasm.js'></script>
 		<script type = 'importmap'>
 		{
 			"imports": {
 				"ethers": "../vendor/ethers/ethers.esm.js",
 				"webextension-polyfill": "../vendor/webextension-polyfill/browser-polyfill.js",
-				"es-module-shims": "../vendor/es-module-shims/es-module-shims.js",
 				"preact": "../vendor/preact/preact.module.js",
 				"preact/jsx-runtime": "../vendor/preact/jsx-runtime/jsxRuntime.module.js",
 				"preact/hooks": "../vendor/preact/hooks/hooks.module.js",
@@ -23,6 +21,7 @@
 
 		<main>Loading...</main>
 
+		<!-- a workaround for bug: https://bugzilla.mozilla.org/show_bug.cgi?id=1803984 -->
 		<script type = 'module' src = '../js/background/background.js'></script>
 	</body>
 </html>
