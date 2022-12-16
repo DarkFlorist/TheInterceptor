@@ -174,13 +174,13 @@ function SendOrReceiveTokensImportanceBox(param: SendOrReceiveTokensImportanceBo
 								/>
 							}
 						</div>
-						<div class = 'log-cell'>
+						<div class = 'log-cell' style = 'padding-right: 0.2em'>
 							<TokenSymbol
 								token = { tokenEvent.tokenAddress }
 								addressMetadata = { param.addressMetadata.get(addressString(tokenEvent.tokenAddress)) }
 								textColor = { param.textColor }
 								useFullTokenName = { false }
-							/>&nbsp;
+							/>
 						</div>
 						<div class = 'log-cell'>
 							<p class = 'ellipsis' style = { `color: ${ param.textColor }; margin-bottom: 0px; display: inline-block` }>
@@ -456,13 +456,13 @@ export function TokenLogEvent(params: TokenLogEventParams ) {
 					} </>
 				}
 			</div>
-			<div class = 'log-cell'>
+			<div class = 'log-cell' style = 'padding-right: 0.2em'>
 				<TokenSymbol
 					token = { params.tokenVisualizerResult.tokenAddress }
 					addressMetadata = { params.addressMetadata.get(addressString(params.tokenVisualizerResult.tokenAddress)) }
 					textColor = { textColor }
 					useFullTokenName = { false }
-				/>&nbsp;
+				/>
 			</div>
 			<div class = 'log-cell'>
 				<SmallAddress
@@ -471,7 +471,7 @@ export function TokenLogEvent(params: TokenLogEventParams ) {
 					textColor = { textColor }
 				/>
 			</div>
-			<div class = 'log-cell'>
+			<div class = 'log-cell' style = 'padding-right: 0.2em; padding-left: 0.2em'>
 				{ params.tokenVisualizerResult.isApproval ? <ApproveIcon color = { textColor } /> : <ArrowIcon color = { textColor } /> }
 			</div>
 			<div class = 'log-cell'>

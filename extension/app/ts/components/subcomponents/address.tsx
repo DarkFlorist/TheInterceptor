@@ -189,9 +189,7 @@ export function FromAddressToAddress(params: FromAddressToAddressParams ) {
 			<BigAddress address = { params.from } title = { params.fromAddressMetadata?.name }/>
 		</div>
 		<div class = 'column' style = 'width: 5%; padding: 0px; align-self: center; flex: none;'>
-			{ params.isApproval ? <ApproveIcon color = { 'var(--text-color)' }/> :
-				<ArrowIcon color = { 'var(--text-color)' }/>
-			}
+			{ params.isApproval ? <ApproveIcon color = { 'var(--text-color)' }/> : <ArrowIcon color = { 'var(--text-color)' }/> }
 		</div>
 		<div class = 'column' style = 'width: 47.5%; flex: none; padding-bottom: 0px;'>
 			<BigAddress address = { params.to } title = { params.toAddressMetadata?.name }/>
