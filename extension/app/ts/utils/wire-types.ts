@@ -784,3 +784,9 @@ export const EIP2612Message = t.Object({
 		deadline: t.Number,
 	}),
 })
+
+export type GetTransactionCount = t.Static<typeof GetTransactionCount>
+export const GetTransactionCount = t.Object({
+	method: t.Literal('eth_getTransactionCount'),
+	params: t.Tuple(EthereumAddress, EthereumBlockTag)
+}).asReadonly()

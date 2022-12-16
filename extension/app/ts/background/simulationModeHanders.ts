@@ -1,7 +1,7 @@
 import { Simulator } from '../simulation/simulator.js'
 import { bytes32String } from '../utils/bigint.js'
 import { InterceptedRequest } from '../utils/interceptor-messages.js'
-import { EstimateGasParams, EthBalanceParams, EthBlockByNumberParams, EthCallParams, EthereumAddress, EthereumData, EthereumQuantity, EthereumSignedTransactionWithBlockData, EthSubscribeParams, EthTransactionReceiptResponse, EthUnSubscribeParams, GetBlockReturn, GetCode, JsonRpcNewHeadsNotification, NewHeadsSubscriptionData, PersonalSignParams, RequestPermissions, SendTransactionParams, SignTypedDataV4Params, SwitchEthereumChainParams, TransactionByHashParams, TransactionReceiptParams } from '../utils/wire-types.js'
+import { EstimateGasParams, EthBalanceParams, EthBlockByNumberParams, EthCallParams, EthereumAddress, EthereumData, EthereumQuantity, EthereumSignedTransactionWithBlockData, EthSubscribeParams, EthTransactionReceiptResponse, EthUnSubscribeParams, GetBlockReturn, GetCode, GetTransactionCount, JsonRpcNewHeadsNotification, NewHeadsSubscriptionData, PersonalSignParams, RequestPermissions, SendTransactionParams, SignTypedDataV4Params, SwitchEthereumChainParams, TransactionByHashParams, TransactionReceiptParams } from '../utils/wire-types.js'
 import { postMessageIfStillConnected } from './background.js'
 import { WebsiteAccess } from './settings.js'
 import { openChangeChainDialog } from './windows/changeChain.js'
@@ -221,8 +221,16 @@ export async function signTypedDataV4(_simulator: Simulator, port: browser.runti
 
 }
 
-export async function switchEthereumChain(_simulator: Simulator, port: browser.runtime.Port, request: InterceptedRequest) {
+export async function switchEthereumChain(simulator: Simulator, port: browser.runtime.Port, request: InterceptedRequest) {
 	const params = SwitchEthereumChainParams.parse(request.options)
+	if (await simulator.ethereum.getChainId() === params.params[0].chainId) {
+		return postMessageIfStillConnected(port, {
+			interceptorApproved: true,
+			requestId: request.requestId,
+			options: request.options,
+			result: []
+		})
+	}
 	return openChangeChainDialog(port, request, params.params[0].chainId)
 }
 
@@ -248,5 +256,15 @@ export async function getPermissions(_simulator: Simulator, port: browser.runtim
 		requestId: request.requestId,
 		options: request.options,
 		result: [ { "eth_accounts": {} } ]
+	})
+}
+
+export async function getTransactionCount(simulator: Simulator, port: browser.runtime.Port, request: InterceptedRequest) {
+	const params = GetTransactionCount.parse(request.options)
+	return postMessageIfStillConnected(port, {
+		interceptorApproved: true,
+		requestId: request.requestId,
+		options: request.options,
+		result: EthereumQuantity.serialize(await simulator.ethereum.getTransactionCount(params.params[0], params.params[1]))
 	})
 }

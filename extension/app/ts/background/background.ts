@@ -3,7 +3,7 @@ import 'webextension-polyfill'
 import { Simulator } from '../simulation/simulator.js'
 import { EIP2612Message, EthereumAddress, EthereumQuantity, EthereumUnsignedTransaction } from '../utils/wire-types.js'
 import { getSettings, saveActiveChain, saveActiveSigningAddress, saveActiveSimulationAddress, Settings } from './settings.js'
-import { blockNumber, call, chainId, estimateGas, gasPrice, getAccounts, getBalance, getBlockByNumber, getCode, getPermissions, getTransactionByHash, getTransactionReceipt, personalSign, requestPermissions, sendRawTransaction, sendTransaction, signTypedDataV4, subscribe, switchEthereumChain, unsubscribe } from './simulationModeHanders.js'
+import { blockNumber, call, chainId, estimateGas, gasPrice, getAccounts, getBalance, getBlockByNumber, getCode, getPermissions, getTransactionByHash, getTransactionCount, getTransactionReceipt, personalSign, requestPermissions, sendRawTransaction, sendTransaction, signTypedDataV4, subscribe, switchEthereumChain, unsubscribe } from './simulationModeHanders.js'
 import { changeActiveAddress, changeAddressInfos, changeMakeMeRich, changePage, resetSimulation, confirmDialog, RefreshSimulation, removeTransaction, requestAccountsFromSigner, refreshPopupConfirmTransactionSimulation, confirmPersonalSign, confirmRequestAccess, changeInterceptorAccess, changeChainDialog, popupChangeActiveChain, enableSimulationMode, reviewNotification, rejectNotification } from './popupMessageHandlers.js'
 import { AddressMetadata, SimResults, SimulationState, TokenPriceEstimate } from '../utils/visualizer-types.js'
 import { WebsiteApproval, SignerState } from '../utils/user-interface-types.js'
@@ -289,12 +289,12 @@ export const handlers = new Map<string, SimulationHandler >([
 	['eth_accounts', getAccounts.bind(undefined, getActiveAddressForDomain)],
 	['eth_requestAccounts', getAccounts.bind(undefined, getActiveAddressForDomain)],
 	['eth_sendRawTransaction', sendRawTransaction],
-	['eth_gasPrice', gasPrice]
+	['eth_gasPrice', gasPrice],
+	['eth_getTransactionCount', getTransactionCount],
 
 	/*
 	Missing methods:
 	['eth_getProof', ],
-	['eth_getTransactionCount', ],
 	['eth_getBlockTransactionCountByNumber', ],
 	['eth_getTransactionByBlockHashAndIndex', ],
 	['eth_getTransactionByBlockNumberAndIndex', ],
