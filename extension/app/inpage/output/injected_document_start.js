@@ -88,17 +88,6 @@ class EthereumJsonRpcError extends Error {
         this.name = this.constructor.name;
     }
 }
-function checkErrorForCode(error) {
-    if (typeof error !== 'object')
-        return false;
-    if (error === null)
-        return false;
-    if (!('code' in error))
-        return false;
-    if (typeof error.code !== 'number')
-        return false;
-    return true;
-}
 class InterceptorMessageListener {
     constructor() {
         this.connected = false;
@@ -119,20 +108,10 @@ class InterceptorMessageListener {
             const currentRequestId = this.requestId;
             const future = new InterceptorFuture();
             this.outstandingRequests.set(currentRequestId, future);
-            console.log(\`request: \${currentRequestId}: \${options.method}\`);
             try {
                 // make a message that the background script will catch and reply us. We'll wait until the background script replies to us and return only after that
-                window.postMessage({
-                    interceptorRequest: true,
-                    usingInterceptorWithoutSigner: this.usingInterceptorWithoutSigner,
-                    requestId: currentRequestId,
-                    options: {
-                        method: options.method,
-                        params: options.params,
-                    }
-                }, '*');
-                const reply = await future; //TODO: we need to figure out somekind of timeout here, it needs to depend on the request type, eg. if we are asking user to sign something, maybe there shouldn't even be a timeout?
-                return reply;
+                this.sendMessageToBackgroundPage({ method: options.method, params: options.params }, currentRequestId);
+                return await future; //TODO: we need to figure out somekind of timeout here, it needs to depend on the request type, eg. if we are asking user to sign something, maybe there shouldn't even be a timeout?
             }
             catch (error) {
                 // if it is an Error, add context to it if context doesn't already exist
@@ -149,7 +128,6 @@ class InterceptorMessageListener {
                 throw new EthereumJsonRpcError(-32603, \`Unexpected thrown value.\`, { error: error, request: options });
             }
             finally {
-                console.log(\`delete request: \${currentRequestId}: \${options.method}\`);
                 this.outstandingRequests.delete(currentRequestId);
             }
         };
@@ -219,65 +197,72 @@ class InterceptorMessageListener {
         this.WindowEthereumEnable = async () => {
             this.WindowEthereumRequest({ method: 'eth_requestAccounts' });
         };
-        this.requestAccounts = async () => {
+        this.requestAccountsFromSigner = async () => {
             if (this.signerWindowEthereumRequest === undefined)
                 return;
             const reply = await this.signerWindowEthereumRequest({ method: 'eth_requestAccounts', params: [] });
-            if (Array.isArray(reply)) {
-                window.postMessage({
-                    interceptorRequest: true,
-                    options: {
-                        method: 'eth_accounts_reply',
-                        params: reply,
-                    },
-                    usingInterceptorWithoutSigner: this.usingInterceptorWithoutSigner,
-                }, '*');
-            }
+            if (!Array.isArray(reply))
+                return;
+            this.sendMessageToBackgroundPage({ method: 'eth_accounts_reply', params: reply });
         };
-        this.requestChainId = async () => {
+        this.requestChainIdFromSigner = async () => {
             if (this.signerWindowEthereumRequest === undefined)
                 return;
             const reply = await this.signerWindowEthereumRequest({ method: 'eth_chainId', params: [] });
-            if (typeof reply === 'string') {
-                window.postMessage({
-                    interceptorRequest: true,
-                    options: {
-                        method: 'signer_chainChanged',
-                        params: [reply],
-                    },
-                    usingInterceptorWithoutSigner: this.usingInterceptorWithoutSigner,
-                }, '*');
-            }
+            if (typeof reply !== 'string')
+                return;
+            this.sendMessageToBackgroundPage({ method: 'signer_chainChanged', params: [reply] });
         };
-        this.requestChangeChain = async (chainId) => {
+        this.requestChangeChainFromSigner = async (chainId) => {
             if (this.signerWindowEthereumRequest === undefined)
                 return;
             try {
                 const reply = await this.signerWindowEthereumRequest({ method: 'wallet_switchEthereumChain', params: [{ 'chainId': chainId }] });
-                if (reply === null) {
-                    window.postMessage({
-                        interceptorRequest: true,
-                        options: {
-                            method: 'wallet_switchEthereumChain_reply',
-                            params: [{ accept: true, chainId: chainId }],
-                        },
-                        usingInterceptorWithoutSigner: this.usingInterceptorWithoutSigner,
-                    }, '*');
-                }
+                if (reply !== null)
+                    return;
+                this.sendMessageToBackgroundPage({ method: 'wallet_switchEthereumChain_reply', params: [{ accept: true, chainId: chainId }] });
             }
             catch (error) {
-                if (checkErrorForCode(error) && (error.code === METAMASK_ERROR_USER_REJECTED_REQUEST || error.code === METAMASK_ERROR_CHAIN_NOT_ADDED_TO_METAMASK)) {
-                    return window.postMessage({
-                        interceptorRequest: true,
-                        options: {
-                            method: 'wallet_switchEthereumChain_reply',
-                            params: [{ accept: false, chainId: chainId }],
-                        },
-                        usingInterceptorWithoutSigner: this.usingInterceptorWithoutSigner,
-                    }, '*');
+                if (InterceptorMessageListener.checkErrorForCode(error) && (error.code === METAMASK_ERROR_USER_REJECTED_REQUEST || error.code === METAMASK_ERROR_CHAIN_NOT_ADDED_TO_METAMASK)) {
+                    this.sendMessageToBackgroundPage({ method: 'wallet_switchEthereumChain_reply', params: [{ accept: false, chainId: chainId }] });
                 }
                 throw error;
             }
+        };
+        this.handleReplyRequest = async (replyRequest) => {
+            if (replyRequest.subscription !== undefined) {
+                return this.onMessageCallBacks.forEach((f) => f({ type: 'eth_subscription', data: replyRequest.result }));
+            }
+            // inform callbacks
+            if (replyRequest.options.method === 'accountsChanged') {
+                return this.onAccountsChangedCallBacks.forEach((f) => f(replyRequest.result));
+            }
+            if (replyRequest.options.method === 'connect') {
+                this.connected = true;
+                return this.onConnectCallBacks.forEach((f) => f({ chainId: replyRequest.result }));
+            }
+            if (replyRequest.options.method === 'disconnect') {
+                this.connected = false;
+                const resultArray = replyRequest.result;
+                return this.onDisconnectCallBacks.forEach((f) => f({ name: 'disconnect', ...resultArray }));
+            }
+            if (replyRequest.options.method === 'chainChanged') {
+                return this.onChainChangedCallBacks.forEach((f) => f(replyRequest.result));
+            }
+            // The Interceptor requested us to request informatio from igner
+            if (replyRequest.options.method === 'request_signer_to_eth_requestAccounts') {
+                // when dapp requsts eth_requestAccounts, interceptor needs to reply to it, but we also need to try to sign to the signer
+                return await this.requestAccountsFromSigner();
+            }
+            if (replyRequest.options.method === 'request_signer_to_wallet_switchEthereumChain') {
+                return await this.requestChangeChainFromSigner(replyRequest.result);
+            }
+            if (replyRequest.options.method === 'request_signer_chainId') {
+                return await this.requestChainIdFromSigner();
+            }
+            if (replyRequest.requestId === undefined)
+                throw new Error('Reply request missing requestId');
+            return this.outstandingRequests.get(replyRequest.requestId).resolve(replyRequest.result);
         };
         this.onMessage = async (messageEvent) => {
             if (typeof messageEvent !== 'object'
@@ -288,61 +273,30 @@ class InterceptorMessageListener {
                 || !('interceptorApproved' in messageEvent.data))
                 return;
             if (!('ethereum' in window) || !window.ethereum)
-                throw 'window.ethereum changed';
-            if (!('options' in messageEvent.data || 'method' in messageEvent.data.options || 'params' in messageEvent.data.options))
-                throw 'missing fields';
+                throw new Error('window.ethereum missing');
+            if (!('options' in messageEvent.data && typeof messageEvent.data.options === 'object' && messageEvent.data.options !== null))
+                throw new Error('missing options field');
+            if (!('method' in messageEvent.data.options))
+                throw new Error('missing method field');
+            if (!('param' in messageEvent.data.options))
+                throw new Error('missing param field');
             const forwardRequest = messageEvent.data; //use "as" here as we don't want to inject funtypes here
-            console.log(\`reply: \${forwardRequest.requestId}: \${forwardRequest.options.method}\`);
             if (forwardRequest.error !== undefined) {
                 if (forwardRequest.requestId === undefined || !this.outstandingRequests.has(forwardRequest.requestId))
                     throw new EthereumJsonRpcError(forwardRequest.error.code, forwardRequest.error.message);
                 return this.outstandingRequests.get(forwardRequest.requestId).reject(new EthereumJsonRpcError(forwardRequest.error.code, forwardRequest.error.message));
             }
-            if (forwardRequest.result !== undefined) {
-                // if interceptor direclty sent us the result, just forward that to the dapp, otherwise ask the signer for the result
-                if (forwardRequest.subscription !== undefined) {
-                    return this.onMessageCallBacks.forEach((f) => f({ type: 'eth_subscription', data: forwardRequest.result }));
-                }
-                if (forwardRequest.options.method === 'accountsChanged') {
-                    return this.onAccountsChangedCallBacks.forEach((f) => f(forwardRequest.result));
-                }
-                if (forwardRequest.options.method === 'connect') {
-                    this.connected = true;
-                    return this.onConnectCallBacks.forEach((f) => f({ chainId: forwardRequest.result }));
-                }
-                if (forwardRequest.options.method === 'disconnect') {
-                    this.connected = false;
-                    const resultArray = forwardRequest.result;
-                    return this.onDisconnectCallBacks.forEach((f) => f({ name: 'disconnect', ...resultArray }));
-                }
-                if (forwardRequest.options.method === 'chainChanged') {
-                    return this.onChainChangedCallBacks.forEach((f) => f(forwardRequest.result));
-                }
-                if (forwardRequest.options.method === 'request_signer_to_eth_requestAccounts') {
-                    // when dapp requsts eth_requestAccounts, interceptor needs to reply to it, but we also need to try to sign to the signer
-                    return await this.requestAccounts();
-                }
-                if (forwardRequest.options.method === 'request_signer_to_wallet_switchEthereumChain') {
-                    return await this.requestChangeChain(forwardRequest.result);
-                }
-                if (forwardRequest.options.method === 'request_signer_chainId') {
-                    return await this.requestChainId();
-                }
-                if (forwardRequest.requestId === undefined)
-                    return;
-                return this.outstandingRequests.get(forwardRequest.requestId).resolve(forwardRequest.result);
-            }
+            if (forwardRequest.result !== undefined)
+                return this.handleReplyRequest(forwardRequest);
             try {
                 if (this.usingInterceptorWithoutSigner)
                     throw 'Interceptor is in wallet mode and should not forward to an external wallet';
                 if (this.signerWindowEthereumRequest == undefined)
                     throw 'signer not found';
-                console.log('signer request');
                 const reply = await this.signerWindowEthereumRequest(forwardRequest.options);
                 if (forwardRequest.requestId === undefined)
                     return;
                 this.outstandingRequests.get(forwardRequest.requestId).resolve(reply);
-                console.log(\`resolved: \${forwardRequest.requestId}: \${forwardRequest.options.method}\`);
             }
             catch (error) {
                 // if it is an Error, add context to it if context doesn't already exist
@@ -366,21 +320,22 @@ class InterceptorMessageListener {
                 this.outstandingRequests.get(forwardRequest.requestId).reject(new EthereumJsonRpcError(-32603, \`Unexpected thrown value.\`, { error: error, request: forwardRequest.options }));
             }
         };
-        this.sendConnectedMessage = (signerName) => {
-            if (!('ethereum' in window) || !window.ethereum)
-                return;
+        this.sendMessageToBackgroundPage = (messageMethodAndParams, requestId = undefined) => {
             window.postMessage({
                 interceptorRequest: true,
                 options: {
-                    method: 'connected_to_signer',
-                    params: [signerName],
+                    method: messageMethodAndParams.method,
+                    params: messageMethodAndParams.params,
                 },
-                usingInterceptorWithoutSigner: signerName === 'NoSigner',
+                usingInterceptorWithoutSigner: this.usingInterceptorWithoutSigner,
+                ...(requestId === undefined ? {} : { requestId: requestId })
             }, '*');
+        };
+        this.sendConnectedMessage = (signerName) => {
+            this.sendMessageToBackgroundPage({ method: 'connected_to_signer', params: [signerName] });
         };
         this.injectEthereumIntoWindow = () => {
             if (!('ethereum' in window) || !window.ethereum) {
-                console.log('no signer');
                 // no existing signer found
                 window.ethereum = {
                     isConnected: this.WindowEthereumIsConnected,
@@ -395,7 +350,6 @@ class InterceptorMessageListener {
                 this.connected = true;
                 return this.sendConnectedMessage('NoSigner');
             }
-            console.log('injecting on top of existing');
             // subscribe for signers events
             window.ethereum.on('accountsChanged', (accounts) => {
                 this.WindowEthereumRequest({ method: 'eth_accounts_reply', params: accounts });
@@ -425,13 +379,13 @@ class InterceptorMessageListener {
             }
             else {
                 // we cannot inject window.ethereum alone here as it seems like window.ethereum is cached (maybe ethers.js does that?)
+                window.ethereum.isConnected = this.WindowEthereumIsConnected;
                 window.ethereum.request = this.WindowEthereumRequest;
-                window.ethereum.on = this.WindowEthereumOn;
-                window.ethereum.removeListener = this.WindowEthereumRemoveListener;
                 window.ethereum.send = this.WindowEthereumSend;
                 window.ethereum.sendAsync = this.WindowEthereumSendAsync;
+                window.ethereum.on = this.WindowEthereumOn;
+                window.ethereum.removeListener = this.WindowEthereumRemoveListener;
                 window.ethereum.enable = this.WindowEthereumEnable;
-                window.ethereum.isConnected = this.WindowEthereumIsConnected;
                 this.sendConnectedMessage(window.ethereum.isMetaMask ? 'MetaMask' : 'NotRecognizedSigner');
             }
         };
@@ -439,17 +393,30 @@ class InterceptorMessageListener {
         this.injectEthereumIntoWindow();
     }
 }
+InterceptorMessageListener.checkErrorForCode = (error) => {
+    if (typeof error !== 'object')
+        return false;
+    if (error === null)
+        return false;
+    if (!('code' in error))
+        return false;
+    if (typeof error.code !== 'number')
+        return false;
+    return true;
+};
 function inject() {
     const interceptorMessageListener = new InterceptorMessageListener();
     window.addEventListener('message', interceptorMessageListener.onMessage);
+    // listen if Metamask injects their payload, and if so, reinject Interceptor
     const interceptorCapturedDispatcher = window.dispatchEvent;
     window.dispatchEvent = (event) => {
         interceptorCapturedDispatcher(event);
-        if (event.type === 'ethereum#initialized') {
-            console.log('Interceptor: Detected MetaMask reinject');
-            interceptorMessageListener.injectEthereumIntoWindow();
-            window.dispatchEvent = interceptorCapturedDispatcher;
-        }
+        if (!(typeof event === 'object' && event !== null && 'type' in event && typeof event.type === 'string'))
+            return;
+        if (event.type !== 'ethereum#initialized')
+            return;
+        interceptorMessageListener.injectEthereumIntoWindow();
+        window.dispatchEvent = interceptorCapturedDispatcher;
     };
 }
 inject();
