@@ -53,20 +53,4 @@ function injectScript(content: any) {
 	}
 }
 
-const injected_ts = `[[injected.ts]]`
-
-const capturer = `
-var interceptorCapturedDispatcher = window.dispatchEvent
-window.dispatchEvent = function (event) {
-    interceptorCapturedDispatcher(event)
-    if (event.type === 'ethereum#initialized') {
-		console.log('Interceptor: Detected MetaMask injection, reinject')
-		injectEthereumIntoWindow()
-		window.dispatchEvent = interceptorCapturedDispatcher
-	}
-}
-`
-
-const inpageContent = capturer + injected_ts
-
-injectScript(inpageContent)
+injectScript(`[[injected.ts]]`)
