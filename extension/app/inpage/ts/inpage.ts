@@ -127,7 +127,7 @@ function checkErrorForCode(error: unknown): error is { code: number } {
 class InterceptorMessageListener {
 	private connected: boolean = false
 	private requestId: number = 0
-	private signerRequest: EthereumRequest | undefined
+	private signerWindowEthereumRequest: EthereumRequest | undefined
 	private usingInterceptorWithoutSigner: boolean = true
 	private readonly outstandingRequests: Map<number, InterceptorFuture<unknown> > = new Map()
 	private readonly onMessageCallBacks: Set<((message: ProviderMessage) => void)> = new Set()
@@ -137,27 +137,16 @@ class InterceptorMessageListener {
 	private readonly onChainChangedCallBacks: Set<((chainId: string) => void)> = new Set()
 
 	public constructor() {
+		this.signerWindowEthereumRequest = undefined
 		this.injectEthereumIntoWindow()
-
-		const interceptorCapturedDispatcher = window.dispatchEvent
-		window.dispatchEvent = (event: any) => {
-			interceptorCapturedDispatcher(event)
-			if (event.type === 'ethereum#initialized') {
-				console.log('Interceptor: Detected MetaMask reinject')
-				this.injectEthereumIntoWindow()
-				window.dispatchEvent = interceptorCapturedDispatcher
-			}
-		}
-		console.log('start listening...')
-		window.addEventListener('message', this.onMessage)
 	}
 
-	private isConnected = () => {
+	private readonly WindowEthereumIsConnected = () => {
 		return this.connected
 	}
 
 	// sends messag to The Interceptor background page
-	private request = async (options: { readonly method: string, readonly params?: unknown[] }) => {
+	private readonly WindowEthereumRequest = async (options: { readonly method: string, readonly params?: unknown[] }) => {
 		this.requestId++
 		const currentRequestId = this.requestId
 		const future = new InterceptorFuture<unknown>()
@@ -196,22 +185,22 @@ class InterceptorMessageListener {
 	// 🤬 Uniswap, among others, require `send` to be implemented even though it was never part of any final specification.
 	// To make matters worse, some versions of send will have a first parameter that is an object (like `request`) and others will have a first and second parameter.
 	// On top of all that, some applications have a mix of both!
-	private send = async (method: string | {method: string, params: unknown[]}, params: unknown[]) => {
+	private readonly WindowEthereumSend = async (method: string | {method: string, params: unknown[]}, params: unknown[]) => {
 		if (typeof method === 'object') {
-			return await this.request({ method: method.method, params: method.params})
+			return await this.WindowEthereumRequest({ method: method.method, params: method.params})
 		} else {
-			return await this.request({ method, params })
+			return await this.WindowEthereumRequest({ method, params })
 		}
 	}
 
-	private sendAsync = async (payload: { id: string | number | null, method: string, params: unknown[] }, callback: (error: IJsonRpcError | null, response: IJsonRpcSuccess<unknown> | null) => void) => {
-		this.request(payload)
+	private readonly WindowEthereumSendAsync = async (payload: { id: string | number | null, method: string, params: unknown[] }, callback: (error: IJsonRpcError | null, response: IJsonRpcSuccess<unknown> | null) => void) => {
+		this.WindowEthereumRequest(payload)
 			.then(result => callback(null, { jsonrpc: '2.0', id: payload.id, result }))
 			// since `request(...)` only throws things shaped like `JsonRpcError`, we can rely on it having those properties.
 			.catch(error => callback({ jsonrpc: '2.0', id: payload.id, error: { code: error.code, message: error.message, data: { ...error.data, stack: error.stack } } }, null))
 	}
 
-	private on = async (kind: OnMessage, callback: AnyCallBack) => {
+	private readonly WindowEthereumOn = async (kind: OnMessage, callback: AnyCallBack) => {
 		switch (kind) {
 			case 'accountsChanged':
 				this.onAccountsChangedCallBacks.add( callback as (accounts: string[]) => void )
@@ -235,7 +224,7 @@ class InterceptorMessageListener {
 		}
 	}
 
-	private removeListener = async (kind: OnMessage, callback: AnyCallBack) => {
+	private readonly WindowEthereumRemoveListener = async (kind: OnMessage, callback: AnyCallBack) => {
 		switch (kind) {
 			case 'accountsChanged':
 				this.onAccountsChangedCallBacks.delete(callback as (accounts: string[]) => void)
@@ -259,14 +248,13 @@ class InterceptorMessageListener {
 		}
 	}
 
-	private enable = async () => {
-		this.request({ method: 'eth_requestAccounts' })
+	private readonly WindowEthereumEnable = async () => {
+		this.WindowEthereumRequest({ method: 'eth_requestAccounts' })
 	}
 
-	// listens for Interceptor, DApps, and signers messaes
-	private async requestAccounts() {
-		if( !('ethereum' in window) || !window.ethereum || !('oldRequest' in window.ethereum) || this.signerRequest === undefined ) return
-		const reply = await this.signerRequest({ method: 'eth_requestAccounts', params: [] })
+	private readonly requestAccounts = async () => {
+		if (this.signerWindowEthereumRequest === undefined ) return
+		const reply = await this.signerWindowEthereumRequest({ method: 'eth_requestAccounts', params: [] })
 
 		if ( Array.isArray(reply) ) {
 			window.postMessage({
@@ -280,9 +268,9 @@ class InterceptorMessageListener {
 		}
 	}
 
-	private async requestChainId() {
-		if( !('ethereum' in window) || !window.ethereum || !('oldRequest' in window.ethereum) || this.signerRequest === undefined ) return
-		const reply = await this.signerRequest( { method: 'eth_chainId', params: [] } )
+	private readonly requestChainId = async () => {
+		if (this.signerWindowEthereumRequest === undefined ) return
+		const reply = await this.signerWindowEthereumRequest( { method: 'eth_chainId', params: [] } )
 		if ( typeof reply === 'string') {
 			window.postMessage({
 				interceptorRequest: true,
@@ -295,11 +283,11 @@ class InterceptorMessageListener {
 		}
 	}
 
-	private async requestChangeChain(chainId: string) {
-		if( !('ethereum' in window) || !window.ethereum || !('oldRequest' in window.ethereum) || this.signerRequest === undefined) return
+	private readonly requestChangeChain = async (chainId: string) => {
+		if(this.signerWindowEthereumRequest === undefined) return
 
 		try {
-			const reply = await this.signerRequest( { method: 'wallet_switchEthereumChain', params: [ { 'chainId': chainId } ] } )
+			const reply = await this.signerWindowEthereumRequest( { method: 'wallet_switchEthereumChain', params: [ { 'chainId': chainId } ] } )
 			if ( reply === null) {
 				window.postMessage({
 					interceptorRequest: true,
@@ -325,7 +313,7 @@ class InterceptorMessageListener {
 		}
 	}
 
-	private async onMessage(messageEvent: any) {
+	public readonly onMessage = async (messageEvent: any) => {
 		if (
 			typeof messageEvent !== 'object'
 			|| messageEvent === null
@@ -338,7 +326,6 @@ class InterceptorMessageListener {
 		if (!('options' in messageEvent.data || 'method' in messageEvent.data.options || 'params' in messageEvent.data.options)) throw 'missing fields'
 		const forwardRequest = messageEvent.data as InterceptedRequestForward //use "as" here as we don't want to inject funtypes here
 		console.log(`reply: ${forwardRequest.requestId}: ${forwardRequest.options.method}`)
-		console.log(this.outstandingRequests.keys())
 		if (forwardRequest.error !== undefined) {
 			if (forwardRequest.requestId === undefined || !this.outstandingRequests.has(forwardRequest.requestId)) throw new EthereumJsonRpcError(forwardRequest.error.code, forwardRequest.error.message)
 			return this.outstandingRequests.get(forwardRequest.requestId)!.reject(new EthereumJsonRpcError(forwardRequest.error.code, forwardRequest.error.message))
@@ -379,9 +366,9 @@ class InterceptorMessageListener {
 
 		try {
 			if ( this.usingInterceptorWithoutSigner ) throw 'Interceptor is in wallet mode and should not forward to an external wallet'
-			if ( this.signerRequest == undefined) throw 'signer not found'
+			if ( this.signerWindowEthereumRequest == undefined) throw 'signer not found'
 			console.log('signer request')
-			const reply = await this.signerRequest(forwardRequest.options)
+			const reply = await this.signerWindowEthereumRequest(forwardRequest.options)
 
 			if ( forwardRequest.requestId === undefined) return
 			this.outstandingRequests.get(forwardRequest.requestId)!.resolve(reply)
@@ -405,7 +392,7 @@ class InterceptorMessageListener {
 		}
 	}
 
-	private sendConnectedMessage = (signerName: 'NoSigner' | 'NotRecognizedSigner' | 'MetaMask' | 'Brave') => {
+	private readonly sendConnectedMessage = (signerName: 'NoSigner' | 'NotRecognizedSigner' | 'MetaMask' | 'Brave') => {
 		if( !('ethereum' in window) || !window.ethereum) return
 		window.postMessage({
 			interceptorRequest: true,
@@ -417,69 +404,86 @@ class InterceptorMessageListener {
 		}, '*')
 	}
 
-	public injectEthereumIntoWindow() {
+	public readonly injectEthereumIntoWindow = () => {
 		if (!('ethereum' in window) || !window.ethereum) {
 
 			console.log('no signer')
 			// no existing signer found
 
 			window.ethereum = {
-				isConnected: this.isConnected,
-				request: this.request,
-				send: this.send,
-				sendAsync: this.sendAsync,
-				on: this.on,
-				removeListener: this.removeListener,
-				enable: this.enable
+				isConnected: this.WindowEthereumIsConnected,
+				request: this.WindowEthereumRequest,
+				send: this.WindowEthereumSend,
+				sendAsync: this.WindowEthereumSendAsync,
+				on: this.WindowEthereumOn,
+				removeListener: this.WindowEthereumRemoveListener,
+				enable: this.WindowEthereumEnable
 			}
 			this.usingInterceptorWithoutSigner = true
+			this.connected = true
 
 			return this.sendConnectedMessage('NoSigner')
 		}
 
 		console.log('injecting on top of existing')
 
-		this.signerRequest = window.ethereum.request // store the request object to signer
-
 		// subscribe for signers events
 		window.ethereum.on('accountsChanged', (accounts: string[]) => {
-			this.request( { method: 'eth_accounts_reply', params: accounts } )
+			this.WindowEthereumRequest( { method: 'eth_accounts_reply', params: accounts } )
 		})
 		window.ethereum.on('connect', (_connectInfo: ProviderConnectInfo) => {
 
 		})
 		window.ethereum.on('disconnect', (_error: ProviderRpcError) => {
-			this.request( { method: 'eth_accounts_reply', params: [] } )
+			this.WindowEthereumRequest( { method: 'eth_accounts_reply', params: [] } )
 		})
 		window.ethereum.on('chainChanged', (chainId: string) => {
-			this.request( { method: 'signer_chainChanged', params: [chainId] } )
+			this.WindowEthereumRequest( { method: 'signer_chainChanged', params: [chainId] } )
 		})
+
+		this.connected = window.ethereum.isConnected()
+		this.signerWindowEthereumRequest = window.ethereum.request // store the request object to signer
+		this.usingInterceptorWithoutSigner = false
 
 		if (window.ethereum.isBraveWallet) {
 			window.ethereum = {
-				isConnected: this.isConnected,
-				request: this.request,
-				send: this.send,
-				sendAsync: this.sendAsync,
-				on: this.on,
-				removeListener: this.removeListener,
-				enable: this.enable
+				isConnected: this.WindowEthereumIsConnected,
+				request: this.WindowEthereumRequest,
+				send: this.WindowEthereumSend,
+				sendAsync: this.WindowEthereumSendAsync,
+				on: this.WindowEthereumOn,
+				removeListener: this.WindowEthereumRemoveListener,
+				enable: this.WindowEthereumEnable
 			}
 			this.sendConnectedMessage('Brave')
 		} else {
 			// we cannot inject window.ethereum alone here as it seems like window.ethereum is cached (maybe ethers.js does that?)
-			window.ethereum.request = this.request
-			window.ethereum.on = this.on
-			window.ethereum.removeListener = this.removeListener
-			window.ethereum.send = this.send
-			window.ethereum.sendAsync = this.sendAsync
-			window.ethereum.enable = this.enable
+			window.ethereum.request = this.WindowEthereumRequest
+			window.ethereum.on = this.WindowEthereumOn
+			window.ethereum.removeListener = this.WindowEthereumRemoveListener
+			window.ethereum.send = this.WindowEthereumSend
+			window.ethereum.sendAsync = this.WindowEthereumSendAsync
+			window.ethereum.enable = this.WindowEthereumEnable
+			window.ethereum.isConnected = this.WindowEthereumIsConnected
 			this.sendConnectedMessage(window.ethereum.isMetaMask ? 'MetaMask' : 'NotRecognizedSigner')
 		}
-
-		this.usingInterceptorWithoutSigner = false
 	}
 
 }
 
-new InterceptorMessageListener()
+function inject() {
+	const interceptorMessageListener = new InterceptorMessageListener()
+	window.addEventListener('message', interceptorMessageListener.onMessage)
+
+	const interceptorCapturedDispatcher = window.dispatchEvent
+	window.dispatchEvent = (event: any) => {
+		interceptorCapturedDispatcher(event)
+		if (event.type === 'ethereum#initialized') {
+			console.log('Interceptor: Detected MetaMask reinject')
+			interceptorMessageListener.injectEthereumIntoWindow()
+			window.dispatchEvent = interceptorCapturedDispatcher
+		}
+	}
+}
+
+inject()
