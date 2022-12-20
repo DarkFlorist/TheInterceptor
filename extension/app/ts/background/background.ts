@@ -1,4 +1,4 @@
-import { InterceptedRequest, InterceptedRequestForward, PopupMessage, SignerName } from '../utils/interceptor-messages.js'
+import { InterceptedRequest, InterceptedRequestForward, PopupMessage, ProviderMessage, SignerName } from '../utils/interceptor-messages.js'
 import 'webextension-polyfill'
 import { Simulator } from '../simulation/simulator.js'
 import { EIP2612Message, EthereumAddress, EthereumQuantity, EthereumUnsignedTransaction } from '../utils/wire-types.js'
@@ -400,7 +400,7 @@ export async function changeActiveChain(chainId: bigint) {
 	}
 }
 
-type ProviderHandler = (port: browser.runtime.Port, request: InterceptedRequest) => void
+type ProviderHandler = (port: browser.runtime.Port, request: ProviderMessage) => void
 const providerHandlers = new Map<string, ProviderHandler >([
 	['eth_accounts_reply', ethAccountsReply],
 	['signer_chainChanged', signerChainChanged],
