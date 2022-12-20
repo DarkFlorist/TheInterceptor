@@ -92,16 +92,14 @@ class InterceptorMessageListener {
     constructor() {
         this.connected = false;
         this.requestId = 0;
-        this.usingInterceptorWithoutSigner = true;
+        this.signerWindowEthereumRequest = undefined;
         this.outstandingRequests = new Map();
         this.onMessageCallBacks = new Set();
         this.onConnectCallBacks = new Set();
         this.onAccountsChangedCallBacks = new Set();
         this.onDisconnectCallBacks = new Set();
         this.onChainChangedCallBacks = new Set();
-        this.WindowEthereumIsConnected = () => {
-            return this.connected;
-        };
+        this.WindowEthereumIsConnected = () => this.connected;
         // sends messag to The Interceptor background page
         this.WindowEthereumRequest = async (options) => {
             this.requestId++;
@@ -135,12 +133,9 @@ class InterceptorMessageListener {
         // To make matters worse, some versions of send will have a first parameter that is an object (like \`request\`) and others will have a first and second parameter.
         // On top of all that, some applications have a mix of both!
         this.WindowEthereumSend = async (method, params) => {
-            if (typeof method === 'object') {
+            if (typeof method === 'object')
                 return await this.WindowEthereumRequest({ method: method.method, params: method.params });
-            }
-            else {
-                return await this.WindowEthereumRequest({ method, params });
-            }
+            return await this.WindowEthereumRequest({ method, params });
         };
         this.WindowEthereumSendAsync = async (payload, callback) => {
             this.WindowEthereumRequest(payload)
@@ -194,9 +189,7 @@ class InterceptorMessageListener {
                 default:
             }
         };
-        this.WindowEthereumEnable = async () => {
-            this.WindowEthereumRequest({ method: 'eth_requestAccounts' });
-        };
+        this.WindowEthereumEnable = async () => this.WindowEthereumRequest({ method: 'eth_requestAccounts' });
         this.requestAccountsFromSigner = async () => {
             if (this.signerWindowEthereumRequest === undefined)
                 return;
@@ -249,7 +242,7 @@ class InterceptorMessageListener {
             if (replyRequest.options.method === 'chainChanged') {
                 return this.onChainChangedCallBacks.forEach((f) => f(replyRequest.result));
             }
-            // The Interceptor requested us to request informatio from igner
+            // The Interceptor requested us to request information from signer
             if (replyRequest.options.method === 'request_signer_to_eth_requestAccounts') {
                 // when dapp requsts eth_requestAccounts, interceptor needs to reply to it, but we also need to try to sign to the signer
                 return await this.requestAccountsFromSigner();
@@ -289,10 +282,8 @@ class InterceptorMessageListener {
             if (forwardRequest.result !== undefined)
                 return this.handleReplyRequest(forwardRequest);
             try {
-                if (this.usingInterceptorWithoutSigner)
-                    throw 'Interceptor is in wallet mode and should not forward to an external wallet';
                 if (this.signerWindowEthereumRequest == undefined)
-                    throw 'signer not found';
+                    throw 'Interceptor is in wallet mode and should not forward to an external wallet';
                 const reply = await this.signerWindowEthereumRequest(forwardRequest.options);
                 if (forwardRequest.requestId === undefined)
                     return;
@@ -327,7 +318,7 @@ class InterceptorMessageListener {
                     method: messageMethodAndParams.method,
                     params: messageMethodAndParams.params,
                 },
-                usingInterceptorWithoutSigner: this.usingInterceptorWithoutSigner,
+                usingInterceptorWithoutSigner: this.signerWindowEthereumRequest === undefined,
                 ...(requestId === undefined ? {} : { requestId: requestId })
             }, '*');
         };
@@ -346,7 +337,6 @@ class InterceptorMessageListener {
                     removeListener: this.WindowEthereumRemoveListener,
                     enable: this.WindowEthereumEnable
                 };
-                this.usingInterceptorWithoutSigner = true;
                 this.connected = true;
                 return this.sendConnectedMessage('NoSigner');
             }
@@ -364,7 +354,6 @@ class InterceptorMessageListener {
             });
             this.connected = window.ethereum.isConnected();
             this.signerWindowEthereumRequest = window.ethereum.request; // store the request object to signer
-            this.usingInterceptorWithoutSigner = false;
             if (window.ethereum.isBraveWallet) {
                 window.ethereum = {
                     isConnected: this.WindowEthereumIsConnected,
@@ -375,21 +364,18 @@ class InterceptorMessageListener {
                     removeListener: this.WindowEthereumRemoveListener,
                     enable: this.WindowEthereumEnable
                 };
-                this.sendConnectedMessage('Brave');
+                return this.sendConnectedMessage('Brave');
             }
-            else {
-                // we cannot inject window.ethereum alone here as it seems like window.ethereum is cached (maybe ethers.js does that?)
-                window.ethereum.isConnected = this.WindowEthereumIsConnected;
-                window.ethereum.request = this.WindowEthereumRequest;
-                window.ethereum.send = this.WindowEthereumSend;
-                window.ethereum.sendAsync = this.WindowEthereumSendAsync;
-                window.ethereum.on = this.WindowEthereumOn;
-                window.ethereum.removeListener = this.WindowEthereumRemoveListener;
-                window.ethereum.enable = this.WindowEthereumEnable;
-                this.sendConnectedMessage(window.ethereum.isMetaMask ? 'MetaMask' : 'NotRecognizedSigner');
-            }
+            // we cannot inject window.ethereum alone here as it seems like window.ethereum is cached (maybe ethers.js does that?)
+            window.ethereum.isConnected = this.WindowEthereumIsConnected;
+            window.ethereum.request = this.WindowEthereumRequest;
+            window.ethereum.send = this.WindowEthereumSend;
+            window.ethereum.sendAsync = this.WindowEthereumSendAsync;
+            window.ethereum.on = this.WindowEthereumOn;
+            window.ethereum.removeListener = this.WindowEthereumRemoveListener;
+            window.ethereum.enable = this.WindowEthereumEnable;
+            this.sendConnectedMessage(window.ethereum.isMetaMask ? 'MetaMask' : 'NotRecognizedSigner');
         };
-        this.signerWindowEthereumRequest = undefined;
         this.injectEthereumIntoWindow();
     }
 }
@@ -404,7 +390,7 @@ InterceptorMessageListener.checkErrorForCode = (error) => {
         return false;
     return true;
 };
-function inject() {
+function injectInterceptor() {
     const interceptorMessageListener = new InterceptorMessageListener();
     window.addEventListener('message', interceptorMessageListener.onMessage);
     // listen if Metamask injects their payload, and if so, reinject Interceptor
@@ -419,5 +405,5 @@ function inject() {
         window.dispatchEvent = interceptorCapturedDispatcher;
     };
 }
-inject();
+injectInterceptor();
 //# sourceMappingURL=inpage.js.map`);
