@@ -66,7 +66,7 @@ export function ChangeActiveAddress(param: ChangeActiveAddressParam) {
 									</div>
 
 									<div class = 'media-content' style = 'overflow-y: hidden;'>
-										<p class = 'title is-5'>{ `Use address from ${ getSignerName(param.signerName) }` }</p>
+										<p class = 'title is-5 is-spaced'>{ `Use address from ${ getSignerName(param.signerName) }` }</p>
 										<p class = 'subtitle is-7'> { signerAddressName === undefined ? '' : signerAddressName }</p>
 									</div>
 								</div>
@@ -78,9 +78,7 @@ export function ChangeActiveAddress(param: ChangeActiveAddressParam) {
 						<li>
 							<div class = 'card hoverable' onClick = { () => { ChangeAndStoreActiveAddress(addressInfo.address) } }>
 								<div class = 'card-content hoverable ' style = 'cursor: pointer;'>
-									<div class = 'media'>
-										<BigAddress address = { addressInfo.address } title = { addressInfo.name } noCopying = { true }/>
-									</div>
+									<BigAddress address = { addressInfo.address } title = { addressInfo.name } noCopying = { true }/>
 									{ isSignerConnected(addressInfo.address) ?
 										<div class = 'content' style = 'color: var(--text-color)'>
 											<SignerLogoText signerName = { param.signerName } text = { ` ${ getSignerName(param.signerName) } connected` }/>
