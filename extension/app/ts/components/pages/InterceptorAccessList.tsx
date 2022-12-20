@@ -193,17 +193,15 @@ export function InterceptorAccessList(param: InterceptorAccessListParams) {
 									<div class = 'card-content' style = 'margin-bottom: 0px;'>
 										{ access.addressAccess.length === 0 ? <p className = 'paragraph'> No individual address accesses given </p> : <>
 											{ access.addressAccessModified.map( (websiteAccessAddress, addressIndex) => (
-												<li style = { `margin: 0px; margin-bottom: ${addressIndex < access.addressAccessModified.length - 1  ? '10px;' : '0px'}` }>
+												<li style = { `margin: 0px; margin-bottom: ${ addressIndex < access.addressAccessModified.length - 1  ? '10px;' : '0px' }` }>
 													{ websiteAccessAddress.removed ? <p style = 'color: var(--negative-color)' > { `Forgot ${ websiteAccessAddress.address }`} </p> :
-														<div class = 'media'>
-															<div class = 'media-content' style = 'overflow-y: visible; overflow-x: unset; flex-basis: min-content;'>
-																<SmallAddress address = { BigInt(websiteAccessAddress.address) } addressMetaData = { metadata.get(websiteAccessAddress.address) }/>
-															</div>
-															<label class = 'form-control' style = 'width: 8em'>
-																<input type = 'checkbox' checked = { websiteAccessAddress.access } onInput = { e => { if (e.target instanceof HTMLInputElement && e.target !== null) { setAddressAccess(accessListIndex, addressIndex, e.target.checked, undefined) } } } />
-																Allow access
-															</label>
-															<div class = 'content' style = 'color: var(--text-color);'>
+														<div style = 'display: flex; width: 100%; overflow: hidden;'>
+															<SmallAddress address = { BigInt(websiteAccessAddress.address) } addressMetaData = { metadata.get(websiteAccessAddress.address) }/>
+															<div style = 'margin-left: auto; flex-shrink: 0; display: flex'>
+																<label class = 'form-control' style = 'margin: auto'>
+																	<input type = 'checkbox' checked = { websiteAccessAddress.access } onInput = { e => { if (e.target instanceof HTMLInputElement && e.target !== null) { setAddressAccess(accessListIndex, addressIndex, e.target.checked, undefined) } } } />
+																	<p class = 'paragraph' style = 'white-space: nowrap;'>Allow access</p>
+																</label>
 																<button class = 'card-header-icon' style = 'padding: 0px;' aria-label = 'forget' onClick = { () => setAddressAccess(accessListIndex, addressIndex, undefined, true) }>
 																	<span class = 'icon' style = 'color: var(--text-color);'> X </span>
 																</button>

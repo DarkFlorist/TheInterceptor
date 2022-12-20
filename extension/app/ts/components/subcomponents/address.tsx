@@ -164,7 +164,7 @@ export function SmallAddress(params: SmallAddressParams) {
 	const textColor = params.textColor === undefined ? 'var(--text-color)' : params.textColor
 
 	return	<CopyToClipboard content = { ethers.utils.getAddress(addressString(params.address)) } copyMessage = 'Address copied!'>
-		<div style = 'display: contents'>
+		<div style = 'display: inline-flex; width: 100%'>
 			<span class = 'vertical-center noselect nopointer' style = 'margin-right: 5px'>
 				<Blockie seed = { addressString(params.address).toLowerCase() } size = { 8 } scale = { 3 } />
 			</span>
