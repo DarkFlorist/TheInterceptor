@@ -81,12 +81,12 @@ export function BigAddress(params: BigAddressParams) {
 		<div class = 'media-content' style = 'overflow-y: hidden; overflow-x: clip; display: block;'>
 			{ !params.noCopying ?
 				<CopyToClipboard content = { ethers.utils.getAddress(addressString(params.address)) } copyMessage = 'Address copied!'>
-					<p class = 'title is-5 noselect nopointer' style = 'text-overflow: ellipsis; white-space: nowrap;'>
+					<p class = 'title is-5 noselect nopointer is-spaced' style = 'text-overflow: ellipsis; white-space: nowrap;'>
 						{ title }
 					</p>
 				</CopyToClipboard>
 			:
-				<p class = 'title is-5 noselect nopointer' style = 'text-overflow: ellipsis; white-space: nowrap;'>
+				<p class = 'title is-5 noselect nopointer is-spaced' style = 'text-overflow: ellipsis; white-space: nowrap;'>
 					{ title }
 				</p>
 			}
