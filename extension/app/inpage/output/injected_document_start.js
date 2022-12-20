@@ -271,8 +271,6 @@ class InterceptorMessageListener {
                 throw new Error('missing options field');
             if (!('method' in messageEvent.data.options))
                 throw new Error('missing method field');
-            if (!('param' in messageEvent.data.options))
-                throw new Error('missing param field');
             const forwardRequest = messageEvent.data; //use "as" here as we don't want to inject funtypes here
             if (forwardRequest.error !== undefined) {
                 if (forwardRequest.requestId === undefined || !this.outstandingRequests.has(forwardRequest.requestId))

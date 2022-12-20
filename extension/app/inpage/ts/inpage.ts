@@ -334,7 +334,6 @@ class InterceptorMessageListener {
 		if (!('ethereum' in window) || !window.ethereum) throw new Error('window.ethereum missing')
 		if (!('options' in messageEvent.data && typeof messageEvent.data.options === 'object' && messageEvent.data.options !== null)) throw new Error('missing options field')
 		if (!('method' in messageEvent.data.options)) throw new Error('missing method field')
-		if (!('param' in messageEvent.data.options)) throw new Error('missing param field')
 
 		const forwardRequest = messageEvent.data as InterceptedRequestForward //use "as" here as we don't want to inject funtypes here
 
