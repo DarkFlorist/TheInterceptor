@@ -78,7 +78,7 @@ export function getApprovalInfoFromTx(transaction: {input?: Uint8Array, from: bi
 
 	const functionSig = new DataView(data.buffer, 0, 4).getUint32(0)
 
-	if (functionSig == ERC20_APPROVAL_4BYTES) return {...parseApproval(data), from: transaction.from}
+	if (functionSig == ERC20_APPROVAL_4BYTES) return { ...parseApproval(data), from: transaction.from }
 	else if (functionSig == ERC721_APPROVAL_FOR_ALL_4BYTES) {
 		const { spender, approval } = parseApprovalForAll(data)
 		if (!approval) return undefined
@@ -89,35 +89,19 @@ export function getApprovalInfoFromTx(transaction: {input?: Uint8Array, from: bi
 }
 
 export function parseTransfer(data: Uint8Array) {
-	const { to, amount } = decodeMethod(ERC20_TRANSFER_4BYTES, TRANSFER_PARAMS, data) as { to: bigint, amount: bigint }
-	return {
-		to,
-		amount,
-	}
+	return decodeMethod(ERC20_TRANSFER_4BYTES, TRANSFER_PARAMS, data) as { to: bigint, amount: bigint }
 }
 
 export function parseTransferFrom(data: Uint8Array) {
-	const { from, to, amount } = decodeMethod(ERC20_TRANSFER_FROM_4BYTES, TRANSFER_FROM_PARAMS, data) as { from: bigint, to: bigint, amount: bigint }
-	return {
-		from,
-		to,
-		amount,
-	}
+	return decodeMethod(ERC20_TRANSFER_FROM_4BYTES, TRANSFER_FROM_PARAMS, data) as { from: bigint, to: bigint, amount: bigint }
 }
 
 export function parseApproval(data: Uint8Array) {
-	const { spender } = decodeMethod(ERC20_APPROVAL_4BYTES, APPROVAL_PARAMS, data) as { spender: bigint, amount: bigint }
-	return {
-		spender
-	}
+	return decodeMethod(ERC20_APPROVAL_4BYTES, APPROVAL_PARAMS, data) as { spender: bigint, amount: bigint }
 }
 
 export function parseApprovalForAll(data: Uint8Array) {
-	const { spender, approval } = decodeMethod(ERC721_APPROVAL_FOR_ALL_4BYTES, APPROVAL_FOR_ALL, data) as { spender: bigint, approval: boolean }
-	return {
-		spender,
-		approval
-	}
+	return decodeMethod(ERC721_APPROVAL_FOR_ALL_4BYTES, APPROVAL_FOR_ALL, data) as { spender: bigint, approval: boolean }
 }
 
 export function get4Byte(data: Uint8Array) {
