@@ -137,9 +137,10 @@ type OnMessage = "accountsChanged" | "message" | "connect" | "error" | "close" |
 class InterceptorMessageListener {
 	private connected: boolean = false
 	private requestId: number = 0
-	private signerWindowEthereumRequest: EthereumRequest | undefined
-	private usingInterceptorWithoutSigner: boolean = true
+	private signerWindowEthereumRequest: EthereumRequest | undefined = undefined
+
 	private readonly outstandingRequests: Map<number, InterceptorFuture<unknown> > = new Map()
+
 	private readonly onMessageCallBacks: Set<((message: ProviderMessage) => void)> = new Set()
 	private readonly onConnectCallBacks: Set<((connectInfo: ProviderConnectInfo) => void)> = new Set()
 	private readonly onAccountsChangedCallBacks: Set<((accounts: string[]) => void)> = new Set()
@@ -147,13 +148,10 @@ class InterceptorMessageListener {
 	private readonly onChainChangedCallBacks: Set<((chainId: string) => void)> = new Set()
 
 	public constructor() {
-		this.signerWindowEthereumRequest = undefined
 		this.injectEthereumIntoWindow()
 	}
 
-	private readonly WindowEthereumIsConnected = () => {
-		return this.connected
-	}
+	private readonly WindowEthereumIsConnected = () => this.connected
 
 	// sends messag to The Interceptor background page
 	private readonly WindowEthereumRequest = async (options: { readonly method: string, readonly params?: unknown[] }) => {
@@ -184,12 +182,9 @@ class InterceptorMessageListener {
 	// 🤬 Uniswap, among others, require `send` to be implemented even though it was never part of any final specification.
 	// To make matters worse, some versions of send will have a first parameter that is an object (like `request`) and others will have a first and second parameter.
 	// On top of all that, some applications have a mix of both!
-	private readonly WindowEthereumSend = async (method: string | {method: string, params: unknown[]}, params: unknown[]) => {
-		if (typeof method === 'object') {
-			return await this.WindowEthereumRequest({ method: method.method, params: method.params})
-		} else {
-			return await this.WindowEthereumRequest({ method, params })
-		}
+	private readonly WindowEthereumSend = async (method: string | { method: string, params: unknown[] }, params: unknown[]) => {
+		if (typeof method === 'object') return await this.WindowEthereumRequest({ method: method.method, params: method.params })
+		return await this.WindowEthereumRequest({ method, params })
 	}
 
 	private readonly WindowEthereumSendAsync = async (payload: { id: string | number | null, method: string, params: unknown[] }, callback: (error: IJsonRpcError | null, response: IJsonRpcSuccess<unknown> | null) => void) => {
@@ -247,9 +242,7 @@ class InterceptorMessageListener {
 		}
 	}
 
-	private readonly WindowEthereumEnable = async () => {
-		this.WindowEthereumRequest({ method: 'eth_requestAccounts' })
-	}
+	private readonly WindowEthereumEnable = async () => this.WindowEthereumRequest({ method: 'eth_requestAccounts' })
 
 	private readonly requestAccountsFromSigner = async () => {
 		if (this.signerWindowEthereumRequest === undefined ) return
@@ -273,6 +266,7 @@ class InterceptorMessageListener {
 		if (typeof (error as { code: unknown }).code !== 'number') return false
 		return true
 	}
+
 	private readonly requestChangeChainFromSigner = async (chainId: string) => {
 		if (this.signerWindowEthereumRequest === undefined) return
 
@@ -311,7 +305,7 @@ class InterceptorMessageListener {
 			return this.onChainChangedCallBacks.forEach( (f) => f( replyRequest.result as string ) )
 		}
 
-		// The Interceptor requested us to request informatio from igner
+		// The Interceptor requested us to request information from signer
 
 		if (replyRequest.options.method === 'request_signer_to_eth_requestAccounts') {
 			// when dapp requsts eth_requestAccounts, interceptor needs to reply to it, but we also need to try to sign to the signer
@@ -352,8 +346,7 @@ class InterceptorMessageListener {
 		if (forwardRequest.result !== undefined) return this.handleReplyRequest(forwardRequest)
 
 		try {
-			if ( this.usingInterceptorWithoutSigner ) throw 'Interceptor is in wallet mode and should not forward to an external wallet'
-			if ( this.signerWindowEthereumRequest == undefined) throw 'signer not found'
+			if ( this.signerWindowEthereumRequest == undefined) throw 'Interceptor is in wallet mode and should not forward to an external wallet'
 			const reply = await this.signerWindowEthereumRequest(forwardRequest.options)
 
 			if ( forwardRequest.requestId === undefined) return
@@ -384,8 +377,8 @@ class InterceptorMessageListener {
 				method: messageMethodAndParams.method,
 				params: messageMethodAndParams.params,
 			},
-			usingInterceptorWithoutSigner: this.usingInterceptorWithoutSigner,
-			...(requestId === undefined ? {} : {requestId: requestId })
+			usingInterceptorWithoutSigner: this.signerWindowEthereumRequest === undefined,
+			...(requestId === undefined ? { } : { requestId: requestId })
 		}, '*')
 	}
 
@@ -406,7 +399,6 @@ class InterceptorMessageListener {
 				removeListener: this.WindowEthereumRemoveListener,
 				enable: this.WindowEthereumEnable
 			}
-			this.usingInterceptorWithoutSigner = true
 			this.connected = true
 
 			return this.sendConnectedMessage('NoSigner')
@@ -428,7 +420,6 @@ class InterceptorMessageListener {
 
 		this.connected = window.ethereum.isConnected()
 		this.signerWindowEthereumRequest = window.ethereum.request // store the request object to signer
-		this.usingInterceptorWithoutSigner = false
 
 		if (window.ethereum.isBraveWallet) {
 			window.ethereum = {
@@ -440,22 +431,21 @@ class InterceptorMessageListener {
 				removeListener: this.WindowEthereumRemoveListener,
 				enable: this.WindowEthereumEnable
 			}
-			this.sendConnectedMessage('Brave')
-		} else {
-			// we cannot inject window.ethereum alone here as it seems like window.ethereum is cached (maybe ethers.js does that?)
-			window.ethereum.isConnected = this.WindowEthereumIsConnected
-			window.ethereum.request = this.WindowEthereumRequest
-			window.ethereum.send = this.WindowEthereumSend
-			window.ethereum.sendAsync = this.WindowEthereumSendAsync
-			window.ethereum.on = this.WindowEthereumOn
-			window.ethereum.removeListener = this.WindowEthereumRemoveListener
-			window.ethereum.enable = this.WindowEthereumEnable
-			this.sendConnectedMessage(window.ethereum.isMetaMask ? 'MetaMask' : 'NotRecognizedSigner')
+			return this.sendConnectedMessage('Brave')
 		}
+		// we cannot inject window.ethereum alone here as it seems like window.ethereum is cached (maybe ethers.js does that?)
+		window.ethereum.isConnected = this.WindowEthereumIsConnected
+		window.ethereum.request = this.WindowEthereumRequest
+		window.ethereum.send = this.WindowEthereumSend
+		window.ethereum.sendAsync = this.WindowEthereumSendAsync
+		window.ethereum.on = this.WindowEthereumOn
+		window.ethereum.removeListener = this.WindowEthereumRemoveListener
+		window.ethereum.enable = this.WindowEthereumEnable
+		this.sendConnectedMessage(window.ethereum.isMetaMask ? 'MetaMask' : 'NotRecognizedSigner')
 	}
 }
 
-function inject() {
+function injectInterceptor() {
 	const interceptorMessageListener = new InterceptorMessageListener()
 	window.addEventListener('message', interceptorMessageListener.onMessage)
 
@@ -470,4 +460,4 @@ function inject() {
 	}
 }
 
-inject()
+injectInterceptor()
