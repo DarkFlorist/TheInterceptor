@@ -119,31 +119,36 @@ export async function requestAccessFromUser(origin: string, icon: string | undef
 	}
 
 	if (pendingInterceptorAccess !== undefined) {
-		return false // instead of popping new dialogs, block until the old one closes
-	}
-
-	pendingInterceptorAccess = new Future<Confirmation>()
-
-	window.interceptor.interceptorAccessDialog =  {
-		origin: origin,
-		icon: icon,
-		requestAccessToAddress: accessAddress,
-		addressMetadata: addressMetadata,
-	}
-
-	openedInterceptorAccessWindow = await browser.windows.create(
-		{
-			url: '../html/interceptorAccess.html',
-			type: 'popup',
-			height: 400,
-			width: 520,
+		if ( !(window.interceptor.interceptorAccessDialog
+			&& window.interceptor.interceptorAccessDialog.origin === origin
+			&& window.interceptor.interceptorAccessDialog.requestAccessToAddress === requestAccessToAddress
+		)) {
+			return false // there's already one pending request, and it's different access request
 		}
-	)
-
-	if (openedInterceptorAccessWindow) {
-		browser.windows.onRemoved.addListener( onCloseWindow ) // check if user has closed the window on their own, if so, reject signature
 	} else {
-		resolveInterceptorAccess('NoResponse')
+		pendingInterceptorAccess = new Future<Confirmation>()
+
+		window.interceptor.interceptorAccessDialog =  {
+			origin: origin,
+			icon: icon,
+			requestAccessToAddress: accessAddress,
+			addressMetadata: addressMetadata,
+		}
+
+		openedInterceptorAccessWindow = await browser.windows.create(
+			{
+				url: '../html/interceptorAccess.html',
+				type: 'popup',
+				height: 400,
+				width: 520,
+			}
+		)
+
+		if (openedInterceptorAccessWindow) {
+			browser.windows.onRemoved.addListener( onCloseWindow ) // check if user has closed the window on their own, if so, reject signature
+		} else {
+			resolveInterceptorAccess('NoResponse')
+		}
 	}
 
 	const access = await pendingInterceptorAccess
