@@ -5,7 +5,7 @@ import { AddressMetadata, SimulatedAndVisualizedTransaction, SimulationAndVisual
 import { AddressList } from './pages/AddressList.js'
 import { ChangeActiveAddress } from './pages/ChangeActiveAddress.js'
 import { Home } from './pages/Home.js'
-import { Page, AddressInfo } from '../utils/user-interface-types.js'
+import { Page, AddressInfo, TabConnection } from '../utils/user-interface-types.js'
 import Hint from './subcomponents/Hint.js'
 import { AddNewAddress } from './pages/AddNewAddress.js'
 import { InterceptorAccessList } from './pages/InterceptorAccessList.js'
@@ -13,7 +13,7 @@ import { ethers } from 'ethers'
 import { PasteCatcher } from './subcomponents/PasteCatcher.js'
 import { truncateAddr } from '../utils/ethereum.js'
 import { NotificationCenter } from './pages/NotificationCenter.js'
-import { ICON_NOT_ACTIVE } from '../utils/constants.js'
+import { DEFAULT_TAB_CONNECTION } from '../utils/constants.js'
 import { SignerName } from '../utils/interceptor-messages.js'
 import { EthereumQuantity } from '../utils/wire-types.js'
 import { version, gitCommitSha } from '../version.js'
@@ -34,7 +34,7 @@ export function App() {
 	const [nameInput, setNameInput] = useState<string | undefined>(undefined)
 	const [simulationMode, setSimulationMode] = useState<boolean>(true)
 	const [notificationBadgeCount, setNotificationBadgeCount] = useState<number>(0)
-	const [tabIcon, setTabIcon] = useState<string>( ICON_NOT_ACTIVE )
+	const [tabConnection, setTabConnection] = useState<TabConnection>(DEFAULT_TAB_CONNECTION)
 	const [tabApproved, setTabApproved] = useState<boolean>(false)
 	const [isSettingsLoaded, setIsSettingsLoaded] = useState<boolean>(false)
 	const [currentBlockNumber, setCurrentBlockNumber] = useState<bigint | undefined>(undefined)
@@ -115,14 +115,14 @@ export function App() {
 		fetchSettings(backgroundPage)
 		fetchSimulationState(backgroundPage)
 		setSignerName(backgroundPage.interceptor.signerName)
-		setTabIcon( ICON_NOT_ACTIVE )
+		setTabConnection( DEFAULT_TAB_CONNECTION )
 		setCurrentBlockNumber(backgroundPage.interceptor.currentBlockNumber)
 		const tabs = await browser.tabs.query({ active: true, currentWindow: true })
 		if (tabs.length === 0 || tabs[0].id === undefined ) return
 		const signerState = backgroundPage.interceptor.websiteTabSignerStates.get(tabs[0].id)
 		if (signerState) setSignerAccounts(signerState.signerAccounts)
 		const conn = backgroundPage.interceptor.websiteTabConnection.get(tabs[0].id)
-		if ( conn ) setTabIcon(conn)
+		if ( conn ) setTabConnection(conn)
 		setTabApproved(backgroundPage.interceptor.websiteTabApprovals.get(tabs[0].id)?.approved === true)
 		setIsSettingsLoaded(true)
 	}
@@ -203,7 +203,7 @@ export function App() {
 						makeMeRich = { makeMeRich }
 						addressInfos = { addressInfos }
 						simulationMode = { simulationMode }
-						tabIcon = { tabIcon }
+						tabConnection = { tabConnection }
 						tabApproved = { tabApproved }
 						currentBlockNumber = { currentBlockNumber }
 						signerName = { signerName }
