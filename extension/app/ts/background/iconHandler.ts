@@ -31,7 +31,6 @@ export function updateExtensionIcon(port: browser.runtime.Port) {
 		return setIcon(port.sender.tab.id, ICON_NOT_ACTIVE, `${ origin } has PENDING access request for ${ getAddressMetaData(activeAddress, window.interceptor.settings?.addressInfos).name }!`)
 	}
 
-
 	if (censoredActiveAddress === undefined) {
 		if ( hasAccess(window.interceptor.settings.websiteAccess, origin) === 'noAccess') {
 			return setIcon(port.sender.tab.id, ICON_ACCESS_DENIED, `The access for ${ origin } has been DENIED!`)
