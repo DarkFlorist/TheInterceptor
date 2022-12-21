@@ -2,36 +2,34 @@ import * as funtypes from 'funtypes'
 import { AddressInfo } from './user-interface-types.js'
 import { EthereumAddress, EthereumQuantity } from './wire-types.js'
 
+
+export type MessageMethodAndParams = funtypes.Static<typeof MessageMethodAndParams>
+export const MessageMethodAndParams = funtypes.Union(
+	funtypes.Object({
+		method: funtypes.String,
+		params: funtypes.Union(funtypes.Array(funtypes.Unknown), funtypes.Undefined)
+	}).asReadonly(),
+	funtypes.Object({ method: funtypes.String }).asReadonly()
+)
+
 export type InterceptedRequest = funtypes.Static<typeof InterceptedRequest>
 export const InterceptedRequest = funtypes.Intersect(
 	funtypes.Object({
 		interceptorRequest: funtypes.Boolean,
 		usingInterceptorWithoutSigner: funtypes.Boolean,
-		options: funtypes.Union(
-			funtypes.Object({
-				method: funtypes.String,
-				params: funtypes.Union(funtypes.Array(funtypes.Unknown), funtypes.Undefined)
-			}).asReadonly(), funtypes.Object({ method: funtypes.String }).asReadonly()
-		),
+		options: MessageMethodAndParams,
 	}).asReadonly(),
 	funtypes.Partial({
 		requestId: funtypes.Number,
 	}).asReadonly()
 )
+export type ProviderMessage = InterceptedRequest
 
 export type InterceptedRequestForward = funtypes.Static<typeof InterceptedRequestForward>
 export const InterceptedRequestForward = funtypes.Intersect(
 	funtypes.Object({
 		interceptorApproved: funtypes.Boolean,
-		options: funtypes.Union(
-			funtypes.Object({
-				method: funtypes.String,
-				params: funtypes.Union(funtypes.Array(funtypes.Unknown), funtypes.Undefined)
-			}).asReadonly(),
-			funtypes.Object({
-				method: funtypes.String
-			}).asReadonly()
-		),
+		options: MessageMethodAndParams,
 	}).asReadonly(),
 	funtypes.Union(
 		funtypes.Object({

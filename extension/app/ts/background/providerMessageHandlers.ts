@@ -1,10 +1,10 @@
-import { ConnectedToSigner, InterceptedRequest, WalletSwitchEthereumChainReply } from '../utils/interceptor-messages.js'
+import { ConnectedToSigner, ProviderMessage, WalletSwitchEthereumChainReply } from '../utils/interceptor-messages.js'
 import { EthereumAccountsReply, EthereumChainReply } from '../utils/wire-types.js'
 import { changeActiveAddressAndChainAndResetSimulation } from './background.js'
 import { sendPopupMessageToOpenWindows } from './backgroundUtils.js'
 import { resolveSignerChainChange } from './windows/changeChain.js'
 
-export function ethAccountsReply(port: browser.runtime.Port, request: InterceptedRequest) {
+export function ethAccountsReply(port: browser.runtime.Port, request: ProviderMessage) {
 	if (!('params' in request.options)) return
 	const signerAccounts = EthereumAccountsReply.parse(request.options.params)
 	if ( port.sender?.tab?.id !== undefined ) {
@@ -42,13 +42,13 @@ async function changeSignerChain(port: browser.runtime.Port, signerChain: bigint
 	sendPopupMessageToOpenWindows('popup_chain_update')
 }
 
-export function signerChainChanged(port: browser.runtime.Port, request: InterceptedRequest) {
+export function signerChainChanged(port: browser.runtime.Port, request: ProviderMessage) {
 	if (!('params' in request.options)) return
 	const signerChain = EthereumChainReply.parse(request.options.params)[0]
 	changeSignerChain(port, signerChain)
 }
 
-export function walletSwitchEthereumChainReply(port: browser.runtime.Port, request: InterceptedRequest) {
+export function walletSwitchEthereumChainReply(port: browser.runtime.Port, request: ProviderMessage) {
 	const params = WalletSwitchEthereumChainReply.parse(request.options).params[0]
 	resolveSignerChainChange({
 		method: 'popup_changeChainDialog',
@@ -59,7 +59,7 @@ export function walletSwitchEthereumChainReply(port: browser.runtime.Port, reque
 	if (params.accept) changeSignerChain(port, params.chainId )
 }
 
-export function connectedToSigner(_port: browser.runtime.Port, request: InterceptedRequest) {
+export function connectedToSigner(_port: browser.runtime.Port, request: ProviderMessage) {
 	window.interceptor.signerName = ConnectedToSigner.parse(request.options).params[0]
 	sendPopupMessageToOpenWindows('popup_signer_name_changed')
 }
