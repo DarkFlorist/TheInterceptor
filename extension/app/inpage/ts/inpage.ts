@@ -120,6 +120,9 @@ type InjectFunctions = {
 	removeListener: (kind: OnMessage, callback: AnyCallBack) => Promise<void>,
 	isConnected: () => boolean,
 	enable: () => void,
+	_metamask?: {
+		isUnlocked: () => boolean
+	}
 }
 
 type WindowEthereum = InjectFunctions & {
@@ -396,7 +399,11 @@ class InterceptorMessageListener {
 				sendAsync: this.WindowEthereumSendAsync,
 				on: this.WindowEthereumOn,
 				removeListener: this.WindowEthereumRemoveListener,
-				enable: this.WindowEthereumEnable
+				enable: this.WindowEthereumEnable,
+				// Emulate Metamask experimental methods
+				_metamask: {
+					isUnlocked: () => true
+				}
 			}
 			this.connected = true
 
