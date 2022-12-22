@@ -190,7 +190,7 @@ function SendOrReceiveTokensImportanceBox(param: SendOrReceiveTokensImportanceBo
 						<div class = 'log-cell'>
 							<SmallAddress
 								address = { tokenEvent.to }
-								addressMetaData = { param.addressMetadata.get(addressString(tokenEvent.to)) }
+								addressMetadata = { param.addressMetadata.get(addressString(tokenEvent.to)) }
 								textColor = { param.textColor }
 							/>
 						</div>
@@ -467,7 +467,7 @@ export function TokenLogEvent(params: TokenLogEventParams ) {
 			<div class = 'log-cell'>
 				<SmallAddress
 					address = { params.tokenVisualizerResult.from }
-					addressMetaData = { params.addressMetadata.get(addressString(params.tokenVisualizerResult.from)) }
+					addressMetadata = { params.addressMetadata.get(addressString(params.tokenVisualizerResult.from)) }
 					textColor = { textColor }
 				/>
 			</div>
@@ -477,7 +477,7 @@ export function TokenLogEvent(params: TokenLogEventParams ) {
 			<div class = 'log-cell'>
 				<SmallAddress
 					address = { params.tokenVisualizerResult.to }
-					addressMetaData = { params.addressMetadata.get(addressString(params.tokenVisualizerResult.to)) }
+					addressMetadata = { params.addressMetadata.get(addressString(params.tokenVisualizerResult.to)) }
 					textColor = { textColor }
 				/>
 			</div>

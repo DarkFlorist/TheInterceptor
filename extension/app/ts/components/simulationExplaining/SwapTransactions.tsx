@@ -287,10 +287,10 @@ export function identifyRoutes(simulatedAndVisualizedTransaction: SimulatedAndVi
 	return sorted
 }
 
-export function getSwapName(identifiedSwap: IdentifiedSwap, addressMetaData: Map<string, AddressMetadata>) {
+export function getSwapName(identifiedSwap: IdentifiedSwap, addressMetadata: Map<string, AddressMetadata>) {
 	if ( identifiedSwap === false ) return undefined
-	const SwapFrom = identifiedSwap.type === 'TokenToToken' || identifiedSwap.type === 'TokenToETH' ? getTokenData(identifiedSwap.tokenAddressSent, addressMetaData.get(addressString(identifiedSwap.tokenAddressSent))).symbol : 'ETH'
-	const SwapTo = identifiedSwap.type === 'TokenToToken' || identifiedSwap.type === 'ETHToToken' ? getTokenData(identifiedSwap.tokenAddressReceived, addressMetaData.get(addressString(identifiedSwap.tokenAddressReceived))).symbol : 'ETH'
+	const SwapFrom = identifiedSwap.type === 'TokenToToken' || identifiedSwap.type === 'TokenToETH' ? getTokenData(identifiedSwap.tokenAddressSent, addressMetadata.get(addressString(identifiedSwap.tokenAddressSent))).symbol : 'ETH'
+	const SwapTo = identifiedSwap.type === 'TokenToToken' || identifiedSwap.type === 'ETHToToken' ? getTokenData(identifiedSwap.tokenAddressReceived, addressMetadata.get(addressString(identifiedSwap.tokenAddressReceived))).symbol : 'ETH'
 	return `Swap ${ SwapFrom } for ${ SwapTo }`
 }
 

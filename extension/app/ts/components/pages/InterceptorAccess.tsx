@@ -108,7 +108,10 @@ export function InterceptorAccess() {
 							</div>
 						</div>
 
-						<BigAddress address = { BigInt(accessRequest.requestAccessToAddress) } title = { accessRequest.addressMetadata.get(accessRequest.requestAccessToAddress)?.name }/>
+						<BigAddress
+							address = { BigInt(accessRequest.requestAccessToAddress) }
+							addressMetadata = { accessRequest.addressMetadata.get(accessRequest.requestAccessToAddress) }
+						/>
 
 					</div>
 				}
@@ -127,7 +130,10 @@ export function InterceptorAccess() {
 						<ul>
 							{ Array.from(accessRequest.addressMetadata.entries()).map( ([address, metadata], index) => (
 								<li style = { `margin: 0px; margin-bottom: ${index < accessRequest.addressMetadata.size - 1  ? '10px;' : '0px'}` }>
-									<BigAddress address = { BigInt(address) } title = { metadata.name }/>
+									<BigAddress
+										address = { BigInt(address) }
+										addressMetadata = { metadata }
+									/>
 								</li>
 							)) }
 						</ul>

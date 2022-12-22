@@ -131,7 +131,7 @@ export function TokenSymbol(param: TokenSymbolParams) {
 						seed = { tokenString.toLowerCase() }
 						size = { 8 }
 						scale = { 3 }
-						rounded = { true }
+						borderRadius = { '50%' }
 					/>
 				:
 				<img class = 'noselect nopointer vertical-center' style = 'max-height: 25px; max-width: 25px;' src = { tokenData.logoURI }/>

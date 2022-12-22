@@ -115,7 +115,10 @@ export function PersonalSign() {
 							</>}
 						</header>
 						<div class = 'card-content'>
-							<BigAddress address = { signRequest.account } title = { signRequest.addressInfo.name } />
+							<BigAddress
+								address = { signRequest.account }
+								addressMetadata = { { name: signRequest.addressInfo.name, metadataSource: 'theInterceptor', logoURI: undefined, protocol: undefined } }
+							/>
 						</div>
 
 						<div class = 'block' style = 'background-color: var(--card-bg-color); margin-top: 10px; margin-bottom: 10px;'>
