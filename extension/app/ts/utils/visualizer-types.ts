@@ -65,7 +65,7 @@ export const AddressMetadata = funtypes.Union(
 		name: funtypes.String,
 		logoURI: funtypes.Union(funtypes.String, funtypes.Undefined),
 		protocol: funtypes.Union(funtypes.String, funtypes.Undefined),
-		metadataSource: funtypes.Union(funtypes.Literal('addressBook'), funtypes.Literal('contract'), funtypes.Literal('other'))
+		metadataSource: funtypes.Union(funtypes.Literal('addressBook'), funtypes.Literal('contract'), funtypes.Literal('theInterceptor'))
 	}), funtypes.Object({
 		name: funtypes.String,
 		symbol: funtypes.String,

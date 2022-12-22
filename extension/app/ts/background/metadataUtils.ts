@@ -11,9 +11,9 @@ export function getAddressMetaData(address: bigint, addressInfos: readonly Addre
 	if ( address === MOCK_ADDRESS) {
 		return {
 			name: 'Ethereum Validator',
-			logoURI: undefined,
+			logoURI: '../../img/contracts/rhinoceros.png',
 			protocol: undefined,
-			metadataSource: 'other',
+			metadataSource: 'theInterceptor',
 		}
 	}
 	if (addressInfos !== undefined) {

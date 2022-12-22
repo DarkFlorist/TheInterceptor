@@ -20,6 +20,20 @@ export function findAddressInfo(addressToFind: bigint, addressInfos: readonly Ad
 	}
 }
 
+export type AddressIconParams = {
+	address: bigint,
+	addressMetadata: AddressMetadata
+}
+
+function AddressIcon(param: AddressIconParams) {
+	if (param.addressMetadata.logoURI === undefined) {
+		return <figure class = 'image noselect nopointer'>
+			<Blockie seed = { addressString(param.address).toLowerCase() } size = { 8 } scale = { 5 } />
+		</figure>
+	}
+	return <img src = { param.addressMetadata.logoURI } width = '40px' height = '40px'/>
+}
+
 export type BigAddressParamsWithChainSelector = {
 	address: bigint
 	title: string | undefined
