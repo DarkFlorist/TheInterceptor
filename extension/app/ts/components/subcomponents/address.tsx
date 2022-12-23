@@ -28,7 +28,7 @@ export type AddressIconParams = {
 }
 
 function AddressIcon(param: AddressIconParams) {
-	const style = `background-color: var(--disabled-text-color); ${ param.isBig ? `width: 40px; height: 40px; border-radius: 10px;` : `width: 24px; height: 24px; border-radius: 2px;` }`
+	const style = `${ param.isBig ? `width: 40px; height: 40px; border-radius: 10px;` : `width: 24px; height: 24px; border-radius: 2px;` }`
 	if (param.addressMetadata === undefined || param.addressMetadata.logoURI === undefined) {
 		return <div style = { style }>
 			<Blockie
@@ -197,7 +197,7 @@ export function SmallAddress(params: SmallAddressParams) {
 	const textColor = params.textColor === undefined ? 'var(--text-color)' : params.textColor
 
 	return	<CopyToClipboard content = { ethers.utils.getAddress(addressString(params.address)) } copyMessage = 'Address copied!'>
-		<div style = 'display: inline-flex; width: 100%'>
+		<div style = 'display: inline-flex; background-color: var(--alpha-005); padding: 4px; margin: 2px; padding-right: 10px; border-radius: 10px 40px 40px 10px; overflow: inherit;'>
 			<span class = 'vertical-center noselect nopointer' style = 'margin-right: 5px'>
 				<AddressIcon
 					address = { params.address }
