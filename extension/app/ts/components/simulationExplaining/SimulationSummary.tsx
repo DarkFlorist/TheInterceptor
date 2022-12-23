@@ -6,6 +6,7 @@ import { ERC721Token, Ether, Token, TokenAmount, TokenPrice, TokenSymbol } from 
 import { Transactions } from './Transactions.js'
 import { CopyToClipboard } from '../subcomponents/CopyToClipboard.js'
 import { SomeTimeAgo } from '../subcomponents/SomeTimeAgo.js'
+import { CHAINS } from '../../utils/constants.js'
 
 type EtherChangeParams = {
 	textColor: string,
@@ -420,9 +421,9 @@ export function SimulationSummary(param: SimulationSummaryParams) {
 	const ownAddresses = Array.from(summary.entries()).filter( ([address, _balanceSummary]) =>
 		param.simulationAndVisualisationResults.addressMetadata.get(address)?.metadataSource === 'addressBook' || BigInt(address) === param.simulationAndVisualisationResults.activeAddress
 	)
-	const notOwnAddresses = Array.from(summary.entries()).filter( ([address, _balanceSummary]) =>
-		param.simulationAndVisualisationResults.addressMetadata.get(address)?.metadataSource !== 'addressBook' && BigInt(address) !== param.simulationAndVisualisationResults.activeAddress
-	)
+	const notOwnAddresses = Array.from(summary.entries())
+		.filter( ([address, _balanceSummary]) => param.simulationAndVisualisationResults.addressMetadata.get(address)?.metadataSource !== 'addressBook' && BigInt(address) !== param.simulationAndVisualisationResults.activeAddress)
+		.filter( ([address, _balanceSummary]) => CHAINS[param.simulationAndVisualisationResults.chain].eth_donator !== BigInt(address) ) // remove eth donator
 
 	function resetSimulation() {
 		browser.runtime.sendMessage( { method: 'popup_resetSimulation' } );
