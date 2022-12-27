@@ -27,7 +27,7 @@ interface ToolTipParams {
 	content: string
 }
 
-export function ToolTip(props: ToolTipParams): preact.VNode {
+export function ToolTip(props: ToolTipParams) {
 	return (
 		<div style = 'display: inherit; overflow: inherit;'>
 			<div
