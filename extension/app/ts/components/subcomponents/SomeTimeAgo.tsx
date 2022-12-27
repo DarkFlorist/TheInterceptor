@@ -4,7 +4,7 @@ export interface SomeTimeAgoProps {
 	priorTimestamp: Date,
 }
 
-export function SomeTimeAgo( props: SomeTimeAgoProps ): preact.VNode {
+export function SomeTimeAgo( props: SomeTimeAgoProps ) {
 	const [, setNewSecondTrigger] = useState(0)
 	useEffect(() => {
 		const id = setInterval(() => setNewSecondTrigger(( old ) => old + 1), 1000)

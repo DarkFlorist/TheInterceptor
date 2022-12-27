@@ -1,4 +1,4 @@
-import { HomeParams, AddressInfo, Page, FirstCardParams } from '../../utils/user-interface-types.js'
+import { HomeParams, AddressInfo, Page, FirstCardParams, TabConnection } from '../../utils/user-interface-types.js'
 import { useEffect, useState } from 'preact/hooks'
 import { SimulationAndVisualisationResults } from '../../utils/visualizer-types.js'
 import { EthereumQuantity } from '../../utils/wire-types.js'
@@ -6,10 +6,11 @@ import { ActiveAddress, findAddressInfo } from '../subcomponents/address.js'
 import { SimulationResults } from '../simulationExplaining/SimulationSummary.js'
 import { ChainSelector } from '../subcomponents/ChainSelector.js'
 import { Spinner } from '../subcomponents/Spinner.js'
-import { getChainName, ICON_NOT_ACTIVE, ICON_SIGNING, ICON_SIGNING_NOT_SUPPORTED, isSupportedChain } from '../../utils/constants.js'
+import { DEFAULT_TAB_CONNECTION, getChainName, ICON_NOT_ACTIVE, ICON_SIGNING, ICON_SIGNING_NOT_SUPPORTED, isSupportedChain } from '../../utils/constants.js'
 import { SignerName } from '../../utils/interceptor-messages.js'
 import { getSignerName, SignerLogoText, SignersLogoName } from '../subcomponents/signers.js'
 import { Error } from '../subcomponents/Error.js'
+import { ToolTip } from '../subcomponents/CopyToClipboard.js'
 
 function FirstCard(param: FirstCardParams) {
 	async function enableMakeMeRich(enabled: boolean) {
@@ -31,7 +32,9 @@ function FirstCard(param: FirstCardParams) {
 			<header class = 'card-header'>
 				<div class = 'card-header-icon unset-cursor'>
 					<span class = 'icon' style = 'height: 3rem; width: 3rem;'>
-						<img src = { param.tabIcon } />
+						<ToolTip content = {  param.tabConnection.iconReason }>
+							<img className = 'noselect nopointer' src = { param.tabConnection.icon } />
+						</ToolTip>
 					</span>
 				</div>
 				<div class = 'card-header-title px-0 is-justify-content-center'>
@@ -64,8 +67,8 @@ function FirstCard(param: FirstCardParams) {
 							Retrieving from&nbsp;
 							<SignersLogoName signerName = { param.signerName } />
 						</span>
-						{ param.signerAccounts !== undefined && param.signerAccounts.length > 0 && param.tabIcon !== ICON_NOT_ACTIVE ? <span style = 'float: right; color: var(--primary-color);'> CONNECTED </span> :
-							param.tabIcon === ICON_SIGNING || param.tabIcon === ICON_SIGNING_NOT_SUPPORTED ? <span style = 'float: right; color: var(--negative-color);'> NOT CONNECTED </span> : <></>
+						{ param.signerAccounts !== undefined && param.signerAccounts.length > 0 && param.tabConnection.icon !== ICON_NOT_ACTIVE ? <span style = 'float: right; color: var(--primary-color);'> CONNECTED </span> :
+							param.tabConnection.icon === ICON_SIGNING || param.tabConnection.icon === ICON_SIGNING_NOT_SUPPORTED ? <span style = 'float: right; color: var(--negative-color);'> NOT CONNECTED </span> : <></>
 						}
 					</p>
 					: <></>
@@ -88,7 +91,7 @@ function FirstCard(param: FirstCardParams) {
 				}
 				{ !param.simulationMode ?
 
-					( (param.signerAccounts === undefined || param.signerAccounts.length == 0) && param.tabIcon !== ICON_NOT_ACTIVE ) ?
+					( (param.signerAccounts === undefined || param.signerAccounts.length == 0) && param.tabConnection.icon !== ICON_NOT_ACTIVE ) ?
 						<div style = 'margin-top: 5px'>
 							<button className = 'button is-primary' onClick = { connectToSigner } >
 								<SignerLogoText
@@ -115,7 +118,7 @@ export function Home(param: HomeParams) {
 	const [simulationAndVisualisationResults, setSimulationAndVisualisationResults] = useState<SimulationAndVisualisationResults | undefined>(undefined)
 	const [activeChain, setActiveChain] = useState<bigint>(1n)
 	const [simulationMode, setSimulationMode] = useState<boolean>(true)
-	const [tabIcon, setTabIcon] = useState<string>( ICON_NOT_ACTIVE )
+	const [tabConnection, setTabConnection] = useState<TabConnection>( DEFAULT_TAB_CONNECTION )
 	const [tabApproved, setTabApproved] = useState<boolean>(false)
 	const [signerAccounts, setSignerAccounts] = useState<readonly bigint[] | undefined>(undefined)
 	const [isLoaded, setLoaded] = useState<boolean>(false)
@@ -133,7 +136,7 @@ export function Home(param: HomeParams) {
 		setActiveChain(param.activeChain)
 		setSimulationMode(param.simulationMode)
 		setTabApproved(param.tabApproved)
-		setTabIcon(param.tabIcon)
+		setTabConnection(param.tabConnection)
 		setSignerAccounts(param.signerAccounts)
 		setCurrentBlockNumber(param.currentBlockNumber)
 		setSignerName(param.signerName)
@@ -145,7 +148,7 @@ export function Home(param: HomeParams) {
 		param.useSignersAddressAsActiveAddress,
 		param.activeChain,
 		param.simulationMode,
-		param.tabIcon,
+		param.tabConnection,
 		param.tabApproved,
 		param.currentBlockNumber,
 		param.signerName,
@@ -185,7 +188,7 @@ export function Home(param: HomeParams) {
 						changeActiveAddress = { changeActiveAddress }
 						makeMeRich = { param.makeMeRich }
 						signerAccounts = { signerAccounts }
-						tabIcon = { tabIcon }
+						tabConnection = { tabConnection }
 						tabApproved = { tabApproved }
 						signerName = { signerName }
 					/>

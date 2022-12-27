@@ -62,7 +62,7 @@ export type HomeParams = {
 	activeChain: bigint,
 	setActiveChainAndInformAboutIt: (network: bigint) => void,
 	simulationMode: boolean,
-	tabIcon: string,
+	tabConnection: TabConnection,
 	tabApproved: boolean,
 	currentBlockNumber: bigint | undefined,
 	signerName: SignerName | undefined,
@@ -87,7 +87,7 @@ export type FirstCardParams = {
 	changeActiveAddress: () => void,
 	makeMeRich: boolean,
 	signerAccounts: readonly bigint[] | undefined,
-	tabIcon: string,
+	tabConnection: TabConnection,
 	tabApproved: boolean,
 	signerName: SignerName | undefined,
 }
@@ -109,6 +109,11 @@ export type LogAnalysisParams = {
 export type WebsiteApproval = {
 	origin: string,
 	approved: boolean, // if user has approved connection
+}
+
+export type TabConnection = {
+	icon: string,
+	iconReason: string,
 }
 
 export type NotificationCenterParams = {

@@ -99,6 +99,7 @@ export const ICON_NOT_ACTIVE = '../img/head-not-active.png'
 export const ICON_SIMULATING = '../img/head-simulating.png'
 export const ICON_SIGNING = '../img/head-signing.png'
 export const ICON_SIGNING_NOT_SUPPORTED = '../img/head-signing-unsupported-network.png'
+export const DEFAULT_TAB_CONNECTION = { icon: ICON_NOT_ACTIVE, iconReason: 'The website has not requested to connect to The Interceptor.' }
 
 export const MAKE_YOU_RICH_TRANSACTION = {
 	type: '1559' as const,
