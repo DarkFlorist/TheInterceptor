@@ -80,7 +80,7 @@ export function ChangeActiveAddress(param: ChangeActiveAddressParam) {
 								<div class = 'card-content hoverable ' style = 'cursor: pointer;'>
 									<BigAddress
 										address = { addressInfo.address }
-										addressMetadata = { { name: addressInfo.name, metadataSource: 'theInterceptor', logoURI: undefined, protocol: undefined } }
+										addressMetadata = { { name: addressInfo.name, metadataSource: 'other', logoUri: undefined, protocol: undefined } }
 										noCopying = { true }
 									/>
 									{ isSignerConnected(addressInfo.address) ?

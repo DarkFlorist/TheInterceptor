@@ -13,7 +13,7 @@ export function getAddressMetaData(address: bigint, addressInfos: readonly Addre
 			name: 'Ethereum Validator',
 			logoUri: '../../img/contracts/rhino.png',
 			protocol: undefined,
-			metadataSource: 'theInterceptor',
+			metadataSource: 'other',
 		}
 	}
 	if (addressInfos !== undefined) {
@@ -34,7 +34,7 @@ export function getAddressMetaData(address: bigint, addressInfos: readonly Addre
 	const addressData = contractMetadata.get(addrString)
 	if (addressData) return {
 		...addressData,
-		logoURI: addressData.logoURI ? `${ LOGO_URI_PREFIX }/${ addressData.logoURI }` : undefined,
+		logoUri: addressData.logoUri ? `${ LOGO_URI_PREFIX }/${ addressData.logoUri }` : undefined,
 		metadataSource: 'contract',
 	}
 

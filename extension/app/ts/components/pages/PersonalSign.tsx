@@ -117,7 +117,7 @@ export function PersonalSign() {
 						<div class = 'card-content'>
 							<BigAddress
 								address = { signRequest.account }
-								addressMetadata = { { name: signRequest.addressInfo.name, metadataSource: 'theInterceptor', logoURI: undefined, protocol: undefined } }
+								addressMetadata = { { name: signRequest.addressInfo.name, metadataSource: 'other', logoUri: undefined, protocol: undefined } }
 							/>
 						</div>
 
