@@ -11,7 +11,7 @@ type TokenData = {
 	decimals: bigint | undefined
 	name: string
 	symbol: string
-	logoURI: string | undefined
+	logoUri?: string
 }
 
 export function getTokenData(token: bigint, metadata: AddressMetadata | undefined) : TokenData {
@@ -20,14 +20,14 @@ export function getTokenData(token: bigint, metadata: AddressMetadata | undefine
 			decimals: undefined,
 			name: `Token (${ ethers.utils.getAddress(addressString(token)) })`,
 			symbol: '???',
-			logoURI: undefined
+			logoUri: undefined
 		}
 	}
 	return {
 		decimals: 'decimals' in metadata ? metadata.decimals : undefined,
 		name: metadata.name,
 		symbol: 'symbol' in metadata ? metadata.symbol : '???',
-		logoURI: 'logoURI' in metadata && metadata.logoURI !== undefined ? metadata.logoURI : undefined
+		logoUri: 'logoUri' in metadata && metadata.logoUri !== undefined ? metadata.logoUri : undefined
 	}
 }
 
@@ -126,7 +126,7 @@ export function TokenSymbol(param: TokenSymbolParams) {
 	return <>
 		<div style = 'overflow: initial; height: 28px;'>
 			<CopyToClipboard content = { tokenString } copyMessage = 'Token address copied!' >
-				{ tokenData.logoURI === undefined ?
+				{ tokenData.logoUri === undefined ?
 					<Blockie
 						seed = { tokenString.toLowerCase() }
 						size = { 8 }
@@ -134,7 +134,7 @@ export function TokenSymbol(param: TokenSymbolParams) {
 						borderRadius = { '50%' }
 					/>
 				:
-				<img class = 'noselect nopointer vertical-center' style = 'max-height: 25px; max-width: 25px;' src = { tokenData.logoURI }/>
+				<img class = 'noselect nopointer vertical-center' style = 'max-height: 25px; max-width: 25px;' src = { tokenData.logoUri }/>
 				}
 			</CopyToClipboard>
 		</div>

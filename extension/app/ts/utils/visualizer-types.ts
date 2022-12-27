@@ -4,6 +4,7 @@ import { EthBalanceChanges, EthereumAddress, EthereumQuantity, EthereumTransacti
 import * as funtypes from 'funtypes'
 import { QUARANTINE_CODE } from '../simulation/protectors/quarantine-codes.js'
 import { CHAIN } from './user-interface-types.js'
+import { Partial } from 'funtypes'
 
 export type TokenVisualizerResult = funtypes.Static<typeof TokenVisualizerResult>
 export const TokenVisualizerResult = funtypes.Intersect(
@@ -63,17 +64,19 @@ export type AddressMetadata = funtypes.Static<typeof AddressMetadata>
 export const AddressMetadata = funtypes.Union(
 	funtypes.Object({
 		name: funtypes.String,
-		logoURI: funtypes.Union(funtypes.String, funtypes.Undefined),
-		protocol: funtypes.Union(funtypes.String, funtypes.Undefined),
-		metadataSource: funtypes.Union(funtypes.Literal('addressBook'), funtypes.Literal('contract'), funtypes.Literal('other'), funtypes.Literal('theInterceptor'))
-	}), funtypes.Object({
+		metadataSource: funtypes.Union(funtypes.Literal('addressBook'), funtypes.Literal('contract'), funtypes.Literal('other'))
+	}).And(Partial({
+		logoUri: funtypes.String,
+		protocol: funtypes.String,
+	})), funtypes.Object({
 		name: funtypes.String,
 		symbol: funtypes.String,
-		logoURI: funtypes.Union(funtypes.String, funtypes.Undefined),
 		protocol: funtypes.Union(funtypes.String, funtypes.Undefined),
 		decimals: funtypes.Union(EthereumQuantity, funtypes.Undefined),
 		metadataSource: funtypes.Union(funtypes.Literal('token'), funtypes.Literal('nft'), funtypes.Literal('imputed'))
-	})
+	}).And(Partial({
+		logoUri: funtypes.String,
+	}))
 )
 
 export type SimulatedAndVisualizedTransaction = {
