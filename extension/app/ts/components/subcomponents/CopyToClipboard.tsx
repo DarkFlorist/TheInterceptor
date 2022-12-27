@@ -7,7 +7,7 @@ interface CopyToClipboardParams {
 	copyMessage?: string
 }
 
-export function CopyToClipboard(props: CopyToClipboardParams): preact.VNode {
+export function CopyToClipboard(props: CopyToClipboardParams) {
 	return (
 		<div onClick = { () => { clipboardCopy(props.content) } } style = 'display: inherit; overflow: inherit;'>
 			<div
