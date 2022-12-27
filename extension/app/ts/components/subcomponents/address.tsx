@@ -40,7 +40,7 @@ function AddressIcon(param: AddressIconParams) {
 	}
 
 	return <div style = { style }>
-		<img src = { param.addressMetadata.logoURI === 'images/contracts/uniswap.svg' ? '../img/contracts/uniswap.svg': param.addressMetadata.logoURI } style = 'width: 100%; max-height: 100%'/>
+		<img src = { param.addressMetadata.logoURI } style = 'width: 100%; max-height: 100%'/>
 	</div>
 }
 

@@ -34,6 +34,7 @@ export function getAddressMetaData(address: bigint, addressInfos: readonly Addre
 	const addressData = contractMetadata.get(addrString)
 	if (addressData) return {
 		...addressData,
+		logoURI: addressData.logoURI ? `${ LOGO_URI_PREFIX }/${ addressData.logoURI }` : undefined,
 		metadataSource: 'contract',
 	}
 
