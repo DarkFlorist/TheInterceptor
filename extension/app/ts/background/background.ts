@@ -6,7 +6,7 @@ import { getSettings, saveActiveChain, saveActiveSigningAddress, saveActiveSimul
 import { blockNumber, call, chainId, estimateGas, gasPrice, getAccounts, getBalance, getBlockByNumber, getCode, getPermissions, getTransactionByHash, getTransactionCount, getTransactionReceipt, personalSign, requestPermissions, sendRawTransaction, sendTransaction, signTypedDataV4, subscribe, switchEthereumChain, unsubscribe } from './simulationModeHanders.js'
 import { changeActiveAddress, changeAddressInfos, changeMakeMeRich, changePage, resetSimulation, confirmDialog, RefreshSimulation, removeTransaction, requestAccountsFromSigner, refreshPopupConfirmTransactionSimulation, confirmPersonalSign, confirmRequestAccess, changeInterceptorAccess, changeChainDialog, popupChangeActiveChain, enableSimulationMode, reviewNotification, rejectNotification } from './popupMessageHandlers.js'
 import { AddressMetadata, SimResults, SimulationState, TokenPriceEstimate } from '../utils/visualizer-types.js'
-import { WebsiteApproval, SignerState } from '../utils/user-interface-types.js'
+import { WebsiteApproval, SignerState, TabConnection } from '../utils/user-interface-types.js'
 import { getAddressMetadataForAccess, setPendingAccessRequests } from './windows/interceptorAccess.js'
 import { CHAINS, ICON_NOT_ACTIVE, isSupportedChain, MAKE_YOU_RICH_TRANSACTION, METAMASK_ERROR_USER_REJECTED_REQUEST } from '../utils/constants.js'
 import { PriceEstimator } from '../simulation/priceEstimator.js'
@@ -79,7 +79,7 @@ declare global {
 			websiteTabSignerStates: Map<number, SignerState>,
 			websitePortApprovals: Map<browser.runtime.Port, WebsiteApproval>, // map of ports that are either approved or not-approved by interceptor
 			websiteTabApprovals: Map<number, WebsiteApproval>,
-			websiteTabConnection: Map<number, string>, // icon for each tab
+			websiteTabConnection: Map<number, TabConnection>,
 			settings: Settings | undefined,
 			currentBlockNumber: bigint | undefined,
 		}

@@ -1,6 +1,6 @@
 import { addressString } from '../../utils/bigint.js'
 import { TransactionVisualizationParameters } from '../../utils/visualizer-types.js'
-import { Ether } from '../subcomponents/coins.js'
+import { EtherAmount, EtherSymbol } from '../subcomponents/coins.js'
 import { nameTransaction } from './identifyTransaction.js'
 
 export const transactionExplainers = new Map<string, [string, string]>([
@@ -39,17 +39,26 @@ export function makeYouRichTransaction(param: TransactionVisualizationParameters
 			</header>
 			<div class = 'card-content'>
 				<div class = 'container'>
-					<div class = 'content' >
-						<div class = 'vertical-center'>
-							<p style = { `color: var(--text-color); margin-bottom: 0px`}> { explainer[0] } </p>
-							<Ether
-								amount = { param.tx.unsignedTransaction.value }
-								showSign = { false }
-								textColor = { 'var(--text-color)' }
-								chain = { param.simulationAndVisualisationResults.chain }
-							/>
-							<p style = { `color: var(--text-color); margin-bottom: 0px; margin-left: 5px`}> { explainer[1] } </p>
-						</div>
+					<div class = 'content' style = 'display: inline-block;'>
+						<table class = 'log-table'>
+							<div class = 'log-cell'>
+								<p class = 'ellipsis' style = {`color: var(--text-color); margin-bottom: 0px`}> { explainer[0] }&nbsp; </p>
+							</div>
+							<div class = 'log-cell' style = 'justify-content: right;'>
+								<EtherAmount
+									amount = { param.tx.unsignedTransaction.value }
+								/>
+							</div>
+							<div class = 'log-cell'>
+								<EtherSymbol
+									amount = { param.tx.unsignedTransaction.value }
+									chain = { param.simulationAndVisualisationResults.chain }
+								/>
+							</div>
+							<div class = 'log-cell'>
+								<p class = 'ellipsis' style = {`color: var(--text-color); margin-bottom: 0px`}> &nbsp;{ explainer[1] } </p>
+							</div>
+						</table>
 					</div>
 				</div>
 			</div>

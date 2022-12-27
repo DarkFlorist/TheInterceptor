@@ -6,6 +6,9 @@ import { ERC721Token, Ether, Token, TokenAmount, TokenPrice, TokenSymbol } from 
 import { Transactions } from './Transactions.js'
 import { CopyToClipboard } from '../subcomponents/CopyToClipboard.js'
 import { SomeTimeAgo } from '../subcomponents/SomeTimeAgo.js'
+import { CHAINS, MAKE_YOU_RICH_TRANSACTION } from '../../utils/constants.js'
+import { addressString } from '../../utils/bigint.js'
+import { identifyTransaction } from './identifyTransaction.js'
 
 type EtherChangeParams = {
 	textColor: string,
@@ -407,6 +410,28 @@ type SimulationSummaryParams = {
 	currentBlockNumber: bigint | undefined,
 }
 
+export function removeEthDonator(chain: CHAIN, summary: Map<string, BalanceChangeSummary>) {
+	const donatorAddress = addressString(CHAINS[chain].eth_donator)
+	const donatorSummary = summary.get(donatorAddress)
+	if (donatorSummary === undefined) return summary
+	if (donatorSummary.etherResults === undefined) return summary
+	if (donatorSummary.etherResults.balanceAfter + MAKE_YOU_RICH_TRANSACTION.value === donatorSummary.etherResults.balanceBefore ) {
+		if (donatorSummary.ERC721OperatorChanges.size === 0 &&
+			donatorSummary.ERC721TokenBalanceChanges.size === 0 &&
+			donatorSummary.ERC721TokenIdApprovalChanges.size === 0 &&
+			donatorSummary.tokenApprovalChanges.size === 0 &&
+			donatorSummary.tokenBalanceChanges.size === 0
+		) {
+			summary.delete(donatorAddress)
+			return summary
+		}
+		donatorSummary.etherResults = undefined
+		return summary
+	}
+	donatorSummary.etherResults.balanceAfter = donatorSummary.etherResults.balanceAfter + MAKE_YOU_RICH_TRANSACTION.value
+	return summary
+}
+
 export function SimulationSummary(param: SimulationSummaryParams) {
 	if (param.simulationAndVisualisationResults === undefined) return <></>
 
@@ -415,14 +440,17 @@ export function SimulationSummary(param: SimulationSummaryParams) {
 		param.simulationAndVisualisationResults.simulatedAndVisualizedTransactions.map( (x) => (x.simResults?.visualizerResults) )
 
 	const logSummarizer = new LogSummarizer( VisResults )
-	const summary = logSummarizer.getSummary()
+
+	//remove eth donator if we are in rich mode
+	const firstTransaction = param.simulationAndVisualisationResults.simulatedAndVisualizedTransactions.at(0)
+	const summary = firstTransaction && identifyTransaction(firstTransaction, param.simulationAndVisualisationResults.activeAddress) === 'MakeYouRichTransaction' ?
+		removeEthDonator(param.simulationAndVisualisationResults.chain, logSummarizer.getSummary())
+		: logSummarizer.getSummary()
 
 	const ownAddresses = Array.from(summary.entries()).filter( ([address, _balanceSummary]) =>
 		param.simulationAndVisualisationResults.addressMetadata.get(address)?.metadataSource === 'addressBook' || BigInt(address) === param.simulationAndVisualisationResults.activeAddress
 	)
-	const notOwnAddresses = Array.from(summary.entries()).filter( ([address, _balanceSummary]) =>
-		param.simulationAndVisualisationResults.addressMetadata.get(address)?.metadataSource !== 'addressBook' && BigInt(address) !== param.simulationAndVisualisationResults.activeAddress
-	)
+	const notOwnAddresses = Array.from(summary.entries()).filter( ([address, _balanceSummary]) => param.simulationAndVisualisationResults.addressMetadata.get(address)?.metadataSource !== 'addressBook' && BigInt(address) !== param.simulationAndVisualisationResults.activeAddress)
 
 	function resetSimulation() {
 		browser.runtime.sendMessage( { method: 'popup_resetSimulation' } );

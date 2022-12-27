@@ -89,7 +89,7 @@ async function getTokenMetadata(simulator: Simulator, address: bigint) : Promise
 	const decimals = simulator === undefined ? undefined : await simulator.ethereum.getTokenDecimals(address).catch(() => {
 		console.log(`could not fetch decimals for ${ address }`)
 		return undefined
-	});
+	})
 	return {
 		name: ethers.utils.getAddress(addrString),
 		symbol: '???',

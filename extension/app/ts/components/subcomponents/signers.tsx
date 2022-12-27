@@ -7,7 +7,7 @@ const signerLogos = {
 }
 
 export function getSignerName(signerName: SignerName | undefined ) {
-	if (signerName === 'NoSigner' || signerName === 'NotRecognizedSigner' || signerName === undefined) return 'Signer'
+	if (signerName === 'NoSigner' || signerName === 'NotRecognizedSigner' || signerName === undefined) return 'Unknown signer'
 	return signerName
 }
 

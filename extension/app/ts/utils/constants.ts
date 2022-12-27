@@ -9,13 +9,6 @@ export const UNISWAP_V3_FACTORY_ADDRESS = 0x1F98431c8aD98523631AE4a59f267346ea31
 export const UNISWAP_V3_ROUTER = 0xE592427A0AEce92De3Edee1F18E0157C05861564n
 export const UNISWAP_V3_NFT_ROUTER = 0xC36442b4a4522E871399CD717aBDD847Ab11FE88n
 
-// Token addresses
-export const WETH = 0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2n
-export const USDC = 0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48n
-export const USDT = 0xdAC17F958D2ee523a2206206994597C13D831ec7n
-export const DAI = 0x6B175474E89094C44Da98b954EedeAC495271d0Fn
-export const WBTC = 0x2260FAC5E5542a773Aa44fBCfeDf7C193bc2C599n
-
 // common 4-byte function sigs
 export const ERC20_TRANSFER_FROM_4BYTES = 0x23b872dd
 export const ERC20_TRANSFER_4BYTES = 0xa9059cbb
@@ -99,6 +92,7 @@ export const ICON_NOT_ACTIVE = '../img/head-not-active.png'
 export const ICON_SIMULATING = '../img/head-simulating.png'
 export const ICON_SIGNING = '../img/head-signing.png'
 export const ICON_SIGNING_NOT_SUPPORTED = '../img/head-signing-unsupported-network.png'
+export const DEFAULT_TAB_CONNECTION = { icon: ICON_NOT_ACTIVE, iconReason: 'The website has not requested to connect to The Interceptor.' }
 
 export const MAKE_YOU_RICH_TRANSACTION = {
 	type: '1559' as const,

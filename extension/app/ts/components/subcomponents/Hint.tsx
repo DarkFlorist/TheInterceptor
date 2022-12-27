@@ -47,7 +47,7 @@ export default function Container(props: Props) {
 				}, parseInt(delay))
 			}
 			const mouseover = (e: Event) => {
-				if ( !(e.target instanceof Element) || !e.target.hasAttribute(toolTipAttribute) || !e.target.hasAttribute(timerAttribute) ) return
+				if ( !(e.target instanceof Element) || (!e.target.hasAttribute(toolTipAttribute) && !e.target.hasAttribute(timerAttribute)) ) return
 				if ( copyMessageTimeoutId !== undefined ) return
 
 				// show on tooltip on mouseover
