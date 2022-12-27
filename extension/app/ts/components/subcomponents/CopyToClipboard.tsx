@@ -1,7 +1,8 @@
+import { ComponentChildren } from 'preact'
 import { clipboardCopy } from './clipboardcopy.js'
 
 interface CopyToClipboardParams {
-	children: preact.VNode
+	children: ComponentChildren
 	content: string
 	contentDisplayOverride?: string
 	copyMessage?: string
@@ -23,7 +24,7 @@ export function CopyToClipboard(props: CopyToClipboardParams) {
 }
 
 interface ToolTipParams {
-	children: preact.VNode
+	children: ComponentChildren
 	content: string
 }
 
