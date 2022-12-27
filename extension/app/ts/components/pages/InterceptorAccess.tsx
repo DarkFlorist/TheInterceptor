@@ -110,7 +110,7 @@ export function InterceptorAccess() {
 
 						<BigAddress
 							address = { BigInt(accessRequest.requestAccessToAddress) }
-							addressMetadata = { accessRequest.addressMetadata.get(accessRequest.requestAccessToAddress) }
+							nameAndLogo = { accessRequest.addressMetadata.get(accessRequest.requestAccessToAddress) }
 						/>
 
 					</div>
@@ -132,7 +132,7 @@ export function InterceptorAccess() {
 								<li style = { `margin: 0px; margin-bottom: ${index < accessRequest.addressMetadata.size - 1  ? '10px;' : '0px'}` }>
 									<BigAddress
 										address = { BigInt(address) }
-										addressMetadata = { metadata }
+										nameAndLogo = { metadata }
 									/>
 								</li>
 							)) }

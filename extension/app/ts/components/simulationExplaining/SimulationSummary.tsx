@@ -96,7 +96,7 @@ export function Erc20ApprovalChange(param: Erc20ApprovalChangeParams) {
 			<div class = 'log-cell'>
 				<SmallAddress
 					address = { BigInt(param.addressToApprove) }
-					addressMetadata = { param.addressMetadata.get(param.addressToApprove) }
+					nameAndLogo = { param.addressMetadata.get(param.addressToApprove) }
 					textColor = { textColor }
 				/>
 			</div>
@@ -208,7 +208,7 @@ export function ERC721OperatorChanges(param: ERC721OperatorChangesParams) {
 							<div class = 'log-cell'>
 								<SmallAddress
 									address = { BigInt(operator) }
-									addressMetadata = { param.addressMetadata.get(operator) }
+									nameAndLogo = { param.addressMetadata.get(operator) }
 									textColor = { param.negativeColor }
 								/>
 							</div>
@@ -269,7 +269,7 @@ export function ERC721TokenIdApprovalChanges(param: ERC721TokenIdApprovalChanges
 								<div class = 'log-cell'>
 									<SmallAddress
 										address = { BigInt(approvedAddress) }
-										addressMetadata = { param.addressMetadata.get(approvedAddress) }
+										nameAndLogo = { param.addressMetadata.get(approvedAddress) }
 										textColor = { param.negativeColor }
 									/>
 								</div>
@@ -315,12 +315,12 @@ export function SummarizeAddress(param: SummarizeAddressParams) {
 		{ isOwnAddress ?
 			<BigAddress
 				address = { BigInt(param.address) }
-				addressMetadata = { param.simulationAndVisualisationResults.addressMetadata.get(param.address) }
+				nameAndLogo = { param.simulationAndVisualisationResults.addressMetadata.get(param.address) }
 			/> :
 			<SmallAddress
 				textColor = { positiveNegativeColors.textColor }
 				address = { BigInt(param.address) }
-				addressMetadata = { param.simulationAndVisualisationResults.addressMetadata.get(param.address)}
+				nameAndLogo = { param.simulationAndVisualisationResults.addressMetadata.get(param.address)}
 			/>
 		}
 

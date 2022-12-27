@@ -22,14 +22,14 @@ export function findAddressInfo(addressToFind: bigint, addressInfos: readonly Ad
 
 export type AddressIconParams = {
 	address: bigint,
-	addressMetadata: AddressMetadata | undefined,
+	logoUri: string | undefined,
 	isBig: boolean
 	backgroundColor: string,
 }
 
 function AddressIcon(param: AddressIconParams) {
 	const style = `${ param.isBig ? `width: 40px; height: 40px; border-radius: 10px;` : `width: 24px; height: 24px; border-radius: 2px;` }`
-	if (param.addressMetadata === undefined || param.addressMetadata.logoUri === undefined) {
+	if (param.logoUri === undefined) {
 		return <div style = { style }>
 			<Blockie
 				seed = { addressString(param.address).toLowerCase() }
@@ -40,7 +40,7 @@ function AddressIcon(param: AddressIconParams) {
 	}
 
 	return <div style = { style }>
-		<img src = { param.addressMetadata.logoUri } style = 'width: 100%; max-height: 100%'/>
+		<img src = { param.logoUri } style = 'width: 100%; max-height: 100%'/>
 	</div>
 }
 
@@ -77,13 +77,13 @@ export function BigAddressWithChainSelector(param: BigAddressParamsWithChainSele
 
 export type BigAddressParams = {
 	address: bigint
-	addressMetadata: AddressMetadata | undefined
+	nameAndLogo: Pick<AddressMetadata, 'name' | 'logoUri'> | undefined
 	noCopying?: boolean
 }
 
 export function BigAddress(params: BigAddressParams) {
 	const addrString = ethers.utils.getAddress(addressString(params.address))
-	const title = params.addressMetadata === undefined || params.addressMetadata.name === undefined ? addrString: params.addressMetadata.name
+	const title = params.nameAndLogo === undefined || params.nameAndLogo.name === undefined ? addrString: params.nameAndLogo.name
 	const subTitle = title != addrString ? addrString : ''
 
 	return <div class = 'media'>
@@ -93,7 +93,7 @@ export function BigAddress(params: BigAddressParams) {
 					<span class = 'noselect nopointer'>
 						<AddressIcon
 							address = { params.address }
-							addressMetadata = { params.addressMetadata }
+							logoUri = { params.nameAndLogo?.logoUri }
 							isBig = { true }
 							backgroundColor = { 'var(--text-color)' }
 						/>
@@ -103,7 +103,7 @@ export function BigAddress(params: BigAddressParams) {
 				<span class = 'noselect nopointer'>
 					<AddressIcon
 						address = { params.address }
-						addressMetadata = { params.addressMetadata }
+						logoUri = { params.nameAndLogo?.logoUri }
 						isBig = { true }
 						backgroundColor = { 'var(--text-color)' }
 					/>
@@ -183,17 +183,17 @@ export function ActiveAddress(params: ActiveAddressParams) {
 
 export type SmallAddressParams = {
 	address: bigint,
-	addressMetadata: AddressMetadata | undefined,
+	nameAndLogo: Pick<AddressMetadata, 'name' | 'logoUri'> | undefined
 	textColor?: string,
 }
 
-export function getAddressName(address: bigint, metadata: AddressMetadata | undefined) {
+export function getAddressName(address: bigint, metadata: Pick<AddressMetadata, 'name' | 'logoUri'> | undefined) {
 	if ( metadata === undefined ) return ethers.utils.getAddress(addressString(address))
 	return metadata.name
 }
 
 export function SmallAddress(params: SmallAddressParams) {
-	const name = getAddressName(params.address, params.addressMetadata)
+	const name = getAddressName(params.address, params.nameAndLogo)
 	const textColor = params.textColor === undefined ? 'var(--text-color)' : params.textColor
 
 	return	<CopyToClipboard content = { ethers.utils.getAddress(addressString(params.address)) } copyMessage = 'Address copied!'>
@@ -201,7 +201,7 @@ export function SmallAddress(params: SmallAddressParams) {
 			<span class = 'vertical-center noselect nopointer' style = 'margin-right: 5px'>
 				<AddressIcon
 					address = { params.address }
-					addressMetadata = { params.addressMetadata }
+					logoUri = { params.nameAndLogo?.logoUri }
 					isBig = { false }
 					backgroundColor = { textColor }
 				/>
@@ -216,8 +216,8 @@ export function SmallAddress(params: SmallAddressParams) {
 export type FromAddressToAddressParams = {
 	from: bigint
 	to: bigint
-	fromAddressMetadata: AddressMetadata | undefined
-	toAddressMetadata: AddressMetadata | undefined
+	fromAddressNameAndLogo: Pick<AddressMetadata, 'name' | 'logoUri'> | undefined
+	toAddressNameAndLogo: Pick<AddressMetadata, 'name' | 'logoUri'> | undefined
 	isApproval: boolean
 }
 
@@ -226,7 +226,7 @@ export function FromAddressToAddress(params: FromAddressToAddressParams ) {
 		<div class = 'column' style = 'width: 47.5%; flex: none; padding-bottom: 0px;'>
 			<BigAddress
 				address = { params.from }
-				addressMetadata = { params.fromAddressMetadata }
+				nameAndLogo = { params.fromAddressNameAndLogo }
 			/>
 		</div>
 		<div class = 'column' style = 'width: 5%; padding: 0px; align-self: center; flex: none;'>
@@ -235,7 +235,7 @@ export function FromAddressToAddress(params: FromAddressToAddressParams ) {
 		<div class = 'column' style = 'width: 47.5%; flex: none; padding-bottom: 0px;'>
 			<BigAddress
 				address = { params.to }
-				addressMetadata = { params.toAddressMetadata }
+				nameAndLogo = { params.toAddressNameAndLogo }
 			/>
 		</div>
 	</div>
