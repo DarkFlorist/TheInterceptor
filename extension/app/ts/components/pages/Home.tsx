@@ -79,6 +79,7 @@ function FirstCard(param: FirstCardParams) {
 						title = { param.activeAddress.name }
 						simulationMode = { param.simulationMode }
 						changeActiveAddress = { param.changeActiveAddress }
+						renameAddressCallBack = { param.renameAddressCallBack }
 					/>
 				: param.useSignersAddressAsActiveAddress || !param.simulationMode ?
 					<div class = 'content' style = 'color: var(--negative-color)'>
@@ -191,6 +192,7 @@ export function Home(param: HomeParams) {
 						tabConnection = { tabConnection }
 						tabApproved = { tabApproved }
 						signerName = { signerName }
+						renameAddressCallBack = { param.addOrModifyAddress }
 					/>
 				</div>
 			</div>
@@ -211,6 +213,7 @@ export function Home(param: HomeParams) {
 					removeTransaction = { removeTransaction }
 					refreshSimulation = { refreshSimulation }
 					currentBlockNumber = { currentBlockNumber }
+					renameAddressCallBack = { param.addOrModifyAddress }
 				/>
 			}
 		</div>

@@ -98,6 +98,7 @@ export function ConfirmTransaction() {
 									removeTransaction = { removeTransaction }
 									showOnlyOneAndAggregateRest = { true }
 									activeAddress = { simulationAndVisualisationResults.activeAddress }
+									renameAddressCallBack = { undefined }
 								/>
 								<SimulationSummary
 									simulationAndVisualisationResults = { simulationAndVisualisationResults }
@@ -105,6 +106,7 @@ export function ConfirmTransaction() {
 									resetButton = { false }
 									refreshSimulation = { refreshSimulation }
 									currentBlockNumber = { currentBlockNumber }
+									renameAddressCallBack = { undefined }
 								/>
 								<div className = 'block' style = 'margin: 10px; padding: 10px; background-color: var(--card-bg-color);'>
 									{ simulationAndVisualisationResults && simulationAndVisualisationResults.simulatedAndVisualizedTransactions[simulationAndVisualisationResults.simulatedAndVisualizedTransactions.length - 1 ].multicallResponse.statusCode === 'success' ? <></> :

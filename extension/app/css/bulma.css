@@ -3306,8 +3306,6 @@ fieldset[disabled] .input,
 fieldset[disabled] .textarea,
 fieldset[disabled] .select select,
 .select fieldset[disabled] select {
-  background-color: whitesmoke;
-  border-color: whitesmoke;
   box-shadow: none;
   color: #7a7a7a;
 }

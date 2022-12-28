@@ -78,7 +78,12 @@ export function ChangeActiveAddress(param: ChangeActiveAddressParam) {
 						<li>
 							<div class = 'card hoverable' onClick = { () => { ChangeAndStoreActiveAddress(addressInfo.address) } }>
 								<div class = 'card-content hoverable ' style = 'cursor: pointer;'>
-									<BigAddress address = { addressInfo.address } title = { addressInfo.name } noCopying = { true }/>
+									<BigAddress
+										address = { addressInfo.address }
+										title = { addressInfo.name }
+										noCopying = { true }
+										renameAddressCallBack = { undefined }
+									/>
 									{ isSignerConnected(addressInfo.address) ?
 										<div class = 'content' style = 'color: var(--text-color)'>
 											<SignerLogoText signerName = { param.signerName } text = { ` ${ getSignerName(param.signerName) } connected` }/>
