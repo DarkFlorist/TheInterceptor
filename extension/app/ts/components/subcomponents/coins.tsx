@@ -84,10 +84,10 @@ type EtherSymbolParams = {
 
 export function EtherSymbol(param: EtherSymbolParams) {
 	const color = param.textColor ? param.textColor : 'var(--text-color)'
-	return <>
+	return <div style = 'overflow: initial; height: 28px;'>
 		<img class = 'noselect nopointer vertical-center' style = 'height: 25px; width: 16px; display: inline-block' src = '../../img/coins/ethereum.png'/>
 		<p class = 'noselect nopointer'  style = { `color: ${ color }; display: inline-block` }> { param.useFullTokenName ? CHAINS[param.chain].currencyName : CHAINS[param.chain].currencyTicker } </p>
-	</>
+	</div>
 }
 
 type TokenPriceParams = {

@@ -2,7 +2,7 @@ import { addressString } from '../../utils/bigint.js'
 import { AddressMetadata, SimulatedAndVisualizedTransaction, SimulationAndVisualisationResults, TokenVisualizerResult, TransactionVisualizationParameters } from '../../utils/visualizer-types.js'
 import { FromAddressToAddress, SmallAddress } from '../subcomponents/address.js'
 import { EtherSymbol, TokenSymbol, TokenAmount, EtherAmount, Token721AmountField, ERC721TokenNumber } from '../subcomponents/coins.js'
-import { CHAIN, LogAnalysisParams } from '../../utils/user-interface-types.js'
+import { CHAIN, LogAnalysisParams, RenameAddressCallBack } from '../../utils/user-interface-types.js'
 import { QUARANTINE_CODES_DICT } from '../../simulation/protectors/quarantine-codes.js'
 import { Error } from '../subcomponents/Error.js'
 import { identifyRoutes, identifySwap, SwapVisualization } from './SwapTransactions.js'
@@ -144,6 +144,7 @@ type SendOrReceiveTokensImportanceBoxParams = {
 	tokenVisualizerResults: TokenVisualizerResult[] | undefined,
 	addressMetadata: Map<string, AddressMetadata>,
 	textColor: string,
+	renameAddressCallBack: RenameAddressCallBack | undefined,
 }
 
 function SendOrReceiveTokensImportanceBox(param: SendOrReceiveTokensImportanceBoxParams ) {
@@ -192,6 +193,7 @@ function SendOrReceiveTokensImportanceBox(param: SendOrReceiveTokensImportanceBo
 								address = { tokenEvent.to }
 								addressMetaData = { param.addressMetadata.get(addressString(tokenEvent.to)) }
 								textColor = { param.textColor }
+								renameAddressCallBack = { param.renameAddressCallBack }
 							/>
 						</div>
 					</table>
@@ -204,6 +206,7 @@ function SendOrReceiveTokensImportanceBox(param: SendOrReceiveTokensImportanceBo
 type TransactionImportanceBlockParams = {
 	tx: SimulatedAndVisualizedTransaction,
 	simulationAndVisualisationResults: SimulationAndVisualisationResults,
+	renameAddressCallBack: RenameAddressCallBack | undefined,
 }
 
 // showcases the most important things the transaction does
@@ -256,6 +259,7 @@ function TransactionImportanceBlock( param: TransactionImportanceBlockParams ) {
 			tokenVisualizerResults = { sendingTokenResults?.filter( (x) => !x.isApproval) }
 			sending = { true }
 			textColor = { textColor }
+			renameAddressCallBack = { param.renameAddressCallBack }
 		/>
 
 		{ /* us approving other addresses */ }
@@ -265,6 +269,7 @@ function TransactionImportanceBlock( param: TransactionImportanceBlockParams ) {
 			textColor = { textColor }
 			negativeColor = { textColor }
 			isImportant = { true }
+			renameAddressCallBack = { param.renameAddressCallBack }
 		/>
 		<ERC721OperatorChanges
 			addressMetadata = { param.simulationAndVisualisationResults.addressMetadata }
@@ -272,6 +277,7 @@ function TransactionImportanceBlock( param: TransactionImportanceBlockParams ) {
 			textColor = { textColor }
 			negativeColor = { textColor }
 			isImportant = { true }
+			renameAddressCallBack = { param.renameAddressCallBack }
 		/>
 		<ERC721TokenIdApprovalChanges
 			addressMetadata = { param.simulationAndVisualisationResults.addressMetadata }
@@ -279,6 +285,7 @@ function TransactionImportanceBlock( param: TransactionImportanceBlockParams ) {
 			textColor = { textColor }
 			negativeColor = { textColor }
 			isImportant = { true }
+			renameAddressCallBack = { param.renameAddressCallBack }
 		/>
 
 		{ /* receiving tokens */ }
@@ -287,6 +294,7 @@ function TransactionImportanceBlock( param: TransactionImportanceBlockParams ) {
 			tokenVisualizerResults = { receivingTokenResults?.filter( (x) => !x.isApproval) }
 			sending = { false }
 			textColor = { textColor }
+			renameAddressCallBack = { param.renameAddressCallBack }
 		/>
 	</>
 }
@@ -320,11 +328,13 @@ function normalTransaction(param: TransactionVisualizationParameters) {
 								fromAddressMetadata = { param.simulationAndVisualisationResults.addressMetadata.get(addressString(param.tx.signedTransaction.from)) }
 								toAddressMetadata = { param.simulationAndVisualisationResults.addressMetadata.get(addressString(param.tx.signedTransaction.to)) }
 								isApproval = { false }
+								renameAddressCallBack = { param.renameAddressCallBack }
 							/>
 							<div class = 'content importance-box-content' >
 								<TransactionImportanceBlock
 									tx = { param.tx }
 									simulationAndVisualisationResults = { param.simulationAndVisualisationResults }
+									renameAddressCallBack = { param.renameAddressCallBack }
 								/>
 								{ param.tx.simResults !== undefined ? <>
 									{ param.tx.simResults.quarantineCodes.map( (code) => (
@@ -341,7 +351,12 @@ function normalTransaction(param: TransactionVisualizationParameters) {
 				{ param.tx.simResults !== undefined ?  <>
 					<div class = 'container'>
 						<div class = 'notification' style = 'background-color: unset; padding-right: 10px; padding-left: 10px; padding-top: 0px; padding-bottom: 0px;'>
-							<LogAnalysis simulatedAndVisualizedTransaction = { param.tx } addressMetadata = { param.simulationAndVisualisationResults.addressMetadata } identifiedSwap = { identifiedSwap } />
+							<LogAnalysis
+								simulatedAndVisualizedTransaction = { param.tx }
+								addressMetadata = { param.simulationAndVisualisationResults.addressMetadata }
+								identifiedSwap = { identifiedSwap }
+								renameAddressCallBack = { param.renameAddressCallBack }
+							/>
 						</div>
 					</div>
 				</> : <></> }
@@ -390,6 +405,7 @@ type TransactionsParams = {
 	removeTransaction: (hash: bigint) => void,
 	showOnlyOneAndAggregateRest?: boolean,
 	activeAddress: bigint,
+	renameAddressCallBack: RenameAddressCallBack | undefined,
 }
 
 export function Transactions(param: TransactionsParams) {
@@ -410,6 +426,7 @@ export function Transactions(param: TransactionsParams) {
 						simulationAndVisualisationResults = { param.simulationAndVisualisationResults }
 						removeTransaction = { param.removeTransaction }
 						activeAddress = { param.activeAddress }
+						renameAddressCallBack = { param.renameAddressCallBack }
 					/>
 				</li>
 			</ul>
@@ -423,6 +440,7 @@ export function Transactions(param: TransactionsParams) {
 					simulationAndVisualisationResults = { param.simulationAndVisualisationResults }
 					removeTransaction = { param.removeTransaction }
 					activeAddress = { param.activeAddress }
+					renameAddressCallBack = { param.renameAddressCallBack }
 				/>
 			</li>
 		)) }
@@ -433,6 +451,7 @@ type TokenLogEventParams = {
 	tokenVisualizerResult: TokenVisualizerResult
 	addressMetadata: Map<string, AddressMetadata>
 	ourAddressInReferenceFrame: bigint,
+	renameAddressCallBack: RenameAddressCallBack | undefined,
 }
 
 export function TokenLogEvent(params: TokenLogEventParams ) {
@@ -469,6 +488,7 @@ export function TokenLogEvent(params: TokenLogEventParams ) {
 					address = { params.tokenVisualizerResult.from }
 					addressMetaData = { params.addressMetadata.get(addressString(params.tokenVisualizerResult.from)) }
 					textColor = { textColor }
+					renameAddressCallBack = { params.renameAddressCallBack }
 				/>
 			</div>
 			<div class = 'log-cell' style = 'padding-right: 0.2em; padding-left: 0.2em'>
@@ -479,6 +499,7 @@ export function TokenLogEvent(params: TokenLogEventParams ) {
 					address = { params.tokenVisualizerResult.to }
 					addressMetaData = { params.addressMetadata.get(addressString(params.tokenVisualizerResult.to)) }
 					textColor = { textColor }
+					renameAddressCallBack = { params.renameAddressCallBack }
 				/>
 			</div>
 	</>
@@ -494,6 +515,7 @@ function LogAnalysis(param: LogAnalysisParams) {
 				tokenVisualizerResult = { tokenVisualizerResult }
 				addressMetadata = { param.addressMetadata }
 				ourAddressInReferenceFrame = { param.simulatedAndVisualizedTransaction.unsignedTransaction.from }
+				renameAddressCallBack = { param.renameAddressCallBack }
 			/>
 		))
 	:
@@ -502,6 +524,7 @@ function LogAnalysis(param: LogAnalysisParams) {
 				tokenVisualizerResult = { tokenVisualizerResult }
 				addressMetadata = { param.addressMetadata }
 				ourAddressInReferenceFrame = { param.simulatedAndVisualizedTransaction.unsignedTransaction.from }
+				renameAddressCallBack = { param.renameAddressCallBack }
 			/>
 		))
 	} </table>
