@@ -168,11 +168,13 @@ export function App() {
 		setNameInput(`Pasted ${ truncateAddr(addressString) }`)
 		setAddressInput(addressString)
 	}
-	function addOrModifyAddress(name: string | undefined, address: string) {
+
+	function renameAddressCallBack(name: string | undefined, address: string) {
 		setAndSaveAppPage(Page.ModifyAddress)
 		setNameInput(name === undefined ? '' : name)
 		setAddressInput(ethers.utils.getAddress(address))
 	}
+
 	return (
 		<main style = { `background-color: var(--bg-color); width: 520px; height: 600px; ${ appPage !== Page.Home ? 'overflow: hidden;' : 'overflow: auto;' }` }>
 			<PasteCatcher enabled = { appPage === Page.Home } onPaste = { addressPaste } />
@@ -212,14 +214,14 @@ export function App() {
 						tabApproved = { tabApproved }
 						currentBlockNumber = { currentBlockNumber }
 						signerName = { signerName }
-						renameAddressCallBack = { addOrModifyAddress }
+						renameAddressCallBack = { renameAddressCallBack }
 					/>
 
 					<div class = { `modal ${ appPage !== Page.Home ? 'is-active' : ''}` }>
 						{ appPage === Page.NotificationCenter ?
 							<NotificationCenter
 								setAndSaveAppPage = { setAndSaveAppPage }
-								renameAddressCallBack = { addOrModifyAddress }
+								renameAddressCallBack = { renameAddressCallBack }
 							/>
 						: <></> }
 						{ appPage === Page.AccessList ?
@@ -228,7 +230,7 @@ export function App() {
 								setWebsiteAccess = { setWebsiteAccess }
 								websiteAccess = { websiteAccess }
 								websiteAccessAddressMetadata = { websiteAccessAddressMetadata }
-								renameAddressCallBack = { addOrModifyAddress }
+								renameAddressCallBack = { renameAddressCallBack }
 							/>
 						: <></> }
 						{ appPage === Page.AddressList ?
@@ -245,7 +247,7 @@ export function App() {
 								setAndSaveAppPage = { setAndSaveAppPage }
 								addressInfos = { addressInfos }
 								signerName = { signerName }
-								renameAddressCallBack = { addOrModifyAddress }
+								renameAddressCallBack = { renameAddressCallBack }
 							/>
 						: <></> }
 						{ appPage === Page.AddNewAddress || appPage === Page.ModifyAddress ?

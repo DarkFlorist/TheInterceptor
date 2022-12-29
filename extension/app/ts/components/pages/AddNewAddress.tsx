@@ -94,7 +94,7 @@ export function AddNewAddress(param: AddAddressParam) {
 								/>
 								<input disabled = { !param.addingNewAddress } className = 'input interceptorInput' type = 'text' value = { addressInput } placeholder = { '0x0...' }
 									onInput = { e => param.setAddressInput((e.target as HTMLInputElement).value) }
-									style = { `${ addressInput === undefined || ethers.utils.isAddress(addressInput.trim()) ? '' : 'color:var(--negative-color);' }` } />
+									style = { `${ addressInput === undefined || ethers.utils.isAddress(addressInput.trim()) ? '' : 'color: var(--negative-color);' }` } />
 								<label class = 'form-control'>
 									<input type = 'checkbox' checked = { !askForAddressAccess } onInput = { e => { if (e.target instanceof HTMLInputElement && e.target !== null) { setAskForAddressAccess(!e.target.checked) } } } />
 									Don't request for an access (unsecure)
@@ -110,7 +110,7 @@ export function AddNewAddress(param: AddAddressParam) {
 			<footer class = 'modal-card-foot window-footer' style = 'border-bottom-left-radius: unset; border-bottom-right-radius: unset; border-top: unset; padding: 10px;'>
 				{ param.setActiveAddressAndInformAboutIt !== undefined && activeAddress !== undefined && addressInput !== undefined && activeAddress === BigInt(addressInput) ? <></> : <button class = 'button is-success is-primary' onClick = { createAndSwitch } disabled = { ! (areInputValid()) }> { param.addingNewAddress ? 'Create and switch' : 'Modify and switch' } </button> }
 				<button class = 'button is-success is-primary' onClick = { add } disabled = { ! (areInputValid()) }> { param.addingNewAddress ? 'Create' : 'Modify' } </button>
-				<button class = 'button is-primary' style = 'background-color: var(--negative-color)' onClick = { close }>Cancel</button>
+				<button class = 'button is-primary' style = 'background-color: var(--negative-color)' onClick = { param.close }>Cancel</button>
 			</footer>
 		</div>
 	</> )
