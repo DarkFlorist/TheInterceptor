@@ -5,26 +5,39 @@ import { Page, AddAddressParam, AddressInfo } from '../../utils/user-interface-t
 import Blockie from '../subcomponents/PreactBlocky.js'
 import { Notice } from '../subcomponents/Error.js'
 import { getIssueWithAddressString } from '../ui-utils.js'
-import { addressString } from '../../utils/bigint.js'
 
 export function AddNewAddress(param: AddAddressParam) {
 	const [addressInput, setAddressInput] = useState<string | undefined>(undefined)
 	const [nameInput, setNameInput] = useState<string | undefined>(undefined)
 	const [askForAddressAccess, setAskForAddressAccess] = useState<boolean>(true)
 	const [errorString, setErrorString] = useState<string | undefined>(undefined)
+	const [activeAddress, setActiveAddress] = useState<bigint | undefined>(undefined)
 
 	function add() {
 		if (addressInput === undefined) return
 		if (!areInputValid()) return
 		param.setAndSaveAppPage(Page.Home)
-		const addressInfosWithAddressRemoved = param.addressInfos.filter( (x) => addressString(x.address) !== addressInput )
-		const newAddressInfos = addressInfosWithAddressRemoved.concat( [{
+		const newEntry = {
 			name: nameInput ? nameInput: ethers.utils.getAddress(addressInput),
 			address: EthereumAddress.parse(addressInput),
 			askForAddressAccess: askForAddressAccess,
-		}])
-		browser.runtime.sendMessage( { method: 'popup_changeAddressInfos', options: newAddressInfos.map( (x) => AddressInfo.serialize(x) ) } )
-		param.setAddressInfos(newAddressInfos)
+		}
+		if (param.addressInfos.find( (x) => x.address === BigInt(addressInput) !== undefined) ) {
+			// replace in place to maintain the same order
+			const newAddressInfos = param.addressInfos.map( (x) => x.address === BigInt(addressInput) ? newEntry : x )
+			browser.runtime.sendMessage( { method: 'popup_changeAddressInfos', options: newAddressInfos.map( (x) => AddressInfo.serialize(x) ) } )
+			param.setAddressInfos(newAddressInfos)
+		} else {
+			// append to the end
+			const newAddressInfos = param.addressInfos.concat( [{
+				name: nameInput ? nameInput: ethers.utils.getAddress(addressInput),
+				address: EthereumAddress.parse(addressInput),
+				askForAddressAccess: askForAddressAccess,
+			}])
+			browser.runtime.sendMessage( { method: 'popup_changeAddressInfos', options: newAddressInfos.map( (x) => AddressInfo.serialize(x) ) } )
+			param.setAddressInfos(newAddressInfos)
+		}
+
 		setAddress(undefined)
 		setNameInput(undefined)
 	}
@@ -40,7 +53,8 @@ export function AddNewAddress(param: AddAddressParam) {
 	useEffect( () => {
 		setAddress(param.addressInput)
 		setNameInput(param.nameInput)
-	}, [param.addressInput, param.nameInput])
+		setActiveAddress(param.activeAddress)
+	}, [param.addressInput, param.nameInput, param.activeAddress])
 
 	function areInputValid() {
 		if (addressInput === undefined) return false
@@ -113,7 +127,7 @@ export function AddNewAddress(param: AddAddressParam) {
 				</div>
 			</section>
 			<footer class = 'modal-card-foot window-footer' style = 'border-bottom-left-radius: unset; border-bottom-right-radius: unset; border-top: unset; padding: 10px;'>
-				<button class = 'button is-success is-primary' onClick = { createAndSwitch } disabled = { ! (areInputValid()) }> { param.addingNewAddress ? 'Create and switch' : 'Modify and switch' } </button>
+				{ activeAddress !== undefined && addressInput !== undefined && activeAddress === BigInt(addressInput) ? <></> : <button class = 'button is-success is-primary' onClick = { createAndSwitch } disabled = { ! (areInputValid()) }> { param.addingNewAddress ? 'Create and switch' : 'Modify and switch' } </button> }
 				<button class = 'button is-success is-primary' onClick = { add } disabled = { ! (areInputValid()) }> { param.addingNewAddress ? 'Create' : 'Modify' } </button>
 				<button class = 'button is-primary' style = 'background-color: var(--negative-color)' onClick = { close }>Cancel</button>
 			</footer>

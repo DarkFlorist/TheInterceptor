@@ -171,7 +171,7 @@ export function App() {
 	function addOrModifyAddress(name: string | undefined, address: string) {
 		setAndSaveAppPage(Page.ModifyAddress)
 		setNameInput(name === undefined ? '' : name)
-		setAddressInput(address)
+		setAddressInput(ethers.utils.getAddress(address))
 	}
 	return (
 		<main style = { `background-color: var(--bg-color); width: 520px; height: 600px; ${ appPage !== Page.Home ? 'overflow: hidden;' : 'overflow: auto;' }` }>
@@ -256,6 +256,7 @@ export function App() {
 								setAndSaveAppPage = { setAndSaveAppPage }
 								addressInfos = { addressInfos }
 								setAddressInfos = { setAddressInfos }
+								activeAddress = { simulationMode ? activeSimulationAddress : activeSigningAddress }
 							/>
 						: <></> }
 					</div>

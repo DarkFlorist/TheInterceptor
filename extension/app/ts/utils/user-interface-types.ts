@@ -50,6 +50,7 @@ export type AddAddressParam = {
 	setNameInput: (name: string) => void,
 	setActiveAddressAndInformAboutIt: (address: bigint | 'signer') => void,
 	addingNewAddress: boolean,
+	activeAddress: bigint | undefined,
 }
 
 export type HomeParams = {
