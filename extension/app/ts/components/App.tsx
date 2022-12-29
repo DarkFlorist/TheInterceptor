@@ -168,6 +168,11 @@ export function App() {
 		setNameInput(`Pasted ${ truncateAddr(addressString) }`)
 		setAddressInput(addressString)
 	}
+	function addOrModifyAddress(name: string | undefined, address: string) {
+		setAndSaveAppPage(Page.ModifyAddress)
+		setNameInput(name === undefined ? '' : name)
+		setAddressInput(ethers.utils.getAddress(address))
+	}
 	return (
 		<main style = { `background-color: var(--bg-color); width: 520px; height: 600px; ${ appPage !== Page.Home ? 'overflow: hidden;' : 'overflow: auto;' }` }>
 			<PasteCatcher enabled = { appPage === Page.Home } onPaste = { addressPaste } />
@@ -207,6 +212,7 @@ export function App() {
 						tabApproved = { tabApproved }
 						currentBlockNumber = { currentBlockNumber }
 						signerName = { signerName }
+						addOrModifyAddress = { addOrModifyAddress }
 					/>
 
 					<div class = { `modal ${ appPage !== Page.Home ? 'is-active' : ''}` }>
@@ -239,16 +245,18 @@ export function App() {
 								signerName = { signerName }
 							/>
 						: <></> }
-						{ appPage === Page.AddNewAddress ?
+						{ appPage === Page.AddNewAddress || appPage === Page.ModifyAddress ?
 							<AddNewAddress
 								setActiveAddressAndInformAboutIt = { setActiveAddressAndInformAboutIt }
 								addressInput = { addressInput }
 								nameInput = { nameInput }
+								addingNewAddress = { appPage === Page.AddNewAddress }
 								setAddressInput = { setAddressInput }
 								setNameInput = { setNameInput }
 								setAndSaveAppPage = { setAndSaveAppPage }
 								addressInfos = { addressInfos }
 								setAddressInfos = { setAddressInfos }
+								activeAddress = { simulationMode ? activeSimulationAddress : activeSigningAddress }
 							/>
 						: <></> }
 					</div>

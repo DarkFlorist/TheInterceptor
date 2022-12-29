@@ -163,14 +163,12 @@ html, body {
 
 .interceptorInput:hover {
 	border: unset;
-	color: var(--text-color);
 	border-bottom: 2px solid var(--highlighted-primary-color);
 	box-shadow: none;
 }
 
 .interceptorInput:focus {
 	border: unset;
-	color: var(--text-color);
 	border-radius: unset;
 	border-bottom: 2px solid var(--primary-color);
 	box-shadow: none;

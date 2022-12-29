@@ -3,7 +3,7 @@ import { IUnsignedTransaction } from './ethereum.js'
 import { EthBalanceChanges, EthereumAddress, EthereumQuantity, EthereumTransactionSignature, EthereumUnsignedTransaction, SingleMulticallResponse } from './wire-types.js'
 import * as funtypes from 'funtypes'
 import { QUARANTINE_CODE } from '../simulation/protectors/quarantine-codes.js'
-import { CHAIN } from './user-interface-types.js'
+import { CHAIN, RenameAddressCallBack } from './user-interface-types.js'
 import { Partial } from 'funtypes'
 
 export type TokenVisualizerResult = funtypes.Static<typeof TokenVisualizerResult>
@@ -125,4 +125,5 @@ export type TransactionVisualizationParameters = {
 	simulationAndVisualisationResults: SimulationAndVisualisationResults,
 	removeTransaction: (hash: bigint) => void,
 	activeAddress: bigint,
+	renameAddressCallBack: RenameAddressCallBack | undefined,
 }

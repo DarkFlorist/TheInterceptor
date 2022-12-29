@@ -1,5 +1,5 @@
 import { LogSummarizer } from '../../simulation/services/LogSummarizer.js'
-import { CHAIN, SimulationStateParam } from '../../utils/user-interface-types.js'
+import { CHAIN, RenameAddressCallBack, SimulationStateParam } from '../../utils/user-interface-types.js'
 import { AddressMetadata, BalanceChangeSummary, SimulationAndVisualisationResults, TokenPriceEstimate } from '../../utils/visualizer-types.js'
 import { BigAddress, SmallAddress } from '../subcomponents/address.js'
 import { ERC721Token, Ether, Token, TokenAmount, TokenPrice, TokenSymbol } from '../subcomponents/coins.js'
@@ -82,6 +82,7 @@ type Erc20ApprovalChangeParams = {
 	textColor: string,
 	negativeColor: string,
 	isImportant: boolean,
+	renameAddressCallBack: RenameAddressCallBack | undefined,
 }
 
 export function Erc20ApprovalChange(param: Erc20ApprovalChangeParams) {
@@ -98,6 +99,7 @@ export function Erc20ApprovalChange(param: Erc20ApprovalChangeParams) {
 					address = { BigInt(param.addressToApprove) }
 					nameAndLogo = { param.addressMetadata.get(param.addressToApprove) }
 					textColor = { textColor }
+					renameAddressCallBack = { param.renameAddressCallBack }
 				/>
 			</div>
 			<div class = 'log-cell'>
@@ -132,6 +134,7 @@ type Erc20ApprovalChangesParams = {
 	textColor: string,
 	negativeColor: string,
 	isImportant: boolean,
+	renameAddressCallBack: RenameAddressCallBack | undefined,
 }
 
 export function Erc20ApprovalChanges(param: Erc20ApprovalChangesParams ) {
@@ -146,7 +149,8 @@ export function Erc20ApprovalChanges(param: Erc20ApprovalChangesParams ) {
 					addressMetadata: param.addressMetadata,
 					textColor: param.textColor,
 					negativeColor: param.negativeColor,
-					isImportant: param.isImportant
+					isImportant: param.isImportant,
+					renameAddressCallBack: param.renameAddressCallBack,
 				} } />
 			))
 		)) }
@@ -192,6 +196,7 @@ type ERC721OperatorChangesParams = {
 	textColor: string,
 	negativeColor: string,
 	isImportant: boolean,
+	renameAddressCallBack: RenameAddressCallBack | undefined,
 }
 
 export function ERC721OperatorChanges(param: ERC721OperatorChangesParams) {
@@ -210,6 +215,7 @@ export function ERC721OperatorChanges(param: ERC721OperatorChangesParams) {
 									address = { BigInt(operator) }
 									nameAndLogo = { param.addressMetadata.get(operator) }
 									textColor = { param.negativeColor }
+									renameAddressCallBack = { param.renameAddressCallBack }
 								/>
 							</div>
 							<div class = 'log-cell'>
@@ -253,6 +259,7 @@ type ERC721TokenIdApprovalChangesParams = {
 	textColor: string,
 	negativeColor: string,
 	isImportant: boolean,
+	renameAddressCallBack: RenameAddressCallBack | undefined,
 }
 
 export function ERC721TokenIdApprovalChanges(param: ERC721TokenIdApprovalChangesParams ) {
@@ -271,6 +278,7 @@ export function ERC721TokenIdApprovalChanges(param: ERC721TokenIdApprovalChanges
 										address = { BigInt(approvedAddress) }
 										nameAndLogo = { param.addressMetadata.get(approvedAddress) }
 										textColor = { param.negativeColor }
+										renameAddressCallBack = { param.renameAddressCallBack }
 									/>
 								</div>
 								<div class = 'log-cell'>
@@ -300,6 +308,7 @@ type SummarizeAddressParams = {
 	address: string,
 	balanceSummary: BalanceChangeSummary,
 	simulationAndVisualisationResults: SimulationAndVisualisationResults,
+	renameAddressCallBack: RenameAddressCallBack | undefined,
 }
 
 export function SummarizeAddress(param: SummarizeAddressParams) {
@@ -316,11 +325,13 @@ export function SummarizeAddress(param: SummarizeAddressParams) {
 			<BigAddress
 				address = { BigInt(param.address) }
 				nameAndLogo = { param.simulationAndVisualisationResults.addressMetadata.get(param.address) }
+				renameAddressCallBack = { param.renameAddressCallBack }
 			/> :
 			<SmallAddress
 				textColor = { positiveNegativeColors.textColor }
 				address = { BigInt(param.address) }
 				nameAndLogo = { param.simulationAndVisualisationResults.addressMetadata.get(param.address)}
+				renameAddressCallBack = { param.renameAddressCallBack }
 			/>
 		}
 
@@ -347,6 +358,7 @@ export function SummarizeAddress(param: SummarizeAddressParams) {
 				textColor = { positiveNegativeColors.textColor }
 				negativeColor = { positiveNegativeColors.negativeColor }
 				isImportant = { isOwnAddress }
+				renameAddressCallBack = { param.renameAddressCallBack }
 			/>
 			<ERC721TokenChanges
 				addressMetadata = { param.simulationAndVisualisationResults.addressMetadata }
@@ -361,6 +373,7 @@ export function SummarizeAddress(param: SummarizeAddressParams) {
 				textColor = { positiveNegativeColors.textColor }
 				negativeColor = { positiveNegativeColors.negativeColor }
 				isImportant = { isOwnAddress }
+				renameAddressCallBack = { param.renameAddressCallBack }
 			/>
 			<ERC721TokenIdApprovalChanges
 				addressMetadata = { param.simulationAndVisualisationResults.addressMetadata }
@@ -368,6 +381,7 @@ export function SummarizeAddress(param: SummarizeAddressParams) {
 				textColor = { positiveNegativeColors.textColor }
 				negativeColor = { positiveNegativeColors.negativeColor }
 				isImportant = { isOwnAddress }
+				renameAddressCallBack = { param.renameAddressCallBack }
 			/>
 		</div>
 	</div>
@@ -389,12 +403,14 @@ export function SimulationResults(param: SimulationStateParam) {
 						simulationAndVisualisationResults = { param.simulationAndVisualisationResults }
 						removeTransaction = { param.removeTransaction }
 						activeAddress = { param.simulationAndVisualisationResults.activeAddress }
+						renameAddressCallBack = { param.renameAddressCallBack }
 					/>
 					<SimulationSummary
 						simulationAndVisualisationResults = { param.simulationAndVisualisationResults }
 						resetButton = { true }
 						refreshSimulation =  { param.refreshSimulation }
 						currentBlockNumber = { param.currentBlockNumber }
+						renameAddressCallBack = { param.renameAddressCallBack }
 					/>
 				</>
 			}
@@ -408,6 +424,7 @@ type SimulationSummaryParams = {
 	resetButton: boolean,
 	refreshSimulation: () => void,
 	currentBlockNumber: bigint | undefined,
+	renameAddressCallBack: RenameAddressCallBack | undefined,
 }
 
 export function removeEthDonator(chain: CHAIN, summary: Map<string, BalanceChangeSummary>) {
@@ -483,6 +500,7 @@ export function SimulationSummary(param: SimulationSummaryParams) {
 												address = { address }
 												balanceSummary = { balanceSummary }
 												simulationAndVisualisationResults = { param.simulationAndVisualisationResults }
+												renameAddressCallBack = { param.renameAddressCallBack }
 											/>
 											{ index + 1 !== ownAddresses.length ? <div class = 'is-divider' style = 'margin-top: 8px; margin-bottom: 8px'/> : <></> }
 										</>
@@ -497,6 +515,7 @@ export function SimulationSummary(param: SimulationSummaryParams) {
 										address = { address }
 										balanceSummary = { balanceSummary }
 										simulationAndVisualisationResults = { param.simulationAndVisualisationResults }
+										renameAddressCallBack = { param.renameAddressCallBack }
 									/>
 									<div class = 'is-divider' style = 'margin-top: 8px; margin-bottom: 8px'/>
 								</>

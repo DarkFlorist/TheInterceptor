@@ -24,6 +24,7 @@ export enum Page {
 	ChangeActiveAddress,
 	AccessList,
 	NotificationCenter,
+	ModifyAddress,
 }
 
 export type AddressListParams = {
@@ -48,6 +49,8 @@ export type AddAddressParam = {
 	setAddressInput: (address: string) => void,
 	setNameInput: (name: string) => void,
 	setActiveAddressAndInformAboutIt: (address: bigint | 'signer') => void,
+	addingNewAddress: boolean,
+	activeAddress: bigint | undefined,
 }
 
 export type HomeParams = {
@@ -66,6 +69,7 @@ export type HomeParams = {
 	tabApproved: boolean,
 	currentBlockNumber: bigint | undefined,
 	signerName: SignerName | undefined,
+	addOrModifyAddress: (name: string | undefined, address: string) => void,
 }
 
 export type ChangeActiveAddressParam = {
@@ -90,6 +94,7 @@ export type FirstCardParams = {
 	tabConnection: TabConnection,
 	tabApproved: boolean,
 	signerName: SignerName | undefined,
+	renameAddressCallBack: RenameAddressCallBack,
 }
 
 export type SimulationStateParam = {
@@ -98,12 +103,14 @@ export type SimulationStateParam = {
 	addressMetadata: Map<string, AddressMetadata>,
 	refreshSimulation: () => void,
 	currentBlockNumber: bigint | undefined,
+	renameAddressCallBack: RenameAddressCallBack | undefined,
 }
 
 export type LogAnalysisParams = {
 	simulatedAndVisualizedTransaction: SimulatedAndVisualizedTransaction,
 	addressMetadata: Map<string, AddressMetadata>,
 	identifiedSwap: IdentifiedSwap,
+	renameAddressCallBack: RenameAddressCallBack | undefined,
 }
 
 export type WebsiteApproval = {
@@ -134,3 +141,5 @@ export interface SignerState {
 	signerAccounts: EthereumAccountsReply | undefined,
 	signerChain: EthereumQuantity | undefined
 }
+
+export type RenameAddressCallBack = (name: string | undefined, address: string) => void

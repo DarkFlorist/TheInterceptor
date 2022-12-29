@@ -82,6 +82,7 @@ export function ChangeActiveAddress(param: ChangeActiveAddressParam) {
 										address = { addressInfo.address }
 										nameAndLogo = { { name: addressInfo.name, logoUri: undefined } }
 										noCopying = { true }
+										renameAddressCallBack = { undefined }
 									/>
 									{ isSignerConnected(addressInfo.address) ?
 										<div class = 'content' style = 'color: var(--text-color)'>

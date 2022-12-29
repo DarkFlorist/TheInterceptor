@@ -111,6 +111,7 @@ export function InterceptorAccess() {
 						<BigAddress
 							address = { BigInt(accessRequest.requestAccessToAddress) }
 							nameAndLogo = { accessRequest.addressMetadata.get(accessRequest.requestAccessToAddress) }
+							renameAddressCallBack = { undefined }
 						/>
 
 					</div>
@@ -133,6 +134,7 @@ export function InterceptorAccess() {
 									<BigAddress
 										address = { BigInt(address) }
 										nameAndLogo = { metadata }
+										renameAddressCallBack = { undefined }
 									/>
 								</li>
 							)) }
