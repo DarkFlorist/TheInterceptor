@@ -1,7 +1,7 @@
 import { changeActiveAddressAndChainAndResetSimulation, changeActiveChain, PrependTransactionMode, refreshConfirmTransactionSimulation, updatePrependMode, updateSimulationState } from './background.js'
 import { saveAddressInfos, saveMakeMeRich, savePage, saveSimulationMode, saveUseSignersAddressAsActiveAddress, saveWebsiteAccess } from './settings.js'
 import { Simulator } from '../simulation/simulator.js'
-import { ChangeActiveAddress, ChangeAddressInfos, ChangeMakeMeRich, ChangePage, PersonalSign, PopupMessage, RemoveTransaction, RequestAccountsFromSigner, TransactionConfirmation, InterceptorAccess, ChangeInterceptorAccess, ChainChangeConfirmation, EnableSimulationMode, ReviewNotification, RejectNotification, ChangeActiveChain } from '../utils/interceptor-messages.js'
+import { ChangeActiveAddress, ChangeAddressInfos, ChangeMakeMeRich, ChangePage, PersonalSign, PopupMessage, RemoveTransaction, RequestAccountsFromSigner, TransactionConfirmation, InterceptorAccess, ChangeInterceptorAccess, ChainChangeConfirmation, EnableSimulationMode, ReviewNotification, RejectNotification, ChangeActiveChain, AddOrModifyAddresInfo } from '../utils/interceptor-messages.js'
 import { resolvePendingTransaction } from './windows/confirmTransaction.js'
 import { resolvePersonalSign } from './windows/personalSign.js'
 import { changeAccess, requestAccessFromUser, resolveInterceptorAccess, setPendingAccessRequests } from './windows/interceptorAccess.js'
@@ -61,6 +61,24 @@ export async function changeAddressInfos(_simulator: Simulator, payload: PopupMe
 	const addressInfosChange = ChangeAddressInfos.parse(payload)
 	window.interceptor.settings.addressInfos = addressInfosChange.options
 	saveAddressInfos(addressInfosChange.options)
+	updateWebsiteApprovalAccesses()
+	sendPopupMessageToOpenWindows('popup_address_infos_changed')
+}
+
+export async function addOrModifyAddressInfo(_simulator: Simulator, payload: PopupMessage) {
+	if (window.interceptor.settings === undefined) return
+	const addressInfosChanges = AddOrModifyAddresInfo.parse(payload)
+	for (const newEntry of addressInfosChanges.options) {
+		if (window.interceptor.settings.addressInfos.find( (x) => x.address === newEntry.address) ) {
+			// replace in place to maintain the same order
+			window.interceptor.settings.addressInfos = window.interceptor.settings.addressInfos.map( (x) => x.address === newEntry.address ? newEntry : x )
+		} else {
+			// append to the end
+			window.interceptor.settings.addressInfos = window.interceptor.settings.addressInfos.concat([newEntry])
+		}
+	}
+
+	saveAddressInfos(window.interceptor.settings.addressInfos)
 	updateWebsiteApprovalAccesses()
 	sendPopupMessageToOpenWindows('popup_address_infos_changed')
 }

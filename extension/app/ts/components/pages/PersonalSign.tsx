@@ -8,6 +8,7 @@ import Hint from '../subcomponents/Hint.js'
 import { Error as ErrorComponent} from '../subcomponents/Error.js'
 import { getAddressMetaData } from '../../background/metadataUtils.js'
 import { getChainName } from '../../utils/constants.js'
+import { AddNewAddress } from './AddNewAddress.js'
 
 interface SignRequest {
 	simulationMode: boolean,
@@ -19,7 +20,10 @@ interface SignRequest {
 export function PersonalSign() {
 	const [requestToConfirm, setRequestToConfirm] = useState<InterceptedRequest | undefined>(undefined)
 	const [signRequest, setSignRequest] = useState<SignRequest | undefined>(undefined)
-	const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+	const textareaRef = useRef<HTMLTextAreaElement | null>(null)
+	const [isEditAddressModelOpen, setEditAddressModelOpen] = useState<boolean> (false)
+	const [addressInput, setAddressInput] = useState<string | undefined> (undefined)
+	const [nameInput, setNameInput] = useState<string | undefined> (undefined)
 
 	useEffect( () => {
 		function popupMessageListener(_msg: unknown) {
@@ -82,10 +86,27 @@ export function PersonalSign() {
 		browser.runtime.sendMessage( { method: 'popup_personalSign', options: { request: requestToConfirm, accept: false } } )
 	}
 
+	function renameAddressCallBack(name: string | undefined, address: string) {
+		setEditAddressModelOpen(true)
+		setAddressInput(address)
+		setNameInput(name)
+	}
 
 	return (
 		<main>
 			<Hint>
+				<div class = { `modal ${ isEditAddressModelOpen? 'is-active' : ''}` }>
+					<AddNewAddress
+						setActiveAddressAndInformAboutIt = { undefined }
+						addressInput = { addressInput }
+						nameInput = { nameInput }
+						addingNewAddress = { false }
+						setAddressInput = { setAddressInput }
+						setNameInput = { setNameInput }
+						close = { () => { setEditAddressModelOpen(false) } }
+						activeAddress = { undefined }
+					/>
+				</div>
 				<div className = 'block' style = 'margin: 10px; margin-bottom: 0px'>
 					{ signRequest === undefined ? <></> : <>
 						<header class = 'card-header'>
@@ -118,7 +139,7 @@ export function PersonalSign() {
 							<BigAddress
 								address = { signRequest.account }
 								title = { signRequest.addressInfo.name }
-								renameAddressCallBack = { undefined }
+								renameAddressCallBack = { renameAddressCallBack }
 							/>
 						</div>
 

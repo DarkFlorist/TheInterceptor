@@ -38,17 +38,16 @@ export type InterceptorAccessListParams = {
 	setWebsiteAccess: StateUpdater<readonly WebsiteAccess[] | undefined>,
 	websiteAccess: readonly WebsiteAccess[] | undefined,
 	websiteAccessAddressMetadata: [string, AddressMetadata][],
+	renameAddressCallBack: RenameAddressCallBack,
 }
 
 export type AddAddressParam = {
-	setAndSaveAppPage: (page: Page) => void,
-	addressInfos: readonly AddressInfo[],
-	setAddressInfos: StateUpdater<readonly AddressInfo[]>,
+	close: () => void,
 	addressInput: string | undefined,
 	nameInput: string | undefined,
 	setAddressInput: (address: string) => void,
 	setNameInput: (name: string) => void,
-	setActiveAddressAndInformAboutIt: (address: bigint | 'signer') => void,
+	setActiveAddressAndInformAboutIt: ((address: bigint | 'signer') => void) | undefined,
 	addingNewAddress: boolean,
 	activeAddress: bigint | undefined,
 }
@@ -69,7 +68,7 @@ export type HomeParams = {
 	tabApproved: boolean,
 	currentBlockNumber: bigint | undefined,
 	signerName: SignerName | undefined,
-	addOrModifyAddress: (name: string | undefined, address: string) => void,
+	renameAddressCallBack: RenameAddressCallBack,
 }
 
 export type ChangeActiveAddressParam = {
@@ -78,6 +77,7 @@ export type ChangeActiveAddressParam = {
 	setActiveAddressAndInformAboutIt: (address: bigint | 'signer') => void,
 	signerAccounts: readonly bigint[] | undefined,
 	signerName: SignerName | undefined,
+	renameAddressCallBack: RenameAddressCallBack,
 }
 
 export type FirstCardParams = {
@@ -103,14 +103,14 @@ export type SimulationStateParam = {
 	addressMetadata: Map<string, AddressMetadata>,
 	refreshSimulation: () => void,
 	currentBlockNumber: bigint | undefined,
-	renameAddressCallBack: RenameAddressCallBack | undefined,
+	renameAddressCallBack: RenameAddressCallBack,
 }
 
 export type LogAnalysisParams = {
 	simulatedAndVisualizedTransaction: SimulatedAndVisualizedTransaction,
 	addressMetadata: Map<string, AddressMetadata>,
 	identifiedSwap: IdentifiedSwap,
-	renameAddressCallBack: RenameAddressCallBack | undefined,
+	renameAddressCallBack: RenameAddressCallBack,
 }
 
 export type WebsiteApproval = {
@@ -125,6 +125,7 @@ export type TabConnection = {
 
 export type NotificationCenterParams = {
 	setAndSaveAppPage: (page: Page) => void,
+	renameAddressCallBack: RenameAddressCallBack,
 }
 
 export type PendingAccessRequest = {

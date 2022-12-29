@@ -93,6 +93,12 @@ export const ChangeAddressInfos = funtypes.Object({
 	options: funtypes.ReadonlyArray(AddressInfo)
 }).asReadonly()
 
+export type AddOrModifyAddresInfo = funtypes.Static<typeof AddOrModifyAddresInfo>
+export const AddOrModifyAddresInfo = funtypes.Object({
+	method: funtypes.Literal('popup_addOrModifyAddressInfo'),
+	options: funtypes.ReadonlyArray(AddressInfo)
+}).asReadonly()
+
 export type ChangePage = funtypes.Static<typeof ChangePage>
 export const ChangePage = funtypes.Object({
 	method: funtypes.Literal('popup_changePage'),
@@ -227,4 +233,5 @@ export const PopupMessage = funtypes.Union(
 	RejectNotification,
 	ReviewNotification,
 	ConnectedToSigner,
+	AddOrModifyAddresInfo,
 )

@@ -199,7 +199,7 @@ export function InterceptorAccessList(param: InterceptorAccessListParams) {
 															<SmallAddress
 																address = { BigInt(websiteAccessAddress.address) }
 																addressMetaData = { metadata.get(websiteAccessAddress.address) }
-																renameAddressCallBack = { undefined }
+																renameAddressCallBack = { param.renameAddressCallBack }
 															/>
 															<div style = 'margin-left: auto; flex-shrink: 0; display: flex'>
 																<label class = 'form-control' style = 'margin: auto'>

@@ -212,13 +212,14 @@ export function App() {
 						tabApproved = { tabApproved }
 						currentBlockNumber = { currentBlockNumber }
 						signerName = { signerName }
-						addOrModifyAddress = { addOrModifyAddress }
+						renameAddressCallBack = { addOrModifyAddress }
 					/>
 
 					<div class = { `modal ${ appPage !== Page.Home ? 'is-active' : ''}` }>
 						{ appPage === Page.NotificationCenter ?
 							<NotificationCenter
 								setAndSaveAppPage = { setAndSaveAppPage }
+								renameAddressCallBack = { addOrModifyAddress }
 							/>
 						: <></> }
 						{ appPage === Page.AccessList ?
@@ -227,6 +228,7 @@ export function App() {
 								setWebsiteAccess = { setWebsiteAccess }
 								websiteAccess = { websiteAccess }
 								websiteAccessAddressMetadata = { websiteAccessAddressMetadata }
+								renameAddressCallBack = { addOrModifyAddress }
 							/>
 						: <></> }
 						{ appPage === Page.AddressList ?
@@ -243,6 +245,7 @@ export function App() {
 								setAndSaveAppPage = { setAndSaveAppPage }
 								addressInfos = { addressInfos }
 								signerName = { signerName }
+								renameAddressCallBack = { addOrModifyAddress }
 							/>
 						: <></> }
 						{ appPage === Page.AddNewAddress || appPage === Page.ModifyAddress ?
@@ -253,9 +256,7 @@ export function App() {
 								addingNewAddress = { appPage === Page.AddNewAddress }
 								setAddressInput = { setAddressInput }
 								setNameInput = { setNameInput }
-								setAndSaveAppPage = { setAndSaveAppPage }
-								addressInfos = { addressInfos }
-								setAddressInfos = { setAddressInfos }
+								close = { () => setAndSaveAppPage(Page.Home) }
 								activeAddress = { simulationMode ? activeSimulationAddress : activeSigningAddress }
 							/>
 						: <></> }
