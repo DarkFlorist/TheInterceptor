@@ -166,7 +166,6 @@ export function ActiveAddress(params: ActiveAddressParams) {
 export type SmallAddressParams = {
 	readonly address: bigint
 	readonly nameAndLogo: Pick<AddressMetadata, 'name' | 'logoUri'> | undefined
-	readonly addressMetaData: AddressMetadata | undefined
 	readonly textColor?: string
 	readonly renameAddressCallBack: RenameAddressCallBack | undefined
 }
