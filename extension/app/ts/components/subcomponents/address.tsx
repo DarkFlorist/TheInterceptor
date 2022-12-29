@@ -21,11 +21,11 @@ export function findAddressInfo(addressToFind: bigint, addressInfos: readonly Ad
 }
 
 export type BigAddressParams = {
-	address: bigint
-	title?: string
-	subtitle?: string
-	noCopying?: boolean
-	renameAddressCallBack: RenameAddressCallBack | undefined
+	readonly address: bigint
+	readonly title?: string
+	readonly subtitle?: string
+	readonly noCopying?: boolean
+	readonly renameAddressCallBack: RenameAddressCallBack | undefined
 }
 
 export function BigAddress(params: BigAddressParams) {
@@ -82,12 +82,12 @@ export function BigAddress(params: BigAddressParams) {
 }
 
 export type ActiveAddressParams = {
-	address: bigint
-	title?: string
-	subtitle?: string
-	simulationMode: boolean
-	changeActiveAddress: () => void
-	renameAddressCallBack: RenameAddressCallBack
+	readonly address: bigint
+	readonly title?: string
+	readonly subtitle?: string
+	readonly simulationMode: boolean
+	readonly changeActiveAddress: () => void
+	readonly renameAddressCallBack: RenameAddressCallBack
 }
 
 export function ActiveAddress(params: ActiveAddressParams) {
@@ -130,10 +130,10 @@ export function ActiveAddress(params: ActiveAddressParams) {
 }
 
 export type SmallAddressParams = {
-	address: bigint
-	addressMetaData: AddressMetadata | undefined
-	textColor?: string
-	renameAddressCallBack: RenameAddressCallBack | undefined
+	readonly address: bigint
+	readonly addressMetaData: AddressMetadata | undefined
+	readonly textColor?: string
+	readonly renameAddressCallBack: RenameAddressCallBack | undefined
 }
 
 export function getAddressName(address: bigint, metadata: AddressMetadata | undefined) {
@@ -162,12 +162,12 @@ export function SmallAddress(params: SmallAddressParams) {
 }
 
 export type FromAddressToAddressParams = {
-	from: bigint
-	to: bigint
-	fromAddressMetadata: AddressMetadata | undefined
-	toAddressMetadata: AddressMetadata | undefined
-	isApproval: boolean
-	renameAddressCallBack: RenameAddressCallBack | undefined
+	readonly from: bigint
+	readonly to: bigint
+	readonly fromAddressMetadata: AddressMetadata | undefined
+	readonly toAddressMetadata: AddressMetadata | undefined
+	readonly isApproval: boolean
+	readonly renameAddressCallBack: RenameAddressCallBack | undefined
 }
 
 export function FromAddressToAddress(params: FromAddressToAddressParams ) {
