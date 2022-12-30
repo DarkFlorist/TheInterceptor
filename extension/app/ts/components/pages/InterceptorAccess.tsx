@@ -12,9 +12,9 @@ interface InterceptorAccessRequest {
 
 export function InterceptorAccess() {
 	const [accessRequest, setAccessRequest] = useState<InterceptorAccessRequest | undefined>(undefined)
-	const [isEditAddressModelOpen, setEditAddressModelOpen] = useState<boolean> (false)
-	const [addressInput, setAddressInput] = useState<string | undefined> (undefined)
-	const [nameInput, setNameInput] = useState<string | undefined> (undefined)
+	const [isEditAddressModelOpen, setEditAddressModelOpen] = useState<boolean>(false)
+	const [addressInput, setAddressInput] = useState<string | undefined>(undefined)
+	const [nameInput, setNameInput] = useState<string | undefined>(undefined)
 
 	useEffect( () => {
 		function popupMessageListener(msg: unknown) {
