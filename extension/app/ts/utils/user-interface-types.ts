@@ -130,7 +130,7 @@ export type NotificationCenterParams = {
 export type PendingAccessRequest = {
 	origin: string,
 	icon: string | undefined,
-	requestAccessToAddress: string | undefined,
+	requestAccessToPersonaId: number | undefined,
 }
 
 export interface PendingAccessRequestWithMetadata extends PendingAccessRequest {

@@ -9,8 +9,8 @@ export const defaultAddresses = [
 	}
 ]
 
-export interface WebsiteAddressAccess {
-	address: string,
+export interface WebsitePersonaIdAccess {
+	persoanaId: string,
 	access: boolean
 } []
 
@@ -18,12 +18,21 @@ export interface WebsiteAccess {
 	origin: string,
 	originIcon: string | undefined,
 	access: boolean,
-	addressAccess: readonly WebsiteAddressAccess[] | undefined,
+	personaIdAccess: readonly WebsitePersonaIdAccess[] | undefined,
+}
+
+export interface Persona {
+	name: string,
+	id: number,
+	address: readonly string[],
 }
 
 export interface Settings {
 	activeSimulationAddress: EthereumAddress | undefined,
 	activeSigningAddress: EthereumAddress | undefined,
+	activePersonaId: number,
+	personas: readonly Persona[],
+	nextPersonaId: number,
 	activeChain: EthereumQuantity,
 	addressInfos: readonly AddressInfo[],
 	page: Page,
@@ -34,16 +43,12 @@ export interface Settings {
 	pendingAccessRequests: readonly PendingAccessRequest[]
 }
 
-function parseActiveChain(chain: string) {
-	// backwards compatible as the chain used to be a string
-	if (chain === 'Ethereum Mainnet') return 1n
-	if (chain === 'Goerli') return 5n
-	return EthereumQuantity.parse(chain)
-}
-
 export async function getSettings() : Promise<Settings> {
 	const isEmpty = (obj: Object) => { return Object.keys(obj).length === 0 }
 	const results = await browser.storage.local.get([
+		'activePersonaId',
+		'personas',
+		'nextPersonaId',
 		'activeSigningAddress',
 		'activeSimulationAddress',
 		'addressInfos',
@@ -55,16 +60,18 @@ export async function getSettings() : Promise<Settings> {
 		'simulationMode',
 		'pendingAccessRequests',
 	])
-	console.log(results)
 	return {
 		activeSimulationAddress: results.activeSimulationAddress !== undefined && !isEmpty(results.activeSimulationAddress) ? EthereumAddress.parse(results.activeSimulationAddress) : defaultAddresses[0].address,
 		activeSigningAddress: results.activeSigningAddress !== undefined && !isEmpty(results.activeSigningAddress) ? EthereumAddress.parse(results.activeSigningAddress) : undefined,
+		activePersonaId: results.activePersonaId !== undefined ? results.activePersonaId : 0,
+		personas: results.personas !== undefined ? results.personas : [{ 'name': 'default', id: 0, address: defaultAddresses[0].address }],
+		nextPersonaId: results.nextPersonaId !== undefined ? results.nextPersonaId : 1,
 		addressInfos: results.addressInfos !== undefined && !isEmpty(results.addressInfos) ? results.addressInfos.map( (x: AddressInfo) => AddressInfo.parse(x)) : defaultAddresses,
 		page: results.page !== undefined && !isEmpty(results.page) ? parseInt(results.page) : Page.Home,
 		makeMeRich: results.makeMeRich !== undefined ? results.makeMeRich : false,
 		useSignersAddressAsActiveAddress: results.useSignersAddressAsActiveAddress !== undefined ? results.useSignersAddressAsActiveAddress : false,
 		websiteAccess: results.websiteAccess !== undefined ? results.websiteAccess : [],
-		activeChain: results.activeChain !== undefined ? parseActiveChain(results.activeChain) : 1n,
+		activeChain: results.activeChain !== undefined ? EthereumQuantity.parse(results.activeChain) : 1n,
 		simulationMode: results.simulationMode !== undefined ? results.simulationMode : true,
 		pendingAccessRequests: results.pendingAccessRequests !== undefined ? results.pendingAccessRequests : [],
 	}
@@ -100,4 +107,16 @@ export function saveSimulationMode(simulationMode: boolean) {
 }
 export function savePendingAccessRequests(pendingAccessRequests: readonly PendingAccessRequest[]) {
 	browser.storage.local.set({ pendingAccessRequests: pendingAccessRequests })
+}
+
+export function savePersonas(personas: readonly Persona[]) {
+	browser.storage.local.set({ personas: personas })
+}
+
+export function saveNextPersonaId(nextPersonaId: number) {
+	browser.storage.local.set({ nextPersonaId: nextPersonaId })
+}
+
+export function saveActivePersonaId(activePersonaId: number) {
+	browser.storage.local.set({ activePersonaId: activePersonaId })
 }
