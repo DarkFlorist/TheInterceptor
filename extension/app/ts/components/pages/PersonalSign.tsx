@@ -21,9 +21,9 @@ export function PersonalSign() {
 	const [requestToConfirm, setRequestToConfirm] = useState<InterceptedRequest | undefined>(undefined)
 	const [signRequest, setSignRequest] = useState<SignRequest | undefined>(undefined)
 	const textareaRef = useRef<HTMLTextAreaElement | null>(null)
-	const [isEditAddressModelOpen, setEditAddressModelOpen] = useState<boolean> (false)
-	const [addressInput, setAddressInput] = useState<string | undefined> (undefined)
-	const [nameInput, setNameInput] = useState<string | undefined> (undefined)
+	const [isEditAddressModelOpen, setEditAddressModelOpen] = useState<boolean>(false)
+	const [addressInput, setAddressInput] = useState<string | undefined>(undefined)
+	const [nameInput, setNameInput] = useState<string | undefined>(undefined)
 
 	useEffect( () => {
 		function popupMessageListener(_msg: unknown) {
