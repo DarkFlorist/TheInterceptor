@@ -191,7 +191,7 @@ function SendOrReceiveTokensImportanceBox(param: SendOrReceiveTokensImportanceBo
 						<div class = 'log-cell'>
 							<SmallAddress
 								address = { tokenEvent.to }
-								addressMetaData = { param.addressMetadata.get(addressString(tokenEvent.to)) }
+								nameAndLogo = { param.addressMetadata.get(addressString(tokenEvent.to)) }
 								textColor = { param.textColor }
 								renameAddressCallBack = { param.renameAddressCallBack }
 							/>
@@ -325,8 +325,8 @@ function normalTransaction(param: TransactionVisualizationParameters) {
 							<FromAddressToAddress
 								from = { param.tx.signedTransaction.from }
 								to = { param.tx.signedTransaction.to }
-								fromAddressMetadata = { param.simulationAndVisualisationResults.addressMetadata.get(addressString(param.tx.signedTransaction.from)) }
-								toAddressMetadata = { param.simulationAndVisualisationResults.addressMetadata.get(addressString(param.tx.signedTransaction.to)) }
+								fromAddressNameAndLogo= { param.simulationAndVisualisationResults.addressMetadata.get(addressString(param.tx.signedTransaction.from)) }
+								toAddressNameAndLogo = { param.simulationAndVisualisationResults.addressMetadata.get(addressString(param.tx.signedTransaction.to)) }
 								isApproval = { false }
 								renameAddressCallBack = { param.renameAddressCallBack }
 							/>
@@ -486,7 +486,7 @@ export function TokenLogEvent(params: TokenLogEventParams ) {
 			<div class = 'log-cell'>
 				<SmallAddress
 					address = { params.tokenVisualizerResult.from }
-					addressMetaData = { params.addressMetadata.get(addressString(params.tokenVisualizerResult.from)) }
+					nameAndLogo = { params.addressMetadata.get(addressString(params.tokenVisualizerResult.from)) }
 					textColor = { textColor }
 					renameAddressCallBack = { params.renameAddressCallBack }
 				/>
@@ -497,7 +497,7 @@ export function TokenLogEvent(params: TokenLogEventParams ) {
 			<div class = 'log-cell'>
 				<SmallAddress
 					address = { params.tokenVisualizerResult.to }
-					addressMetaData = { params.addressMetadata.get(addressString(params.tokenVisualizerResult.to)) }
+					nameAndLogo = { params.addressMetadata.get(addressString(params.tokenVisualizerResult.to)) }
 					textColor = { textColor }
 					renameAddressCallBack = { params.renameAddressCallBack }
 				/>

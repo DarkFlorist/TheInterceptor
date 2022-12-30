@@ -20,31 +20,65 @@ export function findAddressInfo(addressToFind: bigint, addressInfos: readonly Ad
 	}
 }
 
+export type AddressIconParams = {
+	address: bigint,
+	logoUri: string | undefined,
+	isBig: boolean
+	backgroundColor: string,
+}
+
+function AddressIcon(param: AddressIconParams) {
+	const style = `${ param.isBig ? `width: 40px; height: 40px; border-radius: 10px;` : `width: 24px; height: 24px; border-radius: 2px;` }`
+	if (param.logoUri === undefined) {
+		return <div style = { style }>
+			<Blockie
+				seed = { addressString(param.address).toLowerCase() }
+				size = { 8 }
+				scale = { param.isBig ? 5 : 3 }
+			/>
+		</div>
+	}
+
+	return <div style = { style }>
+		<img src = { param.logoUri } style = 'width: 100%; max-height: 100%'/>
+	</div>
+}
+
+
 export type BigAddressParams = {
 	readonly address: bigint
-	readonly title?: string
-	readonly subtitle?: string
 	readonly noCopying?: boolean
+	readonly nameAndLogo: Pick<AddressMetadata, 'name' | 'logoUri'> | undefined
 	readonly renameAddressCallBack: RenameAddressCallBack
 }
 
 export function BigAddress(params: BigAddressParams) {
-	const title = params.title === undefined ? ethers.utils.getAddress(addressString(params.address)): params.title
 	const addrString = ethers.utils.getAddress(addressString(params.address))
-	const subTitle = params.subtitle === undefined && title != addrString ? addrString : params.subtitle
+	const title = params.nameAndLogo === undefined || params.nameAndLogo.name === undefined ? addrString : params.nameAndLogo.name
+	const subTitle = title != addrString ? addrString : ''
 
 	return <div class = 'media'>
 		<div class = 'media-left'>
 			{ !params.noCopying ?
-				<CopyToClipboard content = { ethers.utils.getAddress(addressString(params.address)) } copyMessage = 'Address copied!'>
-					<figure class = 'image noselect nopointer'>
-						<Blockie seed = { addressString(params.address).toLowerCase() } size = { 8 } scale = { 5 } />
-					</figure>
+				<CopyToClipboard content = { addrString } copyMessage = 'Address copied!'>
+					<span class = 'noselect nopointer'>
+						<AddressIcon
+							address = { params.address }
+							logoUri = { params.nameAndLogo?.logoUri }
+							isBig = { true }
+							backgroundColor = { 'var(--text-color)' }
+						/>
+					</span>
 				</CopyToClipboard>
 			:
-				<figure class = 'image noselect nopointer'>
-					<Blockie seed = { addressString(params.address).toLowerCase() } size = { 8 } scale = { 5 } />
-				</figure>
+				<span class = 'noselect nopointer'>
+					<AddressIcon
+						address = { params.address }
+						logoUri = { params.nameAndLogo?.logoUri }
+						isBig = { true }
+						backgroundColor = { 'var(--text-color)' }
+					/>
+				</span>
 			}
 		</div>
 
@@ -65,14 +99,14 @@ export function BigAddress(params: BigAddressParams) {
 				</RenameAddressButton>
 			</div>
 			{ !params.noCopying ?
-				<CopyToClipboard content = { ethers.utils.getAddress(addressString(params.address)) } copyMessage = 'Address copied!'>
+				<CopyToClipboard content = { addrString } copyMessage = 'Address copied!'>
 					<p class = 'subtitle is-7 noselect nopointer' style = 'text-overflow: ellipsis; white-space: nowrap;'>
-						{ subTitle === undefined ? '' : subTitle }
+						{ subTitle }
 					</p>
 				</CopyToClipboard>
 			:
 				<p class = 'subtitle is-7 noselect nopointer' style = 'text-overflow: ellipsis; white-space: nowrap;'>
-					{ subTitle === undefined ? '' : subTitle }
+					{ subTitle }
 				</p>
 			}
 		</div>
@@ -129,24 +163,29 @@ export function ActiveAddress(params: ActiveAddressParams) {
 
 export type SmallAddressParams = {
 	readonly address: bigint
-	readonly addressMetaData: AddressMetadata | undefined
+	readonly nameAndLogo: Pick<AddressMetadata, 'name' | 'logoUri'> | undefined
 	readonly textColor?: string
 	readonly renameAddressCallBack: RenameAddressCallBack
 }
 
-export function getAddressName(address: bigint, metadata: AddressMetadata | undefined) {
+export function getAddressName(address: bigint, metadata: Pick<AddressMetadata, 'name' | 'logoUri'> | undefined) {
 	if ( metadata === undefined ) return ethers.utils.getAddress(addressString(address))
 	return metadata.name
 }
 
 export function SmallAddress(params: SmallAddressParams) {
-	const name = getAddressName(params.address, params.addressMetaData)
+	const name = getAddressName(params.address, params.nameAndLogo)
 	const textColor = params.textColor === undefined ? 'var(--text-color)' : params.textColor
 
 	return	<CopyToClipboard content = { ethers.utils.getAddress(addressString(params.address)) } copyMessage = 'Address copied!'>
-		<div style = 'display: inline-flex; width: 100%; position: relative;'>
+		<div style = 'display: inline-flex; width: 100%; position: relative; background-color: var(--alpha-005); padding: 4px; margin: 2px; padding-right: 10px; border-radius: 10px 40px 40px 10px; overflow: inherit;'>
 			<span class = 'vertical-center noselect nopointer' style = 'margin-right: 5px'>
-				<Blockie seed = { addressString(params.address).toLowerCase() } size = { 8 } scale = { 3 } />
+				<AddressIcon
+					address = { params.address }
+					logoUri = { params.nameAndLogo?.logoUri }
+					isBig = { false }
+					backgroundColor = { textColor }
+				/>
 			</span>
 			<RenameAddressButton renameAddress = { () => params.renameAddressCallBack(name, addressString(params.address)) }>
 				<span class = 'noselect nopointer' style = { `color: ${ textColor }; overflow: hidden; text-overflow: ellipsis;` } >
@@ -160,8 +199,8 @@ export function SmallAddress(params: SmallAddressParams) {
 export type FromAddressToAddressParams = {
 	readonly from: bigint
 	readonly to: bigint
-	readonly fromAddressMetadata: AddressMetadata | undefined
-	readonly toAddressMetadata: AddressMetadata | undefined
+	readonly fromAddressNameAndLogo: Pick<AddressMetadata, 'name' | 'logoUri'> | undefined
+	readonly toAddressNameAndLogo: Pick<AddressMetadata, 'name' | 'logoUri'> | undefined
 	readonly isApproval: boolean
 	readonly renameAddressCallBack: RenameAddressCallBack
 }
@@ -169,13 +208,21 @@ export type FromAddressToAddressParams = {
 export function FromAddressToAddress(params: FromAddressToAddressParams ) {
 	return  <div class = 'columns is-mobile' style = 'margin-bottom: 0px; color: var(--text-color);'>
 		<div class = 'column' style = 'width: 47.5%; flex: none; padding-bottom: 0px;'>
-			<BigAddress address = { params.from } title = { params.fromAddressMetadata?.name } renameAddressCallBack = { params.renameAddressCallBack }/>
+			<BigAddress
+				address = { params.from }
+				nameAndLogo = { params.fromAddressNameAndLogo }
+				renameAddressCallBack = { params.renameAddressCallBack }
+			/>
 		</div>
 		<div class = 'column' style = 'width: 5%; padding: 0px; align-self: center; flex: none;'>
 			{ params.isApproval ? <ApproveIcon color = { 'var(--text-color)' }/> : <ArrowIcon color = { 'var(--text-color)' }/> }
 		</div>
 		<div class = 'column' style = 'width: 47.5%; flex: none; padding-bottom: 0px;'>
-			<BigAddress address = { params.to } title = { params.toAddressMetadata?.name } renameAddressCallBack = { params.renameAddressCallBack }/>
+			<BigAddress
+				address = { params.to }
+				nameAndLogo = { params.toAddressNameAndLogo }
+				renameAddressCallBack = { params.renameAddressCallBack }
+			/>
 		</div>
 	</div>
 }

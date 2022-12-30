@@ -1,15 +1,15 @@
-import type { ComponentChild, VNode } from 'preact'
+import type { ComponentChild, ComponentChildren } from 'preact'
 import { useCallback, useEffect, useRef, useState } from 'preact/hooks'
 
 interface Props {
     children: ComponentChild | ComponentChild[]
     attribute?: string
-    template?: (content: string) => VNode
+    template?: (content: string) => ComponentChildren
 }
 
 const timerAttribute = 'data-hint-clickable-hide-timer-ms'
 
-export default function Container(props: Props): VNode {
+export default function Container(props: Props) {
     const copyAttribute = props.attribute || 'data-hint'
     const toolTipAttribute = props.attribute || 'data-tooltip'
     const [content, setContent] = useState<string>('')
@@ -84,7 +84,7 @@ export default function Container(props: Props): VNode {
 
 interface HintProps {
     content: string
-    template?: (content: string) => VNode
+    template?: (content: string) => ComponentChildren
     rootBoundingRect: ClientRect
     targetBoundingRect: ClientRect
 }
@@ -100,7 +100,7 @@ function calculatePosition(props: HintProps, hintWidth: number) {
 	}
 }
 
-function Hint(props: HintProps): VNode {
+function Hint(props: HintProps) {
     const hint = useRef<HTMLSpanElement>(null)
     // Render way off-screen to prevent rubber banding from initial (and unavoidable) render.
     const [hintWidth, setHintWidth] = useState(10000)

@@ -97,7 +97,7 @@ export function Erc20ApprovalChange(param: Erc20ApprovalChangeParams) {
 			<div class = 'log-cell'>
 				<SmallAddress
 					address = { BigInt(param.addressToApprove) }
-					addressMetaData = { param.addressMetadata.get(param.addressToApprove) }
+					nameAndLogo = { param.addressMetadata.get(param.addressToApprove) }
 					textColor = { textColor }
 					renameAddressCallBack = { param.renameAddressCallBack }
 				/>
@@ -213,7 +213,7 @@ export function ERC721OperatorChanges(param: ERC721OperatorChangesParams) {
 							<div class = 'log-cell'>
 								<SmallAddress
 									address = { BigInt(operator) }
-									addressMetaData = { param.addressMetadata.get(operator) }
+									nameAndLogo = { param.addressMetadata.get(operator) }
 									textColor = { param.negativeColor }
 									renameAddressCallBack = { param.renameAddressCallBack }
 								/>
@@ -276,7 +276,7 @@ export function ERC721TokenIdApprovalChanges(param: ERC721TokenIdApprovalChanges
 								<div class = 'log-cell'>
 									<SmallAddress
 										address = { BigInt(approvedAddress) }
-										addressMetaData = { param.addressMetadata.get(approvedAddress) }
+										nameAndLogo = { param.addressMetadata.get(approvedAddress) }
 										textColor = { param.negativeColor }
 										renameAddressCallBack = { param.renameAddressCallBack }
 									/>
@@ -324,13 +324,13 @@ export function SummarizeAddress(param: SummarizeAddressParams) {
 		{ isOwnAddress ?
 			<BigAddress
 				address = { BigInt(param.address) }
-				title = { param.simulationAndVisualisationResults.addressMetadata.get(param.address)?.name }
+				nameAndLogo = { param.simulationAndVisualisationResults.addressMetadata.get(param.address) }
 				renameAddressCallBack = { param.renameAddressCallBack }
 			/> :
 			<SmallAddress
 				textColor = { positiveNegativeColors.textColor }
 				address = { BigInt(param.address) }
-				addressMetaData = { param.simulationAndVisualisationResults.addressMetadata.get(param.address)}
+				nameAndLogo = { param.simulationAndVisualisationResults.addressMetadata.get(param.address)}
 				renameAddressCallBack = { param.renameAddressCallBack }
 			/>
 		}

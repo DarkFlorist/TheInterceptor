@@ -198,7 +198,7 @@ export function InterceptorAccessList(param: InterceptorAccessListParams) {
 														<div style = 'display: flex; width: 100%; overflow: hidden;'>
 															<SmallAddress
 																address = { BigInt(websiteAccessAddress.address) }
-																addressMetaData = { metadata.get(websiteAccessAddress.address) }
+																nameAndLogo = { metadata.get(websiteAccessAddress.address) }
 																renameAddressCallBack = { param.renameAddressCallBack }
 															/>
 															<div style = 'margin-left: auto; flex-shrink: 0; display: flex'>

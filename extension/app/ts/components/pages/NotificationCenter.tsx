@@ -118,7 +118,7 @@ export function NotificationCenter(param: NotificationCenterParams) {
 										</div>
 										<BigAddress
 											address = { BigInt(pendingAccessRequest.requestAccessToAddress) }
-											title = { addressMetadata.get(pendingAccessRequest.requestAccessToAddress)?.name }
+											nameAndLogo = { addressMetadata.get(pendingAccessRequest.requestAccessToAddress) }
 											renameAddressCallBack = { param.renameAddressCallBack }
 										/>
 

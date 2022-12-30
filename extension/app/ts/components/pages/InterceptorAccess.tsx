@@ -129,13 +129,11 @@ export function InterceptorAccess() {
 									</p>
 								</div>
 							</div>
-
 							<BigAddress
 								address = { BigInt(accessRequest.requestAccessToAddress) }
-								title = { accessRequest.addressMetadata.get(accessRequest.requestAccessToAddress)?.name }
+								nameAndLogo = { accessRequest.addressMetadata.get(accessRequest.requestAccessToAddress) }
 								renameAddressCallBack = { renameAddressCallBack }
 							/>
-
 						</div>
 					}
 				</div>
@@ -155,7 +153,7 @@ export function InterceptorAccess() {
 									<li style = { `margin: 0px; margin-bottom: ${index < accessRequest.addressMetadata.size - 1  ? '10px;' : '0px'}` }>
 										<BigAddress
 											address = { BigInt(address) }
-											title = { metadata.name }
+											nameAndLogo = { metadata }
 											renameAddressCallBack = { renameAddressCallBack }
 										/>
 									</li>
@@ -174,8 +172,7 @@ export function InterceptorAccess() {
 							Deny Access
 						</button>
 					</div>
-				</div>
-
+					</div>
 				<div class = 'content' style = 'height: 0.1px'/>
 			</> }
 		</main>
