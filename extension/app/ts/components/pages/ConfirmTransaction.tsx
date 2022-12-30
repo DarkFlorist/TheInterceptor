@@ -14,10 +14,10 @@ export function ConfirmTransaction() {
 	const [simulationAndVisualisationResults, setSimulationAndVisualisationResults] = useState<SimulationAndVisualisationResults | undefined >(undefined)
 	const [forceSend, setForceSend] = useState<boolean>(false)
 	const [currentBlockNumber, setCurrentBlockNumber] = useState<undefined | bigint>(undefined)
-	const [signerName, setSignerName] = useState<SignerName | undefined> (undefined)
-	const [isEditAddressModelOpen, setEditAddressModelOpen] = useState<boolean> (false)
-	const [addressInput, setAddressInput] = useState<string | undefined> (undefined)
-	const [nameInput, setNameInput] = useState<string | undefined> (undefined)
+	const [signerName, setSignerName] = useState<SignerName | undefined>(undefined)
+	const [isEditAddressModelOpen, setEditAddressModelOpen] = useState<boolean>(false)
+	const [addressInput, setAddressInput] = useState<string | undefined>(undefined)
+	const [nameInput, setNameInput] = useState<string | undefined>(undefined)
 
 	useEffect( () => {
 		const updateTx = async () => {
