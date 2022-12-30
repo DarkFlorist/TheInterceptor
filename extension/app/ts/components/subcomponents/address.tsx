@@ -54,7 +54,7 @@ export type BigAddressParams = {
 
 export function BigAddress(params: BigAddressParams) {
 	const addrString = ethers.utils.getAddress(addressString(params.address))
-	const title = params.nameAndLogo === undefined || params.nameAndLogo.name === undefined ? addrString: params.nameAndLogo.name
+	const title = params.nameAndLogo === undefined || params.nameAndLogo.name === undefined ? addrString : params.nameAndLogo.name
 	const subTitle = title != addrString ? addrString : ''
 	const renameAddressCallBack = params.renameAddressCallBack
 
