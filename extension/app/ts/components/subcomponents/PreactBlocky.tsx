@@ -7,7 +7,7 @@ interface BlockieProps {
 	color?: string,
 	bgColor?: string,
 	spotColor?: string,
-	rounded?: true,
+	borderRadius?: string,
 }
 
 function generateIdenticon(options: BlockieProps, canvasRef: HTMLCanvasElement) {
@@ -136,7 +136,7 @@ export default function Blockie(props: BlockieProps) {
 			{
 				width: `${ dimension }px`,
 				height: `${ dimension }px`,
-				borderRadius: props.rounded ? '50%' : '0%',
+				borderRadius: props.borderRadius ? props.borderRadius : '0%',
 			}
 		}
 	/>

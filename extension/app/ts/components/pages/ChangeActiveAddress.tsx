@@ -80,7 +80,7 @@ export function ChangeActiveAddress(param: ChangeActiveAddressParam) {
 								<div class = 'card-content hoverable ' style = 'cursor: pointer;'>
 									<BigAddress
 										address = { addressInfo.address }
-										title = { addressInfo.name }
+										nameAndLogo = { { name: addressInfo.name, logoUri: undefined } }
 										noCopying = { true }
 										renameAddressCallBack = { undefined }
 									/>

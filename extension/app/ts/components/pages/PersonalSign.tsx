@@ -117,7 +117,7 @@ export function PersonalSign() {
 						<div class = 'card-content'>
 							<BigAddress
 								address = { signRequest.account }
-								title = { signRequest.addressInfo.name }
+								nameAndLogo = { { name: signRequest.addressInfo.name, logoUri: undefined } }
 								renameAddressCallBack = { undefined }
 							/>
 						</div>
