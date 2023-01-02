@@ -1,7 +1,7 @@
 import { Simulator } from '../simulation/simulator.js'
 import { bytes32String } from '../utils/bigint.js'
 import { InterceptedRequest } from '../utils/interceptor-messages.js'
-import { EstimateGasParams, EthBalanceParams, EthBlockByNumberParams, EthCallParams, EthereumAddress, EthereumData, EthereumQuantity, EthereumSignedTransactionWithBlockData, EthSubscribeParams, EthTransactionReceiptResponse, EthUnSubscribeParams, GetBlockReturn, GetCode, GetTransactionCount, JsonRpcNewHeadsNotification, NewHeadsSubscriptionData, PersonalSignParams, RequestPermissions, SendTransactionParams, SignTypedDataV4Params, SwitchEthereumChainParams, TransactionByHashParams, TransactionReceiptParams } from '../utils/wire-types.js'
+import { EstimateGasParams, EthBalanceParams, EthBlockByNumberParams, EthCallParams, EthereumAddress, EthereumData, EthereumQuantity, EthereumSignedTransactionWithBlockData, EthereumUnsignedTransactionArray, EthSubscribeParams, EthTransactionReceiptResponse, EthUnSubscribeParams, GetBlockReturn, GetCode, GetTransactionCount, JsonRpcNewHeadsNotification, NewHeadsSubscriptionData, PersonalSignParams, RequestPermissions, SendTransactionParams, SignTypedDataV4Params, SwitchEthereumChainParams, TransactionByHashParams, TransactionReceiptParams } from '../utils/wire-types.js'
 import { postMessageIfStillConnected } from './background.js'
 import { WebsiteAccess } from './settings.js'
 import { openChangeChainDialog } from './windows/changeChain.js'
@@ -266,5 +266,14 @@ export async function getTransactionCount(simulator: Simulator, port: browser.ru
 		requestId: request.requestId,
 		options: request.options,
 		result: EthereumQuantity.serialize(await simulator.ethereum.getTransactionCount(params.params[0], params.params[1]))
+	})
+}
+
+export async function getSimulatedUnsignedTransactions(simulator: Simulator, port: browser.runtime.Port, request: InterceptedRequest) {
+	return postMessageIfStillConnected(port, {
+		interceptorApproved: true,
+		requestId: request.requestId,
+		options: request.options,
+		result: EthereumUnsignedTransactionArray.serialize(simulator.simulationModeNode.getSimulatedUnsignedTransactions())
 	})
 }

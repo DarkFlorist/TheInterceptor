@@ -199,6 +199,9 @@ export const EthereumUnsignedTransaction1559 = t.Intersect(
 export type EthereumUnsignedTransaction = t.Static<typeof EthereumUnsignedTransaction>
 export const EthereumUnsignedTransaction = t.Union(EthereumUnsignedTransactionLegacy, EthereumUnsignedTransaction2930, EthereumUnsignedTransaction1559)
 
+export type EthereumUnsignedTransactionArray = t.Static<typeof EthereumUnsignedTransactionArray>
+export const EthereumUnsignedTransactionArray = t.ReadonlyArray(EthereumUnsignedTransaction)
+
 export type EthereumTransactionSignature = t.Static<typeof EthereumTransactionSignature>
 export const EthereumTransactionSignature = t.Intersect(
 	t.Object({
@@ -711,7 +714,6 @@ export const RequestPermissions = t.Object({
 	method: t.Literal('wallet_requestPermissions'),
 	params: t.Tuple( t.Object({ eth_accounts: t.Object({ }) }) )
 }).asReadonly()
-
 
 const BigIntParserNonHex: t.ParsedValue<t.String, bigint>['config'] = {
 	parse: value => {

@@ -52,6 +52,11 @@ export class SimulationModeEthereumClientService {
 		return newSimulation
 	}
 
+	public getSimulatedUnsignedTransactions = () => {
+		if (this.simulationState === undefined) return []
+		return this.simulationState.simulatedTransactions.map( (x) => x.unsignedTransaction )
+	}
+
 	public transactionQueueTotalGasLimit = () => {
 		if ( this.simulationState === undefined) return 0n
 		return this.simulationState.simulatedTransactions.reduce((a, b) => a + b.unsignedTransaction.gas, 0n)
