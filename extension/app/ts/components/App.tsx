@@ -175,6 +175,12 @@ export function App() {
 		setAddressInput(ethers.utils.getAddress(address))
 	}
 
+	function openAddressBook() {
+		browser.tabs.create({
+			url: '../html/addressBook.html',
+		})
+	}
+
 	return (
 		<main style = { `background-color: var(--bg-color); width: 520px; height: 600px; ${ appPage !== Page.Home ? 'overflow: hidden;' : 'overflow: auto;' }` }>
 			<PasteCatcher enabled = { appPage === Page.Home } onPaste = { addressPaste } />
@@ -190,7 +196,8 @@ export function App() {
 							</a>
 							<a class = 'navbar-item' style = 'margin-left: auto; margin-right: 0;'>
 								<img src = '../img/internet.svg' width = '32' onClick = { () => setAndSaveAppPage(Page.AccessList) }/>
-								<img src = '../img/address-book.svg' width = '32' onClick = { () => setAndSaveAppPage(Page.AddressList) }/>
+								<img src = '../img/my-accounts.svg' width = '32' onClick = { () => setAndSaveAppPage(Page.AddressList) }/>
+								<img src = '../img/address-book.svg' width = '32' onClick = { openAddressBook }/>
 								<div>
 									<img src = '../img/notification-bell.svg' width = '32' onClick = { () => setAndSaveAppPage(Page.NotificationCenter) }/>
 									{ notificationBadgeCount <= 0 ? <> </> : <span class = 'badge' style = 'transform: translate(-75%, 75%);'> { notificationBadgeCount } </span> }
