@@ -144,7 +144,7 @@ type SendOrReceiveTokensImportanceBoxParams = {
 	tokenVisualizerResults: TokenVisualizerResult[] | undefined,
 	addressMetadata: Map<string, AddressMetadata>,
 	textColor: string,
-	renameAddressCallBack: RenameAddressCallBack | undefined,
+	renameAddressCallBack: RenameAddressCallBack,
 }
 
 function SendOrReceiveTokensImportanceBox(param: SendOrReceiveTokensImportanceBoxParams ) {
@@ -206,7 +206,7 @@ function SendOrReceiveTokensImportanceBox(param: SendOrReceiveTokensImportanceBo
 type TransactionImportanceBlockParams = {
 	tx: SimulatedAndVisualizedTransaction,
 	simulationAndVisualisationResults: SimulationAndVisualisationResults,
-	renameAddressCallBack: RenameAddressCallBack | undefined,
+	renameAddressCallBack: RenameAddressCallBack,
 }
 
 // showcases the most important things the transaction does
@@ -405,7 +405,7 @@ type TransactionsParams = {
 	removeTransaction: (hash: bigint) => void,
 	showOnlyOneAndAggregateRest?: boolean,
 	activeAddress: bigint,
-	renameAddressCallBack: RenameAddressCallBack | undefined,
+	renameAddressCallBack: RenameAddressCallBack,
 }
 
 export function Transactions(param: TransactionsParams) {
@@ -451,7 +451,7 @@ type TokenLogEventParams = {
 	tokenVisualizerResult: TokenVisualizerResult
 	addressMetadata: Map<string, AddressMetadata>
 	ourAddressInReferenceFrame: bigint,
-	renameAddressCallBack: RenameAddressCallBack | undefined,
+	renameAddressCallBack: RenameAddressCallBack,
 }
 
 export function TokenLogEvent(params: TokenLogEventParams ) {

@@ -1,7 +1,7 @@
 import { ethers } from 'ethers'
 import { useEffect, useState } from 'preact/hooks'
 import { EthereumAddress } from '../../utils/wire-types.js'
-import { Page, AddAddressParam, AddressInfo } from '../../utils/user-interface-types.js'
+import { AddAddressParam } from '../../utils/user-interface-types.js'
 import Blockie from '../subcomponents/PreactBlocky.js'
 import { Notice } from '../subcomponents/Error.js'
 import { getIssueWithAddressString } from '../ui-utils.js'
@@ -16,27 +16,13 @@ export function AddNewAddress(param: AddAddressParam) {
 	function add() {
 		if (addressInput === undefined) return
 		if (!areInputValid()) return
-		param.setAndSaveAppPage(Page.Home)
+		param.close()
 		const newEntry = {
 			name: nameInput ? nameInput: ethers.utils.getAddress(addressInput),
-			address: EthereumAddress.parse(addressInput),
+			address: EthereumAddress.serialize(BigInt(addressInput)),
 			askForAddressAccess: askForAddressAccess,
 		}
-		if (param.addressInfos.find( (x) => x.address === BigInt(addressInput) !== undefined) ) {
-			// replace in place to maintain the same order
-			const newAddressInfos = param.addressInfos.map( (x) => x.address === BigInt(addressInput) ? newEntry : x )
-			browser.runtime.sendMessage( { method: 'popup_changeAddressInfos', options: newAddressInfos.map( (x) => AddressInfo.serialize(x) ) } )
-			param.setAddressInfos(newAddressInfos)
-		} else {
-			// append to the end
-			const newAddressInfos = param.addressInfos.concat( [{
-				name: nameInput ? nameInput: ethers.utils.getAddress(addressInput),
-				address: EthereumAddress.parse(addressInput),
-				askForAddressAccess: askForAddressAccess,
-			}])
-			browser.runtime.sendMessage( { method: 'popup_changeAddressInfos', options: newAddressInfos.map( (x) => AddressInfo.serialize(x) ) } )
-			param.setAddressInfos(newAddressInfos)
-		}
+		browser.runtime.sendMessage( { method: 'popup_addOrModifyAddressInfo', options: [newEntry] } )
 
 		setAddress(undefined)
 		setNameInput(undefined)
@@ -45,9 +31,8 @@ export function AddNewAddress(param: AddAddressParam) {
 	function createAndSwitch() {
 		if (addressInput === undefined) return
 		if (!areInputValid()) return
-		const addressToSwitch = BigInt(addressInput)
 		add()
-		param.setActiveAddressAndInformAboutIt(addressToSwitch)
+		if (param.setActiveAddressAndInformAboutIt !== undefined) param.setActiveAddressAndInformAboutIt(BigInt(addressInput))
 	}
 
 	useEffect( () => {
@@ -61,10 +46,6 @@ export function AddNewAddress(param: AddAddressParam) {
 		if (!ethers.utils.isAddress(addressInput)) return false
 		if (nameInput !== undefined && nameInput.length > 42) return false
 		return true
-	}
-
-	function close() {
-		param.setAndSaveAppPage(Page.Home)
 	}
 
 	function setAddress(input: string | undefined) {
@@ -90,7 +71,7 @@ export function AddNewAddress(param: AddAddressParam) {
 				<p class = 'card-header-title'>
 					<p className = 'paragraph'> { param.addingNewAddress ? 'Add New Address' : 'Edit Address' } </p>
 				</p>
-				<button class = 'card-header-icon' aria-label = 'close' onClick = { close }>
+				<button class = 'card-header-icon' aria-label = 'close' onClick = { param.close }>
 					<span class = 'icon' style = 'color: var(--text-color);'> X </span>
 				</button>
 			</header>
@@ -113,7 +94,7 @@ export function AddNewAddress(param: AddAddressParam) {
 								/>
 								<input disabled = { !param.addingNewAddress } className = 'input interceptorInput' type = 'text' value = { addressInput } placeholder = { '0x0...' }
 									onInput = { e => param.setAddressInput((e.target as HTMLInputElement).value) }
-									style = { `${ addressInput === undefined || ethers.utils.isAddress(addressInput.trim()) ? '' : 'color: var(--negative-color)' };` } />
+									style = { `${ addressInput === undefined || ethers.utils.isAddress(addressInput.trim()) ? '' : 'color: var(--negative-color);' }` } />
 								<label class = 'form-control'>
 									<input type = 'checkbox' checked = { !askForAddressAccess } onInput = { e => { if (e.target instanceof HTMLInputElement && e.target !== null) { setAskForAddressAccess(!e.target.checked) } } } />
 									Don't request for an access (unsecure)
@@ -123,13 +104,13 @@ export function AddNewAddress(param: AddAddressParam) {
 					</div>
 				</div>
 				<div style = 'padding: 10px; height: 50px'>
-					{ errorString === undefined ? <></> :<Notice text = { errorString } /> }
+					{ errorString === undefined ? <></> : <Notice text = { errorString } /> }
 				</div>
 			</section>
 			<footer class = 'modal-card-foot window-footer' style = 'border-bottom-left-radius: unset; border-bottom-right-radius: unset; border-top: unset; padding: 10px;'>
-				{ activeAddress !== undefined && addressInput !== undefined && activeAddress === BigInt(addressInput) ? <></> : <button class = 'button is-success is-primary' onClick = { createAndSwitch } disabled = { ! (areInputValid()) }> { param.addingNewAddress ? 'Create and switch' : 'Modify and switch' } </button> }
+				{ param.setActiveAddressAndInformAboutIt !== undefined && activeAddress !== undefined && addressInput !== undefined && activeAddress === BigInt(addressInput) ? <></> : <button class = 'button is-success is-primary' onClick = { createAndSwitch } disabled = { ! (areInputValid()) }> { param.addingNewAddress ? 'Create and switch' : 'Modify and switch' } </button> }
 				<button class = 'button is-success is-primary' onClick = { add } disabled = { ! (areInputValid()) }> { param.addingNewAddress ? 'Create' : 'Modify' } </button>
-				<button class = 'button is-primary' style = 'background-color: var(--negative-color)' onClick = { close }>Cancel</button>
+				<button class = 'button is-primary' style = 'background-color: var(--negative-color)' onClick = { param.close }>Cancel</button>
 			</footer>
 		</div>
 	</> )

@@ -192,7 +192,7 @@ export function Home(param: HomeParams) {
 						tabConnection = { tabConnection }
 						tabApproved = { tabApproved }
 						signerName = { signerName }
-						renameAddressCallBack = { param.addOrModifyAddress }
+						renameAddressCallBack = { param.renameAddressCallBack }
 					/>
 				</div>
 			</div>
@@ -213,7 +213,7 @@ export function Home(param: HomeParams) {
 					removeTransaction = { removeTransaction }
 					refreshSimulation = { refreshSimulation }
 					currentBlockNumber = { currentBlockNumber }
-					renameAddressCallBack = { param.addOrModifyAddress }
+					renameAddressCallBack = { param.renameAddressCallBack }
 				/>
 			}
 		</div>

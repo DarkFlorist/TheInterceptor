@@ -125,5 +125,5 @@ export type TransactionVisualizationParameters = {
 	simulationAndVisualisationResults: SimulationAndVisualisationResults,
 	removeTransaction: (hash: bigint) => void,
 	activeAddress: bigint,
-	renameAddressCallBack: RenameAddressCallBack | undefined,
+	renameAddressCallBack: RenameAddressCallBack,
 }

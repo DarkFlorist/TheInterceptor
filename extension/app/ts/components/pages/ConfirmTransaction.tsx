@@ -7,13 +7,17 @@ import { SimulationSummary } from '../simulationExplaining/SimulationSummary.js'
 import { Transactions } from '../simulationExplaining/Transactions.js'
 import { Spinner } from '../subcomponents/Spinner.js'
 import { getSignerName, SignerLogoText } from '../subcomponents/signers.js'
+import { AddNewAddress } from './AddNewAddress.js'
 
 export function ConfirmTransaction() {
 	const [requestToConfirm, setRequestToConfirm] = useState<InterceptedRequest | undefined>(undefined)
 	const [simulationAndVisualisationResults, setSimulationAndVisualisationResults] = useState<SimulationAndVisualisationResults | undefined >(undefined)
 	const [forceSend, setForceSend] = useState<boolean>(false)
 	const [currentBlockNumber, setCurrentBlockNumber] = useState<undefined | bigint>(undefined)
-	const [signerName, setSignerName] = useState<SignerName | undefined> (undefined)
+	const [signerName, setSignerName] = useState<SignerName | undefined>(undefined)
+	const [isEditAddressModelOpen, setEditAddressModelOpen] = useState<boolean>(false)
+	const [addressInput, setAddressInput] = useState<string | undefined>(undefined)
+	const [nameInput, setNameInput] = useState<string | undefined>(undefined)
 
 	useEffect( () => {
 		const updateTx = async () => {
@@ -86,57 +90,73 @@ export function ConfirmTransaction() {
 		return !success || !noQuarantines
 	}
 
+	function renameAddressCallBack(name: string | undefined, address: string) {
+		setEditAddressModelOpen(true)
+		setAddressInput(address)
+		setNameInput(name)
+	}
+
 	return (
 		<main>
 			{ simulationAndVisualisationResults !== undefined ?
 				<Hint>
-					<>
-						<div className = 'block' style = 'margin-bottom: 0px'>
-							<div style = 'margin: 10px;'>
-								<Transactions
-									simulationAndVisualisationResults = { simulationAndVisualisationResults }
-									removeTransaction = { removeTransaction }
-									showOnlyOneAndAggregateRest = { true }
-									activeAddress = { simulationAndVisualisationResults.activeAddress }
-									renameAddressCallBack = { undefined }
-								/>
-								<SimulationSummary
-									simulationAndVisualisationResults = { simulationAndVisualisationResults }
-									summarizeOnlyLastTransaction = { true }
-									resetButton = { false }
-									refreshSimulation = { refreshSimulation }
-									currentBlockNumber = { currentBlockNumber }
-									renameAddressCallBack = { undefined }
-								/>
-								<div className = 'block' style = 'margin: 10px; padding: 10px; background-color: var(--card-bg-color);'>
-									{ simulationAndVisualisationResults && simulationAndVisualisationResults.simulatedAndVisualizedTransactions[simulationAndVisualisationResults.simulatedAndVisualizedTransactions.length - 1 ].multicallResponse.statusCode === 'success' ? <></> :
-										<div class = 'card-content'>
-											<ErrorCheckBox text = { 'I understand that the transaction will most likely fail but I want to send it anyway.' } checked = { forceSend } onInput = { setForceSend } />
-										</div>
-									}
-									{ simulationAndVisualisationResults && simulationAndVisualisationResults.simulatedAndVisualizedTransactions[simulationAndVisualisationResults.simulatedAndVisualizedTransactions.length - 1 ].simResults?.quarantine !== true ? <></> :
-										<div class = 'card-content'>
-											<ErrorCheckBox text = { 'I understand that there are issues with this transaction but I want to send it anyway against Interceptors recommendations.' } checked = { forceSend } onInput = { setForceSend } />
-										</div>
-									}
-									<div style = 'overflow: auto; display: flex; justify-content: space-around; width: 100%; height: 40px;'>
-										<button className = 'button is-primary' style = 'flex-grow: 1; margin-left: 5px; margin-right: 5px;' onClick = { approve } disabled = { isConfirmDisabled() }>
-											{ simulationAndVisualisationResults.simulationMode ? 'Simulate!' :
-												<SignerLogoText {...{
-													signerName,
-													text: `Sign with ${ getSignerName(signerName) }`
-												}} />
-											}
-										</button>
-										<button className = 'button is-primary is-danger' style = 'flex-grow: 1; margin-left: 5px; margin-right: 5px;' onClick = { reject } >
-											Reject
-										</button>
+					<div class = { `modal ${ isEditAddressModelOpen? 'is-active' : ''}` }>
+						<AddNewAddress
+							setActiveAddressAndInformAboutIt = { undefined }
+							addressInput = { addressInput }
+							nameInput = { nameInput }
+							addingNewAddress = { false }
+							setAddressInput = { setAddressInput }
+							setNameInput = { setNameInput }
+							close = { () => { setEditAddressModelOpen(false) } }
+							activeAddress = { undefined }
+						/>
+					</div>
+					<div className = 'block' style = 'margin-bottom: 0px'>
+						<div style = 'margin: 10px;'>
+							<Transactions
+								simulationAndVisualisationResults = { simulationAndVisualisationResults }
+								removeTransaction = { removeTransaction }
+								showOnlyOneAndAggregateRest = { true }
+								activeAddress = { simulationAndVisualisationResults.activeAddress }
+								renameAddressCallBack = { renameAddressCallBack }
+							/>
+							<SimulationSummary
+								simulationAndVisualisationResults = { simulationAndVisualisationResults }
+								summarizeOnlyLastTransaction = { true }
+								resetButton = { false }
+								refreshSimulation = { refreshSimulation }
+								currentBlockNumber = { currentBlockNumber }
+								renameAddressCallBack = { renameAddressCallBack }
+							/>
+							<div className = 'block' style = 'margin: 10px; padding: 10px; background-color: var(--card-bg-color);'>
+								{ simulationAndVisualisationResults && simulationAndVisualisationResults.simulatedAndVisualizedTransactions[simulationAndVisualisationResults.simulatedAndVisualizedTransactions.length - 1 ].multicallResponse.statusCode === 'success' ? <></> :
+									<div class = 'card-content'>
+										<ErrorCheckBox text = { 'I understand that the transaction will most likely fail but I want to send it anyway.' } checked = { forceSend } onInput = { setForceSend } />
 									</div>
+								}
+								{ simulationAndVisualisationResults && simulationAndVisualisationResults.simulatedAndVisualizedTransactions[simulationAndVisualisationResults.simulatedAndVisualizedTransactions.length - 1 ].simResults?.quarantine !== true ? <></> :
+									<div class = 'card-content'>
+										<ErrorCheckBox text = { 'I understand that there are issues with this transaction but I want to send it anyway against Interceptors recommendations.' } checked = { forceSend } onInput = { setForceSend } />
+									</div>
+								}
+								<div style = 'overflow: auto; display: flex; justify-content: space-around; width: 100%; height: 40px;'>
+									<button className = 'button is-primary' style = 'flex-grow: 1; margin-left: 5px; margin-right: 5px;' onClick = { approve } disabled = { isConfirmDisabled() }>
+										{ simulationAndVisualisationResults.simulationMode ? 'Simulate!' :
+											<SignerLogoText {...{
+												signerName,
+												text: `Sign with ${ getSignerName(signerName) }`
+											}} />
+										}
+									</button>
+									<button className = 'button is-primary is-danger' style = 'flex-grow: 1; margin-left: 5px; margin-right: 5px;' onClick = { reject } >
+										Reject
+									</button>
 								</div>
 							</div>
 						</div>
-						<div class = 'content' style = 'height: 0.1px'/>
-					</>
+					</div>
+					<div class = 'content' style = 'height: 0.1px'/>
 				</Hint>
 			:
 				<div class = 'center-to-page'>

@@ -82,7 +82,7 @@ type Erc20ApprovalChangeParams = {
 	textColor: string,
 	negativeColor: string,
 	isImportant: boolean,
-	renameAddressCallBack: RenameAddressCallBack | undefined,
+	renameAddressCallBack: RenameAddressCallBack,
 }
 
 export function Erc20ApprovalChange(param: Erc20ApprovalChangeParams) {
@@ -134,7 +134,7 @@ type Erc20ApprovalChangesParams = {
 	textColor: string,
 	negativeColor: string,
 	isImportant: boolean,
-	renameAddressCallBack: RenameAddressCallBack | undefined,
+	renameAddressCallBack: RenameAddressCallBack,
 }
 
 export function Erc20ApprovalChanges(param: Erc20ApprovalChangesParams ) {
@@ -196,7 +196,7 @@ type ERC721OperatorChangesParams = {
 	textColor: string,
 	negativeColor: string,
 	isImportant: boolean,
-	renameAddressCallBack: RenameAddressCallBack | undefined,
+	renameAddressCallBack: RenameAddressCallBack,
 }
 
 export function ERC721OperatorChanges(param: ERC721OperatorChangesParams) {
@@ -259,7 +259,7 @@ type ERC721TokenIdApprovalChangesParams = {
 	textColor: string,
 	negativeColor: string,
 	isImportant: boolean,
-	renameAddressCallBack: RenameAddressCallBack | undefined,
+	renameAddressCallBack: RenameAddressCallBack,
 }
 
 export function ERC721TokenIdApprovalChanges(param: ERC721TokenIdApprovalChangesParams ) {
@@ -308,7 +308,7 @@ type SummarizeAddressParams = {
 	address: string,
 	balanceSummary: BalanceChangeSummary,
 	simulationAndVisualisationResults: SimulationAndVisualisationResults,
-	renameAddressCallBack: RenameAddressCallBack | undefined,
+	renameAddressCallBack: RenameAddressCallBack,
 }
 
 export function SummarizeAddress(param: SummarizeAddressParams) {
@@ -424,7 +424,7 @@ type SimulationSummaryParams = {
 	resetButton: boolean,
 	refreshSimulation: () => void,
 	currentBlockNumber: bigint | undefined,
-	renameAddressCallBack: RenameAddressCallBack | undefined,
+	renameAddressCallBack: RenameAddressCallBack,
 }
 
 export function removeEthDonator(chain: CHAIN, summary: Map<string, BalanceChangeSummary>) {
