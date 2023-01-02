@@ -11,7 +11,7 @@ export function getAddressMetaData(address: bigint, addressInfos: readonly Addre
 	if ( address === MOCK_ADDRESS) {
 		return {
 			name: 'Ethereum Validator',
-			logoUri: '../../img/contracts/rhino.png',
+			logoURI: '../../img/contracts/rhino.png',
 			protocol: undefined,
 			metadataSource: 'other',
 		}
@@ -21,7 +21,7 @@ export function getAddressMetaData(address: bigint, addressInfos: readonly Addre
 			if (info.address === address) {
 				return {
 					name: info.name,
-					logoUri: undefined,
+					logoURI: undefined,
 					protocol: undefined,
 					metadataSource: 'addressBook',
 				}
@@ -34,7 +34,7 @@ export function getAddressMetaData(address: bigint, addressInfos: readonly Addre
 	const addressData = contractMetadata.get(addrString)
 	if (addressData) return {
 		...addressData,
-		logoUri: addressData.logoUri ? `${ LOGO_URI_PREFIX }/${ addressData.logoUri }` : undefined,
+		logoURI: addressData.logoURI ? `${ LOGO_URI_PREFIX }/${ addressData.logoURI }` : undefined,
 		metadataSource: 'contract',
 	}
 
@@ -42,7 +42,7 @@ export function getAddressMetaData(address: bigint, addressInfos: readonly Addre
 	if (tokenData) return {
 		name: tokenData.name,
 		symbol: tokenData.symbol,
-		logoUri: tokenData.logoUri ? `${ LOGO_URI_PREFIX }/${ tokenData.logoUri }` : undefined,
+		logoURI: tokenData.logoURI ? `${ LOGO_URI_PREFIX }/${ tokenData.logoURI }` : undefined,
 		protocol: undefined,
 		metadataSource: 'token',
 		decimals: tokenData.decimals,
@@ -52,7 +52,7 @@ export function getAddressMetaData(address: bigint, addressInfos: readonly Addre
 	if (nftTokenData) return {
 		name: nftTokenData.name,
 		symbol: nftTokenData.symbol,
-		logoUri: nftTokenData.logoUri ? `${ LOGO_URI_PREFIX }/${ nftTokenData.logoUri }` : undefined,
+		logoURI: nftTokenData.logoURI ? `${ LOGO_URI_PREFIX }/${ nftTokenData.logoURI }` : undefined,
 		metadataSource: 'nft',
 		protocol: undefined,
 		decimals: undefined,
@@ -60,7 +60,7 @@ export function getAddressMetaData(address: bigint, addressInfos: readonly Addre
 
 	return {
 		name: ethers.utils.getAddress(addrString),
-		logoUri: undefined,
+		logoURI: undefined,
 		protocol: undefined,
 		metadataSource: 'other',
 	}
@@ -72,7 +72,7 @@ async function getTokenMetadata(simulator: Simulator, address: bigint) : Promise
 	if (tokenData) return {
 		name: tokenData.name,
 		symbol: tokenData.symbol,
-		logoUri: tokenData.logoUri ? `${ LOGO_URI_PREFIX }/${ tokenData.logoUri }` : undefined,
+		logoURI: tokenData.logoURI ? `${ LOGO_URI_PREFIX }/${ tokenData.logoURI }` : undefined,
 		protocol: undefined,
 		metadataSource: 'token',
 		decimals: tokenData.decimals,
@@ -81,7 +81,7 @@ async function getTokenMetadata(simulator: Simulator, address: bigint) : Promise
 	if (nftTokenData) return {
 		name: nftTokenData.name,
 		symbol: nftTokenData.symbol,
-		logoUri: nftTokenData.logoUri ? `${ LOGO_URI_PREFIX }/${ nftTokenData.logoUri }` : undefined,
+		logoURI: nftTokenData.logoURI ? `${ LOGO_URI_PREFIX }/${ nftTokenData.logoURI }` : undefined,
 		metadataSource: 'nft',
 		protocol: undefined,
 		decimals: undefined
@@ -94,7 +94,7 @@ async function getTokenMetadata(simulator: Simulator, address: bigint) : Promise
 		name: ethers.utils.getAddress(addrString),
 		symbol: '???',
 		protocol: undefined,
-		logoUri: undefined,
+		logoURI: undefined,
 		metadataSource: 'imputed' as const,
 		decimals
 	}
