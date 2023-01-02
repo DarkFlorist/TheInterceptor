@@ -66,7 +66,7 @@ export const AddressMetadata = funtypes.Union(
 		name: funtypes.String,
 		metadataSource: funtypes.Union(funtypes.Literal('addressBook'), funtypes.Literal('contract'), funtypes.Literal('other'))
 	}).And(Partial({
-		logoUri: funtypes.String,
+		logoURI: funtypes.String,
 		protocol: funtypes.String,
 	})), funtypes.Object({
 		name: funtypes.String,
@@ -75,7 +75,7 @@ export const AddressMetadata = funtypes.Union(
 		decimals: funtypes.Union(EthereumQuantity, funtypes.Undefined),
 		metadataSource: funtypes.Union(funtypes.Literal('token'), funtypes.Literal('nft'), funtypes.Literal('imputed'))
 	}).And(Partial({
-		logoUri: funtypes.String,
+		logoURI: funtypes.String,
 	}))
 )
 
