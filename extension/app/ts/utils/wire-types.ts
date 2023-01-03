@@ -199,9 +199,6 @@ export const EthereumUnsignedTransaction1559 = t.Intersect(
 export type EthereumUnsignedTransaction = t.Static<typeof EthereumUnsignedTransaction>
 export const EthereumUnsignedTransaction = t.Union(EthereumUnsignedTransactionLegacy, EthereumUnsignedTransaction2930, EthereumUnsignedTransaction1559)
 
-export type EthereumUnsignedTransactionArray = t.Static<typeof EthereumUnsignedTransactionArray>
-export const EthereumUnsignedTransactionArray = t.ReadonlyArray(EthereumUnsignedTransaction)
-
 export type EthereumTransactionSignature = t.Static<typeof EthereumTransactionSignature>
 export const EthereumTransactionSignature = t.Intersect(
 	t.Object({
@@ -792,3 +789,11 @@ export const GetTransactionCount = t.Object({
 	method: t.Literal('eth_getTransactionCount'),
 	params: t.Tuple(EthereumAddress, EthereumBlockTag)
 }).asReadonly()
+
+
+export type GetSimulationResults = t.Static<typeof GetSimulationResults>
+export const GetSimulationResults = t.ReadonlyArray(t.Intersect(
+	EthereumUnsignedTransaction,
+	SingleMulticallResponse,
+	t.Object({ realizedGasPrice: EthereumQuantity }).asReadonly(),
+))
