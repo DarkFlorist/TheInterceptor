@@ -26,7 +26,7 @@
 	// all hashes except the first one are from .html files `<script type = 'module'>import '../js/popup.js'</script>` part
 	// this was done to workaround bug: https://bugzilla.mozilla.org/show_bug.cgi?id=1803984
 	// the first hash is for importmaps: <script type = 'importmap'> ... </script>
-	"content_security_policy": "object-src 'self'; script-src 'self' 'sha256-1yZWjAKHObRCaBauCTkoZtWkihs/4uwsiu6Hnx3OkTs=' 'sha256-y2bC3XlnL3txBHGTwN4KRThAGFnM0R9B7x04C1zC5Sg=' 'sha256-Uit0MJakCHko/a4ufXGIQJssrw/9TvLamXN+6ltsoG8=' 'sha256-H3mVX1ZCLoCDyvKnpCmo127wWUkke4ADcFzg0RfP2ZM=' 'sha256-8HfgBeyLUz3lfmitlAsCqVcTegmlIKg2JkhG9r1SC3o=' 'sha256-0TgMBbiL41Lbex4DiXR11hCqokTcIKXw6/HJa+UJ7H4=' 'sha256-X9JOx19AgjNibvT805ows7My7i7Soq9cP0ELHgAiHKg=' 'sha256-iB/olENWaDPColSQWbyQ9U80pjJM7Z2JPlm1hWWXq6I='",
+	"content_security_policy": "object-src 'self'; script-src 'self' 'sha256-1yZWjAKHObRCaBauCTkoZtWkihs/4uwsiu6Hnx3OkTs=' 'sha256-y2bC3XlnL3txBHGTwN4KRThAGFnM0R9B7x04C1zC5Sg=' 'sha256-Uit0MJakCHko/a4ufXGIQJssrw/9TvLamXN+6ltsoG8=' 'sha256-H3mVX1ZCLoCDyvKnpCmo127wWUkke4ADcFzg0RfP2ZM=' 'sha256-8HfgBeyLUz3lfmitlAsCqVcTegmlIKg2JkhG9r1SC3o=' 'sha256-0TgMBbiL41Lbex4DiXR11hCqokTcIKXw6/HJa+UJ7H4=' 'sha256-X9JOx19AgjNibvT805ows7My7i7Soq9cP0ELHgAiHKg=' 'sha256-gVIjW5dVlcD3TUPzJPpC1f6BIyZdWpfYxyJVWNRAlLg='",
 	"content_scripts": [
 		{
 			"matches": ["file://*/*", "http://*/*", "https://*/*"],

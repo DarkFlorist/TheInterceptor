@@ -5029,14 +5029,14 @@ button.dropdown-item.is-active {
 
 .menu-list a {
   border-radius: 2px;
-  color: #4a4a4a;
+  color: var(--text-color);
   display: block;
   padding: 0.5em 0.75em;
 }
 
 .menu-list a:hover {
-  background-color: whitesmoke;
-  color: #363636;
+  background-color: var(--highlighted-primary-color);
+  color: var(--text-color);
 }
 
 .menu-list a.is-active {

@@ -1,7 +1,7 @@
 import { changeActiveAddressAndChainAndResetSimulation, changeActiveChain, PrependTransactionMode, refreshConfirmTransactionSimulation, updatePrependMode, updateSimulationState } from './background.js'
 import { saveAddressInfos, saveMakeMeRich, savePage, saveSimulationMode, saveUseSignersAddressAsActiveAddress, saveWebsiteAccess } from './settings.js'
 import { Simulator } from '../simulation/simulator.js'
-import { ChangeActiveAddress, ChangeAddressInfos, ChangeMakeMeRich, ChangePage, PersonalSign, PopupMessage, RemoveTransaction, RequestAccountsFromSigner, TransactionConfirmation, InterceptorAccess, ChangeInterceptorAccess, ChainChangeConfirmation, EnableSimulationMode, ReviewNotification, RejectNotification, ChangeActiveChain, AddOrModifyAddresInfo } from '../utils/interceptor-messages.js'
+import { ChangeActiveAddress, ChangeAddressInfos, ChangeMakeMeRich, ChangePage, PersonalSign, PopupMessage, RemoveTransaction, RequestAccountsFromSigner, TransactionConfirmation, InterceptorAccess, ChangeInterceptorAccess, ChainChangeConfirmation, EnableSimulationMode, ReviewNotification, RejectNotification, ChangeActiveChain, AddOrModifyAddresInfo, GetAddressBookData, GetAddressBookDataFilter } from '../utils/interceptor-messages.js'
 import { resolvePendingTransaction } from './windows/confirmTransaction.js'
 import { resolvePersonalSign } from './windows/personalSign.js'
 import { changeAccess, requestAccessFromUser, resolveInterceptorAccess, setPendingAccessRequests } from './windows/interceptorAccess.js'
@@ -10,6 +10,8 @@ import { EthereumQuantity } from '../utils/wire-types.js'
 import { getAssociatedAddresses, sendMessageToApprovedWebsitePorts, updateWebsiteApprovalAccesses } from './accessManagement.js'
 import { sendPopupMessageToOpenWindows } from './backgroundUtils.js'
 import { isSupportedChain } from '../utils/constants.js'
+import { getMetadataForAddressBookData } from './metadataUtils.js'
+import { AddressBookEntries } from '../utils/user-interface-types.js'
 
 export async function confirmDialog(_simulator: Simulator, payload: PopupMessage) {
 	const confirmation = TransactionConfirmation.parse(payload)
@@ -183,4 +185,15 @@ export async function rejectNotification(_simulator: Simulator, payload: PopupMe
 		await changeAccess('Rejected', params.options.origin, notification?.icon, params.options.requestAccessToAddress)
 	}
 	sendPopupMessageToOpenWindows('popup_notification_removed')
+}
+
+export async function getAddressBookData(_simulator: Simulator, payload: PopupMessage) {
+	const parsed = GetAddressBookData.parse(payload)
+	const data = getMetadataForAddressBookData(parsed.options, window.interceptor.settings?.addressInfos)
+	sendPopupMessageToOpenWindows('popup_getAddressBookData', [ {
+		options: GetAddressBookDataFilter.serialize(parsed.options),
+		entries: AddressBookEntries.serialize(data.data),
+		lenght: EthereumQuantity.serialize(BigInt(data.length)),
+	}
+])
 }

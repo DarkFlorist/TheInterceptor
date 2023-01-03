@@ -1,5 +1,5 @@
 import * as preact from 'preact'
-import { AddressBook } from './components/pages/AddressBook.js'
+import { AddressBook } from './AddressBook.js'
 
 function rerender() {
 	const element = preact.createElement(AddressBook, {})

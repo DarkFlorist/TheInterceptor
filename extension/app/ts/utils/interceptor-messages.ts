@@ -1,5 +1,5 @@
 import * as funtypes from 'funtypes'
-import { AddressInfo } from './user-interface-types.js'
+import { AddressBookEntries, AddressInfo } from './user-interface-types.js'
 import { EthereumAddress, EthereumQuantity } from './wire-types.js'
 
 
@@ -212,6 +212,37 @@ export const RejectNotification = funtypes.Object({
 	})
 }).asReadonly()
 
+export type GetAddressBookDataFilter = funtypes.Static<typeof GetAddressBookDataFilter>
+export const GetAddressBookDataFilter = funtypes.Object({
+	filter: funtypes.Union(
+		funtypes.Literal('Active Addresses'),
+		funtypes.Literal('My Contacts'),
+		funtypes.Literal('Tokens'),
+		funtypes.Literal('Non Fungible Tokens'),
+		funtypes.Literal('Other Contracts')
+	),
+	startIndex: funtypes.Number,
+	maxIndex: funtypes.Number,
+}).asReadonly()
+
+export type GetAddressBookData = funtypes.Static<typeof GetAddressBookData>
+export const GetAddressBookData = funtypes.Object({
+	method: funtypes.Literal('popup_getAddressBookData'),
+	options: GetAddressBookDataFilter
+}).asReadonly()
+
+export type GetAddressBookDataReply = funtypes.Static<typeof GetAddressBookDataReply>
+export const GetAddressBookDataReply = funtypes.Object({
+	message: funtypes.Literal('popup_getAddressBookData'),
+	data: funtypes.Tuple(
+		funtypes.Object({
+			options: GetAddressBookDataFilter,
+			entries: AddressBookEntries,
+			lenght: EthereumQuantity,
+		})
+	)
+}).asReadonly()
+
 export type PopupMessage = funtypes.Static<typeof PopupMessage>
 export const PopupMessage = funtypes.Union(
 	ChangeAddressInfos,
@@ -234,4 +265,5 @@ export const PopupMessage = funtypes.Union(
 	ReviewNotification,
 	ConnectedToSigner,
 	AddOrModifyAddresInfo,
+	GetAddressBookData,
 )

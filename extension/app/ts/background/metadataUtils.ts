@@ -5,7 +5,45 @@ import { nftMetadata, tokenMetadata, contractMetadata } from '@darkflorist/addre
 import { ethers } from 'ethers'
 import { Simulator } from '../simulation/simulator.js'
 import { MOCK_ADDRESS } from '../utils/constants.js'
+import { GetAddressBookDataFilter } from '../utils/interceptor-messages.js'
 const LOGO_URI_PREFIX = `../vendor/@darkflorist/address-metadata`
+
+export function getMetadataForAddressBookData(filter: GetAddressBookDataFilter, addressInfos: readonly AddressInfo[] | undefined) {
+	switch(filter.filter) {
+		case 'My Contacts':
+		case 'Active Addresses': return {
+			data: addressInfos ? addressInfos.slice(filter.startIndex, filter.maxIndex).map( (x) => ({
+				type: 'addressInfo' as const,
+				...x
+			})) : [],
+			length: addressInfos ? addressInfos.length : 0
+		}
+		case 'Tokens': return {
+			data: Array.from(tokenMetadata).slice(filter.startIndex, filter.maxIndex).map( (x) => ({
+				type: 'token' as const,
+				address: BigInt(x[0]),
+				...x[1]
+			})),
+			length: addressInfos ? addressInfos.length : 0
+		}
+		case 'Non Fungible Tokens': return {
+			data: Array.from(nftMetadata).slice(filter.startIndex, filter.maxIndex).map( (x) => ({
+				type: 'NFT' as const,
+				address: BigInt(x[0]),
+				...x[1]
+			})),
+			length: nftMetadata.size
+		}
+		case 'Other Contracts': return {
+			data: Array.from(contractMetadata).slice(filter.startIndex, filter.maxIndex).map( (x) => ({
+				type: 'other contract' as const,
+				address: BigInt(x[0]),
+				...x[1]
+			})),
+			length: addressInfos ? addressInfos.length : 0
+		}
+	}
+}
 
 export function getAddressMetaData(address: bigint, addressInfos: readonly AddressInfo[] | undefined) : AddressMetadata {
 	if ( address === MOCK_ADDRESS) {
