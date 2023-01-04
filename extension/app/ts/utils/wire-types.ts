@@ -790,10 +790,12 @@ export const GetTransactionCount = t.Object({
 	params: t.Tuple(EthereumAddress, EthereumBlockTag)
 }).asReadonly()
 
-
-export type GetSimulationResults = t.Static<typeof GetSimulationResults>
-export const GetSimulationResults = t.ReadonlyArray(t.Intersect(
+export type GetSimulationStack = t.Static<typeof GetSimulationStack>
+export const GetSimulationStack = t.ReadonlyArray(t.Intersect(
 	EthereumUnsignedTransaction,
 	SingleMulticallResponse,
-	t.Object({ realizedGasPrice: EthereumQuantity }).asReadonly(),
+	t.Object({
+		realizedGasPrice: EthereumQuantity,
+		gasLimit: EthereumQuantity,
+	}).asReadonly(),
 ))

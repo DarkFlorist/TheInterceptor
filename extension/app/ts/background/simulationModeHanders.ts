@@ -1,7 +1,7 @@
 import { Simulator } from '../simulation/simulator.js'
 import { bytes32String } from '../utils/bigint.js'
 import { InterceptedRequest } from '../utils/interceptor-messages.js'
-import { EstimateGasParams, EthBalanceParams, EthBlockByNumberParams, EthCallParams, EthereumAddress, EthereumData, EthereumQuantity, EthereumSignedTransactionWithBlockData, EthSubscribeParams, EthTransactionReceiptResponse, EthUnSubscribeParams, GetBlockReturn, GetCode, GetSimulationResults, GetTransactionCount, JsonRpcNewHeadsNotification, NewHeadsSubscriptionData, PersonalSignParams, RequestPermissions, SendTransactionParams, SignTypedDataV4Params, SwitchEthereumChainParams, TransactionByHashParams, TransactionReceiptParams } from '../utils/wire-types.js'
+import { EstimateGasParams, EthBalanceParams, EthBlockByNumberParams, EthCallParams, EthereumAddress, EthereumData, EthereumQuantity, EthereumSignedTransactionWithBlockData, EthSubscribeParams, EthTransactionReceiptResponse, EthUnSubscribeParams, GetBlockReturn, GetCode, GetSimulationStack, GetTransactionCount, JsonRpcNewHeadsNotification, NewHeadsSubscriptionData, PersonalSignParams, RequestPermissions, SendTransactionParams, SignTypedDataV4Params, SwitchEthereumChainParams, TransactionByHashParams, TransactionReceiptParams } from '../utils/wire-types.js'
 import { postMessageIfStillConnected } from './background.js'
 import { WebsiteAccess } from './settings.js'
 import { openChangeChainDialog } from './windows/changeChain.js'
@@ -269,14 +269,14 @@ export async function getTransactionCount(simulator: Simulator, port: browser.ru
 	})
 }
 
-export async function getSimulationResults(simulator: Simulator, port: browser.runtime.Port, request: InterceptedRequest) {
+export async function getSimulationStack(simulator: Simulator, port: browser.runtime.Port, request: InterceptedRequest) {
 	return postMessageIfStillConnected(port, {
 		interceptorApproved: true,
 		requestId: request.requestId,
 		options: request.options,
 		result: {
 			version: '1.0.0',
-    		result: GetSimulationResults.serialize(simulator.simulationModeNode.getSimulationResults())
+			payload: GetSimulationStack.serialize(simulator.simulationModeNode.getSimulationStack()),
 		}
 	})
 }
