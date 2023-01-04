@@ -52,6 +52,16 @@ export class SimulationModeEthereumClientService {
 		return newSimulation
 	}
 
+	public getSimulationStack = () => {
+		if (this.simulationState === undefined) return []
+		return this.simulationState.simulatedTransactions.map((x) => ({
+			...x.unsignedTransaction,
+			...x.multicallResponse,
+			realizedGasPrice: x.realizedGasPrice,
+			gasLimit: x.unsignedTransaction.gas
+		}))
+	}
+
 	public transactionQueueTotalGasLimit = () => {
 		if ( this.simulationState === undefined) return 0n
 		return this.simulationState.simulatedTransactions.reduce((a, b) => a + b.unsignedTransaction.gas, 0n)
@@ -114,8 +124,8 @@ export class SimulationModeEthereumClientService {
 			return { signed: signed, simulationState: this.simulationState }
 		}
 
-		const unsignedTxts = this.simulationState.simulatedTransactions.map( (x) => x.unsignedTransaction ).concat([transaction])
-		const signedTxs = this.simulationState.simulatedTransactions.map( (x) => x.signedTransaction ).concat([signed])
+		const unsignedTxts = this.simulationState.simulatedTransactions.map((x) => x.unsignedTransaction ).concat([transaction])
+		const signedTxs = this.simulationState.simulatedTransactions.map((x) => x.signedTransaction ).concat([signed])
 		const multicallResult = await this.multicall([transaction], parentBlock.number)
 		if (multicallResult.length !== signedTxs.length) throw 'multicall length does not match'
 
@@ -172,7 +182,7 @@ export class SimulationModeEthereumClientService {
 
 	public getTransactionQueue = () => {
 		if ( this.simulationState === undefined ) return []
-		return this.simulationState.simulatedTransactions.map( (x) => x.unsignedTransaction)
+		return this.simulationState.simulatedTransactions.map((x) => x.unsignedTransaction)
 	}
 	public getPrependTransactionsQueue = () => this.prependTransactionsQueue
 
@@ -195,7 +205,7 @@ export class SimulationModeEthereumClientService {
 	public removeTransaction = async (transactionHash: bigint) => {
 		if ( this.simulationState === undefined) return this.simulationState
 		const filtered = this.simulationState.simulatedTransactions.filter( (transaction) => transaction.signedTransaction.hash !== transactionHash)
-		return await this.setTransactions(filtered.map( (x) => x.unsignedTransaction))
+		return await this.setTransactions(filtered.map((x) => x.unsignedTransaction))
 	}
 
 	public removeTransactionAndUpdateTransactionNonces = async (transactionHash: bigint) => {
@@ -224,7 +234,7 @@ export class SimulationModeEthereumClientService {
 			// if block number is the same, we don't need to compute anything as nothing has changed, but let's update timestamp to show the simulation was refreshed for this time
 			return { ...this.simulationState, simulationConductedTimestamp: new Date() }
 		}
-		return await this.setTransactions(this.simulationState.simulatedTransactions.map( (x) => x.unsignedTransaction))
+		return await this.setTransactions(this.simulationState.simulatedTransactions.map((x) => x.unsignedTransaction))
 	}
 
 	public resetSimulation = async () => {
@@ -430,7 +440,7 @@ export class SimulationModeEthereumClientService {
 			}
 		}
 		//TODO: handle other filter options
-		return EthGetLogsResponse.parse(events).filter( (x) => logFilter.address === undefined || x.address === logFilter.address)
+		return EthGetLogsResponse.parse(events).filter((x) => logFilter.address === undefined || x.address === logFilter.address)
 	}
 
 	public readonly getLogs = async (logFilter: EthGetLogsRequest): Promise<EthGetLogsResponse> => {

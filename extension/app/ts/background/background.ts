@@ -3,7 +3,7 @@ import 'webextension-polyfill'
 import { Simulator } from '../simulation/simulator.js'
 import { EIP2612Message, EthereumQuantity, EthereumUnsignedTransaction } from '../utils/wire-types.js'
 import { getSettings, saveActiveChain, saveActiveSigningAddress, saveActiveSimulationAddress, Settings } from './settings.js'
-import { blockNumber, call, chainId, estimateGas, gasPrice, getAccounts, getBalance, getBlockByNumber, getCode, getPermissions, getTransactionByHash, getTransactionCount, getTransactionReceipt, personalSign, requestPermissions, sendRawTransaction, sendTransaction, signTypedDataV4, subscribe, switchEthereumChain, unsubscribe } from './simulationModeHanders.js'
+import { blockNumber, call, chainId, estimateGas, gasPrice, getAccounts, getBalance, getBlockByNumber, getCode, getPermissions, getSimulationStack, getTransactionByHash, getTransactionCount, getTransactionReceipt, personalSign, requestPermissions, sendRawTransaction, sendTransaction, signTypedDataV4, subscribe, switchEthereumChain, unsubscribe } from './simulationModeHanders.js'
 import { changeActiveAddress, changeAddressInfos, changeMakeMeRich, changePage, resetSimulation, confirmDialog, RefreshSimulation, removeTransaction, requestAccountsFromSigner, refreshPopupConfirmTransactionSimulation, confirmPersonalSign, confirmRequestAccess, changeInterceptorAccess, changeChainDialog, popupChangeActiveChain, enableSimulationMode, reviewNotification, rejectNotification, addOrModifyAddressInfo, getAddressBookData } from './popupMessageHandlers.js'
 import { AddressMetadata, SimResults, SimulationState, TokenPriceEstimate } from '../utils/visualizer-types.js'
 import { WebsiteApproval, SignerState, TabConnection } from '../utils/user-interface-types.js'
@@ -291,6 +291,7 @@ export const handlers = new Map<string, SimulationHandler >([
 	['eth_sendRawTransaction', sendRawTransaction],
 	['eth_gasPrice', gasPrice],
 	['eth_getTransactionCount', getTransactionCount],
+	['interceptor_getSimulationStack', getSimulationStack],
 
 	/*
 	Missing methods:
