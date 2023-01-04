@@ -712,7 +712,6 @@ export const RequestPermissions = t.Object({
 	params: t.Tuple( t.Object({ eth_accounts: t.Object({ }) }) )
 }).asReadonly()
 
-
 const BigIntParserNonHex: t.ParsedValue<t.String, bigint>['config'] = {
 	parse: value => {
 		if (!/([0-9]{1,64})$/.test(value)) return { success: false, message: `${value} is not a hex string encoded number.` }
@@ -790,3 +789,13 @@ export const GetTransactionCount = t.Object({
 	method: t.Literal('eth_getTransactionCount'),
 	params: t.Tuple(EthereumAddress, EthereumBlockTag)
 }).asReadonly()
+
+export type GetSimulationStack = t.Static<typeof GetSimulationStack>
+export const GetSimulationStack = t.ReadonlyArray(t.Intersect(
+	EthereumUnsignedTransaction,
+	SingleMulticallResponse,
+	t.Object({
+		realizedGasPrice: EthereumQuantity,
+		gasLimit: EthereumQuantity,
+	}).asReadonly(),
+))
