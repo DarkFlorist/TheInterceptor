@@ -68,7 +68,7 @@ export default function Container(props: Props) {
     }, [containerElement])
 
     return (
-        <div ref = { onRefChange } style = 'position: relative;'>
+        <div ref = { onRefChange } style = 'position: relative; overflow-x: hidden;'>
             { content && containerElement && targetBoundingRect && (
                 <Hint
                     content = { content }

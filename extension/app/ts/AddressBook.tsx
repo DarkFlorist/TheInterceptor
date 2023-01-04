@@ -2,9 +2,9 @@ import { useEffect, useRef, useState } from 'preact/hooks'
 import { addressString } from './utils/bigint.js'
 import { AddressBookEntries } from './utils/user-interface-types.js'
 import Blockie from './components/subcomponents/PreactBlocky.js'
-import { GetAddressBookDataReply } from './utils/interceptor-messages.js'
+import { GetAddressBookDataReply, MessageToPopup } from './utils/interceptor-messages.js'
 
-type ActiveFilter = 'Active Addresses' | 'My Contacts' | 'Tokens' | 'Non Fungible Tokens' | 'Other Contracts'
+type ActiveFilter = 'My Active Addresses' | 'My Contacts' | 'Tokens' | 'Non Fungible Tokens' | 'Other Contracts'
 
 export function FilterLink(param: { name: ActiveFilter, currentFilter: ActiveFilter, setActiveFilter: (activeFilter: ActiveFilter) => void}) {
 	return <a
@@ -15,8 +15,9 @@ export function FilterLink(param: { name: ActiveFilter, currentFilter: ActiveFil
 }
 
 export function AddressList(param: { addressBookEntries: AddressBookEntries | undefined }) {
+	if (param.addressBookEntries === undefined) return <p class = 'paragraph'> Loading... </p>
 	return <ul>
-		{ param.addressBookEntries === undefined ? <></> : param.addressBookEntries.map( (entry, _index) => (
+		{ param.addressBookEntries.length === 0 ? <p class = 'paragraph'> No cute dinosaurs here </p> : param.addressBookEntries.map( (entry, _index) => (
 			<li>
 				<div class = 'card'>
 					<div class = 'card-content'>
@@ -63,16 +64,16 @@ export function AddressList(param: { addressBookEntries: AddressBookEntries | un
 }
 
 export function AddressBook() {
-	const [activeFilter, setActiveFilter] = useState<ActiveFilter>('Active Addresses')
+	const [activeFilter, setActiveFilter] = useState<ActiveFilter>('My Active Addresses')
 	const [addressBookEntries, setAddressBookEntries] = useState<AddressBookEntries | undefined>(undefined)
 	const activeFilterRef = useRef<ActiveFilter>(activeFilter)
 
 	useEffect( () => {
-		const popupMessageListener = async (msg: unknown) => {
-			if (!GetAddressBookDataReply.test(msg)) console.log('failed to parse')
+		const popupMessageListener = async (msg: MessageToPopup) => {
+			if (msg.message !== 'popup_getAddressBookData') return
 			const reply = GetAddressBookDataReply.parse(msg)
-			if (reply.data[0].options.filter === activeFilterRef.current) {
-				setAddressBookEntries(reply.data[0].entries)
+			if (reply.data.options.filter === activeFilterRef.current) {
+				setAddressBookEntries(reply.data.entries)
 			}
 		}
 		changeFilter(activeFilter)
@@ -95,17 +96,18 @@ export function AddressBook() {
 				<div class = 'column is-2'>
 					<aside class = 'menu'>
 						<ul class = 'menu-list'>
-							<FilterLink name = 'Active Addresses' currentFilter = { activeFilter } setActiveFilter = { changeFilter }/>
-						</ul>
-						<ul class = 'menu-list'>
-							<FilterLink name = 'My Contacts' currentFilter = { activeFilter } setActiveFilter = { changeFilter }/>
-						</ul>
-						<ul class = 'menu-list'>
-							<p class = 'paragraph'> Contracts </p>
+							<p class = 'paragraph' style = 'color: var(--disabled-text-color)'> My Addresses </p>
 							<ul>
-								<li><FilterLink name = 'Tokens' currentFilter = { activeFilter } setActiveFilter = { changeFilter }/></li>
-								<li><FilterLink name = 'Non Fungible Tokens' currentFilter = { activeFilter } setActiveFilter = { changeFilter }/></li>
-								<li><FilterLink name = 'Other Contracts' currentFilter = { activeFilter } setActiveFilter = { changeFilter }/></li>
+								<li> <FilterLink name = 'My Active Addresses' currentFilter = { activeFilter } setActiveFilter = { changeFilter }/> </li>
+								<li> <FilterLink name = 'My Contacts' currentFilter = { activeFilter } setActiveFilter = { changeFilter }/> </li>
+							</ul>
+						</ul>
+						<ul class = 'menu-list'>
+							<p class = 'paragraph' style = 'color: var(--disabled-text-color)'> Contracts </p>
+							<ul>
+								<li> <FilterLink name = 'Tokens' currentFilter = { activeFilter } setActiveFilter = { changeFilter }/> </li>
+								<li> <FilterLink name = 'Non Fungible Tokens' currentFilter = { activeFilter } setActiveFilter = { changeFilter }/> </li>
+								<li> <FilterLink name = 'Other Contracts' currentFilter = { activeFilter } setActiveFilter = { changeFilter }/> </li>
 							</ul>
 						</ul>
 					</aside>

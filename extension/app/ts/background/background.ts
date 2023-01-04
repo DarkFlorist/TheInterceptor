@@ -1,7 +1,7 @@
 import { InterceptedRequest, InterceptedRequestForward, PopupMessage, ProviderMessage, SignerName } from '../utils/interceptor-messages.js'
 import 'webextension-polyfill'
 import { Simulator } from '../simulation/simulator.js'
-import { EIP2612Message, EthereumAddress, EthereumQuantity, EthereumUnsignedTransaction } from '../utils/wire-types.js'
+import { EIP2612Message, EthereumQuantity, EthereumUnsignedTransaction } from '../utils/wire-types.js'
 import { getSettings, saveActiveChain, saveActiveSigningAddress, saveActiveSimulationAddress, Settings } from './settings.js'
 import { blockNumber, call, chainId, estimateGas, gasPrice, getAccounts, getBalance, getBlockByNumber, getCode, getPermissions, getTransactionByHash, getTransactionCount, getTransactionReceipt, personalSign, requestPermissions, sendRawTransaction, sendTransaction, signTypedDataV4, subscribe, switchEthereumChain, unsubscribe } from './simulationModeHanders.js'
 import { changeActiveAddress, changeAddressInfos, changeMakeMeRich, changePage, resetSimulation, confirmDialog, RefreshSimulation, removeTransaction, requestAccountsFromSigner, refreshPopupConfirmTransactionSimulation, confirmPersonalSign, confirmRequestAccess, changeInterceptorAccess, changeChainDialog, popupChangeActiveChain, enableSimulationMode, reviewNotification, rejectNotification, addOrModifyAddressInfo, getAddressBookData } from './popupMessageHandlers.js'
@@ -112,7 +112,7 @@ window.interceptor = {
 export async function updateSimulationState( getUpdatedSimulationState: () => Promise<SimulationState | undefined>) {
 	try {
 		window.interceptor.simulation.isComputingSimulation = true
-		sendPopupMessageToOpenWindows('popup_started_simulation_update')
+		sendPopupMessageToOpenWindows({ message: 'popup_started_simulation_update' })
 		window.interceptor.simulation.simulationId++
 
 		if ( simulator === undefined ) {
@@ -124,7 +124,7 @@ export async function updateSimulationState( getUpdatedSimulationState: () => Pr
 				tokenPrices: [],
 				visualizerResults: [],
 			}
-			sendPopupMessageToOpenWindows('popup_simulation_state_changed')
+			sendPopupMessageToOpenWindows({ message: 'popup_simulation_state_changed' })
 			return
 		}
 
@@ -168,7 +168,7 @@ export async function updateSimulationState( getUpdatedSimulationState: () => Pr
 				isComputingSimulation: false,
 			}
 		}
-		sendPopupMessageToOpenWindows('popup_simulation_state_changed')
+		sendPopupMessageToOpenWindows({ message: 'popup_simulation_state_changed' })
 		return updatedSimulationState
 	} catch(e) {
 		throw e
@@ -189,7 +189,7 @@ export async function refreshConfirmTransactionSimulation() {
 	const newSimulator = simulator.simulationModeNode.copy()
 	const currentRequestId = window.interceptor.confirmTransactionDialog.requestToConfirm.requestId
 	window.interceptor.confirmTransactionDialog.isComputingSimulation = true
-	sendPopupMessageToOpenWindows('popup_confirm_transaction_simulation_started' )
+	sendPopupMessageToOpenWindows({ message: 'popup_confirm_transaction_simulation_started' })
 	const appended = await newSimulator.appendTransaction(EthereumUnsignedTransaction.parse(window.interceptor.confirmTransactionDialog.transactionToSimulate))
 	const transactions = appended.simulationState.simulatedTransactions.map(x => x.unsignedTransaction)
 	const visualizerResult = await simulator.visualizeTransactionChain(transactions, appended.simulationState.blockNumber, appended.simulationState.simulatedTransactions.map( x => x.multicallResponse))
@@ -207,7 +207,7 @@ export async function refreshConfirmTransactionSimulation() {
 	window.interceptor.confirmTransactionDialog.addressMetadata = addressMetadata
 	window.interceptor.confirmTransactionDialog.visualizerResults = visualizerResult
 	window.interceptor.confirmTransactionDialog.isComputingSimulation = false
-	sendPopupMessageToOpenWindows('popup_confirm_transaction_simulation_state_changed')
+	sendPopupMessageToOpenWindows({ message: 'popup_confirm_transaction_simulation_state_changed' })
 }
 
 // returns true if simulation state was changed
@@ -338,7 +338,7 @@ async function handleSimulationMode(port: browser.runtime.Port, request: Interce
 
 function newBlockCallback(blockNumber: bigint) {
 	window.interceptor.currentBlockNumber = blockNumber
-	sendPopupMessageToOpenWindows('popup_new_block_arrived', [])
+	sendPopupMessageToOpenWindows({ message: 'popup_new_block_arrived' })
 }
 
 export async function changeActiveAddressAndChainAndResetSimulation(activeAddress: bigint | undefined | 'noActiveAddressChange', activeChain: bigint | 'noActiveChainChange') {
@@ -379,14 +379,13 @@ export async function changeActiveAddressAndChainAndResetSimulation(activeAddres
 
 	if (chainChanged) {
 		sendMessageToApprovedWebsitePorts('chainChanged', EthereumQuantity.serialize(window.interceptor.settings.activeChain))
-		sendPopupMessageToOpenWindows('popup_chain_update', [])
+		sendPopupMessageToOpenWindows({ message: 'popup_chain_update' })
 	}
 
 	// inform all the tabs about the address change (this needs to be done on only chain changes too)
 	sendActiveAccountChangeToApprovedWebsitePorts()
 	if (activeAddress !== 'noActiveAddressChange') {
-		const activeAddress = getActiveAddress()
-		sendPopupMessageToOpenWindows('popup_accounts_update', activeAddress ? [EthereumAddress.serialize(activeAddress)] : [])
+		sendPopupMessageToOpenWindows({ message: 'popup_accounts_update' })
 	}
 }
 

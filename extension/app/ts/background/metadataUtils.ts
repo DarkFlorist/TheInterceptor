@@ -10,8 +10,8 @@ const LOGO_URI_PREFIX = `../vendor/@darkflorist/address-metadata`
 
 export function getMetadataForAddressBookData(filter: GetAddressBookDataFilter, addressInfos: readonly AddressInfo[] | undefined) {
 	switch(filter.filter) {
-		case 'My Contacts':
-		case 'Active Addresses': return {
+		case 'My Contacts': return { data: [], length: 0 }
+		case 'My Active Addresses': return {
 			data: addressInfos ? addressInfos.slice(filter.startIndex, filter.maxIndex).map( (x) => ({
 				type: 'addressInfo' as const,
 				...x

@@ -10,7 +10,7 @@ function setIcon(tabId: number, icon: string, iconReason: string) {
 		icon: icon,
 		iconReason: iconReason
 	})
-	sendPopupMessageToOpenWindows('popup_websiteIconChanged');
+	sendPopupMessageToOpenWindows({ message: 'popup_websiteIconChanged' })
 	return browser.browserAction.setIcon({
 		path: { 128: icon },
 		tabId: tabId

@@ -176,9 +176,7 @@ export function App() {
 	}
 
 	function openAddressBook() {
-		browser.tabs.create({
-			url: '../html/addressBook.html',
-		})
+		browser.tabs.create({ url: '../html/addressBook.html' })
 	}
 
 	return (
