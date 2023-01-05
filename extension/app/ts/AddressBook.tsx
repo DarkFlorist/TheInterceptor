@@ -14,10 +14,10 @@ export function FilterLink(param: { name: ActiveFilter, currentFilter: ActiveFil
 	</a>
 }
 
-export function AddressList(param: { addressBookEntries: AddressBookEntries | undefined }) {
-	if (param.addressBookEntries === undefined) return <p class = 'paragraph'> Loading... </p>
+export function AddressList({ addressBookEntries }: { addressBookEntries: AddressBookEntries | undefined }) {
+	if (addressBookEntries === undefined) return <p class = 'paragraph'> Loading... </p>
 	return <ul>
-		{ param.addressBookEntries.length === 0 ? <p class = 'paragraph'> No cute dinosaurs here </p> : param.addressBookEntries.map( (entry, _index) => (
+		{ addressBookEntries.length === 0 ? <p class = 'paragraph'> No cute dinosaurs here </p> : addressBookEntries.map( (entry, _index) => (
 			<li>
 				<div class = 'card'>
 					<div class = 'card-content'>
@@ -68,7 +68,7 @@ export function AddressBook() {
 	const [addressBookEntries, setAddressBookEntries] = useState<AddressBookEntries | undefined>(undefined)
 	const activeFilterRef = useRef<ActiveFilter>(activeFilter)
 
-	useEffect( () => {
+	useEffect(() => {
 		const popupMessageListener = async (msg: MessageToPopup) => {
 			if (msg.message !== 'popup_getAddressBookData') return
 			const reply = GetAddressBookDataReply.parse(msg)
