@@ -1,0 +1,22 @@
+{
+	"compilerOptions": {
+		"target": "ES2021",
+		"module": "ES2020",
+		"moduleResolution": "node",
+		"noEmit": true,
+		"rootDir": "app/ts",
+		"strict": true,
+		"noUnusedLocals": true,
+		"noUnusedParameters": true,
+		"noImplicitReturns": true,
+		"noImplicitThis": true,
+		"lib": [ "ES2021" ],
+	},
+	"include": [
+		"./app/ts/**/*.ts",
+		"./app/ts/**/*.tsx",
+	],
+	"ts-node": {
+		"esm": true,
+	}
+}
