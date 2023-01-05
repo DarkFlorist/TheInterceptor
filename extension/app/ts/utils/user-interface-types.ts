@@ -17,6 +17,42 @@ export const AddressInfo = funtypes.Object({
 	askForAddressAccess: funtypes.Union(funtypes.Boolean, funtypes.Literal(undefined).withParser(LiteralConverterParserFactory(undefined, true))),
 }).asReadonly()
 
+export type AddressBookEntry = funtypes.Static<typeof AddressBookEntry>
+export const AddressBookEntry = funtypes.Union(
+	funtypes.Object({
+		type: funtypes.Literal('addressInfo'),
+		name: funtypes.String,
+		address: EthereumAddress,
+		askForAddressAccess: funtypes.Union(funtypes.Boolean, funtypes.Literal(undefined).withParser(LiteralConverterParserFactory(undefined, true))),
+	}),
+	funtypes.Object({
+		type: funtypes.Literal('token'),
+		name: funtypes.String,
+		address: EthereumAddress,
+		symbol: funtypes.String,
+		decimals: EthereumQuantity,
+		logoURI: funtypes.Union(funtypes.String, funtypes.Undefined),
+	}),
+	funtypes.Object({
+		type: funtypes.Literal('NFT'),
+		name: funtypes.String,
+		address: EthereumAddress,
+		symbol: funtypes.String,
+		protocol: funtypes.Union(funtypes.String, funtypes.Undefined),
+		logoURI: funtypes.Union(funtypes.String, funtypes.Undefined),
+	}),
+	funtypes.Object({
+		type: funtypes.Literal('other contract'),
+		name: funtypes.String,
+		address: EthereumAddress,
+		protocol: funtypes.Union(funtypes.String, funtypes.Undefined),
+		logoURI: funtypes.Union(funtypes.String, funtypes.Undefined),
+	})
+)
+
+export type AddressBookEntries = funtypes.Static<typeof AddressBookEntries>
+export const AddressBookEntries = funtypes.ReadonlyArray(AddressBookEntry)
+
 export enum Page {
 	Home,
 	AddressList,

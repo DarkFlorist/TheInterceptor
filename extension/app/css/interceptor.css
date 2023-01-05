@@ -471,7 +471,12 @@ svg.spinner > circle {
 	align-items: center;
 	vertical-align: middle;
 }
+
 .ellipsis {
 	text-overflow: ellipsis;
 	overflow: hidden;
+}
+
+.menu-list.a {
+	color: var(--text-color);
 }

@@ -98,7 +98,7 @@ export async function changeAccess(access: Confirmation, origin: string, originI
 	window.interceptor.websiteAccessAddressMetadata = getAddressMetadataForAccess(window.interceptor.settings.websiteAccess)
 	saveWebsiteAccess(window.interceptor.settings.websiteAccess)
 	updateWebsiteApprovalAccesses()
-	sendPopupMessageToOpenWindows('popup_websiteAccess_changed')
+	sendPopupMessageToOpenWindows({ message: 'popup_websiteAccess_changed' })
 }
 
 export async function requestAccessFromUser(origin: string, icon: string | undefined, requestAccessToAddress: string | undefined = undefined, addressMetadata: [string, AddressMetadata][] = []) {
@@ -115,7 +115,7 @@ export async function requestAccessFromUser(origin: string, icon: string | undef
 			requestAccessToAddress: accessAddress,
 			icon: icon,
 		}) )
-		sendPopupMessageToOpenWindows('popup_notification_added')
+		sendPopupMessageToOpenWindows({ message: 'popup_notification_added' })
 	}
 
 	if (pendingInterceptorAccess !== undefined) {

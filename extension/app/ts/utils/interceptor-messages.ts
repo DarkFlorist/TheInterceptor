@@ -1,5 +1,5 @@
 import * as funtypes from 'funtypes'
-import { AddressInfo } from './user-interface-types.js'
+import { AddressBookEntries, AddressInfo } from './user-interface-types.js'
 import { EthereumAddress, EthereumQuantity } from './wire-types.js'
 
 
@@ -212,6 +212,38 @@ export const RejectNotification = funtypes.Object({
 	})
 }).asReadonly()
 
+export type GetAddressBookDataFilter = funtypes.Static<typeof GetAddressBookDataFilter>
+export const GetAddressBookDataFilter = funtypes.Object({
+	filter: funtypes.Union(
+		funtypes.Literal('My Active Addresses'),
+		funtypes.Literal('My Contacts'),
+		funtypes.Literal('Tokens'),
+		funtypes.Literal('Non Fungible Tokens'),
+		funtypes.Literal('Other Contracts')
+	),
+	startIndex: funtypes.Number,
+	maxIndex: funtypes.Number,
+}).asReadonly()
+
+export type GetAddressBookData = funtypes.Static<typeof GetAddressBookData>
+export const GetAddressBookData = funtypes.Object({
+	method: funtypes.Literal('popup_getAddressBookData'),
+	options: GetAddressBookDataFilter,
+}).asReadonly()
+
+export type GetAddressBookDataReplyData = funtypes.Static<typeof GetAddressBookDataReplyData>
+export const GetAddressBookDataReplyData = funtypes.Object({
+	options: GetAddressBookDataFilter,
+	entries: AddressBookEntries,
+	lenght: funtypes.Number,
+}).asReadonly()
+
+export type GetAddressBookDataReply = funtypes.Static<typeof GetAddressBookDataReply>
+export const GetAddressBookDataReply = funtypes.Object({
+	message: funtypes.Literal('popup_getAddressBookData'),
+	data: GetAddressBookDataReplyData,
+}).asReadonly()
+
 export type PopupMessage = funtypes.Static<typeof PopupMessage>
 export const PopupMessage = funtypes.Union(
 	ChangeAddressInfos,
@@ -234,4 +266,31 @@ export const PopupMessage = funtypes.Union(
 	ReviewNotification,
 	ConnectedToSigner,
 	AddOrModifyAddresInfo,
+	GetAddressBookData,
+)
+
+export const MessageToPopupSimple = funtypes.Object({
+	message: funtypes.Union(
+		funtypes.Literal('popup_chain_update'),
+		funtypes.Literal('popup_started_simulation_update'),
+		funtypes.Literal('popup_simulation_state_changed'),
+		funtypes.Literal('popup_confirm_transaction_simulation_started'),
+		funtypes.Literal('popup_confirm_transaction_simulation_state_changed'),
+		funtypes.Literal('popup_new_block_arrived'),
+		funtypes.Literal('popup_accounts_update'),
+		funtypes.Literal('popup_websiteIconChanged'),
+		funtypes.Literal('popup_address_infos_changed'),
+		funtypes.Literal('popup_interceptor_access_changed'),
+		funtypes.Literal('popup_notification_removed'),
+		funtypes.Literal('popup_signer_name_changed'),
+		funtypes.Literal('popup_accounts_update'),
+		funtypes.Literal('popup_websiteAccess_changed'),
+		funtypes.Literal('popup_notification_added'),
+	)
+}).asReadonly()
+
+export type MessageToPopup = funtypes.Static<typeof MessageToPopup>
+export const MessageToPopup = funtypes.Union(
+	GetAddressBookDataReply,
+	MessageToPopupSimple
 )

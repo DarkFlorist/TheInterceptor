@@ -1,11 +1,13 @@
+import { MessageToPopup } from '../utils/interceptor-messages.js'
+
 export function getActiveAddress() {
 	if (window.interceptor.settings === undefined) return undefined
 	return window.interceptor.settings.simulationMode ? window.interceptor.settings.activeSimulationAddress : window.interceptor.settings.activeSigningAddress
 }
 
-export async function sendPopupMessageToOpenWindows(message: string, data: unknown[] | undefined = undefined) {
+export async function sendPopupMessageToOpenWindows(message: MessageToPopup) {
 	try {
-		await browser.runtime.sendMessage( { message: message, data: data } )
+		await browser.runtime.sendMessage( MessageToPopup.serialize(message) )
 	} catch (error) {
 		if (error instanceof Error) {
 			if (error?.message?.includes('Could not establish connection.')) {
