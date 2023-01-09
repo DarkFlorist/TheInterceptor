@@ -4,16 +4,17 @@
 		"module": "ES2022",
 		"moduleResolution": "node",
 		"noEmit": true,
-		"rootDir": ".",
 		"strict": true,
 		"noUnusedLocals": true,
 		"noUnusedParameters": true,
 		"noImplicitReturns": true,
 		"noImplicitThis": true,
-		"lib": [ "ES2020" ],
+		"lib": [ "ES2022" ],
 	},
 	"include": [
-		"./*.ts"
+		"./app/ts/**/*.ts",
+		"./app/ts/**/*.tsx",
+		"./test/**/*.tsx",
 	],
 	"ts-node": {
 		"esm": true,
