@@ -23,6 +23,9 @@ COPY app/img/ /extension/app/img/
 COPY app/inpage/ /extension/app/inpage/
 COPY build/tsconfig.json build/vendor.ts /extension/build/
 
+COPY tsconfig-test.json /extension/
+COPY test/ /extension/test/
+
 WORKDIR /extension/build
 RUN npm run vendor
 
