@@ -99,7 +99,6 @@ export function AddressBook() {
 		const popupMessageListener = async (msg: MessageToPopup) => {
 			if (msg.message !== 'popup_getAddressBookData') return
 			const reply = GetAddressBookDataReply.parse(msg)
-			console.log(reply)
 			if (reply.data.options.filter === activeFilterRef.current) {
 				setAddressBookEntries(reply.data.entries)
 				setCurrentPage( Math.floor( (reply.data.options.startIndex + 1) / PAGE_SIZE) + 1)
@@ -114,24 +113,32 @@ export function AddressBook() {
 		}
 	}, [])
 
+	function sendQuery(filter: ActiveFilter, searchString: string | undefined, startIndex: number) {
+		setAddressBookEntries([])
+		browser.runtime.sendMessage({ method: 'popup_getAddressBookData', options: {
+			filter: filter,
+			searchString: searchString,
+			startIndex: startIndex,
+			maxIndex: startIndex + PAGE_SIZE
+		} })
+		window.scrollTo({ top: 0 })
+	}
+
 	function changeFilter(filter: ActiveFilter) {
 		setActiveFilter(filter)
 		activeFilterRef.current = filter
-		browser.runtime.sendMessage({ method: 'popup_getAddressBookData', options: { filter: filter, searchString: searchString, startIndex: 0, maxIndex: PAGE_SIZE } })
-		window.scrollTo({ top: 0 })
 		setSearchString(undefined)
+		sendQuery(filter, searchString, 0)
 	}
 
 	function setPage(page: number) {
 		const index = (page - 1) * PAGE_SIZE
-		browser.runtime.sendMessage({ method: 'popup_getAddressBookData', options: { filter: activeFilterRef.current, searchString: searchString, startIndex: index, maxIndex: index + PAGE_SIZE } })
-		window.scrollTo({ top: 0 })
+		sendQuery(activeFilterRef.current, searchString, index)
 	}
 
 	function search(searchString: string | undefined) {
 		setSearchString(searchString)
-		browser.runtime.sendMessage({ method: 'popup_getAddressBookData', options: { filter: activeFilterRef.current, searchString: searchString, startIndex: 0, maxIndex: PAGE_SIZE } })
-		window.scrollTo({ top: 0 })
+		sendQuery(activeFilterRef.current, searchString, 0)
 	}
 
 	function getNoResultsError() {
