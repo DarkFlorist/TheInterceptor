@@ -9,7 +9,7 @@ async function main() {
 	].every(item => item === true)
 
 	if (!result) {
-		console.log(`${ RED }TESTS FAILED!${ RESET }`)
+		console.error(`${ RED }TESTS FAILED!${ RESET }`)
 		process.exit(1);
 	}
 	console.log(`${ GREEN }TESTS SUCCEEDED!${ RESET }`)
