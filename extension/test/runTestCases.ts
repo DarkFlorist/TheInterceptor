@@ -1,6 +1,8 @@
 export const RED = '\x1b[31m'
 export const GREEN = '\x1b[32m'
 export const RESET = '\x1b[0m'
+import * as process from 'process'
+import * as url from 'url'
 
 export interface TestCase {
 	testFunction: () => unknown,
@@ -15,11 +17,12 @@ function runTestCase(testCase: TestCase) {
 			console.log(`\t${ GREEN }√ ${ testCase.testName }${ RESET }`)
 			return true
 		} else {
-			console.error(`\t${ RED }X ${ testCase.testName }: Expected ${ testCase.expectedValue } but got ${ result }${ RESET }`)
+			console.error(`\t${ RED }X ${ testCase.testName }: Expected "${ testCase.expectedValue }" but got "${ result }"${ RESET }`)
 		}
 	} catch (error) {
-		console.error(`\t${ RED }X: Error ${ testCase.testName }${ RESET }`)
-		throw error
+		console.error(`\t${ RED }X ${ testCase.testName }: Got exception: ${ RESET }`)
+		console.error(error)
+		return false
 	}
 	return false
 }
@@ -33,9 +36,19 @@ export function runTestCases(categoryName: string, testCases: [() => unknown, un
 	})).reduce((partialSum, a) => partialSum + (a ? 0 : 1), 0)
 
 	if (testsFailed === 0) {
-		console.log(` --- Done ---`)
 		return true
 	}
-	console.log(`${ RED }${ testsFailed } test${ testsFailed > 1 ? 's' : '' } failed!${ RESET }`)
+	console.error(`${ RED }${ testsFailed } test${ testsFailed > 1 ? 's' : '' } failed!${ RESET }`)
 	return false
+}
+
+export async function runIfRoot(func: () => Promise<unknown>, importMeta: any) {
+    if (process.argv[1] !== url.fileURLToPath(importMeta.url)) return
+    try {
+        await func()
+        process.exit(0)
+    } catch (error: unknown) {
+        console.dir(error, { colors: true, depth: null })
+        process.exit(1)
+    }
 }

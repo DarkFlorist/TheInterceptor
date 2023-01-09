@@ -1,7 +1,7 @@
 {
 	"compilerOptions": {
 		"target": "ES2021",
-		"module": "ES2020",
+		"module": "ES2022",
 		"moduleResolution": "node",
 		"noEmit": true,
 		"rootDir": "app/ts",
@@ -15,6 +15,7 @@
 	"include": [
 		"./app/ts/**/*.ts",
 		"./app/ts/**/*.tsx",
+		"./test/**/*.tsx",
 	],
 	"ts-node": {
 		"esm": true,
