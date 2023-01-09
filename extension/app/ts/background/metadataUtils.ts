@@ -9,38 +9,66 @@ import { GetAddressBookDataFilter } from '../utils/interceptor-messages.js'
 const LOGO_URI_PREFIX = `../vendor/@darkflorist/address-metadata`
 
 export function getMetadataForAddressBookData(filter: GetAddressBookDataFilter, addressInfos: readonly AddressInfo[] | undefined) {
+	const searchString = filter.searchString !== undefined && filter.searchString.trim().length > 0 ? filter.searchString.trim().toLowerCase() : undefined
 	switch(filter.filter) {
 		case 'My Contacts': return { data: [], length: 0 }
-		case 'My Active Addresses': return {
-			data: addressInfos ? addressInfos.slice(filter.startIndex, filter.maxIndex).map( (x) => ({
-				type: 'addressInfo' as const,
-				...x
-			})) : [],
-			length: addressInfos ? addressInfos.length : 0
+		case 'My Active Addresses': {
+			const searchFiltered = searchString === undefined ? addressInfos : addressInfos?.filter( (x) =>
+				x.address.toString().includes(searchString)
+				|| x.name.toLowerCase().includes(searchString)
+			)
+			return {
+				data: searchFiltered ? searchFiltered.slice(filter.startIndex, filter.maxIndex).map( (x) => ({
+					type: 'addressInfo' as const,
+					...x
+				})) : [],
+				length: searchFiltered ? searchFiltered.length : 0
+			}
 		}
-		case 'Tokens': return {
-			data: Array.from(tokenMetadata).slice(filter.startIndex, filter.maxIndex).map( (x) => ({
-				type: 'token' as const,
-				address: BigInt(x[0]),
-				...x[1]
-			})),
-			length: addressInfos ? addressInfos.length : 0
+		case 'Tokens': {
+			const searchFiltered = searchString === undefined ? Array.from(tokenMetadata) : Array.from(tokenMetadata).filter( ([address, def]) =>
+				address.includes(searchString)
+				|| def.name.toLowerCase().includes(searchString)
+				|| def.symbol.toLowerCase().includes(searchString)
+			)
+			return {
+				data: searchFiltered.slice(filter.startIndex, filter.maxIndex).map( (x) => ({
+					type: 'token' as const,
+					address: BigInt(x[0]),
+					...x[1]
+				})),
+				length: searchFiltered.length
+			}
 		}
-		case 'Non Fungible Tokens': return {
-			data: Array.from(nftMetadata).slice(filter.startIndex, filter.maxIndex).map( (x) => ({
-				type: 'NFT' as const,
-				address: BigInt(x[0]),
-				...x[1]
-			})),
-			length: nftMetadata.size
+		case 'Non Fungible Tokens': {
+			const searchFiltered = searchString === undefined ? Array.from(nftMetadata) : Array.from(nftMetadata).filter( ([address, def]) =>
+				address.includes(searchString)
+				|| def.name.toLowerCase().includes(searchString)
+				|| def.symbol.toLowerCase().includes(searchString)
+			)
+			return {
+				data: searchFiltered.slice(filter.startIndex, filter.maxIndex).map( (x) => ({
+					type: 'NFT' as const,
+					address: BigInt(x[0]),
+					...x[1]
+				})),
+				length: searchFiltered.length
+			}
 		}
-		case 'Other Contracts': return {
-			data: Array.from(contractMetadata).slice(filter.startIndex, filter.maxIndex).map( (x) => ({
-				type: 'other contract' as const,
-				address: BigInt(x[0]),
-				...x[1]
-			})),
-			length: addressInfos ? addressInfos.length : 0
+		case 'Other Contracts': {
+			const searchFiltered = searchString === undefined ? Array.from(contractMetadata) : Array.from(contractMetadata).filter( ([address, def]) =>
+				address.includes(searchString)
+				|| def.name.toLowerCase().includes(searchString)
+				|| def.protocol?.toLowerCase().includes(searchString)
+			)
+			return {
+				data: searchFiltered.slice(filter.startIndex, filter.maxIndex).map( (x) => ({
+					type: 'other contract' as const,
+					address: BigInt(x[0]),
+					...x[1]
+				})),
+				length: searchFiltered.length
+			}
 		}
 	}
 }
