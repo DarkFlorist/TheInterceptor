@@ -31,23 +31,26 @@ export const AddressBookEntry = funtypes.Union(
 		address: EthereumAddress,
 		symbol: funtypes.String,
 		decimals: EthereumQuantity,
-		logoURI: funtypes.Union(funtypes.String, funtypes.Undefined),
-	}),
+	}).And(funtypes.Partial({
+		logoUri: funtypes.String,
+	})),
 	funtypes.Object({
 		type: funtypes.Literal('NFT'),
 		name: funtypes.String,
 		address: EthereumAddress,
 		symbol: funtypes.String,
-		protocol: funtypes.Union(funtypes.String, funtypes.Undefined),
-		logoURI: funtypes.Union(funtypes.String, funtypes.Undefined),
-	}),
+	}).And(funtypes.Partial({
+		protocol: funtypes.String,
+		logoUri: funtypes.String,
+	})),
 	funtypes.Object({
 		type: funtypes.Literal('other contract'),
 		name: funtypes.String,
 		address: EthereumAddress,
-		protocol: funtypes.Union(funtypes.String, funtypes.Undefined),
-		logoURI: funtypes.Union(funtypes.String, funtypes.Undefined),
-	})
+	}).And(funtypes.Partial({
+		protocol: funtypes.String,
+		logoUri: funtypes.String,
+	}))
 )
 
 export type AddressBookEntries = funtypes.Static<typeof AddressBookEntries>
