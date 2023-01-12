@@ -5,9 +5,14 @@ import Blockie from './components/subcomponents/PreactBlocky.js'
 import { GetAddressBookDataReply, MessageToPopup } from './utils/interceptor-messages.js'
 
 type ActiveFilter = 'My Active Addresses' | 'My Contacts' | 'Tokens' | 'Non Fungible Tokens' | 'Other Contracts'
-const PAGE_SIZE = 100
+const PAGE_SIZE = 20
+const ELEMENT_SIZE_PX = 68 + 10
+const PAGE_SIZE_PX = (ELEMENT_SIZE_PX * PAGE_SIZE)
+const WINDOW_SIZE_IN_PAGES = Math.ceil(window.innerHeight / PAGE_SIZE_PX )
+const UNLOAD_DISTANCE = WINDOW_SIZE_IN_PAGES + 4
+const LOAD_DISTANCE = WINDOW_SIZE_IN_PAGES + 2
 
-export function FilterLink(param: { name: ActiveFilter, currentFilter: ActiveFilter, setActiveFilter: (activeFilter: ActiveFilter) => void}) {
+export function FilterLink(param: { name: ActiveFilter, currentFilter: ActiveFilter, setActiveFilter: (activeFilter: ActiveFilter) => void }) {
 	return <a
 		class = { param.currentFilter === param.name ? `is-active` : '' }
 		onClick = { () => param.setActiveFilter(param.name) }>
@@ -15,130 +20,188 @@ export function FilterLink(param: { name: ActiveFilter, currentFilter: ActiveFil
 	</a>
 }
 
-export function AddressList({ addressBookEntries }: { addressBookEntries: AddressBookEntries | undefined }) {
-	if (addressBookEntries === undefined) return <p class = 'paragraph'> Loading... </p>
+export function AddressList({ addressBookEntries  }: { addressBookEntries: AddressBookEntries | undefined | 'fetching' }) {
+	if (addressBookEntries === undefined || addressBookEntries === 'fetching') {
+		return <li style = { `margin: 0px; height: ${ PAGE_SIZE_PX }px` }> </li>
+	}
 	return <>
-		<ul>
-			{ addressBookEntries.map( (entry, _index) => (
-				<li>
-					<div class = 'card'>
-						<div class = 'card-content'>
-							<div class = 'media'>
-								<div class = 'media-left'>
-									<figure class = 'image'>
-										<Blockie seed = { addressString(entry.address).toLowerCase() } size = { 8 } scale = { 5 } />
-									</figure>
-								</div>
+		{ addressBookEntries.map( (entry, _) => (
+			<li style = 'margin: 0px; padding-bottom: 10px' key = { entry.address }>
+				<div class = 'card' style = 'height: 68px'>
+					<div class = 'card-content'>
+						<div class = 'media'>
+							<div class = 'media-left'>
+								<figure class = 'image'>
+									<Blockie seed = { addressString(entry.address).toLowerCase() } size = { 8 } scale = { 5 } />
+								</figure>
+							</div>
 
-								<div class = 'media-content' style = 'overflow-y: visible; overflow-x: unset;'>
-									<div className = 'field is-grouped' style = 'margin-bottom: 0px'>
-										<div className = 'control is-expanded'>
-											<input className = 'input interceptorInput' type = 'text' value = { entry.name }
-												style = 'overflow: visible;'
-												maxLength = { 42 }/>
-										</div>
+							<div class = 'media-content' style = 'overflow-y: visible; overflow-x: unset;'>
+								<div className = 'field is-grouped' style = 'margin-bottom: 0px'>
+									<div className = 'control is-expanded'>
+										<input className = 'input interceptorInput' type = 'text' value = { entry.name }
+											style = 'overflow: visible;'
+											maxLength = { 42 }/>
 									</div>
-									<div className = 'field is-grouped' style = 'margin-bottom: 0px'>
-										<div className = 'control is-expanded'>
-											<input className = 'input interceptorInput' type = 'text' value = { addressString(entry.address) }
-												style = { `overflow: visible; color: var(--text-color)` } />
-										</div>
-									</div>
-									{ 'askForAddressAccess' in entry ?
-										<label class = 'form-control'>
-											<input type = 'checkbox' checked = { !entry.askForAddressAccess }  />
-											Don't request for an access (unsecure)
-										</label>
-									: <></> }
 								</div>
+								<div className = 'field is-grouped' style = 'margin-bottom: 0px'>
+									<div className = 'control is-expanded'>
+										<input className = 'input interceptorInput' type = 'text' value = { addressString(entry.address) }
+											style = { `overflow: visible; color: var(--text-color)` } />
+									</div>
+								</div>
+								{ 'askForAddressAccess' in entry ?
+									<label class = 'form-control'>
+										<input type = 'checkbox' checked = { !entry.askForAddressAccess }  />
+										Don't request for an access (unsecure)
+									</label>
+								: <></> }
+							</div>
 
-								<div class = 'content' style = 'color: var(--text-color);'>
-									<button class = 'card-header-icon' style = 'padding: 0px;' aria-label = 'delete'>
-										<span class = 'icon' style = 'color: var(--text-color);'> X </span>
-									</button>
-								</div>
+							<div class = 'content' style = 'color: var(--text-color);'>
+								<button class = 'card-header-icon' style = 'padding: 0px;' aria-label = 'delete'>
+									<span class = 'icon' style = 'color: var(--text-color);'> X </span>
+								</button>
 							</div>
 						</div>
 					</div>
-				</li>
-			) ) }
-		</ul>
+				</div>
+			</li>
+		) ) }
 	</>
 }
-export function PaginationList({ currentPage, lastPage, setPage }: { currentPage: number, lastPage: number, setPage: (page: number) => void }) {
-	function Page( { pageNumber, enabled, setPage, text }: { pageNumber: number, setPage: (page: number) => void, enabled: boolean, text: string } ) {
-		return <li style = 'margin: 0px;'>
-			<button class = { `is-primary pagination-link is-small ${ currentPage === pageNumber ? 'is-current' : ''};` }
-				disabled = { !enabled }
-				onClick = { () => setPage(pageNumber) }
-			>
-				{ text }
-			</button>
-		</li>
-	}
-	if (lastPage === 1) return <></>
-	return <>
-		<Page pageNumber = { 1 } enabled = { true } setPage = { setPage } text = { 'First Page' } />
-		<Page pageNumber = { currentPage - 1} enabled = { currentPage - 1 > 1 } setPage = { setPage } text = { '<' } />
-		<Page pageNumber = { currentPage } enabled = { false } setPage = { setPage } text = { `Page ${ currentPage } / ${ lastPage }` } />
-		<Page pageNumber = { currentPage + 1 } enabled = { currentPage + 1 < lastPage } setPage = { setPage } text = { '>' } />
-		<Page pageNumber = { lastPage } enabled = { true } setPage = { setPage } text = { 'Last Page' } />
-	</>
 
+type AddressBookState = {
+	pages: Map<number, AddressBookEntries | 'fetching'>,
+	maxIndex: number,
+	maxPages: number,
+	searchString: string | undefined,
+	activeFilter: ActiveFilter,
 }
 
 export function AddressBook() {
 	const [activeFilter, setActiveFilter] = useState<ActiveFilter>('My Active Addresses')
-	const [addressBookEntries, setAddressBookEntries] = useState<AddressBookEntries | undefined>(undefined)
-	const [currentPage, setCurrentPage] = useState<number>(1)
-	const [lastPage, setLastPage] = useState<number>(1)
 	const [searchString, setSearchString] = useState<string | undefined>(undefined)
+	const [currentPage, setCurrentPage] = useState<number>(0)
+	const [addressBookState, setAddressBookState] = useState<AddressBookState | undefined>(undefined)
+	const previousState = useRef<AddressBookState | undefined>(undefined)
+
 	const activeFilterRef = useRef<ActiveFilter>(activeFilter)
+	const searchStringRef = useRef<string | undefined>(searchString)
+	const previousPage = useRef<number>(currentPage)
+
+	function unloadExtra(pages: Map<number, AddressBookEntries | 'fetching'>, currentPage: number) {
+		// unloads pages that are not in viewing distance
+		const pagesToUnload = Array.from(pages.entries()).filter(([page, _]) => Math.abs(currentPage - page) > UNLOAD_DISTANCE)
+
+		if (pagesToUnload.length > 0) {
+			const unloadedPages = new Map(pages)
+			pagesToUnload.forEach(([page, _]) => unloadedPages.delete(page))
+			return unloadedPages
+		}
+		return new Map(pages)
+	}
 
 	useEffect(() => {
 		const popupMessageListener = async (msg: MessageToPopup) => {
 			if (msg.message !== 'popup_getAddressBookData') return
 			const reply = GetAddressBookDataReply.parse(msg)
-			if (reply.data.options.filter === activeFilterRef.current) {
-				setAddressBookEntries(reply.data.entries)
-				setCurrentPage( Math.floor( (reply.data.options.startIndex + 1) / PAGE_SIZE) + 1)
-				setLastPage(Math.floor( (reply.data.lenght + 1) / PAGE_SIZE) + 1)
+			if (reply.data.options.filter !== activeFilterRef.current || reply.data.options.searchString !== searchStringRef.current) return
+
+			const newPage = Math.ceil(reply.data.options.startIndex / PAGE_SIZE)
+			const newPages = (previousState.current !== undefined ? new Map(previousState.current.pages) : new Map()).set(newPage, reply.data.entries)
+			const newState = {
+				pages: newPages,
+				maxIndex: reply.data.lenght,
+				maxPages: Math.ceil( (reply.data.lenght) / PAGE_SIZE),
+				searchString: reply.data.options.searchString,
+				activeFilter: reply.data.options.filter,
 			}
+			setAddressBookState(newState)
+			previousState.current = newState
 		}
 		changeFilter(activeFilter)
 		browser.runtime.onMessage.addListener(popupMessageListener)
 
+		const scrollListener = () => update()
+		window.addEventListener('scroll', scrollListener)
+
 		return () => {
 			browser.runtime.onMessage.removeListener(popupMessageListener)
+			window.removeEventListener('scroll', scrollListener)
 		}
 	}, [])
 
-	function sendQuery(filter: ActiveFilter, searchString: string | undefined, startIndex: number) {
-		setAddressBookEntries([])
+	function update() {
+		const newPage = Math.floor(window.scrollY / PAGE_SIZE_PX + 0.5)
+		if (previousPage.current === newPage || previousState.current === undefined) return
+		setCurrentPage(newPage)
+		previousPage.current = newPage
+		// load pages that are in loading distance
+		const pagesToQuery = Array.from(new Array(2 * LOAD_DISTANCE + 1), (_, pageDiff) => newPage + pageDiff - LOAD_DISTANCE).filter((pageToLoad) => {
+			return previousState.current && pageToLoad >= 0 && previousState.current.pages.get(pageToLoad) === undefined
+		})
+
+		const newPages = unloadExtra(previousState.current.pages, newPage)
+		pagesToQuery.forEach((page) => {
+			newPages.set(page, 'fetching')
+			sendQuery(activeFilterRef.current, searchStringRef.current, page)
+		})
+		const newState ={
+			...previousState.current,
+			pages: newPages
+		}
+		setAddressBookState(newState)
+		previousState.current = newState
+	}
+
+	function sendQuery(filter: ActiveFilter, searchString: string | undefined, page: number) {
+		const startIndex = page * PAGE_SIZE
 		browser.runtime.sendMessage({ method: 'popup_getAddressBookData', options: {
 			filter: filter,
 			searchString: searchString,
 			startIndex: startIndex,
 			maxIndex: startIndex + PAGE_SIZE
 		} })
-		window.scrollTo({ top: 0 })
 	}
 
 	function changeFilter(filter: ActiveFilter) {
+		setCurrentPage(0)
+		previousPage.current = 0
 		setActiveFilter(filter)
 		activeFilterRef.current = filter
 		setSearchString(undefined)
-		sendQuery(filter, searchString, 0)
-	}
 
-	function setPage(page: number) {
-		const index = (page - 1) * PAGE_SIZE
-		sendQuery(activeFilterRef.current, searchString, index)
+		const newState = {
+			pages: new Map(),
+			maxIndex: 0,
+			maxPages: 0,
+			searchString: undefined,
+			activeFilter: filter,
+		}
+		previousState.current = newState
+		searchStringRef.current = undefined
+		Array.from(new Array(LOAD_DISTANCE + 1)).forEach((_, page) => {
+			sendQuery(filter, undefined, page)
+		})
 	}
 
 	function search(searchString: string | undefined) {
+		setCurrentPage(0)
+		previousPage.current = 0
+		const newState = {
+			pages: new Map(),
+			maxIndex: 0,
+			maxPages: 0,
+			searchString: searchString,
+			activeFilter: activeFilterRef.current,
+		}
+		previousState.current = newState
+		searchStringRef.current = searchString
 		setSearchString(searchString)
-		sendQuery(activeFilterRef.current, searchString, 0)
+		Array.from(new Array(LOAD_DISTANCE + 1)).forEach((_, page) => {
+			sendQuery(activeFilterRef.current, searchString, page)
+		})
 	}
 
 	function getNoResultsError() {
@@ -171,17 +234,23 @@ export function AddressBook() {
 				<div class = 'column'>
 					<div class = 'field is-grouped' style = 'max-width: 400px; margin: 10px'>
 						<p class = 'control is-expanded'>
-							<input class = 'input interceptorInput' type = 'text' placeholder = 'Search In Category' value = { searchString } onInput = { e => search((e.target as HTMLInputElement).value) } />
+							<input class = 'input interceptorInput' type = 'text' placeholder = 'Search In Category' value = { searchString === undefined ? '' : searchString } onInput = { e => search((e.target as HTMLInputElement).value) } />
 						</p>
 					</div>
-					{ addressBookEntries !== undefined && addressBookEntries.length === 0 ? <p class = 'paragraph'> { getNoResultsError() } </p> :
-						<AddressList addressBookEntries = { addressBookEntries }/>
+					{ addressBookState === undefined ? <></> :
+						addressBookState.maxPages === 0 ? <p class = 'paragraph'> { getNoResultsError() } </p> :<>
+							<ul style = { `height: ${ PAGE_SIZE_PX * (addressBookState.maxPages - 1) + PAGE_SIZE_PX - (PAGE_SIZE - addressBookState.maxIndex % PAGE_SIZE) * ELEMENT_SIZE_PX }px` }>
+								<li style = { `margin: 0px; height: ${ PAGE_SIZE_PX * Math.max(0, currentPage - WINDOW_SIZE_IN_PAGES) }px` } key = { -1 }> </li>
+								{ Array(2 * WINDOW_SIZE_IN_PAGES + 1).fill(0).map((_, i) => <>
+									{ currentPage + ( i - WINDOW_SIZE_IN_PAGES ) >= 0 ?
+										<AddressList addressBookEntries = { addressBookState.pages.get(currentPage + ( i - WINDOW_SIZE_IN_PAGES ) ) }/>
+										: <></>
+									} </>
+								) }
+							</ul>
+						</>
 					}
-					<nav class = 'pagination is-small' role = 'navigation' aria-label = 'pagination' style = 'margin: 10px'>
-						<ul class = 'pagination-list'>
-							<PaginationList currentPage = { currentPage } lastPage = { lastPage } setPage = { setPage } />
-						</ul>
-					</nav>
+
 				</div>
 			</div>
 		</main>
