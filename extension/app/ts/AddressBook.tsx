@@ -3,14 +3,15 @@ import { addressString } from './utils/bigint.js'
 import { AddressBookEntries } from './utils/user-interface-types.js'
 import Blockie from './components/subcomponents/PreactBlocky.js'
 import { GetAddressBookDataReply, MessageToPopup } from './utils/interceptor-messages.js'
+import { arrayToChunks } from './utils/typed-arrays.js'
 
 type ActiveFilter = 'My Active Addresses' | 'My Contacts' | 'Tokens' | 'Non Fungible Tokens' | 'Other Contracts'
 const PAGE_SIZE = 20
 const ELEMENT_SIZE_PX = 68 + 10
 const PAGE_SIZE_PX = (ELEMENT_SIZE_PX * PAGE_SIZE)
 const WINDOW_SIZE_IN_PAGES = Math.ceil(window.innerHeight / PAGE_SIZE_PX )
-const UNLOAD_DISTANCE = WINDOW_SIZE_IN_PAGES + 4
-const LOAD_DISTANCE = WINDOW_SIZE_IN_PAGES + 2
+const UNLOAD_DISTANCE = WINDOW_SIZE_IN_PAGES * 8
+const LOAD_DISTANCE = WINDOW_SIZE_IN_PAGES *  4
 
 export function FilterLink(param: { name: ActiveFilter, currentFilter: ActiveFilter, setActiveFilter: (activeFilter: ActiveFilter) => void }) {
 	return <a
@@ -20,33 +21,38 @@ export function FilterLink(param: { name: ActiveFilter, currentFilter: ActiveFil
 	</a>
 }
 
-export function AddressList({ addressBookEntries  }: { addressBookEntries: AddressBookEntries | undefined | 'fetching' }) {
-	if (addressBookEntries === undefined || addressBookEntries === 'fetching') {
-		return <li style = { `margin: 0px; height: ${ PAGE_SIZE_PX }px` }> </li>
-	}
+export function AddressList({ addressBookEntries, numberOfEntries  }: { addressBookEntries: AddressBookEntries | undefined | 'fetching', numberOfEntries: number }) {
+	const entries = addressBookEntries === undefined || addressBookEntries === 'fetching' ?
+		Array.from(new Array(numberOfEntries + 1)).map((_, index) => ({
+			key: index,
+			type: 'empty' as const,
+		})) : addressBookEntries
 	return <>
-		{ addressBookEntries.map( (entry, _) => (
-			<li style = 'margin: 0px; padding-bottom: 10px' key = { entry.address }>
+		{ entries.map( (entry, _) => (
+			<li style = 'margin: 0px; padding-bottom: 10px' key = { entry.type === 'empty' ? entry.key : entry.address }>
 				<div class = 'card' style = 'height: 68px'>
 					<div class = 'card-content'>
 						<div class = 'media'>
 							<div class = 'media-left'>
 								<figure class = 'image'>
-									<Blockie seed = { addressString(entry.address).toLowerCase() } size = { 8 } scale = { 5 } />
+									{ entry.type === 'empty' ? <img src = { 'data:image/gif;base64,R0lGODlhAQABAAAAACwAAAAAAQABAAA=' } style = 'width: 40px; height: 40px'/> :
+										<Blockie seed = { addressString(entry.address).toLowerCase() } size = { 8 } scale = { 5 } />
+									}
 								</figure>
 							</div>
 
 							<div class = 'media-content' style = 'overflow-y: visible; overflow-x: unset;'>
 								<div className = 'field is-grouped' style = 'margin-bottom: 0px'>
 									<div className = 'control is-expanded'>
-										<input className = 'input interceptorInput' type = 'text' value = { entry.name }
+										<input className = 'input interceptorInput' type = 'text' value = { entry.type === 'empty' ? '' : entry.name }
 											style = 'overflow: visible;'
-											maxLength = { 42 }/>
+											maxLength = { 42 }
+										/>
 									</div>
 								</div>
 								<div className = 'field is-grouped' style = 'margin-bottom: 0px'>
 									<div className = 'control is-expanded'>
-										<input className = 'input interceptorInput' type = 'text' value = { addressString(entry.address) }
+										<input className = 'input interceptorInput' type = 'text' value = { entry.type === 'empty' ? '' : addressString(entry.address) }
 											style = { `overflow: visible; color: var(--text-color)` } />
 									</div>
 								</div>
@@ -77,6 +83,7 @@ type AddressBookState = {
 	maxPages: number,
 	searchString: string | undefined,
 	activeFilter: ActiveFilter,
+	loadingFirst: boolean,
 }
 
 export function AddressBook() {
@@ -89,6 +96,7 @@ export function AddressBook() {
 	const activeFilterRef = useRef<ActiveFilter>(activeFilter)
 	const searchStringRef = useRef<string | undefined>(searchString)
 	const previousPage = useRef<number>(currentPage)
+	const scrollTimer = useRef<NodeJS.Timeout | undefined>(undefined)
 
 	function unloadExtra(pages: Map<number, AddressBookEntries | 'fetching'>, currentPage: number) {
 		// unloads pages that are not in viewing distance
@@ -108,21 +116,26 @@ export function AddressBook() {
 			const reply = GetAddressBookDataReply.parse(msg)
 			if (reply.data.options.filter !== activeFilterRef.current || reply.data.options.searchString !== searchStringRef.current) return
 
-			const newPage = Math.ceil(reply.data.options.startIndex / PAGE_SIZE)
-			const newPages = (previousState.current !== undefined ? new Map(previousState.current.pages) : new Map()).set(newPage, reply.data.entries)
+			const startPageIndex = Math.ceil(reply.data.options.startIndex / PAGE_SIZE)
+			const chunkedresults = arrayToChunks(reply.data.entries, PAGE_SIZE)
+
+			const newPages = (previousState.current !== undefined ? new Map(previousState.current.pages) : new Map())
+
+			Array.from(chunkedresults).forEach((entries, pageOffset) => newPages.set(startPageIndex + pageOffset, entries))
+
 			const newState = {
 				pages: newPages,
 				maxIndex: reply.data.lenght,
 				maxPages: Math.ceil( (reply.data.lenght) / PAGE_SIZE),
 				searchString: reply.data.options.searchString,
 				activeFilter: reply.data.options.filter,
+				loadingFirst: false,
 			}
 			setAddressBookState(newState)
 			previousState.current = newState
 		}
 		changeFilter(activeFilter)
 		browser.runtime.onMessage.addListener(popupMessageListener)
-
 		const scrollListener = () => update()
 		window.addEventListener('scroll', scrollListener)
 
@@ -133,35 +146,44 @@ export function AddressBook() {
 	}, [])
 
 	function update() {
-		const newPage = Math.floor(window.scrollY / PAGE_SIZE_PX + 0.5)
-		if (previousPage.current === newPage || previousState.current === undefined) return
-		setCurrentPage(newPage)
-		previousPage.current = newPage
-		// load pages that are in loading distance
-		const pagesToQuery = Array.from(new Array(2 * LOAD_DISTANCE + 1), (_, pageDiff) => newPage + pageDiff - LOAD_DISTANCE).filter((pageToLoad) => {
-			return previousState.current && pageToLoad >= 0 && previousState.current.pages.get(pageToLoad) === undefined
-		})
+		if (scrollTimer.current !== undefined) clearTimeout(scrollTimer.current);
+		scrollTimer.current = setTimeout(function(){ // batch calls together if user is scrolling fast
+			if (previousState.current === undefined) return
+			const newPage = Math.min(Math.floor(window.scrollY / PAGE_SIZE_PX + 0.5), previousState.current.maxPages)
+			if (previousPage.current === newPage) return
 
-		const newPages = unloadExtra(previousState.current.pages, newPage)
-		pagesToQuery.forEach((page) => {
-			newPages.set(page, 'fetching')
-			sendQuery(activeFilterRef.current, searchStringRef.current, page)
-		})
-		const newState ={
-			...previousState.current,
-			pages: newPages
-		}
-		setAddressBookState(newState)
-		previousState.current = newState
+			setCurrentPage(newPage)
+			previousPage.current = newPage
+			// load pages that are in loading distance
+			const pagesToQuery = Array.from(new Array(2 * LOAD_DISTANCE + 1), (_, pageDiff) => newPage + pageDiff - LOAD_DISTANCE).filter((pageToLoad) => {
+				return previousState.current && pageToLoad >= 0 && previousState.current.pages.get(pageToLoad) === undefined
+			})
+
+			const newPages = unloadExtra(previousState.current.pages, newPage)
+			if ( Math.max(...pagesToQuery) - Math.min(...pagesToQuery) === pagesToQuery.length - 1 ) {
+				sendQuery(activeFilterRef.current, searchStringRef.current, Math.min(...pagesToQuery), Math.max(...pagesToQuery))
+			} else {
+				pagesToQuery.forEach((page) => {
+					newPages.set(page, 'fetching')
+					sendQuery(activeFilterRef.current, searchStringRef.current, page, page)
+				})
+			}
+			const newState = {
+				...previousState.current,
+				pages: newPages
+			}
+			setAddressBookState(newState)
+			previousState.current = newState
+		}, 10)
 	}
 
-	function sendQuery(filter: ActiveFilter, searchString: string | undefined, page: number) {
-		const startIndex = page * PAGE_SIZE
+	function sendQuery(filter: ActiveFilter, searchString: string | undefined, startPage: number, endPage: number) {
+		console.log('query:',startPage,'-', endPage)
 		browser.runtime.sendMessage({ method: 'popup_getAddressBookData', options: {
 			filter: filter,
 			searchString: searchString,
-			startIndex: startIndex,
-			maxIndex: startIndex + PAGE_SIZE
+			startIndex: startPage * PAGE_SIZE,
+			maxIndex: endPage * PAGE_SIZE + PAGE_SIZE,
 		} })
 	}
 
@@ -178,12 +200,11 @@ export function AddressBook() {
 			maxPages: 0,
 			searchString: undefined,
 			activeFilter: filter,
+			loadingFirst: true,
 		}
 		previousState.current = newState
 		searchStringRef.current = undefined
-		Array.from(new Array(LOAD_DISTANCE + 1)).forEach((_, page) => {
-			sendQuery(filter, undefined, page)
-		})
+		sendQuery(filter, undefined, 0, LOAD_DISTANCE + 1)
 	}
 
 	function search(searchString: string | undefined) {
@@ -195,13 +216,12 @@ export function AddressBook() {
 			maxPages: 0,
 			searchString: searchString,
 			activeFilter: activeFilterRef.current,
+			loadingFirst: true,
 		}
 		previousState.current = newState
 		searchStringRef.current = searchString
 		setSearchString(searchString)
-		Array.from(new Array(LOAD_DISTANCE + 1)).forEach((_, page) => {
-			sendQuery(activeFilterRef.current, searchString, page)
-		})
+		sendQuery(activeFilterRef.current, searchString, 0, LOAD_DISTANCE + 1)
 	}
 
 	function getNoResultsError() {
@@ -237,13 +257,16 @@ export function AddressBook() {
 							<input class = 'input interceptorInput' type = 'text' placeholder = 'Search In Category' value = { searchString === undefined ? '' : searchString } onInput = { e => search((e.target as HTMLInputElement).value) } />
 						</p>
 					</div>
-					{ addressBookState === undefined ? <></> :
+					{ addressBookState === undefined || addressBookState.loadingFirst ? <></> :
 						addressBookState.maxPages === 0 ? <p class = 'paragraph'> { getNoResultsError() } </p> :<>
-							<ul style = { `height: ${ PAGE_SIZE_PX * (addressBookState.maxPages - 1) + PAGE_SIZE_PX - (PAGE_SIZE - addressBookState.maxIndex % PAGE_SIZE) * ELEMENT_SIZE_PX }px` }>
+							<ul style = { `height: ${ addressBookState.maxIndex * ELEMENT_SIZE_PX }px` }>
 								<li style = { `margin: 0px; height: ${ PAGE_SIZE_PX * Math.max(0, currentPage - WINDOW_SIZE_IN_PAGES) }px` } key = { -1 }> </li>
 								{ Array(2 * WINDOW_SIZE_IN_PAGES + 1).fill(0).map((_, i) => <>
-									{ currentPage + ( i - WINDOW_SIZE_IN_PAGES ) >= 0 ?
-										<AddressList addressBookEntries = { addressBookState.pages.get(currentPage + ( i - WINDOW_SIZE_IN_PAGES ) ) }/>
+									{ currentPage + ( i - WINDOW_SIZE_IN_PAGES ) >= 0 && currentPage + ( i - WINDOW_SIZE_IN_PAGES ) < addressBookState.maxPages?
+										<AddressList
+											addressBookEntries = { addressBookState.pages.get(currentPage + ( i - WINDOW_SIZE_IN_PAGES ) ) }
+											numberOfEntries = { currentPage === addressBookState.maxPages - 1 ? addressBookState.maxIndex % PAGE_SIZE : PAGE_SIZE }
+										/>
 										: <></>
 									} </>
 								) }
