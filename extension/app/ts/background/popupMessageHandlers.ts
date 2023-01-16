@@ -1,7 +1,7 @@
 import { changeActiveAddressAndChainAndResetSimulation, changeActiveChain, PrependTransactionMode, refreshConfirmTransactionSimulation, updatePrependMode, updateSimulationState } from './background.js'
 import { saveAddressInfos, saveMakeMeRich, savePage, saveSimulationMode, saveUseSignersAddressAsActiveAddress, saveWebsiteAccess } from './settings.js'
 import { Simulator } from '../simulation/simulator.js'
-import { ChangeActiveAddress, ChangeAddressInfos, ChangeMakeMeRich, ChangePage, PersonalSign, PopupMessage, RemoveTransaction, RequestAccountsFromSigner, TransactionConfirmation, InterceptorAccess, ChangeInterceptorAccess, ChainChangeConfirmation, EnableSimulationMode, ReviewNotification, RejectNotification, ChangeActiveChain, AddOrModifyAddresInfo } from '../utils/interceptor-messages.js'
+import { ChangeActiveAddress, ChangeAddressInfos, ChangeMakeMeRich, ChangePage, PersonalSign, PopupMessage, RemoveTransaction, RequestAccountsFromSigner, TransactionConfirmation, InterceptorAccess, ChangeInterceptorAccess, ChainChangeConfirmation, EnableSimulationMode, ReviewNotification, RejectNotification, ChangeActiveChain, AddOrModifyAddresInfo, GetAddressBookData } from '../utils/interceptor-messages.js'
 import { resolvePendingTransaction } from './windows/confirmTransaction.js'
 import { resolvePersonalSign } from './windows/personalSign.js'
 import { changeAccess, requestAccessFromUser, resolveInterceptorAccess, setPendingAccessRequests } from './windows/interceptorAccess.js'
@@ -10,6 +10,7 @@ import { EthereumQuantity } from '../utils/wire-types.js'
 import { getAssociatedAddresses, sendMessageToApprovedWebsitePorts, updateWebsiteApprovalAccesses } from './accessManagement.js'
 import { sendPopupMessageToOpenWindows } from './backgroundUtils.js'
 import { isSupportedChain } from '../utils/constants.js'
+import { getMetadataForAddressBookData } from './metadataUtils.js'
 
 export async function confirmDialog(_simulator: Simulator, payload: PopupMessage) {
 	const confirmation = TransactionConfirmation.parse(payload)
@@ -62,7 +63,7 @@ export async function changeAddressInfos(_simulator: Simulator, payload: PopupMe
 	window.interceptor.settings.addressInfos = addressInfosChange.options
 	saveAddressInfos(addressInfosChange.options)
 	updateWebsiteApprovalAccesses()
-	sendPopupMessageToOpenWindows('popup_address_infos_changed')
+	sendPopupMessageToOpenWindows({ message: 'popup_address_infos_changed' })
 }
 
 export async function addOrModifyAddressInfo(_simulator: Simulator, payload: PopupMessage) {
@@ -80,7 +81,7 @@ export async function addOrModifyAddressInfo(_simulator: Simulator, payload: Pop
 
 	saveAddressInfos(window.interceptor.settings.addressInfos)
 	updateWebsiteApprovalAccesses()
-	sendPopupMessageToOpenWindows('popup_address_infos_changed')
+	sendPopupMessageToOpenWindows({ message: 'popup_address_infos_changed' })
 }
 
 export async function changeInterceptorAccess(_simulator: Simulator, payload: PopupMessage) {
@@ -89,7 +90,7 @@ export async function changeInterceptorAccess(_simulator: Simulator, payload: Po
 	window.interceptor.settings.websiteAccess = accessChange.options
 	saveWebsiteAccess(accessChange.options)
 	updateWebsiteApprovalAccesses()
-	sendPopupMessageToOpenWindows('popup_interceptor_access_changed')
+	sendPopupMessageToOpenWindows({ message: 'popup_interceptor_access_changed' })
 }
 
 export async function changePage(_simulator: Simulator, payload: PopupMessage) {
@@ -182,5 +183,18 @@ export async function rejectNotification(_simulator: Simulator, payload: PopupMe
 	if (!params.options.removeOnly) {
 		await changeAccess('Rejected', params.options.origin, notification?.icon, params.options.requestAccessToAddress)
 	}
-	sendPopupMessageToOpenWindows('popup_notification_removed')
+	sendPopupMessageToOpenWindows({ message: 'popup_notification_removed' })
+}
+
+export async function getAddressBookData(_simulator: Simulator, payload: PopupMessage) {
+	const parsed = GetAddressBookData.parse(payload)
+	const data = getMetadataForAddressBookData(parsed.options, window.interceptor.settings?.addressInfos)
+	sendPopupMessageToOpenWindows({
+		message: 'popup_getAddressBookData',
+		data: {
+			options: parsed.options,
+			entries: data.data,
+			lenght: data.length,
+		}
+	})
 }

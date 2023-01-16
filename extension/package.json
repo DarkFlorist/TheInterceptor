@@ -11,12 +11,12 @@
 		"vendor": "cd build && npm ci --ignore-scripts && npm run vendor"
 	},
 	"dependencies": {
-		"@darkflorist/address-metadata": "0.0.5",
 		"@types/node-fetch": "2.6.1",
 		"@zoltu/ethereum-abi-encoder": "5.0.4",
 		"@zoltu/ethereum-crypto": "2.2.2",
 		"@zoltu/ethereum-types": "9.0.4",
 		"@zoltu/rlp-encoder": "2.0.6",
+		"@darkflorist/address-metadata": "0.2.0",
 		"ethers": "5.5.1",
 		"funtypes": "5.0.3",
 		"preact": "10.8.1",
