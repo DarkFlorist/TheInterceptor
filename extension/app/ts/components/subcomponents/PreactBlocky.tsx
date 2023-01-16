@@ -1,4 +1,6 @@
-import { useRef, useEffect } from 'preact/hooks'
+import { useEffect, useState } from 'preact/hooks'
+import { DataURLCache } from './DataURLCache.js'
+const dataURLCache = new DataURLCache()
 
 interface BlockieProps {
 	seed: string,
@@ -22,7 +24,7 @@ function generateIdenticon(options: BlockieProps, canvasRef: HTMLCanvasElement) 
 			randseed[i] = 0
 		}
 		for (let i = 0; i < seed.length; i++) {
-			randseed[i%4] = ((randseed[i%4] << 5) - randseed[i%4]) + seed.charCodeAt(i)
+			randseed[i % 4] = ((randseed[i % 4] << 5) - randseed[i % 4]) + seed.charCodeAt(i)
 		}
 	}
 
@@ -63,7 +65,7 @@ function generateIdenticon(options: BlockieProps, canvasRef: HTMLCanvasElement) 
 			for (let x = 0; x < dataWidth; x++) {
 				// this makes foreground and background color to have a 43% (1/2.3) probability
 				// spot color has 13% chance
-				row[x] = Math.floor(rand()*2.3)
+				row[x] = Math.floor(rand() * 2.3)
 			}
 			const r = row.slice(0, mirrorWidth)
 			r.reverse()
@@ -82,10 +84,10 @@ function generateIdenticon(options: BlockieProps, canvasRef: HTMLCanvasElement) 
 		const size = width * scale
 
 		identicon.width = size
-		identicon.style.width = `${size}px`
+		identicon.style.width = `${ size }px`
 
 		identicon.height = size
-		identicon.style.height = `${size}px`
+		identicon.style.height = `${ size }px`
 
 		const cc = identicon.getContext('2d')
 		cc!.fillStyle = bgcolor
@@ -123,15 +125,24 @@ function generateIdenticon(options: BlockieProps, canvasRef: HTMLCanvasElement) 
 }
 
 export default function Blockie(props: BlockieProps) {
-	const canvasRef = useRef<HTMLCanvasElement>(null)
+	const scale = props.scale || 4
+	const dimension = (props.size || 8) * scale
+	const [dataURL, setDataURL] = useState<string | undefined>(dataURLCache.get(`${ props.seed }!${ dimension }`))
+
 	useEffect(() => {
-		if (canvasRef.current) {
-			generateIdenticon(props, canvasRef.current)
+		if (dataURL === undefined) {
+			const element = document.createElement('canvas')
+			generateIdenticon(props, element)
+			element.toBlob((blob) => {
+				if (!blob) return
+				const dataUrl = URL.createObjectURL(blob)
+				setDataURL(dataUrl)
+				dataURLCache.set(dataUrl, `${ props.seed }!${ dimension }`)
+			})
 		}
 	}, [props.seed])
-	const dimension = (props.size || 8) * (props.scale || 4)
-	return <canvas
-		ref = { canvasRef }
+	return <img
+		src = { dataURL === undefined ? 'data:image/gif;base64,R0lGODlhAQABAAAAACwAAAAAAQABAAA=' : dataURL}
 		style = {
 			{
 				width: `${ dimension }px`,

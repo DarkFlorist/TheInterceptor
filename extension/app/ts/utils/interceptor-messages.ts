@@ -212,18 +212,26 @@ export const RejectNotification = funtypes.Object({
 	})
 }).asReadonly()
 
+export type AddressBookCategory = funtypes.Static<typeof AddressBookCategory>
+export const AddressBookCategory = funtypes.Union(
+	funtypes.Literal('My Active Addresses'),
+	funtypes.Literal('My Contacts'),
+	funtypes.Literal('Tokens'),
+	funtypes.Literal('Non Fungible Tokens'),
+	funtypes.Literal('Other Contracts')
+)
+
 export type GetAddressBookDataFilter = funtypes.Static<typeof GetAddressBookDataFilter>
-export const GetAddressBookDataFilter = funtypes.Object({
-	filter: funtypes.Union(
-		funtypes.Literal('My Active Addresses'),
-		funtypes.Literal('My Contacts'),
-		funtypes.Literal('Tokens'),
-		funtypes.Literal('Non Fungible Tokens'),
-		funtypes.Literal('Other Contracts')
-	),
-	startIndex: funtypes.Number,
-	maxIndex: funtypes.Number,
-}).asReadonly()
+export const GetAddressBookDataFilter = funtypes.Intersect(
+	funtypes.Object({
+		filter: AddressBookCategory,
+		startIndex: funtypes.Number,
+		maxIndex: funtypes.Number,
+	}).asReadonly(),
+	funtypes.Partial({
+		searchString: funtypes.String,
+	}).asReadonly()
+)
 
 export type GetAddressBookData = funtypes.Static<typeof GetAddressBookData>
 export const GetAddressBookData = funtypes.Object({
@@ -235,7 +243,7 @@ export type GetAddressBookDataReplyData = funtypes.Static<typeof GetAddressBookD
 export const GetAddressBookDataReplyData = funtypes.Object({
 	options: GetAddressBookDataFilter,
 	entries: AddressBookEntries,
-	lenght: funtypes.Number,
+	maxDataLength: funtypes.Number,
 }).asReadonly()
 
 export type GetAddressBookDataReply = funtypes.Static<typeof GetAddressBookDataReply>
