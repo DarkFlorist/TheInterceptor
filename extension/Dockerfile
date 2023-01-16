@@ -32,7 +32,7 @@ RUN npm run vendor
 WORKDIR /extension
 RUN npm run inpage
 RUN npm run build
-RUN npm run test-all
+RUN npm run test
 
 WORKDIR /extension/app
 RUN zip ../interceptor.zip -r .
