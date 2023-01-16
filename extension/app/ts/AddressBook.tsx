@@ -1,14 +1,16 @@
 import { useEffect, useRef, useState } from 'preact/hooks'
 import { addressString } from './utils/bigint.js'
-import { AddressBookEntries } from './utils/user-interface-types.js'
+import { AddressBookEntries, AddressBookEntry } from './utils/user-interface-types.js'
 import Blockie from './components/subcomponents/PreactBlocky.js'
 import { GetAddressBookDataReply, MessageToPopup } from './utils/interceptor-messages.js'
 import { arrayToChunks } from './utils/typed-arrays.js'
+import { LOGO_URI_PREFIX } from './background/metadataUtils.js'
 
 type ActiveFilter = 'My Active Addresses' | 'My Contacts' | 'Tokens' | 'Non Fungible Tokens' | 'Other Contracts'
 const PAGE_SIZE = 20
-const ELEMENT_SIZE_PX = 68 + 10
-const PAGE_SIZE_PX = (ELEMENT_SIZE_PX * PAGE_SIZE)
+const ELEMENT_SIZE_PX = 83
+const ELEMENT_SIZE_WITH_PADDING_PX = ELEMENT_SIZE_PX + 10
+const PAGE_SIZE_PX = (ELEMENT_SIZE_WITH_PADDING_PX * PAGE_SIZE)
 const WINDOW_SIZE_IN_PAGES = Math.ceil(window.innerHeight / PAGE_SIZE_PX )
 const UNLOAD_DISTANCE = WINDOW_SIZE_IN_PAGES * 8
 const LOAD_DISTANCE = WINDOW_SIZE_IN_PAGES *  4
@@ -21,59 +23,64 @@ export function FilterLink(param: { name: ActiveFilter, currentFilter: ActiveFil
 	</a>
 }
 
-export function AddressList({ addressBookEntries, numberOfEntries  }: { addressBookEntries: AddressBookEntries | undefined | 'fetching', numberOfEntries: number }) {
-	const entries = addressBookEntries === undefined || addressBookEntries === 'fetching' ?
-		Array.from(new Array(numberOfEntries + 1)).map((_, index) => ({
-			key: index,
-			type: 'empty' as const,
-		})) : addressBookEntries
-	return <>
-		{ entries.map( (entry, _) => (
-			<li style = 'margin: 0px; padding-bottom: 10px' key = { entry.type === 'empty' ? entry.key : entry.address }>
-				<div class = 'card' style = 'height: 68px'>
-					<div class = 'card-content'>
-						<div class = 'media'>
-							<div class = 'media-left'>
-								<figure class = 'image'>
-									{ entry.type === 'empty' ? <img src = { 'data:image/gif;base64,R0lGODlhAQABAAAAACwAAAAAAQABAAA=' } style = 'width: 40px; height: 40px'/> :
-										<Blockie seed = { addressString(entry.address).toLowerCase() } size = { 8 } scale = { 5 } />
-									}
-								</figure>
-							</div>
+export function ListElement(entry: (AddressBookEntry | { type: 'empty' }) & { listKey: string }) {
+	return <li style = 'margin: 0px; padding-bottom: 10px' key = { entry.listKey }>
+		<div class = 'card' style = { `height: ${ ELEMENT_SIZE_PX }px` }>
+			<div class = 'card-content' style = { `height: ${ ELEMENT_SIZE_PX }px` }>
+				<div class = 'media'>
+					<div class = 'media-left'>
+						<figure class = 'image'>
+							{ entry.type === 'empty' ? <img src = { 'data:image/gif;base64,R0lGODlhAQABAAAAACwAAAAAAQABAAA=' } style = 'width: 40px; height: 40px'/> :
+								'logoURI' in entry && entry.logoURI !== undefined ? <img src = { `${ LOGO_URI_PREFIX }/${ entry.logoURI }` } style = 'width: 40px; max-height: 100%'/> : <Blockie seed = { addressString(entry.address).toLowerCase() } size = { 8 } scale = { 5 } />
+							}
+						</figure>
+					</div>
 
-							<div class = 'media-content' style = 'overflow-y: visible; overflow-x: unset;'>
-								<div className = 'field is-grouped' style = 'margin-bottom: 0px'>
-									<div className = 'control is-expanded'>
-										<input className = 'input interceptorInput' type = 'text' value = { entry.type === 'empty' ? '' : entry.name }
-											style = 'overflow: visible;'
-											maxLength = { 42 }
-										/>
-									</div>
-								</div>
-								<div className = 'field is-grouped' style = 'margin-bottom: 0px'>
-									<div className = 'control is-expanded'>
-										<input className = 'input interceptorInput' type = 'text' value = { entry.type === 'empty' ? '' : addressString(entry.address) }
-											style = { `overflow: visible; color: var(--text-color)` } />
-									</div>
-								</div>
-								{ 'askForAddressAccess' in entry ?
-									<label class = 'form-control'>
-										<input type = 'checkbox' checked = { !entry.askForAddressAccess }  />
-										Don't request for an access (unsecure)
-									</label>
-								: <></> }
-							</div>
-
-							<div class = 'content' style = 'color: var(--text-color);'>
-								<button class = 'card-header-icon' style = 'padding: 0px;' aria-label = 'delete'>
-									<span class = 'icon' style = 'color: var(--text-color);'> X </span>
-								</button>
+					<div class = 'media-content' style = 'overflow-y: visible; overflow-x: unset;'>
+						<div className = 'field is-grouped' style = 'margin-bottom: 0px'>
+							<div className = 'control is-expanded'>
+								<input className = 'input interceptorInput' type = 'text' value = { entry.type === 'empty' ? '' : entry.name }
+									style = 'overflow: visible;'
+									maxLength = { 42 }
+								/>
 							</div>
 						</div>
+						<div className = 'field is-grouped' style = 'margin-bottom: 0px'>
+							<div className = 'control is-expanded'>
+								<input className = 'input interceptorInput' type = 'text' value = { entry.type === 'empty' ? '' : addressString(entry.address) }
+									style = { `overflow: visible; color: var(--text-color)` } />
+							</div>
+						</div>
+						{ 'askForAddressAccess' in entry ?
+							<label class = 'form-control'>
+								<input type = 'checkbox' checked = { !entry.askForAddressAccess }  />
+								Don't request for an access (unsecure)
+							</label>
+						: <></> }
+					</div>
+
+					<div class = 'content' style = 'color: var(--text-color);'>
+						<button class = 'card-header-icon' style = 'padding: 0px;' aria-label = 'delete'>
+							<span class = 'icon' style = 'color: var(--text-color);'> X </span>
+						</button>
 					</div>
 				</div>
-			</li>
-		) ) }
+			</div>
+		</div>
+	</li>
+}
+
+type AddressList = {
+	addressBookEntries: AddressBookEntries | undefined | 'fetching',
+	numberOfEntries: number,
+	startIndex: number,
+	listName: string,
+}
+
+export function AddressList({ addressBookEntries, numberOfEntries, startIndex, listName }: AddressList) {
+	const entries = addressBookEntries === undefined || addressBookEntries === 'fetching' ? Array.from(new Array(numberOfEntries + 1)).map(() => ({ type: 'empty' as const })) : addressBookEntries
+	return <>
+		{ entries.map( (entry, index) => <ListElement { ...entry } listKey = { `${ (startIndex + index).toString() } ${ listName }`}/> ) }
 	</>
 }
 
@@ -83,7 +90,6 @@ type AddressBookState = {
 	maxPages: number,
 	searchString: string | undefined,
 	activeFilter: ActiveFilter,
-	loadingFirst: boolean,
 }
 
 export function AddressBook() {
@@ -91,12 +97,16 @@ export function AddressBook() {
 	const [searchString, setSearchString] = useState<string | undefined>(undefined)
 	const [currentPage, setCurrentPage] = useState<number>(0)
 	const [addressBookState, setAddressBookState] = useState<AddressBookState | undefined>(undefined)
-	const previousState = useRef<AddressBookState | undefined>(undefined)
 
 	const activeFilterRef = useRef<ActiveFilter>(activeFilter)
 	const searchStringRef = useRef<string | undefined>(searchString)
-	const previousPage = useRef<number>(currentPage)
+	const currentPageRef = useRef<number>(currentPage)
+
 	const scrollTimer = useRef<NodeJS.Timeout | undefined>(undefined)
+
+	useEffect(() => { activeFilterRef.current = activeFilter }, [activeFilter])
+	useEffect(() => { searchStringRef.current = searchString }, [searchString])
+	useEffect(() => { currentPageRef.current = currentPage }, [currentPage])
 
 	function unloadExtra(pages: Map<number, AddressBookEntries | 'fetching'>, currentPage: number) {
 		// unloads pages that are not in viewing distance
@@ -114,25 +124,26 @@ export function AddressBook() {
 		const popupMessageListener = async (msg: MessageToPopup) => {
 			if (msg.message !== 'popup_getAddressBookData') return
 			const reply = GetAddressBookDataReply.parse(msg)
-			if (reply.data.options.filter !== activeFilterRef.current || reply.data.options.searchString !== searchStringRef.current) return
+			setAddressBookState((previousState) => {
+				if ( activeFilterRef.current !== reply.data.options.filter || searchStringRef.current !== reply.data.options.searchString) return previousState
 
-			const startPageIndex = Math.ceil(reply.data.options.startIndex / PAGE_SIZE)
-			const chunkedresults = arrayToChunks(reply.data.entries, PAGE_SIZE)
+				const startPageIndex = Math.ceil(reply.data.options.startIndex / PAGE_SIZE)
+				const chunkedresults = arrayToChunks(reply.data.entries, PAGE_SIZE)
 
-			const newPages = (previousState.current !== undefined ? new Map(previousState.current.pages) : new Map())
+				const newPages = (previousState !== undefined
+					&& reply.data.options.filter === previousState.activeFilter
+					&& reply.data.options.searchString === previousState.searchString ? new Map(previousState.pages) : new Map())
 
-			Array.from(chunkedresults).forEach((entries, pageOffset) => newPages.set(startPageIndex + pageOffset, entries))
-
-			const newState = {
-				pages: newPages,
-				maxIndex: reply.data.lenght,
-				maxPages: Math.ceil( (reply.data.lenght) / PAGE_SIZE),
-				searchString: reply.data.options.searchString,
-				activeFilter: reply.data.options.filter,
-				loadingFirst: false,
-			}
-			setAddressBookState(newState)
-			previousState.current = newState
+				Array.from(chunkedresults).forEach((entries, pageOffset) => newPages.set(startPageIndex + pageOffset, entries))
+				const newData = {
+					pages: newPages,
+					maxIndex: reply.data.maxDataLength,
+					maxPages: Math.ceil( (reply.data.maxDataLength) / PAGE_SIZE),
+					searchString: reply.data.options.searchString,
+					activeFilter: reply.data.options.filter,
+				}
+				return newData
+			})
 		}
 		changeFilter(activeFilter)
 		browser.runtime.onMessage.addListener(popupMessageListener)
@@ -147,38 +158,37 @@ export function AddressBook() {
 
 	function update() {
 		if (scrollTimer.current !== undefined) clearTimeout(scrollTimer.current);
-		scrollTimer.current = setTimeout(function(){ // batch calls together if user is scrolling fast
-			if (previousState.current === undefined) return
-			const newPage = Math.min(Math.floor(window.scrollY / PAGE_SIZE_PX + 0.5), previousState.current.maxPages)
-			if (previousPage.current === newPage) return
+		scrollTimer.current = setTimeout(function() { // batch calls together if user is scrolling fast
+			setAddressBookState((previousState) => {
+				if (previousState === undefined) return previousState
+				const newPage = Math.min(Math.floor(window.scrollY / PAGE_SIZE_PX + 0.5), previousState.maxPages)
+				if (currentPageRef.current === newPage) return previousState
 
-			setCurrentPage(newPage)
-			previousPage.current = newPage
-			// load pages that are in loading distance
-			const pagesToQuery = Array.from(new Array(2 * LOAD_DISTANCE + 1), (_, pageDiff) => newPage + pageDiff - LOAD_DISTANCE).filter((pageToLoad) => {
-				return previousState.current && pageToLoad >= 0 && previousState.current.pages.get(pageToLoad) === undefined
-			})
-
-			const newPages = unloadExtra(previousState.current.pages, newPage)
-			if ( Math.max(...pagesToQuery) - Math.min(...pagesToQuery) === pagesToQuery.length - 1 ) {
-				sendQuery(activeFilterRef.current, searchStringRef.current, Math.min(...pagesToQuery), Math.max(...pagesToQuery))
-			} else {
-				pagesToQuery.forEach((page) => {
-					newPages.set(page, 'fetching')
-					sendQuery(activeFilterRef.current, searchStringRef.current, page, page)
+				setCurrentPage(newPage)
+				// load pages that are in loading distance
+				const pagesToQuery = Array.from(new Array(2 * LOAD_DISTANCE + 1), (_, pageDiff) => newPage + pageDiff - LOAD_DISTANCE).filter((pageToLoad) => {
+					return previousState && pageToLoad >= 0 && previousState.pages.get(pageToLoad) === undefined
 				})
-			}
-			const newState = {
-				...previousState.current,
-				pages: newPages
-			}
-			setAddressBookState(newState)
-			previousState.current = newState
+
+				const newPages = unloadExtra(previousState.pages, newPage)
+				if ( Math.max(...pagesToQuery) - Math.min(...pagesToQuery) === pagesToQuery.length - 1 ) {
+					sendQuery(activeFilterRef.current, searchStringRef.current, Math.min(...pagesToQuery), Math.max(...pagesToQuery))
+				} else {
+					pagesToQuery.forEach((page) => {
+						newPages.set(page, 'fetching')
+						sendQuery(activeFilterRef.current, searchStringRef.current, page, page)
+					})
+				}
+				return {
+					...previousState,
+					pages: newPages
+				}
+			})
 		}, 10)
 	}
 
 	function sendQuery(filter: ActiveFilter, searchString: string | undefined, startPage: number, endPage: number) {
-		console.log('query:',startPage,'-', endPage)
+		console.log('query:',filter,' - ',searchString,': ',startPage,'-', endPage)
 		browser.runtime.sendMessage({ method: 'popup_getAddressBookData', options: {
 			filter: filter,
 			searchString: searchString,
@@ -189,37 +199,13 @@ export function AddressBook() {
 
 	function changeFilter(filter: ActiveFilter) {
 		setCurrentPage(0)
-		previousPage.current = 0
 		setActiveFilter(filter)
-		activeFilterRef.current = filter
 		setSearchString(undefined)
-
-		const newState = {
-			pages: new Map(),
-			maxIndex: 0,
-			maxPages: 0,
-			searchString: undefined,
-			activeFilter: filter,
-			loadingFirst: true,
-		}
-		previousState.current = newState
-		searchStringRef.current = undefined
 		sendQuery(filter, undefined, 0, LOAD_DISTANCE + 1)
 	}
 
 	function search(searchString: string | undefined) {
 		setCurrentPage(0)
-		previousPage.current = 0
-		const newState = {
-			pages: new Map(),
-			maxIndex: 0,
-			maxPages: 0,
-			searchString: searchString,
-			activeFilter: activeFilterRef.current,
-			loadingFirst: true,
-		}
-		previousState.current = newState
-		searchStringRef.current = searchString
 		setSearchString(searchString)
 		sendQuery(activeFilterRef.current, searchString, 0, LOAD_DISTANCE + 1)
 	}
@@ -227,6 +213,17 @@ export function AddressBook() {
 	function getNoResultsError() {
 		if ( searchString && searchString.trim().length > 0 ) return `No entries found for "${ searchString }" in ${ activeFilter }`
 		return `No cute dinosaurs in ${ activeFilter }`
+	}
+
+	function renderAddressList(currentPage: number) {
+		return <> { addressBookState !== undefined && currentPage >= 0 && currentPage < addressBookState.maxPages ?
+			<AddressList
+				addressBookEntries = { addressBookState.pages.get(currentPage) }
+				numberOfEntries = { currentPage === addressBookState.maxPages - 1 ? addressBookState.maxIndex % PAGE_SIZE : PAGE_SIZE }
+				startIndex = { currentPage * PAGE_SIZE }
+				listName = { `${ addressBookState.searchString }|${ addressBookState.activeFilter }` }
+			/> : <></>
+		} </>
 	}
 
 	return (
@@ -257,23 +254,13 @@ export function AddressBook() {
 							<input class = 'input interceptorInput' type = 'text' placeholder = 'Search In Category' value = { searchString === undefined ? '' : searchString } onInput = { e => search((e.target as HTMLInputElement).value) } />
 						</p>
 					</div>
-					{ addressBookState === undefined || addressBookState.loadingFirst ? <></> :
-						addressBookState.maxPages === 0 ? <p class = 'paragraph'> { getNoResultsError() } </p> :<>
-							<ul style = { `height: ${ addressBookState.maxIndex * ELEMENT_SIZE_PX }px` }>
-								<li style = { `margin: 0px; height: ${ PAGE_SIZE_PX * Math.max(0, currentPage - WINDOW_SIZE_IN_PAGES) }px` } key = { -1 }> </li>
-								{ Array(2 * WINDOW_SIZE_IN_PAGES + 1).fill(0).map((_, i) => <>
-									{ currentPage + ( i - WINDOW_SIZE_IN_PAGES ) >= 0 && currentPage + ( i - WINDOW_SIZE_IN_PAGES ) < addressBookState.maxPages?
-										<AddressList
-											addressBookEntries = { addressBookState.pages.get(currentPage + ( i - WINDOW_SIZE_IN_PAGES ) ) }
-											numberOfEntries = { currentPage === addressBookState.maxPages - 1 ? addressBookState.maxIndex % PAGE_SIZE : PAGE_SIZE }
-										/>
-										: <></>
-									} </>
-								) }
-							</ul>
-						</>
-					}
-
+					{ addressBookState === undefined ? <></> : <>
+						{ addressBookState.maxIndex === 0 ? <p class = 'paragraph'> { getNoResultsError() } </p> : <></> }
+						<ul style = { `height: ${ addressBookState.maxIndex * ELEMENT_SIZE_WITH_PADDING_PX }px; overflow: hidden;` }>
+							<li style = { `margin: 0px; height: ${ PAGE_SIZE_PX * Math.max(0, currentPage - WINDOW_SIZE_IN_PAGES) }px` } key = { -1 }> </li>
+							{ Array(2 * WINDOW_SIZE_IN_PAGES + 1).fill(0).map((_, i) => renderAddressList(currentPage + ( i - WINDOW_SIZE_IN_PAGES ))) }
+						</ul>
+					</> }
 				</div>
 			</div>
 		</main>

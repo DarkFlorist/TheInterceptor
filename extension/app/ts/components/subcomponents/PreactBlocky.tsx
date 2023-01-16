@@ -133,9 +133,12 @@ export default function Blockie(props: BlockieProps) {
 		if (dataURL === undefined) {
 			const element = document.createElement('canvas')
 			generateIdenticon(props, element)
-			const dataURL = element.toDataURL()
-			setDataURL(dataURL)
-			dataURLCache.set(dataURL, `${ props.seed }!${ dimension }`)
+			element.toBlob((blob) => {
+				if (!blob) return
+				const dataUrl = URL.createObjectURL(blob)
+				setDataURL(dataUrl)
+				dataURLCache.set(dataUrl, `${ props.seed }!${ dimension }`)
+			})
 		}
 	}, [props.seed])
 	return <img

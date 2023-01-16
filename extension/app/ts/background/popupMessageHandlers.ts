@@ -10,7 +10,7 @@ import { EthereumQuantity } from '../utils/wire-types.js'
 import { getAssociatedAddresses, sendMessageToApprovedWebsitePorts, updateWebsiteApprovalAccesses } from './accessManagement.js'
 import { sendPopupMessageToOpenWindows } from './backgroundUtils.js'
 import { isSupportedChain } from '../utils/constants.js'
-import { getMetadataForAddressBookData } from './metadataUtils.js'
+import { getMetadataForAddressBookData } from './medataSearch.js'
 
 export async function confirmDialog(_simulator: Simulator, payload: PopupMessage) {
 	const confirmation = TransactionConfirmation.parse(payload)
@@ -193,8 +193,8 @@ export async function getAddressBookData(_simulator: Simulator, payload: PopupMe
 		message: 'popup_getAddressBookData',
 		data: {
 			options: parsed.options,
-			entries: data.data,
-			lenght: data.length,
+			entries: data.entries,
+			maxDataLength: data.maxDataLength,
 		}
 	})
 }
