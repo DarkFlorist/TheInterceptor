@@ -10,7 +10,7 @@ export interface TestCase {
 	testName: string,
 }
 
-function runTestCase(testCase: TestCase) {
+function runTestCase(testCase: TestCase): boolean {
 	try {
 		let result = testCase.testFunction()
 		if (result === testCase.expectedValue) {
@@ -18,13 +18,13 @@ function runTestCase(testCase: TestCase) {
 			return true
 		} else {
 			console.error(`\t${ RED }X ${ testCase.testName }: Expected "${ testCase.expectedValue }" but got "${ result }"${ RESET }`)
+			return false
 		}
 	} catch (error) {
 		console.error(`\t${ RED }X ${ testCase.testName }: Got exception: ${ RESET }`)
 		console.error(error)
 		return false
 	}
-	return false
 }
 
 export function runTestCases(categoryName: string, testCases: [() => unknown, unknown, string][]) {
