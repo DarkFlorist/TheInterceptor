@@ -1,4 +1,3 @@
-
 import { getAddressMetaData } from '../app/ts/background/metadataUtils.js'
 import { runIfRoot, runTestCases } from './runTestCases.js'
 
