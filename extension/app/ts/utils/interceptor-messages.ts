@@ -87,10 +87,28 @@ export const ChangeMakeMeRich = funtypes.Object({
 	options: funtypes.Boolean
 }).asReadonly()
 
+export type AddressBookCategory = funtypes.Static<typeof AddressBookCategory>
+export const AddressBookCategory = funtypes.Union(
+	funtypes.Literal('My Active Addresses'),
+	funtypes.Literal('My Contacts'),
+	funtypes.Literal('Tokens'),
+	funtypes.Literal('Non Fungible Tokens'),
+	funtypes.Literal('Other Contracts')
+)
+
 export type ChangeAddressInfos = funtypes.Static<typeof ChangeAddressInfos>
 export const ChangeAddressInfos = funtypes.Object({
 	method: funtypes.Literal('popup_changeAddressInfos'),
 	options: funtypes.ReadonlyArray(AddressInfo)
+}).asReadonly()
+
+export type RemoveAddressBookEntry = funtypes.Static<typeof RemoveAddressBookEntry>
+export const RemoveAddressBookEntry = funtypes.Object({
+	method: funtypes.Literal('popup_removeAddressBookEntry'),
+	options: funtypes.Object({
+		address: EthereumAddress,
+		addressBookCategory: AddressBookCategory,
+	})
 }).asReadonly()
 
 export type AddOrModifyAddresInfo = funtypes.Static<typeof AddOrModifyAddresInfo>
@@ -212,15 +230,6 @@ export const RejectNotification = funtypes.Object({
 	})
 }).asReadonly()
 
-export type AddressBookCategory = funtypes.Static<typeof AddressBookCategory>
-export const AddressBookCategory = funtypes.Union(
-	funtypes.Literal('My Active Addresses'),
-	funtypes.Literal('My Contacts'),
-	funtypes.Literal('Tokens'),
-	funtypes.Literal('Non Fungible Tokens'),
-	funtypes.Literal('Other Contracts')
-)
-
 export type GetAddressBookDataFilter = funtypes.Static<typeof GetAddressBookDataFilter>
 export const GetAddressBookDataFilter = funtypes.Intersect(
 	funtypes.Object({
@@ -275,6 +284,7 @@ export const PopupMessage = funtypes.Union(
 	ConnectedToSigner,
 	AddOrModifyAddresInfo,
 	GetAddressBookData,
+	RemoveAddressBookEntry,
 )
 
 export const MessageToPopupSimple = funtypes.Object({

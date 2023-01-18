@@ -22,14 +22,14 @@ export function findAddressInfo(addressToFind: bigint, addressInfos: readonly Ad
 
 export type AddressIconParams = {
 	address: bigint,
-	logoURI: string | undefined,
+	logoUri: string | undefined,
 	isBig: boolean
 	backgroundColor: string,
 }
 
 function AddressIcon(param: AddressIconParams) {
 	const style = `${ param.isBig ? `width: 40px; height: 40px; border-radius: 10px;` : `width: 24px; height: 24px; border-radius: 2px;` }`
-	if (param.logoURI === undefined) {
+	if (param.logoUri === undefined) {
 		return <div style = { style }>
 			<Blockie
 				seed = { addressString(param.address).toLowerCase() }
@@ -40,7 +40,7 @@ function AddressIcon(param: AddressIconParams) {
 	}
 
 	return <div style = { style }>
-		<img src = { param.logoURI } style = 'width: 100%; max-height: 100%'/>
+		<img src = { param.logoUri } style = 'width: 100%; max-height: 100%'/>
 	</div>
 }
 
@@ -48,7 +48,7 @@ function AddressIcon(param: AddressIconParams) {
 export type BigAddressParams = {
 	readonly address: bigint
 	readonly noCopying?: boolean
-	readonly nameAndLogo: Pick<AddressMetadata, 'name' | 'logoURI'> | undefined
+	readonly nameAndLogo: Pick<AddressMetadata, 'name' | 'logoUri'> | undefined
 	readonly renameAddressCallBack: RenameAddressCallBack
 }
 
@@ -64,7 +64,7 @@ export function BigAddress(params: BigAddressParams) {
 					<span class = 'noselect nopointer'>
 						<AddressIcon
 							address = { params.address }
-							logoURI = { params.nameAndLogo?.logoURI }
+							logoUri = { params.nameAndLogo?.logoUri }
 							isBig = { true }
 							backgroundColor = { 'var(--text-color)' }
 						/>
@@ -74,7 +74,7 @@ export function BigAddress(params: BigAddressParams) {
 				<span class = 'noselect nopointer'>
 					<AddressIcon
 						address = { params.address }
-						logoURI = { params.nameAndLogo?.logoURI }
+						logoUri = { params.nameAndLogo?.logoUri }
 						isBig = { true }
 						backgroundColor = { 'var(--text-color)' }
 					/>
@@ -163,12 +163,12 @@ export function ActiveAddress(params: ActiveAddressParams) {
 
 export type SmallAddressParams = {
 	readonly address: bigint
-	readonly nameAndLogo: Pick<AddressMetadata, 'name' | 'logoURI'> | undefined
+	readonly nameAndLogo: Pick<AddressMetadata, 'name' | 'logoUri'> | undefined
 	readonly textColor?: string
 	readonly renameAddressCallBack: RenameAddressCallBack
 }
 
-export function getAddressName(address: bigint, metadata: Pick<AddressMetadata, 'name' | 'logoURI'> | undefined) {
+export function getAddressName(address: bigint, metadata: Pick<AddressMetadata, 'name' | 'logoUri'> | undefined) {
 	if ( metadata === undefined ) return ethers.utils.getAddress(addressString(address))
 	return metadata.name
 }
@@ -182,7 +182,7 @@ export function SmallAddress(params: SmallAddressParams) {
 			<span class = 'vertical-center noselect nopointer' style = 'margin-right: 5px'>
 				<AddressIcon
 					address = { params.address }
-					logoURI = { params.nameAndLogo?.logoURI }
+					logoUri = { params.nameAndLogo?.logoUri }
 					isBig = { false }
 					backgroundColor = { textColor }
 				/>
@@ -199,8 +199,8 @@ export function SmallAddress(params: SmallAddressParams) {
 export type FromAddressToAddressParams = {
 	readonly from: bigint
 	readonly to: bigint
-	readonly fromAddressNameAndLogo: Pick<AddressMetadata, 'name' | 'logoURI'> | undefined
-	readonly toAddressNameAndLogo: Pick<AddressMetadata, 'name' | 'logoURI'> | undefined
+	readonly fromAddressNameAndLogo: Pick<AddressMetadata, 'name' | 'logoUri'> | undefined
+	readonly toAddressNameAndLogo: Pick<AddressMetadata, 'name' | 'logoUri'> | undefined
 	readonly isApproval: boolean
 	readonly renameAddressCallBack: RenameAddressCallBack
 }

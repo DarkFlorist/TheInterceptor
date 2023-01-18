@@ -187,7 +187,7 @@ export function AddressList(param: AddressListParams) {
 											<div class = 'media-content' style = 'overflow-y: visible; overflow-x: unset;'>
 												<div className = 'field is-grouped' style = 'margin-bottom: 0px'>
 													<div className = 'control is-expanded'>
-														<input className = 'input interceptorInput' type = 'text' value = { temporaryAddressInfoState.nameAttempt }
+														<input className = 'input' type = 'text' value = { temporaryAddressInfoState.nameAttempt }
 															onInput = { e => changeName(addressInfoIndex, (e.target as HTMLInputElement).value) }
 															style = 'overflow: visible;'
 															maxLength = { 42 }/>
@@ -195,7 +195,7 @@ export function AddressList(param: AddressListParams) {
 												</div>
 												<div className = 'field is-grouped' style = 'margin-bottom: 0px'>
 													<div className = 'control is-expanded'>
-														<input className = 'input interceptorInput' type = 'text' value = { temporaryAddressInfoState.addressAttempt }
+														<input className = 'input' type = 'text' value = { temporaryAddressInfoState.addressAttempt }
 															onInput = { e => changeAddress(addressInfoIndex, (e.target as HTMLInputElement).value) }
 															style = { `overflow: visible; color: ${ ethers.utils.isAddress(temporaryAddressInfoState.addressAttempt.trim()) ? 'var(--text-color)' : 'var(--negative-color)' };` } />
 													</div>

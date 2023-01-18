@@ -410,7 +410,7 @@ export const TokenListResponse = t.Object({tokens: t.ReadonlyArray(t.Object({
 	name: t.String,
 	symbol: t.String,
 	decimals: t.Number,
-	logoURI: t.Union(t.String, t.Undefined),
+	logoUri: t.Union(t.String, t.Undefined),
 }).asReadonly())}).asReadonly()
 
 //

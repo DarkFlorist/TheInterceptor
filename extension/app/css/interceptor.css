@@ -149,7 +149,7 @@ html, body {
 	background-color: var(--highlighted-primary-color)
 }
 
-.interceptorInput {
+.input {
 	background: rgba(0, 0, 0, 0);
 	color: var(--text-color);
 	padding: 0px;
@@ -161,13 +161,13 @@ html, body {
 	font-size: 13px;
 }
 
-.interceptorInput:hover {
+.input:hover {
 	border: unset;
 	border-bottom: 2px solid var(--highlighted-primary-color);
 	box-shadow: none;
 }
 
-.interceptorInput:focus {
+.input:focus {
 	border: unset;
 	border-radius: unset;
 	border-bottom: 2px solid var(--primary-color);
@@ -479,4 +479,9 @@ svg.spinner > circle {
 
 .menu-list.a {
 	color: var(--text-color);
+}
+
+.addressbook-input {
+	max-width: unset;
+	width: unset;
 }
