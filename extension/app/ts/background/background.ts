@@ -15,6 +15,7 @@ import { getAddressMetadataForVisualiser } from './metadataUtils.js'
 import { getActiveAddress, sendPopupMessageToOpenWindows } from './backgroundUtils.js'
 import { updateExtensionIcon } from './iconHandler.js'
 import { connectedToSigner, ethAccountsReply, signerChainChanged, walletSwitchEthereumChainReply } from './providerMessageHandlers.js'
+import { SimulationModeEthereumClientService } from '../simulation/services/SimulationModeEthereumClientService.js'
 
 browser.runtime.onConnect.addListener(port => onContentScriptConnected(port).catch(console.error))
 
@@ -255,7 +256,7 @@ export async function appendTransactionToSimulator(transaction: EthereumUnsigned
 	if ( simulator === undefined) return
 	const simulationState = await updateSimulationState(async () => (await simulator?.simulationModeNode.appendTransaction(transaction))?.simulationState)
 	return {
-		signed: await simulator.simulationModeNode.mockSignTransaction(transaction),
+		signed: await SimulationModeEthereumClientService.mockSignTransaction(transaction),
 		simulationState: simulationState,
 	}
 }
