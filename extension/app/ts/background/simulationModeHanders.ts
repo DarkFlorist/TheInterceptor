@@ -1,7 +1,7 @@
 import { Simulator } from '../simulation/simulator.js'
 import { bytes32String } from '../utils/bigint.js'
 import { InterceptedRequest } from '../utils/interceptor-messages.js'
-import { EstimateGasParams, EthBalanceParams, EthBlockByNumberParams, EthCallParams, EthereumAddress, EthereumData, EthereumQuantity, EthereumSignedTransactionWithBlockData, EthSubscribeParams, EthTransactionReceiptResponse, EthUnSubscribeParams, GetBlockReturn, GetCode, GetSimulationStack, GetTransactionCount, JsonRpcNewHeadsNotification, NewHeadsSubscriptionData, PersonalSignParams, RequestPermissions, SendTransactionParams, SignTypedDataV4Params, SwitchEthereumChainParams, TransactionByHashParams, TransactionReceiptParams } from '../utils/wire-types.js'
+import { EstimateGasParams, EthBalanceParams, EthBlockByNumberParams, EthCallParams, EthereumAddress, EthereumData, EthereumQuantity, EthereumSignedTransactionWithBlockData, EthSubscribeParams, EthTransactionReceiptResponse, EthUnSubscribeParams, GetBlockReturn, GetCode, GetSimulationStack, GetSimulationStackReply, GetTransactionCount, JsonRpcNewHeadsNotification, NewHeadsSubscriptionData, PersonalSignParams, RequestPermissions, SendTransactionParams, SignTypedDataV4Params, SwitchEthereumChainParams, TransactionByHashParams, TransactionReceiptParams } from '../utils/wire-types.js'
 import { postMessageIfStillConnected } from './background.js'
 import { WebsiteAccess } from './settings.js'
 import { openChangeChainDialog } from './windows/changeChain.js'
@@ -270,13 +270,24 @@ export async function getTransactionCount(simulator: Simulator, port: browser.ru
 }
 
 export async function getSimulationStack(simulator: Simulator, port: browser.runtime.Port, request: InterceptedRequest) {
+	const params = GetSimulationStack.parse(request.options)
+	if (params.params[0] !== '1.0.0') return postMessageIfStillConnected(port, {
+		interceptorApproved: true,
+		requestId: request.requestId,
+		options: request.options,
+		error: {
+			message: `Unsupported version number: ${ params.params[0] }`,
+			code: 400,
+		}
+	})
+
 	return postMessageIfStillConnected(port, {
 		interceptorApproved: true,
 		requestId: request.requestId,
 		options: request.options,
 		result: {
 			version: '1.0.0',
-			payload: GetSimulationStack.serialize(simulator.simulationModeNode.getSimulationStack()),
+			payload: GetSimulationStackReply.serialize(simulator.simulationModeNode.getSimulationStack()),
 		}
 	})
 }

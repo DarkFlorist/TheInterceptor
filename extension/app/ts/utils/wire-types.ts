@@ -791,7 +791,13 @@ export const GetTransactionCount = t.Object({
 }).asReadonly()
 
 export type GetSimulationStack = t.Static<typeof GetSimulationStack>
-export const GetSimulationStack = t.ReadonlyArray(t.Intersect(
+export const GetSimulationStack = t.Object({
+	method: t.Literal('interceptor_getSimulationStack'),
+	params: t.Tuple(t.String),
+}).asReadonly()
+
+export type GetSimulationStackReply = t.Static<typeof GetSimulationStackReply>
+export const GetSimulationStackReply = t.ReadonlyArray(t.Intersect(
 	EthereumUnsignedTransaction,
 	SingleMulticallResponse,
 	t.Object({
