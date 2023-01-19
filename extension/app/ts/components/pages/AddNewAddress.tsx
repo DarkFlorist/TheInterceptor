@@ -88,11 +88,11 @@ export function AddNewAddress(param: AddAddressParam) {
 							</div>
 
 							<div class = 'media-content' style = 'overflow-y: unset; overflow-x: unset;'>
-								<input className = 'input interceptorInput' type = 'text' value = { nameInput } placeholder = { addressInput === undefined || addressInput === '' ? 'Name of the address' : addressInput }
+								<input className = 'input' type = 'text' value = { nameInput } placeholder = { addressInput === undefined || addressInput === '' ? 'Name of the address' : addressInput }
 									onInput = { e => param.setNameInput((e.target as HTMLInputElement).value) }
 									maxLength = { 42 }
 								/>
-								<input disabled = { !param.addingNewAddress } className = 'input interceptorInput' type = 'text' value = { addressInput } placeholder = { '0x0...' }
+								<input disabled = { !param.addingNewAddress } className = 'input' type = 'text' value = { addressInput } placeholder = { '0x0...' }
 									onInput = { e => param.setAddressInput((e.target as HTMLInputElement).value) }
 									style = { `${ addressInput === undefined || ethers.utils.isAddress(addressInput.trim()) ? '' : 'color: var(--negative-color);' }` } />
 								<label class = 'form-control'>
@@ -108,7 +108,7 @@ export function AddNewAddress(param: AddAddressParam) {
 				</div>
 			</section>
 			<footer class = 'modal-card-foot window-footer' style = 'border-bottom-left-radius: unset; border-bottom-right-radius: unset; border-top: unset; padding: 10px;'>
-				{ param.setActiveAddressAndInformAboutIt !== undefined && activeAddress !== undefined && addressInput !== undefined && activeAddress === BigInt(addressInput) ? <></> : <button class = 'button is-success is-primary' onClick = { createAndSwitch } disabled = { ! (areInputValid()) }> { param.addingNewAddress ? 'Create and switch' : 'Modify and switch' } </button> }
+				{ param.setActiveAddressAndInformAboutIt === undefined || addressInput === undefined || activeAddress === BigInt(addressInput) ? <></> : <button class = 'button is-success is-primary' onClick = { createAndSwitch } disabled = { ! (areInputValid()) }> { param.addingNewAddress ? 'Create and switch' : 'Modify and switch' } </button> }
 				<button class = 'button is-success is-primary' onClick = { add } disabled = { ! (areInputValid()) }> { param.addingNewAddress ? 'Create' : 'Modify' } </button>
 				<button class = 'button is-primary' style = 'background-color: var(--negative-color)' onClick = { param.close }>Cancel</button>
 			</footer>
