@@ -5,7 +5,7 @@ import { AddressBookCategory, GetAddressBookDataFilter } from '../utils/intercep
 import { NftDefinition } from '@darkflorist/address-metadata/lib/nftMetadata.js'
 import { ContractDefinition } from '@darkflorist/address-metadata/lib/contractMetadata.js'
 import { TokenDefinition } from '@darkflorist/address-metadata/lib/tokenMetadata.js'
-export const LOGO_URI_PREFIX = `../vendor/@darkflorist/address-metadata`
+import { getFullLogoUri } from './metadataUtils.js'
 
 type PartialResult = {
 	bestMatchLength: number,
@@ -55,6 +55,7 @@ function filterAddressBookDataByCategoryAndSearchString(addressBookCategory: Add
 			}))).map(([address, def]) => ({
 				address: BigInt(address),
 				...def,
+				logoUri: def.logoUri ? `${ getFullLogoUri(def.logoUri) }` : undefined,
 				type: 'token' as const,
 			}))
 		)
@@ -65,6 +66,7 @@ function filterAddressBookDataByCategoryAndSearchString(addressBookCategory: Add
 			}))).map(([address, def]) => ({
 				address: BigInt(address),
 				...def,
+				logoUri: def.logoUri ? `${ getFullLogoUri(def.logoUri) }` : undefined,
 				type: 'NFT' as const,
 			}))
 		)
@@ -75,6 +77,7 @@ function filterAddressBookDataByCategoryAndSearchString(addressBookCategory: Add
 			}))).map(([address, def]) => ({
 				address: BigInt(address),
 				...def,
+				logoUri: def.logoUri ? `${ getFullLogoUri(def.logoUri) }` : undefined,
 				type: 'other contract' as const,
 			}))
 		)

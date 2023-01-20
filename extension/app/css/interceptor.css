@@ -190,7 +190,7 @@ html, body {
 }
 
 .modal-card {
-	width: 90%;
+	max-width: 90%;
 }
 
 .modal-card-body {
