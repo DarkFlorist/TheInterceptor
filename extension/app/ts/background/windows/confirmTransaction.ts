@@ -1,10 +1,9 @@
 import { bytes32String } from '../../utils/bigint.js'
 import { METAMASK_ERROR_NOT_CONNECTED_TO_CHAIN, METAMASK_ERROR_USER_REJECTED_REQUEST } from '../../utils/constants.js'
 import { Future } from '../../utils/future.js'
-import { InterceptedRequest } from '../../utils/interceptor-messages.js'
 import { EthereumUnsignedTransaction } from '../../utils/wire-types.js'
 import { getActiveAddressForDomain } from '../accessManagement.js'
-import { appendTransactionToSimulator, postMessageIfStillConnected, refreshConfirmTransactionSimulation } from '../background.js'
+import { appendTransactionToSimulator, refreshConfirmTransactionSimulation } from '../background.js'
 
 export type Confirmation = 'Approved' | 'Rejected' | 'NoResponse'
 let openedConfirmTransactionDialogWindow: browser.windows.Window | null = null
@@ -30,34 +29,44 @@ const onCloseWindow = () => { // check if user has closed the window on their ow
 }
 
 export async function openConfirmTransactionDialog(
-	port: browser.runtime.Port,
-	request: InterceptedRequest,
+	requestId: number,
+	origin: string,
 	simulationMode: boolean,
 	transactionToSimulatePromise: () => Promise<EthereumUnsignedTransaction>,
 ) {
-	if (window.interceptor.settings === undefined) return
-	if (port.sender?.url === undefined) return
+	if (window.interceptor.settings === undefined) {
+		return {
+			error: {
+				code: 1,
+				message: 'Interceptor not ready'
+			}
+		}
+	}
 
-	const activeAddress = getActiveAddressForDomain(window.interceptor.settings.websiteAccess, (new URL(port.sender.url)).hostname)
-	if (activeAddress === undefined) return
+	const activeAddress = getActiveAddressForDomain(window.interceptor.settings.websiteAccess, (new URL(origin)).hostname)
+	if (activeAddress === undefined) {
+		return {
+			error: {
+				code: 1,
+				message: 'No active address'
+			}
+		}
+	}
 
 	const reject = function() {
-		return postMessageIfStillConnected(port, {
-			interceptorApproved: false,
-			requestId: request.requestId,
-			options: request.options,
+		return {
 			error: {
 				code: METAMASK_ERROR_USER_REJECTED_REQUEST,
 				message: 'Interceptor Tx Signature: User denied transaction signature.'
 			}
-		})
+		}
 	}
 
 	if (window.interceptor.confirmTransactionDialog !== undefined
 		&& window.interceptor.confirmTransactionDialog.visualizerResults === undefined) return reject() // previous window still loading
 
 	window.interceptor.confirmTransactionDialog = {
-		requestToConfirm: request,
+		requestId: requestId,
 		addressMetadata: [],
 		visualizerResults: undefined,
 		simulationState: undefined,
@@ -100,28 +109,16 @@ export async function openConfirmTransactionDialog(
 		if (simulationMode) {
 			const appended = await appendTransactionToSimulator(transactionToSimulate)
 			if (appended === undefined) {
-				return postMessageIfStillConnected(port, {
-					interceptorApproved: false,
-					requestId: request.requestId,
-					options: request.options,
+				return {
 					error: {
 						code: METAMASK_ERROR_NOT_CONNECTED_TO_CHAIN,
 						message: 'Interceptor not ready'
 					}
-				})
+				}
 			}
-			return postMessageIfStillConnected(port, {
-				interceptorApproved: true,
-				requestId: request.requestId,
-				options: request.options,
-				result: bytes32String(appended.signed.hash)
-			})
+			return { result: bytes32String(appended.signed.hash) }
 		}
-		return postMessageIfStillConnected(port, {
-			interceptorApproved: true,
-			requestId: request.requestId,
-			options: request.options
-		})
+		return { forward: true as const }
 	}
 	return reject()
 }

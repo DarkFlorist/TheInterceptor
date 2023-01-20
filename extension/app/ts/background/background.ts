@@ -1,9 +1,9 @@
-import { InterceptedRequest, InterceptedRequestForward, PopupMessage, ProviderMessage, SignerName } from '../utils/interceptor-messages.js'
+import { HandleSimulationModeReturnValue, InterceptedRequest, InterceptedRequestForward, PopupMessage, ProviderMessage, SignerName } from '../utils/interceptor-messages.js'
 import 'webextension-polyfill'
 import { Simulator } from '../simulation/simulator.js'
-import { EIP2612Message, EthereumQuantity, EthereumUnsignedTransaction } from '../utils/wire-types.js'
+import { EIP2612Message, EthereumQuantity, EthereumUnsignedTransaction, PersonalSignParams, SendTransactionParams, SupportedETHRPCCall, SwitchEthereumChainParams } from '../utils/wire-types.js'
 import { getSettings, saveActiveChain, saveActiveSigningAddress, saveActiveSimulationAddress, Settings } from './settings.js'
-import { blockNumber, call, chainId, estimateGas, gasPrice, getAccounts, getBalance, getBlockByNumber, getCode, getPermissions, getSimulationStack, getTransactionByHash, getTransactionCount, getTransactionReceipt, personalSign, requestPermissions, sendRawTransaction, sendTransaction, signTypedDataV4, subscribe, switchEthereumChain, unsubscribe } from './simulationModeHanders.js'
+import { blockNumber, call, chainId, estimateGas, gasPrice, getAccounts, getBalance, getBlockByNumber, getCode, getPermissions, getSimulationStack, getTransactionByHash, getTransactionCount, getTransactionReceipt, personalSign, requestPermissions, sendTransaction, signTypedDataV4, subscribe, switchEthereumChain, unsubscribe } from './simulationModeHanders.js'
 import { changeActiveAddress, changeAddressInfos, changeMakeMeRich, changePage, resetSimulation, confirmDialog, RefreshSimulation, removeTransaction, requestAccountsFromSigner, refreshPopupConfirmTransactionSimulation, confirmPersonalSign, confirmRequestAccess, changeInterceptorAccess, changeChainDialog, popupChangeActiveChain, enableSimulationMode, reviewNotification, rejectNotification, addOrModifyAddressInfo, getAddressBookData } from './popupMessageHandlers.js'
 import { AddressMetadata, SimResults, SimulationState, TokenPriceEstimate } from '../utils/visualizer-types.js'
 import { WebsiteApproval, SignerState, TabConnection } from '../utils/user-interface-types.js'
@@ -30,7 +30,7 @@ declare global {
 	interface Window {
 		interceptor: {
 			confirmTransactionDialog?: {
-				requestToConfirm: InterceptedRequest,
+				requestId: number,
 				transactionToSimulate: unknown,
 				simulationMode: boolean,
 				simulationState: SimulationState | undefined,
@@ -41,7 +41,7 @@ declare global {
 				activeAddress: bigint,
 			}
 			personalSignDialog?: {
-				requestToConfirm: InterceptedRequest,
+				requestId: number,
 				simulationMode: boolean,
 				message: string,
 				account: string,
@@ -56,7 +56,7 @@ declare global {
 				addressMetadata: [string, AddressMetadata][],
 			}
 			changeChainDialog?: {
-				requestToConfirm: InterceptedRequest,
+				requestId: number,
 				chainId: string,
 				origin: string,
 				icon: string | undefined,
@@ -138,7 +138,7 @@ export async function updateSimulationState( getUpdatedSimulationState: () => Pr
 			const visualizerResult = await simulator.visualizeTransactionChain(transactions, updatedSimulationState.blockNumber, updatedSimulationState.simulatedTransactions.map( x => x.multicallResponse))
 			const addressMetadata = await getAddressMetadataForVisualiser(simulator, visualizerResult.map( (x) => x.visualizerResults), updatedSimulationState, window.interceptor.settings?.addressInfos)
 
-			function onlyTokensAndTokensWithKnownDecimals(metadata: [string, AddressMetadata]) : metadata is [string, AddressMetadata & { metadataSource: 'token', decimals: `0x${ string }` } ]  {
+			function onlyTokensAndTokensWithKnownDecimals(metadata: [string, AddressMetadata]) : metadata is [string, AddressMetadata & { metadataSource: 'token', decimals: `0x${ string }` } ] {
 				if (metadata[1].metadataSource !== 'token') return false
 				if (metadata[1].decimals === undefined) return false
 				return true
@@ -187,7 +187,7 @@ export async function refreshConfirmTransactionSimulation() {
 	if ( simulator === undefined ) return
 	const priceEstimator = new PriceEstimator(simulator.ethereum)
 	const newSimulator = simulator.simulationModeNode.copy()
-	const currentRequestId = window.interceptor.confirmTransactionDialog.requestToConfirm.requestId
+	const currentRequestId = window.interceptor.confirmTransactionDialog.requestId
 	window.interceptor.confirmTransactionDialog.isComputingSimulation = true
 	sendPopupMessageToOpenWindows({ message: 'popup_confirm_transaction_simulation_started' })
 	const appended = await newSimulator.appendTransaction(EthereumUnsignedTransaction.parse(window.interceptor.confirmTransactionDialog.transactionToSimulate))
@@ -200,7 +200,7 @@ export async function refreshConfirmTransactionSimulation() {
 		).filter( (x) => x.token !== 0x0n )
 	)
 
-	if ( window.interceptor.confirmTransactionDialog === undefined || window.interceptor.confirmTransactionDialog.requestToConfirm.requestId !== currentRequestId ) return // fixes race condition where user has already closed the dialog or initiated a new one
+	if ( window.interceptor.confirmTransactionDialog === undefined || window.interceptor.confirmTransactionDialog.requestId !== currentRequestId ) return // fixes race condition where user has already closed the dialog or initiated a new one
 
 	window.interceptor.confirmTransactionDialog.tokenPrices = tokenPrices
 	window.interceptor.confirmTransactionDialog.simulationState = appended.simulationState
@@ -265,76 +265,77 @@ export async function personalSignWithSimulator(message: string, account: bigint
 	return await simulator.simulationModeNode.personalSign(message, account)
 }
 
-type SimulationHandler = (simulator: Simulator, port: browser.runtime.Port, request: InterceptedRequest) => Promise<void>
-
-export const handlers = new Map<string, SimulationHandler >([
-	['eth_getBlockByNumber', getBlockByNumber],
-	['eth_getBalance', getBalance],
-	['eth_estimateGas', estimateGas],
-	['eth_getTransactionByHash', getTransactionByHash],
-	['eth_getTransactionReceipt', getTransactionReceipt],
-	['eth_sendTransaction', sendTransaction],
-	['eth_call', call],
-	['eth_blockNumber', blockNumber],
-	['eth_subscribe', subscribe],
-	['eth_unsubscribe', unsubscribe],
-	['eth_chainId', chainId],
-	['net_version', chainId],
-	['eth_getCode', getCode],
-	['personal_sign', personalSign],
-	['eth_signTypedData_v4', signTypedDataV4],
-	['wallet_switchEthereumChain', switchEthereumChain ],
-	['wallet_requestPermissions', requestPermissions.bind(undefined, getActiveAddressForDomain) ],
-	['wallet_getPermissions', getPermissions ],
-	['eth_accounts', getAccounts.bind(undefined, getActiveAddressForDomain)],
-	['eth_requestAccounts', getAccounts.bind(undefined, getActiveAddressForDomain)],
-	['eth_sendRawTransaction', sendRawTransaction],
-	['eth_gasPrice', gasPrice],
-	['eth_getTransactionCount', getTransactionCount],
-	['interceptor_getSimulationStack', getSimulationStack],
-
-	/*
-	Missing methods:
-	['eth_getProof', ],
-	['eth_getBlockTransactionCountByNumber', ],
-	['eth_getTransactionByBlockHashAndIndex', ],
-	['eth_getTransactionByBlockNumberAndIndex', ],
-	['eth_getBlockReceipts', ]
-	['eth_getStorageAt', ],
-
-	['eth_getLogs', ],
-	['eth_getFilterChanges', ],
-	['eth_getFilterLogs', ],
-	['eth_newBlockFilter', ],
-	['eth_newFilter', ],
-	['eth_newPendingTransactionFilter', ],
-	['eth_uninstallFilter', ],
-
-	['eth_protocolVersion', ],
-	['eth_feeHistory', ],
-	['eth_maxPriorityFeePerGas', ],
-	['net_listening', ],
-
-	['eth_getUncleByBlockHashAndIndex', ],
-	['eth_getUncleByBlockNumberAndIndex', ],
-	['eth_getUncleCountByBlockHash', ],
-	['eth_getUncleCountByBlockNumber', ],
-	*/
-])
-
-async function handleSimulationMode(port: browser.runtime.Port, request: InterceptedRequest) {
-	if ( simulator === undefined ) return
-	await updatePrependMode()
-	const handler = handlers.get(request.options.method)
-	if (handler === undefined) {
-		if ( request.usingInterceptorWithoutSigner || window.interceptor.settings?.simulationMode ) return
-		return port.postMessage({
-			interceptorApproved: true,
-			requestId: request.requestId,
-			options: request.options
-		})
+async function handleSimulationMode(simulator: Simulator, port: browser.runtime.Port, request: InterceptedRequest): Promise<HandleSimulationModeReturnValue> {
+	let parsedRequest // separate request parsing and request handling. If there's a parse error, throw that to API user
+	try {
+		parsedRequest = SupportedETHRPCCall.parse(request.options)
+	} catch (error) {
+		if (error instanceof Error) {
+			return {
+				error: {
+					message: error.message,
+					code: 400,
+				}
+			}
+		}
+		throw error
 	}
-	return await handler(simulator, port, request)
+
+	await updatePrependMode()
+
+	switch (parsedRequest.method) {
+		case 'eth_getBlockByNumber': return await getBlockByNumber(simulator, parsedRequest)
+		case 'eth_getBalance': return await getBalance(simulator, parsedRequest)
+		case 'eth_estimateGas': return await estimateGas(simulator, parsedRequest)
+		case 'eth_getTransactionByHash': return await getTransactionByHash(simulator, parsedRequest)
+		case 'eth_getTransactionReceipt': return await getTransactionReceipt(simulator, parsedRequest)
+		case 'eth_sendTransaction': return await sendTransaction(simulator, parsedRequest, port, request?.requestId)
+		case 'eth_call': return await call(simulator, parsedRequest)
+		case 'eth_blockNumber': return await blockNumber(simulator)
+		case 'eth_subscribe': return await subscribe(simulator, port, parsedRequest)
+		case 'eth_unsubscribe': return await unsubscribe(simulator, parsedRequest)
+		case 'eth_chainId': return await chainId(simulator)
+		case 'net_version': return await chainId(simulator)
+		case 'eth_getCode': return await getCode(simulator, parsedRequest)
+		case 'personal_sign': return await personalSign(simulator, parsedRequest, request?.requestId)
+		case 'eth_signTypedData_v4': return await signTypedDataV4(simulator, parsedRequest, request?.requestId)
+		case 'wallet_switchEthereumChain': return await switchEthereumChain(simulator, parsedRequest, port, request?.requestId)
+		case 'wallet_requestPermissions': return await requestPermissions(getActiveAddressForDomain, simulator, port)
+		case 'wallet_getPermissions': return await getPermissions()
+		case 'eth_accounts': return await getAccounts(getActiveAddressForDomain, simulator, port)
+		case 'eth_requestAccounts': return await getAccounts(getActiveAddressForDomain, simulator, port)
+		case 'eth_gasPrice': return await gasPrice(simulator)
+		case 'eth_getTransactionCount': return await getTransactionCount(simulator, parsedRequest)
+		case 'interceptor_getSimulationStack': return await getSimulationStack(simulator)
+		/*
+		Missing methods:
+		case 'eth_sendRawTransaction': return
+		case 'eth_getProof': return
+		case 'eth_getBlockTransactionCountByNumber': return
+		case 'eth_getTransactionByBlockHashAndIndex': return
+		case 'eth_getTransactionByBlockNumberAndIndex': return
+		case 'eth_getBlockReceipts': return
+		case 'eth_getStorageAt': return
+
+		case 'eth_getLogs': return
+		case 'eth_getFilterChanges': return
+		case 'eth_getFilterLogs': return
+		case 'eth_newBlockFilter': return
+		case 'eth_newFilter': return
+		case 'eth_newPendingTransactionFilter': return
+		case 'eth_uninstallFilter': return
+
+		case 'eth_protocolVersion': return
+		case 'eth_feeHistory': return
+		case 'eth_maxPriorityFeePerGas': return
+		case 'net_listening': return
+
+		case 'eth_getUncleByBlockHashAndIndex': return
+		case 'eth_getUncleByBlockNumberAndIndex': return
+		case 'eth_getUncleCountByBlockHash': return
+		case 'eth_getUncleCountByBlockNumber': return
+		*/
+	}
 }
 
 function newBlockCallback(blockNumber: bigint) {
@@ -487,19 +488,35 @@ async function onContentScriptConnected(port: browser.runtime.Port) {
 					}
 				}
 			}
-			if ( window.interceptor.settings?.simulationMode || request.usingInterceptorWithoutSigner) {
-				return await handleSimulationMode(port, request)
-			}
-
 			// if simulation mode is not on, we only intercept eth_sendTransaction and personalSign
 			if ( simulator === undefined ) throw 'Interceptor not ready'
 
-			if (request.options.method === 'personal_sign') return personalSign(simulator, port, request, false)
-			if (request.options.method === 'wallet_switchEthereumChain') return switchEthereumChain(simulator, port, request)
+			if ( window.interceptor.settings?.simulationMode || request.usingInterceptorWithoutSigner) {
+				const resolved = await handleSimulationMode(simulator, port, request)
+				if ('error' in resolved) {
+					return postMessageIfStillConnected(port, {
+						...resolved,
+						interceptorApproved: false,
+						requestId: request.requestId,
+						options: request.options
+					})
+				}
+				if (!('forward' in resolved)) {
+					return postMessageIfStillConnected(port, {
+						result: resolved.result,
+						interceptorApproved: true,
+						requestId: request.requestId,
+						options: request.options
+					})
+				}
+			}
 
-			if ( window.interceptor.settings && isSupportedChain(window.interceptor.settings.activeChain.toString()) )  {
+			if (request.options.method === 'personal_sign') return personalSign(simulator, PersonalSignParams.parse(request.options), request.requestId, false)
+			if (request.options.method === 'wallet_switchEthereumChain') return switchEthereumChain(simulator, SwitchEthereumChainParams.parse(request.options), port, request.requestId)
+
+			if (window.interceptor.settings && isSupportedChain(window.interceptor.settings.activeChain.toString()) ) {
 				// we only support this method if we are on supported chain, otherwise forward to signer directly
-				if (request.options.method === 'eth_sendTransaction') return sendTransaction(simulator, port, request, false)
+				if (request.options.method === 'eth_sendTransaction') return sendTransaction(simulator, SendTransactionParams.parse(request.options), port, request.requestId, false)
 			}
 
 			return postMessageIfStillConnected(port, {

@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'preact/hooks'
-import { InterceptedRequest, SignerName } from '../../utils/interceptor-messages.js'
+import { SignerName } from '../../utils/interceptor-messages.js'
 import { SimulatedAndVisualizedTransaction, SimulationAndVisualisationResults } from '../../utils/visualizer-types.js'
 import { ErrorCheckBox } from '../subcomponents/Error.js'
 import Hint from '../subcomponents/Hint.js'
@@ -10,7 +10,7 @@ import { getSignerName, SignerLogoText } from '../subcomponents/signers.js'
 import { AddNewAddress } from './AddNewAddress.js'
 
 export function ConfirmTransaction() {
-	const [requestToConfirm, setRequestToConfirm] = useState<InterceptedRequest | undefined>(undefined)
+	const [requestIdToConfirm, setRequestIdToConfirm] = useState<number | undefined>(undefined)
 	const [simulationAndVisualisationResults, setSimulationAndVisualisationResults] = useState<SimulationAndVisualisationResults | undefined >(undefined)
 	const [forceSend, setForceSend] = useState<boolean>(false)
 	const [currentBlockNumber, setCurrentBlockNumber] = useState<undefined | bigint>(undefined)
@@ -23,9 +23,7 @@ export function ConfirmTransaction() {
 		const updateTx = async () => {
 			const backgroundPage = await browser.runtime.getBackgroundPage()
 			if( !('confirmTransactionDialog' in backgroundPage.interceptor) || backgroundPage.interceptor.confirmTransactionDialog === undefined) return window.close();
-			const req = InterceptedRequest.parse(backgroundPage.interceptor.confirmTransactionDialog.requestToConfirm)
-
-			setRequestToConfirm(req)
+			setRequestIdToConfirm(backgroundPage.interceptor.confirmTransactionDialog.requestId)
 			await fetchSimulationState()
 		}
 		function popupMessageListener(msg: unknown) {
@@ -72,11 +70,11 @@ export function ConfirmTransaction() {
 	const removeTransaction = (_hash: bigint) => reject()
 
 	function approve() {
-		browser.runtime.sendMessage( { method: 'popup_confirmDialog', options: { request: requestToConfirm, accept: true } } )
+		browser.runtime.sendMessage( { method: 'popup_confirmDialog', options: { requestId: requestIdToConfirm, accept: true } } )
 	}
 
 	function reject() {
-		browser.runtime.sendMessage( { method: 'popup_confirmDialog', options: { request: requestToConfirm, accept: false } } )
+		browser.runtime.sendMessage( { method: 'popup_confirmDialog', options: { requestId: requestIdToConfirm, accept: false } } )
 	}
 
 	function refreshSimulation() {

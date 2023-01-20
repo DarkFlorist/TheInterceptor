@@ -1,7 +1,7 @@
 import { METAMASK_ERROR_USER_REJECTED_REQUEST } from '../../utils/constants.js'
 import { Future } from '../../utils/future.js'
-import { ChainChangeConfirmation, InterceptedRequest, } from '../../utils/interceptor-messages.js'
-import { changeActiveChain, postMessageIfStillConnected } from '../background.js'
+import { ChainChangeConfirmation, } from '../../utils/interceptor-messages.js'
+import { changeActiveChain } from '../background.js'
 
 let pendForUserReply: Future<ChainChangeConfirmation> | undefined = undefined
 let pendForSignerReply: Future<ChainChangeConfirmation> | undefined = undefined
@@ -29,20 +29,23 @@ export async function resolveSignerChainChange(confirmation: ChainChangeConfirma
 	openedWindow = null
 }
 
-export async function openChangeChainDialog(port: browser.runtime.Port, request: InterceptedRequest, chainId: bigint) {
-	if (window.interceptor.settings === undefined) return
-	if (port.sender === undefined) return
-	if (port.sender.url === undefined) return
+export async function openChangeChainDialog(requestId: number, origin: string, favIconUrl: string | undefined, chainId: bigint) {
+	if (window.interceptor.settings === undefined) return {
+		error: {
+			code: 1,
+			message: 'Interceptor not ready'
+		}
+	}
 	if (openedWindow !== null && openedWindow.id) {
 		await browser.windows.remove(openedWindow.id)
 	}
 	pendForUserReply = new Future<ChainChangeConfirmation>()
 
 	window.interceptor.changeChainDialog = {
-		requestToConfirm: request,
+		requestId: requestId,
 		chainId: chainId.toString(),
-		origin: (new URL(port.sender.url)).hostname,
-		icon: port.sender?.tab?.favIconUrl,
+		origin: (new URL(origin)).hostname,
+		icon: favIconUrl,
 		simulationMode: window.interceptor.settings.simulationMode,
 	}
 
@@ -58,7 +61,7 @@ export async function openChangeChainDialog(port: browser.runtime.Port, request:
 	const reject = {
 		method: 'popup_changeChainDialog',
 		options: {
-			request,
+			requestId,
 			accept: false
 		}
 	} as const
@@ -77,26 +80,18 @@ export async function openChangeChainDialog(port: browser.runtime.Port, request:
 	const reply = await pendForUserReply
 
 	// forward message to content script
-	if(reply.options.accept) {
+	if (reply.options.accept) {
 		await changeActiveChain(chainId)
 		pendForSignerReply = new Future<ChainChangeConfirmation>() // we need to get reply from the signer too, if we are using signer, if signer is not used, interceptor replies to this
 		const signerReply = await pendForSignerReply
 		if (signerReply.options.accept) {
-			return postMessageIfStillConnected(port, {
-				interceptorApproved: true,
-				requestId: request.requestId,
-				options: request.options,
-				result: []
-			})
+			return { result: [] }
 		}
 	}
-	return postMessageIfStillConnected(port, {
-		interceptorApproved: false,
-		requestId: request.requestId,
-		options: request.options,
+	return {
 		error: {
 			code: METAMASK_ERROR_USER_REJECTED_REQUEST,
 			message: 'User denied the chain change.'
 		}
-	})
+	}
 }

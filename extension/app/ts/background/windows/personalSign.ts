@@ -1,11 +1,11 @@
 import { addressString } from '../../utils/bigint.js'
 import { METAMASK_ERROR_USER_REJECTED_REQUEST } from '../../utils/constants.js'
 import { Future } from '../../utils/future.js'
-import { InterceptedRequest, PersonalSign } from '../../utils/interceptor-messages.js'
+import { PersonalSign } from '../../utils/interceptor-messages.js'
 import { AddressInfo } from '../../utils/user-interface-types.js'
 import { AddressMetadata } from '../../utils/visualizer-types.js'
 import { EIP2612Message, EthereumAddress } from '../../utils/wire-types.js'
-import { personalSignWithSimulator, postMessageIfStillConnected } from '../background.js'
+import { personalSignWithSimulator } from '../background.js'
 import { getAddressMetaData } from '../metadataUtils.js'
 
 let pendingPersonalSign: Future<PersonalSign> | undefined = undefined
@@ -32,7 +32,7 @@ function getAddressMetadataForEIP2612Message(message: EIP2612Message, addressInf
 }
 
 
-export async function openPersonalSignDialog(port: browser.runtime.Port, request: InterceptedRequest, simulationMode: boolean, message: string, account: EthereumAddress, method: 'personalSign' | 'v4') {
+export async function openPersonalSignDialog(requestId: number, simulationMode: boolean, message: string, account: EthereumAddress, method: 'personalSign' | 'v4') {
 
 	if (openedPersonalSignDialogWindow !== null && openedPersonalSignDialogWindow.id) {
 		await browser.windows.remove(openedPersonalSignDialogWindow.id)
@@ -43,7 +43,7 @@ export async function openPersonalSignDialog(port: browser.runtime.Port, request
 		const parsed = EIP2612Message.parse(JSON.parse(message))
 		window.interceptor.personalSignDialog =  {
 			simulationMode: simulationMode,
-			requestToConfirm: request,
+			requestId: requestId,
 			message: message,
 			account: addressString(account),
 			method: method,
@@ -54,7 +54,7 @@ export async function openPersonalSignDialog(port: browser.runtime.Port, request
 	else if ( method === 'personalSign' ) {
 		window.interceptor.personalSignDialog =  {
 			simulationMode: simulationMode,
-			requestToConfirm: request,
+			requestId: requestId,
 			message: message,
 			account: addressString(account),
 			method: method,
@@ -75,7 +75,7 @@ export async function openPersonalSignDialog(port: browser.runtime.Port, request
 	const rejectSign = {
 		method: 'popup_personalSign',
 		options: {
-			request,
+			requestId,
 			accept: false
 		}
 	} as const
@@ -96,36 +96,20 @@ export async function openPersonalSignDialog(port: browser.runtime.Port, request
 	if(reply.options.accept) {
 		if (simulationMode) {
 			const result = await personalSignWithSimulator(message, account)
-			if (result === undefined) return postMessageIfStillConnected(port, {
-				interceptorApproved: false,
-				requestId: request.requestId,
-				options: request.options,
+			if (result === undefined) return {
 				error: {
 					code: METAMASK_ERROR_USER_REJECTED_REQUEST,
 					message: 'Interceptor not ready'
 				}
-			})
-
-			return postMessageIfStillConnected(port, {
-				interceptorApproved: true,
-				requestId: request.requestId,
-				options: request.options,
-				result: result
-			})
+			}
+			return { result: result }
 		}
-		return postMessageIfStillConnected(port, {
-			interceptorApproved: true,
-			requestId: request.requestId,
-			options: request.options
-		})
+		return { forward: true as const }
 	}
-	return postMessageIfStillConnected(port, {
-		interceptorApproved: false,
-		requestId: request.requestId,
-		options: request.options,
+	return {
 		error: {
 			code: METAMASK_ERROR_USER_REJECTED_REQUEST,
 			message: 'Interceptor Personal Signature: User denied personal signature.'
 		}
-	})
+	}
 }
