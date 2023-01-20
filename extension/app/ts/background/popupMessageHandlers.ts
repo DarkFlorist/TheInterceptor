@@ -1,7 +1,7 @@
 import { changeActiveAddressAndChainAndResetSimulation, changeActiveChain, PrependTransactionMode, refreshConfirmTransactionSimulation, updatePrependMode, updateSimulationState } from './background.js'
 import { saveAddressInfos, saveMakeMeRich, savePage, saveSimulationMode, saveUseSignersAddressAsActiveAddress, saveWebsiteAccess } from './settings.js'
 import { Simulator } from '../simulation/simulator.js'
-import { ChangeActiveAddress, ChangeAddressInfos, ChangeMakeMeRich, ChangePage, PersonalSign, PopupMessage, RemoveTransaction, RequestAccountsFromSigner, TransactionConfirmation, InterceptorAccess, ChangeInterceptorAccess, ChainChangeConfirmation, EnableSimulationMode, ReviewNotification, RejectNotification, ChangeActiveChain, AddOrModifyAddresInfo, GetAddressBookData } from '../utils/interceptor-messages.js'
+import { ChangeActiveAddress, ChangeAddressInfos, ChangeMakeMeRich, ChangePage, PersonalSign, PopupMessage, RemoveTransaction, RequestAccountsFromSigner, TransactionConfirmation, InterceptorAccess, ChangeInterceptorAccess, ChainChangeConfirmation, EnableSimulationMode, ReviewNotification, RejectNotification, ChangeActiveChain, AddOrModifyAddresInfo, GetAddressBookData, RemoveAddressBookEntry } from '../utils/interceptor-messages.js'
 import { resolvePendingTransaction } from './windows/confirmTransaction.js'
 import { resolvePersonalSign } from './windows/personalSign.js'
 import { changeAccess, requestAccessFromUser, resolveInterceptorAccess, setPendingAccessRequests } from './windows/interceptorAccess.js'
@@ -64,6 +64,19 @@ export async function changeAddressInfos(_simulator: Simulator, payload: PopupMe
 	saveAddressInfos(addressInfosChange.options)
 	updateWebsiteApprovalAccesses()
 	sendPopupMessageToOpenWindows({ message: 'popup_address_infos_changed' })
+}
+
+export async function removeAddressBookEntry(_simulator: Simulator, payload: PopupMessage) {
+	if (window.interceptor.settings === undefined) return
+	const removeAddressBookEntry = RemoveAddressBookEntry.parse(payload)
+	if (removeAddressBookEntry.options.addressBookCategory === 'My Active Addresses') {
+		window.interceptor.settings.addressInfos = window.interceptor.settings.addressInfos.filter((info) => info.address !== removeAddressBookEntry.options.address)
+		saveAddressInfos(window.interceptor.settings.addressInfos)
+		updateWebsiteApprovalAccesses()
+		sendPopupMessageToOpenWindows({ message: 'popup_address_infos_changed' })
+		return
+	}
+	throw new Error('Tried to remove addressbook category that is not supported yet!')
 }
 
 export async function addOrModifyAddressInfo(_simulator: Simulator, payload: PopupMessage) {
