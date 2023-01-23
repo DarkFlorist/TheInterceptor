@@ -804,7 +804,7 @@ export const GetSimulationStackReply = t.ReadonlyArray(t.Intersect(
 export type GetSimulationStack = t.Static<typeof GetSimulationStack>
 export const GetSimulationStack = t.Object({
 	method: t.Literal('interceptor_getSimulationStack'),
-	params: t.Tuple(t.Union(t.Literal('1.0.0'))),
+	params: t.Tuple(t.Literal('1.0.0')),
 }).asReadonly()
 
 export type SupportedETHRPCCall = t.Static<typeof SupportedETHRPCCall>
