@@ -1,19 +1,17 @@
 import { useEffect, useRef, useState } from 'preact/hooks'
 import { addressString } from './utils/bigint.js'
 import { AddressBookEntries, AddressBookEntry, RenameAddressCallBack } from './utils/user-interface-types.js'
-import Blockie from './components/subcomponents/PreactBlocky.js'
 import { GetAddressBookDataReply, MessageToPopup } from './utils/interceptor-messages.js'
 import { arrayToChunks } from './utils/typed-arrays.js'
-import { LOGO_URI_PREFIX } from './background/metadataUtils.js'
-import { Notice } from './components/subcomponents/Error.js'
 import { AddNewAddress } from './components/pages/AddNewAddress.js'
 import { BigAddress } from './components/subcomponents/address.js'
 import { ethers } from 'ethers'
+import Hint from './components/subcomponents/Hint.js'
 
 type Modals = 'noModal' | 'addNewAddress' | 'ConfirmaddressBookEntryToBeRemoved'
 
 type ActiveFilter = 'My Active Addresses' | 'My Contacts' | 'Tokens' | 'Non Fungible Tokens' | 'Other Contracts'
-const ActiveFilterSigle = {
+const ActiveFilterSingle = {
 	'My Active Addresses': 'Active Address',
 	'My Contacts': 'Contact',
 	'Tokens': 'Token',
@@ -64,7 +62,7 @@ export function ConfirmaddressBookEntryToBeRemoved(param: ConfirmaddressBookEntr
 					</span>
 				</div>
 				<p class = 'card-header-title'>
-					<p className = 'paragraph'> { 'Remove address' } </p>
+					<p className = 'paragraph'> { `Remove ${ ActiveFilterSingle[param.category] }` } </p>
 				</p>
 				<button class = 'card-header-icon' aria-label = 'close' onClick = { param.close }>
 					<span class = 'icon' style = 'color: var(--text-color);'> X </span>
@@ -93,78 +91,51 @@ type ListElementParam = (AddressBookEntry | { type: 'empty' }) & {
 	listKey: string,
 	category: ActiveFilter,
 	removeEntry: (entry: AddressBookEntry) => void,
+	renameAddressCallBack: RenameAddressCallBack,
 }
 
 export function ListElement(entry: ListElementParam) {
 	return <li style = { `margin: 0px; padding-bottom: ${ ELEMENT_PADDING_PX }px` } key = { entry.listKey }>
 		<div class = 'card' style = { `height: ${ ELEMENT_SIZE_PX[entry.category] }px` }>
-			<div class = 'card-content' style = { `height: ${ ELEMENT_SIZE_PX[entry.category] }px` }>
-				<div class = 'media'>
-					<div class = 'media-left'>
-						<figure class = 'image'>
-							{ entry.type === 'empty' ? <img src = { 'data:image/gif;base64,R0lGODlhAQABAAAAACwAAAAAAQABAAA=' } style = 'width: 40px; height: 40px'/> :
-								'logoUri' in entry && entry.logoUri !== undefined ? <img src = { `${ LOGO_URI_PREFIX }/${ entry.logoUri }` } style = 'width: 40px; max-height: 100%'/> : <Blockie seed = { addressString(entry.address).toLowerCase() } size = { 8 } scale = { 5 } />
+			<div class = 'card-content' style = 'height: 100%;'>
+				<div class = 'media' style = 'height: 100%;'>
+					<div class = 'media-content' style = 'overflow-y: visible; overflow-x: unset; height: 100%;'>
+						<div style = 'padding-bottom: 10px; height: 40px'>
+							{ entry.type === 'empty' ? <></> :
+								<BigAddress
+									address = { entry.address }
+									nameAndLogo = { { name: `${ entry.name } ${ 'symbol' in entry ? `(${ entry.symbol })` : '' }`, logoUri: 'logoUri' in entry && entry.logoUri !== undefined ?  `${entry.logoUri }` : undefined } }
+									noCopying = { true }
+									renameAddressCallBack = { entry.renameAddressCallBack }
+								/>
 							}
-						</figure>
-					</div>
-
-					<div class = 'media-content' style = 'overflow-y: visible; overflow-x: unset;'>
-						<div>
-							<span
-								class = 'input addressbook-input title is-5'
-								type = 'text'
-								style = 'min-width: 2em;'
-								maxLength = { 42 }
-								contentEditable = { true }
-							>{ entry.type === 'empty' ? '' : entry.name } </span>
-
-							{ entry.category === 'Tokens' || entry.category === 'Non Fungible Tokens' ? <>
-								<p class = 'title is-5' style = 'display: inline-block; vertical-align: top;'>&nbsp;(</p>
-								<span
-									class = 'input addressbook-input title is-5'
-									type = 'text'
-									style = { `min-width: 1em;` }
-									contentEditable = { true }
-								>{ 'symbol' in entry ? entry.symbol : '()' }</span>
-								<p class = 'title is-5' style = 'display: inline-block; vertical-align: top;'>)</p>
-							</> : <></> }
-						</div>
-
-						<div className = 'input addressbook-input subtitle is-7' type = 'text' style = { `overflow: visible; color: var(--text-color)` } >
-							{ entry.type === 'empty' ? '' : addressString(entry.address) }
 						</div>
 
 						{ entry.category === 'Tokens' ? <div>
-							<p class = 'paragraph' style = 'display: inline-block; font-size: 13px; vertical-align: top;'>Decimals:&nbsp;</p>
-							<span
-								class = 'input addressbook-input'
-								type = 'text'
-								style = { `min-width: 1em;` }
-								contentEditable = { true }
-							>{ 'decimals' in entry ? entry.decimals.toString() : '' }</span>
+							<p class = 'paragraph' style = 'display: inline-block; font-size: 13px; vertical-align: top;'>{ `Decimals: ${ 'decimals' in entry ? entry.decimals.toString() : 'MISSING' }` }</p>
 						</div> : <></> }
 
 						{ entry.category === 'Non Fungible Tokens' || entry.category === 'Other Contracts' ? <div>
-								<p class = 'paragraph' style = 'display: inline-block; font-size: 13px; vertical-align: top;'>Protocol:&nbsp;</p>
-								<span className = 'input addressbook-input' type = 'text' style = { `overflow: visible; color: var(--text-color);` }>
-									{ 'protocol' in entry ? entry.protocol : '' }
-								</span>
-							</div>
+							<p class = 'paragraph' style = 'display: inline-block; font-size: 13px; vertical-align: top;'>
+								{ `Protocol: ${ 'protocol' in entry ? entry.protocol : '' } ` }
+							</p>
+						</div>
 						: <> </> }
 
 						{ entry.category === 'My Active Addresses' ?
-							<label class = 'form-control'>
-								<input type = 'checkbox' checked = { 'askForAddressAccess' in entry && !entry.askForAddressAccess }  />
+							<label class = 'form-control' style = 'padding-top: 10px'>
+								<input type = 'checkbox' checked = { 'askForAddressAccess' in entry && !entry.askForAddressAccess } disabled = { true }/>
 								Don't request for an access (unsecure)
 							</label>
 							: <></>
 						}
 					</div>
 
-					<div class = 'content' style = 'color: var(--text-color);'>
-						<button class = 'card-header-icon' style = 'padding: 0px;' aria-label = 'delete'>
-							<span class = 'icon' style = 'color: var(--text-color);' onClick = { entry.type != 'empty' ? () => entry.removeEntry(entry) : () => {} }> X </span>
+					<div class = 'content' style = 'color: var(--text-color); display: flex; height: 100%; flex-direction: column; justify-content: space-between;'>
+						<button class = 'card-header-icon' style = 'padding: 0px; margin-left: auto;' aria-label = 'delete'>
+							<span class = 'icon' style = 'color: var(--text-color);' onClick = { entry.type != 'empty' && entry.category === 'My Active Addresses' ? () => entry.removeEntry(entry) : () => {} }> X </span>
 						</button>
+						<button class = 'button is-primary is-small' onClick = { () => {} } disabled = { true }>Edit</button>
 					</div>
 				</div>
 			</div>
@@ -179,14 +150,21 @@ type AddressList = {
 	listName: string,
 	filter: ActiveFilter,
 	removeEntry: (entry: AddressBookEntry) => void,
+	renameAddressCallBack: RenameAddressCallBack,
 }
 
-export function AddressList({ addressBookEntries, numberOfEntries, startIndex, listName, filter, removeEntry }: AddressList) {
+export function AddressList({ addressBookEntries, numberOfEntries, startIndex, listName, filter, removeEntry, renameAddressCallBack }: AddressList) {
 	const entries = addressBookEntries === undefined || addressBookEntries === 'fetching' ? Array.from(new Array(numberOfEntries + 1)).map(() => ({
 		type: 'empty' as const
 	})) : addressBookEntries
 	return <>
-		{ entries.map( (entry, index) => <ListElement { ...entry } removeEntry = { removeEntry } category = { filter } listKey = { `${ (startIndex + index).toString() } ${ listName }`}/> ) }
+		{ entries.map( (entry, index) => <ListElement
+			{ ...entry }
+			removeEntry = { removeEntry }
+			category = { filter }
+			listKey = { `${ (startIndex + index).toString() } ${ listName }`}
+			renameAddressCallBack = { renameAddressCallBack }
+		/> ) }
 	</>
 }
 
@@ -201,7 +179,6 @@ type AddressBookState = {
 export function AddressBook() {
 	const [activeFilter, setActiveFilter] = useState<ActiveFilter>('My Active Addresses')
 	const [searchString, setSearchString] = useState<string | undefined>(undefined)
-	const [errorString, _setErrorString] = useState<string | undefined>(undefined)
 	const [currentPage, setCurrentPage] = useState<number>(0)
 	const [modalState, setModalState] = useState<Modals>('noModal')
 	const [addressBookState, setAddressBookState] = useState<AddressBookState | undefined>(undefined)
@@ -214,6 +191,7 @@ export function AddressBook() {
 
 	const [nameInput, setNameInput] = useState<string | undefined>(undefined)
 	const [addressInput, setAddressInput] = useState<string | undefined>(undefined)
+	const [addingNewAddress, setAddingNewAddress] = useState<boolean>(false)
 
 	const scrollTimer = useRef<NodeJS.Timeout | undefined>(undefined)
 
@@ -344,6 +322,7 @@ export function AddressBook() {
 				filter = { addressBookState.activeFilter }
 				listName = { `${ addressBookState.searchString }|${ addressBookState.activeFilter }` }
 				removeEntry = { openConfirmaddressBookEntryToBeRemoved }
+				renameAddressCallBack = { renameAddressCallBack }
 			/> : <></>
 		} </>
 	}
@@ -360,6 +339,7 @@ export function AddressBook() {
 		setModalState('addNewAddress')
 		setNameInput(undefined)
 		setAddressInput(undefined)
+		setAddingNewAddress(true)
 	}
 
 	function openConfirmaddressBookEntryToBeRemoved(entry: AddressBookEntry) {
@@ -371,6 +351,7 @@ export function AddressBook() {
 		setModalState('addNewAddress')
 		setNameInput(name === undefined ? '' : name)
 		setAddressInput(ethers.utils.getAddress(address))
+		setAddingNewAddress(false)
 	}
 
 	function removeAddressBookEntry(entry: AddressBookEntry) {
@@ -382,77 +363,74 @@ export function AddressBook() {
 
 	return (
 		<main>
-			<div class = 'columns' style = 'margin: 10px'>
-				<div class = 'column is-2'>
-					<aside class = 'menu'>
-						<ul class = 'menu-list'>
-							<p class = 'paragraph' style = 'color: var(--disabled-text-color)'> My Addresses </p>
-							<ul>
-								<li> <FilterLink name = 'My Active Addresses' currentFilter = { activeFilter } setActiveFilter = { changeFilter }/> </li>
-								<li> <FilterLink name = 'My Contacts' currentFilter = { activeFilter } setActiveFilter = { changeFilter }/> </li>
+			<Hint>
+				<div class = 'columns' style = 'margin: 10px'>
+					<div class = 'column is-2'>
+						<aside class = 'menu'>
+							<ul class = 'menu-list'>
+								<p class = 'paragraph' style = 'color: var(--disabled-text-color)'> My Addresses </p>
+								<ul>
+									<li> <FilterLink name = 'My Active Addresses' currentFilter = { activeFilter } setActiveFilter = { changeFilter }/> </li>
+									<li> <FilterLink name = 'My Contacts' currentFilter = { activeFilter } setActiveFilter = { changeFilter }/> </li>
+								</ul>
 							</ul>
-						</ul>
-						<ul class = 'menu-list'>
-							<p class = 'paragraph' style = 'color: var(--disabled-text-color)'> Contracts </p>
-							<ul>
-								<li> <FilterLink name = 'Tokens' currentFilter = { activeFilter } setActiveFilter = { changeFilter }/> </li>
-								<li> <FilterLink name = 'Non Fungible Tokens' currentFilter = { activeFilter } setActiveFilter = { changeFilter }/> </li>
-								<li> <FilterLink name = 'Other Contracts' currentFilter = { activeFilter } setActiveFilter = { changeFilter }/> </li>
+							<ul class = 'menu-list'>
+								<p class = 'paragraph' style = 'color: var(--disabled-text-color)'> Contracts </p>
+								<ul>
+									<li> <FilterLink name = 'Tokens' currentFilter = { activeFilter } setActiveFilter = { changeFilter }/> </li>
+									<li> <FilterLink name = 'Non Fungible Tokens' currentFilter = { activeFilter } setActiveFilter = { changeFilter }/> </li>
+									<li> <FilterLink name = 'Other Contracts' currentFilter = { activeFilter } setActiveFilter = { changeFilter }/> </li>
+								</ul>
 							</ul>
-						</ul>
-					</aside>
-				</div>
-				<div class = 'column'>
-					<div style = 'display: flex; padding-bottom: 10px'>
-						<div class = 'field is-grouped' style = 'max-width: 400px; margin: 10px'>
-							<p class = 'control is-expanded'>
-								<input class = 'input' type = 'text' placeholder = 'Search In Category' value = { searchString === undefined ? '' : searchString } onInput = { e => search((e.target as HTMLInputElement).value) } />
-							</p>
-						</div>
-						<div style = 'margin-left: auto;'>
-							{ addressBookState !== undefined ? <button class = 'button is-primary' onClick = { () => openNewAddress() } >{ `Add New ${ ActiveFilterSigle[addressBookState.activeFilter] }` }</button> : <></> }
-						</div>
+						</aside>
 					</div>
-					{ addressBookState === undefined ? <></> : <>
-						{ addressBookState.maxIndex === 0 ? <p class = 'paragraph'> { getNoResultsError() } </p> : <></> }
-						<ul style = { `height: ${ addressBookState.maxIndex * (ELEMENT_SIZE_PX[addressBookState.activeFilter] + ELEMENT_PADDING_PX) }px; overflow: hidden;` }>
-							<li style = { `margin: 0px; height: ${ getPageSizeInPixels(addressBookState.activeFilter) * Math.max(0, currentPage - getWindowSizeInPages(addressBookState.activeFilter) ) }px` } key = { -1 }> </li>
-							{ Array(2 * getWindowSizeInPages(addressBookState.activeFilter) + 1).fill(0).map((_, i) => renderAddressList(currentPage + ( i - getWindowSizeInPages(addressBookState.activeFilter) ))) }
-						</ul>
-					</> }
-				</div>
-			</div>
-			{ errorString === undefined ? <></> :
-				<footer class = 'window-footer' style = 'border-bottom-left-radius: unset; border-bottom-right-radius: unset; border-top: unset; padding: 10px;'>
-					<div style = 'padding-bottom: 0.5em;'>
-						<Notice text = { errorString }/>
+					<div class = 'column'>
+						<div style = 'display: flex; padding-bottom: 10px'>
+							<div class = 'field is-grouped' style = 'max-width: 400px; margin: 10px'>
+								<p class = 'control is-expanded'>
+									<input class = 'input' type = 'text' placeholder = 'Search In Category' value = { searchString === undefined ? '' : searchString } onInput = { e => search((e.target as HTMLInputElement).value) } />
+								</p>
+							</div>
+							<div style = 'margin-left: auto;'>
+								{ addressBookState !== undefined ? <button class = 'button is-primary' onClick = { () => openNewAddress() } disabled = { addressBookState.activeFilter !== 'My Active Addresses' }>
+									{ `Add New ${ ActiveFilterSingle[addressBookState.activeFilter] }` }
+								</button> : <></> }
+							</div>
+						</div>
+						{ addressBookState === undefined ? <></> : <>
+							{ addressBookState.maxIndex === 0 ? <p class = 'paragraph'> { getNoResultsError() } </p> : <></> }
+							<ul style = { `height: ${ addressBookState.maxIndex * (ELEMENT_SIZE_PX[addressBookState.activeFilter] + ELEMENT_PADDING_PX) }px; overflow: hidden;` }>
+								<li style = { `margin: 0px; height: ${ getPageSizeInPixels(addressBookState.activeFilter) * Math.max(0, currentPage - getWindowSizeInPages(addressBookState.activeFilter) ) }px` } key = { -1 }> </li>
+								{ Array(2 * getWindowSizeInPages(addressBookState.activeFilter) + 1).fill(0).map((_, i) => renderAddressList(currentPage + ( i - getWindowSizeInPages(addressBookState.activeFilter) ))) }
+							</ul>
+						</> }
 					</div>
-				</footer>
-			}
+				</div>
 
-			<div class = { `modal ${ modalState !== 'noModal' ? 'is-active' : ''}` }>
-				{ modalState === 'addNewAddress' ?
-					<AddNewAddress
-						setActiveAddressAndInformAboutIt = { undefined }
-						addressInput = { addressInput }
-						nameInput = { nameInput }
-						addingNewAddress = { true }
-						setAddressInput = { setAddressInput }
-						setNameInput = { setNameInput }
-						close = { () => setModalState('noModal') }
-						activeAddress = { undefined }
-					/>
-				: <></> }
-				{ modalState === 'ConfirmaddressBookEntryToBeRemoved' && addressBookEntryToBeRemoved !== undefined ?
-					<ConfirmaddressBookEntryToBeRemoved
-						category = { activeFilter }
-						addressBookEntry = { addressBookEntryToBeRemoved }
-						removeEntry = { removeAddressBookEntry }
-						close = { () => setModalState('noModal') }
-						renameAddressCallBack = { renameAddressCallBack }
-					/>
-				: <></> }
-			</div>
+				<div class = { `modal ${ modalState !== 'noModal' ? 'is-active' : ''}` }>
+					{ modalState === 'addNewAddress' ?
+						<AddNewAddress
+							setActiveAddressAndInformAboutIt = { undefined }
+							addressInput = { addressInput }
+							nameInput = { nameInput }
+							addingNewAddress = { addingNewAddress }
+							setAddressInput = { setAddressInput }
+							setNameInput = { setNameInput }
+							close = { () => setModalState('noModal') }
+							activeAddress = { undefined }
+						/>
+					: <></> }
+					{ modalState === 'ConfirmaddressBookEntryToBeRemoved' && addressBookEntryToBeRemoved !== undefined ?
+						<ConfirmaddressBookEntryToBeRemoved
+							category = { activeFilter }
+							addressBookEntry = { addressBookEntryToBeRemoved }
+							removeEntry = { removeAddressBookEntry }
+							close = { () => setModalState('noModal') }
+							renameAddressCallBack = { renameAddressCallBack }
+						/>
+					: <></> }
+				</div>
+			</Hint>
 		</main>
 	)
 }
