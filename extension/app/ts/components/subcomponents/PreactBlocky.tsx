@@ -127,10 +127,12 @@ function generateIdenticon(options: BlockieProps, canvasRef: HTMLCanvasElement) 
 export default function Blockie(props: BlockieProps) {
 	const scale = props.scale || 4
 	const dimension = (props.size || 8) * scale
+	const [seed, setSeed] = useState<string | undefined>(props.seed)
 	const [dataURL, setDataURL] = useState<string | undefined>(dataURLCache.get(`${ props.seed }!${ dimension }`))
 
 	useEffect(() => {
-		if (dataURL === undefined) {
+		if (dataURL === undefined || seed !== props.seed) {
+			setSeed(props.seed)
 			const element = document.createElement('canvas')
 			generateIdenticon(props, element)
 			element.toBlob((blob) => {

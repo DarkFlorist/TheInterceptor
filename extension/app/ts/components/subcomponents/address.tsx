@@ -29,18 +29,15 @@ export type AddressIconParams = {
 
 function AddressIcon(param: AddressIconParams) {
 	const style = `${ param.isBig ? `width: 40px; height: 40px; border-radius: 10px;` : `width: 24px; height: 24px; border-radius: 2px;` }`
-	if (param.logoUri === undefined) {
-		return <div style = { style }>
+	return <div style = { style }>
+		{ param.logoUri === undefined ? <>
 			<Blockie
 				seed = { addressString(param.address).toLowerCase() }
 				size = { 8 }
 				scale = { param.isBig ? 5 : 3 }
 			/>
-		</div>
-	}
-
-	return <div style = { style }>
-		<img src = { param.logoUri } style = 'width: 100%; max-height: 100%'/>
+			</> : <img src = { param.logoUri } style = 'width: 100%; max-height: 100%'/>
+		}
 	</div>
 }
 
