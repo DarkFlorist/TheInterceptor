@@ -791,8 +791,8 @@ export const GetTransactionCount = t.Object({
 	params: t.Tuple(EthereumAddress, EthereumBlockTag)
 }).asReadonly()
 
-export type GetSimulationStack = t.Static<typeof GetSimulationStack>
-export const GetSimulationStack = t.ReadonlyArray(t.Intersect(
+export type GetSimulationStackReply = t.Static<typeof GetSimulationStackReply>
+export const GetSimulationStackReply = t.ReadonlyArray(t.Intersect(
 	EthereumUnsignedTransaction,
 	SingleMulticallResponse,
 	t.Object({
@@ -800,6 +800,12 @@ export const GetSimulationStack = t.ReadonlyArray(t.Intersect(
 		gasLimit: EthereumQuantity,
 	}).asReadonly(),
 ))
+
+export type GetSimulationStack = t.Static<typeof GetSimulationStack>
+export const GetSimulationStack = t.Object({
+	method: t.Literal('interceptor_getSimulationStack'),
+	params: t.Tuple(t.Union(t.Literal('1.0.0'))),
+}).asReadonly()
 
 export type SupportedETHRPCCall = t.Static<typeof SupportedETHRPCCall>
 export const SupportedETHRPCCall = t.Union(
@@ -825,7 +831,7 @@ export const SupportedETHRPCCall = t.Union(
 	t.Object({ method: t.Literal('eth_requestAccounts') }),
 	t.Object({ method: t.Literal('eth_gasPrice') }),
 	GetTransactionCount,
-	t.Object({ method: t.Literal('interceptor_getSimulationStack') }),
+	GetSimulationStack,
 )
 
 export const SupportedETHRPCCalls = [
