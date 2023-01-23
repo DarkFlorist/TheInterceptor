@@ -91,7 +91,6 @@ function FirstCard(param: FirstCardParams) {
 					</div>
 				}
 				{ !param.simulationMode ?
-
 					( (param.signerAccounts === undefined || param.signerAccounts.length == 0) && param.tabConnection.icon !== ICON_NOT_ACTIVE ) ?
 						<div style = 'margin-top: 5px'>
 							<button className = 'button is-primary' onClick = { connectToSigner } >
@@ -103,7 +102,7 @@ function FirstCard(param: FirstCardParams) {
 						</div>
 					: <p style = 'color: var(--subtitle-text-color);' class = 'subtitle is-7'> { ` You can change active address by changing it directly from ${ getSignerName(param.signerName) }` } </p>
 				:
-					<label class = 'form-control'>
+					<label class = 'form-control' style = 'padding-top: 10px'>
 						<input type = 'checkbox' checked = { param.makeMeRich } onInput = { e => { if (e.target instanceof HTMLInputElement && e.target !== null) { enableMakeMeRich(e.target.checked) } } } />
 						Make me rich
 					</label>
