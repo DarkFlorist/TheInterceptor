@@ -1,5 +1,6 @@
 import { Simulator } from '../simulation/simulator.js'
 import { bytes32String } from '../utils/bigint.js'
+import { ERROR_INTERCEPTOR_UNKNOWN_ORIGIN } from '../utils/constants.js'
 import { EstimateGasParams, EthBalanceParams, EthBlockByNumberParams, EthCallParams, EthereumAddress, EthereumData, EthereumQuantity, EthereumSignedTransactionWithBlockData, EthSubscribeParams, EthTransactionReceiptResponse, EthUnSubscribeParams, GetBlockReturn, GetCode, GetSimulationStack, GetTransactionCount, JsonRpcNewHeadsNotification, NewHeadsSubscriptionData, PersonalSignParams, SendTransactionParams, SignTypedDataV4Params, SwitchEthereumChainParams, TransactionByHashParams, TransactionReceiptParams } from '../utils/wire-types.js'
 import { postMessageIfStillConnected } from './background.js'
 import { WebsiteAccess } from './settings.js'
@@ -46,12 +47,7 @@ export async function sendTransaction(simulator: Simulator, request: SendTransac
 		}
 	}
 	const origin = port.sender?.url
-	if (origin === undefined) {
-		return { error: {
-			code: 400,
-			message: 'Unknown origin',
-		} }
-	}
+	if (origin === undefined) return ERROR_INTERCEPTOR_UNKNOWN_ORIGIN
 	if (requestId === undefined) throw new Error('sendTransaction requires known requestId')
 	return await openConfirmTransactionDialog(requestId, origin, simulationMode, formTransaction)
 }
@@ -142,12 +138,7 @@ export async function switchEthereumChain(simulator: Simulator, request: SwitchE
 		return { result: [] }
 	}
 	const origin = port.sender?.url
-	if (origin === undefined) {
-		return { error: {
-			code: 400,
-			message: 'Unknown origin',
-		} }
-	}
+	if (origin === undefined) return ERROR_INTERCEPTOR_UNKNOWN_ORIGIN
 	if (requestId === undefined) throw new Error('switchEthereumChain requires known requestId')
 
 	const favicon = port.sender?.tab?.favIconUrl

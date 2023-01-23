@@ -1,5 +1,5 @@
 import { bytes32String } from '../../utils/bigint.js'
-import { METAMASK_ERROR_NOT_CONNECTED_TO_CHAIN, METAMASK_ERROR_USER_REJECTED_REQUEST } from '../../utils/constants.js'
+import { ERROR_INTERCEPTOR_NOT_READY, ERROR_INTERCEPTOR_NO_ACTIVE_ADDRESS, METAMASK_ERROR_NOT_CONNECTED_TO_CHAIN, METAMASK_ERROR_USER_REJECTED_REQUEST } from '../../utils/constants.js'
 import { Future } from '../../utils/future.js'
 import { EthereumUnsignedTransaction } from '../../utils/wire-types.js'
 import { getActiveAddressForDomain } from '../accessManagement.js'
@@ -34,24 +34,10 @@ export async function openConfirmTransactionDialog(
 	simulationMode: boolean,
 	transactionToSimulatePromise: () => Promise<EthereumUnsignedTransaction>,
 ) {
-	if (window.interceptor.settings === undefined) {
-		return {
-			error: {
-				code: 1,
-				message: 'Interceptor not ready'
-			}
-		}
-	}
+	if (window.interceptor.settings === undefined) return ERROR_INTERCEPTOR_NOT_READY
 
 	const activeAddress = getActiveAddressForDomain(window.interceptor.settings.websiteAccess, (new URL(origin)).hostname)
-	if (activeAddress === undefined) {
-		return {
-			error: {
-				code: 1,
-				message: 'No active address'
-			}
-		}
-	}
+	if (activeAddress === undefined) return ERROR_INTERCEPTOR_NO_ACTIVE_ADDRESS
 
 	const reject = function() {
 		return {

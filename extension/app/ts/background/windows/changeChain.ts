@@ -1,4 +1,4 @@
-import { METAMASK_ERROR_USER_REJECTED_REQUEST } from '../../utils/constants.js'
+import { METAMASK_ERROR_USER_REJECTED_REQUEST, ERROR_INTERCEPTOR_NOT_READY } from '../../utils/constants.js'
 import { Future } from '../../utils/future.js'
 import { ChainChangeConfirmation, } from '../../utils/interceptor-messages.js'
 import { changeActiveChain } from '../background.js'
@@ -30,12 +30,7 @@ export async function resolveSignerChainChange(confirmation: ChainChangeConfirma
 }
 
 export async function openChangeChainDialog(requestId: number, origin: string, favIconUrl: string | undefined, chainId: bigint) {
-	if (window.interceptor.settings === undefined) return {
-		error: {
-			code: 1,
-			message: 'Interceptor not ready'
-		}
-	}
+	if (window.interceptor.settings === undefined) return ERROR_INTERCEPTOR_NOT_READY
 	if (openedWindow !== null && openedWindow.id) {
 		await browser.windows.remove(openedWindow.id)
 	}

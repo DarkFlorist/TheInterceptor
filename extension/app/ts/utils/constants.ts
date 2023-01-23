@@ -63,8 +63,12 @@ export const METAMASK_ERROR_METHOD_DOES_NOT_EXIST = 32601
 export const METAMASK_ERROR_INVALID_ARGUMENT = 32602
 export const METAMASK_ERROR_BLANKET_ERROR = 32603
 export const METAMASK_ERROR_TRANSACTION_REJECTD = 32003
-export const METAMASK_ERROR_METHOD_NOT_SUPPORTED= 32004
+export const METAMASK_ERROR_METHOD_NOT_SUPPORTED = 32004
 export const METAMASK_ERROR_RATE_LIMITED = 32005
+
+export const ERROR_INTERCEPTOR_NOT_READY = { error: { code: 1, message: 'Interceptor: Not ready' } }
+export const ERROR_INTERCEPTOR_NO_ACTIVE_ADDRESS = { error: { code: 2, message: 'Interceptor: No active address' } }
+export const ERROR_INTERCEPTOR_UNKNOWN_ORIGIN = { error: { code: 400, message: 'Interceptor: Unkown website origin' } }
 
 function get4Byte(functionAbi: string) {
 	return Number(ethers.utils.keccak256(ethers.utils.toUtf8Bytes(functionAbi)).slice(0, 10))
