@@ -1,7 +1,7 @@
 import { addressString } from '../utils/bigint.js'
 import { AddressMetadata } from '../utils/visualizer-types.js'
-import { EthereumAddress } from '../utils/wire-types.js'
-import { handlers, postMessageIfStillConnected, setEthereumNodeBlockPolling } from './background.js'
+import { EthereumAddress, SupportedETHRPCCalls } from '../utils/wire-types.js'
+import { postMessageIfStillConnected, setEthereumNodeBlockPolling } from './background.js'
 import { getActiveAddress } from './backgroundUtils.js'
 import { getAddressMetaData } from './metadataUtils.js'
 import { Settings, WebsiteAccess, WebsiteAddressAccess } from './settings.js'
@@ -48,9 +48,9 @@ export async function verifyAccess(port: browser.runtime.Port, callMethod: strin
 	if ( connection && connection.approved ) return true
 
 	const origin = (new URL(port.sender.url)).hostname
-	// ask user for permission only if this is an RPC method that we handle. otherwise some metamask call backs will trigger access request
+	// ask user for permission only if this is an RPC method that we handle. otherwise some metamask callbacks will trigger access request
 	// we could just ask user permisson on eth_request accounts, but I feel its more dynamic when you can use any eth method for it
-	const isRpcMethod = handlers.get(callMethod) !== undefined
+	const isRpcMethod = SupportedETHRPCCalls.includes(callMethod) !== undefined
 	const activeAddress = getActiveAddress()
 	if (activeAddress !== undefined) {
 

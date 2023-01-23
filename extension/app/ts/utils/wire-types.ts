@@ -618,6 +618,7 @@ export const SendTransactionParams = t.Object({
 	params: t.Tuple(DappRequestTransaction)
 })
 
+
 export type EthereumAccountsReply = t.Static<typeof EthereumAccountsReply>
 export const EthereumAccountsReply = t.ReadonlyArray(EthereumAddress)
 
@@ -799,3 +800,56 @@ export const GetSimulationStack = t.ReadonlyArray(t.Intersect(
 		gasLimit: EthereumQuantity,
 	}).asReadonly(),
 ))
+
+export type SupportedETHRPCCall = t.Static<typeof SupportedETHRPCCall>
+export const SupportedETHRPCCall = t.Union(
+	EthBlockByNumberParams,
+	EthBalanceParams,
+	EstimateGasParams,
+	TransactionByHashParams,
+	TransactionReceiptParams,
+	SendTransactionParams,
+	EthCallParams,
+	EthSubscribeParams,
+	EthUnSubscribeParams,
+	t.Object({ method: t.Literal('eth_blockNumber') }),
+	t.Object({ method: t.Literal('eth_chainId') }),
+	t.Object({ method: t.Literal('net_version') }),
+	GetCode,
+	PersonalSignParams,
+	SignTypedDataV4Params,
+	SwitchEthereumChainParams,
+	RequestPermissions,
+	t.Object({ method: t.Literal('wallet_getPermissions') }),
+	t.Object({ method: t.Literal('eth_accounts') }),
+	t.Object({ method: t.Literal('eth_requestAccounts') }),
+	t.Object({ method: t.Literal('eth_gasPrice') }),
+	GetTransactionCount,
+	t.Object({ method: t.Literal('interceptor_getSimulationStack') }),
+)
+
+export const SupportedETHRPCCalls = [
+	'eth_getBlockByNumber',
+	'eth_getBalance',
+	'eth_estimateGas',
+	'eth_getTransactionByHash',
+	'eth_getTransactionReceipt',
+	'eth_sendTransaction',
+	'eth_call',
+	'eth_subscribe',
+	'eth_unsubscribe',
+	'eth_blockNumber',
+	'eth_chainId',
+	'net_version',
+	'eth_getCode',
+	'personal_sign',
+	'eth_signTypedData_v4',
+	'wallet_switchEthereumChain',
+	'wallet_requestPermissions',
+	'wallet_getPermissions',
+	'eth_accounts',
+	'eth_requestAccounts',
+	'eth_gasPrice',
+	'eth_getTransactionCount',
+	'interceptor_getSimulationStack'
+]

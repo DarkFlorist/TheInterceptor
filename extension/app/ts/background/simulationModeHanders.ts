@@ -1,7 +1,7 @@
 import { Simulator } from '../simulation/simulator.js'
 import { bytes32String } from '../utils/bigint.js'
-import { InterceptedRequest } from '../utils/interceptor-messages.js'
-import { EstimateGasParams, EthBalanceParams, EthBlockByNumberParams, EthCallParams, EthereumAddress, EthereumData, EthereumQuantity, EthereumSignedTransactionWithBlockData, EthSubscribeParams, EthTransactionReceiptResponse, EthUnSubscribeParams, GetBlockReturn, GetCode, GetSimulationStack, GetTransactionCount, JsonRpcNewHeadsNotification, NewHeadsSubscriptionData, PersonalSignParams, RequestPermissions, SendTransactionParams, SignTypedDataV4Params, SwitchEthereumChainParams, TransactionByHashParams, TransactionReceiptParams } from '../utils/wire-types.js'
+import { ERROR_INTERCEPTOR_UNKNOWN_ORIGIN } from '../utils/constants.js'
+import { EstimateGasParams, EthBalanceParams, EthBlockByNumberParams, EthCallParams, EthereumAddress, EthereumData, EthereumQuantity, EthereumSignedTransactionWithBlockData, EthSubscribeParams, EthTransactionReceiptResponse, EthUnSubscribeParams, GetBlockReturn, GetCode, GetSimulationStack, GetTransactionCount, JsonRpcNewHeadsNotification, NewHeadsSubscriptionData, PersonalSignParams, SendTransactionParams, SignTypedDataV4Params, SwitchEthereumChainParams, TransactionByHashParams, TransactionReceiptParams } from '../utils/wire-types.js'
 import { postMessageIfStillConnected } from './background.js'
 import { WebsiteAccess } from './settings.js'
 import { openChangeChainDialog } from './windows/changeChain.js'
@@ -10,84 +10,49 @@ import { openPersonalSignDialog } from './windows/personalSign.js'
 
 const defaultCallAddress = 0x1n
 
-export async function getBlockByNumber(simulator: Simulator, port: browser.runtime.Port, request: InterceptedRequest) {
-	const balanceParams = EthBlockByNumberParams.parse(request.options)
-	const block = await simulator.simulationModeNode.getBlock(balanceParams.params[0], balanceParams.params[1])
-	return postMessageIfStillConnected(port, {
-		interceptorApproved: true,
-		requestId: request.requestId,
-		options: request.options,
-		result: GetBlockReturn.serialize(block)
-	})
+export async function getBlockByNumber(simulator: Simulator, request: EthBlockByNumberParams) {
+	const block = await simulator.simulationModeNode.getBlock(request.params[0], request.params[1])
+	return { result: GetBlockReturn.serialize(block) }
 }
-export async function getBalance(simulator: Simulator, port: browser.runtime.Port, request: InterceptedRequest) {
-	const balanceParams = EthBalanceParams.parse(request.options)
-	return postMessageIfStillConnected(port, {
-		interceptorApproved: true,
-		requestId: request.requestId,
-		options: request.options,
-		result: EthereumQuantity.serialize(await simulator.simulationModeNode.getBalance(balanceParams.params[0]))
-	})
+export async function getBalance(simulator: Simulator, request: EthBalanceParams) {
+	return { result: EthereumQuantity.serialize(await simulator.simulationModeNode.getBalance(request.params[0])) }
 }
-export async function getTransactionByHash(simulator: Simulator, port: browser.runtime.Port, request: InterceptedRequest) {
-	const hashParams = TransactionByHashParams.parse(request.options)
-	const result = await simulator.simulationModeNode.getTransactionByHash(hashParams.params[0])
-	if(result === undefined) {
-		return postMessageIfStillConnected(port, {
-			interceptorApproved: true,
-			requestId: request.requestId,
-			options: request.options,
-			result: undefined
-		})
-	}
-	return postMessageIfStillConnected(port, {
-		interceptorApproved: true,
-		requestId: request.requestId,
-		options: request.options,
-		result: EthereumSignedTransactionWithBlockData.serialize(result)
-	})
+export async function getTransactionByHash(simulator: Simulator, request: TransactionByHashParams) {
+	const result = await simulator.simulationModeNode.getTransactionByHash(request.params[0])
+	if (result === undefined) return { result: undefined }
+	return { result: EthereumSignedTransactionWithBlockData.serialize(result) }
 }
-export async function getTransactionReceipt(simulator: Simulator, port: browser.runtime.Port, request: InterceptedRequest) {
-	const receiptRequest = TransactionReceiptParams.parse(request.options)
-	return postMessageIfStillConnected(port, {
-		interceptorApproved: true,
-		requestId: request.requestId,
-		options: request.options,
-		result: EthTransactionReceiptResponse.serialize(await simulator.simulationModeNode.getTransactionReceipt(receiptRequest.params[0]))
-	})
+export async function getTransactionReceipt(simulator: Simulator, request: TransactionReceiptParams) {
+	return { result: EthTransactionReceiptResponse.serialize(await simulator.simulationModeNode.getTransactionReceipt(request.params[0])) }
 }
-export async function sendTransaction(simulator: Simulator, port: browser.runtime.Port, request: InterceptedRequest, simulationMode: boolean = true) {
-	const requestTransaction = SendTransactionParams.parse(request.options)
-
+export async function sendTransaction(simulator: Simulator, request: SendTransactionParams, port: browser.runtime.Port, requestId: number | undefined, simulationMode: boolean = true) {
 	async function formTransaction() {
 		const block = simulator.ethereum.getBlock()
 		const chainId = simulator.ethereum.getChainId()
-		const transactionCount = simulator.simulationModeNode.getTransactionCount(requestTransaction.params[0].from)
+		const transactionCount = simulator.simulationModeNode.getTransactionCount(request.params[0].from)
 
 		const maxFeePerGas = (await block).baseFeePerGas * 2n
 		return {
 			type: '1559' as const,
-			from: requestTransaction.params[0].from,
+			from: request.params[0].from,
 			chainId: await chainId,
 			nonce: await transactionCount,
-			maxFeePerGas: requestTransaction.params[0].maxFeePerGas ? requestTransaction.params[0].maxFeePerGas : maxFeePerGas,
-			maxPriorityFeePerGas: requestTransaction.params[0].maxPriorityFeePerGas ? requestTransaction.params[0].maxPriorityFeePerGas : 1n,
-			gas: requestTransaction.params[0].gas ? requestTransaction.params[0].gas : 90000n,
-			to: requestTransaction.params[0].to ? requestTransaction.params[0].to : 0n,
-			value: requestTransaction.params[0].value ? requestTransaction.params[0].value : 0n,
-			input: requestTransaction.params[0].data,
+			maxFeePerGas: request.params[0].maxFeePerGas ? request.params[0].maxFeePerGas : maxFeePerGas,
+			maxPriorityFeePerGas: request.params[0].maxPriorityFeePerGas ? request.params[0].maxPriorityFeePerGas : 1n,
+			gas: request.params[0].gas ? request.params[0].gas : 90000n,
+			to: request.params[0].to ? request.params[0].to : 0n,
+			value: request.params[0].value ? request.params[0].value : 0n,
+			input: request.params[0].data,
 			accessList: []
 		}
 	}
-	return openConfirmTransactionDialog(port, request, simulationMode, formTransaction )
+	const origin = port.sender?.url
+	if (origin === undefined) return ERROR_INTERCEPTOR_UNKNOWN_ORIGIN
+	if (requestId === undefined) throw new Error('sendTransaction requires known requestId')
+	return await openConfirmTransactionDialog(requestId, origin, simulationMode, formTransaction)
 }
 
-export async function sendRawTransaction(simulator: Simulator, port: browser.runtime.Port, request: InterceptedRequest) {
-	return sendTransaction(simulator, port, request, true)
-}
-
-export async function call(simulator: Simulator, port: browser.runtime.Port, request: InterceptedRequest) {
-	const params = EthCallParams.parse(request.options)
+export async function call(simulator: Simulator, request: EthCallParams) {
 	const transaction = {
 		type: '1559' as const,
 		from: defaultCallAddress,
@@ -97,48 +62,31 @@ export async function call(simulator: Simulator, port: browser.runtime.Port, req
 		maxPriorityFeePerGas: 0n,
 		gas: await simulator.simulationModeNode.estimateGas({
 			from: defaultCallAddress,
-			to: params.params[0].to,
-			data: params.params[0].data
+			to: request.params[0].to,
+			data: request.params[0].data
 		}),
-		to: params.params[0].to,
+		to: request.params[0].to,
 		value: 0n,
-		input: params.params[0].data,
-		accessList: []
+		input: request.params[0].data,
+		accessList: [],
 	}
-	const result = params.params.length > 1 ? await simulator.simulationModeNode.call(transaction, params.params[1]) : await simulator.simulationModeNode.call(transaction)
-	return postMessageIfStillConnected(port, {
-		interceptorApproved: true,
-		requestId: request.requestId,
-		options: request.options,
-		result: result
-	})
+	const result = request.params.length > 1 ? await simulator.simulationModeNode.call(transaction, request.params[1]) : await simulator.simulationModeNode.call(transaction)
+	return { result: result }
 }
-export async function blockNumber(simulator: Simulator, port: browser.runtime.Port, request: InterceptedRequest) {
+export async function blockNumber(simulator: Simulator) {
 	const block = await simulator.simulationModeNode.getBlockNumber()
-	return postMessageIfStillConnected(port, {
-		interceptorApproved: true,
-		requestId: request.requestId,
-		options: request.options,
-		result: bytes32String(block)
-	})
+	return { result: bytes32String(block) }
 }
 
-export async function estimateGas(simulator: Simulator, port: browser.runtime.Port, request: InterceptedRequest) {
-	const gasParams = EstimateGasParams.parse(request.options)
-	return postMessageIfStillConnected(port, {
-		interceptorApproved: true,
-		requestId: request.requestId,
-		options: request.options,
-		result: EthereumQuantity.serialize(await simulator.simulationModeNode.estimateGas(gasParams.params[0]))
-	})
+export async function estimateGas(simulator: Simulator, request: EstimateGasParams) {
+	return { result: EthereumQuantity.serialize(await simulator.simulationModeNode.estimateGas(request.params[0])) }
 }
 
-export async function subscribe(simulator: Simulator, port: browser.runtime.Port, request: InterceptedRequest) {
-	const params = EthSubscribeParams.parse(request.options)
-	const result = await simulator.simulationModeNode.createSubscription(params, (subscriptionId: string, reply: JsonRpcNewHeadsNotification) => {
+export async function subscribe(simulator: Simulator, port: browser.runtime.Port, request: EthSubscribeParams) {
+	const result = await simulator.simulationModeNode.createSubscription(request, (subscriptionId: string, reply: JsonRpcNewHeadsNotification) => {
 		return postMessageIfStillConnected(port, {
 			interceptorApproved: true,
-			options: request.options,
+			options: request,
 			result: NewHeadsSubscriptionData.serialize(reply.params),
 			subscription: subscriptionId
 		})
@@ -146,137 +94,78 @@ export async function subscribe(simulator: Simulator, port: browser.runtime.Port
 
 	if (result === undefined) throw ('failed to create subscription')
 
-	return postMessageIfStillConnected(port, {
-		interceptorApproved: true,
-		requestId: request.requestId,
-		options: request.options,
-		result: result
-	})
+	return { result: result }
 }
 
-export async function unsubscribe(simulator: Simulator, port: browser.runtime.Port, request: InterceptedRequest) {
-	const params = EthUnSubscribeParams.parse(request.options)
-	return postMessageIfStillConnected(port, {
-		interceptorApproved: true,
-		requestId: request.requestId,
-		options: request.options,
-		result: simulator.simulationModeNode.remoteSubscription(params.params[0])
-	})
+export async function unsubscribe(simulator: Simulator, request: EthUnSubscribeParams) {
+	return { result: simulator.simulationModeNode.remoteSubscription(request.params[0]) }
 }
 
-export async function getAccounts(getActiveAddressForDomain: (websiteAccess: readonly WebsiteAccess[], origin: string) => bigint | undefined, _simulator: Simulator, port: browser.runtime.Port, request: InterceptedRequest) {
+export async function getAccounts(getActiveAddressForDomain: (websiteAccess: readonly WebsiteAccess[], origin: string) => bigint | undefined, _simulator: Simulator, port: browser.runtime.Port) {
 	const connection = window.interceptor.websitePortApprovals.get(port)
 	if (connection === undefined || window.interceptor.settings === undefined) {
-		return postMessageIfStillConnected(port, {
-			interceptorApproved: true,
-			requestId: request.requestId,
-			options: request.options,
-			result: []
-		})
+		return { result: [] }
 	}
 	const account = getActiveAddressForDomain(window.interceptor.settings.websiteAccess, connection.origin)
 	if (account === undefined) {
-		return postMessageIfStillConnected(port, {
-			interceptorApproved: true,
-			requestId: request.requestId,
-			options: request.options,
-			result: []
-		})
+		return {result: [] }
 	}
 
-	return postMessageIfStillConnected(port, {
-		interceptorApproved: true,
-		requestId: request.requestId,
-		options: request.options,
-		result: [EthereumAddress.serialize(account)]
-	})
+	return { result: [EthereumAddress.serialize(account)] }
 }
 
-export async function chainId(simulator: Simulator, port: browser.runtime.Port, request: InterceptedRequest) {
-	return postMessageIfStillConnected(port, {
-		interceptorApproved: true,
-		requestId: request.requestId,
-		options: request.options,
-		result: EthereumQuantity.serialize(await simulator.ethereum.getChainId())
-	})
+export async function chainId(simulator: Simulator) {
+	return { result: EthereumQuantity.serialize(await simulator.ethereum.getChainId()) }
 }
 
-export async function gasPrice(simulator: Simulator, port: browser.runtime.Port, request: InterceptedRequest) {
-	return postMessageIfStillConnected(port, {
-		interceptorApproved: true,
-		requestId: request.requestId,
-		options: request.options,
-		result: EthereumQuantity.serialize(await simulator.ethereum.getGasPrice())
-	})
+export async function gasPrice(simulator: Simulator) {
+	return { result: EthereumQuantity.serialize(await simulator.ethereum.getGasPrice()) }
 }
 
-export async function personalSign(_simulator: Simulator, port: browser.runtime.Port, request: InterceptedRequest, simulationMode: boolean = true) {
-	const params = PersonalSignParams.parse(request.options)
-	return openPersonalSignDialog(port, request, simulationMode, params.params[0], params.params[1], 'personalSign')
+export async function personalSign(_simulator: Simulator, request: PersonalSignParams, requestId: number | undefined, simulationMode: boolean = true) {
+	if (requestId === undefined) throw new Error('personalSign requires known requestId')
+	return await openPersonalSignDialog(requestId, simulationMode, request.params[0], request.params[1], 'personalSign')
 }
 
-export async function signTypedDataV4(_simulator: Simulator, port: browser.runtime.Port, request: InterceptedRequest, simulationMode: boolean = true) {
-	const params = SignTypedDataV4Params.parse(request.options)
-	return openPersonalSignDialog(port, request, simulationMode, params.params[1], params.params[0], 'v4')
-
+export async function signTypedDataV4(_simulator: Simulator, request: SignTypedDataV4Params, requestId: number | undefined, simulationMode: boolean = true) {
+	if (requestId === undefined) throw new Error('signTypedDataV4 requires known requestId')
+	return await openPersonalSignDialog(requestId, simulationMode, request.params[1], request.params[0], 'v4')
 }
 
-export async function switchEthereumChain(simulator: Simulator, port: browser.runtime.Port, request: InterceptedRequest) {
-	const params = SwitchEthereumChainParams.parse(request.options)
-	if (await simulator.ethereum.getChainId() === params.params[0].chainId) {
-		return postMessageIfStillConnected(port, {
-			interceptorApproved: true,
-			requestId: request.requestId,
-			options: request.options,
-			result: []
-		})
+export async function switchEthereumChain(simulator: Simulator, request: SwitchEthereumChainParams, port: browser.runtime.Port, requestId: number | undefined) {
+	if (await simulator.ethereum.getChainId() === request.params[0].chainId) {
+		// we are already on the right chain
+		return { result: [] }
 	}
-	return openChangeChainDialog(port, request, params.params[0].chainId)
+	const origin = port.sender?.url
+	if (origin === undefined) return ERROR_INTERCEPTOR_UNKNOWN_ORIGIN
+	if (requestId === undefined) throw new Error('switchEthereumChain requires known requestId')
+
+	const favicon = port.sender?.tab?.favIconUrl
+	return await openChangeChainDialog(requestId, origin, favicon, request.params[0].chainId)
 }
 
-export async function getCode(simulator: Simulator, port: browser.runtime.Port, request: InterceptedRequest) {
-	const params = GetCode.parse(request.options)
-
-	return postMessageIfStillConnected(port, {
-		interceptorApproved: true,
-		requestId: request.requestId,
-		options: request.options,
-		result: EthereumData.serialize(await simulator.simulationModeNode.getCode(params.params[0], params.params[1]))
-	})
+export async function getCode(simulator: Simulator, request: GetCode) {
+	return { result: EthereumData.serialize(await simulator.simulationModeNode.getCode(request.params[0], request.params[1])) }
 }
 
-export async function requestPermissions(getActiveAddressForDomain: (websiteAccess: readonly WebsiteAccess[], origin: string) => bigint | undefined, simulator: Simulator, port: browser.runtime.Port, request: InterceptedRequest) {
-	RequestPermissions.parse(request.options)
-	return await getAccounts(getActiveAddressForDomain, simulator, port, request)
+export async function requestPermissions(getActiveAddressForDomain: (websiteAccess: readonly WebsiteAccess[], origin: string) => bigint | undefined, simulator: Simulator, port: browser.runtime.Port) {
+	return await getAccounts(getActiveAddressForDomain, simulator, port)
 }
 
-export async function getPermissions(_simulator: Simulator, port: browser.runtime.Port, request: InterceptedRequest) {
-	return postMessageIfStillConnected(port, {
-		interceptorApproved: true,
-		requestId: request.requestId,
-		options: request.options,
-		result: [ { "eth_accounts": {} } ]
-	})
+export async function getPermissions() {
+	return { result: [ { "eth_accounts": {} } ] }
 }
 
-export async function getTransactionCount(simulator: Simulator, port: browser.runtime.Port, request: InterceptedRequest) {
-	const params = GetTransactionCount.parse(request.options)
-	return postMessageIfStillConnected(port, {
-		interceptorApproved: true,
-		requestId: request.requestId,
-		options: request.options,
-		result: EthereumQuantity.serialize(await simulator.ethereum.getTransactionCount(params.params[0], params.params[1]))
-	})
+export async function getTransactionCount(simulator: Simulator, request: GetTransactionCount) {
+	return { result: EthereumQuantity.serialize(await simulator.ethereum.getTransactionCount(request.params[0], request.params[1])) }
 }
 
-export async function getSimulationStack(simulator: Simulator, port: browser.runtime.Port, request: InterceptedRequest) {
-	return postMessageIfStillConnected(port, {
-		interceptorApproved: true,
-		requestId: request.requestId,
-		options: request.options,
+export async function getSimulationStack(simulator: Simulator) {
+	return {
 		result: {
 			version: '1.0.0',
 			payload: GetSimulationStack.serialize(simulator.simulationModeNode.getSimulationStack()),
 		}
-	})
+	}
 }

@@ -53,7 +53,7 @@ export type TransactionConfirmation = funtypes.Static<typeof TransactionConfirma
 export const TransactionConfirmation = funtypes.Object({
 	method: funtypes.Literal('popup_confirmDialog'),
 	options: funtypes.Object({
-		request: InterceptedRequest,
+		requestId: funtypes.Number,
 		accept: funtypes.Boolean
 	})
 }).asReadonly()
@@ -62,7 +62,7 @@ export type PersonalSign = funtypes.Static<typeof PersonalSign>
 export const PersonalSign = funtypes.Object({
 	method: funtypes.Literal('popup_personalSign'),
 	options: funtypes.Object({
-		request: InterceptedRequest,
+		requestId: funtypes.Number,
 		accept: funtypes.Boolean
 	})
 }).asReadonly()
@@ -312,3 +312,14 @@ export const MessageToPopup = funtypes.Union(
 	GetAddressBookDataReply,
 	MessageToPopupSimple
 )
+
+export type HandleSimulationModeReturnValue = {
+	result: unknown,
+} | {
+	error: {
+		code: number,
+		message: string,
+	}
+} | {
+	forward: true,
+}

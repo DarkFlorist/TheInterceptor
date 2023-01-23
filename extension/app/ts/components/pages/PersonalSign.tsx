@@ -1,6 +1,5 @@
 import { useState, useEffect, useRef } from 'preact/hooks'
 import { bigintToRoundedPrettyDecimalString, stringToUint8Array } from '../../utils/bigint.js'
-import { InterceptedRequest } from '../../utils/interceptor-messages.js'
 import { EthereumAddress } from '../../utils/wire-types.js'
 import { BigAddress, findAddressInfo } from '../subcomponents/address.js'
 import { AddressInfo } from '../../utils/user-interface-types.js'
@@ -18,7 +17,7 @@ interface SignRequest {
 }
 
 export function PersonalSign() {
-	const [requestToConfirm, setRequestToConfirm] = useState<InterceptedRequest | undefined>(undefined)
+	const [requestIdToConfirm, setRequestIdToConfirm] = useState<Number | undefined>(undefined)
 	const [signRequest, setSignRequest] = useState<SignRequest | undefined>(undefined)
 	const textareaRef = useRef<HTMLTextAreaElement | null>(null)
 	const [isEditAddressModelOpen, setEditAddressModelOpen] = useState<boolean>(false)
@@ -50,9 +49,8 @@ export function PersonalSign() {
 		if( !('personalSignDialog' in backgroundPage.interceptor) || backgroundPage.interceptor.personalSignDialog === undefined) return window.close();
 		if (backgroundPage.interceptor.settings === undefined) return window.close()
 
-		const req = InterceptedRequest.parse(backgroundPage.interceptor.personalSignDialog.requestToConfirm)
-		setRequestToConfirm(req)
 		setActiveSimulationAddress(backgroundPage.interceptor.settings.activeSimulationAddress)
+		setRequestIdToConfirm(backgroundPage.interceptor.personalSignDialog.requestId)
 		const dialog = backgroundPage.interceptor.personalSignDialog
 		const addressToSignWith = EthereumAddress.parse(dialog.account)
 		const addressInfo = findAddressInfo(addressToSignWith, backgroundPage.interceptor.settings === undefined ? [] : backgroundPage.interceptor.settings.addressInfos)
@@ -81,11 +79,11 @@ export function PersonalSign() {
 	}
 
 	function approve() {
-		browser.runtime.sendMessage( { method: 'popup_personalSign', options: { request: requestToConfirm, accept: true } } )
+		browser.runtime.sendMessage( { method: 'popup_personalSign', options: { requestId: requestIdToConfirm, accept: true } } )
 	}
 
 	function reject() {
-		browser.runtime.sendMessage( { method: 'popup_personalSign', options: { request: requestToConfirm, accept: false } } )
+		browser.runtime.sendMessage( { method: 'popup_personalSign', options: { requestId: requestIdToConfirm, accept: false } } )
 	}
 
 	function renameAddressCallBack(name: string | undefined, address: string) {

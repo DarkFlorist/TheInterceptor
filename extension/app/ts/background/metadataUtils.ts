@@ -7,6 +7,10 @@ import { Simulator } from '../simulation/simulator.js'
 import { MOCK_ADDRESS } from '../utils/constants.js'
 export const LOGO_URI_PREFIX = `../vendor/@darkflorist/address-metadata`
 
+export function getFullLogoUri(logoURI: string) {
+	return `${ LOGO_URI_PREFIX }/${ logoURI }`
+}
+
 export function getAddressMetaData(address: bigint, addressInfos: readonly AddressInfo[] | undefined) : AddressMetadata {
 	if ( address === MOCK_ADDRESS) {
 		return {
@@ -34,7 +38,7 @@ export function getAddressMetaData(address: bigint, addressInfos: readonly Addre
 	const addressData = contractMetadata.get(addrString)
 	if (addressData) return {
 		...addressData,
-		logoUri: addressData.logoUri ? `${ LOGO_URI_PREFIX }/${ addressData.logoUri }` : undefined,
+		logoUri: addressData.logoUri ? `${ getFullLogoUri(addressData.logoUri) }` : undefined,
 		metadataSource: 'contract',
 	}
 
@@ -42,7 +46,7 @@ export function getAddressMetaData(address: bigint, addressInfos: readonly Addre
 	if (tokenData) return {
 		name: tokenData.name,
 		symbol: tokenData.symbol,
-		logoUri: tokenData.logoUri ? `${ LOGO_URI_PREFIX }/${ tokenData.logoUri }` : undefined,
+		logoUri: tokenData.logoUri ? `${ getFullLogoUri(tokenData.logoUri) }` : undefined,
 		protocol: undefined,
 		metadataSource: 'token',
 		decimals: tokenData.decimals,
@@ -52,7 +56,7 @@ export function getAddressMetaData(address: bigint, addressInfos: readonly Addre
 	if (nftTokenData) return {
 		name: nftTokenData.name,
 		symbol: nftTokenData.symbol,
-		logoUri: nftTokenData.logoUri ? `${ LOGO_URI_PREFIX }/${ nftTokenData.logoUri }` : undefined,
+		logoUri: nftTokenData.logoUri ? `${ getFullLogoUri(nftTokenData.logoUri) }` : undefined,
 		metadataSource: 'nft',
 		protocol: undefined,
 		decimals: undefined,
@@ -72,7 +76,7 @@ async function getTokenMetadata(simulator: Simulator, address: bigint) : Promise
 	if (tokenData) return {
 		name: tokenData.name,
 		symbol: tokenData.symbol,
-		logoUri: tokenData.logoUri ? `${ LOGO_URI_PREFIX }/${ tokenData.logoUri }` : undefined,
+		logoUri: tokenData.logoUri ? `${ getFullLogoUri(tokenData.logoUri) }` : undefined,
 		protocol: undefined,
 		metadataSource: 'token',
 		decimals: tokenData.decimals,
@@ -81,7 +85,7 @@ async function getTokenMetadata(simulator: Simulator, address: bigint) : Promise
 	if (nftTokenData) return {
 		name: nftTokenData.name,
 		symbol: nftTokenData.symbol,
-		logoUri: nftTokenData.logoUri ? `${ LOGO_URI_PREFIX }/${ nftTokenData.logoUri }` : undefined,
+		logoUri: nftTokenData.logoUri ? `${ getFullLogoUri(nftTokenData.logoUri) }` : undefined,
 		metadataSource: 'nft',
 		protocol: undefined,
 		decimals: undefined
