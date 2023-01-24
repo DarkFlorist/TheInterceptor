@@ -3,8 +3,7 @@ import { IUnsignedTransaction } from './ethereum.js'
 import { EthBalanceChanges, EthereumAddress, EthereumQuantity, EthereumTransactionSignature, EthereumUnsignedTransaction, SingleMulticallResponse } from './wire-types.js'
 import * as funtypes from 'funtypes'
 import { QUARANTINE_CODE } from '../simulation/protectors/quarantine-codes.js'
-import { CHAIN, RenameAddressCallBack } from './user-interface-types.js'
-import { Partial } from 'funtypes'
+import { AddressBookEntry, CHAIN, NFTEntry, RenameAddressCallBack, TokenEntry } from './user-interface-types.js'
 
 export type TokenVisualizerResult = funtypes.Static<typeof TokenVisualizerResult>
 export const TokenVisualizerResult = funtypes.Intersect(
@@ -25,6 +24,35 @@ export const TokenVisualizerResult = funtypes.Intersect(
 			isApproval: funtypes.Boolean,
 		}),
 		funtypes.Object({ // ERC721 all approval // all approval removal
+			is721: funtypes.Literal(true),
+			isAllApproval: funtypes.Boolean,
+			allApprovalAdded: funtypes.Boolean, // true if approval is added, and false if removed
+			isApproval: funtypes.Literal(true),
+		})
+	)
+)
+
+export type TokenVisualizerResultWithMetadata = funtypes.Static<typeof TokenVisualizerResultWithMetadata>
+export const TokenVisualizerResultWithMetadata = funtypes.Intersect(
+	funtypes.Object( {
+		from: AddressBookEntry,
+		to: AddressBookEntry,
+	}),
+	funtypes.Union(
+		funtypes.Object({ // ERC20 transfer / approval
+			token: TokenEntry,
+			amount: EthereumQuantity,
+			is721: funtypes.Literal(false),
+			isApproval: funtypes.Boolean,
+		}),
+		funtypes.Object({ // ERC721 transfer / approval
+			token: NFTEntry,
+			tokenId: EthereumQuantity,
+			is721: funtypes.Literal(true),
+			isApproval: funtypes.Boolean,
+		}),
+		funtypes.Object({ // ERC721 all approval // all approval removal
+			token: NFTEntry,
 			is721: funtypes.Literal(true),
 			isAllApproval: funtypes.Boolean,
 			allApprovalAdded: funtypes.Boolean, // true if approval is added, and false if removed
@@ -60,25 +88,6 @@ export type SimulationState = {
 	simulationConductedTimestamp: Date,
 }
 
-export type AddressMetadata = funtypes.Static<typeof AddressMetadata>
-export const AddressMetadata = funtypes.Union(
-	funtypes.Object({
-		name: funtypes.String,
-		metadataSource: funtypes.Union(funtypes.Literal('addressBook'), funtypes.Literal('contract'), funtypes.Literal('other'))
-	}).And(Partial({
-		logoUri: funtypes.String,
-		protocol: funtypes.String,
-	})), funtypes.Object({
-		name: funtypes.String,
-		symbol: funtypes.String,
-		protocol: funtypes.Union(funtypes.String, funtypes.Undefined),
-		decimals: funtypes.Union(EthereumQuantity, funtypes.Undefined),
-		metadataSource: funtypes.Union(funtypes.Literal('token'), funtypes.Literal('nft'), funtypes.Literal('imputed'))
-	}).And(Partial({
-		logoUri: funtypes.String,
-	}))
-)
-
 export type SimulatedAndVisualizedTransaction = {
 	multicallResponse: SingleMulticallResponse
 	unsignedTransaction: EthereumUnsignedTransaction
@@ -92,7 +101,7 @@ export type SimulationAndVisualisationResults = {
 	blockTimestamp: Date,
 	simulationConductedTimestamp: Date,
 	simulatedAndVisualizedTransactions: SimulatedAndVisualizedTransaction[],
-	addressMetadata: Map<string, AddressMetadata>,
+	addressMetadata: Map<string, AddressBookEntry>,
 	chain: CHAIN,
 	tokenPrices: TokenPriceEstimate[],
 	activeAddress: bigint,
@@ -122,6 +131,8 @@ export const TokenPriceEstimate = funtypes.Object({
 
 export type TransactionVisualizationParameters = {
 	tx: SimulatedAndVisualizedTransaction,
+	from: AddressBookEntry,
+	to: AddressBookEntry,
 	simulationAndVisualisationResults: SimulationAndVisualisationResults,
 	removeTransaction: (hash: bigint) => void,
 	activeAddress: bigint,

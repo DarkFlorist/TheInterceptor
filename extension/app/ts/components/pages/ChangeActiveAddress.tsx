@@ -79,8 +79,7 @@ export function ChangeActiveAddress(param: ChangeActiveAddressParam) {
 							<div class = 'card hoverable' onClick = { () => { ChangeAndStoreActiveAddress(addressInfo.address) } }>
 								<div class = 'card-content hoverable ' style = 'cursor: pointer;'>
 									<BigAddress
-										address = { addressInfo.address }
-										nameAndLogo = { { name: addressInfo.name, logoUri: undefined } }
+										addressBookEntry = { { ...addressInfo, type: 'addressInfo' as const } }
 										noCopying = { true }
 										renameAddressCallBack = { param.renameAddressCallBack }
 									/>

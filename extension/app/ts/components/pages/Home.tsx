@@ -75,8 +75,12 @@ function FirstCard(param: FirstCardParams) {
 				}
 				{ param.activeAddress !== undefined ?
 					<ActiveAddress
-						address = { param.activeAddress.address }
-						title = { param.activeAddress.name }
+						addressBookEntry = { {
+							type: 'addressInfo' as const,
+							name: param.activeAddress.name,
+							address: param.activeAddress.address,
+							askForAddressAccess: false, // TODO, when getting rid of window.interceptor, make active address an addressbook entry too
+						} }
 						simulationMode = { param.simulationMode }
 						changeActiveAddress = { param.changeActiveAddress }
 						renameAddressCallBack = { param.renameAddressCallBack }

@@ -8,6 +8,9 @@ import { Transactions } from '../simulationExplaining/Transactions.js'
 import { Spinner } from '../subcomponents/Spinner.js'
 import { getSignerName, SignerLogoText } from '../subcomponents/signers.js'
 import { AddNewAddress } from './AddNewAddress.js'
+import { AddressBookEntry } from '../../utils/user-interface-types.js'
+import { ethers } from 'ethers'
+import { addressString } from '../../utils/bigint.js'
 
 export function ConfirmTransaction() {
 	const [requestIdToConfirm, setRequestIdToConfirm] = useState<number | undefined>(undefined)
@@ -59,7 +62,7 @@ export function ConfirmTransaction() {
 			isComputingSimulation: dialog.isComputingSimulation,
 			simulationConductedTimestamp: dialog.simulationState.simulationConductedTimestamp,
 			simulatedAndVisualizedTransactions: txs,
-			addressMetadata: new Map(dialog.addressMetadata.map( (x) => [x[0], x[1]])),
+			addressMetadata: new Map(dialog.addressBookEntries.map( (x) => [x[0], x[1]])),
 			chain: dialog.simulationState.chain,
 			tokenPrices: dialog.tokenPrices,
 			activeAddress: dialog.activeAddress,
@@ -88,10 +91,10 @@ export function ConfirmTransaction() {
 		return !success || !noQuarantines
 	}
 
-	function renameAddressCallBack(name: string | undefined, address: string) {
+	function renameAddressCallBack(entry: AddressBookEntry) {
 		setEditAddressModelOpen(true)
-		setAddressInput(address)
-		setNameInput(name)
+		setNameInput(entry.name === undefined ? '' : entry.name)
+		setAddressInput(ethers.utils.getAddress(addressString(entry.address)))
 	}
 
 	return (

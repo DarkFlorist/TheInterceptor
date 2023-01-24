@@ -2,8 +2,7 @@ import { addressString } from '../../utils/bigint.js'
 import { METAMASK_ERROR_USER_REJECTED_REQUEST } from '../../utils/constants.js'
 import { Future } from '../../utils/future.js'
 import { PersonalSign } from '../../utils/interceptor-messages.js'
-import { AddressInfo } from '../../utils/user-interface-types.js'
-import { AddressMetadata } from '../../utils/visualizer-types.js'
+import { AddressBookEntry, AddressInfo } from '../../utils/user-interface-types.js'
 import { EIP2612Message, EthereumAddress } from '../../utils/wire-types.js'
 import { personalSignWithSimulator } from '../background.js'
 import { getAddressMetaData } from '../metadataUtils.js'
@@ -23,7 +22,7 @@ export async function resolvePersonalSign(confirmation: PersonalSign) {
 	openedPersonalSignDialogWindow = null
 }
 
-function getAddressMetadataForEIP2612Message(message: EIP2612Message, addressInfos: readonly AddressInfo[] | undefined) : [string, AddressMetadata][] {
+function getAddressMetadataForEIP2612Message(message: EIP2612Message, addressInfos: readonly AddressInfo[] | undefined) : [string, AddressBookEntry][] {
 	return [
 		[addressString(message.message.owner), getAddressMetaData(message.message.owner, addressInfos)],
 		[addressString(message.message.spender), getAddressMetaData(message.message.spender, addressInfos)],
@@ -47,7 +46,7 @@ export async function openPersonalSignDialog(requestId: number, simulationMode: 
 			message: message,
 			account: addressString(account),
 			method: method,
-			addressMetadata: getAddressMetadataForEIP2612Message(parsed, window.interceptor.settings?.addressInfos),
+			addressBookEntries: getAddressMetadataForEIP2612Message(parsed, window.interceptor.settings?.addressInfos),
 			eip2612Message: parsed,
 		}
 	}
@@ -58,7 +57,7 @@ export async function openPersonalSignDialog(requestId: number, simulationMode: 
 			message: message,
 			account: addressString(account),
 			method: method,
-			addressMetadata: [],
+			addressBookEntries: [],
 		}
 	} else {
 		throw new Error('Unknown method');

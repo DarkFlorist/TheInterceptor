@@ -1,14 +1,14 @@
 import { addressString } from '../utils/bigint.js'
-import { AddressMetadata } from '../utils/visualizer-types.js'
 import { EthereumAddress, SupportedETHRPCCalls } from '../utils/wire-types.js'
 import { postMessageIfStillConnected, setEthereumNodeBlockPolling } from './background.js'
 import { getActiveAddress } from './backgroundUtils.js'
-import { getAddressMetaData } from './metadataUtils.js'
+import { findAddressInfo } from './metadataUtils.js'
 import { Settings, WebsiteAccess, WebsiteAddressAccess } from './settings.js'
 import { requestAccessFromUser, retrieveIcon } from './windows/interceptorAccess.js'
 import { METAMASK_ERROR_USER_REJECTED_REQUEST } from '../utils/constants.js'
 import { EthereumQuantity } from '../utils/wire-types.js'
 import { updateExtensionIcon } from './iconHandler.js'
+import { AddressInfoEntry } from '../utils/user-interface-types.js'
 
 function setWebsitePortApproval(port: browser.runtime.Port, origin: string, approved: boolean) {
 	const tabId = port.sender?.tab?.id
@@ -251,12 +251,12 @@ function disconnectFromPort(port: browser.runtime.Port, origin: string): false {
 	return false
 }
 
-export function getAssociatedAddresses(settings: Settings, origin: string, activeAddress: string | undefined) : [string, AddressMetadata][]{
+export function getAssociatedAddresses(settings: Settings, origin: string, activeAddress: string | undefined) : [string, AddressInfoEntry][]{
 	const addressAccess = getAddressAccesses(settings.websiteAccess, origin).filter( (x) => x.access).map( (x) => x.address)
 	const allAccessAddresses = getAddressesThatDoNotNeedIndividualAccesses(settings)
 
 	const all = allAccessAddresses.map( (address) => addressString(address) ).concat(addressAccess).concat(activeAddress === undefined ? [] : [activeAddress])
-	return Array.from(new Set(all)).map(x => [x, getAddressMetaData(BigInt(x), settings.addressInfos)])
+	return Array.from(new Set(all)).map(x => [x, findAddressInfo(BigInt(x), settings.addressInfos)])
 }
 
 async function askUserForAccessOnConnectionUpdate(port: browser.runtime.Port, origin: string, activeAddress: string | undefined) {

@@ -1,11 +1,11 @@
 import { useState, useEffect } from 'preact/hooks'
 import { defaultAddresses, WebsiteAccess } from '../background/settings.js'
 import { addressString } from '../utils/bigint.js'
-import { AddressMetadata, SimulatedAndVisualizedTransaction, SimulationAndVisualisationResults } from '../utils/visualizer-types.js'
+import { SimulatedAndVisualizedTransaction, SimulationAndVisualisationResults } from '../utils/visualizer-types.js'
 import { AddressList } from './pages/AddressList.js'
 import { ChangeActiveAddress } from './pages/ChangeActiveAddress.js'
 import { Home } from './pages/Home.js'
-import { Page, AddressInfo, TabConnection } from '../utils/user-interface-types.js'
+import { Page, AddressInfo, TabConnection, AddressInfoEntry, AddressBookEntry } from '../utils/user-interface-types.js'
 import Hint from './subcomponents/Hint.js'
 import { AddNewAddress } from './pages/AddNewAddress.js'
 import { InterceptorAccessList } from './pages/InterceptorAccessList.js'
@@ -28,7 +28,7 @@ export function App() {
 	const [useSignersAddressAsActiveAddress, setUseSignersAddressAsActiveAddress] = useState(false)
 	const [simVisResults, setSimVisResults] = useState<SimulationAndVisualisationResults | undefined >(undefined)
 	const [websiteAccess, setWebsiteAccess] = useState<readonly WebsiteAccess[] | undefined>(undefined)
-	const [websiteAccessAddressMetadata, setWebsiteAccessAddressMetadata] = useState<[string, AddressMetadata][]>([])
+	const [websiteAccessAddressMetadata, setWebsiteAccessAddressMetadata] = useState<[string, AddressInfoEntry][]>([])
 	const [activeChain, setActiveChain] = useState<bigint>(1n)
 	const [addressInput, setAddressInput] = useState<string | undefined>(undefined)
 	const [nameInput, setNameInput] = useState<string | undefined>(undefined)
@@ -101,7 +101,7 @@ export function App() {
 			blockTimestamp: backgroundPage.interceptor.simulation.simulationState.blockTimestamp,
 			simulationConductedTimestamp: backgroundPage.interceptor.simulation.simulationState.simulationConductedTimestamp,
 			simulatedAndVisualizedTransactions: txs,
-			addressMetadata: new Map(backgroundPage.interceptor.simulation.addressMetadata.map( (x) => [x[0], x[1]])),
+			addressMetadata: new Map(backgroundPage.interceptor.simulation.addressBookEntries.map( (x) => [x[0], x[1]])),
 			chain: backgroundPage.interceptor.simulation.simulationState.chain,
 			tokenPrices: backgroundPage.interceptor.simulation.tokenPrices,
 			activeAddress: BigInt(backgroundPage.interceptor.settings.activeSimulationAddress),
@@ -169,10 +169,10 @@ export function App() {
 		setAddressInput(addressString)
 	}
 
-	function renameAddressCallBack(name: string | undefined, address: string) {
+	function renameAddressCallBack(entry: AddressBookEntry) {
 		setAndSaveAppPage(Page.ModifyAddress)
-		setNameInput(name === undefined ? '' : name)
-		setAddressInput(ethers.utils.getAddress(address))
+		setNameInput(entry.name === undefined ? '' : entry.name)
+		setAddressInput(ethers.utils.getAddress(addressString(entry.address)))
 	}
 
 	function openAddressBook() {

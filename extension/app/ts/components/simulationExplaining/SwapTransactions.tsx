@@ -1,9 +1,9 @@
-import { AddressMetadata, SimulatedAndVisualizedTransaction, TokenVisualizerResult } from '../../utils/visualizer-types.js'
+import { SimulatedAndVisualizedTransaction, TokenVisualizerResult, TokenVisualizerResultWithMetadata } from '../../utils/visualizer-types.js'
 import * as funtypes from 'funtypes'
 import { EthereumAddress, EthereumQuantity } from '../../utils/wire-types.js'
 import { abs, addressString } from '../../utils/bigint.js'
-import { ERC721Token, Ether, getTokenData, Token } from '../subcomponents/coins.js'
-import { CHAIN } from '../../utils/user-interface-types.js'
+import { ERC721Token, Ether, Token } from '../subcomponents/coins.js'
+import { AddressBookEntry, CHAIN, NFTEntry, TokenEntry } from '../../utils/user-interface-types.js'
 
 export type IdentifiedSwap = funtypes.Static<typeof IdentifiedSwap>
 export const IdentifiedSwap = funtypes.Union(
@@ -50,9 +50,51 @@ export const IdentifiedSwap = funtypes.Union(
 	)
 )
 
+export type IdentifiedSwapWithMetadata = funtypes.Static<typeof IdentifiedSwapWithMetadata>
+export const IdentifiedSwapWithMetadata = funtypes.Union(
+	funtypes.Literal(false), // not a swap
+	funtypes.Intersect(
+		funtypes.Object({
+			type: funtypes.Literal('TokenToToken'),
+			sender: AddressBookEntry,
+			tokenAddressSent: EthereumAddress,
+			tokenAddressReceived: EthereumAddress,
+		} ),
+		funtypes.Union(
+			funtypes.Object( { tokenAmountSent: EthereumQuantity, tokenAddressSent: TokenEntry } ),
+			funtypes.Object( { tokenIdSent: EthereumQuantity, tokenAddressSent: NFTEntry } )
+		),
+		funtypes.Union(
+			funtypes.Object( { tokenAmountReceived: EthereumQuantity, tokenAddressReceived: TokenEntry } ),
+			funtypes.Object( { tokenIdReceived: EthereumQuantity, tokenAddressReceived: NFTEntry } )
+		),
+	),
+	funtypes.Intersect(
+		funtypes.Object({
+			type: funtypes.Literal('TokenToETH'),
+			sender: AddressBookEntry,
+			ethAmountReceived: EthereumQuantity,
+		}),
+		funtypes.Union(
+			funtypes.Object( { tokenAmountSent: EthereumQuantity, tokenAddressSent: TokenEntry } ),
+			funtypes.Object( { tokenIdSent: EthereumQuantity, tokenAddressSent: NFTEntry } )
+		),
+	),
+	funtypes.Intersect(
+		funtypes.Object({
+			type: funtypes.Literal('ETHToToken'),
+			sender: AddressBookEntry,
+			ethAmountSent: EthereumQuantity
+		}),
+		funtypes.Union(
+			funtypes.Object( { tokenAmountReceived: EthereumQuantity, tokenAddressReceived: TokenEntry } ),
+			funtypes.Object( { tokenIdReceived: EthereumQuantity, tokenAddressReceived: NFTEntry } )
+		),
+	)
+)
+
 interface SwapVisualizationParams {
-	identifiedSwap: IdentifiedSwap,
-	addressMetadata: Map<string, AddressMetadata>,
+	identifiedSwap: IdentifiedSwapWithMetadata,
 	chain: CHAIN
 }
 
@@ -131,17 +173,17 @@ export function identifySwap(simulatedAndVisualizedTransaction: SimulatedAndVisu
 	return false
 }
 
-type Graph = Map<string, Map<string | undefined, {to: string, tokenResultIndex: number | undefined } > > // from, tokenaddress (undefined for ether), to
+type Graph = Map<AddressBookEntry, Map<AddressBookEntry | undefined, {to: AddressBookEntry, tokenResultIndex: number | undefined } > > // from, tokenaddress (undefined for ether), to
 interface State {
-	fromAddress: string,
-	toAddress: string,
-	currentTokenAddress: string | undefined, // undefined for ether
+	fromAddress: AddressBookEntry,
+	toAddress: AddressBookEntry,
+	currentTokenAddress: AddressBookEntry | undefined, // undefined for ether
 	tokenResultIndex: number | undefined,
 }
 
 interface EthTradePair {
-	fromAddress: string,
-	toAddress: string,
+	fromAddress: AddressBookEntry,
+	toAddress: AddressBookEntry,
 	amount: bigint
 }
 
@@ -168,13 +210,11 @@ function *findSwapRoutes(graph: Graph, currentState: State, goalState: State, pa
 	}
 }
 
-export function identifyRoutes(simulatedAndVisualizedTransaction: SimulatedAndVisualizedTransaction, identifiedSwap: IdentifiedSwap) {
+export function identifyRoutes(simulatedAndVisualizedTransaction: SimulatedAndVisualizedTransaction, identifiedSwap: IdentifiedSwapWithMetadata) : false | TokenVisualizerResultWithMetadata[] {
 	if ( identifiedSwap === false ) return false
 	if (simulatedAndVisualizedTransaction.simResults?.visualizerResults === undefined) return false
 	const tokenResults = simulatedAndVisualizedTransaction.simResults.visualizerResults.tokenResults
 	const ethBalanceChanges = simulatedAndVisualizedTransaction.simResults.visualizerResults.ethBalanceChanges
-	console.log(tokenResults)
-	console.log(ethBalanceChanges)
 	if ( tokenResults.length > 10 ) return false // too complex
 
 	const graph: Graph = new Map()
@@ -193,7 +233,6 @@ export function identifyRoutes(simulatedAndVisualizedTransaction: SimulatedAndVi
 		if(!from!.has(tokenAddress)) {
 			from!.set(tokenAddress, { to: toAddress, tokenResultIndex: tokenResultIndex } )
 		} else {
-			console.log('token multihop!')
 			return false
 		}
 	}
@@ -228,25 +267,24 @@ export function identifyRoutes(simulatedAndVisualizedTransaction: SimulatedAndVi
 		if(!from!.has(undefined)) {
 			from!.set(undefined, { to: matchedPair.toAddress, tokenResultIndex: undefined } )
 		} else {
-			console.log('eth multihop!')
 			return false
 		}
 	}
 	Map<string, Map<string | undefined, {to: string, tokenResultIndex: number | undefined } > >
 	// traverse chain
-	const startToken = 'tokenAddressSent' in identifiedSwap ? addressString(identifiedSwap.tokenAddressSent) : undefined
-	const endToken = 'tokenAddressReceived' in identifiedSwap ? addressString(identifiedSwap.tokenAddressReceived) : undefined
-	const lastIndex = endToken !== undefined ? tokenResults.findIndex( ( x ) => (x.to === identifiedSwap.sender && x.tokenAddress === BigInt(endToken) ) ) : -1
+	const startToken = 'tokenAddressSent' in identifiedSwap ? identifiedSwap.tokenAddressSent : undefined
+	const endToken = 'tokenAddressReceived' in identifiedSwap ? identifiedSwap.tokenAddressReceived : undefined
+	const lastIndex = endToken !== undefined ? tokenResults.findIndex( ( x ) => (x.to === identifiedSwap.sender.address && x.tokenAddress === BigInt(endToken.address) ) ) : -1
 	const routes = [...findSwapRoutes(graph,
 		{
-			fromAddress: addressString(identifiedSwap.sender),
-			toAddress: addressString(identifiedSwap.sender),
-			tokenResultIndex: graph.get(addressString(identifiedSwap.sender))?.get(startToken)?.tokenResultIndex,
-			currentTokenAddress: startToken
+			from: identifiedSwap.sender.address,
+			to: identifiedSwap.sender,
+			tokenResultIndex: graph.get(addressString(identifiedSwap.sender.address))?.get(startToken?.address)?.tokenResultIndex,
+			currentTokenAddress: startToken?.address === undefined ? undefined : addressString(startToken.address)
 		},
 		{
-			fromAddress: addressString(identifiedSwap.sender),
-			toAddress: addressString(identifiedSwap.sender),
+			from: identifiedSwap.sender,
+			to: identifiedSwap.sender,
 			tokenResultIndex: lastIndex >= 0 ? lastIndex : undefined,
 			currentTokenAddress: endToken
 		}
@@ -258,11 +296,7 @@ export function identifyRoutes(simulatedAndVisualizedTransaction: SimulatedAndVi
 			return seen.has(item) ? false : seen.add(item);
 		})
 	}
-	console.log(tokenResults)
 	const route = uniqByKeepFirst(routes.flat())
-	route.forEach( function(x) {
-		console.log(x.fromAddress + ' : ' + x.toAddress +' via ' + x.currentTokenAddress)
-	})
 
 	if ( route.length === 0) return false
 
@@ -270,31 +304,26 @@ export function identifyRoutes(simulatedAndVisualizedTransaction: SimulatedAndVi
 		const indexOfA = route.findIndex( (x) => a.from === BigInt(x.fromAddress) && BigInt(x.toAddress) === a.to && addressString(a.tokenAddress) === x.currentTokenAddress )
 		const indexOfB = route.findIndex( (x) => b.from === BigInt(x.fromAddress) && BigInt(x.toAddress) === b.to && addressString(b.tokenAddress) === x.currentTokenAddress )
 		const v =  (indexOfA >= 0 ? indexOfA : route.length + tokenResults.indexOf(a) ) - (indexOfB >= 0 ? indexOfB : route.length + tokenResults.indexOf(b))
-
-		console.log('search')
-		console.log(addressString(a.from) + ' : ' + addressString(a.to) +' via ' + addressString(a.tokenAddress))
-		console.log(addressString(b.from) + ' : ' + addressString(b.to) +' via ' + addressString(b.tokenAddress))
-		console.log(indexOfA)
-		console.log(indexOfB)
-		console.log(v)
-
 		return v
 	}
 
 	const sorted = [ ...tokenResults ].sort(sortAccordingArrayIfNotMaintainOrder)
-	console.log(sorted)
 
 	return sorted
 }
 
-export function getSwapName(identifiedSwap: IdentifiedSwap, addressMetadata: Map<string, AddressMetadata>) {
+export function getSwapName(identifiedSwap: IdentifiedSwap, addressMetadata: Map<string, AddressBookEntry>) {
 	if ( identifiedSwap === false ) return undefined
-	const SwapFrom = identifiedSwap.type === 'TokenToToken' || identifiedSwap.type === 'TokenToETH' ? getTokenData(identifiedSwap.tokenAddressSent, addressMetadata.get(addressString(identifiedSwap.tokenAddressSent))).symbol : 'ETH'
-	const SwapTo = identifiedSwap.type === 'TokenToToken' || identifiedSwap.type === 'ETHToToken' ? getTokenData(identifiedSwap.tokenAddressReceived, addressMetadata.get(addressString(identifiedSwap.tokenAddressReceived))).symbol : 'ETH'
+	const sentTokenMetadata = 'tokenAddressSent' in identifiedSwap ? addressMetadata.get(addressString(identifiedSwap.tokenAddressSent)) : undefined
+	const receivedTokenMetadata = 'tokenAddressReceived' in identifiedSwap ? addressMetadata.get(addressString(identifiedSwap.tokenAddressReceived)) : undefined
+
+	const SwapFrom = identifiedSwap.type === 'TokenToToken' || identifiedSwap.type === 'TokenToETH' ? (sentTokenMetadata !== undefined && 'symbol' in sentTokenMetadata ? sentTokenMetadata.symbol : '???' ) : 'ETH'
+	const SwapTo = identifiedSwap.type === 'TokenToToken' || identifiedSwap.type === 'ETHToToken' ? (receivedTokenMetadata !== undefined && 'symbol' in receivedTokenMetadata ? receivedTokenMetadata.symbol : '???' ) : 'ETH'
 	return `Swap ${ SwapFrom } for ${ SwapTo }`
 }
 
 export function SwapVisualization(param: SwapVisualizationParams) {
+
 	if ( param.identifiedSwap === false ) return <></>
 	return <div class = 'vertical-center' style = 'color: var(--text-color); padding-top: 5px; justify-content: center;' >
 		<p style = { `color: var(--text-color); display: inline-block` }>
@@ -304,16 +333,21 @@ export function SwapVisualization(param: SwapVisualizationParams) {
 					'tokenIdSent' in param.identifiedSwap ?
 						<ERC721Token
 							tokenId = { param.identifiedSwap.tokenIdSent }
-							token = { param.identifiedSwap.tokenAddressSent }
-							addressMetadata = { param.addressMetadata.get(addressString(param.identifiedSwap.tokenAddressSent)) }
+							tokenName = { param.identifiedSwap.tokenAddressSent.name }
+							tokenAddress = { param.identifiedSwap.tokenAddressSent.address }
+							tokenSymbol = { param.identifiedSwap.tokenAddressSent.symbol }
+							tokenLogoUri = { param.identifiedSwap.tokenAddressSent.logoUri }
 							useFullTokenName = { false }
 							received = { false }
 						/>
 						:
 						<Token
 							amount = { param.identifiedSwap.tokenAmountSent }
-							token = { param.identifiedSwap.tokenAddressSent }
-							addressMetadata = { param.addressMetadata.get(addressString(param.identifiedSwap.tokenAddressSent)) }
+							tokenName = { param.identifiedSwap.tokenAddressSent.name }
+							tokenAddress = { param.identifiedSwap.tokenAddressSent.address }
+							tokenSymbol = { param.identifiedSwap.tokenAddressSent.symbol }
+							tokenLogoUri = { param.identifiedSwap.tokenAddressSent.logoUri }
+							tokenDecimals = { param.identifiedSwap.tokenAddressSent.decimals }
 							useFullTokenName = { false }
 						/>
 				: <Ether
@@ -328,16 +362,21 @@ export function SwapVisualization(param: SwapVisualizationParams) {
 					'tokenIdReceived' in param.identifiedSwap ?
 						<ERC721Token
 							tokenId = { param.identifiedSwap.tokenIdReceived }
-							token = { param.identifiedSwap.tokenAddressReceived }
-							addressMetadata = { param.addressMetadata.get(addressString(param.identifiedSwap.tokenAddressReceived)) }
+							tokenName = { param.identifiedSwap.tokenAddressReceived.name }
+							tokenAddress = { param.identifiedSwap.tokenAddressReceived.address }
+							tokenSymbol = { param.identifiedSwap.tokenAddressReceived.symbol }
+							tokenLogoUri = { param.identifiedSwap.tokenAddressReceived.logoUri }
 							useFullTokenName = { false }
 							received = { false }
 						/>
 						:
 						<Token
 							amount = { param.identifiedSwap.tokenAmountReceived }
-							token = { param.identifiedSwap.tokenAddressReceived }
-							addressMetadata = { param.addressMetadata.get(addressString(param.identifiedSwap.tokenAddressReceived)) }
+							tokenName = { param.identifiedSwap.tokenAddressReceived.name }
+							tokenAddress = { param.identifiedSwap.tokenAddressReceived.address }
+							tokenSymbol = { param.identifiedSwap.tokenAddressReceived.symbol }
+							tokenLogoUri = { param.identifiedSwap.tokenAddressReceived.logoUri }
+							tokenDecimals = { param.identifiedSwap.tokenAddressReceived.decimals }
 							useFullTokenName = { false }
 						/>
 				: <Ether

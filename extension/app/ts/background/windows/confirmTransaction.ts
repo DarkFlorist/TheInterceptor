@@ -53,7 +53,7 @@ export async function openConfirmTransactionDialog(
 
 	window.interceptor.confirmTransactionDialog = {
 		requestId: requestId,
-		addressMetadata: [],
+		addressBookEntries: [],
 		visualizerResults: undefined,
 		simulationState: undefined,
 		simulationMode: simulationMode,

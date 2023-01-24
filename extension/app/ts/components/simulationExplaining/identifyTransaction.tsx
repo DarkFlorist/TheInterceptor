@@ -1,11 +1,12 @@
 import { get4Byte } from '../../utils/calldata.js'
 import { CHAINS, FourByteExplanations, isSupportedChain, MAKE_YOU_RICH_TRANSACTION } from '../../utils/constants.js'
-import { AddressMetadata, SimulatedAndVisualizedTransaction } from '../../utils/visualizer-types.js'
+import { AddressBookEntry } from '../../utils/user-interface-types.js'
+import { SimulatedAndVisualizedTransaction } from '../../utils/visualizer-types.js'
 import { getSwapName, identifySwap } from './SwapTransactions.js'
 
 type TRANSACTION_TYPE = 'MakeYouRichTransaction' | 'NormalTransaction'
 
-export function nameTransaction(transaction: SimulatedAndVisualizedTransaction, addressMetadata: Map<string, AddressMetadata>, activeAddress: bigint ) {
+export function nameTransaction(transaction: SimulatedAndVisualizedTransaction, addressMetadata: Map<string, AddressBookEntry>, activeAddress: bigint ) {
 	if (identifyTransaction(transaction, activeAddress) === 'MakeYouRichTransaction') {
 		return 'Simply making you rich'
 	}

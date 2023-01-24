@@ -72,8 +72,7 @@ export function ConfirmaddressBookEntryToBeRemoved(param: ConfirmaddressBookEntr
 				<div class = 'card' style = 'margin: 10px;'>
 					<div class = 'card-content'>
 						<BigAddress
-							address = { param.addressBookEntry.address }
-							nameAndLogo = { param.addressBookEntry }
+							addressBookEntry = { param.addressBookEntry }
 							renameAddressCallBack = { param.renameAddressCallBack }
 						/>
 					</div>
@@ -103,8 +102,7 @@ export function ListElement(entry: ListElementParam) {
 						<div style = 'padding-bottom: 10px; height: 40px'>
 							{ entry.type === 'empty' ? <></> :
 								<BigAddress
-									address = { entry.address }
-									nameAndLogo = { { name: `${ entry.name } ${ 'symbol' in entry ? `(${ entry.symbol })` : '' }`, logoUri: 'logoUri' in entry && entry.logoUri !== undefined ?  `${entry.logoUri }` : undefined } }
+									addressBookEntry = { { ...entry, ...{ name: `${ entry.name } ${ 'symbol' in entry ? `(${ entry.symbol })` : '' }`} } }
 									noCopying = { true }
 									renameAddressCallBack = { entry.renameAddressCallBack }
 								/>
@@ -135,7 +133,7 @@ export function ListElement(entry: ListElementParam) {
 						<button class = 'card-header-icon' style = 'padding: 0px; margin-left: auto;' aria-label = 'delete'>
 							<span class = 'icon' style = 'color: var(--text-color);' onClick = { entry.type != 'empty' && entry.category === 'My Active Addresses' ? () => entry.removeEntry(entry) : () => {} }> X </span>
 						</button>
-						<button class = 'button is-primary is-small' onClick = { () => {} } disabled = { true }>Edit</button>
+						<button class = 'button is-primary is-small' onClick = { entry.type != 'empty' ? () => entry.renameAddressCallBack(entry) : () => {} }>Edit</button>
 					</div>
 				</div>
 			</div>
@@ -347,10 +345,10 @@ export function AddressBook() {
 		setModalState('ConfirmaddressBookEntryToBeRemoved')
 	}
 
-	function renameAddressCallBack(name: string | undefined, address: string) {
+	function renameAddressCallBack(entry: AddressBookEntry) {
 		setModalState('addNewAddress')
-		setNameInput(name === undefined ? '' : name)
-		setAddressInput(ethers.utils.getAddress(address))
+		setNameInput(entry.name === undefined ? '' : entry.name)
+		setAddressInput(ethers.utils.getAddress(addressString(entry.address)))
 		setAddingNewAddress(false)
 	}
 

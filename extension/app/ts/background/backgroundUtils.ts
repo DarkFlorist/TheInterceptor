@@ -1,8 +1,15 @@
 import { MessageToPopup } from '../utils/interceptor-messages.js'
+import { findAddressInfo } from './metadataUtils.js'
 
 export function getActiveAddress() {
 	if (window.interceptor.settings === undefined) return undefined
 	return window.interceptor.settings.simulationMode ? window.interceptor.settings.activeSimulationAddress : window.interceptor.settings.activeSigningAddress
+}
+
+export function getActiveAddressInfo() {
+	const address = getActiveAddress()
+	if (address === undefined) return undefined
+	return findAddressInfo(address, window.interceptor.settings?.addressInfos)
 }
 
 export async function sendPopupMessageToOpenWindows(message: MessageToPopup) {

@@ -1,12 +1,20 @@
 import { useEffect, useState } from 'preact/hooks'
-import { NotificationCenterParams, Page, PendingAccessRequest } from '../../utils/user-interface-types.js'
-import { AddressMetadata } from '../../utils/visualizer-types.js'
+import { AddressInfoEntry, NotificationCenterParams, Page } from '../../utils/user-interface-types.js'
 import { BigAddress } from '../subcomponents/address.js'
+import { ethers } from 'ethers'
+
+export type PendingAccessRequestWithMetadata = AddressInfoEntry & {
+	origin: string,
+	icon: string | undefined
+} | {
+	origin: string,
+	icon: string | undefined
+	address: undefined
+}
 
 export function NotificationCenter(param: NotificationCenterParams) {
 
-	const [pendingAcessRequests, setPendingAccessRequests] = useState<PendingAccessRequest[] | undefined>(undefined)
-	const [addressMetadata, setAddressMetadata] = useState< Map<string, AddressMetadata> >( new Map() )
+	const [pendingAcessRequests, setPendingAccessRequests] = useState<PendingAccessRequestWithMetadata[] | undefined>(undefined)
 
 	useEffect( () => {
 		function popupMessageListener(msg: unknown) {
@@ -26,26 +34,31 @@ export function NotificationCenter(param: NotificationCenterParams) {
 	async function updateList() {
 		const backgroundPage = await browser.runtime.getBackgroundPage()
 		if ( backgroundPage.interceptor.settings === undefined) return
+		const metadata = new Map(backgroundPage.interceptor.pendingAccessMetadata)
 		setPendingAccessRequests( backgroundPage.interceptor.settings.pendingAccessRequests.map( (x) => ({
 			origin: x.origin,
 			icon: x.icon,
-			requestAccessToAddress: x.requestAccessToAddress,
+			...(x.requestAccessToAddress === undefined ? { address: undefined } : metadata.get(x.requestAccessToAddress) || { // TODO, refactor away when we are using messaging instead of globals for these
+				type: 'addressInfo' as const,
+				name: ethers.utils.getAddress(x.requestAccessToAddress),
+				address: BigInt(x.requestAccessToAddress),
+				askForAddressAccess: false,
+			})
 		}) ) )
-		setAddressMetadata(new Map(backgroundPage.interceptor.pendingAccessMetadata))
 	}
 
 	function goHome() {
 		param.setAndSaveAppPage(Page.Home)
 	}
 
-	function review(origin: string, requestAccessToAddress: string | undefined) {
+	function review(origin: string, requestAccessToAddress: bigint | undefined) {
 		browser.runtime.sendMessage( { method: 'popup_reviewNotification', options: {
 			origin: origin,
 			requestAccessToAddress: requestAccessToAddress
 		} } )
 	}
 
-	function reject(origin: string, requestAccessToAddress: string | undefined, removeOnly: boolean) {
+	function reject(origin: string, requestAccessToAddress: bigint | undefined, removeOnly: boolean) {
 		browser.runtime.sendMessage( { method: 'popup_rejectNotification', options: {
 			origin: origin,
 			requestAccessToAddress: requestAccessToAddress,
@@ -90,16 +103,16 @@ export function NotificationCenter(param: NotificationCenterParams) {
 									</div>
 									<p class = 'card-header-title' style = 'width: 60%'>
 										<p className = 'paragraph' style = 'text-overflow: ellipsis; overflow: hidden;'>
-											{ pendingAccessRequest.requestAccessToAddress === undefined ? 'The Interceptor access request' : 'Address access request' }
+											{ pendingAccessRequest.address === undefined ? 'The Interceptor access request' : 'Address access request' }
 										</p>
 									</p>
-									<button class = 'card-header-icon' onClick = { () => reject(pendingAccessRequest.origin, pendingAccessRequest.requestAccessToAddress, true) } >
+									<button class = 'card-header-icon' onClick = { () => reject(pendingAccessRequest.origin, pendingAccessRequest.address, true) } >
 										<span class = 'icon' style = 'color: var(--text-color);'> X </span>
 									</button>
 
 								</div>
 								<div class = 'card-content' style = 'margin-bottom: 0px;'>
-									{ pendingAccessRequest.requestAccessToAddress === undefined ?
+									{ pendingAccessRequest.address === undefined ?
 										<p className = 'paragraph' style = 'padding-bottom: 10px; word-break: break-word;'>
 											<span className = 'paragraph' style = 'font-weight: bold;'>
 												{ `${ pendingAccessRequest.origin }` }
@@ -117,8 +130,7 @@ export function NotificationCenter(param: NotificationCenterParams) {
 											</p>
 										</div>
 										<BigAddress
-											address = { BigInt(pendingAccessRequest.requestAccessToAddress) }
-											nameAndLogo = { addressMetadata.get(pendingAccessRequest.requestAccessToAddress) }
+											addressBookEntry = { pendingAccessRequest }
 											renameAddressCallBack = { param.renameAddressCallBack }
 										/>
 
@@ -126,11 +138,11 @@ export function NotificationCenter(param: NotificationCenterParams) {
 									</>
 
 									}
-									<button className = 'button is-primary is-small' onClick = { () => review(pendingAccessRequest.origin, pendingAccessRequest.requestAccessToAddress) }>
+									<button className = 'button is-primary is-small' onClick = { () => review(pendingAccessRequest.origin, pendingAccessRequest.address) }>
 										Review
 									</button>
 
-									<button className = 'button is-primary is-small' style = 'background-color: var(--negative-color); margin-left: 10px;' onClick = { () => reject(pendingAccessRequest.origin, pendingAccessRequest.requestAccessToAddress, false) }>
+									<button className = 'button is-primary is-small' style = 'background-color: var(--negative-color); margin-left: 10px;' onClick = { () => reject(pendingAccessRequest.origin, pendingAccessRequest.address, false) }>
 										Decline
 									</button>
 								</div>

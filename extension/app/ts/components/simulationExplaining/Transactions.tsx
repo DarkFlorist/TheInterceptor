@@ -1,5 +1,5 @@
 import { addressString } from '../../utils/bigint.js'
-import { AddressMetadata, SimulatedAndVisualizedTransaction, SimulationAndVisualisationResults, TokenVisualizerResult, TransactionVisualizationParameters } from '../../utils/visualizer-types.js'
+import { SimulatedAndVisualizedTransaction, SimulationAndVisualisationResults, TokenVisualizerResultWithMetadata, TransactionVisualizationParameters } from '../../utils/visualizer-types.js'
 import { FromAddressToAddress, SmallAddress } from '../subcomponents/address.js'
 import { EtherSymbol, TokenSymbol, TokenAmount, EtherAmount, Token721AmountField, ERC721TokenNumber } from '../subcomponents/coins.js'
 import { CHAIN, LogAnalysisParams, RenameAddressCallBack } from '../../utils/user-interface-types.js'
@@ -12,7 +12,7 @@ import { makeYouRichTransaction } from './transactionExplainers.js'
 import { JSXInternal } from 'preact/src/jsx'
 import { ApproveIcon, ArrowIcon } from '../subcomponents/icons.js'
 
-function isPositiveEvent(visResult: TokenVisualizerResult, ourAddressInReferenceFrame: bigint) {
+function isPositiveEvent(visResult: TokenVisualizerResultWithMetadata, ourAddressInReferenceFrame: bigint) {
 	if (!visResult.is721) {
 		if (!visResult.isApproval) {
 			return visResult.amount >= 0 // simple transfer
@@ -22,14 +22,14 @@ function isPositiveEvent(visResult: TokenVisualizerResult, ourAddressInReference
 
 	// nfts
 	if ('isAllApproval' in visResult) { // all approval is only positive if someone all approves us, or all approval is removed from us
-		return (visResult.allApprovalAdded && visResult.to === ourAddressInReferenceFrame) || (!visResult.allApprovalAdded && visResult.from === ourAddressInReferenceFrame)
+		return (visResult.allApprovalAdded && visResult.to.address === ourAddressInReferenceFrame) || (!visResult.allApprovalAdded && visResult.from.address === ourAddressInReferenceFrame)
 	}
 
 	if (visResult.isApproval) {
-		return visResult.to === ourAddressInReferenceFrame // approval is only positive if we are getting approved
+		return visResult.to.address === ourAddressInReferenceFrame // approval is only positive if we are getting approved
 	}
 
-	return visResult.to === ourAddressInReferenceFrame // send is positive if we are receiving
+	return visResult.to.address === ourAddressInReferenceFrame // send is positive if we are receiving
 }
 
 type TransactionAggregateParam = {
@@ -141,8 +141,7 @@ function EtherTransferEvent(param: EtherTransferEventParams) {
 
 type SendOrReceiveTokensImportanceBoxParams = {
 	sending: boolean,
-	tokenVisualizerResults: TokenVisualizerResult[] | undefined,
-	addressMetadata: Map<string, AddressMetadata>,
+	tokenVisualizerResults: TokenVisualizerResultWithMetadata[] | undefined,
 	textColor: string,
 	renameAddressCallBack: RenameAddressCallBack,
 }
@@ -170,15 +169,17 @@ function SendOrReceiveTokensImportanceBox(param: SendOrReceiveTokensImportanceBo
 							:
 								<TokenAmount
 									amount = { tokenEvent.amount }
-									addressMetadata = { param.addressMetadata.get(addressString(tokenEvent.tokenAddress)) }
+									tokenDecimals = { tokenEvent.token.decimals }
 									textColor = { param.textColor }
 								/>
 							}
 						</div>
 						<div class = 'log-cell' style = 'padding-right: 0.2em'>
 							<TokenSymbol
-								token = { tokenEvent.tokenAddress }
-								addressMetadata = { param.addressMetadata.get(addressString(tokenEvent.tokenAddress)) }
+								tokenName = { tokenEvent.token.name }
+								tokenAddress = { tokenEvent.token.address }
+								tokenSymbol = { tokenEvent.token.symbol }
+								tokenLogoUri = { tokenEvent.token.logoUri }
 								textColor = { param.textColor }
 								useFullTokenName = { false }
 							/>
@@ -190,8 +191,7 @@ function SendOrReceiveTokensImportanceBox(param: SendOrReceiveTokensImportanceBo
 						</div>
 						<div class = 'log-cell'>
 							<SmallAddress
-								address = { tokenEvent.to }
-								nameAndLogo = { param.addressMetadata.get(addressString(tokenEvent.to)) }
+								addressBookEntry = { tokenEvent.to }
 								textColor = { param.textColor }
 								renameAddressCallBack = { param.renameAddressCallBack }
 							/>
@@ -264,7 +264,6 @@ function TransactionImportanceBlock( param: TransactionImportanceBlockParams ) {
 
 		{ /* us approving other addresses */ }
 		<Erc20ApprovalChanges
-			addressMetadata = { param.simulationAndVisualisationResults.addressMetadata }
 			tokenApprovalChanges = { tokenApprovalChanges }
 			textColor = { textColor }
 			negativeColor = { textColor }
@@ -272,7 +271,6 @@ function TransactionImportanceBlock( param: TransactionImportanceBlockParams ) {
 			renameAddressCallBack = { param.renameAddressCallBack }
 		/>
 		<ERC721OperatorChanges
-			addressMetadata = { param.simulationAndVisualisationResults.addressMetadata }
 			ERC721OperatorChanges = { operatorChanges }
 			textColor = { textColor }
 			negativeColor = { textColor }
@@ -280,7 +278,6 @@ function TransactionImportanceBlock( param: TransactionImportanceBlockParams ) {
 			renameAddressCallBack = { param.renameAddressCallBack }
 		/>
 		<ERC721TokenIdApprovalChanges
-			addressMetadata = { param.simulationAndVisualisationResults.addressMetadata }
 			ERC721TokenIdApprovalChanges = { tokenIdApprovalChanges }
 			textColor = { textColor }
 			negativeColor = { textColor }
@@ -323,10 +320,8 @@ function normalTransaction(param: TransactionVisualizationParameters) {
 					<div class = 'container'>
 						<div class = 'notification' style = { `${ areThereImportantEventsToHighlight(param.tx , param.simulationAndVisualisationResults) ? 'background-color: var(--unimportant-text-color); margin-bottom: 10px;' : 'background-color: unset;' } padding: 10px` } >
 							<FromAddressToAddress
-								from = { param.tx.signedTransaction.from }
-								to = { param.tx.signedTransaction.to }
-								fromAddressNameAndLogo= { param.simulationAndVisualisationResults.addressMetadata.get(addressString(param.tx.signedTransaction.from)) }
-								toAddressNameAndLogo = { param.simulationAndVisualisationResults.addressMetadata.get(addressString(param.tx.signedTransaction.to)) }
+								fromEntry = { param.from }
+								toEntry = { param.to }
 								isApproval = { false }
 								renameAddressCallBack = { param.renameAddressCallBack }
 							/>
@@ -448,8 +443,7 @@ export function Transactions(param: TransactionsParams) {
 }
 
 type TokenLogEventParams = {
-	tokenVisualizerResult: TokenVisualizerResult
-	addressMetadata: Map<string, AddressMetadata>
+	tokenVisualizerResult: TokenVisualizerResultWithMetadata
 	ourAddressInReferenceFrame: bigint,
 	renameAddressCallBack: RenameAddressCallBack,
 }
@@ -461,7 +455,7 @@ export function TokenLogEvent(params: TokenLogEventParams ) {
 			<div class = 'log-cell' style = 'justify-content: right;'>
 				{ params.tokenVisualizerResult.is721 ?
 					<Token721AmountField
-						visResult = { params.tokenVisualizerResult }
+						{ ...params.tokenVisualizerResult }
 						textColor = { textColor }
 					/>
 				: <> { params.tokenVisualizerResult.amount > 2n ** 100n && params.tokenVisualizerResult.isApproval ?
@@ -469,7 +463,7 @@ export function TokenLogEvent(params: TokenLogEventParams ) {
 					:
 						<TokenAmount
 							amount = { params.tokenVisualizerResult.amount }
-							addressMetadata = { params.addressMetadata.get(addressString(params.tokenVisualizerResult.tokenAddress)) }
+							tokenDecimals = { params.tokenVisualizerResult.token.decimals }
 							textColor = { textColor }
 						/>
 					} </>
@@ -477,16 +471,17 @@ export function TokenLogEvent(params: TokenLogEventParams ) {
 			</div>
 			<div class = 'log-cell' style = 'padding-right: 0.2em'>
 				<TokenSymbol
-					token = { params.tokenVisualizerResult.tokenAddress }
-					addressMetadata = { params.addressMetadata.get(addressString(params.tokenVisualizerResult.tokenAddress)) }
+					tokenName = { params.tokenVisualizerResult.token.name }
+					tokenAddress = { params.tokenVisualizerResult.token.address }
+					tokenLogoUri = { params.tokenVisualizerResult.token.logoUri }
+					tokenSymbol = { params.tokenVisualizerResult.token.symbol }
 					textColor = { textColor }
 					useFullTokenName = { false }
 				/>
 			</div>
 			<div class = 'log-cell'>
 				<SmallAddress
-					address = { params.tokenVisualizerResult.from }
-					nameAndLogo = { params.addressMetadata.get(addressString(params.tokenVisualizerResult.from)) }
+					addressBookEntry = { params.tokenVisualizerResult.from }
 					textColor = { textColor }
 					renameAddressCallBack = { params.renameAddressCallBack }
 				/>
@@ -496,8 +491,7 @@ export function TokenLogEvent(params: TokenLogEventParams ) {
 			</div>
 			<div class = 'log-cell'>
 				<SmallAddress
-					address = { params.tokenVisualizerResult.to }
-					nameAndLogo = { params.addressMetadata.get(addressString(params.tokenVisualizerResult.to)) }
+					addressBookEntry = { params.tokenVisualizerResult.to }
 					textColor = { textColor }
 					renameAddressCallBack = { params.renameAddressCallBack }
 				/>
@@ -513,7 +507,6 @@ function LogAnalysis(param: LogAnalysisParams) {
 		routes.map( (tokenVisualizerResult) => (
 			<TokenLogEvent
 				tokenVisualizerResult = { tokenVisualizerResult }
-				addressMetadata = { param.addressMetadata }
 				ourAddressInReferenceFrame = { param.simulatedAndVisualizedTransaction.unsignedTransaction.from }
 				renameAddressCallBack = { param.renameAddressCallBack }
 			/>
@@ -522,7 +515,6 @@ function LogAnalysis(param: LogAnalysisParams) {
 		param.simulatedAndVisualizedTransaction.simResults.visualizerResults.tokenResults.map( (tokenVisualizerResult) => (
 			<TokenLogEvent
 				tokenVisualizerResult = { tokenVisualizerResult }
-				addressMetadata = { param.addressMetadata }
 				ourAddressInReferenceFrame = { param.simulatedAndVisualizedTransaction.unsignedTransaction.from }
 				renameAddressCallBack = { param.renameAddressCallBack }
 			/>

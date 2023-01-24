@@ -1,11 +1,11 @@
 import { StateUpdater } from 'preact/hooks'
 import * as funtypes from 'funtypes'
 import { EthereumAccountsReply, EthereumAddress, EthereumQuantity, LiteralConverterParserFactory } from './wire-types.js'
-import { AddressMetadata, SimulatedAndVisualizedTransaction, SimulationAndVisualisationResults } from './visualizer-types.js'
-import { WebsiteAccess } from '../background/settings.js'
-import { IdentifiedSwap } from '../components/simulationExplaining/SwapTransactions.js'
+import { SimulatedAndVisualizedTransaction, SimulationAndVisualisationResults } from './visualizer-types.js'
+import { IdentifiedSwap, IdentifiedSwapWithMetadata } from '../components/simulationExplaining/SwapTransactions.js'
 import { CHAINS } from './constants.js'
 import { SignerName } from './interceptor-messages.js'
+import { WebsiteAccess } from '../background/settings.js'
 
 export type CHAIN = keyof typeof CHAINS
 export const CHAIN = funtypes.Union(funtypes.Literal('1'), funtypes.Literal('5'))
@@ -17,32 +17,48 @@ export const AddressInfo = funtypes.Object({
 	askForAddressAccess: funtypes.Union(funtypes.Boolean, funtypes.Literal(undefined).withParser(LiteralConverterParserFactory(undefined, true))),
 }).asReadonly()
 
+export type AddressInfoEntry = funtypes.Static<typeof AddressInfoEntry>
+export const AddressInfoEntry = funtypes.Object({
+	type: funtypes.Literal('addressInfo'),
+	name: funtypes.String,
+	address: EthereumAddress,
+	askForAddressAccess: funtypes.Union(funtypes.Boolean, funtypes.Literal(undefined).withParser(LiteralConverterParserFactory(undefined, true))),
+})
+
+export type TokenEntry = funtypes.Static<typeof TokenEntry>
+export const TokenEntry = funtypes.Object({
+	type: funtypes.Literal('token'),
+	name: funtypes.String,
+	address: EthereumAddress,
+	symbol: funtypes.String,
+	decimals: EthereumQuantity,
+}).And(funtypes.Partial({
+	logoUri: funtypes.String,
+}))
+
+export type NFTEntry = funtypes.Static<typeof NFTEntry>
+export const NFTEntry = funtypes.Object({
+	type: funtypes.Literal('NFT'),
+	name: funtypes.String,
+	address: EthereumAddress,
+	symbol: funtypes.String,
+}).And(funtypes.Partial({
+	protocol: funtypes.String,
+	logoUri: funtypes.String,
+}))
+
 export type AddressBookEntry = funtypes.Static<typeof AddressBookEntry>
 export const AddressBookEntry = funtypes.Union(
+	AddressInfoEntry,
 	funtypes.Object({
-		type: funtypes.Literal('addressInfo'),
+		type: funtypes.Literal('contact'),
 		name: funtypes.String,
 		address: EthereumAddress,
-		askForAddressAccess: funtypes.Union(funtypes.Boolean, funtypes.Literal(undefined).withParser(LiteralConverterParserFactory(undefined, true))),
-	}),
-	funtypes.Object({
-		type: funtypes.Literal('token'),
-		name: funtypes.String,
-		address: EthereumAddress,
-		symbol: funtypes.String,
-		decimals: EthereumQuantity,
 	}).And(funtypes.Partial({
 		logoUri: funtypes.String,
 	})),
-	funtypes.Object({
-		type: funtypes.Literal('NFT'),
-		name: funtypes.String,
-		address: EthereumAddress,
-		symbol: funtypes.String,
-	}).And(funtypes.Partial({
-		protocol: funtypes.String,
-		logoUri: funtypes.String,
-	})),
+	TokenEntry,
+	NFTEntry,
 	funtypes.Object({
 		type: funtypes.Literal('other contract'),
 		name: funtypes.String,
@@ -76,7 +92,7 @@ export type InterceptorAccessListParams = {
 	setAndSaveAppPage: (page: Page) => void,
 	setWebsiteAccess: StateUpdater<readonly WebsiteAccess[] | undefined>,
 	websiteAccess: readonly WebsiteAccess[] | undefined,
-	websiteAccessAddressMetadata: [string, AddressMetadata][],
+	websiteAccessAddressMetadata: [string, AddressInfoEntry][],
 	renameAddressCallBack: RenameAddressCallBack,
 }
 
@@ -139,7 +155,7 @@ export type FirstCardParams = {
 export type SimulationStateParam = {
 	simulationAndVisualisationResults: SimulationAndVisualisationResults | undefined,
 	removeTransaction: (hash: bigint) => void,
-	addressMetadata: Map<string, AddressMetadata>,
+	addressMetadata: Map<string, AddressBookEntry>,
 	refreshSimulation: () => void,
 	currentBlockNumber: bigint | undefined,
 	renameAddressCallBack: RenameAddressCallBack,
@@ -147,8 +163,8 @@ export type SimulationStateParam = {
 
 export type LogAnalysisParams = {
 	simulatedAndVisualizedTransaction: SimulatedAndVisualizedTransaction,
-	addressMetadata: Map<string, AddressMetadata>,
-	identifiedSwap: IdentifiedSwap,
+	addressMetadata: Map<string, AddressBookEntry>,
+	identifiedSwap: IdentifiedSwapWithMetadata,
 	renameAddressCallBack: RenameAddressCallBack,
 }
 
@@ -174,7 +190,7 @@ export type PendingAccessRequest = {
 }
 
 export interface PendingAccessRequestWithMetadata extends PendingAccessRequest {
-	addressMetadata: [string, AddressMetadata][],
+	addressMetadata: [string, AddressInfoEntry][],
 }
 
 export interface SignerState {
@@ -182,4 +198,4 @@ export interface SignerState {
 	signerChain: EthereumQuantity | undefined
 }
 
-export type RenameAddressCallBack = (name: string | undefined, address: string) => void
+export type RenameAddressCallBack = (addressBookEntry: AddressBookEntry) => void
