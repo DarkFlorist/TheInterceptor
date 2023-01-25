@@ -1,6 +1,6 @@
 
 import { addressString } from '../../utils/bigint.js'
-import { BalanceChangeSummary, TokenVisualizerResult, VisualizerResult } from '../../utils/visualizer-types.js'
+import { BalanceChangeSummary, SimulatedAndVisualizedTransaction, TokenVisualizerResultWithMetadata } from '../../utils/visualizer-types.js'
 
 export class LogSummarizer {
 	private summary = new Map<string, BalanceChangeSummary>()
@@ -18,9 +18,9 @@ export class LogSummarizer {
 		}
 	}
 
-	private updateEthBalances = (result: VisualizerResult) => {
+	private updateEthBalances = (result: SimulatedAndVisualizedTransaction) => {
 		for (const change of result.ethBalanceChanges) {
-			const address = addressString(change.address)
+			const address = addressString(change.address.address)
 			this.ensureAddressInSummary(address)
 			const addressData = this.summary.get(address)!
 			const etherResults = this.summary.get(address)?.etherResults
@@ -44,7 +44,7 @@ export class LogSummarizer {
 		}
 	}
 
-	private updateERC721 = (from: string, to: string, tokenAddress: string, change: TokenVisualizerResult) => {
+	private updateERC721 = (from: string, to: string, tokenAddress: string, change: TokenVisualizerResultWithMetadata) => {
 		if ( !change.is721 ) return
 		if (change.isApproval) {
 			const fromSummary = this.summary.get(from)!
@@ -86,7 +86,7 @@ export class LogSummarizer {
 		}
 	}
 
-	private updateERC20 = (from: string, to: string, tokenAddress: string, change: TokenVisualizerResult) => {
+	private updateERC20 = (from: string, to: string, tokenAddress: string, change: TokenVisualizerResultWithMetadata) => {
 		if ( change.is721 ) return
 		if (change.isApproval) {
 			// track approvals
@@ -115,11 +115,11 @@ export class LogSummarizer {
 		}
 	}
 
-	private updateTokenChanges = (result: VisualizerResult) => {
+	private updateTokenChanges = (result: SimulatedAndVisualizedTransaction) => {
 		for (const change of result.tokenResults) {
-			const from = addressString(change.from)
-			const to = addressString(change.to)
-			const tokenAddress = addressString(change.tokenAddress)
+			const from = addressString(change.from.address)
+			const to = addressString(change.to.address)
+			const tokenAddress = addressString(change.token.address)
 
 			for (const address of [from, to]) {
 				this.ensureAddressInSummary(address)
@@ -130,19 +130,18 @@ export class LogSummarizer {
 		}
 	}
 
-	private summarizeToAddressChanges = (visualizerResults: (VisualizerResult | undefined)[]) => {
-		for (const result of visualizerResults) {
-			if ( result === undefined ) continue
+	private summarizeToAddressChanges = (transactions: (SimulatedAndVisualizedTransaction | undefined)[]) => {
+		for (const transaction of transactions) {
+			if ( transaction === undefined ) continue
 			// calculate ether balances for each account
-			this.updateEthBalances(result)
+			this.updateEthBalances(transaction)
 			// calculate token changes for each account
-			this.updateTokenChanges(result)
+			this.updateTokenChanges(transaction)
 		}
 	}
 
-	public constructor(visualizerResults: (VisualizerResult | undefined)[]) {
-		this.summarizeToAddressChanges(visualizerResults)
-
+	public constructor(transactions: (SimulatedAndVisualizedTransaction | undefined)[]) {
+		this.summarizeToAddressChanges(transactions)
 
 		// remove addresses that ended up with no changes
 		Array.from(this.summary.entries()).forEach( ([address, addressSummary]) => {

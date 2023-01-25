@@ -143,7 +143,7 @@ export function Erc20ApprovalChanges(param: Erc20ApprovalChangesParams ) {
 	return <>
 		{ param.tokenApprovalChanges.map( (token) => (
 			token.approvals.map( (entryToApprove) => (
-				<Erc20ApprovalChange { {
+				<Erc20ApprovalChange { ...{
 					...token,
 					entryToApprove: entryToApprove,
 					change: entryToApprove.change,
@@ -523,8 +523,8 @@ export function SimulationSummary(param: SimulationSummaryParams) {
 	if (param.simulationAndVisualisationResults === undefined) return <></>
 
 	const VisResults = param.summarizeOnlyLastTransaction && param.simulationAndVisualisationResults.simulatedAndVisualizedTransactions.length > 0 ?
-		[param.simulationAndVisualisationResults.simulatedAndVisualizedTransactions.at(-1)?.simResults?.visualizerResults] :
-		param.simulationAndVisualisationResults.simulatedAndVisualizedTransactions.map( (x) => (x.simResults?.visualizerResults) )
+		[param.simulationAndVisualisationResults.simulatedAndVisualizedTransactions.at(-1)] :
+		param.simulationAndVisualisationResults.simulatedAndVisualizedTransactions
 
 	const logSummarizer = new LogSummarizer( VisResults )
 
@@ -551,8 +551,8 @@ export function SimulationSummary(param: SimulationSummaryParams) {
 						<div class = 'card-header-icon unset-cursor'>
 							<span class = 'icon'>
 								{ param.summarizeOnlyLastTransaction ?
-									<img src = { param.simulationAndVisualisationResults.simulatedAndVisualizedTransactions[param.simulationAndVisualisationResults.simulatedAndVisualizedTransactions.length - 1].multicallResponse.statusCode === 'success' ? ( param.simulationAndVisualisationResults.simulatedAndVisualizedTransactions[param.simulationAndVisualisationResults.simulatedAndVisualizedTransactions.length - 1].simResults?.quarantine === true ? '../img/warning-sign.svg' : '../img/success-icon.svg' ) : '../img/error-icon.svg' } /> :
-									<img src = { param.simulationAndVisualisationResults.simulatedAndVisualizedTransactions.find( (x) => x.multicallResponse.statusCode !== 'success') === undefined ? ( param.simulationAndVisualisationResults.simulatedAndVisualizedTransactions.find( (x) => x.simResults && x.simResults.quarantine ) !== undefined ? '../img/warning-sign.svg' : '../img/success-icon.svg' ) : '../img/error-icon.svg' } />
+									<img src = { param.simulationAndVisualisationResults.simulatedAndVisualizedTransactions[param.simulationAndVisualisationResults.simulatedAndVisualizedTransactions.length - 1].statusCode === 'success' ? ( param.simulationAndVisualisationResults.simulatedAndVisualizedTransactions[param.simulationAndVisualisationResults.simulatedAndVisualizedTransactions.length - 1].quarantine === true ? '../img/warning-sign.svg' : '../img/success-icon.svg' ) : '../img/error-icon.svg' } /> :
+									<img src = { param.simulationAndVisualisationResults.simulatedAndVisualizedTransactions.find( (x) => x.statusCode !== 'success') === undefined ? ( param.simulationAndVisualisationResults.simulatedAndVisualizedTransactions.find( (x) => x.quarantine ) !== undefined ? '../img/warning-sign.svg' : '../img/success-icon.svg' ) : '../img/error-icon.svg' } />
 								}
 							</span>
 						</div>

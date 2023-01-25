@@ -88,20 +88,42 @@ export type SimulationState = {
 	simulationConductedTimestamp: Date,
 }
 
-export type SimulatedAndVisualizedTransaction = {
-	multicallResponse: SingleMulticallResponse
-	unsignedTransaction: EthereumUnsignedTransaction
-	signedTransaction: (IUnsignedTransaction & EthereumTransactionSignature)
-	realizedGasPrice: bigint
-	simResults: SimResults | undefined
+export type EthBalanceChangesWithMetadata = {
+	address: AddressBookEntry,
+	before: bigint,
+	after: bigint,
 }
+
+export type SimulatedAndVisualizedTransaction = {
+	from: AddressBookEntry
+	to: AddressBookEntry | undefined
+	value: EthereumQuantity
+	realizedGasPrice: EthereumQuantity
+	ethBalanceChanges: EthBalanceChangesWithMetadata[]
+	tokenResults: TokenVisualizerResultWithMetadata[]
+	gasSpent: EthereumQuantity
+	quarantine: boolean
+	quarantineCodes: QUARANTINE_CODE[]
+	input: Uint8Array
+	chainId: CHAIN
+	hash: bigint
+	gas: bigint
+} & ({
+	type: '1559'
+	maxFeePerGas: EthereumQuantity
+	maxPriorityFeePerGas: EthereumQuantity
+} | {
+	type: 'legacy' | '2930'
+}) & (
+	{ statusCode: 'failure', error: string } |
+	{ statusCode: 'success' }
+)
 
 export type SimulationAndVisualisationResults = {
 	blockNumber: bigint,
 	blockTimestamp: Date,
 	simulationConductedTimestamp: Date,
 	simulatedAndVisualizedTransactions: SimulatedAndVisualizedTransaction[],
-	addressMetadata: Map<string, AddressBookEntry>,
 	chain: CHAIN,
 	tokenPrices: TokenPriceEstimate[],
 	activeAddress: bigint,
@@ -131,8 +153,6 @@ export const TokenPriceEstimate = funtypes.Object({
 
 export type TransactionVisualizationParameters = {
 	tx: SimulatedAndVisualizedTransaction,
-	from: AddressBookEntry,
-	to: AddressBookEntry,
 	simulationAndVisualisationResults: SimulationAndVisualisationResults,
 	removeTransaction: (hash: bigint) => void,
 	activeAddress: bigint,

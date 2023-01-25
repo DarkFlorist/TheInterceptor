@@ -2,7 +2,7 @@ import { StateUpdater } from 'preact/hooks'
 import * as funtypes from 'funtypes'
 import { EthereumAccountsReply, EthereumAddress, EthereumQuantity, LiteralConverterParserFactory } from './wire-types.js'
 import { SimulatedAndVisualizedTransaction, SimulationAndVisualisationResults } from './visualizer-types.js'
-import { IdentifiedSwap, IdentifiedSwapWithMetadata } from '../components/simulationExplaining/SwapTransactions.js'
+import { IdentifiedSwapWithMetadata } from '../components/simulationExplaining/SwapTransactions.js'
 import { CHAINS } from './constants.js'
 import { SignerName } from './interceptor-messages.js'
 import { WebsiteAccess } from '../background/settings.js'
@@ -155,7 +155,6 @@ export type FirstCardParams = {
 export type SimulationStateParam = {
 	simulationAndVisualisationResults: SimulationAndVisualisationResults | undefined,
 	removeTransaction: (hash: bigint) => void,
-	addressMetadata: Map<string, AddressBookEntry>,
 	refreshSimulation: () => void,
 	currentBlockNumber: bigint | undefined,
 	renameAddressCallBack: RenameAddressCallBack,
@@ -163,7 +162,6 @@ export type SimulationStateParam = {
 
 export type LogAnalysisParams = {
 	simulatedAndVisualizedTransaction: SimulatedAndVisualizedTransaction,
-	addressMetadata: Map<string, AddressBookEntry>,
 	identifiedSwap: IdentifiedSwapWithMetadata,
 	renameAddressCallBack: RenameAddressCallBack,
 }

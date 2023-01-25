@@ -62,7 +62,6 @@ export function ConfirmTransaction() {
 			isComputingSimulation: dialog.isComputingSimulation,
 			simulationConductedTimestamp: dialog.simulationState.simulationConductedTimestamp,
 			simulatedAndVisualizedTransactions: txs,
-			addressMetadata: new Map(dialog.addressBookEntries.map( (x) => [x[0], x[1]])),
 			chain: dialog.simulationState.chain,
 			tokenPrices: dialog.tokenPrices,
 			activeAddress: dialog.activeAddress,
@@ -86,8 +85,8 @@ export function ConfirmTransaction() {
 
 	function isConfirmDisabled() {
 		if (forceSend) return false
-		const success = simulationAndVisualisationResults && simulationAndVisualisationResults.simulatedAndVisualizedTransactions[simulationAndVisualisationResults.simulatedAndVisualizedTransactions.length - 1 ].multicallResponse.statusCode === 'success'
-		const noQuarantines = simulationAndVisualisationResults && simulationAndVisualisationResults.simulatedAndVisualizedTransactions.find( (x) => (x.simResults && x.simResults.quarantine)) === undefined
+		const success = simulationAndVisualisationResults && simulationAndVisualisationResults.simulatedAndVisualizedTransactions[simulationAndVisualisationResults.simulatedAndVisualizedTransactions.length - 1 ].statusCode === 'success'
+		const noQuarantines = simulationAndVisualisationResults && simulationAndVisualisationResults.simulatedAndVisualizedTransactions.find( (x) => x.quarantine) === undefined
 		return !success || !noQuarantines
 	}
 
@@ -131,12 +130,12 @@ export function ConfirmTransaction() {
 								renameAddressCallBack = { renameAddressCallBack }
 							/>
 							<div className = 'block' style = 'margin: 10px; padding: 10px; background-color: var(--card-bg-color);'>
-								{ simulationAndVisualisationResults && simulationAndVisualisationResults.simulatedAndVisualizedTransactions[simulationAndVisualisationResults.simulatedAndVisualizedTransactions.length - 1 ].multicallResponse.statusCode === 'success' ? <></> :
+								{ simulationAndVisualisationResults && simulationAndVisualisationResults.simulatedAndVisualizedTransactions[simulationAndVisualisationResults.simulatedAndVisualizedTransactions.length - 1 ].statusCode === 'success' ? <></> :
 									<div class = 'card-content'>
 										<ErrorCheckBox text = { 'I understand that the transaction will most likely fail but I want to send it anyway.' } checked = { forceSend } onInput = { setForceSend } />
 									</div>
 								}
-								{ simulationAndVisualisationResults && simulationAndVisualisationResults.simulatedAndVisualizedTransactions[simulationAndVisualisationResults.simulatedAndVisualizedTransactions.length - 1 ].simResults?.quarantine !== true ? <></> :
+								{ simulationAndVisualisationResults && simulationAndVisualisationResults.simulatedAndVisualizedTransactions[simulationAndVisualisationResults.simulatedAndVisualizedTransactions.length - 1 ].quarantine !== true ? <></> :
 									<div class = 'card-content'>
 										<ErrorCheckBox text = { 'I understand that there are issues with this transaction but I want to send it anyway against Interceptors recommendations.' } checked = { forceSend } onInput = { setForceSend } />
 									</div>

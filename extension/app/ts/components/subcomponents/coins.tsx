@@ -3,7 +3,7 @@ import { getTokenAmountsWorth } from '../../simulation/priceEstimator.js'
 import { abs, addressString, bigintToDecimalString, bigintToRoundedPrettyDecimalString } from '../../utils/bigint.js'
 import { CHAINS } from '../../utils/constants.js'
 import { CHAIN } from '../../utils/user-interface-types.js'
-import { TokenPriceEstimate, TokenVisualizerResult } from '../../utils/visualizer-types.js'
+import { TokenPriceEstimate } from '../../utils/visualizer-types.js'
 import { CopyToClipboard } from './CopyToClipboard.js'
 import Blockie from './PreactBlocky.js'
 

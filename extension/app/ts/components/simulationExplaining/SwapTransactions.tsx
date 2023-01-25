@@ -1,54 +1,10 @@
 import { SimulatedAndVisualizedTransaction, TokenVisualizerResult, TokenVisualizerResultWithMetadata } from '../../utils/visualizer-types.js'
 import * as funtypes from 'funtypes'
-import { EthereumAddress, EthereumQuantity } from '../../utils/wire-types.js'
+import { EthereumQuantity } from '../../utils/wire-types.js'
 import { abs, addressString } from '../../utils/bigint.js'
 import { ERC721Token, Ether, Token } from '../subcomponents/coins.js'
 import { AddressBookEntry, CHAIN, NFTEntry, TokenEntry } from '../../utils/user-interface-types.js'
-
-export type IdentifiedSwap = funtypes.Static<typeof IdentifiedSwap>
-export const IdentifiedSwap = funtypes.Union(
-	funtypes.Literal(false), // not a swap
-	funtypes.Intersect(
-		funtypes.Object({
-			type: funtypes.Literal('TokenToToken'),
-			sender: EthereumAddress,
-			tokenAddressSent: EthereumAddress,
-			tokenAddressReceived: EthereumAddress,
-		} ),
-		funtypes.Union(
-			funtypes.Object( { tokenAmountSent: EthereumQuantity } ),
-			funtypes.Object( { tokenIdSent: EthereumQuantity } )
-		),
-		funtypes.Union(
-			funtypes.Object( { tokenAmountReceived: EthereumQuantity } ),
-			funtypes.Object( { tokenIdReceived: EthereumQuantity } )
-		),
-	),
-	funtypes.Intersect(
-		funtypes.Object({
-			type: funtypes.Literal('TokenToETH'),
-			sender: EthereumAddress,
-			tokenAddressSent: EthereumAddress,
-			ethAmountReceived: EthereumQuantity,
-		}),
-		funtypes.Union(
-			funtypes.Object( { tokenAmountSent: EthereumQuantity } ),
-			funtypes.Object( { tokenIdSent: EthereumQuantity } )
-		),
-	),
-	funtypes.Intersect(
-		funtypes.Object({
-			type: funtypes.Literal('ETHToToken'),
-			sender: EthereumAddress,
-			tokenAddressReceived: EthereumAddress,
-			ethAmountSent: EthereumQuantity
-		}),
-		funtypes.Union(
-			funtypes.Object( { tokenAmountReceived: EthereumQuantity } ),
-			funtypes.Object( { tokenIdReceived: EthereumQuantity } )
-		),
-	)
-)
+import { CHAINS } from '../../utils/constants.js'
 
 export type IdentifiedSwapWithMetadata = funtypes.Static<typeof IdentifiedSwapWithMetadata>
 export const IdentifiedSwapWithMetadata = funtypes.Union(
@@ -57,8 +13,6 @@ export const IdentifiedSwapWithMetadata = funtypes.Union(
 		funtypes.Object({
 			type: funtypes.Literal('TokenToToken'),
 			sender: AddressBookEntry,
-			tokenAddressSent: EthereumAddress,
-			tokenAddressReceived: EthereumAddress,
 		} ),
 		funtypes.Union(
 			funtypes.Object( { tokenAmountSent: EthereumQuantity, tokenAddressSent: TokenEntry } ),
@@ -98,75 +52,104 @@ interface SwapVisualizationParams {
 	chain: CHAIN
 }
 
-export function identifySwap(simulatedAndVisualizedTransaction: SimulatedAndVisualizedTransaction): IdentifiedSwap {
-	if (simulatedAndVisualizedTransaction.simResults === undefined) return false
-	if (simulatedAndVisualizedTransaction.simResults.visualizerResults === undefined) return false
-	const visualizerResults = simulatedAndVisualizedTransaction.simResults.visualizerResults
+function dropDuplicates<T>(array: T[], isEqual: (a: T, b: T) => boolean): T[] {
+    const result: T[] = [];
+    for (const item of array) {
+        const found = result.some((value) => isEqual(value, item));
+        if (!found) {
+            result.push(item);
+        }
+    }
+    return result;
+}
 
-	const sender = simulatedAndVisualizedTransaction.unsignedTransaction.from
+export function identifySwap(transaction: SimulatedAndVisualizedTransaction): IdentifiedSwapWithMetadata {
+	const sender = transaction.from.address
 
-	for (const tokenTransaction of visualizerResults.tokenResults) {
-		if (tokenTransaction.isApproval && tokenTransaction.from === sender) return false // if the transaction includes us approving something, its not a simple swap
+	for (const tokenTransaction of transaction.tokenResults) {
+		if (tokenTransaction.isApproval && tokenTransaction.from.address === sender) return false // if the transaction includes us approving something, its not a simple swap
 	}
 
 	// check if sender sends one token type/ether and receives one token type/ether
 
-	const tokensSent = visualizerResults.tokenResults.filter( (token) => token.from === sender)
-	const tokensReceived = visualizerResults.tokenResults.filter( (token) => token.to === sender)
+	const tokensSent = transaction.tokenResults.filter( (token) => token.from.address === sender)
+	const tokensReceived = transaction.tokenResults.filter( (token) => token.to.address === sender)
 
 	if (tokensReceived.length > 1) return false // received more than one token
 	if (tokensSent.length > 1) return false // sent more than one token
 
-	const tokenAddressesSent = new Set(tokensSent.map( (token) => token.tokenAddress))
-	const tokenAddressesReceived = new Set(tokensReceived.map( (token) => token.tokenAddress))
+	const isSameTokenAddress = (a: TokenVisualizerResultWithMetadata, b: TokenVisualizerResultWithMetadata) => a.token.address === b.token.address
 
-	const etherChange = visualizerResults.ethBalanceChanges.filter( (x) => x.address === sender)
+	const tokenAddressesSent = dropDuplicates<TokenVisualizerResultWithMetadata>(tokensSent, isSameTokenAddress).map((x) => x.token)
+	const tokenAddressesReceived = dropDuplicates<TokenVisualizerResultWithMetadata>(tokensReceived, isSameTokenAddress).map((x) => x.token)
+
+	const etherChange = transaction.ethBalanceChanges.filter( (x) => x.address.address === sender)
 	const ethDiff = etherChange !== undefined && etherChange.length >= 1 ? etherChange[etherChange.length - 1].after - etherChange[0].before : 0n
 
-	const transactionGasCost = simulatedAndVisualizedTransaction.realizedGasPrice * simulatedAndVisualizedTransaction.unsignedTransaction.gas
+	const transactionGasCost = transaction.realizedGasPrice * transaction.gas
 
-	if( tokenAddressesSent.size === 1 && tokenAddressesReceived.size === 1 && -ethDiff <= transactionGasCost) {
+	if (tokenAddressesSent.length === 1 && tokenAddressesReceived.length === 1 && -ethDiff <= transactionGasCost) {
 		// user swapped one token to another and eth didn't change more than gas fees
 		const tokenAddressSent = Array.from(tokenAddressesSent.values())[0]
 		const tokenAddressReceived = Array.from(tokenAddressesReceived.values())[0]
-		if(tokenAddressSent !== tokenAddressReceived ) {
-			const sentData = tokensSent.filter( (x) => x.tokenAddress === tokenAddressSent )[0]
-			const receivedData = tokensReceived.filter( (x) => x.tokenAddress === tokenAddressReceived )[0]
+		if (tokenAddressSent !== tokenAddressReceived ) {
+			const sentData = tokensSent.filter( (x) => x.token.address === tokenAddressSent.address )[0]
+			const receivedData = tokensReceived.filter( (x) => x.token.address === tokenAddressReceived.address )[0]
 			return {
 				type: 'TokenToToken' as const,
-				sender: sender,
-				tokenAddressSent,
-				...(sentData.is721 ? { tokenIdSent: 'tokenId' in sentData ? sentData.tokenId : 0x0n } : { tokenAmountSent: 'amount' in sentData ?  sentData.amount : 0x0n }),
-				tokenAddressReceived,
-				...(receivedData.is721 ? { tokenIdReceived: 'tokenId' in receivedData ? receivedData.tokenId : 0x0n } : { tokenAmountReceived: 'amount' in receivedData ? receivedData.amount : 0x0n }),
+				sender: transaction.from,
+				...(tokenAddressSent.type === 'NFT' ? {
+					tokenAddressSent: tokenAddressSent,
+					tokenIdSent: 'tokenId' in sentData ? sentData.tokenId : 0x0n,
+				} : {
+					tokenAddressSent: tokenAddressSent,
+					tokenAmountSent: 'amount' in sentData ?  sentData.amount : 0x0n,
+				}),
+				...(tokenAddressReceived.type === 'NFT' ? {
+					tokenAddressReceived: tokenAddressReceived,
+					tokenIdReceived: 'tokenId' in receivedData ? receivedData.tokenId : 0x0n,
+				} : {
+					tokenAddressReceived: tokenAddressReceived,
+					tokenAmountReceived: 'amount' in receivedData ? receivedData.amount : 0x0n,
+				}),
 			}
 		}
 	}
 
-	if( tokenAddressesSent.size === 1 && tokenAddressesReceived.size === 0 && ethDiff > 0n ) {
+	if (tokenAddressesSent.length === 1 && tokenAddressesReceived.length === 0 && ethDiff > 0n ) {
 		// user sold token for eth
 		const tokenAddressSent = Array.from(tokenAddressesSent.values())[0]
-		const sentData = tokensSent.filter( (x) => x.tokenAddress === tokenAddressSent )[0]
+		const sentData = tokensSent.filter( (x) => x.token.address === tokenAddressSent.address )[0]
 		return {
 			type: 'TokenToETH' as const,
-			sender: sender,
-			tokenAddressSent,
-			...(sentData.is721 ? { tokenIdSent: 'tokenId' in sentData ? sentData.tokenId : 0x0n } : { tokenAmountSent: 'amount' in sentData ?  sentData.amount : 0x0n }),
+			sender: transaction.from,
+			...(tokenAddressSent.type === 'NFT' ? {
+				tokenIdSent: 'tokenId' in sentData ? sentData.tokenId : 0x0n,
+				tokenAddressSent,
+			} : {
+				tokenAmountSent: 'amount' in sentData ? sentData.amount : 0x0n,
+				tokenAddressSent,
+			}),
 			ethAmountReceived: ethDiff,
 		}
 	}
 
-	if( tokenAddressesSent.size === 0 && tokenAddressesReceived.size === 1 && ethDiff < transactionGasCost ) {
+	if( tokenAddressesSent.length === 0 && tokenAddressesReceived.length === 1 && ethDiff < transactionGasCost ) {
 		// user bought token with eth
 		const tokenAddressReceived = Array.from(tokenAddressesReceived.values())[0]
-		const receivedData = tokensReceived.filter( (x) => x.tokenAddress === tokenAddressReceived )[0]
+		const receivedData = tokensReceived.filter( (x) => x.token.address === tokenAddressReceived.address )[0]
 		return {
 			type: 'ETHToToken' as const,
-			sender: sender,
-			tokenAddressReceived,
+			sender: transaction.from,
 			ethAmountSent: -ethDiff,
 			tokenAmountReceived: 'amount' in receivedData ? receivedData.amount : 0n,
-			...(receivedData.is721 ? { tokenIdReceived: 'tokenId' in receivedData ? receivedData.tokenId : 0x0n } : { tokenAmountReceived: 'amount' in receivedData ? receivedData.amount : 0x0n }),
+			...(tokenAddressReceived.type === 'NFT' ? {
+				tokenIdReceived: 'tokenId' in receivedData ? receivedData.tokenId : 0x0n,
+				tokenAddressReceived,
+			} : {
+				tokenAmountReceived: 'amount' in receivedData ? receivedData.amount : 0x0n,
+				tokenAddressReceived,
+			}),
 		}
 	}
 
@@ -212,13 +195,12 @@ function *findSwapRoutes(graph: Graph, currentState: State, goalState: State, pa
 
 export function identifyRoutes(simulatedAndVisualizedTransaction: SimulatedAndVisualizedTransaction, identifiedSwap: IdentifiedSwapWithMetadata) : false | TokenVisualizerResultWithMetadata[] {
 	if ( identifiedSwap === false ) return false
-	if (simulatedAndVisualizedTransaction.simResults?.visualizerResults === undefined) return false
-	const tokenResults = simulatedAndVisualizedTransaction.simResults.visualizerResults.tokenResults
-	const ethBalanceChanges = simulatedAndVisualizedTransaction.simResults.visualizerResults.ethBalanceChanges
+	const tokenResults = simulatedAndVisualizedTransaction.tokenResults
+	const ethBalanceChanges = simulatedAndVisualizedTransaction.ethBalanceChanges
 	if ( tokenResults.length > 10 ) return false // too complex
 
 	const graph: Graph = new Map()
-	const transactionGasCost = simulatedAndVisualizedTransaction.realizedGasPrice * simulatedAndVisualizedTransaction.unsignedTransaction.gas
+	const transactionGasCost = simulatedAndVisualizedTransaction.realizedGasPrice * simulatedAndVisualizedTransaction.gas
 
 	// build search graph
 	for (const [tokenResultIndex, result] of tokenResults.entries()) {
@@ -312,14 +294,11 @@ export function identifyRoutes(simulatedAndVisualizedTransaction: SimulatedAndVi
 	return sorted
 }
 
-export function getSwapName(identifiedSwap: IdentifiedSwap, addressMetadata: Map<string, AddressBookEntry>) {
+export function getSwapName(identifiedSwap: IdentifiedSwapWithMetadata, chain: CHAIN) {
 	if ( identifiedSwap === false ) return undefined
-	const sentTokenMetadata = 'tokenAddressSent' in identifiedSwap ? addressMetadata.get(addressString(identifiedSwap.tokenAddressSent)) : undefined
-	const receivedTokenMetadata = 'tokenAddressReceived' in identifiedSwap ? addressMetadata.get(addressString(identifiedSwap.tokenAddressReceived)) : undefined
-
-	const SwapFrom = identifiedSwap.type === 'TokenToToken' || identifiedSwap.type === 'TokenToETH' ? (sentTokenMetadata !== undefined && 'symbol' in sentTokenMetadata ? sentTokenMetadata.symbol : '???' ) : 'ETH'
-	const SwapTo = identifiedSwap.type === 'TokenToToken' || identifiedSwap.type === 'ETHToToken' ? (receivedTokenMetadata !== undefined && 'symbol' in receivedTokenMetadata ? receivedTokenMetadata.symbol : '???' ) : 'ETH'
-	return `Swap ${ SwapFrom } for ${ SwapTo }`
+	const sent = 'tokenAddressSent' in identifiedSwap ? identifiedSwap.tokenAddressSent.symbol : CHAINS[chain].currencyTicker
+	const to = 'tokenAddressReceived' in identifiedSwap ? identifiedSwap.tokenAddressReceived.symbol : CHAINS[chain].currencyTicker
+	return `Swap ${ sent } for ${ to }`
 }
 
 export function SwapVisualization(param: SwapVisualizationParams) {

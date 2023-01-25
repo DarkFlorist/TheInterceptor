@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'preact/hooks'
 import { defaultAddresses, WebsiteAccess } from '../background/settings.js'
 import { addressString } from '../utils/bigint.js'
-import { SimulatedAndVisualizedTransaction, SimulationAndVisualisationResults } from '../utils/visualizer-types.js'
+import { EthBalanceChangesWithMetadata, SimulatedAndVisualizedTransaction, SimulationAndVisualisationResults, TokenVisualizerResultWithMetadata } from '../utils/visualizer-types.js'
 import { AddressList } from './pages/AddressList.js'
 import { ChangeActiveAddress } from './pages/ChangeActiveAddress.js'
 import { Home } from './pages/Home.js'
@@ -88,21 +88,78 @@ export function App() {
 	}
 
 	function fetchSimulationState(backgroundPage: Window) {
-		if (backgroundPage.interceptor.simulation.simulationState === undefined) return setSimVisResults(undefined)
+		const simState = backgroundPage.interceptor.simulation.simulationState
+		if (simState === undefined) return setSimVisResults(undefined)
 		if (backgroundPage.interceptor.settings?.activeSimulationAddress === undefined) return setSimVisResults(undefined)
 
-		const txs: SimulatedAndVisualizedTransaction[] = backgroundPage.interceptor.simulation.simulationState.simulatedTransactions.map( (x, index) => ({
-			...x,
-			simResults: backgroundPage.interceptor.simulation.visualizerResults === undefined ? undefined : backgroundPage.interceptor.simulation.visualizerResults[index],
-		}) )
+		const addressMetadata = new Map(backgroundPage.interceptor.simulation.addressBookEntries.map( (x) => [x[0], x[1]]))
+
+		// todo, move this to background page (and refacor hard) to form when simulation is made and we can get rid of most of the validations done here
+		const txs: SimulatedAndVisualizedTransaction[] = simState.simulatedTransactions.map( (simulatedTx, index) => {
+			const from = addressMetadata.get(addressString(simulatedTx.unsignedTransaction.from))
+			if (from === undefined) throw new Error('missing metadata')
+
+			const to = simulatedTx.unsignedTransaction.to !== null ? addressMetadata.get(addressString(simulatedTx.unsignedTransaction.to)) : undefined
+			if (simulatedTx.unsignedTransaction.to !== null && to === undefined ) throw new Error('missing metadata')
+
+			if (backgroundPage.interceptor.simulation.visualizerResults === undefined) throw new Error('missing visualizerResults')
+			const visualiser = backgroundPage.interceptor.simulation.visualizerResults[index].visualizerResults
+
+			const ethBalanceChanges: EthBalanceChangesWithMetadata[] = visualiser === undefined ? [] : visualiser.ethBalanceChanges.map((change) => {
+				const entry = addressMetadata.get(addressString(change.address))
+				if (entry === undefined) throw new Error('missing metadata')
+				return {
+					...change,
+					address: entry,
+				}
+			})
+			const tokenResults: TokenVisualizerResultWithMetadata[] = visualiser === undefined ? [] : visualiser.tokenResults.map((change) => {
+				const fromEntry = addressMetadata.get(addressString(change.from))
+				const toEntry = addressMetadata.get(addressString(change.to))
+				const tokenEntry = addressMetadata.get(addressString(change.tokenAddress))
+				if (fromEntry === undefined || toEntry === undefined || tokenEntry === undefined) throw new Error('missing metadata')
+				if ( !(change.is721 && tokenEntry.type === 'NFT') ) throw new Error('wrong tokentype')
+				return {
+					...change,
+					from: fromEntry,
+					to: toEntry,
+					token: tokenEntry,
+				}
+			})
+			return {
+				from: from,
+				to: to,
+				value: simulatedTx.unsignedTransaction.value,
+				realizedGasPrice: simulatedTx.realizedGasPrice,
+				ethBalanceChanges: ethBalanceChanges,
+				tokenResults: tokenResults,
+				gasSpent: simulatedTx.multicallResponse.gasSpent,
+				quarantine: backgroundPage.interceptor.simulation.visualizerResults[index].quarantine,
+				quarantineCodes: backgroundPage.interceptor.simulation.visualizerResults[index].quarantineCodes,
+				chainId: simState.chain,
+				gas: simulatedTx.unsignedTransaction.gas,
+				input: simulatedTx.unsignedTransaction.input,
+				...(simulatedTx.unsignedTransaction.type === '1559' ? {
+					type: simulatedTx.unsignedTransaction.type,
+					maxFeePerGas: simulatedTx.unsignedTransaction.maxFeePerGas,
+					maxPriorityFeePerGas: simulatedTx.unsignedTransaction.maxPriorityFeePerGas,
+				} : { type: simulatedTx.unsignedTransaction.type } ),
+				hash: simulatedTx.signedTransaction.hash,
+				...(simulatedTx.multicallResponse.statusCode === 'failure' ? {
+					error: simulatedTx.multicallResponse.error,
+					statusCode: simulatedTx.multicallResponse.statusCode,
+				} : {
+					statusCode: simulatedTx.multicallResponse.statusCode,
+				}),
+			}
+		} )
 
 		setSimVisResults( {
-			blockNumber: backgroundPage.interceptor.simulation.simulationState.blockNumber,
-			blockTimestamp: backgroundPage.interceptor.simulation.simulationState.blockTimestamp,
-			simulationConductedTimestamp: backgroundPage.interceptor.simulation.simulationState.simulationConductedTimestamp,
+			blockNumber: simState.blockNumber,
+			blockTimestamp: simState.blockTimestamp,
+			simulationConductedTimestamp: simState.simulationConductedTimestamp,
 			simulatedAndVisualizedTransactions: txs,
-			addressMetadata: new Map(backgroundPage.interceptor.simulation.addressBookEntries.map( (x) => [x[0], x[1]])),
-			chain: backgroundPage.interceptor.simulation.simulationState.chain,
+			chain: simState.chain,
 			tokenPrices: backgroundPage.interceptor.simulation.tokenPrices,
 			activeAddress: BigInt(backgroundPage.interceptor.settings.activeSimulationAddress),
 			simulationMode: backgroundPage.interceptor.settings.simulationMode,

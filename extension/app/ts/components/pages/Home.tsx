@@ -211,7 +211,6 @@ export function Home(param: HomeParams) {
 
 			{ !simulationMode || activeSimulationAddress === undefined ? <></> :
 				<SimulationResults
-					addressMetadata = { param.simVisResults !== undefined ? param.simVisResults.addressMetadata : new Map() }
 					simulationAndVisualisationResults = { simulationAndVisualisationResults }
 					removeTransaction = { removeTransaction }
 					refreshSimulation = { refreshSimulation }
