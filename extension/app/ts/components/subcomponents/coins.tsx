@@ -3,7 +3,7 @@ import { getTokenAmountsWorth } from '../../simulation/priceEstimator.js'
 import { abs, addressString, bigintToDecimalString, bigintToRoundedPrettyDecimalString } from '../../utils/bigint.js'
 import { CHAINS } from '../../utils/constants.js'
 import { CHAIN } from '../../utils/user-interface-types.js'
-import { TokenPriceEstimate } from '../../utils/visualizer-types.js'
+import { ERC721TokenDefinitionParams, TokenDefinitionParams, TokenPriceEstimate } from '../../utils/visualizer-types.js'
 import { CopyToClipboard } from './CopyToClipboard.js'
 import Blockie from './PreactBlocky.js'
 
@@ -151,14 +151,6 @@ export function TokenAmount(param: TokenAmountParams) {
 	</>
 }
 
-export type TokenDefinitionParams = {
-	tokenName: string
-    tokenAddress: bigint
-    tokenSymbol: string
-    tokenDecimals: bigint
-	tokenLogoUri: string | undefined
-}
-
 type TokenParams = TokenDefinitionParams & {
 	amount: bigint
 	showSign?: boolean
@@ -199,14 +191,6 @@ export function ERC721TokenNumber(param: ERC721TokenNumberParams) {
 			{ `${ sign } NFT #${ truncate(param.tokenId.toString(), 9) }`}&nbsp;
 		</p>
 	</CopyToClipboard>
-}
-
-export type ERC721TokenDefinitionParams = {
-	tokenId: bigint
-	tokenName: string
-    tokenAddress: bigint
-    tokenSymbol: string
-	tokenLogoUri: string | undefined
 }
 
 type ERC721TokenParams = ERC721TokenDefinitionParams & {

@@ -1,8 +1,8 @@
-import { LogSummarizer } from '../../simulation/services/LogSummarizer.js'
+import { LogSummarizer, SummaryOutcome } from '../../simulation/services/LogSummarizer.js'
 import { AddressBookEntry, CHAIN, RenameAddressCallBack, SimulationStateParam } from '../../utils/user-interface-types.js'
-import { BalanceChangeSummary, SimulationAndVisualisationResults, TokenPriceEstimate } from '../../utils/visualizer-types.js'
+import { ERC721TokenApprovalChange, ERC721TokenDefinitionParams, SimulationAndVisualisationResults, TokenApprovalChange, TokenBalanceChange, TokenDefinitionParams } from '../../utils/visualizer-types.js'
 import { BigAddress, SmallAddress } from '../subcomponents/address.js'
-import { ERC721Token, ERC721TokenDefinitionParams, Ether, Token, TokenAmount, TokenDefinitionParams, TokenPrice, TokenSymbol } from '../subcomponents/coins.js'
+import { ERC721Token, Ether, Token, TokenAmount, TokenPrice, TokenSymbol } from '../subcomponents/coins.js'
 import { Transactions } from './Transactions.js'
 import { CopyToClipboard } from '../subcomponents/CopyToClipboard.js'
 import { SomeTimeAgo } from '../subcomponents/SomeTimeAgo.js'
@@ -36,11 +36,6 @@ function EtherChange(param: EtherChangeParams) {
 			/>
 		</div>
 	</div>
-}
-
-type TokenBalanceChange = TokenDefinitionParams & {
-	changeAmount: bigint
-	tokenPriceEstimate: TokenPriceEstimate | undefined
 }
 
 type Erc20BalanceChangeParams = {
@@ -126,10 +121,6 @@ export function Erc20ApprovalChange(param: Erc20ApprovalChangeParams) {
 	</div>
 }
 
-type TokenApprovalChange = TokenDefinitionParams & {
-	approvals: (AddressBookEntry & { change: bigint })[]
-}
-
 type Erc20ApprovalChangesParams = {
 	tokenApprovalChanges: TokenApprovalChange[]
 	textColor: string,
@@ -158,8 +149,10 @@ export function Erc20ApprovalChanges(param: Erc20ApprovalChangesParams ) {
 	</>
 }
 
+export type ERC721TokenBalanceChange = (ERC721TokenDefinitionParams & { received: boolean })
+
 type ERC721TokenChangesParams = {
-	ERC721TokenBalanceChanges: (ERC721TokenDefinitionParams & { received: boolean })[],
+	ERC721TokenBalanceChanges: ERC721TokenBalanceChange[],
 	textColor: string,
 	negativeColor: string,
 	isImportant: boolean,
@@ -185,8 +178,10 @@ function ERC721TokenChanges(param: ERC721TokenChangesParams ) {
 	</>
 }
 
+export type ERC721OperatorChange = Omit<ERC721TokenDefinitionParams, 'tokenId'> & { operator: AddressBookEntry | undefined }
+
 type ERC721OperatorChangesParams = {
-	ERC721OperatorChanges: (Omit<ERC721TokenDefinitionParams, 'tokenId'> & { operator: AddressBookEntry | undefined })[]
+	ERC721OperatorChanges: ERC721OperatorChange[]
 	textColor: string,
 	negativeColor: string,
 	isImportant: boolean,
@@ -244,11 +239,6 @@ export function ERC721OperatorChanges(param: ERC721OperatorChangesParams) {
 	</>
 }
 
-type ERC721TokenApprovalChange = {
-	token: ERC721TokenDefinitionParams
-	approvedEntry: AddressBookEntry
-}
-
 type ERC721TokenIdApprovalChangesParams = {
 	ERC721TokenIdApprovalChanges: ERC721TokenApprovalChange[]
 	textColor: string,
@@ -293,16 +283,14 @@ export function ERC721TokenIdApprovalChanges(param: ERC721TokenIdApprovalChanges
 	: <></> } </>
 }
 
-
 type SummarizeAddressParams = {
-	entry: AddressBookEntry,
-	balanceSummary: BalanceChangeSummary,
+	balanceSummary: SummaryOutcome,
 	simulationAndVisualisationResults: SimulationAndVisualisationResults,
 	renameAddressCallBack: RenameAddressCallBack,
 }
 
 export function SummarizeAddress(param: SummarizeAddressParams) {
-	const isOwnAddress = param.entry.type === 'addressInfo' || param.entry.address === param.simulationAndVisualisationResults.activeAddress
+	const isOwnAddress = param.balanceSummary.summaryFor.type === 'addressInfo' || param.balanceSummary.summaryFor.address === param.simulationAndVisualisationResults.activeAddress
 	const positiveNegativeColors = isOwnAddress ? {
 		textColor: 'var(--text-color)',
 		negativeColor: 'var(--text-color)'
@@ -311,102 +299,15 @@ export function SummarizeAddress(param: SummarizeAddressParams) {
 		negativeColor: 'var(--negative-dim-color)'
 	}
 
-	const tokenBalanceChanges: TokenBalanceChange[] = Array.from(param.balanceSummary.tokenBalanceChanges).map(([tokenAddress, changeAmount]) => {
-		const metadata = param.simulationAndVisualisationResults.addressMetadata.get(tokenAddress)
-		if (metadata === undefined || metadata.type !== 'token') throw new Error('Missing metadata for token')
-		return {
-			tokenName: metadata.name,
-			tokenAddress: metadata.address,
-			tokenSymbol: metadata.symbol,
-			tokenLogoUri: metadata.logoUri,
-			tokenDecimals: metadata.decimals,
-			changeAmount: changeAmount,
-			tokenPriceEstimate: param.simulationAndVisualisationResults.tokenPrices.find((x) => x.token === tokenAddress)
-		}
-	})
-
-	const tokenApprovalChanges: TokenApprovalChange[] = Array.from(param.balanceSummary.tokenApprovalChanges).map( ([tokenAddress, approvals]) => {
-		const metadata = param.simulationAndVisualisationResults.addressMetadata.get(tokenAddress)
-		if (metadata === undefined || metadata.type !== 'token') throw new Error('Missing metadata for token')
-		return {
-			tokenName: metadata.name,
-			tokenAddress: metadata.address,
-			tokenSymbol: metadata.symbol,
-			tokenLogoUri: metadata.logoUri,
-			tokenDecimals: metadata.decimals,
-			approvals: Array.from(approvals).map( ([addressToApprove, change]) => {
-				const approvedAddresMetadata = param.simulationAndVisualisationResults.addressMetadata.get(addressToApprove)
-				if (approvedAddresMetadata === undefined) throw new Error('Missing metadata for address')
-				return { ...approvedAddresMetadata, change }
-			}),
-		}
-	})
-
-	const erc721TokenBalanceChanges: (ERC721TokenDefinitionParams & { received: boolean })[] = Array.from(param.balanceSummary.ERC721TokenBalanceChanges).map( ([tokenAddress, tokenIds]) => {
-		const metadata = param.simulationAndVisualisationResults.addressMetadata.get(tokenAddress)
-		if (metadata === undefined || metadata.type !== 'NFT') throw new Error('Missing metadata for token')
-		return Array.from(tokenIds).map(([tokenId, received]) => ({
-			tokenName: metadata.name,
-			tokenAddress: metadata.address,
-			tokenSymbol: metadata.symbol,
-			tokenLogoUri: metadata.logoUri,
-			tokenId: BigInt(tokenId),
-			received,
-		}))
-	}).reduce((accumulator, value) => accumulator.concat(value), [])
-
-	const erc721OperatorChanges: (Omit<ERC721TokenDefinitionParams, 'tokenId'> & { operator: AddressBookEntry | undefined })[] = Array.from(param.balanceSummary.ERC721OperatorChanges).map( ([tokenAddress, operator]) => {
-		const metadata = param.simulationAndVisualisationResults.addressMetadata.get(tokenAddress)
-		if (metadata === undefined || metadata.type !== 'NFT') throw new Error('Missing metadata for token')
-
-		if (operator === undefined) {
-			return {
-				operator: undefined,
-				tokenName: metadata.name,
-				tokenAddress: metadata.address,
-				tokenSymbol: metadata.symbol,
-				tokenLogoUri: metadata.logoUri,
-			}
-		}
-		const operatorMetadata = param.simulationAndVisualisationResults.addressMetadata.get(operator)
-		if (operatorMetadata === undefined) throw new Error('Missing metadata for token')
-		return {
-			operator: operatorMetadata,
-			tokenName: metadata.name,
-			tokenAddress: metadata.address,
-			tokenSymbol: metadata.symbol,
-			tokenLogoUri: metadata.logoUri,
-		}
-	})
-
-	const erc721TokenIdApprovalChanges: ERC721TokenApprovalChange[] = Array.from(param.balanceSummary.ERC721TokenIdApprovalChanges).map( ([tokenAddress, approvals]) => {
-		const metadata = param.simulationAndVisualisationResults.addressMetadata.get(tokenAddress)
-		if (metadata === undefined || metadata.type !== 'NFT') throw new Error('Missing metadata for token')
-		return Array.from(approvals).map( ([tokenId, approvedAddress]) => {
-			const approvedMetadata = param.simulationAndVisualisationResults.addressMetadata.get(approvedAddress)
-			if (approvedMetadata === undefined) throw new Error('Missing metadata for token')
-			return {
-				token: {
-					tokenId: BigInt(tokenId),
-					tokenName: metadata.name,
-					tokenAddress: metadata.address,
-					tokenSymbol: metadata.symbol,
-					tokenLogoUri: metadata.logoUri,
-				},
-				approvedEntry: approvedMetadata
-			}
-		})
-	}).reduce((accumulator, value) => accumulator.concat(value), [])
-
 	return <div>
 		{ isOwnAddress ?
 			<BigAddress
-				addressBookEntry = { param.entry }
+				addressBookEntry = { param.balanceSummary.summaryFor }
 				renameAddressCallBack = { param.renameAddressCallBack }
 			/> :
 			<SmallAddress
 				textColor = { positiveNegativeColors.textColor }
-				addressBookEntry = { param.entry }
+				addressBookEntry = { param.balanceSummary.summaryFor }
 				renameAddressCallBack = { param.renameAddressCallBack }
 			/>
 		}
@@ -420,34 +321,34 @@ export function SummarizeAddress(param: SummarizeAddressParams) {
 				chain = { param.simulationAndVisualisationResults.chain }
 			/>
 			<Erc20BalanceChange
-				tokenBalanceChanges = { tokenBalanceChanges }
+				tokenBalanceChanges = { param.balanceSummary.tokenBalanceChanges }
 				textColor = { positiveNegativeColors.textColor }
 				negativeColor = { positiveNegativeColors.negativeColor }
 				isImportant = { isOwnAddress }
 				chain = { param.simulationAndVisualisationResults.chain }
 			/>
 			<Erc20ApprovalChanges
-				tokenApprovalChanges = { tokenApprovalChanges }
+				tokenApprovalChanges = { param.balanceSummary.tokenApprovalChanges }
 				textColor = { positiveNegativeColors.textColor }
 				negativeColor = { positiveNegativeColors.negativeColor }
 				isImportant = { isOwnAddress }
 				renameAddressCallBack = { param.renameAddressCallBack }
 			/>
 			<ERC721TokenChanges
-				ERC721TokenBalanceChanges = { erc721TokenBalanceChanges }
+				ERC721TokenBalanceChanges = { param.balanceSummary.erc721TokenBalanceChanges }
 				textColor = { positiveNegativeColors.textColor }
 				negativeColor = { positiveNegativeColors.negativeColor }
 				isImportant = { isOwnAddress }
 			/>
 			<ERC721OperatorChanges
-				ERC721OperatorChanges = { erc721OperatorChanges }
+				ERC721OperatorChanges = { param.balanceSummary.erc721OperatorChanges }
 				textColor = { positiveNegativeColors.textColor }
 				negativeColor = { positiveNegativeColors.negativeColor }
 				isImportant = { isOwnAddress }
 				renameAddressCallBack = { param.renameAddressCallBack }
 			/>
 			<ERC721TokenIdApprovalChanges
-				ERC721TokenIdApprovalChanges = { erc721TokenIdApprovalChanges }
+				ERC721TokenIdApprovalChanges = { param.balanceSummary.erc721TokenIdApprovalChanges }
 				textColor = { positiveNegativeColors.textColor }
 				negativeColor = { positiveNegativeColors.negativeColor }
 				isImportant = { isOwnAddress }
@@ -488,28 +389,19 @@ export function SimulationResults(param: SimulationStateParam) {
 	</div>)
 }
 
-type SimulationSummaryParams = {
-	simulationAndVisualisationResults: SimulationAndVisualisationResults,
-	summarizeOnlyLastTransaction?: boolean,
-	resetButton: boolean,
-	refreshSimulation: () => void,
-	currentBlockNumber: bigint | undefined,
-	renameAddressCallBack: RenameAddressCallBack,
-}
-
-export function removeEthDonator(chain: CHAIN, summary: Map<string, BalanceChangeSummary>) {
+export function removeEthDonator(chain: CHAIN, summary: SummaryOutcome[]) {
 	const donatorAddress = addressString(CHAINS[chain].eth_donator)
-	const donatorSummary = summary.get(donatorAddress)
+	const donatorSummary = summary.find((x) => addressString(x.summaryFor.address) === donatorAddress)
 	if (donatorSummary === undefined) return summary
 	if (donatorSummary.etherResults === undefined) return summary
 	if (donatorSummary.etherResults.balanceAfter + MAKE_YOU_RICH_TRANSACTION.value === donatorSummary.etherResults.balanceBefore ) {
-		if (donatorSummary.ERC721OperatorChanges.size === 0 &&
-			donatorSummary.ERC721TokenBalanceChanges.size === 0 &&
-			donatorSummary.ERC721TokenIdApprovalChanges.size === 0 &&
-			donatorSummary.tokenApprovalChanges.size === 0 &&
-			donatorSummary.tokenBalanceChanges.size === 0
+		if (donatorSummary.erc721OperatorChanges.length === 0 &&
+			donatorSummary.erc721TokenBalanceChanges.length === 0 &&
+			donatorSummary.erc721TokenIdApprovalChanges.length === 0 &&
+			donatorSummary.tokenApprovalChanges.length === 0 &&
+			donatorSummary.tokenBalanceChanges.length === 0
 		) {
-			summary.delete(donatorAddress)
+			summary.splice(summary.indexOf(donatorSummary))
 			return summary
 		}
 		donatorSummary.etherResults = undefined
@@ -517,6 +409,15 @@ export function removeEthDonator(chain: CHAIN, summary: Map<string, BalanceChang
 	}
 	donatorSummary.etherResults.balanceAfter = donatorSummary.etherResults.balanceAfter + MAKE_YOU_RICH_TRANSACTION.value
 	return summary
+}
+
+type SimulationSummaryParams = {
+	simulationAndVisualisationResults: SimulationAndVisualisationResults,
+	summarizeOnlyLastTransaction?: boolean,
+	resetButton: boolean,
+	refreshSimulation: () => void,
+	currentBlockNumber: bigint | undefined,
+	renameAddressCallBack: RenameAddressCallBack,
 }
 
 export function SimulationSummary(param: SimulationSummaryParams) {
@@ -527,17 +428,17 @@ export function SimulationSummary(param: SimulationSummaryParams) {
 		param.simulationAndVisualisationResults.simulatedAndVisualizedTransactions
 
 	const logSummarizer = new LogSummarizer( VisResults )
-
+	const originalSummary = logSummarizer.getSummary( param.simulationAndVisualisationResults.addressMetaData, param.simulationAndVisualisationResults.tokenPrices)
 	//remove eth donator if we are in rich mode
 	const firstTransaction = param.simulationAndVisualisationResults.simulatedAndVisualizedTransactions.at(0)
 	const summary = firstTransaction && identifyTransaction(firstTransaction, param.simulationAndVisualisationResults.activeAddress) === 'MakeYouRichTransaction' ?
-		removeEthDonator(param.simulationAndVisualisationResults.chain, logSummarizer.getSummary())
-		: logSummarizer.getSummary()
+		removeEthDonator(param.simulationAndVisualisationResults.chain, originalSummary)
+		: originalSummary
 
-	const ownAddresses = Array.from(summary.entries()).filter( ([address, _balanceSummary]) =>
-		param.simulationAndVisualisationResults.addressMetadata.get(address)?.type === 'addressInfo' || BigInt(address) === param.simulationAndVisualisationResults.activeAddress
+	const ownAddresses = Array.from(summary.entries()).filter( ([_index, balanceSummary]) =>
+		balanceSummary.summaryFor.type === 'addressInfo' || balanceSummary.summaryFor.address === param.simulationAndVisualisationResults.activeAddress
 	)
-	const notOwnAddresses = Array.from(summary.entries()).filter( ([address, _balanceSummary]) => param.simulationAndVisualisationResults.addressMetadata.get(address)?.type !== 'addressInfo' && BigInt(address) !== param.simulationAndVisualisationResults.activeAddress)
+	const notOwnAddresses = Array.from(summary.entries()).filter( ([_index, balanceSummary]) => balanceSummary.summaryFor.type !== 'addressInfo' && balanceSummary.summaryFor.address !== param.simulationAndVisualisationResults.activeAddress)
 
 	function resetSimulation() {
 		browser.runtime.sendMessage( { method: 'popup_resetSimulation' } );
@@ -564,12 +465,9 @@ export function SimulationSummary(param: SimulationSummaryParams) {
 						<div class = 'container'>
 							<div class = 'notification' style = 'background-color: var(--unimportant-text-color); padding: 10px; margin-bottom: 10px; color: var(--text-color)'>
 								{ ownAddresses.length == 0 ? <p> No changes to your accounts </p>
-									: ownAddresses.map( ([address, balanceSummary], index) => {
-										const entry = param.simulationAndVisualisationResults.addressMetadata.get(address)
-										if (entry === undefined) throw new Error('address was not found in metadata')
+									: ownAddresses.map( ([_index, balanceSummary], index) => {
 										return <>
 											<SummarizeAddress
-												entry = { entry }
 												balanceSummary = { balanceSummary }
 												simulationAndVisualisationResults = { param.simulationAndVisualisationResults }
 												renameAddressCallBack = { param.renameAddressCallBack }
@@ -582,12 +480,9 @@ export function SimulationSummary(param: SimulationSummaryParams) {
 						</div>
 						<div class = 'container'>
 							{ notOwnAddresses.length == 0 ? <p> No token or NFT changes to other accounts</p>
-								: notOwnAddresses.map( ([address, balanceSummary]) => {
-									const entry = param.simulationAndVisualisationResults.addressMetadata.get(address)
-									if (entry === undefined) throw new Error('address was not found in metadata')
+								: notOwnAddresses.map( ([_index, balanceSummary]) => {
 									return <>
 										<SummarizeAddress
-											entry = { entry }
 											balanceSummary = { balanceSummary }
 											simulationAndVisualisationResults = { param.simulationAndVisualisationResults }
 											renameAddressCallBack = { param.renameAddressCallBack }

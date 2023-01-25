@@ -1,12 +1,11 @@
-import { addressString } from '../../utils/bigint.js'
-import { SimulatedAndVisualizedTransaction, SimulationAndVisualisationResults, TokenVisualizerResultWithMetadata, TransactionVisualizationParameters } from '../../utils/visualizer-types.js'
+import { ERC721TokenApprovalChange, SimulatedAndVisualizedTransaction, SimulationAndVisualisationResults, TokenApprovalChange, TokenVisualizerERC20Event, TokenVisualizerERC721AllApprovalEvent, TokenVisualizerERC721Event, TokenVisualizerResultWithMetadata, TransactionVisualizationParameters } from '../../utils/visualizer-types.js'
 import { FromAddressToAddress, SmallAddress } from '../subcomponents/address.js'
 import { EtherSymbol, TokenSymbol, TokenAmount, EtherAmount, Token721AmountField, ERC721TokenNumber } from '../subcomponents/coins.js'
 import { CHAIN, LogAnalysisParams, RenameAddressCallBack } from '../../utils/user-interface-types.js'
 import { QUARANTINE_CODES_DICT } from '../../simulation/protectors/quarantine-codes.js'
 import { Error } from '../subcomponents/Error.js'
 import { identifyRoutes, identifySwap, SwapVisualization } from './SwapTransactions.js'
-import { Erc20ApprovalChanges, ERC721OperatorChanges, ERC721TokenIdApprovalChanges } from './SimulationSummary.js'
+import { Erc20ApprovalChanges, ERC721OperatorChange, ERC721OperatorChanges, ERC721TokenIdApprovalChanges } from './SimulationSummary.js'
 import { identifyTransaction, nameTransaction } from './identifyTransaction.js'
 import { makeYouRichTransaction } from './transactionExplainers.js'
 import { JSXInternal } from 'preact/src/jsx'
@@ -220,39 +219,60 @@ function TransactionImportanceBlock( param: TransactionImportanceBlockParams ) {
 		/>
 	}
 
-	const msgSender = param.tx.from
+	const msgSender = param.tx.from.address
 
-	const sendingTokenResults = param.tx.tokenResults.filter( (x) => x.from === msgSender)
-	const receivingTokenResults = param.tx.tokenResults.filter( (x) => x.to === msgSender)
+	const sendingTokenResults = param.tx.tokenResults.filter( (x) => x.from.address === msgSender)
+	const receivingTokenResults = param.tx.tokenResults.filter( (x) => x.to.address === msgSender)
 
 	// tokenApprovalChanges: Map<string, Map<string, bigint > > // token address, approved address, amount
-	const tokenApprovalChanges: Map<string, Map<string, bigint > > = sendingTokenResults ? new Map( sendingTokenResults.filter( (x) => x.isApproval && !x.is721).map(
-		(x) => [ addressString(x.tokenAddress), new Map( [ [ addressString(x.to), 'amount' in x ? x.amount : 0n ] ]  ) ]
-	)) : new Map()
+	const tokenApprovalChanges: TokenApprovalChange[] = sendingTokenResults.filter((x): x is TokenVisualizerERC20Event  => x.isApproval && !('isAllApproval' in x)).map((entry) => {
+		return {
+			tokenName: entry.token.name,
+			tokenAddress: entry.token.address,
+			tokenSymbol: entry.token.symbol,
+			tokenDecimals: entry.token.decimals,
+			tokenLogoUri: entry.token.logoUri,
+			approvals: [ {...entry.to, change: entry.amount } ]
+		}
+	})
 
-	// ERC721OperatorChanges: Map<string, string | undefined>
-	const operatorChanges: Map<string, string | undefined> = sendingTokenResults ? new Map( sendingTokenResults.filter( (x) => x.isApproval && x.is721 && ('isAllApproval' in x && x.isAllApproval) ).map(
-		(x) => [ addressString(x.tokenAddress), 'allApprovalAdded' in x && x.allApprovalAdded ? addressString(x.to) : undefined ]
-	)) : new Map()
+	const operatorChanges: ERC721OperatorChange[] = sendingTokenResults.filter((x): x is TokenVisualizerERC721AllApprovalEvent  => 'isAllApproval' in x).map((entry) => {
+		return {
+			tokenName: entry.token.name,
+			tokenAddress: entry.token.address,
+			tokenSymbol: entry.token.symbol,
+			tokenLogoUri: entry.token.logoUri,
+			operator: 'allApprovalAdded' in entry && entry.allApprovalAdded ? entry.to : undefined
+		}
+	})
 
 	// token address, tokenId, approved address
-	const tokenIdApprovalChanges: Map<string, Map<string, string > > = sendingTokenResults ? new Map( sendingTokenResults.filter( (x) => x.isApproval && x.is721).map(
-		(x) => [ addressString(x.tokenAddress), new Map( [ [ 'tokenId' in x ? x.tokenId : 0n, x.to ] ]  ) ]
-	)) : new Map()
+	const tokenIdApprovalChanges: ERC721TokenApprovalChange[] = sendingTokenResults.filter((x): x is TokenVisualizerERC721Event  => 'tokenId' in x).map((entry) => {
+		return {
+			token: {
+				tokenId: entry.tokenId,
+				tokenName: entry.token.name,
+				tokenAddress: entry.token.address,
+				tokenSymbol: entry.token.symbol,
+				tokenLogoUri: entry.token.logoUri,
+			},
+			approvedEntry: entry.to
+		}
+	})
 
-	const ownBalanceChanges = param.tx.simResults?.visualizerResults?.ethBalanceChanges.filter( (change) => change.address === msgSender)
+	const ownBalanceChanges = param.tx.ethBalanceChanges.filter( (change) => change.address.address === msgSender)
 
 	return <>
 		{ /* sending ether / tokens */ }
 		<EtherTransferEvent
-			valueSent = { param.tx.signedTransaction.value }
+			valueSent = { param.tx.value }
 			totalReceived = { ownBalanceChanges !== undefined && ownBalanceChanges.length > 0 ? ownBalanceChanges[ownBalanceChanges.length - 1].after - ownBalanceChanges[0].before : 0n  }
 			textColor = { textColor }
 			chain = { param.simulationAndVisualisationResults.chain }
 		/>
 
 		<SendOrReceiveTokensImportanceBox
-			tokenVisualizerResults = { sendingTokenResults?.filter( (x) => !x.isApproval) }
+			tokenVisualizerResults = { sendingTokenResults.filter( (x) => !x.isApproval) }
 			sending = { true }
 			textColor = { textColor }
 			renameAddressCallBack = { param.renameAddressCallBack }

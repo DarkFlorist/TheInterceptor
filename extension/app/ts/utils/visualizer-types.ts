@@ -32,33 +32,42 @@ export const TokenVisualizerResult = funtypes.Intersect(
 	)
 )
 
+export type TokenVisualizerERC20Event  = funtypes.Static<typeof TokenVisualizerERC20Event>
+export const TokenVisualizerERC20Event = funtypes.Object( {
+	from: AddressBookEntry,
+	to: AddressBookEntry,
+	token: TokenEntry,
+	amount: EthereumQuantity,
+	is721: funtypes.Literal(false),
+	isApproval: funtypes.Boolean,
+})
+
+export type TokenVisualizerERC721Event  = funtypes.Static<typeof TokenVisualizerERC721Event>
+export const TokenVisualizerERC721Event = funtypes.Object( {
+	from: AddressBookEntry,
+	to: AddressBookEntry,
+	token: NFTEntry,
+	tokenId: EthereumQuantity,
+	is721: funtypes.Literal(true),
+	isApproval: funtypes.Boolean,
+})
+
+export type TokenVisualizerERC721AllApprovalEvent  = funtypes.Static<typeof TokenVisualizerERC721AllApprovalEvent>
+export const TokenVisualizerERC721AllApprovalEvent = funtypes.Object( {
+	from: AddressBookEntry,
+	to: AddressBookEntry,
+	token: NFTEntry,
+	is721: funtypes.Literal(true),
+	isAllApproval: funtypes.Boolean,
+	allApprovalAdded: funtypes.Boolean, // true if approval is added, and false if removed
+	isApproval: funtypes.Literal(true),
+})
+
 export type TokenVisualizerResultWithMetadata = funtypes.Static<typeof TokenVisualizerResultWithMetadata>
-export const TokenVisualizerResultWithMetadata = funtypes.Intersect(
-	funtypes.Object( {
-		from: AddressBookEntry,
-		to: AddressBookEntry,
-	}),
-	funtypes.Union(
-		funtypes.Object({ // ERC20 transfer / approval
-			token: TokenEntry,
-			amount: EthereumQuantity,
-			is721: funtypes.Literal(false),
-			isApproval: funtypes.Boolean,
-		}),
-		funtypes.Object({ // ERC721 transfer / approval
-			token: NFTEntry,
-			tokenId: EthereumQuantity,
-			is721: funtypes.Literal(true),
-			isApproval: funtypes.Boolean,
-		}),
-		funtypes.Object({ // ERC721 all approval // all approval removal
-			token: NFTEntry,
-			is721: funtypes.Literal(true),
-			isAllApproval: funtypes.Boolean,
-			allApprovalAdded: funtypes.Boolean, // true if approval is added, and false if removed
-			isApproval: funtypes.Literal(true),
-		})
-	)
+export const TokenVisualizerResultWithMetadata = funtypes.Union(
+	TokenVisualizerERC20Event,
+	TokenVisualizerERC721Event,
+	TokenVisualizerERC721AllApprovalEvent,
 )
 
 export type VisualizerResult = {
@@ -123,25 +132,13 @@ export type SimulationAndVisualisationResults = {
 	blockNumber: bigint,
 	blockTimestamp: Date,
 	simulationConductedTimestamp: Date,
+	addressMetaData: Map<string, AddressBookEntry >
 	simulatedAndVisualizedTransactions: SimulatedAndVisualizedTransaction[],
 	chain: CHAIN,
 	tokenPrices: TokenPriceEstimate[],
 	activeAddress: bigint,
 	simulationMode: boolean,
 	isComputingSimulation: boolean,
-}
-
-export type BalanceChangeSummary = {
-	ERC721TokenBalanceChanges: Map<string, Map<string, boolean > >, // token address, token id, {true if received, false if sent}
-	ERC721OperatorChanges: Map<string, string | undefined> // token address, operator
-	ERC721TokenIdApprovalChanges: Map<string, Map<string, string > > // token address, tokenId, approved address
-
-	tokenBalanceChanges: Map<string, bigint>, // token address, amount
-	tokenApprovalChanges: Map<string, Map<string, bigint > > // token address, approved address, amount
-	etherResults: {
-		balanceBefore: bigint,
-		balanceAfter: bigint,
-	} | undefined
 }
 
 export type TokenPriceEstimate = funtypes.Static<typeof TokenPriceEstimate>
@@ -157,4 +154,34 @@ export type TransactionVisualizationParameters = {
 	removeTransaction: (hash: bigint) => void,
 	activeAddress: bigint,
 	renameAddressCallBack: RenameAddressCallBack,
+}
+
+export type TokenDefinitionParams = {
+	tokenName: string
+    tokenAddress: bigint
+    tokenSymbol: string
+    tokenDecimals: bigint
+	tokenLogoUri: string | undefined
+}
+
+export type TokenBalanceChange = TokenDefinitionParams & {
+	changeAmount: bigint
+	tokenPriceEstimate: TokenPriceEstimate | undefined
+}
+
+export type TokenApprovalChange = TokenDefinitionParams & {
+	approvals: (AddressBookEntry & { change: bigint })[]
+}
+
+export type ERC721TokenDefinitionParams = {
+	tokenId: bigint
+	tokenName: string
+    tokenAddress: bigint
+    tokenSymbol: string
+	tokenLogoUri: string | undefined
+}
+
+export type ERC721TokenApprovalChange = {
+	token: ERC721TokenDefinitionParams
+	approvedEntry: AddressBookEntry
 }

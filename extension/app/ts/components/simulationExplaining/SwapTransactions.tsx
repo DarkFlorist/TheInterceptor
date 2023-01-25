@@ -1,4 +1,4 @@
-import { SimulatedAndVisualizedTransaction, TokenVisualizerResult, TokenVisualizerResultWithMetadata } from '../../utils/visualizer-types.js'
+import { SimulatedAndVisualizedTransaction, TokenVisualizerResultWithMetadata } from '../../utils/visualizer-types.js'
 import * as funtypes from 'funtypes'
 import { EthereumQuantity } from '../../utils/wire-types.js'
 import { abs, addressString } from '../../utils/bigint.js'
@@ -156,17 +156,17 @@ export function identifySwap(transaction: SimulatedAndVisualizedTransaction): Id
 	return false
 }
 
-type Graph = Map<AddressBookEntry, Map<AddressBookEntry | undefined, {to: AddressBookEntry, tokenResultIndex: number | undefined } > > // from, tokenaddress (undefined for ether), to
+type Graph = Map<string, Map<string | undefined, { to: string, tokenResultIndex: number | undefined } > > // from, tokenaddress (undefined for ether), to
 interface State {
-	fromAddress: AddressBookEntry,
-	toAddress: AddressBookEntry,
-	currentTokenAddress: AddressBookEntry | undefined, // undefined for ether
+	fromAddress: string,
+	toAddress: string,
+	currentTokenAddress: string | undefined, // undefined for ether
 	tokenResultIndex: number | undefined,
 }
 
 interface EthTradePair {
-	fromAddress: AddressBookEntry,
-	toAddress: AddressBookEntry,
+	fromAddress: string,
+	toAddress: string,
 	amount: bigint
 }
 
@@ -204,9 +204,9 @@ export function identifyRoutes(simulatedAndVisualizedTransaction: SimulatedAndVi
 
 	// build search graph
 	for (const [tokenResultIndex, result] of tokenResults.entries()) {
-		const fromAddress = addressString(result.from)
-		const toAddress = addressString(result.to)
-		const tokenAddress = addressString(result.tokenAddress)
+		const fromAddress = addressString(result.from.address)
+		const toAddress = addressString(result.to.address)
+		const tokenAddress = addressString(result.token.address)
 		if(!graph.has(fromAddress)) graph.set(fromAddress, new Map() )
 
 		if (!('amount' in result)) return false // cannot deal with nft's
@@ -224,10 +224,10 @@ export function identifyRoutes(simulatedAndVisualizedTransaction: SimulatedAndVi
 	// we do this figuring out by trying to find an account that has its delta eth balance go up the amount we sent, with error of transactiongascost
 	let matchedEthPairs: EthTradePair[] = []
 	for (const result of ethBalanceChanges) {
-		const address = addressString(result.address)
+		const address = addressString(result.address.address)
 		const delta = result.after - result.before
 		for (const compareTo of ethBalanceChanges) {
-			const compareToAddress = addressString(compareTo.address)
+			const compareToAddress = addressString(compareTo.address.address)
 			const compareToDelta = compareTo.after - compareTo.before
 			if(compareToAddress !== address) {
 				if( abs(delta+compareToDelta) <= transactionGasCost && abs(delta) >= transactionGasCost && abs(compareToDelta) >= transactionGasCost ) {
@@ -254,19 +254,19 @@ export function identifyRoutes(simulatedAndVisualizedTransaction: SimulatedAndVi
 	}
 	Map<string, Map<string | undefined, {to: string, tokenResultIndex: number | undefined } > >
 	// traverse chain
-	const startToken = 'tokenAddressSent' in identifiedSwap ? identifiedSwap.tokenAddressSent : undefined
-	const endToken = 'tokenAddressReceived' in identifiedSwap ? identifiedSwap.tokenAddressReceived : undefined
-	const lastIndex = endToken !== undefined ? tokenResults.findIndex( ( x ) => (x.to === identifiedSwap.sender.address && x.tokenAddress === BigInt(endToken.address) ) ) : -1
+	const startToken = 'tokenAddressSent' in identifiedSwap ? addressString(identifiedSwap.tokenAddressSent.address) : undefined
+	const endToken = 'tokenAddressReceived' in identifiedSwap ? addressString(identifiedSwap.tokenAddressReceived.address) : undefined
+	const lastIndex = endToken !== undefined ? tokenResults.findIndex( ( x ) => (x.to.address === identifiedSwap.sender.address && addressString(x.token.address) === endToken ) ) : -1
 	const routes = [...findSwapRoutes(graph,
 		{
-			from: identifiedSwap.sender.address,
-			to: identifiedSwap.sender,
-			tokenResultIndex: graph.get(addressString(identifiedSwap.sender.address))?.get(startToken?.address)?.tokenResultIndex,
-			currentTokenAddress: startToken?.address === undefined ? undefined : addressString(startToken.address)
+			fromAddress: addressString(identifiedSwap.sender.address),
+			toAddress: addressString(identifiedSwap.sender.address),
+			tokenResultIndex: graph.get(addressString(identifiedSwap.sender.address))?.get(startToken)?.tokenResultIndex,
+			currentTokenAddress: startToken,
 		},
 		{
-			from: identifiedSwap.sender,
-			to: identifiedSwap.sender,
+			fromAddress: addressString(identifiedSwap.sender.address),
+			toAddress: addressString(identifiedSwap.sender.address),
 			tokenResultIndex: lastIndex >= 0 ? lastIndex : undefined,
 			currentTokenAddress: endToken
 		}
@@ -282,9 +282,9 @@ export function identifyRoutes(simulatedAndVisualizedTransaction: SimulatedAndVi
 
 	if ( route.length === 0) return false
 
-	function sortAccordingArrayIfNotMaintainOrder(a: TokenVisualizerResult, b: TokenVisualizerResult) {
-		const indexOfA = route.findIndex( (x) => a.from === BigInt(x.fromAddress) && BigInt(x.toAddress) === a.to && addressString(a.tokenAddress) === x.currentTokenAddress )
-		const indexOfB = route.findIndex( (x) => b.from === BigInt(x.fromAddress) && BigInt(x.toAddress) === b.to && addressString(b.tokenAddress) === x.currentTokenAddress )
+	function sortAccordingArrayIfNotMaintainOrder(a: TokenVisualizerResultWithMetadata, b: TokenVisualizerResultWithMetadata) {
+		const indexOfA = route.findIndex( (x) => a.from.address === BigInt(x.fromAddress) && BigInt(x.toAddress) === a.to.address && addressString(a.token.address) === x.currentTokenAddress )
+		const indexOfB = route.findIndex( (x) => b.from.address === BigInt(x.fromAddress) && BigInt(x.toAddress) === b.to.address && addressString(b.token.address) === x.currentTokenAddress )
 		const v =  (indexOfA >= 0 ? indexOfA : route.length + tokenResults.indexOf(a) ) - (indexOfB >= 0 ? indexOfB : route.length + tokenResults.indexOf(b))
 		return v
 	}

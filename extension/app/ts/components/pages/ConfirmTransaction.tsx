@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'preact/hooks'
 import { SignerName } from '../../utils/interceptor-messages.js'
-import { SimulatedAndVisualizedTransaction, SimulationAndVisualisationResults } from '../../utils/visualizer-types.js'
+import { SimulationAndVisualisationResults } from '../../utils/visualizer-types.js'
 import { ErrorCheckBox } from '../subcomponents/Error.js'
 import Hint from '../subcomponents/Hint.js'
 import { SimulationSummary } from '../simulationExplaining/SimulationSummary.js'
@@ -11,6 +11,7 @@ import { AddNewAddress } from './AddNewAddress.js'
 import { AddressBookEntry } from '../../utils/user-interface-types.js'
 import { ethers } from 'ethers'
 import { addressString } from '../../utils/bigint.js'
+import { formSimulatedAndVisualizedTransaction } from '../formVisualizerResults.js'
 
 export function ConfirmTransaction() {
 	const [requestIdToConfirm, setRequestIdToConfirm] = useState<number | undefined>(undefined)
@@ -49,23 +50,22 @@ export function ConfirmTransaction() {
 		const dialog = backgroundPage.interceptor.confirmTransactionDialog
 		if (dialog === undefined || dialog.simulationState === undefined || dialog.visualizerResults === undefined) return setSimulationAndVisualisationResults(undefined)
 
-		const txs: SimulatedAndVisualizedTransaction[] = dialog.simulationState.simulatedTransactions.map( (x, index) => ({
-			...x,
-			simResults: dialog.visualizerResults === undefined ? undefined : dialog.visualizerResults[index],
-		}) )
-
+		const simState = dialog.simulationState
 		setCurrentBlockNumber(backgroundPage.interceptor.currentBlockNumber)
 
+		const addressMetaData = new Map(dialog.addressBookEntries.map( (x) => [x[0], x[1]]))
+		const txs = formSimulatedAndVisualizedTransaction(simState, dialog.visualizerResults, addressMetaData)
 		setSimulationAndVisualisationResults( {
-			blockNumber: dialog.simulationState.blockNumber,
-			blockTimestamp: dialog.simulationState.blockTimestamp,
-			isComputingSimulation: dialog.isComputingSimulation,
-			simulationConductedTimestamp: dialog.simulationState.simulationConductedTimestamp,
+			blockNumber: simState.blockNumber,
+			blockTimestamp: simState.blockTimestamp,
+			simulationConductedTimestamp: simState.simulationConductedTimestamp,
 			simulatedAndVisualizedTransactions: txs,
-			chain: dialog.simulationState.chain,
+			chain: simState.chain,
 			tokenPrices: dialog.tokenPrices,
 			activeAddress: dialog.activeAddress,
 			simulationMode: dialog.simulationMode,
+			isComputingSimulation: dialog.isComputingSimulation,
+			addressMetaData: addressMetaData,
 		})
 	}
 
