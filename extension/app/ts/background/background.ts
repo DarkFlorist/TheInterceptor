@@ -306,7 +306,7 @@ async function handleSimulationMode(simulator: Simulator, port: browser.runtime.
 		case 'eth_requestAccounts': return await getAccounts(getActiveAddressForDomain, simulator, port)
 		case 'eth_gasPrice': return await gasPrice(simulator)
 		case 'eth_getTransactionCount': return await getTransactionCount(simulator, parsedRequest)
-		case 'interceptor_getSimulationStack': return await getSimulationStack(simulator)
+		case 'interceptor_getSimulationStack': return await getSimulationStack(simulator, parsedRequest)
 		/*
 		Missing methods:
 		case 'eth_sendRawTransaction': return

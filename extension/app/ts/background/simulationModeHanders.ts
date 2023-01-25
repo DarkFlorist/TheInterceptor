@@ -1,7 +1,7 @@
 import { Simulator } from '../simulation/simulator.js'
 import { bytes32String } from '../utils/bigint.js'
 import { ERROR_INTERCEPTOR_UNKNOWN_ORIGIN } from '../utils/constants.js'
-import { EstimateGasParams, EthBalanceParams, EthBlockByNumberParams, EthCallParams, EthereumAddress, EthereumData, EthereumQuantity, EthereumSignedTransactionWithBlockData, EthSubscribeParams, EthTransactionReceiptResponse, EthUnSubscribeParams, GetBlockReturn, GetCode, GetSimulationStack, GetTransactionCount, JsonRpcNewHeadsNotification, NewHeadsSubscriptionData, PersonalSignParams, SendTransactionParams, SignTypedDataV4Params, SwitchEthereumChainParams, TransactionByHashParams, TransactionReceiptParams } from '../utils/wire-types.js'
+import { EstimateGasParams, EthBalanceParams, EthBlockByNumberParams, EthCallParams, EthereumAddress, EthereumData, EthereumQuantity, EthereumSignedTransactionWithBlockData, EthSubscribeParams, EthTransactionReceiptResponse, EthUnSubscribeParams, GetBlockReturn, GetCode, GetSimulationStack, GetSimulationStackReply, GetTransactionCount, JsonRpcNewHeadsNotification, NewHeadsSubscriptionData, PersonalSignParams, SendTransactionParams, SignTypedDataV4Params, SwitchEthereumChainParams, TransactionByHashParams, TransactionReceiptParams } from '../utils/wire-types.js'
 import { postMessageIfStillConnected } from './background.js'
 import { WebsiteAccess } from './settings.js'
 import { openChangeChainDialog } from './windows/changeChain.js'
@@ -161,11 +161,13 @@ export async function getTransactionCount(simulator: Simulator, request: GetTran
 	return { result: EthereumQuantity.serialize(await simulator.ethereum.getTransactionCount(request.params[0], request.params[1])) }
 }
 
-export async function getSimulationStack(simulator: Simulator) {
-	return {
-		result: {
-			version: '1.0.0',
-			payload: GetSimulationStack.serialize(simulator.simulationModeNode.getSimulationStack()),
+export async function getSimulationStack(simulator: Simulator, request: GetSimulationStack) {
+	switch (request.params[0]) {
+		case '1.0.0': return {
+			result: {
+				version: '1.0.0',
+				payload: GetSimulationStackReply.serialize(simulator.simulationModeNode.getSimulationStack()),
+			}
 		}
 	}
 }

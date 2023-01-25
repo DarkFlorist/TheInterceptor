@@ -1,3 +1,4 @@
+import { MOCK_PRIVATE_KEYS_ADDRESS } from '../utils/constants.js'
 import { AddressInfo, Page, PendingAccessRequest } from '../utils/user-interface-types.js'
 import { EthereumAddress, EthereumQuantity } from '../utils/wire-types.js'
 
@@ -5,6 +6,11 @@ export const defaultAddresses = [
 	{
 		name: 'vitalik.eth',
 		address: 0xd8da6bf26964af9d7eed9e03e53415d37aa96045n,
+		askForAddressAccess: false,
+	},
+	{
+		name: 'Public private key',
+		address: MOCK_PRIVATE_KEYS_ADDRESS,
 		askForAddressAccess: false,
 	}
 ]

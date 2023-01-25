@@ -6,7 +6,7 @@ import { AddressBookEntry, AddressInfo } from '../../utils/user-interface-types.
 import Hint from '../subcomponents/Hint.js'
 import { Error as ErrorComponent} from '../subcomponents/Error.js'
 import { getAddressMetaData } from '../../background/metadataUtils.js'
-import { getChainName } from '../../utils/constants.js'
+import { MOCK_PRIVATE_KEYS_ADDRESS, getChainName } from '../../utils/constants.js'
 import { AddNewAddress } from './AddNewAddress.js'
 import { ethers } from 'ethers'
 
@@ -24,6 +24,7 @@ export function PersonalSign() {
 	const [isEditAddressModelOpen, setEditAddressModelOpen] = useState<boolean>(false)
 	const [addressInput, setAddressInput] = useState<string | undefined>(undefined)
 	const [nameInput, setNameInput] = useState<string | undefined>(undefined)
+	const [activeSimulationAddress, setActiveSimulationAddress] = useState<bigint | undefined>(undefined)
 
 	useEffect( () => {
 		function popupMessageListener(_msg: unknown) {
@@ -49,11 +50,12 @@ export function PersonalSign() {
 		if( !('personalSignDialog' in backgroundPage.interceptor) || backgroundPage.interceptor.personalSignDialog === undefined) return window.close();
 		if (backgroundPage.interceptor.settings === undefined) return window.close()
 
+		setActiveSimulationAddress(backgroundPage.interceptor.settings.activeSimulationAddress)
 		setRequestIdToConfirm(backgroundPage.interceptor.personalSignDialog.requestId)
 		const dialog = backgroundPage.interceptor.personalSignDialog
 		const addressToSignWith = EthereumAddress.parse(dialog.account)
 		const addressInfo = findAddressInfo(addressToSignWith, backgroundPage.interceptor.settings === undefined ? [] : backgroundPage.interceptor.settings.addressInfos)
-		if( dialog.eip2612Message !== undefined ) {
+		if (dialog.eip2612Message !== undefined) {
 			const chainName = getChainName(BigInt(dialog.eip2612Message.domain.chainId))
 			const verifyingContract = dialog.eip2612Message.domain.verifyingContract
 			const verifyingContractMetadata = getAddressMetaData(verifyingContract, backgroundPage.interceptor.settings.addressInfos)
@@ -163,14 +165,19 @@ export function PersonalSign() {
 
 						<div className = 'block' style = 'padding: 10px; background-color: var(--card-bg-color);'>
 							<div style = 'overflow: auto; display: flex; justify-content: space-around; width: 100%; height: 40px; margin-bottom: 10px;'>
-								<button className = 'button is-primary' style = 'flex-grow: 1; margin-left:5px; margin-right:5px;' onClick = { approve } disabled = { signRequest.simulationMode }>
+								<button
+									className = 'button is-primary'
+									style = 'flex-grow: 1; margin-left:5px; margin-right:5px;'
+									onClick = { approve }
+									disabled = { signRequest.simulationMode && (activeSimulationAddress === undefined || activeSimulationAddress !== MOCK_PRIVATE_KEYS_ADDRESS) }
+								>
 									{ signRequest.simulationMode ? 'Simulate!' : 'Forward to wallet for signing' }
 								</button>
 								<button className = 'button is-primary is-danger' style = 'flex-grow: 1; margin-left: 5px; margin-right: 5px;' onClick = { reject } >
 									Reject
 								</button>
 							</div>
-							{ signRequest.simulationMode ?
+							{ signRequest.simulationMode && (activeSimulationAddress === undefined || activeSimulationAddress !== MOCK_PRIVATE_KEYS_ADDRESS)  ?
 								<ErrorComponent text = 'Unfortunately we cannot simulate message signing as it requires private key access 😢.'/>
 								: <></>
 							}
