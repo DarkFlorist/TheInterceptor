@@ -87,13 +87,13 @@ export async function setPendingAccessRequests(pendingAccessRequest: readonly Pe
 	await updateExtensionBadge()
 }
 
-export async function changeAccess(access: Confirmation, origin: string, originIcon: string | undefined, accessAddress: bigint | undefined) {
+export async function changeAccess(access: Confirmation, origin: string, originIcon: string | undefined, accessAddress: string | undefined) {
 	if (window.interceptor.settings === undefined) return
 	if (access === 'NoResponse') return
 
 	await setPendingAccessRequests( window.interceptor.settings.pendingAccessRequests.filter( (x) => !(x.origin === origin && x.requestAccessToAddress === accessAddress) ) )
 
-	window.interceptor.settings.websiteAccess = setAccess(window.interceptor.settings.websiteAccess, origin, originIcon, access === 'Approved', accessAddress === undefined ? undefined : addressString(accessAddress))
+	window.interceptor.settings.websiteAccess = setAccess(window.interceptor.settings.websiteAccess, origin, originIcon, access === 'Approved', accessAddress)
 	window.interceptor.websiteAccessAddressMetadata = getAddressMetadataForAccess(window.interceptor.settings.websiteAccess)
 	saveWebsiteAccess(window.interceptor.settings.websiteAccess)
 	updateWebsiteApprovalAccesses()
@@ -152,7 +152,7 @@ export async function requestAccessFromUser(origin: string, icon: string | undef
 
 	const access = await pendingInterceptorAccess
 
-	await changeAccess(access, origin, icon, accessAddress === undefined ? undefined : BigInt(accessAddress))
+	await changeAccess(access, origin, icon, accessAddress)
 
 	return access === 'Approved'
 }

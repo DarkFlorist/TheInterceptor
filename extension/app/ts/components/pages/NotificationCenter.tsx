@@ -2,6 +2,7 @@ import { useEffect, useState } from 'preact/hooks'
 import { AddressInfoEntry, NotificationCenterParams, Page } from '../../utils/user-interface-types.js'
 import { BigAddress } from '../subcomponents/address.js'
 import { ethers } from 'ethers'
+import { addressString } from '../../utils/bigint.js'
 
 export type PendingAccessRequestWithMetadata = AddressInfoEntry & {
 	origin: string,
@@ -54,14 +55,14 @@ export function NotificationCenter(param: NotificationCenterParams) {
 	function review(origin: string, requestAccessToAddress: bigint | undefined) {
 		browser.runtime.sendMessage( { method: 'popup_reviewNotification', options: {
 			origin: origin,
-			requestAccessToAddress: requestAccessToAddress
+			requestAccessToAddress: requestAccessToAddress !== undefined ? addressString(requestAccessToAddress) : undefined
 		} } )
 	}
 
 	function reject(origin: string, requestAccessToAddress: bigint | undefined, removeOnly: boolean) {
 		browser.runtime.sendMessage( { method: 'popup_rejectNotification', options: {
 			origin: origin,
-			requestAccessToAddress: requestAccessToAddress,
+			requestAccessToAddress: requestAccessToAddress !== undefined ? addressString(requestAccessToAddress) : undefined,
 			removeOnly: removeOnly
 		} } )
 	}

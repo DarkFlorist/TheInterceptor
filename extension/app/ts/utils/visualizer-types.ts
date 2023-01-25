@@ -158,9 +158,9 @@ export type TransactionVisualizationParameters = {
 
 export type TokenDefinitionParams = {
 	tokenName: string
-    tokenAddress: bigint
-    tokenSymbol: string
-    tokenDecimals: bigint
+	tokenAddress: bigint
+	tokenSymbol: string
+	tokenDecimals: bigint
 	tokenLogoUri: string | undefined
 }
 
@@ -176,8 +176,8 @@ export type TokenApprovalChange = TokenDefinitionParams & {
 export type ERC721TokenDefinitionParams = {
 	tokenId: bigint
 	tokenName: string
-    tokenAddress: bigint
-    tokenSymbol: string
+	tokenAddress: bigint
+	tokenSymbol: string
 	tokenLogoUri: string | undefined
 }
 

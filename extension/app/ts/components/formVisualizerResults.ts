@@ -25,13 +25,24 @@ export function formSimulatedAndVisualizedTransaction(simState: SimulationState,
 			const toEntry = addressMetaData.get(addressString(change.to))
 			const tokenEntry = addressMetaData.get(addressString(change.tokenAddress))
 			if (fromEntry === undefined || toEntry === undefined || tokenEntry === undefined) throw new Error('missing metadata')
-			if ( !(change.is721 && tokenEntry.type === 'NFT') ) throw new Error('wrong tokentype')
-			return {
-				...change,
-				from: fromEntry,
-				to: toEntry,
-				token: tokenEntry,
+
+			if (change.is721 && tokenEntry.type === 'NFT') {
+				return {
+					...change,
+					from: fromEntry,
+					to: toEntry,
+					token: tokenEntry
+				}
 			}
+			if (!change.is721 && tokenEntry.type === 'token') {
+				return {
+					...change,
+					from: fromEntry,
+					to: toEntry,
+					token: tokenEntry
+				}
+			}
+			throw new Error('wrong token type')
 		})
 		return {
 			from: from,
