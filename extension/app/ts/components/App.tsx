@@ -2,7 +2,6 @@ import { useState, useEffect } from 'preact/hooks'
 import { defaultAddresses, WebsiteAccess } from '../background/settings.js'
 import { addressString } from '../utils/bigint.js'
 import { SimulationAndVisualisationResults } from '../utils/visualizer-types.js'
-import { AddressList } from './pages/AddressList.js'
 import { ChangeActiveAddress } from './pages/ChangeActiveAddress.js'
 import { Home } from './pages/Home.js'
 import { Page, AddressInfo, TabConnection, AddressInfoEntry, AddressBookEntry } from '../utils/user-interface-types.js'
@@ -194,7 +193,6 @@ export function App() {
 							</a>
 							<a class = 'navbar-item' style = 'margin-left: auto; margin-right: 0;'>
 								<img src = '../img/internet.svg' width = '32' onClick = { () => setAndSaveAppPage(Page.AccessList) }/>
-								<img src = '../img/my-accounts.svg' width = '32' onClick = { () => setAndSaveAppPage(Page.AddressList) }/>
 								<img src = '../img/address-book.svg' width = '32' onClick = { openAddressBook }/>
 								<div>
 									<img src = '../img/notification-bell.svg' width = '32' onClick = { () => setAndSaveAppPage(Page.NotificationCenter) }/>
@@ -236,13 +234,6 @@ export function App() {
 								websiteAccess = { websiteAccess }
 								websiteAccessAddressMetadata = { websiteAccessAddressMetadata }
 								renameAddressCallBack = { renameAddressCallBack }
-							/>
-						: <></> }
-						{ appPage === Page.AddressList ?
-							<AddressList
-								setAddressInfos = { setAddressInfos }
-								setAndSaveAppPage = { setAndSaveAppPage }
-								addressInfos = { addressInfos }
 							/>
 						: <></> }
 						{ appPage === Page.ChangeActiveAddress ?
