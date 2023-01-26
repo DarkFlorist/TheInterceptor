@@ -1,18 +1,17 @@
-import { addressString } from '../../utils/bigint.js'
-import { AddressMetadata, SimulatedAndVisualizedTransaction, SimulationAndVisualisationResults, TokenVisualizerResult, TransactionVisualizationParameters } from '../../utils/visualizer-types.js'
+import { ERC721TokenApprovalChange, SimulatedAndVisualizedTransaction, SimulationAndVisualisationResults, TokenApprovalChange, TokenVisualizerERC20Event, TokenVisualizerERC721AllApprovalEvent, TokenVisualizerERC721Event, TokenVisualizerResultWithMetadata, TransactionVisualizationParameters } from '../../utils/visualizer-types.js'
 import { FromAddressToAddress, SmallAddress } from '../subcomponents/address.js'
 import { EtherSymbol, TokenSymbol, TokenAmount, EtherAmount, Token721AmountField, ERC721TokenNumber } from '../subcomponents/coins.js'
 import { CHAIN, LogAnalysisParams, RenameAddressCallBack } from '../../utils/user-interface-types.js'
 import { QUARANTINE_CODES_DICT } from '../../simulation/protectors/quarantine-codes.js'
 import { Error } from '../subcomponents/Error.js'
 import { identifyRoutes, identifySwap, SwapVisualization } from './SwapTransactions.js'
-import { Erc20ApprovalChanges, ERC721OperatorChanges, ERC721TokenIdApprovalChanges } from './SimulationSummary.js'
+import { Erc20ApprovalChanges, ERC721OperatorChange, ERC721OperatorChanges, ERC721TokenIdApprovalChanges } from './SimulationSummary.js'
 import { identifyTransaction, nameTransaction } from './identifyTransaction.js'
 import { makeYouRichTransaction } from './transactionExplainers.js'
 import { JSXInternal } from 'preact/src/jsx'
 import { ApproveIcon, ArrowIcon } from '../subcomponents/icons.js'
 
-function isPositiveEvent(visResult: TokenVisualizerResult, ourAddressInReferenceFrame: bigint) {
+function isPositiveEvent(visResult: TokenVisualizerResultWithMetadata, ourAddressInReferenceFrame: bigint) {
 	if (!visResult.is721) {
 		if (!visResult.isApproval) {
 			return visResult.amount >= 0 // simple transfer
@@ -22,14 +21,14 @@ function isPositiveEvent(visResult: TokenVisualizerResult, ourAddressInReference
 
 	// nfts
 	if ('isAllApproval' in visResult) { // all approval is only positive if someone all approves us, or all approval is removed from us
-		return (visResult.allApprovalAdded && visResult.to === ourAddressInReferenceFrame) || (!visResult.allApprovalAdded && visResult.from === ourAddressInReferenceFrame)
+		return (visResult.allApprovalAdded && visResult.to.address === ourAddressInReferenceFrame) || (!visResult.allApprovalAdded && visResult.from.address === ourAddressInReferenceFrame)
 	}
 
 	if (visResult.isApproval) {
-		return visResult.to === ourAddressInReferenceFrame // approval is only positive if we are getting approved
+		return visResult.to.address === ourAddressInReferenceFrame // approval is only positive if we are getting approved
 	}
 
-	return visResult.to === ourAddressInReferenceFrame // send is positive if we are receiving
+	return visResult.to.address === ourAddressInReferenceFrame // send is positive if we are receiving
 }
 
 type TransactionAggregateParam = {
@@ -48,13 +47,13 @@ function TransactionAggregate(param: TransactionAggregateParam) {
 							<header class = 'card-header'>
 								<div class = 'card-header-icon unset-cursor'>
 									<span class = 'icon'>
-									<img src = { tx.multicallResponse.statusCode === 'success' ? ( tx.simResults && tx.simResults.quarantine ? '../img/warning-sign.svg' : '../img/success-icon.svg' ) : '../img/error-icon.svg' } />
+									<img src = { tx.statusCode === 'success' ? ( tx.quarantine ? '../img/warning-sign.svg' : '../img/success-icon.svg' ) : '../img/error-icon.svg' } />
 									</span>
 								</div>
 
 								<p class = 'card-header-title'>
 									<p className = 'paragraph'>
-										{ nameTransaction(tx, param.simulationAndVisualisationResults.addressMetadata, param.activeAddress) }
+										{ nameTransaction(tx, param.activeAddress) }
 									</p>
 								</p>
 							</header>
@@ -69,14 +68,12 @@ function TransactionAggregate(param: TransactionAggregateParam) {
 function areThereImportantEventsToHighlight(tx: SimulatedAndVisualizedTransaction, _simulationAndVisualisationResults: SimulationAndVisualisationResults ) {
 	const identifiedSwap = identifySwap(tx)
 	if (identifiedSwap) return true
-	const msgSender = tx.unsignedTransaction.from
-	if (tx.simResults?.visualizerResults === undefined) return false
-
+	const msgSender = tx.from
 	// ether changes
-	if (tx.simResults?.visualizerResults?.ethBalanceChanges.filter( (x) => x.address === msgSender && x.after !== x.before ).length > 0) return true
+	if (tx.ethBalanceChanges.filter( (x) => x.address === msgSender && x.after !== x.before ).length > 0) return true
 
 	// token changes
-	return tx.simResults.visualizerResults.tokenResults.filter( (x) => x.from === msgSender || x.to === msgSender ).length > 0
+	return tx.tokenResults.filter( (x) => x.from === msgSender || x.to === msgSender ).length > 0
 }
 
 type EtherTransferEventParams = {
@@ -141,8 +138,7 @@ function EtherTransferEvent(param: EtherTransferEventParams) {
 
 type SendOrReceiveTokensImportanceBoxParams = {
 	sending: boolean,
-	tokenVisualizerResults: TokenVisualizerResult[] | undefined,
-	addressMetadata: Map<string, AddressMetadata>,
+	tokenVisualizerResults: TokenVisualizerResultWithMetadata[] | undefined,
 	textColor: string,
 	renameAddressCallBack: RenameAddressCallBack,
 }
@@ -170,30 +166,19 @@ function SendOrReceiveTokensImportanceBox(param: SendOrReceiveTokensImportanceBo
 							:
 								<TokenAmount
 									amount = { tokenEvent.amount }
-									addressMetadata = { param.addressMetadata.get(addressString(tokenEvent.tokenAddress)) }
+									tokenDecimals = { tokenEvent.token.decimals }
 									textColor = { param.textColor }
 								/>
 							}
 						</div>
 						<div class = 'log-cell' style = 'padding-right: 0.2em'>
 							<TokenSymbol
-								token = { tokenEvent.tokenAddress }
-								addressMetadata = { param.addressMetadata.get(addressString(tokenEvent.tokenAddress)) }
+								tokenName = { tokenEvent.token.name }
+								tokenAddress = { tokenEvent.token.address }
+								tokenSymbol = { tokenEvent.token.symbol }
+								tokenLogoUri = { tokenEvent.token.logoUri }
 								textColor = { param.textColor }
 								useFullTokenName = { false }
-							/>
-						</div>
-						<div class = 'log-cell'>
-							<p class = 'ellipsis' style = { `color: ${ param.textColor }; margin-bottom: 0px; display: inline-block` }>
-								&nbsp;{ param.sending ? 'to' : 'from' }&nbsp;
-							</p>
-						</div>
-						<div class = 'log-cell'>
-							<SmallAddress
-								address = { tokenEvent.to }
-								nameAndLogo = { param.addressMetadata.get(addressString(tokenEvent.to)) }
-								textColor = { param.textColor }
-								renameAddressCallBack = { param.renameAddressCallBack }
 							/>
 						</div>
 					</table>
@@ -211,52 +196,70 @@ type TransactionImportanceBlockParams = {
 
 // showcases the most important things the transaction does
 function TransactionImportanceBlock( param: TransactionImportanceBlockParams ) {
-	if ( param.tx.multicallResponse.statusCode === 'failure') return <></>
+	if ( param.tx.statusCode === 'failure') return <></>
 	const identifiedSwap = identifySwap(param.tx)
 	const textColor =  'var(--text-color)'
 
 	if(identifiedSwap) {
 		return <SwapVisualization
 			identifiedSwap = { identifiedSwap }
-			addressMetadata = { param.simulationAndVisualisationResults.addressMetadata }
 			chain = { param.simulationAndVisualisationResults.chain }
 		/>
 	}
 
-	const msgSender = param.tx.unsignedTransaction.from
+	const msgSender = param.tx.from.address
 
-	const sendingTokenResults = param.tx.simResults?.visualizerResults?.tokenResults.filter( (x) => x.from === msgSender)
-	const receivingTokenResults = param.tx.simResults?.visualizerResults?.tokenResults.filter( (x) => x.to === msgSender)
+	const sendingTokenResults = param.tx.tokenResults.filter( (x) => x.from.address === msgSender)
+	const receivingTokenResults = param.tx.tokenResults.filter( (x) => x.to.address === msgSender)
 
-	// tokenApprovalChanges: Map<string, Map<string, bigint > > // token address, approved address, amount
-	const tokenApprovalChanges: Map<string, Map<string, bigint > > = sendingTokenResults ? new Map( sendingTokenResults.filter( (x) => x.isApproval && !x.is721).map(
-		(x) => [ addressString(x.tokenAddress), new Map( [ [ addressString(x.to), 'amount' in x ? x.amount : 0n ] ]  ) ]
-	)) : new Map()
+	const erc20tokenApprovalChanges: TokenApprovalChange[] = sendingTokenResults.filter((x): x is TokenVisualizerERC20Event  => x.isApproval && !x.is721).map((entry) => {
+		return {
+			tokenName: entry.token.name,
+			tokenAddress: entry.token.address,
+			tokenSymbol: entry.token.symbol,
+			tokenDecimals: entry.token.decimals,
+			tokenLogoUri: entry.token.logoUri,
+			approvals: [ {...entry.to, change: entry.amount } ]
+		}
+	})
 
-	// ERC721OperatorChanges: Map<string, string | undefined>
-	const operatorChanges: Map<string, string | undefined> = sendingTokenResults ? new Map( sendingTokenResults.filter( (x) => x.isApproval && x.is721 && ('isAllApproval' in x && x.isAllApproval) ).map(
-		(x) => [ addressString(x.tokenAddress), 'allApprovalAdded' in x && x.allApprovalAdded ? addressString(x.to) : undefined ]
-	)) : new Map()
+	const operatorChanges: ERC721OperatorChange[] = sendingTokenResults.filter((x): x is TokenVisualizerERC721AllApprovalEvent  => 'isAllApproval' in x && x.is721).map((entry) => {
+		return {
+			tokenName: entry.token.name,
+			tokenAddress: entry.token.address,
+			tokenSymbol: entry.token.symbol,
+			tokenLogoUri: entry.token.logoUri,
+			operator: 'allApprovalAdded' in entry && entry.allApprovalAdded ? entry.to : undefined
+		}
+	})
 
 	// token address, tokenId, approved address
-	const tokenIdApprovalChanges: Map<string, Map<string, string > > = sendingTokenResults ? new Map( sendingTokenResults.filter( (x) => x.isApproval && x.is721).map(
-		(x) => [ addressString(x.tokenAddress), new Map( [ [ 'tokenId' in x ? x.tokenId : 0n, x.to ] ]  ) ]
-	)) : new Map()
+	const tokenIdApprovalChanges: ERC721TokenApprovalChange[] = sendingTokenResults.filter((x): x is TokenVisualizerERC721Event  => 'tokenId' in x && x.isApproval).map((entry) => {
+		return {
+			token: {
+				tokenId: entry.tokenId,
+				tokenName: entry.token.name,
+				tokenAddress: entry.token.address,
+				tokenSymbol: entry.token.symbol,
+				tokenLogoUri: entry.token.logoUri,
+			},
+			approvedEntry: entry.to
+		}
+	})
 
-	const ownBalanceChanges = param.tx.simResults?.visualizerResults?.ethBalanceChanges.filter( (change) => change.address === msgSender)
+	const ownBalanceChanges = param.tx.ethBalanceChanges.filter( (change) => change.address.address === msgSender)
 
 	return <>
 		{ /* sending ether / tokens */ }
 		<EtherTransferEvent
-			valueSent = { param.tx.signedTransaction.value }
+			valueSent = { param.tx.value }
 			totalReceived = { ownBalanceChanges !== undefined && ownBalanceChanges.length > 0 ? ownBalanceChanges[ownBalanceChanges.length - 1].after - ownBalanceChanges[0].before : 0n  }
 			textColor = { textColor }
 			chain = { param.simulationAndVisualisationResults.chain }
 		/>
 
 		<SendOrReceiveTokensImportanceBox
-			addressMetadata = { param.simulationAndVisualisationResults.addressMetadata }
-			tokenVisualizerResults = { sendingTokenResults?.filter( (x) => !x.isApproval) }
+			tokenVisualizerResults = { sendingTokenResults.filter( (x) => !x.isApproval) }
 			sending = { true }
 			textColor = { textColor }
 			renameAddressCallBack = { param.renameAddressCallBack }
@@ -264,15 +267,13 @@ function TransactionImportanceBlock( param: TransactionImportanceBlockParams ) {
 
 		{ /* us approving other addresses */ }
 		<Erc20ApprovalChanges
-			addressMetadata = { param.simulationAndVisualisationResults.addressMetadata }
-			tokenApprovalChanges = { tokenApprovalChanges }
+			tokenApprovalChanges = { erc20tokenApprovalChanges }
 			textColor = { textColor }
 			negativeColor = { textColor }
 			isImportant = { true }
 			renameAddressCallBack = { param.renameAddressCallBack }
 		/>
 		<ERC721OperatorChanges
-			addressMetadata = { param.simulationAndVisualisationResults.addressMetadata }
 			ERC721OperatorChanges = { operatorChanges }
 			textColor = { textColor }
 			negativeColor = { textColor }
@@ -280,7 +281,6 @@ function TransactionImportanceBlock( param: TransactionImportanceBlockParams ) {
 			renameAddressCallBack = { param.renameAddressCallBack }
 		/>
 		<ERC721TokenIdApprovalChanges
-			addressMetadata = { param.simulationAndVisualisationResults.addressMetadata }
 			ERC721TokenIdApprovalChanges = { tokenIdApprovalChanges }
 			textColor = { textColor }
 			negativeColor = { textColor }
@@ -290,8 +290,7 @@ function TransactionImportanceBlock( param: TransactionImportanceBlockParams ) {
 
 		{ /* receiving tokens */ }
 		<SendOrReceiveTokensImportanceBox
-			addressMetadata = { param.simulationAndVisualisationResults.addressMetadata }
-			tokenVisualizerResults = { receivingTokenResults?.filter( (x) => !x.isApproval) }
+			tokenVisualizerResults = { receivingTokenResults.filter( (x) => !x.isApproval) }
 			sending = { false }
 			textColor = { textColor }
 			renameAddressCallBack = { param.renameAddressCallBack }
@@ -306,27 +305,25 @@ function normalTransaction(param: TransactionVisualizationParameters) {
 			<header class = 'card-header'>
 				<div class = 'card-header-icon unset-cursor'>
 					<span class = 'icon'>
-						<img src = { param.tx.multicallResponse.statusCode === 'success' ? ( param.tx.simResults && param.tx.simResults.quarantine ? '../img/warning-sign.svg' : '../img/success-icon.svg' ) : '../img/error-icon.svg' } />
+						<img src = { param.tx.statusCode === 'success' ? ( param.tx.quarantine ? '../img/warning-sign.svg' : '../img/success-icon.svg' ) : '../img/error-icon.svg' } />
 					</span>
 				</div>
 				<p class = 'card-header-title'>
 					<p className = 'paragraph'>
-						{ nameTransaction(param.tx, param.simulationAndVisualisationResults.addressMetadata, param.activeAddress) }
+						{ nameTransaction(param.tx, param.activeAddress) }
 					</p>
 				</p>
-				<button class = 'card-header-icon' aria-label = 'remove' onClick = { () => param.removeTransaction(param.tx.signedTransaction.hash) }>
+				<button class = 'card-header-icon' aria-label = 'remove' onClick = { () => param.removeTransaction(param.tx.hash) }>
 					<span class = 'icon' style = 'color: var(--text-color);'> X </span>
 				</button>
 			</header>
 			<div class = 'card-content'>
-				{ param.tx.signedTransaction.to === null ? <>Contract deployment</> :
+				{ param.tx.to === undefined ? <>Contract deployment</> :
 					<div class = 'container'>
 						<div class = 'notification' style = { `${ areThereImportantEventsToHighlight(param.tx , param.simulationAndVisualisationResults) ? 'background-color: var(--unimportant-text-color); margin-bottom: 10px;' : 'background-color: unset;' } padding: 10px` } >
 							<FromAddressToAddress
-								from = { param.tx.signedTransaction.from }
-								to = { param.tx.signedTransaction.to }
-								fromAddressNameAndLogo= { param.simulationAndVisualisationResults.addressMetadata.get(addressString(param.tx.signedTransaction.from)) }
-								toAddressNameAndLogo = { param.simulationAndVisualisationResults.addressMetadata.get(addressString(param.tx.signedTransaction.to)) }
+								fromEntry = { param.tx.from }
+								toEntry = { param.tx.to }
 								isApproval = { false }
 								renameAddressCallBack = { param.renameAddressCallBack }
 							/>
@@ -336,31 +333,25 @@ function normalTransaction(param: TransactionVisualizationParameters) {
 									simulationAndVisualisationResults = { param.simulationAndVisualisationResults }
 									renameAddressCallBack = { param.renameAddressCallBack }
 								/>
-								{ param.tx.simResults !== undefined ? <>
-									{ param.tx.simResults.quarantineCodes.map( (code) => (
-										<div style = 'padding-top: 10px'>
-											<Error text = { QUARANTINE_CODES_DICT[code].label } />
-										</div>
-									)) }
-									</> : <></>
-								}
+								{ param.tx.quarantineCodes.map( (code) => (
+									<div style = 'padding-top: 10px'>
+										<Error text = { QUARANTINE_CODES_DICT[code].label } />
+									</div>
+								)) }
 							</div>
 						</div>
 					</div>
 				}
-				{ param.tx.simResults !== undefined ?  <>
-					<div class = 'container'>
-						<div class = 'notification' style = 'background-color: unset; padding-right: 10px; padding-left: 10px; padding-top: 0px; padding-bottom: 0px;'>
-							<LogAnalysis
-								simulatedAndVisualizedTransaction = { param.tx }
-								addressMetadata = { param.simulationAndVisualisationResults.addressMetadata }
-								identifiedSwap = { identifiedSwap }
-								renameAddressCallBack = { param.renameAddressCallBack }
-							/>
-						</div>
+				<div class = 'container'>
+					<div class = 'notification' style = 'background-color: unset; padding-right: 10px; padding-left: 10px; padding-top: 0px; padding-bottom: 0px;'>
+						<LogAnalysis
+							simulatedAndVisualizedTransaction = { param.tx }
+							identifiedSwap = { identifiedSwap }
+							renameAddressCallBack = { param.renameAddressCallBack }
+						/>
 					</div>
-				</> : <></> }
-				{ param.tx.multicallResponse.statusCode !== 'success' ? <Error text = { `The transaction fails with error '${param.tx.multicallResponse.error}'` } /> : <></>}
+				</div>
+				{ param.tx.statusCode !== 'success' ? <Error text = { `The transaction fails with error '${ param.tx.error }'` } /> : <></>}
 				{ param.tx.realizedGasPrice > 0n ?
 					<table class = 'log-table' style = 'width: fit-content; margin: 0 0 0 auto;'>
 						<div class = 'log-cell'>
@@ -368,13 +359,13 @@ function normalTransaction(param: TransactionVisualizationParameters) {
 						</div>
 						<div class = 'log-cell' style = 'justify-content: right;'>
 							<EtherAmount
-								amount = { param.tx.multicallResponse.gasSpent * param.tx.realizedGasPrice  }
+								amount = { param.tx.gasSpent * param.tx.realizedGasPrice  }
 								textColor = { 'var(--subtitle-text-color)' }
 							/>
 						</div>
 						<div class = 'log-cell'>
 							<EtherSymbol
-								amount = { param.tx.multicallResponse.gasSpent * param.tx.realizedGasPrice  }
+								amount = { param.tx.gasSpent * param.tx.realizedGasPrice  }
 								textColor = { 'var(--subtitle-text-color)' }
 								chain = { param.simulationAndVisualisationResults.chain }
 							/>
@@ -448,8 +439,7 @@ export function Transactions(param: TransactionsParams) {
 }
 
 type TokenLogEventParams = {
-	tokenVisualizerResult: TokenVisualizerResult
-	addressMetadata: Map<string, AddressMetadata>
+	tokenVisualizerResult: TokenVisualizerResultWithMetadata
 	ourAddressInReferenceFrame: bigint,
 	renameAddressCallBack: RenameAddressCallBack,
 }
@@ -461,7 +451,7 @@ export function TokenLogEvent(params: TokenLogEventParams ) {
 			<div class = 'log-cell' style = 'justify-content: right;'>
 				{ params.tokenVisualizerResult.is721 ?
 					<Token721AmountField
-						visResult = { params.tokenVisualizerResult }
+						{ ...params.tokenVisualizerResult }
 						textColor = { textColor }
 					/>
 				: <> { params.tokenVisualizerResult.amount > 2n ** 100n && params.tokenVisualizerResult.isApproval ?
@@ -469,7 +459,7 @@ export function TokenLogEvent(params: TokenLogEventParams ) {
 					:
 						<TokenAmount
 							amount = { params.tokenVisualizerResult.amount }
-							addressMetadata = { params.addressMetadata.get(addressString(params.tokenVisualizerResult.tokenAddress)) }
+							tokenDecimals = { params.tokenVisualizerResult.token.decimals }
 							textColor = { textColor }
 						/>
 					} </>
@@ -477,16 +467,17 @@ export function TokenLogEvent(params: TokenLogEventParams ) {
 			</div>
 			<div class = 'log-cell' style = 'padding-right: 0.2em'>
 				<TokenSymbol
-					token = { params.tokenVisualizerResult.tokenAddress }
-					addressMetadata = { params.addressMetadata.get(addressString(params.tokenVisualizerResult.tokenAddress)) }
+					tokenName = { params.tokenVisualizerResult.token.name }
+					tokenAddress = { params.tokenVisualizerResult.token.address }
+					tokenLogoUri = { params.tokenVisualizerResult.token.logoUri }
+					tokenSymbol = { params.tokenVisualizerResult.token.symbol }
 					textColor = { textColor }
 					useFullTokenName = { false }
 				/>
 			</div>
 			<div class = 'log-cell'>
 				<SmallAddress
-					address = { params.tokenVisualizerResult.from }
-					nameAndLogo = { params.addressMetadata.get(addressString(params.tokenVisualizerResult.from)) }
+					addressBookEntry = { params.tokenVisualizerResult.from }
 					textColor = { textColor }
 					renameAddressCallBack = { params.renameAddressCallBack }
 				/>
@@ -496,8 +487,7 @@ export function TokenLogEvent(params: TokenLogEventParams ) {
 			</div>
 			<div class = 'log-cell'>
 				<SmallAddress
-					address = { params.tokenVisualizerResult.to }
-					nameAndLogo = { params.addressMetadata.get(addressString(params.tokenVisualizerResult.to)) }
+					addressBookEntry = { params.tokenVisualizerResult.to }
 					textColor = { textColor }
 					renameAddressCallBack = { params.renameAddressCallBack }
 				/>
@@ -506,24 +496,21 @@ export function TokenLogEvent(params: TokenLogEventParams ) {
 }
 
 function LogAnalysis(param: LogAnalysisParams) {
-	if ( param.simulatedAndVisualizedTransaction?.simResults?.visualizerResults === undefined ) return <></>
-	if ( param.simulatedAndVisualizedTransaction.simResults.visualizerResults.tokenResults.length === 0 ) return <></>
+	if ( param.simulatedAndVisualizedTransaction.tokenResults.length === 0 ) return <></>
 	const routes = identifyRoutes(param.simulatedAndVisualizedTransaction, param.identifiedSwap)
 	return <table class = 'log-table' style = 'justify-content: center; column-gap: 5px;'> { routes ?
 		routes.map( (tokenVisualizerResult) => (
 			<TokenLogEvent
 				tokenVisualizerResult = { tokenVisualizerResult }
-				addressMetadata = { param.addressMetadata }
-				ourAddressInReferenceFrame = { param.simulatedAndVisualizedTransaction.unsignedTransaction.from }
+				ourAddressInReferenceFrame = { param.simulatedAndVisualizedTransaction.from.address }
 				renameAddressCallBack = { param.renameAddressCallBack }
 			/>
 		))
 	:
-		param.simulatedAndVisualizedTransaction.simResults.visualizerResults.tokenResults.map( (tokenVisualizerResult) => (
+		param.simulatedAndVisualizedTransaction.tokenResults.map( (tokenVisualizerResult) => (
 			<TokenLogEvent
 				tokenVisualizerResult = { tokenVisualizerResult }
-				addressMetadata = { param.addressMetadata }
-				ourAddressInReferenceFrame = { param.simulatedAndVisualizedTransaction.unsignedTransaction.from }
+				ourAddressInReferenceFrame = { param.simulatedAndVisualizedTransaction.from.address }
 				renameAddressCallBack = { param.renameAddressCallBack }
 			/>
 		))

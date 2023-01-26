@@ -3,33 +3,9 @@ import { getTokenAmountsWorth } from '../../simulation/priceEstimator.js'
 import { abs, addressString, bigintToDecimalString, bigintToRoundedPrettyDecimalString } from '../../utils/bigint.js'
 import { CHAINS } from '../../utils/constants.js'
 import { CHAIN } from '../../utils/user-interface-types.js'
-import { AddressMetadata, TokenPriceEstimate, TokenVisualizerResult } from '../../utils/visualizer-types.js'
+import { ERC721TokenDefinitionParams, TokenDefinitionParams, TokenPriceEstimate } from '../../utils/visualizer-types.js'
 import { CopyToClipboard } from './CopyToClipboard.js'
 import Blockie from './PreactBlocky.js'
-
-type TokenData = {
-	decimals: bigint | undefined
-	name: string
-	symbol: string
-	logoUri?: string
-}
-
-export function getTokenData(token: bigint, metadata: AddressMetadata | undefined) : TokenData {
-	if (metadata === undefined) {
-		return {
-			decimals: undefined,
-			name: `Token (${ ethers.utils.getAddress(addressString(token)) })`,
-			symbol: '???',
-			logoUri: undefined
-		}
-	}
-	return {
-		decimals: 'decimals' in metadata ? metadata.decimals : undefined,
-		name: metadata.name,
-		symbol: 'symbol' in metadata ? metadata.symbol : '???',
-		logoUri: 'logoUri' in metadata && metadata.logoUri !== undefined ? metadata.logoUri : undefined
-	}
-}
 
 type EtherParams = {
 	amount: bigint
@@ -113,20 +89,22 @@ export function TokenPrice(param: TokenPriceParams) {
 }
 
 type TokenSymbolParams = {
-	token: bigint,
 	textColor?: string,
-	addressMetadata: AddressMetadata | undefined,
+	tokenName: string
+	tokenAddress: bigint
+	tokenSymbol: string
+	tokenLogoUri: string | undefined
+
 	useFullTokenName: boolean | undefined
 }
 
 export function TokenSymbol(param: TokenSymbolParams) {
-	const tokenData = getTokenData(param.token, param.addressMetadata)
-	const tokenString = ethers.utils.getAddress(addressString(param.token))
+	const tokenString = ethers.utils.getAddress(addressString(param.tokenAddress))
 	const color = param.textColor ? param.textColor : 'var(--text-color)'
 	return <>
 		<div style = 'overflow: initial; height: 28px;'>
 			<CopyToClipboard content = { tokenString } copyMessage = 'Token address copied!' >
-				{ tokenData.logoUri === undefined ?
+				{ param.tokenLogoUri === undefined ?
 					<Blockie
 						seed = { tokenString.toLowerCase() }
 						size = { 8 }
@@ -134,18 +112,18 @@ export function TokenSymbol(param: TokenSymbolParams) {
 						borderRadius = { '50%' }
 					/>
 				:
-				<img class = 'noselect nopointer vertical-center' style = 'max-height: 25px; max-width: 25px;' src = { tokenData.logoUri }/>
+				<img class = 'noselect nopointer vertical-center' style = 'max-height: 25px; max-width: 25px;' src = { param.tokenLogoUri }/>
 				}
 			</CopyToClipboard>
 		</div>
 		<CopyToClipboard content = { tokenString } copyMessage = 'Token address copied!' >
 			{ param.useFullTokenName ?
 				<p class = 'noselect nopointer' style = { `color: ${ color }; display: inline-block; overflow: hidden; text-overflow: ellipsis;` }>
-					{ `${ tokenData.name }` }
+					{ `${ param.tokenName === undefined ? tokenString : param.tokenName }` }
 				</p>
 			:
 				<p class = 'noselect nopointer' style = { `color: ${ color }; display: inline-block; overflow: hidden; text-overflow: ellipsis;` }>
-					{ `${ tokenData.symbol }` }
+					{ `${ param.tokenSymbol }` }
 				</p>
 			}
 		</CopyToClipboard>
@@ -156,30 +134,27 @@ type TokenAmountParams = {
 	amount: bigint
 	showSign?: boolean
 	textColor?: string
-	addressMetadata: AddressMetadata | undefined
+	tokenDecimals: bigint | undefined
 }
 
 export function TokenAmount(param: TokenAmountParams) {
 	const color = param.textColor ? param.textColor : 'var(--text-color)'
-	const decimals = param.addressMetadata && 'decimals' in param.addressMetadata ? param.addressMetadata.decimals : undefined
 	const sign = param.showSign ? (param.amount >= 0 ? ' + ' : ' - '): ''
 
-	if (decimals === undefined) {
+	if (param.tokenDecimals === undefined) {
 		return <p class = 'noselect nopointer ellipsis' style = { `display: inline-block; color: ${ color };` }> &nbsp;Unknown Amount&nbsp; </p>
 	}
 	return <>
-		<CopyToClipboard content = { bigintToDecimalString(abs(param.amount), decimals) } copyMessage = 'Token amount copied!' >
-			<p class = 'noselect nopointer' style = { `display: inline-block; color: ${ color };` }>{ `${ sign }${ bigintToRoundedPrettyDecimalString(abs(param.amount), decimals ) }` }&nbsp; </p>
+		<CopyToClipboard content = { bigintToDecimalString(abs(param.amount), param.tokenDecimals) } copyMessage = 'Token amount copied!' >
+			<p class = 'noselect nopointer' style = { `display: inline-block; color: ${ color };` }>{ `${ sign }${ bigintToRoundedPrettyDecimalString(abs(param.amount), param.tokenDecimals ) }` }&nbsp; </p>
 		</CopyToClipboard>
 	</>
 }
 
-type TokenParams = {
+type TokenParams = TokenDefinitionParams & {
 	amount: bigint
-	token: bigint
 	showSign?: boolean
 	textColor?: string
-	addressMetadata: AddressMetadata | undefined
 	useFullTokenName: boolean
 }
 
@@ -187,19 +162,12 @@ export function Token(param: TokenParams) {
 	return <table class = 'log-table' style = 'width: fit-content'>
 		<div class = 'log-cell' style = 'justify-content: right;'>
 			<TokenAmount
+				{ ...param }
 				amount = { param.amount }
-				showSign = { param.showSign }
-				textColor = { param.textColor }
-				addressMetadata = { param.addressMetadata }
 			/>
 		</div>
 		<div class = 'log-cell'>
-			<TokenSymbol
-				token = { param.token }
-				addressMetadata = { param.addressMetadata }
-				textColor = { param.textColor }
-				useFullTokenName = { param.useFullTokenName }
-			/>
+			<TokenSymbol { ... param }/>
 		</div>
 	</table>
 }
@@ -225,79 +193,39 @@ export function ERC721TokenNumber(param: ERC721TokenNumberParams) {
 	</CopyToClipboard>
 }
 
-type ERC72TokenParams = {
-	tokenId: bigint
-	token: bigint
+type ERC721TokenParams = ERC721TokenDefinitionParams & {
 	received: boolean
 	textColor?: string
-	addressMetadata: AddressMetadata | undefined
 	useFullTokenName: boolean
 	showSign?: boolean
 }
 
-export function ERC721Token(param: ERC72TokenParams) {
+export function ERC721Token(param: ERC721TokenParams) {
 	return <table class = 'log-table'>
 		<div class = 'log-cell' style = 'justify-content: right;'>
-			<ERC721TokenNumber
-				tokenId = { param.tokenId }
-				received = { param.received }
-				textColor = { param.textColor }
-				showSign = { param.showSign }
-			/>
+			<ERC721TokenNumber { ... param }/>
 		</div>
 		<div class = 'log-cell'>
-			<TokenSymbol
-				token = { param.token }
-				addressMetadata = { param.addressMetadata }
-				textColor = { param.textColor }
-				useFullTokenName = { param.useFullTokenName }
-			/>
+			<TokenSymbol { ...param }/>
 		</div>
 	</table>
 }
 
-type TokenTextParams = {
-	useFullTokenName: boolean,
+type Token721AmountFieldParams = { textColor: string } & ({
+	tokenId: bigint,
 	isApproval: boolean,
-	amount: bigint,
-	tokenAddress: bigint,
-	addressMetadata: AddressMetadata | undefined,
-	textColor: string,
-	negativeColor: string
-}
+} | {
+	isAllApproval: boolean
+	allApprovalAdded: boolean
+	isApproval: true
+})
 
-export function TokenText(param: TokenTextParams) {
-	if (param.isApproval && param.amount > 2n ** 100n) {
-		return <>
-			<p style = { `display: inline-block; color: ${ param.negativeColor };` } > <b>ALL</b> </p>
-			<TokenSymbol token = { param.tokenAddress } addressMetadata = { param.addressMetadata } textColor = { param.negativeColor }  useFullTokenName = { param.useFullTokenName }/>
-		</>
-	}
-	if (param.isApproval) {
-		return <p style = { `display: inline-block; color: ${ param.negativeColor };` } >
-			<Token amount = { param.amount } token = { param.tokenAddress } addressMetadata = { param.addressMetadata } textColor = { param.negativeColor } useFullTokenName = { param.useFullTokenName }/>
-		</p>
-	}
-	return <Token
-		amount = { param.amount }
-		token = { param.tokenAddress }
-		addressMetadata = { param.addressMetadata }
-		textColor = { param.textColor }
-		useFullTokenName = { param.useFullTokenName }
-	/>
-}
-
-type Token721AmountFieldParams = {
-	visResult: TokenVisualizerResult,
-	textColor: string,
-}
 
 export function Token721AmountField(param: Token721AmountFieldParams ) {
-	if (param.visResult.is721 !== true) throw `needs to be erc721`
 	const color = param.textColor ? param.textColor : 'var(--text-color)'
-	if (!param.visResult.isApproval || !('isAllApproval' in param.visResult)) {
-		return <p style = { `color: ${ color }` }>{ `NFT #${ truncate(param.visResult.tokenId.toString(), 9) }` }</p>
+	if (!param.isApproval || !('isAllApproval' in param)) {
+		return <p style = { `color: ${ color }` }>{ `NFT #${ truncate(param.tokenId.toString(), 9) }` }</p>
 	}
-	if (!param.visResult.allApprovalAdded) return <p style = { `color: ${ color }` }><b>NONE</b></p>
+	if (!param.allApprovalAdded) return <p style = { `color: ${ color }` }><b>NONE</b></p>
 	return <p style = { `color: ${ color }` }><b>ALL</b></p>
 }

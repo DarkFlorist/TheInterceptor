@@ -1,12 +1,11 @@
 import { addressString } from '../../utils/bigint.js'
 import { Future } from '../../utils/future.js'
 import { imageToUri } from '../../utils/imageToUri.js'
-import { PendingAccessRequest } from '../../utils/user-interface-types.js'
-import { AddressMetadata } from '../../utils/visualizer-types.js'
+import { AddressInfoEntry, PendingAccessRequest } from '../../utils/user-interface-types.js'
 import { setAccess, updateWebsiteApprovalAccesses } from '../accessManagement.js'
 import { sendPopupMessageToOpenWindows } from '../backgroundUtils.js'
 import { updateExtensionBadge } from '../iconHandler.js'
-import { getAddressMetaData } from '../metadataUtils.js'
+import { findAddressInfo } from '../metadataUtils.js'
 import { savePendingAccessRequests, saveWebsiteAccess, WebsiteAccess } from '../settings.js'
 
 export type Confirmation = 'Approved' | 'Rejected' | 'NoResponse'
@@ -34,12 +33,12 @@ export async function resolveInterceptorAccess(confirmation: Confirmation) {
 	openedInterceptorAccessWindow = null
 }
 
-export function getAddressMetadataForAccess(websiteAccess: readonly WebsiteAccess[]) : [string, AddressMetadata][]{
+export function getAddressMetadataForAccess(websiteAccess: readonly WebsiteAccess[]) : [string, AddressInfoEntry][]{
 	if ( window.interceptor.settings === undefined) return []
 	const addresses = websiteAccess.map( (x) => x.addressAccess === undefined ? [] : x.addressAccess?.map( (addr) => addr.address) ).flat()
 	const addressSet = new Set(addresses)
 	const infos = window.interceptor.settings.addressInfos
-	return Array.from(addressSet).map( (x) => [x, getAddressMetaData(BigInt(x), infos)] )
+	return Array.from(addressSet).map( (x) => [x, findAddressInfo(BigInt(x), infos)] )
 }
 
 export async function retrieveIcon(tabId: number | undefined) {
@@ -83,7 +82,7 @@ export async function setPendingAccessRequests(pendingAccessRequest: readonly Pe
 	const addresses = window.interceptor.settings.pendingAccessRequests.map( (x) => x.requestAccessToAddress === undefined ? [] : x.requestAccessToAddress ).flat()
 	const addressSet = new Set(addresses)
 	const infos = window.interceptor.settings.addressInfos
-	window.interceptor.pendingAccessMetadata = Array.from(addressSet).map( (x) => [x, getAddressMetaData(BigInt(x), infos)] )
+	window.interceptor.pendingAccessMetadata = Array.from(addressSet).map( (x) => [x, findAddressInfo(BigInt(x), infos)] )
 	savePendingAccessRequests(window.interceptor.settings.pendingAccessRequests)
 	await updateExtensionBadge()
 }
@@ -101,7 +100,7 @@ export async function changeAccess(access: Confirmation, origin: string, originI
 	sendPopupMessageToOpenWindows({ message: 'popup_websiteAccess_changed' })
 }
 
-export async function requestAccessFromUser(origin: string, icon: string | undefined, requestAccessToAddress: string | undefined = undefined, addressMetadata: [string, AddressMetadata][] = []) {
+export async function requestAccessFromUser(origin: string, icon: string | undefined, requestAccessToAddress: string | undefined = undefined, addressMetadata: [string, AddressInfoEntry][] = []) {
 	if (window.interceptor.settings === undefined) return false
 
 	// check if we need to ask address access or not. If address is put to never need to have address specific permision, we don't need to ask for it
@@ -132,7 +131,7 @@ export async function requestAccessFromUser(origin: string, icon: string | undef
 			origin: origin,
 			icon: icon,
 			requestAccessToAddress: accessAddress,
-			addressMetadata: addressMetadata,
+			addressBookEntries: addressMetadata,
 		}
 
 		openedInterceptorAccessWindow = await browser.windows.create(

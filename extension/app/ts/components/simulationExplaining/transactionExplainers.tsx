@@ -25,15 +25,15 @@ export function makeYouRichTransaction(param: TransactionVisualizationParameters
 			<header class = 'card-header'>
 				<div class = 'card-header-icon unset-cursor'>
 					<span class = 'icon'>
-						<img src = { param.tx.multicallResponse.statusCode === 'success' ? ( param.tx.simResults && param.tx.simResults.quarantine ? '../img/warning-sign.svg' : '../img/success-icon.svg' ) : '../img/error-icon.svg' } />
+						<img src = { param.tx.statusCode === 'success' ? ( param.tx.quarantine ? '../img/warning-sign.svg' : '../img/success-icon.svg' ) : '../img/error-icon.svg' } />
 					</span>
 				</div>
 				<p class = 'card-header-title'>
 					<p className = 'paragraph'>
-						{ nameTransaction(param.tx, param.simulationAndVisualisationResults.addressMetadata, param.activeAddress) }
+						{ nameTransaction(param.tx, param.activeAddress) }
 					</p>
 				</p>
-				<button class = 'card-header-icon' aria-label = 'remove' onClick = { () => param.removeTransaction(param.tx.signedTransaction.hash) }>
+				<button class = 'card-header-icon' aria-label = 'remove' onClick = { () => param.removeTransaction(param.tx.hash) }>
 					<span class = 'icon' style = 'color: var(--text-color);'> X </span>
 				</button>
 			</header>
@@ -46,12 +46,12 @@ export function makeYouRichTransaction(param: TransactionVisualizationParameters
 							</div>
 							<div class = 'log-cell' style = 'justify-content: right;'>
 								<EtherAmount
-									amount = { param.tx.unsignedTransaction.value }
+									amount = { param.tx.value }
 								/>
 							</div>
 							<div class = 'log-cell'>
 								<EtherSymbol
-									amount = { param.tx.unsignedTransaction.value }
+									amount = { param.tx.value }
 									chain = { param.simulationAndVisualisationResults.chain }
 								/>
 							</div>

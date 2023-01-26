@@ -1,13 +1,15 @@
 import { useState, useEffect } from 'preact/hooks'
-import { AddressMetadata } from '../../utils/visualizer-types.js'
 import { BigAddress } from '../subcomponents/address.js'
 import { AddNewAddress } from './AddNewAddress.js'
+import { AddressInfoEntry, AddressBookEntry } from '../../utils/user-interface-types.js'
+import { ethers } from 'ethers'
+import { addressString } from '../../utils/bigint.js'
 
 interface InterceptorAccessRequest {
-	origin: string,
-	icon: string | undefined,
-	requestAccessToAddress: string | undefined,
-	addressMetadata: Map<string, AddressMetadata>,
+	origin: string
+	icon: string | undefined
+	requestAccessToAddress: AddressInfoEntry | undefined
+	addressMetadata: Map<string, AddressInfoEntry>
 }
 
 export function InterceptorAccess() {
@@ -36,11 +38,22 @@ export function InterceptorAccess() {
 		if( !('interceptorAccessDialog' in backgroundPage.interceptor) || backgroundPage.interceptor.interceptorAccessDialog === undefined) return window.close();
 		const dialog = backgroundPage.interceptor.interceptorAccessDialog
 
-		setAccessRequest( {
+		const metadata = new Map(dialog.addressBookEntries)
+		if (dialog.requestAccessToAddress !== undefined) {
+			const requestAccessToAddress = metadata.get(dialog.requestAccessToAddress)
+			if ( requestAccessToAddress === undefined) throw new Error('metadata missing for requested adress')
+			return setAccessRequest( {
+				origin: dialog.origin,
+				icon: dialog.icon,
+				requestAccessToAddress: requestAccessToAddress,
+				addressMetadata: metadata,
+			})
+		}
+		return setAccessRequest( {
 			origin: dialog.origin,
 			icon: dialog.icon,
-			requestAccessToAddress: dialog.requestAccessToAddress,
-			addressMetadata: new Map(dialog.addressMetadata)
+			requestAccessToAddress: undefined,
+			addressMetadata: metadata,
 		})
 	}
 
@@ -52,10 +65,10 @@ export function InterceptorAccess() {
 		browser.runtime.sendMessage( { method: 'popup_interceptorAccess', options: { accept: false } } )
 	}
 
-	function renameAddressCallBack(name: string | undefined, address: string) {
+	function renameAddressCallBack(entry: AddressBookEntry) {
 		setEditAddressModelOpen(true)
-		setAddressInput(address)
-		setNameInput(name)
+		setNameInput(entry.name === undefined ? '' : entry.name)
+		setAddressInput(ethers.utils.getAddress(addressString(entry.address)))
 	}
 
 	return (
@@ -130,8 +143,7 @@ export function InterceptorAccess() {
 								</div>
 							</div>
 							<BigAddress
-								address = { BigInt(accessRequest.requestAccessToAddress) }
-								nameAndLogo = { accessRequest.addressMetadata.get(accessRequest.requestAccessToAddress) }
+								addressBookEntry = { accessRequest.requestAccessToAddress }
 								renameAddressCallBack = { renameAddressCallBack }
 							/>
 						</div>
@@ -149,11 +161,10 @@ export function InterceptorAccess() {
 						</header>
 						<div class = 'card-content'>
 							<ul>
-								{ Array.from(accessRequest.addressMetadata.entries()).map( ([address, metadata], index) => (
+								{ Array.from(accessRequest.addressMetadata.entries()).map( ([_address, metadata], index) => (
 									<li style = { `margin: 0px; margin-bottom: ${index < accessRequest.addressMetadata.size - 1  ? '10px;' : '0px'}` }>
 										<BigAddress
-											address = { BigInt(address) }
-											nameAndLogo = { metadata }
+											addressBookEntry = { metadata }
 											renameAddressCallBack = { renameAddressCallBack }
 										/>
 									</li>

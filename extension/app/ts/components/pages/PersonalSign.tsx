@@ -1,13 +1,14 @@
 import { useState, useEffect, useRef } from 'preact/hooks'
-import { bigintToRoundedPrettyDecimalString, stringToUint8Array } from '../../utils/bigint.js'
+import { addressString, bigintToRoundedPrettyDecimalString, stringToUint8Array } from '../../utils/bigint.js'
 import { EthereumAddress } from '../../utils/wire-types.js'
 import { BigAddress, findAddressInfo } from '../subcomponents/address.js'
-import { AddressInfo } from '../../utils/user-interface-types.js'
+import { AddressBookEntry, AddressInfo } from '../../utils/user-interface-types.js'
 import Hint from '../subcomponents/Hint.js'
 import { Error as ErrorComponent} from '../subcomponents/Error.js'
 import { getAddressMetaData } from '../../background/metadataUtils.js'
 import { MOCK_PRIVATE_KEYS_ADDRESS, getChainName } from '../../utils/constants.js'
 import { AddNewAddress } from './AddNewAddress.js'
+import { ethers } from 'ethers'
 
 interface SignRequest {
 	simulationMode: boolean,
@@ -86,10 +87,10 @@ export function PersonalSign() {
 		browser.runtime.sendMessage( { method: 'popup_personalSign', options: { requestId: requestIdToConfirm, accept: false } } )
 	}
 
-	function renameAddressCallBack(name: string | undefined, address: string) {
+	function renameAddressCallBack(entry: AddressBookEntry) {
 		setEditAddressModelOpen(true)
-		setAddressInput(address)
-		setNameInput(name)
+		setNameInput(entry.name === undefined ? '' : entry.name)
+		setAddressInput(ethers.utils.getAddress(addressString(entry.address)))
 	}
 
 	return (
@@ -137,8 +138,12 @@ export function PersonalSign() {
 						</header>
 						<div class = 'card-content'>
 							<BigAddress
-								address = { signRequest.account }
-								nameAndLogo = { { name: signRequest.addressInfo.name, logoUri: undefined } }
+								addressBookEntry = { {
+									type: 'addressInfo' as const,
+									name: signRequest.addressInfo.name,
+									address: signRequest.account,
+									askForAddressAccess: false, // TODO, when getting rid of window.interceptor, make this  address an addressbook entry too
+								} }
 								renameAddressCallBack = { renameAddressCallBack }
 							/>
 						</div>

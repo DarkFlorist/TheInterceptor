@@ -1,6 +1,6 @@
 import { addressString } from '../utils/bigint.js'
-import { AddressInfo } from '../utils/user-interface-types.js'
-import { AddressMetadata, SimulationState, VisualizerResult } from '../utils/visualizer-types.js'
+import { AddressInfoEntry, AddressBookEntry, AddressInfo } from '../utils/user-interface-types.js'
+import { SimulationState, VisualizerResult } from '../utils/visualizer-types.js'
 import { nftMetadata, tokenMetadata, contractMetadata } from '@darkflorist/address-metadata'
 import { ethers } from 'ethers'
 import { Simulator } from '../simulation/simulator.js'
@@ -11,23 +11,40 @@ export function getFullLogoUri(logoURI: string) {
 	return `${ LOGO_URI_PREFIX }/${ logoURI }`
 }
 
-export function getAddressMetaData(address: bigint, addressInfos: readonly AddressInfo[] | undefined) : AddressMetadata {
+export function findAddressInfo(address: bigint, addressInfos: readonly AddressInfo[] | undefined) : AddressInfoEntry{
+	if (addressInfos !== undefined) {
+		for (const info of addressInfos) {
+			if (info.address === address) {
+				return {
+					...info,
+					type: 'addressInfo'
+				}
+			}
+		}
+	}
+	return {
+		type: 'addressInfo' as const,
+		name: ethers.utils.getAddress(addressString(address)),
+		address: address,
+		askForAddressAccess: false,
+	}
+}
+
+export function getAddressMetaData(address: bigint, addressInfos: readonly AddressInfo[] | undefined) : AddressBookEntry {
 	if ( address === MOCK_ADDRESS) {
 		return {
+			address: address,
 			name: 'Ethereum Validator',
 			logoUri: '../../img/contracts/rhino.png',
-			protocol: undefined,
-			metadataSource: 'other',
+			type: 'contact',
 		}
 	}
 	if (addressInfos !== undefined) {
 		for (const info of addressInfos) {
 			if (info.address === address) {
 				return {
-					name: info.name,
-					logoUri: undefined,
-					protocol: undefined,
-					metadataSource: 'addressBook',
+					...info,
+					type: 'addressInfo'
 				}
 			}
 		}
@@ -38,73 +55,72 @@ export function getAddressMetaData(address: bigint, addressInfos: readonly Addre
 	const addressData = contractMetadata.get(addrString)
 	if (addressData) return {
 		...addressData,
+		address: address,
 		logoUri: addressData.logoUri ? `${ getFullLogoUri(addressData.logoUri) }` : undefined,
-		metadataSource: 'contract',
+		type: 'other contract',
 	}
 
 	const tokenData = tokenMetadata.get(addrString)
 	if (tokenData) return {
-		name: tokenData.name,
-		symbol: tokenData.symbol,
+		...tokenData,
+		address: address,
 		logoUri: tokenData.logoUri ? `${ getFullLogoUri(tokenData.logoUri) }` : undefined,
-		protocol: undefined,
-		metadataSource: 'token',
-		decimals: tokenData.decimals,
+		type: 'token',
 	}
 
 	const nftTokenData = nftMetadata.get(addrString)
 	if (nftTokenData) return {
-		name: nftTokenData.name,
-		symbol: nftTokenData.symbol,
+		...nftTokenData,
+		address: address,
 		logoUri: nftTokenData.logoUri ? `${ getFullLogoUri(nftTokenData.logoUri) }` : undefined,
-		metadataSource: 'nft',
-		protocol: undefined,
-		decimals: undefined,
+		type: 'NFT'
 	}
 
 	return {
+		address: address,
 		name: ethers.utils.getAddress(addrString),
-		logoUri: undefined,
-		protocol: undefined,
-		metadataSource: 'other',
+		type: 'contact',
 	}
 }
 
-async function getTokenMetadata(simulator: Simulator, address: bigint) : Promise<AddressMetadata> {
+async function getTokenMetadata(simulator: Simulator, address: bigint) : Promise<AddressBookEntry> {
 	const addrString = addressString(address)
 	const tokenData = tokenMetadata.get(addrString)
 	if (tokenData) return {
-		name: tokenData.name,
-		symbol: tokenData.symbol,
+		...tokenData,
+		address: address,
 		logoUri: tokenData.logoUri ? `${ getFullLogoUri(tokenData.logoUri) }` : undefined,
-		protocol: undefined,
-		metadataSource: 'token',
-		decimals: tokenData.decimals,
+		type: 'token',
 	}
 	const nftTokenData = nftMetadata.get(addrString)
 	if (nftTokenData) return {
-		name: nftTokenData.name,
-		symbol: nftTokenData.symbol,
+		...nftTokenData,
+		address: address,
 		logoUri: nftTokenData.logoUri ? `${ getFullLogoUri(nftTokenData.logoUri) }` : undefined,
-		metadataSource: 'nft',
-		protocol: undefined,
-		decimals: undefined
+		type: 'NFT',
 	}
 	const decimals = simulator === undefined ? undefined : await simulator.ethereum.getTokenDecimals(address).catch(() => {
 		console.log(`could not fetch decimals for ${ address }`)
 		return undefined
 	})
-	return {
+	if (decimals !== undefined) {
+		return {
+			name: ethers.utils.getAddress(addrString),
+			address: BigInt(addrString),
+			symbol: '???',
+			decimals: decimals,
+			type: 'token',
+		}
+	}
+	return { //if we don't know decimals, assume it's NFT
 		name: ethers.utils.getAddress(addrString),
+		address: BigInt(addrString),
 		symbol: '???',
-		protocol: undefined,
-		logoUri: undefined,
-		metadataSource: 'imputed' as const,
-		decimals
+		type: 'NFT',
 	}
 }
 
-export async function getAddressMetadataForVisualiser(simulator: Simulator, visualizerResult: (VisualizerResult | undefined)[], simulationState: SimulationState, addressInfos: readonly AddressInfo[] | undefined) : Promise<[string, AddressMetadata][]> {
+export async function getAddressBookEntriesForVisualiser(simulator: Simulator, visualizerResult: (VisualizerResult | undefined)[], simulationState: SimulationState, addressInfos: readonly AddressInfo[] | undefined) : Promise<[string, AddressBookEntry][]> {
 	let addressesToFetchMetadata: bigint[] = []
 	let tokenAddresses: bigint[] = []
 
@@ -128,12 +144,12 @@ export async function getAddressMetadataForVisualiser(simulator: Simulator, visu
 	const tokenPromises = deDuplicatedTokens.map ( (addr) => getTokenMetadata(simulator, addr))
 	const tokenResolves = await Promise.all(tokenPromises)
 
-	const tokens: [string, AddressMetadata][] = deDuplicatedTokens.map( (addr, index) => [
+	const tokens: [string, AddressBookEntry][] = deDuplicatedTokens.map( (addr, index) => [
 		addressString(addr), tokenResolves[index]]
 	)
 
 	const deDuplicated = new Set<bigint>(addressesToFetchMetadata)
-	const addresses: [string, AddressMetadata][] = Array.from(deDuplicated.values()).filter( (address) => !deDuplicatedTokens.includes(address) ).map( ( address ) =>
+	const addresses: [string, AddressBookEntry][] = Array.from(deDuplicated.values()).filter( (address) => !deDuplicatedTokens.includes(address) ).map( ( address ) =>
 		[addressString(address), getAddressMetaData(address, addressInfos)]
 	)
 

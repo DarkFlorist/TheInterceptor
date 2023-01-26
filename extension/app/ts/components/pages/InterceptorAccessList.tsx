@@ -1,9 +1,9 @@
-import { InterceptorAccessListParams, Page } from '../../utils/user-interface-types.js'
+import { AddressInfoEntry, InterceptorAccessListParams, Page } from '../../utils/user-interface-types.js'
 import { useEffect, useState } from 'preact/hooks'
 import { WebsiteAccess, WebsiteAddressAccess } from '../../background/settings.js'
-import { AddressMetadata } from '../../utils/visualizer-types.js'
 import { SmallAddress } from '../subcomponents/address.js'
 import { CopyToClipboard } from '../subcomponents/CopyToClipboard.js'
+import { ethers } from 'ethers'
 
 interface ModifiedAddressAccess {
 	address: string,
@@ -21,7 +21,7 @@ interface EditableAccess {
 
 export function InterceptorAccessList(param: InterceptorAccessListParams) {
 	const [editableAccessList, setEditableAccessList] = useState<readonly EditableAccess[] | undefined>(undefined)
-	const [metadata, setMetadata] = useState<Map<string, AddressMetadata>>(new Map())
+	const [metadata, setMetadata] = useState<Map<string, AddressInfoEntry> >(new Map())
 
 	function updateEditableAccessList(websiteAccess: readonly WebsiteAccess[] | undefined = undefined) {
 		const newList = websiteAccess ? websiteAccess : param.websiteAccess
@@ -197,8 +197,12 @@ export function InterceptorAccessList(param: InterceptorAccessListParams) {
 													{ websiteAccessAddress.removed ? <p style = 'color: var(--negative-color)' > { `Forgot ${ websiteAccessAddress.address }`} </p> :
 														<div style = 'display: flex; width: 100%; overflow: hidden;'>
 															<SmallAddress
-																address = { BigInt(websiteAccessAddress.address) }
-																nameAndLogo = { metadata.get(websiteAccessAddress.address) }
+																addressBookEntry = { metadata.get(websiteAccessAddress.address) || { // TODO, refactor away when we are using messaging instead of globals for these
+																	type: 'addressInfo',
+																	name: ethers.utils.getAddress(websiteAccessAddress.address),
+																	address: BigInt(websiteAccessAddress.address),
+																	askForAddressAccess: false
+																}}
 																renameAddressCallBack = { param.renameAddressCallBack }
 															/>
 															<div style = 'margin-left: auto; flex-shrink: 0; display: flex'>

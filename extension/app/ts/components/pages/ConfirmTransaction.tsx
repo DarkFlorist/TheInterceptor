@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'preact/hooks'
 import { SignerName } from '../../utils/interceptor-messages.js'
-import { SimulatedAndVisualizedTransaction, SimulationAndVisualisationResults } from '../../utils/visualizer-types.js'
+import { SimulationAndVisualisationResults } from '../../utils/visualizer-types.js'
 import { ErrorCheckBox } from '../subcomponents/Error.js'
 import Hint from '../subcomponents/Hint.js'
 import { SimulationSummary } from '../simulationExplaining/SimulationSummary.js'
@@ -8,6 +8,10 @@ import { Transactions } from '../simulationExplaining/Transactions.js'
 import { Spinner } from '../subcomponents/Spinner.js'
 import { getSignerName, SignerLogoText } from '../subcomponents/signers.js'
 import { AddNewAddress } from './AddNewAddress.js'
+import { AddressBookEntry } from '../../utils/user-interface-types.js'
+import { ethers } from 'ethers'
+import { addressString } from '../../utils/bigint.js'
+import { formSimulatedAndVisualizedTransaction } from '../formVisualizerResults.js'
 
 export function ConfirmTransaction() {
 	const [requestIdToConfirm, setRequestIdToConfirm] = useState<number | undefined>(undefined)
@@ -46,24 +50,22 @@ export function ConfirmTransaction() {
 		const dialog = backgroundPage.interceptor.confirmTransactionDialog
 		if (dialog === undefined || dialog.simulationState === undefined || dialog.visualizerResults === undefined) return setSimulationAndVisualisationResults(undefined)
 
-		const txs: SimulatedAndVisualizedTransaction[] = dialog.simulationState.simulatedTransactions.map( (x, index) => ({
-			...x,
-			simResults: dialog.visualizerResults === undefined ? undefined : dialog.visualizerResults[index],
-		}) )
-
+		const simState = dialog.simulationState
 		setCurrentBlockNumber(backgroundPage.interceptor.currentBlockNumber)
 
+		const addressMetaData = new Map(dialog.addressBookEntries.map( (x) => [x[0], x[1]]))
+		const txs = formSimulatedAndVisualizedTransaction(simState, dialog.visualizerResults, addressMetaData)
 		setSimulationAndVisualisationResults( {
-			blockNumber: dialog.simulationState.blockNumber,
-			blockTimestamp: dialog.simulationState.blockTimestamp,
-			isComputingSimulation: dialog.isComputingSimulation,
-			simulationConductedTimestamp: dialog.simulationState.simulationConductedTimestamp,
+			blockNumber: simState.blockNumber,
+			blockTimestamp: simState.blockTimestamp,
+			simulationConductedTimestamp: simState.simulationConductedTimestamp,
 			simulatedAndVisualizedTransactions: txs,
-			addressMetadata: new Map(dialog.addressMetadata.map( (x) => [x[0], x[1]])),
-			chain: dialog.simulationState.chain,
+			chain: simState.chain,
 			tokenPrices: dialog.tokenPrices,
 			activeAddress: dialog.activeAddress,
 			simulationMode: dialog.simulationMode,
+			isComputingSimulation: dialog.isComputingSimulation,
+			addressMetaData: addressMetaData,
 		})
 	}
 
@@ -83,15 +85,15 @@ export function ConfirmTransaction() {
 
 	function isConfirmDisabled() {
 		if (forceSend) return false
-		const success = simulationAndVisualisationResults && simulationAndVisualisationResults.simulatedAndVisualizedTransactions[simulationAndVisualisationResults.simulatedAndVisualizedTransactions.length - 1 ].multicallResponse.statusCode === 'success'
-		const noQuarantines = simulationAndVisualisationResults && simulationAndVisualisationResults.simulatedAndVisualizedTransactions.find( (x) => (x.simResults && x.simResults.quarantine)) === undefined
+		const success = simulationAndVisualisationResults && simulationAndVisualisationResults.simulatedAndVisualizedTransactions[simulationAndVisualisationResults.simulatedAndVisualizedTransactions.length - 1 ].statusCode === 'success'
+		const noQuarantines = simulationAndVisualisationResults && simulationAndVisualisationResults.simulatedAndVisualizedTransactions.find( (x) => x.quarantine) === undefined
 		return !success || !noQuarantines
 	}
 
-	function renameAddressCallBack(name: string | undefined, address: string) {
+	function renameAddressCallBack(entry: AddressBookEntry) {
 		setEditAddressModelOpen(true)
-		setAddressInput(address)
-		setNameInput(name)
+		setNameInput(entry.name === undefined ? '' : entry.name)
+		setAddressInput(ethers.utils.getAddress(addressString(entry.address)))
 	}
 
 	return (
@@ -128,12 +130,12 @@ export function ConfirmTransaction() {
 								renameAddressCallBack = { renameAddressCallBack }
 							/>
 							<div className = 'block' style = 'margin: 10px; padding: 10px; background-color: var(--card-bg-color);'>
-								{ simulationAndVisualisationResults && simulationAndVisualisationResults.simulatedAndVisualizedTransactions[simulationAndVisualisationResults.simulatedAndVisualizedTransactions.length - 1 ].multicallResponse.statusCode === 'success' ? <></> :
+								{ simulationAndVisualisationResults && simulationAndVisualisationResults.simulatedAndVisualizedTransactions[simulationAndVisualisationResults.simulatedAndVisualizedTransactions.length - 1 ].statusCode === 'success' ? <></> :
 									<div class = 'card-content'>
 										<ErrorCheckBox text = { 'I understand that the transaction will most likely fail but I want to send it anyway.' } checked = { forceSend } onInput = { setForceSend } />
 									</div>
 								}
-								{ simulationAndVisualisationResults && simulationAndVisualisationResults.simulatedAndVisualizedTransactions[simulationAndVisualisationResults.simulatedAndVisualizedTransactions.length - 1 ].simResults?.quarantine !== true ? <></> :
+								{ simulationAndVisualisationResults && simulationAndVisualisationResults.simulatedAndVisualizedTransactions[simulationAndVisualisationResults.simulatedAndVisualizedTransactions.length - 1 ].quarantine !== true ? <></> :
 									<div class = 'card-content'>
 										<ErrorCheckBox text = { 'I understand that there are issues with this transaction but I want to send it anyway against Interceptors recommendations.' } checked = { forceSend } onInput = { setForceSend } />
 									</div>

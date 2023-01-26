@@ -5,13 +5,13 @@ import { EIP2612Message, EthereumQuantity, EthereumUnsignedTransaction, Personal
 import { getSettings, saveActiveChain, saveActiveSigningAddress, saveActiveSimulationAddress, Settings } from './settings.js'
 import { blockNumber, call, chainId, estimateGas, gasPrice, getAccounts, getBalance, getBlockByNumber, getCode, getPermissions, getSimulationStack, getTransactionByHash, getTransactionCount, getTransactionReceipt, personalSign, requestPermissions, sendTransaction, signTypedDataV4, subscribe, switchEthereumChain, unsubscribe } from './simulationModeHanders.js'
 import { changeActiveAddress, changeAddressInfos, changeMakeMeRich, changePage, resetSimulation, confirmDialog, RefreshSimulation, removeTransaction, requestAccountsFromSigner, refreshPopupConfirmTransactionSimulation, confirmPersonalSign, confirmRequestAccess, changeInterceptorAccess, changeChainDialog, popupChangeActiveChain, enableSimulationMode, reviewNotification, rejectNotification, addOrModifyAddressInfo, getAddressBookData, removeAddressBookEntry } from './popupMessageHandlers.js'
-import { AddressMetadata, SimResults, SimulationState, TokenPriceEstimate } from '../utils/visualizer-types.js'
-import { WebsiteApproval, SignerState, TabConnection } from '../utils/user-interface-types.js'
+import { SimResults, SimulationState, TokenPriceEstimate } from '../utils/visualizer-types.js'
+import { WebsiteApproval, SignerState, TabConnection, AddressBookEntry, AddressInfoEntry } from '../utils/user-interface-types.js'
 import { getAddressMetadataForAccess, setPendingAccessRequests } from './windows/interceptorAccess.js'
 import { CHAINS, ICON_NOT_ACTIVE, isSupportedChain, MAKE_YOU_RICH_TRANSACTION, METAMASK_ERROR_USER_REJECTED_REQUEST } from '../utils/constants.js'
 import { PriceEstimator } from '../simulation/priceEstimator.js'
 import { getActiveAddressForDomain, sendActiveAccountChangeToApprovedWebsitePorts, sendMessageToApprovedWebsitePorts, updateWebsiteApprovalAccesses, verifyAccess } from './accessManagement.js'
-import { getAddressMetadataForVisualiser } from './metadataUtils.js'
+import { getAddressBookEntriesForVisualiser } from './metadataUtils.js'
 import { getActiveAddress, sendPopupMessageToOpenWindows } from './backgroundUtils.js'
 import { updateExtensionIcon } from './iconHandler.js'
 import { connectedToSigner, ethAccountsReply, signerChainChanged, walletSwitchEthereumChainReply } from './providerMessageHandlers.js'
@@ -36,7 +36,7 @@ declare global {
 				simulationState: SimulationState | undefined,
 				isComputingSimulation: boolean,
 				visualizerResults: SimResults[] | undefined,
-				addressMetadata: [string, AddressMetadata][],
+				addressBookEntries: [string, AddressBookEntry][],
 				tokenPrices: TokenPriceEstimate[],
 				activeAddress: bigint,
 			}
@@ -46,14 +46,14 @@ declare global {
 				message: string,
 				account: string,
 				method: 'personalSign' | 'v4',
-				addressMetadata: [string, AddressMetadata][],
+				addressBookEntries: [string, AddressBookEntry][],
 				eip2612Message?: EIP2612Message,
 			}
 			interceptorAccessDialog?: {
 				origin: string,
 				icon: string | undefined,
 				requestAccessToAddress: string | undefined,
-				addressMetadata: [string, AddressMetadata][],
+				addressBookEntries: [string, AddressInfoEntry][],
 			}
 			changeChainDialog?: {
 				requestId: number,
@@ -67,11 +67,11 @@ declare global {
 				simulationState: SimulationState | undefined,
 				isComputingSimulation: boolean,
 				visualizerResults: SimResults[] | undefined,
-				addressMetadata: [string, AddressMetadata][],
+				addressBookEntries: [string, AddressBookEntry][],
 				tokenPrices: TokenPriceEstimate[],
 			}
-			websiteAccessAddressMetadata: [string, AddressMetadata][],
-			pendingAccessMetadata: [string, AddressMetadata][],
+			websiteAccessAddressMetadata: [string, AddressInfoEntry][],
+			pendingAccessMetadata: [string, AddressInfoEntry][],
 			prependTransactionMode: PrependTransactionMode,
 			signerAccounts: readonly bigint[] | undefined,
 			signerChain: bigint | undefined,
@@ -103,7 +103,7 @@ window.interceptor = {
 		simulationState: undefined,
 		isComputingSimulation: false,
 		visualizerResults: undefined,
-		addressMetadata: [],
+		addressBookEntries: [],
 		tokenPrices: [],
 	},
 	currentBlockNumber: undefined,
@@ -120,7 +120,7 @@ export async function updateSimulationState( getUpdatedSimulationState: () => Pr
 				simulationId: window.interceptor.simulation.simulationId,
 				simulationState: undefined,
 				isComputingSimulation: false,
-				addressMetadata: [],
+				addressBookEntries: [],
 				tokenPrices: [],
 				visualizerResults: [],
 			}
@@ -136,24 +136,24 @@ export async function updateSimulationState( getUpdatedSimulationState: () => Pr
 
 			const transactions = updatedSimulationState.simulatedTransactions.map(x => x.unsignedTransaction)
 			const visualizerResult = await simulator.visualizeTransactionChain(transactions, updatedSimulationState.blockNumber, updatedSimulationState.simulatedTransactions.map( x => x.multicallResponse))
-			const addressMetadata = await getAddressMetadataForVisualiser(simulator, visualizerResult.map( (x) => x.visualizerResults), updatedSimulationState, window.interceptor.settings?.addressInfos)
+			const addressBookEntries = await getAddressBookEntriesForVisualiser(simulator, visualizerResult.map( (x) => x.visualizerResults), updatedSimulationState, window.interceptor.settings?.addressInfos)
 
-			function onlyTokensAndTokensWithKnownDecimals(metadata: [string, AddressMetadata]) : metadata is [string, AddressMetadata & { metadataSource: 'token', decimals: `0x${ string }` } ] {
-				if (metadata[1].metadataSource !== 'token') return false
+			function onlyTokensAndTokensWithKnownDecimals(metadata: [string, AddressBookEntry]) : metadata is [string, AddressBookEntry & { type: 'token', decimals: `0x${ string }` } ] {
+				if (metadata[1].type !== 'token') return false
 				if (metadata[1].decimals === undefined) return false
 				return true
 			}
-			function metadataRestructure([address, metadata]: [string, AddressMetadata & { metadataSource: 'token', decimals: bigint } ] ) {
+			function metadataRestructure([address, metadata]: [string, AddressBookEntry &  { type: 'token', decimals: bigint } ] ) {
 				return { token: BigInt(address), decimals: BigInt(metadata.decimals) }
 			}
-			const tokenPrices = await priceEstimator.estimateEthereumPricesForTokens(addressMetadata.filter(onlyTokensAndTokensWithKnownDecimals).map(metadataRestructure))
+			const tokenPrices = await priceEstimator.estimateEthereumPricesForTokens(addressBookEntries.filter(onlyTokensAndTokensWithKnownDecimals).map(metadataRestructure))
 
 			if (simId !== window.interceptor.simulation.simulationId) return // do not update state if we are already calculating a new one
 
 			window.interceptor.simulation = {
 				simulationId: window.interceptor.simulation.simulationId,
 				tokenPrices: tokenPrices,
-				addressMetadata: addressMetadata,
+				addressBookEntries: addressBookEntries,
 				visualizerResults: visualizerResult,
 				simulationState: updatedSimulationState,
 				isComputingSimulation: false,
@@ -161,7 +161,7 @@ export async function updateSimulationState( getUpdatedSimulationState: () => Pr
 		} else {
 			window.interceptor.simulation = {
 				simulationId: window.interceptor.simulation.simulationId,
-				addressMetadata: [],
+				addressBookEntries: [],
 				tokenPrices: [],
 				visualizerResults: [],
 				simulationState: updatedSimulationState,
@@ -193,10 +193,10 @@ export async function refreshConfirmTransactionSimulation() {
 	const appended = await newSimulator.appendTransaction(EthereumUnsignedTransaction.parse(window.interceptor.confirmTransactionDialog.transactionToSimulate))
 	const transactions = appended.simulationState.simulatedTransactions.map(x => x.unsignedTransaction)
 	const visualizerResult = await simulator.visualizeTransactionChain(transactions, appended.simulationState.blockNumber, appended.simulationState.simulatedTransactions.map( x => x.multicallResponse))
-	const addressMetadata = await getAddressMetadataForVisualiser(simulator, visualizerResult.map( (x) => x.visualizerResults), appended.simulationState, window.interceptor.settings?.addressInfos)
+	const addressMetadata = await getAddressBookEntriesForVisualiser(simulator, visualizerResult.map( (x) => x.visualizerResults), appended.simulationState, window.interceptor.settings?.addressInfos)
 	const tokenPrices = await priceEstimator.estimateEthereumPricesForTokens(
 		addressMetadata.map(
-			(x) => x[1].metadataSource === 'token' && x[1].decimals !== undefined ? { token: BigInt(x[0]), decimals: x[1].decimals } : { token: 0x0n, decimals: 0x0n }
+			(x) => x[1].type === 'token' && x[1].decimals !== undefined ? { token: BigInt(x[0]), decimals: x[1].decimals } : { token: 0x0n, decimals: 0x0n }
 		).filter( (x) => x.token !== 0x0n )
 	)
 
@@ -204,7 +204,7 @@ export async function refreshConfirmTransactionSimulation() {
 
 	window.interceptor.confirmTransactionDialog.tokenPrices = tokenPrices
 	window.interceptor.confirmTransactionDialog.simulationState = appended.simulationState
-	window.interceptor.confirmTransactionDialog.addressMetadata = addressMetadata
+	window.interceptor.confirmTransactionDialog.addressBookEntries = addressMetadata
 	window.interceptor.confirmTransactionDialog.visualizerResults = visualizerResult
 	window.interceptor.confirmTransactionDialog.isComputingSimulation = false
 	sendPopupMessageToOpenWindows({ message: 'popup_confirm_transaction_simulation_state_changed' })
