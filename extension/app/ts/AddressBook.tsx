@@ -103,7 +103,7 @@ export function ListElement(entry: ListElementParam) {
 							{ entry.type === 'empty' ? <></> :
 								<BigAddress
 									addressBookEntry = { { ...entry, ...{ name: `${ entry.name } ${ 'symbol' in entry ? `(${ entry.symbol })` : '' }`} } }
-									noCopying = { true }
+									noCopying = { false }
 									renameAddressCallBack = { entry.renameAddressCallBack }
 								/>
 							}
