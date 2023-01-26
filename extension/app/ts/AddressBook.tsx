@@ -5,7 +5,6 @@ import { GetAddressBookDataReply, MessageToPopup } from './utils/interceptor-mes
 import { arrayToChunks } from './utils/typed-arrays.js'
 import { AddNewAddress } from './components/pages/AddNewAddress.js'
 import { BigAddress } from './components/subcomponents/address.js'
-import { ethers } from 'ethers'
 import Hint from './components/subcomponents/Hint.js'
 
 type Modals = 'noModal' | 'addNewAddress' | 'ConfirmaddressBookEntryToBeRemoved'
@@ -133,7 +132,7 @@ export function ListElement(entry: ListElementParam) {
 						<button class = 'card-header-icon' style = 'padding: 0px; margin-left: auto;' aria-label = 'delete'>
 							<span class = 'icon' style = 'color: var(--text-color);' onClick = { entry.type != 'empty' && entry.category === 'My Active Addresses' ? () => entry.removeEntry(entry) : () => {} }> X </span>
 						</button>
-						<button class = 'button is-primary is-small' disabled = { true } onClick = { entry.type != 'empty' ? () => entry.renameAddressCallBack(entry) : () => {} }>Edit</button>
+						<button class = 'button is-primary is-small' disabled = { entry.type !== 'addressInfo' && entry.type !== 'empty' } onClick = { entry.type != 'empty' ? () => entry.renameAddressCallBack(entry) : () => {} }>Edit</button>
 					</div>
 				</div>
 			</div>
@@ -186,9 +185,7 @@ export function AddressBook() {
 	const searchStringRef = useRef<string | undefined>(searchString)
 	const currentPageRef = useRef<number>(currentPage)
 
-
-	const [nameInput, setNameInput] = useState<string | undefined>(undefined)
-	const [addressInput, setAddressInput] = useState<string | undefined>(undefined)
+	const [addressBookEntryInput, setAddressBookEntryInput] = useState<AddressBookEntry | undefined>(undefined)
 	const [addingNewAddress, setAddingNewAddress] = useState<boolean>(false)
 
 	const scrollTimer = useRef<NodeJS.Timeout | undefined>(undefined)
@@ -335,8 +332,7 @@ export function AddressBook() {
 
 	function openNewAddress() {
 		setModalState('addNewAddress')
-		setNameInput(undefined)
-		setAddressInput(undefined)
+		setAddressBookEntryInput(undefined)
 		setAddingNewAddress(true)
 	}
 
@@ -347,8 +343,7 @@ export function AddressBook() {
 
 	function renameAddressCallBack(entry: AddressBookEntry) {
 		setModalState('addNewAddress')
-		setNameInput(entry.name === undefined ? '' : entry.name)
-		setAddressInput(ethers.utils.getAddress(addressString(entry.address)))
+		setAddressBookEntryInput(entry)
 		setAddingNewAddress(false)
 	}
 
@@ -409,11 +404,9 @@ export function AddressBook() {
 					{ modalState === 'addNewAddress' ?
 						<AddNewAddress
 							setActiveAddressAndInformAboutIt = { undefined }
-							addressInput = { addressInput }
-							nameInput = { nameInput }
+							addressBookEntry = { addressBookEntryInput }
+							setAddressBookEntryInput = { setAddressBookEntryInput }
 							addingNewAddress = { addingNewAddress }
-							setAddressInput = { setAddressInput }
-							setNameInput = { setNameInput }
 							close = { () => setModalState('noModal') }
 							activeAddress = { undefined }
 						/>

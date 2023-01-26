@@ -2,8 +2,6 @@ import { useState, useEffect } from 'preact/hooks'
 import { BigAddress } from '../subcomponents/address.js'
 import { AddNewAddress } from './AddNewAddress.js'
 import { AddressInfoEntry, AddressBookEntry } from '../../utils/user-interface-types.js'
-import { ethers } from 'ethers'
-import { addressString } from '../../utils/bigint.js'
 
 interface InterceptorAccessRequest {
 	origin: string
@@ -15,8 +13,7 @@ interface InterceptorAccessRequest {
 export function InterceptorAccess() {
 	const [accessRequest, setAccessRequest] = useState<InterceptorAccessRequest | undefined>(undefined)
 	const [isEditAddressModelOpen, setEditAddressModelOpen] = useState<boolean>(false)
-	const [addressInput, setAddressInput] = useState<string | undefined>(undefined)
-	const [nameInput, setNameInput] = useState<string | undefined>(undefined)
+	const [addressBookEntryInput, setAddressBookEntryInput] = useState<AddressBookEntry | undefined>(undefined)
 
 	useEffect( () => {
 		function popupMessageListener(msg: unknown) {
@@ -67,8 +64,7 @@ export function InterceptorAccess() {
 
 	function renameAddressCallBack(entry: AddressBookEntry) {
 		setEditAddressModelOpen(true)
-		setNameInput(entry.name === undefined ? '' : entry.name)
-		setAddressInput(ethers.utils.getAddress(addressString(entry.address)))
+		setAddressBookEntryInput(entry)
 	}
 
 	return (
@@ -76,11 +72,9 @@ export function InterceptorAccess() {
 			<div class = { `modal ${ isEditAddressModelOpen? 'is-active' : ''}` }>
 				<AddNewAddress
 					setActiveAddressAndInformAboutIt = { undefined }
-					addressInput = { addressInput }
-					nameInput = { nameInput }
+					addressBookEntry = { addressBookEntryInput }
+					setAddressBookEntryInput = { setAddressBookEntryInput }
 					addingNewAddress = { false }
-					setAddressInput = { setAddressInput }
-					setNameInput = { setNameInput }
 					close = { () => { setEditAddressModelOpen(false) } }
 					activeAddress = { undefined }
 				/>
