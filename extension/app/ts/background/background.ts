@@ -143,7 +143,7 @@ export async function updateSimulationState( getUpdatedSimulationState: () => Pr
 				if (metadata[1].decimals === undefined) return false
 				return true
 			}
-			function metadataRestructure([address, metadata]: [string, AddressBookEntry & { decimals: bigint } ] ) {
+			function metadataRestructure([address, metadata]: [string, AddressBookEntry &  { type: 'token', decimals: bigint } ] ) {
 				return { token: BigInt(address), decimals: BigInt(metadata.decimals) }
 			}
 			const tokenPrices = await priceEstimator.estimateEthereumPricesForTokens(addressBookEntries.filter(onlyTokensAndTokensWithKnownDecimals).map(metadataRestructure))

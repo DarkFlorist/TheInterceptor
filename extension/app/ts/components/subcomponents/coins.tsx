@@ -91,8 +91,8 @@ export function TokenPrice(param: TokenPriceParams) {
 type TokenSymbolParams = {
 	textColor?: string,
 	tokenName: string
-    tokenAddress: bigint
-    tokenSymbol: string
+	tokenAddress: bigint
+	tokenSymbol: string
 	tokenLogoUri: string | undefined
 
 	useFullTokenName: boolean | undefined
@@ -167,7 +167,7 @@ export function Token(param: TokenParams) {
 			/>
 		</div>
 		<div class = 'log-cell'>
-			<TokenSymbol { ... param}/>
+			<TokenSymbol { ... param }/>
 		</div>
 	</table>
 }
@@ -203,7 +203,7 @@ type ERC721TokenParams = ERC721TokenDefinitionParams & {
 export function ERC721Token(param: ERC721TokenParams) {
 	return <table class = 'log-table'>
 		<div class = 'log-cell' style = 'justify-content: right;'>
-			<ERC721TokenNumber { ... param}/>
+			<ERC721TokenNumber { ... param }/>
 		</div>
 		<div class = 'log-cell'>
 			<TokenSymbol { ...param }/>

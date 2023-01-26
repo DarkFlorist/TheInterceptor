@@ -133,7 +133,7 @@ export function ListElement(entry: ListElementParam) {
 						<button class = 'card-header-icon' style = 'padding: 0px; margin-left: auto;' aria-label = 'delete'>
 							<span class = 'icon' style = 'color: var(--text-color);' onClick = { entry.type != 'empty' && entry.category === 'My Active Addresses' ? () => entry.removeEntry(entry) : () => {} }> X </span>
 						</button>
-						<button class = 'button is-primary is-small' onClick = { entry.type != 'empty' ? () => entry.renameAddressCallBack(entry) : () => {} }>Edit</button>
+						<button class = 'button is-primary is-small' disabled = { true } onClick = { entry.type != 'empty' ? () => entry.renameAddressCallBack(entry) : () => {} }>Edit</button>
 					</div>
 				</div>
 			</div>

@@ -181,18 +181,6 @@ function SendOrReceiveTokensImportanceBox(param: SendOrReceiveTokensImportanceBo
 								useFullTokenName = { false }
 							/>
 						</div>
-						<div class = 'log-cell'>
-							<p class = 'ellipsis' style = { `color: ${ param.textColor }; margin-bottom: 0px; display: inline-block` }>
-								&nbsp;{ param.sending ? 'to' : 'from' }&nbsp;
-							</p>
-						</div>
-						<div class = 'log-cell'>
-							<SmallAddress
-								addressBookEntry = { tokenEvent.to }
-								textColor = { param.textColor }
-								renameAddressCallBack = { param.renameAddressCallBack }
-							/>
-						</div>
 					</table>
 				</div>
 			</div>
@@ -224,8 +212,7 @@ function TransactionImportanceBlock( param: TransactionImportanceBlockParams ) {
 	const sendingTokenResults = param.tx.tokenResults.filter( (x) => x.from.address === msgSender)
 	const receivingTokenResults = param.tx.tokenResults.filter( (x) => x.to.address === msgSender)
 
-	// tokenApprovalChanges: Map<string, Map<string, bigint > > // token address, approved address, amount
-	const tokenApprovalChanges: TokenApprovalChange[] = sendingTokenResults.filter((x): x is TokenVisualizerERC20Event  => x.isApproval && !('isAllApproval' in x)).map((entry) => {
+	const erc20tokenApprovalChanges: TokenApprovalChange[] = sendingTokenResults.filter((x): x is TokenVisualizerERC20Event  => x.isApproval && !x.is721).map((entry) => {
 		return {
 			tokenName: entry.token.name,
 			tokenAddress: entry.token.address,
@@ -236,7 +223,7 @@ function TransactionImportanceBlock( param: TransactionImportanceBlockParams ) {
 		}
 	})
 
-	const operatorChanges: ERC721OperatorChange[] = sendingTokenResults.filter((x): x is TokenVisualizerERC721AllApprovalEvent  => 'isAllApproval' in x).map((entry) => {
+	const operatorChanges: ERC721OperatorChange[] = sendingTokenResults.filter((x): x is TokenVisualizerERC721AllApprovalEvent  => 'isAllApproval' in x && x.is721).map((entry) => {
 		return {
 			tokenName: entry.token.name,
 			tokenAddress: entry.token.address,
@@ -247,7 +234,7 @@ function TransactionImportanceBlock( param: TransactionImportanceBlockParams ) {
 	})
 
 	// token address, tokenId, approved address
-	const tokenIdApprovalChanges: ERC721TokenApprovalChange[] = sendingTokenResults.filter((x): x is TokenVisualizerERC721Event  => 'tokenId' in x).map((entry) => {
+	const tokenIdApprovalChanges: ERC721TokenApprovalChange[] = sendingTokenResults.filter((x): x is TokenVisualizerERC721Event  => 'tokenId' in x && x.isApproval).map((entry) => {
 		return {
 			token: {
 				tokenId: entry.tokenId,
@@ -280,7 +267,7 @@ function TransactionImportanceBlock( param: TransactionImportanceBlockParams ) {
 
 		{ /* us approving other addresses */ }
 		<Erc20ApprovalChanges
-			tokenApprovalChanges = { tokenApprovalChanges }
+			tokenApprovalChanges = { erc20tokenApprovalChanges }
 			textColor = { textColor }
 			negativeColor = { textColor }
 			isImportant = { true }
@@ -303,7 +290,7 @@ function TransactionImportanceBlock( param: TransactionImportanceBlockParams ) {
 
 		{ /* receiving tokens */ }
 		<SendOrReceiveTokensImportanceBox
-			tokenVisualizerResults = { receivingTokenResults?.filter( (x) => !x.isApproval) }
+			tokenVisualizerResults = { receivingTokenResults.filter( (x) => !x.isApproval) }
 			sending = { false }
 			textColor = { textColor }
 			renameAddressCallBack = { param.renameAddressCallBack }
