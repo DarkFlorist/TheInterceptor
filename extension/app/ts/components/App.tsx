@@ -145,7 +145,7 @@ export function App() {
 
 	function setAndSaveAppPage(page: Page) {
 		setAppPage(page)
-		browser.runtime.sendMessage( { method: 'popup_changePage', options: page } );
+		browser.runtime.sendMessage( { method: 'popup_changePage', options: page } )
 	}
 
 	async function addressPaste(address: string) {
@@ -176,7 +176,8 @@ export function App() {
 	}
 
 	function openAddressBook() {
-		browser.tabs.create({ url: '../html/addressBook.html' })
+		browser.runtime.sendMessage( { method: 'popup_openAddressBook' } )
+		return window.close() // close extension popup, chrome closes it by default, but firefox does not
 	}
 
 	return (

@@ -248,6 +248,11 @@ export const GetAddressBookData = funtypes.Object({
 	options: GetAddressBookDataFilter,
 }).asReadonly()
 
+export type OpenAddressBook = funtypes.Static<typeof OpenAddressBook>
+export const OpenAddressBook = funtypes.Object({
+	method: funtypes.Literal('popup_openAddressBook'),
+}).asReadonly()
+
 export type GetAddressBookDataReplyData = funtypes.Static<typeof GetAddressBookDataReplyData>
 export const GetAddressBookDataReplyData = funtypes.Object({
 	options: GetAddressBookDataFilter,
@@ -285,6 +290,7 @@ export const PopupMessage = funtypes.Union(
 	AddOrModifyAddresInfo,
 	GetAddressBookData,
 	RemoveAddressBookEntry,
+	OpenAddressBook,
 )
 
 export const MessageToPopupSimple = funtypes.Object({
@@ -323,3 +329,8 @@ export type HandleSimulationModeReturnValue = {
 } | {
 	forward: true,
 }
+
+export type AddressBookTabIdSetting = funtypes.Static<typeof AddressBookTabIdSetting>
+export const AddressBookTabIdSetting = funtypes.Object({
+	addressbookTabId: funtypes.Number,
+}).asReadonly()

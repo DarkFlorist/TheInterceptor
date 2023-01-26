@@ -1,5 +1,5 @@
 import { changeActiveAddressAndChainAndResetSimulation, changeActiveChain, PrependTransactionMode, refreshConfirmTransactionSimulation, updatePrependMode, updateSimulationState } from './background.js'
-import { saveAddressInfos, saveMakeMeRich, savePage, saveSimulationMode, saveUseSignersAddressAsActiveAddress, saveWebsiteAccess } from './settings.js'
+import { getOpenedAddressBookTabId, saveAddressInfos, saveMakeMeRich, saveOpenedAddressBookTabId, savePage, saveSimulationMode, saveUseSignersAddressAsActiveAddress, saveWebsiteAccess } from './settings.js'
 import { Simulator } from '../simulation/simulator.js'
 import { ChangeActiveAddress, ChangeAddressInfos, ChangeMakeMeRich, ChangePage, PersonalSign, PopupMessage, RemoveTransaction, RequestAccountsFromSigner, TransactionConfirmation, InterceptorAccess, ChangeInterceptorAccess, ChainChangeConfirmation, EnableSimulationMode, ReviewNotification, RejectNotification, ChangeActiveChain, AddOrModifyAddresInfo, GetAddressBookData, RemoveAddressBookEntry } from '../utils/interceptor-messages.js'
 import { resolvePendingTransaction } from './windows/confirmTransaction.js'
@@ -210,4 +210,21 @@ export async function getAddressBookData(_simulator: Simulator, payload: PopupMe
 			maxDataLength: data.maxDataLength,
 		}
 	})
+}
+
+export async function openAddressBook(_simulator: Simulator, _payload: PopupMessage) {
+	const html = '/html/addressBook.html'
+
+	const openInNewTab = async () => {
+		const tab = await browser.tabs.create({ url: `..${ html }` })
+		if (tab.id !== undefined) saveOpenedAddressBookTabId(tab.id)
+	}
+
+	const tabId = await getOpenedAddressBookTabId()
+	if (tabId === undefined) return await openInNewTab()
+	const allTabs = await browser.tabs.query({})
+	const addressBookTab = allTabs.find((tab) => tab.id === tabId)
+
+	if (addressBookTab?.id === undefined) return await openInNewTab()
+	return await browser.tabs.update(addressBookTab.id, { active: true })
 }
