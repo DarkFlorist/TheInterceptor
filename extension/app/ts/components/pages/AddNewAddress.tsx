@@ -1,10 +1,11 @@
 import { ethers } from 'ethers'
 import { useEffect, useState } from 'preact/hooks'
 import { EthereumAddress } from '../../utils/wire-types.js'
-import { AddAddressParam } from '../../utils/user-interface-types.js'
+import { AddAddressParam, AddressBookEntry } from '../../utils/user-interface-types.js'
 import Blockie from '../subcomponents/PreactBlocky.js'
 import { Notice } from '../subcomponents/Error.js'
 import { getIssueWithAddressString } from '../ui-utils.js'
+import { addressString } from '../../utils/bigint.js'
 
 export function AddNewAddress(param: AddAddressParam) {
 	const [addressInput, setAddressInput] = useState<string | undefined>(undefined)
@@ -12,20 +13,24 @@ export function AddNewAddress(param: AddAddressParam) {
 	const [askForAddressAccess, setAskForAddressAccess] = useState<boolean>(true)
 	const [errorString, setErrorString] = useState<string | undefined>(undefined)
 	const [activeAddress, setActiveAddress] = useState<bigint | undefined>(undefined)
+	const [addresBookEntryInput, setAddressBookEntryInput] = useState<AddressBookEntry | undefined>(undefined)
+	const [addressType, setAddressType] = useState<'contact' | 'addressInfo' | 'token' | 'NFT' | 'other contract'>('addressInfo')
 
 	function add() {
 		if (addressInput === undefined) return
 		if (!areInputValid()) return
 		param.close()
 		const newEntry = {
+			...addresBookEntryInput,
 			name: nameInput ? nameInput: ethers.utils.getAddress(addressInput),
 			address: EthereumAddress.serialize(BigInt(addressInput)),
 			askForAddressAccess: askForAddressAccess,
 		}
-		browser.runtime.sendMessage( { method: 'popup_addOrModifyAddressInfo', options: [newEntry] } )
+		browser.runtime.sendMessage( { method: 'popup_addOrModifyAddressBookEntry', options: [newEntry] } )
 
 		setAddress(undefined)
 		setNameInput(undefined)
+		setAskForAddressAccess(true)
 	}
 
 	function createAndSwitch() {
@@ -36,10 +41,20 @@ export function AddNewAddress(param: AddAddressParam) {
 	}
 
 	useEffect( () => {
-		setAddress(param.addressInput)
-		setNameInput(param.nameInput)
+		if (param.addressBookEntry !== undefined) {
+			setAddressInput(ethers.utils.getAddress(addressString(param.addressBookEntry.address)))
+			setNameInput(param.addressBookEntry.name)
+			setAddressType(param.addressBookEntry.type)
+			if (param.addressBookEntry.type === 'addressInfo') {
+				setAskForAddressAccess(param.addressBookEntry.askForAddressAccess)
+			}
+		} else {
+			setAddressType('addressInfo')
+		}
+		setAddressBookEntryInput(param.addressBookEntry)
 		setActiveAddress(param.activeAddress)
-	}, [param.addressInput, param.nameInput, param.activeAddress])
+
+	}, [param.addressBookEntry, param.activeAddress])
 
 	function areInputValid() {
 		if (addressInput === undefined) return false
@@ -52,6 +67,7 @@ export function AddNewAddress(param: AddAddressParam) {
 		setAddressInput(input)
 
 		if (input === undefined) return setErrorString(undefined)
+
 		if (ethers.utils.isAddress(input)) return setErrorString(undefined)
 
 		const issue = getIssueWithAddressString(input)
@@ -78,29 +94,40 @@ export function AddNewAddress(param: AddAddressParam) {
 			<section class = 'modal-card-body' style = 'overflow: visible;'>
 				<div class = 'card' style = 'margin: 10px;'>
 					<div class = 'card-content'>
-						<div class = 'media'>
-							<div class = 'media-left'>
-								<figure class = 'image'>
-									{ addressInput && ethers.utils.isAddress(addressInput.trim()) ?
-										<Blockie seed = { addressInput.trim().toLowerCase() } size = { 8 } scale = { 5 } />
-									: <div style = 'background-color: var(--unimportant-text-color); width: 40px; height: 40px; border-radius: 5px;'/> }
-								</figure>
-							</div>
+						{ addressType !== 'addressInfo' ? <p class = 'paragraph'> { `No support to rename this address type yet 😢 (${ addressType })` } </p> :
+							<div class = 'media'>
+								<div class = 'media-left'>
+									<figure class = 'image'>
+										{ addressInput && ethers.utils.isAddress(addressInput.trim()) ?
+											<Blockie seed = { addressInput.trim().toLowerCase() } size = { 8 } scale = { 5 } />
+										: <div style = 'background-color: var(--unimportant-text-color); width: 40px; height: 40px; border-radius: 5px;'/> }
+									</figure>
+								</div>
 
-							<div class = 'media-content' style = 'overflow-y: unset; overflow-x: unset;'>
-								<input className = 'input' type = 'text' value = { nameInput } placeholder = { addressInput === undefined || addressInput === '' ? 'Name of the address' : addressInput }
-									onInput = { e => param.setNameInput((e.target as HTMLInputElement).value) }
-									maxLength = { 42 }
-								/>
-								<input disabled = { !param.addingNewAddress } className = 'input' type = 'text' value = { addressInput } placeholder = { '0x0...' }
-									onInput = { e => param.setAddressInput((e.target as HTMLInputElement).value) }
-									style = { `${ addressInput === undefined || ethers.utils.isAddress(addressInput.trim()) ? '' : 'color: var(--negative-color);' }` } />
-								<label class = 'form-control'>
-									<input type = 'checkbox' checked = { !askForAddressAccess } onInput = { e => { if (e.target instanceof HTMLInputElement && e.target !== null) { setAskForAddressAccess(!e.target.checked) } } } />
-									Don't request for an access (unsecure)
-								</label>
+								<div class = 'media-content' style = 'overflow-y: unset; overflow-x: unset;'>
+									<input
+										className = 'input'
+										type = 'text'
+										value = { nameInput }
+										placeholder = { addressInput === undefined || addressInput === '' ? 'Name of the address' : addressInput }
+										onInput = { e => setNameInput((e.target as HTMLInputElement).value) }
+										maxLength = { 42 }
+									/>
+									<input
+										disabled = { !param.addingNewAddress }
+										className = 'input'
+										type = 'text'
+										value = { addressInput }
+										placeholder = { '0x0...' }
+										onInput = { e => setAddress((e.target as HTMLInputElement).value) }
+										style = { `${ addressInput === undefined || ethers.utils.isAddress(addressInput.trim()) ? '' : 'color: var(--negative-color);' }` } />
+									<label class = 'form-control'>
+										<input type = 'checkbox' checked = { !askForAddressAccess } onInput = { e => { if (e.target instanceof HTMLInputElement && e.target !== null) { setAskForAddressAccess(!e.target.checked) } } } />
+										Don't request for an access (unsecure)
+									</label>
+								</div>
 							</div>
-						</div>
+						}
 					</div>
 				</div>
 				<div style = 'padding: 10px; height: 50px'>

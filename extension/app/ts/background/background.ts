@@ -561,7 +561,7 @@ const popupMessageHandlers = new Map<string, PopupMessageHandler>([
 	['popup_enableSimulationMode', enableSimulationMode],
 	['popup_reviewNotification', reviewNotification],
 	['popup_rejectNotification', rejectNotification],
-	['popup_addOrModifyAddressInfo', addOrModifyAddressInfo],
+	['popup_addOrModifyAddressBookEntry', addOrModifyAddressInfo],
 	['popup_getAddressBookData', getAddressBookData],
 	['popup_removeAddressBookEntry', removeAddressBookEntry],
 ])

@@ -1,5 +1,5 @@
 import * as funtypes from 'funtypes'
-import { AddressBookEntries, AddressInfo } from './user-interface-types.js'
+import { AddressBookEntries, AddressBookEntry, AddressInfo } from './user-interface-types.js'
 import { EthereumAddress, EthereumQuantity } from './wire-types.js'
 
 
@@ -113,8 +113,8 @@ export const RemoveAddressBookEntry = funtypes.Object({
 
 export type AddOrModifyAddresInfo = funtypes.Static<typeof AddOrModifyAddresInfo>
 export const AddOrModifyAddresInfo = funtypes.Object({
-	method: funtypes.Literal('popup_addOrModifyAddressInfo'),
-	options: funtypes.ReadonlyArray(AddressInfo)
+	method: funtypes.Literal('popup_addOrModifyAddressBookEntry'),
+	options: funtypes.ReadonlyArray(AddressBookEntry)
 }).asReadonly()
 
 export type ChangePage = funtypes.Static<typeof ChangePage>

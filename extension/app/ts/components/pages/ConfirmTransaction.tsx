@@ -9,8 +9,6 @@ import { Spinner } from '../subcomponents/Spinner.js'
 import { getSignerName, SignerLogoText } from '../subcomponents/signers.js'
 import { AddNewAddress } from './AddNewAddress.js'
 import { AddressBookEntry } from '../../utils/user-interface-types.js'
-import { ethers } from 'ethers'
-import { addressString } from '../../utils/bigint.js'
 import { formSimulatedAndVisualizedTransaction } from '../formVisualizerResults.js'
 
 export function ConfirmTransaction() {
@@ -20,8 +18,7 @@ export function ConfirmTransaction() {
 	const [currentBlockNumber, setCurrentBlockNumber] = useState<undefined | bigint>(undefined)
 	const [signerName, setSignerName] = useState<SignerName | undefined>(undefined)
 	const [isEditAddressModelOpen, setEditAddressModelOpen] = useState<boolean>(false)
-	const [addressInput, setAddressInput] = useState<string | undefined>(undefined)
-	const [nameInput, setNameInput] = useState<string | undefined>(undefined)
+	const [addressBookEntryInput, setAddressBookEntryInput] = useState<AddressBookEntry | undefined>(undefined)
 
 	useEffect( () => {
 		const updateTx = async () => {
@@ -92,8 +89,7 @@ export function ConfirmTransaction() {
 
 	function renameAddressCallBack(entry: AddressBookEntry) {
 		setEditAddressModelOpen(true)
-		setNameInput(entry.name === undefined ? '' : entry.name)
-		setAddressInput(ethers.utils.getAddress(addressString(entry.address)))
+		setAddressBookEntryInput(entry)
 	}
 
 	return (
@@ -103,11 +99,9 @@ export function ConfirmTransaction() {
 					<div class = { `modal ${ isEditAddressModelOpen? 'is-active' : ''}` }>
 						<AddNewAddress
 							setActiveAddressAndInformAboutIt = { undefined }
-							addressInput = { addressInput }
-							nameInput = { nameInput }
+							addressBookEntry = { addressBookEntryInput }
+							setAddressBookEntryInput = { setAddressBookEntryInput }
 							addingNewAddress = { false }
-							setAddressInput = { setAddressInput }
-							setNameInput = { setNameInput }
 							close = { () => { setEditAddressModelOpen(false) } }
 							activeAddress = { undefined }
 						/>

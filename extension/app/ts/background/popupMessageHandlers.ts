@@ -83,6 +83,7 @@ export async function addOrModifyAddressInfo(_simulator: Simulator, payload: Pop
 	if (window.interceptor.settings === undefined) return
 	const addressInfosChanges = AddOrModifyAddresInfo.parse(payload)
 	for (const newEntry of addressInfosChanges.options) {
+		if (newEntry.type !== 'addressInfo') throw new Error('No support to modify this entry yet!')
 		if (window.interceptor.settings.addressInfos.find( (x) => x.address === newEntry.address) ) {
 			// replace in place to maintain the same order
 			window.interceptor.settings.addressInfos = window.interceptor.settings.addressInfos.map( (x) => x.address === newEntry.address ? newEntry : x )

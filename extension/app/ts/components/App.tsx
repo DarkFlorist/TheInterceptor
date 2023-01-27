@@ -31,8 +31,7 @@ export function App() {
 	const [websiteAccess, setWebsiteAccess] = useState<readonly WebsiteAccess[] | undefined>(undefined)
 	const [websiteAccessAddressMetadata, setWebsiteAccessAddressMetadata] = useState<[string, AddressInfoEntry][]>([])
 	const [activeChain, setActiveChain] = useState<bigint>(1n)
-	const [addressInput, setAddressInput] = useState<string | undefined>(undefined)
-	const [nameInput, setNameInput] = useState<string | undefined>(undefined)
+	const [addressBookEntryInput, setAddressBookEntryInput] = useState<AddressBookEntry | undefined>(undefined)
 	const [simulationMode, setSimulationMode] = useState<boolean>(true)
 	const [notificationBadgeCount, setNotificationBadgeCount] = useState<number>(0)
 	const [tabConnection, setTabConnection] = useState<TabConnection>(DEFAULT_TAB_CONNECTION)
@@ -154,10 +153,10 @@ export function App() {
 		const trimmed = address.trim()
 		if ( !ethers.utils.isAddress(trimmed) ) return
 
-		const integerRepresentatio = BigInt(trimmed)
+		const bigIntReprentation = BigInt(trimmed)
 		// see if we have that address, if so, let's switch to it
 		for (const addressInfo of addressInfos) {
-			if ( addressInfo.address === integerRepresentatio) {
+			if ( addressInfo.address === bigIntReprentation) {
 				return await setActiveAddressAndInformAboutIt(addressInfo.address)
 			}
 		}
@@ -165,14 +164,17 @@ export function App() {
 		// address not found, let's promt user to create it
 		const addressString = ethers.utils.getAddress(trimmed)
 		setAndSaveAppPage(Page.AddNewAddress)
-		setNameInput(`Pasted ${ truncateAddr(addressString) }`)
-		setAddressInput(addressString)
+		setAddressBookEntryInput( {
+			type: 'addressInfo' as const,
+			name: `Pasted ${ truncateAddr(addressString) }`,
+			address: bigIntReprentation,
+			askForAddressAccess: true,
+		})
 	}
 
 	function renameAddressCallBack(entry: AddressBookEntry) {
 		setAndSaveAppPage(Page.ModifyAddress)
-		setNameInput(entry.name === undefined ? '' : entry.name)
-		setAddressInput(ethers.utils.getAddress(addressString(entry.address)))
+		setAddressBookEntryInput(entry)
 	}
 
 	function openAddressBook() {
@@ -258,11 +260,9 @@ export function App() {
 						{ appPage === Page.AddNewAddress || appPage === Page.ModifyAddress ?
 							<AddNewAddress
 								setActiveAddressAndInformAboutIt = { setActiveAddressAndInformAboutIt }
-								addressInput = { addressInput }
-								nameInput = { nameInput }
+								addressBookEntry = { addressBookEntryInput }
+								setAddressBookEntryInput = { setAddressBookEntryInput }
 								addingNewAddress = { appPage === Page.AddNewAddress }
-								setAddressInput = { setAddressInput }
-								setNameInput = { setNameInput }
 								close = { () => setAndSaveAppPage(Page.Home) }
 								activeAddress = { simulationMode ? activeSimulationAddress : activeSigningAddress }
 							/>
