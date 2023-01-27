@@ -1,5 +1,5 @@
 import { EthereumClientService } from './EthereumClientService.js'
-import { EthGetLogsResponse, EthereumUnsignedTransaction, EthereumSignedTransactionWithBlockData, EthereumBlockHeader, EthereumBlockTag, EthGetLogsRequest, EthereumTransactionSignature, EthTransactionReceiptResponse, EstimateGasParamsVariables, EthSubscribeParams, JsonRpcMessage, JsonRpcNewHeadsNotification, EthereumAddress, EthereumBlockHeaderWithTransactionHashes } from '../../utils/wire-types.js'
+import { EthGetLogsResponse, EthereumUnsignedTransaction, EthereumSignedTransactionWithBlockData, EthereumBlockHeader, EthereumBlockTag, EthGetLogsRequest, EthereumTransactionSignature, EthTransactionReceiptResponse, EstimateGasParamsVariables, EthSubscribeParams, JsonRpcMessage, JsonRpcNewHeadsNotification, EthereumBlockHeaderWithTransactionHashes, PersonalSignParams, SignTypedDataParams } from '../../utils/wire-types.js'
 import { IUnsignedTransaction, signTransaction } from '../../utils/ethereum.js'
 import { EthereumUnsignedTransactionToUnsingnedTransaction } from '../../utils/ethereum.js'
 import { bytes32String, dataString, max, min } from '../../utils/bigint.js'
@@ -515,8 +515,11 @@ export class SimulationModeEthereumClientService {
 		return 0x1n
 	}
 
-	public readonly personalSign = async (message: string, _account: EthereumAddress) => {
-		return await new ethers.Wallet(bytes32String(MOCK_PRIVATE_KEY)).signMessage(message)
+	public readonly personalSign = async (params: PersonalSignParams | SignTypedDataParams) => {
+		if (params.method === 'personal_sign') {
+			return await new ethers.Wallet(bytes32String(MOCK_PRIVATE_KEY)).signMessage(params.params[0])
+		}
+		return 'NOT IMPLEMENTED'
 	}
 
 	private subscriptions = new Map<string, Subscription>()

@@ -70,12 +70,21 @@ export function PersonalSign() {
 				addressInfo: addressInfo,
 			})
 		} else {
-			setSignRequest( {
-				simulationMode: dialog.simulationMode,
-				message: new TextDecoder().decode(stringToUint8Array(dialog.message)),
-				account: addressToSignWith,
-				addressInfo: addressInfo,
-			})
+			if (dialog.method === 'personal_sign' ) {
+				setSignRequest( {
+					simulationMode: dialog.simulationMode,
+					message: new TextDecoder().decode(stringToUint8Array(dialog.message)),
+					account: addressToSignWith,
+					addressInfo: addressInfo,
+				})
+			} else {
+				setSignRequest( {
+					simulationMode: dialog.simulationMode,
+					message: dialog.message,
+					account: addressToSignWith,
+					addressInfo: addressInfo,
+				})
+			}
 		}
 	}
 

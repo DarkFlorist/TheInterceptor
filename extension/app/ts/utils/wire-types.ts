@@ -26,6 +26,7 @@ const SmallIntParser: t.ParsedValue<t.String, bigint>['config'] = {
 	},
 }
 
+
 const AddressParser: t.ParsedValue<t.String, bigint>['config'] = {
 	parse: value => {
 		if (!/^0x([a-fA-F0-9]{40})$/.test(value)) return { success: false, message: `${value} is not a hex string encoded address.` }
@@ -653,25 +654,25 @@ export const EstimateGasParams = t.Object({
 
 export type EthBalanceParams = t.Static<typeof EthBalanceParams>
 export const EthBalanceParams = t.Object({
-	method: t.Literal("eth_getBalance"),
+	method: t.Literal('eth_getBalance'),
 	params: t.Tuple(EthereumAddress, EthereumBlockTag)
 })
 
 export type EthBlockByNumberParams = t.Static<typeof EthBlockByNumberParams>
 export const EthBlockByNumberParams = t.Object({
-	method: t.Literal("eth_getBlockByNumber"),
+	method: t.Literal('eth_getBlockByNumber'),
 	params: t.Tuple(EthereumBlockTag, t.Boolean)
 })
 
 export type EthSubscribeParams = t.Static<typeof EthSubscribeParams>
 export const EthSubscribeParams = t.Object({
-	method: t.Literal("eth_subscribe"),
-	params: t.Tuple(t.Union(t.Literal("newHeads"), t.Literal("logs"), t.Literal("newPendingTransactions"), t.Literal("syncing")))
+	method: t.Literal('eth_subscribe'),
+	params: t.Tuple(t.Union(t.Literal('newHeads'), t.Literal('logs'), t.Literal('newPendingTransactions'), t.Literal('syncing')))
 })
 
 export type EthUnSubscribeParams = t.Static<typeof EthUnSubscribeParams>
 export const EthUnSubscribeParams = t.Object({
-	method: t.Literal("eth_unsubscribe"),
+	method: t.Literal('eth_unsubscribe'),
 	params: t.Tuple(t.String)
 })
 
@@ -680,17 +681,35 @@ export type EthSubscriptionResponse = t.Static<typeof EthSubscriptionResponse>
 
 export type PersonalSignParams = t.Static<typeof PersonalSignParams>
 export const PersonalSignParams = t.Object({
-	method: t.Literal("personal_sign"),
+	method: t.Literal('personal_sign'),
 	params: t.Union(
 		t.Tuple(t.String, EthereumAddress, t.Union(t.String, t.Undefined)), // message, account, password
 		t.Tuple(t.String, EthereumAddress) // message, account
 	)
 })
 
-export type SignTypedDataV4Params = t.Static<typeof SignTypedDataV4Params>
-export const SignTypedDataV4Params = t.Object({
-	method: t.Literal("eth_signTypedData_v4"),
-	params: t.Tuple(EthereumAddress, t.String), // address that will sign the message, typed data
+export type EIP712Message = t.Static<typeof EIP712Message>
+export const EIP712Message = t.Object({
+	types: t.Record(t.String, t.ReadonlyArray(
+		t.Object({
+			name: t.String,
+			type: t.String,
+		})
+	)),
+	primaryType: t.String,
+	domain: t.Record(t.String, t.String),
+	message: t.Record(t.String, t.Union(t .Record(t.String, t.String), t.String)),
+})
+
+export type SignTypedDataParams = t.Static<typeof SignTypedDataParams>
+export const SignTypedDataParams = t.Object({
+	method: t.Union(
+		t.Literal('eth_signTypedData'),
+		t.Literal('eth_signTypedData_v1'),
+		t.Literal('eth_signTypedData_v3'),
+		t.Literal('eth_signTypedData_v4'),
+	),
+	params: t.Tuple(EthereumAddress, EIP712Message), // address that will sign the message, typed data
 })
 
 export type SwitchEthereumChainParams = t.Static<typeof SwitchEthereumChainParams>
@@ -729,52 +748,51 @@ export const EIP2612Message = t.Object({
 	types: t.Object({
 		EIP712Domain: t.Tuple(
 			t.Object({
-				name: t.Literal("name"),
-				type: t.Literal("string"),
+				name: t.Literal('name'),
+				type: t.Literal('string'),
 			}),
 			t.Object({
-				name: t.Literal("version"),
-				type: t.Literal("string"),
+				name: t.Literal('version'),
+				type: t.Literal('string'),
 			}),
 			t.Object({
-				name: t.Literal("chainId"),
-				type: t.Literal("uint256"),
+				name: t.Literal('chainId'),
+				type: t.Literal('uint256'),
 			}),
 			t.Object({
-				name: t.Literal("verifyingContract"),
-				type: t.Literal("address"),
+				name: t.Literal('verifyingContract'),
+				type: t.Literal('address'),
 			}),
 		),
 		Permit: t.Tuple(
 			t.Object({
-				name: t.Literal("owner"),
-				type: t.Literal("address"),
+				name: t.Literal('owner'),
+				type: t.Literal('address'),
 			}),
 			t.Object({
-				name: t.Literal("spender"),
-				type: t.Literal("address"),
+				name: t.Literal('spender'),
+				type: t.Literal('address'),
 			}),
 			t.Object({
-				name: t.Literal("value"),
-				type: t.Literal("uint256"),
+				name: t.Literal('value'),
+				type: t.Literal('uint256'),
 			}),
 			t.Object({
-				name: t.Literal("nonce"),
-				type: t.Literal("uint256"),
+				name: t.Literal('nonce'),
+				type: t.Literal('uint256'),
 			}),
 			t.Object({
-				name: t.Literal("deadline"),
-				type: t.Literal("uint256"),
+				name: t.Literal('deadline'),
+				type: t.Literal('uint256'),
 			}),
 		),
 	}),
-	primaryType: t.Literal("Permit"),
+	primaryType: t.Literal('Permit'),
 	domain: t.Object({
 		name: t.String,
 		version: t.String.withParser(BigIntParserNonHex),
 		chainId: t.Number,
 		verifyingContract: EthereumAddress,
-
 	}),
 	message: t.Object({
 		owner: EthereumAddress,
@@ -823,7 +841,7 @@ export const SupportedETHRPCCall = t.Union(
 	t.Object({ method: t.Literal('net_version') }),
 	GetCode,
 	PersonalSignParams,
-	SignTypedDataV4Params,
+	SignTypedDataParams,
 	SwitchEthereumChainParams,
 	RequestPermissions,
 	t.Object({ method: t.Literal('wallet_getPermissions') }),
@@ -849,7 +867,10 @@ export const SupportedETHRPCCalls = [
 	'net_version',
 	'eth_getCode',
 	'personal_sign',
+	'eth_signTypedData_v1',
+	'eth_signTypedData',
 	'eth_signTypedData_v4',
+	'eth_signTypedData_v3',
 	'wallet_switchEthereumChain',
 	'wallet_requestPermissions',
 	'wallet_getPermissions',
@@ -859,3 +880,71 @@ export const SupportedETHRPCCalls = [
 	'eth_getTransactionCount',
 	'interceptor_getSimulationStack'
 ]
+
+export type Permit2 = t.Static<typeof Permit2>
+export const Permit2 = t.Object({
+	types: t.Object({
+		PermitSingle: t.Tuple(
+			t.Object({
+				name: t.Literal('details'),
+				type: t.Literal('PermitDetails'),
+			}),
+			t.Object({
+				name: t.Literal('spender'),
+				type: t.Literal('address'),
+			}),
+			t.Object({
+				name: t.Literal('sigDeadline'),
+				type: t.Literal('uint256'),
+			}),
+		),
+		PermitDetails: t.Tuple(
+			t.Object({
+				name: t.Literal('token'),
+				type: t.Literal('address'),
+			}),
+			t.Object({
+				name: t.Literal('amount'),
+				type: t.Literal('uint160'),
+			}),
+			t.Object({
+				name: t.Literal('expiration'),
+				type: t.Literal('uint48'),
+			}),
+			t.Object({
+				name: t.Literal('nonce'),
+				type: t.Literal('uint48'),
+			}),
+		),
+		EIP712Domain: t.Tuple(
+			t.Object({
+				name: t.Literal('name'),
+				type: t.Literal('string'),
+			}),
+			t.Object({
+				name: t.Literal('chainId'),
+				type: t.Literal('uint256'),
+			}),
+			t.Object({
+				name: t.Literal('verifyingContract'),
+				type: t.Literal('address'),
+			}),
+		)
+	}),
+	domain: t.Object({
+		name: t.Literal('Permit2'),
+		chainId: t.String,
+		verifyingContract: EthereumAddress,
+	}),
+	primaryType: t.Literal('PermitSingle'),
+	message: t.Object({
+		details: t.Object({
+			token: EthereumAddress,
+			amount: t.String,
+			expiration: t.String,
+			nonce: t.String,
+		}),
+		spender: EthereumAddress,
+		sigDeadline: t.String,
+	})
+})
