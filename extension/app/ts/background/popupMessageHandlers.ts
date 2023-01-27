@@ -216,7 +216,7 @@ export async function openAddressBook(_simulator: Simulator, _payload: PopupMess
 	const html = '/html/addressBook.html'
 
 	const openInNewTab = async () => {
-		const tab = await browser.tabs.create({ url: `..${ html }` })
+		const tab = await browser.tabs.create({ url: html })
 		if (tab.id !== undefined) saveOpenedAddressBookTabId(tab.id)
 	}
 
