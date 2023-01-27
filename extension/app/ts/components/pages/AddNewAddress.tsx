@@ -94,7 +94,7 @@ export function AddNewAddress(param: AddAddressParam) {
 			<section class = 'modal-card-body' style = 'overflow: visible;'>
 				<div class = 'card' style = 'margin: 10px;'>
 					<div class = 'card-content'>
-						{ addressType !== 'addressInfo' ? <p class = 'paragraph'> { `No support to rename this address type yet :( (${ addressType })` } </p> :
+						{ addressType !== 'addressInfo' ? <p class = 'paragraph'> { `No support to rename this address type yet 😢 (${ addressType })` } </p> :
 							<div class = 'media'>
 								<div class = 'media-left'>
 									<figure class = 'image'>
