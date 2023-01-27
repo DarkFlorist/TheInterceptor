@@ -68,6 +68,12 @@ function isSignedTransaction(maybeSigned: unknown): maybeSigned is ISignedTransa
 		&& 'yParity' in maybeSigned
 }
 
+export function getV(transaction: Pick<ISignedTransaction, 'chainId' | 'yParity'>) {
+	return 'chainId' in transaction && transaction.chainId !== undefined
+	? (transaction.yParity === 'even' ? 0n : 1n) + 35n + 2n * transaction.chainId
+	: transaction.yParity === 'even' ? 27n : 28n
+}
+
 export function rlpEncodeLegacyTransactionPayload(transaction: IUnsignedTransactionLegacy): Uint8Array {
 	const toEncode = [
 		stripLeadingZeros(bigintToUint8Array(transaction.nonce, 32)),
@@ -84,9 +90,7 @@ export function rlpEncodeLegacyTransactionPayload(transaction: IUnsignedTransact
 			toEncode.push(stripLeadingZeros(new Uint8Array(0)))
 		}
 	} else {
-		const v = 'chainId' in transaction && transaction.chainId !== undefined
-			? (transaction.yParity === 'even' ? 0n : 1n) + 35n + 2n * transaction.chainId
-			: transaction.yParity === 'even' ? 27n : 28n
+		const v = getV(transaction)
 		toEncode.push(stripLeadingZeros(bigintToUint8Array(v, 32)))
 		toEncode.push(stripLeadingZeros(bigintToUint8Array(transaction.r, 32)))
 		toEncode.push(stripLeadingZeros(bigintToUint8Array(transaction.s, 32)))
@@ -169,7 +173,7 @@ export async function create2Address(deployerAddress: bigint, deploymentBytecode
 	return await keccak256.hash([0xff, ...bigintToUint8Array(deployerAddress, 20), ...bigintToUint8Array(salt, 32), ...bigintToUint8Array(deploymentBytecodeHash, 32)]) & 0xffffffffffffffffffffffffffffffffffffffffn
 }
 
-export function EthereumUnsignedTransactionToUnsingnedTransaction(transaction: EthereumUnsignedTransaction): IUnsignedTransaction {
+export function EthereumUnsignedTransactionToUnsignedTransaction(transaction: EthereumUnsignedTransaction): IUnsignedTransaction {
 	switch (transaction.type) {
 		case '1559': return {
 			type: '1559',

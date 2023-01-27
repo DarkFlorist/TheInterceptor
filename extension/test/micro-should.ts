@@ -8,7 +8,7 @@ const red = '\x1b[31m'
 const green = '\x1b[32m'
 const reset = '\x1b[0m'
 
-type TestFunction = () => void
+type TestFunction = (() => void) | (() => Promise<void>)
 
 type TestCase = {
 	message: string
@@ -30,7 +30,7 @@ async function runOne({ message, test, skip }: TestCase) {
 		return true
 	}
 	try {
-		test()
+		await test()
 		console.log(`${ green }√ ${ output }${ reset }`)
 		return true
 	} catch (error) {
