@@ -1,4 +1,4 @@
-import { addressString } from '../../utils/bigint.js'
+import { addressString, stringifyJSONWithBigInts } from '../../utils/bigint.js'
 import { METAMASK_ERROR_USER_REJECTED_REQUEST } from '../../utils/constants.js'
 import { Future } from '../../utils/future.js'
 import { PersonalSign } from '../../utils/interceptor-messages.js'
@@ -56,22 +56,22 @@ export async function openPersonalSignDialog(requestId: number, simulationMode: 
 		}
 	} else {
 		if (params.params[1].primaryType === 'Permit') {
-			const parsed = EIP2612Message.parse(params.params)
+			const parsed = EIP2612Message.parse(params.params[1])
 			window.interceptor.personalSignDialog =  {
 				simulationMode: simulationMode,
 				requestId: requestId,
-				message: JSON.stringify(parsed.message),
+				message: stringifyJSONWithBigInts(parsed.message),
 				account: addressString(params.params[0]),
 				method: params.method,
 				addressBookEntries: getAddressMetadataForEIP2612Message(parsed, window.interceptor.settings?.addressInfos),
 				eip2612Message: parsed,
 			}
 		} else if(params.params[1].primaryType === 'PermitSingle') {
-			const parsed = Permit2.parse(params.params)
+			const parsed = Permit2.parse(params.params[1])
 			window.interceptor.personalSignDialog =  {
 				simulationMode: simulationMode,
 				requestId: requestId,
-				message: JSON.stringify(parsed.message),
+				message: stringifyJSONWithBigInts(parsed.message),
 				account: addressString(params.params[0]),
 				method: params.method,
 				addressBookEntries: getAddressMetadataForPermitMessage(parsed, window.interceptor.settings?.addressInfos),
@@ -81,7 +81,7 @@ export async function openPersonalSignDialog(requestId: number, simulationMode: 
 			window.interceptor.personalSignDialog =  {
 				simulationMode: simulationMode,
 				requestId: requestId,
-				message: JSON.stringify(params.params[1]),
+				message: stringifyJSONWithBigInts(params.params[1]),
 				account: addressString(params.params[0]),
 				method: params.method,
 				addressBookEntries: [],

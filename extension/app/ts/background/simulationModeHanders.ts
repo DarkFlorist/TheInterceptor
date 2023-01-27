@@ -129,6 +129,22 @@ export async function personalSign(_simulator: Simulator, request: PersonalSignP
 
 export async function signTypedData(_simulator: Simulator, request: SignTypedDataParams, requestId: number | undefined, simulationMode: boolean = true) {
 	if (requestId === undefined) throw new Error('signTypedData requires known requestId')
+
+/*
+	if (params.params[1].primaryType === 'Permit') {
+		const parsed = EIP2612Message.parse(params.params)
+		window.interceptor.personalSignDialog =  {
+			simulationMode: simulationMode,
+			requestId: requestId,
+			message: JSON.stringify(parsed.message, undefined, 2),
+			account: addressString(params.params[0]),
+			method: params.method,
+			addressBookEntries: getAddressMetadataForEIP2612Message(parsed, window.interceptor.settings?.addressInfos),
+			eip2612Message: parsed,
+		}
+	} else if(params.params[1].primaryType === 'PermitSingle') {
+
+*/
 	return await openPersonalSignDialog(requestId, simulationMode, request)
 }
 

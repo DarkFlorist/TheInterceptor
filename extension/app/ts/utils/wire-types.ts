@@ -698,8 +698,29 @@ export const EIP712Message = t.Object({
 	)),
 	primaryType: t.String,
 	domain: t.Record(t.String, t.String),
-	message: t.Record(t.String, t.Union(t .Record(t.String, t.String), t.String)),
+	message: t.Record(t.String, t.Union(t.Record(t.String, t.String), t.String)),
 })
+
+function isJSON(text: string){
+    if (typeof text !== 'string') return false
+    try {
+        return (typeof JSON.parse(text) === 'object')
+    }
+    catch (error) {
+        return false
+    }
+}
+
+const EIP712MessageParser: t.ParsedValue<t.String, EIP712Message>['config'] = {
+	parse: value => {
+		if (!isJSON(value) || !EIP712Message.test(JSON.parse(value))) return { success: false, message: `${ value } is not EIP712 message` }
+		else return { success: true, value: EIP712Message.parse(JSON.parse(value)) }
+	},
+	serialize: value => {
+		if (!EIP712Message.test(value)) return { success: false, message: `${ value } is not a EIP712 mmessage.`}
+		return { success: true, value: EIP712Message.serialize(value) as string }
+	},
+}
 
 export type SignTypedDataParams = t.Static<typeof SignTypedDataParams>
 export const SignTypedDataParams = t.Object({
@@ -709,7 +730,7 @@ export const SignTypedDataParams = t.Object({
 		t.Literal('eth_signTypedData_v3'),
 		t.Literal('eth_signTypedData_v4'),
 	),
-	params: t.Tuple(EthereumAddress, EIP712Message), // address that will sign the message, typed data
+	params: t.Tuple(EthereumAddress, t.String.withParser(EIP712MessageParser)), // address that will sign the message, typed data
 })
 
 export type SwitchEthereumChainParams = t.Static<typeof SwitchEthereumChainParams>
@@ -734,12 +755,12 @@ export const RequestPermissions = t.Object({
 
 const BigIntParserNonHex: t.ParsedValue<t.String, bigint>['config'] = {
 	parse: value => {
-		if (!/([0-9]{1,64})$/.test(value)) return { success: false, message: `${value} is not a hex string encoded number.` }
+		if (!/([0-9]{1,64})$/.test(value)) return { success: false, message: `${ value } is not a string encoded number.` }
 		else return { success: true, value: BigInt(value) }
 	},
 	serialize: value => {
-		if (typeof value !== 'bigint') return { success: false, message: `${typeof value} is not a bigint.`}
-		return { success: true, value: `${value.toString()}` }
+		if (typeof value !== 'bigint') return { success: false, message: `${ typeof value } is not a bigint.`}
+		return { success: true, value: `${ value.toString() }` }
 	},
 }
 
@@ -933,18 +954,18 @@ export const Permit2 = t.Object({
 	}),
 	domain: t.Object({
 		name: t.Literal('Permit2'),
-		chainId: t.String,
+		chainId: t.String.withParser(BigIntParserNonHex),
 		verifyingContract: EthereumAddress,
 	}),
 	primaryType: t.Literal('PermitSingle'),
 	message: t.Object({
 		details: t.Object({
 			token: EthereumAddress,
-			amount: t.String,
-			expiration: t.String,
-			nonce: t.String,
+			amount: t.String.withParser(BigIntParserNonHex),
+			expiration: t.String.withParser(BigIntParserNonHex),
+			nonce: t.String.withParser(BigIntParserNonHex),
 		}),
 		spender: EthereumAddress,
-		sigDeadline: t.String,
+		sigDeadline: t.String.withParser(BigIntParserNonHex),
 	})
 })

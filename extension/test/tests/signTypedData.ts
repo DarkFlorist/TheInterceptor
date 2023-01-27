@@ -1,4 +1,3 @@
-import * as assert from 'assert'
 import { EIP712Message, Permit2 } from '../../app/ts/utils/wire-types.js'
 import { describe, runIfRoot, should, run } from '../micro-should.js'
 
