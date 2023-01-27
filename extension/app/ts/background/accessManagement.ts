@@ -129,8 +129,8 @@ export function hasAddressAccess(websiteAccess: readonly WebsiteAccess[], origin
 					}
 				}
 			}
-			const askForAddresssAccess = window.interceptor.settings?.addressInfos.find((x) => addressString(x.address) === address )?.askForAddressAccess
-			if (askForAddresssAccess === false) return 'hasAccess'
+			const askForAddressAccess = window.interceptor.settings?.addressInfos.find((x) => addressString(x.address) === address )?.askForAddressAccess
+			if (askForAddressAccess === false) return 'hasAccess'
 			return 'notFound'
 		}
 	}
