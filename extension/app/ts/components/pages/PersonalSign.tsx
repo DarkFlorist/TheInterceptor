@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'preact/hooks'
-import { addressString, bigintToRoundedPrettyDecimalString, stringToUint8Array } from '../../utils/bigint.js'
+import { bigintToRoundedPrettyDecimalString, stringToUint8Array } from '../../utils/bigint.js'
 import { EthereumAddress } from '../../utils/wire-types.js'
 import { BigAddress, findAddressInfo } from '../subcomponents/address.js'
 import { AddressBookEntry, AddressInfo } from '../../utils/user-interface-types.js'
@@ -8,7 +8,6 @@ import { Error as ErrorComponent} from '../subcomponents/Error.js'
 import { getAddressMetaData } from '../../background/metadataUtils.js'
 import { MOCK_PRIVATE_KEYS_ADDRESS, getChainName } from '../../utils/constants.js'
 import { AddNewAddress } from './AddNewAddress.js'
-import { ethers } from 'ethers'
 
 interface SignRequest {
 	simulationMode: boolean,
@@ -22,8 +21,7 @@ export function PersonalSign() {
 	const [signRequest, setSignRequest] = useState<SignRequest | undefined>(undefined)
 	const textareaRef = useRef<HTMLTextAreaElement | null>(null)
 	const [isEditAddressModelOpen, setEditAddressModelOpen] = useState<boolean>(false)
-	const [addressInput, setAddressInput] = useState<string | undefined>(undefined)
-	const [nameInput, setNameInput] = useState<string | undefined>(undefined)
+	const [addressBookEntryInput, setAddressBookEntryInput] = useState<AddressBookEntry | undefined>(undefined)
 	const [activeSimulationAddress, setActiveSimulationAddress] = useState<bigint | undefined>(undefined)
 
 	useEffect( () => {
@@ -98,8 +96,7 @@ export function PersonalSign() {
 
 	function renameAddressCallBack(entry: AddressBookEntry) {
 		setEditAddressModelOpen(true)
-		setNameInput(entry.name === undefined ? '' : entry.name)
-		setAddressInput(ethers.utils.getAddress(addressString(entry.address)))
+		setAddressBookEntryInput(entry)
 	}
 
 	return (
@@ -108,11 +105,9 @@ export function PersonalSign() {
 				<div class = { `modal ${ isEditAddressModelOpen? 'is-active' : ''}` }>
 					<AddNewAddress
 						setActiveAddressAndInformAboutIt = { undefined }
-						addressInput = { addressInput }
-						nameInput = { nameInput }
+						addressBookEntry = { addressBookEntryInput }
+						setAddressBookEntryInput = { setAddressBookEntryInput }
 						addingNewAddress = { false }
-						setAddressInput = { setAddressInput }
-						setNameInput = { setNameInput }
 						close = { () => { setEditAddressModelOpen(false) } }
 						activeAddress = { undefined }
 					/>

@@ -98,10 +98,8 @@ export type InterceptorAccessListParams = {
 
 export type AddAddressParam = {
 	close: () => void,
-	addressInput: string | undefined,
-	nameInput: string | undefined,
-	setAddressInput: (address: string) => void,
-	setNameInput: (name: string) => void,
+	addressBookEntry: AddressBookEntry | undefined,
+	setAddressBookEntryInput: (entry: AddressBookEntry) => void,
 	setActiveAddressAndInformAboutIt: ((address: bigint | 'signer') => void) | undefined,
 	addingNewAddress: boolean,
 	activeAddress: bigint | undefined,

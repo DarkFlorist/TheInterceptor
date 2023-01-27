@@ -1,7 +1,6 @@
 import { EthereumClientService } from './EthereumClientService.js'
 import { EthGetLogsResponse, EthereumUnsignedTransaction, EthereumSignedTransactionWithBlockData, EthereumBlockHeader, EthereumBlockTag, EthGetLogsRequest, EthereumTransactionSignature, EthTransactionReceiptResponse, EstimateGasParamsVariables, EthSubscribeParams, JsonRpcMessage, JsonRpcNewHeadsNotification, EthereumBlockHeaderWithTransactionHashes, PersonalSignParams, SignTypedDataParams } from '../../utils/wire-types.js'
-import { IUnsignedTransaction, signTransaction } from '../../utils/ethereum.js'
-import { EthereumUnsignedTransactionToUnsingnedTransaction } from '../../utils/ethereum.js'
+import { EthereumUnsignedTransactionToUnsignedTransaction, IUnsignedTransaction, serializeTransactionToBytes } from '../../utils/ethereum.js'
 import { bytes32String, dataString, max, min } from '../../utils/bigint.js'
 import { MOCK_ADDRESS } from '../../utils/constants.js'
 import { ErrorWithData } from '../../utils/errors.js'
@@ -99,12 +98,15 @@ export class SimulationModeEthereumClientService {
 		return min(baseFee + transaction.maxPriorityFeePerGas, transaction.maxFeePerGas)
 	}
 
-	public mockSignTransaction = async (transaction: EthereumUnsignedTransaction) => {
-		return await signTransaction(MOCK_PRIVATE_KEY , EthereumUnsignedTransactionToUnsingnedTransaction(transaction))
+	public static mockSignTransaction = async (transaction: EthereumUnsignedTransaction) => {
+		const signatureParams = { r: 0n, s: 0n, yParity: 'even' as const }
+		const unsignedTransaction = EthereumUnsignedTransactionToUnsignedTransaction(transaction)
+		const hash = await keccak256.hash(serializeTransactionToBytes({ ...unsignedTransaction, ...signatureParams }))
+		return { ...unsignedTransaction, ...signatureParams, hash }
 	}
 
 	public appendTransaction = async (transaction: EthereumUnsignedTransaction) => {
-		const signed = await this.mockSignTransaction(transaction)
+		const signed = await SimulationModeEthereumClientService.mockSignTransaction(transaction)
 		const parentBlock = await this.ethereumClientService.getBlock()
 		if ( this.simulationState === undefined ) {
 			const multicallResult = await this.multicall([transaction], parentBlock.number)
@@ -159,7 +161,7 @@ export class SimulationModeEthereumClientService {
 
 		let signedTxs: (IUnsignedTransaction & EthereumTransactionSignature)[] = []
 		for (const transaction of unsignedTxts) {
-			signedTxs.push(await this.mockSignTransaction(transaction))
+			signedTxs.push(await SimulationModeEthereumClientService.mockSignTransaction(transaction))
 		}
 		const parentBlock = await this.ethereumClientService.getBlock()
 		const multicallResult = await this.ethereumClientService.multicall(unsignedTxts, parentBlock.number)
