@@ -105,7 +105,11 @@ export function AddNewAddress(param: AddAddressParam) {
 								</div>
 
 								<div class = 'media-content' style = 'overflow-y: unset; overflow-x: unset;'>
-									<input className = 'input' type = 'text' value = { nameInput } placeholder = { addressInput === undefined || addressInput === '' ? 'Name of the address' : addressInput }
+									<input
+										className = 'input'
+										type = 'text'
+										value = { nameInput }
+										placeholder = { addressInput === undefined || addressInput === '' ? 'Name of the address' : addressInput }
 										onInput = { e => setNameInput((e.target as HTMLInputElement).value) }
 										maxLength = { 42 }
 									/>
