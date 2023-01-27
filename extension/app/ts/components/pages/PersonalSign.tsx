@@ -12,6 +12,7 @@ import { AddNewAddress } from './AddNewAddress.js'
 interface SignRequest {
 	simulationMode: boolean,
 	message: string,
+	method: 'personal_sign' | 'eth_signTypedData' | 'eth_signTypedData_v1'| 'eth_signTypedData_v2'  | 'eth_signTypedData_v3' | 'eth_signTypedData_v4',
 	account: bigint,
 	addressInfo: AddressInfo,
 }
@@ -66,6 +67,7 @@ export function PersonalSign() {
 				message: message,
 				account: addressToSignWith,
 				addressInfo: addressInfo,
+				method: dialog.method,
 			})
 		} else {
 			if (dialog.method === 'personal_sign' ) {
@@ -74,6 +76,7 @@ export function PersonalSign() {
 					message: new TextDecoder().decode(stringToUint8Array(dialog.message)),
 					account: addressToSignWith,
 					addressInfo: addressInfo,
+					method: dialog.method,
 				})
 			} else {
 				setSignRequest( {
@@ -81,6 +84,7 @@ export function PersonalSign() {
 					message: dialog.message,
 					account: addressToSignWith,
 					addressInfo: addressInfo,
+					method: dialog.method,
 				})
 			}
 		}
@@ -173,7 +177,7 @@ export function PersonalSign() {
 									className = 'button is-primary'
 									style = 'flex-grow: 1; margin-left:5px; margin-right:5px;'
 									onClick = { approve }
-									disabled = { signRequest.simulationMode && (activeSimulationAddress === undefined || activeSimulationAddress !== MOCK_PRIVATE_KEYS_ADDRESS) }
+									disabled = { signRequest.simulationMode && (activeSimulationAddress === undefined || activeSimulationAddress !== MOCK_PRIVATE_KEYS_ADDRESS || signRequest.method  != 'personal_sign') }
 								>
 									{ signRequest.simulationMode ? 'Simulate!' : 'Forward to wallet for signing' }
 								</button>
@@ -181,7 +185,7 @@ export function PersonalSign() {
 									Reject
 								</button>
 							</div>
-							{ signRequest.simulationMode && (activeSimulationAddress === undefined || activeSimulationAddress !== MOCK_PRIVATE_KEYS_ADDRESS)  ?
+							{ signRequest.simulationMode && (activeSimulationAddress === undefined || activeSimulationAddress !== MOCK_PRIVATE_KEYS_ADDRESS || signRequest.method  != 'personal_sign')  ?
 								<ErrorComponent text = 'Unfortunately we cannot simulate message signing as it requires private key access 😢.'/>
 								: <></>
 							}
