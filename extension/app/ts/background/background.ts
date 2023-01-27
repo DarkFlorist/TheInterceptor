@@ -46,7 +46,7 @@ declare global {
 				simulationMode: boolean,
 				message: string,
 				account: string,
-				method: 'personal_sign' | 'eth_signTypedData' | 'eth_signTypedData_v1' | 'eth_signTypedData_v3' | 'eth_signTypedData_v4',
+				method: 'personal_sign' | 'eth_signTypedData' | 'eth_signTypedData_v1'| 'eth_signTypedData_v2'  | 'eth_signTypedData_v3' | 'eth_signTypedData_v4',
 				addressBookEntries: [string, AddressBookEntry][],
 				eip2612Message?: EIP2612Message,
 				permit2?: Permit2,
@@ -300,10 +300,11 @@ async function handleSimulationMode(simulator: Simulator, port: browser.runtime.
 		case 'net_version': return await chainId(simulator)
 		case 'eth_getCode': return await getCode(simulator, parsedRequest)
 		case 'personal_sign': return await personalSign(simulator, parsedRequest, request?.requestId)
-		case 'eth_signTypedData_v4': return await signTypedData(simulator, parsedRequest, request?.requestId)
 		case 'eth_signTypedData': return await signTypedData(simulator, parsedRequest, request?.requestId)
 		case 'eth_signTypedData_v1': return await signTypedData(simulator, parsedRequest, request?.requestId)
+		case 'eth_signTypedData_v2': return await signTypedData(simulator, parsedRequest, request?.requestId)
 		case 'eth_signTypedData_v3': return await signTypedData(simulator, parsedRequest, request?.requestId)
+		case 'eth_signTypedData_v4': return await signTypedData(simulator, parsedRequest, request?.requestId)
 		case 'wallet_switchEthereumChain': return await switchEthereumChain(simulator, parsedRequest, port, request?.requestId)
 		case 'wallet_requestPermissions': return await requestPermissions(getActiveAddressForDomain, simulator, port)
 		case 'wallet_getPermissions': return await getPermissions()
