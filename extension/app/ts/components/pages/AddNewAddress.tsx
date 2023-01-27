@@ -113,7 +113,12 @@ export function AddNewAddress(param: AddAddressParam) {
 										onInput = { e => setNameInput((e.target as HTMLInputElement).value) }
 										maxLength = { 42 }
 									/>
-									<input disabled = { !param.addingNewAddress } className = 'input' type = 'text' value = { addressInput } placeholder = { '0x0...' }
+									<input
+										disabled = { !param.addingNewAddress }
+										className = 'input'
+										type = 'text'
+										value = { addressInput }
+										placeholder = { '0x0...' }
 										onInput = { e => setAddress((e.target as HTMLInputElement).value) }
 										style = { `${ addressInput === undefined || ethers.utils.isAddress(addressInput.trim()) ? '' : 'color: var(--negative-color);' }` } />
 									<label class = 'form-control'>
