@@ -22,7 +22,7 @@ export async function resolvePersonalSign(confirmation: PersonalSign) {
 	openedPersonalSignDialogWindow = null
 }
 
-function getAddressMetadataForEIP2612Message(message: EIP2612Message, addressInfos: readonly AddressInfo[] | undefined) : [string, AddressBookEntry][] {
+function getAddressMetadataForEIP2612Message(message: EIP2612Message, addressInfos: readonly AddressInfo[] | undefined): [string, AddressBookEntry][] {
 	return [
 		[addressString(message.message.owner), getAddressMetaData(message.message.owner, addressInfos)],
 		[addressString(message.message.spender), getAddressMetaData(message.message.spender, addressInfos)],
