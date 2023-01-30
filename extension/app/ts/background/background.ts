@@ -1,9 +1,9 @@
 import { HandleSimulationModeReturnValue, InterceptedRequest, InterceptedRequestForward, PopupMessage, ProviderMessage, SignerName } from '../utils/interceptor-messages.js'
 import 'webextension-polyfill'
 import { Simulator } from '../simulation/simulator.js'
-import { EIP2612Message, EthereumQuantity, EthereumUnsignedTransaction, PersonalSignParams, SendTransactionParams, SupportedETHRPCCall, SwitchEthereumChainParams } from '../utils/wire-types.js'
+import { EIP2612Message, EthereumQuantity, EthereumUnsignedTransaction, Permit2, PersonalSignParams, SendTransactionParams, SignTypedDataParams, SupportedETHRPCCall, SwitchEthereumChainParams } from '../utils/wire-types.js'
 import { getSettings, saveActiveChain, saveActiveSigningAddress, saveActiveSimulationAddress, Settings } from './settings.js'
-import { blockNumber, call, chainId, estimateGas, gasPrice, getAccounts, getBalance, getBlockByNumber, getCode, getPermissions, getSimulationStack, getTransactionByHash, getTransactionCount, getTransactionReceipt, personalSign, requestPermissions, sendTransaction, signTypedDataV4, subscribe, switchEthereumChain, unsubscribe } from './simulationModeHanders.js'
+import { blockNumber, call, chainId, estimateGas, gasPrice, getAccounts, getBalance, getBlockByNumber, getCode, getPermissions, getSimulationStack, getTransactionByHash, getTransactionCount, getTransactionReceipt, personalSign, requestPermissions, sendTransaction, signTypedData, subscribe, switchEthereumChain, unsubscribe } from './simulationModeHanders.js'
 import { changeActiveAddress, changeAddressInfos, changeMakeMeRich, changePage, resetSimulation, confirmDialog, RefreshSimulation, removeTransaction, requestAccountsFromSigner, refreshPopupConfirmTransactionSimulation, confirmPersonalSign, confirmRequestAccess, changeInterceptorAccess, changeChainDialog, popupChangeActiveChain, enableSimulationMode, reviewNotification, rejectNotification, addOrModifyAddressInfo, getAddressBookData, removeAddressBookEntry, openAddressBook } from './popupMessageHandlers.js'
 import { SimResults, SimulationState, TokenPriceEstimate } from '../utils/visualizer-types.js'
 import { WebsiteApproval, SignerState, TabConnection, AddressBookEntry, AddressInfoEntry } from '../utils/user-interface-types.js'
@@ -46,9 +46,10 @@ declare global {
 				simulationMode: boolean,
 				message: string,
 				account: string,
-				method: 'personalSign' | 'v4',
+				method: 'personal_sign' | 'eth_signTypedData' | 'eth_signTypedData_v1'| 'eth_signTypedData_v2'  | 'eth_signTypedData_v3' | 'eth_signTypedData_v4',
 				addressBookEntries: [string, AddressBookEntry][],
 				eip2612Message?: EIP2612Message,
+				permit2?: Permit2,
 			}
 			interceptorAccessDialog?: {
 				origin: string,
@@ -261,9 +262,9 @@ export async function appendTransactionToSimulator(transaction: EthereumUnsigned
 	}
 }
 
-export async function personalSignWithSimulator(message: string, account: bigint) {
+export async function personalSignWithSimulator(params: PersonalSignParams | SignTypedDataParams) {
 	if ( simulator === undefined) return
-	return await simulator.simulationModeNode.personalSign(message, account)
+	return await simulator.simulationModeNode.personalSign(params)
 }
 
 async function handleSimulationMode(simulator: Simulator, port: browser.runtime.Port, request: InterceptedRequest): Promise<HandleSimulationModeReturnValue> {
@@ -299,7 +300,11 @@ async function handleSimulationMode(simulator: Simulator, port: browser.runtime.
 		case 'net_version': return await chainId(simulator)
 		case 'eth_getCode': return await getCode(simulator, parsedRequest)
 		case 'personal_sign': return await personalSign(simulator, parsedRequest, request?.requestId)
-		case 'eth_signTypedData_v4': return await signTypedDataV4(simulator, parsedRequest, request?.requestId)
+		case 'eth_signTypedData': return await signTypedData(simulator, parsedRequest, request?.requestId)
+		case 'eth_signTypedData_v1': return await signTypedData(simulator, parsedRequest, request?.requestId)
+		case 'eth_signTypedData_v2': return await signTypedData(simulator, parsedRequest, request?.requestId)
+		case 'eth_signTypedData_v3': return await signTypedData(simulator, parsedRequest, request?.requestId)
+		case 'eth_signTypedData_v4': return await signTypedData(simulator, parsedRequest, request?.requestId)
 		case 'wallet_switchEthereumChain': return await switchEthereumChain(simulator, parsedRequest, port, request?.requestId)
 		case 'wallet_requestPermissions': return await requestPermissions(getActiveAddressForDomain, simulator, port)
 		case 'wallet_getPermissions': return await getPermissions()

@@ -1,9 +1,9 @@
-import { addressString } from '../../utils/bigint.js'
+import { addressString, stringifyJSONWithBigInts } from '../../utils/bigint.js'
 import { METAMASK_ERROR_USER_REJECTED_REQUEST } from '../../utils/constants.js'
 import { Future } from '../../utils/future.js'
 import { PersonalSign } from '../../utils/interceptor-messages.js'
 import { AddressBookEntry, AddressInfo } from '../../utils/user-interface-types.js'
-import { EIP2612Message, EthereumAddress } from '../../utils/wire-types.js'
+import { EIP2612Message, Permit2, PersonalSignParams, SignTypedDataParams } from '../../utils/wire-types.js'
 import { personalSignWithSimulator } from '../background.js'
 import { getAddressMetaData } from '../metadataUtils.js'
 
@@ -22,7 +22,7 @@ export async function resolvePersonalSign(confirmation: PersonalSign) {
 	openedPersonalSignDialogWindow = null
 }
 
-function getAddressMetadataForEIP2612Message(message: EIP2612Message, addressInfos: readonly AddressInfo[] | undefined) : [string, AddressBookEntry][] {
+function getAddressMetadataForEIP2612Message(message: EIP2612Message, addressInfos: readonly AddressInfo[] | undefined): [string, AddressBookEntry][] {
 	return [
 		[addressString(message.message.owner), getAddressMetaData(message.message.owner, addressInfos)],
 		[addressString(message.message.spender), getAddressMetaData(message.message.spender, addressInfos)],
@@ -30,37 +30,63 @@ function getAddressMetadataForEIP2612Message(message: EIP2612Message, addressInf
 	]
 }
 
+function getAddressMetadataForPermitMessage(message: Permit2, addressInfos: readonly AddressInfo[] | undefined): [string, AddressBookEntry][] {
+	return [
+		[addressString(message.message.details.token), getAddressMetaData(message.message.details.token, addressInfos)],
+		[addressString(message.message.spender), getAddressMetaData(message.message.spender, addressInfos)],
+		[addressString(message.domain.verifyingContract), getAddressMetaData(message.domain.verifyingContract, addressInfos)],
+	]
+}
 
-export async function openPersonalSignDialog(requestId: number, simulationMode: boolean, message: string, account: EthereumAddress, method: 'personalSign' | 'v4') {
+export async function openPersonalSignDialog(requestId: number, simulationMode: boolean, params: PersonalSignParams | SignTypedDataParams) {
 
 	if (openedPersonalSignDialogWindow !== null && openedPersonalSignDialogWindow.id) {
 		await browser.windows.remove(openedPersonalSignDialogWindow.id)
 	}
 	pendingPersonalSign = new Future<PersonalSign>()
 
-	if ( method === 'v4' ) {
-		const parsed = EIP2612Message.parse(JSON.parse(message))
+	if (params.method === 'personal_sign') {
 		window.interceptor.personalSignDialog =  {
 			simulationMode: simulationMode,
 			requestId: requestId,
-			message: message,
-			account: addressString(account),
-			method: method,
-			addressBookEntries: getAddressMetadataForEIP2612Message(parsed, window.interceptor.settings?.addressInfos),
-			eip2612Message: parsed,
-		}
-	}
-	else if ( method === 'personalSign' ) {
-		window.interceptor.personalSignDialog =  {
-			simulationMode: simulationMode,
-			requestId: requestId,
-			message: message,
-			account: addressString(account),
-			method: method,
+			message: params.params[0],
+			account: addressString(params.params[1]),
+			method: params.method,
 			addressBookEntries: [],
 		}
 	} else {
-		throw new Error('Unknown method');
+		if (params.params[1].primaryType === 'Permit') {
+			const parsed = EIP2612Message.parse(params.params[1])
+			window.interceptor.personalSignDialog =  {
+				simulationMode: simulationMode,
+				requestId: requestId,
+				message: stringifyJSONWithBigInts(parsed.message),
+				account: addressString(params.params[0]),
+				method: params.method,
+				addressBookEntries: getAddressMetadataForEIP2612Message(parsed, window.interceptor.settings?.addressInfos),
+				eip2612Message: parsed,
+			}
+		} else if(params.params[1].primaryType === 'PermitSingle') {
+			const parsed = Permit2.parse(params.params[1])
+			window.interceptor.personalSignDialog =  {
+				simulationMode: simulationMode,
+				requestId: requestId,
+				message: stringifyJSONWithBigInts(parsed.message),
+				account: addressString(params.params[0]),
+				method: params.method,
+				addressBookEntries: getAddressMetadataForPermitMessage(parsed, window.interceptor.settings?.addressInfos),
+				permit2: parsed,
+			}
+		} else {
+			window.interceptor.personalSignDialog =  {
+				simulationMode: simulationMode,
+				requestId: requestId,
+				message: stringifyJSONWithBigInts(params.params[1]),
+				account: addressString(params.params[0]),
+				method: params.method,
+				addressBookEntries: [],
+			}
+		}
 	}
 
 	openedPersonalSignDialogWindow = await browser.windows.create(
@@ -92,9 +118,9 @@ export async function openPersonalSignDialog(requestId: number, simulationMode: 
 	const reply = await pendingPersonalSign
 
 	// forward message to content script
-	if(reply.options.accept) {
+	if (reply.options.accept) {
 		if (simulationMode) {
-			const result = await personalSignWithSimulator(message, account)
+			const result = await personalSignWithSimulator(params)
 			if (result === undefined) return {
 				error: {
 					code: METAMASK_ERROR_USER_REJECTED_REQUEST,

@@ -1,7 +1,7 @@
 import { Simulator } from '../simulation/simulator.js'
 import { bytes32String } from '../utils/bigint.js'
 import { ERROR_INTERCEPTOR_UNKNOWN_ORIGIN } from '../utils/constants.js'
-import { EstimateGasParams, EthBalanceParams, EthBlockByNumberParams, EthCallParams, EthereumAddress, EthereumData, EthereumQuantity, EthereumSignedTransactionWithBlockData, EthSubscribeParams, EthTransactionReceiptResponse, EthUnSubscribeParams, GetBlockReturn, GetCode, GetSimulationStack, GetSimulationStackReply, GetTransactionCount, JsonRpcNewHeadsNotification, NewHeadsSubscriptionData, PersonalSignParams, SendTransactionParams, SignTypedDataV4Params, SwitchEthereumChainParams, TransactionByHashParams, TransactionReceiptParams } from '../utils/wire-types.js'
+import { EstimateGasParams, EthBalanceParams, EthBlockByNumberParams, EthCallParams, EthereumAddress, EthereumData, EthereumQuantity, EthereumSignedTransactionWithBlockData, EthSubscribeParams, EthTransactionReceiptResponse, EthUnSubscribeParams, GetBlockReturn, GetCode, GetSimulationStack, GetSimulationStackReply, GetTransactionCount, JsonRpcNewHeadsNotification, NewHeadsSubscriptionData, PersonalSignParams, SendTransactionParams, SignTypedDataParams, SwitchEthereumChainParams, TransactionByHashParams, TransactionReceiptParams } from '../utils/wire-types.js'
 import { postMessageIfStillConnected } from './background.js'
 import { WebsiteAccess } from './settings.js'
 import { openChangeChainDialog } from './windows/changeChain.js'
@@ -124,12 +124,12 @@ export async function gasPrice(simulator: Simulator) {
 
 export async function personalSign(_simulator: Simulator, request: PersonalSignParams, requestId: number | undefined, simulationMode: boolean = true) {
 	if (requestId === undefined) throw new Error('personalSign requires known requestId')
-	return await openPersonalSignDialog(requestId, simulationMode, request.params[0], request.params[1], 'personalSign')
+	return await openPersonalSignDialog(requestId, simulationMode, request)
 }
 
-export async function signTypedDataV4(_simulator: Simulator, request: SignTypedDataV4Params, requestId: number | undefined, simulationMode: boolean = true) {
-	if (requestId === undefined) throw new Error('signTypedDataV4 requires known requestId')
-	return await openPersonalSignDialog(requestId, simulationMode, request.params[1], request.params[0], 'v4')
+export async function signTypedData(_simulator: Simulator, request: SignTypedDataParams, requestId: number | undefined, simulationMode: boolean = true) {
+	if (requestId === undefined) throw new Error('signTypedData requires known requestId')
+	return await openPersonalSignDialog(requestId, simulationMode, request)
 }
 
 export async function switchEthereumChain(simulator: Simulator, request: SwitchEthereumChainParams, port: browser.runtime.Port, requestId: number | undefined) {
