@@ -1,4 +1,5 @@
 import { MOCK_PRIVATE_KEYS_ADDRESS } from '../utils/constants.js'
+import { AddressBookTabIdSetting } from '../utils/interceptor-messages.js'
 import { AddressInfo, Page, PendingAccessRequest } from '../utils/user-interface-types.js'
 import { EthereumAddress, EthereumQuantity } from '../utils/wire-types.js'
 
@@ -106,4 +107,13 @@ export function saveSimulationMode(simulationMode: boolean) {
 }
 export function savePendingAccessRequests(pendingAccessRequests: readonly PendingAccessRequest[]) {
 	browser.storage.local.set({ pendingAccessRequests: pendingAccessRequests })
+}
+export function saveOpenedAddressBookTabId(addressbookTabId: number) {
+	browser.storage.local.set({ addressbookTabId: addressbookTabId })
+}
+
+export async function getOpenedAddressBookTabId() {
+	const tabIdData = await browser.storage.local.get(['addressbookTabId'])
+	if (!AddressBookTabIdSetting.test(tabIdData)) return undefined
+	return AddressBookTabIdSetting.parse(tabIdData).addressbookTabId
 }
