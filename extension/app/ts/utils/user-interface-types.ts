@@ -74,7 +74,6 @@ export const AddressBookEntries = funtypes.ReadonlyArray(AddressBookEntry)
 
 export enum Page {
 	Home,
-	AddressList,
 	AddNewAddress,
 	ChangeActiveAddress,
 	AccessList,
