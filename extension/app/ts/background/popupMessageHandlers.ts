@@ -213,10 +213,8 @@ export async function getAddressBookData(_simulator: Simulator, payload: PopupMe
 }
 
 export async function openAddressBook(_simulator: Simulator, _payload: PopupMessage) {
-	const html = '/html/addressBook.html'
-
 	const openInNewTab = async () => {
-		const tab = await browser.tabs.create({ url: html })
+		const tab = await browser.tabs.create({ url: '/html/addressBook.html' })
 		if (tab.id !== undefined) saveOpenedAddressBookTabId(tab.id)
 	}
 
