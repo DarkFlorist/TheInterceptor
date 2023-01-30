@@ -2,7 +2,6 @@ import { useState, useEffect } from 'preact/hooks'
 import { defaultAddresses, WebsiteAccess } from '../background/settings.js'
 import { addressString } from '../utils/bigint.js'
 import { SimulationAndVisualisationResults } from '../utils/visualizer-types.js'
-import { AddressList } from './pages/AddressList.js'
 import { ChangeActiveAddress } from './pages/ChangeActiveAddress.js'
 import { Home } from './pages/Home.js'
 import { Page, AddressInfo, TabConnection, AddressInfoEntry, AddressBookEntry } from '../utils/user-interface-types.js'
@@ -144,7 +143,7 @@ export function App() {
 
 	function setAndSaveAppPage(page: Page) {
 		setAppPage(page)
-		browser.runtime.sendMessage( { method: 'popup_changePage', options: page } );
+		browser.runtime.sendMessage( { method: 'popup_changePage', options: page } )
 	}
 
 	async function addressPaste(address: string) {
@@ -178,7 +177,8 @@ export function App() {
 	}
 
 	function openAddressBook() {
-		browser.tabs.create({ url: '../html/addressBook.html' })
+		browser.runtime.sendMessage( { method: 'popup_openAddressBook' } )
+		return window.close() // close extension popup, chrome closes it by default, but firefox does not
 	}
 
 	return (
@@ -196,7 +196,6 @@ export function App() {
 							</a>
 							<a class = 'navbar-item' style = 'margin-left: auto; margin-right: 0;'>
 								<img src = '../img/internet.svg' width = '32' onClick = { () => setAndSaveAppPage(Page.AccessList) }/>
-								<img src = '../img/my-accounts.svg' width = '32' onClick = { () => setAndSaveAppPage(Page.AddressList) }/>
 								<img src = '../img/address-book.svg' width = '32' onClick = { openAddressBook }/>
 								<div>
 									<img src = '../img/notification-bell.svg' width = '32' onClick = { () => setAndSaveAppPage(Page.NotificationCenter) }/>
@@ -238,13 +237,6 @@ export function App() {
 								websiteAccess = { websiteAccess }
 								websiteAccessAddressMetadata = { websiteAccessAddressMetadata }
 								renameAddressCallBack = { renameAddressCallBack }
-							/>
-						: <></> }
-						{ appPage === Page.AddressList ?
-							<AddressList
-								setAddressInfos = { setAddressInfos }
-								setAndSaveAppPage = { setAndSaveAppPage }
-								addressInfos = { addressInfos }
 							/>
 						: <></> }
 						{ appPage === Page.ChangeActiveAddress ?
