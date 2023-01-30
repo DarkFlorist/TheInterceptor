@@ -30,7 +30,7 @@ function getAddressMetadataForEIP2612Message(message: EIP2612Message, addressInf
 	]
 }
 
-function getAddressMetadataForPermitMessage(message: Permit2, addressInfos: readonly AddressInfo[] | undefined) : [string, AddressBookEntry][] {
+function getAddressMetadataForPermitMessage(message: Permit2, addressInfos: readonly AddressInfo[] | undefined): [string, AddressBookEntry][] {
 	return [
 		[addressString(message.message.details.token), getAddressMetaData(message.message.details.token, addressInfos)],
 		[addressString(message.message.spender), getAddressMetaData(message.message.spender, addressInfos)],
