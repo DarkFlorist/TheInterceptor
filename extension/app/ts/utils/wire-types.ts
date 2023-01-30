@@ -756,7 +756,7 @@ export const RequestPermissions = t.Object({
 
 const BigIntParserNonHex: t.ParsedValue<t.String, bigint>['config'] = {
 	parse: value => {
-		if (!/([0-9]{1,64})$/.test(value)) return { success: false, message: `${ value } is not a string encoded number.` }
+		if (!/^[0-9]+$/.test(value)) return { success: false, message: `${ value } is not a string encoded number.` }
 		else return { success: true, value: BigInt(value) }
 	},
 	serialize: value => {
@@ -764,6 +764,9 @@ const BigIntParserNonHex: t.ParsedValue<t.String, bigint>['config'] = {
 		return { success: true, value: `${ value.toString() }` }
 	},
 }
+
+export const NonHexBigInt = t.String.withParser(BigIntParserNonHex)
+export type NonHexBigInt = t.Static<typeof NonHexBigInt>
 
 export type EIP2612Message = t.Static<typeof EIP2612Message>
 export const EIP2612Message = t.Object({
@@ -812,14 +815,14 @@ export const EIP2612Message = t.Object({
 	primaryType: t.Literal('Permit'),
 	domain: t.Object({
 		name: t.String,
-		version: t.String.withParser(BigIntParserNonHex),
+		version: NonHexBigInt,
 		chainId: t.Number,
 		verifyingContract: EthereumAddress,
 	}),
 	message: t.Object({
 		owner: EthereumAddress,
 		spender: EthereumAddress,
-		value: t.String.withParser(BigIntParserNonHex),
+		value: NonHexBigInt,
 		nonce: t.Number,
 		deadline: t.Number,
 	}),
@@ -956,18 +959,18 @@ export const Permit2 = t.Object({
 	}),
 	domain: t.Object({
 		name: t.Literal('Permit2'),
-		chainId: t.String.withParser(BigIntParserNonHex),
+		chainId: NonHexBigInt,
 		verifyingContract: EthereumAddress,
 	}),
 	primaryType: t.Literal('PermitSingle'),
 	message: t.Object({
 		details: t.Object({
 			token: EthereumAddress,
-			amount: t.String.withParser(BigIntParserNonHex),
-			expiration: t.String.withParser(BigIntParserNonHex),
-			nonce: t.String.withParser(BigIntParserNonHex),
+			amount: NonHexBigInt,
+			expiration: NonHexBigInt,
+			nonce: NonHexBigInt,
 		}),
 		spender: EthereumAddress,
-		sigDeadline: t.String.withParser(BigIntParserNonHex),
+		sigDeadline: NonHexBigInt,
 	})
 })

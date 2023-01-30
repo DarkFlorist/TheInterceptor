@@ -1,6 +1,6 @@
 import * as funtypes from 'funtypes'
 import { AddressBookEntries, AddressBookEntry, AddressInfo } from './user-interface-types.js'
-import { EthereumAddress, EthereumQuantity } from './wire-types.js'
+import { EIP2612Message, EthereumAddress, EthereumQuantity, Permit2 } from './wire-types.js'
 
 
 export type MessageMethodAndParams = funtypes.Static<typeof MessageMethodAndParams>
@@ -291,6 +291,7 @@ export const PopupMessage = funtypes.Union(
 	GetAddressBookData,
 	RemoveAddressBookEntry,
 	OpenAddressBook,
+	funtypes.Object({ method: funtypes.Literal('popup_personalSignReadyAndListening') })
 )
 
 export const MessageToPopupSimple = funtypes.Object({
@@ -310,13 +311,56 @@ export const MessageToPopupSimple = funtypes.Object({
 		funtypes.Literal('popup_accounts_update'),
 		funtypes.Literal('popup_websiteAccess_changed'),
 		funtypes.Literal('popup_notification_added'),
+		funtypes.Literal('popup_notification_added'),
 	)
 }).asReadonly()
 
+export type PersonalSignRequest = funtypes.Static<typeof PersonalSignRequest>
+export const PersonalSignRequest = funtypes.Object({
+	message: funtypes.Literal('popup_personal_sign_request'),
+	data: funtypes.Intersect(
+		funtypes.Object({
+			activeAddress: EthereumAddress,
+			requestId: funtypes.Number,
+			simulationMode: funtypes.Boolean,
+			account: AddressBookEntry,
+			method: funtypes.Union(
+				funtypes.Literal('personal_sign'),
+				funtypes.Literal('eth_signTypedData'),
+				funtypes.Literal('eth_signTypedData_v1'),
+				funtypes.Literal('eth_signTypedData_v2'),
+				funtypes.Literal('eth_signTypedData_v3'),
+				funtypes.Literal('eth_signTypedData_v4')
+			),
+		}),
+		funtypes.Object({
+			type: funtypes.Literal('NotParsed'),
+			message: funtypes.String,
+		}).Or(funtypes.Object({
+			type: funtypes.Literal('Permit'),
+			message: EIP2612Message,
+			addressBookEntries: funtypes.Object({
+				owner: AddressBookEntry,
+				spender: AddressBookEntry,
+				verifyingContract: AddressBookEntry,
+			}),
+		})).Or(funtypes.Object({
+			type: funtypes.Literal('Permit2'),
+			message: Permit2,
+			addressBookEntries: funtypes.Object({
+				token: AddressBookEntry,
+				spender: AddressBookEntry,
+				verifyingContract: AddressBookEntry,
+			}),
+		}))
+	)
+})
+
 export type MessageToPopup = funtypes.Static<typeof MessageToPopup>
 export const MessageToPopup = funtypes.Union(
+	MessageToPopupSimple,
 	GetAddressBookDataReply,
-	MessageToPopupSimple
+	PersonalSignRequest,
 )
 
 export type HandleSimulationModeReturnValue = {

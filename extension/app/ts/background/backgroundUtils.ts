@@ -7,7 +7,7 @@ export function getActiveAddress() {
 
 export async function sendPopupMessageToOpenWindows(message: MessageToPopup) {
 	try {
-		await browser.runtime.sendMessage( MessageToPopup.serialize(message) )
+		await browser.runtime.sendMessage(MessageToPopup.serialize(message))
 	} catch (error) {
 		if (error instanceof Error) {
 			if (error?.message?.includes('Could not establish connection.')) {
