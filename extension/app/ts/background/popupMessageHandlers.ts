@@ -11,7 +11,6 @@ import { getAssociatedAddresses, sendMessageToApprovedWebsitePorts, updateWebsit
 import { sendPopupMessageToOpenWindows } from './backgroundUtils.js'
 import { isSupportedChain } from '../utils/constants.js'
 import { getMetadataForAddressBookData } from './medataSearch.js'
-import { addressString } from '../utils/bigint.js'
 import { findAddressInfo } from './metadataUtils.js'
 
 export async function confirmDialog(_simulator: Simulator, payload: PopupMessage) {
@@ -29,7 +28,7 @@ export async function confirmRequestAccess(_simulator: Simulator, payload: Popup
 	await resolveInterceptorAccess({
 		outcome: confirmation.options.accept ? 'Approved' : 'Rejected',
 		origin: confirmation.options.origin,
-        requestAccessToAddress: confirmation.options.requestAccessToAddress === undefined ? undefined : addressString(confirmation.options.requestAccessToAddress),
+        requestAccessToAddress: confirmation.options.requestAccessToAddress,
 	})
 }
 
@@ -209,7 +208,7 @@ export async function rejectNotification(_simulator: Simulator, payload: PopupMe
 			},
 			params.options.origin,
 			notification?.icon,
-			params.options.requestAccessToAddress
+			params.options.requestAccessToAddress,
 		)
 	}
 	sendPopupMessageToOpenWindows({ message: 'popup_notification_removed' })

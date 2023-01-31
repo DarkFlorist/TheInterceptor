@@ -12,7 +12,7 @@ import { savePendingAccessRequests, saveWebsiteAccess, WebsiteAccess } from '../
 export type Confirmation = {
 	outcome: 'Approved' | 'Rejected' | 'NoResponse',
 	origin : string,
-	requestAccessToAddress: string | undefined,
+	requestAccessToAddress: bigint | undefined,
 }
 
 let openedInterceptorAccessWindow: browser.windows.Window | null = null
@@ -27,7 +27,7 @@ const onCloseWindow = () => { // check if user has closed the window on their ow
 	if (pendingInterceptorAccess !== undefined) pendingInterceptorAccess.future.resolve({
 		outcome: 'NoResponse',
 		origin: pendingInterceptorAccess.origin,
-		requestAccessToAddress: pendingInterceptorAccess.requestAccessToAddress === undefined ? undefined : addressString(pendingInterceptorAccess.requestAccessToAddress)
+		requestAccessToAddress: pendingInterceptorAccess.requestAccessToAddress
 	})
 	pendingInterceptorAccess = undefined
 	openedInterceptorAccessWindow = null
@@ -35,15 +35,17 @@ const onCloseWindow = () => { // check if user has closed the window on their ow
 }
 
 export async function resolveExistingInterceptorAccessAsNoResponse() {
-	if (pendingInterceptorAccess !== undefined) pendingInterceptorAccess.future.resolve({
+	if (pendingInterceptorAccess === undefined) return
+	await resolveInterceptorAccess({
 		outcome: 'NoResponse',
 		origin: pendingInterceptorAccess.origin,
-		requestAccessToAddress: pendingInterceptorAccess.requestAccessToAddress === undefined ? undefined : addressString(pendingInterceptorAccess.requestAccessToAddress)
+		requestAccessToAddress: pendingInterceptorAccess.requestAccessToAddress
 	})
 }
 
 export async function resolveInterceptorAccess(confirmation: Confirmation) {
 	if (pendingInterceptorAccess !== undefined)
+	if (confirmation.origin === pendingInterceptorAccess.origin && confirmation.requestAccessToAddress === pendingInterceptorAccess.requestAccessToAddress)
 	pendingInterceptorAccess.future.resolve(confirmation)
 	pendingInterceptorAccess = undefined
 
@@ -108,7 +110,7 @@ export async function setPendingAccessRequests(pendingAccessRequest: readonly Pe
 	await updateExtensionBadge()
 }
 
-export async function changeAccess(confirmation: Confirmation, origin: string, originIcon: string | undefined, accessAddress: string | undefined) {
+export async function changeAccess(confirmation: Confirmation, origin: string, originIcon: string | undefined, accessAddress: bigint | undefined) {
 	if (window.interceptor.settings === undefined) return
 	if (confirmation.outcome === 'NoResponse') return
 
@@ -181,14 +183,14 @@ export async function requestAccessFromUser(origin: string, icon: string | undef
 			resolveInterceptorAccess({
 				outcome: 'NoResponse',
 				origin: pendingInterceptorAccess.origin,
-				requestAccessToAddress: pendingInterceptorAccess.requestAccessToAddress === undefined ? undefined : addressString(pendingInterceptorAccess.requestAccessToAddress)
+				requestAccessToAddress: pendingInterceptorAccess.requestAccessToAddress
 			})
 		}
 	}
 
 	const confirmation = await pendingInterceptorAccess.future
 
-	await changeAccess(confirmation, origin, icon, accessAddress ? addressString(accessAddress.address) : undefined)
+	await changeAccess(confirmation, origin, icon, accessAddress ? accessAddress.address : undefined)
 
 	return confirmation.outcome === 'Approved'
 }

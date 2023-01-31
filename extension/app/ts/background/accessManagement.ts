@@ -151,7 +151,8 @@ export function getAddressesThatDoNotNeedIndividualAccesses(settings: Settings) 
 	return settings.addressInfos.filter( (x) => x.askForAddressAccess === false).map( (x) => x.address)
 }
 
-export function setAccess(websiteAccess: readonly WebsiteAccess[], origin: string, originIcon: string | undefined, access: boolean, address: string | undefined) : readonly WebsiteAccess[] {
+export function setAccess(websiteAccess: readonly WebsiteAccess[], origin: string, originIcon: string | undefined, access: boolean, address: bigint | undefined) : readonly WebsiteAccess[] {
+	const addrString = address === undefined ? undefined : addressString(address)
 	const oldAccess = hasAccess(websiteAccess, origin)
 	if ( oldAccess === 'notFound') {
 		return [...websiteAccess,
@@ -159,13 +160,13 @@ export function setAccess(websiteAccess: readonly WebsiteAccess[], origin: strin
 				origin: origin,
 				originIcon: originIcon,
 				access: access,
-				addressAccess: address === undefined || !access ? undefined : [ { address: address, access: access } ]
+				addressAccess: addrString === undefined || !access ? undefined : [ { address: addrString, access: access } ]
 			}
 		]
 	}
 	return websiteAccess.map( (x) => {
 		if( x.origin === origin) {
-			if (address === undefined) {
+			if (addrString === undefined) {
 				return {
 					origin: origin,
 					originIcon: x.originIcon ? x.originIcon : originIcon,
@@ -178,22 +179,22 @@ export function setAccess(websiteAccess: readonly WebsiteAccess[], origin: strin
 					origin: origin,
 					originIcon: x.originIcon ? x.originIcon : originIcon,
 					access: x.access ? x.access : access,
-					addressAccess:  [ { address: address, access: access } ]
+					addressAccess:  [ { address: addrString, access: access } ]
 				}
 			}
-			if (x.addressAccess.find( (x) => x.address === address) === undefined) {
+			if (x.addressAccess.find( (x) => x.address === addrString) === undefined) {
 				return {
 					origin: origin,
 					originIcon: x.originIcon ? x.originIcon : originIcon,
 					access: x.access ? x.access : access,
-					addressAccess:  [ ...x.addressAccess, { address: address, access: access } ]
+					addressAccess:  [ ...x.addressAccess, { address: addrString, access: access } ]
 				}
 			}
 			return {
 				origin: origin,
 				originIcon: x.originIcon ? x.originIcon : originIcon,
 				access: x.access ? x.access : access,
-				addressAccess: x.addressAccess.map( (x) => ( x.address === address ? { address: address, access: access } : x ) )
+				addressAccess: x.addressAccess.map( (x) => ( x.address === addrString ? { address: addrString, access: access } : x ) )
 			}
 		}
 		return x

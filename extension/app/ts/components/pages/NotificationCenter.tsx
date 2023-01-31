@@ -3,6 +3,7 @@ import { AddressInfoEntry, NotificationCenterParams, Page } from '../../utils/us
 import { BigAddress } from '../subcomponents/address.js'
 import { ethers } from 'ethers'
 import { addressString } from '../../utils/bigint.js'
+import { RejectNotification, ReviewNotification } from '../../utils/interceptor-messages.js'
 
 export type PendingAccessRequestWithMetadata = AddressInfoEntry & {
 	origin: string,
@@ -53,18 +54,18 @@ export function NotificationCenter(param: NotificationCenterParams) {
 	}
 
 	function review(origin: string, requestAccessToAddress: bigint | undefined) {
-		browser.runtime.sendMessage( { method: 'popup_reviewNotification', options: {
+		browser.runtime.sendMessage( ReviewNotification.serialize({ method: 'popup_reviewNotification', options: {
 			origin: origin,
-			requestAccessToAddress: requestAccessToAddress !== undefined ? addressString(requestAccessToAddress) : undefined
-		} } )
+			requestAccessToAddress: requestAccessToAddress,
+		} } ))
 	}
 
 	function reject(origin: string, requestAccessToAddress: bigint | undefined, removeOnly: boolean) {
-		browser.runtime.sendMessage( { method: 'popup_rejectNotification', options: {
+		browser.runtime.sendMessage( RejectNotification.serialize({ method: 'popup_rejectNotification', options: {
 			origin: origin,
-			requestAccessToAddress: requestAccessToAddress !== undefined ? addressString(requestAccessToAddress) : undefined,
-			removeOnly: removeOnly
-		} } )
+			requestAccessToAddress: requestAccessToAddress,
+			removeOnly: removeOnly,
+		} } ))
 	}
 
 	return ( <>

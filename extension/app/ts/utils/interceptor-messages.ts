@@ -228,7 +228,7 @@ export const ReviewNotification = funtypes.Object({
 	method: funtypes.Literal('popup_reviewNotification'),
 	options: funtypes.Object({
 		origin: funtypes.String,
-		requestAccessToAddress: funtypes.Union(funtypes.String, funtypes.Undefined),
+		requestAccessToAddress: funtypes.Union(EthereumAddress, funtypes.Undefined),
 	})
 }).asReadonly()
 
@@ -237,7 +237,7 @@ export const RejectNotification = funtypes.Object({
 	method: funtypes.Literal('popup_rejectNotification'),
 	options: funtypes.Object({
 		origin: funtypes.String,
-		requestAccessToAddress: funtypes.Union(funtypes.String, funtypes.Undefined),
+		requestAccessToAddress: funtypes.Union(EthereumAddress, funtypes.Undefined),
 		removeOnly: funtypes.Boolean,
 	})
 }).asReadonly()
