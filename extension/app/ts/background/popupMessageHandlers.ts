@@ -4,13 +4,15 @@ import { Simulator } from '../simulation/simulator.js'
 import { ChangeActiveAddress, ChangeAddressInfos, ChangeMakeMeRich, ChangePage, PersonalSign, PopupMessage, RemoveTransaction, RequestAccountsFromSigner, TransactionConfirmation, InterceptorAccess, ChangeInterceptorAccess, ChainChangeConfirmation, EnableSimulationMode, ReviewNotification, RejectNotification, ChangeActiveChain, AddOrModifyAddresInfo, GetAddressBookData, RemoveAddressBookEntry } from '../utils/interceptor-messages.js'
 import { resolvePendingTransaction } from './windows/confirmTransaction.js'
 import { resolvePersonalSign } from './windows/personalSign.js'
-import { changeAccess, requestAccessFromUser, resolveInterceptorAccess, setPendingAccessRequests } from './windows/interceptorAccess.js'
+import { changeAccess, requestAccessFromUser, resolveExistingInterceptorAccessAsNoResponse, resolveInterceptorAccess, setPendingAccessRequests } from './windows/interceptorAccess.js'
 import { resolveChainChange } from './windows/changeChain.js'
 import { EthereumQuantity } from '../utils/wire-types.js'
 import { getAssociatedAddresses, sendMessageToApprovedWebsitePorts, updateWebsiteApprovalAccesses } from './accessManagement.js'
 import { sendPopupMessageToOpenWindows } from './backgroundUtils.js'
 import { isSupportedChain } from '../utils/constants.js'
 import { getMetadataForAddressBookData } from './medataSearch.js'
+import { addressString } from '../utils/bigint.js'
+import { findAddressInfo } from './metadataUtils.js'
 
 export async function confirmDialog(_simulator: Simulator, payload: PopupMessage) {
 	const confirmation = TransactionConfirmation.parse(payload)
@@ -24,7 +26,11 @@ export async function confirmPersonalSign(_simulator: Simulator, payload: PopupM
 
 export async function confirmRequestAccess(_simulator: Simulator, payload: PopupMessage) {
 	const confirmation = InterceptorAccess.parse(payload)
-	await resolveInterceptorAccess(confirmation.options.accept ? 'Approved' : 'Rejected')
+	await resolveInterceptorAccess({
+		outcome: confirmation.options.accept ? 'Approved' : 'Rejected',
+		origin: confirmation.options.origin,
+        requestAccessToAddress: confirmation.options.requestAccessToAddress === undefined ? undefined : addressString(confirmation.options.requestAccessToAddress),
+	})
 }
 
 export async function changeActiveAddress(_simulator: Simulator, payload: PopupMessage) {
@@ -174,10 +180,11 @@ export async function reviewNotification(_simulator: Simulator, payload: PopupMe
 	const params = ReviewNotification.parse(payload)
 	const notification = window.interceptor.settings.pendingAccessRequests.find( (x) => x.origin === params.options.origin && x.requestAccessToAddress === params.options.requestAccessToAddress)
 	if (notification === undefined) return
-	await resolveInterceptorAccess('NoResponse') // close pending access request if there's one
+	await resolveExistingInterceptorAccessAsNoResponse()
 
-	const metadata = getAssociatedAddresses(window.interceptor.settings, notification.origin, notification.requestAccessToAddress)
-	await requestAccessFromUser(notification.origin, notification.icon, notification.requestAccessToAddress, metadata)
+	const addressInfo = notification.requestAccessToAddress === undefined ? undefined : findAddressInfo(BigInt(notification.requestAccessToAddress), window.interceptor.settings.addressInfos)
+	const metadata = getAssociatedAddresses(window.interceptor.settings, notification.origin, addressInfo)
+	await requestAccessFromUser(notification.origin, notification.icon, addressInfo, metadata)
 }
 export async function rejectNotification(_simulator: Simulator, payload: PopupMessage) {
 	if (window.interceptor.settings === undefined) return
@@ -188,14 +195,22 @@ export async function rejectNotification(_simulator: Simulator, payload: PopupMe
 		await setPendingAccessRequests( window.interceptor.settings.pendingAccessRequests.filter( (x) => !(x.origin === params.options.origin && x.requestAccessToAddress === params.options.requestAccessToAddress) ) )
 	}
 
-	if (window.interceptor.interceptorAccessDialog !== undefined
-		&& window.interceptor.interceptorAccessDialog.origin === params.options.origin
-		&& window.interceptor.interceptorAccessDialog.requestAccessToAddress === params.options.requestAccessToAddress
-	) {
-		await resolveInterceptorAccess(params.options.removeOnly ? 'NoResponse' : 'Rejected') // close pending access for this request
-	}
+	await resolveInterceptorAccess({
+		origin : params.options.origin,
+		requestAccessToAddress: params.options.requestAccessToAddress,
+		outcome: params.options.removeOnly ? 'NoResponse' : 'Rejected'
+	}) // close pending access for this request if its open
 	if (!params.options.removeOnly) {
-		await changeAccess('Rejected', params.options.origin, notification?.icon, params.options.requestAccessToAddress)
+		await changeAccess(
+			{
+				origin : params.options.origin,
+				requestAccessToAddress: params.options.requestAccessToAddress,
+				outcome: 'Rejected'
+			},
+			params.options.origin,
+			notification?.icon,
+			params.options.requestAccessToAddress
+		)
 	}
 	sendPopupMessageToOpenWindows({ message: 'popup_notification_removed' })
 }

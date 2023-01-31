@@ -2,12 +2,13 @@ import { useState, useEffect } from 'preact/hooks'
 import { BigAddress } from '../subcomponents/address.js'
 import { AddNewAddress } from './AddNewAddress.js'
 import { AddressInfoEntry, AddressBookEntry } from '../../utils/user-interface-types.js'
+import { InterceptorAccess as InterceptorAccessType, MessageToPopup } from '../../utils/interceptor-messages.js'
 
 interface InterceptorAccessRequest {
 	origin: string
 	icon: string | undefined
 	requestAccessToAddress: AddressInfoEntry | undefined
-	addressMetadata: Map<string, AddressInfoEntry>
+	associatedAddresses: readonly AddressInfoEntry[]
 }
 
 export function InterceptorAccess() {
@@ -16,50 +17,34 @@ export function InterceptorAccess() {
 	const [addressBookEntryInput, setAddressBookEntryInput] = useState<AddressBookEntry | undefined>(undefined)
 
 	useEffect( () => {
-		function popupMessageListener(msg: unknown) {
-			console.log('popup message')
-			console.log(msg)
-			fetchAccessDialog()
+		async function popupMessageListener(msg: unknown) {
+			const message = MessageToPopup.parse(msg)
+			if ( message.message !== 'popup_interceptorAccessDialog') return
+			setAccessRequest(message.data)
 		}
 		browser.runtime.onMessage.addListener(popupMessageListener)
-
-		fetchAccessDialog()
-
-		return () => {
-			browser.runtime.onMessage.removeListener(popupMessageListener)
-		};
-	}, []);
-
-	async function fetchAccessDialog() {
-		const backgroundPage = await browser.runtime.getBackgroundPage()
-		if( !('interceptorAccessDialog' in backgroundPage.interceptor) || backgroundPage.interceptor.interceptorAccessDialog === undefined) return window.close();
-		const dialog = backgroundPage.interceptor.interceptorAccessDialog
-
-		const metadata = new Map(dialog.addressBookEntries)
-		if (dialog.requestAccessToAddress !== undefined) {
-			const requestAccessToAddress = metadata.get(dialog.requestAccessToAddress)
-			if ( requestAccessToAddress === undefined) throw new Error('metadata missing for requested adress')
-			return setAccessRequest( {
-				origin: dialog.origin,
-				icon: dialog.icon,
-				requestAccessToAddress: requestAccessToAddress,
-				addressMetadata: metadata,
-			})
-		}
-		return setAccessRequest( {
-			origin: dialog.origin,
-			icon: dialog.icon,
-			requestAccessToAddress: undefined,
-			addressMetadata: metadata,
-		})
-	}
+		browser.runtime.sendMessage( { method: 'popup_interceptorAccessReadyAndListening' } )
+		return () => browser.runtime.onMessage.removeListener(popupMessageListener)
+	}, [])
 
 	function approve() {
-		browser.runtime.sendMessage( { method: 'popup_interceptorAccess', options: { accept: true } } )
+		if (accessRequest === undefined) return
+		const options = {
+			accept: true,
+			origin: accessRequest.origin,
+			requestAccessToAddress: accessRequest.requestAccessToAddress?.address
+		}
+		browser.runtime.sendMessage( InterceptorAccessType.serialize({ method: 'popup_interceptorAccess', options }) )
 	}
 
 	function reject() {
-		browser.runtime.sendMessage( { method: 'popup_interceptorAccess', options: { accept: false } } )
+		if (accessRequest === undefined) return
+		const options = {
+			accept: false,
+			origin: accessRequest.origin,
+			requestAccessToAddress: accessRequest.requestAccessToAddress?.address
+		}
+		browser.runtime.sendMessage( InterceptorAccessType.serialize({ method: 'popup_interceptorAccess', options }) )
 	}
 
 	function renameAddressCallBack(entry: AddressBookEntry) {
@@ -144,7 +129,7 @@ export function InterceptorAccess() {
 					}
 				</div>
 
-				{ accessRequest.addressMetadata.size <= 1 ? <></> :
+				{ accessRequest.associatedAddresses.length <= 1 ? <></> :
 					<div class = 'block' style = 'margin: 10px'>
 						<header class = 'card-header'>
 							<p class = 'card-header-title'>
@@ -155,10 +140,10 @@ export function InterceptorAccess() {
 						</header>
 						<div class = 'card-content'>
 							<ul>
-								{ Array.from(accessRequest.addressMetadata.entries()).map( ([_address, metadata], index) => (
-									<li style = { `margin: 0px; margin-bottom: ${index < accessRequest.addressMetadata.size - 1  ? '10px;' : '0px'}` }>
+								{ accessRequest.associatedAddresses.map( (info, index) => (
+									<li style = { `margin: 0px; margin-bottom: ${ index < accessRequest.associatedAddresses.length - 1  ? '10px;' : '0px' }` } >
 										<BigAddress
-											addressBookEntry = { metadata }
+											addressBookEntry = { info }
 											renameAddressCallBack = { renameAddressCallBack }
 										/>
 									</li>

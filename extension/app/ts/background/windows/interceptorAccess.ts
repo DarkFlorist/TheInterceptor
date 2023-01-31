@@ -9,7 +9,11 @@ import { updateExtensionBadge } from '../iconHandler.js'
 import { findAddressInfo } from '../metadataUtils.js'
 import { savePendingAccessRequests, saveWebsiteAccess, WebsiteAccess } from '../settings.js'
 
-export type Confirmation = 'Approved' | 'Rejected' | 'NoResponse'
+export type Confirmation = {
+	outcome: 'Approved' | 'Rejected' | 'NoResponse',
+	origin : string,
+	requestAccessToAddress: string | undefined,
+}
 
 let openedInterceptorAccessWindow: browser.windows.Window | null = null
 
@@ -20,14 +24,27 @@ let pendingInterceptorAccess: {
 } | undefined = undefined
 
 const onCloseWindow = () => { // check if user has closed the window on their own, if so, reject signature
-	if (pendingInterceptorAccess !== undefined) pendingInterceptorAccess.future.resolve('NoResponse')
+	if (pendingInterceptorAccess !== undefined) pendingInterceptorAccess.future.resolve({
+		outcome: 'NoResponse',
+		origin: pendingInterceptorAccess.origin,
+		requestAccessToAddress: pendingInterceptorAccess.requestAccessToAddress === undefined ? undefined : addressString(pendingInterceptorAccess.requestAccessToAddress)
+	})
 	pendingInterceptorAccess = undefined
 	openedInterceptorAccessWindow = null
 	browser.windows.onRemoved.removeListener( onCloseWindow )
 }
 
+export async function resolveExistingInterceptorAccessAsNoResponse() {
+	if (pendingInterceptorAccess !== undefined) pendingInterceptorAccess.future.resolve({
+		outcome: 'NoResponse',
+		origin: pendingInterceptorAccess.origin,
+		requestAccessToAddress: pendingInterceptorAccess.requestAccessToAddress === undefined ? undefined : addressString(pendingInterceptorAccess.requestAccessToAddress)
+	})
+}
+
 export async function resolveInterceptorAccess(confirmation: Confirmation) {
-	if (pendingInterceptorAccess !== undefined) pendingInterceptorAccess.future.resolve(confirmation)
+	if (pendingInterceptorAccess !== undefined)
+	pendingInterceptorAccess.future.resolve(confirmation)
 	pendingInterceptorAccess = undefined
 
 	if (openedInterceptorAccessWindow !== null && openedInterceptorAccessWindow.id) {
@@ -91,13 +108,13 @@ export async function setPendingAccessRequests(pendingAccessRequest: readonly Pe
 	await updateExtensionBadge()
 }
 
-export async function changeAccess(access: Confirmation, origin: string, originIcon: string | undefined, accessAddress: string | undefined) {
+export async function changeAccess(confirmation: Confirmation, origin: string, originIcon: string | undefined, accessAddress: string | undefined) {
 	if (window.interceptor.settings === undefined) return
-	if (access === 'NoResponse') return
+	if (confirmation.outcome === 'NoResponse') return
 
 	await setPendingAccessRequests( window.interceptor.settings.pendingAccessRequests.filter( (x) => !(x.origin === origin && x.requestAccessToAddress === accessAddress) ) )
 
-	window.interceptor.settings.websiteAccess = setAccess(window.interceptor.settings.websiteAccess, origin, originIcon, access === 'Approved', accessAddress)
+	window.interceptor.settings.websiteAccess = setAccess(window.interceptor.settings.websiteAccess, origin, originIcon, confirmation.outcome === 'Approved', accessAddress)
 	window.interceptor.websiteAccessAddressMetadata = getAddressMetadataForAccess(window.interceptor.settings.websiteAccess)
 	saveWebsiteAccess(window.interceptor.settings.websiteAccess)
 	updateWebsiteApprovalAccesses()
@@ -161,13 +178,17 @@ export async function requestAccessFromUser(origin: string, icon: string | undef
 		if (openedInterceptorAccessWindow) {
 			browser.windows.onRemoved.addListener( onCloseWindow ) // check if user has closed the window on their own, if so, reject signature
 		} else {
-			resolveInterceptorAccess('NoResponse')
+			resolveInterceptorAccess({
+				outcome: 'NoResponse',
+				origin: pendingInterceptorAccess.origin,
+				requestAccessToAddress: pendingInterceptorAccess.requestAccessToAddress === undefined ? undefined : addressString(pendingInterceptorAccess.requestAccessToAddress)
+			})
 		}
 	}
 
-	const access = await pendingInterceptorAccess.future
+	const confirmation = await pendingInterceptorAccess.future
 
-	await changeAccess(access, origin, icon, accessAddress)
+	await changeAccess(confirmation, origin, icon, accessAddress ? addressString(accessAddress.address) : undefined)
 
-	return access === 'Approved'
+	return confirmation.outcome === 'Approved'
 }

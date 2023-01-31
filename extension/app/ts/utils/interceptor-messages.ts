@@ -71,7 +71,9 @@ export type InterceptorAccess = funtypes.Static<typeof InterceptorAccess>
 export const InterceptorAccess = funtypes.Object({
 	method: funtypes.Literal('popup_interceptorAccess'),
 	options: funtypes.Object({
-		accept: funtypes.Boolean
+		accept: funtypes.Boolean,
+		origin: funtypes.String,
+		requestAccessToAddress: funtypes.Union(EthereumAddress, funtypes.Undefined),
 	})
 }).asReadonly()
 
