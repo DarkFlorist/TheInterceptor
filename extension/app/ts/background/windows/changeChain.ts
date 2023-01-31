@@ -1,48 +1,61 @@
-import { METAMASK_ERROR_USER_REJECTED_REQUEST, ERROR_INTERCEPTOR_NOT_READY } from '../../utils/constants.js'
+import { METAMASK_ERROR_USER_REJECTED_REQUEST } from '../../utils/constants.js'
 import { Future } from '../../utils/future.js'
-import { ChainChangeConfirmation, } from '../../utils/interceptor-messages.js'
+import { ChainChangeConfirmation, PopupMessage, SignerChainChangeConfirmation, } from '../../utils/interceptor-messages.js'
 import { changeActiveChain } from '../background.js'
+import { sendPopupMessageToOpenWindows } from '../backgroundUtils.js'
 
 let pendForUserReply: Future<ChainChangeConfirmation> | undefined = undefined
-let pendForSignerReply: Future<ChainChangeConfirmation> | undefined = undefined
+let pendForSignerReply: Future<SignerChainChangeConfirmation> | undefined = undefined
 
 let openedWindow: browser.windows.Window | null = null
 
 export async function resolveChainChange(confirmation: ChainChangeConfirmation) {
 	if (pendForUserReply !== undefined) pendForUserReply.resolve(confirmation)
 	pendForUserReply = undefined
-
-	if (openedWindow !== null && openedWindow.id) {
-		await browser.windows.remove(openedWindow.id)
-	}
-	window.interceptor.changeChainDialog = undefined
-	openedWindow = null
 }
 
-export async function resolveSignerChainChange(confirmation: ChainChangeConfirmation) {
-	if (openedWindow !== null && openedWindow.id) {
-		await browser.windows.remove(openedWindow.id)
-	}
+export async function resolveSignerChainChange(confirmation: SignerChainChangeConfirmation) {
 	if (pendForSignerReply !== undefined) pendForSignerReply.resolve(confirmation)
 	pendForSignerReply = undefined
-	window.interceptor.changeChainDialog = undefined
-	openedWindow = null
 }
 
-export async function openChangeChainDialog(requestId: number, origin: string, favIconUrl: string | undefined, chainId: bigint) {
-	if (window.interceptor.settings === undefined) return ERROR_INTERCEPTOR_NOT_READY
-	if (openedWindow !== null && openedWindow.id) {
-		await browser.windows.remove(openedWindow.id)
+function rejectMessage(requestId: number) {
+	return {
+		method: 'popup_changeChainDialog',
+		options: {
+			requestId,
+			accept: false,
+		},
+	} as const
+}
+
+export const openChangeChainDialog = async (requestId: number, simulationMode: boolean, origin: string, favIconUrl: string | undefined, chainId: bigint) => {
+	if (openedWindow !== null || pendForUserReply || pendForSignerReply) {
+		return {
+			error: {
+				code: METAMASK_ERROR_USER_REJECTED_REQUEST,
+				message: 'User denied the chain change.'
+			}
+		}
 	}
 	pendForUserReply = new Future<ChainChangeConfirmation>()
 
-	window.interceptor.changeChainDialog = {
-		requestId: requestId,
-		chainId: chainId.toString(),
-		origin: (new URL(origin)).hostname,
-		icon: favIconUrl,
-		simulationMode: window.interceptor.settings.simulationMode,
+	const changeChainWindowReadyAndListening = async function popupMessageListener(msg: unknown) {
+		const message = PopupMessage.parse(msg)
+		if ( message.method !== 'popup_changeChainReadyAndListening') return
+		browser.runtime.onMessage.removeListener(changeChainWindowReadyAndListening)
+		return sendPopupMessageToOpenWindows({
+			message: 'popup_ChangeChainRequest',
+			data: {
+				requestId: requestId,
+				chainId: chainId,
+				origin: (new URL(origin)).hostname,
+				icon: favIconUrl,
+				simulationMode: simulationMode,
+			}
+		})
 	}
+	browser.runtime.onMessage.addListener(changeChainWindowReadyAndListening)
 
 	openedWindow = await browser.windows.create(
 		{
@@ -53,34 +66,31 @@ export async function openChangeChainDialog(requestId: number, origin: string, f
 		}
 	)
 
-	const reject = {
-		method: 'popup_changeChainDialog',
-		options: {
-			requestId,
-			accept: false
-		}
-	} as const
-
 	if (openedWindow) {
-		browser.windows.onRemoved.addListener( () => { // check if user has closed the window on their own, if so, reject signature
-			if (pendForUserReply === undefined) return
-			window.interceptor.changeChainDialog = undefined
+		const windowClosed = () => { // check if user has closed the window on their own, if so, reject signature
+			browser.windows.onRemoved.removeListener(windowClosed)
 			openedWindow = null
-			resolveChainChange(reject)
-		} )
+			if (pendForUserReply === undefined) return
+			resolveChainChange(rejectMessage(requestId))
+		}
+		browser.windows.onRemoved.addListener(windowClosed)
 	} else {
-		resolveChainChange(reject)
+		resolveChainChange(rejectMessage(requestId))
 	}
 	pendForSignerReply = undefined
 	const reply = await pendForUserReply
 
 	// forward message to content script
-	if (reply.options.accept) {
+	if (reply.options.accept && reply.options.requestId === requestId) {
+		if (simulationMode) {
+			await changeActiveChain(chainId)
+			return { result: null }
+		}
+		pendForSignerReply = new Future<SignerChainChangeConfirmation>() // when not in simulation mode, we need to get reply from the signer too
 		await changeActiveChain(chainId)
-		pendForSignerReply = new Future<ChainChangeConfirmation>() // we need to get reply from the signer too, if we are using signer, if signer is not used, interceptor replies to this
 		const signerReply = await pendForSignerReply
-		if (signerReply.options.accept) {
-			return { result: [] }
+		if (signerReply.options.accept && signerReply.options.chainId === chainId) {
+			return { result: null }
 		}
 	}
 	return {

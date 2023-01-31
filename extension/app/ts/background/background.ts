@@ -1,7 +1,7 @@
 import { HandleSimulationModeReturnValue, InterceptedRequest, InterceptedRequestForward, PopupMessage, ProviderMessage, SignerName } from '../utils/interceptor-messages.js'
 import 'webextension-polyfill'
 import { Simulator } from '../simulation/simulator.js'
-import { EIP2612Message, EthereumQuantity, EthereumUnsignedTransaction, Permit2, PersonalSignParams, SendTransactionParams, SignTypedDataParams, SupportedETHRPCCall, SwitchEthereumChainParams } from '../utils/wire-types.js'
+import { EIP2612Message, EthereumQuantity, EthereumUnsignedTransaction, Permit2, PersonalSignParams, SendTransactionParams, SignTypedDataParams, SupportedETHRPCCall } from '../utils/wire-types.js'
 import { getSettings, saveActiveChain, saveActiveSigningAddress, saveActiveSimulationAddress, Settings } from './settings.js'
 import { blockNumber, call, chainId, estimateGas, gasPrice, getAccounts, getBalance, getBlockByNumber, getCode, getPermissions, getSimulationStack, getTransactionByHash, getTransactionCount, getTransactionReceipt, personalSign, requestPermissions, sendTransaction, signTypedData, subscribe, switchEthereumChain, unsubscribe } from './simulationModeHanders.js'
 import { changeActiveAddress, changeAddressInfos, changeMakeMeRich, changePage, resetSimulation, confirmDialog, RefreshSimulation, removeTransaction, requestAccountsFromSigner, refreshPopupConfirmTransactionSimulation, confirmPersonalSign, confirmRequestAccess, changeInterceptorAccess, changeChainDialog, popupChangeActiveChain, enableSimulationMode, reviewNotification, rejectNotification, addOrModifyAddressInfo, getAddressBookData, removeAddressBookEntry, openAddressBook } from './popupMessageHandlers.js'
@@ -56,13 +56,6 @@ declare global {
 				icon: string | undefined,
 				requestAccessToAddress: string | undefined,
 				addressBookEntries: [string, AddressInfoEntry][],
-			}
-			changeChainDialog?: {
-				requestId: number,
-				chainId: string,
-				origin: string,
-				icon: string | undefined,
-				simulationMode: boolean,
 			}
 			simulation: {
 				simulationId: number,
@@ -299,13 +292,13 @@ async function handleSimulationMode(simulator: Simulator, port: browser.runtime.
 		case 'eth_chainId': return await chainId(simulator)
 		case 'net_version': return await chainId(simulator)
 		case 'eth_getCode': return await getCode(simulator, parsedRequest)
-		case 'personal_sign': return await personalSign(simulator, parsedRequest, request?.requestId)
-		case 'eth_signTypedData': return await signTypedData(simulator, parsedRequest, request?.requestId)
-		case 'eth_signTypedData_v1': return await signTypedData(simulator, parsedRequest, request?.requestId)
-		case 'eth_signTypedData_v2': return await signTypedData(simulator, parsedRequest, request?.requestId)
-		case 'eth_signTypedData_v3': return await signTypedData(simulator, parsedRequest, request?.requestId)
-		case 'eth_signTypedData_v4': return await signTypedData(simulator, parsedRequest, request?.requestId)
-		case 'wallet_switchEthereumChain': return await switchEthereumChain(simulator, parsedRequest, port, request?.requestId)
+		case 'personal_sign': return await personalSign(simulator, parsedRequest, request?.requestId, true)
+		case 'eth_signTypedData': return await signTypedData(simulator, parsedRequest, request?.requestId, true)
+		case 'eth_signTypedData_v1': return await signTypedData(simulator, parsedRequest, request?.requestId, true)
+		case 'eth_signTypedData_v2': return await signTypedData(simulator, parsedRequest, request?.requestId, true)
+		case 'eth_signTypedData_v3': return await signTypedData(simulator, parsedRequest, request?.requestId, true)
+		case 'eth_signTypedData_v4': return await signTypedData(simulator, parsedRequest, request?.requestId, true)
+		case 'wallet_switchEthereumChain': return await switchEthereumChain(simulator, parsedRequest, port, request?.requestId, true)
 		case 'wallet_requestPermissions': return await requestPermissions(getActiveAddressForDomain, simulator, port)
 		case 'wallet_getPermissions': return await getPermissions()
 		case 'eth_accounts': return await getAccounts(getActiveAddressForDomain, simulator, port)
@@ -344,6 +337,61 @@ async function handleSimulationMode(simulator: Simulator, port: browser.runtime.
 	}
 }
 
+async function handleSigningMode(simulator: Simulator, port: browser.runtime.Port, request: InterceptedRequest): Promise<HandleSimulationModeReturnValue> {
+	let parsedRequest // separate request parsing and request handling. If there's a parse error, throw that to API user
+	try {
+		parsedRequest = SupportedETHRPCCall.parse(request.options)
+	} catch (error) {
+		if (error instanceof Error) {
+			return {
+				error: {
+					message: error.message,
+					code: 400,
+				}
+			}
+		}
+		throw error
+	}
+
+	const forwardToSigner = () => ({ forward: true } as const)
+
+	switch (parsedRequest.method) {
+		case 'eth_getBlockByNumber':
+		case 'eth_getBalance':
+		case 'eth_estimateGas':
+		case 'eth_getTransactionByHash':
+		case 'eth_getTransactionReceipt':
+		case 'eth_call':
+		case 'eth_blockNumber':
+		case 'eth_subscribe':
+		case 'eth_unsubscribe':
+		case 'eth_chainId':
+		case 'net_version':
+		case 'eth_getCode':
+		case 'wallet_requestPermissions':
+		case 'wallet_getPermissions':
+		case 'eth_accounts':
+		case 'eth_requestAccounts':
+		case 'eth_gasPrice':
+		case 'eth_getTransactionCount':
+		case 'interceptor_getSimulationStack': return forwardToSigner()
+
+		case 'personal_sign': return await personalSign(simulator, parsedRequest, request?.requestId, false)
+		case 'eth_signTypedData': return await signTypedData(simulator, parsedRequest, request?.requestId, false)
+		case 'eth_signTypedData_v1': return await signTypedData(simulator, parsedRequest, request?.requestId, false)
+		case 'eth_signTypedData_v2': return await signTypedData(simulator, parsedRequest, request?.requestId, false)
+		case 'eth_signTypedData_v3': return await signTypedData(simulator, parsedRequest, request?.requestId, false)
+		case 'eth_signTypedData_v4': return await signTypedData(simulator, parsedRequest, request?.requestId, false)
+		case 'wallet_switchEthereumChain': return await switchEthereumChain(simulator, parsedRequest, port, request?.requestId, false)
+		case 'eth_sendTransaction': {
+			if (window.interceptor.settings && isSupportedChain(window.interceptor.settings.activeChain.toString()) ) {
+				return sendTransaction(simulator, SendTransactionParams.parse(request.options), port, request.requestId, false)
+			}
+			return forwardToSigner()
+		}
+	}
+}
+
 function newBlockCallback(blockNumber: bigint) {
 	window.interceptor.currentBlockNumber = blockNumber
 	sendPopupMessageToOpenWindows({ message: 'popup_new_block_arrived' })
@@ -354,7 +402,7 @@ export async function changeActiveAddressAndChainAndResetSimulation(activeAddres
 	if ( simulator === undefined ) return
 
 	let chainChanged = false
-	if ( await simulator.ethereum.getChainId() !== activeChain && activeChain !== 'noActiveChainChange') {
+	if (activeChain !== 'noActiveChainChange') {
 
 		window.interceptor.settings.activeChain = activeChain
 		saveActiveChain(activeChain)
@@ -402,9 +450,8 @@ export async function changeActiveChain(chainId: bigint) {
 	if (window.interceptor.settings === undefined) return
 	if (window.interceptor.settings.simulationMode) {
 		return await changeActiveAddressAndChainAndResetSimulation('noActiveAddressChange', chainId)
-	} else {
-		sendMessageToApprovedWebsitePorts('request_signer_to_wallet_switchEthereumChain', EthereumQuantity.serialize(chainId))
 	}
+	sendMessageToApprovedWebsitePorts('request_signer_to_wallet_switchEthereumChain', EthereumQuantity.serialize(chainId))
 }
 
 type ProviderHandler = (port: browser.runtime.Port, request: ProviderMessage) => void
@@ -497,32 +544,22 @@ async function onContentScriptConnected(port: browser.runtime.Port) {
 			// if simulation mode is not on, we only intercept eth_sendTransaction and personalSign
 			if ( simulator === undefined ) throw 'Interceptor not ready'
 
-			if ( window.interceptor.settings?.simulationMode || request.usingInterceptorWithoutSigner) {
-				const resolved = await handleSimulationMode(simulator, port, request)
-				if ('error' in resolved) {
-					return postMessageIfStillConnected(port, {
-						...resolved,
-						interceptorApproved: false,
-						requestId: request.requestId,
-						options: request.options
-					})
-				}
-				if (!('forward' in resolved)) {
-					return postMessageIfStillConnected(port, {
-						result: resolved.result,
-						interceptorApproved: true,
-						requestId: request.requestId,
-						options: request.options
-					})
-				}
+			const resolved = window.interceptor.settings?.simulationMode || request.usingInterceptorWithoutSigner ? await handleSimulationMode(simulator, port, request) : await handleSigningMode(simulator, port, request)
+			if ('error' in resolved) {
+				return postMessageIfStillConnected(port, {
+					...resolved,
+					interceptorApproved: false,
+					requestId: request.requestId,
+					options: request.options
+				})
 			}
-
-			if (request.options.method === 'personal_sign') return personalSign(simulator, PersonalSignParams.parse(request.options), request.requestId, false)
-			if (request.options.method === 'wallet_switchEthereumChain') return switchEthereumChain(simulator, SwitchEthereumChainParams.parse(request.options), port, request.requestId)
-
-			if (window.interceptor.settings && isSupportedChain(window.interceptor.settings.activeChain.toString()) ) {
-				// we only support this method if we are on supported chain, otherwise forward to signer directly
-				if (request.options.method === 'eth_sendTransaction') return sendTransaction(simulator, SendTransactionParams.parse(request.options), port, request.requestId, false)
+			if (!('forward' in resolved)) {
+				return postMessageIfStillConnected(port, {
+					result: resolved.result,
+					interceptorApproved: true,
+					requestId: request.requestId,
+					options: request.options
+				})
 			}
 
 			return postMessageIfStillConnected(port, {
@@ -570,6 +607,8 @@ const popupMessageHandlers = new Map<string, PopupMessageHandler>([
 	['popup_getAddressBookData', getAddressBookData],
 	['popup_removeAddressBookEntry', removeAddressBookEntry],
 	['popup_openAddressBook', openAddressBook],
+	['popup_personalSignReadyAndListening', async () => {}], // handled elsewhere (personalSign.ts)
+	['popup_changeChainReadyAndListening', async () => {}], // handled elsewhere (changeChain.ts)
 ])
 
 async function startup() {

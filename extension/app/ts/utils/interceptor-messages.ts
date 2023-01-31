@@ -1,6 +1,6 @@
 import * as funtypes from 'funtypes'
 import { AddressBookEntries, AddressBookEntry, AddressInfo } from './user-interface-types.js'
-import { EthereumAddress, EthereumQuantity } from './wire-types.js'
+import { EIP2612Message, EthereumAddress, EthereumQuantity, Permit2 } from './wire-types.js'
 
 
 export type MessageMethodAndParams = funtypes.Static<typeof MessageMethodAndParams>
@@ -184,6 +184,16 @@ export type ChainChangeConfirmation = funtypes.Static<typeof ChainChangeConfirma
 export const ChainChangeConfirmation = funtypes.Object({
 	method: funtypes.Literal('popup_changeChainDialog'),
 	options: funtypes.Object({
+		requestId: funtypes.Number,
+		accept: funtypes.Boolean
+	})
+}).asReadonly()
+
+export type SignerChainChangeConfirmation = funtypes.Static<typeof SignerChainChangeConfirmation>
+export const SignerChainChangeConfirmation = funtypes.Object({
+	method: funtypes.Literal('popup_signerChangeChainDialog'),
+	options: funtypes.Object({
+		chainId: EthereumQuantity,
 		accept: funtypes.Boolean
 	})
 }).asReadonly()
@@ -283,6 +293,7 @@ export const PopupMessage = funtypes.Union(
 	ChangeInterceptorAccess,
 	ChangeActiveChain,
 	ChainChangeConfirmation,
+	SignerChainChangeConfirmation,
 	EnableSimulationMode,
 	RejectNotification,
 	ReviewNotification,
@@ -291,6 +302,8 @@ export const PopupMessage = funtypes.Union(
 	GetAddressBookData,
 	RemoveAddressBookEntry,
 	OpenAddressBook,
+	funtypes.Object({ method: funtypes.Literal('popup_personalSignReadyAndListening') }),
+	funtypes.Object({ method: funtypes.Literal('popup_changeChainReadyAndListening') }),
 )
 
 export const MessageToPopupSimple = funtypes.Object({
@@ -313,10 +326,64 @@ export const MessageToPopupSimple = funtypes.Object({
 	)
 }).asReadonly()
 
+export type PersonalSignRequest = funtypes.Static<typeof PersonalSignRequest>
+export const PersonalSignRequest = funtypes.Object({
+	message: funtypes.Literal('popup_personal_sign_request'),
+	data: funtypes.Intersect(
+		funtypes.Object({
+			activeAddress: EthereumAddress,
+			requestId: funtypes.Number,
+			simulationMode: funtypes.Boolean,
+			account: AddressBookEntry,
+			method: funtypes.Union(
+				funtypes.Literal('personal_sign'),
+				funtypes.Literal('eth_signTypedData'),
+				funtypes.Literal('eth_signTypedData_v1'),
+				funtypes.Literal('eth_signTypedData_v2'),
+				funtypes.Literal('eth_signTypedData_v3'),
+				funtypes.Literal('eth_signTypedData_v4')
+			),
+		}),
+		funtypes.Object({
+			type: funtypes.Literal('NotParsed'),
+			message: funtypes.String,
+		}).Or(funtypes.Object({
+			type: funtypes.Literal('Permit'),
+			message: EIP2612Message,
+			addressBookEntries: funtypes.Object({
+				owner: AddressBookEntry,
+				spender: AddressBookEntry,
+				verifyingContract: AddressBookEntry,
+			}),
+		})).Or(funtypes.Object({
+			type: funtypes.Literal('Permit2'),
+			message: Permit2,
+			addressBookEntries: funtypes.Object({
+				token: AddressBookEntry,
+				spender: AddressBookEntry,
+				verifyingContract: AddressBookEntry,
+			}),
+		}))
+	)
+})
+
+export type ChangeChainRequest = funtypes.Static<typeof ChangeChainRequest>
+export const ChangeChainRequest = funtypes.Object({
+	message: funtypes.Literal('popup_ChangeChainRequest'),
+	data: funtypes.Object({
+		requestId: funtypes.Number,
+		simulationMode: funtypes.Boolean,
+		chainId: EthereumQuantity,
+		origin: funtypes.String,
+		icon: funtypes.Union(funtypes.String, funtypes.Undefined),
+	})
+})
+
 export type MessageToPopup = funtypes.Static<typeof MessageToPopup>
 export const MessageToPopup = funtypes.Union(
 	GetAddressBookDataReply,
-	MessageToPopupSimple
+	PersonalSignRequest,
+	ChangeChainRequest,
 )
 
 export type HandleSimulationModeReturnValue = {

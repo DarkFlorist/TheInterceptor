@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'preact/hooks'
 import { getChainName, isSupportedChain } from '../../utils/constants.js'
-import { Error, ErrorCheckBox } from '../subcomponents/Error.js'
+import { Error as ErrorContainer, ErrorCheckBox } from '../subcomponents/Error.js'
+import { ChangeChainRequest, MessageToPopup } from '../../utils/interceptor-messages.js'
 
 interface InterceptorChainChangeRequest {
 	isInterceptorSupport: boolean,
@@ -8,6 +9,7 @@ interface InterceptorChainChangeRequest {
 	origin: string,
 	icon: string | undefined,
 	simulationMode: boolean,
+	requestId: number,
 }
 
 
@@ -16,39 +18,37 @@ export function ChangeChain() {
 	const [connectAnyway, setConnectAnyway] = useState<boolean>(false)
 
 	useEffect( () => {
-		function popupMessageListener(msg: unknown) {
-			console.log('popup message')
-			console.log(msg)
-			fetch()
+		async function popupMessageListener(msg: unknown) {
+			const message = MessageToPopup.parse(msg)
+			if ( message.message !== 'popup_ChangeChainRequest') return
+			await updatePage(message)
 		}
 		browser.runtime.onMessage.addListener(popupMessageListener)
+		browser.runtime.sendMessage( { method: 'popup_changeChainReadyAndListening' } )
+		return () => browser.runtime.onMessage.removeListener(popupMessageListener)
+	}, [])
 
-		fetch()
-
-		return () => {
-			browser.runtime.onMessage.removeListener(popupMessageListener)
-		};
-	}, []);
-
-	async function fetch() {
-		const backgroundPage = await browser.runtime.getBackgroundPage()
-		if( !('changeChainDialog' in backgroundPage.interceptor) || backgroundPage.interceptor.changeChainDialog === undefined) return window.close();
-		const dialog = backgroundPage.interceptor.changeChainDialog
+	async function updatePage(message: ChangeChainRequest) {
 		setChainChangeData( {
-			isInterceptorSupport : isSupportedChain(dialog.chainId),
-			chainName : getChainName(BigInt(dialog.chainId)),
-			origin: dialog.origin,
-			icon: dialog.icon,
-			simulationMode: dialog.simulationMode,
+			isInterceptorSupport : isSupportedChain(message.data.chainId.toString()),
+			chainName : getChainName(message.data.chainId),
+			origin: message.data.origin,
+			icon: message.data.icon,
+			simulationMode: message.data.simulationMode,
+			requestId: message.data.requestId,
 		} )
 	}
 
 	function approve() {
-		browser.runtime.sendMessage( { method: 'popup_changeChainDialog', options: { accept: true } } )
+		if ( chainChangeData?.requestId === undefined) throw new Error('Request id is missing')
+		browser.runtime.sendMessage( { method: 'popup_changeChainDialog', options: { accept: true, requestId: chainChangeData.requestId } } )
+		window.close()
 	}
 
 	function reject() {
-		browser.runtime.sendMessage( { method: 'popup_changeChainDialog', options: { accept: false } } )
+		if ( chainChangeData?.requestId === undefined) throw new Error('Request id is missing')
+		browser.runtime.sendMessage( { method: 'popup_changeChainDialog', options: { accept: false, requestId: chainChangeData.requestId } } )
+		window.close()
 	}
 
 	return (
@@ -90,7 +90,7 @@ export function ChangeChain() {
 								</p>
 								{ !chainChangeData.isInterceptorSupport && chainChangeData.simulationMode ?
 									<div style = 'font-size: 0.5em;'>
-										<Error
+										<ErrorContainer
 											text = { 'This chain is not supported by The Interceptor. If you want to use this chain anyway. Select Signing mode instead of Simulation mode and attempt to change the chain again. You will then be able to disable The Interceptor and send transactions without protection of The Interceptor.' }
 										/>
 									</div>
