@@ -130,7 +130,7 @@ export type EthereumBytes256 = t.Static<typeof EthereumBytes256>
 export const EthereumTimestamp = t.String.withParser(TimestampParser)
 export type EthereumTimestamp = t.Static<typeof EthereumTimestamp>
 
-export const EthereumBlockTag = t.Union(EthereumQuantitySmall, EthereumBytes32, t.Literal('latest'))
+export const EthereumBlockTag = t.Union(EthereumQuantitySmall, EthereumBytes32, t.Literal('latest'), t.Literal('pending'))
 export type EthereumBlockTag = t.Static<typeof EthereumBlockTag>
 
 export const EthereumInput = t.Union(t.String, t.Undefined).withParser(OptionalBytesParser)
