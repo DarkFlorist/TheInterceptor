@@ -29,14 +29,16 @@ function rejectMessage(requestId: number) {
 	} as const
 }
 
+const userDeniedChange = {
+	error: {
+		code: METAMASK_ERROR_USER_REJECTED_REQUEST,
+		message: 'User denied the chain change.',
+	}
+} as const
+
 export const openChangeChainDialog = async (requestId: number, simulationMode: boolean, origin: string, favIconUrl: string | undefined, chainId: bigint) => {
 	if (openedWindow !== null || pendForUserReply || pendForSignerReply) {
-		return {
-			error: {
-				code: METAMASK_ERROR_USER_REJECTED_REQUEST,
-				message: 'User denied the chain change.'
-			}
-		}
+		return userDeniedChange
 	}
 	pendForUserReply = new Future<ChainChangeConfirmation>()
 
@@ -93,10 +95,5 @@ export const openChangeChainDialog = async (requestId: number, simulationMode: b
 			return { result: null }
 		}
 	}
-	return {
-		error: {
-			code: METAMASK_ERROR_USER_REJECTED_REQUEST,
-			message: 'User denied the chain change.'
-		}
-	}
+	return userDeniedChange
 }

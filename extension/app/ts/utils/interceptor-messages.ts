@@ -185,7 +185,7 @@ export const ChainChangeConfirmation = funtypes.Object({
 	method: funtypes.Literal('popup_changeChainDialog'),
 	options: funtypes.Object({
 		requestId: funtypes.Number,
-		accept: funtypes.Boolean
+		accept: funtypes.Boolean,
 	})
 }).asReadonly()
 
@@ -194,7 +194,7 @@ export const SignerChainChangeConfirmation = funtypes.Object({
 	method: funtypes.Literal('popup_signerChangeChainDialog'),
 	options: funtypes.Object({
 		chainId: EthereumQuantity,
-		accept: funtypes.Boolean
+		accept: funtypes.Boolean,
 	})
 }).asReadonly()
 
