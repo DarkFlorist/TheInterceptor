@@ -1,5 +1,5 @@
 import * as funtypes from 'funtypes'
-import { AddressBookEntries, AddressBookEntry, AddressInfo } from './user-interface-types.js'
+import { AddressBookEntries, AddressBookEntry, AddressInfo, AddressInfoEntry } from './user-interface-types.js'
 import { EIP2612Message, EthereumAddress, EthereumQuantity, Permit2 } from './wire-types.js'
 
 
@@ -304,6 +304,7 @@ export const PopupMessage = funtypes.Union(
 	OpenAddressBook,
 	funtypes.Object({ method: funtypes.Literal('popup_personalSignReadyAndListening') }),
 	funtypes.Object({ method: funtypes.Literal('popup_changeChainReadyAndListening') }),
+	funtypes.Object({ method: funtypes.Literal('popup_interceptorAccessReadyAndListening') }),
 )
 
 export const MessageToPopupSimple = funtypes.Object({
@@ -380,12 +381,24 @@ export const ChangeChainRequest = funtypes.Object({
 	})
 })
 
+export type InterceptorAccessDialog = funtypes.Static<typeof InterceptorAccessDialog>
+export const InterceptorAccessDialog = funtypes.Object({
+	message: funtypes.Literal('popup_interceptorAccessDialog'),
+	data: funtypes.Object({
+		origin: funtypes.String,
+		icon: funtypes.Union(funtypes.String, funtypes.Undefined),
+		requestAccessToAddress: funtypes.Union(AddressInfoEntry, funtypes.Undefined),
+		associatedAddresses: funtypes.ReadonlyArray(AddressInfoEntry),
+	})
+})
+
 export type MessageToPopup = funtypes.Static<typeof MessageToPopup>
 export const MessageToPopup = funtypes.Union(
 	MessageToPopupSimple,
 	GetAddressBookDataReply,
 	PersonalSignRequest,
 	ChangeChainRequest,
+	InterceptorAccessDialog,
 )
 
 export type HandleSimulationModeReturnValue = {

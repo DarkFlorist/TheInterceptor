@@ -1,6 +1,7 @@
 import { addressString } from '../../utils/bigint.js'
 import { Future } from '../../utils/future.js'
 import { imageToUri } from '../../utils/imageToUri.js'
+import { PopupMessage } from '../../utils/interceptor-messages.js'
 import { AddressInfoEntry, PendingAccessRequest } from '../../utils/user-interface-types.js'
 import { setAccess, updateWebsiteApprovalAccesses } from '../accessManagement.js'
 import { sendPopupMessageToOpenWindows } from '../backgroundUtils.js'
@@ -9,27 +10,30 @@ import { findAddressInfo } from '../metadataUtils.js'
 import { savePendingAccessRequests, saveWebsiteAccess, WebsiteAccess } from '../settings.js'
 
 export type Confirmation = 'Approved' | 'Rejected' | 'NoResponse'
-let pendingInterceptorAccess: Future<Confirmation> | undefined = undefined
 
 let openedInterceptorAccessWindow: browser.windows.Window | null = null
 
+let pendingInterceptorAccess: {
+	future: Future<Confirmation>
+	origin: string,
+	requestAccessToAddress: bigint | undefined,
+} | undefined = undefined
+
 const onCloseWindow = () => { // check if user has closed the window on their own, if so, reject signature
-	if (pendingInterceptorAccess !== undefined) pendingInterceptorAccess.resolve('NoResponse')
+	if (pendingInterceptorAccess !== undefined) pendingInterceptorAccess.future.resolve('NoResponse')
 	pendingInterceptorAccess = undefined
-	window.interceptor.interceptorAccessDialog = undefined
 	openedInterceptorAccessWindow = null
 	browser.windows.onRemoved.removeListener( onCloseWindow )
 }
 
 export async function resolveInterceptorAccess(confirmation: Confirmation) {
-	if (pendingInterceptorAccess !== undefined) pendingInterceptorAccess.resolve(confirmation)
+	if (pendingInterceptorAccess !== undefined) pendingInterceptorAccess.future.resolve(confirmation)
 	pendingInterceptorAccess = undefined
 
 	if (openedInterceptorAccessWindow !== null && openedInterceptorAccessWindow.id) {
 		browser.windows.onRemoved.removeListener( onCloseWindow )
 		await browser.windows.remove(openedInterceptorAccessWindow.id)
 	}
-	window.interceptor.interceptorAccessDialog = undefined
 	openedInterceptorAccessWindow = null
 }
 
@@ -100,39 +104,50 @@ export async function changeAccess(access: Confirmation, origin: string, originI
 	sendPopupMessageToOpenWindows({ message: 'popup_websiteAccess_changed' })
 }
 
-export async function requestAccessFromUser(origin: string, icon: string | undefined, requestAccessToAddress: string | undefined = undefined, addressMetadata: [string, AddressInfoEntry][] = []) {
+export async function requestAccessFromUser(origin: string, icon: string | undefined, requestAccessToAddress: AddressInfoEntry | undefined, associatedAddresses: AddressInfoEntry[]) {
 	if (window.interceptor.settings === undefined) return false
 
 	// check if we need to ask address access or not. If address is put to never need to have address specific permision, we don't need to ask for it
-	const askForAddressAccess = requestAccessToAddress !== undefined && window.interceptor.settings?.addressInfos.find((x) => addressString(x.address) === requestAccessToAddress )?.askForAddressAccess !== false
+	const askForAddressAccess = requestAccessToAddress !== undefined && window.interceptor.settings?.addressInfos.find((x) => x.address === requestAccessToAddress.address )?.askForAddressAccess !== false
 	const accessAddress = askForAddressAccess ? requestAccessToAddress : undefined
 
 	if (window.interceptor.settings.pendingAccessRequests.find( (x) => x.origin === origin && x.requestAccessToAddress === accessAddress) === undefined) {
 		// we didn't have this request pending already, add it to the list
 		await setPendingAccessRequests( window.interceptor.settings.pendingAccessRequests.concat( {
 			origin: origin,
-			requestAccessToAddress: accessAddress,
+			requestAccessToAddress: accessAddress ? addressString(accessAddress.address) : undefined,
 			icon: icon,
 		}) )
 		sendPopupMessageToOpenWindows({ message: 'popup_notification_added' })
 	}
 
 	if (pendingInterceptorAccess !== undefined) {
-		if ( !(window.interceptor.interceptorAccessDialog
-			&& window.interceptor.interceptorAccessDialog.origin === origin
-			&& window.interceptor.interceptorAccessDialog.requestAccessToAddress === requestAccessToAddress
-		)) {
+		if ( pendingInterceptorAccess.origin === origin && pendingInterceptorAccess.requestAccessToAddress === requestAccessToAddress ) {
 			return false // there's already one pending request, and it's different access request
 		}
 	} else {
-		pendingInterceptorAccess = new Future<Confirmation>()
-
-		window.interceptor.interceptorAccessDialog =  {
+		pendingInterceptorAccess =  {
+			future: new Future<Confirmation>(),
 			origin: origin,
-			icon: icon,
-			requestAccessToAddress: accessAddress,
-			addressBookEntries: addressMetadata,
+			requestAccessToAddress: accessAddress?.address,
 		}
+
+		const windowReadyAndListening = async function popupMessageListener(msg: unknown) {
+			const message = PopupMessage.parse(msg)
+			if ( message.method !== 'popup_interceptorAccessReadyAndListening') return
+			browser.runtime.onMessage.removeListener(windowReadyAndListening)
+			return sendPopupMessageToOpenWindows({
+				message: 'popup_interceptorAccessDialog',
+				data: {
+					origin: origin,
+					icon: icon,
+					requestAccessToAddress: accessAddress,
+					associatedAddresses: associatedAddresses,
+				}
+			})
+		}
+
+		browser.runtime.onMessage.addListener(windowReadyAndListening)
 
 		openedInterceptorAccessWindow = await browser.windows.create(
 			{
@@ -150,7 +165,7 @@ export async function requestAccessFromUser(origin: string, icon: string | undef
 		}
 	}
 
-	const access = await pendingInterceptorAccess
+	const access = await pendingInterceptorAccess.future
 
 	await changeAccess(access, origin, icon, accessAddress)
 
