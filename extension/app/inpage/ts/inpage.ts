@@ -58,7 +58,7 @@ class EthereumJsonRpcError extends Error {
 
 type MessageMethodAndParams = {
 	readonly method: string,
-	readonly params?: unknown[]
+	readonly params?: readonly unknown[]
 }
 
 interface MessageToBackgroundPage {
@@ -106,11 +106,11 @@ interface ProviderMessage {
 
 type AnyCallBack =  ((message: ProviderMessage) => void)
 	| ( (connectInfo: ProviderConnectInfo) => void )
-	| ( (accounts: string[]) => void )
+	| ( (accounts: readonly string[]) => void )
 	| ( (error: ProviderRpcError) => void )
 	| ( (chainId: string) => void )
 
-type EthereumRequest = (options: { readonly method: string, readonly params?: unknown[] }) => Promise<unknown>
+type EthereumRequest = (options: { readonly method: string, readonly params?: readonly unknown[] }) => Promise<unknown>
 
 type InjectFunctions = {
 	request: EthereumRequest,
@@ -143,7 +143,7 @@ class InterceptorMessageListener {
 
 	private readonly onMessageCallBacks: Set<((message: ProviderMessage) => void)> = new Set()
 	private readonly onConnectCallBacks: Set<((connectInfo: ProviderConnectInfo) => void)> = new Set()
-	private readonly onAccountsChangedCallBacks: Set<((accounts: string[]) => void)> = new Set()
+	private readonly onAccountsChangedCallBacks: Set<((accounts: readonly string[]) => void)> = new Set()
 	private readonly onDisconnectCallBacks: Set<((error: ProviderRpcError) => void)> = new Set()
 	private readonly onChainChangedCallBacks: Set<((chainId: string) => void)> = new Set()
 
@@ -154,7 +154,7 @@ class InterceptorMessageListener {
 	private readonly WindowEthereumIsConnected = () => this.connected
 
 	// sends messag to The Interceptor background page
-	private readonly WindowEthereumRequest = async (options: { readonly method: string, readonly params?: unknown[] }) => {
+	private readonly WindowEthereumRequest = async (options: { readonly method: string, readonly params?: readonly unknown[] }) => {
 		this.requestId++
 		const currentRequestId = this.requestId
 		const future = new InterceptorFuture<unknown>()
@@ -182,12 +182,12 @@ class InterceptorMessageListener {
 	// 🤬 Uniswap, among others, require `send` to be implemented even though it was never part of any final specification.
 	// To make matters worse, some versions of send will have a first parameter that is an object (like `request`) and others will have a first and second parameter.
 	// On top of all that, some applications have a mix of both!
-	private readonly WindowEthereumSend = async (method: string | { method: string, params: unknown[] }, params: unknown[]) => {
+	private readonly WindowEthereumSend = async (method: string | { method: string, params: readonly unknown[] }, params: readonly unknown[]) => {
 		if (typeof method === 'object') return await this.WindowEthereumRequest({ method: method.method, params: method.params })
 		return await this.WindowEthereumRequest({ method, params })
 	}
 
-	private readonly WindowEthereumSendAsync = async (payload: { id: string | number | null, method: string, params: unknown[] }, callback: (error: IJsonRpcError | null, response: IJsonRpcSuccess<unknown> | null) => void) => {
+	private readonly WindowEthereumSendAsync = async (payload: { id: string | number | null, method: string, params: readonly unknown[] }, callback: (error: IJsonRpcError | null, response: IJsonRpcSuccess<unknown> | null) => void) => {
 		this.WindowEthereumRequest(payload)
 			.then(result => callback(null, { jsonrpc: '2.0', id: payload.id, result }))
 			// since `request(...)` only throws things shaped like `JsonRpcError`, we can rely on it having those properties.
@@ -197,7 +197,7 @@ class InterceptorMessageListener {
 	private readonly WindowEthereumOn = async (kind: OnMessage, callback: AnyCallBack) => {
 		switch (kind) {
 			case 'accountsChanged':
-				this.onAccountsChangedCallBacks.add( callback as (accounts: string[]) => void )
+				this.onAccountsChangedCallBacks.add( callback as (accounts: readonly string[]) => void )
 				return
 			case 'message':
 				this.onMessageCallBacks.add(callback as (message: ProviderMessage) => void)
@@ -221,7 +221,7 @@ class InterceptorMessageListener {
 	private readonly WindowEthereumRemoveListener = async (kind: OnMessage, callback: AnyCallBack) => {
 		switch (kind) {
 			case 'accountsChanged':
-				this.onAccountsChangedCallBacks.delete(callback as (accounts: string[]) => void)
+				this.onAccountsChangedCallBacks.delete(callback as (accounts: readonly string[]) => void)
 				return
 			case 'message':
 				this.onMessageCallBacks.delete(callback as (message: ProviderMessage) => void)
@@ -290,7 +290,7 @@ class InterceptorMessageListener {
 		// inform callbacks
 
 		if (replyRequest.options.method === 'accountsChanged') {
-			return this.onAccountsChangedCallBacks.forEach( (f) => f( replyRequest.result as string[] ) )
+			return this.onAccountsChangedCallBacks.forEach( (f) => f( replyRequest.result as readonly string[] ) )
 		}
 		if (replyRequest.options.method === 'connect') {
 			this.connected = true
@@ -404,7 +404,7 @@ class InterceptorMessageListener {
 		}
 
 		// subscribe for signers events
-		window.ethereum.on('accountsChanged', (accounts: string[]) => {
+		window.ethereum.on('accountsChanged', (accounts: readonly string[]) => {
 			this.WindowEthereumRequest( { method: 'eth_accounts_reply', params: accounts } )
 		})
 		window.ethereum.on('connect', (_connectInfo: ProviderConnectInfo) => {
