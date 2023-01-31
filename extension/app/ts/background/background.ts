@@ -1,7 +1,7 @@
 import { HandleSimulationModeReturnValue, InterceptedRequest, InterceptedRequestForward, PopupMessage, ProviderMessage, SignerName } from '../utils/interceptor-messages.js'
 import 'webextension-polyfill'
 import { Simulator } from '../simulation/simulator.js'
-import { EIP2612Message, EthereumQuantity, EthereumUnsignedTransaction, Permit2, PersonalSignParams, SendTransactionParams, SignTypedDataParams, SupportedETHRPCCall } from '../utils/wire-types.js'
+import { EthereumQuantity, EthereumUnsignedTransaction, PersonalSignParams, SendTransactionParams, SignTypedDataParams, SupportedETHRPCCall } from '../utils/wire-types.js'
 import { getSettings, saveActiveChain, saveActiveSigningAddress, saveActiveSimulationAddress, Settings } from './settings.js'
 import { blockNumber, call, chainId, estimateGas, gasPrice, getAccounts, getBalance, getBlockByNumber, getCode, getPermissions, getSimulationStack, getTransactionByHash, getTransactionCount, getTransactionReceipt, personalSign, requestPermissions, sendTransaction, signTypedData, subscribe, switchEthereumChain, unsubscribe } from './simulationModeHanders.js'
 import { changeActiveAddress, changeAddressInfos, changeMakeMeRich, changePage, resetSimulation, confirmDialog, RefreshSimulation, removeTransaction, requestAccountsFromSigner, refreshPopupConfirmTransactionSimulation, confirmPersonalSign, confirmRequestAccess, changeInterceptorAccess, changeChainDialog, popupChangeActiveChain, enableSimulationMode, reviewNotification, rejectNotification, addOrModifyAddressInfo, getAddressBookData, removeAddressBookEntry, openAddressBook } from './popupMessageHandlers.js'
@@ -40,16 +40,6 @@ declare global {
 				addressBookEntries: [string, AddressBookEntry][],
 				tokenPrices: TokenPriceEstimate[],
 				activeAddress: bigint,
-			}
-			personalSignDialog?: {
-				requestId: number,
-				simulationMode: boolean,
-				message: string,
-				account: string,
-				method: 'personal_sign' | 'eth_signTypedData' | 'eth_signTypedData_v1'| 'eth_signTypedData_v2'  | 'eth_signTypedData_v3' | 'eth_signTypedData_v4',
-				addressBookEntries: [string, AddressBookEntry][],
-				eip2612Message?: EIP2612Message,
-				permit2?: Permit2,
 			}
 			interceptorAccessDialog?: {
 				origin: string,

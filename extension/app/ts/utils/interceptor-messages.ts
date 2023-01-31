@@ -323,6 +323,7 @@ export const MessageToPopupSimple = funtypes.Object({
 		funtypes.Literal('popup_accounts_update'),
 		funtypes.Literal('popup_websiteAccess_changed'),
 		funtypes.Literal('popup_notification_added'),
+		funtypes.Literal('popup_notification_added'),
 	)
 }).asReadonly()
 
@@ -381,6 +382,7 @@ export const ChangeChainRequest = funtypes.Object({
 
 export type MessageToPopup = funtypes.Static<typeof MessageToPopup>
 export const MessageToPopup = funtypes.Union(
+	MessageToPopupSimple,
 	GetAddressBookDataReply,
 	PersonalSignRequest,
 	ChangeChainRequest,
