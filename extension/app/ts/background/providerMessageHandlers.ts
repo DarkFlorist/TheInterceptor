@@ -50,13 +50,14 @@ export function signerChainChanged(port: browser.runtime.Port, request: Provider
 
 export function walletSwitchEthereumChainReply(port: browser.runtime.Port, request: ProviderMessage) {
 	const params = WalletSwitchEthereumChainReply.parse(request.options).params[0]
+	if (params.accept) changeSignerChain(port, params.chainId )
 	resolveSignerChainChange({
-		method: 'popup_changeChainDialog',
+		method: 'popup_signerChangeChainDialog',
 		options: {
-			accept: params.accept
+			chainId: params.chainId,
+			accept: params.accept,
 		}
 	})
-	if (params.accept) changeSignerChain(port, params.chainId )
 }
 
 export function connectedToSigner(_port: browser.runtime.Port, request: ProviderMessage) {

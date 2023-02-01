@@ -184,7 +184,17 @@ export type ChainChangeConfirmation = funtypes.Static<typeof ChainChangeConfirma
 export const ChainChangeConfirmation = funtypes.Object({
 	method: funtypes.Literal('popup_changeChainDialog'),
 	options: funtypes.Object({
-		accept: funtypes.Boolean
+		requestId: funtypes.Number,
+		accept: funtypes.Boolean,
+	})
+}).asReadonly()
+
+export type SignerChainChangeConfirmation = funtypes.Static<typeof SignerChainChangeConfirmation>
+export const SignerChainChangeConfirmation = funtypes.Object({
+	method: funtypes.Literal('popup_signerChangeChainDialog'),
+	options: funtypes.Object({
+		chainId: EthereumQuantity,
+		accept: funtypes.Boolean,
 	})
 }).asReadonly()
 
@@ -283,6 +293,7 @@ export const PopupMessage = funtypes.Union(
 	ChangeInterceptorAccess,
 	ChangeActiveChain,
 	ChainChangeConfirmation,
+	SignerChainChangeConfirmation,
 	EnableSimulationMode,
 	RejectNotification,
 	ReviewNotification,
@@ -291,7 +302,8 @@ export const PopupMessage = funtypes.Union(
 	GetAddressBookData,
 	RemoveAddressBookEntry,
 	OpenAddressBook,
-	funtypes.Object({ method: funtypes.Literal('popup_personalSignReadyAndListening') })
+	funtypes.Object({ method: funtypes.Literal('popup_personalSignReadyAndListening') }),
+	funtypes.Object({ method: funtypes.Literal('popup_changeChainReadyAndListening') }),
 )
 
 export const MessageToPopupSimple = funtypes.Object({
@@ -356,11 +368,24 @@ export const PersonalSignRequest = funtypes.Object({
 	)
 })
 
+export type ChangeChainRequest = funtypes.Static<typeof ChangeChainRequest>
+export const ChangeChainRequest = funtypes.Object({
+	message: funtypes.Literal('popup_ChangeChainRequest'),
+	data: funtypes.Object({
+		requestId: funtypes.Number,
+		simulationMode: funtypes.Boolean,
+		chainId: EthereumQuantity,
+		origin: funtypes.String,
+		icon: funtypes.Union(funtypes.String, funtypes.Undefined),
+	})
+})
+
 export type MessageToPopup = funtypes.Static<typeof MessageToPopup>
 export const MessageToPopup = funtypes.Union(
 	MessageToPopupSimple,
 	GetAddressBookDataReply,
 	PersonalSignRequest,
+	ChangeChainRequest,
 )
 
 export type HandleSimulationModeReturnValue = {

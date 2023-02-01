@@ -122,27 +122,27 @@ export async function gasPrice(simulator: Simulator) {
 	return { result: EthereumQuantity.serialize(await simulator.ethereum.getGasPrice()) }
 }
 
-export async function personalSign(_simulator: Simulator, request: PersonalSignParams, requestId: number | undefined, simulationMode: boolean = true) {
+export async function personalSign(_simulator: Simulator, request: PersonalSignParams, requestId: number | undefined, simulationMode: boolean) {
 	if (requestId === undefined) throw new Error('personalSign requires known requestId')
 	return await openPersonalSignDialog(requestId, simulationMode, request)
 }
 
-export async function signTypedData(_simulator: Simulator, request: SignTypedDataParams, requestId: number | undefined, simulationMode: boolean = true) {
+export async function signTypedData(_simulator: Simulator, request: SignTypedDataParams, requestId: number | undefined, simulationMode: boolean) {
 	if (requestId === undefined) throw new Error('signTypedData requires known requestId')
 	return await openPersonalSignDialog(requestId, simulationMode, request)
 }
 
-export async function switchEthereumChain(simulator: Simulator, request: SwitchEthereumChainParams, port: browser.runtime.Port, requestId: number | undefined) {
+export async function switchEthereumChain(simulator: Simulator, request: SwitchEthereumChainParams, port: browser.runtime.Port, requestId: number | undefined, simulationMode: boolean) {
 	if (await simulator.ethereum.getChainId() === request.params[0].chainId) {
 		// we are already on the right chain
-		return { result: [] }
+		return { result: null }
 	}
 	const origin = port.sender?.url
 	if (origin === undefined) return ERROR_INTERCEPTOR_UNKNOWN_ORIGIN
 	if (requestId === undefined) throw new Error('switchEthereumChain requires known requestId')
 
 	const favicon = port.sender?.tab?.favIconUrl
-	return await openChangeChainDialog(requestId, origin, favicon, request.params[0].chainId)
+	return await openChangeChainDialog(requestId, simulationMode, origin, favicon, request.params[0].chainId)
 }
 
 export async function getCode(simulator: Simulator, request: GetCode) {
