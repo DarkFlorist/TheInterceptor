@@ -110,7 +110,7 @@ type AnyCallBack =  ((message: ProviderMessage) => void)
 	| ( (error: ProviderRpcError) => void )
 	| ( (chainId: string) => void )
 
-type EthereumRequest = (options: { readonly method: string, readonly params?: readonly unknown[] }) => Promise<unknown>
+type EthereumRequest = (options: readonly { readonly method: string, readonly params?: readonly unknown[] }) => Promise<unknown>
 
 type InjectFunctions = {
 	request: EthereumRequest,
