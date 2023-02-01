@@ -44,8 +44,9 @@ export async function resolveExistingInterceptorAccessAsNoResponse() {
 }
 
 export async function resolveInterceptorAccess(confirmation: Confirmation) {
-	if (pendingInterceptorAccess !== undefined)
-	if (confirmation.origin === pendingInterceptorAccess.origin && confirmation.requestAccessToAddress === pendingInterceptorAccess.requestAccessToAddress)
+	if (pendingInterceptorAccess === undefined) return
+	if (confirmation.origin !== pendingInterceptorAccess.origin || confirmation.requestAccessToAddress !== pendingInterceptorAccess.requestAccessToAddress) return
+
 	pendingInterceptorAccess.future.resolve(confirmation)
 	pendingInterceptorAccess = undefined
 
