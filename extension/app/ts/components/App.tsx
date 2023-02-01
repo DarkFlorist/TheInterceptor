@@ -1,6 +1,5 @@
 import { useState, useEffect } from 'preact/hooks'
 import { defaultAddresses, WebsiteAccessArray } from '../background/settings.js'
-import { addressString } from '../utils/bigint.js'
 import { SimulationAndVisualisationResults } from '../utils/visualizer-types.js'
 import { ChangeActiveAddress } from './pages/ChangeActiveAddress.js'
 import { Home } from './pages/Home.js'
@@ -14,9 +13,9 @@ import { truncateAddr } from '../utils/ethereum.js'
 import { NotificationCenter } from './pages/NotificationCenter.js'
 import { DEFAULT_TAB_CONNECTION } from '../utils/constants.js'
 import { SignerName } from '../utils/interceptor-messages.js'
-import { EthereumQuantity } from '../utils/wire-types.js'
 import { version, gitCommitSha } from '../version.js'
 import { formSimulatedAndVisualizedTransaction } from './formVisualizerResults.js'
+import { sendPopupMessageToBackgroundPage } from '../background/backgroundUtils.js'
 
 export function App() {
 	const [appPage, setAppPage] = useState(Page.Home)
@@ -58,13 +57,13 @@ export function App() {
 	async function setActiveAddressAndInformAboutIt(address: bigint | 'signer') {
 		setUseSignersAddressAsActiveAddress(address === 'signer')
 		if( address === 'signer' ) {
-			browser.runtime.sendMessage( { method: 'popup_changeActiveAddress', options: 'signer' } );
+			sendPopupMessageToBackgroundPage( { method: 'popup_changeActiveAddress', options: 'signer' } )
 			if(simulationMode) {
 				return setActiveSimulationAddress(signerAccounts && signerAccounts.length > 0 ? signerAccounts[0] : undefined)
 			}
 			return setActiveSigningAddress(signerAccounts && signerAccounts.length > 0 ? signerAccounts[0] : undefined)
 		}
-		browser.runtime.sendMessage( { method: 'popup_changeActiveAddress', options: addressString(address) } );
+		sendPopupMessageToBackgroundPage( { method: 'popup_changeActiveAddress', options: address } )
 		if(simulationMode) {
 			return setActiveSimulationAddress(address)
 		}
@@ -80,7 +79,7 @@ export function App() {
 	}
 
 	async function setActiveChainAndInformAboutIt(chainId: bigint) {
-		browser.runtime.sendMessage( { method: 'popup_changeActiveChain', options: EthereumQuantity.serialize(chainId) } );
+		sendPopupMessageToBackgroundPage( { method: 'popup_changeActiveChain', options: chainId } )
 		if(!isSignerConnected()) {
 			setActiveChain(chainId)
 		}
@@ -143,7 +142,7 @@ export function App() {
 
 	function setAndSaveAppPage(page: Page) {
 		setAppPage(page)
-		browser.runtime.sendMessage( { method: 'popup_changePage', options: page } )
+		sendPopupMessageToBackgroundPage( { method: 'popup_changePage', options: page } )
 	}
 
 	async function addressPaste(address: string) {
@@ -177,7 +176,7 @@ export function App() {
 	}
 
 	function openAddressBook() {
-		browser.runtime.sendMessage( { method: 'popup_openAddressBook' } )
+		sendPopupMessageToBackgroundPage( { method: 'popup_openAddressBook' } )
 		return window.close() // close extension popup, chrome closes it by default, but firefox does not
 	}
 

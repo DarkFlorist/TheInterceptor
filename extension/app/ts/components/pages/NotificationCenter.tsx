@@ -2,8 +2,8 @@ import { useEffect, useState } from 'preact/hooks'
 import { AddressInfoEntry, NotificationCenterParams, Page } from '../../utils/user-interface-types.js'
 import { BigAddress } from '../subcomponents/address.js'
 import { ethers } from 'ethers'
-import { RejectNotification, ReviewNotification } from '../../utils/interceptor-messages.js'
 import { addressString } from '../../utils/bigint.js'
+import { sendPopupMessageToBackgroundPage } from '../../background/backgroundUtils.js'
 
 export type PendingAccessRequestWithMetadata = AddressInfoEntry & {
 	origin: string,
@@ -54,18 +54,24 @@ export function NotificationCenter(param: NotificationCenterParams) {
 	}
 
 	function review(origin: string, requestAccessToAddress: bigint | undefined) {
-		browser.runtime.sendMessage( ReviewNotification.serialize({ method: 'popup_reviewNotification', options: {
-			origin: origin,
-			requestAccessToAddress: requestAccessToAddress,
-		} } ))
+		sendPopupMessageToBackgroundPage({
+			method: 'popup_reviewNotification',
+			options: {
+				origin: origin,
+				requestAccessToAddress: requestAccessToAddress,
+			}
+		} )
 	}
 
 	function reject(origin: string, requestAccessToAddress: bigint | undefined, removeOnly: boolean) {
-		browser.runtime.sendMessage( RejectNotification.serialize({ method: 'popup_rejectNotification', options: {
-			origin: origin,
-			requestAccessToAddress: requestAccessToAddress,
-			removeOnly: removeOnly,
-		} } ))
+		sendPopupMessageToBackgroundPage({
+			method: 'popup_rejectNotification',
+			options: {
+				origin: origin,
+				requestAccessToAddress: requestAccessToAddress,
+				removeOnly: removeOnly,
+			}
+		} )
 	}
 
 	return ( <>

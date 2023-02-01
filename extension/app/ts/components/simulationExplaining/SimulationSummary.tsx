@@ -9,6 +9,7 @@ import { SomeTimeAgo } from '../subcomponents/SomeTimeAgo.js'
 import { CHAINS, MAKE_YOU_RICH_TRANSACTION } from '../../utils/constants.js'
 import { addressString } from '../../utils/bigint.js'
 import { identifyTransaction } from './identifyTransaction.js'
+import { sendPopupMessageToBackgroundPage } from '../../background/backgroundUtils.js'
 
 type EtherChangeParams = {
 	textColor: string,
@@ -441,7 +442,7 @@ export function SimulationSummary(param: SimulationSummaryParams) {
 	const notOwnAddresses = Array.from(summary.entries()).filter( ([_index, balanceSummary]) => balanceSummary.summaryFor.type !== 'addressInfo' && balanceSummary.summaryFor.address !== param.simulationAndVisualisationResults.activeAddress)
 
 	function resetSimulation() {
-		browser.runtime.sendMessage( { method: 'popup_resetSimulation' } );
+		sendPopupMessageToBackgroundPage( { method: 'popup_resetSimulation' } )
 	}
 
 	return (

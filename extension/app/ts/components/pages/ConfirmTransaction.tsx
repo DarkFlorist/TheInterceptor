@@ -10,6 +10,7 @@ import { getSignerName, SignerLogoText } from '../subcomponents/signers.js'
 import { AddNewAddress } from './AddNewAddress.js'
 import { AddressBookEntry } from '../../utils/user-interface-types.js'
 import { formSimulatedAndVisualizedTransaction } from '../formVisualizerResults.js'
+import { sendPopupMessageToBackgroundPage } from '../../background/backgroundUtils.js'
 
 export function ConfirmTransaction() {
 	const [requestIdToConfirm, setRequestIdToConfirm] = useState<number | undefined>(undefined)
@@ -23,7 +24,7 @@ export function ConfirmTransaction() {
 	useEffect( () => {
 		const updateTx = async () => {
 			const backgroundPage = await browser.runtime.getBackgroundPage()
-			if( !('confirmTransactionDialog' in backgroundPage.interceptor) || backgroundPage.interceptor.confirmTransactionDialog === undefined) return window.close();
+			if( !('confirmTransactionDialog' in backgroundPage.interceptor) || backgroundPage.interceptor.confirmTransactionDialog === undefined) return window.close()
 			setRequestIdToConfirm(backgroundPage.interceptor.confirmTransactionDialog.requestId)
 			await fetchSimulationState()
 		}
@@ -69,15 +70,17 @@ export function ConfirmTransaction() {
 	const removeTransaction = (_hash: bigint) => reject()
 
 	function approve() {
-		browser.runtime.sendMessage( { method: 'popup_confirmDialog', options: { requestId: requestIdToConfirm, accept: true } } )
+		if (requestIdToConfirm === undefined) throw new Error('request id is not set')
+		sendPopupMessageToBackgroundPage( { method: 'popup_confirmDialog', options: { requestId: requestIdToConfirm, accept: true } } )
 	}
 
 	function reject() {
-		browser.runtime.sendMessage( { method: 'popup_confirmDialog', options: { requestId: requestIdToConfirm, accept: false } } )
+		if (requestIdToConfirm === undefined) throw new Error('request id is not set')
+		sendPopupMessageToBackgroundPage( { method: 'popup_confirmDialog', options: { requestId: requestIdToConfirm, accept: false } } )
 	}
 
 	function refreshSimulation() {
-		browser.runtime.sendMessage( { method: 'popup_refreshConfirmTransactionDialogSimulation' } );
+		sendPopupMessageToBackgroundPage( { method: 'popup_refreshConfirmTransactionDialogSimulation' } )
 	}
 
 	function isConfirmDisabled() {

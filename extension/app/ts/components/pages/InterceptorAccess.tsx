@@ -2,7 +2,8 @@ import { useState, useEffect } from 'preact/hooks'
 import { BigAddress } from '../subcomponents/address.js'
 import { AddNewAddress } from './AddNewAddress.js'
 import { AddressInfoEntry, AddressBookEntry } from '../../utils/user-interface-types.js'
-import { InterceptorAccess as InterceptorAccessType, MessageToPopup } from '../../utils/interceptor-messages.js'
+import { MessageToPopup } from '../../utils/interceptor-messages.js'
+import { sendPopupMessageToBackgroundPage } from '../../background/backgroundUtils.js'
 
 interface InterceptorAccessRequest {
 	origin: string
@@ -23,7 +24,7 @@ export function InterceptorAccess() {
 			setAccessRequest(message.data)
 		}
 		browser.runtime.onMessage.addListener(popupMessageListener)
-		browser.runtime.sendMessage( { method: 'popup_interceptorAccessReadyAndListening' } )
+		sendPopupMessageToBackgroundPage( { method: 'popup_interceptorAccessReadyAndListening' } )
 		return () => browser.runtime.onMessage.removeListener(popupMessageListener)
 	}, [])
 
@@ -34,7 +35,7 @@ export function InterceptorAccess() {
 			origin: accessRequest.origin,
 			requestAccessToAddress: accessRequest.requestAccessToAddress?.address
 		}
-		browser.runtime.sendMessage( InterceptorAccessType.serialize({ method: 'popup_interceptorAccess', options }) )
+		sendPopupMessageToBackgroundPage({ method: 'popup_interceptorAccess', options })
 	}
 
 	function reject() {
@@ -44,7 +45,7 @@ export function InterceptorAccess() {
 			origin: accessRequest.origin,
 			requestAccessToAddress: accessRequest.requestAccessToAddress?.address
 		}
-		browser.runtime.sendMessage( InterceptorAccessType.serialize({ method: 'popup_interceptorAccess', options }) )
+		sendPopupMessageToBackgroundPage({ method: 'popup_interceptorAccess', options })
 	}
 
 	function renameAddressCallBack(entry: AddressBookEntry) {

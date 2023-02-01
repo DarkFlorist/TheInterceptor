@@ -2,6 +2,7 @@ import { useState, useEffect } from 'preact/hooks'
 import { getChainName, isSupportedChain } from '../../utils/constants.js'
 import { Error as ErrorContainer, ErrorCheckBox } from '../subcomponents/Error.js'
 import { ChangeChainRequest, MessageToPopup } from '../../utils/interceptor-messages.js'
+import { sendPopupMessageToBackgroundPage } from '../../background/backgroundUtils.js'
 
 interface InterceptorChainChangeRequest {
 	isInterceptorSupport: boolean,
@@ -24,7 +25,7 @@ export function ChangeChain() {
 			await updatePage(message)
 		}
 		browser.runtime.onMessage.addListener(popupMessageListener)
-		browser.runtime.sendMessage( { method: 'popup_changeChainReadyAndListening' } )
+		sendPopupMessageToBackgroundPage( { method: 'popup_changeChainReadyAndListening' } )
 		return () => browser.runtime.onMessage.removeListener(popupMessageListener)
 	}, [])
 
@@ -41,13 +42,13 @@ export function ChangeChain() {
 
 	function approve() {
 		if ( chainChangeData?.requestId === undefined) throw new Error('Request id is missing')
-		browser.runtime.sendMessage( { method: 'popup_changeChainDialog', options: { accept: true, requestId: chainChangeData.requestId } } )
+		sendPopupMessageToBackgroundPage( { method: 'popup_changeChainDialog', options: { accept: true, requestId: chainChangeData.requestId } } )
 		window.close()
 	}
 
 	function reject() {
 		if ( chainChangeData?.requestId === undefined) throw new Error('Request id is missing')
-		browser.runtime.sendMessage( { method: 'popup_changeChainDialog', options: { accept: false, requestId: chainChangeData.requestId } } )
+		sendPopupMessageToBackgroundPage( { method: 'popup_changeChainDialog', options: { accept: false, requestId: chainChangeData.requestId } } )
 		window.close()
 	}
 

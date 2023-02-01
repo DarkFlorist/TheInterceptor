@@ -1,11 +1,11 @@
 import { useEffect, useRef, useState } from 'preact/hooks'
-import { addressString } from './utils/bigint.js'
 import { AddressBookEntries, AddressBookEntry, RenameAddressCallBack } from './utils/user-interface-types.js'
 import { GetAddressBookDataReply, MessageToPopup } from './utils/interceptor-messages.js'
 import { arrayToChunks } from './utils/typed-arrays.js'
 import { AddNewAddress } from './components/pages/AddNewAddress.js'
 import { BigAddress } from './components/subcomponents/address.js'
 import Hint from './components/subcomponents/Hint.js'
+import { sendPopupMessageToBackgroundPage } from './background/backgroundUtils.js'
 
 type Modals = 'noModal' | 'addNewAddress' | 'ConfirmaddressBookEntryToBeRemoved'
 
@@ -282,7 +282,7 @@ export function AddressBook() {
 
 	function sendQuery(filter: ActiveFilter, searchString: string | undefined, startPage: number, endPage: number) {
 		console.log('query:',filter,' - ',searchString,': ',startPage,'-', endPage)
-		browser.runtime.sendMessage({ method: 'popup_getAddressBookData', options: {
+		sendPopupMessageToBackgroundPage({ method: 'popup_getAddressBookData', options: {
 			filter: filter,
 			searchString: searchString,
 			startIndex: startPage * PAGE_SIZE,
@@ -348,10 +348,13 @@ export function AddressBook() {
 	}
 
 	function removeAddressBookEntry(entry: AddressBookEntry) {
-		browser.runtime.sendMessage({ method: 'popup_removeAddressBookEntry', options: {
-			address: addressString(entry.address),
-			addressBookCategory: activeFilter,
-		} })
+		sendPopupMessageToBackgroundPage({
+			method: 'popup_removeAddressBookEntry', 
+			options: {
+				address: entry.address,
+				addressBookCategory: activeFilter,
+			}
+		})
 	}
 
 	return (
