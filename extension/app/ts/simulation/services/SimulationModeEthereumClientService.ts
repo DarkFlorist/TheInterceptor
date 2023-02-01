@@ -248,9 +248,19 @@ export class SimulationModeEthereumClientService {
 		return await this.ethereumClientService.getStorageAt(contract, slot)
 	}
 
+	canQueryNodeDirectly = async (blockTag: EthereumBlockTag = 'latest') => {
+		if ( this.simulationState === undefined
+			|| this.simulationState.simulatedTransactions.length == 0 ||
+			(typeof blockTag === 'bigint' && blockTag <= await this.ethereumClientService.getBlockNumber())
+		){
+			return true
+		}
+		return false
+	}
+
 	public readonly getTransactionCount = async (address: bigint, blockTag: EthereumBlockTag = 'latest') => {
 		let addedTransactions = 0n
-		if (blockTag === 'latest' || blockTag === await this.getBlockNumber()) {
+		if (blockTag === 'latest' || blockTag === 'pending' || blockTag === await this.getBlockNumber()) {
 			// if we are on our simulated block, just count how many transactions we have sent in the simulation to increment transaction count
 			if ( this.simulationState === undefined ) return await this.ethereumClientService.getTransactionCount(address, blockTag)
 			for (const signed of this.simulationState.simulatedTransactions) {
@@ -302,7 +312,7 @@ export class SimulationModeEthereumClientService {
 	}
 
 	public readonly getBalance = async (address: bigint, blockTag: EthereumBlockTag = 'latest'): Promise<bigint> => {
-		if (this.simulationState === undefined || blockTag <= await this.ethereumClientService.getBlockNumber()) return await this.ethereumClientService.getBalance(address, blockTag)
+		if (await this.canQueryNodeDirectly(blockTag) || this.simulationState === undefined) return await this.ethereumClientService.getBalance(address, blockTag)
 		const balances = new Map<bigint, bigint>()
 		for (const transaction of this.simulationState.simulatedTransactions) {
 			if (transaction.multicallResponse.statusCode !== 'success') continue
@@ -318,9 +328,8 @@ export class SimulationModeEthereumClientService {
 	}
 
 	public readonly getCode = async (address: bigint, blockTag: EthereumBlockTag = 'latest') => {
+		if (await this.canQueryNodeDirectly(blockTag)) return await this.ethereumClientService.getCode(address, blockTag)
 		const blockNum = await this.ethereumClientService.getBlockNumber()
-		if (this.simulationState === undefined || blockTag <= blockNum) return await this.ethereumClientService.getCode(address, blockTag)
-
 		const input = await encodeMethod(keccak256.hash, 'at(address)', [address])
 
 		const getCodeTransaction = {
@@ -366,10 +375,7 @@ export class SimulationModeEthereumClientService {
 	}
 
 	public readonly getBlock = async (blockTag: EthereumBlockTag = 'latest', fullObjects: boolean = true): Promise<EthereumBlockHeader | EthereumBlockHeaderWithTransactionHashes> => {
-		if (this.simulationState == undefined) return await this.ethereumClientService.getBlock(blockTag, fullObjects)
-
-		const blockNum = await this.ethereumClientService.getBlockNumber()
-		if (blockTag !== 'latest' && blockTag !== blockNum + 1n) return await this.ethereumClientService.getBlock(blockTag, fullObjects)
+		if (this.simulationState == undefined || await this.canQueryNodeDirectly(blockTag)) return await this.ethereumClientService.getBlock(blockTag, fullObjects)
 
 		// make a mock block based on the previous block
 		const parentBlock = await this.ethereumClientService.getBlock('latest', true)
@@ -497,7 +503,7 @@ export class SimulationModeEthereumClientService {
 	}
 
 	public readonly call = async (transaction: EthereumUnsignedTransaction, blockTag: EthereumBlockTag = 'latest'): Promise<string> => {
-		if (blockTag === 'latest') {
+		if (blockTag === 'latest' || blockTag === 'pending') {
 			const multicallResult = await this.multicall([transaction], await this.ethereumClientService.getBlockNumber() + 1n)
 			return `0x${dataString(multicallResult[multicallResult.length - 1].returnValue)}`
 		} else {

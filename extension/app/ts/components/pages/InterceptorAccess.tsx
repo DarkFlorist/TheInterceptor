@@ -20,7 +20,7 @@ export function InterceptorAccess() {
 	useEffect( () => {
 		async function popupMessageListener(msg: unknown) {
 			const message = MessageToPopup.parse(msg)
-			if ( message.message !== 'popup_interceptorAccessDialog') return
+			if (message.message !== 'popup_interceptorAccessDialog') return
 			setAccessRequest(message.data)
 		}
 		browser.runtime.onMessage.addListener(popupMessageListener)
