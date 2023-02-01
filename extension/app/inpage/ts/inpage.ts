@@ -154,7 +154,7 @@ class InterceptorMessageListener {
 	private readonly WindowEthereumIsConnected = () => this.connected
 
 	// sends messag to The Interceptor background page
-	private readonly WindowEthereumRequest = async (options: { readonly method: string, readonly params?: readonly unknown[] }) => {
+	private readonly WindowEthereumRequest = async (options: readonly { readonly method: string, readonly params?: readonly unknown[] }) => {
 		this.requestId++
 		const currentRequestId = this.requestId
 		const future = new InterceptorFuture<unknown>()
