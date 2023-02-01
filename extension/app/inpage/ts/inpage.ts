@@ -110,7 +110,7 @@ type AnyCallBack =  ((message: ProviderMessage) => void)
 	| ( (error: ProviderRpcError) => void )
 	| ( (chainId: string) => void )
 
-type EthereumRequest = (options: readonly { readonly method: string, readonly params?: readonly unknown[] }) => Promise<unknown>
+type EthereumRequest = (options: { readonly method: string, readonly params?: readonly unknown[] }) => Promise<unknown>
 
 type InjectFunctions = {
 	request: EthereumRequest,
@@ -154,7 +154,7 @@ class InterceptorMessageListener {
 	private readonly WindowEthereumIsConnected = () => this.connected
 
 	// sends messag to The Interceptor background page
-	private readonly WindowEthereumRequest = async (options: readonly { readonly method: string, readonly params?: readonly unknown[] }) => {
+	private readonly WindowEthereumRequest = async (options: { readonly method: string, readonly params?: readonly unknown[] }) => {
 		this.requestId++
 		const currentRequestId = this.requestId
 		const future = new InterceptorFuture<unknown>()
@@ -182,12 +182,12 @@ class InterceptorMessageListener {
 	// 🤬 Uniswap, among others, require `send` to be implemented even though it was never part of any final specification.
 	// To make matters worse, some versions of send will have a first parameter that is an object (like `request`) and others will have a first and second parameter.
 	// On top of all that, some applications have a mix of both!
-	private readonly WindowEthereumSend = async (method: string | readonly { method: string, params: readonly unknown[] }, params: readonly unknown[]) => {
+	private readonly WindowEthereumSend = async (method: string | { readonly method: string, readonly params: readonly unknown[] }, params: readonly unknown[]) => {
 		if (typeof method === 'object') return await this.WindowEthereumRequest({ method: method.method, params: method.params })
 		return await this.WindowEthereumRequest({ method, params })
 	}
 
-	private readonly WindowEthereumSendAsync = async (payload: readonly { id: string | number | null, method: string, params: readonly unknown[] }, callback: (error: IJsonRpcError | null, response: IJsonRpcSuccess<unknown> | null) => void) => {
+	private readonly WindowEthereumSendAsync = async (payload: { readonly id: string | number | null, readonly method: string, readonly params: readonly unknown[] }, callback: (error: IJsonRpcError | null, response: IJsonRpcSuccess<unknown> | null) => void) => {
 		this.WindowEthereumRequest(payload)
 			.then(result => callback(null, { jsonrpc: '2.0', id: payload.id, result }))
 			// since `request(...)` only throws things shaped like `JsonRpcError`, we can rely on it having those properties.
