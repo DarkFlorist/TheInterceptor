@@ -182,7 +182,7 @@ class InterceptorMessageListener {
 	// 🤬 Uniswap, among others, require `send` to be implemented even though it was never part of any final specification.
 	// To make matters worse, some versions of send will have a first parameter that is an object (like `request`) and others will have a first and second parameter.
 	// On top of all that, some applications have a mix of both!
-	private readonly WindowEthereumSend = async (method: string | { method: string, params: readonly unknown[] }, params: readonly unknown[]) => {
+	private readonly WindowEthereumSend = async (method: string | readonly { method: string, params: readonly unknown[] }, params: readonly unknown[]) => {
 		if (typeof method === 'object') return await this.WindowEthereumRequest({ method: method.method, params: method.params })
 		return await this.WindowEthereumRequest({ method, params })
 	}
