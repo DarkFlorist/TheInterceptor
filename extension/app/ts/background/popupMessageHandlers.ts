@@ -28,7 +28,7 @@ export async function confirmRequestAccess(_simulator: Simulator, payload: Popup
 	await resolveInterceptorAccess({
 		outcome: confirmation.options.accept ? 'Approved' : 'Rejected',
 		origin: confirmation.options.origin,
-        requestAccessToAddress: confirmation.options.requestAccessToAddress,
+		requestAccessToAddress: confirmation.options.requestAccessToAddress,
 	})
 }
 
