@@ -70,17 +70,19 @@ export const TokenVisualizerResultWithMetadata = funtypes.Union(
 	TokenVisualizerERC721AllApprovalEvent,
 )
 
-export type VisualizerResult = {
-	readonly ethBalanceChanges: EthBalanceChanges
-	readonly tokenResults: TokenVisualizerResult[]
-	readonly blockNumber: bigint
-}
+export type VisualizerResult  = funtypes.Static<typeof VisualizerResult>
+export const VisualizerResult = funtypes.Object( {
+	ethBalanceChanges: EthBalanceChanges,
+	tokenResults: funtypes.ReadonlyArray(TokenVisualizerResult),
+	blockNumber: EthereumQuantity,
+})
 
-export type SimResults = {
-	quarantine: boolean,
-	quarantineCodes: QUARANTINE_CODE[],
-	visualizerResults: VisualizerResult | undefined,
-}
+export type SimResults  = funtypes.Static<typeof SimResults>
+export const SimResults = funtypes.Object( {
+	quarantine: funtypes.Boolean,
+	quarantineCodes: funtypes.ReadonlyArray(QUARANTINE_CODE),
+	visualizerResults: funtypes.Union(VisualizerResult, funtypes.Undefined),
+})
 
 export type SimulatedTransaction = {
 	multicallResponse: SingleMulticallResponse,

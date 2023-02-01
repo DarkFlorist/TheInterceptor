@@ -1,3 +1,5 @@
+import * as funtypes from 'funtypes'
+
 export const QUARANTINE_CODES_DICT = {
 	'ERC20_UNINTENDED_CONTRACT': {
 		label: 'Attempt to send token to a contract that cannot receive such tokens',
@@ -30,4 +32,14 @@ export const QUARANTINE_CODES_DICT = {
 }
 
 export const QUARANTINE_CODES = Object.values(QUARANTINE_CODES_DICT)
-export type QUARANTINE_CODE = keyof typeof QUARANTINE_CODES_DICT
+
+export type QUARANTINE_CODE = funtypes.Static<typeof QUARANTINE_CODE>
+export const QUARANTINE_CODE = funtypes.Union(
+	funtypes.Literal('ERC20_UNINTENDED_CONTRACT'),
+	funtypes.Literal('ERC20_ITSELF'),
+	funtypes.Literal('ERC20_DONTBELONG'),
+	funtypes.Literal('ERC20_NOTAPPROVED'),
+	funtypes.Literal('BIG_FEE'),
+	funtypes.Literal('EOA_APPROVAL'),
+	funtypes.Literal('EOA_CALLDATA'),
+)

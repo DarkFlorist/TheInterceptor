@@ -30,17 +30,6 @@ let simulator: Simulator | undefined = undefined
 declare global {
 	interface Window {
 		interceptor: {
-			confirmTransactionDialog?: {
-				requestId: number,
-				transactionToSimulate: unknown,
-				simulationMode: boolean,
-				simulationState: SimulationState | undefined,
-				isComputingSimulation: boolean,
-				visualizerResults: SimResults[] | undefined,
-				addressBookEntries: [string, AddressBookEntry][],
-				tokenPrices: TokenPriceEstimate[],
-				activeAddress: bigint,
-			}
 			simulation: {
 				simulationId: number,
 				simulationState: SimulationState | undefined,
@@ -161,15 +150,15 @@ export function setEthereumNodeBlockPolling(enabled: boolean) {
 	simulator.ethereum.setBlockPolling(enabled)
 }
 
-export async function refreshConfirmTransactionSimulation() {
-	if ( window.interceptor.confirmTransactionDialog === undefined ) return
+export async function refreshConfirmTransactionSimulation(activeAddress: bigint, simulationMode: boolean, requestId: number, transactionToSimulate: EthereumUnsignedTransaction) {
 	if ( simulator === undefined ) return
+
+	sendPopupMessageToOpenWindows({ message: 'popup_confirm_computing_simulation' })
+
 	const priceEstimator = new PriceEstimator(simulator.ethereum)
 	const newSimulator = simulator.simulationModeNode.copy()
-	const currentRequestId = window.interceptor.confirmTransactionDialog.requestId
-	window.interceptor.confirmTransactionDialog.isComputingSimulation = true
 	sendPopupMessageToOpenWindows({ message: 'popup_confirm_transaction_simulation_started' })
-	const appended = await newSimulator.appendTransaction(EthereumUnsignedTransaction.parse(window.interceptor.confirmTransactionDialog.transactionToSimulate))
+	const appended = await newSimulator.appendTransaction(transactionToSimulate)
 	const transactions = appended.simulationState.simulatedTransactions.map(x => x.unsignedTransaction)
 	const visualizerResult = await simulator.visualizeTransactionChain(transactions, appended.simulationState.blockNumber, appended.simulationState.simulatedTransactions.map( x => x.multicallResponse))
 	const addressMetadata = await getAddressBookEntriesForVisualiser(simulator, visualizerResult.map( (x) => x.visualizerResults), appended.simulationState, window.interceptor.settings?.addressInfos)
@@ -179,15 +168,22 @@ export async function refreshConfirmTransactionSimulation() {
 		).filter( (x) => x.token !== 0x0n )
 	)
 
-	if ( window.interceptor.confirmTransactionDialog === undefined || window.interceptor.confirmTransactionDialog.requestId !== currentRequestId ) return // fixes race condition where user has already closed the dialog or initiated a new one
-
-	window.interceptor.confirmTransactionDialog.tokenPrices = tokenPrices
-	window.interceptor.confirmTransactionDialog.simulationState = appended.simulationState
-	window.interceptor.confirmTransactionDialog.addressBookEntries = addressMetadata
-	window.interceptor.confirmTransactionDialog.visualizerResults = visualizerResult
-	window.interceptor.confirmTransactionDialog.isComputingSimulation = false
-	sendPopupMessageToOpenWindows({ message: 'popup_confirm_transaction_simulation_state_changed' })
+	sendPopupMessageToOpenWindows({
+		message: 'popup_confirm_transaction_simulation_state_changed',
+		data: {
+			requestId: requestId,
+			transactionToSimulate: transactionToSimulate,
+			simulationMode: simulationMode,
+			simulationState: appended.simulationState,
+			isComputingSimulation: false,
+			visualizerResults: visualizerResult,
+			addressBookEntries: addressMetadata,
+			tokenPrices: tokenPrices,
+			activeAddress: activeAddress,
+		}
+	})
 }
+
 
 // returns true if simulation state was changed
 export async function updatePrependMode(forceRefresh: boolean = false) {

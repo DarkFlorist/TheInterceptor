@@ -1,7 +1,7 @@
 import * as funtypes from 'funtypes'
 import { AddressBookEntries, AddressBookEntry, AddressInfo, AddressInfoEntry } from './user-interface-types.js'
-import { EIP2612Message, EthereumAddress, EthereumQuantity, Permit2 } from './wire-types.js'
-
+import { EIP2612Message, EthereumAddress, EthereumQuantity, EthereumUnsignedTransaction, Permit2 } from './wire-types.js'
+import { SimResults, TokenPriceEstimate } from './visualizer-types.js'
 
 export type MessageMethodAndParams = funtypes.Static<typeof MessageMethodAndParams>
 export const MessageMethodAndParams = funtypes.Union(
@@ -315,7 +315,6 @@ export const MessageToPopupSimple = funtypes.Object({
 		funtypes.Literal('popup_started_simulation_update'),
 		funtypes.Literal('popup_simulation_state_changed'),
 		funtypes.Literal('popup_confirm_transaction_simulation_started'),
-		funtypes.Literal('popup_confirm_transaction_simulation_state_changed'),
 		funtypes.Literal('popup_new_block_arrived'),
 		funtypes.Literal('popup_accounts_update'),
 		funtypes.Literal('popup_websiteIconChanged'),
@@ -394,6 +393,22 @@ export const InterceptorAccessDialog = funtypes.Object({
 	})
 })
 
+export type ConfirmTransactionSimulationStateChanged = funtypes.Static<typeof ConfirmTransactionSimulationStateChanged>
+export const ConfirmTransactionSimulationStateChanged = funtypes.Object({
+	message: funtypes.Literal('popup_confirm_transaction_simulation_state_changed'),
+	data: funtypes.Object({
+		requestId: funtypes.Number,
+		transactionToSimulate: EthereumUnsignedTransaction,
+		simulationMode: funtypes.Boolean,
+		simulationState: funtypes.Boolean,
+		isComputingSimulation: funtypes.Boolean,
+		visualizerResults: SimResults,
+		addressBookEntries: AddressBookEntries,
+		tokenPrices: funtypes.ReadonlyArray(TokenPriceEstimate),
+		activeAddress: EthereumAddress,
+	})
+})
+
 export type MessageToPopup = funtypes.Static<typeof MessageToPopup>
 export const MessageToPopup = funtypes.Union(
 	MessageToPopupSimple,
@@ -401,6 +416,7 @@ export const MessageToPopup = funtypes.Union(
 	PersonalSignRequest,
 	ChangeChainRequest,
 	InterceptorAccessDialog,
+	ConfirmTransactionSimulationStateChanged,
 )
 
 export type HandleSimulationModeReturnValue = {
