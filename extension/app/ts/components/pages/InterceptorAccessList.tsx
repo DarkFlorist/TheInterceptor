@@ -5,6 +5,7 @@ import { SmallAddress } from '../subcomponents/address.js'
 import { CopyToClipboard } from '../subcomponents/CopyToClipboard.js'
 import { ethers } from 'ethers'
 import { addressString } from '../../utils/bigint.js'
+import { sendPopupMessageToBackgroundPage } from '../../background/backgroundUtils.js'
 
 interface ModifiedAddressAccess {
 	address: string,
@@ -122,7 +123,7 @@ export function InterceptorAccessList(param: InterceptorAccessListParams) {
 				access: addr.access,
 			})),
 		}))
-		browser.runtime.sendMessage( { method: 'popup_changeInterceptorAccess', options: newEntries } )
+		sendPopupMessageToBackgroundPage( { method: 'popup_changeInterceptorAccess', options: newEntries } )
 		updateEditableAccessList(newEntries)
 		param.setWebsiteAccess(newEntries)
 		return goHome()

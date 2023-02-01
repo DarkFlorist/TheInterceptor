@@ -1,7 +1,6 @@
 import { HomeParams, AddressInfo, Page, FirstCardParams, TabConnection } from '../../utils/user-interface-types.js'
 import { useEffect, useState } from 'preact/hooks'
 import { SimulationAndVisualisationResults } from '../../utils/visualizer-types.js'
-import { EthereumQuantity } from '../../utils/wire-types.js'
 import { ActiveAddress, findAddressInfo } from '../subcomponents/address.js'
 import { SimulationResults } from '../simulationExplaining/SimulationSummary.js'
 import { ChainSelector } from '../subcomponents/ChainSelector.js'
@@ -11,14 +10,15 @@ import { SignerName } from '../../utils/interceptor-messages.js'
 import { getSignerName, SignerLogoText, SignersLogoName } from '../subcomponents/signers.js'
 import { Error } from '../subcomponents/Error.js'
 import { ToolTip } from '../subcomponents/CopyToClipboard.js'
+import { sendPopupMessageToBackgroundPage } from '../../background/backgroundUtils.js'
 
 function FirstCard(param: FirstCardParams) {
 	async function enableMakeMeRich(enabled: boolean) {
-		browser.runtime.sendMessage( { method: 'popup_changeMakeMeRich', options: enabled } );
+		sendPopupMessageToBackgroundPage( { method: 'popup_changeMakeMeRich', options: enabled } )
 	}
 
 	function connectToSigner() {
-		browser.runtime.sendMessage( { method: 'popup_requestAccountsFromSigner', options: true } );
+		sendPopupMessageToBackgroundPage( { method: 'popup_requestAccountsFromSigner', options: true } )
 	}
 
 	return <>
@@ -163,16 +163,16 @@ export function Home(param: HomeParams) {
 	}
 
 	function enableSimulationMode(enabled: boolean ) {
-		browser.runtime.sendMessage( { method: 'popup_enableSimulationMode', options: enabled } );
+		sendPopupMessageToBackgroundPage( { method: 'popup_enableSimulationMode', options: enabled } )
 		setSimulationMode(enabled)
 	}
 
 	function removeTransaction(hash: bigint) {
-		browser.runtime.sendMessage( { method: 'popup_removeTransaction', options: EthereumQuantity.serialize(hash) } );
+		sendPopupMessageToBackgroundPage( { method: 'popup_removeTransaction', options: hash } )
 	}
 
 	function refreshSimulation() {
-		browser.runtime.sendMessage( { method: 'popup_refreshSimulation' } );
+		sendPopupMessageToBackgroundPage( { method: 'popup_refreshSimulation' } )
 	}
 
 	if (!isLoaded) return <></>

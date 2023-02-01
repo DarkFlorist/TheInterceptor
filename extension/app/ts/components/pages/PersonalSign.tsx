@@ -7,6 +7,7 @@ import { Error as ErrorComponent} from '../subcomponents/Error.js'
 import { MOCK_PRIVATE_KEYS_ADDRESS, getChainName } from '../../utils/constants.js'
 import { AddNewAddress } from './AddNewAddress.js'
 import { MessageToPopup, PersonalSignRequest } from '../../utils/interceptor-messages.js'
+import { sendPopupMessageToBackgroundPage } from '../../background/backgroundUtils.js'
 
 interface SignRequest {
 	simulationMode: boolean,
@@ -16,7 +17,7 @@ interface SignRequest {
 }
 
 export function PersonalSign() {
-	const [requestIdToConfirm, setRequestIdToConfirm] = useState<Number | undefined>(undefined)
+	const [requestIdToConfirm, setRequestIdToConfirm] = useState<number | undefined>(undefined)
 	const [signRequest, setSignRequest] = useState<SignRequest | undefined>(undefined)
 	const textareaRef = useRef<HTMLTextAreaElement | null>(null)
 	const [isEditAddressModelOpen, setEditAddressModelOpen] = useState<boolean>(false)
@@ -30,7 +31,7 @@ export function PersonalSign() {
 			await updatePage(message)
 		}
 		browser.runtime.onMessage.addListener(popupMessageListener)
-		browser.runtime.sendMessage( { method: 'popup_personalSignReadyAndListening' } )
+		sendPopupMessageToBackgroundPage( { method: 'popup_personalSignReadyAndListening' } )
 		return () => browser.runtime.onMessage.removeListener(popupMessageListener)
 	}, [])
 
@@ -88,11 +89,13 @@ export function PersonalSign() {
 	}
 
 	function approve() {
-		browser.runtime.sendMessage( { method: 'popup_personalSign', options: { requestId: requestIdToConfirm, accept: true } } )
+		if ( requestIdToConfirm === undefined) throw new Error('Request id is missing')
+		sendPopupMessageToBackgroundPage( { method: 'popup_personalSign', options: { requestId: requestIdToConfirm, accept: true } } )
 	}
 
 	function reject() {
-		browser.runtime.sendMessage( { method: 'popup_personalSign', options: { requestId: requestIdToConfirm, accept: false } } )
+		if ( requestIdToConfirm === undefined) throw new Error('Request id is missing')
+		sendPopupMessageToBackgroundPage( { method: 'popup_personalSign', options: { requestId: requestIdToConfirm, accept: false } } )
 	}
 
 	function renameAddressCallBack(entry: AddressBookEntry) {

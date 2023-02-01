@@ -1,11 +1,11 @@
 import { ethers } from 'ethers'
 import { useEffect, useState } from 'preact/hooks'
-import { EthereumAddress } from '../../utils/wire-types.js'
 import { AddAddressParam, AddressBookEntry } from '../../utils/user-interface-types.js'
 import Blockie from '../subcomponents/PreactBlocky.js'
 import { Notice } from '../subcomponents/Error.js'
 import { getIssueWithAddressString } from '../ui-utils.js'
 import { addressString } from '../../utils/bigint.js'
+import { sendPopupMessageToBackgroundPage } from '../../background/backgroundUtils.js'
 
 export function AddNewAddress(param: AddAddressParam) {
 	const [addressInput, setAddressInput] = useState<string | undefined>(undefined)
@@ -13,20 +13,22 @@ export function AddNewAddress(param: AddAddressParam) {
 	const [askForAddressAccess, setAskForAddressAccess] = useState<boolean>(true)
 	const [errorString, setErrorString] = useState<string | undefined>(undefined)
 	const [activeAddress, setActiveAddress] = useState<bigint | undefined>(undefined)
-	const [addresBookEntryInput, setAddressBookEntryInput] = useState<AddressBookEntry | undefined>(undefined)
+	const [addressBookEntryInput, setAddressBookEntryInput] = useState<AddressBookEntry | undefined>(undefined)
 	const [addressType, setAddressType] = useState<'contact' | 'addressInfo' | 'token' | 'NFT' | 'other contract'>('addressInfo')
 
 	function add() {
 		if (addressInput === undefined) return
 		if (!areInputValid()) return
+		if ( addressBookEntryInput?.type !== 'addressInfo') throw new Error('no support to add other than address infos for now')
+		
 		param.close()
 		const newEntry = {
-			...addresBookEntryInput,
+			type: addressBookEntryInput.type,
 			name: nameInput ? nameInput: ethers.utils.getAddress(addressInput),
-			address: EthereumAddress.serialize(BigInt(addressInput)),
+			address: BigInt(addressInput),
 			askForAddressAccess: askForAddressAccess,
 		}
-		browser.runtime.sendMessage( { method: 'popup_addOrModifyAddressBookEntry', options: [newEntry] } )
+		sendPopupMessageToBackgroundPage( { method: 'popup_addOrModifyAddressBookEntry', options: [newEntry] } )
 
 		setAddress(undefined)
 		setNameInput(undefined)

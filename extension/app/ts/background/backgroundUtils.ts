@@ -1,4 +1,4 @@
-import { MessageToPopup } from '../utils/interceptor-messages.js'
+import { MessageToPopup, PopupMessage } from '../utils/interceptor-messages.js'
 
 export function getActiveAddress() {
 	if (window.interceptor.settings === undefined) return undefined
@@ -18,4 +18,8 @@ export async function sendPopupMessageToOpenWindows(message: MessageToPopup) {
 			if (error) return console.error(`Popup message error: ${ error.message }`);
 		}
 	}
+}
+
+export async function sendPopupMessageToBackgroundPage(message: PopupMessage) {
+	await browser.runtime.sendMessage(PopupMessage.serialize(message))
 }
