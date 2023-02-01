@@ -187,7 +187,7 @@ class InterceptorMessageListener {
 		return await this.WindowEthereumRequest({ method, params })
 	}
 
-	private readonly WindowEthereumSendAsync = async (payload: { id: string | number | null, method: string, params: readonly unknown[] }, callback: (error: IJsonRpcError | null, response: IJsonRpcSuccess<unknown> | null) => void) => {
+	private readonly WindowEthereumSendAsync = async (payload: readonly { id: string | number | null, method: string, params: readonly unknown[] }, callback: (error: IJsonRpcError | null, response: IJsonRpcSuccess<unknown> | null) => void) => {
 		this.WindowEthereumRequest(payload)
 			.then(result => callback(null, { jsonrpc: '2.0', id: payload.id, result }))
 			// since `request(...)` only throws things shaped like `JsonRpcError`, we can rely on it having those properties.
