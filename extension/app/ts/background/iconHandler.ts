@@ -1,5 +1,4 @@
 import { getSignerName } from '../components/subcomponents/signers.js'
-import { addressString } from '../utils/bigint.js'
 import { ICON_ACCESS_DENIED, ICON_NOT_ACTIVE, ICON_SIGNING, ICON_SIGNING_NOT_SUPPORTED, ICON_SIMULATING, isSupportedChain } from '../utils/constants.js'
 import { getActiveAddressForDomain, hasAccess, hasAddressAccess } from './accessManagement.js'
 import { getActiveAddress, sendPopupMessageToOpenWindows } from './backgroundUtils.js'
@@ -26,7 +25,7 @@ export function updateExtensionIcon(port: browser.runtime.Port) {
 	const activeAddress = getActiveAddress()
 	const censoredActiveAddress = getActiveAddressForDomain(window.interceptor.settings.websiteAccess, origin)
 	if ( activeAddress === undefined) return setIcon(port.sender.tab.id, ICON_NOT_ACTIVE, 'No active address selected.')
-	if (hasAddressAccess(window.interceptor.settings.websiteAccess, origin, addressString(activeAddress) )  === 'notFound') {
+	if (hasAddressAccess(window.interceptor.settings.websiteAccess, origin, activeAddress )  === 'notFound') {
 		// we don't have active address selected, or no access specified
 		return setIcon(port.sender.tab.id, ICON_NOT_ACTIVE, `${ origin } has PENDING access request for ${ getAddressMetaData(activeAddress, window.interceptor.settings?.addressInfos).name }!`)
 	}

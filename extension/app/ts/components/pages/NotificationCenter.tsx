@@ -2,8 +2,8 @@ import { useEffect, useState } from 'preact/hooks'
 import { AddressInfoEntry, NotificationCenterParams, Page } from '../../utils/user-interface-types.js'
 import { BigAddress } from '../subcomponents/address.js'
 import { ethers } from 'ethers'
-import { addressString } from '../../utils/bigint.js'
 import { RejectNotification, ReviewNotification } from '../../utils/interceptor-messages.js'
+import { addressString } from '../../utils/bigint.js'
 
 export type PendingAccessRequestWithMetadata = AddressInfoEntry & {
 	origin: string,
@@ -16,7 +16,7 @@ export type PendingAccessRequestWithMetadata = AddressInfoEntry & {
 
 export function NotificationCenter(param: NotificationCenterParams) {
 
-	const [pendingAcessRequests, setPendingAccessRequests] = useState<PendingAccessRequestWithMetadata[] | undefined>(undefined)
+	const [pendingAccessRequests, setPendingAccessRequests] = useState<PendingAccessRequestWithMetadata[] | undefined>(undefined)
 
 	useEffect( () => {
 		function popupMessageListener(msg: unknown) {
@@ -40,10 +40,10 @@ export function NotificationCenter(param: NotificationCenterParams) {
 		setPendingAccessRequests( backgroundPage.interceptor.settings.pendingAccessRequests.map( (x) => ({
 			origin: x.origin,
 			icon: x.icon,
-			...(x.requestAccessToAddress === undefined ? { address: undefined } : metadata.get(x.requestAccessToAddress) || { // TODO, refactor away when we are using messaging instead of globals for these
+			...(x.requestAccessToAddress === undefined ? { address: undefined } : metadata.get(addressString(x.requestAccessToAddress)) || { // TODO, refactor away when we are using messaging instead of globals for these
 				type: 'addressInfo' as const,
-				name: ethers.utils.getAddress(x.requestAccessToAddress),
-				address: BigInt(x.requestAccessToAddress),
+				name: ethers.utils.getAddress(addressString(x.requestAccessToAddress)),
+				address: x.requestAccessToAddress,
 				askForAddressAccess: false,
 			})
 		}) ) )
@@ -87,14 +87,14 @@ export function NotificationCenter(param: NotificationCenterParams) {
 				</button>
 			</header>
 			<section class = 'modal-card-body' style = 'min-height: 100px'>
-				{ pendingAcessRequests === undefined ?
+				{ pendingAccessRequests === undefined ?
 					<p className = 'paragraph' style = 'text-align: center; margin-top: 10%; margin-bottom: 10%;'> Loading... </p>
 
-				: pendingAcessRequests.length === 0 ?
+				: pendingAccessRequests.length === 0 ?
 					<p className = 'paragraph' style = 'text-align: center; margin-top: 10%; margin-bottom: 10%;'> All clear! Nothing to notify! </p>
 				:
 					<ul>
-						{ pendingAcessRequests.map( (pendingAccessRequest) => (
+						{ pendingAccessRequests.map( (pendingAccessRequest) => (
 						<li>
 							<div class = 'card'>
 								<div class = 'card-header'>

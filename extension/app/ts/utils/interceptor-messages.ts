@@ -168,7 +168,7 @@ export const ChangeInterceptorAccess = funtypes.Object({
 			access: funtypes.Boolean,
 			addressAccess: funtypes.Union(
 				funtypes.ReadonlyArray(funtypes.Object( {
-					address: funtypes.String,
+					address: EthereumAddress,
 					access: funtypes.Boolean,
 				} ))
 			, funtypes.Undefined),

@@ -49,7 +49,7 @@ declare global {
 				addressBookEntries: [string, AddressBookEntry][],
 				tokenPrices: TokenPriceEstimate[],
 			}
-			websiteAccessAddressMetadata: [string, AddressInfoEntry][],
+			websiteAccessAddressMetadata: AddressInfoEntry[],
 			pendingAccessMetadata: [string, AddressInfoEntry][],
 			prependTransactionMode: PrependTransactionMode,
 			signerAccounts: readonly bigint[] | undefined,

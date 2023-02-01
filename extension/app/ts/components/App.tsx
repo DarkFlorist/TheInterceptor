@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'preact/hooks'
-import { defaultAddresses, WebsiteAccess } from '../background/settings.js'
+import { defaultAddresses, WebsiteAccessArray } from '../background/settings.js'
 import { addressString } from '../utils/bigint.js'
 import { SimulationAndVisualisationResults } from '../utils/visualizer-types.js'
 import { ChangeActiveAddress } from './pages/ChangeActiveAddress.js'
@@ -27,8 +27,8 @@ export function App() {
 	const [activeSigningAddress, setActiveSigningAddress] = useState<bigint | undefined>(undefined)
 	const [useSignersAddressAsActiveAddress, setUseSignersAddressAsActiveAddress] = useState(false)
 	const [simVisResults, setSimVisResults] = useState<SimulationAndVisualisationResults | undefined >(undefined)
-	const [websiteAccess, setWebsiteAccess] = useState<readonly WebsiteAccess[] | undefined>(undefined)
-	const [websiteAccessAddressMetadata, setWebsiteAccessAddressMetadata] = useState<[string, AddressInfoEntry][]>([])
+	const [websiteAccess, setWebsiteAccess] = useState<WebsiteAccessArray | undefined>(undefined)
+	const [websiteAccessAddressMetadata, setWebsiteAccessAddressMetadata] = useState<AddressInfoEntry[]>([])
 	const [activeChain, setActiveChain] = useState<bigint>(1n)
 	const [addressBookEntryInput, setAddressBookEntryInput] = useState<AddressBookEntry | undefined>(undefined)
 	const [simulationMode, setSimulationMode] = useState<boolean>(true)

@@ -5,7 +5,7 @@ import { SimulatedAndVisualizedTransaction, SimulationAndVisualisationResults } 
 import { IdentifiedSwapWithMetadata } from '../components/simulationExplaining/SwapTransactions.js'
 import { CHAINS } from './constants.js'
 import { SignerName } from './interceptor-messages.js'
-import { WebsiteAccess } from '../background/settings.js'
+import { WebsiteAccessArray } from '../background/settings.js'
 
 export type CHAIN = keyof typeof CHAINS
 export const CHAIN = funtypes.Union(funtypes.Literal('1'), funtypes.Literal('5'))
@@ -89,9 +89,9 @@ export type AddressListParams = {
 
 export type InterceptorAccessListParams = {
 	setAndSaveAppPage: (page: Page) => void,
-	setWebsiteAccess: StateUpdater<readonly WebsiteAccess[] | undefined>,
-	websiteAccess: readonly WebsiteAccess[] | undefined,
-	websiteAccessAddressMetadata: [string, AddressInfoEntry][],
+	setWebsiteAccess: StateUpdater<WebsiteAccessArray | undefined>,
+	websiteAccess: WebsiteAccessArray | undefined,
+	websiteAccessAddressMetadata: AddressInfoEntry[],
 	renameAddressCallBack: RenameAddressCallBack,
 }
 
@@ -178,11 +178,15 @@ export type NotificationCenterParams = {
 	renameAddressCallBack: RenameAddressCallBack,
 }
 
-export type PendingAccessRequest = {
-	origin: string,
-	icon: string | undefined,
-	requestAccessToAddress: string | undefined,
-}
+export type PendingAccessRequest = funtypes.Static<typeof PendingAccessRequest>
+export const PendingAccessRequest = funtypes.Object({
+	origin: funtypes.String,
+	icon: funtypes.Union(funtypes.String, funtypes.Undefined),
+	requestAccessToAddress: funtypes.Union(EthereumAddress, funtypes.Undefined),
+}).asReadonly()
+
+export type PendingAccessRequestArray = funtypes.Static<typeof PendingAccessRequestArray>
+export const PendingAccessRequestArray = funtypes.ReadonlyArray(PendingAccessRequest)
 
 export interface PendingAccessRequestWithMetadata extends PendingAccessRequest {
 	addressMetadata: [string, AddressInfoEntry][],

@@ -1,9 +1,10 @@
 import { AddressInfoEntry, InterceptorAccessListParams, Page } from '../../utils/user-interface-types.js'
 import { useEffect, useState } from 'preact/hooks'
-import { WebsiteAccess, WebsiteAddressAccess } from '../../background/settings.js'
+import { WebsiteAccess, WebsiteAccessArray, WebsiteAddressAccess } from '../../background/settings.js'
 import { SmallAddress } from '../subcomponents/address.js'
 import { CopyToClipboard } from '../subcomponents/CopyToClipboard.js'
 import { ethers } from 'ethers'
+import { addressString } from '../../utils/bigint.js'
 
 interface ModifiedAddressAccess {
 	address: string,
@@ -23,14 +24,14 @@ export function InterceptorAccessList(param: InterceptorAccessListParams) {
 	const [editableAccessList, setEditableAccessList] = useState<readonly EditableAccess[] | undefined>(undefined)
 	const [metadata, setMetadata] = useState<Map<string, AddressInfoEntry> >(new Map())
 
-	function updateEditableAccessList(websiteAccess: readonly WebsiteAccess[] | undefined = undefined) {
+	function updateEditableAccessList(websiteAccess: WebsiteAccessArray | undefined = undefined) {
 		const newList = websiteAccess ? websiteAccess : param.websiteAccess
 		if ( newList === undefined ) return setEditableAccessList(undefined)
 		setEditableAccessList(newList.map( (x) => ({
 			websiteAccess: x,
 			addressAccess: x.addressAccess === undefined ? [] : x.addressAccess,
 			addressAccessModified: x.addressAccess === undefined ? [] : x.addressAccess.map( (addr) => ({
-				address: addr.address,
+				address: addressString(addr.address),
 				access: addr.access,
 				removed: false,
 			})),
@@ -41,12 +42,12 @@ export function InterceptorAccessList(param: InterceptorAccessListParams) {
 
 	useEffect( () => {
 		updateEditableAccessList()
-		setMetadata(new Map(param.websiteAccessAddressMetadata))
+		setMetadata(new Map(param.websiteAccessAddressMetadata.map((x) => [addressString(x.address), x])))
 	}, [])
 
 	useEffect( () => {
 		updateEditableAccessList()
-		setMetadata(new Map(param.websiteAccessAddressMetadata))
+		setMetadata(new Map(param.websiteAccessAddressMetadata.map((x) => [addressString(x.address), x])))
 	}, [param.websiteAccess, param.websiteAccessAddressMetadata])
 
 	function goHome() {
@@ -117,7 +118,7 @@ export function InterceptorAccessList(param: InterceptorAccessListParams) {
 			originIcon: x.websiteAccess.originIcon,
 			access: x.access,
 			addressAccess: x.addressAccessModified.filter( (x) => !x.removed ).map( (addr) => ({
-				address: addr.address,
+				address: BigInt(addr.address),
 				access: addr.access,
 			})),
 		}))

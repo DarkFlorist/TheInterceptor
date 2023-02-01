@@ -3,7 +3,7 @@ import { bytes32String } from '../utils/bigint.js'
 import { ERROR_INTERCEPTOR_UNKNOWN_ORIGIN } from '../utils/constants.js'
 import { EstimateGasParams, EthBalanceParams, EthBlockByNumberParams, EthCallParams, EthereumAddress, EthereumData, EthereumQuantity, EthereumSignedTransactionWithBlockData, EthSubscribeParams, EthTransactionReceiptResponse, EthUnSubscribeParams, GetBlockReturn, GetCode, GetSimulationStack, GetSimulationStackReply, GetTransactionCount, JsonRpcNewHeadsNotification, NewHeadsSubscriptionData, PersonalSignParams, SendTransactionParams, SignTypedDataParams, SwitchEthereumChainParams, TransactionByHashParams, TransactionReceiptParams } from '../utils/wire-types.js'
 import { postMessageIfStillConnected } from './background.js'
-import { WebsiteAccess } from './settings.js'
+import { WebsiteAccessArray } from './settings.js'
 import { openChangeChainDialog } from './windows/changeChain.js'
 import { openConfirmTransactionDialog } from './windows/confirmTransaction.js'
 import { openPersonalSignDialog } from './windows/personalSign.js'
@@ -101,7 +101,7 @@ export async function unsubscribe(simulator: Simulator, request: EthUnSubscribeP
 	return { result: simulator.simulationModeNode.remoteSubscription(request.params[0]) }
 }
 
-export async function getAccounts(getActiveAddressForDomain: (websiteAccess: readonly WebsiteAccess[], origin: string) => bigint | undefined, _simulator: Simulator, port: browser.runtime.Port) {
+export async function getAccounts(getActiveAddressForDomain: (websiteAccess: WebsiteAccessArray, origin: string) => bigint | undefined, _simulator: Simulator, port: browser.runtime.Port) {
 	const connection = window.interceptor.websitePortApprovals.get(port)
 	if (connection === undefined || window.interceptor.settings === undefined) {
 		return { result: [] }
@@ -149,7 +149,7 @@ export async function getCode(simulator: Simulator, request: GetCode) {
 	return { result: EthereumData.serialize(await simulator.simulationModeNode.getCode(request.params[0], request.params[1])) }
 }
 
-export async function requestPermissions(getActiveAddressForDomain: (websiteAccess: readonly WebsiteAccess[], origin: string) => bigint | undefined, simulator: Simulator, port: browser.runtime.Port) {
+export async function requestPermissions(getActiveAddressForDomain: (websiteAccess: WebsiteAccessArray, origin: string) => bigint | undefined, simulator: Simulator, port: browser.runtime.Port) {
 	return await getAccounts(getActiveAddressForDomain, simulator, port)
 }
 

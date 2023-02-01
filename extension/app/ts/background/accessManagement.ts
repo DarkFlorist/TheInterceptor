@@ -1,9 +1,8 @@
-import { addressString } from '../utils/bigint.js'
 import { EthereumAddress, SupportedETHRPCCalls } from '../utils/wire-types.js'
 import { postMessageIfStillConnected, setEthereumNodeBlockPolling } from './background.js'
 import { getActiveAddress } from './backgroundUtils.js'
 import { findAddressInfo } from './metadataUtils.js'
-import { Settings, WebsiteAccess, WebsiteAddressAccess } from './settings.js'
+import { Settings, WebsiteAccessArray, WebsiteAddressAccess } from './settings.js'
 import { requestAccessFromUser, retrieveIcon } from './windows/interceptorAccess.js'
 import { METAMASK_ERROR_USER_REJECTED_REQUEST } from '../utils/constants.js'
 import { EthereumQuantity } from '../utils/wire-types.js'
@@ -54,12 +53,12 @@ export async function verifyAccess(port: browser.runtime.Port, callMethod: strin
 	const activeAddress = getActiveAddress()
 	if (activeAddress !== undefined) {
 
-		const addressAccess = hasAddressAccess(window.interceptor.settings.websiteAccess, origin, addressString(activeAddress))
+		const addressAccess = hasAddressAccess(window.interceptor.settings.websiteAccess, origin, activeAddress)
 		if (addressAccess === 'hasAccess') {
 			return connectToPort(port, origin)
 		}
 
-		const addressInfo = findAddressInfo(BigInt(activeAddress), window.interceptor.settings.addressInfos)
+		const addressInfo = findAddressInfo(activeAddress, window.interceptor.settings.addressInfos)
 
 		// access not found, ask access
 		if (addressAccess === 'notFound'
@@ -111,7 +110,7 @@ export function sendActiveAccountChangeToApprovedWebsitePorts() {
 	}
 }
 
-export function hasAccess(websiteAccess: readonly WebsiteAccess[], origin: string) : 'hasAccess' | 'noAccess' | 'notFound' {
+export function hasAccess(websiteAccess: WebsiteAccessArray, origin: string) : 'hasAccess' | 'noAccess' | 'notFound' {
 	for (const web of websiteAccess) {
 		if (web.origin === origin) {
 			return web.access ? 'hasAccess' : 'noAccess'
@@ -120,7 +119,7 @@ export function hasAccess(websiteAccess: readonly WebsiteAccess[], origin: strin
 	return 'notFound'
 }
 
-export function hasAddressAccess(websiteAccess: readonly WebsiteAccess[], origin: string, address: string) : 'hasAccess' | 'noAccess' | 'notFound' {
+export function hasAddressAccess(websiteAccess: WebsiteAccessArray, origin: string, address: bigint) : 'hasAccess' | 'noAccess' | 'notFound' {
 	for (const web of websiteAccess) {
 		if (web.origin === origin) {
 			if (!web.access) return 'noAccess'
@@ -131,7 +130,7 @@ export function hasAddressAccess(websiteAccess: readonly WebsiteAccess[], origin
 					}
 				}
 			}
-			const askForAddressAccess = window.interceptor.settings?.addressInfos.find((x) => addressString(x.address) === address )?.askForAddressAccess
+			const askForAddressAccess = window.interceptor.settings?.addressInfos.find((x) => x.address === address )?.askForAddressAccess
 			if (askForAddressAccess === false) return 'hasAccess'
 			return 'notFound'
 		}
@@ -139,7 +138,7 @@ export function hasAddressAccess(websiteAccess: readonly WebsiteAccess[], origin
 	return 'notFound'
 }
 
-export function getAddressAccesses(websiteAccess: readonly WebsiteAccess[], origin: string) : readonly WebsiteAddressAccess[] {
+export function getAddressAccesses(websiteAccess: WebsiteAccessArray, origin: string) : readonly WebsiteAddressAccess[] {
 	for (const web of websiteAccess) {
 		if (web.origin === origin) {
 			return web.addressAccess === undefined ? [] : web.addressAccess
@@ -151,8 +150,7 @@ export function getAddressesThatDoNotNeedIndividualAccesses(settings: Settings) 
 	return settings.addressInfos.filter( (x) => x.askForAddressAccess === false).map( (x) => x.address)
 }
 
-export function setAccess(websiteAccess: readonly WebsiteAccess[], origin: string, originIcon: string | undefined, access: boolean, address: bigint | undefined) : readonly WebsiteAccess[] {
-	const addrString = address === undefined ? undefined : addressString(address)
+export function setAccess(websiteAccess: WebsiteAccessArray, origin: string, originIcon: string | undefined, access: boolean, address: bigint | undefined) : WebsiteAccessArray {
 	const oldAccess = hasAccess(websiteAccess, origin)
 	if ( oldAccess === 'notFound') {
 		return [...websiteAccess,
@@ -160,13 +158,13 @@ export function setAccess(websiteAccess: readonly WebsiteAccess[], origin: strin
 				origin: origin,
 				originIcon: originIcon,
 				access: access,
-				addressAccess: addrString === undefined || !access ? undefined : [ { address: addrString, access: access } ]
+				addressAccess: address === undefined || !access ? undefined : [ { address: address, access: access } ]
 			}
 		]
 	}
 	return websiteAccess.map( (x) => {
 		if( x.origin === origin) {
-			if (addrString === undefined) {
+			if (address === undefined) {
 				return {
 					origin: origin,
 					originIcon: x.originIcon ? x.originIcon : originIcon,
@@ -179,22 +177,22 @@ export function setAccess(websiteAccess: readonly WebsiteAccess[], origin: strin
 					origin: origin,
 					originIcon: x.originIcon ? x.originIcon : originIcon,
 					access: x.access ? x.access : access,
-					addressAccess:  [ { address: addrString, access: access } ]
+					addressAccess:  [ { address: address, access: access } ]
 				}
 			}
-			if (x.addressAccess.find( (x) => x.address === addrString) === undefined) {
+			if (x.addressAccess.find( (x) => x.address === address) === undefined) {
 				return {
 					origin: origin,
 					originIcon: x.originIcon ? x.originIcon : originIcon,
 					access: x.access ? x.access : access,
-					addressAccess:  [ ...x.addressAccess, { address: addrString, access: access } ]
+					addressAccess:  [ ...x.addressAccess, { address: address, access: access } ]
 				}
 			}
 			return {
 				origin: origin,
 				originIcon: x.originIcon ? x.originIcon : originIcon,
 				access: x.access ? x.access : access,
-				addressAccess: x.addressAccess.map( (x) => ( x.address === addrString ? { address: addrString, access: access } : x ) )
+				addressAccess: x.addressAccess.map( (x) => ( x.address === address ? { address: address, access: access } : x ) )
 			}
 		}
 		return x
@@ -203,10 +201,10 @@ export function setAccess(websiteAccess: readonly WebsiteAccess[], origin: strin
 
 // gets active address if the website has been give access for it, otherwise returns undefined
 // this is to guard websites from seeing addresses without access
-export function getActiveAddressForDomain(websiteAccess: readonly WebsiteAccess[], origin: string) {
+export function getActiveAddressForDomain(websiteAccess: WebsiteAccessArray, origin: string) {
 	const activeAddress = getActiveAddress()
 	if ( activeAddress === undefined) return undefined
-	const hasAccess = hasAddressAccess(websiteAccess, origin, addressString(activeAddress))
+	const hasAccess = hasAddressAccess(websiteAccess, origin, activeAddress)
 	if( hasAccess === 'hasAccess' ) {
 		return activeAddress
 	}
@@ -258,8 +256,8 @@ export function getAssociatedAddresses(settings: Settings, origin: string, activ
 	const addressAccess = getAddressAccesses(settings.websiteAccess, origin).filter( (x) => x.access).map( (x) => x.address)
 	const allAccessAddresses = getAddressesThatDoNotNeedIndividualAccesses(settings)
 
-	const all = allAccessAddresses.map( (address) => addressString(address) ).concat(addressAccess).concat(activeAddress === undefined ? [] : [addressString(activeAddress.address)])
-	return Array.from(new Set(all)).map(x => findAddressInfo(BigInt(x), settings.addressInfos))
+	const all = allAccessAddresses.concat(addressAccess).concat(activeAddress === undefined ? [] : [activeAddress.address])
+	return Array.from(new Set(all)).map(x => findAddressInfo(x, settings.addressInfos))
 }
 
 async function askUserForAccessOnConnectionUpdate(port: browser.runtime.Port, origin: string, activeAddress: AddressInfoEntry | undefined) {
@@ -280,7 +278,7 @@ export function updateWebsiteApprovalAccesses() {
 		const websiteAccess = hasAccess(window.interceptor.settings.websiteAccess, connection.origin)
 		if (activeAddress) {
 			// check for address access changes
-			const addressAccess = hasAddressAccess(window.interceptor.settings.websiteAccess, connection.origin, addressString(activeAddress))
+			const addressAccess = hasAddressAccess(window.interceptor.settings.websiteAccess, connection.origin, activeAddress)
 
 			if (addressAccess === 'notFound') {
 				askUserForAccessOnConnectionUpdate(port, connection.origin, findAddressInfo(activeAddress, window.interceptor.settings.addressInfos) )
