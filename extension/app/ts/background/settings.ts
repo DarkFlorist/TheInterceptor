@@ -1,7 +1,8 @@
 import { MOCK_PRIVATE_KEYS_ADDRESS } from '../utils/constants.js'
 import { AddressBookTabIdSetting } from '../utils/interceptor-messages.js'
-import { AddressInfo, Page, PendingAccessRequest } from '../utils/user-interface-types.js'
+import { AddressInfo, Page, PendingAccessRequestArray } from '../utils/user-interface-types.js'
 import { EthereumAddress, EthereumQuantity } from '../utils/wire-types.js'
+import * as funtypes from 'funtypes'
 
 export const defaultAddresses = [
 	{
@@ -16,17 +17,22 @@ export const defaultAddresses = [
 	}
 ]
 
-export interface WebsiteAddressAccess {
-	address: string,
-	access: boolean
-} []
+export type WebsiteAddressAccess = funtypes.Static<typeof WebsiteAddressAccess>
+export const WebsiteAddressAccess = funtypes.Object({
+	address: EthereumAddress,
+	access: funtypes.Boolean,
+}).asReadonly()
 
-export interface WebsiteAccess {
-	origin: string,
-	originIcon: string | undefined,
-	access: boolean,
-	addressAccess: readonly WebsiteAddressAccess[] | undefined,
-}
+export type WebsiteAccess = funtypes.Static<typeof WebsiteAccess>
+export const WebsiteAccess = funtypes.Object({
+	origin: funtypes.String,
+	originIcon: funtypes.Union(funtypes.String, funtypes.Undefined),
+	access: funtypes.Boolean,
+	addressAccess: funtypes.Union(funtypes.ReadonlyArray(WebsiteAddressAccess), funtypes.Undefined),
+}).asReadonly()
+
+export type WebsiteAccessArray = funtypes.Static<typeof WebsiteAccessArray>
+export const WebsiteAccessArray = funtypes.ReadonlyArray(WebsiteAccess)
 
 export interface Settings {
 	activeSimulationAddress: EthereumAddress | undefined,
@@ -36,9 +42,9 @@ export interface Settings {
 	page: Page,
 	makeMeRich: boolean,
 	useSignersAddressAsActiveAddress: boolean,
-	websiteAccess: readonly WebsiteAccess[],
+	websiteAccess: WebsiteAccessArray,
 	simulationMode: boolean,
-	pendingAccessRequests: readonly PendingAccessRequest[]
+	pendingAccessRequests: PendingAccessRequestArray,
 }
 
 function parseActiveChain(chain: string) {
@@ -70,10 +76,10 @@ export async function getSettings() : Promise<Settings> {
 		page: results.page !== undefined && !isEmpty(results.page) ? parseInt(results.page) : Page.Home,
 		makeMeRich: results.makeMeRich !== undefined ? results.makeMeRich : false,
 		useSignersAddressAsActiveAddress: results.useSignersAddressAsActiveAddress !== undefined ? results.useSignersAddressAsActiveAddress : false,
-		websiteAccess: results.websiteAccess !== undefined ? results.websiteAccess : [],
+		websiteAccess: WebsiteAccessArray.parse(results.websiteAccess !== undefined ? results.websiteAccess : []),
 		activeChain: results.activeChain !== undefined ? parseActiveChain(results.activeChain) : 1n,
 		simulationMode: results.simulationMode !== undefined ? results.simulationMode : true,
-		pendingAccessRequests: results.pendingAccessRequests !== undefined ? results.pendingAccessRequests : [],
+		pendingAccessRequests: PendingAccessRequestArray.parse(results.pendingAccessRequests !== undefined ? results.pendingAccessRequests : []),
 	}
 }
 
@@ -96,8 +102,8 @@ export function saveMakeMeRich(makeMeRich: boolean) {
 export function saveUseSignersAddressAsActiveAddress(useSignersAddressAsActiveAddress: boolean) {
 	browser.storage.local.set({ useSignersAddressAsActiveAddress: useSignersAddressAsActiveAddress })
 }
-export function saveWebsiteAccess(websiteAccess: readonly WebsiteAccess[]) {
-	browser.storage.local.set({ websiteAccess: websiteAccess })
+export function saveWebsiteAccess(websiteAccess: WebsiteAccessArray) {
+	browser.storage.local.set({ websiteAccess: WebsiteAccessArray.serialize(websiteAccess) })
 }
 export function saveActiveChain(activeChain: EthereumQuantity) {
 	browser.storage.local.set({ activeChain: EthereumQuantity.serialize(activeChain) })
@@ -105,8 +111,8 @@ export function saveActiveChain(activeChain: EthereumQuantity) {
 export function saveSimulationMode(simulationMode: boolean) {
 	browser.storage.local.set({ simulationMode: simulationMode })
 }
-export function savePendingAccessRequests(pendingAccessRequests: readonly PendingAccessRequest[]) {
-	browser.storage.local.set({ pendingAccessRequests: pendingAccessRequests })
+export function savePendingAccessRequests(pendingAccessRequests: PendingAccessRequestArray) {
+	browser.storage.local.set({ pendingAccessRequests: PendingAccessRequestArray.serialize(pendingAccessRequests) })
 }
 export function saveOpenedAddressBookTabId(addressbookTabId: number) {
 	browser.storage.local.set({ addressbookTabId: addressbookTabId })

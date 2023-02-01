@@ -41,12 +41,6 @@ declare global {
 				tokenPrices: TokenPriceEstimate[],
 				activeAddress: bigint,
 			}
-			interceptorAccessDialog?: {
-				origin: string,
-				icon: string | undefined,
-				requestAccessToAddress: string | undefined,
-				addressBookEntries: [string, AddressInfoEntry][],
-			}
 			simulation: {
 				simulationId: number,
 				simulationState: SimulationState | undefined,
@@ -55,7 +49,7 @@ declare global {
 				addressBookEntries: [string, AddressBookEntry][],
 				tokenPrices: TokenPriceEstimate[],
 			}
-			websiteAccessAddressMetadata: [string, AddressInfoEntry][],
+			websiteAccessAddressMetadata: AddressInfoEntry[],
 			pendingAccessMetadata: [string, AddressInfoEntry][],
 			prependTransactionMode: PrependTransactionMode,
 			signerAccounts: readonly bigint[] | undefined,
