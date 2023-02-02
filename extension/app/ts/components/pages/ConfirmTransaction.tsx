@@ -33,9 +33,6 @@ export function ConfirmTransaction() {
 
 			if (message.method !== 'popup_confirm_transaction_simulation_state_changed') return
 			
-			//todo check if we need thi check, or just ban these options initially
-			if (message.data.simulationState === undefined || message.data.visualizerResults === undefined) return setSimulationAndVisualisationResults(undefined)
-
 			if (currentBlockNumber === undefined || message.data.simulationState.blockNumber > currentBlockNumber) {
 				setCurrentBlockNumber(message.data.simulationState.blockNumber)
 			}

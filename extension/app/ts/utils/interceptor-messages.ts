@@ -415,7 +415,7 @@ export const ConfirmTransactionSimulationStateChanged = funtypes.Object({
 		requestId: funtypes.Number,
 		transactionToSimulate: EthereumUnsignedTransaction,
 		simulationMode: funtypes.Boolean,
-		simulationState: funtypes.Union(SimulationState, funtypes.Undefined),
+		simulationState: SimulationState,
 		visualizerResults: funtypes.ReadonlyArray(SimResults),
 		addressBookEntries: AddressBookEntries,
 		tokenPrices: funtypes.ReadonlyArray(TokenPriceEstimate),
