@@ -1,6 +1,5 @@
 
-import { IUnsignedTransaction } from './ethereum.js'
-import { EthBalanceChanges, EthereumAddress, EthereumQuantity, EthereumTransactionSignature, EthereumUnsignedTransaction, SingleMulticallResponse } from './wire-types.js'
+import { EthBalanceChanges, EthereumAddress, EthereumQuantity, EthereumSignedTransaction, EthereumTimestamp, SingleMulticallResponse } from './wire-types.js'
 import * as funtypes from 'funtypes'
 import { QUARANTINE_CODE } from '../simulation/protectors/quarantine-codes.js'
 import { AddressBookEntry, CHAIN, NFTEntry, RenameAddressCallBack, TokenEntry } from './user-interface-types.js'
@@ -84,20 +83,21 @@ export const SimResults = funtypes.Object( {
 	visualizerResults: funtypes.Union(VisualizerResult, funtypes.Undefined),
 })
 
-export type SimulatedTransaction = {
+export type SimulatedTransaction = funtypes.Static<typeof SimulatedTransaction>
+export const SimulatedTransaction = funtypes.Object({
 	multicallResponse: SingleMulticallResponse,
-	unsignedTransaction: EthereumUnsignedTransaction,
-	signedTransaction: (IUnsignedTransaction & EthereumTransactionSignature),
-	realizedGasPrice: bigint,
-}
+	signedTransaction: EthereumSignedTransaction,
+	realizedGasPrice: EthereumQuantity,
+})
 
-export type SimulationState = {
-	simulatedTransactions: SimulatedTransaction[],
-	blockNumber: bigint,
-	blockTimestamp: Date,
+export type SimulationState = funtypes.Static<typeof SimulationState>
+export const SimulationState = funtypes.Object({
+	simulatedTransactions: funtypes.ReadonlyArray(SimulatedTransaction),
+	blockNumber: EthereumQuantity,
+	blockTimestamp: EthereumTimestamp,
 	chain: CHAIN,
-	simulationConductedTimestamp: Date,
-}
+	simulationConductedTimestamp: EthereumTimestamp,
+})
 
 export type EthBalanceChangesWithMetadata = {
 	address: AddressBookEntry,
@@ -110,11 +110,11 @@ export type SimulatedAndVisualizedTransaction = {
 	to: AddressBookEntry | undefined
 	value: EthereumQuantity
 	realizedGasPrice: EthereumQuantity
-	ethBalanceChanges: EthBalanceChangesWithMetadata[]
-	tokenResults: TokenVisualizerResultWithMetadata[]
+	ethBalanceChanges: readonly EthBalanceChangesWithMetadata[]
+	tokenResults: readonly TokenVisualizerResultWithMetadata[]
 	gasSpent: EthereumQuantity
 	quarantine: boolean
-	quarantineCodes: QUARANTINE_CODE[]
+	quarantineCodes: readonly QUARANTINE_CODE[]
 	input: Uint8Array
 	chainId: CHAIN
 	hash: bigint
@@ -134,10 +134,10 @@ export type SimulationAndVisualisationResults = {
 	blockNumber: bigint,
 	blockTimestamp: Date,
 	simulationConductedTimestamp: Date,
-	addressMetaData: Map<string, AddressBookEntry >
-	simulatedAndVisualizedTransactions: SimulatedAndVisualizedTransaction[],
+	addressMetaData: readonly AddressBookEntry[],
+	simulatedAndVisualizedTransactions: readonly SimulatedAndVisualizedTransaction[],
 	chain: CHAIN,
-	tokenPrices: TokenPriceEstimate[],
+	tokenPrices: readonly TokenPriceEstimate[],
 	activeAddress: bigint,
 	simulationMode: boolean,
 	isComputingSimulation: boolean,

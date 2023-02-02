@@ -3,13 +3,13 @@ import { EthBalanceChangesWithMetadata, SimResults, SimulatedAndVisualizedTransa
 import { AddressBookEntry } from '../utils/user-interface-types.js'
 
 // todo, move this to background page (and refacor hard) to form when simulation is made and we can get rid of most of the validations done here
-export function formSimulatedAndVisualizedTransaction(simState: SimulationState, visualizerResults: SimResults[], addressMetaData: Map<string, AddressBookEntry> ) : SimulatedAndVisualizedTransaction[] {
+export function formSimulatedAndVisualizedTransaction(simState: SimulationState, visualizerResults: readonly SimResults[], addressMetaData: Map<string, AddressBookEntry> ) : SimulatedAndVisualizedTransaction[] {
 	return simState.simulatedTransactions.map( (simulatedTx, index) => {
-		const from = addressMetaData.get(addressString(simulatedTx.unsignedTransaction.from))
+		const from = addressMetaData.get(addressString(simulatedTx.signedTransaction.from))
 		if (from === undefined) throw new Error('missing metadata')
 
-		const to = simulatedTx.unsignedTransaction.to !== null ? addressMetaData.get(addressString(simulatedTx.unsignedTransaction.to)) : undefined
-		if (simulatedTx.unsignedTransaction.to !== null && to === undefined ) throw new Error('missing metadata')
+		const to = simulatedTx.signedTransaction.to !== null ? addressMetaData.get(addressString(simulatedTx.signedTransaction.to)) : undefined
+		if (simulatedTx.signedTransaction.to !== null && to === undefined ) throw new Error('missing metadata')
 		const visualiser = visualizerResults[index].visualizerResults
 
 		const ethBalanceChanges: EthBalanceChangesWithMetadata[] = visualiser === undefined ? [] : visualiser.ethBalanceChanges.map((change) => {
@@ -47,7 +47,7 @@ export function formSimulatedAndVisualizedTransaction(simState: SimulationState,
 		return {
 			from: from,
 			to: to,
-			value: simulatedTx.unsignedTransaction.value,
+			value: simulatedTx.signedTransaction.value,
 			realizedGasPrice: simulatedTx.realizedGasPrice,
 			ethBalanceChanges: ethBalanceChanges,
 			tokenResults: tokenResults,
@@ -55,13 +55,13 @@ export function formSimulatedAndVisualizedTransaction(simState: SimulationState,
 			quarantine: visualizerResults[index].quarantine,
 			quarantineCodes: visualizerResults[index].quarantineCodes,
 			chainId: simState.chain,
-			gas: simulatedTx.unsignedTransaction.gas,
-			input: simulatedTx.unsignedTransaction.input,
-			...(simulatedTx.unsignedTransaction.type === '1559' ? {
-				type: simulatedTx.unsignedTransaction.type,
-				maxFeePerGas: simulatedTx.unsignedTransaction.maxFeePerGas,
-				maxPriorityFeePerGas: simulatedTx.unsignedTransaction.maxPriorityFeePerGas,
-			} : { type: simulatedTx.unsignedTransaction.type } ),
+			gas: simulatedTx.signedTransaction.gas,
+			input: simulatedTx.signedTransaction.input,
+			...(simulatedTx.signedTransaction.type === '1559' ? {
+				type: simulatedTx.signedTransaction.type,
+				maxFeePerGas: simulatedTx.signedTransaction.maxFeePerGas,
+				maxPriorityFeePerGas: simulatedTx.signedTransaction.maxPriorityFeePerGas,
+			} : { type: simulatedTx.signedTransaction.type } ),
 			hash: simulatedTx.signedTransaction.hash,
 			...(simulatedTx.multicallResponse.statusCode === 'failure' ? {
 				error: simulatedTx.multicallResponse.error,

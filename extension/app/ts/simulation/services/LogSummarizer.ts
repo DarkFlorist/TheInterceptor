@@ -157,7 +157,7 @@ export class LogSummarizer {
 		}
 	}
 
-	private summarizeToAddressChanges = (transactions: (SimulatedAndVisualizedTransaction | undefined)[]) => {
+	private summarizeToAddressChanges = (transactions: readonly (SimulatedAndVisualizedTransaction | undefined)[]) => {
 		for (const transaction of transactions) {
 			if ( transaction === undefined ) continue
 			// calculate ether balances for each account
@@ -167,7 +167,7 @@ export class LogSummarizer {
 		}
 	}
 
-	public constructor(transactions: (SimulatedAndVisualizedTransaction | undefined)[]) {
+	public constructor(transactions: readonly (SimulatedAndVisualizedTransaction | undefined)[]) {
 		this.summarizeToAddressChanges(transactions)
 
 		// remove addresses that ended up with no changes
@@ -185,7 +185,7 @@ export class LogSummarizer {
 		})
 	}
 
-	public getSummary = (addressMetaData: Map<string, AddressBookEntry>, tokenPrices: TokenPriceEstimate[] ) => {
+	public getSummary = (addressMetaData: Map<string, AddressBookEntry>, tokenPrices: readonly TokenPriceEstimate[] ) => {
 		const summaries: SummaryOutcome[] = []
 		for (const [address, _summary] of this.summary.entries()) {
 			const summary = this.getSummaryForAddr(address, addressMetaData, tokenPrices)
@@ -197,7 +197,7 @@ export class LogSummarizer {
 		return summaries
 	}
 
-	public readonly getSummaryForAddr = (address: string, addressMetaData: Map<string, AddressBookEntry>, tokenPrices: TokenPriceEstimate[] ) => {
+	public readonly getSummaryForAddr = (address: string, addressMetaData: Map<string, AddressBookEntry>, tokenPrices: readonly TokenPriceEstimate[] ) => {
 		const addressSummary = this.summary.get(address)
 		if (addressSummary === undefined) return undefined
 

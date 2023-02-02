@@ -64,12 +64,12 @@ export class Simulator {
 
 	public async visualizeTransaction(transaction: EthereumUnsignedTransaction, blockNumber: bigint, singleMulticallResponse: SingleMulticallResponse) {
 		let quarantine = false
-		const quarantineCodes = new Set<QUARANTINE_CODE>()
+		const quarantineCodesSet = new Set<QUARANTINE_CODE>()
 		for (const protectorMethod of PROTECTORS) {
 			const reason = await protectorMethod(transaction, this)
 			if (reason !== undefined) {
 				quarantine = true
-				quarantineCodes.add(reason)
+				quarantineCodesSet.add(reason)
 			}
 		}
 
@@ -92,10 +92,10 @@ export class Simulator {
 				blockNumber
 			}
 		}
-
+		const quarantineCodes = Array.from(quarantineCodesSet)
 		return {
 			quarantine,
-			quarantineCodes : Array.from(quarantineCodes),
+			quarantineCodes,
 			visualizerResults,
 		}
 	}

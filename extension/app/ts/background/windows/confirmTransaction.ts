@@ -4,6 +4,7 @@ import { Future } from '../../utils/future.js'
 import { EthereumUnsignedTransaction } from '../../utils/wire-types.js'
 import { getActiveAddressForDomain } from '../accessManagement.js'
 import { appendTransactionToSimulator, refreshConfirmTransactionSimulation } from '../background.js'
+import { sendPopupMessageToOpenWindows } from '../backgroundUtils.js'
 
 export type Confirmation = 'Approved' | 'Rejected' | 'NoResponse'
 let openedConfirmTransactionDialogWindow: browser.windows.Window | null = null
@@ -16,16 +17,23 @@ export async function resolvePendingTransaction(confirmation: Confirmation) {
 	if (openedConfirmTransactionDialogWindow !== null && openedConfirmTransactionDialogWindow.id) {
 		await browser.windows.remove(openedConfirmTransactionDialogWindow.id)
 	}
-	window.interceptor.confirmTransactionDialog = undefined
 	openedConfirmTransactionDialogWindow = null
 }
 
 const onCloseWindow = () => { // check if user has closed the window on their own, if so, reject signature
 	if (pendingTransaction === undefined) return
-	window.interceptor.confirmTransactionDialog = undefined
 	openedConfirmTransactionDialogWindow = null
 	resolvePendingTransaction('Rejected')
 	browser.windows.onRemoved.removeListener( onCloseWindow )
+}
+
+const reject = function() {
+	return {
+		error: {
+			code: METAMASK_ERROR_USER_REJECTED_REQUEST,
+			message: 'Interceptor Tx Signature: User denied transaction signature.'
+		}
+	}
 }
 
 export async function openConfirmTransactionDialog(
@@ -34,39 +42,34 @@ export async function openConfirmTransactionDialog(
 	simulationMode: boolean,
 	transactionToSimulatePromise: () => Promise<EthereumUnsignedTransaction>,
 ) {
+	if (pendingTransaction !== undefined) return reject() // previous window still loading
 	if (window.interceptor.settings === undefined) return ERROR_INTERCEPTOR_NOT_READY
 
 	const activeAddress = getActiveAddressForDomain(window.interceptor.settings.websiteAccess, (new URL(origin)).hostname)
 	if (activeAddress === undefined) return ERROR_INTERCEPTOR_NO_ACTIVE_ADDRESS
 
-	const reject = function() {
-		return {
-			error: {
-				code: METAMASK_ERROR_USER_REJECTED_REQUEST,
-				message: 'Interceptor Tx Signature: User denied transaction signature.'
-			}
-		}
-	}
-
-	if (window.interceptor.confirmTransactionDialog !== undefined
-		&& window.interceptor.confirmTransactionDialog.visualizerResults === undefined) return reject() // previous window still loading
-
-	window.interceptor.confirmTransactionDialog = {
-		requestId: requestId,
-		addressBookEntries: [],
-		visualizerResults: undefined,
-		simulationState: undefined,
-		simulationMode: simulationMode,
-		tokenPrices: [],
-		activeAddress: activeAddress,
-		transactionToSimulate: undefined,
-		isComputingSimulation: false,
-	}
-
 	if (openedConfirmTransactionDialogWindow !== null && openedConfirmTransactionDialogWindow.id) {
 		browser.windows.onRemoved.removeListener( onCloseWindow )
 		await browser.windows.remove(openedConfirmTransactionDialogWindow.id)
 	}
+
+	const transactionToSimulate = await transactionToSimulatePromise()
+
+	const refreshSimulationPromise = refreshConfirmTransactionSimulation(activeAddress, simulationMode, requestId, transactionToSimulate)
+
+	const windowReadyAndListening = async function popupMessageListener(msg: unknown) {
+		const message = PopupMessage.parse(msg)
+		if ( message.method !== 'popup_interceptorAccessReadyAndListening') return
+		browser.runtime.onMessage.removeListener(windowReadyAndListening)
+		const refreshMessage = await refreshSimulationPromise
+		if (openedConfirmTransactionDialogWindow !== null && openedConfirmTransactionDialogWindow.id) {
+			if (refreshMessage === undefined) return await browser.windows.remove(openedConfirmTransactionDialogWindow.id)
+			return sendPopupMessageToOpenWindows(refreshMessage)
+		}
+	}
+
+	browser.runtime.onMessage.addListener(windowReadyAndListening)
+	pendingTransaction = new Future<Confirmation>()
 
 	openedConfirmTransactionDialogWindow = await browser.windows.create(
 		{
@@ -79,32 +82,21 @@ export async function openConfirmTransactionDialog(
 
 	if (openedConfirmTransactionDialogWindow === null) return reject()
 
-	pendingTransaction = new Future<Confirmation>()
 	browser.windows.onRemoved.addListener(onCloseWindow)
-
-	const transactionToSimulate = await transactionToSimulatePromise()
-	if (window.interceptor.confirmTransactionDialog === undefined) return reject() // user already closed the window
-
-	window.interceptor.confirmTransactionDialog.transactionToSimulate = EthereumUnsignedTransaction.serialize(transactionToSimulate)
-	await refreshConfirmTransactionSimulation()
 
 	const reply = await pendingTransaction
 
-	// forward message to content script
-	if(reply === 'Approved') {
-		if (simulationMode) {
-			const appended = await appendTransactionToSimulator(transactionToSimulate)
-			if (appended === undefined) {
-				return {
-					error: {
-						code: METAMASK_ERROR_NOT_CONNECTED_TO_CHAIN,
-						message: 'Interceptor not ready'
-					}
-				}
+	if (reply !== 'Approved') return reject()
+	if (!simulationMode) return { forward: true as const }
+
+	const appended = await appendTransactionToSimulator(transactionToSimulate)
+	if (appended === undefined) {
+		return {
+			error: {
+				code: METAMASK_ERROR_NOT_CONNECTED_TO_CHAIN,
+				message: 'Interceptor not ready'
 			}
-			return { result: bytes32String(appended.signed.hash) }
 		}
-		return { forward: true as const }
 	}
-	return reject()
+	return { result: bytes32String(appended.signed.hash) }
 }

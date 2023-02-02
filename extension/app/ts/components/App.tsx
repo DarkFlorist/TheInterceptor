@@ -16,6 +16,7 @@ import { SignerName } from '../utils/interceptor-messages.js'
 import { version, gitCommitSha } from '../version.js'
 import { formSimulatedAndVisualizedTransaction } from './formVisualizerResults.js'
 import { sendPopupMessageToBackgroundPage } from '../background/backgroundUtils.js'
+import { addressString } from '../utils/bigint.js'
 
 export function App() {
 	const [appPage, setAppPage] = useState(Page.Home)
@@ -91,7 +92,7 @@ export function App() {
 		if (backgroundPage.interceptor.settings?.activeSimulationAddress === undefined) return setSimVisResults(undefined)
 		if (backgroundPage.interceptor.simulation.visualizerResults === undefined) return setSimVisResults(undefined)
 
-		const addressMetaData = new Map(backgroundPage.interceptor.simulation.addressBookEntries.map( (x) => [x[0], x[1]]))
+		const addressMetaData = new Map(backgroundPage.interceptor.simulation.addressBookEntries.map( (x) => [addressString(x.address), x]))
 		const txs = formSimulatedAndVisualizedTransaction(simState, backgroundPage.interceptor.simulation.visualizerResults, addressMetaData)
 		setSimVisResults( {
 			blockNumber: simState.blockNumber,
@@ -103,7 +104,7 @@ export function App() {
 			activeAddress: BigInt(backgroundPage.interceptor.settings.activeSimulationAddress),
 			simulationMode: backgroundPage.interceptor.settings.simulationMode,
 			isComputingSimulation: backgroundPage.interceptor.simulation.isComputingSimulation,
-			addressMetaData: addressMetaData,
+			addressMetaData: backgroundPage.interceptor.simulation.addressBookEntries,
 		})
 	}
 

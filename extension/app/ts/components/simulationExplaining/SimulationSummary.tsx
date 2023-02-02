@@ -429,7 +429,8 @@ export function SimulationSummary(param: SimulationSummaryParams) {
 		param.simulationAndVisualisationResults.simulatedAndVisualizedTransactions
 
 	const logSummarizer = new LogSummarizer( VisResults )
-	const originalSummary = logSummarizer.getSummary( param.simulationAndVisualisationResults.addressMetaData, param.simulationAndVisualisationResults.tokenPrices)
+	const addressMetaData = new Map(param.simulationAndVisualisationResults.addressMetaData.map( (x) => [addressString(x.address), x]))
+	const originalSummary = logSummarizer.getSummary(addressMetaData, param.simulationAndVisualisationResults.tokenPrices)
 	//remove eth donator if we are in rich mode
 	const firstTransaction = param.simulationAndVisualisationResults.simulatedAndVisualizedTransactions.at(0)
 	const summary = firstTransaction && identifyTransaction(firstTransaction, param.simulationAndVisualisationResults.activeAddress) === 'MakeYouRichTransaction' ?
