@@ -140,7 +140,6 @@ export type SimulationAndVisualisationResults = {
 	tokenPrices: readonly TokenPriceEstimate[],
 	activeAddress: bigint,
 	simulationMode: boolean,
-	isComputingSimulation: boolean,
 }
 
 export type TokenPriceEstimate = funtypes.Static<typeof TokenPriceEstimate>

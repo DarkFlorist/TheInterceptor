@@ -209,12 +209,12 @@ export function AddressBook() {
 	useEffect(() => {
 		const popupMessageListener = async (msg: MessageToPopup) => {
 			console.log(msg)
-			if (msg.message === 'popup_address_infos_changed') {
+			if (msg.method === 'popup_address_infos_changed') {
 				// fields updated, refresh
 				changeFilter(activeFilter)
 				return
 			}
-			if (msg.message !== 'popup_getAddressBookData') return
+			if (msg.method !== 'popup_getAddressBookData') return
 			const reply = GetAddressBookDataReply.parse(msg)
 			setAddressBookState((previousState) => {
 				if ( activeFilterRef.current !== reply.data.options.filter || searchStringRef.current !== reply.data.options.searchString) return previousState

@@ -60,7 +60,7 @@ export async function openConfirmTransactionDialog(
 
 	const windowReadyAndListening = async function popupMessageListener(msg: unknown) {
 		const message = PopupMessage.parse(msg)
-		if ( message.method !== 'popup_interceptorAccessReadyAndListening') return
+		if ( message.method !== 'popup_confirmTransactionReadyAndListening') return
 		browser.runtime.onMessage.removeListener(windowReadyAndListening)
 		const refreshMessage = await refreshSimulationPromise
 		if (openedConfirmTransactionDialogWindow !== null && openedConfirmTransactionDialogWindow.id) {

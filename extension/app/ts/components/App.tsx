@@ -103,7 +103,6 @@ export function App() {
 			tokenPrices: backgroundPage.interceptor.simulation.tokenPrices,
 			activeAddress: BigInt(backgroundPage.interceptor.settings.activeSimulationAddress),
 			simulationMode: backgroundPage.interceptor.settings.simulationMode,
-			isComputingSimulation: backgroundPage.interceptor.simulation.isComputingSimulation,
 			addressMetaData: backgroundPage.interceptor.simulation.addressBookEntries,
 		})
 	}

@@ -38,7 +38,7 @@ export const InterceptedRequestForward = funtypes.Intersect(
 		funtypes.Object({
 			error: funtypes.Object({
 				code: funtypes.Number,
-				message: funtypes.String
+				method: funtypes.String
 			}).asReadonly(),
 		}).asReadonly(),
 		funtypes.Object({ })
@@ -269,7 +269,7 @@ export const GetAddressBookDataReplyData = funtypes.Object({
 
 export type GetAddressBookDataReply = funtypes.Static<typeof GetAddressBookDataReply>
 export const GetAddressBookDataReply = funtypes.Object({
-	message: funtypes.Literal('popup_getAddressBookData'),
+	method: funtypes.Literal('popup_getAddressBookData'),
 	data: GetAddressBookDataReplyData,
 }).asReadonly()
 
@@ -282,6 +282,14 @@ export const RefreshConfirmTransactionDialogSimulation = funtypes.Object({
 		simulationMode: funtypes.Boolean,
 		requestId: funtypes.Number,
 		transactionToSimulate: EthereumUnsignedTransaction,
+	}),
+}).asReadonly()
+
+export type NewBlockArrived = funtypes.Static<typeof NewBlockArrived>
+export const NewBlockArrived = funtypes.Object({
+	method: funtypes.Literal('popup_new_block_arrived'),
+	data: funtypes.Object({
+		blockNumber: EthereumQuantity,
 	}),
 }).asReadonly()
 
@@ -318,12 +326,11 @@ export const PopupMessage = funtypes.Union(
 )
 
 export const MessageToPopupSimple = funtypes.Object({
-	message: funtypes.Union(
+	method: funtypes.Union(
 		funtypes.Literal('popup_chain_update'),
 		funtypes.Literal('popup_started_simulation_update'),
 		funtypes.Literal('popup_simulation_state_changed'),
 		funtypes.Literal('popup_confirm_transaction_simulation_started'),
-		funtypes.Literal('popup_new_block_arrived'),
 		funtypes.Literal('popup_accounts_update'),
 		funtypes.Literal('popup_websiteIconChanged'),
 		funtypes.Literal('popup_address_infos_changed'),
@@ -339,7 +346,7 @@ export const MessageToPopupSimple = funtypes.Object({
 
 export type PersonalSignRequest = funtypes.Static<typeof PersonalSignRequest>
 export const PersonalSignRequest = funtypes.Object({
-	message: funtypes.Literal('popup_personal_sign_request'),
+	method: funtypes.Literal('popup_personal_sign_request'),
 	data: funtypes.Intersect(
 		funtypes.Object({
 			activeAddress: EthereumAddress,
@@ -380,7 +387,7 @@ export const PersonalSignRequest = funtypes.Object({
 
 export type ChangeChainRequest = funtypes.Static<typeof ChangeChainRequest>
 export const ChangeChainRequest = funtypes.Object({
-	message: funtypes.Literal('popup_ChangeChainRequest'),
+	method: funtypes.Literal('popup_ChangeChainRequest'),
 	data: funtypes.Object({
 		requestId: funtypes.Number,
 		simulationMode: funtypes.Boolean,
@@ -392,7 +399,7 @@ export const ChangeChainRequest = funtypes.Object({
 
 export type InterceptorAccessDialog = funtypes.Static<typeof InterceptorAccessDialog>
 export const InterceptorAccessDialog = funtypes.Object({
-	message: funtypes.Literal('popup_interceptorAccessDialog'),
+	method: funtypes.Literal('popup_interceptorAccessDialog'),
 	data: funtypes.Object({
 		origin: funtypes.String,
 		icon: funtypes.Union(funtypes.String, funtypes.Undefined),
@@ -403,13 +410,12 @@ export const InterceptorAccessDialog = funtypes.Object({
 
 export type ConfirmTransactionSimulationStateChanged = funtypes.Static<typeof ConfirmTransactionSimulationStateChanged>
 export const ConfirmTransactionSimulationStateChanged = funtypes.Object({
-	message: funtypes.Literal('popup_confirm_transaction_simulation_state_changed'),
+	method: funtypes.Literal('popup_confirm_transaction_simulation_state_changed'),
 	data: funtypes.Object({
 		requestId: funtypes.Number,
 		transactionToSimulate: EthereumUnsignedTransaction,
 		simulationMode: funtypes.Boolean,
 		simulationState: funtypes.Union(SimulationState, funtypes.Undefined),
-		isComputingSimulation: funtypes.Boolean,
 		visualizerResults: funtypes.ReadonlyArray(SimResults),
 		addressBookEntries: AddressBookEntries,
 		tokenPrices: funtypes.ReadonlyArray(TokenPriceEstimate),
@@ -426,6 +432,7 @@ export const MessageToPopup = funtypes.Union(
 	ChangeChainRequest,
 	InterceptorAccessDialog,
 	ConfirmTransactionSimulationStateChanged,
+	NewBlockArrived,
 )
 
 export type HandleSimulationModeReturnValue = {

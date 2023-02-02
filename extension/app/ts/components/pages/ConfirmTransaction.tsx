@@ -23,17 +23,25 @@ export function ConfirmTransaction() {
 	const [signerName, setSignerName] = useState<SignerName | undefined>(undefined)
 	const [isEditAddressModelOpen, setEditAddressModelOpen] = useState<boolean>(false)
 	const [addressBookEntryInput, setAddressBookEntryInput] = useState<AddressBookEntry | undefined>(undefined)
+	const [refreshPressed, setRefreshPressed] = useState<boolean>(false)
 
 	useEffect( () => {
 		function popupMessageListener(msg: unknown) {
 			const message = MessageToPopup.parse(msg)
-			if (message.message !== 'popup_confirm_transaction_simulation_state_changed') return
+
+			if (message.method === 'popup_new_block_arrived') return setCurrentBlockNumber(message.data.blockNumber)
+
+			if (message.method !== 'popup_confirm_transaction_simulation_state_changed') return
 			
 			//todo check if we need thi check, or just ban these options initially
 			if (message.data.simulationState === undefined || message.data.visualizerResults === undefined) return setSimulationAndVisualisationResults(undefined)
 
+			if (currentBlockNumber === undefined || message.data.simulationState.blockNumber > currentBlockNumber) {
+				setCurrentBlockNumber(message.data.simulationState.blockNumber)
+			}
+
+			setRefreshPressed(false)
 			setSignerName(message.data.signerName)
-			setCurrentBlockNumber(message.data.simulationState.blockNumber) //TODO, wrong number
 			setRequestIdToConfirm(message.data.requestId)
 			const addressMetaData = new Map(message.data.addressBookEntries.map( (x) => [addressString(x.address), x]))
 			const txs = formSimulatedAndVisualizedTransaction(message.data.simulationState, message.data.visualizerResults, addressMetaData)
@@ -48,7 +56,6 @@ export function ConfirmTransaction() {
 				tokenPrices: message.data.tokenPrices,
 				activeAddress: message.data.activeAddress,
 				simulationMode: message.data.simulationMode,
-				isComputingSimulation: message.data.isComputingSimulation,
 				addressMetaData: message.data.addressBookEntries,
 			})
 		}
@@ -73,7 +80,8 @@ export function ConfirmTransaction() {
 	}
 
 	function refreshSimulation() {
-		if(simulationAndVisualisationResults === undefined || requestIdToConfirm === undefined || transactionToSimulate === undefined) return
+		if (simulationAndVisualisationResults === undefined || requestIdToConfirm === undefined || transactionToSimulate === undefined) return
+		setRefreshPressed(true)
 		sendPopupMessageToBackgroundPage( {
 			method: 'popup_refreshConfirmTransactionDialogSimulation',
 			data: {
@@ -127,6 +135,7 @@ export function ConfirmTransaction() {
 								refreshSimulation = { refreshSimulation }
 								currentBlockNumber = { currentBlockNumber }
 								renameAddressCallBack = { renameAddressCallBack }
+								refreshPressed = { refreshPressed }
 							/>
 							<div className = 'block' style = 'margin: 10px; padding: 10px; background-color: var(--card-bg-color);'>
 								{ simulationAndVisualisationResults && simulationAndVisualisationResults.simulatedAndVisualizedTransactions[simulationAndVisualisationResults.simulatedAndVisualizedTransactions.length - 1 ].statusCode === 'success' ? <></> :

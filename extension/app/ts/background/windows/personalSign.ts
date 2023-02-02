@@ -56,7 +56,7 @@ export const openPersonalSignDialog = async (requestId: number, simulationMode: 
 
 		if (params.method === 'personal_sign') {
 			return sendPopupMessageToOpenWindows({
-				message: 'popup_personal_sign_request',
+				method: 'popup_personal_sign_request',
 				data: {
 					activeAddress,
 					type: 'NotParsed' as const,
@@ -72,7 +72,7 @@ export const openPersonalSignDialog = async (requestId: number, simulationMode: 
 		if (params.params[1].primaryType === 'Permit') {
 			const parsed = EIP2612Message.parse(params.params[1])
 			return sendPopupMessageToOpenWindows({
-				message: 'popup_personal_sign_request',
+				method: 'popup_personal_sign_request',
 				data: {
 					activeAddress,
 					type: 'Permit' as const,
@@ -93,7 +93,7 @@ export const openPersonalSignDialog = async (requestId: number, simulationMode: 
 		if (params.params[1].primaryType === 'PermitSingle') {
 			const parsed = Permit2.parse(params.params[1])
 			return sendPopupMessageToOpenWindows({
-				message: 'popup_personal_sign_request',
+				method: 'popup_personal_sign_request',
 				data: {
 					activeAddress,
 					type: 'Permit2' as const,
@@ -112,7 +112,7 @@ export const openPersonalSignDialog = async (requestId: number, simulationMode: 
 		}
 
 		return sendPopupMessageToOpenWindows({
-			message: 'popup_personal_sign_request',
+			method: 'popup_personal_sign_request',
 			data: {
 				activeAddress,
 				type: 'NotParsed' as const,

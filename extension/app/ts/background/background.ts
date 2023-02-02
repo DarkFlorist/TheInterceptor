@@ -33,7 +33,6 @@ declare global {
 			simulation: {
 				simulationId: number,
 				simulationState: SimulationState | undefined,
-				isComputingSimulation: boolean,
 				visualizerResults: SimResults[] | undefined,
 				addressBookEntries: AddressBookEntry[],
 				tokenPrices: TokenPriceEstimate[],
@@ -69,7 +68,6 @@ window.interceptor = {
 	simulation: {
 		simulationId: 0,
 		simulationState: undefined,
-		isComputingSimulation: false,
 		visualizerResults: undefined,
 		addressBookEntries: [],
 		tokenPrices: [],
@@ -79,20 +77,17 @@ window.interceptor = {
 
 export async function updateSimulationState( getUpdatedSimulationState: () => Promise<SimulationState | undefined>) {
 	try {
-		window.interceptor.simulation.isComputingSimulation = true
-		sendPopupMessageToOpenWindows({ message: 'popup_started_simulation_update' })
 		window.interceptor.simulation.simulationId++
 
 		if ( simulator === undefined ) {
 			window.interceptor.simulation = {
 				simulationId: window.interceptor.simulation.simulationId,
 				simulationState: undefined,
-				isComputingSimulation: false,
 				addressBookEntries: [],
 				tokenPrices: [],
 				visualizerResults: [],
 			}
-			sendPopupMessageToOpenWindows({ message: 'popup_simulation_state_changed' })
+			sendPopupMessageToOpenWindows({ method: 'popup_simulation_state_changed' })
 			return
 		}
 
@@ -124,7 +119,6 @@ export async function updateSimulationState( getUpdatedSimulationState: () => Pr
 				addressBookEntries: addressBookEntries,
 				visualizerResults: visualizerResult,
 				simulationState: updatedSimulationState,
-				isComputingSimulation: false,
 			}
 		} else {
 			window.interceptor.simulation = {
@@ -133,15 +127,12 @@ export async function updateSimulationState( getUpdatedSimulationState: () => Pr
 				tokenPrices: [],
 				visualizerResults: [],
 				simulationState: updatedSimulationState,
-				isComputingSimulation: false,
 			}
 		}
-		sendPopupMessageToOpenWindows({ message: 'popup_simulation_state_changed' })
+		sendPopupMessageToOpenWindows({ method: 'popup_simulation_state_changed' })
 		return updatedSimulationState
 	} catch(e) {
 		throw e
-	} finally {
-		window.interceptor.simulation.isComputingSimulation = false
 	}
 }
 
@@ -155,7 +146,7 @@ export async function refreshConfirmTransactionSimulation(activeAddress: bigint,
 
 	const priceEstimator = new PriceEstimator(simulator.ethereum)
 	const newSimulator = simulator.simulationModeNode.copy()
-	sendPopupMessageToOpenWindows({ message: 'popup_confirm_transaction_simulation_started' })
+	sendPopupMessageToOpenWindows({ method: 'popup_confirm_transaction_simulation_started' })
 	const appended = await newSimulator.appendTransaction(transactionToSimulate)
 	const transactions = appended.simulationState.simulatedTransactions.map(x => x.signedTransaction)
 	const visualizerResult = await simulator.visualizeTransactionChain(transactions, appended.simulationState.blockNumber, appended.simulationState.simulatedTransactions.map( x => x.multicallResponse))
@@ -167,13 +158,12 @@ export async function refreshConfirmTransactionSimulation(activeAddress: bigint,
 	)
 
 	return {
-		message: 'popup_confirm_transaction_simulation_state_changed' as const,
+		method: 'popup_confirm_transaction_simulation_state_changed' as const,
 		data: {
 			requestId: requestId,
 			transactionToSimulate: transactionToSimulate,
 			simulationMode: simulationMode,
 			simulationState: appended.simulationState,
-			isComputingSimulation: false,
 			visualizerResults: visualizerResult,
 			addressBookEntries: addressMetadata,
 			tokenPrices: tokenPrices,
@@ -373,7 +363,7 @@ async function handleSigningMode(simulator: Simulator, port: browser.runtime.Por
 
 function newBlockCallback(blockNumber: bigint) {
 	window.interceptor.currentBlockNumber = blockNumber
-	sendPopupMessageToOpenWindows({ message: 'popup_new_block_arrived' })
+	sendPopupMessageToOpenWindows({ method: 'popup_new_block_arrived', data: { blockNumber } })
 }
 
 export async function changeActiveAddressAndChainAndResetSimulation(activeAddress: bigint | undefined | 'noActiveAddressChange', activeChain: bigint | 'noActiveChainChange') {
@@ -414,13 +404,13 @@ export async function changeActiveAddressAndChainAndResetSimulation(activeAddres
 
 	if (chainChanged) {
 		sendMessageToApprovedWebsitePorts('chainChanged', EthereumQuantity.serialize(window.interceptor.settings.activeChain))
-		sendPopupMessageToOpenWindows({ message: 'popup_chain_update' })
+		sendPopupMessageToOpenWindows({ method: 'popup_chain_update' })
 	}
 
 	// inform all the tabs about the address change (this needs to be done on only chain changes too)
 	sendActiveAccountChangeToApprovedWebsitePorts()
 	if (activeAddress !== 'noActiveAddressChange') {
-		sendPopupMessageToOpenWindows({ message: 'popup_accounts_update' })
+		sendPopupMessageToOpenWindows({ method: 'popup_accounts_update' })
 	}
 }
 
@@ -490,7 +480,7 @@ async function onContentScriptConnected(port: browser.runtime.Port) {
 					options: request.options,
 					error: {
 						code: METAMASK_ERROR_USER_REJECTED_REQUEST,
-						message: 'User refused access to the wallet'
+						method: 'User refused access to the wallet'
 					}
 				})
 			}
@@ -553,7 +543,7 @@ async function onContentScriptConnected(port: browser.runtime.Port) {
 				options: request.options,
 				error: {
 					code: 123456,
-					message: 'Unknown error'
+					method: 'Unknown error'
 				}
 			})
 			throw error
@@ -623,14 +613,14 @@ async function startup() {
 		changeActiveAddressAndChainAndResetSimulation(window.interceptor.settings.activeSimulationAddress, window.interceptor.settings.activeChain)
 	}
 
-	browser.runtime.onMessage.addListener(async function(message: unknown) {
+	browser.runtime.onMessage.addListener(async function(message: PopupMessage) {
 		console.log(message)
 		try {
 			const payload = PopupMessage.parse(message)
 			const handler = popupMessageHandlers.get(payload.method)
 			if (handler === undefined) throw `unknown popup message ${ payload.method }`
 			if (simulator === undefined) return
-			return await handler(simulator, payload)
+			return await handler(simulator, message)
 		}
 		catch (error) {
 			console.log('invalid popup message!')

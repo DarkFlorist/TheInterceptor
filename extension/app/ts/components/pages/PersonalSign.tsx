@@ -27,7 +27,7 @@ export function PersonalSign() {
 	useEffect( () => {
 		async function popupMessageListener(msg: unknown) {
 			const message = MessageToPopup.parse(msg)
-			if ( message.message !== 'popup_personal_sign_request') return
+			if ( message.method !== 'popup_personal_sign_request') return
 			await updatePage(message)
 		}
 		browser.runtime.onMessage.addListener(popupMessageListener)
