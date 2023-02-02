@@ -480,7 +480,7 @@ async function onContentScriptConnected(port: browser.runtime.Port) {
 					options: request.options,
 					error: {
 						code: METAMASK_ERROR_USER_REJECTED_REQUEST,
-						method: 'User refused access to the wallet'
+						message: 'User refused access to the wallet'
 					}
 				})
 			}
@@ -543,7 +543,7 @@ async function onContentScriptConnected(port: browser.runtime.Port) {
 				options: request.options,
 				error: {
 					code: 123456,
-					method: 'Unknown error'
+					message: 'Unknown error'
 				}
 			})
 			throw error

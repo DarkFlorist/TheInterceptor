@@ -38,7 +38,7 @@ export const InterceptedRequestForward = funtypes.Intersect(
 		funtypes.Object({
 			error: funtypes.Object({
 				code: funtypes.Number,
-				method: funtypes.String
+				message: funtypes.String
 			}).asReadonly(),
 		}).asReadonly(),
 		funtypes.Object({ })
