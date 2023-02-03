@@ -4,7 +4,8 @@ import { describe, runIfRoot, should, run } from '../micro-should.js'
 import * as assert from 'assert'
 import { EthereumSignedTransactionToSignedTransaction, getV, serializeTransactionToBytes } from '../../app/ts/utils/ethereum.js'
 import { bytes32String } from '../../app/ts/utils/bigint.js'
-import { EthereumSignedTransaction1559 } from '../../app/ts/utils/wire-types.js'
+import { EthereumQuantity, EthereumSignedTransaction1559 } from '../../app/ts/utils/wire-types.js'
+import { keccak256 } from '@zoltu/ethereum-crypto'
 
 export async function main() {
 	describe('SimulationModeEthereumClientService', () => {
@@ -71,7 +72,9 @@ export async function main() {
 			assert.equal(signed.type, '1559')
 			if (signed.type !== '1559') throw new Error('wrong transaction type')
 
-			const digest = serializeTransactionToBytes(signed)
+			const digest = EthereumQuantity.serialize(await keccak256.hash(serializeTransactionToBytes(signed))) as string
+			assert.equal(digest, validTransaction.hash)
+			
 			const addr = ethers.utils.recoverAddress(digest, {
 				r: bytes32String(signed.r),
 				s: bytes32String(signed.s),
