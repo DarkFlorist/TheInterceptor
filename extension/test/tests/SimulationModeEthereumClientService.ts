@@ -2,7 +2,7 @@ import { ethers } from 'ethers'
 import { SimulationModeEthereumClientService } from '../../app/ts/simulation/services/SimulationModeEthereumClientService.js'
 import { describe, runIfRoot, should, run } from '../micro-should.js'
 import * as assert from 'assert'
-import { EthereumSignedTransactionToSignedTransaction, getV, serializeTransactionToBytes } from '../../app/ts/utils/ethereum.js'
+import { EthereumSignedTransactionToSignedTransaction, serializeTransactionToBytes } from '../../app/ts/utils/ethereum.js'
 import { bytes32String } from '../../app/ts/utils/bigint.js'
 
 export async function main() {
@@ -36,10 +36,11 @@ export async function main() {
 			assert.throws(() => ethers.utils.recoverAddress(digest, {
 					r: bytes32String(signed.r),
 					s: bytes32String(signed.s),
-					v: Number(getV(signed)),
+					recoveryParam: signed.yParity === 'even' ? 0 : 1,
 				}),
 				'Error: invalid point'
 			)
+			//TODO, add positive test here too
 		})
 	})
 }

@@ -78,11 +78,6 @@ function isSignedTransaction(maybeSigned: unknown): maybeSigned is ISignedTransa
 		&& 'yParity' in maybeSigned
 }
 
-export function getV(transaction: Pick<ISignedTransaction1559 | ISignedTransaction2930, 'chainId' | 'yParity'>) {
-	return 'chainId' in transaction && transaction.chainId !== undefined
-	? (transaction.yParity === 'even' ? 0n : 1n) + 35n + 2n * transaction.chainId
-	: transaction.yParity === 'even' ? 27n : 28n
-}
 
 export function rlpEncodeLegacyTransactionPayload(transaction: IUnsignedTransactionLegacy): Uint8Array {
 	const toEncode = [
@@ -100,8 +95,7 @@ export function rlpEncodeLegacyTransactionPayload(transaction: IUnsignedTransact
 			toEncode.push(stripLeadingZeros(new Uint8Array(0)))
 		}
 	} else {
-		const v = 'v' in transaction ? transaction.v : getV(transaction)
-		toEncode.push(stripLeadingZeros(bigintToUint8Array(v, 32)))
+		toEncode.push(stripLeadingZeros(bigintToUint8Array(transaction.v, 32)))
 		toEncode.push(stripLeadingZeros(bigintToUint8Array(transaction.r, 32)))
 		toEncode.push(stripLeadingZeros(bigintToUint8Array(transaction.s, 32)))
 	}
