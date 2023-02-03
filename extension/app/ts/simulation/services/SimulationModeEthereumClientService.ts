@@ -98,9 +98,14 @@ export class SimulationModeEthereumClientService {
 		return min(baseFee + transaction.maxPriorityFeePerGas, transaction.maxFeePerGas)
 	}
 
-	public static mockSignTransaction = async (transaction: EthereumUnsignedTransaction) => {
-		const signatureParams = { r: 0n, s: 0n, yParity: 'even' as const }
+	public static mockSignTransaction = async (transaction: EthereumUnsignedTransaction) : Promise<EthereumSignedTransaction> => {
 		const unsignedTransaction = EthereumUnsignedTransactionToUnsignedTransaction(transaction)
+		if (transaction.type === 'legacy') {
+			const signatureParams = { r: 0n, s: 0n, v: 0n }
+			const hash = await keccak256.hash(serializeTransactionToBytes({ ...unsignedTransaction, ...signatureParams }))
+			return { ...transaction, ...signatureParams, hash }
+		}
+		const signatureParams = { r: 0n, s: 0n, yParity: 'even' as const }
 		const hash = await keccak256.hash(serializeTransactionToBytes({ ...unsignedTransaction, ...signatureParams }))
 		return { ...transaction, ...signatureParams, hash }
 	}

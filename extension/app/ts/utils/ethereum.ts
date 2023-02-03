@@ -3,7 +3,7 @@ import { rlpEncode } from '@zoltu/rlp-encoder'
 import { bigintToUint8Array, dataString } from './bigint.js'
 import { stripLeadingZeros } from './typed-arrays.js'
 import { assertNever } from './typescript.js'
-import { EthereumUnsignedTransaction } from './wire-types.js'
+import { EthereumSignedTransaction, EthereumUnsignedTransaction } from './wire-types.js'
 
 export interface IUnsignedTransactionLegacy {
 	readonly type: 'legacy'
@@ -50,7 +50,14 @@ export interface IUnsignedTransaction1559 {
 	}[]
 }
 
-export interface ITransactionSignature {
+export interface ITransactionSignatureLegacy {
+	readonly r: bigint
+	readonly s: bigint
+	readonly v: bigint
+	readonly hash: bigint
+}
+
+export interface ITransactionSignature1559and2930 {
 	readonly r: bigint
 	readonly s: bigint
 	readonly yParity: 'even' | 'odd'
@@ -58,7 +65,10 @@ export interface ITransactionSignature {
 }
 
 export type IUnsignedTransaction = IUnsignedTransactionLegacy | IUnsignedTransaction2930 | IUnsignedTransaction1559
-export type ISignedTransaction = (IUnsignedTransactionLegacy | IUnsignedTransaction2930 | IUnsignedTransaction1559) & ITransactionSignature
+export type ISignedTransaction1559 = IUnsignedTransaction1559 & ITransactionSignature1559and2930
+export type ISignedTransactionLegacy = IUnsignedTransactionLegacy & ITransactionSignatureLegacy
+export type ISignedTransaction2930 = IUnsignedTransaction2930 & ITransactionSignature1559and2930
+export type ISignedTransaction = ISignedTransaction1559 | ISignedTransactionLegacy | ISignedTransaction2930
 
 function isSignedTransaction(maybeSigned: unknown): maybeSigned is ISignedTransaction {
 	return typeof maybeSigned === 'object'
@@ -68,7 +78,7 @@ function isSignedTransaction(maybeSigned: unknown): maybeSigned is ISignedTransa
 		&& 'yParity' in maybeSigned
 }
 
-export function getV(transaction: Pick<ISignedTransaction, 'chainId' | 'yParity'>) {
+export function getV(transaction: Pick<ISignedTransaction1559 | ISignedTransaction2930, 'chainId' | 'yParity'>) {
 	return 'chainId' in transaction && transaction.chainId !== undefined
 	? (transaction.yParity === 'even' ? 0n : 1n) + 35n + 2n * transaction.chainId
 	: transaction.yParity === 'even' ? 27n : 28n
@@ -90,7 +100,7 @@ export function rlpEncodeLegacyTransactionPayload(transaction: IUnsignedTransact
 			toEncode.push(stripLeadingZeros(new Uint8Array(0)))
 		}
 	} else {
-		const v = getV(transaction)
+		const v = 'v' in transaction ? transaction.v : getV(transaction)
 		toEncode.push(stripLeadingZeros(bigintToUint8Array(v, 32)))
 		toEncode.push(stripLeadingZeros(bigintToUint8Array(transaction.r, 32)))
 		toEncode.push(stripLeadingZeros(bigintToUint8Array(transaction.s, 32)))
@@ -98,7 +108,7 @@ export function rlpEncodeLegacyTransactionPayload(transaction: IUnsignedTransact
 	return rlpEncode(toEncode)
 }
 
-export function rlpEncode2930TransactionPayload(transaction: IUnsignedTransaction2930): Uint8Array {
+export function rlpEncode2930TransactionPayload(transaction: IUnsignedTransaction2930 | ISignedTransaction2930): Uint8Array {
 	const toEncode = [
 		stripLeadingZeros(bigintToUint8Array(transaction.chainId, 32)),
 		stripLeadingZeros(bigintToUint8Array(transaction.nonce, 32)),
@@ -109,7 +119,7 @@ export function rlpEncode2930TransactionPayload(transaction: IUnsignedTransactio
 		transaction.input,
 		transaction.accessList.map(({address, storageKeys}) => [bigintToUint8Array(address, 20), storageKeys.map(slot => bigintToUint8Array(slot, 32))]),
 	]
-	if (isSignedTransaction(transaction)) {
+	if (isSignedTransaction(transaction) && 'yParity' in transaction) {
 		toEncode.push(stripLeadingZeros(new Uint8Array([transaction.yParity === 'even' ? 0 : 1]))),
 		toEncode.push(stripLeadingZeros(bigintToUint8Array(transaction.r, 32)))
 		toEncode.push(stripLeadingZeros(bigintToUint8Array(transaction.s, 32)))
@@ -150,7 +160,8 @@ export function serializeTransactionToString(transaction: ISignedTransaction) {
 	return `0x${dataString(serializeTransactionToBytes(transaction))}`
 }
 
-export async function signTransaction<T extends IUnsignedTransaction>(privateKey: bigint, unsignedTransaction: T): Promise<T & ITransactionSignature> {
+export async function signTransaction<T extends IUnsignedTransaction>(privateKey: bigint, unsignedTransaction: T): Promise<ISignedTransaction> {
+	if (unsignedTransaction.type === 'legacy') throw new Error('Cannot sign legacy transaction')
 	const serializedUnsignedTransaction = serializeTransactionToBytes(unsignedTransaction)
 	const unsignedHash = await keccak256.hash(serializedUnsignedTransaction)
 	const { r, s, recoveryParameter } = await secp256k1.sign(privateKey, unsignedHash)
@@ -210,6 +221,59 @@ export function EthereumUnsignedTransactionToUnsignedTransaction(transaction: Et
 			value: transaction.value,
 			input: transaction.input,
 			accessList: transaction.accessList !== undefined ? transaction.accessList : []
+		}
+	}
+}
+
+export function EthereumSignedTransactionToSignedTransaction(transaction: EthereumSignedTransaction): ISignedTransaction {
+	switch (transaction.type) {
+		case '1559': return {
+			type: '1559',
+			from: transaction.from,
+			chainId: transaction.chainId,
+			nonce: transaction.nonce,
+			maxFeePerGas: transaction.maxFeePerGas,
+			maxPriorityFeePerGas: transaction.maxPriorityFeePerGas,
+			gasLimit: transaction.gas,
+			to: transaction.to,
+			value: transaction.value,
+			input: transaction.input,
+			accessList: transaction.accessList !== undefined ? transaction.accessList : [],
+			r: transaction.r,
+			s: transaction.s,
+			yParity: transaction.yParity,
+			hash: transaction.hash,
+		}
+		case '2930': return {
+			type: '2930',
+			from: transaction.from,
+			chainId: transaction.chainId,
+			nonce: transaction.nonce,
+			gasPrice: transaction.gasPrice,
+			gasLimit: transaction.gas,
+			to: transaction.to,
+			value: transaction.value,
+			input: transaction.input,
+			accessList: transaction.accessList !== undefined ? transaction.accessList : [],
+			r: transaction.r,
+			s: transaction.s,
+			yParity: transaction.yParity,
+			hash: transaction.hash,
+		}
+		case 'legacy': return {
+			type: 'legacy',
+			from: transaction.from,
+			chainId: transaction.chainId,
+			nonce: transaction.nonce,
+			gasPrice: transaction.gasPrice,
+			gasLimit: transaction.gas,
+			to: transaction.to,
+			value: transaction.value,
+			input: transaction.input,
+			r: transaction.r,
+			s: transaction.s,
+			v: transaction.v,
+			hash: transaction.hash,
 		}
 	}
 }
