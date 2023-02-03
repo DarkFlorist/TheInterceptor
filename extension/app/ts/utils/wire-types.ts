@@ -702,13 +702,14 @@ export const EIP712Message = t.Object({
 })
 
 function isJSON(text: string){
-    if (typeof text !== 'string') return false
-    try {
-        return (typeof JSON.parse(text) === 'object')
-    }
-    catch (error) {
-        return false
-    }
+	if (typeof text !== 'string') return false
+	try {
+		JSON.parse(text)
+		return true
+	}
+	catch (error) {
+		return false
+	}
 }
 
 const EIP712MessageParser: t.ParsedValue<t.String, EIP712Message>['config'] = {
