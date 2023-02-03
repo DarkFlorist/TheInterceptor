@@ -78,10 +78,6 @@ function isSignedTransaction(maybeSigned: unknown): maybeSigned is ISignedTransa
 		&& 'yParity' in maybeSigned
 }
 
-export function getV(yParity: 'even' |'odd', chainId: bigint) {	
-	return (yParity === 'even' ? 0n : 1n) + 35n + 2n * chainId
-}
-
 export function rlpEncodeLegacyTransactionPayload(transaction: IUnsignedTransactionLegacy): Uint8Array {
 	const toEncode = [
 		stripLeadingZeros(bigintToUint8Array(transaction.nonce, 32)),
