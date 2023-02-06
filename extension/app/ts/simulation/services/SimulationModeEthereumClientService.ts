@@ -382,6 +382,7 @@ export class SimulationModeEthereumClientService {
 		// make a mock block based on the previous block
 		const parentBlock = await this.ethereumClientService.getBlock('latest', true)
 		const block = {
+			author: parentBlock.miner,
 			difficulty: parentBlock.difficulty,
 			extraData: parentBlock.extraData,
 			gasLimit: parentBlock.gasLimit,

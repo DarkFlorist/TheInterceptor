@@ -253,6 +253,7 @@ export const EthereumSignedTransactionWithBlockData = t.Intersect(
 
 export type EthereumBlockHeader = t.Static<typeof EthereumBlockHeader>
 export const EthereumBlockHeader = t.Object({
+	author: EthereumAddress,
 	difficulty: EthereumQuantity,
 	extraData: EthereumData,
 	gasLimit: EthereumQuantity,
@@ -514,6 +515,7 @@ export const DappRequestTransaction = t.Intersect(
 
 export type EthereumBlockHeaderWithTransactionHashes = t.Static<typeof EthereumBlockHeaderWithTransactionHashes>
 export const EthereumBlockHeaderWithTransactionHashes = t.Object({
+	author: EthereumAddress,
 	difficulty: EthereumQuantity,
 	extraData: EthereumData,
 	gasLimit: EthereumQuantity,
