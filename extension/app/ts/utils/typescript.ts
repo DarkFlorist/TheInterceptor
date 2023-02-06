@@ -35,3 +35,4 @@ export function assertsOneOf<T, U extends T>(item: T, array: readonly U[], messa
 
 export type DistributedPick<T, K extends string> = T extends unknown ? { [P in K & keyof T]: T[P] } : never
 export type DistributedOmit<T, K extends keyof T> = T extends unknown ? Omit<T, K> : never
+export type DistributiveOmit<T extends object, K extends keyof T> = T extends unknown ? Omit<T, K> : never

@@ -2,7 +2,7 @@ import { ethers } from 'ethers'
 import { SimulationModeEthereumClientService } from '../../app/ts/simulation/services/SimulationModeEthereumClientService.js'
 import { describe, runIfRoot, should, run } from '../micro-should.js'
 import * as assert from 'assert'
-import { EthereumSignedTransactionToSignedTransaction, EthereumUnsignedTransactionToUnsignedTransaction, serializeTransactionToBytes } from '../../app/ts/utils/ethereum.js'
+import { EthereumSignedTransactionToSignedTransaction, EthereumUnsignedTransactionToUnsignedTransaction, serializeUnsignedTransactionToBytes } from '../../app/ts/utils/ethereum.js'
 import { bytes32String } from '../../app/ts/utils/bigint.js'
 import { EthereumSignedTransaction1559, EthereumUnsignedTransaction } from '../../app/ts/utils/wire-types.js'
 import { keccak256 } from '@zoltu/ethereum-crypto'
@@ -35,7 +35,7 @@ export async function main() {
 			assert.equal(signed.type, '1559')
 			if (signed.type !== '1559') throw new Error('wrong transaction type')
 			const unsigned = EthereumUnsignedTransactionToUnsignedTransaction(exampleTransaction)
-			const digest = bytes32String(await keccak256.hash(serializeTransactionToBytes(unsigned)))
+			const digest = bytes32String(await keccak256.hash(serializeUnsignedTransactionToBytes(unsigned)))
 			assert.throws(() => ethers.utils.recoverAddress(digest, {
 					r: bytes32String(signed.r),
 					s: bytes32String(signed.s),
@@ -74,7 +74,7 @@ export async function main() {
 			assert.equal(signed.type, '1559')
 			if (signed.type !== '1559') throw new Error('wrong transaction type')
 
-			const digest = bytes32String(await keccak256.hash(serializeTransactionToBytes(unsigned)))
+			const digest = bytes32String(await keccak256.hash(serializeUnsignedTransactionToBytes(unsigned)))
 			
 			const addr = ethers.utils.recoverAddress(digest, {
 				r: bytes32String(signed.r),
