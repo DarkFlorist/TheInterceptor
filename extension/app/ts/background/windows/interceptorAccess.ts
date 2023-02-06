@@ -131,7 +131,7 @@ export async function requestAccessFromUser(origin: string, icon: string | undef
 	const askForAddressAccess = requestAccessToAddress !== undefined && window.interceptor.settings?.addressInfos.find((x) => x.address === requestAccessToAddress.address )?.askForAddressAccess !== false
 	const accessAddress = askForAddressAccess ? requestAccessToAddress : undefined
 
-	if (window.interceptor.settings.pendingAccessRequests.find((x) => x.origin === origin && x.requestAccessToAddress === accessAddress) === undefined) {
+	if (window.interceptor.settings.pendingAccessRequests.find((x) => x.origin === origin && x.requestAccessToAddress === accessAddress?.address) === undefined) {
 		// we didn't have this request pending already, add it to the list
 		await setPendingAccessRequests( window.interceptor.settings.pendingAccessRequests.concat( {
 			origin: origin,
