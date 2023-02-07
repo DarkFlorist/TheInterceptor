@@ -578,6 +578,7 @@ const popupMessageHandlers = new Map<string, PopupMessageHandler>([
 	['popup_openAddressBook', openAddressBook],
 	['popup_personalSignReadyAndListening', async () => {}], // handled elsewhere (personalSign.ts)
 	['popup_changeChainReadyAndListening', async () => {}], // handled elsewhere (changeChain.ts)
+	['popup_interceptorAccessReadyAndListening', async () => {}], // handled elsewhere (interceptorAccess.ts)
 ])
 
 async function startup() {
