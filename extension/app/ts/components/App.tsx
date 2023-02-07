@@ -3,7 +3,7 @@ import { defaultAddresses, WebsiteAccessArray } from '../background/settings.js'
 import { SimulationAndVisualisationResults } from '../utils/visualizer-types.js'
 import { ChangeActiveAddress } from './pages/ChangeActiveAddress.js'
 import { Home } from './pages/Home.js'
-import { Page, AddressInfo, TabConnection, AddressInfoEntry, AddressBookEntry } from '../utils/user-interface-types.js'
+import { Page, AddressInfo, TabConnection, AddressInfoEntry, AddressBookEntry, AddingNewAddressType } from '../utils/user-interface-types.js'
 import Hint from './subcomponents/Hint.js'
 import { AddNewAddress } from './pages/AddNewAddress.js'
 import { InterceptorAccessList } from './pages/InterceptorAccessList.js'
@@ -30,7 +30,6 @@ export function App() {
 	const [websiteAccess, setWebsiteAccess] = useState<WebsiteAccessArray | undefined>(undefined)
 	const [websiteAccessAddressMetadata, setWebsiteAccessAddressMetadata] = useState<AddressInfoEntry[]>([])
 	const [activeChain, setActiveChain] = useState<bigint>(1n)
-	const [addressBookEntryInput, setAddressBookEntryInput] = useState<AddressBookEntry | undefined>(undefined)
 	const [simulationMode, setSimulationMode] = useState<boolean>(true)
 	const [notificationBadgeCount, setNotificationBadgeCount] = useState<number>(0)
 	const [tabConnection, setTabConnection] = useState<TabConnection>(DEFAULT_TAB_CONNECTION)
@@ -38,6 +37,7 @@ export function App() {
 	const [isSettingsLoaded, setIsSettingsLoaded] = useState<boolean>(false)
 	const [currentBlockNumber, setCurrentBlockNumber] = useState<bigint | undefined>(undefined)
 	const [signerName, setSignerName] = useState<SignerName | undefined>(undefined)
+	const [addingNewAddress, setAddingNewAddress] = useState<AddingNewAddressType> ({ addingAddress: true, type: 'addressInfo' as const })
 
 	function fetchSettings(backgroundPage: Window) {
 		const settings = backgroundPage.interceptor.settings
@@ -162,17 +162,17 @@ export function App() {
 		// address not found, let's promt user to create it
 		const addressString = ethers.utils.getAddress(trimmed)
 		setAndSaveAppPage(Page.AddNewAddress)
-		setAddressBookEntryInput( {
+		setAddingNewAddress({ addingAddress: false, entry: {
 			type: 'addressInfo' as const,
 			name: `Pasted ${ truncateAddr(addressString) }`,
 			address: bigIntReprentation,
 			askForAddressAccess: true,
-		})
+		} } )
 	}
 
 	function renameAddressCallBack(entry: AddressBookEntry) {
 		setAndSaveAppPage(Page.ModifyAddress)
-		setAddressBookEntryInput(entry)
+		setAddingNewAddress({ addingAddress: false, entry: entry })
 	}
 
 	function openAddressBook() {
@@ -251,9 +251,7 @@ export function App() {
 						{ appPage === Page.AddNewAddress || appPage === Page.ModifyAddress ?
 							<AddNewAddress
 								setActiveAddressAndInformAboutIt = { setActiveAddressAndInformAboutIt }
-								addressBookEntry = { addressBookEntryInput }
-								setAddressBookEntryInput = { setAddressBookEntryInput }
-								addingNewAddress = { appPage === Page.AddNewAddress }
+								addingNewAddress = { addingNewAddress }
 								close = { () => setAndSaveAppPage(Page.Home) }
 								activeAddress = { simulationMode ? activeSimulationAddress : activeSigningAddress }
 							/>

@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'preact/hooks'
 import { bigintToRoundedPrettyDecimalString, stringToUint8Array } from '../../utils/bigint.js'
 import { BigAddress } from '../subcomponents/address.js'
-import { AddressBookEntry } from '../../utils/user-interface-types.js'
+import { AddingNewAddressType, AddressBookEntry } from '../../utils/user-interface-types.js'
 import Hint from '../subcomponents/Hint.js'
 import { Error as ErrorComponent} from '../subcomponents/Error.js'
 import { MOCK_PRIVATE_KEYS_ADDRESS, getChainName } from '../../utils/constants.js'
@@ -20,9 +20,8 @@ export function PersonalSign() {
 	const [requestIdToConfirm, setRequestIdToConfirm] = useState<number | undefined>(undefined)
 	const [signRequest, setSignRequest] = useState<SignRequest | undefined>(undefined)
 	const textareaRef = useRef<HTMLTextAreaElement | null>(null)
-	const [isEditAddressModelOpen, setEditAddressModelOpen] = useState<boolean>(false)
-	const [addressBookEntryInput, setAddressBookEntryInput] = useState<AddressBookEntry | undefined>(undefined)
 	const [activeAddress, setActiveAddress] = useState<bigint | undefined>(undefined)
+	const [addingNewAddress, setAddingNewAddress] = useState<AddingNewAddressType | 'renameAddressModalClosed'> ('renameAddressModalClosed')
 
 	useEffect( () => {
 		async function popupMessageListener(msg: unknown) {
@@ -99,22 +98,21 @@ export function PersonalSign() {
 	}
 
 	function renameAddressCallBack(entry: AddressBookEntry) {
-		setEditAddressModelOpen(true)
-		setAddressBookEntryInput(entry)
+		setAddingNewAddress({ addingAddress: false, entry: entry })
 	}
 
 	return (
 		<main>
 			<Hint>
-				<div class = { `modal ${ isEditAddressModelOpen? 'is-active' : ''}` }>
-					<AddNewAddress
-						setActiveAddressAndInformAboutIt = { undefined }
-						addressBookEntry = { addressBookEntryInput }
-						setAddressBookEntryInput = { setAddressBookEntryInput }
-						addingNewAddress = { false }
-						close = { () => { setEditAddressModelOpen(false) } }
-						activeAddress = { undefined }
-					/>
+				<div class = { `modal ${ addingNewAddress !== 'renameAddressModalClosed' ? 'is-active' : ''}` }>
+					{ addingNewAddress === 'renameAddressModalClosed' ? <></> :
+						<AddNewAddress
+							setActiveAddressAndInformAboutIt = { undefined }
+							addingNewAddress = { addingNewAddress }
+							close = { () => { setAddingNewAddress('renameAddressModalClosed') } }
+							activeAddress = { undefined }
+						/>
+					}
 				</div>
 				<div className = 'block' style = 'margin: 10px; margin-bottom: 0px'>
 					{ signRequest === undefined ? <></> : <>

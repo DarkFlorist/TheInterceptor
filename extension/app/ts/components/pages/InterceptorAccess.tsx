@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'preact/hooks'
 import { BigAddress } from '../subcomponents/address.js'
 import { AddNewAddress } from './AddNewAddress.js'
-import { AddressInfoEntry, AddressBookEntry } from '../../utils/user-interface-types.js'
+import { AddressInfoEntry, AddressBookEntry, AddingNewAddressType } from '../../utils/user-interface-types.js'
 import { MessageToPopup } from '../../utils/interceptor-messages.js'
 import { sendPopupMessageToBackgroundPage } from '../../background/backgroundUtils.js'
 
@@ -14,8 +14,7 @@ interface InterceptorAccessRequest {
 
 export function InterceptorAccess() {
 	const [accessRequest, setAccessRequest] = useState<InterceptorAccessRequest | undefined>(undefined)
-	const [isEditAddressModelOpen, setEditAddressModelOpen] = useState<boolean>(false)
-	const [addressBookEntryInput, setAddressBookEntryInput] = useState<AddressBookEntry | undefined>(undefined)
+	const [addingNewAddress, setAddingNewAddress] = useState<AddingNewAddressType | 'renameAddressModalClosed'> ('renameAddressModalClosed')
 
 	useEffect( () => {
 		async function popupMessageListener(msg: unknown) {
@@ -49,21 +48,20 @@ export function InterceptorAccess() {
 	}
 
 	function renameAddressCallBack(entry: AddressBookEntry) {
-		setEditAddressModelOpen(true)
-		setAddressBookEntryInput(entry)
+		setAddingNewAddress({ addingAddress: false, entry: entry })
 	}
 
 	return (
 		<main>
-			<div class = { `modal ${ isEditAddressModelOpen? 'is-active' : ''}` }>
-				<AddNewAddress
-					setActiveAddressAndInformAboutIt = { undefined }
-					addressBookEntry = { addressBookEntryInput }
-					setAddressBookEntryInput = { setAddressBookEntryInput }
-					addingNewAddress = { false }
-					close = { () => { setEditAddressModelOpen(false) } }
-					activeAddress = { undefined }
-				/>
+			<div class = { `modal ${ addingNewAddress !== 'renameAddressModalClosed' ? 'is-active' : ''}` }>
+				{ addingNewAddress === 'renameAddressModalClosed' ? <></> :
+					<AddNewAddress
+						setActiveAddressAndInformAboutIt = { undefined }
+						addingNewAddress = { addingNewAddress }
+						close = { () => { setAddingNewAddress('renameAddressModalClosed') } }
+						activeAddress = { undefined }
+					/>
+				}
 			</div>
 			{ accessRequest === undefined ? <></> : <>
 				<div className = 'block' style = 'margin-bottom: 0px; margin: 10px'>

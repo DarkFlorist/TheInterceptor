@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'preact/hooks'
-import { AddressBookEntries, AddressBookEntry, RenameAddressCallBack } from './utils/user-interface-types.js'
+import { AddingNewAddressType, AddressBookEntries, AddressBookEntry, RenameAddressCallBack } from './utils/user-interface-types.js'
 import { GetAddressBookDataReply, MessageToPopup } from './utils/interceptor-messages.js'
 import { arrayToChunks } from './utils/typed-arrays.js'
 import { AddNewAddress } from './components/pages/AddNewAddress.js'
@@ -185,8 +185,7 @@ export function AddressBook() {
 	const searchStringRef = useRef<string | undefined>(searchString)
 	const currentPageRef = useRef<number>(currentPage)
 
-	const [addressBookEntryInput, setAddressBookEntryInput] = useState<AddressBookEntry | undefined>(undefined)
-	const [addingNewAddress, setAddingNewAddress] = useState<boolean>(false)
+	const [addingNewAddressType, setAddingNewAddressType] = useState<AddingNewAddressType>({ addingAddress: true, type: 'addressInfo' as const })
 
 	const scrollTimer = useRef<NodeJS.Timeout | undefined>(undefined)
 
@@ -330,10 +329,15 @@ export function AddressBook() {
 		return Math.ceil(window.innerHeight / getPageSizeInPixels(filter) )
 	}
 
-	function openNewAddress() {
+	function openNewAddress(filter: ActiveFilter) {
 		setModalState('addNewAddress')
-		setAddressBookEntryInput(undefined)
-		setAddingNewAddress(true)
+		switch(filter) {
+			case 'My Active Addresses': return setAddingNewAddressType({ addingAddress: true, type: 'addressInfo' as const })
+			case 'My Contacts': return setAddingNewAddressType({ addingAddress: true, type: 'contact' as const })
+			case 'Tokens': return setAddingNewAddressType({ addingAddress: true, type: 'token' as const })
+			case 'Non Fungible Tokens': return setAddingNewAddressType({ addingAddress: true, type: 'NFT' as const })
+			case 'Other Contracts': return setAddingNewAddressType({ addingAddress: true, type: 'other contract' as const })
+		}
 	}
 
 	function openConfirmaddressBookEntryToBeRemoved(entry: AddressBookEntry) {
@@ -343,13 +347,12 @@ export function AddressBook() {
 
 	function renameAddressCallBack(entry: AddressBookEntry) {
 		setModalState('addNewAddress')
-		setAddressBookEntryInput(entry)
-		setAddingNewAddress(false)
+		setAddingNewAddressType({ addingAddress: false, entry: entry })
 	}
 
 	function removeAddressBookEntry(entry: AddressBookEntry) {
 		sendPopupMessageToBackgroundPage({
-			method: 'popup_removeAddressBookEntry', 
+			method: 'popup_removeAddressBookEntry',
 			options: {
 				address: entry.address,
 				addressBookCategory: activeFilter,
@@ -388,7 +391,12 @@ export function AddressBook() {
 								</p>
 							</div>
 							<div style = 'margin-left: auto;'>
-								{ addressBookState !== undefined ? <button class = 'button is-primary' onClick = { () => openNewAddress() } disabled = { addressBookState.activeFilter !== 'My Active Addresses' }>
+								{ addressBookState !== undefined ?
+									<button
+										class = 'button is-primary'
+										onClick = { () => openNewAddress(addressBookState.activeFilter) }
+										disabled = { addressBookState.activeFilter !== 'My Active Addresses' && addressBookState.activeFilter !== 'My Contacts' }
+									>
 									{ `Add New ${ ActiveFilterSingle[addressBookState.activeFilter] }` }
 								</button> : <></> }
 							</div>
@@ -407,9 +415,7 @@ export function AddressBook() {
 					{ modalState === 'addNewAddress' ?
 						<AddNewAddress
 							setActiveAddressAndInformAboutIt = { undefined }
-							addressBookEntry = { addressBookEntryInput }
-							setAddressBookEntryInput = { setAddressBookEntryInput }
-							addingNewAddress = { addingNewAddress }
+							addingNewAddress = { addingNewAddressType }
 							close = { () => setModalState('noModal') }
 							activeAddress = { undefined }
 						/>
