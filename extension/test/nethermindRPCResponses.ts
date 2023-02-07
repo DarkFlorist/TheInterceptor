@@ -1,4 +1,5 @@
 export const eth_getBlockByNumber_goerli_8443561_false = `
+{
     "jsonrpc": "2.0",
     "result": {
         "author": "0xf36f155486299ecaff2d4f5160ed5114c1f66000",

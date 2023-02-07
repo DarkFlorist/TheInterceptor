@@ -1,5 +1,5 @@
 import { EthereumClientService } from './EthereumClientService.js'
-import { EthGetLogsResponse, EthereumUnsignedTransaction, EthereumSignedTransactionWithBlockData, EthereumBlockHeader, EthereumBlockTag, EthGetLogsRequest, EthTransactionReceiptResponse, EstimateGasParamsVariables, EthSubscribeParams, JsonRpcMessage, JsonRpcNewHeadsNotification, EthereumBlockHeaderWithTransactionHashes, PersonalSignParams, SignTypedDataParams, EthereumSignedTransaction } from '../../utils/wire-types.js'
+import { EthGetLogsResponse, EthereumUnsignedTransaction, EthereumSignedTransactionWithBlockData, EthereumBlockTag, EthGetLogsRequest, EthTransactionReceiptResponse, EstimateGasParamsVariables, EthSubscribeParams, JsonRpcMessage, JsonRpcNewHeadsNotification, PersonalSignParams, SignTypedDataParams, EthereumSignedTransaction, GetBlockReturn } from '../../utils/wire-types.js'
 import { EthereumUnsignedTransactionToUnsignedTransaction, serializeSignedTransactionToBytes } from '../../utils/ethereum.js'
 import { bytes32String, dataString, max, min } from '../../utils/bigint.js'
 import { MOCK_ADDRESS } from '../../utils/constants.js'
@@ -379,7 +379,7 @@ export class SimulationModeEthereumClientService {
 		return parent_base_fee_per_gas - base_fee_per_gas_delta
 	}
 
-	public readonly getBlock = async (blockTag: EthereumBlockTag = 'latest', fullObjects: boolean = true): Promise<EthereumBlockHeader | EthereumBlockHeaderWithTransactionHashes> => {
+	public readonly getBlock = async (blockTag: EthereumBlockTag = 'latest', fullObjects: boolean = true): Promise<GetBlockReturn> => {
 		if (this.simulationState == undefined || await this.canQueryNodeDirectly(blockTag)) return await this.ethereumClientService.getBlock(blockTag, fullObjects)
 
 		// make a mock block based on the previous block
@@ -482,21 +482,24 @@ export class SimulationModeEthereumClientService {
 		if ( this.simulationState === undefined ) return await this.ethereumClientService.getTransactionByHash(hash)
 		for (const [index, simulatedTransaction] of this.simulationState.simulatedTransactions.entries()) {
 			if (hash === simulatedTransaction.signedTransaction.hash) {
-				const blockParams = {
+				const v = 'v' in simulatedTransaction.signedTransaction ? simulatedTransaction.signedTransaction.v : (simulatedTransaction.signedTransaction.yParity === 'even' ? 0n : 1n)
+				const additionalParams = {
 					blockHash: this.getHashOfSimulatedBlock(),
 					blockNumber: await this.getBlockNumber(),
-					transactionIndex: BigInt(index)
+					transactionIndex: BigInt(index),
+					data: simulatedTransaction.signedTransaction.input,
+					v : v,
 				}
 				if ('gasPrice' in simulatedTransaction.signedTransaction) {
 					return {
 						...simulatedTransaction.signedTransaction,
-						...blockParams
+						...additionalParams,
 					}
 				}
 				return {
 					...simulatedTransaction.signedTransaction,
-					...blockParams,
-					gasPrice: simulatedTransaction.realizedGasPrice
+					...additionalParams,
+					gasPrice: simulatedTransaction.realizedGasPrice,
 				}
 			}
 		}

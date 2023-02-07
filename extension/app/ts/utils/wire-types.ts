@@ -59,6 +59,16 @@ const Bytes256Parser: t.ParsedValue<t.String, bigint>['config'] = {
 		return { success: true, value: `0x${value.toString(16).padStart(512, '0')}` }
 	},
 }
+const Bytes16Parser: t.ParsedValue<t.String, bigint>['config'] = {
+	parse: value => {
+		if (!/^0x([a-fA-F0-9]{16})$/.test(value)) return { success: false, message: `${value} is not a hex string encoded 256 byte value.` }
+		else return { success: true, value: BigInt(value) }
+	},
+	serialize: value => {
+		if (typeof value !== 'bigint') return { success: false, message: `${typeof value} is not a bigint.`}
+		return { success: true, value: `0x${value.toString(16).padStart(16, '0')}` }
+	},
+}
 
 const BytesParser: t.ParsedValue<t.String, Uint8Array>['config'] = {
 	parse: value => {
@@ -126,6 +136,9 @@ export type EthereumBytes32 = t.Static<typeof EthereumBytes32>
 
 export const EthereumBytes256 = t.String.withParser(Bytes256Parser)
 export type EthereumBytes256 = t.Static<typeof EthereumBytes256>
+
+export const EthereumBytes16 = t.String.withParser(Bytes16Parser)
+export type EthereumBytes16 = t.Static<typeof EthereumBytes16>
 
 export const EthereumTimestamp = t.String.withParser(TimestampParser)
 export type EthereumTimestamp = t.Static<typeof EthereumTimestamp>
@@ -256,9 +269,11 @@ export const EthereumSignedTransactionWithBlockData = t.Intersect(
 		t.Intersect(EthereumSignedTransaction1559, t.Object({gasPrice: EthereumQuantity})),
 	),
 	t.Object({
+		data: EthereumInput,
 		blockHash: t.Union(EthereumBytes32, t.Null),
 		blockNumber: t.Union(EthereumQuantity, t.Null),
-		transactionIndex: t.Union(EthereumQuantity, t.Null)
+		transactionIndex: t.Union(EthereumQuantity, t.Null),
+		v: EthereumQuantity,
 	})
 )
 
@@ -273,7 +288,7 @@ export const EthereumBlockHeader = t.Object({
 	logsBloom: EthereumBytes256,
 	miner: EthereumAddress,
 	mixHash: EthereumBytes32,
-	nonce: EthereumQuantity,
+	nonce: EthereumBytes16,
 	number: EthereumQuantity,
 	parentHash: EthereumBytes32,
 	receiptsRoot: EthereumBytes32,
@@ -535,7 +550,7 @@ export const EthereumBlockHeaderWithTransactionHashes = t.Object({
 	logsBloom: EthereumBytes256,
 	miner: EthereumAddress,
 	mixHash: EthereumBytes32,
-	nonce: EthereumQuantity,
+	nonce: EthereumBytes16,
 	number: EthereumQuantity,
 	parentHash: EthereumBytes32,
 	receiptsRoot: EthereumBytes32,
