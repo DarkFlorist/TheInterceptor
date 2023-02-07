@@ -1,6 +1,6 @@
 import { EthereumClientService } from './EthereumClientService.js'
 import { EthGetLogsResponse, EthereumUnsignedTransaction, EthereumSignedTransactionWithBlockData, EthereumBlockHeader, EthereumBlockTag, EthGetLogsRequest, EthTransactionReceiptResponse, EstimateGasParamsVariables, EthSubscribeParams, JsonRpcMessage, JsonRpcNewHeadsNotification, EthereumBlockHeaderWithTransactionHashes, PersonalSignParams, SignTypedDataParams, EthereumSignedTransaction } from '../../utils/wire-types.js'
-import { EthereumUnsignedTransactionToUnsignedTransaction, serializeTransactionToBytes } from '../../utils/ethereum.js'
+import { EthereumUnsignedTransactionToUnsignedTransaction, serializeSignedTransactionToBytes } from '../../utils/ethereum.js'
 import { bytes32String, dataString, max, min } from '../../utils/bigint.js'
 import { MOCK_ADDRESS } from '../../utils/constants.js'
 import { ErrorWithData } from '../../utils/errors.js'
@@ -98,11 +98,19 @@ export class SimulationModeEthereumClientService {
 		return min(baseFee + transaction.maxPriorityFeePerGas, transaction.maxFeePerGas)
 	}
 
-	public static mockSignTransaction = async (transaction: EthereumUnsignedTransaction) => {
-		const signatureParams = { r: 0n, s: 0n, yParity: 'even' as const }
+	public static mockSignTransaction = async (transaction: EthereumUnsignedTransaction) : Promise<EthereumSignedTransaction> => {
 		const unsignedTransaction = EthereumUnsignedTransactionToUnsignedTransaction(transaction)
-		const hash = await keccak256.hash(serializeTransactionToBytes({ ...unsignedTransaction, ...signatureParams }))
-		return { ...transaction, ...signatureParams, hash }
+		if (unsignedTransaction.type === 'legacy') {
+			const signatureParams = { r: 0n, s: 0n, v: 0n }
+			const hash = await keccak256.hash(serializeSignedTransactionToBytes({ ...unsignedTransaction, ...signatureParams }))
+			if (transaction.type !== 'legacy') throw new Error('types do not match')
+			return { ...transaction, ...signatureParams, hash }
+		} else {
+			const signatureParams = { r: 0n, s: 0n, yParity: 'even' as const }
+			const hash = await keccak256.hash(serializeSignedTransactionToBytes({ ...unsignedTransaction, ...signatureParams }))
+			if (transaction.type === 'legacy') throw new Error('types do not match')
+			return { ...transaction, ...signatureParams, hash }
+		}
 	}
 
 	public appendTransaction = async (transaction: EthereumUnsignedTransaction) => {
