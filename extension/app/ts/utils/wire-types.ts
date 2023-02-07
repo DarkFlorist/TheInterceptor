@@ -176,7 +176,7 @@ export const EthereumUnsignedTransaction2930 = t.Intersect(
 	}).asReadonly(),
 	t.Partial({
 		accessList: EthereumAccessList,
-	}),
+	}).asReadonly(),
 )
 
 export type EthereumUnsignedTransaction1559 = t.Static<typeof EthereumUnsignedTransaction1559>
@@ -195,40 +195,54 @@ export const EthereumUnsignedTransaction1559 = t.Intersect(
 	}).asReadonly(),
 	t.Partial({
 		accessList: EthereumAccessList,
-	}),
+	}).asReadonly(),
 )
 export type EthereumUnsignedTransaction = t.Static<typeof EthereumUnsignedTransaction>
 export const EthereumUnsignedTransaction = t.Union(EthereumUnsignedTransactionLegacy, EthereumUnsignedTransaction2930, EthereumUnsignedTransaction1559)
 
-export type EthereumTransactionSignature = t.Static<typeof EthereumTransactionSignature>
-export const EthereumTransactionSignature = t.Intersect(
+export type EthereumTransaction2930And1559Signature = t.Static<typeof EthereumTransaction2930And1559Signature>
+export const EthereumTransaction2930And1559Signature = t.Object({
+	r: EthereumQuantity,
+	s: EthereumQuantity,
+	hash: EthereumBytes32,
+	yParity: t.Union(t.Literal('0x0').withParser(LiteralConverterParserFactory('0x0', 'even' as const)), t.Literal('0x1').withParser(LiteralConverterParserFactory('0x1', 'odd' as const))),
+})
+
+export type EthereumTransactionLegacySignature = t.Static<typeof EthereumTransactionLegacySignature>
+export const EthereumTransactionLegacySignature = t.Intersect(
 	t.Object({
 		r: EthereumQuantity,
 		s: EthereumQuantity,
-		hash: EthereumBytes32
+		hash: EthereumBytes32,
+		v: EthereumQuantity,
 	}),
 	t.Union(
-		t.Object({ yParity: t.Union(t.Literal('0x0').withParser(LiteralConverterParserFactory('0x0', 'even' as const)), t.Literal('0x1').withParser(LiteralConverterParserFactory('0x1', 'odd' as const))) }),
-		t.Object({ v: EthereumQuantity })
+		t.Object({
+			v: EthereumQuantity,
+		}),
+		t.Object({
+			yParity: t.Union(t.Literal('0x0').withParser(LiteralConverterParserFactory('0x0', 'even' as const)), t.Literal('0x1').withParser(LiteralConverterParserFactory('0x1', 'odd' as const))),
+			chainId: EthereumQuantity,
+		})
 	)
 )
 
 export type EthereumSignedTransactionLegacy = t.Static<typeof EthereumSignedTransactionLegacy>
 export const EthereumSignedTransactionLegacy = t.Intersect(
 	EthereumUnsignedTransactionLegacy,
-	EthereumTransactionSignature,
+	EthereumTransactionLegacySignature,
 )
 
 export type EthereumSignedTransaction2930 = t.Static<typeof EthereumSignedTransaction2930>
 export const EthereumSignedTransaction2930 = t.Intersect(
 	EthereumUnsignedTransaction2930,
-	EthereumTransactionSignature,
+	EthereumTransaction2930And1559Signature,
 )
 
 export type EthereumSignedTransaction1559 = t.Static<typeof EthereumSignedTransaction1559>
 export const EthereumSignedTransaction1559 = t.Intersect(
 	EthereumUnsignedTransaction1559,
-	EthereumTransactionSignature,
+	EthereumTransaction2930And1559Signature,
 )
 
 export type EthereumSignedTransaction = t.Static<typeof EthereumSignedTransaction>

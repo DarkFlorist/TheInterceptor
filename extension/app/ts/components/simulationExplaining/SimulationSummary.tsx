@@ -383,6 +383,7 @@ export function SimulationResults(param: SimulationStateParam) {
 						refreshSimulation =  { param.refreshSimulation }
 						currentBlockNumber = { param.currentBlockNumber }
 						renameAddressCallBack = { param.renameAddressCallBack }
+						refreshPressed = { param.refreshPressed }
 					/>
 				</>
 			}
@@ -419,6 +420,7 @@ type SimulationSummaryParams = {
 	refreshSimulation: () => void,
 	currentBlockNumber: bigint | undefined,
 	renameAddressCallBack: RenameAddressCallBack,
+	refreshPressed: boolean,
 }
 
 export function SimulationSummary(param: SimulationSummaryParams) {
@@ -429,7 +431,8 @@ export function SimulationSummary(param: SimulationSummaryParams) {
 		param.simulationAndVisualisationResults.simulatedAndVisualizedTransactions
 
 	const logSummarizer = new LogSummarizer( VisResults )
-	const originalSummary = logSummarizer.getSummary( param.simulationAndVisualisationResults.addressMetaData, param.simulationAndVisualisationResults.tokenPrices)
+	const addressMetaData = new Map(param.simulationAndVisualisationResults.addressMetaData.map( (x) => [addressString(x.address), x]))
+	const originalSummary = logSummarizer.getSummary(addressMetaData, param.simulationAndVisualisationResults.tokenPrices)
 	//remove eth donator if we are in rich mode
 	const firstTransaction = param.simulationAndVisualisationResults.simulatedAndVisualizedTransactions.at(0)
 	const summary = firstTransaction && identifyTransaction(firstTransaction, param.simulationAndVisualisationResults.activeAddress) === 'MakeYouRichTransaction' ?
@@ -510,7 +513,7 @@ export function SimulationSummary(param: SimulationSummaryParams) {
 										{ ' ago' }
 									</p>
 								</CopyToClipboard>
-								<button class = 'button is-primary is-small' disabled = { param.simulationAndVisualisationResults.isComputingSimulation || param.simulationAndVisualisationResults.blockNumber === param.currentBlockNumber || param.currentBlockNumber === undefined}  style = 'margin-left: 5px;' onClick = { param.refreshSimulation } >
+								<button class = 'button is-primary is-small' disabled = { param.refreshPressed || param.simulationAndVisualisationResults.blockNumber === param.currentBlockNumber || param.currentBlockNumber === undefined}  style = 'margin-left: 5px;' onClick = { param.refreshSimulation } >
 									<span class = 'icon'>
 										<img src = '../../img/refresh.svg'/>
 									</span>

@@ -1,7 +1,7 @@
 import * as funtypes from 'funtypes'
 import { AddressBookEntries, AddressBookEntry, AddressInfo, AddressInfoEntry } from './user-interface-types.js'
-import { EIP2612Message, EthereumAddress, EthereumQuantity, Permit2 } from './wire-types.js'
-
+import { EIP2612Message, EthereumAddress, EthereumQuantity, EthereumUnsignedTransaction, Permit2 } from './wire-types.js'
+import { SimResults, SimulationState, TokenPriceEstimate } from './visualizer-types.js'
 
 export type MessageMethodAndParams = funtypes.Static<typeof MessageMethodAndParams>
 export const MessageMethodAndParams = funtypes.Union(
@@ -153,11 +153,6 @@ export const RefreshSimulation = funtypes.Object({
 	method: funtypes.Literal('popup_refreshSimulation')
 }).asReadonly()
 
-export type RefreshConfirmTransactionDialogSimulation = funtypes.Static<typeof RefreshConfirmTransactionDialogSimulation>
-export const RefreshConfirmTransactionDialogSimulation = funtypes.Object({
-	method: funtypes.Literal('popup_refreshConfirmTransactionDialogSimulation')
-}).asReadonly()
-
 export type ChangeInterceptorAccess = funtypes.Static<typeof ChangeInterceptorAccess>
 export const ChangeInterceptorAccess = funtypes.Object({
 	method: funtypes.Literal('popup_changeInterceptorAccess'),
@@ -274,8 +269,28 @@ export const GetAddressBookDataReplyData = funtypes.Object({
 
 export type GetAddressBookDataReply = funtypes.Static<typeof GetAddressBookDataReply>
 export const GetAddressBookDataReply = funtypes.Object({
-	message: funtypes.Literal('popup_getAddressBookData'),
+	method: funtypes.Literal('popup_getAddressBookData'),
 	data: GetAddressBookDataReplyData,
+}).asReadonly()
+
+
+export type RefreshConfirmTransactionDialogSimulation = funtypes.Static<typeof RefreshConfirmTransactionDialogSimulation>
+export const RefreshConfirmTransactionDialogSimulation = funtypes.Object({
+	method: funtypes.Literal('popup_refreshConfirmTransactionDialogSimulation'),
+	data: funtypes.Object({
+		activeAddress: EthereumAddress,
+		simulationMode: funtypes.Boolean,
+		requestId: funtypes.Number,
+		transactionToSimulate: EthereumUnsignedTransaction,
+	}),
+}).asReadonly()
+
+export type NewBlockArrived = funtypes.Static<typeof NewBlockArrived>
+export const NewBlockArrived = funtypes.Object({
+	method: funtypes.Literal('popup_new_block_arrived'),
+	data: funtypes.Object({
+		blockNumber: EthereumQuantity,
+	}),
 }).asReadonly()
 
 export type PopupMessage = funtypes.Static<typeof PopupMessage>
@@ -307,16 +322,15 @@ export const PopupMessage = funtypes.Union(
 	funtypes.Object({ method: funtypes.Literal('popup_personalSignReadyAndListening') }),
 	funtypes.Object({ method: funtypes.Literal('popup_changeChainReadyAndListening') }),
 	funtypes.Object({ method: funtypes.Literal('popup_interceptorAccessReadyAndListening') }),
+	funtypes.Object({ method: funtypes.Literal('popup_confirmTransactionReadyAndListening') }),
 )
 
 export const MessageToPopupSimple = funtypes.Object({
-	message: funtypes.Union(
+	method: funtypes.Union(
 		funtypes.Literal('popup_chain_update'),
 		funtypes.Literal('popup_started_simulation_update'),
 		funtypes.Literal('popup_simulation_state_changed'),
 		funtypes.Literal('popup_confirm_transaction_simulation_started'),
-		funtypes.Literal('popup_confirm_transaction_simulation_state_changed'),
-		funtypes.Literal('popup_new_block_arrived'),
 		funtypes.Literal('popup_accounts_update'),
 		funtypes.Literal('popup_websiteIconChanged'),
 		funtypes.Literal('popup_address_infos_changed'),
@@ -332,7 +346,7 @@ export const MessageToPopupSimple = funtypes.Object({
 
 export type PersonalSignRequest = funtypes.Static<typeof PersonalSignRequest>
 export const PersonalSignRequest = funtypes.Object({
-	message: funtypes.Literal('popup_personal_sign_request'),
+	method: funtypes.Literal('popup_personal_sign_request'),
 	data: funtypes.Intersect(
 		funtypes.Object({
 			activeAddress: EthereumAddress,
@@ -373,7 +387,7 @@ export const PersonalSignRequest = funtypes.Object({
 
 export type ChangeChainRequest = funtypes.Static<typeof ChangeChainRequest>
 export const ChangeChainRequest = funtypes.Object({
-	message: funtypes.Literal('popup_ChangeChainRequest'),
+	method: funtypes.Literal('popup_ChangeChainRequest'),
 	data: funtypes.Object({
 		requestId: funtypes.Number,
 		simulationMode: funtypes.Boolean,
@@ -385,12 +399,28 @@ export const ChangeChainRequest = funtypes.Object({
 
 export type InterceptorAccessDialog = funtypes.Static<typeof InterceptorAccessDialog>
 export const InterceptorAccessDialog = funtypes.Object({
-	message: funtypes.Literal('popup_interceptorAccessDialog'),
+	method: funtypes.Literal('popup_interceptorAccessDialog'),
 	data: funtypes.Object({
 		origin: funtypes.String,
 		icon: funtypes.Union(funtypes.String, funtypes.Undefined),
 		requestAccessToAddress: funtypes.Union(AddressInfoEntry, funtypes.Undefined),
 		associatedAddresses: funtypes.ReadonlyArray(AddressInfoEntry),
+	})
+})
+
+export type ConfirmTransactionSimulationStateChanged = funtypes.Static<typeof ConfirmTransactionSimulationStateChanged>
+export const ConfirmTransactionSimulationStateChanged = funtypes.Object({
+	method: funtypes.Literal('popup_confirm_transaction_simulation_state_changed'),
+	data: funtypes.Object({
+		requestId: funtypes.Number,
+		transactionToSimulate: EthereumUnsignedTransaction,
+		simulationMode: funtypes.Boolean,
+		simulationState: SimulationState,
+		visualizerResults: funtypes.ReadonlyArray(SimResults),
+		addressBookEntries: AddressBookEntries,
+		tokenPrices: funtypes.ReadonlyArray(TokenPriceEstimate),
+		activeAddress: EthereumAddress,
+		signerName: funtypes.Union(SignerName, funtypes.Undefined),
 	})
 })
 
@@ -401,6 +431,8 @@ export const MessageToPopup = funtypes.Union(
 	PersonalSignRequest,
 	ChangeChainRequest,
 	InterceptorAccessDialog,
+	ConfirmTransactionSimulationStateChanged,
+	NewBlockArrived,
 )
 
 export type HandleSimulationModeReturnValue = {

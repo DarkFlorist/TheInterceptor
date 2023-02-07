@@ -30,23 +30,11 @@ let simulator: Simulator | undefined = undefined
 declare global {
 	interface Window {
 		interceptor: {
-			confirmTransactionDialog?: {
-				requestId: number,
-				transactionToSimulate: unknown,
-				simulationMode: boolean,
-				simulationState: SimulationState | undefined,
-				isComputingSimulation: boolean,
-				visualizerResults: SimResults[] | undefined,
-				addressBookEntries: [string, AddressBookEntry][],
-				tokenPrices: TokenPriceEstimate[],
-				activeAddress: bigint,
-			}
 			simulation: {
 				simulationId: number,
 				simulationState: SimulationState | undefined,
-				isComputingSimulation: boolean,
 				visualizerResults: SimResults[] | undefined,
-				addressBookEntries: [string, AddressBookEntry][],
+				addressBookEntries: AddressBookEntry[],
 				tokenPrices: TokenPriceEstimate[],
 			}
 			websiteAccessAddressMetadata: AddressInfoEntry[],
@@ -80,7 +68,6 @@ window.interceptor = {
 	simulation: {
 		simulationId: 0,
 		simulationState: undefined,
-		isComputingSimulation: false,
 		visualizerResults: undefined,
 		addressBookEntries: [],
 		tokenPrices: [],
@@ -90,20 +77,17 @@ window.interceptor = {
 
 export async function updateSimulationState( getUpdatedSimulationState: () => Promise<SimulationState | undefined>) {
 	try {
-		window.interceptor.simulation.isComputingSimulation = true
-		sendPopupMessageToOpenWindows({ message: 'popup_started_simulation_update' })
 		window.interceptor.simulation.simulationId++
 
 		if ( simulator === undefined ) {
 			window.interceptor.simulation = {
 				simulationId: window.interceptor.simulation.simulationId,
 				simulationState: undefined,
-				isComputingSimulation: false,
 				addressBookEntries: [],
 				tokenPrices: [],
 				visualizerResults: [],
 			}
-			sendPopupMessageToOpenWindows({ message: 'popup_simulation_state_changed' })
+			sendPopupMessageToOpenWindows({ method: 'popup_simulation_state_changed' })
 			return
 		}
 
@@ -113,17 +97,17 @@ export async function updateSimulationState( getUpdatedSimulationState: () => Pr
 		if ( updatedSimulationState !== undefined ) {
 			const priceEstimator = new PriceEstimator(simulator.ethereum)
 
-			const transactions = updatedSimulationState.simulatedTransactions.map(x => x.unsignedTransaction)
+			const transactions = updatedSimulationState.simulatedTransactions.map(x => x.signedTransaction)
 			const visualizerResult = await simulator.visualizeTransactionChain(transactions, updatedSimulationState.blockNumber, updatedSimulationState.simulatedTransactions.map( x => x.multicallResponse))
 			const addressBookEntries = await getAddressBookEntriesForVisualiser(simulator, visualizerResult.map( (x) => x.visualizerResults), updatedSimulationState, window.interceptor.settings?.addressInfos)
 
-			function onlyTokensAndTokensWithKnownDecimals(metadata: [string, AddressBookEntry]) : metadata is [string, AddressBookEntry & { type: 'token', decimals: `0x${ string }` } ] {
-				if (metadata[1].type !== 'token') return false
-				if (metadata[1].decimals === undefined) return false
+			function onlyTokensAndTokensWithKnownDecimals(metadata: AddressBookEntry) : metadata is AddressBookEntry & { type: 'token', decimals: `0x${ string }` } {
+				if (metadata.type !== 'token') return false
+				if (metadata.decimals === undefined) return false
 				return true
 			}
-			function metadataRestructure([address, metadata]: [string, AddressBookEntry &  { type: 'token', decimals: bigint } ] ) {
-				return { token: BigInt(address), decimals: BigInt(metadata.decimals) }
+			function metadataRestructure(metadata: AddressBookEntry &  { type: 'token', decimals: bigint } ) {
+				return { token: metadata.address, decimals: metadata.decimals }
 			}
 			const tokenPrices = await priceEstimator.estimateEthereumPricesForTokens(addressBookEntries.filter(onlyTokensAndTokensWithKnownDecimals).map(metadataRestructure))
 
@@ -135,7 +119,6 @@ export async function updateSimulationState( getUpdatedSimulationState: () => Pr
 				addressBookEntries: addressBookEntries,
 				visualizerResults: visualizerResult,
 				simulationState: updatedSimulationState,
-				isComputingSimulation: false,
 			}
 		} else {
 			window.interceptor.simulation = {
@@ -144,15 +127,12 @@ export async function updateSimulationState( getUpdatedSimulationState: () => Pr
 				tokenPrices: [],
 				visualizerResults: [],
 				simulationState: updatedSimulationState,
-				isComputingSimulation: false,
 			}
 		}
-		sendPopupMessageToOpenWindows({ message: 'popup_simulation_state_changed' })
+		sendPopupMessageToOpenWindows({ method: 'popup_simulation_state_changed' })
 		return updatedSimulationState
 	} catch(e) {
 		throw e
-	} finally {
-		window.interceptor.simulation.isComputingSimulation = false
 	}
 }
 
@@ -161,33 +141,38 @@ export function setEthereumNodeBlockPolling(enabled: boolean) {
 	simulator.ethereum.setBlockPolling(enabled)
 }
 
-export async function refreshConfirmTransactionSimulation() {
-	if ( window.interceptor.confirmTransactionDialog === undefined ) return
-	if ( simulator === undefined ) return
+export async function refreshConfirmTransactionSimulation(activeAddress: bigint, simulationMode: boolean, requestId: number, transactionToSimulate: EthereumUnsignedTransaction) {
+	if ( simulator === undefined ) return undefined
+
 	const priceEstimator = new PriceEstimator(simulator.ethereum)
 	const newSimulator = simulator.simulationModeNode.copy()
-	const currentRequestId = window.interceptor.confirmTransactionDialog.requestId
-	window.interceptor.confirmTransactionDialog.isComputingSimulation = true
-	sendPopupMessageToOpenWindows({ message: 'popup_confirm_transaction_simulation_started' })
-	const appended = await newSimulator.appendTransaction(EthereumUnsignedTransaction.parse(window.interceptor.confirmTransactionDialog.transactionToSimulate))
-	const transactions = appended.simulationState.simulatedTransactions.map(x => x.unsignedTransaction)
+	sendPopupMessageToOpenWindows({ method: 'popup_confirm_transaction_simulation_started' })
+	const appended = await newSimulator.appendTransaction(transactionToSimulate)
+	const transactions = appended.simulationState.simulatedTransactions.map(x => x.signedTransaction)
 	const visualizerResult = await simulator.visualizeTransactionChain(transactions, appended.simulationState.blockNumber, appended.simulationState.simulatedTransactions.map( x => x.multicallResponse))
 	const addressMetadata = await getAddressBookEntriesForVisualiser(simulator, visualizerResult.map( (x) => x.visualizerResults), appended.simulationState, window.interceptor.settings?.addressInfos)
 	const tokenPrices = await priceEstimator.estimateEthereumPricesForTokens(
 		addressMetadata.map(
-			(x) => x[1].type === 'token' && x[1].decimals !== undefined ? { token: BigInt(x[0]), decimals: x[1].decimals } : { token: 0x0n, decimals: 0x0n }
+			(x) => x.type === 'token' && x.decimals !== undefined ? { token: x.address, decimals: x.decimals } : { token: 0x0n, decimals: 0x0n }
 		).filter( (x) => x.token !== 0x0n )
 	)
 
-	if ( window.interceptor.confirmTransactionDialog === undefined || window.interceptor.confirmTransactionDialog.requestId !== currentRequestId ) return // fixes race condition where user has already closed the dialog or initiated a new one
-
-	window.interceptor.confirmTransactionDialog.tokenPrices = tokenPrices
-	window.interceptor.confirmTransactionDialog.simulationState = appended.simulationState
-	window.interceptor.confirmTransactionDialog.addressBookEntries = addressMetadata
-	window.interceptor.confirmTransactionDialog.visualizerResults = visualizerResult
-	window.interceptor.confirmTransactionDialog.isComputingSimulation = false
-	sendPopupMessageToOpenWindows({ message: 'popup_confirm_transaction_simulation_state_changed' })
+	return {
+		method: 'popup_confirm_transaction_simulation_state_changed' as const,
+		data: {
+			requestId: requestId,
+			transactionToSimulate: transactionToSimulate,
+			simulationMode: simulationMode,
+			simulationState: appended.simulationState,
+			visualizerResults: visualizerResult,
+			addressBookEntries: addressMetadata,
+			tokenPrices: tokenPrices,
+			activeAddress: activeAddress,
+			signerName: window.interceptor.signerName,
+		}
+	}
 }
+
 
 // returns true if simulation state was changed
 export async function updatePrependMode(forceRefresh: boolean = false) {
@@ -378,7 +363,7 @@ async function handleSigningMode(simulator: Simulator, port: browser.runtime.Por
 
 function newBlockCallback(blockNumber: bigint) {
 	window.interceptor.currentBlockNumber = blockNumber
-	sendPopupMessageToOpenWindows({ message: 'popup_new_block_arrived' })
+	sendPopupMessageToOpenWindows({ method: 'popup_new_block_arrived', data: { blockNumber } })
 }
 
 export async function changeActiveAddressAndChainAndResetSimulation(activeAddress: bigint | undefined | 'noActiveAddressChange', activeChain: bigint | 'noActiveChainChange') {
@@ -419,13 +404,13 @@ export async function changeActiveAddressAndChainAndResetSimulation(activeAddres
 
 	if (chainChanged) {
 		sendMessageToApprovedWebsitePorts('chainChanged', EthereumQuantity.serialize(window.interceptor.settings.activeChain))
-		sendPopupMessageToOpenWindows({ message: 'popup_chain_update' })
+		sendPopupMessageToOpenWindows({ method: 'popup_chain_update' })
 	}
 
 	// inform all the tabs about the address change (this needs to be done on only chain changes too)
 	sendActiveAccountChangeToApprovedWebsitePorts()
 	if (activeAddress !== 'noActiveAddressChange') {
-		sendPopupMessageToOpenWindows({ message: 'popup_accounts_update' })
+		sendPopupMessageToOpenWindows({ method: 'popup_accounts_update' })
 	}
 }
 
@@ -628,7 +613,7 @@ async function startup() {
 		changeActiveAddressAndChainAndResetSimulation(window.interceptor.settings.activeSimulationAddress, window.interceptor.settings.activeChain)
 	}
 
-	browser.runtime.onMessage.addListener(async function(message: any) {
+	browser.runtime.onMessage.addListener(async function(message: PopupMessage) {
 		console.log(message)
 		try {
 			const payload = PopupMessage.parse(message)

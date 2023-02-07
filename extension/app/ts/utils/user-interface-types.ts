@@ -155,6 +155,7 @@ export type SimulationStateParam = {
 	refreshSimulation: () => void,
 	currentBlockNumber: bigint | undefined,
 	renameAddressCallBack: RenameAddressCallBack,
+	refreshPressed: boolean,
 }
 
 export type LogAnalysisParams = {

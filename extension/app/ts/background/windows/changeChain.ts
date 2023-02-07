@@ -47,7 +47,7 @@ export const openChangeChainDialog = async (requestId: number, simulationMode: b
 		if ( message.method !== 'popup_changeChainReadyAndListening') return
 		browser.runtime.onMessage.removeListener(changeChainWindowReadyAndListening)
 		return sendPopupMessageToOpenWindows({
-			message: 'popup_ChangeChainRequest',
+			method: 'popup_ChangeChainRequest',
 			data: {
 				requestId: requestId,
 				chainId: chainId,

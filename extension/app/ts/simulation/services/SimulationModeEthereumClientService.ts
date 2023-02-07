@@ -1,6 +1,6 @@
 import { EthereumClientService } from './EthereumClientService.js'
-import { EthGetLogsResponse, EthereumUnsignedTransaction, EthereumSignedTransactionWithBlockData, EthereumBlockHeader, EthereumBlockTag, EthGetLogsRequest, EthereumTransactionSignature, EthTransactionReceiptResponse, EstimateGasParamsVariables, EthSubscribeParams, JsonRpcMessage, JsonRpcNewHeadsNotification, EthereumBlockHeaderWithTransactionHashes, PersonalSignParams, SignTypedDataParams } from '../../utils/wire-types.js'
-import { EthereumUnsignedTransactionToUnsignedTransaction, IUnsignedTransaction, serializeTransactionToBytes } from '../../utils/ethereum.js'
+import { EthGetLogsResponse, EthereumUnsignedTransaction, EthereumSignedTransactionWithBlockData, EthereumBlockHeader, EthereumBlockTag, EthGetLogsRequest, EthTransactionReceiptResponse, EstimateGasParamsVariables, EthSubscribeParams, JsonRpcMessage, JsonRpcNewHeadsNotification, EthereumBlockHeaderWithTransactionHashes, PersonalSignParams, SignTypedDataParams, EthereumSignedTransaction } from '../../utils/wire-types.js'
+import { EthereumUnsignedTransactionToUnsignedTransaction, serializeSignedTransactionToBytes } from '../../utils/ethereum.js'
 import { bytes32String, dataString, max, min } from '../../utils/bigint.js'
 import { MOCK_ADDRESS } from '../../utils/constants.js'
 import { ErrorWithData } from '../../utils/errors.js'
@@ -54,16 +54,16 @@ export class SimulationModeEthereumClientService {
 	public getSimulationStack = () => {
 		if (this.simulationState === undefined) return []
 		return this.simulationState.simulatedTransactions.map((x) => ({
-			...x.unsignedTransaction,
+			...x.signedTransaction,
 			...x.multicallResponse,
 			realizedGasPrice: x.realizedGasPrice,
-			gasLimit: x.unsignedTransaction.gas
+			gasLimit: x.signedTransaction.gas,
 		}))
 	}
 
 	public transactionQueueTotalGasLimit = () => {
 		if ( this.simulationState === undefined) return 0n
-		return this.simulationState.simulatedTransactions.reduce((a, b) => a + b.unsignedTransaction.gas, 0n)
+		return this.simulationState.simulatedTransactions.reduce((a, b) => a + b.signedTransaction.gas, 0n)
 	}
 
 	public readonly estimateGas = async (data: EstimateGasParamsVariables) => {
@@ -98,11 +98,19 @@ export class SimulationModeEthereumClientService {
 		return min(baseFee + transaction.maxPriorityFeePerGas, transaction.maxFeePerGas)
 	}
 
-	public static mockSignTransaction = async (transaction: EthereumUnsignedTransaction) => {
-		const signatureParams = { r: 0n, s: 0n, yParity: 'even' as const }
+	public static mockSignTransaction = async (transaction: EthereumUnsignedTransaction) : Promise<EthereumSignedTransaction> => {
 		const unsignedTransaction = EthereumUnsignedTransactionToUnsignedTransaction(transaction)
-		const hash = await keccak256.hash(serializeTransactionToBytes({ ...unsignedTransaction, ...signatureParams }))
-		return { ...unsignedTransaction, ...signatureParams, hash }
+		if (unsignedTransaction.type === 'legacy') {
+			const signatureParams = { r: 0n, s: 0n, v: 0n }
+			const hash = await keccak256.hash(serializeSignedTransactionToBytes({ ...unsignedTransaction, ...signatureParams }))
+			if (transaction.type !== 'legacy') throw new Error('types do not match')
+			return { ...transaction, ...signatureParams, hash }
+		} else {
+			const signatureParams = { r: 0n, s: 0n, yParity: 'even' as const }
+			const hash = await keccak256.hash(serializeSignedTransactionToBytes({ ...unsignedTransaction, ...signatureParams }))
+			if (transaction.type === 'legacy') throw new Error('types do not match')
+			return { ...transaction, ...signatureParams, hash }
+		}
 	}
 
 	public appendTransaction = async (transaction: EthereumUnsignedTransaction) => {
@@ -114,7 +122,6 @@ export class SimulationModeEthereumClientService {
 			this.simulationState = {
 				simulatedTransactions: [{
 					multicallResponse: multicallResult[0],
-					unsignedTransaction: transaction,
 					signedTransaction: signed,
 					realizedGasPrice: this.calculateGasPrice(transaction, parentBlock.gasUsed, parentBlock.gasLimit, parentBlock.baseFeePerGas),
 				}],
@@ -126,7 +133,6 @@ export class SimulationModeEthereumClientService {
 			return { signed: signed, simulationState: this.simulationState }
 		}
 
-		const unsignedTxts = this.simulationState.simulatedTransactions.map((x) => x.unsignedTransaction ).concat([transaction])
 		const signedTxs = this.simulationState.simulatedTransactions.map((x) => x.signedTransaction ).concat([signed])
 		const multicallResult = await this.multicall([transaction], parentBlock.number)
 		if (multicallResult.length !== signedTxs.length) throw 'multicall length does not match'
@@ -134,9 +140,8 @@ export class SimulationModeEthereumClientService {
 		this.simulationState = {
 			simulatedTransactions: multicallResult.map( (singleResult, index) => ({
 				multicallResponse: singleResult,
-				unsignedTransaction: unsignedTxts[index],
 				signedTransaction: signedTxs[index],
-				realizedGasPrice: this.calculateGasPrice(unsignedTxts[index], parentBlock.gasUsed, parentBlock.gasLimit, parentBlock.baseFeePerGas),
+				realizedGasPrice: this.calculateGasPrice(signedTxs[index], parentBlock.gasUsed, parentBlock.gasLimit, parentBlock.baseFeePerGas),
 			})),
 			blockNumber: parentBlock.number,
 			blockTimestamp: parentBlock.timestamp,
@@ -159,7 +164,7 @@ export class SimulationModeEthereumClientService {
 			}
 		}
 
-		let signedTxs: (IUnsignedTransaction & EthereumTransactionSignature)[] = []
+		let signedTxs: EthereumSignedTransaction[] = []
 		for (const transaction of unsignedTxts) {
 			signedTxs.push(await SimulationModeEthereumClientService.mockSignTransaction(transaction))
 		}
@@ -184,7 +189,7 @@ export class SimulationModeEthereumClientService {
 
 	public getTransactionQueue = () => {
 		if ( this.simulationState === undefined ) return []
-		return this.simulationState.simulatedTransactions.map((x) => x.unsignedTransaction)
+		return this.simulationState.simulatedTransactions.map((x) => x.signedTransaction)
 	}
 	public getPrependTransactionsQueue = () => this.prependTransactionsQueue
 
@@ -207,7 +212,7 @@ export class SimulationModeEthereumClientService {
 	public removeTransaction = async (transactionHash: bigint) => {
 		if ( this.simulationState === undefined) return this.simulationState
 		const filtered = this.simulationState.simulatedTransactions.filter( (transaction) => transaction.signedTransaction.hash !== transactionHash)
-		return await this.setTransactions(filtered.map((x) => x.unsignedTransaction))
+		return await this.setTransactions(filtered.map((x) => x.signedTransaction))
 	}
 
 	public removeTransactionAndUpdateTransactionNonces = async (transactionHash: bigint) => {
@@ -223,8 +228,8 @@ export class SimulationModeEthereumClientService {
 				transactionWasFound = true
 				continue
 			}
-			const shouldUpdateNonce = transactionWasFound && transaction.unsignedTransaction.from === transactionToBeRemoved.unsignedTransaction.from
-			const newTransaction = { ...transaction.unsignedTransaction, ...(shouldUpdateNonce ? { nonce: transaction.unsignedTransaction.nonce - 1n } : {}) }
+			const shouldUpdateNonce = transactionWasFound && transaction.signedTransaction.from === transactionToBeRemoved.signedTransaction.from
+			const newTransaction = { ...transaction.signedTransaction, ...(shouldUpdateNonce ? { nonce: transaction.signedTransaction.nonce - 1n } : {}) }
 			newTransactions.push(newTransaction)
 		}
 		return await this.setTransactions(newTransactions)
@@ -236,7 +241,7 @@ export class SimulationModeEthereumClientService {
 			// if block number is the same, we don't need to compute anything as nothing has changed, but let's update timestamp to show the simulation was refreshed for this time
 			return { ...this.simulationState, simulationConductedTimestamp: new Date() }
 		}
-		return await this.setTransactions(this.simulationState.simulatedTransactions.map((x) => x.unsignedTransaction))
+		return await this.setTransactions(this.simulationState.simulatedTransactions.map((x) => x.signedTransaction))
 	}
 
 	public resetSimulation = async () => {
@@ -406,8 +411,7 @@ export class SimulationModeEthereumClientService {
 			return {
 				...block,
 				transactions: this.simulationState.simulatedTransactions.map( (simulatedTransaction) => {
-					const { gasLimit: gas, ...other } = simulatedTransaction.signedTransaction
-					return { ...other, gas: gas }
+					return simulatedTransaction.signedTransaction
 				})
 			}
 		}
@@ -477,21 +481,19 @@ export class SimulationModeEthereumClientService {
 		if ( this.simulationState === undefined ) return await this.ethereumClientService.getTransactionByHash(hash)
 		for (const [index, simulatedTransaction] of this.simulationState.simulatedTransactions.entries()) {
 			if (hash === simulatedTransaction.signedTransaction.hash) {
-				const { gasLimit: gas, ...other } = simulatedTransaction.signedTransaction
-				const withGas = { ...other, gas: gas }
 				const blockParams = {
 					blockHash: this.getHashOfSimulatedBlock(),
 					blockNumber: await this.getBlockNumber(),
 					transactionIndex: BigInt(index)
 				}
-				if ('gasPrice' in withGas) {
+				if ('gasPrice' in simulatedTransaction.signedTransaction) {
 					return {
-						...withGas,
+						...simulatedTransaction.signedTransaction,
 						...blockParams
 					}
 				}
 				return {
-					...withGas,
+					...simulatedTransaction.signedTransaction,
 					...blockParams,
 					gasPrice: simulatedTransaction.realizedGasPrice
 				}
@@ -513,10 +515,8 @@ export class SimulationModeEthereumClientService {
 	}
 
 	public readonly multicall = async (transactions: readonly EthereumUnsignedTransaction[], blockNumber: bigint) => {
-		//todo: how to handle blockNumber?
-		const mergedTxs = this.getTransactionQueue().concat(transactions)
-		const multicallResult = await this.ethereumClientService.multicall(mergedTxs, blockNumber)
-		return multicallResult
+		const mergedTxs: EthereumUnsignedTransaction[] = this.getTransactionQueue()
+		return await this.ethereumClientService.multicall(mergedTxs.concat(transactions), blockNumber)
 	}
 
 	public readonly getHashOfSimulatedBlock = () => {

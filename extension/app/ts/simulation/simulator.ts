@@ -64,36 +64,38 @@ export class Simulator {
 
 	public async visualizeTransaction(transaction: EthereumUnsignedTransaction, blockNumber: bigint, singleMulticallResponse: SingleMulticallResponse) {
 		let quarantine = false
-		const quarantineCodes = new Set<QUARANTINE_CODE>()
+		const quarantineCodesSet = new Set<QUARANTINE_CODE>()
 		for (const protectorMethod of PROTECTORS) {
 			const reason = await protectorMethod(transaction, this)
 			if (reason !== undefined) {
 				quarantine = true
-				quarantineCodes.add(reason)
+				quarantineCodesSet.add(reason)
 			}
 		}
 
 		let visualizerResults: VisualizerResult | undefined = undefined
 		const multicallResult = singleMulticallResponse
 		if (multicallResult.statusCode === 'success') {
-			visualizerResults = {
-				ethBalanceChanges: multicallResult.balanceChanges,
-				tokenResults: [],
-				blockNumber
-			}
+			const tokenResults = []
 
 			for (const eventLog of multicallResult.events) {
 				const logSignature = eventLog.topics[0]
 				const handler = logHandler.get(bytes32String(logSignature))
 				if ( handler ) {
-					visualizerResults.tokenResults.push(handler(eventLog))
+					tokenResults.push(handler(eventLog))
 				}
 			}
+			
+			visualizerResults = {
+				ethBalanceChanges: multicallResult.balanceChanges,
+				tokenResults: tokenResults,
+				blockNumber
+			}
 		}
-
+		const quarantineCodes = Array.from(quarantineCodesSet)
 		return {
 			quarantine,
-			quarantineCodes : Array.from(quarantineCodes),
+			quarantineCodes,
 			visualizerResults,
 		}
 	}

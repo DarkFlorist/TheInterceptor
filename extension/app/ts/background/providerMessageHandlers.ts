@@ -21,7 +21,7 @@ export function ethAccountsReply(port: browser.runtime.Port, request: ProviderMe
 	if (window.interceptor.settings?.useSignersAddressAsActiveAddress || window.interceptor.settings?.simulationMode === false) {
 		changeActiveAddressAndChainAndResetSimulation(signerAccounts[0], 'noActiveChainChange')
 	}
-	sendPopupMessageToOpenWindows({ message: 'popup_accounts_update' })
+	sendPopupMessageToOpenWindows({ method: 'popup_accounts_update' })
 }
 
 async function changeSignerChain(port: browser.runtime.Port, signerChain: bigint ) {
@@ -39,7 +39,7 @@ async function changeSignerChain(port: browser.runtime.Port, signerChain: bigint
 	if ( !window.interceptor.settings?.simulationMode ) {
 		return changeActiveAddressAndChainAndResetSimulation('noActiveAddressChange', signerChain)
 	}
-	sendPopupMessageToOpenWindows({ message: 'popup_chain_update' })
+	sendPopupMessageToOpenWindows({ method: 'popup_chain_update' })
 }
 
 export function signerChainChanged(port: browser.runtime.Port, request: ProviderMessage) {
@@ -62,5 +62,5 @@ export function walletSwitchEthereumChainReply(port: browser.runtime.Port, reque
 
 export function connectedToSigner(_port: browser.runtime.Port, request: ProviderMessage) {
 	window.interceptor.signerName = ConnectedToSigner.parse(request.options).params[0]
-	sendPopupMessageToOpenWindows({ message: 'popup_signer_name_changed' })
+	sendPopupMessageToOpenWindows({ method: 'popup_signer_name_changed' })
 }

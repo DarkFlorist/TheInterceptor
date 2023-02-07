@@ -120,7 +120,7 @@ async function getTokenMetadata(simulator: Simulator, address: bigint) : Promise
 	}
 }
 
-export async function getAddressBookEntriesForVisualiser(simulator: Simulator, visualizerResult: (VisualizerResult | undefined)[], simulationState: SimulationState, addressInfos: readonly AddressInfo[] | undefined) : Promise<[string, AddressBookEntry][]> {
+export async function getAddressBookEntriesForVisualiser(simulator: Simulator, visualizerResult: (VisualizerResult | undefined)[], simulationState: SimulationState, addressInfos: readonly AddressInfo[] | undefined) : Promise<AddressBookEntry[]> {
 	let addressesToFetchMetadata: bigint[] = []
 	let tokenAddresses: bigint[] = []
 
@@ -136,21 +136,17 @@ export async function getAddressBookEntriesForVisualiser(simulator: Simulator, v
 		if ( tx.multicallResponse.statusCode === 'success') {
 			addressesToFetchMetadata.concat(tx.multicallResponse.events.map( (tx) => tx.loggersAddress ))
 		}
-		addressesToFetchMetadata.push(tx.unsignedTransaction.from)
-		if (tx.unsignedTransaction.to !== null) addressesToFetchMetadata.push(tx.unsignedTransaction.to)
+		addressesToFetchMetadata.push(tx.signedTransaction.from)
+		if (tx.signedTransaction.to !== null) addressesToFetchMetadata.push(tx.signedTransaction.to)
 	})
 
 	const deDuplicatedTokens = Array.from(new Set<bigint>(tokenAddresses).values())
 	const tokenPromises = deDuplicatedTokens.map ( (addr) => getTokenMetadata(simulator, addr))
-	const tokenResolves = await Promise.all(tokenPromises)
-
-	const tokens: [string, AddressBookEntry][] = deDuplicatedTokens.map( (addr, index) => [
-		addressString(addr), tokenResolves[index]]
-	)
+	const tokens = await Promise.all(tokenPromises)
 
 	const deDuplicated = new Set<bigint>(addressesToFetchMetadata)
-	const addresses: [string, AddressBookEntry][] = Array.from(deDuplicated.values()).filter( (address) => !deDuplicatedTokens.includes(address) ).map( ( address ) =>
-		[addressString(address), getAddressMetaData(address, addressInfos)]
+	const addresses: AddressBookEntry[] = Array.from(deDuplicated.values()).filter( (address) => !deDuplicatedTokens.includes(address) ).map( ( address ) =>
+		getAddressMetaData(address, addressInfos)
 	)
 
 	return addresses.concat(tokens)

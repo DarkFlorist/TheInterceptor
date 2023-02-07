@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'preact/hooks'
-import { SignerName } from '../../utils/interceptor-messages.js'
+import { MessageToPopup, SignerName } from '../../utils/interceptor-messages.js'
 import { SimulationAndVisualisationResults } from '../../utils/visualizer-types.js'
 import { ErrorCheckBox } from '../subcomponents/Error.js'
 import Hint from '../subcomponents/Hint.js'
@@ -9,63 +9,60 @@ import { Spinner } from '../subcomponents/Spinner.js'
 import { getSignerName, SignerLogoText } from '../subcomponents/signers.js'
 import { AddNewAddress } from './AddNewAddress.js'
 import { AddressBookEntry } from '../../utils/user-interface-types.js'
-import { formSimulatedAndVisualizedTransaction } from '../formVisualizerResults.js'
 import { sendPopupMessageToBackgroundPage } from '../../background/backgroundUtils.js'
+import { formSimulatedAndVisualizedTransaction } from '../formVisualizerResults.js'
+import { addressString } from '../../utils/bigint.js'
+import { EthereumUnsignedTransaction } from '../../utils/wire-types.js'
 
 export function ConfirmTransaction() {
 	const [requestIdToConfirm, setRequestIdToConfirm] = useState<number | undefined>(undefined)
 	const [simulationAndVisualisationResults, setSimulationAndVisualisationResults] = useState<SimulationAndVisualisationResults | undefined >(undefined)
+	const [transactionToSimulate, setTransactionToSimulate] = useState<EthereumUnsignedTransaction | undefined >(undefined)
 	const [forceSend, setForceSend] = useState<boolean>(false)
 	const [currentBlockNumber, setCurrentBlockNumber] = useState<undefined | bigint>(undefined)
 	const [signerName, setSignerName] = useState<SignerName | undefined>(undefined)
 	const [isEditAddressModelOpen, setEditAddressModelOpen] = useState<boolean>(false)
 	const [addressBookEntryInput, setAddressBookEntryInput] = useState<AddressBookEntry | undefined>(undefined)
+	const [refreshPressed, setRefreshPressed] = useState<boolean>(false)
 
 	useEffect( () => {
-		const updateTx = async () => {
-			const backgroundPage = await browser.runtime.getBackgroundPage()
-			if( !('confirmTransactionDialog' in backgroundPage.interceptor) || backgroundPage.interceptor.confirmTransactionDialog === undefined) return window.close()
-			setRequestIdToConfirm(backgroundPage.interceptor.confirmTransactionDialog.requestId)
-			await fetchSimulationState()
-		}
 		function popupMessageListener(msg: unknown) {
-			console.log('popup message')
-			console.log(msg)
-			fetchSimulationState()
+			const message = MessageToPopup.parse(msg)
+
+			if (message.method === 'popup_new_block_arrived') return setCurrentBlockNumber(message.data.blockNumber)
+
+			if (message.method !== 'popup_confirm_transaction_simulation_state_changed') return
+			
+			if (currentBlockNumber === undefined || message.data.simulationState.blockNumber > currentBlockNumber) {
+				setCurrentBlockNumber(message.data.simulationState.blockNumber)
+			}
+
+			setRefreshPressed(false)
+			setSignerName(message.data.signerName)
+			setRequestIdToConfirm(message.data.requestId)
+			const addressMetaData = new Map(message.data.addressBookEntries.map( (x) => [addressString(x.address), x]))
+			const txs = formSimulatedAndVisualizedTransaction(message.data.simulationState, message.data.visualizerResults, addressMetaData)
+			setTransactionToSimulate(message.data.transactionToSimulate)
+
+			setSimulationAndVisualisationResults( {
+				blockNumber: message.data.simulationState.blockNumber,
+				blockTimestamp: message.data.simulationState.blockTimestamp,
+				simulationConductedTimestamp: message.data.simulationState.simulationConductedTimestamp,
+				simulatedAndVisualizedTransactions: txs,
+				chain: message.data.simulationState.chain,
+				tokenPrices: message.data.tokenPrices,
+				activeAddress: message.data.activeAddress,
+				simulationMode: message.data.simulationMode,
+				addressMetaData: message.data.addressBookEntries,
+			})
 		}
 		browser.runtime.onMessage.addListener(popupMessageListener)
-
-		updateTx()
+		sendPopupMessageToBackgroundPage( { method: 'popup_confirmTransactionReadyAndListening' } )
 
 		return () => {
 			browser.runtime.onMessage.removeListener(popupMessageListener)
 		}
 	}, [])
-
-	async function fetchSimulationState() {
-		const backgroundPage = await browser.runtime.getBackgroundPage()
-		setSignerName(backgroundPage.interceptor.signerName)
-		const dialog = backgroundPage.interceptor.confirmTransactionDialog
-		if (dialog === undefined || dialog.simulationState === undefined || dialog.visualizerResults === undefined) return setSimulationAndVisualisationResults(undefined)
-
-		const simState = dialog.simulationState
-		setCurrentBlockNumber(backgroundPage.interceptor.currentBlockNumber)
-
-		const addressMetaData = new Map(dialog.addressBookEntries.map( (x) => [x[0], x[1]]))
-		const txs = formSimulatedAndVisualizedTransaction(simState, dialog.visualizerResults, addressMetaData)
-		setSimulationAndVisualisationResults( {
-			blockNumber: simState.blockNumber,
-			blockTimestamp: simState.blockTimestamp,
-			simulationConductedTimestamp: simState.simulationConductedTimestamp,
-			simulatedAndVisualizedTransactions: txs,
-			chain: simState.chain,
-			tokenPrices: dialog.tokenPrices,
-			activeAddress: dialog.activeAddress,
-			simulationMode: dialog.simulationMode,
-			isComputingSimulation: dialog.isComputingSimulation,
-			addressMetaData: addressMetaData,
-		})
-	}
 
 	const removeTransaction = (_hash: bigint) => reject()
 
@@ -80,7 +77,17 @@ export function ConfirmTransaction() {
 	}
 
 	function refreshSimulation() {
-		sendPopupMessageToBackgroundPage( { method: 'popup_refreshConfirmTransactionDialogSimulation' } )
+		if (simulationAndVisualisationResults === undefined || requestIdToConfirm === undefined || transactionToSimulate === undefined) return
+		setRefreshPressed(true)
+		sendPopupMessageToBackgroundPage( {
+			method: 'popup_refreshConfirmTransactionDialogSimulation',
+			data: {
+				activeAddress: simulationAndVisualisationResults.activeAddress,
+				simulationMode: simulationAndVisualisationResults.simulationMode,
+				requestId: requestIdToConfirm,
+				transactionToSimulate: transactionToSimulate,
+			}
+		} )
 	}
 
 	function isConfirmDisabled() {
@@ -125,6 +132,7 @@ export function ConfirmTransaction() {
 								refreshSimulation = { refreshSimulation }
 								currentBlockNumber = { currentBlockNumber }
 								renameAddressCallBack = { renameAddressCallBack }
+								refreshPressed = { refreshPressed }
 							/>
 							<div className = 'block' style = 'margin: 10px; padding: 10px; background-color: var(--card-bg-color);'>
 								{ simulationAndVisualisationResults && simulationAndVisualisationResults.simulatedAndVisualizedTransactions[simulationAndVisualisationResults.simulatedAndVisualizedTransactions.length - 1 ].statusCode === 'success' ? <></> :

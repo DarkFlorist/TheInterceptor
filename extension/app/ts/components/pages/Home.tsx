@@ -127,10 +127,12 @@ export function Home(param: HomeParams) {
 	const [signerAccounts, setSignerAccounts] = useState<readonly bigint[] | undefined>(undefined)
 	const [isLoaded, setLoaded] = useState<boolean>(false)
 	const [currentBlockNumber, setCurrentBlockNumber] = useState<bigint | undefined>(undefined)
-	const [signerName, setSignerName]= useState<SignerName | undefined> (undefined)
+	const [signerName, setSignerName] = useState<SignerName | undefined> (undefined)
+	const [refreshPressed, setRefreshPressed] = useState<boolean> (false)
 
 	useEffect( () => {
 		setSimulationAndVisualisationResults(param.simVisResults)
+		setRefreshPressed(false)
 	}, [param.simVisResults])
 
 	useEffect( () => {
@@ -172,6 +174,7 @@ export function Home(param: HomeParams) {
 	}
 
 	function refreshSimulation() {
+		setRefreshPressed(true)
 		sendPopupMessageToBackgroundPage( { method: 'popup_refreshSimulation' } )
 	}
 
@@ -216,6 +219,7 @@ export function Home(param: HomeParams) {
 					refreshSimulation = { refreshSimulation }
 					currentBlockNumber = { currentBlockNumber }
 					renameAddressCallBack = { param.renameAddressCallBack }
+					refreshPressed = { refreshPressed }
 				/>
 			}
 		</div>

@@ -121,7 +121,7 @@ export async function changeAccess(confirmation: Confirmation, origin: string, o
 	window.interceptor.websiteAccessAddressMetadata = getAddressMetadataForAccess(window.interceptor.settings.websiteAccess)
 	saveWebsiteAccess(window.interceptor.settings.websiteAccess)
 	updateWebsiteApprovalAccesses()
-	sendPopupMessageToOpenWindows({ message: 'popup_websiteAccess_changed' })
+	sendPopupMessageToOpenWindows({ method: 'popup_websiteAccess_changed' })
 }
 
 export async function requestAccessFromUser(origin: string, icon: string | undefined, requestAccessToAddress: AddressInfoEntry | undefined, associatedAddresses: AddressInfoEntry[]) {
@@ -138,7 +138,7 @@ export async function requestAccessFromUser(origin: string, icon: string | undef
 			requestAccessToAddress: accessAddress?.address,
 			icon: icon,
 		}) )
-		sendPopupMessageToOpenWindows({ message: 'popup_notification_added' })
+		sendPopupMessageToOpenWindows({ method: 'popup_notification_added' })
 	}
 
 	if (pendingInterceptorAccess !== undefined) {
@@ -157,7 +157,7 @@ export async function requestAccessFromUser(origin: string, icon: string | undef
 			if ( message.method !== 'popup_interceptorAccessReadyAndListening') return
 			browser.runtime.onMessage.removeListener(windowReadyAndListening)
 			return sendPopupMessageToOpenWindows({
-				message: 'popup_interceptorAccessDialog',
+				method: 'popup_interceptorAccessDialog',
 				data: {
 					origin: origin,
 					icon: icon,
