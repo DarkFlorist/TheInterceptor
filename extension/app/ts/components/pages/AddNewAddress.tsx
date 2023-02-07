@@ -19,11 +19,11 @@ export function AddNewAddress(param: AddAddressParam) {
 	function add() {
 		if (addressInput === undefined) return
 		if (!areInputValid()) return
-		if ( addressBookEntryInput?.type !== 'addressInfo') throw new Error('no support to add other than address infos for now')
+		if ( addressBookEntryInput?.type !== 'addressInfo' && addressBookEntryInput !== undefined) throw new Error('no support to add other than address infos for now')
 		
 		param.close()
 		const newEntry = {
-			type: addressBookEntryInput.type,
+			type: 'addressInfo' as const,
 			name: nameInput ? nameInput: ethers.utils.getAddress(addressInput),
 			address: BigInt(addressInput),
 			askForAddressAccess: askForAddressAccess,
