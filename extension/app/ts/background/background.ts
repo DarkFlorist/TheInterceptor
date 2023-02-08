@@ -4,7 +4,7 @@ import { Simulator } from '../simulation/simulator.js'
 import { EthereumQuantity, EthereumUnsignedTransaction, PersonalSignParams, SendTransactionParams, SignTypedDataParams, SupportedETHRPCCall } from '../utils/wire-types.js'
 import { getSettings, saveActiveChain, saveActiveSigningAddress, saveActiveSimulationAddress, Settings } from './settings.js'
 import { blockNumber, call, chainId, estimateGas, gasPrice, getAccounts, getBalance, getBlockByNumber, getCode, getPermissions, getSimulationStack, getTransactionByHash, getTransactionCount, getTransactionReceipt, personalSign, requestPermissions, sendTransaction, signTypedData, subscribe, switchEthereumChain, unsubscribe } from './simulationModeHanders.js'
-import { changeActiveAddress, changeAddressInfos, changeMakeMeRich, changePage, resetSimulation, confirmDialog, RefreshSimulation, removeTransaction, requestAccountsFromSigner, refreshPopupConfirmTransactionSimulation, confirmPersonalSign, confirmRequestAccess, changeInterceptorAccess, changeChainDialog, popupChangeActiveChain, enableSimulationMode, reviewNotification, rejectNotification, addOrModifyAddressInfo, getAddressBookData, removeAddressBookEntry, openAddressBook } from './popupMessageHandlers.js'
+import { changeActiveAddress, changeAddressInfos, changeMakeMeRich, changePage, resetSimulation, confirmDialog, refreshSimulation, removeTransaction, requestAccountsFromSigner, refreshPopupConfirmTransactionSimulation, confirmPersonalSign, confirmRequestAccess, changeInterceptorAccess, changeChainDialog, popupChangeActiveChain, enableSimulationMode, reviewNotification, rejectNotification, addOrModifyAddressInfo, getAddressBookData, removeAddressBookEntry, openAddressBook } from './popupMessageHandlers.js'
 import { SimResults, SimulationState, TokenPriceEstimate } from '../utils/visualizer-types.js'
 import { WebsiteApproval, SignerState, TabConnection, AddressBookEntry, AddressInfoEntry } from '../utils/user-interface-types.js'
 import { getAddressMetadataForAccess, setPendingAccessRequests } from './windows/interceptorAccess.js'
@@ -551,35 +551,50 @@ async function onContentScriptConnected(port: browser.runtime.Port) {
 	})
 }
 
-type PopupMessageHandler = (simulator: Simulator, request: PopupMessage) => Promise<unknown>
+async function popupMessageHandler(simulator: Simulator, request: unknown) {
+	let parsedRequest // separate request parsing and request handling. If there's a parse error, throw that to API user
+	try {
+		parsedRequest = PopupMessage.parse(request)
+	} catch (error) {
+		if (error instanceof Error) {
+			return {
+				error: {
+					message: error.message,
+					code: 400,
+				}
+			}
+		}
+		throw error
+	}
 
-const popupMessageHandlers = new Map<string, PopupMessageHandler>([
-	['popup_confirmDialog', confirmDialog],
-	['popup_changeActiveAddress', changeActiveAddress],
-	['popup_changeMakeMeRich', changeMakeMeRich],
-	['popup_changeAddressInfos', changeAddressInfos],
-	['popup_changePage', changePage],
-	['popup_requestAccountsFromSigner', requestAccountsFromSigner],
-	['popup_resetSimulation', resetSimulation],
-	['popup_removeTransaction', removeTransaction],
-	['popup_refreshSimulation', RefreshSimulation],
-	['popup_refreshConfirmTransactionDialogSimulation', refreshPopupConfirmTransactionSimulation],
-	['popup_personalSign', confirmPersonalSign],
-	['popup_interceptorAccess', confirmRequestAccess],
-	['popup_changeInterceptorAccess', changeInterceptorAccess],
-	['popup_changeActiveChain', popupChangeActiveChain],
-	['popup_changeChainDialog', changeChainDialog],
-	['popup_enableSimulationMode', enableSimulationMode],
-	['popup_reviewNotification', reviewNotification],
-	['popup_rejectNotification', rejectNotification],
-	['popup_addOrModifyAddressBookEntry', addOrModifyAddressInfo],
-	['popup_getAddressBookData', getAddressBookData],
-	['popup_removeAddressBookEntry', removeAddressBookEntry],
-	['popup_openAddressBook', openAddressBook],
-	['popup_personalSignReadyAndListening', async () => {}], // handled elsewhere (personalSign.ts)
-	['popup_changeChainReadyAndListening', async () => {}], // handled elsewhere (changeChain.ts)
-	['popup_interceptorAccessReadyAndListening', async () => {}], // handled elsewhere (interceptorAccess.ts)
-])
+	switch (parsedRequest.method) {
+		case 'popup_confirmDialog': return await confirmDialog(simulator, parsedRequest)
+		case 'popup_changeActiveAddress': return await changeActiveAddress(simulator, parsedRequest)
+		case 'popup_changeMakeMeRich': return await changeMakeMeRich(simulator, parsedRequest)
+		case 'popup_changeAddressInfos': return await changeAddressInfos(simulator, parsedRequest)
+		case 'popup_changePage': return await changePage(simulator, parsedRequest)
+		case 'popup_requestAccountsFromSigner': return await requestAccountsFromSigner(simulator, parsedRequest)
+		case 'popup_resetSimulation': return await resetSimulation(simulator)
+		case 'popup_removeTransaction': return await removeTransaction(simulator, parsedRequest)
+		case 'popup_refreshSimulation': return await refreshSimulation(simulator)
+		case 'popup_refreshConfirmTransactionDialogSimulation': return await refreshPopupConfirmTransactionSimulation(simulator, parsedRequest)
+		case 'popup_personalSign': return await confirmPersonalSign(simulator, parsedRequest)
+		case 'popup_interceptorAccess': return await confirmRequestAccess(simulator, parsedRequest)
+		case 'popup_changeInterceptorAccess': return await changeInterceptorAccess(simulator, parsedRequest)
+		case 'popup_changeActiveChain': return await popupChangeActiveChain(simulator, parsedRequest)
+		case 'popup_changeChainDialog': return await changeChainDialog(simulator, parsedRequest)
+		case 'popup_enableSimulationMode': return await enableSimulationMode(simulator, parsedRequest)
+		case 'popup_reviewNotification': return await reviewNotification(simulator, parsedRequest)
+		case 'popup_rejectNotification': return await rejectNotification(simulator, parsedRequest)
+		case 'popup_addOrModifyAddressBookEntry': return await addOrModifyAddressInfo(simulator, parsedRequest)
+		case 'popup_getAddressBookData': return await getAddressBookData(simulator, parsedRequest)
+		case 'popup_removeAddressBookEntry': return await removeAddressBookEntry(simulator, parsedRequest)
+		case 'popup_openAddressBook': return await openAddressBook(simulator)
+		case 'popup_personalSignReadyAndListening': return // handled elsewhere (personalSign.ts)
+		case 'popup_changeChainReadyAndListening': return // handled elsewhere (changeChain.ts)
+		case 'popup_interceptorAccessReadyAndListening': return // handled elsewhere (interceptorAccess.ts)
+	}
+}
 
 async function startup() {
 	window.interceptor.settings = await getSettings()
@@ -614,19 +629,9 @@ async function startup() {
 		changeActiveAddressAndChainAndResetSimulation(window.interceptor.settings.activeSimulationAddress, window.interceptor.settings.activeChain)
 	}
 
-	browser.runtime.onMessage.addListener(async function(message: PopupMessage) {
-		console.log(message)
-		try {
-			const payload = PopupMessage.parse(message)
-			const handler = popupMessageHandlers.get(payload.method)
-			if (handler === undefined) throw `unknown popup message ${ payload.method }`
-			if (simulator === undefined) return
-			return await handler(simulator, message)
-		}
-		catch (error) {
-			console.log('invalid popup message!')
-			console.log(error)
-		}
+	browser.runtime.onMessage.addListener(async function(message: unknown) {
+		if (simulator === undefined) throw new Error('Interceptor not ready yet')
+		await popupMessageHandler(simulator, message)
 	})
 	await setPendingAccessRequests(window.interceptor.settings.pendingAccessRequests)
 }
