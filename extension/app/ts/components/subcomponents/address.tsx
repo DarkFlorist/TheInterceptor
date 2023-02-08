@@ -26,7 +26,7 @@ export type AddressIconParams = {
 	backgroundColor: string,
 }
 
-function AddressIcon(param: AddressIconParams) {
+export function AddressIcon(param: AddressIconParams) {
 	const style = `${ param.isBig ? `width: 40px; height: 40px; border-radius: 10px;` : `width: 24px; height: 24px; border-radius: 2px;` }`
 	return <div style = { style }>
 		{ param.logoUri === undefined ? <>

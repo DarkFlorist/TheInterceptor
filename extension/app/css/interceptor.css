@@ -174,6 +174,10 @@ html, body {
 	box-shadow: none;
  }
 
+.input:disabled, input[disabled] {
+	border-bottom: unset
+}
+
 .button.is-focused:not(:active), .button:focus:not(:active) {
 	box-shadow: none;
 }

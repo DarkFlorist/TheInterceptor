@@ -47,16 +47,24 @@ export const NFTEntry = funtypes.Object({
 	logoUri: funtypes.String,
 }))
 
+export type ContactEntry = funtypes.Static<typeof ContactEntry>
+export const ContactEntry = funtypes.Object({
+	type: funtypes.Literal('contact'),
+	name: funtypes.String,
+	address: EthereumAddress,
+}).And(funtypes.Partial({
+	logoUri: funtypes.String,
+}))
+
+export type ContactEntries = funtypes.Static<typeof ContactEntries>
+export const ContactEntries = funtypes.ReadonlyArray(ContactEntry)
+
+export type AddressBookEntryCategory = 'contact' | 'addressInfo' | 'token' | 'NFT' | 'other contract'
+
 export type AddressBookEntry = funtypes.Static<typeof AddressBookEntry>
 export const AddressBookEntry = funtypes.Union(
 	AddressInfoEntry,
-	funtypes.Object({
-		type: funtypes.Literal('contact'),
-		name: funtypes.String,
-		address: EthereumAddress,
-	}).And(funtypes.Partial({
-		logoUri: funtypes.String,
-	})),
+	ContactEntry,
 	TokenEntry,
 	NFTEntry,
 	funtypes.Object({
@@ -95,12 +103,18 @@ export type InterceptorAccessListParams = {
 	renameAddressCallBack: RenameAddressCallBack,
 }
 
+export type AddingNewAddressType = {
+	addingAddress: true,
+	type: 'contact' | 'addressInfo' | 'token' | 'NFT' | 'other contract'
+} | {
+	addingAddress: false,
+	entry: AddressBookEntry,
+}
+
 export type AddAddressParam = {
 	close: () => void,
-	addressBookEntry: AddressBookEntry | undefined,
-	setAddressBookEntryInput: (entry: AddressBookEntry) => void,
 	setActiveAddressAndInformAboutIt: ((address: bigint | 'signer') => void) | undefined,
-	addingNewAddress: boolean,
+	addingNewAddress: AddingNewAddressType,
 	activeAddress: bigint | undefined,
 }
 

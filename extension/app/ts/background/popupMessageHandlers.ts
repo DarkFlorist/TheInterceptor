@@ -12,6 +12,7 @@ import { sendPopupMessageToOpenWindows } from './backgroundUtils.js'
 import { isSupportedChain } from '../utils/constants.js'
 import { getMetadataForAddressBookData } from './medataSearch.js'
 import { findAddressInfo } from './metadataUtils.js'
+import { assertUnreachable } from '../utils/typescript.js'
 
 export async function confirmDialog(_simulator: Simulator, confirmation: TransactionConfirmation) {
 	await resolvePendingTransaction(confirmation.options.accept ? 'Approved' : 'Rejected')
@@ -80,13 +81,28 @@ export async function removeAddressBookEntry(_simulator: Simulator, removeAddres
 export async function addOrModifyAddressInfo(_simulator: Simulator, addressInfosChanges: AddOrModifyAddresInfo) {
 	if (window.interceptor.settings === undefined) return
 	for (const newEntry of addressInfosChanges.options) {
-		if (newEntry.type !== 'addressInfo') throw new Error('No support to modify this entry yet!')
-		if (window.interceptor.settings.addressInfos.find( (x) => x.address === newEntry.address) ) {
-			// replace in place to maintain the same order
-			window.interceptor.settings.addressInfos = window.interceptor.settings.addressInfos.map( (x) => x.address === newEntry.address ? newEntry : x )
-		} else {
-			// append to the end
-			window.interceptor.settings.addressInfos = window.interceptor.settings.addressInfos.concat([newEntry])
+		const entryType = newEntry.type
+		switch (entryType) {
+			case 'NFT':
+			case 'other contract':
+			case 'token': throw new Error(`No support to modify this entry yet! ${ entryType }`)
+			case 'addressInfo': {
+				if (window.interceptor.settings.addressInfos.find( (x) => x.address === newEntry.address) ) {
+					window.interceptor.settings.addressInfos = window.interceptor.settings.addressInfos.map( (x) => x.address === newEntry.address ? newEntry : x )
+				} else {
+					window.interceptor.settings.addressInfos = window.interceptor.settings.addressInfos.concat([newEntry])
+				}
+				break
+			}
+			case 'contact': {
+				if (window.interceptor.settings.contacts.find( (x) => x.address === newEntry.address) ) {
+					window.interceptor.settings.contacts = window.interceptor.settings.contacts.map( (x) => x.address === newEntry.address ? newEntry : x )
+				} else {
+					window.interceptor.settings.contacts = window.interceptor.settings.contacts.concat([newEntry])
+				}
+				break
+			}
+			default: assertUnreachable(entryType)
 		}
 	}
 

@@ -8,7 +8,7 @@ import { Transactions } from '../simulationExplaining/Transactions.js'
 import { Spinner } from '../subcomponents/Spinner.js'
 import { getSignerName, SignerLogoText } from '../subcomponents/signers.js'
 import { AddNewAddress } from './AddNewAddress.js'
-import { AddressBookEntry } from '../../utils/user-interface-types.js'
+import { AddingNewAddressType, AddressBookEntry } from '../../utils/user-interface-types.js'
 import { sendPopupMessageToBackgroundPage } from '../../background/backgroundUtils.js'
 import { formSimulatedAndVisualizedTransaction } from '../formVisualizerResults.js'
 import { addressString } from '../../utils/bigint.js'
@@ -21,8 +21,7 @@ export function ConfirmTransaction() {
 	const [forceSend, setForceSend] = useState<boolean>(false)
 	const [currentBlockNumber, setCurrentBlockNumber] = useState<undefined | bigint>(undefined)
 	const [signerName, setSignerName] = useState<SignerName | undefined>(undefined)
-	const [isEditAddressModelOpen, setEditAddressModelOpen] = useState<boolean>(false)
-	const [addressBookEntryInput, setAddressBookEntryInput] = useState<AddressBookEntry | undefined>(undefined)
+	const [addingNewAddress, setAddingNewAddress] = useState<AddingNewAddressType | 'renameAddressModalClosed'> ('renameAddressModalClosed')
 	const [refreshPressed, setRefreshPressed] = useState<boolean>(false)
 
 	useEffect( () => {
@@ -32,7 +31,7 @@ export function ConfirmTransaction() {
 			if (message.method === 'popup_new_block_arrived') return setCurrentBlockNumber(message.data.blockNumber)
 
 			if (message.method !== 'popup_confirm_transaction_simulation_state_changed') return
-			
+
 			if (currentBlockNumber === undefined || message.data.simulationState.blockNumber > currentBlockNumber) {
 				setCurrentBlockNumber(message.data.simulationState.blockNumber)
 			}
@@ -98,23 +97,22 @@ export function ConfirmTransaction() {
 	}
 
 	function renameAddressCallBack(entry: AddressBookEntry) {
-		setEditAddressModelOpen(true)
-		setAddressBookEntryInput(entry)
+		setAddingNewAddress({ addingAddress: false, entry: entry })
 	}
 
 	return (
 		<main>
 			{ simulationAndVisualisationResults !== undefined ?
 				<Hint>
-					<div class = { `modal ${ isEditAddressModelOpen? 'is-active' : ''}` }>
-						<AddNewAddress
-							setActiveAddressAndInformAboutIt = { undefined }
-							addressBookEntry = { addressBookEntryInput }
-							setAddressBookEntryInput = { setAddressBookEntryInput }
-							addingNewAddress = { false }
-							close = { () => { setEditAddressModelOpen(false) } }
-							activeAddress = { undefined }
-						/>
+					<div class = { `modal ${ addingNewAddress !== 'renameAddressModalClosed' ? 'is-active' : ''}` }>
+						{ addingNewAddress === 'renameAddressModalClosed' ? <></> :
+							<AddNewAddress
+								setActiveAddressAndInformAboutIt = { undefined }
+								addingNewAddress = { addingNewAddress }
+								close = { () => { setAddingNewAddress('renameAddressModalClosed') } }
+								activeAddress = { undefined }
+							/>
+						}
 					</div>
 					<div className = 'block' style = 'margin-bottom: 0px'>
 						<div style = 'margin: 10px;'>

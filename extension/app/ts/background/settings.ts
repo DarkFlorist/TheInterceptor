@@ -1,6 +1,6 @@
 import { MOCK_PRIVATE_KEYS_ADDRESS } from '../utils/constants.js'
 import { AddressBookTabIdSetting } from '../utils/interceptor-messages.js'
-import { AddressInfo, Page, PendingAccessRequestArray } from '../utils/user-interface-types.js'
+import { AddressInfo, ContactEntries, Page, PendingAccessRequestArray } from '../utils/user-interface-types.js'
 import { EthereumAddress, EthereumQuantity } from '../utils/wire-types.js'
 import * as funtypes from 'funtypes'
 
@@ -45,6 +45,7 @@ export interface Settings {
 	websiteAccess: WebsiteAccessArray,
 	simulationMode: boolean,
 	pendingAccessRequests: PendingAccessRequestArray,
+	contacts: ContactEntries,
 }
 
 function parseActiveChain(chain: string) {
@@ -67,6 +68,7 @@ export async function getSettings() : Promise<Settings> {
 		'activeChain',
 		'simulationMode',
 		'pendingAccessRequests',
+		'contacts',
 	])
 	console.log(results)
 	return {
@@ -80,6 +82,7 @@ export async function getSettings() : Promise<Settings> {
 		activeChain: results.activeChain !== undefined ? parseActiveChain(results.activeChain) : 1n,
 		simulationMode: results.simulationMode !== undefined ? results.simulationMode : true,
 		pendingAccessRequests: PendingAccessRequestArray.parse(results.pendingAccessRequests !== undefined ? results.pendingAccessRequests : []),
+		contacts: ContactEntries.parse(results.contacts !== undefined ? results.contacts : []),
 	}
 }
 
