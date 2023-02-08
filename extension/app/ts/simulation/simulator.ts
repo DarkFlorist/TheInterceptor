@@ -14,6 +14,7 @@ import { TokenVisualizerResult, VisualizerResult } from '../utils/visualizer-typ
 import { handleApprovalLog, handleDepositLog, handleERC721ApprovalForAllLog, handleTransferLog, handleWithdrawalLog } from './logHandlers.js'
 import { CHAIN } from '../utils/user-interface-types.js'
 import { QUARANTINE_CODE } from './protectors/quarantine-codes.js'
+import { EthereumJSONRpcRequestHandler } from './services/EthereumJSONRpcRequestHandler.js'
 
 const PROTECTORS = [
 	selfTokenOops,
@@ -40,7 +41,7 @@ export class Simulator {
 	public readonly simulationModeNode
 
 	public constructor(chain: CHAIN, enableCaching: boolean, newBlockCallback: (blockNumber: bigint) => void ) {
-		this.ethereum = new EthereumClientService(CHAINS[chain].https_rpc, chain, enableCaching, newBlockCallback)
+		this.ethereum = new EthereumClientService(new EthereumJSONRpcRequestHandler(CHAINS[chain].https_rpc), chain, enableCaching, newBlockCallback)
 		this.simulationModeNode = new SimulationModeEthereumClientService(this.ethereum, CHAINS[chain].wss_rpc)
 	}
 

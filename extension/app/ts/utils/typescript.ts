@@ -36,3 +36,10 @@ export function assertsOneOf<T, U extends T>(item: T, array: readonly U[], messa
 export type DistributedPick<T, K extends string> = T extends unknown ? { [P in K & keyof T]: T[P] } : never
 export type DistributedOmit<T, K extends keyof T> = T extends unknown ? Omit<T, K> : never
 export type DistributiveOmit<T extends object, K extends keyof T> = T extends unknown ? Omit<T, K> : never
+
+export function isObject(maybe: unknown): maybe is Object {
+	return typeof maybe === 'object' && maybe !== null && !Array.isArray(maybe)
+}
+export function assertIsObject(maybe: unknown): asserts maybe is Object {
+	if (!isObject(maybe)) throw new Error(`Expected object but got ${ typeof maybe }`)
+}

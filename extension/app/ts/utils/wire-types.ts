@@ -59,6 +59,16 @@ const Bytes256Parser: t.ParsedValue<t.String, bigint>['config'] = {
 		return { success: true, value: `0x${value.toString(16).padStart(512, '0')}` }
 	},
 }
+const Bytes16Parser: t.ParsedValue<t.String, bigint>['config'] = {
+	parse: value => {
+		if (!/^0x([a-fA-F0-9]{16})$/.test(value)) return { success: false, message: `${value} is not a hex string encoded 256 byte value.` }
+		else return { success: true, value: BigInt(value) }
+	},
+	serialize: value => {
+		if (typeof value !== 'bigint') return { success: false, message: `${typeof value} is not a bigint.`}
+		return { success: true, value: `0x${value.toString(16).padStart(16, '0')}` }
+	},
+}
 
 const BytesParser: t.ParsedValue<t.String, Uint8Array>['config'] = {
 	parse: value => {
@@ -126,6 +136,9 @@ export type EthereumBytes32 = t.Static<typeof EthereumBytes32>
 
 export const EthereumBytes256 = t.String.withParser(Bytes256Parser)
 export type EthereumBytes256 = t.Static<typeof EthereumBytes256>
+
+export const EthereumBytes16 = t.String.withParser(Bytes16Parser)
+export type EthereumBytes16 = t.Static<typeof EthereumBytes16>
 
 export const EthereumTimestamp = t.String.withParser(TimestampParser)
 export type EthereumTimestamp = t.Static<typeof EthereumTimestamp>
@@ -256,14 +269,17 @@ export const EthereumSignedTransactionWithBlockData = t.Intersect(
 		t.Intersect(EthereumSignedTransaction1559, t.Object({gasPrice: EthereumQuantity})),
 	),
 	t.Object({
+		data: EthereumInput,
 		blockHash: t.Union(EthereumBytes32, t.Null),
 		blockNumber: t.Union(EthereumQuantity, t.Null),
-		transactionIndex: t.Union(EthereumQuantity, t.Null)
+		transactionIndex: t.Union(EthereumQuantity, t.Null),
+		v: EthereumQuantity,
 	})
 )
 
 export type EthereumBlockHeader = t.Static<typeof EthereumBlockHeader>
 export const EthereumBlockHeader = t.Object({
+	author: EthereumAddress,
 	difficulty: EthereumQuantity,
 	extraData: EthereumData,
 	gasLimit: EthereumQuantity,
@@ -272,7 +288,7 @@ export const EthereumBlockHeader = t.Object({
 	logsBloom: EthereumBytes256,
 	miner: EthereumAddress,
 	mixHash: EthereumBytes32,
-	nonce: EthereumQuantity,
+	nonce: EthereumBytes16,
 	number: EthereumQuantity,
 	parentHash: EthereumBytes32,
 	receiptsRoot: EthereumBytes32,
@@ -286,10 +302,6 @@ export const EthereumBlockHeader = t.Object({
 	baseFeePerGas: EthereumQuantity,
 	transactionsRoot: EthereumBytes32
 }).asReadonly()
-
-
-export const EthGetStorageAtRequestParameters = t.Readonly(t.Tuple(EthereumAddress, EthereumQuantity))
-export type EthGetStorageAtRequestParameters = t.Static<typeof EthGetStorageAtRequestParameters>
 
 export type EthGetStorageAtResponse = t.Static<typeof EthGetStorageAtResponse>
 export const EthGetStorageAtResponse = t.Union(
@@ -525,6 +537,7 @@ export const DappRequestTransaction = t.Intersect(
 
 export type EthereumBlockHeaderWithTransactionHashes = t.Static<typeof EthereumBlockHeaderWithTransactionHashes>
 export const EthereumBlockHeaderWithTransactionHashes = t.Object({
+	author: EthereumAddress,
 	difficulty: EthereumQuantity,
 	extraData: EthereumData,
 	gasLimit: EthereumQuantity,
@@ -533,7 +546,7 @@ export const EthereumBlockHeaderWithTransactionHashes = t.Object({
 	logsBloom: EthereumBytes256,
 	miner: EthereumAddress,
 	mixHash: EthereumBytes32,
-	nonce: EthereumQuantity,
+	nonce: EthereumBytes16,
 	number: EthereumQuantity,
 	parentHash: EthereumBytes32,
 	receiptsRoot: EthereumBytes32,
@@ -609,18 +622,6 @@ export const JsonRpcResponse = t.Union(JsonRpcErrorResponse, JsonRpcSuccessRespo
 export type JsonRpcMessage = t.Static<typeof JsonRpcMessage>
 export const JsonRpcMessage = t.Union(JsonRpcResponse, JsonRpcNotification, JsonRpcRequest)
 
-export type EthCallParams = t.Static<typeof EthCallParams>
-export const EthCallParams = t.Object({
-	method: t.Literal('eth_call'),
-	params: t.Tuple(
-		t.Object({
-			data: EthereumData,
-			to: EthereumAddress,
-		}),
-		EthereumBlockTag
-	)
-}).asReadonly()
-
 export type TransactionByHashParams = t.Static<typeof TransactionByHashParams>
 export const TransactionByHashParams = t.Object({
 	method: t.Literal('eth_getTransactionByHash'),
@@ -632,7 +633,6 @@ export const SendTransactionParams = t.Object({
 	method: t.Literal('eth_sendTransaction'),
 	params: t.Tuple(DappRequestTransaction)
 })
-
 
 export type EthereumAccountsReply = t.Static<typeof EthereumAccountsReply>
 export const EthereumAccountsReply = t.ReadonlyArray(EthereumAddress)
@@ -666,6 +666,21 @@ export const EstimateGasParams = t.Object({
 	params: t.Union(t.Tuple(EstimateGasParamsVariables), t.Tuple(EstimateGasParamsVariables, EthereumBlockTag))
 })
 
+export type EthCallParams = t.Static<typeof EthCallParams>
+export const EthCallParams = t.Object({
+	method: t.Literal('eth_call'),
+	params: t.Tuple(
+		EstimateGasParamsVariables,
+		EthereumBlockTag
+	)
+}).asReadonly()
+
+export type EthGetLogsParams = t.Static<typeof EthGetLogsParams>
+export const EthGetLogsParams = t.Object({
+	method: t.Literal('eth_getLogs'),
+	params: t.Tuple(EthGetLogsRequest)
+}).asReadonly()
+
 export type EthBalanceParams = t.Static<typeof EthBalanceParams>
 export const EthBalanceParams = t.Object({
 	method: t.Literal('eth_getBalance'),
@@ -688,6 +703,12 @@ export type EthUnSubscribeParams = t.Static<typeof EthUnSubscribeParams>
 export const EthUnSubscribeParams = t.Object({
 	method: t.Literal('eth_unsubscribe'),
 	params: t.Tuple(t.String)
+})
+
+export type EthGetStorageAtParams = t.Static<typeof EthGetStorageAtParams>
+export const EthGetStorageAtParams = t.Object({
+	method: t.Literal('eth_getStorageAt'),
+	params: t.Tuple(EthereumAddress, EthereumQuantity, EthereumBlockTag)
 })
 
 export const EthSubscriptionResponse = t.String
@@ -865,8 +886,8 @@ export const GetSimulationStack = t.Object({
 	params: t.Tuple(t.Literal('1.0.0')),
 }).asReadonly()
 
-export type SupportedETHRPCCall = t.Static<typeof SupportedETHRPCCall>
-export const SupportedETHRPCCall = t.Union(
+export type EthereumJsonRpcRequest = t.Static<typeof EthereumJsonRpcRequest>
+export const EthereumJsonRpcRequest = t.Union(
 	EthBlockByNumberParams,
 	EthBalanceParams,
 	EstimateGasParams,
@@ -890,6 +911,9 @@ export const SupportedETHRPCCall = t.Union(
 	t.Object({ method: t.Literal('eth_gasPrice') }),
 	GetTransactionCount,
 	GetSimulationStack,
+	t.Object({ method: t.Literal('eth_multicall'), params: MulticallRequestParameters }),
+	EthGetStorageAtParams,
+	EthGetLogsParams,
 )
 
 export const SupportedETHRPCCalls = [
