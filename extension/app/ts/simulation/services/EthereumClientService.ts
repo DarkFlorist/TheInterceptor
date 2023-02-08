@@ -1,6 +1,6 @@
 import { encodeMethod } from '@zoltu/ethereum-abi-encoder'
 import { keccak256 } from '@zoltu/ethereum-crypto'
-import { EthGetLogsResponse, MulticallRequestParameters, MulticallResponse, serializeUnsignedTransactionToJson, EthereumUnsignedTransaction, EthereumSignedTransactionWithBlockData, EthGetStorageAtResponse, serialize, EthGetStorageAtRequestParameters, EthereumAddress, EthereumQuantity, EthereumBlockTag, EthTransactionReceiptResponse, EthereumBytes32, EthereumData, EthGetLogsRequest, EthereumBlockHeader, EstimateGasParamsVariables, EthereumBlockHeaderWithTransactionHashes } from '../../utils/wire-types.js'
+import { MulticallResponse, EthereumUnsignedTransaction, EthereumSignedTransactionWithBlockData, EthGetStorageAtResponse, EthereumQuantity, EthereumBlockTag, EthTransactionReceiptResponse, EthereumData, EthereumBlockHeader, EstimateGasParamsVariables, EthereumBlockHeaderWithTransactionHashes, EthGetLogsRequest, EthGetLogsResponse } from '../../utils/wire-types.js'
 import { IUnsignedTransaction } from '../../utils/ethereum.js'
 
 import { TIME_BETWEEN_BLOCKS, CHAINS, MOCK_ADDRESS } from '../../utils/constants.js'
@@ -53,7 +53,7 @@ export class EthereumClientService {
 		if (this.retrievingBlock) return
 		try {
 			this.retrievingBlock = true
-			const response = await this.requestHandler.jsonRpcRequest('eth_getBlockByNumber', ['latest', true])
+			const response = await this.requestHandler.jsonRpcRequest({ method: 'eth_getBlockByNumber', params: ['latest', true] })
 			if (this.cacheRefreshTimer === undefined) return
 			const newBlock = EthereumBlockHeader.parse(response)
 			console.log(`Current block number: ${ newBlock.number }`)
@@ -69,32 +69,32 @@ export class EthereumClientService {
 	}
 
 	public readonly estimateGas = async (data: EstimateGasParamsVariables) => {
-		const response = await this.requestHandler.jsonRpcRequest('eth_estimateGas', [serialize(EstimateGasParamsVariables, data) ] )
+		const response = await this.requestHandler.jsonRpcRequest({ method: 'eth_estimateGas', params: [data] } )
 		return EthereumQuantity.parse(response)
 	}
 
-	public readonly getStorageAt = async (contract: bigint, slot: bigint) => {
-		const response = await this.requestHandler.jsonRpcRequest('eth_getStorageAt', serialize(EthGetStorageAtRequestParameters, [contract, slot] as const))
+	public readonly getStorageAt = async (contract: bigint, slot: bigint, blockTag: EthereumBlockTag = 'latest') => {
+		const response = await this.requestHandler.jsonRpcRequest({ method: 'eth_getStorageAt', params: [contract, slot, blockTag] })
 		return EthGetStorageAtResponse.parse(response)
 	}
 
 	public readonly getTransactionCount = async (address: bigint, blockTag: EthereumBlockTag = 'latest') => {
-		const response = await this.requestHandler.jsonRpcRequest('eth_getTransactionCount', [serialize(EthereumAddress, address), serialize(EthereumBlockTag, blockTag)])
+		const response = await this.requestHandler.jsonRpcRequest({ method: 'eth_getTransactionCount', params: [address, blockTag] })
 		return EthereumQuantity.parse(response)
 	}
 
 	public readonly getTransactionReceipt = async (hash: bigint) => {
-		const response = await this.requestHandler.jsonRpcRequest('eth_getTransactionReceipt', [serialize(EthereumBytes32, hash)])
+		const response = await this.requestHandler.jsonRpcRequest({ method: 'eth_getTransactionReceipt', params: [hash] })
 		return EthTransactionReceiptResponse.parse(response)
 	}
 
 	public readonly getBalance = async (address: bigint, blockTag: EthereumBlockTag = 'latest') => {
-		const response = await this.requestHandler.jsonRpcRequest('eth_getBalance', [serialize(EthereumAddress, address), serialize(EthereumBlockTag, blockTag)])
+		const response = await this.requestHandler.jsonRpcRequest({ method: 'eth_getBalance', params: [address, blockTag] })
 		return EthereumQuantity.parse(response)
 	}
 
 	public readonly getCode = async (address: bigint, blockTag: EthereumBlockTag = 'latest') => {
-		const response = await this.requestHandler.jsonRpcRequest('eth_getCode', [serialize(EthereumAddress, address), serialize(EthereumBlockTag, blockTag)])
+		const response = await this.requestHandler.jsonRpcRequest({ method: 'eth_getCode', params: [address, blockTag] })
 		return EthereumData.parse(response)
 	}
 
@@ -103,7 +103,7 @@ export class EthereumClientService {
 			// todo, add here conversion from fullObjects to non fullObjects if non fullObjects block is asked
 			return this.cachedBlock
 		}
-		const response = await this.requestHandler.jsonRpcRequest('eth_getBlockByNumber', [serialize(EthereumBlockTag, blockTag), fullObjects])
+		const response = await this.requestHandler.jsonRpcRequest({ method: 'eth_getBlockByNumber', params: [blockTag, fullObjects] })
 		if ( fullObjects === false ) {
 			return EthereumBlockHeaderWithTransactionHashes.parse(response)
 		}
@@ -118,13 +118,8 @@ export class EthereumClientService {
 		return this.chain
 	}
 
-	public readonly sendEncodedTransaction = async (transaction: Uint8Array) => {
-		const response = await this.requestHandler.jsonRpcRequest('eth_sendRawTransaction', [serialize(EthereumData, transaction)])
-		return EthereumBytes32.parse(response)
-	}
-
 	public readonly getLogs = async (logFilter: EthGetLogsRequest) => {
-		const response = await this.requestHandler.jsonRpcRequest('eth_getLogs', [serialize(EthGetLogsRequest, logFilter)])
+		const response = await this.requestHandler.jsonRpcRequest({ method: 'eth_getLogs', params: [logFilter] })
 		return EthGetLogsResponse.parse(response)
 	}
 
@@ -132,12 +127,12 @@ export class EthereumClientService {
 		if (this.cachedBlock) {
 			return this.cachedBlock.number
 		}
-		const response = await this.requestHandler.jsonRpcRequest('eth_blockNumber', [])
+		const response = await this.requestHandler.jsonRpcRequest({ method: 'eth_blockNumber' })
 		return EthereumQuantity.parse(response)
 	}
 
 	public readonly getGasPrice = async() => {
-		const response = await this.requestHandler.jsonRpcRequest('eth_gasPrice', [])
+		const response = await this.requestHandler.jsonRpcRequest({ method: 'eth_gasPrice' })
 		return EthereumQuantity.parse(response)
 	}
 
@@ -186,23 +181,28 @@ export class EthereumClientService {
 	}
 
 	public readonly getTransactionByHash = async (hash: bigint) => {
-		const response = (await this.requestHandler.jsonRpcRequest('eth_getTransactionByHash', [serialize(EthereumBytes32, hash)])) as string
+		const response = await this.requestHandler.jsonRpcRequest({ method: 'eth_getTransactionByHash', params: [hash] })
 		if( response === null) return undefined
 		return EthereumSignedTransactionWithBlockData.parse(response)
 	}
 
 	public readonly call = async (transaction: IUnsignedTransaction, blockTag: EthereumBlockTag = 'latest') => {
-		const serializedTransaction = serializeUnsignedTransactionToJson(transaction)
-		const serializedBlockTag = serialize(EthereumBlockTag, blockTag)
-		const response = await this.requestHandler.jsonRpcRequest('eth_call', [serializedTransaction, serializedBlockTag])
+		if ( transaction.to === null) throw new Error('To cannot be null')
+		const params = {
+			to: transaction.to,
+			from: transaction.from,
+			data: transaction.input,
+			value: transaction.value,
+			gasPrice: 'maxFeePerGas' in transaction ? transaction.maxFeePerGas + transaction.maxPriorityFeePerGas : transaction.gasPrice,
+			gas: transaction.gasLimit
+		}
+		const response = await this.requestHandler.jsonRpcRequest({ method: 'eth_call', params: [params, blockTag] })
 		return response as string
 	}
 
 	public readonly multicall = async (transactions: readonly EthereumUnsignedTransaction[], blockNumber: bigint) => {
-		// typecast here for basically the same reason as above, MOCK_ADDRESS is too narrow which causes the `serialize` first parameter to not infer correctly
 		const blockAuthor: bigint = MOCK_ADDRESS
-		const params = serialize(MulticallRequestParameters, [blockNumber, blockAuthor, transactions] as const)
-		const unvalidatedResult = await this.requestHandler.jsonRpcRequest('eth_multicall', params) as any[]
+		const unvalidatedResult = await this.requestHandler.jsonRpcRequest({ method: 'eth_multicall', params: [blockNumber, blockAuthor, transactions] })
 		return MulticallResponse.parse(unvalidatedResult)
 	}
 }

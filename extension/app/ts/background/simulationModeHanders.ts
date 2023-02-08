@@ -67,7 +67,7 @@ export async function call(simulator: Simulator, request: EthCallParams) {
 		}),
 		to: request.params[0].to,
 		value: 0n,
-		input: request.params[0].data,
+		input: 'data' in request.params[0] || request.params[0].data === undefined ? new Uint8Array() : request.params[0].data,
 		accessList: [],
 	}
 	const result = request.params.length > 1 ? await simulator.simulationModeNode.call(transaction, request.params[1]) : await simulator.simulationModeNode.call(transaction)

@@ -303,10 +303,6 @@ export const EthereumBlockHeader = t.Object({
 	transactionsRoot: EthereumBytes32
 }).asReadonly()
 
-
-export const EthGetStorageAtRequestParameters = t.Readonly(t.Tuple(EthereumAddress, EthereumQuantity))
-export type EthGetStorageAtRequestParameters = t.Static<typeof EthGetStorageAtRequestParameters>
-
 export type EthGetStorageAtResponse = t.Static<typeof EthGetStorageAtResponse>
 export const EthGetStorageAtResponse = t.Union(
 	EthereumBytes32,
@@ -626,18 +622,6 @@ export const JsonRpcResponse = t.Union(JsonRpcErrorResponse, JsonRpcSuccessRespo
 export type JsonRpcMessage = t.Static<typeof JsonRpcMessage>
 export const JsonRpcMessage = t.Union(JsonRpcResponse, JsonRpcNotification, JsonRpcRequest)
 
-export type EthCallParams = t.Static<typeof EthCallParams>
-export const EthCallParams = t.Object({
-	method: t.Literal('eth_call'),
-	params: t.Tuple(
-		t.Object({
-			data: EthereumData,
-			to: EthereumAddress,
-		}),
-		EthereumBlockTag
-	)
-}).asReadonly()
-
 export type TransactionByHashParams = t.Static<typeof TransactionByHashParams>
 export const TransactionByHashParams = t.Object({
 	method: t.Literal('eth_getTransactionByHash'),
@@ -649,7 +633,6 @@ export const SendTransactionParams = t.Object({
 	method: t.Literal('eth_sendTransaction'),
 	params: t.Tuple(DappRequestTransaction)
 })
-
 
 export type EthereumAccountsReply = t.Static<typeof EthereumAccountsReply>
 export const EthereumAccountsReply = t.ReadonlyArray(EthereumAddress)
@@ -683,6 +666,21 @@ export const EstimateGasParams = t.Object({
 	params: t.Union(t.Tuple(EstimateGasParamsVariables), t.Tuple(EstimateGasParamsVariables, EthereumBlockTag))
 })
 
+export type EthCallParams = t.Static<typeof EthCallParams>
+export const EthCallParams = t.Object({
+	method: t.Literal('eth_call'),
+	params: t.Tuple(
+		EstimateGasParamsVariables,
+		EthereumBlockTag
+	)
+}).asReadonly()
+
+export type EthGetLogsParams = t.Static<typeof EthGetLogsParams>
+export const EthGetLogsParams = t.Object({
+	method: t.Literal('eth_getLogs'),
+	params: t.Tuple(EthGetLogsRequest)
+}).asReadonly()
+
 export type EthBalanceParams = t.Static<typeof EthBalanceParams>
 export const EthBalanceParams = t.Object({
 	method: t.Literal('eth_getBalance'),
@@ -705,6 +703,12 @@ export type EthUnSubscribeParams = t.Static<typeof EthUnSubscribeParams>
 export const EthUnSubscribeParams = t.Object({
 	method: t.Literal('eth_unsubscribe'),
 	params: t.Tuple(t.String)
+})
+
+export type EthGetStorageAtParams = t.Static<typeof EthGetStorageAtParams>
+export const EthGetStorageAtParams = t.Object({
+	method: t.Literal('eth_getStorageAt'),
+	params: t.Tuple(EthereumAddress, EthereumQuantity, EthereumBlockTag)
 })
 
 export const EthSubscriptionResponse = t.String
@@ -882,8 +886,8 @@ export const GetSimulationStack = t.Object({
 	params: t.Tuple(t.Literal('1.0.0')),
 }).asReadonly()
 
-export type SupportedETHRPCCall = t.Static<typeof SupportedETHRPCCall>
-export const SupportedETHRPCCall = t.Union(
+export type EthereumJsonRpcRequest = t.Static<typeof EthereumJsonRpcRequest>
+export const EthereumJsonRpcRequest = t.Union(
 	EthBlockByNumberParams,
 	EthBalanceParams,
 	EstimateGasParams,
@@ -907,6 +911,9 @@ export const SupportedETHRPCCall = t.Union(
 	t.Object({ method: t.Literal('eth_gasPrice') }),
 	GetTransactionCount,
 	GetSimulationStack,
+	t.Object({ method: t.Literal('eth_multicall'), params: MulticallRequestParameters }),
+	EthGetStorageAtParams,
+	EthGetLogsParams,
 )
 
 export const SupportedETHRPCCalls = [

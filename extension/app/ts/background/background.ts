@@ -1,7 +1,7 @@
 import { HandleSimulationModeReturnValue, InterceptedRequest, InterceptedRequestForward, PopupMessage, ProviderMessage, SignerName } from '../utils/interceptor-messages.js'
 import 'webextension-polyfill'
 import { Simulator } from '../simulation/simulator.js'
-import { EthereumQuantity, EthereumUnsignedTransaction, PersonalSignParams, SendTransactionParams, SignTypedDataParams, SupportedETHRPCCall } from '../utils/wire-types.js'
+import { EthereumJsonRpcRequest, EthereumQuantity, EthereumUnsignedTransaction, PersonalSignParams, SendTransactionParams, SignTypedDataParams } from '../utils/wire-types.js'
 import { getSettings, saveActiveChain, saveActiveSigningAddress, saveActiveSimulationAddress, Settings } from './settings.js'
 import { blockNumber, call, chainId, estimateGas, gasPrice, getAccounts, getBalance, getBlockByNumber, getCode, getPermissions, getSimulationStack, getTransactionByHash, getTransactionCount, getTransactionReceipt, personalSign, requestPermissions, sendTransaction, signTypedData, subscribe, switchEthereumChain, unsubscribe } from './simulationModeHanders.js'
 import { changeActiveAddress, changeAddressInfos, changeMakeMeRich, changePage, resetSimulation, confirmDialog, RefreshSimulation, removeTransaction, requestAccountsFromSigner, refreshPopupConfirmTransactionSimulation, confirmPersonalSign, confirmRequestAccess, changeInterceptorAccess, changeChainDialog, popupChangeActiveChain, enableSimulationMode, reviewNotification, rejectNotification, addOrModifyAddressInfo, getAddressBookData, removeAddressBookEntry, openAddressBook } from './popupMessageHandlers.js'
@@ -232,7 +232,7 @@ export async function personalSignWithSimulator(params: PersonalSignParams | Sig
 async function handleSimulationMode(simulator: Simulator, port: browser.runtime.Port, request: InterceptedRequest): Promise<HandleSimulationModeReturnValue> {
 	let parsedRequest // separate request parsing and request handling. If there's a parse error, throw that to API user
 	try {
-		parsedRequest = SupportedETHRPCCall.parse(request.options)
+		parsedRequest = EthereumJsonRpcRequest.parse(request.options)
 	} catch (error) {
 		if (error instanceof Error) {
 			return {
@@ -275,6 +275,9 @@ async function handleSimulationMode(simulator: Simulator, port: browser.runtime.
 		case 'eth_gasPrice': return await gasPrice(simulator)
 		case 'eth_getTransactionCount': return await getTransactionCount(simulator, parsedRequest)
 		case 'interceptor_getSimulationStack': return await getSimulationStack(simulator, parsedRequest)
+		case 'eth_multicall': return { error: { code: 10000, message: 'Cannot call eth_multicall directly' } }
+		case 'eth_getStorageAt': return { error: { code: 10000, message: 'eth_getStorageAt not implemented' } }
+		case 'eth_getLogs': return { error: { code: 10000, message: 'eth_getLogs not implemented' } }
 		/*
 		Missing methods:
 		case 'eth_sendRawTransaction': return
@@ -309,7 +312,7 @@ async function handleSimulationMode(simulator: Simulator, port: browser.runtime.
 async function handleSigningMode(simulator: Simulator, port: browser.runtime.Port, request: InterceptedRequest): Promise<HandleSimulationModeReturnValue> {
 	let parsedRequest // separate request parsing and request handling. If there's a parse error, throw that to API user
 	try {
-		parsedRequest = SupportedETHRPCCall.parse(request.options)
+		parsedRequest = EthereumJsonRpcRequest.parse(request.options)
 	} catch (error) {
 		if (error instanceof Error) {
 			return {
@@ -343,6 +346,9 @@ async function handleSigningMode(simulator: Simulator, port: browser.runtime.Por
 		case 'eth_requestAccounts':
 		case 'eth_gasPrice':
 		case 'eth_getTransactionCount':
+		case 'eth_multicall':
+		case 'eth_getStorageAt':
+		case 'eth_getLogs':
 		case 'interceptor_getSimulationStack': return forwardToSigner()
 
 		case 'personal_sign': return await personalSign(simulator, parsedRequest, request?.requestId, false)

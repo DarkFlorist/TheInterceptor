@@ -427,10 +427,6 @@ export class SimulationModeEthereumClientService {
 		return await this.ethereumClientService.getChainId()
 	}
 
-	public readonly sendEncodedTransaction = async (transaction: Uint8Array) => {
-		return await this.ethereumClientService.sendEncodedTransaction(transaction)
-	}
-
 	private getSimulatedLogs = async (logFilter: EthGetLogsRequest): Promise<EthGetLogsResponse> => {
 		let events: unknown[] = []
 		if (this.simulationState !== undefined) {

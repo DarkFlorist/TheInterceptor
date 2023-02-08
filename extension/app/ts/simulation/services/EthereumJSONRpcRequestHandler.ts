@@ -1,4 +1,5 @@
-import { JsonRpcResponse } from '../../utils/wire-types.js'
+import { assertIsObject } from '../../utils/typescript.js'
+import { EthereumJsonRpcRequest, JsonRpcResponse } from '../../utils/wire-types.js'
 
 export type IEthereumJSONRpcRequestHandler = Pick<EthereumJSONRpcRequestHandler, keyof EthereumJSONRpcRequestHandler>
 export class EthereumJSONRpcRequestHandler {
@@ -9,10 +10,15 @@ export class EthereumJSONRpcRequestHandler {
 		this.endpoint = endpoint
     }
 
-	public readonly jsonRpcRequest = async (method: string, params: readonly unknown[]) => {
-		const request = { jsonrpc: '2.0', id: ++this.nextRequestId, method, params }
-		const requestBodyJson = JSON.stringify(request)
-		const response = await fetch(`${this.endpoint}`, {
+	public readonly jsonRpcRequest = async (rpcRequest: EthereumJsonRpcRequest) => {
+		const serialized = EthereumJsonRpcRequest.serialize(rpcRequest)
+		assertIsObject(serialized)
+		const requestBodyJson = JSON.stringify({
+			jsonrpc: '2.0',
+			id: ++this.nextRequestId,
+			...serialized,
+		})
+		const response = await fetch(`${ this.endpoint }`, {
 			method: 'POST',
 			headers: {
 				'Content-Type': 'application/json'
