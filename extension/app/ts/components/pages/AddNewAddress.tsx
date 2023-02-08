@@ -7,6 +7,7 @@ import { addressString } from '../../utils/bigint.js'
 import { sendPopupMessageToBackgroundPage } from '../../background/backgroundUtils.js'
 import { AddressIcon } from '../subcomponents/address.js'
 import { assertUnreachable } from '../../utils/typescript.js'
+import { createRef } from 'preact'
 
 const readableAddressType = {
 	'contact': 'Contact',
@@ -47,13 +48,16 @@ type NameInputParams = {
 }
 
 export function NameInput({ nameInput, setNameInput }: NameInputParams) {
+	const ref = createRef<HTMLInputElement>()
+    useEffect(() => { ref.current && ref.current.focus() }, [])
 	return <input
 		className = 'input title is-5 is-spaced'
 		type = 'text'
 		value = { nameInput }
-		placeholder = { 'Name of the address' }
+		placeholder = { 'What should we call this address?' }
 		onInput = { e => setNameInput((e.target as HTMLInputElement).value) }
 		maxLength = { 42 }
+		ref = { ref }
 	/>
 }
 
@@ -86,7 +90,7 @@ type AddressInfoFieldsParams = {
 	logoUri: string | undefined
 }
 
-export function AddressInfoFields({ addressInput, nameInput, setNameInput, setAddress, disableAddress, askForAddressAccess, setAskForAddressAccess, logoUri } : AddressInfoFieldsParams ) {
+export function AddressInfoFields({ addressInput, nameInput, setNameInput, setAddress, disableAddress, askForAddressAccess, setAskForAddressAccess, logoUri }: AddressInfoFieldsParams ) {
 	return <div class = 'media'>
 		<div class = 'media-left'>
 			<figure class = 'image'>
@@ -151,7 +155,7 @@ export function AddNewAddress(param: AddAddressParam) {
 					method: 'popup_addOrModifyAddressBookEntry',
 					options: [{
 						type: 'contact' as const,
-						name: nameInput ? nameInput: ethers.utils.getAddress(addressInput),
+						name: nameInput ? nameInput : ethers.utils.getAddress(addressInput),
 						address: BigInt(addressInput),
 					}]
 				} )
@@ -162,7 +166,7 @@ export function AddNewAddress(param: AddAddressParam) {
 					method: 'popup_addOrModifyAddressBookEntry',
 					options: [{
 						type: 'addressInfo' as const,
-						name: nameInput ? nameInput: ethers.utils.getAddress(addressInput),
+						name: nameInput ? nameInput : ethers.utils.getAddress(addressInput),
 						address: BigInt(addressInput),
 						askForAddressAccess: askForAddressAccess,
 					}]
@@ -186,8 +190,9 @@ export function AddNewAddress(param: AddAddressParam) {
 
 	useEffect( () => {
 		if (param.addingNewAddress.addingAddress === false) {
-			setAddressInput(ethers.utils.getAddress(addressString(param.addingNewAddress.entry.address)))
-			setNameInput(param.addingNewAddress.entry.name)
+			const addressInput = ethers.utils.getAddress(addressString(param.addingNewAddress.entry.address))
+			setAddressInput(addressInput)
+			setNameInput(param.addingNewAddress.entry.name === addressInput ? undefined : param.addingNewAddress.entry.name)
 			setAddressType(param.addingNewAddress.entry.type)
 			if (param.addingNewAddress.entry.type === 'addressInfo') {
 				setAskForAddressAccess(param.addingNewAddress.entry.askForAddressAccess)
