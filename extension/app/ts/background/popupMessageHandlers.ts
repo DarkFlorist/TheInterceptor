@@ -1,7 +1,7 @@
 import { changeActiveAddressAndChainAndResetSimulation, changeActiveChain, PrependTransactionMode, refreshConfirmTransactionSimulation, updatePrependMode, updateSimulationState } from './background.js'
 import { getOpenedAddressBookTabId, saveAddressInfos, saveMakeMeRich, saveOpenedAddressBookTabId, savePage, saveSimulationMode, saveUseSignersAddressAsActiveAddress, saveWebsiteAccess } from './settings.js'
 import { Simulator } from '../simulation/simulator.js'
-import { ChangeActiveAddress, ChangeAddressInfos, ChangeMakeMeRich, ChangePage, PersonalSign, PopupMessage, RemoveTransaction, RequestAccountsFromSigner, TransactionConfirmation, InterceptorAccess, ChangeInterceptorAccess, ChainChangeConfirmation, EnableSimulationMode, ReviewNotification, RejectNotification, ChangeActiveChain, AddOrModifyAddresInfo, GetAddressBookData, RemoveAddressBookEntry, RefreshConfirmTransactionDialogSimulation } from '../utils/interceptor-messages.js'
+import { ChangeActiveAddress, ChangeAddressInfos, ChangeMakeMeRich, ChangePage, PersonalSign, RemoveTransaction, RequestAccountsFromSigner, TransactionConfirmation, InterceptorAccess, ChangeInterceptorAccess, ChainChangeConfirmation, EnableSimulationMode, ReviewNotification, RejectNotification, ChangeActiveChain, AddOrModifyAddresInfo, GetAddressBookData, RemoveAddressBookEntry, RefreshConfirmTransactionDialogSimulation } from '../utils/interceptor-messages.js'
 import { resolvePendingTransaction } from './windows/confirmTransaction.js'
 import { resolvePersonalSign } from './windows/personalSign.js'
 import { changeAccess, requestAccessFromUser, resolveExistingInterceptorAccessAsNoResponse, resolveInterceptorAccess, setPendingAccessRequests } from './windows/interceptorAccess.js'
@@ -14,18 +14,15 @@ import { getMetadataForAddressBookData } from './medataSearch.js'
 import { findAddressInfo } from './metadataUtils.js'
 import { assertUnreachable } from '../utils/typescript.js'
 
-export async function confirmDialog(_simulator: Simulator, payload: PopupMessage) {
-	const confirmation = TransactionConfirmation.parse(payload)
+export async function confirmDialog(_simulator: Simulator, confirmation: TransactionConfirmation) {
 	await resolvePendingTransaction(confirmation.options.accept ? 'Approved' : 'Rejected')
 }
 
-export async function confirmPersonalSign(_simulator: Simulator, payload: PopupMessage) {
-	const confirmation = PersonalSign.parse(payload)
+export async function confirmPersonalSign(_simulator: Simulator, confirmation: PersonalSign) {
 	await resolvePersonalSign(confirmation)
 }
 
-export async function confirmRequestAccess(_simulator: Simulator, payload: PopupMessage) {
-	const confirmation = InterceptorAccess.parse(payload)
+export async function confirmRequestAccess(_simulator: Simulator, confirmation: InterceptorAccess) {
 	await resolveInterceptorAccess({
 		outcome: confirmation.options.accept ? 'Approved' : 'Rejected',
 		origin: confirmation.options.origin,
@@ -33,9 +30,8 @@ export async function confirmRequestAccess(_simulator: Simulator, payload: Popup
 	})
 }
 
-export async function changeActiveAddress(_simulator: Simulator, payload: PopupMessage) {
+export async function changeActiveAddress(_simulator: Simulator, addressChange: ChangeActiveAddress) {
 	if (window.interceptor.settings === undefined) return
-	const addressChange = ChangeActiveAddress.parse(payload)
 	window.interceptor.settings.useSignersAddressAsActiveAddress = addressChange.options === 'signer'
 
 	// if using signers address, set the active address to signers address if available, otherwise we don't know active address and set it to be undefined
@@ -48,9 +44,8 @@ export async function changeActiveAddress(_simulator: Simulator, payload: PopupM
 	saveUseSignersAddressAsActiveAddress(window.interceptor.settings.useSignersAddressAsActiveAddress)
 }
 
-export async function changeMakeMeRich(_simulator: Simulator, payload: PopupMessage) {
+export async function changeMakeMeRich(_simulator: Simulator, makeMeRichChange: ChangeMakeMeRich) {
 	if (window.interceptor.settings === undefined) return
-	const makeMeRichChange = ChangeMakeMeRich.parse(payload)
 
 	if (makeMeRichChange.options) {
 		window.interceptor.prependTransactionMode = PrependTransactionMode.RICH_MODE
@@ -63,18 +58,16 @@ export async function changeMakeMeRich(_simulator: Simulator, payload: PopupMess
 	await updatePrependMode(true)
 }
 
-export async function changeAddressInfos(_simulator: Simulator, payload: PopupMessage) {
+export async function changeAddressInfos(_simulator: Simulator, addressInfosChange: ChangeAddressInfos) {
 	if (window.interceptor.settings === undefined) return
-	const addressInfosChange = ChangeAddressInfos.parse(payload)
 	window.interceptor.settings.addressInfos = addressInfosChange.options
 	saveAddressInfos(addressInfosChange.options)
 	updateWebsiteApprovalAccesses()
 	sendPopupMessageToOpenWindows({ method: 'popup_address_infos_changed' })
 }
 
-export async function removeAddressBookEntry(_simulator: Simulator, payload: PopupMessage) {
+export async function removeAddressBookEntry(_simulator: Simulator, removeAddressBookEntry: RemoveAddressBookEntry) {
 	if (window.interceptor.settings === undefined) return
-	const removeAddressBookEntry = RemoveAddressBookEntry.parse(payload)
 	if (removeAddressBookEntry.options.addressBookCategory === 'My Active Addresses') {
 		window.interceptor.settings.addressInfos = window.interceptor.settings.addressInfos.filter((info) => info.address !== removeAddressBookEntry.options.address)
 		saveAddressInfos(window.interceptor.settings.addressInfos)
@@ -85,9 +78,8 @@ export async function removeAddressBookEntry(_simulator: Simulator, payload: Pop
 	throw new Error('Tried to remove addressbook category that is not supported yet!')
 }
 
-export async function addOrModifyAddressInfo(_simulator: Simulator, payload: PopupMessage) {
+export async function addOrModifyAddressInfo(_simulator: Simulator, addressInfosChanges: AddOrModifyAddresInfo) {
 	if (window.interceptor.settings === undefined) return
-	const addressInfosChanges = AddOrModifyAddresInfo.parse(payload)
 	for (const newEntry of addressInfosChanges.options) {
 		const entryType = newEntry.type
 		switch (entryType) {
@@ -119,62 +111,54 @@ export async function addOrModifyAddressInfo(_simulator: Simulator, payload: Pop
 	sendPopupMessageToOpenWindows({ method: 'popup_address_infos_changed' })
 }
 
-export async function changeInterceptorAccess(_simulator: Simulator, payload: PopupMessage) {
+export async function changeInterceptorAccess(_simulator: Simulator, accessChange: ChangeInterceptorAccess) {
 	if (window.interceptor.settings === undefined) return
-	const accessChange = ChangeInterceptorAccess.parse(payload)
 	window.interceptor.settings.websiteAccess = accessChange.options
 	saveWebsiteAccess(accessChange.options)
 	updateWebsiteApprovalAccesses()
 	sendPopupMessageToOpenWindows({ method: 'popup_interceptor_access_changed' })
 }
 
-export async function changePage(_simulator: Simulator, payload: PopupMessage) {
+export async function changePage(_simulator: Simulator, page: ChangePage) {
 	if (window.interceptor.settings === undefined) return
-	const page = ChangePage.parse(payload)
 	window.interceptor.settings.page = page.options
 	savePage(page.options)
 }
 
-export async function requestAccountsFromSigner(_simulator: Simulator, payload: PopupMessage) {
-	const params = RequestAccountsFromSigner.parse(payload)
+export async function requestAccountsFromSigner(_simulator: Simulator, params: RequestAccountsFromSigner) {
 	if (params.options) {
 		sendMessageToApprovedWebsitePorts('request_signer_to_eth_requestAccounts', [])
 	}
 }
 
-export async function resetSimulation(simulator: Simulator, _payload: PopupMessage) {
+export async function resetSimulation(simulator: Simulator) {
 	await updateSimulationState(async () => await simulator.simulationModeNode.resetSimulation())
 }
 
-export async function removeTransaction(simulator: Simulator, payload: PopupMessage) {
-	const params = RemoveTransaction.parse(payload)
+export async function removeTransaction(simulator: Simulator, params: RemoveTransaction) {
 	await updateSimulationState(async () => await simulator.simulationModeNode.removeTransactionAndUpdateTransactionNonces(params.options))
 }
 
-export async function RefreshSimulation(simulator: Simulator, _payload: PopupMessage) {
+export async function refreshSimulation(simulator: Simulator) {
 	await updateSimulationState(async() => await simulator.simulationModeNode.refreshSimulation())
 }
 
-export async function refreshPopupConfirmTransactionSimulation(_simulator: Simulator, payload: PopupMessage) {
-	const { data } = RefreshConfirmTransactionDialogSimulation.parse(payload)
+export async function refreshPopupConfirmTransactionSimulation(_simulator: Simulator, { data }: RefreshConfirmTransactionDialogSimulation) {
 	const refreshMessage = await refreshConfirmTransactionSimulation(data.activeAddress, data.simulationMode, data.requestId, data.transactionToSimulate)
 	if (refreshMessage === undefined) return
 	return sendPopupMessageToOpenWindows(refreshMessage)
 }
 
-export async function popupChangeActiveChain(_simulator: Simulator, payload: PopupMessage) {
-	const params = ChangeActiveChain.parse(payload)
+export async function popupChangeActiveChain(_simulator: Simulator, params: ChangeActiveChain) {
 	await changeActiveChain(params.options)
 }
 
-export async function changeChainDialog(_simulator: Simulator, payload: PopupMessage) {
-	const chainChange = ChainChangeConfirmation.parse(payload)
+export async function changeChainDialog(_simulator: Simulator, chainChange: ChainChangeConfirmation) {
 	await resolveChainChange(chainChange)
 }
 
-export async function enableSimulationMode(_simulator: Simulator, payload: PopupMessage) {
+export async function enableSimulationMode(_simulator: Simulator, params: EnableSimulationMode) {
 	if (window.interceptor.settings === undefined) return
-	const params = EnableSimulationMode.parse(payload)
 
 	window.interceptor.settings.simulationMode = params.options
 	saveSimulationMode(params.options)
@@ -193,9 +177,8 @@ export async function enableSimulationMode(_simulator: Simulator, payload: Popup
 	}
 }
 
-export async function reviewNotification(_simulator: Simulator, payload: PopupMessage) {
+export async function reviewNotification(_simulator: Simulator, params: ReviewNotification) {
 	if (window.interceptor.settings === undefined) return
-	const params = ReviewNotification.parse(payload)
 	const notification = window.interceptor.settings.pendingAccessRequests.find( (x) => x.origin === params.options.origin && x.requestAccessToAddress === params.options.requestAccessToAddress)
 	if (notification === undefined) return
 	await resolveExistingInterceptorAccessAsNoResponse()
@@ -204,9 +187,8 @@ export async function reviewNotification(_simulator: Simulator, payload: PopupMe
 	const metadata = getAssociatedAddresses(window.interceptor.settings, notification.origin, addressInfo)
 	await requestAccessFromUser(notification.origin, notification.icon, addressInfo, metadata)
 }
-export async function rejectNotification(_simulator: Simulator, payload: PopupMessage) {
+export async function rejectNotification(_simulator: Simulator, params: RejectNotification) {
 	if (window.interceptor.settings === undefined) return
-	const params = RejectNotification.parse(payload)
 	const notification = window.interceptor.settings.pendingAccessRequests.find( (x) => x.origin === params.options.origin && x.requestAccessToAddress === params.options.requestAccessToAddress)
 
 	if (params.options.removeOnly) {
@@ -233,8 +215,7 @@ export async function rejectNotification(_simulator: Simulator, payload: PopupMe
 	sendPopupMessageToOpenWindows({ method: 'popup_notification_removed' })
 }
 
-export async function getAddressBookData(_simulator: Simulator, payload: PopupMessage) {
-	const parsed = GetAddressBookData.parse(payload)
+export async function getAddressBookData(_simulator: Simulator, parsed: GetAddressBookData) {
 	const data = getMetadataForAddressBookData(parsed.options, window.interceptor.settings?.addressInfos)
 	sendPopupMessageToOpenWindows({
 		method: 'popup_getAddressBookData',
@@ -246,7 +227,7 @@ export async function getAddressBookData(_simulator: Simulator, payload: PopupMe
 	})
 }
 
-export async function openAddressBook(_simulator: Simulator, _payload: PopupMessage) {
+export async function openAddressBook(_simulator: Simulator) {
 	const openInNewTab = async () => {
 		const tab = await browser.tabs.create({ url: '/html/addressBook.html' })
 		if (tab.id !== undefined) saveOpenedAddressBookTabId(tab.id)
