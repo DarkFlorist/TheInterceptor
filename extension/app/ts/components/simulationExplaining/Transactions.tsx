@@ -454,7 +454,7 @@ export function TokenLogEvent(params: TokenLogEventParams ) {
 						{ ...params.tokenVisualizerResult }
 						textColor = { textColor }
 					/>
-				: <> { params.tokenVisualizerResult.amount > 2n ** 100n && params.tokenVisualizerResult.isApproval ?
+				: <> { params.tokenVisualizerResult.amount >= (2n ** 96n - 1n ) && params.tokenVisualizerResult.isApproval ?
 						<p class = 'ellipsis' style = { `color: ${ textColor }` }><b>ALL</b></p>
 					:
 						<TokenAmount
