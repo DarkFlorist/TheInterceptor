@@ -45,7 +45,7 @@ export function App() {
 		setActiveSimulationAddress(settings.activeSimulationAddress)
 		setActiveSigningAddress(settings.activeSigningAddress)
 		setUseSignersAddressAsActiveAddress(settings.useSignersAddressAsActiveAddress)
-		setAddressInfos(settings.addressInfos)
+		setAddressInfos(settings.userAddressBook.addressInfos)
 		setAppPage(settings.page)
 		setMakeMeRich(settings.makeMeRich)
 		setWebsiteAccess(settings.websiteAccess)
@@ -108,7 +108,7 @@ export function App() {
 	}
 
 	async function updateState() {
-		const backgroundPage = await browser.runtime.getBackgroundPage()
+		const backgroundPage = await browser.runtime.getBackgroundPage() //TODO, get rid of this
 		fetchSettings(backgroundPage)
 		fetchSimulationState(backgroundPage)
 		setSignerName(backgroundPage.interceptor.signerName)

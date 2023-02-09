@@ -61,7 +61,7 @@ export function getAddressMetadataForAccess(websiteAccess: WebsiteAccessArray) :
 	if ( window.interceptor.settings === undefined) return []
 	const addresses = websiteAccess.map( (x) => x.addressAccess === undefined ? [] : x.addressAccess?.map( (addr) => addr.address) ).flat()
 	const addressSet = new Set(addresses)
-	const infos = window.interceptor.settings.addressInfos
+	const infos = window.interceptor.settings.userAddressBook.addressInfos
 	return Array.from(addressSet).map( (x) => findAddressInfo(x, infos) )
 }
 
@@ -105,7 +105,7 @@ export async function setPendingAccessRequests(pendingAccessRequest: PendingAcce
 	window.interceptor.settings.pendingAccessRequests = pendingAccessRequest
 	const addresses = window.interceptor.settings.pendingAccessRequests.map( (x) => x.requestAccessToAddress === undefined ? [] : x.requestAccessToAddress ).flat()
 	const addressSet = new Set(addresses)
-	const infos = window.interceptor.settings.addressInfos
+	const infos = window.interceptor.settings.userAddressBook.addressInfos
 	window.interceptor.pendingAccessMetadata = Array.from(addressSet).map( (x) => [addressString(x), findAddressInfo(BigInt(x), infos)] )
 	savePendingAccessRequests(window.interceptor.settings.pendingAccessRequests)
 	await updateExtensionBadge()
@@ -128,7 +128,7 @@ export async function requestAccessFromUser(origin: string, icon: string | undef
 	if (window.interceptor.settings === undefined) return false
 
 	// check if we need to ask address access or not. If address is put to never need to have address specific permision, we don't need to ask for it
-	const askForAddressAccess = requestAccessToAddress !== undefined && window.interceptor.settings?.addressInfos.find((x) => x.address === requestAccessToAddress.address )?.askForAddressAccess !== false
+	const askForAddressAccess = requestAccessToAddress !== undefined && window.interceptor.settings?.userAddressBook.addressInfos.find((x) => x.address === requestAccessToAddress.address )?.askForAddressAccess !== false
 	const accessAddress = askForAddressAccess ? requestAccessToAddress : undefined
 
 	if (window.interceptor.settings.pendingAccessRequests.find((x) => x.origin === origin && x.requestAccessToAddress === accessAddress?.address) === undefined) {

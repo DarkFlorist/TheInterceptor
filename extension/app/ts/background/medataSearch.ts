@@ -6,6 +6,7 @@ import { NftDefinition } from '@darkflorist/address-metadata/lib/nftMetadata.js'
 import { ContractDefinition } from '@darkflorist/address-metadata/lib/contractMetadata.js'
 import { TokenDefinition } from '@darkflorist/address-metadata/lib/tokenMetadata.js'
 import { getFullLogoUri } from './metadataUtils.js'
+import { UserAddressBook } from './settings.js'
 
 type PartialResult = {
 	bestMatchLength: number,
@@ -34,13 +35,21 @@ function search<ElementType>(searchArray: readonly ElementType[], searchFunction
 	return undefinedRemoved.sort((a, b) => (a.comparison.bestMatchLength - b.comparison.bestMatchLength) || (a.comparison.locationOfBestMatch - b.comparison.locationOfBestMatch)).map((x) => x.element)
 }
 
-function filterAddressBookDataByCategoryAndSearchString(addressBookCategory: AddressBookCategory, searchString: string | undefined, addressInfos: readonly AddressInfo[]) {
+function filterAddressBookDataByCategoryAndSearchString(addressBookCategory: AddressBookCategory, searchString: string | undefined, userAddressBook: UserAddressBook) {
 	const trimmedSearch = searchString !== undefined && searchString.trim().length > 0 ? searchString.trim().toLowerCase() : undefined
 	const searchPattern = trimmedSearch ? new RegExp(`(?=(${ trimmedSearch.split('').join('.*?') }))`) : undefined
 	switch(addressBookCategory) {
-		case 'My Contacts': return []
+		case 'My Contacts': return (
+			(trimmedSearch === undefined || searchPattern === undefined ? userAddressBook.contacts : search(userAddressBook.addressInfos, (element: AddressInfo) => ({
+				comparison: fuzzyCompare(searchPattern, trimmedSearch, element.name.toLowerCase(), addressString(element.address)),
+				element: element,
+			}))).map((info) => ({
+				...info,
+				type: 'contact' as const,
+			}))
+		)
 		case 'My Active Addresses': return (
-			(trimmedSearch === undefined || searchPattern === undefined ? addressInfos : search(addressInfos, (element: AddressInfo) => ({
+			(trimmedSearch === undefined || searchPattern === undefined ? userAddressBook.addressInfos : search(userAddressBook.addressInfos, (element: AddressInfo) => ({
 				comparison: fuzzyCompare(searchPattern, trimmedSearch, element.name.toLowerCase(), addressString(element.address)),
 				element: element,
 			}))).map((info) => ({
@@ -84,8 +93,8 @@ function filterAddressBookDataByCategoryAndSearchString(addressBookCategory: Add
 	}
 }
 
-export function getMetadataForAddressBookData(filter: GetAddressBookDataFilter, addressInfos: readonly AddressInfo[] | undefined) {
-	const filtered = filterAddressBookDataByCategoryAndSearchString(filter.filter, filter.searchString, addressInfos === undefined ? [] : addressInfos)
+export function getMetadataForAddressBookData(filter: GetAddressBookDataFilter, userAddressBook: UserAddressBook) {
+	const filtered = filterAddressBookDataByCategoryAndSearchString(filter.filter, filter.searchString, userAddressBook)
 	return {
 		entries: filtered.slice(filter.startIndex, filter.maxIndex),
 		maxDataLength: filtered.length,
