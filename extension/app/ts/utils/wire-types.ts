@@ -521,19 +521,16 @@ export type ToWireType<T> =
 
 
 export type DappRequestTransaction = t.Static<typeof DappRequestTransaction>
-export const DappRequestTransaction = t.Intersect(
-	t.Object({
-		from: EthereumAddress,
-		data: EthereumData,
-	}).asReadonly(),
-	t.Partial({
-		gas: EthereumQuantity,
-		value: EthereumQuantity,
-		to: EthereumAddress,
-		maxPriorityFeePerGas: EthereumQuantity,
-		maxFeePerGas: EthereumQuantity
-	}).asReadonly()
-)
+export const DappRequestTransaction = t.Partial({
+	from: EthereumAddress,
+	data: EthereumData,
+	gas: EthereumQuantity,
+	value: EthereumQuantity,
+	to: EthereumAddress,
+	gasPrice: EthereumQuantity,
+	maxPriorityFeePerGas: EthereumQuantity,
+	maxFeePerGas: EthereumQuantity,
+}).asReadonly()
 
 export type EthereumBlockHeaderWithTransactionHashes = t.Static<typeof EthereumBlockHeaderWithTransactionHashes>
 export const EthereumBlockHeaderWithTransactionHashes = t.Object({

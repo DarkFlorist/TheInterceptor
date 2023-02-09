@@ -25,16 +25,33 @@ export async function getTransactionByHash(simulator: Simulator, request: Transa
 export async function getTransactionReceipt(simulator: Simulator, request: TransactionReceiptParams) {
 	return { result: EthTransactionReceiptResponse.serialize(await simulator.simulationModeNode.getTransactionReceipt(request.params[0])) }
 }
-export async function sendTransaction(simulator: Simulator, request: SendTransactionParams, port: browser.runtime.Port, requestId: number | undefined, simulationMode: boolean = true) {
+
+function getFromField(simulationMode: boolean, request: SendTransactionParams, getActiveAddressForDomain: (websiteAccess: WebsiteAccessArray, origin: string) => bigint | undefined, port: browser.runtime.Port) {
+	if (window.interceptor.settings === undefined) throw new Error('Interceptor is not ready')
+
+	if (simulationMode && 'from' in request.params[0] && request.params[0].from !== undefined) {
+		return request.params[0].from // use `from` field directly from the dapp if we are in simulation mode and its available
+	} else {
+		const connection = window.interceptor.websitePortApprovals.get(port)
+		if (connection === undefined) throw new Error('Not connected')
+
+		const from = getActiveAddressForDomain(window.interceptor.settings.websiteAccess, connection.origin)
+		if (from === undefined) throw new Error('Access to active address is denied')
+		return from
+	}
+}
+
+export async function sendTransaction(getActiveAddressForDomain: (websiteAccess: WebsiteAccessArray, origin: string) => bigint | undefined, simulator: Simulator, request: SendTransactionParams, port: browser.runtime.Port, requestId: number | undefined, simulationMode: boolean = true) {
 	async function formTransaction() {
 		const block = simulator.ethereum.getBlock()
 		const chainId = simulator.ethereum.getChainId()
-		const transactionCount = simulator.simulationModeNode.getTransactionCount(request.params[0].from)
+		const from = getFromField(simulationMode, request, getActiveAddressForDomain, port)
+		const transactionCount = simulator.simulationModeNode.getTransactionCount(from)
 
 		const maxFeePerGas = (await block).baseFeePerGas * 2n
 		return {
 			type: '1559' as const,
-			from: request.params[0].from,
+			from: from,
 			chainId: await chainId,
 			nonce: await transactionCount,
 			maxFeePerGas: request.params[0].maxFeePerGas ? request.params[0].maxFeePerGas : maxFeePerGas,
@@ -42,7 +59,7 @@ export async function sendTransaction(simulator: Simulator, request: SendTransac
 			gas: request.params[0].gas ? request.params[0].gas : 90000n,
 			to: request.params[0].to ? request.params[0].to : 0n,
 			value: request.params[0].value ? request.params[0].value : 0n,
-			input: request.params[0].data,
+			input: 'data' in request.params[0] && request.params[0].data !== undefined ? request.params[0].data : new Uint8Array(),
 			accessList: []
 		}
 	}
