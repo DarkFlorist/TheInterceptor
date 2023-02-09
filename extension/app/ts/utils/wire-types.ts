@@ -1,19 +1,19 @@
-import * as t from 'funtypes'
+import * as funtypes from 'funtypes'
 import { UnionToIntersection, assertNever } from './typescript.js'
 import { IUnsignedTransaction } from './ethereum.js'
 
-const BigIntParser: t.ParsedValue<t.String, bigint>['config'] = {
+const BigIntParser: funtypes.ParsedValue<funtypes.String, bigint>['config'] = {
 	parse: value => {
 		if (!/^0x([a-fA-F0-9]{1,64})$/.test(value)) return { success: false, message: `${value} is not a hex string encoded number.` }
 		else return { success: true, value: BigInt(value) }
 	},
 	serialize: value => {
-		if (typeof value !== 'bigint') return { success: false, message: `${typeof value} is not a bigint.`}
+		if (typeof value !== 'bigint') return { success: false, message: `${typeof value} is not a biginfuntypes.`}
 		return { success: true, value: `0x${value.toString(16)}` }
 	},
 }
 
-const SmallIntParser: t.ParsedValue<t.String, bigint>['config'] = {
+const SmallIntParser: funtypes.ParsedValue<funtypes.String, bigint>['config'] = {
 	parse: value => {
 		if (!/^0x([a-fA-F0-9]{1,64})$/.test(value)) return { success: false, message: `${value} is not a hex string encoded number.` }
 		if (BigInt(value) >= 2n**64n) return { success: false, message: `${value} must be smaller than 2^64.` }
@@ -21,56 +21,56 @@ const SmallIntParser: t.ParsedValue<t.String, bigint>['config'] = {
 	},
 	serialize: value => {
 		if (value >= 2n**64n) return { success: false, message: `${value} must be smaller than 2^64.` }
-		if (typeof value !== 'bigint') return { success: false, message: `${typeof value} is not a bigint.`}
+		if (typeof value !== 'bigint') return { success: false, message: `${typeof value} is not a biginfuntypes.`}
 		return { success: true, value: `0x${value.toString(16)}` }
 	},
 }
 
 
-const AddressParser: t.ParsedValue<t.String, bigint>['config'] = {
+const AddressParser: funtypes.ParsedValue<funtypes.String, bigint>['config'] = {
 	parse: value => {
 		if (!/^0x([a-fA-F0-9]{40})$/.test(value)) return { success: false, message: `${value} is not a hex string encoded address.` }
 		else return { success: true, value: BigInt(value) }
 	},
 	serialize: value => {
-		if (typeof value !== 'bigint') return { success: false, message: `${typeof value} is not a bigint.`}
+		if (typeof value !== 'bigint') return { success: false, message: `${typeof value} is not a biginfuntypes.`}
 		return { success: true, value: `0x${value.toString(16).padStart(40, '0')}` }
 	},
 }
 
-const Bytes32Parser: t.ParsedValue<t.String, bigint>['config'] = {
+const Bytes32Parser: funtypes.ParsedValue<funtypes.String, bigint>['config'] = {
 	parse: value => {
 		if (!/^0x([a-fA-F0-9]{64})$/.test(value)) return { success: false, message: `${value} is not a hex string encoded 32 byte value.` }
 		else return { success: true, value: BigInt(value) }
 	},
 	serialize: value => {
-		if (typeof value !== 'bigint') return { success: false, message: `${typeof value} is not a bigint.`}
+		if (typeof value !== 'bigint') return { success: false, message: `${typeof value} is not a biginfuntypes.`}
 		return { success: true, value: `0x${value.toString(16).padStart(64, '0')}` }
 	},
 }
 
-const Bytes256Parser: t.ParsedValue<t.String, bigint>['config'] = {
+const Bytes256Parser: funtypes.ParsedValue<funtypes.String, bigint>['config'] = {
 	parse: value => {
 		if (!/^0x([a-fA-F0-9]{512})$/.test(value)) return { success: false, message: `${value} is not a hex string encoded 256 byte value.` }
 		else return { success: true, value: BigInt(value) }
 	},
 	serialize: value => {
-		if (typeof value !== 'bigint') return { success: false, message: `${typeof value} is not a bigint.`}
+		if (typeof value !== 'bigint') return { success: false, message: `${typeof value} is not a biginfuntypes.`}
 		return { success: true, value: `0x${value.toString(16).padStart(512, '0')}` }
 	},
 }
-const Bytes16Parser: t.ParsedValue<t.String, bigint>['config'] = {
+const Bytes16Parser: funtypes.ParsedValue<funtypes.String, bigint>['config'] = {
 	parse: value => {
 		if (!/^0x([a-fA-F0-9]{16})$/.test(value)) return { success: false, message: `${value} is not a hex string encoded 256 byte value.` }
 		else return { success: true, value: BigInt(value) }
 	},
 	serialize: value => {
-		if (typeof value !== 'bigint') return { success: false, message: `${typeof value} is not a bigint.`}
+		if (typeof value !== 'bigint') return { success: false, message: `${typeof value} is not a biginfuntypes.`}
 		return { success: true, value: `0x${value.toString(16).padStart(16, '0')}` }
 	},
 }
 
-const BytesParser: t.ParsedValue<t.String, Uint8Array>['config'] = {
+const BytesParser: funtypes.ParsedValue<funtypes.String, Uint8Array>['config'] = {
 	parse: value => {
 		const match = /^(?:0x)?([a-fA-F0-9]*)$/.exec(value)
 		if (match === null) return { success: false, message: `Expected a hex string encoded byte array with an optional '0x' prefix but received ${value}` }
@@ -92,7 +92,7 @@ const BytesParser: t.ParsedValue<t.String, Uint8Array>['config'] = {
 	}
 }
 
-const TimestampParser: t.ParsedValue<t.String, Date>['config'] = {
+const TimestampParser: funtypes.ParsedValue<funtypes.String, Date>['config'] = {
 	parse: value => {
 		if (!/^0x([a-fA-F0-9]{0,8})$/.test(value)) return { success: false, message: `${value} is not a hex string encoded timestamp.` }
 		else return { success: true, value: new Date(Number.parseInt(value, 16) * 1000) }
@@ -103,12 +103,12 @@ const TimestampParser: t.ParsedValue<t.String, Date>['config'] = {
 	},
 }
 
-const OptionalBytesParser: t.ParsedValue<t.Union<[t.String, t.Literal<undefined>]>, Uint8Array>['config'] = {
+const OptionalBytesParser: funtypes.ParsedValue<funtypes.Union<[funtypes.String, funtypes.Literal<undefined>]>, Uint8Array>['config'] = {
 	parse: value => BytesParser.parse(value || '0x'),
 	serialize: value => BytesParser.serialize!(value || new Uint8Array()),
 }
 
-export const LiteralConverterParserFactory: <TInput, TOutput> (input: TInput, output: TOutput) => t.ParsedValue<t.Runtype<TInput>, TOutput>['config'] = (input, output) => {
+export const LiteralConverterParserFactory: <TInput, TOutput> (input: TInput, output: TOutput) => funtypes.ParsedValue<funtypes.Runtype<TInput>, TOutput>['config'] = (input, output) => {
 	return {
 		parse: value => (value === input) ? { success: true, value: output } : { success: false, message: `${value} was expected to be literal.` },
 		serialize: value => (value === output) ? { success: true, value: input } : { success: false, message: `${value} was expected to be literal.`  }
@@ -119,166 +119,166 @@ export const LiteralConverterParserFactory: <TInput, TOutput> (input: TInput, ou
 // Ethereum
 //
 
-export const EthereumQuantity = t.String.withParser(BigIntParser)
-export type EthereumQuantity = t.Static<typeof EthereumQuantity>
+export const EthereumQuantity = funtypes.String.withParser(BigIntParser)
+export type EthereumQuantity = funtypes.Static<typeof EthereumQuantity>
 
-export const EthereumQuantitySmall = t.String.withParser(SmallIntParser)
-export type EthereumQuantitySmall = t.Static<typeof EthereumQuantitySmall>
+export const EthereumQuantitySmall = funtypes.String.withParser(SmallIntParser)
+export type EthereumQuantitySmall = funtypes.Static<typeof EthereumQuantitySmall>
 
-export const EthereumData = t.String.withParser(BytesParser)
-export type EthereumData = t.Static<typeof EthereumData>
+export const EthereumData = funtypes.String.withParser(BytesParser)
+export type EthereumData = funtypes.Static<typeof EthereumData>
 
-export const EthereumAddress = t.String.withParser(AddressParser)
-export type EthereumAddress = t.Static<typeof EthereumAddress>
+export const EthereumAddress = funtypes.String.withParser(AddressParser)
+export type EthereumAddress = funtypes.Static<typeof EthereumAddress>
 
-export const EthereumBytes32 = t.String.withParser(Bytes32Parser)
-export type EthereumBytes32 = t.Static<typeof EthereumBytes32>
+export const EthereumBytes32 = funtypes.String.withParser(Bytes32Parser)
+export type EthereumBytes32 = funtypes.Static<typeof EthereumBytes32>
 
-export const EthereumBytes256 = t.String.withParser(Bytes256Parser)
-export type EthereumBytes256 = t.Static<typeof EthereumBytes256>
+export const EthereumBytes256 = funtypes.String.withParser(Bytes256Parser)
+export type EthereumBytes256 = funtypes.Static<typeof EthereumBytes256>
 
-export const EthereumBytes16 = t.String.withParser(Bytes16Parser)
-export type EthereumBytes16 = t.Static<typeof EthereumBytes16>
+export const EthereumBytes16 = funtypes.String.withParser(Bytes16Parser)
+export type EthereumBytes16 = funtypes.Static<typeof EthereumBytes16>
 
-export const EthereumTimestamp = t.String.withParser(TimestampParser)
-export type EthereumTimestamp = t.Static<typeof EthereumTimestamp>
+export const EthereumTimestamp = funtypes.String.withParser(TimestampParser)
+export type EthereumTimestamp = funtypes.Static<typeof EthereumTimestamp>
 
-export const EthereumBlockTag = t.Union(EthereumQuantitySmall, EthereumBytes32, t.Literal('latest'), t.Literal('pending'))
-export type EthereumBlockTag = t.Static<typeof EthereumBlockTag>
+export const EthereumBlockTag = funtypes.Union(EthereumQuantitySmall, EthereumBytes32, funtypes.Literal('latest'), funtypes.Literal('pending'))
+export type EthereumBlockTag = funtypes.Static<typeof EthereumBlockTag>
 
-export const EthereumInput = t.Union(t.String, t.Undefined).withParser(OptionalBytesParser)
-export type EthereumInput = t.Static<typeof EthereumInput>
+export const EthereumInput = funtypes.Union(funtypes.String, funtypes.Undefined).withParser(OptionalBytesParser)
+export type EthereumInput = funtypes.Static<typeof EthereumInput>
 
-export const EthereumAccessList = t.ReadonlyArray(
-	t.Object({
+export const EthereumAccessList = funtypes.ReadonlyArray(
+	funtypes.Object({
 		address: EthereumAddress,
-		storageKeys: t.ReadonlyArray(EthereumBytes32)
+		storageKeys: funtypes.ReadonlyArray(EthereumBytes32)
 	}).asReadonly()
 )
-export type EthereumAccessList = t.Static<typeof EthereumAccessList>
+export type EthereumAccessList = funtypes.Static<typeof EthereumAccessList>
 
-export type EthereumUnsignedTransactionLegacy = t.Static<typeof EthereumUnsignedTransactionLegacy>
-export const EthereumUnsignedTransactionLegacy = t.Intersect(
-	t.Object({
-		type: t.Union(t.Literal('0x0').withParser(LiteralConverterParserFactory('0x0', 'legacy' as const)), t.Literal(undefined).withParser(LiteralConverterParserFactory(undefined, 'legacy' as const))),
+export type EthereumUnsignedTransactionLegacy = funtypes.Static<typeof EthereumUnsignedTransactionLegacy>
+export const EthereumUnsignedTransactionLegacy = funtypes.Intersect(
+	funtypes.Object({
+		type: funtypes.Union(funtypes.Literal('0x0').withParser(LiteralConverterParserFactory('0x0', 'legacy' as const)), funtypes.Literal(undefined).withParser(LiteralConverterParserFactory(undefined, 'legacy' as const))),
 		from: EthereumAddress,
 		nonce: EthereumQuantity,
 		gasPrice: EthereumQuantity,
 		gas: EthereumQuantity,
-		to: t.Union(EthereumAddress, t.Null),
+		to: funtypes.Union(EthereumAddress, funtypes.Null),
 		value: EthereumQuantity,
 		input: EthereumInput,
 	}).asReadonly(),
-	t.Partial({
+	funtypes.Partial({
 		chainId: EthereumQuantity,
 	}).asReadonly()
 )
 
-export type EthereumUnsignedTransaction2930 = t.Static<typeof EthereumUnsignedTransaction2930>
-export const EthereumUnsignedTransaction2930 = t.Intersect(
-	t.Object({
-		type: t.Literal('0x1').withParser(LiteralConverterParserFactory('0x1', '2930' as const)),
+export type EthereumUnsignedTransaction2930 = funtypes.Static<typeof EthereumUnsignedTransaction2930>
+export const EthereumUnsignedTransaction2930 = funtypes.Intersect(
+	funtypes.Object({
+		type: funtypes.Literal('0x1').withParser(LiteralConverterParserFactory('0x1', '2930' as const)),
 		from: EthereumAddress,
 		nonce: EthereumQuantity,
 		gasPrice: EthereumQuantity,
 		gas: EthereumQuantity,
-		to: t.Union(EthereumAddress, t.Null),
+		to: funtypes.Union(EthereumAddress, funtypes.Null),
 		value: EthereumQuantity,
 		input: EthereumInput,
 		chainId: EthereumQuantity,
 	}).asReadonly(),
-	t.Partial({
+	funtypes.Partial({
 		accessList: EthereumAccessList,
 	}).asReadonly(),
 )
 
-export type EthereumUnsignedTransaction1559 = t.Static<typeof EthereumUnsignedTransaction1559>
-export const EthereumUnsignedTransaction1559 = t.Intersect(
-	t.Object({
-		type: t.Literal('0x2').withParser(LiteralConverterParserFactory('0x2', '1559' as const)),
+export type EthereumUnsignedTransaction1559 = funtypes.Static<typeof EthereumUnsignedTransaction1559>
+export const EthereumUnsignedTransaction1559 = funtypes.Intersect(
+	funtypes.Object({
+		type: funtypes.Literal('0x2').withParser(LiteralConverterParserFactory('0x2', '1559' as const)),
 		from: EthereumAddress,
 		nonce: EthereumQuantity,
 		maxFeePerGas: EthereumQuantity,
 		maxPriorityFeePerGas: EthereumQuantity,
 		gas: EthereumQuantity,
-		to: t.Union(EthereumAddress, t.Null),
+		to: funtypes.Union(EthereumAddress, funtypes.Null),
 		value: EthereumQuantity,
 		input: EthereumInput,
 		chainId: EthereumQuantity,
 	}).asReadonly(),
-	t.Partial({
+	funtypes.Partial({
 		accessList: EthereumAccessList,
 	}).asReadonly(),
 )
-export type EthereumUnsignedTransaction = t.Static<typeof EthereumUnsignedTransaction>
-export const EthereumUnsignedTransaction = t.Union(EthereumUnsignedTransactionLegacy, EthereumUnsignedTransaction2930, EthereumUnsignedTransaction1559)
+export type EthereumUnsignedTransaction = funtypes.Static<typeof EthereumUnsignedTransaction>
+export const EthereumUnsignedTransaction = funtypes.Union(EthereumUnsignedTransactionLegacy, EthereumUnsignedTransaction2930, EthereumUnsignedTransaction1559)
 
-export type EthereumTransaction2930And1559Signature = t.Static<typeof EthereumTransaction2930And1559Signature>
-export const EthereumTransaction2930And1559Signature = t.Object({
+export type EthereumTransaction2930And1559Signature = funtypes.Static<typeof EthereumTransaction2930And1559Signature>
+export const EthereumTransaction2930And1559Signature = funtypes.Object({
 	r: EthereumQuantity,
 	s: EthereumQuantity,
 	hash: EthereumBytes32,
-	yParity: t.Union(t.Literal('0x0').withParser(LiteralConverterParserFactory('0x0', 'even' as const)), t.Literal('0x1').withParser(LiteralConverterParserFactory('0x1', 'odd' as const))),
+	yParity: funtypes.Union(funtypes.Literal('0x0').withParser(LiteralConverterParserFactory('0x0', 'even' as const)), funtypes.Literal('0x1').withParser(LiteralConverterParserFactory('0x1', 'odd' as const))),
 })
 
-export type EthereumTransactionLegacySignature = t.Static<typeof EthereumTransactionLegacySignature>
-export const EthereumTransactionLegacySignature = t.Intersect(
-	t.Object({
+export type EthereumTransactionLegacySignature = funtypes.Static<typeof EthereumTransactionLegacySignature>
+export const EthereumTransactionLegacySignature = funtypes.Intersect(
+	funtypes.Object({
 		r: EthereumQuantity,
 		s: EthereumQuantity,
 		hash: EthereumBytes32,
 		v: EthereumQuantity,
 	}),
-	t.Union(
-		t.Object({
+	funtypes.Union(
+		funtypes.Object({
 			v: EthereumQuantity,
 		}),
-		t.Object({
-			yParity: t.Union(t.Literal('0x0').withParser(LiteralConverterParserFactory('0x0', 'even' as const)), t.Literal('0x1').withParser(LiteralConverterParserFactory('0x1', 'odd' as const))),
+		funtypes.Object({
+			yParity: funtypes.Union(funtypes.Literal('0x0').withParser(LiteralConverterParserFactory('0x0', 'even' as const)), funtypes.Literal('0x1').withParser(LiteralConverterParserFactory('0x1', 'odd' as const))),
 			chainId: EthereumQuantity,
 		})
 	)
 )
 
-export type EthereumSignedTransactionLegacy = t.Static<typeof EthereumSignedTransactionLegacy>
-export const EthereumSignedTransactionLegacy = t.Intersect(
+export type EthereumSignedTransactionLegacy = funtypes.Static<typeof EthereumSignedTransactionLegacy>
+export const EthereumSignedTransactionLegacy = funtypes.Intersect(
 	EthereumUnsignedTransactionLegacy,
 	EthereumTransactionLegacySignature,
 )
 
-export type EthereumSignedTransaction2930 = t.Static<typeof EthereumSignedTransaction2930>
-export const EthereumSignedTransaction2930 = t.Intersect(
+export type EthereumSignedTransaction2930 = funtypes.Static<typeof EthereumSignedTransaction2930>
+export const EthereumSignedTransaction2930 = funtypes.Intersect(
 	EthereumUnsignedTransaction2930,
 	EthereumTransaction2930And1559Signature,
 )
 
-export type EthereumSignedTransaction1559 = t.Static<typeof EthereumSignedTransaction1559>
-export const EthereumSignedTransaction1559 = t.Intersect(
+export type EthereumSignedTransaction1559 = funtypes.Static<typeof EthereumSignedTransaction1559>
+export const EthereumSignedTransaction1559 = funtypes.Intersect(
 	EthereumUnsignedTransaction1559,
 	EthereumTransaction2930And1559Signature,
 )
 
-export type EthereumSignedTransaction = t.Static<typeof EthereumSignedTransaction>
-export const EthereumSignedTransaction = t.Union(EthereumSignedTransactionLegacy, EthereumSignedTransaction2930, EthereumSignedTransaction1559)
+export type EthereumSignedTransaction = funtypes.Static<typeof EthereumSignedTransaction>
+export const EthereumSignedTransaction = funtypes.Union(EthereumSignedTransactionLegacy, EthereumSignedTransaction2930, EthereumSignedTransaction1559)
 
-export type EthereumSignedTransactionWithBlockData = t.Static<typeof EthereumSignedTransactionWithBlockData>
-export const EthereumSignedTransactionWithBlockData = t.Intersect(
-	t.Union(
+export type EthereumSignedTransactionWithBlockData = funtypes.Static<typeof EthereumSignedTransactionWithBlockData>
+export const EthereumSignedTransactionWithBlockData = funtypes.Intersect(
+	funtypes.Union(
 		EthereumSignedTransactionLegacy,
 		EthereumSignedTransaction2930,
-		t.Intersect(EthereumSignedTransaction1559, t.Object({gasPrice: EthereumQuantity})),
+		funtypes.Intersect(EthereumSignedTransaction1559, funtypes.Object({gasPrice: EthereumQuantity})),
 	),
-	t.Object({
+	funtypes.Object({
 		data: EthereumInput,
-		blockHash: t.Union(EthereumBytes32, t.Null),
-		blockNumber: t.Union(EthereumQuantity, t.Null),
-		transactionIndex: t.Union(EthereumQuantity, t.Null),
+		blockHash: funtypes.Union(EthereumBytes32, funtypes.Null),
+		blockNumber: funtypes.Union(EthereumQuantity, funtypes.Null),
+		transactionIndex: funtypes.Union(EthereumQuantity, funtypes.Null),
 		v: EthereumQuantity,
 	})
 )
 
-export type EthereumBlockHeader = t.Static<typeof EthereumBlockHeader>
-export const EthereumBlockHeader = t.Object({
+export type EthereumBlockHeader = funtypes.Static<typeof EthereumBlockHeader>
+export const EthereumBlockHeader = funtypes.Object({
 	author: EthereumAddress,
 	difficulty: EthereumQuantity,
 	extraData: EthereumData,
@@ -297,75 +297,75 @@ export const EthereumBlockHeader = t.Object({
 	timestamp: EthereumTimestamp,
 	size: EthereumQuantity,
 	totalDifficulty: EthereumQuantity,
-	transactions: t.ReadonlyArray(EthereumSignedTransaction),
-	uncles: t.ReadonlyArray(EthereumBytes32),
+	transactions: funtypes.ReadonlyArray(EthereumSignedTransaction),
+	uncles: funtypes.ReadonlyArray(EthereumBytes32),
 	baseFeePerGas: EthereumQuantity,
 	transactionsRoot: EthereumBytes32
 }).asReadonly()
 
-export type EthGetStorageAtResponse = t.Static<typeof EthGetStorageAtResponse>
-export const EthGetStorageAtResponse = t.Union(
+export type EthGetStorageAtResponse = funtypes.Static<typeof EthGetStorageAtResponse>
+export const EthGetStorageAtResponse = funtypes.Union(
 	EthereumBytes32,
-	t.String.withParser({ parse: x => x === '0x' ? { success: true, value: null } : { success: false, message: `eth_getStorageAt didn't return 32 bytes of data nor 0x.` } }),
+	funtypes.String.withParser({ parse: x => x === '0x' ? { success: true, value: null } : { success: false, message: `eth_getStorageAt didn't return 32 bytes of data nor 0x.` } }),
 )
 
-export type EthGetLogsRequest = t.Static<typeof EthGetLogsRequest>
-export const EthGetLogsRequest = t.Intersect(
-	t.Union(
-		t.Object({ blockHash: EthereumBytes32 }).asReadonly(),
-		t.Object({ fromBlock: EthereumQuantity, toBlock: t.Union(EthereumQuantity, t.Literal('latest')) }).asReadonly(),
+export type EthGetLogsRequest = funtypes.Static<typeof EthGetLogsRequest>
+export const EthGetLogsRequest = funtypes.Intersect(
+	funtypes.Union(
+		funtypes.Object({ blockHash: EthereumBytes32 }).asReadonly(),
+		funtypes.Object({ fromBlock: EthereumQuantity, toBlock: funtypes.Union(EthereumQuantity, funtypes.Literal('latest')) }).asReadonly(),
 	),
-	t.Partial({
+	funtypes.Partial({
 		address: EthereumAddress,
-		topics: t.ReadonlyArray(t.Union(EthereumBytes32, t.ReadonlyArray(EthereumBytes32))),
+		topics: funtypes.ReadonlyArray(funtypes.Union(EthereumBytes32, funtypes.ReadonlyArray(EthereumBytes32))),
 	}).asReadonly()
 )
 
-export type EthGetLogsResponse = t.Static<typeof EthGetLogsResponse>
-export const EthGetLogsResponse = t.ReadonlyArray(
-	t.Object({
-		removed: t.Boolean,
-		logIndex: t.Union(EthereumQuantity, t.Null),
-		transactionIndex: t.Union(EthereumQuantity, t.Null),
-		transactionHash: t.Union(EthereumBytes32, t.Null),
-		blockHash: t.Union(EthereumBytes32, t.Null),
-		blockNumber: t.Union(EthereumQuantity, t.Null),
+export type EthGetLogsResponse = funtypes.Static<typeof EthGetLogsResponse>
+export const EthGetLogsResponse = funtypes.ReadonlyArray(
+	funtypes.Object({
+		removed: funtypes.Boolean,
+		logIndex: funtypes.Union(EthereumQuantity, funtypes.Null),
+		transactionIndex: funtypes.Union(EthereumQuantity, funtypes.Null),
+		transactionHash: funtypes.Union(EthereumBytes32, funtypes.Null),
+		blockHash: funtypes.Union(EthereumBytes32, funtypes.Null),
+		blockNumber: funtypes.Union(EthereumQuantity, funtypes.Null),
 		address: EthereumAddress,
 		data: EthereumInput,
-		topics: t.ReadonlyArray(EthereumBytes32),
+		topics: funtypes.ReadonlyArray(EthereumBytes32),
 	}).asReadonly()
 )
 
-export type EthTransactionReceiptResponse = t.Static<typeof EthTransactionReceiptResponse>
-export const EthTransactionReceiptResponse = t.Union(
-	t.Null,
-	t.Object({
-		type: t.Union(
-			t.Union(t.Literal('0x0').withParser(LiteralConverterParserFactory('0x0', 'legacy' as const)), t.Literal(undefined).withParser(LiteralConverterParserFactory(undefined, 'legacy' as const))),
-			t.Literal('0x0').withParser(LiteralConverterParserFactory('0x0', 'legacy' as const)),
-			t.Literal('0x1').withParser(LiteralConverterParserFactory('0x1', '2930' as const)),
-			t.Literal('0x2').withParser(LiteralConverterParserFactory('0x2', '1559' as const)),
+export type EthTransactionReceiptResponse = funtypes.Static<typeof EthTransactionReceiptResponse>
+export const EthTransactionReceiptResponse = funtypes.Union(
+	funtypes.Null,
+	funtypes.Object({
+		type: funtypes.Union(
+			funtypes.Union(funtypes.Literal('0x0').withParser(LiteralConverterParserFactory('0x0', 'legacy' as const)), funtypes.Literal(undefined).withParser(LiteralConverterParserFactory(undefined, 'legacy' as const))),
+			funtypes.Literal('0x0').withParser(LiteralConverterParserFactory('0x0', 'legacy' as const)),
+			funtypes.Literal('0x1').withParser(LiteralConverterParserFactory('0x1', '2930' as const)),
+			funtypes.Literal('0x2').withParser(LiteralConverterParserFactory('0x2', '1559' as const)),
 		),
 		blockHash: EthereumBytes32,
 		blockNumber: EthereumQuantity,
 		transactionHash: EthereumBytes32,
 		transactionIndex: EthereumQuantity,
-		contractAddress: t.Union(t.Null, EthereumAddress),
+		contractAddress: funtypes.Union(funtypes.Null, EthereumAddress),
 		cumulativeGasUsed: EthereumQuantity,
 		gasUsed: EthereumQuantity,
 		effectiveGasPrice: EthereumQuantity,
 		from: EthereumAddress,
-		to: t.Union(t.Null, EthereumAddress),
+		to: funtypes.Union(funtypes.Null, EthereumAddress),
 		logs: EthGetLogsResponse,
 		logsBloom: EthereumBytes256,
-		status: t.Union(
-			t.Literal('0x0').withParser(LiteralConverterParserFactory('0x0', 'failure' as const)),
-			t.Literal('0x1').withParser(LiteralConverterParserFactory('0x1', 'success' as const)),
+		status: funtypes.Union(
+			funtypes.Literal('0x0').withParser(LiteralConverterParserFactory('0x0', 'failure' as const)),
+			funtypes.Literal('0x1').withParser(LiteralConverterParserFactory('0x1', 'success' as const)),
 		),
 	}).asReadonly()
 )
 
-const RevertErrorParser: t.ParsedValue<t.String, string>['config'] = {
+const RevertErrorParser: funtypes.ParsedValue<funtypes.String, string>['config'] = {
 	parse: value => {
 		if (!value.startsWith('Reverted ')) return { success: true, value }
 		const parseResult = BytesParser.parse(value.slice('Reverted '.length))
@@ -381,75 +381,75 @@ const RevertErrorParser: t.ParsedValue<t.String, string>['config'] = {
 	},
 }
 
-export type MulticallRequestParameters = t.Static<typeof MulticallRequestParameters>
-export const MulticallRequestParameters = t.Readonly(t.Tuple(
+export type MulticallRequestParameters = funtypes.Static<typeof MulticallRequestParameters>
+export const MulticallRequestParameters = funtypes.Readonly(funtypes.Tuple(
 	EthereumQuantity, // block number
 	EthereumAddress, // miner
-	t.ReadonlyArray(EthereumUnsignedTransaction),
+	funtypes.ReadonlyArray(EthereumUnsignedTransaction),
 ))
 
-export type MulticallResponseEventLog = t.Static<typeof MulticallResponseEventLog>
-export const MulticallResponseEventLog =  t.Object({
+export type MulticallResponseEventLog = funtypes.Static<typeof MulticallResponseEventLog>
+export const MulticallResponseEventLog =  funtypes.Object({
 	loggersAddress: EthereumAddress,
 	data: EthereumInput,
-	topics: t.ReadonlyArray(EthereumBytes32),
+	topics: funtypes.ReadonlyArray(EthereumBytes32),
 }).asReadonly()
 
-export type MulticallResponseEventLogs = t.Static<typeof MulticallResponseEventLogs>
-export const MulticallResponseEventLogs = t.ReadonlyArray(MulticallResponseEventLog)
+export type MulticallResponseEventLogs = funtypes.Static<typeof MulticallResponseEventLogs>
+export const MulticallResponseEventLogs = funtypes.ReadonlyArray(MulticallResponseEventLog)
 
-export type EthBalanceChanges = t.Static<typeof EthBalanceChanges>
-export const EthBalanceChanges = t.ReadonlyArray(
-	t.Object({
+export type EthBalanceChanges = funtypes.Static<typeof EthBalanceChanges>
+export const EthBalanceChanges = funtypes.ReadonlyArray(
+	funtypes.Object({
 		address: EthereumAddress,
 		before: EthereumQuantity,
 		after: EthereumQuantity,
 	}).asReadonly()
 )
 
-export type SingleMulticallResponse = t.Static<typeof SingleMulticallResponse>
-export const SingleMulticallResponse = t.Union(
-	t.Object({
-		statusCode: t.Literal(1).withParser(LiteralConverterParserFactory(1, 'success' as const)),
+export type SingleMulticallResponse = funtypes.Static<typeof SingleMulticallResponse>
+export const SingleMulticallResponse = funtypes.Union(
+	funtypes.Object({
+		statusCode: funtypes.Literal(1).withParser(LiteralConverterParserFactory(1, 'success' as const)),
 		gasSpent: EthereumQuantity,
 		returnValue: EthereumData,
 		events: MulticallResponseEventLogs,
 		balanceChanges: EthBalanceChanges,
 	}).asReadonly(),
-	t.Object({
-		statusCode: t.Literal(0).withParser(LiteralConverterParserFactory(0, 'failure' as const)),
+	funtypes.Object({
+		statusCode: funtypes.Literal(0).withParser(LiteralConverterParserFactory(0, 'failure' as const)),
 		gasSpent: EthereumQuantity,
-		error: t.String.withParser(RevertErrorParser),
+		error: funtypes.String.withParser(RevertErrorParser),
 		returnValue: EthereumData,
 	}).asReadonly(),
 )
 
-export type MulticallResponse = t.Static<typeof MulticallResponse>
-export const MulticallResponse = t.ReadonlyArray(SingleMulticallResponse)
+export type MulticallResponse = funtypes.Static<typeof MulticallResponse>
+export const MulticallResponse = funtypes.ReadonlyArray(SingleMulticallResponse)
 
 //
 // Token Lists
 //
 
-export type TokenListResponse = t.Static<typeof TokenListResponse>
-export const TokenListResponse = t.Object({tokens: t.ReadonlyArray(t.Object({
+export type TokenListResponse = funtypes.Static<typeof TokenListResponse>
+export const TokenListResponse = funtypes.Object({tokens: funtypes.ReadonlyArray(funtypes.Object({
 	address: EthereumAddress,
-	name: t.String,
-	symbol: t.String,
-	decimals: t.Number,
-	logoUri: t.Union(t.String, t.Undefined),
+	name: funtypes.String,
+	symbol: funtypes.String,
+	decimals: funtypes.Number,
+	logoUri: funtypes.Union(funtypes.String, funtypes.Undefined),
 }).asReadonly())}).asReadonly()
 
 //
 // NFT Data
 //
 
-export type NFTDataResponse = t.Static<typeof NFTDataResponse>
-export const NFTDataResponse = t.Object({
+export type NFTDataResponse = funtypes.Static<typeof NFTDataResponse>
+export const NFTDataResponse = funtypes.Object({
 	address: EthereumAddress,
-	name: t.String,
-	symbol: t.String,
-	image_url: t.String,
+	name: funtypes.String,
+	symbol: funtypes.String,
+	image_url: funtypes.String,
 }).asReadonly()
 
 //
@@ -501,27 +501,27 @@ export function serializeUnsignedTransactionToJson(transaction: IUnsignedTransac
 	}
 }
 
-export function serialize<T, U extends t.Codec<T>>(funtype: U, value: T) {
+export function serialize<T, U extends funtypes.Codec<T>>(funtype: U, value: T) {
 	return funtype.serialize(value) as ToWireType<U>
 }
 
 export type ToWireType<T> =
-	T extends t.Intersect<infer U> ? UnionToIntersection<{ [I in keyof U]: ToWireType<U[I]> }[number]>
-	: T extends t.Union<infer U> ? { [I in keyof U]: ToWireType<U[I]> }[number]
-	: T extends t.Record<infer U, infer V> ? Record<t.Static<U>, ToWireType<V>>
-	: T extends t.Partial<infer U, infer V> ? V extends true ? { readonly [K in keyof U]?: ToWireType<U[K]> } : { [K in keyof U]?: ToWireType<U[K]> }
-	: T extends t.Object<infer U, infer V> ? V extends true ? { readonly [K in keyof U]: ToWireType<U[K]> } : { [K in keyof U]: ToWireType<U[K]> }
-	: T extends t.Readonly<t.Tuple<infer U>> ? { readonly [P in keyof U]: ToWireType<U[P]>}
-	: T extends t.Tuple<infer U> ? { [P in keyof U]: ToWireType<U[P]>}
-	: T extends t.ReadonlyArray<infer U> ? readonly ToWireType<U>[]
-	: T extends t.Array<infer U> ? ToWireType<U>[]
-	: T extends t.ParsedValue<infer U, infer _> ? ToWireType<U>
-	: T extends t.Codec<infer U> ? U
+	T extends funtypes.Intersect<infer U> ? UnionToIntersection<{ [I in keyof U]: ToWireType<U[I]> }[number]>
+	: T extends funtypes.Union<infer U> ? { [I in keyof U]: ToWireType<U[I]> }[number]
+	: T extends funtypes.Record<infer U, infer V> ? Record<funtypes.Static<U>, ToWireType<V>>
+	: T extends funtypes.Partial<infer U, infer V> ? V extends true ? { readonly [K in keyof U]?: ToWireType<U[K]> } : { [K in keyof U]?: ToWireType<U[K]> }
+	: T extends funtypes.Object<infer U, infer V> ? V extends true ? { readonly [K in keyof U]: ToWireType<U[K]> } : { [K in keyof U]: ToWireType<U[K]> }
+	: T extends funtypes.Readonly<funtypes.Tuple<infer U>> ? { readonly [P in keyof U]: ToWireType<U[P]>}
+	: T extends funtypes.Tuple<infer U> ? { [P in keyof U]: ToWireType<U[P]>}
+	: T extends funtypes.ReadonlyArray<infer U> ? readonly ToWireType<U>[]
+	: T extends funtypes.Array<infer U> ? ToWireType<U>[]
+	: T extends funtypes.ParsedValue<infer U, infer _> ? ToWireType<U>
+	: T extends funtypes.Codec<infer U> ? U
 	: never
 
 
-export type DappRequestTransaction = t.Static<typeof DappRequestTransaction>
-export const DappRequestTransaction = t.Partial({
+export type DappRequestTransaction = funtypes.Static<typeof DappRequestTransaction>
+export const DappRequestTransaction = funtypes.Partial({
 	from: EthereumAddress,
 	data: EthereumData,
 	gas: EthereumQuantity,
@@ -532,8 +532,8 @@ export const DappRequestTransaction = t.Partial({
 	maxFeePerGas: EthereumQuantity,
 }).asReadonly()
 
-export type EthereumBlockHeaderWithTransactionHashes = t.Static<typeof EthereumBlockHeaderWithTransactionHashes>
-export const EthereumBlockHeaderWithTransactionHashes = t.Object({
+export type EthereumBlockHeaderWithTransactionHashes = funtypes.Static<typeof EthereumBlockHeaderWithTransactionHashes>
+export const EthereumBlockHeaderWithTransactionHashes = funtypes.Object({
 	author: EthereumAddress,
 	difficulty: EthereumQuantity,
 	extraData: EthereumData,
@@ -552,103 +552,103 @@ export const EthereumBlockHeaderWithTransactionHashes = t.Object({
 	timestamp: EthereumTimestamp,
 	size: EthereumQuantity,
 	totalDifficulty: EthereumQuantity,
-	transactions: t.ReadonlyArray(EthereumBytes32),
-	uncles: t.ReadonlyArray(EthereumBytes32),
+	transactions: funtypes.ReadonlyArray(EthereumBytes32),
+	uncles: funtypes.ReadonlyArray(EthereumBytes32),
 	baseFeePerGas: EthereumQuantity,
 	transactionsRoot: EthereumBytes32
 }).asReadonly()
 
-export type GetBlockReturn = t.Static<typeof GetBlockReturn>
-export const GetBlockReturn = t.Union(EthereumBlockHeader, EthereumBlockHeaderWithTransactionHashes)
+export type GetBlockReturn = funtypes.Static<typeof GetBlockReturn>
+export const GetBlockReturn = funtypes.Union(EthereumBlockHeader, EthereumBlockHeaderWithTransactionHashes)
 
-export const NewHeadsSubscriptionData = t.Object({
-	subscription: t.String,
+export const NewHeadsSubscriptionData = funtypes.Object({
+	subscription: funtypes.String,
 	result: EthereumBlockHeaderWithTransactionHashes
 }).asReadonly()
 
-export type JsonRpcNewHeadsNotification = t.Static<typeof JsonRpcNewHeadsNotification>
-export const JsonRpcNewHeadsNotification = t.Object({
-	jsonrpc: t.Literal('2.0'),
-	method: t.String,
+export type JsonRpcNewHeadsNotification = funtypes.Static<typeof JsonRpcNewHeadsNotification>
+export const JsonRpcNewHeadsNotification = funtypes.Object({
+	jsonrpc: funtypes.Literal('2.0'),
+	method: funtypes.String,
 	params: NewHeadsSubscriptionData
 }).asReadonly()
 
-export type JsonSubscriptionNotification = t.Static<typeof JsonSubscriptionNotification>
-export const JsonSubscriptionNotification = t.Object({
-	jsonrpc: t.Literal('2.0'),
-	method: t.Literal('eth_subscription'),
-	params: t.Object({
-		result: t.Union(EthereumBlockHeader, EthereumBytes32),
-		subscription: t.String
+export type JsonSubscriptionNotification = funtypes.Static<typeof JsonSubscriptionNotification>
+export const JsonSubscriptionNotification = funtypes.Object({
+	jsonrpc: funtypes.Literal('2.0'),
+	method: funtypes.Literal('eth_subscription'),
+	params: funtypes.Object({
+		result: funtypes.Union(EthereumBlockHeader, EthereumBytes32),
+		subscription: funtypes.String
 	}).asReadonly()
 }).asReadonly()
 
-export type JsonRpcSuccessResponse = t.Static<typeof JsonRpcSuccessResponse>
-export const JsonRpcSuccessResponse = t.Object({
-	jsonrpc: t.Literal('2.0'),
-	id: t.Union(t.String, t.Number),
-	result: t.Unknown,
+export type JsonRpcSuccessResponse = funtypes.Static<typeof JsonRpcSuccessResponse>
+export const JsonRpcSuccessResponse = funtypes.Object({
+	jsonrpc: funtypes.Literal('2.0'),
+	id: funtypes.Union(funtypes.String, funtypes.Number),
+	result: funtypes.Unknown,
 }).asReadonly()
 
-export type JsonRpcErrorResponse = t.Static<typeof JsonRpcErrorResponse>
-export const JsonRpcErrorResponse = t.Object({
-	jsonrpc: t.Literal('2.0'),
-	id: t.Union(t.String, t.Number),
-	error: t.Object({
-		code: t.Number,
-		message: t.String,
-		data: t.Unknown,
+export type JsonRpcErrorResponse = funtypes.Static<typeof JsonRpcErrorResponse>
+export const JsonRpcErrorResponse = funtypes.Object({
+	jsonrpc: funtypes.Literal('2.0'),
+	id: funtypes.Union(funtypes.String, funtypes.Number),
+	error: funtypes.Object({
+		code: funtypes.Number,
+		message: funtypes.String,
+		data: funtypes.Unknown,
 	}).asReadonly(),
 }).asReadonly()
 
 
-export type JsonRpcNotification = t.Static<typeof JsonRpcNotification>
-export const JsonRpcNotification = t.Union(JsonRpcNewHeadsNotification, JsonSubscriptionNotification)
+export type JsonRpcNotification = funtypes.Static<typeof JsonRpcNotification>
+export const JsonRpcNotification = funtypes.Union(JsonRpcNewHeadsNotification, JsonSubscriptionNotification)
 
-export type JsonRpcRequest = t.Static<typeof JsonRpcRequest>
-export const JsonRpcRequest = t.Object({
-	jsonrpc: t.Literal('2.0'),
-	id: t.Union(t.String, t.Number),
-	method: t.String,
-	params: t.Union(t.ReadonlyArray(t.Unknown), t.Literal(undefined).withParser(LiteralConverterParserFactory(undefined, [])))
+export type JsonRpcRequest = funtypes.Static<typeof JsonRpcRequest>
+export const JsonRpcRequest = funtypes.Object({
+	jsonrpc: funtypes.Literal('2.0'),
+	id: funtypes.Union(funtypes.String, funtypes.Number),
+	method: funtypes.String,
+	params: funtypes.Union(funtypes.ReadonlyArray(funtypes.Unknown), funtypes.Literal(undefined).withParser(LiteralConverterParserFactory(undefined, [])))
 })
 
-export type JsonRpcResponse = t.Static<typeof JsonRpcResponse>
-export const JsonRpcResponse = t.Union(JsonRpcErrorResponse, JsonRpcSuccessResponse)
+export type JsonRpcResponse = funtypes.Static<typeof JsonRpcResponse>
+export const JsonRpcResponse = funtypes.Union(JsonRpcErrorResponse, JsonRpcSuccessResponse)
 
-export type JsonRpcMessage = t.Static<typeof JsonRpcMessage>
-export const JsonRpcMessage = t.Union(JsonRpcResponse, JsonRpcNotification, JsonRpcRequest)
+export type JsonRpcMessage = funtypes.Static<typeof JsonRpcMessage>
+export const JsonRpcMessage = funtypes.Union(JsonRpcResponse, JsonRpcNotification, JsonRpcRequest)
 
-export type TransactionByHashParams = t.Static<typeof TransactionByHashParams>
-export const TransactionByHashParams = t.Object({
-	method: t.Literal('eth_getTransactionByHash'),
-	params: t.Tuple(EthereumBytes32)
+export type TransactionByHashParams = funtypes.Static<typeof TransactionByHashParams>
+export const TransactionByHashParams = funtypes.Object({
+	method: funtypes.Literal('eth_getTransactionByHash'),
+	params: funtypes.Tuple(EthereumBytes32)
 })
 
-export type SendTransactionParams = t.Static<typeof SendTransactionParams>
-export const SendTransactionParams = t.Object({
-	method: t.Literal('eth_sendTransaction'),
-	params: t.Tuple(DappRequestTransaction)
+export type SendTransactionParams = funtypes.Static<typeof SendTransactionParams>
+export const SendTransactionParams = funtypes.Object({
+	method: funtypes.Literal('eth_sendTransaction'),
+	params: funtypes.Tuple(DappRequestTransaction)
 })
 
-export type EthereumAccountsReply = t.Static<typeof EthereumAccountsReply>
-export const EthereumAccountsReply = t.ReadonlyArray(EthereumAddress)
+export type EthereumAccountsReply = funtypes.Static<typeof EthereumAccountsReply>
+export const EthereumAccountsReply = funtypes.ReadonlyArray(EthereumAddress)
 
-export type EthereumChainReply = t.Static<typeof EthereumChainReply>
-export const EthereumChainReply = t.ReadonlyArray(EthereumQuantity)
+export type EthereumChainReply = funtypes.Static<typeof EthereumChainReply>
+export const EthereumChainReply = funtypes.ReadonlyArray(EthereumQuantity)
 
-export type TransactionReceiptParams = t.Static<typeof TransactionReceiptParams>
-export const TransactionReceiptParams = t.Object({
-	method: t.Literal('eth_getTransactionReceipt'),
-	params: t.Tuple(EthereumBytes32)
+export type TransactionReceiptParams = funtypes.Static<typeof TransactionReceiptParams>
+export const TransactionReceiptParams = funtypes.Object({
+	method: funtypes.Literal('eth_getTransactionReceipt'),
+	params: funtypes.Tuple(EthereumBytes32)
 })
 
-export type EstimateGasParamsVariables = t.Static<typeof EstimateGasParamsVariables>
-export const EstimateGasParamsVariables = t.Intersect(
-	t.Object({
+export type EstimateGasParamsVariables = funtypes.Static<typeof EstimateGasParamsVariables>
+export const EstimateGasParamsVariables = funtypes.Intersect(
+	funtypes.Object({
 		to: EthereumAddress
 	}),
-	t.Partial({
+	funtypes.Partial({
 		from: EthereumAddress,
 		data: EthereumData,
 		value: EthereumQuantity,
@@ -657,80 +657,80 @@ export const EstimateGasParamsVariables = t.Intersect(
 	})
 )
 
-export type EstimateGasParams = t.Static<typeof EstimateGasParams>
-export const EstimateGasParams = t.Object({
-	method: t.Literal('eth_estimateGas'),
-	params: t.Union(t.Tuple(EstimateGasParamsVariables), t.Tuple(EstimateGasParamsVariables, EthereumBlockTag))
+export type EstimateGasParams = funtypes.Static<typeof EstimateGasParams>
+export const EstimateGasParams = funtypes.Object({
+	method: funtypes.Literal('eth_estimateGas'),
+	params: funtypes.Union(funtypes.Tuple(EstimateGasParamsVariables), funtypes.Tuple(EstimateGasParamsVariables, EthereumBlockTag))
 })
 
-export type EthCallParams = t.Static<typeof EthCallParams>
-export const EthCallParams = t.Object({
-	method: t.Literal('eth_call'),
-	params: t.Tuple(
+export type EthCallParams = funtypes.Static<typeof EthCallParams>
+export const EthCallParams = funtypes.Object({
+	method: funtypes.Literal('eth_call'),
+	params: funtypes.Tuple(
 		EstimateGasParamsVariables,
 		EthereumBlockTag
 	)
 }).asReadonly()
 
-export type EthGetLogsParams = t.Static<typeof EthGetLogsParams>
-export const EthGetLogsParams = t.Object({
-	method: t.Literal('eth_getLogs'),
-	params: t.Tuple(EthGetLogsRequest)
+export type EthGetLogsParams = funtypes.Static<typeof EthGetLogsParams>
+export const EthGetLogsParams = funtypes.Object({
+	method: funtypes.Literal('eth_getLogs'),
+	params: funtypes.Tuple(EthGetLogsRequest)
 }).asReadonly()
 
-export type EthBalanceParams = t.Static<typeof EthBalanceParams>
-export const EthBalanceParams = t.Object({
-	method: t.Literal('eth_getBalance'),
-	params: t.Tuple(EthereumAddress, EthereumBlockTag)
+export type EthBalanceParams = funtypes.Static<typeof EthBalanceParams>
+export const EthBalanceParams = funtypes.Object({
+	method: funtypes.Literal('eth_getBalance'),
+	params: funtypes.Tuple(EthereumAddress, EthereumBlockTag)
 })
 
-export type EthBlockByNumberParams = t.Static<typeof EthBlockByNumberParams>
-export const EthBlockByNumberParams = t.Object({
-	method: t.Literal('eth_getBlockByNumber'),
-	params: t.Tuple(EthereumBlockTag, t.Boolean)
+export type EthBlockByNumberParams = funtypes.Static<typeof EthBlockByNumberParams>
+export const EthBlockByNumberParams = funtypes.Object({
+	method: funtypes.Literal('eth_getBlockByNumber'),
+	params: funtypes.Tuple(EthereumBlockTag, funtypes.Boolean)
 })
 
-export type EthSubscribeParams = t.Static<typeof EthSubscribeParams>
-export const EthSubscribeParams = t.Object({
-	method: t.Literal('eth_subscribe'),
-	params: t.Tuple(t.Union(t.Literal('newHeads'), t.Literal('logs'), t.Literal('newPendingTransactions'), t.Literal('syncing')))
+export type EthSubscribeParams = funtypes.Static<typeof EthSubscribeParams>
+export const EthSubscribeParams = funtypes.Object({
+	method: funtypes.Literal('eth_subscribe'),
+	params: funtypes.Tuple(funtypes.Union(funtypes.Literal('newHeads'), funtypes.Literal('logs'), funtypes.Literal('newPendingTransactions'), funtypes.Literal('syncing')))
 })
 
-export type EthUnSubscribeParams = t.Static<typeof EthUnSubscribeParams>
-export const EthUnSubscribeParams = t.Object({
-	method: t.Literal('eth_unsubscribe'),
-	params: t.Tuple(t.String)
+export type EthUnSubscribeParams = funtypes.Static<typeof EthUnSubscribeParams>
+export const EthUnSubscribeParams = funtypes.Object({
+	method: funtypes.Literal('eth_unsubscribe'),
+	params: funtypes.Tuple(funtypes.String)
 })
 
-export type EthGetStorageAtParams = t.Static<typeof EthGetStorageAtParams>
-export const EthGetStorageAtParams = t.Object({
-	method: t.Literal('eth_getStorageAt'),
-	params: t.Tuple(EthereumAddress, EthereumQuantity, EthereumBlockTag)
+export type EthGetStorageAtParams = funtypes.Static<typeof EthGetStorageAtParams>
+export const EthGetStorageAtParams = funtypes.Object({
+	method: funtypes.Literal('eth_getStorageAt'),
+	params: funtypes.Tuple(EthereumAddress, EthereumQuantity, EthereumBlockTag)
 })
 
-export const EthSubscriptionResponse = t.String
-export type EthSubscriptionResponse = t.Static<typeof EthSubscriptionResponse>
+export const EthSubscriptionResponse = funtypes.String
+export type EthSubscriptionResponse = funtypes.Static<typeof EthSubscriptionResponse>
 
-export type PersonalSignParams = t.Static<typeof PersonalSignParams>
-export const PersonalSignParams = t.Object({
-	method: t.Literal('personal_sign'),
-	params: t.Union(
-		t.Tuple(t.String, EthereumAddress, t.Union(t.String, t.Undefined)), // message, account, password
-		t.Tuple(t.String, EthereumAddress) // message, account
+export type PersonalSignParams = funtypes.Static<typeof PersonalSignParams>
+export const PersonalSignParams = funtypes.Object({
+	method: funtypes.Literal('personal_sign'),
+	params: funtypes.Union(
+		funtypes.Tuple(funtypes.String, EthereumAddress, funtypes.Union(funtypes.String, funtypes.Undefined)), // message, account, password
+		funtypes.Tuple(funtypes.String, EthereumAddress) // message, account
 	)
 })
 
-export type EIP712Message = t.Static<typeof EIP712Message>
-export const EIP712Message = t.Object({
-	types: t.Record(t.String, t.ReadonlyArray(
-		t.Object({
-			name: t.String,
-			type: t.String,
+export type EIP712Message = funtypes.Static<typeof EIP712Message>
+export const EIP712Message = funtypes.Object({
+	types: funtypes.Record(funtypes.String, funtypes.ReadonlyArray(
+		funtypes.Object({
+			name: funtypes.String,
+			type: funtypes.String,
 		})
 	)),
-	primaryType: t.String,
-	domain: t.Record(t.String, t.String),
-	message: t.Record(t.String, t.Union(t.Record(t.String, t.String), t.String)),
+	primaryType: funtypes.String,
+	domain: funtypes.Record(funtypes.String, funtypes.String),
+	message: funtypes.Record(funtypes.String, funtypes.Union(funtypes.Record(funtypes.String, funtypes.String), funtypes.String)),
 })
 
 function isJSON(text: string){
@@ -744,7 +744,7 @@ function isJSON(text: string){
 	}
 }
 
-const EIP712MessageParser: t.ParsedValue<t.String, EIP712Message>['config'] = {
+const EIP712MessageParser: funtypes.ParsedValue<funtypes.String, EIP712Message>['config'] = {
 	parse: value => {
 		if (!isJSON(value) || !EIP712Message.test(JSON.parse(value))) return { success: false, message: `${ value } is not EIP712 message` }
 		else return { success: true, value: EIP712Message.parse(JSON.parse(value)) }
@@ -755,136 +755,136 @@ const EIP712MessageParser: t.ParsedValue<t.String, EIP712Message>['config'] = {
 	},
 }
 
-export type SignTypedDataParams = t.Static<typeof SignTypedDataParams>
-export const SignTypedDataParams = t.Object({
-	method: t.Union(
-		t.Literal('eth_signTypedData'),
-		t.Literal('eth_signTypedData_v1'),
-		t.Literal('eth_signTypedData_v2'),
-		t.Literal('eth_signTypedData_v3'),
-		t.Literal('eth_signTypedData_v4'),
+export type SignTypedDataParams = funtypes.Static<typeof SignTypedDataParams>
+export const SignTypedDataParams = funtypes.Object({
+	method: funtypes.Union(
+		funtypes.Literal('eth_signTypedData'),
+		funtypes.Literal('eth_signTypedData_v1'),
+		funtypes.Literal('eth_signTypedData_v2'),
+		funtypes.Literal('eth_signTypedData_v3'),
+		funtypes.Literal('eth_signTypedData_v4'),
 	),
-	params: t.Tuple(EthereumAddress, t.String.withParser(EIP712MessageParser)), // address that will sign the message, typed data
+	params: funtypes.Tuple(EthereumAddress, funtypes.String.withParser(EIP712MessageParser)), // address that will sign the message, typed data
 })
 
-export type SwitchEthereumChainParams = t.Static<typeof SwitchEthereumChainParams>
-export const SwitchEthereumChainParams = t.Object({
-	method: t.Literal('wallet_switchEthereumChain'),
-	params: t.Tuple(t.Object({
+export type SwitchEthereumChainParams = funtypes.Static<typeof SwitchEthereumChainParams>
+export const SwitchEthereumChainParams = funtypes.Object({
+	method: funtypes.Literal('wallet_switchEthereumChain'),
+	params: funtypes.Tuple(funtypes.Object({
 		chainId: EthereumQuantity
 	}).asReadonly()),
 }).asReadonly()
 
-export type GetCode = t.Static<typeof GetCode>
-export const GetCode = t.Object({
-	method: t.Literal('eth_getCode'),
-	params: t.Tuple(EthereumAddress, EthereumBlockTag)
+export type GetCode = funtypes.Static<typeof GetCode>
+export const GetCode = funtypes.Object({
+	method: funtypes.Literal('eth_getCode'),
+	params: funtypes.Tuple(EthereumAddress, EthereumBlockTag)
 }).asReadonly()
 
-export type RequestPermissions = t.Static<typeof RequestPermissions>
-export const RequestPermissions = t.Object({
-	method: t.Literal('wallet_requestPermissions'),
-	params: t.Tuple( t.Object({ eth_accounts: t.Object({ }) }) )
+export type RequestPermissions = funtypes.Static<typeof RequestPermissions>
+export const RequestPermissions = funtypes.Object({
+	method: funtypes.Literal('wallet_requestPermissions'),
+	params: funtypes.Tuple( funtypes.Object({ eth_accounts: funtypes.Object({ }) }) )
 }).asReadonly()
 
-const BigIntParserNonHex: t.ParsedValue<t.String, bigint>['config'] = {
+const BigIntParserNonHex: funtypes.ParsedValue<funtypes.String, bigint>['config'] = {
 	parse: value => {
 		if (!/^[0-9]+$/.test(value)) return { success: false, message: `${ value } is not a string encoded number.` }
 		else return { success: true, value: BigInt(value) }
 	},
 	serialize: value => {
-		if (typeof value !== 'bigint') return { success: false, message: `${ typeof value } is not a bigint.`}
+		if (typeof value !== 'bigint') return { success: false, message: `${ typeof value } is not a biginfuntypes.`}
 		return { success: true, value: `${ value.toString() }` }
 	},
 }
 
-export const NonHexBigInt = t.String.withParser(BigIntParserNonHex)
-export type NonHexBigInt = t.Static<typeof NonHexBigInt>
+export const NonHexBigInt = funtypes.String.withParser(BigIntParserNonHex)
+export type NonHexBigInt = funtypes.Static<typeof NonHexBigInt>
 
-export type EIP2612Message = t.Static<typeof EIP2612Message>
-export const EIP2612Message = t.Object({
-	types: t.Object({
-		EIP712Domain: t.Tuple(
-			t.Object({
-				name: t.Literal('name'),
-				type: t.Literal('string'),
+export type EIP2612Message = funtypes.Static<typeof EIP2612Message>
+export const EIP2612Message = funtypes.Object({
+	types: funtypes.Object({
+		EIP712Domain: funtypes.Tuple(
+			funtypes.Object({
+				name: funtypes.Literal('name'),
+				type: funtypes.Literal('string'),
 			}),
-			t.Object({
-				name: t.Literal('version'),
-				type: t.Literal('string'),
+			funtypes.Object({
+				name: funtypes.Literal('version'),
+				type: funtypes.Literal('string'),
 			}),
-			t.Object({
-				name: t.Literal('chainId'),
-				type: t.Literal('uint256'),
+			funtypes.Object({
+				name: funtypes.Literal('chainId'),
+				type: funtypes.Literal('uint256'),
 			}),
-			t.Object({
-				name: t.Literal('verifyingContract'),
-				type: t.Literal('address'),
+			funtypes.Object({
+				name: funtypes.Literal('verifyingContract'),
+				type: funtypes.Literal('address'),
 			}),
 		),
-		Permit: t.Tuple(
-			t.Object({
-				name: t.Literal('owner'),
-				type: t.Literal('address'),
+		Permit: funtypes.Tuple(
+			funtypes.Object({
+				name: funtypes.Literal('owner'),
+				type: funtypes.Literal('address'),
 			}),
-			t.Object({
-				name: t.Literal('spender'),
-				type: t.Literal('address'),
+			funtypes.Object({
+				name: funtypes.Literal('spender'),
+				type: funtypes.Literal('address'),
 			}),
-			t.Object({
-				name: t.Literal('value'),
-				type: t.Literal('uint256'),
+			funtypes.Object({
+				name: funtypes.Literal('value'),
+				type: funtypes.Literal('uint256'),
 			}),
-			t.Object({
-				name: t.Literal('nonce'),
-				type: t.Literal('uint256'),
+			funtypes.Object({
+				name: funtypes.Literal('nonce'),
+				type: funtypes.Literal('uint256'),
 			}),
-			t.Object({
-				name: t.Literal('deadline'),
-				type: t.Literal('uint256'),
+			funtypes.Object({
+				name: funtypes.Literal('deadline'),
+				type: funtypes.Literal('uint256'),
 			}),
 		),
 	}),
-	primaryType: t.Literal('Permit'),
-	domain: t.Object({
-		name: t.String,
+	primaryType: funtypes.Literal('Permit'),
+	domain: funtypes.Object({
+		name: funtypes.String,
 		version: NonHexBigInt,
-		chainId: t.Number,
+		chainId: funtypes.Number,
 		verifyingContract: EthereumAddress,
 	}),
-	message: t.Object({
+	message: funtypes.Object({
 		owner: EthereumAddress,
 		spender: EthereumAddress,
 		value: NonHexBigInt,
-		nonce: t.Number,
-		deadline: t.Number,
+		nonce: funtypes.Number,
+		deadline: funtypes.Number,
 	}),
 })
 
-export type GetTransactionCount = t.Static<typeof GetTransactionCount>
-export const GetTransactionCount = t.Object({
-	method: t.Literal('eth_getTransactionCount'),
-	params: t.Tuple(EthereumAddress, EthereumBlockTag)
+export type GetTransactionCount = funtypes.Static<typeof GetTransactionCount>
+export const GetTransactionCount = funtypes.Object({
+	method: funtypes.Literal('eth_getTransactionCount'),
+	params: funtypes.Tuple(EthereumAddress, EthereumBlockTag)
 }).asReadonly()
 
-export type GetSimulationStackReply = t.Static<typeof GetSimulationStackReply>
-export const GetSimulationStackReply = t.ReadonlyArray(t.Intersect(
+export type GetSimulationStackReply = funtypes.Static<typeof GetSimulationStackReply>
+export const GetSimulationStackReply = funtypes.ReadonlyArray(funtypes.Intersect(
 	EthereumUnsignedTransaction,
 	SingleMulticallResponse,
-	t.Object({
+	funtypes.Object({
 		realizedGasPrice: EthereumQuantity,
 		gasLimit: EthereumQuantity,
 	}).asReadonly(),
 ))
 
-export type GetSimulationStack = t.Static<typeof GetSimulationStack>
-export const GetSimulationStack = t.Object({
-	method: t.Literal('interceptor_getSimulationStack'),
-	params: t.Tuple(t.Literal('1.0.0')),
+export type GetSimulationStack = funtypes.Static<typeof GetSimulationStack>
+export const GetSimulationStack = funtypes.Object({
+	method: funtypes.Literal('interceptor_getSimulationStack'),
+	params: funtypes.Tuple(funtypes.Literal('1.0.0')),
 }).asReadonly()
 
-export type EthereumJsonRpcRequest = t.Static<typeof EthereumJsonRpcRequest>
-export const EthereumJsonRpcRequest = t.Union(
+export type EthereumJsonRpcRequest = funtypes.Static<typeof EthereumJsonRpcRequest>
+export const EthereumJsonRpcRequest = funtypes.Union(
 	EthBlockByNumberParams,
 	EthBalanceParams,
 	EstimateGasParams,
@@ -894,21 +894,21 @@ export const EthereumJsonRpcRequest = t.Union(
 	EthCallParams,
 	EthSubscribeParams,
 	EthUnSubscribeParams,
-	t.Object({ method: t.Literal('eth_blockNumber') }),
-	t.Object({ method: t.Literal('eth_chainId') }),
-	t.Object({ method: t.Literal('net_version') }),
+	funtypes.Object({ method: funtypes.Literal('eth_blockNumber') }),
+	funtypes.Object({ method: funtypes.Literal('eth_chainId') }),
+	funtypes.Object({ method: funtypes.Literal('net_version') }),
 	GetCode,
 	PersonalSignParams,
 	SignTypedDataParams,
 	SwitchEthereumChainParams,
 	RequestPermissions,
-	t.Object({ method: t.Literal('wallet_getPermissions') }),
-	t.Object({ method: t.Literal('eth_accounts') }),
-	t.Object({ method: t.Literal('eth_requestAccounts') }),
-	t.Object({ method: t.Literal('eth_gasPrice') }),
+	funtypes.Object({ method: funtypes.Literal('wallet_getPermissions') }),
+	funtypes.Object({ method: funtypes.Literal('eth_accounts') }),
+	funtypes.Object({ method: funtypes.Literal('eth_requestAccounts') }),
+	funtypes.Object({ method: funtypes.Literal('eth_gasPrice') }),
 	GetTransactionCount,
 	GetSimulationStack,
-	t.Object({ method: t.Literal('eth_multicall'), params: MulticallRequestParameters }),
+	funtypes.Object({ method: funtypes.Literal('eth_multicall'), params: MulticallRequestParameters }),
 	EthGetStorageAtParams,
 	EthGetLogsParams,
 )
@@ -943,64 +943,64 @@ export const SupportedETHRPCCalls = [
 	'interceptor_getSimulationStack'
 ]
 
-export type Permit2 = t.Static<typeof Permit2>
-export const Permit2 = t.Object({
-	types: t.Object({
-		PermitSingle: t.Tuple(
-			t.Object({
-				name: t.Literal('details'),
-				type: t.Literal('PermitDetails'),
+export type Permit2 = funtypes.Static<typeof Permit2>
+export const Permit2 = funtypes.Object({
+	types: funtypes.Object({
+		PermitSingle: funtypes.Tuple(
+			funtypes.Object({
+				name: funtypes.Literal('details'),
+				type: funtypes.Literal('PermitDetails'),
 			}),
-			t.Object({
-				name: t.Literal('spender'),
-				type: t.Literal('address'),
+			funtypes.Object({
+				name: funtypes.Literal('spender'),
+				type: funtypes.Literal('address'),
 			}),
-			t.Object({
-				name: t.Literal('sigDeadline'),
-				type: t.Literal('uint256'),
-			}),
-		),
-		PermitDetails: t.Tuple(
-			t.Object({
-				name: t.Literal('token'),
-				type: t.Literal('address'),
-			}),
-			t.Object({
-				name: t.Literal('amount'),
-				type: t.Literal('uint160'),
-			}),
-			t.Object({
-				name: t.Literal('expiration'),
-				type: t.Literal('uint48'),
-			}),
-			t.Object({
-				name: t.Literal('nonce'),
-				type: t.Literal('uint48'),
+			funtypes.Object({
+				name: funtypes.Literal('sigDeadline'),
+				type: funtypes.Literal('uint256'),
 			}),
 		),
-		EIP712Domain: t.Tuple(
-			t.Object({
-				name: t.Literal('name'),
-				type: t.Literal('string'),
+		PermitDetails: funtypes.Tuple(
+			funtypes.Object({
+				name: funtypes.Literal('token'),
+				type: funtypes.Literal('address'),
 			}),
-			t.Object({
-				name: t.Literal('chainId'),
-				type: t.Literal('uint256'),
+			funtypes.Object({
+				name: funtypes.Literal('amount'),
+				type: funtypes.Literal('uint160'),
 			}),
-			t.Object({
-				name: t.Literal('verifyingContract'),
-				type: t.Literal('address'),
+			funtypes.Object({
+				name: funtypes.Literal('expiration'),
+				type: funtypes.Literal('uint48'),
+			}),
+			funtypes.Object({
+				name: funtypes.Literal('nonce'),
+				type: funtypes.Literal('uint48'),
+			}),
+		),
+		EIP712Domain: funtypes.Tuple(
+			funtypes.Object({
+				name: funtypes.Literal('name'),
+				type: funtypes.Literal('string'),
+			}),
+			funtypes.Object({
+				name: funtypes.Literal('chainId'),
+				type: funtypes.Literal('uint256'),
+			}),
+			funtypes.Object({
+				name: funtypes.Literal('verifyingContract'),
+				type: funtypes.Literal('address'),
 			}),
 		)
 	}),
-	domain: t.Object({
-		name: t.Literal('Permit2'),
+	domain: funtypes.Object({
+		name: funtypes.Literal('Permit2'),
 		chainId: NonHexBigInt,
 		verifyingContract: EthereumAddress,
 	}),
-	primaryType: t.Literal('PermitSingle'),
-	message: t.Object({
-		details: t.Object({
+	primaryType: funtypes.Literal('PermitSingle'),
+	message: funtypes.Object({
+		details: funtypes.Object({
 			token: EthereumAddress,
 			amount: NonHexBigInt,
 			expiration: NonHexBigInt,
