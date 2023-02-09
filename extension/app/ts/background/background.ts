@@ -1,7 +1,7 @@
 import { HandleSimulationModeReturnValue, InterceptedRequest, InterceptedRequestForward, PopupMessage, ProviderMessage, SignerName } from '../utils/interceptor-messages.js'
 import 'webextension-polyfill'
 import { Simulator } from '../simulation/simulator.js'
-import { EthereumJsonRpcRequest, EthereumQuantity, EthereumUnsignedTransaction, PersonalSignParams, SendTransactionParams, SignTypedDataParams } from '../utils/wire-types.js'
+import { EthereumJsonRpcRequest, EthereumQuantity, EthereumUnsignedTransaction, PersonalSignParams, SignTypedDataParams } from '../utils/wire-types.js'
 import { getSettings, saveActiveChain, saveActiveSigningAddress, saveActiveSimulationAddress, Settings } from './settings.js'
 import { blockNumber, call, chainId, estimateGas, gasPrice, getAccounts, getBalance, getBlockByNumber, getCode, getPermissions, getSimulationStack, getTransactionByHash, getTransactionCount, getTransactionReceipt, personalSign, requestPermissions, sendTransaction, signTypedData, subscribe, switchEthereumChain, unsubscribe } from './simulationModeHanders.js'
 import { changeActiveAddress, changeMakeMeRich, changePage, resetSimulation, confirmDialog, refreshSimulation, removeTransaction, requestAccountsFromSigner, refreshPopupConfirmTransactionSimulation, confirmPersonalSign, confirmRequestAccess, changeInterceptorAccess, changeChainDialog, popupChangeActiveChain, enableSimulationMode, reviewNotification, rejectNotification, addOrModifyAddressInfo, getAddressBookData, removeAddressBookEntry, openAddressBook } from './popupMessageHandlers.js'
@@ -253,7 +253,7 @@ async function handleSimulationMode(simulator: Simulator, port: browser.runtime.
 		case 'eth_estimateGas': return await estimateGas(simulator, parsedRequest)
 		case 'eth_getTransactionByHash': return await getTransactionByHash(simulator, parsedRequest)
 		case 'eth_getTransactionReceipt': return await getTransactionReceipt(simulator, parsedRequest)
-		case 'eth_sendTransaction': return await sendTransaction(simulator, parsedRequest, port, request?.requestId)
+		case 'eth_sendTransaction': return await sendTransaction(getActiveAddressForDomain, simulator, parsedRequest, port, request?.requestId)
 		case 'eth_call': return await call(simulator, parsedRequest)
 		case 'eth_blockNumber': return await blockNumber(simulator)
 		case 'eth_subscribe': return await subscribe(simulator, port, parsedRequest)
@@ -360,7 +360,7 @@ async function handleSigningMode(simulator: Simulator, port: browser.runtime.Por
 		case 'wallet_switchEthereumChain': return await switchEthereumChain(simulator, parsedRequest, port, request?.requestId, false)
 		case 'eth_sendTransaction': {
 			if (window.interceptor.settings && isSupportedChain(window.interceptor.settings.activeChain.toString()) ) {
-				return sendTransaction(simulator, SendTransactionParams.parse(request.options), port, request.requestId, false)
+				return sendTransaction(getActiveAddressForDomain, simulator, parsedRequest, port, request.requestId, false)
 			}
 			return forwardToSigner()
 		}
