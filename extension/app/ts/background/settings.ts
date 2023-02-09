@@ -48,13 +48,6 @@ export interface Settings {
 	contacts: ContactEntries,
 }
 
-function parseActiveChain(chain: string) {
-	// backwards compatible as the chain used to be a string
-	if (chain === 'Ethereum Mainnet') return 1n
-	if (chain === 'Goerli') return 5n
-	return EthereumQuantity.parse(chain)
-}
-
 export async function getSettings() : Promise<Settings> {
 	const isEmpty = (obj: Object) => { return Object.keys(obj).length === 0 }
 	const results = await browser.storage.local.get([
@@ -79,7 +72,7 @@ export async function getSettings() : Promise<Settings> {
 		makeMeRich: results.makeMeRich !== undefined ? results.makeMeRich : false,
 		useSignersAddressAsActiveAddress: results.useSignersAddressAsActiveAddress !== undefined ? results.useSignersAddressAsActiveAddress : false,
 		websiteAccess: WebsiteAccessArray.parse(results.websiteAccess !== undefined ? results.websiteAccess : []),
-		activeChain: results.activeChain !== undefined ? parseActiveChain(results.activeChain) : 1n,
+		activeChain: results.activeChain !== undefined ? EthereumQuantity.parse(results.activeChain) : 1n,
 		simulationMode: results.simulationMode !== undefined ? results.simulationMode : true,
 		pendingAccessRequests: PendingAccessRequestArray.parse(results.pendingAccessRequests !== undefined ? results.pendingAccessRequests : []),
 		contacts: ContactEntries.parse(results.contacts !== undefined ? results.contacts : []),
