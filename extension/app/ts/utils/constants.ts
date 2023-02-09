@@ -45,6 +45,16 @@ export const CHAINS = {
 		currencyName: 'Goerli Testnet ETH',
 		currencyTicker: 'GÖETH',
 		weth: 0xb4fbf271143f4fbf7b91a5ded31805e42b2208d6n,
+	},
+	'11155111': {
+		name: 'Sepolia',
+		chainId: 11155111n,
+		https_rpc: 'https://rpc-sepolia.dark.florist/flipcardtrustone',
+		wss_rpc: 'wss://rpc-sepolia.dark.florist/flipcardtrustone',
+		eth_donator: 0xb21c33de1fab3fa15499c62b59fe0cc3250020d1n, // Richest address on Sepolia
+		currencyName: 'Sepolia Testnet ETH',
+		currencyTicker: 'SEETH',
+		weth: 0x105083929bf9bb22c26cb1777ec92661170d4285n,
 	}
 } as const
 
@@ -184,6 +194,7 @@ export const CHAIN_NAMES = new Map<string, string>( [
 	['333999', 'Polis'],
 	['420420', 'KekChain'],
 	['888888', 'Vision'],
+	['11155111', 'Sepolia'],
 	['1313161554', 'Aurora'],
 	['1666600000', 'Harmony'],
 	['11297108109', 'Palm'],

@@ -8,7 +8,7 @@ import { SignerName } from './interceptor-messages.js'
 import { WebsiteAccessArray } from '../background/settings.js'
 
 export type CHAIN = keyof typeof CHAINS
-export const CHAIN = funtypes.Union(funtypes.Literal('1'), funtypes.Literal('5'))
+export const CHAIN = funtypes.Union(funtypes.Literal('1'), funtypes.Literal('5'), funtypes.Literal('11155111'))
 
 export type AddressInfo = funtypes.Static<typeof AddressInfo>
 export const AddressInfo = funtypes.Object({
