@@ -1,4 +1,4 @@
-import { ComponentChildren } from 'preact'
+import { ComponentChildren, JSX } from 'preact'
 import { clipboardCopy } from './clipboardcopy.js'
 
 interface CopyToClipboardParams {
@@ -6,11 +6,12 @@ interface CopyToClipboardParams {
 	content: string
 	contentDisplayOverride?: string
 	copyMessage?: string
+	style?: JSX.CSSProperties
 }
 
 export function CopyToClipboard(props: CopyToClipboardParams) {
 	return (
-		<div onClick = { () => { clipboardCopy(props.content) } } style = 'display: inherit; overflow: inherit;'>
+		<div onClick = { () => { clipboardCopy(props.content) } } style = { 'style' in props ? props.style : 'display: inherit; overflow: inherit;' }>
 			<div
 				data-hint-clickable-hide-timer-ms = { 1500 }
 				data-hint = { props.copyMessage ? props.copyMessage : 'Copied to clipboard!' }

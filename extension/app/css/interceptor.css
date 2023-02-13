@@ -476,6 +476,17 @@ svg.spinner > circle {
 	vertical-align: middle;
 }
 
+.log-cell-flexless {
+	text-overflow: ellipsis;
+	overflow: hidden;
+	white-space: nowrap;
+	-ms-flex-align: center;
+	-webkit-align-items: center;
+	-webkit-box-align: center;
+	align-items: center;
+	vertical-align: middle;
+}
+
 .ellipsis {
 	text-overflow: ellipsis;
 	overflow: hidden;
@@ -488,4 +499,71 @@ svg.spinner > circle {
 .addressbook-input {
 	max-width: unset;
 	width: unset;
+}
+
+.big-address-container {
+	display: flex;
+	flex-direction: column;
+	overflow: hidden;
+}
+
+.big-address-container::after {
+	content: attr(data-value);
+	display: block;
+	visibility: hidden;
+	height: 0px;
+}
+
+.big-address-container:hover > .address-text-holder > .rename-address-button {
+	display: flex;
+}
+
+.small-address-container {
+	display: flex;
+	flex-direction: column;
+	overflow: hidden;
+}
+
+.small-address-container::after {
+	content: attr(data-value);
+	display: block;
+	visibility: hidden;
+	height: 0px;
+	margin-left: 47px;
+}
+
+.rename-address-button {
+	display: none;
+	flex-shrink: 0;
+	margin-left: 5px;
+	height: 18px;
+}
+
+.small-address-container:hover > .address-text-holder > .small-address-baggage-tag > .rename-address-button {
+	display: flex;
+}
+
+.address-text-holder {
+	display: flex;
+	flex-direction: row;
+	width: 0;
+	min-width: 100%;
+}
+
+.address-text {
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.small-address-baggage-tag {
+	display: flex;
+	flex-direction: row;
+	position: relative;
+	background-color: var(--alpha-005);
+	padding: 4px;
+	margin: 2px;
+	padding-right: 10px;
+	border-radius: 10px 40px 40px 10px;
+	overflow: hidden;
 }
