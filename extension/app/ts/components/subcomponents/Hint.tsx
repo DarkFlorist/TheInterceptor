@@ -2,62 +2,61 @@ import type { ComponentChild, ComponentChildren } from 'preact'
 import { useCallback, useEffect, useRef, useState } from 'preact/hooks'
 
 interface Props {
-    children: ComponentChild | ComponentChild[]
-    attribute?: string
-    template?: (content: string) => ComponentChildren
+	children: ComponentChild | ComponentChild[]
+	attribute?: string
+	template?: (content: string) => ComponentChildren
 }
 
 const timerAttribute = 'data-hint-clickable-hide-timer-ms'
 
 export default function Container(props: Props) {
-    const copyAttribute = props.attribute || 'data-hint'
-    const toolTipAttribute = props.attribute || 'data-tooltip'
-    const [content, setContent] = useState<string>('')
-    const [containerElement, setContainerElement] = useState<HTMLDivElement | null>(null)
-    const [targetBoundingRect, setTargetBoundingRect] = useState<ClientRect | null>(null)
-	let copyMessageTimeoutId: NodeJS.Timeout|undefined = undefined
-	let toolTipTimeoutId: NodeJS.Timeout|undefined = undefined
-    const onRefChange = useCallback( (node: HTMLDivElement | null) => {
-		setContainerElement(node)
+	const copyAttribute = props.attribute || 'data-hint'
+	const toolTipAttribute = props.attribute || 'data-tooltip'
+	const [content, setContent] = useState<string>('')
+	const [containerElement, setContainerElement] = useState<HTMLDivElement | null>(null)
+	const [clickPosition, setClickPosition] = useState<{ x: number, y: number } | null>(null)
+	let copyMessageTimeoutId: NodeJS.Timeout | undefined = undefined
+	let toolTipTimeoutId: NodeJS.Timeout | undefined = undefined
+	const onRefChange = useCallback( (containerElement: HTMLDivElement | null) => {
+		setContainerElement(containerElement)
 		if (containerElement) {
 			const hide = (e: Event) => {
 				if (!(e.target instanceof Element) || !e.target.hasAttribute(toolTipAttribute)) return
-				if ( toolTipTimeoutId !== undefined) clearTimeout(toolTipTimeoutId)
-				if ( copyMessageTimeoutId !== undefined) return
+				clearTimeout(toolTipTimeoutId)
+				if (copyMessageTimeoutId !== undefined) return
 				setContent('')
-				setTargetBoundingRect(null)
+				setClickPosition(null)
 			}
 
-			const click = (e: Event) => {
-				if ( !(e.target instanceof Element) || !e.target.hasAttribute(copyAttribute) || !e.target.hasAttribute(timerAttribute) ) return
-				if ( toolTipTimeoutId !== undefined) clearTimeout(toolTipTimeoutId)
+			const click = (e: MouseEvent) => {
+				if (!(e.target instanceof Element) || !e.target.hasAttribute(copyAttribute) || !e.target.hasAttribute(timerAttribute)) return
+				clearTimeout(toolTipTimeoutId)
 				const delay = e.target.getAttribute(timerAttribute)
-				if ( delay === null ) return
+				if (delay === null) return
 				clearTimeout(copyMessageTimeoutId)
+				copyMessageTimeoutId = undefined
 
 				// show on click
 				setContent(e.target.getAttribute(copyAttribute) || '')
-				setTargetBoundingRect(e.target.getBoundingClientRect())
+				setClickPosition({ x: e.clientX, y: e.clientY })
 
 				copyMessageTimeoutId = setTimeout( () => {
 					// hide after timeout
 					setContent('')
-					setTargetBoundingRect(null)
+					setClickPosition(null)
 					copyMessageTimeoutId = undefined
 				}, parseInt(delay))
 			}
-			const mouseover = (e: Event) => {
-				if ( !(e.target instanceof Element) || (!e.target.hasAttribute(toolTipAttribute) && !e.target.hasAttribute(timerAttribute)) ) return
-				if ( copyMessageTimeoutId !== undefined ) return
+			const mouseover = (e: MouseEvent) => {
+				if (!(e.target instanceof Element) || (!e.target.hasAttribute(toolTipAttribute) && !e.target.hasAttribute(timerAttribute))) return
+				clearTimeout(toolTipTimeoutId)
 
 				// show on tooltip on mouseover
 				const content = e.target.getAttribute(toolTipAttribute)
-				const bound = e.target.getBoundingClientRect()
 				toolTipTimeoutId = setTimeout( () => {
 					setContent(content || '')
-					setTargetBoundingRect(bound)
-					toolTipTimeoutId = undefined
-				}, 500)
+					setClickPosition({ x: e.clientX, y: e.clientY })
+				}, 250)
 			}
 
 			containerElement.addEventListener('click', click)
@@ -65,56 +64,58 @@ export default function Container(props: Props) {
 			containerElement.addEventListener('mouseout', hide)
 			containerElement.addEventListener('focusout', hide)
 		}
-    }, [containerElement])
+	}, [containerElement])
 
-    return (
-        <div ref = { onRefChange } style = 'position: relative; overflow-x: hidden;'>
-            { content && containerElement && targetBoundingRect && (
-                <Hint
-                    content = { content }
-                    template = { props.template }
-                    rootBoundingRect = { containerElement.getBoundingClientRect() }
-                    targetBoundingRect = { targetBoundingRect }
-                />
-            ) }
-            { props.children }
-        </div>
-    )
+	return (
+		<div ref = { onRefChange } style = 'position: relative; overflow-x: hidden;'>
+			{ content && containerElement && clickPosition && (
+				<Hint
+					content = { content }
+					template = { props.template }
+					rootBoundingRect = { containerElement.getBoundingClientRect() }
+					clickPosition = { clickPosition }
+				/>
+			) }
+			{ props.children }
+		</div>
+	)
 }
 
 interface HintProps {
-    content: string
-    template?: (content: string) => ComponentChildren
-    rootBoundingRect: ClientRect
-    targetBoundingRect: ClientRect
+	content: string
+	template?: (content: string) => ComponentChildren
+	rootBoundingRect: ClientRect
+	clickPosition: { x: number, y: number }
 }
 
-function calculatePosition(props: HintProps, hintWidth: number) {
-	const positionX = props.targetBoundingRect.left - props.rootBoundingRect.left - hintWidth / 2 + props.targetBoundingRect.width / 2
-	const positionY = props.rootBoundingRect.height - props.targetBoundingRect.top + props.rootBoundingRect.top + 2
+function calculatePosition(clickPosX: number, clickPosY: number, hintWidth: number) {
+	const positionX = clickPosX - hintWidth / 2
+	const positionY = clickPosY + 10
 	const borderPadding = 30
 
 	return {
 		left: positionX + hintWidth > window.innerWidth - borderPadding ? window.innerWidth - borderPadding - hintWidth : (positionX < borderPadding ? borderPadding : positionX),
-		bottom: positionY,
+		top: positionY,
 	}
 }
 
 function Hint(props: HintProps) {
-    const hint = useRef<HTMLSpanElement>(null)
-    // Render way off-screen to prevent rubber banding from initial (and unavoidable) render.
-    const [hintWidth, setHintWidth] = useState(10000)
+	const hint = useRef<HTMLSpanElement>(null)
+	const [clickPosition, setClickPosition] = useState<{ x: number, y: number }>(props.clickPosition)
+	// Render way off-screen to prevent rubber banding from initial (and unavoidable) render.
+	const [hintWidth, setHintWidth] = useState(10000)
 
-    useEffect( () => {
-        if (hint.current === null) return
-        setHintWidth(hint.current.getBoundingClientRect().width)
-    }, [hint] )
+	useEffect( () => {
+		if (hint.current === null) return
+		setHintWidth(hint.current.getBoundingClientRect().width)
+		setClickPosition(clickPosition)
+	}, [hint, props.clickPosition, hintWidth] )
 
-    return (
-        <div class = 'preact-hint' style = { calculatePosition(props, hintWidth) }>
-            <span class = 'preact-hint__content' ref = { hint }>
-                { props.template ? props.template(props.content) : props.content }
-            </span>
-        </div>
-    )
+	return (
+		<div class = 'preact-hint' style = { calculatePosition(clickPosition.x, clickPosition.y, hintWidth) }>
+			<span class = 'preact-hint__content' ref = { hint }>
+				{ props.template ? props.template(props.content) : props.content }
+			</span>
+		</div>
+	)
 }
