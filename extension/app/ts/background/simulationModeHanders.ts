@@ -1,6 +1,6 @@
 import { Simulator } from '../simulation/simulator.js'
 import { bytes32String } from '../utils/bigint.js'
-import { ERROR_INTERCEPTOR_UNKNOWN_ORIGIN } from '../utils/constants.js'
+import { ERROR_INTERCEPTOR_UNKNOWN_ORIGIN, KNOWN_CONTRACT_CALLER_ADDRESSES } from '../utils/constants.js'
 import { EstimateGasParams, EthBalanceParams, EthBlockByNumberParams, EthCallParams, EthereumAddress, EthereumData, EthereumQuantity, EthereumSignedTransactionWithBlockData, EthSubscribeParams, EthTransactionReceiptResponse, EthUnSubscribeParams, GetBlockReturn, GetCode, GetSimulationStack, GetSimulationStackReply, GetTransactionCount, JsonRpcNewHeadsNotification, NewHeadsSubscriptionData, PersonalSignParams, SendTransactionParams, SignTypedDataParams, SwitchEthereumChainParams, TransactionByHashParams, TransactionReceiptParams } from '../utils/wire-types.js'
 import { postMessageIfStillConnected } from './background.js'
 import { WebsiteAccessArray } from './settings.js'
@@ -69,27 +69,47 @@ export async function sendTransaction(getActiveAddressForDomain: (websiteAccess:
 	return await openConfirmTransactionDialog(requestId, origin, simulationMode, formTransaction)
 }
 
-export async function call(simulator: Simulator, request: EthCallParams) {
+async function singleCallWithFromOverride(simulator: Simulator, request: EthCallParams, from: bigint) {
+	const callParams = request.params[0]
+	const blockTag = request.params.length > 1 ? request.params[1] : 'latest' as const
+	const input = callParams.data !== undefined ? callParams.data : new Uint8Array()
+	const gasPrice = callParams.gasPrice !== undefined ? callParams.gasPrice : 0n
+	const value = callParams.value !== undefined ? callParams.value : 0n
 	const transaction = {
 		type: '1559' as const,
-		from: defaultCallAddress,
+		from,
 		chainId: await simulator.ethereum.getChainId(),
-		nonce: await simulator.simulationModeNode.getTransactionCount(defaultCallAddress),
-		maxFeePerGas: 0n,
+		nonce: await simulator.simulationModeNode.getTransactionCount(from),
+		maxFeePerGas: gasPrice,
 		maxPriorityFeePerGas: 0n,
-		gas: await simulator.simulationModeNode.estimateGas({
-			from: defaultCallAddress,
-			to: request.params[0].to,
-			data: request.params[0].data
+		gas: callParams.gas !== undefined ? callParams.gas : await simulator.simulationModeNode.estimateGas({
+			from,
+			to: callParams.to,
+			data: input,
+			gasPrice,
+			value,
 		}),
-		to: request.params[0].to,
-		value: 0n,
-		input: 'data' in request.params[0] || request.params[0].data === undefined ? new Uint8Array() : request.params[0].data,
+		to: callParams.to,
+		value,
+		input,
 		accessList: [],
 	}
-	const result = request.params.length > 1 ? await simulator.simulationModeNode.call(transaction, request.params[1]) : await simulator.simulationModeNode.call(transaction)
-	return { result: result }
+	return await simulator.simulationModeNode.call(transaction, blockTag)
 }
+
+export async function call(simulator: Simulator, request: EthCallParams) {
+	const callParams = request.params[0]
+	const from = callParams.from !== undefined && !KNOWN_CONTRACT_CALLER_ADDRESSES.includes(callParams.from) ? callParams.from : defaultCallAddress
+	const callResult = await singleCallWithFromOverride(simulator, request, from)
+
+	// if we fail our call because we are calling from a contract, retry and change address to our default calling address
+	// TODO: Remove this logic and KNOWN_CONTRACT_CALLER_ADDRESSES when multicall supports calling from contracts
+	if ('error' in callResult && callResult.error?.data === 'sender has deployed code' && from !== defaultCallAddress) {
+		return await singleCallWithFromOverride(simulator, request, defaultCallAddress)
+	}
+	return callResult
+}
+
 export async function blockNumber(simulator: Simulator) {
 	const block = await simulator.simulationModeNode.getBlockNumber()
 	return { result: bytes32String(block) }

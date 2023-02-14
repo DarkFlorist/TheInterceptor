@@ -204,3 +204,7 @@ export const CHAIN_NAMES = new Map<string, string>( [
 export function getChainName(chainId: bigint) { return CHAIN_NAMES.get(chainId.toString()) || `Chain: ${chainId.toString()}` }
 
 export const MOCK_PRIVATE_KEYS_ADDRESS = 0x7E5F4552091A69125d5DfCb7b8C2659029395Bdfn // an address represeting 0x1 privatekey
+
+export const KNOWN_CONTRACT_CALLER_ADDRESSES = [
+	0xca11bde05977b3631167028862be2a173976ca11n // curve multicaller
+]
