@@ -34,18 +34,24 @@ export const WebsiteAccess = funtypes.Object({
 export type WebsiteAccessArray = funtypes.Static<typeof WebsiteAccessArray>
 export const WebsiteAccessArray = funtypes.ReadonlyArray(WebsiteAccess)
 
+
+export type UserAddressBook = funtypes.Static<typeof UserAddressBook>
+export const UserAddressBook = funtypes.Object({
+	addressInfos: funtypes.ReadonlyArray(AddressInfo),
+	contacts: ContactEntries,
+})
+
 export interface Settings {
 	activeSimulationAddress: EthereumAddress | undefined,
 	activeSigningAddress: EthereumAddress | undefined,
 	activeChain: EthereumQuantity,
-	addressInfos: readonly AddressInfo[],
 	page: Page,
 	makeMeRich: boolean,
 	useSignersAddressAsActiveAddress: boolean,
 	websiteAccess: WebsiteAccessArray,
 	simulationMode: boolean,
 	pendingAccessRequests: PendingAccessRequestArray,
-	contacts: ContactEntries,
+	userAddressBook: UserAddressBook,
 }
 
 function parseActiveChain(chain: string) {
@@ -74,7 +80,6 @@ export async function getSettings() : Promise<Settings> {
 	return {
 		activeSimulationAddress: results.activeSimulationAddress !== undefined && !isEmpty(results.activeSimulationAddress) ? EthereumAddress.parse(results.activeSimulationAddress) : defaultAddresses[0].address,
 		activeSigningAddress: results.activeSigningAddress !== undefined && !isEmpty(results.activeSigningAddress) ? EthereumAddress.parse(results.activeSigningAddress) : undefined,
-		addressInfos: results.addressInfos !== undefined && !isEmpty(results.addressInfos) ? results.addressInfos.map( (x: AddressInfo) => AddressInfo.parse(x)) : defaultAddresses,
 		page: results.page !== undefined && !isEmpty(results.page) ? parseInt(results.page) : Page.Home,
 		makeMeRich: results.makeMeRich !== undefined ? results.makeMeRich : false,
 		useSignersAddressAsActiveAddress: results.useSignersAddressAsActiveAddress !== undefined ? results.useSignersAddressAsActiveAddress : false,
@@ -82,7 +87,10 @@ export async function getSettings() : Promise<Settings> {
 		activeChain: results.activeChain !== undefined ? parseActiveChain(results.activeChain) : 1n,
 		simulationMode: results.simulationMode !== undefined ? results.simulationMode : true,
 		pendingAccessRequests: PendingAccessRequestArray.parse(results.pendingAccessRequests !== undefined ? results.pendingAccessRequests : []),
-		contacts: ContactEntries.parse(results.contacts !== undefined ? results.contacts : []),
+		userAddressBook: {
+			addressInfos: results.addressInfos !== undefined && !isEmpty(results.addressInfos) ? results.addressInfos.map( (x: AddressInfo) => AddressInfo.parse(x)) : defaultAddresses,
+			contacts: ContactEntries.parse(results.contacts !== undefined ? results.contacts : []),	
+		}
 	}
 }
 
@@ -95,6 +103,9 @@ export function saveActiveSigningAddress(activeSigningAddress: bigint | undefine
 
 export function saveAddressInfos(addressInfos: readonly AddressInfo[]) {
 	browser.storage.local.set({ addressInfos: addressInfos.map( (x) => AddressInfo.serialize(x) ) })
+}
+export function saveContacts(contacts: ContactEntries) {
+	browser.storage.local.set({ contacts: ContactEntries.serialize(contacts) })
 }
 export function savePage(page: Page) {
 	browser.storage.local.set({ page: page })

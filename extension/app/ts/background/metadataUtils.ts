@@ -5,6 +5,7 @@ import { nftMetadata, tokenMetadata, contractMetadata } from '@darkflorist/addre
 import { ethers } from 'ethers'
 import { Simulator } from '../simulation/simulator.js'
 import { MOCK_ADDRESS } from '../utils/constants.js'
+import { UserAddressBook } from './settings.js'
 export const LOGO_URI_PREFIX = `../vendor/@darkflorist/address-metadata`
 
 export function getFullLogoUri(logoURI: string) {
@@ -30,7 +31,7 @@ export function findAddressInfo(address: bigint, addressInfos: readonly AddressI
 	}
 }
 
-export function getAddressMetaData(address: bigint, addressInfos: readonly AddressInfo[] | undefined) : AddressBookEntry {
+export function getAddressMetaData(address: bigint, userAddressBook: UserAddressBook | undefined) : AddressBookEntry {
 	if ( address === MOCK_ADDRESS) {
 		return {
 			address: address,
@@ -39,12 +40,21 @@ export function getAddressMetaData(address: bigint, addressInfos: readonly Addre
 			type: 'contact',
 		}
 	}
-	if (addressInfos !== undefined) {
-		for (const info of addressInfos) {
+	if (userAddressBook !== undefined) {
+		for (const info of userAddressBook.addressInfos) {
 			if (info.address === address) {
 				return {
 					...info,
 					type: 'addressInfo'
+				}
+			}
+		}
+
+		for (const contact of userAddressBook.contacts) {
+			if (contact.address === address) {
+				return {
+					...contact,
+					type: 'contact'
 				}
 			}
 		}
@@ -120,7 +130,7 @@ async function getTokenMetadata(simulator: Simulator, address: bigint) : Promise
 	}
 }
 
-export async function getAddressBookEntriesForVisualiser(simulator: Simulator, visualizerResult: (VisualizerResult | undefined)[], simulationState: SimulationState, addressInfos: readonly AddressInfo[] | undefined) : Promise<AddressBookEntry[]> {
+export async function getAddressBookEntriesForVisualiser(simulator: Simulator, visualizerResult: (VisualizerResult | undefined)[], simulationState: SimulationState, userAddressBook: UserAddressBook | undefined) : Promise<AddressBookEntry[]> {
 	let addressesToFetchMetadata: bigint[] = []
 	let tokenAddresses: bigint[] = []
 
@@ -146,7 +156,7 @@ export async function getAddressBookEntriesForVisualiser(simulator: Simulator, v
 
 	const deDuplicated = new Set<bigint>(addressesToFetchMetadata)
 	const addresses: AddressBookEntry[] = Array.from(deDuplicated.values()).filter( (address) => !deDuplicatedTokens.includes(address) ).map( ( address ) =>
-		getAddressMetaData(address, addressInfos)
+		getAddressMetaData(address, userAddressBook)
 	)
 
 	return addresses.concat(tokens)

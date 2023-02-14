@@ -1,5 +1,5 @@
 import * as funtypes from 'funtypes'
-import { AddressBookEntries, AddressBookEntry, AddressInfo, AddressInfoEntry } from './user-interface-types.js'
+import { AddressBookEntries, AddressBookEntry, AddressInfoEntry } from './user-interface-types.js'
 import { EIP2612Message, EthereumAddress, EthereumQuantity, EthereumUnsignedTransaction, Permit2 } from './wire-types.js'
 import { SimResults, SimulationState, TokenPriceEstimate } from './visualizer-types.js'
 
@@ -98,12 +98,6 @@ export const AddressBookCategory = funtypes.Union(
 	funtypes.Literal('Other Contracts')
 )
 
-export type ChangeAddressInfos = funtypes.Static<typeof ChangeAddressInfos>
-export const ChangeAddressInfos = funtypes.Object({
-	method: funtypes.Literal('popup_changeAddressInfos'),
-	options: funtypes.ReadonlyArray(AddressInfo)
-}).asReadonly()
-
 export type RemoveAddressBookEntry = funtypes.Static<typeof RemoveAddressBookEntry>
 export const RemoveAddressBookEntry = funtypes.Object({
 	method: funtypes.Literal('popup_removeAddressBookEntry'),
@@ -113,10 +107,10 @@ export const RemoveAddressBookEntry = funtypes.Object({
 	})
 }).asReadonly()
 
-export type AddOrModifyAddresInfo = funtypes.Static<typeof AddOrModifyAddresInfo>
-export const AddOrModifyAddresInfo = funtypes.Object({
+export type AddOrEditAddressBookEntry = funtypes.Static<typeof AddOrEditAddressBookEntry>
+export const AddOrEditAddressBookEntry = funtypes.Object({
 	method: funtypes.Literal('popup_addOrModifyAddressBookEntry'),
-	options: funtypes.ReadonlyArray(AddressBookEntry)
+	options: AddressBookEntry,
 }).asReadonly()
 
 export type ChangePage = funtypes.Static<typeof ChangePage>
@@ -295,7 +289,6 @@ export const NewBlockArrived = funtypes.Object({
 
 export type PopupMessage = funtypes.Static<typeof PopupMessage>
 export const PopupMessage = funtypes.Union(
-	ChangeAddressInfos,
 	ChangeMakeMeRich,
 	ChangeActiveAddress,
 	TransactionConfirmation,
@@ -315,7 +308,7 @@ export const PopupMessage = funtypes.Union(
 	RejectNotification,
 	ReviewNotification,
 	ConnectedToSigner,
-	AddOrModifyAddresInfo,
+	AddOrEditAddressBookEntry,
 	GetAddressBookData,
 	RemoveAddressBookEntry,
 	OpenAddressBook,
@@ -333,7 +326,7 @@ export const MessageToPopupSimple = funtypes.Object({
 		funtypes.Literal('popup_confirm_transaction_simulation_started'),
 		funtypes.Literal('popup_accounts_update'),
 		funtypes.Literal('popup_websiteIconChanged'),
-		funtypes.Literal('popup_address_infos_changed'),
+		funtypes.Literal('popup_addressBookEntriesChanged'),
 		funtypes.Literal('popup_interceptor_access_changed'),
 		funtypes.Literal('popup_notification_removed'),
 		funtypes.Literal('popup_signer_name_changed'),
