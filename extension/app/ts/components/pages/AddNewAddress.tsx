@@ -153,23 +153,23 @@ export function AddNewAddress(param: AddAddressParam) {
 			case 'contact': {
 				sendPopupMessageToBackgroundPage({
 					method: 'popup_addOrModifyAddressBookEntry',
-					options: [{
+					options: {
 						type: 'contact' as const,
 						name: nameInput ? nameInput : ethers.utils.getAddress(addressInput),
 						address: BigInt(addressInput),
-					}]
+					}
 				} )
 				break
 			}
 			case 'addressInfo': {
 				sendPopupMessageToBackgroundPage({
 					method: 'popup_addOrModifyAddressBookEntry',
-					options: [{
+					options: {
 						type: 'addressInfo' as const,
 						name: nameInput ? nameInput : ethers.utils.getAddress(addressInput),
 						address: BigInt(addressInput),
 						askForAddressAccess: askForAddressAccess,
-					}]
+					}
 				} )
 				break
 			}

@@ -27,14 +27,14 @@ export function updateExtensionIcon(port: browser.runtime.Port) {
 	if ( activeAddress === undefined) return setIcon(port.sender.tab.id, ICON_NOT_ACTIVE, 'No active address selected.')
 	if (hasAddressAccess(window.interceptor.settings.websiteAccess, origin, activeAddress )  === 'notFound') {
 		// we don't have active address selected, or no access specified
-		return setIcon(port.sender.tab.id, ICON_NOT_ACTIVE, `${ origin } has PENDING access request for ${ getAddressMetaData(activeAddress, window.interceptor.settings?.addressInfos).name }!`)
+		return setIcon(port.sender.tab.id, ICON_NOT_ACTIVE, `${ origin } has PENDING access request for ${ getAddressMetaData(activeAddress, window.interceptor.settings?.userAddressBook).name }!`)
 	}
 
 	if (censoredActiveAddress === undefined) {
 		if ( hasAccess(window.interceptor.settings.websiteAccess, origin) === 'noAccess') {
 			return setIcon(port.sender.tab.id, ICON_ACCESS_DENIED, `The access for ${ origin } has been DENIED!`)
 		}
-		return setIcon(port.sender.tab.id, ICON_ACCESS_DENIED, `The access to ${ getAddressMetaData(activeAddress, window.interceptor.settings?.addressInfos).name } for ${ origin } has been DENIED!`)
+		return setIcon(port.sender.tab.id, ICON_ACCESS_DENIED, `The access to ${ getAddressMetaData(activeAddress, window.interceptor.settings?.userAddressBook).name } for ${ origin } has been DENIED!`)
 	}
 	if (window.interceptor.settings?.simulationMode) return setIcon(port.sender.tab.id, ICON_SIMULATING, `The Interceptor simulates your sent transactions.`)
 	if (!isSupportedChain(window.interceptor.settings.activeChain.toString())) return setIcon(port.sender.tab.id, ICON_SIGNING_NOT_SUPPORTED, `Interceptor is on an unsupported network and simulation mode is disabled.`)

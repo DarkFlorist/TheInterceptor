@@ -58,7 +58,7 @@ export async function verifyAccess(port: browser.runtime.Port, callMethod: strin
 			return connectToPort(port, origin)
 		}
 
-		const addressInfo = findAddressInfo(activeAddress, window.interceptor.settings.addressInfos)
+		const addressInfo = findAddressInfo(activeAddress, window.interceptor.settings.userAddressBook.addressInfos)
 
 		// access not found, ask access
 		if (addressAccess === 'notFound'
@@ -130,7 +130,7 @@ export function hasAddressAccess(websiteAccess: WebsiteAccessArray, origin: stri
 					}
 				}
 			}
-			const askForAddressAccess = window.interceptor.settings?.addressInfos.find((x) => x.address === address )?.askForAddressAccess
+			const askForAddressAccess = window.interceptor.settings?.userAddressBook.addressInfos.find((x) => x.address === address )?.askForAddressAccess
 			if (askForAddressAccess === false) return 'hasAccess'
 			return 'notFound'
 		}
@@ -147,7 +147,7 @@ export function getAddressAccesses(websiteAccess: WebsiteAccessArray, origin: st
 	return []
 }
 export function getAddressesThatDoNotNeedIndividualAccesses(settings: Settings) : readonly bigint[] {
-	return settings.addressInfos.filter( (x) => x.askForAddressAccess === false).map( (x) => x.address)
+	return settings.userAddressBook.addressInfos.filter( (x) => x.askForAddressAccess === false).map( (x) => x.address)
 }
 
 export function setAccess(websiteAccess: WebsiteAccessArray, origin: string, originIcon: string | undefined, access: boolean, address: bigint | undefined) : WebsiteAccessArray {
@@ -257,7 +257,7 @@ export function getAssociatedAddresses(settings: Settings, origin: string, activ
 	const allAccessAddresses = getAddressesThatDoNotNeedIndividualAccesses(settings)
 
 	const all = allAccessAddresses.concat(addressAccess).concat(activeAddress === undefined ? [] : [activeAddress.address])
-	return Array.from(new Set(all)).map(x => findAddressInfo(x, settings.addressInfos))
+	return Array.from(new Set(all)).map(x => findAddressInfo(x, settings.userAddressBook.addressInfos))
 }
 
 async function askUserForAccessOnConnectionUpdate(port: browser.runtime.Port, origin: string, activeAddress: AddressInfoEntry | undefined) {
@@ -281,7 +281,7 @@ export function updateWebsiteApprovalAccesses() {
 			const addressAccess = hasAddressAccess(window.interceptor.settings.websiteAccess, connection.origin, activeAddress)
 
 			if (addressAccess === 'notFound') {
-				askUserForAccessOnConnectionUpdate(port, connection.origin, findAddressInfo(activeAddress, window.interceptor.settings.addressInfos) )
+				askUserForAccessOnConnectionUpdate(port, connection.origin, findAddressInfo(activeAddress, window.interceptor.settings.userAddressBook.addressInfos) )
 			}
 
 			// access has been denied or removed for the address, but it was approved before

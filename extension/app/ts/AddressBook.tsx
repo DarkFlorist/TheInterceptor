@@ -130,7 +130,12 @@ export function ListElement(entry: ListElementParam) {
 
 					<div class = 'content' style = 'color: var(--text-color); display: flex; height: 100%; flex-direction: column; justify-content: space-between;'>
 						<button class = 'card-header-icon' style = 'padding: 0px; margin-left: auto;' aria-label = 'delete'>
-							<span class = 'icon' style = 'color: var(--text-color);' onClick = { entry.type != 'empty' && entry.category === 'My Active Addresses' ? () => entry.removeEntry(entry) : () => {} }> X </span>
+							<span
+								class = 'icon'
+								style = 'color: var(--text-color);'
+								onClick = { entry.type != 'empty' && (entry.category === 'My Active Addresses' || entry.category === 'My Contacts')  ? () => entry.removeEntry(entry) : () => {} }>
+								X
+							</span>
 						</button>
 						<button class = 'button is-primary is-small' disabled = { entry.type !== 'addressInfo' && entry.type !== 'empty' } onClick = { entry.type != 'empty' ? () => entry.renameAddressCallBack(entry) : () => {} }>Edit</button>
 					</div>
@@ -207,10 +212,9 @@ export function AddressBook() {
 
 	useEffect(() => {
 		const popupMessageListener = async (msg: MessageToPopup) => {
-			console.log(msg)
-			if (msg.method === 'popup_address_infos_changed') {
+			if (msg.method === 'popup_addressBookEntriesChanged') {
 				// fields updated, refresh
-				changeFilter(activeFilter)
+				changeFilter(activeFilterRef.current)
 				return
 			}
 			if (msg.method !== 'popup_getAddressBookData') return
@@ -280,7 +284,6 @@ export function AddressBook() {
 	}
 
 	function sendQuery(filter: ActiveFilter, searchString: string | undefined, startPage: number, endPage: number) {
-		console.log('query:',filter,' - ',searchString,': ',startPage,'-', endPage)
 		sendPopupMessageToBackgroundPage({ method: 'popup_getAddressBookData', options: {
 			filter: filter,
 			searchString: searchString,

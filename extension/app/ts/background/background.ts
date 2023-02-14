@@ -4,7 +4,7 @@ import { Simulator } from '../simulation/simulator.js'
 import { EthereumJsonRpcRequest, EthereumQuantity, EthereumUnsignedTransaction, PersonalSignParams, SignTypedDataParams } from '../utils/wire-types.js'
 import { getSettings, saveActiveChain, saveActiveSigningAddress, saveActiveSimulationAddress, Settings } from './settings.js'
 import { blockNumber, call, chainId, estimateGas, gasPrice, getAccounts, getBalance, getBlockByNumber, getCode, getPermissions, getSimulationStack, getTransactionByHash, getTransactionCount, getTransactionReceipt, personalSign, requestPermissions, sendTransaction, signTypedData, subscribe, switchEthereumChain, unsubscribe } from './simulationModeHanders.js'
-import { changeActiveAddress, changeAddressInfos, changeMakeMeRich, changePage, resetSimulation, confirmDialog, refreshSimulation, removeTransaction, requestAccountsFromSigner, refreshPopupConfirmTransactionSimulation, confirmPersonalSign, confirmRequestAccess, changeInterceptorAccess, changeChainDialog, popupChangeActiveChain, enableSimulationMode, reviewNotification, rejectNotification, addOrModifyAddressInfo, getAddressBookData, removeAddressBookEntry, openAddressBook } from './popupMessageHandlers.js'
+import { changeActiveAddress, changeMakeMeRich, changePage, resetSimulation, confirmDialog, refreshSimulation, removeTransaction, requestAccountsFromSigner, refreshPopupConfirmTransactionSimulation, confirmPersonalSign, confirmRequestAccess, changeInterceptorAccess, changeChainDialog, popupChangeActiveChain, enableSimulationMode, reviewNotification, rejectNotification, addOrModifyAddressInfo, getAddressBookData, removeAddressBookEntry, openAddressBook } from './popupMessageHandlers.js'
 import { SimResults, SimulationState, TokenPriceEstimate } from '../utils/visualizer-types.js'
 import { WebsiteApproval, SignerState, TabConnection, AddressBookEntry, AddressInfoEntry } from '../utils/user-interface-types.js'
 import { getAddressMetadataForAccess, setPendingAccessRequests } from './windows/interceptorAccess.js'
@@ -99,7 +99,7 @@ export async function updateSimulationState( getUpdatedSimulationState: () => Pr
 
 			const transactions = updatedSimulationState.simulatedTransactions.map(x => x.signedTransaction)
 			const visualizerResult = await simulator.visualizeTransactionChain(transactions, updatedSimulationState.blockNumber, updatedSimulationState.simulatedTransactions.map( x => x.multicallResponse))
-			const addressBookEntries = await getAddressBookEntriesForVisualiser(simulator, visualizerResult.map( (x) => x.visualizerResults), updatedSimulationState, window.interceptor.settings?.addressInfos)
+			const addressBookEntries = await getAddressBookEntriesForVisualiser(simulator, visualizerResult.map( (x) => x.visualizerResults), updatedSimulationState, window.interceptor.settings?.userAddressBook)
 
 			function onlyTokensAndTokensWithKnownDecimals(metadata: AddressBookEntry) : metadata is AddressBookEntry & { type: 'token', decimals: `0x${ string }` } {
 				if (metadata.type !== 'token') return false
@@ -150,7 +150,7 @@ export async function refreshConfirmTransactionSimulation(activeAddress: bigint,
 	const appended = await newSimulator.appendTransaction(transactionToSimulate)
 	const transactions = appended.simulationState.simulatedTransactions.map(x => x.signedTransaction)
 	const visualizerResult = await simulator.visualizeTransactionChain(transactions, appended.simulationState.blockNumber, appended.simulationState.simulatedTransactions.map( x => x.multicallResponse))
-	const addressMetadata = await getAddressBookEntriesForVisualiser(simulator, visualizerResult.map( (x) => x.visualizerResults), appended.simulationState, window.interceptor.settings?.addressInfos)
+	const addressMetadata = await getAddressBookEntriesForVisualiser(simulator, visualizerResult.map( (x) => x.visualizerResults), appended.simulationState, window.interceptor.settings?.userAddressBook)
 	const tokenPrices = await priceEstimator.estimateEthereumPricesForTokens(
 		addressMetadata.map(
 			(x) => x.type === 'token' && x.decimals !== undefined ? { token: x.address, decimals: x.decimals } : { token: 0x0n, decimals: 0x0n }
@@ -577,7 +577,6 @@ async function popupMessageHandler(simulator: Simulator, request: unknown) {
 		case 'popup_confirmDialog': return await confirmDialog(simulator, parsedRequest)
 		case 'popup_changeActiveAddress': return await changeActiveAddress(simulator, parsedRequest)
 		case 'popup_changeMakeMeRich': return await changeMakeMeRich(simulator, parsedRequest)
-		case 'popup_changeAddressInfos': return await changeAddressInfos(simulator, parsedRequest)
 		case 'popup_changePage': return await changePage(simulator, parsedRequest)
 		case 'popup_requestAccountsFromSigner': return await requestAccountsFromSigner(simulator, parsedRequest)
 		case 'popup_resetSimulation': return await resetSimulation(simulator)
@@ -593,7 +592,7 @@ async function popupMessageHandler(simulator: Simulator, request: unknown) {
 		case 'popup_reviewNotification': return await reviewNotification(simulator, parsedRequest)
 		case 'popup_rejectNotification': return await rejectNotification(simulator, parsedRequest)
 		case 'popup_addOrModifyAddressBookEntry': return await addOrModifyAddressInfo(simulator, parsedRequest)
-		case 'popup_getAddressBookData': return await getAddressBookData(simulator, parsedRequest)
+		case 'popup_getAddressBookData': return await getAddressBookData(parsedRequest, window.interceptor.settings?.userAddressBook)
 		case 'popup_removeAddressBookEntry': return await removeAddressBookEntry(simulator, parsedRequest)
 		case 'popup_openAddressBook': return await openAddressBook(simulator)
 		case 'popup_personalSignReadyAndListening': return // handled elsewhere (personalSign.ts)

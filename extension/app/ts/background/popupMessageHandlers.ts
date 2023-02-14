@@ -1,7 +1,7 @@
 import { changeActiveAddressAndChainAndResetSimulation, changeActiveChain, PrependTransactionMode, refreshConfirmTransactionSimulation, updatePrependMode, updateSimulationState } from './background.js'
-import { getOpenedAddressBookTabId, saveAddressInfos, saveMakeMeRich, saveOpenedAddressBookTabId, savePage, saveSimulationMode, saveUseSignersAddressAsActiveAddress, saveWebsiteAccess } from './settings.js'
+import { getOpenedAddressBookTabId, saveAddressInfos, saveContacts, saveMakeMeRich, saveOpenedAddressBookTabId, savePage, saveSimulationMode, saveUseSignersAddressAsActiveAddress, saveWebsiteAccess, UserAddressBook } from './settings.js'
 import { Simulator } from '../simulation/simulator.js'
-import { ChangeActiveAddress, ChangeAddressInfos, ChangeMakeMeRich, ChangePage, PersonalSign, RemoveTransaction, RequestAccountsFromSigner, TransactionConfirmation, InterceptorAccess, ChangeInterceptorAccess, ChainChangeConfirmation, EnableSimulationMode, ReviewNotification, RejectNotification, ChangeActiveChain, AddOrModifyAddresInfo, GetAddressBookData, RemoveAddressBookEntry, RefreshConfirmTransactionDialogSimulation } from '../utils/interceptor-messages.js'
+import { ChangeActiveAddress, ChangeMakeMeRich, ChangePage, PersonalSign, RemoveTransaction, RequestAccountsFromSigner, TransactionConfirmation, InterceptorAccess, ChangeInterceptorAccess, ChainChangeConfirmation, EnableSimulationMode, ReviewNotification, RejectNotification, ChangeActiveChain, AddOrEditAddressBookEntry, GetAddressBookData, RemoveAddressBookEntry, RefreshConfirmTransactionDialogSimulation } from '../utils/interceptor-messages.js'
 import { resolvePendingTransaction } from './windows/confirmTransaction.js'
 import { resolvePersonalSign } from './windows/personalSign.js'
 import { changeAccess, requestAccessFromUser, resolveExistingInterceptorAccessAsNoResponse, resolveInterceptorAccess, setPendingAccessRequests } from './windows/interceptorAccess.js'
@@ -58,57 +58,59 @@ export async function changeMakeMeRich(_simulator: Simulator, makeMeRichChange: 
 	await updatePrependMode(true)
 }
 
-export async function changeAddressInfos(_simulator: Simulator, addressInfosChange: ChangeAddressInfos) {
-	if (window.interceptor.settings === undefined) return
-	window.interceptor.settings.addressInfos = addressInfosChange.options
-	saveAddressInfos(addressInfosChange.options)
-	updateWebsiteApprovalAccesses()
-	sendPopupMessageToOpenWindows({ method: 'popup_address_infos_changed' })
-}
-
 export async function removeAddressBookEntry(_simulator: Simulator, removeAddressBookEntry: RemoveAddressBookEntry) {
 	if (window.interceptor.settings === undefined) return
-	if (removeAddressBookEntry.options.addressBookCategory === 'My Active Addresses') {
-		window.interceptor.settings.addressInfos = window.interceptor.settings.addressInfos.filter((info) => info.address !== removeAddressBookEntry.options.address)
-		saveAddressInfos(window.interceptor.settings.addressInfos)
-		updateWebsiteApprovalAccesses()
-		sendPopupMessageToOpenWindows({ method: 'popup_address_infos_changed' })
-		return
+	switch(removeAddressBookEntry.options.addressBookCategory) {
+		case 'My Active Addresses': {
+			window.interceptor.settings.userAddressBook.addressInfos = window.interceptor.settings.userAddressBook.addressInfos.filter((info) => info.address !== removeAddressBookEntry.options.address)
+			saveAddressInfos(window.interceptor.settings.userAddressBook.addressInfos)
+			updateWebsiteApprovalAccesses()
+			sendPopupMessageToOpenWindows({ method: 'popup_addressBookEntriesChanged' })
+			return
+		}
+		case 'My Contacts': {
+			window.interceptor.settings.userAddressBook.contacts = window.interceptor.settings.userAddressBook.contacts.filter((contact) => contact.address !== removeAddressBookEntry.options.address)
+			saveContacts(window.interceptor.settings.userAddressBook.contacts)
+			sendPopupMessageToOpenWindows({ method: 'popup_addressBookEntriesChanged' })
+			return
+		}
+		case 'Non Fungible Tokens':
+		case 'Other Contracts':
+		case 'Tokens': throw new Error('Tried to remove addressbook category that is not supported yet!')
+		default: assertUnreachable(removeAddressBookEntry.options.addressBookCategory)
 	}
-	throw new Error('Tried to remove addressbook category that is not supported yet!')
 }
 
-export async function addOrModifyAddressInfo(_simulator: Simulator, addressInfosChanges: AddOrModifyAddresInfo) {
+export async function addOrModifyAddressInfo(_simulator: Simulator, entry: AddOrEditAddressBookEntry) {
 	if (window.interceptor.settings === undefined) return
-	for (const newEntry of addressInfosChanges.options) {
-		const entryType = newEntry.type
-		switch (entryType) {
-			case 'NFT':
-			case 'other contract':
-			case 'token': throw new Error(`No support to modify this entry yet! ${ entryType }`)
-			case 'addressInfo': {
-				if (window.interceptor.settings.addressInfos.find( (x) => x.address === newEntry.address) ) {
-					window.interceptor.settings.addressInfos = window.interceptor.settings.addressInfos.map( (x) => x.address === newEntry.address ? newEntry : x )
-				} else {
-					window.interceptor.settings.addressInfos = window.interceptor.settings.addressInfos.concat([newEntry])
-				}
-				break
+	const newEntry = entry.options
+	switch (newEntry.type) {
+		case 'NFT':
+		case 'other contract':
+		case 'token': throw new Error(`No support to modify this entry yet! ${ newEntry.type }`)
+		case 'addressInfo': {
+			if (window.interceptor.settings.userAddressBook.addressInfos.find( (x) => x.address === entry.options.address) ) {
+				window.interceptor.settings.userAddressBook.addressInfos = window.interceptor.settings.userAddressBook.addressInfos.map( (x) => x.address === newEntry.address ? newEntry : x )
+			} else {
+				window.interceptor.settings.userAddressBook.addressInfos = window.interceptor.settings.userAddressBook.addressInfos.concat([newEntry])
 			}
-			case 'contact': {
-				if (window.interceptor.settings.contacts.find( (x) => x.address === newEntry.address) ) {
-					window.interceptor.settings.contacts = window.interceptor.settings.contacts.map( (x) => x.address === newEntry.address ? newEntry : x )
-				} else {
-					window.interceptor.settings.contacts = window.interceptor.settings.contacts.concat([newEntry])
-				}
-				break
-			}
-			default: assertUnreachable(entryType)
+			saveAddressInfos(window.interceptor.settings.userAddressBook.addressInfos)
+			updateWebsiteApprovalAccesses()
+			sendPopupMessageToOpenWindows({ method: 'popup_addressBookEntriesChanged' })
+			return
 		}
+		case 'contact': {
+			if (window.interceptor.settings.userAddressBook.contacts.find( (x) => x.address === entry.options.address) ) {
+				window.interceptor.settings.userAddressBook.contacts = window.interceptor.settings.userAddressBook.contacts.map( (x) => x.address === newEntry.address ? newEntry : x )
+			} else {
+				window.interceptor.settings.userAddressBook.contacts = window.interceptor.settings.userAddressBook.contacts.concat([newEntry])
+			}
+			saveContacts(window.interceptor.settings.userAddressBook.contacts)
+			sendPopupMessageToOpenWindows({ method: 'popup_addressBookEntriesChanged' })
+			return
+		}
+		default: assertUnreachable(newEntry)
 	}
-
-	saveAddressInfos(window.interceptor.settings.addressInfos)
-	updateWebsiteApprovalAccesses()
-	sendPopupMessageToOpenWindows({ method: 'popup_address_infos_changed' })
 }
 
 export async function changeInterceptorAccess(_simulator: Simulator, accessChange: ChangeInterceptorAccess) {
@@ -183,7 +185,7 @@ export async function reviewNotification(_simulator: Simulator, params: ReviewNo
 	if (notification === undefined) return
 	await resolveExistingInterceptorAccessAsNoResponse()
 
-	const addressInfo = notification.requestAccessToAddress === undefined ? undefined : findAddressInfo(BigInt(notification.requestAccessToAddress), window.interceptor.settings.addressInfos)
+	const addressInfo = notification.requestAccessToAddress === undefined ? undefined : findAddressInfo(BigInt(notification.requestAccessToAddress), window.interceptor.settings.userAddressBook.addressInfos)
 	const metadata = getAssociatedAddresses(window.interceptor.settings, notification.origin, addressInfo)
 	await requestAccessFromUser(notification.origin, notification.icon, addressInfo, metadata)
 }
@@ -215,8 +217,9 @@ export async function rejectNotification(_simulator: Simulator, params: RejectNo
 	sendPopupMessageToOpenWindows({ method: 'popup_notification_removed' })
 }
 
-export async function getAddressBookData(_simulator: Simulator, parsed: GetAddressBookData) {
-	const data = getMetadataForAddressBookData(parsed.options, window.interceptor.settings?.addressInfos)
+export async function getAddressBookData(parsed: GetAddressBookData, userAddressBook: UserAddressBook | undefined) {
+	if (userAddressBook === undefined) throw new Error('Interceptor is not ready')
+	const data = getMetadataForAddressBookData(parsed.options, userAddressBook)
 	sendPopupMessageToOpenWindows({
 		method: 'popup_getAddressBookData',
 		data: {
