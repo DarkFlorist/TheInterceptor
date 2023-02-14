@@ -475,7 +475,7 @@ export function TokenLogEvent(params: TokenLogEventParams ) {
 					useFullTokenName = { false }
 				/>
 			</div>
-			<div class = 'log-cell'>
+			<div class = 'log-cell-flexless'>
 				<SmallAddress
 					addressBookEntry = { params.tokenVisualizerResult.from }
 					textColor = { textColor }
@@ -485,7 +485,7 @@ export function TokenLogEvent(params: TokenLogEventParams ) {
 			<div class = 'log-cell' style = 'padding-right: 0.2em; padding-left: 0.2em'>
 				{ params.tokenVisualizerResult.isApproval ? <ApproveIcon color = { textColor } /> : <ArrowIcon color = { textColor } /> }
 			</div>
-			<div class = 'log-cell'>
+			<div class = 'log-cell-flexless'>
 				<SmallAddress
 					addressBookEntry = { params.tokenVisualizerResult.to }
 					textColor = { textColor }
@@ -498,7 +498,7 @@ export function TokenLogEvent(params: TokenLogEventParams ) {
 function LogAnalysis(param: LogAnalysisParams) {
 	if ( param.simulatedAndVisualizedTransaction.tokenResults.length === 0 ) return <></>
 	const routes = identifyRoutes(param.simulatedAndVisualizedTransaction, param.identifiedSwap)
-	return <table class = 'log-table' style = 'justify-content: center; column-gap: 5px;'> { routes ?
+	return <span class = 'log-table' style = 'justify-content: center; column-gap: 5px;'> { routes ?
 		routes.map( (tokenVisualizerResult) => (
 			<TokenLogEvent
 				tokenVisualizerResult = { tokenVisualizerResult }
@@ -514,5 +514,5 @@ function LogAnalysis(param: LogAnalysisParams) {
 				renameAddressCallBack = { param.renameAddressCallBack }
 			/>
 		))
-	} </table>
+	} </span>
 }
