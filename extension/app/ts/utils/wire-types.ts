@@ -8,7 +8,7 @@ const BigIntParser: funtypes.ParsedValue<funtypes.String, bigint>['config'] = {
 		else return { success: true, value: BigInt(value) }
 	},
 	serialize: value => {
-		if (typeof value !== 'bigint') return { success: false, message: `${typeof value} is not a biginfuntypes.`}
+		if (typeof value !== 'bigint') return { success: false, message: `${typeof value} is not a bigint.`}
 		return { success: true, value: `0x${value.toString(16)}` }
 	},
 }
@@ -21,7 +21,7 @@ const SmallIntParser: funtypes.ParsedValue<funtypes.String, bigint>['config'] = 
 	},
 	serialize: value => {
 		if (value >= 2n**64n) return { success: false, message: `${value} must be smaller than 2^64.` }
-		if (typeof value !== 'bigint') return { success: false, message: `${typeof value} is not a biginfuntypes.`}
+		if (typeof value !== 'bigint') return { success: false, message: `${typeof value} is not a bigint.`}
 		return { success: true, value: `0x${value.toString(16)}` }
 	},
 }
@@ -33,7 +33,7 @@ const AddressParser: funtypes.ParsedValue<funtypes.String, bigint>['config'] = {
 		else return { success: true, value: BigInt(value) }
 	},
 	serialize: value => {
-		if (typeof value !== 'bigint') return { success: false, message: `${typeof value} is not a biginfuntypes.`}
+		if (typeof value !== 'bigint') return { success: false, message: `${typeof value} is not a bigint.`}
 		return { success: true, value: `0x${value.toString(16).padStart(40, '0')}` }
 	},
 }
@@ -44,7 +44,7 @@ const Bytes32Parser: funtypes.ParsedValue<funtypes.String, bigint>['config'] = {
 		else return { success: true, value: BigInt(value) }
 	},
 	serialize: value => {
-		if (typeof value !== 'bigint') return { success: false, message: `${typeof value} is not a biginfuntypes.`}
+		if (typeof value !== 'bigint') return { success: false, message: `${typeof value} is not a bigint.`}
 		return { success: true, value: `0x${value.toString(16).padStart(64, '0')}` }
 	},
 }
@@ -55,7 +55,7 @@ const Bytes256Parser: funtypes.ParsedValue<funtypes.String, bigint>['config'] = 
 		else return { success: true, value: BigInt(value) }
 	},
 	serialize: value => {
-		if (typeof value !== 'bigint') return { success: false, message: `${typeof value} is not a biginfuntypes.`}
+		if (typeof value !== 'bigint') return { success: false, message: `${typeof value} is not a bigint.`}
 		return { success: true, value: `0x${value.toString(16).padStart(512, '0')}` }
 	},
 }
@@ -65,7 +65,7 @@ const Bytes16Parser: funtypes.ParsedValue<funtypes.String, bigint>['config'] = {
 		else return { success: true, value: BigInt(value) }
 	},
 	serialize: value => {
-		if (typeof value !== 'bigint') return { success: false, message: `${typeof value} is not a biginfuntypes.`}
+		if (typeof value !== 'bigint') return { success: false, message: `${typeof value} is not a bigint.`}
 		return { success: true, value: `0x${value.toString(16).padStart(16, '0')}` }
 	},
 }
@@ -793,7 +793,7 @@ const BigIntParserNonHex: funtypes.ParsedValue<funtypes.String, bigint>['config'
 		else return { success: true, value: BigInt(value) }
 	},
 	serialize: value => {
-		if (typeof value !== 'bigint') return { success: false, message: `${ typeof value } is not a biginfuntypes.`}
+		if (typeof value !== 'bigint') return { success: false, message: `${ typeof value } is not a bigint.`}
 		return { success: true, value: `${ value.toString() }` }
 	},
 }
