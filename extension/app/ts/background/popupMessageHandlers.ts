@@ -109,6 +109,7 @@ export async function addOrModifyAddressInfo(_simulator: Simulator, entry: AddOr
 			sendPopupMessageToOpenWindows({ method: 'popup_addressBookEntriesChanged' })
 			return
 		}
+		default: assertUnreachable(newEntry)
 	}
 }
 
