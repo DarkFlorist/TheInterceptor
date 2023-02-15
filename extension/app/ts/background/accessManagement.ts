@@ -3,10 +3,10 @@ import { postMessageIfStillConnected, setEthereumNodeBlockPolling } from './back
 import { getActiveAddress } from './backgroundUtils.js'
 import { findAddressInfo } from './metadataUtils.js'
 import { Settings, WebsiteAccessArray, WebsiteAddressAccess } from './settings.js'
-import { requestAccessFromUser, retrieveIcon } from './windows/interceptorAccess.js'
+import { requestAccessFromUser } from './windows/interceptorAccess.js'
 import { METAMASK_ERROR_USER_REJECTED_REQUEST } from '../utils/constants.js'
 import { EthereumQuantity } from '../utils/wire-types.js'
-import { updateExtensionIcon } from './iconHandler.js'
+import { retrieveWebsiteTabIcon, updateExtensionIcon } from './iconHandler.js'
 import { AddressInfoEntry } from '../utils/user-interface-types.js'
 
 function setWebsitePortApproval(port: browser.runtime.Port, origin: string, approved: boolean) {
@@ -63,7 +63,7 @@ export async function verifyAccess(port: browser.runtime.Port, callMethod: strin
 		// access not found, ask access
 		if (addressAccess === 'notFound'
 			&& isRpcMethod
-			&& await requestAccessFromUser(origin, await retrieveIcon(port.sender?.tab?.id), addressInfo, getAssociatedAddresses(window.interceptor.settings, origin, addressInfo ))
+			&& await requestAccessFromUser(origin, await retrieveWebsiteTabIcon(port.sender?.tab?.id), addressInfo, getAssociatedAddresses(window.interceptor.settings, origin, addressInfo ))
 		) {
 			return connectToPort(port, origin)
 		}
@@ -77,7 +77,7 @@ export async function verifyAccess(port: browser.runtime.Port, callMethod: strin
 	}
 
 	if (access === 'notFound' && isRpcMethod
-		&& await requestAccessFromUser(origin, await retrieveIcon(port.sender?.tab?.id), undefined, getAssociatedAddresses(window.interceptor.settings, origin, undefined ) )
+		&& await requestAccessFromUser(origin, await retrieveWebsiteTabIcon(port.sender?.tab?.id), undefined, getAssociatedAddresses(window.interceptor.settings, origin, undefined ) )
 	) {
 		return connectToPort(port, origin)
 	}
@@ -263,7 +263,7 @@ export function getAssociatedAddresses(settings: Settings, origin: string, activ
 async function askUserForAccessOnConnectionUpdate(port: browser.runtime.Port, origin: string, activeAddress: AddressInfoEntry | undefined) {
 	if (window.interceptor.settings === undefined) return
 
-	if (await requestAccessFromUser(origin, await retrieveIcon(port.sender?.tab?.id), activeAddress, getAssociatedAddresses(window.interceptor.settings, origin, activeAddress))) {
+	if (await requestAccessFromUser(origin, await retrieveWebsiteTabIcon(port.sender?.tab?.id), activeAddress, getAssociatedAddresses(window.interceptor.settings, origin, activeAddress))) {
 		connectToPort(port, origin)
 	}
 }

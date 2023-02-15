@@ -1,6 +1,5 @@
 import { addressString } from '../../utils/bigint.js'
 import { Future } from '../../utils/future.js'
-import { imageToUri } from '../../utils/imageToUri.js'
 import { PopupMessage } from '../../utils/interceptor-messages.js'
 import { AddressInfoEntry, PendingAccessRequestArray } from '../../utils/user-interface-types.js'
 import { setAccess, updateWebsiteApprovalAccesses } from '../accessManagement.js'
@@ -63,41 +62,6 @@ export function getAddressMetadataForAccess(websiteAccess: WebsiteAccessArray) :
 	const addressSet = new Set(addresses)
 	const infos = window.interceptor.settings.userAddressBook.addressInfos
 	return Array.from(addressSet).map( (x) => findAddressInfo(x, infos) )
-}
-
-export async function retrieveIcon(tabId: number | undefined) {
-	if ( tabId === undefined) return undefined
-
-	// wait for the tab to be fully loaded
-	const waitForLoaded = new Promise(async resolve => {
-		const listener = function listener(tabIdUpdated: number, info: browser.tabs._OnUpdatedChangeInfo) {
-			if (info.status === 'complete' && tabId === tabIdUpdated) {
-				browser.tabs.onUpdated.removeListener(listener)
-				resolve(undefined)
-			}
-		}
-		browser.tabs.onUpdated.addListener(listener)
-		if( (await browser.tabs.get(tabId)).status === 'complete') {
-			browser.tabs.onUpdated.removeListener(listener)
-			resolve(undefined)
-		}
-	})
-
-	await waitForLoaded
-
-	// if the tab is not ready yet try to wait for a while for it to be ready, if not, we just have no icon to show on firefox
-	let maxRetries = 10
-	// apparently there's a lot bugs in firefox related to getting this favicon. Eve if the tab has loaded, the favicon is not necessary loaded either
-	// https://bugzilla.mozilla.org/show_bug.cgi?id=1450384
-	// https://bugzilla.mozilla.org/show_bug.cgi?id=1417721
-	// below is my attempt to try to get favicon...
-	while ( (await browser.tabs.get(tabId)).favIconUrl === undefined) {
-		await new Promise(resolve => setTimeout(resolve, 100))
-		maxRetries--
-		if (maxRetries <= 0) break // timeout
-	}
-	const url = (await browser.tabs.get(tabId)).favIconUrl
-	return url === undefined ? undefined : await imageToUri(url)
 }
 
 export async function setPendingAccessRequests(pendingAccessRequest: PendingAccessRequestArray) {
