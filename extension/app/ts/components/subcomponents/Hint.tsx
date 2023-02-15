@@ -38,7 +38,7 @@ export default function Container(props: Props) {
 
 				// show on click
 				setContent(e.target.getAttribute(copyAttribute) || '')
-				setClickPosition({ x: e.clientX, y: e.clientY })
+				setClickPosition({ x: e.pageX, y: e.pageY })
 
 				copyMessageTimeoutId = setTimeout( () => {
 					// hide after timeout
@@ -55,7 +55,7 @@ export default function Container(props: Props) {
 				const content = e.target.getAttribute(toolTipAttribute)
 				toolTipTimeoutId = setTimeout( () => {
 					setContent(content || '')
-					setClickPosition({ x: e.clientX, y: e.clientY })
+					setClickPosition({ x: e.pageX, y: e.pageY })
 				}, 250)
 			}
 
