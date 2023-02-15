@@ -276,6 +276,8 @@ export const RefreshConfirmTransactionDialogSimulation = funtypes.Object({
 		simulationMode: funtypes.Boolean,
 		requestId: funtypes.Number,
 		transactionToSimulate: EthereumUnsignedTransaction,
+		websiteOrigin: funtypes.String,
+		websiteIcon: funtypes.Union(funtypes.String, funtypes.Undefined),
 	}),
 }).asReadonly()
 
@@ -414,6 +416,8 @@ export const ConfirmTransactionSimulationStateChanged = funtypes.Object({
 		tokenPrices: funtypes.ReadonlyArray(TokenPriceEstimate),
 		activeAddress: EthereumAddress,
 		signerName: funtypes.Union(SignerName, funtypes.Undefined),
+		websiteOrigin: funtypes.String,
+		websiteIcon: funtypes.Union(funtypes.String, funtypes.Undefined),
 	})
 })
 

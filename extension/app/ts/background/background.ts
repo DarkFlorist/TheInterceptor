@@ -141,7 +141,7 @@ export function setEthereumNodeBlockPolling(enabled: boolean) {
 	simulator.ethereum.setBlockPolling(enabled)
 }
 
-export async function refreshConfirmTransactionSimulation(activeAddress: bigint, simulationMode: boolean, requestId: number, transactionToSimulate: EthereumUnsignedTransaction) {
+export async function refreshConfirmTransactionSimulation(activeAddress: bigint, simulationMode: boolean, requestId: number, transactionToSimulate: EthereumUnsignedTransaction, websiteOrigin: string, websiteIcon: string | undefined) {
 	if ( simulator === undefined ) return undefined
 
 	const priceEstimator = new PriceEstimator(simulator.ethereum)
@@ -169,6 +169,8 @@ export async function refreshConfirmTransactionSimulation(activeAddress: bigint,
 			tokenPrices: tokenPrices,
 			activeAddress: activeAddress,
 			signerName: window.interceptor.signerName,
+			websiteOrigin,
+			websiteIcon,
 		}
 	}
 }

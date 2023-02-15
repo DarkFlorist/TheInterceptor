@@ -39,14 +39,15 @@ const reject = function() {
 
 export async function openConfirmTransactionDialog(
 	requestId: number,
-	origin: string,
+	websiteOrigin: string,
+	websiteIcon: string | undefined,
 	simulationMode: boolean,
 	transactionToSimulatePromise: () => Promise<EthereumUnsignedTransaction>,
 ) {
 	if (pendingTransaction !== undefined) return reject() // previous window still loading
 	if (window.interceptor.settings === undefined) return ERROR_INTERCEPTOR_NOT_READY
 
-	const activeAddress = getActiveAddressForDomain(window.interceptor.settings.websiteAccess, (new URL(origin)).hostname)
+	const activeAddress = getActiveAddressForDomain(window.interceptor.settings.websiteAccess, (new URL(websiteOrigin)).hostname)
 	if (activeAddress === undefined) return ERROR_INTERCEPTOR_NO_ACTIVE_ADDRESS
 
 	if (openedConfirmTransactionDialogWindow !== null && openedConfirmTransactionDialogWindow.id) {
@@ -56,7 +57,7 @@ export async function openConfirmTransactionDialog(
 
 	const transactionToSimulate = await transactionToSimulatePromise()
 
-	const refreshSimulationPromise = refreshConfirmTransactionSimulation(activeAddress, simulationMode, requestId, transactionToSimulate)
+	const refreshSimulationPromise = refreshConfirmTransactionSimulation(activeAddress, simulationMode, requestId, transactionToSimulate, websiteOrigin, websiteIcon)
 
 	const windowReadyAndListening = async function popupMessageListener(msg: unknown) {
 		const message = PopupMessage.parse(msg)

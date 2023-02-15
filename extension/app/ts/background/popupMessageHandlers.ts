@@ -146,7 +146,7 @@ export async function refreshSimulation(simulator: Simulator) {
 }
 
 export async function refreshPopupConfirmTransactionSimulation(_simulator: Simulator, { data }: RefreshConfirmTransactionDialogSimulation) {
-	const refreshMessage = await refreshConfirmTransactionSimulation(data.activeAddress, data.simulationMode, data.requestId, data.transactionToSimulate)
+	const refreshMessage = await refreshConfirmTransactionSimulation(data.activeAddress, data.simulationMode, data.requestId, data.transactionToSimulate, data.websiteOrigin, data.websiteIcon)
 	if (refreshMessage === undefined) return
 	return sendPopupMessageToOpenWindows(refreshMessage)
 }
