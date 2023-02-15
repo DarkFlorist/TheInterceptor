@@ -1,7 +1,7 @@
 import { EthereumClientService } from './EthereumClientService.js'
-import { EthGetLogsResponse, EthereumUnsignedTransaction, EthereumSignedTransactionWithBlockData, EthereumBlockTag, EthGetLogsRequest, EthTransactionReceiptResponse, EstimateGasParamsVariables, EthSubscribeParams, JsonRpcMessage, JsonRpcNewHeadsNotification, PersonalSignParams, SignTypedDataParams, EthereumSignedTransaction, GetBlockReturn } from '../../utils/wire-types.js'
+import { EthGetLogsResponse, EthereumUnsignedTransaction, EthereumSignedTransactionWithBlockData, EthereumBlockTag, EthGetLogsRequest, EthTransactionReceiptResponse, EstimateGasParamsVariables, EthSubscribeParams, JsonRpcMessage, JsonRpcNewHeadsNotification, PersonalSignParams, SignTypedDataParams, EthereumSignedTransaction, GetBlockReturn, EthereumData } from '../../utils/wire-types.js'
 import { EthereumUnsignedTransactionToUnsignedTransaction, serializeSignedTransactionToBytes } from '../../utils/ethereum.js'
-import { bytes32String, dataString, max, min } from '../../utils/bigint.js'
+import { bytes32String, max, min } from '../../utils/bigint.js'
 import { MOCK_ADDRESS } from '../../utils/constants.js'
 import { ErrorWithData } from '../../utils/errors.js'
 import { Future } from '../../utils/future.js'
@@ -67,25 +67,25 @@ export class SimulationModeEthereumClientService {
 	}
 
 	public readonly estimateGas = async (data: EstimateGasParamsVariables) => {
-		const sendAddress = data.from === undefined ? MOCK_ADDRESS : data.from
+		const sendAddress = data.from !== undefined ? data.from : MOCK_ADDRESS
 		const transactionCount = this.getTransactionCount(sendAddress)
 		const block = await this.ethereumClientService.getBlock()
-		const maxGas = (data.gas === undefined ? block.gasLimit : data.gas) * 1023n / 1024n - this.transactionQueueTotalGasLimit()
+		const maxGas = block.gasLimit * 1023n / 1024n - this.transactionQueueTotalGasLimit()
 		const tmp = {
 			type: '1559' as const,
 			from: sendAddress,
 			chainId: await this.getChainId(),
 			nonce: await transactionCount,
-			maxFeePerGas: data.gasPrice === undefined ? 0n : data.gasPrice,
+			maxFeePerGas: data.gasPrice !== undefined ? data.gasPrice : 0n,
 			maxPriorityFeePerGas: 2n,
-			gas: maxGas,
+			gas: data.gas === undefined ? maxGas : data.gas,
 			to: data.to,
 			value: data.value === undefined ? 0n : data.value,
 			input: data.data === undefined ? new Uint8Array(0) : data.data,
 			accessList: []
 		}
 		const multiCall = await this.multicall([tmp], block.number + 1n)
-		const gasSpent = multiCall[multiCall.length-1].gasSpent * 12n / 10n
+		const gasSpent = multiCall[multiCall.length - 1].gasSpent * 12n / 10n
 		return gasSpent < maxGas ? gasSpent : maxGas
 	}
 
@@ -504,14 +504,21 @@ export class SimulationModeEthereumClientService {
 		return await this.ethereumClientService.getTransactionByHash(hash)
 	}
 
-	public readonly call = async (transaction: EthereumUnsignedTransaction, blockTag: EthereumBlockTag = 'latest'): Promise<string> => {
-		if (blockTag === 'latest' || blockTag === 'pending') {
-			const multicallResult = await this.multicall([transaction], await this.ethereumClientService.getBlockNumber() + 1n)
-			return `0x${dataString(multicallResult[multicallResult.length - 1].returnValue)}`
-		} else {
-			const multicallResult = await this.multicall([transaction], blockTag)
-			return `0x${dataString(multicallResult[multicallResult.length - 1].returnValue)}`
+	public readonly call = async (transaction: EthereumUnsignedTransaction, blockTag: EthereumBlockTag = 'latest') => {
+		const multicallResult = blockTag === 'latest' || blockTag === 'pending' ? 
+			await this.multicall([transaction], await this.ethereumClientService.getBlockNumber() + 1n)
+			: await this.multicall([transaction], blockTag)
+		const callResult = multicallResult[multicallResult.length - 1]
+		if (callResult.statusCode === 'failure') {
+			return {
+				error: {
+					code: -32015,
+					message: 'VM execution error.',
+					data: callResult.error,
+				}
+			}
 		}
+		return { result: EthereumData.serialize(callResult.returnValue) }
 	}
 
 	public readonly multicall = async (transactions: readonly EthereumUnsignedTransaction[], blockNumber: bigint) => {
