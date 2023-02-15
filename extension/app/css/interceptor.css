@@ -567,3 +567,12 @@ svg.spinner > circle {
 	border-radius: 10px 40px 40px 10px;
 	overflow: hidden;
 }
+
+.breadcrumb ul, .breadcrumb ol {
+	align-items: center;
+}
+
+.breadcrumb li + li::before {
+	margin-left: 5px;
+	margin-right: 5px;
+}

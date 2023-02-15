@@ -195,7 +195,7 @@ type TransactionImportanceBlockParams = {
 }
 
 // showcases the most important things the transaction does
-function TransactionImportanceBlock( param: TransactionImportanceBlockParams ) {
+export function TransactionImportanceBlock( param: TransactionImportanceBlockParams ) {
 	if ( param.tx.statusCode === 'failure') return <></>
 	const identifiedSwap = identifySwap(param.tx)
 	const textColor =  'var(--text-color)'
@@ -495,7 +495,7 @@ export function TokenLogEvent(params: TokenLogEventParams ) {
 	</>
 }
 
-function LogAnalysis(param: LogAnalysisParams) {
+export function LogAnalysis(param: LogAnalysisParams) {
 	if ( param.simulatedAndVisualizedTransaction.tokenResults.length === 0 ) return <></>
 	const routes = identifyRoutes(param.simulatedAndVisualizedTransaction, param.identifiedSwap)
 	return <span class = 'log-table' style = 'justify-content: center; column-gap: 5px;'> { routes ?
