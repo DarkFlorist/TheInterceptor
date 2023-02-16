@@ -58,23 +58,28 @@ input[type = 'checkbox'] {
 	background-color: #fff;
 	margin: 0;
 	font: inherit;
-	color: currentColor;
+	color: black;
+	place-content: center;
 	width: 1.15em;
 	height: 1.15em;
 	display: grid;
-	place-content: center;
 	border-radius: 3px;
 	background-color: var(--unimportant-text-color);
+	border: 1px solid black;
 }
 
 input[type = 'checkbox']::before {
-	content: '';
+	content: '✓';
+	place-content: center;
+	padding-left: 2px;
+	color: black;
 	width: 1.15em;
 	height: 1.15em;
 	transform: scale(0);
 	border-radius: 3px;
 	transition: 120ms transform ease-in-out;
-	box-shadow: inset 1em 1em var(--primary-color);
+	background-color: var(--primary-color);
+	border: 1px solid black;
 }
 
 input[type = 'checkbox']:checked::before {
@@ -589,4 +594,11 @@ svg.spinner > circle {
 
 .button.is-primary:focus:not(:active) {
 	box-shadow: unset
+}
+
+.button-overflow {
+	overflow: hidden;
+	white-space: nowrap;
+	display: block;
+	text-overflow: ellipsis;
 }

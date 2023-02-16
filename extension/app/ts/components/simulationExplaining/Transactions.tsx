@@ -52,7 +52,7 @@ function TransactionAggregate(param: TransactionAggregateParam) {
 								</div>
 
 								<p class = 'card-header-title'>
-									<p className = 'paragraph'>
+									<p class = 'paragraph'>
 										{ nameTransaction(tx, param.activeAddress) }
 									</p>
 								</p>
@@ -196,11 +196,13 @@ type TransactionImportanceBlockParams = {
 
 // showcases the most important things the transaction does
 export function TransactionImportanceBlock( param: TransactionImportanceBlockParams ) {
-	if ( param.tx.statusCode === 'failure') return <></>
+	if ( param.tx.statusCode === 'failure') return <div>
+		<Error text = { `The transaction fails with error '${ param.tx.error }'` } />
+	</div>
 	const identifiedSwap = identifySwap(param.tx)
 	const textColor =  'var(--text-color)'
 
-	if(identifiedSwap) {
+	if (identifiedSwap) {
 		return <SwapVisualization
 			identifiedSwap = { identifiedSwap }
 			chain = { param.simulationAndVisualisationResults.chain }
@@ -248,6 +250,12 @@ export function TransactionImportanceBlock( param: TransactionImportanceBlockPar
 	})
 
 	const ownBalanceChanges = param.tx.ethBalanceChanges.filter( (change) => change.address.address === msgSender)
+
+	if (param.tx.tokenResults.length === 0 && param.tx.ethBalanceChanges.length === 0 ) {
+		return <div class = 'notification' style = 'background-color: var(--unimportant-text-color); padding: 10px; margin-bottom: 10px;'>
+			<p class = 'paragraph'> The transaction does no visible changes</p>
+		</div>
+	}
 
 	return <div class = 'notification' style = 'background-color: var(--unimportant-text-color); padding: 10px; margin-bottom: 10px;'>
 		{ /* sending ether / tokens */ }
@@ -496,7 +504,7 @@ export function TokenLogEvent(params: TokenLogEventParams ) {
 }
 
 export function LogAnalysis(param: LogAnalysisParams) {
-	if ( param.simulatedAndVisualizedTransaction.tokenResults.length === 0 ) return <></>
+	if ( param.simulatedAndVisualizedTransaction.tokenResults.length === 0 ) return <p class = 'paragraph'> No token events </p>
 	const routes = identifyRoutes(param.simulatedAndVisualizedTransaction, param.identifiedSwap)
 	return <span class = 'log-table' style = 'justify-content: center; column-gap: 5px;'> { routes ?
 		routes.map( (tokenVisualizerResult) => (

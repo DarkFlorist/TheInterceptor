@@ -4,6 +4,7 @@ import Blockie from './PreactBlocky.js'
 import { AddressBookEntry, AddressInfo, RenameAddressCallBack } from '../../utils/user-interface-types.js'
 import { CopyToClipboard } from './CopyToClipboard.js'
 import { ApproveIcon, ArrowIcon } from '../subcomponents/icons.js'
+import { JSX } from 'preact/jsx-runtime'
 
 export function findAddressInfo(addressToFind: bigint, addressInfos: readonly AddressInfo[]) {
 	for (const info of addressInfos) {
@@ -160,6 +161,7 @@ export type SmallAddressParams = {
 	readonly addressBookEntry: AddressBookEntry
 	readonly textColor?: string
 	readonly renameAddressCallBack: RenameAddressCallBack
+	readonly style?: JSX.CSSProperties
 }
 
 export function SmallAddress(params: SmallAddressParams) {
@@ -167,7 +169,7 @@ export function SmallAddress(params: SmallAddressParams) {
 	return (
 		<span className = 'small-address-container' data-value = { params.addressBookEntry.name }>
 			<span class = 'address-text-holder'>
-				<span class = 'small-address-baggage-tag vertical-center'>
+				<span class = 'small-address-baggage-tag vertical-center' style = { params.style }>
 					<span style = 'margin-right: 5px'>
 						<CopyToClipboard content = { ethers.utils.getAddress(addressString(params.addressBookEntry.address)) } copyMessage = 'Address copied!'>
 							<AddressIcon

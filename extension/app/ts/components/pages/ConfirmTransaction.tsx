@@ -13,6 +13,7 @@ import { EthereumUnsignedTransaction } from '../../utils/wire-types.js'
 import { SignerLogoText, getSignerName } from '../subcomponents/signers.js'
 import { SmallAddress } from '../subcomponents/address.js'
 import { nameTransactionAction } from '../simulationExplaining/identifyTransaction.js'
+import { ErrorCheckBox } from '../subcomponents/Error.js'
 
 type WebsiteOriginAndIcon = {
 	websiteOrigin: string,
@@ -24,7 +25,7 @@ export function ConfirmTransaction() {
 	const [simulationAndVisualisationResults, setSimulationAndVisualisationResults] = useState<(SimulationAndVisualisationResults & WebsiteOriginAndIcon) | undefined >(undefined)
 	const [transactionToSimulate, setTransactionToSimulate] = useState<EthereumUnsignedTransaction | undefined>(undefined)
 	const [sender, setSender] = useState<AddressBookEntry | undefined>(undefined)
-	const [forceSend, _setForceSend] = useState<boolean>(false)
+	const [forceSend, setForceSend] = useState<boolean>(false)
 	const [currentBlockNumber, setCurrentBlockNumber] = useState<undefined | bigint>(undefined)
 	const [signerName, setSignerName] = useState<SignerName | undefined>(undefined)
 	const [addingNewAddress, setAddingNewAddress] = useState<AddingNewAddressType | 'renameAddressModalClosed'> ('renameAddressModalClosed')
@@ -133,47 +134,62 @@ export function ConfirmTransaction() {
 						}
 					</div>
 
-					<div className = 'block' style = 'margin-bottom: 0px;'>
-						<header class = 'card-header window-header' style = 'height: 40px; border-top-left-radius: 0px; border-top-right-radius: 0px'>
-							<p class = 'card-header-title' style = 'padding-right: 0px; padding-left: 0px; overflow: hidden; margin-left: 20px; font-weight: unset'>
-								{ sender === undefined ? <></> : <SmallAddress
-									addressBookEntry = { sender }
-									renameAddressCallBack = { renameAddressCallBack }
-								/> }
-							</p>
-							<div class = 'card-header-icon noselect nopointer' style = 'overflow: hidden; padding: 0px;'>
-								<a style = 'background-color: var(--alpha-005); margin: 2px; border-radius: 40px 40px 40px 40px; display: flex; padding: 4px 10px 4px 10px; margin-right: 20px; overflow: hidden;'>
-									<span style = 'margin-right: 5px; width: 24px; height: 24px; min-width: 24px'>
-										<img src = { simulationAndVisualisationResults.websiteIcon } alt = 'Logo' style = 'width: 24px; height: 24px;'/>
-									</span>
-									<p class = 'address-text' style = 'color: #FFFFFF; padding-left: 5px;'>{ simulationAndVisualisationResults.websiteOrigin }</p>
-								</a>
+					<div className = 'block' style = 'margin-bottom: 0px; display: flex; justify-content: space-between; flex-direction: column; height: 100%; position: fixed; width: 100%'>
+						<div style = 'overflow-y: auto'>
+							<header class = 'card-header window-header' style = 'height: 40px; border-top-left-radius: 0px; border-top-right-radius: 0px'>
+								<div class = 'card-header-icon noselect nopointer' style = 'overflow: hidden; padding: 0px;'>
+									<a style = 'margin: 2px; border-radius: 40px 40px 40px 40px; display: flex; padding: 4px 10px 4px 10px; overflow: hidden;'>
+										<span style = 'margin-right: 5px; width: 24px; height: 24px; min-width: 24px'>
+											<img src = { simulationAndVisualisationResults.websiteIcon } alt = 'Logo' style = 'width: 24px; height: 24px;'/>
+										</span>
+										<p class = 'address-text' style = 'color: #FFFFFF; padding-left: 5px;'>{ simulationAndVisualisationResults.websiteOrigin }</p>
+									</a>
+								</div>
+								<p class = 'card-header-title' style = 'overflow: hidden; font-weight: unset; flex-direction: row-reverse;'>
+									{ sender === undefined ? <></> : <SmallAddress
+										addressBookEntry = { sender }
+										renameAddressCallBack = { renameAddressCallBack }
+									/> }
+								</p>
+							</header>
+
+							<NewStyle
+								simulationAndVisualisationResults = { simulationAndVisualisationResults }
+								renameAddressCallBack = { renameAddressCallBack }
+								activeAddress = { simulationAndVisualisationResults.activeAddress }
+								resetButton = { false }
+								refreshSimulation = { refreshSimulation }
+								currentBlockNumber = { currentBlockNumber }
+								refreshPressed = { refreshPressed }
+							/>
+						</div>
+
+						<nav class = 'window-header' style = 'display: flex; justify-content: space-around; width: 100%; flex-direction: column;'>
+							<div style = 'display: grid'>
+							{ simulationAndVisualisationResults && simulationAndVisualisationResults.simulatedAndVisualizedTransactions[simulationAndVisualisationResults.simulatedAndVisualizedTransactions.length - 1 ].statusCode === 'success' ?
+								simulationAndVisualisationResults && simulationAndVisualisationResults.simulatedAndVisualizedTransactions[simulationAndVisualisationResults.simulatedAndVisualizedTransactions.length - 1 ].quarantine !== true ? <></> :
+								<div style = 'margin: 0px; margin-top: 5px; margin-left: 20px; margin-right: 20px; '>
+									<ErrorCheckBox text = { 'I understand that there are issues with this transaction but I want to send it anyway against Interceptors recommendations.' } checked = { forceSend } onInput = { setForceSend } />
+								</div>
+							:
+								<div style = 'margin: 0px; margin-top: 5px; margin-left: 20px; margin-right: 20px; '>
+									<ErrorCheckBox text = { 'I understand that the transaction will fail but I want to send it anyway.' } checked = { forceSend } onInput = { setForceSend } />
+								</div>
+							}
 							</div>
-						</header>
-
-						<NewStyle
-							simulationAndVisualisationResults = { simulationAndVisualisationResults }
-							renameAddressCallBack = { renameAddressCallBack }
-							activeAddress = { simulationAndVisualisationResults.activeAddress }
-							resetButton = { false }
-							refreshSimulation = { refreshSimulation }
-							currentBlockNumber = { currentBlockNumber }
-							refreshPressed = { refreshPressed }
-						/>
-
-						<div class = 'content' style = 'height: 50px;'/>
-						<nav class = 'navbar is-fixed-bottom window-header' style = 'overflow: auto; display: flex; justify-content: space-around; width: 100%; height: 40px;'>
-							<button className = 'button is-primary' style = 'flex-grow: 1; margin-left: 20px; margin-right: 20px; margin-top: 6px;' onClick = { approve } disabled = { isConfirmDisabled() }>
-								{ simulationAndVisualisationResults.simulationMode ? `Simulate ${ buttonNameAddon(simulationAndVisualisationResults, simulationAndVisualisationResults.activeAddress) }!` :
-									<SignerLogoText {...{
-										signerName,
-										text: `${ buttonNameAddon(simulationAndVisualisationResults, simulationAndVisualisationResults.activeAddress) } ${ getSignerName(signerName) }`
-									}}/>
-								}
-							</button>
-							<button className = 'button is-primary is-danger' style = 'flex-grow: 1; margin-left: 20px; margin-right: 20px; margin-top: 6px;' onClick = { reject} >
-								{ `Reject ${ buttonNameAddon(simulationAndVisualisationResults, simulationAndVisualisationResults.activeAddress) }` }
-							</button>
+							<div style = 'display: flex; flex-direction: row;'>
+								<button className = 'button is-primary button-overflow' style = 'flex-grow: 1; margin-left: 10px; margin-right: 5px; margin-top: 5px; margin-bottom: 5px;' onClick = { approve } disabled = { isConfirmDisabled() }>
+									{ simulationAndVisualisationResults.simulationMode ? `Simulate ${ buttonNameAddon(simulationAndVisualisationResults, simulationAndVisualisationResults.activeAddress) }!` :
+										<SignerLogoText {...{
+											signerName,
+											text: `${ buttonNameAddon(simulationAndVisualisationResults, simulationAndVisualisationResults.activeAddress) } ${ getSignerName(signerName) }`
+										}}/>
+									}
+								</button>
+								<button className = 'button is-primary is-danger button-overflow' style = 'flex-grow: 1; margin-left: 5px; margin-right: 10px; margin-top: 5px; margin-bottom: 5px;' onClick = { reject} >
+									{ `Reject ${ buttonNameAddon(simulationAndVisualisationResults, simulationAndVisualisationResults.activeAddress) }` }
+								</button>
+							</div>
 						</nav>
 					</div>
 				</Hint>

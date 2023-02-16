@@ -2,7 +2,7 @@ import { LogSummarizer, SummaryOutcome } from '../../simulation/services/LogSumm
 import { AddressBookEntry, CHAIN, RenameAddressCallBack, SimulationStateParam } from '../../utils/user-interface-types.js'
 import { ERC721TokenApprovalChange, ERC721TokenDefinitionParams, SimulationAndVisualisationResults, TokenApprovalChange, TokenBalanceChange, TokenDefinitionParams } from '../../utils/visualizer-types.js'
 import { BigAddress, SmallAddress } from '../subcomponents/address.js'
-import { ERC721Token, Ether, Token, TokenAmount, TokenPrice, TokenSymbol } from '../subcomponents/coins.js'
+import { ERC721Token, Ether, EtherAmount, EtherSymbol, Token, TokenAmount, TokenPrice, TokenSymbol } from '../subcomponents/coins.js'
 import { LogAnalysis, TransactionImportanceBlock, Transactions } from './Transactions.js'
 import { CopyToClipboard } from '../subcomponents/CopyToClipboard.js'
 import { SomeTimeAgo } from '../subcomponents/SomeTimeAgo.js'
@@ -514,25 +514,30 @@ export function NewStyle(param: newStyleParams) {
 	const notOwnAddresses = Array.from(summary.entries()).filter( ([_index, balanceSummary]) => balanceSummary.summaryFor.type !== 'addressInfo' && balanceSummary.summaryFor.address !== param.simulationAndVisualisationResults.activeAddress)
 
 	return <>
-		<div class = 'block' style = 'margin: 20px; margin-top: 10px; margin-bottom: 10px;'>
+		<div class = 'block' style = 'margin: 10px; margin-top: 10px; margin-bottom: 10px;'>
 			<nav class = 'breadcrumb has-succeeds-separator is-small'>
 				<ul>
-					{ param.simulationAndVisualisationResults.simulatedAndVisualizedTransactions.slice(0, -1).map((tx, _index) => (
+					{ param.simulationAndVisualisationResults.simulatedAndVisualizedTransactions.map((tx, index) => (
 						<li style = 'margin: 0px;'>
-							<div class = 'card' style = 'padding: 5px;'>
-								<p class = 'paragraph' style = 'margin: 0px;'>
+							<div class = 'card' style = { `padding: 5px;${ index !== param.simulationAndVisualisationResults.simulatedAndVisualizedTransactions.length - 1 ? 'background-color: var(--disabled-card-color)' : ''}` }>
+								<p class = 'paragraph' style = {`margin: 0px;${ index !== param.simulationAndVisualisationResults.simulatedAndVisualizedTransactions.length - 1 ? 'color: var(--disabled-text-color)' : ''}` }>
 									{ nameTransaction(tx, param.activeAddress) }
 								</p>
 							</div>
 						</li>
 					)) }
-					<li style = 'margin: 0px'> </li>
 				</ul>
 			</nav>
 		</div>
 
-		<div class = 'card' style = 'margin: 20px; margin-top: 10px; margin-bottom: 10px;'>
+		<div class = 'card' style = 'margin: 10px; margin-top: 0px; margin-bottom: 0px;'>
 			<header class = 'card-header'>
+				<div class = 'card-header-icon unset-cursor'>
+					<span class = 'icon'>
+						<img src = { tx.statusCode === 'success' ? ( tx.quarantine ? '../img/warning-sign.svg' : '../img/success-icon.svg' ) : '../img/error-icon.svg' } />
+					</span>
+				</div>
+
 				<p class = 'card-header-title' style = 'padding-right: 0px;'>
 					{ nameTransaction(tx, param.activeAddress) }
 				</p>
@@ -541,6 +546,7 @@ export function NewStyle(param: newStyleParams) {
 						<SmallAddress
 							addressBookEntry = { tx.to }
 							renameAddressCallBack = { param.renameAddressCallBack }
+							style = { { 'background-color': 'unset' } }
 						/>
 					</p>
 				}
@@ -556,55 +562,56 @@ export function NewStyle(param: newStyleParams) {
 
 				<div class = 'card'>
 					<header class = 'card-header noselect' style = 'cursor: pointer; height: 30px;' onClick = { () => setShowSumary((prevValue) => !prevValue) }>
-						<p class = 'card-header-title'>
-							{ `${ summary.length } Account${ summary.length > 1 ? 's' : '' } Changing` }
+						<p class = 'card-header-title' style = 'font-weight: unset; font-size: 0.8em;'>
+							{ summary.length === 0 ? 'No visible changes' : `${ summary.length } account${ summary.length > 1 ? 's' : '' } changing` }
 						</p>
 						<div class = 'card-header-icon'>
-							<span class = 'icon' style = 'color: var(--text-color);'> V </span>
+							<span class = 'icon' style = 'color: var(--text-color); font-weight: unset; font-size: 0.8em;'> V </span>
 						</div>
 					</header>
 					{ !showSummary ? <></> : <>
 						<div class = 'card-content'>
 							<div class = 'container'>
-									<div class = 'notification' style = 'background-color: var(--unimportant-text-color); padding: 10px; margin-bottom: 10px; color: var(--text-color)'>
-										{ ownAddresses.length == 0 ? <p> No changes to your accounts </p>
-											: ownAddresses.map( ([_index, balanceSummary], index) => {
-												return <>
-													<SummarizeAddress
-														balanceSummary = { balanceSummary }
-														simulationAndVisualisationResults = { param.simulationAndVisualisationResults }
-														renameAddressCallBack = { param.renameAddressCallBack }
-													/>
-													{ index + 1 !== ownAddresses.length ? <div class = 'is-divider' style = 'margin-top: 8px; margin-bottom: 8px'/> : <></> }
-												</>
-											} )
-										}
-									</div>
-								</div>
-								<div class = 'container'>
-									{ notOwnAddresses.length == 0 ? <p> No token or NFT changes to other accounts</p>
-										: notOwnAddresses.map( ([_index, balanceSummary]) => {
+								{ ownAddresses.length == 0 ? <p class = 'paragraph'> No changes to your accounts </p>
+									: <div class = 'notification' style = 'background-color: var(--unimportant-text-color); padding: 10px; margin-bottom: 10px; color: var(--text-color)'>
+										{ ownAddresses.map( ([_index, balanceSummary], index) => {
 											return <>
 												<SummarizeAddress
 													balanceSummary = { balanceSummary }
 													simulationAndVisualisationResults = { param.simulationAndVisualisationResults }
 													renameAddressCallBack = { param.renameAddressCallBack }
 												/>
-												<div class = 'is-divider' style = 'margin-top: 8px; margin-bottom: 8px'/>
+												{ index + 1 !== ownAddresses.length ? <div class = 'is-divider' style = 'margin-top: 8px; margin-bottom: 8px'/> : <></> }
 											</>
-										})
-									}
-								</div>
+										} ) }
+									</div>
+								}
+							</div>
+
+							<div class = 'container'>
+								{ notOwnAddresses.length == 0 ? <></>
+									: notOwnAddresses.map( ([_index, balanceSummary]) => {
+										return <>
+											<SummarizeAddress
+												balanceSummary = { balanceSummary }
+												simulationAndVisualisationResults = { param.simulationAndVisualisationResults }
+												renameAddressCallBack = { param.renameAddressCallBack }
+											/>
+											<div class = 'is-divider' style = 'margin-top: 8px; margin-bottom: 8px'/>
+										</>
+									})
+								}
+							</div>
 						</div>
 					</> }
 				</div>
 				<div class = 'card' style = 'margin-top: 10px;'>
 					<header class = 'card-header noselect' style = 'cursor: pointer; height: 30px;' onClick = { () => setShowLogs((prevValue) => !prevValue) }>
-						<p class = 'card-header-title'>
-							{ `${ tx.tokenResults.length } Individual Token Transfer${ tx.tokenResults.length > 1 ? 's' : '' }` }
+						<p class = 'card-header-title' style = 'font-weight: unset; font-size: 0.8em;'>
+							{ tx.tokenResults.length === 0 ? 'No token events' : `${ tx.tokenResults.length } token event${ tx.tokenResults.length > 1 ? 's' : '' }` }
 						</p>
 						<div class = 'card-header-icon'>
-							<span class = 'icon' style = 'color: var(--text-color);'> V </span>
+							<span class = 'icon' style = 'color: var(--text-color); font-weight: unset; font-size: 0.8em;'> V </span>
 						</div>
 					</header>
 					{ !showLogs ? <></> : <>
@@ -618,24 +625,42 @@ export function NewStyle(param: newStyleParams) {
 					</> }
 				</div>
 
-				<p style = 'color: var(--subtitle-text-color); line-height: 28px; display: flex; margin: 0 0 0 auto; width: fit-content; margin-top: 10px;'>
-					<CopyToClipboard
-						content = { param.simulationAndVisualisationResults.blockNumber.toString() }
-						contentDisplayOverride = { `Simulated in block number ${ param.simulationAndVisualisationResults.blockNumber }` }
-						copyMessage = 'Block number copied!'
-					>
-						<p class = 'noselect nopointer' style = 'color: var(--subtitle-text-color); text-align: right; display: inline'>
-							{ 'Simulated ' }
-							<span style = { `font-weight: bold; font-family: monospace; color: ${
-								param.simulationAndVisualisationResults.blockNumber === param.currentBlockNumber || param.currentBlockNumber === undefined ? 'var(--positive-color)' :
-								param.simulationAndVisualisationResults.blockNumber + 1n === param.currentBlockNumber ? 'var(--warning-color)' : 'var(--negative-color)'
-							} ` }>
-								<SomeTimeAgo priorTimestamp = { param.simulationAndVisualisationResults.simulationConductedTimestamp }/>
-							</span>
-							{ ' ago' }
-						</p>
-					</CopyToClipboard>
-				</p>
+				<span class = 'log-table' style = 'margin-top: 10px; grid-template-columns: min-content min-content min-content auto;'>
+					<div class = 'log-cell'>
+						<p class = 'ellipsis' style = { `color: var(--subtitle-text-color); margin-bottom: 0px` }> Gas fee:&nbsp;</p>
+					</div>
+					<div class = 'log-cell'>
+						<EtherAmount
+							amount = { tx.gasSpent * tx.realizedGasPrice  }
+							textColor = { 'var(--subtitle-text-color)' }
+						/>
+					</div>
+					<div class = 'log-cell'>
+						<EtherSymbol
+							amount = { tx.gasSpent * tx.realizedGasPrice  }
+							textColor = { 'var(--subtitle-text-color)' }
+							chain = { param.simulationAndVisualisationResults.chain }
+						/>
+					</div>
+					<div class = 'log-cell' style = 'justify-content: right;'>
+						<CopyToClipboard
+							content = { param.simulationAndVisualisationResults.blockNumber.toString() }
+							contentDisplayOverride = { `Simulated in block number ${ param.simulationAndVisualisationResults.blockNumber }` }
+							copyMessage = 'Block number copied!'
+						>
+							<p class = 'noselect nopointer' style = 'color: var(--subtitle-text-color);'>
+								{ 'Simulated ' }
+								<span style = { `font-weight: bold; font-family: monospace; color: ${
+									param.simulationAndVisualisationResults.blockNumber === param.currentBlockNumber || param.currentBlockNumber === undefined ? 'var(--positive-color)' :
+									param.simulationAndVisualisationResults.blockNumber + 1n === param.currentBlockNumber ? 'var(--warning-color)' : 'var(--negative-color)'
+								} ` }>
+									<SomeTimeAgo priorTimestamp = { param.simulationAndVisualisationResults.simulationConductedTimestamp }/>
+								</span>
+								{ ' ago' }
+							</p>
+						</CopyToClipboard>
+					</div>
+				</span>
 			</div>
 		</div>
 	</>
@@ -695,9 +720,9 @@ export function SimulationSummary(param: SimulationSummaryParams) {
 					</header>
 					<div class = 'card-content'>
 						<div class = 'container'>
-							<div class = 'notification' style = 'background-color: var(--unimportant-text-color); padding: 10px; margin-bottom: 10px; color: var(--text-color)'>
-								{ ownAddresses.length == 0 ? <p> No changes to your accounts </p>
-									: ownAddresses.map( ([_index, balanceSummary], index) => {
+							{ ownAddresses.length == 0 ? <p class = 'paragraph'> No changes to your accounts </p>
+								: <div class = 'notification' style = 'background-color: var(--unimportant-text-color); padding: 10px; margin-bottom: 10px; color: var(--text-color)'>
+									{ ownAddresses.map( ([_index, balanceSummary], index) => {
 										return <>
 											<SummarizeAddress
 												balanceSummary = { balanceSummary }
@@ -706,12 +731,12 @@ export function SimulationSummary(param: SimulationSummaryParams) {
 											/>
 											{ index + 1 !== ownAddresses.length ? <div class = 'is-divider' style = 'margin-top: 8px; margin-bottom: 8px'/> : <></> }
 										</>
-									} )
-								}
-							</div>
+									} ) }
+								</div>
+							}
 						</div>
 						<div class = 'container'>
-							{ notOwnAddresses.length == 0 ? <p> No token or NFT changes to other accounts</p>
+							{ notOwnAddresses.length == 0 ? <></>
 								: notOwnAddresses.map( ([_index, balanceSummary]) => {
 									return <>
 										<SummarizeAddress

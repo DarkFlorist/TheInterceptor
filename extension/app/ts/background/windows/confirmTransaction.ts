@@ -77,8 +77,8 @@ export async function openConfirmTransactionDialog(
 		{
 			url: '../html/confirmTransaction.html',
 			type: 'popup',
-			height: 400,
-			width: 520,
+			height: 600,
+			width: 600,
 		}
 	)
 

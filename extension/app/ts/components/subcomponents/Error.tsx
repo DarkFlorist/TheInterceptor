@@ -34,8 +34,8 @@ interface ErrorCheckboxProps {
 export function ErrorCheckBox(props: ErrorCheckboxProps) {
 	return (
 		<div class = 'container'>
-			<div className = 'notification' style = 'background-color: var(--negative-color); padding: 10px;'>
-				<label class = 'form-control'>
+			<div className = 'notification' style = 'background-color: var(--error-box-color); padding: 10px;'>
+				<label class = 'form-control' style = 'color: var(--error-box-text); font-size: 1em;'>
 					<input type = 'checkbox'
 						checked = { props.checked }
 						onInput = { e => { if (e.target instanceof HTMLInputElement && e.target !== null) { props.onInput(e.target.checked) } } }

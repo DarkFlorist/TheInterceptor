@@ -14,24 +14,16 @@ type EtherParams = {
 	textColor?: string
 	useFullTokenName?: boolean
 	chain: CHAIN
+	style?: JSX.CSSProperties
 }
 
 export function Ether(param: EtherParams) {
 	return <table class = 'log-table' style = 'width: fit-content'>
 		<div class = 'log-cell' style = 'justify-content: right;'>
-			<EtherAmount
-				amount = { param.amount }
-				textColor = { param.textColor }
-				showSign = { param.showSign }
-			/>
+			<EtherAmount { ...param } />
 		</div>
 		<div class = 'log-cell'>
-			<EtherSymbol
-				amount = { param.amount }
-				textColor = { param.textColor }
-				useFullTokenName = { param.useFullTokenName }
-				chain = { param.chain }
-			/>
+			<EtherSymbol { ...param } />
 		</div>
 	</table>
 }
@@ -39,15 +31,21 @@ type EtherAmountParams = {
 	amount: bigint
 	showSign?: boolean
 	textColor?: string
+	style?: JSX.CSSProperties
 }
 
 export function EtherAmount(param: EtherAmountParams) {
-	const color = param.textColor ? param.textColor : 'var(--text-color)'
 	const sign = param.showSign ? (param.amount >= 0 ? ' + ' : ' - '): ''
-
+	const style = {
+		...(param.style === undefined ? {} : param.style),
+		display: 'inline-block',
+		overflow: 'hidden',
+		'text-overflow': 'ellipsis',
+		color: param.textColor ? param.textColor : 'var(--text-color)'
+	}
 	return <>
 		<CopyToClipboard content = { bigintToDecimalString(abs(param.amount), 18n) } copyMessage = 'Ether amount copied!' >
-			<p class = 'noselect nopointer' style = { `overflow: hidden; text-overflow: ellipsis; display: inline-block; color: ${ color };` }>{ `${ sign }${ bigintToRoundedPrettyDecimalString(abs(param.amount), 18n ) }` }&nbsp; </p>
+			<p class = 'noselect nopointer' style = { style }>{ `${ sign }${ bigintToRoundedPrettyDecimalString(abs(param.amount), 18n ) }` }&nbsp; </p>
 		</CopyToClipboard>
 	</>
 }
@@ -57,14 +55,24 @@ type EtherSymbolParams = {
 	textColor?: string
 	useFullTokenName?: boolean
 	chain: CHAIN
+	style?: JSX.CSSProperties
 }
 
 export function EtherSymbol(param: EtherSymbolParams) {
-	const color = param.textColor ? param.textColor : 'var(--text-color)'
-	return <div style = 'overflow: initial; height: 28px;'>
-		<img class = 'noselect nopointer vertical-center' style = 'height: 25px; width: 16px; display: inline-block' src = '../../img/coins/ethereum.png'/>
-		<p class = 'noselect nopointer'  style = { `color: ${ color }; display: inline-block` }> { param.useFullTokenName ? CHAINS[param.chain].currencyName : CHAINS[param.chain].currencyTicker } </p>
-	</div>
+	const style = {
+		...(param.style === undefined ? {} : param.style),
+		color: param.textColor ? param.textColor : 'var(--text-color)',
+		display: 'inline-block',
+		overflow: 'hidden',
+		'text-overflow': 'ellipsis',
+		'margin-left': '2px',
+	}
+	return <>
+		<div style = 'overflow: initial; height: 28px;'>
+			<img class = 'noselect nopointer vertical-center' style = 'max-height: 25px; max-width: 25px;' src = '../../img/coins/ethereum.png'/>
+		</div>
+		<p class = 'noselect nopointer' style = { style }> { param.useFullTokenName ? CHAINS[param.chain].currencyName : CHAINS[param.chain].currencyTicker } </p>
+	</>
 }
 
 type TokenPriceParams = {
@@ -102,14 +110,14 @@ type TokenSymbolParams = {
 
 export function TokenSymbol(param: TokenSymbolParams) {
 	const tokenString = ethers.utils.getAddress(addressString(param.tokenAddress))
-	const color = param.textColor ? param.textColor : 'var(--text-color)'
 
 	const style = {
 		...(param.style === undefined ? {} : param.style),
-		color: color,
+		color: param.textColor ? param.textColor : 'var(--text-color)',
 		display: 'inline-block',
 		overflow: 'hidden',
 		'text-overflow': 'ellipsis',
+		'margin-left': '2px',
 	}
 	return <>
 		<div style = 'overflow: initial; height: 28px;'>
@@ -149,12 +157,11 @@ type TokenAmountParams = {
 }
 
 export function TokenAmount(param: TokenAmountParams) {
-	const color = param.textColor ? param.textColor : 'var(--text-color)'
 	const sign = param.showSign ? (param.amount >= 0 ? ' + ' : ' - '): ''
 	const style = {
 		...(param.style === undefined ? {} : param.style),
 		display: 'inline-block',
-		color: color
+		color: param.textColor ? param.textColor : 'var(--text-color)'
 	}
 
 	if (param.tokenDecimals === undefined) {
@@ -178,10 +185,7 @@ type TokenParams = TokenDefinitionParams & {
 export function Token(param: TokenParams) {
 	return <table class = 'log-table' style = 'width: fit-content'>
 		<div class = 'log-cell' style = 'justify-content: right;'>
-			<TokenAmount
-				{ ...param }
-				amount = { param.amount }
-			/>
+			<TokenAmount { ...param } />
 		</div>
 		<div class = 'log-cell'>
 			<TokenSymbol { ... param }/>
@@ -198,13 +202,19 @@ type ERC721TokenNumberParams = {
 	received: boolean
 	textColor?: string
 	showSign?: boolean
+	style?: JSX.CSSProperties
 }
 
 export function ERC721TokenNumber(param: ERC721TokenNumberParams) {
 	const sign = param.showSign ? (param.received ? ' + ' : ' - ') : ''
+	const style = {
+		...(param.style === undefined ? {} : param.style),
+		display: 'inline',
+		color: param.textColor ? param.textColor : 'var(--text-color)',
+	}
 
 	return <CopyToClipboard content = { param.tokenId.toString() } copyMessage = 'Token ID copied!' >
-		<p class = 'noselect nopointer' style = {`display: inline; color: ${ param.textColor ? param.textColor : 'var(--text-color)' } `}>
+		<p class = 'noselect nopointer' style = { style }>
 			{ `${ sign } NFT #${ truncate(param.tokenId.toString(), 9) }`}&nbsp;
 		</p>
 	</CopyToClipboard>
@@ -215,6 +225,7 @@ type ERC721TokenParams = ERC721TokenDefinitionParams & {
 	textColor?: string
 	useFullTokenName: boolean
 	showSign?: boolean
+	style?: JSX.CSSProperties
 }
 
 export function ERC721Token(param: ERC721TokenParams) {
@@ -228,9 +239,12 @@ export function ERC721Token(param: ERC721TokenParams) {
 	</table>
 }
 
-type Token721AmountFieldParams = { textColor: string } & ({
-	tokenId: bigint,
-	isApproval: boolean,
+type Token721AmountFieldParams = {
+	textColor: string
+	style?: JSX.CSSProperties
+} & ({
+	tokenId: bigint
+	isApproval: boolean
 } | {
 	isAllApproval: boolean
 	allApprovalAdded: boolean
@@ -239,10 +253,13 @@ type Token721AmountFieldParams = { textColor: string } & ({
 
 
 export function Token721AmountField(param: Token721AmountFieldParams ) {
-	const color = param.textColor ? param.textColor : 'var(--text-color)'
-	if (!param.isApproval || !('isAllApproval' in param)) {
-		return <p style = { `color: ${ color }` }>{ `NFT #${ truncate(param.tokenId.toString(), 9) }` }</p>
+	const style = {
+		...(param.style === undefined ? {} : param.style),
+		color: param.textColor ? param.textColor : 'var(--text-color)'
 	}
-	if (!param.allApprovalAdded) return <p style = { `color: ${ color }` }><b>NONE</b></p>
-	return <p style = { `color: ${ color }` }><b>ALL</b></p>
+	if (!param.isApproval || !('isAllApproval' in param)) {
+		return <p style = { style }>{ `NFT #${ truncate(param.tokenId.toString(), 9) }` }</p>
+	}
+	if (!param.allApprovalAdded) return <p style = { style }><b>NONE</b></p>
+	return <p style = { style }><b>ALL</b></p>
 }
