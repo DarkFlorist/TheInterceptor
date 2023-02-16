@@ -249,7 +249,7 @@ export function TransactionImportanceBlock( param: TransactionImportanceBlockPar
 
 	const ownBalanceChanges = param.tx.ethBalanceChanges.filter( (change) => change.address.address === msgSender)
 
-	return <>
+	return <div class = 'notification' style = 'background-color: var(--unimportant-text-color); padding: 10px; margin-bottom: 10px;'>
 		{ /* sending ether / tokens */ }
 		<EtherTransferEvent
 			valueSent = { param.tx.value }
@@ -295,7 +295,7 @@ export function TransactionImportanceBlock( param: TransactionImportanceBlockPar
 			textColor = { textColor }
 			renameAddressCallBack = { param.renameAddressCallBack }
 		/>
-	</>
+	</div>
 }
 
 function normalTransaction(param: TransactionVisualizationParameters) {
@@ -475,7 +475,7 @@ export function TokenLogEvent(params: TokenLogEventParams ) {
 					useFullTokenName = { false }
 				/>
 			</div>
-			<div class = 'log-cell-flexless'>
+			<div class = 'log-cell-flexless' style = 'margin: 2px;'>
 				<SmallAddress
 					addressBookEntry = { params.tokenVisualizerResult.from }
 					textColor = { textColor }
@@ -485,7 +485,7 @@ export function TokenLogEvent(params: TokenLogEventParams ) {
 			<div class = 'log-cell' style = 'padding-right: 0.2em; padding-left: 0.2em'>
 				{ params.tokenVisualizerResult.isApproval ? <ApproveIcon color = { textColor } /> : <ArrowIcon color = { textColor } /> }
 			</div>
-			<div class = 'log-cell-flexless'>
+			<div class = 'log-cell-flexless' style = 'margin: 2px;'>
 				<SmallAddress
 					addressBookEntry = { params.tokenVisualizerResult.to }
 					textColor = { textColor }

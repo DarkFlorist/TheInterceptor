@@ -6,6 +6,7 @@ import { CHAIN } from '../../utils/user-interface-types.js'
 import { ERC721TokenDefinitionParams, TokenDefinitionParams, TokenPriceEstimate } from '../../utils/visualizer-types.js'
 import { CopyToClipboard } from './CopyToClipboard.js'
 import Blockie from './PreactBlocky.js'
+import { JSX } from 'preact/jsx-runtime'
 
 type EtherParams = {
 	amount: bigint
@@ -96,11 +97,20 @@ type TokenSymbolParams = {
 	tokenLogoUri: string | undefined
 
 	useFullTokenName: boolean | undefined
+	style?: JSX.CSSProperties
 }
 
 export function TokenSymbol(param: TokenSymbolParams) {
 	const tokenString = ethers.utils.getAddress(addressString(param.tokenAddress))
 	const color = param.textColor ? param.textColor : 'var(--text-color)'
+
+	const style = {
+		...(param.style === undefined ? {} : param.style),
+		color: color,
+		display: 'inline-block',
+		overflow: 'hidden',
+		'text-overflow': 'ellipsis',
+	}
 	return <>
 		<div style = 'overflow: initial; height: 28px;'>
 			<CopyToClipboard content = { tokenString } copyMessage = 'Token address copied!' >
@@ -118,11 +128,11 @@ export function TokenSymbol(param: TokenSymbolParams) {
 		</div>
 		<CopyToClipboard content = { tokenString } copyMessage = 'Token address copied!' >
 			{ param.useFullTokenName ?
-				<p class = 'noselect nopointer' style = { `color: ${ color }; display: inline-block; overflow: hidden; text-overflow: ellipsis;` }>
+				<p class = 'noselect nopointer' style = { style }>
 					{ `${ param.tokenName === undefined ? tokenString : param.tokenName }` }
 				</p>
 			:
-				<p class = 'noselect nopointer' style = { `color: ${ color }; display: inline-block; overflow: hidden; text-overflow: ellipsis;` }>
+				<p class = 'noselect nopointer' style = { style }>
 					{ `${ param.tokenSymbol }` }
 				</p>
 			}
@@ -135,18 +145,24 @@ type TokenAmountParams = {
 	showSign?: boolean
 	textColor?: string
 	tokenDecimals: bigint | undefined
+	style?: JSX.CSSProperties
 }
 
 export function TokenAmount(param: TokenAmountParams) {
 	const color = param.textColor ? param.textColor : 'var(--text-color)'
 	const sign = param.showSign ? (param.amount >= 0 ? ' + ' : ' - '): ''
+	const style = {
+		...(param.style === undefined ? {} : param.style),
+		display: 'inline-block',
+		color: color
+	}
 
 	if (param.tokenDecimals === undefined) {
-		return <p class = 'noselect nopointer ellipsis' style = { `display: inline-block; color: ${ color };` }> &nbsp;Unknown Amount&nbsp; </p>
+		return <p class = 'noselect nopointer ellipsis' style = { style }> &nbsp;Unknown Amount&nbsp; </p>
 	}
 	return <>
 		<CopyToClipboard content = { bigintToDecimalString(abs(param.amount), param.tokenDecimals) } copyMessage = 'Token amount copied!' >
-			<p class = 'noselect nopointer' style = { `display: inline-block; color: ${ color };` }>{ `${ sign }${ bigintToRoundedPrettyDecimalString(abs(param.amount), param.tokenDecimals ) }` }&nbsp; </p>
+			<p class = 'noselect nopointer' style = { style }>{ `${ sign }${ bigintToRoundedPrettyDecimalString(abs(param.amount), param.tokenDecimals ) }` }&nbsp; </p>
 		</CopyToClipboard>
 	</>
 }
@@ -156,6 +172,7 @@ type TokenParams = TokenDefinitionParams & {
 	showSign?: boolean
 	textColor?: string
 	useFullTokenName: boolean
+	style?: JSX.CSSProperties
 }
 
 export function Token(param: TokenParams) {

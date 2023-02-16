@@ -513,32 +513,13 @@ export function NewStyle(param: newStyleParams) {
 	)
 	const notOwnAddresses = Array.from(summary.entries()).filter( ([_index, balanceSummary]) => balanceSummary.summaryFor.type !== 'addressInfo' && balanceSummary.summaryFor.address !== param.simulationAndVisualisationResults.activeAddress)
 
-	return <div className = 'block' style = 'margin-bottom: 0px;'>
-		<nav class = 'navbar window-header' role = 'navigation' aria-label = 'main navigation'>
-			<div class = 'navbar-brand'>
-				<a class = 'navbar-item'>
-					<SmallAddress
-						addressBookEntry = { tx.from }
-						renameAddressCallBack = { param.renameAddressCallBack }
-					/>
-				</a>
-				<a class = 'navbar-item'>
-					<a style = 'cursor: unset; background-color: var(--alpha-005); padding: 4px; margin: 2px; padding-right: 10px; border-radius: 40px 40px 40px 40px; display: flex;'>
-						<span style = 'margin-right: 5px; width: 24px; height: 24px;'>
-							<img src = { param.simulationAndVisualisationResults.websiteIcon } alt = 'Logo' style = 'width: 24px; height: 24px;'/>
-						</span>
-						<p style = 'color: #FFFFFF; padding-left: 5px;'>{ param.simulationAndVisualisationResults.websiteOrigin }</p>
-					</a>
-				</a>
-			</div>
-		</nav>
-
+	return <>
 		<div class = 'block' style = 'margin: 20px; margin-top: 10px; margin-bottom: 10px;'>
-			<nav class = "breadcrumb has-succeeds-separator is-small">
+			<nav class = 'breadcrumb has-succeeds-separator is-small'>
 				<ul>
 					{ param.simulationAndVisualisationResults.simulatedAndVisualizedTransactions.slice(0, -1).map((tx, _index) => (
 						<li style = 'margin: 0px;'>
-							<div class = 'block' style = 'background-color: var(--disabled-card-color); padding: 5px;'>
+							<div class = 'card' style = 'padding: 5px;'>
 								<p class = 'paragraph' style = 'margin: 0px;'>
 									{ nameTransaction(tx, param.activeAddress) }
 								</p>
@@ -550,13 +531,13 @@ export function NewStyle(param: newStyleParams) {
 			</nav>
 		</div>
 
-		<div class = 'card' style = 'background-color: var(--card-bg-color); margin: 20px; margin-top: 10px; margin-bottom: 10px;'>
-			<header class = 'card-header' style = 'height: 48px;'>
-				<p class = 'card-header-title'>
-					<p class = 'paragraph'> { tx.to  === undefined ? 'Contract creation' : 'Send Transaction' } </p> 
+		<div class = 'card' style = 'margin: 20px; margin-top: 10px; margin-bottom: 10px;'>
+			<header class = 'card-header'>
+				<p class = 'card-header-title' style = 'padding-right: 0px;'>
+					{ nameTransaction(tx, param.activeAddress) }
 				</p>
 				{ tx.to  === undefined ? <></> :
-					<p class = 'card-header-icon' style = 'margin-left: auto; margin-right: 0; padding-right: 10px;'>
+					<p class = 'card-header-icon' style = 'margin-left: auto; margin-right: 0; padding-right: 10px; padding-left: 0px;'>
 						<SmallAddress
 							addressBookEntry = { tx.to }
 							renameAddressCallBack = { param.renameAddressCallBack }
@@ -566,26 +547,24 @@ export function NewStyle(param: newStyleParams) {
 			</header>
 			<div class = 'card-content'>
 				<div class = 'container'>
-					<div class = 'notification' style = 'background-color: var(--unimportant-text-color); padding: 10px; margin-bottom: 10px;'>
-						<TransactionImportanceBlock
-							tx = { tx }
-							simulationAndVisualisationResults = { param.simulationAndVisualisationResults }
-							renameAddressCallBack = { param.renameAddressCallBack }
-						/>
-					</div>
+					<TransactionImportanceBlock
+						tx = { tx }
+						simulationAndVisualisationResults = { param.simulationAndVisualisationResults }
+						renameAddressCallBack = { param.renameAddressCallBack }
+					/>
 				</div>
-				
+
 				<div class = 'card'>
-					<header class = 'card-header' style = 'height: 30px;'>
+					<header class = 'card-header noselect' style = 'cursor: pointer; height: 30px;' onClick = { () => setShowSumary((prevValue) => !prevValue) }>
 						<p class = 'card-header-title'>
-							<p class = 'paragraph'> Transaction Outcome </p> 
+							{ `${ summary.length } Account${ summary.length > 1 ? 's' : '' } Changing` }
 						</p>
-						<button class = 'card-header-icon' aria-label = 'remove' onClick = { () => {} }>
-							<span class = 'icon' style = 'color: var(--text-color);' onClick = { () => setShowSumary((prevValue) => !prevValue)}> V </span>
-						</button>
+						<div class = 'card-header-icon'>
+							<span class = 'icon' style = 'color: var(--text-color);'> V </span>
+						</div>
 					</header>
 					{ !showSummary ? <></> : <>
-						<div class = 'card-content' style = 'border-bottom-left-radius: 0.25rem; border-bottom-right-radius: 0.25rem; border-left: 2px solid var(--card-bg-color); border-right: 2px solid var(--card-bg-color); border-bottom: 2px solid var(--card-bg-color);'>
+						<div class = 'card-content'>
 							<div class = 'container'>
 									<div class = 'notification' style = 'background-color: var(--unimportant-text-color); padding: 10px; margin-bottom: 10px; color: var(--text-color)'>
 										{ ownAddresses.length == 0 ? <p> No changes to your accounts </p>
@@ -620,13 +599,13 @@ export function NewStyle(param: newStyleParams) {
 					</> }
 				</div>
 				<div class = 'card' style = 'margin-top: 10px;'>
-					<header class = 'card-header' style = 'height: 30px;'>
+					<header class = 'card-header noselect' style = 'cursor: pointer; height: 30px;' onClick = { () => setShowLogs((prevValue) => !prevValue) }>
 						<p class = 'card-header-title'>
-							<p class = 'paragraph'> Logs </p> 
+							{ `${ tx.tokenResults.length } Individual Token Transfer${ tx.tokenResults.length > 1 ? 's' : '' }` }
 						</p>
-						<button class = 'card-header-icon' aria-label = 'remove' onClick = { () => {} }>
-							<span class = 'icon' style = 'color: var(--text-color);' onClick = { () => setShowLogs((prevValue) => !prevValue)}> V </span>
-						</button>
+						<div class = 'card-header-icon'>
+							<span class = 'icon' style = 'color: var(--text-color);'> V </span>
+						</div>
 					</header>
 					{ !showLogs ? <></> : <>
 						<div class = 'card-content' style = 'border-bottom-left-radius: 0.25rem; border-bottom-right-radius: 0.25rem; border-left: 2px solid var(--card-bg-color); border-right: 2px solid var(--card-bg-color); border-bottom: 2px solid var(--card-bg-color);'>
@@ -638,8 +617,8 @@ export function NewStyle(param: newStyleParams) {
 						</div>
 					</> }
 				</div>
-				
-				<p style = 'color: var(--subtitle-text-color); line-height: 28px; display: flex; margin: 0 0 0 auto; width: fit-content;'>
+
+				<p style = 'color: var(--subtitle-text-color); line-height: 28px; display: flex; margin: 0 0 0 auto; width: fit-content; margin-top: 10px;'>
 					<CopyToClipboard
 						content = { param.simulationAndVisualisationResults.blockNumber.toString() }
 						contentDisplayOverride = { `Simulated in block number ${ param.simulationAndVisualisationResults.blockNumber }` }
@@ -659,17 +638,7 @@ export function NewStyle(param: newStyleParams) {
 				</p>
 			</div>
 		</div>
-
-		<div class = 'content' style = 'height: 50px;'/>
-		<nav class = 'navbar is-fixed-bottom window-header' style = 'overflow: auto; display: flex; justify-content: space-around; width: 100%; height: 40px;'>
-			<button className = 'button is-primary' style = 'flex-grow: 1; margin-left: 5px; margin-right: 5px; margin-top: 6px;'>
-				Simulate Swap!
-			</button>
-			<button className = 'button is-primary is-danger' style = 'flex-grow: 1; margin-left: 5px; margin-right: 5px; margin-top: 6px;'>
-				Reject Swap
-			</button>
-		</nav>
-	</div>
+	</>
 }
 
 type SimulationSummaryParams = {

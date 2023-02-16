@@ -10,6 +10,9 @@ import { sendPopupMessageToBackgroundPage } from '../../background/backgroundUti
 import { formSimulatedAndVisualizedTransaction } from '../formVisualizerResults.js'
 import { addressString } from '../../utils/bigint.js'
 import { EthereumUnsignedTransaction } from '../../utils/wire-types.js'
+import { SignerLogoText, getSignerName } from '../subcomponents/signers.js'
+import { SmallAddress } from '../subcomponents/address.js'
+import { nameTransactionAction } from '../simulationExplaining/identifyTransaction.js'
 
 type WebsiteOriginAndIcon = {
 	websiteOrigin: string,
@@ -20,9 +23,10 @@ export function ConfirmTransaction() {
 	const [requestIdToConfirm, setRequestIdToConfirm] = useState<number | undefined>(undefined)
 	const [simulationAndVisualisationResults, setSimulationAndVisualisationResults] = useState<(SimulationAndVisualisationResults & WebsiteOriginAndIcon) | undefined >(undefined)
 	const [transactionToSimulate, setTransactionToSimulate] = useState<EthereumUnsignedTransaction | undefined>(undefined)
-	const [_forceSend, _setForceSend] = useState<boolean>(false)
+	const [sender, setSender] = useState<AddressBookEntry | undefined>(undefined)
+	const [forceSend, _setForceSend] = useState<boolean>(false)
 	const [currentBlockNumber, setCurrentBlockNumber] = useState<undefined | bigint>(undefined)
-	const [_signerName, setSignerName] = useState<SignerName | undefined>(undefined)
+	const [signerName, setSignerName] = useState<SignerName | undefined>(undefined)
 	const [addingNewAddress, setAddingNewAddress] = useState<AddingNewAddressType | 'renameAddressModalClosed'> ('renameAddressModalClosed')
 	const [refreshPressed, setRefreshPressed] = useState<boolean>(false)
 
@@ -44,6 +48,7 @@ export function ConfirmTransaction() {
 			const addressMetaData = new Map(message.data.addressBookEntries.map( (x) => [addressString(x.address), x]))
 			const txs = formSimulatedAndVisualizedTransaction(message.data.simulationState, message.data.visualizerResults, addressMetaData)
 			setTransactionToSimulate(message.data.transactionToSimulate)
+			setSender(txs.at(-1)?.from)
 
 			setSimulationAndVisualisationResults( {
 				blockNumber: message.data.simulationState.blockNumber,
@@ -70,20 +75,16 @@ export function ConfirmTransaction() {
 		}
 	}, [])
 
-	/*
-	const removeTransaction = (_hash: bigint) => reject()
+	//const removeTransaction = (_hash: bigint) => reject()
 
 	function approve() {
 		if (requestIdToConfirm === undefined) throw new Error('request id is not set')
 		sendPopupMessageToBackgroundPage( { method: 'popup_confirmDialog', options: { requestId: requestIdToConfirm, accept: true } } )
 	}
-	*/
-/*
 	function reject() {
 		if (requestIdToConfirm === undefined) throw new Error('request id is not set')
 		sendPopupMessageToBackgroundPage( { method: 'popup_confirmDialog', options: { requestId: requestIdToConfirm, accept: false } } )
 	}
-*/
 	function refreshSimulation() {
 		if (simulationAndVisualisationResults === undefined || requestIdToConfirm === undefined || transactionToSimulate === undefined) return
 		setRefreshPressed(true)
@@ -99,16 +100,22 @@ export function ConfirmTransaction() {
 			}
 		} )
 	}
-/*
+
 	function isConfirmDisabled() {
 		if (forceSend) return false
 		const success = simulationAndVisualisationResults && simulationAndVisualisationResults.simulatedAndVisualizedTransactions[simulationAndVisualisationResults.simulatedAndVisualizedTransactions.length - 1 ].statusCode === 'success'
 		const noQuarantines = simulationAndVisualisationResults && simulationAndVisualisationResults.simulatedAndVisualizedTransactions.find( (x) => x.quarantine) === undefined
 		return !success || !noQuarantines
-	}*/
+	}
 
 	function renameAddressCallBack(entry: AddressBookEntry) {
 		setAddingNewAddress({ addingAddress: false, entry: entry })
+	}
+
+	function buttonNameAddon(vis: SimulationAndVisualisationResults, activeAddress: bigint) {
+		const tx = vis.simulatedAndVisualizedTransactions.at(-1)
+		if (tx === undefined) return ''
+		return nameTransactionAction(tx, activeAddress)
 	}
 
 	return (
@@ -126,15 +133,49 @@ export function ConfirmTransaction() {
 						}
 					</div>
 
-					<NewStyle
-						simulationAndVisualisationResults = { simulationAndVisualisationResults }
-						renameAddressCallBack = { renameAddressCallBack }
-						activeAddress = { simulationAndVisualisationResults.activeAddress }
-						resetButton = { false }
-						refreshSimulation = { refreshSimulation }
-						currentBlockNumber = { currentBlockNumber }
-						refreshPressed = { refreshPressed }
-					/>
+					<div className = 'block' style = 'margin-bottom: 0px;'>
+						<header class = 'card-header window-header' style = 'height: 40px; border-top-left-radius: 0px; border-top-right-radius: 0px'>
+							<p class = 'card-header-title' style = 'padding-right: 0px; padding-left: 0px; overflow: hidden; margin-left: 20px; font-weight: unset'>
+								{ sender === undefined ? <></> : <SmallAddress
+									addressBookEntry = { sender }
+									renameAddressCallBack = { renameAddressCallBack }
+								/> }
+							</p>
+							<div class = 'card-header-icon noselect nopointer' style = 'overflow: hidden; padding: 0px;'>
+								<a style = 'background-color: var(--alpha-005); margin: 2px; border-radius: 40px 40px 40px 40px; display: flex; padding: 4px 10px 4px 10px; margin-right: 20px; overflow: hidden;'>
+									<span style = 'margin-right: 5px; width: 24px; height: 24px; min-width: 24px'>
+										<img src = { simulationAndVisualisationResults.websiteIcon } alt = 'Logo' style = 'width: 24px; height: 24px;'/>
+									</span>
+									<p class = 'address-text' style = 'color: #FFFFFF; padding-left: 5px;'>{ simulationAndVisualisationResults.websiteOrigin }</p>
+								</a>
+							</div>
+						</header>
+
+						<NewStyle
+							simulationAndVisualisationResults = { simulationAndVisualisationResults }
+							renameAddressCallBack = { renameAddressCallBack }
+							activeAddress = { simulationAndVisualisationResults.activeAddress }
+							resetButton = { false }
+							refreshSimulation = { refreshSimulation }
+							currentBlockNumber = { currentBlockNumber }
+							refreshPressed = { refreshPressed }
+						/>
+
+						<div class = 'content' style = 'height: 50px;'/>
+						<nav class = 'navbar is-fixed-bottom window-header' style = 'overflow: auto; display: flex; justify-content: space-around; width: 100%; height: 40px;'>
+							<button className = 'button is-primary' style = 'flex-grow: 1; margin-left: 20px; margin-right: 20px; margin-top: 6px;' onClick = { approve } disabled = { isConfirmDisabled() }>
+								{ simulationAndVisualisationResults.simulationMode ? `Simulate ${ buttonNameAddon(simulationAndVisualisationResults, simulationAndVisualisationResults.activeAddress) }!` :
+									<SignerLogoText {...{
+										signerName,
+										text: `${ buttonNameAddon(simulationAndVisualisationResults, simulationAndVisualisationResults.activeAddress) } ${ getSignerName(signerName) }`
+									}}/>
+								}
+							</button>
+							<button className = 'button is-primary is-danger' style = 'flex-grow: 1; margin-left: 20px; margin-right: 20px; margin-top: 6px;' onClick = { reject} >
+								{ `Reject ${ buttonNameAddon(simulationAndVisualisationResults, simulationAndVisualisationResults.activeAddress) }` }
+							</button>
+						</nav>
+					</div>
 				</Hint>
 			:
 				<div class = 'center-to-page'>

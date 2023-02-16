@@ -302,12 +302,11 @@ export function getSwapName(identifiedSwap: IdentifiedSwapWithMetadata, chain: C
 }
 
 export function SwapVisualization(param: SwapVisualizationParams) {
-
 	if ( param.identifiedSwap === false ) return <></>
-	return <div style = 'max-width: 400px; margin: auto;'>
+	return <div class = 'notification' style = 'background-color: var(--unimportant-text-color); padding: 10px; margin: auto; margin-bottom: 10px; max-width: 400px;'>
 			<div style = 'padding-top: 5px; display: grid; grid-template-rows: max-content max-content max-content max-content;' >
 			<p style = { `color: var(--text-color);` }> Swap </p>
-			<div class = 'box' style = 'padding: 4px; background-color: var(--alpha-005); box-shadow: unset; margin-bottom: 0px; display: grid;'>
+			<div class = 'box' style = 'background-color: var(--alpha-005); box-shadow: unset; margin-bottom: 0px; display: grid;'>
 				<span class = 'grid' style = 'grid-template-columns: max-content auto; display:grid;'>
 					{ param.identifiedSwap.type === 'TokenToToken' || param.identifiedSwap.type === 'TokenToETH' ?
 						'tokenIdSent' in param.identifiedSwap ?
@@ -325,6 +324,7 @@ export function SwapVisualization(param: SwapVisualizationParams) {
 									<TokenAmount
 										amount = { param.identifiedSwap.tokenAmountSent }
 										tokenDecimals = { param.identifiedSwap.tokenAddressSent.decimals }
+										style = { { 'font-size': '28px', 'font-weight': '500' } }
 									/>
 								</div>
 								<div class = 'log-cell' style = 'justify-content: right;'>
@@ -334,6 +334,7 @@ export function SwapVisualization(param: SwapVisualizationParams) {
 										tokenSymbol = { param.identifiedSwap.tokenAddressSent.symbol }
 										tokenLogoUri = { param.identifiedSwap.tokenAddressSent.logoUri }
 										useFullTokenName = { false }
+										style = { { 'font-size': '18px', 'font-weight': '500' } }
 									/>
 								</div>
 							</>
@@ -345,7 +346,7 @@ export function SwapVisualization(param: SwapVisualizationParams) {
 				</span>
 			</div>
 			<p style = { `color: var(--text-color);` }> For </p>
-			<div class = 'box' style = 'padding: 4px; background-color: var(--alpha-005); box-shadow: unset; margin-bottom: 0px; display: grid;'>
+			<div class = 'box' style = 'background-color: var(--alpha-005); box-shadow: unset; margin-bottom: 0px; display: grid;'>
 				<span class = 'grid' style = 'grid-template-columns: max-content auto; display:grid;'>
 					{ param.identifiedSwap.type === 'TokenToToken' || param.identifiedSwap.type === 'ETHToToken' ?
 						'tokenIdReceived' in param.identifiedSwap ?
@@ -363,6 +364,7 @@ export function SwapVisualization(param: SwapVisualizationParams) {
 								<TokenAmount
 									amount = { param.identifiedSwap.tokenAmountReceived }
 									tokenDecimals = { param.identifiedSwap.tokenAddressReceived.decimals }
+									style = { { 'font-size': '28px', 'font-weight': '500' } }
 								/>
 							</div>
 							<div class = 'log-cell' style = 'justify-content: right;'>
@@ -372,6 +374,7 @@ export function SwapVisualization(param: SwapVisualizationParams) {
 									tokenSymbol = { param.identifiedSwap.tokenAddressReceived.symbol }
 									tokenLogoUri = { param.identifiedSwap.tokenAddressReceived.logoUri }
 									useFullTokenName = { false }
+									style = { { 'font-size': '18px', 'font-weight': '500' } }
 								/>
 							</div>
 							</>

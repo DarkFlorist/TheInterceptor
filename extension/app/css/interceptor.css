@@ -2,6 +2,7 @@
 	--bg-color: #303030;
 	--card-bg-color: #424242;
 	--card-content-bg-color: #484848;
+	--card-header-bg-color: #404040;
 	--window-header-bg-color: #606060;
 
 	--disabled-card-color: rgba(10, 10, 10, 0.6);
@@ -120,7 +121,11 @@ input[type = 'checkbox']:checked::before {
 }
 
 .paragraph {
-	color:var(--text-color);
+	color: var(--text-color);
+}
+
+.card-header-title {
+	color: var(--text-color);
 }
 
 .subtitle {
@@ -213,15 +218,21 @@ li {
 .card-content {
 	padding: 10px;
 	background-color: var(--card-content-bg-color);
+	border-bottom-left-radius: 0.25rem;
+	border-bottom-right-radius: 0.25rem;
+	border-left: 2px solid var(--card-bg-color);
+	border-right: 2px solid var(--card-bg-color);
+	border-bottom: 2px solid var(--card-bg-color);
 }
 
 .card-header {
-	background-color: var(--card-bg-color);
+	background-color: var(--card-header-bg-color);
 }
 
 .card-header.window-header {
 	background-color: var(--window-header-bg-color);
 }
+
 .window-header {
 	background-color: var(--window-header-bg-color);
 }
@@ -562,7 +573,6 @@ svg.spinner > circle {
 	position: relative;
 	background-color: var(--alpha-005);
 	padding: 4px;
-	margin: 2px;
 	padding-right: 10px;
 	border-radius: 10px 40px 40px 10px;
 	overflow: hidden;
@@ -575,4 +585,8 @@ svg.spinner > circle {
 .breadcrumb li + li::before {
 	margin-left: 5px;
 	margin-right: 5px;
+}
+
+.button.is-primary:focus:not(:active) {
+	box-shadow: unset
 }
