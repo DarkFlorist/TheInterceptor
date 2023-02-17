@@ -69,7 +69,7 @@ input[type = 'checkbox'] {
 }
 
 input[type = 'checkbox']::before {
-	content: '✓';
+	content: 'X';
 	place-content: center;
 	padding-left: 2px;
 	color: black;

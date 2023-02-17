@@ -2,23 +2,18 @@ import { useState, useEffect } from 'preact/hooks'
 import { MessageToPopup, SignerName } from '../../utils/interceptor-messages.js'
 import { SimulationAndVisualisationResults } from '../../utils/visualizer-types.js'
 import Hint from '../subcomponents/Hint.js'
-import { NewStyle } from '../simulationExplaining/SimulationSummary.js'
+import { NewStyleTransactionCard } from '../simulationExplaining/SimulationSummary.js'
 import { Spinner } from '../subcomponents/Spinner.js'
 import { AddNewAddress } from './AddNewAddress.js'
-import { AddingNewAddressType, AddressBookEntry } from '../../utils/user-interface-types.js'
+import { AddingNewAddressType, AddressBookEntry, WebsiteOriginAndIcon } from '../../utils/user-interface-types.js'
 import { sendPopupMessageToBackgroundPage } from '../../background/backgroundUtils.js'
 import { formSimulatedAndVisualizedTransaction } from '../formVisualizerResults.js'
 import { addressString } from '../../utils/bigint.js'
 import { EthereumUnsignedTransaction } from '../../utils/wire-types.js'
 import { SignerLogoText, getSignerName } from '../subcomponents/signers.js'
-import { SmallAddress } from '../subcomponents/address.js'
+import { SmallAddress, Website } from '../subcomponents/address.js'
 import { nameTransactionAction } from '../simulationExplaining/identifyTransaction.js'
 import { ErrorCheckBox } from '../subcomponents/Error.js'
-
-type WebsiteOriginAndIcon = {
-	websiteOrigin: string,
-	websiteIcon: string | undefined,
-}
 
 export function ConfirmTransaction() {
 	const [requestIdToConfirm, setRequestIdToConfirm] = useState<number | undefined>(undefined)
@@ -138,12 +133,7 @@ export function ConfirmTransaction() {
 						<div style = 'overflow-y: auto'>
 							<header class = 'card-header window-header' style = 'height: 40px; border-top-left-radius: 0px; border-top-right-radius: 0px'>
 								<div class = 'card-header-icon noselect nopointer' style = 'overflow: hidden; padding: 0px;'>
-									<a style = 'margin: 2px; border-radius: 40px 40px 40px 40px; display: flex; padding: 4px 10px 4px 10px; overflow: hidden;'>
-										<span style = 'margin-right: 5px; width: 24px; height: 24px; min-width: 24px'>
-											<img src = { simulationAndVisualisationResults.websiteIcon } alt = 'Logo' style = 'width: 24px; height: 24px;'/>
-										</span>
-										<p class = 'address-text' style = 'color: #FFFFFF; padding-left: 5px;'>{ simulationAndVisualisationResults.websiteOrigin }</p>
-									</a>
+									<Website { ...simulationAndVisualisationResults } />
 								</div>
 								<p class = 'card-header-title' style = 'overflow: hidden; font-weight: unset; flex-direction: row-reverse;'>
 									{ sender === undefined ? <></> : <SmallAddress
@@ -153,7 +143,7 @@ export function ConfirmTransaction() {
 								</p>
 							</header>
 
-							<NewStyle
+							<NewStyleTransactionCard
 								simulationAndVisualisationResults = { simulationAndVisualisationResults }
 								renameAddressCallBack = { renameAddressCallBack }
 								activeAddress = { simulationAndVisualisationResults.activeAddress }
@@ -164,21 +154,23 @@ export function ConfirmTransaction() {
 							/>
 						</div>
 
-						<nav class = 'window-header' style = 'display: flex; justify-content: space-around; width: 100%; flex-direction: column;'>
-							<div style = 'display: grid'>
+						<nav class = 'window-header' style = 'display: flex; justify-content: space-around; width: 100%; flex-direction: column; padding-bottom: 10px; padding-top: 10px;'>
 							{ simulationAndVisualisationResults && simulationAndVisualisationResults.simulatedAndVisualizedTransactions[simulationAndVisualisationResults.simulatedAndVisualizedTransactions.length - 1 ].statusCode === 'success' ?
 								simulationAndVisualisationResults && simulationAndVisualisationResults.simulatedAndVisualizedTransactions[simulationAndVisualisationResults.simulatedAndVisualizedTransactions.length - 1 ].quarantine !== true ? <></> :
-								<div style = 'margin: 0px; margin-top: 5px; margin-left: 20px; margin-right: 20px; '>
-									<ErrorCheckBox text = { 'I understand that there are issues with this transaction but I want to send it anyway against Interceptors recommendations.' } checked = { forceSend } onInput = { setForceSend } />
+								<div style = 'display: grid'>
+									<div style = 'margin: 0px; margin-bottom: 10px; margin-left: 20px; margin-right: 20px; '>
+										<ErrorCheckBox text = { 'I understand that there are issues with this transaction but I want to send it anyway against Interceptors recommendations.' } checked = { forceSend } onInput = { setForceSend } />
+									</div>
 								</div>
 							:
-								<div style = 'margin: 0px; margin-top: 5px; margin-left: 20px; margin-right: 20px; '>
-									<ErrorCheckBox text = { 'I understand that the transaction will fail but I want to send it anyway.' } checked = { forceSend } onInput = { setForceSend } />
+								<div style = 'display: grid'>
+									<div style = 'margin: 0px; margin-bottom: 10px; margin-left: 20px; margin-right: 20px; '>
+										<ErrorCheckBox text = { 'I understand that the transaction will fail but I want to send it anyway.' } checked = { forceSend } onInput = { setForceSend } />
+									</div>
 								</div>
 							}
-							</div>
 							<div style = 'display: flex; flex-direction: row;'>
-								<button className = 'button is-primary button-overflow' style = 'flex-grow: 1; margin-left: 10px; margin-right: 5px; margin-top: 5px; margin-bottom: 5px;' onClick = { approve } disabled = { isConfirmDisabled() }>
+								<button className = 'button is-primary button-overflow' style = 'flex-grow: 1; margin-left: 10px; margin-right: 5px; margin-top: 0px; margin-bottom: 0px;' onClick = { approve } disabled = { isConfirmDisabled() }>
 									{ simulationAndVisualisationResults.simulationMode ? `Simulate ${ buttonNameAddon(simulationAndVisualisationResults, simulationAndVisualisationResults.activeAddress) }!` :
 										<SignerLogoText {...{
 											signerName,
@@ -186,7 +178,7 @@ export function ConfirmTransaction() {
 										}}/>
 									}
 								</button>
-								<button className = 'button is-primary is-danger button-overflow' style = 'flex-grow: 1; margin-left: 5px; margin-right: 10px; margin-top: 5px; margin-bottom: 5px;' onClick = { reject} >
+								<button className = 'button is-primary is-danger button-overflow' style = 'flex-grow: 1; margin-left: 5px; margin-right: 10px; margin-top: 0px; margin-bottom: 0px;' onClick = { reject} >
 									{ `Reject ${ buttonNameAddon(simulationAndVisualisationResults, simulationAndVisualisationResults.activeAddress) }` }
 								</button>
 							</div>

@@ -2,7 +2,7 @@
 import { EthBalanceChanges, EthereumAddress, EthereumQuantity, EthereumSignedTransaction, EthereumTimestamp, SingleMulticallResponse } from './wire-types.js'
 import * as funtypes from 'funtypes'
 import { QUARANTINE_CODE } from '../simulation/protectors/quarantine-codes.js'
-import { AddressBookEntry, CHAIN, NFTEntry, RenameAddressCallBack, TokenEntry } from './user-interface-types.js'
+import { AddressBookEntry, CHAIN, NFTEntry, RenameAddressCallBack, TokenEntry, WebsiteOriginAndIcon } from './user-interface-types.js'
 
 export type TokenVisualizerResult = funtypes.Static<typeof TokenVisualizerResult>
 export const TokenVisualizerResult = funtypes.Intersect(
@@ -155,6 +155,7 @@ export type TransactionVisualizationParameters = {
 	removeTransaction: (hash: bigint) => void,
 	activeAddress: bigint,
 	renameAddressCallBack: RenameAddressCallBack,
+	website: WebsiteOriginAndIcon,
 }
 
 export type TokenDefinitionParams = {

@@ -1,7 +1,7 @@
 import { ethers } from 'ethers'
 import { addressString } from '../../utils/bigint.js'
 import Blockie from './PreactBlocky.js'
-import { AddressBookEntry, AddressInfo, RenameAddressCallBack } from '../../utils/user-interface-types.js'
+import { AddressBookEntry, AddressInfo, RenameAddressCallBack, WebsiteOriginAndIcon } from '../../utils/user-interface-types.js'
 import { CopyToClipboard } from './CopyToClipboard.js'
 import { ApproveIcon, ArrowIcon } from '../subcomponents/icons.js'
 import { JSX } from 'preact/jsx-runtime'
@@ -219,4 +219,36 @@ export function FromAddressToAddress(params: FromAddressToAddressParams ) {
 			/>
 		</div>
 	</div>
+}
+
+export function FromSmallAddressToSmallAddress({ from, to, renameAddressCallBack }: { from: AddressBookEntry, to: AddressBookEntry, renameAddressCallBack: RenameAddressCallBack }) {
+	const textColor = 'var(--text-color)'
+	return <span class = 'log-table' style = 'justify-content: center; column-gap: 5px;'>
+		<div class = 'log-cell-flexless' style = 'margin: 2px;'>
+			<SmallAddress
+				addressBookEntry = { from }
+				textColor = { textColor }
+				renameAddressCallBack = { renameAddressCallBack }
+			/>
+		</div>
+		<div class = 'log-cell' style = 'padding-right: 0.2em; padding-left: 0.2em'>
+			<ArrowIcon color = { textColor } />
+		</div>
+		<div class = 'log-cell-flexless' style = 'margin: 2px;'>
+			<SmallAddress
+				addressBookEntry = { to }
+				textColor = { textColor }
+				renameAddressCallBack = { renameAddressCallBack }
+			/>
+		</div>
+	</span>
+}
+
+export function Website( { websiteIcon, websiteOrigin, textColor }: WebsiteOriginAndIcon & { textColor?: string }) {
+	return <a style = 'margin: 2px; border-radius: 40px 40px 40px 40px; display: flex; padding: 4px 10px 4px 10px; overflow: hidden;'>
+		<span style = 'margin-right: 5px; width: 24px; height: 24px; min-width: 24px'>
+			<img src = { websiteIcon } alt = 'Logo' style = 'width: 24px; height: 24px;'/>
+		</span>
+		<p class = 'address-text' style = {`color: ${ textColor === undefined ? 'var(--text-color)' : textColor }; padding-left: 5px;` }>{ websiteOrigin }</p>
+	</a>
 }

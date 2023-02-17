@@ -213,3 +213,9 @@ export interface SignerState {
 }
 
 export type RenameAddressCallBack = (addressBookEntry: AddressBookEntry) => void
+
+
+export type WebsiteOriginAndIcon = {
+	websiteOrigin: string,
+	websiteIcon: string | undefined,
+}
