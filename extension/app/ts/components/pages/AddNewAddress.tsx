@@ -103,7 +103,7 @@ export function AddressInfoFields({ addressInput, nameInput, setNameInput, setAd
 			<AddressInput disableAddress = { disableAddress } addressInput = { addressInput } setAddress = { setAddress } />
 			<label class = 'form-control'>
 				<input type = 'checkbox' checked = { !askForAddressAccess } onInput = { e => { if (e.target instanceof HTMLInputElement && e.target !== null) { setAskForAddressAccess(!e.target.checked) } } } />
-				Don't request for an access (unsecure)
+				<p class = 'paragraph checkbox-text'>Don't request for an access (unsecure)</p>
 			</label>
 		</div>
 	</div>

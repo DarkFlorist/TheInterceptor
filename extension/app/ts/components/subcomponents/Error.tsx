@@ -6,8 +6,8 @@ export function Error(props: ErrorProps) {
 	return (
 		<div class = 'container'>
 			<div className = 'notification' style = 'background-color: var(--error-box-color); display: flex; align-items: center; padding: 2px; padding: 10px'>
-				<span class = 'icon' style = 'margin-left: 0px; margin-right: 5px; width: 2em; height: 2em;'>
-					<img src = '../img/warning-sign-black.svg' />
+				<span class = 'icon' style = 'margin-left: 0px; margin-right: 5px; width: 2em; height: 2em; min-width: 2em; min-height: 2em;'>
+					<img src = '../img/warning-sign-black.svg' style = 'width: 2em; height: 2em;'/>
 				</span>
 				<p className = 'paragraph' style = 'marging-left: 10px; color: var(--error-box-text);'> { props.text } </p>
 			</div>
@@ -40,7 +40,7 @@ export function ErrorCheckBox(props: ErrorCheckboxProps) {
 						checked = { props.checked }
 						onInput = { e => { if (e.target instanceof HTMLInputElement && e.target !== null) { props.onInput(e.target.checked) } } }
 					/>
-					{ props.text }
+					<p class = 'paragraph checkbox-text' style = 'color: var(--error-box-text);'> { props.text } </p>
 				</label>
 			</div>
 		</div>

@@ -57,7 +57,7 @@ input[type = 'checkbox'] {
 	appearance: none;
 	background-color: #fff;
 	margin: 0;
-	font: inherit;
+	font-size: 1.2em;
 	color: black;
 	place-content: center;
 	width: 1.15em;
@@ -69,14 +69,16 @@ input[type = 'checkbox'] {
 }
 
 input[type = 'checkbox']::before {
-	content: 'X';
-	place-content: center;
-	padding-left: 2px;
-	color: black;
-	width: 1.15em;
-	height: 1.15em;
-	transform: scale(0);
-	border-radius: 3px;
+	content: '✔';
+    place-content: center;
+    display: flex;
+    margin-bottom: 2;
+    color: black;
+    line-height: 1.15em;
+    width: 1.15em;
+    height: 1.15em;
+    transform: scale(0);
+    border-radius: 3px;
 	transition: 120ms transform ease-in-out;
 	background-color: var(--primary-color);
 	border: 1px solid black;
@@ -184,7 +186,7 @@ html, body {
 	box-shadow: none;
  }
 
-.input:disabled, input[disabled] {
+.input:not([type='checkbox']):disabled, input:not([type='checkbox'])[disabled] {
 	border-bottom: unset
 }
 
@@ -601,4 +603,9 @@ svg.spinner > circle {
 	white-space: nowrap;
 	display: block;
 	text-overflow: ellipsis;
+}
+
+
+.checkbox-text {
+	padding-left: 0.2em;
 }

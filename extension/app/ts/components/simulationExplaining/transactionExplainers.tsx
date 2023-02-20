@@ -21,7 +21,7 @@ export function makeYouRichTransaction(param: TransactionVisualizationParameters
 	const lastLetterOfActiveAddress = addressString(param.activeAddress).slice(-1)
 	const explainer = transactionExplainers.get(lastLetterOfActiveAddress) || ['Receive', 'for fun and profit 🎉']
 	return (
-		<div class = 'block' style = 'background-color: var(--card-bg-color);'>
+		<div class = 'card' style = 'background-color: var(--card-bg-color);'>
 			<header class = 'card-header'>
 				<div class = 'card-header-icon unset-cursor'>
 					<span class = 'icon'>

@@ -2,7 +2,7 @@ import { useState, useEffect } from 'preact/hooks'
 import { MessageToPopup, SignerName } from '../../utils/interceptor-messages.js'
 import { SimulationAndVisualisationResults } from '../../utils/visualizer-types.js'
 import Hint from '../subcomponents/Hint.js'
-import { NewStyleTransactionCard } from '../simulationExplaining/SimulationSummary.js'
+import { GasFee, LogAnalysisCard, SimulatedInBlockNumber, TransactionHeader, TransactionsAccountChangesCard } from '../simulationExplaining/SimulationSummary.js'
 import { Spinner } from '../subcomponents/Spinner.js'
 import { AddNewAddress } from './AddNewAddress.js'
 import { AddingNewAddressType, AddressBookEntry, WebsiteOriginAndIcon } from '../../utils/user-interface-types.js'
@@ -12,8 +12,85 @@ import { addressString } from '../../utils/bigint.js'
 import { EthereumUnsignedTransaction } from '../../utils/wire-types.js'
 import { SignerLogoText, getSignerName } from '../subcomponents/signers.js'
 import { SmallAddress, Website } from '../subcomponents/address.js'
-import { nameTransactionAction } from '../simulationExplaining/identifyTransaction.js'
+import { nameTransaction, nameTransactionAction } from '../simulationExplaining/identifyTransaction.js'
 import { ErrorCheckBox } from '../subcomponents/Error.js'
+import { TransactionImportanceBlock } from '../simulationExplaining/Transactions.js'
+
+type TransactionCardParams = {
+	simulationAndVisualisationResults: SimulationAndVisualisationResults & WebsiteOriginAndIcon,
+	renameAddressCallBack: (entry: AddressBookEntry) => void,
+	activeAddress: bigint,
+	resetButton: boolean,
+	refreshSimulation: () => void,
+	currentBlockNumber: bigint | undefined,
+	refreshPressed: boolean,
+}
+
+function TransactionCard(param: TransactionCardParams) {
+	const tx = param.simulationAndVisualisationResults.simulatedAndVisualizedTransactions.at(-1)
+	if (tx === undefined) return <></>
+
+	return <>
+		<div class = 'block' style = 'margin: 10px; margin-top: 10px; margin-bottom: 10px;'>
+			<nav class = 'breadcrumb has-succeeds-separator is-small'>
+				<ul>
+					{ param.simulationAndVisualisationResults.simulatedAndVisualizedTransactions.map((tx, index) => (
+						<li style = 'margin: 0px;'>
+							<div class = 'card' style = { `padding: 5px;${ index !== param.simulationAndVisualisationResults.simulatedAndVisualizedTransactions.length - 1 ? 'background-color: var(--disabled-card-color)' : ''}` }>
+								<p class = 'paragraph' style = {`margin: 0px;${ index !== param.simulationAndVisualisationResults.simulatedAndVisualizedTransactions.length - 1 ? 'color: var(--disabled-text-color)' : ''}` }>
+									{ nameTransaction(tx, param.activeAddress) }
+								</p>
+							</div>
+						</li>
+					)) }
+				</ul>
+			</nav>
+		</div>
+
+		<div class = 'card' style = 'margin: 10px;'>
+			<TransactionHeader
+				tx = { tx }
+				renameAddressCallBack =  {param.renameAddressCallBack }
+				activeAddress = { param.activeAddress }
+			/>
+			<div class = 'card-content' style = 'padding-bottom: 5px;'>
+				<div class = 'container'>
+					<TransactionImportanceBlock
+						tx = { tx }
+						simulationAndVisualisationResults = { param.simulationAndVisualisationResults }
+						renameAddressCallBack = { param.renameAddressCallBack }
+					/>
+				</div>
+
+				<TransactionsAccountChangesCard
+					tx = { tx }
+					simulationAndVisualisationResults = { param.simulationAndVisualisationResults }
+					renameAddressCallBack = { param.renameAddressCallBack }
+					addressMetaData = { param.simulationAndVisualisationResults.addressMetaData }
+				/>
+
+				<LogAnalysisCard
+					tx = { tx }
+					renameAddressCallBack = { param.renameAddressCallBack }
+				/>
+
+				<span class = 'log-table' style = 'margin-top: 10px; grid-template-columns: min-content min-content min-content auto;'>
+					<GasFee
+						tx = { tx }
+						chain = { param.simulationAndVisualisationResults.chain }
+					/>
+					<div class = 'log-cell' style = 'justify-content: right;'>
+						<SimulatedInBlockNumber
+							simulationBlockNumber = { param.simulationAndVisualisationResults.blockNumber }
+							currentBlockNumber = { param.currentBlockNumber }
+							simulationConductedTimestamp = { param.simulationAndVisualisationResults.simulationConductedTimestamp }
+						/>
+					</div>
+				</span>
+			</div>
+		</div>
+	</>
+}
 
 export function ConfirmTransaction() {
 	const [requestIdToConfirm, setRequestIdToConfirm] = useState<number | undefined>(undefined)
@@ -59,9 +136,6 @@ export function ConfirmTransaction() {
 				websiteOrigin: message.data.websiteOrigin,
 				websiteIcon: message.data.websiteIcon,
 			})
-
-			console.log(message.data.websiteOrigin)
-			console.log(message.data.websiteIcon)
 		}
 		browser.runtime.onMessage.addListener(popupMessageListener)
 		sendPopupMessageToBackgroundPage( { method: 'popup_confirmTransactionReadyAndListening' } )
@@ -99,8 +173,10 @@ export function ConfirmTransaction() {
 
 	function isConfirmDisabled() {
 		if (forceSend) return false
-		const success = simulationAndVisualisationResults && simulationAndVisualisationResults.simulatedAndVisualizedTransactions[simulationAndVisualisationResults.simulatedAndVisualizedTransactions.length - 1 ].statusCode === 'success'
-		const noQuarantines = simulationAndVisualisationResults && simulationAndVisualisationResults.simulatedAndVisualizedTransactions.find( (x) => x.quarantine) === undefined
+		if (simulationAndVisualisationResults === undefined) return false
+		const lastTx = simulationAndVisualisationResults.simulatedAndVisualizedTransactions[simulationAndVisualisationResults.simulatedAndVisualizedTransactions.length - 1 ]
+		const success = lastTx.statusCode === 'success'
+		const noQuarantines = lastTx.quarantine == false
 		return !success || !noQuarantines
 	}
 
@@ -152,7 +228,7 @@ export function ConfirmTransaction() {
 							</p>
 						</header>
 
-						<NewStyleTransactionCard
+						<TransactionCard
 							simulationAndVisualisationResults = { simulationAndVisualisationResults }
 							renameAddressCallBack = { renameAddressCallBack }
 							activeAddress = { simulationAndVisualisationResults.activeAddress }
