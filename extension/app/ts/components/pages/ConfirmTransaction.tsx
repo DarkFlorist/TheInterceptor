@@ -14,10 +14,15 @@ import { formSimulatedAndVisualizedTransaction } from '../formVisualizerResults.
 import { addressString } from '../../utils/bigint.js'
 import { EthereumUnsignedTransaction } from '../../utils/wire-types.js'
 
+type WebsiteOriginAndIcon = {
+	websiteOrigin: string,
+	websiteIcon: string | undefined,
+}
+
 export function ConfirmTransaction() {
 	const [requestIdToConfirm, setRequestIdToConfirm] = useState<number | undefined>(undefined)
-	const [simulationAndVisualisationResults, setSimulationAndVisualisationResults] = useState<SimulationAndVisualisationResults | undefined >(undefined)
-	const [transactionToSimulate, setTransactionToSimulate] = useState<EthereumUnsignedTransaction | undefined >(undefined)
+	const [simulationAndVisualisationResults, setSimulationAndVisualisationResults] = useState<(SimulationAndVisualisationResults & WebsiteOriginAndIcon) | undefined >(undefined)
+	const [transactionToSimulate, setTransactionToSimulate] = useState<EthereumUnsignedTransaction | undefined>(undefined)
 	const [forceSend, setForceSend] = useState<boolean>(false)
 	const [currentBlockNumber, setCurrentBlockNumber] = useState<undefined | bigint>(undefined)
 	const [signerName, setSignerName] = useState<SignerName | undefined>(undefined)
@@ -53,7 +58,12 @@ export function ConfirmTransaction() {
 				activeAddress: message.data.activeAddress,
 				simulationMode: message.data.simulationMode,
 				addressMetaData: message.data.addressBookEntries,
+				websiteOrigin: message.data.websiteOrigin,
+				websiteIcon: message.data.websiteIcon,
 			})
+
+			console.log(message.data.websiteOrigin)
+			console.log(message.data.websiteIcon)
 		}
 		browser.runtime.onMessage.addListener(popupMessageListener)
 		sendPopupMessageToBackgroundPage( { method: 'popup_confirmTransactionReadyAndListening' } )
@@ -85,6 +95,8 @@ export function ConfirmTransaction() {
 				simulationMode: simulationAndVisualisationResults.simulationMode,
 				requestId: requestIdToConfirm,
 				transactionToSimulate: transactionToSimulate,
+				websiteOrigin: simulationAndVisualisationResults.websiteOrigin,
+				websiteIcon: simulationAndVisualisationResults.websiteIcon,
 			}
 		} )
 	}

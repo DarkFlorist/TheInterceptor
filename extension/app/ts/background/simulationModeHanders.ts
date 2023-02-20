@@ -3,6 +3,7 @@ import { bytes32String } from '../utils/bigint.js'
 import { ERROR_INTERCEPTOR_UNKNOWN_ORIGIN, KNOWN_CONTRACT_CALLER_ADDRESSES } from '../utils/constants.js'
 import { EstimateGasParams, EthBalanceParams, EthBlockByNumberParams, EthCallParams, EthereumAddress, EthereumData, EthereumQuantity, EthereumSignedTransactionWithBlockData, EthSubscribeParams, EthTransactionReceiptResponse, EthUnSubscribeParams, GetBlockReturn, GetCode, GetSimulationStack, GetSimulationStackReply, GetTransactionCount, JsonRpcNewHeadsNotification, NewHeadsSubscriptionData, PersonalSignParams, SendTransactionParams, SignTypedDataParams, SwitchEthereumChainParams, TransactionByHashParams, TransactionReceiptParams } from '../utils/wire-types.js'
 import { postMessageIfStillConnected } from './background.js'
+import { retrieveWebsiteTabIcon } from './iconHandler.js'
 import { WebsiteAccessArray } from './settings.js'
 import { openChangeChainDialog } from './windows/changeChain.js'
 import { openConfirmTransactionDialog } from './windows/confirmTransaction.js'
@@ -63,10 +64,12 @@ export async function sendTransaction(getActiveAddressForDomain: (websiteAccess:
 			accessList: []
 		}
 	}
-	const origin = port.sender?.url
-	if (origin === undefined) return ERROR_INTERCEPTOR_UNKNOWN_ORIGIN
+	const websiteOrigin = port.sender?.url
+	if (websiteOrigin === undefined) return ERROR_INTERCEPTOR_UNKNOWN_ORIGIN
 	if (requestId === undefined) throw new Error('sendTransaction requires known requestId')
-	return await openConfirmTransactionDialog(requestId, origin, simulationMode, formTransaction)
+	
+	const websiteIcon = await retrieveWebsiteTabIcon(port.sender?.tab?.id)
+	return await openConfirmTransactionDialog(requestId, websiteOrigin, websiteIcon, simulationMode, formTransaction)
 }
 
 async function singleCallWithFromOverride(simulator: Simulator, request: EthCallParams, from: bigint) {
