@@ -4,6 +4,7 @@ import { getActiveAddressForDomain, hasAccess, hasAddressAccess } from './access
 import { getActiveAddress, sendPopupMessageToOpenWindows } from './backgroundUtils.js'
 import { getAddressMetaData } from './metadataUtils.js'
 import { imageToUri } from '../utils/imageToUri.js'
+import { Future } from '../utils/future.js'
 
 function setInterceptorIcon(tabId: number, icon: string, iconReason: string) {
 	window.interceptor.websiteTabConnection.set(tabId, {
@@ -53,22 +54,29 @@ export async function retrieveWebsiteTabIcon(tabId: number | undefined) {
 	if ( tabId === undefined) return undefined
 
 	// wait for the tab to be fully loaded
-	const waitForLoaded = new Promise(async resolve => {
-		const listener = function listener(tabIdUpdated: number, info: browser.tabs._OnUpdatedChangeInfo) {
-			if (info.status === 'complete' && tabId === tabIdUpdated) {
-				browser.tabs.onUpdated.removeListener(listener)
-				resolve(undefined)
+	const waitForLoadedFuture = new Future<void>
+	const waitForLoaded = async () => {
+		try {
+			const listener = function listener(tabIdUpdated: number, info: browser.tabs._OnUpdatedChangeInfo) {
+				if (info.status === 'complete' && tabId === tabIdUpdated) {
+					browser.tabs.onUpdated.removeListener(listener)
+					return waitForLoadedFuture.resolve()
+				}
 			}
+			browser.tabs.onUpdated.addListener(listener)
+			if( (await browser.tabs.get(tabId)).status === 'complete') {
+				browser.tabs.onUpdated.removeListener(listener)
+				return waitForLoadedFuture.resolve()
+			}
+			return waitForLoadedFuture.resolve()
+		} catch(error) {
+			if (error instanceof Error) return waitForLoadedFuture.reject(error)
+			return waitForLoadedFuture.reject(new Error('Unknown error'))
 		}
-		browser.tabs.onUpdated.addListener(listener)
-		if( (await browser.tabs.get(tabId)).status === 'complete') {
-			browser.tabs.onUpdated.removeListener(listener)
-			resolve(undefined)
-		}
-	})
+	}
 
-	await waitForLoaded
-
+	waitForLoaded()
+	await waitForLoadedFuture
 	// if the tab is not ready yet try to wait for a while for it to be ready, if not, we just have no icon to show on firefox
 	let maxRetries = 10
 	// apparently there's a lot bugs in firefox related to getting this favicon. Eve if the tab has loaded, the favicon is not necessary loaded either
