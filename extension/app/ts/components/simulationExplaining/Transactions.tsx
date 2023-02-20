@@ -285,7 +285,7 @@ function normalTransaction(param: TransactionVisualizationParameters) {
 				activeAddress = { param.activeAddress }
 				removeTransaction = { () => param.removeTransaction(param.tx.hash) }
 			/>
-			<div class = 'card-content'>
+			<div class = 'card-content' style = 'padding-bottom: 5px;'>
 				<div class = 'container'>
 					<TransactionImportanceBlock
 						tx = { param.tx }
@@ -300,7 +300,7 @@ function normalTransaction(param: TransactionVisualizationParameters) {
 
 				<span class = 'log-table' style = 'margin-top: 10px; column-gap: 5px; justify-content: space-between; grid-template-columns: auto auto'>
 					<div class = 'log-cell' style = ''>
-						<p style = { `color: var(--subtitle-text-color);` }> Transaction sender </p>
+						<p style = { `color: var(--subtitle-text-color);` }> Transaction sender: </p>
 					</div>
 					<div class = 'log-cell' style = ''>
 						<SmallAddress

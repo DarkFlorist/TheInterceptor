@@ -114,85 +114,86 @@ export function ConfirmTransaction() {
 		return nameTransactionAction(tx, activeAddress)
 	}
 
+
+	if (simulationAndVisualisationResults === undefined) {
+		return <div class = 'center-to-page'>
+			<div class = 'vertical-center' style = 'scale: 3'>
+				<Spinner/>
+				<span style = 'margin-left: 0.2em' > Simulating... </span>
+			</div>
+		</div>
+	}
+
 	return (
 		<main>
-			{ simulationAndVisualisationResults !== undefined ?
-				<Hint>
-					<div class = { `modal ${ addingNewAddress !== 'renameAddressModalClosed' ? 'is-active' : ''}` }>
-						{ addingNewAddress === 'renameAddressModalClosed' ? <></> :
-							<AddNewAddress
-								setActiveAddressAndInformAboutIt = { undefined }
-								addingNewAddress = { addingNewAddress }
-								close = { () => { setAddingNewAddress('renameAddressModalClosed') } }
-								activeAddress = { undefined }
-							/>
-						}
-					</div>
-
-					<div className = 'block' style = 'margin-bottom: 0px; display: flex; justify-content: space-between; flex-direction: column; height: 100%; position: fixed; width: 100%'>
-						<div style = 'overflow-y: auto'>
-							<header class = 'card-header window-header' style = 'height: 40px; border-top-left-radius: 0px; border-top-right-radius: 0px'>
-								<div class = 'card-header-icon noselect nopointer' style = 'overflow: hidden; padding: 0px;'>
-									<Website { ...simulationAndVisualisationResults } />
-								</div>
-								<p class = 'card-header-title' style = 'overflow: hidden; font-weight: unset; flex-direction: row-reverse;'>
-									{ sender === undefined ? <></> : <SmallAddress
-										addressBookEntry = { sender }
-										renameAddressCallBack = { renameAddressCallBack }
-									/> }
-								</p>
-							</header>
-
-							<NewStyleTransactionCard
-								simulationAndVisualisationResults = { simulationAndVisualisationResults }
-								renameAddressCallBack = { renameAddressCallBack }
-								activeAddress = { simulationAndVisualisationResults.activeAddress }
-								resetButton = { false }
-								refreshSimulation = { refreshSimulation }
-								currentBlockNumber = { currentBlockNumber }
-								refreshPressed = { refreshPressed }
-							/>
-						</div>
-
-						<nav class = 'window-header' style = 'display: flex; justify-content: space-around; width: 100%; flex-direction: column; padding-bottom: 10px; padding-top: 10px;'>
-							{ simulationAndVisualisationResults && simulationAndVisualisationResults.simulatedAndVisualizedTransactions[simulationAndVisualisationResults.simulatedAndVisualizedTransactions.length - 1 ].statusCode === 'success' ?
-								simulationAndVisualisationResults && simulationAndVisualisationResults.simulatedAndVisualizedTransactions[simulationAndVisualisationResults.simulatedAndVisualizedTransactions.length - 1 ].quarantine !== true ? <></> :
-								<div style = 'display: grid'>
-									<div style = 'margin: 0px; margin-bottom: 10px; margin-left: 20px; margin-right: 20px; '>
-										<ErrorCheckBox text = { 'I understand that there are issues with this transaction but I want to send it anyway against Interceptors recommendations.' } checked = { forceSend } onInput = { setForceSend } />
-									</div>
-								</div>
-							:
-								<div style = 'display: grid'>
-									<div style = 'margin: 0px; margin-bottom: 10px; margin-left: 20px; margin-right: 20px; '>
-										<ErrorCheckBox text = { 'I understand that the transaction will fail but I want to send it anyway.' } checked = { forceSend } onInput = { setForceSend } />
-									</div>
-								</div>
-							}
-							<div style = 'display: flex; flex-direction: row;'>
-								<button className = 'button is-primary button-overflow' style = 'flex-grow: 1; margin-left: 10px; margin-right: 5px; margin-top: 0px; margin-bottom: 0px;' onClick = { approve } disabled = { isConfirmDisabled() }>
-									{ simulationAndVisualisationResults.simulationMode ? `Simulate ${ buttonNameAddon(simulationAndVisualisationResults, simulationAndVisualisationResults.activeAddress) }!` :
-										<SignerLogoText {...{
-											signerName,
-											text: `${ buttonNameAddon(simulationAndVisualisationResults, simulationAndVisualisationResults.activeAddress) } ${ getSignerName(signerName) }`
-										}}/>
-									}
-								</button>
-								<button className = 'button is-primary is-danger button-overflow' style = 'flex-grow: 1; margin-left: 5px; margin-right: 10px; margin-top: 0px; margin-bottom: 0px;' onClick = { reject} >
-									{ `Reject ${ buttonNameAddon(simulationAndVisualisationResults, simulationAndVisualisationResults.activeAddress) }` }
-								</button>
-							</div>
-						</nav>
-					</div>
-				</Hint>
-			:
-				<div class = 'center-to-page'>
-					<div class = 'vertical-center' style = 'scale: 3'>
-						<Spinner/>
-						<span style = 'margin-left: 0.2em' > Simulating... </span>
-					</div>
+			<Hint>
+				<div class = { `modal ${ addingNewAddress !== 'renameAddressModalClosed' ? 'is-active' : ''}` }>
+					{ addingNewAddress === 'renameAddressModalClosed' ? <></> :
+						<AddNewAddress
+							setActiveAddressAndInformAboutIt = { undefined }
+							addingNewAddress = { addingNewAddress }
+							close = { () => { setAddingNewAddress('renameAddressModalClosed') } }
+							activeAddress = { undefined }
+						/>
+					}
 				</div>
-			}
+
+				<div className = 'block' style = 'margin-bottom: 0px; display: flex; justify-content: space-between; flex-direction: column; height: 100%; position: fixed; width: 100%'>
+					<div style = 'overflow-y: auto'>
+						<header class = 'card-header window-header' style = 'height: 40px; border-top-left-radius: 0px; border-top-right-radius: 0px'>
+							<div class = 'card-header-icon noselect nopointer' style = 'overflow: hidden; padding: 0px;'>
+								<Website { ...simulationAndVisualisationResults } />
+							</div>
+							<p class = 'card-header-title' style = 'overflow: hidden; font-weight: unset; flex-direction: row-reverse;'>
+								{ sender === undefined ? <></> : <SmallAddress
+									addressBookEntry = { sender }
+									renameAddressCallBack = { renameAddressCallBack }
+								/> }
+							</p>
+						</header>
+
+						<NewStyleTransactionCard
+							simulationAndVisualisationResults = { simulationAndVisualisationResults }
+							renameAddressCallBack = { renameAddressCallBack }
+							activeAddress = { simulationAndVisualisationResults.activeAddress }
+							resetButton = { false }
+							refreshSimulation = { refreshSimulation }
+							currentBlockNumber = { currentBlockNumber }
+							refreshPressed = { refreshPressed }
+						/>
+					</div>
+
+					<nav class = 'window-header' style = 'display: flex; justify-content: space-around; width: 100%; flex-direction: column; padding-bottom: 10px; padding-top: 10px;'>
+						{ simulationAndVisualisationResults && simulationAndVisualisationResults.simulatedAndVisualizedTransactions[simulationAndVisualisationResults.simulatedAndVisualizedTransactions.length - 1 ].statusCode === 'success' ?
+							simulationAndVisualisationResults && simulationAndVisualisationResults.simulatedAndVisualizedTransactions[simulationAndVisualisationResults.simulatedAndVisualizedTransactions.length - 1 ].quarantine !== true ? <></> :
+							<div style = 'display: grid'>
+								<div style = 'margin: 0px; margin-bottom: 10px; margin-left: 20px; margin-right: 20px; '>
+									<ErrorCheckBox text = { 'I understand that there are issues with this transaction but I want to send it anyway against Interceptors recommendations.' } checked = { forceSend } onInput = { setForceSend } />
+								</div>
+							</div>
+						:
+							<div style = 'display: grid'>
+								<div style = 'margin: 0px; margin-bottom: 10px; margin-left: 20px; margin-right: 20px; '>
+									<ErrorCheckBox text = { 'I understand that the transaction will fail but I want to send it anyway.' } checked = { forceSend } onInput = { setForceSend } />
+								</div>
+							</div>
+						}
+						<div style = 'display: flex; flex-direction: row;'>
+							<button className = 'button is-primary button-overflow' style = 'flex-grow: 1; margin-left: 10px; margin-right: 5px; margin-top: 0px; margin-bottom: 0px;' onClick = { approve } disabled = { isConfirmDisabled() }>
+								{ simulationAndVisualisationResults.simulationMode ? `Simulate ${ buttonNameAddon(simulationAndVisualisationResults, simulationAndVisualisationResults.activeAddress) }!` :
+									<SignerLogoText {...{
+										signerName,
+										text: `${ buttonNameAddon(simulationAndVisualisationResults, simulationAndVisualisationResults.activeAddress) } ${ getSignerName(signerName) }`
+									}}/>
+								}
+							</button>
+							<button className = 'button is-primary is-danger button-overflow' style = 'flex-grow: 1; margin-left: 5px; margin-right: 10px; margin-top: 0px; margin-bottom: 0px;' onClick = { reject} >
+								{ `Reject ${ buttonNameAddon(simulationAndVisualisationResults, simulationAndVisualisationResults.activeAddress) }` }
+							</button>
+						</div>
+					</nav>
+				</div>
+			</Hint>
 		</main>
 	)
 }

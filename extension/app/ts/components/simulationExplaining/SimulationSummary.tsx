@@ -361,71 +361,18 @@ export function SummarizeAddress(param: SummarizeAddressParams) {
 	</div>
 }
 
-export function SummarizeChangesForAddress(param: SummarizeAddressParams) {
-	const isOwnAddress = param.balanceSummary.summaryFor.type === 'addressInfo' || param.balanceSummary.summaryFor.address === param.simulationAndVisualisationResults.activeAddress
-	const positiveNegativeColors = isOwnAddress ? {
-		textColor: 'var(--text-color)',
-		negativeColor: 'var(--text-color)'
-	} : {
-		textColor: 'var(--disabled-text-color)',
-		negativeColor: 'var(--negative-dim-color)'
-	}
-
-	return <div class = 'content' style = 'margin-bottom: 0px;'>
-		<EtherChange
-			textColor = { positiveNegativeColors.textColor }
-			negativeColor = { positiveNegativeColors.negativeColor }
-			isImportant = { isOwnAddress }
-			etherResults =  { param.balanceSummary.etherResults }
-			chain = { param.simulationAndVisualisationResults.chain }
-		/>
-		<Erc20BalanceChange
-			tokenBalanceChanges = { param.balanceSummary.tokenBalanceChanges }
-			textColor = { positiveNegativeColors.textColor }
-			negativeColor = { positiveNegativeColors.negativeColor }
-			isImportant = { isOwnAddress }
-			chain = { param.simulationAndVisualisationResults.chain }
-		/>
-		<Erc20ApprovalChanges
-			tokenApprovalChanges = { param.balanceSummary.tokenApprovalChanges }
-			textColor = { positiveNegativeColors.textColor }
-			negativeColor = { positiveNegativeColors.negativeColor }
-			isImportant = { isOwnAddress }
-			renameAddressCallBack = { param.renameAddressCallBack }
-		/>
-		<ERC721TokenChanges
-			ERC721TokenBalanceChanges = { param.balanceSummary.erc721TokenBalanceChanges }
-			textColor = { positiveNegativeColors.textColor }
-			negativeColor = { positiveNegativeColors.negativeColor }
-			isImportant = { isOwnAddress }
-		/>
-		<ERC721OperatorChanges
-			ERC721OperatorChanges = { param.balanceSummary.erc721OperatorChanges }
-			textColor = { positiveNegativeColors.textColor }
-			negativeColor = { positiveNegativeColors.negativeColor }
-			isImportant = { isOwnAddress }
-			renameAddressCallBack = { param.renameAddressCallBack }
-		/>
-		<ERC721TokenIdApprovalChanges
-			ERC721TokenIdApprovalChanges = { param.balanceSummary.erc721TokenIdApprovalChanges }
-			textColor = { positiveNegativeColors.textColor }
-			negativeColor = { positiveNegativeColors.negativeColor }
-			isImportant = { isOwnAddress }
-			renameAddressCallBack = { param.renameAddressCallBack }
-		/>
-	</div>
-}
-
 export function SimulationResults(param: SimulationStateParam) {
-	if ( param.simulationAndVisualisationResults === undefined ) return <></>
+	if (param.simulationAndVisualisationResults === undefined) return <></>
 	if (param.simulationAndVisualisationResults.simulatedAndVisualizedTransactions.length === 0) {
 		return <div class = 'vertical-center'>
 			<img style = 'padding-right: 10px; transform: scaleX(-1);' src = '../img/LOGOA.svg' width = '32'/>
 			<span class = 'paragraph' style = 'padding-left: 0.2em'> - Give me some transactions to munch on! </span>
 		</div>
 	}
+
 	return <div>
 		<p className = 'h1' style = 'padding-left: 10px'> Simulation Results </p>
+
 		<Transactions
 			simulationAndVisualisationResults = { param.simulationAndVisualisationResults }
 			removeTransaction = { param.removeTransaction }
@@ -456,7 +403,7 @@ export function removeEthDonator(chain: CHAIN, summary: SummaryOutcome[]) {
 			donatorSummary.tokenApprovalChanges.length === 0 &&
 			donatorSummary.tokenBalanceChanges.length === 0
 		) {
-			summary.splice(summary.indexOf(donatorSummary))
+			summary.slice(0).splice(summary.indexOf(donatorSummary))
 			return summary
 		}
 		donatorSummary.etherResults = undefined
@@ -504,6 +451,21 @@ export function LogAnalysisCard({ tx, renameAddressCallBack }: LogAnalysisCardPa
 	</>
 }
 
+function separateAndCleanSummary(firstTx: SimulatedAndVisualizedTransaction | undefined, originalSummary: SummaryOutcome[], activeAddress: bigint, chain: CHAIN) {
+	//remove eth donator if we are in rich mode
+	const summary = firstTx && identifyTransaction(firstTx, activeAddress) === 'MakeYouRichTransaction' ?
+		removeEthDonator(chain, originalSummary)
+		: originalSummary
+
+	const ownAddresses = Array.from(summary.entries()).filter( ([_index, balanceSummary]) =>
+		balanceSummary.summaryFor.type === 'addressInfo' || balanceSummary.summaryFor.address === activeAddress
+	)
+	const notOwnAddresses = Array.from(summary.entries()).filter( ([_index, balanceSummary]) =>
+		balanceSummary.summaryFor.type !== 'addressInfo' && balanceSummary.summaryFor.address !== activeAddress
+	)
+	return [notOwnAddresses, ownAddresses]
+}
+
 type AccountChangesCardParams = {
 	tx: SimulatedAndVisualizedTransaction
 	simulationAndVisualisationResults: SimulationAndVisualisationResults
@@ -515,23 +477,14 @@ export function TransactionsAccountChangesCard({ tx, renameAddressCallBack, addr
 	const logSummarizer = new LogSummarizer( [tx] )
 	const addressMetaDataMap = new Map(addressMetaData.map( (x) => [addressString(x.address), x]))
 	const originalSummary = logSummarizer.getSummary(addressMetaDataMap, simulationAndVisualisationResults.tokenPrices)
-	//remove eth donator if we are in rich mode
-	const summary = identifyTransaction(tx, simulationAndVisualisationResults.activeAddress) === 'MakeYouRichTransaction' ?
-		removeEthDonator(simulationAndVisualisationResults.chain, originalSummary)
-		: originalSummary
-
-	const ownAddresses = Array.from(summary.entries()).filter( ([_index, balanceSummary]) =>
-		balanceSummary.summaryFor.type === 'addressInfo' || balanceSummary.summaryFor.address === simulationAndVisualisationResults.activeAddress
-	)
-	const notOwnAddresses = Array.from(summary.entries()).filter( ([_index, balanceSummary]) => balanceSummary.summaryFor.type !== 'addressInfo' && balanceSummary.summaryFor.address !== simulationAndVisualisationResults.activeAddress)
-
-
-	const [showSummary, setShowSumary] = useState<boolean>(false)
+	const [showSummary, setShowSummary] = useState<boolean>(false)
+	const [notOwnAddresses, ownAddresses] = separateAndCleanSummary(tx, originalSummary, simulationAndVisualisationResults.activeAddress, simulationAndVisualisationResults.chain)
+	const numberOfChanges = notOwnAddresses.length + ownAddresses.length
 
 	return <div class = 'card'>
-		<header class = 'card-header noselect' style = 'cursor: pointer; height: 30px;' onClick = { () => setShowSumary((prevValue) => !prevValue) }>
+		<header class = 'card-header noselect' style = 'cursor: pointer; height: 30px;' onClick = { () => setShowSummary((prevValue) => !prevValue) }>
 			<p class = 'card-header-title' style = 'font-weight: unset; font-size: 0.8em;'>
-				{ summary.length === 0 ? 'No visible changes' : `${ summary.length } account${ summary.length > 1 ? 's' : '' } changing` }
+				{ numberOfChanges === 0 ? 'No visible changes' : `${ numberOfChanges } account${ numberOfChanges > 1 ? 's' : '' } changing` }
 			</p>
 			<div class = 'card-header-icon'>
 				<span class = 'icon' style = 'color: var(--text-color); font-weight: unset; font-size: 0.8em;'> V </span>
@@ -542,33 +495,29 @@ export function TransactionsAccountChangesCard({ tx, renameAddressCallBack, addr
 				<div class = 'container'>
 					{ ownAddresses.length == 0 ? <p class = 'paragraph'> No changes to your accounts </p>
 						: <div class = 'notification' style = 'background-color: var(--unimportant-text-color); padding: 10px; margin-bottom: 10px; color: var(--text-color)'>
-							{ ownAddresses.map( ([_index, balanceSummary], index) => {
-								return <>
-									<SummarizeAddress
-										balanceSummary = { balanceSummary }
-										simulationAndVisualisationResults = { simulationAndVisualisationResults }
-										renameAddressCallBack = { renameAddressCallBack }
-									/>
-									{ index + 1 !== ownAddresses.length ? <div class = 'is-divider' style = 'margin-top: 8px; margin-bottom: 8px'/> : <></> }
-								</>
-							} ) }
-						</div>
-					}
-				</div>
-
-				<div class = 'container'>
-					{ notOwnAddresses.length == 0 ? <></>
-						: notOwnAddresses.map( ([_index, balanceSummary]) => {
-							return <>
+							{ ownAddresses.map( ([_index, balanceSummary], index) => <>
 								<SummarizeAddress
 									balanceSummary = { balanceSummary }
 									simulationAndVisualisationResults = { simulationAndVisualisationResults }
 									renameAddressCallBack = { renameAddressCallBack }
 								/>
-								<div class = 'is-divider' style = 'margin-top: 8px; margin-bottom: 8px'/>
-							</>
-						})
+								{ index + 1 !== ownAddresses.length ? <div class = 'is-divider' style = 'margin-top: 8px; margin-bottom: 8px'/> : <></> }
+							</> ) }
+						</div>
 					}
+				</div>
+
+				<div class = 'container'>
+					{ notOwnAddresses.length == 0 ? <></> : notOwnAddresses.map( ([_index, balanceSummary]) => {
+						return <>
+							<SummarizeAddress
+								balanceSummary = { balanceSummary }
+								simulationAndVisualisationResults = { simulationAndVisualisationResults }
+								renameAddressCallBack = { renameAddressCallBack }
+							/>
+							<div class = 'is-divider' style = 'margin-top: 8px; margin-bottom: 8px'/>
+						</>
+					}) }
 				</div>
 			</div>
 		</> }
@@ -668,7 +617,7 @@ export function NewStyleTransactionCard(param: NewStyleTransactionCardParams) {
 				renameAddressCallBack =  {param.renameAddressCallBack }
 				activeAddress = { param.activeAddress }
 			/>
-			<div class = 'card-content'>
+			<div class = 'card-content' style = 'padding-bottom: 5px;'>
 				<div class = 'container'>
 					<TransactionImportanceBlock
 						tx = { tx }
@@ -720,7 +669,6 @@ export function NewStyleTransactionCard(param: NewStyleTransactionCardParams) {
 
 type SimulationSummaryParams = {
 	simulationAndVisualisationResults: SimulationAndVisualisationResults,
-	summarizeOnlyLastTransaction?: boolean,
 	resetButton: boolean,
 	refreshSimulation: () => void,
 	currentBlockNumber: bigint | undefined,
@@ -731,27 +679,13 @@ type SimulationSummaryParams = {
 export function SimulationSummary(param: SimulationSummaryParams) {
 	if (param.simulationAndVisualisationResults === undefined) return <></>
 
-	const VisResults = param.summarizeOnlyLastTransaction && param.simulationAndVisualisationResults.simulatedAndVisualizedTransactions.length > 0 ?
-		[param.simulationAndVisualisationResults.simulatedAndVisualizedTransactions.at(-1)] :
-		param.simulationAndVisualisationResults.simulatedAndVisualizedTransactions
-
-	const logSummarizer = new LogSummarizer( VisResults )
+	const logSummarizer = new LogSummarizer( param.simulationAndVisualisationResults.simulatedAndVisualizedTransactions )
 	const addressMetaData = new Map(param.simulationAndVisualisationResults.addressMetaData.map( (x) => [addressString(x.address), x]))
 	const originalSummary = logSummarizer.getSummary(addressMetaData, param.simulationAndVisualisationResults.tokenPrices)
-	//remove eth donator if we are in rich mode
-	const firstTransaction = param.simulationAndVisualisationResults.simulatedAndVisualizedTransactions.at(0)
-	const summary = firstTransaction && identifyTransaction(firstTransaction, param.simulationAndVisualisationResults.activeAddress) === 'MakeYouRichTransaction' ?
-		removeEthDonator(param.simulationAndVisualisationResults.chain, originalSummary)
-		: originalSummary
+	const [notOwnAddresses, ownAddresses] = separateAndCleanSummary(param.simulationAndVisualisationResults.simulatedAndVisualizedTransactions.at(0), originalSummary, param.simulationAndVisualisationResults.activeAddress, param.simulationAndVisualisationResults.chain)
 
-	const ownAddresses = Array.from(summary.entries()).filter( ([_index, balanceSummary]) =>
-		balanceSummary.summaryFor.type === 'addressInfo' || balanceSummary.summaryFor.address === param.simulationAndVisualisationResults.activeAddress
-	)
-	const notOwnAddresses = Array.from(summary.entries()).filter( ([_index, balanceSummary]) => balanceSummary.summaryFor.type !== 'addressInfo' && balanceSummary.summaryFor.address !== param.simulationAndVisualisationResults.activeAddress)
-
-	function resetSimulation() {
-		sendPopupMessageToBackgroundPage( { method: 'popup_resetSimulation' } )
-	}
+	const [showOtherAccountChanges, setShowOtherAccountChange] = useState<boolean>(false)
+	const resetSimulation = () => sendPopupMessageToBackgroundPage( { method: 'popup_resetSimulation' } )
 
 	return (
 		<div className = 'block' style = 'margin-bottom: 0px'>
@@ -760,84 +694,78 @@ export function SimulationSummary(param: SimulationSummaryParams) {
 					<header class = 'card-header'>
 						<div class = 'card-header-icon unset-cursor'>
 							<span class = 'icon'>
-								{ param.summarizeOnlyLastTransaction ?
-									<img src = { param.simulationAndVisualisationResults.simulatedAndVisualizedTransactions[param.simulationAndVisualisationResults.simulatedAndVisualizedTransactions.length - 1].statusCode === 'success' ? ( param.simulationAndVisualisationResults.simulatedAndVisualizedTransactions[param.simulationAndVisualisationResults.simulatedAndVisualizedTransactions.length - 1].quarantine === true ? '../img/warning-sign.svg' : '../img/success-icon.svg' ) : '../img/error-icon.svg' } /> :
-									<img src = { param.simulationAndVisualisationResults.simulatedAndVisualizedTransactions.find( (x) => x.statusCode !== 'success') === undefined ? ( param.simulationAndVisualisationResults.simulatedAndVisualizedTransactions.find( (x) => x.quarantine ) !== undefined ? '../img/warning-sign.svg' : '../img/success-icon.svg' ) : '../img/error-icon.svg' } />
-								}
+								<img src = { param.simulationAndVisualisationResults.simulatedAndVisualizedTransactions.find( (x) => x.statusCode !== 'success') === undefined ? ( param.simulationAndVisualisationResults.simulatedAndVisualizedTransactions.find( (x) => x.quarantine ) !== undefined ? '../img/warning-sign.svg' : '../img/success-icon.svg' ) : '../img/error-icon.svg' } />
 							</span>
 						</div>
 						<p class = 'card-header-title'>
-							<p className = 'paragraph'> { param.summarizeOnlyLastTransaction ? 'Transaction Outcome' : 'Simulation Outcome' } </p>
+							<p className = 'paragraph'> Simulation Outcome </p>
 						</p>
 					</header>
 					<div class = 'card-content'>
 						<div class = 'container'>
 							{ ownAddresses.length == 0 ? <p class = 'paragraph'> No changes to your accounts </p>
 								: <div class = 'notification' style = 'background-color: var(--unimportant-text-color); padding: 10px; margin-bottom: 10px; color: var(--text-color)'>
-									{ ownAddresses.map( ([_index, balanceSummary], index) => {
-										return <>
-											<SummarizeAddress
-												balanceSummary = { balanceSummary }
-												simulationAndVisualisationResults = { param.simulationAndVisualisationResults }
-												renameAddressCallBack = { param.renameAddressCallBack }
-											/>
-											{ index + 1 !== ownAddresses.length ? <div class = 'is-divider' style = 'margin-top: 8px; margin-bottom: 8px'/> : <></> }
-										</>
-									} ) }
-								</div>
-							}
-						</div>
-						<div class = 'container'>
-							{ notOwnAddresses.length == 0 ? <></>
-								: notOwnAddresses.map( ([_index, balanceSummary]) => {
-									return <>
+									{ ownAddresses.map( ([_index, balanceSummary], index) => <>
 										<SummarizeAddress
 											balanceSummary = { balanceSummary }
 											simulationAndVisualisationResults = { param.simulationAndVisualisationResults }
 											renameAddressCallBack = { param.renameAddressCallBack }
 										/>
-										<div class = 'is-divider' style = 'margin-top: 8px; margin-bottom: 8px'/>
-									</>
-								})
+										{ index + 1 !== ownAddresses.length ? <div class = 'is-divider' style = 'margin-top: 8px; margin-bottom: 8px'/> : <></> }
+									</> ) }
+								</div>
 							}
 						</div>
-							<p style = 'color: var(--subtitle-text-color); line-height: 28px; display: flex; margin: 0 0 0 auto; width: fit-content;'>
-								<CopyToClipboard
-									content = { param.simulationAndVisualisationResults.blockNumber.toString() }
-									contentDisplayOverride = { `Simulated in block number ${ param.simulationAndVisualisationResults.blockNumber }` }
-									copyMessage = 'Block number copied!'
-								>
-									<p class = 'noselect nopointer' style = 'color: var(--subtitle-text-color); text-align: right; display: inline'>
-										{ 'Simulated ' }
-										<span style = { `font-weight: bold; font-family: monospace; color: ${
-											param.simulationAndVisualisationResults.blockNumber === param.currentBlockNumber || param.currentBlockNumber === undefined ? 'var(--positive-color)' :
-											param.simulationAndVisualisationResults.blockNumber + 1n === param.currentBlockNumber ? 'var(--warning-color)' : 'var(--negative-color)'
-										} ` }>
-											<SomeTimeAgo priorTimestamp = { param.simulationAndVisualisationResults.simulationConductedTimestamp }/>
-										</span>
-										{ ' ago' }
-									</p>
-								</CopyToClipboard>
-								<button class = 'button is-primary is-small' disabled = { param.refreshPressed || param.simulationAndVisualisationResults.blockNumber === param.currentBlockNumber || param.currentBlockNumber === undefined}  style = 'margin-left: 5px;' onClick = { param.refreshSimulation } >
-									<span class = 'icon'>
-										<img src = '../../img/refresh.svg'/>
+						<div class = 'card'>
+							<header class = 'card-header noselect' style = 'cursor: pointer; height: 30px;' onClick = { () => setShowOtherAccountChange((prevValue) => !prevValue) }>
+								<p class = 'card-header-title' style = 'font-weight: unset; font-size: 0.8em;'>
+									{ notOwnAddresses.length === 0 ? 'No visible changes' : `${ notOwnAddresses.length } other account${ notOwnAddresses.length > 1 ? 's' : '' } changing` }
+								</p>
+								<div class = 'card-header-icon'>
+									<span class = 'icon' style = 'color: var(--text-color); font-weight: unset; font-size: 0.8em;'> V </span>
+								</div>
+							</header>
+							{ !showOtherAccountChanges ? <></> :
+								<div class = 'card-content'>
+									<div class = 'container'>
+										{ notOwnAddresses.length == 0 ? <></> : notOwnAddresses.map( ([_index, balanceSummary]) => (<>
+											<SummarizeAddress
+												balanceSummary = { balanceSummary }
+												simulationAndVisualisationResults = { param.simulationAndVisualisationResults }
+												renameAddressCallBack = { param.renameAddressCallBack }
+											/>
+											<div class = 'is-divider' style = 'margin-top: 8px; margin-bottom: 8px'/>
+										</>) ) }
+									</div>
+								</div>
+							}
+						</div>
+						<p style = 'color: var(--subtitle-text-color); line-height: 28px; display: flex; margin: 0 0 0 auto; width: fit-content; margin-top: 10px'>
+							<CopyToClipboard
+								content = { param.simulationAndVisualisationResults.blockNumber.toString() }
+								contentDisplayOverride = { `Simulated in block number ${ param.simulationAndVisualisationResults.blockNumber }` }
+								copyMessage = 'Block number copied!'
+							>
+								<p class = 'noselect nopointer' style = 'color: var(--subtitle-text-color); text-align: right; display: inline'>
+									{ 'Simulated ' }
+									<span style = { `font-weight: bold; font-family: monospace; color: ${
+										param.simulationAndVisualisationResults.blockNumber === param.currentBlockNumber || param.currentBlockNumber === undefined ? 'var(--positive-color)' :
+										param.simulationAndVisualisationResults.blockNumber + 1n === param.currentBlockNumber ? 'var(--warning-color)' : 'var(--negative-color)'
+									} ` }>
+										<SomeTimeAgo priorTimestamp = { param.simulationAndVisualisationResults.simulationConductedTimestamp }/>
 									</span>
-									<span>
-										Refresh
-									</span>
-								</button>
-								{ param.resetButton ?
-									<button className = 'button is-primary is-small' style = 'margin-left: 5px; background-color: var(--negative-color);' onClick = { resetSimulation } >
-										<span class = 'icon'>
-											<img src = '../../img/broom.svg'/>
-										</span>
-										<span>
-											Reset
-										</span>
-									</button>
-									: <></>
-								}
-							</p>
+									{ ' ago' }
+								</p>
+							</CopyToClipboard>
+							<button className = 'button is-primary is-small' style = 'margin-left: 5px; background-color: var(--negative-color);' onClick = { resetSimulation } >
+								<span class = 'icon'>
+									<img src = '../../img/broom.svg'/>
+								</span>
+								<span>
+									Reset
+								</span>
+							</button>
+						</p>
 					</div>
 				</div>
 			</div>

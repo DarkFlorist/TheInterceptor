@@ -101,18 +101,29 @@ function calculatePosition(clickPosX: number, clickPosY: number, hintWidth: numb
 
 function Hint(props: HintProps) {
 	const hint = useRef<HTMLSpanElement>(null)
-	const [clickPosition, setClickPosition] = useState<{ x: number, y: number }>(props.clickPosition)
+	const [dialogPosition, setDialogPosition] = useState<{ left: number, top: number }>({ left: -1000, top: -1000 })
 	// Render way off-screen to prevent rubber banding from initial (and unavoidable) render.
 	const [hintWidth, setHintWidth] = useState(10000)
 
-	useEffect( () => {
+	const clean = () => {
+		setDialogPosition({ left: -1000, top: -1000 })
+	}
+
+	useEffect(() => {
+		window.addEventListener('resize', clean)
+		return () => {
+			window.removeEventListener('resize', clean)
+		}
+	})
+
+	useEffect(() => {
 		if (hint.current === null) return
 		setHintWidth(hint.current.getBoundingClientRect().width)
-		setClickPosition(clickPosition)
+		setDialogPosition(calculatePosition(props.clickPosition.x, props.clickPosition.y, hintWidth))
 	}, [hint, props.clickPosition, hintWidth] )
 
 	return (
-		<div class = 'preact-hint' style = { calculatePosition(clickPosition.x, clickPosition.y, hintWidth) }>
+		<div class ='preact-hint' style = { dialogPosition }>
 			<span class = 'preact-hint__content' ref = { hint }>
 				{ props.template ? props.template(props.content) : props.content }
 			</span>
