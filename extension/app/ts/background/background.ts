@@ -16,6 +16,7 @@ import { getActiveAddress, sendPopupMessageToOpenWindows } from './backgroundUti
 import { updateExtensionIcon } from './iconHandler.js'
 import { connectedToSigner, ethAccountsReply, signerChainChanged, walletSwitchEthereumChainReply } from './providerMessageHandlers.js'
 import { SimulationModeEthereumClientService } from '../simulation/services/SimulationModeEthereumClientService.js'
+import { assertUnreachable } from '../utils/typescript.js'
 
 browser.runtime.onConnect.addListener(port => onContentScriptConnected(port).catch(console.error))
 
@@ -366,6 +367,7 @@ async function handleSigningMode(simulator: Simulator, port: browser.runtime.Por
 			}
 			return forwardToSigner()
 		}
+		default: assertUnreachable(parsedRequest)
 	}
 }
 
@@ -600,6 +602,8 @@ async function popupMessageHandler(simulator: Simulator, request: unknown) {
 		case 'popup_personalSignReadyAndListening': return // handled elsewhere (personalSign.ts)
 		case 'popup_changeChainReadyAndListening': return // handled elsewhere (changeChain.ts)
 		case 'popup_interceptorAccessReadyAndListening': return // handled elsewhere (interceptorAccess.ts)
+		case 'popup_confirmTransactionReadyAndListening': return // handled elsewhere (confirmTransaction.ts)
+		default: assertUnreachable(parsedRequest)
 	}
 }
 

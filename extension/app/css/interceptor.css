@@ -25,8 +25,10 @@
 	--disabled-text-color: rgba(255, 255, 255, 0.5);
 	--disabled-negative-text-color: rgba(246, 104, 94, 0.5);
 	--unimportant-text-color: rgba(255, 255, 255, 0.2);
+	--importance-box-color: rgba(109, 109, 109);
 	--dim-text-color: rgba(255, 255, 255, 0.8);
 	--alpha-005: rgba(255, 255, 255, 0.05);
+	--alpha-015: rgba(255, 255, 255, 0.15);
 
 	--modal-background-color: rgba(10, 10, 10, .7)
 }

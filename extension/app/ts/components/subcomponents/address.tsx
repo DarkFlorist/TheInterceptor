@@ -113,46 +113,19 @@ export type ActiveAddressParams = {
 }
 
 export function ActiveAddress(params: ActiveAddressParams) {
-	const title = params.addressBookEntry.name
-	const addrString = ethers.utils.getAddress(addressString(params.addressBookEntry.address))
-	const subTitle = title != addrString ? addrString : ''
-
-	return <div class = 'media'>
-		<div class = 'media-left'>
-			<CopyToClipboard content = { ethers.utils.getAddress(addressString(params.addressBookEntry.address)) } copyMessage = 'Address copied!'>
-				<AddressIcon
-					address = { params.addressBookEntry.address }
-					logoUri = { 'logoUri' in params.addressBookEntry ? params.addressBookEntry.logoUri : undefined }
-					isBig = { true }
-					backgroundColor = { 'var(--text-color)' }
-				/>
-			</CopyToClipboard>
+	return <div class = 'log-table' style = 'grid-template-columns: auto max-content'>
+		<div class = 'log-cell' style = 'display: block;'>
+			<BigAddress
+				addressBookEntry = { params.addressBookEntry }
+				renameAddressCallBack = { params.renameAddressCallBack }
+			/>
 		</div>
-
-		<div class = 'media-content' style = 'overflow-y: hidden;'>
-			<span className = 'big-address-container' data-value = { params.addressBookEntry.name }>
-				<span class = 'address-text-holder'>
-					<CopyToClipboard content = { ethers.utils.getAddress(addressString(params.addressBookEntry.address)) } copyMessage = 'Address copied!' style = { { 'text-overflow': 'ellipsis', overflow: 'hidden' } }>
-						<p class = 'title is-5 is-spaced address-text noselect nopointer'>{ title }</p>
-					</CopyToClipboard>
-					<button className = 'button is-primary is-small rename-address-button' onClick ={ () => params.renameAddressCallBack(params.addressBookEntry) }>
-						<span class = 'icon'>
-							<img src = '../img/rename.svg'/>
-						</span>
-					</button>
-				</span>
-			</span>
-			<CopyToClipboard content = { ethers.utils.getAddress(addressString(params.addressBookEntry.address)) } copyMessage = 'Address copied!'>
-				<p class = 'subtitle is-7 noselect nopointer'>
-					{ subTitle === undefined ? '' : subTitle }
-				</p>
-			</CopyToClipboard>
-		</div>
-
-		<div class = 'media-right'>
-			<button className = 'button is-primary' disabled = { !params.simulationMode } onClick = { params.changeActiveAddress } >
-				Change
-			</button>
+		<div class = 'log-cell'>
+			<div class = 'media-right'>
+				<button className = 'button is-primary' disabled = { !params.simulationMode }  onClick = { params.changeActiveAddress } >
+					Change
+				</button>
+			</div>
 		</div>
 	</div>
 }

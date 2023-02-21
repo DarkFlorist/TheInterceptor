@@ -224,7 +224,7 @@ export function TransactionImportanceBlock( param: TransactionImportanceBlockPar
 
 	if (param.tx.tokenResults.length === 0 && param.tx.ethBalanceChanges.length === 0 ) {
 		return <>
-			<div class = 'notification' style = 'background-color: var(--unimportant-text-color); padding: 10px; margin-bottom: 10px;'>
+			<div class = 'notification' style = 'background-color: var(--importance-box-color); padding: 10px; margin-bottom: 10px;'>
 				<p class = 'paragraph'> The transaction does no visible changes</p>
 			</div>
 			<QuarantineCodes tx = { param.tx }/>
@@ -232,7 +232,7 @@ export function TransactionImportanceBlock( param: TransactionImportanceBlockPar
 	}
 
 	return <>
-		<div class = 'notification' style = 'background-color: var(--unimportant-text-color); padding: 10px; margin-bottom: 10px;'>
+		<div class = 'notification' style = 'background-color: var(--importance-box-color); padding: 10px; margin-bottom: 10px;'>
 			{ /* sending ether / tokens */ }
 			<EtherTransferEvent
 				valueSent = { param.tx.value }

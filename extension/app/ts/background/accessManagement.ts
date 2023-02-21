@@ -58,12 +58,24 @@ export async function verifyAccess(port: browser.runtime.Port, callMethod: strin
 			return connectToPort(port, origin)
 		}
 
+		// access not found, ask access
 		const addressInfo = findAddressInfo(activeAddress, window.interceptor.settings.userAddressBook.addressInfos)
 
-		// access not found, ask access
+		const accessReply = await requestAccessFromUser(origin, await retrieveWebsiteTabIcon(port.sender?.tab?.id), addressInfo, getAssociatedAddresses(window.interceptor.settings, origin, addressInfo ))
+		if (accessReply.userRequestedAddressChange) {
+			const changedActiveAddress = getActiveAddress()
+			if (changedActiveAddress === undefined) return false
+			const addressAccess = hasAddressAccess(window.interceptor.settings.websiteAccess, origin, changedActiveAddress)
+			if (addressAccess === 'hasAccess') {
+				return connectToPort(port, origin)
+			}
+			return false
+		}
+
 		if (addressAccess === 'notFound'
 			&& isRpcMethod
-			&& await requestAccessFromUser(origin, await retrieveWebsiteTabIcon(port.sender?.tab?.id), addressInfo, getAssociatedAddresses(window.interceptor.settings, origin, addressInfo ))
+			&& accessReply.approved
+			&& accessReply.requestAccessToAddress === addressInfo.address
 		) {
 			return connectToPort(port, origin)
 		}
@@ -76,8 +88,13 @@ export async function verifyAccess(port: browser.runtime.Port, callMethod: strin
 		return connectToPort(port, origin)
 	}
 
-	if (access === 'notFound' && isRpcMethod
-		&& await requestAccessFromUser(origin, await retrieveWebsiteTabIcon(port.sender?.tab?.id), undefined, getAssociatedAddresses(window.interceptor.settings, origin, undefined ) )
+	const accessReply = await requestAccessFromUser(origin, await retrieveWebsiteTabIcon(port.sender?.tab?.id), undefined, getAssociatedAddresses(window.interceptor.settings, origin, undefined ) )
+	if (accessReply.userRequestedAddressChange === true || accessReply.requestAccessToAddress !== undefined) throw new Error('We did not ask for address specific address but got one anyway')
+
+	if (access === 'notFound'
+		&& isRpcMethod
+		&& accessReply.approved
+		&& accessReply.requestAccessToAddress === undefined
 	) {
 		return connectToPort(port, origin)
 	}
@@ -263,7 +280,9 @@ export function getAssociatedAddresses(settings: Settings, origin: string, activ
 async function askUserForAccessOnConnectionUpdate(port: browser.runtime.Port, origin: string, activeAddress: AddressInfoEntry | undefined) {
 	if (window.interceptor.settings === undefined) return
 
-	if (await requestAccessFromUser(origin, await retrieveWebsiteTabIcon(port.sender?.tab?.id), activeAddress, getAssociatedAddresses(window.interceptor.settings, origin, activeAddress))) {
+	const accessReply = await requestAccessFromUser(origin, await retrieveWebsiteTabIcon(port.sender?.tab?.id), activeAddress, getAssociatedAddresses(window.interceptor.settings, origin, activeAddress))
+	// here if the reply was for diferent address (requestAccessFromUser can change the target address), we still want to connect even if the address is diferent
+	if (accessReply.approved) {
 		connectToPort(port, origin)
 	}
 }

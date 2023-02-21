@@ -12,6 +12,7 @@ import { Error } from '../subcomponents/Error.js'
 import { ToolTip } from '../subcomponents/CopyToClipboard.js'
 import { sendPopupMessageToBackgroundPage } from '../../background/backgroundUtils.js'
 import { Transactions } from '../simulationExplaining/Transactions.js'
+import { DinoSays } from '../subcomponents/DinoSays.js'
 
 function FirstCard(param: FirstCardParams) {
 	async function enableMakeMeRich(enabled: boolean) {
@@ -112,10 +113,7 @@ function FirstCard(param: FirstCardParams) {
 function SimulationResults(param: SimulationStateParam) {
 	if (param.simulationAndVisualisationResults === undefined) return <></>
 	if (param.simulationAndVisualisationResults.simulatedAndVisualizedTransactions.length === 0) {
-		return <div class = 'vertical-center'>
-			<img style = 'padding-right: 10px; transform: scaleX(-1);' src = '../img/LOGOA.svg' width = '32'/>
-			<span class = 'paragraph' style = 'padding-left: 0.2em'> - Give me some transactions to munch on! </span>
-		</div>
+		return <DinoSays text = { 'Give me some transactions to munch on!' } />
 	}
 
 	return <div>

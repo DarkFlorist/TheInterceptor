@@ -23,11 +23,7 @@ export async function confirmPersonalSign(_simulator: Simulator, confirmation: P
 }
 
 export async function confirmRequestAccess(_simulator: Simulator, confirmation: InterceptorAccess) {
-	await resolveInterceptorAccess({
-		outcome: confirmation.options.accept ? 'Approved' : 'Rejected',
-		origin: confirmation.options.origin,
-		requestAccessToAddress: confirmation.options.requestAccessToAddress,
-	})
+	await resolveInterceptorAccess(confirmation.options)
 }
 
 export async function changeActiveAddress(_simulator: Simulator, addressChange: ChangeActiveAddress) {
@@ -198,20 +194,21 @@ export async function rejectNotification(_simulator: Simulator, params: RejectNo
 	}
 
 	await resolveInterceptorAccess({
+		type: 'approval',
 		origin : params.options.origin,
 		requestAccessToAddress: params.options.requestAccessToAddress,
-		outcome: params.options.removeOnly ? 'NoResponse' : 'Rejected'
+		approval: params.options.removeOnly ? 'NoResponse' : 'Rejected'
 	}) // close pending access for this request if its open
 	if (!params.options.removeOnly) {
 		await changeAccess(
 			{
+				type: 'approval',
 				origin : params.options.origin,
 				requestAccessToAddress: params.options.requestAccessToAddress,
-				outcome: 'Rejected'
+				approval: 'Rejected'
 			},
 			params.options.origin,
 			notification?.icon,
-			params.options.requestAccessToAddress,
 		)
 	}
 	sendPopupMessageToOpenWindows({ method: 'popup_notification_removed' })

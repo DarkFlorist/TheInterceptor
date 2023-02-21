@@ -1,5 +1,5 @@
 import * as funtypes from 'funtypes'
-import { AddressBookEntries, AddressBookEntry, AddressInfoEntry } from './user-interface-types.js'
+import { AddressBookEntries, AddressBookEntry, AddressInfo, AddressInfoEntry } from './user-interface-types.js'
 import { EIP2612Message, EthereumAddress, EthereumQuantity, EthereumUnsignedTransaction, Permit2 } from './wire-types.js'
 import { SimResults, SimulationState, TokenPriceEstimate } from './visualizer-types.js'
 
@@ -67,14 +67,26 @@ export const PersonalSign = funtypes.Object({
 	})
 }).asReadonly()
 
+export type InterceptorAccessOptions = funtypes.Static<typeof InterceptorAccessOptions>
+export const InterceptorAccessOptions = funtypes.Union(
+	funtypes.Object({
+		type: funtypes.Literal('approval'),
+		approval: funtypes.Union(funtypes.Literal('Approved'), funtypes.Literal('Rejected'), funtypes.Literal('NoResponse') ),
+		origin: funtypes.String,
+		requestAccessToAddress: funtypes.Union(EthereumAddress, funtypes.Undefined),
+	}),
+	funtypes.Object({
+		type: funtypes.Literal('addressChange'),
+		newActiveAddress: funtypes.Union(EthereumAddress, funtypes.Literal('signer')),
+		origin: funtypes.String,
+		requestAccessToAddress: funtypes.Union(EthereumAddress, funtypes.Undefined),
+	}),
+)
+
 export type InterceptorAccess = funtypes.Static<typeof InterceptorAccess>
 export const InterceptorAccess = funtypes.Object({
 	method: funtypes.Literal('popup_interceptorAccess'),
-	options: funtypes.Object({
-		accept: funtypes.Boolean,
-		origin: funtypes.String,
-		requestAccessToAddress: funtypes.Union(EthereumAddress, funtypes.Undefined),
-	})
+	options: InterceptorAccessOptions,
 }).asReadonly()
 
 export type ChangeActiveAddress = funtypes.Static<typeof ChangeActiveAddress>
@@ -305,11 +317,9 @@ export const PopupMessage = funtypes.Union(
 	ChangeInterceptorAccess,
 	ChangeActiveChain,
 	ChainChangeConfirmation,
-	SignerChainChangeConfirmation,
 	EnableSimulationMode,
 	RejectNotification,
 	ReviewNotification,
-	ConnectedToSigner,
 	AddOrEditAddressBookEntry,
 	GetAddressBookData,
 	RemoveAddressBookEntry,
@@ -400,6 +410,9 @@ export const InterceptorAccessDialog = funtypes.Object({
 		icon: funtypes.Union(funtypes.String, funtypes.Undefined),
 		requestAccessToAddress: funtypes.Union(AddressInfoEntry, funtypes.Undefined),
 		associatedAddresses: funtypes.ReadonlyArray(AddressInfoEntry),
+		addressInfos: funtypes.ReadonlyArray(AddressInfo),
+		signerAccounts: funtypes.ReadonlyArray(EthereumAddress),
+		signerName: funtypes.Union(SignerName, funtypes.Undefined),
 	})
 })
 

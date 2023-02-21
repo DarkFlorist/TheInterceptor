@@ -1,30 +1,26 @@
 import { addressString } from '../../utils/bigint.js'
 import { Future } from '../../utils/future.js'
-import { PopupMessage } from '../../utils/interceptor-messages.js'
+import { InterceptorAccessOptions, PopupMessage } from '../../utils/interceptor-messages.js'
 import { AddressInfoEntry, PendingAccessRequestArray } from '../../utils/user-interface-types.js'
-import { setAccess, updateWebsiteApprovalAccesses } from '../accessManagement.js'
+import { getAssociatedAddresses, setAccess, updateWebsiteApprovalAccesses } from '../accessManagement.js'
+import { changeActiveAddressAndChainAndResetSimulation } from '../background.js'
 import { sendPopupMessageToOpenWindows } from '../backgroundUtils.js'
 import { updateExtensionBadge } from '../iconHandler.js'
 import { findAddressInfo } from '../metadataUtils.js'
 import { savePendingAccessRequests, saveWebsiteAccess, WebsiteAccessArray } from '../settings.js'
 
-export type Confirmation = {
-	outcome: 'Approved' | 'Rejected' | 'NoResponse',
-	origin : string,
-	requestAccessToAddress: bigint | undefined,
-}
-
 let openedInterceptorAccessWindow: browser.windows.Window | null = null
 
 let pendingInterceptorAccess: {
-	future: Future<Confirmation>
+	future: Future<InterceptorAccessOptions>
 	origin: string,
 	requestAccessToAddress: bigint | undefined,
 } | undefined = undefined
 
 const onCloseWindow = () => { // check if user has closed the window on their own, if so, reject signature
 	if (pendingInterceptorAccess !== undefined) pendingInterceptorAccess.future.resolve({
-		outcome: 'NoResponse',
+		type: 'approval',
+		approval: 'NoResponse',
 		origin: pendingInterceptorAccess.origin,
 		requestAccessToAddress: pendingInterceptorAccess.requestAccessToAddress
 	})
@@ -36,24 +32,28 @@ const onCloseWindow = () => { // check if user has closed the window on their ow
 export async function resolveExistingInterceptorAccessAsNoResponse() {
 	if (pendingInterceptorAccess === undefined) return
 	await resolveInterceptorAccess({
-		outcome: 'NoResponse',
+		type: 'approval',
+		approval: 'NoResponse',
 		origin: pendingInterceptorAccess.origin,
 		requestAccessToAddress: pendingInterceptorAccess.requestAccessToAddress
 	})
 }
 
-export async function resolveInterceptorAccess(confirmation: Confirmation) {
+export async function resolveInterceptorAccess(confirmation: InterceptorAccessOptions) {
 	if (pendingInterceptorAccess === undefined) return
 	if (confirmation.origin !== pendingInterceptorAccess.origin || confirmation.requestAccessToAddress !== pendingInterceptorAccess.requestAccessToAddress) return
 
-	pendingInterceptorAccess.future.resolve(confirmation)
+	const resolved = pendingInterceptorAccess
 	pendingInterceptorAccess = undefined
 
-	if (openedInterceptorAccessWindow !== null && openedInterceptorAccessWindow.id) {
-		browser.windows.onRemoved.removeListener( onCloseWindow )
-		await browser.windows.remove(openedInterceptorAccessWindow.id)
+	resolved.future.resolve(confirmation)
+	if (confirmation.type === 'approval') { // close window on approval only, otherwise we want to keep the same window open
+		if (openedInterceptorAccessWindow !== null && openedInterceptorAccessWindow.id) {
+			browser.windows.onRemoved.removeListener( onCloseWindow )
+			await browser.windows.remove(openedInterceptorAccessWindow.id)
+		}
+		openedInterceptorAccessWindow = null
 	}
-	openedInterceptorAccessWindow = null
 }
 
 export function getAddressMetadataForAccess(websiteAccess: WebsiteAccessArray) : AddressInfoEntry[] {
@@ -75,21 +75,31 @@ export async function setPendingAccessRequests(pendingAccessRequest: PendingAcce
 	await updateExtensionBadge()
 }
 
-export async function changeAccess(confirmation: Confirmation, origin: string, originIcon: string | undefined, accessAddress: bigint | undefined) {
+export async function changeAccess(confirmation: InterceptorAccessOptions, origin: string, originIcon: string | undefined) {
 	if (window.interceptor.settings === undefined) return
-	if (confirmation.outcome === 'NoResponse') return
+	if (confirmation.type !== 'approval') return
+	if (confirmation.approval === 'NoResponse') return
 
-	await setPendingAccessRequests( window.interceptor.settings.pendingAccessRequests.filter((x) => !(x.origin === origin && x.requestAccessToAddress === accessAddress)))
+	await setPendingAccessRequests( window.interceptor.settings.pendingAccessRequests.filter((x) => !(x.origin === origin && x.requestAccessToAddress === confirmation.requestAccessToAddress)))
 
-	window.interceptor.settings.websiteAccess = setAccess(window.interceptor.settings.websiteAccess, origin, originIcon, confirmation.outcome === 'Approved', accessAddress)
+	window.interceptor.settings.websiteAccess = setAccess(window.interceptor.settings.websiteAccess, origin, originIcon, confirmation.approval === 'Approved', confirmation.requestAccessToAddress)
 	window.interceptor.websiteAccessAddressMetadata = getAddressMetadataForAccess(window.interceptor.settings.websiteAccess)
 	saveWebsiteAccess(window.interceptor.settings.websiteAccess)
 	updateWebsiteApprovalAccesses()
 	sendPopupMessageToOpenWindows({ method: 'popup_websiteAccess_changed' })
 }
 
-export async function requestAccessFromUser(origin: string, icon: string | undefined, requestAccessToAddress: AddressInfoEntry | undefined, associatedAddresses: AddressInfoEntry[]) {
-	if (window.interceptor.settings === undefined) return false
+
+type RequestAccessFromUserReply = {
+	requestAccessToAddress: bigint | undefined
+	approved: boolean
+	userRequestedAddressChange: boolean,
+}
+
+
+export async function requestAccessFromUser(origin: string, icon: string | undefined, requestAccessToAddress: AddressInfoEntry | undefined, associatedAddresses: AddressInfoEntry[]) : Promise<RequestAccessFromUserReply> {
+	const rejectReply = { requestAccessToAddress: requestAccessToAddress?.address, approved: false, userRequestedAddressChange: false }
+	if (window.interceptor.settings === undefined) return rejectReply
 
 	// check if we need to ask address access or not. If address is put to never need to have address specific permision, we don't need to ask for it
 	const askForAddressAccess = requestAccessToAddress !== undefined && window.interceptor.settings?.userAddressBook.addressInfos.find((x) => x.address === requestAccessToAddress.address )?.askForAddressAccess !== false
@@ -105,40 +115,43 @@ export async function requestAccessFromUser(origin: string, icon: string | undef
 		sendPopupMessageToOpenWindows({ method: 'popup_notification_added' })
 	}
 
+	const windowReadyAndListening = async function popupMessageListener(msg: unknown) {
+		const message = PopupMessage.parse(msg)
+		if (message.method !== 'popup_interceptorAccessReadyAndListening') return
+		browser.runtime.onMessage.removeListener(windowReadyAndListening)
+		if (window.interceptor.settings === undefined) return rejectReply
+		return await sendPopupMessageToOpenWindows({
+			method: 'popup_interceptorAccessDialog',
+			data: {
+				origin: origin,
+				icon: icon,
+				requestAccessToAddress: accessAddress,
+				associatedAddresses: associatedAddresses,
+				addressInfos: window.interceptor.settings.userAddressBook.addressInfos,
+				signerAccounts: window.interceptor.signerAccounts === undefined ? [] : window.interceptor.signerAccounts,
+				signerName: window.interceptor.signerName,
+			}
+		})
+	}
+
 	if (pendingInterceptorAccess !== undefined) {
 		if ( pendingInterceptorAccess.origin === origin && pendingInterceptorAccess.requestAccessToAddress === requestAccessToAddress?.address ) {
-			return false // there's already one pending request, and it's different access request
+			return rejectReply // there's already one pending request, and it's different access request
 		}
 	} else {
 		pendingInterceptorAccess =  {
-			future: new Future<Confirmation>(),
+			future: new Future<InterceptorAccessOptions>(),
 			origin: origin,
 			requestAccessToAddress: accessAddress?.address,
 		}
-
-		const windowReadyAndListening = async function popupMessageListener(msg: unknown) {
-			const message = PopupMessage.parse(msg)
-			if ( message.method !== 'popup_interceptorAccessReadyAndListening') return
-			browser.runtime.onMessage.removeListener(windowReadyAndListening)
-			return sendPopupMessageToOpenWindows({
-				method: 'popup_interceptorAccessDialog',
-				data: {
-					origin: origin,
-					icon: icon,
-					requestAccessToAddress: accessAddress,
-					associatedAddresses: associatedAddresses,
-				}
-			})
-		}
-
 		browser.runtime.onMessage.addListener(windowReadyAndListening)
 
 		openedInterceptorAccessWindow = await browser.windows.create(
 			{
 				url: '../html/interceptorAccess.html',
 				type: 'popup',
-				height: 400,
-				width: 520,
+				height: 600,
+				width: 600,
 			}
 		)
 
@@ -146,16 +159,55 @@ export async function requestAccessFromUser(origin: string, icon: string | undef
 			browser.windows.onRemoved.addListener( onCloseWindow ) // check if user has closed the window on their own, if so, reject signature
 		} else {
 			resolveInterceptorAccess({
-				outcome: 'NoResponse',
+				type: 'approval',
+				approval: 'NoResponse',
 				origin: pendingInterceptorAccess.origin,
 				requestAccessToAddress: pendingInterceptorAccess.requestAccessToAddress
 			})
 		}
 	}
+	let userRequestedAddressChange = false
+	while (true) {
+		const confirmation: InterceptorAccessOptions = await pendingInterceptorAccess.future
+		browser.runtime.onMessage.removeListener(windowReadyAndListening)
+		if (confirmation.type === 'approval') {
+			browser.windows.onRemoved.removeListener(onCloseWindow)
+			if (userRequestedAddressChange) {
+				// clear the original pending request, which was made with other account
+				await setPendingAccessRequests( window.interceptor.settings.pendingAccessRequests.filter((x) => !(x.origin === origin && x.requestAccessToAddress === requestAccessToAddress?.address)))
 
-	const confirmation = await pendingInterceptorAccess.future
+				// change address
+				await changeActiveAddressAndChainAndResetSimulation(confirmation.requestAccessToAddress, 'noActiveChainChange')
+			}
 
-	await changeAccess(confirmation, origin, icon, accessAddress ? accessAddress.address : undefined)
-
-	return confirmation.outcome === 'Approved'
+			await changeAccess(confirmation, origin, icon)
+			return {
+				requestAccessToAddress: confirmation.requestAccessToAddress,
+				approved: confirmation.approval === 'Approved',
+				userRequestedAddressChange: userRequestedAddressChange, // if true, the access given was not for the original address
+			}
+		} else { // user requested address change
+			userRequestedAddressChange = true
+			if (confirmation.newActiveAddress === 'signer') throw new Error('signer mode not supported yet')
+			const newActiveAddress = findAddressInfo(confirmation.newActiveAddress, window.interceptor.settings.userAddressBook.addressInfos)
+			const associatedAddresses = getAssociatedAddresses(window.interceptor.settings, origin, newActiveAddress)
+			pendingInterceptorAccess =  {
+				future: new Future<InterceptorAccessOptions>(),
+				origin: origin,
+				requestAccessToAddress: confirmation.newActiveAddress,
+			}
+			await sendPopupMessageToOpenWindows({
+				method: 'popup_interceptorAccessDialog',
+				data: {
+					origin: origin,
+					icon: icon,
+					requestAccessToAddress: newActiveAddress,
+					associatedAddresses: associatedAddresses,
+					addressInfos: window.interceptor.settings.userAddressBook.addressInfos,
+					signerAccounts: window.interceptor.signerAccounts === undefined ? [] : window.interceptor.signerAccounts,
+					signerName: window.interceptor.signerName,
+				}
+			})
+		}
+	}
 }
