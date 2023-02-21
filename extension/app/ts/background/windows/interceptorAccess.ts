@@ -144,6 +144,7 @@ export async function requestAccessFromUser(port: browser.runtime.Port | undefin
 		return await sendPopupMessageToOpenWindows({
 			method: 'popup_interceptorAccessDialog',
 			data: {
+				title: 'TODO add title',
 				origin: origin,
 				icon: icon,
 				requestAccessToAddress: accessAddress,
@@ -236,6 +237,7 @@ export async function requestAccessFromUser(port: browser.runtime.Port | undefin
 			await sendPopupMessageToOpenWindows({
 				method: 'popup_interceptorAccessDialog',
 				data: {
+					title: 'TODO add title',
 					origin: origin,
 					icon: icon,
 					requestAccessToAddress: newActiveAddressAddressInfo,

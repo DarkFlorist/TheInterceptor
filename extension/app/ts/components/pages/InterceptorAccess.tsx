@@ -10,26 +10,6 @@ import { ChangeActiveAddress } from './ChangeActiveAddress.js'
 import { DinoSays } from '../subcomponents/DinoSays.js'
 import { getSignerName } from '../subcomponents/signers.js'
 
-function BigWebsite({ icon, origin }: { icon: string | undefined, origin: string }) {
-	return <div class = 'media' style = 'margin: 2px; border-radius: 40px 40px 40px 40px; display: flex; padding: 4px 10px 4px 10px; overflow: hidden; background-color: var(--alpha-015);'>
-		{ icon === undefined ? <></> :
-			<figure class = 'media-left' style = 'margin: auto; display: block; padding: 10px'>
-				<img src = { icon } style = 'width: 48px; height: 48px;'/>
-			</figure>
-		}
-		<div class = 'media-content' style = 'margin: auto;'>
-			<div style = 'overflow: hidden;'>
-				<p class = 'title is-5 address-text is-spaced'>
-					{ 'TODO: add website title here' }
-				</p>
-				<p class = 'subtitle is-7 is-spaced' style = 'overflow: visible; white-space: normal;'>
-					{ origin }
-				</p>
-			</div>
-		</div>
-	</div>
-}
-
 function AssociatedTogether({ associatedAddresses, renameAddressCallBack }: { associatedAddresses: readonly AddressInfoEntry[], renameAddressCallBack: RenameAddressCallBack } ) {
 	const [showLogs, setShowLogs] = useState<boolean>(associatedAddresses.length > 1)
 
@@ -66,19 +46,30 @@ function AssociatedTogether({ associatedAddresses, renameAddressCallBack }: { as
 		</div>
 	</>
 }
-export function AccessRequest({ renameAddressCallBack, accessRequest, changeActiveAddress, refreshActiveAddress }: { renameAddressCallBack: RenameAddressCallBack, accessRequest: InterceptorAccessRequest, changeActiveAddress: () => void, refreshActiveAddress: () => void }) {
+
+function Title({ icon, title} : {icon: string | undefined, title: string}) {
+	return <p style = 'font-weight: 700; line-height: 48px'>
+		{ icon === undefined ? <></> :
+			<img src = { icon } style = 'width: 48px; height: 48px; vertical-align: bottom; margin-right: 10px;'/>
+		}
+		{ title }
+	</p>
+}
+
+function AccessRequest({ renameAddressCallBack, accessRequest, changeActiveAddress, refreshActiveAddress }: { renameAddressCallBack: RenameAddressCallBack, accessRequest: InterceptorAccessRequest, changeActiveAddress: () => void, refreshActiveAddress: () => void }) {
 	return <>
-		{ accessRequest.requestAccessToAddress === undefined ? <div class = 'card-content'>
-			<BigWebsite { ...accessRequest } />
-			<p className = 'title is-4' style = 'text-align: center; margin-top: 20px; margin-bottom: 20px;'>
+		{ accessRequest.requestAccessToAddress === undefined ?
+		<div style = 'margin: 10px'>
+			<p className = 'title is-4' style = 'text-align: center; margin-top: 40px; margin-bottom: 40px;'>
+				<Title icon = { accessRequest.icon } title = { accessRequest.title }/>
 				would like to connect to The Interceptor
 			</p>
 		</div> :
 			<>
 				<div class = 'notification' style = 'background-color: var(--importance-box-color); color: var(--text-color)'>
-					<BigWebsite { ...accessRequest } />
-					<p className = 'title is-4' style = 'text-align: center; margin-top: 20px; margin-bottom: 20px;'>
-						would like to connect to your account
+					<p className = 'title is-3' style = 'text-align: center; margin-bottom: 10px;'>
+						<Title icon = { accessRequest.icon } title = { accessRequest.title }/>
+						would like to connect to your account:
 					</p>
 					<div class = 'notification' style = 'padding: 10px; background-color: var(--alpha-015); justify-content: center; '>
 						{ accessRequest.simulationMode ?
@@ -116,6 +107,7 @@ export function AccessRequest({ renameAddressCallBack, accessRequest, changeActi
 interface InterceptorAccessRequest {
 	origin: string
 	icon: string | undefined
+	title: string
 	requestAccessToAddress: AddressInfoEntry | undefined
 	associatedAddresses: readonly AddressInfoEntry[]
 	addressInfos: readonly AddressInfo[]
@@ -217,13 +209,13 @@ export function InterceptorAccess() {
 				: <></> }
 			</div>
 
-			<div className = 'block' style = 'margin-bottom: 0px; display: flex; justify-content: space-between; flex-direction: column; height: 100%; position: fixed; width: 100%'>
+			<div className = 'block' style = 'margin-bottom: 0px; display: flex; justify-content: space-between; flex-direction: column; height: 100%; position: fixed; width: 100%; background-color: var(--card-content-bg-color);'>
 				<header class = 'card-header window-header' style = 'height: 40px; border-top-left-radius: 0px; border-top-right-radius: 0px'>
 					<div class = 'card-header-icon noselect nopointer' style = 'overflow: hidden; padding: 0px;'>
 						<Website websiteOrigin = { accessRequest.origin } websiteIcon = { accessRequest.icon } />
 					</div>
 				</header>
-				<div style = 'overflow-y: auto; padding: 20px'>
+				<div style = 'overflow-y: auto; padding: 10px'>
 					<AccessRequest
 						renameAddressCallBack = { renameAddressCallBack }
 						accessRequest = { accessRequest }

@@ -409,6 +409,7 @@ export type InterceptorAccessDialog = funtypes.Static<typeof InterceptorAccessDi
 export const InterceptorAccessDialog = funtypes.Object({
 	method: funtypes.Literal('popup_interceptorAccessDialog'),
 	data: funtypes.Object({
+		title: funtypes.String,
 		origin: funtypes.String,
 		icon: funtypes.Union(funtypes.String, funtypes.Undefined),
 		requestAccessToAddress: funtypes.Union(AddressInfoEntry, funtypes.Undefined),
