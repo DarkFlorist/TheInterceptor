@@ -68,19 +68,24 @@ export const PersonalSign = funtypes.Object({
 }).asReadonly()
 
 export type InterceptorAccessOptions = funtypes.Static<typeof InterceptorAccessOptions>
-export const InterceptorAccessOptions = funtypes.Union(
+export const InterceptorAccessOptions = funtypes.Intersect(
 	funtypes.Object({
-		type: funtypes.Literal('approval'),
-		approval: funtypes.Union(funtypes.Literal('Approved'), funtypes.Literal('Rejected'), funtypes.Literal('NoResponse') ),
 		origin: funtypes.String,
 		requestAccessToAddress: funtypes.Union(EthereumAddress, funtypes.Undefined),
 	}),
-	funtypes.Object({
-		type: funtypes.Literal('addressChange'),
-		newActiveAddress: funtypes.Union(EthereumAddress, funtypes.Literal('signer')),
-		origin: funtypes.String,
-		requestAccessToAddress: funtypes.Union(EthereumAddress, funtypes.Undefined),
-	}),
+	funtypes.Union(
+		funtypes.Object({
+			type: funtypes.Literal('approval'),
+			approval: funtypes.Union(funtypes.Literal('Approved'), funtypes.Literal('Rejected'), funtypes.Literal('NoResponse') ),
+		}),
+		funtypes.Object({
+			type: funtypes.Literal('addressChange'),
+			newActiveAddress: funtypes.Union(EthereumAddress, funtypes.Literal('signer')),
+		}),
+		funtypes.Object({
+			type: funtypes.Literal('addressRefresh'),
+		})
+	)
 )
 
 export type InterceptorAccess = funtypes.Static<typeof InterceptorAccess>
@@ -342,9 +347,7 @@ export const MessageToPopupSimple = funtypes.Object({
 		funtypes.Literal('popup_interceptor_access_changed'),
 		funtypes.Literal('popup_notification_removed'),
 		funtypes.Literal('popup_signer_name_changed'),
-		funtypes.Literal('popup_accounts_update'),
 		funtypes.Literal('popup_websiteAccess_changed'),
-		funtypes.Literal('popup_notification_added'),
 		funtypes.Literal('popup_notification_added'),
 	)
 }).asReadonly()
@@ -413,6 +416,8 @@ export const InterceptorAccessDialog = funtypes.Object({
 		addressInfos: funtypes.ReadonlyArray(AddressInfo),
 		signerAccounts: funtypes.ReadonlyArray(EthereumAddress),
 		signerName: funtypes.Union(SignerName, funtypes.Undefined),
+		simulationMode: funtypes.Boolean,
+		allowAddressChanging: funtypes.Boolean,
 	})
 })
 
@@ -444,6 +449,8 @@ export const MessageToPopup = funtypes.Union(
 	ConfirmTransactionSimulationStateChanged,
 	NewBlockArrived,
 )
+
+export const ReceivedPopupMessage = funtypes.Union(MessageToPopup, PopupMessage)
 
 export type HandleSimulationModeReturnValue = {
 	result: unknown,

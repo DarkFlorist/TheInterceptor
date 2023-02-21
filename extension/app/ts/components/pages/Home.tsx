@@ -70,13 +70,12 @@ function FirstCard(param: FirstCardParams) {
 			}
 			{ param.activeAddress !== undefined ?
 				<ActiveAddress
-					addressBookEntry = { {
+					activeAddress = { {
 						type: 'addressInfo' as const,
-						name: param.activeAddress.name,
-						address: param.activeAddress.address,
-						askForAddressAccess: false, // TODO, when getting rid of window.interceptor, make active address an addressbook entry too
+						...param.activeAddress,
 					} }
-					simulationMode = { param.simulationMode }
+					buttonText = { 'Change' }
+					disableButton = { !param.simulationMode }
 					changeActiveAddress = { param.changeActiveAddress }
 					renameAddressCallBack = { param.renameAddressCallBack }
 				/>
@@ -113,7 +112,7 @@ function FirstCard(param: FirstCardParams) {
 function SimulationResults(param: SimulationStateParam) {
 	if (param.simulationAndVisualisationResults === undefined) return <></>
 	if (param.simulationAndVisualisationResults.simulatedAndVisualizedTransactions.length === 0) {
-		return <DinoSays text = { 'Give me some transactions to munch on!' } />
+		return <div style = 'padding: 10px'> <DinoSays text = { 'Give me some transactions to munch on!' } /> </div>
 	}
 
 	return <div>

@@ -443,9 +443,10 @@ const providerHandlers = new Map<string, ProviderHandler >([
 
 export function postMessageIfStillConnected(port: browser.runtime.Port, message: InterceptedRequestForward) {
 	const tabId = port.sender?.tab?.id
-	if ( tabId === undefined ) return
-	if (!window.interceptor.websiteTabConnection.has(tabId)) return
+	if (tabId === undefined) return false
+	if (!window.interceptor.websiteTabConnection.has(tabId)) return false
 	port.postMessage(message)
+	return true
 }
 
 async function onContentScriptConnected(port: browser.runtime.Port) {

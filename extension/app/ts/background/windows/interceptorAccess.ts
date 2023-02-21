@@ -1,9 +1,9 @@
 import { addressString } from '../../utils/bigint.js'
 import { Future } from '../../utils/future.js'
-import { InterceptorAccessOptions, PopupMessage } from '../../utils/interceptor-messages.js'
+import { InterceptorAccessOptions, PopupMessage, ReceivedPopupMessage } from '../../utils/interceptor-messages.js'
 import { AddressInfoEntry, PendingAccessRequestArray } from '../../utils/user-interface-types.js'
 import { getAssociatedAddresses, setAccess, updateWebsiteApprovalAccesses } from '../accessManagement.js'
-import { changeActiveAddressAndChainAndResetSimulation } from '../background.js'
+import { changeActiveAddressAndChainAndResetSimulation, postMessageIfStillConnected } from '../background.js'
 import { sendPopupMessageToOpenWindows } from '../backgroundUtils.js'
 import { updateExtensionBadge } from '../iconHandler.js'
 import { findAddressInfo } from '../metadataUtils.js'
@@ -89,6 +89,28 @@ export async function changeAccess(confirmation: InterceptorAccessOptions, origi
 	sendPopupMessageToOpenWindows({ method: 'popup_websiteAccess_changed' })
 }
 
+async function askForSignerAccountsFromSignerIfNotAvailable(port: browser.runtime.Port) {
+	if (window.interceptor.signerAccounts !== undefined) return window.interceptor.signerAccounts
+
+	const future = new Future<void>
+	const listener = async function popupMessageListener(msg: unknown) {
+		const message = ReceivedPopupMessage.parse(msg)
+		if (message.method !== 'popup_accounts_update') return
+		future.resolve()
+	}
+	try {
+		browser.runtime.onMessage.addListener(listener)
+		const messageSent = postMessageIfStillConnected(port, {
+			interceptorApproved: true,
+			options: { method: 'request_signer_to_eth_requestAccounts' },
+			result: []
+		})
+		if (messageSent) await future
+	} finally {
+		browser.runtime.onMessage.removeListener(listener)
+	}
+	return window.interceptor.signerAccounts
+}
 
 type RequestAccessFromUserReply = {
 	requestAccessToAddress: bigint | undefined
@@ -96,8 +118,7 @@ type RequestAccessFromUserReply = {
 	userRequestedAddressChange: boolean,
 }
 
-
-export async function requestAccessFromUser(origin: string, icon: string | undefined, requestAccessToAddress: AddressInfoEntry | undefined, associatedAddresses: AddressInfoEntry[]) : Promise<RequestAccessFromUserReply> {
+export async function requestAccessFromUser(port: browser.runtime.Port | undefined, origin: string, icon: string | undefined, requestAccessToAddress: AddressInfoEntry | undefined, associatedAddresses: AddressInfoEntry[]) : Promise<RequestAccessFromUserReply> {
 	const rejectReply = { requestAccessToAddress: requestAccessToAddress?.address, approved: false, userRequestedAddressChange: false }
 	if (window.interceptor.settings === undefined) return rejectReply
 
@@ -128,8 +149,10 @@ export async function requestAccessFromUser(origin: string, icon: string | undef
 				requestAccessToAddress: accessAddress,
 				associatedAddresses: associatedAddresses,
 				addressInfos: window.interceptor.settings.userAddressBook.addressInfos,
-				signerAccounts: window.interceptor.signerAccounts === undefined ? [] : window.interceptor.signerAccounts,
+				signerAccounts: [],
 				signerName: window.interceptor.signerName,
+				simulationMode: window.interceptor.settings.simulationMode,
+				allowAddressChanging: port !== undefined,
 			}
 		})
 	}
@@ -166,12 +189,14 @@ export async function requestAccessFromUser(origin: string, icon: string | undef
 			})
 		}
 	}
-	let userRequestedAddressChange = false
+
 	while (true) {
-		const confirmation: InterceptorAccessOptions = await pendingInterceptorAccess.future
+		const confirmation = await pendingInterceptorAccess.future
 		browser.runtime.onMessage.removeListener(windowReadyAndListening)
 		if (confirmation.type === 'approval') {
 			browser.windows.onRemoved.removeListener(onCloseWindow)
+			const userRequestedAddressChange = confirmation.requestAccessToAddress !== requestAccessToAddress?.address
+
 			if (userRequestedAddressChange) {
 				// clear the original pending request, which was made with other account
 				await setPendingAccessRequests( window.interceptor.settings.pendingAccessRequests.filter((x) => !(x.origin === origin && x.requestAccessToAddress === requestAccessToAddress?.address)))
@@ -187,25 +212,39 @@ export async function requestAccessFromUser(origin: string, icon: string | undef
 				userRequestedAddressChange: userRequestedAddressChange, // if true, the access given was not for the original address
 			}
 		} else { // user requested address change
-			userRequestedAddressChange = true
-			if (confirmation.newActiveAddress === 'signer') throw new Error('signer mode not supported yet')
-			const newActiveAddress = findAddressInfo(confirmation.newActiveAddress, window.interceptor.settings.userAddressBook.addressInfos)
-			const associatedAddresses = getAssociatedAddresses(window.interceptor.settings, origin, newActiveAddress)
-			pendingInterceptorAccess =  {
+			if (requestAccessToAddress === undefined) throw new Error('Requesting account change on site level access request')
+			if (port === undefined) throw new Error('Requesting account change on site that we cannot connect anymore')
+
+			async function getProposedAddress(port: browser.runtime.Port, confirmation: InterceptorAccessOptions & { type: 'addressChange' | 'addressRefresh' }) {
+				if (confirmation.type === 'addressRefresh' || confirmation.newActiveAddress === 'signer') {
+					const signerAccounts = await askForSignerAccountsFromSignerIfNotAvailable(port)
+					return signerAccounts === undefined || signerAccounts.length == 0 ? undefined : signerAccounts[0]
+				}
+				return confirmation.newActiveAddress
+			}
+
+			const proposedAddress = await getProposedAddress(port, confirmation)
+
+			const newActiveAddress: bigint = proposedAddress === undefined ? requestAccessToAddress.address : proposedAddress
+			const newActiveAddressAddressInfo = findAddressInfo(newActiveAddress, window.interceptor.settings.userAddressBook.addressInfos)
+			const associatedAddresses = getAssociatedAddresses(window.interceptor.settings, origin, newActiveAddressAddressInfo)
+			pendingInterceptorAccess = {
 				future: new Future<InterceptorAccessOptions>(),
 				origin: origin,
-				requestAccessToAddress: confirmation.newActiveAddress,
+				requestAccessToAddress: newActiveAddress,
 			}
 			await sendPopupMessageToOpenWindows({
 				method: 'popup_interceptorAccessDialog',
 				data: {
 					origin: origin,
 					icon: icon,
-					requestAccessToAddress: newActiveAddress,
+					requestAccessToAddress: newActiveAddressAddressInfo,
 					associatedAddresses: associatedAddresses,
 					addressInfos: window.interceptor.settings.userAddressBook.addressInfos,
-					signerAccounts: window.interceptor.signerAccounts === undefined ? [] : window.interceptor.signerAccounts,
+					signerAccounts: [],
 					signerName: window.interceptor.signerName,
+					simulationMode: window.interceptor.settings.simulationMode,
+					allowAddressChanging: port !== undefined,
 				}
 			})
 		}

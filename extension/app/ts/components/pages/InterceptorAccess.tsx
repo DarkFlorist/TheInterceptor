@@ -5,9 +5,10 @@ import { AddressInfoEntry, AddressBookEntry, AddingNewAddressType, RenameAddress
 import { MessageToPopup, SignerName } from '../../utils/interceptor-messages.js'
 import { sendPopupMessageToBackgroundPage } from '../../background/backgroundUtils.js'
 import Hint from '../subcomponents/Hint.js'
-import { convertNumberToCharacterRepresentationIfSmallEnough, upperCaseFirstCharacter } from '../ui-utils.js'
+import { convertNumberToCharacterRepresentationIfSmallEnough } from '../ui-utils.js'
 import { ChangeActiveAddress } from './ChangeActiveAddress.js'
 import { DinoSays } from '../subcomponents/DinoSays.js'
+import { getSignerName } from '../subcomponents/signers.js'
 
 function BigWebsite({ icon, origin }: { icon: string | undefined, origin: string }) {
 	return <div class = 'media' style = 'margin: 2px; border-radius: 40px 40px 40px 40px; display: flex; padding: 4px 10px 4px 10px; overflow: hidden; background-color: var(--alpha-015);'>
@@ -19,7 +20,7 @@ function BigWebsite({ icon, origin }: { icon: string | undefined, origin: string
 		<div class = 'media-content' style = 'margin: auto;'>
 			<div style = 'overflow: hidden;'>
 				<p class = 'title is-5 address-text is-spaced'>
-					{ 'website title is here' }
+					{ 'TODO: add website title here' }
 				</p>
 				<p class = 'subtitle is-7 is-spaced' style = 'overflow: visible; white-space: normal;'>
 					{ origin }
@@ -36,7 +37,11 @@ function AssociatedTogether({ associatedAddresses, renameAddressCallBack }: { as
 		<div class = 'card' style = 'margin-top: 10px; margin-bottom: 10px'>
 			<header class = 'card-header noselect' style = 'cursor: pointer; height: 30px;' onClick = { () => setShowLogs((prevValue) => !prevValue) }>
 				<p class = 'card-header-title' style = 'font-weight: unset; font-size: 0.8em;'>
-					{ associatedAddresses.length <=1 ? 'The website cannot associate any addresses with each other' : `There are ${ upperCaseFirstCharacter(convertNumberToCharacterRepresentationIfSmallEnough(associatedAddresses.length)) } addresses that the website can associate together with` }
+					{ associatedAddresses.length <= 1 ? 'The website cannot associate any addresses with each other' : <>
+						There are&nbsp;
+						<p style = 'font-size: 0.8em; font-weight: 700'>{ convertNumberToCharacterRepresentationIfSmallEnough(associatedAddresses.length).toUpperCase() } </p>
+						&nbsp;addresses that the website can associate together with
+					</> }
 				</p>
 				<div class = 'card-header-icon'>
 					<span class = 'icon' style = 'color: var(--text-color); font-weight: unset; font-size: 0.8em;'> V </span>
@@ -61,8 +66,7 @@ function AssociatedTogether({ associatedAddresses, renameAddressCallBack }: { as
 		</div>
 	</>
 }
-
-export function AccessRequest({ renameAddressCallBack, accessRequest, changeActiveAddress }: { renameAddressCallBack: RenameAddressCallBack, accessRequest: InterceptorAccessRequest, changeActiveAddress: () => void  }) {
+export function AccessRequest({ renameAddressCallBack, accessRequest, changeActiveAddress, refreshActiveAddress }: { renameAddressCallBack: RenameAddressCallBack, accessRequest: InterceptorAccessRequest, changeActiveAddress: () => void, refreshActiveAddress: () => void }) {
 	return <>
 		{ accessRequest.requestAccessToAddress === undefined ? <div class = 'card-content'>
 			<BigWebsite { ...accessRequest } />
@@ -77,12 +81,26 @@ export function AccessRequest({ renameAddressCallBack, accessRequest, changeActi
 						would like to connect to your account
 					</p>
 					<div class = 'notification' style = 'padding: 10px; background-color: var(--alpha-015); justify-content: center; '>
-						<ActiveAddress
-							addressBookEntry = { accessRequest.requestAccessToAddress }
-							renameAddressCallBack = { renameAddressCallBack }
-							changeActiveAddress = { changeActiveAddress }
-							simulationMode = { true }
-						/>
+						{ accessRequest.simulationMode ?
+							<ActiveAddress
+								activeAddress = { accessRequest.requestAccessToAddress }
+								renameAddressCallBack = { renameAddressCallBack }
+								changeActiveAddress = { changeActiveAddress }
+								buttonText = { 'Change' }
+								disableButton = { !accessRequest.simulationMode || !accessRequest.allowAddressChanging }
+							/> : <>
+								<ActiveAddress
+									activeAddress = { accessRequest.requestAccessToAddress }
+									renameAddressCallBack = { renameAddressCallBack }
+									changeActiveAddress = { refreshActiveAddress }
+									disableButton = { !accessRequest.allowAddressChanging }
+									buttonText = { 'Refresh' }
+								/>
+								<p style = 'color: var(--subtitle-text-color); white-space: normal;' class = 'subtitle is-7'>
+									{ `You can change active address by changing it directly from ${ getSignerName(accessRequest.signerName) } and clicking refresh here afterwards` }
+								</p>
+							</>
+						}
 					</div>
 				</div>
 
@@ -103,6 +121,8 @@ interface InterceptorAccessRequest {
 	addressInfos: readonly AddressInfo[]
 	signerAccounts: readonly bigint[]
 	signerName: SignerName | undefined
+	simulationMode: boolean,
+	allowAddressChanging: boolean,
 }
 
 export function InterceptorAccess() {
@@ -152,6 +172,15 @@ export function InterceptorAccess() {
 		setAppPage(Page.ChangeActiveAddress)
 	}
 
+	function refreshActiveAddress() {
+		if (accessRequest === undefined) throw Error('access request not loaded')
+		sendPopupMessageToBackgroundPage({ method: 'popup_interceptorAccess', options: {
+			type: 'addressRefresh',
+			origin: accessRequest.origin,
+			requestAccessToAddress: accessRequest.requestAccessToAddress?.address,
+		} } )
+	}
+
 	function setActiveAddressAndInformAboutIt(address: bigint | 'signer') {
 		if (accessRequest === undefined) throw Error('access request not loaded')
 		sendPopupMessageToBackgroundPage({ method: 'popup_interceptorAccess', options: {
@@ -199,6 +228,7 @@ export function InterceptorAccess() {
 						renameAddressCallBack = { renameAddressCallBack }
 						accessRequest = { accessRequest }
 						changeActiveAddress = { changeActiveAddress }
+						refreshActiveAddress = { refreshActiveAddress }
 					/>
 				</div>
 				<nav class = 'window-header' style = 'display: flex; justify-content: space-around; width: 100%; flex-direction: column; padding-bottom: 10px; padding-top: 10px;'>

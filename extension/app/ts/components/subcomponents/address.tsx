@@ -106,30 +106,30 @@ export function BigAddress(params: BigAddressParams) {
 }
 
 export type ActiveAddressParams = {
-	readonly addressBookEntry: AddressBookEntry
-	readonly simulationMode: boolean
+	readonly activeAddress: AddressBookEntry
+	readonly disableButton: boolean
 	readonly changeActiveAddress: () => void
 	readonly renameAddressCallBack: RenameAddressCallBack
+	readonly buttonText: string
 }
 
 export function ActiveAddress(params: ActiveAddressParams) {
 	return <div class = 'log-table' style = 'grid-template-columns: auto max-content'>
 		<div class = 'log-cell' style = 'display: block;'>
 			<BigAddress
-				addressBookEntry = { params.addressBookEntry }
+				addressBookEntry = { params.activeAddress }
 				renameAddressCallBack = { params.renameAddressCallBack }
 			/>
 		</div>
 		<div class = 'log-cell'>
 			<div class = 'media-right'>
-				<button className = 'button is-primary' disabled = { !params.simulationMode }  onClick = { params.changeActiveAddress } >
-					Change
+				<button className = 'button is-primary' disabled = { params.disableButton } onClick = { params.changeActiveAddress } >
+					{ params.buttonText }
 				</button>
 			</div>
 		</div>
 	</div>
 }
-
 export type SmallAddressParams = {
 	readonly addressBookEntry: AddressBookEntry
 	readonly textColor?: string

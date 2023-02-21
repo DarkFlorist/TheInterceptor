@@ -183,7 +183,7 @@ export async function reviewNotification(_simulator: Simulator, params: ReviewNo
 
 	const addressInfo = notification.requestAccessToAddress === undefined ? undefined : findAddressInfo(BigInt(notification.requestAccessToAddress), window.interceptor.settings.userAddressBook.addressInfos)
 	const metadata = getAssociatedAddresses(window.interceptor.settings, notification.origin, addressInfo)
-	await requestAccessFromUser(notification.origin, notification.icon, addressInfo, metadata)
+	await requestAccessFromUser(undefined, notification.origin, notification.icon, addressInfo, metadata)
 }
 export async function rejectNotification(_simulator: Simulator, params: RejectNotification) {
 	if (window.interceptor.settings === undefined) return
