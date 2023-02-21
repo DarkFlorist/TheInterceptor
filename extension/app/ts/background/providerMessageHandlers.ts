@@ -1,7 +1,7 @@
 import { ConnectedToSigner, ProviderMessage, WalletSwitchEthereumChainReply } from '../utils/interceptor-messages.js'
 import { EthereumAccountsReply, EthereumChainReply } from '../utils/wire-types.js'
 import { changeActiveAddressAndChainAndResetSimulation } from './background.js'
-import { sendPopupMessageToOpenWindows } from './backgroundUtils.js'
+import { sendInternalWindowMessage, sendPopupMessageToOpenWindows } from './backgroundUtils.js'
 import { resolveSignerChainChange } from './windows/changeChain.js'
 
 export function ethAccountsReply(port: browser.runtime.Port, request: ProviderMessage) {
@@ -15,6 +15,8 @@ export function ethAccountsReply(port: browser.runtime.Port, request: ProviderMe
 	}
 	if (window.interceptor) {
 		window.interceptor.signerAccounts = signerAccounts
+		const portSenderId = port.sender?.id
+		if (portSenderId !== undefined) sendInternalWindowMessage({ method: 'window_signer_accounts_changed', data: { portSenderId: portSenderId} })
 	}
 
 	// update active address if we are using signers address

@@ -451,8 +451,6 @@ export const MessageToPopup = funtypes.Union(
 	NewBlockArrived,
 )
 
-export const ReceivedPopupMessage = funtypes.Union(MessageToPopup, PopupMessage)
-
 export type HandleSimulationModeReturnValue = {
 	result: unknown,
 } | {
@@ -468,3 +466,14 @@ export type AddressBookTabIdSetting = funtypes.Static<typeof AddressBookTabIdSet
 export const AddressBookTabIdSetting = funtypes.Object({
 	addressbookTabId: funtypes.Number,
 }).asReadonly()
+
+export type WindowMessageSignerAccountsChanged = funtypes.Static<typeof WindowMessageSignerAccountsChanged>
+export const WindowMessageSignerAccountsChanged = funtypes.Object({
+	method: funtypes.Literal('window_signer_accounts_changed'),
+	data: funtypes.Object({
+		portSenderId: funtypes.String,
+	})
+})
+
+export type WindowMessage = funtypes.Static<typeof WindowMessage>
+export const WindowMessage = WindowMessageSignerAccountsChanged

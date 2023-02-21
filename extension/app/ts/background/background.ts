@@ -424,7 +424,6 @@ export async function changeActiveAddressAndChainAndResetSimulation(activeAddres
 	}
 }
 
-
 export async function changeActiveChain(chainId: bigint) {
 	if (window.interceptor.settings === undefined) return
 	if (window.interceptor.settings.simulationMode) {
