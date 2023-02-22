@@ -1,5 +1,5 @@
 import * as funtypes from 'funtypes'
-import { AddressBookEntries, AddressBookEntry, AddressInfo, AddressInfoEntry } from './user-interface-types.js'
+import { AddressBookEntries, AddressBookEntry, AddressInfo, AddressInfoEntry, Website } from './user-interface-types.js'
 import { EIP2612Message, EthereumAddress, EthereumQuantity, EthereumUnsignedTransaction, Permit2 } from './wire-types.js'
 import { SimResults, SimulationState, TokenPriceEstimate } from './visualizer-types.js'
 
@@ -70,7 +70,7 @@ export const PersonalSign = funtypes.Object({
 export type InterceptorAccessOptions = funtypes.Static<typeof InterceptorAccessOptions>
 export const InterceptorAccessOptions = funtypes.Intersect(
 	funtypes.Object({
-		origin: funtypes.String,
+		websiteOrigin: funtypes.String,
 		requestAccessToAddress: funtypes.Union(EthereumAddress, funtypes.Undefined),
 	}),
 	funtypes.Union(
@@ -169,8 +169,7 @@ export const ChangeInterceptorAccess = funtypes.Object({
 	method: funtypes.Literal('popup_changeInterceptorAccess'),
 	options: funtypes.ReadonlyArray(
 		funtypes.Object({
-			origin: funtypes.String,
-			originIcon: funtypes.Union(funtypes.String, funtypes.Undefined),
+			website: Website,
 			access: funtypes.Boolean,
 			addressAccess: funtypes.Union(
 				funtypes.ReadonlyArray(funtypes.Object( {
@@ -233,7 +232,7 @@ export type ReviewNotification = funtypes.Static<typeof ReviewNotification>
 export const ReviewNotification = funtypes.Object({
 	method: funtypes.Literal('popup_reviewNotification'),
 	options: funtypes.Object({
-		origin: funtypes.String,
+		website: Website,
 		requestAccessToAddress: funtypes.Union(EthereumAddress, funtypes.Undefined),
 	})
 }).asReadonly()
@@ -242,7 +241,7 @@ export type RejectNotification = funtypes.Static<typeof RejectNotification>
 export const RejectNotification = funtypes.Object({
 	method: funtypes.Literal('popup_rejectNotification'),
 	options: funtypes.Object({
-		origin: funtypes.String,
+		website: Website,
 		requestAccessToAddress: funtypes.Union(EthereumAddress, funtypes.Undefined),
 		removeOnly: funtypes.Boolean,
 	})
@@ -293,8 +292,7 @@ export const RefreshConfirmTransactionDialogSimulation = funtypes.Object({
 		simulationMode: funtypes.Boolean,
 		requestId: funtypes.Number,
 		transactionToSimulate: EthereumUnsignedTransaction,
-		websiteOrigin: funtypes.String,
-		websiteIcon: funtypes.Union(funtypes.String, funtypes.Undefined),
+		website: Website,
 	}),
 }).asReadonly()
 
@@ -400,8 +398,7 @@ export const ChangeChainRequest = funtypes.Object({
 		requestId: funtypes.Number,
 		simulationMode: funtypes.Boolean,
 		chainId: EthereumQuantity,
-		origin: funtypes.String,
-		icon: funtypes.Union(funtypes.String, funtypes.Undefined),
+		website: Website,
 	})
 })
 
@@ -409,9 +406,7 @@ export type InterceptorAccessDialog = funtypes.Static<typeof InterceptorAccessDi
 export const InterceptorAccessDialog = funtypes.Object({
 	method: funtypes.Literal('popup_interceptorAccessDialog'),
 	data: funtypes.Object({
-		title: funtypes.String,
-		origin: funtypes.String,
-		icon: funtypes.Union(funtypes.String, funtypes.Undefined),
+		website: Website,
 		requestAccessToAddress: funtypes.Union(AddressInfoEntry, funtypes.Undefined),
 		associatedAddresses: funtypes.ReadonlyArray(AddressInfoEntry),
 		addressInfos: funtypes.ReadonlyArray(AddressInfo),
@@ -435,8 +430,7 @@ export const ConfirmTransactionSimulationStateChanged = funtypes.Object({
 		tokenPrices: funtypes.ReadonlyArray(TokenPriceEstimate),
 		activeAddress: EthereumAddress,
 		signerName: funtypes.Union(SignerName, funtypes.Undefined),
-		websiteOrigin: funtypes.String,
-		websiteIcon: funtypes.Union(funtypes.String, funtypes.Undefined),
+		website: Website,
 	})
 })
 

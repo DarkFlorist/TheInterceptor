@@ -3,7 +3,7 @@ import { bytes32String } from '../utils/bigint.js'
 import { ERROR_INTERCEPTOR_UNKNOWN_ORIGIN, KNOWN_CONTRACT_CALLER_ADDRESSES } from '../utils/constants.js'
 import { EstimateGasParams, EthBalanceParams, EthBlockByNumberParams, EthCallParams, EthereumAddress, EthereumData, EthereumQuantity, EthereumSignedTransactionWithBlockData, EthSubscribeParams, EthTransactionReceiptResponse, EthUnSubscribeParams, GetBlockReturn, GetCode, GetSimulationStack, GetSimulationStackReply, GetTransactionCount, JsonRpcNewHeadsNotification, NewHeadsSubscriptionData, PersonalSignParams, SendTransactionParams, SignTypedDataParams, SwitchEthereumChainParams, TransactionByHashParams, TransactionReceiptParams } from '../utils/wire-types.js'
 import { postMessageIfStillConnected } from './background.js'
-import { retrieveWebsiteTabIcon } from './iconHandler.js'
+import { retrieveWebsiteDetails } from './iconHandler.js'
 import { WebsiteAccessArray } from './settings.js'
 import { openChangeChainDialog } from './windows/changeChain.js'
 import { openConfirmTransactionDialog } from './windows/confirmTransaction.js'
@@ -27,7 +27,7 @@ export async function getTransactionReceipt(simulator: Simulator, request: Trans
 	return { result: EthTransactionReceiptResponse.serialize(await simulator.simulationModeNode.getTransactionReceipt(request.params[0])) }
 }
 
-function getFromField(simulationMode: boolean, request: SendTransactionParams, getActiveAddressForDomain: (websiteAccess: WebsiteAccessArray, origin: string) => bigint | undefined, port: browser.runtime.Port) {
+function getFromField(simulationMode: boolean, request: SendTransactionParams, getActiveAddressForDomain: (websiteAccess: WebsiteAccessArray, websiteOrigin: string) => bigint | undefined, port: browser.runtime.Port) {
 	if (window.interceptor.settings === undefined) throw new Error('Interceptor is not ready')
 
 	if (simulationMode && 'from' in request.params[0] && request.params[0].from !== undefined) {
@@ -36,13 +36,13 @@ function getFromField(simulationMode: boolean, request: SendTransactionParams, g
 		const connection = window.interceptor.websitePortApprovals.get(port)
 		if (connection === undefined) throw new Error('Not connected')
 
-		const from = getActiveAddressForDomain(window.interceptor.settings.websiteAccess, connection.origin)
+		const from = getActiveAddressForDomain(window.interceptor.settings.websiteAccess, connection.websiteOrigin)
 		if (from === undefined) throw new Error('Access to active address is denied')
 		return from
 	}
 }
 
-export async function sendTransaction(getActiveAddressForDomain: (websiteAccess: WebsiteAccessArray, origin: string) => bigint | undefined, simulator: Simulator, request: SendTransactionParams, port: browser.runtime.Port, requestId: number | undefined, simulationMode: boolean = true) {
+export async function sendTransaction(getActiveAddressForDomain: (websiteAccess: WebsiteAccessArray, websiteOrigin: string) => bigint | undefined, simulator: Simulator, request: SendTransactionParams, port: browser.runtime.Port, requestId: number | undefined, simulationMode: boolean = true) {
 	async function formTransaction() {
 		const block = simulator.ethereum.getBlock()
 		const chainId = simulator.ethereum.getChainId()
@@ -64,12 +64,11 @@ export async function sendTransaction(getActiveAddressForDomain: (websiteAccess:
 			accessList: []
 		}
 	}
-	const website = port.sender?.url
-	if (website === undefined) return ERROR_INTERCEPTOR_UNKNOWN_ORIGIN
+	if (port.sender?.url === undefined) return ERROR_INTERCEPTOR_UNKNOWN_ORIGIN
 	if (requestId === undefined) throw new Error('sendTransaction requires known requestId')
 
-	const websiteIcon = await retrieveWebsiteTabIcon(port.sender?.tab?.id)
-	return await openConfirmTransactionDialog(requestId, website, websiteIcon, simulationMode, formTransaction)
+	const website = await retrieveWebsiteDetails(port, (new URL(port.sender.url)).hostname)
+	return await openConfirmTransactionDialog(requestId, website, simulationMode, formTransaction)
 }
 
 async function singleCallWithFromOverride(simulator: Simulator, request: EthCallParams, from: bigint) {
@@ -141,12 +140,12 @@ export async function unsubscribe(simulator: Simulator, request: EthUnSubscribeP
 	return { result: simulator.simulationModeNode.remoteSubscription(request.params[0]) }
 }
 
-export async function getAccounts(getActiveAddressForDomain: (websiteAccess: WebsiteAccessArray, origin: string) => bigint | undefined, _simulator: Simulator, port: browser.runtime.Port) {
+export async function getAccounts(getActiveAddressForDomain: (websiteAccess: WebsiteAccessArray, websiteOrigin: string) => bigint | undefined, _simulator: Simulator, port: browser.runtime.Port) {
 	const connection = window.interceptor.websitePortApprovals.get(port)
 	if (connection === undefined || window.interceptor.settings === undefined) {
 		return { result: [] }
 	}
-	const account = getActiveAddressForDomain(window.interceptor.settings.websiteAccess, connection.origin)
+	const account = getActiveAddressForDomain(window.interceptor.settings.websiteAccess, connection.websiteOrigin)
 	if (account === undefined) {
 		return {result: [] }
 	}
@@ -177,19 +176,18 @@ export async function switchEthereumChain(simulator: Simulator, request: SwitchE
 		// we are already on the right chain
 		return { result: null }
 	}
-	const origin = port.sender?.url
-	if (origin === undefined) return ERROR_INTERCEPTOR_UNKNOWN_ORIGIN
+	if (port.sender?.url === undefined) return ERROR_INTERCEPTOR_UNKNOWN_ORIGIN
 	if (requestId === undefined) throw new Error('switchEthereumChain requires known requestId')
 
-	const favicon = port.sender?.tab?.favIconUrl
-	return await openChangeChainDialog(requestId, simulationMode, origin, favicon, request.params[0].chainId)
+	const website = await retrieveWebsiteDetails(port, (new URL(port.sender.url)).hostname)
+	return await openChangeChainDialog(requestId, simulationMode, website, request.params[0].chainId)
 }
 
 export async function getCode(simulator: Simulator, request: GetCode) {
 	return { result: EthereumData.serialize(await simulator.simulationModeNode.getCode(request.params[0], request.params[1])) }
 }
 
-export async function requestPermissions(getActiveAddressForDomain: (websiteAccess: WebsiteAccessArray, origin: string) => bigint | undefined, simulator: Simulator, port: browser.runtime.Port) {
+export async function requestPermissions(getActiveAddressForDomain: (websiteAccess: WebsiteAccessArray, websiteOrigin: string) => bigint | undefined, simulator: Simulator, port: browser.runtime.Port) {
 	return await getAccounts(getActiveAddressForDomain, simulator, port)
 }
 

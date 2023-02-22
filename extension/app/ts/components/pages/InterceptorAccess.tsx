@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'preact/hooks'
-import { ActiveAddress, BigAddress, Website } from '../subcomponents/address.js'
+import { ActiveAddress, BigAddress, WebsiteOriginText } from '../subcomponents/address.js'
 import { AddNewAddress } from './AddNewAddress.js'
-import { AddressInfoEntry, AddressBookEntry, AddingNewAddressType, RenameAddressCallBack, Page, AddressInfo } from '../../utils/user-interface-types.js'
+import { AddressInfoEntry, AddressBookEntry, AddingNewAddressType, RenameAddressCallBack, Page, AddressInfo, Website } from '../../utils/user-interface-types.js'
 import { MessageToPopup, SignerName } from '../../utils/interceptor-messages.js'
 import { sendPopupMessageToBackgroundPage } from '../../background/backgroundUtils.js'
 import Hint from '../subcomponents/Hint.js'
@@ -61,14 +61,14 @@ function AccessRequest({ renameAddressCallBack, accessRequest, changeActiveAddre
 		{ accessRequest.requestAccessToAddress === undefined ?
 		<div style = 'margin: 10px'>
 			<p className = 'title is-4' style = 'text-align: center; margin-top: 40px; margin-bottom: 40px;'>
-				<Title icon = { accessRequest.icon } title = { accessRequest.title }/>
+				<Title icon = { accessRequest.website.icon } title = { accessRequest.website.title === undefined ? accessRequest.website.websiteOrigin : accessRequest.website.title }/>
 				would like to connect to The Interceptor
 			</p>
 		</div> :
 			<>
 				<div class = 'notification' style = 'background-color: var(--importance-box-color); color: var(--text-color)'>
 					<p className = 'title is-3' style = 'text-align: center; margin-bottom: 10px;'>
-						<Title icon = { accessRequest.icon } title = { accessRequest.title }/>
+						<Title icon = { accessRequest.website.icon } title = { accessRequest.website.title === undefined ? accessRequest.website.websiteOrigin : accessRequest.website.title }/>
 						would like to connect to your account:
 					</p>
 					<div class = 'notification' style = 'padding: 10px; background-color: var(--alpha-015); justify-content: center; '>
@@ -105,9 +105,7 @@ function AccessRequest({ renameAddressCallBack, accessRequest, changeActiveAddre
 }
 
 interface InterceptorAccessRequest {
-	origin: string
-	icon: string | undefined
-	title: string
+	website: Website,
 	requestAccessToAddress: AddressInfoEntry | undefined
 	associatedAddresses: readonly AddressInfoEntry[]
 	addressInfos: readonly AddressInfo[]
@@ -138,7 +136,7 @@ export function InterceptorAccess() {
 		const options = {
 			type: 'approval' as const,
 			approval: 'Approved' as const,
-			origin: accessRequest.origin,
+			websiteOrigin: accessRequest.website.websiteOrigin,
 			requestAccessToAddress: accessRequest.requestAccessToAddress?.address,
 		}
 		sendPopupMessageToBackgroundPage({ method: 'popup_interceptorAccess', options })
@@ -149,7 +147,7 @@ export function InterceptorAccess() {
 		const options = {
 			type: 'approval' as const,
 			approval: 'Rejected' as const,
-			origin: accessRequest.origin,
+			websiteOrigin: accessRequest.website.websiteOrigin,
 			requestAccessToAddress: accessRequest.requestAccessToAddress?.address,
 		}
 		sendPopupMessageToBackgroundPage({ method: 'popup_interceptorAccess', options })
@@ -168,7 +166,7 @@ export function InterceptorAccess() {
 		if (accessRequest === undefined) throw Error('access request not loaded')
 		sendPopupMessageToBackgroundPage({ method: 'popup_interceptorAccess', options: {
 			type: 'addressRefresh',
-			origin: accessRequest.origin,
+			websiteOrigin: accessRequest.website.websiteOrigin,
 			requestAccessToAddress: accessRequest.requestAccessToAddress?.address,
 		} } )
 	}
@@ -177,7 +175,7 @@ export function InterceptorAccess() {
 		if (accessRequest === undefined) throw Error('access request not loaded')
 		sendPopupMessageToBackgroundPage({ method: 'popup_interceptorAccess', options: {
 			type: 'addressChange',
-			origin: accessRequest.origin,
+			websiteOrigin: accessRequest.website.websiteOrigin,
 			requestAccessToAddress: accessRequest.requestAccessToAddress?.address,
 			newActiveAddress: address,
 		} } )
@@ -212,7 +210,7 @@ export function InterceptorAccess() {
 			<div className = 'block' style = 'margin-bottom: 0px; display: flex; justify-content: space-between; flex-direction: column; height: 100%; position: fixed; width: 100%; background-color: var(--card-content-bg-color);'>
 				<header class = 'card-header window-header' style = 'height: 40px; border-top-left-radius: 0px; border-top-right-radius: 0px'>
 					<div class = 'card-header-icon noselect nopointer' style = 'overflow: hidden; padding: 0px;'>
-						<Website websiteOrigin = { accessRequest.origin } websiteIcon = { accessRequest.icon } />
+						<WebsiteOriginText { ...accessRequest.website } />
 					</div>
 				</header>
 				<div style = 'overflow-y: auto; padding: 10px'>

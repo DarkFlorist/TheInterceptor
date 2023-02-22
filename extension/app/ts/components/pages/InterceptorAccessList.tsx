@@ -115,8 +115,7 @@ export function InterceptorAccessList(param: InterceptorAccessListParams) {
 
 		const withoutRemovedEntries = editableAccessList.filter( (state) => !state.removed )
 		const newEntries = withoutRemovedEntries.map( (x) => ({
-			origin: x.websiteAccess.origin,
-			originIcon: x.websiteAccess.originIcon,
+			website: x.websiteAccess.website,
 			access: x.access,
 			addressAccess: x.addressAccessModified.filter( (x) => !x.removed ).map( (addr) => ({
 				address: BigInt(addr.address),
@@ -164,27 +163,27 @@ export function InterceptorAccessList(param: InterceptorAccessListParams) {
 					: <></> }
 					{ editableAccessList === undefined ? <></> : editableAccessList.map( (access, accessListIndex) => (
 						<li>
-							{ access.removed ? <p style = 'color: var(--negative-color)' > { `Forgot ${ access.websiteAccess.origin }. `}</p> :
+							{ access.removed ? <p style = 'color: var(--negative-color)' > { `Forgot ${ access.websiteAccess.website.websiteOrigin }. `}</p> :
 								<div class = 'card'>
 									<div class = 'card-header'>
 										<div class = 'card-header-icon unset-cursor' >
 											<p class = 'image is-24x24'>
-												<img src = { access.websiteAccess.originIcon === undefined ? '../../img/question-mark-sign.svg' : access.websiteAccess.originIcon }/>
+												<img src = { access.websiteAccess.website.icon === undefined ? '../../img/question-mark-sign.svg' : access.websiteAccess.website.icon }/>
 											</p>
 										</div>
 										<p class = 'card-header-title' style = 'width: 13em'>
 											<CopyToClipboard
-												content = { access.websiteAccess.origin }
+												content = { access.websiteAccess.website.websiteOrigin }
 												copyMessage = 'Website address copied!'
 											>
 												<p className = 'paragraph noselect nopointer' style = 'text-overflow: ellipsis; overflow: hidden; white-space: nowrap; display: block; width: 13em'>
-													{ access.websiteAccess.origin }
+													{ access.websiteAccess.website.websiteOrigin }
 												</p>
 											</CopyToClipboard>
 										</p>
 										<div class = 'card-header-icon unset-cursor'>
 											<label class = 'form-control' style = 'width: 8em;'>
-												<input type = 'checkbox' checked = { access.access } onInput = { e => { if (e.target instanceof HTMLInputElement && e.target !== null) { setWebsiteAccess(accessListIndex, e.target.checked ,undefined) } } } />
+												<input type = 'checkbox' checked = { access.access } onInput = { e => { if (e.target instanceof HTMLInputElement && e.target !== null) { setWebsiteAccess(accessListIndex, e.target.checked, undefined) } } } />
 												<p class = 'paragraph checkbox-text'>Allow access</p>
 											</label>
 											<button class = 'card-header-icon' style = 'padding: 0px;' aria-label = 'forget' onClick = { () => setWebsiteAccess(accessListIndex, undefined, true) }>

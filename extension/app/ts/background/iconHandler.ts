@@ -23,20 +23,20 @@ export function updateExtensionIcon(port: browser.runtime.Port) {
 	if (port.sender?.tab?.id === undefined) return
 	if (port.sender?.url === undefined) return
 
-	const origin = (new URL(port.sender.url)).hostname
+	const websiteOrigin = (new URL(port.sender.url)).hostname
 	const activeAddress = getActiveAddress()
-	const censoredActiveAddress = getActiveAddressForDomain(window.interceptor.settings.websiteAccess, origin)
+	const censoredActiveAddress = getActiveAddressForDomain(window.interceptor.settings.websiteAccess, websiteOrigin)
 	if ( activeAddress === undefined) return setInterceptorIcon(port.sender.tab.id, ICON_NOT_ACTIVE, 'No active address selected.')
-	if (hasAddressAccess(window.interceptor.settings.websiteAccess, origin, activeAddress )  === 'notFound') {
+	if (hasAddressAccess(window.interceptor.settings.websiteAccess, websiteOrigin, activeAddress )  === 'notFound') {
 		// we don't have active address selected, or no access specified
-		return setInterceptorIcon(port.sender.tab.id, ICON_NOT_ACTIVE, `${ origin } has PENDING access request for ${ getAddressMetaData(activeAddress, window.interceptor.settings?.userAddressBook).name }!`)
+		return setInterceptorIcon(port.sender.tab.id, ICON_NOT_ACTIVE, `${ websiteOrigin } has PENDING access request for ${ getAddressMetaData(activeAddress, window.interceptor.settings?.userAddressBook).name }!`)
 	}
 
 	if (censoredActiveAddress === undefined) {
-		if ( hasAccess(window.interceptor.settings.websiteAccess, origin) === 'noAccess') {
-			return setInterceptorIcon(port.sender.tab.id, ICON_ACCESS_DENIED, `The access for ${ origin } has been DENIED!`)
+		if ( hasAccess(window.interceptor.settings.websiteAccess, websiteOrigin) === 'noAccess') {
+			return setInterceptorIcon(port.sender.tab.id, ICON_ACCESS_DENIED, `The access for ${ websiteOrigin } has been DENIED!`)
 		}
-		return setInterceptorIcon(port.sender.tab.id, ICON_ACCESS_DENIED, `The access to ${ getAddressMetaData(activeAddress, window.interceptor.settings?.userAddressBook).name } for ${ origin } has been DENIED!`)
+		return setInterceptorIcon(port.sender.tab.id, ICON_ACCESS_DENIED, `The access to ${ getAddressMetaData(activeAddress, window.interceptor.settings?.userAddressBook).name } for ${ websiteOrigin } has been DENIED!`)
 	}
 	if (window.interceptor.settings?.simulationMode) return setInterceptorIcon(port.sender.tab.id, ICON_SIMULATING, `The Interceptor simulates your sent transactions.`)
 	if (!isSupportedChain(window.interceptor.settings.activeChain.toString())) return setInterceptorIcon(port.sender.tab.id, ICON_SIGNING_NOT_SUPPORTED, `Interceptor is on an unsupported network and simulation mode is disabled.`)
@@ -50,8 +50,13 @@ export async function updateExtensionBadge() {
 	return await browser.browserAction.setBadgeText( { text: count === 0 ? '' : count.toString() } )
 }
 
-export async function retrieveWebsiteTabIcon(tabId: number | undefined) {
-	if ( tabId === undefined) return undefined
+export async function retrieveWebsiteDetails(port: browser.runtime.Port, websiteOrigin: string) {
+	const tabId = port.sender?.tab?.id
+	if (tabId === undefined) return  {
+		websiteOrigin: websiteOrigin,
+		title: undefined,
+		icon: undefined
+	}
 
 	// wait for the tab to be fully loaded
 	const waitForLoadedFuture = new Future<void>
@@ -88,6 +93,10 @@ export async function retrieveWebsiteTabIcon(tabId: number | undefined) {
 		maxRetries--
 		if (maxRetries <= 0) break // timeout
 	}
-	const url = (await browser.tabs.get(tabId)).favIconUrl
-	return url === undefined ? undefined : await imageToUri(url)
+	const tab = await browser.tabs.get(tabId)
+	return {
+		websiteOrigin: websiteOrigin,
+		title: tab.title,
+		icon: tab.favIconUrl === undefined ? undefined : await imageToUri(tab.favIconUrl)
+	}
 }

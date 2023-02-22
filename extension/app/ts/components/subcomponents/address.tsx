@@ -1,7 +1,7 @@
 import { ethers } from 'ethers'
 import { addressString } from '../../utils/bigint.js'
 import Blockie from './PreactBlocky.js'
-import { AddressBookEntry, AddressInfo, RenameAddressCallBack, WebsiteOriginAndIcon } from '../../utils/user-interface-types.js'
+import { AddressBookEntry, AddressInfo, RenameAddressCallBack, Website } from '../../utils/user-interface-types.js'
 import { CopyToClipboard } from './CopyToClipboard.js'
 import { ApproveIcon, ArrowIcon } from '../subcomponents/icons.js'
 import { JSX } from 'preact/jsx-runtime'
@@ -217,10 +217,10 @@ export function FromSmallAddressToSmallAddress({ from, to, renameAddressCallBack
 	</span>
 }
 
-export function Website( { websiteIcon, websiteOrigin, textColor }: WebsiteOriginAndIcon & { textColor?: string }) {
+export function WebsiteOriginText( { icon, websiteOrigin, textColor }: Website & { textColor?: string }) {
 	return <a style = 'margin: 2px; border-radius: 40px 40px 40px 40px; display: flex; padding: 4px 10px 4px 10px; overflow: hidden;'>
 		<span style = 'margin-right: 5px; width: 24px; height: 24px; min-width: 24px'>
-			<img src = { websiteIcon } alt = 'Logo' style = 'width: 24px; height: 24px;'/>
+			<img src = { icon } alt = 'Logo' style = 'width: 24px; height: 24px;'/>
 		</span>
 		<p class = 'address-text' style = {`color: ${ textColor === undefined ? 'var(--text-color)' : textColor }; padding-left: 5px;` }>{ websiteOrigin }</p>
 	</a>

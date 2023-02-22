@@ -1,6 +1,7 @@
 import { METAMASK_ERROR_USER_REJECTED_REQUEST } from '../../utils/constants.js'
 import { Future } from '../../utils/future.js'
 import { ChainChangeConfirmation, PopupMessage, SignerChainChangeConfirmation, } from '../../utils/interceptor-messages.js'
+import { Website } from '../../utils/user-interface-types.js'
 import { changeActiveChain } from '../background.js'
 import { sendPopupMessageToOpenWindows } from '../backgroundUtils.js'
 
@@ -36,7 +37,7 @@ const userDeniedChange = {
 	}
 } as const
 
-export const openChangeChainDialog = async (requestId: number, simulationMode: boolean, origin: string, favIconUrl: string | undefined, chainId: bigint) => {
+export const openChangeChainDialog = async (requestId: number, simulationMode: boolean, website: Website, chainId: bigint) => {
 	if (openedWindow !== null || pendForUserReply || pendForSignerReply) {
 		return userDeniedChange
 	}
@@ -51,8 +52,7 @@ export const openChangeChainDialog = async (requestId: number, simulationMode: b
 			data: {
 				requestId: requestId,
 				chainId: chainId,
-				origin: (new URL(origin)).hostname,
-				icon: favIconUrl,
+				website: website,
 				simulationMode: simulationMode,
 			}
 		})

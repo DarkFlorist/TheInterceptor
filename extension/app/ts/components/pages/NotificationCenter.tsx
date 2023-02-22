@@ -1,16 +1,14 @@
 import { useEffect, useState } from 'preact/hooks'
-import { AddressInfoEntry, NotificationCenterParams, Page } from '../../utils/user-interface-types.js'
+import { AddressInfoEntry, NotificationCenterParams, Page, Website } from '../../utils/user-interface-types.js'
 import { BigAddress } from '../subcomponents/address.js'
 import { ethers } from 'ethers'
 import { addressString } from '../../utils/bigint.js'
 import { sendPopupMessageToBackgroundPage } from '../../background/backgroundUtils.js'
 
 export type PendingAccessRequestWithMetadata = AddressInfoEntry & {
-	origin: string,
-	icon: string | undefined
+	website: Website,
 } | {
-	origin: string,
-	icon: string | undefined
+	website: Website,
 	address: undefined
 }
 
@@ -38,8 +36,7 @@ export function NotificationCenter(param: NotificationCenterParams) {
 		if ( backgroundPage.interceptor.settings === undefined) return
 		const metadata = new Map(backgroundPage.interceptor.pendingAccessMetadata)
 		setPendingAccessRequests( backgroundPage.interceptor.settings.pendingAccessRequests.map( (x) => ({
-			origin: x.origin,
-			icon: x.icon,
+			website: x.website,
 			...(x.requestAccessToAddress === undefined ? { address: undefined } : metadata.get(addressString(x.requestAccessToAddress)) || { // TODO, refactor away when we are using messaging instead of globals for these
 				type: 'addressInfo' as const,
 				name: ethers.utils.getAddress(addressString(x.requestAccessToAddress)),
@@ -53,21 +50,21 @@ export function NotificationCenter(param: NotificationCenterParams) {
 		param.setAndSaveAppPage(Page.Home)
 	}
 
-	function review(origin: string, requestAccessToAddress: bigint | undefined) {
+	function review(website: Website, requestAccessToAddress: bigint | undefined) {
 		sendPopupMessageToBackgroundPage({
 			method: 'popup_reviewNotification',
 			options: {
-				origin: origin,
+				website: website,
 				requestAccessToAddress: requestAccessToAddress,
 			}
 		} )
 	}
 
-	function reject(origin: string, requestAccessToAddress: bigint | undefined, removeOnly: boolean) {
+	function reject(website: Website, requestAccessToAddress: bigint | undefined, removeOnly: boolean) {
 		sendPopupMessageToBackgroundPage({
 			method: 'popup_rejectNotification',
 			options: {
-				origin: origin,
+				website: website,
 				requestAccessToAddress: requestAccessToAddress,
 				removeOnly: removeOnly,
 			}
@@ -106,7 +103,7 @@ export function NotificationCenter(param: NotificationCenterParams) {
 								<div class = 'card-header'>
 									<div class = 'card-header-icon unset-cursor' >
 										<p class = 'image is-24x24'>
-											<img src = { pendingAccessRequest.icon === undefined ? '../../img/question-mark-sign.svg' : pendingAccessRequest.icon }/>
+											<img src = { pendingAccessRequest.website.icon === undefined ? '../../img/question-mark-sign.svg' : pendingAccessRequest.website.icon }/>
 										</p>
 									</div>
 									<p class = 'card-header-title' style = 'width: 60%'>
@@ -114,7 +111,7 @@ export function NotificationCenter(param: NotificationCenterParams) {
 											{ pendingAccessRequest.address === undefined ? 'The Interceptor access request' : 'Address access request' }
 										</p>
 									</p>
-									<button class = 'card-header-icon' onClick = { () => reject(pendingAccessRequest.origin, pendingAccessRequest.address, true) } >
+									<button class = 'card-header-icon' onClick = { () => reject(pendingAccessRequest.website, pendingAccessRequest.address, true) } >
 										<span class = 'icon' style = 'color: var(--text-color);'> X </span>
 									</button>
 
@@ -123,7 +120,7 @@ export function NotificationCenter(param: NotificationCenterParams) {
 									{ pendingAccessRequest.address === undefined ?
 										<p className = 'paragraph' style = 'padding-bottom: 10px; word-break: break-word;'>
 											<span className = 'paragraph' style = 'font-weight: bold;'>
-												{ `${ pendingAccessRequest.origin }` }
+												{ `${ pendingAccessRequest.website.websiteOrigin }` }
 											</span>
 											<span> would like to connect to The Interceptor </span>
 										</p>
@@ -132,7 +129,7 @@ export function NotificationCenter(param: NotificationCenterParams) {
 										<div class = 'media-content' style = 'padding-bottom: 10px'>
 											<p className = 'paragraph' style = 'word-break: break-word;'>
 												<span className = 'paragraph' style = 'font-weight: bold;'>
-													{ `${ pendingAccessRequest.origin }` }
+													{ `${ pendingAccessRequest.website.websiteOrigin }` }
 												</span>
 												<span> would like to connect to your account </span>
 											</p>
@@ -146,11 +143,11 @@ export function NotificationCenter(param: NotificationCenterParams) {
 									</>
 
 									}
-									<button className = 'button is-primary is-small' onClick = { () => review(pendingAccessRequest.origin, pendingAccessRequest.address) }>
+									<button className = 'button is-primary is-small' onClick = { () => review(pendingAccessRequest.website, pendingAccessRequest.address) }>
 										Review
 									</button>
 
-									<button className = 'button is-primary is-small' style = 'background-color: var(--negative-color); margin-left: 10px;' onClick = { () => reject(pendingAccessRequest.origin, pendingAccessRequest.address, false) }>
+									<button className = 'button is-primary is-small' style = 'background-color: var(--negative-color); margin-left: 10px;' onClick = { () => reject(pendingAccessRequest.website, pendingAccessRequest.address, false) }>
 										Decline
 									</button>
 								</div>

@@ -142,7 +142,7 @@ export async function refreshSimulation(simulator: Simulator) {
 }
 
 export async function refreshPopupConfirmTransactionSimulation(_simulator: Simulator, { data }: RefreshConfirmTransactionDialogSimulation) {
-	const refreshMessage = await refreshConfirmTransactionSimulation(data.activeAddress, data.simulationMode, data.requestId, data.transactionToSimulate, data.websiteOrigin, data.websiteIcon)
+	const refreshMessage = await refreshConfirmTransactionSimulation(data.activeAddress, data.simulationMode, data.requestId, data.transactionToSimulate, data.website)
 	if (refreshMessage === undefined) return
 	return sendPopupMessageToOpenWindows(refreshMessage)
 }
@@ -177,25 +177,23 @@ export async function enableSimulationMode(_simulator: Simulator, params: Enable
 
 export async function reviewNotification(_simulator: Simulator, params: ReviewNotification) {
 	if (window.interceptor.settings === undefined) return
-	const notification = window.interceptor.settings.pendingAccessRequests.find( (x) => x.origin === params.options.origin && x.requestAccessToAddress === params.options.requestAccessToAddress)
+	const notification = window.interceptor.settings.pendingAccessRequests.find( (x) => x.website.websiteOrigin === params.options.website.websiteOrigin && x.requestAccessToAddress === params.options.requestAccessToAddress)
 	if (notification === undefined) return
 	await resolveExistingInterceptorAccessAsNoResponse()
 
 	const addressInfo = notification.requestAccessToAddress === undefined ? undefined : findAddressInfo(BigInt(notification.requestAccessToAddress), window.interceptor.settings.userAddressBook.addressInfos)
-	const metadata = getAssociatedAddresses(window.interceptor.settings, notification.origin, addressInfo)
-	await requestAccessFromUser(undefined, notification.origin, notification.icon, addressInfo, metadata)
+	const metadata = getAssociatedAddresses(window.interceptor.settings, notification.website.websiteOrigin, addressInfo)
+	await requestAccessFromUser(undefined, notification.website, addressInfo, metadata)
 }
 export async function rejectNotification(_simulator: Simulator, params: RejectNotification) {
 	if (window.interceptor.settings === undefined) return
-	const notification = window.interceptor.settings.pendingAccessRequests.find( (x) => x.origin === params.options.origin && x.requestAccessToAddress === params.options.requestAccessToAddress)
-
 	if (params.options.removeOnly) {
-		await setPendingAccessRequests( window.interceptor.settings.pendingAccessRequests.filter( (x) => !(x.origin === params.options.origin && x.requestAccessToAddress === params.options.requestAccessToAddress) ) )
+		await setPendingAccessRequests( window.interceptor.settings.pendingAccessRequests.filter( (x) => !(x.website.websiteOrigin === params.options.website.websiteOrigin && x.requestAccessToAddress === params.options.requestAccessToAddress) ) )
 	}
 
 	await resolveInterceptorAccess({
 		type: 'approval',
-		origin : params.options.origin,
+		websiteOrigin : params.options.website.websiteOrigin,
 		requestAccessToAddress: params.options.requestAccessToAddress,
 		approval: params.options.removeOnly ? 'NoResponse' : 'Rejected'
 	}) // close pending access for this request if its open
@@ -203,12 +201,11 @@ export async function rejectNotification(_simulator: Simulator, params: RejectNo
 		await changeAccess(
 			{
 				type: 'approval',
-				origin : params.options.origin,
+				websiteOrigin : params.options.website.websiteOrigin,
 				requestAccessToAddress: params.options.requestAccessToAddress,
 				approval: 'Rejected'
 			},
-			params.options.origin,
-			notification?.icon,
+			params.options.website,
 		)
 	}
 	sendPopupMessageToOpenWindows({ method: 'popup_notification_removed' })

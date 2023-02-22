@@ -3,16 +3,15 @@ import { getChainName, isSupportedChain } from '../../utils/constants.js'
 import { Error as ErrorContainer, ErrorCheckBox } from '../subcomponents/Error.js'
 import { ChangeChainRequest, MessageToPopup } from '../../utils/interceptor-messages.js'
 import { sendPopupMessageToBackgroundPage } from '../../background/backgroundUtils.js'
+import { Website } from '../../utils/user-interface-types.js'
 
 interface InterceptorChainChangeRequest {
 	isInterceptorSupport: boolean,
 	chainName: string,
-	origin: string,
-	icon: string | undefined,
+	website: Website,
 	simulationMode: boolean,
 	requestId: number,
 }
-
 
 export function ChangeChain() {
 	const [chainChangeData, setChainChangeData] = useState<InterceptorChainChangeRequest | undefined>(undefined)
@@ -33,8 +32,7 @@ export function ChangeChain() {
 		setChainChangeData( {
 			isInterceptorSupport : isSupportedChain(message.data.chainId.toString()),
 			chainName : getChainName(message.data.chainId),
-			origin: message.data.origin,
-			icon: message.data.icon,
+			website: message.data.website,
 			simulationMode: message.data.simulationMode,
 			requestId: message.data.requestId,
 		} )
@@ -71,10 +69,10 @@ export function ChangeChain() {
 				<div class = 'card-content'>
 					<article class = 'media'>
 						{
-							chainChangeData.icon === undefined ? <></> :
+							chainChangeData.website.icon === undefined ? <></> :
 								<figure class = 'media-left' style = 'margin: auto; display: block; padding: 20px'>
 									<p class = 'image is-64x64'>
-										<img src = { chainChangeData.icon }/>
+										<img src = { chainChangeData.website.icon }/>
 									</p>
 								</figure>
 						}
@@ -83,7 +81,7 @@ export function ChangeChain() {
 						<div class = 'content'>
 							<p className = 'title' style = 'white-space: normal; text-align: center;'>
 								<p className = 'title' style = 'white-space: normal; text-align: center; font-weight: bold;'>
-									{ chainChangeData.origin }
+									{ chainChangeData.website.websiteOrigin }
 								</p>
 								would like to switch to
 								<p className = 'title' style = 'white-space: normal; text-align: center; font-weight: bold;'>

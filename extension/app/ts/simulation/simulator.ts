@@ -9,8 +9,8 @@ import { commonTokenOops } from './protectors/commonTokenOops.js'
 import { eoaApproval } from './protectors/eoaApproval.js'
 import { eoaCalldata } from './protectors/eoaCalldata.js'
 import { tokenToContract } from './protectors/tokenToContract.js'
-import { SimulationModeEthereumClientService } from './services/SimulationModeEthereumClientService.js'
-import { TokenVisualizerResult, VisualizerResult } from '../utils/visualizer-types.js'
+import { EthereumUnsignedTransactionWithWebsite, SimulationModeEthereumClientService } from './services/SimulationModeEthereumClientService.js'
+import { SimResults, TokenVisualizerResult, VisualizerResult } from '../utils/visualizer-types.js'
 import { handleApprovalLog, handleDepositLog, handleERC721ApprovalForAllLog, handleTransferLog, handleWithdrawalLog } from './logHandlers.js'
 import { CHAIN } from '../utils/user-interface-types.js'
 import { QUARANTINE_CODE } from './protectors/quarantine-codes.js'
@@ -49,21 +49,21 @@ export class Simulator {
 		this.ethereum.cleanup()
 	}
 
-	public async visualizeTransactionChain(transactions: EthereumUnsignedTransaction[], blockNumber: bigint, multicallResults: MulticallResponse) {
-		let resultPromises = []
+	public async visualizeTransactionChain(transactions: EthereumUnsignedTransactionWithWebsite[], blockNumber: bigint, multicallResults: MulticallResponse) {
+		let resultPromises: Promise<SimResults>[]= []
 		for (let i = 0; i < transactions.length; i++) {
 			resultPromises.push(this.visualizeTransaction(transactions[i], blockNumber, multicallResults[i]))
 		}
 		return Promise.all(resultPromises)
 	}
 
-	public async evaluateTransaction(transaction: EthereumUnsignedTransaction, transactionQueue: EthereumUnsignedTransaction[]) {
+	public async evaluateTransaction(transaction: EthereumUnsignedTransactionWithWebsite, transactionQueue: EthereumUnsignedTransaction[]) {
 		const blockNumber = await this.ethereum.getBlockNumber()
 		const multicallResults = await this.simulationModeNode.multicall(transactionQueue.concat([transaction]), blockNumber)
 		return await this.visualizeTransaction(transaction, blockNumber, multicallResults[multicallResults.length - 1])
 	}
 
-	public async visualizeTransaction(transaction: EthereumUnsignedTransaction, blockNumber: bigint, singleMulticallResponse: SingleMulticallResponse) {
+	public async visualizeTransaction(transaction: EthereumUnsignedTransactionWithWebsite, blockNumber: bigint, singleMulticallResponse: SingleMulticallResponse) {
 		let quarantine = false
 		const quarantineCodesSet = new Set<QUARANTINE_CODE>()
 		for (const protectorMethod of PROTECTORS) {
@@ -86,7 +86,7 @@ export class Simulator {
 					tokenResults.push(handler(eventLog))
 				}
 			}
-			
+
 			visualizerResults = {
 				ethBalanceChanges: multicallResult.balanceChanges,
 				tokenResults: tokenResults,
@@ -98,6 +98,7 @@ export class Simulator {
 			quarantine,
 			quarantineCodes,
 			visualizerResults,
+			website: transaction.website,
 		}
 	}
 }
