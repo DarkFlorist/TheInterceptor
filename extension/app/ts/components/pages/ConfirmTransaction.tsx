@@ -50,7 +50,7 @@ function TransactionCard(param: TransactionCardParams) {
 		<div class = 'card' style = 'margin: 10px;'>
 			<TransactionHeader
 				tx = { tx }
-				renameAddressCallBack =  {param.renameAddressCallBack }
+				renameAddressCallBack = { param.renameAddressCallBack }
 				activeAddress = { param.activeAddress }
 			/>
 			<div class = 'card-content' style = 'padding-bottom: 5px;'>
