@@ -145,8 +145,6 @@ export function ConfirmTransaction() {
 		}
 	}, [])
 
-	//const removeTransaction = (_hash: bigint) => reject()
-
 	function approve() {
 		if (requestIdToConfirm === undefined) throw new Error('request id is not set')
 		sendPopupMessageToBackgroundPage( { method: 'popup_confirmDialog', options: { requestId: requestIdToConfirm, accept: true } } )
