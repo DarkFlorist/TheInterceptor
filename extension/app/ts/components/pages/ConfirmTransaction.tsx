@@ -101,10 +101,6 @@ export function ConfirmTransaction() {
 	const [addingNewAddress, setAddingNewAddress] = useState<AddingNewAddressType | 'renameAddressModalClosed'> ('renameAddressModalClosed')
 
 	useEffect( () => {
-		sendPopupMessageToBackgroundPage( { method: 'popup_confirmTransactionReadyAndListening' } )
-	}, [])
-
-	useEffect( () => {
 		function popupMessageListener(msg: unknown) {
 			const message = MessageToPopup.parse(msg)
 
@@ -144,7 +140,9 @@ export function ConfirmTransaction() {
 		return () => browser.runtime.onMessage.removeListener(popupMessageListener)
 	})
 
-	//const removeTransaction = (_hash: bigint) => reject()
+	useEffect( () => {
+		sendPopupMessageToBackgroundPage( { method: 'popup_confirmTransactionReadyAndListening' } )
+	}, [])
 
 	function approve() {
 		if (requestIdToConfirm === undefined) throw new Error('request id is not set')
