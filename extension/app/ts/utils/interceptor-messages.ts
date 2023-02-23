@@ -1,5 +1,5 @@
 import * as funtypes from 'funtypes'
-import { AddressBookEntries, AddressBookEntry, AddressInfoEntry } from './user-interface-types.js'
+import { AddressBookEntries, AddressBookEntry, AddressInfo, AddressInfoEntry } from './user-interface-types.js'
 import { EIP2612Message, EthereumAddress, EthereumQuantity, EthereumUnsignedTransaction, Permit2 } from './wire-types.js'
 import { SimResults, SimulationState, TokenPriceEstimate } from './visualizer-types.js'
 
@@ -67,14 +67,31 @@ export const PersonalSign = funtypes.Object({
 	})
 }).asReadonly()
 
+export type InterceptorAccessOptions = funtypes.Static<typeof InterceptorAccessOptions>
+export const InterceptorAccessOptions = funtypes.Intersect(
+	funtypes.Object({
+		origin: funtypes.String,
+		requestAccessToAddress: funtypes.Union(EthereumAddress, funtypes.Undefined),
+	}),
+	funtypes.Union(
+		funtypes.Object({
+			type: funtypes.Literal('approval'),
+			approval: funtypes.Union(funtypes.Literal('Approved'), funtypes.Literal('Rejected'), funtypes.Literal('NoResponse') ),
+		}),
+		funtypes.Object({
+			type: funtypes.Literal('addressChange'),
+			newActiveAddress: funtypes.Union(EthereumAddress, funtypes.Literal('signer')),
+		}),
+		funtypes.Object({
+			type: funtypes.Literal('addressRefresh'),
+		})
+	)
+)
+
 export type InterceptorAccess = funtypes.Static<typeof InterceptorAccess>
 export const InterceptorAccess = funtypes.Object({
 	method: funtypes.Literal('popup_interceptorAccess'),
-	options: funtypes.Object({
-		accept: funtypes.Boolean,
-		origin: funtypes.String,
-		requestAccessToAddress: funtypes.Union(EthereumAddress, funtypes.Undefined),
-	})
+	options: InterceptorAccessOptions,
 }).asReadonly()
 
 export type ChangeActiveAddress = funtypes.Static<typeof ChangeActiveAddress>
@@ -305,11 +322,9 @@ export const PopupMessage = funtypes.Union(
 	ChangeInterceptorAccess,
 	ChangeActiveChain,
 	ChainChangeConfirmation,
-	SignerChainChangeConfirmation,
 	EnableSimulationMode,
 	RejectNotification,
 	ReviewNotification,
-	ConnectedToSigner,
 	AddOrEditAddressBookEntry,
 	GetAddressBookData,
 	RemoveAddressBookEntry,
@@ -332,9 +347,7 @@ export const MessageToPopupSimple = funtypes.Object({
 		funtypes.Literal('popup_interceptor_access_changed'),
 		funtypes.Literal('popup_notification_removed'),
 		funtypes.Literal('popup_signer_name_changed'),
-		funtypes.Literal('popup_accounts_update'),
 		funtypes.Literal('popup_websiteAccess_changed'),
-		funtypes.Literal('popup_notification_added'),
 		funtypes.Literal('popup_notification_added'),
 	)
 }).asReadonly()
@@ -396,10 +409,16 @@ export type InterceptorAccessDialog = funtypes.Static<typeof InterceptorAccessDi
 export const InterceptorAccessDialog = funtypes.Object({
 	method: funtypes.Literal('popup_interceptorAccessDialog'),
 	data: funtypes.Object({
+		title: funtypes.String,
 		origin: funtypes.String,
 		icon: funtypes.Union(funtypes.String, funtypes.Undefined),
 		requestAccessToAddress: funtypes.Union(AddressInfoEntry, funtypes.Undefined),
 		associatedAddresses: funtypes.ReadonlyArray(AddressInfoEntry),
+		addressInfos: funtypes.ReadonlyArray(AddressInfo),
+		signerAccounts: funtypes.ReadonlyArray(EthereumAddress),
+		signerName: funtypes.Union(SignerName, funtypes.Undefined),
+		simulationMode: funtypes.Boolean,
+		allowAddressChanging: funtypes.Boolean,
 	})
 })
 
@@ -447,3 +466,14 @@ export type AddressBookTabIdSetting = funtypes.Static<typeof AddressBookTabIdSet
 export const AddressBookTabIdSetting = funtypes.Object({
 	addressbookTabId: funtypes.Number,
 }).asReadonly()
+
+export type WindowMessageSignerAccountsChanged = funtypes.Static<typeof WindowMessageSignerAccountsChanged>
+export const WindowMessageSignerAccountsChanged = funtypes.Object({
+	method: funtypes.Literal('window_signer_accounts_changed'),
+	data: funtypes.Object({
+		portSenderId: funtypes.String,
+	})
+})
+
+export type WindowMessage = funtypes.Static<typeof WindowMessage>
+export const WindowMessage = WindowMessageSignerAccountsChanged

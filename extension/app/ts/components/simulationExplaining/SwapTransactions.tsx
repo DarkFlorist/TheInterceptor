@@ -303,7 +303,7 @@ export function getSwapName(identifiedSwap: IdentifiedSwapWithMetadata, chain: C
 
 export function SwapVisualization(param: SwapVisualizationParams) {
 	if ( param.identifiedSwap === false ) return <></>
-	return <div class = 'notification' style = 'background-color: var(--unimportant-text-color); padding: 10px; margin: auto; margin-bottom: 10px; max-width: 400px;'>
+	return <div class = 'notification' style = 'background-color: var(--importance-box-color); padding: 10px; margin: auto; margin-bottom: 10px; max-width: 400px;'>
 			<div style = 'display: grid; grid-template-rows: max-content max-content max-content max-content;' >
 			<p style = { `color: var(--text-color);` }> Swap </p>
 			<div class = 'box' style = 'background-color: var(--alpha-005); box-shadow: unset; margin-bottom: 0px; display: grid;'>
