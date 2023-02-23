@@ -373,6 +373,7 @@ async function handleSigningMode(simulator: Simulator, port: browser.runtime.Por
 function newBlockCallback(blockNumber: bigint) {
 	window.interceptor.currentBlockNumber = blockNumber
 	sendPopupMessageToOpenWindows({ method: 'popup_new_block_arrived', data: { blockNumber } })
+	if (simulator !== undefined) refreshSimulation(simulator)
 }
 
 export async function changeActiveAddressAndChainAndResetSimulation(activeAddress: bigint | undefined | 'noActiveAddressChange', activeChain: bigint | 'noActiveChainChange') {

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'preact/hooks'
+import { useState, useEffect, useRef } from 'preact/hooks'
 import { MessageToPopup, SignerName } from '../../utils/interceptor-messages.js'
 import { SimulationAndVisualisationResults } from '../../utils/visualizer-types.js'
 import Hint from '../subcomponents/Hint.js'
@@ -21,9 +21,7 @@ type TransactionCardParams = {
 	renameAddressCallBack: (entry: AddressBookEntry) => void,
 	activeAddress: bigint,
 	resetButton: boolean,
-	refreshSimulation: () => void,
 	currentBlockNumber: bigint | undefined,
-	refreshPressed: boolean,
 }
 
 function TransactionCard(param: TransactionCardParams) {
@@ -101,13 +99,23 @@ export function ConfirmTransaction() {
 	const [currentBlockNumber, setCurrentBlockNumber] = useState<undefined | bigint>(undefined)
 	const [signerName, setSignerName] = useState<SignerName | undefined>(undefined)
 	const [addingNewAddress, setAddingNewAddress] = useState<AddingNewAddressType | 'renameAddressModalClosed'> ('renameAddressModalClosed')
-	const [refreshPressed, setRefreshPressed] = useState<boolean>(false)
+
+	const simulationAndVisualisationResultsRef = useRef<SimulationAndVisualisationResults & ({ website: Website }) | undefined>(simulationAndVisualisationResults)
+	const requestIdToConfirmRef = useRef<number | undefined>(requestIdToConfirm)
+	const transactionToSimulateRef = useRef<EthereumUnsignedTransaction | undefined>(transactionToSimulate)
+
+	useEffect(() => { simulationAndVisualisationResultsRef.current = simulationAndVisualisationResults }, [simulationAndVisualisationResults])
+	useEffect(() => { requestIdToConfirmRef.current = requestIdToConfirm }, [requestIdToConfirm])
+	useEffect(() => { transactionToSimulateRef.current = transactionToSimulate }, [transactionToSimulate])
 
 	useEffect( () => {
 		function popupMessageListener(msg: unknown) {
 			const message = MessageToPopup.parse(msg)
 
-			if (message.method === 'popup_new_block_arrived') return setCurrentBlockNumber(message.data.blockNumber)
+			if (message.method === 'popup_new_block_arrived') {
+				refreshSimulation()
+				return setCurrentBlockNumber(message.data.blockNumber)
+			}
 
 			if (message.method !== 'popup_confirm_transaction_simulation_state_changed') return
 
@@ -115,7 +123,6 @@ export function ConfirmTransaction() {
 				setCurrentBlockNumber(message.data.simulationState.blockNumber)
 			}
 
-			setRefreshPressed(false)
 			setSignerName(message.data.signerName)
 			setRequestIdToConfirm(message.data.requestId)
 			const addressMetaData = new Map(message.data.addressBookEntries.map( (x) => [addressString(x.address), x]))
@@ -154,17 +161,16 @@ export function ConfirmTransaction() {
 		if (requestIdToConfirm === undefined) throw new Error('request id is not set')
 		sendPopupMessageToBackgroundPage( { method: 'popup_confirmDialog', options: { requestId: requestIdToConfirm, accept: false } } )
 	}
-	function refreshSimulation() {
-		if (simulationAndVisualisationResults === undefined || requestIdToConfirm === undefined || transactionToSimulate === undefined) return
-		setRefreshPressed(true)
+	const refreshSimulation = () => {
+		if (simulationAndVisualisationResultsRef.current === undefined || requestIdToConfirmRef.current === undefined || transactionToSimulateRef.current === undefined) return
 		sendPopupMessageToBackgroundPage( {
 			method: 'popup_refreshConfirmTransactionDialogSimulation',
 			data: {
-				activeAddress: simulationAndVisualisationResults.activeAddress,
-				simulationMode: simulationAndVisualisationResults.simulationMode,
-				requestId: requestIdToConfirm,
-				transactionToSimulate: transactionToSimulate,
-				website: simulationAndVisualisationResults.website,
+				activeAddress: simulationAndVisualisationResultsRef.current.activeAddress,
+				simulationMode: simulationAndVisualisationResultsRef.current.simulationMode,
+				requestId: requestIdToConfirmRef.current,
+				transactionToSimulate: transactionToSimulateRef.current,
+				website: simulationAndVisualisationResultsRef.current.website,
 			}
 		} )
 	}
@@ -231,9 +237,7 @@ export function ConfirmTransaction() {
 							renameAddressCallBack = { renameAddressCallBack }
 							activeAddress = { simulationAndVisualisationResults.activeAddress }
 							resetButton = { false }
-							refreshSimulation = { refreshSimulation }
 							currentBlockNumber = { currentBlockNumber }
-							refreshPressed = { refreshPressed }
 						/>
 					</div>
 
