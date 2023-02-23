@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'preact/hooks'
+import { useState, useEffect } from 'preact/hooks'
 import { MessageToPopup, SignerName } from '../../utils/interceptor-messages.js'
 import { SimulationAndVisualisationResults } from '../../utils/visualizer-types.js'
 import Hint from '../subcomponents/Hint.js'
@@ -100,13 +100,9 @@ export function ConfirmTransaction() {
 	const [signerName, setSignerName] = useState<SignerName | undefined>(undefined)
 	const [addingNewAddress, setAddingNewAddress] = useState<AddingNewAddressType | 'renameAddressModalClosed'> ('renameAddressModalClosed')
 
-	const simulationAndVisualisationResultsRef = useRef<SimulationAndVisualisationResults & ({ website: Website }) | undefined>(simulationAndVisualisationResults)
-	const requestIdToConfirmRef = useRef<number | undefined>(requestIdToConfirm)
-	const transactionToSimulateRef = useRef<EthereumUnsignedTransaction | undefined>(transactionToSimulate)
-
-	useEffect(() => { simulationAndVisualisationResultsRef.current = simulationAndVisualisationResults }, [simulationAndVisualisationResults])
-	useEffect(() => { requestIdToConfirmRef.current = requestIdToConfirm }, [requestIdToConfirm])
-	useEffect(() => { transactionToSimulateRef.current = transactionToSimulate }, [transactionToSimulate])
+	useEffect( () => {
+		sendPopupMessageToBackgroundPage( { method: 'popup_confirmTransactionReadyAndListening' } )
+	})
 
 	useEffect( () => {
 		function popupMessageListener(msg: unknown) {
@@ -144,12 +140,9 @@ export function ConfirmTransaction() {
 			})
 		}
 		browser.runtime.onMessage.addListener(popupMessageListener)
-		sendPopupMessageToBackgroundPage( { method: 'popup_confirmTransactionReadyAndListening' } )
 
-		return () => {
-			browser.runtime.onMessage.removeListener(popupMessageListener)
-		}
-	}, [])
+		return () => browser.runtime.onMessage.removeListener(popupMessageListener)
+	})
 
 	//const removeTransaction = (_hash: bigint) => reject()
 
@@ -162,15 +155,15 @@ export function ConfirmTransaction() {
 		sendPopupMessageToBackgroundPage( { method: 'popup_confirmDialog', options: { requestId: requestIdToConfirm, accept: false } } )
 	}
 	const refreshSimulation = () => {
-		if (simulationAndVisualisationResultsRef.current === undefined || requestIdToConfirmRef.current === undefined || transactionToSimulateRef.current === undefined) return
+		if (simulationAndVisualisationResults === undefined || requestIdToConfirm === undefined || transactionToSimulate === undefined) return
 		sendPopupMessageToBackgroundPage( {
 			method: 'popup_refreshConfirmTransactionDialogSimulation',
 			data: {
-				activeAddress: simulationAndVisualisationResultsRef.current.activeAddress,
-				simulationMode: simulationAndVisualisationResultsRef.current.simulationMode,
-				requestId: requestIdToConfirmRef.current,
-				transactionToSimulate: transactionToSimulateRef.current,
-				website: simulationAndVisualisationResultsRef.current.website,
+				activeAddress: simulationAndVisualisationResults.activeAddress,
+				simulationMode: simulationAndVisualisationResults.simulationMode,
+				requestId: requestIdToConfirm,
+				transactionToSimulate: transactionToSimulate,
+				website: simulationAndVisualisationResults.website,
 			}
 		} )
 	}
