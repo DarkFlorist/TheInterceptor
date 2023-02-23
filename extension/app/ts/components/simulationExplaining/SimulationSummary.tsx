@@ -1,15 +1,18 @@
 import { LogSummarizer, SummaryOutcome } from '../../simulation/services/LogSummarizer.js'
-import { AddressBookEntry, CHAIN, RenameAddressCallBack, SimulationStateParam } from '../../utils/user-interface-types.js'
-import { ERC721TokenApprovalChange, ERC721TokenDefinitionParams, SimulationAndVisualisationResults, TokenApprovalChange, TokenBalanceChange, TokenDefinitionParams } from '../../utils/visualizer-types.js'
+import { AddressBookEntry, CHAIN, RenameAddressCallBack } from '../../utils/user-interface-types.js'
+import { ERC721TokenApprovalChange, ERC721TokenDefinitionParams, SimulatedAndVisualizedTransaction, SimulationAndVisualisationResults, TokenApprovalChange, TokenBalanceChange, TokenDefinitionParams } from '../../utils/visualizer-types.js'
 import { BigAddress, SmallAddress } from '../subcomponents/address.js'
-import { ERC721Token, Ether, Token, TokenAmount, TokenPrice, TokenSymbol } from '../subcomponents/coins.js'
-import { Transactions } from './Transactions.js'
+import { ERC721Token, Ether, EtherAmount, EtherSymbol, Token, TokenAmount, TokenPrice, TokenSymbol } from '../subcomponents/coins.js'
+import { LogAnalysis } from './Transactions.js'
 import { CopyToClipboard } from '../subcomponents/CopyToClipboard.js'
 import { SomeTimeAgo } from '../subcomponents/SomeTimeAgo.js'
 import { CHAINS, MAKE_YOU_RICH_TRANSACTION } from '../../utils/constants.js'
 import { addressString } from '../../utils/bigint.js'
-import { identifyTransaction } from './identifyTransaction.js'
+import { identifyTransaction, nameTransaction } from './identifyTransaction.js'
 import { sendPopupMessageToBackgroundPage } from '../../background/backgroundUtils.js'
+import { identifySwap } from './SwapTransactions.js'
+import { useState } from 'preact/hooks'
+import { convertNumberToCharacterRepresentationIfSmallEnough, upperCaseFirstCharacter } from '../ui-utils.js'
 
 type EtherChangeParams = {
 	textColor: string,
@@ -359,63 +362,211 @@ export function SummarizeAddress(param: SummarizeAddressParams) {
 	</div>
 }
 
-export function SimulationResults(param: SimulationStateParam) {
-	if ( param.simulationAndVisualisationResults === undefined ) return <></>
-
-	return (
-		<div>
-			{	param.simulationAndVisualisationResults.simulatedAndVisualizedTransactions.length === 0 ? <>
-					<div class = 'vertical-center'>
-						<img style = 'padding-right: 10px; transform: scaleX(-1);' src = '../img/LOGOA.svg' width = '32'/>
-						<span class = 'paragraph' style = 'padding-left: 0.2em'> - Give me some transactions to munch on! </span>
-					</div>
-				</> : <>
-					<p className = 'h1' style = 'padding-left: 10px'> Simulation Results </p>
-					<Transactions
-						simulationAndVisualisationResults = { param.simulationAndVisualisationResults }
-						removeTransaction = { param.removeTransaction }
-						activeAddress = { param.simulationAndVisualisationResults.activeAddress }
-						renameAddressCallBack = { param.renameAddressCallBack }
-					/>
-					<SimulationSummary
-						simulationAndVisualisationResults = { param.simulationAndVisualisationResults }
-						resetButton = { true }
-						refreshSimulation =  { param.refreshSimulation }
-						currentBlockNumber = { param.currentBlockNumber }
-						renameAddressCallBack = { param.renameAddressCallBack }
-						refreshPressed = { param.refreshPressed }
-					/>
-				</>
-			}
-			<div class = 'content' style = 'height: 0.1px'/>
-	</div>)
-}
-
 export function removeEthDonator(chain: CHAIN, summary: SummaryOutcome[]) {
-	const donatorAddress = addressString(CHAINS[chain].eth_donator)
-	const donatorSummary = summary.find((x) => addressString(x.summaryFor.address) === donatorAddress)
-	if (donatorSummary === undefined) return summary
-	if (donatorSummary.etherResults === undefined) return summary
-	if (donatorSummary.etherResults.balanceAfter + MAKE_YOU_RICH_TRANSACTION.value === donatorSummary.etherResults.balanceBefore ) {
+	const donatorSummary = summary.find((x) => x.summaryFor.address === CHAINS[chain].eth_donator)
+	if (donatorSummary === undefined || donatorSummary.etherResults === undefined) return
+	if (donatorSummary.etherResults.balanceAfter + MAKE_YOU_RICH_TRANSACTION.value === donatorSummary.etherResults.balanceBefore) {
 		if (donatorSummary.erc721OperatorChanges.length === 0 &&
 			donatorSummary.erc721TokenBalanceChanges.length === 0 &&
 			donatorSummary.erc721TokenIdApprovalChanges.length === 0 &&
 			donatorSummary.tokenApprovalChanges.length === 0 &&
 			donatorSummary.tokenBalanceChanges.length === 0
 		) {
-			summary.splice(summary.indexOf(donatorSummary))
-			return summary
+			summary.splice(summary.indexOf(donatorSummary), 1)
+			return
 		}
 		donatorSummary.etherResults = undefined
-		return summary
+		return
 	}
 	donatorSummary.etherResults.balanceAfter = donatorSummary.etherResults.balanceAfter + MAKE_YOU_RICH_TRANSACTION.value
-	return summary
+	return
+}
+
+type LogAnalysisCardParams = {
+	tx: SimulatedAndVisualizedTransaction
+	renameAddressCallBack: RenameAddressCallBack,
+}
+
+export function LogAnalysisCard({ tx, renameAddressCallBack }: LogAnalysisCardParams) {
+	const [showLogs, setShowLogs] = useState<boolean>(false)
+	const identifiedSwap = identifySwap(tx)
+	if (tx === undefined) return <></>
+
+	return <>
+		<div class = 'card' style = 'margin-top: 10px; margin-bottom: 10px'>
+			<header class = 'card-header noselect' style = 'cursor: pointer; height: 30px;' onClick = { () => setShowLogs((prevValue) => !prevValue) }>
+				<p class = 'card-header-title' style = 'font-weight: unset; font-size: 0.8em;'>
+					{ tx.tokenResults.length === 0 ? 'No token events' : `${ upperCaseFirstCharacter(convertNumberToCharacterRepresentationIfSmallEnough(tx.tokenResults.length)) } token event${ tx.tokenResults.length > 1 ? 's' : '' }` }
+				</p>
+				<div class = 'card-header-icon'>
+					<span class = 'icon' style = 'color: var(--text-color); font-weight: unset; font-size: 0.8em;'> V </span>
+				</div>
+			</header>
+			{ !showLogs ? <></> : <>
+				<div class = 'card-content' style = 'border-bottom-left-radius: 0.25rem; border-bottom-right-radius: 0.25rem; border-left: 2px solid var(--card-bg-color); border-right: 2px solid var(--card-bg-color); border-bottom: 2px solid var(--card-bg-color);'>
+					<LogAnalysis
+						simulatedAndVisualizedTransaction = { tx }
+						identifiedSwap = { identifiedSwap }
+						renameAddressCallBack = { renameAddressCallBack }
+					/>
+				</div>
+			</> }
+		</div>
+	</>
+}
+
+function splitToOwnAndNotOwnAndCleanSummary(firstTx: SimulatedAndVisualizedTransaction | undefined, summary: SummaryOutcome[], activeAddress: bigint, chain: CHAIN) {
+	//remove eth donator if we are in rich mode
+	if (firstTx && identifyTransaction(firstTx, activeAddress) === 'MakeYouRichTransaction') {
+		removeEthDonator(chain, summary)
+	}
+
+	const ownAddresses = Array.from(summary.entries()).filter( ([_index, balanceSummary]) =>
+		balanceSummary.summaryFor.type === 'addressInfo' || balanceSummary.summaryFor.address === activeAddress
+	)
+	const notOwnAddresses = Array.from(summary.entries()).filter( ([_index, balanceSummary]) =>
+		balanceSummary.summaryFor.type !== 'addressInfo' && balanceSummary.summaryFor.address !== activeAddress
+	)
+	return [ownAddresses, notOwnAddresses]
+}
+
+type AccountChangesCardParams = {
+	tx: SimulatedAndVisualizedTransaction
+	simulationAndVisualisationResults: SimulationAndVisualisationResults
+	renameAddressCallBack: RenameAddressCallBack
+	addressMetaData: readonly AddressBookEntry[]
+}
+
+export function TransactionsAccountChangesCard({ tx, renameAddressCallBack, addressMetaData, simulationAndVisualisationResults }: AccountChangesCardParams) {
+	const logSummarizer = new LogSummarizer( [tx] )
+	const addressMetaDataMap = new Map(addressMetaData.map( (x) => [addressString(x.address), x]))
+	const originalSummary = logSummarizer.getSummary(addressMetaDataMap, simulationAndVisualisationResults.tokenPrices)
+	const [showSummary, setShowSummary] = useState<boolean>(false)
+	const [ownAddresses, notOwnAddresses] = splitToOwnAndNotOwnAndCleanSummary(tx, originalSummary, simulationAndVisualisationResults.activeAddress, simulationAndVisualisationResults.chain)
+	const numberOfChanges = notOwnAddresses.length + ownAddresses.length
+
+	return <div class = 'card' style = 'margin-top: 10px; margin-bottom: 10px'>
+		<header class = 'card-header noselect' style = 'cursor: pointer; height: 30px;' onClick = { () => setShowSummary((prevValue) => !prevValue) }>
+			<p class = 'card-header-title' style = 'font-weight: unset; font-size: 0.8em;'>
+				{ numberOfChanges === 0 ? 'No changes in accounts' : `${  upperCaseFirstCharacter(convertNumberToCharacterRepresentationIfSmallEnough(numberOfChanges)) } account${ numberOfChanges > 1 ? 's' : '' } changing` }
+			</p>
+			<div class = 'card-header-icon'>
+				<span class = 'icon' style = 'color: var(--text-color); font-weight: unset; font-size: 0.8em;'> V </span>
+			</div>
+		</header>
+		{ !showSummary ? <></> : <>
+			<div class = 'card-content'>
+				<div class = 'container' style = 'margin-bottom: 10px;'>
+					{ ownAddresses.length == 0 ? <p class = 'paragraph'> No changes to your accounts </p>
+						: <div class = 'notification' style = 'background-color: var(--unimportant-text-color); color: var(--text-color)'>
+							{ ownAddresses.map( ([_index, balanceSummary], index) => <>
+								<SummarizeAddress
+									balanceSummary = { balanceSummary }
+									simulationAndVisualisationResults = { simulationAndVisualisationResults }
+									renameAddressCallBack = { renameAddressCallBack }
+								/>
+								{ index + 1 !== ownAddresses.length ? <div class = 'is-divider' style = 'margin-top: 8px; margin-bottom: 8px'/> : <></> }
+							</> ) }
+						</div>
+					}
+				</div>
+
+				{ notOwnAddresses.length == 0 ? <></> :
+					<div class = 'container'>
+						{ notOwnAddresses.map( ([_index, balanceSummary]) => {
+							return <>
+								<SummarizeAddress
+									balanceSummary = { balanceSummary }
+									simulationAndVisualisationResults = { simulationAndVisualisationResults }
+									renameAddressCallBack = { renameAddressCallBack }
+								/>
+								<div class = 'is-divider' style = 'margin-top: 8px; margin-bottom: 8px'/>
+							</>
+						})}
+					</div>
+				}
+			</div>
+		</> }
+	</div>
+}
+
+export function GasFee({ tx, chain }: { tx: SimulatedAndVisualizedTransaction, chain: CHAIN } ) {
+	return <>
+		<div class = 'log-cell'>
+			<p class = 'ellipsis' style = { `color: var(--subtitle-text-color); margin-bottom: 0px` }> Gas fee:&nbsp;</p>
+		</div>
+		<div class = 'log-cell'>
+			<EtherAmount
+				amount = { tx.gasSpent * tx.realizedGasPrice  }
+				textColor = { 'var(--subtitle-text-color)' }
+			/>
+		</div>
+		<div class = 'log-cell'>
+			<EtherSymbol
+				amount = { tx.gasSpent * tx.realizedGasPrice  }
+				textColor = { 'var(--subtitle-text-color)' }
+				chain = { chain }
+			/>
+		</div>
+	</>
+}
+
+type TransactionHeaderParams = {
+	tx: SimulatedAndVisualizedTransaction
+	renameAddressCallBack: RenameAddressCallBack
+	activeAddress: bigint
+	removeTransaction?: () => void
+}
+
+export function TransactionHeader( { tx, renameAddressCallBack, activeAddress, removeTransaction } : TransactionHeaderParams) {
+	return <header class = 'card-header' style = 'height: 40px;'>
+		<div class = 'card-header-icon unset-cursor'>
+			<span class = 'icon'>
+				<img src = { tx.statusCode === 'success' ? ( tx.quarantine ? '../img/warning-sign.svg' : '../img/success-icon.svg' ) : '../img/error-icon.svg' } />
+			</span>
+		</div>
+
+		<p class = 'card-header-title' style = 'white-space: nowrap;'>
+			{ nameTransaction(tx, activeAddress) }
+		</p>
+		{ tx.to  === undefined ? <></> :
+			<p class = 'card-header-icon' style = 'margin-left: auto; margin-right: 0; padding-right: 10px; padding-left: 0px;'>
+				<SmallAddress
+					addressBookEntry = { tx.to }
+					renameAddressCallBack = { renameAddressCallBack }
+					style = { { 'background-color': 'unset' } }
+				/>
+			</p>
+		}
+		{ removeTransaction !== undefined ?
+			<button class = 'card-header-icon' aria-label = 'remove' onClick = { removeTransaction }>
+				<span class = 'icon' style = 'color: var(--text-color);'> X </span>
+			</button>
+		: <></> }
+	</header>
+}
+
+export function SimulatedInBlockNumber({ simulationBlockNumber, currentBlockNumber, simulationConductedTimestamp } : { simulationBlockNumber: bigint, currentBlockNumber: bigint | undefined, simulationConductedTimestamp: Date }) {
+	return <CopyToClipboard
+		content = { simulationBlockNumber.toString() }
+		contentDisplayOverride = { `Simulated in block number ${ simulationBlockNumber }` }
+		copyMessage = 'Block number copied!'
+	>
+		<p class = 'noselect nopointer' style = 'color: var(--subtitle-text-color); text-align: right; display: inline'>
+			{ 'Simulated ' }
+			<span style = { `font-weight: bold; font-family: monospace; color: ${
+				simulationBlockNumber === currentBlockNumber || currentBlockNumber === undefined ? 'var(--positive-color)' :
+				simulationBlockNumber + 1n === currentBlockNumber ? 'var(--warning-color)' : 'var(--negative-color)'
+			} ` }>
+				<SomeTimeAgo priorTimestamp = { simulationConductedTimestamp }/>
+			</span>
+			{ ' ago' }
+		</p>
+	</CopyToClipboard>
 }
 
 type SimulationSummaryParams = {
 	simulationAndVisualisationResults: SimulationAndVisualisationResults,
-	summarizeOnlyLastTransaction?: boolean,
 	resetButton: boolean,
 	refreshSimulation: () => void,
 	currentBlockNumber: bigint | undefined,
@@ -426,115 +577,80 @@ type SimulationSummaryParams = {
 export function SimulationSummary(param: SimulationSummaryParams) {
 	if (param.simulationAndVisualisationResults === undefined) return <></>
 
-	const VisResults = param.summarizeOnlyLastTransaction && param.simulationAndVisualisationResults.simulatedAndVisualizedTransactions.length > 0 ?
-		[param.simulationAndVisualisationResults.simulatedAndVisualizedTransactions.at(-1)] :
-		param.simulationAndVisualisationResults.simulatedAndVisualizedTransactions
-
-	const logSummarizer = new LogSummarizer( VisResults )
+	const logSummarizer = new LogSummarizer( param.simulationAndVisualisationResults.simulatedAndVisualizedTransactions )
 	const addressMetaData = new Map(param.simulationAndVisualisationResults.addressMetaData.map( (x) => [addressString(x.address), x]))
 	const originalSummary = logSummarizer.getSummary(addressMetaData, param.simulationAndVisualisationResults.tokenPrices)
-	//remove eth donator if we are in rich mode
-	const firstTransaction = param.simulationAndVisualisationResults.simulatedAndVisualizedTransactions.at(0)
-	const summary = firstTransaction && identifyTransaction(firstTransaction, param.simulationAndVisualisationResults.activeAddress) === 'MakeYouRichTransaction' ?
-		removeEthDonator(param.simulationAndVisualisationResults.chain, originalSummary)
-		: originalSummary
+	const [ownAddresses, notOwnAddresses] = splitToOwnAndNotOwnAndCleanSummary(param.simulationAndVisualisationResults.simulatedAndVisualizedTransactions.at(0), originalSummary, param.simulationAndVisualisationResults.activeAddress, param.simulationAndVisualisationResults.chain)
 
-	const ownAddresses = Array.from(summary.entries()).filter( ([_index, balanceSummary]) =>
-		balanceSummary.summaryFor.type === 'addressInfo' || balanceSummary.summaryFor.address === param.simulationAndVisualisationResults.activeAddress
-	)
-	const notOwnAddresses = Array.from(summary.entries()).filter( ([_index, balanceSummary]) => balanceSummary.summaryFor.type !== 'addressInfo' && balanceSummary.summaryFor.address !== param.simulationAndVisualisationResults.activeAddress)
-
-	function resetSimulation() {
-		sendPopupMessageToBackgroundPage( { method: 'popup_resetSimulation' } )
-	}
+	const [showOtherAccountChanges, setShowOtherAccountChange] = useState<boolean>(false)
+	const resetSimulation = () => sendPopupMessageToBackgroundPage( { method: 'popup_resetSimulation' } )
 
 	return (
-		<div className = 'block' style = 'margin-bottom: 0px'>
-			<div style = 'margin: 10px;'>
-				<div class = 'block' style = 'background-color: var(--card-bg-color)'>
-					<header class = 'card-header'>
-						<div class = 'card-header-icon unset-cursor'>
-							<span class = 'icon'>
-								{ param.summarizeOnlyLastTransaction ?
-									<img src = { param.simulationAndVisualisationResults.simulatedAndVisualizedTransactions[param.simulationAndVisualisationResults.simulatedAndVisualizedTransactions.length - 1].statusCode === 'success' ? ( param.simulationAndVisualisationResults.simulatedAndVisualizedTransactions[param.simulationAndVisualisationResults.simulatedAndVisualizedTransactions.length - 1].quarantine === true ? '../img/warning-sign.svg' : '../img/success-icon.svg' ) : '../img/error-icon.svg' } /> :
-									<img src = { param.simulationAndVisualisationResults.simulatedAndVisualizedTransactions.find( (x) => x.statusCode !== 'success') === undefined ? ( param.simulationAndVisualisationResults.simulatedAndVisualizedTransactions.find( (x) => x.quarantine ) !== undefined ? '../img/warning-sign.svg' : '../img/success-icon.svg' ) : '../img/error-icon.svg' } />
-								}
-							</span>
+		<div class = 'card' style = 'background-color: var(--card-bg-color); margin: 10px;'>
+			<header class = 'card-header'>
+				<div class = 'card-header-icon unset-cursor'>
+					<span class = 'icon'>
+						<img src = { param.simulationAndVisualisationResults.simulatedAndVisualizedTransactions.find( (x) => x.statusCode !== 'success') === undefined ? ( param.simulationAndVisualisationResults.simulatedAndVisualizedTransactions.find( (x) => x.quarantine ) !== undefined ? '../img/warning-sign.svg' : '../img/success-icon.svg' ) : '../img/error-icon.svg' } />
+					</span>
+				</div>
+				<p class = 'card-header-title'>
+					<p className = 'paragraph'> Simulation Outcome </p>
+				</p>
+			</header>
+			<div class = 'card-content'>
+				<div class = 'container' style = 'margin-bottom: 10px'>
+					{ ownAddresses.length == 0 ?<p class = 'paragraph'> No changes to your accounts </p>
+						: <div class = 'notification' style = 'background-color: var(--unimportant-text-color);color: var(--text-color)'>
+							{ ownAddresses.map( ([_index, balanceSummary], index) => <>
+								<SummarizeAddress
+									balanceSummary = { balanceSummary }
+									simulationAndVisualisationResults = { param.simulationAndVisualisationResults }
+									renameAddressCallBack = { param.renameAddressCallBack }
+								/>
+								{ index + 1 !== ownAddresses.length ? <div class = 'is-divider' style = 'margin-top: 8px; margin-bottom: 8px'/> : <></> }
+							</> ) }
 						</div>
-						<p class = 'card-header-title'>
-							<p className = 'paragraph'> { param.summarizeOnlyLastTransaction ? 'Transaction Outcome' : 'Simulation Outcome' } </p>
+					}
+				</div>
+				<div class = 'card'>
+					<header class = 'card-header noselect' style = 'cursor: pointer; height: 30px;' onClick = { () => setShowOtherAccountChange((prevValue) => !prevValue) }>
+						<p class = 'card-header-title' style = 'font-weight: unset; font-size: 0.8em;'>
+							{ notOwnAddresses.length === 0 ? 'No changes in other accounts' : `${ upperCaseFirstCharacter(convertNumberToCharacterRepresentationIfSmallEnough(notOwnAddresses.length)) } other account${ notOwnAddresses.length > 1 ? 's' : '' } changing` }
 						</p>
+						<div class = 'card-header-icon'>
+							<span class = 'icon' style = 'color: var(--text-color); font-weight: unset; font-size: 0.8em;'> V </span>
+						</div>
 					</header>
-					<div class = 'card-content'>
-						<div class = 'container'>
-							<div class = 'notification' style = 'background-color: var(--unimportant-text-color); padding: 10px; margin-bottom: 10px; color: var(--text-color)'>
-								{ ownAddresses.length == 0 ? <p> No changes to your accounts </p>
-									: ownAddresses.map( ([_index, balanceSummary], index) => {
-										return <>
-											<SummarizeAddress
-												balanceSummary = { balanceSummary }
-												simulationAndVisualisationResults = { param.simulationAndVisualisationResults }
-												renameAddressCallBack = { param.renameAddressCallBack }
-											/>
-											{ index + 1 !== ownAddresses.length ? <div class = 'is-divider' style = 'margin-top: 8px; margin-bottom: 8px'/> : <></> }
-										</>
-									} )
-								}
+					{ !showOtherAccountChanges ? <></> :
+						<div class = 'card-content'>
+							<div class = 'container'>
+								{ notOwnAddresses.length == 0 ? <p class = 'paragraph'>No changes to other accounts</p> : notOwnAddresses.map( ([_index, balanceSummary]) => (<>
+									<SummarizeAddress
+										balanceSummary = { balanceSummary }
+										simulationAndVisualisationResults = { param.simulationAndVisualisationResults }
+										renameAddressCallBack = { param.renameAddressCallBack }
+									/>
+									<div class = 'is-divider' style = 'margin-top: 8px; margin-bottom: 8px'/>
+								</>) ) }
 							</div>
 						</div>
-						<div class = 'container'>
-							{ notOwnAddresses.length == 0 ? <p> No token or NFT changes to other accounts</p>
-								: notOwnAddresses.map( ([_index, balanceSummary]) => {
-									return <>
-										<SummarizeAddress
-											balanceSummary = { balanceSummary }
-											simulationAndVisualisationResults = { param.simulationAndVisualisationResults }
-											renameAddressCallBack = { param.renameAddressCallBack }
-										/>
-										<div class = 'is-divider' style = 'margin-top: 8px; margin-bottom: 8px'/>
-									</>
-								})
-							}
-						</div>
-							<p style = 'color: var(--subtitle-text-color); line-height: 28px; display: flex; margin: 0 0 0 auto; width: fit-content;'>
-								<CopyToClipboard
-									content = { param.simulationAndVisualisationResults.blockNumber.toString() }
-									contentDisplayOverride = { `Simulated in block number ${ param.simulationAndVisualisationResults.blockNumber }` }
-									copyMessage = 'Block number copied!'
-								>
-									<p class = 'noselect nopointer' style = 'color: var(--subtitle-text-color); text-align: right; display: inline'>
-										{ 'Simulated ' }
-										<span style = { `font-weight: bold; font-family: monospace; color: ${
-											param.simulationAndVisualisationResults.blockNumber === param.currentBlockNumber || param.currentBlockNumber === undefined ? 'var(--positive-color)' :
-											param.simulationAndVisualisationResults.blockNumber + 1n === param.currentBlockNumber ? 'var(--warning-color)' : 'var(--negative-color)'
-										} ` }>
-											<SomeTimeAgo priorTimestamp = { param.simulationAndVisualisationResults.simulationConductedTimestamp }/>
-										</span>
-										{ ' ago' }
-									</p>
-								</CopyToClipboard>
-								<button class = 'button is-primary is-small' disabled = { param.refreshPressed || param.simulationAndVisualisationResults.blockNumber === param.currentBlockNumber || param.currentBlockNumber === undefined}  style = 'margin-left: 5px;' onClick = { param.refreshSimulation } >
-									<span class = 'icon'>
-										<img src = '../../img/refresh.svg'/>
-									</span>
-									<span>
-										Refresh
-									</span>
-								</button>
-								{ param.resetButton ?
-									<button className = 'button is-primary is-small' style = 'margin-left: 5px; background-color: var(--negative-color);' onClick = { resetSimulation } >
-										<span class = 'icon'>
-											<img src = '../../img/broom.svg'/>
-										</span>
-										<span>
-											Reset
-										</span>
-									</button>
-									: <></>
-								}
-							</p>
-					</div>
+					}
 				</div>
+				<p style = 'color: var(--subtitle-text-color); line-height: 28px; display: flex; margin: 0 0 0 auto; width: fit-content; margin-top: 10px'>
+					<SimulatedInBlockNumber
+						simulationBlockNumber = { param.simulationAndVisualisationResults.blockNumber }
+						currentBlockNumber = { param.currentBlockNumber }
+						simulationConductedTimestamp = { param.simulationAndVisualisationResults.simulationConductedTimestamp }
+					/>
+					<button className = 'button is-primary is-small' style = 'margin-left: 5px; background-color: var(--negative-color);' onClick = { resetSimulation } >
+						<span class = 'icon'>
+							<img src = '../../img/broom.svg'/>
+						</span>
+						<span>
+							Reset
+						</span>
+					</button>
+				</p>
 			</div>
 		</div>
 	)

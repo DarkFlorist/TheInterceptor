@@ -2,6 +2,7 @@
 	--bg-color: #303030;
 	--card-bg-color: #424242;
 	--card-content-bg-color: #484848;
+	--card-header-bg-color: #404040;
 	--window-header-bg-color: #606060;
 
 	--disabled-card-color: rgba(10, 10, 10, 0.6);
@@ -56,24 +57,31 @@ input[type = 'checkbox'] {
 	appearance: none;
 	background-color: #fff;
 	margin: 0;
-	font: inherit;
-	color: currentColor;
+	font-size: 1.2em;
+	color: black;
+	place-content: center;
 	width: 1.15em;
 	height: 1.15em;
 	display: grid;
-	place-content: center;
 	border-radius: 3px;
 	background-color: var(--unimportant-text-color);
+	border: 1px solid black;
 }
 
 input[type = 'checkbox']::before {
-	content: '';
-	width: 1.15em;
-	height: 1.15em;
-	transform: scale(0);
-	border-radius: 3px;
+	content: '✔';
+    place-content: center;
+    display: flex;
+    margin-bottom: 2;
+    color: black;
+    line-height: 1.15em;
+    width: 1.15em;
+    height: 1.15em;
+    transform: scale(0);
+    border-radius: 3px;
 	transition: 120ms transform ease-in-out;
-	box-shadow: inset 1em 1em var(--primary-color);
+	background-color: var(--primary-color);
+	border: 1px solid black;
 }
 
 input[type = 'checkbox']:checked::before {
@@ -81,7 +89,7 @@ input[type = 'checkbox']:checked::before {
 }
 
 .preact-hint {
-	position: absolute;
+	position: fixed;
 	z-index: 9999;
 	cursor: default;
 	border: 1px solid white;
@@ -120,7 +128,11 @@ input[type = 'checkbox']:checked::before {
 }
 
 .paragraph {
-	color:var(--text-color);
+	color: var(--text-color);
+}
+
+.card-header-title {
+	color: var(--text-color);
 }
 
 .subtitle {
@@ -174,7 +186,7 @@ html, body {
 	box-shadow: none;
  }
 
-.input:disabled, input[disabled] {
+.input:not([type='checkbox']):disabled, input:not([type='checkbox'])[disabled] {
 	border-bottom: unset
 }
 
@@ -213,15 +225,21 @@ li {
 .card-content {
 	padding: 10px;
 	background-color: var(--card-content-bg-color);
+	border-bottom-left-radius: 0.25rem;
+	border-bottom-right-radius: 0.25rem;
+	border-left: 2px solid var(--card-bg-color);
+	border-right: 2px solid var(--card-bg-color);
+	border-bottom: 2px solid var(--card-bg-color);
 }
 
 .card-header {
-	background-color: var(--card-bg-color);
+	background-color: var(--card-header-bg-color);
 }
 
 .card-header.window-header {
 	background-color: var(--window-header-bg-color);
 }
+
 .window-header {
 	background-color: var(--window-header-bg-color);
 }
@@ -562,8 +580,32 @@ svg.spinner > circle {
 	position: relative;
 	background-color: var(--alpha-005);
 	padding: 4px;
-	margin: 2px;
 	padding-right: 10px;
 	border-radius: 10px 40px 40px 10px;
 	overflow: hidden;
+}
+
+.breadcrumb ul, .breadcrumb ol {
+	align-items: center;
+}
+
+.breadcrumb li + li::before {
+	margin-left: 5px;
+	margin-right: 5px;
+}
+
+.button.is-primary:focus:not(:active) {
+	box-shadow: unset
+}
+
+.button-overflow {
+	overflow: hidden;
+	white-space: nowrap;
+	display: block;
+	text-overflow: ellipsis;
+}
+
+
+.checkbox-text {
+	padding-left: 0.2em;
 }

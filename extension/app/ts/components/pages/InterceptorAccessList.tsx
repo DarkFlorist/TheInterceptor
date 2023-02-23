@@ -185,7 +185,7 @@ export function InterceptorAccessList(param: InterceptorAccessListParams) {
 										<div class = 'card-header-icon unset-cursor'>
 											<label class = 'form-control' style = 'width: 8em;'>
 												<input type = 'checkbox' checked = { access.access } onInput = { e => { if (e.target instanceof HTMLInputElement && e.target !== null) { setWebsiteAccess(accessListIndex, e.target.checked ,undefined) } } } />
-												Allow access
+												<p class = 'paragraph checkbox-text'>Allow access</p>
 											</label>
 											<button class = 'card-header-icon' style = 'padding: 0px;' aria-label = 'forget' onClick = { () => setWebsiteAccess(accessListIndex, undefined, true) }>
 												<span class = 'icon' style = 'color: var(--text-color);'> X </span>
@@ -210,7 +210,7 @@ export function InterceptorAccessList(param: InterceptorAccessListParams) {
 															<div style = 'margin-left: auto; flex-shrink: 0; display: flex'>
 																<label class = 'form-control' style = 'margin: auto'>
 																	<input type = 'checkbox' checked = { websiteAccessAddress.access } onInput = { e => { if (e.target instanceof HTMLInputElement && e.target !== null) { setAddressAccess(accessListIndex, addressIndex, e.target.checked, undefined) } } } />
-																	<p class = 'paragraph' style = 'white-space: nowrap;'>Allow access</p>
+																	<p class = 'paragraph checkbox-text' style = 'white-space: nowrap;'>Allow access</p>
 																</label>
 																<button class = 'card-header-icon' style = 'padding: 0px;' aria-label = 'forget' onClick = { () => setAddressAccess(accessListIndex, addressIndex, undefined, true) }>
 																	<span class = 'icon' style = 'color: var(--text-color);'> X </span>

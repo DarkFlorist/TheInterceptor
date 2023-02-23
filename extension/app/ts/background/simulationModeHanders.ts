@@ -64,12 +64,12 @@ export async function sendTransaction(getActiveAddressForDomain: (websiteAccess:
 			accessList: []
 		}
 	}
-	const websiteOrigin = port.sender?.url
-	if (websiteOrigin === undefined) return ERROR_INTERCEPTOR_UNKNOWN_ORIGIN
+	const website = port.sender?.url
+	if (website === undefined) return ERROR_INTERCEPTOR_UNKNOWN_ORIGIN
 	if (requestId === undefined) throw new Error('sendTransaction requires known requestId')
-	
+
 	const websiteIcon = await retrieveWebsiteTabIcon(port.sender?.tab?.id)
-	return await openConfirmTransactionDialog(requestId, websiteOrigin, websiteIcon, simulationMode, formTransaction)
+	return await openConfirmTransactionDialog(requestId, website, websiteIcon, simulationMode, formTransaction)
 }
 
 async function singleCallWithFromOverride(simulator: Simulator, request: EthCallParams, from: bigint) {

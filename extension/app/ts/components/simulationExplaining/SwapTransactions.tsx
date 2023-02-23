@@ -2,7 +2,7 @@ import { SimulatedAndVisualizedTransaction, TokenVisualizerResultWithMetadata } 
 import * as funtypes from 'funtypes'
 import { EthereumQuantity } from '../../utils/wire-types.js'
 import { abs, addressString } from '../../utils/bigint.js'
-import { ERC721Token, Ether, Token } from '../subcomponents/coins.js'
+import { ERC721TokenNumber, EtherAmount, EtherSymbol, TokenAmount, TokenSymbol } from '../subcomponents/coins.js'
 import { AddressBookEntry, CHAIN, NFTEntry, TokenEntry } from '../../utils/user-interface-types.js'
 import { CHAINS } from '../../utils/constants.js'
 
@@ -302,68 +302,131 @@ export function getSwapName(identifiedSwap: IdentifiedSwapWithMetadata, chain: C
 }
 
 export function SwapVisualization(param: SwapVisualizationParams) {
-
 	if ( param.identifiedSwap === false ) return <></>
-	return <div class = 'vertical-center' style = 'color: var(--text-color); padding-top: 5px; justify-content: center;' >
-		<p style = { `color: var(--text-color); display: inline-block` }>
-			Swap&nbsp;
-			<div class = 'box' style = 'padding: 4px; background-color: var(--highlighted-primary-color); box-shadow: unset; margin-bottom: 0px; display: inherit;'>
-				{ param.identifiedSwap.type === 'TokenToToken' || param.identifiedSwap.type === 'TokenToETH' ?
-					'tokenIdSent' in param.identifiedSwap ?
-						<ERC721Token
-							tokenId = { param.identifiedSwap.tokenIdSent }
-							tokenName = { param.identifiedSwap.tokenAddressSent.name }
-							tokenAddress = { param.identifiedSwap.tokenAddressSent.address }
-							tokenSymbol = { param.identifiedSwap.tokenAddressSent.symbol }
-							tokenLogoUri = { param.identifiedSwap.tokenAddressSent.logoUri }
-							useFullTokenName = { false }
-							received = { false }
-						/>
-						:
-						<Token
-							amount = { param.identifiedSwap.tokenAmountSent }
-							tokenName = { param.identifiedSwap.tokenAddressSent.name }
-							tokenAddress = { param.identifiedSwap.tokenAddressSent.address }
-							tokenSymbol = { param.identifiedSwap.tokenAddressSent.symbol }
-							tokenLogoUri = { param.identifiedSwap.tokenAddressSent.logoUri }
-							tokenDecimals = { param.identifiedSwap.tokenAddressSent.decimals }
-							useFullTokenName = { false }
-						/>
-				: <Ether
-					amount = { param.identifiedSwap.ethAmountSent }
-					chain = { param.chain }
-				/>
-				}
+	return <div class = 'notification' style = 'background-color: var(--unimportant-text-color); padding: 10px; margin: auto; margin-bottom: 10px; max-width: 400px;'>
+			<div style = 'display: grid; grid-template-rows: max-content max-content max-content max-content;' >
+			<p style = { `color: var(--text-color);` }> Swap </p>
+			<div class = 'box' style = 'background-color: var(--alpha-005); box-shadow: unset; margin-bottom: 0px; display: grid;'>
+				<span class = 'grid' style = 'grid-template-columns: max-content auto; display:grid;'>
+					{ param.identifiedSwap.type === 'TokenToToken' || param.identifiedSwap.type === 'TokenToETH' ?
+						'tokenIdSent' in param.identifiedSwap ? <>
+								<div class = 'log-cell' style = 'justify-content: left;'>
+									<ERC721TokenNumber
+										tokenId = { param.identifiedSwap.tokenIdSent }
+										received = { false }
+										style = { { 'font-size': '28px', 'font-weight': '500' } }
+									/>
+								</div>
+								<div class = 'log-cell' style = 'justify-content: right;'>
+									<TokenSymbol
+										tokenName = { param.identifiedSwap.tokenAddressSent.name }
+										tokenAddress = { param.identifiedSwap.tokenAddressSent.address }
+										tokenSymbol = { param.identifiedSwap.tokenAddressSent.symbol }
+										tokenLogoUri = { param.identifiedSwap.tokenAddressSent.logoUri }
+										useFullTokenName = { false }
+										style = { { 'font-size': '18px', 'font-weight': '500' } }
+									/>
+								</div>
+							</>
+							:<>
+								<div class = 'log-cell' style = 'justify-content: left;'>
+									<TokenAmount
+										amount = { param.identifiedSwap.tokenAmountSent }
+										tokenDecimals = { param.identifiedSwap.tokenAddressSent.decimals }
+										style = { { 'font-size': '28px', 'font-weight': '500' } }
+									/>
+								</div>
+								<div class = 'log-cell' style = 'justify-content: right;'>
+									<TokenSymbol
+										tokenName = { param.identifiedSwap.tokenAddressSent.name }
+										tokenAddress = { param.identifiedSwap.tokenAddressSent.address }
+										tokenSymbol = { param.identifiedSwap.tokenAddressSent.symbol }
+										tokenLogoUri = { param.identifiedSwap.tokenAddressSent.logoUri }
+										useFullTokenName = { false }
+										style = { { 'font-size': '18px', 'font-weight': '500' } }
+									/>
+								</div>
+							</>
+					: <>
+						<div class = 'log-cell' style = 'justify-content: left;'>
+							<EtherAmount
+								amount = { param.identifiedSwap.ethAmountSent }
+								style = { { 'font-size': '28px', 'font-weight': '500' } }
+							/>
+						</div>
+						<div class = 'log-cell' style = 'justify-content: right;'>
+							<EtherSymbol
+								amount = { param.identifiedSwap.ethAmountSent }
+								chain = { param.chain }
+								useFullTokenName = { false }
+								style = { { 'font-size': '18px', 'font-weight': '500' } }
+							/>
+						</div>
+					</>
+					}
+				</span>
 			</div>
-			&nbsp;for&nbsp;
-			<div class = 'box' style = 'padding: 4px; background-color: var(--highlighted-primary-color); box-shadow: unset; display: inherit;'>
-				{ param.identifiedSwap.type === 'TokenToToken' || param.identifiedSwap.type === 'ETHToToken' ?
-					'tokenIdReceived' in param.identifiedSwap ?
-						<ERC721Token
-							tokenId = { param.identifiedSwap.tokenIdReceived }
-							tokenName = { param.identifiedSwap.tokenAddressReceived.name }
-							tokenAddress = { param.identifiedSwap.tokenAddressReceived.address }
-							tokenSymbol = { param.identifiedSwap.tokenAddressReceived.symbol }
-							tokenLogoUri = { param.identifiedSwap.tokenAddressReceived.logoUri }
-							useFullTokenName = { false }
-							received = { false }
-						/>
-						:
-						<Token
-							amount = { param.identifiedSwap.tokenAmountReceived }
-							tokenName = { param.identifiedSwap.tokenAddressReceived.name }
-							tokenAddress = { param.identifiedSwap.tokenAddressReceived.address }
-							tokenSymbol = { param.identifiedSwap.tokenAddressReceived.symbol }
-							tokenLogoUri = { param.identifiedSwap.tokenAddressReceived.logoUri }
-							tokenDecimals = { param.identifiedSwap.tokenAddressReceived.decimals }
-							useFullTokenName = { false }
-						/>
-				: <Ether
-					amount = { param.identifiedSwap.ethAmountReceived }
-					chain = { param.chain }
-				/>
-				}
+			<p style = { `color: var(--text-color);` }> For </p>
+			<div class = 'box' style = 'background-color: var(--alpha-005); box-shadow: unset; margin-bottom: 0px; display: grid;'>
+				<span class = 'grid' style = 'grid-template-columns: max-content auto; display:grid;'>
+					{ param.identifiedSwap.type === 'TokenToToken' || param.identifiedSwap.type === 'ETHToToken' ?
+						'tokenIdReceived' in param.identifiedSwap ? <>
+								<div class = 'log-cell' style = 'justify-content: left;'>
+									<ERC721TokenNumber
+										tokenId = { param.identifiedSwap.tokenIdReceived }
+										received = { false }
+										style = { { 'font-size': '28px', 'font-weight': '500' } }
+									/>
+								</div>
+								<div class = 'log-cell' style = 'justify-content: right;'>
+									<TokenSymbol
+										tokenName = { param.identifiedSwap.tokenAddressReceived.name }
+										tokenAddress = { param.identifiedSwap.tokenAddressReceived.address }
+										tokenSymbol = { param.identifiedSwap.tokenAddressReceived.symbol }
+										tokenLogoUri = { param.identifiedSwap.tokenAddressReceived.logoUri }
+										useFullTokenName = { false }
+										style = { { 'font-size': '18px', 'font-weight': '500' } }
+									/>
+								</div>
+							</>
+							:<>
+							<div class = 'log-cell' style = 'justify-content: left;'>
+								<TokenAmount
+									amount = { param.identifiedSwap.tokenAmountReceived }
+									tokenDecimals = { param.identifiedSwap.tokenAddressReceived.decimals }
+									style = { { 'font-size': '28px', 'font-weight': '500' } }
+								/>
+							</div>
+							<div class = 'log-cell' style = 'justify-content: right;'>
+								<TokenSymbol
+									tokenName = { param.identifiedSwap.tokenAddressReceived.name }
+									tokenAddress = { param.identifiedSwap.tokenAddressReceived.address }
+									tokenSymbol = { param.identifiedSwap.tokenAddressReceived.symbol }
+									tokenLogoUri = { param.identifiedSwap.tokenAddressReceived.logoUri }
+									useFullTokenName = { false }
+									style = { { 'font-size': '18px', 'font-weight': '500' } }
+								/>
+							</div>
+							</>
+					: <>
+						<div class = 'log-cell' style = 'justify-content: left;'>
+							<EtherAmount
+								amount = { param.identifiedSwap.ethAmountReceived }
+								style = { { 'font-size': '28px', 'font-weight': '500' } }
+							/>
+						</div>
+						<div class = 'log-cell' style = 'justify-content: right;'>
+							<EtherSymbol
+								amount = { param.identifiedSwap.ethAmountReceived }
+								chain = { param.chain }
+								useFullTokenName = { false }
+								style = { { 'font-size': '18px', 'font-weight': '500' } }
+							/>
+						</div>
+					</>
+					}
+				</span>
 			</div>
-		</p>
+		</div>
 	</div>
 }

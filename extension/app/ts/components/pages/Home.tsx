@@ -1,8 +1,8 @@
-import { HomeParams, AddressInfo, Page, FirstCardParams, TabConnection } from '../../utils/user-interface-types.js'
+import { HomeParams, AddressInfo, Page, FirstCardParams, TabConnection, SimulationStateParam } from '../../utils/user-interface-types.js'
 import { useEffect, useState } from 'preact/hooks'
 import { SimulationAndVisualisationResults } from '../../utils/visualizer-types.js'
 import { ActiveAddress, findAddressInfo } from '../subcomponents/address.js'
-import { SimulationResults } from '../simulationExplaining/SimulationSummary.js'
+import { SimulationSummary } from '../simulationExplaining/SimulationSummary.js'
 import { ChainSelector } from '../subcomponents/ChainSelector.js'
 import { Spinner } from '../subcomponents/Spinner.js'
 import { DEFAULT_TAB_CONNECTION, getChainName, ICON_NOT_ACTIVE, ICON_SIGNING, ICON_SIGNING_NOT_SUPPORTED, isSupportedChain } from '../../utils/constants.js'
@@ -11,6 +11,7 @@ import { getSignerName, SignerLogoText, SignersLogoName } from '../subcomponents
 import { Error } from '../subcomponents/Error.js'
 import { ToolTip } from '../subcomponents/CopyToClipboard.js'
 import { sendPopupMessageToBackgroundPage } from '../../background/backgroundUtils.js'
+import { Transactions } from '../simulationExplaining/Transactions.js'
 
 function FirstCard(param: FirstCardParams) {
 	async function enableMakeMeRich(enabled: boolean) {
@@ -21,100 +22,123 @@ function FirstCard(param: FirstCardParams) {
 		sendPopupMessageToBackgroundPage( { method: 'popup_requestAccountsFromSigner', options: true } )
 	}
 
-	return <>
-		{ !isSupportedChain(param.activeChain.toString()) ?
-			<div style = 'padding-bottom: 10px; background-color: var(--bg-color);'>
-				<Error text = { `${ getChainName(param.activeChain) } is not a supported network. The Interceptor is disabled while you are using the network.` }/>
+	return <div class = 'card' style = 'margin: 10px;'>
+		<header class = 'card-header'>
+			<div class = 'card-header-icon unset-cursor'>
+				<span class = 'icon' style = 'height: 3rem; width: 3rem;'>
+					<ToolTip content = {  param.tabConnection.iconReason }>
+						<img className = 'noselect nopointer' src = { param.tabConnection.icon } />
+					</ToolTip>
+				</span>
 			</div>
-		: <></> }
+			<div class = 'card-header-title px-0 is-justify-content-center'>
+				<div class = 'buttons has-addons' style = 'border-style: solid; border-color: var(--primary-color); border-radius: 4px; padding: 1px; border-width: 1px; margin-bottom: 0px' >
+					<button
+						class = { `button is-primary ${ param.simulationMode ? '' : 'is-outlined' }` }
+						style = { `margin-bottom: 0px; ${ param.simulationMode ? 'opacity: 1;' : 'border-style: none;' }` }
+						disabled = { param.simulationMode }
+						onClick = { () => param.enableSimulationMode(true) }>
+						Simulating
+					</button>
+					<button
+						class = { `button is-primary ${ param.simulationMode ? 'is-outlined' : ''}` }
+						style = { `margin-bottom: 0px; ${ param.simulationMode ? 'border-style: none;' : 'opacity: 1;' }` }
+						disabled = { !param.simulationMode }
+						onClick = { () => param.enableSimulationMode(false) }>
+						<SignerLogoText signerName = { param.signerName } text = { 'Signing' } />
+					</button>
+				</div>
+			</div>
+			<div class = 'card-header-icon unset-cursor'>
+				<ChainSelector currentChain = { param.activeChain } changeChain = { (chainId: bigint) => { param.changeActiveChain(chainId) } }/>
+			</div>
 
-		<div class = 'block' style = 'background-color: var(--card-bg-color); margin-bottom: 0px;'>
-			<header class = 'card-header'>
-				<div class = 'card-header-icon unset-cursor'>
-					<span class = 'icon' style = 'height: 3rem; width: 3rem;'>
-						<ToolTip content = {  param.tabConnection.iconReason }>
-							<img className = 'noselect nopointer' src = { param.tabConnection.icon } />
-						</ToolTip>
+		</header>
+		<div class = 'card-content'>
+			{ param.useSignersAddressAsActiveAddress || !param.simulationMode ?
+				<p style = 'color: var(--text-color); text-align: left'>
+					<span class = 'vertical-center' style = 'display: inline-flex;' >
+						Retrieving from&nbsp;
+						<SignersLogoName signerName = { param.signerName } />
 					</span>
+					{ param.signerAccounts !== undefined && param.signerAccounts.length > 0 && param.tabConnection.icon !== ICON_NOT_ACTIVE ? <span style = 'float: right; color: var(--primary-color);'> CONNECTED </span> :
+						param.tabConnection.icon === ICON_SIGNING || param.tabConnection.icon === ICON_SIGNING_NOT_SUPPORTED ? <span style = 'float: right; color: var(--negative-color);'> NOT CONNECTED </span> : <></>
+					}
+				</p>
+				: <></>
+			}
+			{ param.activeAddress !== undefined ?
+				<ActiveAddress
+					addressBookEntry = { {
+						type: 'addressInfo' as const,
+						name: param.activeAddress.name,
+						address: param.activeAddress.address,
+						askForAddressAccess: false, // TODO, when getting rid of window.interceptor, make active address an addressbook entry too
+					} }
+					simulationMode = { param.simulationMode }
+					changeActiveAddress = { param.changeActiveAddress }
+					renameAddressCallBack = { param.renameAddressCallBack }
+				/>
+			: param.useSignersAddressAsActiveAddress || !param.simulationMode ?
+				<div class = 'content' style = 'color: var(--negative-color)'>
+					{ `No active address found in ${ getSignerName(param.signerName) }` }
 				</div>
-				<div class = 'card-header-title px-0 is-justify-content-center'>
-					<div class = 'buttons has-addons' style = 'border-style: solid; border-color: var(--primary-color); border-radius: 4px; padding: 1px; border-width: 1px; margin-bottom: 0px' >
-						<button
-							class = { `button is-primary ${ param.simulationMode ? '' : 'is-outlined' }` }
-							style = { `margin-bottom: 0px; ${ param.simulationMode ? 'opacity: 1;' : 'border-style: none;' }` }
-							disabled = { param.simulationMode }
-							onClick = { () => param.enableSimulationMode(true) }>
-							Simulating
+			:
+				<div class = 'content' style = 'color: var(--negative-color)'>
+					No active address
+				</div>
+			}
+			{ !param.simulationMode ?
+				( (param.signerAccounts === undefined || param.signerAccounts.length == 0) && param.tabConnection.icon !== ICON_NOT_ACTIVE ) ?
+					<div style = 'margin-top: 5px'>
+						<button className = 'button is-primary' onClick = { connectToSigner } >
+							<SignerLogoText
+								signerName = { param.signerName }
+								text = { `Connect to ${ getSignerName(param.signerName) }` }
+							/>
 						</button>
-						<button
-							class = { `button is-primary ${ param.simulationMode ? 'is-outlined' : ''}` }
-							style = { `margin-bottom: 0px; ${ param.simulationMode ? 'border-style: none;' : 'opacity: 1;' }` }
-							disabled = { !param.simulationMode }
-							onClick = { () => param.enableSimulationMode(false) }>
-							<SignerLogoText signerName = { param.signerName } text = { 'Signing' } />
-						</button>
 					</div>
-				</div>
-				<div class = 'card-header-icon unset-cursor'>
-					<ChainSelector currentChain = { param.activeChain } changeChain = { (chainId: bigint) => { param.changeActiveChain(chainId) } }/>
-				</div>
-
-			</header>
-			<div class = 'card-content'>
-				{ param.useSignersAddressAsActiveAddress || !param.simulationMode ?
-					<p style = 'color: var(--text-color); text-align: left'>
-						<span class = 'vertical-center' style = 'display: inline-flex;' >
-							Retrieving from&nbsp;
-							<SignersLogoName signerName = { param.signerName } />
-						</span>
-						{ param.signerAccounts !== undefined && param.signerAccounts.length > 0 && param.tabConnection.icon !== ICON_NOT_ACTIVE ? <span style = 'float: right; color: var(--primary-color);'> CONNECTED </span> :
-							param.tabConnection.icon === ICON_SIGNING || param.tabConnection.icon === ICON_SIGNING_NOT_SUPPORTED ? <span style = 'float: right; color: var(--negative-color);'> NOT CONNECTED </span> : <></>
-						}
-					</p>
-					: <></>
-				}
-				{ param.activeAddress !== undefined ?
-					<ActiveAddress
-						addressBookEntry = { {
-							type: 'addressInfo' as const,
-							name: param.activeAddress.name,
-							address: param.activeAddress.address,
-							askForAddressAccess: false, // TODO, when getting rid of window.interceptor, make active address an addressbook entry too
-						} }
-						simulationMode = { param.simulationMode }
-						changeActiveAddress = { param.changeActiveAddress }
-						renameAddressCallBack = { param.renameAddressCallBack }
-					/>
-				: param.useSignersAddressAsActiveAddress || !param.simulationMode ?
-					<div class = 'content' style = 'color: var(--negative-color)'>
-						{ `No active address found in ${ getSignerName(param.signerName) }` }
-					</div>
-				:
-					<div class = 'content' style = 'color: var(--negative-color)'>
-						No active address
-					</div>
-				}
-				{ !param.simulationMode ?
-					( (param.signerAccounts === undefined || param.signerAccounts.length == 0) && param.tabConnection.icon !== ICON_NOT_ACTIVE ) ?
-						<div style = 'margin-top: 5px'>
-							<button className = 'button is-primary' onClick = { connectToSigner } >
-								<SignerLogoText
-									signerName = { param.signerName }
-									text = { `Connect to ${ getSignerName(param.signerName) }` }
-								/>
-							</button>
-						</div>
-					: <p style = 'color: var(--subtitle-text-color);' class = 'subtitle is-7'> { ` You can change active address by changing it directly from ${ getSignerName(param.signerName) }` } </p>
-				:
-					<label class = 'form-control' style = 'padding-top: 10px'>
-						<input type = 'checkbox' checked = { param.makeMeRich } onInput = { e => { if (e.target instanceof HTMLInputElement && e.target !== null) { enableMakeMeRich(e.target.checked) } } } />
-						Make me rich
-					</label>
-				}
-			</div>
+				: <p style = 'color: var(--subtitle-text-color);' class = 'subtitle is-7'> { ` You can change active address by changing it directly from ${ getSignerName(param.signerName) }` } </p>
+			:
+				<label class = 'form-control' style = 'padding-top: 10px'>
+					<input type = 'checkbox' checked = { param.makeMeRich } onInput = { e => { if (e.target instanceof HTMLInputElement && e.target !== null) { enableMakeMeRich(e.target.checked) } } } />
+					<p class = 'paragraph checkbox-text'>Make me rich</p>
+				</label>
+			}
 		</div>
-	</>
+	</div>
 }
+
+function SimulationResults(param: SimulationStateParam) {
+	if (param.simulationAndVisualisationResults === undefined) return <></>
+	if (param.simulationAndVisualisationResults.simulatedAndVisualizedTransactions.length === 0) {
+		return <div class = 'vertical-center'>
+			<img style = 'padding-right: 10px; transform: scaleX(-1);' src = '../img/LOGOA.svg' width = '32'/>
+			<span class = 'paragraph' style = 'padding-left: 0.2em'> - Give me some transactions to munch on! </span>
+		</div>
+	}
+
+	return <div>
+		<p className = 'h1' style = 'padding-left: 10px'> Simulation Results </p>
+
+		<Transactions
+			simulationAndVisualisationResults = { param.simulationAndVisualisationResults }
+			removeTransaction = { param.removeTransaction }
+			activeAddress = { param.simulationAndVisualisationResults.activeAddress }
+			renameAddressCallBack = { param.renameAddressCallBack }
+		/>
+		<SimulationSummary
+			simulationAndVisualisationResults = { param.simulationAndVisualisationResults }
+			resetButton = { true }
+			refreshSimulation =  { param.refreshSimulation }
+			currentBlockNumber = { param.currentBlockNumber }
+			renameAddressCallBack = { param.renameAddressCallBack }
+			refreshPressed = { param.refreshPressed }
+		/>
+		<div class = 'content' style = 'height: 0.1px'/>
+	</div>
+}
+
 export function Home(param: HomeParams) {
 	const [activeSimulationAddress, setActiveSimulationAddress] = useState<AddressInfo | undefined>(undefined)
 	const [activeSigningAddress, setActiveSigningAddress] = useState<AddressInfo | undefined>(undefined)
@@ -180,48 +204,48 @@ export function Home(param: HomeParams) {
 
 	if (!isLoaded) return <></>
 
-	return (
-		<div className = 'block' style = 'margin-bottom: 0px' >
-			<div style = 'margin: 10px;'>
-				<div class = 'block' style = 'background-color: var(--card-content-bg-color)'>
-					<FirstCard
-						addressInfos = { param.addressInfos }
-						useSignersAddressAsActiveAddress = { useSignersAddressAsActiveAddress }
-						enableSimulationMode = { enableSimulationMode }
-						activeAddress = { simulationMode ? activeSimulationAddress : activeSigningAddress }
-						activeChain = { activeChain }
-						changeActiveChain = { param.setActiveChainAndInformAboutIt }
-						simulationMode = { simulationMode }
-						changeActiveAddress = { changeActiveAddress }
-						makeMeRich = { param.makeMeRich }
-						signerAccounts = { signerAccounts }
-						tabConnection = { tabConnection }
-						tabApproved = { tabApproved }
-						signerName = { signerName }
-						renameAddressCallBack = { param.renameAddressCallBack }
-					/>
+	return <>
+		{ !isSupportedChain(param.activeChain.toString()) ?
+			<div style = 'margin: 10px; background-color: var(--bg-color);'>
+				<Error text = { `${ getChainName(param.activeChain) } is not a supported network. The Interceptor is disabled while you are using the network.` }/>
+			</div>
+		: <></> }
+
+		<FirstCard
+			addressInfos = { param.addressInfos }
+			useSignersAddressAsActiveAddress = { useSignersAddressAsActiveAddress }
+			enableSimulationMode = { enableSimulationMode }
+			activeAddress = { simulationMode ? activeSimulationAddress : activeSigningAddress }
+			activeChain = { activeChain }
+			changeActiveChain = { param.setActiveChainAndInformAboutIt }
+			simulationMode = { simulationMode }
+			changeActiveAddress = { changeActiveAddress }
+			makeMeRich = { param.makeMeRich }
+			signerAccounts = { signerAccounts }
+			tabConnection = { tabConnection }
+			tabApproved = { tabApproved }
+			signerName = { signerName }
+			renameAddressCallBack = { param.renameAddressCallBack }
+		/>
+
+		{ simulationMode && simulationAndVisualisationResults === undefined ?
+			<div style = 'margin-top: 0px; margin-left: 10px; margin-right: 10px;'>
+				<div class = 'vertical-center'>
+					<Spinner/>
+					<span style = 'margin-left: 0.2em' > Simulating... </span>
 				</div>
 			</div>
+		: <></> }
 
-			{ simulationMode && simulationAndVisualisationResults === undefined ?
-				<div style = 'margin-top: 0px; margin-left: 10px; margin-right: 10px;'>
-					<div class = 'vertical-center'>
-						<Spinner/>
-						<span style = 'margin-left: 0.2em' > Simulating... </span>
-					</div>
-				</div>
-			: <></> }
-
-			{ !simulationMode || activeSimulationAddress === undefined ? <></> :
-				<SimulationResults
-					simulationAndVisualisationResults = { simulationAndVisualisationResults }
-					removeTransaction = { removeTransaction }
-					refreshSimulation = { refreshSimulation }
-					currentBlockNumber = { currentBlockNumber }
-					renameAddressCallBack = { param.renameAddressCallBack }
-					refreshPressed = { refreshPressed }
-				/>
-			}
-		</div>
-	)
+		{ !simulationMode || activeSimulationAddress === undefined ? <></> :
+			<SimulationResults
+				simulationAndVisualisationResults = { simulationAndVisualisationResults }
+				removeTransaction = { removeTransaction }
+				refreshSimulation = { refreshSimulation }
+				currentBlockNumber = { currentBlockNumber }
+				renameAddressCallBack = { param.renameAddressCallBack }
+				refreshPressed = { refreshPressed }
+			/>
+		}
+	</>
 }

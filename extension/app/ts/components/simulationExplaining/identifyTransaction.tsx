@@ -11,6 +11,8 @@ export function nameTransaction(transaction: SimulatedAndVisualizedTransaction, 
 	}
 	if (transaction.input.length == 0) return 'Ether Transfer'
 
+	//TODO: add simple token transfer
+
 	const identifiedSwap = identifySwap(transaction)
 	if (identifiedSwap) return getSwapName(identifiedSwap, transaction.chainId)
 
@@ -18,6 +20,24 @@ export function nameTransaction(transaction: SimulatedAndVisualizedTransaction, 
 	if (fourByte === undefined) return 'Contract Fallback Method'
 	const explanation = FourByteExplanations.get(fourByte)
 	return explanation !== undefined ? explanation : 'Contract Execution'
+}
+
+
+export function nameTransactionAction(transaction: SimulatedAndVisualizedTransaction, activeAddress: bigint ) {
+	if (identifyTransaction(transaction, activeAddress) === 'MakeYouRichTransaction') {
+		return 'Rich'
+	}
+	if (transaction.input.length == 0) return 'Transfer Ether '
+
+	//TODO: add simple token transfer
+
+	const identifiedSwap = identifySwap(transaction)
+	if (identifiedSwap) return 'Swap'
+
+	const fourByte = get4Byte(transaction.input)
+	if (fourByte === undefined) return 'Contract Fallback'
+	const explanation = FourByteExplanations.get(fourByte)
+	return explanation !== undefined ? explanation : 'Execute Contract'
 }
 
 export function identifyTransaction(transaction: SimulatedAndVisualizedTransaction, activeAddress: bigint): TRANSACTION_TYPE {

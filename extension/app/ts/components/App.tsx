@@ -181,85 +181,87 @@ export function App() {
 	}
 
 	return (
-		<main style = { `background-color: var(--bg-color); width: 520px; height: 600px; ${ appPage !== Page.Home ? 'overflow: hidden;' : 'overflow: auto;' }` }>
-			<PasteCatcher enabled = { appPage === Page.Home } onPaste = { addressPaste } />
-			{ !isSettingsLoaded ? <></> : <>
-				<Hint>
-					<nav class = 'navbar window-header' role = 'navigation' aria-label = 'main navigation'>
-						<div class = 'navbar-brand'>
-							<a class = 'navbar-item' style = 'cursor: unset'>
-								<img src = '../img/LOGOA.svg' alt = 'Logo' width = '32'/>
-								<p style = 'color: #FFFFFF; padding-left: 5px;'>THE INTERCEPTOR
-									<span style = 'color: var(--unimportant-text-color);' > { ` alpha ${ version } - ${ gitCommitSha.slice(0, 8) }`  } </span>
-								</p>
-							</a>
-							<a class = 'navbar-item' style = 'margin-left: auto; margin-right: 0;'>
-								<img src = '../img/internet.svg' width = '32' onClick = { () => setAndSaveAppPage(Page.AccessList) }/>
-								<img src = '../img/address-book.svg' width = '32' onClick = { openAddressBook }/>
-								<div>
-									<img src = '../img/notification-bell.svg' width = '32' onClick = { () => setAndSaveAppPage(Page.NotificationCenter) }/>
-									{ notificationBadgeCount <= 0 ? <> </> : <span class = 'badge' style = 'transform: translate(-75%, 75%);'> { notificationBadgeCount } </span> }
-								</div>
-							</a>
+		<main>
+			<Hint>
+				<PasteCatcher enabled = { appPage === Page.Home } onPaste = { addressPaste } />
+				<div style = { `background-color: var(--bg-color); width: 520px; height: 600px; ${ appPage !== Page.Home ? 'overflow: hidden;' : 'overflow: auto;' }` }>
+					{ !isSettingsLoaded ? <></> : <>
+						<nav class = 'navbar window-header' role = 'navigation' aria-label = 'main navigation'>
+							<div class = 'navbar-brand'>
+								<a class = 'navbar-item' style = 'cursor: unset'>
+									<img src = '../img/LOGOA.svg' alt = 'Logo' width = '32'/>
+									<p style = 'color: #FFFFFF; padding-left: 5px;'>THE INTERCEPTOR
+										<span style = 'color: var(--unimportant-text-color);' > { ` alpha ${ version } - ${ gitCommitSha.slice(0, 8) }`  } </span>
+									</p>
+								</a>
+								<a class = 'navbar-item' style = 'margin-left: auto; margin-right: 0;'>
+									<img src = '../img/internet.svg' width = '32' onClick = { () => setAndSaveAppPage(Page.AccessList) }/>
+									<img src = '../img/address-book.svg' width = '32' onClick = { openAddressBook }/>
+									<div>
+										<img src = '../img/notification-bell.svg' width = '32' onClick = { () => setAndSaveAppPage(Page.NotificationCenter) }/>
+										{ notificationBadgeCount <= 0 ? <> </> : <span class = 'badge' style = 'transform: translate(-75%, 75%);'> { notificationBadgeCount } </span> }
+									</div>
+								</a>
+							</div>
+						</nav>
+						<Home
+							setActiveChainAndInformAboutIt = { setActiveChainAndInformAboutIt }
+							activeChain = { activeChain }
+							simVisResults = { simVisResults }
+							useSignersAddressAsActiveAddress = { useSignersAddressAsActiveAddress }
+							activeSigningAddress = { activeSigningAddress }
+							activeSimulationAddress = { activeSimulationAddress }
+							signerAccounts = { signerAccounts }
+							setAndSaveAppPage = { setAndSaveAppPage }
+							makeMeRich = { makeMeRich }
+							addressInfos = { addressInfos }
+							simulationMode = { simulationMode }
+							tabConnection = { tabConnection }
+							tabApproved = { tabApproved }
+							currentBlockNumber = { currentBlockNumber }
+							signerName = { signerName }
+							renameAddressCallBack = { renameAddressCallBack }
+						/>
+
+						<div class = { `modal ${ appPage !== Page.Home ? 'is-active' : ''}` }>
+							{ appPage === Page.NotificationCenter ?
+								<NotificationCenter
+									setAndSaveAppPage = { setAndSaveAppPage }
+									renameAddressCallBack = { renameAddressCallBack }
+								/>
+							: <></> }
+							{ appPage === Page.AccessList ?
+								<InterceptorAccessList
+									setAndSaveAppPage = { setAndSaveAppPage }
+									setWebsiteAccess = { setWebsiteAccess }
+									websiteAccess = { websiteAccess }
+									websiteAccessAddressMetadata = { websiteAccessAddressMetadata }
+									renameAddressCallBack = { renameAddressCallBack }
+								/>
+							: <></> }
+							{ appPage === Page.ChangeActiveAddress ?
+								<ChangeActiveAddress
+									setActiveAddressAndInformAboutIt = { setActiveAddressAndInformAboutIt }
+									signerAccounts = { signerAccounts }
+									setAndSaveAppPage = { setAndSaveAppPage }
+									addressInfos = { addressInfos }
+									signerName = { signerName }
+									renameAddressCallBack = { renameAddressCallBack }
+								/>
+							: <></> }
+							{ appPage === Page.AddNewAddress || appPage === Page.ModifyAddress ?
+								<AddNewAddress
+									setActiveAddressAndInformAboutIt = { setActiveAddressAndInformAboutIt }
+									addingNewAddress = { addingNewAddress }
+									close = { () => setAndSaveAppPage(Page.Home) }
+									activeAddress = { simulationMode ? activeSimulationAddress : activeSigningAddress }
+								/>
+							: <></> }
 						</div>
-					</nav>
-					<Home
-						setActiveChainAndInformAboutIt = { setActiveChainAndInformAboutIt }
-						activeChain = { activeChain }
-						simVisResults = { simVisResults }
-						useSignersAddressAsActiveAddress = { useSignersAddressAsActiveAddress }
-						activeSigningAddress = { activeSigningAddress }
-						activeSimulationAddress = { activeSimulationAddress }
-						signerAccounts = { signerAccounts }
-						setAndSaveAppPage = { setAndSaveAppPage }
-						makeMeRich = { makeMeRich }
-						addressInfos = { addressInfos }
-						simulationMode = { simulationMode }
-						tabConnection = { tabConnection }
-						tabApproved = { tabApproved }
-						currentBlockNumber = { currentBlockNumber }
-						signerName = { signerName }
-						renameAddressCallBack = { renameAddressCallBack }
-					/>
 
-					<div class = { `modal ${ appPage !== Page.Home ? 'is-active' : ''}` }>
-						{ appPage === Page.NotificationCenter ?
-							<NotificationCenter
-								setAndSaveAppPage = { setAndSaveAppPage }
-								renameAddressCallBack = { renameAddressCallBack }
-							/>
-						: <></> }
-						{ appPage === Page.AccessList ?
-							<InterceptorAccessList
-								setAndSaveAppPage = { setAndSaveAppPage }
-								setWebsiteAccess = { setWebsiteAccess }
-								websiteAccess = { websiteAccess }
-								websiteAccessAddressMetadata = { websiteAccessAddressMetadata }
-								renameAddressCallBack = { renameAddressCallBack }
-							/>
-						: <></> }
-						{ appPage === Page.ChangeActiveAddress ?
-							<ChangeActiveAddress
-								setActiveAddressAndInformAboutIt = { setActiveAddressAndInformAboutIt }
-								signerAccounts = { signerAccounts }
-								setAndSaveAppPage = { setAndSaveAppPage }
-								addressInfos = { addressInfos }
-								signerName = { signerName }
-								renameAddressCallBack = { renameAddressCallBack }
-							/>
-						: <></> }
-						{ appPage === Page.AddNewAddress || appPage === Page.ModifyAddress ?
-							<AddNewAddress
-								setActiveAddressAndInformAboutIt = { setActiveAddressAndInformAboutIt }
-								addingNewAddress = { addingNewAddress }
-								close = { () => setAndSaveAppPage(Page.Home) }
-								activeAddress = { simulationMode ? activeSimulationAddress : activeSigningAddress }
-							/>
-						: <></> }
-					</div>
-
-				</Hint>
-			</> }
+					</> }
+				</div>
+			</Hint>
 		</main>
 	)
 }

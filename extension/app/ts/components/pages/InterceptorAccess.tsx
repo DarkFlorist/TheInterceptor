@@ -64,7 +64,7 @@ export function InterceptorAccess() {
 				}
 			</div>
 			{ accessRequest === undefined ? <></> : <>
-				<div className = 'block' style = 'margin-bottom: 0px; margin: 10px'>
+				<div className = 'card' style = 'margin: 10px'>
 					<header class = 'card-header window-header'>
 						<div class = 'card-header-icon unset-cursor'>
 							<span class = 'icon'>

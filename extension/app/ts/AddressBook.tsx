@@ -122,7 +122,7 @@ export function ListElement(entry: ListElementParam) {
 						{ entry.category === 'My Active Addresses' ?
 							<label class = 'form-control' style = 'padding-top: 10px'>
 								<input type = 'checkbox' checked = { 'askForAddressAccess' in entry && !entry.askForAddressAccess } disabled = { true }/>
-								Don't request for an access (insecure)
+								<p class = 'paragraph checkbox-text'>Don't request for an access (insecure) </p>
 							</label>
 							: <></>
 						}
