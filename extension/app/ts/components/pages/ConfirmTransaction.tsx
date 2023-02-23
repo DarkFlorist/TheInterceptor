@@ -102,7 +102,7 @@ export function ConfirmTransaction() {
 
 	useEffect( () => {
 		sendPopupMessageToBackgroundPage( { method: 'popup_confirmTransactionReadyAndListening' } )
-	})
+	}, [])
 
 	useEffect( () => {
 		function popupMessageListener(msg: unknown) {
