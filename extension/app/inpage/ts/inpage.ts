@@ -116,8 +116,8 @@ type InjectFunctions = {
 	request: EthereumRequest,
 	send: unknown,
 	sendAsync: unknown,
-	on: (kind: OnMessage, callback: AnyCallBack) => Promise<void>,
-	removeListener: (kind: OnMessage, callback: AnyCallBack) => Promise<void>,
+	on: (kind: OnMessage, callback: AnyCallBack) => WindowEthereum,
+	removeListener: (kind: OnMessage, callback: AnyCallBack) => WindowEthereum,
 	isConnected: () => boolean,
 	enable: () => void,
 }
@@ -195,6 +195,7 @@ class InterceptorMessageListener {
 	}
 
 	private readonly WindowEthereumOn = (kind: OnMessage, callback: AnyCallBack) => {
+		if (window.ethereum === undefined) throw new Error('window.ethereum is not defined')
 		switch (kind) {
 			case 'accountsChanged':
 				this.onAccountsChangedCallBacks.add( callback as (accounts: readonly string[]) => void )
@@ -220,6 +221,7 @@ class InterceptorMessageListener {
 	}
 
 	private readonly WindowEthereumRemoveListener = (kind: OnMessage, callback: AnyCallBack) => {
+		if (window.ethereum === undefined) throw new Error('window.ethereum is not defined')
 		switch (kind) {
 			case 'accountsChanged':
 				this.onAccountsChangedCallBacks.delete(callback as (accounts: readonly string[]) => void)
