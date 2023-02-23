@@ -143,51 +143,57 @@ class InterceptorMessageListener {
                 // since \`request(...)\` only throws things shaped like \`JsonRpcError\`, we can rely on it having those properties.
                 .catch(error => callback({ jsonrpc: '2.0', id: payload.id, error: { code: error.code, message: error.message, data: { ...error.data, stack: error.stack } } }, null));
         };
-        this.WindowEthereumOn = async (kind, callback) => {
+        this.WindowEthereumOn = (kind, callback) => {
+            if (window.ethereum === undefined)
+                throw new Error('window.ethereum is not defined');
             switch (kind) {
                 case 'accountsChanged':
                     this.onAccountsChangedCallBacks.add(callback);
-                    return;
+                    break;
                 case 'message':
                     this.onMessageCallBacks.add(callback);
-                    return;
+                    break;
                 case 'connect':
                     this.onConnectCallBacks.add(callback);
-                    return;
+                    break;
                 case 'close': //close is deprecated on eip-1193 by disconnect but its still used by dapps (MyEtherWallet)
                     this.onDisconnectCallBacks.add(callback);
-                    return;
+                    break;
                 case 'disconnect':
                     this.onDisconnectCallBacks.add(callback);
-                    return;
+                    break;
                 case 'chainChanged':
                     this.onChainChangedCallBacks.add(callback);
-                    return;
-                default:
+                    break;
+                default: InterceptorMessageListener.exhaustivenessCheck(kind);
             }
+            return window.ethereum;
         };
-        this.WindowEthereumRemoveListener = async (kind, callback) => {
+        this.WindowEthereumRemoveListener = (kind, callback) => {
+            if (window.ethereum === undefined)
+                throw new Error('window.ethereum is not defined');
             switch (kind) {
                 case 'accountsChanged':
                     this.onAccountsChangedCallBacks.delete(callback);
-                    return;
+                    break;
                 case 'message':
                     this.onMessageCallBacks.delete(callback);
-                    return;
+                    break;
                 case 'connect':
                     this.onConnectCallBacks.delete(callback);
-                    return;
+                    break;
                 case 'close': //close is deprecated on eip-1193 by disconnect but its still used by dapps (MyEtherWallet)
                     this.onDisconnectCallBacks.delete(callback);
-                    return;
+                    break;
                 case 'disconnect':
                     this.onDisconnectCallBacks.delete(callback);
-                    return;
+                    break;
                 case 'chainChanged':
                     this.onChainChangedCallBacks.delete(callback);
-                    return;
-                default:
+                    break;
+                default: InterceptorMessageListener.exhaustivenessCheck(kind);
             }
+            return window.ethereum;
         };
         this.WindowEthereumEnable = async () => this.WindowEthereumRequest({ method: 'eth_requestAccounts' });
         this.requestAccountsFromSigner = async () => {
@@ -377,6 +383,7 @@ class InterceptorMessageListener {
         this.injectEthereumIntoWindow();
     }
 }
+InterceptorMessageListener.exhaustivenessCheck = (_thing) => { };
 InterceptorMessageListener.checkErrorForCode = (error) => {
     if (typeof error !== 'object')
         return false;

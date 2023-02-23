@@ -116,8 +116,8 @@ type InjectFunctions = {
 	request: EthereumRequest,
 	send: unknown,
 	sendAsync: unknown,
-	on: (kind: OnMessage, callback: AnyCallBack) => Promise<void>,
-	removeListener: (kind: OnMessage, callback: AnyCallBack) => Promise<void>,
+	on: (kind: OnMessage, callback: AnyCallBack) => WindowEthereum,
+	removeListener: (kind: OnMessage, callback: AnyCallBack) => WindowEthereum,
 	isConnected: () => boolean,
 	enable: () => void,
 }
@@ -132,7 +132,7 @@ interface Window {
 	ethereum?: WindowEthereum
 }
 
-type OnMessage = "accountsChanged" | "message" | "connect" | "error" | "close" | "disconnect" | "chainChanged"
+type OnMessage = 'accountsChanged' | 'message' | 'connect' | 'close' | 'disconnect' | 'chainChanged'
 
 class InterceptorMessageListener {
 	private connected: boolean = false
@@ -194,52 +194,58 @@ class InterceptorMessageListener {
 			.catch(error => callback({ jsonrpc: '2.0', id: payload.id, error: { code: error.code, message: error.message, data: { ...error.data, stack: error.stack } } }, null))
 	}
 
-	private readonly WindowEthereumOn = async (kind: OnMessage, callback: AnyCallBack) => {
+	static exhaustivenessCheck = (_thing: never) => {}
+
+	private readonly WindowEthereumOn = (kind: OnMessage, callback: AnyCallBack) => {
+		if (window.ethereum === undefined) throw new Error('window.ethereum is not defined')
 		switch (kind) {
 			case 'accountsChanged':
 				this.onAccountsChangedCallBacks.add( callback as (accounts: readonly string[]) => void )
-				return
+				break
 			case 'message':
 				this.onMessageCallBacks.add(callback as (message: ProviderMessage) => void)
-				return
+				break
 			case 'connect':
 				this.onConnectCallBacks.add(callback as (connectInfo: ProviderConnectInfo) => void)
-				return
+				break
 			case 'close': //close is deprecated on eip-1193 by disconnect but its still used by dapps (MyEtherWallet)
 				this.onDisconnectCallBacks.add(callback as (error: ProviderRpcError) => void)
-				return
+				break
 			case 'disconnect':
 				this.onDisconnectCallBacks.add(callback as (error: ProviderRpcError) => void)
-				return
+				break
 			case 'chainChanged':
 				this.onChainChangedCallBacks.add(callback as (chainId: string) => void)
-				return
-			default:
+				break
+			default: InterceptorMessageListener.exhaustivenessCheck(kind)
 		}
+		return window.ethereum
 	}
 
-	private readonly WindowEthereumRemoveListener = async (kind: OnMessage, callback: AnyCallBack) => {
+	private readonly WindowEthereumRemoveListener = (kind: OnMessage, callback: AnyCallBack) => {
+		if (window.ethereum === undefined) throw new Error('window.ethereum is not defined')
 		switch (kind) {
 			case 'accountsChanged':
 				this.onAccountsChangedCallBacks.delete(callback as (accounts: readonly string[]) => void)
-				return
+				break
 			case 'message':
 				this.onMessageCallBacks.delete(callback as (message: ProviderMessage) => void)
-				return
+				break
 			case 'connect':
 				this.onConnectCallBacks.delete(callback as (connectInfo: ProviderConnectInfo) => void)
-				return
+				break
 			case 'close': //close is deprecated on eip-1193 by disconnect but its still used by dapps (MyEtherWallet)
 				this.onDisconnectCallBacks.delete(callback as (error: ProviderRpcError) => void)
-				return
+				break
 			case 'disconnect':
 				this.onDisconnectCallBacks.delete(callback as (error: ProviderRpcError) => void)
-				return
+				break
 			case 'chainChanged':
 				this.onChainChangedCallBacks.delete(callback as (chainId: string) => void)
-				return
-			default:
+				break
+			default: InterceptorMessageListener.exhaustivenessCheck(kind)
 		}
+		return window.ethereum
 	}
 
 	private readonly WindowEthereumEnable = async () => this.WindowEthereumRequest({ method: 'eth_requestAccounts' })
