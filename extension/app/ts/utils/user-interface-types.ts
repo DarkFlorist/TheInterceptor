@@ -7,6 +7,13 @@ import { CHAINS } from './constants.js'
 import { SignerName } from './interceptor-messages.js'
 import { WebsiteAccessArray } from '../background/settings.js'
 
+export type Website = funtypes.Static<typeof Website>
+export const Website = funtypes.Object({
+	websiteOrigin: funtypes.String,
+	icon: funtypes.Union(funtypes.String, funtypes.Undefined),
+	title: funtypes.Union(funtypes.String, funtypes.Undefined),
+})
+
 export type CHAIN = keyof typeof CHAINS
 export const CHAIN = funtypes.Union(funtypes.Literal('1'), funtypes.Literal('5'), funtypes.Literal('11155111'))
 
@@ -179,7 +186,7 @@ export type LogAnalysisParams = {
 }
 
 export type WebsiteApproval = {
-	origin: string,
+	websiteOrigin: string,
 	approved: boolean, // if user has approved connection
 }
 
@@ -195,8 +202,7 @@ export type NotificationCenterParams = {
 
 export type PendingAccessRequest = funtypes.Static<typeof PendingAccessRequest>
 export const PendingAccessRequest = funtypes.Object({
-	origin: funtypes.String,
-	icon: funtypes.Union(funtypes.String, funtypes.Undefined),
+	website: Website,
 	requestAccessToAddress: funtypes.Union(EthereumAddress, funtypes.Undefined),
 }).asReadonly()
 
@@ -213,9 +219,3 @@ export interface SignerState {
 }
 
 export type RenameAddressCallBack = (addressBookEntry: AddressBookEntry) => void
-
-
-export type WebsiteOriginAndIcon = {
-	websiteOrigin: string,
-	websiteIcon: string | undefined,
-}

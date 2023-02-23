@@ -2,7 +2,7 @@
 import { EthBalanceChanges, EthereumAddress, EthereumQuantity, EthereumSignedTransaction, EthereumTimestamp, SingleMulticallResponse } from './wire-types.js'
 import * as funtypes from 'funtypes'
 import { QUARANTINE_CODE } from '../simulation/protectors/quarantine-codes.js'
-import { AddressBookEntry, CHAIN, NFTEntry, RenameAddressCallBack, TokenEntry, WebsiteOriginAndIcon } from './user-interface-types.js'
+import { AddressBookEntry, CHAIN, NFTEntry, RenameAddressCallBack, TokenEntry, Website } from './user-interface-types.js'
 
 export type TokenVisualizerResult = funtypes.Static<typeof TokenVisualizerResult>
 export const TokenVisualizerResult = funtypes.Intersect(
@@ -81,6 +81,7 @@ export const SimResults = funtypes.Object( {
 	quarantine: funtypes.Boolean,
 	quarantineCodes: funtypes.ReadonlyArray(QUARANTINE_CODE),
 	visualizerResults: funtypes.Union(VisualizerResult, funtypes.Undefined),
+	website: Website,
 })
 
 export type SimulatedTransaction = funtypes.Static<typeof SimulatedTransaction>
@@ -88,6 +89,7 @@ export const SimulatedTransaction = funtypes.Object({
 	multicallResponse: SingleMulticallResponse,
 	signedTransaction: EthereumSignedTransaction,
 	realizedGasPrice: EthereumQuantity,
+	website: Website,
 })
 
 export type SimulationState = funtypes.Static<typeof SimulationState>
@@ -112,6 +114,7 @@ export type SimulatedAndVisualizedTransaction = {
 	realizedGasPrice: EthereumQuantity
 	ethBalanceChanges: readonly EthBalanceChangesWithMetadata[]
 	tokenResults: readonly TokenVisualizerResultWithMetadata[]
+	website: Website,
 	gasSpent: EthereumQuantity
 	quarantine: boolean
 	quarantineCodes: readonly QUARANTINE_CODE[]
@@ -155,7 +158,6 @@ export type TransactionVisualizationParameters = {
 	removeTransaction: (hash: bigint) => void,
 	activeAddress: bigint,
 	renameAddressCallBack: RenameAddressCallBack,
-	website: WebsiteOriginAndIcon,
 }
 
 export type TokenDefinitionParams = {

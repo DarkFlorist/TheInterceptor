@@ -2,6 +2,7 @@ import { bytes32String } from '../../utils/bigint.js'
 import { ERROR_INTERCEPTOR_NOT_READY, ERROR_INTERCEPTOR_NO_ACTIVE_ADDRESS, METAMASK_ERROR_NOT_CONNECTED_TO_CHAIN, METAMASK_ERROR_USER_REJECTED_REQUEST } from '../../utils/constants.js'
 import { Future } from '../../utils/future.js'
 import { PopupMessage } from '../../utils/interceptor-messages.js'
+import { Website } from '../../utils/user-interface-types.js'
 import { EthereumUnsignedTransaction } from '../../utils/wire-types.js'
 import { getActiveAddressForDomain } from '../accessManagement.js'
 import { appendTransactionToSimulator, refreshConfirmTransactionSimulation } from '../background.js'
@@ -39,15 +40,14 @@ const reject = function() {
 
 export async function openConfirmTransactionDialog(
 	requestId: number,
-	website: string,
-	websiteIcon: string | undefined,
+	website: Website,
 	simulationMode: boolean,
 	transactionToSimulatePromise: () => Promise<EthereumUnsignedTransaction>,
 ) {
 	if (pendingTransaction !== undefined) return reject() // previous window still loading
 	if (window.interceptor.settings === undefined) return ERROR_INTERCEPTOR_NOT_READY
 
-	const activeAddress = getActiveAddressForDomain(window.interceptor.settings.websiteAccess, (new URL(website)).hostname)
+	const activeAddress = getActiveAddressForDomain(window.interceptor.settings.websiteAccess, website.websiteOrigin)
 	if (activeAddress === undefined) return ERROR_INTERCEPTOR_NO_ACTIVE_ADDRESS
 
 	if (openedConfirmTransactionDialogWindow !== null && openedConfirmTransactionDialogWindow.id) {
@@ -57,7 +57,7 @@ export async function openConfirmTransactionDialog(
 
 	const transactionToSimulate = await transactionToSimulatePromise()
 
-	const refreshSimulationPromise = refreshConfirmTransactionSimulation(activeAddress, simulationMode, requestId, transactionToSimulate, (new URL(website)).hostname, websiteIcon)
+	const refreshSimulationPromise = refreshConfirmTransactionSimulation(activeAddress, simulationMode, requestId, transactionToSimulate, website)
 
 	const windowReadyAndListening = async function popupMessageListener(msg: unknown) {
 		const message = PopupMessage.parse(msg)
@@ -91,7 +91,7 @@ export async function openConfirmTransactionDialog(
 	if (reply !== 'Approved') return reject()
 	if (!simulationMode) return { forward: true as const }
 
-	const appended = await appendTransactionToSimulator(transactionToSimulate)
+	const appended = await appendTransactionToSimulator(transactionToSimulate, website)
 	if (appended === undefined) {
 		return {
 			error: {

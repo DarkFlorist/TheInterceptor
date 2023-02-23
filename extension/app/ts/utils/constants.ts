@@ -115,7 +115,12 @@ export const MAKE_YOU_RICH_TRANSACTION = {
 	gas: 21000n,
 	value: 200000000000000000000000n,
 	input: new Uint8Array(0),
-	accessList: []
+	accessList: [],
+	website: {
+		websiteOrigin: 'The Interceptor',
+		title: 'The Interceptor',
+		icon: undefined,
+	},
 }
 
 export const TIME_BETWEEN_BLOCKS = 12

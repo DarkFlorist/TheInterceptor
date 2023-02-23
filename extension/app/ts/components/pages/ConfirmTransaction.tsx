@@ -5,19 +5,19 @@ import Hint from '../subcomponents/Hint.js'
 import { GasFee, LogAnalysisCard, SimulatedInBlockNumber, TransactionHeader, TransactionsAccountChangesCard } from '../simulationExplaining/SimulationSummary.js'
 import { Spinner } from '../subcomponents/Spinner.js'
 import { AddNewAddress } from './AddNewAddress.js'
-import { AddingNewAddressType, AddressBookEntry, WebsiteOriginAndIcon } from '../../utils/user-interface-types.js'
+import { AddingNewAddressType, AddressBookEntry, Website } from '../../utils/user-interface-types.js'
 import { sendPopupMessageToBackgroundPage } from '../../background/backgroundUtils.js'
 import { formSimulatedAndVisualizedTransaction } from '../formVisualizerResults.js'
 import { addressString } from '../../utils/bigint.js'
 import { EthereumUnsignedTransaction } from '../../utils/wire-types.js'
 import { SignerLogoText, getSignerName } from '../subcomponents/signers.js'
-import { SmallAddress, Website } from '../subcomponents/address.js'
+import { SmallAddress, WebsiteOriginText } from '../subcomponents/address.js'
 import { nameTransaction, nameTransactionAction } from '../simulationExplaining/identifyTransaction.js'
 import { ErrorCheckBox } from '../subcomponents/Error.js'
 import { TransactionImportanceBlock } from '../simulationExplaining/Transactions.js'
 
 type TransactionCardParams = {
-	simulationAndVisualisationResults: SimulationAndVisualisationResults & WebsiteOriginAndIcon,
+	simulationAndVisualisationResults: SimulationAndVisualisationResults,
 	renameAddressCallBack: (entry: AddressBookEntry) => void,
 	activeAddress: bigint,
 	resetButton: boolean,
@@ -94,7 +94,7 @@ function TransactionCard(param: TransactionCardParams) {
 
 export function ConfirmTransaction() {
 	const [requestIdToConfirm, setRequestIdToConfirm] = useState<number | undefined>(undefined)
-	const [simulationAndVisualisationResults, setSimulationAndVisualisationResults] = useState<(SimulationAndVisualisationResults & WebsiteOriginAndIcon) | undefined >(undefined)
+	const [simulationAndVisualisationResults, setSimulationAndVisualisationResults] = useState<SimulationAndVisualisationResults & ({ website: Website }) | undefined >(undefined)
 	const [transactionToSimulate, setTransactionToSimulate] = useState<EthereumUnsignedTransaction | undefined>(undefined)
 	const [sender, setSender] = useState<AddressBookEntry | undefined>(undefined)
 	const [forceSend, setForceSend] = useState<boolean>(false)
@@ -133,8 +133,7 @@ export function ConfirmTransaction() {
 				activeAddress: message.data.activeAddress,
 				simulationMode: message.data.simulationMode,
 				addressMetaData: message.data.addressBookEntries,
-				websiteOrigin: message.data.websiteOrigin,
-				websiteIcon: message.data.websiteIcon,
+				website: message.data.website,
 			})
 		}
 		browser.runtime.onMessage.addListener(popupMessageListener)
@@ -163,8 +162,7 @@ export function ConfirmTransaction() {
 				simulationMode: simulationAndVisualisationResults.simulationMode,
 				requestId: requestIdToConfirm,
 				transactionToSimulate: transactionToSimulate,
-				websiteOrigin: simulationAndVisualisationResults.websiteOrigin,
-				websiteIcon: simulationAndVisualisationResults.websiteIcon,
+				website: simulationAndVisualisationResults.website,
 			}
 		} )
 	}
@@ -216,7 +214,7 @@ export function ConfirmTransaction() {
 					<div style = 'overflow-y: auto'>
 						<header class = 'card-header window-header' style = 'height: 40px; border-top-left-radius: 0px; border-top-right-radius: 0px'>
 							<div class = 'card-header-icon noselect nopointer' style = 'overflow: hidden; padding: 0px;'>
-								<Website { ...simulationAndVisualisationResults } />
+								<WebsiteOriginText { ...simulationAndVisualisationResults.website } />
 							</div>
 							<p class = 'card-header-title' style = 'overflow: hidden; font-weight: unset; flex-direction: row-reverse;'>
 								{ sender === undefined ? <></> : <SmallAddress

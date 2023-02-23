@@ -6,10 +6,10 @@ import { Settings, WebsiteAccessArray, WebsiteAddressAccess } from './settings.j
 import { requestAccessFromUser } from './windows/interceptorAccess.js'
 import { METAMASK_ERROR_USER_REJECTED_REQUEST } from '../utils/constants.js'
 import { EthereumQuantity } from '../utils/wire-types.js'
-import { retrieveWebsiteTabIcon, updateExtensionIcon } from './iconHandler.js'
-import { AddressInfoEntry } from '../utils/user-interface-types.js'
+import { retrieveWebsiteDetails, updateExtensionIcon } from './iconHandler.js'
+import { AddressInfoEntry, Website } from '../utils/user-interface-types.js'
 
-function setWebsitePortApproval(port: browser.runtime.Port, origin: string, approved: boolean) {
+function setWebsitePortApproval(port: browser.runtime.Port, websiteOrigin: string, approved: boolean) {
 	const tabId = port.sender?.tab?.id
 	if (window.interceptor.websitePortApprovals.get(port) === undefined) {
 		setEthereumNodeBlockPolling(true)
@@ -29,7 +29,7 @@ function setWebsitePortApproval(port: browser.runtime.Port, origin: string, appr
 		})
 	}
 	const websiteApproval = {
-		origin: origin,
+		websiteOrigin: websiteOrigin,
 		approved: approved
 	}
 	window.interceptor.websitePortApprovals.set(port, websiteApproval)
@@ -46,28 +46,28 @@ export async function verifyAccess(port: browser.runtime.Port, callMethod: strin
 	const connection = window.interceptor.websitePortApprovals.get(port)
 	if ( connection && connection.approved ) return true
 
-	const origin = (new URL(port.sender.url)).hostname
+	const websiteOrigin = (new URL(port.sender.url)).hostname
 	// ask user for permission only if this is an RPC method that we handle. otherwise some metamask callbacks will trigger access request
 	// we could just ask user permisson on eth_request accounts, but I feel its more dynamic when you can use any eth method for it
 	const isRpcMethod = SupportedETHRPCCalls.includes(callMethod) !== undefined
 	const activeAddress = getActiveAddress()
 	if (activeAddress !== undefined) {
 
-		const addressAccess = hasAddressAccess(window.interceptor.settings.websiteAccess, origin, activeAddress)
+		const addressAccess = hasAddressAccess(window.interceptor.settings.websiteAccess, websiteOrigin, activeAddress)
 		if (addressAccess === 'hasAccess') {
-			return connectToPort(port, origin)
+			return connectToPort(port, websiteOrigin)
 		}
 
 		// access not found, ask access
 		const addressInfo = findAddressInfo(activeAddress, window.interceptor.settings.userAddressBook.addressInfos)
-
-		const accessReply = await requestAccessFromUser(port, origin, await retrieveWebsiteTabIcon(port.sender?.tab?.id), addressInfo, getAssociatedAddresses(window.interceptor.settings, origin, addressInfo ))
+		const website = await retrieveWebsiteDetails(port, websiteOrigin)
+		const accessReply = await requestAccessFromUser(port, website, addressInfo, getAssociatedAddresses(window.interceptor.settings, websiteOrigin, addressInfo ))
 		if (accessReply.userRequestedAddressChange) {
 			const changedActiveAddress = getActiveAddress()
 			if (changedActiveAddress === undefined) return false
-			const addressAccess = hasAddressAccess(window.interceptor.settings.websiteAccess, origin, changedActiveAddress)
+			const addressAccess = hasAddressAccess(window.interceptor.settings.websiteAccess, websiteOrigin, changedActiveAddress)
 			if (addressAccess === 'hasAccess') {
-				return connectToPort(port, origin)
+				return connectToPort(port, websiteOrigin)
 			}
 			return false
 		}
@@ -77,18 +77,19 @@ export async function verifyAccess(port: browser.runtime.Port, callMethod: strin
 			&& accessReply.approved
 			&& accessReply.requestAccessToAddress === addressInfo.address
 		) {
-			return connectToPort(port, origin)
+			return connectToPort(port, websiteOrigin)
 		}
 
 		return false
 	}
 
-	const access = hasAccess(window.interceptor.settings.websiteAccess, origin)
+	const access = hasAccess(window.interceptor.settings.websiteAccess, websiteOrigin)
 	if (access === 'hasAccess') {
-		return connectToPort(port, origin)
+		return connectToPort(port, websiteOrigin)
 	}
 
-	const accessReply = await requestAccessFromUser(port, origin, await retrieveWebsiteTabIcon(port.sender?.tab?.id), undefined, getAssociatedAddresses(window.interceptor.settings, origin, undefined ) )
+	const website = await retrieveWebsiteDetails(port, websiteOrigin)
+	const accessReply = await requestAccessFromUser(port, website, undefined, getAssociatedAddresses(window.interceptor.settings, websiteOrigin, undefined ) )
 	if (accessReply.userRequestedAddressChange === true || accessReply.requestAccessToAddress !== undefined) throw new Error('We did not ask for address specific address but got one anyway')
 
 	if (access === 'notFound'
@@ -96,7 +97,7 @@ export async function verifyAccess(port: browser.runtime.Port, callMethod: strin
 		&& accessReply.approved
 		&& accessReply.requestAccessToAddress === undefined
 	) {
-		return connectToPort(port, origin)
+		return connectToPort(port, websiteOrigin)
 	}
 
 	return false
@@ -118,7 +119,7 @@ export function sendActiveAccountChangeToApprovedWebsitePorts() {
 	// inform all the tabs about the address change
 	for (const [port, connection] of window.interceptor.websitePortApprovals.entries() ) {
 		if ( !connection.approved ) continue
-		const activeAddress = getActiveAddressForDomain(window.interceptor.settings.websiteAccess, connection.origin)
+		const activeAddress = getActiveAddressForDomain(window.interceptor.settings.websiteAccess, connection.websiteOrigin)
 		postMessageIfStillConnected(port, {
 			interceptorApproved: true,
 			options: { method: 'accountsChanged' },
@@ -127,18 +128,18 @@ export function sendActiveAccountChangeToApprovedWebsitePorts() {
 	}
 }
 
-export function hasAccess(websiteAccess: WebsiteAccessArray, origin: string) : 'hasAccess' | 'noAccess' | 'notFound' {
+export function hasAccess(websiteAccess: WebsiteAccessArray, websiteOrigin: string) : 'hasAccess' | 'noAccess' | 'notFound' {
 	for (const web of websiteAccess) {
-		if (web.origin === origin) {
+		if (web.website.websiteOrigin === websiteOrigin) {
 			return web.access ? 'hasAccess' : 'noAccess'
 		}
 	}
 	return 'notFound'
 }
 
-export function hasAddressAccess(websiteAccess: WebsiteAccessArray, origin: string, address: bigint) : 'hasAccess' | 'noAccess' | 'notFound' {
+export function hasAddressAccess(websiteAccess: WebsiteAccessArray, websiteOrigin: string, address: bigint) : 'hasAccess' | 'noAccess' | 'notFound' {
 	for (const web of websiteAccess) {
-		if (web.origin === origin) {
+		if (web.website.websiteOrigin === websiteOrigin) {
 			if (!web.access) return 'noAccess'
 			if (web.addressAccess !== undefined) {
 				for (const addressAccess of web.addressAccess ) {
@@ -155,9 +156,9 @@ export function hasAddressAccess(websiteAccess: WebsiteAccessArray, origin: stri
 	return 'notFound'
 }
 
-export function getAddressAccesses(websiteAccess: WebsiteAccessArray, origin: string) : readonly WebsiteAddressAccess[] {
+export function getAddressAccesses(websiteAccess: WebsiteAccessArray, websiteOrigin: string) : readonly WebsiteAddressAccess[] {
 	for (const web of websiteAccess) {
-		if (web.origin === origin) {
+		if (web.website.websiteOrigin === websiteOrigin) {
 			return web.addressAccess === undefined ? [] : web.addressAccess
 		}
 	}
@@ -167,47 +168,58 @@ export function getAddressesThatDoNotNeedIndividualAccesses(settings: Settings) 
 	return settings.userAddressBook.addressInfos.filter( (x) => x.askForAddressAccess === false).map( (x) => x.address)
 }
 
-export function setAccess(websiteAccess: WebsiteAccessArray, origin: string, originIcon: string | undefined, access: boolean, address: bigint | undefined) : WebsiteAccessArray {
-	const oldAccess = hasAccess(websiteAccess, origin)
+export function setAccess(websiteAccess: WebsiteAccessArray, website: Website, access: boolean, address: bigint | undefined) : WebsiteAccessArray {
+	const oldAccess = hasAccess(websiteAccess, website.websiteOrigin)
 	if ( oldAccess === 'notFound') {
 		return [...websiteAccess,
 			{
-				origin: origin,
-				originIcon: originIcon,
+				website,
 				access: access,
 				addressAccess: address === undefined || !access ? undefined : [ { address: address, access: access } ]
 			}
 		]
 	}
 	return websiteAccess.map( (x) => {
-		if( x.origin === origin) {
+		if( x.website.websiteOrigin === website.websiteOrigin) {
 			if (address === undefined) {
 				return {
-					origin: origin,
-					originIcon: x.originIcon ? x.originIcon : originIcon,
+					website: {
+						...website,
+						icon: x.website.icon ? x.website.icon : website.icon,
+						title: x.website.title ? x.website.title : website.title,
+					},
 					access: access,
 					addressAccess: x.addressAccess,
 				}
 			}
 			if (x.addressAccess === undefined) {
 				return {
-					origin: origin,
-					originIcon: x.originIcon ? x.originIcon : originIcon,
+					website: {
+						...website,
+						icon: x.website.icon ? x.website.icon : website.icon,
+						title: x.website.title ? x.website.title : website.title,
+					},
 					access: x.access ? x.access : access,
 					addressAccess:  [ { address: address, access: access } ]
 				}
 			}
 			if (x.addressAccess.find( (x) => x.address === address) === undefined) {
 				return {
-					origin: origin,
-					originIcon: x.originIcon ? x.originIcon : originIcon,
+					website: {
+						...website,
+						icon: x.website.icon ? x.website.icon : website.icon,
+						title: x.website.title ? x.website.title : website.title,
+					},
 					access: x.access ? x.access : access,
 					addressAccess:  [ ...x.addressAccess, { address: address, access: access } ]
 				}
 			}
 			return {
-				origin: origin,
-				originIcon: x.originIcon ? x.originIcon : originIcon,
+				website: {
+					...website,
+					icon: x.website.icon ? x.website.icon : website.icon,
+					title: x.website.title ? x.website.title : website.title,
+				},
 				access: x.access ? x.access : access,
 				addressAccess: x.addressAccess.map( (x) => ( x.address === address ? { address: address, access: access } : x ) )
 			}
@@ -218,18 +230,18 @@ export function setAccess(websiteAccess: WebsiteAccessArray, origin: string, ori
 
 // gets active address if the website has been give access for it, otherwise returns undefined
 // this is to guard websites from seeing addresses without access
-export function getActiveAddressForDomain(websiteAccess: WebsiteAccessArray, origin: string) {
+export function getActiveAddressForDomain(websiteAccess: WebsiteAccessArray, websiteOrigin: string) {
 	const activeAddress = getActiveAddress()
 	if ( activeAddress === undefined) return undefined
-	const hasAccess = hasAddressAccess(websiteAccess, origin, activeAddress)
+	const hasAccess = hasAddressAccess(websiteAccess, websiteOrigin, activeAddress)
 	if( hasAccess === 'hasAccess' ) {
 		return activeAddress
 	}
 	return undefined
 }
 
-function connectToPort(port: browser.runtime.Port, origin: string): true {
-	setWebsitePortApproval(port, origin, true)
+function connectToPort(port: browser.runtime.Port, websiteOrigin: string): true {
+	setWebsitePortApproval(port, websiteOrigin, true)
 	updateExtensionIcon(port)
 
 	if (window.interceptor.settings === undefined) return true
@@ -242,7 +254,7 @@ function connectToPort(port: browser.runtime.Port, origin: string): true {
 	})
 
 	// seems like dapps also want to get account changed and chain changed events after we connect again, so let's send them too
-	const activeAddress = getActiveAddressForDomain(window.interceptor.settings.websiteAccess, origin)
+	const activeAddress = getActiveAddressForDomain(window.interceptor.settings.websiteAccess, websiteOrigin)
 	postMessageIfStillConnected(port, {
 		interceptorApproved: true,
 		options: { method: 'accountsChanged' },
@@ -257,8 +269,8 @@ function connectToPort(port: browser.runtime.Port, origin: string): true {
 	return true
 }
 
-function disconnectFromPort(port: browser.runtime.Port, origin: string): false {
-	setWebsitePortApproval(port, origin, false)
+function disconnectFromPort(port: browser.runtime.Port, websiteOrigin: string): false {
+	setWebsitePortApproval(port, websiteOrigin, false)
 	updateExtensionIcon(port)
 
 	postMessageIfStillConnected(port, {
@@ -269,21 +281,22 @@ function disconnectFromPort(port: browser.runtime.Port, origin: string): false {
 	return false
 }
 
-export function getAssociatedAddresses(settings: Settings, origin: string, activeAddress: AddressInfoEntry | undefined) : AddressInfoEntry[] {
-	const addressAccess = getAddressAccesses(settings.websiteAccess, origin).filter( (x) => x.access).map( (x) => x.address)
+export function getAssociatedAddresses(settings: Settings, websiteOrigin: string, activeAddress: AddressInfoEntry | undefined) : AddressInfoEntry[] {
+	const addressAccess = getAddressAccesses(settings.websiteAccess, websiteOrigin).filter( (x) => x.access).map( (x) => x.address)
 	const allAccessAddresses = getAddressesThatDoNotNeedIndividualAccesses(settings)
 
 	const all = allAccessAddresses.concat(addressAccess).concat(activeAddress === undefined ? [] : [activeAddress.address])
 	return Array.from(new Set(all)).map(x => findAddressInfo(x, settings.userAddressBook.addressInfos))
 }
 
-async function askUserForAccessOnConnectionUpdate(port: browser.runtime.Port, origin: string, activeAddress: AddressInfoEntry | undefined) {
+async function askUserForAccessOnConnectionUpdate(port: browser.runtime.Port, websiteOrigin: string, activeAddress: AddressInfoEntry | undefined) {
 	if (window.interceptor.settings === undefined) return
 
-	const accessReply = await requestAccessFromUser(port, origin, await retrieveWebsiteTabIcon(port.sender?.tab?.id), activeAddress, getAssociatedAddresses(window.interceptor.settings, origin, activeAddress))
+	const website = await retrieveWebsiteDetails(port, websiteOrigin)
+	const accessReply = await requestAccessFromUser(port, website, activeAddress, getAssociatedAddresses(window.interceptor.settings, websiteOrigin, activeAddress))
 	// here if the reply was for diferent address (requestAccessFromUser can change the target address), we still want to connect even if the address is diferent
 	if (accessReply.approved) {
-		connectToPort(port, origin)
+		connectToPort(port, websiteOrigin)
 	}
 }
 
@@ -294,41 +307,41 @@ export function updateWebsiteApprovalAccesses() {
 	// update port connections and disconnect from ports that should not have access anymore
 	for (const [port, connection] of window.interceptor.websitePortApprovals.entries() ) {
 		updateExtensionIcon(port)
-		const websiteAccess = hasAccess(window.interceptor.settings.websiteAccess, connection.origin)
+		const websiteAccess = hasAccess(window.interceptor.settings.websiteAccess, connection.websiteOrigin)
 		if (activeAddress) {
 			// check for address access changes
-			const addressAccess = hasAddressAccess(window.interceptor.settings.websiteAccess, connection.origin, activeAddress)
+			const addressAccess = hasAddressAccess(window.interceptor.settings.websiteAccess, connection.websiteOrigin, activeAddress)
 
 			if (addressAccess === 'notFound') {
-				askUserForAccessOnConnectionUpdate(port, connection.origin, findAddressInfo(activeAddress, window.interceptor.settings.userAddressBook.addressInfos) )
+				askUserForAccessOnConnectionUpdate(port, connection.websiteOrigin, findAddressInfo(activeAddress, window.interceptor.settings.userAddressBook.addressInfos) )
 			}
 
 			// access has been denied or removed for the address, but it was approved before
 			if ( addressAccess !== 'hasAccess' && connection.approved) {
-				disconnectFromPort(port, connection.origin)
+				disconnectFromPort(port, connection.websiteOrigin)
 				continue
 			}
 			// access has been granted for the address and it was not approved before
 			if ( addressAccess === 'hasAccess' && !connection.approved) {
-				connectToPort(port, connection.origin)
+				connectToPort(port, connection.websiteOrigin)
 				continue
 			}
 			continue
 		}
 
 		if (websiteAccess === 'notFound') {
-			askUserForAccessOnConnectionUpdate(port, connection.origin, undefined)
+			askUserForAccessOnConnectionUpdate(port, connection.websiteOrigin, undefined)
 		}
 
 		// access has been denied or removed for the whole webpage, but it was approved before
 		if ( websiteAccess !== 'hasAccess' && connection.approved) {
-			disconnectFromPort(port, connection.origin)
+			disconnectFromPort(port, connection.websiteOrigin)
 			continue
 		}
 
 		// access has been granted, but it was rejected before
 		if ( websiteAccess === 'hasAccess' && !connection.approved) {
-			connectToPort(port, connection.origin)
+			connectToPort(port, connection.websiteOrigin)
 			continue
 		}
 	}

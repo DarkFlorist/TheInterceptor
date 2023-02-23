@@ -1,6 +1,6 @@
 import { MOCK_PRIVATE_KEYS_ADDRESS } from '../utils/constants.js'
 import { AddressBookTabIdSetting } from '../utils/interceptor-messages.js'
-import { AddressInfo, ContactEntries, Page, PendingAccessRequestArray } from '../utils/user-interface-types.js'
+import { AddressInfo, ContactEntries, Page, PendingAccessRequestArray, Website } from '../utils/user-interface-types.js'
 import { EthereumAddress, EthereumQuantity } from '../utils/wire-types.js'
 import * as funtypes from 'funtypes'
 
@@ -23,10 +23,19 @@ export const WebsiteAddressAccess = funtypes.Object({
 	access: funtypes.Boolean,
 }).asReadonly()
 
-export type WebsiteAccess = funtypes.Static<typeof WebsiteAccess>
-export const WebsiteAccess = funtypes.Object({
+type LegacyWebsiteAccess = funtypes.Static<typeof WebsiteAccess>
+const LegacyWebsiteAccess = funtypes.Object({
 	origin: funtypes.String,
 	originIcon: funtypes.Union(funtypes.String, funtypes.Undefined),
+	access: funtypes.Boolean,
+	addressAccess: funtypes.Union(funtypes.ReadonlyArray(WebsiteAddressAccess), funtypes.Undefined),
+})
+type LegacyWebsiteAccessArray = funtypes.Static<typeof LegacyWebsiteAccessArray>
+const LegacyWebsiteAccessArray = funtypes.ReadonlyArray(LegacyWebsiteAccess)
+
+export type WebsiteAccess = funtypes.Static<typeof WebsiteAccess>
+export const WebsiteAccess = funtypes.Object({
+	website: Website,
 	access: funtypes.Boolean,
 	addressAccess: funtypes.Union(funtypes.ReadonlyArray(WebsiteAddressAccess), funtypes.Undefined),
 }).asReadonly()
@@ -34,6 +43,8 @@ export const WebsiteAccess = funtypes.Object({
 export type WebsiteAccessArray = funtypes.Static<typeof WebsiteAccessArray>
 export const WebsiteAccessArray = funtypes.ReadonlyArray(WebsiteAccess)
 
+export type WebsiteAccessArrayWithLegacy = funtypes.Static<typeof WebsiteAccessArrayWithLegacy>
+export const WebsiteAccessArrayWithLegacy = funtypes.Union(LegacyWebsiteAccessArray, WebsiteAccessArray)
 
 export type UserAddressBook = funtypes.Static<typeof UserAddressBook>
 export const UserAddressBook = funtypes.Object({
@@ -54,6 +65,24 @@ export interface Settings {
 	userAddressBook: UserAddressBook,
 }
 
+function parseAccessWithLegacySupport(data: unknown): WebsiteAccessArray {
+	const parsed = WebsiteAccessArrayWithLegacy.parse(data)
+	if (parsed.length === 0) return []
+	if ('origin' in parsed[0]) {
+		const legacy = LegacyWebsiteAccessArray.parse(data)
+		return legacy.map((x) => ({
+			access: x.access,
+			addressAccess: x.addressAccess,
+			website: {
+				websiteOrigin: x.origin,
+				icon: x.originIcon,
+				title: undefined,
+			},
+		}))
+	}
+	return WebsiteAccessArray.parse(data)
+}
+
 export async function getSettings() : Promise<Settings> {
 	const isEmpty = (obj: Object) => { return Object.keys(obj).length === 0 }
 	const results = await browser.storage.local.get([
@@ -66,7 +95,7 @@ export async function getSettings() : Promise<Settings> {
 		'websiteAccess',
 		'activeChain',
 		'simulationMode',
-		'pendingAccessRequests',
+		'pendingAccessRequestNotifications',
 		'contacts',
 	])
 	console.log(results)
@@ -76,13 +105,13 @@ export async function getSettings() : Promise<Settings> {
 		page: results.page !== undefined && !isEmpty(results.page) ? parseInt(results.page) : Page.Home,
 		makeMeRich: results.makeMeRich !== undefined ? results.makeMeRich : false,
 		useSignersAddressAsActiveAddress: results.useSignersAddressAsActiveAddress !== undefined ? results.useSignersAddressAsActiveAddress : false,
-		websiteAccess: WebsiteAccessArray.parse(results.websiteAccess !== undefined ? results.websiteAccess : []),
+		websiteAccess: results.websiteAccess !== undefined ? parseAccessWithLegacySupport(results.websiteAccess) : [],
 		activeChain: results.activeChain !== undefined ? EthereumQuantity.parse(results.activeChain) : 1n,
 		simulationMode: results.simulationMode !== undefined ? results.simulationMode : true,
-		pendingAccessRequests: PendingAccessRequestArray.parse(results.pendingAccessRequests !== undefined ? results.pendingAccessRequests : []),
+		pendingAccessRequests: PendingAccessRequestArray.parse(results.pendingAccessRequestNotifications !== undefined ? results.pendingAccessRequestNotifications : []),
 		userAddressBook: {
 			addressInfos: results.addressInfos !== undefined && !isEmpty(results.addressInfos) ? results.addressInfos.map( (x: AddressInfo) => AddressInfo.parse(x)) : defaultAddresses,
-			contacts: ContactEntries.parse(results.contacts !== undefined ? results.contacts : []),	
+			contacts: ContactEntries.parse(results.contacts !== undefined ? results.contacts : []),
 		}
 	}
 }
