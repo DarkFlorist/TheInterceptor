@@ -255,7 +255,7 @@ export function ConfirmTransaction() {
 								{ simulationAndVisualisationResults.simulationMode ? `Simulate ${ buttonNameAddon(simulationAndVisualisationResults, simulationAndVisualisationResults.activeAddress) }!` :
 									<SignerLogoText {...{
 										signerName,
-										text: `${ buttonNameAddon(simulationAndVisualisationResults, simulationAndVisualisationResults.activeAddress) } ${ getSignerName(signerName) }`
+										text: `Sign ${ buttonNameAddon(simulationAndVisualisationResults, simulationAndVisualisationResults.activeAddress) } with ${ getSignerName(signerName) }`
 									}}/>
 								}
 							</button>

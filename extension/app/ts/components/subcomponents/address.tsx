@@ -220,7 +220,7 @@ export function FromSmallAddressToSmallAddress({ from, to, renameAddressCallBack
 export function WebsiteOriginText( { icon, websiteOrigin, textColor }: Website & { textColor?: string }) {
 	return <a style = 'margin: 2px; border-radius: 40px 40px 40px 40px; display: flex; padding: 4px 10px 4px 10px; overflow: hidden;'>
 		<span style = 'margin-right: 5px; width: 24px; height: 24px; min-width: 24px'>
-			<img src = { icon } alt = 'Logo' style = 'width: 24px; height: 24px;'/>
+			<img src = { icon } style = 'width: 24px; height: 24px;'/>
 		</span>
 		<p class = 'address-text' style = {`color: ${ textColor === undefined ? 'var(--text-color)' : textColor }; padding-left: 5px;` }>{ websiteOrigin }</p>
 	</a>

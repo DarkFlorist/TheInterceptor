@@ -530,7 +530,7 @@ export function TransactionHeader( { tx, renameAddressCallBack, activeAddress, r
 			{ nameTransaction(tx, activeAddress) }
 		</p>
 		{ tx.to  === undefined ? <></> :
-			<p class = 'card-header-icon' style = 'margin-left: auto; margin-right: 0; padding-right: 10px; padding-left: 0px;'>
+			<p class = 'card-header-icon' style = 'margin-left: auto; margin-right: 0; padding-right: 10px; padding-left: 0px; overflow: hidden'>
 				<SmallAddress
 					addressBookEntry = { tx.to }
 					renameAddressCallBack = { renameAddressCallBack }
