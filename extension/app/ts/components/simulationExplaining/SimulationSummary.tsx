@@ -458,7 +458,7 @@ export function TransactionsAccountChangesCard({ tx, renameAddressCallBack, addr
 			<div class = 'card-content'>
 				<div class = 'container' style = 'margin-bottom: 10px;'>
 					{ ownAddresses.length == 0 ? <p class = 'paragraph'> No changes to your accounts </p>
-						: <div class = 'notification' style = 'background-color: var(--importance-box-color); color: var(--text-color)'>
+						: <div class = 'notification transaction-importance-box'>
 							{ ownAddresses.map( ([_index, balanceSummary], index) => <>
 								<SummarizeAddress
 									balanceSummary = { balanceSummary }
@@ -600,7 +600,7 @@ export function SimulationSummary(param: SimulationSummaryParams) {
 			<div class = 'card-content'>
 				<div class = 'container' style = 'margin-bottom: 10px'>
 					{ ownAddresses.length == 0 ?<p class = 'paragraph'> No changes to your accounts </p>
-						: <div class = 'notification' style = 'background-color: var(--importance-box-color);color: var(--text-color)'>
+						: <div class = 'notification transaction-importance-box'>
 							{ ownAddresses.map( ([_index, balanceSummary], index) => <>
 								<SummarizeAddress
 									balanceSummary = { balanceSummary }
