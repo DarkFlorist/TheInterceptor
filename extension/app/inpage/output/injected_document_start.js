@@ -165,7 +165,7 @@ class InterceptorMessageListener {
                 case 'chainChanged':
                     this.onChainChangedCallBacks.add(callback);
                     break;
-                default:
+                default: InterceptorMessageListener.exhaustivenessCheck(kind);
             }
             return window.ethereum;
         };
@@ -191,7 +191,7 @@ class InterceptorMessageListener {
                 case 'chainChanged':
                     this.onChainChangedCallBacks.delete(callback);
                     break;
-                default:
+                default: InterceptorMessageListener.exhaustivenessCheck(kind);
             }
             return window.ethereum;
         };
@@ -383,6 +383,7 @@ class InterceptorMessageListener {
         this.injectEthereumIntoWindow();
     }
 }
+InterceptorMessageListener.exhaustivenessCheck = (_thing) => { };
 InterceptorMessageListener.checkErrorForCode = (error) => {
     if (typeof error !== 'object')
         return false;

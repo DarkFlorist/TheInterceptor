@@ -132,7 +132,7 @@ interface Window {
 	ethereum?: WindowEthereum
 }
 
-type OnMessage = "accountsChanged" | "message" | "connect" | "error" | "close" | "disconnect" | "chainChanged"
+type OnMessage = 'accountsChanged' | 'message' | 'connect' | 'close' | 'disconnect' | 'chainChanged'
 
 class InterceptorMessageListener {
 	private connected: boolean = false
@@ -194,6 +194,8 @@ class InterceptorMessageListener {
 			.catch(error => callback({ jsonrpc: '2.0', id: payload.id, error: { code: error.code, message: error.message, data: { ...error.data, stack: error.stack } } }, null))
 	}
 
+	static exhaustivenessCheck = (_thing: never) => {}
+
 	private readonly WindowEthereumOn = (kind: OnMessage, callback: AnyCallBack) => {
 		if (window.ethereum === undefined) throw new Error('window.ethereum is not defined')
 		switch (kind) {
@@ -215,7 +217,7 @@ class InterceptorMessageListener {
 			case 'chainChanged':
 				this.onChainChangedCallBacks.add(callback as (chainId: string) => void)
 				break
-			default:
+			default: InterceptorMessageListener.exhaustivenessCheck(kind)
 		}
 		return window.ethereum
 	}
@@ -241,7 +243,7 @@ class InterceptorMessageListener {
 			case 'chainChanged':
 				this.onChainChangedCallBacks.delete(callback as (chainId: string) => void)
 				break
-			default:
+			default: InterceptorMessageListener.exhaustivenessCheck(kind)
 		}
 		return window.ethereum
 	}
