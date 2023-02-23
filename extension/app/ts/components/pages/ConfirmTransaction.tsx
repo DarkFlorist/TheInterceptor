@@ -21,9 +21,7 @@ type TransactionCardParams = {
 	renameAddressCallBack: (entry: AddressBookEntry) => void,
 	activeAddress: bigint,
 	resetButton: boolean,
-	refreshSimulation: () => void,
 	currentBlockNumber: bigint | undefined,
-	refreshPressed: boolean,
 }
 
 function TransactionCard(param: TransactionCardParams) {
@@ -101,13 +99,15 @@ export function ConfirmTransaction() {
 	const [currentBlockNumber, setCurrentBlockNumber] = useState<undefined | bigint>(undefined)
 	const [signerName, setSignerName] = useState<SignerName | undefined>(undefined)
 	const [addingNewAddress, setAddingNewAddress] = useState<AddingNewAddressType | 'renameAddressModalClosed'> ('renameAddressModalClosed')
-	const [refreshPressed, setRefreshPressed] = useState<boolean>(false)
 
 	useEffect( () => {
 		function popupMessageListener(msg: unknown) {
 			const message = MessageToPopup.parse(msg)
 
-			if (message.method === 'popup_new_block_arrived') return setCurrentBlockNumber(message.data.blockNumber)
+			if (message.method === 'popup_new_block_arrived') {
+				refreshSimulation()
+				return setCurrentBlockNumber(message.data.blockNumber)
+			}
 
 			if (message.method !== 'popup_confirm_transaction_simulation_state_changed') return
 
@@ -115,7 +115,6 @@ export function ConfirmTransaction() {
 				setCurrentBlockNumber(message.data.simulationState.blockNumber)
 			}
 
-			setRefreshPressed(false)
 			setSignerName(message.data.signerName)
 			setRequestIdToConfirm(message.data.requestId)
 			const addressMetaData = new Map(message.data.addressBookEntries.map( (x) => [addressString(x.address), x]))
@@ -137,11 +136,12 @@ export function ConfirmTransaction() {
 			})
 		}
 		browser.runtime.onMessage.addListener(popupMessageListener)
-		sendPopupMessageToBackgroundPage( { method: 'popup_confirmTransactionReadyAndListening' } )
 
-		return () => {
-			browser.runtime.onMessage.removeListener(popupMessageListener)
-		}
+		return () => browser.runtime.onMessage.removeListener(popupMessageListener)
+	})
+
+	useEffect( () => {
+		sendPopupMessageToBackgroundPage( { method: 'popup_confirmTransactionReadyAndListening' } )
 	}, [])
 
 	function approve() {
@@ -152,9 +152,8 @@ export function ConfirmTransaction() {
 		if (requestIdToConfirm === undefined) throw new Error('request id is not set')
 		sendPopupMessageToBackgroundPage( { method: 'popup_confirmDialog', options: { requestId: requestIdToConfirm, accept: false } } )
 	}
-	function refreshSimulation() {
+	const refreshSimulation = () => {
 		if (simulationAndVisualisationResults === undefined || requestIdToConfirm === undefined || transactionToSimulate === undefined) return
-		setRefreshPressed(true)
 		sendPopupMessageToBackgroundPage( {
 			method: 'popup_refreshConfirmTransactionDialogSimulation',
 			data: {
@@ -229,9 +228,7 @@ export function ConfirmTransaction() {
 							renameAddressCallBack = { renameAddressCallBack }
 							activeAddress = { simulationAndVisualisationResults.activeAddress }
 							resetButton = { false }
-							refreshSimulation = { refreshSimulation }
 							currentBlockNumber = { currentBlockNumber }
-							refreshPressed = { refreshPressed }
 						/>
 					</div>
 
