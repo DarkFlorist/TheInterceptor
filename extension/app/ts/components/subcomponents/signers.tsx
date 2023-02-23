@@ -19,10 +19,10 @@ export function getSignerLogo(signerName: SignerName | undefined ) {
 export function SignerLogoText(param: { signerName: SignerName | undefined, text: string }) {
 	const signerLogo = getSignerLogo(param.signerName)
 
-	return <span class = 'vertical-center'>
-		{ signerLogo ? <img class = 'vertical-center' style = 'width: 24px;' src = { signerLogo }/> : <></>}
-		<p class = 'vertical-center'> { param.text } </p>
-	</span>
+	return <p style = 'line-height: 24px'>
+		{ signerLogo ? <img style = 'width: 24px; height: 24px; vertical-align: bottom; margin-right: 5px' src = { signerLogo }/> : <></>}
+		{ param.text }
+	</p>
 }
 
 export function SignersLogoName(param: { signerName: SignerName | undefined}) {

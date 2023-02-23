@@ -27,7 +27,7 @@ export function nameTransactionAction(transaction: SimulatedAndVisualizedTransac
 	if (identifyTransaction(transaction, activeAddress) === 'MakeYouRichTransaction') {
 		return 'Rich'
 	}
-	if (transaction.input.length == 0) return 'Transfer Ether '
+	if (transaction.input.length == 0) return 'Ether Transfer'
 
 	//TODO: add simple token transfer
 
