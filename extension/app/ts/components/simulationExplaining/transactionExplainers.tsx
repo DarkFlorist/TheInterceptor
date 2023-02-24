@@ -1,7 +1,7 @@
 import { addressString } from '../../utils/bigint.js'
 import { TransactionVisualizationParameters } from '../../utils/visualizer-types.js'
 import { EtherAmount, EtherSymbol } from '../subcomponents/coins.js'
-import { nameTransaction } from './identifyTransaction.js'
+import { identifyTransaction } from './identifyTransaction.js'
 
 export const transactionExplainers = new Map<string, [string, string]>([
 	['0', ['Airdropping you', '🚁']],
@@ -30,7 +30,7 @@ export function makeYouRichTransaction(param: TransactionVisualizationParameters
 				</div>
 				<p class = 'card-header-title'>
 					<p className = 'paragraph'>
-						{ nameTransaction(param.tx, param.activeAddress) }
+						{ identifyTransaction(param.tx, param.activeAddress).title }
 					</p>
 				</p>
 				<button class = 'card-header-icon' aria-label = 'remove' onClick = { () => param.removeTransaction(param.tx.hash) }>

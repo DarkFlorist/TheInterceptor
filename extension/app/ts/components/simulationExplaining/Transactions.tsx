@@ -334,7 +334,7 @@ export const transactionExplainers = new Map<string, (param: TransactionVisualiz
 ])
 
 function Transaction(param: TransactionVisualizationParameters) {
-	const identifiedTransaction = identifyTransaction(param.tx, param.activeAddress)
+	const identifiedTransaction = identifyTransaction(param.tx, param.activeAddress).type
 	const handler = transactionExplainers.get(identifiedTransaction)
 	if (handler === undefined) {
 		return normalTransaction(param)

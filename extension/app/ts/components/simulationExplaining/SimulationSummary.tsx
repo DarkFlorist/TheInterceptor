@@ -8,7 +8,7 @@ import { CopyToClipboard } from '../subcomponents/CopyToClipboard.js'
 import { SomeTimeAgo } from '../subcomponents/SomeTimeAgo.js'
 import { CHAINS, MAKE_YOU_RICH_TRANSACTION } from '../../utils/constants.js'
 import { addressString } from '../../utils/bigint.js'
-import { identifyTransaction, nameTransaction } from './identifyTransaction.js'
+import { identifyTransaction } from './identifyTransaction.js'
 import { sendPopupMessageToBackgroundPage } from '../../background/backgroundUtils.js'
 import { identifySwap } from './SwapTransactions.js'
 import { useState } from 'preact/hooks'
@@ -417,7 +417,7 @@ export function LogAnalysisCard({ tx, renameAddressCallBack }: LogAnalysisCardPa
 
 function splitToOwnAndNotOwnAndCleanSummary(firstTx: SimulatedAndVisualizedTransaction | undefined, summary: SummaryOutcome[], activeAddress: bigint, chain: CHAIN) {
 	//remove eth donator if we are in rich mode
-	if (firstTx && identifyTransaction(firstTx, activeAddress) === 'MakeYouRichTransaction') {
+	if (firstTx && identifyTransaction(firstTx, activeAddress).type === 'MakeYouRichTransaction') {
 		removeEthDonator(chain, summary)
 	}
 
@@ -527,7 +527,7 @@ export function TransactionHeader( { tx, renameAddressCallBack, activeAddress, r
 		</div>
 
 		<p class = 'card-header-title' style = 'white-space: nowrap;'>
-			{ nameTransaction(tx, activeAddress) }
+			{ identifyTransaction(tx, activeAddress).title }
 		</p>
 		{ tx.to  === undefined ? <></> :
 			<p class = 'card-header-icon' style = 'margin-left: auto; margin-right: 0; padding-right: 10px; padding-left: 0px; overflow: hidden'>

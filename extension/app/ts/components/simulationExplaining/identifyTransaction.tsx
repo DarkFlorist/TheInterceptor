@@ -3,47 +3,21 @@ import { CHAINS, FourByteExplanations, isSupportedChain, MAKE_YOU_RICH_TRANSACTI
 import { SimulatedAndVisualizedTransaction } from '../../utils/visualizer-types.js'
 import { getSwapName, identifySwap } from './SwapTransactions.js'
 
-type TRANSACTION_TYPE = 'MakeYouRichTransaction' | 'NormalTransaction'
+type TRANSACTION_TYPE = 'MakeYouRichTransaction' | 'ArbitaryContractExecution' | 'EtherTransfer' | 'Swap' | 'ContractFallbackMethod'
 
-export function nameTransaction(transaction: SimulatedAndVisualizedTransaction, activeAddress: bigint ) {
-	if (identifyTransaction(transaction, activeAddress) === 'MakeYouRichTransaction') {
-		return 'Simply making you rich'
-	}
-	if (transaction.input.length == 0) return 'Ether Transfer'
-
-	//TODO: add simple token transfer
-
-	const identifiedSwap = identifySwap(transaction)
-	if (identifiedSwap) return getSwapName(identifiedSwap, transaction.chainId)
-
-	const fourByte = get4Byte(transaction.input)
-	if (fourByte === undefined) return 'Contract Fallback Method'
-	const explanation = FourByteExplanations.get(fourByte)
-	return explanation !== undefined ? explanation : 'Contract Execution'
+type IdenttifiedTransaction = {
+	type: TRANSACTION_TYPE,
+	title: string,
+	signingAction: string,
+	simulationAction: string,
+	rejectAction: string,
 }
 
-
-export function nameTransactionAction(transaction: SimulatedAndVisualizedTransaction, activeAddress: bigint ) {
-	if (identifyTransaction(transaction, activeAddress) === 'MakeYouRichTransaction') {
-		return 'Rich'
-	}
-	if (transaction.input.length == 0) return 'Ether Transfer'
-
-	//TODO: add simple token transfer
-
-	const identifiedSwap = identifySwap(transaction)
-	if (identifiedSwap) return 'Swap'
-
-	const fourByte = get4Byte(transaction.input)
-	if (fourByte === undefined) return 'Contract Fallback'
-	const explanation = FourByteExplanations.get(fourByte)
-	return explanation !== undefined ? explanation : 'Execute Contract'
-}
-
-export function identifyTransaction(transaction: SimulatedAndVisualizedTransaction, activeAddress: bigint): TRANSACTION_TYPE {
+export function identifyTransaction(transaction: SimulatedAndVisualizedTransaction, activeAddress: bigint): IdenttifiedTransaction {
 	const chainString = transaction.chainId.toString()
-	if (!isSupportedChain(chainString)) return 'NormalTransaction'
-	if (CHAINS[chainString].eth_donator === transaction.from.address
+
+	if (isSupportedChain(chainString)
+		&& CHAINS[chainString].eth_donator === transaction.from.address
 		&& transaction.to?.address === activeAddress
 		&& transaction.type === MAKE_YOU_RICH_TRANSACTION.type
 		&& transaction.maxFeePerGas === MAKE_YOU_RICH_TRANSACTION.maxFeePerGas
@@ -51,7 +25,60 @@ export function identifyTransaction(transaction: SimulatedAndVisualizedTransacti
 		&& transaction.input.toString() === MAKE_YOU_RICH_TRANSACTION.input.toString()
 		&& transaction.value === MAKE_YOU_RICH_TRANSACTION.value
 	) {
-		return 'MakeYouRichTransaction'
+		return {
+			type: 'MakeYouRichTransaction',
+			title: 'Simply making you rich',
+			signingAction: 'Make me rich',
+			simulationAction: 'Simulate richies',
+			rejectAction: 'Reject richies',
+		}
 	}
-	return 'NormalTransaction'
+
+	if (transaction.input.length == 0) return {
+		type: 'EtherTransfer',
+		title: 'Ether Transfer',
+		signingAction: 'Transfer Ether',
+		simulationAction: 'Simulate Ether Transfer',
+		rejectAction: 'Reject Ether Transfer',
+	}
+
+	const identifiedSwap = identifySwap(transaction)
+	if (identifiedSwap) {
+		const swapname = getSwapName(identifiedSwap, transaction.chainId)
+		return {
+			type: 'Swap',
+			title: swapname === undefined ? 'Swap' : swapname,
+			signingAction: 'Swap',
+			simulationAction: 'Simulate Swap',
+			rejectAction: 'Reject Swap',
+		}
+	}
+
+	const fourByte = get4Byte(transaction.input)
+	if (fourByte === undefined) return {
+		type: 'ArbitaryContractExecution',
+		title: 'Contract Fallback Method',
+		signingAction: 'Execute Contract',
+		simulationAction: 'Simulate Contract Execution',
+		rejectAction: 'Reject Contract Execution',
+	}
+
+	const explanation = FourByteExplanations.get(fourByte)
+
+	if (explanation === undefined) {
+		return {
+			type: 'ArbitaryContractExecution',
+			title: 'Contract Execution',
+			signingAction: 'Execute Contract',
+			simulationAction: 'Simulate Contract Execution',
+			rejectAction: 'Reject Contract Execution',
+		}
+	}
+	return {
+		type: 'ArbitaryContractExecution',
+		title: explanation === undefined ? 'Contract Execution' : explanation,
+		signingAction: `Sign ${ explanation }`,
+		simulationAction: `Simulate ${ explanation }`,
+		rejectAction: `Reject ${ explanation }`,
+	}
 }
