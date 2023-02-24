@@ -10,6 +10,7 @@ import { identifyTransaction } from './identifyTransaction.js'
 import { makeYouRichTransaction } from './transactionExplainers.js'
 import { JSXInternal } from 'preact/src/jsx'
 import { ApproveIcon, ArrowIcon } from '../subcomponents/icons.js'
+import { EtherTransferVisualisation } from './EtherTransferVisualisation.js'
 
 function isPositiveEvent(visResult: TokenVisualizerResultWithMetadata, ourAddressInReferenceFrame: bigint) {
 	if (!visResult.is721) {
@@ -168,13 +169,23 @@ export function TransactionImportanceBlock( param: TransactionImportanceBlockPar
 		<QuarantineCodes tx = { param.tx }/>
 	</>
 	const identifiedSwap = identifySwap(param.tx)
-	const textColor = 'var(--text-color)'
 
 	if (identifiedSwap) {
 		return <>
 			<SwapVisualization
 				identifiedSwap = { identifiedSwap }
 				chain = { param.simulationAndVisualisationResults.chain }
+			/>
+			<QuarantineCodes tx = { param.tx }/>
+		</>
+	}
+
+	const transactionIdentification = identifyTransaction(param.tx, param.simulationAndVisualisationResults.activeAddress)
+	if (transactionIdentification.type === 'EtherTransfer') {
+		return <>
+			<EtherTransferVisualisation
+				transaction = { param.tx }
+				renameAddressCallBack = { param.renameAddressCallBack }
 			/>
 			<QuarantineCodes tx = { param.tx }/>
 		</>
@@ -230,6 +241,8 @@ export function TransactionImportanceBlock( param: TransactionImportanceBlockPar
 			<QuarantineCodes tx = { param.tx }/>
 		</>
 	}
+
+	const textColor = 'var(--text-color)'
 
 	return <>
 		<div class = 'notification transaction-importance-box'>

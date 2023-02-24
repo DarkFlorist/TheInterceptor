@@ -2357,12 +2357,6 @@ div.icon-text {
   top: 0.5rem;
 }
 
-.notification .title,
-.notification .subtitle,
-.notification .content {
-  color: currentColor;
-}
-
 .notification.is-white {
   background-color: white;
   color: #0a0a0a;
