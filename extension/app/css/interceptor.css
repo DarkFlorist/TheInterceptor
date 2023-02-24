@@ -607,7 +607,15 @@ svg.spinner > circle {
 	text-overflow: ellipsis;
 }
 
-
 .checkbox-text {
 	padding-left: 0.2em;
+}
+
+.transaction-importance-box {
+	background-color: var(--importance-box-color);
+	padding: 10px;
+	margin: auto;
+	margin-bottom: 10px;
+	max-width: 400px;
+	color: var(--text-color)
 }
