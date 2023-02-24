@@ -200,7 +200,6 @@ export function ConfirmTransaction() {
 		</div>
 	}
 
-
 	if (simulationAndVisualisationResults === undefined) {
 		return <div class = 'center-to-page'>
 			<div class = 'vertical-center' style = 'scale: 3'>
