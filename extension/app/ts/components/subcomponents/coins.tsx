@@ -127,6 +127,7 @@ export function TokenSymbol(param: TokenSymbolParams) {
 						size = { 8 }
 						scale = { 3 }
 						borderRadius = { '50%' }
+						style = { { 'vertical-align': 'middle' } }
 					/>
 				:
 				<img class = 'noselect nopointer vertical-center' style = 'max-height: 25px; max-width: 25px;' src = { param.logoUri }/>

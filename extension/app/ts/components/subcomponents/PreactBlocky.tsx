@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'preact/hooks'
 import { DataURLCache } from './DataURLCache.js'
+import { JSX } from 'preact/jsx-runtime'
 const dataURLCache = new DataURLCache()
 
 interface BlockieProps {
@@ -10,6 +11,7 @@ interface BlockieProps {
 	bgColor?: string,
 	spotColor?: string,
 	borderRadius?: string,
+	style?: JSX.CSSProperties
 }
 
 function generateIdenticon(options: BlockieProps, canvasRef: HTMLCanvasElement) {
@@ -147,6 +149,7 @@ export default function Blockie(props: BlockieProps) {
 		src = { dataURL === undefined ? 'data:image/gif;base64,R0lGODlhAQABAAAAACwAAAAAAQABAAA=' : dataURL}
 		style = {
 			{
+				...props.style,
 				width: `${ dimension }px`,
 				height: `${ dimension }px`,
 				borderRadius: props.borderRadius ? props.borderRadius : '0%',
