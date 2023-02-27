@@ -218,7 +218,7 @@ export function AddressBook() {
 				changeFilter(activeFilterRef.current)
 				return
 			}
-			if (parsed.method !== 'popup_getAddressBookData') return
+			if (parsed.method !== 'popup_getAddressBookDataReply') return
 			const reply = GetAddressBookDataReply.parse(msg)
 			setAddressBookState((previousState) => {
 				if ( activeFilterRef.current !== reply.data.options.filter || searchStringRef.current !== reply.data.options.searchString) return previousState
