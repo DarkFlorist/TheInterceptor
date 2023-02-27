@@ -201,12 +201,12 @@ export function ConfirmTransaction() {
 	}
 
 	if (simulationAndVisualisationResults === undefined) {
-		return <div class = 'center-to-page'>
+		return <main class = 'center-to-page'>
 			<div class = 'vertical-center' style = 'scale: 3'>
 				<Spinner/>
 				<span style = 'margin-left: 0.2em' > Simulating... </span>
 			</div>
-		</div>
+		</main>
 	}
 
 	return (

@@ -140,7 +140,7 @@ input[type = 'checkbox']:checked::before {
 .subtitle {
 	white-space: nowrap;
 	overflow: hidden;
-	color:var(--text-color);
+	color: var(--subtitle-text-color);
 }
 
 html, body {
