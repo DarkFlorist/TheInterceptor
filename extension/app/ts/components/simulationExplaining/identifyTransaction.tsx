@@ -34,7 +34,7 @@ export function identifyTransaction(transaction: SimulatedAndVisualizedTransacti
 		}
 	}
 
-	if (transaction.input.length == 0) return {
+	if (transaction.input.length == 0 && transaction.tokenResults.length == 0 && transaction.gasSpent == 21000n) return {
 		type: 'EtherTransfer',
 		title: 'Ether Transfer',
 		signingAction: 'Transfer Ether',
