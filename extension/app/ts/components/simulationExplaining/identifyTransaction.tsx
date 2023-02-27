@@ -47,14 +47,13 @@ export function checkSimpleTokenApproval(transaction: SimulatedAndVisualizedTran
 				simulationAction: `Simulate ${ symbol } ALL Approval`,
 				rejectAction: `Reject ${ symbol } ALL Approval`,
 			}
-		} else {
-			return {
-				type: 'SimpleTokenApproval' as const,
-				title: `Remove ${ symbol } All Approval`,
-				signingAction: `Remove ALL Approval Removal for ${ symbol }`,
-				simulationAction: `Simulate Removal of All Approval for ${ symbol }`,
-				rejectAction: `Reject All Approval Removal`,
-			}
+		}
+		return {
+			type: 'SimpleTokenApproval' as const,
+			title: `Remove ${ symbol } All Approval`,
+			signingAction: `Remove ALL Approval Removal for ${ symbol }`,
+			simulationAction: `Simulate Removal of All Approval for ${ symbol }`,
+			rejectAction: `Reject All Approval Removal`,
 		}
 	}
 
