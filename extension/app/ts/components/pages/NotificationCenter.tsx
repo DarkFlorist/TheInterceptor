@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'preact/hooks'
-import { AddressInfoEntry, NotificationCenterParams, Page, Website } from '../../utils/user-interface-types.js'
+import { AddressInfoEntry, NotificationCenterParams, Website } from '../../utils/user-interface-types.js'
 import { BigAddress } from '../subcomponents/address.js'
 import { ethers } from 'ethers'
 import { addressString } from '../../utils/bigint.js'
@@ -47,7 +47,7 @@ export function NotificationCenter(param: NotificationCenterParams) {
 	}
 
 	function goHome() {
-		param.setAndSaveAppPage(Page.Home)
+		param.setAndSaveAppPage('Home')
 	}
 
 	function review(website: Website, requestAccessToAddress: bigint | undefined) {

@@ -1,9 +1,9 @@
 import { useState, useEffect } from 'preact/hooks'
-import { defaultAddresses, WebsiteAccessArray } from '../background/settings.js'
-import { SimulationAndVisualisationResults } from '../utils/visualizer-types.js'
+import { defaultAddresses } from '../background/settings.js'
+import { SimResults, SimulationAndVisualisationResults, SimulationState, TokenPriceEstimate } from '../utils/visualizer-types.js'
 import { ChangeActiveAddress } from './pages/ChangeActiveAddress.js'
 import { Home } from './pages/Home.js'
-import { Page, AddressInfo, TabConnection, AddressInfoEntry, AddressBookEntry, AddingNewAddressType } from '../utils/user-interface-types.js'
+import { AddressInfo, AddressInfoEntry, AddressBookEntry, AddingNewAddressType, AddressBookEntries } from '../utils/user-interface-types.js'
 import Hint from './subcomponents/Hint.js'
 import { AddNewAddress } from './pages/AddNewAddress.js'
 import { InterceptorAccessList } from './pages/InterceptorAccessList.js'
@@ -12,14 +12,15 @@ import { PasteCatcher } from './subcomponents/PasteCatcher.js'
 import { truncateAddr } from '../utils/ethereum.js'
 import { NotificationCenter } from './pages/NotificationCenter.js'
 import { DEFAULT_TAB_CONNECTION } from '../utils/constants.js'
-import { SignerName } from '../utils/interceptor-messages.js'
+import { ExternalPopupMessage, SignerName, TabConnection, UpdateHomePage, Page, WebsiteAccessArray } from '../utils/interceptor-messages.js'
 import { version, gitCommitSha } from '../version.js'
 import { formSimulatedAndVisualizedTransaction } from './formVisualizerResults.js'
 import { sendPopupMessageToBackgroundPage } from '../background/backgroundUtils.js'
 import { addressString } from '../utils/bigint.js'
+import { EthereumAddress } from '../utils/wire-types.js'
 
 export function App() {
-	const [appPage, setAppPage] = useState(Page.Home)
+	const [appPage, setAppPage] = useState<Page>('Home')
 	const [makeMeRich, setMakeMeRich] = useState(false)
 	const [addressInfos, setAddressInfos] = useState<readonly AddressInfo[]>(defaultAddresses)
 	const [signerAccounts, setSignerAccounts] = useState<readonly bigint[] | undefined>(undefined)
@@ -28,7 +29,7 @@ export function App() {
 	const [useSignersAddressAsActiveAddress, setUseSignersAddressAsActiveAddress] = useState(false)
 	const [simVisResults, setSimVisResults] = useState<SimulationAndVisualisationResults | undefined >(undefined)
 	const [websiteAccess, setWebsiteAccess] = useState<WebsiteAccessArray | undefined>(undefined)
-	const [websiteAccessAddressMetadata, setWebsiteAccessAddressMetadata] = useState<AddressInfoEntry[]>([])
+	const [websiteAccessAddressMetadata, setWebsiteAccessAddressMetadata] = useState<readonly AddressInfoEntry[]>([])
 	const [activeChain, setActiveChain] = useState<bigint>(1n)
 	const [simulationMode, setSimulationMode] = useState<boolean>(true)
 	const [notificationBadgeCount, setNotificationBadgeCount] = useState<number>(0)
@@ -38,22 +39,6 @@ export function App() {
 	const [currentBlockNumber, setCurrentBlockNumber] = useState<bigint | undefined>(undefined)
 	const [signerName, setSignerName] = useState<SignerName | undefined>(undefined)
 	const [addingNewAddress, setAddingNewAddress] = useState<AddingNewAddressType> ({ addingAddress: true, type: 'addressInfo' as const })
-
-	function fetchSettings(backgroundPage: Window) {
-		const settings = backgroundPage.interceptor.settings
-		if ( settings === undefined ) throw `failed to fetch settings`
-		setActiveSimulationAddress(settings.activeSimulationAddress)
-		setActiveSigningAddress(settings.activeSigningAddress)
-		setUseSignersAddressAsActiveAddress(settings.useSignersAddressAsActiveAddress)
-		setAddressInfos(settings.userAddressBook.addressInfos)
-		setAppPage(settings.page)
-		setMakeMeRich(settings.makeMeRich)
-		setWebsiteAccess(settings.websiteAccess)
-		setWebsiteAccessAddressMetadata(backgroundPage.interceptor.websiteAccessAddressMetadata)
-		setActiveChain(settings.activeChain)
-		setSimulationMode(settings.simulationMode !== undefined ? settings.simulationMode : true)
-		setNotificationBadgeCount(settings.pendingAccessRequests.length)
-	}
 
 	async function setActiveAddressAndInformAboutIt(address: bigint | 'signer') {
 		setUseSignersAddressAsActiveAddress(address === 'signer')
@@ -86,58 +71,79 @@ export function App() {
 		}
 	}
 
-	function fetchSimulationState(backgroundPage: Window) {
-		const simState = backgroundPage.interceptor.simulation.simulationState
+	function setSimulationState(
+		simState: SimulationState | undefined,
+		visualizerResults: readonly SimResults[] | undefined,
+		addressBookEntries: AddressBookEntries,
+		tokenPrices: readonly TokenPriceEstimate[],
+		activeSimulationAddress: EthereumAddress | undefined,
+		simulationMode: boolean,
+	) {
 		if (simState === undefined) return setSimVisResults(undefined)
-		if (backgroundPage.interceptor.settings?.activeSimulationAddress === undefined) return setSimVisResults(undefined)
-		if (backgroundPage.interceptor.simulation.visualizerResults === undefined) return setSimVisResults(undefined)
+		if (visualizerResults === undefined) return setSimVisResults(undefined)
+		if (activeSimulationAddress === undefined) return setSimVisResults(undefined)
 
-		const addressMetaData = new Map(backgroundPage.interceptor.simulation.addressBookEntries.map( (x) => [addressString(x.address), x]))
-		const txs = formSimulatedAndVisualizedTransaction(simState, backgroundPage.interceptor.simulation.visualizerResults, addressMetaData)
+		const addressMetaData = new Map(addressBookEntries.map( (x) => [addressString(x.address), x]))
+		const txs = formSimulatedAndVisualizedTransaction(simState, visualizerResults, addressMetaData)
 		setSimVisResults( {
 			blockNumber: simState.blockNumber,
 			blockTimestamp: simState.blockTimestamp,
 			simulationConductedTimestamp: simState.simulationConductedTimestamp,
 			simulatedAndVisualizedTransactions: txs,
 			chain: simState.chain,
-			tokenPrices: backgroundPage.interceptor.simulation.tokenPrices,
-			activeAddress: BigInt(backgroundPage.interceptor.settings.activeSimulationAddress),
-			simulationMode: backgroundPage.interceptor.settings.simulationMode,
-			addressMetaData: backgroundPage.interceptor.simulation.addressBookEntries,
+			tokenPrices: tokenPrices,
+			activeAddress: activeSimulationAddress,
+			simulationMode: simulationMode,
+			addressMetaData: addressBookEntries,
 		})
 	}
 
-	async function updateState() {
-		const backgroundPage = await browser.runtime.getBackgroundPage() //TODO, get rid of this
-		fetchSettings(backgroundPage)
-		fetchSimulationState(backgroundPage)
-		setSignerName(backgroundPage.interceptor.signerName)
-		setTabConnection( DEFAULT_TAB_CONNECTION )
-		setCurrentBlockNumber(backgroundPage.interceptor.currentBlockNumber)
-		const tabs = await browser.tabs.query({ active: true, currentWindow: true })
-		if (tabs.length === 0 || tabs[0].id === undefined ) return
-		const signerState = backgroundPage.interceptor.websiteTabSignerStates.get(tabs[0].id)
-		if (signerState) setSignerAccounts(signerState.signerAccounts)
-		const conn = backgroundPage.interceptor.websiteTabConnection.get(tabs[0].id)
-		if ( conn ) setTabConnection(conn)
-		setTabApproved(backgroundPage.interceptor.websiteTabApprovals.get(tabs[0].id)?.approved === true)
+	async function updateHomePage({ data }: UpdateHomePage) {
+		const settings = data.settings
+		setSimulationState(
+			data.simulation.simulationState,
+			data.simulation.visualizerResults,
+			data.simulation.addressBookEntries,
+			data.simulation.tokenPrices,
+			settings.activeSimulationAddress,
+			settings.simulationMode,
+		)
+
+		setActiveSimulationAddress(settings.activeSimulationAddress)
+		setActiveSigningAddress(settings.activeSigningAddress)
+		setUseSignersAddressAsActiveAddress(settings.useSignersAddressAsActiveAddress)
+		setAddressInfos(settings.userAddressBook.addressInfos)
+		setAppPage(settings.page)
+		setMakeMeRich(settings.makeMeRich)
+		setWebsiteAccess(settings.websiteAccess)
+
+		setWebsiteAccessAddressMetadata(data.websiteAccessAddressMetadata)
+		setActiveChain(settings.activeChain)
+		setSimulationMode(settings.simulationMode !== undefined ? settings.simulationMode : true)
+		setNotificationBadgeCount(settings.pendingAccessRequests.length)
+
+		setSignerName(data.signerName)
+		setCurrentBlockNumber(data.currentBlockNumber)
+
+		setSignerAccounts(data.signerAccounts)
+		if (data.tabConnection === undefined) {
+			setTabConnection(DEFAULT_TAB_CONNECTION)
+		} else {
+			setTabConnection(data.tabConnection)
+		}
+		setTabApproved(data.tabApproved)
 		setIsSettingsLoaded(true)
 	}
 
 	useEffect(  () => {
-		updateState()
-
 		async function popupMessageListener(msg: unknown) {
-			console.log('popup message')
-			console.log(msg)
-			updateState()
+			const message = ExternalPopupMessage.parse(msg)
+			if (message.method !== 'popup_UpdateHomePage') return sendPopupMessageToBackgroundPage( { method: 'popup_requestNewHomeData' } )
+			await updateHomePage(message)
 		}
-
 		browser.runtime.onMessage.addListener(popupMessageListener)
-
-		return () => {
-			browser.runtime.onMessage.removeListener(popupMessageListener)
-		}
+		sendPopupMessageToBackgroundPage( { method: 'popup_requestNewHomeData' } )
+		return () => browser.runtime.onMessage.removeListener(popupMessageListener)
 	}, [])
 
 	function setAndSaveAppPage(page: Page) {
@@ -146,7 +152,7 @@ export function App() {
 	}
 
 	async function addressPaste(address: string) {
-		if (appPage === Page.AddNewAddress) return
+		if (appPage === 'AddNewAddress') return
 
 		const trimmed = address.trim()
 		if ( !ethers.utils.isAddress(trimmed) ) return
@@ -161,7 +167,7 @@ export function App() {
 
 		// address not found, let's promt user to create it
 		const addressString = ethers.utils.getAddress(trimmed)
-		setAndSaveAppPage(Page.AddNewAddress)
+		setAndSaveAppPage('AddNewAddress')
 		setAddingNewAddress({ addingAddress: false, entry: {
 			type: 'addressInfo' as const,
 			name: `Pasted ${ truncateAddr(addressString) }`,
@@ -171,7 +177,7 @@ export function App() {
 	}
 
 	function renameAddressCallBack(entry: AddressBookEntry) {
-		setAndSaveAppPage(Page.ModifyAddress)
+		setAndSaveAppPage('ModifyAddress')
 		setAddingNewAddress({ addingAddress: false, entry: entry })
 	}
 
@@ -183,8 +189,8 @@ export function App() {
 	return (
 		<main>
 			<Hint>
-				<PasteCatcher enabled = { appPage === Page.Home } onPaste = { addressPaste } />
-				<div style = { `background-color: var(--bg-color); width: 520px; height: 600px; ${ appPage !== Page.Home ? 'overflow: hidden;' : 'overflow: auto;' }` }>
+				<PasteCatcher enabled = { appPage === 'Home' } onPaste = { addressPaste } />
+				<div style = { `background-color: var(--bg-color); width: 520px; height: 600px; ${ appPage !== 'Home' ? 'overflow: hidden;' : 'overflow: auto;' }` }>
 					{ !isSettingsLoaded ? <></> : <>
 						<nav class = 'navbar window-header' role = 'navigation' aria-label = 'main navigation'>
 							<div class = 'navbar-brand'>
@@ -195,10 +201,10 @@ export function App() {
 									</p>
 								</a>
 								<a class = 'navbar-item' style = 'margin-left: auto; margin-right: 0;'>
-									<img src = '../img/internet.svg' width = '32' onClick = { () => setAndSaveAppPage(Page.AccessList) }/>
+									<img src = '../img/internet.svg' width = '32' onClick = { () => setAndSaveAppPage('AccessList') }/>
 									<img src = '../img/address-book.svg' width = '32' onClick = { openAddressBook }/>
 									<div>
-										<img src = '../img/notification-bell.svg' width = '32' onClick = { () => setAndSaveAppPage(Page.NotificationCenter) }/>
+										<img src = '../img/notification-bell.svg' width = '32' onClick = { () => setAndSaveAppPage('NotificationCenter') }/>
 										{ notificationBadgeCount <= 0 ? <> </> : <span class = 'badge' style = 'transform: translate(-75%, 75%);'> { notificationBadgeCount } </span> }
 									</div>
 								</a>
@@ -223,14 +229,14 @@ export function App() {
 							renameAddressCallBack = { renameAddressCallBack }
 						/>
 
-						<div class = { `modal ${ appPage !== Page.Home ? 'is-active' : ''}` }>
-							{ appPage === Page.NotificationCenter ?
+						<div class = { `modal ${ appPage !== 'Home' ? 'is-active' : ''}` }>
+							{ appPage === 'NotificationCenter' ?
 								<NotificationCenter
 									setAndSaveAppPage = { setAndSaveAppPage }
 									renameAddressCallBack = { renameAddressCallBack }
 								/>
 							: <></> }
-							{ appPage === Page.AccessList ?
+							{ appPage === 'AccessList' ?
 								<InterceptorAccessList
 									setAndSaveAppPage = { setAndSaveAppPage }
 									setWebsiteAccess = { setWebsiteAccess }
@@ -239,7 +245,7 @@ export function App() {
 									renameAddressCallBack = { renameAddressCallBack }
 								/>
 							: <></> }
-							{ appPage === Page.ChangeActiveAddress ?
+							{ appPage === 'ChangeActiveAddress' ?
 								<ChangeActiveAddress
 									setActiveAddressAndInformAboutIt = { setActiveAddressAndInformAboutIt }
 									signerAccounts = { signerAccounts }
@@ -249,11 +255,11 @@ export function App() {
 									renameAddressCallBack = { renameAddressCallBack }
 								/>
 							: <></> }
-							{ appPage === Page.AddNewAddress || appPage === Page.ModifyAddress ?
+							{ appPage === 'AddNewAddress' || appPage === 'ModifyAddress' ?
 								<AddNewAddress
 									setActiveAddressAndInformAboutIt = { setActiveAddressAndInformAboutIt }
 									addingNewAddress = { addingNewAddress }
-									close = { () => setAndSaveAppPage(Page.Home) }
+									close = { () => setAndSaveAppPage('Home') }
 									activeAddress = { simulationMode ? activeSimulationAddress : activeSigningAddress }
 								/>
 							: <></> }

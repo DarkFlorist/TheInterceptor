@@ -1,13 +1,13 @@
 import { addressString } from '../../utils/bigint.js'
 import { Future } from '../../utils/future.js'
-import { InterceptorAccessOptions, PopupMessage, WindowMessage } from '../../utils/interceptor-messages.js'
+import { InterceptorAccessOptions, PopupMessage, WebsiteAccessArray, WindowMessage } from '../../utils/interceptor-messages.js'
 import { AddressInfoEntry, PendingAccessRequestArray, Website } from '../../utils/user-interface-types.js'
 import { getAssociatedAddresses, setAccess, updateWebsiteApprovalAccesses } from '../accessManagement.js'
 import { changeActiveAddressAndChainAndResetSimulation, postMessageIfStillConnected } from '../background.js'
 import { createInternalMessageListener, sendPopupMessageToOpenWindows } from '../backgroundUtils.js'
 import { updateExtensionBadge } from '../iconHandler.js'
 import { findAddressInfo } from '../metadataUtils.js'
-import { savePendingAccessRequests, saveWebsiteAccess, WebsiteAccessArray } from '../settings.js'
+import { savePendingAccessRequests, saveWebsiteAccess } from '../settings.js'
 
 let openedInterceptorAccessWindow: browser.windows.Window | null = null
 

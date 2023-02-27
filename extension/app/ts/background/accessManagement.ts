@@ -2,12 +2,12 @@ import { EthereumAddress, SupportedETHRPCCalls } from '../utils/wire-types.js'
 import { postMessageIfStillConnected, setEthereumNodeBlockPolling } from './background.js'
 import { getActiveAddress } from './backgroundUtils.js'
 import { findAddressInfo } from './metadataUtils.js'
-import { Settings, WebsiteAccessArray, WebsiteAddressAccess } from './settings.js'
 import { requestAccessFromUser } from './windows/interceptorAccess.js'
 import { METAMASK_ERROR_USER_REJECTED_REQUEST } from '../utils/constants.js'
 import { EthereumQuantity } from '../utils/wire-types.js'
 import { retrieveWebsiteDetails, updateExtensionIcon } from './iconHandler.js'
 import { AddressInfoEntry, Website } from '../utils/user-interface-types.js'
+import { Settings, WebsiteAccessArray, WebsiteAddressAccess } from '../utils/interceptor-messages.js'
 
 function setWebsitePortApproval(port: browser.runtime.Port, websiteOrigin: string, approved: boolean) {
 	const tabId = port.sender?.tab?.id

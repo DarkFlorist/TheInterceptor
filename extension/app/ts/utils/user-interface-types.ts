@@ -4,8 +4,7 @@ import { EthereumAccountsReply, EthereumAddress, EthereumQuantity, LiteralConver
 import { SimulatedAndVisualizedTransaction, SimulationAndVisualisationResults } from './visualizer-types.js'
 import { IdentifiedSwapWithMetadata } from '../components/simulationExplaining/SwapTransactions.js'
 import { CHAINS } from './constants.js'
-import { SignerName } from './interceptor-messages.js'
-import { WebsiteAccessArray } from '../background/settings.js'
+import { Page, SignerName, TabConnection, WebsiteAccessArray } from './interceptor-messages.js'
 
 export type Website = funtypes.Static<typeof Website>
 export const Website = funtypes.Object({
@@ -87,15 +86,6 @@ export const AddressBookEntry = funtypes.Union(
 export type AddressBookEntries = funtypes.Static<typeof AddressBookEntries>
 export const AddressBookEntries = funtypes.ReadonlyArray(AddressBookEntry)
 
-export enum Page {
-	Home,
-	AddNewAddress,
-	ChangeActiveAddress,
-	AccessList,
-	NotificationCenter,
-	ModifyAddress,
-}
-
 export type AddressListParams = {
 	setAndSaveAppPage: (page: Page) => void,
 	setAddressInfos: StateUpdater<readonly AddressInfo[]>,
@@ -106,7 +96,7 @@ export type InterceptorAccessListParams = {
 	setAndSaveAppPage: (page: Page) => void,
 	setWebsiteAccess: StateUpdater<WebsiteAccessArray | undefined>,
 	websiteAccess: WebsiteAccessArray | undefined,
-	websiteAccessAddressMetadata: AddressInfoEntry[],
+	websiteAccessAddressMetadata: readonly AddressInfoEntry[],
 	renameAddressCallBack: RenameAddressCallBack,
 }
 
@@ -188,11 +178,6 @@ export type LogAnalysisParams = {
 export type WebsiteApproval = {
 	websiteOrigin: string,
 	approved: boolean, // if user has approved connection
-}
-
-export type TabConnection = {
-	icon: string,
-	iconReason: string,
 }
 
 export type NotificationCenterParams = {

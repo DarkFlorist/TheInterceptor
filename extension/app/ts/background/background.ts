@@ -1,12 +1,12 @@
-import { HandleSimulationModeReturnValue, InterceptedRequest, InterceptedRequestForward, PopupMessage, ProviderMessage, SignerName } from '../utils/interceptor-messages.js'
+import { HandleSimulationModeReturnValue, InterceptedRequest, InterceptedRequestForward, PopupMessage, ProviderMessage, Settings, SignerName, TabConnection } from '../utils/interceptor-messages.js'
 import 'webextension-polyfill'
 import { Simulator } from '../simulation/simulator.js'
-import { EthereumJsonRpcRequest, EthereumQuantity, EthereumUnsignedTransaction, PersonalSignParams, SignTypedDataParams } from '../utils/wire-types.js'
-import { getSettings, saveActiveChain, saveActiveSigningAddress, saveActiveSimulationAddress, Settings } from './settings.js'
+import { EthereumAddress, EthereumJsonRpcRequest, EthereumQuantity, EthereumUnsignedTransaction, PersonalSignParams, SignTypedDataParams } from '../utils/wire-types.js'
+import { getSettings, saveActiveChain, saveActiveSigningAddress, saveActiveSimulationAddress } from './settings.js'
 import { blockNumber, call, chainId, estimateGas, gasPrice, getAccounts, getBalance, getBlockByNumber, getCode, getPermissions, getSimulationStack, getTransactionByHash, getTransactionCount, getTransactionReceipt, personalSign, requestPermissions, sendTransaction, signTypedData, subscribe, switchEthereumChain, unsubscribe } from './simulationModeHanders.js'
-import { changeActiveAddress, changeMakeMeRich, changePage, resetSimulation, confirmDialog, refreshSimulation, removeTransaction, requestAccountsFromSigner, refreshPopupConfirmTransactionSimulation, confirmPersonalSign, confirmRequestAccess, changeInterceptorAccess, changeChainDialog, popupChangeActiveChain, enableSimulationMode, reviewNotification, rejectNotification, addOrModifyAddressInfo, getAddressBookData, removeAddressBookEntry, openAddressBook } from './popupMessageHandlers.js'
-import { SimResults, SimulationState, TokenPriceEstimate } from '../utils/visualizer-types.js'
-import { WebsiteApproval, SignerState, TabConnection, AddressBookEntry, AddressInfoEntry, Website } from '../utils/user-interface-types.js'
+import { changeActiveAddress, changeMakeMeRich, changePage, resetSimulation, confirmDialog, refreshSimulation, removeTransaction, requestAccountsFromSigner, refreshPopupConfirmTransactionSimulation, confirmPersonalSign, confirmRequestAccess, changeInterceptorAccess, changeChainDialog, popupChangeActiveChain, enableSimulationMode, reviewNotification, rejectNotification, addOrModifyAddressInfo, getAddressBookData, removeAddressBookEntry, openAddressBook, homeOpened } from './popupMessageHandlers.js'
+import { SimulationState, TokenPriceEstimate, SimResults } from '../utils/visualizer-types.js'
+import { WebsiteApproval, SignerState, AddressBookEntry, AddressInfoEntry, Website } from '../utils/user-interface-types.js'
 import { getAddressMetadataForAccess, setPendingAccessRequests } from './windows/interceptorAccess.js'
 import { CHAINS, ICON_NOT_ACTIVE, isSupportedChain, MAKE_YOU_RICH_TRANSACTION, METAMASK_ERROR_USER_REJECTED_REQUEST } from '../utils/constants.js'
 import { PriceEstimator } from '../simulation/priceEstimator.js'
@@ -41,7 +41,6 @@ declare global {
 			websiteAccessAddressMetadata: AddressInfoEntry[],
 			pendingAccessMetadata: [string, AddressInfoEntry][],
 			prependTransactionMode: PrependTransactionMode,
-			signerAccounts: readonly bigint[] | undefined,
 			signerChain: bigint | undefined,
 			signerName: SignerName | undefined,
 			websiteTabSignerStates: Map<number, SignerState>,
@@ -50,15 +49,16 @@ declare global {
 			websiteTabConnection: Map<number, TabConnection>,
 			settings: Settings | undefined,
 			currentBlockNumber: bigint | undefined,
+			signerAccounts: readonly EthereumAddress[] | undefined,
 		}
 	}
 }
 
 window.interceptor = {
 	prependTransactionMode: PrependTransactionMode.NO_PREPEND,
+	signerAccounts: undefined,
 	websiteAccessAddressMetadata: [],
 	pendingAccessMetadata: [],
-	signerAccounts: undefined,
 	signerChain: undefined,
 	signerName: undefined,
 	websiteTabSignerStates: new Map(),
@@ -444,7 +444,16 @@ export function postMessageIfStillConnected(port: browser.runtime.Port, message:
 	const tabId = port.sender?.tab?.id
 	if (tabId === undefined) return false
 	if (!window.interceptor.websiteTabConnection.has(tabId)) return false
-	port.postMessage(message)
+	try {
+		port.postMessage(message)
+	} catch (error) {
+		if (error instanceof Error) {
+			if (error.message?.includes('Attempting to use a disconnected port object')) {
+				return
+			}
+		}
+		throw error
+	}
 	return true
 }
 
@@ -603,6 +612,7 @@ async function popupMessageHandler(simulator: Simulator, request: unknown) {
 		case 'popup_changeChainReadyAndListening': return // handled elsewhere (changeChain.ts)
 		case 'popup_interceptorAccessReadyAndListening': return // handled elsewhere (interceptorAccess.ts)
 		case 'popup_confirmTransactionReadyAndListening': return // handled elsewhere (confirmTransaction.ts)
+		case 'popup_requestNewHomeData': return homeOpened()
 		default: assertUnreachable(parsedRequest)
 	}
 }
