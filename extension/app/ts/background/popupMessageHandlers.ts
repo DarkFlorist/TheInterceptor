@@ -215,7 +215,7 @@ export async function getAddressBookData(parsed: GetAddressBookData, userAddress
 	if (userAddressBook === undefined) throw new Error('Interceptor is not ready')
 	const data = getMetadataForAddressBookData(parsed.options, userAddressBook)
 	sendPopupMessageToOpenWindows({
-		method: 'popup_getAddressBookData',
+		method: 'popup_getAddressBookDataReply',
 		data: {
 			options: parsed.options,
 			entries: data.entries,
