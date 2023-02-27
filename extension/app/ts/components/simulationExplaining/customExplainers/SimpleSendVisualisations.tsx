@@ -81,12 +81,7 @@ function SimpleSend({ transaction, asset, sender, receiver, renameAddressCallBac
 
 function getBeforeAndAfterBalanceForAddress(ethBalances: readonly EthBalanceChangesWithMetadata[], address: bigint) {
 	const filtered = ethBalances.filter((x) => x.address.address === address)
-	if (filtered.length === 0) {
-		return {
-			before: 0n,
-			after: 0n,
-		}
-	}
+	if (filtered.length === 0) return { before: 0n, after: 0n }
 	return {
 		before: filtered[0].before,
 		after: filtered[filtered.length - 1].after,
