@@ -142,7 +142,7 @@ export function Erc20ApprovalChanges(param: Erc20ApprovalChangesParams ) {
 					...token,
 					entryToApprove: entryToApprove,
 					change: entryToApprove.change,
-					tokenAddress: token.tokenAddress,
+					address: token.address,
 					textColor: param.textColor,
 					negativeColor: param.negativeColor,
 					isImportant: param.isImportant,
@@ -182,7 +182,7 @@ function ERC721TokenChanges(param: ERC721TokenChangesParams ) {
 	</>
 }
 
-export type ERC721OperatorChange = Omit<ERC721TokenDefinitionParams, 'tokenId'> & { operator: AddressBookEntry | undefined }
+export type ERC721OperatorChange = Omit<ERC721TokenDefinitionParams, 'id'> & { operator: AddressBookEntry | undefined }
 
 type ERC721OperatorChangesParams = {
 	ERC721OperatorChanges: ERC721OperatorChange[]
@@ -529,7 +529,7 @@ export function TransactionHeader( { tx, renameAddressCallBack, activeAddress, r
 		<p class = 'card-header-title' style = 'white-space: nowrap;'>
 			{ identifyTransaction(tx, activeAddress).title }
 		</p>
-		{ tx.to  === undefined ? <></> :
+		{ tx.to  === undefined || identifyTransaction(tx, activeAddress).type === 'MakeYouRichTransaction' ? <></> :
 			<p class = 'card-header-icon' style = 'margin-left: auto; margin-right: 0; padding-right: 10px; padding-left: 0px; overflow: hidden'>
 				<SmallAddress
 					addressBookEntry = { tx.to }

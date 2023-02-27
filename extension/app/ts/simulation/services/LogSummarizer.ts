@@ -21,7 +21,7 @@ export type SummaryOutcome = {
 	tokenBalanceChanges: TokenBalanceChange[]
 	tokenApprovalChanges: TokenApprovalChange[]
 	erc721TokenBalanceChanges: (ERC721TokenDefinitionParams & { received: boolean })[]
-	erc721OperatorChanges: (Omit<ERC721TokenDefinitionParams, 'tokenId'> & { operator: AddressBookEntry | undefined })[]
+	erc721OperatorChanges: (Omit<ERC721TokenDefinitionParams, 'id'> & { operator: AddressBookEntry | undefined })[]
 	erc721TokenIdApprovalChanges: ERC721TokenApprovalChange[]
 	etherResults: {
 		balanceBefore: bigint,
@@ -205,11 +205,7 @@ export class LogSummarizer {
 			const metadata = addressMetaData.get(tokenAddress)
 			if (metadata === undefined || metadata.type !== 'token') throw new Error('Missing metadata for token')
 			return {
-				tokenName: metadata.name,
-				tokenAddress: metadata.address,
-				tokenSymbol: metadata.symbol,
-				tokenLogoUri: metadata.logoUri,
-				tokenDecimals: metadata.decimals,
+				...metadata,
 				changeAmount: changeAmount,
 				tokenPriceEstimate: tokenPrices.find((x) => x.token === tokenAddress)
 			}
@@ -219,11 +215,7 @@ export class LogSummarizer {
 			const metadata = addressMetaData.get(tokenAddress)
 			if (metadata === undefined || metadata.type !== 'token') throw new Error('Missing metadata for token')
 			return {
-				tokenName: metadata.name,
-				tokenAddress: metadata.address,
-				tokenSymbol: metadata.symbol,
-				tokenLogoUri: metadata.logoUri,
-				tokenDecimals: metadata.decimals,
+				...metadata,
 				approvals: Array.from(approvals).map( ([addressToApprove, change]) => {
 					const approvedAddresMetadata = addressMetaData.get(addressToApprove)
 					if (approvedAddresMetadata === undefined) throw new Error('Missing metadata for address')
@@ -236,36 +228,27 @@ export class LogSummarizer {
 			const metadata = addressMetaData.get(tokenAddress)
 			if (metadata === undefined || metadata.type !== 'NFT') throw new Error('Missing metadata for token')
 			return Array.from(tokenIds).map(([tokenId, received]) => ({
-				tokenName: metadata.name,
-				tokenAddress: metadata.address,
-				tokenSymbol: metadata.symbol,
-				tokenLogoUri: metadata.logoUri,
-				tokenId: BigInt(tokenId),
+				...metadata,
+				id: BigInt(tokenId),
 				received,
 			}))
 		}).reduce((accumulator, value) => accumulator.concat(value), [])
 
-		const erc721OperatorChanges: (Omit<ERC721TokenDefinitionParams, 'tokenId'> & { operator: AddressBookEntry | undefined })[] = Array.from(addressSummary.ERC721OperatorChanges).map( ([tokenAddress, operator]) => {
+		const erc721OperatorChanges: (Omit<ERC721TokenDefinitionParams, 'id'> & { operator: AddressBookEntry | undefined })[] = Array.from(addressSummary.ERC721OperatorChanges).map( ([tokenAddress, operator]) => {
 			const metadata = addressMetaData.get(tokenAddress)
 			if (metadata === undefined || metadata.type !== 'NFT') throw new Error('Missing metadata for token')
 
 			if (operator === undefined) {
 				return {
+					...metadata,
 					operator: undefined,
-					tokenName: metadata.name,
-					tokenAddress: metadata.address,
-					tokenSymbol: metadata.symbol,
-					tokenLogoUri: metadata.logoUri,
 				}
 			}
 			const operatorMetadata = addressMetaData.get(operator)
 			if (operatorMetadata === undefined) throw new Error('Missing metadata for token')
 			return {
+				...metadata,
 				operator: operatorMetadata,
-				tokenName: metadata.name,
-				tokenAddress: metadata.address,
-				tokenSymbol: metadata.symbol,
-				tokenLogoUri: metadata.logoUri,
 			}
 		})
 
@@ -277,11 +260,8 @@ export class LogSummarizer {
 				if (approvedMetadata === undefined) throw new Error('Missing metadata for token')
 				return {
 					token: {
-						tokenId: BigInt(tokenId),
-						tokenName: metadata.name,
-						tokenAddress: metadata.address,
-						tokenSymbol: metadata.symbol,
-						tokenLogoUri: metadata.logoUri,
+						...metadata,
+						id: BigInt(tokenId),
 					},
 					approvedEntry: approvedMetadata
 				}

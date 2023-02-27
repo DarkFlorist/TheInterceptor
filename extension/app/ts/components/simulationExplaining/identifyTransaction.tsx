@@ -3,7 +3,7 @@ import { CHAINS, FourByteExplanations, isSupportedChain, MAKE_YOU_RICH_TRANSACTI
 import { SimulatedAndVisualizedTransaction } from '../../utils/visualizer-types.js'
 import { getSwapName, identifySwap } from './SwapTransactions.js'
 
-type TRANSACTION_TYPE = 'MakeYouRichTransaction' | 'ArbitaryContractExecution' | 'EtherTransfer' | 'Swap' | 'ContractFallbackMethod'
+type TRANSACTION_TYPE = 'MakeYouRichTransaction' | 'ArbitaryContractExecution' | 'EtherTransfer' | 'Swap' | 'ContractFallbackMethod' | 'SimpleTokenTransfer'
 
 type IdenttifiedTransaction = {
 	type: TRANSACTION_TYPE,
@@ -15,7 +15,6 @@ type IdenttifiedTransaction = {
 
 export function identifyTransaction(transaction: SimulatedAndVisualizedTransaction, activeAddress: bigint): IdenttifiedTransaction {
 	const chainString = transaction.chainId.toString()
-
 	if (isSupportedChain(chainString)
 		&& CHAINS[chainString].eth_donator === transaction.from.address
 		&& transaction.to?.address === activeAddress
@@ -51,6 +50,22 @@ export function identifyTransaction(transaction: SimulatedAndVisualizedTransacti
 			signingAction: 'Swap',
 			simulationAction: 'Simulate Swap',
 			rejectAction: 'Reject Swap',
+		}
+	}
+
+	if (transaction.value === 0n
+		&& transaction.tokenResults.length === 1
+		&& transaction.tokenResults[0].isApproval == false
+		&& transaction.tokenResults[0].from.address !== transaction.tokenResults[0].to.address
+		&& transaction.tokenResults[0].from === transaction.from
+	) {
+		const symbol = transaction.tokenResults[0].token.symbol
+		return {
+			type: 'SimpleTokenTransfer',
+			title: `${ symbol } Transfer`,
+			signingAction: `Transfer ${ symbol }`,
+			simulationAction: `Simulate ${ symbol } Transfer`,
+			rejectAction: `Reject ${ symbol } Transfer`,
 		}
 	}
 

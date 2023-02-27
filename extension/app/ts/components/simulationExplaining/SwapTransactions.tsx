@@ -312,17 +312,14 @@ export function SwapVisualization(param: SwapVisualizationParams) {
 						'tokenIdSent' in param.identifiedSwap ? <>
 								<div class = 'log-cell' style = 'justify-content: left;'>
 									<ERC721TokenNumber
-										tokenId = { param.identifiedSwap.tokenIdSent }
+										id = { param.identifiedSwap.tokenIdSent }
 										received = { false }
 										style = { { 'font-size': '28px', 'font-weight': '500' } }
 									/>
 								</div>
 								<div class = 'log-cell' style = 'justify-content: right;'>
 									<TokenSymbol
-										tokenName = { param.identifiedSwap.tokenAddressSent.name }
-										tokenAddress = { param.identifiedSwap.tokenAddressSent.address }
-										tokenSymbol = { param.identifiedSwap.tokenAddressSent.symbol }
-										tokenLogoUri = { param.identifiedSwap.tokenAddressSent.logoUri }
+										{ ...param.identifiedSwap.tokenAddressSent }
 										useFullTokenName = { false }
 										style = { { 'font-size': '18px', 'font-weight': '500' } }
 									/>
@@ -332,16 +329,13 @@ export function SwapVisualization(param: SwapVisualizationParams) {
 								<div class = 'log-cell' style = 'justify-content: left;'>
 									<TokenAmount
 										amount = { param.identifiedSwap.tokenAmountSent }
-										tokenDecimals = { param.identifiedSwap.tokenAddressSent.decimals }
+										decimals = { param.identifiedSwap.tokenAddressSent.decimals }
 										style = { { 'font-size': '28px', 'font-weight': '500' } }
 									/>
 								</div>
 								<div class = 'log-cell' style = 'justify-content: right;'>
 									<TokenSymbol
-										tokenName = { param.identifiedSwap.tokenAddressSent.name }
-										tokenAddress = { param.identifiedSwap.tokenAddressSent.address }
-										tokenSymbol = { param.identifiedSwap.tokenAddressSent.symbol }
-										tokenLogoUri = { param.identifiedSwap.tokenAddressSent.logoUri }
+										{ ...param.identifiedSwap.tokenAddressSent }
 										useFullTokenName = { false }
 										style = { { 'font-size': '18px', 'font-weight': '500' } }
 									/>
@@ -373,17 +367,14 @@ export function SwapVisualization(param: SwapVisualizationParams) {
 						'tokenIdReceived' in param.identifiedSwap ? <>
 								<div class = 'log-cell' style = 'justify-content: left;'>
 									<ERC721TokenNumber
-										tokenId = { param.identifiedSwap.tokenIdReceived }
+										id = { param.identifiedSwap.tokenIdReceived }
 										received = { false }
 										style = { { 'font-size': '28px', 'font-weight': '500' } }
 									/>
 								</div>
 								<div class = 'log-cell' style = 'justify-content: right;'>
 									<TokenSymbol
-										tokenName = { param.identifiedSwap.tokenAddressReceived.name }
-										tokenAddress = { param.identifiedSwap.tokenAddressReceived.address }
-										tokenSymbol = { param.identifiedSwap.tokenAddressReceived.symbol }
-										tokenLogoUri = { param.identifiedSwap.tokenAddressReceived.logoUri }
+										{ ...param.identifiedSwap.tokenAddressReceived }
 										useFullTokenName = { false }
 										style = { { 'font-size': '18px', 'font-weight': '500' } }
 									/>
@@ -393,16 +384,13 @@ export function SwapVisualization(param: SwapVisualizationParams) {
 							<div class = 'log-cell' style = 'justify-content: left;'>
 								<TokenAmount
 									amount = { param.identifiedSwap.tokenAmountReceived }
-									tokenDecimals = { param.identifiedSwap.tokenAddressReceived.decimals }
+									decimals = { param.identifiedSwap.tokenAddressReceived.decimals }
 									style = { { 'font-size': '28px', 'font-weight': '500' } }
 								/>
 							</div>
 							<div class = 'log-cell' style = 'justify-content: right;'>
 								<TokenSymbol
-									tokenName = { param.identifiedSwap.tokenAddressReceived.name }
-									tokenAddress = { param.identifiedSwap.tokenAddressReceived.address }
-									tokenSymbol = { param.identifiedSwap.tokenAddressReceived.symbol }
-									tokenLogoUri = { param.identifiedSwap.tokenAddressReceived.logoUri }
+									{ ...param.identifiedSwap.tokenAddressReceived }
 									useFullTokenName = { false }
 									style = { { 'font-size': '18px', 'font-weight': '500' } }
 								/>

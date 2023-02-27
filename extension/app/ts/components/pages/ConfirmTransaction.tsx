@@ -13,7 +13,7 @@ import { EthereumUnsignedTransaction } from '../../utils/wire-types.js'
 import { SignerLogoText } from '../subcomponents/signers.js'
 import { SmallAddress, WebsiteOriginText } from '../subcomponents/address.js'
 import { ErrorCheckBox } from '../subcomponents/Error.js'
-import { TransactionImportanceBlock } from '../simulationExplaining/Transactions.js'
+import { QuarantineCodes, TransactionImportanceBlock } from '../simulationExplaining/Transactions.js'
 import { identifyTransaction } from '../simulationExplaining/identifyTransaction.js'
 
 type TransactionCardParams = {
@@ -58,6 +58,7 @@ function TransactionCard(param: TransactionCardParams) {
 						simulationAndVisualisationResults = { param.simulationAndVisualisationResults }
 						renameAddressCallBack = { param.renameAddressCallBack }
 					/>
+					<QuarantineCodes tx = { tx }/>
 				</div>
 
 				<TransactionsAccountChangesCard
