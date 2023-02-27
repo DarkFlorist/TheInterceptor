@@ -10,11 +10,11 @@ import { sendPopupMessageToBackgroundPage } from '../../background/backgroundUti
 import { formSimulatedAndVisualizedTransaction } from '../formVisualizerResults.js'
 import { addressString } from '../../utils/bigint.js'
 import { EthereumUnsignedTransaction } from '../../utils/wire-types.js'
-import { SignerLogoText, getSignerName } from '../subcomponents/signers.js'
+import { SignerLogoText } from '../subcomponents/signers.js'
 import { SmallAddress, WebsiteOriginText } from '../subcomponents/address.js'
-import { nameTransaction, nameTransactionAction } from '../simulationExplaining/identifyTransaction.js'
 import { ErrorCheckBox } from '../subcomponents/Error.js'
 import { TransactionImportanceBlock } from '../simulationExplaining/Transactions.js'
+import { identifyTransaction } from '../simulationExplaining/identifyTransaction.js'
 
 type TransactionCardParams = {
 	simulationAndVisualisationResults: SimulationAndVisualisationResults,
@@ -36,7 +36,7 @@ function TransactionCard(param: TransactionCardParams) {
 						<li style = 'margin: 0px;'>
 							<div class = 'card' style = { `padding: 5px;${ index !== param.simulationAndVisualisationResults.simulatedAndVisualizedTransactions.length - 1 ? 'background-color: var(--disabled-card-color)' : ''}` }>
 								<p class = 'paragraph' style = {`margin: 0px;${ index !== param.simulationAndVisualisationResults.simulatedAndVisualizedTransactions.length - 1 ? 'color: var(--disabled-text-color)' : ''}` }>
-									{ nameTransaction(tx, param.activeAddress) }
+									{ identifyTransaction(tx, param.activeAddress).title }
 								</p>
 							</div>
 						</li>
@@ -179,12 +179,26 @@ export function ConfirmTransaction() {
 		setAddingNewAddress({ addingAddress: false, entry: entry })
 	}
 
-	function buttonNameAddon(vis: SimulationAndVisualisationResults, activeAddress: bigint) {
-		const tx = vis.simulatedAndVisualizedTransactions.at(-1)
-		if (tx === undefined) return ''
-		return nameTransactionAction(tx, activeAddress)
-	}
+	function Buttons() {
+		if (simulationAndVisualisationResults === undefined) return <></>
+		const tx = simulationAndVisualisationResults.simulatedAndVisualizedTransactions.at(-1)
+		if (tx === undefined) return <></>
+		const identified = identifyTransaction(tx, simulationAndVisualisationResults.activeAddress)
 
+		return <div style = 'display: flex; flex-direction: row;'>
+			<button className = 'button is-primary button-overflow' style = 'flex-grow: 1; margin-left: 10px; margin-right: 5px; margin-top: 0px; margin-bottom: 0px;' onClick = { approve } disabled = { isConfirmDisabled() }>
+				{ simulationAndVisualisationResults.simulationMode ? `${ identified.simulationAction }!` :
+					<SignerLogoText {...{
+						signerName,
+						text: identified.signingAction,
+					}}/>
+				}
+			</button>
+			<button className = 'button is-primary is-danger button-overflow' style = 'flex-grow: 1; margin-left: 5px; margin-right: 10px; margin-top: 0px; margin-bottom: 0px;' onClick = { reject} >
+				{ identified.rejectAction }
+			</button>
+		</div>
+	}
 
 	if (simulationAndVisualisationResults === undefined) {
 		return <div class = 'center-to-page'>
@@ -247,19 +261,7 @@ export function ConfirmTransaction() {
 								</div>
 							</div>
 						}
-						<div style = 'display: flex; flex-direction: row;'>
-							<button className = 'button is-primary button-overflow' style = 'flex-grow: 1; margin-left: 10px; margin-right: 5px; margin-top: 0px; margin-bottom: 0px;' onClick = { approve } disabled = { isConfirmDisabled() }>
-								{ simulationAndVisualisationResults.simulationMode ? `Simulate ${ buttonNameAddon(simulationAndVisualisationResults, simulationAndVisualisationResults.activeAddress) }!` :
-									<SignerLogoText {...{
-										signerName,
-										text: `Sign ${ buttonNameAddon(simulationAndVisualisationResults, simulationAndVisualisationResults.activeAddress) } with ${ getSignerName(signerName) }`
-									}}/>
-								}
-							</button>
-							<button className = 'button is-primary is-danger button-overflow' style = 'flex-grow: 1; margin-left: 5px; margin-right: 10px; margin-top: 0px; margin-bottom: 0px;' onClick = { reject} >
-								{ `Reject ${ buttonNameAddon(simulationAndVisualisationResults, simulationAndVisualisationResults.activeAddress) }` }
-							</button>
-						</div>
+						<Buttons/>
 					</nav>
 				</div>
 			</Hint>

@@ -73,7 +73,7 @@ export async function main() {
 
 		should('adding transaction and getting the next block should include all the same fields as Nethermind', async () => {
 			const block = await simulationModeNode.getBlock(blockNumber, true)
-			await simulationModeNode.appendTransaction(exampleTransaction)
+			await simulationModeNode.appendTransaction( { ...exampleTransaction, website: { websiteOrigin: 'test', icon: undefined, title: undefined } })
 			const nextBlock = await simulationModeNode.getBlock(blockNumber + 1n, true)
 			assert.equal(JSON.stringify(Object.keys(nextBlock).sort()), JSON.stringify(Object.keys(block).sort()))
 
