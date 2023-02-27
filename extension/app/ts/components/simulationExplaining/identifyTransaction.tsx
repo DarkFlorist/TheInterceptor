@@ -15,7 +15,6 @@ type IdenttifiedTransaction = {
 
 export function identifyTransaction(transaction: SimulatedAndVisualizedTransaction, activeAddress: bigint): IdenttifiedTransaction {
 	const chainString = transaction.chainId.toString()
-	console.log(transaction)
 	if (isSupportedChain(chainString)
 		&& CHAINS[chainString].eth_donator === transaction.from.address
 		&& transaction.to?.address === activeAddress
