@@ -80,6 +80,7 @@ export function TransactionImportanceBlock( param: TransactionImportanceBlockPar
 		}
 		case 'MakeYouRichTransaction': return makeYouRichTransaction(param)
 		case 'ContractFallbackMethod':
+		case 'SimpleTokenApproval':
 		case 'ArbitaryContractExecution': return <CatchAllVisualizer { ...param } />
 		default: assertNever(transactionIdentification.type)
 	}
