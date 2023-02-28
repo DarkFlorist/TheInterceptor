@@ -113,13 +113,27 @@ type AnyCallBack =  ((message: ProviderMessage) => void)
 type EthereumRequest = (options: { readonly method: string, readonly params?: readonly unknown[] }) => Promise<unknown>
 
 type InjectFunctions = {
-	request: EthereumRequest,
-	send: unknown,
-	sendAsync: unknown,
-	on: (kind: OnMessage, callback: AnyCallBack) => WindowEthereum,
-	removeListener: (kind: OnMessage, callback: AnyCallBack) => WindowEthereum,
-	isConnected: () => boolean,
-	enable: () => void,
+	request: EthereumRequest
+	send: unknown
+	sendAsync: unknown
+	on: (kind: OnMessage, callback: AnyCallBack) => WindowEthereum
+	removeListener: (kind: OnMessage, callback: AnyCallBack) => WindowEthereum
+	isConnected: () => boolean
+	enable: () => void
+}
+
+type UnSupportedWindowEthereumMethods = {
+	// We don't support these
+	chainId?: string
+	networkVersion?: string
+	selectedAddress?: string
+	once?: () => void
+	prependListener?: () => void
+	prependOnceListener?: () => void
+	_metamask?: {
+		_isUnlocked: () => Promise<boolean>
+		requestBatch: () => Promise<void>,
+	}
 }
 
 type WindowEthereum = InjectFunctions & {
@@ -391,6 +405,24 @@ class InterceptorMessageListener {
 		this.sendMessageToBackgroundPage({ method: 'connected_to_signer', params: [signerName] })
 	}
 
+	private readonly injectUnSupportedMethods = (windowEthereum: WindowEthereum & UnSupportedWindowEthereumMethods) => {
+		const unSupportedError = (method: string) => {
+			throw new Error(`The application tried to call a deprecated or non-standard method: "${ method }". Please contact the application developer to fix this issue.`)
+		}
+
+		windowEthereum.once = () => { return unSupportedError('window.ethereum.once()') },
+		windowEthereum.prependListener = () => { return unSupportedError('window.ethereum.prependListener()') },
+		windowEthereum.prependOnceListener = () => { return unSupportedError('window.ethereum.prependOnceListener()') },
+		windowEthereum._metamask = {
+			_isUnlocked: () => { return unSupportedError('window.ethereum._metamask._isUnlocked()') },
+			requestBatch: () => { return unSupportedError('window.ethereum._metamask.requestBatch()') }
+		}
+
+		Object.defineProperty(window.ethereum, 'chainId', { get() { unSupportedError('window.ethereum.chainId') }  })
+		Object.defineProperty(window.ethereum, 'networkVersion', { get() { unSupportedError('window.ethereum.networkVersion') } })
+		Object.defineProperty(window.ethereum, 'selectedAddress', { get() { unSupportedError('window.ethereum.selectedAddress') } })
+	}
+
 	public readonly injectEthereumIntoWindow = () => {
 		if (!('ethereum' in window) || !window.ethereum) {
 			// no existing signer found
@@ -402,8 +434,9 @@ class InterceptorMessageListener {
 				sendAsync: this.WindowEthereumSendAsync,
 				on: this.WindowEthereumOn,
 				removeListener: this.WindowEthereumRemoveListener,
-				enable: this.WindowEthereumEnable
+				enable: this.WindowEthereumEnable,
 			}
+			this.injectUnSupportedMethods(window.ethereum)
 			this.connected = true
 
 			return this.sendConnectedMessage('NoSigner')
@@ -436,6 +469,7 @@ class InterceptorMessageListener {
 				removeListener: this.WindowEthereumRemoveListener,
 				enable: this.WindowEthereumEnable
 			}
+			this.injectUnSupportedMethods(window.ethereum)
 			return this.sendConnectedMessage('Brave')
 		}
 		// we cannot inject window.ethereum alone here as it seems like window.ethereum is cached (maybe ethers.js does that?)
@@ -446,6 +480,7 @@ class InterceptorMessageListener {
 		window.ethereum.on = this.WindowEthereumOn
 		window.ethereum.removeListener = this.WindowEthereumRemoveListener
 		window.ethereum.enable = this.WindowEthereumEnable
+		this.injectUnSupportedMethods(window.ethereum)
 		this.sendConnectedMessage(window.ethereum.isMetaMask ? 'MetaMask' : 'NotRecognizedSigner')
 	}
 }
