@@ -61,19 +61,19 @@ export function TransactionImportanceBlock( param: TransactionImportanceBlockPar
 	switch (transactionIdentification.type) {
 		case 'EtherTransfer': {
 			return <EtherTransferVisualisation
-				transaction = { param.tx }
+				transaction = { transactionIdentification.identifiedTransaction }
 				renameAddressCallBack = { param.renameAddressCallBack }
 			/>
 		}
 		case 'SimpleTokenTransfer': {
 			return <SimpleTokenTransferVisualisation
-				transaction = { param.tx }
+				transaction = { transactionIdentification.identifiedTransaction }
 				renameAddressCallBack = { param.renameAddressCallBack }
 			/>
 		}
 		case 'SimpleTokenApproval': {
 			return <SimpleTokenApprovalVisualisation
-				transaction = { param.tx }
+				transaction = { transactionIdentification.identifiedTransaction }
 				renameAddressCallBack = { param.renameAddressCallBack }
 			/>
 		}
@@ -88,7 +88,7 @@ export function TransactionImportanceBlock( param: TransactionImportanceBlockPar
 		case 'MakeYouRichTransaction': return makeYouRichTransaction(param)
 		case 'ContractFallbackMethod':
 		case 'ArbitaryContractExecution': return <CatchAllVisualizer { ...param } />
-		default: assertNever(transactionIdentification.type)
+		default: assertNever(transactionIdentification)
 	}
 }
 

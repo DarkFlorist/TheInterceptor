@@ -490,7 +490,12 @@ export function TransactionsAccountChangesCard({ tx, renameAddressCallBack, addr
 	</div>
 }
 
-export function GasFee({ tx, chain }: { tx: SimulatedAndVisualizedTransaction, chain: CHAIN } ) {
+export type TransactionGasses = {
+	gasSpent: bigint
+	realizedGasPrice: bigint
+}
+
+export function GasFee({ tx, chain }: { tx: TransactionGasses, chain: CHAIN } ) {
 	return <>
 		<div class = 'log-cell'>
 			<p class = 'ellipsis' style = { `color: var(--subtitle-text-color); margin-bottom: 0px` }> Gas fee:&nbsp;</p>

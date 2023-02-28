@@ -1,9 +1,10 @@
 import { DistributedOmit } from '../../../utils/typescript.js'
-import { AddressBookEntry, RenameAddressCallBack } from '../../../utils/user-interface-types.js'
-import { SimulatedAndVisualizedTransaction, EthBalanceChangesWithMetadata } from '../../../utils/visualizer-types.js'
+import { AddressBookEntry, CHAIN, RenameAddressCallBack } from '../../../utils/user-interface-types.js'
+import { EthBalanceChangesWithMetadata } from '../../../utils/visualizer-types.js'
 import { BigAddress } from '../../subcomponents/address.js'
 import { TokenOrEth, TokenOrEtherParams } from '../../subcomponents/coins.js'
-import { GasFee } from '../SimulationSummary.js'
+import { GasFee, TransactionGasses } from '../SimulationSummary.js'
+import { SimulatedAndVisualizedEtherTransferTransaction, SimulatedAndVisualizedSimpleTokenTransferTransaction } from '../identifyTransaction.js'
 
 type BeforeAfterAddress = {
 	address: AddressBookEntry
@@ -40,7 +41,7 @@ export function AddressBeforeAfter({ address, beforeAndAfter, renameAddressCallB
 }
 
 type SimpleSendParams = {
-	transaction: SimulatedAndVisualizedTransaction
+	transaction: TransactionGasses & { chainId: CHAIN }
 	asset: TokenOrEtherParams
 	sender: BeforeAfterAddress
 	receiver: BeforeAfterAddress
@@ -88,9 +89,7 @@ function getBeforeAndAfterBalanceForAddress(ethBalances: readonly EthBalanceChan
 	}
 }
 
-export function EtherTransferVisualisation({ transaction, renameAddressCallBack }: { transaction: SimulatedAndVisualizedTransaction, renameAddressCallBack: RenameAddressCallBack }) {
-	if (transaction.to === undefined) return <></>
-
+export function EtherTransferVisualisation({ transaction, renameAddressCallBack }: { transaction: SimulatedAndVisualizedEtherTransferTransaction, renameAddressCallBack: RenameAddressCallBack }) {
 	const senderBalanceChanges = getBeforeAndAfterBalanceForAddress(transaction.ethBalanceChanges, transaction.from.address)
 	const receiverBalanceChanges = getBeforeAndAfterBalanceForAddress(transaction.ethBalanceChanges, transaction.to.address)
 	if (senderBalanceChanges === undefined || receiverBalanceChanges === undefined) return <></>
@@ -107,12 +106,8 @@ export function EtherTransferVisualisation({ transaction, renameAddressCallBack 
 	/>
 }
 
-export function SimpleTokenTransferVisualisation({ transaction, renameAddressCallBack }: { transaction: SimulatedAndVisualizedTransaction, renameAddressCallBack: RenameAddressCallBack }) {
-	if (transaction.to === undefined) throw new Error('Contract creation trasaction')
-	if (transaction.tokenResults.length != 1) throw new Error('Multiple token events transfer')
-
+export function SimpleTokenTransferVisualisation({ transaction, renameAddressCallBack }: { transaction: SimulatedAndVisualizedSimpleTokenTransferTransaction, renameAddressCallBack: RenameAddressCallBack }) {
 	const transfer = transaction.tokenResults[0]
-	if (transfer.isApproval) throw new Error('Is Approval')
 	const asset = { ...('amount' in transfer ? { ...transfer.token, amount: transfer.amount } : { ...transfer.token, received: false, id: transfer.tokenId }) }
 
 	return <SimpleSend

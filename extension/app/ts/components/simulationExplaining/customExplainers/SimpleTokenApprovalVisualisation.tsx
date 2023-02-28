@@ -1,15 +1,11 @@
 import { RenameAddressCallBack } from '../../../utils/user-interface-types.js'
-import { SimulatedAndVisualizedTransaction } from '../../../utils/visualizer-types.js'
 import { BigAddress } from '../../subcomponents/address.js'
 import { Token721AmountField, TokenAmount, TokenSymbol } from '../../subcomponents/coins.js'
 import { GasFee } from '../SimulationSummary.js'
+import { SimulatedAndVisualizedSimpleApprovalTransaction } from '../identifyTransaction.js'
 
-export function SimpleTokenApprovalVisualisation({ transaction, renameAddressCallBack }: { transaction: SimulatedAndVisualizedTransaction, renameAddressCallBack: RenameAddressCallBack }) {
-	if (transaction.to === undefined) throw new Error('Contract creation trasaction')
-	if (transaction.tokenResults.length != 1) throw new Error('Multiple token events transfer')
-
+export function SimpleTokenApprovalVisualisation({ transaction, renameAddressCallBack }: { transaction: SimulatedAndVisualizedSimpleApprovalTransaction, renameAddressCallBack: RenameAddressCallBack }) {
 	const approval = transaction.tokenResults[0]
-	if (!approval.isApproval) throw new Error('Is Not Approval')
 	const textColor = 'var(--negative-color)'
 
 	return <div class = 'notification transaction-importance-box'>
