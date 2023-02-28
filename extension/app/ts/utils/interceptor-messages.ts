@@ -502,10 +502,10 @@ export const Settings = funtypes.Object({
 })
 
 export type UpdateHomePage = funtypes.Static<typeof UpdateHomePage>
-export const UpdateHomePage = funtypes.Object({
+export const UpdateHomePage = funtypes.ReadonlyObject({
 	method: funtypes.Literal('popup_UpdateHomePage'),
-	data: funtypes.Object({
-		simulation: funtypes.Object({
+	data: funtypes.ReadonlyObject({
+		simulation: funtypes.ReadonlyObject({
 			simulationState: funtypes.Union(SimulationState, funtypes.Undefined),
 			visualizerResults: funtypes.Union(funtypes.ReadonlyArray(SimResults), funtypes.Undefined),
 			addressBookEntries: AddressBookEntries,
