@@ -10,6 +10,7 @@ import { identifyTransaction } from './identifyTransaction.js'
 import { makeYouRichTransaction } from './customExplainers/MakeMeRich.js'
 import { ApproveIcon, ArrowIcon } from '../subcomponents/icons.js'
 import { EtherTransferVisualisation, SimpleTokenTransferVisualisation } from './customExplainers/SimpleSendVisualisations.js'
+import { SimpleTokenApprovalVisualisation } from './customExplainers/SimpleTokenApprovalVisualisation.js'
 import { assertNever } from '../../utils/typescript.js'
 import { CatchAllVisualizer } from './customExplainers/CatchAllVisualizer.js'
 
@@ -60,13 +61,19 @@ export function TransactionImportanceBlock( param: TransactionImportanceBlockPar
 	switch (transactionIdentification.type) {
 		case 'EtherTransfer': {
 			return <EtherTransferVisualisation
-				transaction = { param.tx }
+				transaction = { transactionIdentification.identifiedTransaction }
 				renameAddressCallBack = { param.renameAddressCallBack }
 			/>
 		}
 		case 'SimpleTokenTransfer': {
 			return <SimpleTokenTransferVisualisation
-				transaction = { param.tx }
+				transaction = { transactionIdentification.identifiedTransaction }
+				renameAddressCallBack = { param.renameAddressCallBack }
+			/>
+		}
+		case 'SimpleTokenApproval': {
+			return <SimpleTokenApprovalVisualisation
+				transaction = { transactionIdentification.identifiedTransaction }
 				renameAddressCallBack = { param.renameAddressCallBack }
 			/>
 		}
@@ -80,9 +87,8 @@ export function TransactionImportanceBlock( param: TransactionImportanceBlockPar
 		}
 		case 'MakeYouRichTransaction': return makeYouRichTransaction(param)
 		case 'ContractFallbackMethod':
-		case 'SimpleTokenApproval':
 		case 'ArbitaryContractExecution': return <CatchAllVisualizer { ...param } />
-		default: assertNever(transactionIdentification.type)
+		default: assertNever(transactionIdentification)
 	}
 }
 
