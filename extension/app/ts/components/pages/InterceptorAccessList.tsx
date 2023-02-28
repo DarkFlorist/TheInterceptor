@@ -28,19 +28,21 @@ export function InterceptorAccessList(param: InterceptorAccessListParams) {
 	function updateEditableAccessList(websiteAccess: WebsiteAccessArray | undefined = undefined) {
 		const newList = websiteAccess ? websiteAccess : param.websiteAccess
 		if (newList === undefined) return setEditableAccessList(undefined)
-		if (editableAccessList === undefined) {
-			setEditableAccessList(newList.map( (x) => ({
-				websiteAccess: x,
-				addressAccess: x.addressAccess === undefined ? [] : x.addressAccess,
-				addressAccessModified: x.addressAccess === undefined ? [] : x.addressAccess.map( (addr) => ({
-					address: addr.address,
-					access: addr.access,
+		setEditableAccessList((editableAccessList) => {
+			if (editableAccessList === undefined) {
+				return newList.map( (x) => ({
+					websiteAccess: x,
+					addressAccess: x.addressAccess === undefined ? [] : x.addressAccess,
+					addressAccessModified: x.addressAccess === undefined ? [] : x.addressAccess.map( (addr) => ({
+						address: addr.address,
+						access: addr.access,
+						removed: false,
+					})),
+					access: x.access,
 					removed: false,
-				})),
-				access: x.access,
-				removed: false,
-			})))
-		} else {
+				}))
+			}
+			// update only the changed entities
 			const merge = (newAccess: WebsiteAccess, editableAccessList: readonly EditableAccess[]) => {
 				const previousEntity = editableAccessList.find((x) => x.websiteAccess.website.websiteOrigin === newAccess.website.websiteOrigin)
 				if (previousEntity === undefined) {
@@ -60,7 +62,6 @@ export function InterceptorAccessList(param: InterceptorAccessListParams) {
 				const mergeAddressAccess = (addr: WebsiteAddressAccess, modifiedAddressAccess: readonly ModifiedAddressAccess[], previousEntity: readonly WebsiteAddressAccess[]) => {
 					const previousModifiedAccess = modifiedAddressAccess.find((x) => x.address === addr.address)
 					const previousAccess = previousEntity.find((x) => x.address === addr.address)
-
 					return {
 						address: addr.address,
 						access: previousModifiedAccess === undefined || previousAccess === undefined ? addr.access : (previousModifiedAccess.access === previousAccess.access ? addr.access : previousModifiedAccess.access),
@@ -76,9 +77,8 @@ export function InterceptorAccessList(param: InterceptorAccessListParams) {
 					access: previousEntity.access === previousEntity.websiteAccess.access ? newAccess.access : previousEntity.access
 				}
 			}
-			// update only changed entities
-			setEditableAccessList(newList.map( (x) => merge(x, editableAccessList)))
-		}
+			return newList.map( (x) => merge(x, editableAccessList))
+		})
 	}
 
 	useEffect( () => {
