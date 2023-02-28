@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'preact/hooks'
 import { getChainName, isSupportedChain } from '../../utils/constants.js'
 import { Error as ErrorContainer, ErrorCheckBox } from '../subcomponents/Error.js'
-import { ChangeChainRequest, MessageToPopup } from '../../utils/interceptor-messages.js'
+import { ChangeChainRequest, ExternalPopupMessage } from '../../utils/interceptor-messages.js'
 import { sendPopupMessageToBackgroundPage } from '../../background/backgroundUtils.js'
 import { Website } from '../../utils/user-interface-types.js'
 
@@ -19,7 +19,7 @@ export function ChangeChain() {
 
 	useEffect( () => {
 		async function popupMessageListener(msg: unknown) {
-			const message = MessageToPopup.parse(msg)
+			const message = ExternalPopupMessage.parse(msg)
 			if ( message.method !== 'popup_ChangeChainRequest') return
 			await updatePage(message)
 		}

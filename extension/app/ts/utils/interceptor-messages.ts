@@ -279,7 +279,7 @@ export const GetAddressBookDataReplyData = funtypes.Object({
 
 export type GetAddressBookDataReply = funtypes.Static<typeof GetAddressBookDataReply>
 export const GetAddressBookDataReply = funtypes.Object({
-	method: funtypes.Literal('popup_getAddressBookData'),
+	method: funtypes.Literal('popup_getAddressBookDataReply'),
 	data: GetAddressBookDataReplyData,
 }).asReadonly()
 
@@ -444,6 +444,9 @@ export const MessageToPopup = funtypes.Union(
 	ConfirmTransactionSimulationStateChanged,
 	NewBlockArrived,
 )
+
+export type ExternalPopupMessage = funtypes.Static<typeof MessageToPopup>
+export const ExternalPopupMessage = funtypes.Union(MessageToPopup, PopupMessage) // message that moves from popup to another, or from background page to popup, or from popup to background page
 
 export type HandleSimulationModeReturnValue = {
 	result: unknown,

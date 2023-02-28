@@ -6,7 +6,7 @@ import Hint from '../subcomponents/Hint.js'
 import { Error as ErrorComponent} from '../subcomponents/Error.js'
 import { MOCK_PRIVATE_KEYS_ADDRESS, getChainName } from '../../utils/constants.js'
 import { AddNewAddress } from './AddNewAddress.js'
-import { MessageToPopup, PersonalSignRequest } from '../../utils/interceptor-messages.js'
+import { ExternalPopupMessage, PersonalSignRequest } from '../../utils/interceptor-messages.js'
 import { sendPopupMessageToBackgroundPage } from '../../background/backgroundUtils.js'
 
 interface SignRequest {
@@ -25,7 +25,7 @@ export function PersonalSign() {
 
 	useEffect( () => {
 		async function popupMessageListener(msg: unknown) {
-			const message = MessageToPopup.parse(msg)
+			const message = ExternalPopupMessage.parse(msg)
 			if ( message.method !== 'popup_personal_sign_request') return
 			await updatePage(message)
 		}

@@ -2,7 +2,7 @@ import { useState, useEffect } from 'preact/hooks'
 import { ActiveAddress, BigAddress, WebsiteOriginText } from '../subcomponents/address.js'
 import { AddNewAddress } from './AddNewAddress.js'
 import { AddressInfoEntry, AddressBookEntry, AddingNewAddressType, RenameAddressCallBack, Page, AddressInfo, Website } from '../../utils/user-interface-types.js'
-import { MessageToPopup, SignerName } from '../../utils/interceptor-messages.js'
+import { ExternalPopupMessage, SignerName } from '../../utils/interceptor-messages.js'
 import { sendPopupMessageToBackgroundPage } from '../../background/backgroundUtils.js'
 import Hint from '../subcomponents/Hint.js'
 import { convertNumberToCharacterRepresentationIfSmallEnough } from '../ui-utils.js'
@@ -122,7 +122,7 @@ export function InterceptorAccess() {
 
 	useEffect( () => {
 		async function popupMessageListener(msg: unknown) {
-			const message = MessageToPopup.parse(msg)
+			const message = ExternalPopupMessage.parse(msg)
 			if (message.method !== 'popup_interceptorAccessDialog') return
 			setAccessRequest(message.data)
 		}

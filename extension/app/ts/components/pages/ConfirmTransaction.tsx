@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'preact/hooks'
-import { MessageToPopup, SignerName } from '../../utils/interceptor-messages.js'
+import { ExternalPopupMessage, SignerName } from '../../utils/interceptor-messages.js'
 import { SimulationAndVisualisationResults } from '../../utils/visualizer-types.js'
 import Hint from '../subcomponents/Hint.js'
 import { GasFee, LogAnalysisCard, SimulatedInBlockNumber, TransactionHeader, TransactionsAccountChangesCard } from '../simulationExplaining/SimulationSummary.js'
@@ -103,7 +103,7 @@ export function ConfirmTransaction() {
 
 	useEffect( () => {
 		function popupMessageListener(msg: unknown) {
-			const message = MessageToPopup.parse(msg)
+			const message = ExternalPopupMessage.parse(msg)
 
 			if (message.method === 'popup_new_block_arrived') {
 				refreshSimulation()
