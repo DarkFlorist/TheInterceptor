@@ -329,20 +329,20 @@ class InterceptorMessageListener {
         this.sendConnectedMessage = (signerName) => {
             this.sendMessageToBackgroundPage({ method: 'connected_to_signer', params: [signerName] });
         };
-        this.injectUnSupportedMethods = (windowEthereum) => {
-            const unSupportedError = (method) => {
+        this.injectUnsupportedMethods = (windowEthereum) => {
+            const unsupportedError = (method) => {
                 throw new Error(\`The application tried to call a deprecated or non-standard method: "\${method}". Please contact the application developer to fix this issue.\`);
             };
-            windowEthereum.once = () => { return unSupportedError('window.ethereum.once()'); },
-                windowEthereum.prependListener = () => { return unSupportedError('window.ethereum.prependListener()'); },
-                windowEthereum.prependOnceListener = () => { return unSupportedError('window.ethereum.prependOnceListener()'); },
+            windowEthereum.once = () => { return unsupportedError('window.ethereum.once()'); },
+                windowEthereum.prependListener = () => { return unsupportedError('window.ethereum.prependListener()'); },
+                windowEthereum.prependOnceListener = () => { return unsupportedError('window.ethereum.prependOnceListener()'); },
                 windowEthereum._metamask = {
-                    isUnlocked: () => { return unSupportedError('window.ethereum._metamask.isUnlocked()'); },
-                    requestBatch: () => { return unSupportedError('window.ethereum._metamask.requestBatch()'); }
+                    isUnlocked: () => { return unsupportedError('window.ethereum._metamask.isUnlocked()'); },
+                    requestBatch: () => { return unsupportedError('window.ethereum._metamask.requestBatch()'); }
                 };
-            Object.defineProperty(window.ethereum, 'chainId', { get() { unSupportedError('window.ethereum.chainId'); } });
-            Object.defineProperty(window.ethereum, 'networkVersion', { get() { unSupportedError('window.ethereum.networkVersion'); } });
-            Object.defineProperty(window.ethereum, 'selectedAddress', { get() { unSupportedError('window.ethereum.selectedAddress'); } });
+            Object.defineProperty(window.ethereum, 'chainId', { get() { unsupportedError('window.ethereum.chainId'); } });
+            Object.defineProperty(window.ethereum, 'networkVersion', { get() { unsupportedError('window.ethereum.networkVersion'); } });
+            Object.defineProperty(window.ethereum, 'selectedAddress', { get() { unsupportedError('window.ethereum.selectedAddress'); } });
         };
         this.injectEthereumIntoWindow = () => {
             if (!('ethereum' in window) || !window.ethereum) {
@@ -356,7 +356,7 @@ class InterceptorMessageListener {
                     removeListener: this.WindowEthereumRemoveListener,
                     enable: this.WindowEthereumEnable,
                 };
-                this.injectUnSupportedMethods(window.ethereum);
+                this.injectUnsupportedMethods(window.ethereum);
                 this.connected = true;
                 return this.sendConnectedMessage('NoSigner');
             }
@@ -384,7 +384,7 @@ class InterceptorMessageListener {
                     removeListener: this.WindowEthereumRemoveListener,
                     enable: this.WindowEthereumEnable
                 };
-                this.injectUnSupportedMethods(window.ethereum);
+                this.injectUnsupportedMethods(window.ethereum);
                 return this.sendConnectedMessage('Brave');
             }
             // we cannot inject window.ethereum alone here as it seems like window.ethereum is cached (maybe ethers.js does that?)
@@ -395,7 +395,7 @@ class InterceptorMessageListener {
             window.ethereum.on = this.WindowEthereumOn;
             window.ethereum.removeListener = this.WindowEthereumRemoveListener;
             window.ethereum.enable = this.WindowEthereumEnable;
-            this.injectUnSupportedMethods(window.ethereum);
+            this.injectUnsupportedMethods(window.ethereum);
             this.sendConnectedMessage(window.ethereum.isMetaMask ? 'MetaMask' : 'NotRecognizedSigner');
         };
         this.injectEthereumIntoWindow();
