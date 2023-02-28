@@ -181,8 +181,10 @@ export type WebsiteApproval = {
 }
 
 export type NotificationCenterParams = {
-	setAndSaveAppPage: (page: Page) => void,
-	renameAddressCallBack: RenameAddressCallBack,
+	setAndSaveAppPage: (page: Page) => void
+	renameAddressCallBack: RenameAddressCallBack
+	pendingAccessRequests: PendingAccessRequestArray | undefined
+	pendingAccessMetadata: readonly [string, AddressInfoEntry][]
 }
 
 export type PendingAccessRequest = funtypes.Static<typeof PendingAccessRequest>

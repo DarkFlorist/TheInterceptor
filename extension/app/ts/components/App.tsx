@@ -3,7 +3,7 @@ import { defaultAddresses } from '../background/settings.js'
 import { SimResults, SimulationAndVisualisationResults, SimulationState, TokenPriceEstimate } from '../utils/visualizer-types.js'
 import { ChangeActiveAddress } from './pages/ChangeActiveAddress.js'
 import { Home } from './pages/Home.js'
-import { AddressInfo, AddressInfoEntry, AddressBookEntry, AddingNewAddressType, AddressBookEntries } from '../utils/user-interface-types.js'
+import { AddressInfo, AddressInfoEntry, AddressBookEntry, AddingNewAddressType, AddressBookEntries, PendingAccessRequestArray } from '../utils/user-interface-types.js'
 import Hint from './subcomponents/Hint.js'
 import { AddNewAddress } from './pages/AddNewAddress.js'
 import { InterceptorAccessList } from './pages/InterceptorAccessList.js'
@@ -32,7 +32,8 @@ export function App() {
 	const [websiteAccessAddressMetadata, setWebsiteAccessAddressMetadata] = useState<readonly AddressInfoEntry[]>([])
 	const [activeChain, setActiveChain] = useState<bigint>(1n)
 	const [simulationMode, setSimulationMode] = useState<boolean>(true)
-	const [notificationBadgeCount, setNotificationBadgeCount] = useState<number>(0)
+	const [pendingAccessRequests, setPendingAccessRequests] = useState<PendingAccessRequestArray | undefined>(undefined)
+	const [pendingAccessMetadata, setPendingAccessMetadata] = useState<readonly [string, AddressInfoEntry][]>([])
 	const [tabConnection, setTabConnection] = useState<TabConnection>(DEFAULT_TAB_CONNECTION)
 	const [tabApproved, setTabApproved] = useState<boolean>(false)
 	const [isSettingsLoaded, setIsSettingsLoaded] = useState<boolean>(false)
@@ -120,7 +121,8 @@ export function App() {
 		setWebsiteAccessAddressMetadata(data.websiteAccessAddressMetadata)
 		setActiveChain(settings.activeChain)
 		setSimulationMode(settings.simulationMode !== undefined ? settings.simulationMode : true)
-		setNotificationBadgeCount(settings.pendingAccessRequests.length)
+		setPendingAccessRequests(settings.pendingAccessRequests)
+		setPendingAccessMetadata(data.pendingAccessMetadata)
 
 		setSignerName(data.signerName)
 		setCurrentBlockNumber(data.currentBlockNumber)
@@ -205,7 +207,7 @@ export function App() {
 									<img src = '../img/address-book.svg' width = '32' onClick = { openAddressBook }/>
 									<div>
 										<img src = '../img/notification-bell.svg' width = '32' onClick = { () => setAndSaveAppPage('NotificationCenter') }/>
-										{ notificationBadgeCount <= 0 ? <> </> : <span class = 'badge' style = 'transform: translate(-75%, 75%);'> { notificationBadgeCount } </span> }
+										{ pendingAccessRequests === undefined || pendingAccessRequests.length <= 0 ? <> </> : <span class = 'badge' style = 'transform: translate(-75%, 75%);'> { pendingAccessRequests.length } </span> }
 									</div>
 								</a>
 							</div>
@@ -234,6 +236,8 @@ export function App() {
 								<NotificationCenter
 									setAndSaveAppPage = { setAndSaveAppPage }
 									renameAddressCallBack = { renameAddressCallBack }
+									pendingAccessRequests = { pendingAccessRequests }
+									pendingAccessMetadata = { pendingAccessMetadata }
 								/>
 							: <></> }
 							{ appPage === 'AccessList' ?
