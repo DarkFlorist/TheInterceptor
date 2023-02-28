@@ -131,7 +131,7 @@ type UnSupportedWindowEthereumMethods = {
 	prependListener?: () => void
 	prependOnceListener?: () => void
 	_metamask?: {
-		_isUnlocked: () => Promise<boolean>
+		isUnlocked: () => Promise<boolean>
 		requestBatch: () => Promise<void>,
 	}
 }

@@ -337,7 +337,7 @@ class InterceptorMessageListener {
                 windowEthereum.prependListener = () => { return unSupportedError('window.ethereum.prependListener()'); },
                 windowEthereum.prependOnceListener = () => { return unSupportedError('window.ethereum.prependOnceListener()'); },
                 windowEthereum._metamask = {
-                    _isUnlocked: () => { return unSupportedError('window.ethereum._metamask._isUnlocked()'); },
+                    isUnlocked: () => { return unSupportedError('window.ethereum._metamask.isUnlocked()'); },
                     requestBatch: () => { return unSupportedError('window.ethereum._metamask.requestBatch()'); }
                 };
             Object.defineProperty(window.ethereum, 'chainId', { get() { unSupportedError('window.ethereum.chainId'); } });
