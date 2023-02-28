@@ -1,11 +1,11 @@
 
-import { Page, ChangeActiveAddressParam } from '../../utils/user-interface-types.js'
+import { ChangeActiveAddressParam } from '../../utils/user-interface-types.js'
 import { BigAddress } from '../subcomponents/address.js'
 import { getSignerLogo, getSignerName, SignerLogoText } from '../subcomponents/signers.js'
 
 export function ChangeActiveAddress(param: ChangeActiveAddressParam) {
 	function ChangeAndStoreActiveAddress(activeAddress: bigint | 'signer') {
-		param.setAndSaveAppPage(Page.Home)
+		param.setAndSaveAppPage('Home')
 		param.setActiveAddressAndInformAboutIt(activeAddress)
 	}
 
@@ -21,11 +21,11 @@ export function ChangeActiveAddress(param: ChangeActiveAddressParam) {
 	}
 
 	function goHome() {
-		param.setAndSaveAppPage(Page.Home)
+		param.setAndSaveAppPage('Home')
 	}
 
 	function changePageToAddAddress() {
-		param.setAndSaveAppPage(Page.AddNewAddress)
+		param.setAndSaveAppPage('AddNewAddress')
 	}
 
 	const signerAddressName = param.addressInfos.find( (x) => x.address === getSignerAccount() )?.name

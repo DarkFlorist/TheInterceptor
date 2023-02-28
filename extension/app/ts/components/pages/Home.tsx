@@ -1,4 +1,4 @@
-import { HomeParams, AddressInfo, Page, FirstCardParams, TabConnection, SimulationStateParam } from '../../utils/user-interface-types.js'
+import { HomeParams, AddressInfo, FirstCardParams, SimulationStateParam } from '../../utils/user-interface-types.js'
 import { useEffect, useState } from 'preact/hooks'
 import { SimulationAndVisualisationResults } from '../../utils/visualizer-types.js'
 import { ActiveAddress, findAddressInfo } from '../subcomponents/address.js'
@@ -6,7 +6,7 @@ import { SimulationSummary } from '../simulationExplaining/SimulationSummary.js'
 import { ChainSelector } from '../subcomponents/ChainSelector.js'
 import { Spinner } from '../subcomponents/Spinner.js'
 import { DEFAULT_TAB_CONNECTION, getChainName, ICON_NOT_ACTIVE, ICON_SIGNING, ICON_SIGNING_NOT_SUPPORTED, isSupportedChain } from '../../utils/constants.js'
-import { SignerName } from '../../utils/interceptor-messages.js'
+import { SignerName, TabConnection } from '../../utils/interceptor-messages.js'
 import { getSignerName, SignerLogoText, SignersLogoName } from '../subcomponents/signers.js'
 import { Error } from '../subcomponents/Error.js'
 import { ToolTip } from '../subcomponents/CopyToClipboard.js'
@@ -182,7 +182,7 @@ export function Home(param: HomeParams) {
 	])
 
 	function changeActiveAddress() {
-		param.setAndSaveAppPage(Page.ChangeActiveAddress)
+		param.setAndSaveAppPage('ChangeActiveAddress')
 	}
 
 	function enableSimulationMode(enabled: boolean ) {

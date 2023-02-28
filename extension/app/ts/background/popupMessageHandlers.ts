@@ -1,7 +1,7 @@
 import { changeActiveAddressAndChainAndResetSimulation, changeActiveChain, PrependTransactionMode, refreshConfirmTransactionSimulation, updatePrependMode, updateSimulationState } from './background.js'
-import { getOpenedAddressBookTabId, saveAddressInfos, saveContacts, saveMakeMeRich, saveOpenedAddressBookTabId, savePage, saveSimulationMode, saveUseSignersAddressAsActiveAddress, saveWebsiteAccess, UserAddressBook } from './settings.js'
+import { getOpenedAddressBookTabId, saveAddressInfos, saveContacts, saveMakeMeRich, saveOpenedAddressBookTabId, savePage, saveSimulationMode, saveUseSignersAddressAsActiveAddress, saveWebsiteAccess } from './settings.js'
 import { Simulator } from '../simulation/simulator.js'
-import { ChangeActiveAddress, ChangeMakeMeRich, ChangePage, PersonalSign, RemoveTransaction, RequestAccountsFromSigner, TransactionConfirmation, InterceptorAccess, ChangeInterceptorAccess, ChainChangeConfirmation, EnableSimulationMode, ReviewNotification, RejectNotification, ChangeActiveChain, AddOrEditAddressBookEntry, GetAddressBookData, RemoveAddressBookEntry, RefreshConfirmTransactionDialogSimulation } from '../utils/interceptor-messages.js'
+import { ChangeActiveAddress, ChangeMakeMeRich, ChangePage, PersonalSign, RemoveTransaction, RequestAccountsFromSigner, TransactionConfirmation, InterceptorAccess, ChangeInterceptorAccess, ChainChangeConfirmation, EnableSimulationMode, ReviewNotification, RejectNotification, ChangeActiveChain, AddOrEditAddressBookEntry, GetAddressBookData, RemoveAddressBookEntry, RefreshConfirmTransactionDialogSimulation, UserAddressBook } from '../utils/interceptor-messages.js'
 import { resolvePendingTransaction } from './windows/confirmTransaction.js'
 import { resolvePersonalSign } from './windows/personalSign.js'
 import { changeAccess, requestAccessFromUser, resolveExistingInterceptorAccessAsNoResponse, resolveInterceptorAccess, setPendingAccessRequests } from './windows/interceptorAccess.js'
@@ -237,4 +237,36 @@ export async function openAddressBook(_simulator: Simulator) {
 
 	if (addressBookTab?.id === undefined) return await openInNewTab()
 	return await browser.tabs.update(addressBookTab.id, { active: true })
+}
+
+export async function homeOpened() {
+	if (window.interceptor.settings === undefined) return
+
+	const tabs = await browser.tabs.query({ active: true, currentWindow: true })
+	if (tabs.length === 0 || tabs[0].id === undefined ) return
+	const signerState = window.interceptor.websiteTabSignerStates.get(tabs[0].id)
+	const signerAccounts = signerState === undefined ? undefined : signerState.signerAccounts
+	const tabConnection = window.interceptor.websiteTabConnection.get(tabs[0].id)
+	const tabApproved = window.interceptor.websiteTabApprovals.get(tabs[0].id)?.approved === true
+
+	sendPopupMessageToOpenWindows({
+		method: 'popup_UpdateHomePage',
+		data: {
+			simulation: {
+				simulationState: window.interceptor.simulation.simulationState,
+				visualizerResults: window.interceptor.simulation.visualizerResults,
+				addressBookEntries: window.interceptor.simulation.addressBookEntries,
+				tokenPrices: window.interceptor.simulation.tokenPrices,
+			},
+			websiteAccessAddressMetadata: window.interceptor.websiteAccessAddressMetadata,
+			pendingAccessMetadata: window.interceptor.pendingAccessMetadata,
+			signerAccounts: signerAccounts,
+			signerChain: window.interceptor.signerChain,
+			signerName: window.interceptor.signerName,
+			currentBlockNumber: window.interceptor.currentBlockNumber,
+			settings: window.interceptor.settings,
+			tabConnection: tabConnection,
+			tabApproved: tabApproved,
+		}
+	})
 }

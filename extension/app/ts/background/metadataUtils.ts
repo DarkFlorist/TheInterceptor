@@ -5,7 +5,7 @@ import { nftMetadata, tokenMetadata, contractMetadata } from '@darkflorist/addre
 import { ethers } from 'ethers'
 import { Simulator } from '../simulation/simulator.js'
 import { MOCK_ADDRESS } from '../utils/constants.js'
-import { UserAddressBook } from './settings.js'
+import { UserAddressBook } from '../utils/interceptor-messages.js'
 export const LOGO_URI_PREFIX = `../vendor/@darkflorist/address-metadata`
 
 export function getFullLogoUri(logoURI: string) {

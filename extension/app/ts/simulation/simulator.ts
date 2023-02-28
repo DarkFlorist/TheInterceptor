@@ -54,7 +54,7 @@ export class Simulator {
 		for (let i = 0; i < transactions.length; i++) {
 			resultPromises.push(this.visualizeTransaction(transactions[i], blockNumber, multicallResults[i]))
 		}
-		return Promise.all(resultPromises)
+		return await Promise.all(resultPromises)
 	}
 
 	public async evaluateTransaction(transaction: EthereumUnsignedTransactionWithWebsite, transactionQueue: EthereumUnsignedTransaction[]) {

@@ -1,11 +1,11 @@
-import { AddressInfoEntry, InterceptorAccessListParams, Page } from '../../utils/user-interface-types.js'
+import { AddressInfoEntry, InterceptorAccessListParams } from '../../utils/user-interface-types.js'
 import { useEffect, useState } from 'preact/hooks'
-import { WebsiteAccess, WebsiteAccessArray, WebsiteAddressAccess } from '../../background/settings.js'
 import { SmallAddress } from '../subcomponents/address.js'
 import { CopyToClipboard } from '../subcomponents/CopyToClipboard.js'
 import { ethers } from 'ethers'
 import { addressString } from '../../utils/bigint.js'
 import { sendPopupMessageToBackgroundPage } from '../../background/backgroundUtils.js'
+import { WebsiteAccess, WebsiteAccessArray, WebsiteAddressAccess } from '../../utils/interceptor-messages.js'
 
 interface ModifiedAddressAccess {
 	address: string,
@@ -52,7 +52,7 @@ export function InterceptorAccessList(param: InterceptorAccessListParams) {
 	}, [param.websiteAccess, param.websiteAccessAddressMetadata])
 
 	function goHome() {
-		param.setAndSaveAppPage(Page.Home)
+		param.setAndSaveAppPage('Home')
 	}
 
 	function setWebsiteAccess(index: number, access: boolean | undefined, removed: boolean | undefined) {

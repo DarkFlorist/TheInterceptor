@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'preact/hooks'
 import { ActiveAddress, BigAddress, WebsiteOriginText } from '../subcomponents/address.js'
 import { AddNewAddress } from './AddNewAddress.js'
-import { AddressInfoEntry, AddressBookEntry, AddingNewAddressType, RenameAddressCallBack, Page, AddressInfo, Website } from '../../utils/user-interface-types.js'
+import { AddressInfoEntry, AddressBookEntry, AddingNewAddressType, RenameAddressCallBack, AddressInfo, Website } from '../../utils/user-interface-types.js'
 import { ExternalPopupMessage, SignerName } from '../../utils/interceptor-messages.js'
 import { sendPopupMessageToBackgroundPage } from '../../background/backgroundUtils.js'
 import Hint from '../subcomponents/Hint.js'
@@ -118,7 +118,7 @@ interface InterceptorAccessRequest {
 export function InterceptorAccess() {
 	const [accessRequest, setAccessRequest] = useState<InterceptorAccessRequest | undefined>(undefined)
 	const [addingNewAddress, setAddingNewAddress] = useState<AddingNewAddressType> ({ addingAddress: true, type: 'addressInfo' as const })
-	const [appPage, setAppPage] = useState(Page.Home)
+	const [appPage, setAppPage] = useState('Home')
 
 	useEffect( () => {
 		async function popupMessageListener(msg: unknown) {
@@ -154,12 +154,12 @@ export function InterceptorAccess() {
 	}
 
 	function renameAddressCallBack(entry: AddressBookEntry) {
-		setAppPage(Page.ModifyAddress)
+		setAppPage('ModifyAddress')
 		setAddingNewAddress({ addingAddress: false, entry: entry })
 	}
 
 	function changeActiveAddress() {
-		setAppPage(Page.ChangeActiveAddress)
+		setAppPage('ChangeActiveAddress')
 	}
 
 	function refreshActiveAddress() {
@@ -185,17 +185,17 @@ export function InterceptorAccess() {
 
 	return <main>
 		<Hint>
-			<div class = { `modal ${ appPage !== Page.Home ? 'is-active' : ''}` }>
-				{ appPage === Page.AddNewAddress || appPage === Page.ModifyAddress ?
+			<div class = { `modal ${ appPage !== 'Home' ? 'is-active' : ''}` }>
+				{ appPage === 'AddNewAddress' || appPage === 'ModifyAddress' ?
 					<AddNewAddress
 						setActiveAddressAndInformAboutIt = { setActiveAddressAndInformAboutIt }
-						addingNewAddress = { appPage === Page.AddNewAddress ? { addingAddress: true, type: 'addressInfo' } : addingNewAddress }
-						close = { () => setAppPage(Page.Home) }
+						addingNewAddress = { appPage === 'AddNewAddress' ? { addingAddress: true, type: 'addressInfo' } : addingNewAddress }
+						close = { () => setAppPage('Home') }
 						activeAddress = { accessRequest.requestAccessToAddress?.address }
 					/>
 					: <></> }
 
-				{ appPage === Page.ChangeActiveAddress ?
+				{ appPage === 'ChangeActiveAddress' ?
 					<ChangeActiveAddress
 						setActiveAddressAndInformAboutIt = { setActiveAddressAndInformAboutIt }
 						signerAccounts = { accessRequest.signerAccounts }

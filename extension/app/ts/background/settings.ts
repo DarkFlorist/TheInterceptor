@@ -1,8 +1,7 @@
 import { MOCK_PRIVATE_KEYS_ADDRESS } from '../utils/constants.js'
-import { AddressBookTabIdSetting } from '../utils/interceptor-messages.js'
-import { AddressInfo, ContactEntries, Page, PendingAccessRequestArray, Website } from '../utils/user-interface-types.js'
+import { AddressBookTabIdSetting, LegacyWebsiteAccessArray, Page, Settings, WebsiteAccessArray, WebsiteAccessArrayWithLegacy, pages } from '../utils/interceptor-messages.js'
+import { AddressInfo, ContactEntries, PendingAccessRequestArray } from '../utils/user-interface-types.js'
 import { EthereumAddress, EthereumQuantity } from '../utils/wire-types.js'
-import * as funtypes from 'funtypes'
 
 export const defaultAddresses = [
 	{
@@ -16,54 +15,6 @@ export const defaultAddresses = [
 		askForAddressAccess: false,
 	}
 ]
-
-export type WebsiteAddressAccess = funtypes.Static<typeof WebsiteAddressAccess>
-export const WebsiteAddressAccess = funtypes.Object({
-	address: EthereumAddress,
-	access: funtypes.Boolean,
-}).asReadonly()
-
-type LegacyWebsiteAccess = funtypes.Static<typeof WebsiteAccess>
-const LegacyWebsiteAccess = funtypes.Object({
-	origin: funtypes.String,
-	originIcon: funtypes.Union(funtypes.String, funtypes.Undefined),
-	access: funtypes.Boolean,
-	addressAccess: funtypes.Union(funtypes.ReadonlyArray(WebsiteAddressAccess), funtypes.Undefined),
-})
-type LegacyWebsiteAccessArray = funtypes.Static<typeof LegacyWebsiteAccessArray>
-const LegacyWebsiteAccessArray = funtypes.ReadonlyArray(LegacyWebsiteAccess)
-
-export type WebsiteAccess = funtypes.Static<typeof WebsiteAccess>
-export const WebsiteAccess = funtypes.Object({
-	website: Website,
-	access: funtypes.Boolean,
-	addressAccess: funtypes.Union(funtypes.ReadonlyArray(WebsiteAddressAccess), funtypes.Undefined),
-}).asReadonly()
-
-export type WebsiteAccessArray = funtypes.Static<typeof WebsiteAccessArray>
-export const WebsiteAccessArray = funtypes.ReadonlyArray(WebsiteAccess)
-
-export type WebsiteAccessArrayWithLegacy = funtypes.Static<typeof WebsiteAccessArrayWithLegacy>
-export const WebsiteAccessArrayWithLegacy = funtypes.Union(LegacyWebsiteAccessArray, WebsiteAccessArray)
-
-export type UserAddressBook = funtypes.Static<typeof UserAddressBook>
-export const UserAddressBook = funtypes.Object({
-	addressInfos: funtypes.ReadonlyArray(AddressInfo),
-	contacts: ContactEntries,
-})
-
-export interface Settings {
-	activeSimulationAddress: EthereumAddress | undefined,
-	activeSigningAddress: EthereumAddress | undefined,
-	activeChain: EthereumQuantity,
-	page: Page,
-	makeMeRich: boolean,
-	useSignersAddressAsActiveAddress: boolean,
-	websiteAccess: WebsiteAccessArray,
-	simulationMode: boolean,
-	pendingAccessRequests: PendingAccessRequestArray,
-	userAddressBook: UserAddressBook,
-}
 
 function parseAccessWithLegacySupport(data: unknown): WebsiteAccessArray {
 	const parsed = WebsiteAccessArrayWithLegacy.parse(data)
@@ -102,7 +53,7 @@ export async function getSettings() : Promise<Settings> {
 	return {
 		activeSimulationAddress: results.activeSimulationAddress !== undefined && !isEmpty(results.activeSimulationAddress) ? EthereumAddress.parse(results.activeSimulationAddress) : defaultAddresses[0].address,
 		activeSigningAddress: results.activeSigningAddress !== undefined && !isEmpty(results.activeSigningAddress) ? EthereumAddress.parse(results.activeSigningAddress) : undefined,
-		page: results.page !== undefined && !isEmpty(results.page) ? parseInt(results.page) : Page.Home,
+		page: results.page !== undefined && !isEmpty(results.page) && pages.includes(results.page) ? results.page : 'Home',
 		makeMeRich: results.makeMeRich !== undefined ? results.makeMeRich : false,
 		useSignersAddressAsActiveAddress: results.useSignersAddressAsActiveAddress !== undefined ? results.useSignersAddressAsActiveAddress : false,
 		websiteAccess: results.websiteAccess !== undefined ? parseAccessWithLegacySupport(results.websiteAccess) : [],

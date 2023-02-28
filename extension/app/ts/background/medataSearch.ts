@@ -1,12 +1,11 @@
 import { addressString } from '../utils/bigint.js'
 import { AddressBookEntries, AddressInfo, ContactEntry } from '../utils/user-interface-types.js'
 import { nftMetadata, tokenMetadata, contractMetadata } from '@darkflorist/address-metadata'
-import { AddressBookCategory, GetAddressBookDataFilter } from '../utils/interceptor-messages.js'
+import { AddressBookCategory, GetAddressBookDataFilter, UserAddressBook } from '../utils/interceptor-messages.js'
 import { NftDefinition } from '@darkflorist/address-metadata/lib/nftMetadata.js'
 import { ContractDefinition } from '@darkflorist/address-metadata/lib/contractMetadata.js'
 import { TokenDefinition } from '@darkflorist/address-metadata/lib/tokenMetadata.js'
 import { getFullLogoUri } from './metadataUtils.js'
-import { UserAddressBook } from './settings.js'
 
 type PartialResult = {
 	bestMatchLength: number,
