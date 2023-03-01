@@ -225,7 +225,7 @@ export function Home(param: HomeParams) {
 			renameAddressCallBack = { param.renameAddressCallBack }
 		/>
 
-		{ simulationMode && simulationAndVisualisationResults === undefined ?
+		{ simulationMode && simulationAndVisualisationResults === undefined && activeSimulationAddress !== undefined ?
 			<div style = 'margin-top: 0px; margin-left: 10px; margin-right: 10px;'>
 				<div class = 'vertical-center'>
 					<Spinner/>

@@ -24,7 +24,6 @@ const onCloseWindow = () => { // check if user has closed the window on their ow
 		websiteOrigin: pendingInterceptorAccess.websiteOrigin,
 		requestAccessToAddress: pendingInterceptorAccess.requestAccessToAddress
 	})
-	pendingInterceptorAccess = undefined
 	openedInterceptorAccessWindow = null
 	browser.windows.onRemoved.removeListener(onCloseWindow)
 }
@@ -43,10 +42,7 @@ export async function resolveInterceptorAccess(confirmation: InterceptorAccessOp
 	if (pendingInterceptorAccess === undefined) return
 	if (confirmation.websiteOrigin !== pendingInterceptorAccess.websiteOrigin || confirmation.requestAccessToAddress !== pendingInterceptorAccess.requestAccessToAddress) return
 
-	const resolved = pendingInterceptorAccess
-	pendingInterceptorAccess = undefined
-
-	resolved.future.resolve(confirmation)
+	pendingInterceptorAccess.future.resolve(confirmation)
 	if (confirmation.type === 'approval') { // close window on approval only, otherwise we want to keep the same window open
 		if (openedInterceptorAccessWindow !== null && openedInterceptorAccessWindow.id) {
 			browser.windows.onRemoved.removeListener(onCloseWindow)
@@ -80,13 +76,12 @@ export async function changeAccess(confirmation: InterceptorAccessOptions, websi
 	if (confirmation.type !== 'approval') return
 	if (confirmation.approval === 'NoResponse') return
 
-	await setPendingAccessRequests(window.interceptor.settings.pendingAccessRequests.filter((x) => !(x.website.websiteOrigin === website.websiteOrigin && x.requestAccessToAddress === confirmation.requestAccessToAddress)))
-
 	window.interceptor.settings.websiteAccess = setAccess(window.interceptor.settings.websiteAccess, website, confirmation.approval === 'Approved', confirmation.requestAccessToAddress)
 	window.interceptor.websiteAccessAddressMetadata = getAddressMetadataForAccess(window.interceptor.settings.websiteAccess)
 	saveWebsiteAccess(window.interceptor.settings.websiteAccess)
 	updateWebsiteApprovalAccesses()
 	sendPopupMessageToOpenWindows({ method: 'popup_websiteAccess_changed' })
+	await setPendingAccessRequests(window.interceptor.settings.pendingAccessRequests.filter((x) => !(x.website.websiteOrigin === website.websiteOrigin && x.requestAccessToAddress === confirmation.requestAccessToAddress)))
 }
 
 async function askForSignerAccountsFromSignerIfNotAvailable(port: browser.runtime.Port) {
@@ -121,7 +116,6 @@ type RequestAccessFromUserReply = {
 export async function requestAccessFromUser(port: browser.runtime.Port | undefined, website: Website, requestAccessToAddress: AddressInfoEntry | undefined, associatedAddresses: AddressInfoEntry[]): Promise<RequestAccessFromUserReply> {
 	const rejectReply = { requestAccessToAddress: requestAccessToAddress?.address, approved: false, userRequestedAddressChange: false }
 	if (window.interceptor.settings === undefined) return rejectReply
-
 	// check if we need to ask address access or not. If address is put to never need to have address specific permision, we don't need to ask for it
 	const askForAddressAccess = requestAccessToAddress !== undefined && window.interceptor.settings?.userAddressBook.addressInfos.find((x) => x.address === requestAccessToAddress.address)?.askForAddressAccess !== false
 	const accessAddress = askForAddressAccess ? requestAccessToAddress : undefined
@@ -157,7 +151,7 @@ export async function requestAccessFromUser(port: browser.runtime.Port | undefin
 	}
 
 	if (pendingInterceptorAccess !== undefined) {
-		if (pendingInterceptorAccess.websiteOrigin === website.websiteOrigin && pendingInterceptorAccess.requestAccessToAddress === requestAccessToAddress?.address) {
+		if (pendingInterceptorAccess.websiteOrigin === website.websiteOrigin && pendingInterceptorAccess.requestAccessToAddress === accessAddress?.address) {
 			return rejectReply // there's already one pending request, and it's different access request
 		}
 	} else {
@@ -194,24 +188,27 @@ export async function requestAccessFromUser(port: browser.runtime.Port | undefin
 		browser.runtime.onMessage.removeListener(windowReadyAndListening)
 		if (confirmation.type === 'approval') {
 			browser.windows.onRemoved.removeListener(onCloseWindow)
-			const userRequestedAddressChange = confirmation.requestAccessToAddress !== requestAccessToAddress?.address
+			const userRequestedAddressChange = confirmation.requestAccessToAddress !== accessAddress?.address
 
 			if (userRequestedAddressChange) {
 				// clear the original pending request, which was made with other account
-				await setPendingAccessRequests(window.interceptor.settings.pendingAccessRequests.filter((x) => !(x.website.websiteOrigin === website.websiteOrigin && x.requestAccessToAddress === requestAccessToAddress?.address)))
+				await setPendingAccessRequests(window.interceptor.settings.pendingAccessRequests.filter((x) => !(x.website.websiteOrigin === website.websiteOrigin && x.requestAccessToAddress === accessAddress?.address)))
 
 				// change address
-				await changeActiveAddressAndChainAndResetSimulation(confirmation.requestAccessToAddress, 'noActiveChainChange')
+				if (confirmation.requestAccessToAddress !== undefined) {
+					await changeActiveAddressAndChainAndResetSimulation(confirmation.requestAccessToAddress, 'noActiveChainChange')
+				}
 			}
 
 			await changeAccess(confirmation, website)
+			pendingInterceptorAccess = undefined
 			return {
 				requestAccessToAddress: confirmation.requestAccessToAddress,
 				approved: confirmation.approval === 'Approved',
 				userRequestedAddressChange: userRequestedAddressChange, // if true, the access given was not for the original address
 			}
 		} else { // user requested address change
-			if (requestAccessToAddress === undefined) throw new Error('Requesting account change on site level access request')
+			if (accessAddress === undefined) throw new Error('Requesting account change on site level access request')
 			if (port === undefined) throw new Error('Requesting account change on site that we cannot connect anymore')
 
 			async function getProposedAddress(port: browser.runtime.Port, confirmation: InterceptorAccessOptions & { type: 'addressChange' | 'addressRefresh' }) {
@@ -224,7 +221,7 @@ export async function requestAccessFromUser(port: browser.runtime.Port | undefin
 
 			const proposedAddress = await getProposedAddress(port, confirmation)
 
-			const newActiveAddress: bigint = proposedAddress === undefined ? requestAccessToAddress.address : proposedAddress
+			const newActiveAddress: bigint = proposedAddress === undefined ? accessAddress.address : proposedAddress
 			const newActiveAddressAddressInfo = findAddressInfo(newActiveAddress, window.interceptor.settings.userAddressBook.addressInfos)
 			const associatedAddresses = getAssociatedAddresses(window.interceptor.settings, website.websiteOrigin, newActiveAddressAddressInfo)
 			pendingInterceptorAccess = {
