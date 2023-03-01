@@ -124,9 +124,6 @@ type InjectFunctions = {
 
 type UnsupportedWindowEthereumMethods = {
 	// We don't support these
-	chainId?: string
-	networkVersion?: string
-	selectedAddress?: string
 	once?: () => void
 	prependListener?: () => void
 	prependOnceListener?: () => void
@@ -407,20 +404,19 @@ class InterceptorMessageListener {
 
 	private readonly injectUnsupportedMethods = (windowEthereum: WindowEthereum & UnsupportedWindowEthereumMethods) => {
 		const unsupportedError = (method: string) => {
-			throw new Error(`The application tried to call a deprecated or non-standard method: "${ method }". Please contact the application developer to fix this issue.`)
+			return console.error(`The application tried to call a deprecated or non-standard method: "${ method }". Please contact the application developer to fix this issue.`)
 		}
 
 		windowEthereum.once = () => { return unsupportedError('window.ethereum.once()') },
 		windowEthereum.prependListener = () => { return unsupportedError('window.ethereum.prependListener()') },
 		windowEthereum.prependOnceListener = () => { return unsupportedError('window.ethereum.prependOnceListener()') },
 		windowEthereum._metamask = {
-			isUnlocked: () => { return unsupportedError('window.ethereum._metamask.isUnlocked()') },
-			requestBatch: () => { return unsupportedError('window.ethereum._metamask.requestBatch()') }
+			isUnlocked: async () => {
+				unsupportedError('window.ethereum._metamask.isUnlocked()')
+				return this.connected
+			},
+			requestBatch: async () => { return unsupportedError('window.ethereum._metamask.requestBatch()') }
 		}
-
-		Object.defineProperty(window.ethereum, 'chainId', { get() { unsupportedError('window.ethereum.chainId') }  })
-		Object.defineProperty(window.ethereum, 'networkVersion', { get() { unsupportedError('window.ethereum.networkVersion') } })
-		Object.defineProperty(window.ethereum, 'selectedAddress', { get() { unsupportedError('window.ethereum.selectedAddress') } })
 	}
 
 	public readonly injectEthereumIntoWindow = () => {
