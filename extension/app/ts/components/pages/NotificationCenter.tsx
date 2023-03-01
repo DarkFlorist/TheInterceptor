@@ -17,25 +17,9 @@ export function NotificationCenter(param: NotificationCenterParams) {
 	const [pendingAccessRequests, setPendingAccessRequests] = useState<PendingAccessRequestWithMetadata[] | undefined>(undefined)
 
 	useEffect( () => {
-		function popupMessageListener(msg: unknown) {
-			console.log('popup message')
-			console.log(msg)
-			updateList()
-		}
-		browser.runtime.onMessage.addListener(popupMessageListener)
-
-		updateList()
-
-		return () => {
-			browser.runtime.onMessage.removeListener(popupMessageListener)
-		}
-	}, [])
-
-	async function updateList() {
-		const backgroundPage = await browser.runtime.getBackgroundPage()
-		if ( backgroundPage.interceptor.settings === undefined) return
-		const metadata = new Map(backgroundPage.interceptor.pendingAccessMetadata)
-		setPendingAccessRequests( backgroundPage.interceptor.settings.pendingAccessRequests.map( (x) => ({
+		if (param.pendingAccessRequests == undefined) return setPendingAccessRequests(undefined)
+		const metadata = new Map(param.pendingAccessMetadata)
+		setPendingAccessRequests(param.pendingAccessRequests.map( (x) => ({
 			website: x.website,
 			...(x.requestAccessToAddress === undefined ? { address: undefined } : metadata.get(addressString(x.requestAccessToAddress)) || { // TODO, refactor away when we are using messaging instead of globals for these
 				type: 'addressInfo' as const,
@@ -44,7 +28,7 @@ export function NotificationCenter(param: NotificationCenterParams) {
 				askForAddressAccess: false,
 			})
 		}) ) )
-	}
+	}, [param.pendingAccessRequests, param.pendingAccessMetadata])
 
 	function goHome() {
 		param.setAndSaveAppPage('Home')
