@@ -8,7 +8,7 @@ import { sendPopupMessageToBackgroundPage } from '../../background/backgroundUti
 import { WebsiteAccess, WebsiteAccessArray, WebsiteAddressAccess } from '../../utils/interceptor-messages.js'
 
 interface ModifiedAddressAccess {
-	address: string,
+	address: bigint,
 	access: boolean,
 	removed: boolean,
 }
@@ -27,18 +27,58 @@ export function InterceptorAccessList(param: InterceptorAccessListParams) {
 
 	function updateEditableAccessList(websiteAccess: WebsiteAccessArray | undefined = undefined) {
 		const newList = websiteAccess ? websiteAccess : param.websiteAccess
-		if ( newList === undefined ) return setEditableAccessList(undefined)
-		setEditableAccessList(newList.map( (x) => ({
-			websiteAccess: x,
-			addressAccess: x.addressAccess === undefined ? [] : x.addressAccess,
-			addressAccessModified: x.addressAccess === undefined ? [] : x.addressAccess.map( (addr) => ({
-				address: addressString(addr.address),
-				access: addr.access,
-				removed: false,
-			})),
-			access: x.access,
-			removed: false,
-		})))
+		if (newList === undefined) return setEditableAccessList(undefined)
+		setEditableAccessList((editableAccessList) => {
+			if (editableAccessList === undefined) {
+				return newList.map( (x) => ({
+					websiteAccess: x,
+					addressAccess: x.addressAccess === undefined ? [] : x.addressAccess,
+					addressAccessModified: x.addressAccess === undefined ? [] : x.addressAccess.map( (addr) => ({
+						address: addr.address,
+						access: addr.access,
+						removed: false,
+					})),
+					access: x.access,
+					removed: false,
+				}))
+			}
+			// update only the changed entities
+			const merge = (newAccess: WebsiteAccess, editableAccessList: readonly EditableAccess[]) => {
+				const previousEntity = editableAccessList.find((x) => x.websiteAccess.website.websiteOrigin === newAccess.website.websiteOrigin)
+				if (previousEntity === undefined) {
+					return {
+						websiteAccess: newAccess,
+						addressAccess: newAccess.addressAccess === undefined ? [] : newAccess.addressAccess,
+						addressAccessModified: newAccess.addressAccess === undefined ? [] : newAccess.addressAccess.map( (addr) => ({
+							address: addr.address,
+							access: addr.access,
+							removed: false,
+						})),
+						access: newAccess.access,
+						removed: false,
+					}
+				}
+				// we need to merge edited and new updated access rights together
+				const mergeAddressAccess = (addr: WebsiteAddressAccess, modifiedAddressAccess: readonly ModifiedAddressAccess[], previousEntity: readonly WebsiteAddressAccess[]) => {
+					const previousModifiedAccess = modifiedAddressAccess.find((x) => x.address === addr.address)
+					const previousAccess = previousEntity.find((x) => x.address === addr.address)
+					return {
+						address: addr.address,
+						access: previousModifiedAccess === undefined || previousAccess === undefined ? addr.access : (previousModifiedAccess.access === previousAccess.access ? addr.access : previousModifiedAccess.access),
+						removed: previousModifiedAccess === undefined ? false : previousModifiedAccess.removed,
+					}
+				}
+
+				const addressAccessModified = newAccess.addressAccess === undefined ? [] : newAccess.addressAccess.map( (addr) => mergeAddressAccess(addr, previousEntity.addressAccessModified, previousEntity.addressAccess))
+				return {
+					...previousEntity,
+					websiteAccess: newAccess,
+					addressAccessModified: addressAccessModified,
+					access: previousEntity.access === previousEntity.websiteAccess.access ? newAccess.access : previousEntity.access
+				}
+			}
+			return newList.map( (x) => merge(x, editableAccessList))
+		})
 	}
 
 	useEffect( () => {
@@ -48,8 +88,11 @@ export function InterceptorAccessList(param: InterceptorAccessListParams) {
 
 	useEffect( () => {
 		updateEditableAccessList()
+	}, [param.websiteAccess])
+
+	useEffect( () => {
 		setMetadata(new Map(param.websiteAccessAddressMetadata.map((x) => [addressString(x.address), x])))
-	}, [param.websiteAccess, param.websiteAccessAddressMetadata])
+	}, [param.websiteAccessAddressMetadata])
 
 	function goHome() {
 		param.setAndSaveAppPage('Home')
@@ -195,12 +238,12 @@ export function InterceptorAccessList(param: InterceptorAccessListParams) {
 										{ access.addressAccess.length === 0 ? <p className = 'paragraph'> No individual address accesses given </p> : <>
 											{ access.addressAccessModified.map( (websiteAccessAddress, addressIndex) => (
 												<li style = { `margin: 0px; margin-bottom: ${ addressIndex < access.addressAccessModified.length - 1  ? '10px;' : '0px' }` }>
-													{ websiteAccessAddress.removed ? <p style = 'color: var(--negative-color)' > { `Forgot ${ websiteAccessAddress.address }`} </p> :
+													{ websiteAccessAddress.removed ? <p style = 'color: var(--negative-color)' > { `Forgot ${ ethers.utils.getAddress(addressString(websiteAccessAddress.address)) }`} </p> :
 														<div style = 'display: flex; width: 100%; overflow: hidden;'>
 															<SmallAddress
-																addressBookEntry = { metadata.get(websiteAccessAddress.address) || { // TODO, refactor away when we are using messaging instead of globals for these
+																addressBookEntry = { metadata.get(addressString(websiteAccessAddress.address)) || {
 																	type: 'addressInfo',
-																	name: ethers.utils.getAddress(websiteAccessAddress.address),
+																	name: ethers.utils.getAddress(addressString(websiteAccessAddress.address)),
 																	address: BigInt(websiteAccessAddress.address),
 																	askForAddressAccess: false
 																}}
