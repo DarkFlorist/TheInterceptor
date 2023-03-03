@@ -1,0 +1,40 @@
+{
+	"name": "Interceptor",
+	"description": "Interceptor",
+	"version": "0.0.0",
+	"manifest_version": 3,
+	"action": {
+		"default_icon": {
+			"128": "img/head-not-active.png"
+		},
+		"default_title": "The Interceptor"
+	},
+	"background": {
+		"service_worker": "./js/backgroundServiceWorker.js",
+		"type": "module"
+	},
+	"icons": {
+		"128": "img/head.png",
+		"400": "img/LOGOA_400x400.png"
+	},
+	"permissions": [
+		"activeTab",
+		"storage",
+		"webNavigation",
+		"scripting"
+	],
+	"web_accessible_resources": [
+		{
+			"resources": ["vendor/*", "js/*", "inpage/*"],
+			"matches": ["<all_urls>"] // not sure if this is right?
+		}
+	],
+	"content_security_policy": {
+		"extension_pages": "script-src 'self'; object-src 'self'"
+	},
+	"host_permissions": [
+		"file://*/*",
+		"http://*/*",
+		"https://*/*"
+	]
+}
