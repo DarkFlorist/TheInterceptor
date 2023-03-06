@@ -12,7 +12,7 @@ import { CHAINS, ICON_NOT_ACTIVE, isSupportedChain, MAKE_YOU_RICH_TRANSACTION, M
 import { PriceEstimator } from '../simulation/priceEstimator.js'
 import { getActiveAddressForDomain, sendActiveAccountChangeToApprovedWebsitePorts, sendMessageToApprovedWebsitePorts, updateWebsiteApprovalAccesses, verifyAccess } from './accessManagement.js'
 import { getAddressBookEntriesForVisualiser } from './metadataUtils.js'
-import { getActiveAddress, sendPopupMessageToOpenWindows } from './backgroundUtils.js'
+import { getActiveAddress, sendPopupMessageToOpenWindows, setExtensionBadgeBackgroundColor, setExtensionIcon } from './backgroundUtils.js'
 import { updateExtensionIcon } from './iconHandler.js'
 import { connectedToSigner, ethAccountsReply, signerChainChanged, walletSwitchEthereumChainReply } from './providerMessageHandlers.js'
 import { SimulationModeEthereumClientService } from '../simulation/services/SimulationModeEthereumClientService.js'
@@ -623,8 +623,8 @@ async function startup() {
 		globalThis.interceptor.prependTransactionMode = PrependTransactionMode.NO_PREPEND
 	}
 
-	browser.action.setIcon({ path: ICON_NOT_ACTIVE })
-	browser.action.setBadgeBackgroundColor( { color: '#58a5b3' } )
+	await setExtensionIcon({ path: ICON_NOT_ACTIVE })
+	await setExtensionBadgeBackgroundColor( { color: '#58a5b3' } )
 
 	// if we are using signers mode, update our active address representing to signers address
 	if (globalThis.interceptor.settings.useSignersAddressAsActiveAddress || globalThis.interceptor.settings.simulationMode === false) {

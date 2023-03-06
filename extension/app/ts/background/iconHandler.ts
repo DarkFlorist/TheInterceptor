@@ -1,18 +1,18 @@
 import { getSignerName } from '../components/subcomponents/signers.js'
 import { ICON_ACCESS_DENIED, ICON_NOT_ACTIVE, ICON_SIGNING, ICON_SIGNING_NOT_SUPPORTED, ICON_SIMULATING, isSupportedChain } from '../utils/constants.js'
 import { getActiveAddressForDomain, hasAccess, hasAddressAccess } from './accessManagement.js'
-import { getActiveAddress, sendPopupMessageToOpenWindows } from './backgroundUtils.js'
+import { getActiveAddress, sendPopupMessageToOpenWindows, setExtensionBadgeText, setExtensionIcon } from './backgroundUtils.js'
 import { getAddressMetaData } from './metadataUtils.js'
 import { imageToUri } from '../utils/imageToUri.js'
 import { Future } from '../utils/future.js'
 
-function setInterceptorIcon(tabId: number, icon: string, iconReason: string) {
+async function setInterceptorIcon(tabId: number, icon: string, iconReason: string) {
 	globalThis.interceptor.websiteTabConnection.set(tabId, {
 		icon: icon,
 		iconReason: iconReason
 	})
 	sendPopupMessageToOpenWindows({ method: 'popup_websiteIconChanged' })
-	return browser.action.setIcon({
+	return await setExtensionIcon({
 		path: { 128: icon },
 		tabId: tabId
 	})
@@ -47,7 +47,7 @@ export function updateExtensionIcon(port: browser.runtime.Port) {
 export async function updateExtensionBadge() {
 	if (!globalThis.interceptor.settings) return
 	const count = globalThis.interceptor.settings.pendingAccessRequests.length
-	return await browser.action.setBadgeText( { text: count === 0 ? '' : count.toString() } )
+	return await setExtensionBadgeText( { text: count === 0 ? '' : count.toString() } )
 }
 
 export async function retrieveWebsiteDetails(port: browser.runtime.Port, websiteOrigin: string) {

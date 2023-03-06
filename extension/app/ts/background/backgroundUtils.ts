@@ -40,8 +40,32 @@ export function createInternalMessageListener(handler: (message: WindowMessage) 
 type HTMLFile = 'popup' | 'addressBook' | 'changeChain' | 'confirmTransaction' | 'interceptorAccess' | 'personalSign'
 export function getHtmlFile(file: HTMLFile) {
 	const manifest = browser.runtime.getManifest()
-	if (manifest.version === '2') {
+	if (manifest.manifest_version === 2) {
 		return `html/${ file }.html`
 	}
 	return `html3/${ file }V3.html`
+}
+
+export async function setExtensionIcon(details: browser.action._SetIconDetails) {
+	const manifest = browser.runtime.getManifest()
+	if (manifest.manifest_version === 2) {
+		return browser.browserAction.setIcon(details)
+	}
+	return browser.action.setIcon(details)
+}
+
+export async function setExtensionBadgeText(details: browser.browserAction._SetBadgeTextDetails) {
+	const manifest = browser.runtime.getManifest()
+	if (manifest.manifest_version === 2) {
+		return browser.browserAction.setBadgeText(details)
+	}
+	return browser.action.setBadgeText(details)
+}
+
+export async function setExtensionBadgeBackgroundColor(details: browser.action._SetBadgeBackgroundColorDetails) {
+	const manifest = browser.runtime.getManifest()
+	if (manifest.manifest_version === 2) {
+		return browser.browserAction.setBadgeBackgroundColor(details)
+	}
+	return browser.action.setBadgeBackgroundColor(details)
 }
