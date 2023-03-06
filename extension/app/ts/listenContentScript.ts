@@ -8,9 +8,8 @@ function listenInContentScript() {
 	let connected = true
 
 	// forward all message events to the background script, which will then filter and process them
-	window.addEventListener('message', messageEvent => {
+	globalThis.addEventListener('message', messageEvent => {
 		try {
-			console.log(messageEvent)
 			// we only want the data element, if it exists, and postMessage will fail if it can't clone the object fully (and it cannot clone a MessageEvent)
 			if (!('data' in messageEvent)) return
 			if (connected) extensionPort.postMessage({ data: messageEvent.data })
@@ -29,7 +28,7 @@ function listenInContentScript() {
 	// forward all messages we get from the background script to the window so the page script can filter and process them
 	extensionPort.onMessage.addListener(response => {
 		try {
-			if (connected) window.postMessage(response, '*')
+			if (connected) globalThis.postMessage(response, '*')
 		} catch (error) {
 			console.error(error)
 		}

@@ -8,19 +8,19 @@ export function ethAccountsReply(port: browser.runtime.Port, request: ProviderMe
 	if (!('params' in request.options)) return
 	const signerAccounts = EthereumAccountsReply.parse(request.options.params)
 	if ( port.sender?.tab?.id !== undefined ) {
-		window.interceptor.websiteTabSignerStates.set(port.sender.tab.id, {
+		globalThis.interceptor.websiteTabSignerStates.set(port.sender.tab.id, {
 			signerAccounts: signerAccounts,
-			signerChain: window.interceptor.signerChain,
+			signerChain: globalThis.interceptor.signerChain,
 		})
 	}
-	if (window.interceptor) {
-		window.interceptor.signerAccounts = signerAccounts
+	if (globalThis.interceptor) {
+		globalThis.interceptor.signerAccounts = signerAccounts
 		const portSenderId = port.sender?.id
 		if (portSenderId !== undefined) sendInternalWindowMessage({ method: 'window_signer_accounts_changed', data: { portSenderId: portSenderId} })
 	}
 
 	// update active address if we are using signers address
-	if (window.interceptor.settings?.useSignersAddressAsActiveAddress || window.interceptor.settings?.simulationMode === false) {
+	if (globalThis.interceptor.settings?.useSignersAddressAsActiveAddress || globalThis.interceptor.settings?.simulationMode === false) {
 		changeActiveAddressAndChainAndResetSimulation(signerAccounts[0], 'noActiveChainChange')
 	}
 	sendPopupMessageToOpenWindows({ method: 'popup_accounts_update' })
@@ -28,17 +28,17 @@ export function ethAccountsReply(port: browser.runtime.Port, request: ProviderMe
 
 async function changeSignerChain(port: browser.runtime.Port, signerChain: bigint ) {
 	if ( port.sender?.tab?.id !== undefined ) {
-		window.interceptor.websiteTabSignerStates.set(port.sender.tab.id, {
-			signerAccounts: window.interceptor.signerAccounts,
+		globalThis.interceptor.websiteTabSignerStates.set(port.sender.tab.id, {
+			signerAccounts: globalThis.interceptor.signerAccounts,
 			signerChain: signerChain,
 		})
 	}
-	if (window.interceptor) {
-		window.interceptor.signerChain = signerChain
+	if (globalThis.interceptor) {
+		globalThis.interceptor.signerChain = signerChain
 	}
 
 	// update active address if we are using signers address
-	if ( !window.interceptor.settings?.simulationMode ) {
+	if ( !globalThis.interceptor.settings?.simulationMode ) {
 		return changeActiveAddressAndChainAndResetSimulation('noActiveAddressChange', signerChain)
 	}
 	sendPopupMessageToOpenWindows({ method: 'popup_chain_update' })
@@ -63,6 +63,6 @@ export function walletSwitchEthereumChainReply(port: browser.runtime.Port, reque
 }
 
 export function connectedToSigner(_port: browser.runtime.Port, request: ProviderMessage) {
-	window.interceptor.signerName = ConnectedToSigner.parse(request.options).params[0]
+	globalThis.interceptor.signerName = ConnectedToSigner.parse(request.options).params[0]
 	sendPopupMessageToOpenWindows({ method: 'popup_signer_name_changed' })
 }

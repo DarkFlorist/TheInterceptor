@@ -37,7 +37,7 @@ export const openPersonalSignDialog = async (requestId: number, simulationMode: 
 		if (pendingPersonalSign) await pendingPersonalSign // wait for previous to clean up
 	}
 
-	const activeAddress = simulationMode ? window.interceptor.settings?.activeSimulationAddress : window.interceptor.settings?.activeSigningAddress
+	const activeAddress = simulationMode ? globalThis.interceptor.settings?.activeSimulationAddress : globalThis.interceptor.settings?.activeSigningAddress
 	if ( activeAddress === undefined) {
 		return { result: {
 			error: {
@@ -63,7 +63,7 @@ export const openPersonalSignDialog = async (requestId: number, simulationMode: 
 					simulationMode: simulationMode,
 					requestId: requestId,
 					message: params.params[0],
-					account: getAddressMetaData(params.params[1], window.interceptor.settings?.userAddressBook),
+					account: getAddressMetaData(params.params[1], globalThis.interceptor.settings?.userAddressBook),
 					method: params.method,
 				}
 			})
@@ -79,12 +79,12 @@ export const openPersonalSignDialog = async (requestId: number, simulationMode: 
 					simulationMode: simulationMode,
 					requestId: requestId,
 					message: parsed,
-					account: getAddressMetaData(params.params[0], window.interceptor.settings?.userAddressBook),
+					account: getAddressMetaData(params.params[0], globalThis.interceptor.settings?.userAddressBook),
 					method: params.method,
 					addressBookEntries: {
-						owner: getAddressMetaData(parsed.message.owner, window.interceptor.settings?.userAddressBook),
-						spender: getAddressMetaData(parsed.message.spender, window.interceptor.settings?.userAddressBook),
-						verifyingContract: getAddressMetaData(parsed.domain.verifyingContract, window.interceptor.settings?.userAddressBook)
+						owner: getAddressMetaData(parsed.message.owner, globalThis.interceptor.settings?.userAddressBook),
+						spender: getAddressMetaData(parsed.message.spender, globalThis.interceptor.settings?.userAddressBook),
+						verifyingContract: getAddressMetaData(parsed.domain.verifyingContract, globalThis.interceptor.settings?.userAddressBook)
 					},
 				}
 			})
@@ -100,12 +100,12 @@ export const openPersonalSignDialog = async (requestId: number, simulationMode: 
 					simulationMode: simulationMode,
 					requestId: requestId,
 					message: parsed,
-					account: getAddressMetaData(params.params[0], window.interceptor.settings?.userAddressBook),
+					account: getAddressMetaData(params.params[0], globalThis.interceptor.settings?.userAddressBook),
 					method: params.method,
 					addressBookEntries: {
-						token: getAddressMetaData(parsed.message.details.token, window.interceptor.settings?.userAddressBook),
-						spender: getAddressMetaData(parsed.message.spender, window.interceptor.settings?.userAddressBook),
-						verifyingContract: getAddressMetaData(parsed.domain.verifyingContract, window.interceptor.settings?.userAddressBook)
+						token: getAddressMetaData(parsed.message.details.token, globalThis.interceptor.settings?.userAddressBook),
+						spender: getAddressMetaData(parsed.message.spender, globalThis.interceptor.settings?.userAddressBook),
+						verifyingContract: getAddressMetaData(parsed.domain.verifyingContract, globalThis.interceptor.settings?.userAddressBook)
 					},
 				}
 			})
@@ -119,7 +119,7 @@ export const openPersonalSignDialog = async (requestId: number, simulationMode: 
 				simulationMode: simulationMode,
 				requestId: requestId,
 				message: stringifyJSONWithBigInts(params.params[1]),
-				account: getAddressMetaData(params.params[0], window.interceptor.settings?.userAddressBook),
+				account: getAddressMetaData(params.params[0], globalThis.interceptor.settings?.userAddressBook),
 				method: params.method,
 			}
 		})
@@ -128,7 +128,7 @@ export const openPersonalSignDialog = async (requestId: number, simulationMode: 
 
 	openedPersonalSignDialogWindow = await browser.windows.create(
 		{
-			url: '../html/personalSign.html',
+			url: '../html3/personalSignV3.html',
 			type: 'popup',
 			height: 400,
 			width: 520,

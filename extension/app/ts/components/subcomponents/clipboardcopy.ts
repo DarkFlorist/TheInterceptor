@@ -28,22 +28,22 @@ async function copyExecCommand (text: string) {
 	document.body.appendChild(span)
 
 	// Make a selection object representing the range of text selected by the user
-	const selection = window.getSelection()
+	const selection = globalThis.getSelection()
 	if (!selection) return
-	const range = window.document.createRange()
+	const range = globalThis.document.createRange()
 	selection.removeAllRanges()
 	range.selectNode(span)
 	selection.addRange(range)
 
 	// Copy text to the clipboard
 	try {
-		if (!window.document.execCommand('copy')) {
+		if (!globalThis.document.execCommand('copy')) {
 			throw makeError()
 		}
 	} finally {
 		// Cleanup
 		selection.removeAllRanges()
-		window.document.body.removeChild(span)
+		globalThis.document.body.removeChild(span)
 	}
 }
 

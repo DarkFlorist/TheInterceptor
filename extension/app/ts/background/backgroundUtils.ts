@@ -1,8 +1,8 @@
 import { MessageToPopup, PopupMessage, WindowMessage } from '../utils/interceptor-messages.js'
 
 export function getActiveAddress() {
-	if (window.interceptor.settings === undefined) return undefined
-	return window.interceptor.settings.simulationMode ? window.interceptor.settings.activeSimulationAddress : window.interceptor.settings.activeSigningAddress
+	if (globalThis.interceptor.settings === undefined) return undefined
+	return globalThis.interceptor.settings.simulationMode ? globalThis.interceptor.settings.activeSimulationAddress : globalThis.interceptor.settings.activeSigningAddress
 }
 
 export async function sendPopupMessageToOpenWindows(message: MessageToPopup) {
@@ -24,13 +24,15 @@ export async function sendPopupMessageToBackgroundPage(message: PopupMessage) {
 	await browser.runtime.sendMessage(PopupMessage.serialize(message))
 }
 
+export const INTERNAL_CHANNEL_NAME = 'internalChannel'
+
 export function sendInternalWindowMessage(message: WindowMessage) {
-	window.postMessage(WindowMessage.serialize(message), window.location.origin)
+	new BroadcastChannel(INTERNAL_CHANNEL_NAME).postMessage(WindowMessage.serialize(message))
 }
 
 export function createInternalMessageListener(handler: (message: WindowMessage) => void) {
 	return (message: MessageEvent) => {
-		if (message.origin !== window.location.origin) return
+		if (message.origin !== globalThis.location.origin) return
 		handler(WindowMessage.parse(message.data))
 	}
 }

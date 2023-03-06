@@ -1,5 +1,5 @@
 import './background/background.js'
-
+/*
 chrome.runtime.onStartup.addListener(() => {
 	console.log('onStartup()')
 })
@@ -16,15 +16,13 @@ chrome.runtime.onMessageExternal.addListener(({ type, name }) => {
 	console.log(name)
 	return false
 })
+*/
+chrome.action.setPopup({ popup: 'html3/popupV3.html' })
 
 self.addEventListener('install', () => {
 	console.log('install')
 })
 
-self.addEventListener('message', (mess) => {
-	console.log('window.message')
-	console.log(mess)
-})
 /*
 async function onContentScriptConnected(port: chrome.runtime.Port) {
 	console.log('content script connected')
@@ -64,9 +62,3 @@ const injectContentScript = async () => {
 }
 
 injectContentScript()
-
-chrome.action.onClicked.addListener((_tab) => {
-	chrome.action.setPopup({
-        popup: 'html/popup.html'
-    })
-})

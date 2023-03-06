@@ -1,21 +1,19 @@
 <!DOCTYPE html>
-<html style = 'background-color: var(--bg-color); width: 520px; height: 600px; min-width: 520px; overflow-y: inherit;'>
+<html style = 'background-color: var(--bg-color);overflow-y: inherit;'>
 	<head>
-		<title>The Interceptor</title>
+		<title>Change Chain - The Interceptor</title>
 		<meta charset = 'utf-8'>
 		<link rel = 'icon' type = 'image/x-icon' href = 'favicon.ico'>
 	</head>
-	<body style = 'width: 520px; height: 600px; background-color: var(--bg-color); min-width: 520px; margin: auto;'>
+	<body style = 'background-color: var(--bg-color); margin: auto;'>
 		<meta name = 'viewport' content = 'width = device-width, initial-scale = 1' />
 		<link rel = 'stylesheet' type = 'text/css' href = '../css/bulma.css' />
 		<link rel = 'stylesheet' type = 'text/css' href = '../css/bulma-divider.css' />
-		<link rel = 'stylesheet' type = 'text/css' href = '../css/bulma-badge.css' />
 		<link rel = 'stylesheet' type = 'text/css' href = '../css/interceptor.css' />
 
 		<main>Loading...</main>
 
-		<!-- a workaround for bug: https://bugzilla.mozilla.org/show_bug.cgi?id=1803984 -->
 		<script src = '../vendor/webextension-polyfill/browser-polyfill.js'></script>
-		<script type = 'module' src = '../js/popup.js'></script>
+		<script type = 'module' src = '../js/changeChain.js'></script>
 	</body>
 </html>

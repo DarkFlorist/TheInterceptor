@@ -4,7 +4,7 @@ import { InterceptorAccessOptions, PopupMessage, WebsiteAccessArray, WindowMessa
 import { AddressInfoEntry, PendingAccessRequestArray, Website } from '../../utils/user-interface-types.js'
 import { getAssociatedAddresses, setAccess, updateWebsiteApprovalAccesses } from '../accessManagement.js'
 import { changeActiveAddressAndChainAndResetSimulation, postMessageIfStillConnected } from '../background.js'
-import { createInternalMessageListener, sendPopupMessageToOpenWindows } from '../backgroundUtils.js'
+import { INTERNAL_CHANNEL_NAME, createInternalMessageListener, sendPopupMessageToOpenWindows } from '../backgroundUtils.js'
 import { updateExtensionBadge } from '../iconHandler.js'
 import { findAddressInfo } from '../metadataUtils.js'
 import { savePendingAccessRequests, saveWebsiteAccess } from '../settings.js'
@@ -53,48 +53,49 @@ export async function resolveInterceptorAccess(confirmation: InterceptorAccessOp
 }
 
 export function getAddressMetadataForAccess(websiteAccess: WebsiteAccessArray): AddressInfoEntry[] {
-	if (window.interceptor.settings === undefined) return []
+	if (globalThis.interceptor.settings === undefined) return []
 	const addresses = websiteAccess.map((x) => x.addressAccess === undefined ? [] : x.addressAccess?.map((addr) => addr.address)).flat()
 	const addressSet = new Set(addresses)
-	const infos = window.interceptor.settings.userAddressBook.addressInfos
+	const infos = globalThis.interceptor.settings.userAddressBook.addressInfos
 	return Array.from(addressSet).map((x) => findAddressInfo(x, infos))
 }
 
 export async function setPendingAccessRequests(pendingAccessRequest: PendingAccessRequestArray) {
-	if (window.interceptor.settings === undefined) return
-	window.interceptor.settings.pendingAccessRequests = pendingAccessRequest
-	const addresses = window.interceptor.settings.pendingAccessRequests.map((x) => x.requestAccessToAddress === undefined ? [] : x.requestAccessToAddress).flat()
+	if (globalThis.interceptor.settings === undefined) return
+	globalThis.interceptor.settings.pendingAccessRequests = pendingAccessRequest
+	const addresses = globalThis.interceptor.settings.pendingAccessRequests.map((x) => x.requestAccessToAddress === undefined ? [] : x.requestAccessToAddress).flat()
 	const addressSet = new Set(addresses)
-	const infos = window.interceptor.settings.userAddressBook.addressInfos
-	window.interceptor.pendingAccessMetadata = Array.from(addressSet).map((x) => [addressString(x), findAddressInfo(BigInt(x), infos)])
-	savePendingAccessRequests(window.interceptor.settings.pendingAccessRequests)
+	const infos = globalThis.interceptor.settings.userAddressBook.addressInfos
+	globalThis.interceptor.pendingAccessMetadata = Array.from(addressSet).map((x) => [addressString(x), findAddressInfo(BigInt(x), infos)])
+	savePendingAccessRequests(globalThis.interceptor.settings.pendingAccessRequests)
 	await updateExtensionBadge()
 }
 
 export async function changeAccess(confirmation: InterceptorAccessOptions, website: Website) {
-	if (window.interceptor.settings === undefined) return
+	if (globalThis.interceptor.settings === undefined) return
 	if (confirmation.type !== 'approval') return
 	if (confirmation.approval === 'NoResponse') return
 
-	window.interceptor.settings.websiteAccess = setAccess(window.interceptor.settings.websiteAccess, website, confirmation.approval === 'Approved', confirmation.requestAccessToAddress)
-	window.interceptor.websiteAccessAddressMetadata = getAddressMetadataForAccess(window.interceptor.settings.websiteAccess)
-	saveWebsiteAccess(window.interceptor.settings.websiteAccess)
+	globalThis.interceptor.settings.websiteAccess = setAccess(globalThis.interceptor.settings.websiteAccess, website, confirmation.approval === 'Approved', confirmation.requestAccessToAddress)
+	globalThis.interceptor.websiteAccessAddressMetadata = getAddressMetadataForAccess(globalThis.interceptor.settings.websiteAccess)
+	saveWebsiteAccess(globalThis.interceptor.settings.websiteAccess)
 	updateWebsiteApprovalAccesses()
 	sendPopupMessageToOpenWindows({ method: 'popup_websiteAccess_changed' })
-	await setPendingAccessRequests(window.interceptor.settings.pendingAccessRequests.filter((x) => !(x.website.websiteOrigin === website.websiteOrigin && x.requestAccessToAddress === confirmation.requestAccessToAddress)))
+	await setPendingAccessRequests(globalThis.interceptor.settings.pendingAccessRequests.filter((x) => !(x.website.websiteOrigin === website.websiteOrigin && x.requestAccessToAddress === confirmation.requestAccessToAddress)))
 }
 
 async function askForSignerAccountsFromSignerIfNotAvailable(port: browser.runtime.Port) {
-	if (window.interceptor.signerAccounts !== undefined) return window.interceptor.signerAccounts
+	if (globalThis.interceptor.signerAccounts !== undefined) return globalThis.interceptor.signerAccounts
 	const portSenderId = port.sender?.id
-	if (portSenderId === undefined) return window.interceptor.signerAccounts
+	if (portSenderId === undefined) return globalThis.interceptor.signerAccounts
 
 	const future = new Future<void>
 	const listener = createInternalMessageListener( (message: WindowMessage) => {
 		if (message.method === 'window_signer_accounts_changed' && message.data.portSenderId === portSenderId) return future.resolve()
 	})
+	const channel = new BroadcastChannel(INTERNAL_CHANNEL_NAME)
 	try {
-		window.addEventListener('message', listener)
+		channel.addEventListener('message', listener)
 		const messageSent = postMessageIfStillConnected(port, {
 			interceptorApproved: true,
 			options: { method: 'request_signer_to_eth_requestAccounts' },
@@ -102,9 +103,10 @@ async function askForSignerAccountsFromSignerIfNotAvailable(port: browser.runtim
 		})
 		if (messageSent) await future
 	} finally {
-		window.removeEventListener('message', listener)
+		channel.removeEventListener('message', listener)
+		channel.close()
 	}
-	return window.interceptor.signerAccounts
+	return globalThis.interceptor.signerAccounts
 }
 
 type RequestAccessFromUserReply = {
@@ -115,15 +117,15 @@ type RequestAccessFromUserReply = {
 
 export async function requestAccessFromUser(port: browser.runtime.Port | undefined, website: Website, requestAccessToAddress: AddressInfoEntry | undefined, associatedAddresses: AddressInfoEntry[]): Promise<RequestAccessFromUserReply> {
 	const rejectReply = { requestAccessToAddress: requestAccessToAddress?.address, approved: false, userRequestedAddressChange: false }
-	if (window.interceptor.settings === undefined) return rejectReply
+	if (globalThis.interceptor.settings === undefined) return rejectReply
 	// check if we need to ask address access or not. If address is put to never need to have address specific permision, we don't need to ask for it
-	const askForAddressAccess = requestAccessToAddress !== undefined && window.interceptor.settings?.userAddressBook.addressInfos.find((x) => x.address === requestAccessToAddress.address)?.askForAddressAccess !== false
+	const askForAddressAccess = requestAccessToAddress !== undefined && globalThis.interceptor.settings?.userAddressBook.addressInfos.find((x) => x.address === requestAccessToAddress.address)?.askForAddressAccess !== false
 	const accessAddress = askForAddressAccess ? requestAccessToAddress : undefined
-	const simulationMode = window.interceptor.settings.simulationMode
+	const simulationMode = globalThis.interceptor.settings.simulationMode
 
-	if (window.interceptor.settings.pendingAccessRequests.find((x) => x.website.websiteOrigin === website.websiteOrigin && x.requestAccessToAddress === accessAddress?.address) === undefined) {
+	if (globalThis.interceptor.settings.pendingAccessRequests.find((x) => x.website.websiteOrigin === website.websiteOrigin && x.requestAccessToAddress === accessAddress?.address) === undefined) {
 		// we didn't have this request pending already, add it to the list
-		await setPendingAccessRequests(window.interceptor.settings.pendingAccessRequests.concat({
+		await setPendingAccessRequests(globalThis.interceptor.settings.pendingAccessRequests.concat({
 			website,
 			requestAccessToAddress: accessAddress?.address,
 		}))
@@ -134,16 +136,16 @@ export async function requestAccessFromUser(port: browser.runtime.Port | undefin
 		const message = PopupMessage.parse(msg)
 		if (message.method !== 'popup_interceptorAccessReadyAndListening') return
 		browser.runtime.onMessage.removeListener(windowReadyAndListening)
-		if (window.interceptor.settings === undefined) return rejectReply
+		if (globalThis.interceptor.settings === undefined) return rejectReply
 		return await sendPopupMessageToOpenWindows({
 			method: 'popup_interceptorAccessDialog',
 			data: {
 				website: website,
 				requestAccessToAddress: accessAddress,
 				associatedAddresses: associatedAddresses,
-				addressInfos: window.interceptor.settings.userAddressBook.addressInfos,
+				addressInfos: globalThis.interceptor.settings.userAddressBook.addressInfos,
 				signerAccounts: [],
-				signerName: window.interceptor.signerName,
+				signerName: globalThis.interceptor.signerName,
 				simulationMode: simulationMode,
 				allowAddressChanging: port !== undefined,
 			}
@@ -164,7 +166,7 @@ export async function requestAccessFromUser(port: browser.runtime.Port | undefin
 
 		openedInterceptorAccessWindow = await browser.windows.create(
 			{
-				url: '../html/interceptorAccess.html',
+				url: '../html3/interceptorAccessV3.html',
 				type: 'popup',
 				height: 600,
 				width: 600,
@@ -192,7 +194,7 @@ export async function requestAccessFromUser(port: browser.runtime.Port | undefin
 
 			if (userRequestedAddressChange) {
 				// clear the original pending request, which was made with other account
-				await setPendingAccessRequests(window.interceptor.settings.pendingAccessRequests.filter((x) => !(x.website.websiteOrigin === website.websiteOrigin && x.requestAccessToAddress === accessAddress?.address)))
+				await setPendingAccessRequests(globalThis.interceptor.settings.pendingAccessRequests.filter((x) => !(x.website.websiteOrigin === website.websiteOrigin && x.requestAccessToAddress === accessAddress?.address)))
 
 				// change address
 				if (confirmation.requestAccessToAddress !== undefined) {
@@ -222,8 +224,8 @@ export async function requestAccessFromUser(port: browser.runtime.Port | undefin
 			const proposedAddress = await getProposedAddress(port, confirmation)
 
 			const newActiveAddress: bigint = proposedAddress === undefined ? accessAddress.address : proposedAddress
-			const newActiveAddressAddressInfo = findAddressInfo(newActiveAddress, window.interceptor.settings.userAddressBook.addressInfos)
-			const associatedAddresses = getAssociatedAddresses(window.interceptor.settings, website.websiteOrigin, newActiveAddressAddressInfo)
+			const newActiveAddressAddressInfo = findAddressInfo(newActiveAddress, globalThis.interceptor.settings.userAddressBook.addressInfos)
+			const associatedAddresses = getAssociatedAddresses(globalThis.interceptor.settings, website.websiteOrigin, newActiveAddressAddressInfo)
 			pendingInterceptorAccess = {
 				future: new Future<InterceptorAccessOptions>(),
 				websiteOrigin: website.websiteOrigin,
@@ -235,9 +237,9 @@ export async function requestAccessFromUser(port: browser.runtime.Port | undefin
 					website,
 					requestAccessToAddress: newActiveAddressAddressInfo,
 					associatedAddresses: associatedAddresses,
-					addressInfos: window.interceptor.settings.userAddressBook.addressInfos,
+					addressInfos: globalThis.interceptor.settings.userAddressBook.addressInfos,
 					signerAccounts: [],
-					signerName: window.interceptor.signerName,
+					signerName: globalThis.interceptor.signerName,
 					simulationMode: simulationMode,
 					allowAddressChanging: port !== undefined,
 				}

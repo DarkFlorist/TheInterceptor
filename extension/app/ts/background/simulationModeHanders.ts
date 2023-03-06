@@ -28,15 +28,15 @@ export async function getTransactionReceipt(simulator: Simulator, request: Trans
 }
 
 function getFromField(simulationMode: boolean, request: SendTransactionParams, getActiveAddressForDomain: (websiteAccess: WebsiteAccessArray, websiteOrigin: string) => bigint | undefined, port: browser.runtime.Port) {
-	if (window.interceptor.settings === undefined) throw new Error('Interceptor is not ready')
+	if (globalThis.interceptor.settings === undefined) throw new Error('Interceptor is not ready')
 
 	if (simulationMode && 'from' in request.params[0] && request.params[0].from !== undefined) {
 		return request.params[0].from // use `from` field directly from the dapp if we are in simulation mode and its available
 	} else {
-		const connection = window.interceptor.websitePortApprovals.get(port)
+		const connection = globalThis.interceptor.websitePortApprovals.get(port)
 		if (connection === undefined) throw new Error('Not connected')
 
-		const from = getActiveAddressForDomain(window.interceptor.settings.websiteAccess, connection.websiteOrigin)
+		const from = getActiveAddressForDomain(globalThis.interceptor.settings.websiteAccess, connection.websiteOrigin)
 		if (from === undefined) throw new Error('Access to active address is denied')
 		return from
 	}
@@ -141,11 +141,11 @@ export async function unsubscribe(simulator: Simulator, request: EthUnSubscribeP
 }
 
 export async function getAccounts(getActiveAddressForDomain: (websiteAccess: WebsiteAccessArray, websiteOrigin: string) => bigint | undefined, _simulator: Simulator, port: browser.runtime.Port) {
-	const connection = window.interceptor.websitePortApprovals.get(port)
-	if (connection === undefined || window.interceptor.settings === undefined) {
+	const connection = globalThis.interceptor.websitePortApprovals.get(port)
+	if (connection === undefined || globalThis.interceptor.settings === undefined) {
 		return { result: [] }
 	}
-	const account = getActiveAddressForDomain(window.interceptor.settings.websiteAccess, connection.websiteOrigin)
+	const account = getActiveAddressForDomain(globalThis.interceptor.settings.websiteAccess, connection.websiteOrigin)
 	if (account === undefined) {
 		return {result: [] }
 	}

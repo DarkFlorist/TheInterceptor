@@ -5,9 +5,10 @@
 	"scripts": {
 		"test": "tsc --project tsconfig-test.json && node test/js/test/run-all.js",
 		"setup": "npm run vendor && npm run inpage && npm run build",
-		"build": "tsc",
+		"build": "tsc && npm run bundle",
 		"inpage": "cd inpage && npm ci --ignore-scripts && npm run build",
-		"vendor": "cd build && npm ci --ignore-scripts && npm run vendor"
+		"vendor": "cd build && npm ci --ignore-scripts && npm run vendor",
+		"bundle": "cd build && npm run bundle"
 	},
 	"dependencies": {
 		"@darkflorist/address-metadata": "0.2.0",

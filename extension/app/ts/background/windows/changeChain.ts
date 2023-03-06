@@ -61,7 +61,7 @@ export const openChangeChainDialog = async (requestId: number, simulationMode: b
 
 	openedWindow = await browser.windows.create(
 		{
-			url: '../html/changeChain.html',
+			url: '../html3/changeChainV3.html',
 			type: 'popup',
 			height: 400,
 			width: 520,
