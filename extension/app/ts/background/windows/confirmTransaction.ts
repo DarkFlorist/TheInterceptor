@@ -6,7 +6,7 @@ import { Website } from '../../utils/user-interface-types.js'
 import { EthereumUnsignedTransaction } from '../../utils/wire-types.js'
 import { getActiveAddressForDomain } from '../accessManagement.js'
 import { appendTransactionToSimulator, refreshConfirmTransactionSimulation } from '../background.js'
-import { sendPopupMessageToOpenWindows } from '../backgroundUtils.js'
+import { getHtmlFile, sendPopupMessageToOpenWindows } from '../backgroundUtils.js'
 
 export type Confirmation = 'Approved' | 'Rejected' | 'NoResponse'
 let openedConfirmTransactionDialogWindow: browser.windows.Window | null = null
@@ -75,7 +75,7 @@ export async function openConfirmTransactionDialog(
 
 	openedConfirmTransactionDialogWindow = await browser.windows.create(
 		{
-			url: '../html3/confirmTransactionV3.html',
+			url: getHtmlFile('confirmTransaction'),
 			type: 'popup',
 			height: 600,
 			width: 600,

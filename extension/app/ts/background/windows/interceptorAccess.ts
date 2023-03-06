@@ -4,7 +4,7 @@ import { InterceptorAccessOptions, PopupMessage, WebsiteAccessArray, WindowMessa
 import { AddressInfoEntry, PendingAccessRequestArray, Website } from '../../utils/user-interface-types.js'
 import { getAssociatedAddresses, setAccess, updateWebsiteApprovalAccesses } from '../accessManagement.js'
 import { changeActiveAddressAndChainAndResetSimulation, postMessageIfStillConnected } from '../background.js'
-import { INTERNAL_CHANNEL_NAME, createInternalMessageListener, sendPopupMessageToOpenWindows } from '../backgroundUtils.js'
+import { INTERNAL_CHANNEL_NAME, createInternalMessageListener, getHtmlFile, sendPopupMessageToOpenWindows } from '../backgroundUtils.js'
 import { updateExtensionBadge } from '../iconHandler.js'
 import { findAddressInfo } from '../metadataUtils.js'
 import { savePendingAccessRequests, saveWebsiteAccess } from '../settings.js'
@@ -166,7 +166,7 @@ export async function requestAccessFromUser(port: browser.runtime.Port | undefin
 
 		openedInterceptorAccessWindow = await browser.windows.create(
 			{
-				url: '../html3/interceptorAccessV3.html',
+				url: getHtmlFile('interceptorAccess'),
 				type: 'popup',
 				height: 600,
 				width: 600,

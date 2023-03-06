@@ -12,7 +12,7 @@ function setInterceptorIcon(tabId: number, icon: string, iconReason: string) {
 		iconReason: iconReason
 	})
 	sendPopupMessageToOpenWindows({ method: 'popup_websiteIconChanged' })
-	return chrome.action.setIcon({
+	return browser.action.setIcon({
 		path: { 128: icon },
 		tabId: tabId
 	})

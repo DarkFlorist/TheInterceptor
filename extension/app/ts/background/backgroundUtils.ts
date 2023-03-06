@@ -36,3 +36,12 @@ export function createInternalMessageListener(handler: (message: WindowMessage) 
 		handler(WindowMessage.parse(message.data))
 	}
 }
+
+type HTMLFile = 'popup' | 'addressBook' | 'changeChain' | 'confirmTransaction' | 'interceptorAccess' | 'personalSign'
+export function getHtmlFile(file: HTMLFile) {
+	const manifest = browser.runtime.getManifest()
+	if (manifest.version === '2') {
+		return `html/${ file }.html`
+	}
+	return `html3/${ file }V3.html`
+}

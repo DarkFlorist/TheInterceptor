@@ -8,7 +8,7 @@ import { changeAccess, requestAccessFromUser, resolveExistingInterceptorAccessAs
 import { resolveChainChange } from './windows/changeChain.js'
 import { EthereumQuantity } from '../utils/wire-types.js'
 import { getAssociatedAddresses, sendMessageToApprovedWebsitePorts, updateWebsiteApprovalAccesses } from './accessManagement.js'
-import { sendPopupMessageToOpenWindows } from './backgroundUtils.js'
+import { getHtmlFile, sendPopupMessageToOpenWindows } from './backgroundUtils.js'
 import { isSupportedChain } from '../utils/constants.js'
 import { getMetadataForAddressBookData } from './medataSearch.js'
 import { findAddressInfo } from './metadataUtils.js'
@@ -226,7 +226,7 @@ export async function getAddressBookData(parsed: GetAddressBookData, userAddress
 
 export async function openAddressBook(_simulator: Simulator) {
 	const openInNewTab = async () => {
-		const tab = await browser.tabs.create({ url: '/html3/addressBookV3.html' })
+		const tab = await browser.tabs.create({ url: getHtmlFile('addressBook') })
 		if (tab.id !== undefined) saveOpenedAddressBookTabId(tab.id)
 	}
 

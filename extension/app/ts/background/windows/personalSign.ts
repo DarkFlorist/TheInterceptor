@@ -4,7 +4,7 @@ import { Future } from '../../utils/future.js'
 import { PersonalSign, PopupMessage } from '../../utils/interceptor-messages.js'
 import { EIP2612Message, Permit2, PersonalSignParams, SignTypedDataParams } from '../../utils/wire-types.js'
 import { personalSignWithSimulator } from '../background.js'
-import { sendPopupMessageToOpenWindows } from '../backgroundUtils.js'
+import { getHtmlFile, sendPopupMessageToOpenWindows } from '../backgroundUtils.js'
 import { getAddressMetaData } from '../metadataUtils.js'
 
 let pendingPersonalSign: Future<PersonalSign> | undefined = undefined
@@ -128,7 +128,7 @@ export const openPersonalSignDialog = async (requestId: number, simulationMode: 
 
 	openedPersonalSignDialogWindow = await browser.windows.create(
 		{
-			url: '../html3/personalSignV3.html',
+			url: getHtmlFile('personalSign'),
 			type: 'popup',
 			height: 400,
 			width: 520,

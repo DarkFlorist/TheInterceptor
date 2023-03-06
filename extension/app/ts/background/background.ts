@@ -623,7 +623,7 @@ async function startup() {
 		globalThis.interceptor.prependTransactionMode = PrependTransactionMode.NO_PREPEND
 	}
 
-	chrome.action.setIcon( { path: ICON_NOT_ACTIVE })
+	browser.action.setIcon({ path: ICON_NOT_ACTIVE })
 	browser.action.setBadgeBackgroundColor( { color: '#58a5b3' } )
 
 	// if we are using signers mode, update our active address representing to signers address
