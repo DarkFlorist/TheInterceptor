@@ -1,7 +1,13 @@
 import * as funtypes from 'funtypes'
 import { AddressBookEntries, AddressBookEntry, AddressInfo, AddressInfoEntry, ContactEntries, PendingAccessRequestArray, Website } from './user-interface-types.js'
-import { EIP2612Message, EthereumAddress, EthereumQuantity, EthereumUnsignedTransaction, Permit2 } from './wire-types.js'
+import { EIP2612Message, EthereumAddress, EthereumQuantity, EthereumUnsignedTransaction, Permit2, PersonalSignParams, SignTypedDataParams } from './wire-types.js'
 import { SimulationState, TokenPriceEstimate, SimResults } from './visualizer-types.js'
+
+export type WebsiteSocket = funtypes.Static<typeof WebsiteSocket>
+export const WebsiteSocket = funtypes.Object({
+	tabId: funtypes.Number,
+	connectionName: EthereumQuantity,
+})
 
 export type MessageMethodAndParams = funtypes.Static<typeof MessageMethodAndParams>
 export const MessageMethodAndParams = funtypes.Union(
@@ -18,8 +24,6 @@ export const InterceptedRequest = funtypes.Intersect(
 		interceptorRequest: funtypes.Boolean,
 		usingInterceptorWithoutSigner: funtypes.Boolean,
 		options: MessageMethodAndParams,
-	}).asReadonly(),
-	funtypes.Partial({
 		requestId: funtypes.Number,
 	}).asReadonly()
 )
@@ -67,31 +71,36 @@ export const PersonalSign = funtypes.Object({
 	})
 }).asReadonly()
 
-export type InterceptorAccessOptions = funtypes.Static<typeof InterceptorAccessOptions>
-export const InterceptorAccessOptions = funtypes.Intersect(
-	funtypes.Object({
+export type InterceptorAccessRefresh = funtypes.Static<typeof InterceptorAccessRefresh>
+export const InterceptorAccessRefresh = funtypes.Object({
+	method: funtypes.Literal('popup_interceptorAccessRefresh'),
+	options: funtypes.Object({
 		websiteOrigin: funtypes.String,
 		requestAccessToAddress: funtypes.Union(EthereumAddress, funtypes.Undefined),
 	}),
-	funtypes.Union(
-		funtypes.Object({
-			type: funtypes.Literal('approval'),
-			approval: funtypes.Union(funtypes.Literal('Approved'), funtypes.Literal('Rejected'), funtypes.Literal('NoResponse') ),
-		}),
-		funtypes.Object({
-			type: funtypes.Literal('addressChange'),
-			newActiveAddress: funtypes.Union(EthereumAddress, funtypes.Literal('signer')),
-		}),
-		funtypes.Object({
-			type: funtypes.Literal('addressRefresh'),
-		})
-	)
-)
+}).asReadonly()
+
+export type InterceptorAccessChangeAddress = funtypes.Static<typeof InterceptorAccessChangeAddress>
+export const InterceptorAccessChangeAddress = funtypes.Object({
+	method: funtypes.Literal('popup_interceptorAccessChangeAddress'),
+	options: funtypes.Object({
+		websiteOrigin: funtypes.String,
+		requestAccessToAddress: funtypes.Union(EthereumAddress, funtypes.Undefined),
+		newActiveAddress: funtypes.Union(EthereumAddress, funtypes.Literal('signer')),
+	}),
+}).asReadonly()
+
+export type InterceptorAccessReply = funtypes.Static<typeof InterceptorAccessReply>
+export const InterceptorAccessReply = funtypes.Object({
+	websiteOrigin: funtypes.String,
+	requestAccessToAddress: funtypes.Union(EthereumAddress, funtypes.Undefined),
+	approval: funtypes.Union(funtypes.Literal('Approved'), funtypes.Literal('Rejected'), funtypes.Literal('NoResponse') ),
+})
 
 export type InterceptorAccess = funtypes.Static<typeof InterceptorAccess>
 export const InterceptorAccess = funtypes.Object({
 	method: funtypes.Literal('popup_interceptorAccess'),
-	options: InterceptorAccessOptions,
+	options: InterceptorAccessReply,
 }).asReadonly()
 
 export type ChangeActiveAddress = funtypes.Static<typeof ChangeActiveAddress>
@@ -201,10 +210,17 @@ export const ChangeActiveChain = funtypes.Object({
 export type ChainChangeConfirmation = funtypes.Static<typeof ChainChangeConfirmation>
 export const ChainChangeConfirmation = funtypes.Object({
 	method: funtypes.Literal('popup_changeChainDialog'),
-	options: funtypes.Object({
-		requestId: funtypes.Number,
-		accept: funtypes.Boolean,
-	})
+	options: funtypes.Union(
+		funtypes.Object({
+			chainId: EthereumQuantity,
+			requestId: funtypes.Number,
+			accept: funtypes.Literal(true),
+		}),
+		funtypes.Object({
+			requestId: funtypes.Number,
+			accept: funtypes.Literal(false),
+		}),
+	)
 }).asReadonly()
 
 export type SignerChainChangeConfirmation = funtypes.Static<typeof SignerChainChangeConfirmation>
@@ -245,6 +261,7 @@ export const ReviewNotification = funtypes.Object({
 	options: funtypes.Object({
 		website: Website,
 		requestAccessToAddress: funtypes.Union(EthereumAddress, funtypes.Undefined),
+		socket: WebsiteSocket,
 	})
 }).asReadonly()
 
@@ -328,6 +345,8 @@ export const PopupMessage = funtypes.Union(
 	RefreshConfirmTransactionDialogSimulation,
 	PersonalSign,
 	InterceptorAccess,
+	InterceptorAccessRefresh,
+	InterceptorAccessChangeAddress,
 	ChangeInterceptorAccess,
 	ChangeActiveChain,
 	ChainChangeConfirmation,
@@ -425,7 +444,6 @@ export const InterceptorAccessDialog = funtypes.Object({
 		signerAccounts: funtypes.ReadonlyArray(EthereumAddress),
 		signerName: funtypes.Union(SignerName, funtypes.Undefined),
 		simulationMode: funtypes.Boolean,
-		allowAddressChanging: funtypes.Boolean,
 	})
 })
 
@@ -569,9 +587,35 @@ export type PendingUserRequestPromise = funtypes.Static<typeof PendingUserReques
 export const PendingUserRequestPromise = funtypes.Object({
 	website: Website,
 	dialogId: funtypes.Number,
-	tabId: funtypes.Number,
-	connectionName: funtypes.String,
+	socket: WebsiteSocket,
 	request: InterceptedRequest,
 	transactionToSimulate: EthereumUnsignedTransaction,
 	simulationMode: funtypes.Boolean,
+})
+
+export type PendingChainChangeConfirmationPromise = funtypes.Static<typeof PendingChainChangeConfirmationPromise>
+export const PendingChainChangeConfirmationPromise = funtypes.Object({
+	website: Website,
+	dialogId: funtypes.Number,
+	socket: WebsiteSocket,
+	request: InterceptedRequest,
+	simulationMode: funtypes.Boolean,
+})
+
+export type PendingPersonalSignPromise = funtypes.Static<typeof PendingPersonalSignPromise>
+export const PendingPersonalSignPromise = funtypes.Object({
+	website: Website,
+	dialogId: funtypes.Number,
+	socket: WebsiteSocket,
+	request: InterceptedRequest,
+	simulationMode: funtypes.Boolean,
+	params: funtypes.Union(PersonalSignParams, SignTypedDataParams)
+})
+
+export type PendingInterceptorAccessRequestPromise = funtypes.Static<typeof PendingInterceptorAccessRequestPromise>
+export const PendingInterceptorAccessRequestPromise = funtypes.Object({
+	website: Website,
+	dialogId: funtypes.Number,
+	socket: WebsiteSocket,
+	requestAccessToAddress: funtypes.Union(AddressInfoEntry, funtypes.Undefined),
 })

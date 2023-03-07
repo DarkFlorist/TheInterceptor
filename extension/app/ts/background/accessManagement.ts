@@ -1,6 +1,6 @@
 import { EthereumAddress, SupportedETHRPCCalls } from '../utils/wire-types.js'
 import { postMessageIfStillConnected, setEthereumNodeBlockPolling } from './background.js'
-import { getActiveAddress } from './backgroundUtils.js'
+import { getActiveAddress, getSocketFromPort, websiteSocketPairToString } from './backgroundUtils.js'
 import { findAddressInfo } from './metadataUtils.js'
 import { requestAccessFromUser } from './windows/interceptorAccess.js'
 import { METAMASK_ERROR_USER_REJECTED_REQUEST } from '../utils/constants.js'
@@ -11,28 +11,27 @@ import { Settings, WebsiteAccessArray, WebsiteAddressAccess } from '../utils/int
 
 function setWebsitePortApproval(port: browser.runtime.Port, websiteOrigin: string, approved: boolean) {
 	const tabId = port.sender?.tab?.id
-	if (globalThis.interceptor.websitePortApprovals.get(port) === undefined) {
+	if (tabId === undefined) return
+	const identifier = websiteSocketPairToString(tabId, port.name)
+	if (globalThis.interceptor.websiteSocketApprovals.get(identifier) === undefined) {
 		setEthereumNodeBlockPolling(true)
 		// if we don't already have this connection, clean up afterwards
 		port.onDisconnect.addListener((port) => {
-			globalThis.interceptor.websitePortApprovals.delete(port)
-			if (globalThis.interceptor.websitePortApprovals.size === 0) {
+			const tabId = port.sender?.tab?.id
+			if (tabId === undefined) return
+			const identifier = websiteSocketPairToString(tabId, port.name)
+			globalThis.interceptor.websiteSocketApprovals.delete(identifier)
+			if (globalThis.interceptor.websiteSocketApprovals.size === 0) {
 				setEthereumNodeBlockPolling(false)
-			}
-
-			if (tabId !== undefined) {
-				//check if there are still ports using this tab, if not, delete
-				if (Array.from(globalThis.interceptor.websitePortApprovals.entries()).filter( ([mapPort, _approval]) => mapPort.sender?.tab?.id === tabId ).length == 0) {
-					globalThis.interceptor.websiteTabApprovals.delete(tabId)
-				}
 			}
 		})
 	}
 	const websiteApproval = {
+		socket: getSocketFromPort(port),
 		websiteOrigin: websiteOrigin,
 		approved: approved
 	}
-	globalThis.interceptor.websitePortApprovals.set(port, websiteApproval)
+	globalThis.interceptor.websiteSocketApprovals.set(identifier, websiteApproval)
 	if (tabId !== undefined) {
 		globalThis.interceptor.websiteTabApprovals.set(tabId, websiteApproval)
 	}
@@ -41,9 +40,14 @@ function setWebsitePortApproval(port: browser.runtime.Port, websiteOrigin: strin
 export async function verifyAccess(port: browser.runtime.Port, callMethod: string) {
 	if (port.sender === undefined || port.sender.url === undefined) return false
 	if (globalThis.interceptor.settings == undefined) return false
+	const tabId = port.sender?.tab?.id
+	if (tabId === undefined) return false
+
+	const socket = getSocketFromPort(port)
 
 	// check if access has been granted/rejected already
-	const connection = globalThis.interceptor.websitePortApprovals.get(port)
+	const identifier = websiteSocketPairToString(tabId, port.name)
+	const connection = globalThis.interceptor.websiteSocketApprovals.get(identifier)
 	if ( connection && connection.approved ) return true
 
 	const websiteOrigin = (new URL(port.sender.url)).hostname
@@ -61,7 +65,7 @@ export async function verifyAccess(port: browser.runtime.Port, callMethod: strin
 		// access not found, ask access
 		const addressInfo = findAddressInfo(activeAddress, globalThis.interceptor.settings.userAddressBook.addressInfos)
 		const website = await retrieveWebsiteDetails(port, websiteOrigin)
-		const accessReply = await requestAccessFromUser(port, website, addressInfo, getAssociatedAddresses(globalThis.interceptor.settings, websiteOrigin, addressInfo ))
+		const accessReply = await requestAccessFromUser(socket, website, addressInfo, getAssociatedAddresses(globalThis.interceptor.settings, websiteOrigin, addressInfo ))
 		if (accessReply.userRequestedAddressChange) {
 			const changedActiveAddress = getActiveAddress()
 			if (changedActiveAddress === undefined) return false
@@ -89,7 +93,7 @@ export async function verifyAccess(port: browser.runtime.Port, callMethod: strin
 	}
 
 	const website = await retrieveWebsiteDetails(port, websiteOrigin)
-	const accessReply = await requestAccessFromUser(port, website, undefined, getAssociatedAddresses(globalThis.interceptor.settings, websiteOrigin, undefined ) )
+	const accessReply = await requestAccessFromUser(socket, website, undefined, getAssociatedAddresses(globalThis.interceptor.settings, websiteOrigin, undefined ) )
 	if (accessReply.userRequestedAddressChange === true || accessReply.requestAccessToAddress !== undefined) throw new Error('We did not ask for address specific address but got one anyway')
 
 	if (access === 'notFound'
@@ -105,11 +109,9 @@ export async function verifyAccess(port: browser.runtime.Port, callMethod: strin
 
 export function sendMessageToApprovedWebsitePorts(method: string, data: unknown) {
 	// inform all the tabs about the address change
-	for (const [port, connection] of globalThis.interceptor.websitePortApprovals.entries() ) {
+	for (const [_identifier, connection] of globalThis.interceptor.websiteSocketApprovals.entries() ) {
 		if ( !connection.approved ) continue
-		const tabId = port.sender?.tab?.id
-		if (tabId === undefined) continue
-		postMessageIfStillConnected(tabId, port.name, {
+		postMessageIfStillConnected(connection.socket, {
 			interceptorApproved: true,
 			options: { method: method },
 			result: data
@@ -119,12 +121,10 @@ export function sendMessageToApprovedWebsitePorts(method: string, data: unknown)
 export function sendActiveAccountChangeToApprovedWebsitePorts() {
 	if ( !globalThis.interceptor.settings ) return
 	// inform all the tabs about the address change
-	for (const [port, connection] of globalThis.interceptor.websitePortApprovals.entries() ) {
+	for (const [_identifier, connection] of globalThis.interceptor.websiteSocketApprovals.entries() ) {
 		if ( !connection.approved ) continue
-		const tabId = port.sender?.tab?.id
-		if (tabId === undefined) continue
 		const activeAddress = getActiveAddressForDomain(globalThis.interceptor.settings.websiteAccess, connection.websiteOrigin)
-		postMessageIfStillConnected(tabId, port.name, {
+		postMessageIfStillConnected(connection.socket, {
 			interceptorApproved: true,
 			options: { method: 'accountsChanged' },
 			result: activeAddress !== undefined ? [EthereumAddress.serialize(activeAddress)] : []
@@ -246,14 +246,13 @@ export function getActiveAddressForDomain(websiteAccess: WebsiteAccessArray, web
 
 function connectToPort(port: browser.runtime.Port, websiteOrigin: string): true {
 	setWebsitePortApproval(port, websiteOrigin, true)
-	updateExtensionIcon(port)
+	const socket = getSocketFromPort(port)
+	updateExtensionIcon(socket, websiteOrigin)
 
 	if (globalThis.interceptor.settings === undefined) return true
 	if (globalThis.interceptor.settings.activeChain === undefined) return true
-	const tabId = port.sender?.tab?.id
-	if (tabId === undefined) return true
 
-	postMessageIfStillConnected(tabId, port.name, {
+	postMessageIfStillConnected(socket, {
 		interceptorApproved: true,
 		options: { method: 'connect' },
 		result: [EthereumQuantity.serialize(globalThis.interceptor.settings.activeChain)]
@@ -261,13 +260,13 @@ function connectToPort(port: browser.runtime.Port, websiteOrigin: string): true 
 
 	// seems like dapps also want to get account changed and chain changed events after we connect again, so let's send them too
 	const activeAddress = getActiveAddressForDomain(globalThis.interceptor.settings.websiteAccess, websiteOrigin)
-	postMessageIfStillConnected(tabId, port.name, {
+	postMessageIfStillConnected(socket, {
 		interceptorApproved: true,
 		options: { method: 'accountsChanged' },
 		result: activeAddress !== undefined ? [EthereumAddress.serialize(activeAddress)] : []
 	})
 
-	postMessageIfStillConnected(tabId, port.name, {
+	postMessageIfStillConnected(socket, {
 		interceptorApproved: true,
 		options: { method: 'chainChanged' },
 		result: EthereumQuantity.serialize(globalThis.interceptor.settings.activeChain)
@@ -277,11 +276,12 @@ function connectToPort(port: browser.runtime.Port, websiteOrigin: string): true 
 
 function disconnectFromPort(port: browser.runtime.Port, websiteOrigin: string): false {
 	setWebsitePortApproval(port, websiteOrigin, false)
-	updateExtensionIcon(port)
+	updateExtensionIcon(getSocketFromPort(port), websiteOrigin)
 	const tabId = port.sender?.tab?.id
 	if (tabId === undefined) return false
+	const socket = { tabId: tabId, connectionName: EthereumQuantity.parse(port.name) }
 
-	postMessageIfStillConnected(tabId, port.name, {
+	postMessageIfStillConnected(socket, {
 		interceptorApproved: true,
 		options: { method: 'disconnect' },
 		result: { code: METAMASK_ERROR_USER_REJECTED_REQUEST, message: 'User refused access to the wallet' }
@@ -299,9 +299,10 @@ export function getAssociatedAddresses(settings: Settings, websiteOrigin: string
 
 async function askUserForAccessOnConnectionUpdate(port: browser.runtime.Port, websiteOrigin: string, activeAddress: AddressInfoEntry | undefined) {
 	if (globalThis.interceptor.settings === undefined) return
+	const socket = getSocketFromPort(port)
 
 	const website = await retrieveWebsiteDetails(port, websiteOrigin)
-	const accessReply = await requestAccessFromUser(port, website, activeAddress, getAssociatedAddresses(globalThis.interceptor.settings, websiteOrigin, activeAddress))
+	const accessReply = await requestAccessFromUser(socket, website, activeAddress, getAssociatedAddresses(globalThis.interceptor.settings, websiteOrigin, activeAddress))
 	// here if the reply was for diferent address (requestAccessFromUser can change the target address), we still want to connect even if the address is diferent
 	if (accessReply.approved) {
 		connectToPort(port, websiteOrigin)
@@ -313,8 +314,13 @@ export function updateWebsiteApprovalAccesses() {
 
 	const activeAddress = getActiveAddress()
 	// update port connections and disconnect from ports that should not have access anymore
-	for (const [port, connection] of globalThis.interceptor.websitePortApprovals.entries() ) {
-		updateExtensionIcon(port)
+	for (const [_identifier, connection] of globalThis.interceptor.websiteSocketApprovals.entries() ) {
+		updateExtensionIcon(connection.socket, connection.websiteOrigin)
+
+		//this is bit ugly..., maybe we should also store the socket to websiteSocketApprovals
+		const port = globalThis.interceptor.websiteTabConnection.get(connection.socket.tabId)?.portConnections[EthereumQuantity.serialize(connection.socket.connectionName) as string]
+		if (port === undefined) throw new Error('TODO, what to do, approval should be removed?')
+
 		const websiteAccess = hasAccess(globalThis.interceptor.settings.websiteAccess, connection.websiteOrigin)
 		if (activeAddress) {
 			// check for address access changes

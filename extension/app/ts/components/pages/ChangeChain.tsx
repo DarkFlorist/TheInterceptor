@@ -8,6 +8,7 @@ import { Website } from '../../utils/user-interface-types.js'
 interface InterceptorChainChangeRequest {
 	isInterceptorSupport: boolean,
 	chainName: string,
+	chainId: bigint,
 	website: Website,
 	simulationMode: boolean,
 	requestId: number,
@@ -31,6 +32,7 @@ export function ChangeChain() {
 	async function updatePage(message: ChangeChainRequest) {
 		setChainChangeData( {
 			isInterceptorSupport : isSupportedChain(message.data.chainId.toString()),
+			chainId: message.data.chainId,
 			chainName : getChainName(message.data.chainId),
 			website: message.data.website,
 			simulationMode: message.data.simulationMode,
@@ -39,13 +41,13 @@ export function ChangeChain() {
 	}
 
 	function approve() {
-		if ( chainChangeData?.requestId === undefined) throw new Error('Request id is missing')
-		sendPopupMessageToBackgroundPage( { method: 'popup_changeChainDialog', options: { accept: true, requestId: chainChangeData.requestId } } )
+		if (chainChangeData === undefined) return
+		sendPopupMessageToBackgroundPage( { method: 'popup_changeChainDialog', options: { accept: true, requestId: chainChangeData.requestId, chainId: chainChangeData.chainId } } )
 		globalThis.close()
 	}
 
 	function reject() {
-		if ( chainChangeData?.requestId === undefined) throw new Error('Request id is missing')
+		if (chainChangeData === undefined) return
 		sendPopupMessageToBackgroundPage( { method: 'popup_changeChainDialog', options: { accept: false, requestId: chainChangeData.requestId } } )
 		globalThis.close()
 	}

@@ -78,13 +78,13 @@ function AccessRequest({ renameAddressCallBack, accessRequest, changeActiveAddre
 								renameAddressCallBack = { renameAddressCallBack }
 								changeActiveAddress = { changeActiveAddress }
 								buttonText = { 'Change' }
-								disableButton = { !accessRequest.simulationMode || !accessRequest.allowAddressChanging }
+								disableButton = { !accessRequest.simulationMode }
 							/> : <>
 								<ActiveAddress
 									activeAddress = { accessRequest.requestAccessToAddress }
 									renameAddressCallBack = { renameAddressCallBack }
 									changeActiveAddress = { refreshActiveAddress }
-									disableButton = { !accessRequest.allowAddressChanging }
+									disableButton = { true }
 									buttonText = { 'Refresh' }
 								/>
 								<p style = 'color: var(--subtitle-text-color); white-space: normal;' class = 'subtitle is-7'>
@@ -111,8 +111,7 @@ interface InterceptorAccessRequest {
 	addressInfos: readonly AddressInfo[]
 	signerAccounts: readonly bigint[]
 	signerName: SignerName | undefined
-	simulationMode: boolean,
-	allowAddressChanging: boolean,
+	simulationMode: boolean
 }
 
 export function InterceptorAccess() {
@@ -134,7 +133,6 @@ export function InterceptorAccess() {
 	async function approve() {
 		if (accessRequest === undefined) return
 		const options = {
-			type: 'approval' as const,
 			approval: 'Approved' as const,
 			websiteOrigin: accessRequest.website.websiteOrigin,
 			requestAccessToAddress: accessRequest.requestAccessToAddress?.address,
@@ -146,7 +144,6 @@ export function InterceptorAccess() {
 	async function reject() {
 		if (accessRequest === undefined) return
 		const options = {
-			type: 'approval' as const,
 			approval: 'Rejected' as const,
 			websiteOrigin: accessRequest.website.websiteOrigin,
 			requestAccessToAddress: accessRequest.requestAccessToAddress?.address,
@@ -166,8 +163,7 @@ export function InterceptorAccess() {
 
 	function refreshActiveAddress() {
 		if (accessRequest === undefined) throw Error('access request not loaded')
-		sendPopupMessageToBackgroundPage({ method: 'popup_interceptorAccess', options: {
-			type: 'addressRefresh',
+		sendPopupMessageToBackgroundPage({ method: 'popup_interceptorAccessRefresh', options: {
 			websiteOrigin: accessRequest.website.websiteOrigin,
 			requestAccessToAddress: accessRequest.requestAccessToAddress?.address,
 		} } )
@@ -175,8 +171,7 @@ export function InterceptorAccess() {
 
 	function setActiveAddressAndInformAboutIt(address: bigint | 'signer') {
 		if (accessRequest === undefined) throw Error('access request not loaded')
-		sendPopupMessageToBackgroundPage({ method: 'popup_interceptorAccess', options: {
-			type: 'addressChange',
+		sendPopupMessageToBackgroundPage({ method: 'popup_interceptorAccessChangeAddress', options: {
 			websiteOrigin: accessRequest.website.websiteOrigin,
 			requestAccessToAddress: accessRequest.requestAccessToAddress?.address,
 			newActiveAddress: address,

@@ -1,10 +1,10 @@
-import { HandleSimulationModeReturnValue, InterceptedRequest, InterceptedRequestForward, PopupMessage, ProviderMessage, Settings, SignerName } from '../utils/interceptor-messages.js'
+import { HandleSimulationModeReturnValue, InterceptedRequest, InterceptedRequestForward, PopupMessage, ProviderMessage, Settings, SignerName, WebsiteSocket } from '../utils/interceptor-messages.js'
 import 'webextension-polyfill'
 import { Simulator } from '../simulation/simulator.js'
 import { EthereumAddress, EthereumJsonRpcRequest, EthereumQuantity, EthereumUnsignedTransaction, PersonalSignParams, SignTypedDataParams } from '../utils/wire-types.js'
 import { getSettings, saveActiveChain, saveActiveSigningAddress, saveActiveSimulationAddress } from './settings.js'
-import { blockNumber, call, chainId, estimateGas, gasPrice, getAccounts, getBalance, getBlockByNumber, getCode, getPermissions, getSimulationStack, getTransactionByHash, getTransactionCount, getTransactionReceipt, personalSign, requestPermissions, sendTransaction, signTypedData, subscribe, switchEthereumChain, unsubscribe } from './simulationModeHanders.js'
-import { changeActiveAddress, changeMakeMeRich, changePage, resetSimulation, confirmDialog, refreshSimulation, removeTransaction, requestAccountsFromSigner, refreshPopupConfirmTransactionSimulation, confirmPersonalSign, confirmRequestAccess, changeInterceptorAccess, changeChainDialog, popupChangeActiveChain, enableSimulationMode, reviewNotification, rejectNotification, addOrModifyAddressInfo, getAddressBookData, removeAddressBookEntry, openAddressBook, homeOpened } from './popupMessageHandlers.js'
+import { blockNumber, call, chainId, estimateGas, gasPrice, getAccounts, getBalance, getBlockByNumber, getCode, getPermissions, getSimulationStack, getTransactionByHash, getTransactionCount, getTransactionReceipt, personalSign, requestPermissions, sendTransaction, subscribe, switchEthereumChain, unsubscribe } from './simulationModeHanders.js'
+import { changeActiveAddress, changeMakeMeRich, changePage, resetSimulation, confirmDialog, refreshSimulation, removeTransaction, requestAccountsFromSigner, refreshPopupConfirmTransactionSimulation, confirmPersonalSign, confirmRequestAccess, changeInterceptorAccess, changeChainDialog, popupChangeActiveChain, enableSimulationMode, reviewNotification, rejectNotification, addOrModifyAddressInfo, getAddressBookData, removeAddressBookEntry, openAddressBook, homeOpened, interceptorAccessChangeAddress, interceptorAccessRefresh } from './popupMessageHandlers.js'
 import { SimulationState, TokenPriceEstimate, SimResults } from '../utils/visualizer-types.js'
 import { WebsiteApproval, SignerState, AddressBookEntry, AddressInfoEntry, Website, TabConnection } from '../utils/user-interface-types.js'
 import { getAddressMetadataForAccess, setPendingAccessRequests } from './windows/interceptorAccess.js'
@@ -12,8 +12,8 @@ import { CHAINS, ICON_NOT_ACTIVE, isSupportedChain, MAKE_YOU_RICH_TRANSACTION, M
 import { PriceEstimator } from '../simulation/priceEstimator.js'
 import { getActiveAddressForDomain, sendActiveAccountChangeToApprovedWebsitePorts, sendMessageToApprovedWebsitePorts, updateWebsiteApprovalAccesses, verifyAccess } from './accessManagement.js'
 import { getAddressBookEntriesForVisualiser } from './metadataUtils.js'
-import { getActiveAddress, sendPopupMessageToOpenWindows, setExtensionBadgeBackgroundColor, setExtensionIcon } from './backgroundUtils.js'
-import { updateExtensionIcon } from './iconHandler.js'
+import { getActiveAddress, getSocketFromPort, sendPopupMessageToOpenWindows, setExtensionBadgeBackgroundColor, setExtensionIcon } from './backgroundUtils.js'
+import { retrieveWebsiteDetails, updateExtensionIcon } from './iconHandler.js'
 import { connectedToSigner, ethAccountsReply, signerChainChanged, walletSwitchEthereumChainReply } from './providerMessageHandlers.js'
 import { SimulationModeEthereumClientService } from '../simulation/services/SimulationModeEthereumClientService.js'
 import { assertUnreachable } from '../utils/typescript.js'
@@ -43,7 +43,7 @@ declare global {
 		signerChain: bigint | undefined,
 		signerName: SignerName | undefined,
 		websiteTabSignerStates: Map<number, SignerState>,
-		websitePortApprovals: Map<browser.runtime.Port, WebsiteApproval>, // map of ports that are either approved or not-approved by interceptor
+		websiteSocketApprovals: Map<string, WebsiteApproval>, // map of ports that are either approved or not-approved by interceptor
 		websiteTabApprovals: Map<number, WebsiteApproval>,
 		websiteTabConnection: Map<number, TabConnection>,
 		settings: Settings | undefined,
@@ -61,7 +61,7 @@ globalThis.interceptor = {
 	signerName: undefined,
 	websiteTabSignerStates: new Map(),
 	settings: undefined,
-	websitePortApprovals: new Map(),
+	websiteSocketApprovals: new Map(),
 	websiteTabApprovals: new Map(),
 	websiteTabConnection: new Map(),
 	simulation: {
@@ -229,7 +229,7 @@ export async function personalSignWithSimulator(params: PersonalSignParams | Sig
 	return await simulator.simulationModeNode.personalSign(params)
 }
 
-async function handleSimulationMode(simulator: Simulator, port: browser.runtime.Port, request: InterceptedRequest): Promise<HandleSimulationModeReturnValue> {
+async function handleSimulationMode(simulator: Simulator, socket: WebsiteSocket, website: Website, request: InterceptedRequest): Promise<HandleSimulationModeReturnValue> {
 	let parsedRequest // separate request parsing and request handling. If there's a parse error, throw that to API user
 	try {
 		parsedRequest = EthereumJsonRpcRequest.parse(request.options)
@@ -253,25 +253,25 @@ async function handleSimulationMode(simulator: Simulator, port: browser.runtime.
 		case 'eth_estimateGas': return await estimateGas(simulator, parsedRequest)
 		case 'eth_getTransactionByHash': return await getTransactionByHash(simulator, parsedRequest)
 		case 'eth_getTransactionReceipt': return await getTransactionReceipt(simulator, parsedRequest)
-		case 'eth_sendTransaction': return await sendTransaction(getActiveAddressForDomain, simulator, parsedRequest, port, request)
+		case 'eth_sendTransaction': return sendTransaction(getActiveAddressForDomain, simulator, parsedRequest, socket, request, true, website)
 		case 'eth_call': return await call(simulator, parsedRequest)
 		case 'eth_blockNumber': return await blockNumber(simulator)
-		case 'eth_subscribe': return await subscribe(simulator, port, parsedRequest)
+		case 'eth_subscribe': return await subscribe(simulator, socket, parsedRequest)
 		case 'eth_unsubscribe': return await unsubscribe(simulator, parsedRequest)
 		case 'eth_chainId': return await chainId(simulator)
 		case 'net_version': return await chainId(simulator)
 		case 'eth_getCode': return await getCode(simulator, parsedRequest)
-		case 'personal_sign': return await personalSign(simulator, parsedRequest, request?.requestId, true)
-		case 'eth_signTypedData': return await signTypedData(simulator, parsedRequest, request?.requestId, true)
-		case 'eth_signTypedData_v1': return await signTypedData(simulator, parsedRequest, request?.requestId, true)
-		case 'eth_signTypedData_v2': return await signTypedData(simulator, parsedRequest, request?.requestId, true)
-		case 'eth_signTypedData_v3': return await signTypedData(simulator, parsedRequest, request?.requestId, true)
-		case 'eth_signTypedData_v4': return await signTypedData(simulator, parsedRequest, request?.requestId, true)
-		case 'wallet_switchEthereumChain': return await switchEthereumChain(simulator, parsedRequest, port, request?.requestId, true)
-		case 'wallet_requestPermissions': return await requestPermissions(getActiveAddressForDomain, simulator, port)
+		case 'personal_sign':
+		case 'eth_signTypedData':
+		case 'eth_signTypedData_v1':
+		case 'eth_signTypedData_v2':
+		case 'eth_signTypedData_v3':
+		case 'eth_signTypedData_v4': return await personalSign(socket, parsedRequest, request, true, website)
+		case 'wallet_switchEthereumChain': return await switchEthereumChain(socket, simulator, parsedRequest, request, true, website)
+		case 'wallet_requestPermissions': return await requestPermissions(getActiveAddressForDomain, simulator, socket)
 		case 'wallet_getPermissions': return await getPermissions()
-		case 'eth_accounts': return await getAccounts(getActiveAddressForDomain, simulator, port)
-		case 'eth_requestAccounts': return await getAccounts(getActiveAddressForDomain, simulator, port)
+		case 'eth_accounts': return await getAccounts(getActiveAddressForDomain, simulator, socket)
+		case 'eth_requestAccounts': return await getAccounts(getActiveAddressForDomain, simulator, socket)
 		case 'eth_gasPrice': return await gasPrice(simulator)
 		case 'eth_getTransactionCount': return await getTransactionCount(simulator, parsedRequest)
 		case 'interceptor_getSimulationStack': return await getSimulationStack(simulator, parsedRequest)
@@ -309,7 +309,7 @@ async function handleSimulationMode(simulator: Simulator, port: browser.runtime.
 	}
 }
 
-async function handleSigningMode(simulator: Simulator, port: browser.runtime.Port, request: InterceptedRequest): Promise<HandleSimulationModeReturnValue> {
+async function handleSigningMode(simulator: Simulator, socket: WebsiteSocket, website: Website, request: InterceptedRequest): Promise<HandleSimulationModeReturnValue> {
 	let parsedRequest // separate request parsing and request handling. If there's a parse error, throw that to API user
 	try {
 		parsedRequest = EthereumJsonRpcRequest.parse(request.options)
@@ -351,16 +351,16 @@ async function handleSigningMode(simulator: Simulator, port: browser.runtime.Por
 		case 'eth_getLogs':
 		case 'interceptor_getSimulationStack': return forwardToSigner()
 
-		case 'personal_sign': return await personalSign(simulator, parsedRequest, request?.requestId, false)
-		case 'eth_signTypedData': return await signTypedData(simulator, parsedRequest, request?.requestId, false)
-		case 'eth_signTypedData_v1': return await signTypedData(simulator, parsedRequest, request?.requestId, false)
-		case 'eth_signTypedData_v2': return await signTypedData(simulator, parsedRequest, request?.requestId, false)
-		case 'eth_signTypedData_v3': return await signTypedData(simulator, parsedRequest, request?.requestId, false)
-		case 'eth_signTypedData_v4': return await signTypedData(simulator, parsedRequest, request?.requestId, false)
-		case 'wallet_switchEthereumChain': return await switchEthereumChain(simulator, parsedRequest, port, request?.requestId, false)
+		case 'personal_sign':
+		case 'eth_signTypedData':
+		case 'eth_signTypedData_v1':
+		case 'eth_signTypedData_v2':
+		case 'eth_signTypedData_v3':
+		case 'eth_signTypedData_v4': return await personalSign(socket, parsedRequest, request, false, website)
+		case 'wallet_switchEthereumChain': return await switchEthereumChain(socket, simulator, parsedRequest, request, false, website)
 		case 'eth_sendTransaction': {
 			if (globalThis.interceptor.settings && isSupportedChain(globalThis.interceptor.settings.activeChain.toString()) ) {
-				return sendTransaction(getActiveAddressForDomain, simulator, parsedRequest, port, request, false)
+				return sendTransaction(getActiveAddressForDomain, simulator, parsedRequest, socket, request, false, website)
 			}
 			return forwardToSigner()
 		}
@@ -437,12 +437,12 @@ const providerHandlers = new Map<string, ProviderHandler >([
 	['wallet_switchEthereumChain_reply', walletSwitchEthereumChainReply],
 	['connected_to_signer', connectedToSigner]
 ])
-export function postMessageIfStillConnected(tabId: number, connectionName: string, message: InterceptedRequestForward) {
-	const tabConnection = globalThis.interceptor.websiteTabConnection.get(tabId)
+export function postMessageIfStillConnected(socket: WebsiteSocket, message: InterceptedRequestForward) {
+	const tabConnection = globalThis.interceptor.websiteTabConnection.get(socket.tabId)
 	if (tabConnection === undefined) return false
 
 	for (const [entrysConnectionName, newPort] of Object.entries(tabConnection.portConnections)) {
-		if (connectionName !== entrysConnectionName) continue
+		if (EthereumQuantity.serialize(socket.connectionName) !== entrysConnectionName) continue
 		try {
 			newPort.postMessage(message)
 		} catch (error) {
@@ -457,9 +457,9 @@ export function postMessageIfStillConnected(tabId: number, connectionName: strin
 	return true
 }
 
-export function sendMessageToContentScript(tabId: number, connectionName: string, resolved: HandleSimulationModeReturnValue, request: InterceptedRequest) {
+export function sendMessageToContentScript(socket: WebsiteSocket, resolved: HandleSimulationModeReturnValue, request: InterceptedRequest) {
 	if ('error' in resolved) {
-		return postMessageIfStillConnected(tabId, connectionName, {
+		return postMessageIfStillConnected(socket, {
 			...resolved,
 			interceptorApproved: false,
 			requestId: request.requestId,
@@ -467,7 +467,7 @@ export function sendMessageToContentScript(tabId: number, connectionName: string
 		})
 	}
 	if (!('forward' in resolved)) {
-		return postMessageIfStillConnected(tabId, connectionName, {
+		return postMessageIfStillConnected(socket, {
 			result: resolved.result,
 			interceptorApproved: true,
 			requestId: request.requestId,
@@ -475,7 +475,7 @@ export function sendMessageToContentScript(tabId: number, connectionName: string
 		})
 	}
 
-	return postMessageIfStillConnected(tabId, connectionName, {
+	return postMessageIfStillConnected(socket, {
 		interceptorApproved: true,
 		requestId: request.requestId,
 		options: request.options
@@ -484,20 +484,21 @@ export function sendMessageToContentScript(tabId: number, connectionName: string
 
 async function onContentScriptConnected(port: browser.runtime.Port) {
 	console.log('content script connected')
-	const connectionName = port.name
-	const tabId = port.sender?.tab?.id
-	if (tabId === undefined) return
+	const socket = getSocketFromPort(port)
+	if (port?.sender?.url === undefined) return
+	const origin = (new URL(port.sender.url)).hostname
+	const website = await retrieveWebsiteDetails(port, (new URL(port.sender.url)).hostname)
 
-	const tabConnection = globalThis.interceptor.websiteTabConnection.get(tabId)
+	const tabConnection = globalThis.interceptor.websiteTabConnection.get(socket.tabId)
 	if (tabConnection === undefined) {
-		globalThis.interceptor.websiteTabConnection.set(tabId, {
+		globalThis.interceptor.websiteTabConnection.set(socket.tabId, {
 			portConnections: { [port.name]: port },
 			tabIconDetails: {
 				icon: ICON_NOT_ACTIVE,
 				iconReason: 'No active address selected.',
 			}
 		})
-		updateExtensionIcon(port)
+		updateExtensionIcon(socket, origin)
 	} else {
 		tabConnection.portConnections[port.name] = port
 	}
@@ -533,7 +534,7 @@ async function onContentScriptConnected(port: browser.runtime.Port) {
 			}
 
 			if (!(await verifyAccess(port, request.options.method))) {
-				return postMessageIfStillConnected(tabId, connectionName, {
+				return postMessageIfStillConnected(socket, {
 					interceptorApproved: false,
 					requestId: request.requestId,
 					options: request.options,
@@ -544,7 +545,7 @@ async function onContentScriptConnected(port: browser.runtime.Port) {
 				})
 			}
 			if (connectionStatus === 'notInitialized' && globalThis.interceptor.settings?.activeChain !== undefined) {
-				postMessageIfStillConnected(tabId, connectionName, {
+				postMessageIfStillConnected(socket, {
 					interceptorApproved: true,
 					options: { method: 'connect' },
 					result: [EthereumQuantity.serialize(globalThis.interceptor.settings.activeChain)]
@@ -555,12 +556,12 @@ async function onContentScriptConnected(port: browser.runtime.Port) {
 				// request info (chain and accounts) from the connection right away after the user has approved connection
 				if (port.sender?.tab?.id !== undefined) {
 					if ( globalThis.interceptor.websiteTabSignerStates.get(port.sender.tab.id) === undefined) {
-						postMessageIfStillConnected(tabId, connectionName, {
+						postMessageIfStillConnected(socket, {
 							interceptorApproved: true,
 							options: { method: 'request_signer_to_eth_requestAccounts' },
 							result: []
 						})
-						postMessageIfStillConnected(tabId, connectionName, {
+						postMessageIfStillConnected(socket, {
 							interceptorApproved: true,
 							options: { method: 'request_signer_chainId' },
 							result: []
@@ -571,10 +572,12 @@ async function onContentScriptConnected(port: browser.runtime.Port) {
 			// if simulation mode is not on, we only intercept eth_sendTransaction and personalSign
 			if ( simulator === undefined ) throw 'Interceptor not ready'
 
-			const resolved = globalThis.interceptor.settings?.simulationMode || request.usingInterceptorWithoutSigner ? await handleSimulationMode(simulator, port, request) : await handleSigningMode(simulator, port, request)
-			return sendMessageToContentScript(tabId, connectionName, resolved, request)
+			const resolved = globalThis.interceptor.settings?.simulationMode || request.usingInterceptorWithoutSigner ?
+				await handleSimulationMode(simulator, socket, website, request)
+				: await handleSigningMode(simulator, socket, website, request)
+			return sendMessageToContentScript(socket, resolved, request)
 		} catch(error) {
-			postMessageIfStillConnected(tabId, connectionName, {
+			postMessageIfStillConnected(socket, {
 				interceptorApproved: false,
 				requestId: request.requestId,
 				options: request.options,
@@ -632,6 +635,8 @@ async function popupMessageHandler(simulator: Simulator, request: unknown) {
 		case 'popup_interceptorAccessReadyAndListening': return // handled elsewhere (interceptorAccess.ts)
 		case 'popup_confirmTransactionReadyAndListening': return // handled elsewhere (confirmTransaction.ts)
 		case 'popup_requestNewHomeData': return homeOpened()
+		case 'popup_interceptorAccessChangeAddress': return await interceptorAccessChangeAddress(simulator, parsedRequest)
+		case 'popup_interceptorAccessRefresh': return await interceptorAccessRefresh(simulator, parsedRequest)
 		default: assertUnreachable(parsedRequest)
 	}
 }

@@ -4,7 +4,7 @@ import { EthereumAccountsReply, EthereumAddress, EthereumQuantity, LiteralConver
 import { SimulatedAndVisualizedTransaction, SimulationAndVisualisationResults } from './visualizer-types.js'
 import { IdentifiedSwapWithMetadata } from '../components/simulationExplaining/SwapTransactions.js'
 import { CHAINS } from './constants.js'
-import { Page, SignerName, TabIconDetails, WebsiteAccessArray } from './interceptor-messages.js'
+import { Page, SignerName, TabIconDetails, WebsiteAccessArray, WebsiteSocket } from './interceptor-messages.js'
 
 export type Website = funtypes.Static<typeof Website>
 export const Website = funtypes.Object({
@@ -176,6 +176,7 @@ export type LogAnalysisParams = {
 }
 
 export type WebsiteApproval = {
+	socket: WebsiteSocket,
 	websiteOrigin: string,
 	approved: boolean, // if user has approved connection
 }
@@ -189,6 +190,7 @@ export type NotificationCenterParams = {
 
 export type PendingAccessRequest = funtypes.Static<typeof PendingAccessRequest>
 export const PendingAccessRequest = funtypes.Object({
+	socket: WebsiteSocket,
 	website: Website,
 	requestAccessToAddress: funtypes.Union(EthereumAddress, funtypes.Undefined),
 }).asReadonly()

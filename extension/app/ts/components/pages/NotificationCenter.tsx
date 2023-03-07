@@ -4,10 +4,13 @@ import { BigAddress } from '../subcomponents/address.js'
 import { ethers } from 'ethers'
 import { addressString } from '../../utils/bigint.js'
 import { sendPopupMessageToBackgroundPage } from '../../background/backgroundUtils.js'
+import { WebsiteSocket } from '../../utils/interceptor-messages.js'
 
 export type PendingAccessRequestWithMetadata = AddressInfoEntry & {
+	socket: WebsiteSocket,
 	website: Website,
 } | {
+	socket: WebsiteSocket,
 	website: Website,
 	address: undefined
 }
@@ -21,6 +24,7 @@ export function NotificationCenter(param: NotificationCenterParams) {
 		const metadata = new Map(param.pendingAccessMetadata)
 		setPendingAccessRequests(param.pendingAccessRequests.map( (x) => ({
 			website: x.website,
+			socket: x.socket,
 			...(x.requestAccessToAddress === undefined ? { address: undefined } : metadata.get(addressString(x.requestAccessToAddress)) || { // TODO, refactor away when we are using messaging instead of globals for these
 				type: 'addressInfo' as const,
 				name: ethers.utils.getAddress(addressString(x.requestAccessToAddress)),
@@ -34,12 +38,15 @@ export function NotificationCenter(param: NotificationCenterParams) {
 		param.setAndSaveAppPage('Home')
 	}
 
-	function review(website: Website, requestAccessToAddress: bigint | undefined) {
+	function review(pendingAccessRequest: PendingAccessRequestWithMetadata) {
 		sendPopupMessageToBackgroundPage({
 			method: 'popup_reviewNotification',
 			options: {
-				website: website,
-				requestAccessToAddress: requestAccessToAddress,
+				socket: {
+					...pendingAccessRequest.socket
+				},
+				website: pendingAccessRequest.website,
+				requestAccessToAddress: pendingAccessRequest.address,
 			}
 		} )
 	}
@@ -127,7 +134,7 @@ export function NotificationCenter(param: NotificationCenterParams) {
 									</>
 
 									}
-									<button className = 'button is-primary is-small' onClick = { () => review(pendingAccessRequest.website, pendingAccessRequest.address) }>
+									<button className = 'button is-primary is-small' onClick = { () => review(pendingAccessRequest) }>
 										Review
 									</button>
 

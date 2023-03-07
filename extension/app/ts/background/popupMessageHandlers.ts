@@ -1,7 +1,7 @@
 import { changeActiveAddressAndChainAndResetSimulation, changeActiveChain, PrependTransactionMode, refreshConfirmTransactionSimulation, updatePrependMode, updateSimulationState } from './background.js'
 import { getOpenedAddressBookTabId, saveAddressInfos, saveContacts, saveMakeMeRich, saveOpenedAddressBookTabId, savePage, saveSimulationMode, saveUseSignersAddressAsActiveAddress, saveWebsiteAccess } from './settings.js'
 import { Simulator } from '../simulation/simulator.js'
-import { ChangeActiveAddress, ChangeMakeMeRich, ChangePage, PersonalSign, RemoveTransaction, RequestAccountsFromSigner, TransactionConfirmation, InterceptorAccess, ChangeInterceptorAccess, ChainChangeConfirmation, EnableSimulationMode, ReviewNotification, RejectNotification, ChangeActiveChain, AddOrEditAddressBookEntry, GetAddressBookData, RemoveAddressBookEntry, RefreshConfirmTransactionDialogSimulation, UserAddressBook } from '../utils/interceptor-messages.js'
+import { ChangeActiveAddress, ChangeMakeMeRich, ChangePage, PersonalSign, RemoveTransaction, RequestAccountsFromSigner, TransactionConfirmation, InterceptorAccess, ChangeInterceptorAccess, ChainChangeConfirmation, EnableSimulationMode, ReviewNotification, RejectNotification, ChangeActiveChain, AddOrEditAddressBookEntry, GetAddressBookData, RemoveAddressBookEntry, RefreshConfirmTransactionDialogSimulation, UserAddressBook, InterceptorAccessRefresh, InterceptorAccessChangeAddress } from '../utils/interceptor-messages.js'
 import { resolvePendingTransaction } from './windows/confirmTransaction.js'
 import { resolvePersonalSign } from './windows/personalSign.js'
 import { changeAccess, requestAccessFromUser, resolveExistingInterceptorAccessAsNoResponse, resolveInterceptorAccess, setPendingAccessRequests } from './windows/interceptorAccess.js'
@@ -183,7 +183,7 @@ export async function reviewNotification(_simulator: Simulator, params: ReviewNo
 
 	const addressInfo = notification.requestAccessToAddress === undefined ? undefined : findAddressInfo(BigInt(notification.requestAccessToAddress), globalThis.interceptor.settings.userAddressBook.addressInfos)
 	const metadata = getAssociatedAddresses(globalThis.interceptor.settings, notification.website.websiteOrigin, addressInfo)
-	await requestAccessFromUser(undefined, notification.website, addressInfo, metadata)
+	await requestAccessFromUser(params.options.socket, notification.website, addressInfo, metadata)
 }
 export async function rejectNotification(_simulator: Simulator, params: RejectNotification) {
 	if (globalThis.interceptor.settings === undefined) return
@@ -192,21 +192,16 @@ export async function rejectNotification(_simulator: Simulator, params: RejectNo
 	}
 
 	await resolveInterceptorAccess({
-		type: 'approval',
 		websiteOrigin : params.options.website.websiteOrigin,
 		requestAccessToAddress: params.options.requestAccessToAddress,
 		approval: params.options.removeOnly ? 'NoResponse' : 'Rejected'
 	}) // close pending access for this request if its open
 	if (!params.options.removeOnly) {
-		await changeAccess(
-			{
-				type: 'approval',
-				websiteOrigin : params.options.website.websiteOrigin,
-				requestAccessToAddress: params.options.requestAccessToAddress,
-				approval: 'Rejected'
-			},
-			params.options.website,
-		)
+		await changeAccess({
+			websiteOrigin : params.options.website.websiteOrigin,
+			requestAccessToAddress: params.options.requestAccessToAddress,
+			approval: 'Rejected'
+		}, params.options.website )
 	}
 	sendPopupMessageToOpenWindows({ method: 'popup_notification_removed' })
 }
@@ -269,4 +264,11 @@ export async function homeOpened() {
 			tabApproved: tabApproved,
 		}
 	})
+}
+
+export async function interceptorAccessChangeAddress(_simulator: Simulator, _params: InterceptorAccessChangeAddress) {
+	throw new Error("Not implemented")
+}
+export async function interceptorAccessRefresh(_simulator: Simulator, _params: InterceptorAccessRefresh) {
+	throw new Error("Not implemented")
 }
