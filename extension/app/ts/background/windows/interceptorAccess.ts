@@ -46,7 +46,6 @@ export async function resolveInterceptorAccess(confirmation: InterceptorAccessOp
 	if (confirmation.type === 'approval') { // close window on approval only, otherwise we want to keep the same window open
 		if (openedInterceptorAccessWindow !== null && openedInterceptorAccessWindow.id) {
 			browser.windows.onRemoved.removeListener(onCloseWindow)
-			await browser.windows.remove(openedInterceptorAccessWindow.id)
 		}
 		openedInterceptorAccessWindow = null
 	}
@@ -88,6 +87,8 @@ async function askForSignerAccountsFromSignerIfNotAvailable(port: browser.runtim
 	if (globalThis.interceptor.signerAccounts !== undefined) return globalThis.interceptor.signerAccounts
 	const portSenderId = port.sender?.id
 	if (portSenderId === undefined) return globalThis.interceptor.signerAccounts
+	const tabId = port.sender?.tab?.id
+	if (tabId === undefined) return []
 
 	const future = new Future<void>
 	const listener = createInternalMessageListener( (message: WindowMessage) => {
@@ -96,7 +97,7 @@ async function askForSignerAccountsFromSignerIfNotAvailable(port: browser.runtim
 	const channel = new BroadcastChannel(INTERNAL_CHANNEL_NAME)
 	try {
 		channel.addEventListener('message', listener)
-		const messageSent = postMessageIfStillConnected(port, {
+		const messageSent = postMessageIfStillConnected(tabId, port.name, {
 			interceptorApproved: true,
 			options: { method: 'request_signer_to_eth_requestAccounts' },
 			result: []

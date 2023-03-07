@@ -145,13 +145,15 @@ export function ConfirmTransaction() {
 		sendPopupMessageToBackgroundPage( { method: 'popup_confirmTransactionReadyAndListening' } )
 	}, [])
 
-	function approve() {
+	async function approve() {
 		if (requestIdToConfirm === undefined) throw new Error('request id is not set')
-		sendPopupMessageToBackgroundPage( { method: 'popup_confirmDialog', options: { requestId: requestIdToConfirm, accept: true } } )
+		await sendPopupMessageToBackgroundPage( { method: 'popup_confirmDialog', options: { requestId: requestIdToConfirm, accept: true } } )
+		globalThis.close()
 	}
-	function reject() {
+	async function reject() {
 		if (requestIdToConfirm === undefined) throw new Error('request id is not set')
-		sendPopupMessageToBackgroundPage( { method: 'popup_confirmDialog', options: { requestId: requestIdToConfirm, accept: false } } )
+		await sendPopupMessageToBackgroundPage( { method: 'popup_confirmDialog', options: { requestId: requestIdToConfirm, accept: false } } )
+		globalThis.close()
 	}
 	const refreshSimulation = () => {
 		if (simulationAndVisualisationResults === undefined || requestIdToConfirm === undefined || transactionToSimulate === undefined) return

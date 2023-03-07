@@ -12,7 +12,7 @@ import { PasteCatcher } from './subcomponents/PasteCatcher.js'
 import { truncateAddr } from '../utils/ethereum.js'
 import { NotificationCenter } from './pages/NotificationCenter.js'
 import { DEFAULT_TAB_CONNECTION } from '../utils/constants.js'
-import { ExternalPopupMessage, SignerName, TabConnection, UpdateHomePage, Page, WebsiteAccessArray } from '../utils/interceptor-messages.js'
+import { ExternalPopupMessage, SignerName, TabIconDetails, UpdateHomePage, Page, WebsiteAccessArray } from '../utils/interceptor-messages.js'
 import { version, gitCommitSha } from '../version.js'
 import { formSimulatedAndVisualizedTransaction } from './formVisualizerResults.js'
 import { sendPopupMessageToBackgroundPage } from '../background/backgroundUtils.js'
@@ -34,7 +34,7 @@ export function App() {
 	const [simulationMode, setSimulationMode] = useState<boolean>(true)
 	const [pendingAccessRequests, setPendingAccessRequests] = useState<PendingAccessRequestArray | undefined>(undefined)
 	const [pendingAccessMetadata, setPendingAccessMetadata] = useState<readonly [string, AddressInfoEntry][]>([])
-	const [tabConnection, setTabConnection] = useState<TabConnection>(DEFAULT_TAB_CONNECTION)
+	const [tabIconDetails, setTabConnection] = useState<TabIconDetails>(DEFAULT_TAB_CONNECTION)
 	const [tabApproved, setTabApproved] = useState<boolean>(false)
 	const [isSettingsLoaded, setIsSettingsLoaded] = useState<boolean>(false)
 	const [currentBlockNumber, setCurrentBlockNumber] = useState<bigint | undefined>(undefined)
@@ -128,10 +128,10 @@ export function App() {
 		setCurrentBlockNumber(data.currentBlockNumber)
 
 		setSignerAccounts(data.signerAccounts)
-		if (data.tabConnection === undefined) {
+		if (data.tabIconDetails === undefined) {
 			setTabConnection(DEFAULT_TAB_CONNECTION)
 		} else {
-			setTabConnection(data.tabConnection)
+			setTabConnection(data.tabIconDetails)
 		}
 		setTabApproved(data.tabApproved)
 		setIsSettingsLoaded(true)
@@ -224,7 +224,7 @@ export function App() {
 							makeMeRich = { makeMeRich }
 							addressInfos = { addressInfos }
 							simulationMode = { simulationMode }
-							tabConnection = { tabConnection }
+							tabIconDetails = { tabIconDetails }
 							tabApproved = { tabApproved }
 							currentBlockNumber = { currentBlockNumber }
 							signerName = { signerName }

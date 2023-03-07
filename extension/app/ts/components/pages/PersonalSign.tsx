@@ -87,14 +87,16 @@ export function PersonalSign() {
 		}
 	}
 
-	function approve() {
+	async function approve() {
 		if ( requestIdToConfirm === undefined) throw new Error('Request id is missing')
-		sendPopupMessageToBackgroundPage( { method: 'popup_personalSign', options: { requestId: requestIdToConfirm, accept: true } } )
+		await sendPopupMessageToBackgroundPage( { method: 'popup_personalSign', options: { requestId: requestIdToConfirm, accept: true } } )
+		globalThis.close()
 	}
 
-	function reject() {
+	async function reject() {
 		if ( requestIdToConfirm === undefined) throw new Error('Request id is missing')
-		sendPopupMessageToBackgroundPage( { method: 'popup_personalSign', options: { requestId: requestIdToConfirm, accept: false } } )
+		await sendPopupMessageToBackgroundPage( { method: 'popup_personalSign', options: { requestId: requestIdToConfirm, accept: false } } )
+		globalThis.close()
 	}
 
 	function renameAddressCallBack(entry: AddressBookEntry) {

@@ -1,5 +1,5 @@
 import { MOCK_PRIVATE_KEYS_ADDRESS } from '../utils/constants.js'
-import { AddressBookTabIdSetting, LegacyWebsiteAccessArray, Page, Settings, WebsiteAccessArray, WebsiteAccessArrayWithLegacy, pages } from '../utils/interceptor-messages.js'
+import { AddressBookTabIdSetting, LegacyWebsiteAccessArray, Page, PendingUserRequestPromise, Settings, WebsiteAccessArray, WebsiteAccessArrayWithLegacy, pages } from '../utils/interceptor-messages.js'
 import { AddressInfo, ContactEntries, PendingAccessRequestArray } from '../utils/user-interface-types.js'
 import { EthereumAddress, EthereumQuantity } from '../utils/wire-types.js'
 
@@ -109,4 +109,16 @@ export async function getOpenedAddressBookTabId() {
 	const tabIdData = await browser.storage.local.get(['addressbookTabId'])
 	if (!AddressBookTabIdSetting.test(tabIdData)) return undefined
 	return AddressBookTabIdSetting.parse(tabIdData).addressbookTabId
+}
+
+export async function getConfirmationWindowPromise(): Promise<PendingUserRequestPromise | undefined> {
+	const results = await browser.storage.local.get(['ConfirmationWindowPromise'])
+	return results.ConfirmationWindowPromise === undefined ? undefined : PendingUserRequestPromise.parse(results.ConfirmationWindowPromise)
+}
+
+export async function saveConfirmationWindowPromise(promise: PendingUserRequestPromise | undefined) {
+	if (promise === undefined) {
+		return await browser.storage.local.remove('ConfirmationWindowPromise')
+	}
+	return await browser.storage.local.set({ ConfirmationWindowPromise: PendingUserRequestPromise.serialize(promise) })
 }

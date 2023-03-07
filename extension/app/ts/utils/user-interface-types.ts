@@ -4,7 +4,7 @@ import { EthereumAccountsReply, EthereumAddress, EthereumQuantity, LiteralConver
 import { SimulatedAndVisualizedTransaction, SimulationAndVisualisationResults } from './visualizer-types.js'
 import { IdentifiedSwapWithMetadata } from '../components/simulationExplaining/SwapTransactions.js'
 import { CHAINS } from './constants.js'
-import { Page, SignerName, TabConnection, WebsiteAccessArray } from './interceptor-messages.js'
+import { Page, SignerName, TabIconDetails, WebsiteAccessArray } from './interceptor-messages.js'
 
 export type Website = funtypes.Static<typeof Website>
 export const Website = funtypes.Object({
@@ -127,7 +127,7 @@ export type HomeParams = {
 	activeChain: bigint,
 	setActiveChainAndInformAboutIt: (network: bigint) => void,
 	simulationMode: boolean,
-	tabConnection: TabConnection,
+	tabIconDetails: TabIconDetails,
 	tabApproved: boolean,
 	currentBlockNumber: bigint | undefined,
 	signerName: SignerName | undefined,
@@ -154,7 +154,7 @@ export type FirstCardParams = {
 	changeActiveAddress: () => void,
 	makeMeRich: boolean,
 	signerAccounts: readonly bigint[] | undefined,
-	tabConnection: TabConnection,
+	tabIconDetails: TabIconDetails,
 	tabApproved: boolean,
 	signerName: SignerName | undefined,
 	renameAddressCallBack: RenameAddressCallBack,
@@ -206,3 +206,8 @@ export interface SignerState {
 }
 
 export type RenameAddressCallBack = (addressBookEntry: AddressBookEntry) => void
+
+export type TabConnection = {
+	tabIconDetails: TabIconDetails
+	portConnections: Record<string, browser.runtime.Port>
+}

@@ -7,9 +7,13 @@ import { imageToUri } from '../utils/imageToUri.js'
 import { Future } from '../utils/future.js'
 
 async function setInterceptorIcon(tabId: number, icon: string, iconReason: string) {
+	const previousValue = globalThis.interceptor.websiteTabConnection.get(tabId)
 	globalThis.interceptor.websiteTabConnection.set(tabId, {
-		icon: icon,
-		iconReason: iconReason
+		portConnections: previousValue === undefined ? {} : previousValue.portConnections,
+		tabIconDetails: {
+			icon: icon,
+			iconReason: iconReason
+		}
 	})
 	sendPopupMessageToOpenWindows({ method: 'popup_websiteIconChanged' })
 	return await setExtensionIcon({
@@ -26,7 +30,7 @@ export function updateExtensionIcon(port: browser.runtime.Port) {
 	const websiteOrigin = (new URL(port.sender.url)).hostname
 	const activeAddress = getActiveAddress()
 	const censoredActiveAddress = getActiveAddressForDomain(globalThis.interceptor.settings.websiteAccess, websiteOrigin)
-	if ( activeAddress === undefined) return setInterceptorIcon(port.sender.tab.id, ICON_NOT_ACTIVE, 'No active address selected.')
+	if (activeAddress === undefined) return setInterceptorIcon(port.sender.tab.id, ICON_NOT_ACTIVE, 'No active address selected.')
 	if (hasAddressAccess(globalThis.interceptor.settings.websiteAccess, websiteOrigin, activeAddress )  === 'notFound') {
 		// we don't have active address selected, or no access specified
 		return setInterceptorIcon(port.sender.tab.id, ICON_NOT_ACTIVE, `${ websiteOrigin } has PENDING access request for ${ getAddressMetaData(activeAddress, globalThis.interceptor.settings?.userAddressBook).name }!`)

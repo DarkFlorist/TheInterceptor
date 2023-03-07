@@ -14,10 +14,6 @@ let openedPersonalSignDialogWindow: browser.windows.Window | null = null
 export async function resolvePersonalSign(confirmation: PersonalSign) {
 	if (pendingPersonalSign !== undefined) pendingPersonalSign.resolve(confirmation)
 	pendingPersonalSign = undefined
-
-	if (openedPersonalSignDialogWindow !== null && openedPersonalSignDialogWindow.id) {
-		await browser.windows.remove(openedPersonalSignDialogWindow.id)
-	}
 	openedPersonalSignDialogWindow = null
 }
 
