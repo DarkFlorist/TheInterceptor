@@ -1,11 +1,11 @@
 import { Simulator } from '../simulation/simulator.js'
 import { bytes32String } from '../utils/bigint.js'
 import { KNOWN_CONTRACT_CALLER_ADDRESSES } from '../utils/constants.js'
-import { InterceptedRequest, WebsiteAccessArray, WebsiteSocket } from '../utils/interceptor-messages.js'
-import { Website } from '../utils/user-interface-types.js'
+import { InterceptedRequest, WebsiteAccessArray } from '../utils/interceptor-messages.js'
+import { Website, WebsiteSocket } from '../utils/user-interface-types.js'
 import { EstimateGasParams, EthBalanceParams, EthBlockByNumberParams, EthCallParams, EthereumAddress, EthereumData, EthereumQuantity, EthereumSignedTransactionWithBlockData, EthSubscribeParams, EthTransactionReceiptResponse, EthUnSubscribeParams, GetBlockReturn, GetCode, GetSimulationStack, GetSimulationStackReply, GetTransactionCount, JsonRpcNewHeadsNotification, NewHeadsSubscriptionData, PersonalSignParams, SendTransactionParams, SignTypedDataParams, SwitchEthereumChainParams, TransactionByHashParams, TransactionReceiptParams } from '../utils/wire-types.js'
+import { getConnectionDetails } from './accessManagement.js'
 import { postMessageIfStillConnected } from './background.js'
-import { websiteSocketToString } from './backgroundUtils.js'
 import { openChangeChainDialog } from './windows/changeChain.js'
 import { openConfirmTransactionDialog } from './windows/confirmTransaction.js'
 import { openPersonalSignDialog } from './windows/personalSign.js'
@@ -34,7 +34,7 @@ function getFromField(simulationMode: boolean, request: SendTransactionParams, g
 	if (simulationMode && 'from' in request.params[0] && request.params[0].from !== undefined) {
 		return request.params[0].from // use `from` field directly from the dapp if we are in simulation mode and its available
 	} else {
-		const connection = globalThis.interceptor.websiteSocketApprovals.get(websiteSocketToString(socket))
+		const connection = getConnectionDetails(socket)
 		if (connection === undefined) throw new Error('Not connected')
 
 		const from = getActiveAddressForDomain(globalThis.interceptor.settings.websiteAccess, connection.websiteOrigin)
@@ -152,7 +152,7 @@ export async function unsubscribe(simulator: Simulator, request: EthUnSubscribeP
 }
 
 export async function getAccounts(getActiveAddressForDomain: (websiteAccess: WebsiteAccessArray, websiteOrigin: string) => bigint | undefined, _simulator: Simulator, socket: WebsiteSocket) {
-	const connection = globalThis.interceptor.websiteSocketApprovals.get(websiteSocketToString(socket))
+	const connection = getConnectionDetails(socket)
 	if (connection === undefined || globalThis.interceptor.settings === undefined) {
 		return { result: [] }
 	}

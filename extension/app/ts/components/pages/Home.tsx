@@ -144,7 +144,6 @@ export function Home(param: HomeParams) {
 	const [activeChain, setActiveChain] = useState<bigint>(1n)
 	const [simulationMode, setSimulationMode] = useState<boolean>(true)
 	const [tabIconDetails, setTabConnection] = useState<TabIconDetails>( DEFAULT_TAB_CONNECTION )
-	const [tabApproved, setTabApproved] = useState<boolean>(false)
 	const [signerAccounts, setSignerAccounts] = useState<readonly bigint[] | undefined>(undefined)
 	const [isLoaded, setLoaded] = useState<boolean>(false)
 	const [currentBlockNumber, setCurrentBlockNumber] = useState<bigint | undefined>(undefined)
@@ -162,7 +161,6 @@ export function Home(param: HomeParams) {
 		setActiveSigningAddress(param.activeSigningAddress !== undefined ? findAddressInfo(param.activeSigningAddress, param.addressInfos) : undefined)
 		setActiveChain(param.activeChain)
 		setSimulationMode(param.simulationMode)
-		setTabApproved(param.tabApproved)
 		setTabConnection(param.tabIconDetails)
 		setSignerAccounts(param.signerAccounts)
 		setCurrentBlockNumber(param.currentBlockNumber)
@@ -176,7 +174,6 @@ export function Home(param: HomeParams) {
 		param.activeChain,
 		param.simulationMode,
 		param.tabIconDetails,
-		param.tabApproved,
 		param.currentBlockNumber,
 		param.signerName,
 	])
@@ -220,7 +217,6 @@ export function Home(param: HomeParams) {
 			makeMeRich = { param.makeMeRich }
 			signerAccounts = { signerAccounts }
 			tabIconDetails = { tabIconDetails }
-			tabApproved = { tabApproved }
 			signerName = { signerName }
 			renameAddressCallBack = { param.renameAddressCallBack }
 		/>

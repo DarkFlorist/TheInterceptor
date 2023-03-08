@@ -4,7 +4,7 @@ import { Simulator } from '../simulation/simulator.js'
 import { ChangeActiveAddress, ChangeMakeMeRich, ChangePage, PersonalSign, RemoveTransaction, RequestAccountsFromSigner, TransactionConfirmation, InterceptorAccess, ChangeInterceptorAccess, ChainChangeConfirmation, EnableSimulationMode, ReviewNotification, RejectNotification, ChangeActiveChain, AddOrEditAddressBookEntry, GetAddressBookData, RemoveAddressBookEntry, RefreshConfirmTransactionDialogSimulation, UserAddressBook, InterceptorAccessRefresh, InterceptorAccessChangeAddress } from '../utils/interceptor-messages.js'
 import { resolvePendingTransaction } from './windows/confirmTransaction.js'
 import { resolvePersonalSign } from './windows/personalSign.js'
-import { changeAccess, requestAccessFromUser, resolveExistingInterceptorAccessAsNoResponse, resolveInterceptorAccess, setPendingAccessRequests } from './windows/interceptorAccess.js'
+import { changeAccess, requestAccessFromUser, requestAddressChange, resolveExistingInterceptorAccessAsNoResponse, resolveInterceptorAccess, setPendingAccessRequests } from './windows/interceptorAccess.js'
 import { resolveChainChange } from './windows/changeChain.js'
 import { EthereumQuantity } from '../utils/wire-types.js'
 import { getAssociatedAddresses, sendMessageToApprovedWebsitePorts, updateWebsiteApprovalAccesses } from './accessManagement.js'
@@ -242,7 +242,6 @@ export async function homeOpened() {
 	const signerState = globalThis.interceptor.websiteTabSignerStates.get(tabs[0].id)
 	const signerAccounts = signerState === undefined ? undefined : signerState.signerAccounts
 	const tabIconDetails = globalThis.interceptor.websiteTabConnection.get(tabs[0].id)?.tabIconDetails
-	const tabApproved = globalThis.interceptor.websiteTabApprovals.get(tabs[0].id)?.approved === true
 
 	sendPopupMessageToOpenWindows({
 		method: 'popup_UpdateHomePage',
@@ -261,14 +260,13 @@ export async function homeOpened() {
 			currentBlockNumber: globalThis.interceptor.currentBlockNumber,
 			settings: globalThis.interceptor.settings,
 			tabIconDetails: tabIconDetails,
-			tabApproved: tabApproved,
 		}
 	})
 }
 
-export async function interceptorAccessChangeAddress(_simulator: Simulator, _params: InterceptorAccessChangeAddress) {
-	throw new Error("Not implemented")
+export async function interceptorAccessChangeAddress(params: InterceptorAccessChangeAddress) {
+	requestAddressChange(params)
 }
-export async function interceptorAccessRefresh(_simulator: Simulator, _params: InterceptorAccessRefresh) {
-	throw new Error("Not implemented")
+export async function interceptorAccessRefresh(params: InterceptorAccessRefresh) {
+	requestAddressChange(params)
 }

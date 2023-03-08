@@ -35,7 +35,6 @@ export function App() {
 	const [pendingAccessRequests, setPendingAccessRequests] = useState<PendingAccessRequestArray | undefined>(undefined)
 	const [pendingAccessMetadata, setPendingAccessMetadata] = useState<readonly [string, AddressInfoEntry][]>([])
 	const [tabIconDetails, setTabConnection] = useState<TabIconDetails>(DEFAULT_TAB_CONNECTION)
-	const [tabApproved, setTabApproved] = useState<boolean>(false)
 	const [isSettingsLoaded, setIsSettingsLoaded] = useState<boolean>(false)
 	const [currentBlockNumber, setCurrentBlockNumber] = useState<bigint | undefined>(undefined)
 	const [signerName, setSignerName] = useState<SignerName | undefined>(undefined)
@@ -133,7 +132,6 @@ export function App() {
 		} else {
 			setTabConnection(data.tabIconDetails)
 		}
-		setTabApproved(data.tabApproved)
 		setIsSettingsLoaded(true)
 	}
 
@@ -225,7 +223,6 @@ export function App() {
 							addressInfos = { addressInfos }
 							simulationMode = { simulationMode }
 							tabIconDetails = { tabIconDetails }
-							tabApproved = { tabApproved }
 							currentBlockNumber = { currentBlockNumber }
 							signerName = { signerName }
 							renameAddressCallBack = { renameAddressCallBack }

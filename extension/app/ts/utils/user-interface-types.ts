@@ -4,7 +4,13 @@ import { EthereumAccountsReply, EthereumAddress, EthereumQuantity, LiteralConver
 import { SimulatedAndVisualizedTransaction, SimulationAndVisualisationResults } from './visualizer-types.js'
 import { IdentifiedSwapWithMetadata } from '../components/simulationExplaining/SwapTransactions.js'
 import { CHAINS } from './constants.js'
-import { Page, SignerName, TabIconDetails, WebsiteAccessArray, WebsiteSocket } from './interceptor-messages.js'
+import { Page, SignerName, TabIconDetails, WebsiteAccessArray } from './interceptor-messages.js'
+
+export type WebsiteSocket = funtypes.Static<typeof WebsiteSocket>
+export const WebsiteSocket = funtypes.Object({
+	tabId: funtypes.Number,
+	connectionName: EthereumQuantity,
+})
 
 export type Website = funtypes.Static<typeof Website>
 export const Website = funtypes.Object({
@@ -128,7 +134,6 @@ export type HomeParams = {
 	setActiveChainAndInformAboutIt: (network: bigint) => void,
 	simulationMode: boolean,
 	tabIconDetails: TabIconDetails,
-	tabApproved: boolean,
 	currentBlockNumber: bigint | undefined,
 	signerName: SignerName | undefined,
 	renameAddressCallBack: RenameAddressCallBack,
@@ -155,7 +160,6 @@ export type FirstCardParams = {
 	makeMeRich: boolean,
 	signerAccounts: readonly bigint[] | undefined,
 	tabIconDetails: TabIconDetails,
-	tabApproved: boolean,
 	signerName: SignerName | undefined,
 	renameAddressCallBack: RenameAddressCallBack,
 }
@@ -173,12 +177,6 @@ export type LogAnalysisParams = {
 	simulatedAndVisualizedTransaction: SimulatedAndVisualizedTransaction,
 	identifiedSwap: IdentifiedSwapWithMetadata,
 	renameAddressCallBack: RenameAddressCallBack,
-}
-
-export type WebsiteApproval = {
-	socket: WebsiteSocket,
-	websiteOrigin: string,
-	approved: boolean, // if user has approved connection
 }
 
 export type NotificationCenterParams = {
@@ -209,7 +207,14 @@ export interface SignerState {
 
 export type RenameAddressCallBack = (addressBookEntry: AddressBookEntry) => void
 
+export type SocketConnection = {
+	port: browser.runtime.Port,
+	socket: WebsiteSocket,
+	websiteOrigin: string,
+	approved: boolean, // if user has approved connection
+}
+
 export type TabConnection = {
 	tabIconDetails: TabIconDetails
-	portConnections: Record<string, browser.runtime.Port>
+	connections: Record<string, SocketConnection> // socket as string
 }

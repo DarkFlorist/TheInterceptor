@@ -40,8 +40,8 @@ export class Simulator {
 	public readonly ethereum
 	public readonly simulationModeNode
 
-	public constructor(chain: CHAIN, enableCaching: boolean, newBlockCallback: (blockNumber: bigint) => void ) {
-		this.ethereum = new EthereumClientService(new EthereumJSONRpcRequestHandler(CHAINS[chain].https_rpc), chain, enableCaching, newBlockCallback)
+	public constructor(chain: CHAIN, newBlockCallback: (blockNumber: bigint) => void ) {
+		this.ethereum = new EthereumClientService(new EthereumJSONRpcRequestHandler(CHAINS[chain].https_rpc), chain, newBlockCallback)
 		this.simulationModeNode = new SimulationModeEthereumClientService(this.ethereum, CHAINS[chain].wss_rpc)
 	}
 

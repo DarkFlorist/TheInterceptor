@@ -9,7 +9,7 @@ function listenInContentScript(conectionName) {
     function generateId(len) {
         const arr = new Uint8Array((len || 40) / 2);
         globalThis.crypto.getRandomValues(arr);
-        return Array.from(arr, dec2hex).join('');
+        return `0x${Array.from(arr, dec2hex).join('')}`;
     }
     const connectionNameNotUndefined = conectionName === undefined ? generateId(40) : conectionName;
     const extensionPort = browser.runtime.connect({ name: connectionNameNotUndefined });
@@ -121,7 +121,7 @@ class InterceptorMessageListener {
                     usingInterceptorWithoutSigner: this.signerWindowEthereumRequest === undefined,
                     requestId: pendingRequestId,
                 }, '*');
-                await future;
+                return await future;
             }
             catch (error) {
                 throw error;
@@ -134,7 +134,7 @@ class InterceptorMessageListener {
         this.WindowEthereumRequest = async (options) => {
             try {
                 // make a message that the background script will catch and reply us. We'll wait until the background script replies to us and return only after that
-                await this.sendMessageToBackgroundPage({ method: options.method, params: options.params });
+                return await this.sendMessageToBackgroundPage({ method: options.method, params: options.params });
             }
             catch (error) {
                 // if it is an Error, add context to it if context doesn't already exist
@@ -224,7 +224,7 @@ class InterceptorMessageListener {
             const reply = await this.signerWindowEthereumRequest({ method: 'eth_requestAccounts', params: [] });
             if (!Array.isArray(reply))
                 return;
-            await this.sendMessageToBackgroundPage({ method: 'eth_accounts_reply', params: reply });
+            return await this.sendMessageToBackgroundPage({ method: 'eth_accounts_reply', params: reply });
         };
         this.requestChainIdFromSigner = async () => {
             if (this.signerWindowEthereumRequest === undefined)
@@ -232,7 +232,7 @@ class InterceptorMessageListener {
             const reply = await this.signerWindowEthereumRequest({ method: 'eth_chainId', params: [] });
             if (typeof reply !== 'string')
                 return;
-            await this.sendMessageToBackgroundPage({ method: 'signer_chainChanged', params: [reply] });
+            return await this.sendMessageToBackgroundPage({ method: 'signer_chainChanged', params: [reply] });
         };
         this.requestChangeChainFromSigner = async (chainId) => {
             if (this.signerWindowEthereumRequest === undefined)
@@ -281,8 +281,6 @@ class InterceptorMessageListener {
             if (replyRequest.options.method === 'request_signer_chainId') {
                 return await this.requestChainIdFromSigner();
             }
-            if (replyRequest.requestId === undefined)
-                throw new Error('Reply request missing requestId');
             return this.outstandingRequests.get(replyRequest.requestId).resolve(replyRequest.result);
         };
         this.onMessage = async (messageEvent) => {
@@ -301,7 +299,7 @@ class InterceptorMessageListener {
                 throw new Error('missing method field');
             const forwardRequest = messageEvent.data; //use "as" here as we don't want to inject funtypes here
             if (forwardRequest.error !== undefined) {
-                if (forwardRequest.requestId === undefined || !this.outstandingRequests.has(forwardRequest.requestId))
+                if (!this.outstandingRequests.has(forwardRequest.requestId))
                     throw new EthereumJsonRpcError(forwardRequest.error.code, forwardRequest.error.message);
                 return this.outstandingRequests.get(forwardRequest.requestId).reject(new EthereumJsonRpcError(forwardRequest.error.code, forwardRequest.error.message));
             }
@@ -311,16 +309,12 @@ class InterceptorMessageListener {
                 if (this.signerWindowEthereumRequest == undefined)
                     throw 'Interceptor is in wallet mode and should not forward to an external wallet';
                 const reply = await this.signerWindowEthereumRequest(forwardRequest.options);
-                if (forwardRequest.requestId === undefined)
-                    return;
                 this.outstandingRequests.get(forwardRequest.requestId).resolve(reply);
             }
             catch (error) {
                 // if it is an Error, add context to it if context doesn't already exist
                 console.log(error);
                 console.log(messageEvent);
-                if (forwardRequest.requestId === undefined)
-                    throw error;
                 if (error instanceof Error) {
                     if (!('code' in error))
                         error.code = -32603;

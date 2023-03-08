@@ -1,10 +1,9 @@
 import { useEffect, useState } from 'preact/hooks'
-import { AddressInfoEntry, NotificationCenterParams, Website } from '../../utils/user-interface-types.js'
+import { AddressInfoEntry, NotificationCenterParams, Website, WebsiteSocket } from '../../utils/user-interface-types.js'
 import { BigAddress } from '../subcomponents/address.js'
 import { ethers } from 'ethers'
 import { addressString } from '../../utils/bigint.js'
 import { sendPopupMessageToBackgroundPage } from '../../background/backgroundUtils.js'
-import { WebsiteSocket } from '../../utils/interceptor-messages.js'
 
 export type PendingAccessRequestWithMetadata = AddressInfoEntry & {
 	socket: WebsiteSocket,

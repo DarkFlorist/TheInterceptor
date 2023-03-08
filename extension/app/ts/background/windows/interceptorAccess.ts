@@ -1,10 +1,10 @@
 import { addressString } from '../../utils/bigint.js'
 import { Future } from '../../utils/future.js'
-import { InterceptorAccessChangeAddress, InterceptorAccessRefresh, InterceptorAccessReply, PopupMessage, WebsiteAccessArray, WebsiteSocket, WindowMessage } from '../../utils/interceptor-messages.js'
-import { AddressInfoEntry, PendingAccessRequestArray, Website } from '../../utils/user-interface-types.js'
+import { InterceptorAccessChangeAddress, InterceptorAccessRefresh, InterceptorAccessReply, PopupMessage, WebsiteAccessArray, WindowMessage } from '../../utils/interceptor-messages.js'
+import { AddressInfoEntry, PendingAccessRequestArray, Website, WebsiteSocket } from '../../utils/user-interface-types.js'
 import { getAssociatedAddresses, setAccess, updateWebsiteApprovalAccesses } from '../accessManagement.js'
 import { changeActiveAddressAndChainAndResetSimulation, postMessageIfStillConnected } from '../background.js'
-import { INTERNAL_CHANNEL_NAME, createInternalMessageListener, getHtmlFile, getSocketFromPort, sendPopupMessageToOpenWindows } from '../backgroundUtils.js'
+import { INTERNAL_CHANNEL_NAME, createInternalMessageListener, getHtmlFile, sendPopupMessageToOpenWindows, websiteSocketToString } from '../backgroundUtils.js'
 import { updateExtensionBadge } from '../iconHandler.js'
 import { findAddressInfo } from '../metadataUtils.js'
 import { getPendingInterceptorAccessRequestPromise, savePendingAccessRequests, saveWebsiteAccess, savePendingInterceptorAccessRequestPromise } from '../settings.js'
@@ -85,21 +85,17 @@ export async function changeAccess(confirmation: InterceptorAccessReply, website
 	await setPendingAccessRequests(globalThis.interceptor.settings.pendingAccessRequests.filter((x) => !(x.website.websiteOrigin === website.websiteOrigin && x.requestAccessToAddress === confirmation.requestAccessToAddress)))
 }
 
-async function askForSignerAccountsFromSignerIfNotAvailable(port: browser.runtime.Port) {
+async function askForSignerAccountsFromSignerIfNotAvailable(socket: WebsiteSocket) {
 	if (globalThis.interceptor.signerAccounts !== undefined) return globalThis.interceptor.signerAccounts
-	const portSenderId = port.sender?.id
-	if (portSenderId === undefined) return globalThis.interceptor.signerAccounts
-	const tabId = port.sender?.tab?.id
-	if (tabId === undefined) return []
 
 	const future = new Future<void>
 	const listener = createInternalMessageListener( (message: WindowMessage) => {
-		if (message.method === 'window_signer_accounts_changed' && message.data.portSenderId === portSenderId) return future.resolve()
+		if (message.method === 'window_signer_accounts_changed' && websiteSocketToString(message.data.socket) === websiteSocketToString(socket)) return future.resolve()
 	})
 	const channel = new BroadcastChannel(INTERNAL_CHANNEL_NAME)
 	try {
 		channel.addEventListener('message', listener)
-		const messageSent = postMessageIfStillConnected(getSocketFromPort(port), {
+		const messageSent = postMessageIfStillConnected(socket, {
 			interceptorApproved: true,
 			options: { method: 'request_signer_to_eth_requestAccounts' },
 			result: []
@@ -155,6 +151,7 @@ export async function requestAccessFromUser(
 				signerAccounts: [],
 				signerName: globalThis.interceptor.signerName,
 				simulationMode: globalThis.interceptor.settings.simulationMode,
+				socket: socket,
 			}
 		})
 	}
@@ -234,34 +231,34 @@ async function resolve(confirmation: InterceptorAccessReply) {
 	}
 }
 
-export async function requestAddressChange(port: browser.runtime.Port | undefined, website: Website, options: InterceptorAccessChangeAddress | InterceptorAccessRefresh) {
+export async function requestAddressChange(message: InterceptorAccessChangeAddress | InterceptorAccessRefresh) {
 	if (globalThis.interceptor.settings === undefined) return
-	if (options.options.requestAccessToAddress === undefined) throw new Error('Requesting account change on site level access request')
-	if (port === undefined) throw new Error('Requesting account change on site that we cannot connect anymore')
+	if (message.options.requestAccessToAddress === undefined) throw new Error('Requesting account change on site level access request')
 
-	async function getProposedAddress(port: browser.runtime.Port, confirmation: InterceptorAccessChangeAddress | InterceptorAccessRefresh) {
-		if (confirmation.method === 'popup_interceptorAccessRefresh' || confirmation.options.newActiveAddress === 'signer') {
-			const signerAccounts = await askForSignerAccountsFromSignerIfNotAvailable(port)
+	async function getProposedAddress() {
+		if (message.method === 'popup_interceptorAccessRefresh' || message.options.newActiveAddress === 'signer') {
+			const signerAccounts = await askForSignerAccountsFromSignerIfNotAvailable(message.options.socket)
 			return signerAccounts === undefined || signerAccounts.length == 0 ? undefined : signerAccounts[0]
 		}
-		return confirmation.options.newActiveAddress
+		return message.options.newActiveAddress
 	}
 
-	const proposedAddress = await getProposedAddress(port, options)
+	const proposedAddress = await getProposedAddress()
 
-	const newActiveAddress: bigint = proposedAddress === undefined ? options.options.requestAccessToAddress : proposedAddress
+	const newActiveAddress: bigint = proposedAddress === undefined ? message.options.requestAccessToAddress : proposedAddress
 	const newActiveAddressAddressInfo = findAddressInfo(newActiveAddress, globalThis.interceptor.settings.userAddressBook.addressInfos)
-	const associatedAddresses = getAssociatedAddresses(globalThis.interceptor.settings, website.websiteOrigin, newActiveAddressAddressInfo)
+	const associatedAddresses = getAssociatedAddresses(globalThis.interceptor.settings, message.options.website.websiteOrigin, newActiveAddressAddressInfo)
 	return await sendPopupMessageToOpenWindows({
 		method: 'popup_interceptorAccessDialog',
 		data: {
-			website,
+			website: message.options.website,
 			requestAccessToAddress: newActiveAddressAddressInfo,
 			associatedAddresses: associatedAddresses,
 			addressInfos: globalThis.interceptor.settings.userAddressBook.addressInfos,
 			signerAccounts: [],
 			signerName: globalThis.interceptor.signerName,
 			simulationMode: globalThis.interceptor.settings.simulationMode,
+			socket: message.options.socket,
 		}
 	})
 }

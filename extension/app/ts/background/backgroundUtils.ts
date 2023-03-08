@@ -1,4 +1,5 @@
-import { MessageToPopup, PopupMessage, WebsiteSocket, WindowMessage } from '../utils/interceptor-messages.js'
+import { MessageToPopup, PopupMessage, WindowMessage } from '../utils/interceptor-messages.js'
+import { WebsiteSocket } from '../utils/user-interface-types.js'
 import { EthereumQuantity } from '../utils/wire-types.js'
 
 export function getActiveAddress() {
@@ -71,9 +72,7 @@ export async function setExtensionBadgeBackgroundColor(details: browser.action._
 	return browser.action.setBadgeBackgroundColor(details)
 }
 
-export const websiteSocketToString = (socket: WebsiteSocket) => `${ socket.tabId }-${ socket.connectionName }`
-
-export const websiteSocketPairToString = (tabId: number, connectionName: string) => `${ tabId }-${ connectionName }`
+export const websiteSocketToString = (socket: WebsiteSocket) => `${ socket.tabId }-${ EthereumQuantity.serialize(socket.connectionName) }`
 
 export const getSocketFromPort = (port: browser.runtime.Port) => {
 	if (port.sender?.tab?.id === undefined) throw new Error('tab id not found in socket')

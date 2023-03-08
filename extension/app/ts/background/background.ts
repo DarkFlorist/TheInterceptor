@@ -1,4 +1,4 @@
-import { HandleSimulationModeReturnValue, InterceptedRequest, InterceptedRequestForward, PopupMessage, ProviderMessage, Settings, SignerName, WebsiteSocket } from '../utils/interceptor-messages.js'
+import { HandleSimulationModeReturnValue, InterceptedRequest, InterceptedRequestForward, PopupMessage, ProviderMessage, Settings, SignerName } from '../utils/interceptor-messages.js'
 import 'webextension-polyfill'
 import { Simulator } from '../simulation/simulator.js'
 import { EthereumAddress, EthereumJsonRpcRequest, EthereumQuantity, EthereumUnsignedTransaction, PersonalSignParams, SignTypedDataParams } from '../utils/wire-types.js'
@@ -6,13 +6,13 @@ import { getSettings, saveActiveChain, saveActiveSigningAddress, saveActiveSimul
 import { blockNumber, call, chainId, estimateGas, gasPrice, getAccounts, getBalance, getBlockByNumber, getCode, getPermissions, getSimulationStack, getTransactionByHash, getTransactionCount, getTransactionReceipt, personalSign, requestPermissions, sendTransaction, subscribe, switchEthereumChain, unsubscribe } from './simulationModeHanders.js'
 import { changeActiveAddress, changeMakeMeRich, changePage, resetSimulation, confirmDialog, refreshSimulation, removeTransaction, requestAccountsFromSigner, refreshPopupConfirmTransactionSimulation, confirmPersonalSign, confirmRequestAccess, changeInterceptorAccess, changeChainDialog, popupChangeActiveChain, enableSimulationMode, reviewNotification, rejectNotification, addOrModifyAddressInfo, getAddressBookData, removeAddressBookEntry, openAddressBook, homeOpened, interceptorAccessChangeAddress, interceptorAccessRefresh } from './popupMessageHandlers.js'
 import { SimulationState, TokenPriceEstimate, SimResults } from '../utils/visualizer-types.js'
-import { WebsiteApproval, SignerState, AddressBookEntry, AddressInfoEntry, Website, TabConnection } from '../utils/user-interface-types.js'
+import { SignerState, AddressBookEntry, AddressInfoEntry, Website, TabConnection, WebsiteSocket } from '../utils/user-interface-types.js'
 import { getAddressMetadataForAccess, setPendingAccessRequests } from './windows/interceptorAccess.js'
 import { CHAINS, ICON_NOT_ACTIVE, isSupportedChain, MAKE_YOU_RICH_TRANSACTION, METAMASK_ERROR_USER_REJECTED_REQUEST } from '../utils/constants.js'
 import { PriceEstimator } from '../simulation/priceEstimator.js'
 import { getActiveAddressForDomain, sendActiveAccountChangeToApprovedWebsitePorts, sendMessageToApprovedWebsitePorts, updateWebsiteApprovalAccesses, verifyAccess } from './accessManagement.js'
 import { getAddressBookEntriesForVisualiser } from './metadataUtils.js'
-import { getActiveAddress, getSocketFromPort, sendPopupMessageToOpenWindows, setExtensionBadgeBackgroundColor, setExtensionIcon } from './backgroundUtils.js'
+import { getActiveAddress, getSocketFromPort, sendPopupMessageToOpenWindows, setExtensionBadgeBackgroundColor, setExtensionIcon, websiteSocketToString } from './backgroundUtils.js'
 import { retrieveWebsiteDetails, updateExtensionIcon } from './iconHandler.js'
 import { connectedToSigner, ethAccountsReply, signerChainChanged, walletSwitchEthereumChainReply } from './providerMessageHandlers.js'
 import { SimulationModeEthereumClientService } from '../simulation/services/SimulationModeEthereumClientService.js'
@@ -43,8 +43,6 @@ declare global {
 		signerChain: bigint | undefined,
 		signerName: SignerName | undefined,
 		websiteTabSignerStates: Map<number, SignerState>,
-		websiteSocketApprovals: Map<string, WebsiteApproval>, // map of ports that are either approved or not-approved by interceptor
-		websiteTabApprovals: Map<number, WebsiteApproval>,
 		websiteTabConnection: Map<number, TabConnection>,
 		settings: Settings | undefined,
 		currentBlockNumber: bigint | undefined,
@@ -61,8 +59,6 @@ globalThis.interceptor = {
 	signerName: undefined,
 	websiteTabSignerStates: new Map(),
 	settings: undefined,
-	websiteSocketApprovals: new Map(),
-	websiteTabApprovals: new Map(),
 	websiteTabConnection: new Map(),
 	simulation: {
 		simulationId: 0,
@@ -385,10 +381,9 @@ export async function changeActiveAddressAndChainAndResetSimulation(activeAddres
 		saveActiveChain(activeChain)
 		const chainString = activeChain.toString()
 		if (isSupportedChain(chainString)) {
-			const isPolling = simulator.ethereum.isBlockPolling()
 			globalThis.interceptor.currentBlockNumber = undefined
 			simulator.cleanup()
-			simulator = new Simulator(chainString, isPolling, newBlockCallback)
+			simulator = new Simulator(chainString, newBlockCallback)
 		}
 
 		// inform all the tabs about the chain change
@@ -439,12 +434,12 @@ const providerHandlers = new Map<string, ProviderHandler >([
 ])
 export function postMessageIfStillConnected(socket: WebsiteSocket, message: InterceptedRequestForward) {
 	const tabConnection = globalThis.interceptor.websiteTabConnection.get(socket.tabId)
+	const identifier = websiteSocketToString(socket)
 	if (tabConnection === undefined) return false
-
-	for (const [entrysConnectionName, newPort] of Object.entries(tabConnection.portConnections)) {
-		if (EthereumQuantity.serialize(socket.connectionName) !== entrysConnectionName) continue
+	for (const [socketAsString, connection] of Object.entries(tabConnection.connections)) {
+		if (socketAsString !== identifier) continue
 		try {
-			newPort.postMessage(message)
+			connection.port.postMessage(message)
 		} catch (error) {
 			if (error instanceof Error) {
 				if (error.message?.includes('Attempting to use a disconnected port object')) {
@@ -490,9 +485,16 @@ async function onContentScriptConnected(port: browser.runtime.Port) {
 	const website = await retrieveWebsiteDetails(port, (new URL(port.sender.url)).hostname)
 
 	const tabConnection = globalThis.interceptor.websiteTabConnection.get(socket.tabId)
+	const newConnection = {
+		port: port,
+		socket: socket,
+		websiteOrigin: origin,
+		approved: false
+	}
 	if (tabConnection === undefined) {
+		const identifier = websiteSocketToString(socket)
 		globalThis.interceptor.websiteTabConnection.set(socket.tabId, {
-			portConnections: { [port.name]: port },
+			connections: { [identifier]: newConnection },
 			tabIconDetails: {
 				icon: ICON_NOT_ACTIVE,
 				iconReason: 'No active address selected.',
@@ -500,7 +502,7 @@ async function onContentScriptConnected(port: browser.runtime.Port) {
 		})
 		updateExtensionIcon(socket, origin)
 	} else {
-		tabConnection.portConnections[port.name] = port
+		tabConnection.connections[port.name] = newConnection
 	}
 
 	let connectionStatus: 'connected' | 'disconnected' | 'notInitialized' = 'notInitialized'
@@ -510,7 +512,7 @@ async function onContentScriptConnected(port: browser.runtime.Port) {
 		if (tabId === undefined) return
 		const tabConnection = globalThis.interceptor.websiteTabConnection.get(tabId)
 		if (tabConnection === undefined) return
-		delete tabConnection.portConnections[port.name]
+		delete tabConnection.connections[port.name]
 		if (Object.keys(tabConnection).length === 0) {
 			globalThis.interceptor.websiteTabConnection.delete(tabId)
 		}
@@ -526,11 +528,12 @@ async function onContentScriptConnected(port: browser.runtime.Port) {
 		)) return
 		// received message from injected.ts page
 		const request = InterceptedRequest.parse(payload.data)
-
+		console.log(request.options.method)
 		try {
 			const providerHandler = providerHandlers.get(request.options.method)
 			if (providerHandler) {
-				return providerHandler(port, request)
+				providerHandler(port, request)
+				return sendMessageToContentScript(socket, {'result': '0x'}, request)
 			}
 
 			if (!(await verifyAccess(port, request.options.method))) {
@@ -635,8 +638,8 @@ async function popupMessageHandler(simulator: Simulator, request: unknown) {
 		case 'popup_interceptorAccessReadyAndListening': return // handled elsewhere (interceptorAccess.ts)
 		case 'popup_confirmTransactionReadyAndListening': return // handled elsewhere (confirmTransaction.ts)
 		case 'popup_requestNewHomeData': return homeOpened()
-		case 'popup_interceptorAccessChangeAddress': return await interceptorAccessChangeAddress(simulator, parsedRequest)
-		case 'popup_interceptorAccessRefresh': return await interceptorAccessRefresh(simulator, parsedRequest)
+		case 'popup_interceptorAccessChangeAddress': return await interceptorAccessChangeAddress(parsedRequest)
+		case 'popup_interceptorAccessRefresh': return await interceptorAccessRefresh(parsedRequest)
 		default: assertUnreachable(parsedRequest)
 	}
 }
@@ -666,9 +669,9 @@ async function startup() {
 
 	const chainString = globalThis.interceptor.settings.activeChain.toString()
 	if (isSupportedChain(chainString)) {
-		simulator = new Simulator(chainString, false, newBlockCallback)
+		simulator = new Simulator(chainString, newBlockCallback)
 	} else {
-		simulator = new Simulator('1', false, newBlockCallback) // initialize with mainnet, if user is not using any supported chains
+		simulator = new Simulator('1', newBlockCallback) // initialize with mainnet, if user is not using any supported chains
 	}
 	if (globalThis.interceptor.settings.simulationMode) {
 		changeActiveAddressAndChainAndResetSimulation(globalThis.interceptor.settings.activeSimulationAddress, globalThis.interceptor.settings.activeChain)

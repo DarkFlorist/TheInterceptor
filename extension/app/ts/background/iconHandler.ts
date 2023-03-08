@@ -5,12 +5,13 @@ import { getActiveAddress, sendPopupMessageToOpenWindows, setExtensionBadgeText,
 import { getAddressMetaData } from './metadataUtils.js'
 import { imageToUri } from '../utils/imageToUri.js'
 import { Future } from '../utils/future.js'
-import { WebsiteSocket } from '../utils/interceptor-messages.js'
+import { WebsiteSocket } from '../utils/user-interface-types.js'
 
 async function setInterceptorIcon(tabId: number, icon: string, iconReason: string) {
 	const previousValue = globalThis.interceptor.websiteTabConnection.get(tabId)
+	if (previousValue === undefined) return
 	globalThis.interceptor.websiteTabConnection.set(tabId, {
-		portConnections: previousValue === undefined ? {} : previousValue.portConnections,
+		...previousValue,
 		tabIconDetails: {
 			icon: icon,
 			iconReason: iconReason

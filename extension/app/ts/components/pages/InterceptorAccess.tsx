@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'preact/hooks'
 import { ActiveAddress, BigAddress, WebsiteOriginText } from '../subcomponents/address.js'
 import { AddNewAddress } from './AddNewAddress.js'
-import { AddressInfoEntry, AddressBookEntry, AddingNewAddressType, RenameAddressCallBack, AddressInfo, Website } from '../../utils/user-interface-types.js'
+import { AddressInfoEntry, AddressBookEntry, AddingNewAddressType, RenameAddressCallBack, AddressInfo, Website, WebsiteSocket } from '../../utils/user-interface-types.js'
 import { ExternalPopupMessage, SignerName } from '../../utils/interceptor-messages.js'
 import { sendPopupMessageToBackgroundPage } from '../../background/backgroundUtils.js'
 import Hint from '../subcomponents/Hint.js'
@@ -112,6 +112,7 @@ interface InterceptorAccessRequest {
 	signerAccounts: readonly bigint[]
 	signerName: SignerName | undefined
 	simulationMode: boolean
+	socket: WebsiteSocket
 }
 
 export function InterceptorAccess() {
@@ -164,7 +165,8 @@ export function InterceptorAccess() {
 	function refreshActiveAddress() {
 		if (accessRequest === undefined) throw Error('access request not loaded')
 		sendPopupMessageToBackgroundPage({ method: 'popup_interceptorAccessRefresh', options: {
-			websiteOrigin: accessRequest.website.websiteOrigin,
+			socket: accessRequest.socket,
+			website: accessRequest.website,
 			requestAccessToAddress: accessRequest.requestAccessToAddress?.address,
 		} } )
 	}
@@ -172,7 +174,8 @@ export function InterceptorAccess() {
 	function setActiveAddressAndInformAboutIt(address: bigint | 'signer') {
 		if (accessRequest === undefined) throw Error('access request not loaded')
 		sendPopupMessageToBackgroundPage({ method: 'popup_interceptorAccessChangeAddress', options: {
-			websiteOrigin: accessRequest.website.websiteOrigin,
+			socket: accessRequest.socket,
+			website: accessRequest.website,
 			requestAccessToAddress: accessRequest.requestAccessToAddress?.address,
 			newActiveAddress: address,
 		} } )

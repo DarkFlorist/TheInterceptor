@@ -40,15 +40,15 @@ export function ChangeChain() {
 		} )
 	}
 
-	function approve() {
+	async function approve() {
 		if (chainChangeData === undefined) return
-		sendPopupMessageToBackgroundPage( { method: 'popup_changeChainDialog', options: { accept: true, requestId: chainChangeData.requestId, chainId: chainChangeData.chainId } } )
+		await sendPopupMessageToBackgroundPage( { method: 'popup_changeChainDialog', options: { accept: true, requestId: chainChangeData.requestId, chainId: chainChangeData.chainId } } )
 		globalThis.close()
 	}
 
-	function reject() {
+	async function reject() {
 		if (chainChangeData === undefined) return
-		sendPopupMessageToBackgroundPage( { method: 'popup_changeChainDialog', options: { accept: false, requestId: chainChangeData.requestId } } )
+		await sendPopupMessageToBackgroundPage( { method: 'popup_changeChainDialog', options: { accept: false, requestId: chainChangeData.requestId } } )
 		globalThis.close()
 	}
 

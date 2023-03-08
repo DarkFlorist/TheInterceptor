@@ -1,7 +1,7 @@
 import { METAMASK_ERROR_USER_REJECTED_REQUEST } from '../../utils/constants.js'
 import { Future } from '../../utils/future.js'
-import { ChainChangeConfirmation, InterceptedRequest, PopupMessage, SignerChainChangeConfirmation, WebsiteSocket, } from '../../utils/interceptor-messages.js'
-import { Website } from '../../utils/user-interface-types.js'
+import { ChainChangeConfirmation, InterceptedRequest, PopupMessage, SignerChainChangeConfirmation } from '../../utils/interceptor-messages.js'
+import { Website, WebsiteSocket } from '../../utils/user-interface-types.js'
 import { changeActiveChain, sendMessageToContentScript } from '../background.js'
 import { getHtmlFile, sendPopupMessageToOpenWindows } from '../backgroundUtils.js'
 import { getChainChangeConfirmationPromise, saveChainChangeConfirmationPromise } from '../settings.js'
@@ -14,13 +14,13 @@ let openedWindow: browser.windows.Window | null = null
 export async function resolveChainChange(confirmation: ChainChangeConfirmation) {
 	if (pendForUserReply !== undefined) {
 		pendForUserReply.resolve(confirmation)
-	} else {
-		const data = await getChainChangeConfirmationPromise()
-		if (data === undefined || confirmation.options.requestId !== data.request.requestId) return
-		const resolved = await resolve(confirmation, data.simulationMode)
-		sendMessageToContentScript(data.socket, resolved, data.request)
+		pendForUserReply = undefined
+		return
 	}
-	pendForUserReply = undefined
+	const data = await getChainChangeConfirmationPromise()
+	if (data === undefined || confirmation.options.requestId !== data.request.requestId) return
+	const resolved = await resolve(confirmation, data.simulationMode)
+	sendMessageToContentScript(data.socket, resolved, data.request)
 }
 
 export async function resolveSignerChainChange(confirmation: SignerChainChangeConfirmation) {
@@ -86,7 +86,7 @@ export const openChangeChainDialog = async (
 		{
 			url: getHtmlFile('changeChain'),
 			type: 'popup',
-			height: 400,
+			height: 450,
 			width: 520,
 		}
 	)

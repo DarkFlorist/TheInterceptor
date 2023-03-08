@@ -125,7 +125,7 @@ export async function saveConfirmationWindowPromise(promise: PendingUserRequestP
 
 export async function getChainChangeConfirmationPromise(): Promise<PendingChainChangeConfirmationPromise | undefined> {
 	const results = await browser.storage.local.get(['ChainChangeConfirmationPromise'])
-	return results.ChainChangeConfirmationPromise === undefined ? undefined : PendingChainChangeConfirmationPromise.parse(results.ConfirmationWindowPromise)
+	return results.ChainChangeConfirmationPromise === undefined ? undefined : PendingChainChangeConfirmationPromise.parse(results.ChainChangeConfirmationPromise)
 }
 
 export async function saveChainChangeConfirmationPromise(promise: PendingChainChangeConfirmationPromise | undefined) {
@@ -137,7 +137,7 @@ export async function saveChainChangeConfirmationPromise(promise: PendingChainCh
 
 export async function getPendingPersonalSignPromise(): Promise<PendingPersonalSignPromise | undefined> {
 	const results = await browser.storage.local.get(['PersonalSignPromise'])
-	return results.PersonalSignPromise === undefined ? undefined : PendingPersonalSignPromise.parse(results.ConfirmationWindowPromise)
+	return results.PersonalSignPromise === undefined ? undefined : PendingPersonalSignPromise.parse(results.PersonalSignPromise)
 }
 
 export async function savePendingPersonalSignPromise(promise: PendingPersonalSignPromise | undefined) {

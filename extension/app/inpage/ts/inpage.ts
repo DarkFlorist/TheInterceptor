@@ -179,7 +179,7 @@ class InterceptorMessageListener {
 				usingInterceptorWithoutSigner: this.signerWindowEthereumRequest === undefined,
 				requestId: pendingRequestId,
 			}, '*')
-			await future
+			return await future
 		} catch (error) {
 			throw error
 		} finally {
@@ -189,10 +189,9 @@ class InterceptorMessageListener {
 
 	// sends messag to The Interceptor background page
 	private readonly WindowEthereumRequest = async (options: { readonly method: string, readonly params?: readonly unknown[] }) => {
-
 		try {
 			// make a message that the background script will catch and reply us. We'll wait until the background script replies to us and return only after that
-			await this.sendMessageToBackgroundPage( { method: options.method, params: options.params })
+			return await this.sendMessageToBackgroundPage({ method: options.method, params: options.params })
 		} catch (error) {
 			// if it is an Error, add context to it if context doesn't already exist
 			if (error instanceof Error) {
@@ -282,14 +281,14 @@ class InterceptorMessageListener {
 		const reply = await this.signerWindowEthereumRequest({ method: 'eth_requestAccounts', params: [] })
 
 		if ( !Array.isArray(reply) ) return
-		await this.sendMessageToBackgroundPage({ method: 'eth_accounts_reply', params: reply })
+		return await this.sendMessageToBackgroundPage({ method: 'eth_accounts_reply', params: reply })
 	}
 
 	private readonly requestChainIdFromSigner = async () => {
 		if (this.signerWindowEthereumRequest === undefined ) return
 		const reply = await this.signerWindowEthereumRequest( { method: 'eth_chainId', params: [] } )
 		if ( typeof reply !== 'string') return
-		await this.sendMessageToBackgroundPage({ method: 'signer_chainChanged', params: [ reply ] })
+		return await this.sendMessageToBackgroundPage({ method: 'signer_chainChanged', params: [ reply ] })
 	}
 
 	private static readonly checkErrorForCode = (error: unknown): error is { code: number } => {
