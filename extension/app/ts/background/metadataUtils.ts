@@ -25,7 +25,7 @@ export function findAddressInfo(address: bigint, addressInfos: readonly AddressI
 	}
 	return {
 		type: 'addressInfo' as const,
-		name: ethers.utils.getAddress(addressString(address)),
+		name: ethers.getAddress(addressString(address)),
 		address: address,
 		askForAddressAccess: false,
 	}
@@ -88,7 +88,7 @@ export function getAddressMetaData(address: bigint, userAddressBook: UserAddress
 
 	return {
 		address: address,
-		name: ethers.utils.getAddress(addrString),
+		name: ethers.getAddress(addrString),
 		type: 'contact',
 	}
 }
@@ -115,7 +115,7 @@ async function getTokenMetadata(simulator: Simulator, address: bigint) : Promise
 	})
 	if (decimals !== undefined) {
 		return {
-			name: ethers.utils.getAddress(addrString),
+			name: ethers.getAddress(addrString),
 			address: BigInt(addrString),
 			symbol: '???',
 			decimals: decimals,
@@ -123,7 +123,7 @@ async function getTokenMetadata(simulator: Simulator, address: bigint) : Promise
 		}
 	}
 	return { //if we don't know decimals, assume it's NFT
-		name: ethers.utils.getAddress(addrString),
+		name: ethers.getAddress(addrString),
 		address: BigInt(addrString),
 		symbol: '???',
 		type: 'NFT',

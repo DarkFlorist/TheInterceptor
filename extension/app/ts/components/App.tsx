@@ -155,7 +155,7 @@ export function App() {
 		if (appPage === 'AddNewAddress') return
 
 		const trimmed = address.trim()
-		if ( !ethers.utils.isAddress(trimmed) ) return
+		if ( !ethers.isAddress(trimmed) ) return
 
 		const bigIntReprentation = BigInt(trimmed)
 		// see if we have that address, if so, let's switch to it
@@ -166,7 +166,7 @@ export function App() {
 		}
 
 		// address not found, let's promt user to create it
-		const addressString = ethers.utils.getAddress(trimmed)
+		const addressString = ethers.getAddress(trimmed)
 		setAndSaveAppPage('AddNewAddress')
 		setAddingNewAddress({ addingAddress: false, entry: {
 			type: 'addressInfo' as const,

@@ -23,7 +23,7 @@ type IncompleteAddressIconParams = {
 }
 
 export function IncompleteAddressIcon({ addressInput, logoUri }: IncompleteAddressIconParams) {
-	if (addressInput !== undefined && ethers.utils.isAddress(addressInput.trim())) {
+	if (addressInput !== undefined && ethers.isAddress(addressInput.trim())) {
 		return <AddressIcon
 			address = { BigInt(addressInput) }
 			logoUri = { logoUri }
@@ -75,7 +75,7 @@ export function AddressInput({ disableAddress, addressInput, setAddress }: Addre
 		value = { addressInput }
 		placeholder = { '0x0...' }
 		onInput = { e => setAddress((e.target as HTMLInputElement).value) }
-		style = { `${ addressInput === undefined || ethers.utils.isAddress(addressInput.trim()) ? '' : 'color: var(--negative-color);' }` }
+		style = { `${ addressInput === undefined || ethers.isAddress(addressInput.trim()) ? '' : 'color: var(--negative-color);' }` }
 	/>
 }
 
@@ -155,7 +155,7 @@ export function AddNewAddress(param: AddAddressParam) {
 					method: 'popup_addOrModifyAddressBookEntry',
 					options: {
 						type: 'contact' as const,
-						name: nameInput ? nameInput : ethers.utils.getAddress(addressInput),
+						name: nameInput ? nameInput : ethers.getAddress(addressInput),
 						address: BigInt(addressInput),
 					}
 				} )
@@ -166,7 +166,7 @@ export function AddNewAddress(param: AddAddressParam) {
 					method: 'popup_addOrModifyAddressBookEntry',
 					options: {
 						type: 'addressInfo' as const,
-						name: nameInput ? nameInput : ethers.utils.getAddress(addressInput),
+						name: nameInput ? nameInput : ethers.getAddress(addressInput),
 						address: BigInt(addressInput),
 						askForAddressAccess: askForAddressAccess,
 					}
@@ -190,7 +190,7 @@ export function AddNewAddress(param: AddAddressParam) {
 
 	useEffect( () => {
 		if (param.addingNewAddress.addingAddress === false) {
-			const addressInput = ethers.utils.getAddress(addressString(param.addingNewAddress.entry.address))
+			const addressInput = ethers.getAddress(addressString(param.addingNewAddress.entry.address))
 			setAddressInput(addressInput)
 			setNameInput(param.addingNewAddress.entry.name === addressInput ? undefined : param.addingNewAddress.entry.name)
 			setAddressType(param.addingNewAddress.entry.type)
@@ -206,7 +206,7 @@ export function AddNewAddress(param: AddAddressParam) {
 
 	function areInputValid() {
 		if (addressInput === undefined) return false
-		if (!ethers.utils.isAddress(addressInput)) return false
+		if (!ethers.isAddress(addressInput)) return false
 		if (nameInput !== undefined && nameInput.length > 42) return false
 		return true
 	}
@@ -216,7 +216,7 @@ export function AddNewAddress(param: AddAddressParam) {
 
 		if (input === undefined) return setErrorString(undefined)
 
-		if (ethers.utils.isAddress(input)) return setErrorString(undefined)
+		if (ethers.isAddress(input)) return setErrorString(undefined)
 
 		const issue = getIssueWithAddressString(input)
 		if (issue === undefined) return setErrorString('Unknown issue.')
