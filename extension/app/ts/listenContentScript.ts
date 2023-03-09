@@ -38,19 +38,4 @@ function listenInContentScript() {
 		connected = false
 	})
 }
-
-function injectScript(content: any) {
-	try {
-		const container = document.head || document.documentElement
-		const scriptTag = document.createElement('script')
-		scriptTag.setAttribute('async', 'false')
-		scriptTag.textContent = content
-		container.insertBefore(scriptTag, container.children[0])
-		container.removeChild(scriptTag)
-		listenInContentScript()
-	} catch (error) {
-	  	console.error('Interceptor: Provider injection failed.', error)
-	}
-}
-
-injectScript(`[[injected.ts]]`)
+listenInContentScript()

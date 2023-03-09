@@ -1,18 +1,17 @@
+import { Future } from './future.js'
+
 export async function imageToUri(url: string, maxSizeInBytes: number = 1048576) {
-	const canvas = document.createElement('canvas')
-	const context = canvas.getContext('2d')
-	if (context === null) return undefined
+	const response = await fetch(url)
+	const blob = await response.blob()
+	const reader = new FileReader()
+	const future = new Future<string | undefined>
 
-	const baseImage = new Image()
-	baseImage.src = url
-	await new Promise(resolve => baseImage.onload = resolve)
-	canvas.width = baseImage.width
-	canvas.height = baseImage.height
-	context.drawImage(baseImage, 0, 0)
-	const dataUrl = canvas.toDataURL('image/png')
-	canvas.remove()
+	reader.onloadend = () => future.resolve(reader.result === null ? undefined : reader.result as string)
+	reader.onerror = () => future.resolve(undefined)
+	reader.onabort = () => future.resolve(undefined)
+	reader.readAsDataURL(blob)
+	const data = await future
 
-	// if the file is too big, let's not store it
-	if ( new Blob([dataUrl]).size > maxSizeInBytes ) return undefined
-	return dataUrl
+	if (data === undefined || data.length > maxSizeInBytes) return undefined
+	return data
 }

@@ -12,7 +12,7 @@ import { CHAINS, ICON_NOT_ACTIVE, isSupportedChain, MAKE_YOU_RICH_TRANSACTION, M
 import { PriceEstimator } from '../simulation/priceEstimator.js'
 import { getActiveAddressForDomain, sendActiveAccountChangeToApprovedWebsitePorts, sendMessageToApprovedWebsitePorts, updateWebsiteApprovalAccesses, verifyAccess } from './accessManagement.js'
 import { getAddressBookEntriesForVisualiser } from './metadataUtils.js'
-import { getActiveAddress, sendPopupMessageToOpenWindows } from './backgroundUtils.js'
+import { getActiveAddress, sendPopupMessageToOpenWindows, setExtensionBadgeBackgroundColor, setExtensionIcon } from './backgroundUtils.js'
 import { updateExtensionIcon } from './iconHandler.js'
 import { connectedToSigner, ethAccountsReply, signerChainChanged, walletSwitchEthereumChainReply } from './providerMessageHandlers.js'
 import { SimulationModeEthereumClientService } from '../simulation/services/SimulationModeEthereumClientService.js'
@@ -29,32 +29,30 @@ let currentPrependMode: PrependTransactionMode = PrependTransactionMode.NO_PREPE
 let simulator: Simulator | undefined = undefined
 
 declare global {
-	interface Window {
-		interceptor: {
-			simulation: {
-				simulationId: number,
-				simulationState: SimulationState | undefined,
-				visualizerResults: SimResults[] | undefined,
-				addressBookEntries: AddressBookEntry[],
-				tokenPrices: TokenPriceEstimate[],
-			}
-			websiteAccessAddressMetadata: AddressInfoEntry[],
-			pendingAccessMetadata: [string, AddressInfoEntry][],
-			prependTransactionMode: PrependTransactionMode,
-			signerChain: bigint | undefined,
-			signerName: SignerName | undefined,
-			websiteTabSignerStates: Map<number, SignerState>,
-			websitePortApprovals: Map<browser.runtime.Port, WebsiteApproval>, // map of ports that are either approved or not-approved by interceptor
-			websiteTabApprovals: Map<number, WebsiteApproval>,
-			websiteTabConnection: Map<number, TabConnection>,
-			settings: Settings | undefined,
-			currentBlockNumber: bigint | undefined,
-			signerAccounts: readonly EthereumAddress[] | undefined,
+	var interceptor: {
+		simulation: {
+			simulationId: number,
+			simulationState: SimulationState | undefined,
+			visualizerResults: SimResults[] | undefined,
+			addressBookEntries: AddressBookEntry[],
+			tokenPrices: TokenPriceEstimate[],
 		}
+		websiteAccessAddressMetadata: AddressInfoEntry[],
+		pendingAccessMetadata: [string, AddressInfoEntry][],
+		prependTransactionMode: PrependTransactionMode,
+		signerChain: bigint | undefined,
+		signerName: SignerName | undefined,
+		websiteTabSignerStates: Map<number, SignerState>,
+		websitePortApprovals: Map<browser.runtime.Port, WebsiteApproval>, // map of ports that are either approved or not-approved by interceptor
+		websiteTabApprovals: Map<number, WebsiteApproval>,
+		websiteTabConnection: Map<number, TabConnection>,
+		settings: Settings | undefined,
+		currentBlockNumber: bigint | undefined,
+		signerAccounts: readonly EthereumAddress[] | undefined,
 	}
 }
 
-window.interceptor = {
+globalThis.interceptor = {
 	prependTransactionMode: PrependTransactionMode.NO_PREPEND,
 	signerAccounts: undefined,
 	websiteAccessAddressMetadata: [],
@@ -78,11 +76,11 @@ window.interceptor = {
 
 export async function updateSimulationState( getUpdatedSimulationState: () => Promise<SimulationState | undefined>) {
 	try {
-		window.interceptor.simulation.simulationId++
+		globalThis.interceptor.simulation.simulationId++
 
 		if ( simulator === undefined ) {
-			window.interceptor.simulation = {
-				simulationId: window.interceptor.simulation.simulationId,
+			globalThis.interceptor.simulation = {
+				simulationId: globalThis.interceptor.simulation.simulationId,
 				simulationState: undefined,
 				addressBookEntries: [],
 				tokenPrices: [],
@@ -94,14 +92,14 @@ export async function updateSimulationState( getUpdatedSimulationState: () => Pr
 
 		const updatedSimulationState = await getUpdatedSimulationState()
 
-		const simId = window.interceptor.simulation.simulationId
+		const simId = globalThis.interceptor.simulation.simulationId
 		if ( updatedSimulationState !== undefined ) {
 			const priceEstimator = new PriceEstimator(simulator.ethereum)
 
 			const transactions = updatedSimulationState.simulatedTransactions.map((x) => ({ ...x.signedTransaction, website: x.website }))
 			const visualizerResult = await simulator.visualizeTransactionChain(transactions, updatedSimulationState.blockNumber, updatedSimulationState.simulatedTransactions.map( x => x.multicallResponse))
 			const visualizerResultWithWebsites = visualizerResult.map((x,i) => ({ ...x, website: updatedSimulationState.simulatedTransactions[i].website }))
-			const addressBookEntries = await getAddressBookEntriesForVisualiser(simulator, visualizerResult.map( (x) => x.visualizerResults), updatedSimulationState, window.interceptor.settings?.userAddressBook)
+			const addressBookEntries = await getAddressBookEntriesForVisualiser(simulator, visualizerResult.map( (x) => x.visualizerResults), updatedSimulationState, globalThis.interceptor.settings?.userAddressBook)
 
 			function onlyTokensAndTokensWithKnownDecimals(metadata: AddressBookEntry) : metadata is AddressBookEntry & { type: 'token', decimals: `0x${ string }` } {
 				if (metadata.type !== 'token') return false
@@ -113,18 +111,18 @@ export async function updateSimulationState( getUpdatedSimulationState: () => Pr
 			}
 			const tokenPrices = await priceEstimator.estimateEthereumPricesForTokens(addressBookEntries.filter(onlyTokensAndTokensWithKnownDecimals).map(metadataRestructure))
 
-			if (simId !== window.interceptor.simulation.simulationId) return // do not update state if we are already calculating a new one
+			if (simId !== globalThis.interceptor.simulation.simulationId) return // do not update state if we are already calculating a new one
 
-			window.interceptor.simulation = {
-				simulationId: window.interceptor.simulation.simulationId,
+			globalThis.interceptor.simulation = {
+				simulationId: globalThis.interceptor.simulation.simulationId,
 				tokenPrices: tokenPrices,
 				addressBookEntries: addressBookEntries,
 				visualizerResults: visualizerResultWithWebsites,
 				simulationState: updatedSimulationState,
 			}
 		} else {
-			window.interceptor.simulation = {
-				simulationId: window.interceptor.simulation.simulationId,
+			globalThis.interceptor.simulation = {
+				simulationId: globalThis.interceptor.simulation.simulationId,
 				addressBookEntries: [],
 				tokenPrices: [],
 				visualizerResults: [],
@@ -152,7 +150,7 @@ export async function refreshConfirmTransactionSimulation(activeAddress: bigint,
 	const appended = await newSimulator.appendTransaction({ ...transactionToSimulate, website: website })
 	const transactions = appended.simulationState.simulatedTransactions.map(x => ({ ...x.signedTransaction, website: x.website }) )
 	const visualizerResult = await simulator.visualizeTransactionChain(transactions, appended.simulationState.blockNumber, appended.simulationState.simulatedTransactions.map( x => x.multicallResponse))
-	const addressMetadata = await getAddressBookEntriesForVisualiser(simulator, visualizerResult.map( (x) => x.visualizerResults), appended.simulationState, window.interceptor.settings?.userAddressBook)
+	const addressMetadata = await getAddressBookEntriesForVisualiser(simulator, visualizerResult.map( (x) => x.visualizerResults), appended.simulationState, globalThis.interceptor.settings?.userAddressBook)
 	const tokenPrices = await priceEstimator.estimateEthereumPricesForTokens(
 		addressMetadata.map(
 			(x) => x.type === 'token' && x.decimals !== undefined ? { token: x.address, decimals: x.decimals } : { token: 0x0n, decimals: 0x0n }
@@ -170,7 +168,7 @@ export async function refreshConfirmTransactionSimulation(activeAddress: bigint,
 			addressBookEntries: addressMetadata,
 			tokenPrices: tokenPrices,
 			activeAddress: activeAddress,
-			signerName: window.interceptor.signerName,
+			signerName: globalThis.interceptor.signerName,
 			website: website,
 		}
 	}
@@ -178,27 +176,27 @@ export async function refreshConfirmTransactionSimulation(activeAddress: bigint,
 
 // returns true if simulation state was changed
 export async function updatePrependMode(forceRefresh: boolean = false) {
-	if ( currentPrependMode === window.interceptor.prependTransactionMode && !forceRefresh ) return
+	if ( currentPrependMode === globalThis.interceptor.prependTransactionMode && !forceRefresh ) return
 	if ( simulator === undefined ) return
-	if ( window.interceptor.settings === undefined ) return
-	if ( !window.interceptor.settings.simulationMode ) {
+	if ( globalThis.interceptor.settings === undefined ) return
+	if ( !globalThis.interceptor.settings.simulationMode ) {
 		await updateSimulationState(async () => await simulator?.simulationModeNode.setPrependTransactionsQueue([]))
-		currentPrependMode = window.interceptor.prependTransactionMode
+		currentPrependMode = globalThis.interceptor.prependTransactionMode
 		return true
 	}
 
-	switch(window.interceptor.prependTransactionMode) {
+	switch(globalThis.interceptor.prependTransactionMode) {
 		case PrependTransactionMode.NO_PREPEND: {
 			await updateSimulationState(async () => await simulator?.simulationModeNode.setPrependTransactionsQueue([]))
 			break
 		}
 		case PrependTransactionMode.RICH_MODE: {
 			const activeAddress = getActiveAddress()
-			const chainId = window.interceptor.settings.activeChain.toString()
+			const chainId = globalThis.interceptor.settings.activeChain.toString()
 			if ( !isSupportedChain(chainId) ) return false
 			if ( activeAddress === undefined ) return false
 			await updateSimulationState(async () => {
-				if ( window.interceptor.settings === undefined ) return undefined
+				if ( globalThis.interceptor.settings === undefined ) return undefined
 				if ( simulator === undefined ) return undefined
 				if ( !isSupportedChain(chainId) ) return undefined
 				const queue = [{
@@ -213,7 +211,7 @@ export async function updatePrependMode(forceRefresh: boolean = false) {
 			break
 		}
 	}
-	currentPrependMode = window.interceptor.prependTransactionMode
+	currentPrependMode = globalThis.interceptor.prependTransactionMode
 	return true
 }
 
@@ -361,7 +359,7 @@ async function handleSigningMode(simulator: Simulator, port: browser.runtime.Por
 		case 'eth_signTypedData_v4': return await signTypedData(simulator, parsedRequest, request?.requestId, false)
 		case 'wallet_switchEthereumChain': return await switchEthereumChain(simulator, parsedRequest, port, request?.requestId, false)
 		case 'eth_sendTransaction': {
-			if (window.interceptor.settings && isSupportedChain(window.interceptor.settings.activeChain.toString()) ) {
+			if (globalThis.interceptor.settings && isSupportedChain(globalThis.interceptor.settings.activeChain.toString()) ) {
 				return sendTransaction(getActiveAddressForDomain, simulator, parsedRequest, port, request.requestId, false)
 			}
 			return forwardToSigner()
@@ -371,24 +369,24 @@ async function handleSigningMode(simulator: Simulator, port: browser.runtime.Por
 }
 
 function newBlockCallback(blockNumber: bigint) {
-	window.interceptor.currentBlockNumber = blockNumber
+	globalThis.interceptor.currentBlockNumber = blockNumber
 	sendPopupMessageToOpenWindows({ method: 'popup_new_block_arrived', data: { blockNumber } })
 	if (simulator !== undefined) refreshSimulation(simulator)
 }
 
 export async function changeActiveAddressAndChainAndResetSimulation(activeAddress: bigint | undefined | 'noActiveAddressChange', activeChain: bigint | 'noActiveChainChange') {
-	if (window.interceptor.settings === undefined) return
+	if (globalThis.interceptor.settings === undefined) return
 	if ( simulator === undefined ) return
 
 	let chainChanged = false
 	if (activeChain !== 'noActiveChainChange') {
 
-		window.interceptor.settings.activeChain = activeChain
+		globalThis.interceptor.settings.activeChain = activeChain
 		saveActiveChain(activeChain)
 		const chainString = activeChain.toString()
 		if (isSupportedChain(chainString)) {
 			const isPolling = simulator.ethereum.isBlockPolling()
-			window.interceptor.currentBlockNumber = undefined
+			globalThis.interceptor.currentBlockNumber = undefined
 			simulator.cleanup()
 			simulator = new Simulator(chainString, isPolling, newBlockCallback)
 		}
@@ -398,11 +396,11 @@ export async function changeActiveAddressAndChainAndResetSimulation(activeAddres
 	}
 
 	if (activeAddress !== 'noActiveAddressChange') {
-		if (window.interceptor.settings.simulationMode) {
-			window.interceptor.settings.activeSimulationAddress = activeAddress
+		if (globalThis.interceptor.settings.simulationMode) {
+			globalThis.interceptor.settings.activeSimulationAddress = activeAddress
 			saveActiveSimulationAddress(activeAddress)
 		} else {
-			window.interceptor.settings.activeSigningAddress = activeAddress
+			globalThis.interceptor.settings.activeSigningAddress = activeAddress
 			saveActiveSigningAddress(activeAddress)
 		}
 	}
@@ -413,7 +411,7 @@ export async function changeActiveAddressAndChainAndResetSimulation(activeAddres
 	}
 
 	if (chainChanged) {
-		sendMessageToApprovedWebsitePorts('chainChanged', EthereumQuantity.serialize(window.interceptor.settings.activeChain))
+		sendMessageToApprovedWebsitePorts('chainChanged', EthereumQuantity.serialize(globalThis.interceptor.settings.activeChain))
 		sendPopupMessageToOpenWindows({ method: 'popup_chain_update' })
 	}
 
@@ -425,8 +423,8 @@ export async function changeActiveAddressAndChainAndResetSimulation(activeAddres
 }
 
 export async function changeActiveChain(chainId: bigint) {
-	if (window.interceptor.settings === undefined) return
-	if (window.interceptor.settings.simulationMode) {
+	if (globalThis.interceptor.settings === undefined) return
+	if (globalThis.interceptor.settings.simulationMode) {
 		return await changeActiveAddressAndChainAndResetSimulation('noActiveAddressChange', chainId)
 	}
 	sendMessageToApprovedWebsitePorts('request_signer_to_wallet_switchEthereumChain', EthereumQuantity.serialize(chainId))
@@ -443,7 +441,7 @@ const providerHandlers = new Map<string, ProviderHandler >([
 export function postMessageIfStillConnected(port: browser.runtime.Port, message: InterceptedRequestForward) {
 	const tabId = port.sender?.tab?.id
 	if (tabId === undefined) return false
-	if (!window.interceptor.websiteTabConnection.has(tabId)) return false
+	if (!globalThis.interceptor.websiteTabConnection.has(tabId)) return false
 	try {
 		port.postMessage(message)
 	} catch (error) {
@@ -464,7 +462,7 @@ async function onContentScriptConnected(port: browser.runtime.Port) {
 		connectionStatus = 'disconnected'
 		const tabId = port.sender?.tab?.id
 		if ( tabId === undefined ) return
-		window.interceptor.websiteTabConnection.delete(tabId)
+		globalThis.interceptor.websiteTabConnection.delete(tabId)
 	})
 	port.onMessage.addListener(async (payload) => {
 		if (connectionStatus === 'disconnected') return
@@ -482,7 +480,7 @@ async function onContentScriptConnected(port: browser.runtime.Port) {
 		const tabId = port.sender?.tab?.id
 		if ( tabId === undefined ) return
 
-		if (!window.interceptor.websiteTabConnection.has(tabId)) {
+		if (!globalThis.interceptor.websiteTabConnection.has(tabId)) {
 			updateExtensionIcon(port)
 		}
 
@@ -503,19 +501,19 @@ async function onContentScriptConnected(port: browser.runtime.Port) {
 					}
 				})
 			}
-			if (connectionStatus === 'notInitialized' && window.interceptor.settings?.activeChain !== undefined) {
+			if (connectionStatus === 'notInitialized' && globalThis.interceptor.settings?.activeChain !== undefined) {
 				console.log('send connect!')
 				postMessageIfStillConnected(port, {
 					interceptorApproved: true,
 					options: { method: 'connect' },
-					result: [EthereumQuantity.serialize(window.interceptor.settings.activeChain)]
+					result: [EthereumQuantity.serialize(globalThis.interceptor.settings.activeChain)]
 				})
 				connectionStatus = 'connected'
 			}
-			if (!window.interceptor.settings?.simulationMode || window.interceptor.settings?.useSignersAddressAsActiveAddress) {
+			if (!globalThis.interceptor.settings?.simulationMode || globalThis.interceptor.settings?.useSignersAddressAsActiveAddress) {
 				// request info (chain and accounts) from the connection right away after the user has approved connection
 				if (port.sender?.tab?.id !== undefined) {
-					if ( window.interceptor.websiteTabSignerStates.get(port.sender.tab.id) === undefined) {
+					if ( globalThis.interceptor.websiteTabSignerStates.get(port.sender.tab.id) === undefined) {
 						postMessageIfStillConnected(port, {
 							interceptorApproved: true,
 							options: { method: 'request_signer_to_eth_requestAccounts' },
@@ -532,7 +530,7 @@ async function onContentScriptConnected(port: browser.runtime.Port) {
 			// if simulation mode is not on, we only intercept eth_sendTransaction and personalSign
 			if ( simulator === undefined ) throw 'Interceptor not ready'
 
-			const resolved = window.interceptor.settings?.simulationMode || request.usingInterceptorWithoutSigner ? await handleSimulationMode(simulator, port, request) : await handleSigningMode(simulator, port, request)
+			const resolved = globalThis.interceptor.settings?.simulationMode || request.usingInterceptorWithoutSigner ? await handleSimulationMode(simulator, port, request) : await handleSigningMode(simulator, port, request)
 			if ('error' in resolved) {
 				return postMessageIfStillConnected(port, {
 					...resolved,
@@ -605,7 +603,7 @@ async function popupMessageHandler(simulator: Simulator, request: unknown) {
 		case 'popup_reviewNotification': return await reviewNotification(simulator, parsedRequest)
 		case 'popup_rejectNotification': return await rejectNotification(simulator, parsedRequest)
 		case 'popup_addOrModifyAddressBookEntry': return await addOrModifyAddressInfo(simulator, parsedRequest)
-		case 'popup_getAddressBookData': return await getAddressBookData(parsedRequest, window.interceptor.settings?.userAddressBook)
+		case 'popup_getAddressBookData': return await getAddressBookData(parsedRequest, globalThis.interceptor.settings?.userAddressBook)
 		case 'popup_removeAddressBookEntry': return await removeAddressBookEntry(simulator, parsedRequest)
 		case 'popup_openAddressBook': return await openAddressBook(simulator)
 		case 'popup_personalSignReadyAndListening': return // handled elsewhere (personalSign.ts)
@@ -618,43 +616,43 @@ async function popupMessageHandler(simulator: Simulator, request: unknown) {
 }
 
 async function startup() {
-	window.interceptor.settings = await getSettings()
-	if (window.interceptor.settings.makeMeRich) {
-		window.interceptor.prependTransactionMode = PrependTransactionMode.RICH_MODE
+	globalThis.interceptor.settings = await getSettings()
+	if (globalThis.interceptor.settings.makeMeRich) {
+		globalThis.interceptor.prependTransactionMode = PrependTransactionMode.RICH_MODE
 	} else {
-		window.interceptor.prependTransactionMode = PrependTransactionMode.NO_PREPEND
+		globalThis.interceptor.prependTransactionMode = PrependTransactionMode.NO_PREPEND
 	}
 
-	browser.browserAction.setIcon( { path: ICON_NOT_ACTIVE } )
-	browser.browserAction.setBadgeBackgroundColor( { color: '#58a5b3' } )
+	await setExtensionIcon({ path: ICON_NOT_ACTIVE })
+	await setExtensionBadgeBackgroundColor( { color: '#58a5b3' } )
 
 	// if we are using signers mode, update our active address representing to signers address
-	if (window.interceptor.settings.useSignersAddressAsActiveAddress || window.interceptor.settings.simulationMode === false) {
-		const signerAcc = (window.interceptor.signerAccounts && window.interceptor.signerAccounts.length > 0) ? window.interceptor.signerAccounts[0] : undefined
-		if(window.interceptor.settings.simulationMode) {
-			window.interceptor.settings.activeSimulationAddress = signerAcc
+	if (globalThis.interceptor.settings.useSignersAddressAsActiveAddress || globalThis.interceptor.settings.simulationMode === false) {
+		const signerAcc = (globalThis.interceptor.signerAccounts && globalThis.interceptor.signerAccounts.length > 0) ? globalThis.interceptor.signerAccounts[0] : undefined
+		if(globalThis.interceptor.settings.simulationMode) {
+			globalThis.interceptor.settings.activeSimulationAddress = signerAcc
 		} else {
-			window.interceptor.settings.activeSigningAddress = signerAcc
+			globalThis.interceptor.settings.activeSigningAddress = signerAcc
 		}
 	}
 
-	window.interceptor.websiteAccessAddressMetadata = getAddressMetadataForAccess(window.interceptor.settings.websiteAccess)
+	globalThis.interceptor.websiteAccessAddressMetadata = getAddressMetadataForAccess(globalThis.interceptor.settings.websiteAccess)
 
-	const chainString = window.interceptor.settings.activeChain.toString()
+	const chainString = globalThis.interceptor.settings.activeChain.toString()
 	if (isSupportedChain(chainString)) {
 		simulator = new Simulator(chainString, false, newBlockCallback)
 	} else {
 		simulator = new Simulator('1', false, newBlockCallback) // initialize with mainnet, if user is not using any supported chains
 	}
-	if (window.interceptor.settings.simulationMode) {
-		changeActiveAddressAndChainAndResetSimulation(window.interceptor.settings.activeSimulationAddress, window.interceptor.settings.activeChain)
+	if (globalThis.interceptor.settings.simulationMode) {
+		changeActiveAddressAndChainAndResetSimulation(globalThis.interceptor.settings.activeSimulationAddress, globalThis.interceptor.settings.activeChain)
 	}
 
 	browser.runtime.onMessage.addListener(async function(message: unknown) {
 		if (simulator === undefined) throw new Error('Interceptor not ready yet')
 		await popupMessageHandler(simulator, message)
 	})
-	await setPendingAccessRequests(window.interceptor.settings.pendingAccessRequests)
+	await setPendingAccessRequests(globalThis.interceptor.settings.pendingAccessRequests)
 }
 
 startup()

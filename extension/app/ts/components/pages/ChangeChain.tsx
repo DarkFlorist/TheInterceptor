@@ -41,13 +41,13 @@ export function ChangeChain() {
 	function approve() {
 		if ( chainChangeData?.requestId === undefined) throw new Error('Request id is missing')
 		sendPopupMessageToBackgroundPage( { method: 'popup_changeChainDialog', options: { accept: true, requestId: chainChangeData.requestId } } )
-		window.close()
+		globalThis.close()
 	}
 
 	function reject() {
 		if ( chainChangeData?.requestId === undefined) throw new Error('Request id is missing')
 		sendPopupMessageToBackgroundPage( { method: 'popup_changeChainDialog', options: { accept: false, requestId: chainChangeData.requestId } } )
-		window.close()
+		globalThis.close()
 	}
 
 	return (

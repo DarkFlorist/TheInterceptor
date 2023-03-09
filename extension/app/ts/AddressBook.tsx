@@ -244,11 +244,11 @@ export function AddressBook() {
 		changeFilter(activeFilter)
 		browser.runtime.onMessage.addListener(popupMessageListener)
 		const scrollListener = () => update()
-		window.addEventListener('scroll', scrollListener)
+		globalThis.addEventListener('scroll', scrollListener)
 
 		return () => {
 			browser.runtime.onMessage.removeListener(popupMessageListener)
-			window.removeEventListener('scroll', scrollListener)
+			globalThis.removeEventListener('scroll', scrollListener)
 		}
 	}, [])
 
@@ -258,7 +258,7 @@ export function AddressBook() {
 			setAddressBookState((previousState) => {
 				if (previousState === undefined) return previousState
 				const pageSizePx = PAGE_SIZE * (ELEMENT_SIZE_PX[previousState.activeFilter] + ELEMENT_PADDING_PX)
-				const newPage = Math.min(Math.floor(window.scrollY / pageSizePx + 0.5), previousState.maxPages)
+				const newPage = Math.min(Math.floor(globalThis.scrollY / pageSizePx + 0.5), previousState.maxPages)
 				if (currentPageRef.current === newPage) return previousState
 
 				setCurrentPage(newPage)
@@ -330,7 +330,7 @@ export function AddressBook() {
 	}
 
 	function getWindowSizeInPages(filter: ActiveFilter) {
-		return Math.ceil(window.innerHeight / getPageSizeInPixels(filter) )
+		return Math.ceil(globalThis.innerHeight / getPageSizeInPixels(filter) )
 	}
 
 	function openNewAddress(filter: ActiveFilter) {

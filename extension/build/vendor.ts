@@ -44,7 +44,7 @@ async function vendorDependencies(files: string[]) {
 
 	// update the new hash to manifest.json
 	const base64EncodedSHA256 = createHash('sha256').update(importmapJson).digest('base64')
-	const manifestLocation = path.join(directoryOfThisFile, '..', 'app', 'manifest.json')
+	const manifestLocation = path.join(directoryOfThisFile, '..', 'app', 'manifestV2.json')
 	const oldManifest = await fs.readFile(manifestLocation, 'utf8')
 	const newManifest = oldManifest.replace(/sha256-[\s\S]*?'/m, `sha256-${ base64EncodedSHA256 }'`)
 	await fs.writeFile(manifestLocation, newManifest)

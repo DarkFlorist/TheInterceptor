@@ -6,7 +6,7 @@ import { Website } from '../../utils/user-interface-types.js'
 import { EthereumUnsignedTransaction } from '../../utils/wire-types.js'
 import { getActiveAddressForDomain } from '../accessManagement.js'
 import { appendTransactionToSimulator, refreshConfirmTransactionSimulation } from '../background.js'
-import { sendPopupMessageToOpenWindows } from '../backgroundUtils.js'
+import { getHtmlFile, sendPopupMessageToOpenWindows } from '../backgroundUtils.js'
 
 export type Confirmation = 'Approved' | 'Rejected' | 'NoResponse'
 let openedConfirmTransactionDialogWindow: browser.windows.Window | null = null
@@ -45,9 +45,9 @@ export async function openConfirmTransactionDialog(
 	transactionToSimulatePromise: () => Promise<EthereumUnsignedTransaction>,
 ) {
 	if (pendingTransaction !== undefined) return reject() // previous window still loading
-	if (window.interceptor.settings === undefined) return ERROR_INTERCEPTOR_NOT_READY
+	if (globalThis.interceptor.settings === undefined) return ERROR_INTERCEPTOR_NOT_READY
 
-	const activeAddress = getActiveAddressForDomain(window.interceptor.settings.websiteAccess, website.websiteOrigin)
+	const activeAddress = getActiveAddressForDomain(globalThis.interceptor.settings.websiteAccess, website.websiteOrigin)
 	if (activeAddress === undefined) return ERROR_INTERCEPTOR_NO_ACTIVE_ADDRESS
 
 	if (openedConfirmTransactionDialogWindow !== null && openedConfirmTransactionDialogWindow.id) {
@@ -75,7 +75,7 @@ export async function openConfirmTransactionDialog(
 
 	openedConfirmTransactionDialogWindow = await browser.windows.create(
 		{
-			url: '../html/confirmTransaction.html',
+			url: getHtmlFile('confirmTransaction'),
 			type: 'popup',
 			height: 600,
 			width: 600,

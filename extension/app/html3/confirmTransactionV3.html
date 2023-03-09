@@ -1,0 +1,20 @@
+<!DOCTYPE html>
+<html style="background-color:var(--bg-color); overflow-y: inherit;">
+	<head>
+		<title>Confirm Transaction - The Interceptor</title>
+		<meta charset='utf-8'>
+		<link rel="icon" type="image/x-icon" href="favicon.ico">
+	</head>
+	<body style = 'background-color: var(--bg-color); margin: auto;'>
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<link rel="stylesheet" type="text/css" href="../css/bulma.css" />
+		<link rel="stylesheet" type="text/css" href="../css/bulma-divider.css" />
+		<link rel="stylesheet" type="text/css" href="../css/interceptor.css" />
+		<script src='../vendor/webextension-polyfill/browser-polyfill.js'></script>
+
+		<main>Loading...</main>
+
+		<!-- a workaround for bug: https://bugzilla.mozilla.org/show_bug.cgi?id=1803984 -->
+		<script type = 'module' src = '../js/confirmTransaction.js'></script>
+	</body>
+</html>

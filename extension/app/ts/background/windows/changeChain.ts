@@ -3,7 +3,7 @@ import { Future } from '../../utils/future.js'
 import { ChainChangeConfirmation, PopupMessage, SignerChainChangeConfirmation, } from '../../utils/interceptor-messages.js'
 import { Website } from '../../utils/user-interface-types.js'
 import { changeActiveChain } from '../background.js'
-import { sendPopupMessageToOpenWindows } from '../backgroundUtils.js'
+import { getHtmlFile, sendPopupMessageToOpenWindows } from '../backgroundUtils.js'
 
 let pendForUserReply: Future<ChainChangeConfirmation> | undefined = undefined
 let pendForSignerReply: Future<SignerChainChangeConfirmation> | undefined = undefined
@@ -61,7 +61,7 @@ export const openChangeChainDialog = async (requestId: number, simulationMode: b
 
 	openedWindow = await browser.windows.create(
 		{
-			url: '../html/changeChain.html',
+			url: getHtmlFile('changeChain'),
 			type: 'popup',
 			height: 400,
 			width: 520,

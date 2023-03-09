@@ -185,7 +185,7 @@ export function App() {
 
 	function openAddressBook() {
 		sendPopupMessageToBackgroundPage( { method: 'popup_openAddressBook' } )
-		return window.close() // close extension popup, chrome closes it by default, but firefox does not
+		return globalThis.close() // close extension popup, chrome closes it by default, but firefox does not
 	}
 
 	return (

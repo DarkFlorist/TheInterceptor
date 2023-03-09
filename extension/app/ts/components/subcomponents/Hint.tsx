@@ -94,7 +94,7 @@ function calculatePosition(clickPosX: number, clickPosY: number, hintWidth: numb
 	const borderPadding = 30
 
 	return {
-		left: positionX + hintWidth > window.innerWidth - borderPadding ? window.innerWidth - borderPadding - hintWidth : (positionX < borderPadding ? borderPadding : positionX),
+		left: positionX + hintWidth > globalThis.innerWidth - borderPadding ? globalThis.innerWidth - borderPadding - hintWidth : (positionX < borderPadding ? borderPadding : positionX),
 		top: positionY,
 	}
 }
@@ -110,9 +110,9 @@ function Hint(props: HintProps) {
 	}
 
 	useEffect(() => {
-		window.addEventListener('resize', clean)
+		globalThis.addEventListener('resize', clean)
 		return () => {
-			window.removeEventListener('resize', clean)
+			globalThis.removeEventListener('resize', clean)
 		}
 	})
 
