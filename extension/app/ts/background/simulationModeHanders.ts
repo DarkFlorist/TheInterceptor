@@ -1,7 +1,7 @@
 import { Simulator } from '../simulation/simulator.js'
 import { bytes32String } from '../utils/bigint.js'
 import { ERROR_INTERCEPTOR_UNKNOWN_ORIGIN, KNOWN_CONTRACT_CALLER_ADDRESSES } from '../utils/constants.js'
-import { WebsiteAccessArray } from '../utils/interceptor-messages.js'
+import { InterceptedRequest, WebsiteAccessArray } from '../utils/interceptor-messages.js'
 import { EstimateGasParams, EthBalanceParams, EthBlockByNumberParams, EthCallParams, EthereumAddress, EthereumData, EthereumQuantity, EthereumSignedTransactionWithBlockData, EthSubscribeParams, EthTransactionReceiptResponse, EthUnSubscribeParams, GetBlockReturn, GetCode, GetSimulationStack, GetSimulationStackReply, GetTransactionCount, JsonRpcNewHeadsNotification, NewHeadsSubscriptionData, PersonalSignParams, SendTransactionParams, SignTypedDataParams, SwitchEthereumChainParams, TransactionByHashParams, TransactionReceiptParams } from '../utils/wire-types.js'
 import { postMessageIfStillConnected } from './background.js'
 import { retrieveWebsiteDetails } from './iconHandler.js'
@@ -42,11 +42,11 @@ function getFromField(simulationMode: boolean, request: SendTransactionParams, g
 	}
 }
 
-export async function sendTransaction(getActiveAddressForDomain: (websiteAccess: WebsiteAccessArray, websiteOrigin: string) => bigint | undefined, simulator: Simulator, request: SendTransactionParams, port: browser.runtime.Port, requestId: number | undefined, simulationMode: boolean = true) {
+export async function sendTransaction(getActiveAddressForDomain: (websiteAccess: WebsiteAccessArray, websiteOrigin: string) => bigint | undefined, simulator: Simulator, sendTransactionParams: SendTransactionParams, port: browser.runtime.Port, request: InterceptedRequest, simulationMode: boolean = true) {
 	async function formTransaction() {
 		const block = simulator.ethereum.getBlock()
 		const chainId = simulator.ethereum.getChainId()
-		const from = getFromField(simulationMode, request, getActiveAddressForDomain, port)
+		const from = getFromField(simulationMode, sendTransactionParams, getActiveAddressForDomain, port)
 		const transactionCount = simulator.simulationModeNode.getTransactionCount(from)
 
 		const maxFeePerGas = (await block).baseFeePerGas * 2n
@@ -55,20 +55,27 @@ export async function sendTransaction(getActiveAddressForDomain: (websiteAccess:
 			from: from,
 			chainId: await chainId,
 			nonce: await transactionCount,
-			maxFeePerGas: request.params[0].maxFeePerGas ? request.params[0].maxFeePerGas : maxFeePerGas,
-			maxPriorityFeePerGas: request.params[0].maxPriorityFeePerGas ? request.params[0].maxPriorityFeePerGas : 1n,
-			gas: request.params[0].gas ? request.params[0].gas : 90000n,
-			to: request.params[0].to ? request.params[0].to : 0n,
-			value: request.params[0].value ? request.params[0].value : 0n,
-			input: 'data' in request.params[0] && request.params[0].data !== undefined ? request.params[0].data : new Uint8Array(),
+			maxFeePerGas: sendTransactionParams.params[0].maxFeePerGas ? sendTransactionParams.params[0].maxFeePerGas : maxFeePerGas,
+			maxPriorityFeePerGas: sendTransactionParams.params[0].maxPriorityFeePerGas ? sendTransactionParams.params[0].maxPriorityFeePerGas : 1n,
+			gas: sendTransactionParams.params[0].gas ? sendTransactionParams.params[0].gas : 90000n,
+			to: sendTransactionParams.params[0].to ? sendTransactionParams.params[0].to : 0n,
+			value: sendTransactionParams.params[0].value ? sendTransactionParams.params[0].value : 0n,
+			input: 'data' in sendTransactionParams.params[0] && sendTransactionParams.params[0].data !== undefined ? sendTransactionParams.params[0].data : new Uint8Array(),
 			accessList: []
 		}
 	}
-	if (port.sender?.url === undefined) return ERROR_INTERCEPTOR_UNKNOWN_ORIGIN
-	if (requestId === undefined) throw new Error('sendTransaction requires known requestId')
-
+	const tabId = port.sender?.tab?.id
+	if (port.sender?.url === undefined || tabId === undefined) return ERROR_INTERCEPTOR_UNKNOWN_ORIGIN
+	if (!('requestId' in request) || request.requestId === undefined) throw new Error('sendTransaction requires known requestId')
 	const website = await retrieveWebsiteDetails(port, (new URL(port.sender.url)).hostname)
-	return await openConfirmTransactionDialog(requestId, website, simulationMode, formTransaction)
+	return await openConfirmTransactionDialog(
+		tabId,
+		port.name,
+		{ ...request, requestId: request.requestId },
+		website,
+		simulationMode,
+		formTransaction
+	)
 }
 
 async function singleCallWithFromOverride(simulator: Simulator, request: EthCallParams, from: bigint) {
@@ -122,8 +129,10 @@ export async function estimateGas(simulator: Simulator, request: EstimateGasPara
 }
 
 export async function subscribe(simulator: Simulator, port: browser.runtime.Port, request: EthSubscribeParams) {
+	const tabId = port.sender?.tab?.id
+	if (tabId === undefined)  throw new Error('failed to create subscription')
 	const result = await simulator.simulationModeNode.createSubscription(request, (subscriptionId: string, reply: JsonRpcNewHeadsNotification) => {
-		return postMessageIfStillConnected(port, {
+		return postMessageIfStillConnected(tabId, port.name, {
 			interceptorApproved: true,
 			options: request,
 			result: NewHeadsSubscriptionData.serialize(reply.params),
@@ -131,7 +140,7 @@ export async function subscribe(simulator: Simulator, port: browser.runtime.Port
 		})
 	})
 
-	if (result === undefined) throw ('failed to create subscription')
+	if (result === undefined) throw new Error('failed to create subscription')
 
 	return { result: result }
 }

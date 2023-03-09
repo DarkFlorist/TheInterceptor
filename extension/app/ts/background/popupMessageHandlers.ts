@@ -246,7 +246,7 @@ export async function homeOpened() {
 	if (tabs.length === 0 || tabs[0].id === undefined ) return
 	const signerState = globalThis.interceptor.websiteTabSignerStates.get(tabs[0].id)
 	const signerAccounts = signerState === undefined ? undefined : signerState.signerAccounts
-	const tabConnection = globalThis.interceptor.websiteTabConnection.get(tabs[0].id)
+	const tabIconDetails = globalThis.interceptor.websiteTabConnection.get(tabs[0].id)?.tabIconDetails
 	const tabApproved = globalThis.interceptor.websiteTabApprovals.get(tabs[0].id)?.approved === true
 
 	sendPopupMessageToOpenWindows({
@@ -265,7 +265,7 @@ export async function homeOpened() {
 			signerName: globalThis.interceptor.signerName,
 			currentBlockNumber: globalThis.interceptor.currentBlockNumber,
 			settings: globalThis.interceptor.settings,
-			tabConnection: tabConnection,
+			tabIconDetails: tabIconDetails,
 			tabApproved: tabApproved,
 		}
 	})

@@ -107,7 +107,9 @@ export function sendMessageToApprovedWebsitePorts(method: string, data: unknown)
 	// inform all the tabs about the address change
 	for (const [port, connection] of globalThis.interceptor.websitePortApprovals.entries() ) {
 		if ( !connection.approved ) continue
-		postMessageIfStillConnected(port, {
+		const tabId = port.sender?.tab?.id
+		if (tabId === undefined) continue
+		postMessageIfStillConnected(tabId, port.name, {
 			interceptorApproved: true,
 			options: { method: method },
 			result: data
@@ -119,8 +121,10 @@ export function sendActiveAccountChangeToApprovedWebsitePorts() {
 	// inform all the tabs about the address change
 	for (const [port, connection] of globalThis.interceptor.websitePortApprovals.entries() ) {
 		if ( !connection.approved ) continue
+		const tabId = port.sender?.tab?.id
+		if (tabId === undefined) continue
 		const activeAddress = getActiveAddressForDomain(globalThis.interceptor.settings.websiteAccess, connection.websiteOrigin)
-		postMessageIfStillConnected(port, {
+		postMessageIfStillConnected(tabId, port.name, {
 			interceptorApproved: true,
 			options: { method: 'accountsChanged' },
 			result: activeAddress !== undefined ? [EthereumAddress.serialize(activeAddress)] : []
@@ -246,8 +250,10 @@ function connectToPort(port: browser.runtime.Port, websiteOrigin: string): true 
 
 	if (globalThis.interceptor.settings === undefined) return true
 	if (globalThis.interceptor.settings.activeChain === undefined) return true
+	const tabId = port.sender?.tab?.id
+	if (tabId === undefined) return true
 
-	postMessageIfStillConnected(port, {
+	postMessageIfStillConnected(tabId, port.name, {
 		interceptorApproved: true,
 		options: { method: 'connect' },
 		result: [EthereumQuantity.serialize(globalThis.interceptor.settings.activeChain)]
@@ -255,13 +261,13 @@ function connectToPort(port: browser.runtime.Port, websiteOrigin: string): true 
 
 	// seems like dapps also want to get account changed and chain changed events after we connect again, so let's send them too
 	const activeAddress = getActiveAddressForDomain(globalThis.interceptor.settings.websiteAccess, websiteOrigin)
-	postMessageIfStillConnected(port, {
+	postMessageIfStillConnected(tabId, port.name, {
 		interceptorApproved: true,
 		options: { method: 'accountsChanged' },
 		result: activeAddress !== undefined ? [EthereumAddress.serialize(activeAddress)] : []
 	})
 
-	postMessageIfStillConnected(port, {
+	postMessageIfStillConnected(tabId, port.name, {
 		interceptorApproved: true,
 		options: { method: 'chainChanged' },
 		result: EthereumQuantity.serialize(globalThis.interceptor.settings.activeChain)
@@ -272,8 +278,10 @@ function connectToPort(port: browser.runtime.Port, websiteOrigin: string): true 
 function disconnectFromPort(port: browser.runtime.Port, websiteOrigin: string): false {
 	setWebsitePortApproval(port, websiteOrigin, false)
 	updateExtensionIcon(port)
+	const tabId = port.sender?.tab?.id
+	if (tabId === undefined) return false
 
-	postMessageIfStillConnected(port, {
+	postMessageIfStillConnected(tabId, port.name, {
 		interceptorApproved: true,
 		options: { method: 'disconnect' },
 		result: { code: METAMASK_ERROR_USER_REJECTED_REQUEST, message: 'User refused access to the wallet' }

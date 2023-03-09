@@ -1,24 +1,29 @@
 import { bytes32String } from '../../utils/bigint.js'
 import { ERROR_INTERCEPTOR_NOT_READY, ERROR_INTERCEPTOR_NO_ACTIVE_ADDRESS, METAMASK_ERROR_NOT_CONNECTED_TO_CHAIN, METAMASK_ERROR_USER_REJECTED_REQUEST } from '../../utils/constants.js'
 import { Future } from '../../utils/future.js'
-import { PopupMessage } from '../../utils/interceptor-messages.js'
+import { InterceptedRequest, PopupMessage } from '../../utils/interceptor-messages.js'
 import { Website } from '../../utils/user-interface-types.js'
 import { EthereumUnsignedTransaction } from '../../utils/wire-types.js'
 import { getActiveAddressForDomain } from '../accessManagement.js'
-import { appendTransactionToSimulator, refreshConfirmTransactionSimulation } from '../background.js'
+import { appendTransactionToSimulator, refreshConfirmTransactionSimulation, sendMessageToContentScript } from '../background.js'
 import { getHtmlFile, sendPopupMessageToOpenWindows } from '../backgroundUtils.js'
+import { getConfirmationWindowPromise, saveConfirmationWindowPromise } from '../settings.js'
 
 export type Confirmation = 'Approved' | 'Rejected' | 'NoResponse'
 let openedConfirmTransactionDialogWindow: browser.windows.Window | null = null
 let pendingTransaction: Future<Confirmation> | undefined = undefined
 
 export async function resolvePendingTransaction(confirmation: Confirmation) {
-	if (pendingTransaction !== undefined) pendingTransaction.resolve(confirmation)
-	pendingTransaction = undefined
-
-	if (openedConfirmTransactionDialogWindow !== null && openedConfirmTransactionDialogWindow.id) {
-		await browser.windows.remove(openedConfirmTransactionDialogWindow.id)
+	if (pendingTransaction !== undefined) {
+		pendingTransaction.resolve(confirmation)
+	} else {
+		// we have not been tracking this window, forward its message directly to content script (or signer)
+		const data = await getConfirmationWindowPromise()
+		if (data === undefined) return
+		const resolved = await resolve(confirmation, data.simulationMode, data.transactionToSimulate, data.website)
+		sendMessageToContentScript(data.tabId, data.connectionName, resolved, data.request)
 	}
+	pendingTransaction = undefined
 	openedConfirmTransactionDialogWindow = null
 }
 
@@ -39,7 +44,9 @@ const reject = function() {
 }
 
 export async function openConfirmTransactionDialog(
-	requestId: number,
+	tabId: number,
+	connectionName: string,
+	request: InterceptedRequest & { requestId: number},
 	website: Website,
 	simulationMode: boolean,
 	transactionToSimulatePromise: () => Promise<EthereumUnsignedTransaction>,
@@ -47,17 +54,26 @@ export async function openConfirmTransactionDialog(
 	if (pendingTransaction !== undefined) return reject() // previous window still loading
 	if (globalThis.interceptor.settings === undefined) return ERROR_INTERCEPTOR_NOT_READY
 
+	const oldPromise = await getConfirmationWindowPromise()
+	if (oldPromise !== undefined) {
+		if ((await chrome.tabs.query({ windowId: oldPromise.dialogId })).length > 0) {
+			return reject() // previous window still open
+		} else {
+			await saveConfirmationWindowPromise(undefined)
+		}
+	}
+
 	const activeAddress = getActiveAddressForDomain(globalThis.interceptor.settings.websiteAccess, website.websiteOrigin)
 	if (activeAddress === undefined) return ERROR_INTERCEPTOR_NO_ACTIVE_ADDRESS
 
 	if (openedConfirmTransactionDialogWindow !== null && openedConfirmTransactionDialogWindow.id) {
-		browser.windows.onRemoved.removeListener( onCloseWindow )
+		browser.windows.onRemoved.removeListener(onCloseWindow)
 		await browser.windows.remove(openedConfirmTransactionDialogWindow.id)
 	}
 
 	const transactionToSimulate = await transactionToSimulatePromise()
 
-	const refreshSimulationPromise = refreshConfirmTransactionSimulation(activeAddress, simulationMode, requestId, transactionToSimulate, website)
+	const refreshSimulationPromise = refreshConfirmTransactionSimulation(activeAddress, simulationMode, request.requestId, transactionToSimulate, website)
 
 	const windowReadyAndListening = async function popupMessageListener(msg: unknown) {
 		const message = PopupMessage.parse(msg)
@@ -82,12 +98,26 @@ export async function openConfirmTransactionDialog(
 		}
 	)
 
-	if (openedConfirmTransactionDialogWindow === null) return reject()
+	if (openedConfirmTransactionDialogWindow === null || openedConfirmTransactionDialogWindow.id === undefined) return reject()
+
+	saveConfirmationWindowPromise({
+		website: website,
+		dialogId: openedConfirmTransactionDialogWindow.id,
+		tabId: tabId,
+		connectionName: connectionName,
+		request: request,
+		transactionToSimulate: transactionToSimulate,
+		simulationMode: simulationMode,
+	})
 
 	browser.windows.onRemoved.addListener(onCloseWindow)
 
 	const reply = await pendingTransaction
+	return await resolve(reply, simulationMode, transactionToSimulate, website)
+}
 
+async function resolve(reply: Confirmation, simulationMode: boolean, transactionToSimulate: EthereumUnsignedTransaction, website: Website ) {
+	await saveConfirmationWindowPromise(undefined)
 	if (reply !== 'Approved') return reject()
 	if (!simulationMode) return { forward: true as const }
 

@@ -1,4 +1,4 @@
-import { HandleSimulationModeReturnValue, InterceptedRequest, InterceptedRequestForward, PopupMessage, ProviderMessage, Settings, SignerName, TabConnection } from '../utils/interceptor-messages.js'
+import { HandleSimulationModeReturnValue, InterceptedRequest, InterceptedRequestForward, PopupMessage, ProviderMessage, Settings, SignerName } from '../utils/interceptor-messages.js'
 import 'webextension-polyfill'
 import { Simulator } from '../simulation/simulator.js'
 import { EthereumAddress, EthereumJsonRpcRequest, EthereumQuantity, EthereumUnsignedTransaction, PersonalSignParams, SignTypedDataParams } from '../utils/wire-types.js'
@@ -6,7 +6,7 @@ import { getSettings, saveActiveChain, saveActiveSigningAddress, saveActiveSimul
 import { blockNumber, call, chainId, estimateGas, gasPrice, getAccounts, getBalance, getBlockByNumber, getCode, getPermissions, getSimulationStack, getTransactionByHash, getTransactionCount, getTransactionReceipt, personalSign, requestPermissions, sendTransaction, signTypedData, subscribe, switchEthereumChain, unsubscribe } from './simulationModeHanders.js'
 import { changeActiveAddress, changeMakeMeRich, changePage, resetSimulation, confirmDialog, refreshSimulation, removeTransaction, requestAccountsFromSigner, refreshPopupConfirmTransactionSimulation, confirmPersonalSign, confirmRequestAccess, changeInterceptorAccess, changeChainDialog, popupChangeActiveChain, enableSimulationMode, reviewNotification, rejectNotification, addOrModifyAddressInfo, getAddressBookData, removeAddressBookEntry, openAddressBook, homeOpened } from './popupMessageHandlers.js'
 import { SimulationState, TokenPriceEstimate, SimResults } from '../utils/visualizer-types.js'
-import { WebsiteApproval, SignerState, AddressBookEntry, AddressInfoEntry, Website } from '../utils/user-interface-types.js'
+import { WebsiteApproval, SignerState, AddressBookEntry, AddressInfoEntry, Website, TabConnection } from '../utils/user-interface-types.js'
 import { getAddressMetadataForAccess, setPendingAccessRequests } from './windows/interceptorAccess.js'
 import { CHAINS, ICON_NOT_ACTIVE, isSupportedChain, MAKE_YOU_RICH_TRANSACTION, METAMASK_ERROR_USER_REJECTED_REQUEST } from '../utils/constants.js'
 import { PriceEstimator } from '../simulation/priceEstimator.js'
@@ -253,7 +253,7 @@ async function handleSimulationMode(simulator: Simulator, port: browser.runtime.
 		case 'eth_estimateGas': return await estimateGas(simulator, parsedRequest)
 		case 'eth_getTransactionByHash': return await getTransactionByHash(simulator, parsedRequest)
 		case 'eth_getTransactionReceipt': return await getTransactionReceipt(simulator, parsedRequest)
-		case 'eth_sendTransaction': return await sendTransaction(getActiveAddressForDomain, simulator, parsedRequest, port, request?.requestId)
+		case 'eth_sendTransaction': return await sendTransaction(getActiveAddressForDomain, simulator, parsedRequest, port, request)
 		case 'eth_call': return await call(simulator, parsedRequest)
 		case 'eth_blockNumber': return await blockNumber(simulator)
 		case 'eth_subscribe': return await subscribe(simulator, port, parsedRequest)
@@ -360,7 +360,7 @@ async function handleSigningMode(simulator: Simulator, port: browser.runtime.Por
 		case 'wallet_switchEthereumChain': return await switchEthereumChain(simulator, parsedRequest, port, request?.requestId, false)
 		case 'eth_sendTransaction': {
 			if (globalThis.interceptor.settings && isSupportedChain(globalThis.interceptor.settings.activeChain.toString()) ) {
-				return sendTransaction(getActiveAddressForDomain, simulator, parsedRequest, port, request.requestId, false)
+				return sendTransaction(getActiveAddressForDomain, simulator, parsedRequest, port, request, false)
 			}
 			return forwardToSigner()
 		}
@@ -437,32 +437,82 @@ const providerHandlers = new Map<string, ProviderHandler >([
 	['wallet_switchEthereumChain_reply', walletSwitchEthereumChainReply],
 	['connected_to_signer', connectedToSigner]
 ])
+export function postMessageIfStillConnected(tabId: number, connectionName: string, message: InterceptedRequestForward) {
+	const tabConnection = globalThis.interceptor.websiteTabConnection.get(tabId)
+	if (tabConnection === undefined) return false
 
-export function postMessageIfStillConnected(port: browser.runtime.Port, message: InterceptedRequestForward) {
-	const tabId = port.sender?.tab?.id
-	if (tabId === undefined) return false
-	if (!globalThis.interceptor.websiteTabConnection.has(tabId)) return false
-	try {
-		port.postMessage(message)
-	} catch (error) {
-		if (error instanceof Error) {
-			if (error.message?.includes('Attempting to use a disconnected port object')) {
-				return
+	for (const [entrysConnectionName, newPort] of Object.entries(tabConnection.portConnections)) {
+		if (connectionName !== entrysConnectionName) continue
+		try {
+			newPort.postMessage(message)
+		} catch (error) {
+			if (error instanceof Error) {
+				if (error.message?.includes('Attempting to use a disconnected port object')) {
+					return
+				}
 			}
+			throw error
 		}
-		throw error
 	}
 	return true
 }
 
+export function sendMessageToContentScript(tabId: number, connectionName: string, resolved: HandleSimulationModeReturnValue, request: InterceptedRequest) {
+	if ('error' in resolved) {
+		return postMessageIfStillConnected(tabId, connectionName, {
+			...resolved,
+			interceptorApproved: false,
+			requestId: request.requestId,
+			options: request.options
+		})
+	}
+	if (!('forward' in resolved)) {
+		return postMessageIfStillConnected(tabId, connectionName, {
+			result: resolved.result,
+			interceptorApproved: true,
+			requestId: request.requestId,
+			options: request.options
+		})
+	}
+
+	return postMessageIfStillConnected(tabId, connectionName, {
+		interceptorApproved: true,
+		requestId: request.requestId,
+		options: request.options
+	})
+}
+
 async function onContentScriptConnected(port: browser.runtime.Port) {
 	console.log('content script connected')
+	const connectionName = port.name
+	const tabId = port.sender?.tab?.id
+	if (tabId === undefined) return
+
+	const tabConnection = globalThis.interceptor.websiteTabConnection.get(tabId)
+	if (tabConnection === undefined) {
+		globalThis.interceptor.websiteTabConnection.set(tabId, {
+			portConnections: { [port.name]: port },
+			tabIconDetails: {
+				icon: ICON_NOT_ACTIVE,
+				iconReason: 'No active address selected.',
+			}
+		})
+		updateExtensionIcon(port)
+	} else {
+		tabConnection.portConnections[port.name] = port
+	}
+
 	let connectionStatus: 'connected' | 'disconnected' | 'notInitialized' = 'notInitialized'
 	port.onDisconnect.addListener(() => {
 		connectionStatus = 'disconnected'
 		const tabId = port.sender?.tab?.id
-		if ( tabId === undefined ) return
-		globalThis.interceptor.websiteTabConnection.delete(tabId)
+		if (tabId === undefined) return
+		const tabConnection = globalThis.interceptor.websiteTabConnection.get(tabId)
+		if (tabConnection === undefined) return
+		delete tabConnection.portConnections[port.name]
+		if (Object.keys(tabConnection).length === 0) {
+			globalThis.interceptor.websiteTabConnection.delete(tabId)
+		}
 	})
 	port.onMessage.addListener(async (payload) => {
 		if (connectionStatus === 'disconnected') return
@@ -475,14 +525,6 @@ async function onContentScriptConnected(port: browser.runtime.Port) {
 		)) return
 		// received message from injected.ts page
 		const request = InterceptedRequest.parse(payload.data)
-		console.log(request.options.method)
-
-		const tabId = port.sender?.tab?.id
-		if ( tabId === undefined ) return
-
-		if (!globalThis.interceptor.websiteTabConnection.has(tabId)) {
-			updateExtensionIcon(port)
-		}
 
 		try {
 			const providerHandler = providerHandlers.get(request.options.method)
@@ -491,7 +533,7 @@ async function onContentScriptConnected(port: browser.runtime.Port) {
 			}
 
 			if (!(await verifyAccess(port, request.options.method))) {
-				return postMessageIfStillConnected(port, {
+				return postMessageIfStillConnected(tabId, connectionName, {
 					interceptorApproved: false,
 					requestId: request.requestId,
 					options: request.options,
@@ -502,8 +544,7 @@ async function onContentScriptConnected(port: browser.runtime.Port) {
 				})
 			}
 			if (connectionStatus === 'notInitialized' && globalThis.interceptor.settings?.activeChain !== undefined) {
-				console.log('send connect!')
-				postMessageIfStillConnected(port, {
+				postMessageIfStillConnected(tabId, connectionName, {
 					interceptorApproved: true,
 					options: { method: 'connect' },
 					result: [EthereumQuantity.serialize(globalThis.interceptor.settings.activeChain)]
@@ -514,12 +555,12 @@ async function onContentScriptConnected(port: browser.runtime.Port) {
 				// request info (chain and accounts) from the connection right away after the user has approved connection
 				if (port.sender?.tab?.id !== undefined) {
 					if ( globalThis.interceptor.websiteTabSignerStates.get(port.sender.tab.id) === undefined) {
-						postMessageIfStillConnected(port, {
+						postMessageIfStillConnected(tabId, connectionName, {
 							interceptorApproved: true,
 							options: { method: 'request_signer_to_eth_requestAccounts' },
 							result: []
 						})
-						postMessageIfStillConnected(port, {
+						postMessageIfStillConnected(tabId, connectionName, {
 							interceptorApproved: true,
 							options: { method: 'request_signer_chainId' },
 							result: []
@@ -531,30 +572,9 @@ async function onContentScriptConnected(port: browser.runtime.Port) {
 			if ( simulator === undefined ) throw 'Interceptor not ready'
 
 			const resolved = globalThis.interceptor.settings?.simulationMode || request.usingInterceptorWithoutSigner ? await handleSimulationMode(simulator, port, request) : await handleSigningMode(simulator, port, request)
-			if ('error' in resolved) {
-				return postMessageIfStillConnected(port, {
-					...resolved,
-					interceptorApproved: false,
-					requestId: request.requestId,
-					options: request.options
-				})
-			}
-			if (!('forward' in resolved)) {
-				return postMessageIfStillConnected(port, {
-					result: resolved.result,
-					interceptorApproved: true,
-					requestId: request.requestId,
-					options: request.options
-				})
-			}
-
-			return postMessageIfStillConnected(port, {
-				interceptorApproved: true,
-				requestId: request.requestId,
-				options: request.options
-			})
+			return sendMessageToContentScript(tabId, connectionName, resolved, request)
 		} catch(error) {
-			postMessageIfStillConnected(port, {
+			postMessageIfStillConnected(tabId, connectionName, {
 				interceptorApproved: false,
 				requestId: request.requestId,
 				options: request.options,
@@ -583,6 +603,7 @@ async function popupMessageHandler(simulator: Simulator, request: unknown) {
 		}
 		throw error
 	}
+	console.log(parsedRequest.method)
 
 	switch (parsedRequest.method) {
 		case 'popup_confirmDialog': return await confirmDialog(simulator, parsedRequest)

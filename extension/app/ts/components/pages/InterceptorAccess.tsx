@@ -131,7 +131,7 @@ export function InterceptorAccess() {
 		return () => browser.runtime.onMessage.removeListener(popupMessageListener)
 	}, [])
 
-	function approve() {
+	async function approve() {
 		if (accessRequest === undefined) return
 		const options = {
 			type: 'approval' as const,
@@ -139,10 +139,11 @@ export function InterceptorAccess() {
 			websiteOrigin: accessRequest.website.websiteOrigin,
 			requestAccessToAddress: accessRequest.requestAccessToAddress?.address,
 		}
-		sendPopupMessageToBackgroundPage({ method: 'popup_interceptorAccess', options })
+		await sendPopupMessageToBackgroundPage({ method: 'popup_interceptorAccess', options })
+		globalThis.close()
 	}
 
-	function reject() {
+	async function reject() {
 		if (accessRequest === undefined) return
 		const options = {
 			type: 'approval' as const,
@@ -150,7 +151,8 @@ export function InterceptorAccess() {
 			websiteOrigin: accessRequest.website.websiteOrigin,
 			requestAccessToAddress: accessRequest.requestAccessToAddress?.address,
 		}
-		sendPopupMessageToBackgroundPage({ method: 'popup_interceptorAccess', options })
+		await sendPopupMessageToBackgroundPage({ method: 'popup_interceptorAccess', options })
+		globalThis.close()
 	}
 
 	function renameAddressCallBack(entry: AddressBookEntry) {

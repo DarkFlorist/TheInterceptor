@@ -446,8 +446,8 @@ export const ConfirmTransactionSimulationStateChanged = funtypes.Object({
 	})
 })
 
-export type TabConnection = funtypes.Static<typeof TabConnection>
-export const TabConnection = funtypes.Object({
+export type TabIconDetails = funtypes.Static<typeof TabIconDetails>
+export const TabIconDetails = funtypes.Object({
 	icon: funtypes.String,
 	iconReason: funtypes.String,
 })
@@ -518,7 +518,7 @@ export const UpdateHomePage = funtypes.ReadonlyObject({
 		signerName: funtypes.Union(SignerName, funtypes.Undefined),
 		currentBlockNumber: funtypes.Union(EthereumQuantity, funtypes.Undefined),
 		settings: Settings,
-		tabConnection: funtypes.Union(TabConnection, funtypes.Undefined),
+		tabIconDetails: funtypes.Union(TabIconDetails, funtypes.Undefined),
 		tabApproved: funtypes.Boolean,
 	})
 })
@@ -564,3 +564,14 @@ export const WindowMessageSignerAccountsChanged = funtypes.Object({
 
 export type WindowMessage = funtypes.Static<typeof WindowMessage>
 export const WindowMessage = WindowMessageSignerAccountsChanged
+
+export type PendingUserRequestPromise = funtypes.Static<typeof PendingUserRequestPromise>
+export const PendingUserRequestPromise = funtypes.Object({
+	website: Website,
+	dialogId: funtypes.Number,
+	tabId: funtypes.Number,
+	connectionName: funtypes.String,
+	request: InterceptedRequest,
+	transactionToSimulate: EthereumUnsignedTransaction,
+	simulationMode: funtypes.Boolean,
+})
