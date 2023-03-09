@@ -24,6 +24,7 @@ const onCloseWindow = async () => { // check if user has closed the window on th
 		requestAccessToAddress: pendingInterceptorAccess.requestAccessToAddress,
 		originalRequestAccessToAddress: pendingInterceptorAccess.requestAccessToAddress
 	})
+	pendingInterceptorAccess = undefined
 	openedInterceptorAccessWindow = null
 	browser.windows.onRemoved.removeListener(onCloseWindow)
 }
