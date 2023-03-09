@@ -36,6 +36,7 @@ declare global {
 			visualizerResults: SimResults[] | undefined,
 			addressBookEntries: AddressBookEntry[],
 			tokenPrices: TokenPriceEstimate[],
+			activeAddress: bigint | undefined,
 		}
 		websiteAccessAddressMetadata: AddressInfoEntry[],
 		pendingAccessMetadata: [string, AddressInfoEntry][],
@@ -66,29 +67,32 @@ globalThis.interceptor = {
 		visualizerResults: undefined,
 		addressBookEntries: [],
 		tokenPrices: [],
+		activeAddress: undefined
 	},
 	currentBlockNumber: undefined,
 }
 
-export async function updateSimulationState( getUpdatedSimulationState: () => Promise<SimulationState | undefined>) {
+export async function updateSimulationState( getUpdatedSimulationState: () => Promise<SimulationState | undefined>, setAsActiveAddress: bigint | undefined = undefined) {
+	const activeSimAddress = globalThis.interceptor.settings === undefined ? undefined : globalThis.interceptor.settings.activeSimulationAddress
+	const activeAddress = setAsActiveAddress === undefined ? activeSimAddress : setAsActiveAddress
 	try {
 		globalThis.interceptor.simulation.simulationId++
+		const simId = globalThis.interceptor.simulation.simulationId
 
-		if ( simulator === undefined ) {
+		if (simulator === undefined) {
 			globalThis.interceptor.simulation = {
 				simulationId: globalThis.interceptor.simulation.simulationId,
 				simulationState: undefined,
 				addressBookEntries: [],
 				tokenPrices: [],
 				visualizerResults: [],
+				activeAddress: activeAddress,
 			}
 			sendPopupMessageToOpenWindows({ method: 'popup_simulation_state_changed' })
 			return
 		}
-
 		const updatedSimulationState = await getUpdatedSimulationState()
 
-		const simId = globalThis.interceptor.simulation.simulationId
 		if ( updatedSimulationState !== undefined ) {
 			const priceEstimator = new PriceEstimator(simulator.ethereum)
 
@@ -115,6 +119,7 @@ export async function updateSimulationState( getUpdatedSimulationState: () => Pr
 				addressBookEntries: addressBookEntries,
 				visualizerResults: visualizerResultWithWebsites,
 				simulationState: updatedSimulationState,
+				activeAddress: activeAddress,
 			}
 		} else {
 			globalThis.interceptor.simulation = {
@@ -123,6 +128,7 @@ export async function updateSimulationState( getUpdatedSimulationState: () => Pr
 				tokenPrices: [],
 				visualizerResults: [],
 				simulationState: updatedSimulationState,
+				activeAddress: activeAddress,
 			}
 		}
 		sendPopupMessageToOpenWindows({ method: 'popup_simulation_state_changed' })
@@ -172,9 +178,9 @@ export async function refreshConfirmTransactionSimulation(activeAddress: bigint,
 
 // returns true if simulation state was changed
 export async function updatePrependMode(forceRefresh: boolean = false) {
-	if ( currentPrependMode === globalThis.interceptor.prependTransactionMode && !forceRefresh ) return
-	if ( simulator === undefined ) return
-	if ( globalThis.interceptor.settings === undefined ) return
+	if ( currentPrependMode === globalThis.interceptor.prependTransactionMode && !forceRefresh ) return false
+	if ( simulator === undefined ) return false
+	if ( globalThis.interceptor.settings === undefined ) return false
 	if ( !globalThis.interceptor.settings.simulationMode ) {
 		await updateSimulationState(async () => await simulator?.simulationModeNode.setPrependTransactionsQueue([]))
 		currentPrependMode = globalThis.interceptor.prependTransactionMode
@@ -192,9 +198,8 @@ export async function updatePrependMode(forceRefresh: boolean = false) {
 			if ( !isSupportedChain(chainId) ) return false
 			if ( activeAddress === undefined ) return false
 			await updateSimulationState(async () => {
-				if ( globalThis.interceptor.settings === undefined ) return undefined
-				if ( simulator === undefined ) return undefined
-				if ( !isSupportedChain(chainId) ) return undefined
+				if (simulator === undefined) return undefined
+				if (!isSupportedChain(chainId)) return undefined
 				const queue = [{
 					from: CHAINS[chainId].eth_donator,
 					chainId: CHAINS[chainId].chainId,
@@ -203,7 +208,7 @@ export async function updatePrependMode(forceRefresh: boolean = false) {
 					...MAKE_YOU_RICH_TRANSACTION
 				} as const]
 				return await simulator.simulationModeNode.setPrependTransactionsQueue(queue)
-			})
+			}, activeAddress)
 			break
 		}
 	}
@@ -372,7 +377,7 @@ function newBlockCallback(blockNumber: bigint) {
 
 export async function changeActiveAddressAndChainAndResetSimulation(activeAddress: bigint | undefined | 'noActiveAddressChange', activeChain: bigint | 'noActiveChainChange') {
 	if (globalThis.interceptor.settings === undefined) return
-	if ( simulator === undefined ) return
+	if (simulator === undefined) return
 
 	let chainChanged = false
 	if (activeChain !== 'noActiveChainChange') {

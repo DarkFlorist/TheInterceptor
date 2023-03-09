@@ -544,6 +544,7 @@ export const UpdateHomePage = funtypes.ReadonlyObject({
 			visualizerResults: funtypes.Union(funtypes.ReadonlyArray(SimResults), funtypes.Undefined),
 			addressBookEntries: AddressBookEntries,
 			tokenPrices: funtypes.ReadonlyArray(TokenPriceEstimate),
+			activeAddress: funtypes.Union(EthereumAddress, funtypes.Undefined),
 		}),
 		websiteAccessAddressMetadata: funtypes.ReadonlyArray(AddressInfoEntry),
 		pendingAccessMetadata: funtypes.ReadonlyArray(funtypes.Tuple(funtypes.String, AddressInfoEntry)),

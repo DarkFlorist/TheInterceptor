@@ -127,10 +127,8 @@ function SimulationResults(param: SimulationStateParam) {
 		<SimulationSummary
 			simulationAndVisualisationResults = { param.simulationAndVisualisationResults }
 			resetButton = { true }
-			refreshSimulation =  { param.refreshSimulation }
 			currentBlockNumber = { param.currentBlockNumber }
 			renameAddressCallBack = { param.renameAddressCallBack }
-			refreshPressed = { param.refreshPressed }
 		/>
 		<div class = 'content' style = 'height: 0.1px'/>
 	</div>
@@ -148,14 +146,9 @@ export function Home(param: HomeParams) {
 	const [isLoaded, setLoaded] = useState<boolean>(false)
 	const [currentBlockNumber, setCurrentBlockNumber] = useState<bigint | undefined>(undefined)
 	const [signerName, setSignerName] = useState<SignerName | undefined> (undefined)
-	const [refreshPressed, setRefreshPressed] = useState<boolean> (false)
 
 	useEffect( () => {
 		setSimulationAndVisualisationResults(param.simVisResults)
-		setRefreshPressed(false)
-	}, [param.simVisResults])
-
-	useEffect( () => {
 		setUseSignersAddressAsActiveAddress(param.useSignersAddressAsActiveAddress)
 		setActiveSimulationAddress(param.activeSimulationAddress !== undefined ? findAddressInfo(param.activeSimulationAddress, param.addressInfos) : undefined)
 		setActiveSigningAddress(param.activeSigningAddress !== undefined ? findAddressInfo(param.activeSigningAddress, param.addressInfos) : undefined)
@@ -176,6 +169,7 @@ export function Home(param: HomeParams) {
 		param.tabIconDetails,
 		param.currentBlockNumber,
 		param.signerName,
+		param.simVisResults
 	])
 
 	function changeActiveAddress() {
@@ -189,11 +183,6 @@ export function Home(param: HomeParams) {
 
 	function removeTransaction(hash: bigint) {
 		sendPopupMessageToBackgroundPage( { method: 'popup_removeTransaction', options: hash } )
-	}
-
-	function refreshSimulation() {
-		setRefreshPressed(true)
-		sendPopupMessageToBackgroundPage( { method: 'popup_refreshSimulation' } )
 	}
 
 	if (!isLoaded) return <></>
@@ -234,10 +223,8 @@ export function Home(param: HomeParams) {
 			<SimulationResults
 				simulationAndVisualisationResults = { simulationAndVisualisationResults }
 				removeTransaction = { removeTransaction }
-				refreshSimulation = { refreshSimulation }
 				currentBlockNumber = { currentBlockNumber }
 				renameAddressCallBack = { param.renameAddressCallBack }
-				refreshPressed = { refreshPressed }
 			/>
 		}
 	</>

@@ -98,14 +98,14 @@ export function App() {
 		})
 	}
 
-	async function updateHomePage({ data }: UpdateHomePage) {
+	function updateHomePage({ data }: UpdateHomePage) {
 		const settings = data.settings
 		setSimulationState(
 			data.simulation.simulationState,
 			data.simulation.visualizerResults,
 			data.simulation.addressBookEntries,
 			data.simulation.tokenPrices,
-			settings.activeSimulationAddress,
+			data.simulation.activeAddress,
 			settings.simulationMode,
 		)
 
@@ -136,10 +136,10 @@ export function App() {
 	}
 
 	useEffect(  () => {
-		async function popupMessageListener(msg: unknown) {
+		function popupMessageListener(msg: unknown) {
 			const message = ExternalPopupMessage.parse(msg)
 			if (message.method !== 'popup_UpdateHomePage') return sendPopupMessageToBackgroundPage( { method: 'popup_requestNewHomeData' } )
-			await updateHomePage(message)
+			return updateHomePage(message)
 		}
 		browser.runtime.onMessage.addListener(popupMessageListener)
 		sendPopupMessageToBackgroundPage( { method: 'popup_requestNewHomeData' } )

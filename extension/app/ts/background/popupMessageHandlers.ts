@@ -253,6 +253,7 @@ export async function homeOpened() {
 				visualizerResults: globalThis.interceptor.simulation.visualizerResults,
 				addressBookEntries: globalThis.interceptor.simulation.addressBookEntries,
 				tokenPrices: globalThis.interceptor.simulation.tokenPrices,
+				activeAddress: globalThis.interceptor.simulation.activeAddress,
 			},
 			websiteAccessAddressMetadata: globalThis.interceptor.websiteAccessAddressMetadata,
 			pendingAccessMetadata: globalThis.interceptor.pendingAccessMetadata,
