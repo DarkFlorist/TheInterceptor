@@ -516,7 +516,6 @@ export function refuseAccess(socket: WebsiteSocket, request: InterceptedRequest)
 }
 
 export async function gateKeepRequestBehindAccessDialog(socket: WebsiteSocket, request: InterceptedRequest, website: Website) {
-	console.log('gateKeepRequestBehindAccessDialog', request.options.method)
 	if (globalThis.interceptor.settings === undefined) return refuseAccess(socket, request)
 	const activeAddress = getActiveAddress()
 	const addressInfo = activeAddress !== undefined ? findAddressInfo(activeAddress, globalThis.interceptor.settings.userAddressBook.addressInfos) : undefined
@@ -568,7 +567,6 @@ async function onContentScriptConnected(port: browser.runtime.Port) {
 			&& 'interceptorRequest' in payload.data
 		)) return
 		const request = InterceptedRequest.parse(payload.data)
-		console.log(request.options.method)
 		const providerHandler = providerHandlers.get(request.options.method)
 		if (providerHandler) {
 			providerHandler(port, request)
@@ -600,7 +598,6 @@ async function popupMessageHandler(simulator: Simulator, request: unknown) {
 		}
 		throw error
 	}
-	console.log(parsedRequest.method)
 
 	switch (parsedRequest.method) {
 		case 'popup_confirmDialog': return await confirmDialog(simulator, parsedRequest)
