@@ -4,7 +4,7 @@ import { EthereumAccountsReply, EthereumAddress, EthereumQuantity, LiteralConver
 import { SimulatedAndVisualizedTransaction, SimulationAndVisualisationResults } from './visualizer-types.js'
 import { IdentifiedSwapWithMetadata } from '../components/simulationExplaining/SwapTransactions.js'
 import { CHAINS } from './constants.js'
-import { Page, SignerName, TabIconDetails, WebsiteAccessArray } from './interceptor-messages.js'
+import { Page, PendingAccessRequestArray, SignerName, TabIconDetails, WebsiteAccessArray } from './interceptor-messages.js'
 
 export type WebsiteSocket = funtypes.Static<typeof WebsiteSocket>
 export const WebsiteSocket = funtypes.Object({
@@ -186,20 +186,6 @@ export type NotificationCenterParams = {
 	pendingAccessMetadata: readonly [string, AddressInfoEntry][]
 }
 
-export type PendingAccessRequest = funtypes.Static<typeof PendingAccessRequest>
-export const PendingAccessRequest = funtypes.Object({
-	socket: WebsiteSocket,
-	website: Website,
-	requestAccessToAddress: funtypes.Union(EthereumAddress, funtypes.Undefined),
-}).asReadonly()
-
-export type PendingAccessRequestArray = funtypes.Static<typeof PendingAccessRequestArray>
-export const PendingAccessRequestArray = funtypes.ReadonlyArray(PendingAccessRequest)
-
-export interface PendingAccessRequestWithMetadata extends PendingAccessRequest {
-	addressMetadata: [string, AddressInfoEntry][],
-}
-
 export interface SignerState {
 	signerAccounts: EthereumAccountsReply | undefined,
 	signerChain: EthereumQuantity | undefined
@@ -212,6 +198,7 @@ export type SocketConnection = {
 	socket: WebsiteSocket,
 	websiteOrigin: string,
 	approved: boolean, // if user has approved connection
+	wantsToConnect: boolean,
 }
 
 export type TabConnection = {

@@ -17,6 +17,9 @@ export async function sendPopupMessageToOpenWindows(message: MessageToPopup) {
 				// we are ignoring this error because the popup messaging is used to update a popups UI, and if a popup is not open, we don't need to update the UI
 				return
 			}
+			if (error?.message?.includes('A listener indicated an asynchronous response by returning true, but the message channel closed before a response was received')) {
+				return
+			}
 			if (error) return console.error(`Popup message error: ${ error.message }`);
 		}
 	}

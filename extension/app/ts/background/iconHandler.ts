@@ -8,9 +8,9 @@ import { Future } from '../utils/future.js'
 import { WebsiteSocket } from '../utils/user-interface-types.js'
 
 async function setInterceptorIcon(tabId: number, icon: string, iconReason: string) {
-	const previousValue = globalThis.interceptor.websiteTabConnection.get(tabId)
+	const previousValue = globalThis.interceptor.websiteTabConnections.get(tabId)
 	if (previousValue === undefined) return
-	globalThis.interceptor.websiteTabConnection.set(tabId, {
+	globalThis.interceptor.websiteTabConnections.set(tabId, {
 		...previousValue,
 		tabIconDetails: {
 			icon: icon,

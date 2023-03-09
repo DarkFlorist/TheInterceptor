@@ -78,13 +78,13 @@ function AccessRequest({ renameAddressCallBack, accessRequest, changeActiveAddre
 								renameAddressCallBack = { renameAddressCallBack }
 								changeActiveAddress = { changeActiveAddress }
 								buttonText = { 'Change' }
-								disableButton = { !accessRequest.simulationMode }
+								disableButton = { false }
 							/> : <>
 								<ActiveAddress
 									activeAddress = { accessRequest.requestAccessToAddress }
 									renameAddressCallBack = { renameAddressCallBack }
 									changeActiveAddress = { refreshActiveAddress }
-									disableButton = { true }
+									disableButton = { false }
 									buttonText = { 'Refresh' }
 								/>
 								<p style = 'color: var(--subtitle-text-color); white-space: normal;' class = 'subtitle is-7'>
@@ -107,6 +107,7 @@ function AccessRequest({ renameAddressCallBack, accessRequest, changeActiveAddre
 interface InterceptorAccessRequest {
 	website: Website,
 	requestAccessToAddress: AddressInfoEntry | undefined
+	originalRequestAccessToAddress: AddressInfoEntry | undefined
 	associatedAddresses: readonly AddressInfoEntry[]
 	addressInfos: readonly AddressInfo[]
 	signerAccounts: readonly bigint[]
@@ -137,6 +138,7 @@ export function InterceptorAccess() {
 			approval: 'Approved' as const,
 			websiteOrigin: accessRequest.website.websiteOrigin,
 			requestAccessToAddress: accessRequest.requestAccessToAddress?.address,
+			originalRequestAccessToAddress: accessRequest.originalRequestAccessToAddress?.address,
 		}
 		await sendPopupMessageToBackgroundPage({ method: 'popup_interceptorAccess', options })
 		globalThis.close()
@@ -148,6 +150,7 @@ export function InterceptorAccess() {
 			approval: 'Rejected' as const,
 			websiteOrigin: accessRequest.website.websiteOrigin,
 			requestAccessToAddress: accessRequest.requestAccessToAddress?.address,
+			originalRequestAccessToAddress: accessRequest.originalRequestAccessToAddress?.address,
 		}
 		await sendPopupMessageToBackgroundPage({ method: 'popup_interceptorAccess', options })
 		globalThis.close()

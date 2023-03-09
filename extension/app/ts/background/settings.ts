@@ -1,6 +1,6 @@
 import { MOCK_PRIVATE_KEYS_ADDRESS } from '../utils/constants.js'
-import { AddressBookTabIdSetting, LegacyWebsiteAccessArray, Page, PendingChainChangeConfirmationPromise, PendingInterceptorAccessRequestPromise, PendingPersonalSignPromise, PendingUserRequestPromise, Settings, WebsiteAccessArray, WebsiteAccessArrayWithLegacy, pages } from '../utils/interceptor-messages.js'
-import { AddressInfo, ContactEntries, PendingAccessRequestArray } from '../utils/user-interface-types.js'
+import { AddressBookTabIdSetting, LegacyWebsiteAccessArray, Page, PendingAccessRequestArray, PendingChainChangeConfirmationPromise, PendingInterceptorAccessRequestPromise, PendingPersonalSignPromise, PendingUserRequestPromise, Settings, WebsiteAccessArray, WebsiteAccessArrayWithLegacy, pages } from '../utils/interceptor-messages.js'
+import { AddressInfo, ContactEntries } from '../utils/user-interface-types.js'
 import { EthereumAddress, EthereumQuantity } from '../utils/wire-types.js'
 
 export const defaultAddresses = [

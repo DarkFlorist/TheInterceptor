@@ -183,7 +183,7 @@ export async function reviewNotification(_simulator: Simulator, params: ReviewNo
 
 	const addressInfo = notification.requestAccessToAddress === undefined ? undefined : findAddressInfo(BigInt(notification.requestAccessToAddress), globalThis.interceptor.settings.userAddressBook.addressInfos)
 	const metadata = getAssociatedAddresses(globalThis.interceptor.settings, notification.website.websiteOrigin, addressInfo)
-	await requestAccessFromUser(params.options.socket, notification.website, addressInfo, metadata)
+	await requestAccessFromUser(params.options.socket, notification.website, params.options.request, addressInfo, metadata)
 }
 export async function rejectNotification(_simulator: Simulator, params: RejectNotification) {
 	if (globalThis.interceptor.settings === undefined) return
@@ -194,12 +194,14 @@ export async function rejectNotification(_simulator: Simulator, params: RejectNo
 	await resolveInterceptorAccess({
 		websiteOrigin : params.options.website.websiteOrigin,
 		requestAccessToAddress: params.options.requestAccessToAddress,
+		originalRequestAccessToAddress: params.options.requestAccessToAddress,
 		approval: params.options.removeOnly ? 'NoResponse' : 'Rejected'
 	}) // close pending access for this request if its open
 	if (!params.options.removeOnly) {
 		await changeAccess({
 			websiteOrigin : params.options.website.websiteOrigin,
 			requestAccessToAddress: params.options.requestAccessToAddress,
+			originalRequestAccessToAddress: params.options.requestAccessToAddress,
 			approval: 'Rejected'
 		}, params.options.website )
 	}
@@ -241,7 +243,7 @@ export async function homeOpened() {
 	if (tabs.length === 0 || tabs[0].id === undefined ) return
 	const signerState = globalThis.interceptor.websiteTabSignerStates.get(tabs[0].id)
 	const signerAccounts = signerState === undefined ? undefined : signerState.signerAccounts
-	const tabIconDetails = globalThis.interceptor.websiteTabConnection.get(tabs[0].id)?.tabIconDetails
+	const tabIconDetails = globalThis.interceptor.websiteTabConnections.get(tabs[0].id)?.tabIconDetails
 
 	sendPopupMessageToOpenWindows({
 		method: 'popup_UpdateHomePage',

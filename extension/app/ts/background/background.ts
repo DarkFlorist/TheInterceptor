@@ -7,16 +7,16 @@ import { blockNumber, call, chainId, estimateGas, gasPrice, getAccounts, getBala
 import { changeActiveAddress, changeMakeMeRich, changePage, resetSimulation, confirmDialog, refreshSimulation, removeTransaction, requestAccountsFromSigner, refreshPopupConfirmTransactionSimulation, confirmPersonalSign, confirmRequestAccess, changeInterceptorAccess, changeChainDialog, popupChangeActiveChain, enableSimulationMode, reviewNotification, rejectNotification, addOrModifyAddressInfo, getAddressBookData, removeAddressBookEntry, openAddressBook, homeOpened, interceptorAccessChangeAddress, interceptorAccessRefresh } from './popupMessageHandlers.js'
 import { SimulationState, TokenPriceEstimate, SimResults } from '../utils/visualizer-types.js'
 import { SignerState, AddressBookEntry, AddressInfoEntry, Website, TabConnection, WebsiteSocket } from '../utils/user-interface-types.js'
-import { getAddressMetadataForAccess, setPendingAccessRequests } from './windows/interceptorAccess.js'
+import { getAddressMetadataForAccess, requestAccessFromUser, setPendingAccessRequests } from './windows/interceptorAccess.js'
 import { CHAINS, ICON_NOT_ACTIVE, isSupportedChain, MAKE_YOU_RICH_TRANSACTION, METAMASK_ERROR_USER_REJECTED_REQUEST } from '../utils/constants.js'
 import { PriceEstimator } from '../simulation/priceEstimator.js'
-import { getActiveAddressForDomain, sendActiveAccountChangeToApprovedWebsitePorts, sendMessageToApprovedWebsitePorts, updateWebsiteApprovalAccesses, verifyAccess } from './accessManagement.js'
-import { getAddressBookEntriesForVisualiser } from './metadataUtils.js'
+import { getActiveAddressForDomain, getAssociatedAddresses, sendActiveAccountChangeToApprovedWebsitePorts, sendMessageToApprovedWebsitePorts, updateWebsiteApprovalAccesses, verifyAccess } from './accessManagement.js'
+import { findAddressInfo, getAddressBookEntriesForVisualiser } from './metadataUtils.js'
 import { getActiveAddress, getSocketFromPort, sendPopupMessageToOpenWindows, setExtensionBadgeBackgroundColor, setExtensionIcon, websiteSocketToString } from './backgroundUtils.js'
 import { retrieveWebsiteDetails, updateExtensionIcon } from './iconHandler.js'
 import { connectedToSigner, ethAccountsReply, signerChainChanged, walletSwitchEthereumChainReply } from './providerMessageHandlers.js'
 import { SimulationModeEthereumClientService } from '../simulation/services/SimulationModeEthereumClientService.js'
-import { assertUnreachable } from '../utils/typescript.js'
+import { assertNever, assertUnreachable } from '../utils/typescript.js'
 
 browser.runtime.onConnect.addListener(port => onContentScriptConnected(port).catch(console.error))
 
@@ -43,7 +43,7 @@ declare global {
 		signerChain: bigint | undefined,
 		signerName: SignerName | undefined,
 		websiteTabSignerStates: Map<number, SignerState>,
-		websiteTabConnection: Map<number, TabConnection>,
+		websiteTabConnections: Map<number, TabConnection>,
 		settings: Settings | undefined,
 		currentBlockNumber: bigint | undefined,
 		signerAccounts: readonly EthereumAddress[] | undefined,
@@ -59,7 +59,7 @@ globalThis.interceptor = {
 	signerName: undefined,
 	websiteTabSignerStates: new Map(),
 	settings: undefined,
-	websiteTabConnection: new Map(),
+	websiteTabConnections: new Map(),
 	simulation: {
 		simulationId: 0,
 		simulationState: undefined,
@@ -433,7 +433,7 @@ const providerHandlers = new Map<string, ProviderHandler >([
 	['connected_to_signer', connectedToSigner]
 ])
 export function postMessageIfStillConnected(socket: WebsiteSocket, message: InterceptedRequestForward) {
-	const tabConnection = globalThis.interceptor.websiteTabConnection.get(socket.tabId)
+	const tabConnection = globalThis.interceptor.websiteTabConnections.get(socket.tabId)
 	const identifier = websiteSocketToString(socket)
 	if (tabConnection === undefined) return false
 	for (const [socketAsString, connection] of Object.entries(tabConnection.connections)) {
@@ -477,119 +477,105 @@ export function sendMessageToContentScript(socket: WebsiteSocket, resolved: Hand
 	})
 }
 
+export async function handleContentScriptMessage(socket: WebsiteSocket, request: InterceptedRequest, website: Website) {
+	try {
+		if (simulator === undefined) throw 'Interceptor not ready'
+		const resolved = globalThis.interceptor.settings?.simulationMode || request.usingInterceptorWithoutSigner ?
+			await handleSimulationMode(simulator, socket, website, request)
+			: await handleSigningMode(simulator, socket, website, request)
+		return sendMessageToContentScript(socket, resolved, request)
+	} catch(error) {
+		postMessageIfStillConnected(socket, {
+			interceptorApproved: false,
+			requestId: request.requestId,
+			options: request.options,
+			error: {
+				code: 123456,
+				message: 'Unknown error'
+			}
+		})
+		throw error
+	}
+}
+
+export function refuseAccess(socket: WebsiteSocket, request: InterceptedRequest) {
+	return postMessageIfStillConnected(socket, {
+		interceptorApproved: false,
+		requestId: request.requestId,
+		options: request.options,
+		error: {
+			code: METAMASK_ERROR_USER_REJECTED_REQUEST,
+			message: 'User refused access to the wallet'
+		}
+	})
+}
+
+export async function gateKeepRequestBehindAccessDialog(socket: WebsiteSocket, request: InterceptedRequest, website: Website) {
+	console.log('gateKeepRequestBehindAccessDialog', request.options.method)
+	if (globalThis.interceptor.settings === undefined) return refuseAccess(socket, request)
+	const activeAddress = getActiveAddress()
+	const addressInfo = activeAddress !== undefined ? findAddressInfo(activeAddress, globalThis.interceptor.settings.userAddressBook.addressInfos) : undefined
+	return await requestAccessFromUser(socket, website, request, addressInfo, getAssociatedAddresses(globalThis.interceptor.settings, website.websiteOrigin, addressInfo))
+}
+
 async function onContentScriptConnected(port: browser.runtime.Port) {
 	console.log('content script connected')
 	const socket = getSocketFromPort(port)
 	if (port?.sender?.url === undefined) return
-	const origin = (new URL(port.sender.url)).hostname
-	const website = await retrieveWebsiteDetails(port, (new URL(port.sender.url)).hostname)
+	const websiteOrigin = (new URL(port.sender.url)).hostname
+	const websitePromise = retrieveWebsiteDetails(port, websiteOrigin)
+	const identifier = websiteSocketToString(socket)
 
-	const tabConnection = globalThis.interceptor.websiteTabConnection.get(socket.tabId)
+	const tabConnection = globalThis.interceptor.websiteTabConnections.get(socket.tabId)
 	const newConnection = {
 		port: port,
 		socket: socket,
-		websiteOrigin: origin,
-		approved: false
+		websiteOrigin: websiteOrigin,
+		approved: false,
+		wantsToConnect: false,
 	}
 	if (tabConnection === undefined) {
-		const identifier = websiteSocketToString(socket)
-		globalThis.interceptor.websiteTabConnection.set(socket.tabId, {
+		globalThis.interceptor.websiteTabConnections.set(socket.tabId, {
 			connections: { [identifier]: newConnection },
 			tabIconDetails: {
 				icon: ICON_NOT_ACTIVE,
 				iconReason: 'No active address selected.',
 			}
 		})
-		updateExtensionIcon(socket, origin)
+		updateExtensionIcon(socket, websiteOrigin)
 	} else {
-		tabConnection.connections[port.name] = newConnection
+		tabConnection.connections[identifier] = newConnection
 	}
 
-	let connectionStatus: 'connected' | 'disconnected' | 'notInitialized' = 'notInitialized'
 	port.onDisconnect.addListener(() => {
-		connectionStatus = 'disconnected'
-		const tabId = port.sender?.tab?.id
-		if (tabId === undefined) return
-		const tabConnection = globalThis.interceptor.websiteTabConnection.get(tabId)
+		const tabConnection = globalThis.interceptor.websiteTabConnections.get(socket.tabId)
 		if (tabConnection === undefined) return
-		delete tabConnection.connections[port.name]
+		delete tabConnection.connections[websiteSocketToString(socket)]
 		if (Object.keys(tabConnection).length === 0) {
-			globalThis.interceptor.websiteTabConnection.delete(tabId)
+			globalThis.interceptor.websiteTabConnections.delete(socket.tabId)
 		}
 	})
 	port.onMessage.addListener(async (payload) => {
-		if (connectionStatus === 'disconnected') return
-
 		if(!(
 			'data' in payload
 			&& typeof payload.data === 'object'
 			&& payload.data !== null
 			&& 'interceptorRequest' in payload.data
 		)) return
-		// received message from injected.ts page
 		const request = InterceptedRequest.parse(payload.data)
 		console.log(request.options.method)
-		try {
-			const providerHandler = providerHandlers.get(request.options.method)
-			if (providerHandler) {
-				providerHandler(port, request)
-				return sendMessageToContentScript(socket, {'result': '0x'}, request)
-			}
+		const providerHandler = providerHandlers.get(request.options.method)
+		if (providerHandler) {
+			providerHandler(port, request)
+			return sendMessageToContentScript(socket, { 'result': '0x' }, request)
+		}
 
-			if (!(await verifyAccess(port, request.options.method))) {
-				return postMessageIfStillConnected(socket, {
-					interceptorApproved: false,
-					requestId: request.requestId,
-					options: request.options,
-					error: {
-						code: METAMASK_ERROR_USER_REJECTED_REQUEST,
-						message: 'User refused access to the wallet'
-					}
-				})
-			}
-			if (connectionStatus === 'notInitialized' && globalThis.interceptor.settings?.activeChain !== undefined) {
-				postMessageIfStillConnected(socket, {
-					interceptorApproved: true,
-					options: { method: 'connect' },
-					result: [EthereumQuantity.serialize(globalThis.interceptor.settings.activeChain)]
-				})
-				connectionStatus = 'connected'
-			}
-			if (!globalThis.interceptor.settings?.simulationMode || globalThis.interceptor.settings?.useSignersAddressAsActiveAddress) {
-				// request info (chain and accounts) from the connection right away after the user has approved connection
-				if (port.sender?.tab?.id !== undefined) {
-					if ( globalThis.interceptor.websiteTabSignerStates.get(port.sender.tab.id) === undefined) {
-						postMessageIfStillConnected(socket, {
-							interceptorApproved: true,
-							options: { method: 'request_signer_to_eth_requestAccounts' },
-							result: []
-						})
-						postMessageIfStillConnected(socket, {
-							interceptorApproved: true,
-							options: { method: 'request_signer_chainId' },
-							result: []
-						})
-					}
-				}
-			}
-			// if simulation mode is not on, we only intercept eth_sendTransaction and personalSign
-			if ( simulator === undefined ) throw 'Interceptor not ready'
-
-			const resolved = globalThis.interceptor.settings?.simulationMode || request.usingInterceptorWithoutSigner ?
-				await handleSimulationMode(simulator, socket, website, request)
-				: await handleSigningMode(simulator, socket, website, request)
-			return sendMessageToContentScript(socket, resolved, request)
-		} catch(error) {
-			postMessageIfStillConnected(socket, {
-				interceptorApproved: false,
-				requestId: request.requestId,
-				options: request.options,
-				error: {
-					code: 123456,
-					message: 'Unknown error'
-				}
-			})
-			throw error
+		const access = verifyAccess(socket, request.options.method, websiteOrigin)
+		switch (access) {
+			case 'noAccess': return refuseAccess(socket, request)
+			case 'askAccess': return gateKeepRequestBehindAccessDialog(socket, request, await websitePromise)
+			case 'hasAccess': return handleContentScriptMessage(socket, request, await websitePromise)
+			default: assertNever(access)
 		}
 	})
 }

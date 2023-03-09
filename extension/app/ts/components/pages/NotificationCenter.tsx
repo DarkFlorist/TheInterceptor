@@ -4,11 +4,14 @@ import { BigAddress } from '../subcomponents/address.js'
 import { ethers } from 'ethers'
 import { addressString } from '../../utils/bigint.js'
 import { sendPopupMessageToBackgroundPage } from '../../background/backgroundUtils.js'
+import { InterceptedRequest } from '../../utils/interceptor-messages.js'
 
 export type PendingAccessRequestWithMetadata = AddressInfoEntry & {
+	request: InterceptedRequest | undefined
 	socket: WebsiteSocket,
 	website: Website,
 } | {
+	request: InterceptedRequest | undefined
 	socket: WebsiteSocket,
 	website: Website,
 	address: undefined
@@ -24,6 +27,7 @@ export function NotificationCenter(param: NotificationCenterParams) {
 		setPendingAccessRequests(param.pendingAccessRequests.map( (x) => ({
 			website: x.website,
 			socket: x.socket,
+			request: x.request,
 			...(x.requestAccessToAddress === undefined ? { address: undefined } : metadata.get(addressString(x.requestAccessToAddress)) || { // TODO, refactor away when we are using messaging instead of globals for these
 				type: 'addressInfo' as const,
 				name: ethers.utils.getAddress(addressString(x.requestAccessToAddress)),
@@ -45,6 +49,7 @@ export function NotificationCenter(param: NotificationCenterParams) {
 					...pendingAccessRequest.socket
 				},
 				website: pendingAccessRequest.website,
+				request: pendingAccessRequest.request,
 				requestAccessToAddress: pendingAccessRequest.address,
 			}
 		} )

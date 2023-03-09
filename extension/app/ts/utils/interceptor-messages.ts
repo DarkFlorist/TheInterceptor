@@ -1,5 +1,5 @@
 import * as funtypes from 'funtypes'
-import { AddressBookEntries, AddressBookEntry, AddressInfo, AddressInfoEntry, ContactEntries, PendingAccessRequestArray, Website, WebsiteSocket } from './user-interface-types.js'
+import { AddressBookEntries, AddressBookEntry, AddressInfo, AddressInfoEntry, ContactEntries, Website, WebsiteSocket } from './user-interface-types.js'
 import { EIP2612Message, EthereumAddress, EthereumQuantity, EthereumUnsignedTransaction, Permit2, PersonalSignParams, SignTypedDataParams } from './wire-types.js'
 import { SimulationState, TokenPriceEstimate, SimResults } from './visualizer-types.js'
 
@@ -89,6 +89,7 @@ export const InterceptorAccessChangeAddress = funtypes.Object({
 export type InterceptorAccessReply = funtypes.Static<typeof InterceptorAccessReply>
 export const InterceptorAccessReply = funtypes.Object({
 	websiteOrigin: funtypes.String,
+	originalRequestAccessToAddress: funtypes.Union(EthereumAddress, funtypes.Undefined),
 	requestAccessToAddress: funtypes.Union(EthereumAddress, funtypes.Undefined),
 	approval: funtypes.Union(funtypes.Literal('Approved'), funtypes.Literal('Rejected'), funtypes.Literal('NoResponse') ),
 })
@@ -258,6 +259,7 @@ export const ReviewNotification = funtypes.Object({
 		website: Website,
 		requestAccessToAddress: funtypes.Union(EthereumAddress, funtypes.Undefined),
 		socket: WebsiteSocket,
+		request: funtypes.Union(InterceptedRequest, funtypes.Undefined),
 	})
 }).asReadonly()
 
@@ -360,6 +362,7 @@ export const PopupMessage = funtypes.Union(
 	funtypes.Object({ method: funtypes.Literal('popup_requestNewHomeData') }),
 )
 
+export type MessageToPopupSimple = funtypes.Static<typeof MessageToPopupSimple>
 export const MessageToPopupSimple = funtypes.Object({
 	method: funtypes.Union(
 		funtypes.Literal('popup_chain_update'),
@@ -435,6 +438,7 @@ export const InterceptorAccessDialog = funtypes.Object({
 	data: funtypes.Object({
 		website: Website,
 		requestAccessToAddress: funtypes.Union(AddressInfoEntry, funtypes.Undefined),
+		originalRequestAccessToAddress: funtypes.Union(AddressInfoEntry, funtypes.Undefined),
 		associatedAddresses: funtypes.ReadonlyArray(AddressInfoEntry),
 		addressInfos: funtypes.ReadonlyArray(AddressInfo),
 		signerAccounts: funtypes.ReadonlyArray(EthereumAddress),
@@ -501,6 +505,21 @@ export const UserAddressBook = funtypes.Object({
 	addressInfos: funtypes.ReadonlyArray(AddressInfo),
 	contacts: ContactEntries,
 })
+
+export type PendingAccessRequest = funtypes.Static<typeof PendingAccessRequest>
+export const PendingAccessRequest = funtypes.Object({
+	socket: WebsiteSocket,
+	request: funtypes.Union(InterceptedRequest, funtypes.Undefined),
+	website: Website,
+	requestAccessToAddress: funtypes.Union(EthereumAddress, funtypes.Undefined),
+}).asReadonly()
+
+export type PendingAccessRequestArray = funtypes.Static<typeof PendingAccessRequestArray>
+export const PendingAccessRequestArray = funtypes.ReadonlyArray(PendingAccessRequest)
+
+export interface PendingAccessRequestWithMetadata extends PendingAccessRequest {
+	addressMetadata: [string, AddressInfoEntry][],
+}
 
 export type Settings = funtypes.Static<typeof Settings>
 export const Settings = funtypes.Object({
@@ -613,5 +632,6 @@ export const PendingInterceptorAccessRequestPromise = funtypes.Object({
 	website: Website,
 	dialogId: funtypes.Number,
 	socket: WebsiteSocket,
+	request: funtypes.Union(InterceptedRequest, funtypes.Undefined),
 	requestAccessToAddress: funtypes.Union(AddressInfoEntry, funtypes.Undefined),
 })
