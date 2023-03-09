@@ -68,13 +68,13 @@ export async function setPendingAccessRequests(pendingAccessRequest: PendingAcce
 	await updateExtensionBadge()
 }
 
-export async function changeAccess(confirmation: InterceptorAccessReply, website: Website) {
+export async function changeAccess(confirmation: InterceptorAccessReply, website: Website, promptForAccessesIfNeeded: boolean = true) {
 	if (globalThis.interceptor.settings === undefined) return
 	if (confirmation.approval === 'NoResponse') return
 	globalThis.interceptor.settings.websiteAccess = setAccess(globalThis.interceptor.settings.websiteAccess, website, confirmation.approval === 'Approved', confirmation.requestAccessToAddress)
 	globalThis.interceptor.websiteAccessAddressMetadata = getAddressMetadataForAccess(globalThis.interceptor.settings.websiteAccess)
 	saveWebsiteAccess(globalThis.interceptor.settings.websiteAccess)
-	updateWebsiteApprovalAccesses()
+	updateWebsiteApprovalAccesses(promptForAccessesIfNeeded)
 	sendPopupMessageToOpenWindows({ method: 'popup_websiteAccess_changed' })
 	await setPendingAccessRequests(globalThis.interceptor.settings.pendingAccessRequests.filter((x) => !(x.website.websiteOrigin === website.websiteOrigin && x.requestAccessToAddress === confirmation.requestAccessToAddress)))
 }
@@ -222,16 +222,16 @@ async function resolve(confirmation: InterceptorAccessReply) {
 		if (data.request !== undefined) {
 			refuseAccess(data.socket, data.request)
 		}
-		await changeAccess(confirmation, data.website)
+
+		if (confirmation.requestAccessToAddress === undefined) throw new Error('Changed request to page level')
 
 		// clear the original pending request, which was made with other account
 		if (globalThis.interceptor.settings !== undefined) {
 			await setPendingAccessRequests(globalThis.interceptor.settings.pendingAccessRequests.filter((x) => !(x.website.websiteOrigin === data.website.websiteOrigin && x.requestAccessToAddress === data.requestAccessToAddress?.address)))
 		}
-		// change address
-		if (confirmation.requestAccessToAddress !== undefined) {
-			await changeActiveAddressAndChainAndResetSimulation(confirmation.requestAccessToAddress, 'noActiveChainChange')
-		}
+
+		await changeAccess(confirmation, data.website, false)
+		await changeActiveAddressAndChainAndResetSimulation(confirmation.requestAccessToAddress, 'noActiveChainChange')
 	}
 }
 

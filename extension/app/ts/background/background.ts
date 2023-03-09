@@ -573,8 +573,8 @@ async function onContentScriptConnected(port: browser.runtime.Port) {
 		const access = verifyAccess(socket, request.options.method, websiteOrigin)
 		switch (access) {
 			case 'noAccess': return refuseAccess(socket, request)
-			case 'askAccess': return gateKeepRequestBehindAccessDialog(socket, request, await websitePromise)
-			case 'hasAccess': return handleContentScriptMessage(socket, request, await websitePromise)
+			case 'askAccess': return await gateKeepRequestBehindAccessDialog(socket, request, await websitePromise)
+			case 'hasAccess': return await handleContentScriptMessage(socket, request, await websitePromise)
 			default: assertNever(access)
 		}
 	})

@@ -245,7 +245,7 @@ async function askUserForAccessOnConnectionUpdate(socket: WebsiteSocket, website
 	await requestAccessFromUser(socket, website, undefined, activeAddress, getAssociatedAddresses(globalThis.interceptor.settings, websiteOrigin, activeAddress))
 }
 
-function updateTabConnections(tabConnection: TabConnection) {
+function updateTabConnections(tabConnection: TabConnection, promptForAccessesIfNeeded: boolean) {
 	if (globalThis.interceptor.settings === undefined) return
 
 	const activeAddress = getActiveAddress()
@@ -259,16 +259,16 @@ function updateTabConnections(tabConnection: TabConnection) {
 			connectToPort(connection.socket, connection.websiteOrigin)
 		}
 
-		if (access === 'notFound' && connection.wantsToConnect) {
+		if (access === 'notFound' && connection.wantsToConnect && promptForAccessesIfNeeded) {
 			const addressInfo = activeAddress ? findAddressInfo(activeAddress, globalThis.interceptor.settings.userAddressBook.addressInfos) : undefined
 			askUserForAccessOnConnectionUpdate(connection.socket, connection.websiteOrigin, addressInfo)
 		}
 	}
 }
 
-export function updateWebsiteApprovalAccesses() {
+export function updateWebsiteApprovalAccesses(promptForAccessesIfNeeded: boolean = true) {
 	// update port connections and disconnect from ports that should not have access anymore
 	for (const [_tab, tabConnection] of globalThis.interceptor.websiteTabConnections.entries() ) {
-		updateTabConnections(tabConnection)
+		updateTabConnections(tabConnection, promptForAccessesIfNeeded)
 	}
 }
