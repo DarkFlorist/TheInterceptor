@@ -267,9 +267,6 @@ export async function homeOpened() {
 	})
 }
 
-export async function interceptorAccessChangeAddress(params: InterceptorAccessChangeAddress) {
-	requestAddressChange(params)
-}
-export async function interceptorAccessRefresh(params: InterceptorAccessRefresh) {
+export async function interceptorAccessChangeAddressOrRefresh(params: InterceptorAccessChangeAddress | InterceptorAccessRefresh) {
 	requestAddressChange(params)
 }
