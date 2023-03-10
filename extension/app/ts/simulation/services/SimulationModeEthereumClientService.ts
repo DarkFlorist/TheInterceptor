@@ -1,12 +1,13 @@
 import { EthereumClientService } from './EthereumClientService.js'
-import { EthGetLogsResponse, EthereumUnsignedTransaction, EthereumSignedTransactionWithBlockData, EthereumBlockTag, EthGetLogsRequest, EthTransactionReceiptResponse, EstimateGasParamsVariables, EthSubscribeParams, JsonRpcMessage, JsonRpcNewHeadsNotification, PersonalSignParams, SignTypedDataParams, EthereumSignedTransaction, GetBlockReturn, EthereumData } from '../../utils/wire-types.js'
+import { EthGetLogsResponse, EthereumUnsignedTransaction, EthereumSignedTransactionWithBlockData, EthereumBlockTag, EthGetLogsRequest, EthTransactionReceiptResponse, EstimateGasParamsVariables, EthSubscribeParams, JsonRpcMessage, JsonRpcNewHeadsNotification, PersonalSignParams, SignTypedDataParams, EthereumSignedTransaction, GetBlockReturn, EthereumData, EthereumQuantity } from '../../utils/wire-types.js'
 import { bytes32String, max, min, stringToUint8Array } from '../../utils/bigint.js'
 import { MOCK_ADDRESS } from '../../utils/constants.js'
 import { ErrorWithData } from '../../utils/errors.js'
 import { Future } from '../../utils/future.js'
-import { ethers } from 'ethers'
+import { ethers, keccak256 } from 'ethers'
 import { SimulatedTransaction, SimulationState } from '../../utils/visualizer-types.js'
 import { Website } from '../../utils/user-interface-types.js'
+import { EthereumUnsignedTransactionToUnsignedTransaction, serializeSignedTransactionToBytes } from '../../utils/ethereum.js'
 
 const MOCK_PRIVATE_KEY = 0x1n // key used to sign mock transactions
 const GET_CODE_CONTRACT = 0x1ce438391307f908756fefe0fe220c0f0d51508an
@@ -102,21 +103,19 @@ export class SimulationModeEthereumClientService {
 		return min(baseFee + transaction.maxPriorityFeePerGas, transaction.maxFeePerGas)
 	}
 
-	public static mockSignTransaction = async (_transaction: EthereumUnsignedTransaction) : Promise<EthereumSignedTransaction> => {
-		throw new Error('not supported')
-
-		/*const unsignedTransaction = EthereumUnsignedTransactionToUnsignedTransaction(transaction)
+	public static mockSignTransaction = async (transaction: EthereumUnsignedTransaction) : Promise<EthereumSignedTransaction> => {
+		const unsignedTransaction = EthereumUnsignedTransactionToUnsignedTransaction(transaction)
 		if (unsignedTransaction.type === 'legacy') {
 			const signatureParams = { r: 0n, s: 0n, v: 0n }
-			const hash = keccak(serializeSignedTransactionToBytes({ ...unsignedTransaction, ...signatureParams }))
+			const hash = EthereumQuantity.parse(keccak256(serializeSignedTransactionToBytes({ ...unsignedTransaction, ...signatureParams })))
 			if (transaction.type !== 'legacy') throw new Error('types do not match')
 			return { ...transaction, ...signatureParams, hash }
 		} else {
 			const signatureParams = { r: 0n, s: 0n, yParity: 'even' as const }
-			const hash = keccak(serializeSignedTransactionToBytes({ ...unsignedTransaction, ...signatureParams }))
+			const hash = EthereumQuantity.parse(keccak256(serializeSignedTransactionToBytes({ ...unsignedTransaction, ...signatureParams })))
 			if (transaction.type === 'legacy') throw new Error('types do not match')
 			return { ...transaction, ...signatureParams, hash }
-		}*/
+		}
 	}
 
 	public appendTransaction = async (transaction: EthereumUnsignedTransactionWithWebsite) => {
