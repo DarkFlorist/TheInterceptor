@@ -5,7 +5,7 @@ import * as assert from 'assert'
 import { EthereumSignedTransactionToSignedTransaction, EthereumUnsignedTransactionToUnsignedTransaction, serializeUnsignedTransactionToBytes } from '../../app/ts/utils/ethereum.js'
 import { bytes32String } from '../../app/ts/utils/bigint.js'
 import { EthereumSignedTransaction1559, EthereumUnsignedTransaction } from '../../app/ts/utils/wire-types.js'
-import { keccak256 } from '@zoltu/ethereum-crypto'
+import { keccak256 } from '@noble/curves'
 
 export async function main() {
 	describe('SimulationModeEthereumClientService', () => {

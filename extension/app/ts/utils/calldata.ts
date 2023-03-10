@@ -1,107 +1,57 @@
-import { ERC20_APPROVAL_4BYTES, ERC20_TRANSFER_4BYTES, ERC20_TRANSFER_FROM_4BYTES, ERC721_APPROVAL_FOR_ALL_4BYTES } from './constants.js'
-import { decodeMethod } from '@zoltu/ethereum-abi-encoder'
+import { ethers } from 'ethers'
+import { dataString } from './bigint.js'
+import * as funtypes from 'funtypes'
+import { EthereumAddress, EthereumQuantity } from './wire-types.js'
 
-const TRANSFER_PARAMS = [
-	{
-		internalType: 'address',
-		name: 'to',
-		type: 'address'
-	},
-	{
-		internalType: 'uint256',
-		name: 'amount',
-		type: 'uint256'
-	}
+const ABI = [
+	'function transfer(address to, uint256 value) public returns (bool success)',
+	'function transferFrom(address from, address to, uint256 value) public returns (bool success)',
+	'function approve(address spender, uint256 value) public returns (bool success)',
+	'function setApprovalForAll(address operator, bool approved)',
 ]
 
-const TRANSFER_FROM_PARAMS = [
-	{
-		internalType: 'address',
-		name: 'sender',
-		type: 'address'
-	},
-	{
-		internalType: 'address',
-		name: 'to',
-		type: 'address'
-	},
-	{
-		internalType: 'uint256',
-		name: 'amount',
-		type: 'uint256'
-	}
-]
+type CallDataType = funtypes.Static<typeof CallDataType>
+const CallDataType = funtypes.Union(
+	funtypes.Object({
+		name: funtypes.Literal('transfer'),
+		arguments: funtypes.Object({
+			to: EthereumAddress,
+			value: EthereumQuantity,
+		})
+	}),
+	funtypes.Object({
+		name: funtypes.Literal('transferFrom'),
+		arguments: funtypes.Object({
+			from: EthereumAddress,
+			to: EthereumAddress,
+			value: EthereumQuantity,
+		})
+	}),
+	funtypes.Object({
+		name: funtypes.Literal('approve'),
+		arguments: funtypes.Object({
+			spender: EthereumAddress,
+			value: EthereumQuantity,
+		})
+	}),
+	funtypes.Object({
+		name: funtypes.Literal('setApprovalForAll'),
+		arguments: funtypes.Object({
+			operator: EthereumAddress,
+			approved: funtypes.Boolean,
+		})
+	}),
+)
 
-const APPROVAL_PARAMS = [
-	{
-		internalType: 'address',
-		name: 'spender',
-		type: 'address'
-	},
-	{
-		internalType: 'uint256',
-		name: 'amount',
-		type: 'uint256'
-	},
-]
-
-const APPROVAL_FOR_ALL = [
-	{
-		internalType: 'address',
-		name: 'spender',
-		type: 'address'
-	},
-	{
-		internalType: 'bool',
-		name: 'approved',
-		type: 'bool'
-	}
-]
-
-export function getTransferInfoFromTx(transaction: {input?: Uint8Array, from: bigint}) {
+export function parseTransaction(transaction: {input?: Uint8Array, from: bigint}) {
 	if (!('input' in transaction) || transaction.input === undefined || transaction.input.length < 4) return undefined
-
-	const data = transaction.input
-
-	const functionSig = new DataView(data.buffer, 0, 4).getUint32(0)
-
-	if (functionSig == ERC20_TRANSFER_4BYTES) return {...parseTransfer(data), from: transaction.from}
-	else if (functionSig == ERC20_TRANSFER_FROM_4BYTES) return parseTransferFrom(data)
-
-	return undefined
-}
-
-export function getApprovalInfoFromTx(transaction: {input?: Uint8Array, from: bigint}) {
-	if (!('input' in transaction) || transaction.input === undefined || transaction.input.length < 4) return undefined
-
-	const data = transaction.input
-
-	const functionSig = new DataView(data.buffer, 0, 4).getUint32(0)
-
-	if (functionSig == ERC20_APPROVAL_4BYTES) return { ...parseApproval(data), from: transaction.from }
-	else if (functionSig == ERC721_APPROVAL_FOR_ALL_4BYTES) {
-		const { spender, approval } = parseApprovalForAll(data)
-		if (!approval) return undefined
-		return { spender, from: transaction.from}
-	}
-
-	return undefined
-}
-
-export function parseTransfer(data: Uint8Array) {
-	return decodeMethod(ERC20_TRANSFER_4BYTES, TRANSFER_PARAMS, data) as { to: bigint, amount: bigint }
-}
-
-export function parseTransferFrom(data: Uint8Array) {
-	return decodeMethod(ERC20_TRANSFER_FROM_4BYTES, TRANSFER_FROM_PARAMS, data) as { from: bigint, to: bigint, amount: bigint }
-}
-
-export function parseApproval(data: Uint8Array) {
-	return decodeMethod(ERC20_APPROVAL_4BYTES, APPROVAL_PARAMS, data) as { spender: bigint, amount: bigint }
-}
-
-export function parseApprovalForAll(data: Uint8Array) {
-	return decodeMethod(ERC721_APPROVAL_FOR_ALL_4BYTES, APPROVAL_FOR_ALL, data) as { spender: bigint, approval: boolean }
+	const iface = new ethers.Interface(ABI)
+	const parsed = iface.parseTransaction({ data: dataString(transaction.input) })
+	if (parsed === null) return undefined
+	return CallDataType.parse({
+		name: parsed.name,
+		arguments: parsed?.args,
+	})
 }
 
 export function get4Byte(data: Uint8Array) {

@@ -1,14 +1,19 @@
-import { decodeParameters, encodeMethod } from '@zoltu/ethereum-abi-encoder'
-import { keccak256 } from '@zoltu/ethereum-crypto'
 import { CHAINS, isSupportedChain, UNISWAP_V2_ROUTER_ADDRESS } from '../utils/constants.js'
 import { EthereumClientService } from './services/EthereumClientService.js'
 import { TokenPriceEstimate } from '../utils/visualizer-types.js'
-import { addressString } from '../utils/bigint.js'
+import { addressString, stringToUint8Array } from '../utils/bigint.js'
+import { ethers } from 'ethers'
 
 interface TokenDecimals {
 	token: bigint,
 	decimals: bigint,
 }
+
+const ABI = [
+	'function swapExactETHForTokens(uint256,address[],address,uint256) returns (uint[] memory amounts)',
+	'function approve(address,uint256)',
+	'function swapTokensForExactETH(uint256,uint256,address[],address,uint256) returns (uint[] memory amounts)',
+]
 
 export class PriceEstimator {
 	private readonly ethereum
@@ -30,7 +35,7 @@ export class PriceEstimator {
 
 		const transactionCount = await this.ethereum.getTransactionCount(sender)
 		let inOutResults: TokenPriceEstimate[] = []
-		const outputAbi = [{ 'internalType': 'uint256[]', 'name': 'amounts', 'type': 'uint256[]' }]
+		const swapInterface = new ethers.Interface(ABI)
 		for ( const token of tokens) {
 			if ( token.token === CHAINS[chainString].weth ) {
 				inOutResults.push({
@@ -51,7 +56,7 @@ export class PriceEstimator {
 					gas: 15000000n,
 					to: UNISWAP_V2_ROUTER_ADDRESS,
 					value: 10n ** 18n,
-					input: await encodeMethod(keccak256.hash, 'swapExactETHForTokens(uint256,address[],address,uint256)', [amountOutMin, [CHAINS[chainString].weth, token.token], sender, deadline] ),
+					input: stringToUint8Array(swapInterface.encodeFunctionData('swapExactETHForTokens', [amountOutMin, [CHAINS[chainString].weth, token.token], sender, deadline] )),
 					accessList: [],
 				},
 				{
@@ -64,7 +69,7 @@ export class PriceEstimator {
 					gas: 15000000n,
 					to: token.token,
 					value: 0n,
-					input: await encodeMethod(keccak256.hash, 'approve(address,uint256)', [UNISWAP_V2_ROUTER_ADDRESS, 2n ** 127n] ),
+					input: stringToUint8Array(swapInterface.encodeFunctionData('approve', [UNISWAP_V2_ROUTER_ADDRESS, 2n ** 127n] )),
 					accessList: [],
 				},
 				{
@@ -77,14 +82,15 @@ export class PriceEstimator {
 					gas: 15000000n,
 					to: UNISWAP_V2_ROUTER_ADDRESS,
 					value: 0n,
-					input: await encodeMethod(keccak256.hash, 'swapTokensForExactETH(uint256,uint256,address[],address,uint256)', [10n ** 18n / 2n, 2n ** 127n, [token.token, CHAINS[chainString].weth], sender, deadline] ),
+					input: stringToUint8Array(swapInterface.encodeFunctionData('swapTokensForExactETH', [10n ** 18n / 2n, 2n ** 127n, [token.token, CHAINS[chainString].weth], sender, deadline] )),
 					accessList: [],
 				},
 			]
 			const results = await this.ethereum.multicall(swapTransactions, block.number + 1n)
 			if (results.length !== 3) throw ('invalid multicall result')
 			if ( results[2].statusCode === 'success' ) {
-				const inOut = decodeParameters(outputAbi, results[2].returnValue) as { amounts: bigint[] }
+				const parsed = swapInterface.parseCallResult(results[2].returnValue)
+				const inOut = parsed.toObject() as { amounts: bigint[] } // TODO, change to funtype
 				if (inOut.amounts.length != 2) return []
 				if(inOut.amounts[0] <= 0n || inOut.amounts[1] <= 0n || token.decimals <= 0n) return []
 				inOutResults.push( {

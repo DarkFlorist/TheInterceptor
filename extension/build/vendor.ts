@@ -1,7 +1,7 @@
 import * as path from 'path'
 import * as url from 'url'
 import { promises as fs } from 'fs'
-import { recursiveDirectoryCopy } from '@zoltu/file-copier'
+import { FileType, recursiveDirectoryCopy } from '@zoltu/file-copier'
 import { createHash } from 'node:crypto'
 
 const directoryOfThisFile = path.dirname(url.fileURLToPath(import.meta.url))
@@ -14,17 +14,34 @@ const dependencyPaths = [
 	{ packageName: 'preact/hooks', subfolderToVendor: 'dist', entrypointFile: 'hooks.module.js' },
 	{ packageName: 'funtypes', subfolderToVendor: 'lib', entrypointFile: 'index.mjs' },
 	{ packageName: 'node-fetch', subfolderToVendor: 'lib', entrypointFile: 'index.mjs' },
-	{ packageName: '@zoltu/ethereum-abi-encoder', subfolderToVendor: 'output-esm', entrypointFile: 'index.js' },
-	{ packageName: '@zoltu/ethereum-crypto', subfolderToVendor: 'output-esm', entrypointFile: 'index.js' },
-	{ packageName: '@zoltu/rlp-encoder', subfolderToVendor: 'output-esm', entrypointFile: 'index.js' },
+	{ packageName: '@noble/hashes/crypto', packageToVendor: '@noble/hashes', subfolderToVendor: 'esm', entrypointFile: 'cryptoBrowser.js' },
+	{ packageName: '@noble/hashes/sha3', packageToVendor: '@noble/hashes', subfolderToVendor: 'esm', entrypointFile: 'sha3.js' },
+	{ packageName: '@noble/hashes/sha256', packageToVendor: '@noble/hashes', subfolderToVendor: 'esm', entrypointFile: 'sha256.js' },
+	{ packageName: '@noble/hashes/sha512', packageToVendor: '@noble/hashes', subfolderToVendor: 'esm', entrypointFile: 'sha512.js' },
+	{ packageName: '@noble/hashes/blake2s', packageToVendor: '@noble/hashes', subfolderToVendor: 'esm', entrypointFile: 'blake2s.js' },
+	{ packageName: '@noble/hashes/utils', packageToVendor: '@noble/hashes', subfolderToVendor: 'esm', entrypointFile: 'utils.js' },
+	{ packageName: '@noble/hashes/hmac', packageToVendor: '@noble/hashes', subfolderToVendor: 'esm', entrypointFile: 'hmac.js' },
+	{ packageName: '@noble/curves/secp256k1', packageToVendor: '@noble/secp256k1', subfolderToVendor: '', entrypointFile: 'index.js' },
+	{ packageName: '@noble/curves/stark', packageToVendor: '@noble/curves', subfolderToVendor: '', entrypointFile: 'stark.js' },
 	{ packageName: '@darkflorist/address-metadata', subfolderToVendor: 'lib', entrypointFile: 'index.js' },
 ]
 
 async function vendorDependencies(files: string[]) {
-	for (const { packageName, subfolderToVendor } of dependencyPaths) {
-		const sourceDirectoryPath = path.join(directoryOfThisFile, '..', 'node_modules', packageName, subfolderToVendor)
+	for (const { packageName, packageToVendor, subfolderToVendor } of dependencyPaths) {
+		const sourceDirectoryPath = path.join(directoryOfThisFile, '..', 'node_modules', packageToVendor || packageName, subfolderToVendor)
 		const destinationDirectoryPath = path.join(directoryOfThisFile, '..', 'app', 'vendor', packageName)
-		await recursiveDirectoryCopy(sourceDirectoryPath, destinationDirectoryPath, undefined, rewriteSourceMapSourcePath.bind(undefined, packageName))
+		async function inclusionPredicate(path: string, fileType: FileType) {
+			if (path.endsWith('.js')) return true
+			if (path.endsWith('.ts')) return true
+			if (path.endsWith('.mjs')) return true
+			if (path.endsWith('.mts')) return true
+			if (path.endsWith('.map')) return true
+			if (path.endsWith('.git') || path.endsWith('.git/') || path.endsWith('.git\\')) return false
+			if (path.endsWith('node_modules') || path.endsWith('node_modules/') || path.endsWith('node_modules\\')) return false
+			if (fileType === 'directory') return true
+			return false
+		}
+		await recursiveDirectoryCopy(sourceDirectoryPath, destinationDirectoryPath, inclusionPredicate, rewriteSourceMapSourcePath.bind(undefined, packageName))
 	}
 
 	const importmap = dependencyPaths.reduce((importmap, { packageName, entrypointFile }) => {
