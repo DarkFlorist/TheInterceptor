@@ -81,7 +81,7 @@ export function calculateV(transaction: DistributiveOmit<ITransactionSignatureLe
 type RlpEncodeableData = Uint8Array | Array<RlpEncodeableData>
 function rlpEncode(data: RlpEncodeableData[]): Uint8Array {
 	function rlpEncodeArray(data: RlpEncodeableData): ethers.RlpStructuredData {
-		if(!Array.isArray(data)) return `0x${ dataString(data) }`
+		if (!Array.isArray(data)) return `0x${ dataString(data) }`
 		return data.map((x) => Array.isArray(x) ? rlpEncodeArray(x) : `0x${ dataString(x) }`)
 	}
 	return stringToUint8Array(ethers.encodeRlp(data.map((x) => Array.isArray(x) ? rlpEncodeArray(x) : `0x${ dataString(x) }`)))

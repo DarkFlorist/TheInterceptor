@@ -7,7 +7,7 @@ import { createHash } from 'node:crypto'
 const directoryOfThisFile = path.dirname(url.fileURLToPath(import.meta.url))
 
 const dependencyPaths = [
-	{ packageName: 'ethers', subfolderToVendor: 'dist', entrypointFile: 'ethers.esm.js' },
+	{ packageName: 'ethers', subfolderToVendor: 'dist', entrypointFile: 'ethers.js' },
 	{ packageName: 'webextension-polyfill', subfolderToVendor: 'dist', entrypointFile: 'browser-polyfill.js' },
 	{ packageName: 'preact', subfolderToVendor: 'dist', entrypointFile: 'preact.module.js' },
 	{ packageName: 'preact/jsx-runtime', subfolderToVendor: 'dist', entrypointFile: 'jsxRuntime.module.js' },
