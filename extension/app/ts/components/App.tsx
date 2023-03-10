@@ -3,7 +3,7 @@ import { defaultAddresses } from '../background/settings.js'
 import { SimResults, SimulationAndVisualisationResults, SimulationState, TokenPriceEstimate } from '../utils/visualizer-types.js'
 import { ChangeActiveAddress } from './pages/ChangeActiveAddress.js'
 import { Home } from './pages/Home.js'
-import { AddressInfo, AddressInfoEntry, AddressBookEntry, AddingNewAddressType, AddressBookEntries, PendingAccessRequestArray } from '../utils/user-interface-types.js'
+import { AddressInfo, AddressInfoEntry, AddressBookEntry, AddingNewAddressType, AddressBookEntries } from '../utils/user-interface-types.js'
 import Hint from './subcomponents/Hint.js'
 import { AddNewAddress } from './pages/AddNewAddress.js'
 import { InterceptorAccessList } from './pages/InterceptorAccessList.js'
@@ -12,7 +12,7 @@ import { PasteCatcher } from './subcomponents/PasteCatcher.js'
 import { truncateAddr } from '../utils/ethereum.js'
 import { NotificationCenter } from './pages/NotificationCenter.js'
 import { DEFAULT_TAB_CONNECTION } from '../utils/constants.js'
-import { ExternalPopupMessage, SignerName, TabIconDetails, UpdateHomePage, Page, WebsiteAccessArray } from '../utils/interceptor-messages.js'
+import { ExternalPopupMessage, SignerName, TabIconDetails, UpdateHomePage, Page, WebsiteAccessArray, PendingAccessRequestArray } from '../utils/interceptor-messages.js'
 import { version, gitCommitSha } from '../version.js'
 import { formSimulatedAndVisualizedTransaction } from './formVisualizerResults.js'
 import { sendPopupMessageToBackgroundPage } from '../background/backgroundUtils.js'
@@ -35,7 +35,6 @@ export function App() {
 	const [pendingAccessRequests, setPendingAccessRequests] = useState<PendingAccessRequestArray | undefined>(undefined)
 	const [pendingAccessMetadata, setPendingAccessMetadata] = useState<readonly [string, AddressInfoEntry][]>([])
 	const [tabIconDetails, setTabConnection] = useState<TabIconDetails>(DEFAULT_TAB_CONNECTION)
-	const [tabApproved, setTabApproved] = useState<boolean>(false)
 	const [isSettingsLoaded, setIsSettingsLoaded] = useState<boolean>(false)
 	const [currentBlockNumber, setCurrentBlockNumber] = useState<bigint | undefined>(undefined)
 	const [signerName, setSignerName] = useState<SignerName | undefined>(undefined)
@@ -99,14 +98,14 @@ export function App() {
 		})
 	}
 
-	async function updateHomePage({ data }: UpdateHomePage) {
+	function updateHomePage({ data }: UpdateHomePage) {
 		const settings = data.settings
 		setSimulationState(
 			data.simulation.simulationState,
 			data.simulation.visualizerResults,
 			data.simulation.addressBookEntries,
 			data.simulation.tokenPrices,
-			settings.activeSimulationAddress,
+			data.simulation.activeAddress,
 			settings.simulationMode,
 		)
 
@@ -133,15 +132,14 @@ export function App() {
 		} else {
 			setTabConnection(data.tabIconDetails)
 		}
-		setTabApproved(data.tabApproved)
 		setIsSettingsLoaded(true)
 	}
 
 	useEffect(  () => {
-		async function popupMessageListener(msg: unknown) {
+		function popupMessageListener(msg: unknown) {
 			const message = ExternalPopupMessage.parse(msg)
 			if (message.method !== 'popup_UpdateHomePage') return sendPopupMessageToBackgroundPage( { method: 'popup_requestNewHomeData' } )
-			await updateHomePage(message)
+			return updateHomePage(message)
 		}
 		browser.runtime.onMessage.addListener(popupMessageListener)
 		sendPopupMessageToBackgroundPage( { method: 'popup_requestNewHomeData' } )
@@ -225,7 +223,6 @@ export function App() {
 							addressInfos = { addressInfos }
 							simulationMode = { simulationMode }
 							tabIconDetails = { tabIconDetails }
-							tabApproved = { tabApproved }
 							currentBlockNumber = { currentBlockNumber }
 							signerName = { signerName }
 							renameAddressCallBack = { renameAddressCallBack }

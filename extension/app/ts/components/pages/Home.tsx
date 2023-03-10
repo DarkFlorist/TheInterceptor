@@ -127,10 +127,8 @@ function SimulationResults(param: SimulationStateParam) {
 		<SimulationSummary
 			simulationAndVisualisationResults = { param.simulationAndVisualisationResults }
 			resetButton = { true }
-			refreshSimulation =  { param.refreshSimulation }
 			currentBlockNumber = { param.currentBlockNumber }
 			renameAddressCallBack = { param.renameAddressCallBack }
-			refreshPressed = { param.refreshPressed }
 		/>
 		<div class = 'content' style = 'height: 0.1px'/>
 	</div>
@@ -144,25 +142,18 @@ export function Home(param: HomeParams) {
 	const [activeChain, setActiveChain] = useState<bigint>(1n)
 	const [simulationMode, setSimulationMode] = useState<boolean>(true)
 	const [tabIconDetails, setTabConnection] = useState<TabIconDetails>( DEFAULT_TAB_CONNECTION )
-	const [tabApproved, setTabApproved] = useState<boolean>(false)
 	const [signerAccounts, setSignerAccounts] = useState<readonly bigint[] | undefined>(undefined)
 	const [isLoaded, setLoaded] = useState<boolean>(false)
 	const [currentBlockNumber, setCurrentBlockNumber] = useState<bigint | undefined>(undefined)
 	const [signerName, setSignerName] = useState<SignerName | undefined> (undefined)
-	const [refreshPressed, setRefreshPressed] = useState<boolean> (false)
 
 	useEffect( () => {
 		setSimulationAndVisualisationResults(param.simVisResults)
-		setRefreshPressed(false)
-	}, [param.simVisResults])
-
-	useEffect( () => {
 		setUseSignersAddressAsActiveAddress(param.useSignersAddressAsActiveAddress)
 		setActiveSimulationAddress(param.activeSimulationAddress !== undefined ? findAddressInfo(param.activeSimulationAddress, param.addressInfos) : undefined)
 		setActiveSigningAddress(param.activeSigningAddress !== undefined ? findAddressInfo(param.activeSigningAddress, param.addressInfos) : undefined)
 		setActiveChain(param.activeChain)
 		setSimulationMode(param.simulationMode)
-		setTabApproved(param.tabApproved)
 		setTabConnection(param.tabIconDetails)
 		setSignerAccounts(param.signerAccounts)
 		setCurrentBlockNumber(param.currentBlockNumber)
@@ -176,9 +167,9 @@ export function Home(param: HomeParams) {
 		param.activeChain,
 		param.simulationMode,
 		param.tabIconDetails,
-		param.tabApproved,
 		param.currentBlockNumber,
 		param.signerName,
+		param.simVisResults
 	])
 
 	function changeActiveAddress() {
@@ -192,11 +183,6 @@ export function Home(param: HomeParams) {
 
 	function removeTransaction(hash: bigint) {
 		sendPopupMessageToBackgroundPage( { method: 'popup_removeTransaction', options: hash } )
-	}
-
-	function refreshSimulation() {
-		setRefreshPressed(true)
-		sendPopupMessageToBackgroundPage( { method: 'popup_refreshSimulation' } )
 	}
 
 	if (!isLoaded) return <></>
@@ -220,7 +206,6 @@ export function Home(param: HomeParams) {
 			makeMeRich = { param.makeMeRich }
 			signerAccounts = { signerAccounts }
 			tabIconDetails = { tabIconDetails }
-			tabApproved = { tabApproved }
 			signerName = { signerName }
 			renameAddressCallBack = { param.renameAddressCallBack }
 		/>
@@ -238,10 +223,8 @@ export function Home(param: HomeParams) {
 			<SimulationResults
 				simulationAndVisualisationResults = { simulationAndVisualisationResults }
 				removeTransaction = { removeTransaction }
-				refreshSimulation = { refreshSimulation }
 				currentBlockNumber = { currentBlockNumber }
 				renameAddressCallBack = { param.renameAddressCallBack }
-				refreshPressed = { refreshPressed }
 			/>
 		}
 	</>

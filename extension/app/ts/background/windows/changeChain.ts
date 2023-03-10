@@ -1,9 +1,10 @@
 import { METAMASK_ERROR_USER_REJECTED_REQUEST } from '../../utils/constants.js'
 import { Future } from '../../utils/future.js'
-import { ChainChangeConfirmation, PopupMessage, SignerChainChangeConfirmation, } from '../../utils/interceptor-messages.js'
-import { Website } from '../../utils/user-interface-types.js'
-import { changeActiveChain } from '../background.js'
+import { ChainChangeConfirmation, InterceptedRequest, PopupMessage, SignerChainChangeConfirmation } from '../../utils/interceptor-messages.js'
+import { Website, WebsiteSocket } from '../../utils/user-interface-types.js'
+import { changeActiveChain, sendMessageToContentScript } from '../background.js'
 import { getHtmlFile, sendPopupMessageToOpenWindows } from '../backgroundUtils.js'
+import { getChainChangeConfirmationPromise, saveChainChangeConfirmationPromise } from '../settings.js'
 
 let pendForUserReply: Future<ChainChangeConfirmation> | undefined = undefined
 let pendForSignerReply: Future<SignerChainChangeConfirmation> | undefined = undefined
@@ -11,8 +12,15 @@ let pendForSignerReply: Future<SignerChainChangeConfirmation> | undefined = unde
 let openedWindow: browser.windows.Window | null = null
 
 export async function resolveChainChange(confirmation: ChainChangeConfirmation) {
-	if (pendForUserReply !== undefined) pendForUserReply.resolve(confirmation)
-	pendForUserReply = undefined
+	if (pendForUserReply !== undefined) {
+		pendForUserReply.resolve(confirmation)
+		pendForUserReply = undefined
+		return
+	}
+	const data = await getChainChangeConfirmationPromise()
+	if (data === undefined || confirmation.options.requestId !== data.request.requestId) return
+	const resolved = await resolve(confirmation, data.simulationMode)
+	sendMessageToContentScript(data.socket, resolved, data.request)
 }
 
 export async function resolveSignerChainChange(confirmation: SignerChainChangeConfirmation) {
@@ -37,10 +45,25 @@ const userDeniedChange = {
 	}
 } as const
 
-export const openChangeChainDialog = async (requestId: number, simulationMode: boolean, website: Website, chainId: bigint) => {
+export const openChangeChainDialog = async (
+	socket: WebsiteSocket,
+	request: InterceptedRequest,
+	simulationMode: boolean,
+	website: Website,
+	chainId: bigint
+) => {
 	if (openedWindow !== null || pendForUserReply || pendForSignerReply) {
 		return userDeniedChange
 	}
+	const oldPromise = await getChainChangeConfirmationPromise()
+	if (oldPromise !== undefined) {
+		if ((await chrome.tabs.query({ windowId: oldPromise.dialogId })).length > 0) {
+			return userDeniedChange
+		} else {
+			await saveChainChangeConfirmationPromise(undefined)
+		}
+	}
+
 	pendForUserReply = new Future<ChainChangeConfirmation>()
 
 	const changeChainWindowReadyAndListening = async function popupMessageListener(msg: unknown) {
@@ -50,7 +73,7 @@ export const openChangeChainDialog = async (requestId: number, simulationMode: b
 		return sendPopupMessageToOpenWindows({
 			method: 'popup_ChangeChainRequest',
 			data: {
-				requestId: requestId,
+				requestId: request.requestId,
 				chainId: chainId,
 				website: website,
 				simulationMode: simulationMode,
@@ -63,35 +86,49 @@ export const openChangeChainDialog = async (requestId: number, simulationMode: b
 		{
 			url: getHtmlFile('changeChain'),
 			type: 'popup',
-			height: 400,
+			height: 450,
 			width: 520,
 		}
 	)
 
-	if (openedWindow) {
+	if (openedWindow && openedWindow.id !== undefined) {
 		const windowClosed = () => { // check if user has closed the window on their own, if so, reject signature
 			browser.windows.onRemoved.removeListener(windowClosed)
 			openedWindow = null
 			if (pendForUserReply === undefined) return
-			resolveChainChange(rejectMessage(requestId))
+			resolveChainChange(rejectMessage(request.requestId))
 		}
 		browser.windows.onRemoved.addListener(windowClosed)
+
+		saveChainChangeConfirmationPromise({
+			website: website,
+			dialogId: openedWindow.id,
+			socket: socket,
+			request: request,
+			simulationMode: simulationMode,
+		})
 	} else {
-		resolveChainChange(rejectMessage(requestId))
+		resolveChainChange(rejectMessage(request.requestId))
 	}
 	pendForSignerReply = undefined
+
 	const reply = await pendForUserReply
 
 	// forward message to content script
-	if (reply.options.accept && reply.options.requestId === requestId) {
+	return resolve(reply, simulationMode)
+}
+
+async function resolve(reply: ChainChangeConfirmation, simulationMode: boolean) {
+	await saveChainChangeConfirmationPromise(undefined)
+	if (reply.options.accept) {
 		if (simulationMode) {
-			await changeActiveChain(chainId)
+			await changeActiveChain(reply.options.chainId)
 			return { result: null }
 		}
 		pendForSignerReply = new Future<SignerChainChangeConfirmation>() // when not in simulation mode, we need to get reply from the signer too
-		await changeActiveChain(chainId)
+		await changeActiveChain(reply.options.chainId)
 		const signerReply = await pendForSignerReply
-		if (signerReply.options.accept && signerReply.options.chainId === chainId) {
+		if (signerReply.options.accept && signerReply.options.chainId === reply.options.chainId) {
 			return { result: null }
 		}
 	}

@@ -573,10 +573,8 @@ export function SimulatedInBlockNumber({ simulationBlockNumber, currentBlockNumb
 type SimulationSummaryParams = {
 	simulationAndVisualisationResults: SimulationAndVisualisationResults,
 	resetButton: boolean,
-	refreshSimulation: () => void,
 	currentBlockNumber: bigint | undefined,
 	renameAddressCallBack: RenameAddressCallBack,
-	refreshPressed: boolean,
 }
 
 export function SimulationSummary(param: SimulationSummaryParams) {

@@ -10,7 +10,7 @@ function listenInContentScript(conectionName: string | undefined) {
 	function generateId (len: number) {
 		const arr = new Uint8Array((len || 40) / 2)
 		globalThis.crypto.getRandomValues(arr)
-		return Array.from(arr, dec2hex).join('')
+		return `0x${ Array.from(arr, dec2hex).join('') }`
 	}
 	const connectionNameNotUndefined = conectionName === undefined ? generateId(40) : conectionName
 

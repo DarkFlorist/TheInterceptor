@@ -2,7 +2,7 @@ import { bytes32String } from '../../utils/bigint.js'
 import { ERROR_INTERCEPTOR_NOT_READY, ERROR_INTERCEPTOR_NO_ACTIVE_ADDRESS, METAMASK_ERROR_NOT_CONNECTED_TO_CHAIN, METAMASK_ERROR_USER_REJECTED_REQUEST } from '../../utils/constants.js'
 import { Future } from '../../utils/future.js'
 import { InterceptedRequest, PopupMessage } from '../../utils/interceptor-messages.js'
-import { Website } from '../../utils/user-interface-types.js'
+import { Website, WebsiteSocket } from '../../utils/user-interface-types.js'
 import { EthereumUnsignedTransaction } from '../../utils/wire-types.js'
 import { getActiveAddressForDomain } from '../accessManagement.js'
 import { appendTransactionToSimulator, refreshConfirmTransactionSimulation, sendMessageToContentScript } from '../background.js'
@@ -21,7 +21,7 @@ export async function resolvePendingTransaction(confirmation: Confirmation) {
 		const data = await getConfirmationWindowPromise()
 		if (data === undefined) return
 		const resolved = await resolve(confirmation, data.simulationMode, data.transactionToSimulate, data.website)
-		sendMessageToContentScript(data.tabId, data.connectionName, resolved, data.request)
+		sendMessageToContentScript(data.socket, resolved, data.request)
 	}
 	pendingTransaction = undefined
 	openedConfirmTransactionDialogWindow = null
@@ -44,9 +44,8 @@ const reject = function() {
 }
 
 export async function openConfirmTransactionDialog(
-	tabId: number,
-	connectionName: string,
-	request: InterceptedRequest & { requestId: number},
+	socket: WebsiteSocket,
+	request: InterceptedRequest,
 	website: Website,
 	simulationMode: boolean,
 	transactionToSimulatePromise: () => Promise<EthereumUnsignedTransaction>,
@@ -103,8 +102,7 @@ export async function openConfirmTransactionDialog(
 	saveConfirmationWindowPromise({
 		website: website,
 		dialogId: openedConfirmTransactionDialogWindow.id,
-		tabId: tabId,
-		connectionName: connectionName,
+		socket: socket,
 		request: request,
 		transactionToSimulate: transactionToSimulate,
 		simulationMode: simulationMode,

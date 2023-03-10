@@ -5,11 +5,13 @@ import { getActiveAddress, sendPopupMessageToOpenWindows, setExtensionBadgeText,
 import { getAddressMetaData } from './metadataUtils.js'
 import { imageToUri } from '../utils/imageToUri.js'
 import { Future } from '../utils/future.js'
+import { WebsiteSocket } from '../utils/user-interface-types.js'
 
 async function setInterceptorIcon(tabId: number, icon: string, iconReason: string) {
-	const previousValue = globalThis.interceptor.websiteTabConnection.get(tabId)
-	globalThis.interceptor.websiteTabConnection.set(tabId, {
-		portConnections: previousValue === undefined ? {} : previousValue.portConnections,
+	const previousValue = globalThis.interceptor.websiteTabConnections.get(tabId)
+	if (previousValue === undefined) return
+	globalThis.interceptor.websiteTabConnections.set(tabId, {
+		...previousValue,
 		tabIconDetails: {
 			icon: icon,
 			iconReason: iconReason
@@ -22,30 +24,26 @@ async function setInterceptorIcon(tabId: number, icon: string, iconReason: strin
 	})
 }
 
-export function updateExtensionIcon(port: browser.runtime.Port) {
+export function updateExtensionIcon(socket: WebsiteSocket, websiteOrigin: string) {
 	if (!globalThis.interceptor.settings) return
-	if (port.sender?.tab?.id === undefined) return
-	if (port.sender?.url === undefined) return
-
-	const websiteOrigin = (new URL(port.sender.url)).hostname
 	const activeAddress = getActiveAddress()
 	const censoredActiveAddress = getActiveAddressForDomain(globalThis.interceptor.settings.websiteAccess, websiteOrigin)
-	if (activeAddress === undefined) return setInterceptorIcon(port.sender.tab.id, ICON_NOT_ACTIVE, 'No active address selected.')
+	if (activeAddress === undefined) return setInterceptorIcon(socket.tabId, ICON_NOT_ACTIVE, 'No active address selected.')
 	if (hasAddressAccess(globalThis.interceptor.settings.websiteAccess, websiteOrigin, activeAddress )  === 'notFound') {
 		// we don't have active address selected, or no access specified
-		return setInterceptorIcon(port.sender.tab.id, ICON_NOT_ACTIVE, `${ websiteOrigin } has PENDING access request for ${ getAddressMetaData(activeAddress, globalThis.interceptor.settings?.userAddressBook).name }!`)
+		return setInterceptorIcon(socket.tabId, ICON_NOT_ACTIVE, `${ websiteOrigin } has PENDING access request for ${ getAddressMetaData(activeAddress, globalThis.interceptor.settings?.userAddressBook).name }!`)
 	}
 
 	if (censoredActiveAddress === undefined) {
 		if ( hasAccess(globalThis.interceptor.settings.websiteAccess, websiteOrigin) === 'noAccess') {
-			return setInterceptorIcon(port.sender.tab.id, ICON_ACCESS_DENIED, `The access for ${ websiteOrigin } has been DENIED!`)
+			return setInterceptorIcon(socket.tabId, ICON_ACCESS_DENIED, `The access for ${ websiteOrigin } has been DENIED!`)
 		}
-		return setInterceptorIcon(port.sender.tab.id, ICON_ACCESS_DENIED, `The access to ${ getAddressMetaData(activeAddress, globalThis.interceptor.settings?.userAddressBook).name } for ${ websiteOrigin } has been DENIED!`)
+		return setInterceptorIcon(socket.tabId, ICON_ACCESS_DENIED, `The access to ${ getAddressMetaData(activeAddress, globalThis.interceptor.settings?.userAddressBook).name } for ${ websiteOrigin } has been DENIED!`)
 	}
-	if (globalThis.interceptor.settings?.simulationMode) return setInterceptorIcon(port.sender.tab.id, ICON_SIMULATING, `The Interceptor simulates your sent transactions.`)
-	if (!isSupportedChain(globalThis.interceptor.settings.activeChain.toString())) return setInterceptorIcon(port.sender.tab.id, ICON_SIGNING_NOT_SUPPORTED, `Interceptor is on an unsupported network and simulation mode is disabled.`)
+	if (globalThis.interceptor.settings?.simulationMode) return setInterceptorIcon(socket.tabId, ICON_SIMULATING, `The Interceptor simulates your sent transactions.`)
+	if (!isSupportedChain(globalThis.interceptor.settings.activeChain.toString())) return setInterceptorIcon(socket.tabId, ICON_SIGNING_NOT_SUPPORTED, `Interceptor is on an unsupported network and simulation mode is disabled.`)
 
-	return setInterceptorIcon(port.sender.tab.id, ICON_SIGNING, `The Interceptor forwards your transactions to ${ getSignerName(globalThis.interceptor.signerName) } once sent.`)
+	return setInterceptorIcon(socket.tabId, ICON_SIGNING, `The Interceptor forwards your transactions to ${ getSignerName(globalThis.interceptor.signerName) } once sent.`)
 }
 
 export async function updateExtensionBadge() {

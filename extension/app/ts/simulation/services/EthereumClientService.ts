@@ -12,16 +12,22 @@ export class EthereumClientService {
 	private chain: CHAIN
 	private cachedBlock: EthereumBlockHeader | undefined = undefined
 	private cacheRefreshTimer: NodeJS.Timer | undefined = undefined
+	private lastCacheAccess: number = 0
 	private retrievingBlock: boolean = false
 	private newBlockCallback: (blockNumber: bigint) => void
 	private requestHandler
 
-    constructor(requestHandler: IEthereumJSONRpcRequestHandler, chain: CHAIN, caching: boolean, newBlockCallback: (blockNumber: bigint) => void) {
+    constructor(requestHandler: IEthereumJSONRpcRequestHandler, chain: CHAIN, newBlockCallback: (blockNumber: bigint) => void) {
 		this.requestHandler = requestHandler
 		this.chain = chain
 		this.newBlockCallback = newBlockCallback
-		this.setBlockPolling(caching)
     }
+
+	public getCachedBlock() {
+		this.setBlockPolling(true)
+		this.lastCacheAccess = Date.now()
+		return this.cachedBlock
+	}
 
 	public cleanup = () => {
 		this.setBlockPolling(false)
@@ -37,6 +43,9 @@ export class EthereumClientService {
 			this.cacheRefreshTimer = setTimeout( () => { // wait until the clock is just right ( % 12 + 7 ), an then start querying every TIME_BETWEEN_BLOCKS secs
 				this.updateCache()
 				this.cacheRefreshTimer = setInterval(this.updateCache, TIME_BETWEEN_BLOCKS * 1000)
+				if (this.lastCacheAccess - Date.now() > 180000) {
+					this.setBlockPolling(false)
+				}
 			}, timeToTarget > 0 ? timeToTarget : timeToTarget + TIME_BETWEEN_BLOCKS * 1000 )
 			return
 		}
@@ -47,7 +56,6 @@ export class EthereumClientService {
 			return
 		}
 	}
-	public readonly isBlockPolling = () => this.cacheRefreshTimer !== undefined
 
 	private readonly updateCache = async () => {
 		if (this.retrievingBlock) return
@@ -99,9 +107,10 @@ export class EthereumClientService {
 	}
 
 	public readonly getBlock = async (blockTag: EthereumBlockTag = 'latest', fullObjects: boolean = true) => {
-		if (this.cachedBlock && fullObjects) {
+		const cached = this.getCachedBlock()
+		if (cached && fullObjects) {
 			// todo, add here conversion from fullObjects to non fullObjects if non fullObjects block is asked
-			return this.cachedBlock
+			return cached
 		}
 		const response = await this.requestHandler.jsonRpcRequest({ method: 'eth_getBlockByNumber', params: [blockTag, fullObjects] })
 		if ( fullObjects === false ) {
@@ -124,8 +133,9 @@ export class EthereumClientService {
 	}
 
 	public readonly getBlockNumber = async () => {
-		if (this.cachedBlock) {
-			return this.cachedBlock.number
+		const cached = this.getCachedBlock()
+		if (cached) {
+			return cached.number
 		}
 		const response = await this.requestHandler.jsonRpcRequest({ method: 'eth_blockNumber' })
 		return EthereumQuantity.parse(response)

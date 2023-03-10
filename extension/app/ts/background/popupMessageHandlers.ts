@@ -1,10 +1,10 @@
 import { changeActiveAddressAndChainAndResetSimulation, changeActiveChain, PrependTransactionMode, refreshConfirmTransactionSimulation, updatePrependMode, updateSimulationState } from './background.js'
 import { getOpenedAddressBookTabId, saveAddressInfos, saveContacts, saveMakeMeRich, saveOpenedAddressBookTabId, savePage, saveSimulationMode, saveUseSignersAddressAsActiveAddress, saveWebsiteAccess } from './settings.js'
 import { Simulator } from '../simulation/simulator.js'
-import { ChangeActiveAddress, ChangeMakeMeRich, ChangePage, PersonalSign, RemoveTransaction, RequestAccountsFromSigner, TransactionConfirmation, InterceptorAccess, ChangeInterceptorAccess, ChainChangeConfirmation, EnableSimulationMode, ReviewNotification, RejectNotification, ChangeActiveChain, AddOrEditAddressBookEntry, GetAddressBookData, RemoveAddressBookEntry, RefreshConfirmTransactionDialogSimulation, UserAddressBook } from '../utils/interceptor-messages.js'
+import { ChangeActiveAddress, ChangeMakeMeRich, ChangePage, PersonalSign, RemoveTransaction, RequestAccountsFromSigner, TransactionConfirmation, InterceptorAccess, ChangeInterceptorAccess, ChainChangeConfirmation, EnableSimulationMode, ReviewNotification, RejectNotification, ChangeActiveChain, AddOrEditAddressBookEntry, GetAddressBookData, RemoveAddressBookEntry, RefreshConfirmTransactionDialogSimulation, UserAddressBook, InterceptorAccessRefresh, InterceptorAccessChangeAddress } from '../utils/interceptor-messages.js'
 import { resolvePendingTransaction } from './windows/confirmTransaction.js'
 import { resolvePersonalSign } from './windows/personalSign.js'
-import { changeAccess, requestAccessFromUser, resolveExistingInterceptorAccessAsNoResponse, resolveInterceptorAccess, setPendingAccessRequests } from './windows/interceptorAccess.js'
+import { changeAccess, requestAccessFromUser, requestAddressChange, resolveExistingInterceptorAccessAsNoResponse, resolveInterceptorAccess, setPendingAccessRequests } from './windows/interceptorAccess.js'
 import { resolveChainChange } from './windows/changeChain.js'
 import { EthereumQuantity } from '../utils/wire-types.js'
 import { getAssociatedAddresses, sendMessageToApprovedWebsitePorts, updateWebsiteApprovalAccesses } from './accessManagement.js'
@@ -183,7 +183,7 @@ export async function reviewNotification(_simulator: Simulator, params: ReviewNo
 
 	const addressInfo = notification.requestAccessToAddress === undefined ? undefined : findAddressInfo(BigInt(notification.requestAccessToAddress), globalThis.interceptor.settings.userAddressBook.addressInfos)
 	const metadata = getAssociatedAddresses(globalThis.interceptor.settings, notification.website.websiteOrigin, addressInfo)
-	await requestAccessFromUser(undefined, notification.website, addressInfo, metadata)
+	await requestAccessFromUser(params.options.socket, notification.website, params.options.request, addressInfo, metadata)
 }
 export async function rejectNotification(_simulator: Simulator, params: RejectNotification) {
 	if (globalThis.interceptor.settings === undefined) return
@@ -192,21 +192,18 @@ export async function rejectNotification(_simulator: Simulator, params: RejectNo
 	}
 
 	await resolveInterceptorAccess({
-		type: 'approval',
 		websiteOrigin : params.options.website.websiteOrigin,
 		requestAccessToAddress: params.options.requestAccessToAddress,
+		originalRequestAccessToAddress: params.options.requestAccessToAddress,
 		approval: params.options.removeOnly ? 'NoResponse' : 'Rejected'
 	}) // close pending access for this request if its open
 	if (!params.options.removeOnly) {
-		await changeAccess(
-			{
-				type: 'approval',
-				websiteOrigin : params.options.website.websiteOrigin,
-				requestAccessToAddress: params.options.requestAccessToAddress,
-				approval: 'Rejected'
-			},
-			params.options.website,
-		)
+		await changeAccess({
+			websiteOrigin : params.options.website.websiteOrigin,
+			requestAccessToAddress: params.options.requestAccessToAddress,
+			originalRequestAccessToAddress: params.options.requestAccessToAddress,
+			approval: 'Rejected'
+		}, params.options.website )
 	}
 	sendPopupMessageToOpenWindows({ method: 'popup_notification_removed' })
 }
@@ -246,8 +243,7 @@ export async function homeOpened() {
 	if (tabs.length === 0 || tabs[0].id === undefined ) return
 	const signerState = globalThis.interceptor.websiteTabSignerStates.get(tabs[0].id)
 	const signerAccounts = signerState === undefined ? undefined : signerState.signerAccounts
-	const tabIconDetails = globalThis.interceptor.websiteTabConnection.get(tabs[0].id)?.tabIconDetails
-	const tabApproved = globalThis.interceptor.websiteTabApprovals.get(tabs[0].id)?.approved === true
+	const tabIconDetails = globalThis.interceptor.websiteTabConnections.get(tabs[0].id)?.tabIconDetails
 
 	sendPopupMessageToOpenWindows({
 		method: 'popup_UpdateHomePage',
@@ -257,6 +253,7 @@ export async function homeOpened() {
 				visualizerResults: globalThis.interceptor.simulation.visualizerResults,
 				addressBookEntries: globalThis.interceptor.simulation.addressBookEntries,
 				tokenPrices: globalThis.interceptor.simulation.tokenPrices,
+				activeAddress: globalThis.interceptor.simulation.activeAddress,
 			},
 			websiteAccessAddressMetadata: globalThis.interceptor.websiteAccessAddressMetadata,
 			pendingAccessMetadata: globalThis.interceptor.pendingAccessMetadata,
@@ -266,7 +263,10 @@ export async function homeOpened() {
 			currentBlockNumber: globalThis.interceptor.currentBlockNumber,
 			settings: globalThis.interceptor.settings,
 			tabIconDetails: tabIconDetails,
-			tabApproved: tabApproved,
 		}
 	})
+}
+
+export async function interceptorAccessChangeAddressOrRefresh(params: InterceptorAccessChangeAddress | InterceptorAccessRefresh) {
+	requestAddressChange(params)
 }

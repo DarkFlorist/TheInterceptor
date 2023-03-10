@@ -64,14 +64,14 @@ type MessageMethodAndParams = {
 interface MessageToBackgroundPage {
 	readonly interceptorApproved: boolean,
 	readonly usingInterceptorWithoutSigner?: boolean,
-	readonly requestId?: number,
+	readonly requestId: number,
 	options: MessageMethodAndParams,
 }
 
 interface InterceptedRequestForward {
 	readonly interceptorApproved: boolean,
 	readonly usingInterceptorWithoutSigner?: boolean,
-	readonly requestId?: number,
+	readonly requestId: number,
 	options: MessageMethodAndParams,
 	error?: {
 		readonly code: number,
@@ -83,7 +83,7 @@ interface InterceptedRequestForward {
 
 interface BackgroundPageReplyRequest {
 	readonly interceptorApproved: boolean,
-	readonly requestId?: number,
+	readonly requestId: number,
 	options: MessageMethodAndParams,
 	readonly result: unknown,
 	readonly subscription?: string
@@ -164,17 +164,34 @@ class InterceptorMessageListener {
 
 	private readonly WindowEthereumIsConnected = () => this.connected
 
+	private readonly sendMessageToBackgroundPage = async (messageMethodAndParams: MessageMethodAndParams) => {
+		this.requestId++
+		const pendingRequestId = this.requestId
+		const future = new InterceptorFuture<unknown>()
+		this.outstandingRequests.set(pendingRequestId, future)
+		try {
+			window.postMessage({
+				interceptorRequest: true,
+				options: {
+					method: messageMethodAndParams.method,
+					params: messageMethodAndParams.params,
+				},
+				usingInterceptorWithoutSigner: this.signerWindowEthereumRequest === undefined,
+				requestId: pendingRequestId,
+			}, '*')
+			return await future
+		} catch (error) {
+			throw error
+		} finally {
+			this.outstandingRequests.delete(pendingRequestId)
+		}
+	}
+
 	// sends messag to The Interceptor background page
 	private readonly WindowEthereumRequest = async (options: { readonly method: string, readonly params?: readonly unknown[] }) => {
-		this.requestId++
-		const currentRequestId = this.requestId
-		const future = new InterceptorFuture<unknown>()
-		this.outstandingRequests.set(currentRequestId, future)
-
 		try {
 			// make a message that the background script will catch and reply us. We'll wait until the background script replies to us and return only after that
-			this.sendMessageToBackgroundPage( { method: options.method, params: options.params }, currentRequestId )
-			return await future //TODO: we need to figure out somekind of timeout here, it needs to depend on the request type, eg. if we are asking user to sign something, maybe there shouldn't even be a timeout?
+			return await this.sendMessageToBackgroundPage({ method: options.method, params: options.params })
 		} catch (error) {
 			// if it is an Error, add context to it if context doesn't already exist
 			if (error instanceof Error) {
@@ -185,8 +202,6 @@ class InterceptorMessageListener {
 			}
 			// if someone threw something besides an Error, wrap it up in an error
 			throw new EthereumJsonRpcError(-32603, `Unexpected thrown value.`, { error: error, request: options })
-		} finally {
-			this.outstandingRequests.delete(currentRequestId)
 		}
 	}
 
@@ -266,14 +281,14 @@ class InterceptorMessageListener {
 		const reply = await this.signerWindowEthereumRequest({ method: 'eth_requestAccounts', params: [] })
 
 		if ( !Array.isArray(reply) ) return
-		this.sendMessageToBackgroundPage({ method: 'eth_accounts_reply', params: reply })
+		return await this.sendMessageToBackgroundPage({ method: 'eth_accounts_reply', params: reply })
 	}
 
 	private readonly requestChainIdFromSigner = async () => {
 		if (this.signerWindowEthereumRequest === undefined ) return
 		const reply = await this.signerWindowEthereumRequest( { method: 'eth_chainId', params: [] } )
 		if ( typeof reply !== 'string') return
-		this.sendMessageToBackgroundPage({ method: 'signer_chainChanged', params: [ reply ] })
+		return await this.sendMessageToBackgroundPage({ method: 'signer_chainChanged', params: [ reply ] })
 	}
 
 	private static readonly checkErrorForCode = (error: unknown): error is { code: number } => {
@@ -290,10 +305,10 @@ class InterceptorMessageListener {
 		try {
 			const reply = await this.signerWindowEthereumRequest( { method: 'wallet_switchEthereumChain', params: [ { 'chainId': chainId } ] } )
 			if ( reply !== null) return
-			this.sendMessageToBackgroundPage({ method: 'wallet_switchEthereumChain_reply', params: [ { accept: true, chainId: chainId } ] })
+			await this.sendMessageToBackgroundPage({ method: 'wallet_switchEthereumChain_reply', params: [ { accept: true, chainId: chainId } ] })
 		} catch (error) {
 			if( InterceptorMessageListener.checkErrorForCode(error) && ( error.code === METAMASK_ERROR_USER_REJECTED_REQUEST || error.code === METAMASK_ERROR_CHAIN_NOT_ADDED_TO_METAMASK ) ) {
-				this.sendMessageToBackgroundPage({ method: 'wallet_switchEthereumChain_reply', params: [ { accept: false, chainId: chainId } ] })
+				await this.sendMessageToBackgroundPage({ method: 'wallet_switchEthereumChain_reply', params: [ { accept: false, chainId: chainId } ] })
 			}
 			throw error
 		}
@@ -335,7 +350,6 @@ class InterceptorMessageListener {
 			return await this.requestChainIdFromSigner()
 		}
 
-		if ( replyRequest.requestId === undefined) throw new Error('Reply request missing requestId')
 		return this.outstandingRequests.get(replyRequest.requestId)!.resolve(replyRequest.result)
 	}
 
@@ -355,7 +369,7 @@ class InterceptorMessageListener {
 		const forwardRequest = messageEvent.data as InterceptedRequestForward //use "as" here as we don't want to inject funtypes here
 
 		if (forwardRequest.error !== undefined) {
-			if (forwardRequest.requestId === undefined || !this.outstandingRequests.has(forwardRequest.requestId)) throw new EthereumJsonRpcError(forwardRequest.error.code, forwardRequest.error.message)
+			if (!this.outstandingRequests.has(forwardRequest.requestId)) throw new EthereumJsonRpcError(forwardRequest.error.code, forwardRequest.error.message)
 			return this.outstandingRequests.get(forwardRequest.requestId)!.reject(new EthereumJsonRpcError(forwardRequest.error.code, forwardRequest.error.message))
 		}
 
@@ -365,13 +379,11 @@ class InterceptorMessageListener {
 			if ( this.signerWindowEthereumRequest == undefined) throw 'Interceptor is in wallet mode and should not forward to an external wallet'
 			const reply = await this.signerWindowEthereumRequest(forwardRequest.options)
 
-			if ( forwardRequest.requestId === undefined) return
 			this.outstandingRequests.get(forwardRequest.requestId)!.resolve(reply)
 		} catch (error) {
 			// if it is an Error, add context to it if context doesn't already exist
 			console.log(error)
 			console.log(messageEvent)
-			if (forwardRequest.requestId === undefined) throw error
 			if (error instanceof Error) {
 				if (!('code' in error)) (error as any).code = -32603
 				if (!('data' in error) || (error as any).data === undefined || (error as any).data === null) (error as any).data = { request: forwardRequest.options }
@@ -386,20 +398,8 @@ class InterceptorMessageListener {
 		}
 	}
 
-	private readonly sendMessageToBackgroundPage = (messageMethodAndParams: MessageMethodAndParams, requestId: number | undefined = undefined) => {
-		window.postMessage({
-			interceptorRequest: true,
-			options: {
-				method: messageMethodAndParams.method,
-				params: messageMethodAndParams.params,
-			},
-			usingInterceptorWithoutSigner: this.signerWindowEthereumRequest === undefined,
-			...(requestId === undefined ? { } : { requestId: requestId })
-		}, '*')
-	}
-
-	private readonly sendConnectedMessage = (signerName: 'NoSigner' | 'NotRecognizedSigner' | 'MetaMask' | 'Brave') => {
-		this.sendMessageToBackgroundPage({ method: 'connected_to_signer', params: [signerName] })
+	private readonly sendConnectedMessage = async (signerName: 'NoSigner' | 'NotRecognizedSigner' | 'MetaMask' | 'Brave') => {
+		return await this.sendMessageToBackgroundPage({ method: 'connected_to_signer', params: [signerName] })
 	}
 
 	private readonly injectUnsupportedMethods = (windowEthereum: WindowEthereum & UnsupportedWindowEthereumMethods) => {
@@ -435,7 +435,8 @@ class InterceptorMessageListener {
 			this.injectUnsupportedMethods(window.ethereum)
 			this.connected = true
 
-			return this.sendConnectedMessage('NoSigner')
+			this.sendConnectedMessage('NoSigner')
+			return
 		}
 
 		// subscribe for signers events
@@ -466,7 +467,8 @@ class InterceptorMessageListener {
 				enable: this.WindowEthereumEnable
 			}
 			this.injectUnsupportedMethods(window.ethereum)
-			return this.sendConnectedMessage('Brave')
+			this.sendConnectedMessage('Brave')
+			return
 		}
 		// we cannot inject window.ethereum alone here as it seems like window.ethereum is cached (maybe ethers.js does that?)
 		window.ethereum.isConnected = this.WindowEthereumIsConnected

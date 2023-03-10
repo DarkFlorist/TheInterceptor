@@ -1,4 +1,6 @@
 import { MessageToPopup, PopupMessage, WindowMessage } from '../utils/interceptor-messages.js'
+import { WebsiteSocket } from '../utils/user-interface-types.js'
+import { EthereumQuantity } from '../utils/wire-types.js'
 
 export function getActiveAddress() {
 	if (globalThis.interceptor.settings === undefined) return undefined
@@ -13,6 +15,9 @@ export async function sendPopupMessageToOpenWindows(message: MessageToPopup) {
 			if (error?.message?.includes('Could not establish connection.')) {
 				// ignore this error, this error is thrown when a popup is not open to receive the message
 				// we are ignoring this error because the popup messaging is used to update a popups UI, and if a popup is not open, we don't need to update the UI
+				return
+			}
+			if (error?.message?.includes('A listener indicated an asynchronous response by returning true, but the message channel closed before a response was received')) {
 				return
 			}
 			if (error) return console.error(`Popup message error: ${ error.message }`);
@@ -68,4 +73,11 @@ export async function setExtensionBadgeBackgroundColor(details: browser.action._
 		return browser.browserAction.setBadgeBackgroundColor(details)
 	}
 	return browser.action.setBadgeBackgroundColor(details)
+}
+
+export const websiteSocketToString = (socket: WebsiteSocket) => `${ socket.tabId }-${ EthereumQuantity.serialize(socket.connectionName) }`
+
+export const getSocketFromPort = (port: browser.runtime.Port) => {
+	if (port.sender?.tab?.id === undefined) throw new Error('tab id not found in socket')
+	return { tabId: port.sender?.tab?.id, connectionName: EthereumQuantity.parse(port.name) }
 }

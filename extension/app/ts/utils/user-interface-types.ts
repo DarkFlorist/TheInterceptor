@@ -4,7 +4,13 @@ import { EthereumAccountsReply, EthereumAddress, EthereumQuantity, LiteralConver
 import { SimulatedAndVisualizedTransaction, SimulationAndVisualisationResults } from './visualizer-types.js'
 import { IdentifiedSwapWithMetadata } from '../components/simulationExplaining/SwapTransactions.js'
 import { CHAINS } from './constants.js'
-import { Page, SignerName, TabIconDetails, WebsiteAccessArray } from './interceptor-messages.js'
+import { Page, PendingAccessRequestArray, SignerName, TabIconDetails, WebsiteAccessArray } from './interceptor-messages.js'
+
+export type WebsiteSocket = funtypes.Static<typeof WebsiteSocket>
+export const WebsiteSocket = funtypes.Object({
+	tabId: funtypes.Number,
+	connectionName: EthereumQuantity,
+})
 
 export type Website = funtypes.Static<typeof Website>
 export const Website = funtypes.Object({
@@ -128,7 +134,6 @@ export type HomeParams = {
 	setActiveChainAndInformAboutIt: (network: bigint) => void,
 	simulationMode: boolean,
 	tabIconDetails: TabIconDetails,
-	tabApproved: boolean,
 	currentBlockNumber: bigint | undefined,
 	signerName: SignerName | undefined,
 	renameAddressCallBack: RenameAddressCallBack,
@@ -155,7 +160,6 @@ export type FirstCardParams = {
 	makeMeRich: boolean,
 	signerAccounts: readonly bigint[] | undefined,
 	tabIconDetails: TabIconDetails,
-	tabApproved: boolean,
 	signerName: SignerName | undefined,
 	renameAddressCallBack: RenameAddressCallBack,
 }
@@ -163,21 +167,14 @@ export type FirstCardParams = {
 export type SimulationStateParam = {
 	simulationAndVisualisationResults: SimulationAndVisualisationResults | undefined,
 	removeTransaction: (hash: bigint) => void,
-	refreshSimulation: () => void,
 	currentBlockNumber: bigint | undefined,
 	renameAddressCallBack: RenameAddressCallBack,
-	refreshPressed: boolean,
 }
 
 export type LogAnalysisParams = {
 	simulatedAndVisualizedTransaction: SimulatedAndVisualizedTransaction,
 	identifiedSwap: IdentifiedSwapWithMetadata,
 	renameAddressCallBack: RenameAddressCallBack,
-}
-
-export type WebsiteApproval = {
-	websiteOrigin: string,
-	approved: boolean, // if user has approved connection
 }
 
 export type NotificationCenterParams = {
@@ -187,19 +184,6 @@ export type NotificationCenterParams = {
 	pendingAccessMetadata: readonly [string, AddressInfoEntry][]
 }
 
-export type PendingAccessRequest = funtypes.Static<typeof PendingAccessRequest>
-export const PendingAccessRequest = funtypes.Object({
-	website: Website,
-	requestAccessToAddress: funtypes.Union(EthereumAddress, funtypes.Undefined),
-}).asReadonly()
-
-export type PendingAccessRequestArray = funtypes.Static<typeof PendingAccessRequestArray>
-export const PendingAccessRequestArray = funtypes.ReadonlyArray(PendingAccessRequest)
-
-export interface PendingAccessRequestWithMetadata extends PendingAccessRequest {
-	addressMetadata: [string, AddressInfoEntry][],
-}
-
 export interface SignerState {
 	signerAccounts: EthereumAccountsReply | undefined,
 	signerChain: EthereumQuantity | undefined
@@ -207,7 +191,15 @@ export interface SignerState {
 
 export type RenameAddressCallBack = (addressBookEntry: AddressBookEntry) => void
 
+export type SocketConnection = {
+	port: browser.runtime.Port,
+	socket: WebsiteSocket,
+	websiteOrigin: string,
+	approved: boolean, // if user has approved connection
+	wantsToConnect: boolean,
+}
+
 export type TabConnection = {
 	tabIconDetails: TabIconDetails
-	portConnections: Record<string, browser.runtime.Port>
+	connections: Record<string, SocketConnection> // socket as string
 }

@@ -1,6 +1,6 @@
 import { MOCK_PRIVATE_KEYS_ADDRESS } from '../utils/constants.js'
-import { AddressBookTabIdSetting, LegacyWebsiteAccessArray, Page, PendingUserRequestPromise, Settings, WebsiteAccessArray, WebsiteAccessArrayWithLegacy, pages } from '../utils/interceptor-messages.js'
-import { AddressInfo, ContactEntries, PendingAccessRequestArray } from '../utils/user-interface-types.js'
+import { AddressBookTabIdSetting, LegacyWebsiteAccessArray, Page, PendingAccessRequestArray, PendingChainChangeConfirmationPromise, PendingInterceptorAccessRequestPromise, PendingPersonalSignPromise, PendingUserRequestPromise, Settings, WebsiteAccessArray, WebsiteAccessArrayWithLegacy, pages } from '../utils/interceptor-messages.js'
+import { AddressInfo, ContactEntries } from '../utils/user-interface-types.js'
 import { EthereumAddress, EthereumQuantity } from '../utils/wire-types.js'
 
 export const defaultAddresses = [
@@ -46,7 +46,7 @@ export async function getSettings() : Promise<Settings> {
 		'websiteAccess',
 		'activeChain',
 		'simulationMode',
-		'pendingAccessRequestNotifications',
+		'pendingAccessRequests',
 		'contacts',
 	])
 	console.log(results)
@@ -59,7 +59,7 @@ export async function getSettings() : Promise<Settings> {
 		websiteAccess: results.websiteAccess !== undefined ? parseAccessWithLegacySupport(results.websiteAccess) : [],
 		activeChain: results.activeChain !== undefined ? EthereumQuantity.parse(results.activeChain) : 1n,
 		simulationMode: results.simulationMode !== undefined ? results.simulationMode : true,
-		pendingAccessRequests: PendingAccessRequestArray.parse(results.pendingAccessRequestNotifications !== undefined ? results.pendingAccessRequestNotifications : []),
+		pendingAccessRequests: PendingAccessRequestArray.parse(results.pendingAccessRequests !== undefined ? results.pendingAccessRequests : []),
 		userAddressBook: {
 			addressInfos: results.addressInfos !== undefined && !isEmpty(results.addressInfos) ? results.addressInfos.map( (x: AddressInfo) => AddressInfo.parse(x)) : defaultAddresses,
 			contacts: ContactEntries.parse(results.contacts !== undefined ? results.contacts : []),
@@ -122,3 +122,40 @@ export async function saveConfirmationWindowPromise(promise: PendingUserRequestP
 	}
 	return await browser.storage.local.set({ ConfirmationWindowPromise: PendingUserRequestPromise.serialize(promise) })
 }
+
+export async function getChainChangeConfirmationPromise(): Promise<PendingChainChangeConfirmationPromise | undefined> {
+	const results = await browser.storage.local.get(['ChainChangeConfirmationPromise'])
+	return results.ChainChangeConfirmationPromise === undefined ? undefined : PendingChainChangeConfirmationPromise.parse(results.ChainChangeConfirmationPromise)
+}
+
+export async function saveChainChangeConfirmationPromise(promise: PendingChainChangeConfirmationPromise | undefined) {
+	if (promise === undefined) {
+		return await browser.storage.local.remove('ChainChangeConfirmationPromise')
+	}
+	return await browser.storage.local.set({ ChainChangeConfirmationPromise: PendingChainChangeConfirmationPromise.serialize(promise) })
+}
+
+export async function getPendingPersonalSignPromise(): Promise<PendingPersonalSignPromise | undefined> {
+	const results = await browser.storage.local.get(['PersonalSignPromise'])
+	return results.PersonalSignPromise === undefined ? undefined : PendingPersonalSignPromise.parse(results.PersonalSignPromise)
+}
+
+export async function savePendingPersonalSignPromise(promise: PendingPersonalSignPromise | undefined) {
+	if (promise === undefined) {
+		return await browser.storage.local.remove('PersonalSignPromise')
+	}
+	return await browser.storage.local.set({ PersonalSignPromise: PendingPersonalSignPromise.serialize(promise) })
+}
+
+export async function getPendingInterceptorAccessRequestPromise(): Promise<PendingInterceptorAccessRequestPromise | undefined> {
+	const results = await browser.storage.local.get(['InterceptorAccessRequestPromise'])
+	return results.InterceptorAccessRequestPromise === undefined ? undefined : PendingInterceptorAccessRequestPromise.parse(results.InterceptorAccessRequestPromise)
+}
+
+export async function savePendingInterceptorAccessRequestPromise(promise: PendingInterceptorAccessRequestPromise | undefined) {
+	if (promise === undefined) {
+		return await browser.storage.local.remove('InterceptorAccessRequestPromise')
+	}
+	return await browser.storage.local.set({ InterceptorAccessRequestPromise: PendingInterceptorAccessRequestPromise.serialize(promise) })
+}
+

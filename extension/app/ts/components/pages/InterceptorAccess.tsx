@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'preact/hooks'
 import { ActiveAddress, BigAddress, WebsiteOriginText } from '../subcomponents/address.js'
 import { AddNewAddress } from './AddNewAddress.js'
-import { AddressInfoEntry, AddressBookEntry, AddingNewAddressType, RenameAddressCallBack, AddressInfo, Website } from '../../utils/user-interface-types.js'
+import { AddressInfoEntry, AddressBookEntry, AddingNewAddressType, RenameAddressCallBack, AddressInfo, Website, WebsiteSocket } from '../../utils/user-interface-types.js'
 import { ExternalPopupMessage, SignerName } from '../../utils/interceptor-messages.js'
 import { sendPopupMessageToBackgroundPage } from '../../background/backgroundUtils.js'
 import Hint from '../subcomponents/Hint.js'
@@ -78,13 +78,13 @@ function AccessRequest({ renameAddressCallBack, accessRequest, changeActiveAddre
 								renameAddressCallBack = { renameAddressCallBack }
 								changeActiveAddress = { changeActiveAddress }
 								buttonText = { 'Change' }
-								disableButton = { !accessRequest.simulationMode || !accessRequest.allowAddressChanging }
+								disableButton = { false }
 							/> : <>
 								<ActiveAddress
 									activeAddress = { accessRequest.requestAccessToAddress }
 									renameAddressCallBack = { renameAddressCallBack }
 									changeActiveAddress = { refreshActiveAddress }
-									disableButton = { !accessRequest.allowAddressChanging }
+									disableButton = { false }
 									buttonText = { 'Refresh' }
 								/>
 								<p style = 'color: var(--subtitle-text-color); white-space: normal;' class = 'subtitle is-7'>
@@ -107,12 +107,13 @@ function AccessRequest({ renameAddressCallBack, accessRequest, changeActiveAddre
 interface InterceptorAccessRequest {
 	website: Website,
 	requestAccessToAddress: AddressInfoEntry | undefined
+	originalRequestAccessToAddress: AddressInfoEntry | undefined
 	associatedAddresses: readonly AddressInfoEntry[]
 	addressInfos: readonly AddressInfo[]
 	signerAccounts: readonly bigint[]
 	signerName: SignerName | undefined
-	simulationMode: boolean,
-	allowAddressChanging: boolean,
+	simulationMode: boolean
+	socket: WebsiteSocket
 }
 
 export function InterceptorAccess() {
@@ -134,10 +135,10 @@ export function InterceptorAccess() {
 	async function approve() {
 		if (accessRequest === undefined) return
 		const options = {
-			type: 'approval' as const,
 			approval: 'Approved' as const,
 			websiteOrigin: accessRequest.website.websiteOrigin,
 			requestAccessToAddress: accessRequest.requestAccessToAddress?.address,
+			originalRequestAccessToAddress: accessRequest.originalRequestAccessToAddress?.address,
 		}
 		await sendPopupMessageToBackgroundPage({ method: 'popup_interceptorAccess', options })
 		globalThis.close()
@@ -146,10 +147,10 @@ export function InterceptorAccess() {
 	async function reject() {
 		if (accessRequest === undefined) return
 		const options = {
-			type: 'approval' as const,
 			approval: 'Rejected' as const,
 			websiteOrigin: accessRequest.website.websiteOrigin,
 			requestAccessToAddress: accessRequest.requestAccessToAddress?.address,
+			originalRequestAccessToAddress: accessRequest.originalRequestAccessToAddress?.address,
 		}
 		await sendPopupMessageToBackgroundPage({ method: 'popup_interceptorAccess', options })
 		globalThis.close()
@@ -166,18 +167,18 @@ export function InterceptorAccess() {
 
 	function refreshActiveAddress() {
 		if (accessRequest === undefined) throw Error('access request not loaded')
-		sendPopupMessageToBackgroundPage({ method: 'popup_interceptorAccess', options: {
-			type: 'addressRefresh',
-			websiteOrigin: accessRequest.website.websiteOrigin,
+		sendPopupMessageToBackgroundPage({ method: 'popup_interceptorAccessRefresh', options: {
+			socket: accessRequest.socket,
+			website: accessRequest.website,
 			requestAccessToAddress: accessRequest.requestAccessToAddress?.address,
 		} } )
 	}
 
 	function setActiveAddressAndInformAboutIt(address: bigint | 'signer') {
 		if (accessRequest === undefined) throw Error('access request not loaded')
-		sendPopupMessageToBackgroundPage({ method: 'popup_interceptorAccess', options: {
-			type: 'addressChange',
-			websiteOrigin: accessRequest.website.websiteOrigin,
+		sendPopupMessageToBackgroundPage({ method: 'popup_interceptorAccessChangeAddress', options: {
+			socket: accessRequest.socket,
+			website: accessRequest.website,
 			requestAccessToAddress: accessRequest.requestAccessToAddress?.address,
 			newActiveAddress: address,
 		} } )

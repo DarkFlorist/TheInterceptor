@@ -1,13 +1,18 @@
 import { useEffect, useState } from 'preact/hooks'
-import { AddressInfoEntry, NotificationCenterParams, Website } from '../../utils/user-interface-types.js'
+import { AddressInfoEntry, NotificationCenterParams, Website, WebsiteSocket } from '../../utils/user-interface-types.js'
 import { BigAddress } from '../subcomponents/address.js'
 import { ethers } from 'ethers'
 import { addressString } from '../../utils/bigint.js'
 import { sendPopupMessageToBackgroundPage } from '../../background/backgroundUtils.js'
+import { InterceptedRequest } from '../../utils/interceptor-messages.js'
 
 export type PendingAccessRequestWithMetadata = AddressInfoEntry & {
+	request: InterceptedRequest | undefined
+	socket: WebsiteSocket,
 	website: Website,
 } | {
+	request: InterceptedRequest | undefined
+	socket: WebsiteSocket,
 	website: Website,
 	address: undefined
 }
@@ -21,6 +26,8 @@ export function NotificationCenter(param: NotificationCenterParams) {
 		const metadata = new Map(param.pendingAccessMetadata)
 		setPendingAccessRequests(param.pendingAccessRequests.map( (x) => ({
 			website: x.website,
+			socket: x.socket,
+			request: x.request,
 			...(x.requestAccessToAddress === undefined ? { address: undefined } : metadata.get(addressString(x.requestAccessToAddress)) || { // TODO, refactor away when we are using messaging instead of globals for these
 				type: 'addressInfo' as const,
 				name: ethers.utils.getAddress(addressString(x.requestAccessToAddress)),
@@ -34,12 +41,16 @@ export function NotificationCenter(param: NotificationCenterParams) {
 		param.setAndSaveAppPage('Home')
 	}
 
-	function review(website: Website, requestAccessToAddress: bigint | undefined) {
+	function review(pendingAccessRequest: PendingAccessRequestWithMetadata) {
 		sendPopupMessageToBackgroundPage({
 			method: 'popup_reviewNotification',
 			options: {
-				website: website,
-				requestAccessToAddress: requestAccessToAddress,
+				socket: {
+					...pendingAccessRequest.socket
+				},
+				website: pendingAccessRequest.website,
+				request: pendingAccessRequest.request,
+				requestAccessToAddress: pendingAccessRequest.address,
 			}
 		} )
 	}
@@ -127,7 +138,7 @@ export function NotificationCenter(param: NotificationCenterParams) {
 									</>
 
 									}
-									<button className = 'button is-primary is-small' onClick = { () => review(pendingAccessRequest.website, pendingAccessRequest.address) }>
+									<button className = 'button is-primary is-small' onClick = { () => review(pendingAccessRequest) }>
 										Review
 									</button>
 

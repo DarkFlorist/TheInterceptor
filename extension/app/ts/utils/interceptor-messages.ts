@@ -1,6 +1,6 @@
 import * as funtypes from 'funtypes'
-import { AddressBookEntries, AddressBookEntry, AddressInfo, AddressInfoEntry, ContactEntries, PendingAccessRequestArray, Website } from './user-interface-types.js'
-import { EIP2612Message, EthereumAddress, EthereumQuantity, EthereumUnsignedTransaction, Permit2 } from './wire-types.js'
+import { AddressBookEntries, AddressBookEntry, AddressInfo, AddressInfoEntry, ContactEntries, Website, WebsiteSocket } from './user-interface-types.js'
+import { EIP2612Message, EthereumAddress, EthereumQuantity, EthereumUnsignedTransaction, Permit2, PersonalSignParams, SignTypedDataParams } from './wire-types.js'
 import { SimulationState, TokenPriceEstimate, SimResults } from './visualizer-types.js'
 
 export type MessageMethodAndParams = funtypes.Static<typeof MessageMethodAndParams>
@@ -18,8 +18,6 @@ export const InterceptedRequest = funtypes.Intersect(
 		interceptorRequest: funtypes.Boolean,
 		usingInterceptorWithoutSigner: funtypes.Boolean,
 		options: MessageMethodAndParams,
-	}).asReadonly(),
-	funtypes.Partial({
 		requestId: funtypes.Number,
 	}).asReadonly()
 )
@@ -67,31 +65,39 @@ export const PersonalSign = funtypes.Object({
 	})
 }).asReadonly()
 
-export type InterceptorAccessOptions = funtypes.Static<typeof InterceptorAccessOptions>
-export const InterceptorAccessOptions = funtypes.Intersect(
-	funtypes.Object({
-		websiteOrigin: funtypes.String,
+export type InterceptorAccessRefresh = funtypes.Static<typeof InterceptorAccessRefresh>
+export const InterceptorAccessRefresh = funtypes.Object({
+	method: funtypes.Literal('popup_interceptorAccessRefresh'),
+	options: funtypes.Object({
+		socket: WebsiteSocket,
+		website: Website,
 		requestAccessToAddress: funtypes.Union(EthereumAddress, funtypes.Undefined),
 	}),
-	funtypes.Union(
-		funtypes.Object({
-			type: funtypes.Literal('approval'),
-			approval: funtypes.Union(funtypes.Literal('Approved'), funtypes.Literal('Rejected'), funtypes.Literal('NoResponse') ),
-		}),
-		funtypes.Object({
-			type: funtypes.Literal('addressChange'),
-			newActiveAddress: funtypes.Union(EthereumAddress, funtypes.Literal('signer')),
-		}),
-		funtypes.Object({
-			type: funtypes.Literal('addressRefresh'),
-		})
-	)
-)
+}).asReadonly()
+
+export type InterceptorAccessChangeAddress = funtypes.Static<typeof InterceptorAccessChangeAddress>
+export const InterceptorAccessChangeAddress = funtypes.Object({
+	method: funtypes.Literal('popup_interceptorAccessChangeAddress'),
+	options: funtypes.Object({
+		socket: WebsiteSocket,
+		website: Website,
+		requestAccessToAddress: funtypes.Union(EthereumAddress, funtypes.Undefined),
+		newActiveAddress: funtypes.Union(EthereumAddress, funtypes.Literal('signer')),
+	}),
+}).asReadonly()
+
+export type InterceptorAccessReply = funtypes.Static<typeof InterceptorAccessReply>
+export const InterceptorAccessReply = funtypes.Object({
+	websiteOrigin: funtypes.String,
+	originalRequestAccessToAddress: funtypes.Union(EthereumAddress, funtypes.Undefined),
+	requestAccessToAddress: funtypes.Union(EthereumAddress, funtypes.Undefined),
+	approval: funtypes.Union(funtypes.Literal('Approved'), funtypes.Literal('Rejected'), funtypes.Literal('NoResponse') ),
+})
 
 export type InterceptorAccess = funtypes.Static<typeof InterceptorAccess>
 export const InterceptorAccess = funtypes.Object({
 	method: funtypes.Literal('popup_interceptorAccess'),
-	options: InterceptorAccessOptions,
+	options: InterceptorAccessReply,
 }).asReadonly()
 
 export type ChangeActiveAddress = funtypes.Static<typeof ChangeActiveAddress>
@@ -201,10 +207,17 @@ export const ChangeActiveChain = funtypes.Object({
 export type ChainChangeConfirmation = funtypes.Static<typeof ChainChangeConfirmation>
 export const ChainChangeConfirmation = funtypes.Object({
 	method: funtypes.Literal('popup_changeChainDialog'),
-	options: funtypes.Object({
-		requestId: funtypes.Number,
-		accept: funtypes.Boolean,
-	})
+	options: funtypes.Union(
+		funtypes.Object({
+			chainId: EthereumQuantity,
+			requestId: funtypes.Number,
+			accept: funtypes.Literal(true),
+		}),
+		funtypes.Object({
+			requestId: funtypes.Number,
+			accept: funtypes.Literal(false),
+		}),
+	)
 }).asReadonly()
 
 export type SignerChainChangeConfirmation = funtypes.Static<typeof SignerChainChangeConfirmation>
@@ -245,6 +258,8 @@ export const ReviewNotification = funtypes.Object({
 	options: funtypes.Object({
 		website: Website,
 		requestAccessToAddress: funtypes.Union(EthereumAddress, funtypes.Undefined),
+		socket: WebsiteSocket,
+		request: funtypes.Union(InterceptedRequest, funtypes.Undefined),
 	})
 }).asReadonly()
 
@@ -328,6 +343,8 @@ export const PopupMessage = funtypes.Union(
 	RefreshConfirmTransactionDialogSimulation,
 	PersonalSign,
 	InterceptorAccess,
+	InterceptorAccessRefresh,
+	InterceptorAccessChangeAddress,
 	ChangeInterceptorAccess,
 	ChangeActiveChain,
 	ChainChangeConfirmation,
@@ -345,6 +362,7 @@ export const PopupMessage = funtypes.Union(
 	funtypes.Object({ method: funtypes.Literal('popup_requestNewHomeData') }),
 )
 
+export type MessageToPopupSimple = funtypes.Static<typeof MessageToPopupSimple>
 export const MessageToPopupSimple = funtypes.Object({
 	method: funtypes.Union(
 		funtypes.Literal('popup_chain_update'),
@@ -420,12 +438,13 @@ export const InterceptorAccessDialog = funtypes.Object({
 	data: funtypes.Object({
 		website: Website,
 		requestAccessToAddress: funtypes.Union(AddressInfoEntry, funtypes.Undefined),
+		originalRequestAccessToAddress: funtypes.Union(AddressInfoEntry, funtypes.Undefined),
 		associatedAddresses: funtypes.ReadonlyArray(AddressInfoEntry),
 		addressInfos: funtypes.ReadonlyArray(AddressInfo),
 		signerAccounts: funtypes.ReadonlyArray(EthereumAddress),
 		signerName: funtypes.Union(SignerName, funtypes.Undefined),
 		simulationMode: funtypes.Boolean,
-		allowAddressChanging: funtypes.Boolean,
+		socket: WebsiteSocket,
 	})
 })
 
@@ -487,6 +506,21 @@ export const UserAddressBook = funtypes.Object({
 	contacts: ContactEntries,
 })
 
+export type PendingAccessRequest = funtypes.Static<typeof PendingAccessRequest>
+export const PendingAccessRequest = funtypes.Object({
+	socket: WebsiteSocket,
+	request: funtypes.Union(InterceptedRequest, funtypes.Undefined),
+	website: Website,
+	requestAccessToAddress: funtypes.Union(EthereumAddress, funtypes.Undefined),
+}).asReadonly()
+
+export type PendingAccessRequestArray = funtypes.Static<typeof PendingAccessRequestArray>
+export const PendingAccessRequestArray = funtypes.ReadonlyArray(PendingAccessRequest)
+
+export interface PendingAccessRequestWithMetadata extends PendingAccessRequest {
+	addressMetadata: [string, AddressInfoEntry][],
+}
+
 export type Settings = funtypes.Static<typeof Settings>
 export const Settings = funtypes.Object({
 	activeSimulationAddress: funtypes.Union(EthereumAddress, funtypes.Undefined),
@@ -510,6 +544,7 @@ export const UpdateHomePage = funtypes.ReadonlyObject({
 			visualizerResults: funtypes.Union(funtypes.ReadonlyArray(SimResults), funtypes.Undefined),
 			addressBookEntries: AddressBookEntries,
 			tokenPrices: funtypes.ReadonlyArray(TokenPriceEstimate),
+			activeAddress: funtypes.Union(EthereumAddress, funtypes.Undefined),
 		}),
 		websiteAccessAddressMetadata: funtypes.ReadonlyArray(AddressInfoEntry),
 		pendingAccessMetadata: funtypes.ReadonlyArray(funtypes.Tuple(funtypes.String, AddressInfoEntry)),
@@ -519,7 +554,6 @@ export const UpdateHomePage = funtypes.ReadonlyObject({
 		currentBlockNumber: funtypes.Union(EthereumQuantity, funtypes.Undefined),
 		settings: Settings,
 		tabIconDetails: funtypes.Union(TabIconDetails, funtypes.Undefined),
-		tabApproved: funtypes.Boolean,
 	})
 })
 
@@ -558,7 +592,7 @@ export type WindowMessageSignerAccountsChanged = funtypes.Static<typeof WindowMe
 export const WindowMessageSignerAccountsChanged = funtypes.Object({
 	method: funtypes.Literal('window_signer_accounts_changed'),
 	data: funtypes.Object({
-		portSenderId: funtypes.String,
+		socket: WebsiteSocket,
 	})
 })
 
@@ -569,9 +603,36 @@ export type PendingUserRequestPromise = funtypes.Static<typeof PendingUserReques
 export const PendingUserRequestPromise = funtypes.Object({
 	website: Website,
 	dialogId: funtypes.Number,
-	tabId: funtypes.Number,
-	connectionName: funtypes.String,
+	socket: WebsiteSocket,
 	request: InterceptedRequest,
 	transactionToSimulate: EthereumUnsignedTransaction,
 	simulationMode: funtypes.Boolean,
+})
+
+export type PendingChainChangeConfirmationPromise = funtypes.Static<typeof PendingChainChangeConfirmationPromise>
+export const PendingChainChangeConfirmationPromise = funtypes.Object({
+	website: Website,
+	dialogId: funtypes.Number,
+	socket: WebsiteSocket,
+	request: InterceptedRequest,
+	simulationMode: funtypes.Boolean,
+})
+
+export type PendingPersonalSignPromise = funtypes.Static<typeof PendingPersonalSignPromise>
+export const PendingPersonalSignPromise = funtypes.Object({
+	website: Website,
+	dialogId: funtypes.Number,
+	socket: WebsiteSocket,
+	request: InterceptedRequest,
+	simulationMode: funtypes.Boolean,
+	params: funtypes.Union(PersonalSignParams, SignTypedDataParams)
+})
+
+export type PendingInterceptorAccessRequestPromise = funtypes.Static<typeof PendingInterceptorAccessRequestPromise>
+export const PendingInterceptorAccessRequestPromise = funtypes.Object({
+	website: Website,
+	dialogId: funtypes.Number,
+	socket: WebsiteSocket,
+	request: funtypes.Union(InterceptedRequest, funtypes.Undefined),
+	requestAccessToAddress: funtypes.Union(AddressInfoEntry, funtypes.Undefined),
 })
