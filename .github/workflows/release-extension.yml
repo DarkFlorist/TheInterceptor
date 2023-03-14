@@ -27,7 +27,7 @@ jobs:
       - name: Build Extension V2
         working-directory: ./extension
         run: |
-          cp extension/app/manifestV2.json extension/app/manifest.json
+          cp app/manifestV2.json app/manifest.json
           docker image build --tag interceptor-extension .
           docker container create --name temp interceptor-extension
           docker container cp temp:/extension/interceptor.zip ./interceptor-v2.zip
@@ -35,7 +35,7 @@ jobs:
       - name: Build Extension V3
         working-directory: ./extension
         run: |
-          cp extension/app/manifestV3.json extension/app/manifest.json
+          cp app/manifestV3.json app/manifest.json
           docker image build --tag interceptor-extension .
           docker container create --name temp interceptor-extension
           docker container cp temp:/extension/interceptor.zip ./interceptor-v3.zip
