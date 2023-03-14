@@ -23,23 +23,24 @@ jobs:
           echo export const gitCommitSha = \"$GIT_COMMIT_SHA\" > $VERSION_FILE
           echo export const version = \"$VERSION\" >> $VERSION_FILE
           sed -i '/"version"/c\\t"version": "'$VERSION'",' $MANIFEST_FILE_V2 $MANIFEST_FILE_V3
-          zip source.zip -r . -x '*.git*' -x source.zip
       - name: Build Extension V2
         working-directory: ./extension
         run: |
           cp app/manifestV2.json app/manifest.json
           docker image build --tag interceptor-extension .
           docker container create --name temp interceptor-extension
-          docker container cp temp:/extension/interceptor.zip ./interceptor-v2.zip
+          docker container cp temp:/extension/interceptor.zip /tmp/interceptor-v2.zip
           docker container rm temp
+          zip /tmp/interceptor-source-v2.zip -r . -x '*.git*'
       - name: Build Extension V3
         working-directory: ./extension
         run: |
           cp app/manifestV3.json app/manifest.json
-          docker image build --tag interceptor-extension .
+          docker image build --no-cache --tag interceptor-extension .
           docker container create --name temp interceptor-extension
           docker container cp temp:/extension/interceptor.zip ./interceptor-v3.zip
           docker container rm temp
+          zip /tmp/interceptor-source-v3.zip -r . -x '*.git*' -x source.zip
       - name: Create Release
         id: create_release
         uses: actions/create-release@v1
