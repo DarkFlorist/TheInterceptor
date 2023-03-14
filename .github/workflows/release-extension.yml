@@ -38,7 +38,7 @@ jobs:
           cp app/manifestV3.json app/manifest.json
           docker image build --no-cache --tag interceptor-extension .
           docker container create --name temp interceptor-extension
-          docker container cp temp:/extension/interceptor.zip ./interceptor-v3.zip
+          docker container cp temp:/extension/interceptor.zip /tmp/interceptor-v3.zip
           docker container rm temp
           zip /tmp/interceptor-source-v3.zip -r . -x '*.git*'
       - name: Create Release
@@ -57,7 +57,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: ./extension/interceptor-v2.zip
+          asset_path: /tmp/interceptor-v2.zip
           asset_name: interceptor-v2-${{ steps.derive_tag.outputs.TAG }}.zip
           asset_content_type: application/zip
       - name: Upload V3 Extension to Release
@@ -66,7 +66,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: ./extension/interceptor-v3.zip
+          asset_path: /tmp/interceptor-v3.zip
           asset_name: interceptor-v3-${{ steps.derive_tag.outputs.TAG }}.zip
           asset_content_type: application/zip
       - name: Upload V2 Source to Release
