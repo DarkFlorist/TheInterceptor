@@ -26,12 +26,8 @@ COPY build/tsconfig.json build/vendor.ts /extension/build/
 COPY tsconfig-test.json /extension/
 COPY test/ /extension/test/
 
-WORKDIR /extension/build
-RUN npm run vendor
-
 WORKDIR /extension
-RUN npm run inpage
-RUN npm run build-firefox
+RUN npm run setup-firefox
 RUN npm run test
 
 WORKDIR /extension/app
