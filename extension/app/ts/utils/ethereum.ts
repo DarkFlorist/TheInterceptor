@@ -201,19 +201,6 @@ export function serializeTransactionToString(transaction: ISignedTransaction) {
 	return `0x${dataString(serializeSignedTransactionToBytes(transaction))}`
 }
 
-export async function signTransaction<T extends IUnsignedTransaction>(_privateKey: bigint, _unsignedTransaction: T): Promise<ISignedTransaction> {
-	throw new Error('unsupported')
-
-	/*if (unsignedTransaction.type === 'legacy') throw new Error('Cannot sign legacy transaction')
-	const serializedUnsignedTransaction = serializeUnsignedTransactionToBytes(unsignedTransaction)
-	const unsignedHash = keccak(serializedUnsignedTransaction)
-	const { r, s, recovery } = secp256k1.sign(EthereumQuantity.serialize(privateKey) as string, unsignedHash)
-	if (recovery === undefined) throw new Error('This should not happen...')
-	const yParity = recovery === 0 ? 'even' : 'odd'
-	const hash = keccak(serializeSignedTransactionToBytes({ ...unsignedTransaction, r, s, yParity }))
-	return { ...unsignedTransaction, r, s, yParity, hash }*/
-}
-
 export type FormBundleTransaction = {
 	from: bigint,
 	to: bigint,
