@@ -31,4 +31,10 @@ RUN npm run setup-firefox
 RUN npm run test
 
 WORKDIR /extension/app
-RUN zip ../interceptor.zip -r .
+RUN zip ../interceptor-firefox.zip -r .
+
+WORKDIR /extension
+RUN npm run setup-chrome
+
+WORKDIR /extension/app
+RUN zip ../interceptor-chrome.zip -r .
