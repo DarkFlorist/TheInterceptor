@@ -245,7 +245,7 @@ export class SimulationModeEthereumClientService {
 	}
 
 	public refreshSimulation = async () => {
-		if ( this.simulationState === undefined ) return this.simulationState
+		if ( this.simulationState === undefined ) return await this.resetSimulation()
 		if ( this.simulationState.blockNumber == await this.ethereumClientService.getBlockNumber() ) {
 			// if block number is the same, we don't need to compute anything as nothing has changed, but let's update timestamp to show the simulation was refreshed for this time
 			return { ...this.simulationState, simulationConductedTimestamp: new Date() }

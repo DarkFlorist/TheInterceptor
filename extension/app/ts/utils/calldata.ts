@@ -1,5 +1,5 @@
 import { ethers } from 'ethers'
-import { dataString } from './bigint.js'
+import { dataStringWith0xStart } from './bigint.js'
 import * as funtypes from 'funtypes'
 import { EthereumAddress, EthereumQuantity } from './wire-types.js'
 
@@ -43,10 +43,10 @@ const CallDataType = funtypes.Union(
 	}),
 )
 
-export function parseTransaction(transaction: {input?: Uint8Array, from: bigint}) {
+export function parseTransaction(transaction: { input?: Uint8Array, from: bigint }) {
 	if (!('input' in transaction) || transaction.input === undefined || transaction.input.length < 4) return undefined
 	const iface = new ethers.Interface(ABI)
-	const parsed = iface.parseTransaction({ data: dataString(transaction.input) })
+	const parsed = iface.parseTransaction({ data: dataStringWith0xStart(transaction.input) })
 	if (parsed === null) return undefined
 	return CallDataType.parse({
 		name: parsed.name,

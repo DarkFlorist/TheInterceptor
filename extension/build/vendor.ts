@@ -37,6 +37,7 @@ async function vendorDependencies(files: string[]) {
 			if (path.endsWith('.mts')) return true
 			if (path.endsWith('.map')) return true
 			if (path.endsWith('.git') || path.endsWith('.git/') || path.endsWith('.git\\')) return false
+			if (path.includes('address-metadata/lib/images') || path.includes('address-metadata\\lib\\images')) return true
 			if (path.endsWith('node_modules') || path.endsWith('node_modules/') || path.endsWith('node_modules\\')) return false
 			if (fileType === 'directory') return true
 			return false

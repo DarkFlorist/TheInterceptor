@@ -40,7 +40,7 @@ export function PersonalSign() {
 		  const scrollHeight = textareaRef.current.scrollHeight
 		  textareaRef.current.style.height = scrollHeight + 'px'
 		}
-	  }, [signRequest])
+	}, [signRequest])
 
 	async function updatePage(request: PersonalSignRequest) {
 		setActiveAddress(request.data.activeAddress)

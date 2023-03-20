@@ -30,12 +30,12 @@ export function replaceImport(filePath: string, text: string) {
 		const newLocation = path.join(directoryOfThisFile, '..', 'app', 'vendor', dependency.packageToVendor === undefined ? dependency.packageName : dependency.packageToVendor, dependency.entrypointFile)
 		const fileFolder = path.dirname(filePath)
 
-		replaced = replaced.replace(`import '${ dependency.packageName }'`, `import '${ path.relative(fileFolder, newLocation).replace(/\\/g, '/') }'`)
-		replaced = replaced.replace(` from '${ dependency.packageName }'`, ` from '${ path.relative(fileFolder, newLocation).replace(/\\/g, '/') }'`)
-		replaced = replaced.replace(` from "${ dependency.packageName }"`, ` from '${ path.relative(fileFolder, newLocation).replace(/\\/g, '/') }'`)
-		replaced = replaced.replace(`from'${ dependency.packageName }'`, ` from '${ path.relative(fileFolder, newLocation).replace(/\\/g, '/') }'`)
-		replaced = replaced.replace(`from"${ dependency.packageName }"`, ` from '${ path.relative(fileFolder, newLocation).replace(/\\/g, '/') }'`)
-		replaced = replaced.replace(`require("${ dependency.packageName }")`, `require('${ path.relative(fileFolder, newLocation).replace(/\\/g, '/') }')`)
+		replaced = replaced.replaceAll(`import '${ dependency.packageName }'`, `import '${ path.relative(fileFolder, newLocation).replace(/\\/g, '/') }'`)
+		replaced = replaced.replaceAll(` from '${ dependency.packageName }'`, ` from '${ path.relative(fileFolder, newLocation).replace(/\\/g, '/') }'`)
+		replaced = replaced.replaceAll(` from "${ dependency.packageName }"`, ` from '${ path.relative(fileFolder, newLocation).replace(/\\/g, '/') }'`)
+		replaced = replaced.replaceAll(`from'${ dependency.packageName }'`, ` from '${ path.relative(fileFolder, newLocation).replace(/\\/g, '/') }'`)
+		replaced = replaced.replaceAll(`from"${ dependency.packageName }"`, ` from '${ path.relative(fileFolder, newLocation).replace(/\\/g, '/') }'`)
+		replaced = replaced.replaceAll(`require("${ dependency.packageName }")`, `require('${ path.relative(fileFolder, newLocation).replace(/\\/g, '/') }')`)
 	})
 	return replaced
 }

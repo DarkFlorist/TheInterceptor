@@ -92,6 +92,11 @@ export function dataString(data: Uint8Array | null) {
 	return Array.from(data).map(x => x.toString(16).padStart(2,'0')).join('')
 }
 
+export function dataStringWith0xStart(data: Uint8Array | null) {
+	if (data === null) return ''
+	return `0x${ dataString(data) }`
+}
+
 export function bigintToUint8Array(value: bigint, numberOfBytes: number) {
 	if (typeof value === 'number') value = BigInt(value)
 	if (value >= 2n ** BigInt(numberOfBytes * 8) || value < 0n) throw new Error(`Cannot fit ${value} into a ${numberOfBytes}-byte unsigned integer.`)

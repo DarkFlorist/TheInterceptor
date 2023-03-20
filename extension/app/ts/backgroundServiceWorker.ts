@@ -12,7 +12,7 @@ const injectContentScript = async () => {
 		await browser.scripting.registerContentScripts([{
 			id: 'inpage2',
 			matches: ['file://*/*', 'http://*/*', 'https://*/*'],
-			js: ['/vendor/webextension-polyfill/browser-polyfill.js', './js/listenContentScript.js'],
+			js: ['/vendor/webextension-polyfill/browser-polyfill.js', '/inpage/js/listenContentScript.js'],
 			runAt: 'document_start',
 		} ])
 		await chrome.scripting.registerContentScripts([{ // we need to use `chrome` here instead of `browser` as `world: 'MAIN'` is not supported otherwise

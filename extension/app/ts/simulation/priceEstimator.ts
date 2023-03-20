@@ -56,7 +56,10 @@ export class PriceEstimator {
 					gas: 15000000n,
 					to: UNISWAP_V2_ROUTER_ADDRESS,
 					value: 10n ** 18n,
-					input: stringToUint8Array(swapInterface.encodeFunctionData('swapExactETHForTokens', [amountOutMin, [CHAINS[chainString].weth, token.token], sender, deadline] )),
+					input: stringToUint8Array(swapInterface.encodeFunctionData(
+						'swapExactETHForTokens',
+						[amountOutMin, [addressString(CHAINS[chainString].weth), addressString(token.token)], addressString(sender), deadline]
+					)),
 					accessList: [],
 				},
 				{
@@ -69,7 +72,7 @@ export class PriceEstimator {
 					gas: 15000000n,
 					to: token.token,
 					value: 0n,
-					input: stringToUint8Array(swapInterface.encodeFunctionData('approve', [UNISWAP_V2_ROUTER_ADDRESS, 2n ** 127n] )),
+					input: stringToUint8Array(swapInterface.encodeFunctionData('approve', [addressString(UNISWAP_V2_ROUTER_ADDRESS), 2n ** 127n] )),
 					accessList: [],
 				},
 				{
@@ -82,14 +85,19 @@ export class PriceEstimator {
 					gas: 15000000n,
 					to: UNISWAP_V2_ROUTER_ADDRESS,
 					value: 0n,
-					input: stringToUint8Array(swapInterface.encodeFunctionData('swapTokensForExactETH', [10n ** 18n / 2n, 2n ** 127n, [token.token, CHAINS[chainString].weth], sender, deadline] )),
+					input: stringToUint8Array(swapInterface.encodeFunctionData(
+						'swapTokensForExactETH',
+						[10n ** 18n / 2n, 2n ** 127n, [addressString(token.token), addressString(CHAINS[chainString].weth)], addressString(sender), deadline]
+					)),
 					accessList: [],
 				},
 			]
 			const results = await this.ethereum.multicall(swapTransactions, block.number + 1n)
 			if (results.length !== 3) throw ('invalid multicall result')
 			if ( results[2].statusCode === 'success' ) {
-				const parsed = swapInterface.parseCallResult(results[2].returnValue)
+				return []
+				//todo, wait for ethers to implement swapInterface.parseCallResult
+				/*const parsed = swapInterface.parseCallResult(results[2].returnValue)
 				const inOut = parsed.toObject() as { amounts: bigint[] } // TODO, change to funtype
 				if (inOut.amounts.length != 2) return []
 				if(inOut.amounts[0] <= 0n || inOut.amounts[1] <= 0n || token.decimals <= 0n) return []
@@ -97,7 +105,7 @@ export class PriceEstimator {
 					token: addressString(token.token ),
 					inOutAmount: [inOut.amounts[1], inOut.amounts[0]] as const,
 					decimals: token.decimals
-				} )
+				} )*/
 			}
 		}
 		return inOutResults

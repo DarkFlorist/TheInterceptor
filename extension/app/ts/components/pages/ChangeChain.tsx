@@ -19,6 +19,17 @@ export function ChangeChain() {
 	const [connectAnyway, setConnectAnyway] = useState<boolean>(false)
 
 	useEffect( () => {
+		async function updatePage(message: ChangeChainRequest) {
+			setChainChangeData( {
+				isInterceptorSupport : isSupportedChain(message.data.chainId.toString()),
+				chainId: message.data.chainId,
+				chainName : getChainName(message.data.chainId),
+				website: message.data.website,
+				simulationMode: message.data.simulationMode,
+				requestId: message.data.requestId,
+			} )
+		}
+
 		async function popupMessageListener(msg: unknown) {
 			const message = ExternalPopupMessage.parse(msg)
 			if ( message.method !== 'popup_ChangeChainRequest') return
@@ -28,17 +39,6 @@ export function ChangeChain() {
 		sendPopupMessageToBackgroundPage( { method: 'popup_changeChainReadyAndListening' } )
 		return () => browser.runtime.onMessage.removeListener(popupMessageListener)
 	}, [])
-
-	async function updatePage(message: ChangeChainRequest) {
-		setChainChangeData( {
-			isInterceptorSupport : isSupportedChain(message.data.chainId.toString()),
-			chainId: message.data.chainId,
-			chainName : getChainName(message.data.chainId),
-			website: message.data.website,
-			simulationMode: message.data.simulationMode,
-			requestId: message.data.requestId,
-		} )
-	}
 
 	async function approve() {
 		if (chainChangeData === undefined) return

@@ -93,7 +93,7 @@ export async function updateSimulationState( getUpdatedSimulationState: () => Pr
 		}
 		const updatedSimulationState = await getUpdatedSimulationState()
 
-		if ( updatedSimulationState !== undefined ) {
+		if (updatedSimulationState !== undefined) {
 			const priceEstimator = new PriceEstimator(simulator.ethereum)
 
 			const transactions = updatedSimulationState.simulatedTransactions.map((x) => ({ ...x.signedTransaction, website: x.website }))
@@ -111,7 +111,7 @@ export async function updateSimulationState( getUpdatedSimulationState: () => Pr
 			}
 			const tokenPrices = await priceEstimator.estimateEthereumPricesForTokens(addressBookEntries.filter(onlyTokensAndTokensWithKnownDecimals).map(metadataRestructure))
 
-			if (simId !== globalThis.interceptor.simulation.simulationId) return // do not update state if we are already calculating a new one
+			if (simId < globalThis.interceptor.simulation.simulationId) return // do not update state with older state
 
 			globalThis.interceptor.simulation = {
 				simulationId: globalThis.interceptor.simulation.simulationId,
@@ -122,6 +122,7 @@ export async function updateSimulationState( getUpdatedSimulationState: () => Pr
 				activeAddress: activeAddress,
 			}
 		} else {
+			if (simId < globalThis.interceptor.simulation.simulationId) return // do not update state with older state
 			globalThis.interceptor.simulation = {
 				simulationId: globalThis.interceptor.simulation.simulationId,
 				addressBookEntries: [],
@@ -523,12 +524,13 @@ export async function gateKeepRequestBehindAccessDialog(socket: WebsiteSocket, r
 }
 
 async function onContentScriptConnected(port: browser.runtime.Port) {
-	console.log('content script connected')
 	const socket = getSocketFromPort(port)
 	if (port?.sender?.url === undefined) return
 	const websiteOrigin = (new URL(port.sender.url)).hostname
 	const websitePromise = retrieveWebsiteDetails(port, websiteOrigin)
 	const identifier = websiteSocketToString(socket)
+
+	console.log(`content script connected ${ websiteOrigin }`)
 
 	const tabConnection = globalThis.interceptor.websiteTabConnections.get(socket.tabId)
 	const newConnection = {
