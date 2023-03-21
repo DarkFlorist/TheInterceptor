@@ -23,7 +23,7 @@ interface EditableAccess {
 
 export function InterceptorAccessList(param: InterceptorAccessListParams) {
 	const [editableAccessList, setEditableAccessList] = useState<readonly EditableAccess[] | undefined>(undefined)
-	const [metadata, setMetadata] = useState<Map<string, AddressInfoEntry> >(new Map())
+	const [metadata, setMetadata] = useState<Map<string, AddressInfoEntry>>(new Map())
 
 	function updateEditableAccessList(newList: WebsiteAccessArray | undefined) {
 		if (newList === undefined) return setEditableAccessList(undefined)
@@ -32,7 +32,7 @@ export function InterceptorAccessList(param: InterceptorAccessListParams) {
 				return newList.map( (x) => ({
 					websiteAccess: x,
 					addressAccess: x.addressAccess === undefined ? [] : x.addressAccess,
-					addressAccessModified: x.addressAccess === undefined ? [] : x.addressAccess.map( (addr) => ({
+					addressAccessModified: x.addressAccess === undefined ? [] : x.addressAccess.map((addr) => ({
 						address: addr.address,
 						access: addr.access,
 						removed: false,
@@ -48,7 +48,7 @@ export function InterceptorAccessList(param: InterceptorAccessListParams) {
 					return {
 						websiteAccess: newAccess,
 						addressAccess: newAccess.addressAccess === undefined ? [] : newAccess.addressAccess,
-						addressAccessModified: newAccess.addressAccess === undefined ? [] : newAccess.addressAccess.map( (addr) => ({
+						addressAccessModified: newAccess.addressAccess === undefined ? [] : newAccess.addressAccess.map((addr) => ({
 							address: addr.address,
 							access: addr.access,
 							removed: false,
@@ -95,7 +95,7 @@ export function InterceptorAccessList(param: InterceptorAccessListParams) {
 
 	function setWebsiteAccess(index: number, access: boolean | undefined, removed: boolean | undefined) {
 		if (editableAccessList === undefined) return
-		setEditableAccessList(editableAccessList.map( (x , i) => {
+		setEditableAccessList(editableAccessList.map((x , i) => {
 			if(index === i ) {
 				return {
 					websiteAccess: x.websiteAccess,
@@ -111,7 +111,7 @@ export function InterceptorAccessList(param: InterceptorAccessListParams) {
 
 	function setAddressAccess(index: number, addressIndex: number, access: boolean | undefined, removed: boolean | undefined) {
 		if (editableAccessList === undefined) return
-		setEditableAccessList(editableAccessList.map( (x , i) => {
+		setEditableAccessList(editableAccessList.map((x , i) => {
 			if(index === i ) {
 				return {
 					websiteAccess: x.websiteAccess,
@@ -151,10 +151,10 @@ export function InterceptorAccessList(param: InterceptorAccessListParams) {
 		if (editableAccessList === undefined) return goHome()
 
 		const withoutRemovedEntries = editableAccessList.filter( (state) => !state.removed )
-		const newEntries = withoutRemovedEntries.map( (x) => ({
+		const newEntries = withoutRemovedEntries.map((x) => ({
 			website: x.websiteAccess.website,
 			access: x.access,
-			addressAccess: x.addressAccessModified.filter( (x) => !x.removed ).map( (addr) => ({
+			addressAccess: x.addressAccessModified.filter((x) => !x.removed ).map( (addr) => ({
 				address: BigInt(addr.address),
 				access: addr.access,
 			})),
