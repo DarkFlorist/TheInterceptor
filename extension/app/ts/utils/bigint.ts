@@ -1,3 +1,5 @@
+import { ethers } from 'ethers'
+
 export function bigintToDecimalString(value: bigint, power: bigint): string {
 	if ( value >= 0n ) {
 		const integerPart = value / 10n**power
@@ -76,6 +78,10 @@ export function attoethToNanoethDouble(value: bigint) {
 
 export function addressString(address: bigint) {
 	return `0x${address.toString(16).padStart(40, '0')}`
+}
+
+export function checksummedAddress(address: bigint) {
+	return ethers.getAddress(addressString(address))
 }
 
 export function bytes32String(bytes32: bigint) {

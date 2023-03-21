@@ -3,7 +3,7 @@ import { StateUpdater, useEffect, useState } from 'preact/hooks'
 import { AddAddressParam, AddressBookEntryCategory } from '../../utils/user-interface-types.js'
 import { Notice } from '../subcomponents/Error.js'
 import { getIssueWithAddressString } from '../ui-utils.js'
-import { addressString } from '../../utils/bigint.js'
+import { checksummedAddress } from '../../utils/bigint.js'
 import { sendPopupMessageToBackgroundPage } from '../../background/backgroundUtils.js'
 import { AddressIcon } from '../subcomponents/address.js'
 import { assertUnreachable } from '../../utils/typescript.js'
@@ -190,7 +190,7 @@ export function AddNewAddress(param: AddAddressParam) {
 
 	useEffect( () => {
 		if (param.addingNewAddress.addingAddress === false) {
-			const addressInput = ethers.getAddress(addressString(param.addingNewAddress.entry.address))
+			const addressInput = checksummedAddress(param.addingNewAddress.entry.address)
 			setAddressInput(addressInput)
 			setNameInput(param.addingNewAddress.entry.name === addressInput ? undefined : param.addingNewAddress.entry.name)
 			setAddressType(param.addingNewAddress.entry.type)
