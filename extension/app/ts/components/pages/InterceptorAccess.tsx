@@ -226,11 +226,11 @@ export function InterceptorAccess() {
 				</div>
 				<nav class = 'window-header' style = 'display: flex; justify-content: space-around; width: 100%; flex-direction: column; padding-bottom: 10px; padding-top: 10px;'>
 					<div style = 'display: flex; flex-direction: row;'>
-					<button className = 'button is-primary' style = 'flex-grow: 1; margin-left: 5px; margin-right: 5px;' onClick = { approve } >
-							Grant Access
-						</button>
 						<button className = 'button is-primary is-danger' style = 'flex-grow: 1; margin-left: 5px; margin-right: 5px;' onClick = { reject } >
 							Deny Access
+						</button>
+						<button className = 'button is-primary' style = 'flex-grow: 1; margin-left: 5px; margin-right: 5px;' onClick = { approve } >
+							Grant Access
 						</button>
 					</div>
 				</nav>

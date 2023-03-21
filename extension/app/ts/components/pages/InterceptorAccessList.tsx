@@ -272,8 +272,8 @@ export function InterceptorAccessList(param: InterceptorAccessListParams) {
 			</section>
 
 			<footer class = 'modal-card-foot window-footer' style = 'border-bottom-left-radius: unset; border-bottom-right-radius: unset; border-top: unset; padding: 10px;'>
-				<button class = 'button is-success is-primary' onClick = { saveChanges }> { areThereChanges() ? 'Save Changes' : 'Close' } </button>
 				<button class = 'button is-primary' style = 'background-color: var(--negative-color)' onClick = { goHome }>Cancel</button>
+				<button class = 'button is-success is-primary' onClick = { saveChanges }> { areThereChanges() ? 'Save Changes' : 'Close' } </button>
 			</footer>
 		</div>
 	</> )
