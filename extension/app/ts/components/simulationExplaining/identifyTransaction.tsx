@@ -19,6 +19,7 @@ type IdentifiedTransaction =
 	| IdentifiedTransactionBase & { type: 'ContractFallbackMethod' }
 	| IdentifiedTransactionBase & { type: 'ArbitaryContractExecution' }
 	| IdentifiedTransactionBase & { type: 'MakeYouRichTransaction' }
+	| IdentifiedTransactionBase & { type: 'ContractDeployment' }
 
 export function identifySimpleApproval(transaction: SimulatedAndVisualizedTransaction) {
 	if (isSimpleTokenApproval(transaction)) {
@@ -161,6 +162,16 @@ export function identifyTransaction(transaction: SimulatedAndVisualizedTransacti
 			simulationAction: `Simulate ${ symbol } Transfer`,
 			rejectAction: `Reject ${ symbol } Transfer`,
 			identifiedTransaction: transaction
+		}
+	}
+
+	if (transaction.to === undefined) {
+		return {
+			type: 'ContractDeployment',
+			title: `Contract Deployment`,
+			signingAction: `Deploy Contract`,
+			simulationAction: `Simulate Contract Deployment`,
+			rejectAction: `Reject Contract Deployment`,
 		}
 	}
 
