@@ -67,7 +67,7 @@ export async function sendTransaction(
 			maxFeePerGas: sendTransactionParams.params[0].maxFeePerGas ? sendTransactionParams.params[0].maxFeePerGas : maxFeePerGas,
 			maxPriorityFeePerGas: sendTransactionParams.params[0].maxPriorityFeePerGas ? sendTransactionParams.params[0].maxPriorityFeePerGas : 1n,
 			gas: sendTransactionParams.params[0].gas ? sendTransactionParams.params[0].gas : 90000n,
-			to: sendTransactionParams.params[0].to ? sendTransactionParams.params[0].to : 0n,
+			to: sendTransactionParams.params[0].to === undefined ? null : sendTransactionParams.params[0].to,
 			value: sendTransactionParams.params[0].value ? sendTransactionParams.params[0].value : 0n,
 			input: 'data' in sendTransactionParams.params[0] && sendTransactionParams.params[0].data !== undefined ? sendTransactionParams.params[0].data : new Uint8Array(),
 			accessList: []
@@ -102,7 +102,7 @@ async function singleCallWithFromOverride(simulator: Simulator, request: EthCall
 			gasPrice,
 			value,
 		}),
-		to: callParams.to,
+		to: callParams.to === undefined ? null : callParams.to,
 		value,
 		input,
 		accessList: [],
