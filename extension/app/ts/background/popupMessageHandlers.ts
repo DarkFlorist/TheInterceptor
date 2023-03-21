@@ -240,10 +240,10 @@ export async function homeOpened() {
 	if (globalThis.interceptor.settings === undefined) return
 
 	const tabs = await browser.tabs.query({ active: true, currentWindow: true })
-	if (tabs.length === 0 || tabs[0].id === undefined ) return
-	const signerState = globalThis.interceptor.websiteTabSignerStates.get(tabs[0].id)
+	const tabId = tabs.length > 0 ? tabs[0].id : undefined
+	const signerState = tabId === undefined ? undefined : globalThis.interceptor.websiteTabSignerStates.get(tabId)
 	const signerAccounts = signerState === undefined ? undefined : signerState.signerAccounts
-	const tabIconDetails = globalThis.interceptor.websiteTabConnections.get(tabs[0].id)?.tabIconDetails
+	const tabIconDetails = tabId === undefined ? undefined : globalThis.interceptor.websiteTabConnections.get(tabId)?.tabIconDetails
 
 	sendPopupMessageToOpenWindows({
 		method: 'popup_UpdateHomePage',

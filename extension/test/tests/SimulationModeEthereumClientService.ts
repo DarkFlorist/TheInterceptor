@@ -1,11 +1,10 @@
-import { ethers } from 'ethers'
+import { ethers, keccak256 } from 'ethers'
 import { SimulationModeEthereumClientService } from '../../app/ts/simulation/services/SimulationModeEthereumClientService.js'
 import { describe, runIfRoot, should, run } from '../micro-should.js'
 import * as assert from 'assert'
 import { EthereumSignedTransactionToSignedTransaction, EthereumUnsignedTransactionToUnsignedTransaction, serializeUnsignedTransactionToBytes } from '../../app/ts/utils/ethereum.js'
 import { bytes32String } from '../../app/ts/utils/bigint.js'
 import { EthereumSignedTransaction1559, EthereumUnsignedTransaction } from '../../app/ts/utils/wire-types.js'
-import { keccak256 } from '@zoltu/ethereum-crypto'
 
 export async function main() {
 	describe('SimulationModeEthereumClientService', () => {
@@ -30,22 +29,22 @@ export async function main() {
 			if (signed.type === '1559') assert.equal(signed.yParity, 'even')
 		})
 
-		should('ethers.utils.recoverAddress should fail for mocked transaction', async () => {
+		should('ethers.recoverAddress should fail for mocked transaction', async () => {
 			const signed = EthereumSignedTransactionToSignedTransaction(await SimulationModeEthereumClientService.mockSignTransaction(exampleTransaction))
 			assert.equal(signed.type, '1559')
 			if (signed.type !== '1559') throw new Error('wrong transaction type')
 			const unsigned = EthereumUnsignedTransactionToUnsignedTransaction(exampleTransaction)
-			const digest = bytes32String(await keccak256.hash(serializeUnsignedTransactionToBytes(unsigned)))
-			assert.throws(() => ethers.utils.recoverAddress(digest, {
+			const digest = keccak256(serializeUnsignedTransactionToBytes(unsigned))
+			assert.throws(() => ethers.recoverAddress(digest, {
 					r: bytes32String(signed.r),
 					s: bytes32String(signed.s),
-					recoveryParam: signed.yParity == 'even' ? 0 : 1,
+					yParity: signed.yParity == 'even' ? 0 : 1,
 				}),
 				'Error: invalid point'
 			)
 		})
 
-		should('ethers.utils.recoverAddress works for positive case', async() => {
+		should('ethers.recoverAddress works for positive case', async() => {
 			const validTransaction = {
 				'hash': '0xdd0967ea3bf8bb02c40edac86ff849f200587483c6f139e9f73242bdb1ef6284',
 				'nonce': '0x15174',
@@ -74,12 +73,12 @@ export async function main() {
 			assert.equal(signed.type, '1559')
 			if (signed.type !== '1559') throw new Error('wrong transaction type')
 
-			const digest = bytes32String(await keccak256.hash(serializeUnsignedTransactionToBytes(unsigned)))
-			
-			const addr = ethers.utils.recoverAddress(digest, {
+			const digest = keccak256(serializeUnsignedTransactionToBytes(unsigned))
+
+			const addr = ethers.recoverAddress(digest, {
 				r: bytes32String(signed.r),
 				s: bytes32String(signed.s),
-				recoveryParam: signed.yParity == 'even' ? 0 : 1,
+				yParity: signed.yParity == 'even' ? 0 : 1,
 			})
 			assert.equal(BigInt(addr), 0x98db3a41bf8bf4ded2c92a84ec0705689ddeef8bn)
 		})

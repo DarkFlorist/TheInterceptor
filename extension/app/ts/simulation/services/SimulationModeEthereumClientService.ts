@@ -1,15 +1,13 @@
 import { EthereumClientService } from './EthereumClientService.js'
-import { EthGetLogsResponse, EthereumUnsignedTransaction, EthereumSignedTransactionWithBlockData, EthereumBlockTag, EthGetLogsRequest, EthTransactionReceiptResponse, EstimateGasParamsVariables, EthSubscribeParams, JsonRpcMessage, JsonRpcNewHeadsNotification, PersonalSignParams, SignTypedDataParams, EthereumSignedTransaction, GetBlockReturn, EthereumData } from '../../utils/wire-types.js'
-import { EthereumUnsignedTransactionToUnsignedTransaction, serializeSignedTransactionToBytes } from '../../utils/ethereum.js'
-import { bytes32String, max, min } from '../../utils/bigint.js'
+import { EthGetLogsResponse, EthereumUnsignedTransaction, EthereumSignedTransactionWithBlockData, EthereumBlockTag, EthGetLogsRequest, EthTransactionReceiptResponse, EstimateGasParamsVariables, EthSubscribeParams, JsonRpcMessage, JsonRpcNewHeadsNotification, PersonalSignParams, SignTypedDataParams, EthereumSignedTransaction, GetBlockReturn, EthereumData, EthereumQuantity } from '../../utils/wire-types.js'
+import { bytes32String, max, min, stringToUint8Array } from '../../utils/bigint.js'
 import { MOCK_ADDRESS } from '../../utils/constants.js'
 import { ErrorWithData } from '../../utils/errors.js'
 import { Future } from '../../utils/future.js'
-import { ethers } from 'ethers'
+import { ethers, keccak256 } from 'ethers'
 import { SimulatedTransaction, SimulationState } from '../../utils/visualizer-types.js'
-import { encodeMethod } from '@zoltu/ethereum-abi-encoder'
-import { keccak256 } from '@zoltu/ethereum-crypto'
 import { Website } from '../../utils/user-interface-types.js'
+import { EthereumUnsignedTransactionToUnsignedTransaction, serializeSignedTransactionToBytes } from '../../utils/ethereum.js'
 
 const MOCK_PRIVATE_KEY = 0x1n // key used to sign mock transactions
 const GET_CODE_CONTRACT = 0x1ce438391307f908756fefe0fe220c0f0d51508an
@@ -109,12 +107,12 @@ export class SimulationModeEthereumClientService {
 		const unsignedTransaction = EthereumUnsignedTransactionToUnsignedTransaction(transaction)
 		if (unsignedTransaction.type === 'legacy') {
 			const signatureParams = { r: 0n, s: 0n, v: 0n }
-			const hash = await keccak256.hash(serializeSignedTransactionToBytes({ ...unsignedTransaction, ...signatureParams }))
+			const hash = EthereumQuantity.parse(keccak256(serializeSignedTransactionToBytes({ ...unsignedTransaction, ...signatureParams })))
 			if (transaction.type !== 'legacy') throw new Error('types do not match')
 			return { ...transaction, ...signatureParams, hash }
 		} else {
 			const signatureParams = { r: 0n, s: 0n, yParity: 'even' as const }
-			const hash = await keccak256.hash(serializeSignedTransactionToBytes({ ...unsignedTransaction, ...signatureParams }))
+			const hash = EthereumQuantity.parse(keccak256(serializeSignedTransactionToBytes({ ...unsignedTransaction, ...signatureParams })))
 			if (transaction.type === 'legacy') throw new Error('types do not match')
 			return { ...transaction, ...signatureParams, hash }
 		}
@@ -247,7 +245,7 @@ export class SimulationModeEthereumClientService {
 	}
 
 	public refreshSimulation = async () => {
-		if ( this.simulationState === undefined ) return this.simulationState
+		if ( this.simulationState === undefined ) return await this.resetSimulation()
 		if ( this.simulationState.blockNumber == await this.ethereumClientService.getBlockNumber() ) {
 			// if block number is the same, we don't need to compute anything as nothing has changed, but let's update timestamp to show the simulation was refreshed for this time
 			return { ...this.simulationState, simulationConductedTimestamp: new Date() }
@@ -346,7 +344,9 @@ export class SimulationModeEthereumClientService {
 	public readonly getCode = async (address: bigint, blockTag: EthereumBlockTag = 'latest') => {
 		if (await this.canQueryNodeDirectly(blockTag)) return await this.ethereumClientService.getCode(address, blockTag)
 		const blockNum = await this.ethereumClientService.getBlockNumber()
-		const input = await encodeMethod(keccak256.hash, 'at(address)', [address])
+
+		const atInterface = new ethers.Interface(['function at(address) returns (uint256)'])
+		const input = stringToUint8Array(atInterface.encodeFunctionData('at', [address]))
 
 		const getCodeTransaction = {
 			type: '1559' as const,

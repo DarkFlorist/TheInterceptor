@@ -71,79 +71,84 @@ export function App() {
 		}
 	}
 
-	function setSimulationState(
-		simState: SimulationState | undefined,
-		visualizerResults: readonly SimResults[] | undefined,
-		addressBookEntries: AddressBookEntries,
-		tokenPrices: readonly TokenPriceEstimate[],
-		activeSimulationAddress: EthereumAddress | undefined,
-		simulationMode: boolean,
-	) {
-		if (simState === undefined) return setSimVisResults(undefined)
-		if (visualizerResults === undefined) return setSimVisResults(undefined)
-		if (activeSimulationAddress === undefined) return setSimVisResults(undefined)
+	useEffect( () => {
+		const setSimulationState = (
+			simState: SimulationState | undefined,
+			visualizerResults: readonly SimResults[] | undefined,
+			addressBookEntries: AddressBookEntries,
+			tokenPrices: readonly TokenPriceEstimate[],
+			activeSimulationAddress: EthereumAddress | undefined,
+			simulationMode: boolean,
+		) => {
+			if (simState === undefined) return setSimVisResults(undefined)
+			if (visualizerResults === undefined) return setSimVisResults(undefined)
+			if (activeSimulationAddress === undefined) return setSimVisResults(undefined)
 
-		const addressMetaData = new Map(addressBookEntries.map( (x) => [addressString(x.address), x]))
-		const txs = formSimulatedAndVisualizedTransaction(simState, visualizerResults, addressMetaData)
-		setSimVisResults( {
-			blockNumber: simState.blockNumber,
-			blockTimestamp: simState.blockTimestamp,
-			simulationConductedTimestamp: simState.simulationConductedTimestamp,
-			simulatedAndVisualizedTransactions: txs,
-			chain: simState.chain,
-			tokenPrices: tokenPrices,
-			activeAddress: activeSimulationAddress,
-			simulationMode: simulationMode,
-			addressMetaData: addressBookEntries,
-		})
-	}
-
-	function updateHomePage({ data }: UpdateHomePage) {
-		const settings = data.settings
-		setSimulationState(
-			data.simulation.simulationState,
-			data.simulation.visualizerResults,
-			data.simulation.addressBookEntries,
-			data.simulation.tokenPrices,
-			data.simulation.activeAddress,
-			settings.simulationMode,
-		)
-
-		setActiveSimulationAddress(settings.activeSimulationAddress)
-		setActiveSigningAddress(settings.activeSigningAddress)
-		setUseSignersAddressAsActiveAddress(settings.useSignersAddressAsActiveAddress)
-		setAddressInfos(settings.userAddressBook.addressInfos)
-		setAppPage(settings.page)
-		setMakeMeRich(settings.makeMeRich)
-		setWebsiteAccess(settings.websiteAccess)
-
-		setWebsiteAccessAddressMetadata(data.websiteAccessAddressMetadata)
-		setActiveChain(settings.activeChain)
-		setSimulationMode(settings.simulationMode !== undefined ? settings.simulationMode : true)
-		setPendingAccessRequests(settings.pendingAccessRequests)
-		setPendingAccessMetadata(data.pendingAccessMetadata)
-
-		setSignerName(data.signerName)
-		setCurrentBlockNumber(data.currentBlockNumber)
-
-		setSignerAccounts(data.signerAccounts)
-		if (data.tabIconDetails === undefined) {
-			setTabConnection(DEFAULT_TAB_CONNECTION)
-		} else {
-			setTabConnection(data.tabIconDetails)
+			const addressMetaData = new Map(addressBookEntries.map( (x) => [addressString(x.address), x]))
+			const txs = formSimulatedAndVisualizedTransaction(simState, visualizerResults, addressMetaData)
+			setSimVisResults({
+				blockNumber: simState.blockNumber,
+				blockTimestamp: simState.blockTimestamp,
+				simulationConductedTimestamp: simState.simulationConductedTimestamp,
+				simulatedAndVisualizedTransactions: txs,
+				chain: simState.chain,
+				tokenPrices: tokenPrices,
+				activeAddress: activeSimulationAddress,
+				simulationMode: simulationMode,
+				addressMetaData: addressBookEntries,
+			})
 		}
-		setIsSettingsLoaded(true)
-	}
 
-	useEffect(  () => {
-		function popupMessageListener(msg: unknown) {
+		const updateHomePage = ({ data }: UpdateHomePage) => {
+			const settings = data.settings
+			setSimulationState(
+				data.simulation.simulationState,
+				data.simulation.visualizerResults,
+				data.simulation.addressBookEntries,
+				data.simulation.tokenPrices,
+				data.simulation.activeAddress,
+				settings.simulationMode,
+			)
+
+			setActiveSimulationAddress(settings.activeSimulationAddress)
+			setActiveSigningAddress(settings.activeSigningAddress)
+			setUseSignersAddressAsActiveAddress(settings.useSignersAddressAsActiveAddress)
+			setAddressInfos(settings.userAddressBook.addressInfos)
+			setAppPage(settings.page)
+			setMakeMeRich(settings.makeMeRich)
+			setWebsiteAccess(settings.websiteAccess)
+
+			setWebsiteAccessAddressMetadata(data.websiteAccessAddressMetadata)
+			setActiveChain(settings.activeChain)
+			setSimulationMode(settings.simulationMode !== undefined ? settings.simulationMode : true)
+			setPendingAccessRequests(settings.pendingAccessRequests)
+			setPendingAccessMetadata(data.pendingAccessMetadata)
+
+			setSignerName(data.signerName)
+			setCurrentBlockNumber(data.currentBlockNumber)
+
+			setSignerAccounts(data.signerAccounts)
+			if (data.tabIconDetails === undefined) {
+				setTabConnection(DEFAULT_TAB_CONNECTION)
+			} else {
+				setTabConnection(data.tabIconDetails)
+			}
+			setIsSettingsLoaded(true)
+		}
+
+		const popupMessageListener = async (msg: unknown) => {
 			const message = ExternalPopupMessage.parse(msg)
-			if (message.method !== 'popup_UpdateHomePage') return sendPopupMessageToBackgroundPage( { method: 'popup_requestNewHomeData' } )
+			if (message.method !== 'popup_UpdateHomePage') return await sendPopupMessageToBackgroundPage( { method: 'popup_requestNewHomeData' } )
 			return updateHomePage(message)
 		}
 		browser.runtime.onMessage.addListener(popupMessageListener)
+		return () => {
+			browser.runtime.onMessage.removeListener(popupMessageListener)
+		}
+	}, [])
+
+	useEffect( () => {
 		sendPopupMessageToBackgroundPage( { method: 'popup_requestNewHomeData' } )
-		return () => browser.runtime.onMessage.removeListener(popupMessageListener)
 	}, [])
 
 	function setAndSaveAppPage(page: Page) {
@@ -155,7 +160,7 @@ export function App() {
 		if (appPage === 'AddNewAddress') return
 
 		const trimmed = address.trim()
-		if ( !ethers.utils.isAddress(trimmed) ) return
+		if ( !ethers.isAddress(trimmed) ) return
 
 		const bigIntReprentation = BigInt(trimmed)
 		// see if we have that address, if so, let's switch to it
@@ -166,7 +171,7 @@ export function App() {
 		}
 
 		// address not found, let's promt user to create it
-		const addressString = ethers.utils.getAddress(trimmed)
+		const addressString = ethers.getAddress(trimmed)
 		setAndSaveAppPage('AddNewAddress')
 		setAddingNewAddress({ addingAddress: false, entry: {
 			type: 'addressInfo' as const,

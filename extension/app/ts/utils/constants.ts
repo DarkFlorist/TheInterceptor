@@ -16,11 +16,11 @@ export const ERC20_APPROVAL_4BYTES = 0x095ea7b3
 export const ERC721_APPROVAL_FOR_ALL_4BYTES = 0xa22cb465
 
 // common event log signatures
-export const TRANSFER_LOG = ethers.utils.keccak256(ethers.utils.toUtf8Bytes('Transfer(address,address,uint256)'))
-export const APPROVAL_LOG = ethers.utils.keccak256(ethers.utils.toUtf8Bytes('Approval(address,address,uint256)'))
-export const ERC721_APPROVAL_FOR_ALL_LOG = ethers.utils.keccak256(ethers.utils.toUtf8Bytes('ApprovalForAll(address,address,bool)'))
-export const DEPOSIT_LOG = ethers.utils.keccak256(ethers.utils.toUtf8Bytes('Deposit(address,uint256)'))
-export const WITHDRAWAL_LOG = ethers.utils.keccak256(ethers.utils.toUtf8Bytes('Withdrawal(address,uint256)'))
+export const TRANSFER_LOG = ethers.keccak256(ethers.toUtf8Bytes('Transfer(address,address,uint256)'))
+export const APPROVAL_LOG = ethers.keccak256(ethers.toUtf8Bytes('Approval(address,address,uint256)'))
+export const ERC721_APPROVAL_FOR_ALL_LOG = ethers.keccak256(ethers.toUtf8Bytes('ApprovalForAll(address,address,bool)'))
+export const DEPOSIT_LOG = ethers.keccak256(ethers.toUtf8Bytes('Deposit(address,uint256)'))
+export const WITHDRAWAL_LOG = ethers.keccak256(ethers.toUtf8Bytes('Withdrawal(address,uint256)'))
 
 // Other
 export const MOCK_ADDRESS = 0xdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefn
@@ -81,7 +81,7 @@ export const ERROR_INTERCEPTOR_NO_ACTIVE_ADDRESS = { error: { code: 2, message: 
 export const ERROR_INTERCEPTOR_UNKNOWN_ORIGIN = { error: { code: 400, message: 'Interceptor: Unkown website origin' } }
 
 function get4Byte(functionAbi: string) {
-	return Number(ethers.utils.keccak256(ethers.utils.toUtf8Bytes(functionAbi)).slice(0, 10))
+	return Number(ethers.keccak256(ethers.toUtf8Bytes(functionAbi)).slice(0, 10))
 }
 
 export const FourByteExplanations = new Map<number, string >([

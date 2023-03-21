@@ -145,7 +145,9 @@ export function Home(param: HomeParams) {
 	const [signerAccounts, setSignerAccounts] = useState<readonly bigint[] | undefined>(undefined)
 	const [isLoaded, setLoaded] = useState<boolean>(false)
 	const [currentBlockNumber, setCurrentBlockNumber] = useState<bigint | undefined>(undefined)
-	const [signerName, setSignerName] = useState<SignerName | undefined> (undefined)
+	const [signerName, setSignerName] = useState<SignerName | undefined>(undefined)
+	const [addressInfos, setAddressInfos] = useState<readonly AddressInfo[] | undefined>(undefined)
+	const [makeMeRich, setMakeMeRich] = useState<boolean>(false)
 
 	useEffect( () => {
 		setSimulationAndVisualisationResults(param.simVisResults)
@@ -157,8 +159,10 @@ export function Home(param: HomeParams) {
 		setTabConnection(param.tabIconDetails)
 		setSignerAccounts(param.signerAccounts)
 		setCurrentBlockNumber(param.currentBlockNumber)
+		setAddressInfos(param.addressInfos)
 		setSignerName(param.signerName)
 		setLoaded(true)
+		setMakeMeRich(param.makeMeRich)
 	}, [param.activeSigningAddress,
 		param.activeSimulationAddress,
 		param.signerAccounts,
@@ -188,14 +192,14 @@ export function Home(param: HomeParams) {
 	if (!isLoaded) return <></>
 
 	return <>
-		{ !isSupportedChain(param.activeChain.toString()) ?
+		{ !isSupportedChain(activeChain.toString()) ?
 			<div style = 'margin: 10px; background-color: var(--bg-color);'>
-				<Error text = { `${ getChainName(param.activeChain) } is not a supported network. The Interceptor is disabled while you are using the network.` }/>
+				<Error text = { `${ getChainName(activeChain) } is not a supported network. The Interceptor is disabled while you are using the network.` }/>
 			</div>
 		: <></> }
 
 		<FirstCard
-			addressInfos = { param.addressInfos }
+			addressInfos = { addressInfos }
 			useSignersAddressAsActiveAddress = { useSignersAddressAsActiveAddress }
 			enableSimulationMode = { enableSimulationMode }
 			activeAddress = { simulationMode ? activeSimulationAddress : activeSigningAddress }
@@ -203,7 +207,7 @@ export function Home(param: HomeParams) {
 			changeActiveChain = { param.setActiveChainAndInformAboutIt }
 			simulationMode = { simulationMode }
 			changeActiveAddress = { changeActiveAddress }
-			makeMeRich = { param.makeMeRich }
+			makeMeRich = { makeMeRich }
 			signerAccounts = { signerAccounts }
 			tabIconDetails = { tabIconDetails }
 			signerName = { signerName }
@@ -218,7 +222,6 @@ export function Home(param: HomeParams) {
 				</div>
 			</div>
 		: <></> }
-
 		{ !simulationMode || activeSimulationAddress === undefined ? <></> :
 			<SimulationResults
 				simulationAndVisualisationResults = { simulationAndVisualisationResults }

@@ -2,15 +2,19 @@
 	"compilerOptions": {
 		"target": "ES2021",
 		"module": "ES2022",
-		"moduleResolution": "node",
+		"moduleResolution": "node16",
 		"noEmit": true,
 		"rootDir": ".",
+		"sourceMap": true,
+		"inlineSources": true,
+		"declaration": true,
+		"declarationMap": true,
 		"strict": true,
 		"noUnusedLocals": true,
 		"noUnusedParameters": true,
 		"noImplicitReturns": true,
 		"noImplicitThis": true,
-		"lib": [ "ES2020" ],
+		"lib": [ "ES2021" ],
 	},
 	"include": [
 		"./*.ts"

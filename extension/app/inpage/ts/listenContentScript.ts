@@ -1,4 +1,4 @@
-function listenInContentScript(conectionName: string | undefined) {
+function listenContentScript(conectionName: string | undefined) {
 	/**
 	 * this script executed within the context of the active tab when the user clicks the extension bar button
 	 * this script serves as a _very thin_ proxy between the page scripts (dapp) and the extension, simply forwarding messages between the two
@@ -13,7 +13,6 @@ function listenInContentScript(conectionName: string | undefined) {
 		return `0x${ Array.from(arr, dec2hex).join('') }`
 	}
 	const connectionNameNotUndefined = conectionName === undefined ? generateId(40) : conectionName
-
 	const extensionPort = browser.runtime.connect({ name: connectionNameNotUndefined })
 
 	// forward all message events to the background script, which will then filter and process them
@@ -46,7 +45,7 @@ function listenInContentScript(conectionName: string | undefined) {
 
 	extensionPort.onDisconnect.addListener(() => {
 		globalThis.removeEventListener('message', listener)
-		listenInContentScript(connectionNameNotUndefined)
+		listenContentScript(connectionNameNotUndefined)
 	})
 }
-listenInContentScript(undefined)
+listenContentScript(undefined)

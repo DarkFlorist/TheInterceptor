@@ -1,7 +1,7 @@
 import { stringifyJSONWithBigInts } from '../../utils/bigint.js'
 import { METAMASK_ERROR_USER_REJECTED_REQUEST } from '../../utils/constants.js'
 import { Future } from '../../utils/future.js'
-import { HandleSimulationModeReturnValue, InterceptedRequest, PersonalSign, PopupMessage } from '../../utils/interceptor-messages.js'
+import { HandleSimulationModeReturnValue, InterceptedRequest, PersonalSign, ExternalPopupMessage } from '../../utils/interceptor-messages.js'
 import { Website, WebsiteSocket } from '../../utils/user-interface-types.js'
 import { EIP2612Message, Permit2, PersonalSignParams, SignTypedDataParams } from '../../utils/wire-types.js'
 import { personalSignWithSimulator, sendMessageToContentScript } from '../background.js'
@@ -49,7 +49,7 @@ export const openPersonalSignDialog = async (
 
 	const oldPromise = await getPendingPersonalSignPromise()
 	if (oldPromise !== undefined) {
-		if ((await chrome.tabs.query({ windowId: oldPromise.dialogId })).length > 0) {
+		if ((await browser.tabs.query({ windowId: oldPromise.dialogId })).length > 0) {
 			return { result: {
 				error: {
 					code: METAMASK_ERROR_USER_REJECTED_REQUEST,
@@ -74,7 +74,7 @@ export const openPersonalSignDialog = async (
 	pendingPersonalSign = new Future<PersonalSign>()
 
 	const personalSignWindowReadyAndListening = async function popupMessageListener(msg: unknown) {
-		const message = PopupMessage.parse(msg)
+		const message = ExternalPopupMessage.parse(msg)
 		if ( message.method !== 'popup_personalSignReadyAndListening') return
 		browser.runtime.onMessage.removeListener(personalSignWindowReadyAndListening)
 

@@ -1,4 +1,4 @@
-import { TransactionImportanceBlockParams } from "../Transactions"
+import { TransactionImportanceBlockParams } from '../Transactions.js'
 import { Erc20ApprovalChanges, ERC721OperatorChange, ERC721OperatorChanges, ERC721TokenIdApprovalChanges } from '../SimulationSummary.js'
 import { ERC721TokenApprovalChange, TokenApprovalChange, TokenVisualizerERC20Event, TokenVisualizerERC721AllApprovalEvent, TokenVisualizerERC721Event, TokenVisualizerResultWithMetadata } from '../../../utils/visualizer-types.js'
 import { EtherSymbol, TokenSymbol, TokenAmount, EtherAmount, ERC721TokenNumber } from '../../subcomponents/coins.js'
@@ -116,8 +116,8 @@ function SendOrReceiveTokensImportanceBox(param: SendOrReceiveTokensImportanceBo
 export function CatchAllVisualizer(param: TransactionImportanceBlockParams) {
 	const msgSender = param.tx.from.address
 
-	const sendingTokenResults = param.tx.tokenResults.filter( (x) => x.from.address === msgSender)
-	const receivingTokenResults = param.tx.tokenResults.filter( (x) => x.to.address === msgSender)
+	const sendingTokenResults = param.tx.tokenResults.filter((x) => x.from.address === msgSender)
+	const receivingTokenResults = param.tx.tokenResults.filter((x) => x.to.address === msgSender)
 
 	const erc20tokenApprovalChanges: TokenApprovalChange[] = sendingTokenResults.filter((x): x is TokenVisualizerERC20Event  => x.isApproval && !x.is721).map((entry) => {
 		return {

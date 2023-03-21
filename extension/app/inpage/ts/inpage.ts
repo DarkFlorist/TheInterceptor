@@ -61,13 +61,6 @@ type MessageMethodAndParams = {
 	readonly params?: readonly unknown[]
 }
 
-interface MessageToBackgroundPage {
-	readonly interceptorApproved: boolean,
-	readonly usingInterceptorWithoutSigner?: boolean,
-	readonly requestId: number,
-	options: MessageMethodAndParams,
-}
-
 interface InterceptedRequestForward {
 	readonly interceptorApproved: boolean,
 	readonly usingInterceptorWithoutSigner?: boolean,

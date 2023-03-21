@@ -1,11 +1,10 @@
-import { encodeMethod } from '@zoltu/ethereum-abi-encoder'
-import { keccak256 } from '@zoltu/ethereum-crypto'
 import { MulticallResponse, EthereumUnsignedTransaction, EthereumSignedTransactionWithBlockData, EthGetStorageAtResponse, EthereumQuantity, EthereumBlockTag, EthTransactionReceiptResponse, EthereumData, EthereumBlockHeader, EstimateGasParamsVariables, EthereumBlockHeaderWithTransactionHashes, EthGetLogsRequest, EthGetLogsResponse } from '../../utils/wire-types.js'
 import { IUnsignedTransaction } from '../../utils/ethereum.js'
-
 import { TIME_BETWEEN_BLOCKS, CHAINS, MOCK_ADDRESS } from '../../utils/constants.js'
 import { CHAIN } from '../../utils/user-interface-types.js'
 import { IEthereumJSONRpcRequestHandler } from './EthereumJSONRpcRequestHandler.js'
+import { ethers } from 'ethers'
+import { stringToUint8Array } from '../../utils/bigint.js'
 
 export type IEthereumClientService = Pick<EthereumClientService, keyof EthereumClientService>
 export class EthereumClientService {
@@ -147,7 +146,10 @@ export class EthereumClientService {
 	}
 
 	public readonly getTokenBalance = async (token: bigint, owner: bigint) => {
-		const balanceOfCallData = await encodeMethod(keccak256.hash, 'balanceOf(address)', [owner])
+		const tokenInterface = new ethers.Interface([
+			'function balanceOf(address _owner) view returns (uint256)',
+		])
+		const balanceOfCallData = stringToUint8Array(tokenInterface.encodeFunctionData('balanceOf', [owner]))
 		const callTransaction = {
 			type: '1559' as const,
 			from: MOCK_ADDRESS,
@@ -169,7 +171,10 @@ export class EthereumClientService {
 	}
 
 	public readonly getTokenDecimals = async (token: bigint) => {
-		const balanceOfCallData = await encodeMethod(keccak256.hash, 'decimals()', [])
+		const tokenInterface = new ethers.Interface([
+			'function decimals() view returns (uint8)',
+		])
+		const balanceOfCallData = stringToUint8Array(tokenInterface.encodeFunctionData('decimals'))
 		const callTransaction = {
 			type: '1559' as const,
 			from: MOCK_ADDRESS,

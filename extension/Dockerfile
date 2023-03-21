@@ -21,18 +21,20 @@ COPY app/css/ /extension/app/css/
 COPY app/ts/ /extension/app/ts/
 COPY app/img/ /extension/app/img/
 COPY app/inpage/ /extension/app/inpage/
-COPY build/tsconfig.json build/vendor.ts /extension/build/
+COPY build/tsconfig.json build/vendor.ts build/bundler.ts /extension/build/
 
 COPY tsconfig-test.json /extension/
 COPY test/ /extension/test/
 
-WORKDIR /extension/build
-RUN npm run vendor
-
 WORKDIR /extension
-RUN npm run inpage
-RUN npm run build-firefox
+RUN npm run setup-firefox
 RUN npm run test
 
 WORKDIR /extension/app
-RUN zip ../interceptor.zip -r .
+RUN zip ../interceptor-firefox.zip -r .
+
+WORKDIR /extension
+RUN npm run setup-chrome
+
+WORKDIR /extension/app
+RUN zip ../interceptor-chrome.zip -r .

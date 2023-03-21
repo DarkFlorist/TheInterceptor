@@ -1,6 +1,5 @@
-import { keccak256, secp256k1 } from '@zoltu/ethereum-crypto'
-import { rlpEncode } from '@zoltu/rlp-encoder'
-import { bigintToUint8Array, dataString } from './bigint.js'
+import { ethers } from 'ethers'
+import { bigintToUint8Array, dataString, stringToUint8Array } from './bigint.js'
 import { stripLeadingZeros } from './typed-arrays.js'
 import { DistributiveOmit, assertNever } from './typescript.js'
 import { EthereumSignedTransaction, EthereumUnsignedTransaction } from './wire-types.js'
@@ -77,6 +76,15 @@ export type ISignedTransaction = ISignedTransaction1559 | ISignedTransactionLega
 export function calculateV(transaction: DistributiveOmit<ITransactionSignatureLegacy, 'hash'>): bigint {
 	if ('v' in transaction) return transaction.v
 	return (transaction.yParity === 'even' ? 0n : 1n) + 35n + 2n * transaction.chainId
+}
+
+type RlpEncodeableData = Uint8Array | Array<RlpEncodeableData>
+function rlpEncode(data: RlpEncodeableData[]): Uint8Array {
+	function rlpEncodeArray(data: RlpEncodeableData): ethers.RlpStructuredData {
+		if (!Array.isArray(data)) return `0x${ dataString(data) }`
+		return data.map((x) => Array.isArray(x) ? rlpEncodeArray(x) : `0x${ dataString(x) }`)
+	}
+	return stringToUint8Array(ethers.encodeRlp(data.map((x) => Array.isArray(x) ? rlpEncodeArray(x) : `0x${ dataString(x) }`)))
 }
 
 export function rlpEncodeSignedLegacyTransactionPayload(transaction: DistributiveOmit<ISignedTransactionLegacy, 'hash'>): Uint8Array {
@@ -193,16 +201,6 @@ export function serializeTransactionToString(transaction: ISignedTransaction) {
 	return `0x${dataString(serializeSignedTransactionToBytes(transaction))}`
 }
 
-export async function signTransaction<T extends IUnsignedTransaction>(privateKey: bigint, unsignedTransaction: T): Promise<ISignedTransaction> {
-	if (unsignedTransaction.type === 'legacy') throw new Error('Cannot sign legacy transaction')
-	const serializedUnsignedTransaction = serializeUnsignedTransactionToBytes(unsignedTransaction)
-	const unsignedHash = await keccak256.hash(serializedUnsignedTransaction)
-	const { r, s, recoveryParameter } = await secp256k1.sign(privateKey, unsignedHash)
-	const yParity = recoveryParameter === 0 ? 'even' : 'odd'
-	const hash = await keccak256.hash(serializeSignedTransactionToBytes({ ...unsignedTransaction, r, s, yParity }))
-	return { ...unsignedTransaction, r, s, yParity, hash }
-}
-
 export type FormBundleTransaction = {
 	from: bigint,
 	to: bigint,
@@ -210,11 +208,6 @@ export type FormBundleTransaction = {
 	input: Uint8Array,
 	gasLimit: bigint,
 	nonce: bigint
-}
-
-export async function create2Address(deployerAddress: bigint, deploymentBytecodeOrHash: Uint8Array | bigint, salt: bigint = 0n) {
-	const deploymentBytecodeHash = typeof deploymentBytecodeOrHash === 'bigint' ? deploymentBytecodeOrHash : await keccak256.hash(deploymentBytecodeOrHash)
-	return await keccak256.hash([0xff, ...bigintToUint8Array(deployerAddress, 20), ...bigintToUint8Array(salt, 32), ...bigintToUint8Array(deploymentBytecodeHash, 32)]) & 0xffffffffffffffffffffffffffffffffffffffffn
 }
 
 export function EthereumUnsignedTransactionToUnsignedTransaction(transaction: EthereumUnsignedTransaction): IUnsignedTransaction {

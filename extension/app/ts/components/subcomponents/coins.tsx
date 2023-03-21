@@ -108,7 +108,7 @@ export type TokenSymbolParams = {
 }
 
 export function TokenSymbol(param: TokenSymbolParams) {
-	const tokenString = ethers.utils.getAddress(addressString(param.address))
+	const tokenString = ethers.getAddress(addressString(param.address))
 
 	const style = {
 		...(param.style === undefined ? {} : param.style),

@@ -1,7 +1,7 @@
 import { bytes32String } from '../../utils/bigint.js'
 import { ERROR_INTERCEPTOR_NOT_READY, ERROR_INTERCEPTOR_NO_ACTIVE_ADDRESS, METAMASK_ERROR_NOT_CONNECTED_TO_CHAIN, METAMASK_ERROR_USER_REJECTED_REQUEST } from '../../utils/constants.js'
 import { Future } from '../../utils/future.js'
-import { InterceptedRequest, PopupMessage } from '../../utils/interceptor-messages.js'
+import { ExternalPopupMessage, InterceptedRequest } from '../../utils/interceptor-messages.js'
 import { Website, WebsiteSocket } from '../../utils/user-interface-types.js'
 import { EthereumUnsignedTransaction } from '../../utils/wire-types.js'
 import { getActiveAddressForDomain } from '../accessManagement.js'
@@ -55,7 +55,7 @@ export async function openConfirmTransactionDialog(
 
 	const oldPromise = await getConfirmationWindowPromise()
 	if (oldPromise !== undefined) {
-		if ((await chrome.tabs.query({ windowId: oldPromise.dialogId })).length > 0) {
+		if ((await browser.tabs.query({ windowId: oldPromise.dialogId })).length > 0) {
 			return reject() // previous window still open
 		} else {
 			await saveConfirmationWindowPromise(undefined)
@@ -75,7 +75,7 @@ export async function openConfirmTransactionDialog(
 	const refreshSimulationPromise = refreshConfirmTransactionSimulation(activeAddress, simulationMode, request.requestId, transactionToSimulate, website)
 
 	const windowReadyAndListening = async function popupMessageListener(msg: unknown) {
-		const message = PopupMessage.parse(msg)
+		const message = ExternalPopupMessage.parse(msg)
 		if ( message.method !== 'popup_confirmTransactionReadyAndListening') return
 		browser.runtime.onMessage.removeListener(windowReadyAndListening)
 		const refreshMessage = await refreshSimulationPromise

@@ -1,6 +1,6 @@
 import { METAMASK_ERROR_USER_REJECTED_REQUEST } from '../../utils/constants.js'
 import { Future } from '../../utils/future.js'
-import { ChainChangeConfirmation, InterceptedRequest, PopupMessage, SignerChainChangeConfirmation } from '../../utils/interceptor-messages.js'
+import { ChainChangeConfirmation, InterceptedRequest, ExternalPopupMessage, SignerChainChangeConfirmation } from '../../utils/interceptor-messages.js'
 import { Website, WebsiteSocket } from '../../utils/user-interface-types.js'
 import { changeActiveChain, sendMessageToContentScript } from '../background.js'
 import { getHtmlFile, sendPopupMessageToOpenWindows } from '../backgroundUtils.js'
@@ -57,7 +57,7 @@ export const openChangeChainDialog = async (
 	}
 	const oldPromise = await getChainChangeConfirmationPromise()
 	if (oldPromise !== undefined) {
-		if ((await chrome.tabs.query({ windowId: oldPromise.dialogId })).length > 0) {
+		if ((await browser.tabs.query({ windowId: oldPromise.dialogId })).length > 0) {
 			return userDeniedChange
 		} else {
 			await saveChainChangeConfirmationPromise(undefined)
@@ -67,7 +67,7 @@ export const openChangeChainDialog = async (
 	pendForUserReply = new Future<ChainChangeConfirmation>()
 
 	const changeChainWindowReadyAndListening = async function popupMessageListener(msg: unknown) {
-		const message = PopupMessage.parse(msg)
+		const message = ExternalPopupMessage.parse(msg)
 		if ( message.method !== 'popup_changeChainReadyAndListening') return
 		browser.runtime.onMessage.removeListener(changeChainWindowReadyAndListening)
 		return sendPopupMessageToOpenWindows({

@@ -1,6 +1,6 @@
 import { addressString } from '../../utils/bigint.js'
 import { Future } from '../../utils/future.js'
-import { InterceptedRequest, InterceptorAccessChangeAddress, InterceptorAccessRefresh, InterceptorAccessReply, PendingAccessRequestArray, PopupMessage, WebsiteAccessArray, WindowMessage } from '../../utils/interceptor-messages.js'
+import { ExternalPopupMessage, InterceptedRequest, InterceptorAccessChangeAddress, InterceptorAccessRefresh, InterceptorAccessReply, PendingAccessRequestArray, WebsiteAccessArray, WindowMessage } from '../../utils/interceptor-messages.js'
 import { AddressInfoEntry, Website, WebsiteSocket } from '../../utils/user-interface-types.js'
 import { getAssociatedAddresses, setAccess, updateWebsiteApprovalAccesses } from '../accessManagement.js'
 import { changeActiveAddressAndChainAndResetSimulation, handleContentScriptMessage, postMessageIfStillConnected, refuseAccess } from '../background.js'
@@ -130,7 +130,7 @@ export async function requestAccessFromUser(
 	}
 
 	const windowReadyAndListening = async function popupMessageListener(msg: unknown) {
-		const message = PopupMessage.parse(msg)
+		const message = ExternalPopupMessage.parse(msg)
 		if (message.method !== 'popup_interceptorAccessReadyAndListening') return
 		browser.runtime.onMessage.removeListener(windowReadyAndListening)
 		if (globalThis.interceptor.settings === undefined) return rejectReply()
@@ -162,7 +162,7 @@ export async function requestAccessFromUser(
 
 	const oldPromise = await getPendingInterceptorAccessRequestPromise()
 	if (oldPromise !== undefined) {
-		if ((await chrome.tabs.query({ windowId: oldPromise.dialogId })).length > 0) {
+		if ((await browser.tabs.query({ windowId: oldPromise.dialogId })).length > 0) {
 			pendingInterceptorAccess = undefined
 			return rejectReply()
 		}

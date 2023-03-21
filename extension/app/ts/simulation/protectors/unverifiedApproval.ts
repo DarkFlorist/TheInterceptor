@@ -1,10 +1,7 @@
 import { Simulator } from '../simulator.js'
 import { EthereumUnsignedTransaction } from '../../utils/wire-types.js'
-import { getApprovalInfoFromTx } from '../../utils/calldata.js'
 
-export async function unverifiedApproval(transaction: EthereumUnsignedTransaction, _simulator: Simulator) {
-	const approvalInfo = getApprovalInfoFromTx(transaction)
-	if (approvalInfo === undefined) return
+export async function unverifiedApproval(_transaction: EthereumUnsignedTransaction, _simulator: Simulator) {
 	// TODO: how do we access etherscan?
 	return
 	/*
