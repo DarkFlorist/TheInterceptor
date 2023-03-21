@@ -459,8 +459,22 @@ export class SimulationModeEthereumClientService {
 				}
 			}
 		}
-		//TODO: handle other filter options
-		return EthGetLogsResponse.parse(events).filter((x) => logFilter.address === undefined || x.address === logFilter.address)
+
+		const includeLogByTopic = (logsTopics: readonly bigint[], filtersTopics: readonly (bigint | readonly bigint[] | null)[] | undefined) => {
+			if (filtersTopics === undefined || filtersTopics.length === 0) return true
+			if (logsTopics.length < filtersTopics.length) return false
+			for (const [index, filter] of filtersTopics.entries()) {
+				if (filter === null) continue
+				if (!Array.isArray(filter) && filter !== logsTopics[index]) return false
+				if (Array.isArray(filter) && !filter.includes(logsTopics[index])) return false
+			}
+			return true
+		}
+
+		return EthGetLogsResponse.parse(events).filter((x) =>
+			(logFilter.address === undefined || x.address === logFilter.address)
+			&& includeLogByTopic(x.topics, logFilter.topics)
+		)
 	}
 
 	public readonly getLogs = async (logFilter: EthGetLogsRequest): Promise<EthGetLogsResponse> => {
@@ -471,7 +485,7 @@ export class SimulationModeEthereumClientService {
 		}
 		if('fromBlock' in logFilter) {
 			const logs = await this.ethereumClientService.getLogs(logFilter)
-			if(logFilter.toBlock === 'latest' || logFilter.toBlock === await this.getBlockNumber() ) {
+			if (logFilter.toBlock === 'latest' || logFilter.toBlock > await this.ethereumClientService.getBlockNumber() ) {
 				return [...logs, ...await this.getSimulatedLogs(logFilter)]
 			}
 			return logs

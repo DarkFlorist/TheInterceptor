@@ -3,7 +3,7 @@ import { bytes32String } from '../utils/bigint.js'
 import { KNOWN_CONTRACT_CALLER_ADDRESSES } from '../utils/constants.js'
 import { InterceptedRequest, WebsiteAccessArray } from '../utils/interceptor-messages.js'
 import { Website, WebsiteSocket } from '../utils/user-interface-types.js'
-import { EstimateGasParams, EthBalanceParams, EthBlockByNumberParams, EthCallParams, EthereumAddress, EthereumData, EthereumQuantity, EthereumSignedTransactionWithBlockData, EthSubscribeParams, EthTransactionReceiptResponse, EthUnSubscribeParams, GetBlockReturn, GetCode, GetSimulationStack, GetSimulationStackReply, GetTransactionCount, JsonRpcNewHeadsNotification, NewHeadsSubscriptionData, PersonalSignParams, SendTransactionParams, SignTypedDataParams, SwitchEthereumChainParams, TransactionByHashParams, TransactionReceiptParams } from '../utils/wire-types.js'
+import { EstimateGasParams, EthBalanceParams, EthBlockByNumberParams, EthCallParams, EthereumAddress, EthereumData, EthereumQuantity, EthereumSignedTransactionWithBlockData, EthGetLogsParams, EthGetLogsResponse, EthSubscribeParams, EthTransactionReceiptResponse, EthUnSubscribeParams, GetBlockReturn, GetCode, GetSimulationStack, GetSimulationStackReply, GetTransactionCount, JsonRpcNewHeadsNotification, NewHeadsSubscriptionData, PersonalSignParams, SendTransactionParams, SignTypedDataParams, SwitchEthereumChainParams, TransactionByHashParams, TransactionReceiptParams } from '../utils/wire-types.js'
 import { getConnectionDetails } from './accessManagement.js'
 import { postMessageIfStillConnected } from './background.js'
 import { openChangeChainDialog } from './windows/changeChain.js'
@@ -197,7 +197,7 @@ export async function getPermissions() {
 }
 
 export async function getTransactionCount(simulator: Simulator, request: GetTransactionCount) {
-	return { result: EthereumQuantity.serialize(await simulator.ethereum.getTransactionCount(request.params[0], request.params[1])) }
+	return { result: EthereumQuantity.serialize(await simulator.simulationModeNode.getTransactionCount(request.params[0], request.params[1])) }
 }
 
 export async function getSimulationStack(simulator: Simulator, request: GetSimulationStack) {
@@ -209,4 +209,8 @@ export async function getSimulationStack(simulator: Simulator, request: GetSimul
 			}
 		}
 	}
+}
+
+export async function getLogs(simulator: Simulator, request: EthGetLogsParams) {
+	return { result: EthGetLogsResponse.serialize(await simulator.simulationModeNode.getLogs(request.params[0])) }
 }

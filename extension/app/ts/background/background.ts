@@ -3,7 +3,7 @@ import 'webextension-polyfill'
 import { Simulator } from '../simulation/simulator.js'
 import { EthereumAddress, EthereumJsonRpcRequest, EthereumQuantity, EthereumUnsignedTransaction, PersonalSignParams, SignTypedDataParams } from '../utils/wire-types.js'
 import { getSettings, saveActiveChain, saveActiveSigningAddress, saveActiveSimulationAddress } from './settings.js'
-import { blockNumber, call, chainId, estimateGas, gasPrice, getAccounts, getBalance, getBlockByNumber, getCode, getPermissions, getSimulationStack, getTransactionByHash, getTransactionCount, getTransactionReceipt, personalSign, requestPermissions, sendTransaction, subscribe, switchEthereumChain, unsubscribe } from './simulationModeHanders.js'
+import { blockNumber, call, chainId, estimateGas, gasPrice, getAccounts, getBalance, getBlockByNumber, getCode, getLogs, getPermissions, getSimulationStack, getTransactionByHash, getTransactionCount, getTransactionReceipt, personalSign, requestPermissions, sendTransaction, subscribe, switchEthereumChain, unsubscribe } from './simulationModeHanders.js'
 import { changeActiveAddress, changeMakeMeRich, changePage, resetSimulation, confirmDialog, refreshSimulation, removeTransaction, requestAccountsFromSigner, refreshPopupConfirmTransactionSimulation, confirmPersonalSign, confirmRequestAccess, changeInterceptorAccess, changeChainDialog, popupChangeActiveChain, enableSimulationMode, reviewNotification, rejectNotification, addOrModifyAddressInfo, getAddressBookData, removeAddressBookEntry, openAddressBook, homeOpened, interceptorAccessChangeAddressOrRefresh } from './popupMessageHandlers.js'
 import { SimulationState, TokenPriceEstimate, SimResults } from '../utils/visualizer-types.js'
 import { SignerState, AddressBookEntry, AddressInfoEntry, Website, TabConnection, WebsiteSocket } from '../utils/user-interface-types.js'
@@ -279,7 +279,7 @@ async function handleSimulationMode(simulator: Simulator, socket: WebsiteSocket,
 		case 'interceptor_getSimulationStack': return await getSimulationStack(simulator, parsedRequest)
 		case 'eth_multicall': return { error: { code: 10000, message: 'Cannot call eth_multicall directly' } }
 		case 'eth_getStorageAt': return { error: { code: 10000, message: 'eth_getStorageAt not implemented' } }
-		case 'eth_getLogs': return { error: { code: 10000, message: 'eth_getLogs not implemented' } }
+		case 'eth_getLogs': return await getLogs(simulator, parsedRequest)
 		/*
 		Missing methods:
 		case 'eth_sendRawTransaction': return
