@@ -1,6 +1,6 @@
 import { EthereumClientService } from './EthereumClientService.js'
 import { EthGetLogsResponse, EthereumUnsignedTransaction, EthereumSignedTransactionWithBlockData, EthereumBlockTag, EthGetLogsRequest, EthTransactionReceiptResponse, EstimateGasParamsVariables, EthSubscribeParams, JsonRpcMessage, JsonRpcNewHeadsNotification, PersonalSignParams, SignTypedDataParams, EthereumSignedTransaction, GetBlockReturn, EthereumData, EthereumQuantity } from '../../utils/wire-types.js'
-import { bytes32String, max, min, stringToUint8Array } from '../../utils/bigint.js'
+import { addressString, bytes32String, max, min, stringToUint8Array } from '../../utils/bigint.js'
 import { MOCK_ADDRESS } from '../../utils/constants.js'
 import { ErrorWithData } from '../../utils/errors.js'
 import { Future } from '../../utils/future.js'
@@ -346,7 +346,7 @@ export class SimulationModeEthereumClientService {
 		const blockNum = await this.ethereumClientService.getBlockNumber()
 
 		const atInterface = new ethers.Interface(['function at(address) returns (uint256)'])
-		const input = stringToUint8Array(atInterface.encodeFunctionData('at', [address]))
+		const input = stringToUint8Array(atInterface.encodeFunctionData('at', [addressString(address)]))
 
 		const getCodeTransaction = {
 			type: '1559' as const,
@@ -368,7 +368,7 @@ export class SimulationModeEthereumClientService {
 			accessList: []
 		}
 		const multiCall = await this.multicall([getCodeTransaction], blockNum + 1n)
-		return multiCall[multiCall.length-1].returnValue
+		return multiCall[multiCall.length - 1].returnValue
 	}
 
 	private readonly getBaseFeePerGasForNewBlock = (parent_gas_used: bigint, parent_gas_limit: bigint, parent_base_fee_per_gas: bigint) => {
