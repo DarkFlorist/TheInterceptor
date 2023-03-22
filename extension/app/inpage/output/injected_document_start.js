@@ -251,37 +251,38 @@ class InterceptorMessageListener {
             }
         };
         this.handleReplyRequest = async (replyRequest) => {
-            if (replyRequest.subscription !== undefined) {
-                return this.onMessageCallBacks.forEach((f) => f({ type: 'eth_subscription', data: replyRequest.result }));
+            try {
+                if (replyRequest.subscription !== undefined) {
+                    return this.onMessageCallBacks.forEach((f) => f({ type: 'eth_subscription', data: replyRequest.result }));
+                }
+                // inform callbacks
+                switch (replyRequest.options.method) {
+                    case 'accountsChanged': return this.onAccountsChangedCallBacks.forEach((f) => f(replyRequest.result));
+                    case 'connect': {
+                        this.connected = true;
+                        return this.onConnectCallBacks.forEach((f) => f({ chainId: replyRequest.result }));
+                    }
+                    case 'disconnect': {
+                        this.connected = false;
+                        const resultArray = replyRequest.result;
+                        return this.onDisconnectCallBacks.forEach((f) => f({ name: 'disconnect', ...resultArray }));
+                    }
+                    case 'chainChanged': return this.onChainChangedCallBacks.forEach((f) => f(replyRequest.result));
+                    case 'request_signer_to_eth_requestAccounts': return await this.requestAccountsFromSigner();
+                    case 'request_signer_to_wallet_switchEthereumChain': return await this.requestChangeChainFromSigner(replyRequest.result);
+                    case 'request_signer_chainId': return await this.requestChainIdFromSigner();
+                    default: break;
+                }
             }
-            // inform callbacks
-            if (replyRequest.options.method === 'accountsChanged') {
-                return this.onAccountsChangedCallBacks.forEach((f) => f(replyRequest.result));
+            finally {
+                const pending = this.outstandingRequests.get(replyRequest.requestId);
+                if (pending === undefined)
+                    return;
+                if ('error' in replyRequest) {
+                    return pending.resolve(replyRequest.error);
+                }
+                return pending.resolve(replyRequest.result);
             }
-            if (replyRequest.options.method === 'connect') {
-                this.connected = true;
-                return this.onConnectCallBacks.forEach((f) => f({ chainId: replyRequest.result }));
-            }
-            if (replyRequest.options.method === 'disconnect') {
-                this.connected = false;
-                const resultArray = replyRequest.result;
-                return this.onDisconnectCallBacks.forEach((f) => f({ name: 'disconnect', ...resultArray }));
-            }
-            if (replyRequest.options.method === 'chainChanged') {
-                return this.onChainChangedCallBacks.forEach((f) => f(replyRequest.result));
-            }
-            // The Interceptor requested us to request information from signer
-            if (replyRequest.options.method === 'request_signer_to_eth_requestAccounts') {
-                // when dapp requsts eth_requestAccounts, interceptor needs to reply to it, but we also need to try to sign to the signer
-                return await this.requestAccountsFromSigner();
-            }
-            if (replyRequest.options.method === 'request_signer_to_wallet_switchEthereumChain') {
-                return await this.requestChangeChainFromSigner(replyRequest.result);
-            }
-            if (replyRequest.options.method === 'request_signer_chainId') {
-                return await this.requestChainIdFromSigner();
-            }
-            return this.outstandingRequests.get(replyRequest.requestId).resolve(replyRequest.result);
         };
         this.onMessage = async (messageEvent) => {
             if (typeof messageEvent !== 'object'
@@ -299,9 +300,10 @@ class InterceptorMessageListener {
                 throw new Error('missing method field');
             const forwardRequest = messageEvent.data; //use "as" here as we don't want to inject funtypes here
             if (forwardRequest.error !== undefined) {
-                if (!this.outstandingRequests.has(forwardRequest.requestId))
+                const pending = this.outstandingRequests.get(forwardRequest.requestId);
+                if (pending === undefined)
                     throw new EthereumJsonRpcError(forwardRequest.error.code, forwardRequest.error.message);
-                return this.outstandingRequests.get(forwardRequest.requestId).reject(new EthereumJsonRpcError(forwardRequest.error.code, forwardRequest.error.message));
+                return pending.resolve(forwardRequest.error);
             }
             if (forwardRequest.result !== undefined)
                 return this.handleReplyRequest(forwardRequest);
