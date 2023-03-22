@@ -1,4 +1,4 @@
-import { addressString } from '../utils/bigint.js'
+import { addressString, checksummedAddress } from '../utils/bigint.js'
 import { AddressInfoEntry, AddressBookEntry, AddressInfo } from '../utils/user-interface-types.js'
 import { SimulationState, VisualizerResult } from '../utils/visualizer-types.js'
 import { nftMetadata, tokenMetadata, contractMetadata } from '@darkflorist/address-metadata'
@@ -25,7 +25,7 @@ export function findAddressInfo(address: bigint, addressInfos: readonly AddressI
 	}
 	return {
 		type: 'addressInfo' as const,
-		name: ethers.getAddress(addressString(address)),
+		name: checksummedAddress(address),
 		address: address,
 		askForAddressAccess: false,
 	}

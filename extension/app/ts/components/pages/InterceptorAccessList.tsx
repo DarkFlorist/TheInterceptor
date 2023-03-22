@@ -2,8 +2,7 @@ import { AddressInfoEntry, InterceptorAccessListParams } from '../../utils/user-
 import { useEffect, useState } from 'preact/hooks'
 import { SmallAddress } from '../subcomponents/address.js'
 import { CopyToClipboard } from '../subcomponents/CopyToClipboard.js'
-import { ethers } from 'ethers'
-import { addressString } from '../../utils/bigint.js'
+import { addressString, checksummedAddress } from '../../utils/bigint.js'
 import { sendPopupMessageToBackgroundPage } from '../../background/backgroundUtils.js'
 import { WebsiteAccess, WebsiteAccessArray, WebsiteAddressAccess } from '../../utils/interceptor-messages.js'
 
@@ -232,12 +231,12 @@ export function InterceptorAccessList(param: InterceptorAccessListParams) {
 										{ access.addressAccess.length === 0 ? <p className = 'paragraph'> No individual address accesses given </p> : <>
 											{ access.addressAccessModified.map( (websiteAccessAddress, addressIndex) => (
 												<li style = { `margin: 0px; margin-bottom: ${ addressIndex < access.addressAccessModified.length - 1  ? '10px;' : '0px' }` }>
-													{ websiteAccessAddress.removed ? <p style = 'color: var(--negative-color)' > { `Forgot ${ ethers.getAddress(addressString(websiteAccessAddress.address)) }`} </p> :
+													{ websiteAccessAddress.removed ? <p style = 'color: var(--negative-color)' > { `Forgot ${ checksummedAddress(websiteAccessAddress.address) }`} </p> :
 														<div style = 'display: flex; width: 100%; overflow: hidden;'>
 															<SmallAddress
 																addressBookEntry = { metadata.get(addressString(websiteAccessAddress.address)) || {
 																	type: 'addressInfo',
-																	name: ethers.getAddress(addressString(websiteAccessAddress.address)),
+																	name: checksummedAddress(websiteAccessAddress.address),
 																	address: BigInt(websiteAccessAddress.address),
 																	askForAddressAccess: false
 																}}
