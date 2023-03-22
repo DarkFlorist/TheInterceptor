@@ -280,6 +280,7 @@ async function handleSimulationMode(simulator: Simulator, socket: WebsiteSocket,
 		case 'eth_multicall': return { error: { code: 10000, message: 'Cannot call eth_multicall directly' } }
 		case 'eth_getStorageAt': return { error: { code: 10000, message: 'eth_getStorageAt not implemented' } }
 		case 'eth_getLogs': return await getLogs(simulator, parsedRequest)
+		case 'eth_sign': return { error: { code: 10000, message: 'eth_sign is deprecated' } }
 		/*
 		Missing methods:
 		case 'eth_sendRawTransaction': return
@@ -351,6 +352,7 @@ async function handleSigningMode(simulator: Simulator, socket: WebsiteSocket, we
 		case 'eth_multicall':
 		case 'eth_getStorageAt':
 		case 'eth_getLogs':
+		case 'eth_sign':
 		case 'interceptor_getSimulationStack': return forwardToSigner()
 
 		case 'personal_sign':

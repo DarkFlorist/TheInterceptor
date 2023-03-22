@@ -865,6 +865,12 @@ export const GetTransactionCount = funtypes.Object({
 	params: funtypes.Tuple(EthereumAddress, EthereumBlockTag)
 }).asReadonly()
 
+export type EthSign = funtypes.Static<typeof EthSign>
+export const EthSign = funtypes.Object({
+	method: funtypes.Literal('eth_sign'),
+	params: funtypes.Tuple(EthereumAddress, funtypes.String),
+}).asReadonly()
+
 export type GetSimulationStackReply = funtypes.Static<typeof GetSimulationStackReply>
 export const GetSimulationStackReply = funtypes.ReadonlyArray(funtypes.Intersect(
 	EthereumUnsignedTransaction,
@@ -909,6 +915,7 @@ export const EthereumJsonRpcRequest = funtypes.Union(
 	funtypes.Object({ method: funtypes.Literal('eth_multicall'), params: MulticallRequestParameters }),
 	EthGetStorageAtParams,
 	EthGetLogsParams,
+	EthSign,
 )
 
 export const SupportedETHRPCCalls = [
