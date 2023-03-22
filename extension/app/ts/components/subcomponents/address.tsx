@@ -1,5 +1,4 @@
-import { ethers } from 'ethers'
-import { addressString } from '../../utils/bigint.js'
+import { addressString, checksummedAddress } from '../../utils/bigint.js'
 import Blockie from './PreactBlocky.js'
 import { AddressBookEntry, AddressInfo, RenameAddressCallBack, Website } from '../../utils/user-interface-types.js'
 import { CopyToClipboard } from './CopyToClipboard.js'
@@ -13,7 +12,7 @@ export function findAddressInfo(addressToFind: bigint, addressInfos: readonly Ad
 		}
 	}
 	return {
-		name: ethers.getAddress(addressString(addressToFind)),
+		name: checksummedAddress(addressToFind),
 		address: addressToFind,
 		askForAddressAccess: true,
 	}
@@ -48,7 +47,7 @@ export type BigAddressParams = {
 }
 
 export function BigAddress(params: BigAddressParams) {
-	const addrString = ethers.getAddress(addressString(params.addressBookEntry.address))
+	const addrString = checksummedAddress(params.addressBookEntry.address)
 	const title = params.addressBookEntry.name
 	const subTitle = title != addrString ? addrString : ''
 
@@ -80,7 +79,7 @@ export function BigAddress(params: BigAddressParams) {
 		<div class = 'media-content' style = 'overflow-y: hidden; overflow-x: clip; display: block;'>
 			<span className = 'big-address-container' data-value = { params.addressBookEntry.name }>
 				<span class = 'address-text-holder'>
-					<CopyToClipboard content = { ethers.getAddress(addressString(params.addressBookEntry.address)) } copyMessage = 'Address copied!' style = { { 'text-overflow': 'ellipsis', overflow: 'hidden' } }>
+					<CopyToClipboard content = { checksummedAddress(params.addressBookEntry.address) } copyMessage = 'Address copied!' style = { { 'text-overflow': 'ellipsis', overflow: 'hidden' } }>
 						<p class = 'title is-5 is-spaced address-text noselect nopointer'>{ title }</p>
 					</CopyToClipboard>
 					<button className = 'button is-primary is-small rename-address-button' onClick ={ () => params.renameAddressCallBack(params.addressBookEntry) }>
@@ -144,7 +143,7 @@ export function SmallAddress(params: SmallAddressParams) {
 			<span class = 'address-text-holder'>
 				<span class = 'small-address-baggage-tag vertical-center' style = { params.style }>
 					<span style = 'margin-right: 5px'>
-						<CopyToClipboard content = { ethers.getAddress(addressString(params.addressBookEntry.address)) } copyMessage = 'Address copied!'>
+						<CopyToClipboard content = { checksummedAddress(params.addressBookEntry.address) } copyMessage = 'Address copied!'>
 							<AddressIcon
 								address = { params.addressBookEntry.address }
 								logoUri = { 'logoUri' in params.addressBookEntry ? params.addressBookEntry.logoUri : undefined }
@@ -153,7 +152,7 @@ export function SmallAddress(params: SmallAddressParams) {
 							/>
 						</CopyToClipboard>
 					</span>
-					<CopyToClipboard content = { ethers.getAddress(addressString(params.addressBookEntry.address)) } copyMessage = 'Address copied!' style = { { 'text-overflow': 'ellipsis', overflow: 'hidden' } }>
+					<CopyToClipboard content = { checksummedAddress(params.addressBookEntry.address) } copyMessage = 'Address copied!' style = { { 'text-overflow': 'ellipsis', overflow: 'hidden' } }>
 						<p class = 'paragraph address-text noselect nopointer'>{ params.addressBookEntry.name }</p>
 					</CopyToClipboard>
 					<button className = 'button is-primary is-small rename-address-button' onClick ={ () => params.renameAddressCallBack(params.addressBookEntry) }>

@@ -317,7 +317,7 @@ export const EthGetLogsRequest = funtypes.Intersect(
 	),
 	funtypes.Partial({
 		address: EthereumAddress,
-		topics: funtypes.ReadonlyArray(funtypes.Union(EthereumBytes32, funtypes.ReadonlyArray(EthereumBytes32))),
+		topics: funtypes.ReadonlyArray(funtypes.Union(EthereumBytes32, funtypes.ReadonlyArray(EthereumBytes32), funtypes.Null)),
 	}).asReadonly()
 )
 
@@ -645,10 +645,8 @@ export const TransactionReceiptParams = funtypes.Object({
 
 export type EstimateGasParamsVariables = funtypes.Static<typeof EstimateGasParamsVariables>
 export const EstimateGasParamsVariables = funtypes.Intersect(
-	funtypes.Object({
-		to: EthereumAddress
-	}),
 	funtypes.Partial({
+		to: EthereumAddress,
 		from: EthereumAddress,
 		data: EthereumData,
 		value: EthereumQuantity,

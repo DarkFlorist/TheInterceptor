@@ -168,6 +168,9 @@ export function PersonalSign() {
 
 						<div className = 'block' style = 'padding: 10px; background-color: var(--card-bg-color);'>
 							<div style = 'overflow: auto; display: flex; justify-content: space-around; width: 100%; height: 40px; margin-bottom: 10px;'>
+								<button className = 'button is-primary is-danger' style = 'flex-grow: 1; margin-left: 5px; margin-right: 5px;' onClick = { reject } >
+									Reject
+								</button>
 								<button
 									className = 'button is-primary'
 									style = 'flex-grow: 1; margin-left:5px; margin-right:5px;'
@@ -175,9 +178,6 @@ export function PersonalSign() {
 									disabled = { signRequest.simulationMode && (activeAddress === undefined || activeAddress !== MOCK_PRIVATE_KEYS_ADDRESS || signRequest.method  != 'personal_sign') }
 								>
 									{ signRequest.simulationMode ? 'Simulate!' : 'Forward to wallet for signing' }
-								</button>
-								<button className = 'button is-primary is-danger' style = 'flex-grow: 1; margin-left: 5px; margin-right: 5px;' onClick = { reject } >
-									Reject
 								</button>
 							</div>
 							{ signRequest.simulationMode && (activeAddress === undefined || activeAddress !== MOCK_PRIVATE_KEYS_ADDRESS || signRequest.method  != 'personal_sign')  ?

@@ -1,8 +1,7 @@
 import { useEffect, useState } from 'preact/hooks'
 import { AddressInfoEntry, NotificationCenterParams, Website, WebsiteSocket } from '../../utils/user-interface-types.js'
 import { BigAddress } from '../subcomponents/address.js'
-import { ethers } from 'ethers'
-import { addressString } from '../../utils/bigint.js'
+import { addressString, checksummedAddress } from '../../utils/bigint.js'
 import { sendPopupMessageToBackgroundPage } from '../../background/backgroundUtils.js'
 import { InterceptedRequest } from '../../utils/interceptor-messages.js'
 
@@ -30,7 +29,7 @@ export function NotificationCenter(param: NotificationCenterParams) {
 			request: x.request,
 			...(x.requestAccessToAddress === undefined ? { address: undefined } : metadata.get(addressString(x.requestAccessToAddress)) || { // TODO, refactor away when we are using messaging instead of globals for these
 				type: 'addressInfo' as const,
-				name: ethers.getAddress(addressString(x.requestAccessToAddress)),
+				name: checksummedAddress(x.requestAccessToAddress),
 				address: x.requestAccessToAddress,
 				askForAddressAccess: false,
 			})

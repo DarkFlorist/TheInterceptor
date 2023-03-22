@@ -1,6 +1,5 @@
-import { ethers } from 'ethers'
 import { getTokenAmountsWorth } from '../../simulation/priceEstimator.js'
-import { abs, addressString, bigintToDecimalString, bigintToRoundedPrettyDecimalString } from '../../utils/bigint.js'
+import { abs, bigintToDecimalString, bigintToRoundedPrettyDecimalString, checksummedAddress } from '../../utils/bigint.js'
 import { CHAINS } from '../../utils/constants.js'
 import { CHAIN } from '../../utils/user-interface-types.js'
 import { ERC721TokenDefinitionParams, TokenDefinitionParams, TokenPriceEstimate } from '../../utils/visualizer-types.js'
@@ -108,7 +107,7 @@ export type TokenSymbolParams = {
 }
 
 export function TokenSymbol(param: TokenSymbolParams) {
-	const tokenString = ethers.getAddress(addressString(param.address))
+	const tokenString = checksummedAddress(param.address)
 
 	const style = {
 		...(param.style === undefined ? {} : param.style),

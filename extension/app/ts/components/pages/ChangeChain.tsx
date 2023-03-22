@@ -110,17 +110,17 @@ export function ChangeChain() {
 					</div>
 					<div style = 'overflow: auto; display: flex; justify-content: space-around; width: 100%; height: 40px;'>
 						<button
+							className = { `button is-primary ${ chainChangeData.isInterceptorSupport ? 'is-danger' : '' }` }
+							style = { `flex-grow: 1; margin-left: 5px; margin-right: 5px;` }
+							onClick = { reject } >
+							Don't change
+						</button>
+						<button
 							className = { `button is-primary ${ !chainChangeData.isInterceptorSupport ? 'is-danger' : '' }` }
 							disabled = { !chainChangeData.isInterceptorSupport && ( (!connectAnyway && !chainChangeData.simulationMode ) || chainChangeData.simulationMode ) }
 							style = 'flex-grow: 1; margin-left: 5px; margin-right: 5px;'
 							onClick = { approve }>
 							{ chainChangeData.isInterceptorSupport ? 'Change chain' : 'Disable The Interceptor and change' }
-						</button>
-						<button
-							className = { `button is-primary ${ chainChangeData.isInterceptorSupport ? 'is-danger' : '' }` }
-							style = { `flex-grow: 1; margin-left: 5px; margin-right: 5px;` }
-							onClick = { reject } >
-							Don't change
 						</button>
 					</div>
 				</div>
