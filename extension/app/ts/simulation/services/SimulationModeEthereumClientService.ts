@@ -84,7 +84,7 @@ export class SimulationModeEthereumClientService {
 			maxFeePerGas: data.gasPrice !== undefined ? data.gasPrice : 0n,
 			maxPriorityFeePerGas: 2n,
 			gas: data.gas === undefined ? maxGas : data.gas,
-			to: data.to,
+			to: data.to === undefined ? null : data.to,
 			value: data.value === undefined ? 0n : data.value,
 			input: data.data === undefined ? new Uint8Array(0) : data.data,
 			accessList: []
