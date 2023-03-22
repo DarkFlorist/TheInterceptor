@@ -317,7 +317,7 @@ export const EthGetLogsRequest = funtypes.Intersect(
 	),
 	funtypes.Partial({
 		address: EthereumAddress,
-		topics: funtypes.ReadonlyArray(funtypes.Union(EthereumBytes32, funtypes.ReadonlyArray(EthereumBytes32))),
+		topics: funtypes.ReadonlyArray(funtypes.Union(EthereumBytes32, funtypes.ReadonlyArray(EthereumBytes32), funtypes.Null)),
 	}).asReadonly()
 )
 

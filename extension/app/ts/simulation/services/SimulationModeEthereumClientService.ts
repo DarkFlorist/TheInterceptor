@@ -438,10 +438,9 @@ export class SimulationModeEthereumClientService {
 		return await this.ethereumClientService.getChainId()
 	}
 
-	private getSimulatedLogs = async (logFilter: EthGetLogsRequest): Promise<EthGetLogsResponse> => {
+	private getSimulatedLogs = (logFilter: EthGetLogsRequest): EthGetLogsResponse => {
 		let events: unknown[] = []
 		if (this.simulationState !== undefined) {
-			const blockNum = await this.getBlockNumber()
 			for (const [index, sim] of this.simulationState.simulatedTransactions.entries()) {
 				if (!('events' in sim.multicallResponse)) continue
 
@@ -451,7 +450,7 @@ export class SimulationModeEthereumClientService {
 						transactionIndex: BigInt(index),
 						transactionHash: sim.signedTransaction.hash,
 						blockHash: this.getHashOfSimulatedBlock(),
-						blockNumber: blockNum,
+						blockNumber: this.simulationState.blockNumber,
 						address: event.loggersAddress,
 						data: event.data,
 						topics: event.topics
@@ -459,22 +458,37 @@ export class SimulationModeEthereumClientService {
 				}
 			}
 		}
-		//TODO: handle other filter options
-		return EthGetLogsResponse.parse(events).filter((x) => logFilter.address === undefined || x.address === logFilter.address)
+
+		const includeLogByTopic = (logsTopics: readonly bigint[], filtersTopics: readonly (bigint | readonly bigint[] | null)[] | undefined) => {
+			if (filtersTopics === undefined || filtersTopics.length === 0) return true
+			if (logsTopics.length < filtersTopics.length) return false
+			for (const [index, filter] of filtersTopics.entries()) {
+				if (filter === null) continue
+				if (!Array.isArray(filter) && filter !== logsTopics[index]) return false
+				if (Array.isArray(filter) && !filter.includes(logsTopics[index])) return false
+			}
+			return true
+		}
+
+		return EthGetLogsResponse.parse(events).filter((x) =>
+			(logFilter.address === undefined || x.address === logFilter.address)
+			&& includeLogByTopic(x.topics, logFilter.topics)
+		)
 	}
 
 	public readonly getLogs = async (logFilter: EthGetLogsRequest): Promise<EthGetLogsResponse> => {
 		if ('blockHash' in logFilter) {
 			if (logFilter.blockHash === this.getHashOfSimulatedBlock()) {
-				return (await this.getSimulatedLogs(logFilter))
+				return this.getSimulatedLogs(logFilter)
 			}
 		}
 		if('fromBlock' in logFilter) {
 			const logs = await this.ethereumClientService.getLogs(logFilter)
-			if(logFilter.toBlock === 'latest' || logFilter.toBlock === await this.getBlockNumber() ) {
-				return [...logs, ...await this.getSimulatedLogs(logFilter)]
+			if (this.simulationState && (logFilter.toBlock === 'latest' || logFilter.toBlock >= this.simulationState.blockNumber)) {
+				return [...logs, ...this.getSimulatedLogs(logFilter)]
+			} else {
+				return logs
 			}
-			return logs
 		}
 		return await this.ethereumClientService.getLogs(logFilter)
 	}
