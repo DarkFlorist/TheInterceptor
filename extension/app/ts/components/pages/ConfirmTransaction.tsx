@@ -189,16 +189,16 @@ export function ConfirmTransaction() {
 		const identified = identifyTransaction(tx, simulationAndVisualisationResults.activeAddress)
 
 		return <div style = 'display: flex; flex-direction: row;'>
-			<button className = 'button is-primary button-overflow' style = 'flex-grow: 1; margin-left: 10px; margin-right: 5px; margin-top: 0px; margin-bottom: 0px;' onClick = { approve } disabled = { isConfirmDisabled() }>
+			<button className = 'button is-primary is-danger button-overflow' style = 'flex-grow: 1; margin-left: 10px; margin-right: 5px; margin-top: 0px; margin-bottom: 0px;' onClick = { reject} >
+				{ identified.rejectAction }
+			</button>
+			<button className = 'button is-primary button-overflow' style = 'flex-grow: 1; margin-left: 5px; margin-right: 10px; margin-top: 0px; margin-bottom: 0px;' onClick = { approve } disabled = { isConfirmDisabled() }>
 				{ simulationAndVisualisationResults.simulationMode ? `${ identified.simulationAction }!` :
 					<SignerLogoText {...{
 						signerName,
 						text: identified.signingAction,
 					}}/>
 				}
-			</button>
-			<button className = 'button is-primary is-danger button-overflow' style = 'flex-grow: 1; margin-left: 5px; margin-right: 10px; margin-top: 0px; margin-bottom: 0px;' onClick = { reject} >
-				{ identified.rejectAction }
 			</button>
 		</div>
 	}
