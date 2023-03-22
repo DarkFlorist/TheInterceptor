@@ -145,10 +145,16 @@ export function CatchAllVisualizer(param: TransactionImportanceBlockParams) {
 	})
 
 	const ownBalanceChanges = param.tx.ethBalanceChanges.filter( (change) => change.address.address === msgSender)
+	const totalEthReceived = ownBalanceChanges !== undefined && ownBalanceChanges.length > 0 ? ownBalanceChanges[ownBalanceChanges.length - 1].after - ownBalanceChanges[0].before - param.tx.value : 0n
 
-	if (param.tx.tokenResults.length === 0 && param.tx.ethBalanceChanges.length === 0 ) {
+	if (param.tx.to !== undefined
+		&& param.tx.value === 0n
+		&& totalEthReceived <= 0n
+		&& sendingTokenResults.length === 0
+		&& receivingTokenResults.length === 0
+	) {
 		return <div class = 'notification transaction-importance-box'>
-			<p class = 'paragraph'> The transaction does no visible changes</p>
+			<p class = 'paragraph'> The transaction does no visible important changes to your accounts</p>
 		</div>
 	}
 
@@ -166,7 +172,7 @@ export function CatchAllVisualizer(param: TransactionImportanceBlockParams) {
 			<div class = 'log-cell' style = 'justify-content: left; display: grid;'>
 				<EtherTransferEvent
 					valueSent = { param.tx.value }
-					totalReceived = { ownBalanceChanges !== undefined && ownBalanceChanges.length > 0 ? ownBalanceChanges[ownBalanceChanges.length - 1].after - ownBalanceChanges[0].before : 0n  }
+					totalReceived = { totalEthReceived }
 					textColor = { textColor }
 					chain = { param.simulationAndVisualisationResults.chain }
 				/>
