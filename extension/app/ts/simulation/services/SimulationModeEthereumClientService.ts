@@ -438,10 +438,9 @@ export class SimulationModeEthereumClientService {
 		return await this.ethereumClientService.getChainId()
 	}
 
-	private getSimulatedLogs = async (logFilter: EthGetLogsRequest): Promise<EthGetLogsResponse> => {
+	private getSimulatedLogs = (logFilter: EthGetLogsRequest): EthGetLogsResponse => {
 		let events: unknown[] = []
 		if (this.simulationState !== undefined) {
-			const blockNum = await this.getBlockNumber()
 			for (const [index, sim] of this.simulationState.simulatedTransactions.entries()) {
 				if (!('events' in sim.multicallResponse)) continue
 
@@ -451,7 +450,7 @@ export class SimulationModeEthereumClientService {
 						transactionIndex: BigInt(index),
 						transactionHash: sim.signedTransaction.hash,
 						blockHash: this.getHashOfSimulatedBlock(),
-						blockNumber: blockNum,
+						blockNumber: this.simulationState.blockNumber,
 						address: event.loggersAddress,
 						data: event.data,
 						topics: event.topics
@@ -480,15 +479,16 @@ export class SimulationModeEthereumClientService {
 	public readonly getLogs = async (logFilter: EthGetLogsRequest): Promise<EthGetLogsResponse> => {
 		if ('blockHash' in logFilter) {
 			if (logFilter.blockHash === this.getHashOfSimulatedBlock()) {
-				return (await this.getSimulatedLogs(logFilter))
+				return this.getSimulatedLogs(logFilter)
 			}
 		}
 		if('fromBlock' in logFilter) {
 			const logs = await this.ethereumClientService.getLogs(logFilter)
-			if (logFilter.toBlock === 'latest' || logFilter.toBlock > await this.ethereumClientService.getBlockNumber() ) {
-				return [...logs, ...await this.getSimulatedLogs(logFilter)]
+			if (this.simulationState && (logFilter.toBlock === 'latest' || logFilter.toBlock >= this.simulationState.blockNumber)) {
+				return [...logs, ...this.getSimulatedLogs(logFilter)]
+			} else {
+				return logs
 			}
-			return logs
 		}
 		return await this.ethereumClientService.getLogs(logFilter)
 	}
