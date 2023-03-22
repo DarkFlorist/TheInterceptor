@@ -156,6 +156,12 @@ export function CatchAllVisualizer(param: TransactionImportanceBlockParams) {
 
 	return <div class = 'notification transaction-importance-box'>
 		<div style = 'display: grid; grid-template-rows: max-content max-content' >
+			{ /* contract creation */}
+			{ param.tx.to !== undefined ? <></> : <>
+				<div class = 'log-cell' style = 'justify-content: left; display: grid;'>
+					<p class = 'paragraph'> The transaction deploys a contract </p>
+				</div>
+			</> }
 			{ /* sending ether / tokens */ }
 			<div class = 'log-cell' style = 'justify-content: left; display: grid;'>
 				<EtherTransferEvent
