@@ -1,5 +1,5 @@
 import { ethers } from 'ethers'
-import { dataStringWith0xStart } from './bigint.js'
+import { dataStringWith0xStart, stringifyJSONWithBigInts } from './bigint.js'
 import * as funtypes from 'funtypes'
 import { EthereumAddress, EthereumQuantity } from './wire-types.js'
 
@@ -48,10 +48,13 @@ export function parseTransaction(transaction: { input?: Uint8Array, from: bigint
 	const iface = new ethers.Interface(erc20andERC721FunctionSignatures)
 	const parsed = iface.parseTransaction({ data: dataStringWith0xStart(transaction.input) })
 	if (parsed === null) return undefined
-	return CallDataType.parse({
+
+	// https://github.com/ForbesLindesay/funtypes/issues/53
+	// a bit hacky as there's no bigint funtype, so we convert bigints to strings and then parse them into bigits
+	return CallDataType.parse(JSON.parse(stringifyJSONWithBigInts({
 		name: parsed.name,
-		arguments: parsed?.args,
-	})
+		arguments: parsed.args.toObject(),
+	})))
 }
 
 export function get4Byte(data: Uint8Array) {

@@ -529,6 +529,26 @@ export class SimulationModeEthereumClientService {
 		return await this.ethereumClientService.getTransactionByHash(hash)
 	}
 
+	public readonly getTokenDecimals = async (token: bigint) => {
+		const tokenInterface = new ethers.Interface(['function decimals() view returns (uint8)'])
+		const balanceOfCallData = stringToUint8Array(tokenInterface.encodeFunctionData('decimals'))
+		const callTransaction = {
+			type: '1559' as const,
+			from: MOCK_ADDRESS,
+			to: token,
+			input: balanceOfCallData,
+			maxFeePerGas: 0n,
+			maxPriorityFeePerGas: 0n,
+			gas: 21000n,
+			value: 200000000000000000000000n,
+			accessList: [],
+			nonce: 0n,
+			chainId: await this.getChainId()
+		}
+		const response = await this.call(callTransaction)
+		return EthereumQuantity.parse(response)
+	}
+
 	public readonly call = async (transaction: EthereumUnsignedTransaction, blockTag: EthereumBlockTag = 'latest') => {
 		const multicallResult = blockTag === 'latest' || blockTag === 'pending' ?
 			await this.multicall([transaction], await this.ethereumClientService.getBlockNumber() + 1n)
