@@ -30,7 +30,6 @@ let simulator: Simulator | undefined = undefined
 
 declare global {
 	var interceptor: {
-		websiteAccessAddressMetadata: AddressInfoEntry[],
 		pendingAccessMetadata: [string, AddressInfoEntry][],
 		prependTransactionMode: PrependTransactionMode,
 		signerChain: bigint | undefined,
@@ -45,7 +44,6 @@ declare global {
 globalThis.interceptor = {
 	prependTransactionMode: PrependTransactionMode.NO_PREPEND,
 	signerAccounts: undefined,
-	websiteAccessAddressMetadata: [],
 	pendingAccessMetadata: [],
 	signerChain: undefined,
 	signerName: undefined,
