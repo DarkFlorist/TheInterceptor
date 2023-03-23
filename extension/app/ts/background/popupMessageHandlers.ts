@@ -245,12 +245,10 @@ export async function homeOpened() {
 	const signerAccounts = signerState === undefined ? undefined : signerState.signerAccounts
 	const tabIconDetails = tabId === undefined ? undefined : globalThis.interceptor.websiteTabConnections.get(tabId)?.tabIconDetails
 
-	const simulationResults = await getSimulationResults()
-
 	sendPopupMessageToOpenWindows({
 		method: 'popup_UpdateHomePage',
 		data: {
-			simulation: simulationResults,
+			simulation: await getSimulationResults(),
 			websiteAccessAddressMetadata: globalThis.interceptor.websiteAccessAddressMetadata,
 			pendingAccessMetadata: globalThis.interceptor.pendingAccessMetadata,
 			signerAccounts: signerAccounts,

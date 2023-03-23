@@ -2,10 +2,10 @@ import { HandleSimulationModeReturnValue, InterceptedRequest, InterceptedRequest
 import 'webextension-polyfill'
 import { Simulator } from '../simulation/simulator.js'
 import { EthereumAddress, EthereumJsonRpcRequest, EthereumQuantity, EthereumUnsignedTransaction, PersonalSignParams, SignTypedDataParams } from '../utils/wire-types.js'
-import { getSettings, saveActiveChain, saveActiveSigningAddress, saveActiveSimulationAddress } from './settings.js'
+import { getSettings, getSimulationResults, saveActiveChain, saveActiveSigningAddress, saveActiveSimulationAddress, updateSimulationResults } from './settings.js'
 import { blockNumber, call, chainId, estimateGas, gasPrice, getAccounts, getBalance, getBlockByNumber, getCode, getLogs, getPermissions, getSimulationStack, getTransactionByHash, getTransactionCount, getTransactionReceipt, personalSign, requestPermissions, sendTransaction, subscribe, switchEthereumChain, unsubscribe } from './simulationModeHanders.js'
 import { changeActiveAddress, changeMakeMeRich, changePage, resetSimulation, confirmDialog, refreshSimulation, removeTransaction, requestAccountsFromSigner, refreshPopupConfirmTransactionSimulation, confirmPersonalSign, confirmRequestAccess, changeInterceptorAccess, changeChainDialog, popupChangeActiveChain, enableSimulationMode, reviewNotification, rejectNotification, addOrModifyAddressInfo, getAddressBookData, removeAddressBookEntry, openAddressBook, homeOpened, interceptorAccessChangeAddressOrRefresh } from './popupMessageHandlers.js'
-import { SimulationState, TokenPriceEstimate, SimResults } from '../utils/visualizer-types.js'
+import { SimulationState } from '../utils/visualizer-types.js'
 import { SignerState, AddressBookEntry, AddressInfoEntry, Website, TabConnection, WebsiteSocket } from '../utils/user-interface-types.js'
 import { getAddressMetadataForAccess, requestAccessFromUser, setPendingAccessRequests } from './windows/interceptorAccess.js'
 import { CHAINS, ICON_NOT_ACTIVE, isSupportedChain, MAKE_YOU_RICH_TRANSACTION, METAMASK_ERROR_USER_REJECTED_REQUEST } from '../utils/constants.js'
@@ -30,14 +30,6 @@ let simulator: Simulator | undefined = undefined
 
 declare global {
 	var interceptor: {
-		simulation: {
-			simulationId: number,
-			simulationState: SimulationState | undefined,
-			visualizerResults: SimResults[] | undefined,
-			addressBookEntries: AddressBookEntry[],
-			tokenPrices: TokenPriceEstimate[],
-			activeAddress: bigint | undefined,
-		}
 		websiteAccessAddressMetadata: AddressInfoEntry[],
 		pendingAccessMetadata: [string, AddressInfoEntry][],
 		prependTransactionMode: PrependTransactionMode,
@@ -61,36 +53,15 @@ globalThis.interceptor = {
 	websiteTabSignerStates: new Map(),
 	settings: undefined,
 	websiteTabConnections: new Map(),
-	simulation: {
-		simulationId: 0,
-		simulationState: undefined,
-		visualizerResults: undefined,
-		addressBookEntries: [],
-		tokenPrices: [],
-		activeAddress: undefined
-	},
 	currentBlockNumber: undefined,
 }
 
 export async function updateSimulationState( getUpdatedSimulationState: () => Promise<SimulationState | undefined>, setAsActiveAddress: bigint | undefined = undefined) {
+	if (simulator === undefined) return
 	const activeSimAddress = globalThis.interceptor.settings === undefined ? undefined : globalThis.interceptor.settings.activeSimulationAddress
 	const activeAddress = setAsActiveAddress === undefined ? activeSimAddress : setAsActiveAddress
 	try {
-		globalThis.interceptor.simulation.simulationId++
-		const simId = globalThis.interceptor.simulation.simulationId
-
-		if (simulator === undefined) {
-			globalThis.interceptor.simulation = {
-				simulationId: globalThis.interceptor.simulation.simulationId,
-				simulationState: undefined,
-				addressBookEntries: [],
-				tokenPrices: [],
-				visualizerResults: [],
-				activeAddress: activeAddress,
-			}
-			sendPopupMessageToOpenWindows({ method: 'popup_simulation_state_changed' })
-			return
-		}
+		const simId = (await getSimulationResults()).simulationId + 1
 		const updatedSimulationState = await getUpdatedSimulationState()
 
 		if (updatedSimulationState !== undefined) {
@@ -111,26 +82,23 @@ export async function updateSimulationState( getUpdatedSimulationState: () => Pr
 			}
 			const tokenPrices = await priceEstimator.estimateEthereumPricesForTokens(addressBookEntries.filter(onlyTokensAndTokensWithKnownDecimals).map(metadataRestructure))
 
-			if (simId < globalThis.interceptor.simulation.simulationId) return // do not update state with older state
-
-			globalThis.interceptor.simulation = {
-				simulationId: globalThis.interceptor.simulation.simulationId,
+			await updateSimulationResults({
+				simulationId: simId,
 				tokenPrices: tokenPrices,
 				addressBookEntries: addressBookEntries,
 				visualizerResults: visualizerResultWithWebsites,
 				simulationState: updatedSimulationState,
 				activeAddress: activeAddress,
-			}
+			})
 		} else {
-			if (simId < globalThis.interceptor.simulation.simulationId) return // do not update state with older state
-			globalThis.interceptor.simulation = {
-				simulationId: globalThis.interceptor.simulation.simulationId,
+			await updateSimulationResults({
+				simulationId: simId,
 				addressBookEntries: [],
 				tokenPrices: [],
 				visualizerResults: [],
 				simulationState: updatedSimulationState,
 				activeAddress: activeAddress,
-			}
+			})
 		}
 		sendPopupMessageToOpenWindows({ method: 'popup_simulation_state_changed' })
 		return updatedSimulationState
@@ -592,6 +560,8 @@ async function popupMessageHandler(simulator: Simulator, request: unknown) {
 	try {
 		parsedRequest = PopupMessage.parse(request)
 	} catch (error) {
+		console.log(request)
+		console.log(error)
 		if (error instanceof Error) {
 			return {
 				error: {
