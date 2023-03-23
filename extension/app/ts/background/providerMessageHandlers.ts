@@ -7,16 +7,13 @@ import { resolveSignerChainChange } from './windows/changeChain.js'
 export function ethAccountsReply(port: browser.runtime.Port, request: ProviderMessage) {
 	if (!('params' in request.options)) return
 	const signerAccounts = EthereumAccountsReply.parse(request.options.params)
-	if ( port.sender?.tab?.id !== undefined ) {
+	if (port.sender?.tab?.id !== undefined) {
 		globalThis.interceptor.websiteTabSignerStates.set(port.sender.tab.id, {
 			signerAccounts: signerAccounts,
 			signerChain: globalThis.interceptor.signerChain,
 		})
 	}
-	if (globalThis.interceptor) {
-		globalThis.interceptor.signerAccounts = signerAccounts
-		sendInternalWindowMessage({ method: 'window_signer_accounts_changed', data: { socket: getSocketFromPort(port)} })
-	}
+	sendInternalWindowMessage({ method: 'window_signer_accounts_changed', data: { socket: getSocketFromPort(port)} })
 
 	// update active address if we are using signers address
 	if (globalThis.interceptor.settings?.useSignersAddressAsActiveAddress || globalThis.interceptor.settings?.simulationMode === false) {
@@ -28,7 +25,7 @@ export function ethAccountsReply(port: browser.runtime.Port, request: ProviderMe
 async function changeSignerChain(port: browser.runtime.Port, signerChain: bigint ) {
 	if ( port.sender?.tab?.id !== undefined ) {
 		globalThis.interceptor.websiteTabSignerStates.set(port.sender.tab.id, {
-			signerAccounts: globalThis.interceptor.signerAccounts,
+			signerAccounts: globalThis.interceptor.websiteTabSignerStates.get(port.sender.tab.id)?.signerAccounts,
 			signerChain: signerChain,
 		})
 	}

@@ -1,7 +1,7 @@
 import { HandleSimulationModeReturnValue, InterceptedRequest, InterceptedRequestForward, PopupMessage, ProviderMessage, Settings, SignerName } from '../utils/interceptor-messages.js'
 import 'webextension-polyfill'
 import { Simulator } from '../simulation/simulator.js'
-import { EthereumAddress, EthereumJsonRpcRequest, EthereumQuantity, EthereumUnsignedTransaction, PersonalSignParams, SignTypedDataParams } from '../utils/wire-types.js'
+import { EthereumJsonRpcRequest, EthereumQuantity, EthereumUnsignedTransaction, PersonalSignParams, SignTypedDataParams } from '../utils/wire-types.js'
 import { getMakeMeRich, getSettings, getSimulationResults, saveActiveChain, saveActiveSigningAddress, saveActiveSimulationAddress, updateSimulationResults } from './settings.js'
 import { blockNumber, call, chainId, estimateGas, gasPrice, getAccounts, getBalance, getBlockByNumber, getCode, getLogs, getPermissions, getSimulationStack, getTransactionByHash, getTransactionCount, getTransactionReceipt, personalSign, requestPermissions, sendTransaction, subscribe, switchEthereumChain, unsubscribe } from './simulationModeHanders.js'
 import { changeActiveAddress, changeMakeMeRich, changePage, resetSimulation, confirmDialog, refreshSimulation, removeTransaction, requestAccountsFromSigner, refreshPopupConfirmTransactionSimulation, confirmPersonalSign, confirmRequestAccess, changeInterceptorAccess, changeChainDialog, popupChangeActiveChain, enableSimulationMode, reviewNotification, rejectNotification, addOrModifyAddressInfo, getAddressBookData, removeAddressBookEntry, openAddressBook, homeOpened, interceptorAccessChangeAddressOrRefresh } from './popupMessageHandlers.js'
@@ -29,12 +29,10 @@ declare global {
 		websiteTabSignerStates: Map<number, SignerState>,
 		websiteTabConnections: Map<number, TabConnection>,
 		settings: Settings | undefined,
-		signerAccounts: readonly EthereumAddress[] | undefined,
 	}
 }
 
 globalThis.interceptor = {
-	signerAccounts: undefined,
 	signerChain: undefined,
 	signerName: undefined,
 	websiteTabSignerStates: new Map(),
@@ -581,17 +579,7 @@ async function popupMessageHandler(simulator: Simulator, request: unknown) {
 async function startup() {
 	globalThis.interceptor.settings = await getSettings()
 	await setExtensionIcon({ path: ICON_NOT_ACTIVE })
-	await setExtensionBadgeBackgroundColor( { color: '#58a5b3' } )
-
-	// if we are using signers mode, update our active address representing to signers address
-	if (globalThis.interceptor.settings.useSignersAddressAsActiveAddress || globalThis.interceptor.settings.simulationMode === false) {
-		const signerAcc = (globalThis.interceptor.signerAccounts && globalThis.interceptor.signerAccounts.length > 0) ? globalThis.interceptor.signerAccounts[0] : undefined
-		if(globalThis.interceptor.settings.simulationMode) {
-			globalThis.interceptor.settings.activeSimulationAddress = signerAcc
-		} else {
-			globalThis.interceptor.settings.activeSigningAddress = signerAcc
-		}
-	}
+	await setExtensionBadgeBackgroundColor({ color: '#58a5b3' })
 
 	const chainString = globalThis.interceptor.settings.activeChain.toString()
 	if (isSupportedChain(chainString)) {
