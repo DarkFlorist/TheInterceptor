@@ -42,7 +42,7 @@ export function formSimulatedAndVisualizedTransaction(simState: SimulationState,
 				}
 			}
 			return undefined // a token that is not NFT, but does not have decimals either, let's just not visualize them
-		}).filter((x): x is TokenVisualizerResultWithMetadata => x !== undefined)
+		}).filter(<T>(x: T | undefined): x is T => x !== undefined)
 		return {
 			from: from,
 			to: to,
