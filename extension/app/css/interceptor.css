@@ -618,6 +618,7 @@ svg.spinner > circle {
 	padding: 10px;
 	margin: auto;
 	margin-bottom: 10px;
-	max-width: 400px;
+	min-width: 400px;
+	max-width: fit-content;
 	color: var(--text-color)
 }
