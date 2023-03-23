@@ -74,14 +74,6 @@ interface InterceptedRequestForward {
 	readonly subscription?: string
 }
 
-interface BackgroundPageReplyRequest {
-	readonly interceptorApproved: boolean,
-	readonly requestId: number,
-	options: MessageMethodAndParams,
-	readonly result: unknown,
-	readonly subscription?: string
-}
-
 interface ProviderConnectInfo {
 	readonly chainId: string
 }
@@ -307,43 +299,37 @@ class InterceptorMessageListener {
 		}
 	}
 
-	private readonly handleReplyRequest = async(replyRequest: BackgroundPageReplyRequest) => {
-		if (replyRequest.subscription !== undefined) {
-			return this.onMessageCallBacks.forEach( (f) => f( { type: 'eth_subscription', data: replyRequest.result } ))
+	private readonly handleReplyRequest = async(replyRequest: InterceptedRequestForward) => {
+		try {
+			if (replyRequest.subscription !== undefined) {
+				return this.onMessageCallBacks.forEach( (f) => f( { type: 'eth_subscription', data: replyRequest.result } ))
+			}
+			// inform callbacks
+			switch (replyRequest.options.method) {
+				case 'accountsChanged': return this.onAccountsChangedCallBacks.forEach( (f) => f( replyRequest.result as readonly string[] ) )
+				case 'connect': {
+					this.connected = true
+					return this.onConnectCallBacks.forEach( (f) => f( { chainId: replyRequest.result as string } ) )
+				}
+				case 'disconnect': {
+					this.connected = false
+					const resultArray = replyRequest.result as { code: number, message: string }
+					return this.onDisconnectCallBacks.forEach( (f) => f( { name: 'disconnect', ...resultArray } ) )
+				}
+				case 'chainChanged': return this.onChainChangedCallBacks.forEach( (f) => f( replyRequest.result as string ) )
+				case 'request_signer_to_eth_requestAccounts': return await this.requestAccountsFromSigner()
+				case 'request_signer_to_wallet_switchEthereumChain': return await this.requestChangeChainFromSigner( replyRequest.result as string )
+				case 'request_signer_chainId': return await this.requestChainIdFromSigner()
+				default: break
+			}
+		} finally {
+			const pending = this.outstandingRequests.get(replyRequest.requestId)
+			if (pending === undefined) return
+			if ('error' in replyRequest) {
+				return pending.resolve(replyRequest.error)
+			}
+			return pending.resolve(replyRequest.result)
 		}
-
-		// inform callbacks
-
-		if (replyRequest.options.method === 'accountsChanged') {
-			return this.onAccountsChangedCallBacks.forEach( (f) => f( replyRequest.result as readonly string[] ) )
-		}
-		if (replyRequest.options.method === 'connect') {
-			this.connected = true
-			return this.onConnectCallBacks.forEach( (f) => f( { chainId: replyRequest.result as string } ) )
-		}
-		if (replyRequest.options.method === 'disconnect') {
-			this.connected = false
-			const resultArray = replyRequest.result as { code: number, message: string }
-			return this.onDisconnectCallBacks.forEach( (f) => f( { name: 'disconnect', ...resultArray } ) )
-		}
-		if (replyRequest.options.method === 'chainChanged') {
-			return this.onChainChangedCallBacks.forEach( (f) => f( replyRequest.result as string ) )
-		}
-
-		// The Interceptor requested us to request information from signer
-
-		if (replyRequest.options.method === 'request_signer_to_eth_requestAccounts') {
-			// when dapp requsts eth_requestAccounts, interceptor needs to reply to it, but we also need to try to sign to the signer
-			return await this.requestAccountsFromSigner()
-		}
-		if (replyRequest.options.method === 'request_signer_to_wallet_switchEthereumChain') {
-			return await this.requestChangeChainFromSigner( replyRequest.result as string )
-		}
-		if (replyRequest.options.method === 'request_signer_chainId') {
-			return await this.requestChainIdFromSigner()
-		}
-
-		return this.outstandingRequests.get(replyRequest.requestId)!.resolve(replyRequest.result)
 	}
 
 	public readonly onMessage = async (messageEvent: unknown) => {
@@ -362,8 +348,9 @@ class InterceptorMessageListener {
 		const forwardRequest = messageEvent.data as InterceptedRequestForward //use "as" here as we don't want to inject funtypes here
 
 		if (forwardRequest.error !== undefined) {
-			if (!this.outstandingRequests.has(forwardRequest.requestId)) throw new EthereumJsonRpcError(forwardRequest.error.code, forwardRequest.error.message)
-			return this.outstandingRequests.get(forwardRequest.requestId)!.reject(new EthereumJsonRpcError(forwardRequest.error.code, forwardRequest.error.message))
+			const pending = this.outstandingRequests.get(forwardRequest.requestId)
+			if (pending === undefined) throw new EthereumJsonRpcError(forwardRequest.error.code, forwardRequest.error.message)
+			return pending.resolve(forwardRequest.error)
 		}
 
 		if (forwardRequest.result !== undefined) return this.handleReplyRequest(forwardRequest)
