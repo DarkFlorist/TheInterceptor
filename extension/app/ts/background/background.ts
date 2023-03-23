@@ -2,7 +2,7 @@ import { HandleSimulationModeReturnValue, InterceptedRequest, InterceptedRequest
 import 'webextension-polyfill'
 import { Simulator } from '../simulation/simulator.js'
 import { EthereumAddress, EthereumJsonRpcRequest, EthereumQuantity, EthereumUnsignedTransaction, PersonalSignParams, SignTypedDataParams } from '../utils/wire-types.js'
-import { getSettings, getSimulationResults, saveActiveChain, saveActiveSigningAddress, saveActiveSimulationAddress, updateSimulationResults } from './settings.js'
+import { getMakeMeRich, getSettings, getSimulationResults, saveActiveChain, saveActiveSigningAddress, saveActiveSimulationAddress, updateSimulationResults } from './settings.js'
 import { blockNumber, call, chainId, estimateGas, gasPrice, getAccounts, getBalance, getBlockByNumber, getCode, getLogs, getPermissions, getSimulationStack, getTransactionByHash, getTransactionCount, getTransactionReceipt, personalSign, requestPermissions, sendTransaction, subscribe, switchEthereumChain, unsubscribe } from './simulationModeHanders.js'
 import { changeActiveAddress, changeMakeMeRich, changePage, resetSimulation, confirmDialog, refreshSimulation, removeTransaction, requestAccountsFromSigner, refreshPopupConfirmTransactionSimulation, confirmPersonalSign, confirmRequestAccess, changeInterceptorAccess, changeChainDialog, popupChangeActiveChain, enableSimulationMode, reviewNotification, rejectNotification, addOrModifyAddressInfo, getAddressBookData, removeAddressBookEntry, openAddressBook, homeOpened, interceptorAccessChangeAddressOrRefresh } from './popupMessageHandlers.js'
 import { SimulationState } from '../utils/visualizer-types.js'
@@ -20,18 +20,11 @@ import { assertNever, assertUnreachable } from '../utils/typescript.js'
 
 browser.runtime.onConnect.addListener(port => onContentScriptConnected(port).catch(console.error))
 
-export enum PrependTransactionMode {
-	NO_PREPEND,
-	RICH_MODE
-}
-
-let currentPrependMode: PrependTransactionMode = PrependTransactionMode.NO_PREPEND
 let simulator: Simulator | undefined = undefined
 
 declare global {
 	var interceptor: {
 		pendingAccessMetadata: [string, AddressInfoEntry][],
-		prependTransactionMode: PrependTransactionMode,
 		signerChain: bigint | undefined,
 		signerName: SignerName | undefined,
 		websiteTabSignerStates: Map<number, SignerState>,
@@ -42,7 +35,6 @@ declare global {
 }
 
 globalThis.interceptor = {
-	prependTransactionMode: PrependTransactionMode.NO_PREPEND,
 	signerAccounts: undefined,
 	pendingAccessMetadata: [],
 	signerChain: undefined,
@@ -142,47 +134,37 @@ export async function refreshConfirmTransactionSimulation(activeAddress: bigint,
 }
 
 // returns true if simulation state was changed
-export async function updatePrependMode(forceRefresh: boolean = false) {
-	if ( currentPrependMode === globalThis.interceptor.prependTransactionMode && !forceRefresh ) return false
-	if ( simulator === undefined ) return false
-	if ( globalThis.interceptor.settings === undefined ) return false
-	if ( !globalThis.interceptor.settings.simulationMode ) {
+export async function updatePrependMode() {
+	if (simulator === undefined) return false
+	if (globalThis.interceptor.settings === undefined) return false
+
+	const richMode = await getMakeMeRich()
+	if (!globalThis.interceptor.settings.simulationMode || !richMode) {
 		await updateSimulationState(async () => await simulator?.simulationModeNode.setPrependTransactionsQueue([]))
-		currentPrependMode = globalThis.interceptor.prependTransactionMode
 		return true
 	}
 
-	switch(globalThis.interceptor.prependTransactionMode) {
-		case PrependTransactionMode.NO_PREPEND: {
-			await updateSimulationState(async () => await simulator?.simulationModeNode.setPrependTransactionsQueue([]))
-			break
-		}
-		case PrependTransactionMode.RICH_MODE: {
-			const activeAddress = getActiveAddress()
-			const chainId = globalThis.interceptor.settings.activeChain.toString()
-			if ( !isSupportedChain(chainId) ) return false
-			if ( activeAddress === undefined ) return false
-			await updateSimulationState(async () => {
-				if (simulator === undefined) return undefined
-				if (!isSupportedChain(chainId)) return undefined
-				const queue = [{
-					from: CHAINS[chainId].eth_donator,
-					chainId: CHAINS[chainId].chainId,
-					nonce: await simulator.ethereum.getTransactionCount(CHAINS[chainId].eth_donator),
-					to: activeAddress,
-					...MAKE_YOU_RICH_TRANSACTION
-				} as const]
-				return await simulator.simulationModeNode.setPrependTransactionsQueue(queue)
-			}, activeAddress)
-			break
-		}
-	}
-	currentPrependMode = globalThis.interceptor.prependTransactionMode
+	const activeAddress = getActiveAddress()
+	const chainId = globalThis.interceptor.settings.activeChain.toString()
+	if (!isSupportedChain(chainId)) return false
+	if (activeAddress === undefined) return false
+	await updateSimulationState(async () => {
+		if (simulator === undefined) return undefined
+		if (!isSupportedChain(chainId)) return undefined
+		const queue = [{
+			from: CHAINS[chainId].eth_donator,
+			chainId: CHAINS[chainId].chainId,
+			nonce: await simulator.ethereum.getTransactionCount(CHAINS[chainId].eth_donator),
+			to: activeAddress,
+			...MAKE_YOU_RICH_TRANSACTION
+		} as const]
+		return await simulator.simulationModeNode.setPrependTransactionsQueue(queue)
+	}, activeAddress)
 	return true
 }
 
 export async function appendTransactionToSimulator(transaction: EthereumUnsignedTransaction, website: Website) {
-	if ( simulator === undefined) return
+	if (simulator === undefined) return
 	const simulationState = await updateSimulationState(async () => (await simulator?.simulationModeNode.appendTransaction({ ...transaction, website }))?.simulationState)
 	return {
 		signed: await SimulationModeEthereumClientService.mockSignTransaction(transaction),
@@ -210,8 +192,6 @@ async function handleSimulationMode(simulator: Simulator, socket: WebsiteSocket,
 		}
 		throw error
 	}
-
-	await updatePrependMode()
 
 	switch (parsedRequest.method) {
 		case 'eth_getBlockByNumber': return await getBlockByNumber(simulator, parsedRequest)
@@ -371,7 +351,7 @@ export async function changeActiveAddressAndChainAndResetSimulation(activeAddres
 	}
 	updateWebsiteApprovalAccesses()
 
-	if (!await updatePrependMode(true)) {// update prepend mode as our active address has changed, so we need to be sure the rich modes money is sent to right address
+	if (!await updatePrependMode()) {// update prepend mode as our active address has changed, so we need to be sure the rich modes money is sent to right address
 		await updateSimulationState(async () => await simulator?.simulationModeNode.resetSimulation())
 	}
 
@@ -602,12 +582,6 @@ async function popupMessageHandler(simulator: Simulator, request: unknown) {
 
 async function startup() {
 	globalThis.interceptor.settings = await getSettings()
-	if (globalThis.interceptor.settings.makeMeRich) {
-		globalThis.interceptor.prependTransactionMode = PrependTransactionMode.RICH_MODE
-	} else {
-		globalThis.interceptor.prependTransactionMode = PrependTransactionMode.NO_PREPEND
-	}
-
 	await setExtensionIcon({ path: ICON_NOT_ACTIVE })
 	await setExtensionBadgeBackgroundColor( { color: '#58a5b3' } )
 

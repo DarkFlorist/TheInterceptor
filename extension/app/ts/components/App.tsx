@@ -115,7 +115,7 @@ export function App() {
 			setUseSignersAddressAsActiveAddress(settings.useSignersAddressAsActiveAddress)
 			setAddressInfos(settings.userAddressBook.addressInfos)
 			setAppPage(settings.page)
-			setMakeMeRich(settings.makeMeRich)
+			setMakeMeRich(data.makeMeRich)
 			setWebsiteAccess(settings.websiteAccess)
 
 			setWebsiteAccessAddressMetadata(data.websiteAccessAddressMetadata)

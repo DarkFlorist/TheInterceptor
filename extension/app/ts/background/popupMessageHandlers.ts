@@ -1,5 +1,5 @@
-import { changeActiveAddressAndChainAndResetSimulation, changeActiveChain, PrependTransactionMode, refreshConfirmTransactionSimulation, updatePrependMode, updateSimulationState } from './background.js'
-import { getOpenedAddressBookTabId, getSimulationResults, saveAddressInfos, saveContacts, saveMakeMeRich, saveOpenedAddressBookTabId, savePage, saveSimulationMode, saveUseSignersAddressAsActiveAddress, saveWebsiteAccess } from './settings.js'
+import { changeActiveAddressAndChainAndResetSimulation, changeActiveChain, refreshConfirmTransactionSimulation, updatePrependMode, updateSimulationState } from './background.js'
+import { getMakeMeRich, getOpenedAddressBookTabId, getSimulationResults, saveAddressInfos, saveContacts, saveMakeMeRich, saveOpenedAddressBookTabId, savePage, saveSimulationMode, saveUseSignersAddressAsActiveAddress, saveWebsiteAccess } from './settings.js'
 import { Simulator } from '../simulation/simulator.js'
 import { ChangeActiveAddress, ChangeMakeMeRich, ChangePage, PersonalSign, RemoveTransaction, RequestAccountsFromSigner, TransactionConfirmation, InterceptorAccess, ChangeInterceptorAccess, ChainChangeConfirmation, EnableSimulationMode, ReviewNotification, RejectNotification, ChangeActiveChain, AddOrEditAddressBookEntry, GetAddressBookData, RemoveAddressBookEntry, RefreshConfirmTransactionDialogSimulation, UserAddressBook, InterceptorAccessRefresh, InterceptorAccessChangeAddress } from '../utils/interceptor-messages.js'
 import { resolvePendingTransaction } from './windows/confirmTransaction.js'
@@ -41,17 +41,8 @@ export async function changeActiveAddress(_simulator: Simulator, addressChange: 
 }
 
 export async function changeMakeMeRich(_simulator: Simulator, makeMeRichChange: ChangeMakeMeRich) {
-	if (globalThis.interceptor.settings === undefined) return
-
-	if (makeMeRichChange.options) {
-		globalThis.interceptor.prependTransactionMode = PrependTransactionMode.RICH_MODE
-	} else {
-		globalThis.interceptor.prependTransactionMode = PrependTransactionMode.NO_PREPEND
-	}
-	globalThis.interceptor.settings.makeMeRich = makeMeRichChange.options
-
-	saveMakeMeRich(makeMeRichChange.options)
-	await updatePrependMode(true)
+	await saveMakeMeRich(makeMeRichChange.options)
+	await updatePrependMode()
 }
 
 export async function removeAddressBookEntry(_simulator: Simulator, removeAddressBookEntry: RemoveAddressBookEntry) {
@@ -257,6 +248,7 @@ export async function homeOpened(simulator: Simulator) {
 			currentBlockNumber: await simulator.ethereum.getBlockNumber(),
 			settings: globalThis.interceptor.settings,
 			tabIconDetails: tabIconDetails,
+			makeMeRich: await getMakeMeRich()
 		}
 	})
 }

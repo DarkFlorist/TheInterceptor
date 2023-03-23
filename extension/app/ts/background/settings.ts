@@ -4,6 +4,7 @@ import { Semaphore } from '../utils/semaphore.js'
 import { AddressInfo, ContactEntries } from '../utils/user-interface-types.js'
 import { SimulationResults } from '../utils/visualizer-types.js'
 import { EthereumAddress, EthereumQuantity } from '../utils/wire-types.js'
+import * as funtypes from 'funtypes'
 
 export const defaultAddresses = [
 	{
@@ -43,7 +44,6 @@ export async function getSettings() : Promise<Settings> {
 		'activeSimulationAddress',
 		'addressInfos',
 		'page',
-		'makeMeRich',
 		'useSignersAddressAsActiveAddress',
 		'websiteAccess',
 		'activeChain',
@@ -56,7 +56,6 @@ export async function getSettings() : Promise<Settings> {
 		activeSimulationAddress: results.activeSimulationAddress !== undefined && !isEmpty(results.activeSimulationAddress) ? EthereumAddress.parse(results.activeSimulationAddress) : defaultAddresses[0].address,
 		activeSigningAddress: results.activeSigningAddress !== undefined && !isEmpty(results.activeSigningAddress) ? EthereumAddress.parse(results.activeSigningAddress) : undefined,
 		page: results.page !== undefined && !isEmpty(results.page) && pages.includes(results.page) ? results.page : 'Home',
-		makeMeRich: results.makeMeRich !== undefined ? results.makeMeRich : false,
 		useSignersAddressAsActiveAddress: results.useSignersAddressAsActiveAddress !== undefined ? results.useSignersAddressAsActiveAddress : false,
 		websiteAccess: results.websiteAccess !== undefined ? parseAccessWithLegacySupport(results.websiteAccess) : [],
 		activeChain: results.activeChain !== undefined ? EthereumQuantity.parse(results.activeChain) : 1n,
@@ -85,8 +84,12 @@ export function saveContacts(contacts: ContactEntries) {
 export function savePage(page: Page) {
 	browser.storage.local.set({ page: page })
 }
-export function saveMakeMeRich(makeMeRich: boolean) {
-	browser.storage.local.set({ makeMeRich: makeMeRich })
+export async function saveMakeMeRich(makeMeRich: boolean) {
+	await browser.storage.local.set({ makeMeRich: makeMeRich })
+}
+export async function getMakeMeRich() {
+	const results = await browser.storage.local.get('makeMeRich')
+	return funtypes.Boolean.parse(results.makeMeRich !== undefined ? results.makeMeRich : false)
 }
 export function saveUseSignersAddressAsActiveAddress(useSignersAddressAsActiveAddress: boolean) {
 	browser.storage.local.set({ useSignersAddressAsActiveAddress: useSignersAddressAsActiveAddress })
