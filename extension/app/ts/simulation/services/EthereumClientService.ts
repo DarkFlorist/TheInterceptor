@@ -1,5 +1,5 @@
 import { MulticallResponse, EthereumUnsignedTransaction, EthereumSignedTransactionWithBlockData, EthGetStorageAtResponse, EthereumQuantity, EthereumBlockTag, EthTransactionReceiptResponse, EthereumData, EthereumBlockHeader, EstimateGasParamsVariables, EthereumBlockHeaderWithTransactionHashes, EthGetLogsRequest, EthGetLogsResponse } from '../../utils/wire-types.js'
-import { IUnsignedTransaction } from '../../utils/ethereum.js'
+import { IUnsignedTransaction1559 } from '../../utils/ethereum.js'
 import { TIME_BETWEEN_BLOCKS, CHAINS, MOCK_ADDRESS } from '../../utils/constants.js'
 import { CHAIN } from '../../utils/user-interface-types.js'
 import { IEthereumJSONRpcRequestHandler } from './EthereumJSONRpcRequestHandler.js'
@@ -183,14 +183,8 @@ export class EthereumClientService {
 			input: balanceOfCallData,
 			maxFeePerGas: 0n,
 			maxPriorityFeePerGas: 0n,
-			accessList: [],
-			// nethermind will treat this the same as missing/null
 			gasLimit: 15_000_000n,
-			// nethermind will overwrite this, so safe to put whatever here
-			chainId: 0n,
-			// nethermind null coalesces to 0 internally for calls, so this will give us the same behavior as missing
-			nonce: 0n,
-		}
+		} as const
 		const response = await this.call(callTransaction)
 		return EthereumQuantity.parse(response)
 	}
@@ -201,14 +195,14 @@ export class EthereumClientService {
 		return EthereumSignedTransactionWithBlockData.parse(response)
 	}
 
-	public readonly call = async (transaction: IUnsignedTransaction, blockTag: EthereumBlockTag = 'latest') => {
+	public readonly call = async (transaction: Pick<IUnsignedTransaction1559, 'to' | 'from' | 'input' | 'value' | 'maxFeePerGas' | 'maxPriorityFeePerGas' | 'gasLimit'>, blockTag: EthereumBlockTag = 'latest') => {
 		if ( transaction.to === null) throw new Error('To cannot be null')
 		const params = {
 			to: transaction.to,
 			from: transaction.from,
 			data: transaction.input,
 			value: transaction.value,
-			gasPrice: 'maxFeePerGas' in transaction ? transaction.maxFeePerGas + transaction.maxPriorityFeePerGas : transaction.gasPrice,
+			gasPrice: transaction.maxFeePerGas + transaction.maxPriorityFeePerGas,
 			gas: transaction.gasLimit
 		}
 		const response = await this.requestHandler.jsonRpcRequest({ method: 'eth_call', params: [params, blockTag] })

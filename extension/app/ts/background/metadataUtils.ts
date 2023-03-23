@@ -109,7 +109,7 @@ async function getTokenMetadata(simulator: Simulator, address: bigint) : Promise
 		logoUri: nftTokenData.logoUri ? `${ getFullLogoUri(nftTokenData.logoUri) }` : undefined,
 		type: 'NFT',
 	}
-	const decimals = simulator === undefined ? undefined : await simulator.ethereum.getTokenDecimals(address).catch(() => {
+	const decimals = simulator === undefined ? undefined : await simulator.simulationModeNode.getTokenDecimals(address).catch(() => {
 		console.log(`could not fetch decimals for ${ address }`)
 		return undefined
 	})

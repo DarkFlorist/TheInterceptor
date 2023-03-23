@@ -20,12 +20,11 @@ export function formSimulatedAndVisualizedTransaction(simState: SimulationState,
 				address: entry,
 			}
 		})
-		const tokenResults: TokenVisualizerResultWithMetadata[] = visualiser === undefined ? [] : visualiser.tokenResults.map((change) => {
+		const tokenResults: TokenVisualizerResultWithMetadata[] = visualiser === undefined ? [] : visualiser.tokenResults.map((change): TokenVisualizerResultWithMetadata | undefined => {
 			const fromEntry = addressMetaData.get(addressString(change.from))
 			const toEntry = addressMetaData.get(addressString(change.to))
 			const tokenEntry = addressMetaData.get(addressString(change.tokenAddress))
 			if (fromEntry === undefined || toEntry === undefined || tokenEntry === undefined) throw new Error('missing metadata')
-
 			if (change.is721 && tokenEntry.type === 'NFT') {
 				return {
 					...change,
@@ -42,8 +41,8 @@ export function formSimulatedAndVisualizedTransaction(simState: SimulationState,
 					token: tokenEntry
 				}
 			}
-			throw new Error('wrong token type')
-		})
+			return undefined // a token that is not NFT, but does not have decimals either, let's just not visualize them
+		}).filter(<T>(x: T | undefined): x is T => x !== undefined)
 		return {
 			from: from,
 			to: to,

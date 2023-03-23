@@ -140,7 +140,7 @@ export function squareRoot(value: bigint) {
 
 export function stringifyJSONWithBigInts(value: any): string {
 	return JSON.stringify(value, (_key, value) => {
-		return typeof value === "bigint" ? `0x${value.toString(16)}n` : value
+		return typeof value === "bigint" ? `0x${ value.toString(16) }` : value
 	}, 4)
 }
 

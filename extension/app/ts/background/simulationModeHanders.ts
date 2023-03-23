@@ -95,7 +95,7 @@ async function singleCallWithFromOverride(simulator: Simulator, request: EthCall
 		nonce: await simulator.simulationModeNode.getTransactionCount(from),
 		maxFeePerGas: gasPrice,
 		maxPriorityFeePerGas: 0n,
-		gas: callParams.gas !== undefined ? callParams.gas : await simulator.simulationModeNode.estimateGas({
+		gasLimit: callParams.gas !== undefined ? callParams.gas : await simulator.simulationModeNode.estimateGas({
 			from,
 			to: callParams.to,
 			data: input,
