@@ -7,7 +7,7 @@ import { Future } from '../../utils/future.js'
 import { ethers, keccak256 } from 'ethers'
 import { SimulatedTransaction, SimulationState } from '../../utils/visualizer-types.js'
 import { Website } from '../../utils/user-interface-types.js'
-import { EthereumUnsignedTransactionToUnsignedTransaction, serializeSignedTransactionToBytes } from '../../utils/ethereum.js'
+import { EthereumUnsignedTransactionToUnsignedTransaction, IUnsignedTransaction1559, serializeSignedTransactionToBytes } from '../../utils/ethereum.js'
 
 const MOCK_PRIVATE_KEY = 0x1n // key used to sign mock transactions
 const GET_CODE_CONTRACT = 0x1ce438391307f908756fefe0fe220c0f0d51508an
@@ -366,7 +366,7 @@ export class SimulationModeEthereumClientService {
 			value: 0n,
 			input: input,
 			accessList: []
-		}
+		} as const
 		const multiCall = await this.multicall([getCodeTransaction], blockNum + 1n)
 		return multiCall[multiCall.length - 1].returnValue
 	}
@@ -417,7 +417,7 @@ export class SimulationModeEthereumClientService {
 			uncles: [],
 			baseFeePerGas: this.getBaseFeePerGasForNewBlock(parentBlock.gasUsed, parentBlock.gasLimit, parentBlock.baseFeePerGas),
 			transactionsRoot: parentBlock.transactionsRoot // TODO: this is wrong
-		}
+		} as const
 
 		if (fullObjects) {
 			return {
@@ -532,24 +532,28 @@ export class SimulationModeEthereumClientService {
 	public readonly getTokenDecimals = async (token: bigint) => {
 		const tokenInterface = new ethers.Interface(['function decimals() view returns (uint8)'])
 		const balanceOfCallData = stringToUint8Array(tokenInterface.encodeFunctionData('decimals'))
-		const callTransaction = {
-			type: '1559' as const,
+		const callParams = {
 			from: MOCK_ADDRESS,
 			to: token,
 			input: balanceOfCallData,
 			maxFeePerGas: 0n,
 			maxPriorityFeePerGas: 0n,
-			gas: 21000n,
+			gasLimit: 21000n,
 			value: 200000000000000000000000n,
-			accessList: [],
-			nonce: 0n,
-			chainId: await this.getChainId()
-		}
-		const response = await this.call(callTransaction)
+		} as const
+		const response = await this.call(callParams)
 		return EthereumQuantity.parse(response)
 	}
 
-	public readonly call = async (transaction: EthereumUnsignedTransaction, blockTag: EthereumBlockTag = 'latest') => {
+	public readonly call = async (params: Pick<IUnsignedTransaction1559, 'to' | 'from' | 'input' | 'value' | 'maxFeePerGas' | 'maxPriorityFeePerGas' | 'gasLimit'>, blockTag: EthereumBlockTag = 'latest') => {
+		const transaction = {
+			...params,
+			type: '1559' as const,
+			gas: params.gasLimit,
+			nonce: 0n,
+			chainId: await this.getChainId()
+		} as const
+
 		const multicallResult = blockTag === 'latest' || blockTag === 'pending' ?
 			await this.multicall([transaction], await this.ethereumClientService.getBlockNumber() + 1n)
 			: await this.multicall([transaction], blockTag)
