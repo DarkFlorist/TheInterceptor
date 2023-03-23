@@ -1,4 +1,4 @@
-// https://github.com/Zoltu/ethereum-ledger/blob/master/source/vendor/semaphore-async-await/semaphore.ts
+// https://github.com/jsoendermann/semaphore-async-await/blob/master/src/Semaphore.ts
 /** Semaphores are initialized with a number of permits that get aquired and released
  * over the lifecycle of the semaphore. These permits limit the number of simultaneous
  * executions of the code that the semaphore synchronizes. Functions can wait on a semaphore
