@@ -73,7 +73,6 @@ export async function changeAccess(confirmation: InterceptorAccessReply, website
 	if (globalThis.interceptor.settings === undefined) return
 	if (confirmation.approval === 'NoResponse') return
 	globalThis.interceptor.settings.websiteAccess = setAccess(globalThis.interceptor.settings.websiteAccess, website, confirmation.approval === 'Approved', confirmation.requestAccessToAddress)
-	globalThis.interceptor.websiteAccessAddressMetadata = getAddressMetadataForAccess(globalThis.interceptor.settings.websiteAccess)
 	saveWebsiteAccess(globalThis.interceptor.settings.websiteAccess)
 	updateWebsiteApprovalAccesses(promptForAccessesIfNeeded)
 	sendPopupMessageToOpenWindows({ method: 'popup_websiteAccess_changed' })

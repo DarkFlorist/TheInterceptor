@@ -4,7 +4,7 @@ import { Simulator } from '../simulation/simulator.js'
 import { ChangeActiveAddress, ChangeMakeMeRich, ChangePage, PersonalSign, RemoveTransaction, RequestAccountsFromSigner, TransactionConfirmation, InterceptorAccess, ChangeInterceptorAccess, ChainChangeConfirmation, EnableSimulationMode, ReviewNotification, RejectNotification, ChangeActiveChain, AddOrEditAddressBookEntry, GetAddressBookData, RemoveAddressBookEntry, RefreshConfirmTransactionDialogSimulation, UserAddressBook, InterceptorAccessRefresh, InterceptorAccessChangeAddress } from '../utils/interceptor-messages.js'
 import { resolvePendingTransaction } from './windows/confirmTransaction.js'
 import { resolvePersonalSign } from './windows/personalSign.js'
-import { changeAccess, requestAccessFromUser, requestAddressChange, resolveExistingInterceptorAccessAsNoResponse, resolveInterceptorAccess, setPendingAccessRequests } from './windows/interceptorAccess.js'
+import { changeAccess, getAddressMetadataForAccess, requestAccessFromUser, requestAddressChange, resolveExistingInterceptorAccessAsNoResponse, resolveInterceptorAccess, setPendingAccessRequests } from './windows/interceptorAccess.js'
 import { resolveChainChange } from './windows/changeChain.js'
 import { EthereumQuantity } from '../utils/wire-types.js'
 import { getAssociatedAddresses, sendMessageToApprovedWebsitePorts, updateWebsiteApprovalAccesses } from './accessManagement.js'
@@ -249,7 +249,7 @@ export async function homeOpened(simulator: Simulator) {
 		method: 'popup_UpdateHomePage',
 		data: {
 			simulation: await getSimulationResults(),
-			websiteAccessAddressMetadata: globalThis.interceptor.websiteAccessAddressMetadata,
+			websiteAccessAddressMetadata: getAddressMetadataForAccess(globalThis.interceptor.settings.websiteAccess),
 			pendingAccessMetadata: globalThis.interceptor.pendingAccessMetadata,
 			signerAccounts: signerAccounts,
 			signerChain: globalThis.interceptor.signerChain,
