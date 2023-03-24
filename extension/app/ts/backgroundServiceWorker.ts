@@ -28,3 +28,36 @@ const injectContentScript = async () => {
 }
 
 injectContentScript()
+
+/// Workaround for ChromiumIssue1316588 https://bugs.chromium.org/p/chromium/issues/detail?id=1316588
+// TODO, remove when chrome fixes the bug
+const storageArea = chrome.storage.local as chrome.storage.LocalStorageArea & { onChanged: chrome.storage.StorageChangedEvent }
+
+const TEST_INTERVAL_MS = 10000
+const STORAGE_WAIT_TIME_MS = 100
+
+const hasChromiumIssue1316588 = () => {
+	return new Promise((resolve) => {
+		let dispatched = false
+		const testEventDispatching = () => {
+			storageArea.onChanged.removeListener(testEventDispatching)
+			dispatched = true
+		}
+		storageArea.onChanged.addListener(testEventDispatching)
+		storageArea.set({ testEventDispatching: Math.random() })
+		setTimeout(() => resolve(!dispatched), STORAGE_WAIT_TIME_MS)
+	})
+}
+
+const fixChromiumIssue1316588 = () => {
+	hasChromiumIssue1316588().then((hasIssue) => {
+		if (hasIssue) {
+			chrome.runtime.reload()
+		} else {
+			setTimeout(fixChromiumIssue1316588, TEST_INTERVAL_MS)
+		}
+	})
+}
+
+fixChromiumIssue1316588()
+// End of workaround for ChromiumIssue1316588
