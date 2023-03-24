@@ -50,6 +50,6 @@ export function assertIsObject(maybe: unknown): asserts maybe is Object {
 	if (!isObject(maybe)) throw new Error(`Expected object but got ${ typeof maybe }`)
 }
 
-export async function browserStorageLocalGet(keys?: string | string[]) {
-	return await browser.storage.local.get(keys) as { [key: string]: unknown }
+export async function browserStorageLocalGet(keys: string | string[]) {
+	return (await browser.storage.local.get(keys)) as { [key: string]: unknown }
 }
