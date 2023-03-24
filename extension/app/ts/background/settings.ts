@@ -161,8 +161,9 @@ export async function savePendingInterceptorAccessRequestPromise(promise: Pendin
 	return await browser.storage.local.set({ InterceptorAccessRequestPromise: PendingInterceptorAccessRequestPromise.serialize(promise) })
 }
 
+const SIMULATION_RESULTS_STORAGE_KEY = 'simulationResults'
 export async function getSimulationResults() {
-	const results = await browser.storage.local.get(['simulationResults'])
+	const results = await browser.storage.local.get([SIMULATION_RESULTS_STORAGE_KEY]) as unknown
 	if (results.simulationResults === undefined) {
 		return {
 			simulationId: 0,
@@ -179,8 +180,9 @@ export async function getSimulationResults() {
 const simulationResultsSemaphore = new Semaphore(1)
 export async function updateSimulationResults(simulationResults: SimulationResults) {
 	simulationResultsSemaphore.execute(async () => {
-		const results = await browser.storage.local.get(['simulationResults'])
+		const results = await browser.storage.local.get([SIMULATION_RESULTS_STORAGE_KEY]) as unknown
+		// TODO: use funtypes to parse/validate `results` here.  `browser.storage.local.get` returns an `any` I think (which is terrible)
 		if (results.simulationResults !== undefined && simulationResults.simulationId < results.simulationResults.simulationId) return // do not update state with older state
-		return await browser.storage.local.set({ simulationResults: SimulationResults.serialize(simulationResults) })
+		return await browser.storage.local.set({ [SIMULATION_RESULTS_STORAGE_KEY]: SimulationResults.serialize(simulationResults) })
 	})
 }
