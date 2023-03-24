@@ -8,7 +8,7 @@ import Hint from '../subcomponents/Hint.js'
 import { convertNumberToCharacterRepresentationIfSmallEnough } from '../ui-utils.js'
 import { ChangeActiveAddress } from './ChangeActiveAddress.js'
 import { DinoSays } from '../subcomponents/DinoSays.js'
-import { getSignerName } from '../subcomponents/signers.js'
+import { getPrettySignerName } from '../subcomponents/signers.js'
 
 function AssociatedTogether({ associatedAddresses, renameAddressCallBack }: { associatedAddresses: readonly AddressInfoEntry[], renameAddressCallBack: RenameAddressCallBack } ) {
 	const [showLogs, setShowLogs] = useState<boolean>(associatedAddresses.length > 1)
@@ -88,7 +88,7 @@ function AccessRequest({ renameAddressCallBack, accessRequest, changeActiveAddre
 									buttonText = { 'Refresh' }
 								/>
 								<p style = 'color: var(--subtitle-text-color); white-space: normal;' class = 'subtitle is-7'>
-									{ `You can change active address by changing it directly from ${ getSignerName(accessRequest.signerName) } and clicking refresh here afterwards` }
+									{ `You can change active address by changing it directly from ${ getPrettySignerName(accessRequest.signerName) } and clicking refresh here afterwards` }
 								</p>
 							</>
 						}
@@ -111,7 +111,7 @@ interface InterceptorAccessRequest {
 	associatedAddresses: readonly AddressInfoEntry[]
 	addressInfos: readonly AddressInfo[]
 	signerAccounts: readonly bigint[]
-	signerName: SignerName | undefined
+	signerName: SignerName
 	simulationMode: boolean
 	socket: WebsiteSocket
 }

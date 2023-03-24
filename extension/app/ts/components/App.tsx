@@ -37,7 +37,7 @@ export function App() {
 	const [tabIconDetails, setTabConnection] = useState<TabIconDetails>(DEFAULT_TAB_CONNECTION)
 	const [isSettingsLoaded, setIsSettingsLoaded] = useState<boolean>(false)
 	const [currentBlockNumber, setCurrentBlockNumber] = useState<bigint | undefined>(undefined)
-	const [signerName, setSignerName] = useState<SignerName | undefined>(undefined)
+	const [signerName, setSignerName] = useState<SignerName>('NoSignerDetected')
 	const [addingNewAddress, setAddingNewAddress] = useState<AddingNewAddressType> ({ addingAddress: true, type: 'addressInfo' as const })
 
 	async function setActiveAddressAndInformAboutIt(address: bigint | 'signer') {

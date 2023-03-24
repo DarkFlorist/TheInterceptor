@@ -7,7 +7,7 @@ import { ChainSelector } from '../subcomponents/ChainSelector.js'
 import { Spinner } from '../subcomponents/Spinner.js'
 import { DEFAULT_TAB_CONNECTION, getChainName, ICON_NOT_ACTIVE, ICON_SIGNING, ICON_SIGNING_NOT_SUPPORTED, isSupportedChain } from '../../utils/constants.js'
 import { SignerName, TabIconDetails } from '../../utils/interceptor-messages.js'
-import { getSignerName, SignerLogoText, SignersLogoName } from '../subcomponents/signers.js'
+import { getPrettySignerName, SignerLogoText, SignersLogoName } from '../subcomponents/signers.js'
 import { Error } from '../subcomponents/Error.js'
 import { ToolTip } from '../subcomponents/CopyToClipboard.js'
 import { sendPopupMessageToBackgroundPage } from '../../background/backgroundUtils.js'
@@ -81,7 +81,7 @@ function FirstCard(param: FirstCardParams) {
 				/>
 			: param.useSignersAddressAsActiveAddress || !param.simulationMode ?
 				<div class = 'content' style = 'color: var(--negative-color)'>
-					{ `No active address found in ${ getSignerName(param.signerName) }` }
+					{ `No active address found in ${ getPrettySignerName(param.signerName) }` }
 				</div>
 			:
 				<div class = 'content' style = 'color: var(--negative-color)'>
@@ -94,11 +94,11 @@ function FirstCard(param: FirstCardParams) {
 						<button className = 'button is-primary' onClick = { connectToSigner } >
 							<SignerLogoText
 								signerName = { param.signerName }
-								text = { `Connect to ${ getSignerName(param.signerName) }` }
+								text = { `Connect to ${ getPrettySignerName(param.signerName) }` }
 							/>
 						</button>
 					</div>
-				: <p style = 'color: var(--subtitle-text-color);' class = 'subtitle is-7'> { ` You can change active address by changing it directly from ${ getSignerName(param.signerName) }` } </p>
+				: <p style = 'color: var(--subtitle-text-color);' class = 'subtitle is-7'> { ` You can change active address by changing it directly from ${ getPrettySignerName(param.signerName) }` } </p>
 			:
 				<label class = 'form-control' style = 'padding-top: 10px'>
 					<input type = 'checkbox' checked = { param.makeMeRich } onInput = { e => { if (e.target instanceof HTMLInputElement && e.target !== null) { enableMakeMeRich(e.target.checked) } } } />
@@ -145,7 +145,7 @@ export function Home(param: HomeParams) {
 	const [signerAccounts, setSignerAccounts] = useState<readonly bigint[] | undefined>(undefined)
 	const [isLoaded, setLoaded] = useState<boolean>(false)
 	const [currentBlockNumber, setCurrentBlockNumber] = useState<bigint | undefined>(undefined)
-	const [signerName, setSignerName] = useState<SignerName | undefined>(undefined)
+	const [signerName, setSignerName] = useState<SignerName>('NoSignerDetected')
 	const [addressInfos, setAddressInfos] = useState<readonly AddressInfo[] | undefined>(undefined)
 	const [makeMeRich, setMakeMeRich] = useState<boolean>(false)
 

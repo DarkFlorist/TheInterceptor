@@ -6,7 +6,7 @@ import { changeActiveAddressAndChainAndResetSimulation, handleContentScriptMessa
 import { INTERNAL_CHANNEL_NAME, createInternalMessageListener, getHtmlFile, sendPopupMessageToOpenWindows, websiteSocketToString } from '../backgroundUtils.js'
 import { updateExtensionBadge } from '../iconHandler.js'
 import { findAddressInfo } from '../metadataUtils.js'
-import { getPendingInterceptorAccessRequestPromise, savePendingAccessRequests, saveWebsiteAccess, savePendingInterceptorAccessRequestPromise } from '../settings.js'
+import { getPendingInterceptorAccessRequestPromise, savePendingAccessRequests, saveWebsiteAccess, savePendingInterceptorAccessRequestPromise, getSignerName } from '../settings.js'
 
 let openedInterceptorAccessWindow: browser.windows.Window | null = null
 
@@ -138,7 +138,7 @@ export async function requestAccessFromUser(
 				associatedAddresses: associatedAddresses,
 				addressInfos: globalThis.interceptor.settings.userAddressBook.addressInfos,
 				signerAccounts: [],
-				signerName: globalThis.interceptor.signerName,
+				signerName: await getSignerName(),
 				simulationMode: globalThis.interceptor.settings.simulationMode,
 				socket: socket,
 			}
@@ -257,7 +257,7 @@ export async function requestAddressChange(message: InterceptorAccessChangeAddre
 			associatedAddresses: associatedAddresses,
 			addressInfos: globalThis.interceptor.settings.userAddressBook.addressInfos,
 			signerAccounts: [],
-			signerName: globalThis.interceptor.signerName,
+			signerName: await getSignerName(),
 			simulationMode: globalThis.interceptor.settings.simulationMode,
 			socket: message.options.socket,
 		}

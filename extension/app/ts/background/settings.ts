@@ -1,5 +1,5 @@
 import { MOCK_PRIVATE_KEYS_ADDRESS } from '../utils/constants.js'
-import { AddressBookTabIdSetting, LegacyWebsiteAccessArray, Page, PendingAccessRequestArray, PendingChainChangeConfirmationPromise, PendingInterceptorAccessRequestPromise, PendingPersonalSignPromise, PendingUserRequestPromise, Settings, WebsiteAccessArray, WebsiteAccessArrayWithLegacy, pages } from '../utils/interceptor-messages.js'
+import { AddressBookTabIdSetting, LegacyWebsiteAccessArray, Page, PendingAccessRequestArray, PendingChainChangeConfirmationPromise, PendingInterceptorAccessRequestPromise, PendingPersonalSignPromise, PendingUserRequestPromise, Settings, WebsiteAccessArray, WebsiteAccessArrayWithLegacy, pages, SignerName } from '../utils/interceptor-messages.js'
 import { Semaphore } from '../utils/semaphore.js'
 import { AddressInfo, ContactEntries } from '../utils/user-interface-types.js'
 import { SimulationResults } from '../utils/visualizer-types.js'
@@ -186,4 +186,16 @@ export async function updateSimulationResults(simulationResults: SimulationResul
 		if (results.simulationResults !== undefined && simulationResults.simulationId < results.simulationResults.simulationId) return // do not update state with older state
 		return await browser.storage.local.set({ simulationResults: SimulationResults.serialize(simulationResults) })
 	})
+}
+
+export async function saveSignerName(signerName: SignerName) {
+	return await browser.storage.local.set({ signerName: signerName})
+}
+
+export async function getSignerName() {
+	const results = await browser.storage.local.get(['signerName'])
+	if (results) {
+		return SignerName.parse(results.signerName)
+	}
+	return 'NoSignerDetected'
 }

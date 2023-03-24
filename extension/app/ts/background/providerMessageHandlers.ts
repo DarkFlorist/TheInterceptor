@@ -2,9 +2,10 @@ import { ConnectedToSigner, ProviderMessage, WalletSwitchEthereumChainReply } fr
 import { EthereumAccountsReply, EthereumChainReply } from '../utils/wire-types.js'
 import { changeActiveAddressAndChainAndResetSimulation } from './background.js'
 import { getSocketFromPort, sendInternalWindowMessage, sendPopupMessageToOpenWindows } from './backgroundUtils.js'
+import { saveSignerName } from './settings.js'
 import { resolveSignerChainChange } from './windows/changeChain.js'
 
-export function ethAccountsReply(port: browser.runtime.Port, request: ProviderMessage) {
+export async function ethAccountsReply(port: browser.runtime.Port, request: ProviderMessage) {
 	if (!('params' in request.options)) return
 	const signerAccounts = EthereumAccountsReply.parse(request.options.params)
 	if (port.sender?.tab?.id !== undefined) {
@@ -17,9 +18,9 @@ export function ethAccountsReply(port: browser.runtime.Port, request: ProviderMe
 
 	// update active address if we are using signers address
 	if (globalThis.interceptor.settings?.useSignersAddressAsActiveAddress || globalThis.interceptor.settings?.simulationMode === false) {
-		changeActiveAddressAndChainAndResetSimulation(signerAccounts[0], 'noActiveChainChange')
+		await changeActiveAddressAndChainAndResetSimulation(signerAccounts[0], 'noActiveChainChange')
 	}
-	sendPopupMessageToOpenWindows({ method: 'popup_accounts_update' })
+	await sendPopupMessageToOpenWindows({ method: 'popup_accounts_update' })
 }
 
 async function changeSignerChain(port: browser.runtime.Port, signerChain: bigint ) {
@@ -40,16 +41,16 @@ async function changeSignerChain(port: browser.runtime.Port, signerChain: bigint
 	sendPopupMessageToOpenWindows({ method: 'popup_chain_update' })
 }
 
-export function signerChainChanged(port: browser.runtime.Port, request: ProviderMessage) {
+export async function signerChainChanged(port: browser.runtime.Port, request: ProviderMessage) {
 	if (!('params' in request.options)) return
 	const signerChain = EthereumChainReply.parse(request.options.params)[0]
-	changeSignerChain(port, signerChain)
+	await changeSignerChain(port, signerChain)
 }
 
-export function walletSwitchEthereumChainReply(port: browser.runtime.Port, request: ProviderMessage) {
+export async function walletSwitchEthereumChainReply(port: browser.runtime.Port, request: ProviderMessage) {
 	const params = WalletSwitchEthereumChainReply.parse(request.options).params[0]
 	if (params.accept) changeSignerChain(port, params.chainId )
-	resolveSignerChainChange({
+	await resolveSignerChainChange({
 		method: 'popup_signerChangeChainDialog',
 		options: {
 			chainId: params.chainId,
@@ -58,7 +59,7 @@ export function walletSwitchEthereumChainReply(port: browser.runtime.Port, reque
 	})
 }
 
-export function connectedToSigner(_port: browser.runtime.Port, request: ProviderMessage) {
-	globalThis.interceptor.signerName = ConnectedToSigner.parse(request.options).params[0]
-	sendPopupMessageToOpenWindows({ method: 'popup_signer_name_changed' })
+export async function connectedToSigner(_port: browser.runtime.Port, request: ProviderMessage) {
+	await saveSignerName(ConnectedToSigner.parse(request.options).params[0])
+	await sendPopupMessageToOpenWindows({ method: 'popup_signer_name_changed' })
 }
