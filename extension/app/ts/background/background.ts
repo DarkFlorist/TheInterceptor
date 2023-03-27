@@ -7,7 +7,7 @@ import { blockNumber, call, chainId, estimateGas, gasPrice, getAccounts, getBala
 import { changeActiveAddress, changeMakeMeRich, changePage, resetSimulation, confirmDialog, refreshSimulation, removeTransaction, requestAccountsFromSigner, refreshPopupConfirmTransactionSimulation, confirmPersonalSign, confirmRequestAccess, changeInterceptorAccess, changeChainDialog, popupChangeActiveChain, enableSimulationMode, reviewNotification, rejectNotification, addOrModifyAddressInfo, getAddressBookData, removeAddressBookEntry, openAddressBook, homeOpened, interceptorAccessChangeAddressOrRefresh } from './popupMessageHandlers.js'
 import { SimulationState } from '../utils/visualizer-types.js'
 import { SignerState, AddressBookEntry, AddressInfoEntry, Website, TabConnection, WebsiteSocket } from '../utils/user-interface-types.js'
-import { getAddressMetadataForAccess, requestAccessFromUser, setPendingAccessRequests } from './windows/interceptorAccess.js'
+import { requestAccessFromUser, setPendingAccessRequests } from './windows/interceptorAccess.js'
 import { CHAINS, ICON_NOT_ACTIVE, isSupportedChain, MAKE_YOU_RICH_TRANSACTION, METAMASK_ERROR_USER_REJECTED_REQUEST } from '../utils/constants.js'
 import { PriceEstimator } from '../simulation/priceEstimator.js'
 import { getActiveAddressForDomain, getAssociatedAddresses, sendActiveAccountChangeToApprovedWebsitePorts, sendMessageToApprovedWebsitePorts, updateWebsiteApprovalAccesses, verifyAccess } from './accessManagement.js'
@@ -30,7 +30,6 @@ let simulator: Simulator | undefined = undefined
 
 declare global {
 	var interceptor: {
-		websiteAccessAddressMetadata: AddressInfoEntry[],
 		pendingAccessMetadata: [string, AddressInfoEntry][],
 		prependTransactionMode: PrependTransactionMode,
 		signerChain: bigint | undefined,
@@ -45,7 +44,6 @@ declare global {
 globalThis.interceptor = {
 	prependTransactionMode: PrependTransactionMode.NO_PREPEND,
 	signerAccounts: undefined,
-	websiteAccessAddressMetadata: [],
 	pendingAccessMetadata: [],
 	signerChain: undefined,
 	signerName: undefined,
@@ -622,8 +620,6 @@ async function startup() {
 			globalThis.interceptor.settings.activeSigningAddress = signerAcc
 		}
 	}
-
-	globalThis.interceptor.websiteAccessAddressMetadata = getAddressMetadataForAccess(globalThis.interceptor.settings.websiteAccess)
 
 	const chainString = globalThis.interceptor.settings.activeChain.toString()
 	if (isSupportedChain(chainString)) {
