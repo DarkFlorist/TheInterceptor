@@ -325,8 +325,8 @@ class InterceptorMessageListener {
 		} finally {
 			const pending = this.outstandingRequests.get(replyRequest.requestId)
 			if (pending === undefined) return
-			if ('error' in replyRequest) {
-				return pending.resolve(replyRequest.error)
+			if (replyRequest.error !== undefined) {
+				return pending.reject(new EthereumJsonRpcError(replyRequest.error.code, replyRequest.error.message, { request: replyRequest.options }))
 			}
 			return pending.resolve(replyRequest.result)
 		}
@@ -350,7 +350,7 @@ class InterceptorMessageListener {
 		if (forwardRequest.error !== undefined) {
 			const pending = this.outstandingRequests.get(forwardRequest.requestId)
 			if (pending === undefined) throw new EthereumJsonRpcError(forwardRequest.error.code, forwardRequest.error.message)
-			return pending.resolve(forwardRequest.error)
+			return pending.reject(new EthereumJsonRpcError(forwardRequest.error.code, forwardRequest.error.message, { request: forwardRequest.options }))
 		}
 
 		if (forwardRequest.result !== undefined) return this.handleReplyRequest(forwardRequest)

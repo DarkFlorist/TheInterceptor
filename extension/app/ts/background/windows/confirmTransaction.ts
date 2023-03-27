@@ -23,15 +23,14 @@ export async function resolvePendingTransaction(confirmation: Confirmation) {
 		const resolved = await resolve(confirmation, data.simulationMode, data.transactionToSimulate, data.website)
 		sendMessageToContentScript(data.socket, resolved, data.request)
 	}
-	pendingTransaction = undefined
 	openedConfirmTransactionDialogWindow = null
 }
 
-const onCloseWindow = () => { // check if user has closed the window on their own, if so, reject signature
+const onCloseWindow = (windowId: number) => { // check if user has closed the window on their own, if so, reject signature
+	if (openedConfirmTransactionDialogWindow === null || openedConfirmTransactionDialogWindow.id !== windowId) return
 	if (pendingTransaction === undefined) return
 	openedConfirmTransactionDialogWindow = null
 	resolvePendingTransaction('Rejected')
-	browser.windows.onRemoved.removeListener( onCloseWindow )
 }
 
 const reject = function() {
@@ -78,7 +77,7 @@ export async function openConfirmTransactionDialog(
 
 		const windowReadyAndListening = async function popupMessageListener(msg: unknown) {
 			const message = ExternalPopupMessage.parse(msg)
-			if ( message.method !== 'popup_confirmTransactionReadyAndListening') return
+			if (message.method !== 'popup_confirmTransactionReadyAndListening') return
 			browser.runtime.onMessage.removeListener(windowReadyAndListening)
 			const refreshMessage = await refreshSimulationPromise
 			if (openedConfirmTransactionDialogWindow !== null && openedConfirmTransactionDialogWindow.id) {
@@ -87,32 +86,35 @@ export async function openConfirmTransactionDialog(
 			}
 		}
 
-		browser.runtime.onMessage.addListener(windowReadyAndListening)
+		try {
+			browser.runtime.onMessage.addListener(windowReadyAndListening)
 
-		openedConfirmTransactionDialogWindow = await browser.windows.create(
-			{
+			openedConfirmTransactionDialogWindow = await browser.windows.create({
 				url: getHtmlFile('confirmTransaction'),
 				type: 'popup',
 				height: 600,
 				width: 600,
-			}
-		)
+			})
 
-		if (openedConfirmTransactionDialogWindow === null || openedConfirmTransactionDialogWindow.id === undefined) return reject()
+			if (openedConfirmTransactionDialogWindow === null || openedConfirmTransactionDialogWindow.id === undefined) return reject()
 
-		saveConfirmationWindowPromise({
-			website: website,
-			dialogId: openedConfirmTransactionDialogWindow.id,
-			socket: socket,
-			request: request,
-			transactionToSimulate: transactionToSimulate,
-			simulationMode: simulationMode,
-		})
+			saveConfirmationWindowPromise({
+				website: website,
+				dialogId: openedConfirmTransactionDialogWindow.id,
+				socket: socket,
+				request: request,
+				transactionToSimulate: transactionToSimulate,
+				simulationMode: simulationMode,
+			})
 
-		browser.windows.onRemoved.addListener(onCloseWindow)
+			browser.windows.onRemoved.addListener(onCloseWindow)
 
-		const reply = await pendingTransaction
-		return await resolve(reply, simulationMode, transactionToSimulate, website)
+			const reply = await pendingTransaction
+			return await resolve(reply, simulationMode, transactionToSimulate, website)
+		} finally {
+			browser.windows.onRemoved.removeListener(windowReadyAndListening)
+			browser.windows.onRemoved.removeListener(onCloseWindow)
+		}
 	} finally {
 		pendingTransaction = undefined
 	}
