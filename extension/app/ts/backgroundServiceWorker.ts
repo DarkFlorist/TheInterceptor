@@ -31,7 +31,7 @@ injectContentScript()
 
 /// Workaround for ChromiumIssue1316588 https://bugs.chromium.org/p/chromium/issues/detail?id=1316588
 // TODO, remove when chrome fixes the bug
-const storageArea = chrome.storage.local as chrome.storage.LocalStorageArea & { onChanged: chrome.storage.StorageChangedEvent }
+const storageArea = browser.storage.local as browser.storage.LocalStorageArea & { onChanged: browser.storage.StorageChangedEvent }
 
 const TEST_INTERVAL_MS = 10000
 const STORAGE_WAIT_TIME_MS = 100
