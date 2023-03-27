@@ -527,7 +527,6 @@ export const Settings = funtypes.Object({
 	activeSigningAddress: funtypes.Union(EthereumAddress, funtypes.Undefined),
 	activeChain: EthereumQuantity,
 	page: Page,
-	makeMeRich: funtypes.Boolean,
 	useSignersAddressAsActiveAddress: funtypes.Boolean,
 	websiteAccess: WebsiteAccessArray,
 	simulationMode: funtypes.Boolean,
@@ -554,6 +553,7 @@ export const UpdateHomePage = funtypes.ReadonlyObject({
 		currentBlockNumber: funtypes.Union(EthereumQuantity, funtypes.Undefined),
 		settings: Settings,
 		tabIconDetails: funtypes.Union(TabIconDetails, funtypes.Undefined),
+		makeMeRich: funtypes.Boolean,
 	})
 })
 
