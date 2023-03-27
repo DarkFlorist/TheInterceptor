@@ -516,6 +516,12 @@ async function onContentScriptConnected(port: browser.runtime.Port) {
 		}
 
 		const access = verifyAccess(socket, request.options.method, websiteOrigin)
+
+		if (access === 'askAccess' && request.options.method === 'eth_accounts') {
+			// do not prompt for eth_accounts, just reply with no accounts.
+			return sendMessageToContentScript(socket, { 'result': [] }, request)
+		}
+
 		switch (access) {
 			case 'noAccess': return refuseAccess(socket, request)
 			case 'askAccess': return await gateKeepRequestBehindAccessDialog(socket, request, await websitePromise)
