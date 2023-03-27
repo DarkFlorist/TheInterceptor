@@ -182,7 +182,6 @@ const simulationResultsSemaphore = new Semaphore(1)
 export async function updateSimulationResults(newResults: SimulationResults) {
 	simulationResultsSemaphore.execute(async () => {
 		const oldResults = await getSimulationResults()
-		// TODO: use funtypes to parse/validate `results` here.  `browser.storage.local.get` returns an `any` I think (which is terrible)
 		if (newResults.simulationId < oldResults.simulationId) return // do not update state with older state
 		return await browser.storage.local.set({ [SIMULATION_RESULTS_STORAGE_KEY]: SimulationResults.serialize(newResults) })
 	})
