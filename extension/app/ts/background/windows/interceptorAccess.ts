@@ -61,10 +61,6 @@ export function getAddressMetadataForAccess(websiteAccess: WebsiteAccessArray): 
 export async function setPendingAccessRequests(pendingAccessRequest: PendingAccessRequestArray) {
 	if (globalThis.interceptor.settings === undefined) return
 	globalThis.interceptor.settings.pendingAccessRequests = pendingAccessRequest
-	const addresses = globalThis.interceptor.settings.pendingAccessRequests.map((x) => x.requestAccessToAddress === undefined ? [] : x.requestAccessToAddress).flat()
-	const addressSet = new Set(addresses)
-	const infos = globalThis.interceptor.settings.userAddressBook.addressInfos
-	globalThis.interceptor.pendingAccessMetadata = Array.from(addressSet).map((x) => [addressString(x), findAddressInfo(BigInt(x), infos)])
 	savePendingAccessRequests(globalThis.interceptor.settings.pendingAccessRequests)
 	await updateExtensionBadge()
 }

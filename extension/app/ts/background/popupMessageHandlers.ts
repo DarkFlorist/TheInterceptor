@@ -13,6 +13,8 @@ import { isSupportedChain } from '../utils/constants.js'
 import { getMetadataForAddressBookData } from './medataSearch.js'
 import { findAddressInfo } from './metadataUtils.js'
 import { assertUnreachable } from '../utils/typescript.js'
+import { addressString } from '../utils/bigint.js'
+import { AddressInfoEntry } from '../utils/user-interface-types.js'
 
 export async function confirmDialog(_simulator: Simulator, confirmation: TransactionConfirmation) {
 	await resolvePendingTransaction(confirmation.options.accept ? 'Approved' : 'Rejected')
@@ -236,12 +238,16 @@ export async function homeOpened(simulator: Simulator) {
 	const signerAccounts = signerState === undefined ? undefined : signerState.signerAccounts
 	const tabIconDetails = tabId === undefined ? undefined : globalThis.interceptor.websiteTabConnections.get(tabId)?.tabIconDetails
 
+	const pendingAccessRequestsAddresses = new Set(globalThis.interceptor.settings.pendingAccessRequests.map((x) => x.requestAccessToAddress === undefined ? [] : x.requestAccessToAddress).flat())
+	const addressInfos = globalThis.interceptor.settings.userAddressBook.addressInfos
+	const pendingAccessMetadata: [string, AddressInfoEntry][] = Array.from(pendingAccessRequestsAddresses).map((x) => [addressString(x), findAddressInfo(BigInt(x), addressInfos)])
+
 	sendPopupMessageToOpenWindows({
 		method: 'popup_UpdateHomePage',
 		data: {
 			simulation: await getSimulationResults(),
 			websiteAccessAddressMetadata: getAddressMetadataForAccess(globalThis.interceptor.settings.websiteAccess),
-			pendingAccessMetadata: globalThis.interceptor.pendingAccessMetadata,
+			pendingAccessMetadata: pendingAccessMetadata,
 			signerAccounts: signerAccounts,
 			signerChain: globalThis.interceptor.signerChain,
 			signerName: globalThis.interceptor.signerName,
