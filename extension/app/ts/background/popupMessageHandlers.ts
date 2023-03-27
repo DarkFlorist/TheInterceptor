@@ -236,7 +236,7 @@ export async function openAddressBook(_simulator: Simulator) {
 	return await browser.tabs.update(addressBookTab.id, { active: true })
 }
 
-export async function homeOpened() {
+export async function homeOpened(simulator: Simulator) {
 	if (globalThis.interceptor.settings === undefined) return
 
 	const tabs = await browser.tabs.query({ active: true, currentWindow: true })
@@ -254,7 +254,7 @@ export async function homeOpened() {
 			signerAccounts: signerAccounts,
 			signerChain: globalThis.interceptor.signerChain,
 			signerName: globalThis.interceptor.signerName,
-			currentBlockNumber: globalThis.interceptor.currentBlockNumber,
+			currentBlockNumber: await simulator.ethereum.getBlockNumber(),
 			settings: globalThis.interceptor.settings,
 			tabIconDetails: tabIconDetails,
 		}

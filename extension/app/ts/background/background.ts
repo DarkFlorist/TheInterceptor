@@ -38,7 +38,6 @@ declare global {
 		websiteTabSignerStates: Map<number, SignerState>,
 		websiteTabConnections: Map<number, TabConnection>,
 		settings: Settings | undefined,
-		currentBlockNumber: bigint | undefined,
 		signerAccounts: readonly EthereumAddress[] | undefined,
 	}
 }
@@ -53,7 +52,6 @@ globalThis.interceptor = {
 	websiteTabSignerStates: new Map(),
 	settings: undefined,
 	websiteTabConnections: new Map(),
-	currentBlockNumber: undefined,
 }
 
 export async function updateSimulationState( getUpdatedSimulationState: () => Promise<SimulationState | undefined>, setAsActiveAddress: bigint | undefined = undefined) {
@@ -341,7 +339,6 @@ async function handleSigningMode(simulator: Simulator, socket: WebsiteSocket, we
 }
 
 function newBlockCallback(blockNumber: bigint) {
-	globalThis.interceptor.currentBlockNumber = blockNumber
 	sendPopupMessageToOpenWindows({ method: 'popup_new_block_arrived', data: { blockNumber } })
 	if (simulator !== undefined) refreshSimulation(simulator)
 }
@@ -357,7 +354,6 @@ export async function changeActiveAddressAndChainAndResetSimulation(activeAddres
 		saveActiveChain(activeChain)
 		const chainString = activeChain.toString()
 		if (isSupportedChain(chainString)) {
-			globalThis.interceptor.currentBlockNumber = undefined
 			simulator.cleanup()
 			simulator = new Simulator(chainString, newBlockCallback)
 		}
@@ -599,7 +595,7 @@ async function popupMessageHandler(simulator: Simulator, request: unknown) {
 		case 'popup_changeChainReadyAndListening': return // handled elsewhere (changeChain.ts)
 		case 'popup_interceptorAccessReadyAndListening': return // handled elsewhere (interceptorAccess.ts)
 		case 'popup_confirmTransactionReadyAndListening': return // handled elsewhere (confirmTransaction.ts)
-		case 'popup_requestNewHomeData': return homeOpened()
+		case 'popup_requestNewHomeData': return homeOpened(simulator)
 		case 'popup_interceptorAccessChangeAddress': return await interceptorAccessChangeAddressOrRefresh(parsedRequest)
 		case 'popup_interceptorAccessRefresh': return await interceptorAccessChangeAddressOrRefresh(parsedRequest)
 		default: assertUnreachable(parsedRequest)
