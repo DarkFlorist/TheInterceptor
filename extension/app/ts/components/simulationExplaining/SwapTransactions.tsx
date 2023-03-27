@@ -307,7 +307,7 @@ export function SwapVisualization(param: SwapVisualizationParams) {
 			<div style = 'display: grid; grid-template-rows: max-content max-content max-content max-content;' >
 			<p style = { `color: var(--text-color);` }> Swap </p>
 			<div class = 'box' style = 'background-color: var(--alpha-005); box-shadow: unset; margin-bottom: 0px; display: grid;'>
-				<span class = 'grid' style = 'grid-template-columns: max-content auto; display:grid;'>
+				<span class = 'grid' style = 'grid-template-columns: auto auto; display: grid;'>
 					{ param.identifiedSwap.type === 'TokenToToken' || param.identifiedSwap.type === 'TokenToETH' ?
 						'tokenIdSent' in param.identifiedSwap ? <>
 								<div class = 'log-cell' style = 'justify-content: left;'>
@@ -362,7 +362,7 @@ export function SwapVisualization(param: SwapVisualizationParams) {
 			</div>
 			<p style = { `color: var(--text-color);` }> For </p>
 			<div class = 'box' style = 'background-color: var(--alpha-005); box-shadow: unset; margin-bottom: 0px; display: grid;'>
-				<span class = 'grid' style = 'grid-template-columns: max-content auto; display:grid;'>
+				<span class = 'grid' style = 'grid-template-columns: auto auto; display: grid;'>
 					{ param.identifiedSwap.type === 'TokenToToken' || param.identifiedSwap.type === 'ETHToToken' ?
 						'tokenIdReceived' in param.identifiedSwap ? <>
 								<div class = 'log-cell' style = 'justify-content: left;'>

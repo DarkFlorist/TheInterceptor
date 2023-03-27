@@ -31,6 +31,7 @@ export function verifyAccess(socket: WebsiteSocket, callMethod: string, websiteO
 	const activeAddress = getActiveAddress()
 	const access = activeAddress !== undefined ? hasAddressAccess(globalThis.interceptor.settings.websiteAccess, websiteOrigin, activeAddress) : hasAccess(globalThis.interceptor.settings.websiteAccess, websiteOrigin)
 	if (access === 'hasAccess') return connectToPort(socket, websiteOrigin) ? 'hasAccess' : 'noAccess'
+	if (access === 'noAccess') return 'noAccess'
 	return isRpcMethod ? 'askAccess' : 'noAccess'
 }
 

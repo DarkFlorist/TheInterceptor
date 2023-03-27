@@ -158,7 +158,7 @@ export async function getAccounts(getActiveAddressForDomain: (websiteAccess: Web
 	}
 	const account = getActiveAddressForDomain(globalThis.interceptor.settings.websiteAccess, connection.websiteOrigin)
 	if (account === undefined) {
-		return {result: [] }
+		return { result: [] }
 	}
 
 	return { result: [EthereumAddress.serialize(account)] }
