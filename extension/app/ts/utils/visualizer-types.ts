@@ -189,3 +189,13 @@ export type ERC721TokenApprovalChange = {
 	token: ERC721TokenDefinitionParams
 	approvedEntry: AddressBookEntry
 }
+
+export type SimulationResults = funtypes.Static<typeof SimulationResults>
+export const SimulationResults = funtypes.Object({
+	simulationId: funtypes.Number,
+	simulationState: funtypes.Union(SimulationState, funtypes.Undefined),
+	visualizerResults: funtypes.Union(funtypes.ReadonlyArray(SimResults), funtypes.Undefined),
+	addressBookEntries: funtypes.ReadonlyArray(AddressBookEntry),
+	tokenPrices: funtypes.ReadonlyArray(TokenPriceEstimate),
+	activeAddress: funtypes.Union(EthereumAddress, funtypes.Undefined),
+})
