@@ -28,6 +28,7 @@ export const AddressInfo = funtypes.Object({
 	address: EthereumAddress,
 	askForAddressAccess: funtypes.Union(funtypes.Boolean, funtypes.Literal(undefined).withParser(LiteralConverterParserFactory(undefined, true))),
 }).asReadonly()
+export const AddressInfoArray = funtypes.ReadonlyArray(AddressInfo)
 
 export type AddressInfoEntry = funtypes.Static<typeof AddressInfoEntry>
 export const AddressInfoEntry = funtypes.Object({
