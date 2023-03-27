@@ -36,17 +36,16 @@ const storageArea = browser.storage.local as browser.storage.LocalStorageArea & 
 const TEST_INTERVAL_MS = 10000
 const STORAGE_WAIT_TIME_MS = 100
 
-const hasChromiumIssue1316588 = () => {
-	return new Promise((resolve) => {
-		let dispatched = false
-		const testEventDispatching = () => {
-			storageArea.onChanged.removeListener(testEventDispatching)
-			dispatched = true
-		}
-		storageArea.onChanged.addListener(testEventDispatching)
-		storageArea.set({ testEventDispatching: Math.random() })
-		setTimeout(() => resolve(!dispatched), STORAGE_WAIT_TIME_MS)
-	})
+const hasChromiumIssue1316588 = async () => {
+	let dispatched = false
+	const testEventDispatching = () => {
+		storageArea.onChanged.removeListener(testEventDispatching)
+		dispatched = true
+	}
+	storageArea.onChanged.addListener(testEventDispatching)
+	storageArea.set({ testEventDispatching: Math.random() })
+	await sleep(STORAGE_WAIT_TIME_MS)
+	return !dispatched
 }
 
 const fixChromiumIssue1316588 = () => {
