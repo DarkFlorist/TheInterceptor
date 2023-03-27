@@ -31,15 +31,12 @@ export function IncompleteAddressIcon({ addressInput, logoUri }: IncompleteAddre
 			backgroundColor = { 'var(--text-color)' }
 		/>
 	}
-	if (logoUri) {
-		return <AddressIcon
-			address = { 0x0n } //TODO, make address optional for AddressIcon
-			logoUri = { logoUri }
-			isBig = { true }
-			backgroundColor = { 'var(--text-color)' }
-		/>
-	}
-	return <div style = 'background-color: var(--unimportant-text-color); width: 40px; height: 40px; border-radius: 5px;'/>
+	return <AddressIcon
+		address = { undefined }
+		logoUri = { logoUri }
+		isBig = { true }
+		backgroundColor = { 'var(--text-color)' }
+	/>
 }
 
 type NameInputParams = {

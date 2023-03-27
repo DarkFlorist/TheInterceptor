@@ -4,7 +4,7 @@ import { Semaphore } from '../utils/semaphore.js'
 import { browserStorageLocalGet, browserStorageLocalSet } from '../utils/typescript.js'
 import { AddressInfo, AddressInfoArray, ContactEntries } from '../utils/user-interface-types.js'
 import { SimulationResults } from '../utils/visualizer-types.js'
-import { EthereumAddress, EthereumQuantity } from '../utils/wire-types.js'
+import { EthereumAddressOrUndefined, EthereumQuantity } from '../utils/wire-types.js'
 import * as funtypes from 'funtypes'
 
 export const defaultAddresses = [
@@ -52,8 +52,8 @@ export async function getSettings() : Promise<Settings> {
 		'contacts',
 	])
 	return {
-		activeSimulationAddress: results.activeSimulationAddress !== undefined ? EthereumAddress.parse(results.activeSimulationAddress) : defaultAddresses[0].address,
-		activeSigningAddress: results.activeSigningAddress !== undefined ? EthereumAddress.parse(results.activeSigningAddress) : undefined,
+		activeSimulationAddress: results.activeSimulationAddress !== undefined ? EthereumAddressOrUndefined.parse(results.activeSimulationAddress) : defaultAddresses[0].address,
+		activeSigningAddress: results.activeSigningAddress !== undefined ? EthereumAddressOrUndefined.parse(results.activeSigningAddress) : undefined,
 		page: results.page !== undefined ? Page.parse(results.page) : 'Home',
 		useSignersAddressAsActiveAddress: results.useSignersAddressAsActiveAddress !== undefined ? funtypes.Boolean.parse(results.useSignersAddressAsActiveAddress) : false,
 		websiteAccess: results.websiteAccess !== undefined ? parseAccessWithLegacySupport(results.websiteAccess) : [],
@@ -68,10 +68,10 @@ export async function getSettings() : Promise<Settings> {
 }
 
 export function saveActiveSimulationAddress(activeSimulationAddress: bigint | undefined) {
-	return browserStorageLocalSet({ activeSimulationAddress: EthereumAddress.serialize(activeSimulationAddress ? activeSimulationAddress : defaultAddresses[0].address) as string })
+	return browserStorageLocalSet({ activeSimulationAddress: EthereumAddressOrUndefined.serialize(activeSimulationAddress) as string })
 }
 export function saveActiveSigningAddress(activeSigningAddress: bigint | undefined) {
-	return browserStorageLocalSet({ activeSigningAddress: EthereumAddress.serialize(activeSigningAddress ? activeSigningAddress : defaultAddresses[0].address) as string })
+	return browserStorageLocalSet({ activeSigningAddress: EthereumAddressOrUndefined.serialize(activeSigningAddress) as string })
 }
 
 export function saveAddressInfos(addressInfos: readonly AddressInfo[]) {

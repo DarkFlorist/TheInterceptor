@@ -19,46 +19,51 @@ export function findAddressInfo(addressToFind: bigint, addressInfos: readonly Ad
 }
 
 export type AddressIconParams = {
-	address: bigint,
+	address: bigint | undefined,
 	logoUri: string | undefined,
 	isBig: boolean
 	backgroundColor: string,
 }
 
 export function AddressIcon(param: AddressIconParams) {
-	const style = `${ param.isBig ? `width: 40px; height: 40px; border-radius: 10px;` : `width: 24px; height: 24px; border-radius: 2px;` }`
-	return <div style = { style } class = 'noselect nopointer'>
-		{ param.logoUri === undefined ? <>
+	const style = `background-color: var(--unimportant-text-color); ${ param.isBig ? `width: 40px; height: 40px;` : `width: 24px; height: 24px;` }`
+	if (param.address !== undefined && param.logoUri === undefined) {
+		return <div style = { style } class = 'noselect nopointer'>
 			<Blockie
 				seed = { addressString(param.address).toLowerCase() }
 				size = { 8 }
 				scale = { param.isBig ? 5 : 3 }
 			/>
-			</> : <img src = { param.logoUri } style = 'width: 100%; max-height: 100%'/>
-		}
-	</div>
+		</div>
+	}
+	if (param.logoUri !== undefined) {
+		return <div style = { style } class = 'noselect nopointer'>
+			<img src = { param.logoUri } style = 'width: 100%; max-height: 100%'/>
+		</div>
+	}
+	return <div style = { style } class = 'noselect nopointer'></div>
 }
 
 
 export type BigAddressParams = {
-	readonly addressBookEntry: AddressBookEntry
+	readonly addressBookEntry: AddressBookEntry | undefined
 	readonly noCopying?: boolean
 	readonly renameAddressCallBack: RenameAddressCallBack
 }
 
 export function BigAddress(params: BigAddressParams) {
-	const addrString = checksummedAddress(params.addressBookEntry.address)
-	const title = params.addressBookEntry.name
+	const addrString = params.addressBookEntry && checksummedAddress(params.addressBookEntry.address)
+	const title = params.addressBookEntry === undefined ? 'No address found' : params.addressBookEntry.name
 	const subTitle = title != addrString ? addrString : ''
 
 	return <div class = 'media'>
 		<div class = 'media-left'>
-			{ !params.noCopying ?
+			{ !params.noCopying && addrString !== undefined ?
 				<CopyToClipboard content = { addrString } copyMessage = 'Address copied!'>
 					<span class = 'noselect nopointer'>
 						<AddressIcon
-							address = { params.addressBookEntry.address }
-							logoUri = { 'logoUri' in params.addressBookEntry ? params.addressBookEntry.logoUri : undefined}
+							address = { params.addressBookEntry?.address }
+							logoUri = { params.addressBookEntry !== undefined && 'logoUri' in params.addressBookEntry ? params.addressBookEntry.logoUri : undefined}
 							isBig = { true }
 							backgroundColor = { 'var(--text-color)' }
 						/>
@@ -67,8 +72,8 @@ export function BigAddress(params: BigAddressParams) {
 			:
 				<span class = 'noselect nopointer'>
 					<AddressIcon
-						address = { params.addressBookEntry.address }
-						logoUri = { 'logoUri' in params.addressBookEntry ? params.addressBookEntry.logoUri : undefined }
+						address = { params.addressBookEntry?.address }
+						logoUri = { params.addressBookEntry !== undefined && 'logoUri' in params.addressBookEntry ? params.addressBookEntry.logoUri : undefined }
 						isBig = { true }
 						backgroundColor = { 'var(--text-color)' }
 					/>
@@ -77,19 +82,25 @@ export function BigAddress(params: BigAddressParams) {
 		</div>
 
 		<div class = 'media-content' style = 'overflow-y: hidden; overflow-x: clip; display: block;'>
-			<span className = 'big-address-container' data-value = { params.addressBookEntry.name }>
+			<span className = 'big-address-container' data-value = { title }>
 				<span class = 'address-text-holder'>
-					<CopyToClipboard content = { checksummedAddress(params.addressBookEntry.address) } copyMessage = 'Address copied!' style = { { 'text-overflow': 'ellipsis', overflow: 'hidden' } }>
-						<p class = 'title is-5 is-spaced address-text noselect nopointer'>{ title }</p>
-					</CopyToClipboard>
-					<button className = 'button is-primary is-small rename-address-button' onClick ={ () => params.renameAddressCallBack(params.addressBookEntry) }>
+					{ !params.noCopying && addrString !== undefined ?
+						<CopyToClipboard content = { addrString } copyMessage = 'Address copied!' style = { { 'text-overflow': 'ellipsis', overflow: 'hidden' } }>
+							<p class = 'title is-5 is-spaced address-text noselect nopointer'>{ title }</p>
+						</CopyToClipboard>
+					: <p class = 'title is-5 is-spaced address-text noselect nopointer'>{ title }</p> }
+					<button
+						className = 'button is-primary is-small rename-address-button'
+						onClick = { () => params.addressBookEntry && params.renameAddressCallBack(params.addressBookEntry) }
+						disabled = { params.addressBookEntry === undefined }
+					>
 						<span class = 'icon'>
 							<img src = '../img/rename.svg'/>
 						</span>
 					</button>
 				</span>
 			</span>
-			{ !params.noCopying ?
+			{ !params.noCopying && addrString !== undefined ?
 				<CopyToClipboard content = { addrString } copyMessage = 'Address copied!'>
 					<p class = 'subtitle is-7 noselect nopointer' style = 'text-overflow: ellipsis; white-space: nowrap;'>
 						{ subTitle }
@@ -105,7 +116,7 @@ export function BigAddress(params: BigAddressParams) {
 }
 
 export type ActiveAddressParams = {
-	readonly activeAddress: AddressBookEntry
+	readonly activeAddress: AddressBookEntry | undefined
 	readonly disableButton: boolean
 	readonly changeActiveAddress: () => void
 	readonly renameAddressCallBack: RenameAddressCallBack

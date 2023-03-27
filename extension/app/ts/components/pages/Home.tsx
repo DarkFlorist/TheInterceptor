@@ -59,8 +59,11 @@ function FirstCard(param: FirstCardParams) {
 			{ param.useSignersAddressAsActiveAddress || !param.simulationMode ?
 				<p style = 'color: var(--text-color); text-align: left'>
 					<span class = 'vertical-center' style = 'display: inline-flex;' >
-						Retrieving from&nbsp;
-						<SignersLogoName signerName = { param.signerName } />
+						{ param.signerName === 'NoSigner' ? 'Trying to retrieve from a signer, but signer is not connected' :
+							<>Retrieving from&nbsp;
+								<SignersLogoName signerName = { param.signerName } />
+							</>
+						}
 					</span>
 					{ param.signerAccounts !== undefined && param.signerAccounts.length > 0 && param.tabIconDetails.icon !== ICON_NOT_ACTIVE ? <span style = 'float: right; color: var(--primary-color);'> CONNECTED </span> :
 						param.tabIconDetails.icon === ICON_SIGNING || param.tabIconDetails.icon === ICON_SIGNING_NOT_SUPPORTED ? <span style = 'float: right; color: var(--negative-color);'> NOT CONNECTED </span> : <></>
@@ -68,22 +71,26 @@ function FirstCard(param: FirstCardParams) {
 				</p>
 				: <></>
 			}
-			{ param.activeAddress !== undefined ?
-				<ActiveAddress
-					activeAddress = { {
-						type: 'addressInfo' as const,
-						...param.activeAddress,
-					} }
-					buttonText = { 'Change' }
-					disableButton = { !param.simulationMode }
-					changeActiveAddress = { param.changeActiveAddress }
-					renameAddressCallBack = { param.renameAddressCallBack }
-				/>
-			: param.useSignersAddressAsActiveAddress || !param.simulationMode ?
-				<div class = 'content' style = 'color: var(--negative-color)'>
-					{ `No active address found in ${ getPrettySignerName(param.signerName) }` }
-				</div>
-			:
+
+			<ActiveAddress
+				activeAddress = { param.activeAddress !== undefined ? {
+					type: 'addressInfo' as const,
+					...param.activeAddress,
+				} : undefined }
+				buttonText = { 'Change' }
+				disableButton = { !param.simulationMode }
+				changeActiveAddress = { param.changeActiveAddress }
+				renameAddressCallBack = { param.renameAddressCallBack }
+			/>
+
+			{ param.activeAddress !== undefined ? <></>
+				: param.useSignersAddressAsActiveAddress || !param.simulationMode ?
+					<div class = 'content' style = 'color: var(--negative-color)'>
+						{ param.signerName === 'NoSigner' ? 'To communicate with a signer, you need to be on a DApp page and have the signer connected to the DApp' :
+							`No active address found in ${ getPrettySignerName(param.signerName) }`
+						}
+					</div>
+				:
 				<div class = 'content' style = 'color: var(--negative-color)'>
 					No active address
 				</div>
