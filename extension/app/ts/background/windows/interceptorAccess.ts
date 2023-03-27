@@ -109,86 +109,87 @@ export async function requestAccessFromUser(
 		if (request) refuseAccess(socket, request)
 	}
 	if (globalThis.interceptor.settings === undefined) return rejectReply
+
+	if (pendingInterceptorAccess !== undefined) return rejectReply()
+
 	// check if we need to ask address access or not. If address is put to never need to have address specific permision, we don't need to ask for it
 	const askForAddressAccess = requestAccessToAddress !== undefined && globalThis.interceptor.settings?.userAddressBook.addressInfos.find((x) => x.address === requestAccessToAddress.address)?.askForAddressAccess !== false
 	const accessAddress = askForAddressAccess ? requestAccessToAddress : undefined
 
-	if (globalThis.interceptor.settings.pendingAccessRequests.find((x) => x.website.websiteOrigin === website.websiteOrigin && x.requestAccessToAddress === accessAddress?.address) === undefined) {
-		// we didn't have this request pending already, add it to the list
-		await setPendingAccessRequests(globalThis.interceptor.settings.pendingAccessRequests.concat({
-			request,
-			socket,
-			website,
+	try {
+		pendingInterceptorAccess = {
+			future: new Future<InterceptorAccessReply>(),
+			websiteOrigin: website.websiteOrigin,
 			requestAccessToAddress: accessAddress?.address,
-		}))
-		sendPopupMessageToOpenWindows({ method: 'popup_notification_added' })
-	}
+		}
 
-	const windowReadyAndListening = async function popupMessageListener(msg: unknown) {
-		const message = ExternalPopupMessage.parse(msg)
-		if (message.method !== 'popup_interceptorAccessReadyAndListening') return
-		browser.runtime.onMessage.removeListener(windowReadyAndListening)
-		if (globalThis.interceptor.settings === undefined) return rejectReply()
-		return await sendPopupMessageToOpenWindows({
-			method: 'popup_interceptorAccessDialog',
-			data: {
-				website: website,
-				requestAccessToAddress: accessAddress,
-				originalRequestAccessToAddress: accessAddress,
-				associatedAddresses: associatedAddresses,
-				addressInfos: globalThis.interceptor.settings.userAddressBook.addressInfos,
-				signerAccounts: [],
-				signerName: globalThis.interceptor.signerName,
-				simulationMode: globalThis.interceptor.settings.simulationMode,
-				socket: socket,
+		if (globalThis.interceptor.settings.pendingAccessRequests.find((x) => x.website.websiteOrigin === website.websiteOrigin && x.requestAccessToAddress === accessAddress?.address) === undefined) {
+			// we didn't have this request pending already, add it to the list
+			await setPendingAccessRequests(globalThis.interceptor.settings.pendingAccessRequests.concat({
+				request,
+				socket,
+				website,
+				requestAccessToAddress: accessAddress?.address,
+			}))
+			sendPopupMessageToOpenWindows({ method: 'popup_notification_added' })
+		}
+
+		const windowReadyAndListening = async function popupMessageListener(msg: unknown) {
+			const message = ExternalPopupMessage.parse(msg)
+			if (message.method !== 'popup_interceptorAccessReadyAndListening') return
+			browser.runtime.onMessage.removeListener(windowReadyAndListening)
+			if (globalThis.interceptor.settings === undefined) return rejectReply()
+			return await sendPopupMessageToOpenWindows({
+				method: 'popup_interceptorAccessDialog',
+				data: {
+					website: website,
+					requestAccessToAddress: accessAddress,
+					originalRequestAccessToAddress: accessAddress,
+					associatedAddresses: associatedAddresses,
+					addressInfos: globalThis.interceptor.settings.userAddressBook.addressInfos,
+					signerAccounts: [],
+					signerName: globalThis.interceptor.signerName,
+					simulationMode: globalThis.interceptor.settings.simulationMode,
+					socket: socket,
+				}
+			})
+		}
+
+		const oldPromise = await getPendingInterceptorAccessRequestPromise()
+		if (oldPromise !== undefined) {
+			if ((await browser.tabs.query({ windowId: oldPromise.dialogId })).length > 0) {
+				return rejectReply()
 			}
-		})
-	}
+			await savePendingInterceptorAccessRequestPromise(undefined)
+		}
 
-	if (pendingInterceptorAccess !== undefined) {
-		return rejectReply()
-	}
+		browser.runtime.onMessage.addListener(windowReadyAndListening)
 
-	pendingInterceptorAccess = {
-		future: new Future<InterceptorAccessReply>(),
-		websiteOrigin: website.websiteOrigin,
-		requestAccessToAddress: accessAddress?.address,
-	}
+		openedInterceptorAccessWindow = await browser.windows.create(
+			{
+				url: getHtmlFile('interceptorAccess'),
+				type: 'popup',
+				height: 600,
+				width: 600,
+			}
+		)
 
-	const oldPromise = await getPendingInterceptorAccessRequestPromise()
-	if (oldPromise !== undefined) {
-		if ((await browser.tabs.query({ windowId: oldPromise.dialogId })).length > 0) {
-			pendingInterceptorAccess = undefined
+		if (openedInterceptorAccessWindow?.id === undefined) {
 			return rejectReply()
 		}
-		await savePendingInterceptorAccessRequestPromise(undefined)
-	}
-
-	browser.runtime.onMessage.addListener(windowReadyAndListening)
-
-	openedInterceptorAccessWindow = await browser.windows.create(
-		{
-			url: getHtmlFile('interceptorAccess'),
-			type: 'popup',
-			height: 600,
-			width: 600,
-		}
-	)
-
-	if (openedInterceptorAccessWindow?.id === undefined) {
+		browser.windows.onRemoved.addListener(onCloseWindow)
+		await savePendingInterceptorAccessRequestPromise({
+			website: website,
+			dialogId: openedInterceptorAccessWindow.id,
+			socket: socket,
+			requestAccessToAddress: accessAddress,
+			request: request,
+		})
+		const confirmation = await pendingInterceptorAccess.future
+		return await resolve(confirmation)
+	} finally {
 		pendingInterceptorAccess = undefined
-		return rejectReply()
 	}
-	browser.windows.onRemoved.addListener(onCloseWindow)
-	await savePendingInterceptorAccessRequestPromise({
-		website: website,
-		dialogId: openedInterceptorAccessWindow.id,
-		socket: socket,
-		requestAccessToAddress: accessAddress,
-		request: request,
-	})
-	const confirmation = await pendingInterceptorAccess.future
-	return await resolve(confirmation)
 }
 
 async function resolve(confirmation: InterceptorAccessReply) {
