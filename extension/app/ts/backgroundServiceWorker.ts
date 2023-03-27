@@ -1,10 +1,11 @@
 import './background/background.js'
 import { getHtmlFile } from './background/backgroundUtils.js'
+import { sleep } from './utils/node.js'
 
 browser.action.setPopup({ popup: getHtmlFile('popup') })
 
 self.addEventListener('install', () => {
-	console.log('install')
+	console.log('The Interceptor installed')
 })
 
 const injectContentScript = async () => {
@@ -31,7 +32,7 @@ injectContentScript()
 
 /// Workaround for ChromiumIssue1316588 https://bugs.chromium.org/p/chromium/issues/detail?id=1316588
 // TODO, remove when chrome fixes the bug
-const storageArea = browser.storage.local as browser.storage.LocalStorageArea & { onChanged: browser.storage.StorageChangedEvent }
+const storageArea = browser.storage.local as browser.storage.StorageArea & { onChanged: browser.storage.StorageChange }
 
 const TEST_INTERVAL_MS = 10000
 const STORAGE_WAIT_TIME_MS = 100
@@ -48,15 +49,18 @@ const hasChromiumIssue1316588 = async () => {
 	return !dispatched
 }
 
-const fixChromiumIssue1316588 = () => {
-	hasChromiumIssue1316588().then((hasIssue) => {
-		if (hasIssue) {
-			browser.runtime.reload()
-		} else {
-			setTimeout(fixChromiumIssue1316588, TEST_INTERVAL_MS)
-		}
-	})
+const fixChromiumIssue1316588 = async () => {
+	try {
+		const hasIssue = await hasChromiumIssue1316588()
+		if (!hasIssue) return
+		chrome.runtime.reload()
+		clearInterval(intervalId)
+	} catch (error) {
+		console.error(error)
+	}
 }
+const intervalId = setInterval(fixChromiumIssue1316588, TEST_INTERVAL_MS)
 
 fixChromiumIssue1316588()
 // End of workaround for ChromiumIssue1316588
+
