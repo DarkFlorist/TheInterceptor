@@ -51,5 +51,5 @@ export function assertIsObject(maybe: unknown): asserts maybe is Object {
 }
 
 export async function browserStorageLocalGet(keys: string | string[]) {
-	return (await browser.storage.local.get(keys)) as { [key: string]: unknown }
+	return await browser.storage.local.get(keys) as Promise<Record<string, unknown>>
 }
