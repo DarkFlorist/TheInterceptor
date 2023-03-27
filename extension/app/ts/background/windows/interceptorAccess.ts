@@ -1,4 +1,3 @@
-import { addressString } from '../../utils/bigint.js'
 import { Future } from '../../utils/future.js'
 import { ExternalPopupMessage, InterceptedRequest, InterceptorAccessChangeAddress, InterceptorAccessRefresh, InterceptorAccessReply, PendingAccessRequestArray, WebsiteAccessArray, WindowMessage } from '../../utils/interceptor-messages.js'
 import { AddressInfoEntry, Website, WebsiteSocket } from '../../utils/user-interface-types.js'
@@ -76,7 +75,8 @@ export async function changeAccess(confirmation: InterceptorAccessReply, website
 }
 
 async function askForSignerAccountsFromSignerIfNotAvailable(socket: WebsiteSocket) {
-	if (globalThis.interceptor.signerAccounts !== undefined) return globalThis.interceptor.signerAccounts
+	const signerState = globalThis.interceptor.websiteTabSignerStates.get(socket.tabId)
+	if (signerState?.signerAccounts !== undefined) return signerState.signerAccounts
 
 	const future = new Future<void>
 	const listener = createInternalMessageListener( (message: WindowMessage) => {
@@ -95,7 +95,7 @@ async function askForSignerAccountsFromSignerIfNotAvailable(socket: WebsiteSocke
 		channel.removeEventListener('message', listener)
 		channel.close()
 	}
-	return globalThis.interceptor.signerAccounts
+	return globalThis.interceptor.websiteTabSignerStates.get(socket.tabId)?.signerAccounts
 }
 
 export async function requestAccessFromUser(

@@ -33,8 +33,10 @@ export async function changeActiveAddress(_simulator: Simulator, addressChange: 
 	globalThis.interceptor.settings.useSignersAddressAsActiveAddress = addressChange.options === 'signer'
 
 	// if using signers address, set the active address to signers address if available, otherwise we don't know active address and set it to be undefined
-	if(addressChange.options === 'signer') {
-		await changeActiveAddressAndChainAndResetSimulation(globalThis.interceptor.signerAccounts && globalThis.interceptor.signerAccounts.length > 0 ? globalThis.interceptor.signerAccounts[0] : undefined, 'noActiveChainChange')
+	if (addressChange.options === 'signer') {
+		const currentTabId = (await browser.tabs.getCurrent()).id
+		const signerAccounts = currentTabId === undefined ? currentTabId : globalThis.interceptor.websiteTabSignerStates.get(currentTabId)?.signerAccounts
+		await changeActiveAddressAndChainAndResetSimulation(signerAccounts !== undefined ? signerAccounts[0] : undefined, 'noActiveChainChange')
 	} else {
 		await changeActiveAddressAndChainAndResetSimulation(addressChange.options, 'noActiveChainChange')
 	}
@@ -156,8 +158,10 @@ export async function enableSimulationMode(_simulator: Simulator, params: Enable
 	// if we are on unsupported chain, force change to a supported one
 	const chainToSwitch = isSupportedChain(globalThis.interceptor.settings.activeChain.toString()) ? globalThis.interceptor.settings.activeChain : 1n
 
-	if(globalThis.interceptor.settings.useSignersAddressAsActiveAddress || globalThis.interceptor.settings.simulationMode === false) {
-		await changeActiveAddressAndChainAndResetSimulation(globalThis.interceptor.signerAccounts && globalThis.interceptor.signerAccounts.length > 0 ? globalThis.interceptor.signerAccounts[0] : undefined, chainToSwitch)
+	if (globalThis.interceptor.settings.useSignersAddressAsActiveAddress || globalThis.interceptor.settings.simulationMode === false) {
+		const currentTabId = (await browser.tabs.getCurrent()).id
+		const signerAccounts = currentTabId === undefined ? currentTabId : globalThis.interceptor.websiteTabSignerStates.get(currentTabId)?.signerAccounts
+		await changeActiveAddressAndChainAndResetSimulation(signerAccounts !== undefined ? signerAccounts[0] : undefined, chainToSwitch)
 	} else {
 		await changeActiveAddressAndChainAndResetSimulation(globalThis.interceptor.settings.simulationMode ? globalThis.interceptor.settings.activeSimulationAddress : globalThis.interceptor.settings.activeSigningAddress, chainToSwitch)
 	}
