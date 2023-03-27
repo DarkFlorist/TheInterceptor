@@ -22,7 +22,6 @@ export async function resolvePersonalSign(confirmation: PersonalSign) {
 		const resolved = await resolve(confirmation, data.simulationMode, data.params)
 		sendMessageToContentScript(data.socket, resolved, data.request)
 	}
-	pendingPersonalSign = undefined
 	openedPersonalSignDialogWindow = null
 }
 
@@ -35,6 +34,16 @@ function rejectMessage(requestId: number) {
 		},
 	} as const
 }
+
+function reject() {
+	return {
+		error: {
+			code: METAMASK_ERROR_USER_REJECTED_REQUEST,
+			message: 'Interceptor Personal Signature: User denied personal signature.'
+		}
+	}
+}
+
 export const openPersonalSignDialog = async (
 	socket: WebsiteSocket,
 	params: PersonalSignParams | SignTypedDataParams,
@@ -42,37 +51,17 @@ export const openPersonalSignDialog = async (
 	simulationMode: boolean,
 	website: Website,
 ): Promise<HandleSimulationModeReturnValue> => {
-	if (openedPersonalSignDialogWindow !== null && openedPersonalSignDialogWindow.id) {
-		await browser.windows.remove(openedPersonalSignDialogWindow.id)
-		if (pendingPersonalSign) await pendingPersonalSign // wait for previous to clean up
-	}
+	if (pendingPersonalSign !== undefined) return reject()
 
-	const oldPromise = await getPendingPersonalSignPromise()
-	if (oldPromise !== undefined) {
-		if ((await browser.tabs.query({ windowId: oldPromise.dialogId })).length > 0) {
-			return { result: {
-				error: {
-					code: METAMASK_ERROR_USER_REJECTED_REQUEST,
-					message: 'Interceptor Personal Signature: User denied personal signature.'
-				}
-			} }
-		} else {
-			await savePendingPersonalSignPromise(undefined)
-		}
+	const onCloseWindow = (windowId: number) => {
+		if (openedPersonalSignDialogWindow === null || openedPersonalSignDialogWindow.id !== windowId) return
+		if (pendingPersonalSign === undefined) return
+		openedPersonalSignDialogWindow = null
+		return resolvePersonalSign(rejectMessage(request.requestId))
 	}
 
 	const activeAddress = simulationMode ? globalThis.interceptor.settings?.activeSimulationAddress : globalThis.interceptor.settings?.activeSigningAddress
-	if ( activeAddress === undefined) {
-		return { result: {
-			error: {
-				code: METAMASK_ERROR_USER_REJECTED_REQUEST,
-				message: 'Interceptor not ready'
-			}
-		} }
-	}
-
-	pendingPersonalSign = new Future<PersonalSign>()
-
+	if (activeAddress === undefined) return reject()
 	const personalSignWindowReadyAndListening = async function popupMessageListener(msg: unknown) {
 		const message = ExternalPopupMessage.parse(msg)
 		if ( message.method !== 'popup_personalSignReadyAndListening') return
@@ -148,39 +137,49 @@ export const openPersonalSignDialog = async (
 			}
 		})
 	}
-	browser.runtime.onMessage.addListener(personalSignWindowReadyAndListening)
 
-	openedPersonalSignDialogWindow = await browser.windows.create(
-		{
+	pendingPersonalSign = new Future<PersonalSign>()
+	try {
+		const oldPromise = await getPendingPersonalSignPromise()
+		if (oldPromise !== undefined) {
+			if ((await browser.tabs.query({ windowId: oldPromise.dialogId })).length > 0) {
+				return reject()
+			} else {
+				await savePendingPersonalSignPromise(undefined)
+			}
+		}
+
+		browser.runtime.onMessage.addListener(personalSignWindowReadyAndListening)
+
+		openedPersonalSignDialogWindow = await browser.windows.create({
 			url: getHtmlFile('personalSign'),
 			type: 'popup',
 			height: 400,
 			width: 520,
-		}
-	)
-	if (openedPersonalSignDialogWindow && openedPersonalSignDialogWindow.id !== undefined) {
-		browser.windows.onRemoved.addListener( () => { // check if user has closed the window on their own, if so, reject signature
-			if (pendingPersonalSign === undefined) return
-			openedPersonalSignDialogWindow = null
-			return resolvePersonalSign(rejectMessage(request.requestId))
-		} )
-
-		savePendingPersonalSignPromise({
-			website: website,
-			dialogId: openedPersonalSignDialogWindow.id,
-			socket: socket,
-			request: request,
-			simulationMode: simulationMode,
-			params: params,
 		})
-	} else {
-		resolvePersonalSign(rejectMessage(request.requestId))
+		if (openedPersonalSignDialogWindow && openedPersonalSignDialogWindow.id !== undefined) {
+			browser.windows.onRemoved.addListener(onCloseWindow)
+
+			await savePendingPersonalSignPromise({
+				website: website,
+				dialogId: openedPersonalSignDialogWindow.id,
+				socket: socket,
+				request: request,
+				simulationMode: simulationMode,
+				params: params,
+			})
+		} else {
+			await resolvePersonalSign(rejectMessage(request.requestId))
+		}
+
+		const reply = await pendingPersonalSign
+
+		return resolve(reply, simulationMode, params)
+	} finally {
+		browser.runtime.onMessage.removeListener(personalSignWindowReadyAndListening)
+		browser.runtime.onMessage.removeListener(onCloseWindow)
+		pendingPersonalSign = undefined
 	}
-
-	const reply = await pendingPersonalSign
-	browser.runtime.onMessage.removeListener(personalSignWindowReadyAndListening)
-
-	return resolve(reply, simulationMode, params)
 }
 
 async function resolve(reply: PersonalSign, simulationMode: boolean, params: PersonalSignParams | SignTypedDataParams) {
@@ -189,20 +188,10 @@ async function resolve(reply: PersonalSign, simulationMode: boolean, params: Per
 	if (reply.options.accept) {
 		if (simulationMode) {
 			const result = await personalSignWithSimulator(params)
-			if (result === undefined) return {
-				error: {
-					code: METAMASK_ERROR_USER_REJECTED_REQUEST,
-					message: 'Interceptor not ready'
-				}
-			}
+			if (result === undefined) return reject()
 			return { result: result }
 		}
 		return { forward: true as const }
 	}
-	return {
-		error: {
-			code: METAMASK_ERROR_USER_REJECTED_REQUEST,
-			message: 'Interceptor Personal Signature: User denied personal signature.'
-		}
-	}
+	return reject()
 }
