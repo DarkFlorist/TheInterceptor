@@ -52,7 +52,7 @@ const hasChromiumIssue1316588 = () => {
 const fixChromiumIssue1316588 = () => {
 	hasChromiumIssue1316588().then((hasIssue) => {
 		if (hasIssue) {
-			chrome.runtime.reload()
+			browser.runtime.reload()
 		} else {
 			setTimeout(fixChromiumIssue1316588, TEST_INTERVAL_MS)
 		}
