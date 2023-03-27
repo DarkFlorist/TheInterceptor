@@ -16,7 +16,8 @@ let pendingInterceptorAccess: {
 	requestAccessToAddress: bigint | undefined,
 } | undefined = undefined
 
-const onCloseWindow = async () => { // check if user has closed the window on their own, if so, reject signature
+const onCloseWindow = async (windowId: number) => { // check if user has closed the window on their own, if so, reject signature
+	if (openedInterceptorAccessWindow === null || openedInterceptorAccessWindow.id !== windowId) return
 	if (pendingInterceptorAccess !== undefined) pendingInterceptorAccess.future.resolve({
 		approval: 'NoResponse',
 		websiteOrigin: pendingInterceptorAccess.websiteOrigin,
@@ -116,6 +117,27 @@ export async function requestAccessFromUser(
 	const askForAddressAccess = requestAccessToAddress !== undefined && globalThis.interceptor.settings?.userAddressBook.addressInfos.find((x) => x.address === requestAccessToAddress.address)?.askForAddressAccess !== false
 	const accessAddress = askForAddressAccess ? requestAccessToAddress : undefined
 
+	const windowReadyAndListening = async function popupMessageListener(msg: unknown) {
+		const message = ExternalPopupMessage.parse(msg)
+		if (message.method !== 'popup_interceptorAccessReadyAndListening') return
+		browser.runtime.onMessage.removeListener(windowReadyAndListening)
+		if (globalThis.interceptor.settings === undefined) return rejectReply()
+		return await sendPopupMessageToOpenWindows({
+			method: 'popup_interceptorAccessDialog',
+			data: {
+				website: website,
+				requestAccessToAddress: accessAddress,
+				originalRequestAccessToAddress: accessAddress,
+				associatedAddresses: associatedAddresses,
+				addressInfos: globalThis.interceptor.settings.userAddressBook.addressInfos,
+				signerAccounts: [],
+				signerName: await getSignerName(),
+				simulationMode: globalThis.interceptor.settings.simulationMode,
+				socket: socket,
+			}
+		})
+	}
+
 	try {
 		pendingInterceptorAccess = {
 			future: new Future<InterceptorAccessReply>(),
@@ -134,27 +156,6 @@ export async function requestAccessFromUser(
 			sendPopupMessageToOpenWindows({ method: 'popup_notification_added' })
 		}
 
-		const windowReadyAndListening = async function popupMessageListener(msg: unknown) {
-			const message = ExternalPopupMessage.parse(msg)
-			if (message.method !== 'popup_interceptorAccessReadyAndListening') return
-			browser.runtime.onMessage.removeListener(windowReadyAndListening)
-			if (globalThis.interceptor.settings === undefined) return rejectReply()
-			return await sendPopupMessageToOpenWindows({
-				method: 'popup_interceptorAccessDialog',
-				data: {
-					website: website,
-					requestAccessToAddress: accessAddress,
-					originalRequestAccessToAddress: accessAddress,
-					associatedAddresses: associatedAddresses,
-					addressInfos: globalThis.interceptor.settings.userAddressBook.addressInfos,
-					signerAccounts: [],
-					signerName: await getSignerName(),
-					simulationMode: globalThis.interceptor.settings.simulationMode,
-					socket: socket,
-				}
-			})
-		}
-
 		const oldPromise = await getPendingInterceptorAccessRequestPromise()
 		if (oldPromise !== undefined) {
 			if ((await browser.tabs.query({ windowId: oldPromise.dialogId })).length > 0) {
@@ -165,14 +166,12 @@ export async function requestAccessFromUser(
 
 		browser.runtime.onMessage.addListener(windowReadyAndListening)
 
-		openedInterceptorAccessWindow = await browser.windows.create(
-			{
-				url: getHtmlFile('interceptorAccess'),
-				type: 'popup',
-				height: 600,
-				width: 600,
-			}
-		)
+		openedInterceptorAccessWindow = await browser.windows.create({
+			url: getHtmlFile('interceptorAccess'),
+			type: 'popup',
+			height: 600,
+			width: 600,
+		})
 
 		if (openedInterceptorAccessWindow?.id === undefined) {
 			return rejectReply()
@@ -189,13 +188,14 @@ export async function requestAccessFromUser(
 		return await resolve(confirmation)
 	} finally {
 		pendingInterceptorAccess = undefined
+		browser.windows.onRemoved.removeListener(onCloseWindow)
+		browser.windows.onRemoved.removeListener(windowReadyAndListening)
 	}
 }
 
 async function resolve(confirmation: InterceptorAccessReply) {
 	const data = await getPendingInterceptorAccessRequestPromise()
 	savePendingInterceptorAccessRequestPromise(undefined)
-	browser.windows.onRemoved.removeListener(onCloseWindow)
 	openedInterceptorAccessWindow = null
 	if (data === undefined) throw new Error('data was undefined')
 
@@ -212,7 +212,7 @@ async function resolve(confirmation: InterceptorAccessReply) {
 	if (!userRequestedAddressChange) {
 		await changeAccess(confirmation, data.website)
 		if (data.request !== undefined) {
-			handleContentScriptMessage(data.socket, data.request, data.website)
+			await handleContentScriptMessage(data.socket, data.request, data.website)
 		}
 		return
 	} else {
