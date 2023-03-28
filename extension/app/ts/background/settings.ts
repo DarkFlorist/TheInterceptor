@@ -181,7 +181,7 @@ export async function getSimulationResults() {
 
 const simulationResultsSemaphore = new Semaphore(1)
 export async function updateSimulationResults(newResults: SimulationResults) {
-	simulationResultsSemaphore.execute(async () => {
+	await simulationResultsSemaphore.execute(async () => {
 		const oldResults = await getSimulationResults()
 		if (newResults.simulationId < oldResults.simulationId) return // do not update state with older state
 		return await browserStorageLocalSet({ [SIMULATION_RESULTS_STORAGE_KEY]: SimulationResults.serialize(newResults) as string  })
@@ -234,7 +234,7 @@ export async function clearTabStates() {
 
 const tabStateSemaphore = new Semaphore(1)
 export async function updateTabState(tabId: Number, updateFunc: (prevTabState: TabState) => Promise<TabState>) {
-	tabStateSemaphore.execute(async () => {
+	await tabStateSemaphore.execute(async () => {
 		await saveTabState(tabId, await updateFunc(await getTabState(tabId)))
 	})
 }

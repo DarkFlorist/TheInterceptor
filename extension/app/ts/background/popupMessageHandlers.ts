@@ -35,7 +35,7 @@ export async function changeActiveAddress(_simulator: Simulator, addressChange: 
 	// if using signers address, set the active address to signers address if available, otherwise we don't know active address and set it to be undefined
 	if (addressChange.options === 'signer') {
 		const currentTabId = (await browser.tabs.getCurrent())?.id
-		const signerAccounts = currentTabId === undefined ? currentTabId : (await getTabState(currentTabId)).signerAccounts
+		const signerAccounts = currentTabId === undefined ? undefined : (await getTabState(currentTabId)).signerAccounts
 		await changeActiveAddressAndChainAndResetSimulation(signerAccounts !== undefined && signerAccounts.length > 0 ? signerAccounts[0] : undefined, 'noActiveChainChange')
 	} else {
 		await changeActiveAddressAndChainAndResetSimulation(addressChange.options, 'noActiveChainChange')
@@ -160,7 +160,7 @@ export async function enableSimulationMode(_simulator: Simulator, params: Enable
 
 	if (globalThis.interceptor.settings.useSignersAddressAsActiveAddress || globalThis.interceptor.settings.simulationMode === false) {
 		const currentTabId = (await browser.tabs.getCurrent())?.id
-		const signerAccounts = currentTabId === undefined ? currentTabId : (await getTabState(currentTabId)).signerAccounts
+		const signerAccounts = currentTabId === undefined ? undefined : (await getTabState(currentTabId)).signerAccounts
 		await changeActiveAddressAndChainAndResetSimulation(signerAccounts !== undefined && signerAccounts.length > 0 ? signerAccounts[0] : undefined, chainToSwitch)
 	} else {
 		await changeActiveAddressAndChainAndResetSimulation(globalThis.interceptor.settings.simulationMode ? globalThis.interceptor.settings.activeSimulationAddress : globalThis.interceptor.settings.activeSigningAddress, chainToSwitch)
@@ -253,7 +253,7 @@ export async function homeOpened(simulator: Simulator) {
 			websiteAccessAddressMetadata: getAddressMetadataForAccess(globalThis.interceptor.settings.websiteAccess),
 			pendingAccessMetadata: pendingAccessMetadata,
 			signerAccounts: signerAccounts,
-			signerChain: globalThis.interceptor.signerChain,
+			signerChain: tabState?.signerChain,
 			signerName: await getSignerName(),
 			currentBlockNumber: await simulator.ethereum.getBlockNumber(),
 			settings: globalThis.interceptor.settings,
