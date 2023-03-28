@@ -637,3 +637,11 @@ export const PendingInterceptorAccessRequestPromise = funtypes.Object({
 	request: funtypes.Union(InterceptedRequest, funtypes.Undefined),
 	requestAccessToAddress: funtypes.Union(AddressInfoEntry, funtypes.Undefined),
 })
+
+export type TabState = funtypes.Static<typeof TabState>
+export const TabState = funtypes.Object({
+	signerName: SignerName,
+	signerAccounts: funtypes.ReadonlyArray(EthereumAddress),
+	signerChain: funtypes.Union(EthereumQuantity, funtypes.Undefined),
+	tabIconDetails: TabIconDetails,
+})
