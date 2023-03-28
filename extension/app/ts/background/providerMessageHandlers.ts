@@ -13,7 +13,6 @@ export async function ethAccountsReply(port: browser.runtime.Port, request: Prov
 			return {
 				...previousState,
 				signerAccounts: signerAccounts,
-				signerChain: globalThis.interceptor.signerChain,
 			}
 		})
 	}
@@ -34,9 +33,6 @@ async function changeSignerChain(port: browser.runtime.Port, signerChain: bigint
 				signerChain: signerChain,
 			}
 		})
-	}
-	if (globalThis.interceptor) {
-		globalThis.interceptor.signerChain = signerChain
 	}
 
 	// update active address if we are using signers address

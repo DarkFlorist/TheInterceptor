@@ -29,14 +29,12 @@ let simulator: Simulator | undefined = undefined
 
 declare global {
 	var interceptor: {
-		signerChain: bigint | undefined,
 		websiteTabConnections: Map<number, TabConnection>,
 		settings: Settings | undefined,
 	}
 }
 
 globalThis.interceptor = {
-	signerChain: undefined,
 	settings: undefined,
 	websiteTabConnections: new Map(),
 }
