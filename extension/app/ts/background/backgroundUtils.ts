@@ -48,7 +48,7 @@ export function getHtmlFile(file: HTMLFile) {
 	if (manifest.manifest_version === 2) {
 		return `/html/${ file }.html`
 	}
-	return `./html3/${ file }V3.html`
+	return `/html3/${ file }V3.html`
 }
 
 export async function setExtensionIcon(details: browser.action._SetIconDetails) {
