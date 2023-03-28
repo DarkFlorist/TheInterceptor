@@ -20,7 +20,7 @@ export async function sendPopupMessageToOpenWindows(message: MessageToPopup) {
 			if (error?.message?.includes('A listener indicated an asynchronous response by returning true, but the message channel closed before a response was received')) {
 				return
 			}
-			if (error) return console.error(`Popup message error: ${error.message}`);
+			if (error) return console.error(`Popup message error: ${ error.message }`);
 		}
 	}
 }
@@ -46,9 +46,9 @@ type HTMLFile = 'popup' | 'addressBook' | 'changeChain' | 'confirmTransaction' |
 export function getHtmlFile(file: HTMLFile) {
 	const manifest = browser.runtime.getManifest()
 	if (manifest.manifest_version === 2) {
-		return `/html/${file}.html`
+		return `/html/${ file }.html`
 	}
-	return `./html3/${file}V3.html`
+	return `./html3/${ file }V3.html`
 }
 
 export async function setExtensionIcon(details: browser.action._SetIconDetails) {
@@ -75,7 +75,7 @@ export async function setExtensionBadgeBackgroundColor(details: browser.action._
 	return browser.action.setBadgeBackgroundColor(details)
 }
 
-export const websiteSocketToString = (socket: WebsiteSocket) => `${socket.tabId}-${EthereumQuantity.serialize(socket.connectionName)}`
+export const websiteSocketToString = (socket: WebsiteSocket) => `${ socket.tabId }-${ EthereumQuantity.serialize(socket.connectionName) }`
 
 export const getSocketFromPort = (port: browser.runtime.Port) => {
 	if (port.sender?.tab?.id === undefined) throw new Error('tab id not found in socket')
