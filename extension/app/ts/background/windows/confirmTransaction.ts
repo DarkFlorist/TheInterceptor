@@ -20,7 +20,7 @@ export async function resolvePendingTransaction(confirmation: Confirmation) {
 		// we have not been tracking this window, forward its message directly to content script (or signer)
 		const data = await getConfirmationWindowPromise()
 		if (data === undefined) return
-		const resolved = await resolve(confirmation, data.simulationMode, data.transactionToSimulate, data.website)
+		const resolved = await resolve(confirmation, data.simulationMode, data.transactionToSimulate, data.website, data.activeAddress)
 		sendMessageToContentScript(data.socket, resolved, data.request)
 	}
 	openedConfirmTransactionDialogWindow = null
@@ -105,10 +105,11 @@ export async function openConfirmTransactionDialog(
 				request: request,
 				transactionToSimulate: transactionToSimulate,
 				simulationMode: simulationMode,
+				activeAddress: activeAddress,
 			})
 
 			const reply = await pendingTransaction
-			return await resolve(reply, simulationMode, transactionToSimulate, website)
+			return await resolve(reply, simulationMode, transactionToSimulate, website, activeAddress)
 		} finally {
 			browser.windows.onRemoved.removeListener(windowReadyAndListening)
 			browser.windows.onRemoved.removeListener(onCloseWindow)
@@ -118,12 +119,12 @@ export async function openConfirmTransactionDialog(
 	}
 }
 
-async function resolve(reply: Confirmation, simulationMode: boolean, transactionToSimulate: EthereumUnsignedTransaction, website: Website ) {
+async function resolve(reply: Confirmation, simulationMode: boolean, transactionToSimulate: EthereumUnsignedTransaction, website: Website, activeAddress: bigint) {
 	await setConfirmationWindowPromise(undefined)
 	if (reply !== 'Approved') return reject()
 	if (!simulationMode) return { forward: true as const }
 
-	const appended = await appendTransactionToSimulator(transactionToSimulate, website)
+	const appended = await appendTransactionToSimulator(transactionToSimulate, website, activeAddress)
 	if (appended === undefined) {
 		return {
 			error: {

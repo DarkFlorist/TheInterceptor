@@ -91,35 +91,35 @@ export async function getSettings() : Promise<Settings> {
 
 export async function setActiveSimulationAddress(activeSimulationAddress: bigint | undefined) {
 	if (activeSimulationAddress === undefined) return await browser.storage.local.remove(storageName.activeSimulationAddress)
-	return browserStorageLocalSet(storageName.activeSimulationAddress, EthereumAddress.serialize(activeSimulationAddress) as string)
+	return await browserStorageLocalSet(storageName.activeSimulationAddress, EthereumAddress.serialize(activeSimulationAddress) as string)
 }
 export async function setActiveSigningAddress(activeSigningAddress: bigint | undefined) {
 	if (activeSigningAddress === undefined) return await browser.storage.local.remove(storageName.activeSigningAddress)
-	return browserStorageLocalSet(storageName.activeSigningAddress, EthereumAddress.serialize(activeSigningAddress) as string)
+	return await browserStorageLocalSet(storageName.activeSigningAddress, EthereumAddress.serialize(activeSigningAddress) as string)
 }
 
 export async function setPage(page: Page) {
-	return browserStorageLocalSet(storageName.page, page)
+	return await browserStorageLocalSet(storageName.page, page)
 }
 export async function setMakeMeRich(makeMeRich: boolean) {
-	await browserStorageLocalSet(storageName.makeMeRich, makeMeRich)
+	return await browserStorageLocalSet(storageName.makeMeRich, makeMeRich)
 }
 export async function getMakeMeRich() {
 	return funtypes.Boolean.parse(await browserStorageLocalSingleGetWithDefault(storageName.makeMeRich, false))
 }
 export async function setUseSignersAddressAsActiveAddress(useSignersAddressAsActiveAddress: boolean) {
-	return browserStorageLocalSet(storageName.useSignersAddressAsActiveAddress, useSignersAddressAsActiveAddress)
+	return await browserStorageLocalSet(storageName.useSignersAddressAsActiveAddress, useSignersAddressAsActiveAddress)
 }
 
 export async function setActiveChain(activeChain: EthereumQuantity) {
-	return browserStorageLocalSet(storageName.activeChain, EthereumQuantity.serialize(activeChain) as string)
+	return await browserStorageLocalSet(storageName.activeChain, EthereumQuantity.serialize(activeChain) as string)
 }
 export async function setSimulationMode(simulationMode: boolean) {
-	return browserStorageLocalSet(storageName.simulationMode, simulationMode)
+	return await browserStorageLocalSet(storageName.simulationMode, simulationMode)
 }
 
 export async function setOpenedAddressBookTabId(addressbookTabId: number) {
-	return browserStorageLocalSet(storageName.addressbookTabId, addressbookTabId)
+	return await browserStorageLocalSet(storageName.addressbookTabId, addressbookTabId)
 }
 
 export async function getOpenedAddressBookTabId() {
@@ -240,9 +240,9 @@ export async function clearTabStates() {
 }
 
 const tabStateSemaphore = new Semaphore(1)
-export async function updateTabState(tabId: Number, updateFunc: (prevState: TabState) => Promise<TabState>) {
+export async function updateTabState(tabId: Number, updateFunc: (prevState: TabState) => TabState) {
 	await tabStateSemaphore.execute(async () => {
-		await setTabState(tabId, await updateFunc(await getTabState(tabId)))
+		await setTabState(tabId, updateFunc(await getTabState(tabId)))
 	})
 }
 
@@ -250,7 +250,7 @@ const pendingAccessRequestsSemaphore = new Semaphore(1)
 export async function updatePendingAccessRequests(updateFunc: (prevState: PendingAccessRequestArray) => PendingAccessRequestArray) {
 	await pendingAccessRequestsSemaphore.execute(async () => {
 		const pendingAccessRequests = PendingAccessRequestArray.parse(await browserStorageLocalSingleGetWithDefault(storageName.pendingAccessRequests, []))
-		return browserStorageLocalSet(storageName.pendingAccessRequests, PendingAccessRequestArray.serialize(updateFunc(pendingAccessRequests)) as string)
+		return await browserStorageLocalSet(storageName.pendingAccessRequests, PendingAccessRequestArray.serialize(updateFunc(pendingAccessRequests)) as string)
 	})
 }
 
@@ -258,7 +258,7 @@ const websiteAccessSemaphore = new Semaphore(1)
 export async function updateWebsiteAccess(updateFunc: (prevState: WebsiteAccessArray) => WebsiteAccessArray) {
 	await websiteAccessSemaphore.execute(async () => {
 		const websiteAccess = WebsiteAccessArray.parse(await browserStorageLocalSingleGetWithDefault(storageName.websiteAccess, []))
-		return browserStorageLocalSet(storageName.websiteAccess, WebsiteAccessArray.serialize(updateFunc(websiteAccess)) as string)
+		return await browserStorageLocalSet(storageName.websiteAccess, WebsiteAccessArray.serialize(updateFunc(websiteAccess)) as string)
 	})
 }
 
@@ -266,7 +266,7 @@ const addressInfosSemaphore = new Semaphore(1)
 export async function updateAddressInfos(updateFunc: (prevState: AddressInfoArray) => AddressInfoArray) {
 	await addressInfosSemaphore.execute(async () => {
 		const addressInfos = AddressInfoArray.parse(await browserStorageLocalSingleGetWithDefault(storageName.addressInfos, AddressInfoArray.serialize(defaultAddresses)))
-		return browserStorageLocalSet(storageName.addressInfos, AddressInfoArray.serialize(updateFunc(addressInfos)) as string)
+		return await browserStorageLocalSet(storageName.addressInfos, AddressInfoArray.serialize(updateFunc(addressInfos)) as string)
 	})
 }
 
@@ -274,6 +274,6 @@ const contactsSemaphore = new Semaphore(1)
 export async function updateContacts(updateFunc: (prevState: ContactEntries) => ContactEntries) {
 	await contactsSemaphore.execute(async () => {
 		const contacts = ContactEntries.parse(await browserStorageLocalSingleGetWithDefault(storageName.contacts, []))
-		return browserStorageLocalSet(storageName.contacts, ContactEntries.serialize(updateFunc(contacts)) as string)
+		return await browserStorageLocalSet(storageName.contacts, ContactEntries.serialize(updateFunc(contacts)) as string)
 	})
 }

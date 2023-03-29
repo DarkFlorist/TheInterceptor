@@ -603,6 +603,7 @@ export const PendingUserRequestPromise = funtypes.Object({
 	request: InterceptedRequest,
 	transactionToSimulate: EthereumUnsignedTransaction,
 	simulationMode: funtypes.Boolean,
+	activeAddress: EthereumAddress,
 })
 
 export type PendingChainChangeConfirmationPromise = funtypes.Static<typeof PendingChainChangeConfirmationPromise>

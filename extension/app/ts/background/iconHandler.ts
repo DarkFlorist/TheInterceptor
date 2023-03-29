@@ -13,7 +13,6 @@ async function setInterceptorIcon(tabId: number, icon: string, iconReason: strin
 	const previousValue = globalThis.interceptor.websiteTabConnections.get(tabId)
 	if (previousValue === undefined) return
 
-	await updateTabState(tabId, async (previousState: TabState) => {
 		return {
 			...previousState,
 			tabIconDetails: {
@@ -32,29 +31,27 @@ async function setInterceptorIcon(tabId: number, icon: string, iconReason: strin
 
 export async function updateExtensionIcon(socket: WebsiteSocket, websiteOrigin: string) {
 	if (!globalThis.interceptor.settings) return
-	const activeAddress = getActiveAddress()
 	const censoredActiveAddress = getActiveAddressForDomain(globalThis.interceptor.settings.websiteAccess, websiteOrigin)
+	const activeAddress = getActiveAddress(settings)
+	const censoredActiveAddress = getActiveAddressForDomain(settings.websiteAccess, websiteOrigin, settings)
 	if (activeAddress === undefined) return setInterceptorIcon(socket.tabId, ICON_NOT_ACTIVE, 'No active address selected.')
 	if (hasAddressAccess(globalThis.interceptor.settings.websiteAccess, websiteOrigin, activeAddress )  === 'notFound') {
 		// we don't have active address selected, or no access specified
-		return setInterceptorIcon(socket.tabId, ICON_NOT_ACTIVE, `${ websiteOrigin } has PENDING access request for ${ getAddressMetaData(activeAddress, globalThis.interceptor.settings?.userAddressBook).name }!`)
 	}
 
 	if (censoredActiveAddress === undefined) {
 		if ( hasAccess(globalThis.interceptor.settings.websiteAccess, websiteOrigin) === 'noAccess') {
 			return setInterceptorIcon(socket.tabId, ICON_ACCESS_DENIED, `The access for ${ websiteOrigin } has been DENIED!`)
 		}
-		return setInterceptorIcon(socket.tabId, ICON_ACCESS_DENIED, `The access to ${ getAddressMetaData(activeAddress, globalThis.interceptor.settings?.userAddressBook).name } for ${ websiteOrigin } has been DENIED!`)
+		return setInterceptorIcon(socket.tabId, ICON_ACCESS_DENIED, `The access to ${ getAddressMetaData(activeAddress, settings.userAddressBook).name } for ${ websiteOrigin } has been DENIED!`)
 	}
-	if (globalThis.interceptor.settings?.simulationMode) return setInterceptorIcon(socket.tabId, ICON_SIMULATING, `The Interceptor simulates your sent transactions.`)
 	if (!isSupportedChain(globalThis.interceptor.settings.activeChain.toString())) return setInterceptorIcon(socket.tabId, ICON_SIGNING_NOT_SUPPORTED, `Interceptor is on an unsupported network and simulation mode is disabled.`)
 
 	return setInterceptorIcon(socket.tabId, ICON_SIGNING, `The Interceptor forwards your transactions to ${ getPrettySignerName(await getSignerName()) } once sent.`)
 }
 
 export async function updateExtensionBadge() {
-	if (!globalThis.interceptor.settings) return
-	const count = globalThis.interceptor.settings.pendingAccessRequests.length
+	const count = (await getSettings()).pendingAccessRequests.length
 	return await setExtensionBadgeText( { text: count === 0 ? '' : count.toString() } )
 }
 

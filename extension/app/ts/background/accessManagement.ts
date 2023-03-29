@@ -104,7 +104,7 @@ export function getAddressesThatDoNotNeedIndividualAccesses(settings: Settings) 
 }
 
 export async function setAccess(website: Website, access: boolean, address: bigint | undefined) {
-	updateWebsiteAccess((previousWebsiteAccess) => {
+	return await updateWebsiteAccess((previousWebsiteAccess) => {
 		const oldAccess = hasAccess(previousWebsiteAccess, website.websiteOrigin)
 		if (oldAccess === 'notFound') {
 			return [...previousWebsiteAccess,

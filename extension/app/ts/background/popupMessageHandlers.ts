@@ -6,7 +6,6 @@ import { resolvePendingTransaction } from './windows/confirmTransaction.js'
 import { resolvePersonalSign } from './windows/personalSign.js'
 import { changeAccess, getAddressMetadataForAccess, removePendingAccessRequestAndUpdateBadge, requestAccessFromUser, requestAddressChange, resolveExistingInterceptorAccessAsNoResponse, resolveInterceptorAccess } from './windows/interceptorAccess.js'
 import { resolveChainChange } from './windows/changeChain.js'
-import { EthereumQuantity } from '../utils/wire-types.js'
 import { getAssociatedAddresses, sendMessageToApprovedWebsitePorts, updateWebsiteApprovalAccesses } from './accessManagement.js'
 import { getHtmlFile, sendPopupMessageToOpenWindows } from './backgroundUtils.js'
 import { isSupportedChain } from '../utils/constants.js'
@@ -28,15 +27,21 @@ export async function confirmRequestAccess(_simulator: Simulator, confirmation: 
 	await resolveInterceptorAccess(confirmation.options)
 }
 
+export async function getSignerAccount() {
+	const tabs = await browser.tabs.query({ active: true, currentWindow: true })//TODO, use stored tabid instead
+	if (tabs.length === 0) return undefined
+	const signerAccounts = tabs[0].id === undefined ? undefined : (await getTabState(tabs[0].id)).signerAccounts
+	return signerAccounts !== undefined && signerAccounts.length > 0 ? signerAccounts[0] : undefined
+}
+
 export async function changeActiveAddress(_simulator: Simulator, addressChange: ChangeActiveAddress) {
 	await setUseSignersAddressAsActiveAddress(addressChange.options === 'signer')
 
 	// if using signers address, set the active address to signers address if available, otherwise we don't know active address and set it to be undefined
 	if (addressChange.options === 'signer') {
-		const [currentTab] = await browser.tabs.query({ active: true, currentWindow: true })
-		const signerAccounts = currentTab.id === undefined ? undefined : (await getTabState(currentTab.id)).signerAccounts
-		if (currentTab.id) { console.log(await getTabState(currentTab.id)) }
-		await changeActiveAddressAndChainAndResetSimulation(signerAccounts !== undefined && signerAccounts.length > 0 ? signerAccounts[0] : undefined, 'noActiveChainChange', await getSettings())
+		sendMessageToApprovedWebsitePorts('request_signer_to_eth_requestAccounts', [])
+		sendMessageToApprovedWebsitePorts('request_signer_chainId', [])
+		await changeActiveAddressAndChainAndResetSimulation(await getSignerAccount(), 'noActiveChainChange', await getSettings())
 	} else {
 		await changeActiveAddressAndChainAndResetSimulation(addressChange.options, 'noActiveChainChange', await getSettings())
 	}
@@ -96,9 +101,9 @@ export async function addOrModifyAddressInfo(_simulator: Simulator, entry: AddOr
 	}
 }
 
-export async function changeInterceptorAccess(_simulator: Simulator, accessChange: ChangeInterceptorAccess, settings: Settings) {
+export async function changeInterceptorAccess(_simulator: Simulator, accessChange: ChangeInterceptorAccess) {
 	await updateWebsiteAccess(() => accessChange.options) // TODO: update 'popup_changeInterceptorAccess' to return list of changes instead of a new list
-	updateWebsiteApprovalAccesses(undefined, settings)
+	updateWebsiteApprovalAccesses(undefined, await getSettings())
 	return await sendPopupMessageToOpenWindows({ method: 'popup_interceptor_access_changed' })
 }
 
@@ -109,19 +114,20 @@ export async function changePage(_simulator: Simulator, page: ChangePage) {
 export async function requestAccountsFromSigner(_simulator: Simulator, params: RequestAccountsFromSigner) {
 	if (params.options) {
 		sendMessageToApprovedWebsitePorts('request_signer_to_eth_requestAccounts', [])
+		sendMessageToApprovedWebsitePorts('request_signer_chainId', [])
 	}
 }
 
-export async function resetSimulation(simulator: Simulator) {
-	await updateSimulationState(async () => await simulator.simulationModeNode.resetSimulation())
+export async function resetSimulation(simulator: Simulator, settings: Settings) {
+	await updateSimulationState(async () => await simulator.simulationModeNode.resetSimulation(), settings.activeSimulationAddress)
 }
 
-export async function removeTransaction(simulator: Simulator, params: RemoveTransaction) {
-	await updateSimulationState(async () => await simulator.simulationModeNode.removeTransactionAndUpdateTransactionNonces(params.options))
+export async function removeTransaction(simulator: Simulator, params: RemoveTransaction, settings: Settings) {
+	await updateSimulationState(async () => await simulator.simulationModeNode.removeTransactionAndUpdateTransactionNonces(params.options), settings.activeSimulationAddress)
 }
 
-export async function refreshSimulation(simulator: Simulator) {
-	await updateSimulationState(async() => await simulator.simulationModeNode.refreshSimulation())
+export async function refreshSimulation(simulator: Simulator, settings: Settings) {
+	await updateSimulationState(async() => await simulator.simulationModeNode.refreshSimulation(), settings.activeSimulationAddress)
 }
 
 export async function refreshPopupConfirmTransactionSimulation(_simulator: Simulator, { data }: RefreshConfirmTransactionDialogSimulation) {
@@ -138,23 +144,21 @@ export async function changeChainDialog(_simulator: Simulator, chainChange: Chai
 	await resolveChainChange(chainChange)
 }
 
-export async function enableSimulationMode(_simulator: Simulator, params: EnableSimulationMode, settings: Settings) {
+export async function enableSimulationMode(_simulator: Simulator, params: EnableSimulationMode) {
 	await setSimulationMode(params.options)
+	const settings = await getSettings()
 	// if we are on unsupported chain, force change to a supported one
 	const chainToSwitch = isSupportedChain(settings.activeChain.toString()) ? settings.activeChain : 1n
 
-	if (settings.useSignersAddressAsActiveAddress || settings.simulationMode === false) {
-		const [currentTab] = await browser.tabs.query({ active: true, currentWindow: true })
-		const signerAccounts = currentTab.id === undefined ? undefined : (await getTabState(currentTab.id)).signerAccounts
-		if (currentTab.id) { console.log(await getTabState(currentTab.id)) }
-		await changeActiveAddressAndChainAndResetSimulation(signerAccounts !== undefined && signerAccounts.length > 0 ? signerAccounts[0] : undefined, chainToSwitch, settings)
+	if (settings.useSignersAddressAsActiveAddress || params.options === false) {
+		await changeActiveAddressAndChainAndResetSimulation(await getSignerAccount(), chainToSwitch, settings)
 	} else {
 		await changeActiveAddressAndChainAndResetSimulation(settings.simulationMode ? settings.activeSimulationAddress : settings.activeSigningAddress, chainToSwitch, settings)
 	}
 
-	if (!params.options) {
+	if (!params.options || settings.useSignersAddressAsActiveAddress) {
 		sendMessageToApprovedWebsitePorts('request_signer_to_eth_requestAccounts', [])
-		sendMessageToApprovedWebsitePorts('request_signer_chainId', EthereumQuantity.serialize(settings.activeChain))
+		sendMessageToApprovedWebsitePorts('request_signer_chainId', [])
 	}
 }
 
@@ -218,14 +222,10 @@ export async function openAddressBook(_simulator: Simulator) {
 }
 
 export async function homeOpened(simulator: Simulator) {
+	const tabs = await browser.tabs.query({ active: true, lastFocusedWindow: true }) //TODO, FIX: this gets wrong tab after its called after popup is opened
+	const tabState = tabs[0]?.id === undefined ? undefined : await getTabState(tabs[0].id)
+
 	const settings = await getSettings()
-
-	const tabs = await browser.tabs.query({ active: true, currentWindow: true })
-	const tabId = tabs.length > 0 ? tabs[0].id : undefined
-	const tabState = tabId === undefined ? undefined : await getTabState(tabId)
-	const signerAccounts = tabState?.signerAccounts
-	const tabIconDetails = tabState?.tabIconDetails
-
 	const pendingAccessRequestsAddresses = new Set(settings.pendingAccessRequests.map((x) => x.requestAccessToAddress === undefined ? [] : x.requestAccessToAddress).flat())
 	const addressInfos = settings.userAddressBook.addressInfos
 	const pendingAccessMetadata: [string, AddressInfoEntry][] = Array.from(pendingAccessRequestsAddresses).map((x) => [addressString(x), findAddressInfo(BigInt(x), addressInfos)])
@@ -236,12 +236,12 @@ export async function homeOpened(simulator: Simulator) {
 			simulation: await getSimulationResults(),
 			websiteAccessAddressMetadata: getAddressMetadataForAccess(settings.websiteAccess, settings.userAddressBook.addressInfos),
 			pendingAccessMetadata: pendingAccessMetadata,
-			signerAccounts: signerAccounts,
+			signerAccounts: tabState?.signerAccounts,
 			signerChain: tabState?.signerChain,
 			signerName: await getSignerName(),
 			currentBlockNumber: await simulator.ethereum.getBlockNumber(),
 			settings: settings,
-			tabIconDetails: tabIconDetails,
+			tabIconDetails: tabState?.tabIconDetails,
 			makeMeRich: await getMakeMeRich()
 		}
 	})
