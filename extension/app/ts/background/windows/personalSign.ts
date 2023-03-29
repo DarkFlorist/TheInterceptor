@@ -1,13 +1,13 @@
 import { stringifyJSONWithBigInts } from '../../utils/bigint.js'
 import { METAMASK_ERROR_USER_REJECTED_REQUEST } from '../../utils/constants.js'
 import { Future } from '../../utils/future.js'
-import { HandleSimulationModeReturnValue, InterceptedRequest, PersonalSign, ExternalPopupMessage } from '../../utils/interceptor-messages.js'
+import { HandleSimulationModeReturnValue, InterceptedRequest, PersonalSign, ExternalPopupMessage, Settings } from '../../utils/interceptor-messages.js'
 import { Website, WebsiteSocket } from '../../utils/user-interface-types.js'
 import { EIP2612Message, Permit2, PersonalSignParams, SignTypedDataParams } from '../../utils/wire-types.js'
 import { personalSignWithSimulator, sendMessageToContentScript } from '../background.js'
 import { getHtmlFile, sendPopupMessageToOpenWindows } from '../backgroundUtils.js'
 import { getAddressMetaData } from '../metadataUtils.js'
-import { getPendingPersonalSignPromise, savePendingPersonalSignPromise } from '../settings.js'
+import { getPendingPersonalSignPromise, setPendingPersonalSignPromise } from '../settings.js'
 
 let pendingPersonalSign: Future<PersonalSign> | undefined = undefined
 
@@ -50,6 +50,7 @@ export const openPersonalSignDialog = async (
 	request: InterceptedRequest,
 	simulationMode: boolean,
 	website: Website,
+	settings: Settings,
 ): Promise<HandleSimulationModeReturnValue> => {
 	if (pendingPersonalSign !== undefined) return reject()
 
@@ -60,7 +61,7 @@ export const openPersonalSignDialog = async (
 		return resolvePersonalSign(rejectMessage(request.requestId))
 	}
 
-	const activeAddress = simulationMode ? globalThis.interceptor.settings?.activeSimulationAddress : globalThis.interceptor.settings?.activeSigningAddress
+	const activeAddress = simulationMode ? settings.activeSimulationAddress : settings.activeSigningAddress
 	if (activeAddress === undefined) return reject()
 	const personalSignWindowReadyAndListening = async function popupMessageListener(msg: unknown) {
 		const message = ExternalPopupMessage.parse(msg)
@@ -76,7 +77,7 @@ export const openPersonalSignDialog = async (
 					simulationMode: simulationMode,
 					requestId: request.requestId,
 					message: params.params[0],
-					account: getAddressMetaData(params.params[1], globalThis.interceptor.settings?.userAddressBook),
+					account: getAddressMetaData(params.params[1], settings.userAddressBook),
 					method: params.method,
 				}
 			})
@@ -92,12 +93,12 @@ export const openPersonalSignDialog = async (
 					simulationMode: simulationMode,
 					requestId: request.requestId,
 					message: parsed,
-					account: getAddressMetaData(params.params[0], globalThis.interceptor.settings?.userAddressBook),
+					account: getAddressMetaData(params.params[0], settings.userAddressBook),
 					method: params.method,
 					addressBookEntries: {
-						owner: getAddressMetaData(parsed.message.owner, globalThis.interceptor.settings?.userAddressBook),
-						spender: getAddressMetaData(parsed.message.spender, globalThis.interceptor.settings?.userAddressBook),
-						verifyingContract: getAddressMetaData(parsed.domain.verifyingContract, globalThis.interceptor.settings?.userAddressBook)
+						owner: getAddressMetaData(parsed.message.owner, settings.userAddressBook),
+						spender: getAddressMetaData(parsed.message.spender, settings.userAddressBook),
+						verifyingContract: getAddressMetaData(parsed.domain.verifyingContract, settings.userAddressBook)
 					},
 				}
 			})
@@ -113,12 +114,12 @@ export const openPersonalSignDialog = async (
 					simulationMode: simulationMode,
 					requestId: request.requestId,
 					message: parsed,
-					account: getAddressMetaData(params.params[0], globalThis.interceptor.settings?.userAddressBook),
+					account: getAddressMetaData(params.params[0], settings.userAddressBook),
 					method: params.method,
 					addressBookEntries: {
-						token: getAddressMetaData(parsed.message.details.token, globalThis.interceptor.settings?.userAddressBook),
-						spender: getAddressMetaData(parsed.message.spender, globalThis.interceptor.settings?.userAddressBook),
-						verifyingContract: getAddressMetaData(parsed.domain.verifyingContract, globalThis.interceptor.settings?.userAddressBook)
+						token: getAddressMetaData(parsed.message.details.token, settings.userAddressBook),
+						spender: getAddressMetaData(parsed.message.spender, settings.userAddressBook),
+						verifyingContract: getAddressMetaData(parsed.domain.verifyingContract, settings.userAddressBook)
 					},
 				}
 			})
@@ -132,7 +133,7 @@ export const openPersonalSignDialog = async (
 				simulationMode: simulationMode,
 				requestId: request.requestId,
 				message: stringifyJSONWithBigInts(params.params[1]),
-				account: getAddressMetaData(params.params[0], globalThis.interceptor.settings?.userAddressBook),
+				account: getAddressMetaData(params.params[0], settings.userAddressBook),
 				method: params.method,
 			}
 		})
@@ -145,7 +146,7 @@ export const openPersonalSignDialog = async (
 			if ((await browser.tabs.query({ windowId: oldPromise.dialogId })).length > 0) {
 				return reject()
 			} else {
-				await savePendingPersonalSignPromise(undefined)
+				await setPendingPersonalSignPromise(undefined)
 			}
 		}
 
@@ -160,7 +161,7 @@ export const openPersonalSignDialog = async (
 		if (openedPersonalSignDialogWindow && openedPersonalSignDialogWindow.id !== undefined) {
 			browser.windows.onRemoved.addListener(onCloseWindow)
 
-			await savePendingPersonalSignPromise({
+			await setPendingPersonalSignPromise({
 				website: website,
 				dialogId: openedPersonalSignDialogWindow.id,
 				socket: socket,
@@ -183,7 +184,7 @@ export const openPersonalSignDialog = async (
 }
 
 async function resolve(reply: PersonalSign, simulationMode: boolean, params: PersonalSignParams | SignTypedDataParams) {
-	await savePendingPersonalSignPromise(undefined)
+	await setPendingPersonalSignPromise(undefined)
 	// forward message to content script
 	if (reply.options.accept) {
 		if (simulationMode) {

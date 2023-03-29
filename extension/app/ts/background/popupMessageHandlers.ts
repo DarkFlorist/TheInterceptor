@@ -1,10 +1,10 @@
 import { changeActiveAddressAndChainAndResetSimulation, changeActiveChain, refreshConfirmTransactionSimulation, updatePrependMode, updateSimulationState } from './background.js'
-import { getMakeMeRich, getOpenedAddressBookTabId, getSignerName, getSimulationResults, getTabState, saveAddressInfos, saveContacts, saveMakeMeRich, saveOpenedAddressBookTabId, savePage, saveSimulationMode, saveUseSignersAddressAsActiveAddress, saveWebsiteAccess } from './settings.js'
+import { getMakeMeRich, getOpenedAddressBookTabId, getSettings, getSignerName, getSimulationResults, getTabState, setMakeMeRich, setOpenedAddressBookTabId, setPage, setSimulationMode, setUseSignersAddressAsActiveAddress, updateAddressInfos, updateContacts, updateWebsiteAccess } from './settings.js'
 import { Simulator } from '../simulation/simulator.js'
-import { ChangeActiveAddress, ChangeMakeMeRich, ChangePage, PersonalSign, RemoveTransaction, RequestAccountsFromSigner, TransactionConfirmation, InterceptorAccess, ChangeInterceptorAccess, ChainChangeConfirmation, EnableSimulationMode, ReviewNotification, RejectNotification, ChangeActiveChain, AddOrEditAddressBookEntry, GetAddressBookData, RemoveAddressBookEntry, RefreshConfirmTransactionDialogSimulation, UserAddressBook, InterceptorAccessRefresh, InterceptorAccessChangeAddress } from '../utils/interceptor-messages.js'
+import { ChangeActiveAddress, ChangeMakeMeRich, ChangePage, PersonalSign, RemoveTransaction, RequestAccountsFromSigner, TransactionConfirmation, InterceptorAccess, ChangeInterceptorAccess, ChainChangeConfirmation, EnableSimulationMode, ReviewNotification, RejectNotification, ChangeActiveChain, AddOrEditAddressBookEntry, GetAddressBookData, RemoveAddressBookEntry, RefreshConfirmTransactionDialogSimulation, UserAddressBook, InterceptorAccessRefresh, InterceptorAccessChangeAddress, Settings } from '../utils/interceptor-messages.js'
 import { resolvePendingTransaction } from './windows/confirmTransaction.js'
 import { resolvePersonalSign } from './windows/personalSign.js'
-import { changeAccess, getAddressMetadataForAccess, requestAccessFromUser, requestAddressChange, resolveExistingInterceptorAccessAsNoResponse, resolveInterceptorAccess, setPendingAccessRequests } from './windows/interceptorAccess.js'
+import { changeAccess, getAddressMetadataForAccess, removePendingAccessRequestAndUpdateBadge, requestAccessFromUser, requestAddressChange, resolveExistingInterceptorAccessAsNoResponse, resolveInterceptorAccess } from './windows/interceptorAccess.js'
 import { resolveChainChange } from './windows/changeChain.js'
 import { EthereumQuantity } from '../utils/wire-types.js'
 import { getAssociatedAddresses, sendMessageToApprovedWebsitePorts, updateWebsiteApprovalAccesses } from './accessManagement.js'
@@ -29,41 +29,34 @@ export async function confirmRequestAccess(_simulator: Simulator, confirmation: 
 }
 
 export async function changeActiveAddress(_simulator: Simulator, addressChange: ChangeActiveAddress) {
-	if (globalThis.interceptor.settings === undefined) return
-	globalThis.interceptor.settings.useSignersAddressAsActiveAddress = addressChange.options === 'signer'
+	await setUseSignersAddressAsActiveAddress(addressChange.options === 'signer')
 
 	// if using signers address, set the active address to signers address if available, otherwise we don't know active address and set it to be undefined
 	if (addressChange.options === 'signer') {
-		const currentTabId = (await browser.tabs.getCurrent())?.id
-		const signerAccounts = currentTabId === undefined ? undefined : (await getTabState(currentTabId)).signerAccounts
-		await changeActiveAddressAndChainAndResetSimulation(signerAccounts !== undefined && signerAccounts.length > 0 ? signerAccounts[0] : undefined, 'noActiveChainChange')
+		const [currentTab] = await browser.tabs.query({ active: true, currentWindow: true })
+		const signerAccounts = currentTab.id === undefined ? undefined : (await getTabState(currentTab.id)).signerAccounts
+		if (currentTab.id) { console.log(await getTabState(currentTab.id)) }
+		await changeActiveAddressAndChainAndResetSimulation(signerAccounts !== undefined && signerAccounts.length > 0 ? signerAccounts[0] : undefined, 'noActiveChainChange', await getSettings())
 	} else {
-		await changeActiveAddressAndChainAndResetSimulation(addressChange.options, 'noActiveChainChange')
+		await changeActiveAddressAndChainAndResetSimulation(addressChange.options, 'noActiveChainChange', await getSettings())
 	}
-
-	saveUseSignersAddressAsActiveAddress(globalThis.interceptor.settings.useSignersAddressAsActiveAddress)
 }
 
-export async function changeMakeMeRich(_simulator: Simulator, makeMeRichChange: ChangeMakeMeRich) {
-	await saveMakeMeRich(makeMeRichChange.options)
-	await updatePrependMode()
+export async function changeMakeMeRich(_simulator: Simulator, makeMeRichChange: ChangeMakeMeRich, settings: Settings) {
+	await setMakeMeRich(makeMeRichChange.options)
+	await updatePrependMode(settings)
 }
 
 export async function removeAddressBookEntry(_simulator: Simulator, removeAddressBookEntry: RemoveAddressBookEntry) {
-	if (globalThis.interceptor.settings === undefined) return
 	switch(removeAddressBookEntry.options.addressBookCategory) {
 		case 'My Active Addresses': {
-			globalThis.interceptor.settings.userAddressBook.addressInfos = globalThis.interceptor.settings.userAddressBook.addressInfos.filter((info) => info.address !== removeAddressBookEntry.options.address)
-			saveAddressInfos(globalThis.interceptor.settings.userAddressBook.addressInfos)
-			updateWebsiteApprovalAccesses()
-			sendPopupMessageToOpenWindows({ method: 'popup_addressBookEntriesChanged' })
-			return
+			await updateAddressInfos((previousAddressInfos) => previousAddressInfos.filter((info) => info.address !== removeAddressBookEntry.options.address))
+			updateWebsiteApprovalAccesses(undefined, await getSettings())
+			return await sendPopupMessageToOpenWindows({ method: 'popup_addressBookEntriesChanged' })
 		}
 		case 'My Contacts': {
-			globalThis.interceptor.settings.userAddressBook.contacts = globalThis.interceptor.settings.userAddressBook.contacts.filter((contact) => contact.address !== removeAddressBookEntry.options.address)
-			saveContacts(globalThis.interceptor.settings.userAddressBook.contacts)
-			sendPopupMessageToOpenWindows({ method: 'popup_addressBookEntriesChanged' })
-			return
+			await updateContacts((previousContacts) => previousContacts.filter((contact) => contact.address !== removeAddressBookEntry.options.address))
+			return await sendPopupMessageToOpenWindows({ method: 'popup_addressBookEntriesChanged' })
 		}
 		case 'Non Fungible Tokens':
 		case 'Other Contracts':
@@ -73,49 +66,44 @@ export async function removeAddressBookEntry(_simulator: Simulator, removeAddres
 }
 
 export async function addOrModifyAddressInfo(_simulator: Simulator, entry: AddOrEditAddressBookEntry) {
-	if (globalThis.interceptor.settings === undefined) return
 	const newEntry = entry.options
 	switch (newEntry.type) {
 		case 'NFT':
 		case 'other contract':
 		case 'token': throw new Error(`No support to modify this entry yet! ${ newEntry.type }`)
 		case 'addressInfo': {
-			if (globalThis.interceptor.settings.userAddressBook.addressInfos.find( (x) => x.address === entry.options.address) ) {
-				globalThis.interceptor.settings.userAddressBook.addressInfos = globalThis.interceptor.settings.userAddressBook.addressInfos.map( (x) => x.address === newEntry.address ? newEntry : x )
-			} else {
-				globalThis.interceptor.settings.userAddressBook.addressInfos = globalThis.interceptor.settings.userAddressBook.addressInfos.concat([newEntry])
-			}
-			saveAddressInfos(globalThis.interceptor.settings.userAddressBook.addressInfos)
-			updateWebsiteApprovalAccesses()
-			sendPopupMessageToOpenWindows({ method: 'popup_addressBookEntriesChanged' })
-			return
+			await updateAddressInfos((previousAddressInfos) => {
+				if (previousAddressInfos.find((x) => x.address === entry.options.address) ) {
+					return previousAddressInfos.map((x) => x.address === newEntry.address ? newEntry : x )
+				} else {
+					return previousAddressInfos.concat([newEntry])
+				}
+			})
+			updateWebsiteApprovalAccesses(undefined, await getSettings())
+			return await sendPopupMessageToOpenWindows({ method: 'popup_addressBookEntriesChanged' })
 		}
 		case 'contact': {
-			if (globalThis.interceptor.settings.userAddressBook.contacts.find( (x) => x.address === entry.options.address) ) {
-				globalThis.interceptor.settings.userAddressBook.contacts = globalThis.interceptor.settings.userAddressBook.contacts.map( (x) => x.address === newEntry.address ? newEntry : x )
-			} else {
-				globalThis.interceptor.settings.userAddressBook.contacts = globalThis.interceptor.settings.userAddressBook.contacts.concat([newEntry])
-			}
-			saveContacts(globalThis.interceptor.settings.userAddressBook.contacts)
-			sendPopupMessageToOpenWindows({ method: 'popup_addressBookEntriesChanged' })
-			return
+			await updateContacts((previousContacts) => {
+				if (previousContacts.find( (x) => x.address === entry.options.address) ) {
+					return previousContacts.map( (x) => x.address === newEntry.address ? newEntry : x )
+				} else {
+					return previousContacts.concat([newEntry])
+				}
+			})
+			return await sendPopupMessageToOpenWindows({ method: 'popup_addressBookEntriesChanged' })
 		}
 		default: assertUnreachable(newEntry)
 	}
 }
 
-export async function changeInterceptorAccess(_simulator: Simulator, accessChange: ChangeInterceptorAccess) {
-	if (globalThis.interceptor.settings === undefined) return
-	globalThis.interceptor.settings.websiteAccess = accessChange.options
-	saveWebsiteAccess(accessChange.options)
-	updateWebsiteApprovalAccesses()
-	sendPopupMessageToOpenWindows({ method: 'popup_interceptor_access_changed' })
+export async function changeInterceptorAccess(_simulator: Simulator, accessChange: ChangeInterceptorAccess, settings: Settings) {
+	await updateWebsiteAccess(() => accessChange.options) // TODO: update 'popup_changeInterceptorAccess' to return list of changes instead of a new list
+	updateWebsiteApprovalAccesses(undefined, settings)
+	return await sendPopupMessageToOpenWindows({ method: 'popup_interceptor_access_changed' })
 }
 
 export async function changePage(_simulator: Simulator, page: ChangePage) {
-	if (globalThis.interceptor.settings === undefined) return
-	globalThis.interceptor.settings.page = page.options
-	savePage(page.options)
+	await setPage(page.options)
 }
 
 export async function requestAccountsFromSigner(_simulator: Simulator, params: RequestAccountsFromSigner) {
@@ -137,9 +125,9 @@ export async function refreshSimulation(simulator: Simulator) {
 }
 
 export async function refreshPopupConfirmTransactionSimulation(_simulator: Simulator, { data }: RefreshConfirmTransactionDialogSimulation) {
-	const refreshMessage = await refreshConfirmTransactionSimulation(data.activeAddress, data.simulationMode, data.requestId, data.transactionToSimulate, data.website)
+	const refreshMessage = await refreshConfirmTransactionSimulation(data.activeAddress, data.simulationMode, data.requestId, data.transactionToSimulate, data.website, (await getSettings()).userAddressBook)
 	if (refreshMessage === undefined) return
-	return sendPopupMessageToOpenWindows(refreshMessage)
+	return await sendPopupMessageToOpenWindows(refreshMessage)
 }
 
 export async function popupChangeActiveChain(_simulator: Simulator, params: ChangeActiveChain) {
@@ -150,42 +138,38 @@ export async function changeChainDialog(_simulator: Simulator, chainChange: Chai
 	await resolveChainChange(chainChange)
 }
 
-export async function enableSimulationMode(_simulator: Simulator, params: EnableSimulationMode) {
-	if (globalThis.interceptor.settings === undefined) return
-
-	globalThis.interceptor.settings.simulationMode = params.options
-	saveSimulationMode(params.options)
+export async function enableSimulationMode(_simulator: Simulator, params: EnableSimulationMode, settings: Settings) {
+	await setSimulationMode(params.options)
 	// if we are on unsupported chain, force change to a supported one
-	const chainToSwitch = isSupportedChain(globalThis.interceptor.settings.activeChain.toString()) ? globalThis.interceptor.settings.activeChain : 1n
+	const chainToSwitch = isSupportedChain(settings.activeChain.toString()) ? settings.activeChain : 1n
 
-	if (globalThis.interceptor.settings.useSignersAddressAsActiveAddress || globalThis.interceptor.settings.simulationMode === false) {
-		const currentTabId = (await browser.tabs.getCurrent())?.id
-		const signerAccounts = currentTabId === undefined ? undefined : (await getTabState(currentTabId)).signerAccounts
-		await changeActiveAddressAndChainAndResetSimulation(signerAccounts !== undefined && signerAccounts.length > 0 ? signerAccounts[0] : undefined, chainToSwitch)
+	if (settings.useSignersAddressAsActiveAddress || settings.simulationMode === false) {
+		const [currentTab] = await browser.tabs.query({ active: true, currentWindow: true })
+		const signerAccounts = currentTab.id === undefined ? undefined : (await getTabState(currentTab.id)).signerAccounts
+		if (currentTab.id) { console.log(await getTabState(currentTab.id)) }
+		await changeActiveAddressAndChainAndResetSimulation(signerAccounts !== undefined && signerAccounts.length > 0 ? signerAccounts[0] : undefined, chainToSwitch, settings)
 	} else {
-		await changeActiveAddressAndChainAndResetSimulation(globalThis.interceptor.settings.simulationMode ? globalThis.interceptor.settings.activeSimulationAddress : globalThis.interceptor.settings.activeSigningAddress, chainToSwitch)
+		await changeActiveAddressAndChainAndResetSimulation(settings.simulationMode ? settings.activeSimulationAddress : settings.activeSigningAddress, chainToSwitch, settings)
 	}
 
 	if (!params.options) {
 		sendMessageToApprovedWebsitePorts('request_signer_to_eth_requestAccounts', [])
-		sendMessageToApprovedWebsitePorts('request_signer_chainId', EthereumQuantity.serialize(globalThis.interceptor.settings.activeChain))
+		sendMessageToApprovedWebsitePorts('request_signer_chainId', EthereumQuantity.serialize(settings.activeChain))
 	}
 }
 
-export async function reviewNotification(_simulator: Simulator, params: ReviewNotification) {
-	if (globalThis.interceptor.settings === undefined) return
-	const notification = globalThis.interceptor.settings.pendingAccessRequests.find( (x) => x.website.websiteOrigin === params.options.website.websiteOrigin && x.requestAccessToAddress === params.options.requestAccessToAddress)
+export async function reviewNotification(_simulator: Simulator, params: ReviewNotification, settings: Settings) {
+	const notification = settings.pendingAccessRequests.find( (x) => x.website.websiteOrigin === params.options.website.websiteOrigin && x.requestAccessToAddress === params.options.requestAccessToAddress)
 	if (notification === undefined) return
 	await resolveExistingInterceptorAccessAsNoResponse()
 
-	const addressInfo = notification.requestAccessToAddress === undefined ? undefined : findAddressInfo(BigInt(notification.requestAccessToAddress), globalThis.interceptor.settings.userAddressBook.addressInfos)
-	const metadata = getAssociatedAddresses(globalThis.interceptor.settings, notification.website.websiteOrigin, addressInfo)
-	await requestAccessFromUser(params.options.socket, notification.website, params.options.request, addressInfo, metadata)
+	const addressInfo = notification.requestAccessToAddress === undefined ? undefined : findAddressInfo(BigInt(notification.requestAccessToAddress), settings.userAddressBook.addressInfos)
+	const metadata = getAssociatedAddresses(settings, notification.website.websiteOrigin, addressInfo)
+	await requestAccessFromUser(params.options.socket, notification.website, params.options.request, addressInfo, metadata, settings)
 }
 export async function rejectNotification(_simulator: Simulator, params: RejectNotification) {
-	if (globalThis.interceptor.settings === undefined) return
 	if (params.options.removeOnly) {
-		await setPendingAccessRequests( globalThis.interceptor.settings.pendingAccessRequests.filter( (x) => !(x.website.websiteOrigin === params.options.website.websiteOrigin && x.requestAccessToAddress === params.options.requestAccessToAddress) ) )
+		await removePendingAccessRequestAndUpdateBadge(params.options.website.websiteOrigin, params.options.requestAccessToAddress)
 	}
 
 	await resolveInterceptorAccess({
@@ -202,13 +186,13 @@ export async function rejectNotification(_simulator: Simulator, params: RejectNo
 			approval: 'Rejected'
 		}, params.options.website )
 	}
-	sendPopupMessageToOpenWindows({ method: 'popup_notification_removed' })
+	await sendPopupMessageToOpenWindows({ method: 'popup_notification_removed' })
 }
 
 export async function getAddressBookData(parsed: GetAddressBookData, userAddressBook: UserAddressBook | undefined) {
 	if (userAddressBook === undefined) throw new Error('Interceptor is not ready')
 	const data = getMetadataForAddressBookData(parsed.options, userAddressBook)
-	sendPopupMessageToOpenWindows({
+	await sendPopupMessageToOpenWindows({
 		method: 'popup_getAddressBookDataReply',
 		data: {
 			options: parsed.options,
@@ -221,7 +205,7 @@ export async function getAddressBookData(parsed: GetAddressBookData, userAddress
 export async function openAddressBook(_simulator: Simulator) {
 	const openInNewTab = async () => {
 		const tab = await browser.tabs.create({ url: getHtmlFile('addressBook') })
-		if (tab.id !== undefined) saveOpenedAddressBookTabId(tab.id)
+		if (tab.id !== undefined) await setOpenedAddressBookTabId(tab.id)
 	}
 
 	const tabId = await getOpenedAddressBookTabId()
@@ -234,7 +218,7 @@ export async function openAddressBook(_simulator: Simulator) {
 }
 
 export async function homeOpened(simulator: Simulator) {
-	if (globalThis.interceptor.settings === undefined) return
+	const settings = await getSettings()
 
 	const tabs = await browser.tabs.query({ active: true, currentWindow: true })
 	const tabId = tabs.length > 0 ? tabs[0].id : undefined
@@ -242,21 +226,21 @@ export async function homeOpened(simulator: Simulator) {
 	const signerAccounts = tabState?.signerAccounts
 	const tabIconDetails = tabState?.tabIconDetails
 
-	const pendingAccessRequestsAddresses = new Set(globalThis.interceptor.settings.pendingAccessRequests.map((x) => x.requestAccessToAddress === undefined ? [] : x.requestAccessToAddress).flat())
-	const addressInfos = globalThis.interceptor.settings.userAddressBook.addressInfos
+	const pendingAccessRequestsAddresses = new Set(settings.pendingAccessRequests.map((x) => x.requestAccessToAddress === undefined ? [] : x.requestAccessToAddress).flat())
+	const addressInfos = settings.userAddressBook.addressInfos
 	const pendingAccessMetadata: [string, AddressInfoEntry][] = Array.from(pendingAccessRequestsAddresses).map((x) => [addressString(x), findAddressInfo(BigInt(x), addressInfos)])
 
-	sendPopupMessageToOpenWindows({
+	await sendPopupMessageToOpenWindows({
 		method: 'popup_UpdateHomePage',
 		data: {
 			simulation: await getSimulationResults(),
-			websiteAccessAddressMetadata: getAddressMetadataForAccess(globalThis.interceptor.settings.websiteAccess),
+			websiteAccessAddressMetadata: getAddressMetadataForAccess(settings.websiteAccess, settings.userAddressBook.addressInfos),
 			pendingAccessMetadata: pendingAccessMetadata,
 			signerAccounts: signerAccounts,
 			signerChain: tabState?.signerChain,
 			signerName: await getSignerName(),
 			currentBlockNumber: await simulator.ethereum.getBlockNumber(),
-			settings: globalThis.interceptor.settings,
+			settings: settings,
 			tabIconDetails: tabIconDetails,
 			makeMeRich: await getMakeMeRich()
 		}
@@ -264,5 +248,5 @@ export async function homeOpened(simulator: Simulator) {
 }
 
 export async function interceptorAccessChangeAddressOrRefresh(params: InterceptorAccessChangeAddress | InterceptorAccessRefresh) {
-	requestAddressChange(params)
+	await requestAddressChange(params)
 }

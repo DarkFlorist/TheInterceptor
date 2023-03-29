@@ -1,7 +1,7 @@
 import { Simulator } from '../simulation/simulator.js'
 import { bytes32String } from '../utils/bigint.js'
 import { KNOWN_CONTRACT_CALLER_ADDRESSES } from '../utils/constants.js'
-import { InterceptedRequest, WebsiteAccessArray } from '../utils/interceptor-messages.js'
+import { InterceptedRequest, Settings, WebsiteAccessArray } from '../utils/interceptor-messages.js'
 import { Website, WebsiteSocket } from '../utils/user-interface-types.js'
 import { EstimateGasParams, EthBalanceParams, EthBlockByNumberParams, EthCallParams, EthereumAddress, EthereumData, EthereumQuantity, EthereumSignedTransactionWithBlockData, EthGetLogsParams, EthGetLogsResponse, EthSubscribeParams, EthTransactionReceiptResponse, EthUnSubscribeParams, GetBlockReturn, GetCode, GetSimulationStack, GetSimulationStackReply, GetTransactionCount, JsonRpcNewHeadsNotification, NewHeadsSubscriptionData, PersonalSignParams, SendTransactionParams, SignTypedDataParams, SwitchEthereumChainParams, TransactionByHashParams, TransactionReceiptParams } from '../utils/wire-types.js'
 import { getConnectionDetails } from './accessManagement.js'
@@ -28,8 +28,7 @@ export async function getTransactionReceipt(simulator: Simulator, request: Trans
 	return { result: EthTransactionReceiptResponse.serialize(await simulator.simulationModeNode.getTransactionReceipt(request.params[0])) }
 }
 
-function getFromField(simulationMode: boolean, request: SendTransactionParams, getActiveAddressForDomain: (websiteAccess: WebsiteAccessArray, websiteOrigin: string) => bigint | undefined, socket: WebsiteSocket) {
-	if (globalThis.interceptor.settings === undefined) throw new Error('Interceptor is not ready')
+function getFromField(simulationMode: boolean, request: SendTransactionParams, getActiveAddressForDomain: (websiteAccess: WebsiteAccessArray, websiteOrigin: string, settings: Settings) => bigint | undefined, socket: WebsiteSocket, settings: Settings) {
 
 	if (simulationMode && 'from' in request.params[0] && request.params[0].from !== undefined) {
 		return request.params[0].from // use `from` field directly from the dapp if we are in simulation mode and its available
@@ -37,25 +36,26 @@ function getFromField(simulationMode: boolean, request: SendTransactionParams, g
 		const connection = getConnectionDetails(socket)
 		if (connection === undefined) throw new Error('Not connected')
 
-		const from = getActiveAddressForDomain(globalThis.interceptor.settings.websiteAccess, connection.websiteOrigin)
+		const from = getActiveAddressForDomain(settings.websiteAccess, connection.websiteOrigin, settings)
 		if (from === undefined) throw new Error('Access to active address is denied')
 		return from
 	}
 }
 
 export async function sendTransaction(
-	getActiveAddressForDomain: (websiteAccess: WebsiteAccessArray, websiteOrigin: string) => bigint | undefined,
+	getActiveAddressForDomain: (websiteAccess: WebsiteAccessArray, websiteOrigin: string, settings: Settings) => bigint | undefined,
 	simulator: Simulator,
 	sendTransactionParams: SendTransactionParams,
 	socket: WebsiteSocket,
 	request: InterceptedRequest,
 	simulationMode: boolean = true,
-	website: Website
+	website: Website,
+	settings: Settings,
 ) {
 	async function formTransaction() {
 		const block = simulator.ethereum.getBlock()
 		const chainId = simulator.ethereum.getChainId()
-		const from = getFromField(simulationMode, sendTransactionParams, getActiveAddressForDomain, socket)
+		const from = getFromField(simulationMode, sendTransactionParams, getActiveAddressForDomain, socket, settings)
 		const transactionCount = simulator.simulationModeNode.getTransactionCount(from)
 
 		const maxFeePerGas = (await block).baseFeePerGas * 2n
@@ -78,7 +78,8 @@ export async function sendTransaction(
 		request,
 		website,
 		simulationMode,
-		formTransaction
+		formTransaction,
+		settings,
 	)
 }
 
@@ -151,12 +152,12 @@ export async function unsubscribe(simulator: Simulator, request: EthUnSubscribeP
 	return { result: simulator.simulationModeNode.remoteSubscription(request.params[0]) }
 }
 
-export async function getAccounts(getActiveAddressForDomain: (websiteAccess: WebsiteAccessArray, websiteOrigin: string) => bigint | undefined, _simulator: Simulator, socket: WebsiteSocket) {
+export async function getAccounts(getActiveAddressForDomain: (websiteAccess: WebsiteAccessArray, websiteOrigin: string, settings: Settings) => bigint | undefined, _simulator: Simulator, socket: WebsiteSocket, settings: Settings) {
 	const connection = getConnectionDetails(socket)
-	if (connection === undefined || globalThis.interceptor.settings === undefined) {
+	if (connection === undefined) {
 		return { result: [] }
 	}
-	const account = getActiveAddressForDomain(globalThis.interceptor.settings.websiteAccess, connection.websiteOrigin)
+	const account = getActiveAddressForDomain(settings.websiteAccess, connection.websiteOrigin, settings)
 	if (account === undefined) {
 		return { result: [] }
 	}
@@ -172,8 +173,8 @@ export async function gasPrice(simulator: Simulator) {
 	return { result: EthereumQuantity.serialize(await simulator.ethereum.getGasPrice()) }
 }
 
-export async function personalSign(socket: WebsiteSocket, params: PersonalSignParams | SignTypedDataParams, request: InterceptedRequest, simulationMode: boolean, website: Website) {
-	return await openPersonalSignDialog(socket, params, request, simulationMode, website)
+export async function personalSign(socket: WebsiteSocket, params: PersonalSignParams | SignTypedDataParams, request: InterceptedRequest, simulationMode: boolean, website: Website, settings: Settings) {
+	return await openPersonalSignDialog(socket, params, request, simulationMode, website, settings)
 }
 
 export async function switchEthereumChain(socket: WebsiteSocket, simulator: Simulator, params: SwitchEthereumChainParams, request: InterceptedRequest, simulationMode: boolean, website: Website) {
@@ -188,8 +189,8 @@ export async function getCode(simulator: Simulator, request: GetCode) {
 	return { result: EthereumData.serialize(await simulator.simulationModeNode.getCode(request.params[0], request.params[1])) }
 }
 
-export async function requestPermissions(getActiveAddressForDomain: (websiteAccess: WebsiteAccessArray, websiteOrigin: string) => bigint | undefined, simulator: Simulator, socket: WebsiteSocket) {
-	return await getAccounts(getActiveAddressForDomain, simulator, socket)
+export async function requestPermissions(getActiveAddressForDomain: (websiteAccess: WebsiteAccessArray, websiteOrigin: string, settings: Settings) => bigint | undefined, simulator: Simulator, socket: WebsiteSocket, settings: Settings) {
+	return await getAccounts(getActiveAddressForDomain, simulator, socket, settings)
 }
 
 export async function getPermissions() {
