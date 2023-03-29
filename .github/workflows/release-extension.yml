@@ -22,7 +22,7 @@ jobs:
           echo "TAG=$TAG" >> $GITHUB_OUTPUT
           echo export const gitCommitSha = \"$GIT_COMMIT_SHA\" > $VERSION_FILE
           echo export const version = \"$VERSION\" >> $VERSION_FILE
-          sed -i '/"version"/c\\t"version": "'$VERSION'",' $MANIFEST_V2_FILE $MANIFEST_V3_FILE
+          sed -i -e '/"version"/c\\t"version": "'$VERSION'",' -e '/^\t*\/\//d' $MANIFEST_V2_FILE $MANIFEST_V3_FILE
           zip source.zip -r . -x '*.git*' -x source.zip
       - name: Build Extension
         working-directory: ./extension
