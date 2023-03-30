@@ -1,5 +1,5 @@
 import { changeActiveAddressAndChainAndResetSimulation, changeActiveChain, refreshConfirmTransactionSimulation, updatePrependMode, updateSimulationState } from './background.js'
-import { getMakeMeRich, getOpenedAddressBookTabId, getSignerName, getSimulationResults, saveAddressInfos, saveContacts, saveMakeMeRich, saveOpenedAddressBookTabId, savePage, saveSimulationMode, saveUseSignersAddressAsActiveAddress, saveWebsiteAccess } from './settings.js'
+import { getMakeMeRich, getOpenedAddressBookTabId, getSignerName, getSimulationResults, getTabState, saveAddressInfos, saveContacts, saveMakeMeRich, saveOpenedAddressBookTabId, savePage, saveSimulationMode, saveUseSignersAddressAsActiveAddress, saveWebsiteAccess } from './settings.js'
 import { Simulator } from '../simulation/simulator.js'
 import { ChangeActiveAddress, ChangeMakeMeRich, ChangePage, PersonalSign, RemoveTransaction, RequestAccountsFromSigner, TransactionConfirmation, InterceptorAccess, ChangeInterceptorAccess, ChainChangeConfirmation, EnableSimulationMode, ReviewNotification, RejectNotification, ChangeActiveChain, AddOrEditAddressBookEntry, GetAddressBookData, RemoveAddressBookEntry, RefreshConfirmTransactionDialogSimulation, UserAddressBook, InterceptorAccessRefresh, InterceptorAccessChangeAddress } from '../utils/interceptor-messages.js'
 import { resolvePendingTransaction } from './windows/confirmTransaction.js'
@@ -35,8 +35,8 @@ export async function changeActiveAddress(_simulator: Simulator, addressChange: 
 	// if using signers address, set the active address to signers address if available, otherwise we don't know active address and set it to be undefined
 	if (addressChange.options === 'signer') {
 		const currentTabId = (await browser.tabs.getCurrent())?.id
-		const signerAccounts = currentTabId === undefined ? currentTabId : globalThis.interceptor.websiteTabSignerStates.get(currentTabId)?.signerAccounts
-		await changeActiveAddressAndChainAndResetSimulation(signerAccounts !== undefined ? signerAccounts[0] : undefined, 'noActiveChainChange')
+		const signerAccounts = currentTabId === undefined ? undefined : (await getTabState(currentTabId)).signerAccounts
+		await changeActiveAddressAndChainAndResetSimulation(signerAccounts !== undefined && signerAccounts.length > 0 ? signerAccounts[0] : undefined, 'noActiveChainChange')
 	} else {
 		await changeActiveAddressAndChainAndResetSimulation(addressChange.options, 'noActiveChainChange')
 	}
@@ -160,8 +160,8 @@ export async function enableSimulationMode(_simulator: Simulator, params: Enable
 
 	if (globalThis.interceptor.settings.useSignersAddressAsActiveAddress || globalThis.interceptor.settings.simulationMode === false) {
 		const currentTabId = (await browser.tabs.getCurrent())?.id
-		const signerAccounts = currentTabId === undefined ? currentTabId : globalThis.interceptor.websiteTabSignerStates.get(currentTabId)?.signerAccounts
-		await changeActiveAddressAndChainAndResetSimulation(signerAccounts !== undefined ? signerAccounts[0] : undefined, chainToSwitch)
+		const signerAccounts = currentTabId === undefined ? undefined : (await getTabState(currentTabId)).signerAccounts
+		await changeActiveAddressAndChainAndResetSimulation(signerAccounts !== undefined && signerAccounts.length > 0 ? signerAccounts[0] : undefined, chainToSwitch)
 	} else {
 		await changeActiveAddressAndChainAndResetSimulation(globalThis.interceptor.settings.simulationMode ? globalThis.interceptor.settings.activeSimulationAddress : globalThis.interceptor.settings.activeSigningAddress, chainToSwitch)
 	}
@@ -238,9 +238,9 @@ export async function homeOpened(simulator: Simulator) {
 
 	const tabs = await browser.tabs.query({ active: true, currentWindow: true })
 	const tabId = tabs.length > 0 ? tabs[0].id : undefined
-	const signerState = tabId === undefined ? undefined : globalThis.interceptor.websiteTabSignerStates.get(tabId)
-	const signerAccounts = signerState === undefined ? undefined : signerState.signerAccounts
-	const tabIconDetails = tabId === undefined ? undefined : globalThis.interceptor.websiteTabConnections.get(tabId)?.tabIconDetails
+	const tabState = tabId === undefined ? undefined : await getTabState(tabId)
+	const signerAccounts = tabState?.signerAccounts
+	const tabIconDetails = tabState?.tabIconDetails
 
 	const pendingAccessRequestsAddresses = new Set(globalThis.interceptor.settings.pendingAccessRequests.map((x) => x.requestAccessToAddress === undefined ? [] : x.requestAccessToAddress).flat())
 	const addressInfos = globalThis.interceptor.settings.userAddressBook.addressInfos
@@ -253,7 +253,7 @@ export async function homeOpened(simulator: Simulator) {
 			websiteAccessAddressMetadata: getAddressMetadataForAccess(globalThis.interceptor.settings.websiteAccess),
 			pendingAccessMetadata: pendingAccessMetadata,
 			signerAccounts: signerAccounts,
-			signerChain: globalThis.interceptor.signerChain,
+			signerChain: tabState?.signerChain,
 			signerName: await getSignerName(),
 			currentBlockNumber: await simulator.ethereum.getBlockNumber(),
 			settings: globalThis.interceptor.settings,

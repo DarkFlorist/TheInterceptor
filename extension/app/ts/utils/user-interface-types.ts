@@ -1,6 +1,6 @@
 import { StateUpdater } from 'preact/hooks'
 import * as funtypes from 'funtypes'
-import { EthereumAccountsReply, EthereumAddress, EthereumQuantity, LiteralConverterParserFactory } from './wire-types.js'
+import { EthereumAddress, EthereumQuantity, LiteralConverterParserFactory } from './wire-types.js'
 import { SimulatedAndVisualizedTransaction, SimulationAndVisualisationResults } from './visualizer-types.js'
 import { IdentifiedSwapWithMetadata } from '../components/simulationExplaining/SwapTransactions.js'
 import { CHAINS } from './constants.js'
@@ -185,10 +185,6 @@ export type NotificationCenterParams = {
 	pendingAccessMetadata: readonly [string, AddressInfoEntry][]
 }
 
-export interface SignerState {
-	signerAccounts: EthereumAccountsReply | undefined,
-	signerChain: EthereumQuantity | undefined
-}
 
 export type RenameAddressCallBack = (addressBookEntry: AddressBookEntry) => void
 
@@ -201,6 +197,5 @@ export type SocketConnection = {
 }
 
 export type TabConnection = {
-	tabIconDetails: TabIconDetails
 	connections: Record<string, SocketConnection> // socket as string
 }

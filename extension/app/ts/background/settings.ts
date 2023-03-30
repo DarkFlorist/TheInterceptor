@@ -1,10 +1,10 @@
-import { MOCK_PRIVATE_KEYS_ADDRESS } from '../utils/constants.js'
-import { AddressBookTabIdSetting, LegacyWebsiteAccessArray, Page, PendingAccessRequestArray, PendingChainChangeConfirmationPromise, PendingInterceptorAccessRequestPromise, PendingPersonalSignPromise, PendingUserRequestPromise, Settings, WebsiteAccessArray, WebsiteAccessArrayWithLegacy, SignerName } from '../utils/interceptor-messages.js'
+import { ICON_NOT_ACTIVE, MOCK_PRIVATE_KEYS_ADDRESS } from '../utils/constants.js'
+import { AddressBookTabIdSetting, LegacyWebsiteAccessArray, Page, PendingAccessRequestArray, PendingChainChangeConfirmationPromise, PendingInterceptorAccessRequestPromise, PendingPersonalSignPromise, PendingUserRequestPromise, Settings, WebsiteAccessArray, WebsiteAccessArrayWithLegacy, SignerName, TabState } from '../utils/interceptor-messages.js'
 import { Semaphore } from '../utils/semaphore.js'
 import { browserStorageLocalGet, browserStorageLocalSet } from '../utils/typescript.js'
 import { AddressInfo, AddressInfoArray, ContactEntries } from '../utils/user-interface-types.js'
 import { SimulationResults } from '../utils/visualizer-types.js'
-import { EthereumAddress, EthereumQuantity } from '../utils/wire-types.js'
+import { EthereumAddressOrUndefined, EthereumQuantity } from '../utils/wire-types.js'
 import * as funtypes from 'funtypes'
 
 export const defaultAddresses = [
@@ -52,8 +52,8 @@ export async function getSettings() : Promise<Settings> {
 		'contacts',
 	])
 	return {
-		activeSimulationAddress: results.activeSimulationAddress !== undefined ? EthereumAddress.parse(results.activeSimulationAddress) : defaultAddresses[0].address,
-		activeSigningAddress: results.activeSigningAddress !== undefined ? EthereumAddress.parse(results.activeSigningAddress) : undefined,
+		activeSimulationAddress: results.activeSimulationAddress !== undefined ? EthereumAddressOrUndefined.parse(results.activeSimulationAddress) : defaultAddresses[0].address,
+		activeSigningAddress: results.activeSigningAddress !== undefined ? EthereumAddressOrUndefined.parse(results.activeSigningAddress) : undefined,
 		page: results.page !== undefined ? Page.parse(results.page) : 'Home',
 		useSignersAddressAsActiveAddress: results.useSignersAddressAsActiveAddress !== undefined ? funtypes.Boolean.parse(results.useSignersAddressAsActiveAddress) : false,
 		websiteAccess: results.websiteAccess !== undefined ? parseAccessWithLegacySupport(results.websiteAccess) : [],
@@ -68,10 +68,10 @@ export async function getSettings() : Promise<Settings> {
 }
 
 export function saveActiveSimulationAddress(activeSimulationAddress: bigint | undefined) {
-	return browserStorageLocalSet({ activeSimulationAddress: EthereumAddress.serialize(activeSimulationAddress ? activeSimulationAddress : defaultAddresses[0].address) as string })
+	return browserStorageLocalSet({ activeSimulationAddress: EthereumAddressOrUndefined.serialize(activeSimulationAddress) as string })
 }
 export function saveActiveSigningAddress(activeSigningAddress: bigint | undefined) {
-	return browserStorageLocalSet({ activeSigningAddress: EthereumAddress.serialize(activeSigningAddress ? activeSigningAddress : defaultAddresses[0].address) as string })
+	return browserStorageLocalSet({ activeSigningAddress: EthereumAddressOrUndefined.serialize(activeSigningAddress) as string })
 }
 
 export function saveAddressInfos(addressInfos: readonly AddressInfo[]) {
@@ -181,7 +181,7 @@ export async function getSimulationResults() {
 
 const simulationResultsSemaphore = new Semaphore(1)
 export async function updateSimulationResults(newResults: SimulationResults) {
-	simulationResultsSemaphore.execute(async () => {
+	await simulationResultsSemaphore.execute(async () => {
 		const oldResults = await getSimulationResults()
 		if (newResults.simulationId < oldResults.simulationId) return // do not update state with older state
 		return await browserStorageLocalSet({ [SIMULATION_RESULTS_STORAGE_KEY]: SimulationResults.serialize(newResults) as string  })
@@ -194,8 +194,47 @@ export async function saveSignerName(signerName: SignerName) {
 
 export async function getSignerName() {
 	const results = await browserStorageLocalGet(['signerName'])
-	if (results) {
+	if (results.signerName !== undefined) {
 		return SignerName.parse(results.signerName)
 	}
 	return 'NoSignerDetected'
+}
+
+export async function getTabState(tabId: Number) : Promise<TabState> {
+	const name = `tabState_${ tabId }`
+	const results = await browserStorageLocalGet([name])
+	if (results[name] !== undefined) {
+		return TabState.parse(results[name])
+	}
+	return {
+		signerName: 'NoSigner',
+		signerAccounts: [],
+		signerChain: undefined,
+		tabIconDetails: {
+			icon: ICON_NOT_ACTIVE,
+			iconReason: 'No active address selected.',
+		}
+	}
+}
+export async function saveTabState(tabId: Number, tabState: TabState) {
+	const name = `tabState_${ tabId }`
+	return await browserStorageLocalSet({ [name]: TabState.serialize(tabState) as string })
+}
+
+export async function removeTabState(tabId: Number) {
+	const name = `tabState_${ tabId }`
+	await browser.storage.local.remove(name)
+}
+
+export async function clearTabStates() {
+	const allStorage = Object.keys(await browser.storage.local.get())
+	const keysToRemove = allStorage.filter((entry) => entry.match(/^tabState_[0-9]+/))
+	await browser.storage.local.remove(keysToRemove)
+}
+
+const tabStateSemaphore = new Semaphore(1)
+export async function updateTabState(tabId: Number, updateFunc: (prevTabState: TabState) => Promise<TabState>) {
+	await tabStateSemaphore.execute(async () => {
+		await saveTabState(tabId, await updateFunc(await getTabState(tabId)))
+	})
 }

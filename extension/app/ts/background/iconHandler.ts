@@ -6,18 +6,23 @@ import { getAddressMetaData } from './metadataUtils.js'
 import { imageToUri } from '../utils/imageToUri.js'
 import { Future } from '../utils/future.js'
 import { WebsiteSocket } from '../utils/user-interface-types.js'
-import { getSignerName } from './settings.js'
+import { getSignerName, updateTabState } from './settings.js'
+import { TabState } from '../utils/interceptor-messages.js'
 
 async function setInterceptorIcon(tabId: number, icon: string, iconReason: string) {
 	const previousValue = globalThis.interceptor.websiteTabConnections.get(tabId)
 	if (previousValue === undefined) return
-	globalThis.interceptor.websiteTabConnections.set(tabId, {
-		...previousValue,
-		tabIconDetails: {
-			icon: icon,
-			iconReason: iconReason
+
+	await updateTabState(tabId, async (previousState: TabState) => {
+		return {
+			...previousState,
+			tabIconDetails: {
+				icon: icon,
+				iconReason: iconReason
+			}
 		}
 	})
+
 	sendPopupMessageToOpenWindows({ method: 'popup_websiteIconChanged' })
 	return await setExtensionIcon({
 		path: { 128: icon },
