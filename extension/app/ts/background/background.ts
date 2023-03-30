@@ -37,7 +37,6 @@ globalThis.interceptor = {
 	websiteTabConnections: new Map(),
 }
 
-
 export async function updateSimulationState(getUpdatedSimulationState: () => Promise<SimulationState | undefined>, activeAddress: bigint | undefined) {
 	if (simulator === undefined) return
 	try {

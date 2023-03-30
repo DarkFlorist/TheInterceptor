@@ -1,5 +1,5 @@
 import { changeActiveAddressAndChainAndResetSimulation, changeActiveChain, refreshConfirmTransactionSimulation, updatePrependMode, updateSimulationState } from './background.js'
-import { getMakeMeRich, getOpenedAddressBookTabId, getSettings, getSignerName, getSimulationResults, getTabState, setMakeMeRich, setOpenedAddressBookTabId, setPage, setSimulationMode, setUseSignersAddressAsActiveAddress, updateAddressInfos, updateContacts, updateWebsiteAccess } from './settings.js'
+import { getCurrentTabId, getMakeMeRich, getOpenedAddressBookTabId, getSettings, getSignerName, getSimulationResults, getTabState, saveCurrentTabId, setMakeMeRich, setOpenedAddressBookTabId, setPage, setSimulationMode, setUseSignersAddressAsActiveAddress, updateAddressInfos, updateContacts, updateWebsiteAccess } from './settings.js'
 import { Simulator } from '../simulation/simulator.js'
 import { ChangeActiveAddress, ChangeMakeMeRich, ChangePage, PersonalSign, RemoveTransaction, RequestAccountsFromSigner, TransactionConfirmation, InterceptorAccess, ChangeInterceptorAccess, ChainChangeConfirmation, EnableSimulationMode, ReviewNotification, RejectNotification, ChangeActiveChain, AddOrEditAddressBookEntry, GetAddressBookData, RemoveAddressBookEntry, RefreshConfirmTransactionDialogSimulation, UserAddressBook, InterceptorAccessRefresh, InterceptorAccessChangeAddress, Settings } from '../utils/interceptor-messages.js'
 import { resolvePendingTransaction } from './windows/confirmTransaction.js'
@@ -27,10 +27,21 @@ export async function confirmRequestAccess(_simulator: Simulator, confirmation: 
 	await resolveInterceptorAccess(confirmation.options)
 }
 
+export async function getLastKnownCurrentTabId() {
+	const tabId = getCurrentTabId()
+	const tabs = await browser.tabs.query({ active: true, lastFocusedWindow: true })
+	if (tabs[0]?.id === undefined) {
+		return await tabId
+	}
+	if (await tabId !== tabs[0].id) {
+		saveCurrentTabId(tabs[0].id)
+	}
+	return tabs[0].id
+}
+
 export async function getSignerAccount() {
-	const tabs = await browser.tabs.query({ active: true, currentWindow: true })//TODO, use stored tabid instead
-	if (tabs.length === 0) return undefined
-	const signerAccounts = tabs[0].id === undefined ? undefined : (await getTabState(tabs[0].id)).signerAccounts
+	const tabId = await getLastKnownCurrentTabId()
+	const signerAccounts = tabId === undefined ? undefined : (await getTabState(tabId)).signerAccounts
 	return signerAccounts !== undefined && signerAccounts.length > 0 ? signerAccounts[0] : undefined
 }
 
@@ -148,17 +159,15 @@ export async function enableSimulationMode(_simulator: Simulator, params: Enable
 	await setSimulationMode(params.options)
 	const settings = await getSettings()
 	// if we are on unsupported chain, force change to a supported one
-	const chainToSwitch = isSupportedChain(settings.activeChain.toString()) ? settings.activeChain : 1n
-
 	if (settings.useSignersAddressAsActiveAddress || params.options === false) {
-		await changeActiveAddressAndChainAndResetSimulation(await getSignerAccount(), chainToSwitch, settings)
-	} else {
-		await changeActiveAddressAndChainAndResetSimulation(settings.simulationMode ? settings.activeSimulationAddress : settings.activeSigningAddress, chainToSwitch, settings)
-	}
-
-	if (!params.options || settings.useSignersAddressAsActiveAddress) {
+		const tabId = await getLastKnownCurrentTabId()
+		const chainToSwitch = tabId === undefined ? undefined : (await getTabState(tabId)).signerChain 
+		await changeActiveAddressAndChainAndResetSimulation(await getSignerAccount(), chainToSwitch === undefined ? 'noActiveChainChange' : chainToSwitch, settings)
 		sendMessageToApprovedWebsitePorts('request_signer_to_eth_requestAccounts', [])
 		sendMessageToApprovedWebsitePorts('request_signer_chainId', [])
+	} else {
+		const chainToSwitch = isSupportedChain(settings.activeChain.toString()) ? settings.activeChain : 1n
+		await changeActiveAddressAndChainAndResetSimulation(settings.simulationMode ? settings.activeSimulationAddress : settings.activeSigningAddress, chainToSwitch, settings)
 	}
 }
 
@@ -222,8 +231,8 @@ export async function openAddressBook(_simulator: Simulator) {
 }
 
 export async function homeOpened(simulator: Simulator) {
-	const tabs = await browser.tabs.query({ active: true, lastFocusedWindow: true }) //TODO, FIX: this gets wrong tab after its called after popup is opened
-	const tabState = tabs[0]?.id === undefined ? undefined : await getTabState(tabs[0].id)
+	const tabId = await getLastKnownCurrentTabId()
+	const tabState = tabId === undefined ? undefined : await getTabState(tabId)
 
 	const settings = await getSettings()
 	const pendingAccessRequestsAddresses = new Set(settings.pendingAccessRequests.map((x) => x.requestAccessToAddress === undefined ? [] : x.requestAccessToAddress).flat())

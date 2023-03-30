@@ -26,6 +26,7 @@ const storageName = {
 	InterceptorAccessRequestPromise: 'InterceptorAccessRequestPromise',
 	simulationResults: 'simulationResults',
 	signerName: 'signerName',
+	currentTabId: 'currentTabId',
 }
 
 export const defaultAddresses = [
@@ -276,4 +277,12 @@ export async function updateContacts(updateFunc: (prevState: ContactEntries) => 
 		const contacts = ContactEntries.parse(await browserStorageLocalSingleGetWithDefault(storageName.contacts, []))
 		return await browserStorageLocalSet(storageName.contacts, ContactEntries.serialize(updateFunc(contacts)) as string)
 	})
+}
+
+export async function saveCurrentTabId(tabId: number) {
+	return browserStorageLocalSet(storageName.currentTabId, tabId)
+}
+
+export async function getCurrentTabId() {
+	return funtypes.Union(funtypes.Undefined, funtypes.Number).parse(await browserStorageLocalSingleGetWithDefault(storageName.currentTabId, undefined))
 }
