@@ -38,7 +38,7 @@ export async function updateSimulationState(getUpdatedSimulationState: () => Pro
 		if (updatedSimulationState !== undefined) {
 			const priceEstimator = new PriceEstimator(simulator.ethereum)
 
-			const transactions = updatedSimulationState.simulatedTransactions.map((x) => ({ ...x.signedTransaction, website: x.website }))
+			const transactions = updatedSimulationState.simulatedTransactions.map((x) => ({ transaction: x.signedTransaction, website: x.website }))
 			const visualizerResult = await simulator.visualizeTransactionChain(transactions, updatedSimulationState.blockNumber, updatedSimulationState.simulatedTransactions.map( x => x.multicallResponse))
 			const visualizerResultWithWebsites = visualizerResult.map((x, i) => ({ ...x, website: updatedSimulationState.simulatedTransactions[i].website }))
 			const addressBookEntries = await getAddressBookEntriesForVisualiser(simulator, visualizerResult.map( (x) => x.visualizerResults), updatedSimulationState, (await getSettings()).userAddressBook)
@@ -89,8 +89,8 @@ export async function refreshConfirmTransactionSimulation(activeAddress: bigint,
 	const priceEstimator = new PriceEstimator(simulator.ethereum)
 	const newSimulator = simulator.simulationModeNode.copy()
 	sendPopupMessageToOpenWindows({ method: 'popup_confirm_transaction_simulation_started' })
-	const appended = await newSimulator.appendTransaction({ ...transactionToSimulate, website: website })
-	const transactions = appended.simulationState.simulatedTransactions.map(x => ({ ...x.signedTransaction, website: x.website }) )
+	const appended = await newSimulator.appendTransaction({ transaction: transactionToSimulate, website: website })
+	const transactions = appended.simulationState.simulatedTransactions.map(x => ({ transaction: x.signedTransaction, website: x.website }) )
 	const visualizerResult = await simulator.visualizeTransactionChain(transactions, appended.simulationState.blockNumber, appended.simulationState.simulatedTransactions.map( x => x.multicallResponse))
 	const addressMetadata = await getAddressBookEntriesForVisualiser(simulator, visualizerResult.map( (x) => x.visualizerResults), appended.simulationState, userAddressBook)
 	const tokenPrices = await priceEstimator.estimateEthereumPricesForTokens(
@@ -135,11 +135,14 @@ export async function updatePrependMode(settings: Settings) {
 		if (simulator === undefined) return undefined
 		if (!isSupportedChain(chainId)) return undefined
 		const queue = [{
-			from: CHAINS[chainId].eth_donator,
-			chainId: CHAINS[chainId].chainId,
-			nonce: await simulator.ethereum.getTransactionCount(CHAINS[chainId].eth_donator),
-			to: activeAddress,
-			...MAKE_YOU_RICH_TRANSACTION
+			transaction: {
+				from: CHAINS[chainId].eth_donator,
+				chainId: CHAINS[chainId].chainId,
+				nonce: await simulator.ethereum.getTransactionCount(CHAINS[chainId].eth_donator),
+				to: activeAddress,
+				...MAKE_YOU_RICH_TRANSACTION.transaction,
+			},
+			website: MAKE_YOU_RICH_TRANSACTION.website
 		} as const]
 		return await simulator.simulationModeNode.setPrependTransactionsQueue(queue)
 	}, activeAddress)
@@ -148,7 +151,7 @@ export async function updatePrependMode(settings: Settings) {
 
 export async function appendTransactionToSimulator(transaction: EthereumUnsignedTransaction, website: Website, activeAddress: bigint) {
 	if (simulator === undefined) return
-	const simulationState = await updateSimulationState(async () => (await simulator?.simulationModeNode.appendTransaction({ ...transaction, website }))?.simulationState, activeAddress)
+	const simulationState = await updateSimulationState(async () => (await simulator?.simulationModeNode.appendTransaction({ transaction, website }))?.simulationState, activeAddress)
 	return {
 		signed: await SimulationModeEthereumClientService.mockSignTransaction(transaction),
 		simulationState: simulationState,

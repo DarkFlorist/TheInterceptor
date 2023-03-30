@@ -114,13 +114,14 @@ export function isSimpleTokenTransfer(transaction: SimulatedAndVisualizedTransac
 
 export function identifyTransaction(simTx: SimulatedAndVisualizedTransaction): IdentifiedTransaction {
 	const chainString = simTx.transaction.chainId.toString()
+	const richTxParams = MAKE_YOU_RICH_TRANSACTION.transaction
 	if (isSupportedChain(chainString)
 		&& CHAINS[chainString].eth_donator === simTx.transaction.from.address
-		&& simTx.transaction.type === MAKE_YOU_RICH_TRANSACTION.type
-		&& simTx.transaction.maxFeePerGas === MAKE_YOU_RICH_TRANSACTION.maxFeePerGas
-		&& simTx.transaction.maxPriorityFeePerGas === MAKE_YOU_RICH_TRANSACTION.maxPriorityFeePerGas
-		&& simTx.transaction.input.toString() === MAKE_YOU_RICH_TRANSACTION.input.toString()
-		&& simTx.transaction.value === MAKE_YOU_RICH_TRANSACTION.value
+		&& simTx.transaction.type === richTxParams.type
+		&& simTx.transaction.maxFeePerGas === richTxParams.maxFeePerGas
+		&& simTx.transaction.maxPriorityFeePerGas === richTxParams.maxPriorityFeePerGas
+		&& simTx.transaction.input.toString() === richTxParams.input.toString()
+		&& simTx.transaction.value === richTxParams.value
 		&& simTx.website.websiteOrigin === MAKE_YOU_RICH_TRANSACTION.website.websiteOrigin
 	) {
 		return {

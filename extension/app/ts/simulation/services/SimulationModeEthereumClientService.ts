@@ -18,10 +18,10 @@ type Subscription = {
 	rpcSocket: WebSocket
 }
 
-export type EthereumUnsignedTransactionWithWebsite = EthereumUnsignedTransaction & { website: Website }
+export type EthereumUnsignedTransactionWithWebsite = { transaction: EthereumUnsignedTransaction, website: Website }
 
 function convertSimulatedTransactionToEthereumUnsignedTransactionWithWebsite(tx: SimulatedTransaction) {
-	return { ...tx.signedTransaction, website: tx.website }
+	return { transaction: tx.signedTransaction, website: tx.website }
 }
 
 export type ISimulationModeEthereumClientService = Pick<SimulationModeEthereumClientService, keyof SimulationModeEthereumClientService>
@@ -119,16 +119,16 @@ export class SimulationModeEthereumClientService {
 	}
 
 	public appendTransaction = async (transaction: EthereumUnsignedTransactionWithWebsite) => {
-		const signed = await SimulationModeEthereumClientService.mockSignTransaction(transaction)
+		const signed = await SimulationModeEthereumClientService.mockSignTransaction(transaction.transaction)
 		const parentBlock = await this.ethereumClientService.getBlock()
 		if ( this.simulationState === undefined ) {
-			const multicallResult = await this.multicall([transaction], parentBlock.number)
+			const multicallResult = await this.multicall([transaction.transaction], parentBlock.number)
 			if (multicallResult.length != 1) throw 'multicall length does not match'
 			this.simulationState = {
 				simulatedTransactions: [{
 					multicallResponse: multicallResult[0],
 					signedTransaction: signed,
-					realizedGasPrice: this.calculateGasPrice(transaction, parentBlock.gasUsed, parentBlock.gasLimit, parentBlock.baseFeePerGas),
+					realizedGasPrice: this.calculateGasPrice(transaction.transaction, parentBlock.gasUsed, parentBlock.gasLimit, parentBlock.baseFeePerGas),
 					website: transaction.website,
 				}],
 				blockNumber: parentBlock.number,
@@ -140,7 +140,7 @@ export class SimulationModeEthereumClientService {
 		}
 
 		const signedTxs = this.simulationState.simulatedTransactions.map((x) => x.signedTransaction ).concat([signed])
-		const multicallResult = await this.multicall([transaction], parentBlock.number)
+		const multicallResult = await this.multicall([transaction.transaction], parentBlock.number)
 		const websites = this.simulationState.simulatedTransactions.map((x) => x.website ).concat(transaction.website)
 		if (multicallResult.length !== signedTxs.length || websites.length !== signedTxs.length) throw 'multicall length does not match'
 
@@ -174,10 +174,10 @@ export class SimulationModeEthereumClientService {
 
 		let signedTxs: EthereumSignedTransaction[] = []
 		for (const transaction of unsignedTxts) {
-			signedTxs.push(await SimulationModeEthereumClientService.mockSignTransaction(transaction))
+			signedTxs.push(await SimulationModeEthereumClientService.mockSignTransaction(transaction.transaction))
 		}
 		const parentBlock = await this.ethereumClientService.getBlock()
-		const multicallResult = await this.ethereumClientService.multicall(unsignedTxts, parentBlock.number)
+		const multicallResult = await this.ethereumClientService.multicall(unsignedTxts.map((x) => x.transaction), parentBlock.number)
 		if (multicallResult.length !== signedTxs.length) throw 'multicall length does not match'
 
 		this.simulationState = {
@@ -185,7 +185,7 @@ export class SimulationModeEthereumClientService {
 				multicallResponse: singleResult,
 				unsignedTransaction: unsignedTxts[index],
 				signedTransaction: signedTxs[index],
-				realizedGasPrice: this.calculateGasPrice(unsignedTxts[index], parentBlock.gasUsed, parentBlock.gasLimit, parentBlock.baseFeePerGas),
+				realizedGasPrice: this.calculateGasPrice(unsignedTxts[index].transaction, parentBlock.gasUsed, parentBlock.gasLimit, parentBlock.baseFeePerGas),
 				website: unsignedTxts[index].website,
 			})),
 			blockNumber: parentBlock.number,
@@ -239,7 +239,7 @@ export class SimulationModeEthereumClientService {
 			}
 			const shouldUpdateNonce = transactionWasFound && transaction.signedTransaction.from === transactionToBeRemoved.signedTransaction.from
 			const newTransaction = { ...transaction.signedTransaction, ...(shouldUpdateNonce ? { nonce: transaction.signedTransaction.nonce - 1n } : {}) }
-			newTransactions.push({ ...newTransaction, website: transaction.website })
+			newTransactions.push({ transaction: newTransaction, website: transaction.website })
 		}
 		return await this.setTransactions(newTransactions)
 	}
