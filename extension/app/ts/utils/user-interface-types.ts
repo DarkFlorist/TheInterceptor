@@ -28,6 +28,7 @@ export const AddressInfo = funtypes.Object({
 	address: EthereumAddress,
 	askForAddressAccess: funtypes.Union(funtypes.Boolean, funtypes.Literal(undefined).withParser(LiteralConverterParserFactory(undefined, true))),
 }).asReadonly()
+export const AddressInfoArray = funtypes.ReadonlyArray(AddressInfo)
 
 export type AddressInfoEntry = funtypes.Static<typeof AddressInfoEntry>
 export const AddressInfoEntry = funtypes.Object({
@@ -135,7 +136,7 @@ export type HomeParams = {
 	simulationMode: boolean,
 	tabIconDetails: TabIconDetails,
 	currentBlockNumber: bigint | undefined,
-	signerName: SignerName | undefined,
+	signerName: SignerName,
 	renameAddressCallBack: RenameAddressCallBack,
 }
 
@@ -144,7 +145,7 @@ export type ChangeActiveAddressParam = {
 	setAndSaveAppPage: (page: Page) => void,
 	setActiveAddressAndInformAboutIt: (address: bigint | 'signer') => void,
 	signerAccounts: readonly bigint[] | undefined,
-	signerName: SignerName | undefined,
+	signerName: SignerName,
 	renameAddressCallBack: RenameAddressCallBack,
 }
 
@@ -160,7 +161,7 @@ export type FirstCardParams = {
 	makeMeRich: boolean,
 	signerAccounts: readonly bigint[] | undefined,
 	tabIconDetails: TabIconDetails,
-	signerName: SignerName | undefined,
+	signerName: SignerName,
 	renameAddressCallBack: RenameAddressCallBack,
 }
 

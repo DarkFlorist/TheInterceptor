@@ -1,8 +1,8 @@
-import { HandleSimulationModeReturnValue, InterceptedRequest, InterceptedRequestForward, PopupMessage, ProviderMessage, Settings, SignerName } from '../utils/interceptor-messages.js'
+import { HandleSimulationModeReturnValue, InterceptedRequest, InterceptedRequestForward, PopupMessage, ProviderMessage, Settings } from '../utils/interceptor-messages.js'
 import 'webextension-polyfill'
 import { Simulator } from '../simulation/simulator.js'
 import { EthereumJsonRpcRequest, EthereumQuantity, EthereumUnsignedTransaction, PersonalSignParams, SignTypedDataParams } from '../utils/wire-types.js'
-import { getMakeMeRich, getSettings, getSimulationResults, saveActiveChain, saveActiveSigningAddress, saveActiveSimulationAddress, updateSimulationResults } from './settings.js'
+import { getMakeMeRich, getSettings, getSignerName, getSimulationResults, saveActiveChain, saveActiveSigningAddress, saveActiveSimulationAddress, updateSimulationResults } from './settings.js'
 import { blockNumber, call, chainId, estimateGas, gasPrice, getAccounts, getBalance, getBlockByNumber, getCode, getLogs, getPermissions, getSimulationStack, getTransactionByHash, getTransactionCount, getTransactionReceipt, personalSign, requestPermissions, sendTransaction, subscribe, switchEthereumChain, unsubscribe } from './simulationModeHanders.js'
 import { changeActiveAddress, changeMakeMeRich, changePage, resetSimulation, confirmDialog, refreshSimulation, removeTransaction, requestAccountsFromSigner, refreshPopupConfirmTransactionSimulation, confirmPersonalSign, confirmRequestAccess, changeInterceptorAccess, changeChainDialog, popupChangeActiveChain, enableSimulationMode, reviewNotification, rejectNotification, addOrModifyAddressInfo, getAddressBookData, removeAddressBookEntry, openAddressBook, homeOpened, interceptorAccessChangeAddressOrRefresh } from './popupMessageHandlers.js'
 import { SimulationState } from '../utils/visualizer-types.js'
@@ -25,7 +25,6 @@ let simulator: Simulator | undefined = undefined
 declare global {
 	var interceptor: {
 		signerChain: bigint | undefined,
-		signerName: SignerName | undefined,
 		websiteTabSignerStates: Map<number, SignerState>,
 		websiteTabConnections: Map<number, TabConnection>,
 		settings: Settings | undefined,
@@ -34,7 +33,6 @@ declare global {
 
 globalThis.interceptor = {
 	signerChain: undefined,
-	signerName: undefined,
 	websiteTabSignerStates: new Map(),
 	settings: undefined,
 	websiteTabConnections: new Map(),
@@ -123,7 +121,7 @@ export async function refreshConfirmTransactionSimulation(activeAddress: bigint,
 			addressBookEntries: addressMetadata,
 			tokenPrices: tokenPrices,
 			activeAddress: activeAddress,
-			signerName: globalThis.interceptor.signerName,
+			signerName: await getSignerName(),
 			website: website,
 		}
 	}
@@ -371,7 +369,7 @@ export async function changeActiveChain(chainId: bigint) {
 	sendMessageToApprovedWebsitePorts('request_signer_to_wallet_switchEthereumChain', EthereumQuantity.serialize(chainId))
 }
 
-type ProviderHandler = (port: browser.runtime.Port, request: ProviderMessage) => void
+type ProviderHandler = (port: browser.runtime.Port, request: ProviderMessage) => Promise<unknown>
 const providerHandlers = new Map<string, ProviderHandler >([
 	['eth_accounts_reply', ethAccountsReply],
 	['signer_chainChanged', signerChainChanged],
@@ -511,7 +509,7 @@ async function onContentScriptConnected(port: browser.runtime.Port) {
 		const request = InterceptedRequest.parse(payload.data)
 		const providerHandler = providerHandlers.get(request.options.method)
 		if (providerHandler) {
-			providerHandler(port, request)
+			await providerHandler(port, request)
 			return sendMessageToContentScript(socket, { 'result': '0x' }, request)
 		}
 

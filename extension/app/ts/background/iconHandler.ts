@@ -1,4 +1,4 @@
-import { getSignerName } from '../components/subcomponents/signers.js'
+import { getPrettySignerName } from '../components/subcomponents/signers.js'
 import { ICON_ACCESS_DENIED, ICON_NOT_ACTIVE, ICON_SIGNING, ICON_SIGNING_NOT_SUPPORTED, ICON_SIMULATING, isSupportedChain } from '../utils/constants.js'
 import { getActiveAddressForDomain, hasAccess, hasAddressAccess } from './accessManagement.js'
 import { getActiveAddress, sendPopupMessageToOpenWindows, setExtensionBadgeText, setExtensionIcon } from './backgroundUtils.js'
@@ -6,6 +6,7 @@ import { getAddressMetaData } from './metadataUtils.js'
 import { imageToUri } from '../utils/imageToUri.js'
 import { Future } from '../utils/future.js'
 import { WebsiteSocket } from '../utils/user-interface-types.js'
+import { getSignerName } from './settings.js'
 
 async function setInterceptorIcon(tabId: number, icon: string, iconReason: string) {
 	const previousValue = globalThis.interceptor.websiteTabConnections.get(tabId)
@@ -24,7 +25,7 @@ async function setInterceptorIcon(tabId: number, icon: string, iconReason: strin
 	})
 }
 
-export function updateExtensionIcon(socket: WebsiteSocket, websiteOrigin: string) {
+export async function updateExtensionIcon(socket: WebsiteSocket, websiteOrigin: string) {
 	if (!globalThis.interceptor.settings) return
 	const activeAddress = getActiveAddress()
 	const censoredActiveAddress = getActiveAddressForDomain(globalThis.interceptor.settings.websiteAccess, websiteOrigin)
@@ -43,7 +44,7 @@ export function updateExtensionIcon(socket: WebsiteSocket, websiteOrigin: string
 	if (globalThis.interceptor.settings?.simulationMode) return setInterceptorIcon(socket.tabId, ICON_SIMULATING, `The Interceptor simulates your sent transactions.`)
 	if (!isSupportedChain(globalThis.interceptor.settings.activeChain.toString())) return setInterceptorIcon(socket.tabId, ICON_SIGNING_NOT_SUPPORTED, `Interceptor is on an unsupported network and simulation mode is disabled.`)
 
-	return setInterceptorIcon(socket.tabId, ICON_SIGNING, `The Interceptor forwards your transactions to ${ getSignerName(globalThis.interceptor.signerName) } once sent.`)
+	return setInterceptorIcon(socket.tabId, ICON_SIGNING, `The Interceptor forwards your transactions to ${ getPrettySignerName(await getSignerName()) } once sent.`)
 }
 
 export async function updateExtensionBadge() {

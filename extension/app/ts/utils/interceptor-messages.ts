@@ -235,6 +235,7 @@ export const SignerName = funtypes.Union(
 	funtypes.Literal('NotRecognizedSigner'),
 	funtypes.Literal('MetaMask'),
 	funtypes.Literal('Brave'),
+	funtypes.Literal('NoSignerDetected'),
 )
 
 export type ConnectedToSigner = funtypes.Static<typeof ConnectedToSigner>
@@ -442,7 +443,7 @@ export const InterceptorAccessDialog = funtypes.Object({
 		associatedAddresses: funtypes.ReadonlyArray(AddressInfoEntry),
 		addressInfos: funtypes.ReadonlyArray(AddressInfo),
 		signerAccounts: funtypes.ReadonlyArray(EthereumAddress),
-		signerName: funtypes.Union(SignerName, funtypes.Undefined),
+		signerName: SignerName,
 		simulationMode: funtypes.Boolean,
 		socket: WebsiteSocket,
 	})
@@ -460,7 +461,7 @@ export const ConfirmTransactionSimulationStateChanged = funtypes.Object({
 		addressBookEntries: AddressBookEntries,
 		tokenPrices: funtypes.ReadonlyArray(TokenPriceEstimate),
 		activeAddress: EthereumAddress,
-		signerName: funtypes.Union(SignerName, funtypes.Undefined),
+		signerName: SignerName,
 		website: Website,
 	})
 })
@@ -549,7 +550,7 @@ export const UpdateHomePage = funtypes.ReadonlyObject({
 		pendingAccessMetadata: funtypes.ReadonlyArray(funtypes.Tuple(funtypes.String, AddressInfoEntry)),
 		signerAccounts: funtypes.Union(funtypes.ReadonlyArray(EthereumAddress), funtypes.Undefined),
 		signerChain: funtypes.Union(EthereumQuantity, funtypes.Undefined),
-		signerName: funtypes.Union(SignerName, funtypes.Undefined),
+		signerName: SignerName,
 		currentBlockNumber: funtypes.Union(EthereumQuantity, funtypes.Undefined),
 		settings: Settings,
 		tabIconDetails: funtypes.Union(TabIconDetails, funtypes.Undefined),

@@ -1,7 +1,7 @@
 
 import { ChangeActiveAddressParam } from '../../utils/user-interface-types.js'
 import { BigAddress } from '../subcomponents/address.js'
-import { getSignerLogo, getSignerName, SignerLogoText } from '../subcomponents/signers.js'
+import { getSignerLogo, getPrettySignerName, SignerLogoText } from '../subcomponents/signers.js'
 
 export function ChangeActiveAddress(param: ChangeActiveAddressParam) {
 	function ChangeAndStoreActiveAddress(activeAddress: bigint | 'signer') {
@@ -66,7 +66,7 @@ export function ChangeActiveAddress(param: ChangeActiveAddressParam) {
 									</div>
 
 									<div class = 'media-content' style = 'overflow-y: hidden;'>
-										<p class = 'title is-5 is-spaced'>{ `Use address from ${ getSignerName(param.signerName) }` }</p>
+										<p class = 'title is-5 is-spaced'>{ `Use address from ${ getPrettySignerName(param.signerName) }` }</p>
 										<p class = 'subtitle is-7'> { signerAddressName === undefined ? '' : signerAddressName }</p>
 									</div>
 								</div>
@@ -85,7 +85,7 @@ export function ChangeActiveAddress(param: ChangeActiveAddressParam) {
 									/>
 									{ isSignerConnected(addressInfo.address) ?
 										<div class = 'content' style = 'color: var(--text-color)'>
-											<SignerLogoText signerName = { param.signerName } text = { ` ${ getSignerName(param.signerName) } connected` }/>
+											<SignerLogoText signerName = { param.signerName } text = { ` ${ getPrettySignerName(param.signerName) } connected` }/>
 										</div> : <></>
 									}
 								</div>

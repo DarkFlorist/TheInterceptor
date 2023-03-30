@@ -6,17 +6,17 @@ const signerLogos = {
 	'Brave': BRAVE_LOGO
 }
 
-export function getSignerName(signerName: SignerName | undefined ) {
-	if (signerName === 'NoSigner' || signerName === 'NotRecognizedSigner' || signerName === undefined) return 'Unknown signer'
+export function getPrettySignerName(signerName: SignerName ) {
+	if (signerName === 'NoSigner' || signerName === 'NotRecognizedSigner' || signerName === 'NoSignerDetected') return 'Unknown signer'
 	return signerName
 }
 
-export function getSignerLogo(signerName: SignerName | undefined ) {
-	if (signerName === 'NoSigner' || signerName === 'NotRecognizedSigner' || signerName === undefined) return undefined
+export function getSignerLogo(signerName: SignerName ) {
+	if (signerName === 'NoSigner' || signerName === 'NotRecognizedSigner' || signerName === 'NoSignerDetected') return undefined
 	return signerLogos[signerName]
 }
 
-export function SignerLogoText(param: { signerName: SignerName | undefined, text: string }) {
+export function SignerLogoText(param: { signerName: SignerName, text: string }) {
 	const signerLogo = getSignerLogo(param.signerName)
 
 	return <p style = 'line-height: 24px'>
@@ -25,11 +25,11 @@ export function SignerLogoText(param: { signerName: SignerName | undefined, text
 	</p>
 }
 
-export function SignersLogoName(param: { signerName: SignerName | undefined}) {
+export function SignersLogoName(param: { signerName: SignerName}) {
 	const signerLogo = getSignerLogo(param.signerName)
 
 	return <span class = 'vertical-center'>
 		{ signerLogo ? <img class = 'vertical-center' style = 'width: 24px;' src = { signerLogo }/> : <></> }
-		<p class = 'vertical-center'> { getSignerName(param.signerName) } </p>
+		<p class = 'vertical-center'> { getPrettySignerName(param.signerName) } </p>
 	</span>
 }

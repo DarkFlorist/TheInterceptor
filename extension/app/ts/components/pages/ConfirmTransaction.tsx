@@ -98,7 +98,7 @@ export function ConfirmTransaction() {
 	const [sender, setSender] = useState<AddressBookEntry | undefined>(undefined)
 	const [forceSend, setForceSend] = useState<boolean>(false)
 	const [currentBlockNumber, setCurrentBlockNumber] = useState<undefined | bigint>(undefined)
-	const [signerName, setSignerName] = useState<SignerName | undefined>(undefined)
+	const [signerName, setSignerName] = useState<SignerName>('NoSignerDetected')
 	const [addingNewAddress, setAddingNewAddress] = useState<AddingNewAddressType | 'renameAddressModalClosed'> ('renameAddressModalClosed')
 
 	useEffect( () => {

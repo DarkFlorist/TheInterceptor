@@ -1,5 +1,5 @@
 import { changeActiveAddressAndChainAndResetSimulation, changeActiveChain, refreshConfirmTransactionSimulation, updatePrependMode, updateSimulationState } from './background.js'
-import { getMakeMeRich, getOpenedAddressBookTabId, getSimulationResults, saveAddressInfos, saveContacts, saveMakeMeRich, saveOpenedAddressBookTabId, savePage, saveSimulationMode, saveUseSignersAddressAsActiveAddress, saveWebsiteAccess } from './settings.js'
+import { getMakeMeRich, getOpenedAddressBookTabId, getSignerName, getSimulationResults, saveAddressInfos, saveContacts, saveMakeMeRich, saveOpenedAddressBookTabId, savePage, saveSimulationMode, saveUseSignersAddressAsActiveAddress, saveWebsiteAccess } from './settings.js'
 import { Simulator } from '../simulation/simulator.js'
 import { ChangeActiveAddress, ChangeMakeMeRich, ChangePage, PersonalSign, RemoveTransaction, RequestAccountsFromSigner, TransactionConfirmation, InterceptorAccess, ChangeInterceptorAccess, ChainChangeConfirmation, EnableSimulationMode, ReviewNotification, RejectNotification, ChangeActiveChain, AddOrEditAddressBookEntry, GetAddressBookData, RemoveAddressBookEntry, RefreshConfirmTransactionDialogSimulation, UserAddressBook, InterceptorAccessRefresh, InterceptorAccessChangeAddress } from '../utils/interceptor-messages.js'
 import { resolvePendingTransaction } from './windows/confirmTransaction.js'
@@ -254,7 +254,7 @@ export async function homeOpened(simulator: Simulator) {
 			pendingAccessMetadata: pendingAccessMetadata,
 			signerAccounts: signerAccounts,
 			signerChain: globalThis.interceptor.signerChain,
-			signerName: globalThis.interceptor.signerName,
+			signerName: await getSignerName(),
 			currentBlockNumber: await simulator.ethereum.getBlockNumber(),
 			settings: globalThis.interceptor.settings,
 			tabIconDetails: tabIconDetails,
