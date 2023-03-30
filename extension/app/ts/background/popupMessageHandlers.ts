@@ -34,7 +34,7 @@ export async function changeActiveAddress(_simulator: Simulator, addressChange: 
 
 	// if using signers address, set the active address to signers address if available, otherwise we don't know active address and set it to be undefined
 	if (addressChange.options === 'signer') {
-		const currentTabId = (await browser.tabs.getCurrent()).id
+		const currentTabId = (await browser.tabs.getCurrent())?.id
 		const signerAccounts = currentTabId === undefined ? currentTabId : globalThis.interceptor.websiteTabSignerStates.get(currentTabId)?.signerAccounts
 		await changeActiveAddressAndChainAndResetSimulation(signerAccounts !== undefined ? signerAccounts[0] : undefined, 'noActiveChainChange')
 	} else {
@@ -159,7 +159,7 @@ export async function enableSimulationMode(_simulator: Simulator, params: Enable
 	const chainToSwitch = isSupportedChain(globalThis.interceptor.settings.activeChain.toString()) ? globalThis.interceptor.settings.activeChain : 1n
 
 	if (globalThis.interceptor.settings.useSignersAddressAsActiveAddress || globalThis.interceptor.settings.simulationMode === false) {
-		const currentTabId = (await browser.tabs.getCurrent()).id
+		const currentTabId = (await browser.tabs.getCurrent())?.id
 		const signerAccounts = currentTabId === undefined ? currentTabId : globalThis.interceptor.websiteTabSignerStates.get(currentTabId)?.signerAccounts
 		await changeActiveAddressAndChainAndResetSimulation(signerAccounts !== undefined ? signerAccounts[0] : undefined, chainToSwitch)
 	} else {
