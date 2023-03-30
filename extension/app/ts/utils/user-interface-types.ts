@@ -169,7 +169,7 @@ export type FirstCardParams = {
 
 export type SimulationStateParam = {
 	simulationAndVisualisationResults: SimulationAndVisualisationResults | undefined,
-	removeTransaction: (hash: bigint) => void,
+	removeTransaction: (tx: SimulatedAndVisualizedTransaction) => void,
 	currentBlockNumber: bigint | undefined,
 	renameAddressCallBack: RenameAddressCallBack,
 }

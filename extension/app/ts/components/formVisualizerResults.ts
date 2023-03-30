@@ -44,24 +44,26 @@ export function formSimulatedAndVisualizedTransaction(simState: SimulationState,
 			return undefined // a token that is not NFT, but does not have decimals either, let's just not visualize them
 		}).filter(<T>(x: T | undefined): x is T => x !== undefined)
 		return {
-			from: from,
-			to: to,
-			value: simulatedTx.signedTransaction.value,
+			transaction: {
+				from: from,
+				to: to,
+				value: simulatedTx.signedTransaction.value,
+				chainId: simState.chain,
+				gas: simulatedTx.signedTransaction.gas,
+				input: simulatedTx.signedTransaction.input,
+				...(simulatedTx.signedTransaction.type === '1559' ? {
+					type: simulatedTx.signedTransaction.type,
+					maxFeePerGas: simulatedTx.signedTransaction.maxFeePerGas,
+					maxPriorityFeePerGas: simulatedTx.signedTransaction.maxPriorityFeePerGas,
+				} : { type: simulatedTx.signedTransaction.type } ),
+				hash: simulatedTx.signedTransaction.hash,
+			},
 			realizedGasPrice: simulatedTx.realizedGasPrice,
 			ethBalanceChanges: ethBalanceChanges,
 			tokenResults: tokenResults,
 			gasSpent: simulatedTx.multicallResponse.gasSpent,
 			quarantine: visualizerResults[index].quarantine,
 			quarantineCodes: visualizerResults[index].quarantineCodes,
-			chainId: simState.chain,
-			gas: simulatedTx.signedTransaction.gas,
-			input: simulatedTx.signedTransaction.input,
-			...(simulatedTx.signedTransaction.type === '1559' ? {
-				type: simulatedTx.signedTransaction.type,
-				maxFeePerGas: simulatedTx.signedTransaction.maxFeePerGas,
-				maxPriorityFeePerGas: simulatedTx.signedTransaction.maxPriorityFeePerGas,
-			} : { type: simulatedTx.signedTransaction.type } ),
-			hash: simulatedTx.signedTransaction.hash,
 			...(simulatedTx.multicallResponse.statusCode === 'failure' ? {
 				error: simulatedTx.multicallResponse.error,
 				statusCode: simulatedTx.multicallResponse.statusCode,

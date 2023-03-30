@@ -21,9 +21,9 @@ type IdentifiedTransaction =
 	| IdentifiedTransactionBase & { type: 'MakeYouRichTransaction' }
 	| IdentifiedTransactionBase & { type: 'ContractDeployment' }
 
-export function identifySimpleApproval(transaction: SimulatedAndVisualizedTransaction) {
-	if (isSimpleTokenApproval(transaction)) {
-		const tokenResult = transaction.tokenResults[0]
+export function identifySimpleApproval(simTx: SimulatedAndVisualizedTransaction) {
+	if (isSimpleTokenApproval(simTx)) {
+		const tokenResult = simTx.tokenResults[0]
 		const symbol = tokenResult.token.symbol
 		if (!tokenResult.is721) {
 			return {
@@ -32,7 +32,7 @@ export function identifySimpleApproval(transaction: SimulatedAndVisualizedTransa
 				signingAction: `Approve ${ symbol }`,
 				simulationAction: `Simulate ${ symbol } Approval`,
 				rejectAction: `Reject ${ symbol } Approval`,
-				identifiedTransaction: transaction,
+				identifiedTransaction: simTx,
 			}
 		}
 		if ('isAllApproval' in tokenResult) {
@@ -43,7 +43,7 @@ export function identifySimpleApproval(transaction: SimulatedAndVisualizedTransa
 					signingAction: `Approve ALL ${ symbol }`,
 					simulationAction: `Simulate ${ symbol } ALL Approval`,
 					rejectAction: `Reject ${ symbol } ALL Approval`,
-					identifiedTransaction: transaction,
+					identifiedTransaction: simTx,
 				}
 			}
 			return {
@@ -52,7 +52,7 @@ export function identifySimpleApproval(transaction: SimulatedAndVisualizedTransa
 				signingAction: `Remove ALL Approval Removal for ${ symbol }`,
 				simulationAction: `Simulate Removal of All Approval for ${ symbol }`,
 				rejectAction: `Reject All Approval Removal`,
-				identifiedTransaction: transaction,
+				identifiedTransaction: simTx,
 			}
 		}
 
@@ -62,7 +62,7 @@ export function identifySimpleApproval(transaction: SimulatedAndVisualizedTransa
 			signingAction: `Approve #${ tokenResult.tokenId } ${ symbol }`,
 			simulationAction: `Simulate #${ tokenResult.tokenId } ${ symbol } Approval`,
 			rejectAction: `Reject #${ tokenResult.tokenId } ${ symbol } Approval`,
-			identifiedTransaction: transaction,
+			identifiedTransaction: simTx,
 		}
 	}
 	return undefined
@@ -74,12 +74,12 @@ export type SimulatedAndVisualizedSimpleApprovalTransaction = SimulatedAndVisual
 	tokenResults: [TokenVisualizerResultWithMetadata & { isApproval: true }]
 }
 
-export function isSimpleTokenApproval(transaction: SimulatedAndVisualizedTransaction): transaction is SimulatedAndVisualizedSimpleApprovalTransaction {
-	if (! (transaction.value === 0n
-		&& transaction.tokenResults.length === 1
-		&& transaction.tokenResults[0].isApproval == true
-		&& transaction.tokenResults[0].from.address !== transaction.tokenResults[0].to.address
-		&& transaction.tokenResults[0].from === transaction.from
+export function isSimpleTokenApproval(simTx: SimulatedAndVisualizedTransaction): simTx is SimulatedAndVisualizedSimpleApprovalTransaction {
+	if (! (simTx.transaction.value === 0n
+		&& simTx.tokenResults.length === 1
+		&& simTx.tokenResults[0].isApproval == true
+		&& simTx.tokenResults[0].from.address !== simTx.tokenResults[0].to.address
+		&& simTx.tokenResults[0].from === simTx.transaction.from
 	)) return false
 	return true
 }
@@ -90,10 +90,10 @@ export type SimulatedAndVisualizedEtherTransferTransaction = SimulatedAndVisuali
 	tokenResults: []
 }
 
-export function isEtherTransfer(transaction: SimulatedAndVisualizedTransaction): transaction is SimulatedAndVisualizedEtherTransferTransaction {
-	if (transaction.input.length == 0
-		&& transaction.tokenResults.length == 0
-		&& transaction.gasSpent == 21000n) return true
+export function isEtherTransfer(simTx: SimulatedAndVisualizedTransaction): simTx is SimulatedAndVisualizedEtherTransferTransaction {
+	if (simTx.transaction.input.length == 0
+		&& simTx.tokenResults.length == 0
+		&& simTx.gasSpent == 21000n) return true
 	return false
 }
 
@@ -104,24 +104,24 @@ export type SimulatedAndVisualizedSimpleTokenTransferTransaction = SimulatedAndV
 }
 
 export function isSimpleTokenTransfer(transaction: SimulatedAndVisualizedTransaction): transaction is SimulatedAndVisualizedSimpleTokenTransferTransaction {
-	if ( transaction.value === 0n
+	if ( transaction.transaction.value === 0n
 		&& transaction.tokenResults.length === 1
 		&& transaction.tokenResults[0].isApproval == false
 		&& transaction.tokenResults[0].from.address !== transaction.tokenResults[0].to.address
-		&& transaction.tokenResults[0].from === transaction.from) return true
+		&& transaction.tokenResults[0].from === transaction.transaction.from) return true
 	return false
 }
 
-export function identifyTransaction(transaction: SimulatedAndVisualizedTransaction, activeAddress: bigint): IdentifiedTransaction {
-	const chainString = transaction.chainId.toString()
+export function identifyTransaction(simTx: SimulatedAndVisualizedTransaction): IdentifiedTransaction {
+	const chainString = simTx.transaction.chainId.toString()
 	if (isSupportedChain(chainString)
-		&& CHAINS[chainString].eth_donator === transaction.from.address
-		&& transaction.to?.address === activeAddress
-		&& transaction.type === MAKE_YOU_RICH_TRANSACTION.type
-		&& transaction.maxFeePerGas === MAKE_YOU_RICH_TRANSACTION.maxFeePerGas
-		&& transaction.maxPriorityFeePerGas === MAKE_YOU_RICH_TRANSACTION.maxPriorityFeePerGas
-		&& transaction.input.toString() === MAKE_YOU_RICH_TRANSACTION.input.toString()
-		&& transaction.value === MAKE_YOU_RICH_TRANSACTION.value
+		&& CHAINS[chainString].eth_donator === simTx.transaction.from.address
+		&& simTx.transaction.type === MAKE_YOU_RICH_TRANSACTION.type
+		&& simTx.transaction.maxFeePerGas === MAKE_YOU_RICH_TRANSACTION.maxFeePerGas
+		&& simTx.transaction.maxPriorityFeePerGas === MAKE_YOU_RICH_TRANSACTION.maxPriorityFeePerGas
+		&& simTx.transaction.input.toString() === MAKE_YOU_RICH_TRANSACTION.input.toString()
+		&& simTx.transaction.value === MAKE_YOU_RICH_TRANSACTION.value
+		&& simTx.website.websiteOrigin === MAKE_YOU_RICH_TRANSACTION.website.websiteOrigin
 	) {
 		return {
 			type: 'MakeYouRichTransaction',
@@ -132,18 +132,18 @@ export function identifyTransaction(transaction: SimulatedAndVisualizedTransacti
 		}
 	}
 
-	if (isEtherTransfer(transaction)) return {
+	if (isEtherTransfer(simTx)) return {
 		type: 'EtherTransfer',
 		title: 'Ether Transfer',
 		signingAction: 'Transfer Ether',
 		simulationAction: 'Simulate Ether Transfer',
 		rejectAction: 'Reject Ether Transfer',
-		identifiedTransaction: transaction,
+		identifiedTransaction: simTx,
 	}
 
-	const identifiedSwap = identifySwap(transaction)
+	const identifiedSwap = identifySwap(simTx)
 	if (identifiedSwap) {
-		const swapname = getSwapName(identifiedSwap, transaction.chainId)
+		const swapname = getSwapName(identifiedSwap, simTx.transaction.chainId)
 		return {
 			type: 'Swap',
 			title: swapname === undefined ? 'Swap' : swapname,
@@ -153,19 +153,19 @@ export function identifyTransaction(transaction: SimulatedAndVisualizedTransacti
 		}
 	}
 
-	if (isSimpleTokenTransfer(transaction)) {
-		const symbol = transaction.tokenResults[0].token.symbol
+	if (isSimpleTokenTransfer(simTx)) {
+		const symbol = simTx.tokenResults[0].token.symbol
 		return {
 			type: 'SimpleTokenTransfer',
 			title: `${ symbol } Transfer`,
 			signingAction: `Transfer ${ symbol }`,
 			simulationAction: `Simulate ${ symbol } Transfer`,
 			rejectAction: `Reject ${ symbol } Transfer`,
-			identifiedTransaction: transaction
+			identifiedTransaction: simTx
 		}
 	}
 
-	if (transaction.to === undefined) {
+	if (simTx.transaction.to === undefined) {
 		return {
 			type: 'ContractDeployment',
 			title: `Contract Deployment`,
@@ -175,10 +175,10 @@ export function identifyTransaction(transaction: SimulatedAndVisualizedTransacti
 		}
 	}
 
-	const simpleApproval = identifySimpleApproval(transaction)
+	const simpleApproval = identifySimpleApproval(simTx)
 	if (simpleApproval !== undefined) return simpleApproval
 
-	const fourByte = get4Byte(transaction.input)
+	const fourByte = get4Byte(simTx.transaction.input)
 	if (fourByte === undefined) return {
 		type: 'ArbitaryContractExecution',
 		title: 'Contract Fallback Method',

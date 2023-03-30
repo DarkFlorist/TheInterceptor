@@ -114,10 +114,10 @@ function SendOrReceiveTokensImportanceBox(param: SendOrReceiveTokensImportanceBo
 }
 
 export function CatchAllVisualizer(param: TransactionImportanceBlockParams) {
-	const msgSender = param.tx.from.address
+	const msgSender = param.simTx.transaction.from.address
 
-	const sendingTokenResults = param.tx.tokenResults.filter((x) => x.from.address === msgSender)
-	const receivingTokenResults = param.tx.tokenResults.filter((x) => x.to.address === msgSender)
+	const sendingTokenResults = param.simTx.tokenResults.filter((x) => x.from.address === msgSender)
+	const receivingTokenResults = param.simTx.tokenResults.filter((x) => x.to.address === msgSender)
 
 	const erc20tokenApprovalChanges: TokenApprovalChange[] = sendingTokenResults.filter((x): x is TokenVisualizerERC20Event  => x.isApproval && !x.is721).map((entry) => {
 		return {
@@ -144,11 +144,11 @@ export function CatchAllVisualizer(param: TransactionImportanceBlockParams) {
 		}
 	})
 
-	const ownBalanceChanges = param.tx.ethBalanceChanges.filter( (change) => change.address.address === msgSender)
-	const totalEthReceived = ownBalanceChanges !== undefined && ownBalanceChanges.length > 0 ? ownBalanceChanges[ownBalanceChanges.length - 1].after - ownBalanceChanges[0].before - param.tx.value : 0n
+	const ownBalanceChanges = param.simTx.ethBalanceChanges.filter( (change) => change.address.address === msgSender)
+	const totalEthReceived = ownBalanceChanges !== undefined && ownBalanceChanges.length > 0 ? ownBalanceChanges[ownBalanceChanges.length - 1].after - ownBalanceChanges[0].before - param.simTx.transaction.value : 0n
 
-	if (param.tx.to !== undefined
-		&& param.tx.value === 0n
+	if (param.simTx.transaction.to !== undefined
+		&& param.simTx.transaction.value === 0n
 		&& totalEthReceived <= 0n
 		&& sendingTokenResults.length === 0
 		&& receivingTokenResults.length === 0
@@ -163,7 +163,7 @@ export function CatchAllVisualizer(param: TransactionImportanceBlockParams) {
 	return <div class = 'notification transaction-importance-box'>
 		<div style = 'display: grid; grid-template-rows: max-content max-content' >
 			{ /* contract creation */}
-			{ param.tx.to !== undefined ? <></> : <>
+			{ param.simTx.transaction.to !== undefined ? <></> : <>
 				<div class = 'log-cell' style = 'justify-content: left; display: grid;'>
 					<p class = 'paragraph'> The transaction deploys a contract </p>
 				</div>
@@ -171,7 +171,7 @@ export function CatchAllVisualizer(param: TransactionImportanceBlockParams) {
 			{ /* sending ether / tokens */ }
 			<div class = 'log-cell' style = 'justify-content: left; display: grid;'>
 				<EtherTransferEvent
-					valueSent = { param.tx.value }
+					valueSent = { param.simTx.transaction.value }
 					totalReceived = { totalEthReceived }
 					textColor = { textColor }
 					chain = { param.simulationAndVisualisationResults.chain }

@@ -383,20 +383,20 @@ export function removeEthDonator(chain: CHAIN, summary: SummaryOutcome[]) {
 }
 
 type LogAnalysisCardParams = {
-	tx: SimulatedAndVisualizedTransaction
+	simTx: SimulatedAndVisualizedTransaction
 	renameAddressCallBack: RenameAddressCallBack,
 }
 
-export function LogAnalysisCard({ tx, renameAddressCallBack }: LogAnalysisCardParams) {
+export function LogAnalysisCard({ simTx, renameAddressCallBack }: LogAnalysisCardParams) {
 	const [showLogs, setShowLogs] = useState<boolean>(false)
-	const identifiedSwap = identifySwap(tx)
-	if (tx === undefined) return <></>
+	const identifiedSwap = identifySwap(simTx)
+	if (simTx === undefined) return <></>
 
 	return <>
 		<div class = 'card' style = 'margin-top: 10px; margin-bottom: 10px'>
 			<header class = 'card-header noselect' style = 'cursor: pointer; height: 30px;' onClick = { () => setShowLogs((prevValue) => !prevValue) }>
 				<p class = 'card-header-title' style = 'font-weight: unset; font-size: 0.8em;'>
-					{ tx.tokenResults.length === 0 ? 'No token events' : `${ upperCaseFirstCharacter(convertNumberToCharacterRepresentationIfSmallEnough(tx.tokenResults.length)) } token event${ tx.tokenResults.length > 1 ? 's' : '' }` }
+					{ simTx.tokenResults.length === 0 ? 'No token events' : `${ upperCaseFirstCharacter(convertNumberToCharacterRepresentationIfSmallEnough(simTx.tokenResults.length)) } token event${ simTx.tokenResults.length > 1 ? 's' : '' }` }
 				</p>
 				<div class = 'card-header-icon'>
 					<span class = 'icon' style = 'color: var(--text-color); font-weight: unset; font-size: 0.8em;'> V </span>
@@ -405,7 +405,7 @@ export function LogAnalysisCard({ tx, renameAddressCallBack }: LogAnalysisCardPa
 			{ !showLogs ? <></> : <>
 				<div class = 'card-content' style = 'border-bottom-left-radius: 0.25rem; border-bottom-right-radius: 0.25rem; border-left: 2px solid var(--card-bg-color); border-right: 2px solid var(--card-bg-color); border-bottom: 2px solid var(--card-bg-color);'>
 					<LogAnalysis
-						simulatedAndVisualizedTransaction = { tx }
+						simulatedAndVisualizedTransaction = { simTx }
 						identifiedSwap = { identifiedSwap }
 						renameAddressCallBack = { renameAddressCallBack }
 					/>
@@ -417,7 +417,7 @@ export function LogAnalysisCard({ tx, renameAddressCallBack }: LogAnalysisCardPa
 
 function splitToOwnAndNotOwnAndCleanSummary(firstTx: SimulatedAndVisualizedTransaction | undefined, summary: SummaryOutcome[], activeAddress: bigint, chain: CHAIN) {
 	//remove eth donator if we are in rich mode
-	if (firstTx && identifyTransaction(firstTx, activeAddress).type === 'MakeYouRichTransaction') {
+	if (firstTx && identifyTransaction(firstTx).type === 'MakeYouRichTransaction') {
 		removeEthDonator(chain, summary)
 	}
 
@@ -431,18 +431,18 @@ function splitToOwnAndNotOwnAndCleanSummary(firstTx: SimulatedAndVisualizedTrans
 }
 
 type AccountChangesCardParams = {
-	tx: SimulatedAndVisualizedTransaction
+	simTx: SimulatedAndVisualizedTransaction
 	simulationAndVisualisationResults: SimulationAndVisualisationResults
 	renameAddressCallBack: RenameAddressCallBack
 	addressMetaData: readonly AddressBookEntry[]
 }
 
-export function TransactionsAccountChangesCard({ tx, renameAddressCallBack, addressMetaData, simulationAndVisualisationResults }: AccountChangesCardParams) {
-	const logSummarizer = new LogSummarizer( [tx] )
+export function TransactionsAccountChangesCard({ simTx, renameAddressCallBack, addressMetaData, simulationAndVisualisationResults }: AccountChangesCardParams) {
+	const logSummarizer = new LogSummarizer([simTx])
 	const addressMetaDataMap = new Map(addressMetaData.map( (x) => [addressString(x.address), x]))
 	const originalSummary = logSummarizer.getSummary(addressMetaDataMap, simulationAndVisualisationResults.tokenPrices)
 	const [showSummary, setShowSummary] = useState<boolean>(false)
-	const [ownAddresses, notOwnAddresses] = splitToOwnAndNotOwnAndCleanSummary(tx, originalSummary, simulationAndVisualisationResults.activeAddress, simulationAndVisualisationResults.chain)
+	const [ownAddresses, notOwnAddresses] = splitToOwnAndNotOwnAndCleanSummary(simTx, originalSummary, simulationAndVisualisationResults.activeAddress, simulationAndVisualisationResults.chain)
 	const numberOfChanges = notOwnAddresses.length + ownAddresses.length
 
 	return <div class = 'card' style = 'margin-top: 10px; margin-bottom: 10px'>
@@ -517,27 +517,26 @@ export function GasFee({ tx, chain }: { tx: TransactionGasses, chain: CHAIN } ) 
 }
 
 type TransactionHeaderParams = {
-	tx: SimulatedAndVisualizedTransaction
+	simTx: SimulatedAndVisualizedTransaction
 	renameAddressCallBack: RenameAddressCallBack
-	activeAddress: bigint
 	removeTransaction?: () => void
 }
 
-export function TransactionHeader( { tx, renameAddressCallBack, activeAddress, removeTransaction } : TransactionHeaderParams) {
+export function TransactionHeader( { simTx, renameAddressCallBack, removeTransaction } : TransactionHeaderParams) {
 	return <header class = 'card-header' style = 'height: 40px;'>
 		<div class = 'card-header-icon unset-cursor'>
 			<span class = 'icon'>
-				<img src = { tx.statusCode === 'success' ? ( tx.quarantine ? '../img/warning-sign.svg' : '../img/success-icon.svg' ) : '../img/error-icon.svg' } />
+				<img src = { simTx.statusCode === 'success' ? ( simTx.quarantine ? '../img/warning-sign.svg' : '../img/success-icon.svg' ) : '../img/error-icon.svg' } />
 			</span>
 		</div>
 
 		<p class = 'card-header-title' style = 'white-space: nowrap;'>
-			{ identifyTransaction(tx, activeAddress).title }
+			{ identifyTransaction(simTx).title }
 		</p>
-		{ tx.to  === undefined || identifyTransaction(tx, activeAddress).type === 'MakeYouRichTransaction' ? <></> :
+		{ simTx.transaction.to  === undefined || identifyTransaction(simTx).type === 'MakeYouRichTransaction' ? <></> :
 			<p class = 'card-header-icon' style = 'margin-left: auto; margin-right: 0; padding-right: 10px; padding-left: 0px; overflow: hidden'>
 				<SmallAddress
-					addressBookEntry = { tx.to }
+					addressBookEntry = { simTx.transaction.to }
 					renameAddressCallBack = { renameAddressCallBack }
 					style = { { 'background-color': 'unset' } }
 				/>

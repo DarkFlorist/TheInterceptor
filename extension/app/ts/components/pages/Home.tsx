@@ -1,6 +1,6 @@
 import { HomeParams, AddressInfo, FirstCardParams, SimulationStateParam } from '../../utils/user-interface-types.js'
 import { useEffect, useState } from 'preact/hooks'
-import { SimulationAndVisualisationResults } from '../../utils/visualizer-types.js'
+import { SimulatedAndVisualizedTransaction, SimulationAndVisualisationResults } from '../../utils/visualizer-types.js'
 import { ActiveAddress, findAddressInfo } from '../subcomponents/address.js'
 import { SimulationSummary } from '../simulationExplaining/SimulationSummary.js'
 import { ChainSelector } from '../subcomponents/ChainSelector.js'
@@ -13,12 +13,13 @@ import { ToolTip } from '../subcomponents/CopyToClipboard.js'
 import { sendPopupMessageToBackgroundPage } from '../../background/backgroundUtils.js'
 import { Transactions } from '../simulationExplaining/Transactions.js'
 import { DinoSays } from '../subcomponents/DinoSays.js'
+import { identifyTransaction } from '../simulationExplaining/identifyTransaction.js'
+
+async function enableMakeMeRich(enabled: boolean) {
+	sendPopupMessageToBackgroundPage( { method: 'popup_changeMakeMeRich', options: enabled } )
+}
 
 function FirstCard(param: FirstCardParams) {
-	async function enableMakeMeRich(enabled: boolean) {
-		sendPopupMessageToBackgroundPage( { method: 'popup_changeMakeMeRich', options: enabled } )
-	}
-
 	function connectToSigner() {
 		sendPopupMessageToBackgroundPage( { method: 'popup_requestAccountsFromSigner', options: true } )
 	}
@@ -190,8 +191,12 @@ export function Home(param: HomeParams) {
 		setSimulationMode(enabled)
 	}
 
-	function removeTransaction(hash: bigint) {
-		sendPopupMessageToBackgroundPage( { method: 'popup_removeTransaction', options: hash } )
+	async function removeTransaction(tx: SimulatedAndVisualizedTransaction) {
+		if (identifyTransaction(tx).type === 'MakeYouRichTransaction') {
+			return await enableMakeMeRich(false)
+		} else {
+			return await sendPopupMessageToBackgroundPage( { method: 'popup_removeTransaction', options: tx.transaction.hash } )
+		}
 	}
 
 	if (!isLoaded) return <></>

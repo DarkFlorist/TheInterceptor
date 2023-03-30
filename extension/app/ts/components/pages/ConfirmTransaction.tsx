@@ -25,18 +25,18 @@ type TransactionCardParams = {
 }
 
 function TransactionCard(param: TransactionCardParams) {
-	const tx = param.simulationAndVisualisationResults.simulatedAndVisualizedTransactions.at(-1)
-	if (tx === undefined) return <></>
+	const simTx = param.simulationAndVisualisationResults.simulatedAndVisualizedTransactions.at(-1)
+	if (simTx === undefined) return <></>
 
 	return <>
 		<div class = 'block' style = 'margin: 10px; margin-top: 10px; margin-bottom: 10px;'>
 			<nav class = 'breadcrumb has-succeeds-separator is-small'>
 				<ul>
-					{ param.simulationAndVisualisationResults.simulatedAndVisualizedTransactions.map((tx, index) => (
+					{ param.simulationAndVisualisationResults.simulatedAndVisualizedTransactions.map((simTx, index) => (
 						<li style = 'margin: 0px;'>
 							<div class = 'card' style = { `padding: 5px;${ index !== param.simulationAndVisualisationResults.simulatedAndVisualizedTransactions.length - 1 ? 'background-color: var(--disabled-card-color)' : ''}` }>
 								<p class = 'paragraph' style = {`margin: 0px;${ index !== param.simulationAndVisualisationResults.simulatedAndVisualizedTransactions.length - 1 ? 'color: var(--disabled-text-color)' : ''}` }>
-									{ identifyTransaction(tx, param.activeAddress).title }
+									{ identifyTransaction(simTx).title }
 								</p>
 							</div>
 						</li>
@@ -47,35 +47,34 @@ function TransactionCard(param: TransactionCardParams) {
 
 		<div class = 'card' style = 'margin: 10px;'>
 			<TransactionHeader
-				tx = { tx }
+				simTx = { simTx }
 				renameAddressCallBack = { param.renameAddressCallBack }
-				activeAddress = { param.activeAddress }
 			/>
 			<div class = 'card-content' style = 'padding-bottom: 5px;'>
 				<div class = 'container'>
 					<TransactionImportanceBlock
-						tx = { tx }
+						simTx = { simTx }
 						simulationAndVisualisationResults = { param.simulationAndVisualisationResults }
 						renameAddressCallBack = { param.renameAddressCallBack }
 					/>
-					<QuarantineCodes tx = { tx }/>
+					<QuarantineCodes simTx = { simTx }/>
 				</div>
 
 				<TransactionsAccountChangesCard
-					tx = { tx }
+					simTx = { simTx }
 					simulationAndVisualisationResults = { param.simulationAndVisualisationResults }
 					renameAddressCallBack = { param.renameAddressCallBack }
 					addressMetaData = { param.simulationAndVisualisationResults.addressMetaData }
 				/>
 
 				<LogAnalysisCard
-					tx = { tx }
+					simTx = { simTx }
 					renameAddressCallBack = { param.renameAddressCallBack }
 				/>
 
 				<span class = 'log-table' style = 'margin-top: 10px; grid-template-columns: min-content min-content min-content auto;'>
 					<GasFee
-						tx = { tx }
+						tx = { simTx }
 						chain = { param.simulationAndVisualisationResults.chain }
 					/>
 					<div class = 'log-cell' style = 'justify-content: right;'>
@@ -121,7 +120,7 @@ export function ConfirmTransaction() {
 			const addressMetaData = new Map(message.data.addressBookEntries.map( (x) => [addressString(x.address), x]))
 			const txs = formSimulatedAndVisualizedTransaction(message.data.simulationState, message.data.visualizerResults, addressMetaData)
 			setTransactionToSimulate(message.data.transactionToSimulate)
-			setSender(txs.at(-1)?.from)
+			setSender(txs.at(-1)?.transaction.from)
 
 			setSimulationAndVisualisationResults( {
 				blockNumber: message.data.simulationState.blockNumber,
@@ -186,7 +185,7 @@ export function ConfirmTransaction() {
 		if (simulationAndVisualisationResults === undefined) return <></>
 		const tx = simulationAndVisualisationResults.simulatedAndVisualizedTransactions.at(-1)
 		if (tx === undefined) return <></>
-		const identified = identifyTransaction(tx, simulationAndVisualisationResults.activeAddress)
+		const identified = identifyTransaction(tx)
 
 		return <div style = 'display: flex; flex-direction: row;'>
 			<button className = 'button is-primary is-danger button-overflow' style = 'flex-grow: 1; margin-left: 10px; margin-right: 5px; margin-top: 0px; margin-bottom: 0px;' onClick = { reject} >
