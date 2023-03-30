@@ -17,6 +17,7 @@ RUN npm ci
 COPY tsconfig.json /extension/
 COPY app/*.png app/*.jpg app/*.json app/*.ico /extension/app/
 COPY app/html/ /extension/app/html/
+COPY app/html3/ /extension/app/html3/
 COPY app/css/ /extension/app/css/
 COPY app/ts/ /extension/app/ts/
 COPY app/img/ /extension/app/img/
