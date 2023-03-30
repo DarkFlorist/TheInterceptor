@@ -1,17 +1,19 @@
-import { ConnectedToSigner, ProviderMessage, WalletSwitchEthereumChainReply } from '../utils/interceptor-messages.js'
+import { ConnectedToSigner, ProviderMessage, WalletSwitchEthereumChainReply, TabState } from '../utils/interceptor-messages.js'
 import { EthereumAccountsReply, EthereumChainReply } from '../utils/wire-types.js'
 import { changeActiveAddressAndChainAndResetSimulation } from './background.js'
 import { getSocketFromPort, sendInternalWindowMessage, sendPopupMessageToOpenWindows } from './backgroundUtils.js'
-import { saveSignerName } from './settings.js'
+import { saveSignerName, updateTabState } from './settings.js'
 import { resolveSignerChainChange } from './windows/changeChain.js'
 
 export async function ethAccountsReply(port: browser.runtime.Port, request: ProviderMessage) {
 	if (!('params' in request.options)) return
 	const signerAccounts = EthereumAccountsReply.parse(request.options.params)
 	if (port.sender?.tab?.id !== undefined) {
-		globalThis.interceptor.websiteTabSignerStates.set(port.sender.tab.id, {
-			signerAccounts: signerAccounts,
-			signerChain: globalThis.interceptor.signerChain,
+		await updateTabState(port.sender.tab.id, async (previousState: TabState) => {
+			return {
+				...previousState,
+				signerAccounts: signerAccounts,
+			}
 		})
 	}
 	sendInternalWindowMessage({ method: 'window_signer_accounts_changed', data: { socket: getSocketFromPort(port)} })
@@ -25,13 +27,12 @@ export async function ethAccountsReply(port: browser.runtime.Port, request: Prov
 
 async function changeSignerChain(port: browser.runtime.Port, signerChain: bigint ) {
 	if ( port.sender?.tab?.id !== undefined ) {
-		globalThis.interceptor.websiteTabSignerStates.set(port.sender.tab.id, {
-			signerAccounts: globalThis.interceptor.websiteTabSignerStates.get(port.sender.tab.id)?.signerAccounts,
-			signerChain: signerChain,
+		await updateTabState(port.sender.tab.id, async (previousState: TabState) => {
+			return {
+				...previousState,
+				signerChain: signerChain,
+			}
 		})
-	}
-	if (globalThis.interceptor) {
-		globalThis.interceptor.signerChain = signerChain
 	}
 
 	// update active address if we are using signers address

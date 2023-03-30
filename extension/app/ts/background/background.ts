@@ -1,12 +1,12 @@
-import { HandleSimulationModeReturnValue, InterceptedRequest, InterceptedRequestForward, PopupMessage, ProviderMessage, Settings } from '../utils/interceptor-messages.js'
+import { HandleSimulationModeReturnValue, InterceptedRequest, InterceptedRequestForward, PopupMessage, ProviderMessage, Settings, TabState } from '../utils/interceptor-messages.js'
 import 'webextension-polyfill'
 import { Simulator } from '../simulation/simulator.js'
 import { EthereumJsonRpcRequest, EthereumQuantity, EthereumUnsignedTransaction, PersonalSignParams, SignTypedDataParams } from '../utils/wire-types.js'
-import { getMakeMeRich, getSettings, getSignerName, getSimulationResults, saveActiveChain, saveActiveSigningAddress, saveActiveSimulationAddress, updateSimulationResults } from './settings.js'
+import { clearTabStates, getMakeMeRich, getSettings, getSignerName, getSimulationResults, removeTabState, saveActiveChain, saveActiveSigningAddress, saveActiveSimulationAddress, updateSimulationResults, updateTabState } from './settings.js'
 import { blockNumber, call, chainId, estimateGas, gasPrice, getAccounts, getBalance, getBlockByNumber, getCode, getLogs, getPermissions, getSimulationStack, getTransactionByHash, getTransactionCount, getTransactionReceipt, personalSign, requestPermissions, sendTransaction, subscribe, switchEthereumChain, unsubscribe } from './simulationModeHanders.js'
 import { changeActiveAddress, changeMakeMeRich, changePage, resetSimulation, confirmDialog, refreshSimulation, removeTransaction, requestAccountsFromSigner, refreshPopupConfirmTransactionSimulation, confirmPersonalSign, confirmRequestAccess, changeInterceptorAccess, changeChainDialog, popupChangeActiveChain, enableSimulationMode, reviewNotification, rejectNotification, addOrModifyAddressInfo, getAddressBookData, removeAddressBookEntry, openAddressBook, homeOpened, interceptorAccessChangeAddressOrRefresh } from './popupMessageHandlers.js'
 import { SimulationState } from '../utils/visualizer-types.js'
-import { SignerState, AddressBookEntry, Website, TabConnection, WebsiteSocket } from '../utils/user-interface-types.js'
+import { AddressBookEntry, Website, TabConnection, WebsiteSocket } from '../utils/user-interface-types.js'
 import { requestAccessFromUser, setPendingAccessRequests } from './windows/interceptorAccess.js'
 import { CHAINS, ICON_NOT_ACTIVE, isSupportedChain, MAKE_YOU_RICH_TRANSACTION, METAMASK_ERROR_USER_REJECTED_REQUEST } from '../utils/constants.js'
 import { PriceEstimator } from '../simulation/priceEstimator.js'
@@ -19,21 +19,22 @@ import { SimulationModeEthereumClientService } from '../simulation/services/Simu
 import { assertNever, assertUnreachable } from '../utils/typescript.js'
 
 browser.runtime.onConnect.addListener(port => onContentScriptConnected(port).catch(console.error))
+browser.tabs.onRemoved.addListener((tabId: number) => removeTabState(tabId))
+
+if (browser.runtime.getManifest().manifest_version === 2) {
+	clearTabStates()
+}
 
 let simulator: Simulator | undefined = undefined
 
 declare global {
 	var interceptor: {
-		signerChain: bigint | undefined,
-		websiteTabSignerStates: Map<number, SignerState>,
 		websiteTabConnections: Map<number, TabConnection>,
 		settings: Settings | undefined,
 	}
 }
 
 globalThis.interceptor = {
-	signerChain: undefined,
-	websiteTabSignerStates: new Map(),
 	settings: undefined,
 	websiteTabConnections: new Map(),
 }
@@ -478,19 +479,6 @@ async function onContentScriptConnected(port: browser.runtime.Port) {
 		approved: false,
 		wantsToConnect: false,
 	}
-	if (tabConnection === undefined) {
-		globalThis.interceptor.websiteTabConnections.set(socket.tabId, {
-			connections: { [identifier]: newConnection },
-			tabIconDetails: {
-				icon: ICON_NOT_ACTIVE,
-				iconReason: 'No active address selected.',
-			}
-		})
-		updateExtensionIcon(socket, websiteOrigin)
-	} else {
-		tabConnection.connections[identifier] = newConnection
-	}
-
 	port.onDisconnect.addListener(() => {
 		const tabConnection = globalThis.interceptor.websiteTabConnections.get(socket.tabId)
 		if (tabConnection === undefined) return
@@ -527,6 +515,25 @@ async function onContentScriptConnected(port: browser.runtime.Port) {
 			default: assertNever(access)
 		}
 	})
+
+	if (tabConnection === undefined) {
+		globalThis.interceptor.websiteTabConnections.set(socket.tabId, {
+			connections: { [identifier]: newConnection },
+		})
+		await updateTabState(socket.tabId, async (previousState: TabState) => {
+			return {
+				...previousState,
+				tabIconDetails: {
+					icon: ICON_NOT_ACTIVE,
+					iconReason: 'No active address selected.',
+				}
+			}
+		})
+		updateExtensionIcon(socket, websiteOrigin)
+	} else {
+		tabConnection.connections[identifier] = newConnection
+	}
+
 }
 
 async function popupMessageHandler(simulator: Simulator, request: unknown) {

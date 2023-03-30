@@ -6,7 +6,7 @@ import { changeActiveAddressAndChainAndResetSimulation, handleContentScriptMessa
 import { INTERNAL_CHANNEL_NAME, createInternalMessageListener, getHtmlFile, sendPopupMessageToOpenWindows, websiteSocketToString } from '../backgroundUtils.js'
 import { updateExtensionBadge } from '../iconHandler.js'
 import { findAddressInfo } from '../metadataUtils.js'
-import { getPendingInterceptorAccessRequestPromise, savePendingAccessRequests, saveWebsiteAccess, savePendingInterceptorAccessRequestPromise, getSignerName } from '../settings.js'
+import { getPendingInterceptorAccessRequestPromise, savePendingAccessRequests, saveWebsiteAccess, savePendingInterceptorAccessRequestPromise, getSignerName, getTabState } from '../settings.js'
 
 let openedInterceptorAccessWindow: browser.windows.Window | null = null
 
@@ -76,8 +76,8 @@ export async function changeAccess(confirmation: InterceptorAccessReply, website
 }
 
 async function askForSignerAccountsFromSignerIfNotAvailable(socket: WebsiteSocket) {
-	const signerState = globalThis.interceptor.websiteTabSignerStates.get(socket.tabId)
-	if (signerState?.signerAccounts !== undefined) return signerState.signerAccounts
+	const tabState = await getTabState(socket.tabId)
+	if (tabState.signerAccounts.length !== 0) return tabState.signerAccounts
 
 	const future = new Future<void>
 	const listener = createInternalMessageListener( (message: WindowMessage) => {
@@ -96,7 +96,7 @@ async function askForSignerAccountsFromSignerIfNotAvailable(socket: WebsiteSocke
 		channel.removeEventListener('message', listener)
 		channel.close()
 	}
-	return globalThis.interceptor.websiteTabSignerStates.get(socket.tabId)?.signerAccounts
+	return (await getTabState(socket.tabId)).signerAccounts
 }
 
 export async function requestAccessFromUser(

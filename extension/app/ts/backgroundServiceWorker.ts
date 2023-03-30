@@ -1,5 +1,6 @@
 import './background/background.js'
 import { getHtmlFile } from './background/backgroundUtils.js'
+import { clearTabStates } from './background/settings.js'
 import { sleep } from './utils/node.js'
 
 browser.action.setPopup({ popup: getHtmlFile('popup') })
@@ -7,6 +8,8 @@ browser.action.setPopup({ popup: getHtmlFile('popup') })
 self.addEventListener('install', () => {
 	console.log('The Interceptor installed')
 })
+
+self.addEventListener('activate', () => clearTabStates())
 
 const injectContentScript = async () => {
 	try {
@@ -63,4 +66,3 @@ const intervalId = setInterval(fixChromiumIssue1316588, TEST_INTERVAL_MS)
 
 fixChromiumIssue1316588()
 // End of workaround for ChromiumIssue1316588
-
