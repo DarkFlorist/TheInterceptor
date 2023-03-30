@@ -6,13 +6,14 @@ import { getAddressMetaData } from './metadataUtils.js'
 import { imageToUri } from '../utils/imageToUri.js'
 import { Future } from '../utils/future.js'
 import { WebsiteSocket } from '../utils/user-interface-types.js'
-import { getSignerName, updateTabState } from './settings.js'
+import { getSettings, getSignerName, updateTabState } from './settings.js'
 import { TabState } from '../utils/interceptor-messages.js'
 
 async function setInterceptorIcon(tabId: number, icon: string, iconReason: string) {
 	const previousValue = globalThis.interceptor.websiteTabConnections.get(tabId)
 	if (previousValue === undefined) return
 
+	await updateTabState(tabId, (previousState: TabState) => {
 		return {
 			...previousState,
 			tabIconDetails: {
@@ -30,22 +31,23 @@ async function setInterceptorIcon(tabId: number, icon: string, iconReason: strin
 }
 
 export async function updateExtensionIcon(socket: WebsiteSocket, websiteOrigin: string) {
-	if (!globalThis.interceptor.settings) return
-	const censoredActiveAddress = getActiveAddressForDomain(globalThis.interceptor.settings.websiteAccess, websiteOrigin)
+	const settings = await getSettings()
 	const activeAddress = getActiveAddress(settings)
 	const censoredActiveAddress = getActiveAddressForDomain(settings.websiteAccess, websiteOrigin, settings)
 	if (activeAddress === undefined) return setInterceptorIcon(socket.tabId, ICON_NOT_ACTIVE, 'No active address selected.')
-	if (hasAddressAccess(globalThis.interceptor.settings.websiteAccess, websiteOrigin, activeAddress )  === 'notFound') {
+	if (hasAddressAccess(settings.websiteAccess, websiteOrigin, activeAddress, settings)  === 'notFound') {
 		// we don't have active address selected, or no access specified
+		return setInterceptorIcon(socket.tabId, ICON_NOT_ACTIVE, `${ websiteOrigin } has PENDING access request for ${ getAddressMetaData(activeAddress, settings.userAddressBook).name }!`)
 	}
 
 	if (censoredActiveAddress === undefined) {
-		if ( hasAccess(globalThis.interceptor.settings.websiteAccess, websiteOrigin) === 'noAccess') {
+		if (hasAccess(settings.websiteAccess, websiteOrigin) === 'noAccess') {
 			return setInterceptorIcon(socket.tabId, ICON_ACCESS_DENIED, `The access for ${ websiteOrigin } has been DENIED!`)
 		}
 		return setInterceptorIcon(socket.tabId, ICON_ACCESS_DENIED, `The access to ${ getAddressMetaData(activeAddress, settings.userAddressBook).name } for ${ websiteOrigin } has been DENIED!`)
 	}
-	if (!isSupportedChain(globalThis.interceptor.settings.activeChain.toString())) return setInterceptorIcon(socket.tabId, ICON_SIGNING_NOT_SUPPORTED, `Interceptor is on an unsupported network and simulation mode is disabled.`)
+	if (settings.simulationMode) return setInterceptorIcon(socket.tabId, ICON_SIMULATING, `The Interceptor simulates your sent transactions.`)
+	if (!isSupportedChain(settings.activeChain.toString())) return setInterceptorIcon(socket.tabId, ICON_SIGNING_NOT_SUPPORTED, `Interceptor is on an unsupported network and simulation mode is disabled.`)
 
 	return setInterceptorIcon(socket.tabId, ICON_SIGNING, `The Interceptor forwards your transactions to ${ getPrettySignerName(await getSignerName()) } once sent.`)
 }
