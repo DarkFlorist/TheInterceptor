@@ -73,10 +73,7 @@ function FirstCard(param: FirstCardParams) {
 			}
 
 			<ActiveAddress
-				activeAddress = { param.activeAddress !== undefined ? {
-					type: 'addressInfo' as const,
-					...param.activeAddress,
-				} : undefined }
+				activeAddress = { param.activeAddress !== undefined ? { type: 'addressInfo' as const, ...param.activeAddress } : undefined }
 				buttonText = { 'Change' }
 				disableButton = { !param.simulationMode }
 				changeActiveAddress = { param.changeActiveAddress }
