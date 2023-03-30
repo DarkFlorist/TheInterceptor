@@ -73,10 +73,7 @@ function FirstCard(param: FirstCardParams) {
 			}
 
 			<ActiveAddress
-				activeAddress = { param.activeAddress !== undefined ? {
-					type: 'addressInfo' as const,
-					...param.activeAddress,
-				} : undefined }
+				activeAddress = { param.activeAddress !== undefined ? { type: 'addressInfo' as const, ...param.activeAddress } : undefined }
 				buttonText = { 'Change' }
 				disableButton = { !param.simulationMode }
 				changeActiveAddress = { param.changeActiveAddress }
@@ -86,8 +83,9 @@ function FirstCard(param: FirstCardParams) {
 			{ param.activeAddress !== undefined ? <></>
 				: param.useSignersAddressAsActiveAddress || !param.simulationMode ?
 					<div class = 'content' style = 'color: var(--negative-color)'>
-						{ param.signerName === 'NoSigner' ? 'To communicate with a signer, you need to be on a DApp page and have the signer connected to the DApp' :
-							`No active address found in ${ getPrettySignerName(param.signerName) }`
+						{ param.signerName === 'NoSigner'
+							? 'To communicate with a signer, you need to be on a DApp page and have the signer connected to the DApp'
+							: `No active address found in ${ getPrettySignerName(param.signerName) }`
 						}
 					</div>
 				:
