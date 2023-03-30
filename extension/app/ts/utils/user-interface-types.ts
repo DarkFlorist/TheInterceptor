@@ -7,13 +7,13 @@ import { CHAINS } from './constants.js'
 import { Page, PendingAccessRequestArray, SignerName, TabIconDetails, WebsiteAccessArray } from './interceptor-messages.js'
 
 export type WebsiteSocket = funtypes.Static<typeof WebsiteSocket>
-export const WebsiteSocket = funtypes.Object({
+export const WebsiteSocket = funtypes.ReadonlyObject({
 	tabId: funtypes.Number,
 	connectionName: EthereumQuantity,
 })
 
 export type Website = funtypes.Static<typeof Website>
-export const Website = funtypes.Object({
+export const Website = funtypes.ReadonlyObject({
 	websiteOrigin: funtypes.String,
 	icon: funtypes.Union(funtypes.String, funtypes.Undefined),
 	title: funtypes.Union(funtypes.String, funtypes.Undefined),
@@ -23,7 +23,7 @@ export type CHAIN = keyof typeof CHAINS
 export const CHAIN = funtypes.Union(funtypes.Literal('1'), funtypes.Literal('5'), funtypes.Literal('11155111'))
 
 export type AddressInfo = funtypes.Static<typeof AddressInfo>
-export const AddressInfo = funtypes.Object({
+export const AddressInfo = funtypes.ReadonlyObject({
 	name: funtypes.String,
 	address: EthereumAddress,
 	askForAddressAccess: funtypes.Union(funtypes.Boolean, funtypes.Literal(undefined).withParser(LiteralConverterParserFactory(undefined, true))),
@@ -33,7 +33,7 @@ export type AddressInfoArray = funtypes.Static<typeof AddressInfoArray>
 export const AddressInfoArray = funtypes.ReadonlyArray(AddressInfo)
 
 export type AddressInfoEntry = funtypes.Static<typeof AddressInfoEntry>
-export const AddressInfoEntry = funtypes.Object({
+export const AddressInfoEntry = funtypes.ReadonlyObject({
 	type: funtypes.Literal('addressInfo'),
 	name: funtypes.String,
 	address: EthereumAddress,
@@ -41,7 +41,7 @@ export const AddressInfoEntry = funtypes.Object({
 })
 
 export type TokenEntry = funtypes.Static<typeof TokenEntry>
-export const TokenEntry = funtypes.Object({
+export const TokenEntry = funtypes.ReadonlyObject({
 	type: funtypes.Literal('token'),
 	name: funtypes.String,
 	address: EthereumAddress,
@@ -52,7 +52,7 @@ export const TokenEntry = funtypes.Object({
 }))
 
 export type NFTEntry = funtypes.Static<typeof NFTEntry>
-export const NFTEntry = funtypes.Object({
+export const NFTEntry = funtypes.ReadonlyObject({
 	type: funtypes.Literal('NFT'),
 	name: funtypes.String,
 	address: EthereumAddress,
@@ -63,7 +63,7 @@ export const NFTEntry = funtypes.Object({
 }))
 
 export type ContactEntry = funtypes.Static<typeof ContactEntry>
-export const ContactEntry = funtypes.Object({
+export const ContactEntry = funtypes.ReadonlyObject({
 	type: funtypes.Literal('contact'),
 	name: funtypes.String,
 	address: EthereumAddress,
@@ -82,7 +82,7 @@ export const AddressBookEntry = funtypes.Union(
 	ContactEntry,
 	TokenEntry,
 	NFTEntry,
-	funtypes.Object({
+	funtypes.ReadonlyObject({
 		type: funtypes.Literal('other contract'),
 		name: funtypes.String,
 		address: EthereumAddress,

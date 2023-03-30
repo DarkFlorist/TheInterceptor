@@ -12,31 +12,31 @@ const erc20andERC721FunctionSignatures = [
 
 type CallDataType = funtypes.Static<typeof CallDataType>
 const CallDataType = funtypes.Union(
-	funtypes.Object({
+	funtypes.ReadonlyObject({
 		name: funtypes.Literal('transfer'),
-		arguments: funtypes.Object({
+		arguments: funtypes.ReadonlyObject({
 			to: EthereumAddress,
 			value: EthereumQuantity,
 		})
 	}),
-	funtypes.Object({
+	funtypes.ReadonlyObject({
 		name: funtypes.Literal('transferFrom'),
-		arguments: funtypes.Object({
+		arguments: funtypes.ReadonlyObject({
 			from: EthereumAddress,
 			to: EthereumAddress,
 			value: EthereumQuantity,
 		})
 	}),
-	funtypes.Object({
+	funtypes.ReadonlyObject({
 		name: funtypes.Literal('approve'),
-		arguments: funtypes.Object({
+		arguments: funtypes.ReadonlyObject({
 			spender: EthereumAddress,
 			value: EthereumQuantity,
 		})
 	}),
-	funtypes.Object({
+	funtypes.ReadonlyObject({
 		name: funtypes.Literal('setApprovalForAll'),
-		arguments: funtypes.Object({
+		arguments: funtypes.ReadonlyObject({
 			operator: EthereumAddress,
 			approved: funtypes.Boolean,
 		})
