@@ -186,8 +186,8 @@ export function App() {
 		setAddingNewAddress({ addingAddress: false, entry: entry })
 	}
 
-	function openAddressBook() {
-		sendPopupMessageToBackgroundPage( { method: 'popup_openAddressBook' } )
+	async function openAddressBook() {
+		await sendPopupMessageToBackgroundPage( { method: 'popup_openAddressBook' } )
 		return globalThis.close() // close extension popup, chrome closes it by default, but firefox does not
 	}
 
