@@ -1,6 +1,6 @@
 import { Future } from '../../utils/future.js'
 import { ExternalPopupMessage, InterceptedRequest, InterceptorAccessChangeAddress, InterceptorAccessRefresh, InterceptorAccessReply, PendingAccessRequest, Settings, WebsiteAccessArray, WindowMessage } from '../../utils/interceptor-messages.js'
-import { AddressInfo, AddressInfoEntry, Website, WebsiteSocket } from '../../utils/user-interface-types.js'
+import { AddressInfo, AddressInfoEntry, Website, WebsiteSocket, WebsiteTabConnections } from '../../utils/user-interface-types.js'
 import { getAssociatedAddresses, setAccess, updateWebsiteApprovalAccesses } from '../accessManagement.js'
 import { changeActiveAddressAndChainAndResetSimulation, handleContentScriptMessage, postMessageIfStillConnected, refuseAccess } from '../background.js'
 import { INTERNAL_CHANNEL_NAME, createInternalMessageListener, getHtmlFile, sendPopupMessageToOpenWindows, websiteSocketToString } from '../backgroundUtils.js'
@@ -29,9 +29,9 @@ const onCloseWindow = async (windowId: number) => { // check if user has closed 
 	browser.windows.onRemoved.removeListener(onCloseWindow)
 }
 
-export async function resolveExistingInterceptorAccessAsNoResponse() {
+export async function resolveExistingInterceptorAccessAsNoResponse(websiteTabConnections: WebsiteTabConnections, ) {
 	if (pendingInterceptorAccess === undefined) return
-	await resolveInterceptorAccess({
+	await resolveInterceptorAccess(websiteTabConnections, {
 		approval: 'NoResponse',
 		websiteOrigin: pendingInterceptorAccess.websiteOrigin,
 		requestAccessToAddress: pendingInterceptorAccess.requestAccessToAddress,
@@ -39,11 +39,11 @@ export async function resolveExistingInterceptorAccessAsNoResponse() {
 	})
 }
 
-export async function resolveInterceptorAccess(confirmation: InterceptorAccessReply) {
+export async function resolveInterceptorAccess(websiteTabConnections: WebsiteTabConnections, confirmation: InterceptorAccessReply) {
 	if (pendingInterceptorAccess === undefined) {
 		const data = await getPendingInterceptorAccessRequestPromise()
 		if (data === undefined) return
-		return await resolve(confirmation)
+		return await resolve(websiteTabConnections, confirmation)
 	}
 	if (confirmation.websiteOrigin !== pendingInterceptorAccess.websiteOrigin || confirmation.originalRequestAccessToAddress !== pendingInterceptorAccess.requestAccessToAddress) return
 
@@ -75,15 +75,15 @@ export async function removePendingAccessRequestAndUpdateBadge(websiteOrigin: st
 	await updateExtensionBadge()
 }
 
-export async function changeAccess(confirmation: InterceptorAccessReply, website: Website, promptForAccessesIfNeeded: boolean = true) {
+export async function changeAccess(websiteTabConnections: WebsiteTabConnections, confirmation: InterceptorAccessReply, website: Website, promptForAccessesIfNeeded: boolean = true) {
 	if (confirmation.approval === 'NoResponse') return
 	await setAccess(website, confirmation.approval === 'Approved', confirmation.requestAccessToAddress)
-	updateWebsiteApprovalAccesses(promptForAccessesIfNeeded, await getSettings())
+	updateWebsiteApprovalAccesses(websiteTabConnections, promptForAccessesIfNeeded, await getSettings())
 	await removePendingAccessRequestAndUpdateBadge(website.websiteOrigin, confirmation.requestAccessToAddress)
 	await sendPopupMessageToOpenWindows({ method: 'popup_websiteAccess_changed' })
 }
 
-async function askForSignerAccountsFromSignerIfNotAvailable(socket: WebsiteSocket) {
+async function askForSignerAccountsFromSignerIfNotAvailable(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket) {
 	const tabState = await getTabState(socket.tabId)
 	if (tabState.signerAccounts.length !== 0) return tabState.signerAccounts
 
@@ -94,7 +94,7 @@ async function askForSignerAccountsFromSignerIfNotAvailable(socket: WebsiteSocke
 	const channel = new BroadcastChannel(INTERNAL_CHANNEL_NAME)
 	try {
 		channel.addEventListener('message', listener)
-		const messageSent = postMessageIfStillConnected(socket, {
+		const messageSent = postMessageIfStillConnected(websiteTabConnections, socket, {
 			interceptorApproved: true,
 			options: { method: 'request_signer_to_eth_requestAccounts' },
 			result: []
@@ -108,6 +108,7 @@ async function askForSignerAccountsFromSignerIfNotAvailable(socket: WebsiteSocke
 }
 
 export async function requestAccessFromUser(
+	websiteTabConnections: WebsiteTabConnections,
 	socket: WebsiteSocket,
 	website: Website,
 	request: InterceptedRequest | undefined,
@@ -116,7 +117,7 @@ export async function requestAccessFromUser(
 	settings: Settings,
 ) {
 	const rejectReply = () => {
-		if (request) refuseAccess(socket, request)
+		if (request) refuseAccess(websiteTabConnections, socket, request)
 	}
 
 	if (pendingInterceptorAccess !== undefined) return rejectReply()
@@ -188,7 +189,7 @@ export async function requestAccessFromUser(
 			request: request,
 		})
 		const confirmation = await pendingInterceptorAccess.future
-		return await resolve(confirmation)
+		return await resolve(websiteTabConnections, confirmation)
 	} finally {
 		pendingInterceptorAccess = undefined
 		browser.windows.onRemoved.removeListener(onCloseWindow)
@@ -196,7 +197,7 @@ export async function requestAccessFromUser(
 	}
 }
 
-async function resolve(confirmation: InterceptorAccessReply) {
+async function resolve(websiteTabConnections: WebsiteTabConnections, confirmation: InterceptorAccessReply) {
 	const data = await getPendingInterceptorAccessRequestPromise()
 	await setPendingInterceptorAccessRequestPromise(undefined)
 	openedInterceptorAccessWindow = null
@@ -204,7 +205,7 @@ async function resolve(confirmation: InterceptorAccessReply) {
 
 	if (confirmation.approval === 'NoResponse') {
 		if (data.request !== undefined) {
-			refuseAccess(data.socket, data.request)
+			refuseAccess(websiteTabConnections, data.socket, data.request)
 		}
 		return
 	}
@@ -213,29 +214,29 @@ async function resolve(confirmation: InterceptorAccessReply) {
 
 	pendingInterceptorAccess = undefined
 	if (!userRequestedAddressChange) {
-		await changeAccess(confirmation, data.website)
+		await changeAccess(websiteTabConnections, confirmation, data.website)
 		if (data.request !== undefined) {
-			await handleContentScriptMessage(data.socket, data.request, data.website)
+			await handleContentScriptMessage(websiteTabConnections, data.socket, data.request, data.website)
 		}
 		return
 	} else {
-		if (data.request !== undefined) refuseAccess(data.socket, data.request)
+		if (data.request !== undefined) refuseAccess(websiteTabConnections, data.socket, data.request)
 		if (confirmation.requestAccessToAddress === undefined) throw new Error('Changed request to page level')
 
 		// clear the original pending request, which was made with other account
 		await removePendingAccessRequestAndUpdateBadge(data.website.websiteOrigin, data.requestAccessToAddress?.address)
 
-		await changeAccess(confirmation, data.website, false)
-		await changeActiveAddressAndChainAndResetSimulation(confirmation.requestAccessToAddress, 'noActiveChainChange', await getSettings())
+		await changeAccess(websiteTabConnections, confirmation, data.website, false)
+		await changeActiveAddressAndChainAndResetSimulation(websiteTabConnections, confirmation.requestAccessToAddress, 'noActiveChainChange', await getSettings())
 	}
 }
 
-export async function requestAddressChange(message: InterceptorAccessChangeAddress | InterceptorAccessRefresh) {
+export async function requestAddressChange(websiteTabConnections: WebsiteTabConnections, message: InterceptorAccessChangeAddress | InterceptorAccessRefresh) {
 	if (message.options.requestAccessToAddress === undefined) throw new Error('Requesting account change on site level access request')
 
 	async function getProposedAddress() {
 		if (message.method === 'popup_interceptorAccessRefresh' || message.options.newActiveAddress === 'signer') {
-			const signerAccounts = await askForSignerAccountsFromSignerIfNotAvailable(message.options.socket)
+			const signerAccounts = await askForSignerAccountsFromSignerIfNotAvailable(websiteTabConnections, message.options.socket)
 			return signerAccounts === undefined || signerAccounts.length == 0 ? undefined : signerAccounts[0]
 		}
 		return message.options.newActiveAddress

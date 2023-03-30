@@ -2,7 +2,7 @@ import { bytes32String } from '../../utils/bigint.js'
 import { ERROR_INTERCEPTOR_NO_ACTIVE_ADDRESS, METAMASK_ERROR_NOT_CONNECTED_TO_CHAIN, METAMASK_ERROR_USER_REJECTED_REQUEST } from '../../utils/constants.js'
 import { Future } from '../../utils/future.js'
 import { ExternalPopupMessage, InterceptedRequest, Settings } from '../../utils/interceptor-messages.js'
-import { Website, WebsiteSocket } from '../../utils/user-interface-types.js'
+import { Website, WebsiteSocket, WebsiteTabConnections } from '../../utils/user-interface-types.js'
 import { EthereumUnsignedTransaction } from '../../utils/wire-types.js'
 import { getActiveAddressForDomain } from '../accessManagement.js'
 import { appendTransactionToSimulator, refreshConfirmTransactionSimulation, sendMessageToContentScript } from '../background.js'
@@ -13,7 +13,7 @@ export type Confirmation = 'Approved' | 'Rejected' | 'NoResponse'
 let openedConfirmTransactionDialogWindow: browser.windows.Window | null = null
 let pendingTransaction: Future<Confirmation> | undefined = undefined
 
-export async function resolvePendingTransaction(confirmation: Confirmation) {
+export async function resolvePendingTransaction(websiteTabConnections: WebsiteTabConnections, confirmation: Confirmation) {
 	if (pendingTransaction !== undefined) {
 		pendingTransaction.resolve(confirmation)
 	} else {
@@ -21,16 +21,18 @@ export async function resolvePendingTransaction(confirmation: Confirmation) {
 		const data = await getConfirmationWindowPromise()
 		if (data === undefined) return
 		const resolved = await resolve(confirmation, data.simulationMode, data.transactionToSimulate, data.website, data.activeAddress)
-		sendMessageToContentScript(data.socket, resolved, data.request)
+		sendMessageToContentScript(websiteTabConnections, data.socket, resolved, data.request)
 	}
 	openedConfirmTransactionDialogWindow = null
 }
 
-const onCloseWindow = (windowId: number) => { // check if user has closed the window on their own, if so, reject signature
-	if (openedConfirmTransactionDialogWindow === null || openedConfirmTransactionDialogWindow.id !== windowId) return
-	if (pendingTransaction === undefined) return
-	openedConfirmTransactionDialogWindow = null
-	resolvePendingTransaction('Rejected')
+const getOnCloseFunction = (websiteTabConnections: WebsiteTabConnections) => {
+	return (windowId: number) => { // check if user has closed the window on their own, if so, reject signature
+		if (openedConfirmTransactionDialogWindow === null || openedConfirmTransactionDialogWindow.id !== windowId) return
+		if (pendingTransaction === undefined) return
+		openedConfirmTransactionDialogWindow = null
+		resolvePendingTransaction(websiteTabConnections, 'Rejected')
+	}
 }
 
 const reject = function() {
@@ -43,6 +45,7 @@ const reject = function() {
 }
 
 export async function openConfirmTransactionDialog(
+	websiteTabConnections: WebsiteTabConnections,
 	socket: WebsiteSocket,
 	request: InterceptedRequest,
 	website: Website,
@@ -52,6 +55,7 @@ export async function openConfirmTransactionDialog(
 ) {
 	if (pendingTransaction !== undefined) return reject() // previous window still loading
 	pendingTransaction = new Future<Confirmation>()
+	const onCloseWindow = getOnCloseFunction(websiteTabConnections)
 	try {
 		const oldPromise = await getConfirmationWindowPromise()
 		if (oldPromise !== undefined) {

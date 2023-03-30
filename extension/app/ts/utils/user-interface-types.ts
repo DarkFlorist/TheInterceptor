@@ -201,3 +201,5 @@ export type SocketConnection = {
 export type TabConnection = {
 	connections: Record<string, SocketConnection> // socket as string
 }
+
+export type WebsiteTabConnections = Map<number, TabConnection>
