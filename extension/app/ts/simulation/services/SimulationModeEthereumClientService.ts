@@ -471,7 +471,10 @@ export class SimulationModeEthereumClientService {
 		}
 
 		return EthGetLogsResponse.parse(events).filter((x) =>
-			(logFilter.address === undefined || x.address === logFilter.address)
+			(logFilter.address === undefined
+				|| x.address === logFilter.address
+				|| (Array.isArray(logFilter.address) && logFilter.address.includes(x.address))
+			)
 			&& includeLogByTopic(x.topics, logFilter.topics)
 		)
 	}
