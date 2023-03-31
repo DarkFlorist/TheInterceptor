@@ -115,52 +115,52 @@ export async function setAccess(website: Website, access: boolean, address: bigi
 				}
 			]
 		}
-		return previousWebsiteAccess.map( (x) => {
-			if (x.website.websiteOrigin === website.websiteOrigin) {
+		return previousWebsiteAccess.map((prevAccess) => {
+			if (prevAccess.website.websiteOrigin === website.websiteOrigin) {
 				if (address === undefined) {
 					return {
 						website: {
 							...website,
-							icon: x.website.icon ? x.website.icon : website.icon,
-							title: x.website.title ? x.website.title : website.title,
+							icon: prevAccess.website.icon ? prevAccess.website.icon : website.icon,
+							title: prevAccess.website.title ? prevAccess.website.title : website.title,
 						},
 						access: access,
-						addressAccess: x.addressAccess,
+						addressAccess: prevAccess.addressAccess,
 					}
 				}
-				if (x.addressAccess === undefined) {
+				if (prevAccess.addressAccess === undefined) {
 					return {
 						website: {
 							...website,
-							icon: x.website.icon ? x.website.icon : website.icon,
-							title: x.website.title ? x.website.title : website.title,
+							icon: prevAccess.website.icon ? prevAccess.website.icon : website.icon,
+							title: prevAccess.website.title ? prevAccess.website.title : website.title,
 						},
-						access: x.access ? x.access : access,
+						access: prevAccess.access ? prevAccess.access : access,
 						addressAccess:  [ { address: address, access: access } ]
 					}
 				}
-				if (x.addressAccess.find( (x) => x.address === address) === undefined) {
+				if (prevAccess.addressAccess.find((x) => x.address === address) === undefined) {
 					return {
 						website: {
 							...website,
-							icon: x.website.icon ? x.website.icon : website.icon,
-							title: x.website.title ? x.website.title : website.title,
+							icon: prevAccess.website.icon ? prevAccess.website.icon : website.icon,
+							title: prevAccess.website.title ? prevAccess.website.title : website.title,
 						},
-						access: x.access ? x.access : access,
-						addressAccess:  [ ...x.addressAccess, { address: address, access: access } ]
+						access: prevAccess.access ? prevAccess.access : access,
+						addressAccess:  [ ...prevAccess.addressAccess, { address: address, access: access } ]
 					}
 				}
 				return {
 					website: {
 						...website,
-						icon: x.website.icon ? x.website.icon : website.icon,
-						title: x.website.title ? x.website.title : website.title,
+						icon: prevAccess.website.icon ? prevAccess.website.icon : website.icon,
+						title: prevAccess.website.title ? prevAccess.website.title : website.title,
 					},
-					access: x.access ? x.access : access,
-					addressAccess: x.addressAccess.map( (x) => ( x.address === address ? { address: address, access: access } : x ) )
+					access: prevAccess.access ? prevAccess.access : access,
+					addressAccess: prevAccess.addressAccess.map((x) => ( x.address === address ? { address: address, access: access } : x ) )
 				}
 			}
-			return x
+			return prevAccess
 		})
 	})
 }

@@ -99,8 +99,8 @@ export async function refreshConfirmTransactionSimulation(activeAddress: bigint,
 	sendPopupMessageToOpenWindows({ method: 'popup_confirm_transaction_simulation_started' })
 	const appended = await newSimulator.appendTransaction({ ...transactionToSimulate, website: website })
 	const transactions = appended.simulationState.simulatedTransactions.map(x => ({ ...x.signedTransaction, website: x.website }) )
-	const visualizerResult = await simulator.visualizeTransactionChain(transactions, appended.simulationState.blockNumber, appended.simulationState.simulatedTransactions.map( x => x.multicallResponse))
-	const addressMetadata = await getAddressBookEntriesForVisualiser(simulator, visualizerResult.map( (x) => x.visualizerResults), appended.simulationState, userAddressBook)
+	const visualizerResult = await simulator.visualizeTransactionChain(transactions, appended.simulationState.blockNumber, appended.simulationState.simulatedTransactions.map(x => x.multicallResponse))
+	const addressMetadata = await getAddressBookEntriesForVisualiser(simulator, visualizerResult.map((x) => x.visualizerResults), appended.simulationState, userAddressBook)
 	const tokenPrices = await priceEstimator.estimateEthereumPricesForTokens(
 		addressMetadata.map(
 			(x) => x.type === 'token' && x.decimals !== undefined ? { token: x.address, decimals: x.decimals } : { token: 0x0n, decimals: 0x0n }
@@ -346,7 +346,8 @@ export async function changeActiveAddressAndChainAndResetSimulation(activeAddres
 	}
 
 	if (updatedSettings.simulationMode) {
-		if (!await updatePrependMode(updatedSettings)) {// update prepend mode as our active address has changed, so we need to be sure the rich modes money is sent to right address
+		// update prepend mode as our active address has changed, so we need to be sure the rich modes money is sent to right address
+		if (!await updatePrependMode(updatedSettings)) {
 			await updateSimulationState(async () => await simulator?.simulationModeNode.resetSimulation(), updatedSettings.activeSimulationAddress)
 		}
 	}
