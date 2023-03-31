@@ -42,15 +42,15 @@ export function App() {
 
 	async function setActiveAddressAndInformAboutIt(address: bigint | 'signer') {
 		setUseSignersAddressAsActiveAddress(address === 'signer')
-		if( address === 'signer' ) {
-			sendPopupMessageToBackgroundPage( { method: 'popup_changeActiveAddress', options: 'signer' } )
-			if(simulationMode) {
+		if (address === 'signer') {
+			sendPopupMessageToBackgroundPage({ method: 'popup_changeActiveAddress', options: 'signer' })
+			if (simulationMode) {
 				return setActiveSimulationAddress(signerAccounts && signerAccounts.length > 0 ? signerAccounts[0] : undefined)
 			}
 			return setActiveSigningAddress(signerAccounts && signerAccounts.length > 0 ? signerAccounts[0] : undefined)
 		}
-		sendPopupMessageToBackgroundPage( { method: 'popup_changeActiveAddress', options: address } )
-		if(simulationMode) {
+		sendPopupMessageToBackgroundPage({ method: 'popup_changeActiveAddress', options: address })
+		if (simulationMode) {
 			return setActiveSimulationAddress(address)
 		}
 		return setActiveSigningAddress(address)

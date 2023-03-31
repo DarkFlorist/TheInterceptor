@@ -377,7 +377,7 @@ export const MessageToPopupSimple = funtypes.Object({
 		funtypes.Literal('popup_notification_removed'),
 		funtypes.Literal('popup_signer_name_changed'),
 		funtypes.Literal('popup_websiteAccess_changed'),
-		funtypes.Literal('popup_notification_added'),
+		funtypes.Literal('popup_notification_changed'),
 	)
 }).asReadonly()
 
@@ -584,11 +584,6 @@ export type HandleSimulationModeReturnValue = {
 	forward: true,
 }
 
-export type AddressBookTabIdSetting = funtypes.Static<typeof AddressBookTabIdSetting>
-export const AddressBookTabIdSetting = funtypes.Object({
-	addressbookTabId: funtypes.Number,
-}).asReadonly()
-
 export type WindowMessageSignerAccountsChanged = funtypes.Static<typeof WindowMessageSignerAccountsChanged>
 export const WindowMessageSignerAccountsChanged = funtypes.Object({
 	method: funtypes.Literal('window_signer_accounts_changed'),
@@ -608,6 +603,7 @@ export const PendingUserRequestPromise = funtypes.Object({
 	request: InterceptedRequest,
 	transactionToSimulate: EthereumUnsignedTransaction,
 	simulationMode: funtypes.Boolean,
+	activeAddress: EthereumAddress,
 })
 
 export type PendingChainChangeConfirmationPromise = funtypes.Static<typeof PendingChainChangeConfirmationPromise>

@@ -1,10 +1,9 @@
-import { MessageToPopup, PopupMessage, WindowMessage } from '../utils/interceptor-messages.js'
+import { MessageToPopup, PopupMessage, Settings, WindowMessage } from '../utils/interceptor-messages.js'
 import { WebsiteSocket } from '../utils/user-interface-types.js'
 import { EthereumQuantity } from '../utils/wire-types.js'
 
-export function getActiveAddress() {
-	if (globalThis.interceptor.settings === undefined) return undefined
-	return globalThis.interceptor.settings.simulationMode ? globalThis.interceptor.settings.activeSimulationAddress : globalThis.interceptor.settings.activeSigningAddress
+export function getActiveAddress(settings: Settings) {
+	return settings.simulationMode ? settings.activeSimulationAddress : settings.activeSigningAddress
 }
 
 export async function sendPopupMessageToOpenWindows(message: MessageToPopup) {

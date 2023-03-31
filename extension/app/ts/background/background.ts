@@ -1,19 +1,19 @@
-import { HandleSimulationModeReturnValue, InterceptedRequest, InterceptedRequestForward, PopupMessage, ProviderMessage, Settings, TabState } from '../utils/interceptor-messages.js'
+import { HandleSimulationModeReturnValue, InterceptedRequest, InterceptedRequestForward, PopupMessage, ProviderMessage, Settings, TabState, UserAddressBook } from '../utils/interceptor-messages.js'
 import 'webextension-polyfill'
 import { Simulator } from '../simulation/simulator.js'
 import { EthereumJsonRpcRequest, EthereumQuantity, EthereumUnsignedTransaction, PersonalSignParams, SignTypedDataParams } from '../utils/wire-types.js'
-import { clearTabStates, getMakeMeRich, getSettings, getSignerName, getSimulationResults, removeTabState, saveActiveChain, saveActiveSigningAddress, saveActiveSimulationAddress, updateSimulationResults, updateTabState } from './settings.js'
+import { clearTabStates, getMakeMeRich, getSettings, getSignerName, getSimulationResults, removeTabState, setActiveChain, setActiveSigningAddress, setActiveSimulationAddress, updateSimulationResults, updateTabState } from './settings.js'
 import { blockNumber, call, chainId, estimateGas, gasPrice, getAccounts, getBalance, getBlockByNumber, getCode, getLogs, getPermissions, getSimulationStack, getTransactionByHash, getTransactionCount, getTransactionReceipt, personalSign, requestPermissions, sendTransaction, subscribe, switchEthereumChain, unsubscribe } from './simulationModeHanders.js'
 import { changeActiveAddress, changeMakeMeRich, changePage, resetSimulation, confirmDialog, refreshSimulation, removeTransaction, requestAccountsFromSigner, refreshPopupConfirmTransactionSimulation, confirmPersonalSign, confirmRequestAccess, changeInterceptorAccess, changeChainDialog, popupChangeActiveChain, enableSimulationMode, reviewNotification, rejectNotification, addOrModifyAddressInfo, getAddressBookData, removeAddressBookEntry, openAddressBook, homeOpened, interceptorAccessChangeAddressOrRefresh } from './popupMessageHandlers.js'
 import { SimulationState } from '../utils/visualizer-types.js'
 import { AddressBookEntry, Website, TabConnection, WebsiteSocket } from '../utils/user-interface-types.js'
-import { requestAccessFromUser, setPendingAccessRequests } from './windows/interceptorAccess.js'
+import { requestAccessFromUser } from './windows/interceptorAccess.js'
 import { CHAINS, ICON_NOT_ACTIVE, isSupportedChain, MAKE_YOU_RICH_TRANSACTION, METAMASK_ERROR_USER_REJECTED_REQUEST } from '../utils/constants.js'
 import { PriceEstimator } from '../simulation/priceEstimator.js'
 import { getActiveAddressForDomain, getAssociatedAddresses, sendActiveAccountChangeToApprovedWebsitePorts, sendMessageToApprovedWebsitePorts, updateWebsiteApprovalAccesses, verifyAccess } from './accessManagement.js'
 import { findAddressInfo, getAddressBookEntriesForVisualiser } from './metadataUtils.js'
 import { getActiveAddress, getSocketFromPort, sendPopupMessageToOpenWindows, setExtensionBadgeBackgroundColor, setExtensionIcon, websiteSocketToString } from './backgroundUtils.js'
-import { retrieveWebsiteDetails, updateExtensionIcon } from './iconHandler.js'
+import { retrieveWebsiteDetails, updateExtensionBadge, updateExtensionIcon } from './iconHandler.js'
 import { connectedToSigner, ethAccountsReply, signerChainChanged, walletSwitchEthereumChainReply } from './providerMessageHandlers.js'
 import { SimulationModeEthereumClientService } from '../simulation/services/SimulationModeEthereumClientService.js'
 import { assertNever, assertUnreachable } from '../utils/typescript.js'
@@ -29,20 +29,16 @@ let simulator: Simulator | undefined = undefined
 
 declare global {
 	var interceptor: {
-		websiteTabConnections: Map<number, TabConnection>,
-		settings: Settings | undefined,
+		websiteTabConnections: Map<number, TabConnection>
 	}
 }
 
 globalThis.interceptor = {
-	settings: undefined,
 	websiteTabConnections: new Map(),
 }
 
-export async function updateSimulationState( getUpdatedSimulationState: () => Promise<SimulationState | undefined>, setAsActiveAddress: bigint | undefined = undefined) {
+export async function updateSimulationState(getUpdatedSimulationState: () => Promise<SimulationState | undefined>, activeAddress: bigint | undefined) {
 	if (simulator === undefined) return
-	const activeSimAddress = globalThis.interceptor.settings === undefined ? undefined : globalThis.interceptor.settings.activeSimulationAddress
-	const activeAddress = setAsActiveAddress === undefined ? activeSimAddress : setAsActiveAddress
 	try {
 		const simId = (await getSimulationResults()).simulationId + 1
 		const updatedSimulationState = await getUpdatedSimulationState()
@@ -52,8 +48,8 @@ export async function updateSimulationState( getUpdatedSimulationState: () => Pr
 
 			const transactions = updatedSimulationState.simulatedTransactions.map((x) => ({ ...x.signedTransaction, website: x.website }))
 			const visualizerResult = await simulator.visualizeTransactionChain(transactions, updatedSimulationState.blockNumber, updatedSimulationState.simulatedTransactions.map( x => x.multicallResponse))
-			const visualizerResultWithWebsites = visualizerResult.map((x,i) => ({ ...x, website: updatedSimulationState.simulatedTransactions[i].website }))
-			const addressBookEntries = await getAddressBookEntriesForVisualiser(simulator, visualizerResult.map( (x) => x.visualizerResults), updatedSimulationState, globalThis.interceptor.settings?.userAddressBook)
+			const visualizerResultWithWebsites = visualizerResult.map((x, i) => ({ ...x, website: updatedSimulationState.simulatedTransactions[i].website }))
+			const addressBookEntries = await getAddressBookEntriesForVisualiser(simulator, visualizerResult.map( (x) => x.visualizerResults), updatedSimulationState, (await getSettings()).userAddressBook)
 
 			function onlyTokensAndTokensWithKnownDecimals(metadata: AddressBookEntry) : metadata is AddressBookEntry & { type: 'token', decimals: `0x${ string }` } {
 				if (metadata.type !== 'token') return false
@@ -95,16 +91,16 @@ export function setEthereumNodeBlockPolling(enabled: boolean) {
 	simulator.ethereum.setBlockPolling(enabled)
 }
 
-export async function refreshConfirmTransactionSimulation(activeAddress: bigint, simulationMode: boolean, requestId: number, transactionToSimulate: EthereumUnsignedTransaction, website: Website) {
-	if ( simulator === undefined ) return undefined
+export async function refreshConfirmTransactionSimulation(activeAddress: bigint, simulationMode: boolean, requestId: number, transactionToSimulate: EthereumUnsignedTransaction, website: Website, userAddressBook: UserAddressBook) {
+	if (simulator === undefined) return undefined
 
 	const priceEstimator = new PriceEstimator(simulator.ethereum)
 	const newSimulator = simulator.simulationModeNode.copy()
 	sendPopupMessageToOpenWindows({ method: 'popup_confirm_transaction_simulation_started' })
 	const appended = await newSimulator.appendTransaction({ ...transactionToSimulate, website: website })
 	const transactions = appended.simulationState.simulatedTransactions.map(x => ({ ...x.signedTransaction, website: x.website }) )
-	const visualizerResult = await simulator.visualizeTransactionChain(transactions, appended.simulationState.blockNumber, appended.simulationState.simulatedTransactions.map( x => x.multicallResponse))
-	const addressMetadata = await getAddressBookEntriesForVisualiser(simulator, visualizerResult.map( (x) => x.visualizerResults), appended.simulationState, globalThis.interceptor.settings?.userAddressBook)
+	const visualizerResult = await simulator.visualizeTransactionChain(transactions, appended.simulationState.blockNumber, appended.simulationState.simulatedTransactions.map(x => x.multicallResponse))
+	const addressMetadata = await getAddressBookEntriesForVisualiser(simulator, visualizerResult.map((x) => x.visualizerResults), appended.simulationState, userAddressBook)
 	const tokenPrices = await priceEstimator.estimateEthereumPricesForTokens(
 		addressMetadata.map(
 			(x) => x.type === 'token' && x.decimals !== undefined ? { token: x.address, decimals: x.decimals } : { token: 0x0n, decimals: 0x0n }
@@ -129,18 +125,18 @@ export async function refreshConfirmTransactionSimulation(activeAddress: bigint,
 }
 
 // returns true if simulation state was changed
-export async function updatePrependMode() {
+export async function updatePrependMode(settings: Settings) {
 	if (simulator === undefined) return false
-	if (globalThis.interceptor.settings === undefined) return false
 
 	const richMode = await getMakeMeRich()
-	if (!globalThis.interceptor.settings.simulationMode || !richMode) {
-		await updateSimulationState(async () => await simulator?.simulationModeNode.setPrependTransactionsQueue([]))
+
+	if (!settings.simulationMode || !richMode) {
+		await updateSimulationState(async () => await simulator?.simulationModeNode.setPrependTransactionsQueue([]), settings.activeSimulationAddress)
 		return true
 	}
 
-	const activeAddress = getActiveAddress()
-	const chainId = globalThis.interceptor.settings.activeChain.toString()
+	const activeAddress = getActiveAddress(settings)
+	const chainId = settings.activeChain.toString()
 	if (!isSupportedChain(chainId)) return false
 	if (activeAddress === undefined) return false
 	await updateSimulationState(async () => {
@@ -158,9 +154,9 @@ export async function updatePrependMode() {
 	return true
 }
 
-export async function appendTransactionToSimulator(transaction: EthereumUnsignedTransaction, website: Website) {
+export async function appendTransactionToSimulator(transaction: EthereumUnsignedTransaction, website: Website, activeAddress: bigint) {
 	if (simulator === undefined) return
-	const simulationState = await updateSimulationState(async () => (await simulator?.simulationModeNode.appendTransaction({ ...transaction, website }))?.simulationState)
+	const simulationState = await updateSimulationState(async () => (await simulator?.simulationModeNode.appendTransaction({ ...transaction, website }))?.simulationState, activeAddress)
 	return {
 		signed: await SimulationModeEthereumClientService.mockSignTransaction(transaction),
 		simulationState: simulationState,
@@ -172,7 +168,7 @@ export async function personalSignWithSimulator(params: PersonalSignParams | Sig
 	return await simulator.simulationModeNode.personalSign(params)
 }
 
-async function handleSimulationMode(simulator: Simulator, socket: WebsiteSocket, website: Website, request: InterceptedRequest): Promise<HandleSimulationModeReturnValue> {
+async function handleSimulationMode(simulator: Simulator, socket: WebsiteSocket, website: Website, request: InterceptedRequest, settings: Settings): Promise<HandleSimulationModeReturnValue> {
 	let parsedRequest // separate request parsing and request handling. If there's a parse error, throw that to API user
 	try {
 		parsedRequest = EthereumJsonRpcRequest.parse(request.options)
@@ -194,7 +190,7 @@ async function handleSimulationMode(simulator: Simulator, socket: WebsiteSocket,
 		case 'eth_estimateGas': return await estimateGas(simulator, parsedRequest)
 		case 'eth_getTransactionByHash': return await getTransactionByHash(simulator, parsedRequest)
 		case 'eth_getTransactionReceipt': return await getTransactionReceipt(simulator, parsedRequest)
-		case 'eth_sendTransaction': return sendTransaction(getActiveAddressForDomain, simulator, parsedRequest, socket, request, true, website)
+		case 'eth_sendTransaction': return sendTransaction(getActiveAddressForDomain, simulator, parsedRequest, socket, request, true, website, settings)
 		case 'eth_call': return await call(simulator, parsedRequest)
 		case 'eth_blockNumber': return await blockNumber(simulator)
 		case 'eth_subscribe': return await subscribe(simulator, socket, parsedRequest)
@@ -207,12 +203,12 @@ async function handleSimulationMode(simulator: Simulator, socket: WebsiteSocket,
 		case 'eth_signTypedData_v1':
 		case 'eth_signTypedData_v2':
 		case 'eth_signTypedData_v3':
-		case 'eth_signTypedData_v4': return await personalSign(socket, parsedRequest, request, true, website)
+		case 'eth_signTypedData_v4': return await personalSign(socket, parsedRequest, request, true, website, settings)
 		case 'wallet_switchEthereumChain': return await switchEthereumChain(socket, simulator, parsedRequest, request, true, website)
-		case 'wallet_requestPermissions': return await requestPermissions(getActiveAddressForDomain, simulator, socket)
+		case 'wallet_requestPermissions': return await requestPermissions(getActiveAddressForDomain, simulator, socket, settings)
 		case 'wallet_getPermissions': return await getPermissions()
-		case 'eth_accounts': return await getAccounts(getActiveAddressForDomain, simulator, socket)
-		case 'eth_requestAccounts': return await getAccounts(getActiveAddressForDomain, simulator, socket)
+		case 'eth_accounts': return await getAccounts(getActiveAddressForDomain, simulator, socket, settings)
+		case 'eth_requestAccounts': return await getAccounts(getActiveAddressForDomain, simulator, socket, settings)
 		case 'eth_gasPrice': return await gasPrice(simulator)
 		case 'eth_getTransactionCount': return await getTransactionCount(simulator, parsedRequest)
 		case 'interceptor_getSimulationStack': return await getSimulationStack(simulator, parsedRequest)
@@ -251,7 +247,7 @@ async function handleSimulationMode(simulator: Simulator, socket: WebsiteSocket,
 	}
 }
 
-async function handleSigningMode(simulator: Simulator, socket: WebsiteSocket, website: Website, request: InterceptedRequest): Promise<HandleSimulationModeReturnValue> {
+async function handleSigningMode(simulator: Simulator, socket: WebsiteSocket, website: Website, request: InterceptedRequest, settings: Settings): Promise<HandleSimulationModeReturnValue> {
 	let parsedRequest // separate request parsing and request handling. If there's a parse error, throw that to API user
 	try {
 		parsedRequest = EthereumJsonRpcRequest.parse(request.options)
@@ -299,11 +295,11 @@ async function handleSigningMode(simulator: Simulator, socket: WebsiteSocket, we
 		case 'eth_signTypedData_v1':
 		case 'eth_signTypedData_v2':
 		case 'eth_signTypedData_v3':
-		case 'eth_signTypedData_v4': return await personalSign(socket, parsedRequest, request, false, website)
+		case 'eth_signTypedData_v4': return await personalSign(socket, parsedRequest, request, false, website, settings)
 		case 'wallet_switchEthereumChain': return await switchEthereumChain(socket, simulator, parsedRequest, request, false, website)
 		case 'eth_sendTransaction': {
-			if (globalThis.interceptor.settings && isSupportedChain(globalThis.interceptor.settings.activeChain.toString()) ) {
-				return sendTransaction(getActiveAddressForDomain, simulator, parsedRequest, socket, request, false, website)
+			if (settings && isSupportedChain(settings.activeChain.toString()) ) {
+				return sendTransaction(getActiveAddressForDomain, simulator, parsedRequest, socket, request, false, website, settings)
 			}
 			return forwardToSigner()
 		}
@@ -311,61 +307,56 @@ async function handleSigningMode(simulator: Simulator, socket: WebsiteSocket, we
 	}
 }
 
-function newBlockCallback(blockNumber: bigint) {
+async function newBlockCallback(blockNumber: bigint) {
 	sendPopupMessageToOpenWindows({ method: 'popup_new_block_arrived', data: { blockNumber } })
-	if (simulator !== undefined) refreshSimulation(simulator)
+	if (simulator !== undefined) refreshSimulation(simulator, await getSettings())
 }
 
-export async function changeActiveAddressAndChainAndResetSimulation(activeAddress: bigint | undefined | 'noActiveAddressChange', activeChain: bigint | 'noActiveChainChange') {
-	if (globalThis.interceptor.settings === undefined) return
+export async function changeActiveAddressAndChainAndResetSimulation(activeAddress: bigint | undefined | 'noActiveAddressChange', activeChain: bigint | 'noActiveChainChange', settings: Settings) {
 	if (simulator === undefined) return
 
-	let chainChanged = false
 	if (activeChain !== 'noActiveChainChange') {
-
-		globalThis.interceptor.settings.activeChain = activeChain
-		saveActiveChain(activeChain)
+		await setActiveChain(activeChain)
 		const chainString = activeChain.toString()
 		if (isSupportedChain(chainString)) {
 			simulator.cleanup()
 			simulator = new Simulator(chainString, newBlockCallback)
 		}
-
-		// inform all the tabs about the chain change
-		chainChanged = true
 	}
 
 	if (activeAddress !== 'noActiveAddressChange') {
-		if (globalThis.interceptor.settings.simulationMode) {
-			globalThis.interceptor.settings.activeSimulationAddress = activeAddress
-			saveActiveSimulationAddress(activeAddress)
+		if (settings.simulationMode) {
+			await setActiveSimulationAddress(activeAddress)
 		} else {
-			globalThis.interceptor.settings.activeSigningAddress = activeAddress
-			saveActiveSigningAddress(activeAddress)
+			await setActiveSigningAddress(activeAddress)
 		}
 	}
-	updateWebsiteApprovalAccesses()
+	const updatedSettings = await getSettings()
+	updateWebsiteApprovalAccesses(undefined, updatedSettings)
 
-	if (!await updatePrependMode()) {// update prepend mode as our active address has changed, so we need to be sure the rich modes money is sent to right address
-		await updateSimulationState(async () => await simulator?.simulationModeNode.resetSimulation())
-	}
-
-	if (chainChanged) {
-		sendMessageToApprovedWebsitePorts('chainChanged', EthereumQuantity.serialize(globalThis.interceptor.settings.activeChain))
+	if (activeChain !== 'noActiveChainChange') {
+		sendMessageToApprovedWebsitePorts('chainChanged', EthereumQuantity.serialize(activeChain))
 		sendPopupMessageToOpenWindows({ method: 'popup_chain_update' })
 	}
 
 	// inform all the tabs about the address change (this needs to be done on only chain changes too)
-	sendActiveAccountChangeToApprovedWebsitePorts()
+	sendActiveAccountChangeToApprovedWebsitePorts(updatedSettings)
 	if (activeAddress !== 'noActiveAddressChange') {
 		sendPopupMessageToOpenWindows({ method: 'popup_accounts_update' })
+	}
+
+	if (updatedSettings.simulationMode) {
+		// update prepend mode as our active address has changed, so we need to be sure the rich modes money is sent to right address
+		if (!await updatePrependMode(updatedSettings)) {
+			await updateSimulationState(async () => await simulator?.simulationModeNode.resetSimulation(), updatedSettings.activeSimulationAddress)
+		}
 	}
 }
 
 export async function changeActiveChain(chainId: bigint) {
-	if (globalThis.interceptor.settings === undefined) return
-	if (globalThis.interceptor.settings.simulationMode) {
-		return await changeActiveAddressAndChainAndResetSimulation('noActiveAddressChange', chainId)
+	const settings = await getSettings()
+	if (settings.simulationMode) {
+		return await changeActiveAddressAndChainAndResetSimulation('noActiveAddressChange', chainId, settings)
 	}
 	sendMessageToApprovedWebsitePorts('request_signer_to_wallet_switchEthereumChain', EthereumQuantity.serialize(chainId))
 }
@@ -388,6 +379,9 @@ export function postMessageIfStillConnected(socket: WebsiteSocket, message: Inte
 		} catch (error) {
 			if (error instanceof Error) {
 				if (error.message?.includes('Attempting to use a disconnected port object')) {
+					return
+				}
+				if (error.message?.includes('Could not establish connection. Receiving end does not exist')) {
 					return
 				}
 			}
@@ -425,9 +419,10 @@ export function sendMessageToContentScript(socket: WebsiteSocket, resolved: Hand
 export async function handleContentScriptMessage(socket: WebsiteSocket, request: InterceptedRequest, website: Website) {
 	try {
 		if (simulator === undefined) throw 'Interceptor not ready'
-		const resolved = globalThis.interceptor.settings?.simulationMode || request.usingInterceptorWithoutSigner ?
-			await handleSimulationMode(simulator, socket, website, request)
-			: await handleSigningMode(simulator, socket, website, request)
+		const settings = await getSettings()
+		const resolved = settings.simulationMode || request.usingInterceptorWithoutSigner ?
+			await handleSimulationMode(simulator, socket, website, request, settings)
+			: await handleSigningMode(simulator, socket, website, request, settings)
 		return sendMessageToContentScript(socket, resolved, request)
 	} catch(error) {
 		postMessageIfStillConnected(socket, {
@@ -455,11 +450,10 @@ export function refuseAccess(socket: WebsiteSocket, request: InterceptedRequest)
 	})
 }
 
-export async function gateKeepRequestBehindAccessDialog(socket: WebsiteSocket, request: InterceptedRequest, website: Website) {
-	if (globalThis.interceptor.settings === undefined) return refuseAccess(socket, request)
-	const activeAddress = getActiveAddress()
-	const addressInfo = activeAddress !== undefined ? findAddressInfo(activeAddress, globalThis.interceptor.settings.userAddressBook.addressInfos) : undefined
-	return await requestAccessFromUser(socket, website, request, addressInfo, getAssociatedAddresses(globalThis.interceptor.settings, website.websiteOrigin, addressInfo))
+export async function gateKeepRequestBehindAccessDialog(socket: WebsiteSocket, request: InterceptedRequest, website: Website, settings: Settings) {
+	const activeAddress = getActiveAddress(settings)
+	const addressInfo = activeAddress !== undefined ? findAddressInfo(activeAddress, settings.userAddressBook.addressInfos) : undefined
+	return await requestAccessFromUser(socket, website, request, addressInfo, getAssociatedAddresses(settings, website.websiteOrigin, addressInfo), settings)
 }
 
 async function onContentScriptConnected(port: browser.runtime.Port) {
@@ -501,7 +495,7 @@ async function onContentScriptConnected(port: browser.runtime.Port) {
 			return sendMessageToContentScript(socket, { 'result': '0x' }, request)
 		}
 
-		const access = verifyAccess(socket, request.options.method, websiteOrigin)
+		const access = verifyAccess(socket, request.options.method, websiteOrigin, await getSettings())
 
 		if (access === 'askAccess' && request.options.method === 'eth_accounts') {
 			// do not prompt for eth_accounts, just reply with no accounts.
@@ -510,7 +504,7 @@ async function onContentScriptConnected(port: browser.runtime.Port) {
 
 		switch (access) {
 			case 'noAccess': return refuseAccess(socket, request)
-			case 'askAccess': return await gateKeepRequestBehindAccessDialog(socket, request, await websitePromise)
+			case 'askAccess': return await gateKeepRequestBehindAccessDialog(socket, request, await websitePromise, await getSettings())
 			case 'hasAccess': return await handleContentScriptMessage(socket, request, await websitePromise)
 			default: assertNever(access)
 		}
@@ -520,7 +514,7 @@ async function onContentScriptConnected(port: browser.runtime.Port) {
 		globalThis.interceptor.websiteTabConnections.set(socket.tabId, {
 			connections: { [identifier]: newConnection },
 		})
-		await updateTabState(socket.tabId, async (previousState: TabState) => {
+		await updateTabState(socket.tabId, (previousState: TabState) => {
 			return {
 				...previousState,
 				tabIconDetails: {
@@ -536,7 +530,7 @@ async function onContentScriptConnected(port: browser.runtime.Port) {
 
 }
 
-async function popupMessageHandler(simulator: Simulator, request: unknown) {
+async function popupMessageHandler(simulator: Simulator, request: unknown, settings: Settings) {
 	let parsedRequest // separate request parsing and request handling. If there's a parse error, throw that to API user
 	try {
 		parsedRequest = PopupMessage.parse(request)
@@ -557,12 +551,12 @@ async function popupMessageHandler(simulator: Simulator, request: unknown) {
 	switch (parsedRequest.method) {
 		case 'popup_confirmDialog': return await confirmDialog(simulator, parsedRequest)
 		case 'popup_changeActiveAddress': return await changeActiveAddress(simulator, parsedRequest)
-		case 'popup_changeMakeMeRich': return await changeMakeMeRich(simulator, parsedRequest)
+		case 'popup_changeMakeMeRich': return await changeMakeMeRich(simulator, parsedRequest, settings)
 		case 'popup_changePage': return await changePage(simulator, parsedRequest)
 		case 'popup_requestAccountsFromSigner': return await requestAccountsFromSigner(simulator, parsedRequest)
-		case 'popup_resetSimulation': return await resetSimulation(simulator)
-		case 'popup_removeTransaction': return await removeTransaction(simulator, parsedRequest)
-		case 'popup_refreshSimulation': return await refreshSimulation(simulator)
+		case 'popup_resetSimulation': return await resetSimulation(simulator, settings)
+		case 'popup_removeTransaction': return await removeTransaction(simulator, parsedRequest, settings)
+		case 'popup_refreshSimulation': return await refreshSimulation(simulator, settings)
 		case 'popup_refreshConfirmTransactionDialogSimulation': return await refreshPopupConfirmTransactionSimulation(simulator, parsedRequest)
 		case 'popup_personalSign': return await confirmPersonalSign(simulator, parsedRequest)
 		case 'popup_interceptorAccess': return await confirmRequestAccess(simulator, parsedRequest)
@@ -570,10 +564,10 @@ async function popupMessageHandler(simulator: Simulator, request: unknown) {
 		case 'popup_changeActiveChain': return await popupChangeActiveChain(simulator, parsedRequest)
 		case 'popup_changeChainDialog': return await changeChainDialog(simulator, parsedRequest)
 		case 'popup_enableSimulationMode': return await enableSimulationMode(simulator, parsedRequest)
-		case 'popup_reviewNotification': return await reviewNotification(simulator, parsedRequest)
+		case 'popup_reviewNotification': return await reviewNotification(simulator, parsedRequest, settings)
 		case 'popup_rejectNotification': return await rejectNotification(simulator, parsedRequest)
 		case 'popup_addOrModifyAddressBookEntry': return await addOrModifyAddressInfo(simulator, parsedRequest)
-		case 'popup_getAddressBookData': return await getAddressBookData(parsedRequest, globalThis.interceptor.settings?.userAddressBook)
+		case 'popup_getAddressBookData': return await getAddressBookData(parsedRequest, settings.userAddressBook)
 		case 'popup_removeAddressBookEntry': return await removeAddressBookEntry(simulator, parsedRequest)
 		case 'popup_openAddressBook': return await openAddressBook(simulator)
 		case 'popup_personalSignReadyAndListening': return // handled elsewhere (personalSign.ts)
@@ -588,25 +582,27 @@ async function popupMessageHandler(simulator: Simulator, request: unknown) {
 }
 
 async function startup() {
-	globalThis.interceptor.settings = await getSettings()
 	await setExtensionIcon({ path: ICON_NOT_ACTIVE })
 	await setExtensionBadgeBackgroundColor({ color: '#58a5b3' })
 
-	const chainString = globalThis.interceptor.settings.activeChain.toString()
-	if (isSupportedChain(chainString)) {
-		simulator = new Simulator(chainString, newBlockCallback)
-	} else {
-		simulator = new Simulator('1', newBlockCallback) // initialize with mainnet, if user is not using any supported chains
-	}
-	if (globalThis.interceptor.settings.simulationMode) {
-		changeActiveAddressAndChainAndResetSimulation(globalThis.interceptor.settings.activeSimulationAddress, globalThis.interceptor.settings.activeChain)
-	}
+	const settings = await getSettings()
+	const chainString = settings.activeChain.toString()
+	simulator = new Simulator(isSupportedChain(chainString) ? chainString : '1', newBlockCallback)
 
 	browser.runtime.onMessage.addListener(async function(message: unknown) {
 		if (simulator === undefined) throw new Error('Interceptor not ready yet')
-		await popupMessageHandler(simulator, message)
+		await popupMessageHandler(simulator, message, await getSettings())
 	})
-	await setPendingAccessRequests(globalThis.interceptor.settings.pendingAccessRequests)
+
+	await updateExtensionBadge()
+	
+	if (!settings.simulationMode || settings.useSignersAddressAsActiveAddress) {
+		sendMessageToApprovedWebsitePorts('request_signer_to_eth_requestAccounts', [])
+		sendMessageToApprovedWebsitePorts('request_signer_chainId', [])
+	}
+	if (settings.simulationMode) {
+		await changeActiveAddressAndChainAndResetSimulation(settings.activeSimulationAddress, settings.activeChain, settings)
+	}
 }
 
 startup()

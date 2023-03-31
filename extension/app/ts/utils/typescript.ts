@@ -56,6 +56,12 @@ export async function browserStorageLocalGet(keys: string | string[]) {
 
 type JSONEncodeable = string | number | boolean | { [x: string]: JSONEncodeable } | ReadonlyArray<JSONEncodeable>
 
-export async function browserStorageLocalSet(data: Record<string, JSONEncodeable>) {
-	return await browser.storage.local.set(data)
+export async function browserStorageLocalSet(key: string, value: JSONEncodeable) {
+	return await browser.storage.local.set({ [key]: value })
+}
+
+export async function browserStorageLocalSingleGetWithDefault(key: string, valueIfMissing: unknown) {
+	const value = await browser.storage.local.get(key) as Record<string, unknown>
+	if (value[key] === undefined) return valueIfMissing
+	return value[key]
 }

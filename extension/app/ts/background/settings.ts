@@ -1,11 +1,33 @@
 import { ICON_NOT_ACTIVE, MOCK_PRIVATE_KEYS_ADDRESS } from '../utils/constants.js'
-import { AddressBookTabIdSetting, LegacyWebsiteAccessArray, Page, PendingAccessRequestArray, PendingChainChangeConfirmationPromise, PendingInterceptorAccessRequestPromise, PendingPersonalSignPromise, PendingUserRequestPromise, Settings, WebsiteAccessArray, WebsiteAccessArrayWithLegacy, SignerName, TabState } from '../utils/interceptor-messages.js'
+import { LegacyWebsiteAccessArray, Page, PendingAccessRequestArray, PendingChainChangeConfirmationPromise, PendingInterceptorAccessRequestPromise, PendingPersonalSignPromise, PendingUserRequestPromise, Settings, WebsiteAccessArray, WebsiteAccessArrayWithLegacy, SignerName, TabState } from '../utils/interceptor-messages.js'
 import { Semaphore } from '../utils/semaphore.js'
-import { browserStorageLocalGet, browserStorageLocalSet } from '../utils/typescript.js'
-import { AddressInfo, AddressInfoArray, ContactEntries } from '../utils/user-interface-types.js'
+import { browserStorageLocalGet, browserStorageLocalSet, browserStorageLocalSingleGetWithDefault } from '../utils/typescript.js'
+import { AddressInfoArray, ContactEntries } from '../utils/user-interface-types.js'
 import { SimulationResults } from '../utils/visualizer-types.js'
-import { EthereumAddressOrUndefined, EthereumQuantity } from '../utils/wire-types.js'
+import { EthereumAddress, EthereumAddressOrUndefined, EthereumQuantity } from '../utils/wire-types.js'
 import * as funtypes from 'funtypes'
+
+const storageName = {
+	activeSigningAddress: 'activeSigningAddress',
+	activeSimulationAddress: 'activeSimulationAddress',
+	addressInfos: 'addressInfos',
+	page: 'page',
+	useSignersAddressAsActiveAddress: 'useSignersAddressAsActiveAddress',
+	websiteAccess: 'websiteAccess',
+	activeChain: 'activeChain',
+	simulationMode: 'simulationMode',
+	pendingAccessRequests: 'pendingAccessRequests',
+	contacts: 'contacts',
+	makeMeRich: 'makeMeRich',
+	addressbookTabId: 'addressbookTabId',
+	ConfirmationWindowPromise: 'ConfirmationWindowPromise',
+	ChainChangeConfirmationPromise: 'ChainChangeConfirmationPromise',
+	PersonalSignPromise: 'PersonalSignPromise',
+	InterceptorAccessRequestPromise: 'InterceptorAccessRequestPromise',
+	simulationResults: 'simulationResults',
+	signerName: 'signerName',
+	currentTabId: 'currentTabId',
+}
 
 export const defaultAddresses = [
 	{
@@ -40,22 +62,23 @@ function parseAccessWithLegacySupport(data: unknown): WebsiteAccessArray {
 
 export async function getSettings() : Promise<Settings> {
 	const results = await browserStorageLocalGet([
-		'activeSigningAddress',
-		'activeSimulationAddress',
-		'addressInfos',
-		'page',
-		'useSignersAddressAsActiveAddress',
-		'websiteAccess',
-		'activeChain',
-		'simulationMode',
-		'pendingAccessRequests',
-		'contacts',
+		storageName.activeSigningAddress,
+		storageName.activeSimulationAddress,
+		storageName.addressInfos,
+		storageName.page,
+		storageName.useSignersAddressAsActiveAddress,
+		storageName.websiteAccess,
+		storageName.activeChain,
+		storageName.simulationMode,
+		storageName.pendingAccessRequests,
+		storageName.contacts,
 	])
+	const useSignersAddressAsActiveAddress = results.useSignersAddressAsActiveAddress !== undefined ? funtypes.Boolean.parse(results.useSignersAddressAsActiveAddress) : false
 	return {
-		activeSimulationAddress: results.activeSimulationAddress !== undefined ? EthereumAddressOrUndefined.parse(results.activeSimulationAddress) : defaultAddresses[0].address,
-		activeSigningAddress: results.activeSigningAddress !== undefined ? EthereumAddressOrUndefined.parse(results.activeSigningAddress) : undefined,
+		activeSimulationAddress: results.activeSimulationAddress !== undefined ? EthereumAddress.parse(results.activeSimulationAddress) : (useSignersAddressAsActiveAddress ? undefined : defaultAddresses[0].address),
+		activeSigningAddress: EthereumAddressOrUndefined.parse(results.activeSigningAddress),
 		page: results.page !== undefined ? Page.parse(results.page) : 'Home',
-		useSignersAddressAsActiveAddress: results.useSignersAddressAsActiveAddress !== undefined ? funtypes.Boolean.parse(results.useSignersAddressAsActiveAddress) : false,
+		useSignersAddressAsActiveAddress: useSignersAddressAsActiveAddress,
 		websiteAccess: results.websiteAccess !== undefined ? parseAccessWithLegacySupport(results.websiteAccess) : [],
 		activeChain: results.activeChain !== undefined ? EthereumQuantity.parse(results.activeChain) : 1n,
 		simulationMode: results.simulationMode !== undefined ? funtypes.Boolean.parse(results.simulationMode) : true,
@@ -67,106 +90,96 @@ export async function getSettings() : Promise<Settings> {
 	}
 }
 
-export function saveActiveSimulationAddress(activeSimulationAddress: bigint | undefined) {
-	return browserStorageLocalSet({ activeSimulationAddress: EthereumAddressOrUndefined.serialize(activeSimulationAddress) as string })
+export async function setActiveSimulationAddress(activeSimulationAddress: bigint | undefined) {
+	if (activeSimulationAddress === undefined) return await browser.storage.local.remove(storageName.activeSimulationAddress)
+	return await browserStorageLocalSet(storageName.activeSimulationAddress, EthereumAddress.serialize(activeSimulationAddress) as string)
 }
-export function saveActiveSigningAddress(activeSigningAddress: bigint | undefined) {
-	return browserStorageLocalSet({ activeSigningAddress: EthereumAddressOrUndefined.serialize(activeSigningAddress) as string })
+export async function setActiveSigningAddress(activeSigningAddress: bigint | undefined) {
+	if (activeSigningAddress === undefined) return await browser.storage.local.remove(storageName.activeSigningAddress)
+	return await browserStorageLocalSet(storageName.activeSigningAddress, EthereumAddress.serialize(activeSigningAddress) as string)
 }
 
-export function saveAddressInfos(addressInfos: readonly AddressInfo[]) {
-	browserStorageLocalSet({ addressInfos: addressInfos.map( (x) => AddressInfo.serialize(x) as string ) })
+export async function setPage(page: Page) {
+	return await browserStorageLocalSet(storageName.page, page)
 }
-export function saveContacts(contacts: ContactEntries) {
-	browserStorageLocalSet({ contacts: ContactEntries.serialize(contacts) as string })
-}
-export function savePage(page: Page) {
-	browserStorageLocalSet({ page: page })
-}
-export async function saveMakeMeRich(makeMeRich: boolean) {
-	await browserStorageLocalSet({ makeMeRich: makeMeRich })
+export async function setMakeMeRich(makeMeRich: boolean) {
+	return await browserStorageLocalSet(storageName.makeMeRich, makeMeRich)
 }
 export async function getMakeMeRich() {
-	const results = await browserStorageLocalGet('makeMeRich')
-	return funtypes.Boolean.parse(results.makeMeRich !== undefined ? results.makeMeRich : false)
+	return funtypes.Boolean.parse(await browserStorageLocalSingleGetWithDefault(storageName.makeMeRich, false))
 }
-export function saveUseSignersAddressAsActiveAddress(useSignersAddressAsActiveAddress: boolean) {
-	browserStorageLocalSet({ useSignersAddressAsActiveAddress: useSignersAddressAsActiveAddress })
+export async function setUseSignersAddressAsActiveAddress(useSignersAddressAsActiveAddress: boolean) {
+	return await browserStorageLocalSet(storageName.useSignersAddressAsActiveAddress, useSignersAddressAsActiveAddress)
 }
-export function saveWebsiteAccess(websiteAccess: WebsiteAccessArray) {
-	browserStorageLocalSet({ websiteAccess: WebsiteAccessArray.serialize(websiteAccess) as string })
+
+export async function setActiveChain(activeChain: EthereumQuantity) {
+	return await browserStorageLocalSet(storageName.activeChain, EthereumQuantity.serialize(activeChain) as string)
 }
-export function saveActiveChain(activeChain: EthereumQuantity) {
-	browserStorageLocalSet({ activeChain: EthereumQuantity.serialize(activeChain) as string })
+export async function setSimulationMode(simulationMode: boolean) {
+	return await browserStorageLocalSet(storageName.simulationMode, simulationMode)
 }
-export function saveSimulationMode(simulationMode: boolean) {
-	browserStorageLocalSet({ simulationMode: simulationMode })
-}
-export function savePendingAccessRequests(pendingAccessRequests: PendingAccessRequestArray) {
-	browserStorageLocalSet({ pendingAccessRequests: PendingAccessRequestArray.serialize(pendingAccessRequests) as string })
-}
-export function saveOpenedAddressBookTabId(addressbookTabId: number) {
-	browserStorageLocalSet({ addressbookTabId: addressbookTabId })
+
+export async function setOpenedAddressBookTabId(addressbookTabId: number) {
+	return await browserStorageLocalSet(storageName.addressbookTabId, addressbookTabId)
 }
 
 export async function getOpenedAddressBookTabId() {
-	const tabIdData = await browserStorageLocalGet(['addressbookTabId'])
-	if (!AddressBookTabIdSetting.test(tabIdData)) return undefined
-	return AddressBookTabIdSetting.parse(tabIdData).addressbookTabId
+	const tabIdData = await browserStorageLocalSingleGetWithDefault(storageName.addressbookTabId, undefined)
+	return funtypes.Union(funtypes.Undefined, funtypes.Number).parse(tabIdData)
 }
 
 export async function getConfirmationWindowPromise(): Promise<PendingUserRequestPromise | undefined> {
-	const results = await browserStorageLocalGet(['ConfirmationWindowPromise'])
-	return results.ConfirmationWindowPromise === undefined ? undefined : PendingUserRequestPromise.parse(results.ConfirmationWindowPromise)
+	const results = await browserStorageLocalSingleGetWithDefault(storageName.ConfirmationWindowPromise, undefined)
+	return funtypes.Union(funtypes.Undefined, PendingUserRequestPromise).parse(results)
 }
 
-export async function saveConfirmationWindowPromise(promise: PendingUserRequestPromise | undefined) {
+export async function setConfirmationWindowPromise(promise: PendingUserRequestPromise | undefined) {
 	if (promise === undefined) {
-		return await browser.storage.local.remove('ConfirmationWindowPromise')
+		return await browser.storage.local.remove(storageName.ConfirmationWindowPromise)
 	}
-	return await browserStorageLocalSet({ ConfirmationWindowPromise: PendingUserRequestPromise.serialize(promise) as string })
+	return await browserStorageLocalSet(storageName.ConfirmationWindowPromise, PendingUserRequestPromise.serialize(promise) as string)
 }
 
 export async function getChainChangeConfirmationPromise(): Promise<PendingChainChangeConfirmationPromise | undefined> {
-	const results = await browserStorageLocalGet(['ChainChangeConfirmationPromise'])
-	return results.ChainChangeConfirmationPromise === undefined ? undefined : PendingChainChangeConfirmationPromise.parse(results.ChainChangeConfirmationPromise)
+	const results = await browserStorageLocalSingleGetWithDefault(storageName.ChainChangeConfirmationPromise, undefined)
+	return funtypes.Union(funtypes.Undefined, PendingChainChangeConfirmationPromise).parse(results)
 }
 
-export async function saveChainChangeConfirmationPromise(promise: PendingChainChangeConfirmationPromise | undefined) {
+export async function setChainChangeConfirmationPromise(promise: PendingChainChangeConfirmationPromise | undefined) {
 	if (promise === undefined) {
-		return await browser.storage.local.remove('ChainChangeConfirmationPromise')
+		return await browser.storage.local.remove(storageName.ChainChangeConfirmationPromise)
 	}
-	return await browserStorageLocalSet({ ChainChangeConfirmationPromise: PendingChainChangeConfirmationPromise.serialize(promise) as string })
+	return await browserStorageLocalSet(storageName.ChainChangeConfirmationPromise, PendingChainChangeConfirmationPromise.serialize(promise) as string)
 }
 
 export async function getPendingPersonalSignPromise(): Promise<PendingPersonalSignPromise | undefined> {
-	const results = await browserStorageLocalGet(['PersonalSignPromise'])
-	return results.PersonalSignPromise === undefined ? undefined : PendingPersonalSignPromise.parse(results.PersonalSignPromise)
+	const results = await browserStorageLocalSingleGetWithDefault(storageName.PersonalSignPromise, undefined)
+	return funtypes.Union(funtypes.Undefined, PendingPersonalSignPromise).parse(results)
 }
 
-export async function savePendingPersonalSignPromise(promise: PendingPersonalSignPromise | undefined) {
+export async function setPendingPersonalSignPromise(promise: PendingPersonalSignPromise | undefined) {
 	if (promise === undefined) {
-		return await browser.storage.local.remove('PersonalSignPromise')
+		return await browser.storage.local.remove(storageName.PersonalSignPromise)
 	}
-	return await browserStorageLocalSet({ PersonalSignPromise: PendingPersonalSignPromise.serialize(promise) as string })
+	return await browserStorageLocalSet(storageName.PersonalSignPromise, PendingPersonalSignPromise.serialize(promise) as string)
 }
 
 export async function getPendingInterceptorAccessRequestPromise(): Promise<PendingInterceptorAccessRequestPromise | undefined> {
-	const results = await browserStorageLocalGet(['InterceptorAccessRequestPromise'])
-	return results.InterceptorAccessRequestPromise === undefined ? undefined : PendingInterceptorAccessRequestPromise.parse(results.InterceptorAccessRequestPromise)
+	const results = await browserStorageLocalSingleGetWithDefault(storageName.InterceptorAccessRequestPromise, undefined)
+	return funtypes.Union(funtypes.Undefined, PendingInterceptorAccessRequestPromise).parse(results)
 }
 
-export async function savePendingInterceptorAccessRequestPromise(promise: PendingInterceptorAccessRequestPromise | undefined) {
+export async function setPendingInterceptorAccessRequestPromise(promise: PendingInterceptorAccessRequestPromise | undefined) {
 	if (promise === undefined) {
-		return await browser.storage.local.remove('InterceptorAccessRequestPromise')
+		return await browser.storage.local.remove(storageName.InterceptorAccessRequestPromise)
 	}
-	return await browserStorageLocalSet({ InterceptorAccessRequestPromise: PendingInterceptorAccessRequestPromise.serialize(promise) as string })
+	return await browserStorageLocalSet(storageName.InterceptorAccessRequestPromise, PendingInterceptorAccessRequestPromise.serialize(promise) as string)
 }
 
-const SIMULATION_RESULTS_STORAGE_KEY = 'simulationResults'
 export async function getSimulationResults() {
-	const results = await browserStorageLocalGet(['simulationResults'])
-	if (results.simulationResults === undefined) {
+	const results = await browserStorageLocalSingleGetWithDefault(storageName.simulationResults, undefined)
+	const parsed = funtypes.Union(funtypes.Undefined, SimulationResults).parse(results)
+	if (parsed === undefined) {
 		return {
 			simulationId: 0,
 			simulationState: undefined,
@@ -176,7 +189,7 @@ export async function getSimulationResults() {
 			activeAddress: undefined
 		}
 	}
-	return SimulationResults.parse(results.simulationResults)
+	return parsed
 }
 
 const simulationResultsSemaphore = new Semaphore(1)
@@ -184,28 +197,23 @@ export async function updateSimulationResults(newResults: SimulationResults) {
 	await simulationResultsSemaphore.execute(async () => {
 		const oldResults = await getSimulationResults()
 		if (newResults.simulationId < oldResults.simulationId) return // do not update state with older state
-		return await browserStorageLocalSet({ [SIMULATION_RESULTS_STORAGE_KEY]: SimulationResults.serialize(newResults) as string  })
+		return await browserStorageLocalSet(storageName.simulationResults, SimulationResults.serialize(newResults) as string)
 	})
 }
 
-export async function saveSignerName(signerName: SignerName) {
-	return await browserStorageLocalSet({ signerName: signerName })
+export async function setSignerName(signerName: SignerName) {
+	return await browserStorageLocalSet(storageName.signerName, signerName)
 }
 
 export async function getSignerName() {
-	const results = await browserStorageLocalGet(['signerName'])
-	if (results.signerName !== undefined) {
-		return SignerName.parse(results.signerName)
-	}
-	return 'NoSignerDetected'
+	return SignerName.parse(await browserStorageLocalSingleGetWithDefault(storageName.signerName, 'NoSignerDetected'))
 }
 
 export async function getTabState(tabId: Number) : Promise<TabState> {
 	const name = `tabState_${ tabId }`
-	const results = await browserStorageLocalGet([name])
-	if (results[name] !== undefined) {
-		return TabState.parse(results[name])
-	}
+	const results = await browserStorageLocalSingleGetWithDefault(name, undefined)
+	const parsed = funtypes.Union(funtypes.Undefined, TabState).parse(results)
+	if (parsed !== undefined) return parsed
 	return {
 		signerName: 'NoSigner',
 		signerAccounts: [],
@@ -216,9 +224,9 @@ export async function getTabState(tabId: Number) : Promise<TabState> {
 		}
 	}
 }
-export async function saveTabState(tabId: Number, tabState: TabState) {
+export async function setTabState(tabId: Number, tabState: TabState) {
 	const name = `tabState_${ tabId }`
-	return await browserStorageLocalSet({ [name]: TabState.serialize(tabState) as string })
+	return await browserStorageLocalSet(name, TabState.serialize(tabState) as string)
 }
 
 export async function removeTabState(tabId: Number) {
@@ -233,8 +241,48 @@ export async function clearTabStates() {
 }
 
 const tabStateSemaphore = new Semaphore(1)
-export async function updateTabState(tabId: Number, updateFunc: (prevTabState: TabState) => Promise<TabState>) {
+export async function updateTabState(tabId: Number, updateFunc: (prevState: TabState) => TabState) {
 	await tabStateSemaphore.execute(async () => {
-		await saveTabState(tabId, await updateFunc(await getTabState(tabId)))
+		await setTabState(tabId, updateFunc(await getTabState(tabId)))
 	})
+}
+
+const pendingAccessRequestsSemaphore = new Semaphore(1)
+export async function updatePendingAccessRequests(updateFunc: (prevState: PendingAccessRequestArray) => PendingAccessRequestArray) {
+	await pendingAccessRequestsSemaphore.execute(async () => {
+		const pendingAccessRequests = PendingAccessRequestArray.parse(await browserStorageLocalSingleGetWithDefault(storageName.pendingAccessRequests, []))
+		return await browserStorageLocalSet(storageName.pendingAccessRequests, PendingAccessRequestArray.serialize(updateFunc(pendingAccessRequests)) as string)
+	})
+}
+
+const websiteAccessSemaphore = new Semaphore(1)
+export async function updateWebsiteAccess(updateFunc: (prevState: WebsiteAccessArray) => WebsiteAccessArray) {
+	await websiteAccessSemaphore.execute(async () => {
+		const websiteAccess = WebsiteAccessArray.parse(await browserStorageLocalSingleGetWithDefault(storageName.websiteAccess, []))
+		return await browserStorageLocalSet(storageName.websiteAccess, WebsiteAccessArray.serialize(updateFunc(websiteAccess)) as string)
+	})
+}
+
+const addressInfosSemaphore = new Semaphore(1)
+export async function updateAddressInfos(updateFunc: (prevState: AddressInfoArray) => AddressInfoArray) {
+	await addressInfosSemaphore.execute(async () => {
+		const addressInfos = AddressInfoArray.parse(await browserStorageLocalSingleGetWithDefault(storageName.addressInfos, AddressInfoArray.serialize(defaultAddresses)))
+		return await browserStorageLocalSet(storageName.addressInfos, AddressInfoArray.serialize(updateFunc(addressInfos)) as string)
+	})
+}
+
+const contactsSemaphore = new Semaphore(1)
+export async function updateContacts(updateFunc: (prevState: ContactEntries) => ContactEntries) {
+	await contactsSemaphore.execute(async () => {
+		const contacts = ContactEntries.parse(await browserStorageLocalSingleGetWithDefault(storageName.contacts, []))
+		return await browserStorageLocalSet(storageName.contacts, ContactEntries.serialize(updateFunc(contacts)) as string)
+	})
+}
+
+export async function saveCurrentTabId(tabId: number) {
+	return browserStorageLocalSet(storageName.currentTabId, tabId)
+}
+
+export async function getCurrentTabId() {
+	return funtypes.Union(funtypes.Undefined, funtypes.Number).parse(await browserStorageLocalSingleGetWithDefault(storageName.currentTabId, undefined))
 }

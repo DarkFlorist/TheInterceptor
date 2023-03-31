@@ -31,7 +31,7 @@ export function findAddressInfo(address: bigint, addressInfos: readonly AddressI
 	}
 }
 
-export function getAddressMetaData(address: bigint, userAddressBook: UserAddressBook | undefined) : AddressBookEntry {
+export function getAddressMetaData(address: bigint, userAddressBook: UserAddressBook) : AddressBookEntry {
 	if ( address === MOCK_ADDRESS) {
 		return {
 			address: address,
@@ -40,22 +40,20 @@ export function getAddressMetaData(address: bigint, userAddressBook: UserAddress
 			type: 'contact',
 		}
 	}
-	if (userAddressBook !== undefined) {
-		for (const info of userAddressBook.addressInfos) {
-			if (info.address === address) {
-				return {
-					...info,
-					type: 'addressInfo'
-				}
+	for (const info of userAddressBook.addressInfos) {
+		if (info.address === address) {
+			return {
+				...info,
+				type: 'addressInfo'
 			}
 		}
+	}
 
-		for (const contact of userAddressBook.contacts) {
-			if (contact.address === address) {
-				return {
-					...contact,
-					type: 'contact'
-				}
+	for (const contact of userAddressBook.contacts) {
+		if (contact.address === address) {
+			return {
+				...contact,
+				type: 'contact'
 			}
 		}
 	}
@@ -130,7 +128,7 @@ async function getTokenMetadata(simulator: Simulator, address: bigint) : Promise
 	}
 }
 
-export async function getAddressBookEntriesForVisualiser(simulator: Simulator, visualizerResult: (VisualizerResult | undefined)[], simulationState: SimulationState, userAddressBook: UserAddressBook | undefined) : Promise<AddressBookEntry[]> {
+export async function getAddressBookEntriesForVisualiser(simulator: Simulator, visualizerResult: (VisualizerResult | undefined)[], simulationState: SimulationState, userAddressBook: UserAddressBook) : Promise<AddressBookEntry[]> {
 	let addressesToFetchMetadata: bigint[] = []
 	let tokenAddresses: bigint[] = []
 

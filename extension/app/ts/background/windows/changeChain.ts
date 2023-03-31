@@ -4,7 +4,7 @@ import { ChainChangeConfirmation, InterceptedRequest, ExternalPopupMessage, Sign
 import { Website, WebsiteSocket } from '../../utils/user-interface-types.js'
 import { changeActiveChain, sendMessageToContentScript } from '../background.js'
 import { getHtmlFile, sendPopupMessageToOpenWindows } from '../backgroundUtils.js'
-import { getChainChangeConfirmationPromise, saveChainChangeConfirmationPromise } from '../settings.js'
+import { getChainChangeConfirmationPromise, setChainChangeConfirmationPromise } from '../settings.js'
 
 let pendForUserReply: Future<ChainChangeConfirmation> | undefined = undefined
 let pendForSignerReply: Future<SignerChainChangeConfirmation> | undefined = undefined
@@ -83,7 +83,7 @@ export const openChangeChainDialog = async (
 			if ((await browser.tabs.query({ windowId: oldPromise.dialogId })).length > 0) {
 				return userDeniedChange
 			} else {
-				await saveChainChangeConfirmationPromise(undefined)
+				await setChainChangeConfirmationPromise(undefined)
 			}
 		}
 
@@ -99,7 +99,7 @@ export const openChangeChainDialog = async (
 		if (openedWindow && openedWindow.id !== undefined) {
 			browser.windows.onRemoved.addListener(onCloseWindow)
 
-			saveChainChangeConfirmationPromise({
+			setChainChangeConfirmationPromise({
 				website: website,
 				dialogId: openedWindow.id,
 				socket: socket,
@@ -123,7 +123,7 @@ export const openChangeChainDialog = async (
 }
 
 async function resolve(reply: ChainChangeConfirmation, simulationMode: boolean) {
-	await saveChainChangeConfirmationPromise(undefined)
+	await setChainChangeConfirmationPromise(undefined)
 	if (reply.options.accept) {
 		if (simulationMode) {
 			await changeActiveChain(reply.options.chainId)
