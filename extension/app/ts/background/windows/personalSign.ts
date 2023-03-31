@@ -2,7 +2,7 @@ import { stringifyJSONWithBigInts } from '../../utils/bigint.js'
 import { METAMASK_ERROR_USER_REJECTED_REQUEST } from '../../utils/constants.js'
 import { Future } from '../../utils/future.js'
 import { HandleSimulationModeReturnValue, InterceptedRequest, PersonalSign, ExternalPopupMessage, Settings } from '../../utils/interceptor-messages.js'
-import { Website, WebsiteSocket } from '../../utils/user-interface-types.js'
+import { Website, WebsiteSocket, WebsiteTabConnections } from '../../utils/user-interface-types.js'
 import { EIP2612Message, Permit2, PersonalSignParams, SignTypedDataParams } from '../../utils/wire-types.js'
 import { personalSignWithSimulator, sendMessageToContentScript } from '../background.js'
 import { getHtmlFile, sendPopupMessageToOpenWindows } from '../backgroundUtils.js'
@@ -13,14 +13,14 @@ let pendingPersonalSign: Future<PersonalSign> | undefined = undefined
 
 let openedPersonalSignDialogWindow: browser.windows.Window | null = null
 
-export async function resolvePersonalSign(confirmation: PersonalSign) {
+export async function resolvePersonalSign(websiteTabConnections: WebsiteTabConnections, confirmation: PersonalSign) {
 	if (pendingPersonalSign !== undefined) {
 		pendingPersonalSign.resolve(confirmation)
 	} else {
 		const data = await getPendingPersonalSignPromise()
 		if (data === undefined || confirmation.options.requestId !== data.request.requestId) return
 		const resolved = await resolve(confirmation, data.simulationMode, data.params)
-		sendMessageToContentScript(data.socket, resolved, data.request)
+		sendMessageToContentScript(websiteTabConnections, data.socket, resolved, data.request)
 	}
 	openedPersonalSignDialogWindow = null
 }
@@ -45,6 +45,7 @@ function reject() {
 }
 
 export const openPersonalSignDialog = async (
+	websiteTabConnections: WebsiteTabConnections,
 	socket: WebsiteSocket,
 	params: PersonalSignParams | SignTypedDataParams,
 	request: InterceptedRequest,
@@ -58,7 +59,7 @@ export const openPersonalSignDialog = async (
 		if (openedPersonalSignDialogWindow === null || openedPersonalSignDialogWindow.id !== windowId) return
 		if (pendingPersonalSign === undefined) return
 		openedPersonalSignDialogWindow = null
-		return resolvePersonalSign(rejectMessage(request.requestId))
+		return resolvePersonalSign(websiteTabConnections, rejectMessage(request.requestId))
 	}
 
 	const activeAddress = simulationMode ? settings.activeSimulationAddress : settings.activeSigningAddress
@@ -170,7 +171,7 @@ export const openPersonalSignDialog = async (
 				params: params,
 			})
 		} else {
-			await resolvePersonalSign(rejectMessage(request.requestId))
+			await resolvePersonalSign(websiteTabConnections, rejectMessage(request.requestId))
 		}
 
 		const reply = await pendingPersonalSign

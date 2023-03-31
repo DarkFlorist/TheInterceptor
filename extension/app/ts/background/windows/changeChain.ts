@@ -1,7 +1,7 @@
 import { METAMASK_ERROR_USER_REJECTED_REQUEST } from '../../utils/constants.js'
 import { Future } from '../../utils/future.js'
 import { ChainChangeConfirmation, InterceptedRequest, ExternalPopupMessage, SignerChainChangeConfirmation } from '../../utils/interceptor-messages.js'
-import { Website, WebsiteSocket } from '../../utils/user-interface-types.js'
+import { Website, WebsiteSocket, WebsiteTabConnections } from '../../utils/user-interface-types.js'
 import { changeActiveChain, sendMessageToContentScript } from '../background.js'
 import { getHtmlFile, sendPopupMessageToOpenWindows } from '../backgroundUtils.js'
 import { getChainChangeConfirmationPromise, setChainChangeConfirmationPromise } from '../settings.js'
@@ -11,15 +11,15 @@ let pendForSignerReply: Future<SignerChainChangeConfirmation> | undefined = unde
 
 let openedWindow: browser.windows.Window | null = null
 
-export async function resolveChainChange(confirmation: ChainChangeConfirmation) {
+export async function resolveChainChange(websiteTabConnections: WebsiteTabConnections, confirmation: ChainChangeConfirmation) {
 	if (pendForUserReply !== undefined) {
 		pendForUserReply.resolve(confirmation)
 		return
 	}
 	const data = await getChainChangeConfirmationPromise()
 	if (data === undefined || confirmation.options.requestId !== data.request.requestId) return
-	const resolved = await resolve(confirmation, data.simulationMode)
-	sendMessageToContentScript(data.socket, resolved, data.request)
+	const resolved = await resolve(websiteTabConnections, confirmation, data.simulationMode)
+	sendMessageToContentScript(websiteTabConnections, data.socket, resolved, data.request)
 }
 
 export async function resolveSignerChainChange(confirmation: SignerChainChangeConfirmation) {
@@ -45,6 +45,7 @@ const userDeniedChange = {
 } as const
 
 export const openChangeChainDialog = async (
+	websiteTabConnections: WebsiteTabConnections,
 	socket: WebsiteSocket,
 	request: InterceptedRequest,
 	simulationMode: boolean,
@@ -59,7 +60,7 @@ export const openChangeChainDialog = async (
 		if (openedWindow === null || openedWindow.id !== windowId) return
 		openedWindow = null
 		if (pendForUserReply === undefined) return
-		resolveChainChange(rejectMessage(request.requestId))
+		resolveChainChange(websiteTabConnections, rejectMessage(request.requestId))
 	}
 
 	const changeChainWindowReadyAndListening = async function popupMessageListener(msg: unknown) {
@@ -107,14 +108,14 @@ export const openChangeChainDialog = async (
 				simulationMode: simulationMode,
 			})
 		} else {
-			resolveChainChange(rejectMessage(request.requestId))
+			resolveChainChange(websiteTabConnections, rejectMessage(request.requestId))
 		}
 		pendForSignerReply = undefined
 
 		const reply = await pendForUserReply
 
 		// forward message to content script
-		return resolve(reply, simulationMode)
+		return resolve(websiteTabConnections, reply, simulationMode)
 	} finally {
 		browser.windows.onRemoved.removeListener(onCloseWindow)
 		browser.windows.onRemoved.removeListener(changeChainWindowReadyAndListening)
@@ -122,15 +123,15 @@ export const openChangeChainDialog = async (
 	}
 }
 
-async function resolve(reply: ChainChangeConfirmation, simulationMode: boolean) {
+async function resolve(websiteTabConnections: WebsiteTabConnections, reply: ChainChangeConfirmation, simulationMode: boolean) {
 	await setChainChangeConfirmationPromise(undefined)
 	if (reply.options.accept) {
 		if (simulationMode) {
-			await changeActiveChain(reply.options.chainId)
+			await changeActiveChain(websiteTabConnections, reply.options.chainId)
 			return { result: null }
 		}
 		pendForSignerReply = new Future<SignerChainChangeConfirmation>() // when not in simulation mode, we need to get reply from the signer too
-		await changeActiveChain(reply.options.chainId)
+		await changeActiveChain(websiteTabConnections, reply.options.chainId)
 		const signerReply = await pendForSignerReply
 		if (signerReply.options.accept && signerReply.options.chainId === reply.options.chainId) {
 			return { result: null }

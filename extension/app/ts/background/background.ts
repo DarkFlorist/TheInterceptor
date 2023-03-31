@@ -6,7 +6,7 @@ import { clearTabStates, getMakeMeRich, getSettings, getSignerName, getSimulatio
 import { blockNumber, call, chainId, estimateGas, gasPrice, getAccounts, getBalance, getBlockByNumber, getCode, getLogs, getPermissions, getSimulationStack, getTransactionByHash, getTransactionCount, getTransactionReceipt, personalSign, requestPermissions, sendTransaction, subscribe, switchEthereumChain, unsubscribe } from './simulationModeHanders.js'
 import { changeActiveAddress, changeMakeMeRich, changePage, resetSimulation, confirmDialog, refreshSimulation, removeTransaction, requestAccountsFromSigner, refreshPopupConfirmTransactionSimulation, confirmPersonalSign, confirmRequestAccess, changeInterceptorAccess, changeChainDialog, popupChangeActiveChain, enableSimulationMode, reviewNotification, rejectNotification, addOrModifyAddressInfo, getAddressBookData, removeAddressBookEntry, openAddressBook, homeOpened, interceptorAccessChangeAddressOrRefresh } from './popupMessageHandlers.js'
 import { SimulationState } from '../utils/visualizer-types.js'
-import { AddressBookEntry, Website, TabConnection, WebsiteSocket } from '../utils/user-interface-types.js'
+import { AddressBookEntry, Website, TabConnection, WebsiteSocket, WebsiteTabConnections } from '../utils/user-interface-types.js'
 import { requestAccessFromUser } from './windows/interceptorAccess.js'
 import { CHAINS, ICON_NOT_ACTIVE, isSupportedChain, MAKE_YOU_RICH_TRANSACTION, METAMASK_ERROR_USER_REJECTED_REQUEST } from '../utils/constants.js'
 import { PriceEstimator } from '../simulation/priceEstimator.js'
@@ -18,7 +18,9 @@ import { connectedToSigner, ethAccountsReply, signerChainChanged, walletSwitchEt
 import { SimulationModeEthereumClientService } from '../simulation/services/SimulationModeEthereumClientService.js'
 import { assertNever, assertUnreachable } from '../utils/typescript.js'
 
-browser.runtime.onConnect.addListener(port => onContentScriptConnected(port).catch(console.error))
+const websiteTabConnections = new Map<number, TabConnection>()
+
+browser.runtime.onConnect.addListener(port => onContentScriptConnected(port, websiteTabConnections).catch(console.error))
 browser.tabs.onRemoved.addListener((tabId: number) => removeTabState(tabId))
 
 if (browser.runtime.getManifest().manifest_version === 2) {
@@ -26,16 +28,6 @@ if (browser.runtime.getManifest().manifest_version === 2) {
 }
 
 let simulator: Simulator | undefined = undefined
-
-declare global {
-	var interceptor: {
-		websiteTabConnections: Map<number, TabConnection>
-	}
-}
-
-globalThis.interceptor = {
-	websiteTabConnections: new Map(),
-}
 
 export async function updateSimulationState(getUpdatedSimulationState: () => Promise<SimulationState | undefined>, activeAddress: bigint | undefined) {
 	if (simulator === undefined) return
@@ -168,7 +160,7 @@ export async function personalSignWithSimulator(params: PersonalSignParams | Sig
 	return await simulator.simulationModeNode.personalSign(params)
 }
 
-async function handleSimulationMode(simulator: Simulator, socket: WebsiteSocket, website: Website, request: InterceptedRequest, settings: Settings): Promise<HandleSimulationModeReturnValue> {
+async function handleSimulationMode(websiteTabConnections: WebsiteTabConnections, simulator: Simulator, socket: WebsiteSocket, website: Website, request: InterceptedRequest, settings: Settings): Promise<HandleSimulationModeReturnValue> {
 	let parsedRequest // separate request parsing and request handling. If there's a parse error, throw that to API user
 	try {
 		parsedRequest = EthereumJsonRpcRequest.parse(request.options)
@@ -190,10 +182,10 @@ async function handleSimulationMode(simulator: Simulator, socket: WebsiteSocket,
 		case 'eth_estimateGas': return await estimateGas(simulator, parsedRequest)
 		case 'eth_getTransactionByHash': return await getTransactionByHash(simulator, parsedRequest)
 		case 'eth_getTransactionReceipt': return await getTransactionReceipt(simulator, parsedRequest)
-		case 'eth_sendTransaction': return sendTransaction(getActiveAddressForDomain, simulator, parsedRequest, socket, request, true, website, settings)
+		case 'eth_sendTransaction': return sendTransaction(websiteTabConnections, getActiveAddressForDomain, simulator, parsedRequest, socket, request, true, website, settings)
 		case 'eth_call': return await call(simulator, parsedRequest)
 		case 'eth_blockNumber': return await blockNumber(simulator)
-		case 'eth_subscribe': return await subscribe(simulator, socket, parsedRequest)
+		case 'eth_subscribe': return await subscribe(websiteTabConnections, simulator, socket, parsedRequest)
 		case 'eth_unsubscribe': return await unsubscribe(simulator, parsedRequest)
 		case 'eth_chainId': return await chainId(simulator)
 		case 'net_version': return await chainId(simulator)
@@ -203,12 +195,12 @@ async function handleSimulationMode(simulator: Simulator, socket: WebsiteSocket,
 		case 'eth_signTypedData_v1':
 		case 'eth_signTypedData_v2':
 		case 'eth_signTypedData_v3':
-		case 'eth_signTypedData_v4': return await personalSign(socket, parsedRequest, request, true, website, settings)
-		case 'wallet_switchEthereumChain': return await switchEthereumChain(socket, simulator, parsedRequest, request, true, website)
-		case 'wallet_requestPermissions': return await requestPermissions(getActiveAddressForDomain, simulator, socket, settings)
+		case 'eth_signTypedData_v4': return await personalSign(websiteTabConnections, socket, parsedRequest, request, true, website, settings)
+		case 'wallet_switchEthereumChain': return await switchEthereumChain(websiteTabConnections, socket, simulator, parsedRequest, request, true, website)
+		case 'wallet_requestPermissions': return await requestPermissions(websiteTabConnections, getActiveAddressForDomain, simulator, socket, settings)
 		case 'wallet_getPermissions': return await getPermissions()
-		case 'eth_accounts': return await getAccounts(getActiveAddressForDomain, simulator, socket, settings)
-		case 'eth_requestAccounts': return await getAccounts(getActiveAddressForDomain, simulator, socket, settings)
+		case 'eth_accounts': return await getAccounts(websiteTabConnections, getActiveAddressForDomain, simulator, socket, settings)
+		case 'eth_requestAccounts': return await getAccounts(websiteTabConnections, getActiveAddressForDomain, simulator, socket, settings)
 		case 'eth_gasPrice': return await gasPrice(simulator)
 		case 'eth_getTransactionCount': return await getTransactionCount(simulator, parsedRequest)
 		case 'interceptor_getSimulationStack': return await getSimulationStack(simulator, parsedRequest)
@@ -295,11 +287,11 @@ async function handleSigningMode(simulator: Simulator, socket: WebsiteSocket, we
 		case 'eth_signTypedData_v1':
 		case 'eth_signTypedData_v2':
 		case 'eth_signTypedData_v3':
-		case 'eth_signTypedData_v4': return await personalSign(socket, parsedRequest, request, false, website, settings)
-		case 'wallet_switchEthereumChain': return await switchEthereumChain(socket, simulator, parsedRequest, request, false, website)
+		case 'eth_signTypedData_v4': return await personalSign(websiteTabConnections, socket, parsedRequest, request, false, website, settings)
+		case 'wallet_switchEthereumChain': return await switchEthereumChain(websiteTabConnections, socket, simulator, parsedRequest, request, false, website)
 		case 'eth_sendTransaction': {
 			if (settings && isSupportedChain(settings.activeChain.toString()) ) {
-				return sendTransaction(getActiveAddressForDomain, simulator, parsedRequest, socket, request, false, website, settings)
+				return sendTransaction(websiteTabConnections, getActiveAddressForDomain, simulator, parsedRequest, socket, request, false, website, settings)
 			}
 			return forwardToSigner()
 		}
@@ -312,7 +304,7 @@ async function newBlockCallback(blockNumber: bigint) {
 	if (simulator !== undefined) refreshSimulation(simulator, await getSettings())
 }
 
-export async function changeActiveAddressAndChainAndResetSimulation(activeAddress: bigint | undefined | 'noActiveAddressChange', activeChain: bigint | 'noActiveChainChange', settings: Settings) {
+export async function changeActiveAddressAndChainAndResetSimulation(websiteTabConnections: WebsiteTabConnections, activeAddress: bigint | undefined | 'noActiveAddressChange', activeChain: bigint | 'noActiveChainChange', settings: Settings) {
 	if (simulator === undefined) return
 
 	if (activeChain !== 'noActiveChainChange') {
@@ -332,15 +324,15 @@ export async function changeActiveAddressAndChainAndResetSimulation(activeAddres
 		}
 	}
 	const updatedSettings = await getSettings()
-	updateWebsiteApprovalAccesses(undefined, updatedSettings)
+	updateWebsiteApprovalAccesses(websiteTabConnections, undefined, updatedSettings)
 
 	if (activeChain !== 'noActiveChainChange') {
-		sendMessageToApprovedWebsitePorts('chainChanged', EthereumQuantity.serialize(activeChain))
+		sendMessageToApprovedWebsitePorts(websiteTabConnections, 'chainChanged', EthereumQuantity.serialize(activeChain))
 		sendPopupMessageToOpenWindows({ method: 'popup_chain_update' })
 	}
 
 	// inform all the tabs about the address change (this needs to be done on only chain changes too)
-	sendActiveAccountChangeToApprovedWebsitePorts(updatedSettings)
+	sendActiveAccountChangeToApprovedWebsitePorts(websiteTabConnections, updatedSettings)
 	if (activeAddress !== 'noActiveAddressChange') {
 		sendPopupMessageToOpenWindows({ method: 'popup_accounts_update' })
 	}
@@ -353,23 +345,23 @@ export async function changeActiveAddressAndChainAndResetSimulation(activeAddres
 	}
 }
 
-export async function changeActiveChain(chainId: bigint) {
+export async function changeActiveChain(websiteTabConnections: WebsiteTabConnections, chainId: bigint) {
 	const settings = await getSettings()
 	if (settings.simulationMode) {
-		return await changeActiveAddressAndChainAndResetSimulation('noActiveAddressChange', chainId, settings)
+		return await changeActiveAddressAndChainAndResetSimulation(websiteTabConnections, 'noActiveAddressChange', chainId, settings)
 	}
-	sendMessageToApprovedWebsitePorts('request_signer_to_wallet_switchEthereumChain', EthereumQuantity.serialize(chainId))
+	sendMessageToApprovedWebsitePorts(websiteTabConnections, 'request_signer_to_wallet_switchEthereumChain', EthereumQuantity.serialize(chainId))
 }
 
-type ProviderHandler = (port: browser.runtime.Port, request: ProviderMessage) => Promise<unknown>
+type ProviderHandler = (websiteTabConnections: WebsiteTabConnections, port: browser.runtime.Port, request: ProviderMessage) => Promise<unknown>
 const providerHandlers = new Map<string, ProviderHandler >([
 	['eth_accounts_reply', ethAccountsReply],
 	['signer_chainChanged', signerChainChanged],
 	['wallet_switchEthereumChain_reply', walletSwitchEthereumChainReply],
 	['connected_to_signer', connectedToSigner]
 ])
-export function postMessageIfStillConnected(socket: WebsiteSocket, message: InterceptedRequestForward) {
-	const tabConnection = globalThis.interceptor.websiteTabConnections.get(socket.tabId)
+export function postMessageIfStillConnected(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, message: InterceptedRequestForward) {
+	const tabConnection = websiteTabConnections.get(socket.tabId)
 	const identifier = websiteSocketToString(socket)
 	if (tabConnection === undefined) return false
 	for (const [socketAsString, connection] of Object.entries(tabConnection.connections)) {
@@ -391,9 +383,9 @@ export function postMessageIfStillConnected(socket: WebsiteSocket, message: Inte
 	return true
 }
 
-export function sendMessageToContentScript(socket: WebsiteSocket, resolved: HandleSimulationModeReturnValue, request: InterceptedRequest) {
+export function sendMessageToContentScript(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, resolved: HandleSimulationModeReturnValue, request: InterceptedRequest) {
 	if ('error' in resolved) {
-		return postMessageIfStillConnected(socket, {
+		return postMessageIfStillConnected(websiteTabConnections, socket, {
 			...resolved,
 			interceptorApproved: false,
 			requestId: request.requestId,
@@ -401,7 +393,7 @@ export function sendMessageToContentScript(socket: WebsiteSocket, resolved: Hand
 		})
 	}
 	if (!('forward' in resolved)) {
-		return postMessageIfStillConnected(socket, {
+		return postMessageIfStillConnected(websiteTabConnections, socket, {
 			result: resolved.result,
 			interceptorApproved: true,
 			requestId: request.requestId,
@@ -409,23 +401,23 @@ export function sendMessageToContentScript(socket: WebsiteSocket, resolved: Hand
 		})
 	}
 
-	return postMessageIfStillConnected(socket, {
+	return postMessageIfStillConnected(websiteTabConnections, socket, {
 		interceptorApproved: true,
 		requestId: request.requestId,
 		options: request.options
 	})
 }
 
-export async function handleContentScriptMessage(socket: WebsiteSocket, request: InterceptedRequest, website: Website) {
+export async function handleContentScriptMessage(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, request: InterceptedRequest, website: Website) {
 	try {
 		if (simulator === undefined) throw 'Interceptor not ready'
 		const settings = await getSettings()
 		const resolved = settings.simulationMode || request.usingInterceptorWithoutSigner ?
-			await handleSimulationMode(simulator, socket, website, request, settings)
+			await handleSimulationMode(websiteTabConnections, simulator, socket, website, request, settings)
 			: await handleSigningMode(simulator, socket, website, request, settings)
-		return sendMessageToContentScript(socket, resolved, request)
+		return sendMessageToContentScript(websiteTabConnections, socket, resolved, request)
 	} catch(error) {
-		postMessageIfStillConnected(socket, {
+		postMessageIfStillConnected(websiteTabConnections, socket, {
 			interceptorApproved: false,
 			requestId: request.requestId,
 			options: request.options,
@@ -438,8 +430,8 @@ export async function handleContentScriptMessage(socket: WebsiteSocket, request:
 	}
 }
 
-export function refuseAccess(socket: WebsiteSocket, request: InterceptedRequest) {
-	return postMessageIfStillConnected(socket, {
+export function refuseAccess(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, request: InterceptedRequest) {
+	return postMessageIfStillConnected(websiteTabConnections, socket, {
 		interceptorApproved: false,
 		requestId: request.requestId,
 		options: request.options,
@@ -453,10 +445,10 @@ export function refuseAccess(socket: WebsiteSocket, request: InterceptedRequest)
 export async function gateKeepRequestBehindAccessDialog(socket: WebsiteSocket, request: InterceptedRequest, website: Website, settings: Settings) {
 	const activeAddress = getActiveAddress(settings)
 	const addressInfo = activeAddress !== undefined ? findAddressInfo(activeAddress, settings.userAddressBook.addressInfos) : undefined
-	return await requestAccessFromUser(socket, website, request, addressInfo, getAssociatedAddresses(settings, website.websiteOrigin, addressInfo), settings)
+	return await requestAccessFromUser(websiteTabConnections, socket, website, request, addressInfo, getAssociatedAddresses(settings, website.websiteOrigin, addressInfo), settings)
 }
 
-async function onContentScriptConnected(port: browser.runtime.Port) {
+async function onContentScriptConnected(port: browser.runtime.Port, websiteTabConnections: WebsiteTabConnections) {
 	const socket = getSocketFromPort(port)
 	if (port?.sender?.url === undefined) return
 	const websiteOrigin = (new URL(port.sender.url)).hostname
@@ -465,7 +457,7 @@ async function onContentScriptConnected(port: browser.runtime.Port) {
 
 	console.log(`content script connected ${ websiteOrigin }`)
 
-	const tabConnection = globalThis.interceptor.websiteTabConnections.get(socket.tabId)
+	const tabConnection = websiteTabConnections.get(socket.tabId)
 	const newConnection = {
 		port: port,
 		socket: socket,
@@ -474,11 +466,11 @@ async function onContentScriptConnected(port: browser.runtime.Port) {
 		wantsToConnect: false,
 	}
 	port.onDisconnect.addListener(() => {
-		const tabConnection = globalThis.interceptor.websiteTabConnections.get(socket.tabId)
+		const tabConnection = websiteTabConnections.get(socket.tabId)
 		if (tabConnection === undefined) return
 		delete tabConnection.connections[websiteSocketToString(socket)]
 		if (Object.keys(tabConnection).length === 0) {
-			globalThis.interceptor.websiteTabConnections.delete(socket.tabId)
+			websiteTabConnections.delete(socket.tabId)
 		}
 	})
 	port.onMessage.addListener(async (payload) => {
@@ -491,27 +483,27 @@ async function onContentScriptConnected(port: browser.runtime.Port) {
 		const request = InterceptedRequest.parse(payload.data)
 		const providerHandler = providerHandlers.get(request.options.method)
 		if (providerHandler) {
-			await providerHandler(port, request)
-			return sendMessageToContentScript(socket, { 'result': '0x' }, request)
+			await providerHandler(websiteTabConnections, port, request)
+			return sendMessageToContentScript(websiteTabConnections, socket, { 'result': '0x' }, request)
 		}
 
-		const access = verifyAccess(socket, request.options.method, websiteOrigin, await getSettings())
+		const access = verifyAccess(websiteTabConnections, socket, request.options.method, websiteOrigin, await getSettings())
 
 		if (access === 'askAccess' && request.options.method === 'eth_accounts') {
 			// do not prompt for eth_accounts, just reply with no accounts.
-			return sendMessageToContentScript(socket, { 'result': [] }, request)
+			return sendMessageToContentScript(websiteTabConnections, socket, { 'result': [] }, request)
 		}
 
 		switch (access) {
-			case 'noAccess': return refuseAccess(socket, request)
+			case 'noAccess': return refuseAccess(websiteTabConnections, socket, request)
 			case 'askAccess': return await gateKeepRequestBehindAccessDialog(socket, request, await websitePromise, await getSettings())
-			case 'hasAccess': return await handleContentScriptMessage(socket, request, await websitePromise)
+			case 'hasAccess': return await handleContentScriptMessage(websiteTabConnections, socket, request, await websitePromise)
 			default: assertNever(access)
 		}
 	})
 
 	if (tabConnection === undefined) {
-		globalThis.interceptor.websiteTabConnections.set(socket.tabId, {
+		websiteTabConnections.set(socket.tabId, {
 			connections: { [identifier]: newConnection },
 		})
 		await updateTabState(socket.tabId, (previousState: TabState) => {
@@ -523,14 +515,14 @@ async function onContentScriptConnected(port: browser.runtime.Port) {
 				}
 			}
 		})
-		updateExtensionIcon(socket, websiteOrigin)
+		updateExtensionIcon(websiteTabConnections, socket, websiteOrigin)
 	} else {
 		tabConnection.connections[identifier] = newConnection
 	}
 
 }
 
-async function popupMessageHandler(simulator: Simulator, request: unknown, settings: Settings) {
+async function popupMessageHandler(websiteTabConnections: WebsiteTabConnections, simulator: Simulator, request: unknown, settings: Settings) {
 	let parsedRequest // separate request parsing and request handling. If there's a parse error, throw that to API user
 	try {
 		parsedRequest = PopupMessage.parse(request)
@@ -549,34 +541,34 @@ async function popupMessageHandler(simulator: Simulator, request: unknown, setti
 	}
 
 	switch (parsedRequest.method) {
-		case 'popup_confirmDialog': return await confirmDialog(simulator, parsedRequest)
-		case 'popup_changeActiveAddress': return await changeActiveAddress(simulator, parsedRequest)
-		case 'popup_changeMakeMeRich': return await changeMakeMeRich(simulator, parsedRequest, settings)
-		case 'popup_changePage': return await changePage(simulator, parsedRequest)
-		case 'popup_requestAccountsFromSigner': return await requestAccountsFromSigner(simulator, parsedRequest)
+		case 'popup_confirmDialog': return await confirmDialog(websiteTabConnections, parsedRequest)
+		case 'popup_changeActiveAddress': return await changeActiveAddress(websiteTabConnections, parsedRequest)
+		case 'popup_changeMakeMeRich': return await changeMakeMeRich(parsedRequest, settings)
+		case 'popup_changePage': return await changePage(parsedRequest)
+		case 'popup_requestAccountsFromSigner': return await requestAccountsFromSigner(websiteTabConnections, parsedRequest)
 		case 'popup_resetSimulation': return await resetSimulation(simulator, settings)
 		case 'popup_removeTransaction': return await removeTransaction(simulator, parsedRequest, settings)
 		case 'popup_refreshSimulation': return await refreshSimulation(simulator, settings)
-		case 'popup_refreshConfirmTransactionDialogSimulation': return await refreshPopupConfirmTransactionSimulation(simulator, parsedRequest)
-		case 'popup_personalSign': return await confirmPersonalSign(simulator, parsedRequest)
-		case 'popup_interceptorAccess': return await confirmRequestAccess(simulator, parsedRequest)
-		case 'popup_changeInterceptorAccess': return await changeInterceptorAccess(simulator, parsedRequest)
-		case 'popup_changeActiveChain': return await popupChangeActiveChain(simulator, parsedRequest)
-		case 'popup_changeChainDialog': return await changeChainDialog(simulator, parsedRequest)
-		case 'popup_enableSimulationMode': return await enableSimulationMode(simulator, parsedRequest)
-		case 'popup_reviewNotification': return await reviewNotification(simulator, parsedRequest, settings)
-		case 'popup_rejectNotification': return await rejectNotification(simulator, parsedRequest)
-		case 'popup_addOrModifyAddressBookEntry': return await addOrModifyAddressInfo(simulator, parsedRequest)
+		case 'popup_refreshConfirmTransactionDialogSimulation': return await refreshPopupConfirmTransactionSimulation(parsedRequest)
+		case 'popup_personalSign': return await confirmPersonalSign(websiteTabConnections, parsedRequest)
+		case 'popup_interceptorAccess': return await confirmRequestAccess(websiteTabConnections, parsedRequest)
+		case 'popup_changeInterceptorAccess': return await changeInterceptorAccess(websiteTabConnections, parsedRequest)
+		case 'popup_changeActiveChain': return await popupChangeActiveChain(websiteTabConnections,parsedRequest)
+		case 'popup_changeChainDialog': return await changeChainDialog(websiteTabConnections, parsedRequest)
+		case 'popup_enableSimulationMode': return await enableSimulationMode(websiteTabConnections, parsedRequest)
+		case 'popup_reviewNotification': return await reviewNotification(websiteTabConnections, parsedRequest, settings)
+		case 'popup_rejectNotification': return await rejectNotification(websiteTabConnections, parsedRequest)
+		case 'popup_addOrModifyAddressBookEntry': return await addOrModifyAddressInfo(websiteTabConnections, parsedRequest)
 		case 'popup_getAddressBookData': return await getAddressBookData(parsedRequest, settings.userAddressBook)
-		case 'popup_removeAddressBookEntry': return await removeAddressBookEntry(simulator, parsedRequest)
-		case 'popup_openAddressBook': return await openAddressBook(simulator)
+		case 'popup_removeAddressBookEntry': return await removeAddressBookEntry(websiteTabConnections, parsedRequest)
+		case 'popup_openAddressBook': return await openAddressBook()
 		case 'popup_personalSignReadyAndListening': return // handled elsewhere (personalSign.ts)
 		case 'popup_changeChainReadyAndListening': return // handled elsewhere (changeChain.ts)
 		case 'popup_interceptorAccessReadyAndListening': return // handled elsewhere (interceptorAccess.ts)
 		case 'popup_confirmTransactionReadyAndListening': return // handled elsewhere (confirmTransaction.ts)
 		case 'popup_requestNewHomeData': return homeOpened(simulator)
-		case 'popup_interceptorAccessChangeAddress': return await interceptorAccessChangeAddressOrRefresh(parsedRequest)
-		case 'popup_interceptorAccessRefresh': return await interceptorAccessChangeAddressOrRefresh(parsedRequest)
+		case 'popup_interceptorAccessChangeAddress': return await interceptorAccessChangeAddressOrRefresh(websiteTabConnections, parsedRequest)
+		case 'popup_interceptorAccessRefresh': return await interceptorAccessChangeAddressOrRefresh(websiteTabConnections, parsedRequest)
 		default: assertUnreachable(parsedRequest)
 	}
 }
@@ -591,17 +583,17 @@ async function startup() {
 
 	browser.runtime.onMessage.addListener(async function(message: unknown) {
 		if (simulator === undefined) throw new Error('Interceptor not ready yet')
-		await popupMessageHandler(simulator, message, await getSettings())
+		await popupMessageHandler(websiteTabConnections, simulator, message, await getSettings())
 	})
 
 	await updateExtensionBadge()
 	
 	if (!settings.simulationMode || settings.useSignersAddressAsActiveAddress) {
-		sendMessageToApprovedWebsitePorts('request_signer_to_eth_requestAccounts', [])
-		sendMessageToApprovedWebsitePorts('request_signer_chainId', [])
+		sendMessageToApprovedWebsitePorts(websiteTabConnections, 'request_signer_to_eth_requestAccounts', [])
+		sendMessageToApprovedWebsitePorts(websiteTabConnections, 'request_signer_chainId', [])
 	}
 	if (settings.simulationMode) {
-		await changeActiveAddressAndChainAndResetSimulation(settings.activeSimulationAddress, settings.activeChain, settings)
+		await changeActiveAddressAndChainAndResetSimulation(websiteTabConnections, settings.activeSimulationAddress, settings.activeChain, settings)
 	}
 }
 

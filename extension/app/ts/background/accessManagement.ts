@@ -6,41 +6,41 @@ import { requestAccessFromUser } from './windows/interceptorAccess.js'
 import { METAMASK_ERROR_USER_REJECTED_REQUEST } from '../utils/constants.js'
 import { EthereumQuantity } from '../utils/wire-types.js'
 import { retrieveWebsiteDetails, updateExtensionIcon } from './iconHandler.js'
-import { AddressInfoEntry, TabConnection, Website, WebsiteSocket } from '../utils/user-interface-types.js'
+import { AddressInfoEntry, TabConnection, Website, WebsiteSocket, WebsiteTabConnections } from '../utils/user-interface-types.js'
 import { Settings, WebsiteAccessArray, WebsiteAddressAccess } from '../utils/interceptor-messages.js'
 import { updateWebsiteAccess } from './settings.js'
 
-export function getConnectionDetails(socket: WebsiteSocket) {
+export function getConnectionDetails(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket) {
 	const identifier = websiteSocketToString(socket)
-	const tabConnection = globalThis.interceptor.websiteTabConnections.get(socket.tabId)
+	const tabConnection = websiteTabConnections.get(socket.tabId)
 	return tabConnection?.connections[identifier]
 }
 
-function setWebsitePortApproval(socket: WebsiteSocket, approved: boolean) {
-	const connection = getConnectionDetails(socket)
+function setWebsitePortApproval(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, approved: boolean) {
+	const connection = getConnectionDetails(websiteTabConnections, socket)
 	if (connection == undefined) return
 	if (approved) connection.wantsToConnect = true
 	connection.approved = approved
 }
 
-export function verifyAccess(socket: WebsiteSocket, callMethod: string, websiteOrigin: string, settings: Settings): 'hasAccess' | 'noAccess' | 'askAccess' {
-	const connection = getConnectionDetails(socket)
+export function verifyAccess(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, callMethod: string, websiteOrigin: string, settings: Settings): 'hasAccess' | 'noAccess' | 'askAccess' {
+	const connection = getConnectionDetails(websiteTabConnections, socket)
 	if (connection && connection.approved) return 'hasAccess'
 
 	const isRpcMethod = SupportedETHRPCCalls.includes(callMethod) !== undefined
 	const activeAddress = getActiveAddress(settings)
 	const access = activeAddress !== undefined ? hasAddressAccess(settings.websiteAccess, websiteOrigin, activeAddress, settings) : hasAccess(settings.websiteAccess, websiteOrigin)
-	if (access === 'hasAccess') return connectToPort(socket, websiteOrigin, settings) ? 'hasAccess' : 'noAccess'
+	if (access === 'hasAccess') return connectToPort(websiteTabConnections, socket, websiteOrigin, settings) ? 'hasAccess' : 'noAccess'
 	if (access === 'noAccess') return 'noAccess'
 	return isRpcMethod ? 'askAccess' : 'noAccess'
 }
 
-export function sendMessageToApprovedWebsitePorts(method: string, data: unknown) {
+export function sendMessageToApprovedWebsitePorts(websiteTabConnections: WebsiteTabConnections, method: string, data: unknown) {
 	// inform all the tabs about the address change
-	for (const [_tab, tabConnection] of globalThis.interceptor.websiteTabConnections.entries() ) {
+	for (const [_tab, tabConnection] of websiteTabConnections.entries() ) {
 		for (const [_string, connection] of Object.entries(tabConnection.connections) ) {
 			if ( !connection.approved ) continue
-			postMessageIfStillConnected(connection.socket, {
+			postMessageIfStillConnected(websiteTabConnections, connection.socket, {
 				interceptorApproved: true,
 				options: { method: method },
 				result: data
@@ -48,13 +48,13 @@ export function sendMessageToApprovedWebsitePorts(method: string, data: unknown)
 		}
 	}
 }
-export function sendActiveAccountChangeToApprovedWebsitePorts(settings: Settings) {
+export function sendActiveAccountChangeToApprovedWebsitePorts(websiteTabConnections: WebsiteTabConnections, settings: Settings) {
 	// inform all the tabs about the address change
-	for (const [_tab, tabConnection] of globalThis.interceptor.websiteTabConnections.entries() ) {
+	for (const [_tab, tabConnection] of websiteTabConnections.entries() ) {
 		for (const [_string, connection] of Object.entries(tabConnection.connections) ) {
 			if ( !connection.approved ) continue
 			const activeAddress = getActiveAddressForDomain(settings.websiteAccess, connection.websiteOrigin, settings)
-			postMessageIfStillConnected(connection.socket, {
+			postMessageIfStillConnected(websiteTabConnections, connection.socket, {
 				interceptorApproved: true,
 				options: { method: 'accountsChanged' },
 				result: activeAddress !== undefined ? [EthereumAddress.serialize(activeAddress)] : []
@@ -177,13 +177,13 @@ export function getActiveAddressForDomain(websiteAccess: WebsiteAccessArray, web
 	return undefined
 }
 
-function connectToPort(socket: WebsiteSocket, websiteOrigin: string, settings: Settings): true {
-	setWebsitePortApproval(socket, true)
-	updateExtensionIcon(socket, websiteOrigin)
+function connectToPort(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, websiteOrigin: string, settings: Settings): true {
+	setWebsitePortApproval(websiteTabConnections, socket, true)
+	updateExtensionIcon(websiteTabConnections, socket, websiteOrigin)
 
 	if (settings.activeChain === undefined) return true
 
-	postMessageIfStillConnected(socket, {
+	postMessageIfStillConnected(websiteTabConnections, socket, {
 		interceptorApproved: true,
 		options: { method: 'connect' },
 		result: [EthereumQuantity.serialize(settings.activeChain)]
@@ -191,25 +191,25 @@ function connectToPort(socket: WebsiteSocket, websiteOrigin: string, settings: S
 
 	// seems like dapps also want to get account changed and chain changed events after we connect again, so let's send them too
 	const activeAddress = getActiveAddressForDomain(settings.websiteAccess, websiteOrigin, settings)
-	postMessageIfStillConnected(socket, {
+	postMessageIfStillConnected(websiteTabConnections, socket, {
 		interceptorApproved: true,
 		options: { method: 'accountsChanged' },
 		result: activeAddress !== undefined ? [EthereumAddress.serialize(activeAddress)] : []
 	})
 
-	postMessageIfStillConnected(socket, {
+	postMessageIfStillConnected(websiteTabConnections, socket, {
 		interceptorApproved: true,
 		options: { method: 'chainChanged' },
 		result: EthereumQuantity.serialize(settings.activeChain)
 	})
 
 	if (!settings.simulationMode || settings.useSignersAddressAsActiveAddress) {
-		postMessageIfStillConnected(socket, {
+		postMessageIfStillConnected(websiteTabConnections, socket, {
 			interceptorApproved: true,
 			options: { method: 'request_signer_to_eth_requestAccounts' },
 			result: []
 		})
-		postMessageIfStillConnected(socket, {
+		postMessageIfStillConnected(websiteTabConnections, socket, {
 			interceptorApproved: true,
 			options: { method: 'request_signer_chainId' },
 			result: []
@@ -218,10 +218,10 @@ function connectToPort(socket: WebsiteSocket, websiteOrigin: string, settings: S
 	return true
 }
 
-function disconnectFromPort(socket: WebsiteSocket, websiteOrigin: string): false {
-	setWebsitePortApproval(socket, false)
-	updateExtensionIcon(socket, websiteOrigin)
-	postMessageIfStillConnected(socket, {
+function disconnectFromPort(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, websiteOrigin: string): false {
+	setWebsitePortApproval(websiteTabConnections, socket, false)
+	updateExtensionIcon(websiteTabConnections, socket, websiteOrigin)
+	postMessageIfStillConnected(websiteTabConnections, socket, {
 		interceptorApproved: true,
 		options: { method: 'disconnect' },
 		result: { code: METAMASK_ERROR_USER_REJECTED_REQUEST, message: 'User refused access to the wallet' }
@@ -237,36 +237,36 @@ export function getAssociatedAddresses(settings: Settings, websiteOrigin: string
 	return Array.from(new Set(all)).map(x => findAddressInfo(x, settings.userAddressBook.addressInfos))
 }
 
-async function askUserForAccessOnConnectionUpdate(socket: WebsiteSocket, websiteOrigin: string, activeAddress: AddressInfoEntry | undefined, settings: Settings) {
-	const details = getConnectionDetails(socket)
+async function askUserForAccessOnConnectionUpdate(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, websiteOrigin: string, activeAddress: AddressInfoEntry | undefined, settings: Settings) {
+	const details = getConnectionDetails(websiteTabConnections, socket)
 	if (details === undefined) return
 
 	const website = await retrieveWebsiteDetails(details.port, websiteOrigin)
-	await requestAccessFromUser(socket, website, undefined, activeAddress, getAssociatedAddresses(settings, websiteOrigin, activeAddress), settings)
+	await requestAccessFromUser(websiteTabConnections, socket, website, undefined, activeAddress, getAssociatedAddresses(settings, websiteOrigin, activeAddress), settings)
 }
 
-function updateTabConnections(tabConnection: TabConnection, promptForAccessesIfNeeded: boolean, settings: Settings) {
+function updateTabConnections(websiteTabConnections: WebsiteTabConnections, tabConnection: TabConnection, promptForAccessesIfNeeded: boolean, settings: Settings) {
 	const activeAddress = getActiveAddress(settings)
 	for (const [_string, connection] of Object.entries(tabConnection.connections) ) {
-		updateExtensionIcon(connection.socket, connection.websiteOrigin)
+		updateExtensionIcon(websiteTabConnections, connection.socket, connection.websiteOrigin)
 		const access = activeAddress ? hasAddressAccess(settings.websiteAccess, connection.websiteOrigin, activeAddress, settings) : hasAccess(settings.websiteAccess, connection.websiteOrigin)
 
 		if (access !== 'hasAccess' && connection.approved) {
-			disconnectFromPort(connection.socket, connection.websiteOrigin)
+			disconnectFromPort(websiteTabConnections, connection.socket, connection.websiteOrigin)
 		} else if (access === 'hasAccess' && !connection.approved) {
-			connectToPort(connection.socket, connection.websiteOrigin, settings)
+			connectToPort(websiteTabConnections, connection.socket, connection.websiteOrigin, settings)
 		}
 
 		if (access === 'notFound' && connection.wantsToConnect && promptForAccessesIfNeeded) {
 			const addressInfo = activeAddress ? findAddressInfo(activeAddress, settings.userAddressBook.addressInfos) : undefined
-			askUserForAccessOnConnectionUpdate(connection.socket, connection.websiteOrigin, addressInfo, settings)
+			askUserForAccessOnConnectionUpdate(websiteTabConnections, connection.socket, connection.websiteOrigin, addressInfo, settings)
 		}
 	}
 }
 
-export function updateWebsiteApprovalAccesses(promptForAccessesIfNeeded: boolean = true, settings: Settings) {
+export function updateWebsiteApprovalAccesses(websiteTabConnections: WebsiteTabConnections, promptForAccessesIfNeeded: boolean = true, settings: Settings) {
 	// update port connections and disconnect from ports that should not have access anymore
-	for (const [_tab, tabConnection] of globalThis.interceptor.websiteTabConnections.entries() ) {
-		updateTabConnections(tabConnection, promptForAccessesIfNeeded, settings)
+	for (const [_tab, tabConnection] of websiteTabConnections.entries() ) {
+		updateTabConnections(websiteTabConnections, tabConnection, promptForAccessesIfNeeded, settings)
 	}
 }
