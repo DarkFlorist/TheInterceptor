@@ -14,21 +14,23 @@ jobs:
         id: derive_tag
         run: |
           VERSION_FILE=extension/app/ts/version.ts
-          MANIFEST_FILE=extension/app/manifest.json
+          MANIFEST_V2_FILE=extension/app/manifestV2.json
+          MANIFEST_V3_FILE=extension/app/manifestV3.json
           GIT_COMMIT_SHA="${{ github.sha }}"
           TAG=$(basename "${{ github.ref }}")
           VERSION=${TAG#v}
           echo "TAG=$TAG" >> $GITHUB_OUTPUT
           echo export const gitCommitSha = \"$GIT_COMMIT_SHA\" > $VERSION_FILE
           echo export const version = \"$VERSION\" >> $VERSION_FILE
-          sed -i '/"version"/c\\t"version": "'$VERSION'",' $MANIFEST_FILE
+          sed -i -e '/"version"/c\\t"version": "'$VERSION'",' -e '/^\t*\/\//d' $MANIFEST_V2_FILE $MANIFEST_V3_FILE
           zip source.zip -r . -x '*.git*' -x source.zip
       - name: Build Extension
         working-directory: ./extension
         run: |
           docker image build --tag interceptor-extension .
           docker container create --name temp interceptor-extension
-          docker container cp temp:/extension/interceptor.zip .
+          docker container cp temp:/extension/interceptor-firefox.zip .
+          docker container cp temp:/extension/interceptor-chrome.zip .
           docker container rm temp
       - name: Create Release
         id: create_release
@@ -40,14 +42,23 @@ jobs:
           release_name: ${{ steps.derive_tag.outputs.TAG }}
           draft: false
           prerelease: false
-      - name: Upload Extension to Release
+      - name: Upload Chrome Extension to Release
         uses: actions/upload-release-asset@v1.0.1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: ./extension/interceptor.zip
-          asset_name: interceptor-${{ steps.derive_tag.outputs.TAG }}.zip
+          asset_path: ./extension/interceptor-chrome.zip
+          asset_name: interceptor-chrome-${{ steps.derive_tag.outputs.TAG }}.zip
+          asset_content_type: application/zip
+      - name: Upload Firefox Extension to Release
+        uses: actions/upload-release-asset@v1.0.1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: ./extension/interceptor-firefox.zip
+          asset_name: interceptor-firefox-${{ steps.derive_tag.outputs.TAG }}.zip
           asset_content_type: application/zip
       - name: Upload Source to Release
         uses: actions/upload-release-asset@v1.0.1

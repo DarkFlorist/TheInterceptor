@@ -39,9 +39,9 @@ export async function updateSimulationState(getUpdatedSimulationState: () => Pro
 			const priceEstimator = new PriceEstimator(simulator.ethereum)
 
 			const transactions = updatedSimulationState.simulatedTransactions.map((x) => ({ transaction: x.signedTransaction, website: x.website }))
-			const visualizerResult = await simulator.visualizeTransactionChain(transactions, updatedSimulationState.blockNumber, updatedSimulationState.simulatedTransactions.map( x => x.multicallResponse))
+			const visualizerResult = await simulator.visualizeTransactionChain(transactions, updatedSimulationState.blockNumber, updatedSimulationState.simulatedTransactions.map((x) => x.multicallResponse))
 			const visualizerResultWithWebsites = visualizerResult.map((x, i) => ({ ...x, website: updatedSimulationState.simulatedTransactions[i].website }))
-			const addressBookEntries = await getAddressBookEntriesForVisualiser(simulator, visualizerResult.map( (x) => x.visualizerResults), updatedSimulationState, (await getSettings()).userAddressBook)
+			const addressBookEntries = await getAddressBookEntriesForVisualiser(simulator, visualizerResult.map((x) => x.visualizerResults), updatedSimulationState, (await getSettings()).userAddressBook)
 
 			function onlyTokensAndTokensWithKnownDecimals(metadata: AddressBookEntry) : metadata is AddressBookEntry & { type: 'token', decimals: `0x${ string }` } {
 				if (metadata.type !== 'token') return false
@@ -91,8 +91,8 @@ export async function refreshConfirmTransactionSimulation(activeAddress: bigint,
 	sendPopupMessageToOpenWindows({ method: 'popup_confirm_transaction_simulation_started' })
 	const appended = await newSimulator.appendTransaction({ transaction: transactionToSimulate, website: website })
 	const transactions = appended.simulationState.simulatedTransactions.map(x => ({ transaction: x.signedTransaction, website: x.website }) )
-	const visualizerResult = await simulator.visualizeTransactionChain(transactions, appended.simulationState.blockNumber, appended.simulationState.simulatedTransactions.map( x => x.multicallResponse))
-	const addressMetadata = await getAddressBookEntriesForVisualiser(simulator, visualizerResult.map( (x) => x.visualizerResults), appended.simulationState, userAddressBook)
+	const visualizerResult = await simulator.visualizeTransactionChain(transactions, appended.simulationState.blockNumber, appended.simulationState.simulatedTransactions.map(x => x.multicallResponse))
+	const addressMetadata = await getAddressBookEntriesForVisualiser(simulator, visualizerResult.map((x) => x.visualizerResults), appended.simulationState, userAddressBook)
 	const tokenPrices = await priceEstimator.estimateEthereumPricesForTokens(
 		addressMetadata.map(
 			(x) => x.type === 'token' && x.decimals !== undefined ? { token: x.address, decimals: x.decimals } : { token: 0x0n, decimals: 0x0n }
@@ -341,7 +341,8 @@ export async function changeActiveAddressAndChainAndResetSimulation(websiteTabCo
 	}
 
 	if (updatedSettings.simulationMode) {
-		if (!await updatePrependMode(updatedSettings)) {// update prepend mode as our active address has changed, so we need to be sure the rich modes money is sent to right address
+		// update prepend mode as our active address has changed, so we need to be sure the rich modes money is sent to right address
+		if (!await updatePrependMode(updatedSettings)) {
 			await updateSimulationState(async () => await simulator?.simulationModeNode.resetSimulation(), updatedSettings.activeSimulationAddress)
 		}
 	}
