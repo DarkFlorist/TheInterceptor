@@ -27,12 +27,12 @@ export function makeYouRichTransaction(param: TransactionImportanceBlockParams) 
 				</div>
 				<div class = 'log-cell' style = 'justify-content: right;'>
 					<EtherAmount
-						amount = { param.tx.value }
+						amount = { param.simTx.transaction.value }
 					/>
 				</div>
 				<div class = 'log-cell'>
 					<EtherSymbol
-						amount = { param.tx.value }
+						amount = { param.simTx.transaction.value }
 						chain = { param.simulationAndVisualisationResults.chain }
 					/>
 				</div>

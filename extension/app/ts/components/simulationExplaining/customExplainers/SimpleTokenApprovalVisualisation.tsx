@@ -4,8 +4,8 @@ import { Token721AmountField, TokenAmount, TokenSymbol } from '../../subcomponen
 import { GasFee } from '../SimulationSummary.js'
 import { SimulatedAndVisualizedSimpleApprovalTransaction } from '../identifyTransaction.js'
 
-export function SimpleTokenApprovalVisualisation({ transaction, renameAddressCallBack }: { transaction: SimulatedAndVisualizedSimpleApprovalTransaction, renameAddressCallBack: RenameAddressCallBack }) {
-	const approval = transaction.tokenResults[0]
+export function SimpleTokenApprovalVisualisation({ simTx, renameAddressCallBack }: { simTx: SimulatedAndVisualizedSimpleApprovalTransaction, renameAddressCallBack: RenameAddressCallBack }) {
+	const approval = simTx.tokenResults[0]
 	const textColor = 'var(--negative-color)'
 
 	return <div class = 'notification transaction-importance-box'>
@@ -53,7 +53,7 @@ export function SimpleTokenApprovalVisualisation({ transaction, renameAddressCal
 			</span>
 		</div>
 		<span class = 'log-table' style = 'grid-template-columns: min-content min-content min-content; margin-top: 5px;'>
-			<GasFee tx = { transaction } chain = { transaction.chainId } />
+			<GasFee tx = { simTx } chain = { simTx.transaction.chainId } />
 		</span>
 	</div>
 }

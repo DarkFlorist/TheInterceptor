@@ -63,17 +63,17 @@ function dropDuplicates<T>(array: T[], isEqual: (a: T, b: T) => boolean): T[] {
     return result;
 }
 
-export function identifySwap(transaction: SimulatedAndVisualizedTransaction): IdentifiedSwapWithMetadata {
-	const sender = transaction.from.address
+export function identifySwap(simTransaction: SimulatedAndVisualizedTransaction): IdentifiedSwapWithMetadata {
+	const sender = simTransaction.transaction.from.address
 
-	for (const tokenTransaction of transaction.tokenResults) {
+	for (const tokenTransaction of simTransaction.tokenResults) {
 		if (tokenTransaction.isApproval && tokenTransaction.from.address === sender) return false // if the transaction includes us approving something, its not a simple swap
 	}
 
 	// check if sender sends one token type/ether and receives one token type/ether
 
-	const tokensSent = transaction.tokenResults.filter( (token) => token.from.address === sender)
-	const tokensReceived = transaction.tokenResults.filter( (token) => token.to.address === sender)
+	const tokensSent = simTransaction.tokenResults.filter( (token) => token.from.address === sender)
+	const tokensReceived = simTransaction.tokenResults.filter( (token) => token.to.address === sender)
 
 	if (tokensReceived.length > 1) return false // received more than one token
 	if (tokensSent.length > 1) return false // sent more than one token
@@ -83,10 +83,10 @@ export function identifySwap(transaction: SimulatedAndVisualizedTransaction): Id
 	const tokenAddressesSent = dropDuplicates<TokenVisualizerResultWithMetadata>(tokensSent, isSameTokenAddress).map((x) => x.token)
 	const tokenAddressesReceived = dropDuplicates<TokenVisualizerResultWithMetadata>(tokensReceived, isSameTokenAddress).map((x) => x.token)
 
-	const etherChange = transaction.ethBalanceChanges.filter( (x) => x.address.address === sender)
+	const etherChange = simTransaction.ethBalanceChanges.filter( (x) => x.address.address === sender)
 	const ethDiff = etherChange !== undefined && etherChange.length >= 1 ? etherChange[etherChange.length - 1].after - etherChange[0].before : 0n
 
-	const transactionGasCost = transaction.realizedGasPrice * transaction.gas
+	const transactionGasCost = simTransaction.realizedGasPrice * simTransaction.transaction.gas
 
 	if (tokenAddressesSent.length === 1 && tokenAddressesReceived.length === 1 && -ethDiff <= transactionGasCost) {
 		// user swapped one token to another and eth didn't change more than gas fees
@@ -97,7 +97,7 @@ export function identifySwap(transaction: SimulatedAndVisualizedTransaction): Id
 			const receivedData = tokensReceived.filter( (x) => x.token.address === tokenAddressReceived.address )[0]
 			return {
 				type: 'TokenToToken' as const,
-				sender: transaction.from,
+				sender: simTransaction.transaction.from,
 				...(tokenAddressSent.type === 'NFT' ? {
 					tokenAddressSent: tokenAddressSent,
 					tokenIdSent: 'tokenId' in sentData ? sentData.tokenId : 0x0n,
@@ -122,7 +122,7 @@ export function identifySwap(transaction: SimulatedAndVisualizedTransaction): Id
 		const sentData = tokensSent.filter( (x) => x.token.address === tokenAddressSent.address )[0]
 		return {
 			type: 'TokenToETH' as const,
-			sender: transaction.from,
+			sender: simTransaction.transaction.from,
 			...(tokenAddressSent.type === 'NFT' ? {
 				tokenIdSent: 'tokenId' in sentData ? sentData.tokenId : 0x0n,
 				tokenAddressSent,
@@ -140,7 +140,7 @@ export function identifySwap(transaction: SimulatedAndVisualizedTransaction): Id
 		const receivedData = tokensReceived.filter( (x) => x.token.address === tokenAddressReceived.address )[0]
 		return {
 			type: 'ETHToToken' as const,
-			sender: transaction.from,
+			sender: simTransaction.transaction.from,
 			ethAmountSent: -ethDiff,
 			tokenAmountReceived: 'amount' in receivedData ? receivedData.amount : 0n,
 			...(tokenAddressReceived.type === 'NFT' ? {
@@ -200,7 +200,7 @@ export function identifyRoutes(simulatedAndVisualizedTransaction: SimulatedAndVi
 	if ( tokenResults.length > 10 ) return false // too complex
 
 	const graph: Graph = new Map()
-	const transactionGasCost = simulatedAndVisualizedTransaction.realizedGasPrice * simulatedAndVisualizedTransaction.gas
+	const transactionGasCost = simulatedAndVisualizedTransaction.realizedGasPrice * simulatedAndVisualizedTransaction.transaction.gas
 
 	// build search graph
 	for (const [tokenResultIndex, result] of tokenResults.entries()) {

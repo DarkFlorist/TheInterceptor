@@ -1,5 +1,5 @@
 
-import { EthBalanceChanges, EthereumAddress, EthereumQuantity, EthereumSignedTransaction, EthereumTimestamp, SingleMulticallResponse } from './wire-types.js'
+import { EthBalanceChanges, EthereumAddress, EthereumData, EthereumQuantity, EthereumSignedTransaction, EthereumTimestamp, SingleMulticallResponse } from './wire-types.js'
 import * as funtypes from 'funtypes'
 import { QUARANTINE_CODE } from '../simulation/protectors/quarantine-codes.js'
 import { AddressBookEntry, CHAIN, NFTEntry, RenameAddressCallBack, TokenEntry, Website } from './user-interface-types.js'
@@ -107,28 +107,37 @@ export type EthBalanceChangesWithMetadata = {
 	after: bigint,
 }
 
+export type TransactionWithAddressBookEntries = funtypes.Static<typeof TransactionWithAddressBookEntries>
+export const TransactionWithAddressBookEntries = funtypes.Intersect(
+	funtypes.Object({
+		from: AddressBookEntry,
+		to: funtypes.Union(AddressBookEntry, funtypes.Undefined),
+		value: EthereumQuantity,
+		input: EthereumData,
+		chainId: CHAIN,
+		hash: EthereumQuantity,
+		gas: EthereumQuantity,
+	}),
+	funtypes.Union(
+		funtypes.Object({
+			type: funtypes.Literal('1559'),
+			maxFeePerGas: EthereumQuantity,
+			maxPriorityFeePerGas: EthereumQuantity,
+		}),
+		funtypes.Object({ type: funtypes.Union(funtypes.Literal('legacy'), funtypes.Literal('2930')) })
+	)
+)
+
 export type SimulatedAndVisualizedTransaction = {
-	from: AddressBookEntry
-	to: AddressBookEntry | undefined
-	value: EthereumQuantity
-	realizedGasPrice: EthereumQuantity
+	transaction: TransactionWithAddressBookEntries
 	ethBalanceChanges: readonly EthBalanceChangesWithMetadata[]
 	tokenResults: readonly TokenVisualizerResultWithMetadata[]
-	website: Website,
+	website: Website
 	gasSpent: EthereumQuantity
+	realizedGasPrice: EthereumQuantity,
 	quarantine: boolean
 	quarantineCodes: readonly QUARANTINE_CODE[]
-	input: Uint8Array
-	chainId: CHAIN
-	hash: bigint
-	gas: bigint
-} & ({
-	type: '1559'
-	maxFeePerGas: EthereumQuantity
-	maxPriorityFeePerGas: EthereumQuantity
-} | {
-	type: 'legacy' | '2930'
-}) & (
+} & (
 	{ statusCode: 'failure', error: string } |
 	{ statusCode: 'success' }
 )
@@ -153,9 +162,9 @@ export const TokenPriceEstimate = funtypes.Object({
 })
 
 export type TransactionVisualizationParameters = {
-	tx: SimulatedAndVisualizedTransaction,
+	simTx: SimulatedAndVisualizedTransaction,
 	simulationAndVisualisationResults: SimulationAndVisualisationResults,
-	removeTransaction: (hash: bigint) => void,
+	removeTransaction: (tx: SimulatedAndVisualizedTransaction) => void,
 	activeAddress: bigint,
 	renameAddressCallBack: RenameAddressCallBack,
 }

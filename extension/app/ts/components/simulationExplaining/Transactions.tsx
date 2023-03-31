@@ -34,9 +34,9 @@ function isPositiveEvent(visResult: TokenVisualizerResultWithMetadata, ourAddres
 	return visResult.to.address === ourAddressInReferenceFrame // send is positive if we are receiving
 }
 
-export function QuarantineCodes({ tx }: { tx: SimulatedAndVisualizedTransaction }) {
+export function QuarantineCodes({ simTx }: { simTx: SimulatedAndVisualizedTransaction }) {
 	return <> {
-		tx.quarantineCodes.map( (code) => (
+		simTx.quarantineCodes.map( (code) => (
 			<div style = 'margin-top: 10px;margin-bottom: 10px'>
 				<ErrorComponent text = { QUARANTINE_CODES_DICT[code].label } />
 			</div>
@@ -45,40 +45,40 @@ export function QuarantineCodes({ tx }: { tx: SimulatedAndVisualizedTransaction 
 }
 
 export type TransactionImportanceBlockParams = {
-	tx: SimulatedAndVisualizedTransaction,
+	simTx: SimulatedAndVisualizedTransaction,
 	simulationAndVisualisationResults: SimulationAndVisualisationResults,
 	renameAddressCallBack: RenameAddressCallBack,
 }
 
 // showcases the most important things the transaction does
 export function TransactionImportanceBlock( param: TransactionImportanceBlockParams ) {
-	if ( param.tx.statusCode === 'failure') {
+	if ( param.simTx.statusCode === 'failure') {
 		return <div>
-			<ErrorComponent text = { `The transaction fails with an error '${ param.tx.error }'` } />
+			<ErrorComponent text = { `The transaction fails with an error '${ param.simTx.error }'` } />
 		</div>
 	}
-	const transactionIdentification = identifyTransaction(param.tx, param.simulationAndVisualisationResults.activeAddress)
+	const transactionIdentification = identifyTransaction(param.simTx)
 	switch (transactionIdentification.type) {
 		case 'EtherTransfer': {
 			return <EtherTransferVisualisation
-				transaction = { transactionIdentification.identifiedTransaction }
+				simTx = { transactionIdentification.identifiedTransaction }
 				renameAddressCallBack = { param.renameAddressCallBack }
 			/>
 		}
 		case 'SimpleTokenTransfer': {
 			return <SimpleTokenTransferVisualisation
-				transaction = { transactionIdentification.identifiedTransaction }
+				simTx = { transactionIdentification.identifiedTransaction }
 				renameAddressCallBack = { param.renameAddressCallBack }
 			/>
 		}
 		case 'SimpleTokenApproval': {
 			return <SimpleTokenApprovalVisualisation
-				transaction = { transactionIdentification.identifiedTransaction }
+				simTx = { transactionIdentification.identifiedTransaction }
 				renameAddressCallBack = { param.renameAddressCallBack }
 			/>
 		}
 		case 'Swap': {
-			const identifiedSwap = identifySwap(param.tx)
+			const identifiedSwap = identifySwap(param.simTx)
 			if (identifiedSwap === undefined) throw new Error('Not a swap!')
 			return <SwapVisualization
 				identifiedSwap = { identifiedSwap }
@@ -94,23 +94,22 @@ export function TransactionImportanceBlock( param: TransactionImportanceBlockPar
 }
 
 export function Transaction(param: TransactionVisualizationParameters) {
-	const identifiedTransaction = identifyTransaction(param.tx, param.activeAddress).type
+	const identifiedTransaction = identifyTransaction(param.simTx).type
 	return (
 		<div class = 'card'>
 			<TransactionHeader
-				tx = { param.tx }
+				simTx = { param.simTx }
 				renameAddressCallBack =  { param.renameAddressCallBack }
-				activeAddress = { param.activeAddress }
-				removeTransaction = { () => param.removeTransaction(param.tx.hash) }
+				removeTransaction = { () => param.removeTransaction(param.simTx) }
 			/>
 			<div class = 'card-content' style = 'padding-bottom: 5px;'>
 				<div class = 'container'>
 					<TransactionImportanceBlock { ...param }/>
-					<QuarantineCodes tx = { param.tx }/>
+					<QuarantineCodes simTx = { param.simTx }/>
 				</div>
 				{ identifiedTransaction === 'MakeYouRichTransaction' ? <></> :<>
 					<LogAnalysisCard
-						tx = { param.tx }
+						simTx = { param.simTx }
 						renameAddressCallBack = { param.renameAddressCallBack }
 					/>
 
@@ -120,7 +119,7 @@ export function Transaction(param: TransactionVisualizationParameters) {
 						</div>
 						<div class = 'log-cell' style = ''>
 							<SmallAddress
-								addressBookEntry = { param.tx.from }
+								addressBookEntry = { param.simTx.transaction.from }
 								textColor = { 'var(--subtitle-text-color)' }
 								renameAddressCallBack = { param.renameAddressCallBack }
 							/>
@@ -128,9 +127,9 @@ export function Transaction(param: TransactionVisualizationParameters) {
 					</span>
 
 					<span class = 'log-table' style = 'grid-template-columns: min-content min-content min-content auto;'>
-						<GasFee tx = { param.tx } chain = { param.simulationAndVisualisationResults.chain } />
+						<GasFee tx = { param.simTx } chain = { param.simulationAndVisualisationResults.chain } />
 						<div class = 'log-cell' style = 'justify-content: right;'>
-							<WebsiteOriginText { ...param.tx.website } textColor = { 'var(--subtitle-text-color)' }  />
+							<WebsiteOriginText { ...param.simTx.website } textColor = { 'var(--subtitle-text-color)' }  />
 						</div>
 					</span>
 				</> }
@@ -141,17 +140,17 @@ export function Transaction(param: TransactionVisualizationParameters) {
 
 type TransactionsParams = {
 	simulationAndVisualisationResults: SimulationAndVisualisationResults,
-	removeTransaction: (hash: bigint) => void,
+	removeTransaction: (tx: SimulatedAndVisualizedTransaction) => void,
 	activeAddress: bigint,
 	renameAddressCallBack: RenameAddressCallBack,
 }
 
 export function Transactions(param: TransactionsParams) {
 	return <ul>
-		{ param.simulationAndVisualisationResults.simulatedAndVisualizedTransactions.map((tx, _index) => (
+		{ param.simulationAndVisualisationResults.simulatedAndVisualizedTransactions.map((simTx, _index) => (
 			<li>
 				<Transaction
-					tx = { tx }
+					simTx = { simTx }
 					simulationAndVisualisationResults = { param.simulationAndVisualisationResults }
 					removeTransaction = { param.removeTransaction }
 					activeAddress = { param.activeAddress }
@@ -223,7 +222,7 @@ export function LogAnalysis(param: LogAnalysisParams) {
 		routes.map( (tokenVisualizerResult) => (
 			<TokenLogEvent
 				tokenVisualizerResult = { tokenVisualizerResult }
-				ourAddressInReferenceFrame = { param.simulatedAndVisualizedTransaction.from.address }
+				ourAddressInReferenceFrame = { param.simulatedAndVisualizedTransaction.transaction.from.address }
 				renameAddressCallBack = { param.renameAddressCallBack }
 			/>
 		))
@@ -231,7 +230,7 @@ export function LogAnalysis(param: LogAnalysisParams) {
 		param.simulatedAndVisualizedTransaction.tokenResults.map( (tokenVisualizerResult) => (
 			<TokenLogEvent
 				tokenVisualizerResult = { tokenVisualizerResult }
-				ourAddressInReferenceFrame = { param.simulatedAndVisualizedTransaction.from.address }
+				ourAddressInReferenceFrame = { param.simulatedAndVisualizedTransaction.transaction.from.address }
 				renameAddressCallBack = { param.renameAddressCallBack }
 			/>
 		))
