@@ -10,39 +10,39 @@ export type IdentifiedSwapWithMetadata = funtypes.Static<typeof IdentifiedSwapWi
 export const IdentifiedSwapWithMetadata = funtypes.Union(
 	funtypes.Literal(false), // not a swap
 	funtypes.Intersect(
-		funtypes.Object({
+		funtypes.ReadonlyObject({
 			type: funtypes.Literal('TokenToToken'),
 			sender: AddressBookEntry,
 		} ),
 		funtypes.Union(
-			funtypes.Object( { tokenAmountSent: EthereumQuantity, tokenAddressSent: TokenEntry } ),
-			funtypes.Object( { tokenIdSent: EthereumQuantity, tokenAddressSent: NFTEntry } )
+			funtypes.ReadonlyObject( { tokenAmountSent: EthereumQuantity, tokenAddressSent: TokenEntry } ),
+			funtypes.ReadonlyObject( { tokenIdSent: EthereumQuantity, tokenAddressSent: NFTEntry } )
 		),
 		funtypes.Union(
-			funtypes.Object( { tokenAmountReceived: EthereumQuantity, tokenAddressReceived: TokenEntry } ),
-			funtypes.Object( { tokenIdReceived: EthereumQuantity, tokenAddressReceived: NFTEntry } )
+			funtypes.ReadonlyObject( { tokenAmountReceived: EthereumQuantity, tokenAddressReceived: TokenEntry } ),
+			funtypes.ReadonlyObject( { tokenIdReceived: EthereumQuantity, tokenAddressReceived: NFTEntry } )
 		),
 	),
 	funtypes.Intersect(
-		funtypes.Object({
+		funtypes.ReadonlyObject({
 			type: funtypes.Literal('TokenToETH'),
 			sender: AddressBookEntry,
 			ethAmountReceived: EthereumQuantity,
 		}),
 		funtypes.Union(
-			funtypes.Object( { tokenAmountSent: EthereumQuantity, tokenAddressSent: TokenEntry } ),
-			funtypes.Object( { tokenIdSent: EthereumQuantity, tokenAddressSent: NFTEntry } )
+			funtypes.ReadonlyObject( { tokenAmountSent: EthereumQuantity, tokenAddressSent: TokenEntry } ),
+			funtypes.ReadonlyObject( { tokenIdSent: EthereumQuantity, tokenAddressSent: NFTEntry } )
 		),
 	),
 	funtypes.Intersect(
-		funtypes.Object({
+		funtypes.ReadonlyObject({
 			type: funtypes.Literal('ETHToToken'),
 			sender: AddressBookEntry,
 			ethAmountSent: EthereumQuantity
 		}),
 		funtypes.Union(
-			funtypes.Object( { tokenAmountReceived: EthereumQuantity, tokenAddressReceived: TokenEntry } ),
-			funtypes.Object( { tokenIdReceived: EthereumQuantity, tokenAddressReceived: NFTEntry } )
+			funtypes.ReadonlyObject( { tokenAmountReceived: EthereumQuantity, tokenAddressReceived: TokenEntry } ),
+			funtypes.ReadonlyObject( { tokenIdReceived: EthereumQuantity, tokenAddressReceived: NFTEntry } )
 		),
 	)
 )
