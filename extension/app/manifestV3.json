@@ -25,7 +25,7 @@
 	"web_accessible_resources": [
 		{
 			"resources": ["vendor/*", "js/*", "inpage/*"],
-			"matches": ["<all_urls>"] // not sure if this is right?
+			"matches": ["<all_urls>"]
 		}
 	],
 	"content_security_policy": {
