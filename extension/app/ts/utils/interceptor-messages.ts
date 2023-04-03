@@ -384,7 +384,7 @@ export const MessageToPopupSimple = funtypes.ReadonlyObject({
 export type PersonalSignRequest = funtypes.Static<typeof PersonalSignRequest>
 export const PersonalSignRequest = funtypes.ReadonlyObject({
 	method: funtypes.Literal('popup_personal_sign_request'),
-	data: funtypes.Intersect(
+	data: funtypes.Union(
 		funtypes.ReadonlyObject({
 			activeAddress: EthereumAddress,
 			requestId: funtypes.Number,

@@ -2,7 +2,7 @@ import { EIP712Message, Permit2 } from '../../app/ts/utils/wire-types.js'
 import { describe, runIfRoot, should, run } from '../micro-should.js'
 
 export async function main() {
-	const permit2Message: unknown = JSON.parse(`{
+	const permit2Message = `{
 		"types": {
 			"PermitSingle": [
 				{
@@ -67,13 +67,13 @@ export async function main() {
 			"spender": "0xef1c6e67703c7bd7107eed8303fbe6ec2554bf6b",
 			"sigDeadline": "1674745207"
 		}
-	}`)
+	}`
 	describe('EIP712', () => {
 		should('can parse EIP712 message', () => {
 			EIP712Message.parse(permit2Message)
 		})
 		should('can parse Permit2 message', () => {
-			Permit2.parse(permit2Message)
+			Permit2.parse(JSON.parse(permit2Message))
 		})
 	})
 }
