@@ -1,4 +1,3 @@
-import { stringifyJSONWithBigInts } from '../../utils/bigint.js'
 import { METAMASK_ERROR_USER_REJECTED_REQUEST } from '../../utils/constants.js'
 import { Future } from '../../utils/future.js'
 import { HandleSimulationModeReturnValue, InterceptedRequest, PersonalSign, ExternalPopupMessage, Settings } from '../../utils/interceptor-messages.js'
@@ -130,10 +129,10 @@ export const openPersonalSignDialog = async (
 			method: 'popup_personal_sign_request',
 			data: {
 				activeAddress,
-				type: 'NotParsed' as const,
+				type: 'EIP712' as const,
 				simulationMode: simulationMode,
 				requestId: request.requestId,
-				message: stringifyJSONWithBigInts(params.params[1]),
+				message: params.params[1],
 				account: getAddressMetaData(params.params[0], settings.userAddressBook),
 				method: params.method,
 			}
@@ -156,8 +155,8 @@ export const openPersonalSignDialog = async (
 		openedPersonalSignDialogWindow = await browser.windows.create({
 			url: getHtmlFile('personalSign'),
 			type: 'popup',
-			height: 400,
-			width: 520,
+			height: 600,
+			width: 600,
 		})
 		if (openedPersonalSignDialogWindow && openedPersonalSignDialogWindow.id !== undefined) {
 			browser.windows.onRemoved.addListener(onCloseWindow)

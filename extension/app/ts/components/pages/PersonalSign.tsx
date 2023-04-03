@@ -8,6 +8,7 @@ import { MOCK_PRIVATE_KEYS_ADDRESS, getChainName } from '../../utils/constants.j
 import { AddNewAddress } from './AddNewAddress.js'
 import { ExternalPopupMessage, PersonalSignRequest } from '../../utils/interceptor-messages.js'
 import { sendPopupMessageToBackgroundPage } from '../../background/backgroundUtils.js'
+import { assertNever } from '../../utils/typescript.js'
 
 interface SignRequest {
 	simulationMode: boolean,
@@ -56,6 +57,14 @@ export function PersonalSign() {
 					method: request.data.method,
 				})
 			}
+			case 'EIP712': {
+				return setSignRequest( {
+					simulationMode: request.data.simulationMode,
+					message: JSON.stringify(request.data.message),
+					account: addressToSignWith,
+					method: request.data.method,
+				})
+			}
 			case 'Permit': {
 				const chainName = getChainName(BigInt(request.data.message.domain.chainId))
 				const verifyingContract = request.data.addressBookEntries.verifyingContract
@@ -84,6 +93,7 @@ export function PersonalSign() {
 					method: request.data.method,
 				})
 			}
+			default: assertNever(request.data)
 		}
 	}
 

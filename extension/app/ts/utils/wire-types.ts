@@ -721,8 +721,21 @@ export const PersonalSignParams = funtypes.ReadonlyObject({
 	)
 })
 
-export type EIP712Message = funtypes.Static<typeof EIP712Message>
-export const EIP712Message = funtypes.ReadonlyObject({
+type typeJSONEncodeable = string | number | boolean | { [x: string]: typeJSONEncodeable | undefined } | ReadonlyArray<typeJSONEncodeable>
+export type JSONEncodeable = funtypes.Static<typeof JSONEncodeable>
+export const JSONEncodeable: funtypes.Runtype<typeJSONEncodeable> = funtypes.Lazy(() => funtypes.Union(
+	funtypes.String,
+	funtypes.Boolean,
+	funtypes.Number,
+	funtypes.ReadonlyArray(JSONEncodeable),
+	funtypes.ReadonlyRecord(funtypes.String, JSONEncodeable),
+))
+
+export type JSONEncodeableObject = funtypes.Static<typeof JSONEncodeableObject>
+export const JSONEncodeableObject = funtypes.ReadonlyRecord(funtypes.String, JSONEncodeable)
+
+export type EIP712MessageUnderlying = funtypes.Static<typeof EIP712MessageUnderlying>
+export const EIP712MessageUnderlying = funtypes.ReadonlyObject({
 	types: funtypes.Record(funtypes.String, funtypes.ReadonlyArray(
 		funtypes.ReadonlyObject({
 			name: funtypes.String,
@@ -730,8 +743,8 @@ export const EIP712Message = funtypes.ReadonlyObject({
 		})
 	)),
 	primaryType: funtypes.String,
-	domain: funtypes.Record(funtypes.String, funtypes.String),
-	message: funtypes.Record(funtypes.String, funtypes.Union(funtypes.Record(funtypes.String, funtypes.String), funtypes.String)),
+	domain: JSONEncodeableObject,
+	message: JSONEncodeableObject,
 })
 
 function isJSON(text: string){
@@ -745,16 +758,19 @@ function isJSON(text: string){
 	}
 }
 
-const EIP712MessageParser: funtypes.ParsedValue<funtypes.String, EIP712Message>['config'] = {
+const EIP712MessageParser: funtypes.ParsedValue<funtypes.String, EIP712MessageUnderlying>['config'] = {
 	parse: value => {
-		if (!isJSON(value) || !EIP712Message.test(JSON.parse(value))) return { success: false, message: `${ value } is not EIP712 message` }
-		else return { success: true, value: EIP712Message.parse(JSON.parse(value)) }
+		if (!isJSON(value) || !EIP712MessageUnderlying.test(JSON.parse(value))) return { success: false, message: `${ value } is not EIP712 message` }
+		else return { success: true, value: EIP712MessageUnderlying.parse(JSON.parse(value)) }
 	},
 	serialize: value => {
-		if (!EIP712Message.test(value)) return { success: false, message: `${ value } is not a EIP712 mmessage.`}
-		return { success: true, value: EIP712Message.serialize(value) as string }
+		if (!EIP712MessageUnderlying.test(value)) return { success: false, message: `${ value } is not a EIP712 message.`}
+		return { success: true, value: JSON.stringify(EIP712MessageUnderlying.serialize(value)) }
 	},
 }
+
+export type EIP712Message = funtypes.Static<typeof EIP712Message>
+export const EIP712Message = funtypes.String.withParser(EIP712MessageParser)
 
 export type SignTypedDataParams = funtypes.Static<typeof SignTypedDataParams>
 export const SignTypedDataParams = funtypes.ReadonlyObject({
@@ -765,7 +781,7 @@ export const SignTypedDataParams = funtypes.ReadonlyObject({
 		funtypes.Literal('eth_signTypedData_v3'),
 		funtypes.Literal('eth_signTypedData_v4'),
 	),
-	params: funtypes.Tuple(EthereumAddress, funtypes.String.withParser(EIP712MessageParser)), // address that will sign the message, typed data
+	params: funtypes.Tuple(EthereumAddress, EIP712Message), // address that will sign the message, typed data
 })
 
 export type SwitchEthereumChainParams = funtypes.Static<typeof SwitchEthereumChainParams>

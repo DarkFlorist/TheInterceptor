@@ -1,6 +1,6 @@
 import * as funtypes from 'funtypes'
 import { AddressBookEntries, AddressBookEntry, AddressInfo, AddressInfoEntry, ContactEntries, Website, WebsiteSocket } from './user-interface-types.js'
-import { EIP2612Message, EthereumAddress, EthereumQuantity, EthereumUnsignedTransaction, Permit2, PersonalSignParams, SignTypedDataParams } from './wire-types.js'
+import { EIP2612Message, EIP712Message, EthereumAddress, EthereumQuantity, EthereumUnsignedTransaction, Permit2, PersonalSignParams, SignTypedDataParams } from './wire-types.js'
 import { SimulationState, TokenPriceEstimate, SimResults } from './visualizer-types.js'
 
 export type MessageMethodAndParams = funtypes.Static<typeof MessageMethodAndParams>
@@ -384,41 +384,51 @@ export const MessageToPopupSimple = funtypes.ReadonlyObject({
 export type PersonalSignRequest = funtypes.Static<typeof PersonalSignRequest>
 export const PersonalSignRequest = funtypes.ReadonlyObject({
 	method: funtypes.Literal('popup_personal_sign_request'),
-	data: funtypes.Intersect(
+	data: funtypes.Union(
 		funtypes.ReadonlyObject({
 			activeAddress: EthereumAddress,
 			requestId: funtypes.Number,
 			simulationMode: funtypes.Boolean,
 			account: AddressBookEntry,
-			method: funtypes.Union(
-				funtypes.Literal('personal_sign'),
-				funtypes.Literal('eth_signTypedData'),
-				funtypes.Literal('eth_signTypedData_v1'),
-				funtypes.Literal('eth_signTypedData_v2'),
-				funtypes.Literal('eth_signTypedData_v3'),
-				funtypes.Literal('eth_signTypedData_v4')
-			),
-		}),
-		funtypes.ReadonlyObject({
+			method: funtypes.Literal('personal_sign'),
 			type: funtypes.Literal('NotParsed'),
 			message: funtypes.String,
-		}).Or(funtypes.ReadonlyObject({
-			type: funtypes.Literal('Permit'),
-			message: EIP2612Message,
-			addressBookEntries: funtypes.ReadonlyObject({
-				owner: AddressBookEntry,
-				spender: AddressBookEntry,
-				verifyingContract: AddressBookEntry,
+		}),
+		funtypes.Intersect(
+			funtypes.ReadonlyObject({
+				activeAddress: EthereumAddress,
+				requestId: funtypes.Number,
+				simulationMode: funtypes.Boolean,
+				account: AddressBookEntry,
+				method: funtypes.Union(
+					funtypes.Literal('eth_signTypedData'),
+					funtypes.Literal('eth_signTypedData_v1'),
+					funtypes.Literal('eth_signTypedData_v2'),
+					funtypes.Literal('eth_signTypedData_v3'),
+					funtypes.Literal('eth_signTypedData_v4')
+				),
 			}),
-		})).Or(funtypes.ReadonlyObject({
-			type: funtypes.Literal('Permit2'),
-			message: Permit2,
-			addressBookEntries: funtypes.ReadonlyObject({
-				token: AddressBookEntry,
-				spender: AddressBookEntry,
-				verifyingContract: AddressBookEntry,
-			}),
-		}))
+			funtypes.ReadonlyObject({
+				type: funtypes.Literal('EIP712'),
+				message: EIP712Message,
+			}).Or(funtypes.ReadonlyObject({
+				type: funtypes.Literal('Permit'),
+				message: EIP2612Message,
+				addressBookEntries: funtypes.Object({
+					owner: AddressBookEntry,
+					spender: AddressBookEntry,
+					verifyingContract: AddressBookEntry,
+				}),
+			})).Or(funtypes.ReadonlyObject({
+				type: funtypes.Literal('Permit2'),
+				message: Permit2,
+				addressBookEntries: funtypes.ReadonlyObject({
+					token: AddressBookEntry,
+					spender: AddressBookEntry,
+					verifyingContract: AddressBookEntry,
+				}),
+			}))
+		)
 	)
 })
 
