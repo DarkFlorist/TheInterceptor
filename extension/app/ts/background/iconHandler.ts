@@ -66,36 +66,36 @@ export async function retrieveWebsiteDetails(port: browser.runtime.Port, website
 	}
 
 	// wait for the tab to be fully loaded
-	const waitForLoadedFuture = new Future<void>
-	const waitForLoaded = async () => {
-		try {
-			const listener = function listener(tabIdUpdated: number, info: browser.tabs._OnUpdatedChangeInfo) {
-				if (info.status === 'complete' && tabId === tabIdUpdated) {
-					browser.tabs.onUpdated.removeListener(listener)
-					return waitForLoadedFuture.resolve()
-				}
-			}
-			browser.tabs.onUpdated.addListener(listener)
-			if( (await browser.tabs.get(tabId)).status === 'complete') {
-				browser.tabs.onUpdated.removeListener(listener)
-				return waitForLoadedFuture.resolve()
-			}
+	const listener = function listener(tabIdUpdated: number, info: browser.tabs._OnUpdatedChangeInfo) {
+		if (info.status === 'complete' && tabId === tabIdUpdated) {
 			return waitForLoadedFuture.resolve()
-		} catch(error) {
-			if (error instanceof Error) return waitForLoadedFuture.reject(error)
-			return waitForLoadedFuture.reject(new Error('Unknown error'))
 		}
 	}
 
-	waitForLoaded()
-	await waitForLoadedFuture
+	const waitForLoadedFuture = new Future<void>
+	try {
+		browser.tabs.onUpdated.addListener(listener)
+		if ((await browser.tabs.get(tabId)).status === 'complete') {
+			waitForLoadedFuture.resolve()
+		}
+		await waitForLoadedFuture
+	} catch(error) {
+		if (error instanceof Error) {
+			waitForLoadedFuture.reject(error)
+		} else {
+			waitForLoadedFuture.reject(new Error('Unknown error'))
+		}
+	} finally {
+		browser.tabs.onUpdated.removeListener(listener)
+	}
+
 	// if the tab is not ready yet try to wait for a while for it to be ready, if not, we just have no icon to show on firefox
 	let maxRetries = 10
 	// apparently there's a lot bugs in firefox related to getting this favicon. Eve if the tab has loaded, the favicon is not necessary loaded either
 	// https://bugzilla.mozilla.org/show_bug.cgi?id=1450384
 	// https://bugzilla.mozilla.org/show_bug.cgi?id=1417721
 	// below is my attempt to try to get favicon...
-	while ( (await browser.tabs.get(tabId)).favIconUrl === undefined) {
+	while ((await browser.tabs.get(tabId)).favIconUrl === undefined) {
 		await new Promise(resolve => setTimeout(resolve, 100))
 		maxRetries--
 		if (maxRetries <= 0) break // timeout

@@ -59,7 +59,7 @@ export class Simulator {
 
 	public async evaluateTransaction(transaction: EthereumUnsignedTransactionWithWebsite, transactionQueue: EthereumUnsignedTransaction[]) {
 		const blockNumber = await this.ethereum.getBlockNumber()
-		const multicallResults = await this.simulationModeNode.multicall(transactionQueue.concat([transaction]), blockNumber)
+		const multicallResults = await this.simulationModeNode.multicall(transactionQueue.concat([transaction.transaction]), blockNumber)
 		return await this.visualizeTransaction(transaction, blockNumber, multicallResults[multicallResults.length - 1])
 	}
 
@@ -67,7 +67,7 @@ export class Simulator {
 		let quarantine = false
 		const quarantineCodesSet = new Set<QUARANTINE_CODE>()
 		for (const protectorMethod of PROTECTORS) {
-			const reason = await protectorMethod(transaction, this)
+			const reason = await protectorMethod(transaction.transaction, this)
 			if (reason !== undefined) {
 				quarantine = true
 				quarantineCodesSet.add(reason)

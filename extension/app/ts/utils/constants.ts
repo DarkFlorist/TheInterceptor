@@ -109,13 +109,15 @@ export const ICON_SIGNING_NOT_SUPPORTED = '../img/head-signing-unsupported-netwo
 export const DEFAULT_TAB_CONNECTION = { icon: ICON_NOT_ACTIVE, iconReason: 'The website has not requested to connect to The Interceptor.' }
 
 export const MAKE_YOU_RICH_TRANSACTION = {
-	type: '1559' as const,
-	maxFeePerGas: 0n,
-	maxPriorityFeePerGas: 0n,
-	gas: 21000n,
-	value: 200000000000000000000000n,
-	input: new Uint8Array(0),
-	accessList: [],
+	transaction: {
+		type: '1559' as const,
+		maxFeePerGas: 0n,
+		maxPriorityFeePerGas: 0n,
+		gas: 21000n,
+		value: 200000000000000000000000n,
+		input: new Uint8Array(0),
+		accessList: [],
+	},
 	website: {
 		websiteOrigin: 'The Interceptor',
 		title: 'The Interceptor',

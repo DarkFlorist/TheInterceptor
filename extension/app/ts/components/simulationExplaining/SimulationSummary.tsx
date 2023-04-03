@@ -365,7 +365,7 @@ export function SummarizeAddress(param: SummarizeAddressParams) {
 export function removeEthDonator(chain: CHAIN, summary: SummaryOutcome[]) {
 	const donatorSummary = summary.find((x) => x.summaryFor.address === CHAINS[chain].eth_donator)
 	if (donatorSummary === undefined || donatorSummary.etherResults === undefined) return
-	if (donatorSummary.etherResults.balanceAfter + MAKE_YOU_RICH_TRANSACTION.value === donatorSummary.etherResults.balanceBefore) {
+	if (donatorSummary.etherResults.balanceAfter + MAKE_YOU_RICH_TRANSACTION.transaction.value === donatorSummary.etherResults.balanceBefore) {
 		if (donatorSummary.erc721OperatorChanges.length === 0 &&
 			donatorSummary.erc721TokenBalanceChanges.length === 0 &&
 			donatorSummary.erc721TokenIdApprovalChanges.length === 0 &&
@@ -378,7 +378,7 @@ export function removeEthDonator(chain: CHAIN, summary: SummaryOutcome[]) {
 		donatorSummary.etherResults = undefined
 		return
 	}
-	donatorSummary.etherResults.balanceAfter = donatorSummary.etherResults.balanceAfter + MAKE_YOU_RICH_TRANSACTION.value
+	donatorSummary.etherResults.balanceAfter = donatorSummary.etherResults.balanceAfter + MAKE_YOU_RICH_TRANSACTION.transaction.value
 	return
 }
 
