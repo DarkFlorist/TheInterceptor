@@ -38,7 +38,7 @@ export async function main() {
 	const blockNumber = 8443561n
 	const chain = '5'
 	const ethereum = new EthereumClientService(new MockEthereumJSONRpcRequestHandler(CHAINS[chain].https_rpc), chain, () => {})
-	const simulationModeNode = new SimulationModeEthereumClientService(ethereum, CHAINS[chain].wss_rpc)
+	const simulationModeNode = new SimulationModeEthereumClientService(ethereum)
 
 	const exampleTransaction = {
 		type: '1559' as const,
