@@ -9,8 +9,8 @@ import { commonTokenOops } from './protectors/commonTokenOops.js'
 import { eoaApproval } from './protectors/eoaApproval.js'
 import { eoaCalldata } from './protectors/eoaCalldata.js'
 import { tokenToContract } from './protectors/tokenToContract.js'
-import { EthereumUnsignedTransactionWithWebsite, SimulationModeEthereumClientService } from './services/SimulationModeEthereumClientService.js'
-import { SimResults, TokenVisualizerResult, VisualizerResult } from '../utils/visualizer-types.js'
+import { simulatedMulticall } from './services/SimulationModeEthereumClientService.js'
+import { EthereumUnsignedTransactionWithWebsite, SimResults, SimulationState, TokenVisualizerResult, VisualizerResult } from '../utils/visualizer-types.js'
 import { handleApprovalLog, handleDepositLog, handleERC721ApprovalForAllLog, handleTransferLog, handleWithdrawalLog } from './logHandlers.js'
 import { CHAIN } from '../utils/user-interface-types.js'
 import { QUARANTINE_CODE } from './protectors/quarantine-codes.js'
@@ -39,12 +39,10 @@ const logHandler = new Map<string, Loghandler >([
 
 export class Simulator {
 	public readonly ethereum
-	public readonly simulationModeNode
 	public readonly ethSubscriptionService
 
 	public constructor(chain: CHAIN, newBlockCallback: (blockNumber: bigint) => void ) {
 		this.ethereum = new EthereumClientService(new EthereumJSONRpcRequestHandler(CHAINS[chain].https_rpc), chain, newBlockCallback)
-		this.simulationModeNode = new SimulationModeEthereumClientService(this.ethereum)
 		this.ethSubscriptionService = new ETHSubscriptionService(CHAINS[chain].wss_rpc)
 	}
 
@@ -60,9 +58,9 @@ export class Simulator {
 		return await Promise.all(resultPromises)
 	}
 
-	public async evaluateTransaction(transaction: EthereumUnsignedTransactionWithWebsite, transactionQueue: EthereumUnsignedTransaction[]) {
+	public async evaluateTransaction(ethereumClientService: EthereumClientService, simulationState: SimulationState, transaction: EthereumUnsignedTransactionWithWebsite, transactionQueue: EthereumUnsignedTransaction[]) {
 		const blockNumber = await this.ethereum.getBlockNumber()
-		const multicallResults = await this.simulationModeNode.multicall(transactionQueue.concat([transaction.transaction]), blockNumber)
+		const multicallResults = await simulatedMulticall(ethereumClientService, simulationState, transactionQueue.concat([transaction.transaction]), blockNumber)
 		return await this.visualizeTransaction(transaction, blockNumber, multicallResults[multicallResults.length - 1])
 	}
 

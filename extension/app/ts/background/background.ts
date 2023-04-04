@@ -15,8 +15,9 @@ import { findAddressInfo, getAddressBookEntriesForVisualiser } from './metadataU
 import { getActiveAddress, getSocketFromPort, sendPopupMessageToOpenWindows, setExtensionBadgeBackgroundColor, setExtensionIcon, websiteSocketToString } from './backgroundUtils.js'
 import { retrieveWebsiteDetails, updateExtensionBadge, updateExtensionIcon } from './iconHandler.js'
 import { connectedToSigner, ethAccountsReply, signerChainChanged, walletSwitchEthereumChainReply } from './providerMessageHandlers.js'
-import { SimulationModeEthereumClientService } from '../simulation/services/SimulationModeEthereumClientService.js'
 import { assertNever, assertUnreachable } from '../utils/typescript.js'
+import { EthereumClientService } from '../simulation/services/EthereumClientService.js'
+import { appendTransaction, copySimulationState, getSimulatedTransactionCount, setPrependTransactionsQueue, simulatePersonalSign } from '../simulation/services/SimulationModeEthereumClientService.js'
 
 const websiteTabConnections = new Map<number, TabConnection>()
 
@@ -83,16 +84,24 @@ export function setEthereumNodeBlockPolling(enabled: boolean) {
 	simulator.ethereum.setBlockPolling(enabled)
 }
 
-export async function refreshConfirmTransactionSimulation(activeAddress: bigint, simulationMode: boolean, requestId: number, transactionToSimulate: EthereumUnsignedTransaction, website: Website, userAddressBook: UserAddressBook) {
+export async function refreshConfirmTransactionSimulation(
+	ethereumClientService: EthereumClientService,
+	simulationState: SimulationState, 
+	activeAddress: bigint,
+	simulationMode: boolean,
+	requestId: number,
+	transactionToSimulate: EthereumUnsignedTransaction,
+	website: Website,
+	userAddressBook: UserAddressBook
+) {
 	if (simulator === undefined) return undefined
 
 	const priceEstimator = new PriceEstimator(simulator.ethereum)
-	const newSimulator = simulator.simulationModeNode.copy()
 	sendPopupMessageToOpenWindows({ method: 'popup_confirm_transaction_simulation_started' })
-	const appended = await newSimulator.appendTransaction({ transaction: transactionToSimulate, website: website })
-	const transactions = appended.simulationState.simulatedTransactions.map(x => ({ transaction: x.signedTransaction, website: x.website }) )
-	const visualizerResult = await simulator.visualizeTransactionChain(transactions, appended.simulationState.blockNumber, appended.simulationState.simulatedTransactions.map(x => x.multicallResponse))
-	const addressMetadata = await getAddressBookEntriesForVisualiser(simulator, visualizerResult.map((x) => x.visualizerResults), appended.simulationState, userAddressBook)
+	const newState = await appendTransaction(ethereumClientService, copySimulationState(simulationState), { transaction: transactionToSimulate, website: website })
+	const transactions = newState.simulatedTransactions.map(x => ({ transaction: x.signedTransaction, website: x.website }) )
+	const visualizerResult = await simulator.visualizeTransactionChain(transactions, newState.blockNumber, newState.simulatedTransactions.map(x => x.multicallResponse))
+	const addressMetadata = await getAddressBookEntriesForVisualiser(simulator, visualizerResult.map((x) => x.visualizerResults), newState, userAddressBook)
 	const tokenPrices = await priceEstimator.estimateEthereumPricesForTokens(
 		addressMetadata.map(
 			(x) => x.type === 'token' && x.decimals !== undefined ? { token: x.address, decimals: x.decimals } : { token: 0x0n, decimals: 0x0n }
@@ -105,7 +114,7 @@ export async function refreshConfirmTransactionSimulation(activeAddress: bigint,
 			requestId: requestId,
 			transactionToSimulate: transactionToSimulate,
 			simulationMode: simulationMode,
-			simulationState: appended.simulationState,
+			simulationState: newState,
 			visualizerResults: visualizerResult,
 			addressBookEntries: addressMetadata,
 			tokenPrices: tokenPrices,
@@ -117,13 +126,11 @@ export async function refreshConfirmTransactionSimulation(activeAddress: bigint,
 }
 
 // returns true if simulation state was changed
-export async function updatePrependMode(settings: Settings) {
-	if (simulator === undefined) return false
-
+export async function updatePrependMode(ethereumClientService: EthereumClientService, simulationState: SimulationState, settings: Settings) {
 	const richMode = await getMakeMeRich()
 
 	if (!settings.simulationMode || !richMode) {
-		await updateSimulationState(async () => await simulator?.simulationModeNode.setPrependTransactionsQueue([]), settings.activeSimulationAddress)
+		await updateSimulationState(async () => await setPrependTransactionsQueue(ethereumClientService, simulationState, []), settings.activeSimulationAddress)
 		return true
 	}
 
@@ -132,38 +139,40 @@ export async function updatePrependMode(settings: Settings) {
 	if (!isSupportedChain(chainId)) return false
 	if (activeAddress === undefined) return false
 	await updateSimulationState(async () => {
-		if (simulator === undefined) return undefined
 		if (!isSupportedChain(chainId)) return undefined
 		const queue = [{
 			transaction: {
 				from: CHAINS[chainId].eth_donator,
 				chainId: CHAINS[chainId].chainId,
-				nonce: await simulator.ethereum.getTransactionCount(CHAINS[chainId].eth_donator),
+				nonce: await getSimulatedTransactionCount(ethereumClientService, simulationState, CHAINS[chainId].eth_donator),
 				to: activeAddress,
 				...MAKE_YOU_RICH_TRANSACTION.transaction,
 			},
 			website: MAKE_YOU_RICH_TRANSACTION.website
 		} as const]
-		return await simulator.simulationModeNode.setPrependTransactionsQueue(queue)
+		return await setPrependTransactionsQueue(ethereumClientService, simulationState, queue)
 	}, activeAddress)
 	return true
 }
 
-export async function appendTransactionToSimulator(transaction: EthereumUnsignedTransaction, website: Website, activeAddress: bigint) {
-	if (simulator === undefined) return
-	const simulationState = await updateSimulationState(async () => (await simulator?.simulationModeNode.appendTransaction({ transaction, website }))?.simulationState, activeAddress)
-	return {
-		signed: await SimulationModeEthereumClientService.mockSignTransaction(transaction),
-		simulationState: simulationState,
-	}
+export async function appendTransactionToSimulator(ethereumClientService: EthereumClientService, simulationState: SimulationState, transaction: EthereumUnsignedTransaction, website: Website, activeAddress: bigint) {
+	return await updateSimulationState(async () => await appendTransaction(ethereumClientService, simulationState, { transaction, website }), activeAddress)
 }
 
 export async function personalSignWithSimulator(params: PersonalSignParams | SignTypedDataParams) {
-	if ( simulator === undefined) return
-	return await simulator.simulationModeNode.personalSign(params)
+	return await simulatePersonalSign(params)
 }
 
-async function handleSimulationMode(websiteTabConnections: WebsiteTabConnections, simulator: Simulator, socket: WebsiteSocket, website: Website, request: InterceptedRequest, settings: Settings): Promise<HandleSimulationModeReturnValue> {
+async function handleSimulationMode(
+	ethereumClientService: EthereumClientService,
+	simulationState: SimulationState, 
+	websiteTabConnections: WebsiteTabConnections,
+	simulator: Simulator,
+	socket: WebsiteSocket,
+	website: Website,
+	request: InterceptedRequest,
+	settings: Settings
+): Promise<HandleSimulationModeReturnValue> {
 	let parsedRequest // separate request parsing and request handling. If there's a parse error, throw that to API user
 	try {
 		parsedRequest = EthereumJsonRpcRequest.parse(request.options)
@@ -180,36 +189,36 @@ async function handleSimulationMode(websiteTabConnections: WebsiteTabConnections
 	}
 
 	switch (parsedRequest.method) {
-		case 'eth_getBlockByNumber': return await getBlockByNumber(simulator, parsedRequest)
-		case 'eth_getBalance': return await getBalance(simulator, parsedRequest)
-		case 'eth_estimateGas': return await estimateGas(simulator, parsedRequest)
-		case 'eth_getTransactionByHash': return await getTransactionByHash(simulator, parsedRequest)
-		case 'eth_getTransactionReceipt': return await getTransactionReceipt(simulator, parsedRequest)
-		case 'eth_sendTransaction': return sendTransaction(websiteTabConnections, getActiveAddressForDomain, simulator, parsedRequest, socket, request, true, website, settings)
-		case 'eth_call': return await call(simulator, parsedRequest)
-		case 'eth_blockNumber': return await blockNumber(simulator)
+		case 'eth_getBlockByNumber': return await getBlockByNumber(ethereumClientService, simulationState, parsedRequest)
+		case 'eth_getBalance': return await getBalance(ethereumClientService, simulationState, parsedRequest)
+		case 'eth_estimateGas': return await estimateGas(ethereumClientService, simulationState, parsedRequest)
+		case 'eth_getTransactionByHash': return await getTransactionByHash(ethereumClientService, simulationState, parsedRequest)
+		case 'eth_getTransactionReceipt': return await getTransactionReceipt(ethereumClientService, simulationState, parsedRequest)
+		case 'eth_sendTransaction': return sendTransaction(ethereumClientService, simulationState, websiteTabConnections, getActiveAddressForDomain, simulator, parsedRequest, socket, request, true, website, settings)
+		case 'eth_call': return await call(ethereumClientService, simulationState, parsedRequest)
+		case 'eth_blockNumber': return await blockNumber(ethereumClientService, simulationState)
 		case 'eth_subscribe': return await subscribe(websiteTabConnections, simulator, socket, parsedRequest)
 		case 'eth_unsubscribe': return await unsubscribe(simulator, parsedRequest)
 		case 'eth_chainId': return await chainId(simulator)
 		case 'net_version': return await chainId(simulator)
-		case 'eth_getCode': return await getCode(simulator, parsedRequest)
+		case 'eth_getCode': return await getCode(ethereumClientService, simulationState, parsedRequest)
 		case 'personal_sign':
 		case 'eth_signTypedData':
 		case 'eth_signTypedData_v1':
 		case 'eth_signTypedData_v2':
 		case 'eth_signTypedData_v3':
 		case 'eth_signTypedData_v4': return await personalSign(websiteTabConnections, socket, parsedRequest, request, true, website, settings)
-		case 'wallet_switchEthereumChain': return await switchEthereumChain(websiteTabConnections, socket, simulator, parsedRequest, request, true, website)
-		case 'wallet_requestPermissions': return await requestPermissions(websiteTabConnections, getActiveAddressForDomain, simulator, socket, settings)
+		case 'wallet_switchEthereumChain': return await switchEthereumChain(websiteTabConnections, socket, ethereumClientService, parsedRequest, request, true, website)
+		case 'wallet_requestPermissions': return await requestPermissions(websiteTabConnections, getActiveAddressForDomain, socket, settings)
 		case 'wallet_getPermissions': return await getPermissions()
-		case 'eth_accounts': return await getAccounts(websiteTabConnections, getActiveAddressForDomain, simulator, socket, settings)
-		case 'eth_requestAccounts': return await getAccounts(websiteTabConnections, getActiveAddressForDomain, simulator, socket, settings)
+		case 'eth_accounts': return await getAccounts(websiteTabConnections, getActiveAddressForDomain, socket, settings)
+		case 'eth_requestAccounts': return await getAccounts(websiteTabConnections, getActiveAddressForDomain, socket, settings)
 		case 'eth_gasPrice': return await gasPrice(simulator)
-		case 'eth_getTransactionCount': return await getTransactionCount(simulator, parsedRequest)
-		case 'interceptor_getSimulationStack': return await getSimulationStack(simulator, parsedRequest)
+		case 'eth_getTransactionCount': return await getTransactionCount(ethereumClientService, simulationState, parsedRequest)
+		case 'interceptor_getSimulationStack': return await getSimulationStack(simulationState, parsedRequest)
 		case 'eth_multicall': return { error: { code: 10000, message: 'Cannot call eth_multicall directly' } }
 		case 'eth_getStorageAt': return { error: { code: 10000, message: 'eth_getStorageAt not implemented' } }
-		case 'eth_getLogs': return await getLogs(simulator, parsedRequest)
+		case 'eth_getLogs': return await getLogs(ethereumClientService, simulationState, parsedRequest)
 		case 'eth_sign': return { error: { code: 10000, message: 'eth_sign is deprecated' } }
 		/*
 		Missing methods:
@@ -242,7 +251,14 @@ async function handleSimulationMode(websiteTabConnections: WebsiteTabConnections
 	}
 }
 
-async function handleSigningMode(simulator: Simulator, socket: WebsiteSocket, website: Website, request: InterceptedRequest, settings: Settings): Promise<HandleSimulationModeReturnValue> {
+async function handleSigningMode(
+	ethereumClientService: EthereumClientService,
+	simulationState: SimulationState,
+	socket: WebsiteSocket,
+	website: Website,
+	request: InterceptedRequest,
+	settings: Settings
+): Promise<HandleSimulationModeReturnValue> {
 	let parsedRequest // separate request parsing and request handling. If there's a parse error, throw that to API user
 	try {
 		parsedRequest = EthereumJsonRpcRequest.parse(request.options)
@@ -291,10 +307,10 @@ async function handleSigningMode(simulator: Simulator, socket: WebsiteSocket, we
 		case 'eth_signTypedData_v2':
 		case 'eth_signTypedData_v3':
 		case 'eth_signTypedData_v4': return await personalSign(websiteTabConnections, socket, parsedRequest, request, false, website, settings)
-		case 'wallet_switchEthereumChain': return await switchEthereumChain(websiteTabConnections, socket, simulator, parsedRequest, request, false, website)
+		case 'wallet_switchEthereumChain': return await switchEthereumChain(websiteTabConnections, socket, ethereumClientService, parsedRequest, request, false, website)
 		case 'eth_sendTransaction': {
 			if (settings && isSupportedChain(settings.activeChain.toString()) ) {
-				return sendTransaction(websiteTabConnections, getActiveAddressForDomain, simulator, parsedRequest, socket, request, false, website, settings)
+				return sendTransaction(websiteTabConnections, getActiveAddressForDomain, ethereumClientService, simulationState, parsedRequest, socket, request, false, website, settings)
 			}
 			return forwardToSigner()
 		}
@@ -525,7 +541,14 @@ async function onContentScriptConnected(port: browser.runtime.Port, websiteTabCo
 
 }
 
-async function popupMessageHandler(websiteTabConnections: WebsiteTabConnections, simulator: Simulator, request: unknown, settings: Settings) {
+async function popupMessageHandler(
+	websiteTabConnections: WebsiteTabConnections,
+	simulator: Simulator,
+	ethereumClientService: EthereumClientService,
+	simulationState: SimulationState,
+	request: unknown,
+	settings: Settings
+) {
 	let parsedRequest // separate request parsing and request handling. If there's a parse error, throw that to API user
 	try {
 		parsedRequest = PopupMessage.parse(request)

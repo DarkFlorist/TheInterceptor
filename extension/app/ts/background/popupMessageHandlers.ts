@@ -14,6 +14,9 @@ import { findAddressInfo } from './metadataUtils.js'
 import { assertUnreachable } from '../utils/typescript.js'
 import { addressString } from '../utils/bigint.js'
 import { AddressInfoEntry, WebsiteTabConnections } from '../utils/user-interface-types.js'
+import { EthereumClientService } from '../simulation/services/EthereumClientService.js'
+import { SimulationState } from '../utils/visualizer-types.js'
+import { refreshSimulationState, removeTransactionAndUpdateTransactionNonces, resetSimulationState } from '../simulation/services/SimulationModeEthereumClientService.js'
 
 export async function confirmDialog(websiteTabConnections: WebsiteTabConnections, confirmation: TransactionConfirmation) {
 	await resolvePendingTransaction(websiteTabConnections, confirmation.options.accept ? 'Approved' : 'Rejected')
@@ -58,9 +61,9 @@ export async function changeActiveAddress(websiteTabConnections: WebsiteTabConne
 	}
 }
 
-export async function changeMakeMeRich(makeMeRichChange: ChangeMakeMeRich, settings: Settings) {
+export async function changeMakeMeRich(ethereumClientService: EthereumClientService, simulationState: SimulationState, makeMeRichChange: ChangeMakeMeRich, settings: Settings) {
 	await setMakeMeRich(makeMeRichChange.options)
-	await updatePrependMode(settings)
+	await updatePrependMode(ethereumClientService, simulationState, settings)
 }
 
 export async function removeAddressBookEntry(websiteTabConnections: WebsiteTabConnections, removeAddressBookEntry: RemoveAddressBookEntry) {
@@ -129,20 +132,20 @@ export async function requestAccountsFromSigner(websiteTabConnections: WebsiteTa
 	}
 }
 
-export async function resetSimulation(simulator: Simulator, settings: Settings) {
-	await updateSimulationState(async () => await simulator.simulationModeNode.resetSimulation(), settings.activeSimulationAddress)
+export async function resetSimulation(ethereumClientService: EthereumClientService, simulationState: SimulationState, settings: Settings) {
+	await updateSimulationState(async () => await resetSimulationState(ethereumClientService, simulationState), settings.activeSimulationAddress)
 }
 
-export async function removeTransaction(simulator: Simulator, params: RemoveTransaction, settings: Settings) {
-	await updateSimulationState(async () => await simulator.simulationModeNode.removeTransactionAndUpdateTransactionNonces(params.options), settings.activeSimulationAddress)
+export async function removeTransaction(ethereumClientService: EthereumClientService, simulationState: SimulationState, params: RemoveTransaction, settings: Settings) {
+	await updateSimulationState(async () => await removeTransactionAndUpdateTransactionNonces(ethereumClientService, simulationState, params.options), settings.activeSimulationAddress)
 }
 
-export async function refreshSimulation(simulator: Simulator, settings: Settings) {
-	await updateSimulationState(async() => await simulator.simulationModeNode.refreshSimulation(), settings.activeSimulationAddress)
+export async function refreshSimulation(ethereumClientService: EthereumClientService, simulationState: SimulationState, settings: Settings) {
+	await updateSimulationState(async() => await refreshSimulationState(ethereumClientService, simulationState), settings.activeSimulationAddress)
 }
 
-export async function refreshPopupConfirmTransactionSimulation({ data }: RefreshConfirmTransactionDialogSimulation) {
-	const refreshMessage = await refreshConfirmTransactionSimulation(data.activeAddress, data.simulationMode, data.requestId, data.transactionToSimulate, data.website, (await getSettings()).userAddressBook)
+export async function refreshPopupConfirmTransactionSimulation(ethereumClientService: EthereumClientService, simulationState: SimulationState, { data }: RefreshConfirmTransactionDialogSimulation) {
+	const refreshMessage = await refreshConfirmTransactionSimulation(ethereumClientService, simulationState, data.activeAddress, data.simulationMode, data.requestId, data.transactionToSimulate, data.website, (await getSettings()).userAddressBook)
 	if (refreshMessage === undefined) return
 	return await sendPopupMessageToOpenWindows(refreshMessage)
 }
