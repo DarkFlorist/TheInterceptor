@@ -84,12 +84,21 @@ export const SimResults = funtypes.ReadonlyObject( {
 	website: Website,
 })
 
+
+export type TokenBalancesAfter = funtypes.Static<typeof TokenBalancesAfter>
+export const TokenBalancesAfter = funtypes.ReadonlyArray(funtypes.ReadonlyObject({
+	token: EthereumAddress,
+	owner: EthereumAddress,
+	balance: funtypes.Union(EthereumQuantity, funtypes.Undefined),
+}))
+
 export type SimulatedTransaction = funtypes.Static<typeof SimulatedTransaction>
 export const SimulatedTransaction = funtypes.ReadonlyObject({
 	multicallResponse: SingleMulticallResponse,
 	signedTransaction: EthereumSignedTransaction,
 	realizedGasPrice: EthereumQuantity,
 	website: Website,
+	tokenBalancesAfter: TokenBalancesAfter,
 })
 
 export type SimulationState = funtypes.Static<typeof SimulationState>

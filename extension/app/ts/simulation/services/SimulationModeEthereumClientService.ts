@@ -1,11 +1,11 @@
 import { EthereumClientService } from './EthereumClientService.js'
-import { EthGetLogsResponse, EthereumUnsignedTransaction, EthereumSignedTransactionWithBlockData, EthereumBlockTag, EthGetLogsRequest, EthTransactionReceiptResponse, EstimateGasParamsVariables, EthSubscribeParams, JsonRpcMessage, JsonRpcNewHeadsNotification, PersonalSignParams, SignTypedDataParams, EthereumSignedTransaction, GetBlockReturn, EthereumData, EthereumQuantity } from '../../utils/wire-types.js'
-import { addressString, bytes32String, max, min, stringToUint8Array } from '../../utils/bigint.js'
+import { EthGetLogsResponse, EthereumUnsignedTransaction, EthereumSignedTransactionWithBlockData, EthereumBlockTag, EthGetLogsRequest, EthTransactionReceiptResponse, EstimateGasParamsVariables, EthSubscribeParams, JsonRpcMessage, JsonRpcNewHeadsNotification, PersonalSignParams, SignTypedDataParams, EthereumSignedTransaction, GetBlockReturn, EthereumData, EthereumQuantity, MulticallResponseEventLogs, MulticallResponse, EthereumAddress } from '../../utils/wire-types.js'
+import { addressString, bytes32String, bytesToUnsigned, dataStringWith0xStart, max, min, stringToUint8Array } from '../../utils/bigint.js'
 import { MOCK_ADDRESS } from '../../utils/constants.js'
 import { ErrorWithData } from '../../utils/errors.js'
 import { Future } from '../../utils/future.js'
 import { ethers, keccak256 } from 'ethers'
-import { SimulatedTransaction, SimulationState } from '../../utils/visualizer-types.js'
+import { SimulatedTransaction, SimulationState, TokenBalancesAfter } from '../../utils/visualizer-types.js'
 import { Website } from '../../utils/user-interface-types.js'
 import { EthereumUnsignedTransactionToUnsignedTransaction, IUnsignedTransaction1559, serializeSignedTransactionToBytes } from '../../utils/ethereum.js'
 
@@ -121,15 +121,22 @@ export class SimulationModeEthereumClientService {
 	public appendTransaction = async (transaction: EthereumUnsignedTransactionWithWebsite) => {
 		const signed = await SimulationModeEthereumClientService.mockSignTransaction(transaction.transaction)
 		const parentBlock = await this.ethereumClientService.getBlock()
-		if ( this.simulationState === undefined ) {
+		if (this.simulationState === undefined) {
 			const multicallResult = await this.multicall([transaction.transaction], parentBlock.number)
 			if (multicallResult.length != 1) throw 'multicall length does not match'
+			const tokenBalancesAfter = (await SimulationModeEthereumClientService.getTokenBalancesAfter(
+				this.ethereumClientService,
+				[signed],
+				multicallResult,
+				parentBlock.number
+			))[0]
 			this.simulationState = {
 				simulatedTransactions: [{
 					multicallResponse: multicallResult[0],
 					signedTransaction: signed,
 					realizedGasPrice: this.calculateGasPrice(transaction.transaction, parentBlock.gasUsed, parentBlock.gasLimit, parentBlock.baseFeePerGas),
 					website: transaction.website,
+					tokenBalancesAfter: tokenBalancesAfter,
 				}],
 				blockNumber: parentBlock.number,
 				blockTimestamp: parentBlock.timestamp,
@@ -144,12 +151,21 @@ export class SimulationModeEthereumClientService {
 		const websites = this.simulationState.simulatedTransactions.map((x) => x.website ).concat(transaction.website)
 		if (multicallResult.length !== signedTxs.length || websites.length !== signedTxs.length) throw 'multicall length does not match'
 
+		const tokenBalancesAfter = await SimulationModeEthereumClientService.getTokenBalancesAfter(
+			this.ethereumClientService,
+			signedTxs,
+			multicallResult,
+			parentBlock.number
+		)
+		if (multicallResult.length !== tokenBalancesAfter.length) throw 'tokenBalancesAfter length does not match'
+
 		this.simulationState = {
-			simulatedTransactions: multicallResult.map( (singleResult, index) => ({
+			simulatedTransactions: multicallResult.map((singleResult, index) => ({
 				multicallResponse: singleResult,
 				signedTransaction: signedTxs[index],
 				realizedGasPrice: this.calculateGasPrice(signedTxs[index], parentBlock.gasUsed, parentBlock.gasLimit, parentBlock.baseFeePerGas),
 				website: websites[index],
+				tokenBalancesAfter: tokenBalancesAfter[index],
 			})),
 			blockNumber: parentBlock.number,
 			blockTimestamp: parentBlock.timestamp,
@@ -179,18 +195,31 @@ export class SimulationModeEthereumClientService {
 		const parentBlock = await this.ethereumClientService.getBlock()
 		const multicallResult = await this.ethereumClientService.multicall(unsignedTxts.map((x) => x.transaction), parentBlock.number)
 		if (multicallResult.length !== signedTxs.length) throw 'multicall length does not match'
+		const chainId = await this.ethereumClientService.getChain()
 
+		const tokenBalancesAfter: TokenBalancesAfter[] = []
+		for (let resultIndex = 0; resultIndex < multicallResult.length; resultIndex++) {
+			const singleResult = multicallResult[resultIndex]
+			const balances = await SimulationModeEthereumClientService.getTokenBalances(
+				this.ethereumClientService,
+				signedTxs.slice(0, resultIndex),
+				SimulationModeEthereumClientService.getAddressesInteractedWithERC20s(singleResult.statusCode === 'success' ? singleResult.events : []),
+				parentBlock.number
+			)
+			tokenBalancesAfter.push(balances)
+		}
 		this.simulationState = {
-			simulatedTransactions: multicallResult.map( (singleResult, index) => ({
+			simulatedTransactions: multicallResult.map((singleResult, index) => ({
 				multicallResponse: singleResult,
 				unsignedTransaction: unsignedTxts[index],
 				signedTransaction: signedTxs[index],
 				realizedGasPrice: this.calculateGasPrice(unsignedTxts[index].transaction, parentBlock.gasUsed, parentBlock.gasLimit, parentBlock.baseFeePerGas),
 				website: unsignedTxts[index].website,
+				tokenBalancesAfter: tokenBalancesAfter[index]
 			})),
 			blockNumber: parentBlock.number,
 			blockTimestamp: parentBlock.timestamp,
-			chain: await this.ethereumClientService.getChain(),
+			chain: chainId,
 			simulationConductedTimestamp: new Date(),
 		}
 		return this.simulationState
@@ -662,5 +691,80 @@ export class SimulationModeEthereumClientService {
 			case 'newPendingTransactions': throw `Dapp requested for 'newPendingTransactions' subscription but it's not implemented`
 			case 'syncing': throw `Dapp requested for 'syncing' subscription but it's not implemented`
 		}
+	}
+
+	static readonly getTokenBalances = async (ethereumClientService: EthereumClientService, transactionQueue: EthereumUnsignedTransaction[], balances: { token: bigint, owner: bigint }[], blockNumber: bigint): Promise<TokenBalancesAfter> => {
+		console.log('getTokenBalances')
+		console.log(balances)
+		const tokenInterface = new ethers.Interface(['function balanceOf(address account) view returns (uint256)'])
+		const transactions = balances.map((balanceRequest, index) => {
+			const balanceOfCallData = stringToUint8Array(tokenInterface.encodeFunctionData('balanceOf', [addressString(balanceRequest.owner)]))
+			return {
+				type: '1559' as const,
+				from: MOCK_ADDRESS + BigInt(index) + 1n,
+				to: balanceRequest.token,
+				value: 0n,
+				input: balanceOfCallData,
+				maxFeePerGas: 0n,
+				maxPriorityFeePerGas: 0n,
+				accessList: [],
+				gas: 42000n,
+				chainId: 0n,
+				nonce: 0n,
+			}
+		})
+		const transactionQueueSize = transactionQueue.length
+		const response = await ethereumClientService.multicall(transactionQueue.concat(transactions), blockNumber)
+		if (response.length !== transactions.length + transactionQueueSize) throw new Error('Multicall length mismatch')
+		console.log('getTokenBalances reply')
+		console.log(response)
+		return balances.map((balance, index) => ({
+			token: balance.token,
+			owner: balance.owner,
+			balance: response[transactionQueueSize + index].statusCode === 'success' ? bytesToUnsigned(response[transactionQueueSize + index].returnValue) : undefined
+		}))
+	}	
+
+	static readonly getAddressesInteractedWithERC20s = (events: MulticallResponseEventLogs): { token: bigint, owner: bigint }[] => {
+		const erc20ABI = [
+			'event Transfer(address indexed from, address indexed to, uint256 value)',
+			'event Approval(address indexed owner, address indexed spender, uint256 value)',
+		]
+		const erc20 = new ethers.Interface(erc20ABI)
+		const tokenOwners: { token: bigint, owner: bigint }[] = []
+		for (const log of events) {
+			const parsed = erc20.parseLog({ topics: log.topics.map((x) => bytes32String(x)), data: dataStringWith0xStart(log.data) })
+			if (parsed === null) continue
+			switch (parsed.name) {
+				case 'Approval':
+				case 'Transfer': {
+					tokenOwners.push({ token: log.loggersAddress, owner: EthereumAddress.parse(parsed.args[0]) })
+					tokenOwners.push({ token: log.loggersAddress, owner: EthereumAddress.parse(parsed.args[1]) })
+					break
+				}
+				default: throw new Error(`wrong name: ${ parsed.name }`)				
+			}
+		}
+		return tokenOwners
+	}
+
+	static readonly getTokenBalancesAfter = async (
+		ethereumClientService: EthereumClientService,
+		signedTxs: EthereumSignedTransaction[] = [],
+		multicallResult: MulticallResponse,
+		blockNumber: bigint,
+	) => {
+		const tokenBalancesAfter: TokenBalancesAfter[] = []
+		for (let resultIndex = 0; resultIndex < multicallResult.length; resultIndex++) {
+			const singleResult = multicallResult[resultIndex]
+			const balances = await SimulationModeEthereumClientService.getTokenBalances(
+				ethereumClientService,
+				signedTxs.slice(0, resultIndex),
+				SimulationModeEthereumClientService.getAddressesInteractedWithERC20s(singleResult.statusCode === 'success' ? singleResult.events : []),
+				blockNumber
+			)
+			tokenBalancesAfter.push(balances)
+		}
+		return tokenBalancesAfter
 	}
 }

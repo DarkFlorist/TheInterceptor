@@ -145,31 +145,6 @@ export class EthereumClientService {
 		return EthereumQuantity.parse(response)
 	}
 
-	public readonly getTokenBalance = async (token: bigint, owner: bigint) => {
-		const tokenInterface = new ethers.Interface([
-			'function balanceOf(address _owner) view returns (uint256)',
-		])
-		const balanceOfCallData = stringToUint8Array(tokenInterface.encodeFunctionData('balanceOf', [owner]))
-		const callTransaction = {
-			type: '1559' as const,
-			from: MOCK_ADDRESS,
-			to: token,
-			value: 0n,
-			input: balanceOfCallData,
-			maxFeePerGas: 0n,
-			maxPriorityFeePerGas: 0n,
-			accessList: [],
-			// nethermind will treat this the same as missing/null
-			gasLimit: 15_000_000n,
-			// nethermind will overwrite this, so safe to put whatever here
-			chainId: 0n,
-			// nethermind null coalesces to 0 internally for calls, so this will give us the same behavior as missing
-			nonce: 0n,
-		}
-		const response = await this.call(callTransaction)
-		return EthereumQuantity.parse(response)
-	}
-
 	public readonly getTokenDecimals = async (token: bigint) => {
 		const tokenInterface = new ethers.Interface([
 			'function decimals() view returns (uint8)',
