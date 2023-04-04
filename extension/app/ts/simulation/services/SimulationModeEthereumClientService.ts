@@ -694,8 +694,7 @@ export class SimulationModeEthereumClientService {
 	}
 
 	static readonly getTokenBalances = async (ethereumClientService: EthereumClientService, transactionQueue: EthereumUnsignedTransaction[], balances: { token: bigint, owner: bigint }[], blockNumber: bigint): Promise<TokenBalancesAfter> => {
-		console.log('getTokenBalances')
-		console.log(balances)
+		if (balances.length === 0) return []
 		const tokenInterface = new ethers.Interface(['function balanceOf(address account) view returns (uint256)'])
 		const transactions = balances.map((balanceRequest, index) => {
 			const balanceOfCallData = stringToUint8Array(tokenInterface.encodeFunctionData('balanceOf', [addressString(balanceRequest.owner)]))
@@ -716,8 +715,6 @@ export class SimulationModeEthereumClientService {
 		const transactionQueueSize = transactionQueue.length
 		const response = await ethereumClientService.multicall(transactionQueue.concat(transactions), blockNumber)
 		if (response.length !== transactions.length + transactionQueueSize) throw new Error('Multicall length mismatch')
-		console.log('getTokenBalances reply')
-		console.log(response)
 		return balances.map((balance, index) => ({
 			token: balance.token,
 			owner: balance.owner,
