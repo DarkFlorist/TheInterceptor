@@ -344,7 +344,6 @@ export async function changeActiveAddressAndChainAndResetSimulation(
 			const ethereumClientService = simulator.ethereum
 			await updateSimulationState(async () => {
 				const simulationState = (await getSimulationResults()).simulationState
-				if (simulationState === undefined) return undefined
 				const prependQueue = await getPrependTrasactions(ethereumClientService, updatedSettings, await getMakeMeRich())
 				return await setPrependTransactionsQueue(ethereumClientService, simulationState, prependQueue)
 			}, updatedSettings.activeSimulationAddress)
