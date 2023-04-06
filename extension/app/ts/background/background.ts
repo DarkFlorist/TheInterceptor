@@ -313,8 +313,10 @@ export async function changeActiveAddressAndChainAndResetSimulation(
 	settings: Settings
 ) {
 	if (simulator === undefined) return
+	let updatedSettings = settings
 
 	if (activeChain !== 'noActiveChainChange') {
+		updatedSettings = { ...updatedSettings, activeChain: activeChain }
 		await setActiveChain(activeChain)
 		const chainString = activeChain.toString()
 		if (isSupportedChain(chainString)) {
@@ -322,16 +324,17 @@ export async function changeActiveAddressAndChainAndResetSimulation(
 			simulator = new Simulator(chainString, newBlockCallback)
 		}
 	}
-
 	if (activeAddress !== 'noActiveAddressChange') {
 		if (settings.simulationMode) {
+			updatedSettings = { ...updatedSettings, activeSimulationAddress: activeAddress }
+			updateWebsiteApprovalAccesses(websiteTabConnections, undefined, updatedSettings)
 			await setActiveSimulationAddress(activeAddress)
 		} else {
+			updatedSettings = { ...updatedSettings, activeSigningAddress: activeAddress }
+			updateWebsiteApprovalAccesses(websiteTabConnections, undefined, updatedSettings)
 			await setActiveSigningAddress(activeAddress)
 		}
 	}
-	const updatedSettings = await getSettings()
-	updateWebsiteApprovalAccesses(websiteTabConnections, undefined, updatedSettings)
 
 	if (updatedSettings.simulationMode) {
 		// update prepend mode as our active address has changed, so we need to be sure the rich modes money is sent to right address
