@@ -135,7 +135,7 @@ export async function estimateGas(simulator: Simulator, request: EstimateGasPara
 }
 
 export async function subscribe(websiteTabConnections: WebsiteTabConnections, simulator: Simulator, socket: WebsiteSocket, request: EthSubscribeParams) {
-	const result = await simulator.simulationModeNode.createSubscription(request, (subscriptionId: string, reply: JsonRpcNewHeadsNotification) => {
+	const result = await simulator.ethereumSubscriptionService.createSubscription(request, (subscriptionId: string, reply: JsonRpcNewHeadsNotification) => {
 		return postMessageIfStillConnected(websiteTabConnections, socket, {
 			interceptorApproved: true,
 			options: request,
@@ -150,7 +150,7 @@ export async function subscribe(websiteTabConnections: WebsiteTabConnections, si
 }
 
 export async function unsubscribe(simulator: Simulator, request: EthUnSubscribeParams) {
-	return { result: simulator.simulationModeNode.remoteSubscription(request.params[0]) }
+	return { result: simulator.ethereumSubscriptionService.remoteSubscription(request.params[0]) }
 }
 
 export async function getAccounts(websiteTabConnections: WebsiteTabConnections, getActiveAddressForDomain: (websiteAccess: WebsiteAccessArray, websiteOrigin: string, settings: Settings) => bigint | undefined, _simulator: Simulator, socket: WebsiteSocket, settings: Settings) {

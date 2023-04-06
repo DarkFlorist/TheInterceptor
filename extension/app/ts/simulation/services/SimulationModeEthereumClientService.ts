@@ -1,9 +1,7 @@
 import { EthereumClientService } from './EthereumClientService.js'
-import { EthGetLogsResponse, EthereumUnsignedTransaction, EthereumSignedTransactionWithBlockData, EthereumBlockTag, EthGetLogsRequest, EthTransactionReceiptResponse, EstimateGasParamsVariables, EthSubscribeParams, JsonRpcMessage, JsonRpcNewHeadsNotification, PersonalSignParams, SignTypedDataParams, EthereumSignedTransaction, GetBlockReturn, EthereumData, EthereumQuantity, MulticallResponseEventLogs, MulticallResponse, EthereumAddress } from '../../utils/wire-types.js'
+import { EthGetLogsResponse, EthereumUnsignedTransaction, EthereumSignedTransactionWithBlockData, EthereumBlockTag, EthGetLogsRequest, EthTransactionReceiptResponse, EstimateGasParamsVariables, PersonalSignParams, SignTypedDataParams, EthereumSignedTransaction, GetBlockReturn, EthereumData, EthereumQuantity, MulticallResponseEventLogs, MulticallResponse, EthereumAddress } from '../../utils/wire-types.js'
 import { addressString, bytes32String, bytesToUnsigned, dataStringWith0xStart, max, min, stringToUint8Array } from '../../utils/bigint.js'
 import { MOCK_ADDRESS } from '../../utils/constants.js'
-import { ErrorWithData } from '../../utils/errors.js'
-import { Future } from '../../utils/future.js'
 import { ethers, keccak256 } from 'ethers'
 import { SimulatedTransaction, SimulationState, TokenBalancesAfter } from '../../utils/visualizer-types.js'
 import { Website } from '../../utils/user-interface-types.js'
@@ -11,12 +9,6 @@ import { EthereumUnsignedTransactionToUnsignedTransaction, IUnsignedTransaction1
 
 const MOCK_PRIVATE_KEY = 0x1n // key used to sign mock transactions
 const GET_CODE_CONTRACT = 0x1ce438391307f908756fefe0fe220c0f0d51508an
-
-type Subscription = {
-	callback: (subscriptionId: string, reply: JsonRpcNewHeadsNotification) => void
-	params: EthSubscribeParams,
-	rpcSocket: WebSocket
-}
 
 export type EthereumUnsignedTransactionWithWebsite = { transaction: EthereumUnsignedTransaction, website: Website }
 
@@ -33,15 +25,12 @@ export class SimulationModeEthereumClientService {
 
 	private simulationState: SimulationState | undefined = undefined
 
-	private webSocketConnectionString: string
-
-	public constructor(ethereumClientService: EthereumClientService, webSocketConnectionString: string) {
+	public constructor(ethereumClientService: EthereumClientService) {
 		this.ethereumClientService = ethereumClientService
-		this.webSocketConnectionString = webSocketConnectionString
 	}
 
 	public copy = () => {
-		const newSimulation = new SimulationModeEthereumClientService(this.ethereumClientService, this.webSocketConnectionString)
+		const newSimulation = new SimulationModeEthereumClientService(this.ethereumClientService)
 		newSimulation.prependTransactionsQueue = [...this.prependTransactionsQueue]
 		if (this.simulationState) {
 			newSimulation.simulationState = {
@@ -606,81 +595,6 @@ export class SimulationModeEthereumClientService {
 			return await new ethers.Wallet(bytes32String(MOCK_PRIVATE_KEY)).signMessage(params.params[0])
 		}
 		return 'NOT IMPLEMENTED'
-	}
-
-	private subscriptions = new Map<string, Subscription>()
-	private subscriptionSocket = new Map<WebSocket, string>()
-
-	public readonly remoteSubscription = (subscriptionId: string) => {
-		if(this.subscriptions.has(subscriptionId)) {
-			this.subscriptions.get(subscriptionId)?.rpcSocket.close()
-			this.subscriptions.delete(subscriptionId)
-			return true
-		}
-		return false
-	}
-
-	public readonly createSubscription = async (params: EthSubscribeParams, callback: (subscriptionId: string, reply: JsonRpcNewHeadsNotification) => void) => {
-		switch(params.params[0]) {
-			case 'newHeads': {
-				const rpcSocket = new WebSocket(this.webSocketConnectionString)
-				const subscriptionId = new Future<string>()
-
-				rpcSocket.addEventListener('open', _event => {
-					const request = { jsonrpc: '2.0', id: 0, method: 'eth_subscribe', params: ['newHeads'] }
-					rpcSocket.send(JSON.stringify(request))
-				})
-
-				rpcSocket.addEventListener('close', event => {
-					if (event.code === 1000) return
-					if (this.subscriptionSocket.has(rpcSocket)) {
-						this.subscriptions.delete(this.subscriptionSocket.get(rpcSocket)!)
-						this.subscriptionSocket.delete(rpcSocket)
-					}
-					throw new Error(`Websocket disconnected with code ${event.code} and reason: ${event.reason}`)
-				})
-
-				rpcSocket.addEventListener('message', event => {
-					const subResponse = JsonRpcMessage.parse(JSON.parse(event.data))
-					if ('error' in subResponse) {
-						throw new ErrorWithData(`Websocket error`, subResponse.error)
-					}
-					if ('id' in subResponse && 'result' in subResponse) {
-						if (typeof subResponse.result !== 'string') throw new ErrorWithData(`Expected rpc payload to be a string but it was a ${typeof event.data}`, event.data)
-						return subscriptionId.resolve(subResponse.result)
-					}
-					try {
-						if (typeof event.data !== 'string') throw new ErrorWithData(`Expected rpc payload to be a string but it was a ${typeof event.data}`, event.data)
-						const jsonRpcNotification = JsonRpcNewHeadsNotification.parse(JSON.parse(event.data))
-						if (jsonRpcNotification['method'] === 'eth_subscription') {
-							return callback(jsonRpcNotification.params.subscription, jsonRpcNotification)
-						} else {
-							throw('not eth_subscription')
-						}
-					} catch (error: unknown) {
-						console.error(error)
-					}
-				})
-
-				rpcSocket.addEventListener('error', event => {
-					throw new ErrorWithData(`Websocket error`, event)
-				})
-
-				const subId = await subscriptionId
-
-				this.subscriptions.set(subId, {
-					callback: callback,
-					params: params,
-					rpcSocket: rpcSocket
-				})
-				this.subscriptionSocket.set(rpcSocket, subId)
-
-				return subId
-			}
-			case 'logs': throw `Dapp requested for 'logs' subscription but it's not implemented`
-			case 'newPendingTransactions': throw `Dapp requested for 'newPendingTransactions' subscription but it's not implemented`
-			case 'syncing': throw `Dapp requested for 'syncing' subscription but it's not implemented`
-		}
 	}
 
 	static readonly getTokenBalances = async (ethereumClientService: EthereumClientService, transactionQueue: EthereumUnsignedTransaction[], balances: { token: bigint, owner: bigint }[], blockNumber: bigint): Promise<TokenBalancesAfter> => {
