@@ -59,7 +59,7 @@ export const simulateEstimateGas = async (ethereumClientService: EthereumClientS
 		input: data.data === undefined ? new Uint8Array(0) : data.data,
 		accessList: []
 	}
-	const multiCall = await ethereumClientService.multicall([tmp], block.number + 1n)
+	const multiCall = await simulatedMulticall(ethereumClientService, simulationState, [tmp], block.number + 1n)
 	const gasSpent = multiCall[multiCall.length - 1].gasSpent * 12n / 10n
 	return gasSpent < maxGas ? gasSpent : maxGas
 }
@@ -92,9 +92,9 @@ export const appendTransaction = async (ethereumClientService: EthereumClientSer
 	const signed = await mockSignTransaction(transaction.transaction)
 	const parentBlock = await ethereumClientService.getBlock()
 	const signedTxs = simulationState.simulatedTransactions.map((x) => x.signedTransaction).concat([signed])
-	const multicallResult = await ethereumClientService.multicall([transaction.transaction], parentBlock.number)
+	const multicallResult = await ethereumClientService.multicall(signedTxs, parentBlock.number)
 	const websites = simulationState.simulatedTransactions.map((x) => x.website).concat(transaction.website)
-	if (multicallResult.length !== signedTxs.length || websites.length !== signedTxs.length) throw 'multicall length does not match'
+	if (multicallResult.length !== signedTxs.length || websites.length !== signedTxs.length) throw 'multicall length does not match in appendTransaction'
 
 	const tokenBalancesAfter = await getTokenBalancesAfter(
 		ethereumClientService,
@@ -115,7 +115,7 @@ export const appendTransaction = async (ethereumClientService: EthereumClientSer
 		})),
 		blockNumber: parentBlock.number,
 		blockTimestamp: parentBlock.timestamp,
-		chain: await ethereumClientService.getChain(),
+		chain: simulationState.chain,
 		simulationConductedTimestamp: new Date(),
 	}
 }
@@ -140,7 +140,7 @@ export const setSimulationTransactions = async (ethereumClientService: EthereumC
 	}
 	const parentBlock = await ethereumClientService.getBlock()
 	const multicallResult = await ethereumClientService.multicall(newTransactionsToSimulate.map((x) => x.transaction), parentBlock.number)
-	if (multicallResult.length !== signedTxs.length) throw 'multicall length does not match'
+	if (multicallResult.length !== signedTxs.length) throw 'multicall length does not match in setSimulationTransactions'
 	const chainId = await ethereumClientService.getChain()
 
 	const tokenBalancesAfter: TokenBalancesAfter[] = []
@@ -176,12 +176,12 @@ export const getTransactionQueue = (simulationState: SimulationState) => {
 }
 export const getPrependTransactionsQueue = (simulationState: SimulationState) => simulationState.prependTransactionsQueue
 
-export const setPrependTransactionsQueue = async (ethereumClientService: EthereumClientService, simulationState: SimulationState, prepend: readonly EthereumUnsignedTransactionWithWebsite[]): Promise<SimulationState>  => {
-	if (prepend.length > 0) {
+export const setPrependTransactionsQueue = async (ethereumClientService: EthereumClientService, simulationState: SimulationState | undefined, prepend: readonly EthereumUnsignedTransactionWithWebsite[]): Promise<SimulationState>  => {
+	if (prepend.length > 0 && simulationState !== undefined) {
 		return await setSimulationTransactions(ethereumClientService, { ...simulationState, prependTransactionsQueue: prepend }, [])
 	}
 	const block = await ethereumClientService.getBlock()
-	return {
+	const newState = {
 		prependTransactionsQueue: [],
 		simulatedTransactions: [],
 		blockNumber: block.number,
@@ -189,6 +189,11 @@ export const setPrependTransactionsQueue = async (ethereumClientService: Ethereu
 		chain: await ethereumClientService.getChain(),
 		simulationConductedTimestamp: new Date(),
 	}
+
+	if (prepend.length > 0) {
+		return await setSimulationTransactions(ethereumClientService, { ...newState, prependTransactionsQueue: prepend }, [])
+	}
+	return newState
 }
 
 export const removeTransaction = async (ethereumClientService: EthereumClientService, simulationState: SimulationState, transactionHash: bigint): Promise<SimulationState>  => {
@@ -216,6 +221,7 @@ export const removeTransactionAndUpdateTransactionNonces = async (ethereumClient
 }
 
 export const refreshSimulationState = async (ethereumClientService: EthereumClientService, simulationState: SimulationState): Promise<SimulationState>  => {
+	if (ethereumClientService.getChain() !== simulationState.chain) return simulationState // don't refresh if we don't have the same chain to refresh from
 	if (simulationState.blockNumber == await ethereumClientService.getBlockNumber()) {
 		// if block number is the same, we don't need to compute anything as nothing has changed, but let's update timestamp to show the simulation was refreshed for this time
 		return { ...simulationState, simulationConductedTimestamp: new Date() }
@@ -242,9 +248,9 @@ const canQueryNodeDirectly = async (ethereumClientService: EthereumClientService
 	return false
 }
 
-export const getSimulatedTransactionCount = async (ethereumClientService: EthereumClientService, simulationState: SimulationState, address: bigint, blockTag: EthereumBlockTag = 'latest') => {
+export const getSimulatedTransactionCount = async (ethereumClientService: EthereumClientService, simulationState: SimulationState | undefined, address: bigint, blockTag: EthereumBlockTag = 'latest') => {
 	let addedTransactions = 0n
-	if (blockTag === 'latest' || blockTag === 'pending' || blockTag === await ethereumClientService.getBlockNumber()) {
+	if (simulationState !== undefined && (blockTag === 'latest' || blockTag === 'pending' || blockTag === await ethereumClientService.getBlockNumber())) {
 		// if we are on our simulated block, just count how many transactions we have sent in the simulation to increment transaction count
 		if (simulationState === undefined) return await ethereumClientService.getTransactionCount(address, blockTag)
 		for (const signed of simulationState.simulatedTransactions) {
@@ -336,7 +342,7 @@ export const getSimulatedCode = async (ethereumClientService: EthereumClientServ
 		input: input,
 		accessList: []
 	} as const
-	const multiCall = await ethereumClientService.multicall([getCodeTransaction], blockNum + 1n)
+	const multiCall = await simulatedMulticall(ethereumClientService, simulationState, [getCodeTransaction], blockNum + 1n)
 	return multiCall[multiCall.length - 1].returnValue
 }
 

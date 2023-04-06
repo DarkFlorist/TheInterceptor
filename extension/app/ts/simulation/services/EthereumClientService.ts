@@ -13,22 +13,26 @@ export class EthereumClientService {
 	private cacheRefreshTimer: NodeJS.Timer | undefined = undefined
 	private lastCacheAccess: number = 0
 	private retrievingBlock: boolean = false
-	private newBlockCallback: (blockNumber: bigint) => void
+	private newBlockCallback: (blockNumber: bigint, ethereumClientService: EthereumClientService) => void
 	private requestHandler
+	private cleanedUp = false
 
-    constructor(requestHandler: IEthereumJSONRpcRequestHandler, chain: CHAIN, newBlockCallback: (blockNumber: bigint) => void) {
+    constructor(requestHandler: IEthereumJSONRpcRequestHandler, chain: CHAIN, newBlockCallback: (blockNumber: bigint, ethereumClientService: EthereumClientService) => void) {
 		this.requestHandler = requestHandler
 		this.chain = chain
 		this.newBlockCallback = newBlockCallback
     }
 
 	public getCachedBlock() {
-		this.setBlockPolling(true)
+		if (this.cleanedUp === false) {
+			this.setBlockPolling(true)
+		}
 		this.lastCacheAccess = Date.now()
 		return this.cachedBlock
 	}
 
 	public cleanup = () => {
+		this.cleanedUp = true
 		this.setBlockPolling(false)
 	}
 
@@ -49,6 +53,7 @@ export class EthereumClientService {
 			return
 		}
 		if (!enabled) {
+			clearTimeout(this.cacheRefreshTimer)
 			clearInterval(this.cacheRefreshTimer)
 			this.cacheRefreshTimer = undefined
 			this.cachedBlock = undefined
@@ -66,7 +71,7 @@ export class EthereumClientService {
 			console.log(`Current block number: ${ newBlock.number }`)
 			if (this.cachedBlock?.number != newBlock.number) {
 				this.cachedBlock = newBlock
-				this.newBlockCallback(newBlock.number)
+				this.newBlockCallback(newBlock.number, this)
 			}
 		} catch(e) {
 			throw e
@@ -118,11 +123,11 @@ export class EthereumClientService {
 		return EthereumBlockHeader.parse(response)
 	}
 
-	public readonly getChainId = async () => {
+	public readonly getChainId = () => {
 		return CHAINS[this.chain].chainId
 	}
 
-	public readonly getChain = async () => {
+	public readonly getChain = () => {
 		return this.chain
 	}
 

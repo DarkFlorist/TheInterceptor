@@ -1,4 +1,4 @@
-import { changeActiveAddressAndChainAndResetSimulation, changeActiveChain, refreshConfirmTransactionSimulation, updatePrependMode, updateSimulationState } from './background.js'
+import { changeActiveAddressAndChainAndResetSimulation, changeActiveChain, getPrependTrasactions, refreshConfirmTransactionSimulation, updateSimulationState } from './background.js'
 import { getCurrentTabId, getMakeMeRich, getOpenedAddressBookTabId, getSettings, getSignerName, getSimulationResults, getTabState, saveCurrentTabId, setMakeMeRich, setOpenedAddressBookTabId, setPage, setSimulationMode, setUseSignersAddressAsActiveAddress, updateAddressInfos, updateContacts, updateWebsiteAccess } from './settings.js'
 import { Simulator } from '../simulation/simulator.js'
 import { ChangeActiveAddress, ChangeMakeMeRich, ChangePage, PersonalSign, RemoveTransaction, RequestAccountsFromSigner, TransactionConfirmation, InterceptorAccess, ChangeInterceptorAccess, ChainChangeConfirmation, EnableSimulationMode, ReviewNotification, RejectNotification, ChangeActiveChain, AddOrEditAddressBookEntry, GetAddressBookData, RemoveAddressBookEntry, RefreshConfirmTransactionDialogSimulation, UserAddressBook, InterceptorAccessRefresh, InterceptorAccessChangeAddress, Settings } from '../utils/interceptor-messages.js'
@@ -15,11 +15,10 @@ import { assertUnreachable } from '../utils/typescript.js'
 import { addressString } from '../utils/bigint.js'
 import { AddressInfoEntry, WebsiteTabConnections } from '../utils/user-interface-types.js'
 import { EthereumClientService } from '../simulation/services/EthereumClientService.js'
-import { SimulationState } from '../utils/visualizer-types.js'
 import { refreshSimulationState, removeTransactionAndUpdateTransactionNonces, resetSimulationState } from '../simulation/services/SimulationModeEthereumClientService.js'
 
-export async function confirmDialog(websiteTabConnections: WebsiteTabConnections, confirmation: TransactionConfirmation) {
-	await resolvePendingTransaction(websiteTabConnections, confirmation.options.accept ? 'Approved' : 'Rejected')
+export async function confirmDialog(ethereumClientService: EthereumClientService, websiteTabConnections: WebsiteTabConnections, confirmation: TransactionConfirmation) {
+	await resolvePendingTransaction(ethereumClientService, websiteTabConnections, confirmation.options.accept ? 'Approved' : 'Rejected')
 }
 
 export async function confirmPersonalSign(websiteTabConnections: WebsiteTabConnections, confirmation: PersonalSign) {
@@ -61,9 +60,14 @@ export async function changeActiveAddress(websiteTabConnections: WebsiteTabConne
 	}
 }
 
-export async function changeMakeMeRich(ethereumClientService: EthereumClientService, simulationState: SimulationState, makeMeRichChange: ChangeMakeMeRich, settings: Settings) {
+export async function changeMakeMeRich(ethereumClientService: EthereumClientService, makeMeRichChange: ChangeMakeMeRich, settings: Settings) {
 	await setMakeMeRich(makeMeRichChange.options)
-	await updatePrependMode(ethereumClientService, simulationState, settings)
+	await updateSimulationState(async () => {
+		const simulationState = (await getSimulationResults()).simulationState
+		if (simulationState === undefined) return undefined
+		const prependQueue = await getPrependTrasactions(ethereumClientService, settings, makeMeRichChange.options)
+		return await resetSimulationState(ethereumClientService, { ...simulationState, prependTransactionsQueue: prependQueue })
+	}, settings.activeSimulationAddress)
 }
 
 export async function removeAddressBookEntry(websiteTabConnections: WebsiteTabConnections, removeAddressBookEntry: RemoveAddressBookEntry) {
@@ -132,19 +136,33 @@ export async function requestAccountsFromSigner(websiteTabConnections: WebsiteTa
 	}
 }
 
-export async function resetSimulation(ethereumClientService: EthereumClientService, simulationState: SimulationState, settings: Settings) {
-	await updateSimulationState(async () => await resetSimulationState(ethereumClientService, simulationState), settings.activeSimulationAddress)
+export async function resetSimulation(ethereumClientService: EthereumClientService, settings: Settings) {
+	await updateSimulationState(async () => {
+		const simulationState = (await getSimulationResults()).simulationState
+		if (simulationState === undefined) return undefined
+		return await resetSimulationState(ethereumClientService, simulationState)
+	}, settings.activeSimulationAddress)
 }
 
-export async function removeTransaction(ethereumClientService: EthereumClientService, simulationState: SimulationState, params: RemoveTransaction, settings: Settings) {
-	await updateSimulationState(async () => await removeTransactionAndUpdateTransactionNonces(ethereumClientService, simulationState, params.options), settings.activeSimulationAddress)
+export async function removeTransaction(ethereumClientService: EthereumClientService, params: RemoveTransaction, settings: Settings) {
+	await updateSimulationState(async () => {
+		const simulationState = (await getSimulationResults()).simulationState
+		if (simulationState === undefined) return
+		return await removeTransactionAndUpdateTransactionNonces(ethereumClientService, simulationState, params.options)
+	}, settings.activeSimulationAddress)
 }
 
-export async function refreshSimulation(ethereumClientService: EthereumClientService, simulationState: SimulationState, settings: Settings) {
-	await updateSimulationState(async() => await refreshSimulationState(ethereumClientService, simulationState), settings.activeSimulationAddress)
+export async function refreshSimulation(ethereumClientService: EthereumClientService, settings: Settings) {
+	await updateSimulationState(async() => {
+		const simulationState = (await getSimulationResults()).simulationState
+		if (simulationState === undefined) return
+		return await refreshSimulationState(ethereumClientService, simulationState)
+	}, settings.activeSimulationAddress)
 }
 
-export async function refreshPopupConfirmTransactionSimulation(ethereumClientService: EthereumClientService, simulationState: SimulationState, { data }: RefreshConfirmTransactionDialogSimulation) {
+export async function refreshPopupConfirmTransactionSimulation(ethereumClientService: EthereumClientService, { data }: RefreshConfirmTransactionDialogSimulation) {
+	const simulationState = (await getSimulationResults()).simulationState
+	if (simulationState === undefined) return
 	const refreshMessage = await refreshConfirmTransactionSimulation(ethereumClientService, simulationState, data.activeAddress, data.simulationMode, data.requestId, data.transactionToSimulate, data.website, (await getSettings()).userAddressBook)
 	if (refreshMessage === undefined) return
 	return await sendPopupMessageToOpenWindows(refreshMessage)
@@ -164,13 +182,13 @@ export async function enableSimulationMode(websiteTabConnections: WebsiteTabConn
 	// if we are on unsupported chain, force change to a supported one
 	if (settings.useSignersAddressAsActiveAddress || params.options === false) {
 		const tabId = await getLastKnownCurrentTabId()
-		const chainToSwitch = tabId === undefined ? undefined : (await getTabState(tabId)).signerChain 
+		const chainToSwitch = tabId === undefined ? undefined : (await getTabState(tabId)).signerChain
 		await changeActiveAddressAndChainAndResetSimulation(websiteTabConnections, await getSignerAccount(), chainToSwitch === undefined ? 'noActiveChainChange' : chainToSwitch, settings)
 		sendMessageToApprovedWebsitePorts(websiteTabConnections, 'request_signer_to_eth_requestAccounts', [])
 		sendMessageToApprovedWebsitePorts(websiteTabConnections, 'request_signer_chainId', [])
 	} else {
 		const chainToSwitch = isSupportedChain(settings.activeChain.toString()) ? settings.activeChain : 1n
-		await changeActiveAddressAndChainAndResetSimulation(websiteTabConnections, settings.simulationMode ? settings.activeSimulationAddress : settings.activeSigningAddress, chainToSwitch, settings)
+		await changeActiveAddressAndChainAndResetSimulation(websiteTabConnections, settings.activeSimulationAddress, chainToSwitch, settings)
 	}
 }
 

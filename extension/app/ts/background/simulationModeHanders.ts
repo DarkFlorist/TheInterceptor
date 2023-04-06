@@ -9,6 +9,7 @@ import { SimulationState } from '../utils/visualizer-types.js'
 import { EstimateGasParams, EthBalanceParams, EthBlockByNumberParams, EthCallParams, EthereumAddress, EthereumData, EthereumQuantity, EthereumSignedTransactionWithBlockData, EthGetLogsParams, EthGetLogsResponse, EthSubscribeParams, EthTransactionReceiptResponse, EthUnSubscribeParams, GetBlockReturn, GetCode, GetSimulationStack, GetSimulationStackReply, GetTransactionCount, JsonRpcNewHeadsNotification, NewHeadsSubscriptionData, PersonalSignParams, SendTransactionParams, SignTypedDataParams, SwitchEthereumChainParams, TransactionByHashParams, TransactionReceiptParams } from '../utils/wire-types.js'
 import { getConnectionDetails } from './accessManagement.js'
 import { postMessageIfStillConnected } from './background.js'
+import { getSimulationResults } from './settings.js'
 import { openChangeChainDialog } from './windows/changeChain.js'
 import { openConfirmTransactionDialog } from './windows/confirmTransaction.js'
 import { openPersonalSignDialog } from './windows/personalSign.js'
@@ -47,7 +48,7 @@ function getFromField(websiteTabConnections: WebsiteTabConnections, simulationMo
 export async function sendTransaction(
 	websiteTabConnections: WebsiteTabConnections,
 	getActiveAddressForDomain: (websiteAccess: WebsiteAccessArray, websiteOrigin: string, settings: Settings) => bigint | undefined,
-	ethereumClientService: EthereumClientService, simulationState: SimulationState, 
+	ethereumClientService: EthereumClientService,
 	sendTransactionParams: SendTransactionParams,
 	socket: WebsiteSocket,
 	request: InterceptedRequest,
@@ -56,6 +57,8 @@ export async function sendTransaction(
 	settings: Settings,
 ) {
 	async function formTransaction() {
+		const simulationState = (await getSimulationResults()).simulationState
+		if (simulationState === undefined) return undefined
 		const block = getSimulatedBlock(ethereumClientService, simulationState)
 		const chainId = ethereumClientService.getChainId()
 		const from = getFromField(websiteTabConnections, simulationMode, sendTransactionParams, getActiveAddressForDomain, socket, settings)
@@ -77,6 +80,7 @@ export async function sendTransaction(
 		}
 	}
 	return await openConfirmTransactionDialog(
+		ethereumClientService,
 		websiteTabConnections,
 		socket,
 		request,

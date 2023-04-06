@@ -1,5 +1,5 @@
 import { EthereumClientService } from '../../app/ts/simulation/services/EthereumClientService.js'
-import { SimulationModeEthereumClientService } from '../../app/ts/simulation/services/SimulationModeEthereumClientService.js'
+import { appendTransaction, getSimulatedBlock, getSimulatedTransactionByHash } from '../../app/ts/simulation/services/SimulationModeEthereumClientService.js'
 import { CHAINS } from '../../app/ts/utils/constants.js'
 import { GetBlockReturn, EthereumSignedTransactionWithBlockData, JsonRpcResponse, EthereumJsonRpcRequest } from '../../app/ts/utils/wire-types.js'
 import { eth_getBlockByNumber_goerli_8443561_false, eth_getBlockByNumber_goerli_8443561_true, eth_multicall_failure, eth_transactionByhash0xe10c2a85168046080235fff99e2e14ef1e90c8cf5e9d675f2ca214e49e555e0f } from '../nethermindRPCResponses.js'
@@ -36,9 +36,16 @@ class MockEthereumJSONRpcRequestHandler {
 
 export async function main() {
 	const blockNumber = 8443561n
-	const chain = '5'
+	const chain = '5' as const
 	const ethereum = new EthereumClientService(new MockEthereumJSONRpcRequestHandler(CHAINS[chain].https_rpc), chain, () => {})
-	const simulationModeNode = new SimulationModeEthereumClientService(ethereum)
+	const simulationState = {
+		prependTransactionsQueue: [],
+		simulatedTransactions: [],
+		blockNumber: blockNumber,
+		blockTimestamp: new Date(0),
+		chain: chain,
+		simulationConductedTimestamp: new Date(0),
+	}
 
 	const exampleTransaction = {
 		type: '1559' as const,
@@ -56,7 +63,7 @@ export async function main() {
 	describe('Nethermind testing', () => {
 
 		should('getBlock with true aligns with Nethermind', async () => {
-			const block = await simulationModeNode.getBlock(blockNumber, true)
+			const block = await getSimulatedBlock(ethereum, simulationState, blockNumber, true)
 			const serialized = GetBlockReturn.serialize(block)
 			const expected = parseRequest(eth_getBlockByNumber_goerli_8443561_true)
 			assertIsObject(expected)
@@ -64,7 +71,7 @@ export async function main() {
 		})
 
 		should('getBlock with false aligns with Nethermind', async () => {
-			const block = await simulationModeNode.getBlock(blockNumber, false)
+			const block = await getSimulatedBlock(ethereum, simulationState, blockNumber, false)
 			const serialized = GetBlockReturn.serialize(block)
 			const expected = parseRequest(eth_getBlockByNumber_goerli_8443561_false)
 			assertIsObject(expected)
@@ -72,9 +79,9 @@ export async function main() {
 		})
 
 		should('adding transaction and getting the next block should include all the same fields as Nethermind', async () => {
-			const block = await simulationModeNode.getBlock(blockNumber, true)
-			await simulationModeNode.appendTransaction( { transaction: exampleTransaction, website: { websiteOrigin: 'test', icon: undefined, title: undefined } })
-			const nextBlock = await simulationModeNode.getBlock(blockNumber + 1n, true)
+			const block = await getSimulatedBlock(ethereum, simulationState, blockNumber, true)
+			await appendTransaction(ethereum, simulationState, { transaction: exampleTransaction, website: { websiteOrigin: 'test', icon: undefined, title: undefined } })
+			const nextBlock = await getSimulatedBlock(ethereum, simulationState, blockNumber + 1n, true)
 			assert.equal(JSON.stringify(Object.keys(nextBlock).sort()), JSON.stringify(Object.keys(block).sort()))
 
 			const expected = parseRequest(eth_getBlockByNumber_goerli_8443561_true)
@@ -84,7 +91,7 @@ export async function main() {
 		})
 
 		should('get transaction by hash aligns with Nethermind', async () => {
-			const transaction = await simulationModeNode.getTransactionByHash(0xe10c2a85168046080235fff99e2e14ef1e90c8cf5e9d675f2ca214e49e555e0fn)
+			const transaction = await getSimulatedTransactionByHash(ethereum, simulationState, 0xe10c2a85168046080235fff99e2e14ef1e90c8cf5e9d675f2ca214e49e555e0fn)
 			if (transaction === undefined) throw new Error('Transaction is undefined')
 
 			const serialized = EthereumSignedTransactionWithBlockData.serialize(transaction)
