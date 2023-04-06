@@ -124,12 +124,7 @@ export class SimulationModeEthereumClientService {
 		if (this.simulationState === undefined) {
 			const multicallResult = await this.multicall([transaction.transaction], parentBlock.number)
 			if (multicallResult.length != 1) throw 'multicall length does not match'
-			const tokenBalancesAfter = (await SimulationModeEthereumClientService.getTokenBalancesAfter(
-				this.ethereumClientService,
-				[signed],
-				multicallResult,
-				parentBlock.number
-			))[0]
+			const tokenBalancesAfter = (await SimulationModeEthereumClientService.getTokenBalancesAfter(this.ethereumClientService, [signed], multicallResult, parentBlock.number))[0]
 			this.simulationState = {
 				simulatedTransactions: [{
 					multicallResponse: multicallResult[0],
