@@ -8,7 +8,7 @@ type Subscription = {
 	rpcSocket: WebSocket
 }
 
-export class ETHSubscriptionService {
+export class EthereumSubscriptionService {
 	private subscriptions = new Map<string, Subscription>()
 	private subscriptionSocket = new Map<WebSocket, string>()
 
