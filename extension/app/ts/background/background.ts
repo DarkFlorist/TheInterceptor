@@ -18,6 +18,7 @@ import { connectedToSigner, ethAccountsReply, signerChainChanged, walletSwitchEt
 import { assertNever, assertUnreachable } from '../utils/typescript.js'
 import { EthereumClientService } from '../simulation/services/EthereumClientService.js'
 import { appendTransaction, copySimulationState, setPrependTransactionsQueue, simulatePersonalSign } from '../simulation/services/SimulationModeEthereumClientService.js'
+import { Semaphore } from '../utils/semaphore.js'
 
 const websiteTabConnections = new Map<number, TabConnection>()
 
@@ -306,57 +307,60 @@ async function newBlockCallback(blockNumber: bigint, ethereumClientService: Ethe
 	refreshSimulation(ethereumClientService, await getSettings())
 }
 
+const changeActiveAddressAndChainAndResetSimulationSemaphore = new Semaphore(1)
 export async function changeActiveAddressAndChainAndResetSimulation(
 	websiteTabConnections: WebsiteTabConnections,
 	activeAddress: bigint | undefined | 'noActiveAddressChange',
 	activeChain: bigint | 'noActiveChainChange',
 	settings: Settings
 ) {
-	if (simulator === undefined) return
-	let updatedSettings = settings
+	await changeActiveAddressAndChainAndResetSimulationSemaphore.execute(async () => {
+		if (simulator === undefined) return
+		let updatedSettings = settings
 
-	if (activeChain !== 'noActiveChainChange') {
-		updatedSettings = { ...updatedSettings, activeChain: activeChain }
-		await setActiveChain(activeChain)
-		const chainString = activeChain.toString()
-		if (isSupportedChain(chainString)) {
-			simulator.cleanup()
-			simulator = new Simulator(chainString, newBlockCallback)
+		if (activeChain !== 'noActiveChainChange') {
+			updatedSettings = { ...updatedSettings, activeChain: activeChain }
+			await setActiveChain(activeChain)
+			const chainString = activeChain.toString()
+			if (isSupportedChain(chainString)) {
+				simulator.cleanup()
+				simulator = new Simulator(chainString, newBlockCallback)
+			}
 		}
-	}
-	if (activeAddress !== 'noActiveAddressChange') {
-		if (settings.simulationMode) {
-			updatedSettings = { ...updatedSettings, activeSimulationAddress: activeAddress }
-			updateWebsiteApprovalAccesses(websiteTabConnections, undefined, updatedSettings)
-			await setActiveSimulationAddress(activeAddress)
-		} else {
-			updatedSettings = { ...updatedSettings, activeSigningAddress: activeAddress }
-			updateWebsiteApprovalAccesses(websiteTabConnections, undefined, updatedSettings)
-			await setActiveSigningAddress(activeAddress)
+		if (activeAddress !== 'noActiveAddressChange') {
+			if (settings.simulationMode) {
+				updatedSettings = { ...updatedSettings, activeSimulationAddress: activeAddress }
+				updateWebsiteApprovalAccesses(websiteTabConnections, undefined, updatedSettings)
+				await setActiveSimulationAddress(activeAddress)
+			} else {
+				updatedSettings = { ...updatedSettings, activeSigningAddress: activeAddress }
+				updateWebsiteApprovalAccesses(websiteTabConnections, undefined, updatedSettings)
+				await setActiveSigningAddress(activeAddress)
+			}
 		}
-	}
 
-	if (updatedSettings.simulationMode) {
-		// update prepend mode as our active address has changed, so we need to be sure the rich modes money is sent to right address
-		const ethereumClientService = simulator.ethereum
-		await updateSimulationState(async () => {
-			const simulationState = (await getSimulationResults()).simulationState
-			if (simulationState === undefined) return undefined
-			const prependQueue = await getPrependTrasactions(ethereumClientService, updatedSettings, await getMakeMeRich())
-			return await setPrependTransactionsQueue(ethereumClientService, simulationState, prependQueue)
-		}, updatedSettings.activeSimulationAddress)
-	}
+		if (updatedSettings.simulationMode) {
+			// update prepend mode as our active address has changed, so we need to be sure the rich modes money is sent to right address
+			const ethereumClientService = simulator.ethereum
+			await updateSimulationState(async () => {
+				const simulationState = (await getSimulationResults()).simulationState
+				if (simulationState === undefined) return undefined
+				const prependQueue = await getPrependTrasactions(ethereumClientService, updatedSettings, await getMakeMeRich())
+				return await setPrependTransactionsQueue(ethereumClientService, simulationState, prependQueue)
+			}, updatedSettings.activeSimulationAddress)
+		}
 
-	if (activeChain !== 'noActiveChainChange') {
-		sendMessageToApprovedWebsitePorts(websiteTabConnections, 'chainChanged', EthereumQuantity.serialize(activeChain))
-		sendPopupMessageToOpenWindows({ method: 'popup_chain_update' })
-	}
+		if (activeChain !== 'noActiveChainChange') {
+			sendMessageToApprovedWebsitePorts(websiteTabConnections, 'chainChanged', EthereumQuantity.serialize(activeChain))
+			sendPopupMessageToOpenWindows({ method: 'popup_chain_update' })
+		}
 
-	// inform all the tabs about the address change (this needs to be done on only chain changes too)
-	sendActiveAccountChangeToApprovedWebsitePorts(websiteTabConnections, updatedSettings)
-	if (activeAddress !== 'noActiveAddressChange') {
-		sendPopupMessageToOpenWindows({ method: 'popup_accounts_update' })
-	}
+		// inform all the tabs about the address change (this needs to be done on only chain changes too)
+		sendActiveAccountChangeToApprovedWebsitePorts(websiteTabConnections, updatedSettings)
+		if (activeAddress !== 'noActiveAddressChange') {
+			sendPopupMessageToOpenWindows({ method: 'popup_accounts_update' })
+		}
+	})
 }
 
 export async function changeActiveChain(websiteTabConnections: WebsiteTabConnections, chainId: bigint) {
