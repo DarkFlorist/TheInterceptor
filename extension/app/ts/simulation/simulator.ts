@@ -15,7 +15,7 @@ import { handleApprovalLog, handleDepositLog, handleERC721ApprovalForAllLog, han
 import { CHAIN } from '../utils/user-interface-types.js'
 import { QUARANTINE_CODE } from './protectors/quarantine-codes.js'
 import { EthereumJSONRpcRequestHandler } from './services/EthereumJSONRpcRequestHandler.js'
-import { ETHSubscriptionService } from './services/ETHSubscriptionService.js'
+import { EthereumSubscriptionService } from './services/EthereumSubscriptionService.js'
 
 const PROTECTORS = [
 	selfTokenOops,
@@ -39,11 +39,11 @@ const logHandler = new Map<string, Loghandler >([
 
 export class Simulator {
 	public readonly ethereum
-	public readonly ethSubscriptionService
+	public readonly ethereumSubscriptionService
 
 	public constructor(chain: CHAIN, newBlockCallback: (blockNumber: bigint, ethereumClientService: EthereumClientService) => void ) {
 		this.ethereum = new EthereumClientService(new EthereumJSONRpcRequestHandler(CHAINS[chain].https_rpc), chain, newBlockCallback)
-		this.ethSubscriptionService = new ETHSubscriptionService(CHAINS[chain].wss_rpc)
+		this.ethereumSubscriptionService = new EthereumSubscriptionService(CHAINS[chain].wss_rpc)
 	}
 
 	public cleanup = () => {
