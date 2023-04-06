@@ -735,12 +735,7 @@ export class SimulationModeEthereumClientService {
 		return tokenOwners
 	}
 
-	static readonly getTokenBalancesAfter = async (
-		ethereumClientService: EthereumClientService,
-		signedTxs: EthereumSignedTransaction[] = [],
-		multicallResult: MulticallResponse,
-		blockNumber: bigint,
-	) => {
+	static readonly getTokenBalancesAfter = async (ethereumClientService: EthereumClientService, signedTxs: EthereumSignedTransaction[] = [], multicallResult: MulticallResponse, blockNumber: bigint) => {
 		const tokenBalancesAfter: TokenBalancesAfter[] = []
 		for (let resultIndex = 0; resultIndex < multicallResult.length; resultIndex++) {
 			const singleResult = multicallResult[resultIndex]
