@@ -60,7 +60,7 @@ const fixChromiumIssue1316588 = async () => {
 	try {
 		const hasIssue = await hasChromiumIssue1316588()
 		if (!hasIssue) return
-		chrome.runtime.reload()
+		browser.runtime.reload()
 		clearInterval(intervalId)
 	} catch (error) {
 		console.error(error)
