@@ -33,7 +33,6 @@ let simulator: Simulator | undefined = undefined
 export async function updateSimulationState(getUpdatedSimulationState: () => Promise<SimulationState | undefined>, activeAddress: bigint | undefined) {
 	if (simulator === undefined) return
 	try {
-		console.log('updateSimulationState!')
 		const simId = (await getSimulationResults()).simulationId + 1
 		const updatedSimulationState = await getUpdatedSimulationState()
 
@@ -313,9 +312,6 @@ export async function changeActiveAddressAndChainAndResetSimulation(
 	activeChain: bigint | 'noActiveChainChange',
 	settings: Settings
 ) {
-	console.log('changeActiveAddressAndChainAndResetSimulation')
-	console.log('addr ', activeAddress)
-	console.log('chain ', activeChain)
 	if (simulator === undefined) return
 
 	if (activeChain !== 'noActiveChainChange') {
