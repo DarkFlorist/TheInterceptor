@@ -11,21 +11,25 @@ self.addEventListener('install', () => {
 
 self.addEventListener('activate', () => clearTabStates())
 
+// 'MAIN'` is not supported in `browser.` but its in `chrome.`. This code is only going to be run in manifest v3 environment (chrome) so this should be fine, just ugly
+type RegisteredContentScript = Parameters<typeof browser.scripting.registerContentScripts>[0][0]
+type FixedRegisterContentScripts = (scripts: (RegisteredContentScript & { world?: 'MAIN' | 'ISOLATED' })[]) => Promise<void>
+const fixedRegisterContentScripts = ((browser.scripting.registerContentScripts as unknown) as FixedRegisterContentScripts)
+
 const injectContentScript = async () => {
 	try {
-		await browser.scripting.registerContentScripts([{
+		await fixedRegisterContentScripts([{
 			id: 'inpage2',
 			matches: ['file://*/*', 'http://*/*', 'https://*/*'],
 			js: ['/vendor/webextension-polyfill/browser-polyfill.js', '/inpage/js/listenContentScript.js'],
 			runAt: 'document_start',
-		} ])
-		await chrome.scripting.registerContentScripts([{ // we need to use `chrome` here instead of `browser` as `world: 'MAIN'` is not supported otherwise
+		}, {
 			id: 'inpage',
 			matches: ['file://*/*', 'http://*/*', 'https://*/*'],
 			js: ['/inpage/js/inpage.js'],
 			runAt: 'document_start',
 			world: 'MAIN',
-		} ])
+		}])
 	} catch (err) {
 		console.warn(err)
 	}
