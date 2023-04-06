@@ -156,18 +156,22 @@ export async function setPendingInterceptorAccessRequestPromise(promise: Pending
 
 export async function getSimulationResults() {
 	const results = await browserStorageLocalSingleGetWithDefault('simulationResults', undefined)
-	const parsed = funtypes.Union(funtypes.Undefined, SimulationResults).parse(results)
-	if (parsed === undefined) {
-		return {
-			simulationId: 0,
-			simulationState: undefined,
-			visualizerResults: undefined,
-			addressBookEntries: [],
-			tokenPrices: [],
-			activeAddress: undefined
-		}
+	const emptyResults = {
+		simulationId: 0,
+		simulationState: undefined,
+		visualizerResults: undefined,
+		addressBookEntries: [],
+		tokenPrices: [],
+		activeAddress: undefined
 	}
-	return parsed
+	try {
+		const parsed = funtypes.Union(funtypes.Undefined, SimulationResults).parse(results)
+		if (parsed === undefined) return emptyResults
+		return parsed
+	} catch (error) {
+		console.warn(error)
+		return emptyResults
+	}
 }
 
 const simulationResultsSemaphore = new Semaphore(1)
