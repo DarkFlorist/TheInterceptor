@@ -513,10 +513,6 @@ export const getTokenDecimals = async (ethereumClientService: EthereumClientServ
 		from: MOCK_ADDRESS,
 		to: token,
 		input: balanceOfCallData,
-		maxFeePerGas: 0n,
-		maxPriorityFeePerGas: 0n,
-		gasLimit: 21000n,
-		value: 200000000000000000000000n,
 	} as const
 	const response = await ethereumClientService.call(callParams)
 	return EthereumQuantity.parse(response)
@@ -528,7 +524,7 @@ export const simulatedCall = async (ethereumClientService: EthereumClientService
 		type: '1559' as const,
 		gas: params.gasLimit,
 		nonce: 0n,
-		chainId: await ethereumClientService.getChainId()
+		chainId: ethereumClientService.getChainId()
 	} as const
 
 	const multicallResult = blockTag === 'latest' || blockTag === 'pending' ?
