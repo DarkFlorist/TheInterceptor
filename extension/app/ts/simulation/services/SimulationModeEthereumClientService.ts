@@ -240,8 +240,8 @@ export const getStorageAt = async (ethereumClientService: EthereumClientService,
 
 const canQueryNodeDirectly = async (ethereumClientService: EthereumClientService, simulationState: SimulationState, blockTag: EthereumBlockTag = 'latest') => {
 	if (simulationState === undefined
-		|| simulationState.simulatedTransactions.length == 0 ||
-		(typeof blockTag === 'bigint' && blockTag <= await ethereumClientService.getBlockNumber())
+		|| simulationState.simulatedTransactions.length == 0
+		|| (typeof blockTag === 'bigint' && blockTag <= await ethereumClientService.getBlockNumber())
 	){
 		return true
 	}
