@@ -344,7 +344,6 @@ export async function changeActiveAddressAndChainAndResetSimulation(
 		}
 
 		sendPopupMessageToOpenWindows({ method: 'popup_accounts_update' })
-		sendActiveAccountChangeToApprovedWebsitePorts(websiteTabConnections, updatedSettings)
 
 		if (updatedSettings.simulationMode) {
 			// update prepend mode as our active address has changed, so we need to be sure the rich modes money is sent to right address
@@ -355,6 +354,8 @@ export async function changeActiveAddressAndChainAndResetSimulation(
 				return await setPrependTransactionsQueue(ethereumClientService, simulationState, prependQueue)
 			}, updatedSettings.activeSimulationAddress)
 		}
+		// inform website abou this only after we have updated simulation, as they often query the balance right after
+		sendActiveAccountChangeToApprovedWebsitePorts(websiteTabConnections, updatedSettings)
 	})
 }
 
