@@ -94,7 +94,7 @@ export class PriceEstimator {
 			]
 			const results = await this.ethereum.multicall(swapTransactions, block.number + 1n)
 			if (results.length !== 3) throw ('invalid multicall result')
-			if ( results[2].statusCode === 'success' ) {
+			if (results[2].statusCode === 'success') {
 				const parsed = swapInterface.decodeFunctionResult('swapTokensForExactETH', results[2].returnValue)
 				const inOut = parsed.toObject() as { amounts: bigint[] } // TODO, change to funtype
 				if (inOut.amounts.length != 2) return []
