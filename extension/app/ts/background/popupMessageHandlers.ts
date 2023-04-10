@@ -186,7 +186,6 @@ export async function changeChainDialog(websiteTabConnections: WebsiteTabConnect
 }
 
 export async function enableSimulationMode(websiteTabConnections: WebsiteTabConnections, params: EnableSimulationMode) {
-	console.log('enableSimulationMode')
 	const settings = await getSettings()
 	// if we are on unsupported chain, force change to a supported one
 	if (settings.useSignersAddressAsActiveAddress || params.options === false) {
