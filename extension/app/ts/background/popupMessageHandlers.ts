@@ -1,5 +1,5 @@
 import { changeActiveAddressAndChainAndResetSimulation, changeActiveChain, getPrependTrasactions, refreshConfirmTransactionSimulation, updateSimulationState } from './background.js'
-import { getCurrentTabId, getMakeMeRich, getOpenedAddressBookTabId, getSettings, getSignerName, getSimulationResults, getTabState, saveCurrentTabId, setMakeMeRich, setOpenedAddressBookTabId, setPage, setSimulationMode, setUseSignersAddressAsActiveAddress, updateAddressInfos, updateContacts, updateWebsiteAccess } from './settings.js'
+import { getCurrentTabId, getMakeMeRich, getOpenedAddressBookTabId, getSettings, getSignerName, getSimulationResults, getTabState, saveCurrentTabId, setMakeMeRich, setOpenedAddressBookTabId, setPage, setUseSignersAddressAsActiveAddress, updateAddressInfos, updateContacts, updateWebsiteAccess } from './settings.js'
 import { Simulator } from '../simulation/simulator.js'
 import { ChangeActiveAddress, ChangeMakeMeRich, ChangePage, PersonalSign, RemoveTransaction, RequestAccountsFromSigner, TransactionConfirmation, InterceptorAccess, ChangeInterceptorAccess, ChainChangeConfirmation, EnableSimulationMode, ReviewNotification, RejectNotification, ChangeActiveChain, AddOrEditAddressBookEntry, GetAddressBookData, RemoveAddressBookEntry, RefreshConfirmTransactionDialogSimulation, UserAddressBook, InterceptorAccessRefresh, InterceptorAccessChangeAddress, Settings } from '../utils/interceptor-messages.js'
 import { resolvePendingTransaction } from './windows/confirmTransaction.js'
@@ -48,15 +48,24 @@ export async function getSignerAccount() {
 }
 
 export async function changeActiveAddress(websiteTabConnections: WebsiteTabConnections, addressChange: ChangeActiveAddress) {
-	await setUseSignersAddressAsActiveAddress(addressChange.options === 'signer')
+	await setUseSignersAddressAsActiveAddress(addressChange.options.activeAddress === 'signer')
 
 	// if using signers address, set the active address to signers address if available, otherwise we don't know active address and set it to be undefined
-	if (addressChange.options === 'signer') {
+	if (addressChange.options.activeAddress === 'signer') {
 		sendMessageToApprovedWebsitePorts(websiteTabConnections, 'request_signer_to_eth_requestAccounts', [])
 		sendMessageToApprovedWebsitePorts(websiteTabConnections, 'request_signer_chainId', [])
-		await changeActiveAddressAndChainAndResetSimulation(websiteTabConnections, await getSignerAccount(), 'noActiveChainChange', await getSettings())
+		const signerAccount = await getSignerAccount()
+		if (signerAccount !== undefined) {
+			await changeActiveAddressAndChainAndResetSimulation(websiteTabConnections, {
+				simulationMode: addressChange.options.simulationMode,
+				activeAddress: signerAccount,
+			})
+		}
 	} else {
-		await changeActiveAddressAndChainAndResetSimulation(websiteTabConnections, addressChange.options, 'noActiveChainChange', await getSettings())
+		await changeActiveAddressAndChainAndResetSimulation(websiteTabConnections, {
+			simulationMode: addressChange.options.simulationMode,
+			activeAddress: addressChange.options.activeAddress,
+		})
 	}
 }
 
@@ -168,8 +177,8 @@ export async function refreshPopupConfirmTransactionSimulation(ethereumClientSer
 	return await sendPopupMessageToOpenWindows(refreshMessage)
 }
 
-export async function popupChangeActiveChain(websiteTabConnections: WebsiteTabConnections, params: ChangeActiveChain) {
-	await changeActiveChain(websiteTabConnections, params.options)
+export async function popupChangeActiveChain(websiteTabConnections: WebsiteTabConnections, params: ChangeActiveChain, settings: Settings) {
+	return await changeActiveChain(websiteTabConnections, params.options, settings.simulationMode)
 }
 
 export async function changeChainDialog(websiteTabConnections: WebsiteTabConnections, chainChange: ChainChangeConfirmation) {
@@ -177,18 +186,25 @@ export async function changeChainDialog(websiteTabConnections: WebsiteTabConnect
 }
 
 export async function enableSimulationMode(websiteTabConnections: WebsiteTabConnections, params: EnableSimulationMode) {
-	await setSimulationMode(params.options)
+	console.log('enableSimulationMode')
 	const settings = await getSettings()
 	// if we are on unsupported chain, force change to a supported one
 	if (settings.useSignersAddressAsActiveAddress || params.options === false) {
-		const tabId = await getLastKnownCurrentTabId()
-		const chainToSwitch = tabId === undefined ? undefined : (await getTabState(tabId)).signerChain
-		await changeActiveAddressAndChainAndResetSimulation(websiteTabConnections, await getSignerAccount(), chainToSwitch === undefined ? 'noActiveChainChange' : chainToSwitch, settings)
 		sendMessageToApprovedWebsitePorts(websiteTabConnections, 'request_signer_to_eth_requestAccounts', [])
 		sendMessageToApprovedWebsitePorts(websiteTabConnections, 'request_signer_chainId', [])
+		const tabId = await getLastKnownCurrentTabId()
+		const chainToSwitch = tabId === undefined ? undefined : (await getTabState(tabId)).signerChain
+		await changeActiveAddressAndChainAndResetSimulation(websiteTabConnections, {
+			simulationMode: params.options,
+			activeAddress: await getSignerAccount(),
+			...chainToSwitch === undefined ? {} :  { activeChain: chainToSwitch },
+		})
 	} else {
 		const chainToSwitch = isSupportedChain(settings.activeChain.toString()) ? settings.activeChain : 1n
-		await changeActiveAddressAndChainAndResetSimulation(websiteTabConnections, settings.activeSimulationAddress, chainToSwitch, settings)
+		await changeActiveAddressAndChainAndResetSimulation(websiteTabConnections, {
+			simulationMode: params.options,
+			...settings.activeChain === chainToSwitch ? {} : { activeChain: chainToSwitch }
+		})
 	}
 }
 

@@ -99,6 +99,7 @@ export function ConfirmTransaction() {
 	const [currentBlockNumber, setCurrentBlockNumber] = useState<undefined | bigint>(undefined)
 	const [signerName, setSignerName] = useState<SignerName>('NoSignerDetected')
 	const [addingNewAddress, setAddingNewAddress] = useState<AddingNewAddressType | 'renameAddressModalClosed'> ('renameAddressModalClosed')
+	const [simulationMode, setSimulationMode] = useState<boolean>(true)
 
 	useEffect( () => {
 		function popupMessageListener(msg: unknown) {
@@ -130,10 +131,10 @@ export function ConfirmTransaction() {
 				chain: message.data.simulationState.chain,
 				tokenPrices: message.data.tokenPrices,
 				activeAddress: message.data.activeAddress,
-				simulationMode: message.data.simulationMode,
 				addressMetaData: message.data.addressBookEntries,
 				website: message.data.website,
 			})
+			setSimulationMode(message.data.simulationMode)
 		}
 		browser.runtime.onMessage.addListener(popupMessageListener)
 
@@ -160,7 +161,7 @@ export function ConfirmTransaction() {
 			method: 'popup_refreshConfirmTransactionDialogSimulation',
 			data: {
 				activeAddress: simulationAndVisualisationResults.activeAddress,
-				simulationMode: simulationAndVisualisationResults.simulationMode,
+				simulationMode: simulationMode,
 				requestId: requestIdToConfirm,
 				transactionToSimulate: transactionToSimulate,
 				website: simulationAndVisualisationResults.website,
@@ -192,7 +193,7 @@ export function ConfirmTransaction() {
 				{ identified.rejectAction }
 			</button>
 			<button className = 'button is-primary button-overflow' style = 'flex-grow: 1; margin-left: 5px; margin-right: 10px; margin-top: 0px; margin-bottom: 0px;' onClick = { approve } disabled = { isConfirmDisabled() }>
-				{ simulationAndVisualisationResults.simulationMode ? `${ identified.simulationAction }!` :
+				{ simulationMode ? `${ identified.simulationAction }!` :
 					<SignerLogoText {...{
 						signerName,
 						text: identified.signingAction,

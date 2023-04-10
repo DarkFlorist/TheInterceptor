@@ -167,7 +167,6 @@ export type SimulationAndVisualisationResults = {
 	chain: CHAIN,
 	tokenPrices: readonly TokenPriceEstimate[],
 	activeAddress: bigint,
-	simulationMode: boolean,
 }
 
 export type TokenPriceEstimate = funtypes.Static<typeof TokenPriceEstimate>

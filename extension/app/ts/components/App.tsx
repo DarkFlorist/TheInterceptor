@@ -12,7 +12,7 @@ import { PasteCatcher } from './subcomponents/PasteCatcher.js'
 import { truncateAddr } from '../utils/ethereum.js'
 import { NotificationCenter } from './pages/NotificationCenter.js'
 import { DEFAULT_TAB_CONNECTION } from '../utils/constants.js'
-import { ExternalPopupMessage, SignerName, TabIconDetails, UpdateHomePage, Page, WebsiteAccessArray, PendingAccessRequestArray } from '../utils/interceptor-messages.js'
+import { ExternalPopupMessage, SignerName, TabIconDetails, UpdateHomePage, Page, WebsiteAccessArray, PendingAccessRequestArray, Settings, WebsiteIconChanged } from '../utils/interceptor-messages.js'
 import { version, gitCommitSha } from '../version.js'
 import { formSimulatedAndVisualizedTransaction } from './formVisualizerResults.js'
 import { sendPopupMessageToBackgroundPage } from '../background/backgroundUtils.js'
@@ -43,13 +43,13 @@ export function App() {
 	async function setActiveAddressAndInformAboutIt(address: bigint | 'signer') {
 		setUseSignersAddressAsActiveAddress(address === 'signer')
 		if (address === 'signer') {
-			sendPopupMessageToBackgroundPage({ method: 'popup_changeActiveAddress', options: 'signer' })
+			sendPopupMessageToBackgroundPage({ method: 'popup_changeActiveAddress', options: { activeAddress: 'signer', simulationMode: simulationMode } })
 			if (simulationMode) {
 				return setActiveSimulationAddress(signerAccounts && signerAccounts.length > 0 ? signerAccounts[0] : undefined)
 			}
 			return setActiveSigningAddress(signerAccounts && signerAccounts.length > 0 ? signerAccounts[0] : undefined)
 		}
-		sendPopupMessageToBackgroundPage({ method: 'popup_changeActiveAddress', options: address })
+		sendPopupMessageToBackgroundPage({ method: 'popup_changeActiveAddress', options: { activeAddress: address, simulationMode: simulationMode } })
 		if (simulationMode) {
 			return setActiveSimulationAddress(address)
 		}
@@ -78,7 +78,6 @@ export function App() {
 			addressBookEntries: AddressBookEntries,
 			tokenPrices: readonly TokenPriceEstimate[],
 			activeSimulationAddress: EthereumAddress | undefined,
-			simulationMode: boolean,
 		) => {
 			if (simState === undefined) return setSimVisResults(undefined)
 			if (visualizerResults === undefined) return setSimVisResults(undefined)
@@ -94,50 +93,58 @@ export function App() {
 				chain: simState.chain,
 				tokenPrices: tokenPrices,
 				activeAddress: activeSimulationAddress,
-				simulationMode: simulationMode,
 				addressMetaData: addressBookEntries,
 			})
 		}
 
 		const updateHomePage = ({ data }: UpdateHomePage) => {
-			const settings = data.settings
-			setSimulationState(
-				data.simulation.simulationState,
-				data.simulation.visualizerResults,
-				data.simulation.addressBookEntries,
-				data.simulation.tokenPrices,
-				data.simulation.activeAddress,
-				settings.simulationMode,
-			)
-
+			setIsSettingsLoaded((isSettingsLoaded) => {
+				updateHomePageSettings(data.settings, !isSettingsLoaded)
+				if (isSettingsLoaded === false) {
+					if (data.tabIconDetails === undefined) {
+						setTabConnection(DEFAULT_TAB_CONNECTION)
+					} else {
+						setTabConnection(data.tabIconDetails)
+					}
+				}
+				setSimulationState(
+					data.simulation.simulationState,
+					data.simulation.visualizerResults,
+					data.simulation.addressBookEntries,
+					data.simulation.tokenPrices,
+					data.simulation.activeAddress,
+				)
+				setMakeMeRich(data.makeMeRich)
+				setPendingAccessMetadata(data.pendingAccessMetadata)
+				setSignerName(data.signerName)
+				setCurrentBlockNumber(data.currentBlockNumber)
+				setWebsiteAccessAddressMetadata(data.websiteAccessAddressMetadata)
+				setSignerAccounts(data.signerAccounts)
+				return true
+			})
+		}
+		const updateHomePageSettings = (settings: Settings, updateQuery: boolean) => {
+			if (updateQuery) {
+				setSimulationMode(settings.simulationMode)
+				setAppPage(settings.page)
+			}
+			setActiveChain(settings.activeChain)
 			setActiveSimulationAddress(settings.activeSimulationAddress)
 			setActiveSigningAddress(settings.activeSigningAddress)
 			setUseSignersAddressAsActiveAddress(settings.useSignersAddressAsActiveAddress)
 			setAddressInfos(settings.userAddressBook.addressInfos)
-			setAppPage(settings.page)
-			setMakeMeRich(data.makeMeRich)
 			setWebsiteAccess(settings.websiteAccess)
-
-			setWebsiteAccessAddressMetadata(data.websiteAccessAddressMetadata)
-			setActiveChain(settings.activeChain)
-			setSimulationMode(settings.simulationMode !== undefined ? settings.simulationMode : true)
 			setPendingAccessRequests(settings.pendingAccessRequests)
-			setPendingAccessMetadata(data.pendingAccessMetadata)
+		}
 
-			setSignerName(data.signerName)
-			setCurrentBlockNumber(data.currentBlockNumber)
-
-			setSignerAccounts(data.signerAccounts)
-			if (data.tabIconDetails === undefined) {
-				setTabConnection(DEFAULT_TAB_CONNECTION)
-			} else {
-				setTabConnection(data.tabIconDetails)
-			}
-			setIsSettingsLoaded(true)
+		const updateTabIcon = ({ data }: WebsiteIconChanged) => {
+			setTabConnection(data)
 		}
 
 		const popupMessageListener = async (msg: unknown) => {
 			const message = ExternalPopupMessage.parse(msg)
+			if (message.method === 'popup_settingsUpdated') return updateHomePageSettings(message.data, true)
+			if (message.method === 'popup_websiteIconChanged') return updateTabIcon(message)
 			if (message.method !== 'popup_UpdateHomePage') return await sendPopupMessageToBackgroundPage( { method: 'popup_requestNewHomeData' } )
 			return updateHomePage(message)
 		}

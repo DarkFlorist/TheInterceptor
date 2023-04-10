@@ -2,7 +2,7 @@ import { HandleSimulationModeReturnValue, InterceptedRequest, InterceptedRequest
 import 'webextension-polyfill'
 import { Simulator } from '../simulation/simulator.js'
 import { EthereumJsonRpcRequest, EthereumQuantity, EthereumUnsignedTransaction, PersonalSignParams, SignTypedDataParams } from '../utils/wire-types.js'
-import { clearTabStates, getMakeMeRich, getSettings, getSignerName, getSimulationResults, removeTabState, setActiveChain, setActiveSigningAddress, setActiveSimulationAddress, updateSimulationResults, updateTabState } from './settings.js'
+import { changeSimulationMode, clearTabStates, getMakeMeRich, getSettings, getSignerName, getSimulationResults, removeTabState, updateSimulationResults, updateTabState } from './settings.js'
 import { blockNumber, call, chainId, estimateGas, gasPrice, getAccounts, getBalance, getBlockByNumber, getCode, getLogs, getPermissions, getSimulationStack, getTransactionByHash, getTransactionCount, getTransactionReceipt, personalSign, requestPermissions, sendTransaction, subscribe, switchEthereumChain, unsubscribe } from './simulationModeHanders.js'
 import { changeActiveAddress, changeMakeMeRich, changePage, resetSimulation, confirmDialog, refreshSimulation, removeTransaction, requestAccountsFromSigner, refreshPopupConfirmTransactionSimulation, confirmPersonalSign, confirmRequestAccess, changeInterceptorAccess, changeChainDialog, popupChangeActiveChain, enableSimulationMode, reviewNotification, rejectNotification, addOrModifyAddressInfo, getAddressBookData, removeAddressBookEntry, openAddressBook, homeOpened, interceptorAccessChangeAddressOrRefresh } from './popupMessageHandlers.js'
 import { SimulationState } from '../utils/visualizer-types.js'
@@ -310,34 +310,41 @@ async function newBlockCallback(blockNumber: bigint, ethereumClientService: Ethe
 const changeActiveAddressAndChainAndResetSimulationSemaphore = new Semaphore(1)
 export async function changeActiveAddressAndChainAndResetSimulation(
 	websiteTabConnections: WebsiteTabConnections,
-	activeAddress: bigint | undefined | 'noActiveAddressChange',
-	activeChain: bigint | 'noActiveChainChange',
-	settings: Settings
+	change: {
+		simulationMode: boolean,
+		activeAddress?: bigint,
+		activeChain?: bigint,
+	},
 ) {
 	await changeActiveAddressAndChainAndResetSimulationSemaphore.execute(async () => {
 		if (simulator === undefined) return
-		let updatedSettings = settings
 
-		if (activeChain !== 'noActiveChainChange') {
-			updatedSettings = { ...updatedSettings, activeChain: activeChain }
-			await setActiveChain(activeChain)
-			const chainString = activeChain.toString()
+		if (change.simulationMode) {
+			await changeSimulationMode({
+				...change,
+				...'activeAddress' in change ? { activeSimulationAddress: change.activeAddress } : {}
+			})
+		} else {
+			await changeSimulationMode({
+				...change,
+				...'activeAddress' in change ? { activeSigningAddress: change.activeAddress } : {}
+			})
+		}
+		const updatedSettings = await getSettings()
+		updateWebsiteApprovalAccesses(websiteTabConnections, undefined, updatedSettings)
+		sendPopupMessageToOpenWindows({ method: 'popup_settingsUpdated', data: updatedSettings })
+		if (change.activeChain !== undefined) {
+			const chainString = change.activeChain.toString()
 			if (isSupportedChain(chainString)) {
 				simulator.cleanup()
 				simulator = new Simulator(chainString, newBlockCallback)
 			}
+			sendMessageToApprovedWebsitePorts(websiteTabConnections, 'chainChanged', EthereumQuantity.serialize(change.activeChain))
+			sendPopupMessageToOpenWindows({ method: 'popup_chain_update' })
 		}
-		if (activeAddress !== 'noActiveAddressChange') {
-			if (settings.simulationMode) {
-				updatedSettings = { ...updatedSettings, activeSimulationAddress: activeAddress }
-				updateWebsiteApprovalAccesses(websiteTabConnections, undefined, updatedSettings)
-				await setActiveSimulationAddress(activeAddress)
-			} else {
-				updatedSettings = { ...updatedSettings, activeSigningAddress: activeAddress }
-				updateWebsiteApprovalAccesses(websiteTabConnections, undefined, updatedSettings)
-				await setActiveSigningAddress(activeAddress)
-			}
-		}
+
+		sendPopupMessageToOpenWindows({ method: 'popup_accounts_update' })
+		sendActiveAccountChangeToApprovedWebsitePorts(websiteTabConnections, updatedSettings)
 
 		if (updatedSettings.simulationMode) {
 			// update prepend mode as our active address has changed, so we need to be sure the rich modes money is sent to right address
@@ -348,24 +355,16 @@ export async function changeActiveAddressAndChainAndResetSimulation(
 				return await setPrependTransactionsQueue(ethereumClientService, simulationState, prependQueue)
 			}, updatedSettings.activeSimulationAddress)
 		}
-
-		if (activeChain !== 'noActiveChainChange') {
-			sendMessageToApprovedWebsitePorts(websiteTabConnections, 'chainChanged', EthereumQuantity.serialize(activeChain))
-			sendPopupMessageToOpenWindows({ method: 'popup_chain_update' })
-		}
-
-		// inform all the tabs about the address change (this needs to be done on only chain changes too)
-		sendActiveAccountChangeToApprovedWebsitePorts(websiteTabConnections, updatedSettings)
-		if (activeAddress !== 'noActiveAddressChange') {
-			sendPopupMessageToOpenWindows({ method: 'popup_accounts_update' })
-		}
 	})
 }
 
-export async function changeActiveChain(websiteTabConnections: WebsiteTabConnections, chainId: bigint) {
-	const settings = await getSettings()
-	if (settings.simulationMode) return await changeActiveAddressAndChainAndResetSimulation(websiteTabConnections, 'noActiveAddressChange', chainId, settings)
+export async function changeActiveChain(websiteTabConnections: WebsiteTabConnections, chainId: bigint, simulationMode: boolean) {
+	if (simulationMode) return await changeActiveAddressAndChainAndResetSimulation(websiteTabConnections, {
+		simulationMode: simulationMode,
+		activeChain: chainId
+	})
 	sendMessageToApprovedWebsitePorts(websiteTabConnections, 'request_signer_to_wallet_switchEthereumChain', EthereumQuantity.serialize(chainId))
+	await sendPopupMessageToOpenWindows({ method: 'popup_settingsUpdated', data: await getSettings() })
 }
 
 type ProviderHandler = (websiteTabConnections: WebsiteTabConnections, port: browser.runtime.Port, request: ProviderMessage) => Promise<unknown>
@@ -578,7 +577,7 @@ async function popupMessageHandler(
 		case 'popup_personalSign': return await confirmPersonalSign(websiteTabConnections, parsedRequest)
 		case 'popup_interceptorAccess': return await confirmRequestAccess(websiteTabConnections, parsedRequest)
 		case 'popup_changeInterceptorAccess': return await changeInterceptorAccess(websiteTabConnections, parsedRequest)
-		case 'popup_changeActiveChain': return await popupChangeActiveChain(websiteTabConnections,parsedRequest)
+		case 'popup_changeActiveChain': return await popupChangeActiveChain(websiteTabConnections, parsedRequest, settings)
 		case 'popup_changeChainDialog': return await changeChainDialog(websiteTabConnections, parsedRequest)
 		case 'popup_enableSimulationMode': return await enableSimulationMode(websiteTabConnections, parsedRequest)
 		case 'popup_reviewNotification': return await reviewNotification(websiteTabConnections, parsedRequest, settings)
@@ -618,7 +617,13 @@ async function startup() {
 		sendMessageToApprovedWebsitePorts(websiteTabConnections, 'request_signer_chainId', [])
 	}
 	if (settings.simulationMode) {
-		await changeActiveAddressAndChainAndResetSimulation(websiteTabConnections, settings.activeSimulationAddress, settings.activeChain, settings)
+		// update prepend mode as our active address has changed, so we need to be sure the rich modes money is sent to right address
+		const ethereumClientService = simulator.ethereum
+		await updateSimulationState(async () => {
+			const simulationState = (await getSimulationResults()).simulationState
+			const prependQueue = await getPrependTrasactions(ethereumClientService, settings, await getMakeMeRich())
+			return await setPrependTransactionsQueue(ethereumClientService, simulationState, prependQueue)
+		}, settings.activeSimulationAddress)
 	}
 }
 
