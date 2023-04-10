@@ -1,5 +1,5 @@
 
-import { EthBalanceChanges, EthereumAddress, EthereumData, EthereumQuantity, EthereumSignedTransaction, EthereumTimestamp, SingleMulticallResponse } from './wire-types.js'
+import { EthBalanceChanges, EthereumAddress, EthereumData, EthereumQuantity, EthereumSignedTransaction, EthereumTimestamp, EthereumUnsignedTransaction, SingleMulticallResponse } from './wire-types.js'
 import * as funtypes from 'funtypes'
 import { QUARANTINE_CODE } from '../simulation/protectors/quarantine-codes.js'
 import { AddressBookEntry, CHAIN, NFTEntry, RenameAddressCallBack, TokenEntry, Website } from './user-interface-types.js'
@@ -101,8 +101,15 @@ export const SimulatedTransaction = funtypes.ReadonlyObject({
 	tokenBalancesAfter: TokenBalancesAfter,
 })
 
+export type EthereumUnsignedTransactionWithWebsite = funtypes.Static<typeof EthereumUnsignedTransactionWithWebsite>
+export const EthereumUnsignedTransactionWithWebsite = funtypes.ReadonlyObject({
+	transaction: EthereumUnsignedTransaction,
+	website: Website
+})
+
 export type SimulationState = funtypes.Static<typeof SimulationState>
 export const SimulationState = funtypes.ReadonlyObject({
+	prependTransactionsQueue: funtypes.ReadonlyArray(EthereumUnsignedTransactionWithWebsite),
 	simulatedTransactions: funtypes.ReadonlyArray(SimulatedTransaction),
 	blockNumber: EthereumQuantity,
 	blockTimestamp: EthereumTimestamp,

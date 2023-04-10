@@ -6,6 +6,7 @@ import { ethers } from 'ethers'
 import { Simulator } from '../simulation/simulator.js'
 import { MOCK_ADDRESS } from '../utils/constants.js'
 import { UserAddressBook } from '../utils/interceptor-messages.js'
+import { getTokenDecimals } from '../simulation/services/SimulationModeEthereumClientService.js'
 export const LOGO_URI_PREFIX = `../vendor/@darkflorist/address-metadata`
 
 export function getFullLogoUri(logoURI: string) {
@@ -107,7 +108,7 @@ async function getTokenMetadata(simulator: Simulator, address: bigint) : Promise
 		logoUri: nftTokenData.logoUri ? `${ getFullLogoUri(nftTokenData.logoUri) }` : undefined,
 		type: 'NFT',
 	}
-	const decimals = simulator === undefined ? undefined : await simulator.simulationModeNode.getTokenDecimals(address).catch(() => {
+	const decimals = simulator === undefined ? undefined : await getTokenDecimals(simulator.ethereum, address).catch(() => {
 		console.log(`could not fetch decimals for ${ address }`)
 		return undefined
 	})

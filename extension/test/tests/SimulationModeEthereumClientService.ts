@@ -1,10 +1,10 @@
 import { ethers, keccak256 } from 'ethers'
-import { SimulationModeEthereumClientService } from '../../app/ts/simulation/services/SimulationModeEthereumClientService.js'
 import { describe, runIfRoot, should, run } from '../micro-should.js'
 import * as assert from 'assert'
 import { EthereumSignedTransactionToSignedTransaction, EthereumUnsignedTransactionToUnsignedTransaction, serializeUnsignedTransactionToBytes } from '../../app/ts/utils/ethereum.js'
 import { bytes32String } from '../../app/ts/utils/bigint.js'
 import { EthereumSignedTransaction1559, EthereumUnsignedTransaction } from '../../app/ts/utils/wire-types.js'
+import { mockSignTransaction } from '../../app/ts/simulation/services/SimulationModeEthereumClientService.js'
 
 export async function main() {
 	describe('SimulationModeEthereumClientService', () => {
@@ -22,7 +22,7 @@ export async function main() {
 		}
 
 		should('mockSignTransaction should have r=0, s=0 and yParity = "even"', async () => {
-			const signed = await SimulationModeEthereumClientService.mockSignTransaction(exampleTransaction)
+			const signed = await mockSignTransaction(exampleTransaction)
 			assert.equal(signed.type, '1559')
 			assert.equal(signed.r, 0n)
 			assert.equal(signed.s, 0n)
@@ -30,7 +30,7 @@ export async function main() {
 		})
 
 		should('ethers.recoverAddress should fail for mocked transaction', async () => {
-			const signed = EthereumSignedTransactionToSignedTransaction(await SimulationModeEthereumClientService.mockSignTransaction(exampleTransaction))
+			const signed = EthereumSignedTransactionToSignedTransaction(await mockSignTransaction(exampleTransaction))
 			assert.equal(signed.type, '1559')
 			if (signed.type !== '1559') throw new Error('wrong transaction type')
 			const unsigned = EthereumUnsignedTransactionToUnsignedTransaction(exampleTransaction)
