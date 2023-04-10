@@ -103,7 +103,7 @@ export class PriceEstimator {
 					token: addressString(token.token ),
 					inOutAmount: [inOut.amounts[1], inOut.amounts[0]] as const,
 					decimals: token.decimals
-				} )
+				})
 			}
 		}
 		return inOutResults
