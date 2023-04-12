@@ -42,7 +42,7 @@ injectContentScript()
 const storageArea = browser.storage.local as browser.storage.StorageArea & { onChanged: browser.storage.StorageChange }
 
 const TEST_INTERVAL_MS = 10000
-const STORAGE_WAIT_TIME_MS = 100
+const STORAGE_WAIT_TIME_MS = 2000
 
 const hasChromiumIssue1316588 = async () => {
 	let dispatched = false
@@ -60,6 +60,7 @@ const fixChromiumIssue1316588 = async () => {
 	try {
 		const hasIssue = await hasChromiumIssue1316588()
 		if (!hasIssue) return
+		console.warn('Reloading because of Chromium Issue 1316588')
 		browser.runtime.reload()
 		clearInterval(intervalId)
 	} catch (error) {
