@@ -74,7 +74,6 @@ export class Simulator {
 				quarantineCodesSet.add(reason)
 			}
 		}
-
 		let visualizerResults: VisualizerResult | undefined = undefined
 		const multicallResult = singleMulticallResponse
 		if (multicallResult.statusCode === 'success') {
@@ -83,7 +82,7 @@ export class Simulator {
 			for (const eventLog of multicallResult.events) {
 				const logSignature = eventLog.topics[0]
 				const handler = logHandler.get(bytes32String(logSignature))
-				if ( handler ) {
+				if (handler) {
 					tokenResults.push(handler(eventLog))
 				}
 			}

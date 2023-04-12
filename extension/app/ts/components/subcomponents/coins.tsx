@@ -254,12 +254,11 @@ type Token721AmountFieldParams = {
 	textColor: string
 	style?: JSX.CSSProperties
 } & ({
+	type: 'NFT'
 	tokenId: bigint
-	isApproval: boolean
 } | {
-	isAllApproval: boolean
+	type: 'NFT All approval'
 	allApprovalAdded: boolean
-	isApproval: true
 })
 
 
@@ -268,9 +267,9 @@ export function Token721AmountField(param: Token721AmountFieldParams ) {
 		...(param.style === undefined ? {} : param.style),
 		color: param.textColor ? param.textColor : 'var(--text-color)'
 	}
-	if (!param.isApproval || !('isAllApproval' in param)) {
-		return <p style = { style }>{ `NFT #${ truncate(param.tokenId.toString(), 9) }` }</p>
+	if (param.type === 'NFT All approval') {
+		if (!param.allApprovalAdded) return <p style = { style }><b>NONE</b></p>
+		return <p style = { style }><b>ALL</b></p>
 	}
-	if (!param.allApprovalAdded) return <p style = { style }><b>NONE</b></p>
-	return <p style = { style }><b>ALL</b></p>
+	return <p style = { style }>{ `NFT #${ truncate(param.tokenId.toString(), 9) }` }</p>
 }

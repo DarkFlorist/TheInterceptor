@@ -84,7 +84,7 @@ function SendOrReceiveTokensImportanceBox(param: SendOrReceiveTokensImportanceBo
 							</p>
 						</div>
 						<div class = 'log-cell'>
-							{ tokenEvent.is721 ?
+							{ tokenEvent.type !== 'Token' ?
 								<ERC721TokenNumber
 									id = { tokenEvent.tokenId }
 									received = { !param.sending }
@@ -119,14 +119,14 @@ export function CatchAllVisualizer(param: TransactionImportanceBlockParams) {
 	const sendingTokenResults = param.simTx.tokenResults.filter((x) => x.from.address === msgSender)
 	const receivingTokenResults = param.simTx.tokenResults.filter((x) => x.to.address === msgSender)
 
-	const erc20tokenApprovalChanges: TokenApprovalChange[] = sendingTokenResults.filter((x): x is TokenVisualizerERC20Event  => x.isApproval && !x.is721).map((entry) => {
+	const erc20tokenApprovalChanges: TokenApprovalChange[] = sendingTokenResults.filter((x): x is TokenVisualizerERC20Event  => x.isApproval && x.type === 'Token').map((entry) => {
 		return {
 			...entry.token,
 			approvals: [ {...entry.to, change: entry.amount } ]
 		}
 	})
 
-	const operatorChanges: ERC721OperatorChange[] = sendingTokenResults.filter((x): x is TokenVisualizerERC721AllApprovalEvent  => 'isAllApproval' in x && x.is721).map((entry) => {
+	const operatorChanges: ERC721OperatorChange[] = sendingTokenResults.filter((x): x is TokenVisualizerERC721AllApprovalEvent  => x.type === 'NFT All approval').map((entry) => {
 		return {
 			...entry.token,
 			operator: 'allApprovalAdded' in entry && entry.allApprovalAdded ? entry.to : undefined

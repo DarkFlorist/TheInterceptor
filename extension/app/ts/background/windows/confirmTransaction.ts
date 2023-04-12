@@ -97,7 +97,8 @@ export async function openConfirmTransactionDialog(
 
 		try {
 			browser.runtime.onMessage.addListener(windowReadyAndListening)
-
+			browser.windows.onRemoved.addListener(onCloseWindow)
+			
 			openedConfirmTransactionDialogWindow = await browser.windows.create({
 				url: getHtmlFile('confirmTransaction'),
 				type: 'popup',
@@ -106,7 +107,6 @@ export async function openConfirmTransactionDialog(
 			})
 
 			if (openedConfirmTransactionDialogWindow === null || openedConfirmTransactionDialogWindow.id === undefined) return reject()
-			browser.windows.onRemoved.addListener(onCloseWindow)
 
 			await setConfirmationWindowPromise({
 				website: website,

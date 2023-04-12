@@ -9,7 +9,7 @@ export function handleTransferLog(eventLog: MulticallResponseEventLog): TokenVis
 		to: eventLog.topics[2],
 		tokenAddress: eventLog.loggersAddress,
 		isApproval: false,
-		...(is721 ? { tokenId: eventLog.topics[3], is721: true } : { amount: bytesToUnsigned(eventLog.data), is721: false }),
+		...(is721 ? { tokenId: eventLog.topics[3], type: 'NFT' } : { amount: bytesToUnsigned(eventLog.data), type: 'Token' }),
 	}
 }
 
@@ -19,7 +19,7 @@ export function handleApprovalLog(eventLog: MulticallResponseEventLog): TokenVis
 		from: eventLog.topics[1],
 		to: eventLog.topics[2],
 		tokenAddress: eventLog.loggersAddress,
-		...(is721 ? { tokenId: eventLog.topics[3], is721: true } : { amount: bytesToUnsigned(eventLog.data), is721: false }),
+		...(is721 ? { tokenId: eventLog.topics[3], type: 'NFT' } : { amount: bytesToUnsigned(eventLog.data), type: 'Token' }),
 		isApproval: true,
 	}
 }
@@ -29,9 +29,8 @@ export function handleERC721ApprovalForAllLog(eventLog: MulticallResponseEventLo
 		from: eventLog.topics[1],
 		to: eventLog.topics[2],
 		tokenAddress: eventLog.loggersAddress,
-		is721: true,
+		type: 'NFT All approval',
 		isApproval: true,
-		isAllApproval: true,
 		allApprovalAdded: eventLog.topics[3] != 0n,
 	}
 }
@@ -43,7 +42,7 @@ export function handleDepositLog(eventLog: MulticallResponseEventLog): TokenVisu
 		tokenAddress: eventLog.loggersAddress,
 		isApproval: false,
 		amount: bytesToUnsigned(eventLog.data),
-		is721: false
+		type: 'Token'
 	}
 }
 
@@ -54,6 +53,6 @@ export function handleWithdrawalLog(eventLog: MulticallResponseEventLog): TokenV
 		tokenAddress: eventLog.loggersAddress,
 		isApproval: false,
 		amount: bytesToUnsigned(eventLog.data),
-		is721: false
+		type: 'Token'
 	}
 }

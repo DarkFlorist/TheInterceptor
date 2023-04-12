@@ -1,5 +1,6 @@
 import { get4Byte } from '../../utils/calldata.js'
 import { CHAINS, FourByteExplanations, isSupportedChain, MAKE_YOU_RICH_TRANSACTION } from '../../utils/constants.js'
+import { assertNever } from '../../utils/typescript.js'
 import { AddressBookEntry } from '../../utils/user-interface-types.js'
 import { SimulatedAndVisualizedTransaction, TokenVisualizerResultWithMetadata } from '../../utils/visualizer-types.js'
 import { getSwapName, identifySwap } from './SwapTransactions.js'
@@ -25,8 +26,8 @@ export function identifySimpleApproval(simTx: SimulatedAndVisualizedTransaction)
 	if (isSimpleTokenApproval(simTx)) {
 		const tokenResult = simTx.tokenResults[0]
 		const symbol = tokenResult.token.symbol
-		if (!tokenResult.is721) {
-			return {
+		switch (tokenResult.type) {
+			case 'Token': return {
 				type: 'SimpleTokenApproval' as const,
 				title: `${ symbol } Approval`,
 				signingAction: `Approve ${ symbol }`,
@@ -34,35 +35,35 @@ export function identifySimpleApproval(simTx: SimulatedAndVisualizedTransaction)
 				rejectAction: `Reject ${ symbol } Approval`,
 				identifiedTransaction: simTx,
 			}
-		}
-		if ('isAllApproval' in tokenResult) {
-			if (tokenResult.allApprovalAdded) {
+			case 'NFT All approval': {
+				if (tokenResult.allApprovalAdded) {
+					return {
+						type: 'SimpleTokenApproval' as const,
+						title: `${ symbol } ALL Approval`,
+						signingAction: `Approve ALL ${ symbol }`,
+						simulationAction: `Simulate ${ symbol } ALL Approval`,
+						rejectAction: `Reject ${ symbol } ALL Approval`,
+						identifiedTransaction: simTx,
+					}
+				}
 				return {
 					type: 'SimpleTokenApproval' as const,
-					title: `${ symbol } ALL Approval`,
-					signingAction: `Approve ALL ${ symbol }`,
-					simulationAction: `Simulate ${ symbol } ALL Approval`,
-					rejectAction: `Reject ${ symbol } ALL Approval`,
+					title: `Remove ${ symbol } All Approval`,
+					signingAction: `Remove ALL Approval Removal for ${ symbol }`,
+					simulationAction: `Simulate Removal of All Approval for ${ symbol }`,
+					rejectAction: `Reject All Approval Removal`,
 					identifiedTransaction: simTx,
 				}
 			}
-			return {
+			case 'NFT': return {
 				type: 'SimpleTokenApproval' as const,
-				title: `Remove ${ symbol } All Approval`,
-				signingAction: `Remove ALL Approval Removal for ${ symbol }`,
-				simulationAction: `Simulate Removal of All Approval for ${ symbol }`,
-				rejectAction: `Reject All Approval Removal`,
+				title: `#${ tokenResult.tokenId } ${ symbol } Approval`,
+				signingAction: `Approve #${ tokenResult.tokenId } ${ symbol }`,
+				simulationAction: `Simulate #${ tokenResult.tokenId } ${ symbol } Approval`,
+				rejectAction: `Reject #${ tokenResult.tokenId } ${ symbol } Approval`,
 				identifiedTransaction: simTx,
 			}
-		}
-
-		return {
-			type: 'SimpleTokenApproval' as const,
-			title: `#${ tokenResult.tokenId } ${ symbol } Approval`,
-			signingAction: `Approve #${ tokenResult.tokenId } ${ symbol }`,
-			simulationAction: `Simulate #${ tokenResult.tokenId } ${ symbol } Approval`,
-			rejectAction: `Reject #${ tokenResult.tokenId } ${ symbol } Approval`,
-			identifiedTransaction: simTx,
+			default: assertNever(tokenResult)
 		}
 	}
 	return undefined
