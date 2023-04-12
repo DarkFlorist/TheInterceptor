@@ -227,7 +227,11 @@ async function resolve(websiteTabConnections: WebsiteTabConnections, confirmatio
 		await removePendingAccessRequestAndUpdateBadge(data.website.websiteOrigin, data.requestAccessToAddress?.address)
 
 		await changeAccess(websiteTabConnections, confirmation, data.website, false)
-		await changeActiveAddressAndChainAndResetSimulation(websiteTabConnections, confirmation.requestAccessToAddress, 'noActiveChainChange', await getSettings())
+		const settings = await getSettings()
+		await changeActiveAddressAndChainAndResetSimulation(websiteTabConnections, {
+			simulationMode: settings.simulationMode,
+			activeAddress: confirmation.requestAccessToAddress,
+		})
 	}
 }
 

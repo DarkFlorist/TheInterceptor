@@ -1,7 +1,7 @@
 import { ICON_NOT_ACTIVE, MOCK_PRIVATE_KEYS_ADDRESS } from '../utils/constants.js'
 import { LegacyWebsiteAccessArray, Page, PendingAccessRequestArray, PendingChainChangeConfirmationPromise, PendingInterceptorAccessRequestPromise, PendingPersonalSignPromise, PendingUserRequestPromise, Settings, WebsiteAccessArray, WebsiteAccessArrayWithLegacy, SignerName, TabState } from '../utils/interceptor-messages.js'
 import { Semaphore } from '../utils/semaphore.js'
-import { browserStorageLocalGet, browserStorageLocalSet, browserStorageLocalSingleGetWithDefault } from '../utils/typescript.js'
+import { browserStorageLocalGet, browserStorageLocalSet, browserStorageLocalSetKeys, browserStorageLocalSingleGetWithDefault } from '../utils/typescript.js'
 import { AddressInfoArray, ContactEntries } from '../utils/user-interface-types.js'
 import { SimulationResults } from '../utils/visualizer-types.js'
 import { EthereumAddress, EthereumAddressOrUndefined, EthereumQuantity } from '../utils/wire-types.js'
@@ -68,15 +68,6 @@ export async function getSettings() : Promise<Settings> {
 	}
 }
 
-export async function setActiveSimulationAddress(activeSimulationAddress: bigint | undefined) {
-	if (activeSimulationAddress === undefined) return await browser.storage.local.remove('activeSimulationAddress')
-	return await browserStorageLocalSet('activeSimulationAddress', EthereumAddress.serialize(activeSimulationAddress) as string)
-}
-export async function setActiveSigningAddress(activeSigningAddress: bigint | undefined) {
-	if (activeSigningAddress === undefined) return await browser.storage.local.remove('activeSigningAddress')
-	return await browserStorageLocalSet('activeSigningAddress', EthereumAddress.serialize(activeSigningAddress) as string)
-}
-
 export async function setPage(page: Page) {
 	return await browserStorageLocalSet('page', page)
 }
@@ -90,15 +81,17 @@ export async function setUseSignersAddressAsActiveAddress(useSignersAddressAsAct
 	return await browserStorageLocalSet('useSignersAddressAsActiveAddress', useSignersAddressAsActiveAddress)
 }
 
-export async function setActiveChain(activeChain: EthereumQuantity) {
-	return await browserStorageLocalSet('activeChain', EthereumQuantity.serialize(activeChain) as string)
-}
-export async function setSimulationMode(simulationMode: boolean) {
-	return await browserStorageLocalSet('simulationMode', simulationMode)
-}
-
 export async function setOpenedAddressBookTabId(addressbookTabId: number) {
 	return await browserStorageLocalSet('addressbookTabId', addressbookTabId)
+}
+
+export async function changeSimulationMode(changes: { simulationMode: boolean, activeChain?: EthereumQuantity, activeSimulationAddress?: EthereumAddress, activeSigningAddress?: EthereumAddress } ) {
+	return await browserStorageLocalSetKeys({
+		simulationMode: changes.simulationMode,
+		...changes.activeChain ? { activeChain: EthereumQuantity.serialize(changes.activeChain) as string }: {},
+		...changes.activeSimulationAddress ? { activeSimulationAddress: EthereumAddress.serialize(changes.activeSimulationAddress) as string }: {},
+		...changes.activeSigningAddress ? { activeSigningAddress: EthereumAddress.serialize(changes.activeSigningAddress) as string }: {},
+	})
 }
 
 export async function getOpenedAddressBookTabId() {

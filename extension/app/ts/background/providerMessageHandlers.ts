@@ -23,7 +23,10 @@ export async function ethAccountsReply(websiteTabConnections: WebsiteTabConnecti
 	const settings = await getSettings()
 	if ( (settings.useSignersAddressAsActiveAddress && settings.activeSimulationAddress !== signerAccounts[0])
 	|| (settings.simulationMode === false && settings.activeSimulationAddress !== signerAccounts[0])) {
-		await changeActiveAddressAndChainAndResetSimulation(websiteTabConnections, signerAccounts[0], 'noActiveChainChange', settings)
+		await changeActiveAddressAndChainAndResetSimulation(websiteTabConnections, {
+			simulationMode: settings.simulationMode,
+			activeAddress: signerAccounts[0], 
+		})
 		await sendPopupMessageToOpenWindows({ method: 'popup_accounts_update' })
 	}
 }
@@ -41,8 +44,11 @@ async function changeSignerChain(websiteTabConnections: WebsiteTabConnections, p
 
 	// update active address if we are using signers address
 	const settings = await getSettings()
-	if (settings.useSignersAddressAsActiveAddress || !settings.simulationMode) {
-		return changeActiveAddressAndChainAndResetSimulation(websiteTabConnections, 'noActiveAddressChange', signerChain, settings)
+	if ( (settings.useSignersAddressAsActiveAddress || !settings.simulationMode) && settings.activeChain !== signerChain) {
+		return changeActiveAddressAndChainAndResetSimulation(websiteTabConnections, {
+			simulationMode: settings.simulationMode,
+			activeChain: signerChain,
+		})
 	}
 	sendPopupMessageToOpenWindows({ method: 'popup_chain_update' })
 }

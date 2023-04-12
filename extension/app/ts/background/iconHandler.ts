@@ -8,22 +8,31 @@ import { Future } from '../utils/future.js'
 import { WebsiteSocket, WebsiteTabConnections } from '../utils/user-interface-types.js'
 import { getSettings, getSignerName, updateTabState } from './settings.js'
 import { TabState } from '../utils/interceptor-messages.js'
+import { getLastKnownCurrentTabId } from './popupMessageHandlers.js'
 
 async function setInterceptorIcon(websiteTabConnections: WebsiteTabConnections, tabId: number, icon: string, iconReason: string) {
 	const previousValue = websiteTabConnections.get(tabId)
 	if (previousValue === undefined) return
 
+	const tabIconDetails = {
+		icon: icon,
+		iconReason: iconReason
+	}
+
 	await updateTabState(tabId, (previousState: TabState) => {
 		return {
 			...previousState,
-			tabIconDetails: {
-				icon: icon,
-				iconReason: iconReason
-			}
+			tabIconDetails
 		}
 	})
 
-	sendPopupMessageToOpenWindows({ method: 'popup_websiteIconChanged' })
+	if (await getLastKnownCurrentTabId() === tabId) {
+		await sendPopupMessageToOpenWindows({
+			method: 'popup_websiteIconChanged',
+			data: tabIconDetails
+		})
+	}
+
 	return await setExtensionIcon({
 		path: { 128: icon },
 		tabId: tabId

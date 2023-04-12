@@ -103,7 +103,10 @@ export const InterceptorAccess = funtypes.ReadonlyObject({
 export type ChangeActiveAddress = funtypes.Static<typeof ChangeActiveAddress>
 export const ChangeActiveAddress = funtypes.ReadonlyObject({
 	method: funtypes.Literal('popup_changeActiveAddress'),
-	options: funtypes.Union(EthereumAddress, funtypes.Literal('signer')),
+	options: funtypes.ReadonlyObject({
+		simulationMode: funtypes.Boolean,
+		activeAddress: funtypes.Union(EthereumAddress, funtypes.Literal('signer'))
+	})
 }).asReadonly()
 
 export type ChangeMakeMeRich = funtypes.Static<typeof ChangeMakeMeRich>
@@ -363,6 +366,18 @@ export const PopupMessage = funtypes.Union(
 	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_requestNewHomeData') }),
 )
 
+export type TabIconDetails = funtypes.Static<typeof TabIconDetails>
+export const TabIconDetails = funtypes.ReadonlyObject({
+	icon: funtypes.String,
+	iconReason: funtypes.String,
+})
+
+export type WebsiteIconChanged = funtypes.Static<typeof WebsiteIconChanged>
+export const WebsiteIconChanged = funtypes.ReadonlyObject({
+	method: funtypes.Literal('popup_websiteIconChanged'),
+	data: TabIconDetails
+})
+
 export type MessageToPopupSimple = funtypes.Static<typeof MessageToPopupSimple>
 export const MessageToPopupSimple = funtypes.ReadonlyObject({
 	method: funtypes.Union(
@@ -371,7 +386,6 @@ export const MessageToPopupSimple = funtypes.ReadonlyObject({
 		funtypes.Literal('popup_simulation_state_changed'),
 		funtypes.Literal('popup_confirm_transaction_simulation_started'),
 		funtypes.Literal('popup_accounts_update'),
-		funtypes.Literal('popup_websiteIconChanged'),
 		funtypes.Literal('popup_addressBookEntriesChanged'),
 		funtypes.Literal('popup_interceptor_access_changed'),
 		funtypes.Literal('popup_notification_removed'),
@@ -476,12 +490,6 @@ export const ConfirmTransactionSimulationStateChanged = funtypes.ReadonlyObject(
 	})
 })
 
-export type TabIconDetails = funtypes.Static<typeof TabIconDetails>
-export const TabIconDetails = funtypes.ReadonlyObject({
-	icon: funtypes.String,
-	iconReason: funtypes.String,
-})
-
 export type WebsiteAddressAccess = funtypes.Static<typeof WebsiteAddressAccess>
 export const WebsiteAddressAccess = funtypes.ReadonlyObject({
 	address: EthereumAddress,
@@ -568,9 +576,16 @@ export const UpdateHomePage = funtypes.ReadonlyObject({
 	})
 })
 
+export type SettingsUpdated = funtypes.Static<typeof SettingsUpdated>
+export const SettingsUpdated = funtypes.ReadonlyObject({
+	method: funtypes.Literal('popup_settingsUpdated'),
+	data: Settings,
+})
+
 export type MessageToPopup = funtypes.Static<typeof MessageToPopup>
 export const MessageToPopup = funtypes.Union(
 	MessageToPopupSimple,
+	WebsiteIconChanged,
 	GetAddressBookDataReply,
 	PersonalSignRequest,
 	ChangeChainRequest,
@@ -578,6 +593,7 @@ export const MessageToPopup = funtypes.Union(
 	ConfirmTransactionSimulationStateChanged,
 	NewBlockArrived,
 	UpdateHomePage,
+	SettingsUpdated,
 )
 
 export type ExternalPopupMessage = funtypes.Static<typeof MessageToPopup>

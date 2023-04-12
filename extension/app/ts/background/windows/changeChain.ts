@@ -127,11 +127,11 @@ async function resolve(websiteTabConnections: WebsiteTabConnections, reply: Chai
 	await setChainChangeConfirmationPromise(undefined)
 	if (reply.options.accept) {
 		if (simulationMode) {
-			await changeActiveChain(websiteTabConnections, reply.options.chainId)
+			await changeActiveChain(websiteTabConnections, reply.options.chainId, simulationMode)
 			return { result: null }
 		}
 		pendForSignerReply = new Future<SignerChainChangeConfirmation>() // when not in simulation mode, we need to get reply from the signer too
-		await changeActiveChain(websiteTabConnections, reply.options.chainId)
+		await changeActiveChain(websiteTabConnections, reply.options.chainId, simulationMode)
 		const signerReply = await pendForSignerReply
 		if (signerReply.options.accept && signerReply.options.chainId === reply.options.chainId) {
 			return { result: null }
