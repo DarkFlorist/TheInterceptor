@@ -2,7 +2,7 @@ import { SimulatedAndVisualizedTransaction, TokenVisualizerERC20Event, TokenVisu
 import * as funtypes from 'funtypes'
 import { EthereumQuantity } from '../../utils/wire-types.js'
 import { abs, addressString } from '../../utils/bigint.js'
-import { ERC721TokenNumber, EtherAmount, EtherSymbol, TokenAmount, TokenSymbol } from '../subcomponents/coins.js'
+import { ERC721TokenNumber, EtherAmount, EtherSymbol, TokenAmount, TokenOrEthValue, TokenSymbol } from '../subcomponents/coins.js'
 import { AddressBookEntry, CHAIN, NFTEntry, TokenEntry } from '../../utils/user-interface-types.js'
 import { CHAINS } from '../../utils/constants.js'
 import { assertNever } from '../../utils/typescript.js'
@@ -140,7 +140,7 @@ export function identifySwap(simTransaction: SimulatedAndVisualizedTransaction):
 		}
 	}
 
-	if( tokenAddressesSent.length === 0 && tokenAddressesReceived.length === 1 && ethDiff < transactionGasCost ) {
+	if (tokenAddressesSent.length === 0 && tokenAddressesReceived.length === 1 && ethDiff < transactionGasCost ) {
 		// user bought token with eth
 		const receiveToken = tokenAddressesReceived[0]
 		const receiveBalanceAfter = simTransaction.tokenBalancesAfter.find((balance) => balance.owner === simTransaction.transaction.from.address && balance.token === receiveToken.address)?.balance
@@ -307,26 +307,41 @@ export function getSwapName(identifiedSwap: IdentifiedSwapWithMetadata, chain: C
 
 export function VisualizeSwapAsset({ swapAsset, chain }: { swapAsset: SwapAsset, chain: CHAIN }) {
 	const tokenStyle = { 'font-size': '28px', 'font-weight': '500' }
+	const balanceTextStyle = { 'font-size': '14px', 'color': 'var(--subtitle-text-color)' }
+
 	switch (swapAsset.type) {
 		case 'Ether': {
-			return <> <div class = 'log-cell' style = 'justify-content: left;'>
-				<EtherAmount
-					amount = { swapAsset.amount }
-					style = { tokenStyle }
-				/>
-				</div>
-				<div class = 'log-cell' style = 'justify-content: right;'>
-					<EtherSymbol
-						amount = { swapAsset.amount }
-						chain = { chain }
-						useFullTokenName = { false }
-						style = { tokenStyle}
-					/>
-				</div>
+			return <>
+				<span class = 'grid swap-grid'>
+					<div class = 'log-cell' style = 'justify-content: left;'>
+						<EtherAmount
+							amount = { swapAsset.amount }
+							style = { tokenStyle }
+						/>
+						</div>
+						<div class = 'log-cell' style = 'justify-content: right;'>
+							<EtherSymbol
+								amount = { swapAsset.amount }
+								chain = { chain }
+								useFullTokenName = { false }
+								style = { tokenStyle}
+							/>
+						</div>		
+				</span>
+				<span class = 'grid swap-grid'>
+					<div class = 'log-cell'/>
+					{ swapAsset.beforeAfterBalance !== undefined ? <div class = 'log-cell' style = 'justify-content: right;'>
+						<p class = 'paragraph' style = { balanceTextStyle }>Balance:&nbsp;</p>
+						<TokenOrEthValue amount = { swapAsset.beforeAfterBalance?.previousBalance } style = { balanceTextStyle } />
+						<p class = 'paragraph' style = { balanceTextStyle }>&nbsp;{'->'}&nbsp;</p>
+						<TokenOrEthValue amount = { swapAsset.beforeAfterBalance?.afterBalance } style = { balanceTextStyle } />
+						</div> : <></>
+					}
+				</span>
 			</>
 		}
 		case 'NFT': {
-			return <>
+			return <span class = 'grid swap-grid'>
 				<div class = 'log-cell' style = 'justify-content: left;'>
 					<ERC721TokenNumber
 						id = { swapAsset.tokenId }
@@ -341,24 +356,36 @@ export function VisualizeSwapAsset({ swapAsset, chain }: { swapAsset: SwapAsset,
 						style = { tokenStyle }
 					/>
 				</div>
-			</>
+			</span>
 		}
 		case 'Token': {
 			return <>
-				<div class = 'log-cell' style = 'justify-content: left;'>
-					<TokenAmount
-						amount = { swapAsset.amount }
-						decimals = { swapAsset.tokenAddress.decimals }
-						style = { tokenStyle }
-					/>
-				</div>
-				<div class = 'log-cell' style = 'justify-content: right;'>
-					<TokenSymbol
-						{ ...swapAsset.tokenAddress }
-						useFullTokenName = { false }
-						style = { tokenStyle }
-					/>
-				</div>
+				<span class = 'grid swap-grid'>
+					<div class = 'log-cell' style = 'justify-content: left;'>
+						<TokenAmount
+							amount = { swapAsset.amount }
+							decimals = { swapAsset.tokenAddress.decimals }
+							style = { tokenStyle }
+						/>
+					</div>
+					<div class = 'log-cell' style = 'justify-content: right;'>
+						<TokenSymbol
+							{ ...swapAsset.tokenAddress }
+							useFullTokenName = { false }
+							style = { tokenStyle }
+						/>
+					</div>
+				</span>
+				<span class = 'grid swap-grid'>
+					<div class = 'log-cell'/>
+					{ swapAsset.beforeAfterBalance !== undefined ? <div class = 'log-cell' style = 'justify-content: right;'>
+						<p class = 'paragraph' style = { balanceTextStyle }>Balance:&nbsp;</p>
+						<TokenOrEthValue { ...swapAsset.tokenAddress } amount = { swapAsset.beforeAfterBalance?.previousBalance } style = { balanceTextStyle } />
+						<p class = 'paragraph' style = { balanceTextStyle }>&nbsp;{'->'}&nbsp;</p>
+						<TokenOrEthValue { ...swapAsset.tokenAddress } amount = { swapAsset.beforeAfterBalance?.afterBalance } style = { balanceTextStyle } />
+						</div> : <></>
+					}
+				</span>
 			</>
 		}
 		default: assertNever(swapAsset)
@@ -372,15 +399,11 @@ export function SwapVisualization(param: SwapVisualizationParams) {
 		<div style = 'display: grid; grid-template-rows: max-content max-content max-content max-content;'>
 			<p class = 'paragraph'> Swap </p>
 			<div class = 'box swap-box'>
-				<span class = 'grid swap-grid'>
-					<VisualizeSwapAsset swapAsset = { param.identifiedSwap.sendAsset } chain = { param.chain } />
-				</span>
+				<VisualizeSwapAsset swapAsset = { param.identifiedSwap.sendAsset } chain = { param.chain } />
 			</div>
 			<p class = 'paragraph'> For </p>
 			<div class = 'box swap-box'>
-				<span class = 'grid swap-grid'>
-					<VisualizeSwapAsset swapAsset = { param.identifiedSwap.receiveAsset } chain = { param.chain } />
-				</span>
+				<VisualizeSwapAsset swapAsset = { param.identifiedSwap.receiveAsset } chain = { param.chain } />
 			</div>
 		</div>
 	</div>
