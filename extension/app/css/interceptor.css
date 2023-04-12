@@ -628,6 +628,7 @@ svg.spinner > circle {
 	box-shadow: unset;
 	margin-bottom: 0px;
 	display: grid;
+	padding: 10px;
 }
 
 .swap-grid {

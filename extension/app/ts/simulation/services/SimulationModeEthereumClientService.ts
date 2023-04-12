@@ -49,7 +49,7 @@ export const simulateEstimateGas = async (ethereumClientService: EthereumClientS
 	const tmp = {
 		type: '1559' as const,
 		from: sendAddress,
-		chainId: await ethereumClientService.getChainId(),
+		chainId: ethereumClientService.getChainId(),
 		nonce: await transactionCount,
 		maxFeePerGas: data.gasPrice !== undefined ? data.gasPrice : 0n,
 		maxPriorityFeePerGas: 2n,
@@ -141,7 +141,7 @@ export const setSimulationTransactions = async (ethereumClientService: EthereumC
 	const parentBlock = await ethereumClientService.getBlock()
 	const multicallResult = await ethereumClientService.multicall(newTransactionsToSimulate.map((x) => x.transaction), parentBlock.number)
 	if (multicallResult.length !== signedTxs.length) throw 'multicall length does not match in setSimulationTransactions'
-	const chainId = await ethereumClientService.getChain()
+	const chainId = ethereumClientService.getChain()
 
 	const tokenBalancesAfter: TokenBalancesAfter[] = []
 	for (let resultIndex = 0; resultIndex < multicallResult.length; resultIndex++) {
@@ -622,7 +622,7 @@ const getTokenBalancesAfter = async (
 		const singleResult = multicallResult[resultIndex]
 		const balances = await getSimulatedTokenBalances(
 			ethereumClientService,
-			signedTxs.slice(0, resultIndex),
+			signedTxs.slice(0, resultIndex + 1),
 			getAddressesInteractedWithERC20s(singleResult.statusCode === 'success' ? singleResult.events : []),
 			blockNumber
 		)
