@@ -622,3 +622,15 @@ svg.spinner > circle {
 	max-width: fit-content;
 	color: var(--text-color)
 }
+
+.swap-box {
+	background-color: var(--alpha-005);
+	box-shadow: unset;
+	margin-bottom: 0px;
+	display: grid;
+}
+
+.swap-grid {
+	grid-template-columns: auto auto;
+	display: grid;
+}

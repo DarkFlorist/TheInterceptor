@@ -5,46 +5,25 @@ import { abs, addressString } from '../../utils/bigint.js'
 import { ERC721TokenNumber, EtherAmount, EtherSymbol, TokenAmount, TokenSymbol } from '../subcomponents/coins.js'
 import { AddressBookEntry, CHAIN, NFTEntry, TokenEntry } from '../../utils/user-interface-types.js'
 import { CHAINS } from '../../utils/constants.js'
+import { assertNever } from '../../utils/typescript.js'
+
+export type SwapAsset = funtypes.Static<typeof SwapAsset>
+export const SwapAsset = funtypes.Intersect(
+	funtypes.Union(
+		funtypes.ReadonlyObject({ type: funtypes.Literal('Token'), amount: EthereumQuantity, tokenAddress: TokenEntry }),
+		funtypes.ReadonlyObject({ type: funtypes.Literal('NFT'), tokenId: EthereumQuantity, tokenAddress: NFTEntry }),
+		funtypes.ReadonlyObject({ type: funtypes.Literal('Ether'), amount: EthereumQuantity }),
+	)
+)
 
 export type IdentifiedSwapWithMetadata = funtypes.Static<typeof IdentifiedSwapWithMetadata>
 export const IdentifiedSwapWithMetadata = funtypes.Union(
 	funtypes.Literal(false), // not a swap
-	funtypes.Intersect(
-		funtypes.ReadonlyObject({
-			type: funtypes.Literal('TokenToToken'),
-			sender: AddressBookEntry,
-		} ),
-		funtypes.Union(
-			funtypes.ReadonlyObject( { tokenAmountSent: EthereumQuantity, tokenAddressSent: TokenEntry } ),
-			funtypes.ReadonlyObject( { tokenIdSent: EthereumQuantity, tokenAddressSent: NFTEntry } )
-		),
-		funtypes.Union(
-			funtypes.ReadonlyObject( { tokenAmountReceived: EthereumQuantity, tokenAddressReceived: TokenEntry } ),
-			funtypes.ReadonlyObject( { tokenIdReceived: EthereumQuantity, tokenAddressReceived: NFTEntry } )
-		),
-	),
-	funtypes.Intersect(
-		funtypes.ReadonlyObject({
-			type: funtypes.Literal('TokenToETH'),
-			sender: AddressBookEntry,
-			ethAmountReceived: EthereumQuantity,
-		}),
-		funtypes.Union(
-			funtypes.ReadonlyObject( { tokenAmountSent: EthereumQuantity, tokenAddressSent: TokenEntry } ),
-			funtypes.ReadonlyObject( { tokenIdSent: EthereumQuantity, tokenAddressSent: NFTEntry } )
-		),
-	),
-	funtypes.Intersect(
-		funtypes.ReadonlyObject({
-			type: funtypes.Literal('ETHToToken'),
-			sender: AddressBookEntry,
-			ethAmountSent: EthereumQuantity
-		}),
-		funtypes.Union(
-			funtypes.ReadonlyObject( { tokenAmountReceived: EthereumQuantity, tokenAddressReceived: TokenEntry } ),
-			funtypes.ReadonlyObject( { tokenIdReceived: EthereumQuantity, tokenAddressReceived: NFTEntry } )
-		),
-	)
+	funtypes.ReadonlyObject({
+		sender: AddressBookEntry,
+		sendAsset: SwapAsset,
+		receiveAsset: SwapAsset
+	}),
 )
 
 interface SwapVisualizationParams {
@@ -96,22 +75,29 @@ export function identifySwap(simTransaction: SimulatedAndVisualizedTransaction):
 			const sentData = tokensSent.filter( (x) => x.token.address === tokenAddressSent.address )[0]
 			const receivedData = tokensReceived.filter( (x) => x.token.address === tokenAddressReceived.address )[0]
 			return {
-				type: 'TokenToToken' as const,
 				sender: simTransaction.transaction.from,
-				...(tokenAddressSent.type === 'NFT' ? {
-					tokenAddressSent: tokenAddressSent,
-					tokenIdSent: 'tokenId' in sentData ? sentData.tokenId : 0x0n,
-				} : {
-					tokenAddressSent: tokenAddressSent,
-					tokenAmountSent: 'amount' in sentData ?  sentData.amount : 0x0n,
-				}),
-				...(tokenAddressReceived.type === 'NFT' ? {
-					tokenAddressReceived: tokenAddressReceived,
-					tokenIdReceived: 'tokenId' in receivedData ? receivedData.tokenId : 0x0n,
-				} : {
-					tokenAddressReceived: tokenAddressReceived,
-					tokenAmountReceived: 'amount' in receivedData ? receivedData.amount : 0x0n,
-				}),
+				sendAsset: {
+					...(tokenAddressSent.type === 'NFT' ? {
+						type: 'NFT',
+						tokenAddress: tokenAddressSent,
+						tokenId: 'tokenId' in sentData ? sentData.tokenId : 0x0n,
+					} : {
+						type: 'Token',
+						tokenAddress: tokenAddressSent,
+						amount: 'amount' in sentData ?  sentData.amount : 0x0n,
+					}),
+				},
+				receiveAsset: {
+					...(tokenAddressReceived.type === 'NFT' ? {
+						type: 'NFT',
+						tokenAddress: tokenAddressReceived,
+						tokenId: 'tokenId' in receivedData ? receivedData.tokenId : 0x0n,
+					} : {
+						type: 'Token',
+						tokenAddress: tokenAddressReceived,
+						amount: 'amount' in receivedData ? receivedData.amount : 0x0n,
+					}),
+				}
 			}
 		}
 	}
@@ -121,16 +107,19 @@ export function identifySwap(simTransaction: SimulatedAndVisualizedTransaction):
 		const tokenAddressSent = Array.from(tokenAddressesSent.values())[0]
 		const sentData = tokensSent.filter( (x) => x.token.address === tokenAddressSent.address )[0]
 		return {
-			type: 'TokenToETH' as const,
 			sender: simTransaction.transaction.from,
-			...(tokenAddressSent.type === 'NFT' ? {
-				tokenIdSent: 'tokenId' in sentData ? sentData.tokenId : 0x0n,
-				tokenAddressSent,
-			} : {
-				tokenAmountSent: 'amount' in sentData ? sentData.amount : 0x0n,
-				tokenAddressSent,
-			}),
-			ethAmountReceived: ethDiff,
+			sendAsset: {
+				...(tokenAddressSent.type === 'NFT' ? {
+					type: 'NFT',
+					tokenId: 'tokenId' in sentData ? sentData.tokenId : 0x0n,
+					tokenAddress: tokenAddressSent,
+				} : {
+					type: 'Token',
+					amount: 'amount' in sentData ? sentData.amount : 0x0n,
+					tokenAddress: tokenAddressSent,
+				})
+			},
+			receiveAsset: { type: 'Ether', amount: ethDiff },
 		}
 	}
 
@@ -139,17 +128,19 @@ export function identifySwap(simTransaction: SimulatedAndVisualizedTransaction):
 		const tokenAddressReceived = Array.from(tokenAddressesReceived.values())[0]
 		const receivedData = tokensReceived.filter( (x) => x.token.address === tokenAddressReceived.address )[0]
 		return {
-			type: 'ETHToToken' as const,
 			sender: simTransaction.transaction.from,
-			ethAmountSent: -ethDiff,
-			tokenAmountReceived: 'amount' in receivedData ? receivedData.amount : 0n,
-			...(tokenAddressReceived.type === 'NFT' ? {
-				tokenIdReceived: 'tokenId' in receivedData ? receivedData.tokenId : 0x0n,
-				tokenAddressReceived,
-			} : {
-				tokenAmountReceived: 'amount' in receivedData ? receivedData.amount : 0x0n,
-				tokenAddressReceived,
-			}),
+			sendAsset: { type: 'Ether', amount: -ethDiff },
+			receiveAsset: {
+				...(tokenAddressReceived.type === 'NFT' ? {
+					type: 'NFT',
+					tokenId: 'tokenId' in receivedData ? receivedData.tokenId : 0x0n,
+					tokenAddress: tokenAddressReceived,
+				} : {
+					type: 'Token',
+					amount: 'amount' in receivedData ? receivedData.amount : 0x0n,
+					tokenAddress: tokenAddressReceived,
+				}),
+			}
 		}
 	}
 
@@ -254,9 +245,9 @@ export function identifyRoutes(simulatedAndVisualizedTransaction: SimulatedAndVi
 	}
 	Map<string, Map<string | undefined, {to: string, tokenResultIndex: number | undefined } > >
 	// traverse chain
-	const startToken = 'tokenAddressSent' in identifiedSwap ? addressString(identifiedSwap.tokenAddressSent.address) : undefined
-	const endToken = 'tokenAddressReceived' in identifiedSwap ? addressString(identifiedSwap.tokenAddressReceived.address) : undefined
-	const lastIndex = endToken !== undefined ? tokenResults.findIndex( ( x ) => (x.to.address === identifiedSwap.sender.address && addressString(x.token.address) === endToken ) ) : -1
+	const startToken = identifiedSwap.sendAsset.type !== 'Ether' ? addressString(identifiedSwap.sendAsset.tokenAddress.address) : undefined
+	const endToken = identifiedSwap.receiveAsset.type !== 'Ether' ? addressString(identifiedSwap.receiveAsset.tokenAddress.address) : undefined
+	const lastIndex = endToken !== undefined ? tokenResults.findIndex((x) => (x.to.address === identifiedSwap.sender.address && addressString(x.token.address) === endToken ) ) : -1
 	const routes = [...findSwapRoutes(graph,
 		{
 			fromAddress: addressString(identifiedSwap.sender.address),
@@ -295,124 +286,87 @@ export function identifyRoutes(simulatedAndVisualizedTransaction: SimulatedAndVi
 }
 
 export function getSwapName(identifiedSwap: IdentifiedSwapWithMetadata, chain: CHAIN) {
-	if ( identifiedSwap === false ) return undefined
-	const sent = 'tokenAddressSent' in identifiedSwap ? identifiedSwap.tokenAddressSent.symbol : CHAINS[chain].currencyTicker
-	const to = 'tokenAddressReceived' in identifiedSwap ? identifiedSwap.tokenAddressReceived.symbol : CHAINS[chain].currencyTicker
+	if (identifiedSwap === false) return undefined
+	const sent = identifiedSwap.sendAsset.type !== 'Ether' ? identifiedSwap.sendAsset.tokenAddress.symbol : CHAINS[chain].currencyTicker
+	const to = identifiedSwap.receiveAsset.type !== 'Ether' ? identifiedSwap.receiveAsset.tokenAddress.symbol : CHAINS[chain].currencyTicker
 	return `Swap ${ sent } for ${ to }`
+}
+
+export function VisualizeSwapAsset({ swapAsset, chain }: { swapAsset: SwapAsset, chain: CHAIN }) {
+	const tokenStyle = { 'font-size': '28px', 'font-weight': '500' }
+	switch (swapAsset.type) {
+		case 'Ether': {
+			return <> <div class = 'log-cell' style = 'justify-content: left;'>
+				<EtherAmount
+					amount = { swapAsset.amount }
+					style = { tokenStyle }
+				/>
+				</div>
+				<div class = 'log-cell' style = 'justify-content: right;'>
+					<EtherSymbol
+						amount = { swapAsset.amount }
+						chain = { chain }
+						useFullTokenName = { false }
+						style = { tokenStyle}
+					/>
+				</div>
+			</>
+		}
+		case 'NFT': {
+			return <>
+				<div class = 'log-cell' style = 'justify-content: left;'>
+					<ERC721TokenNumber
+						id = { swapAsset.tokenId }
+						received = { false }
+						style = { tokenStyle }
+					/>
+				</div>
+				<div class = 'log-cell' style = 'justify-content: right;'>
+					<TokenSymbol
+						{ ...swapAsset.tokenAddress }
+						useFullTokenName = { false }
+						style = { tokenStyle }
+					/>
+				</div>
+			</>
+		}
+		case 'Token': {
+			return <>
+				<div class = 'log-cell' style = 'justify-content: left;'>
+					<TokenAmount
+						amount = { swapAsset.amount }
+						decimals = { swapAsset.tokenAddress.decimals }
+						style = { tokenStyle }
+					/>
+				</div>
+				<div class = 'log-cell' style = 'justify-content: right;'>
+					<TokenSymbol
+						{ ...swapAsset.tokenAddress }
+						useFullTokenName = { false }
+						style = { tokenStyle }
+					/>
+				</div>
+			</>
+		}
+		default: assertNever(swapAsset)
+	}
 }
 
 export function SwapVisualization(param: SwapVisualizationParams) {
 	if ( param.identifiedSwap === false ) return <></>
+
 	return <div class = 'notification transaction-importance-box'>
-			<div style = 'display: grid; grid-template-rows: max-content max-content max-content max-content;' >
-			<p style = { `color: var(--text-color);` }> Swap </p>
-			<div class = 'box' style = 'background-color: var(--alpha-005); box-shadow: unset; margin-bottom: 0px; display: grid;'>
-				<span class = 'grid' style = 'grid-template-columns: auto auto; display: grid;'>
-					{ param.identifiedSwap.type === 'TokenToToken' || param.identifiedSwap.type === 'TokenToETH' ?
-						'tokenIdSent' in param.identifiedSwap ? <>
-								<div class = 'log-cell' style = 'justify-content: left;'>
-									<ERC721TokenNumber
-										id = { param.identifiedSwap.tokenIdSent }
-										received = { false }
-										style = { { 'font-size': '28px', 'font-weight': '500' } }
-									/>
-								</div>
-								<div class = 'log-cell' style = 'justify-content: right;'>
-									<TokenSymbol
-										{ ...param.identifiedSwap.tokenAddressSent }
-										useFullTokenName = { false }
-										style = { { 'font-size': '18px', 'font-weight': '500' } }
-									/>
-								</div>
-							</>
-							:<>
-								<div class = 'log-cell' style = 'justify-content: left;'>
-									<TokenAmount
-										amount = { param.identifiedSwap.tokenAmountSent }
-										decimals = { param.identifiedSwap.tokenAddressSent.decimals }
-										style = { { 'font-size': '28px', 'font-weight': '500' } }
-									/>
-								</div>
-								<div class = 'log-cell' style = 'justify-content: right;'>
-									<TokenSymbol
-										{ ...param.identifiedSwap.tokenAddressSent }
-										useFullTokenName = { false }
-										style = { { 'font-size': '18px', 'font-weight': '500' } }
-									/>
-								</div>
-							</>
-					: <>
-						<div class = 'log-cell' style = 'justify-content: left;'>
-							<EtherAmount
-								amount = { param.identifiedSwap.ethAmountSent }
-								style = { { 'font-size': '28px', 'font-weight': '500' } }
-							/>
-						</div>
-						<div class = 'log-cell' style = 'justify-content: right;'>
-							<EtherSymbol
-								amount = { param.identifiedSwap.ethAmountSent }
-								chain = { param.chain }
-								useFullTokenName = { false }
-								style = { { 'font-size': '18px', 'font-weight': '500' } }
-							/>
-						</div>
-					</>
-					}
+		<div style = 'display: grid; grid-template-rows: max-content max-content max-content max-content;'>
+			<p class = 'paragraph'> Swap </p>
+			<div class = 'box swap-box'>
+				<span class = 'grid swap-grid'>
+					<VisualizeSwapAsset swapAsset = { param.identifiedSwap.sendAsset } chain = { param.chain } />
 				</span>
 			</div>
-			<p style = { `color: var(--text-color);` }> For </p>
-			<div class = 'box' style = 'background-color: var(--alpha-005); box-shadow: unset; margin-bottom: 0px; display: grid;'>
-				<span class = 'grid' style = 'grid-template-columns: auto auto; display: grid;'>
-					{ param.identifiedSwap.type === 'TokenToToken' || param.identifiedSwap.type === 'ETHToToken' ?
-						'tokenIdReceived' in param.identifiedSwap ? <>
-								<div class = 'log-cell' style = 'justify-content: left;'>
-									<ERC721TokenNumber
-										id = { param.identifiedSwap.tokenIdReceived }
-										received = { false }
-										style = { { 'font-size': '28px', 'font-weight': '500' } }
-									/>
-								</div>
-								<div class = 'log-cell' style = 'justify-content: right;'>
-									<TokenSymbol
-										{ ...param.identifiedSwap.tokenAddressReceived }
-										useFullTokenName = { false }
-										style = { { 'font-size': '18px', 'font-weight': '500' } }
-									/>
-								</div>
-							</>
-							:<>
-							<div class = 'log-cell' style = 'justify-content: left;'>
-								<TokenAmount
-									amount = { param.identifiedSwap.tokenAmountReceived }
-									decimals = { param.identifiedSwap.tokenAddressReceived.decimals }
-									style = { { 'font-size': '28px', 'font-weight': '500' } }
-								/>
-							</div>
-							<div class = 'log-cell' style = 'justify-content: right;'>
-								<TokenSymbol
-									{ ...param.identifiedSwap.tokenAddressReceived }
-									useFullTokenName = { false }
-									style = { { 'font-size': '18px', 'font-weight': '500' } }
-								/>
-							</div>
-							</>
-					: <>
-						<div class = 'log-cell' style = 'justify-content: left;'>
-							<EtherAmount
-								amount = { param.identifiedSwap.ethAmountReceived }
-								style = { { 'font-size': '28px', 'font-weight': '500' } }
-							/>
-						</div>
-						<div class = 'log-cell' style = 'justify-content: right;'>
-							<EtherSymbol
-								amount = { param.identifiedSwap.ethAmountReceived }
-								chain = { param.chain }
-								useFullTokenName = { false }
-								style = { { 'font-size': '18px', 'font-weight': '500' } }
-							/>
-						</div>
-					</>
-					}
+			<p class = 'paragraph'> For </p>
+			<div class = 'box swap-box'>
+				<span class = 'grid swap-grid'>
+					<VisualizeSwapAsset swapAsset = { param.identifiedSwap.receiveAsset } chain = { param.chain } />
 				</span>
 			</div>
 		</div>
