@@ -148,7 +148,7 @@ export const setSimulationTransactions = async (ethereumClientService: EthereumC
 		const singleResult = multicallResult[resultIndex]
 		const balances = await getSimulatedTokenBalances(
 			ethereumClientService,
-			signedTxs.slice(0, resultIndex),
+			signedTxs.slice(0, resultIndex + 1),
 			getAddressesInteractedWithERC20s(singleResult.statusCode === 'success' ? singleResult.events : []),
 			parentBlock.number
 		)
