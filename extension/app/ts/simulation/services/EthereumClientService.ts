@@ -175,14 +175,14 @@ export class EthereumClientService {
 		return EthereumSignedTransactionWithBlockData.parse(response)
 	}
 
-	public readonly call = async (transaction: Pick<IUnsignedTransaction1559, 'to' | 'from' | 'input' | 'value' | 'maxFeePerGas' | 'maxPriorityFeePerGas' | 'gasLimit'>, blockTag: EthereumBlockTag = 'latest') => {
-		if ( transaction.to === null) throw new Error('To cannot be null')
+	public readonly call = async (transaction: Partial<Pick<IUnsignedTransaction1559, 'to' | 'from' | 'input' | 'value' | 'maxFeePerGas' | 'maxPriorityFeePerGas' | 'gasLimit'>>, blockTag: EthereumBlockTag = 'latest') => {
+		if (transaction.to === null) throw new Error('To cannot be null')
 		const params = {
 			to: transaction.to,
 			from: transaction.from,
 			data: transaction.input,
 			value: transaction.value,
-			gasPrice: transaction.maxFeePerGas + transaction.maxPriorityFeePerGas,
+			...transaction.maxFeePerGas !== undefined && transaction.maxPriorityFeePerGas !== undefined ? { gasPrice: transaction.maxFeePerGas + transaction.maxPriorityFeePerGas } : {},
 			gas: transaction.gasLimit
 		}
 		const response = await this.requestHandler.jsonRpcRequest({ method: 'eth_call', params: [params, blockTag] })
