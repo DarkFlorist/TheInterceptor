@@ -81,7 +81,6 @@ export async function retrieveWebsiteDetails(port: browser.runtime.Port, website
 		}
 	}
 
-
 	const tabId = port.sender?.tab?.id
 	if (tabId === undefined) return  {
 		websiteOrigin: websiteOrigin,
