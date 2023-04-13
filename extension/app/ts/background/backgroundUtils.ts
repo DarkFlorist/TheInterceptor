@@ -21,6 +21,7 @@ export async function sendPopupMessageToOpenWindows(message: MessageToPopup) {
 			}
 			if (error) return console.error(`Popup message error: ${ error.message }`);
 		}
+		throw error
 	}
 }
 

@@ -24,7 +24,7 @@ export function SimpleTokenApprovalVisualisation({ simTx, renameAddressCallBack 
 		<div class = 'box' style = 'background-color: var(--alpha-005); box-shadow: unset; margin-bottom: 0px;'>
 			<span class = 'log-table' style = 'justify-content: center; column-gap: 5px;'>
 				<div class = 'log-cell' style = 'justify-content: right;'>
-					{ approval.is721 ?
+					{ approval.type !== 'Token' ?
 						<Token721AmountField
 							{ ...approval }
 							textColor = { textColor }

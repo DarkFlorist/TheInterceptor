@@ -33,51 +33,47 @@ let simulator: Simulator | undefined = undefined
 
 export async function updateSimulationState(getUpdatedSimulationState: () => Promise<SimulationState | undefined>, activeAddress: bigint | undefined) {
 	if (simulator === undefined) return
-	try {
-		const simId = (await getSimulationResults()).simulationId + 1
-		const updatedSimulationState = await getUpdatedSimulationState()
+	const simId = (await getSimulationResults()).simulationId + 1
+	const updatedSimulationState = await getUpdatedSimulationState()
 
-		if (updatedSimulationState !== undefined) {
-			const priceEstimator = new PriceEstimator(simulator.ethereum)
+	if (updatedSimulationState !== undefined) {
+		const priceEstimator = new PriceEstimator(simulator.ethereum)
 
-			const transactions = updatedSimulationState.simulatedTransactions.map((x) => ({ transaction: x.signedTransaction, website: x.website }))
-			const visualizerResult = await simulator.visualizeTransactionChain(updatedSimulationState, transactions, updatedSimulationState.blockNumber, updatedSimulationState.simulatedTransactions.map((x) => x.multicallResponse))
-			const visualizerResultWithWebsites = visualizerResult.map((x, i) => ({ ...x, website: updatedSimulationState.simulatedTransactions[i].website }))
-			const addressBookEntries = await getAddressBookEntriesForVisualiser(simulator, visualizerResult.map((x) => x.visualizerResults), updatedSimulationState, (await getSettings()).userAddressBook)
+		const transactions = updatedSimulationState.simulatedTransactions.map((x) => ({ transaction: x.signedTransaction, website: x.website }))
+		const visualizerResult = await simulator.visualizeTransactionChain(updatedSimulationState, transactions, updatedSimulationState.blockNumber, updatedSimulationState.simulatedTransactions.map((x) => x.multicallResponse))
+		const visualizerResultWithWebsites = visualizerResult.map((x, i) => ({ ...x, website: updatedSimulationState.simulatedTransactions[i].website }))
+		const addressBookEntries = await getAddressBookEntriesForVisualiser(simulator, visualizerResult.map((x) => x.visualizerResults), updatedSimulationState, (await getSettings()).userAddressBook)
 
-			function onlyTokensAndTokensWithKnownDecimals(metadata: AddressBookEntry) : metadata is AddressBookEntry & { type: 'token', decimals: `0x${ string }` } {
-				if (metadata.type !== 'token') return false
-				if (metadata.decimals === undefined) return false
-				return true
-			}
-			function metadataRestructure(metadata: AddressBookEntry &  { type: 'token', decimals: bigint } ) {
-				return { token: metadata.address, decimals: metadata.decimals }
-			}
-			const tokenPrices = await priceEstimator.estimateEthereumPricesForTokens(addressBookEntries.filter(onlyTokensAndTokensWithKnownDecimals).map(metadataRestructure))
-
-			await updateSimulationResults({
-				simulationId: simId,
-				tokenPrices: tokenPrices,
-				addressBookEntries: addressBookEntries,
-				visualizerResults: visualizerResultWithWebsites,
-				simulationState: updatedSimulationState,
-				activeAddress: activeAddress,
-			})
-		} else {
-			await updateSimulationResults({
-				simulationId: simId,
-				addressBookEntries: [],
-				tokenPrices: [],
-				visualizerResults: [],
-				simulationState: updatedSimulationState,
-				activeAddress: activeAddress,
-			})
+		function onlyTokensAndTokensWithKnownDecimals(metadata: AddressBookEntry) : metadata is AddressBookEntry & { type: 'token', decimals: `0x${ string }` } {
+			if (metadata.type !== 'token') return false
+			if (metadata.decimals === undefined) return false
+			return true
 		}
-		sendPopupMessageToOpenWindows({ method: 'popup_simulation_state_changed' })
-		return updatedSimulationState
-	} catch(e) {
-		throw e
+		function metadataRestructure(metadata: AddressBookEntry &  { type: 'token', decimals: bigint } ) {
+			return { token: metadata.address, decimals: metadata.decimals }
+		}
+		const tokenPrices = await priceEstimator.estimateEthereumPricesForTokens(addressBookEntries.filter(onlyTokensAndTokensWithKnownDecimals).map(metadataRestructure))
+
+		await updateSimulationResults({
+			simulationId: simId,
+			tokenPrices: tokenPrices,
+			addressBookEntries: addressBookEntries,
+			visualizerResults: visualizerResultWithWebsites,
+			simulationState: updatedSimulationState,
+			activeAddress: activeAddress,
+		})
+	} else {
+		await updateSimulationResults({
+			simulationId: simId,
+			addressBookEntries: [],
+			tokenPrices: [],
+			visualizerResults: [],
+			simulationState: updatedSimulationState,
+			activeAddress: activeAddress,
+		})
 	}
+	sendPopupMessageToOpenWindows({ method: 'popup_simulation_state_changed' })
+	return updatedSimulationState
 }
 
 export function setEthereumNodeBlockPolling(enabled: boolean) {
@@ -162,6 +158,8 @@ async function handleSimulationMode(
 	try {
 		parsedRequest = EthereumJsonRpcRequest.parse(request.options)
 	} catch (error) {
+		console.log(request)
+		console.log(error)
 		if (error instanceof Error) {
 			return {
 				error: {
@@ -247,6 +245,8 @@ async function handleSigningMode(
 	try {
 		parsedRequest = EthereumJsonRpcRequest.parse(request.options)
 	} catch (error) {
+		console.log(request)
+		console.log(error)
 		if (error instanceof Error) {
 			return {
 				error: {

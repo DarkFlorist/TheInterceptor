@@ -72,10 +72,10 @@ export class LogSummarizer {
 	}
 
 	private updateERC721 = (from: string, to: string, tokenAddress: string, change: TokenVisualizerResultWithMetadata) => {
-		if (!change.is721) return
+		if (change.type === 'Token') return
 		if (change.isApproval) {
 			const fromSummary = this.summary.get(from)!
-			if ( 'isAllApproval' in change ) {
+			if (change.type === 'NFT All approval') {
 				if (change.allApprovalAdded) {
 					fromSummary.ERC721OperatorChanges.set(tokenAddress, to)
 				} else {
@@ -114,7 +114,7 @@ export class LogSummarizer {
 	}
 
 	private updateERC20 = (from: string, to: string, tokenAddress: string, change: TokenVisualizerResultWithMetadata) => {
-		if ( change.is721 ) return
+		if (change.type !== 'Token') return
 		if (change.isApproval) {
 			// track approvals
 			const tokenChanges = this.summary.get(from)!.tokenApprovalChanges.get(tokenAddress)

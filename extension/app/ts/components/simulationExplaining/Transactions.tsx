@@ -15,7 +15,7 @@ import { assertNever } from '../../utils/typescript.js'
 import { CatchAllVisualizer } from './customExplainers/CatchAllVisualizer.js'
 
 function isPositiveEvent(visResult: TokenVisualizerResultWithMetadata, ourAddressInReferenceFrame: bigint) {
-	if (!visResult.is721) {
+	if (visResult.type === 'Token') {
 		if (!visResult.isApproval) {
 			return visResult.amount >= 0 // simple transfer
 		}
@@ -23,7 +23,7 @@ function isPositiveEvent(visResult: TokenVisualizerResultWithMetadata, ourAddres
 	}
 
 	// nfts
-	if ('isAllApproval' in visResult) { // all approval is only positive if someone all approves us, or all approval is removed from us
+	if (visResult.type === 'NFT All approval') { // all approval is only positive if someone all approves us, or all approval is removed from us
 		return (visResult.allApprovalAdded && visResult.to.address === ourAddressInReferenceFrame) || (!visResult.allApprovalAdded && visResult.from.address === ourAddressInReferenceFrame)
 	}
 
@@ -172,7 +172,7 @@ export function TokenLogEvent(params: TokenLogEventParams ) {
 
 	return <>
 		<div class = 'log-cell' style = 'justify-content: right;'>
-			{ params.tokenVisualizerResult.is721 ?
+			{ params.tokenVisualizerResult.type !== 'Token' ?
 				<Token721AmountField
 					{ ...params.tokenVisualizerResult }
 					textColor = { textColor }

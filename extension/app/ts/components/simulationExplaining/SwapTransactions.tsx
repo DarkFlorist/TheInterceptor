@@ -1,4 +1,4 @@
-import { SimulatedAndVisualizedTransaction, TokenVisualizerResultWithMetadata } from '../../utils/visualizer-types.js'
+import { SimulatedAndVisualizedTransaction, TokenVisualizerERC20Event, TokenVisualizerERC721Event, TokenVisualizerResultWithMetadata } from '../../utils/visualizer-types.js'
 import * as funtypes from 'funtypes'
 import { EthereumQuantity } from '../../utils/wire-types.js'
 import { abs, addressString } from '../../utils/bigint.js'
@@ -7,12 +7,31 @@ import { AddressBookEntry, CHAIN, NFTEntry, TokenEntry } from '../../utils/user-
 import { CHAINS } from '../../utils/constants.js'
 import { assertNever } from '../../utils/typescript.js'
 
+export type BeforeAfterBalance = funtypes.Static<typeof SwapAsset>
+export const BeforeAfterBalance = funtypes.ReadonlyObject({
+	previousBalance: EthereumQuantity,
+	afterBalance: EthereumQuantity,
+})
+
 export type SwapAsset = funtypes.Static<typeof SwapAsset>
 export const SwapAsset = funtypes.Intersect(
 	funtypes.Union(
-		funtypes.ReadonlyObject({ type: funtypes.Literal('Token'), amount: EthereumQuantity, tokenAddress: TokenEntry }),
-		funtypes.ReadonlyObject({ type: funtypes.Literal('NFT'), tokenId: EthereumQuantity, tokenAddress: NFTEntry }),
-		funtypes.ReadonlyObject({ type: funtypes.Literal('Ether'), amount: EthereumQuantity }),
+		funtypes.ReadonlyObject({
+			type: funtypes.Literal('Token'),
+			amount: EthereumQuantity,
+			tokenAddress: TokenEntry,
+			beforeAfterBalance: funtypes.Union(BeforeAfterBalance, funtypes.Undefined),
+		}),
+		funtypes.ReadonlyObject({
+			type: funtypes.Literal('NFT'),
+			tokenId: EthereumQuantity,
+			tokenAddress: NFTEntry,
+		}),
+		funtypes.ReadonlyObject({
+			type: funtypes.Literal('Ether'),
+			amount: EthereumQuantity,
+			beforeAfterBalance: funtypes.Union(BeforeAfterBalance, funtypes.Undefined),
+		}),
 	)
 )
 
@@ -41,6 +60,26 @@ function dropDuplicates<T>(array: T[], isEqual: (a: T, b: T) => boolean): T[] {
     }
     return result;
 }
+export function formSwapAsset(tokenResult: TokenVisualizerERC20Event[] | TokenVisualizerERC721Event, sendBalanceAfter: bigint | undefined): SwapAsset {
+	if (Array.isArray(tokenResult)) {
+		const total = tokenResult.reduce((total, current) => total + current.amount, 0n)
+		return {
+			type: 'Token',
+			tokenAddress: tokenResult[0].token,
+			amount: total,
+			beforeAfterBalance: sendBalanceAfter !== undefined ? {
+				previousBalance: sendBalanceAfter - total,
+				afterBalance: sendBalanceAfter
+			} : undefined
+		}
+	} else {
+		return {
+			type: 'NFT',
+			tokenAddress: tokenResult.token,
+			tokenId: tokenResult.tokenId
+		}	
+	}
+}
 
 export function identifySwap(simTransaction: SimulatedAndVisualizedTransaction): IdentifiedSwapWithMetadata {
 	const sender = simTransaction.transaction.from.address
@@ -51,53 +90,34 @@ export function identifySwap(simTransaction: SimulatedAndVisualizedTransaction):
 
 	// check if sender sends one token type/ether and receives one token type/ether
 
-	const tokensSent = simTransaction.tokenResults.filter( (token) => token.from.address === sender)
-	const tokensReceived = simTransaction.tokenResults.filter( (token) => token.to.address === sender)
+	const tokensSent = simTransaction.tokenResults.filter((token): token is TokenVisualizerERC20Event | TokenVisualizerERC721Event => token.from.address === sender && !token.isApproval)
+	const tokensReceived = simTransaction.tokenResults.filter((token): token is TokenVisualizerERC20Event | TokenVisualizerERC721Event => token.to.address === sender && !token.isApproval)
 
-	if (tokensReceived.length > 1) return false // received more than one token
-	if (tokensSent.length > 1) return false // sent more than one token
+	const nftsSent = tokensSent.reduce((total, current) => total + (current.type === 'NFT' ? 1 : 0), 0)
+	const nftsReceived = tokensSent.reduce((total, current) => total + (current.type === 'NFT' ? 1 : 0), 0)
+	if (nftsSent > 1 || nftsReceived > 1) return false //its not a pure 1 to 1 swap if we get multiple NFT's
 
 	const isSameTokenAddress = (a: TokenVisualizerResultWithMetadata, b: TokenVisualizerResultWithMetadata) => a.token.address === b.token.address
 
 	const tokenAddressesSent = dropDuplicates<TokenVisualizerResultWithMetadata>(tokensSent, isSameTokenAddress).map((x) => x.token)
 	const tokenAddressesReceived = dropDuplicates<TokenVisualizerResultWithMetadata>(tokensReceived, isSameTokenAddress).map((x) => x.token)
 
-	const etherChange = simTransaction.ethBalanceChanges.filter( (x) => x.address.address === sender)
+	const etherChange = simTransaction.ethBalanceChanges.filter((x) => x.address.address === sender)
 	const ethDiff = etherChange !== undefined && etherChange.length >= 1 ? etherChange[etherChange.length - 1].after - etherChange[0].before : 0n
 
 	const transactionGasCost = simTransaction.realizedGasPrice * simTransaction.transaction.gas
 
 	if (tokenAddressesSent.length === 1 && tokenAddressesReceived.length === 1 && -ethDiff <= transactionGasCost) {
 		// user swapped one token to another and eth didn't change more than gas fees
-		const tokenAddressSent = Array.from(tokenAddressesSent.values())[0]
-		const tokenAddressReceived = Array.from(tokenAddressesReceived.values())[0]
-		if (tokenAddressSent !== tokenAddressReceived ) {
-			const sentData = tokensSent.filter( (x) => x.token.address === tokenAddressSent.address )[0]
-			const receivedData = tokensReceived.filter( (x) => x.token.address === tokenAddressReceived.address )[0]
+		const sentToken = tokenAddressesSent[0]
+		const receiveToken = tokenAddressesReceived[0]
+		if (sentToken.address !== receiveToken.address) {
+			const sendBalanceAfter = simTransaction.tokenBalancesAfter.find((balance) => balance.owner === simTransaction.transaction.from.address && balance.token === sentToken.address)?.balance
+			const receiveBalanceAfter = simTransaction.tokenBalancesAfter.find((balance) => balance.owner === simTransaction.transaction.from.address && balance.token === receiveToken.address)?.balance
 			return {
 				sender: simTransaction.transaction.from,
-				sendAsset: {
-					...(tokenAddressSent.type === 'NFT' ? {
-						type: 'NFT',
-						tokenAddress: tokenAddressSent,
-						tokenId: 'tokenId' in sentData ? sentData.tokenId : 0x0n,
-					} : {
-						type: 'Token',
-						tokenAddress: tokenAddressSent,
-						amount: 'amount' in sentData ?  sentData.amount : 0x0n,
-					}),
-				},
-				receiveAsset: {
-					...(tokenAddressReceived.type === 'NFT' ? {
-						type: 'NFT',
-						tokenAddress: tokenAddressReceived,
-						tokenId: 'tokenId' in receivedData ? receivedData.tokenId : 0x0n,
-					} : {
-						type: 'Token',
-						tokenAddress: tokenAddressReceived,
-						amount: 'amount' in receivedData ? receivedData.amount : 0x0n,
-					}),
-				}
+				sendAsset: formSwapAsset(tokensSent[0].type === 'NFT' ? tokensSent[0] : tokensSent.filter((token): token is TokenVisualizerERC20Event => token.type === 'Token'), sendBalanceAfter),
+				receiveAsset: formSwapAsset(tokensReceived[0].type === 'NFT' ? tokensReceived[0] : tokensReceived.filter((token): token is TokenVisualizerERC20Event => token.type === 'Token'), receiveBalanceAfter),
 			}
 		}
 	}
@@ -105,45 +125,38 @@ export function identifySwap(simTransaction: SimulatedAndVisualizedTransaction):
 	if (tokenAddressesSent.length === 1 && tokenAddressesReceived.length === 0 && ethDiff > 0n ) {
 		// user sold token for eth
 		const tokenAddressSent = Array.from(tokenAddressesSent.values())[0]
-		const sentData = tokensSent.filter( (x) => x.token.address === tokenAddressSent.address )[0]
+		const sendBalanceAfter = simTransaction.tokenBalancesAfter.find((balance) => balance.owner === simTransaction.transaction.from.address && balance.token === tokenAddressSent.address)?.balance
 		return {
 			sender: simTransaction.transaction.from,
-			sendAsset: {
-				...(tokenAddressSent.type === 'NFT' ? {
-					type: 'NFT',
-					tokenId: 'tokenId' in sentData ? sentData.tokenId : 0x0n,
-					tokenAddress: tokenAddressSent,
-				} : {
-					type: 'Token',
-					amount: 'amount' in sentData ? sentData.amount : 0x0n,
-					tokenAddress: tokenAddressSent,
-				})
+			sendAsset: formSwapAsset(tokensSent[0].type === 'NFT' ? tokensSent[0] : tokensSent.filter((token): token is TokenVisualizerERC20Event => token.type === 'Token'), sendBalanceAfter),
+			receiveAsset: {
+				type: 'Ether', 
+				amount: ethDiff,
+				beforeAfterBalance: {
+					previousBalance: etherChange[0].before,
+					afterBalance: etherChange[0].before + ethDiff
+				}
 			},
-			receiveAsset: { type: 'Ether', amount: ethDiff },
 		}
 	}
 
 	if( tokenAddressesSent.length === 0 && tokenAddressesReceived.length === 1 && ethDiff < transactionGasCost ) {
 		// user bought token with eth
-		const tokenAddressReceived = Array.from(tokenAddressesReceived.values())[0]
-		const receivedData = tokensReceived.filter( (x) => x.token.address === tokenAddressReceived.address )[0]
+		const receiveToken = tokenAddressesReceived[0]
+		const receiveBalanceAfter = simTransaction.tokenBalancesAfter.find((balance) => balance.owner === simTransaction.transaction.from.address && balance.token === receiveToken.address)?.balance
 		return {
 			sender: simTransaction.transaction.from,
-			sendAsset: { type: 'Ether', amount: -ethDiff },
-			receiveAsset: {
-				...(tokenAddressReceived.type === 'NFT' ? {
-					type: 'NFT',
-					tokenId: 'tokenId' in receivedData ? receivedData.tokenId : 0x0n,
-					tokenAddress: tokenAddressReceived,
-				} : {
-					type: 'Token',
-					amount: 'amount' in receivedData ? receivedData.amount : 0x0n,
-					tokenAddress: tokenAddressReceived,
-				}),
-			}
+			sendAsset: {
+				type: 'Ether', 
+				amount: -ethDiff,
+				beforeAfterBalance: {
+					previousBalance: etherChange[0].before,
+					afterBalance: etherChange[0].before + ethDiff
+				}
+			},
+			receiveAsset: formSwapAsset(tokensReceived[0].type === 'NFT' ? tokensReceived[0] : tokensReceived.filter((token): token is TokenVisualizerERC20Event => token.type === 'Token'), receiveBalanceAfter),
 		}
 	}
-
 	return false
 }
 

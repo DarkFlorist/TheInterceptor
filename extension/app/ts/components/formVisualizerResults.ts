@@ -25,7 +25,7 @@ export function formSimulatedAndVisualizedTransaction(simState: SimulationState,
 			const toEntry = addressMetaData.get(addressString(change.to))
 			const tokenEntry = addressMetaData.get(addressString(change.tokenAddress))
 			if (fromEntry === undefined || toEntry === undefined || tokenEntry === undefined) throw new Error('missing metadata')
-			if (change.is721 && tokenEntry.type === 'NFT') {
+			if (change.type !== 'Token' && tokenEntry.type === 'NFT') {
 				return {
 					...change,
 					from: fromEntry,
@@ -33,7 +33,7 @@ export function formSimulatedAndVisualizedTransaction(simState: SimulationState,
 					token: tokenEntry
 				}
 			}
-			if (!change.is721 && tokenEntry.type === 'token') {
+			if (change.type === 'Token' && tokenEntry.type === 'token') {
 				return {
 					...change,
 					from: fromEntry,
@@ -61,6 +61,7 @@ export function formSimulatedAndVisualizedTransaction(simState: SimulationState,
 			realizedGasPrice: simulatedTx.realizedGasPrice,
 			ethBalanceChanges: ethBalanceChanges,
 			tokenResults: tokenResults,
+			tokenBalancesAfter: simulatedTx.tokenBalancesAfter,
 			gasSpent: simulatedTx.multicallResponse.gasSpent,
 			quarantine: visualizerResults[index].quarantine,
 			quarantineCodes: visualizerResults[index].quarantineCodes,

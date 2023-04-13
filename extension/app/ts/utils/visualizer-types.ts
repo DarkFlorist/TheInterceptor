@@ -14,17 +14,16 @@ export const TokenVisualizerResult = funtypes.Intersect(
 	funtypes.Union(
 		funtypes.ReadonlyObject({ // ERC20 transfer / approval
 			amount: EthereumQuantity,
-			is721: funtypes.Literal(false),
+			type: funtypes.Literal('Token'),
 			isApproval: funtypes.Boolean,
 		}),
 		funtypes.ReadonlyObject({ // ERC721 transfer / approval
 			tokenId: EthereumQuantity,
-			is721: funtypes.Literal(true),
+			type: funtypes.Literal('NFT'),
 			isApproval: funtypes.Boolean,
 		}),
 		funtypes.ReadonlyObject({ // ERC721 all approval // all approval removal
-			is721: funtypes.Literal(true),
-			isAllApproval: funtypes.Boolean,
+			type: funtypes.Literal('NFT All approval'),
 			allApprovalAdded: funtypes.Boolean, // true if approval is added, and false if removed
 			isApproval: funtypes.Literal(true),
 		})
@@ -32,32 +31,31 @@ export const TokenVisualizerResult = funtypes.Intersect(
 )
 
 export type TokenVisualizerERC20Event  = funtypes.Static<typeof TokenVisualizerERC20Event>
-export const TokenVisualizerERC20Event = funtypes.ReadonlyObject( {
+export const TokenVisualizerERC20Event = funtypes.ReadonlyObject({
+	type: funtypes.Literal('Token'),
 	from: AddressBookEntry,
 	to: AddressBookEntry,
 	token: TokenEntry,
 	amount: EthereumQuantity,
-	is721: funtypes.Literal(false),
 	isApproval: funtypes.Boolean,
 })
 
 export type TokenVisualizerERC721Event  = funtypes.Static<typeof TokenVisualizerERC721Event>
-export const TokenVisualizerERC721Event = funtypes.ReadonlyObject( {
+export const TokenVisualizerERC721Event = funtypes.ReadonlyObject({
+	type: funtypes.Literal('NFT'),
 	from: AddressBookEntry,
 	to: AddressBookEntry,
 	token: NFTEntry,
 	tokenId: EthereumQuantity,
-	is721: funtypes.Literal(true),
 	isApproval: funtypes.Boolean,
 })
 
 export type TokenVisualizerERC721AllApprovalEvent  = funtypes.Static<typeof TokenVisualizerERC721AllApprovalEvent>
-export const TokenVisualizerERC721AllApprovalEvent = funtypes.ReadonlyObject( {
+export const TokenVisualizerERC721AllApprovalEvent = funtypes.ReadonlyObject({
+	type: funtypes.Literal('NFT All approval'),
 	from: AddressBookEntry,
 	to: AddressBookEntry,
 	token: NFTEntry,
-	is721: funtypes.Literal(true),
-	isAllApproval: funtypes.Boolean,
 	allApprovalAdded: funtypes.Boolean, // true if approval is added, and false if removed
 	isApproval: funtypes.Literal(true),
 })
@@ -83,7 +81,6 @@ export const SimResults = funtypes.ReadonlyObject( {
 	visualizerResults: funtypes.Union(VisualizerResult, funtypes.Undefined),
 	website: Website,
 })
-
 
 export type TokenBalancesAfter = funtypes.Static<typeof TokenBalancesAfter>
 export const TokenBalancesAfter = funtypes.ReadonlyArray(funtypes.ReadonlyObject({
@@ -147,6 +144,7 @@ export const TransactionWithAddressBookEntries = funtypes.Intersect(
 export type SimulatedAndVisualizedTransaction = {
 	transaction: TransactionWithAddressBookEntries
 	ethBalanceChanges: readonly EthBalanceChangesWithMetadata[]
+	tokenBalancesAfter: TokenBalancesAfter
 	tokenResults: readonly TokenVisualizerResultWithMetadata[]
 	website: Website
 	gasSpent: EthereumQuantity
