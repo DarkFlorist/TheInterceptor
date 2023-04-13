@@ -9,7 +9,6 @@ import { SomeTimeAgo } from '../subcomponents/SomeTimeAgo.js'
 import { CHAINS, MAKE_YOU_RICH_TRANSACTION } from '../../utils/constants.js'
 import { addressString } from '../../utils/bigint.js'
 import { identifyTransaction } from './identifyTransaction.js'
-import { sendPopupMessageToBackgroundPage } from '../../background/backgroundUtils.js'
 import { identifySwap } from './SwapTransactions.js'
 import { useState } from 'preact/hooks'
 import { convertNumberToCharacterRepresentationIfSmallEnough, upperCaseFirstCharacter } from '../ui-utils.js'
@@ -571,7 +570,6 @@ export function SimulatedInBlockNumber({ simulationBlockNumber, currentBlockNumb
 
 type SimulationSummaryParams = {
 	simulationAndVisualisationResults: SimulationAndVisualisationResults,
-	resetButton: boolean,
 	currentBlockNumber: bigint | undefined,
 	renameAddressCallBack: RenameAddressCallBack,
 }
@@ -579,13 +577,12 @@ type SimulationSummaryParams = {
 export function SimulationSummary(param: SimulationSummaryParams) {
 	if (param.simulationAndVisualisationResults === undefined) return <></>
 
-	const logSummarizer = new LogSummarizer( param.simulationAndVisualisationResults.simulatedAndVisualizedTransactions )
-	const addressMetaData = new Map(param.simulationAndVisualisationResults.addressMetaData.map( (x) => [addressString(x.address), x]))
+	const logSummarizer = new LogSummarizer(param.simulationAndVisualisationResults.simulatedAndVisualizedTransactions)
+	const addressMetaData = new Map(param.simulationAndVisualisationResults.addressMetaData.map((x) => [addressString(x.address), x]))
 	const originalSummary = logSummarizer.getSummary(addressMetaData, param.simulationAndVisualisationResults.tokenPrices)
 	const [ownAddresses, notOwnAddresses] = splitToOwnAndNotOwnAndCleanSummary(param.simulationAndVisualisationResults.simulatedAndVisualizedTransactions.at(0), originalSummary, param.simulationAndVisualisationResults.activeAddress, param.simulationAndVisualisationResults.chain)
 
 	const [showOtherAccountChanges, setShowOtherAccountChange] = useState<boolean>(false)
-	const resetSimulation = () => sendPopupMessageToBackgroundPage( { method: 'popup_resetSimulation' } )
 
 	return (
 		<div class = 'card' style = 'background-color: var(--card-bg-color); margin: 10px;'>
@@ -644,14 +641,6 @@ export function SimulationSummary(param: SimulationSummaryParams) {
 						currentBlockNumber = { param.currentBlockNumber }
 						simulationConductedTimestamp = { param.simulationAndVisualisationResults.simulationConductedTimestamp }
 					/>
-					<button className = 'button is-primary is-small' style = 'margin-left: 5px; background-color: var(--negative-color);' onClick = { resetSimulation } >
-						<span class = 'icon'>
-							<img src = '../../img/broom.svg'/>
-						</span>
-						<span>
-							Reset
-						</span>
-					</button>
 				</p>
 			</div>
 		</div>
