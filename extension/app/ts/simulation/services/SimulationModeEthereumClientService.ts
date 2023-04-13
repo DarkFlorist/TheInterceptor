@@ -43,13 +43,13 @@ export const transactionQueueTotalGasLimit = (simulationState: SimulationState) 
 //
 export const simulateEstimateGas = async (ethereumClientService: EthereumClientService, simulationState: SimulationState, data: EstimateGasParamsVariables) => {
 	const sendAddress = data.from !== undefined ? data.from : MOCK_ADDRESS
-	const transactionCount = ethereumClientService.getTransactionCount(sendAddress)
+	const transactionCount = getSimulatedTransactionCount(ethereumClientService, simulationState, sendAddress)
 	const block = await ethereumClientService.getBlock()
-	const maxGas = block.gasLimit * 1023n / 1024n - transactionQueueTotalGasLimit(simulationState)
+	const maxGas = max(block.gasLimit * 1023n / 1024n - transactionQueueTotalGasLimit(simulationState), 0n)
 	const tmp = {
 		type: '1559' as const,
 		from: sendAddress,
-		chainId: await ethereumClientService.getChainId(),
+		chainId: ethereumClientService.getChainId(),
 		nonce: await transactionCount,
 		maxFeePerGas: data.gasPrice !== undefined ? data.gasPrice : 0n,
 		maxPriorityFeePerGas: 2n,
@@ -66,7 +66,7 @@ export const simulateEstimateGas = async (ethereumClientService: EthereumClientS
 
 // calculates gas price for receipts
 export const calculateGasPrice = (transaction: EthereumUnsignedTransaction, gasUsed: bigint, gasLimit: bigint, baseFeePerGas: bigint) => {
-	if( 'gasPrice' in transaction) {
+	if ('gasPrice' in transaction) {
 		return transaction.gasPrice
 	}
 	const baseFee = getBaseFeePerGasForNewBlock(gasUsed, gasLimit, baseFeePerGas)
@@ -128,7 +128,7 @@ export const setSimulationTransactions = async (ethereumClientService: EthereumC
 			simulatedTransactions: [],
 			blockNumber: block.number,
 			blockTimestamp: block.timestamp,
-			chain: await ethereumClientService.getChain(),
+			chain: ethereumClientService.getChain(),
 			simulationConductedTimestamp: new Date(),
 		}
 	}
@@ -141,7 +141,7 @@ export const setSimulationTransactions = async (ethereumClientService: EthereumC
 	const parentBlock = await ethereumClientService.getBlock()
 	const multicallResult = await ethereumClientService.multicall(newTransactionsToSimulate.map((x) => x.transaction), parentBlock.number)
 	if (multicallResult.length !== signedTxs.length) throw 'multicall length does not match in setSimulationTransactions'
-	const chainId = await ethereumClientService.getChain()
+	const chainId = ethereumClientService.getChain()
 
 	const tokenBalancesAfter: TokenBalancesAfter[] = []
 	for (let resultIndex = 0; resultIndex < multicallResult.length; resultIndex++) {
@@ -186,7 +186,7 @@ export const setPrependTransactionsQueue = async (ethereumClientService: Ethereu
 		simulatedTransactions: [],
 		blockNumber: block.number,
 		blockTimestamp: block.timestamp,
-		chain: await ethereumClientService.getChain(),
+		chain: ethereumClientService.getChain(),
 		simulationConductedTimestamp: new Date(),
 	}
 
@@ -263,7 +263,7 @@ export const getSimulatedTransactionCount = async (ethereumClientService: Ethere
 export const getSimulatedTransactionReceipt = async (ethereumClientService: EthereumClientService, simulationState: SimulationState, hash: bigint): Promise<EthTransactionReceiptResponse> => {
 	let cumGas = 0n
 	let currentLogIndex = 0
-	if (simulationState === undefined) { return await ethereumClientService.getTransactionReceipt(hash)}
+	if (simulationState === undefined) { return await ethereumClientService.getTransactionReceipt(hash) }
 	for (const [index, simulatedTransaction] of simulationState.simulatedTransactions.entries()) {
 		cumGas += simulatedTransaction.multicallResponse.gasSpent
 		if(hash === simulatedTransaction.signedTransaction.hash) {
@@ -326,17 +326,11 @@ export const getSimulatedCode = async (ethereumClientService: EthereumClientServ
 	const getCodeTransaction = {
 		type: '1559' as const,
 		from: MOCK_ADDRESS,
-		chainId: await ethereumClientService.getChainId(),
+		chainId: ethereumClientService.getChainId(),
 		nonce: await ethereumClientService.getTransactionCount(MOCK_ADDRESS),
 		maxFeePerGas: 0n,
 		maxPriorityFeePerGas: 0n,
-		gas: await simulateEstimateGas(ethereumClientService, simulationState, {
-			from: MOCK_ADDRESS,
-			to: GET_CODE_CONTRACT,
-			data: input,
-			value: 0n,
-			gasPrice: 0n,
-		}),
+		gas: 94104n,
 		to: GET_CODE_CONTRACT,
 		value: 0n,
 		input: input,
@@ -407,10 +401,6 @@ export const getSimulatedBlock = async (ethereumClientService: EthereumClientSer
 		...block,
 		transactions: simulationState.simulatedTransactions.map( (simulatedTransaction) => simulatedTransaction.signedTransaction.hash)
 	}
-}
-
-export const getChainId = async (ethereumClientService: EthereumClientService) => {
-	return await ethereumClientService.getChainId()
 }
 
 const getLogsOfSimulatedBlock = (simulationState: SimulationState, logFilter: EthGetLogsRequest): EthGetLogsResponse => {
