@@ -86,7 +86,6 @@ export function isSimpleTokenApproval(simTx: SimulatedAndVisualizedTransaction):
 }
 
 export type SimulatedAndVisualizedEtherTransferTransaction = SimulatedAndVisualizedTransaction & {
-	to: AddressBookEntry
 	input: []
 	tokenResults: []
 }
