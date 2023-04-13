@@ -36,11 +36,11 @@ type EtherAmountParams = {
 export function EtherAmount(param: EtherAmountParams) {
 	const sign = param.showSign ? (param.amount >= 0 ? ' + ' : ' - '): ''
 	const style = {
-		...(param.style === undefined ? {} : param.style),
 		display: 'inline-block',
 		overflow: 'hidden',
 		'text-overflow': 'ellipsis',
-		color: param.textColor ? param.textColor : 'var(--text-color)'
+		color: param.textColor ? param.textColor : 'var(--text-color)',
+		...(param.style === undefined ? {} : param.style),
 	}
 	return <>
 		<CopyToClipboard content = { bigintToDecimalString(abs(param.amount), 18n) } copyMessage = 'Ether amount copied!' >
@@ -59,12 +59,12 @@ type EtherSymbolParams = {
 
 export function EtherSymbol(param: EtherSymbolParams) {
 	const style = {
-		...(param.style === undefined ? {} : param.style),
 		color: param.textColor ? param.textColor : 'var(--text-color)',
 		display: 'inline-block',
 		overflow: 'hidden',
 		'text-overflow': 'ellipsis',
 		'margin-left': '2px',
+		...(param.style === undefined ? {} : param.style),
 	}
 	return <>
 		<div style = 'overflow: initial; height: 28px;'>
@@ -110,12 +110,12 @@ export function TokenSymbol(param: TokenSymbolParams) {
 	const tokenString = checksummedAddress(param.address)
 
 	const style = {
-		...(param.style === undefined ? {} : param.style),
 		color: param.textColor ? param.textColor : 'var(--text-color)',
 		display: 'inline-block',
 		overflow: 'hidden',
 		'text-overflow': 'ellipsis',
 		'margin-left': '2px',
+		...(param.style === undefined ? {} : param.style),
 	}
 	return <>
 		<div style = 'overflow: initial; height: 28px;'>
@@ -158,9 +158,9 @@ type TokenAmountParams = {
 export function TokenAmount(param: TokenAmountParams) {
 	const sign = param.showSign ? (param.amount >= 0 ? ' + ' : ' - '): ''
 	const style = {
-		...(param.style === undefined ? {} : param.style),
+		color: param.textColor ? param.textColor : 'var(--text-color)',
 		display: 'inline-block',
-		color: param.textColor ? param.textColor : 'var(--text-color)'
+		...(param.style === undefined ? {} : param.style),
 	}
 
 	if (param.decimals === undefined) {
@@ -204,6 +204,13 @@ export function TokenOrEth(param: TokenOrEtherParams) {
 	return <Ether { ...param }/>
 }
 
+export function TokenOrEthValue(param: TokenAmountParams | EtherAmountParams) {
+	if ('decimals' in param) {
+		return <TokenAmount { ...param }/>
+	}
+	return <EtherAmount { ...param }/>
+}
+
 function truncate(str: string, n: number){
 	return (str.length > n) ? `${str.slice(0, n-1)}…` : str;
 }
@@ -219,9 +226,9 @@ type ERC721TokenNumberParams = {
 export function ERC721TokenNumber(param: ERC721TokenNumberParams) {
 	const sign = param.showSign ? (param.received ? ' + ' : ' - ') : ''
 	const style = {
-		...(param.style === undefined ? {} : param.style),
 		display: 'inline',
 		color: param.textColor ? param.textColor : 'var(--text-color)',
+		...(param.style === undefined ? {} : param.style),
 	}
 
 	return <CopyToClipboard content = { param.id.toString() } copyMessage = 'Token ID copied!' >
@@ -264,8 +271,8 @@ type Token721AmountFieldParams = {
 
 export function Token721AmountField(param: Token721AmountFieldParams ) {
 	const style = {
+		color: param.textColor ? param.textColor : 'var(--text-color)',
 		...(param.style === undefined ? {} : param.style),
-		color: param.textColor ? param.textColor : 'var(--text-color)'
 	}
 	if (param.type === 'NFT All approval') {
 		if (!param.allApprovalAdded) return <p style = { style }><b>NONE</b></p>
