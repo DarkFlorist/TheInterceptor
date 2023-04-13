@@ -83,7 +83,7 @@ export function setEthereumNodeBlockPolling(enabled: boolean) {
 
 export async function refreshConfirmTransactionSimulation(
 	ethereumClientService: EthereumClientService,
-	simulationState: SimulationState, 
+	simulationState: SimulationState,
 	activeAddress: bigint,
 	simulationMode: boolean,
 	requestId: number,
@@ -146,7 +146,7 @@ export async function personalSignWithSimulator(params: PersonalSignParams | Sig
 }
 
 async function handleSimulationMode(
-	simulationState: SimulationState, 
+	simulationState: SimulationState,
 	websiteTabConnections: WebsiteTabConnections,
 	simulator: Simulator,
 	socket: WebsiteSocket,
@@ -158,8 +158,8 @@ async function handleSimulationMode(
 	try {
 		parsedRequest = EthereumJsonRpcRequest.parse(request.options)
 	} catch (error) {
-		console.log(request)
-		console.log(error)
+		console.warn(request)
+		console.warn(error)
 		if (error instanceof Error) {
 			return {
 				error: {
@@ -245,8 +245,8 @@ async function handleSigningMode(
 	try {
 		parsedRequest = EthereumJsonRpcRequest.parse(request.options)
 	} catch (error) {
-		console.log(request)
-		console.log(error)
+		console.warn(request)
+		console.warn(error)
 		if (error instanceof Error) {
 			return {
 				error: {
@@ -552,8 +552,8 @@ async function popupMessageHandler(
 	try {
 		parsedRequest = PopupMessage.parse(request)
 	} catch (error) {
-		console.log(request)
-		console.log(error)
+		console.warn(request)
+		console.warn(error)
 		if (error instanceof Error) {
 			return {
 				error: {
@@ -612,7 +612,7 @@ async function startup() {
 	})
 
 	await updateExtensionBadge()
-	
+
 	if (!settings.simulationMode || settings.useSignersAddressAsActiveAddress) {
 		sendMessageToApprovedWebsitePorts(websiteTabConnections, 'request_signer_to_eth_requestAccounts', [])
 		sendMessageToApprovedWebsitePorts(websiteTabConnections, 'request_signer_chainId', [])
