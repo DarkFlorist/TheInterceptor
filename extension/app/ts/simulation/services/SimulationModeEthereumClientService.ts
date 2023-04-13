@@ -66,7 +66,7 @@ export const simulateEstimateGas = async (ethereumClientService: EthereumClientS
 
 // calculates gas price for receipts
 export const calculateGasPrice = (transaction: EthereumUnsignedTransaction, gasUsed: bigint, gasLimit: bigint, baseFeePerGas: bigint) => {
-	if('gasPrice' in transaction) {
+	if ('gasPrice' in transaction) {
 		return transaction.gasPrice
 	}
 	const baseFee = getBaseFeePerGasForNewBlock(gasUsed, gasLimit, baseFeePerGas)
