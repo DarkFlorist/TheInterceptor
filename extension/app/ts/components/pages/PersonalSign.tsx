@@ -6,7 +6,7 @@ import Hint from '../subcomponents/Hint.js'
 import { Error as ErrorComponent} from '../subcomponents/Error.js'
 import { MOCK_PRIVATE_KEYS_ADDRESS, getChainName } from '../../utils/constants.js'
 import { AddNewAddress } from './AddNewAddress.js'
-import { ExternalPopupMessage, PersonalSignRequest } from '../../utils/interceptor-messages.js'
+import { ExternalPopupMessage, PersonalSignRequest, PersonalSignRequestData } from '../../utils/interceptor-messages.js'
 import { sendPopupMessageToBackgroundPage } from '../../background/backgroundUtils.js'
 import { assertNever } from '../../utils/typescript.js'
 
@@ -23,17 +23,20 @@ export function PersonalSign() {
 	const textareaRef = useRef<HTMLTextAreaElement | null>(null)
 	const [activeAddress, setActiveAddress] = useState<bigint | undefined>(undefined)
 	const [addingNewAddress, setAddingNewAddress] = useState<AddingNewAddressType | 'renameAddressModalClosed'> ('renameAddressModalClosed')
+	const [personalSignRequestData, setPersonalSignRequestData] = useState<PersonalSignRequestData | undefined>(undefined)
 
 	useEffect( () => {
-		async function popupMessageListener(msg: unknown) {
+		function popupMessageListener(msg: unknown) {
 			const message = ExternalPopupMessage.parse(msg)
-			if ( message.method !== 'popup_personal_sign_request') return
-			await updatePage(message)
+			if (message.method === 'popup_addressBookEntriesChanged') return refreshMetadata()
+			if (message.method !== 'popup_personal_sign_request') return
+			setPersonalSignRequestData(message.data)
+			updatePage(message)
 		}
 		browser.runtime.onMessage.addListener(popupMessageListener)
-		sendPopupMessageToBackgroundPage( { method: 'popup_personalSignReadyAndListening' } )
+		sendPopupMessageToBackgroundPage({ method: 'popup_personalSignReadyAndListening' })
 		return () => browser.runtime.onMessage.removeListener(popupMessageListener)
-	}, [])
+	})
 
 	useEffect(() => {
 		if (textareaRef && textareaRef.current) {
@@ -43,7 +46,12 @@ export function PersonalSign() {
 		}
 	}, [signRequest])
 
-	async function updatePage(request: PersonalSignRequest) {
+	function refreshMetadata() {
+		if (personalSignRequestData === undefined) return
+		sendPopupMessageToBackgroundPage({ method: 'popup_refreshPersonalSignMetadata', data: personalSignRequestData })
+	}
+
+	function updatePage(request: PersonalSignRequest) {
 		setActiveAddress(request.data.activeAddress)
 		setRequestIdToConfirm(request.data.requestId)
 		const addressToSignWith = request.data.account

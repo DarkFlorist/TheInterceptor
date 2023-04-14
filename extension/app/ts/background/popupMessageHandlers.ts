@@ -1,16 +1,16 @@
 import { changeActiveAddressAndChainAndResetSimulation, changeActiveChain, getPrependTrasactions, refreshConfirmTransactionSimulation, updateSimulationState } from './background.js'
 import { getCurrentTabId, getMakeMeRich, getOpenedAddressBookTabId, getSettings, getSignerName, getSimulationResults, getTabState, saveCurrentTabId, setMakeMeRich, setOpenedAddressBookTabId, setPage, setUseSignersAddressAsActiveAddress, updateAddressInfos, updateContacts, updateWebsiteAccess } from './settings.js'
 import { Simulator } from '../simulation/simulator.js'
-import { ChangeActiveAddress, ChangeMakeMeRich, ChangePage, PersonalSign, RemoveTransaction, RequestAccountsFromSigner, TransactionConfirmation, InterceptorAccess, ChangeInterceptorAccess, ChainChangeConfirmation, EnableSimulationMode, ReviewNotification, RejectNotification, ChangeActiveChain, AddOrEditAddressBookEntry, GetAddressBookData, RemoveAddressBookEntry, RefreshConfirmTransactionDialogSimulation, UserAddressBook, InterceptorAccessRefresh, InterceptorAccessChangeAddress, Settings } from '../utils/interceptor-messages.js'
+import { ChangeActiveAddress, ChangeMakeMeRich, ChangePage, PersonalSign, RemoveTransaction, RequestAccountsFromSigner, TransactionConfirmation, InterceptorAccess, ChangeInterceptorAccess, ChainChangeConfirmation, EnableSimulationMode, ReviewNotification, RejectNotification, ChangeActiveChain, AddOrEditAddressBookEntry, GetAddressBookData, RemoveAddressBookEntry, RefreshConfirmTransactionDialogSimulation, UserAddressBook, InterceptorAccessRefresh, InterceptorAccessChangeAddress, Settings, RefreshConfirmTransactionMetadata, RefreshPersonalSignMetadata } from '../utils/interceptor-messages.js'
 import { resolvePendingTransaction } from './windows/confirmTransaction.js'
-import { resolvePersonalSign } from './windows/personalSign.js'
+import { craftPersonalSignPopupMessage, resolvePersonalSign } from './windows/personalSign.js'
 import { changeAccess, getAddressMetadataForAccess, removePendingAccessRequestAndUpdateBadge, requestAccessFromUser, requestAddressChange, resolveExistingInterceptorAccessAsNoResponse, resolveInterceptorAccess } from './windows/interceptorAccess.js'
 import { resolveChainChange } from './windows/changeChain.js'
 import { getAssociatedAddresses, sendMessageToApprovedWebsitePorts, updateWebsiteApprovalAccesses } from './accessManagement.js'
 import { getHtmlFile, sendPopupMessageToOpenWindows } from './backgroundUtils.js'
 import { isSupportedChain } from '../utils/constants.js'
 import { getMetadataForAddressBookData } from './medataSearch.js'
-import { findAddressInfo } from './metadataUtils.js'
+import { findAddressInfo, getAddressBookEntriesForVisualiser } from './metadataUtils.js'
 import { assertUnreachable } from '../utils/typescript.js'
 import { addressString } from '../utils/bigint.js'
 import { AddressInfoEntry, WebsiteTabConnections } from '../utils/user-interface-types.js'
@@ -169,6 +169,18 @@ export async function refreshSimulation(ethereumClientService: EthereumClientSer
 	}, settings.activeSimulationAddress)
 }
 
+export async function refreshPopupConfirmTransactionMetadata(simulator: Simulator, userAddressBook: UserAddressBook, { data }: RefreshConfirmTransactionMetadata) {
+	console.log('refreshPopupConfirmTransactionMetadata')
+	const addressMetadata = await getAddressBookEntriesForVisualiser(simulator, data.visualizerResults.map((x) => x.visualizerResults), data.simulationState, userAddressBook)
+	return await sendPopupMessageToOpenWindows({
+		method: 'popup_confirm_transaction_simulation_state_changed' as const,
+		data: {
+			...data,
+			addressBookEntries: addressMetadata,
+		}
+	})
+}
+
 export async function refreshPopupConfirmTransactionSimulation(ethereumClientService: EthereumClientService, { data }: RefreshConfirmTransactionDialogSimulation) {
 	const simulationState = (await getSimulationResults()).simulationState
 	if (simulationState === undefined) return
@@ -294,4 +306,14 @@ export async function homeOpened(simulator: Simulator) {
 
 export async function interceptorAccessChangeAddressOrRefresh(websiteTabConnections: WebsiteTabConnections, params: InterceptorAccessChangeAddress | InterceptorAccessRefresh) {
 	await requestAddressChange(websiteTabConnections, params)
+}
+
+export async function refreshPersonalSignMetadata(refreshPersonalSignMetadata: RefreshPersonalSignMetadata, settings: Settings) {
+	return await sendPopupMessageToOpenWindows(craftPersonalSignPopupMessage(
+		refreshPersonalSignMetadata.data.params,
+		refreshPersonalSignMetadata.data.activeAddress,
+		settings.userAddressBook,
+		refreshPersonalSignMetadata.data.simulationMode,
+		refreshPersonalSignMetadata.data.requestId,
+	))
 }

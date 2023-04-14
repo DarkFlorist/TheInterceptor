@@ -1,6 +1,6 @@
 import { METAMASK_ERROR_USER_REJECTED_REQUEST } from '../../utils/constants.js'
 import { Future } from '../../utils/future.js'
-import { HandleSimulationModeReturnValue, InterceptedRequest, PersonalSign, ExternalPopupMessage, Settings } from '../../utils/interceptor-messages.js'
+import { HandleSimulationModeReturnValue, InterceptedRequest, PersonalSign, ExternalPopupMessage, Settings, UserAddressBook } from '../../utils/interceptor-messages.js'
 import { Website, WebsiteSocket, WebsiteTabConnections } from '../../utils/user-interface-types.js'
 import { EIP2612Message, Permit2, PersonalSignParams, SignTypedDataParams } from '../../utils/wire-types.js'
 import { personalSignWithSimulator, sendMessageToContentScript } from '../background.js'
@@ -43,6 +43,81 @@ function reject() {
 	}
 }
 
+export function craftPersonalSignPopupMessage(params: PersonalSignParams | SignTypedDataParams, activeAddress: bigint, userAddressBook: UserAddressBook, simulationMode: boolean, requestId: number) {
+	if (params.method === 'personal_sign') {
+		return {
+			method: 'popup_personal_sign_request',
+			data: {
+				activeAddress,
+				type: 'NotParsed' as const,
+				simulationMode: simulationMode,
+				requestId: requestId,
+				message: params.params[0],
+				account: getAddressMetaData(params.params[1], userAddressBook),
+				method: params.method,
+				params: params
+			}
+		} as const
+	}
+
+	if (params.params[1].primaryType === 'Permit') {
+		const parsed = EIP2612Message.parse(params.params[1])
+		return {
+			method: 'popup_personal_sign_request',
+			data: {
+				activeAddress,
+				type: 'Permit' as const,
+				simulationMode: simulationMode,
+				requestId: requestId,
+				message: parsed,
+				account: getAddressMetaData(params.params[0], userAddressBook),
+				method: params.method,
+				addressBookEntries: {
+					owner: getAddressMetaData(parsed.message.owner, userAddressBook),
+					spender: getAddressMetaData(parsed.message.spender, userAddressBook),
+					verifyingContract: getAddressMetaData(parsed.domain.verifyingContract, userAddressBook)
+				},
+				params: params
+			}
+		} as const
+	}
+
+	if (params.params[1].primaryType === 'PermitSingle') {
+		const parsed = Permit2.parse(params.params[1])
+		return {
+			method: 'popup_personal_sign_request',
+			data: {
+				activeAddress,
+				type: 'Permit2' as const,
+				simulationMode: simulationMode,
+				requestId: requestId,
+				message: parsed,
+				account: getAddressMetaData(params.params[0], userAddressBook),
+				method: params.method,
+				addressBookEntries: {
+					token: getAddressMetaData(parsed.message.details.token, userAddressBook),
+					spender: getAddressMetaData(parsed.message.spender, userAddressBook),
+					verifyingContract: getAddressMetaData(parsed.domain.verifyingContract, userAddressBook)
+				},
+				params: params
+			}
+		} as const
+	}
+	return {
+		method: 'popup_personal_sign_request',
+		data: {
+			activeAddress,
+			type: 'EIP712' as const,
+			simulationMode: simulationMode,
+			requestId: requestId,
+			message: params.params[1],
+			account: getAddressMetaData(params.params[0], userAddressBook),
+			method: params.method,
+			params: params
+		}
+	} as const
+}
+
 export const openPersonalSignDialog = async (
 	websiteTabConnections: WebsiteTabConnections,
 	socket: WebsiteSocket,
@@ -65,78 +140,9 @@ export const openPersonalSignDialog = async (
 	if (activeAddress === undefined) return reject()
 	const personalSignWindowReadyAndListening = async function popupMessageListener(msg: unknown) {
 		const message = ExternalPopupMessage.parse(msg)
-		if ( message.method !== 'popup_personalSignReadyAndListening') return
+		if (message.method !== 'popup_personalSignReadyAndListening') return
 		browser.runtime.onMessage.removeListener(personalSignWindowReadyAndListening)
-
-		if (params.method === 'personal_sign') {
-			return sendPopupMessageToOpenWindows({
-				method: 'popup_personal_sign_request',
-				data: {
-					activeAddress,
-					type: 'NotParsed' as const,
-					simulationMode: simulationMode,
-					requestId: request.requestId,
-					message: params.params[0],
-					account: getAddressMetaData(params.params[1], settings.userAddressBook),
-					method: params.method,
-				}
-			})
-		}
-
-		if (params.params[1].primaryType === 'Permit') {
-			const parsed = EIP2612Message.parse(params.params[1])
-			return sendPopupMessageToOpenWindows({
-				method: 'popup_personal_sign_request',
-				data: {
-					activeAddress,
-					type: 'Permit' as const,
-					simulationMode: simulationMode,
-					requestId: request.requestId,
-					message: parsed,
-					account: getAddressMetaData(params.params[0], settings.userAddressBook),
-					method: params.method,
-					addressBookEntries: {
-						owner: getAddressMetaData(parsed.message.owner, settings.userAddressBook),
-						spender: getAddressMetaData(parsed.message.spender, settings.userAddressBook),
-						verifyingContract: getAddressMetaData(parsed.domain.verifyingContract, settings.userAddressBook)
-					},
-				}
-			})
-		}
-
-		if (params.params[1].primaryType === 'PermitSingle') {
-			const parsed = Permit2.parse(params.params[1])
-			return sendPopupMessageToOpenWindows({
-				method: 'popup_personal_sign_request',
-				data: {
-					activeAddress,
-					type: 'Permit2' as const,
-					simulationMode: simulationMode,
-					requestId: request.requestId,
-					message: parsed,
-					account: getAddressMetaData(params.params[0], settings.userAddressBook),
-					method: params.method,
-					addressBookEntries: {
-						token: getAddressMetaData(parsed.message.details.token, settings.userAddressBook),
-						spender: getAddressMetaData(parsed.message.spender, settings.userAddressBook),
-						verifyingContract: getAddressMetaData(parsed.domain.verifyingContract, settings.userAddressBook)
-					},
-				}
-			})
-		}
-
-		return sendPopupMessageToOpenWindows({
-			method: 'popup_personal_sign_request',
-			data: {
-				activeAddress,
-				type: 'EIP712' as const,
-				simulationMode: simulationMode,
-				requestId: request.requestId,
-				message: params.params[1],
-				account: getAddressMetaData(params.params[0], settings.userAddressBook),
-				method: params.method,
-			}
-		})
+		return await sendPopupMessageToOpenWindows(craftPersonalSignPopupMessage(params, activeAddress, settings.userAddressBook, simulationMode, request.requestId))
 	}
 
 	pendingPersonalSign = new Future<PersonalSign>()
