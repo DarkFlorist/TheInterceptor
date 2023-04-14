@@ -143,11 +143,12 @@ type TransactionsParams = {
 	removeTransaction: (tx: SimulatedAndVisualizedTransaction) => void,
 	activeAddress: bigint,
 	renameAddressCallBack: RenameAddressCallBack,
+	removeTransactionHashes: bigint[],
 }
 
 export function Transactions(param: TransactionsParams) {
 	return <ul>
-		{ param.simulationAndVisualisationResults.simulatedAndVisualizedTransactions.map((simTx, _index) => (
+		{ param.simulationAndVisualisationResults.simulatedAndVisualizedTransactions.filter((tx) => !param.removeTransactionHashes.includes(tx.transaction.hash)).map((simTx, _index) => (
 			<li>
 				<Transaction
 					simTx = { simTx }

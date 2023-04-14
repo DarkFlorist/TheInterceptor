@@ -122,20 +122,36 @@ function SimulationResults(param: SimulationStateParam) {
 	}
 
 	return <div>
-		<p className = 'h1' style = 'padding-left: 10px'> Simulation Results </p>
+		<p style = 'display: grid; grid-template-columns: auto auto; padding-left: 10px; padding-right: 10px' >
+			<div class = 'log-cell' style = 'justify-content: left;'>
+				<p className = 'h1'> Simulation Results </p>
+			</div>
+			<div class = 'log-cell' style = 'justify-content: right;'>
+				<button className = 'button is-small is-danger' disabled = { param.disableReset } onClick = { param.resetSimulation } >
+					<span class = 'icon'>
+						<img src = '../../img/broom.svg'/>
+					</span>
+					<span>
+						Clear
+					</span>
+				</button>
+			</div>
+		</p>
 
 		<Transactions
 			simulationAndVisualisationResults = { param.simulationAndVisualisationResults }
 			removeTransaction = { param.removeTransaction }
 			activeAddress = { param.simulationAndVisualisationResults.activeAddress }
 			renameAddressCallBack = { param.renameAddressCallBack }
+			removeTransactionHashes = { param.removeTransactionHashes }
 		/>
-		<SimulationSummary
-			simulationAndVisualisationResults = { param.simulationAndVisualisationResults }
-			resetButton = { true }
-			currentBlockNumber = { param.currentBlockNumber }
-			renameAddressCallBack = { param.renameAddressCallBack }
-		/>
+		{ param.removeTransactionHashes.length > 0 ? <></> :
+			<SimulationSummary
+				simulationAndVisualisationResults = { param.simulationAndVisualisationResults }
+				currentBlockNumber = { param.currentBlockNumber }
+				renameAddressCallBack = { param.renameAddressCallBack }
+			/>
+		}
 		<div class = 'content' style = 'height: 0.1px'/>
 	</div>
 }
@@ -147,15 +163,17 @@ export function Home(param: HomeParams) {
 	const [simulationAndVisualisationResults, setSimulationAndVisualisationResults] = useState<SimulationAndVisualisationResults | undefined>(undefined)
 	const [activeChain, setActiveChain] = useState<bigint>(1n)
 	const [simulationMode, setSimulationMode] = useState<boolean>(true)
-	const [tabIconDetails, setTabConnection] = useState<TabIconDetails>( DEFAULT_TAB_CONNECTION )
+	const [tabIconDetails, setTabConnection] = useState<TabIconDetails>(DEFAULT_TAB_CONNECTION)
 	const [signerAccounts, setSignerAccounts] = useState<readonly bigint[] | undefined>(undefined)
 	const [isLoaded, setLoaded] = useState<boolean>(false)
 	const [currentBlockNumber, setCurrentBlockNumber] = useState<bigint | undefined>(undefined)
 	const [signerName, setSignerName] = useState<SignerName>('NoSignerDetected')
 	const [addressInfos, setAddressInfos] = useState<readonly AddressInfo[] | undefined>(undefined)
 	const [makeMeRich, setMakeMeRich] = useState<boolean>(false)
+	const [disableReset, setDisableReset] = useState<boolean>(false)
+	const [removeTransactionHashes, setRemoveTransactionHashes] = useState<bigint[]>([])
 
-	useEffect( () => {
+	useEffect(() => {
 		setSimulationAndVisualisationResults(param.simVisResults)
 		setUseSignersAddressAsActiveAddress(param.useSignersAddressAsActiveAddress)
 		setActiveSimulationAddress(param.activeSimulationAddress !== undefined ? findAddressInfo(param.activeSimulationAddress, param.addressInfos) : undefined)
@@ -169,6 +187,8 @@ export function Home(param: HomeParams) {
 		setSignerName(param.signerName)
 		setLoaded(true)
 		setMakeMeRich(param.makeMeRich)
+		setDisableReset(false)
+		setRemoveTransactionHashes([])
 	}, [param.activeSigningAddress,
 		param.activeSimulationAddress,
 		param.signerAccounts,
@@ -191,11 +211,17 @@ export function Home(param: HomeParams) {
 		setSimulationMode(enabled)
 	}
 
+	function resetSimulation() {
+		setDisableReset(true)
+		sendPopupMessageToBackgroundPage({ method: 'popup_resetSimulation' })
+	}
+
 	async function removeTransaction(tx: SimulatedAndVisualizedTransaction) {
+		setRemoveTransactionHashes((hashes) => hashes.concat(tx.transaction.hash))
 		if (identifyTransaction(tx).type === 'MakeYouRichTransaction') {
 			return await enableMakeMeRich(false)
 		} else {
-			return await sendPopupMessageToBackgroundPage( { method: 'popup_removeTransaction', options: tx.transaction.hash } )
+			return await sendPopupMessageToBackgroundPage({ method: 'popup_removeTransaction', options: tx.transaction.hash })
 		}
 	}
 
@@ -236,8 +262,11 @@ export function Home(param: HomeParams) {
 			<SimulationResults
 				simulationAndVisualisationResults = { simulationAndVisualisationResults }
 				removeTransaction = { removeTransaction }
+				disableReset = { disableReset }
+				resetSimulation = { resetSimulation }
 				currentBlockNumber = { currentBlockNumber }
 				renameAddressCallBack = { param.renameAddressCallBack }
+				removeTransactionHashes = { removeTransactionHashes }
 			/>
 		}
 	</>
