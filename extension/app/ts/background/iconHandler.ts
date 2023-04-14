@@ -71,13 +71,10 @@ export async function retrieveWebsiteDetails(port: browser.runtime.Port, website
 		try {
 			return browser.tabs.get(tabId)
 		} catch (error) {
-			if (error instanceof Error) {
-				if (error.message?.includes('No tab with id')) {
-					// if tab is not found (user might have closed it)
-					return undefined
-				}
-			}
-			throw error
+			if (!(error instanceof Error)) throw error
+			if (!error.message?.includes('No tab with id')) throw error
+			// if tab is not found (user might have closed it)
+			return undefined
 		}
 	}
 
