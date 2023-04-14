@@ -19,7 +19,7 @@ function AssociatedTogether({ associatedAddresses, renameAddressCallBack }: { as
 				<p class = 'card-header-title' style = 'font-weight: unset; font-size: 0.8em;'>
 					{ associatedAddresses.length <= 1 ? 'The website cannot associate any addresses with each other' : <>
 						There are&nbsp;
-						<p style = 'font-size: 0.8em; font-weight: 700'>{ convertNumberToCharacterRepresentationIfSmallEnough(associatedAddresses.length).toUpperCase() } </p>
+						<p style = 'font-weight: 700'>{ convertNumberToCharacterRepresentationIfSmallEnough(associatedAddresses.length).toUpperCase() } </p>
 						&nbsp;addresses that the website can associate together with
 					</> }
 				</p>
