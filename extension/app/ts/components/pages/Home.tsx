@@ -6,7 +6,7 @@ import { SimulationSummary } from '../simulationExplaining/SimulationSummary.js'
 import { ChainSelector } from '../subcomponents/ChainSelector.js'
 import { Spinner } from '../subcomponents/Spinner.js'
 import { DEFAULT_TAB_CONNECTION, getChainName, ICON_NOT_ACTIVE, ICON_SIGNING, ICON_SIGNING_NOT_SUPPORTED, isSupportedChain } from '../../utils/constants.js'
-import { SignerName, TabIconDetails } from '../../utils/interceptor-messages.js'
+import { SignerName, TabIcon, TabIconDetails } from '../../utils/interceptor-messages.js'
 import { getPrettySignerName, SignerLogoText, SignersLogoName } from '../subcomponents/signers.js'
 import { Error } from '../subcomponents/Error.js'
 import { ToolTip } from '../subcomponents/CopyToClipboard.js'
@@ -19,9 +19,37 @@ async function enableMakeMeRich(enabled: boolean) {
 	sendPopupMessageToBackgroundPage( { method: 'popup_changeMakeMeRich', options: enabled } )
 }
 
+type SignerExplanationParams = {
+	activeAddress: AddressInfo | undefined
+	simulationMode: boolean
+	signerName: SignerName
+	useSignersAddressAsActiveAddress: boolean
+	tabIcon: TabIcon
+}
+
+function SignerExplanation(param: SignerExplanationParams) {
+	if (param.activeAddress !== undefined) return <></>
+	if (param.tabIcon === ICON_NOT_ACTIVE) {
+		return <div class = 'content'>
+			<p class = 'paragraph' style = 'color: var(--subtitle-text-color)'>(You are not currently using a DApp)</p>
+		</div>
+	}
+	if (param.useSignersAddressAsActiveAddress || !param.simulationMode) {
+		<div class = 'content'>
+			<p class = 'paragraph' style = 'color: var(--subtitle-text-color)'>
+				{ param.signerName === 'NoSigner'
+					? 'Please make sure that the signer is connected to the active DApp'
+					: `Please make sure ${ getPrettySignerName(param.signerName) } is connected to the active DApp`
+				}
+			</p>
+		</div>
+	}
+	return <></>
+}
+
 function FirstCard(param: FirstCardParams) {
 	function connectToSigner() {
-		sendPopupMessageToBackgroundPage( { method: 'popup_requestAccountsFromSigner', options: true } )
+		sendPopupMessageToBackgroundPage({ method: 'popup_requestAccountsFromSigner', options: true })
 	}
 
 	return <div class = 'card' style = 'margin: 10px;'>
@@ -80,20 +108,13 @@ function FirstCard(param: FirstCardParams) {
 				changeActiveAddress = { param.changeActiveAddress }
 				renameAddressCallBack = { param.renameAddressCallBack }
 			/>
-
-			{ param.activeAddress !== undefined ? <></>
-				: param.useSignersAddressAsActiveAddress || !param.simulationMode ?
-					<div class = 'content' style = 'color: var(--negative-color)'>
-						{ param.signerName === 'NoSigner'
-							? 'To communicate with a signer, you need to be on a DApp page and have the signer connected to the DApp'
-							: `No active address found in ${ getPrettySignerName(param.signerName) }`
-						}
-					</div>
-				:
-				<div class = 'content' style = 'color: var(--negative-color)'>
-					No active address
-				</div>
-			}
+			<SignerExplanation
+				activeAddress = { param.activeAddress }
+				simulationMode = { param.simulationMode }
+				signerName = { param.signerName }
+				useSignersAddressAsActiveAddress = { param.useSignersAddressAsActiveAddress }
+				tabIcon = { param.tabIconDetails.icon }
+			/>
 			{ !param.simulationMode ?
 				( (param.signerAccounts === undefined || param.signerAccounts.length == 0) && param.tabIconDetails.icon !== ICON_NOT_ACTIVE ) ?
 					<div style = 'margin-top: 5px'>
