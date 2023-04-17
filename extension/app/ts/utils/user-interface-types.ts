@@ -119,7 +119,7 @@ export type AddingNewAddressType = {
 
 export type AddAddressParam = {
 	close: () => void,
-	setActiveAddressAndInformAboutIt: ((address: bigint | 'signer') => void) | undefined,
+	setActiveAddressAndInformAboutIt: ((address: bigint | 'signer') => Promise<void>) | undefined,
 	addingNewAddress: AddingNewAddressType,
 	activeAddress: bigint | undefined,
 }
