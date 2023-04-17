@@ -67,8 +67,8 @@ export function craftPersonalSignPopupMessage(params: PersonalSignParams | SignT
 			data: {
 				activeAddress,
 				type: 'Permit' as const,
-				simulationMode: simulationMode,
-				requestId: requestId,
+				simulationMode,
+				requestId,
 				message: parsed,
 				account: getAddressMetaData(params.params[0], userAddressBook),
 				method: params.method,
@@ -77,7 +77,7 @@ export function craftPersonalSignPopupMessage(params: PersonalSignParams | SignT
 					spender: getAddressMetaData(parsed.message.spender, userAddressBook),
 					verifyingContract: getAddressMetaData(parsed.domain.verifyingContract, userAddressBook)
 				},
-				params: params
+				params,
 			}
 		} as const
 	}
