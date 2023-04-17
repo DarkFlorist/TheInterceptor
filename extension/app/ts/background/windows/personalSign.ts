@@ -108,12 +108,12 @@ export function craftPersonalSignPopupMessage(params: PersonalSignParams | SignT
 		data: {
 			activeAddress,
 			type: 'EIP712' as const,
-			simulationMode: simulationMode,
-			requestId: requestId,
+			simulationMode,
+			requestId,
 			message: params.params[1],
 			account: getAddressMetaData(params.params[0], userAddressBook),
 			method: params.method,
-			params: params
+			params,
 		}
 	} as const
 }
