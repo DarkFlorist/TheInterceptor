@@ -174,10 +174,7 @@ export async function refreshPopupConfirmTransactionMetadata(simulator: Simulato
 	const addressMetadata = await getAddressBookEntriesForVisualiser(simulator, data.visualizerResults.map((x) => x.visualizerResults), data.simulationState, userAddressBook)
 	return await sendPopupMessageToOpenWindows({
 		method: 'popup_confirm_transaction_simulation_state_changed' as const,
-		data: {
-			...data,
-			addressBookEntries: addressMetadata,
-		}
+		data: { ...data, addressBookEntries: addressMetadata }
 	})
 }
 
