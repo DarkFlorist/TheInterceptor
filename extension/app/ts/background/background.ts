@@ -7,7 +7,7 @@ import { blockNumber, call, chainId, estimateGas, gasPrice, getAccounts, getBala
 import { changeActiveAddress, changeMakeMeRich, changePage, resetSimulation, confirmDialog, refreshSimulation, removeTransaction, requestAccountsFromSigner, refreshPopupConfirmTransactionSimulation, confirmPersonalSign, confirmRequestAccess, changeInterceptorAccess, changeChainDialog, popupChangeActiveChain, enableSimulationMode, reviewNotification, rejectNotification, addOrModifyAddressInfo, getAddressBookData, removeAddressBookEntry, openAddressBook, homeOpened, interceptorAccessChangeAddressOrRefresh, refreshPopupConfirmTransactionMetadata, refreshPersonalSignMetadata } from './popupMessageHandlers.js'
 import { SimulationState } from '../utils/visualizer-types.js'
 import { AddressBookEntry, Website, TabConnection, WebsiteSocket, WebsiteTabConnections } from '../utils/user-interface-types.js'
-import { requestAccessFromUser } from './windows/interceptorAccess.js'
+import { interceptorAccessMetadataRefresh, requestAccessFromUser } from './windows/interceptorAccess.js'
 import { CHAINS, ICON_NOT_ACTIVE, isSupportedChain, MAKE_YOU_RICH_TRANSACTION, METAMASK_ERROR_USER_REJECTED_REQUEST } from '../utils/constants.js'
 import { PriceEstimator } from '../simulation/priceEstimator.js'
 import { getActiveAddressForDomain, getAssociatedAddresses, sendActiveAccountChangeToApprovedWebsitePorts, sendMessageToApprovedWebsitePorts, updateWebsiteApprovalAccesses, verifyAccess } from './accessManagement.js'
@@ -593,6 +593,7 @@ async function popupMessageHandler(
 		case 'popup_interceptorAccessReadyAndListening': return // handled elsewhere (interceptorAccess.ts)
 		case 'popup_confirmTransactionReadyAndListening': return // handled elsewhere (confirmTransaction.ts)
 		case 'popup_requestNewHomeData': return homeOpened(simulator)
+		case 'popup_refreshInterceptorAccessMetadata': return await interceptorAccessMetadataRefresh(parsedRequest)
 		case 'popup_interceptorAccessChangeAddress': return await interceptorAccessChangeAddressOrRefresh(websiteTabConnections, parsedRequest)
 		case 'popup_interceptorAccessRefresh': return await interceptorAccessChangeAddressOrRefresh(websiteTabConnections, parsedRequest)
 		case 'popup_refreshPersonalSignMetadata': return await refreshPersonalSignMetadata(parsedRequest, settings)

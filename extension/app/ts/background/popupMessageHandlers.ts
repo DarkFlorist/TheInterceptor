@@ -1,7 +1,7 @@
 import { changeActiveAddressAndChainAndResetSimulation, changeActiveChain, getPrependTrasactions, refreshConfirmTransactionSimulation, updateSimulationState } from './background.js'
 import { getCurrentTabId, getMakeMeRich, getOpenedAddressBookTabId, getSettings, getSignerName, getSimulationResults, getTabState, saveCurrentTabId, setMakeMeRich, setOpenedAddressBookTabId, setPage, setUseSignersAddressAsActiveAddress, updateAddressInfos, updateContacts, updateWebsiteAccess } from './settings.js'
 import { Simulator } from '../simulation/simulator.js'
-import { ChangeActiveAddress, ChangeMakeMeRich, ChangePage, PersonalSign, RemoveTransaction, RequestAccountsFromSigner, TransactionConfirmation, InterceptorAccess, ChangeInterceptorAccess, ChainChangeConfirmation, EnableSimulationMode, ReviewNotification, RejectNotification, ChangeActiveChain, AddOrEditAddressBookEntry, GetAddressBookData, RemoveAddressBookEntry, RefreshConfirmTransactionDialogSimulation, UserAddressBook, InterceptorAccessRefresh, InterceptorAccessChangeAddress, Settings, RefreshConfirmTransactionMetadata, RefreshPersonalSignMetadata } from '../utils/interceptor-messages.js'
+import { ChangeActiveAddress, ChangeMakeMeRich, ChangePage, PersonalSign, RemoveTransaction, RequestAccountsFromSigner, TransactionConfirmation, InterceptorAccess, ChangeInterceptorAccess, ChainChangeConfirmation, EnableSimulationMode, ReviewNotification, RejectNotification, ChangeActiveChain, AddOrEditAddressBookEntry, GetAddressBookData, RemoveAddressBookEntry, RefreshConfirmTransactionDialogSimulation, UserAddressBook, InterceptorAccessRefresh, InterceptorAccessChangeAddress, Settings, RefreshConfirmTransactionMetadata, RefreshPersonalSignMetadata, RefreshInterceptorAccessMetadata } from '../utils/interceptor-messages.js'
 import { resolvePendingTransaction } from './windows/confirmTransaction.js'
 import { craftPersonalSignPopupMessage, resolvePersonalSign } from './windows/personalSign.js'
 import { changeAccess, getAddressMetadataForAccess, removePendingAccessRequestAndUpdateBadge, requestAccessFromUser, requestAddressChange, resolveExistingInterceptorAccessAsNoResponse, resolveInterceptorAccess } from './windows/interceptorAccess.js'
@@ -306,6 +306,10 @@ export async function homeOpened(simulator: Simulator) {
 
 export async function interceptorAccessChangeAddressOrRefresh(websiteTabConnections: WebsiteTabConnections, params: InterceptorAccessChangeAddress | InterceptorAccessRefresh) {
 	await requestAddressChange(websiteTabConnections, params)
+}
+
+export async function refreshInterceptorAccessMetadata(params: RefreshInterceptorAccessMetadata) {
+	await refreshInterceptorAccessMetadata(params)
 }
 
 export async function refreshPersonalSignMetadata(refreshPersonalSignMetadata: RefreshPersonalSignMetadata, settings: Settings) {

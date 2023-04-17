@@ -32,23 +32,23 @@ export function ChangeChain() {
 
 		async function popupMessageListener(msg: unknown) {
 			const message = ExternalPopupMessage.parse(msg)
-			if ( message.method !== 'popup_ChangeChainRequest') return
+			if (message.method !== 'popup_ChangeChainRequest') return
 			await updatePage(message)
 		}
 		browser.runtime.onMessage.addListener(popupMessageListener)
-		sendPopupMessageToBackgroundPage( { method: 'popup_changeChainReadyAndListening' } )
+		sendPopupMessageToBackgroundPage({ method: 'popup_changeChainReadyAndListening' })
 		return () => browser.runtime.onMessage.removeListener(popupMessageListener)
-	}, [])
+	})
 
 	async function approve() {
 		if (chainChangeData === undefined) return
-		await sendPopupMessageToBackgroundPage( { method: 'popup_changeChainDialog', options: { accept: true, requestId: chainChangeData.requestId, chainId: chainChangeData.chainId } } )
+		await sendPopupMessageToBackgroundPage({ method: 'popup_changeChainDialog', options: { accept: true, requestId: chainChangeData.requestId, chainId: chainChangeData.chainId } })
 		globalThis.close()
 	}
 
 	async function reject() {
 		if (chainChangeData === undefined) return
-		await sendPopupMessageToBackgroundPage( { method: 'popup_changeChainDialog', options: { accept: false, requestId: chainChangeData.requestId } } )
+		await sendPopupMessageToBackgroundPage({ method: 'popup_changeChainDialog', options: { accept: false, requestId: chainChangeData.requestId } })
 		globalThis.close()
 	}
 
