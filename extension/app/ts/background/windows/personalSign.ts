@@ -50,12 +50,12 @@ export function craftPersonalSignPopupMessage(params: PersonalSignParams | SignT
 			data: {
 				activeAddress,
 				type: 'NotParsed' as const,
-				simulationMode: simulationMode,
-				requestId: requestId,
+				simulationMode,
+				requestId,
 				message: params.params[0],
 				account: getAddressMetaData(params.params[1], userAddressBook),
 				method: params.method,
-				params: params
+				params,
 			}
 		} as const
 	}
