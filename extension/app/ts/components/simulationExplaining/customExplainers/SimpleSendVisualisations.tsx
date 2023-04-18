@@ -92,7 +92,7 @@ function getBeforeAndAfterBalanceForAddress(ethBalances: readonly EthBalanceChan
 export function EtherTransferVisualisation({ simTx, renameAddressCallBack }: { simTx: SimulatedAndVisualizedEtherTransferTransaction, renameAddressCallBack: RenameAddressCallBack }) {
 	if (typeof simTx.transaction.to === undefined) throw new Error("Not a simple transfer, missing to address")
 	const senderBalanceChanges = getBeforeAndAfterBalanceForAddress(simTx.ethBalanceChanges, simTx.transaction.from.address)
-	const receiverBalanceChanges = getBeforeAndAfterBalanceForAddress(simTx.ethBalanceChanges, simTx.transaction.to?.address as bigint)
+	const receiverBalanceChanges = getBeforeAndAfterBalanceForAddress(simTx.ethBalanceChanges, simTx.to.address)
 	if (senderBalanceChanges === undefined || receiverBalanceChanges === undefined) return <></>
 	return <SimpleSend
 		transaction = { { ...simTx, chainId: simTx.transaction.chainId } }
@@ -102,7 +102,7 @@ export function EtherTransferVisualisation({ simTx, renameAddressCallBack }: { s
 			useFullTokenName: false,
 		} }
 		sender = { { beforeAndAfter: senderBalanceChanges, address: simTx.transaction.from } }
-		receiver = { { beforeAndAfter: receiverBalanceChanges, address: simTx.transaction.to as AddressBookEntry } }
+		receiver = { { beforeAndAfter: receiverBalanceChanges, address: simTx.to } }
 		renameAddressCallBack = { renameAddressCallBack }
 	/>
 }

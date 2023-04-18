@@ -70,7 +70,9 @@ export function identifySimpleApproval(simTx: SimulatedAndVisualizedTransaction)
 }
 
 export type SimulatedAndVisualizedSimpleApprovalTransaction = SimulatedAndVisualizedTransaction & {
-	to: AddressBookEntry
+	transaction: {
+		to: AddressBookEntry
+	},
 	value: 0n
 	tokenResults: [TokenVisualizerResultWithMetadata & { isApproval: true }]
 }
@@ -86,6 +88,7 @@ export function isSimpleTokenApproval(simTx: SimulatedAndVisualizedTransaction):
 }
 
 export type SimulatedAndVisualizedEtherTransferTransaction = SimulatedAndVisualizedTransaction & {
+	to: AddressBookEntry
 	input: []
 	tokenResults: []
 }
@@ -93,6 +96,7 @@ export type SimulatedAndVisualizedEtherTransferTransaction = SimulatedAndVisuali
 export function isEtherTransfer(simTx: SimulatedAndVisualizedTransaction): simTx is SimulatedAndVisualizedEtherTransferTransaction {
 	if (simTx.transaction.input.length == 0
 		&& simTx.tokenResults.length == 0
+		&& simTx.transaction.to
 		&& simTx.gasSpent == 21000n) return true
 	return false
 }
@@ -139,7 +143,7 @@ export function identifyTransaction(simTx: SimulatedAndVisualizedTransaction): I
 		signingAction: 'Transfer Ether',
 		simulationAction: 'Simulate Ether Transfer',
 		rejectAction: 'Reject Ether Transfer',
-		identifiedTransaction: simTx,
+		identifiedTransaction: { ...simTx, to: simTx.transaction.to as AddressBookEntry }
 	}
 
 	const identifiedSwap = identifySwap(simTx)
