@@ -70,9 +70,7 @@ export function identifySimpleApproval(simTx: SimulatedAndVisualizedTransaction)
 }
 
 export type SimulatedAndVisualizedSimpleApprovalTransaction = SimulatedAndVisualizedTransaction & {
-	transaction: {
-		to: AddressBookEntry
-	},
+	to: AddressBookEntry
 	value: 0n
 	tokenResults: [TokenVisualizerResultWithMetadata & { isApproval: true }]
 }
