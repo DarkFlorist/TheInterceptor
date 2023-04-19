@@ -90,10 +90,10 @@ interface ProviderMessage {
 }
 
 type AnyCallBack =  ((message: ProviderMessage) => void)
-	| ( (connectInfo: ProviderConnectInfo) => void )
-	| ( (accounts: readonly string[]) => void )
-	| ( (error: ProviderRpcError) => void )
-	| ( (chainId: string) => void )
+	| ((connectInfo: ProviderConnectInfo) => void)
+	| ((accounts: readonly string[]) => void)
+	| ((error: ProviderRpcError) => void)
+	| ((chainId: string) => void)
 
 type EthereumRequest = (options: { readonly method: string, readonly params?: readonly unknown[] }) => Promise<unknown>
 
@@ -211,7 +211,7 @@ class InterceptorMessageListener {
 		if (window.ethereum === undefined) throw new Error('window.ethereum is not defined')
 		switch (kind) {
 			case 'accountsChanged':
-				this.onAccountsChangedCallBacks.add( callback as (accounts: readonly string[]) => void )
+				this.onAccountsChangedCallBacks.add( callback as (accounts: readonly string[]) => void)
 				break
 			case 'message':
 				this.onMessageCallBacks.add(callback as (message: ProviderMessage) => void)
@@ -262,16 +262,16 @@ class InterceptorMessageListener {
 	private readonly WindowEthereumEnable = async () => this.WindowEthereumRequest({ method: 'eth_requestAccounts' })
 
 	private readonly requestAccountsFromSigner = async () => {
-		if (this.signerWindowEthereumRequest === undefined ) return
+		if (this.signerWindowEthereumRequest === undefined) return
 		const reply = await this.signerWindowEthereumRequest({ method: 'eth_requestAccounts', params: [] })
 
-		if ( !Array.isArray(reply) ) return
+		if ( !Array.isArray(reply)) return
 		return await this.sendMessageToBackgroundPage({ method: 'eth_accounts_reply', params: reply })
 	}
 
 	private readonly requestChainIdFromSigner = async () => {
-		if (this.signerWindowEthereumRequest === undefined ) return
-		const reply = await this.signerWindowEthereumRequest( { method: 'eth_chainId', params: [] } )
+		if (this.signerWindowEthereumRequest === undefined) return
+		const reply = await this.signerWindowEthereumRequest({ method: 'eth_chainId', params: [] })
 		if ( typeof reply !== 'string') return
 		return await this.sendMessageToBackgroundPage({ method: 'signer_chainChanged', params: [ reply ] })
 	}
@@ -288,11 +288,11 @@ class InterceptorMessageListener {
 		if (this.signerWindowEthereumRequest === undefined) return
 
 		try {
-			const reply = await this.signerWindowEthereumRequest( { method: 'wallet_switchEthereumChain', params: [ { 'chainId': chainId } ] } )
+			const reply = await this.signerWindowEthereumRequest({ method: 'wallet_switchEthereumChain', params: [ { 'chainId': chainId } ] })
 			if ( reply !== null) return
 			await this.sendMessageToBackgroundPage({ method: 'wallet_switchEthereumChain_reply', params: [ { accept: true, chainId: chainId } ] })
 		} catch (error) {
-			if( InterceptorMessageListener.checkErrorForCode(error) && ( error.code === METAMASK_ERROR_USER_REJECTED_REQUEST || error.code === METAMASK_ERROR_CHAIN_NOT_ADDED_TO_METAMASK ) ) {
+			if( InterceptorMessageListener.checkErrorForCode(error) && ( error.code === METAMASK_ERROR_USER_REJECTED_REQUEST || error.code === METAMASK_ERROR_CHAIN_NOT_ADDED_TO_METAMASK)) {
 				await this.sendMessageToBackgroundPage({ method: 'wallet_switchEthereumChain_reply', params: [ { accept: false, chainId: chainId } ] })
 			}
 			throw error
@@ -302,23 +302,23 @@ class InterceptorMessageListener {
 	private readonly handleReplyRequest = async(replyRequest: InterceptedRequestForward) => {
 		try {
 			if (replyRequest.subscription !== undefined) {
-				return this.onMessageCallBacks.forEach( (f) => f( { type: 'eth_subscription', data: replyRequest.result } ))
+				return this.onMessageCallBacks.forEach((f) => f({ type: 'eth_subscription', data: replyRequest.result }))
 			}
 			// inform callbacks
 			switch (replyRequest.options.method) {
-				case 'accountsChanged': return this.onAccountsChangedCallBacks.forEach( (f) => f( replyRequest.result as readonly string[] ) )
+				case 'accountsChanged': return this.onAccountsChangedCallBacks.forEach((f) => f( replyRequest.result as readonly string[]))
 				case 'connect': {
 					this.connected = true
-					return this.onConnectCallBacks.forEach( (f) => f( { chainId: replyRequest.result as string } ) )
+					return this.onConnectCallBacks.forEach((f) => f({ chainId: replyRequest.result as string }))
 				}
 				case 'disconnect': {
 					this.connected = false
 					const resultArray = replyRequest.result as { code: number, message: string }
-					return this.onDisconnectCallBacks.forEach( (f) => f( { name: 'disconnect', ...resultArray } ) )
+					return this.onDisconnectCallBacks.forEach((f) => f({ name: 'disconnect', ...resultArray }))
 				}
-				case 'chainChanged': return this.onChainChangedCallBacks.forEach( (f) => f( replyRequest.result as string ) )
+				case 'chainChanged': return this.onChainChangedCallBacks.forEach((f) => f( replyRequest.result as string))
 				case 'request_signer_to_eth_requestAccounts': return await this.requestAccountsFromSigner()
-				case 'request_signer_to_wallet_switchEthereumChain': return await this.requestChangeChainFromSigner( replyRequest.result as string )
+				case 'request_signer_to_wallet_switchEthereumChain': return await this.requestChangeChainFromSigner( replyRequest.result as string)
 				case 'request_signer_chainId': return await this.requestChainIdFromSigner()
 				default: break
 			}
@@ -382,83 +382,84 @@ class InterceptorMessageListener {
 		return await this.sendMessageToBackgroundPage({ method: 'connected_to_signer', params: [signerName] })
 	}
 
-	private readonly injectUnsupportedMethods = (windowEthereum: WindowEthereum & UnsupportedWindowEthereumMethods) => {
+	private readonly unsupportedMethods = (windowEthereum: WindowEthereum & UnsupportedWindowEthereumMethods | undefined) => {
 		const unsupportedError = (method: string) => {
 			return console.error(`The application tried to call a deprecated or non-standard method: "${ method }". Please contact the application developer to fix this issue.`)
 		}
-
-		windowEthereum.once = () => { return unsupportedError('window.ethereum.once()') },
-		windowEthereum.prependListener = () => { return unsupportedError('window.ethereum.prependListener()') },
-		windowEthereum.prependOnceListener = () => { return unsupportedError('window.ethereum.prependOnceListener()') },
-		windowEthereum._metamask = {
-			isUnlocked: async () => {
-				unsupportedError('window.ethereum._metamask.isUnlocked()')
-				return this.connected
-			},
-			requestBatch: async () => { return unsupportedError('window.ethereum._metamask.requestBatch()') }
+		return {
+			once: (() => { return unsupportedError('window.ethereum.once()') }).bind(windowEthereum),
+			prependListener: (() => { return unsupportedError('window.ethereum.prependListener()') }).bind(windowEthereum),
+			prependOnceListener: (() => { return unsupportedError('window.ethereum.prependOnceListener()') }).bind(windowEthereum),
+			_metamask: {
+				isUnlocked: (async () => {
+					unsupportedError('window.ethereum._metamask.isUnlocked()')
+					return this.connected
+				}),
+				requestBatch: async () => { return unsupportedError('window.ethereum._metamask.requestBatch()') }
+			}
 		}
 	}
 
 	public readonly injectEthereumIntoWindow = () => {
 		if (!('ethereum' in window) || !window.ethereum) {
 			// no existing signer found
-
 			window.ethereum = {
-				isConnected: this.WindowEthereumIsConnected,
-				request: this.WindowEthereumRequest,
-				send: this.WindowEthereumSend,
-				sendAsync: this.WindowEthereumSendAsync,
-				on: this.WindowEthereumOn,
-				removeListener: this.WindowEthereumRemoveListener,
-				enable: this.WindowEthereumEnable,
+				isConnected: this.WindowEthereumIsConnected.bind(window.ethereum),
+				request: this.WindowEthereumRequest.bind(window.ethereum),
+				send: this.WindowEthereumSend.bind(window.ethereum),
+				sendAsync: this.WindowEthereumSendAsync.bind(window.ethereum),
+				on: this.WindowEthereumOn.bind(window.ethereum),
+				removeListener: this.WindowEthereumRemoveListener.bind(window.ethereum),
+				enable: this.WindowEthereumEnable.bind(window.ethereum),
+				...this.unsupportedMethods(window.ethereum),
 			}
-			this.injectUnsupportedMethods(window.ethereum)
 			this.connected = true
-
 			this.sendConnectedMessage('NoSigner')
 			return
 		}
 
 		// subscribe for signers events
 		window.ethereum.on('accountsChanged', (accounts: readonly string[]) => {
-			this.WindowEthereumRequest( { method: 'eth_accounts_reply', params: accounts } )
+			this.WindowEthereumRequest({ method: 'eth_accounts_reply', params: accounts })
 		})
 		window.ethereum.on('connect', (_connectInfo: ProviderConnectInfo) => {
 
 		})
 		window.ethereum.on('disconnect', (_error: ProviderRpcError) => {
-			this.WindowEthereumRequest( { method: 'eth_accounts_reply', params: [] } )
+			this.WindowEthereumRequest({ method: 'eth_accounts_reply', params: [] })
 		})
 		window.ethereum.on('chainChanged', (chainId: string) => {
-			this.WindowEthereumRequest( { method: 'signer_chainChanged', params: [chainId] } )
+			this.WindowEthereumRequest({ method: 'signer_chainChanged', params: [chainId] })
 		})
 
 		this.connected = window.ethereum.isConnected()
-		this.signerWindowEthereumRequest = window.ethereum.request // store the request object to signer
+		this.signerWindowEthereumRequest = window.ethereum.request.bind(window.ethereum) // store the request object to signer
 
 		if (window.ethereum.isBraveWallet) {
 			window.ethereum = {
-				isConnected: this.WindowEthereumIsConnected,
-				request: this.WindowEthereumRequest,
-				send: this.WindowEthereumSend,
-				sendAsync: this.WindowEthereumSendAsync,
-				on: this.WindowEthereumOn,
-				removeListener: this.WindowEthereumRemoveListener,
-				enable: this.WindowEthereumEnable
+				isConnected: this.WindowEthereumIsConnected.bind(window.ethereum),
+				request: this.WindowEthereumRequest.bind(window.ethereum),
+				send: this.WindowEthereumSend.bind(window.ethereum),
+				sendAsync: this.WindowEthereumSendAsync.bind(window.ethereum),
+				on: this.WindowEthereumOn.bind(window.ethereum),
+				removeListener: this.WindowEthereumRemoveListener.bind(window.ethereum),
+				enable: this.WindowEthereumEnable.bind(window.ethereum),
+				...this.unsupportedMethods(window.ethereum),
 			}
-			this.injectUnsupportedMethods(window.ethereum)
 			this.sendConnectedMessage('Brave')
 			return
 		}
 		// we cannot inject window.ethereum alone here as it seems like window.ethereum is cached (maybe ethers.js does that?)
-		window.ethereum.isConnected = this.WindowEthereumIsConnected
-		window.ethereum.request = this.WindowEthereumRequest
-		window.ethereum.send = this.WindowEthereumSend
-		window.ethereum.sendAsync = this.WindowEthereumSendAsync
-		window.ethereum.on = this.WindowEthereumOn
-		window.ethereum.removeListener = this.WindowEthereumRemoveListener
-		window.ethereum.enable = this.WindowEthereumEnable
-		this.injectUnsupportedMethods(window.ethereum)
+		Object.assign(window.ethereum, {
+			isConnected: this.WindowEthereumIsConnected.bind(window.ethereum),
+			request: this.WindowEthereumRequest.bind(window.ethereum),
+			send: this.WindowEthereumSend.bind(window.ethereum),
+			sendAsync: this.WindowEthereumSendAsync.bind(window.ethereum),
+			on: this.WindowEthereumOn.bind(window.ethereum),
+			removeListener: this.WindowEthereumRemoveListener.bind(window.ethereum),
+			enable: this.WindowEthereumEnable.bind(window.ethereum),
+			...this.unsupportedMethods(window.ethereum),
+		})
 		this.sendConnectedMessage(window.ethereum.isMetaMask ? 'MetaMask' : 'NotRecognizedSigner')
 	}
 }
