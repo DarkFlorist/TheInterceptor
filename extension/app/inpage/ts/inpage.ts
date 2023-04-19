@@ -382,37 +382,37 @@ class InterceptorMessageListener {
 		return await this.sendMessageToBackgroundPage({ method: 'connected_to_signer', params: [signerName] })
 	}
 
-	private readonly injectUnsupportedMethods = (windowEthereum: WindowEthereum & UnsupportedWindowEthereumMethods, oldwWindowEthereum: unknown) => {
+	private readonly unsupportedMethods = (windowEthereum: WindowEthereum & UnsupportedWindowEthereumMethods | undefined) => {
 		const unsupportedError = (method: string) => {
 			return console.error(`The application tried to call a deprecated or non-standard method: "${ method }". Please contact the application developer to fix this issue.`)
 		}
-
-		windowEthereum.once = (() => { return unsupportedError('window.ethereum.once()') }).bind(oldwWindowEthereum),
-		windowEthereum.prependListener = (() => { return unsupportedError('window.ethereum.prependListener()') }).bind(oldwWindowEthereum),
-		windowEthereum.prependOnceListener = (() => { return unsupportedError('window.ethereum.prependOnceListener()') }).bind(oldwWindowEthereum),
-		windowEthereum._metamask = {
-			isUnlocked: (async () => {
-				unsupportedError('window.ethereum._metamask.isUnlocked()')
-				return this.connected
-			}),
-			requestBatch: async () => { return unsupportedError('window.ethereum._metamask.requestBatch()') }
+		return {
+			once: (() => { return unsupportedError('window.ethereum.once()') }).bind(windowEthereum),
+			prependListener: (() => { return unsupportedError('window.ethereum.prependListener()') }).bind(windowEthereum),
+			prependOnceListener: (() => { return unsupportedError('window.ethereum.prependOnceListener()') }).bind(windowEthereum),
+			_metamask: {
+				isUnlocked: (async () => {
+					unsupportedError('window.ethereum._metamask.isUnlocked()')
+					return this.connected
+				}),
+				requestBatch: async () => { return unsupportedError('window.ethereum._metamask.requestBatch()') }
+			}
 		}
 	}
 
 	public readonly injectEthereumIntoWindow = () => {
-		const oldwWindowEthereum = window.ethereum
 		if (!('ethereum' in window) || !window.ethereum) {
 			// no existing signer found
 			window.ethereum = {
-				isConnected: this.WindowEthereumIsConnected.bind(oldwWindowEthereum),
-				request: this.WindowEthereumRequest.bind(oldwWindowEthereum),
-				send: this.WindowEthereumSend.bind(oldwWindowEthereum),
-				sendAsync: this.WindowEthereumSendAsync.bind(oldwWindowEthereum),
-				on: this.WindowEthereumOn.bind(oldwWindowEthereum),
-				removeListener: this.WindowEthereumRemoveListener.bind(oldwWindowEthereum),
-				enable: this.WindowEthereumEnable.bind(oldwWindowEthereum),
+				isConnected: this.WindowEthereumIsConnected.bind(window.ethereum),
+				request: this.WindowEthereumRequest.bind(window.ethereum),
+				send: this.WindowEthereumSend.bind(window.ethereum),
+				sendAsync: this.WindowEthereumSendAsync.bind(window.ethereum),
+				on: this.WindowEthereumOn.bind(window.ethereum),
+				removeListener: this.WindowEthereumRemoveListener.bind(window.ethereum),
+				enable: this.WindowEthereumEnable.bind(window.ethereum),
+				...this.unsupportedMethods(window.ethereum),
 			}
-			this.injectUnsupportedMethods(window.ethereum, oldwWindowEthereum)
 			this.connected = true
 			this.sendConnectedMessage('NoSigner')
 			return
@@ -433,31 +433,33 @@ class InterceptorMessageListener {
 		})
 
 		this.connected = window.ethereum.isConnected()
-		this.signerWindowEthereumRequest = window.ethereum.request.bind(oldwWindowEthereum) // store the request object to signer
+		this.signerWindowEthereumRequest = window.ethereum.request.bind(window.ethereum) // store the request object to signer
 
 		if (window.ethereum.isBraveWallet) {
 			window.ethereum = {
-				isConnected: this.WindowEthereumIsConnected.bind(oldwWindowEthereum),
-				request: this.WindowEthereumRequest.bind(oldwWindowEthereum),
-				send: this.WindowEthereumSend.bind(oldwWindowEthereum),
-				sendAsync: this.WindowEthereumSendAsync.bind(oldwWindowEthereum),
-				on: this.WindowEthereumOn.bind(oldwWindowEthereum),
-				removeListener: this.WindowEthereumRemoveListener.bind(oldwWindowEthereum),
-				enable: this.WindowEthereumEnable.bind(oldwWindowEthereum)
+				isConnected: this.WindowEthereumIsConnected.bind(window.ethereum),
+				request: this.WindowEthereumRequest.bind(window.ethereum),
+				send: this.WindowEthereumSend.bind(window.ethereum),
+				sendAsync: this.WindowEthereumSendAsync.bind(window.ethereum),
+				on: this.WindowEthereumOn.bind(window.ethereum),
+				removeListener: this.WindowEthereumRemoveListener.bind(window.ethereum),
+				enable: this.WindowEthereumEnable.bind(window.ethereum),
+				...this.unsupportedMethods(window.ethereum),
 			}
-			this.injectUnsupportedMethods(window.ethereum, oldwWindowEthereum)
 			this.sendConnectedMessage('Brave')
 			return
 		}
 		// we cannot inject window.ethereum alone here as it seems like window.ethereum is cached (maybe ethers.js does that?)
-		window.ethereum.isConnected = this.WindowEthereumIsConnected.bind(oldwWindowEthereum)
-		window.ethereum.request = this.WindowEthereumRequest.bind(oldwWindowEthereum)
-		window.ethereum.send = this.WindowEthereumSend.bind(oldwWindowEthereum)
-		window.ethereum.sendAsync = this.WindowEthereumSendAsync.bind(oldwWindowEthereum)
-		window.ethereum.on = this.WindowEthereumOn.bind(oldwWindowEthereum)
-		window.ethereum.removeListener = this.WindowEthereumRemoveListener.bind(oldwWindowEthereum)
-		window.ethereum.enable = this.WindowEthereumEnable.bind(oldwWindowEthereum)
-		this.injectUnsupportedMethods(window.ethereum, oldwWindowEthereum)
+		Object.assign(window.ethereum, {
+			isConnected: this.WindowEthereumIsConnected.bind(window.ethereum),
+			request: this.WindowEthereumRequest.bind(window.ethereum),
+			send: this.WindowEthereumSend.bind(window.ethereum),
+			sendAsync: this.WindowEthereumSendAsync.bind(window.ethereum),
+			on: this.WindowEthereumOn.bind(window.ethereum),
+			removeListener: this.WindowEthereumRemoveListener.bind(window.ethereum),
+			enable: this.WindowEthereumEnable.bind(window.ethereum),
+			...this.unsupportedMethods(window.ethereum),
+		})
 		this.sendConnectedMessage(window.ethereum.isMetaMask ? 'MetaMask' : 'NotRecognizedSigner')
 	}
 }
