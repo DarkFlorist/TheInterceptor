@@ -166,7 +166,7 @@ export function InterceptorAccess() {
 		setAppPage('ChangeActiveAddress')
 	}
 
-	function refreshMetadata() {
+	async function refreshMetadata() {
 		if (accessRequest === undefined || accessRequest.requestAccessToAddress?.address === undefined || accessRequest.originalRequestAccessToAddress?.address === undefined) return
 		const options = {
 			socket: accessRequest.socket,
@@ -175,21 +175,21 @@ export function InterceptorAccess() {
 			requestAccessToAddress: accessRequest.requestAccessToAddress.address,
 			originalRequestAccessToAddress: accessRequest.originalRequestAccessToAddress.address,
 		}
-		sendPopupMessageToBackgroundPage({ method: 'popup_refreshInterceptorAccessMetadata', options })
+		await sendPopupMessageToBackgroundPage({ method: 'popup_refreshInterceptorAccessMetadata', options })
 	}
 
-	function refreshActiveAddress() {
+	async function refreshActiveAddress() {
 		if (accessRequest === undefined) throw Error('access request not loaded')
-		sendPopupMessageToBackgroundPage({ method: 'popup_interceptorAccessRefresh', options: {
+		await sendPopupMessageToBackgroundPage({ method: 'popup_interceptorAccessRefresh', options: {
 			socket: accessRequest.socket,
 			website: accessRequest.website,
 			requestAccessToAddress: accessRequest.requestAccessToAddress?.address,
 		} } )
 	}
 
-	function setActiveAddressAndInformAboutIt(address: bigint | 'signer') {
+	async function setActiveAddressAndInformAboutIt(address: bigint | 'signer') {
 		if (accessRequest === undefined) throw Error('access request not loaded')
-		sendPopupMessageToBackgroundPage({ method: 'popup_interceptorAccessChangeAddress', options: {
+		await sendPopupMessageToBackgroundPage({ method: 'popup_interceptorAccessChangeAddress', options: {
 			socket: accessRequest.socket,
 			website: accessRequest.website,
 			requestAccessToAddress: accessRequest.requestAccessToAddress?.address,
