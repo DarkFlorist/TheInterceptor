@@ -38,7 +38,7 @@ function SignerExplanation(param: SignerExplanationParams) {
 		<div class = 'content'>
 			<p class = 'paragraph' style = 'color: var(--subtitle-text-color)'>
 				{ param.signerName === 'NoSigner'
-					? 'Please make sure that the signer is connected to the active DApp'
+					? 'Please make sure that you have gone through the wallet connection process on the page and allowed the page to see your signer account.'
 					: `Please make sure ${ getPrettySignerName(param.signerName) } is connected to the active DApp`
 				}
 			</p>
