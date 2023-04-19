@@ -1,16 +1,16 @@
 import { LogSummarizer, SummaryOutcome } from '../../simulation/services/LogSummarizer.js'
 import { AddressBookEntry, CHAIN, RenameAddressCallBack } from '../../utils/user-interface-types.js'
-import { ERC721TokenApprovalChange, ERC721TokenDefinitionParams, SimulatedAndVisualizedTransaction, SimulationAndVisualisationResults, TokenApprovalChange, TokenBalanceChange, TokenDefinitionParams } from '../../utils/visualizer-types.js'
+import { ERC721TokenApprovalChange, ERC721TokenDefinitionParams, SimulatedAndVisualizedTransaction, SimulationAndVisualisationResults, TokenApprovalChange, TokenBalanceChange, TokenDefinitionParams, TransactionWithAddressBookEntries } from '../../utils/visualizer-types.js'
 import { BigAddress, SmallAddress } from '../subcomponents/address.js'
 import { ERC721Token, Ether, EtherAmount, EtherSymbol, Token, TokenAmount, TokenPrice, TokenSymbol } from '../subcomponents/coins.js'
 import { LogAnalysis } from './Transactions.js'
 import { CopyToClipboard } from '../subcomponents/CopyToClipboard.js'
 import { SomeTimeAgo } from '../subcomponents/SomeTimeAgo.js'
 import { CHAINS, MAKE_YOU_RICH_TRANSACTION } from '../../utils/constants.js'
-import { addressString } from '../../utils/bigint.js'
+import { addressString, dataStringWith0xStart } from '../../utils/bigint.js'
 import { identifyTransaction } from './identifyTransaction.js'
 import { identifySwap } from './SwapTransactions.js'
-import { useState } from 'preact/hooks'
+import { useEffect, useRef, useState } from 'preact/hooks'
 import { convertNumberToCharacterRepresentationIfSmallEnough, upperCaseFirstCharacter } from '../ui-utils.js'
 
 type EtherChangeParams = {
@@ -645,4 +645,67 @@ export function SimulationSummary(param: SimulationSummaryParams) {
 			</div>
 		</div>
 	)
+}
+
+type ExtraDetailsTransactionCardParams = {
+	transaction: TransactionWithAddressBookEntries;
+}
+export function ExtraDetailsTransactionCard({ transaction }: ExtraDetailsTransactionCardParams) {
+	const [showSummary, setShowSummary] = useState<boolean>(false)
+	const textareaRef = useRef<HTMLTextAreaElement | null>(null)
+
+	useEffect(() => {
+		const resizeTextArea = () => {
+			if (textareaRef && textareaRef.current) {
+				textareaRef.current.style.height = '0px'
+				const scrollHeight = textareaRef.current.scrollHeight
+				textareaRef.current.style.height = scrollHeight + 'px'
+			}
+		}
+		resizeTextArea()
+		globalThis.addEventListener('resize', resizeTextArea)
+		return () => globalThis.removeEventListener('resize', resizeTextArea)
+	})
+
+	const CellElement = (param: { text: string }) => {
+		return <div class = 'log-cell' style = 'justify-content: right;'> <p class = 'paragraph' style = 'color: var(--subtitle-text-color)'> { param.text }</p></div>
+	}
+
+	return <div class = 'card' style = 'margin-top: 10px; margin-bottom: 10px'>
+		<header class = 'card-header noselect' style = 'cursor: pointer; height: 30px;' onClick = { () => setShowSummary((prevValue) => !prevValue) }>
+			<p class = 'card-header-title' style = 'font-weight: unset; font-size: 0.8em;'>
+				Extra details
+			</p>
+			<div class = 'card-header-icon'>
+				<span class = 'icon' style = 'color: var(--text-color); font-weight: unset; font-size: 0.8em;'> V </span>
+			</div>
+		</header>
+		{ !showSummary ? <></> : <>
+			<div class = 'card-content'>
+				<div class = 'container' style = 'margin-bottom: 10px;'>
+					<span class = 'log-table' style = 'justify-content: center; column-gap: 5px; grid-template-columns: auto auto'>
+						<CellElement text = 'Transaction Type: '/>
+						<CellElement text =  { transaction.type }/>
+						<CellElement text = 'Nonce: '/>
+						<CellElement text = { transaction.nonce.toString() }/>
+						<CellElement text = 'Gas limit: '/>
+						<CellElement text = { `${ transaction.gas.toString() } gas` }/>
+
+						{ transaction.type !== '1559' ? <></> : <>
+							<CellElement text = 'Max Fee Per Gas: '/>
+							<CellElement text = { `${ transaction.maxFeePerGas.toString() } wei/gas` }/>
+							<CellElement text = 'Max Priority Fee Per Gas: '/>
+							<CellElement text = { `${ transaction.maxPriorityFeePerGas.toString() } wei/gas` }/>
+						</> }
+					</span>
+
+					<p class = 'paragraph' style = 'color: var(--subtitle-text-color)'>Raw transaction input: </p>
+
+					<div class = 'control'>
+						<textarea class = 'textarea' readonly ref = { textareaRef } style = 'overflow: hidden; resize: none;'>{ dataStringWith0xStart(transaction.input) }</textarea>
+					</div>
+				</div>
+			</div>
+		</> }
+	</div>
 }
