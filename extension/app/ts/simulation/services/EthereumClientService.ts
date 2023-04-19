@@ -110,17 +110,20 @@ export class EthereumClientService {
 		return EthereumData.parse(response)
 	}
 
-	public readonly getBlock = async (blockTag: EthereumBlockTag = 'latest', fullObjects: boolean = true) => {
+	public async getBlock(blockTag: EthereumBlockTag, fullObjects: true): Promise<EthereumBlockHeader>
+	public async getBlock(blockTag: EthereumBlockTag, fullObjects: false): Promise<EthereumBlockHeaderWithTransactionHashes>
+	public async getBlock(blockTag: EthereumBlockTag = 'latest', fullObjects: boolean = true): Promise<EthereumBlockHeaderWithTransactionHashes | EthereumBlockHeader> {
 		const cached = this.getCachedBlock()
-		if (cached && fullObjects) {
-			// todo, add here conversion from fullObjects to non fullObjects if non fullObjects block is asked
+		if (cached && (blockTag === 'latest' || blockTag === cached.number)) {
+			if (fullObjects === false) {
+				return { ...cached, transactions: cached.transactions.map((transaction) => transaction.hash) }
+			}
 			return cached
 		}
-		const response = await this.requestHandler.jsonRpcRequest({ method: 'eth_getBlockByNumber', params: [blockTag, fullObjects] })
-		if ( fullObjects === false ) {
-			return EthereumBlockHeaderWithTransactionHashes.parse(response)
+		if (fullObjects === false) {
+			return EthereumBlockHeaderWithTransactionHashes.parse(await this.requestHandler.jsonRpcRequest({ method: 'eth_getBlockByNumber', params: [blockTag, false] }))
 		}
-		return EthereumBlockHeader.parse(response)
+		return EthereumBlockHeader.parse(await this.requestHandler.jsonRpcRequest({ method: 'eth_getBlockByNumber', params: [blockTag, fullObjects] }))
 	}
 
 	public readonly getChainId = () => {

@@ -1,4 +1,5 @@
 import { EthereumClientService } from '../simulation/services/EthereumClientService.js'
+import { createEthereumSubscription, removeEthereumSubscription } from '../simulation/services/EthereumSubscriptionService.js'
 import { getSimulatedBalance, getSimulatedBlock, getSimulatedBlockNumber, getSimulatedCode, getSimulatedLogs, getSimulatedStack, getSimulatedTransactionByHash, getSimulatedTransactionCount, getSimulatedTransactionReceipt, simulatedCall, simulateEstimateGas } from '../simulation/services/SimulationModeEthereumClientService.js'
 import { Simulator } from '../simulation/simulator.js'
 import { bytes32String } from '../utils/bigint.js'
@@ -6,9 +7,8 @@ import { KNOWN_CONTRACT_CALLER_ADDRESSES } from '../utils/constants.js'
 import { InterceptedRequest, Settings, WebsiteAccessArray } from '../utils/interceptor-messages.js'
 import { Website, WebsiteSocket, WebsiteTabConnections } from '../utils/user-interface-types.js'
 import { SimulationState } from '../utils/visualizer-types.js'
-import { EstimateGasParams, EthBalanceParams, EthBlockByNumberParams, EthCallParams, EthereumAddress, EthereumData, EthereumQuantity, EthereumSignedTransactionWithBlockData, EthGetLogsParams, EthGetLogsResponse, EthSubscribeParams, EthTransactionReceiptResponse, EthUnSubscribeParams, GetBlockReturn, GetCode, GetSimulationStack, GetSimulationStackReply, GetTransactionCount, JsonRpcNewHeadsNotification, NewHeadsSubscriptionData, PersonalSignParams, SendTransactionParams, SignTypedDataParams, SwitchEthereumChainParams, TransactionByHashParams, TransactionReceiptParams } from '../utils/wire-types.js'
+import { EstimateGasParams, EthBalanceParams, EthBlockByNumberParams, EthCallParams, EthereumAddress, EthereumData, EthereumQuantity, EthereumSignedTransactionWithBlockData, EthGetLogsParams, EthGetLogsResponse, EthSubscribeParams, EthTransactionReceiptResponse, EthUnSubscribeParams, GetBlockReturn, GetCode, GetSimulationStack, GetSimulationStackReply, GetTransactionCount, PersonalSignParams, SendTransactionParams, SignTypedDataParams, SwitchEthereumChainParams, TransactionByHashParams, TransactionReceiptParams } from '../utils/wire-types.js'
 import { getConnectionDetails } from './accessManagement.js'
-import { postMessageIfStillConnected } from './background.js'
 import { getSimulationResults } from './settings.js'
 import { openChangeChainDialog } from './windows/changeChain.js'
 import { openConfirmTransactionDialog } from './windows/confirmTransaction.js'
@@ -17,8 +17,10 @@ import { openPersonalSignDialog } from './windows/personalSign.js'
 const defaultCallAddress = 0x1n
 
 export async function getBlockByNumber(ethereumClientService: EthereumClientService, simulationState: SimulationState, request: EthBlockByNumberParams) {
-	const block = await getSimulatedBlock(ethereumClientService, simulationState, request.params[0], request.params[1])
-	return { result: GetBlockReturn.serialize(block) }
+	if (request.params[1] === true) {
+		return { result: GetBlockReturn.serialize(await getSimulatedBlock(ethereumClientService, simulationState, request.params[0], true)) }
+	}
+	return { result: GetBlockReturn.serialize(await getSimulatedBlock(ethereumClientService, simulationState, request.params[0], false)) }
 }
 export async function getBalance(ethereumClientService: EthereumClientService, simulationState: SimulationState, request: EthBalanceParams) {
 	return { result: EthereumQuantity.serialize(await getSimulatedBalance(ethereumClientService, simulationState, request.params[0])) }
@@ -59,7 +61,7 @@ export async function sendTransaction(
 	async function formTransaction() {
 		const simulationState = (await getSimulationResults()).simulationState
 		if (simulationState === undefined) return undefined
-		const block = getSimulatedBlock(ethereumClientService, simulationState)
+		const block = getSimulatedBlock(ethereumClientService, simulationState, 'latest', true)
 		const chainId = ethereumClientService.getChainId()
 		const from = getFromField(websiteTabConnections, simulationMode, sendTransactionParams, getActiveAddressForDomain, socket, settings)
 		const transactionCount = getSimulatedTransactionCount(ethereumClientService, simulationState, from)
@@ -141,23 +143,12 @@ export async function estimateGas(ethereumClientService: EthereumClientService, 
 	return { result: EthereumQuantity.serialize(await simulateEstimateGas(ethereumClientService, simulationState, request.params[0])) }
 }
 
-export async function subscribe(websiteTabConnections: WebsiteTabConnections, simulator: Simulator, socket: WebsiteSocket, request: EthSubscribeParams) {
-	const result = await simulator.ethereumSubscriptionService.createSubscription(request, (subscriptionId: string, reply: JsonRpcNewHeadsNotification) => {
-		return postMessageIfStillConnected(websiteTabConnections, socket, {
-			interceptorApproved: true,
-			options: request,
-			result: NewHeadsSubscriptionData.serialize(reply.params),
-			subscription: subscriptionId
-		})
-	})
-
-	if (result === undefined) throw new Error('failed to create subscription')
-
-	return { result: result }
+export async function subscribe(socket: WebsiteSocket, request: EthSubscribeParams) {
+	return { result: await createEthereumSubscription(request, socket) }
 }
 
-export async function unsubscribe(simulator: Simulator, request: EthUnSubscribeParams) {
-	return { result: simulator.ethereumSubscriptionService.remoteSubscription(request.params[0]) }
+export async function unsubscribe(socket: WebsiteSocket, request: EthUnSubscribeParams) {
+	return { result: removeEthereumSubscription(socket, request.params[0]) }
 }
 
 export async function getAccounts(websiteTabConnections: WebsiteTabConnections, getActiveAddressForDomain: (websiteAccess: WebsiteAccessArray, websiteOrigin: string, settings: Settings) => bigint | undefined, socket: WebsiteSocket, settings: Settings) {

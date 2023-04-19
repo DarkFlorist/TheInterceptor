@@ -30,7 +30,6 @@ export const CHAINS = {
 		name: 'Ethereum Mainnet',
 		chainId: 1n,
 		https_rpc: 'https://rpc.dark.florist/flipcardtrustone',
-		wss_rpc: 'wss://rpc.dark.florist/flipcardtrustone',
 		eth_donator: 0xda9dfa130df4de4673b89022ee50ff26f6ea73cfn, // Kraken
 		currencyName: 'Ether',
 		currencyTicker: 'ETH',
@@ -40,7 +39,6 @@ export const CHAINS = {
 		name: 'Goerli',
 		chainId: 5n,
 		https_rpc: 'https://rpc-goerli.dark.florist/flipcardtrustone',
-		wss_rpc: 'wss://rpc-goerli.dark.florist/flipcardtrustone',
 		eth_donator: 0xf36F155486299eCAff2D4F5160ed5114C1f66000n, // Some Goerli validator
 		currencyName: 'Goerli Testnet ETH',
 		currencyTicker: 'GÖETH',
@@ -50,7 +48,6 @@ export const CHAINS = {
 		name: 'Sepolia',
 		chainId: 11155111n,
 		https_rpc: 'https://rpc-sepolia.dark.florist/flipcardtrustone',
-		wss_rpc: 'wss://rpc-sepolia.dark.florist/flipcardtrustone',
 		eth_donator: 0xb21c33de1fab3fa15499c62b59fe0cc3250020d1n, // Richest address on Sepolia
 		currencyName: 'Sepolia Testnet ETH',
 		currencyTicker: 'SEETH',

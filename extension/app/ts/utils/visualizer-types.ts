@@ -1,8 +1,8 @@
 
-import { EthBalanceChanges, EthereumAddress, EthereumData, EthereumQuantity, EthereumSignedTransaction, EthereumTimestamp, EthereumUnsignedTransaction, SingleMulticallResponse } from './wire-types.js'
+import { EthBalanceChanges, EthereumAddress, EthereumData, EthereumQuantity, EthereumSignedTransaction, EthereumTimestamp, EthereumUnsignedTransaction, EthSubscribeParams, SingleMulticallResponse } from './wire-types.js'
 import * as funtypes from 'funtypes'
 import { QUARANTINE_CODE } from '../simulation/protectors/quarantine-codes.js'
-import { AddressBookEntry, CHAIN, NFTEntry, RenameAddressCallBack, TokenEntry, Website } from './user-interface-types.js'
+import { AddressBookEntry, CHAIN, NFTEntry, RenameAddressCallBack, TokenEntry, Website, WebsiteSocket } from './user-interface-types.js'
 
 export type TokenVisualizerResult = funtypes.Static<typeof TokenVisualizerResult>
 export const TokenVisualizerResult = funtypes.Intersect(
@@ -221,3 +221,18 @@ export const SimulationResults = funtypes.ReadonlyObject({
 	tokenPrices: funtypes.ReadonlyArray(TokenPriceEstimate),
 	activeAddress: funtypes.Union(EthereumAddress, funtypes.Undefined),
 })
+
+export type NewHeadsSubscription = funtypes.Static<typeof NewHeadsSubscription>
+export const NewHeadsSubscription = funtypes.ReadonlyObject({
+	type: funtypes.Literal('newHeads'),
+	subscriptionId: funtypes.String,
+	params: EthSubscribeParams,
+	subscriptionCreatorSocket: WebsiteSocket,
+})
+
+export type EthereumSubscription = funtypes.Static<typeof EthereumSubscription>
+export const EthereumSubscription = funtypes.Union(NewHeadsSubscription)
+
+export type EthereumSubscriptions = funtypes.Static<typeof EthereumSubscriptions>
+export const EthereumSubscriptions = funtypes.ReadonlyArray(EthereumSubscription)
+
