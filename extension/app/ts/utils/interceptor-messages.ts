@@ -2,6 +2,7 @@ import * as funtypes from 'funtypes'
 import { AddressBookEntries, AddressBookEntry, AddressInfo, AddressInfoEntry, ContactEntries, Website, WebsiteSocket } from './user-interface-types.js'
 import { EIP2612Message, EIP712Message, EthereumAddress, EthereumQuantity, EthereumUnsignedTransaction, Permit2, PersonalSignParams, SignTypedDataParams } from './wire-types.js'
 import { SimulationState, TokenPriceEstimate, SimResults } from './visualizer-types.js'
+import { ICON_ACCESS_DENIED, ICON_ACTIVE, ICON_NOT_ACTIVE, ICON_SIGNING, ICON_SIGNING_NOT_SUPPORTED, ICON_SIMULATING } from './constants.js'
 
 export type MessageMethodAndParams = funtypes.Static<typeof MessageMethodAndParams>
 export const MessageMethodAndParams = funtypes.Union(
@@ -345,9 +346,19 @@ export const NewBlockArrived = funtypes.ReadonlyObject({
 	}),
 }).asReadonly()
 
+export type TabIcon = funtypes.Static<typeof TabIcon>
+export const TabIcon = funtypes.Union(
+	funtypes.Literal(ICON_ACTIVE),
+	funtypes.Literal(ICON_ACCESS_DENIED),
+	funtypes.Literal(ICON_NOT_ACTIVE),
+	funtypes.Literal(ICON_SIMULATING),
+	funtypes.Literal(ICON_SIGNING),
+	funtypes.Literal(ICON_SIGNING_NOT_SUPPORTED),
+)
+
 export type TabIconDetails = funtypes.Static<typeof TabIconDetails>
 export const TabIconDetails = funtypes.ReadonlyObject({
-	icon: funtypes.String,
+	icon: TabIcon,
 	iconReason: funtypes.String,
 })
 

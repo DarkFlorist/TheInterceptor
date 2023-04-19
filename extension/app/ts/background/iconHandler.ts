@@ -7,10 +7,10 @@ import { imageToUri } from '../utils/imageToUri.js'
 import { Future } from '../utils/future.js'
 import { WebsiteSocket, WebsiteTabConnections } from '../utils/user-interface-types.js'
 import { getSettings, getSignerName, updateTabState } from './settings.js'
-import { TabState } from '../utils/interceptor-messages.js'
+import { TabIcon, TabState } from '../utils/interceptor-messages.js'
 import { getLastKnownCurrentTabId } from './popupMessageHandlers.js'
 
-async function setInterceptorIcon(websiteTabConnections: WebsiteTabConnections, tabId: number, icon: string, iconReason: string) {
+async function setInterceptorIcon(websiteTabConnections: WebsiteTabConnections, tabId: number, icon: TabIcon, iconReason: string) {
 	const previousValue = websiteTabConnections.get(tabId)
 	if (previousValue === undefined) return
 
