@@ -18,16 +18,16 @@ export function ChangeChain() {
 	const [chainChangeData, setChainChangeData] = useState<InterceptorChainChangeRequest | undefined>(undefined)
 	const [connectAnyway, setConnectAnyway] = useState<boolean>(false)
 
-	useEffect( () => {
+	useEffect(() => {
 		async function updatePage(message: ChangeChainRequest) {
-			setChainChangeData( {
+			setChainChangeData({
 				isInterceptorSupport : isSupportedChain(message.data.chainId.toString()),
 				chainId: message.data.chainId,
 				chainName : getChainName(message.data.chainId),
 				website: message.data.website,
 				simulationMode: message.data.simulationMode,
 				requestId: message.data.requestId,
-			} )
+			})
 		}
 
 		async function popupMessageListener(msg: unknown) {
@@ -52,9 +52,9 @@ export function ChangeChain() {
 		globalThis.close()
 	}
 
+	if (chainChangeData === undefined) return <main></main>
 	return (
 		<main>
-		{ chainChangeData === undefined ? <></> : <>
 			<div className = 'block' style = 'margin-bottom: 0px; margin: 10px'>
 				<header class = 'card-header window-header'>
 					<div class = 'card-header-icon unset-cursor'>
@@ -127,7 +127,6 @@ export function ChangeChain() {
 			</div>
 
 			<div class = 'content' style = 'height: 0.1px'/>
-		</> }
 		</main>
 	)
 }
