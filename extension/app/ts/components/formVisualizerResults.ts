@@ -3,13 +3,13 @@ import { EthBalanceChangesWithMetadata, SimResults, SimulatedAndVisualizedTransa
 import { AddressBookEntry } from '../utils/user-interface-types.js'
 
 // todo, move this to background page (and refacor hard) to form when simulation is made and we can get rid of most of the validations done here
-export function formSimulatedAndVisualizedTransaction(simState: SimulationState, visualizerResults: readonly SimResults[], addressMetaData: Map<string, AddressBookEntry> ) : SimulatedAndVisualizedTransaction[] {
-	return simState.simulatedTransactions.map( (simulatedTx, index) => {
+export function formSimulatedAndVisualizedTransaction(simState: SimulationState, visualizerResults: readonly SimResults[], addressMetaData: Map<string, AddressBookEntry>): SimulatedAndVisualizedTransaction[] {
+	return simState.simulatedTransactions.map((simulatedTx, index) => {
 		const from = addressMetaData.get(addressString(simulatedTx.signedTransaction.from))
 		if (from === undefined) throw new Error('missing metadata')
 
 		const to = simulatedTx.signedTransaction.to !== null ? addressMetaData.get(addressString(simulatedTx.signedTransaction.to)) : undefined
-		if (simulatedTx.signedTransaction.to !== null && to === undefined ) throw new Error('missing metadata')
+		if (simulatedTx.signedTransaction.to !== null && to === undefined) throw new Error('missing metadata')
 		const visualiser = visualizerResults[index].visualizerResults
 
 		const ethBalanceChanges: EthBalanceChangesWithMetadata[] = visualiser === undefined ? [] : visualiser.ethBalanceChanges.map((change) => {
@@ -55,9 +55,10 @@ export function formSimulatedAndVisualizedTransaction(simState: SimulationState,
 					type: simulatedTx.signedTransaction.type,
 					maxFeePerGas: simulatedTx.signedTransaction.maxFeePerGas,
 					maxPriorityFeePerGas: simulatedTx.signedTransaction.maxPriorityFeePerGas,
-				} : { type: simulatedTx.signedTransaction.type } ),
+				} : { type: simulatedTx.signedTransaction.type }),
 				hash: simulatedTx.signedTransaction.hash,
 			},
+			...(to !== undefined ? { to: to as AddressBookEntry } : {}),
 			realizedGasPrice: simulatedTx.realizedGasPrice,
 			ethBalanceChanges: ethBalanceChanges,
 			tokenResults: tokenResults,
@@ -73,5 +74,5 @@ export function formSimulatedAndVisualizedTransaction(simState: SimulationState,
 			}),
 			website: visualizerResults[index].website,
 		}
-	} )
+	})
 }
