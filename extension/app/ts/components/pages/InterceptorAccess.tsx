@@ -124,13 +124,14 @@ export function InterceptorAccess() {
 	useEffect( () => {
 		async function popupMessageListener(msg: unknown) {
 			const message = ExternalPopupMessage.parse(msg)
+			if (message.method === 'popup_addressBookEntriesChanged') return refreshMetadata()
 			if (message.method !== 'popup_interceptorAccessDialog') return
 			setAccessRequest(message.data)
 		}
 		browser.runtime.onMessage.addListener(popupMessageListener)
 		sendPopupMessageToBackgroundPage( { method: 'popup_interceptorAccessReadyAndListening' } )
 		return () => browser.runtime.onMessage.removeListener(popupMessageListener)
-	}, [])
+	})
 
 	async function approve() {
 		if (accessRequest === undefined) return
@@ -163,6 +164,18 @@ export function InterceptorAccess() {
 
 	function changeActiveAddress() {
 		setAppPage('ChangeActiveAddress')
+	}
+
+	function refreshMetadata() {
+		if (accessRequest === undefined || accessRequest.requestAccessToAddress?.address === undefined || accessRequest.originalRequestAccessToAddress?.address === undefined) return
+		const options = {
+			socket: accessRequest.socket,
+			website: accessRequest.website,
+			websiteOrigin: accessRequest.website.websiteOrigin,
+			requestAccessToAddress: accessRequest.requestAccessToAddress.address,
+			originalRequestAccessToAddress: accessRequest.originalRequestAccessToAddress.address,
+		}
+		sendPopupMessageToBackgroundPage({ method: 'popup_refreshInterceptorAccessMetadata', options })
 	}
 
 	function refreshActiveAddress() {
