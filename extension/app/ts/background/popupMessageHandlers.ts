@@ -55,12 +55,10 @@ export async function changeActiveAddress(websiteTabConnections: WebsiteTabConne
 		sendMessageToApprovedWebsitePorts(websiteTabConnections, 'request_signer_to_eth_requestAccounts', [])
 		sendMessageToApprovedWebsitePorts(websiteTabConnections, 'request_signer_chainId', [])
 		const signerAccount = await getSignerAccount()
-		if (signerAccount !== undefined) {
-			await changeActiveAddressAndChainAndResetSimulation(websiteTabConnections, {
-				simulationMode: addressChange.options.simulationMode,
-				activeAddress: signerAccount,
-			})
-		}
+		await changeActiveAddressAndChainAndResetSimulation(websiteTabConnections, {
+			simulationMode: addressChange.options.simulationMode,
+			activeAddress: signerAccount,
+		})
 	} else {
 		await changeActiveAddressAndChainAndResetSimulation(websiteTabConnections, {
 			simulationMode: addressChange.options.simulationMode,
