@@ -76,6 +76,17 @@ export const InterceptorAccessRefresh = funtypes.ReadonlyObject({
 	}),
 }).asReadonly()
 
+export type RefreshInterceptorAccessMetadata = funtypes.Static<typeof RefreshInterceptorAccessMetadata>
+export const RefreshInterceptorAccessMetadata = funtypes.ReadonlyObject({
+	method: funtypes.Literal('popup_refreshInterceptorAccessMetadata'),
+	options: funtypes.ReadonlyObject({
+		socket: WebsiteSocket,
+		website: Website,
+		originalRequestAccessToAddress: EthereumAddress,
+		requestAccessToAddress: EthereumAddress,
+	}),
+}).asReadonly()
+
 export type InterceptorAccessChangeAddress = funtypes.Static<typeof InterceptorAccessChangeAddress>
 export const InterceptorAccessChangeAddress = funtypes.ReadonlyObject({
 	method: funtypes.Literal('popup_interceptorAccessChangeAddress'),
@@ -665,6 +676,7 @@ export const PopupMessage = funtypes.Union(
 	InterceptorAccess,
 	InterceptorAccessRefresh,
 	InterceptorAccessChangeAddress,
+	RefreshInterceptorAccessMetadata,
 	ChangeInterceptorAccess,
 	ChangeActiveChain,
 	ChainChangeConfirmation,

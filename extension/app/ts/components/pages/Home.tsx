@@ -31,15 +31,15 @@ function SignerExplanation(param: SignerExplanationParams) {
 	if (param.activeAddress !== undefined) return <></>
 	if (param.tabIcon === ICON_NOT_ACTIVE) {
 		return <div class = 'content'>
-			<p class = 'paragraph' style = 'color: var(--subtitle-text-color)'>(You are not currently using a DApp)</p>
+			<p class = 'paragraph' style = 'color: var(--subtitle-text-color)'>(The page you are looking at has not yet connected to the wallet, or you do not have a browser wallet installed)</p>
 		</div>
 	}
 	if (param.useSignersAddressAsActiveAddress || !param.simulationMode) {
 		<div class = 'content'>
 			<p class = 'paragraph' style = 'color: var(--subtitle-text-color)'>
 				{ param.signerName === 'NoSigner'
-					? 'Please make sure that the signer is connected to the active DApp'
-					: `Please make sure ${ getPrettySignerName(param.signerName) } is connected to the active DApp`
+					? 'Please make sure that you have gone through the wallet connection process on the page and allowed the page to see your signer account.'
+					: `Please make sure that you have gone through the wallet connection process on the page and allowed the page to see your ${ getPrettySignerName(param.signerName) } account.`
 				}
 			</p>
 		</div>

@@ -4,7 +4,7 @@ import { Semaphore } from '../utils/semaphore.js'
 import { browserStorageLocalGet, browserStorageLocalSet, browserStorageLocalSetKeys, browserStorageLocalSingleGetWithDefault } from '../utils/typescript.js'
 import { AddressInfoArray, ContactEntries } from '../utils/user-interface-types.js'
 import { EthereumSubscriptions, SimulationResults } from '../utils/visualizer-types.js'
-import { EthereumAddress, EthereumAddressOrUndefined, EthereumQuantity } from '../utils/wire-types.js'
+import { EthereumAddress, EthereumAddressOrMissing, EthereumQuantity } from '../utils/wire-types.js'
 import * as funtypes from 'funtypes'
 
 export const defaultAddresses = [
@@ -53,8 +53,8 @@ export async function getSettings() : Promise<Settings> {
 	])
 	const useSignersAddressAsActiveAddress = results.useSignersAddressAsActiveAddress !== undefined ? funtypes.Boolean.parse(results.useSignersAddressAsActiveAddress) : false
 	return {
-		activeSimulationAddress: results.activeSimulationAddress !== undefined ? EthereumAddress.parse(results.activeSimulationAddress) : (useSignersAddressAsActiveAddress ? undefined : defaultAddresses[0].address),
-		activeSigningAddress: EthereumAddressOrUndefined.parse(results.activeSigningAddress),
+		activeSimulationAddress: results.activeSimulationAddress !== undefined ? EthereumAddressOrMissing.parse(results.activeSimulationAddress) : defaultAddresses[0].address,
+		activeSigningAddress: results.activeSigningAddress === undefined ? undefined : EthereumAddressOrMissing.parse(results.activeSigningAddress),
 		page: results.page !== undefined ? Page.parse(results.page) : 'Home',
 		useSignersAddressAsActiveAddress: useSignersAddressAsActiveAddress,
 		websiteAccess: results.websiteAccess !== undefined ? parseAccessWithLegacySupport(results.websiteAccess) : [],
@@ -85,12 +85,12 @@ export async function setOpenedAddressBookTabId(addressbookTabId: number) {
 	return await browserStorageLocalSet('addressbookTabId', addressbookTabId)
 }
 
-export async function changeSimulationMode(changes: { simulationMode: boolean, activeChain?: EthereumQuantity, activeSimulationAddress?: EthereumAddress, activeSigningAddress?: EthereumAddress } ) {
+export async function changeSimulationMode(changes: { simulationMode: boolean, activeChain?: EthereumQuantity, activeSimulationAddress?: EthereumAddress | undefined, activeSigningAddress?: EthereumAddress | undefined }) {
 	return await browserStorageLocalSetKeys({
 		simulationMode: changes.simulationMode,
 		...changes.activeChain ? { activeChain: EthereumQuantity.serialize(changes.activeChain) as string }: {},
-		...changes.activeSimulationAddress ? { activeSimulationAddress: EthereumAddress.serialize(changes.activeSimulationAddress) as string }: {},
-		...changes.activeSigningAddress ? { activeSigningAddress: EthereumAddress.serialize(changes.activeSigningAddress) as string }: {},
+		...'activeSimulationAddress' in changes ? { activeSimulationAddress: EthereumAddressOrMissing.serialize(changes.activeSimulationAddress) as string }: {},
+		...'activeSigningAddress' in changes ? { activeSigningAddress: EthereumAddressOrMissing.serialize(changes.activeSigningAddress) as string }: {},
 	})
 }
 

@@ -138,7 +138,7 @@ export function AddNewAddress(param: AddAddressParam) {
 	const [activeAddress, setActiveAddress] = useState<bigint | undefined>(undefined)
 	const [addressType, setAddressType] = useState<AddressBookEntryCategory>('addressInfo')
 
-	function add() {
+	async function add() {
 		if (addressInput === undefined) return
 		if (!areInputValid()) return
 
@@ -148,7 +148,7 @@ export function AddNewAddress(param: AddAddressParam) {
 			case 'NFT':
 			case 'other contract': throw new Error(`not upported address type! ${ addressType }`)
 			case 'contact': {
-				sendPopupMessageToBackgroundPage({
+				await sendPopupMessageToBackgroundPage({
 					method: 'popup_addOrModifyAddressBookEntry',
 					options: {
 						type: 'contact' as const,
@@ -159,7 +159,7 @@ export function AddNewAddress(param: AddAddressParam) {
 				break
 			}
 			case 'addressInfo': {
-				sendPopupMessageToBackgroundPage({
+				await sendPopupMessageToBackgroundPage({
 					method: 'popup_addOrModifyAddressBookEntry',
 					options: {
 						type: 'addressInfo' as const,
@@ -178,14 +178,14 @@ export function AddNewAddress(param: AddAddressParam) {
 		setAskForAddressAccess(true)
 	}
 
-	function createAndSwitch() {
+	async function createAndSwitch() {
 		if (addressInput === undefined) return
 		if (!areInputValid()) return
-		add()
-		if (param.setActiveAddressAndInformAboutIt !== undefined) param.setActiveAddressAndInformAboutIt(BigInt(addressInput))
+		await add()
+		if (param.setActiveAddressAndInformAboutIt !== undefined) await param.setActiveAddressAndInformAboutIt(BigInt(addressInput))
 	}
 
-	useEffect( () => {
+	useEffect(() => {
 		if (param.addingNewAddress.addingAddress === false) {
 			const addressInput = checksummedAddress(param.addingNewAddress.entry.address)
 			setAddressInput(addressInput)
