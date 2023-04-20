@@ -687,9 +687,9 @@ export function ExtraDetailsTransactionCard({ transaction }: ExtraDetailsTransac
 						<CellElement text = 'Transaction Type: '/>
 						<CellElement text =  { transaction.type }/>
 						<CellElement text = 'Nonce: '/>
-						<CellElement text = { transaction.nonce.toString() }/>
+						<CellElement text = { transaction.nonce.toString(10) }/>
 						<CellElement text = 'Gas limit: '/>
-						<CellElement text = { `${ transaction.gas.toString() } gas` }/>
+						<CellElement text = { `${ transaction.gas.toString(10) } gas` }/>
 
 						{ transaction.type !== '1559' ? <></> : <>
 							<CellElement text = 'Max Fee Per Gas: '/>
