@@ -10,7 +10,7 @@ export type IEthereumClientService = Pick<EthereumClientService, keyof EthereumC
 export class EthereumClientService {
 	private chain: CHAIN
 	private cachedBlock: EthereumBlockHeader | undefined = undefined
-	private cacheRefreshTimer: NodeJS.Timer | undefined = undefined
+	private cacheRefreshTimer: number | undefined = undefined
 	private lastCacheAccess: number = 0
 	private retrievingBlock: boolean = false
 	private newBlockCallback: (blockNumber: bigint, ethereumClientService: EthereumClientService) => void

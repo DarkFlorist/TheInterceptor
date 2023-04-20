@@ -15,8 +15,8 @@ export default function Container(props: Props) {
 	const [content, setContent] = useState<string>('')
 	const [containerElement, setContainerElement] = useState<HTMLDivElement | null>(null)
 	const [clickPosition, setClickPosition] = useState<{ x: number, y: number } | null>(null)
-	let copyMessageTimeoutId: NodeJS.Timeout | undefined = undefined
-	let toolTipTimeoutId: NodeJS.Timeout | undefined = undefined
+	let copyMessageTimeoutId: number | undefined = undefined
+	let toolTipTimeoutId: number | undefined = undefined
 	const onRefChange = useCallback( (containerElement: HTMLDivElement | null) => {
 		setContainerElement(containerElement)
 		if (containerElement) {

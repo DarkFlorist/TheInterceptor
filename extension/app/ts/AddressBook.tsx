@@ -192,7 +192,7 @@ export function AddressBook() {
 
 	const [addingNewAddressType, setAddingNewAddressType] = useState<AddingNewAddressType>({ addingAddress: true, type: 'addressInfo' as const })
 
-	const scrollTimer = useRef<NodeJS.Timeout | undefined>(undefined)
+	const scrollTimer = useRef<number | undefined>(undefined)
 
 	useEffect(() => { activeFilterRef.current = activeFilter }, [activeFilter])
 	useEffect(() => { searchStringRef.current = searchString }, [searchString])

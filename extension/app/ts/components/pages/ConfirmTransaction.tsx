@@ -25,7 +25,7 @@ type TransactionCardParams = {
 }
 
 function TransactionCard(param: TransactionCardParams) {
-	const simTx = param.simulationAndVisualisationResults.simulatedAndVisualizedTransactions.at(-1)
+	const simTx = param.simulationAndVisualisationResults.simulatedAndVisualizedTransactions[param.simulationAndVisualisationResults.simulatedAndVisualizedTransactions.length - 1]
 	if (simTx === undefined) return <></>
 
 	return <>
@@ -125,7 +125,7 @@ export function ConfirmTransaction() {
 			const addressMetaData = new Map(message.data.addressBookEntries.map( (x) => [addressString(x.address), x]))
 			const txs = formSimulatedAndVisualizedTransaction(message.data.simulationState, message.data.visualizerResults, addressMetaData)
 			setTransactionToSimulate(message.data.transactionToSimulate)
-			setSender(txs.at(-1)?.transaction.from)
+			setSender(txs[txs.length - 1]?.transaction.from)
 			setSimulatedAndVisualizedTransactions(txs)
 			setDialogState(message.data)
 			setSimulationMode(message.data.simulationMode)
@@ -180,7 +180,7 @@ export function ConfirmTransaction() {
 
 	function Buttons() {
 		if (dialogState === undefined) return <></>
-		const tx = simulatedAndVisualizedTransactions.at(-1)
+		const tx = simulatedAndVisualizedTransactions[simulatedAndVisualizedTransactions.length - 1]
 		if (tx === undefined) return <></>
 		const identified = identifyTransaction(tx)
 
