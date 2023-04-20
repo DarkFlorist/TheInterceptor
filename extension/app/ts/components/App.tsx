@@ -71,7 +71,7 @@ export function App() {
 		}
 	}
 
-	useEffect( () => {
+	useEffect(() => {
 		const setSimulationState = (
 			simState: SimulationState | undefined,
 			visualizerResults: readonly SimResults[] | undefined,
@@ -145,6 +145,7 @@ export function App() {
 			const message = ExternalPopupMessage.parse(msg)
 			if (message.method === 'popup_settingsUpdated') return updateHomePageSettings(message.data, true)
 			if (message.method === 'popup_websiteIconChanged') return updateTabIcon(message)
+			if (message.method === 'popup_failed_to_get_block') return
 			if (message.method !== 'popup_UpdateHomePage') return await sendPopupMessageToBackgroundPage( { method: 'popup_requestNewHomeData' } )
 			return updateHomePage(message)
 		}
@@ -152,15 +153,15 @@ export function App() {
 		return () => {
 			browser.runtime.onMessage.removeListener(popupMessageListener)
 		}
-	}, [])
+	})
 
-	useEffect( () => {
-		sendPopupMessageToBackgroundPage( { method: 'popup_requestNewHomeData' } )
+	useEffect(() => {
+		sendPopupMessageToBackgroundPage({ method: 'popup_requestNewHomeData' })
 	}, [])
 
 	function setAndSaveAppPage(page: Page) {
 		setAppPage(page)
-		sendPopupMessageToBackgroundPage( { method: 'popup_changePage', options: page } )
+		sendPopupMessageToBackgroundPage({ method: 'popup_changePage', options: page })
 	}
 
 	async function addressPaste(address: string) {

@@ -238,6 +238,11 @@ export function Home(param: HomeParams) {
 			browser.runtime.onMessage.removeListener(popupMessageListener)
 		}
 	})
+	useEffect(() => {
+		if (param.currentBlockNumber === undefined) {
+			setConnectedToNetwork({ connected: false, timestamp: Date.now() })
+		}
+	}, [param.currentBlockNumber])
 
 	function changeActiveAddress() {
 		param.setAndSaveAppPage('ChangeActiveAddress')
@@ -301,7 +306,9 @@ export function Home(param: HomeParams) {
 				</div>
 			</div>
 		: <></> }
-		{ !simulationMode || activeSimulationAddress === undefined ? <></> :
+
+		{ simulationMode && currentBlockNumber === undefined ? <div style = 'padding: 10px'> <DinoSays text = { 'Not connected to a network..' } /> </div> : <></> }
+		{ !simulationMode || activeSimulationAddress === undefined || currentBlockNumber === undefined ? <></> :
 			<SimulationResults
 				simulationAndVisualisationResults = { simulationAndVisualisationResults }
 				removeTransaction = { removeTransaction }
