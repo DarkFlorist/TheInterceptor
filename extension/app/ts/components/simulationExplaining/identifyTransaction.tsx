@@ -94,6 +94,7 @@ export type SimulatedAndVisualizedEtherTransferTransaction = SimulatedAndVisuali
 export function isEtherTransfer(simTx: SimulatedAndVisualizedTransaction): simTx is SimulatedAndVisualizedEtherTransferTransaction {
 	if (simTx.transaction.input.length == 0
 		&& simTx.tokenResults.length == 0
+		&& simTx.transaction.to
 		&& simTx.gasSpent == 21000n) return true
 	return false
 }
@@ -140,7 +141,7 @@ export function identifyTransaction(simTx: SimulatedAndVisualizedTransaction): I
 		signingAction: 'Transfer Ether',
 		simulationAction: 'Simulate Ether Transfer',
 		rejectAction: 'Reject Ether Transfer',
-		identifiedTransaction: simTx,
+		identifiedTransaction: simTx
 	}
 
 	const identifiedSwap = identifySwap(simTx)
