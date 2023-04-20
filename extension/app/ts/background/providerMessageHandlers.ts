@@ -18,14 +18,13 @@ export async function ethAccountsReply(websiteTabConnections: WebsiteTabConnecti
 		}
 	})
 	sendInternalWindowMessage({ method: 'window_signer_accounts_changed', data: { socket: getSocketFromPort(port) } })
-
 	// update active address if we are using signers address
 	const settings = await getSettings()
 	if ( (settings.useSignersAddressAsActiveAddress && settings.activeSimulationAddress !== signerAccounts[0])
-	|| (settings.simulationMode === false && settings.activeSimulationAddress !== signerAccounts[0])) {
+	|| (settings.simulationMode === false && settings.activeSigningAddress !== signerAccounts[0])) {
 		await changeActiveAddressAndChainAndResetSimulation(websiteTabConnections, {
 			simulationMode: settings.simulationMode,
-			activeAddress: signerAccounts[0], 
+			activeAddress: signerAccounts[0],
 		})
 		await sendPopupMessageToOpenWindows({ method: 'popup_accounts_update' })
 	}

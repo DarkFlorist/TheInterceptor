@@ -119,7 +119,7 @@ export type AddingNewAddressType = {
 
 export type AddAddressParam = {
 	close: () => void,
-	setActiveAddressAndInformAboutIt: ((address: bigint | 'signer') => void) | undefined,
+	setActiveAddressAndInformAboutIt: ((address: bigint | 'signer') => Promise<void>) | undefined,
 	addingNewAddress: AddingNewAddressType,
 	activeAddress: bigint | undefined,
 }
@@ -172,6 +172,9 @@ export type SimulationStateParam = {
 	removeTransaction: (tx: SimulatedAndVisualizedTransaction) => void,
 	currentBlockNumber: bigint | undefined,
 	renameAddressCallBack: RenameAddressCallBack,
+	disableReset: boolean,
+	resetSimulation: () => void,
+	removeTransactionHashes: bigint[],
 }
 
 export type LogAnalysisParams = {

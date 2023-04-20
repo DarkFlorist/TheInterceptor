@@ -7,10 +7,10 @@ import { imageToUri } from '../utils/imageToUri.js'
 import { Future } from '../utils/future.js'
 import { WebsiteSocket, WebsiteTabConnections } from '../utils/user-interface-types.js'
 import { getSettings, getSignerName, updateTabState } from './settings.js'
-import { TabState } from '../utils/interceptor-messages.js'
+import { TabIcon, TabState } from '../utils/interceptor-messages.js'
 import { getLastKnownCurrentTabId } from './popupMessageHandlers.js'
 
-async function setInterceptorIcon(websiteTabConnections: WebsiteTabConnections, tabId: number, icon: string, iconReason: string) {
+async function setInterceptorIcon(websiteTabConnections: WebsiteTabConnections, tabId: number, icon: TabIcon, iconReason: string) {
 	const previousValue = websiteTabConnections.get(tabId)
 	if (previousValue === undefined) return
 
@@ -67,6 +67,17 @@ export async function updateExtensionBadge() {
 }
 
 export async function retrieveWebsiteDetails(port: browser.runtime.Port, websiteOrigin: string) {
+	const tryGettingTab = async (tabId: number) => {
+		try {
+			return browser.tabs.get(tabId)
+		} catch (error) {
+			if (!(error instanceof Error)) throw error
+			if (!error.message?.includes('No tab with id')) throw error
+			// if tab is not found (user might have closed it)
+			return undefined
+		}
+	}
+
 	const tabId = port.sender?.tab?.id
 	if (tabId === undefined) return  {
 		websiteOrigin: websiteOrigin,
@@ -84,7 +95,8 @@ export async function retrieveWebsiteDetails(port: browser.runtime.Port, website
 	const waitForLoadedFuture = new Future<void>
 	try {
 		browser.tabs.onUpdated.addListener(listener)
-		if ((await browser.tabs.get(tabId)).status === 'complete') {
+		const tab = await tryGettingTab(tabId)
+		if (tab !== undefined && tab.status === 'complete') {
 			waitForLoadedFuture.resolve()
 		}
 		await waitForLoadedFuture
@@ -104,15 +116,15 @@ export async function retrieveWebsiteDetails(port: browser.runtime.Port, website
 	// https://bugzilla.mozilla.org/show_bug.cgi?id=1450384
 	// https://bugzilla.mozilla.org/show_bug.cgi?id=1417721
 	// below is my attempt to try to get favicon...
-	while ((await browser.tabs.get(tabId)).favIconUrl === undefined) {
+	while ((await tryGettingTab(tabId))?.favIconUrl === undefined) {
 		await new Promise(resolve => setTimeout(resolve, 100))
 		maxRetries--
 		if (maxRetries <= 0) break // timeout
 	}
-	const tab = await browser.tabs.get(tabId)
+	const tab = await tryGettingTab(tabId)
 	return {
 		websiteOrigin: websiteOrigin,
-		title: tab.title,
-		icon: tab.favIconUrl === undefined ? undefined : await imageToUri(tab.favIconUrl)
+		title: tab?.title,
+		icon: tab?.favIconUrl === undefined ? undefined : await imageToUri(tab.favIconUrl)
 	}
 }

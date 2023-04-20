@@ -131,8 +131,8 @@ export type EthereumData = funtypes.Static<typeof EthereumData>
 export const EthereumAddress = funtypes.String.withParser(AddressParser)
 export type EthereumAddress = funtypes.Static<typeof EthereumAddress>
 
-export const EthereumAddressOrUndefined = funtypes.Union(EthereumAddress, funtypes.Undefined)
-export type EthereumAddressOrUndefined = funtypes.Static<typeof EthereumAddressOrUndefined>
+export const EthereumAddressOrMissing = funtypes.Union(EthereumAddress, funtypes.Literal('missing').withParser(LiteralConverterParserFactory('missing', undefined)))
+export type EthereumAddressOrMissing = funtypes.Static<typeof EthereumAddressOrMissing>
 
 export const EthereumBytes32 = funtypes.String.withParser(Bytes32Parser)
 export type EthereumBytes32 = funtypes.Static<typeof EthereumBytes32>

@@ -19,7 +19,7 @@ function AssociatedTogether({ associatedAddresses, renameAddressCallBack }: { as
 				<p class = 'card-header-title' style = 'font-weight: unset; font-size: 0.8em;'>
 					{ associatedAddresses.length <= 1 ? 'The website cannot associate any addresses with each other' : <>
 						There are&nbsp;
-						<p style = 'font-size: 0.8em; font-weight: 700'>{ convertNumberToCharacterRepresentationIfSmallEnough(associatedAddresses.length).toUpperCase() } </p>
+						<p style = 'font-weight: 700'>{ convertNumberToCharacterRepresentationIfSmallEnough(associatedAddresses.length).toUpperCase() } </p>
 						&nbsp;addresses that the website can associate together with
 					</> }
 				</p>
@@ -124,13 +124,14 @@ export function InterceptorAccess() {
 	useEffect( () => {
 		async function popupMessageListener(msg: unknown) {
 			const message = ExternalPopupMessage.parse(msg)
+			if (message.method === 'popup_addressBookEntriesChanged') return refreshMetadata()
 			if (message.method !== 'popup_interceptorAccessDialog') return
 			setAccessRequest(message.data)
 		}
 		browser.runtime.onMessage.addListener(popupMessageListener)
 		sendPopupMessageToBackgroundPage( { method: 'popup_interceptorAccessReadyAndListening' } )
 		return () => browser.runtime.onMessage.removeListener(popupMessageListener)
-	}, [])
+	})
 
 	async function approve() {
 		if (accessRequest === undefined) return
@@ -165,18 +166,30 @@ export function InterceptorAccess() {
 		setAppPage('ChangeActiveAddress')
 	}
 
-	function refreshActiveAddress() {
+	async function refreshMetadata() {
+		if (accessRequest === undefined || accessRequest.requestAccessToAddress?.address === undefined || accessRequest.originalRequestAccessToAddress?.address === undefined) return
+		const options = {
+			socket: accessRequest.socket,
+			website: accessRequest.website,
+			websiteOrigin: accessRequest.website.websiteOrigin,
+			requestAccessToAddress: accessRequest.requestAccessToAddress.address,
+			originalRequestAccessToAddress: accessRequest.originalRequestAccessToAddress.address,
+		}
+		await sendPopupMessageToBackgroundPage({ method: 'popup_refreshInterceptorAccessMetadata', options })
+	}
+
+	async function refreshActiveAddress() {
 		if (accessRequest === undefined) throw Error('access request not loaded')
-		sendPopupMessageToBackgroundPage({ method: 'popup_interceptorAccessRefresh', options: {
+		await sendPopupMessageToBackgroundPage({ method: 'popup_interceptorAccessRefresh', options: {
 			socket: accessRequest.socket,
 			website: accessRequest.website,
 			requestAccessToAddress: accessRequest.requestAccessToAddress?.address,
 		} } )
 	}
 
-	function setActiveAddressAndInformAboutIt(address: bigint | 'signer') {
+	async function setActiveAddressAndInformAboutIt(address: bigint | 'signer') {
 		if (accessRequest === undefined) throw Error('access request not loaded')
-		sendPopupMessageToBackgroundPage({ method: 'popup_interceptorAccessChangeAddress', options: {
+		await sendPopupMessageToBackgroundPage({ method: 'popup_interceptorAccessChangeAddress', options: {
 			socket: accessRequest.socket,
 			website: accessRequest.website,
 			requestAccessToAddress: accessRequest.requestAccessToAddress?.address,

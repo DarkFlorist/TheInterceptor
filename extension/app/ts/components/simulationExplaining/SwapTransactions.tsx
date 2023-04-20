@@ -77,7 +77,7 @@ export function formSwapAsset(tokenResult: TokenVisualizerERC20Event[] | TokenVi
 			type: 'NFT',
 			tokenAddress: tokenResult.token,
 			tokenId: tokenResult.tokenId
-		}	
+		}
 	}
 }
 
@@ -130,7 +130,7 @@ export function identifySwap(simTransaction: SimulatedAndVisualizedTransaction):
 			sender: simTransaction.transaction.from,
 			sendAsset: formSwapAsset(tokensSent[0].type === 'NFT' ? tokensSent[0] : tokensSent.filter((token): token is TokenVisualizerERC20Event => token.type === 'Token'), sendBalanceAfter),
 			receiveAsset: {
-				type: 'Ether', 
+				type: 'Ether',
 				amount: ethDiff,
 				beforeAfterBalance: {
 					previousBalance: etherChange[0].before,
@@ -147,7 +147,7 @@ export function identifySwap(simTransaction: SimulatedAndVisualizedTransaction):
 		return {
 			sender: simTransaction.transaction.from,
 			sendAsset: {
-				type: 'Ether', 
+				type: 'Ether',
 				amount: -ethDiff,
 				beforeAfterBalance: {
 					previousBalance: etherChange[0].before,
@@ -318,15 +318,15 @@ export function VisualizeSwapAsset({ swapAsset, chain }: { swapAsset: SwapAsset,
 							amount = { swapAsset.amount }
 							style = { tokenStyle }
 						/>
-						</div>
-						<div class = 'log-cell' style = 'justify-content: right;'>
-							<EtherSymbol
-								amount = { swapAsset.amount }
-								chain = { chain }
-								useFullTokenName = { false }
-								style = { tokenStyle}
-							/>
-						</div>		
+					</div>
+					<div class = 'log-cell' style = 'justify-content: right;'>
+						<EtherSymbol
+							amount = { swapAsset.amount }
+							chain = { chain }
+							useFullTokenName = { false }
+							style = { tokenStyle}
+						/>
+					</div>
 				</span>
 				<span class = 'grid swap-grid'>
 					<div class = 'log-cell'/>

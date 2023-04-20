@@ -1,5 +1,5 @@
 import { Future } from '../../utils/future.js'
-import { ExternalPopupMessage, InterceptedRequest, InterceptorAccessChangeAddress, InterceptorAccessRefresh, InterceptorAccessReply, PendingAccessRequest, Settings, WebsiteAccessArray, WindowMessage } from '../../utils/interceptor-messages.js'
+import { ExternalPopupMessage, InterceptedRequest, InterceptorAccessChangeAddress, InterceptorAccessRefresh, InterceptorAccessReply, PendingAccessRequest, RefreshInterceptorAccessMetadata, Settings, WebsiteAccessArray, WindowMessage } from '../../utils/interceptor-messages.js'
 import { AddressInfo, AddressInfoEntry, Website, WebsiteSocket, WebsiteTabConnections } from '../../utils/user-interface-types.js'
 import { getAssociatedAddresses, setAccess, updateWebsiteApprovalAccesses } from '../accessManagement.js'
 import { changeActiveAddressAndChainAndResetSimulation, handleContentScriptMessage, postMessageIfStillConnected, refuseAccess } from '../background.js'
@@ -257,6 +257,26 @@ export async function requestAddressChange(websiteTabConnections: WebsiteTabConn
 			website: message.options.website,
 			requestAccessToAddress: newActiveAddressAddressInfo,
 			originalRequestAccessToAddress: findAddressInfo(message.options.requestAccessToAddress, settings.userAddressBook.addressInfos),
+			associatedAddresses: associatedAddresses,
+			addressInfos: settings.userAddressBook.addressInfos,
+			signerAccounts: [],
+			signerName: await getSignerName(),
+			simulationMode: settings.simulationMode,
+			socket: message.options.socket,
+		}
+	})
+}
+
+export async function interceptorAccessMetadataRefresh(message: RefreshInterceptorAccessMetadata) {
+	const settings = await getSettings()
+	const requestAccessTo = findAddressInfo(message.options.requestAccessToAddress, settings.userAddressBook.addressInfos)
+	const associatedAddresses = getAssociatedAddresses(settings, message.options.website.websiteOrigin, requestAccessTo)
+	return await sendPopupMessageToOpenWindows({
+		method: 'popup_interceptorAccessDialog',
+		data: {
+			website: message.options.website,
+			requestAccessToAddress: requestAccessTo,
+			originalRequestAccessToAddress: requestAccessTo,
 			associatedAddresses: associatedAddresses,
 			addressInfos: settings.userAddressBook.addressInfos,
 			signerAccounts: [],

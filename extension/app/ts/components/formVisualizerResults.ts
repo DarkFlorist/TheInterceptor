@@ -3,8 +3,9 @@ import { EthBalanceChangesWithMetadata, SimResults, SimulatedAndVisualizedTransa
 import { AddressBookEntry } from '../utils/user-interface-types.js'
 
 // todo, move this to background page (and refacor hard) to form when simulation is made and we can get rid of most of the validations done here
-export function formSimulatedAndVisualizedTransaction(simState: SimulationState, visualizerResults: readonly SimResults[], addressMetaData: Map<string, AddressBookEntry>): SimulatedAndVisualizedTransaction[] {
-	return simState.simulatedTransactions.map((simulatedTx, index) => {
+export function formSimulatedAndVisualizedTransaction(simState: SimulationState, visualizerResults: readonly SimResults[], addressMetaData: Map<string, AddressBookEntry> ): readonly SimulatedAndVisualizedTransaction[] {
+	return simState.simulatedTransactions.map( (simulatedTx, index) => {
+
 		const from = addressMetaData.get(addressString(simulatedTx.signedTransaction.from))
 		if (from === undefined) throw new Error('missing metadata')
 
