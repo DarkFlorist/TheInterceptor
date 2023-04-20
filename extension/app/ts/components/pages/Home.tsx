@@ -6,7 +6,7 @@ import { SimulationSummary } from '../simulationExplaining/SimulationSummary.js'
 import { ChainSelector } from '../subcomponents/ChainSelector.js'
 import { Spinner } from '../subcomponents/Spinner.js'
 import { DEFAULT_TAB_CONNECTION, getChainName, ICON_NOT_ACTIVE, ICON_SIGNING, ICON_SIGNING_NOT_SUPPORTED, isSupportedChain } from '../../utils/constants.js'
-import { SignerName, TabIcon, TabIconDetails } from '../../utils/interceptor-messages.js'
+import { ExternalPopupMessage, SignerName, TabIcon, TabIconDetails } from '../../utils/interceptor-messages.js'
 import { getPrettySignerName, SignerLogoText, SignersLogoName } from '../subcomponents/signers.js'
 import { Error } from '../subcomponents/Error.js'
 import { ToolTip } from '../subcomponents/CopyToClipboard.js'
@@ -193,6 +193,7 @@ export function Home(param: HomeParams) {
 	const [makeMeRich, setMakeMeRich] = useState<boolean>(false)
 	const [disableReset, setDisableReset] = useState<boolean>(false)
 	const [removeTransactionHashes, setRemoveTransactionHashes] = useState<bigint[]>([])
+	const [connectedToNetwork, setConnectedToNetwork] = useState<undefined | boolean>(undefined)
 
 	useEffect(() => {
 		setSimulationAndVisualisationResults(param.simVisResults)
@@ -222,6 +223,20 @@ export function Home(param: HomeParams) {
 		param.signerName,
 		param.simVisResults
 	])
+	useEffect(() => {
+		const popupMessageListener = async (msg: unknown) => {
+			const message = ExternalPopupMessage.parse(msg)
+			switch (message.method) {
+				case 'popup_new_block_arrived': return setConnectedToNetwork(true)
+				case 'popup_failed_to_get_block': return setConnectedToNetwork(false)
+				default: break
+			}
+		}
+		browser.runtime.onMessage.addListener(popupMessageListener)
+		return () => {
+			browser.runtime.onMessage.removeListener(popupMessageListener)
+		}
+	})
 
 	function changeActiveAddress() {
 		param.setAndSaveAppPage('ChangeActiveAddress')
@@ -252,6 +267,12 @@ export function Home(param: HomeParams) {
 		{ !isSupportedChain(activeChain.toString()) ?
 			<div style = 'margin: 10px; background-color: var(--bg-color);'>
 				<Error text = { `${ getChainName(activeChain) } is not a supported network. The Interceptor is disabled while you are using the network.` }/>
+			</div>
+		: <></> }
+
+		{ connectedToNetwork === false ?
+			<div style = 'margin: 10px; background-color: var(--bg-color);'>
+				<Error text = { 'Unable to connect to a Ethereum node.' }/>
 			</div>
 		: <></> }
 

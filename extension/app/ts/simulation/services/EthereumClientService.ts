@@ -14,13 +14,15 @@ export class EthereumClientService {
 	private lastCacheAccess: number = 0
 	private retrievingBlock: boolean = false
 	private newBlockCallback: (blockNumber: bigint, ethereumClientService: EthereumClientService) => void
+	private onErrorBlockCallback: (ethereumClientService: EthereumClientService, error: Error) => void
 	private requestHandler
 	private cleanedUp = false
 
-    constructor(requestHandler: IEthereumJSONRpcRequestHandler, chain: CHAIN, newBlockCallback: (blockNumber: bigint, ethereumClientService: EthereumClientService) => void) {
+    constructor(requestHandler: IEthereumJSONRpcRequestHandler, chain: CHAIN, newBlockCallback: (blockNumber: bigint, ethereumClientService: EthereumClientService) => void, onErrorBlockCallback: (ethereumClientService: EthereumClientService, error: Error) => void) {
 		this.requestHandler = requestHandler
 		this.chain = chain
 		this.newBlockCallback = newBlockCallback
+		this.onErrorBlockCallback = onErrorBlockCallback
     }
 
 	public getCachedBlock() {
@@ -73,8 +75,11 @@ export class EthereumClientService {
 				this.cachedBlock = newBlock
 				this.newBlockCallback(newBlock.number, this)
 			}
-		} catch(e) {
-			throw e
+		} catch(error) {
+			if (error instanceof Error) {
+				return this.onErrorBlockCallback(this, error)
+			}
+			throw error
 		} finally {
 			this.retrievingBlock = false
 		}

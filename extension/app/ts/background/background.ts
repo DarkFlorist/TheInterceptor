@@ -307,6 +307,10 @@ async function newBlockCallback(blockNumber: bigint, ethereumClientService: Ethe
 	refreshSimulation(ethereumClientService, await getSettings())
 }
 
+async function onErrorBlockCallback(_ethereumClientService: EthereumClientService, _error: Error) {
+	sendPopupMessageToOpenWindows({ method: 'popup_failed_to_get_block' })
+}
+
 const changeActiveAddressAndChainAndResetSimulationSemaphore = new Semaphore(1)
 export async function changeActiveAddressAndChainAndResetSimulation(
 	websiteTabConnections: WebsiteTabConnections,
@@ -337,7 +341,7 @@ export async function changeActiveAddressAndChainAndResetSimulation(
 			const chainString = change.activeChain.toString()
 			if (isSupportedChain(chainString)) {
 				simulator.cleanup()
-				simulator = new Simulator(chainString, newBlockCallback)
+				simulator = new Simulator(chainString, newBlockCallback, onErrorBlockCallback)
 			}
 			sendMessageToApprovedWebsitePorts(websiteTabConnections, 'chainChanged', EthereumQuantity.serialize(change.activeChain))
 			sendPopupMessageToOpenWindows({ method: 'popup_chain_update' })
@@ -607,7 +611,7 @@ async function startup() {
 
 	const settings = await getSettings()
 	const chainString = settings.activeChain.toString()
-	simulator = new Simulator(isSupportedChain(chainString) ? chainString : '1', newBlockCallback)
+	simulator = new Simulator(isSupportedChain(chainString) ? chainString : '1', newBlockCallback, onErrorBlockCallback)
 
 	browser.runtime.onMessage.addListener(async function(message: unknown) {
 		if (simulator === undefined) throw new Error('Interceptor not ready yet')
