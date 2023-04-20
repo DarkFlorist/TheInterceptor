@@ -693,9 +693,9 @@ export function ExtraDetailsTransactionCard({ transaction }: ExtraDetailsTransac
 
 						{ transaction.type !== '1559' ? <></> : <>
 							<CellElement text = 'Max Fee Per Gas: '/>
-							<CellElement text = { `${ transaction.maxFeePerGas.toString() } wei/gas` }/>
+							<CellElement text = { `${ nanoString(transaction.maxFeePerGas) } nanoeth/gas` }/>
 							<CellElement text = 'Max Priority Fee Per Gas: '/>
-							<CellElement text = { `${ transaction.maxPriorityFeePerGas.toString() } wei/gas` }/>
+							<CellElement text = { `${ nanoString(transaction.maxPriorityFeePerGas) } nanoeth/gas` }/>
 						</> }
 					</span>
 
