@@ -271,7 +271,7 @@ export function Home(param: HomeParams) {
 
 		{ connectedToNetwork?.connected === false ?
 			<div style = 'margin: 10px; background-color: var(--bg-color);'>
-				<Error text = { <>Unable to connect to a Ethereum node. Retrying in <SomeTimeAgo priorTimestamp = { new Date(connectedToNetwork.timestamp + TIME_BETWEEN_BLOCKS * 1000) } countBackwards = { true }/>.</> }/>
+				<Error text = { <>Unable to connect to an Ethereum node. Retrying in <SomeTimeAgo priorTimestamp = { new Date(connectedToNetwork.timestamp + TIME_BETWEEN_BLOCKS * 1000) } countBackwards = { true }/>.</> }/>
 			</div>
 		: <></> }
 
