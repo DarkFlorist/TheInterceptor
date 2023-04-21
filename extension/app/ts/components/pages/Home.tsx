@@ -234,9 +234,7 @@ export function Home(param: HomeParams) {
 			}
 		}
 		browser.runtime.onMessage.addListener(popupMessageListener)
-		return () => {
-			browser.runtime.onMessage.removeListener(popupMessageListener)
-		}
+		return () => browser.runtime.onMessage.removeListener(popupMessageListener)
 	})
 
 	function changeActiveAddress() {
