@@ -12,7 +12,7 @@ import { PasteCatcher } from './subcomponents/PasteCatcher.js'
 import { truncateAddr } from '../utils/ethereum.js'
 import { NotificationCenter } from './pages/NotificationCenter.js'
 import { DEFAULT_TAB_CONNECTION } from '../utils/constants.js'
-import { ExternalPopupMessage, SignerName, TabIconDetails, UpdateHomePage, Page, WebsiteAccessArray, PendingAccessRequestArray, Settings, WebsiteIconChanged } from '../utils/interceptor-messages.js'
+import { ExternalPopupMessage, SignerName, TabIconDetails, UpdateHomePage, Page, WebsiteAccessArray, PendingAccessRequestArray, Settings, WebsiteIconChanged, IsConnected } from '../utils/interceptor-messages.js'
 import { version, gitCommitSha } from '../version.js'
 import { formSimulatedAndVisualizedTransaction } from './formVisualizerResults.js'
 import { sendPopupMessageToBackgroundPage } from '../background/backgroundUtils.js'
@@ -39,6 +39,7 @@ export function App() {
 	const [currentBlockNumber, setCurrentBlockNumber] = useState<bigint | undefined>(undefined)
 	const [signerName, setSignerName] = useState<SignerName>('NoSignerDetected')
 	const [addingNewAddress, setAddingNewAddress] = useState<AddingNewAddressType> ({ addingAddress: true, type: 'addressInfo' as const })
+	const [isConnected, setIsConnected] = useState<IsConnected>(undefined)
 
 	async function setActiveAddressAndInformAboutIt(address: bigint | 'signer') {
 		setUseSignersAddressAsActiveAddress(address === 'signer')
@@ -120,6 +121,7 @@ export function App() {
 				setCurrentBlockNumber(data.currentBlockNumber)
 				setWebsiteAccessAddressMetadata(data.websiteAccessAddressMetadata)
 				setSignerAccounts(data.signerAccounts)
+				setIsConnected(data.isConnected)
 				return true
 			})
 		}
@@ -239,6 +241,7 @@ export function App() {
 							currentBlockNumber = { currentBlockNumber }
 							signerName = { signerName }
 							renameAddressCallBack = { renameAddressCallBack }
+							isConnected = { isConnected}
 						/>
 
 						<div class = { `modal ${ appPage !== 'Home' ? 'is-active' : ''}` }>

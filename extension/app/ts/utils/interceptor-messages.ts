@@ -571,6 +571,12 @@ export const Settings = funtypes.ReadonlyObject({
 	userAddressBook: UserAddressBook,
 })
 
+export type IsConnected = funtypes.Static<typeof IsConnected>
+export const IsConnected = funtypes.Union(funtypes.Undefined, funtypes.ReadonlyObject({
+	isConnected: funtypes.Boolean,
+	lastConnnectionAttempt: funtypes.Number,
+}))
+
 export type UpdateHomePage = funtypes.Static<typeof UpdateHomePage>
 export const UpdateHomePage = funtypes.ReadonlyObject({
 	method: funtypes.Literal('popup_UpdateHomePage'),
@@ -591,6 +597,7 @@ export const UpdateHomePage = funtypes.ReadonlyObject({
 		settings: Settings,
 		tabIconDetails: funtypes.Union(TabIconDetails, funtypes.Undefined),
 		makeMeRich: funtypes.Boolean,
+		isConnected: IsConnected,
 	})
 })
 

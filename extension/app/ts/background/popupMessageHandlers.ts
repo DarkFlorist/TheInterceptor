@@ -1,5 +1,5 @@
 import { changeActiveAddressAndChainAndResetSimulation, changeActiveChain, getPrependTrasactions, refreshConfirmTransactionSimulation, updateSimulationState } from './background.js'
-import { getCurrentTabId, getMakeMeRich, getOpenedAddressBookTabId, getSettings, getSignerName, getSimulationResults, getTabState, saveCurrentTabId, setMakeMeRich, setOpenedAddressBookTabId, setPage, setUseSignersAddressAsActiveAddress, updateAddressInfos, updateContacts, updateWebsiteAccess } from './settings.js'
+import { getCurrentTabId, getIsConnected, getMakeMeRich, getOpenedAddressBookTabId, getSettings, getSignerName, getSimulationResults, getTabState, saveCurrentTabId, setMakeMeRich, setOpenedAddressBookTabId, setPage, setUseSignersAddressAsActiveAddress, updateAddressInfos, updateContacts, updateWebsiteAccess } from './settings.js'
 import { Simulator } from '../simulation/simulator.js'
 import { ChangeActiveAddress, ChangeMakeMeRich, ChangePage, PersonalSign, RemoveTransaction, RequestAccountsFromSigner, TransactionConfirmation, InterceptorAccess, ChangeInterceptorAccess, ChainChangeConfirmation, EnableSimulationMode, ReviewNotification, RejectNotification, ChangeActiveChain, AddOrEditAddressBookEntry, GetAddressBookData, RemoveAddressBookEntry, RefreshConfirmTransactionDialogSimulation, UserAddressBook, InterceptorAccessRefresh, InterceptorAccessChangeAddress, Settings, RefreshConfirmTransactionMetadata, RefreshPersonalSignMetadata, RefreshInterceptorAccessMetadata } from '../utils/interceptor-messages.js'
 import { resolvePendingTransaction } from './windows/confirmTransaction.js'
@@ -305,7 +305,8 @@ export async function homeOpened(simulator: Simulator) {
 			currentBlockNumber: blockNumber,
 			settings: settings,
 			tabIconDetails: tabState?.tabIconDetails,
-			makeMeRich: await getMakeMeRich()
+			makeMeRich: await getMakeMeRich(),
+			isConnected: await getIsConnected(),
 		}
 	})
 }
