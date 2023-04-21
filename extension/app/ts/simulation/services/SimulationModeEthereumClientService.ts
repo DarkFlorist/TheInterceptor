@@ -362,7 +362,7 @@ const getBaseFeePerGasForNewBlock = (parent_gas_used: bigint, parent_gas_limit: 
 export async function getSimulatedBlock(ethereumClientService: EthereumClientService, simulationState: SimulationState, blockTag: EthereumBlockTag, fullObjects: true): Promise<EthereumBlockHeader>
 export async function getSimulatedBlock(ethereumClientService: EthereumClientService, simulationState: SimulationState, blockTag: EthereumBlockTag, fullObjects: false): Promise<EthereumBlockHeaderWithTransactionHashes>
 export async function getSimulatedBlock(ethereumClientService: EthereumClientService, simulationState: SimulationState, blockTag: EthereumBlockTag = 'latest', fullObjects: boolean = true): Promise<EthereumBlockHeader | EthereumBlockHeaderWithTransactionHashes>  {
-	if (simulationState == undefined || await canQueryNodeDirectly(ethereumClientService, simulationState, blockTag)) {
+	if (simulationState === undefined || await canQueryNodeDirectly(ethereumClientService, simulationState, blockTag)) {
 		if (fullObjects) {
 			return await ethereumClientService.getBlock(blockTag, true)
 		} else {
