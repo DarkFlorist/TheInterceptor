@@ -179,7 +179,7 @@ export async function refreshPopupConfirmTransactionMetadata(simulator: Simulato
 export async function refreshPopupConfirmTransactionSimulation(ethereumClientService: EthereumClientService, { data }: RefreshConfirmTransactionDialogSimulation) {
 	const simulationState = (await getSimulationResults()).simulationState
 	if (simulationState === undefined) return
-	const refreshMessage = await refreshConfirmTransactionSimulation(ethereumClientService, simulationState, data.activeAddress, data.simulationMode, data.requestId, data.transactionToSimulate, data.website, (await getSettings()).userAddressBook)
+	const refreshMessage = await refreshConfirmTransactionSimulation(ethereumClientService, simulationState, data.activeAddress, data.simulationMode, data.requestId, data.transactionToSimulate, data.website)
 	if (refreshMessage === undefined) return
 	return await sendPopupMessageToOpenWindows(refreshMessage)
 }

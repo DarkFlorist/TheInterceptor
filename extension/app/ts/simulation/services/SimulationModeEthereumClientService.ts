@@ -317,7 +317,12 @@ export const getSimulatedBalance = async (ethereumClientService: EthereumClientS
 }
 
 export const getSimulatedCode = async (ethereumClientService: EthereumClientService, simulationState: SimulationState, address: bigint, blockTag: EthereumBlockTag = 'latest') => {
-	if (await canQueryNodeDirectly(ethereumClientService, simulationState, blockTag)) return await ethereumClientService.getCode(address, blockTag)
+	if (await canQueryNodeDirectly(ethereumClientService, simulationState, blockTag)) {
+		return {
+			statusCode: 'success' as const,
+			getCodeReturn: await ethereumClientService.getCode(address, blockTag)
+		}
+	}
 	const blockNum = await ethereumClientService.getBlockNumber()
 
 	const atInterface = new ethers.Interface(['function at(address) returns (uint256)'])
@@ -337,7 +342,10 @@ export const getSimulatedCode = async (ethereumClientService: EthereumClientServ
 		accessList: []
 	} as const
 	const multiCall = await simulatedMulticall(ethereumClientService, simulationState, [getCodeTransaction], blockNum + 1n)
-	return multiCall[multiCall.length - 1].returnValue
+	return {
+		statusCode: multiCall[multiCall.length - 1].statusCode,
+		getCodeReturn: multiCall[multiCall.length - 1].returnValue
+	}
 }
 
 const getBaseFeePerGasForNewBlock = (parent_gas_used: bigint, parent_gas_limit: bigint, parent_base_fee_per_gas: bigint) => {

@@ -3,7 +3,7 @@ import { createEthereumSubscription, removeEthereumSubscription } from '../simul
 import { getSimulatedBalance, getSimulatedBlock, getSimulatedBlockNumber, getSimulatedCode, getSimulatedLogs, getSimulatedStack, getSimulatedTransactionByHash, getSimulatedTransactionCount, getSimulatedTransactionReceipt, simulatedCall, simulateEstimateGas } from '../simulation/services/SimulationModeEthereumClientService.js'
 import { Simulator } from '../simulation/simulator.js'
 import { bytes32String } from '../utils/bigint.js'
-import { KNOWN_CONTRACT_CALLER_ADDRESSES } from '../utils/constants.js'
+import { ERROR_INTERCEPTOR_GET_CODE_FAILED, KNOWN_CONTRACT_CALLER_ADDRESSES } from '../utils/constants.js'
 import { InterceptedRequest, Settings, WebsiteAccessArray } from '../utils/interceptor-messages.js'
 import { Website, WebsiteSocket, WebsiteTabConnections } from '../utils/user-interface-types.js'
 import { SimulationState } from '../utils/visualizer-types.js'
@@ -62,7 +62,6 @@ export async function sendTransaction(
 		const simulationState = (await getSimulationResults()).simulationState
 		if (simulationState === undefined) return undefined
 		const block = getSimulatedBlock(ethereumClientService, simulationState, 'latest', true)
-		const chainId = ethereumClientService.getChainId()
 		const from = getFromField(websiteTabConnections, simulationMode, sendTransactionParams, getActiveAddressForDomain, socket, settings)
 		const transactionCount = getSimulatedTransactionCount(ethereumClientService, simulationState, from)
 
@@ -70,7 +69,7 @@ export async function sendTransaction(
 		return {
 			type: '1559' as const,
 			from: from,
-			chainId: await chainId,
+			chainId: ethereumClientService.getChainId(),
 			nonce: await transactionCount,
 			maxFeePerGas: sendTransactionParams.params[0].maxFeePerGas ? sendTransactionParams.params[0].maxFeePerGas : maxFeePerGas,
 			maxPriorityFeePerGas: sendTransactionParams.params[0].maxPriorityFeePerGas ? sendTransactionParams.params[0].maxPriorityFeePerGas : 1n,
@@ -102,7 +101,7 @@ async function singleCallWithFromOverride(ethereumClientService: EthereumClientS
 	const transaction = {
 		type: '1559' as const,
 		from,
-		chainId: await ethereumClientService.getChainId(),
+		chainId: ethereumClientService.getChainId(),
 		nonce: await getSimulatedTransactionCount(ethereumClientService, simulationState, from),
 		maxFeePerGas: gasPrice,
 		maxPriorityFeePerGas: 0n,
@@ -185,7 +184,9 @@ export async function switchEthereumChain(websiteTabConnections: WebsiteTabConne
 }
 
 export async function getCode(ethereumClientService: EthereumClientService, simulationState: SimulationState, request: GetCode) {
-	return { result: EthereumData.serialize(await getSimulatedCode(ethereumClientService, simulationState, request.params[0], request.params[1])) }
+	const code = await getSimulatedCode(ethereumClientService, simulationState, request.params[0], request.params[1])
+	if (code.statusCode === 'failure') return ERROR_INTERCEPTOR_GET_CODE_FAILED
+	return { result: EthereumData.serialize(code.getCodeReturn) }
 }
 
 export async function requestPermissions(websiteTabConnections: WebsiteTabConnections, getActiveAddressForDomain: (websiteAccess: WebsiteAccessArray, websiteOrigin: string, settings: Settings) => bigint | undefined, socket: WebsiteSocket, settings: Settings) {

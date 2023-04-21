@@ -10,13 +10,15 @@ export async function eoaApproval(transaction: EthereumUnsignedTransaction, cont
 	if (approvalInfo.name === 'approve') {
 		if (approvalInfo.arguments.value === 0n) return // approving 0 is allowed
 		const code = await getSimulatedCode(controller.ethereum, simulationState, approvalInfo.arguments.spender)
-		if (code.length > 0) return
+		if (code.statusCode === 'failure') return 'FAILED_CHECK'
+		if (code.getCodeReturn.length > 0) return
 		return 'EOA_APPROVAL'
 	}
 	if (approvalInfo.name === 'setApprovalForAll') {
 		if (approvalInfo.arguments.approved === false) return // setting approval off is allowed
 		const code = await getSimulatedCode(controller.ethereum, simulationState, approvalInfo.arguments.operator)
-		if (code.length > 0) return
+		if (code.statusCode === 'failure') return 'FAILED_CHECK'
+		if (code.getCodeReturn.length > 0) return
 		return 'EOA_APPROVAL'
 	}
 	return

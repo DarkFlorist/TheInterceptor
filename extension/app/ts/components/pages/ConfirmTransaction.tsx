@@ -2,7 +2,7 @@ import { useState, useEffect } from 'preact/hooks'
 import { ConfirmTransactionDialogState, ExternalPopupMessage, SignerName } from '../../utils/interceptor-messages.js'
 import { SimulatedAndVisualizedTransaction, SimulationAndVisualisationResults } from '../../utils/visualizer-types.js'
 import Hint from '../subcomponents/Hint.js'
-import { GasFee, LogAnalysisCard, SimulatedInBlockNumber, TransactionHeader, TransactionsAccountChangesCard } from '../simulationExplaining/SimulationSummary.js'
+import { ExtraDetailsTransactionCard, GasFee, LogAnalysisCard, SimulatedInBlockNumber, TransactionHeader, TransactionsAccountChangesCard } from '../simulationExplaining/SimulationSummary.js'
 import { Spinner } from '../subcomponents/Spinner.js'
 import { AddNewAddress } from './AddNewAddress.js'
 import { AddingNewAddressType, AddressBookEntry } from '../../utils/user-interface-types.js'
@@ -71,6 +71,8 @@ function TransactionCard(param: TransactionCardParams) {
 					simTx = { simTx }
 					renameAddressCallBack = { param.renameAddressCallBack }
 				/>
+
+				<ExtraDetailsTransactionCard transaction = { simTx.transaction } />
 
 				<span class = 'log-table' style = 'margin-top: 10px; grid-template-columns: min-content min-content min-content auto;'>
 					<GasFee

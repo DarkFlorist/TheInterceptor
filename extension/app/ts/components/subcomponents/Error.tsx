@@ -1,5 +1,7 @@
+import type { ComponentChild } from 'preact'
+
 interface ErrorProps {
-	text: string
+	text: ComponentChild
 }
 
 export function Error(props: ErrorProps) {

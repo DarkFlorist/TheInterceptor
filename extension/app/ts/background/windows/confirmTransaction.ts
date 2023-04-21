@@ -82,7 +82,7 @@ export async function openConfirmTransactionDialog(
 
 		const simulationState = (await getSimulationResults()).simulationState
 		if (simulationState === undefined) throw new Error('no simulation state')
-		const refreshSimulationPromise = refreshConfirmTransactionSimulation(ethereumClientService, simulationState, activeAddress, simulationMode, request.requestId, transactionToSimulate, website, settings.userAddressBook)
+		const refreshSimulationPromise = refreshConfirmTransactionSimulation(ethereumClientService, simulationState, activeAddress, simulationMode, request.requestId, transactionToSimulate, website)
 
 		const windowReadyAndListening = async function popupMessageListener(msg: unknown) {
 			const message = ExternalPopupMessage.parse(msg)
@@ -98,7 +98,7 @@ export async function openConfirmTransactionDialog(
 		try {
 			browser.runtime.onMessage.addListener(windowReadyAndListening)
 			browser.windows.onRemoved.addListener(onCloseWindow)
-			
+
 			openedConfirmTransactionDialogWindow = await browser.windows.create({
 				url: getHtmlFile('confirmTransaction'),
 				type: 'popup',

@@ -130,6 +130,7 @@ export const TransactionWithAddressBookEntries = funtypes.Intersect(
 		chainId: CHAIN,
 		hash: EthereumQuantity,
 		gas: EthereumQuantity,
+		nonce: EthereumQuantity,
 	}),
 	funtypes.Union(
 		funtypes.ReadonlyObject({

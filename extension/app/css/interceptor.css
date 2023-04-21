@@ -635,3 +635,9 @@ svg.spinner > circle {
 	grid-template-columns: auto auto;
 	display: grid;
 }
+
+.textarea {
+	background-color: var(--alpha-005);
+	color: var(--subtitle-text-color);
+	border-color: #000000
+}

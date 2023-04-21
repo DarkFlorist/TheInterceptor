@@ -5,7 +5,7 @@ import { LogAnalysisParams, RenameAddressCallBack } from '../../utils/user-inter
 import { QUARANTINE_CODES_DICT } from '../../simulation/protectors/quarantine-codes.js'
 import { Error as ErrorComponent } from '../subcomponents/Error.js'
 import { identifyRoutes, identifySwap, SwapVisualization } from './SwapTransactions.js'
-import { GasFee, LogAnalysisCard, TransactionHeader } from './SimulationSummary.js'
+import { ExtraDetailsTransactionCard, GasFee, LogAnalysisCard, TransactionHeader } from './SimulationSummary.js'
 import { identifyTransaction } from './identifyTransaction.js'
 import { makeYouRichTransaction } from './customExplainers/MakeMeRich.js'
 import { ApproveIcon, ArrowIcon } from '../subcomponents/icons.js'
@@ -112,6 +112,7 @@ export function Transaction(param: TransactionVisualizationParameters) {
 						simTx = { param.simTx }
 						renameAddressCallBack = { param.renameAddressCallBack }
 					/>
+					<ExtraDetailsTransactionCard transaction = { param.simTx.transaction } />
 
 					<span class = 'log-table' style = 'margin-top: 10px; column-gap: 5px; justify-content: space-between; grid-template-columns: auto auto'>
 						<div class = 'log-cell' style = ''>
