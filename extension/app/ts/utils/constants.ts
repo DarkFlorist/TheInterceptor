@@ -78,7 +78,8 @@ export const METAMASK_ERROR_RATE_LIMITED = 32005
 
 export const ERROR_INTERCEPTOR_NOT_READY = { error: { code: 1, message: 'Interceptor: Not ready' } }
 export const ERROR_INTERCEPTOR_NO_ACTIVE_ADDRESS = { error: { code: 2, message: 'Interceptor: No active address' } }
-export const ERROR_INTERCEPTOR_UNKNOWN_ORIGIN = { error: { code: 400, message: 'Interceptor: Unkown website origin' } }
+export const ERROR_INTERCEPTOR_UNKNOWN_ORIGIN = { error: { code: 400, message: 'Interceptor: Unknown website origin' } }
+export const ERROR_INTERCEPTOR_GET_CODE_FAILED = { error: { code: 40001, message: 'Interceptor: Get code failed' } } // I wonder how we should come up with these numbers?
 
 function get4Byte(functionAbi: string) {
 	return Number(ethers.keccak256(ethers.toUtf8Bytes(functionAbi)).slice(0, 10))

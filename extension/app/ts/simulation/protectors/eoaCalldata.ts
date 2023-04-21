@@ -7,7 +7,8 @@ export async function eoaCalldata(transaction: EthereumUnsignedTransaction, simu
 	if (transaction.to === null) return
 	if (transaction.input.length === 0) return
 	const code = await getSimulatedCode(simulator.ethereum, simulationState, transaction.to)
-	if (code.length > 0) return
+	if (code.statusCode === 'failure') return 'FAILED_CHECK'
+	if (code.getCodeReturn.length > 0) return
 	return 'EOA_CALLDATA'
 }
 

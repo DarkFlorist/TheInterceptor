@@ -28,6 +28,10 @@ export const QUARANTINE_CODES_DICT = {
 	'EOA_CALLDATA': {
 		label: 'Transaction to an Externally Owned Account contains calldata',
 		longExplanation: `This transaction is most likely a malformed transaction. The transaction contains data, which is used in calling contracts, but the recipient is not a contract.`
+	},
+	'FAILED_CHECK': {
+		label: 'A check failed',
+		longExplanation: `A check failed to complete. Most likely because the transaction stack is too big.`
 	}
 }
 
@@ -42,4 +46,5 @@ export const QUARANTINE_CODE = funtypes.Union(
 	funtypes.Literal('BIG_FEE'),
 	funtypes.Literal('EOA_APPROVAL'),
 	funtypes.Literal('EOA_CALLDATA'),
+	funtypes.Literal('FAILED_CHECK'),
 )
