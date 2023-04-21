@@ -135,12 +135,7 @@ async function resolve(ethereumClientService: EthereumClientService, reply: Conf
 		return await appendTransaction(ethereumClientService, simulationState, { transaction: transactionToSimulate, website: website })
 	}, activeAddress)
 	if (newState === undefined || newState.simulatedTransactions === undefined || newState.simulatedTransactions.length === 0) {
-		return {
-			error: {
-				code: METAMASK_ERROR_NOT_CONNECTED_TO_CHAIN,
-				message: 'Interceptor not ready'
-			}
-		}
+		return METAMASK_ERROR_NOT_CONNECTED_TO_CHAIN
 	}
 	return { result: bytes32String(newState.simulatedTransactions[newState.simulatedTransactions.length -1 ].signedTransaction.hash) }
 }
