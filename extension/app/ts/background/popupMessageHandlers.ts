@@ -160,7 +160,7 @@ export async function removeTransaction(ethereumClientService: EthereumClientSer
 }
 
 export async function refreshSimulation(ethereumClientService: EthereumClientService, settings: Settings) {
-	await updateSimulationState(async() => {
+	return await updateSimulationState(async() => {
 		const simulationState = (await getSimulationResults()).simulationState
 		if (simulationState === undefined) return
 		return await refreshSimulationState(ethereumClientService, simulationState)
