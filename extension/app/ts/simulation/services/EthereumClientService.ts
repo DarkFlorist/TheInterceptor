@@ -115,6 +115,7 @@ export class EthereumClientService {
 		return EthereumData.parse(response)
 	}
 
+	public async getBlock(blockTag?: EthereumBlockTag, fullObjects?: boolean): Promise<EthereumBlockHeaderWithTransactionHashes | EthereumBlockHeader>
 	public async getBlock(blockTag: EthereumBlockTag, fullObjects: true): Promise<EthereumBlockHeader>
 	public async getBlock(blockTag: EthereumBlockTag, fullObjects: false): Promise<EthereumBlockHeaderWithTransactionHashes>
 	public async getBlock(blockTag: EthereumBlockTag = 'latest', fullObjects: boolean = true): Promise<EthereumBlockHeaderWithTransactionHashes | EthereumBlockHeader> {

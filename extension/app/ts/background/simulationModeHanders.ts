@@ -17,10 +17,7 @@ import { openPersonalSignDialog } from './windows/personalSign.js'
 const defaultCallAddress = 0x1n
 
 export async function getBlockByNumber(ethereumClientService: EthereumClientService, simulationState: SimulationState, request: EthBlockByNumberParams) {
-	if (request.params[1] === true) {
-		return { result: GetBlockReturn.serialize(await getSimulatedBlock(ethereumClientService, simulationState, request.params[0], true)) }
-	}
-	return { result: GetBlockReturn.serialize(await getSimulatedBlock(ethereumClientService, simulationState, request.params[0], false)) }
+	return { result: GetBlockReturn.serialize(await getSimulatedBlock(ethereumClientService, simulationState, request.params[0], request.params[1])) }
 }
 export async function getBalance(ethereumClientService: EthereumClientService, simulationState: SimulationState, request: EthBalanceParams) {
 	return { result: EthereumQuantity.serialize(await getSimulatedBalance(ethereumClientService, simulationState, request.params[0])) }
@@ -61,7 +58,7 @@ export async function sendTransaction(
 	async function formTransaction() {
 		const simulationState = (await getSimulationResults()).simulationState
 		if (simulationState === undefined) return undefined
-		const block = getSimulatedBlock(ethereumClientService, simulationState, 'latest', true)
+		const block = getSimulatedBlock(ethereumClientService, simulationState)
 		const from = getFromField(websiteTabConnections, simulationMode, sendTransactionParams, getActiveAddressForDomain, socket, settings)
 		const transactionCount = getSimulatedTransactionCount(ethereumClientService, simulationState, from)
 
