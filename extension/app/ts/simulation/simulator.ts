@@ -41,8 +41,8 @@ export class Simulator {
 	public readonly ethereum
 	public readonly ethereumSubscriptionService
 
-	public constructor(chain: CHAIN, newBlockCallback: (blockNumber: bigint, ethereumClientService: EthereumClientService) => void ) {
-		this.ethereum = new EthereumClientService(new EthereumJSONRpcRequestHandler(CHAINS[chain].https_rpc), chain, newBlockCallback)
+	public constructor(chain: CHAIN, newBlockCallback: (blockNumber: bigint, ethereumClientService: EthereumClientService) => void, onErrorBlockCallback: (ethereumClientService: EthereumClientService, error: Error) => void) {
+		this.ethereum = new EthereumClientService(new EthereumJSONRpcRequestHandler(CHAINS[chain].https_rpc), chain, newBlockCallback, onErrorBlockCallback)
 		this.ethereumSubscriptionService = new EthereumSubscriptionService(CHAINS[chain].wss_rpc)
 	}
 

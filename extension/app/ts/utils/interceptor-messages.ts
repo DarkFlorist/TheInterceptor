@@ -707,6 +707,7 @@ export const MessageToPopup = funtypes.Union(
 	NewBlockArrived,
 	UpdateHomePage,
 	SettingsUpdated,
+	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_failed_to_get_block') }),
 )
 
 export type ExternalPopupMessage = funtypes.Static<typeof MessageToPopup>
