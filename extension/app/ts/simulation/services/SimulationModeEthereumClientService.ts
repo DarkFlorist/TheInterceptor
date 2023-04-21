@@ -44,7 +44,7 @@ export const transactionQueueTotalGasLimit = (simulationState: SimulationState) 
 export const simulateEstimateGas = async (ethereumClientService: EthereumClientService, simulationState: SimulationState, data: EstimateGasParamsVariables) => {
 	const sendAddress = data.from !== undefined ? data.from : MOCK_ADDRESS
 	const transactionCount = getSimulatedTransactionCount(ethereumClientService, simulationState, sendAddress)
-	const block = await ethereumClientService.getBlock('latest', true)
+	const block = await ethereumClientService.getBlock()
 	const maxGas = max(block.gasLimit * 1023n / 1024n - transactionQueueTotalGasLimit(simulationState), 0n)
 	const tmp = {
 		type: '1559' as const,
@@ -90,7 +90,7 @@ export const mockSignTransaction = async (transaction: EthereumUnsignedTransacti
 
 export const appendTransaction = async (ethereumClientService: EthereumClientService, simulationState: SimulationState, transaction: EthereumUnsignedTransactionWithWebsite): Promise<SimulationState> => {
 	const signed = await mockSignTransaction(transaction.transaction)
-	const parentBlock = await ethereumClientService.getBlock('latest', true)
+	const parentBlock = await ethereumClientService.getBlock()
 	const signedTxs = simulationState.simulatedTransactions.map((x) => x.signedTransaction).concat([signed])
 	const multicallResult = await ethereumClientService.multicall(signedTxs, parentBlock.number)
 	const websites = simulationState.simulatedTransactions.map((x) => x.website).concat(transaction.website)
@@ -122,7 +122,7 @@ export const appendTransaction = async (ethereumClientService: EthereumClientSer
 
 export const setSimulationTransactions = async (ethereumClientService: EthereumClientService, simulationState: SimulationState, unsignedTxts: EthereumUnsignedTransactionWithWebsite[]): Promise<SimulationState>  => {
 	if (unsignedTxts.length === 0 && simulationState.prependTransactionsQueue.length === 0) {
-		const block = await ethereumClientService.getBlock('latest', true)
+		const block = await ethereumClientService.getBlock()
 		return {
 			prependTransactionsQueue: simulationState.prependTransactionsQueue,
 			simulatedTransactions: [],
@@ -138,7 +138,7 @@ export const setSimulationTransactions = async (ethereumClientService: EthereumC
 	for (const transaction of newTransactionsToSimulate) {
 		signedTxs.push(await mockSignTransaction(transaction.transaction))
 	}
-	const parentBlock = await ethereumClientService.getBlock('latest', true)
+	const parentBlock = await ethereumClientService.getBlock()
 	const multicallResult = await ethereumClientService.multicall(newTransactionsToSimulate.map((x) => x.transaction), parentBlock.number)
 	if (multicallResult.length !== signedTxs.length) throw 'multicall length does not match in setSimulationTransactions'
 	const chainId = ethereumClientService.getChain()
@@ -180,7 +180,7 @@ export const setPrependTransactionsQueue = async (ethereumClientService: Ethereu
 	if (prepend.length > 0 && simulationState !== undefined) {
 		return await setSimulationTransactions(ethereumClientService, { ...simulationState, prependTransactionsQueue: prepend }, [])
 	}
-	const block = await ethereumClientService.getBlock('latest', true)
+	const block = await ethereumClientService.getBlock()
 	const newState = {
 		prependTransactionsQueue: [],
 		simulatedTransactions: [],
@@ -367,19 +367,16 @@ const getBaseFeePerGasForNewBlock = (parent_gas_used: bigint, parent_gas_limit: 
 	return parent_base_fee_per_gas - base_fee_per_gas_delta
 }
 
-export async function getSimulatedBlock(ethereumClientService: EthereumClientService, simulationState: SimulationState, blockTag: EthereumBlockTag, fullObjects: true): Promise<EthereumBlockHeader>
+export async function getSimulatedBlock(ethereumClientService: EthereumClientService, simulationState: SimulationState, blockTag?: EthereumBlockTag, fullObjects?: true): Promise<EthereumBlockHeader>
+export async function getSimulatedBlock(ethereumClientService: EthereumClientService, simulationState: SimulationState, blockTag: EthereumBlockTag, fullObjects: boolean): Promise<EthereumBlockHeader | EthereumBlockHeaderWithTransactionHashes>
 export async function getSimulatedBlock(ethereumClientService: EthereumClientService, simulationState: SimulationState, blockTag: EthereumBlockTag, fullObjects: false): Promise<EthereumBlockHeaderWithTransactionHashes>
 export async function getSimulatedBlock(ethereumClientService: EthereumClientService, simulationState: SimulationState, blockTag: EthereumBlockTag = 'latest', fullObjects: boolean = true): Promise<EthereumBlockHeader | EthereumBlockHeaderWithTransactionHashes>  {
 	if (simulationState === undefined || await canQueryNodeDirectly(ethereumClientService, simulationState, blockTag)) {
-		if (fullObjects) {
-			return await ethereumClientService.getBlock(blockTag, true)
-		} else {
-			return await ethereumClientService.getBlock(blockTag, false)
-		}
+		return await ethereumClientService.getBlock(blockTag, fullObjects)
 	}
 
 	// make a mock block based on the previous block
-	const parentBlock = await ethereumClientService.getBlock('latest', true)
+	const parentBlock = await ethereumClientService.getBlock()
 	const block = {
 		author: parentBlock.miner,
 		difficulty: parentBlock.difficulty,

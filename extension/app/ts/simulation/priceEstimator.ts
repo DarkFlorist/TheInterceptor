@@ -30,7 +30,7 @@ export class PriceEstimator {
 
 		const amountOutMin = 0n
 		const sender = CHAINS[chainString].eth_donator
-		const block = await this.ethereum.getBlock('latest', true)
+		const block = await this.ethereum.getBlock()
 		const deadline = BigInt( block.timestamp.getTime() + 1000 * 1000)
 
 		const transactionCount = await this.ethereum.getTransactionCount(sender)
