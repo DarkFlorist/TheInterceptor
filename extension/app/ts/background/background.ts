@@ -1,4 +1,4 @@
-import { HandleSimulationModeReturnValue, InterceptedRequest, InterceptedRequestForward, PopupMessage, ProviderMessage, Settings, TabState, UserAddressBook } from '../utils/interceptor-messages.js'
+import { HandleSimulationModeReturnValue, InterceptedRequest, InterceptedRequestForward, PopupMessage, ProviderMessage, Settings, TabState } from '../utils/interceptor-messages.js'
 import 'webextension-polyfill'
 import { Simulator } from '../simulation/simulator.js'
 import { EthereumJsonRpcRequest, EthereumQuantity, EthereumUnsignedTransaction, PersonalSignParams, SignTypedDataParams } from '../utils/wire-types.js'
@@ -31,35 +31,39 @@ if (browser.runtime.getManifest().manifest_version === 2) {
 
 let simulator: Simulator | undefined = undefined
 
+async function visualizeSimulatorState(simulationState: SimulationState, simulator: Simulator) {
+	const priceEstimator = new PriceEstimator(simulator.ethereum)
+	const transactions = simulationState.simulatedTransactions.map((x) => ({ transaction: x.signedTransaction, website: x.website }))
+	const visualizerResult = await simulator.visualizeTransactionChain(simulationState, transactions, simulationState.blockNumber, simulationState.simulatedTransactions.map((x) => x.multicallResponse))
+	const visualizerResults = visualizerResult.map((x, i) => ({ ...x, website: simulationState.simulatedTransactions[i].website }))
+	const addressBookEntries = await getAddressBookEntriesForVisualiser(simulator, visualizerResult.map((x) => x.visualizerResults), simulationState, (await getSettings()).userAddressBook)
+
+	function onlyTokensAndTokensWithKnownDecimals(metadata: AddressBookEntry) : metadata is AddressBookEntry & { type: 'token', decimals: `0x${ string }` } {
+		if (metadata.type !== 'token') return false
+		if (metadata.decimals === undefined) return false
+		return true
+	}
+	function metadataRestructure(metadata: AddressBookEntry &  { type: 'token', decimals: bigint } ) {
+		return { token: metadata.address, decimals: metadata.decimals }
+	}
+	const tokenPrices = await priceEstimator.estimateEthereumPricesForTokens(addressBookEntries.filter(onlyTokensAndTokensWithKnownDecimals).map(metadataRestructure))
+	return {
+		tokenPrices,
+		addressBookEntries,
+		visualizerResults,
+		simulationState,
+	}
+}
+
 export async function updateSimulationState(getUpdatedSimulationState: () => Promise<SimulationState | undefined>, activeAddress: bigint | undefined) {
 	if (simulator === undefined) return
 	const simId = (await getSimulationResults()).simulationId + 1
 	const updatedSimulationState = await getUpdatedSimulationState()
 
 	if (updatedSimulationState !== undefined) {
-		const priceEstimator = new PriceEstimator(simulator.ethereum)
-
-		const transactions = updatedSimulationState.simulatedTransactions.map((x) => ({ transaction: x.signedTransaction, website: x.website }))
-		const visualizerResult = await simulator.visualizeTransactionChain(updatedSimulationState, transactions, updatedSimulationState.blockNumber, updatedSimulationState.simulatedTransactions.map((x) => x.multicallResponse))
-		const visualizerResultWithWebsites = visualizerResult.map((x, i) => ({ ...x, website: updatedSimulationState.simulatedTransactions[i].website }))
-		const addressBookEntries = await getAddressBookEntriesForVisualiser(simulator, visualizerResult.map((x) => x.visualizerResults), updatedSimulationState, (await getSettings()).userAddressBook)
-
-		function onlyTokensAndTokensWithKnownDecimals(metadata: AddressBookEntry) : metadata is AddressBookEntry & { type: 'token', decimals: `0x${ string }` } {
-			if (metadata.type !== 'token') return false
-			if (metadata.decimals === undefined) return false
-			return true
-		}
-		function metadataRestructure(metadata: AddressBookEntry &  { type: 'token', decimals: bigint } ) {
-			return { token: metadata.address, decimals: metadata.decimals }
-		}
-		const tokenPrices = await priceEstimator.estimateEthereumPricesForTokens(addressBookEntries.filter(onlyTokensAndTokensWithKnownDecimals).map(metadataRestructure))
-
 		await updateSimulationResults({
 			simulationId: simId,
-			tokenPrices: tokenPrices,
-			addressBookEntries: addressBookEntries,
-			visualizerResults: visualizerResultWithWebsites,
-			simulationState: updatedSimulationState,
+			...await visualizeSimulatorState(updatedSimulationState, simulator),
 			activeAddress: activeAddress,
 		})
 	} else {
@@ -89,32 +93,17 @@ export async function refreshConfirmTransactionSimulation(
 	requestId: number,
 	transactionToSimulate: EthereumUnsignedTransaction,
 	website: Website,
-	userAddressBook: UserAddressBook
 ) {
 	if (simulator === undefined) return undefined
-
-	const priceEstimator = new PriceEstimator(simulator.ethereum)
 	sendPopupMessageToOpenWindows({ method: 'popup_confirm_transaction_simulation_started' })
-	const newState = await appendTransaction(ethereumClientService, copySimulationState(simulationState), { transaction: transactionToSimulate, website: website })
-	const transactions = newState.simulatedTransactions.map(x => ({ transaction: x.signedTransaction, website: x.website }))
-	const visualizerResult = await simulator.visualizeTransactionChain(newState, transactions, newState.blockNumber, newState.simulatedTransactions.map(x => x.multicallResponse))
-	const addressMetadata = await getAddressBookEntriesForVisualiser(simulator, visualizerResult.map((x) => x.visualizerResults), newState, userAddressBook)
-	const tokenPrices = await priceEstimator.estimateEthereumPricesForTokens(
-		addressMetadata.map(
-			(x) => x.type === 'token' && x.decimals !== undefined ? { token: x.address, decimals: x.decimals } : { token: 0x0n, decimals: 0x0n }
-		).filter( (x) => x.token !== 0x0n )
-	)
-
+	const simulationStateWithNewTransaction = await appendTransaction(ethereumClientService, copySimulationState(simulationState), { transaction: transactionToSimulate, website: website })
 	return {
 		method: 'popup_confirm_transaction_simulation_state_changed' as const,
 		data: {
 			requestId: requestId,
 			transactionToSimulate: transactionToSimulate,
 			simulationMode: simulationMode,
-			simulationState: newState,
-			visualizerResults: visualizerResult,
-			addressBookEntries: addressMetadata,
-			tokenPrices: tokenPrices,
+			...await visualizeSimulatorState(simulationStateWithNewTransaction, simulator),
 			activeAddress: activeAddress,
 			signerName: await getSignerName(),
 			website: website,
