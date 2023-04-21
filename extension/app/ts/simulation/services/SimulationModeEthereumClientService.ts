@@ -394,9 +394,7 @@ export async function getSimulatedBlock(ethereumClientService: EthereumClientSer
 		uncles: [],
 		baseFeePerGas: getBaseFeePerGasForNewBlock(parentBlock.gasUsed, parentBlock.gasLimit, parentBlock.baseFeePerGas),
 		transactionsRoot: parentBlock.transactionsRoot, // TODO: this is wrong
-		transactions: simulationState.simulatedTransactions.map((simulatedTransaction) => {
-			return simulatedTransaction.signedTransaction
-		})
+		transactions: simulationState.simulatedTransactions.map((simulatedTransaction) => simulatedTransaction.signedTransaction)
 	} as const
 
 	if (fullObjects) return block
