@@ -8,7 +8,7 @@ import { changeActiveAddress, changeMakeMeRich, changePage, resetSimulation, con
 import { SimulationState } from '../utils/visualizer-types.js'
 import { AddressBookEntry, Website, TabConnection, WebsiteSocket, WebsiteTabConnections } from '../utils/user-interface-types.js'
 import { interceptorAccessMetadataRefresh, requestAccessFromUser } from './windows/interceptorAccess.js'
-import { CHAINS, ICON_NOT_ACTIVE, isSupportedChain, MAKE_YOU_RICH_TRANSACTION, METAMASK_ERROR_USER_REJECTED_REQUEST } from '../utils/constants.js'
+import { CHAINS, ICON_NOT_ACTIVE, isSupportedChain, MAKE_YOU_RICH_TRANSACTION, METAMASK_ERROR_NOT_CONNECTED_TO_CHAIN, METAMASK_ERROR_USER_REJECTED_REQUEST } from '../utils/constants.js'
 import { PriceEstimator } from '../simulation/priceEstimator.js'
 import { getActiveAddressForDomain, getAssociatedAddresses, sendActiveAccountChangeToApprovedWebsitePorts, sendMessageToApprovedWebsitePorts, updateWebsiteApprovalAccesses, verifyAccess } from './accessManagement.js'
 import { findAddressInfo, getAddressBookEntriesForVisualiser } from './metadataUtils.js'
@@ -450,6 +450,16 @@ export async function handleContentScriptMessage(websiteTabConnections: WebsiteT
 		return sendMessageToContentScript(websiteTabConnections, socket, resolved, request)
 	} catch(error) {
 		console.warn(error)
+		if (error instanceof Error) {
+			if (isFailedToFetchError(error)) {
+				return postMessageIfStillConnected(websiteTabConnections, socket, {
+					interceptorApproved: false,
+					requestId: request.requestId,
+					options: request.options,
+					...METAMASK_ERROR_NOT_CONNECTED_TO_CHAIN,
+				})
+			}
+		}
 		postMessageIfStillConnected(websiteTabConnections, socket, {
 			interceptorApproved: false,
 			requestId: request.requestId,
