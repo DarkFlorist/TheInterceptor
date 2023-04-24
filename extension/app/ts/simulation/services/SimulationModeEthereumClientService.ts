@@ -516,8 +516,8 @@ export const simulatedCall = async (ethereumClientService: EthereumClientService
 		...params,
 		type: '1559' as const,
 		gas: params.gasLimit,
-		nonce: 0n,
-		chainId: ethereumClientService.getChainId()
+		nonce: await getSimulatedTransactionCount(ethereumClientService, simulationState, params.from, blockTag),
+		chainId: ethereumClientService.getChainId(),
 	} as const
 
 	const multicallResult = blockTag === 'latest' || blockTag === 'pending' ?
