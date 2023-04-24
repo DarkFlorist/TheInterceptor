@@ -129,7 +129,6 @@ export function ConfirmTransaction() {
 			}
 			const addressMetaData = new Map(message.data.addressBookEntries.map((x) => [addressString(x.address), x]))
 			const txs = formSimulatedAndVisualizedTransaction(message.data.simulationState, message.data.visualizerResults, addressMetaData)
-			setTransactionToSimulate(message.data.transactionToSimulate)
 			setSender(txs[txs.length - 1]?.transaction.from)
 			setSimulatedAndVisualizedTransactions(txs)
 			setDialogState({ state: 'success', data: message.data })

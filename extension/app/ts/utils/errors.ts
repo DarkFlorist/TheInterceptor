@@ -16,3 +16,8 @@ export class JsonRpcResponseError extends ErrorWithData {
 		this.id = jsonRpcResponse.id
 	}
 }
+
+export function isFailedToFetchError(error: Error) {
+	if (error.message.includes('Failed to fetch')) return true
+	return false
+}
