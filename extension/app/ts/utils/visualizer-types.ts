@@ -3,6 +3,7 @@ import { EthBalanceChanges, EthereumAddress, EthereumData, EthereumQuantity, Eth
 import * as funtypes from 'funtypes'
 import { QUARANTINE_CODE } from '../simulation/protectors/quarantine-codes.js'
 import { AddressBookEntry, CHAIN, NFTEntry, RenameAddressCallBack, TokenEntry, Website, WebsiteSocket } from './user-interface-types.js'
+import { OptionalEthereumAddress } from './interceptor-messages.js'
 
 export type TokenVisualizerResult = funtypes.Static<typeof TokenVisualizerResult>
 export const TokenVisualizerResult = funtypes.Intersect(
@@ -220,7 +221,7 @@ export const SimulationResults = funtypes.ReadonlyObject({
 	visualizerResults: funtypes.Union(funtypes.ReadonlyArray(SimResults), funtypes.Undefined),
 	addressBookEntries: funtypes.ReadonlyArray(AddressBookEntry),
 	tokenPrices: funtypes.ReadonlyArray(TokenPriceEstimate),
-	activeAddress: funtypes.Union(EthereumAddress, funtypes.Undefined),
+	activeAddress: OptionalEthereumAddress,
 })
 
 export type NewHeadsSubscription = funtypes.Static<typeof NewHeadsSubscription>
