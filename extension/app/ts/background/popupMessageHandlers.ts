@@ -161,7 +161,7 @@ export async function removeTransaction(ethereumClientService: EthereumClientSer
 }
 
 export async function refreshSimulation(ethereumClientService: EthereumClientService, settings: Settings) {
-	await updateSimulationState(async() => {
+	return await updateSimulationState(async() => {
 		const simulationState = (await getSimulationResults()).simulationState
 		if (simulationState === undefined) return
 		return await refreshSimulationState(ethereumClientService, simulationState)
@@ -286,11 +286,9 @@ export async function homeOpened(simulator: Simulator) {
 	try {
 		blockNumber = await simulator.ethereum.getBlockNumber()
 	} catch (error) {
-		if (error instanceof Error) {
-			if (isFailedToFetchError(error)) await sendPopupMessageToOpenWindows({ method: 'popup_failed_to_get_block' })
-		} else {
-			throw error
-		}
+		if (!(error instanceof Error)) throw error
+		if (!isFailedToFetchError(error)) throw error
+		await sendPopupMessageToOpenWindows({ method: 'popup_failed_to_get_block' })
 	}
 
 	await sendPopupMessageToOpenWindows({

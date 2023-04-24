@@ -1,5 +1,5 @@
 import { EthereumClientService } from './EthereumClientService.js'
-import { EthGetLogsResponse, EthereumUnsignedTransaction, EthereumSignedTransactionWithBlockData, EthereumBlockTag, EthGetLogsRequest, EthTransactionReceiptResponse, EstimateGasParamsVariables, PersonalSignParams, SignTypedDataParams, EthereumSignedTransaction, GetBlockReturn, EthereumData, EthereumQuantity, MulticallResponseEventLogs, MulticallResponse, EthereumAddress } from '../../utils/wire-types.js'
+import { EthGetLogsResponse, EthereumUnsignedTransaction, EthereumSignedTransactionWithBlockData, EthereumBlockTag, EthGetLogsRequest, EthTransactionReceiptResponse, EstimateGasParamsVariables, PersonalSignParams, SignTypedDataParams, EthereumSignedTransaction, EthereumData, EthereumQuantity, MulticallResponseEventLogs, MulticallResponse, EthereumAddress, EthereumBlockHeader, EthereumBlockHeaderWithTransactionHashes } from '../../utils/wire-types.js'
 import { addressString, bytes32String, bytesToUnsigned, dataStringWith0xStart, max, min, stringToUint8Array } from '../../utils/bigint.js'
 import { MOCK_ADDRESS } from '../../utils/constants.js'
 import { ethers, keccak256 } from 'ethers'
@@ -317,7 +317,12 @@ export const getSimulatedBalance = async (ethereumClientService: EthereumClientS
 }
 
 export const getSimulatedCode = async (ethereumClientService: EthereumClientService, simulationState: SimulationState, address: bigint, blockTag: EthereumBlockTag = 'latest') => {
-	if (await canQueryNodeDirectly(ethereumClientService, simulationState, blockTag)) return await ethereumClientService.getCode(address, blockTag)
+	if (await canQueryNodeDirectly(ethereumClientService, simulationState, blockTag)) {
+		return {
+			statusCode: 'success' as const,
+			getCodeReturn: await ethereumClientService.getCode(address, blockTag)
+		}
+	}
 	const blockNum = await ethereumClientService.getBlockNumber()
 
 	const atInterface = new ethers.Interface(['function at(address) returns (uint256)'])
@@ -337,7 +342,10 @@ export const getSimulatedCode = async (ethereumClientService: EthereumClientServ
 		accessList: []
 	} as const
 	const multiCall = await simulatedMulticall(ethereumClientService, simulationState, [getCodeTransaction], blockNum + 1n)
-	return multiCall[multiCall.length - 1].returnValue
+	return {
+		statusCode: multiCall[multiCall.length - 1].statusCode,
+		getCodeReturn: multiCall[multiCall.length - 1].returnValue
+	}
 }
 
 const getBaseFeePerGasForNewBlock = (parent_gas_used: bigint, parent_gas_limit: bigint, parent_base_fee_per_gas: bigint) => {
@@ -359,11 +367,16 @@ const getBaseFeePerGasForNewBlock = (parent_gas_used: bigint, parent_gas_limit: 
 	return parent_base_fee_per_gas - base_fee_per_gas_delta
 }
 
-export const getSimulatedBlock = async (ethereumClientService: EthereumClientService, simulationState: SimulationState, blockTag: EthereumBlockTag = 'latest', fullObjects: boolean = true): Promise<GetBlockReturn> => {
-	if (simulationState == undefined || await canQueryNodeDirectly(ethereumClientService, simulationState, blockTag)) return await ethereumClientService.getBlock(blockTag, fullObjects)
+export async function getSimulatedBlock(ethereumClientService: EthereumClientService, simulationState: SimulationState, blockTag?: EthereumBlockTag, fullObjects?: true): Promise<EthereumBlockHeader>
+export async function getSimulatedBlock(ethereumClientService: EthereumClientService, simulationState: SimulationState, blockTag: EthereumBlockTag, fullObjects: boolean): Promise<EthereumBlockHeader | EthereumBlockHeaderWithTransactionHashes>
+export async function getSimulatedBlock(ethereumClientService: EthereumClientService, simulationState: SimulationState, blockTag: EthereumBlockTag, fullObjects: false): Promise<EthereumBlockHeaderWithTransactionHashes>
+export async function getSimulatedBlock(ethereumClientService: EthereumClientService, simulationState: SimulationState, blockTag: EthereumBlockTag = 'latest', fullObjects: boolean = true): Promise<EthereumBlockHeader | EthereumBlockHeaderWithTransactionHashes>  {
+	if (simulationState === undefined || await canQueryNodeDirectly(ethereumClientService, simulationState, blockTag)) {
+		return await ethereumClientService.getBlock(blockTag, fullObjects)
+	}
 
 	// make a mock block based on the previous block
-	const parentBlock = await ethereumClientService.getBlock('latest', true)
+	const parentBlock = await ethereumClientService.getBlock()
 	const block = {
 		author: parentBlock.miner,
 		difficulty: parentBlock.difficulty,
@@ -385,22 +398,12 @@ export const getSimulatedBlock = async (ethereumClientService: EthereumClientSer
 		totalDifficulty: parentBlock.totalDifficulty + parentBlock.difficulty, // The difficulty increases about the same amount as previously
 		uncles: [],
 		baseFeePerGas: getBaseFeePerGasForNewBlock(parentBlock.gasUsed, parentBlock.gasLimit, parentBlock.baseFeePerGas),
-		transactionsRoot: parentBlock.transactionsRoot // TODO: this is wrong
+		transactionsRoot: parentBlock.transactionsRoot, // TODO: this is wrong
+		transactions: simulationState.simulatedTransactions.map((simulatedTransaction) => simulatedTransaction.signedTransaction)
 	} as const
 
-	if (fullObjects) {
-		return {
-			...block,
-			transactions: simulationState.simulatedTransactions.map( (simulatedTransaction) => {
-				return simulatedTransaction.signedTransaction
-			})
-		}
-	}
-
-	return {
-		...block,
-		transactions: simulationState.simulatedTransactions.map( (simulatedTransaction) => simulatedTransaction.signedTransaction.hash)
-	}
+	if (fullObjects) return block
+	return { ...block, transactions: block.transactions.map((transaction) => transaction.hash) }
 }
 
 const getLogsOfSimulatedBlock = (simulationState: SimulationState, logFilter: EthGetLogsRequest): EthGetLogsResponse => {
@@ -576,7 +579,7 @@ const getSimulatedTokenBalances = async (ethereumClientService: EthereumClientSe
 		owner: balance.owner,
 		balance: response[transactionQueueSize + index].statusCode === 'success' ? bytesToUnsigned(response[transactionQueueSize + index].returnValue) : undefined
 	}))
-}	
+}
 
 const getAddressesInteractedWithERC20s = (events: MulticallResponseEventLogs): { token: bigint, owner: bigint }[] => {
 	const erc20ABI = [
@@ -595,7 +598,7 @@ const getAddressesInteractedWithERC20s = (events: MulticallResponseEventLogs): {
 				tokenOwners.push({ token: log.loggersAddress, owner: EthereumAddress.parse(parsed.args[1]) })
 				break
 			}
-			default: throw new Error(`wrong name: ${ parsed.name }`)				
+			default: throw new Error(`wrong name: ${ parsed.name }`)
 		}
 	}
 	return tokenOwners
