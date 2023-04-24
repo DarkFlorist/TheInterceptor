@@ -2,7 +2,7 @@ import { HandleSimulationModeReturnValue, InterceptedRequest, InterceptedRequest
 import 'webextension-polyfill'
 import { Simulator } from '../simulation/simulator.js'
 import { EthereumJsonRpcRequest, EthereumQuantity, EthereumUnsignedTransaction, PersonalSignParams, SignTypedDataParams } from '../utils/wire-types.js'
-import { changeSimulationMode, clearTabStates, getMakeMeRich, getSettings, getSignerName, getSimulationResults, removeTabState, updateSimulationResults, updateTabState } from './settings.js'
+import { changeSimulationMode, clearTabStates, getMakeMeRich, getSettings, getSignerName, getSimulationResults, removeTabState, setIsConnected, updateSimulationResults, updateTabState } from './settings.js'
 import { blockNumber, call, chainId, estimateGas, gasPrice, getAccounts, getBalance, getBlockByNumber, getCode, getLogs, getPermissions, getSimulationStack, getTransactionByHash, getTransactionCount, getTransactionReceipt, personalSign, requestPermissions, sendTransaction, subscribe, switchEthereumChain, unsubscribe } from './simulationModeHanders.js'
 import { changeActiveAddress, changeMakeMeRich, changePage, resetSimulation, confirmDialog, refreshSimulation, removeTransaction, requestAccountsFromSigner, refreshPopupConfirmTransactionSimulation, confirmPersonalSign, confirmRequestAccess, changeInterceptorAccess, changeChainDialog, popupChangeActiveChain, enableSimulationMode, reviewNotification, rejectNotification, addOrModifyAddressInfo, getAddressBookData, removeAddressBookEntry, openAddressBook, homeOpened, interceptorAccessChangeAddressOrRefresh, refreshPopupConfirmTransactionMetadata, refreshPersonalSignMetadata } from './popupMessageHandlers.js'
 import { SimulationState } from '../utils/visualizer-types.js'
@@ -12,7 +12,7 @@ import { CHAINS, ICON_NOT_ACTIVE, isSupportedChain, MAKE_YOU_RICH_TRANSACTION, M
 import { PriceEstimator } from '../simulation/priceEstimator.js'
 import { getActiveAddressForDomain, getAssociatedAddresses, sendActiveAccountChangeToApprovedWebsitePorts, sendMessageToApprovedWebsitePorts, updateWebsiteApprovalAccesses, verifyAccess } from './accessManagement.js'
 import { findAddressInfo, getAddressBookEntriesForVisualiser } from './metadataUtils.js'
-import { getActiveAddress, getSocketFromPort, sendPopupMessageToOpenWindows, setExtensionBadgeBackgroundColor, setExtensionIcon, websiteSocketToString } from './backgroundUtils.js'
+import { getActiveAddress, getSocketFromPort, sendPopupMessageToOpenWindows, setExtensionIcon, websiteSocketToString } from './backgroundUtils.js'
 import { retrieveWebsiteDetails, updateExtensionBadge, updateExtensionIcon } from './iconHandler.js'
 import { connectedToSigner, ethAccountsReply, signerChainChanged, walletSwitchEthereumChainReply } from './providerMessageHandlers.js'
 import { assertNever, assertUnreachable } from '../utils/typescript.js'
@@ -309,6 +309,8 @@ async function handleSigningMode(
 }
 
 async function newBlockCallback(blockNumber: bigint, ethereumClientService: EthereumClientService) {
+	await setIsConnected(true)
+	await updateExtensionBadge()
 	const settings = await getSettings()
 	const updatedSimulationState = await refreshSimulation(ethereumClientService, settings)
 	await sendPopupMessageToOpenWindows({ method: 'popup_new_block_arrived', data: { blockNumber } })
@@ -316,7 +318,11 @@ async function newBlockCallback(blockNumber: bigint, ethereumClientService: Ethe
 }
 
 async function onErrorBlockCallback(_ethereumClientService: EthereumClientService, error: Error) {
-	if (isFailedToFetchError(error)) return await sendPopupMessageToOpenWindows({ method: 'popup_failed_to_get_block' })
+	if (isFailedToFetchError(error)) {
+		await setIsConnected(false)
+		await updateExtensionBadge()
+		return await sendPopupMessageToOpenWindows({ method: 'popup_failed_to_get_block' })
+	}
 	throw error
 }
 
@@ -626,7 +632,6 @@ async function popupMessageHandler(
 
 async function startup() {
 	await setExtensionIcon({ path: ICON_NOT_ACTIVE })
-	await setExtensionBadgeBackgroundColor({ color: '#58a5b3' })
 
 	const settings = await getSettings()
 	const chainString = settings.activeChain.toString()

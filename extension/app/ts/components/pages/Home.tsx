@@ -6,7 +6,7 @@ import { SimulationSummary } from '../simulationExplaining/SimulationSummary.js'
 import { ChainSelector } from '../subcomponents/ChainSelector.js'
 import { Spinner } from '../subcomponents/Spinner.js'
 import { DEFAULT_TAB_CONNECTION, getChainName, ICON_NOT_ACTIVE, ICON_SIGNING, ICON_SIGNING_NOT_SUPPORTED, isSupportedChain, TIME_BETWEEN_BLOCKS } from '../../utils/constants.js'
-import { ExternalPopupMessage, SignerName, TabIcon, TabIconDetails } from '../../utils/interceptor-messages.js'
+import { IsConnected, SignerName, TabIcon, TabIconDetails } from '../../utils/interceptor-messages.js'
 import { getPrettySignerName, SignerLogoText, SignersLogoName } from '../subcomponents/signers.js'
 import { Error } from '../subcomponents/Error.js'
 import { ToolTip } from '../subcomponents/CopyToClipboard.js'
@@ -172,6 +172,7 @@ function SimulationResults(param: SimulationStateParam) {
 				simulationAndVisualisationResults = { param.simulationAndVisualisationResults }
 				currentBlockNumber = { param.currentBlockNumber }
 				renameAddressCallBack = { param.renameAddressCallBack }
+				isConnected = { param.isConnected }
 			/>
 		}
 		<div class = 'content' style = 'height: 0.1px'/>
@@ -194,7 +195,7 @@ export function Home(param: HomeParams) {
 	const [makeMeRich, setMakeMeRich] = useState<boolean>(false)
 	const [disableReset, setDisableReset] = useState<boolean>(false)
 	const [removeTransactionHashes, setRemoveTransactionHashes] = useState<bigint[]>([])
-	const [connectedToNetwork, setConnectedToNetwork] = useState<undefined | { connected: true } | { connected: false, timestamp: number } >(undefined)
+	const [isConnected, setIsConnected] = useState<IsConnected>(undefined)
 
 	useEffect(() => {
 		setSimulationAndVisualisationResults(param.simVisResults)
@@ -212,6 +213,7 @@ export function Home(param: HomeParams) {
 		setMakeMeRich(param.makeMeRich)
 		setDisableReset(false)
 		setRemoveTransactionHashes([])
+		setIsConnected(param.isConnected)
 	}, [param.activeSigningAddress,
 		param.activeSimulationAddress,
 		param.signerAccounts,
@@ -222,25 +224,9 @@ export function Home(param: HomeParams) {
 		param.tabIconDetails,
 		param.currentBlockNumber,
 		param.signerName,
-		param.simVisResults
+		param.simVisResults,
+		param.isConnected,
 	])
-	useEffect(() => {
-		const popupMessageListener = async (msg: unknown) => {
-			const message = ExternalPopupMessage.parse(msg)
-			switch (message.method) {
-				case 'popup_new_block_arrived': return setConnectedToNetwork({ connected: true })
-				case 'popup_failed_to_get_block': return setConnectedToNetwork({ connected: false, timestamp: Date.now() })
-				default: break
-			}
-		}
-		browser.runtime.onMessage.addListener(popupMessageListener)
-		return () => browser.runtime.onMessage.removeListener(popupMessageListener)
-	})
-	useEffect(() => {
-		if (param.currentBlockNumber === undefined) {
-			setConnectedToNetwork({ connected: false, timestamp: Date.now() })
-		}
-	}, [param.currentBlockNumber])
 
 	function changeActiveAddress() {
 		param.setAndSaveAppPage('ChangeActiveAddress')
@@ -270,13 +256,13 @@ export function Home(param: HomeParams) {
 	return <>
 		{ !isSupportedChain(activeChain.toString()) ?
 			<div style = 'margin: 10px; background-color: var(--bg-color);'>
-				<Error text = { `${ getChainName(activeChain) } is not a supported network. The Interceptor is disabled while you are using the network.` }/>
+				<Error text = { `${ getChainName(activeChain) } is not a supported network. The Interceptors is disabled while you are using the network.` }/>
 			</div>
 		: <></> }
 
-		{ connectedToNetwork?.connected === false ?
+		{ isConnected?.isConnected === false ?
 			<div style = 'margin: 10px; background-color: var(--bg-color);'>
-				<Error text = { <>Unable to connect to an Ethereum node. Retrying in <SomeTimeAgo priorTimestamp = { new Date(connectedToNetwork.timestamp + TIME_BETWEEN_BLOCKS * 1000) } countBackwards = { true }/>.</> }/>
+				<Error warning = { true } text = { <>Unable to connect to a Ethereum node. Retrying in <SomeTimeAgo priorTimestamp = { new Date(isConnected.lastConnnectionAttempt + TIME_BETWEEN_BLOCKS * 1000) } countBackwards = { true }/>.</> }/>
 			</div>
 		: <></> }
 
@@ -315,6 +301,7 @@ export function Home(param: HomeParams) {
 				currentBlockNumber = { currentBlockNumber }
 				renameAddressCallBack = { param.renameAddressCallBack }
 				removeTransactionHashes = { removeTransactionHashes }
+				isConnected = { isConnected }
 			/>
 		}
 	</>

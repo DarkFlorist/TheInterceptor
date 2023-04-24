@@ -70,6 +70,7 @@ type StorageKey = 'activeSigningAddress'
 	| 'signerName'
 	| 'currentTabId'
 	| `tabState_${ number }`
+	| 'isConnectedToNode'
 	| 'ethereumSubscriptions'
 
 export async function browserStorageLocalGet(keys: StorageKey | StorageKey[]) {
