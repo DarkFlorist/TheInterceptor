@@ -176,6 +176,7 @@ export type SimulationStateParam = {
 	disableReset: boolean,
 	resetSimulation: () => void,
 	removeTransactionHashes: bigint[],
+	isConnected: IsConnected,
 }
 
 export type LogAnalysisParams = {

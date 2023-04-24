@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'preact/hooks'
-import { ConfirmTransactionDialogState, ConfirmTransactionSimulationBaseData, ExternalPopupMessage } from '../../utils/interceptor-messages.js'
+import { ConfirmTransactionDialogState, ConfirmTransactionSimulationBaseData, ExternalPopupMessage, IsConnected } from '../../utils/interceptor-messages.js'
 import { SimulatedAndVisualizedTransaction, SimulationAndVisualisationResults } from '../../utils/visualizer-types.js'
 import Hint from '../subcomponents/Hint.js'
 import { ExtraDetailsTransactionCard, GasFee, LogAnalysisCard, SimulatedInBlockNumber, TransactionHeader, TransactionsAccountChangesCard } from '../simulationExplaining/SimulationSummary.js'
@@ -11,9 +11,11 @@ import { formSimulatedAndVisualizedTransaction } from '../formVisualizerResults.
 import { addressString } from '../../utils/bigint.js'
 import { SignerLogoText } from '../subcomponents/signers.js'
 import { SmallAddress, WebsiteOriginText } from '../subcomponents/address.js'
-import { ErrorCheckBox } from '../subcomponents/Error.js'
+import { Error as ErrorComponent, ErrorCheckBox } from '../subcomponents/Error.js'
 import { QuarantineCodes, TransactionImportanceBlock } from '../simulationExplaining/Transactions.js'
 import { identifyTransaction } from '../simulationExplaining/identifyTransaction.js'
+import { SomeTimeAgo } from '../subcomponents/SomeTimeAgo.js'
+import { TIME_BETWEEN_BLOCKS } from '../../utils/constants.js'
 
 type TransactionCardParams = {
 	simulationAndVisualisationResults: SimulationAndVisualisationResults,
@@ -21,6 +23,7 @@ type TransactionCardParams = {
 	activeAddress: bigint,
 	resetButton: boolean,
 	currentBlockNumber: bigint | undefined,
+	isConnected: IsConnected,
 }
 
 function TransactionCard(param: TransactionCardParams) {
@@ -83,6 +86,7 @@ function TransactionCard(param: TransactionCardParams) {
 							simulationBlockNumber = { param.simulationAndVisualisationResults.blockNumber }
 							currentBlockNumber = { param.currentBlockNumber }
 							simulationConductedTimestamp = { param.simulationAndVisualisationResults.simulationConductedTimestamp }
+							isConnected = { param.isConnected }
 						/>
 					</div>
 				</span>
@@ -100,6 +104,7 @@ export function ConfirmTransaction() {
 	const [forceSend, setForceSend] = useState<boolean>(false)
 	const [currentBlockNumber, setCurrentBlockNumber] = useState<undefined | bigint>(undefined)
 	const [addingNewAddress, setAddingNewAddress] = useState<AddingNewAddressType | 'renameAddressModalClosed'> ('renameAddressModalClosed')
+	const [isConnected, setIsConnected] = useState<IsConnected>(undefined)
 
 	useEffect( () => {
 		function popupMessageListener(msg: unknown) {
@@ -107,8 +112,12 @@ export function ConfirmTransaction() {
 
 			if (message.method === 'popup_addressBookEntriesChanged') return refreshMetadata()
 			if (message.method === 'popup_new_block_arrived') {
+				setIsConnected({ isConnected: true, lastConnnectionAttempt: Date.now() })
 				refreshSimulation()
 				return setCurrentBlockNumber(message.data.blockNumber)
+			}
+			if (message.method === 'popup_failed_to_get_block') {
+				setIsConnected({ isConnected: false, lastConnnectionAttempt: Date.now() })
 			}
 			if (message.method === 'popup_confirm_transaction_simulation_failed') {
 				return setDialogState({ state: 'failed', data: message.data })
@@ -233,6 +242,12 @@ export function ConfirmTransaction() {
 							</p>
 						</header>
 
+						{ isConnected?.isConnected === false ?
+							<div style = 'margin: 10px; background-color: var(--bg-color);'>
+								<ErrorComponent warning = { true } text = { <>Unable to connect to a Ethereum node. Retrying in <SomeTimeAgo priorTimestamp = { new Date(isConnected.lastConnnectionAttempt + TIME_BETWEEN_BLOCKS * 1000) } countBackwards = { true }/>.</> }/>
+							</div>
+						: <></> }
+
 						<TransactionCard
 							simulationAndVisualisationResults = { {
 								blockNumber: dialogState.data.simulationState.blockNumber,
@@ -248,6 +263,7 @@ export function ConfirmTransaction() {
 							activeAddress = { dialogState.data.activeAddress }
 							resetButton = { false }
 							currentBlockNumber = { currentBlockNumber }
+							isConnected = { isConnected }
 						/>
 					</div>
 

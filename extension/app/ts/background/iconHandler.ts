@@ -1,5 +1,5 @@
 import { getPrettySignerName } from '../components/subcomponents/signers.js'
-import { ICON_ACCESS_DENIED, ICON_NOT_ACTIVE, ICON_SIGNING, ICON_SIGNING_NOT_SUPPORTED, ICON_SIMULATING, isSupportedChain } from '../utils/constants.js'
+import { ICON_ACCESS_DENIED, ICON_NOT_ACTIVE, ICON_SIGNING, ICON_SIGNING_NOT_SUPPORTED, ICON_SIMULATING, isSupportedChain, PRIMARY_COLOR, WARNING_COLOR } from '../utils/constants.js'
 import { getActiveAddressForDomain, hasAccess, hasAddressAccess } from './accessManagement.js'
 import { getActiveAddress, sendPopupMessageToOpenWindows, setExtensionBadgeBackgroundColor, setExtensionBadgeText, setExtensionIcon } from './backgroundUtils.js'
 import { getAddressMetaData } from './metadataUtils.js'
@@ -63,11 +63,11 @@ export async function updateExtensionIcon(websiteTabConnections: WebsiteTabConne
 
 export async function updateExtensionBadge() {
 	if ((await getIsConnected())?.isConnected === false) {
-		await setExtensionBadgeBackgroundColor({ color: '#f6685e' })
+		await setExtensionBadgeBackgroundColor({ color: WARNING_COLOR })
 		return await setExtensionBadgeText({ text: '!' })
 	}
 	const count = (await getSettings()).pendingAccessRequests.length
-	await setExtensionBadgeBackgroundColor({ color: '#58a5b3' })
+	await setExtensionBadgeBackgroundColor({ color: PRIMARY_COLOR })
 	return await setExtensionBadgeText( { text: count === 0 ? '' : count.toString() } )
 }
 

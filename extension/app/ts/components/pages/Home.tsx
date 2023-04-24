@@ -172,6 +172,7 @@ function SimulationResults(param: SimulationStateParam) {
 				simulationAndVisualisationResults = { param.simulationAndVisualisationResults }
 				currentBlockNumber = { param.currentBlockNumber }
 				renameAddressCallBack = { param.renameAddressCallBack }
+				isConnected = { param.isConnected }
 			/>
 		}
 		<div class = 'content' style = 'height: 0.1px'/>
@@ -255,13 +256,13 @@ export function Home(param: HomeParams) {
 	return <>
 		{ !isSupportedChain(activeChain.toString()) ?
 			<div style = 'margin: 10px; background-color: var(--bg-color);'>
-				<Error text = { `${ getChainName(activeChain) } is not a supported network. The Interceptor is disabled while you are using the network.` }/>
+				<Error text = { `${ getChainName(activeChain) } is not a supported network. The Interceptors is disabled while you are using the network.` }/>
 			</div>
 		: <></> }
 
 		{ isConnected?.isConnected === false ?
 			<div style = 'margin: 10px; background-color: var(--bg-color);'>
-				<Error text = { <>Unable to connect to a Ethereum node. Retrying in <SomeTimeAgo priorTimestamp = { new Date(isConnected.lastConnnectionAttempt + TIME_BETWEEN_BLOCKS * 1000) } countBackwards = { true }/>.</> }/>
+				<Error warning = { true } text = { <>Unable to connect to a Ethereum node. Retrying in <SomeTimeAgo priorTimestamp = { new Date(isConnected.lastConnnectionAttempt + TIME_BETWEEN_BLOCKS * 1000) } countBackwards = { true }/>.</> }/>
 			</div>
 		: <></> }
 
@@ -300,6 +301,7 @@ export function Home(param: HomeParams) {
 				currentBlockNumber = { currentBlockNumber }
 				renameAddressCallBack = { param.renameAddressCallBack }
 				removeTransactionHashes = { removeTransactionHashes }
+				isConnected = { isConnected }
 			/>
 		}
 	</>

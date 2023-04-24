@@ -147,7 +147,7 @@ export function App() {
 			const message = ExternalPopupMessage.parse(msg)
 			if (message.method === 'popup_settingsUpdated') return updateHomePageSettings(message.data, true)
 			if (message.method === 'popup_websiteIconChanged') return updateTabIcon(message)
-			if (message.method === 'popup_failed_to_get_block') return
+			if (message.method === 'popup_failed_to_get_block') return await sendPopupMessageToBackgroundPage( { method: 'popup_requestNewHomeData' } )
 			if (message.method !== 'popup_UpdateHomePage') return await sendPopupMessageToBackgroundPage( { method: 'popup_requestNewHomeData' } )
 			return updateHomePage(message)
 		}
