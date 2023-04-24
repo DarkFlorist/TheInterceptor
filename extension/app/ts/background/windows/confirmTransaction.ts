@@ -88,11 +88,7 @@ export async function openConfirmTransactionDialog(
 			const message = ExternalPopupMessage.parse(msg)
 			if (message.method !== 'popup_confirmTransactionReadyAndListening') return
 			browser.runtime.onMessage.removeListener(windowReadyAndListening)
-			const refreshMessage = await refreshSimulationPromise
-			if (openedConfirmTransactionDialogWindow !== null && openedConfirmTransactionDialogWindow.id) {
-				if (refreshMessage === undefined) return await browser.windows.remove(openedConfirmTransactionDialogWindow.id)
-				return sendPopupMessageToOpenWindows(refreshMessage)
-			}
+			return sendPopupMessageToOpenWindows(await refreshSimulationPromise)
 		}
 
 		try {
@@ -138,7 +134,7 @@ async function resolve(ethereumClientService: EthereumClientService, reply: Conf
 		if (simulationState === undefined) return undefined
 		return await appendTransaction(ethereumClientService, simulationState, { transaction: transactionToSimulate, website: website })
 	}, activeAddress)
-	if (newState?.simulatedTransactions === undefined || newState.simulatedTransactions.length === 0) {
+	if (newState === undefined || newState.simulatedTransactions === undefined || newState.simulatedTransactions.length === 0) {
 		return {
 			error: {
 				code: METAMASK_ERROR_NOT_CONNECTED_TO_CHAIN,

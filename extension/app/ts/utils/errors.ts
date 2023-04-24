@@ -17,6 +17,11 @@ export class JsonRpcResponseError extends ErrorWithData {
 	}
 }
 
+export function isFailedToFetchError(error: Error) {
+	if (error.message.includes('Failed to fetch')) return true
+	return false
+}
+
 export function exitOnError<P extends unknown[], R>(func: (...params: P) => R): (...params: P) => R {
 	return (...params: P) => {
 		try {

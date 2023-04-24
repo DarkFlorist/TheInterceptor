@@ -19,6 +19,7 @@ import { assertNever, assertUnreachable } from '../utils/typescript.js'
 import { EthereumClientService } from '../simulation/services/EthereumClientService.js'
 import { appendTransaction, copySimulationState, setPrependTransactionsQueue, simulatePersonalSign } from '../simulation/services/SimulationModeEthereumClientService.js'
 import { Semaphore } from '../utils/semaphore.js'
+import { isFailedToFetchError } from '../utils/errors.js'
 import { sendSubscriptionMessagesForNewBlock } from '../simulation/services/EthereumSubscriptionService.js'
 
 const websiteTabConnections = new Map<number, TabConnection>()
@@ -59,26 +60,35 @@ async function visualizeSimulatorState(simulationState: SimulationState, simulat
 export async function updateSimulationState(getUpdatedSimulationState: () => Promise<SimulationState | undefined>, activeAddress: bigint | undefined) {
 	if (simulator === undefined) return
 	const simId = (await getSimulationResults()).simulationId + 1
-	const updatedSimulationState = await getUpdatedSimulationState()
-
-	if (updatedSimulationState !== undefined) {
-		await updateSimulationResults({
-			simulationId: simId,
-			...await visualizeSimulatorState(updatedSimulationState, simulator),
-			activeAddress: activeAddress,
-		})
-	} else {
-		await updateSimulationResults({
-			simulationId: simId,
-			addressBookEntries: [],
-			tokenPrices: [],
-			visualizerResults: [],
-			simulationState: updatedSimulationState,
-			activeAddress: activeAddress,
-		})
+	try {
+		const updatedSimulationState = await getUpdatedSimulationState()
+		if (updatedSimulationState !== undefined) {
+			await updateSimulationResults({
+				simulationId: simId,
+				...await visualizeSimulatorState(updatedSimulationState, simulator),
+				activeAddress: activeAddress,
+			})
+		} else {
+			await updateSimulationResults({
+				simulationId: simId,
+				addressBookEntries: [],
+				tokenPrices: [],
+				visualizerResults: [],
+				simulationState: updatedSimulationState,
+				activeAddress: activeAddress,
+			})
+		}
+		sendPopupMessageToOpenWindows({ method: 'popup_simulation_state_changed' })
+		return updatedSimulationState
+	} catch(error) {
+		if (error instanceof Error) {
+			if (isFailedToFetchError(error)) {
+				await sendPopupMessageToOpenWindows({ method: 'popup_failed_to_update_simulation_state' })
+				return undefined
+			}
+		}
+		throw error
 	}
-	sendPopupMessageToOpenWindows({ method: 'popup_simulation_state_changed' })
-	return updatedSimulationState
 }
 
 export function setEthereumNodeBlockPolling(enabled: boolean) {
@@ -95,20 +105,26 @@ export async function refreshConfirmTransactionSimulation(
 	transactionToSimulate: EthereumUnsignedTransaction,
 	website: Website,
 ) {
-	if (simulator === undefined) return undefined
+	const info = {
+		requestId: requestId,
+		transactionToSimulate: transactionToSimulate,
+		simulationMode: simulationMode,
+		activeAddress: activeAddress,
+		signerName: await getSignerName(),
+		website: website,
+	}
+	if (simulator === undefined) return { method: 'popup_confirm_transaction_simulation_failed' as const, data: info }
 	sendPopupMessageToOpenWindows({ method: 'popup_confirm_transaction_simulation_started' })
-	const simulationStateWithNewTransaction = await appendTransaction(ethereumClientService, copySimulationState(simulationState), { transaction: transactionToSimulate, website: website })
-	return {
-		method: 'popup_confirm_transaction_simulation_state_changed' as const,
-		data: {
-			requestId: requestId,
-			transactionToSimulate: transactionToSimulate,
-			simulationMode: simulationMode,
-			...await visualizeSimulatorState(simulationStateWithNewTransaction, simulator),
-			activeAddress: activeAddress,
-			signerName: await getSignerName(),
-			website: website,
+	try {
+		const simulationStateWithNewTransaction = await appendTransaction(ethereumClientService, copySimulationState(simulationState), { transaction: transactionToSimulate, website: website })
+		return {
+			method: 'popup_confirm_transaction_simulation_state_changed' as const,
+			data: { ...info, ...await visualizeSimulatorState(simulationStateWithNewTransaction, simulator) }
 		}
+	} catch(error) {
+		if (!(error instanceof Error)) throw error
+		if (!isFailedToFetchError(error)) throw error
+		return { method: 'popup_confirm_transaction_simulation_failed' as const, data: info }
 	}
 }
 
@@ -299,8 +315,9 @@ async function newBlockCallback(blockNumber: bigint, ethereumClientService: Ethe
 	await sendSubscriptionMessagesForNewBlock(blockNumber, ethereumClientService, settings.simulationMode ? updatedSimulationState : undefined, websiteTabConnections)
 }
 
-async function onErrorBlockCallback(_ethereumClientService: EthereumClientService, _error: Error) {
-	sendPopupMessageToOpenWindows({ method: 'popup_failed_to_get_block' })
+async function onErrorBlockCallback(_ethereumClientService: EthereumClientService, error: Error) {
+	if (isFailedToFetchError(error)) return await sendPopupMessageToOpenWindows({ method: 'popup_failed_to_get_block' })
+	throw error
 }
 
 const changeActiveAddressAndChainAndResetSimulationSemaphore = new Semaphore(1)

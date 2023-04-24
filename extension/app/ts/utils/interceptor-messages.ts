@@ -325,7 +325,6 @@ export const GetAddressBookDataReply = funtypes.ReadonlyObject({
 	data: GetAddressBookDataReplyData,
 }).asReadonly()
 
-
 export type RefreshConfirmTransactionDialogSimulation = funtypes.Static<typeof RefreshConfirmTransactionDialogSimulation>
 export const RefreshConfirmTransactionDialogSimulation = funtypes.ReadonlyObject({
 	method: funtypes.Literal('popup_refreshConfirmTransactionDialogSimulation'),
@@ -473,19 +472,23 @@ export const InterceptorAccessDialog = funtypes.ReadonlyObject({
 	})
 })
 
-export type ConfirmTransactionDialogState = funtypes.Static<typeof ConfirmTransactionDialogState>
-export const ConfirmTransactionDialogState = funtypes.ReadonlyObject({
+export type ConfirmTransactionSimulationBaseData = funtypes.Static<typeof ConfirmTransactionSimulationBaseData>
+export const ConfirmTransactionSimulationBaseData = funtypes.ReadonlyObject({
+	activeAddress: EthereumAddress,
+	simulationMode: funtypes.Boolean,
 	requestId: funtypes.Number,
 	transactionToSimulate: EthereumUnsignedTransaction,
-	simulationMode: funtypes.Boolean,
+	website: Website,
+	signerName: SignerName,
+})
+
+export type ConfirmTransactionDialogState = funtypes.Static<typeof ConfirmTransactionDialogState>
+export const ConfirmTransactionDialogState = funtypes.Intersect(ConfirmTransactionSimulationBaseData, funtypes.ReadonlyObject({
 	simulationState: SimulationState,
 	visualizerResults: funtypes.ReadonlyArray(SimResults),
 	addressBookEntries: AddressBookEntries,
 	tokenPrices: funtypes.ReadonlyArray(TokenPriceEstimate),
-	activeAddress: EthereumAddress,
-	signerName: SignerName,
-	website: Website,
-})
+}))
 
 export type ConfirmTransactionSimulationStateChanged = funtypes.Static<typeof ConfirmTransactionSimulationStateChanged>
 export const ConfirmTransactionSimulationStateChanged = funtypes.ReadonlyObject({
@@ -497,6 +500,12 @@ export type RefreshConfirmTransactionMetadata = funtypes.Static<typeof RefreshCo
 export const RefreshConfirmTransactionMetadata = funtypes.ReadonlyObject({
 	method: funtypes.Literal('popup_refreshConfirmTransactionMetadata'),
 	data: ConfirmTransactionDialogState
+}).asReadonly()
+
+export type ConfirmTransactionSimulationFailed = funtypes.Static<typeof ConfirmTransactionSimulationFailed>
+export const ConfirmTransactionSimulationFailed = funtypes.ReadonlyObject({
+	method: funtypes.Literal('popup_confirm_transaction_simulation_failed'),
+	data: ConfirmTransactionSimulationBaseData,
 }).asReadonly()
 
 export type WebsiteAddressAccess = funtypes.Static<typeof WebsiteAddressAccess>
@@ -708,6 +717,8 @@ export const MessageToPopup = funtypes.Union(
 	UpdateHomePage,
 	SettingsUpdated,
 	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_failed_to_get_block') }),
+	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_failed_to_update_simulation_state') }),
+	ConfirmTransactionSimulationFailed,
 )
 
 export type ExternalPopupMessage = funtypes.Static<typeof MessageToPopup>
