@@ -163,6 +163,40 @@ export async function requestAccessFromUser(
 		const oldPromise = await getPendingInterceptorAccessRequestPromise()
 		if (oldPromise !== undefined) {
 			if ((await browser.tabs.query({ windowId: oldPromise.dialogId })).length > 0) {
+				if (oldPromise.requestAccessToAddress === undefined
+					&& website.websiteOrigin === oldPromise.website.websiteOrigin
+					&& requestAccessToAddress !== undefined
+					&& socket.connectionName === oldPromise.socket.connectionName
+					&& socket.tabId === oldPromise.socket.tabId
+				) {
+					// the website is asking to access address right after trying to access interceptor, lets modify the request directly to ask access to address
+					await setPendingInterceptorAccessRequestPromise({
+						website: website,
+						dialogId: oldPromise.dialogId,
+						socket: socket,
+						requestAccessToAddress: accessAddress,
+						request: oldPromise.request,
+					})
+					await sendPopupMessageToOpenWindows({
+						method: 'popup_interceptorAccessDialog',
+						data: {
+							website: website,
+							requestAccessToAddress: accessAddress,
+							originalRequestAccessToAddress: accessAddress,
+							associatedAddresses: associatedAddresses,
+							addressInfos: settings.userAddressBook.addressInfos,
+							signerAccounts: [],
+							signerName: await getSignerName(),
+							simulationMode: settings.simulationMode,
+							socket: socket,
+						}
+					})
+					return await resolve(websiteTabConnections, await pendingInterceptorAccess.future)
+				}
+				if (oldPromise.website.websiteOrigin === website.websiteOrigin && oldPromise.requestAccessToAddress === requestAccessToAddress) {
+					// request needs the same access as we are waiting for
+					return await resolve(websiteTabConnections, await pendingInterceptorAccess.future)
+				}
 				return rejectReply()
 			}
 			await setPendingInterceptorAccessRequestPromise(undefined)
