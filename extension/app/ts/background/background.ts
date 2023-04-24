@@ -121,12 +121,9 @@ export async function refreshConfirmTransactionSimulation(
 			data: { ...info, ...await visualizeSimulatorState(simulationStateWithNewTransaction, simulator) }
 		}
 	} catch(error) {
-		if (error instanceof Error) {
-			if (isFailedToFetchError(error)) {
-				return { method: 'popup_confirm_transaction_simulation_failed' as const, data: info }
-			}
-		}
-		throw error
+		if (!(error instanceof Error)) throw error
+		if (!isFailedToFetchError(error)) throw error
+		return { method: 'popup_confirm_transaction_simulation_failed' as const, data: info }
 	}
 }
 
