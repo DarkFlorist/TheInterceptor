@@ -1,11 +1,8 @@
 import * as funtypes from 'funtypes'
 import { AddressBookEntries, AddressBookEntry, AddressInfo, AddressInfoEntry, ContactEntries, Website, WebsiteSocket } from './user-interface-types.js'
 import { EIP2612Message, EIP712Message, EthereumAddress, EthereumQuantity, EthereumUnsignedTransaction, Permit2, PersonalSignParams, SignTypedDataParams } from './wire-types.js'
-import { SimulationState, TokenPriceEstimate, SimResults } from './visualizer-types.js'
+import { SimulationState, TokenPriceEstimate, SimResults, OptionalEthereumAddress } from './visualizer-types.js'
 import { ICON_ACCESS_DENIED, ICON_ACTIVE, ICON_NOT_ACTIVE, ICON_SIGNING, ICON_SIGNING_NOT_SUPPORTED, ICON_SIMULATING } from './constants.js'
-
-export type OptionalEthereumAddress = funtypes.Static<typeof OptionalEthereumAddress>
-export const OptionalEthereumAddress = funtypes.Union(EthereumAddress, funtypes.Undefined)
 
 export type MessageMethodAndParams = funtypes.Static<typeof MessageMethodAndParams>
 export const MessageMethodAndParams = funtypes.Union(
