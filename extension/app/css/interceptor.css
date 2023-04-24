@@ -639,8 +639,9 @@ svg.spinner > circle {
 	display: grid;
 }
 
-.textarea {
+.textbox {
 	background-color: var(--alpha-005);
-	color: var(--subtitle-text-color);
-	border-color: #000000
+	padding: 10px;
+	word-break: break-all;
+	border-radius: 4px;
 }

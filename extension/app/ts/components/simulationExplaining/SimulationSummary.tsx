@@ -10,7 +10,7 @@ import { CHAINS, MAKE_YOU_RICH_TRANSACTION } from '../../utils/constants.js'
 import { addressString, dataStringWith0xStart, nanoString } from '../../utils/bigint.js'
 import { identifyTransaction } from './identifyTransaction.js'
 import { identifySwap } from './SwapTransactions.js'
-import { useEffect, useRef, useState } from 'preact/hooks'
+import { useState } from 'preact/hooks'
 import { convertNumberToCharacterRepresentationIfSmallEnough, upperCaseFirstCharacter } from '../ui-utils.js'
 import { IsConnected } from '../../utils/interceptor-messages.js'
 
@@ -655,20 +655,6 @@ type ExtraDetailsTransactionCardParams = {
 }
 export function ExtraDetailsTransactionCard({ transaction }: ExtraDetailsTransactionCardParams) {
 	const [showSummary, setShowSummary] = useState<boolean>(false)
-	const textareaRef = useRef<HTMLTextAreaElement | null>(null)
-
-	useEffect(() => {
-		const resizeTextArea = () => {
-			if (textareaRef && textareaRef.current) {
-				textareaRef.current.style.height = '0px'
-				const scrollHeight = textareaRef.current.scrollHeight
-				textareaRef.current.style.height = scrollHeight + 'px'
-			}
-		}
-		resizeTextArea()
-		globalThis.addEventListener('resize', resizeTextArea)
-		return () => globalThis.removeEventListener('resize', resizeTextArea)
-	})
 
 	const CellElement = (param: { text: string }) => {
 		return <div class = 'log-cell' style = 'justify-content: right;'> <p class = 'paragraph' style = 'color: var(--subtitle-text-color)'> { param.text }</p></div>
@@ -704,8 +690,8 @@ export function ExtraDetailsTransactionCard({ transaction }: ExtraDetailsTransac
 
 					<p class = 'paragraph' style = 'color: var(--subtitle-text-color)'>Raw transaction input: </p>
 
-					<div class = 'control'>
-						<textarea class = 'textarea' readonly ref = { textareaRef } style = 'overflow: hidden; resize: none;'>{ dataStringWith0xStart(transaction.input) }</textarea>
+					<div class = 'textbox'>
+						<p class = 'paragraph' style = 'color: var(--subtitle-text-color)'>{ dataStringWith0xStart(transaction.input) }</p>
 					</div>
 				</div>
 			</div>
