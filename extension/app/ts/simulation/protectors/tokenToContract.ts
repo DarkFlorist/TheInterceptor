@@ -9,6 +9,7 @@ export async function tokenToContract(transaction: EthereumUnsignedTransaction, 
 	if (transferInfo === undefined) return
 	if (transferInfo.name !== 'transfer' && transferInfo.name !== 'transferFrom') return
 	const code = await getSimulatedCode(simulator.ethereum, simulationState,transferInfo.arguments.to)
-	if (code.length === 0) return
+	if (code.statusCode === 'failure') return 'FAILED_CHECK'
+	if (code.getCodeReturn.length === 0) return
 	return 'ERC20_UNINTENDED_CONTRACT'
 }

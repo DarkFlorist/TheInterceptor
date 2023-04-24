@@ -20,6 +20,7 @@ import { EthereumClientService } from '../simulation/services/EthereumClientServ
 import { appendTransaction, copySimulationState, setPrependTransactionsQueue, simulatePersonalSign } from '../simulation/services/SimulationModeEthereumClientService.js'
 import { Semaphore } from '../utils/semaphore.js'
 import { isFailedToFetchError } from '../utils/errors.js'
+import { sendSubscriptionMessagesForNewBlock } from '../simulation/services/EthereumSubscriptionService.js'
 
 const websiteTabConnections = new Map<number, TabConnection>()
 
@@ -121,12 +122,9 @@ export async function refreshConfirmTransactionSimulation(
 			data: { ...info, ...await visualizeSimulatorState(simulationStateWithNewTransaction, simulator) }
 		}
 	} catch(error) {
-		if (error instanceof Error) {
-			if (isFailedToFetchError(error)) {
-				return { method: 'popup_confirm_transaction_simulation_failed' as const, data: info }
-			}
-		}
-		throw error
+		if (!(error instanceof Error)) throw error
+		if (!isFailedToFetchError(error)) throw error
+		return { method: 'popup_confirm_transaction_simulation_failed' as const, data: info }
 	}
 }
 
@@ -188,8 +186,8 @@ async function handleSimulationMode(
 		case 'eth_sendTransaction': return sendTransaction(websiteTabConnections, getActiveAddressForDomain, simulator.ethereum, parsedRequest, socket, request, true, website, settings)
 		case 'eth_call': return await call(simulator.ethereum, simulationState, parsedRequest)
 		case 'eth_blockNumber': return await blockNumber(simulator.ethereum, simulationState)
-		case 'eth_subscribe': return await subscribe(websiteTabConnections, simulator, socket, parsedRequest)
-		case 'eth_unsubscribe': return await unsubscribe(simulator, parsedRequest)
+		case 'eth_subscribe': return await subscribe(socket, parsedRequest)
+		case 'eth_unsubscribe': return await unsubscribe(socket, parsedRequest)
 		case 'eth_chainId': return await chainId(simulator)
 		case 'net_version': return await chainId(simulator)
 		case 'eth_getCode': return await getCode(simulator.ethereum, simulationState, parsedRequest)
@@ -313,8 +311,10 @@ async function handleSigningMode(
 async function newBlockCallback(blockNumber: bigint, ethereumClientService: EthereumClientService) {
 	await setIsConnected(true)
 	await updateExtensionBadge()
-	sendPopupMessageToOpenWindows({ method: 'popup_new_block_arrived', data: { blockNumber } })
-	refreshSimulation(ethereumClientService, await getSettings())
+	const settings = await getSettings()
+	const updatedSimulationState = await refreshSimulation(ethereumClientService, settings)
+	await sendPopupMessageToOpenWindows({ method: 'popup_new_block_arrived', data: { blockNumber } })
+	await sendSubscriptionMessagesForNewBlock(blockNumber, ethereumClientService, settings.simulationMode ? updatedSimulationState : undefined, websiteTabConnections)
 }
 
 async function onErrorBlockCallback(_ethereumClientService: EthereumClientService, error: Error) {

@@ -1,92 +1,75 @@
-import { EthSubscribeParams, JsonRpcMessage, JsonRpcNewHeadsNotification } from '../../utils/wire-types.js'
-import { ErrorWithData } from '../../utils/errors.js'
-import { Future } from '../../utils/future.js'
+import { EthSubscribeParams, NewHeadsSubscriptionData } from '../../utils/wire-types.js'
+import { assertNever } from '../../utils/typescript.js'
+import { EthereumClientService } from './EthereumClientService.js'
+import { getEthereumSubscriptions, updateEthereumSubscriptions } from '../../background/settings.js'
+import { EthereumSubscriptions, SimulationState } from '../../utils/visualizer-types.js'
+import { postMessageIfStillConnected } from '../../background/background.js'
+import { WebsiteSocket, WebsiteTabConnections } from '../../utils/user-interface-types.js'
+import { getSimulatedBlock } from './SimulationModeEthereumClientService.js'
 
-type Subscription = {
-	callback: (subscriptionId: string, reply: JsonRpcNewHeadsNotification) => void
-	params: EthSubscribeParams,
-	rpcSocket: WebSocket
+const dec2hex = (dec: number) => dec.toString(16).padStart(2, '0')
+
+function generateId(len: number) {
+	const arr = new Uint8Array((len || 40) / 2)
+	globalThis.crypto.getRandomValues(arr)
+	return `0x${ Array.from(arr, dec2hex).join('') }`
 }
 
-export class EthereumSubscriptionService {
-	private subscriptions = new Map<string, Subscription>()
-	private subscriptionSocket = new Map<WebSocket, string>()
+export async function removeEthereumSubscription(socket: WebsiteSocket, subscriptionId: string) {
+	await updateEthereumSubscriptions((subscriptions: EthereumSubscriptions) => {
+		return subscriptions.filter((subscription) => subscription.subscriptionId !== subscriptionId
+			&& subscription.subscriptionCreatorSocket.tabId === socket.tabId // only allow the same tab and connection to remove the subscription
+			&& subscription.subscriptionCreatorSocket.connectionName === socket.connectionName
+		)
+	})
+}
 
-	private webSocketConnectionString: string
-
-	public constructor(webSocketConnectionString: string) {
-		this.webSocketConnectionString = webSocketConnectionString
-	}
-
-	public readonly remoteSubscription = (subscriptionId: string) => {
-		if(this.subscriptions.has(subscriptionId)) {
-			this.subscriptions.get(subscriptionId)?.rpcSocket.close()
-			this.subscriptions.delete(subscriptionId)
-			return true
-		}
-		return false
-	}
-
-	public readonly createSubscription = async (params: EthSubscribeParams, callback: (subscriptionId: string, reply: JsonRpcNewHeadsNotification) => void) => {
-		switch(params.params[0]) {
+export async function sendSubscriptionMessagesForNewBlock(blockNumber: bigint, ethereumClientService: EthereumClientService, simulationState: SimulationState | undefined, websiteTabConnections: WebsiteTabConnections) {
+	const ethereumSubscriptions = await getEthereumSubscriptions()
+	for (const subscription of ethereumSubscriptions) {
+		switch (subscription.type) {
 			case 'newHeads': {
-				const rpcSocket = new WebSocket(this.webSocketConnectionString)
-				const subscriptionId = new Future<string>()
+				if (websiteTabConnections.get(subscription.subscriptionCreatorSocket.tabId) === undefined) { // connection removed
+					return await removeEthereumSubscription(subscription.subscriptionCreatorSocket, subscription.subscriptionId)
+				}
+				const newBlock = await ethereumClientService.getBlock(blockNumber, false)
 
-				rpcSocket.addEventListener('open', _event => {
-					const request = { jsonrpc: '2.0', id: 0, method: 'eth_subscribe', params: ['newHeads'] }
-					rpcSocket.send(JSON.stringify(request))
+				postMessageIfStillConnected(websiteTabConnections, subscription.subscriptionCreatorSocket, {
+					interceptorApproved: true,
+					options: subscription.params,
+					result: NewHeadsSubscriptionData.serialize({ subscription: subscription.type, result: newBlock }),
+					subscription: subscription.subscriptionId,
 				})
 
-				rpcSocket.addEventListener('close', event => {
-					if (event.code === 1000) return
-					if (this.subscriptionSocket.has(rpcSocket)) {
-						this.subscriptions.delete(this.subscriptionSocket.get(rpcSocket)!)
-						this.subscriptionSocket.delete(rpcSocket)
-					}
-					throw new Error(`Websocket disconnected with code ${event.code} and reason: ${event.reason}`)
-				})
-
-				rpcSocket.addEventListener('message', event => {
-					const subResponse = JsonRpcMessage.parse(JSON.parse(event.data))
-					if ('error' in subResponse) {
-						throw new ErrorWithData(`Websocket error`, subResponse.error)
-					}
-					if ('id' in subResponse && 'result' in subResponse) {
-						if (typeof subResponse.result !== 'string') throw new ErrorWithData(`Expected rpc payload to be a string but it was a ${typeof event.data}`, event.data)
-						return subscriptionId.resolve(subResponse.result)
-					}
-					try {
-						if (typeof event.data !== 'string') throw new ErrorWithData(`Expected rpc payload to be a string but it was a ${typeof event.data}`, event.data)
-						const jsonRpcNotification = JsonRpcNewHeadsNotification.parse(JSON.parse(event.data))
-						if (jsonRpcNotification['method'] === 'eth_subscription') {
-							return callback(jsonRpcNotification.params.subscription, jsonRpcNotification)
-						} else {
-							throw('not eth_subscription')
-						}
-					} catch (error: unknown) {
-						console.error(error)
-					}
-				})
-
-				rpcSocket.addEventListener('error', event => {
-					throw new ErrorWithData(`Websocket error`, event)
-				})
-
-				const subId = await subscriptionId
-
-				this.subscriptions.set(subId, {
-					callback: callback,
-					params: params,
-					rpcSocket: rpcSocket
-				})
-				this.subscriptionSocket.set(rpcSocket, subId)
-
-				return subId
+				if (simulationState !== undefined) {
+					const simulatedBlock = await getSimulatedBlock(ethereumClientService, simulationState, blockNumber + 1n, false)
+					// post our simulated block on top (reorg it)
+					postMessageIfStillConnected(websiteTabConnections, subscription.subscriptionCreatorSocket, {
+						interceptorApproved: true,
+						options: subscription.params,
+						result: NewHeadsSubscriptionData.serialize({ subscription: subscription.type, result: simulatedBlock }),
+						subscription: subscription.subscriptionId,
+					})
+				}
+				return
 			}
-			case 'logs': throw `Dapp requested for 'logs' subscription but it's not implemented`
-			case 'newPendingTransactions': throw `Dapp requested for 'newPendingTransactions' subscription but it's not implemented`
-			case 'syncing': throw `Dapp requested for 'syncing' subscription but it's not implemented`
+			default: assertNever(subscription.type)
 		}
+	}
+	return
+}
+export async function createEthereumSubscription(params: EthSubscribeParams, subscriptionCreatorSocket: WebsiteSocket) {
+	console.log('createsub tabid', subscriptionCreatorSocket.tabId)
+	switch(params.params[0]) {
+		case 'newHeads': {
+			const subscriptionId = generateId(40)
+			await updateEthereumSubscriptions((subscriptions: EthereumSubscriptions) => {
+				return subscriptions.concat({ type: 'newHeads', subscriptionId, params, subscriptionCreatorSocket })
+			})
+			return subscriptionId
+		}
+		case 'logs': throw `Dapp requested for 'logs' subscription but it's not implemented` //TODO: implement
+		case 'newPendingTransactions': throw `Dapp requested for 'newPendingTransactions' subscription but it's not implemented` //TODO: implement
+		case 'syncing': throw `Dapp requested for 'syncing' subscription but it's not implemented` //TODO: implement
 	}
 }

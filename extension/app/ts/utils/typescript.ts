@@ -71,6 +71,7 @@ type StorageKey = 'activeSigningAddress'
 	| 'currentTabId'
 	| `tabState_${ number }`
 	| 'isConnectedToNode'
+	| 'ethereumSubscriptions'
 
 export async function browserStorageLocalGet(keys: StorageKey | StorageKey[]) {
 	return await browser.storage.local.get(keys) as Promise<Partial<Record<StorageKey, JSONEncodeable>>>
