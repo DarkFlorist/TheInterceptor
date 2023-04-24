@@ -116,17 +116,24 @@ interface InterceptorAccessRequest {
 	socket: WebsiteSocket
 }
 
+const DISABLED_DELAY_MS = 3000
+
 export function InterceptorAccess() {
 	const [accessRequest, setAccessRequest] = useState<InterceptorAccessRequest | undefined>(undefined)
 	const [addingNewAddress, setAddingNewAddress] = useState<AddingNewAddressType> ({ addingAddress: true, type: 'addressInfo' as const })
 	const [appPage, setAppPage] = useState('Home')
+	const [informationUpdatedTimestamp, setInformationUpdatedTimestamp] = useState(0)
+	const [, setTimeSinceInformationUpdate] = useState(0)
 
-	useEffect( () => {
+	useEffect(() => {
 		async function popupMessageListener(msg: unknown) {
 			const message = ExternalPopupMessage.parse(msg)
 			if (message.method === 'popup_addressBookEntriesChanged') return refreshMetadata()
 			if (message.method !== 'popup_interceptorAccessDialog') return
 			setAccessRequest(message.data)
+			if (accessRequest !== undefined) {
+				setInformationUpdatedTimestamp(Date.now())
+			}
 		}
 		browser.runtime.onMessage.addListener(popupMessageListener)
 		sendPopupMessageToBackgroundPage( { method: 'popup_interceptorAccessReadyAndListening' } )
@@ -197,6 +204,13 @@ export function InterceptorAccess() {
 		} } )
 	}
 
+	const informationChangedRecently = () => new Date().getTime() < informationUpdatedTimestamp + DISABLED_DELAY_MS
+
+	useEffect(() => {
+		const id = setInterval(() => setTimeSinceInformationUpdate((old) => old + 1), 1000)
+		return () => clearInterval(id)
+	}, [])
+
 	if (accessRequest === undefined) return <main></main>
 
 	return <main>
@@ -239,10 +253,10 @@ export function InterceptorAccess() {
 				</div>
 				<nav class = 'window-header' style = 'display: flex; justify-content: space-around; width: 100%; flex-direction: column; padding-bottom: 10px; padding-top: 10px;'>
 					<div style = 'display: flex; flex-direction: row;'>
-						<button className = 'button is-primary is-danger' style = 'flex-grow: 1; margin-left: 5px; margin-right: 5px;' onClick = { reject } >
+						<button className = 'button is-primary is-danger' style = 'flex-grow: 1; margin-left: 5px; margin-right: 5px;' onClick = { reject } disabled = { informationChangedRecently() }>
 							Deny Access
 						</button>
-						<button className = 'button is-primary' style = 'flex-grow: 1; margin-left: 5px; margin-right: 5px;' onClick = { approve } >
+						<button className = 'button is-primary' style = 'flex-grow: 1; margin-left: 5px; margin-right: 5px;' onClick = { approve } disabled = { informationChangedRecently() }>
 							Grant Access
 						</button>
 					</div>
