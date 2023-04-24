@@ -4,7 +4,7 @@ import { EthereumAddress, EthereumQuantity, LiteralConverterParserFactory } from
 import { SimulatedAndVisualizedTransaction, SimulationAndVisualisationResults } from './visualizer-types.js'
 import { IdentifiedSwapWithMetadata } from '../components/simulationExplaining/SwapTransactions.js'
 import { CHAINS } from './constants.js'
-import { Page, PendingAccessRequestArray, SignerName, TabIconDetails, WebsiteAccessArray } from './interceptor-messages.js'
+import { IsConnected, Page, PendingAccessRequestArray, SignerName, TabIconDetails, WebsiteAccessArray } from './interceptor-messages.js'
 
 export type WebsiteSocket = funtypes.Static<typeof WebsiteSocket>
 export const WebsiteSocket = funtypes.ReadonlyObject({
@@ -140,6 +140,7 @@ export type HomeParams = {
 	currentBlockNumber: bigint | undefined,
 	signerName: SignerName,
 	renameAddressCallBack: RenameAddressCallBack,
+	isConnected: IsConnected,
 }
 
 export type ChangeActiveAddressParam = {
@@ -175,6 +176,7 @@ export type SimulationStateParam = {
 	disableReset: boolean,
 	resetSimulation: () => void,
 	removeTransactionHashes: bigint[],
+	isConnected: IsConnected,
 }
 
 export type LogAnalysisParams = {

@@ -1,9 +1,9 @@
 import { ICON_NOT_ACTIVE, MOCK_PRIVATE_KEYS_ADDRESS } from '../utils/constants.js'
-import { LegacyWebsiteAccessArray, Page, PendingAccessRequestArray, PendingChainChangeConfirmationPromise, PendingInterceptorAccessRequestPromise, PendingPersonalSignPromise, PendingUserRequestPromise, Settings, WebsiteAccessArray, WebsiteAccessArrayWithLegacy, SignerName, TabState } from '../utils/interceptor-messages.js'
+import { LegacyWebsiteAccessArray, Page, PendingAccessRequestArray, PendingChainChangeConfirmationPromise, PendingInterceptorAccessRequestPromise, PendingPersonalSignPromise, PendingUserRequestPromise, Settings, WebsiteAccessArray, WebsiteAccessArrayWithLegacy, SignerName, TabState, IsConnected } from '../utils/interceptor-messages.js'
 import { Semaphore } from '../utils/semaphore.js'
 import { browserStorageLocalGet, browserStorageLocalSet, browserStorageLocalSetKeys, browserStorageLocalSingleGetWithDefault } from '../utils/typescript.js'
 import { AddressInfoArray, ContactEntries } from '../utils/user-interface-types.js'
-import { SimulationResults } from '../utils/visualizer-types.js'
+import { EthereumSubscriptions, SimulationResults } from '../utils/visualizer-types.js'
 import { EthereumAddress, EthereumAddressOrMissing, EthereumQuantity } from '../utils/wire-types.js'
 import * as funtypes from 'funtypes'
 
@@ -197,7 +197,7 @@ export async function getTabState(tabId: number) : Promise<TabState> {
 		tabIconDetails: {
 			icon: ICON_NOT_ACTIVE,
 			iconReason: 'No active address selected.',
-		}
+		},
 	}
 }
 export async function setTabState(tabId: number, tabState: TabState) {
@@ -259,4 +259,24 @@ export async function saveCurrentTabId(tabId: number) {
 
 export async function getCurrentTabId() {
 	return funtypes.Union(funtypes.Undefined, funtypes.Number).parse(await browserStorageLocalSingleGetWithDefault('currentTabId', undefined))
+}
+
+export async function setIsConnected(isConnected: boolean) {
+	return await browserStorageLocalSet('isConnectedToNode', IsConnected.serialize({ isConnected, lastConnnectionAttempt: Date.now() }) as string )
+}
+
+export async function getIsConnected() {
+	return IsConnected.parse(await browserStorageLocalSingleGetWithDefault('isConnectedToNode', undefined))
+}
+
+export async function getEthereumSubscriptions() {
+	return EthereumSubscriptions.parse(await browserStorageLocalSingleGetWithDefault('ethereumSubscriptions', []))
+}
+
+const ethereumSubscriptionsSemaphore = new Semaphore(1)
+export async function updateEthereumSubscriptions(updateFunc: (prevState: EthereumSubscriptions) => EthereumSubscriptions) {
+	await ethereumSubscriptionsSemaphore.execute(async () => {
+		const subscriptions = EthereumSubscriptions.parse(await browserStorageLocalSingleGetWithDefault('ethereumSubscriptions', []))
+		return await browserStorageLocalSet('ethereumSubscriptions', EthereumSubscriptions.serialize(updateFunc(subscriptions)) as string)
+	})
 }

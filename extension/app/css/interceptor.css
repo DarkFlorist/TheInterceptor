@@ -18,6 +18,9 @@
 	--error-box-color:#FFB6B6;
 	--error-box-text: #000000;
 
+	--warning-box-color:#FFC107;
+	--warning-box-text: #000000;
+
 	--highlighted-negative-color: #f77f76;
 	--warning-color: #FFC107;
 	--negative-dim-color: rgba(246, 104, 94, 0.5);

@@ -1,5 +1,5 @@
 import { changeActiveAddressAndChainAndResetSimulation, changeActiveChain, getPrependTrasactions, refreshConfirmTransactionSimulation, updateSimulationState } from './background.js'
-import { getCurrentTabId, getMakeMeRich, getOpenedAddressBookTabId, getSettings, getSignerName, getSimulationResults, getTabState, saveCurrentTabId, setMakeMeRich, setOpenedAddressBookTabId, setPage, setUseSignersAddressAsActiveAddress, updateAddressInfos, updateContacts, updateWebsiteAccess } from './settings.js'
+import { getCurrentTabId, getIsConnected, getMakeMeRich, getOpenedAddressBookTabId, getSettings, getSignerName, getSimulationResults, getTabState, saveCurrentTabId, setMakeMeRich, setOpenedAddressBookTabId, setPage, setUseSignersAddressAsActiveAddress, updateAddressInfos, updateContacts, updateWebsiteAccess } from './settings.js'
 import { Simulator } from '../simulation/simulator.js'
 import { ChangeActiveAddress, ChangeMakeMeRich, ChangePage, PersonalSign, RemoveTransaction, RequestAccountsFromSigner, TransactionConfirmation, InterceptorAccess, ChangeInterceptorAccess, ChainChangeConfirmation, EnableSimulationMode, ReviewNotification, RejectNotification, ChangeActiveChain, AddOrEditAddressBookEntry, GetAddressBookData, RemoveAddressBookEntry, RefreshConfirmTransactionDialogSimulation, UserAddressBook, InterceptorAccessRefresh, InterceptorAccessChangeAddress, Settings, RefreshConfirmTransactionMetadata, RefreshPersonalSignMetadata, RefreshInterceptorAccessMetadata } from '../utils/interceptor-messages.js'
 import { resolvePendingTransaction } from './windows/confirmTransaction.js'
@@ -16,6 +16,7 @@ import { addressString } from '../utils/bigint.js'
 import { AddressInfoEntry, WebsiteTabConnections } from '../utils/user-interface-types.js'
 import { EthereumClientService } from '../simulation/services/EthereumClientService.js'
 import { refreshSimulationState, removeTransactionAndUpdateTransactionNonces, resetSimulationState } from '../simulation/services/SimulationModeEthereumClientService.js'
+import { isFailedToFetchError } from '../utils/errors.js'
 
 export async function confirmDialog(ethereumClientService: EthereumClientService, websiteTabConnections: WebsiteTabConnections, confirmation: TransactionConfirmation) {
 	await resolvePendingTransaction(ethereumClientService, websiteTabConnections, confirmation.options.accept ? 'Approved' : 'Rejected')
@@ -160,7 +161,7 @@ export async function removeTransaction(ethereumClientService: EthereumClientSer
 }
 
 export async function refreshSimulation(ethereumClientService: EthereumClientService, settings: Settings) {
-	await updateSimulationState(async() => {
+	return await updateSimulationState(async() => {
 		const simulationState = (await getSimulationResults()).simulationState
 		if (simulationState === undefined) return
 		return await refreshSimulationState(ethereumClientService, simulationState)
@@ -179,8 +180,7 @@ export async function refreshPopupConfirmTransactionMetadata(simulator: Simulato
 export async function refreshPopupConfirmTransactionSimulation(ethereumClientService: EthereumClientService, { data }: RefreshConfirmTransactionDialogSimulation) {
 	const simulationState = (await getSimulationResults()).simulationState
 	if (simulationState === undefined) return
-	const refreshMessage = await refreshConfirmTransactionSimulation(ethereumClientService, simulationState, data.activeAddress, data.simulationMode, data.requestId, data.transactionToSimulate, data.website, (await getSettings()).userAddressBook)
-	if (refreshMessage === undefined) return
+	const refreshMessage = await refreshConfirmTransactionSimulation(ethereumClientService, simulationState, data.activeAddress, data.simulationMode, data.requestId, data.transactionToSimulate, data.website)
 	return await sendPopupMessageToOpenWindows(refreshMessage)
 }
 
@@ -282,6 +282,15 @@ export async function homeOpened(simulator: Simulator) {
 	const addressInfos = settings.userAddressBook.addressInfos
 	const pendingAccessMetadata: [string, AddressInfoEntry][] = Array.from(pendingAccessRequestsAddresses).map((x) => [addressString(x), findAddressInfo(BigInt(x), addressInfos)])
 
+	let blockNumber = undefined
+	try {
+		blockNumber = await simulator.ethereum.getBlockNumber()
+	} catch (error) {
+		if (!(error instanceof Error)) throw error
+		if (!isFailedToFetchError(error)) throw error
+		await sendPopupMessageToOpenWindows({ method: 'popup_failed_to_get_block' })
+	}
+
 	await sendPopupMessageToOpenWindows({
 		method: 'popup_UpdateHomePage',
 		data: {
@@ -291,10 +300,11 @@ export async function homeOpened(simulator: Simulator) {
 			signerAccounts: tabState?.signerAccounts,
 			signerChain: tabState?.signerChain,
 			signerName: await getSignerName(),
-			currentBlockNumber: await simulator.ethereum.getBlockNumber(),
+			currentBlockNumber: blockNumber,
 			settings: settings,
 			tabIconDetails: tabState?.tabIconDetails,
-			makeMeRich: await getMakeMeRich()
+			makeMeRich: await getMakeMeRich(),
+			isConnected: await getIsConnected(),
 		}
 	})
 }

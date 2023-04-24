@@ -12,7 +12,7 @@ import { PasteCatcher } from './subcomponents/PasteCatcher.js'
 import { truncateAddr } from '../utils/ethereum.js'
 import { NotificationCenter } from './pages/NotificationCenter.js'
 import { DEFAULT_TAB_CONNECTION } from '../utils/constants.js'
-import { ExternalPopupMessage, SignerName, TabIconDetails, UpdateHomePage, Page, WebsiteAccessArray, PendingAccessRequestArray, Settings, WebsiteIconChanged } from '../utils/interceptor-messages.js'
+import { ExternalPopupMessage, SignerName, TabIconDetails, UpdateHomePage, Page, WebsiteAccessArray, PendingAccessRequestArray, Settings, WebsiteIconChanged, IsConnected } from '../utils/interceptor-messages.js'
 import { version, gitCommitSha } from '../version.js'
 import { formSimulatedAndVisualizedTransaction } from './formVisualizerResults.js'
 import { sendPopupMessageToBackgroundPage } from '../background/backgroundUtils.js'
@@ -39,6 +39,7 @@ export function App() {
 	const [currentBlockNumber, setCurrentBlockNumber] = useState<bigint | undefined>(undefined)
 	const [signerName, setSignerName] = useState<SignerName>('NoSignerDetected')
 	const [addingNewAddress, setAddingNewAddress] = useState<AddingNewAddressType> ({ addingAddress: true, type: 'addressInfo' as const })
+	const [isConnected, setIsConnected] = useState<IsConnected>(undefined)
 
 	async function setActiveAddressAndInformAboutIt(address: bigint | 'signer') {
 		setUseSignersAddressAsActiveAddress(address === 'signer')
@@ -71,7 +72,7 @@ export function App() {
 		}
 	}
 
-	useEffect( () => {
+	useEffect(() => {
 		const setSimulationState = (
 			simState: SimulationState | undefined,
 			visualizerResults: readonly SimResults[] | undefined,
@@ -120,6 +121,7 @@ export function App() {
 				setCurrentBlockNumber(data.currentBlockNumber)
 				setWebsiteAccessAddressMetadata(data.websiteAccessAddressMetadata)
 				setSignerAccounts(data.signerAccounts)
+				setIsConnected(data.isConnected)
 				return true
 			})
 		}
@@ -145,6 +147,7 @@ export function App() {
 			const message = ExternalPopupMessage.parse(msg)
 			if (message.method === 'popup_settingsUpdated') return updateHomePageSettings(message.data, true)
 			if (message.method === 'popup_websiteIconChanged') return updateTabIcon(message)
+			if (message.method === 'popup_failed_to_get_block') return await sendPopupMessageToBackgroundPage( { method: 'popup_requestNewHomeData' } )
 			if (message.method !== 'popup_UpdateHomePage') return await sendPopupMessageToBackgroundPage( { method: 'popup_requestNewHomeData' } )
 			return updateHomePage(message)
 		}
@@ -152,15 +155,15 @@ export function App() {
 		return () => {
 			browser.runtime.onMessage.removeListener(popupMessageListener)
 		}
-	}, [])
+	})
 
-	useEffect( () => {
-		sendPopupMessageToBackgroundPage( { method: 'popup_requestNewHomeData' } )
+	useEffect(() => {
+		sendPopupMessageToBackgroundPage({ method: 'popup_requestNewHomeData' })
 	}, [])
 
 	function setAndSaveAppPage(page: Page) {
 		setAppPage(page)
-		sendPopupMessageToBackgroundPage( { method: 'popup_changePage', options: page } )
+		sendPopupMessageToBackgroundPage({ method: 'popup_changePage', options: page })
 	}
 
 	async function addressPaste(address: string) {
@@ -238,6 +241,7 @@ export function App() {
 							currentBlockNumber = { currentBlockNumber }
 							signerName = { signerName }
 							renameAddressCallBack = { renameAddressCallBack }
+							isConnected = { isConnected}
 						/>
 
 						<div class = { `modal ${ appPage !== 'Home' ? 'is-active' : ''}` }>

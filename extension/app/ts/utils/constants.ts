@@ -30,7 +30,6 @@ export const CHAINS = {
 		name: 'Ethereum Mainnet',
 		chainId: 1n,
 		https_rpc: 'https://rpc.dark.florist/flipcardtrustone',
-		wss_rpc: 'wss://rpc.dark.florist/flipcardtrustone',
 		eth_donator: 0xda9dfa130df4de4673b89022ee50ff26f6ea73cfn, // Kraken
 		currencyName: 'Ether',
 		currencyTicker: 'ETH',
@@ -40,7 +39,6 @@ export const CHAINS = {
 		name: 'Goerli',
 		chainId: 5n,
 		https_rpc: 'https://rpc-goerli.dark.florist/flipcardtrustone',
-		wss_rpc: 'wss://rpc-goerli.dark.florist/flipcardtrustone',
 		eth_donator: 0xf36F155486299eCAff2D4F5160ed5114C1f66000n, // Some Goerli validator
 		currencyName: 'Goerli Testnet ETH',
 		currencyTicker: 'GÖETH',
@@ -50,7 +48,6 @@ export const CHAINS = {
 		name: 'Sepolia',
 		chainId: 11155111n,
 		https_rpc: 'https://rpc-sepolia.dark.florist/flipcardtrustone',
-		wss_rpc: 'wss://rpc-sepolia.dark.florist/flipcardtrustone',
 		eth_donator: 0xb21c33de1fab3fa15499c62b59fe0cc3250020d1n, // Richest address on Sepolia
 		currencyName: 'Sepolia Testnet ETH',
 		currencyTicker: 'SEETH',
@@ -65,7 +62,6 @@ export const METAMASK_ERROR_USER_REJECTED_REQUEST = 4001
 export const METAMASK_ERROR_NOT_AUTHORIZED = 4100
 export const METAMASK_ERROR_METHOD_NOT_SUPPORTED_BY_PROVIDER = 4200
 export const METAMASK_ERROR_CHAIN_NOT_ADDED_TO_METAMASK = 4902
-export const METAMASK_ERROR_NOT_CONNECTED_TO_CHAIN = 4900
 export const METAMASK_ERROR_NOT_CONNECTED_TO_APPROPRIATE_CHAIN = 4901
 export const METAMASK_ERROR_INCOMPLETE_REQUEST = 32700
 export const METAMASK_ERROR_REQUEST_STRUCTURE_INCORRECT = 32600
@@ -79,6 +75,8 @@ export const METAMASK_ERROR_RATE_LIMITED = 32005
 export const ERROR_INTERCEPTOR_NOT_READY = { error: { code: 1, message: 'Interceptor: Not ready' } }
 export const ERROR_INTERCEPTOR_NO_ACTIVE_ADDRESS = { error: { code: 2, message: 'Interceptor: No active address' } }
 export const ERROR_INTERCEPTOR_UNKNOWN_ORIGIN = { error: { code: 400, message: 'Interceptor: Unkown website origin' } }
+export const METAMASK_ERROR_NOT_CONNECTED_TO_CHAIN = { error: { code: 4900, message: 'Interceptor: Not connected to chain' } }
+export const ERROR_INTERCEPTOR_GET_CODE_FAILED = { error: { code: 40001, message: 'Interceptor: Get code failed' } } // I wonder how we should come up with these numbers?
 
 function get4Byte(functionAbi: string) {
 	return Number(ethers.keccak256(ethers.toUtf8Bytes(functionAbi)).slice(0, 10))
@@ -215,3 +213,6 @@ export const MOCK_PRIVATE_KEYS_ADDRESS = 0x7E5F4552091A69125d5DfCb7b8C2659029395
 export const KNOWN_CONTRACT_CALLER_ADDRESSES = [
 	0xca11bde05977b3631167028862be2a173976ca11n // curve multicaller
 ]
+
+export const WARNING_COLOR = '#FFC107'
+export const PRIMARY_COLOR = '#58a5b3'

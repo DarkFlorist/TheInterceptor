@@ -5,8 +5,8 @@ import { ActiveAddress, findAddressInfo } from '../subcomponents/address.js'
 import { SimulationSummary } from '../simulationExplaining/SimulationSummary.js'
 import { ChainSelector } from '../subcomponents/ChainSelector.js'
 import { Spinner } from '../subcomponents/Spinner.js'
-import { DEFAULT_TAB_CONNECTION, getChainName, ICON_NOT_ACTIVE, ICON_SIGNING, ICON_SIGNING_NOT_SUPPORTED, isSupportedChain } from '../../utils/constants.js'
-import { SignerName, TabIcon, TabIconDetails } from '../../utils/interceptor-messages.js'
+import { DEFAULT_TAB_CONNECTION, getChainName, ICON_NOT_ACTIVE, ICON_SIGNING, ICON_SIGNING_NOT_SUPPORTED, isSupportedChain, TIME_BETWEEN_BLOCKS } from '../../utils/constants.js'
+import { IsConnected, SignerName, TabIcon, TabIconDetails } from '../../utils/interceptor-messages.js'
 import { getPrettySignerName, SignerLogoText, SignersLogoName } from '../subcomponents/signers.js'
 import { Error } from '../subcomponents/Error.js'
 import { ToolTip } from '../subcomponents/CopyToClipboard.js'
@@ -14,6 +14,7 @@ import { sendPopupMessageToBackgroundPage } from '../../background/backgroundUti
 import { Transactions } from '../simulationExplaining/Transactions.js'
 import { DinoSays } from '../subcomponents/DinoSays.js'
 import { identifyTransaction } from '../simulationExplaining/identifyTransaction.js'
+import { SomeTimeAgo } from '../subcomponents/SomeTimeAgo.js'
 
 async function enableMakeMeRich(enabled: boolean) {
 	sendPopupMessageToBackgroundPage( { method: 'popup_changeMakeMeRich', options: enabled } )
@@ -171,6 +172,7 @@ function SimulationResults(param: SimulationStateParam) {
 				simulationAndVisualisationResults = { param.simulationAndVisualisationResults }
 				currentBlockNumber = { param.currentBlockNumber }
 				renameAddressCallBack = { param.renameAddressCallBack }
+				isConnected = { param.isConnected }
 			/>
 		}
 		<div class = 'content' style = 'height: 0.1px'/>
@@ -193,6 +195,7 @@ export function Home(param: HomeParams) {
 	const [makeMeRich, setMakeMeRich] = useState<boolean>(false)
 	const [disableReset, setDisableReset] = useState<boolean>(false)
 	const [removeTransactionHashes, setRemoveTransactionHashes] = useState<bigint[]>([])
+	const [isConnected, setIsConnected] = useState<IsConnected>(undefined)
 
 	useEffect(() => {
 		setSimulationAndVisualisationResults(param.simVisResults)
@@ -210,6 +213,7 @@ export function Home(param: HomeParams) {
 		setMakeMeRich(param.makeMeRich)
 		setDisableReset(false)
 		setRemoveTransactionHashes([])
+		setIsConnected(param.isConnected)
 	}, [param.activeSigningAddress,
 		param.activeSimulationAddress,
 		param.signerAccounts,
@@ -220,7 +224,8 @@ export function Home(param: HomeParams) {
 		param.tabIconDetails,
 		param.currentBlockNumber,
 		param.signerName,
-		param.simVisResults
+		param.simVisResults,
+		param.isConnected,
 	])
 
 	function changeActiveAddress() {
@@ -251,7 +256,13 @@ export function Home(param: HomeParams) {
 	return <>
 		{ !isSupportedChain(activeChain.toString()) ?
 			<div style = 'margin: 10px; background-color: var(--bg-color);'>
-				<Error text = { `${ getChainName(activeChain) } is not a supported network. The Interceptor is disabled while you are using the network.` }/>
+				<Error text = { `${ getChainName(activeChain) } is not a supported network. The Interceptors is disabled while you are using the network.` }/>
+			</div>
+		: <></> }
+
+		{ isConnected?.isConnected === false ?
+			<div style = 'margin: 10px; background-color: var(--bg-color);'>
+				<Error warning = { true } text = { <>Unable to connect to a Ethereum node. Retrying in <SomeTimeAgo priorTimestamp = { new Date(isConnected.lastConnnectionAttempt + TIME_BETWEEN_BLOCKS * 1000) } countBackwards = { true }/>.</> }/>
 			</div>
 		: <></> }
 
@@ -279,7 +290,9 @@ export function Home(param: HomeParams) {
 				</div>
 			</div>
 		: <></> }
-		{ !simulationMode || activeSimulationAddress === undefined ? <></> :
+
+		{ simulationMode && currentBlockNumber === undefined ? <div style = 'padding: 10px'> <DinoSays text = { 'Not connected to a network..' } /> </div> : <></> }
+		{ !simulationMode || activeSimulationAddress === undefined || currentBlockNumber === undefined ? <></> :
 			<SimulationResults
 				simulationAndVisualisationResults = { simulationAndVisualisationResults }
 				removeTransaction = { removeTransaction }
@@ -288,6 +301,7 @@ export function Home(param: HomeParams) {
 				currentBlockNumber = { currentBlockNumber }
 				renameAddressCallBack = { param.renameAddressCallBack }
 				removeTransactionHashes = { removeTransactionHashes }
+				isConnected = { isConnected }
 			/>
 		}
 	</>

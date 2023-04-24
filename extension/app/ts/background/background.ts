@@ -1,24 +1,26 @@
-import { HandleSimulationModeReturnValue, InterceptedRequest, InterceptedRequestForward, PopupMessage, ProviderMessage, Settings, TabState, UserAddressBook } from '../utils/interceptor-messages.js'
+import { HandleSimulationModeReturnValue, InterceptedRequest, InterceptedRequestForward, PopupMessage, ProviderMessage, Settings, TabState } from '../utils/interceptor-messages.js'
 import 'webextension-polyfill'
 import { Simulator } from '../simulation/simulator.js'
 import { EthereumJsonRpcRequest, EthereumQuantity, EthereumUnsignedTransaction, PersonalSignParams, SignTypedDataParams } from '../utils/wire-types.js'
-import { changeSimulationMode, clearTabStates, getMakeMeRich, getSettings, getSignerName, getSimulationResults, removeTabState, updateSimulationResults, updateTabState } from './settings.js'
+import { changeSimulationMode, clearTabStates, getMakeMeRich, getSettings, getSignerName, getSimulationResults, removeTabState, setIsConnected, updateSimulationResults, updateTabState } from './settings.js'
 import { blockNumber, call, chainId, estimateGas, gasPrice, getAccounts, getBalance, getBlockByNumber, getCode, getLogs, getPermissions, getSimulationStack, getTransactionByHash, getTransactionCount, getTransactionReceipt, personalSign, requestPermissions, sendTransaction, subscribe, switchEthereumChain, unsubscribe } from './simulationModeHanders.js'
 import { changeActiveAddress, changeMakeMeRich, changePage, resetSimulation, confirmDialog, refreshSimulation, removeTransaction, requestAccountsFromSigner, refreshPopupConfirmTransactionSimulation, confirmPersonalSign, confirmRequestAccess, changeInterceptorAccess, changeChainDialog, popupChangeActiveChain, enableSimulationMode, reviewNotification, rejectNotification, addOrModifyAddressInfo, getAddressBookData, removeAddressBookEntry, openAddressBook, homeOpened, interceptorAccessChangeAddressOrRefresh, refreshPopupConfirmTransactionMetadata, refreshPersonalSignMetadata } from './popupMessageHandlers.js'
 import { SimulationState } from '../utils/visualizer-types.js'
 import { AddressBookEntry, Website, TabConnection, WebsiteSocket, WebsiteTabConnections } from '../utils/user-interface-types.js'
 import { interceptorAccessMetadataRefresh, requestAccessFromUser } from './windows/interceptorAccess.js'
-import { CHAINS, ICON_NOT_ACTIVE, isSupportedChain, MAKE_YOU_RICH_TRANSACTION, METAMASK_ERROR_USER_REJECTED_REQUEST } from '../utils/constants.js'
+import { CHAINS, ICON_NOT_ACTIVE, isSupportedChain, MAKE_YOU_RICH_TRANSACTION, METAMASK_ERROR_NOT_CONNECTED_TO_CHAIN, METAMASK_ERROR_USER_REJECTED_REQUEST } from '../utils/constants.js'
 import { PriceEstimator } from '../simulation/priceEstimator.js'
 import { getActiveAddressForDomain, getAssociatedAddresses, sendActiveAccountChangeToApprovedWebsitePorts, sendMessageToApprovedWebsitePorts, updateWebsiteApprovalAccesses, verifyAccess } from './accessManagement.js'
 import { findAddressInfo, getAddressBookEntriesForVisualiser } from './metadataUtils.js'
-import { getActiveAddress, getSocketFromPort, sendPopupMessageToOpenWindows, setExtensionBadgeBackgroundColor, setExtensionIcon, websiteSocketToString } from './backgroundUtils.js'
+import { getActiveAddress, getSocketFromPort, sendPopupMessageToOpenWindows, setExtensionIcon, websiteSocketToString } from './backgroundUtils.js'
 import { retrieveWebsiteDetails, updateExtensionBadge, updateExtensionIcon } from './iconHandler.js'
 import { connectedToSigner, ethAccountsReply, signerChainChanged, walletSwitchEthereumChainReply } from './providerMessageHandlers.js'
 import { assertNever, assertUnreachable } from '../utils/typescript.js'
 import { EthereumClientService } from '../simulation/services/EthereumClientService.js'
 import { appendTransaction, copySimulationState, setPrependTransactionsQueue, simulatePersonalSign } from '../simulation/services/SimulationModeEthereumClientService.js'
 import { Semaphore } from '../utils/semaphore.js'
+import { isFailedToFetchError } from '../utils/errors.js'
+import { sendSubscriptionMessagesForNewBlock } from '../simulation/services/EthereumSubscriptionService.js'
 
 const websiteTabConnections = new Map<number, TabConnection>()
 
@@ -31,49 +33,62 @@ if (browser.runtime.getManifest().manifest_version === 2) {
 
 let simulator: Simulator | undefined = undefined
 
+async function visualizeSimulatorState(simulationState: SimulationState, simulator: Simulator) {
+	const priceEstimator = new PriceEstimator(simulator.ethereum)
+	const transactions = simulationState.simulatedTransactions.map((x) => ({ transaction: x.signedTransaction, website: x.website }))
+	const visualizerResult = await simulator.visualizeTransactionChain(simulationState, transactions, simulationState.blockNumber, simulationState.simulatedTransactions.map((x) => x.multicallResponse))
+	const visualizerResults = visualizerResult.map((x, i) => ({ ...x, website: simulationState.simulatedTransactions[i].website }))
+	const addressBookEntries = await getAddressBookEntriesForVisualiser(simulator, visualizerResult.map((x) => x.visualizerResults), simulationState, (await getSettings()).userAddressBook)
+
+	function onlyTokensAndTokensWithKnownDecimals(metadata: AddressBookEntry) : metadata is AddressBookEntry & { type: 'token', decimals: `0x${ string }` } {
+		if (metadata.type !== 'token') return false
+		if (metadata.decimals === undefined) return false
+		return true
+	}
+	function metadataRestructure(metadata: AddressBookEntry &  { type: 'token', decimals: bigint } ) {
+		return { token: metadata.address, decimals: metadata.decimals }
+	}
+	const tokenPrices = await priceEstimator.estimateEthereumPricesForTokens(addressBookEntries.filter(onlyTokensAndTokensWithKnownDecimals).map(metadataRestructure))
+	return {
+		tokenPrices,
+		addressBookEntries,
+		visualizerResults,
+		simulationState,
+	}
+}
+
 export async function updateSimulationState(getUpdatedSimulationState: () => Promise<SimulationState | undefined>, activeAddress: bigint | undefined) {
 	if (simulator === undefined) return
 	const simId = (await getSimulationResults()).simulationId + 1
-	const updatedSimulationState = await getUpdatedSimulationState()
-
-	if (updatedSimulationState !== undefined) {
-		const priceEstimator = new PriceEstimator(simulator.ethereum)
-
-		const transactions = updatedSimulationState.simulatedTransactions.map((x) => ({ transaction: x.signedTransaction, website: x.website }))
-		const visualizerResult = await simulator.visualizeTransactionChain(updatedSimulationState, transactions, updatedSimulationState.blockNumber, updatedSimulationState.simulatedTransactions.map((x) => x.multicallResponse))
-		const visualizerResultWithWebsites = visualizerResult.map((x, i) => ({ ...x, website: updatedSimulationState.simulatedTransactions[i].website }))
-		const addressBookEntries = await getAddressBookEntriesForVisualiser(simulator, visualizerResult.map((x) => x.visualizerResults), updatedSimulationState, (await getSettings()).userAddressBook)
-
-		function onlyTokensAndTokensWithKnownDecimals(metadata: AddressBookEntry) : metadata is AddressBookEntry & { type: 'token', decimals: `0x${ string }` } {
-			if (metadata.type !== 'token') return false
-			if (metadata.decimals === undefined) return false
-			return true
+	try {
+		const updatedSimulationState = await getUpdatedSimulationState()
+		if (updatedSimulationState !== undefined) {
+			await updateSimulationResults({
+				simulationId: simId,
+				...await visualizeSimulatorState(updatedSimulationState, simulator),
+				activeAddress: activeAddress,
+			})
+		} else {
+			await updateSimulationResults({
+				simulationId: simId,
+				addressBookEntries: [],
+				tokenPrices: [],
+				visualizerResults: [],
+				simulationState: updatedSimulationState,
+				activeAddress: activeAddress,
+			})
 		}
-		function metadataRestructure(metadata: AddressBookEntry &  { type: 'token', decimals: bigint } ) {
-			return { token: metadata.address, decimals: metadata.decimals }
+		sendPopupMessageToOpenWindows({ method: 'popup_simulation_state_changed' })
+		return updatedSimulationState
+	} catch(error) {
+		if (error instanceof Error) {
+			if (isFailedToFetchError(error)) {
+				await sendPopupMessageToOpenWindows({ method: 'popup_failed_to_update_simulation_state' })
+				return undefined
+			}
 		}
-		const tokenPrices = await priceEstimator.estimateEthereumPricesForTokens(addressBookEntries.filter(onlyTokensAndTokensWithKnownDecimals).map(metadataRestructure))
-
-		await updateSimulationResults({
-			simulationId: simId,
-			tokenPrices: tokenPrices,
-			addressBookEntries: addressBookEntries,
-			visualizerResults: visualizerResultWithWebsites,
-			simulationState: updatedSimulationState,
-			activeAddress: activeAddress,
-		})
-	} else {
-		await updateSimulationResults({
-			simulationId: simId,
-			addressBookEntries: [],
-			tokenPrices: [],
-			visualizerResults: [],
-			simulationState: updatedSimulationState,
-			activeAddress: activeAddress,
-		})
+		throw error
 	}
-	sendPopupMessageToOpenWindows({ method: 'popup_simulation_state_changed' })
-	return updatedSimulationState
 }
 
 export function setEthereumNodeBlockPolling(enabled: boolean) {
@@ -89,36 +104,27 @@ export async function refreshConfirmTransactionSimulation(
 	requestId: number,
 	transactionToSimulate: EthereumUnsignedTransaction,
 	website: Website,
-	userAddressBook: UserAddressBook
 ) {
-	if (simulator === undefined) return undefined
-
-	const priceEstimator = new PriceEstimator(simulator.ethereum)
+	const info = {
+		requestId: requestId,
+		transactionToSimulate: transactionToSimulate,
+		simulationMode: simulationMode,
+		activeAddress: activeAddress,
+		signerName: await getSignerName(),
+		website: website,
+	}
+	if (simulator === undefined) return { method: 'popup_confirm_transaction_simulation_failed' as const, data: info }
 	sendPopupMessageToOpenWindows({ method: 'popup_confirm_transaction_simulation_started' })
-	const newState = await appendTransaction(ethereumClientService, copySimulationState(simulationState), { transaction: transactionToSimulate, website: website })
-	const transactions = newState.simulatedTransactions.map(x => ({ transaction: x.signedTransaction, website: x.website }))
-	const visualizerResult = await simulator.visualizeTransactionChain(newState, transactions, newState.blockNumber, newState.simulatedTransactions.map(x => x.multicallResponse))
-	const addressMetadata = await getAddressBookEntriesForVisualiser(simulator, visualizerResult.map((x) => x.visualizerResults), newState, userAddressBook)
-	const tokenPrices = await priceEstimator.estimateEthereumPricesForTokens(
-		addressMetadata.map(
-			(x) => x.type === 'token' && x.decimals !== undefined ? { token: x.address, decimals: x.decimals } : { token: 0x0n, decimals: 0x0n }
-		).filter( (x) => x.token !== 0x0n )
-	)
-
-	return {
-		method: 'popup_confirm_transaction_simulation_state_changed' as const,
-		data: {
-			requestId: requestId,
-			transactionToSimulate: transactionToSimulate,
-			simulationMode: simulationMode,
-			simulationState: newState,
-			visualizerResults: visualizerResult,
-			addressBookEntries: addressMetadata,
-			tokenPrices: tokenPrices,
-			activeAddress: activeAddress,
-			signerName: await getSignerName(),
-			website: website,
+	try {
+		const simulationStateWithNewTransaction = await appendTransaction(ethereumClientService, copySimulationState(simulationState), { transaction: transactionToSimulate, website: website })
+		return {
+			method: 'popup_confirm_transaction_simulation_state_changed' as const,
+			data: { ...info, ...await visualizeSimulatorState(simulationStateWithNewTransaction, simulator) }
 		}
+	} catch(error) {
+		if (!(error instanceof Error)) throw error
+		if (!isFailedToFetchError(error)) throw error
+		return { method: 'popup_confirm_transaction_simulation_failed' as const, data: info }
 	}
 }
 
@@ -180,8 +186,8 @@ async function handleSimulationMode(
 		case 'eth_sendTransaction': return sendTransaction(websiteTabConnections, getActiveAddressForDomain, simulator.ethereum, parsedRequest, socket, request, true, website, settings)
 		case 'eth_call': return await call(simulator.ethereum, simulationState, parsedRequest)
 		case 'eth_blockNumber': return await blockNumber(simulator.ethereum, simulationState)
-		case 'eth_subscribe': return await subscribe(websiteTabConnections, simulator, socket, parsedRequest)
-		case 'eth_unsubscribe': return await unsubscribe(simulator, parsedRequest)
+		case 'eth_subscribe': return await subscribe(socket, parsedRequest)
+		case 'eth_unsubscribe': return await unsubscribe(socket, parsedRequest)
 		case 'eth_chainId': return await chainId(simulator)
 		case 'net_version': return await chainId(simulator)
 		case 'eth_getCode': return await getCode(simulator.ethereum, simulationState, parsedRequest)
@@ -303,8 +309,21 @@ async function handleSigningMode(
 }
 
 async function newBlockCallback(blockNumber: bigint, ethereumClientService: EthereumClientService) {
-	sendPopupMessageToOpenWindows({ method: 'popup_new_block_arrived', data: { blockNumber } })
-	refreshSimulation(ethereumClientService, await getSettings())
+	await setIsConnected(true)
+	await updateExtensionBadge()
+	const settings = await getSettings()
+	const updatedSimulationState = await refreshSimulation(ethereumClientService, settings)
+	await sendPopupMessageToOpenWindows({ method: 'popup_new_block_arrived', data: { blockNumber } })
+	await sendSubscriptionMessagesForNewBlock(blockNumber, ethereumClientService, settings.simulationMode ? updatedSimulationState : undefined, websiteTabConnections)
+}
+
+async function onErrorBlockCallback(_ethereumClientService: EthereumClientService, error: Error) {
+	if (isFailedToFetchError(error)) {
+		await setIsConnected(false)
+		await updateExtensionBadge()
+		return await sendPopupMessageToOpenWindows({ method: 'popup_failed_to_get_block' })
+	}
+	throw error
 }
 
 const changeActiveAddressAndChainAndResetSimulationSemaphore = new Semaphore(1)
@@ -337,7 +356,7 @@ export async function changeActiveAddressAndChainAndResetSimulation(
 			const chainString = change.activeChain.toString()
 			if (isSupportedChain(chainString)) {
 				simulator.cleanup()
-				simulator = new Simulator(chainString, newBlockCallback)
+				simulator = new Simulator(chainString, newBlockCallback, onErrorBlockCallback)
 			}
 			sendMessageToApprovedWebsitePorts(websiteTabConnections, 'chainChanged', EthereumQuantity.serialize(change.activeChain))
 			sendPopupMessageToOpenWindows({ method: 'popup_chain_update' })
@@ -437,6 +456,16 @@ export async function handleContentScriptMessage(websiteTabConnections: WebsiteT
 		return sendMessageToContentScript(websiteTabConnections, socket, resolved, request)
 	} catch(error) {
 		console.warn(error)
+		if (error instanceof Error) {
+			if (isFailedToFetchError(error)) {
+				return postMessageIfStillConnected(websiteTabConnections, socket, {
+					interceptorApproved: false,
+					requestId: request.requestId,
+					options: request.options,
+					...METAMASK_ERROR_NOT_CONNECTED_TO_CHAIN,
+				})
+			}
+		}
 		postMessageIfStillConnected(websiteTabConnections, socket, {
 			interceptorApproved: false,
 			requestId: request.requestId,
@@ -603,11 +632,10 @@ async function popupMessageHandler(
 
 async function startup() {
 	await setExtensionIcon({ path: ICON_NOT_ACTIVE })
-	await setExtensionBadgeBackgroundColor({ color: '#58a5b3' })
 
 	const settings = await getSettings()
 	const chainString = settings.activeChain.toString()
-	simulator = new Simulator(isSupportedChain(chainString) ? chainString : '1', newBlockCallback)
+	simulator = new Simulator(isSupportedChain(chainString) ? chainString : '1', newBlockCallback, onErrorBlockCallback)
 
 	browser.runtime.onMessage.addListener(async function(message: unknown) {
 		if (simulator === undefined) throw new Error('Interceptor not ready yet')

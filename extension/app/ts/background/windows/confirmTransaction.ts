@@ -82,23 +82,19 @@ export async function openConfirmTransactionDialog(
 
 		const simulationState = (await getSimulationResults()).simulationState
 		if (simulationState === undefined) throw new Error('no simulation state')
-		const refreshSimulationPromise = refreshConfirmTransactionSimulation(ethereumClientService, simulationState, activeAddress, simulationMode, request.requestId, transactionToSimulate, website, settings.userAddressBook)
+		const refreshSimulationPromise = refreshConfirmTransactionSimulation(ethereumClientService, simulationState, activeAddress, simulationMode, request.requestId, transactionToSimulate, website)
 
 		const windowReadyAndListening = async function popupMessageListener(msg: unknown) {
 			const message = ExternalPopupMessage.parse(msg)
 			if (message.method !== 'popup_confirmTransactionReadyAndListening') return
 			browser.runtime.onMessage.removeListener(windowReadyAndListening)
-			const refreshMessage = await refreshSimulationPromise
-			if (openedConfirmTransactionDialogWindow !== null && openedConfirmTransactionDialogWindow.id) {
-				if (refreshMessage === undefined) return await browser.windows.remove(openedConfirmTransactionDialogWindow.id)
-				return sendPopupMessageToOpenWindows(refreshMessage)
-			}
+			return sendPopupMessageToOpenWindows(await refreshSimulationPromise)
 		}
 
 		try {
 			browser.runtime.onMessage.addListener(windowReadyAndListening)
 			browser.windows.onRemoved.addListener(onCloseWindow)
-			
+
 			openedConfirmTransactionDialogWindow = await browser.windows.create({
 				url: getHtmlFile('confirmTransaction'),
 				type: 'popup',
@@ -138,13 +134,8 @@ async function resolve(ethereumClientService: EthereumClientService, reply: Conf
 		if (simulationState === undefined) return undefined
 		return await appendTransaction(ethereumClientService, simulationState, { transaction: transactionToSimulate, website: website })
 	}, activeAddress)
-	if (newState?.simulatedTransactions === undefined || newState.simulatedTransactions.length === 0) {
-		return {
-			error: {
-				code: METAMASK_ERROR_NOT_CONNECTED_TO_CHAIN,
-				message: 'Interceptor not ready'
-			}
-		}
+	if (newState === undefined || newState.simulatedTransactions === undefined || newState.simulatedTransactions.length === 0) {
+		return METAMASK_ERROR_NOT_CONNECTED_TO_CHAIN
 	}
 	return { result: bytes32String(newState.simulatedTransactions[newState.simulatedTransactions.length -1 ].signedTransaction.hash) }
 }
