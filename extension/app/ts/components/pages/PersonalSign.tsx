@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'preact/hooks'
+import { useState, useEffect } from 'preact/hooks'
 import { bigintToRoundedPrettyDecimalString, stringToUint8Array } from '../../utils/bigint.js'
 import { BigAddress } from '../subcomponents/address.js'
 import { AddingNewAddressType, AddressBookEntry } from '../../utils/user-interface-types.js'
@@ -20,7 +20,6 @@ interface SignRequest {
 export function PersonalSign() {
 	const [requestIdToConfirm, setRequestIdToConfirm] = useState<number | undefined>(undefined)
 	const [signRequest, setSignRequest] = useState<SignRequest | undefined>(undefined)
-	const textareaRef = useRef<HTMLTextAreaElement | null>(null)
 	const [activeAddress, setActiveAddress] = useState<bigint | undefined>(undefined)
 	const [addingNewAddress, setAddingNewAddress] = useState<AddingNewAddressType | 'renameAddressModalClosed'> ('renameAddressModalClosed')
 	const [personalSignRequestData, setPersonalSignRequestData] = useState<PersonalSignRequestData | undefined>(undefined)
@@ -37,14 +36,6 @@ export function PersonalSign() {
 		sendPopupMessageToBackgroundPage({ method: 'popup_personalSignReadyAndListening' })
 		return () => browser.runtime.onMessage.removeListener(popupMessageListener)
 	})
-
-	useEffect(() => {
-		if (textareaRef && textareaRef.current) {
-		  textareaRef.current.style.height = '0px'
-		  const scrollHeight = textareaRef.current.scrollHeight
-		  textareaRef.current.style.height = scrollHeight + 'px'
-		}
-	}, [signRequest])
 
 	function refreshMetadata() {
 		if (personalSignRequestData === undefined) return
@@ -178,8 +169,8 @@ export function PersonalSign() {
 								</p>
 							</header>
 							<div class = 'card-content'>
-								<div class = 'control'>
-									<textarea class = 'textarea' readonly ref = { textareaRef } style = 'overflow: hidden; resize: none;'>{ signRequest.message }</textarea>
+								<div class = 'textbox'>
+									<p class = 'paragraph' style = 'color: var(--subtitle-text-color)'>{ signRequest.message }</p>
 								</div>
 							</div>
 						</div>
