@@ -1,7 +1,7 @@
 import * as funtypes from 'funtypes'
 import { AddressBookEntries, AddressBookEntry, AddressInfo, AddressInfoEntry, ContactEntries, Website, WebsiteSocket } from './user-interface-types.js'
 import { EIP2612Message, EIP712Message, EthereumAddress, EthereumQuantity, EthereumUnsignedTransaction, Permit2, PersonalSignParams, SignTypedDataParams } from './wire-types.js'
-import { SimulationState, TokenPriceEstimate, SimResults } from './visualizer-types.js'
+import { SimulationState, TokenPriceEstimate, SimResults, OptionalEthereumAddress } from './visualizer-types.js'
 import { ICON_ACCESS_DENIED, ICON_ACTIVE, ICON_NOT_ACTIVE, ICON_SIGNING, ICON_SIGNING_NOT_SUPPORTED, ICON_SIMULATING } from './constants.js'
 
 export type MessageMethodAndParams = funtypes.Static<typeof MessageMethodAndParams>
@@ -72,7 +72,7 @@ export const InterceptorAccessRefresh = funtypes.ReadonlyObject({
 	options: funtypes.ReadonlyObject({
 		socket: WebsiteSocket,
 		website: Website,
-		requestAccessToAddress: funtypes.Union(EthereumAddress, funtypes.Undefined),
+		requestAccessToAddress: OptionalEthereumAddress,
 	}),
 }).asReadonly()
 
@@ -93,7 +93,7 @@ export const InterceptorAccessChangeAddress = funtypes.ReadonlyObject({
 	options: funtypes.ReadonlyObject({
 		socket: WebsiteSocket,
 		website: Website,
-		requestAccessToAddress: funtypes.Union(EthereumAddress, funtypes.Undefined),
+		requestAccessToAddress: OptionalEthereumAddress,
 		newActiveAddress: funtypes.Union(EthereumAddress, funtypes.Literal('signer')),
 	}),
 }).asReadonly()
@@ -101,8 +101,8 @@ export const InterceptorAccessChangeAddress = funtypes.ReadonlyObject({
 export type InterceptorAccessReply = funtypes.Static<typeof InterceptorAccessReply>
 export const InterceptorAccessReply = funtypes.ReadonlyObject({
 	websiteOrigin: funtypes.String,
-	originalRequestAccessToAddress: funtypes.Union(EthereumAddress, funtypes.Undefined),
-	requestAccessToAddress: funtypes.Union(EthereumAddress, funtypes.Undefined),
+	originalRequestAccessToAddress: OptionalEthereumAddress,
+	requestAccessToAddress: OptionalEthereumAddress,
 	approval: funtypes.Union(funtypes.Literal('Approved'), funtypes.Literal('Rejected'), funtypes.Literal('NoResponse') ),
 })
 
@@ -273,7 +273,7 @@ export const ReviewNotification = funtypes.ReadonlyObject({
 	method: funtypes.Literal('popup_reviewNotification'),
 	options: funtypes.ReadonlyObject({
 		website: Website,
-		requestAccessToAddress: funtypes.Union(EthereumAddress, funtypes.Undefined),
+		requestAccessToAddress: OptionalEthereumAddress,
 		socket: WebsiteSocket,
 		request: funtypes.Union(InterceptedRequest, funtypes.Undefined),
 	})
@@ -284,7 +284,7 @@ export const RejectNotification = funtypes.ReadonlyObject({
 	method: funtypes.Literal('popup_rejectNotification'),
 	options: funtypes.ReadonlyObject({
 		website: Website,
-		requestAccessToAddress: funtypes.Union(EthereumAddress, funtypes.Undefined),
+		requestAccessToAddress: OptionalEthereumAddress,
 		removeOnly: funtypes.Boolean,
 	})
 }).asReadonly()
@@ -548,7 +548,7 @@ export const PendingAccessRequest = funtypes.ReadonlyObject({
 	socket: WebsiteSocket,
 	request: funtypes.Union(InterceptedRequest, funtypes.Undefined),
 	website: Website,
-	requestAccessToAddress: funtypes.Union(EthereumAddress, funtypes.Undefined),
+	requestAccessToAddress: OptionalEthereumAddress,
 }).asReadonly()
 
 export type PendingAccessRequestArray = funtypes.Static<typeof PendingAccessRequestArray>
@@ -560,8 +560,8 @@ export interface PendingAccessRequestWithMetadata extends PendingAccessRequest {
 
 export type Settings = funtypes.Static<typeof Settings>
 export const Settings = funtypes.ReadonlyObject({
-	activeSimulationAddress: funtypes.Union(EthereumAddress, funtypes.Undefined),
-	activeSigningAddress: funtypes.Union(EthereumAddress, funtypes.Undefined),
+	activeSimulationAddress: OptionalEthereumAddress,
+	activeSigningAddress: OptionalEthereumAddress,
 	activeChain: EthereumQuantity,
 	page: Page,
 	useSignersAddressAsActiveAddress: funtypes.Boolean,
@@ -586,7 +586,7 @@ export const UpdateHomePage = funtypes.ReadonlyObject({
 			visualizerResults: funtypes.Union(funtypes.ReadonlyArray(SimResults), funtypes.Undefined),
 			addressBookEntries: AddressBookEntries,
 			tokenPrices: funtypes.ReadonlyArray(TokenPriceEstimate),
-			activeAddress: funtypes.Union(EthereumAddress, funtypes.Undefined),
+			activeAddress: OptionalEthereumAddress,
 		}),
 		websiteAccessAddressMetadata: funtypes.ReadonlyArray(AddressInfoEntry),
 		pendingAccessMetadata: funtypes.ReadonlyArray(funtypes.Tuple(funtypes.String, AddressInfoEntry)),
