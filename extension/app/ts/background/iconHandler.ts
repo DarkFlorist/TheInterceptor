@@ -74,7 +74,7 @@ export async function updateExtensionBadge() {
 export async function retrieveWebsiteDetails(port: browser.runtime.Port, websiteOrigin: string) {
 	const tryGettingTab = async (tabId: number) => {
 		try {
-			return browser.tabs.get(tabId)
+			return await browser.tabs.get(tabId)
 		} catch (error) {
 			if (!(error instanceof Error)) throw error
 			if (!error.message?.includes('No tab with id')) throw error
