@@ -1,6 +1,6 @@
 import { METAMASK_ERROR_USER_REJECTED_REQUEST } from '../../utils/constants.js'
 import { Future } from '../../utils/future.js'
-import { HandleSimulationModeReturnValue, InterceptedRequest, PersonalSign, ExternalPopupMessage, Settings, UserAddressBook } from '../../utils/interceptor-messages.js'
+import { HandleSimulationModeReturnValue, InterceptedRequest, PersonalSign, ExternalPopupMessage, Settings, UserAddressBook, SignerName, PersonalSignRequest } from '../../utils/interceptor-messages.js'
 import { Website, WebsiteSocket, WebsiteTabConnections } from '../../utils/user-interface-types.js'
 import { EIP2612Message, Permit2, PersonalSignParams, SignTypedDataParams } from '../../utils/wire-types.js'
 import { personalSignWithSimulator, sendMessageToContentScript } from '../background.js'
@@ -43,19 +43,26 @@ function reject() {
 	}
 }
 
-export function craftPersonalSignPopupMessage(params: PersonalSignParams | SignTypedDataParams, activeAddress: bigint, userAddressBook: UserAddressBook, simulationMode: boolean, requestId: number) {
+export function craftPersonalSignPopupMessage(params: PersonalSignParams | SignTypedDataParams, activeAddress: bigint, userAddressBook: UserAddressBook, simulationMode: boolean, requestId: number, signerName: SignerName, website: Website): PersonalSignRequest {
+	const basicParams = {
+		activeAddress: getAddressMetaData(activeAddress, userAddressBook),
+		simulationMode,
+		requestId,
+		method: params.method,
+		website,
+		signerName,
+		params,
+	}
+
 	if (params.method === 'personal_sign') {
 		return {
 			method: 'popup_personal_sign_request',
 			data: {
-				activeAddress,
+				...basicParams,
 				type: 'NotParsed' as const,
-				simulationMode,
-				requestId,
 				message: params.params[0],
 				account: getAddressMetaData(params.params[1], userAddressBook),
 				method: params.method,
-				params,
 			}
 		} as const
 	}
@@ -65,10 +72,8 @@ export function craftPersonalSignPopupMessage(params: PersonalSignParams | SignT
 		return {
 			method: 'popup_personal_sign_request',
 			data: {
-				activeAddress,
+				...basicParams,
 				type: 'Permit' as const,
-				simulationMode,
-				requestId,
 				message: parsed,
 				account: getAddressMetaData(params.params[0], userAddressBook),
 				method: params.method,
@@ -77,7 +82,6 @@ export function craftPersonalSignPopupMessage(params: PersonalSignParams | SignT
 					spender: getAddressMetaData(parsed.message.spender, userAddressBook),
 					verifyingContract: getAddressMetaData(parsed.domain.verifyingContract, userAddressBook)
 				},
-				params,
 			}
 		} as const
 	}
@@ -87,10 +91,8 @@ export function craftPersonalSignPopupMessage(params: PersonalSignParams | SignT
 		return {
 			method: 'popup_personal_sign_request',
 			data: {
-				activeAddress,
+				...basicParams,
 				type: 'Permit2' as const,
-				simulationMode,
-				requestId,
 				message: parsed,
 				account: getAddressMetaData(params.params[0], userAddressBook),
 				method: params.method,
@@ -99,21 +101,17 @@ export function craftPersonalSignPopupMessage(params: PersonalSignParams | SignT
 					spender: getAddressMetaData(parsed.message.spender, userAddressBook),
 					verifyingContract: getAddressMetaData(parsed.domain.verifyingContract, userAddressBook)
 				},
-				params,
 			}
 		} as const
 	}
 	return {
 		method: 'popup_personal_sign_request',
 		data: {
-			activeAddress,
+			...basicParams,
 			type: 'EIP712' as const,
-			simulationMode,
-			requestId,
 			message: params.params[1],
 			account: getAddressMetaData(params.params[0], userAddressBook),
 			method: params.method,
-			params,
 		}
 	} as const
 }
@@ -127,6 +125,7 @@ export const openPersonalSignDialog = async (
 	website: Website,
 	settings: Settings,
 ): Promise<HandleSimulationModeReturnValue> => {
+	console.log(params)
 	if (pendingPersonalSign !== undefined) return reject()
 
 	const onCloseWindow = (windowId: number) => {
@@ -142,7 +141,7 @@ export const openPersonalSignDialog = async (
 		const message = ExternalPopupMessage.parse(msg)
 		if (message.method !== 'popup_personalSignReadyAndListening') return
 		browser.runtime.onMessage.removeListener(personalSignWindowReadyAndListening)
-		return await sendPopupMessageToOpenWindows(craftPersonalSignPopupMessage(params, activeAddress, settings.userAddressBook, simulationMode, request.requestId))
+		return await sendPopupMessageToOpenWindows(craftPersonalSignPopupMessage(params, activeAddress, settings.userAddressBook, simulationMode, request.requestId, signerName, website))
 	}
 
 	pendingPersonalSign = new Future<PersonalSign>()

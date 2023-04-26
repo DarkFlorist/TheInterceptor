@@ -51,7 +51,7 @@ export type TransactionImportanceBlockParams = {
 }
 
 // showcases the most important things the transaction does
-export function TransactionImportanceBlock( param: TransactionImportanceBlockParams ) {
+export function TransactionImportanceBlock(param: TransactionImportanceBlockParams) {
 	if ( param.simTx.statusCode === 'failure') {
 		return <div>
 			<ErrorComponent text = { `The transaction fails with an error '${ param.simTx.error }'` } />
@@ -73,7 +73,9 @@ export function TransactionImportanceBlock( param: TransactionImportanceBlockPar
 		}
 		case 'SimpleTokenApproval': {
 			return <SimpleTokenApprovalVisualisation
-				simTx = { transactionIdentification.identifiedTransaction }
+				approval = { transactionIdentification.identifiedTransaction.tokenResults[0] }
+				transactionGasses = { transactionIdentification.identifiedTransaction }
+				chainId = { transactionIdentification.identifiedTransaction.transaction.chainId }
 				renameAddressCallBack = { param.renameAddressCallBack }
 			/>
 		}

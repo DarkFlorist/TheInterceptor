@@ -386,18 +386,20 @@ export const MessageToPopupSimple = funtypes.ReadonlyObject({
 export type PersonalSignRequestData = funtypes.Static<typeof PersonalSignRequestData>
 export const PersonalSignRequestData = funtypes.Union(
 	funtypes.ReadonlyObject({
-		activeAddress: EthereumAddress,
+		activeAddress: AddressBookEntry,
 		requestId: funtypes.Number,
 		simulationMode: funtypes.Boolean,
 		account: AddressBookEntry,
 		method: funtypes.Literal('personal_sign'),
 		type: funtypes.Literal('NotParsed'),
 		message: funtypes.String,
-		params: funtypes.Union(PersonalSignParams, SignTypedDataParams)
+		params: funtypes.Union(PersonalSignParams, SignTypedDataParams),
+		signerName: SignerName,
+		website: Website,
 	}),
 	funtypes.Intersect(
 		funtypes.ReadonlyObject({
-			activeAddress: EthereumAddress,
+			activeAddress: AddressBookEntry,
 			requestId: funtypes.Number,
 			simulationMode: funtypes.Boolean,
 			account: AddressBookEntry,
@@ -408,7 +410,9 @@ export const PersonalSignRequestData = funtypes.Union(
 				funtypes.Literal('eth_signTypedData_v3'),
 				funtypes.Literal('eth_signTypedData_v4')
 			),
-			params: funtypes.Union(PersonalSignParams, SignTypedDataParams)
+			params: funtypes.Union(PersonalSignParams, SignTypedDataParams),
+			signerName: SignerName,
+			website: Website,
 		}),
 		funtypes.ReadonlyObject({
 			type: funtypes.Literal('EIP712'),

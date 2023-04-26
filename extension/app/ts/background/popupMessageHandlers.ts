@@ -324,5 +324,7 @@ export async function refreshPersonalSignMetadata(refreshPersonalSignMetadata: R
 		settings.userAddressBook,
 		refreshPersonalSignMetadata.data.simulationMode,
 		refreshPersonalSignMetadata.data.requestId,
+		refreshPersonalSignMetadata.data.signerName,
+		refreshPersonalSignMetadata.data.website,
 	))
 }
