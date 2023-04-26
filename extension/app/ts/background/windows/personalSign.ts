@@ -45,7 +45,7 @@ function reject() {
 	}
 }
 
-export async function craftPersonalSignPopupMessage(params: PersonalSignParams | SignTypedDataParams, activeAddress: bigint, userAddressBook: UserAddressBook, simulationMode: boolean, requestId: number, signerName: SignerName, website: Website, simulator: Simulator): Promise<PersonalSignRequest> {
+export function craftPersonalSignPopupMessage(params: PersonalSignParams | SignTypedDataParams, activeAddress: bigint, userAddressBook: UserAddressBook, simulationMode: boolean, requestId: number, signerName: SignerName, website: Website): PersonalSignRequest {
 	const basicParams = {
 		activeAddress: getAddressMetaData(activeAddress, userAddressBook),
 		simulationMode,
@@ -167,7 +167,7 @@ export const openPersonalSignDialog = async (
 		const message = ExternalPopupMessage.parse(msg)
 		if (message.method !== 'popup_personalSignReadyAndListening') return
 		browser.runtime.onMessage.removeListener(personalSignWindowReadyAndListening)
-		return await sendPopupMessageToOpenWindows(await craftPersonalSignPopupMessage(params, activeAddress, settings.userAddressBook, simulationMode, request.requestId, await getSignerName(), website, simulator))
+		return await sendPopupMessageToOpenWindows(craftPersonalSignPopupMessage(params, activeAddress, settings.userAddressBook, simulationMode, request.requestId, signerName, website))
 	}
 
 	pendingPersonalSign = new Future<PersonalSign>()
