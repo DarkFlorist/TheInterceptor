@@ -1,25 +1,19 @@
 {
 	"compilerOptions": {
-		"target": "ES2021",
-		"module": "ES2020",
-		"moduleResolution": "node",
+		"target": "ES2022",
+		"module": "ES2022",
+		"moduleResolution": "node16",
 		"outDir": "../app/inpage/output/",
 		"rootDir": "../app/inpage/build/",
-		"sourceMap": false,
-		"declaration": false,
-		"declarationMap": false,
+		"noEmit": false,
+		"inlineSourceMap": true,
 		"strict": true,
 		"noUnusedLocals": true,
 		"noUnusedParameters": true,
 		"noImplicitReturns": true,
 		"noImplicitThis": true,
 		"lib": ["ES2021", "DOM"],
-		"plugins": [ { "transform": "@zoltu/typescript-transformer-append-js-extension/output/index.js", "after": true } ]
+		"typeRoots": ["./node_modules/@types"],
 	},
-	"include": [
-		"../app/inpage/build/*.ts"
-	],
-	"ts-node": {
-		"esm": true
-	}
+	"include": ["../app/inpage/build/*.mts"]
 }
