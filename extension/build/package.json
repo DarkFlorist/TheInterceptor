@@ -6,7 +6,7 @@
 		"typescript": "5.0.4"
 	},
 	"scripts": {
-		"vendor": "tsc && node --enable-source-maps ./vendor.mjs && node --input-type=module -e \"import { promises as fs } from 'fs'; await fs.rm('./vendor.mjs')\"",
-		"bundle": "tsc && node --enable-source-maps ./bundler.mjs && node --input-type=module -e \"import { promises as fs } from 'fs'; await fs.rm('./bundler.mjs')\""
+		"vendor": "tsc && node --enable-source-maps ./vendor.mjs && node --input-type=module -e \"import { promises as fs } from 'fs'; await fs.rm('./bundler.mjs'); await fs.rm('./vendor.mjs');\"",
+		"bundle": "tsc && node --enable-source-maps ./bundler.mjs && node --input-type=module -e \"import { promises as fs } from 'fs'; await fs.rm('./bundler.mjs'); await fs.rm('./vendor.mjs');\""
 	}
 }
