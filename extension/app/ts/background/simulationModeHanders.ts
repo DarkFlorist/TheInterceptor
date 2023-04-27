@@ -173,7 +173,7 @@ export async function personalSign(websiteTabConnections: WebsiteTabConnections,
 }
 
 export async function switchEthereumChain(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, ethereumClientService: EthereumClientService, params: SwitchEthereumChainParams, request: InterceptedRequest, simulationMode: boolean, website: Website) {
-	if (await ethereumClientService.getChainId() === params.params[0].chainId) {
+	if (ethereumClientService.getChainId() === params.params[0].chainId) {
 		// we are already on the right chain
 		return { result: null }
 	}

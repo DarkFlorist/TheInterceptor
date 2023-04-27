@@ -120,6 +120,7 @@ export const openChangeChainDialog = async (
 		browser.windows.onRemoved.removeListener(onCloseWindow)
 		browser.windows.onRemoved.removeListener(changeChainWindowReadyAndListening)
 		pendForUserReply = undefined
+		openedWindow = null
 	}
 }
 
