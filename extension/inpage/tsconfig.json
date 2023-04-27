@@ -15,5 +15,5 @@
 		"lib": ["ES2021", "DOM"],
 		"typeRoots": ["./node_modules/@types"],
 	},
-	"include": ["../app/inpage/ts/*.mts"]
+	"include": ["../app/inpage/ts/*.mts", "../app/inpage/ts/*.ts"]
 }
