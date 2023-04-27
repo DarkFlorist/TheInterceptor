@@ -317,14 +317,15 @@ export async function refreshInterceptorAccessMetadata(params: RefreshIntercepto
 	await refreshInterceptorAccessMetadata(params)
 }
 
-export async function refreshPersonalSignMetadata(refreshPersonalSignMetadata: RefreshPersonalSignMetadata, settings: Settings) {
-	return await sendPopupMessageToOpenWindows(craftPersonalSignPopupMessage(
+export async function refreshPersonalSignMetadata(refreshPersonalSignMetadata: RefreshPersonalSignMetadata, settings: Settings, simulator: Simulator) {
+	return await sendPopupMessageToOpenWindows(await craftPersonalSignPopupMessage(
 		refreshPersonalSignMetadata.data.params,
-		refreshPersonalSignMetadata.data.activeAddress,
+		refreshPersonalSignMetadata.data.activeAddress.address,
 		settings.userAddressBook,
 		refreshPersonalSignMetadata.data.simulationMode,
 		refreshPersonalSignMetadata.data.requestId,
-		refreshPersonalSignMetadata.data.signerName,
+		await getSignerName(),
 		refreshPersonalSignMetadata.data.website,
+		simulator,
 	))
 }

@@ -19,7 +19,9 @@ export function SomeTimeAgo(props: SomeTimeAgoProps) {
 
 function humanReadableDateDelta(currentDateMs: number, pastDateMs: number) {
 	const secondsDiff = (currentDateMs - pastDateMs) / 1000
-	if (secondsDiff > 3600 * 1.5) {
+	if (secondsDiff > 3600 * 24 * 1.5) {
+		return `${ Math.floor((secondsDiff + 1800) / 3600 / 24) }d`
+	} else if (secondsDiff > 3600 * 1.5) {
 		return `${ Math.floor((secondsDiff + 1800) / 3600) }h`
 	} else if (secondsDiff > 60 * 1.5) {
 		return `${ Math.floor((secondsDiff + 30) / 60) }m`

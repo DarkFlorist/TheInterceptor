@@ -92,7 +92,7 @@ export function getAddressMetaData(address: bigint, userAddressBook: UserAddress
 	}
 }
 
-async function getTokenMetadata(simulator: Simulator, address: bigint) : Promise<AddressBookEntry> {
+export async function getTokenMetadata(simulator: Simulator, address: bigint) : Promise<TokenEntry | NFTEntry> {
 	const addrString = addressString(address)
 	const tokenData = tokenMetadata.get(addrString)
 	if (tokenData) return {

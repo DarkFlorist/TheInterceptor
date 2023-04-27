@@ -1,3 +1,5 @@
+import { QUARANTINE_CODE } from '../../simulation/protectors/quarantine-codes.js'
+import { Simulator } from '../../simulation/simulator.js'
 import { METAMASK_ERROR_USER_REJECTED_REQUEST } from '../../utils/constants.js'
 import { Future } from '../../utils/future.js'
 import { HandleSimulationModeReturnValue, InterceptedRequest, PersonalSign, ExternalPopupMessage, Settings, UserAddressBook, SignerName, PersonalSignRequest } from '../../utils/interceptor-messages.js'
@@ -5,8 +7,8 @@ import { Website, WebsiteSocket, WebsiteTabConnections } from '../../utils/user-
 import { EIP2612Message, Permit2, PersonalSignParams, SignTypedDataParams } from '../../utils/wire-types.js'
 import { personalSignWithSimulator, sendMessageToContentScript } from '../background.js'
 import { getHtmlFile, sendPopupMessageToOpenWindows } from '../backgroundUtils.js'
-import { getAddressMetaData } from '../metadataUtils.js'
-import { getPendingPersonalSignPromise, setPendingPersonalSignPromise } from '../settings.js'
+import { getAddressMetaData, getTokenMetadata } from '../metadataUtils.js'
+import { getPendingPersonalSignPromise, getSettings, getSignerName, setPendingPersonalSignPromise } from '../settings.js'
 
 let pendingPersonalSign: Future<PersonalSign> | undefined = undefined
 
@@ -43,7 +45,7 @@ function reject() {
 	}
 }
 
-export function craftPersonalSignPopupMessage(params: PersonalSignParams | SignTypedDataParams, activeAddress: bigint, userAddressBook: UserAddressBook, simulationMode: boolean, requestId: number, signerName: SignerName, website: Website): PersonalSignRequest {
+export async function craftPersonalSignPopupMessage(params: PersonalSignParams | SignTypedDataParams, activeAddress: bigint, userAddressBook: UserAddressBook, simulationMode: boolean, requestId: number, signerName: SignerName, website: Website, simulator: Simulator): Promise<PersonalSignRequest> {
 	const basicParams = {
 		activeAddress: getAddressMetaData(activeAddress, userAddressBook),
 		simulationMode,
@@ -52,6 +54,19 @@ export function craftPersonalSignPopupMessage(params: PersonalSignParams | SignT
 		website,
 		signerName,
 		params,
+	}
+
+	const getQuarrantineCodes = async (messageChainId: bigint): Promise<{ quarantine: boolean, quarantineCodes: readonly QUARANTINE_CODE[] }> => {
+		if (BigInt(messageChainId) !== (await getSettings()).activeChain) {
+			return {
+				quarantine: true,
+				quarantineCodes: ['SIGNATURE_CHAIN_ID_DOES_NOT_MATCH']
+			}
+		}
+		return {
+			quarantine: false,
+			quarantineCodes: []
+		}
 	}
 
 	if (params.method === 'personal_sign') {
@@ -63,12 +78,16 @@ export function craftPersonalSignPopupMessage(params: PersonalSignParams | SignT
 				message: params.params[0],
 				account: getAddressMetaData(params.params[1], userAddressBook),
 				method: params.method,
+				quarantine: false,
+				quarantineCodes: [],
 			}
 		} as const
 	}
 
 	if (params.params[1].primaryType === 'Permit') {
 		const parsed = EIP2612Message.parse(params.params[1])
+		const token = await getTokenMetadata(simulator, parsed.domain.verifyingContract)
+		if (token.type === 'NFT') throw 'Attempted to perform Permit2 to an NFT'
 		return {
 			method: 'popup_personal_sign_request',
 			data: {
@@ -80,14 +99,17 @@ export function craftPersonalSignPopupMessage(params: PersonalSignParams | SignT
 				addressBookEntries: {
 					owner: getAddressMetaData(parsed.message.owner, userAddressBook),
 					spender: getAddressMetaData(parsed.message.spender, userAddressBook),
-					verifyingContract: getAddressMetaData(parsed.domain.verifyingContract, userAddressBook)
+					verifyingContract: token,
 				},
+				...await getQuarrantineCodes(parsed.domain.chainId),
 			}
 		} as const
 	}
 
 	if (params.params[1].primaryType === 'PermitSingle') {
 		const parsed = Permit2.parse(params.params[1])
+		const token = await getTokenMetadata(simulator, parsed.message.details.token)
+		if (token.type === 'NFT') throw 'Attempted to perform Permit2 to an NFT'
 		return {
 			method: 'popup_personal_sign_request',
 			data: {
@@ -97,10 +119,11 @@ export function craftPersonalSignPopupMessage(params: PersonalSignParams | SignT
 				account: getAddressMetaData(params.params[0], userAddressBook),
 				method: params.method,
 				addressBookEntries: {
-					token: getAddressMetaData(parsed.message.details.token, userAddressBook),
+					token: token,
 					spender: getAddressMetaData(parsed.message.spender, userAddressBook),
 					verifyingContract: getAddressMetaData(parsed.domain.verifyingContract, userAddressBook)
 				},
+				...await getQuarrantineCodes(parsed.domain.chainId),
 			}
 		} as const
 	}
@@ -112,6 +135,8 @@ export function craftPersonalSignPopupMessage(params: PersonalSignParams | SignT
 			message: params.params[1],
 			account: getAddressMetaData(params.params[0], userAddressBook),
 			method: params.method,
+			quarantine: false,
+			quarantineCodes: []
 		}
 	} as const
 }
@@ -124,6 +149,7 @@ export const openPersonalSignDialog = async (
 	simulationMode: boolean,
 	website: Website,
 	settings: Settings,
+	simulator: Simulator
 ): Promise<HandleSimulationModeReturnValue> => {
 	console.log(params)
 	if (pendingPersonalSign !== undefined) return reject()
@@ -141,7 +167,7 @@ export const openPersonalSignDialog = async (
 		const message = ExternalPopupMessage.parse(msg)
 		if (message.method !== 'popup_personalSignReadyAndListening') return
 		browser.runtime.onMessage.removeListener(personalSignWindowReadyAndListening)
-		return await sendPopupMessageToOpenWindows(craftPersonalSignPopupMessage(params, activeAddress, settings.userAddressBook, simulationMode, request.requestId, signerName, website))
+		return await sendPopupMessageToOpenWindows(await craftPersonalSignPopupMessage(params, activeAddress, settings.userAddressBook, simulationMode, request.requestId, await getSignerName(), website, simulator))
 	}
 
 	pendingPersonalSign = new Future<PersonalSign>()
@@ -160,7 +186,7 @@ export const openPersonalSignDialog = async (
 		openedPersonalSignDialogWindow = await browser.windows.create({
 			url: getHtmlFile('personalSign'),
 			type: 'popup',
-			height: 600,
+			height: 800,
 			width: 600,
 		})
 		if (openedPersonalSignDialogWindow && openedPersonalSignDialogWindow.id !== undefined) {

@@ -59,7 +59,7 @@ function TransactionCard(param: TransactionCardParams) {
 						simulationAndVisualisationResults = { param.simulationAndVisualisationResults }
 						renameAddressCallBack = { param.renameAddressCallBack }
 					/>
-					<QuarantineCodes simTx = { simTx }/>
+					<QuarantineCodes quarantineCodes = { simTx.quarantineCodes }/>
 				</div>
 
 				<TransactionsAccountChangesCard

@@ -2,8 +2,8 @@ import { useState, useEffect } from 'preact/hooks'
 import { stringToUint8Array } from '../../utils/bigint.js'
 import { AddingNewAddressType, AddressBookEntry, RenameAddressCallBack } from '../../utils/user-interface-types.js'
 import Hint from '../subcomponents/Hint.js'
-import { Error as ErrorComponent} from '../subcomponents/Error.js'
-import { MOCK_PRIVATE_KEYS_ADDRESS } from '../../utils/constants.js'
+import { ErrorCheckBox, Error as ErrorComponent} from '../subcomponents/Error.js'
+import { MOCK_PRIVATE_KEYS_ADDRESS, getChainName } from '../../utils/constants.js'
 import { AddNewAddress } from './AddNewAddress.js'
 import { ExternalPopupMessage, PersonalSignRequest, PersonalSignRequestData, SignerName } from '../../utils/interceptor-messages.js'
 import { sendPopupMessageToBackgroundPage } from '../../background/backgroundUtils.js'
@@ -12,6 +12,10 @@ import { SimpleTokenApprovalVisualisation } from '../simulationExplaining/custom
 import { SmallAddress, WebsiteOriginText } from '../subcomponents/address.js'
 import { SignerLogoText } from '../subcomponents/signers.js'
 import { Spinner } from '../subcomponents/Spinner.js'
+import { SomeTimeAgo } from '../subcomponents/SomeTimeAgo.js'
+import { QuarantineCodes } from '../simulationExplaining/Transactions.js'
+import { ComponentChildren } from 'preact'
+import { isSupportedChain } from '../../utils/constants.js'
 
 type SignatureCardParams = {
 	personalSignRequestData: PersonalSignRequestData
@@ -26,28 +30,30 @@ type SignatureHeaderParams = {
 function identifySignature(data: PersonalSignRequestData) {
 	switch (data.type) {
 		case 'EIP712': return {
-			title: 'EIP712',
+			title: 'Arbitary EIP712 message signing request',
 			rejectAction: 'hello',
 			simulationAction: 'hello2',
 			signingAction: 'hello2',
 		}
 		case 'NotParsed': return {
-			title: 'NotParsed',
+			title: 'Arbitary Ethereum message signing request',
 			rejectAction: 'hello',
 			simulationAction: 'hello2',
 			signingAction: 'hello2',
 		}
 		case 'Permit': return {
-			title: 'Permit',
+			title: 'Permit message signing request',
 			rejectAction: 'hello',
 			simulationAction: 'hello2',
 			signingAction: 'hello2',
+			to: data.addressBookEntries.spender
 		}
 		case 'Permit2': return {
-			title: 'Permit',
+			title: 'Permit2 message signing request',
 			rejectAction: 'hello',
 			simulationAction: 'hello2',
 			signingAction: 'hello2',
+			to: data.addressBookEntries.spender
 		}
 		default: assertNever(data)
 	}
@@ -65,11 +71,13 @@ function SignatureHeader(params: SignatureHeaderParams) {
 			{ identifySignature(params.personalSignRequestData).title }
 		</p>
 		<p class = 'card-header-icon' style = 'margin-left: auto; margin-right: 0; padding-right: 10px; padding-left: 0px; overflow: hidden'>
-			<SmallAddress
-				addressBookEntry = { params.personalSignRequestData.account }
-				renameAddressCallBack = { params.renameAddressCallBack }
-				style = { { 'background-color': 'unset' } }
-			/>
+			{'addressBookEntries' in params.personalSignRequestData ?
+				<SmallAddress
+					addressBookEntry = { params.personalSignRequestData.addressBookEntries.spender }
+					renameAddressCallBack = { params.renameAddressCallBack }
+					style = { { 'background-color': 'unset' } }
+				/>
+			: <></>}
 		</p>
 	</header>
 }
@@ -79,7 +87,7 @@ type SignRequestParams = {
 	renameAddressCallBack: RenameAddressCallBack
 }
 
-function SignRequest( {personalSignRequestData, renameAddressCallBack }: SignRequestParams) {
+function SignRequest({ personalSignRequestData, renameAddressCallBack }: SignRequestParams) {
 	switch (personalSignRequestData.type) {
 		case 'NotParsed': {
 			return <div class = 'textbox'>
@@ -92,9 +100,7 @@ function SignRequest( {personalSignRequestData, renameAddressCallBack }: SignReq
 			</div>
 		}
 		case 'Permit': {
-			if (personalSignRequestData.addressBookEntries.verifyingContract.type !== 'token') throw new Error("fixme")
 			const chainId = personalSignRequestData.message.domain.chainId.toString()
-			if (chainId !== '1') throw new Error("fixme")
 			return <SimpleTokenApprovalVisualisation
 				approval = { {
 					type: 'Token',
@@ -105,60 +111,84 @@ function SignRequest( {personalSignRequestData, renameAddressCallBack }: SignReq
 					isApproval: true
 				} }
 				transactionGasses = { { gasSpent: 0n, realizedGasPrice: 0n } }
-				chainId = { chainId }
+				chainId = { isSupportedChain(chainId) ? chainId : '1' }
 				renameAddressCallBack = { renameAddressCallBack }
 			/>
-			// muista näyttää chain id, nonce, timestamp
-/*
-			const chainName = getChainName(BigInt(request.data.message.domain.chainId))
-			const verifyingContract = request.data.addressBookEntries.verifyingContract
-			const spenderMetaData = request.data.addressBookEntries.spender
-			const decimals = 'decimals' in request.data.addressBookEntries.verifyingContract ? request.data.addressBookEntries.verifyingContract.decimals : undefined
-			const value = decimals ? bigintToRoundedPrettyDecimalString( request.data.message.message.value, decimals, 4n) : request.data.message.message.value
-			const message =  `Approve ${ verifyingContract.name } on ${ chainName } for ${ spenderMetaData.name } for value ${ value } with nonce ${ request.data.message.message.nonce }. Valid until ${ new Date( request.data.message.message.deadline * 1000).toISOString() }.`
-			return setSignRequest( {
-				simulationMode: request.data.simulationMode,
-				message: message,
-				account: addressToSignWith,
-				method: request.data.method,
-			})*/
 		}
 		case 'Permit2': {
-			if (personalSignRequestData.addressBookEntries.token.type !== 'token') throw new Error("fixme")
 			const chainId = personalSignRequestData.message.domain.chainId.toString()
-			if (chainId !== '1') throw new Error("fixme")
-
 			return <SimpleTokenApprovalVisualisation
 				approval = { {
 					type: 'Token',
-					from: personalSignRequestData.account,
-					to: personalSignRequestData.addressBookEntries.spender,
 					token: personalSignRequestData.addressBookEntries.token,
 					amount: personalSignRequestData.message.message.details.amount,
+					from: personalSignRequestData.account,
+					to: personalSignRequestData.addressBookEntries.spender,
 					isApproval: true
 				} }
 				transactionGasses = { { gasSpent: 0n, realizedGasPrice: 0n } }
-				chainId = { chainId }
+				chainId = { isSupportedChain(chainId) ? chainId : '1' }
 				renameAddressCallBack = { renameAddressCallBack }
 			/>
-			/*
-			const chainName = getChainName(BigInt(request.data.message.domain.chainId))
-			const verifyingContract = request.data.addressBookEntries.verifyingContract
-			const spenderMetaData = request.data.addressBookEntries.spender
-			const decimals = 'decimals' in request.data.addressBookEntries.token ? request.data.addressBookEntries.token.decimals : undefined
-			const value = decimals ? bigintToRoundedPrettyDecimalString( request.data.message.message.details.amount, decimals, 4n) : request.data.message.message.details.amount
-			const message =  `Approve ${ verifyingContract.name } on ${ chainName } for ${ spenderMetaData.name } for value ${ value } (${ request.data.addressBookEntries.token.name }) with nonce ${ request.data.message.message.details.nonce }. Valid until ${ new Date( Number(request.data.message.message.details.expiration) * 1000).toISOString() }.`
-			return setSignRequest( {
-				simulationMode: request.data.simulationMode,
-				message: message,
-				account: addressToSignWith,
-				method: request.data.method,
-			})
-			*/
 		}
 		default: assertNever(personalSignRequestData)
 	}
 }
+
+
+type ExtraDetailsCardParams = {
+	personalSignRequestData: PersonalSignRequestData
+}
+export function ExtraDetails({ personalSignRequestData }: ExtraDetailsCardParams) {
+	const [showSummary, setShowSummary] = useState<boolean>(true)
+
+	const CellElement = (param: { text: ComponentChildren }) => {
+		return <div class = 'log-cell' style = 'justify-content: right;'> <p class = 'paragraph' style = 'color: var(--subtitle-text-color)'> { param.text }</p></div>
+	}
+
+	if (personalSignRequestData.type !== 'Permit2' && personalSignRequestData.type !== 'Permit') {
+		return <></>
+	}
+
+	return <div class = 'card' style = 'margin-top: 10px; margin-bottom: 10px'>
+		<header class = 'card-header noselect' style = 'cursor: pointer; height: 30px;' onClick = { () => setShowSummary((prevValue) => !prevValue) }>
+			<p class = 'card-header-title' style = 'font-weight: unset; font-size: 0.8em;'>
+				Extra details
+			</p>
+			<div class = 'card-header-icon'>
+				<span class = 'icon' style = 'color: var(--text-color); font-weight: unset; font-size: 0.8em;'> V </span>
+			</div>
+		</header>
+		{ !showSummary ? <></> : <>
+			<div class = 'card-content'>
+				<div class = 'container' style = 'margin-bottom: 10px;'>
+					<span class = 'log-table' style = 'justify-content: center; column-gap: 5px; grid-template-columns: auto auto'>
+						<CellElement text = 'Chain: '/>
+						<CellElement text = { getChainName(BigInt(personalSignRequestData.message.domain.chainId)) }/>
+						{ personalSignRequestData.type !== 'Permit2' ? <></> : <>
+							<CellElement text = 'Nonce: '/>
+							<CellElement text = { personalSignRequestData.message.message.details.nonce.toString(10) }/>
+							<CellElement text = 'Signature expires in:'/>
+							<CellElement text = { <SomeTimeAgo priorTimestamp = { new Date(Number(personalSignRequestData.message.message.sigDeadline) * 1000) } countBackwards = { true }/> }/>
+							<CellElement text = 'Spender can spend for:'/>
+							<CellElement text = { <>
+								<SomeTimeAgo priorTimestamp = { new Date(Number(personalSignRequestData.message.message.details.expiration) * 1000) } countBackwards = { true }/>
+								{` (until ${ new Date(Number(personalSignRequestData.message.message.details.expiration) * 1000).toISOString().split('T')[0] })`}
+							</> }/>
+						</> }
+						{ personalSignRequestData.type !== 'Permit' ? <></> : <>
+							<CellElement text = 'Nonce: '/>
+							<CellElement text = { personalSignRequestData.message.message.nonce.toString(10) }/>
+							<CellElement text = 'Signature expires in:'/>
+							<CellElement text = { <SomeTimeAgo priorTimestamp = { new Date(Number(personalSignRequestData.message.message.deadline) * 1000) } countBackwards = { true }/> }/>
+						</> }
+					</span>
+				</div>
+			</div>
+		</> }
+	</div>
+}
+
 
 function SignatureCard(params: SignatureCardParams) {
 	return <>
@@ -167,7 +197,9 @@ function SignatureCard(params: SignatureCardParams) {
 			<div class = 'card-content' style = 'padding-bottom: 5px;'>
 				<div class = 'container'>
 					<SignRequest { ...params }/>
+					<QuarantineCodes quarantineCodes = { params.personalSignRequestData.quarantineCodes }/>
 				</div>
+				<ExtraDetails { ...params }/>
 			</div>
 		</div>
 	</>
@@ -182,34 +214,11 @@ type ButtonsParams = {
 	approve: () => void
 }
 
-function isConfirmDisabled(personalSignRequestData: PersonalSignRequestData, activeAddress: bigint) {
-	return personalSignRequestData.simulationMode && (activeAddress !== MOCK_PRIVATE_KEYS_ADDRESS || personalSignRequestData.method  !== 'personal_sign')
-}
-
-function Buttons(params: ButtonsParams) {
-	const identified = identifySignature(params.personalSignRequestData)
-
-	return <div style = 'display: flex; flex-direction: row;'>
-		<button className = 'button is-primary is-danger button-overflow dialog-button-left' onClick = { params.reject} >
-			{ identified.rejectAction }
-		</button>
-		<button className = 'button is-primary button-overflow dialog-button-right'
-			onClick = { params.approve }
-			disabled = { isConfirmDisabled(params.personalSignRequestData, params.activeAddress.address) }>
-			{ params.personalSignRequestData.simulationMode ? `${ identified.simulationAction }!` :
-				<SignerLogoText {...{
-					signerName: params.signerName,
-					text: identified.signingAction,
-				}}/>
-			}
-		</button>
-	</div>
-}
-
 export function PersonalSign() {
 	const [requestIdToConfirm, setRequestIdToConfirm] = useState<number | undefined>(undefined)
 	const [addingNewAddress, setAddingNewAddress] = useState<AddingNewAddressType | 'renameAddressModalClosed'> ('renameAddressModalClosed')
 	const [personalSignRequestData, setPersonalSignRequestData] = useState<PersonalSignRequestData | undefined>(undefined)
+	const [forceSend, setForceSend] = useState<boolean>(false)
 
 	useEffect( () => {
 		function popupMessageListener(msg: unknown) {
@@ -235,15 +244,44 @@ export function PersonalSign() {
 
 	async function approve() {
 		if ( requestIdToConfirm === undefined) throw new Error('Request id is missing')
-		await sendPopupMessageToBackgroundPage( { method: 'popup_personalSign', options: { requestId: requestIdToConfirm, accept: true } } )
+		await sendPopupMessageToBackgroundPage({ method: 'popup_personalSign', options: { requestId: requestIdToConfirm, accept: true } })
 		globalThis.close()
 	}
 
 	async function reject() {
 		if ( requestIdToConfirm === undefined) throw new Error('Request id is missing')
-		await sendPopupMessageToBackgroundPage( { method: 'popup_personalSign', options: { requestId: requestIdToConfirm, accept: false } } )
+		await sendPopupMessageToBackgroundPage({ method: 'popup_personalSign', options: { requestId: requestIdToConfirm, accept: false } })
 		globalThis.close()
 	}
+
+	function isPossibleToSend(personalSignRequestData: PersonalSignRequestData, activeAddress: bigint) {
+		return !(personalSignRequestData.simulationMode && (activeAddress !== MOCK_PRIVATE_KEYS_ADDRESS || personalSignRequestData.method !== 'personal_sign'))
+	}
+
+	function isConfirmDisabled(personalSignRequestData: PersonalSignRequestData, activeAddress: bigint) {
+		return !isPossibleToSend(personalSignRequestData, activeAddress) && !forceSend
+	}
+	
+	function Buttons(params: ButtonsParams) {
+		const identified = identifySignature(params.personalSignRequestData)
+	
+		return <div style = 'display: flex; flex-direction: row;'>
+			<button className = 'button is-primary is-danger button-overflow dialog-button-left' onClick = { params.reject} >
+				{ identified.rejectAction }
+			</button>
+			<button className = 'button is-primary button-overflow dialog-button-right'
+				onClick = { params.approve }
+				disabled = { isConfirmDisabled(params.personalSignRequestData, params.activeAddress.address) }>
+				{ params.personalSignRequestData.simulationMode ? `${ identified.simulationAction }!` :
+					<SignerLogoText {...{
+						signerName: params.signerName,
+						text: identified.signingAction,
+					}}/>
+				}
+			</button>
+		</div>
+	}
+	
 
 	function renameAddressCallBack(entry: AddressBookEntry) {
 		setAddingNewAddress({ addingAddress: false, entry: entry })
@@ -257,6 +295,7 @@ export function PersonalSign() {
 			</div>
 		</main>
 	}
+	
 	//TODO, add check that domains match, and active address and account match
 
 	return (
@@ -293,8 +332,20 @@ export function PersonalSign() {
 					</div>
 
 					<nav class = 'window-header' style = 'display: flex; justify-content: space-around; width: 100%; flex-direction: column; padding-bottom: 10px; padding-top: 10px;'>
+						
+						{ isPossibleToSend(personalSignRequestData, personalSignRequestData.activeAddress.address) && personalSignRequestData.quarantine ? 
+							<div style = 'display: grid'>
+								<div style = 'margin: 0px; margin-bottom: 10px; margin-left: 20px; margin-right: 20px; '>
+									<ErrorCheckBox text = { 'I understand that there are issues with this signature request but I want to send it anyway against Interceptors recommendations.' } checked = { forceSend } onInput = { setForceSend } />
+								</div>
+							</div>
+						: <></> }
 						{ personalSignRequestData.simulationMode && (personalSignRequestData.activeAddress.address === undefined || personalSignRequestData.activeAddress.address !== MOCK_PRIVATE_KEYS_ADDRESS || personalSignRequestData.method  != 'personal_sign')  ?
-							<ErrorComponent text = 'Unfortunately we cannot simulate message signing as it requires private key access 😢.'/>
+							<div style = 'display: grid'>
+								<div style = 'margin: 0px; margin-bottom: 10px; margin-left: 20px; margin-right: 20px; '>
+									<ErrorComponent text = 'Unfortunately we cannot simulate message signing as it requires private key access 😢.'/>
+								</div>
+							</div>
 							: <></>
 						}
 						<Buttons

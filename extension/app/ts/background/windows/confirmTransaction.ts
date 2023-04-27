@@ -98,7 +98,7 @@ export async function openConfirmTransactionDialog(
 			openedConfirmTransactionDialogWindow = await browser.windows.create({
 				url: getHtmlFile('confirmTransaction'),
 				type: 'popup',
-				height: 600,
+				height: 800,
 				width: 600,
 			})
 

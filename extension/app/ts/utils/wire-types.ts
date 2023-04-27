@@ -866,7 +866,7 @@ export const EIP2612Message = funtypes.ReadonlyObject({
 	domain: funtypes.ReadonlyObject({
 		name: funtypes.String,
 		version: NonHexBigInt,
-		chainId: funtypes.Number,
+		chainId: NonHexBigInt,
 		verifyingContract: EthereumAddress,
 	}),
 	message: funtypes.ReadonlyObject({

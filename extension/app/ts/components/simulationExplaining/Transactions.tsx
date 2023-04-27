@@ -2,7 +2,7 @@ import { SimulatedAndVisualizedTransaction, SimulationAndVisualisationResults, T
 import { SmallAddress, WebsiteOriginText } from '../subcomponents/address.js'
 import { TokenSymbol, TokenAmount, Token721AmountField } from '../subcomponents/coins.js'
 import { LogAnalysisParams, RenameAddressCallBack } from '../../utils/user-interface-types.js'
-import { QUARANTINE_CODES_DICT } from '../../simulation/protectors/quarantine-codes.js'
+import { QUARANTINE_CODE, QUARANTINE_CODES_DICT } from '../../simulation/protectors/quarantine-codes.js'
 import { Error as ErrorComponent } from '../subcomponents/Error.js'
 import { identifyRoutes, identifySwap, SwapVisualization } from './SwapTransactions.js'
 import { ExtraDetailsTransactionCard, GasFee, LogAnalysisCard, TransactionHeader } from './SimulationSummary.js'
@@ -34,9 +34,9 @@ function isPositiveEvent(visResult: TokenVisualizerResultWithMetadata, ourAddres
 	return visResult.to.address === ourAddressInReferenceFrame // send is positive if we are receiving
 }
 
-export function QuarantineCodes({ simTx }: { simTx: SimulatedAndVisualizedTransaction }) {
+export function QuarantineCodes({ quarantineCodes }: { quarantineCodes: readonly QUARANTINE_CODE[] }) {
 	return <> {
-		simTx.quarantineCodes.map( (code) => (
+		quarantineCodes.map((code) => (
 			<div style = 'margin-top: 10px;margin-bottom: 10px'>
 				<ErrorComponent text = { QUARANTINE_CODES_DICT[code].label } />
 			</div>
@@ -107,7 +107,7 @@ export function Transaction(param: TransactionVisualizationParameters) {
 			<div class = 'card-content' style = 'padding-bottom: 5px;'>
 				<div class = 'container'>
 					<TransactionImportanceBlock { ...param }/>
-					<QuarantineCodes simTx = { param.simTx }/>
+					<QuarantineCodes quarantineCodes = { param.simTx.quarantineCodes }/>
 				</div>
 				{ identifiedTransaction === 'MakeYouRichTransaction' ? <></> :<>
 					<LogAnalysisCard
