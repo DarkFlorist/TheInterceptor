@@ -1,0 +1,21 @@
+{
+	"compilerOptions": {
+		"target": "ES2022",
+        "module": "none",
+		"moduleResolution": "node",
+		"outDir": "app/inpage/js/",
+		"rootDir": "app/inpage/ts/",
+		"noEmit": false,
+		"sourceMap": false,
+		"inlineSources": false,
+		"strict": true,
+		"noUnusedLocals": true,
+		"noUnusedParameters": true,
+		"noImplicitReturns": true,
+		"noImplicitThis": true,
+		"declaration": false,
+		"declarationMap": false,
+		"lib": ["DOM"],
+	},
+	"include": ["app/inpage/ts/*.ts"]
+}

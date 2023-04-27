@@ -1,19 +1,22 @@
 {
 	"compilerOptions": {
 		"target": "ES2022",
-		"module": "ES2022",
+        "module": "ES2022",
 		"moduleResolution": "node16",
-		"outDir": "../app/inpage/js/",
-		"rootDir": "../app/inpage/ts/",
+		"outDir": "app/inpage/js/",
+		"rootDir": "app/inpage/ts/",
 		"noEmit": false,
-		"inlineSourceMap": true,
+		"sourceMap": true,
+		"inlineSources": true,
 		"strict": true,
 		"noUnusedLocals": true,
 		"noUnusedParameters": true,
 		"noImplicitReturns": true,
 		"noImplicitThis": true,
-		"lib": ["ES2021", "DOM"],
+		"declaration": false,
+		"declarationMap": false,
+		"lib": ["ES2022", "DOM"],
 		"typeRoots": ["./node_modules/@types"],
 	},
-	"include": ["../app/inpage/ts/*.mts", "../app/inpage/ts/*.ts"]
+	"include": ["app/inpage/ts/*.mts"]
 }

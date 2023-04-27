@@ -122,11 +122,9 @@ type WindowEthereum = InjectFunctions & {
 	isBraveWallet?: boolean,
 	isMetaMask?: boolean,
 }
-declare global {
-	interface Window {
-		dispatchEvent: any,
-		ethereum?: WindowEthereum
-	}
+interface Window {
+	dispatchEvent: any,
+	ethereum?: WindowEthereum
 }
 
 type OnMessage = 'accountsChanged' | 'message' | 'connect' | 'close' | 'disconnect' | 'chainChanged'

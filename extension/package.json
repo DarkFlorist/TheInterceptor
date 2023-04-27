@@ -8,11 +8,12 @@
 		"setup-chrome": "npm run vendor && npm run inpage && npm run build-chrome",
 		"build-firefox": "tsc && npm run firefox",
 		"build-chrome": "tsc && npm run bundle && npm run chrome",
-		"inpage": "cd inpage && npm ci --ignore-scripts && npm run build",
 		"vendor": "cd build && npm ci --ignore-scripts && npm run vendor",
 		"bundle": "cd build && npm run bundle",
 		"firefox": "node -e \"const fs = require('fs'); fs.copyFileSync('app/manifestV2.json', 'app/manifest.json');\"",
-		"chrome": "node -e \"const fs = require('fs'); fs.copyFileSync('app/manifestV3.json', 'app/manifest.json');\""
+		"chrome": "node -e \"const fs = require('fs'); fs.copyFileSync('app/manifestV3.json', 'app/manifest.json');\"",
+		"prepare-inpage": "tsc --project tsconfig-inpage-create-injection-script.json && node --enable-source-maps app/inpage/js/create_injection_script.mjs && node --input-type=module -e \"import { promises as fs } from 'fs'; await fs.rm('app/inpage/js/create_injection_script.mjs')\"",
+		"inpage": "tsc --project tsconfig-inpage.json && npm run prepare-inpage && tsc --project tsconfig-inpage-output.json"
 	},
 	"dependencies": {
 		"@darkflorist/address-metadata": "0.2.0",
@@ -27,6 +28,6 @@
 		"@types/firefox-webext-browser": "109.0.0",
 		"@types/node-fetch": "2.6.1",
 		"node-fetch": "2.6.7",
-		"typescript": "4.9.3"
+		"typescript": "5.0.4"
 	}
 }
