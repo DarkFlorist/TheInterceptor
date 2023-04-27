@@ -1,5 +1,4 @@
-# node:16.16.0-alpine3.16
-FROM node@sha256:554142f9a6367f1fbd776a1b2048fab3a2cc7aa477d7fe9c00ce0f110aa45716
+FROM node:18.16.0-alpine3.17@sha256:44aaf1ccc80eaed6572a0f2ef7d6b5a2982d54481e4255480041ac92221e2f11
 
 RUN apk --no-cache add zip
 
