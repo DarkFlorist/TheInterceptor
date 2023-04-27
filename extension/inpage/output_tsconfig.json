@@ -13,7 +13,7 @@
 		"noImplicitReturns": true,
 		"noImplicitThis": true,
 		"lib": ["ES2021", "DOM"],
-		"typeRoots": ["./node_modules/@types"],
+		"typeRoots": ["./node_modules/@types"]
 	},
-	"include": ["../app/inpage/build/*.mts"]
+	"include": ["../app/inpage/build/*.mts", "../app/inpage/build/*.ts"]
 }
