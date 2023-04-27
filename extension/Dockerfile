@@ -7,13 +7,12 @@ COPY ./build/package-lock.json /extension/build/package-lock.json
 WORKDIR /extension/build
 RUN npm ci
 
-COPY ./inpage/package.json ./inpage/package-lock.json ./inpage/tsconfig.json ./inpage/output_tsconfig.json /extension/inpage/
 COPY ./package.json /extension/package.json
 COPY ./package-lock.json /extension/package-lock.json
 WORKDIR /extension
 RUN npm ci
 
-COPY tsconfig.json /extension/
+COPY tsconfig.json tsconfig-inpage.json tsconfig-inpage-output.json tsconfig-inpage-create-injection-script.json /extension/
 COPY app/*.png app/*.jpg app/*.json app/*.ico /extension/app/
 COPY app/html/ /extension/app/html/
 COPY app/html3/ /extension/app/html3/
