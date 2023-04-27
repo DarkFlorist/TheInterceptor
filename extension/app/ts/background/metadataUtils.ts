@@ -1,12 +1,12 @@
 import { addressString, checksummedAddress } from '../utils/bigint.js'
-import { AddressInfoEntry, AddressBookEntry, AddressInfo } from '../utils/user-interface-types.js'
+import { AddressInfoEntry, AddressBookEntry, AddressInfo, TokenEntry, NFTEntry } from '../utils/user-interface-types.js'
 import { SimulationState, VisualizerResult } from '../utils/visualizer-types.js'
 import { nftMetadata, tokenMetadata, contractMetadata } from '@darkflorist/address-metadata'
 import { ethers } from 'ethers'
-import { Simulator } from '../simulation/simulator.js'
 import { MOCK_ADDRESS } from '../utils/constants.js'
 import { UserAddressBook } from '../utils/interceptor-messages.js'
 import { getTokenDecimals } from '../simulation/services/SimulationModeEthereumClientService.js'
+import { EthereumClientService } from '../simulation/services/EthereumClientService.js'
 export const LOGO_URI_PREFIX = `../vendor/@darkflorist/address-metadata`
 
 export function getFullLogoUri(logoURI: string) {
@@ -92,7 +92,7 @@ export function getAddressMetaData(address: bigint, userAddressBook: UserAddress
 	}
 }
 
-export async function getTokenMetadata(simulator: Simulator, address: bigint) : Promise<TokenEntry | NFTEntry> {
+export async function getTokenMetadata(ethereumClientService: EthereumClientService, address: bigint) : Promise<TokenEntry | NFTEntry> {
 	const addrString = addressString(address)
 	const tokenData = tokenMetadata.get(addrString)
 	if (tokenData) return {
@@ -108,7 +108,7 @@ export async function getTokenMetadata(simulator: Simulator, address: bigint) : 
 		logoUri: nftTokenData.logoUri ? `${ getFullLogoUri(nftTokenData.logoUri) }` : undefined,
 		type: 'NFT',
 	}
-	const decimals = simulator === undefined ? undefined : await getTokenDecimals(simulator.ethereum, address).catch(() => {
+	const decimals = await getTokenDecimals(ethereumClientService, address).catch(() => {
 		console.log(`could not fetch decimals for ${ address }`)
 		return undefined
 	})
@@ -129,7 +129,7 @@ export async function getTokenMetadata(simulator: Simulator, address: bigint) : 
 	}
 }
 
-export async function getAddressBookEntriesForVisualiser(simulator: Simulator, visualizerResult: (VisualizerResult | undefined)[], simulationState: SimulationState, userAddressBook: UserAddressBook) : Promise<AddressBookEntry[]> {
+export async function getAddressBookEntriesForVisualiser(ethereumClientService: EthereumClientService, visualizerResult: (VisualizerResult | undefined)[], simulationState: SimulationState, userAddressBook: UserAddressBook) : Promise<AddressBookEntry[]> {
 	let addressesToFetchMetadata: bigint[] = []
 	let tokenAddresses: bigint[] = []
 
@@ -150,7 +150,7 @@ export async function getAddressBookEntriesForVisualiser(simulator: Simulator, v
 	})
 
 	const deDuplicatedTokens = Array.from(new Set<bigint>(tokenAddresses).values())
-	const tokenPromises = deDuplicatedTokens.map ( (addr) => getTokenMetadata(simulator, addr))
+	const tokenPromises = deDuplicatedTokens.map ((addr) => getTokenMetadata(ethereumClientService, addr))
 	const tokens = await Promise.all(tokenPromises)
 
 	const deDuplicated = new Set<bigint>(addressesToFetchMetadata)

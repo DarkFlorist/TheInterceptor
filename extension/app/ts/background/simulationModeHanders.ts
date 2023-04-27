@@ -168,8 +168,8 @@ export async function gasPrice(simulator: Simulator) {
 	return { result: EthereumQuantity.serialize(await simulator.ethereum.getGasPrice()) }
 }
 
-export async function personalSign(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, params: PersonalSignParams | SignTypedDataParams, request: InterceptedRequest, simulationMode: boolean, website: Website, settings: Settings) {
-	return await openPersonalSignDialog(websiteTabConnections, socket, params, request, simulationMode, website, settings)
+export async function personalSign(ethereumClientService: EthereumClientService, websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, params: PersonalSignParams | SignTypedDataParams, request: InterceptedRequest, simulationMode: boolean, website: Website, settings: Settings) {
+	return await openPersonalSignDialog(ethereumClientService, websiteTabConnections, socket, params, request, simulationMode, website, settings)
 }
 
 export async function switchEthereumChain(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, ethereumClientService: EthereumClientService, params: SwitchEthereumChainParams, request: InterceptedRequest, simulationMode: boolean, website: Website) {

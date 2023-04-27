@@ -1,5 +1,5 @@
 import { QUARANTINE_CODE } from '../../simulation/protectors/quarantine-codes.js'
-import { Simulator } from '../../simulation/simulator.js'
+import { EthereumClientService } from '../../simulation/services/EthereumClientService.js'
 import { METAMASK_ERROR_USER_REJECTED_REQUEST } from '../../utils/constants.js'
 import { Future } from '../../utils/future.js'
 import { HandleSimulationModeReturnValue, InterceptedRequest, PersonalSign, ExternalPopupMessage, Settings, UserAddressBook, SignerName, PersonalSignRequest } from '../../utils/interceptor-messages.js'
@@ -86,7 +86,7 @@ export function craftPersonalSignPopupMessage(params: PersonalSignParams | SignT
 
 	if (params.params[1].primaryType === 'Permit') {
 		const parsed = EIP2612Message.parse(params.params[1])
-		const token = await getTokenMetadata(simulator, parsed.domain.verifyingContract)
+		const token = await getTokenMetadata(ethereumClientService, parsed.domain.verifyingContract)
 		if (token.type === 'NFT') throw 'Attempted to perform Permit2 to an NFT'
 		return {
 			method: 'popup_personal_sign_request',
@@ -108,7 +108,7 @@ export function craftPersonalSignPopupMessage(params: PersonalSignParams | SignT
 
 	if (params.params[1].primaryType === 'PermitSingle') {
 		const parsed = Permit2.parse(params.params[1])
-		const token = await getTokenMetadata(simulator, parsed.message.details.token)
+		const token = await getTokenMetadata(ethereumClientService, parsed.message.details.token)
 		if (token.type === 'NFT') throw 'Attempted to perform Permit2 to an NFT'
 		return {
 			method: 'popup_personal_sign_request',
@@ -142,6 +142,7 @@ export function craftPersonalSignPopupMessage(params: PersonalSignParams | SignT
 }
 
 export const openPersonalSignDialog = async (
+	ethereumClientService: EthereumClientService,
 	websiteTabConnections: WebsiteTabConnections,
 	socket: WebsiteSocket,
 	params: PersonalSignParams | SignTypedDataParams,
@@ -149,7 +150,6 @@ export const openPersonalSignDialog = async (
 	simulationMode: boolean,
 	website: Website,
 	settings: Settings,
-	simulator: Simulator
 ): Promise<HandleSimulationModeReturnValue> => {
 	console.log(params)
 	if (pendingPersonalSign !== undefined) return reject()
@@ -167,7 +167,7 @@ export const openPersonalSignDialog = async (
 		const message = ExternalPopupMessage.parse(msg)
 		if (message.method !== 'popup_personalSignReadyAndListening') return
 		browser.runtime.onMessage.removeListener(personalSignWindowReadyAndListening)
-		return await sendPopupMessageToOpenWindows(craftPersonalSignPopupMessage(params, activeAddress, settings.userAddressBook, simulationMode, request.requestId, signerName, website))
+		return await sendPopupMessageToOpenWindows(await craftPersonalSignPopupMessage(ethereumClientService, params, activeAddress, settings.userAddressBook, simulationMode, request.requestId, await getSignerName(), website))
 	}
 
 	pendingPersonalSign = new Future<PersonalSign>()
