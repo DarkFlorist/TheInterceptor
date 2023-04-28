@@ -1,0 +1,23 @@
+{
+	"compilerOptions": {
+		"target": "ES2022",
+        "module": "none",
+		"moduleResolution": "classic",
+		"outDir": "app/inpage/output/",
+		"rootDir": "app/inpage/build/",
+		"noEmit": false,
+		"sourceMap": true,
+		"inlineSources": true,
+		"strict": true,
+		"noUnusedLocals": true,
+		"noUnusedParameters": true,
+		"noImplicitReturns": true,
+		"noImplicitThis": true,
+		"declaration": false,
+		"declarationMap": false,
+		"lib": ["ES2022", "DOM"],
+		"typeRoots": [ "./node_modules/@types" ],
+		"types": [ "firefox-webext-browser" ],
+	},
+	"include": ["app/inpage/build/*.ts"]
+}

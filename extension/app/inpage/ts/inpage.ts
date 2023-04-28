@@ -122,7 +122,6 @@ type WindowEthereum = InjectFunctions & {
 	isBraveWallet?: boolean,
 	isMetaMask?: boolean,
 }
-
 interface Window {
 	dispatchEvent: any,
 	ethereum?: WindowEthereum
