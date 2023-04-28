@@ -107,7 +107,7 @@ function SignRequest({ personalSignRequestData, renameAddressCallBack }: SignReq
 		}
 		case 'EIP712': {
 			return <div class = 'textbox'>
-				<p class = 'paragraph' style = 'color: var(--subtitle-text-color)'>{ JSON.stringify(personalSignRequestData.message) }</p>
+				<p class = 'paragraph' style = 'color: var(--subtitle-text-color)'>{ JSON.stringify(personalSignRequestData.message, null, 4) }</p>
 			</div>
 		}
 		case 'Permit': {
