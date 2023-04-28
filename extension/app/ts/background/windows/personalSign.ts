@@ -4,8 +4,9 @@ import { stringifyJSONWithBigInts } from '../../utils/bigint.js'
 import { METAMASK_ERROR_USER_REJECTED_REQUEST } from '../../utils/constants.js'
 import { Future } from '../../utils/future.js'
 import { HandleSimulationModeReturnValue, InterceptedRequest, PersonalSign, ExternalPopupMessage, Settings, UserAddressBook, SignerName, PersonalSignRequest } from '../../utils/interceptor-messages.js'
+import { EIP2612Message, OpenSeaOrder, Permit2 } from '../../utils/personal-message-definitions.js'
 import { AddressBookEntry, Website, WebsiteSocket, WebsiteTabConnections } from '../../utils/user-interface-types.js'
-import { EIP2612Message, OldSignTypedDataParams, Permit2, PersonalSignParams, SignTypedDataParams } from '../../utils/wire-types.js'
+import { OldSignTypedDataParams, PersonalSignParams, SignTypedDataParams } from '../../utils/wire-types.js'
 import { personalSignWithSimulator, sendMessageToContentScript } from '../background.js'
 import { getHtmlFile, sendPopupMessageToOpenWindows } from '../backgroundUtils.js'
 import { getAddressMetaData, getTokenMetadata } from '../metadataUtils.js'
@@ -76,7 +77,7 @@ export async function craftPersonalSignPopupMessage(ethereumClientService: Ether
 				originalParams,
 				...basicParams,
 				type: 'NotParsed' as const,
-				message: stringifyJSONWithBigInts(originalParams.params[0]),
+				message: stringifyJSONWithBigInts(originalParams.params[0], 4),
 				account: getAddressMetaData(originalParams.params[1], userAddressBook),
 				quarantine: false,
 				quarantineCodes: [],
@@ -141,6 +142,20 @@ export async function craftPersonalSignPopupMessage(ethereumClientService: Ether
 					spender: getAddressMetaData(parsed.message.spender, userAddressBook),
 					verifyingContract: getAddressMetaData(parsed.domain.verifyingContract, userAddressBook)
 				},
+				...await getQuarrantineCodes(parsed.domain.chainId, account, activeAddressWithMetadata, undefined),
+			}
+		} as const
+	}
+	if (namedParams.param.primaryType === 'OrderComponents') {
+		const parsed = OpenSeaOrder.parse(namedParams.param)
+		return {
+			method: 'popup_personal_sign_request',
+			data: {
+				originalParams,
+				...basicParams,
+				type: 'OrderComponents' as const,
+				message: parsed.message,
+				account,
 				...await getQuarrantineCodes(parsed.domain.chainId, account, activeAddressWithMetadata, undefined),
 			}
 		} as const

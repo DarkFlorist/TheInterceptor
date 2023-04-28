@@ -1,9 +1,10 @@
 import * as funtypes from 'funtypes'
 import { AddressBookEntries, AddressBookEntry, AddressInfo, AddressInfoEntry, ContactEntries, TokenEntry, Website, WebsiteSocket } from './user-interface-types.js'
-import { EIP2612Message, EIP712Message, EthereumAddress, EthereumQuantity, EthereumUnsignedTransaction, OldSignTypedDataParams, Permit2, PersonalSignParams, SignTypedDataParams } from './wire-types.js'
+import { EIP712Message, EthereumAddress, EthereumQuantity, EthereumUnsignedTransaction, OldSignTypedDataParams, PersonalSignParams, SignTypedDataParams } from './wire-types.js'
 import { SimulationState, TokenPriceEstimate, SimResults, OptionalEthereumAddress } from './visualizer-types.js'
 import { ICON_ACCESS_DENIED, ICON_ACTIVE, ICON_NOT_ACTIVE, ICON_SIGNING, ICON_SIGNING_NOT_SUPPORTED, ICON_SIMULATING } from './constants.js'
 import { QUARANTINE_CODE } from '../simulation/protectors/quarantine-codes.js'
+import { EIP2612Message, OpenSeaOrderMessage, Permit2 } from './personal-message-definitions.js'
 
 export type MessageMethodAndParams = funtypes.Static<typeof MessageMethodAndParams>
 export const MessageMethodAndParams = funtypes.Union(
@@ -428,7 +429,11 @@ export const PersonalSignRequestData = funtypes.Intersect(
 						spender: AddressBookEntry,
 						verifyingContract: AddressBookEntry,
 					}),
-				})
+				}),
+				funtypes.ReadonlyObject({
+					type: funtypes.Literal('OrderComponents'),
+					message: OpenSeaOrderMessage,
+				}),
 			)
 		)
 	)

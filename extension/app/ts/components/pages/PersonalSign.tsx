@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'preact/hooks'
-import { stringToUint8Array } from '../../utils/bigint.js'
+import { stringToUint8Array, stringifyJSONWithBigInts } from '../../utils/bigint.js'
 import { AddingNewAddressType, AddressBookEntry, RenameAddressCallBack } from '../../utils/user-interface-types.js'
 import Hint from '../subcomponents/Hint.js'
 import { ErrorCheckBox, Error as ErrorComponent} from '../subcomponents/Error.js'
@@ -29,6 +29,13 @@ type SignatureHeaderParams = {
 
 function identifySignature(data: PersonalSignRequestData) {
 	switch (data.type) {
+		case 'OrderComponents': return {
+			title: 'Opensea order',
+			rejectAction: 'Reject Opensea order',
+			simulationAction: 'Simulate Opensea order',
+			signingAction: 'Sign Opensea order',
+			
+		}
 		case 'EIP712': return {
 			title: 'Arbitary EIP712 message signing request',
 			rejectAction: 'Reject EIP712 message',
@@ -105,9 +112,10 @@ function SignRequest({ personalSignRequestData, renameAddressCallBack }: SignReq
 				<p class = 'paragraph' style = 'color: var(--subtitle-text-color)'>{ personalSignRequestData.message }</p>
 			</div>
 		}
+		case 'OrderComponents':
 		case 'EIP712': {
 			return <div class = 'textbox'>
-				<p class = 'paragraph' style = 'color: var(--subtitle-text-color)'>{ JSON.stringify(personalSignRequestData.message, null, 4) }</p>
+				<p class = 'paragraph' style = 'color: var(--subtitle-text-color)'>{ stringifyJSONWithBigInts(personalSignRequestData.message, 4) }</p>
 			</div>
 		}
 		case 'Permit': {
