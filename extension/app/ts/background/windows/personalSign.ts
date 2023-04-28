@@ -45,7 +45,7 @@ function reject() {
 	}
 }
 
-export function craftPersonalSignPopupMessage(params: PersonalSignParams | SignTypedDataParams, activeAddress: bigint, userAddressBook: UserAddressBook, simulationMode: boolean, requestId: number, signerName: SignerName, website: Website): PersonalSignRequest {
+export async function craftPersonalSignPopupMessage(ethereumClientService: EthereumClientService, params: PersonalSignParams | SignTypedDataParams, activeAddress: bigint, userAddressBook: UserAddressBook, simulationMode: boolean, requestId: number, signerName: SignerName, website: Website): Promise<PersonalSignRequest> {
 	const basicParams = {
 		activeAddress: getAddressMetaData(activeAddress, userAddressBook),
 		simulationMode,
