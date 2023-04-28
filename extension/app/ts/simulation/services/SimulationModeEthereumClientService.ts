@@ -581,6 +581,14 @@ const getSimulatedTokenBalances = async (ethereumClientService: EthereumClientSe
 	}))
 }
 
+const parseLogIfPossible = (ethersInterface: ethers.Interface, log: { topics: string[], data: string}) => {
+	try {
+		return ethersInterface.parseLog(log)
+	} catch (error) {
+		return null
+	}
+}
+
 const getAddressesInteractedWithERC20s = (events: MulticallResponseEventLogs): { token: bigint, owner: bigint }[] => {
 	const erc20ABI = [
 		'event Transfer(address indexed from, address indexed to, uint256 value)',
@@ -589,8 +597,7 @@ const getAddressesInteractedWithERC20s = (events: MulticallResponseEventLogs): {
 	const erc20 = new ethers.Interface(erc20ABI)
 	const tokenOwners: { token: bigint, owner: bigint }[] = []
 	for (const log of events) {
-		if (log.data.length === 0) continue
-		const parsed = erc20.parseLog({ topics: log.topics.map((x) => bytes32String(x)), data: dataStringWith0xStart(log.data) })
+		const parsed = parseLogIfPossible(erc20, { topics: log.topics.map((x) => bytes32String(x)), data: dataStringWith0xStart(log.data) })
 		if (parsed === null) continue
 		switch (parsed.name) {
 			case 'Approval':
