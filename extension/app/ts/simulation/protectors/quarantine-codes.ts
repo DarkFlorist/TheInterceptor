@@ -36,6 +36,10 @@ export const QUARANTINE_CODES_DICT = {
 	'SIGNATURE_CHAIN_ID_DOES_NOT_MATCH': {
 		label: 'Chain mismatch',
 		longExplanation: `The signature request is for different chain than what is the active address.`
+	},
+	'SIGNATURE_ACCOUNT_DOES_NOT_MATCH': {
+		label: 'Account and active address missmatch',
+		longExplanation: `The signature request is for different account than what is your active address.`
 	}
 }
 
@@ -52,4 +56,5 @@ export const QUARANTINE_CODE = funtypes.Union(
 	funtypes.Literal('EOA_CALLDATA'),
 	funtypes.Literal('FAILED_CHECK'),
 	funtypes.Literal('SIGNATURE_CHAIN_ID_DOES_NOT_MATCH'),
+	funtypes.Literal('SIGNATURE_ACCOUNT_DOES_NOT_MATCH'),
 )

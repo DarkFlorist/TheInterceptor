@@ -5,7 +5,7 @@ import Hint from '../subcomponents/Hint.js'
 import { ErrorCheckBox, Error as ErrorComponent} from '../subcomponents/Error.js'
 import { MOCK_PRIVATE_KEYS_ADDRESS, getChainName } from '../../utils/constants.js'
 import { AddNewAddress } from './AddNewAddress.js'
-import { ExternalPopupMessage, PersonalSignRequest, PersonalSignRequestData, SignerName } from '../../utils/interceptor-messages.js'
+import { ExternalPopupMessage, PersonalSignRequestData, SignerName } from '../../utils/interceptor-messages.js'
 import { sendPopupMessageToBackgroundPage } from '../../background/backgroundUtils.js'
 import { assertNever } from '../../utils/typescript.js'
 import { SimpleTokenApprovalVisualisation } from '../simulationExplaining/customExplainers/SimpleTokenApprovalVisualisation.js'
@@ -31,29 +31,35 @@ function identifySignature(data: PersonalSignRequestData) {
 	switch (data.type) {
 		case 'EIP712': return {
 			title: 'Arbitary EIP712 message signing request',
-			rejectAction: 'hello',
-			simulationAction: 'hello2',
-			signingAction: 'hello2',
+			rejectAction: 'Reject EIP712 message',
+			simulationAction: 'Simulate EIP712 message',
+			signingAction: 'Sign EIP712 message',
 		}
 		case 'NotParsed': return {
 			title: 'Arbitary Ethereum message signing request',
-			rejectAction: 'hello',
-			simulationAction: 'hello2',
-			signingAction: 'hello2',
+			rejectAction: 'Reject arbitary message',
+			simulationAction: 'Simulate arbitary message',
+			signingAction: 'Sign arbitary message',
 		}
-		case 'Permit': return {
-			title: 'Permit message signing request',
-			rejectAction: 'hello',
-			simulationAction: 'hello2',
-			signingAction: 'hello2',
-			to: data.addressBookEntries.spender
+		case 'Permit': {
+			const symbol = data.addressBookEntries.verifyingContract
+			return {
+				title: `${ symbol } Permit`,
+				signingAction: `Sign ${ symbol } Permit`,
+				simulationAction: `Simulate ${ symbol } Permit`,
+				rejectAction: `Reject ${ symbol } Permit`,
+				to: data.addressBookEntries.spender
+			}
 		}
-		case 'Permit2': return {
-			title: 'Permit2 message signing request',
-			rejectAction: 'hello',
-			simulationAction: 'hello2',
-			signingAction: 'hello2',
-			to: data.addressBookEntries.spender
+		case 'Permit2': {
+			const symbol = data.addressBookEntries.token.symbol
+			return {
+				title: `${ symbol } Permit`,
+				signingAction: `Sign ${ symbol } Permit`,
+				simulationAction: `Simulate ${ symbol } Permit`,
+				rejectAction: `Reject ${ symbol } Permit`,
+				to: data.addressBookEntries.spender
+			}
 		}
 		default: assertNever(data)
 	}
@@ -90,8 +96,13 @@ type SignRequestParams = {
 function SignRequest({ personalSignRequestData, renameAddressCallBack }: SignRequestParams) {
 	switch (personalSignRequestData.type) {
 		case 'NotParsed': {
+			if (personalSignRequestData.originalParams.method === 'personal_sign') {
+				return <div class = 'textbox'>
+					<p class = 'paragraph' style = 'color: var(--subtitle-text-color)'>{ new TextDecoder().decode(stringToUint8Array(personalSignRequestData.message)) }</p>
+				</div>
+			}
 			return <div class = 'textbox'>
-				<p class = 'paragraph' style = 'color: var(--subtitle-text-color)'>{ new TextDecoder().decode(stringToUint8Array(personalSignRequestData.message)) }</p>
+				<p class = 'paragraph' style = 'color: var(--subtitle-text-color)'>{ personalSignRequestData.message }</p>
 			</div>
 		}
 		case 'EIP712': {
@@ -226,7 +237,7 @@ export function PersonalSign() {
 			if (message.method === 'popup_addressBookEntriesChanged') return refreshMetadata()
 			if (message.method !== 'popup_personal_sign_request') return
 			setPersonalSignRequestData(message.data)
-			updatePage(message)
+			setRequestIdToConfirm(message.data.requestId)
 		}
 		browser.runtime.onMessage.addListener(popupMessageListener)
 		sendPopupMessageToBackgroundPage({ method: 'popup_personalSignReadyAndListening' })
@@ -236,10 +247,6 @@ export function PersonalSign() {
 	function refreshMetadata() {
 		if (personalSignRequestData === undefined) return
 		sendPopupMessageToBackgroundPage({ method: 'popup_refreshPersonalSignMetadata', data: personalSignRequestData })
-	}
-
-	function updatePage(request: PersonalSignRequest) {
-		setRequestIdToConfirm(request.data.requestId)
 	}
 
 	async function approve() {
@@ -255,7 +262,7 @@ export function PersonalSign() {
 	}
 
 	function isPossibleToSend(personalSignRequestData: PersonalSignRequestData, activeAddress: bigint) {
-		return !(personalSignRequestData.simulationMode && (activeAddress !== MOCK_PRIVATE_KEYS_ADDRESS || personalSignRequestData.method !== 'personal_sign'))
+		return !(personalSignRequestData.simulationMode && (activeAddress !== MOCK_PRIVATE_KEYS_ADDRESS || personalSignRequestData.originalParams.method !== 'personal_sign'))
 	}
 
 	function isConfirmDisabled(personalSignRequestData: PersonalSignRequestData, activeAddress: bigint) {
@@ -273,7 +280,7 @@ export function PersonalSign() {
 				onClick = { params.approve }
 				disabled = { isConfirmDisabled(params.personalSignRequestData, params.activeAddress.address) }>
 				{ params.personalSignRequestData.simulationMode ? `${ identified.simulationAction }!` :
-					<SignerLogoText {...{
+					<SignerLogoText { ...{
 						signerName: params.signerName,
 						text: identified.signingAction,
 					}}/>
@@ -296,8 +303,6 @@ export function PersonalSign() {
 		</main>
 	}
 	
-	//TODO, add check that domains match, and active address and account match
-
 	return (
 		<main>
 			<Hint>
@@ -340,7 +345,7 @@ export function PersonalSign() {
 								</div>
 							</div>
 						: <></> }
-						{ personalSignRequestData.simulationMode && (personalSignRequestData.activeAddress.address === undefined || personalSignRequestData.activeAddress.address !== MOCK_PRIVATE_KEYS_ADDRESS || personalSignRequestData.method  != 'personal_sign')  ?
+						{ personalSignRequestData.simulationMode && (personalSignRequestData.activeAddress.address === undefined || personalSignRequestData.activeAddress.address !== MOCK_PRIVATE_KEYS_ADDRESS || personalSignRequestData.originalParams.method != 'personal_sign')  ?
 							<div style = 'display: grid'>
 								<div style = 'margin: 0px; margin-bottom: 10px; margin-left: 20px; margin-right: 20px; '>
 									<ErrorComponent text = 'Unfortunately we cannot simulate message signing as it requires private key access 😢.'/>

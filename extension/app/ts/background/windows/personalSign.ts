@@ -1,10 +1,11 @@
 import { QUARANTINE_CODE } from '../../simulation/protectors/quarantine-codes.js'
 import { EthereumClientService } from '../../simulation/services/EthereumClientService.js'
+import { stringifyJSONWithBigInts } from '../../utils/bigint.js'
 import { METAMASK_ERROR_USER_REJECTED_REQUEST } from '../../utils/constants.js'
 import { Future } from '../../utils/future.js'
 import { HandleSimulationModeReturnValue, InterceptedRequest, PersonalSign, ExternalPopupMessage, Settings, UserAddressBook, SignerName, PersonalSignRequest } from '../../utils/interceptor-messages.js'
-import { Website, WebsiteSocket, WebsiteTabConnections } from '../../utils/user-interface-types.js'
-import { EIP2612Message, Permit2, PersonalSignParams, SignTypedDataParams } from '../../utils/wire-types.js'
+import { AddressBookEntry, Website, WebsiteSocket, WebsiteTabConnections } from '../../utils/user-interface-types.js'
+import { EIP2612Message, OldSignTypedDataParams, Permit2, PersonalSignParams, SignTypedDataParams } from '../../utils/wire-types.js'
 import { personalSignWithSimulator, sendMessageToContentScript } from '../background.js'
 import { getHtmlFile, sendPopupMessageToOpenWindows } from '../backgroundUtils.js'
 import { getAddressMetaData, getTokenMetadata } from '../metadataUtils.js'
@@ -45,96 +46,112 @@ function reject() {
 	}
 }
 
-export async function craftPersonalSignPopupMessage(ethereumClientService: EthereumClientService, params: PersonalSignParams | SignTypedDataParams, activeAddress: bigint, userAddressBook: UserAddressBook, simulationMode: boolean, requestId: number, signerName: SignerName, website: Website): Promise<PersonalSignRequest> {
+export async function craftPersonalSignPopupMessage(ethereumClientService: EthereumClientService, originalParams: PersonalSignParams | SignTypedDataParams | OldSignTypedDataParams, activeAddress: bigint, userAddressBook: UserAddressBook, simulationMode: boolean, requestId: number, signerName: SignerName, website: Website): Promise<PersonalSignRequest> {
+	const activeAddressWithMetadata = getAddressMetaData(activeAddress, userAddressBook)
 	const basicParams = {
-		activeAddress: getAddressMetaData(activeAddress, userAddressBook),
+		activeAddress: activeAddressWithMetadata,
 		simulationMode,
 		requestId,
-		method: params.method,
 		website,
 		signerName,
-		params,
 	}
 
-	const getQuarrantineCodes = async (messageChainId: bigint): Promise<{ quarantine: boolean, quarantineCodes: readonly QUARANTINE_CODE[] }> => {
+	const getQuarrantineCodes = async (messageChainId: bigint, account: AddressBookEntry, activeAddress: AddressBookEntry): Promise<{ quarantine: boolean, quarantineCodes: readonly QUARANTINE_CODE[] }> => {
+		let quarantineCodes: QUARANTINE_CODE[] = []
 		if (BigInt(messageChainId) !== (await getSettings()).activeChain) {
-			return {
-				quarantine: true,
-				quarantineCodes: ['SIGNATURE_CHAIN_ID_DOES_NOT_MATCH']
-			}
+			quarantineCodes.push('SIGNATURE_CHAIN_ID_DOES_NOT_MATCH')
+		}
+		if (account.address !== activeAddress.address) {
+			quarantineCodes.push('SIGNATURE_ACCOUNT_DOES_NOT_MATCH')
 		}
 		return {
-			quarantine: false,
-			quarantineCodes: []
+			quarantine: quarantineCodes.length > 0,
+			quarantineCodes,
 		}
 	}
-
-	if (params.method === 'personal_sign') {
+	if (originalParams.method === 'eth_signTypedData') {
 		return {
 			method: 'popup_personal_sign_request',
 			data: {
+				originalParams,
 				...basicParams,
 				type: 'NotParsed' as const,
-				message: params.params[0],
-				account: getAddressMetaData(params.params[1], userAddressBook),
-				method: params.method,
+				message: stringifyJSONWithBigInts(originalParams.params[0]),
+				account: getAddressMetaData(originalParams.params[1], userAddressBook),
 				quarantine: false,
 				quarantineCodes: [],
 			}
 		} as const
 	}
 
-	if (params.params[1].primaryType === 'Permit') {
-		const parsed = EIP2612Message.parse(params.params[1])
-		const token = await getTokenMetadata(ethereumClientService, parsed.domain.verifyingContract)
-		if (token.type === 'NFT') throw 'Attempted to perform Permit2 to an NFT'
+	if (originalParams.method === 'personal_sign') {
 		return {
 			method: 'popup_personal_sign_request',
 			data: {
+				originalParams,
+				...basicParams,
+				type: 'NotParsed' as const,
+				message: originalParams.params[0],
+				account: getAddressMetaData(originalParams.params[1], userAddressBook),
+				quarantine: false,
+				quarantineCodes: [],
+			}
+		} as const
+	}
+	const namedParams = { param: originalParams.params[1], account: originalParams.params[0] }
+	const account = getAddressMetaData(namedParams.account, userAddressBook)
+
+	if (namedParams.param.primaryType === 'Permit') {
+		const parsed = EIP2612Message.parse(namedParams.param)
+		const token = await getTokenMetadata(ethereumClientService, parsed.domain.verifyingContract)
+		if (token.type === 'NFT') throw 'Attempted to perform Permit to an NFT'
+		return {
+			method: 'popup_personal_sign_request',
+			data: {
+				originalParams,
 				...basicParams,
 				type: 'Permit' as const,
 				message: parsed,
-				account: getAddressMetaData(params.params[0], userAddressBook),
-				method: params.method,
+				account,
 				addressBookEntries: {
 					owner: getAddressMetaData(parsed.message.owner, userAddressBook),
 					spender: getAddressMetaData(parsed.message.spender, userAddressBook),
 					verifyingContract: token,
 				},
-				...await getQuarrantineCodes(parsed.domain.chainId),
+				...await getQuarrantineCodes(BigInt(parsed.domain.chainId), account, activeAddressWithMetadata),
 			}
 		} as const
 	}
 
-	if (params.params[1].primaryType === 'PermitSingle') {
-		const parsed = Permit2.parse(params.params[1])
+	if (namedParams.param.primaryType === 'PermitSingle') {
+		const parsed = Permit2.parse(namedParams.param)
 		const token = await getTokenMetadata(ethereumClientService, parsed.message.details.token)
 		if (token.type === 'NFT') throw 'Attempted to perform Permit2 to an NFT'
 		return {
 			method: 'popup_personal_sign_request',
 			data: {
+				originalParams,
 				...basicParams,
 				type: 'Permit2' as const,
 				message: parsed,
-				account: getAddressMetaData(params.params[0], userAddressBook),
-				method: params.method,
+				account,
 				addressBookEntries: {
 					token: token,
 					spender: getAddressMetaData(parsed.message.spender, userAddressBook),
 					verifyingContract: getAddressMetaData(parsed.domain.verifyingContract, userAddressBook)
 				},
-				...await getQuarrantineCodes(parsed.domain.chainId),
+				...await getQuarrantineCodes(parsed.domain.chainId, account, activeAddressWithMetadata),
 			}
 		} as const
 	}
 	return {
 		method: 'popup_personal_sign_request',
 		data: {
+			originalParams,
 			...basicParams,
 			type: 'EIP712' as const,
-			message: params.params[1],
-			account: getAddressMetaData(params.params[0], userAddressBook),
-			method: params.method,
+			message: namedParams.param,
+			account,
 			quarantine: false,
 			quarantineCodes: []
 		}
@@ -145,7 +162,7 @@ export const openPersonalSignDialog = async (
 	ethereumClientService: EthereumClientService,
 	websiteTabConnections: WebsiteTabConnections,
 	socket: WebsiteSocket,
-	params: PersonalSignParams | SignTypedDataParams,
+	params: PersonalSignParams | SignTypedDataParams | OldSignTypedDataParams,
 	request: InterceptedRequest,
 	simulationMode: boolean,
 	website: Website,
@@ -163,11 +180,13 @@ export const openPersonalSignDialog = async (
 
 	const activeAddress = simulationMode ? settings.activeSimulationAddress : settings.activeSigningAddress
 	if (activeAddress === undefined) return reject()
+	const popupMessage = await craftPersonalSignPopupMessage(ethereumClientService, params, activeAddress, settings.userAddressBook, simulationMode, request.requestId, await getSignerName(), website)
+
 	const personalSignWindowReadyAndListening = async function popupMessageListener(msg: unknown) {
 		const message = ExternalPopupMessage.parse(msg)
 		if (message.method !== 'popup_personalSignReadyAndListening') return
 		browser.runtime.onMessage.removeListener(personalSignWindowReadyAndListening)
-		return await sendPopupMessageToOpenWindows(await craftPersonalSignPopupMessage(ethereumClientService, params, activeAddress, settings.userAddressBook, simulationMode, request.requestId, await getSignerName(), website))
+		return await sendPopupMessageToOpenWindows(popupMessage)
 	}
 
 	pendingPersonalSign = new Future<PersonalSign>()
@@ -214,7 +233,7 @@ export const openPersonalSignDialog = async (
 	}
 }
 
-async function resolve(reply: PersonalSign, simulationMode: boolean, params: PersonalSignParams | SignTypedDataParams) {
+async function resolve(reply: PersonalSign, simulationMode: boolean, params: PersonalSignParams | SignTypedDataParams | OldSignTypedDataParams) {
 	await setPendingPersonalSignPromise(undefined)
 	// forward message to content script
 	if (reply.options.accept) {

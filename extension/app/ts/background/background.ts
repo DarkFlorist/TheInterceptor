@@ -1,7 +1,7 @@
 import { HandleSimulationModeReturnValue, InterceptedRequest, InterceptedRequestForward, PopupMessage, ProviderMessage, Settings, TabState } from '../utils/interceptor-messages.js'
 import 'webextension-polyfill'
 import { Simulator } from '../simulation/simulator.js'
-import { EthereumJsonRpcRequest, EthereumQuantity, EthereumUnsignedTransaction, PersonalSignParams, SignTypedDataParams } from '../utils/wire-types.js'
+import { EthereumJsonRpcRequest, EthereumQuantity, EthereumUnsignedTransaction, OldSignTypedDataParams, PersonalSignParams, SignTypedDataParams } from '../utils/wire-types.js'
 import { changeSimulationMode, clearTabStates, getMakeMeRich, getSettings, getSignerName, getSimulationResults, removeTabState, setIsConnected, updateSimulationResults, updateTabState } from './settings.js'
 import { blockNumber, call, chainId, estimateGas, gasPrice, getAccounts, getBalance, getBlockByNumber, getCode, getLogs, getPermissions, getSimulationStack, getTransactionByHash, getTransactionCount, getTransactionReceipt, personalSign, requestPermissions, sendTransaction, subscribe, switchEthereumChain, unsubscribe } from './simulationModeHanders.js'
 import { changeActiveAddress, changeMakeMeRich, changePage, resetSimulation, confirmDialog, refreshSimulation, removeTransaction, requestAccountsFromSigner, refreshPopupConfirmTransactionSimulation, confirmPersonalSign, confirmRequestAccess, changeInterceptorAccess, changeChainDialog, popupChangeActiveChain, enableSimulationMode, reviewNotification, rejectNotification, addOrModifyAddressInfo, getAddressBookData, removeAddressBookEntry, openAddressBook, homeOpened, interceptorAccessChangeAddressOrRefresh, refreshPopupConfirmTransactionMetadata, refreshPersonalSignMetadata } from './popupMessageHandlers.js'
@@ -147,7 +147,7 @@ export async function getPrependTrasactions(ethereumClientService: EthereumClien
 	}]
 }
 
-export async function personalSignWithSimulator(params: PersonalSignParams | SignTypedDataParams) {
+export async function personalSignWithSimulator(params: PersonalSignParams | SignTypedDataParams | OldSignTypedDataParams) {
 	return await simulatePersonalSign(params)
 }
 
@@ -164,7 +164,7 @@ async function handleSimulationMode(
 	try {
 		parsedRequest = EthereumJsonRpcRequest.parse(request.options)
 	} catch (error) {
-		console.warn(request)
+		console.log(request)
 		console.warn(error)
 		if (error instanceof Error) {
 			return {
@@ -475,7 +475,7 @@ export async function handleContentScriptMessage(websiteTabConnections: WebsiteT
 				message: 'Unknown error'
 			}
 		})
-		throw error
+		return undefined
 	}
 }
 

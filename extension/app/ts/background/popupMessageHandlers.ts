@@ -320,7 +320,7 @@ export async function refreshInterceptorAccessMetadata(params: RefreshIntercepto
 export async function refreshPersonalSignMetadata(ethereumClientService: EthereumClientService, refreshPersonalSignMetadata: RefreshPersonalSignMetadata, settings: Settings) {
 	return await sendPopupMessageToOpenWindows(await craftPersonalSignPopupMessage(
 		ethereumClientService,
-		refreshPersonalSignMetadata.data.params,
+		refreshPersonalSignMetadata.data.originalParams,
 		refreshPersonalSignMetadata.data.activeAddress.address,
 		settings.userAddressBook,
 		refreshPersonalSignMetadata.data.simulationMode,
