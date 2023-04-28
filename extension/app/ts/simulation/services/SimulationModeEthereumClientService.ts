@@ -589,6 +589,7 @@ const getAddressesInteractedWithERC20s = (events: MulticallResponseEventLogs): {
 	const erc20 = new ethers.Interface(erc20ABI)
 	const tokenOwners: { token: bigint, owner: bigint }[] = []
 	for (const log of events) {
+		if (log.data.length === 0) continue
 		const parsed = erc20.parseLog({ topics: log.topics.map((x) => bytes32String(x)), data: dataStringWith0xStart(log.data) })
 		if (parsed === null) continue
 		switch (parsed.name) {
