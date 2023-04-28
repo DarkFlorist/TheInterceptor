@@ -56,12 +56,12 @@ export async function craftPersonalSignPopupMessage(ethereumClientService: Ether
 		signerName,
 	}
 
-	const getQuarrantineCodes = async (messageChainId: bigint, account: AddressBookEntry, activeAddress: AddressBookEntry): Promise<{ quarantine: boolean, quarantineCodes: readonly QUARANTINE_CODE[] }> => {
+	const getQuarrantineCodes = async (messageChainId: bigint, account: AddressBookEntry, activeAddress: AddressBookEntry, owner: AddressBookEntry | undefined): Promise<{ quarantine: boolean, quarantineCodes: readonly QUARANTINE_CODE[] }> => {
 		let quarantineCodes: QUARANTINE_CODE[] = []
 		if (BigInt(messageChainId) !== (await getSettings()).activeChain) {
 			quarantineCodes.push('SIGNATURE_CHAIN_ID_DOES_NOT_MATCH')
 		}
-		if (account.address !== activeAddress.address) {
+		if (account.address !== activeAddress.address || (owner != undefined && account.address !== owner.address)) {
 			quarantineCodes.push('SIGNATURE_ACCOUNT_DOES_NOT_MATCH')
 		}
 		return {
@@ -104,6 +104,7 @@ export async function craftPersonalSignPopupMessage(ethereumClientService: Ether
 	if (namedParams.param.primaryType === 'Permit') {
 		const parsed = EIP2612Message.parse(namedParams.param)
 		const token = await getTokenMetadata(ethereumClientService, parsed.domain.verifyingContract)
+		const owner = getAddressMetaData(parsed.message.owner, userAddressBook)
 		if (token.type === 'NFT') throw 'Attempted to perform Permit to an NFT'
 		return {
 			method: 'popup_personal_sign_request',
@@ -114,11 +115,11 @@ export async function craftPersonalSignPopupMessage(ethereumClientService: Ether
 				message: parsed,
 				account,
 				addressBookEntries: {
-					owner: getAddressMetaData(parsed.message.owner, userAddressBook),
+					owner,
 					spender: getAddressMetaData(parsed.message.spender, userAddressBook),
 					verifyingContract: token,
 				},
-				...await getQuarrantineCodes(BigInt(parsed.domain.chainId), account, activeAddressWithMetadata),
+				...await getQuarrantineCodes(BigInt(parsed.domain.chainId), account, activeAddressWithMetadata, owner),
 			}
 		} as const
 	}
@@ -140,7 +141,7 @@ export async function craftPersonalSignPopupMessage(ethereumClientService: Ether
 					spender: getAddressMetaData(parsed.message.spender, userAddressBook),
 					verifyingContract: getAddressMetaData(parsed.domain.verifyingContract, userAddressBook)
 				},
-				...await getQuarrantineCodes(parsed.domain.chainId, account, activeAddressWithMetadata),
+				...await getQuarrantineCodes(parsed.domain.chainId, account, activeAddressWithMetadata, undefined),
 			}
 		} as const
 	}
