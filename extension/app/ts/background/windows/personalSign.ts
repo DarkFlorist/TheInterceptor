@@ -169,7 +169,6 @@ export const openPersonalSignDialog = async (
 	website: Website,
 	settings: Settings,
 ): Promise<HandleSimulationModeReturnValue> => {
-	console.log(params)
 	if (pendingPersonalSign !== undefined) return reject()
 
 	const onCloseWindow = (windowId: number) => {
