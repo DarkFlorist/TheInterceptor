@@ -1,8 +1,9 @@
 import * as funtypes from 'funtypes'
-import { AddressBookEntries, AddressBookEntry, AddressInfo, AddressInfoEntry, ContactEntries, Website, WebsiteSocket } from './user-interface-types.js'
-import { EIP2612Message, EIP712Message, EthereumAddress, EthereumQuantity, EthereumUnsignedTransaction, Permit2, PersonalSignParams, SignTypedDataParams } from './wire-types.js'
+import { AddressBookEntries, AddressBookEntry, AddressInfo, AddressInfoEntry, ContactEntries, TokenEntry, Website, WebsiteSocket } from './user-interface-types.js'
+import { EIP2612Message, EIP712Message, EthereumAddress, EthereumQuantity, EthereumUnsignedTransaction, OldSignTypedDataParams, Permit2, PersonalSignParams, SignTypedDataParams } from './wire-types.js'
 import { SimulationState, TokenPriceEstimate, SimResults, OptionalEthereumAddress } from './visualizer-types.js'
 import { ICON_ACCESS_DENIED, ICON_ACTIVE, ICON_NOT_ACTIVE, ICON_SIGNING, ICON_SIGNING_NOT_SUPPORTED, ICON_SIMULATING } from './constants.js'
+import { QUARANTINE_CODE } from '../simulation/protectors/quarantine-codes.js'
 
 export type MessageMethodAndParams = funtypes.Static<typeof MessageMethodAndParams>
 export const MessageMethodAndParams = funtypes.Union(
@@ -384,59 +385,59 @@ export const MessageToPopupSimple = funtypes.ReadonlyObject({
 	)
 }).asReadonly()
 export type PersonalSignRequestData = funtypes.Static<typeof PersonalSignRequestData>
-export const PersonalSignRequestData = funtypes.Union(
+export const PersonalSignRequestData = funtypes.Intersect(
 	funtypes.ReadonlyObject({
-		activeAddress: EthereumAddress,
+		activeAddress: AddressBookEntry,
 		requestId: funtypes.Number,
 		simulationMode: funtypes.Boolean,
+		signerName: SignerName,
+		website: Website,
+		quarantineCodes: funtypes.ReadonlyArray(QUARANTINE_CODE),
+		quarantine: funtypes.Boolean,
 		account: AddressBookEntry,
-		method: funtypes.Literal('personal_sign'),
-		type: funtypes.Literal('NotParsed'),
-		message: funtypes.String,
-		params: funtypes.Union(PersonalSignParams, SignTypedDataParams)
 	}),
-	funtypes.Intersect(
+	funtypes.Union(
 		funtypes.ReadonlyObject({
-			activeAddress: EthereumAddress,
-			requestId: funtypes.Number,
-			simulationMode: funtypes.Boolean,
-			account: AddressBookEntry,
-			method: funtypes.Union(
-				funtypes.Literal('eth_signTypedData'),
-				funtypes.Literal('eth_signTypedData_v1'),
-				funtypes.Literal('eth_signTypedData_v2'),
-				funtypes.Literal('eth_signTypedData_v3'),
-				funtypes.Literal('eth_signTypedData_v4')
-			),
-			params: funtypes.Union(PersonalSignParams, SignTypedDataParams)
+			originalParams: funtypes.Union(PersonalSignParams, OldSignTypedDataParams),
+			type: funtypes.Literal('NotParsed'),
+			message: funtypes.String,
 		}),
-		funtypes.ReadonlyObject({
-			type: funtypes.Literal('EIP712'),
-			message: EIP712Message,
-		}).Or(funtypes.ReadonlyObject({
-			type: funtypes.Literal('Permit'),
-			message: EIP2612Message,
-			addressBookEntries: funtypes.Object({
-				owner: AddressBookEntry,
-				spender: AddressBookEntry,
-				verifyingContract: AddressBookEntry,
+		funtypes.Intersect(
+			funtypes.ReadonlyObject({
+				originalParams: SignTypedDataParams,
 			}),
-		})).Or(funtypes.ReadonlyObject({
-			type: funtypes.Literal('Permit2'),
-			message: Permit2,
-			addressBookEntries: funtypes.ReadonlyObject({
-				token: AddressBookEntry,
-				spender: AddressBookEntry,
-				verifyingContract: AddressBookEntry,
-			}),
-		}))
+			funtypes.Union(
+				funtypes.ReadonlyObject({
+					type: funtypes.Literal('EIP712'),
+					message: EIP712Message,
+				}),
+				funtypes.ReadonlyObject({
+					type: funtypes.Literal('Permit'),
+					message: EIP2612Message,
+					addressBookEntries: funtypes.ReadonlyObject({
+						owner: AddressBookEntry,
+						spender: AddressBookEntry,
+						verifyingContract: TokenEntry,
+					}),
+				}),
+				funtypes.ReadonlyObject({
+					type: funtypes.Literal('Permit2'),
+					message: Permit2,
+					addressBookEntries: funtypes.ReadonlyObject({
+						token: TokenEntry,
+						spender: AddressBookEntry,
+						verifyingContract: AddressBookEntry,
+					}),
+				})
+			)
+		)
 	)
 )
 
 export type PersonalSignRequest = funtypes.Static<typeof PersonalSignRequest>
 export const PersonalSignRequest = funtypes.ReadonlyObject({
 	method: funtypes.Literal('popup_personal_sign_request'),
-	data: PersonalSignRequestData
+	data: PersonalSignRequestData,
 })
 
 export type ChangeChainRequest = funtypes.Static<typeof ChangeChainRequest>
@@ -656,7 +657,7 @@ export const PendingPersonalSignPromise = funtypes.ReadonlyObject({
 	socket: WebsiteSocket,
 	request: InterceptedRequest,
 	simulationMode: funtypes.Boolean,
-	params: funtypes.Union(PersonalSignParams, SignTypedDataParams)
+	params: funtypes.Union(PersonalSignParams, SignTypedDataParams, OldSignTypedDataParams)
 })
 
 export type PendingInterceptorAccessRequestPromise = funtypes.Static<typeof PendingInterceptorAccessRequestPromise>

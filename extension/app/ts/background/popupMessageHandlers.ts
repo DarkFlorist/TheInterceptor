@@ -168,9 +168,9 @@ export async function refreshSimulation(ethereumClientService: EthereumClientSer
 	}, settings.activeSimulationAddress)
 }
 
-export async function refreshPopupConfirmTransactionMetadata(simulator: Simulator, userAddressBook: UserAddressBook, { data }: RefreshConfirmTransactionMetadata) {
+export async function refreshPopupConfirmTransactionMetadata(ethereumClientService: EthereumClientService, userAddressBook: UserAddressBook, { data }: RefreshConfirmTransactionMetadata) {
 	console.log('refreshPopupConfirmTransactionMetadata')
-	const addressMetadata = await getAddressBookEntriesForVisualiser(simulator, data.visualizerResults.map((x) => x.visualizerResults), data.simulationState, userAddressBook)
+	const addressMetadata = await getAddressBookEntriesForVisualiser(ethereumClientService, data.visualizerResults.map((x) => x.visualizerResults), data.simulationState, userAddressBook)
 	return await sendPopupMessageToOpenWindows({
 		method: 'popup_confirm_transaction_simulation_state_changed' as const,
 		data: { ...data, addressBookEntries: addressMetadata }
@@ -317,12 +317,15 @@ export async function refreshInterceptorAccessMetadata(params: RefreshIntercepto
 	await refreshInterceptorAccessMetadata(params)
 }
 
-export async function refreshPersonalSignMetadata(refreshPersonalSignMetadata: RefreshPersonalSignMetadata, settings: Settings) {
-	return await sendPopupMessageToOpenWindows(craftPersonalSignPopupMessage(
-		refreshPersonalSignMetadata.data.params,
-		refreshPersonalSignMetadata.data.activeAddress,
+export async function refreshPersonalSignMetadata(ethereumClientService: EthereumClientService, refreshPersonalSignMetadata: RefreshPersonalSignMetadata, settings: Settings) {
+	return await sendPopupMessageToOpenWindows(await craftPersonalSignPopupMessage(
+		ethereumClientService,
+		refreshPersonalSignMetadata.data.originalParams,
+		refreshPersonalSignMetadata.data.activeAddress.address,
 		settings.userAddressBook,
 		refreshPersonalSignMetadata.data.simulationMode,
 		refreshPersonalSignMetadata.data.requestId,
+		await getSignerName(),
+		refreshPersonalSignMetadata.data.website,
 	))
 }

@@ -1,7 +1,7 @@
 import { HandleSimulationModeReturnValue, InterceptedRequest, InterceptedRequestForward, PopupMessage, ProviderMessage, Settings, TabState } from '../utils/interceptor-messages.js'
 import 'webextension-polyfill'
 import { Simulator } from '../simulation/simulator.js'
-import { EthereumJsonRpcRequest, EthereumQuantity, EthereumUnsignedTransaction, PersonalSignParams, SignTypedDataParams } from '../utils/wire-types.js'
+import { EthereumJsonRpcRequest, EthereumQuantity, EthereumUnsignedTransaction, OldSignTypedDataParams, PersonalSignParams, SignTypedDataParams } from '../utils/wire-types.js'
 import { changeSimulationMode, clearTabStates, getMakeMeRich, getSettings, getSignerName, getSimulationResults, removeTabState, setIsConnected, updateSimulationResults, updateTabState } from './settings.js'
 import { blockNumber, call, chainId, estimateGas, gasPrice, getAccounts, getBalance, getBlockByNumber, getCode, getLogs, getPermissions, getSimulationStack, getTransactionByHash, getTransactionCount, getTransactionReceipt, personalSign, requestPermissions, sendTransaction, subscribe, switchEthereumChain, unsubscribe } from './simulationModeHanders.js'
 import { changeActiveAddress, changeMakeMeRich, changePage, resetSimulation, confirmDialog, refreshSimulation, removeTransaction, requestAccountsFromSigner, refreshPopupConfirmTransactionSimulation, confirmPersonalSign, confirmRequestAccess, changeInterceptorAccess, changeChainDialog, popupChangeActiveChain, enableSimulationMode, reviewNotification, rejectNotification, addOrModifyAddressInfo, getAddressBookData, removeAddressBookEntry, openAddressBook, homeOpened, interceptorAccessChangeAddressOrRefresh, refreshPopupConfirmTransactionMetadata, refreshPersonalSignMetadata } from './popupMessageHandlers.js'
@@ -38,7 +38,7 @@ async function visualizeSimulatorState(simulationState: SimulationState, simulat
 	const transactions = simulationState.simulatedTransactions.map((x) => ({ transaction: x.signedTransaction, website: x.website }))
 	const visualizerResult = await simulator.visualizeTransactionChain(simulationState, transactions, simulationState.blockNumber, simulationState.simulatedTransactions.map((x) => x.multicallResponse))
 	const visualizerResults = visualizerResult.map((x, i) => ({ ...x, website: simulationState.simulatedTransactions[i].website }))
-	const addressBookEntries = await getAddressBookEntriesForVisualiser(simulator, visualizerResult.map((x) => x.visualizerResults), simulationState, (await getSettings()).userAddressBook)
+	const addressBookEntries = await getAddressBookEntriesForVisualiser(simulator.ethereum, visualizerResult.map((x) => x.visualizerResults), simulationState, (await getSettings()).userAddressBook)
 
 	function onlyTokensAndTokensWithKnownDecimals(metadata: AddressBookEntry) : metadata is AddressBookEntry & { type: 'token', decimals: `0x${ string }` } {
 		if (metadata.type !== 'token') return false
@@ -147,7 +147,7 @@ export async function getPrependTrasactions(ethereumClientService: EthereumClien
 	}]
 }
 
-export async function personalSignWithSimulator(params: PersonalSignParams | SignTypedDataParams) {
+export async function personalSignWithSimulator(params: PersonalSignParams | SignTypedDataParams | OldSignTypedDataParams) {
 	return await simulatePersonalSign(params)
 }
 
@@ -164,7 +164,7 @@ async function handleSimulationMode(
 	try {
 		parsedRequest = EthereumJsonRpcRequest.parse(request.options)
 	} catch (error) {
-		console.warn(request)
+		console.log(request)
 		console.warn(error)
 		if (error instanceof Error) {
 			return {
@@ -196,7 +196,7 @@ async function handleSimulationMode(
 		case 'eth_signTypedData_v1':
 		case 'eth_signTypedData_v2':
 		case 'eth_signTypedData_v3':
-		case 'eth_signTypedData_v4': return await personalSign(websiteTabConnections, socket, parsedRequest, request, true, website, settings)
+		case 'eth_signTypedData_v4': return await personalSign(simulator.ethereum, websiteTabConnections, socket, parsedRequest, request, true, website, settings)
 		case 'wallet_switchEthereumChain': return await switchEthereumChain(websiteTabConnections, socket, simulator.ethereum, parsedRequest, request, true, website)
 		case 'wallet_requestPermissions': return await requestPermissions(websiteTabConnections, getActiveAddressForDomain, socket, settings)
 		case 'wallet_getPermissions': return await getPermissions()
@@ -296,7 +296,7 @@ async function handleSigningMode(
 		case 'eth_signTypedData_v1':
 		case 'eth_signTypedData_v2':
 		case 'eth_signTypedData_v3':
-		case 'eth_signTypedData_v4': return await personalSign(websiteTabConnections, socket, parsedRequest, request, false, website, settings)
+		case 'eth_signTypedData_v4': return await personalSign(ethereumClientService, websiteTabConnections, socket, parsedRequest, request, false, website, settings)
 		case 'wallet_switchEthereumChain': return await switchEthereumChain(websiteTabConnections, socket, ethereumClientService, parsedRequest, request, false, website)
 		case 'eth_sendTransaction': {
 			if (settings && isSupportedChain(settings.activeChain.toString()) ) {
@@ -475,7 +475,7 @@ export async function handleContentScriptMessage(websiteTabConnections: WebsiteT
 				message: 'Unknown error'
 			}
 		})
-		throw error
+		return undefined
 	}
 }
 
@@ -604,7 +604,7 @@ async function popupMessageHandler(
 		case 'popup_removeTransaction': return await removeTransaction(simulator.ethereum, parsedRequest, settings)
 		case 'popup_refreshSimulation': return await refreshSimulation(simulator.ethereum, settings)
 		case 'popup_refreshConfirmTransactionDialogSimulation': return await refreshPopupConfirmTransactionSimulation(simulator.ethereum, parsedRequest)
-		case 'popup_refreshConfirmTransactionMetadata': return refreshPopupConfirmTransactionMetadata(simulator, settings.userAddressBook, parsedRequest)
+		case 'popup_refreshConfirmTransactionMetadata': return refreshPopupConfirmTransactionMetadata(simulator.ethereum, settings.userAddressBook, parsedRequest)
 		case 'popup_personalSign': return await confirmPersonalSign(websiteTabConnections, parsedRequest)
 		case 'popup_interceptorAccess': return await confirmRequestAccess(websiteTabConnections, parsedRequest)
 		case 'popup_changeInterceptorAccess': return await changeInterceptorAccess(websiteTabConnections, parsedRequest)
@@ -625,7 +625,7 @@ async function popupMessageHandler(
 		case 'popup_refreshInterceptorAccessMetadata': return await interceptorAccessMetadataRefresh(parsedRequest)
 		case 'popup_interceptorAccessChangeAddress': return await interceptorAccessChangeAddressOrRefresh(websiteTabConnections, parsedRequest)
 		case 'popup_interceptorAccessRefresh': return await interceptorAccessChangeAddressOrRefresh(websiteTabConnections, parsedRequest)
-		case 'popup_refreshPersonalSignMetadata': return await refreshPersonalSignMetadata(parsedRequest, settings)
+		case 'popup_refreshPersonalSignMetadata': return await refreshPersonalSignMetadata(simulator.ethereum, parsedRequest, settings)
 		default: assertUnreachable(parsedRequest)
 	}
 }

@@ -1,5 +1,5 @@
 import { EthereumClientService } from './EthereumClientService.js'
-import { EthGetLogsResponse, EthereumUnsignedTransaction, EthereumSignedTransactionWithBlockData, EthereumBlockTag, EthGetLogsRequest, EthTransactionReceiptResponse, EstimateGasParamsVariables, PersonalSignParams, SignTypedDataParams, EthereumSignedTransaction, EthereumData, EthereumQuantity, MulticallResponseEventLogs, MulticallResponse, EthereumAddress, EthereumBlockHeader, EthereumBlockHeaderWithTransactionHashes } from '../../utils/wire-types.js'
+import { EthGetLogsResponse, EthereumUnsignedTransaction, EthereumSignedTransactionWithBlockData, EthereumBlockTag, EthGetLogsRequest, EthTransactionReceiptResponse, EstimateGasParamsVariables, PersonalSignParams, SignTypedDataParams, EthereumSignedTransaction, EthereumData, EthereumQuantity, MulticallResponseEventLogs, MulticallResponse, EthereumAddress, EthereumBlockHeader, EthereumBlockHeaderWithTransactionHashes, OldSignTypedDataParams } from '../../utils/wire-types.js'
 import { addressString, bytes32String, bytesToUnsigned, dataStringWith0xStart, max, min, stringToUint8Array } from '../../utils/bigint.js'
 import { MOCK_ADDRESS } from '../../utils/constants.js'
 import { ethers, keccak256 } from 'ethers'
@@ -545,7 +545,7 @@ export const getHashOfSimulatedBlock = () => {
 	return 0x1n
 }
 
-export const simulatePersonalSign = async (params: PersonalSignParams | SignTypedDataParams) => {
+export const simulatePersonalSign = async (params: PersonalSignParams | SignTypedDataParams | OldSignTypedDataParams) => {
 	if (params.method === 'personal_sign') {
 		return await new ethers.Wallet(bytes32String(MOCK_PRIVATE_KEY)).signMessage(params.params[0])
 	}

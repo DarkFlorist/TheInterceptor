@@ -772,10 +772,20 @@ const EIP712MessageParser: funtypes.ParsedValue<funtypes.String, EIP712MessageUn
 export type EIP712Message = funtypes.Static<typeof EIP712Message>
 export const EIP712Message = funtypes.String.withParser(EIP712MessageParser)
 
+export type OldSignTypedDataParams = funtypes.Static<typeof OldSignTypedDataParams>
+export const OldSignTypedDataParams = funtypes.ReadonlyObject({
+	method: funtypes.Literal('eth_signTypedData'),
+	params: funtypes.Tuple(funtypes.ReadonlyArray(
+		funtypes.ReadonlyObject({
+			name: funtypes.String,
+			type: funtypes.String,
+		})
+	), EthereumAddress),
+})
+
 export type SignTypedDataParams = funtypes.Static<typeof SignTypedDataParams>
 export const SignTypedDataParams = funtypes.ReadonlyObject({
 	method: funtypes.Union(
-		funtypes.Literal('eth_signTypedData'),
 		funtypes.Literal('eth_signTypedData_v1'),
 		funtypes.Literal('eth_signTypedData_v2'),
 		funtypes.Literal('eth_signTypedData_v3'),
@@ -783,7 +793,6 @@ export const SignTypedDataParams = funtypes.ReadonlyObject({
 	),
 	params: funtypes.Tuple(EthereumAddress, EIP712Message), // address that will sign the message, typed data
 })
-
 export type SwitchEthereumChainParams = funtypes.Static<typeof SwitchEthereumChainParams>
 export const SwitchEthereumChainParams = funtypes.ReadonlyObject({
 	method: funtypes.Literal('wallet_switchEthereumChain'),
@@ -866,7 +875,7 @@ export const EIP2612Message = funtypes.ReadonlyObject({
 	domain: funtypes.ReadonlyObject({
 		name: funtypes.String,
 		version: NonHexBigInt,
-		chainId: funtypes.Number,
+		chainId: NonHexBigInt,
 		verifyingContract: EthereumAddress,
 	}),
 	message: funtypes.ReadonlyObject({
@@ -922,6 +931,7 @@ export const EthereumJsonRpcRequest = funtypes.Union(
 	funtypes.ReadonlyObject({ method: funtypes.Literal('net_version') }),
 	GetCode,
 	PersonalSignParams,
+	OldSignTypedDataParams,
 	SignTypedDataParams,
 	SwitchEthereumChainParams,
 	RequestPermissions,

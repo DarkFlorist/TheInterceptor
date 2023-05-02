@@ -643,5 +643,22 @@ svg.spinner > circle {
 	background-color: var(--alpha-005);
 	padding: 10px;
 	word-break: break-all;
+	white-space: pre-wrap;
 	border-radius: 4px;
+}
+
+.dialog-button-left {
+	flex-grow: 1;
+	margin-left: 10px;
+	margin-right: 5px;
+	margin-top: 0px;
+	margin-bottom: 0px;
+}
+
+.dialog-button-right {
+	flex-grow: 1;
+	margin-left: 5px;
+	margin-right: 10px;
+	margin-top: 0px;
+	margin-bottom: 0px;
 }
