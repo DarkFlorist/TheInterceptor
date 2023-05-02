@@ -12,10 +12,10 @@ jobs:
         with:
           fetch-depth: 0
       - name: Build Extension
-        working-directory: ./extension
+        working-directory: ./
         run: |
           docker image build --tag interceptor-extension .
           docker container create --name temp interceptor-extension
-          docker container cp temp:/extension/interceptor-firefox.zip .
-          docker container cp temp:/extension/interceptor-chrome.zip .
+          docker container cp temp:/interceptor-firefox.zip .
+          docker container cp temp:/interceptor-chrome.zip .
           docker container rm temp

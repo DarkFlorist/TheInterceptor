@@ -13,9 +13,9 @@ jobs:
       - name: Derive Tag Name And Populate version.ts
         id: derive_tag
         run: |
-          VERSION_FILE=extension/app/ts/version.ts
-          MANIFEST_V2_FILE=extension/app/manifestV2.json
-          MANIFEST_V3_FILE=extension/app/manifestV3.json
+          VERSION_FILE=app/ts/version.ts
+          MANIFEST_V2_FILE=app/manifestV2.json
+          MANIFEST_V3_FILE=app/manifestV3.json
           GIT_COMMIT_SHA="${{ github.sha }}"
           TAG=$(basename "${{ github.ref }}")
           VERSION=${TAG#v}
@@ -25,12 +25,12 @@ jobs:
           sed -i -e '/"version"/c\\t"version": "'$VERSION'",' -e '/^\t*\/\//d' $MANIFEST_V2_FILE $MANIFEST_V3_FILE
           zip source.zip -r . -x '*.git*' -x source.zip
       - name: Build Extension
-        working-directory: ./extension
+        working-directory: ./
         run: |
           docker image build --tag interceptor-extension .
           docker container create --name temp interceptor-extension
-          docker container cp temp:/extension/interceptor-firefox.zip .
-          docker container cp temp:/extension/interceptor-chrome.zip .
+          docker container cp temp:/interceptor-firefox.zip .
+          docker container cp temp:/interceptor-chrome.zip .
           docker container rm temp
       - name: Create Release
         id: create_release
