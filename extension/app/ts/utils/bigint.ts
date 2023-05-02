@@ -138,10 +138,10 @@ export function squareRoot(value: bigint) {
 	return y
 }
 
-export function stringifyJSONWithBigInts(value: any): string {
+export function stringifyJSONWithBigInts(value: any, space?: string | number | undefined): string {
 	return JSON.stringify(value, (_key, value) => {
 		return typeof value === "bigint" ? `0x${ value.toString(16) }` : value
-	}, 4)
+	}, space)
 }
 
 export function bytesToUnsigned(bytes: Uint8Array): bigint {
