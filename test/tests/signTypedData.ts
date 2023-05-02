@@ -1,4 +1,5 @@
-import { EIP712Message, Permit2 } from '../../app/ts/utils/wire-types.js'
+import { EIP712Message } from '../../app/ts/utils/wire-types.js'
+import { Permit2 } from '../../app/ts/utils/personal-message-definitions.js'
 import { describe, runIfRoot, should, run } from '../micro-should.js'
 
 export async function main() {
