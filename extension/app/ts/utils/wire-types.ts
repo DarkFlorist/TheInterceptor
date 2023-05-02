@@ -716,7 +716,7 @@ export type PersonalSignParams = funtypes.Static<typeof PersonalSignParams>
 export const PersonalSignParams = funtypes.ReadonlyObject({
 	method: funtypes.Literal('personal_sign'),
 	params: funtypes.Union(
-		funtypes.Tuple(funtypes.String, EthereumAddress, funtypes.Union(funtypes.String, funtypes.Undefined)), // message, account, password
+		funtypes.Tuple(funtypes.String, EthereumAddress, funtypes.Union(funtypes.String, funtypes.Undefined, funtypes.Null)), // message, account, password
 		funtypes.Tuple(funtypes.String, EthereumAddress) // message, account
 	)
 })
