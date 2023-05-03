@@ -195,9 +195,10 @@ export function PermitExtraDetails({ permit }: { permit: PersonalSignRequestData
 
 type ExtraDetailsCardParams = {
 	personalSignRequestData: PersonalSignRequestData
+	renameAddressCallBack: RenameAddressCallBack
 }
 
-export function ExtraDetails({ personalSignRequestData }: ExtraDetailsCardParams) {
+export function ExtraDetails({ personalSignRequestData, renameAddressCallBack }: ExtraDetailsCardParams) {
 	const [showSummary, setShowSummary] = useState<boolean>(true)
 
 	if (personalSignRequestData.type !== 'Permit2'
@@ -221,7 +222,7 @@ export function ExtraDetails({ personalSignRequestData }: ExtraDetailsCardParams
 					<span class = 'log-table' style = 'justify-content: center; column-gap: 5px; grid-template-columns: auto auto'>
 						{ personalSignRequestData.type !== 'Permit2' ? <></> : <Permit2ExtraDetails permit2 = { personalSignRequestData }/> }
 						{ personalSignRequestData.type !== 'Permit' ? <></> : <PermitExtraDetails permit = { personalSignRequestData }/> }
-						{ personalSignRequestData.type !== 'OrderComponents' ? <></> : <OrderComponentsExtraDetails orderComponents = { personalSignRequestData.message }/> }
+						{ personalSignRequestData.type !== 'OrderComponents' ? <></> : <OrderComponentsExtraDetails orderComponents = { personalSignRequestData.message } renameAddressCallBack = { renameAddressCallBack }/> }
 					</span>
 				</div>
 			</div>

@@ -264,7 +264,7 @@ export function ERC721Token(param: ERC721TokenParams) {
 }
 
 type Token721AmountFieldParams = {
-	textColor: string
+	textColor?: string
 	style?: JSX.CSSProperties
 } & ({
 	type: 'NFT'

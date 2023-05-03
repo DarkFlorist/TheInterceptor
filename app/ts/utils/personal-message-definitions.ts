@@ -306,7 +306,7 @@ export const OpenSeaOrder = funtypes.ReadonlyObject({
 	primaryType: funtypes.Literal('OrderComponents'),
 	domain: funtypes.ReadonlyObject({
 		name: funtypes.Literal('Seaport'),
-		version: funtypes.Literal('1.4'),
+		version: funtypes.Literal('1.5'),
 		chainId: NonHexBigInt,
 		verifyingContract: EthereumAddress,
 	}),
@@ -336,7 +336,7 @@ export const SeaPortSingleConsiderationWithAddressBookEntries  = funtypes.Readon
 
 export type OpenSeaOrderMessageWithAddressBookEntries = funtypes.Static<typeof OpenSeaOrderMessageWithAddressBookEntries>
 export const OpenSeaOrderMessageWithAddressBookEntries = funtypes.ReadonlyObject({
-    offerer: EthereumAddress,
+    offerer: AddressBookEntry,
     offer: funtypes.ReadonlyArray(SeaPortSingleOfferWithAddressBookEntries),
     consideration: funtypes.ReadonlyArray(SeaPortSingleConsiderationWithAddressBookEntries),
     startTime: NonHexBigInt,

@@ -51,6 +51,7 @@ export async function addMetadataToOpenSeaOrder(ethereumClientService: EthereumC
 	return {
 		...openSeaOrder,
 		zone: getAddressMetaData(openSeaOrder.zone, userAddressBook),
+		offerer: getAddressMetaData(openSeaOrder.offerer, userAddressBook),
 		offer: await Promise.all(openSeaOrder.offer.map( async (offer) => ({ ...offer, token: await getTokenMetadata(ethereumClientService, offer.token) }))),
 		consideration: await Promise.all(openSeaOrder.consideration.map(async (offer) => ({ ...offer, token: await getTokenMetadata(ethereumClientService, offer.token), recipient: getAddressMetaData(offer.recipient, userAddressBook) })))
 	 }
