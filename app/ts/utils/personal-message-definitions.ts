@@ -2,6 +2,7 @@ import * as funtypes from 'funtypes'
 import { EIP712Message, EthereumAddress, EthereumBytes32, LiteralConverterParserFactory, NonHexBigInt, OldSignTypedDataParams, PersonalSignParams, SignTypedDataParams } from './wire-types.js'
 import { AddressBookEntry, CHAIN, NFTEntry, SignerName, TokenEntry, Website } from './user-interface-types.js'
 import { QUARANTINE_CODE } from '../simulation/protectors/quarantine-codes.js'
+import { EthereumInput } from './wire-types.js'
 
 export type EIP2612Message = funtypes.Static<typeof EIP2612Message>
 export const EIP2612Message = funtypes.ReadonlyObject({
@@ -425,11 +426,71 @@ export const PersonalSignRequestDataOrderComponents = funtypes.Intersect(
 	})
 )
 
+export type SafeTx = funtypes.Static<typeof SafeTx>
+export const SafeTx = funtypes.ReadonlyObject({
+	types: funtypes.ReadonlyObject({
+		SafeTx: funtypes.Tuple(
+            funtypes.ReadonlyObject({ name: funtypes.Literal('to'), type: funtypes.Literal('address') }),
+            funtypes.ReadonlyObject({ name: funtypes.Literal('value'), type: funtypes.Literal('uint256') }),
+            funtypes.ReadonlyObject({ name: funtypes.Literal('data'), type: funtypes.Literal('bytes') }),
+            funtypes.ReadonlyObject({ name: funtypes.Literal('operation'), type: funtypes.Literal('uint8') }),
+            funtypes.ReadonlyObject({ name: funtypes.Literal('safeTxGas'), type: funtypes.Literal('uint256') }),
+            funtypes.ReadonlyObject({ name: funtypes.Literal('baseGas'), type: funtypes.Literal('uint256') }),
+            funtypes.ReadonlyObject({ name: funtypes.Literal('gasPrice'), type: funtypes.Literal('uint256') }),
+            funtypes.ReadonlyObject({ name: funtypes.Literal('gasToken'), type: funtypes.Literal('address') }),
+            funtypes.ReadonlyObject({ name: funtypes.Literal('refundReceiver'), type: funtypes.Literal('address') }),
+            funtypes.ReadonlyObject({ name: funtypes.Literal('nonce'), type: funtypes.Literal('uint256') })
+		),
+        EIP712Domain: funtypes.Tuple(
+			funtypes.Partial({ name: funtypes.Literal('chainId'), type: funtypes.Literal('uint256') }),
+			funtypes.ReadonlyObject({ name: funtypes.Literal('verifyingContract'), type: funtypes.Literal('address') })
+		),
+    }),
+    primaryType: funtypes.Literal('SafeTx'),
+    domain: funtypes.Intersect(
+		funtypes.Partial({
+			chainId: NonHexBigInt,
+		}),
+		funtypes.ReadonlyObject({
+        	verifyingContract: EthereumAddress,
+		})
+	),
+    message: funtypes.ReadonlyObject({
+        to: EthereumAddress,
+        value: NonHexBigInt,
+        data: EthereumInput,
+        operation: NonHexBigInt,
+        safeTxGas: NonHexBigInt,
+        baseGas: NonHexBigInt,
+        gasPrice: NonHexBigInt,
+        gasToken: EthereumAddress,
+        refundReceiver: EthereumAddress,
+        nonce: NonHexBigInt,
+    })
+})
+
+export type PersonalSignRequestDataSafeTx = funtypes.Static<typeof PersonalSignRequestDataSafeTx>
+export const PersonalSignRequestDataSafeTx = funtypes.Intersect(
+	PersonalSignRequestBase,
+	funtypes.ReadonlyObject({
+		originalParams: SignTypedDataParams,
+		type: funtypes.Literal('SafeTx'),
+		message: SafeTx,
+		addressBookEntries: funtypes.ReadonlyObject({
+			gasToken: funtypes.Union(TokenEntry, NFTEntry),
+			to: AddressBookEntry,
+			refundReceiver: AddressBookEntry,
+			verifyingContract: AddressBookEntry,
+		}),
+	})
+)
+
 export type PersonalSignRequestData = funtypes.Static<typeof PersonalSignRequestData>
 export const PersonalSignRequestData = funtypes.Union(
 	PersonalSignRequestDataNotParsed,
 	PersonalSignRequestDataEIP712,
 	PersonalSignRequestDataPermit,
 	PersonalSignRequestDataPermit2,
+	PersonalSignRequestDataSafeTx,
 	PersonalSignRequestDataOrderComponents,
 )
