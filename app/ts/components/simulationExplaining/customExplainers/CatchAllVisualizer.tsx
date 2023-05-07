@@ -28,7 +28,6 @@ function EtherTransferEvent(param: EtherTransferEventParams) {
 						</div>
 						<div class = 'log-cell'>
 							<EtherSymbol
-								amount = { param.valueSent }
 								textColor = { param.textColor }
 								chain = { param.chain }
 							/>
@@ -52,7 +51,6 @@ function EtherTransferEvent(param: EtherTransferEventParams) {
 						</div>
 						<div class = 'log-cell'>
 							<EtherSymbol
-								amount = { param.totalReceived }
 								textColor = { param.textColor }
 								chain = { param.chain }
 							/>

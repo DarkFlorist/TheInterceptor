@@ -321,7 +321,6 @@ export function VisualizeSwapAsset({ swapAsset, chain }: { swapAsset: SwapAsset,
 					</div>
 					<div class = 'log-cell' style = 'justify-content: right;'>
 						<EtherSymbol
-							amount = { swapAsset.amount }
 							chain = { chain }
 							useFullTokenName = { false }
 							style = { tokenStyle}

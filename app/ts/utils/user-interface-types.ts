@@ -4,7 +4,16 @@ import { EthereumAddress, EthereumQuantity, LiteralConverterParserFactory } from
 import { SimulatedAndVisualizedTransaction, SimulationAndVisualisationResults } from './visualizer-types.js'
 import { IdentifiedSwapWithMetadata } from '../components/simulationExplaining/SwapTransactions.js'
 import { CHAINS } from './constants.js'
-import { IsConnected, Page, PendingAccessRequestArray, SignerName, TabIconDetails, WebsiteAccessArray } from './interceptor-messages.js'
+import { IsConnected, Page, PendingAccessRequestArray, TabIconDetails, WebsiteAccessArray } from './interceptor-messages.js'
+
+export type SignerName = funtypes.Static<typeof SignerName>
+export const SignerName = funtypes.Union(
+	funtypes.Literal('NoSigner'),
+	funtypes.Literal('NotRecognizedSigner'),
+	funtypes.Literal('MetaMask'),
+	funtypes.Literal('Brave'),
+	funtypes.Literal('NoSignerDetected'),
+)
 
 export type WebsiteSocket = funtypes.Static<typeof WebsiteSocket>
 export const WebsiteSocket = funtypes.ReadonlyObject({

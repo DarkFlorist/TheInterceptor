@@ -1,10 +1,9 @@
 import * as funtypes from 'funtypes'
-import { AddressBookEntries, AddressBookEntry, AddressInfo, AddressInfoEntry, ContactEntries, TokenEntry, Website, WebsiteSocket } from './user-interface-types.js'
-import { EIP712Message, EthereumAddress, EthereumQuantity, EthereumUnsignedTransaction, OldSignTypedDataParams, PersonalSignParams, SignTypedDataParams } from './wire-types.js'
+import { AddressBookEntries, AddressBookEntry, AddressInfo, AddressInfoEntry, ContactEntries, SignerName, Website, WebsiteSocket } from './user-interface-types.js'
+import { EthereumAddress, EthereumQuantity, EthereumUnsignedTransaction, OldSignTypedDataParams, PersonalSignParams, SignTypedDataParams } from './wire-types.js'
 import { SimulationState, TokenPriceEstimate, SimResults, OptionalEthereumAddress } from './visualizer-types.js'
 import { ICON_ACCESS_DENIED, ICON_ACTIVE, ICON_NOT_ACTIVE, ICON_SIGNING, ICON_SIGNING_NOT_SUPPORTED, ICON_SIMULATING } from './constants.js'
-import { QUARANTINE_CODE } from '../simulation/protectors/quarantine-codes.js'
-import { EIP2612Message, OpenSeaOrderMessage, Permit2 } from './personal-message-definitions.js'
+import { PersonalSignRequestData } from './personal-message-definitions.js'
 
 export type MessageMethodAndParams = funtypes.Static<typeof MessageMethodAndParams>
 export const MessageMethodAndParams = funtypes.Union(
@@ -246,15 +245,6 @@ export const SignerChainChangeConfirmation = funtypes.ReadonlyObject({
 	})
 }).asReadonly()
 
-export type SignerName = funtypes.Static<typeof SignerName>
-export const SignerName = funtypes.Union(
-	funtypes.Literal('NoSigner'),
-	funtypes.Literal('NotRecognizedSigner'),
-	funtypes.Literal('MetaMask'),
-	funtypes.Literal('Brave'),
-	funtypes.Literal('NoSignerDetected'),
-)
-
 export type ConnectedToSigner = funtypes.Static<typeof ConnectedToSigner>
 export const ConnectedToSigner = funtypes.ReadonlyObject({
 	method: funtypes.Literal('connected_to_signer'),
@@ -385,59 +375,6 @@ export const MessageToPopupSimple = funtypes.ReadonlyObject({
 		funtypes.Literal('popup_notification_changed'),
 	)
 }).asReadonly()
-export type PersonalSignRequestData = funtypes.Static<typeof PersonalSignRequestData>
-export const PersonalSignRequestData = funtypes.Intersect(
-	funtypes.ReadonlyObject({
-		activeAddress: AddressBookEntry,
-		requestId: funtypes.Number,
-		simulationMode: funtypes.Boolean,
-		signerName: SignerName,
-		website: Website,
-		quarantineCodes: funtypes.ReadonlyArray(QUARANTINE_CODE),
-		quarantine: funtypes.Boolean,
-		account: AddressBookEntry,
-	}),
-	funtypes.Union(
-		funtypes.ReadonlyObject({
-			originalParams: funtypes.Union(PersonalSignParams, OldSignTypedDataParams),
-			type: funtypes.Literal('NotParsed'),
-			message: funtypes.String,
-		}),
-		funtypes.Intersect(
-			funtypes.ReadonlyObject({
-				originalParams: SignTypedDataParams,
-			}),
-			funtypes.Union(
-				funtypes.ReadonlyObject({
-					type: funtypes.Literal('EIP712'),
-					message: EIP712Message,
-				}),
-				funtypes.ReadonlyObject({
-					type: funtypes.Literal('Permit'),
-					message: EIP2612Message,
-					addressBookEntries: funtypes.ReadonlyObject({
-						owner: AddressBookEntry,
-						spender: AddressBookEntry,
-						verifyingContract: TokenEntry,
-					}),
-				}),
-				funtypes.ReadonlyObject({
-					type: funtypes.Literal('Permit2'),
-					message: Permit2,
-					addressBookEntries: funtypes.ReadonlyObject({
-						token: TokenEntry,
-						spender: AddressBookEntry,
-						verifyingContract: AddressBookEntry,
-					}),
-				}),
-				funtypes.ReadonlyObject({
-					type: funtypes.Literal('OrderComponents'),
-					message: OpenSeaOrderMessage,
-				}),
-			)
-		)
-	)
-)
 
 export type PersonalSignRequest = funtypes.Static<typeof PersonalSignRequest>
 export const PersonalSignRequest = funtypes.ReadonlyObject({
