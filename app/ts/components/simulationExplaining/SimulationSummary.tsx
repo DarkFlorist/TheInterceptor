@@ -508,7 +508,6 @@ export function GasFee({ tx, chain }: { tx: TransactionGasses, chain: CHAIN } ) 
 		</div>
 		<div class = 'log-cell'>
 			<EtherSymbol
-				amount = { tx.gasSpent * tx.realizedGasPrice  }
 				textColor = { 'var(--subtitle-text-color)' }
 				chain = { chain }
 			/>

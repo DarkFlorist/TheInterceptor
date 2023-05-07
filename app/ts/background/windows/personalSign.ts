@@ -3,9 +3,9 @@ import { EthereumClientService } from '../../simulation/services/EthereumClientS
 import { stringifyJSONWithBigInts } from '../../utils/bigint.js'
 import { METAMASK_ERROR_USER_REJECTED_REQUEST } from '../../utils/constants.js'
 import { Future } from '../../utils/future.js'
-import { HandleSimulationModeReturnValue, InterceptedRequest, PersonalSign, ExternalPopupMessage, Settings, UserAddressBook, SignerName, PersonalSignRequest } from '../../utils/interceptor-messages.js'
-import { EIP2612Message, OpenSeaOrder, Permit2 } from '../../utils/personal-message-definitions.js'
-import { AddressBookEntry, Website, WebsiteSocket, WebsiteTabConnections } from '../../utils/user-interface-types.js'
+import { HandleSimulationModeReturnValue, InterceptedRequest, PersonalSign, ExternalPopupMessage, Settings, UserAddressBook, PersonalSignRequest } from '../../utils/interceptor-messages.js'
+import { EIP2612Message, OpenSeaOrder, OpenSeaOrderMessage, Permit2 } from '../../utils/personal-message-definitions.js'
+import { AddressBookEntry, SignerName, Website, WebsiteSocket, WebsiteTabConnections } from '../../utils/user-interface-types.js'
 import { OldSignTypedDataParams, PersonalSignParams, SignTypedDataParams } from '../../utils/wire-types.js'
 import { personalSignWithSimulator, sendMessageToContentScript } from '../background.js'
 import { getHtmlFile, sendPopupMessageToOpenWindows } from '../backgroundUtils.js'
@@ -47,6 +47,16 @@ function reject() {
 	}
 }
 
+export async function addMetadataToOpenSeaOrder(ethereumClientService: EthereumClientService, openSeaOrder: OpenSeaOrderMessage, userAddressBook: UserAddressBook) {
+	return {
+		...openSeaOrder,
+		zone: getAddressMetaData(openSeaOrder.zone, userAddressBook),
+		offerer: getAddressMetaData(openSeaOrder.offerer, userAddressBook),
+		offer: await Promise.all(openSeaOrder.offer.map( async (offer) => ({ ...offer, token: await getTokenMetadata(ethereumClientService, offer.token) }))),
+		consideration: await Promise.all(openSeaOrder.consideration.map(async (offer) => ({ ...offer, token: await getTokenMetadata(ethereumClientService, offer.token), recipient: getAddressMetaData(offer.recipient, userAddressBook) })))
+	 }
+}
+
 export async function craftPersonalSignPopupMessage(ethereumClientService: EthereumClientService, originalParams: PersonalSignParams | SignTypedDataParams | OldSignTypedDataParams, activeAddress: bigint, userAddressBook: UserAddressBook, simulationMode: boolean, requestId: number, signerName: SignerName, website: Website): Promise<PersonalSignRequest> {
 	const activeAddressWithMetadata = getAddressMetaData(activeAddress, userAddressBook)
 	const basicParams = {
@@ -55,6 +65,7 @@ export async function craftPersonalSignPopupMessage(ethereumClientService: Ether
 		requestId,
 		website,
 		signerName,
+		activeChainId: ethereumClientService.getChain(),
 	}
 
 	const getQuarrantineCodes = async (messageChainId: bigint, account: AddressBookEntry, activeAddress: AddressBookEntry, owner: AddressBookEntry | undefined): Promise<{ quarantine: boolean, quarantineCodes: readonly QUARANTINE_CODE[] }> => {
@@ -154,7 +165,7 @@ export async function craftPersonalSignPopupMessage(ethereumClientService: Ether
 				originalParams,
 				...basicParams,
 				type: 'OrderComponents' as const,
-				message: parsed.message,
+				message: await addMetadataToOpenSeaOrder(ethereumClientService, parsed.message, userAddressBook),
 				account,
 				...await getQuarrantineCodes(parsed.domain.chainId, account, activeAddressWithMetadata, undefined),
 			}

@@ -488,6 +488,11 @@ svg.spinner > circle {
 	grid-template-columns: max-content auto auto auto auto;
 	width: 100%;
 }
+.log-table-4 {
+	display: grid;
+	grid-template-columns: max-content auto auto auto;
+	width: 100%;
+}
 
 .log-cell {
 	text-overflow: ellipsis;

@@ -32,7 +32,6 @@ export function makeYouRichTransaction(param: TransactionImportanceBlockParams) 
 				</div>
 				<div class = 'log-cell'>
 					<EtherSymbol
-						amount = { param.simTx.transaction.value }
 						chain = { param.simulationAndVisualisationResults.chain }
 					/>
 				</div>

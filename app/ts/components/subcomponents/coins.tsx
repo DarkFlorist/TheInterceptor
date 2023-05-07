@@ -50,7 +50,6 @@ export function EtherAmount(param: EtherAmountParams) {
 }
 
 type EtherSymbolParams = {
-	amount: bigint
 	textColor?: string
 	useFullTokenName?: boolean
 	chain: CHAIN
@@ -102,7 +101,7 @@ export type TokenSymbolParams = {
 	address: bigint
 	symbol: string
 	logoUri?: string
-	useFullTokenName: boolean | undefined
+	useFullTokenName?: boolean
 	style?: JSX.CSSProperties
 }
 
@@ -204,6 +203,13 @@ export function TokenOrEth(param: TokenOrEtherParams) {
 	return <Ether { ...param }/>
 }
 
+export function TokenOrEthSymbol(param: TokenDefinitionParams | ERC721TokenDefinitionParams | EtherSymbolParams) {
+	if ('decimals' in param || 'id' in param) {
+		return <TokenSymbol { ...param }/>
+	}
+	return <EtherSymbol { ...param }/>
+}
+
 export function TokenOrEthValue(param: TokenAmountParams | EtherAmountParams) {
 	if ('decimals' in param) {
 		return <TokenAmount { ...param }/>
@@ -258,7 +264,7 @@ export function ERC721Token(param: ERC721TokenParams) {
 }
 
 type Token721AmountFieldParams = {
-	textColor: string
+	textColor?: string
 	style?: JSX.CSSProperties
 } & ({
 	type: 'NFT'
