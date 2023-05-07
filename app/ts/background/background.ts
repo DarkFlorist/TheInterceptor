@@ -12,7 +12,7 @@ import { CHAINS, ICON_NOT_ACTIVE, isSupportedChain, MAKE_YOU_RICH_TRANSACTION, M
 import { PriceEstimator } from '../simulation/priceEstimator.js'
 import { getActiveAddressForDomain, getAssociatedAddresses, sendActiveAccountChangeToApprovedWebsitePorts, sendMessageToApprovedWebsitePorts, updateWebsiteApprovalAccesses, verifyAccess } from './accessManagement.js'
 import { findAddressInfo, getAddressBookEntriesForVisualiser } from './metadataUtils.js'
-import { getActiveAddress, getSocketFromPort, sendPopupMessageToOpenWindows, setExtensionIcon, websiteSocketToString } from './backgroundUtils.js'
+import { getActiveAddress, getSocketFromPort, sendPopupMessageToOpenWindows, websiteSocketToString } from './backgroundUtils.js'
 import { retrieveWebsiteDetails, updateExtensionBadge, updateExtensionIcon } from './iconHandler.js'
 import { connectedToSigner, ethAccountsReply, signerChainChanged, walletSwitchEthereumChainReply } from './providerMessageHandlers.js'
 import { assertNever, assertUnreachable } from '../utils/typescript.js'
@@ -632,8 +632,6 @@ async function popupMessageHandler(
 }
 
 async function startup() {
-	await setExtensionIcon({ path: ICON_NOT_ACTIVE })
-
 	const settings = await getSettings()
 	const chainString = settings.activeChain.toString()
 	simulator = new Simulator(isSupportedChain(chainString) ? chainString : '1', newBlockCallback, onErrorBlockCallback)
