@@ -1,11 +1,11 @@
 import { useState, useEffect } from 'preact/hooks'
-import { stringToUint8Array, stringifyJSONWithBigInts } from '../../utils/bigint.js'
-import { AddingNewAddressType, AddressBookEntry, RenameAddressCallBack } from '../../utils/user-interface-types.js'
+import { dataStringWith0xStart, stringToUint8Array, stringifyJSONWithBigInts } from '../../utils/bigint.js'
+import { AddingNewAddressType, AddressBookEntry, RenameAddressCallBack, SignerName } from '../../utils/user-interface-types.js'
 import Hint from '../subcomponents/Hint.js'
 import { ErrorCheckBox, Error as ErrorComponent} from '../subcomponents/Error.js'
 import { MOCK_PRIVATE_KEYS_ADDRESS, getChainName } from '../../utils/constants.js'
 import { AddNewAddress } from './AddNewAddress.js'
-import { ExternalPopupMessage, PersonalSignRequestData, SignerName } from '../../utils/interceptor-messages.js'
+import { ExternalPopupMessage } from '../../utils/interceptor-messages.js'
 import { sendPopupMessageToBackgroundPage } from '../../background/backgroundUtils.js'
 import { assertNever } from '../../utils/typescript.js'
 import { SimpleTokenApprovalVisualisation } from '../simulationExplaining/customExplainers/SimpleTokenApprovalVisualisation.js'
@@ -16,6 +16,9 @@ import { SomeTimeAgo } from '../subcomponents/SomeTimeAgo.js'
 import { QuarantineCodes } from '../simulationExplaining/Transactions.js'
 import { ComponentChildren } from 'preact'
 import { isSupportedChain } from '../../utils/constants.js'
+import { PersonalSignRequestData, PersonalSignRequestDataPermit, PersonalSignRequestDataPermit2, PersonalSignRequestDataSafeTx } from '../../utils/personal-message-definitions.js'
+import { OrderComponents, OrderComponentsExtraDetails } from '../simulationExplaining/customExplainers/OpenSeaOrder.js'
+import { Ether } from '../subcomponents/coins.js'
 
 type SignatureCardParams = {
 	personalSignRequestData: PersonalSignRequestData
@@ -34,7 +37,12 @@ function identifySignature(data: PersonalSignRequestData) {
 			rejectAction: 'Reject Opensea order',
 			simulationAction: 'Simulate Opensea order',
 			signingAction: 'Sign Opensea order',
-			
+		}
+		case 'SafeTx': return {
+			title: 'Arbitary Gnosis Safe message signing request',
+			rejectAction: 'Reject Gnosis Safe message',
+			simulationAction: 'Simulate Gnosis Safe message',
+			signingAction: 'Sign Gnosis Safe message',
 		}
 		case 'EIP712': return {
 			title: 'Arbitary EIP712 message signing request',
@@ -84,7 +92,7 @@ function SignatureHeader(params: SignatureHeaderParams) {
 			{ identifySignature(params.personalSignRequestData).title }
 		</p>
 		<p class = 'card-header-icon' style = 'margin-left: auto; margin-right: 0; padding-right: 10px; padding-left: 0px; overflow: hidden'>
-			{'addressBookEntries' in params.personalSignRequestData ?
+			{'addressBookEntries' in params.personalSignRequestData && 'spender' in params.personalSignRequestData.addressBookEntries ?
 				<SmallAddress
 					addressBookEntry = { params.personalSignRequestData.addressBookEntries.spender }
 					renameAddressCallBack = { params.renameAddressCallBack }
@@ -112,11 +120,22 @@ function SignRequest({ personalSignRequestData, renameAddressCallBack }: SignReq
 				<p class = 'paragraph' style = 'color: var(--subtitle-text-color)'>{ personalSignRequestData.message }</p>
 			</div>
 		}
-		case 'OrderComponents':
+		
+		case 'SafeTx': return <SafeTx
+			personalSignRequestDataSafeTx = { personalSignRequestData }
+			renameAddressCallBack = { renameAddressCallBack }
+		/>
 		case 'EIP712': {
 			return <div class = 'textbox'>
 				<p class = 'paragraph' style = 'color: var(--subtitle-text-color)'>{ stringifyJSONWithBigInts(personalSignRequestData.message, 4) }</p>
 			</div>
+		}
+		case 'OrderComponents': {
+			return <OrderComponents
+				openSeaOrderMessage = { personalSignRequestData.message }
+				chainId = { isSupportedChain(personalSignRequestData.activeChainId) ? personalSignRequestData.activeChainId : '1' }
+				renameAddressCallBack = { renameAddressCallBack }
+			/>
 		}
 		case 'Permit': {
 			const chainId = personalSignRequestData.message.domain.chainId.toString()
@@ -154,18 +173,85 @@ function SignRequest({ personalSignRequestData, renameAddressCallBack }: SignReq
 	}
 }
 
+function SafeTx({ personalSignRequestDataSafeTx, renameAddressCallBack }: { personalSignRequestDataSafeTx: PersonalSignRequestDataSafeTx, renameAddressCallBack: RenameAddressCallBack }) {
+	return <>
+		<span class = 'log-table' style = 'justify-content: center; column-gap: 5px; grid-template-columns: auto auto'>
+			{ personalSignRequestDataSafeTx.message.domain.chainId !== undefined ? <>
+				<CellElement text = 'Chain: '/>
+				<CellElement text = { getChainName(BigInt(personalSignRequestDataSafeTx.message.domain.chainId)) }/>
+			</> : <></>}
+			<CellElement text = 'baseGas: '/>
+			<CellElement text = { personalSignRequestDataSafeTx.message.message.baseGas }/>
+			<CellElement text = 'gasPrice: '/>
+			<CellElement text = { personalSignRequestDataSafeTx.message.message.gasPrice }/>
+			{ personalSignRequestDataSafeTx.message.message.gasToken !== 0n ? <>
+				<CellElement text = 'gasToken: '/>
+				<CellElement text = { <SmallAddress addressBookEntry = { personalSignRequestDataSafeTx.addressBookEntries.gasToken } renameAddressCallBack = { renameAddressCallBack } /> }/>
+			</> : <></> }
+			<CellElement text = 'nonce: '/>
+			<CellElement text = { personalSignRequestDataSafeTx.message.message.nonce }/>
+			<CellElement text = 'operation: '/>
+			<CellElement text = { personalSignRequestDataSafeTx.message.message.operation }/>
+			{ personalSignRequestDataSafeTx.message.message.refundReceiver !== 0n ? <>
+				<CellElement text = 'refundReceiver: '/>
+				<CellElement text = { <SmallAddress addressBookEntry = { personalSignRequestDataSafeTx.addressBookEntries.refundReceiver } renameAddressCallBack = { renameAddressCallBack } /> }/>
+			</> : <></> }
+			<CellElement text = 'safeTxGas: '/>
+			<CellElement text = { personalSignRequestDataSafeTx.message.message.safeTxGas }/>
+			<CellElement text = 'to: '/>
+			<CellElement text = { <SmallAddress addressBookEntry = { personalSignRequestDataSafeTx.addressBookEntries.to } renameAddressCallBack = { renameAddressCallBack } /> }/>
+			<CellElement text = 'value: '/>
+			<CellElement text = { <Ether amount = { personalSignRequestDataSafeTx.message.message.value } chain = { personalSignRequestDataSafeTx.activeChainId }/>  }/>
+		</span>
+		<p class = 'paragraph' style = 'color: var(--subtitle-text-color)'>Raw transaction input: </p>
+		<div class = 'textbox'>
+			<p class = 'paragraph' style = 'color: var(--subtitle-text-color)'>{ dataStringWith0xStart(personalSignRequestDataSafeTx.message.message.data) }</p>
+		</div>
+	</>
+}
+
+const CellElement = (param: { text: ComponentChildren }) => {
+	return <div class = 'log-cell' style = 'justify-content: right;'> <p class = 'paragraph' style = 'color: var(--subtitle-text-color)'> { param.text }</p></div>
+}
+
+export function Permit2ExtraDetails({ permit2 }: { permit2: PersonalSignRequestDataPermit2 }) {
+	return <>
+		<CellElement text = 'Chain: '/>
+		<CellElement text = { getChainName(BigInt(permit2.message.domain.chainId)) }/>
+		<CellElement text = 'Nonce: '/>
+		<CellElement text = { permit2.message.message.details.nonce.toString(10) }/>
+		<CellElement text = 'Signature expires  in:'/>
+		<CellElement text = { <SomeTimeAgo priorTimestamp = { new Date(Number(permit2.message.message.sigDeadline) * 1000) } countBackwards = { true }/> }/>
+		<CellElement text = 'Spender can spend for:'/>
+		<CellElement text = { <>
+			<SomeTimeAgo priorTimestamp = { new Date(Number(permit2.message.message.details.expiration) * 1000) } countBackwards = { true }/>
+			{` (until ${ new Date(Number(permit2.message.message.details.expiration) * 1000).toISOString().split('T')[0] })`}
+		</> }/>
+	</>
+}
+
+export function PermitExtraDetails({ permit }: { permit: PersonalSignRequestDataPermit }) {
+	return <>
+		<CellElement text = 'Chain: '/>
+		<CellElement text = { getChainName(BigInt(permit.message.domain.chainId)) }/>
+		<CellElement text = 'Nonce: '/>
+		<CellElement text = { permit.message.message.nonce.toString(10) }/>
+		<CellElement text = 'Signature expires in:'/>
+		<CellElement text = { <SomeTimeAgo priorTimestamp = { new Date(Number(permit.message.message.deadline) * 1000) } countBackwards = { true }/> }/>		
+	</>
+}
 
 type ExtraDetailsCardParams = {
 	personalSignRequestData: PersonalSignRequestData
+	renameAddressCallBack: RenameAddressCallBack
 }
-export function ExtraDetails({ personalSignRequestData }: ExtraDetailsCardParams) {
+
+export function ExtraDetails({ personalSignRequestData, renameAddressCallBack }: ExtraDetailsCardParams) {
 	const [showSummary, setShowSummary] = useState<boolean>(true)
 
-	const CellElement = (param: { text: ComponentChildren }) => {
-		return <div class = 'log-cell' style = 'justify-content: right;'> <p class = 'paragraph' style = 'color: var(--subtitle-text-color)'> { param.text }</p></div>
-	}
-
-	if (personalSignRequestData.type !== 'Permit2' && personalSignRequestData.type !== 'Permit') {
+	if (personalSignRequestData.type !== 'Permit2'
+		&& personalSignRequestData.type !== 'Permit'
+		&& personalSignRequestData.type !== 'OrderComponents') {
 		return <></>
 	}
 
@@ -182,32 +268,15 @@ export function ExtraDetails({ personalSignRequestData }: ExtraDetailsCardParams
 			<div class = 'card-content'>
 				<div class = 'container' style = 'margin-bottom: 10px;'>
 					<span class = 'log-table' style = 'justify-content: center; column-gap: 5px; grid-template-columns: auto auto'>
-						<CellElement text = 'Chain: '/>
-						<CellElement text = { getChainName(BigInt(personalSignRequestData.message.domain.chainId)) }/>
-						{ personalSignRequestData.type !== 'Permit2' ? <></> : <>
-							<CellElement text = 'Nonce: '/>
-							<CellElement text = { personalSignRequestData.message.message.details.nonce.toString(10) }/>
-							<CellElement text = 'Signature expires in:'/>
-							<CellElement text = { <SomeTimeAgo priorTimestamp = { new Date(Number(personalSignRequestData.message.message.sigDeadline) * 1000) } countBackwards = { true }/> }/>
-							<CellElement text = 'Spender can spend for:'/>
-							<CellElement text = { <>
-								<SomeTimeAgo priorTimestamp = { new Date(Number(personalSignRequestData.message.message.details.expiration) * 1000) } countBackwards = { true }/>
-								{` (until ${ new Date(Number(personalSignRequestData.message.message.details.expiration) * 1000).toISOString().split('T')[0] })`}
-							</> }/>
-						</> }
-						{ personalSignRequestData.type !== 'Permit' ? <></> : <>
-							<CellElement text = 'Nonce: '/>
-							<CellElement text = { personalSignRequestData.message.message.nonce.toString(10) }/>
-							<CellElement text = 'Signature expires in:'/>
-							<CellElement text = { <SomeTimeAgo priorTimestamp = { new Date(Number(personalSignRequestData.message.message.deadline) * 1000) } countBackwards = { true }/> }/>
-						</> }
+						{ personalSignRequestData.type !== 'Permit2' ? <></> : <Permit2ExtraDetails permit2 = { personalSignRequestData }/> }
+						{ personalSignRequestData.type !== 'Permit' ? <></> : <PermitExtraDetails permit = { personalSignRequestData }/> }
+						{ personalSignRequestData.type !== 'OrderComponents' ? <></> : <OrderComponentsExtraDetails orderComponents = { personalSignRequestData.message } renameAddressCallBack = { renameAddressCallBack }/> }
 					</span>
 				</div>
 			</div>
 		</> }
 	</div>
 }
-
 
 function SignatureCard(params: SignatureCardParams) {
 	return <>
@@ -239,7 +308,7 @@ export function PersonalSign() {
 	const [personalSignRequestData, setPersonalSignRequestData] = useState<PersonalSignRequestData | undefined>(undefined)
 	const [forceSend, setForceSend] = useState<boolean>(false)
 
-	useEffect( () => {
+	useEffect(() => {
 		function popupMessageListener(msg: unknown) {
 			const message = ExternalPopupMessage.parse(msg)
 			if (message.method === 'popup_addressBookEntriesChanged') return refreshMetadata()
