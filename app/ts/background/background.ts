@@ -455,6 +455,7 @@ export async function handleContentScriptMessage(websiteTabConnections: WebsiteT
 		const resolved = await handleSigningMode(simulator.ethereum, socket, website, request, settings)
 		return sendMessageToContentScript(websiteTabConnections, socket, resolved, request)
 	} catch(error) {
+		console.log(request)
 		console.warn(error)
 		if (error instanceof Error) {
 			if (isFailedToFetchError(error)) {

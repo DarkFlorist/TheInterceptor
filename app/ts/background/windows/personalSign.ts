@@ -4,7 +4,7 @@ import { stringifyJSONWithBigInts } from '../../utils/bigint.js'
 import { METAMASK_ERROR_USER_REJECTED_REQUEST } from '../../utils/constants.js'
 import { Future } from '../../utils/future.js'
 import { HandleSimulationModeReturnValue, InterceptedRequest, PersonalSign, ExternalPopupMessage, Settings, UserAddressBook, PersonalSignRequest } from '../../utils/interceptor-messages.js'
-import { EIP2612Message, OpenSeaOrder, OpenSeaOrderMessage, Permit2 } from '../../utils/personal-message-definitions.js'
+import { EIP2612Message, OpenSeaOrder, OpenSeaOrderMessage, Permit2, SafeTx } from '../../utils/personal-message-definitions.js'
 import { AddressBookEntry, SignerName, Website, WebsiteSocket, WebsiteTabConnections } from '../../utils/user-interface-types.js'
 import { OldSignTypedDataParams, PersonalSignParams, SignTypedDataParams } from '../../utils/wire-types.js'
 import { personalSignWithSimulator, sendMessageToContentScript } from '../background.js'
@@ -168,6 +168,27 @@ export async function craftPersonalSignPopupMessage(ethereumClientService: Ether
 				message: await addMetadataToOpenSeaOrder(ethereumClientService, parsed.message, userAddressBook),
 				account,
 				...await getQuarrantineCodes(parsed.domain.chainId, account, activeAddressWithMetadata, undefined),
+			}
+		} as const
+	}
+	if (namedParams.param.primaryType === 'SafeTx') {
+		const parsed = SafeTx.parse(namedParams.param)
+		return {
+			method: 'popup_personal_sign_request',
+			data: {
+				originalParams,
+				...basicParams,
+				type: 'SafeTx' as const,
+				message: parsed,
+				account,
+				addressBookEntries: {
+					to: getAddressMetaData(parsed.message.to, userAddressBook),
+					gasToken: await getTokenMetadata(ethereumClientService, parsed.message.gasToken),
+					refundReceiver: getAddressMetaData(parsed.message.refundReceiver, userAddressBook),
+					verifyingContract: getAddressMetaData(parsed.domain.verifyingContract, userAddressBook),
+				},
+				quarantine: false,
+				quarantineCodes: [],
 			}
 		} as const
 	}
