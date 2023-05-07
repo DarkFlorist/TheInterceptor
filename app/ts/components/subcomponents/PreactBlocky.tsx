@@ -152,6 +152,8 @@ export default function Blockie(props: BlockieProps) {
 				...props.style,
 				width: `${ dimension }px`,
 				height: `${ dimension }px`,
+				minWidth: `${ dimension }px`,
+				minHeight: `${ dimension }px`,
 				borderRadius: props.borderRadius ? props.borderRadius : '0%',
 			}
 		}
