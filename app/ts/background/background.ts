@@ -162,6 +162,8 @@ async function handleSimulationMode(
 ): Promise<HandleSimulationModeReturnValue> {
 	const maybeParsedRequest = EthereumJsonRpcRequest.safeParse(request.options)
 	if (maybeParsedRequest.success === false) {
+		console.log(request)
+		console.warn(maybeParsedRequest.fullError)
 		return {
 			error: {
 				message: maybeParsedRequest.fullError === undefined ? 'Unknown parsing error' : maybeParsedRequest.fullError.toString(),
@@ -241,22 +243,18 @@ async function handleSigningMode(
 	request: InterceptedRequest,
 	settings: Settings
 ): Promise<HandleSimulationModeReturnValue> {
-	let parsedRequest // separate request parsing and request handling. If there's a parse error, throw that to API user
-	try {
-		parsedRequest = EthereumJsonRpcRequest.parse(request.options)
-	} catch (error) {
-		console.warn(request)
-		console.warn(error)
-		if (error instanceof Error) {
-			return {
-				error: {
-					message: error.message,
-					code: 400,
-				}
+	const maybeParsedRequest = EthereumJsonRpcRequest.safeParse(request.options)
+	if (maybeParsedRequest.success === false) {
+		console.log(request)
+		console.warn(maybeParsedRequest.fullError)
+		return {
+			error: {
+				message: maybeParsedRequest.fullError === undefined ? 'Unknown parsing error' : maybeParsedRequest.fullError.toString(),
+				code: 400,
 			}
 		}
-		throw error
 	}
+	const parsedRequest = maybeParsedRequest.value
 
 	const forwardToSigner = () => ({ forward: true } as const)
 
@@ -574,6 +572,8 @@ async function popupMessageHandler(
 ) {
 	const maybeParsedRequest = PopupMessage.safeParse(request)
 	if (maybeParsedRequest.success === false) {
+		console.log(request)
+		console.warn(maybeParsedRequest.fullError)
 		return {
 			error: {
 				message: maybeParsedRequest.fullError === undefined ? 'Unknown parsing error' : maybeParsedRequest.fullError.toString(),
