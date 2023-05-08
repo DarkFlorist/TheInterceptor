@@ -48,7 +48,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: ./extension/interceptor-chrome.zip
+          asset_path: ./interceptor-chrome.zip
           asset_name: interceptor-chrome-${{ steps.derive_tag.outputs.TAG }}.zip
           asset_content_type: application/zip
       - name: Upload Firefox Extension to Release
@@ -57,7 +57,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: ./extension/interceptor-firefox.zip
+          asset_path: ./interceptor-firefox.zip
           asset_name: interceptor-firefox-${{ steps.derive_tag.outputs.TAG }}.zip
           asset_content_type: application/zip
       - name: Upload Source to Release
