@@ -494,3 +494,6 @@ export const PersonalSignRequestData = funtypes.Union(
 	PersonalSignRequestDataSafeTx,
 	PersonalSignRequestDataOrderComponents,
 )
+
+export type PersonalSignRequestIdentifiedEIP712Message = funtypes.Static<typeof PersonalSignRequestIdentifiedEIP712Message>
+export const PersonalSignRequestIdentifiedEIP712Message = funtypes.Union(EIP2612Message, Permit2, OpenSeaOrder, SafeTx)

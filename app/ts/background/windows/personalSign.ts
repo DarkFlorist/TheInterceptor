@@ -4,7 +4,8 @@ import { stringifyJSONWithBigInts } from '../../utils/bigint.js'
 import { METAMASK_ERROR_USER_REJECTED_REQUEST } from '../../utils/constants.js'
 import { Future } from '../../utils/future.js'
 import { HandleSimulationModeReturnValue, InterceptedRequest, PersonalSign, ExternalPopupMessage, Settings, UserAddressBook, PersonalSignRequest } from '../../utils/interceptor-messages.js'
-import { EIP2612Message, OpenSeaOrder, OpenSeaOrderMessage, Permit2, SafeTx } from '../../utils/personal-message-definitions.js'
+import { OpenSeaOrderMessage, PersonalSignRequestIdentifiedEIP712Message } from '../../utils/personal-message-definitions.js'
+import { assertNever } from '../../utils/typescript.js'
 import { AddressBookEntry, SignerName, Website, WebsiteSocket, WebsiteTabConnections } from '../../utils/user-interface-types.js'
 import { OldSignTypedDataParams, PersonalSignParams, SignTypedDataParams } from '../../utils/wire-types.js'
 import { personalSignWithSimulator, sendMessageToContentScript } from '../background.js'
@@ -112,68 +113,68 @@ export async function craftPersonalSignPopupMessage(ethereumClientService: Ether
 	}
 	const namedParams = { param: originalParams.params[1], account: originalParams.params[0] }
 	const account = getAddressMetaData(namedParams.account, userAddressBook)
-
-	if (namedParams.param.primaryType === 'Permit') {
-		const parsed = EIP2612Message.parse(namedParams.param)
-		const token = await getTokenMetadata(ethereumClientService, parsed.domain.verifyingContract)
-		const owner = getAddressMetaData(parsed.message.owner, userAddressBook)
-		if (token.type === 'NFT') throw 'Attempted to perform Permit to an NFT'
+	
+	let parsed 
+	try {
+		parsed = PersonalSignRequestIdentifiedEIP712Message.parse(namedParams.param)
+	} catch {
+		// if we fail to parse the message, that means it's a message type we do not identify, let's just show it as a nonidentified EIP712 message
 		return {
 			method: 'popup_personal_sign_request',
 			data: {
 				originalParams,
 				...basicParams,
-				type: 'Permit' as const,
-				message: parsed,
+				type: 'EIP712' as const,
+				message: namedParams.param,
 				account,
-				addressBookEntries: {
-					owner,
-					spender: getAddressMetaData(parsed.message.spender, userAddressBook),
-					verifyingContract: token,
-				},
-				...await getQuarrantineCodes(BigInt(parsed.domain.chainId), account, activeAddressWithMetadata, owner),
+				quarantine: false,
+				quarantineCodes: []
 			}
 		} as const
 	}
-
-	if (namedParams.param.primaryType === 'PermitSingle') {
-		const parsed = Permit2.parse(namedParams.param)
-		const token = await getTokenMetadata(ethereumClientService, parsed.message.details.token)
-		if (token.type === 'NFT') throw 'Attempted to perform Permit2 to an NFT'
-		return {
-			method: 'popup_personal_sign_request',
-			data: {
-				originalParams,
-				...basicParams,
-				type: 'Permit2' as const,
-				message: parsed,
-				account,
-				addressBookEntries: {
-					token: token,
-					spender: getAddressMetaData(parsed.message.spender, userAddressBook),
-					verifyingContract: getAddressMetaData(parsed.domain.verifyingContract, userAddressBook)
-				},
-				...await getQuarrantineCodes(parsed.domain.chainId, account, activeAddressWithMetadata, undefined),
-			}
-		} as const
-	}
-	if (namedParams.param.primaryType === 'OrderComponents') {
-		const parsed = OpenSeaOrder.parse(namedParams.param)
-		return {
-			method: 'popup_personal_sign_request',
-			data: {
-				originalParams,
-				...basicParams,
-				type: 'OrderComponents' as const,
-				message: await addMetadataToOpenSeaOrder(ethereumClientService, parsed.message, userAddressBook),
-				account,
-				...await getQuarrantineCodes(parsed.domain.chainId, account, activeAddressWithMetadata, undefined),
-			}
-		} as const
-	}
-	if (namedParams.param.primaryType === 'SafeTx') {
-		const parsed = SafeTx.parse(namedParams.param)
-		return {
+	switch (parsed.primaryType) {
+		case 'Permit': {
+			const token = await getTokenMetadata(ethereumClientService, parsed.domain.verifyingContract)
+			const owner = getAddressMetaData(parsed.message.owner, userAddressBook)
+			if (token.type === 'NFT') throw 'Attempted to perform Permit to an NFT'
+			return {
+				method: 'popup_personal_sign_request',
+				data: {
+					originalParams,
+					...basicParams,
+					type: 'Permit' as const,
+					message: parsed,
+					account,
+					addressBookEntries: {
+						owner,
+						spender: getAddressMetaData(parsed.message.spender, userAddressBook),
+						verifyingContract: token,
+					},
+					...await getQuarrantineCodes(BigInt(parsed.domain.chainId), account, activeAddressWithMetadata, owner),
+				}
+			} as const
+		}
+		case 'PermitSingle': {
+			const token = await getTokenMetadata(ethereumClientService, parsed.message.details.token)
+			if (token.type === 'NFT') throw 'Attempted to perform Permit2 to an NFT'
+			return {
+				method: 'popup_personal_sign_request',
+				data: {
+					originalParams,
+					...basicParams,
+					type: 'Permit2' as const,
+					message: parsed,
+					account,
+					addressBookEntries: {
+						token: token,
+						spender: getAddressMetaData(parsed.message.spender, userAddressBook),
+						verifyingContract: getAddressMetaData(parsed.domain.verifyingContract, userAddressBook)
+					},
+					...await getQuarrantineCodes(parsed.domain.chainId, account, activeAddressWithMetadata, undefined),
+				}
+			} as const
+		}
+		case 'SafeTx': return {
 			method: 'popup_personal_sign_request',
 			data: {
 				originalParams,
@@ -191,19 +192,19 @@ export async function craftPersonalSignPopupMessage(ethereumClientService: Ether
 				quarantineCodes: [],
 			}
 		} as const
+		case 'OrderComponents': return {
+			method: 'popup_personal_sign_request',
+			data: {
+				originalParams,
+				...basicParams,
+				type: 'OrderComponents' as const,
+				message: await addMetadataToOpenSeaOrder(ethereumClientService, parsed.message, userAddressBook),
+				account,
+				...await getQuarrantineCodes(parsed.domain.chainId, account, activeAddressWithMetadata, undefined),
+			}
+		} as const
+		default: assertNever(parsed)
 	}
-	return {
-		method: 'popup_personal_sign_request',
-		data: {
-			originalParams,
-			...basicParams,
-			type: 'EIP712' as const,
-			message: namedParams.param,
-			account,
-			quarantine: false,
-			quarantineCodes: []
-		}
-	} as const
 }
 
 export const openPersonalSignDialog = async (
