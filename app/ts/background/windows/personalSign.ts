@@ -115,10 +115,8 @@ export async function craftPersonalSignPopupMessage(ethereumClientService: Ether
 	const namedParams = { param: originalParams.params[1], account: originalParams.params[0] }
 	const account = getAddressMetaData(namedParams.account, userAddressBook)
 	
-	let parsed 
-	try {
-		parsed = PersonalSignRequestIdentifiedEIP712Message.parse(namedParams.param)
-	} catch {
+	const maybeParsed = PersonalSignRequestIdentifiedEIP712Message.safeParse(namedParams.param)
+	if (maybeParsed.success === false) {
 		// if we fail to parse the message, that means it's a message type we do not identify, let's just show it as a nonidentified EIP712 message
 		if (validateEIP712Types(namedParams.param) === false) throw new Error('Not a valid EIP712 Message')
 		return {
@@ -134,6 +132,7 @@ export async function craftPersonalSignPopupMessage(ethereumClientService: Ether
 			}
 		} as const
 	}
+	const parsed = maybeParsed.value
 	switch (parsed.primaryType) {
 		case 'Permit': {
 			const token = await getTokenMetadata(ethereumClientService, parsed.domain.verifyingContract)
