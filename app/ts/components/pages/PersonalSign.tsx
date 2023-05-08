@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'preact/hooks'
-import { dataStringWith0xStart, stringToUint8Array, stringifyJSONWithBigInts } from '../../utils/bigint.js'
+import { dataStringWith0xStart, stringToUint8Array } from '../../utils/bigint.js'
 import { AddingNewAddressType, AddressBookEntry, RenameAddressCallBack, SignerName } from '../../utils/user-interface-types.js'
 import Hint from '../subcomponents/Hint.js'
 import { ErrorCheckBox, Error as ErrorComponent} from '../subcomponents/Error.js'
@@ -19,6 +19,7 @@ import { isSupportedChain } from '../../utils/constants.js'
 import { PersonalSignRequestData, PersonalSignRequestDataPermit, PersonalSignRequestDataPermit2, PersonalSignRequestDataSafeTx } from '../../utils/personal-message-definitions.js'
 import { OrderComponents, OrderComponentsExtraDetails } from '../simulationExplaining/customExplainers/OpenSeaOrder.js'
 import { Ether } from '../subcomponents/coins.js'
+import { EnrichedEIP712Message, GroupedSolidityType } from '../../utils/eip712Parsing.js'
 
 type SignatureCardParams = {
 	personalSignRequestData: PersonalSignRequestData
@@ -133,9 +134,11 @@ function SignRequest({ personalSignRequestData, renameAddressCallBack }: SignReq
 			renameAddressCallBack = { renameAddressCallBack }
 		/>
 		case 'EIP712': {
-			return <div class = 'textbox'>
-				<p class = 'paragraph' style = 'color: var(--subtitle-text-color)'>{ stringifyJSONWithBigInts(personalSignRequestData.message, 4) }</p>
-			</div>
+			return <ArbitaryEIP712
+				enrichedEIP712Message = { personalSignRequestData.message }
+				renameAddressCallBack = { renameAddressCallBack }
+				isSubTable = { false }
+			/>
 		}
 		case 'OrderComponents': {
 			return <OrderComponents
@@ -217,8 +220,50 @@ function SafeTx({ personalSignRequestDataSafeTx, renameAddressCallBack }: { pers
 	</>
 }
 
+type ArbitaryEIP712Params = {
+	enrichedEIP712Message: EnrichedEIP712Message
+	renameAddressCallBack: RenameAddressCallBack
+	isSubTable: boolean
+}
+function visualizeEIP712Component(valueType: GroupedSolidityType, renameAddressCallBack: RenameAddressCallBack) {
+	switch(valueType.type) {
+		case 'address': return <SmallAddress addressBookEntry = { valueType.value } renameAddressCallBack = { renameAddressCallBack } />
+		case 'bool': return valueType.value
+		case 'bytes': return <div class = 'textbox' style = 'white-space: normal;'> <p class = 'paragraph' style = 'color: var(--subtitle-text-color)'>{ dataStringWith0xStart(valueType.value) }</p> </div>
+		case 'fixedBytes': return dataStringWith0xStart(valueType.value)
+		case 'integer': return valueType.value
+		case 'string': return valueType.value
+		case 'address[]': return valueType.value.map((value) => <SmallAddress addressBookEntry = { value } renameAddressCallBack = { renameAddressCallBack } />)
+		case 'bool[]': return `[ ${valueType.value.toString() }]`
+		case 'bytes[]':  return valueType.value.map((value) => <div class = 'textbox' style = 'white-space: normal;'> <p class = 'paragraph' style = 'color: var(--subtitle-text-color)'>{ dataStringWith0xStart(value) }</p> </div>)
+		case 'fixedBytes[]': return `[ ${valueType.value.toString() }]`
+		case 'integer[]': return `[ ${valueType.value.toString() }]`
+		case 'string[]': return `[ ${valueType.value.toString() }]`
+		default: assertNever(valueType)
+	}
+}
+
+function ArbitaryEIP712({ enrichedEIP712Message, renameAddressCallBack, isSubTable }: ArbitaryEIP712Params) {
+	return <span class = 'eip-712-table' style = { isSubTable ? 'justify-content: space-between;' : '' }>
+		<>{ Object.entries(enrichedEIP712Message).map(([key, entry]) => <>
+			{ entry === undefined ? <></> : <>
+				<CellElement text = { `${ key }: ` }/>
+				{ entry.type === 'record' || entry.type === 'record[]' ?
+					entry.type === 'record[]' ?
+						<CellElement text = { entry.value.map((value) => <ArbitaryEIP712 enrichedEIP712Message = { value } renameAddressCallBack = { renameAddressCallBack } isSubTable = { true }/>) } />
+						: <CellElement text = { <ArbitaryEIP712 enrichedEIP712Message = { entry.value } renameAddressCallBack = { renameAddressCallBack } isSubTable = { true }/>
+					} />
+					: <CellElement text = { visualizeEIP712Component(entry, renameAddressCallBack) }/>
+				}
+			</> }
+		</>) } </>
+	</span>
+}
+
 const CellElement = (param: { text: ComponentChildren }) => {
-	return <div class = 'log-cell' style = 'justify-content: right;'> <p class = 'paragraph' style = 'color: var(--subtitle-text-color)'> { param.text }</p></div>
+	return <div class = 'log-cell' style = 'justify-content: right; align-self: flex-start;'>
+		<p class = 'paragraph' style = 'text-overflow: ellipsis; overflow: hidden;'>{ param.text }</p>
+	</div>
 }
 
 export function Permit2ExtraDetails({ permit2 }: { permit2: PersonalSignRequestDataPermit2 }) {
