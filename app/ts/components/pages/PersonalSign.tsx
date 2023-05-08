@@ -112,9 +112,16 @@ function SignRequest({ personalSignRequestData, renameAddressCallBack }: SignReq
 	switch (personalSignRequestData.type) {
 		case 'NotParsed': {
 			if (personalSignRequestData.originalParams.method === 'personal_sign') {
-				return <div class = 'textbox'>
-					<p class = 'paragraph' style = 'color: var(--subtitle-text-color)'>{ new TextDecoder().decode(stringToUint8Array(personalSignRequestData.message)) }</p>
-				</div>
+				return <>
+					<p class = 'paragraph'>Raw message: </p>
+					<div class = 'textbox'>
+						<p class = 'paragraph' style = 'color: var(--subtitle-text-color)'>{ personalSignRequestData.message }</p>
+					</div>
+					<p class = 'paragraph'>Text decoded message: </p>
+					<div class = 'textbox'>
+						<p class = 'paragraph' style = 'color: var(--subtitle-text-color)'>{ new TextDecoder().decode(stringToUint8Array(personalSignRequestData.message)) }</p>
+					</div>
+				</>
 			}
 			return <div class = 'textbox'>
 				<p class = 'paragraph' style = 'color: var(--subtitle-text-color)'>{ personalSignRequestData.message }</p>
