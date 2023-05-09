@@ -126,7 +126,7 @@ function validateEIP712TypesSubset(depth: number, message: JSONEncodeableObject,
     const keys = Object.keys(message)
     for (const key of keys) {
         const fullType = findType(key, currentTypes)
-        if (fullType === undefined) continue//TODO; PUT FALSE return false
+        if (fullType === undefined) return false
         const subMessage = message[key]
         if (subMessage === undefined) return false
 		const arraylessType = separateArraySuffix(fullType)
@@ -165,20 +165,19 @@ export const GroupedSolidityType = funtypes.Union(
     funtypes.ReadonlyObject({ type: funtypes.Literal('address[]'), value: funtypes.ReadonlyArray(AddressBookEntry) }),
 )
 
-type EnrichedEIP712MessageRecord = funtypes.Static<typeof EnrichedEIP712Message>
-const EnrichedEIP712MessageRecord = funtypes.ReadonlyRecord(
-    funtypes.String,
-    GroupedSolidityType
-)
+
+type typeEnrichedEIP712MessageRecord = GroupedSolidityType | { type: 'record', value: { [x: string]: typeEnrichedEIP712MessageRecord | undefined } } | { type: 'record[]', value: ReadonlyArray<{ [x: string]: typeEnrichedEIP712MessageRecord | undefined }> }
+type EnrichedEIP712MessageRecord = funtypes.Static<typeof EnrichedEIP712MessageRecord>
+const EnrichedEIP712MessageRecord: funtypes.Runtype<typeEnrichedEIP712MessageRecord> = funtypes.Lazy(() => funtypes.Union(
+	GroupedSolidityType,
+	funtypes.ReadonlyObject({ type: funtypes.Literal('record'), value: funtypes.ReadonlyRecord(funtypes.String, EnrichedEIP712MessageRecord) }),
+	funtypes.ReadonlyObject({ type: funtypes.Literal('record[]'), value: funtypes.ReadonlyArray(funtypes.ReadonlyRecord(funtypes.String, EnrichedEIP712MessageRecord)) }),
+))
 
 export type EnrichedEIP712Message = funtypes.Static<typeof EnrichedEIP712Message>
 export const EnrichedEIP712Message = funtypes.ReadonlyRecord(
     funtypes.String,
-    funtypes.Union(
-        GroupedSolidityType,
-        funtypes.ReadonlyObject({ type: funtypes.Literal('record'), value: EnrichedEIP712MessageRecord }),
-        funtypes.ReadonlyObject({ type: funtypes.Literal('record[]'), value: funtypes.ReadonlyArray(EnrichedEIP712MessageRecord) })
-    )
+    EnrichedEIP712MessageRecord,
 )
 
 function getSolidityTypeCategory(type: SolidityType) {
@@ -316,23 +315,23 @@ function extractEIP712MessageSubset(depth: number, message: JSONEncodeableObject
     if (depth > 2) throw new Error('Too deep EIP712 message')
     const currentTypes = types[currentType]
     if (currentTypes === undefined) throw new Error(`Types not found: ${ currentType }`)
-    const keys = Object.keys(message)
-    return Object.fromEntries(Array.from(keys).map((key) => {
+    const messageEntries = Object.entries(message)
+    const pairArray: [string, EnrichedEIP712MessageRecord][] = Array.from(messageEntries).map(([key, messageEntry]) => {
+        if (messageEntry === undefined) throw new Error(`Subtype not found: ${ key }`)
         const fullType = findType(key, currentTypes)
-        if (fullType === undefined) return [key, { 'type': 'string', value: message[key] }]//TODO PUT ERROR BACK throw new Error(`Type not found for key: ${ key }`)
+        if (fullType === undefined) throw new Error(`Type not found for key: ${ key }`)
 		const arraylessType = separateArraySuffix(fullType)
         if (SolidityType.test(arraylessType.arraylessType)) {
-			return [key, parseSolidityValueByType(SolidityType.parse(arraylessType.arraylessType), message[key], userAddressBook, arraylessType.isArray)]
+			return [key, parseSolidityValueByType(SolidityType.parse(arraylessType.arraylessType), messageEntry, userAddressBook, arraylessType.isArray)]
 		}
-        const subMessage = message[key]
-        if (subMessage === undefined) throw new Error(`Subtype not found: ${ key }`)
 		if (arraylessType.isArray) {
-			if (!Array.isArray(subMessage)) throw new Error(`Type was defined to be an array but it was not: ${ subMessage }`)
-			return [key, { 'type': 'record[]', value: subMessage.map((subSubMessage) => extractEIP712MessageSubset(depth + 1, subSubMessage, arraylessType.arraylessType, types, userAddressBook)) }]
+			if (!Array.isArray(messageEntry)) throw new Error(`Type was defined to be an array but it was not: ${ messageEntry }`)
+			return [key, { type: 'record[]', value: messageEntry.map((subSubMessage) => extractEIP712MessageSubset(depth + 1, subSubMessage, arraylessType.arraylessType, types, userAddressBook)) }]
 		}
-        if (!JSONEncodeableObject.test(subMessage)) throw new Error(`Not a JSON type: ${ subMessage }`)
-        return [key, { 'type': 'record', value: extractEIP712MessageSubset(depth + 1, subMessage, fullType, types, userAddressBook) }]
-    }))
+        if (!JSONEncodeableObject.test(messageEntry)) throw new Error(`Not a JSON type: ${ messageEntry }`)
+        return [key, { type: 'record', value: extractEIP712MessageSubset(depth + 1, messageEntry, fullType, types, userAddressBook) }]
+    })
+	return pairArray.reduce((accumulator, [key, value]) => ({ ...accumulator, [key]: value}), {} as EnrichedEIP712Message)
 }
 
 export function extractEIP712Message(message: EIP712Message, userAddressBook: UserAddressBook): EnrichedEIP712Message {
