@@ -145,7 +145,7 @@ function validateEIP712TypesSubset(depth: number, message: JSONEncodeableObject,
 }
 
 export function validateEIP712Types(message: EIP712Message) {
-    return validateEIP712TypesSubset(0, message.message, message.primaryType, message.types)
+    return validateEIP712TypesSubset(0, message.message, message.primaryType, message.types) && validateEIP712TypesSubset(0, message.domain, 'EIP712Domain', message.types)
 }
 
 export type GroupedSolidityType = funtypes.Static<typeof GroupedSolidityType>
@@ -165,7 +165,6 @@ export const GroupedSolidityType = funtypes.Union(
     funtypes.ReadonlyObject({ type: funtypes.Literal('address[]'), value: funtypes.ReadonlyArray(AddressBookEntry) }),
 )
 
-
 type typeEnrichedEIP712MessageRecord = GroupedSolidityType | { type: 'record', value: { [x: string]: typeEnrichedEIP712MessageRecord | undefined } } | { type: 'record[]', value: ReadonlyArray<{ [x: string]: typeEnrichedEIP712MessageRecord | undefined }> }
 type EnrichedEIP712MessageRecord = funtypes.Static<typeof EnrichedEIP712MessageRecord>
 const EnrichedEIP712MessageRecord: funtypes.Runtype<typeEnrichedEIP712MessageRecord> = funtypes.Lazy(() => funtypes.Union(
@@ -179,6 +178,12 @@ export const EnrichedEIP712Message = funtypes.ReadonlyRecord(
     funtypes.String,
     EnrichedEIP712MessageRecord,
 )
+
+export type EnrichedEIP712 = funtypes.Static<typeof EnrichedEIP712>
+export const EnrichedEIP712 = funtypes.ReadonlyObject({
+	message: EnrichedEIP712Message,
+	domain: EnrichedEIP712Message,
+})
 
 function getSolidityTypeCategory(type: SolidityType) {
 	switch(type) {
@@ -334,6 +339,9 @@ function extractEIP712MessageSubset(depth: number, message: JSONEncodeableObject
 	return pairArray.reduce((accumulator, [key, value]) => ({ ...accumulator, [key]: value}), {} as EnrichedEIP712Message)
 }
 
-export function extractEIP712Message(message: EIP712Message, userAddressBook: UserAddressBook): EnrichedEIP712Message {
-    return extractEIP712MessageSubset(0, message.message, message.primaryType, message.types, userAddressBook)
+export function extractEIP712Message(message: EIP712Message, userAddressBook: UserAddressBook): EnrichedEIP712 {
+    return {
+		message: extractEIP712MessageSubset(0, message.message, message.primaryType, message.types, userAddressBook),
+		domain: extractEIP712MessageSubset(0, message.domain, 'EIP712Domain', message.types, userAddressBook),
+	}
 }

@@ -3,7 +3,7 @@ import { EthereumAddress, EthereumBytes32, LiteralConverterParserFactory, NonHex
 import { AddressBookEntry, CHAIN, NFTEntry, SignerName, TokenEntry, Website } from './user-interface-types.js'
 import { QUARANTINE_CODE } from '../simulation/protectors/quarantine-codes.js'
 import { EthereumInput } from './wire-types.js'
-import { EnrichedEIP712Message } from './eip712Parsing.js'
+import { EnrichedEIP712 } from './eip712Parsing.js'
 
 export type EIP2612Message = funtypes.Static<typeof EIP2612Message>
 export const EIP2612Message = funtypes.ReadonlyObject({
@@ -383,7 +383,7 @@ export const PersonalSignRequestDataEIP712 = funtypes.Intersect(
 	funtypes.ReadonlyObject({
 		originalParams: SignTypedDataParams,
 		type: funtypes.Literal('EIP712'),
-		message: EnrichedEIP712Message,
+		message: EnrichedEIP712,
 	})
 )
 
