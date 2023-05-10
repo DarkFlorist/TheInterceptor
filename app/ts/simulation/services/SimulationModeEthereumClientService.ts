@@ -88,12 +88,12 @@ export const mockSignTransaction = async (transaction: EthereumUnsignedTransacti
 	}
 }
 
-export const appendTransaction = async (ethereumClientService: EthereumClientService, simulationState: SimulationState, transaction: EthereumUnsignedTransactionWithWebsite): Promise<SimulationState> => {
+export const appendTransaction = async (ethereumClientService: EthereumClientService, simulationState: SimulationState | undefined, transaction: EthereumUnsignedTransactionWithWebsite): Promise<SimulationState> => {
 	const signed = await mockSignTransaction(transaction.transaction)
 	const parentBlock = await ethereumClientService.getBlock()
-	const signedTxs = simulationState.simulatedTransactions.map((x) => x.signedTransaction).concat([signed])
+	const signedTxs = simulationState === undefined ? [signed] : simulationState.simulatedTransactions.map((x) => x.signedTransaction).concat([signed])
 	const multicallResult = await ethereumClientService.multicall(signedTxs, parentBlock.number)
-	const websites = simulationState.simulatedTransactions.map((x) => x.website).concat(transaction.website)
+	const websites = simulationState === undefined ? [transaction.website] : simulationState.simulatedTransactions.map((x) => x.website).concat(transaction.website)
 	if (multicallResult.length !== signedTxs.length || websites.length !== signedTxs.length) throw 'multicall length does not match in appendTransaction'
 
 	const tokenBalancesAfter = await getTokenBalancesAfter(
@@ -105,7 +105,7 @@ export const appendTransaction = async (ethereumClientService: EthereumClientSer
 	if (multicallResult.length !== tokenBalancesAfter.length) throw 'tokenBalancesAfter length does not match'
 
 	return {
-		prependTransactionsQueue: simulationState.prependTransactionsQueue,
+		prependTransactionsQueue: simulationState === undefined ? [] : simulationState.prependTransactionsQueue,
 		simulatedTransactions: multicallResult.map((singleResult, index) => ({
 			multicallResponse: singleResult,
 			signedTransaction: signedTxs[index],
@@ -115,7 +115,7 @@ export const appendTransaction = async (ethereumClientService: EthereumClientSer
 		})),
 		blockNumber: parentBlock.number,
 		blockTimestamp: parentBlock.timestamp,
-		chain: simulationState.chain,
+		chain: ethereumClientService.getChain(),
 		simulationConductedTimestamp: new Date(),
 	}
 }
