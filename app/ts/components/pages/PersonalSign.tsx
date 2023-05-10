@@ -19,6 +19,7 @@ import { isSupportedChain } from '../../utils/constants.js'
 import { PersonalSignRequestData, PersonalSignRequestDataPermit, PersonalSignRequestDataPermit2, PersonalSignRequestDataSafeTx } from '../../utils/personal-message-definitions.js'
 import { OrderComponents, OrderComponentsExtraDetails } from '../simulationExplaining/customExplainers/OpenSeaOrder.js'
 import { Ether } from '../subcomponents/coins.js'
+import { humanReadableDate } from '../ui-utils.js'
 
 type SignatureCardParams = {
 	personalSignRequestData: PersonalSignRequestData
@@ -232,7 +233,7 @@ export function Permit2ExtraDetails({ permit2 }: { permit2: PersonalSignRequestD
 		<CellElement text = 'Spender can spend for:'/>
 		<CellElement text = { <>
 			<SomeTimeAgo priorTimestamp = { new Date(Number(permit2.message.message.details.expiration) * 1000) } countBackwards = { true }/>
-			{` (until ${ new Date(Number(permit2.message.message.details.expiration) * 1000).toISOString().split('T')[0] })`}
+			{` (until ${ humanReadableDate(permit2.message.message.details.expiration) })`}
 		</> }/>
 	</>
 }
