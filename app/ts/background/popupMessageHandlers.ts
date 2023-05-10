@@ -270,7 +270,14 @@ export async function openAddressBook() {
 	const addressBookTab = allTabs.find((tab) => tab.id === tabId)
 
 	if (addressBookTab?.id === undefined) return await openInNewTab()
-	return await browser.tabs.update(addressBookTab.id, { active: true })
+	try {
+		return await browser.tabs.update(addressBookTab.id, { active: true })
+	} catch (error) {
+		if (!(error instanceof Error)) throw error
+		if (!error.message?.includes('No tab with id')) throw error
+		// if tab is not found (user might have closed it)
+		return await openInNewTab()
+	}
 }
 
 export async function homeOpened(simulator: Simulator) {
