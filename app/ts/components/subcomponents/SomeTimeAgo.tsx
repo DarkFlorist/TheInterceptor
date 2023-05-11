@@ -8,14 +8,14 @@ export interface SomeTimeAgoProps {
 
 export function SomeTimeAgo(props: SomeTimeAgoProps) {
 	const getTimeDiff = () => (props.priorTimestamp.getTime() - new Date().getTime()) / 1000
-    const timeDiff = useSignal(getTimeDiff())
-    const humanReadableTimeDiff = useComputed(() => humanReadableDateDelta(props.countBackwards ? timeDiff.value : -timeDiff.value))
-    useEffect(() => {
-        const id = setInterval(() => timeDiff.value = getTimeDiff(), 1000)
-        return () => clearInterval(id)
-    })
+	const timeDiff = useSignal(getTimeDiff())
+	const humanReadableTimeDiff = useComputed(() => humanReadableDateDelta(props.countBackwards ? timeDiff.value : -timeDiff.value))
+	useEffect(() => {
+		const id = setInterval(() => timeDiff.value = getTimeDiff(), 1000)
+		return () => clearInterval(id)
+	})
 	useEffect(() => { timeDiff.value = getTimeDiff() }, [props.priorTimestamp])
-    return <>{ humanReadableTimeDiff }</>
+	return <>{ humanReadableTimeDiff }</>
 }
 
 function humanReadableDateDelta(secondsDiff: number) {
