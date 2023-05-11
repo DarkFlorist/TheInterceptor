@@ -666,3 +666,15 @@ svg.spinner > circle {
 	margin-top: 0px;
 	margin-bottom: 0px;
 }
+
+.eip-712-table {
+	display: grid;
+	grid-template-columns: max-content auto auto auto auto;
+	justify-content: center;
+	column-gap: 5px;
+	grid-template-columns: auto auto;
+	background-color: var(--alpha-005);
+	margin: 5px;
+	padding: 5px;
+	border-radius: 5px;
+}

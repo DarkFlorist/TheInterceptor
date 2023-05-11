@@ -65,3 +65,7 @@ export function convertNumberToCharacterRepresentationIfSmallEnough(num: number)
 	if (num > 99) return num.toString()
 	return convertTens(num)
 }
+
+export function humanReadableDate(timeInSeconds: bigint) {
+	return new Date(Number(timeInSeconds) * 1000).toISOString().split('T')[0]
+}
