@@ -11,7 +11,7 @@ import { assertNever } from '../../utils/typescript.js'
 import { SimpleTokenApprovalVisualisation } from '../simulationExplaining/customExplainers/SimpleTokenApprovalVisualisation.js'
 import { SmallAddress, WebsiteOriginText } from '../subcomponents/address.js'
 import { SignerLogoText } from '../subcomponents/signers.js'
-import { Spinner } from '../subcomponents/Spinner.js'
+import { CenterToPageTextSpinner } from '../subcomponents/Spinner.js'
 import { SomeTimeAgo } from '../subcomponents/SomeTimeAgo.js'
 import { QuarantineCodes } from '../simulationExplaining/Transactions.js'
 import { ComponentChildren } from 'preact'
@@ -20,6 +20,7 @@ import { PersonalSignRequestData, PersonalSignRequestDataPermit, PersonalSignReq
 import { OrderComponents, OrderComponentsExtraDetails } from '../simulationExplaining/customExplainers/OpenSeaOrder.js'
 import { Ether } from '../subcomponents/coins.js'
 import { EnrichedEIP712, EnrichedEIP712Message, GroupedSolidityType } from '../../utils/eip712Parsing.js'
+import { humanReadableDate } from '../ui-utils.js'
 
 type SignatureCardParams = {
 	personalSignRequestData: PersonalSignRequestData
@@ -296,7 +297,7 @@ export function Permit2ExtraDetails({ permit2 }: { permit2: PersonalSignRequestD
 		<CellElement text = 'Spender can spend for:'/>
 		<CellElement text = { <>
 			<SomeTimeAgo priorTimestamp = { new Date(Number(permit2.message.message.details.expiration) * 1000) } countBackwards = { true }/>
-			{` (until ${ new Date(Number(permit2.message.message.details.expiration) * 1000).toISOString().split('T')[0] })`}
+			{` (until ${ humanReadableDate(permit2.message.message.details.expiration) })`}
 		</> }/>
 	</>
 }
@@ -442,14 +443,7 @@ export function PersonalSign() {
 		setAddingNewAddress({ addingAddress: false, entry: entry })
 	}
 
-	if (personalSignRequestData === undefined) {
-		return <main class = 'center-to-page'>
-			<div class = 'vertical-center' style = 'scale: 3'>
-				<Spinner/>
-				<span style = 'margin-left: 0.2em' > Visualizing... </span>
-			</div>
-		</main>
-	}
+	if (personalSignRequestData === undefined) return <CenterToPageTextSpinner text = 'Visualizing...'/>
 	
 	return (
 		<main>

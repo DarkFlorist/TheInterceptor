@@ -1,5 +1,5 @@
 import { getPrettySignerName } from '../components/subcomponents/signers.js'
-import { ICON_ACCESS_DENIED, ICON_NOT_ACTIVE, ICON_SIGNING, ICON_SIGNING_NOT_SUPPORTED, ICON_SIMULATING, isSupportedChain, PRIMARY_COLOR, WARNING_COLOR } from '../utils/constants.js'
+import { CHROME_NO_TAB_WITH_ID_ERROR, ICON_ACCESS_DENIED, ICON_NOT_ACTIVE, ICON_SIGNING, ICON_SIGNING_NOT_SUPPORTED, ICON_SIMULATING, isSupportedChain, PRIMARY_COLOR, WARNING_COLOR } from '../utils/constants.js'
 import { getActiveAddressForDomain, hasAccess, hasAddressAccess } from './accessManagement.js'
 import { getActiveAddress, sendPopupMessageToOpenWindows, setExtensionBadgeBackgroundColor, setExtensionBadgeText, setExtensionIcon } from './backgroundUtils.js'
 import { getAddressMetaData } from './metadataUtils.js'
@@ -77,7 +77,7 @@ export async function retrieveWebsiteDetails(port: browser.runtime.Port, website
 			return await browser.tabs.get(tabId)
 		} catch (error) {
 			if (!(error instanceof Error)) throw error
-			if (!error.message?.includes('No tab with id')) throw error
+			if (!error.message?.includes(CHROME_NO_TAB_WITH_ID_ERROR)) throw error
 			// if tab is not found (user might have closed it)
 			return undefined
 		}
