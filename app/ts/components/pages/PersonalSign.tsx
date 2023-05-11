@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'preact/hooks'
-import { dataStringWith0xStart, stringToUint8Array, stringifyJSONWithBigInts } from '../../utils/bigint.js'
+import { dataStringWith0xStart, stringToUint8Array } from '../../utils/bigint.js'
 import { AddingNewAddressType, AddressBookEntry, RenameAddressCallBack, SignerName } from '../../utils/user-interface-types.js'
 import Hint from '../subcomponents/Hint.js'
 import { ErrorCheckBox, Error as ErrorComponent} from '../subcomponents/Error.js'
@@ -19,6 +19,8 @@ import { isSupportedChain } from '../../utils/constants.js'
 import { PersonalSignRequestData, PersonalSignRequestDataPermit, PersonalSignRequestDataPermit2, PersonalSignRequestDataSafeTx } from '../../utils/personal-message-definitions.js'
 import { OrderComponents, OrderComponentsExtraDetails } from '../simulationExplaining/customExplainers/OpenSeaOrder.js'
 import { Ether } from '../subcomponents/coins.js'
+import { EnrichedEIP712, EnrichedEIP712Message, GroupedSolidityType } from '../../utils/eip712Parsing.js'
+import { humanReadableDate } from '../ui-utils.js'
 
 type SignatureCardParams = {
 	personalSignRequestData: PersonalSignRequestData
@@ -44,11 +46,14 @@ function identifySignature(data: PersonalSignRequestData) {
 			simulationAction: 'Simulate Gnosis Safe message',
 			signingAction: 'Sign Gnosis Safe message',
 		}
-		case 'EIP712': return {
-			title: 'Arbitary EIP712 message signing request',
-			rejectAction: 'Reject EIP712 message',
-			simulationAction: 'Simulate EIP712 message',
-			signingAction: 'Sign EIP712 message',
+		case 'EIP712': {
+			const name = data.message.domain.name?.type === 'string' ? data.message.domain.name.value : 'Arbitary EIP712 message'
+			return {
+				title: `${ name } signing request`,
+				rejectAction: `Reject ${ name }`,
+				simulationAction: `Simulate ${ name }`,
+				signingAction: `Sign ${ name }`,
+			}
 		}
 		case 'NotParsed': return {
 			title: 'Arbitary Ethereum message signing request',
@@ -133,9 +138,7 @@ function SignRequest({ personalSignRequestData, renameAddressCallBack }: SignReq
 			renameAddressCallBack = { renameAddressCallBack }
 		/>
 		case 'EIP712': {
-			return <div class = 'textbox'>
-				<p class = 'paragraph' style = 'color: var(--subtitle-text-color)'>{ stringifyJSONWithBigInts(personalSignRequestData.message, 4) }</p>
-			</div>
+			return <ArbitaryEIP712 enrichedEIP712 = { personalSignRequestData.message } renameAddressCallBack = { renameAddressCallBack } />
 		}
 		case 'OrderComponents': {
 			return <OrderComponents
@@ -217,8 +220,70 @@ function SafeTx({ personalSignRequestDataSafeTx, renameAddressCallBack }: { pers
 	</>
 }
 
+function visualizeEIP712Component(valueType: GroupedSolidityType, renameAddressCallBack: RenameAddressCallBack) {
+	switch(valueType.type) {
+		case 'address': return <SmallAddress addressBookEntry = { valueType.value } renameAddressCallBack = { renameAddressCallBack } />
+		case 'bool': return valueType.value
+		case 'bytes': return <div class = 'textbox' style = 'white-space: normal;'> <p class = 'paragraph' style = 'color: var(--subtitle-text-color)'>{ dataStringWith0xStart(valueType.value) }</p> </div>
+		case 'fixedBytes': return dataStringWith0xStart(valueType.value)
+		case 'integer': return valueType.value
+		case 'string': return valueType.value
+		case 'address[]': return valueType.value.map((value) => <SmallAddress addressBookEntry = { value } renameAddressCallBack = { renameAddressCallBack } />)
+		case 'bool[]': return `[ ${valueType.value.toString() }]`
+		case 'bytes[]':  return valueType.value.map((value) => <div class = 'textbox' style = 'white-space: normal;'> <p class = 'paragraph' style = 'color: var(--subtitle-text-color)'>{ dataStringWith0xStart(value) }</p> </div>)
+		case 'fixedBytes[]': return `[ ${valueType.value.toString() }]`
+		case 'integer[]': return `[ ${valueType.value.toString() }]`
+		case 'string[]': return `[ ${valueType.value.toString() }]`
+		default: assertNever(valueType)
+	}
+}
+type EIP712Table = {
+	enrichedEIP712Message: EnrichedEIP712Message
+	renameAddressCallBack: RenameAddressCallBack
+	isSubTable: boolean
+}
+
+function EIP712Table({ enrichedEIP712Message, renameAddressCallBack, isSubTable }: EIP712Table) {
+	return <span class = 'eip-712-table' style = { isSubTable ? 'justify-content: space-between;' : '' }>
+		<>{ Object.entries(enrichedEIP712Message).map(([key, entry]) => <>
+			{ entry === undefined ? <></> : <>
+				<CellElement text = { `${ key }: ` }/>
+				{ entry.type === 'record' || entry.type === 'record[]' ?
+					entry.type === 'record[]' ?
+						<CellElement text = { entry.value.map((value) => <EIP712Table enrichedEIP712Message = { value } renameAddressCallBack = { renameAddressCallBack } isSubTable = { true }/>) } />
+						: <CellElement text = { <EIP712Table enrichedEIP712Message = { entry.value } renameAddressCallBack = { renameAddressCallBack } isSubTable = { true }/>
+					} />
+					: <CellElement text = { visualizeEIP712Component(entry, renameAddressCallBack) }/>
+				}
+			</> }
+		</>) } </>
+	</span>
+}
+
+type ArbitaryEIP712Params = {
+	enrichedEIP712: EnrichedEIP712
+	renameAddressCallBack: RenameAddressCallBack
+}
+
+function ArbitaryEIP712({ enrichedEIP712, renameAddressCallBack }: ArbitaryEIP712Params) {
+	return <>
+		<EIP712Table 
+			enrichedEIP712Message = { enrichedEIP712.domain }
+			renameAddressCallBack = { renameAddressCallBack }
+			isSubTable = { false }
+		/>
+		<EIP712Table 
+			enrichedEIP712Message = { enrichedEIP712.message }
+			renameAddressCallBack = { renameAddressCallBack }
+			isSubTable = { false }
+		/>
+	</>
+}
+
 const CellElement = (param: { text: ComponentChildren }) => {
-	return <div class = 'log-cell' style = 'justify-content: right;'> <p class = 'paragraph' style = 'color: var(--subtitle-text-color)'> { param.text }</p></div>
+	return <div class = 'log-cell' style = 'justify-content: right; align-self: flex-start;'>
+		<p class = 'paragraph' style = 'text-overflow: ellipsis; overflow: hidden;'>{ param.text }</p>
+	</div>
 }
 
 export function Permit2ExtraDetails({ permit2 }: { permit2: PersonalSignRequestDataPermit2 }) {
@@ -232,7 +297,7 @@ export function Permit2ExtraDetails({ permit2 }: { permit2: PersonalSignRequestD
 		<CellElement text = 'Spender can spend for:'/>
 		<CellElement text = { <>
 			<SomeTimeAgo priorTimestamp = { new Date(Number(permit2.message.message.details.expiration) * 1000) } countBackwards = { true }/>
-			{` (until ${ new Date(Number(permit2.message.message.details.expiration) * 1000).toISOString().split('T')[0] })`}
+			{` (until ${ humanReadableDate(permit2.message.message.details.expiration) })`}
 		</> }/>
 	</>
 }
