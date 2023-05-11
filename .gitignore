@@ -1,4 +1,5 @@
 /app/js/
+/test/js/
 /app/vendor/
 node_modules/
 /app/inpage/build/
