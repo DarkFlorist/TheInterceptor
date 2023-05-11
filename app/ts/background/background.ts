@@ -98,7 +98,6 @@ export function setEthereumNodeBlockPolling(enabled: boolean) {
 
 export async function refreshConfirmTransactionSimulation(
 	ethereumClientService: EthereumClientService,
-	simulationState: SimulationState,
 	activeAddress: bigint,
 	simulationMode: boolean,
 	requestId: number,
@@ -115,8 +114,16 @@ export async function refreshConfirmTransactionSimulation(
 	}
 	if (simulator === undefined) return { method: 'popup_confirm_transaction_simulation_failed' as const, data: info }
 	sendPopupMessageToOpenWindows({ method: 'popup_confirm_transaction_simulation_started' })
+
+	const getCopiedSimulationState = async (simulationMode: boolean) => {
+		if (simulationMode === false) return undefined
+		const simResults = await getSimulationResults()
+		if (simResults.simulationState === undefined) return undefined
+		return copySimulationState(simResults.simulationState)
+	}
+
 	try {
-		const simulationStateWithNewTransaction = await appendTransaction(ethereumClientService, copySimulationState(simulationState), { transaction: transactionToSimulate, website: website })
+		const simulationStateWithNewTransaction = await appendTransaction(ethereumClientService, await getCopiedSimulationState(simulationMode), { transaction: transactionToSimulate, website: website })
 		return {
 			method: 'popup_confirm_transaction_simulation_state_changed' as const,
 			data: { ...info, ...await visualizeSimulatorState(simulationStateWithNewTransaction, simulator) }
