@@ -115,6 +115,20 @@ export const LiteralConverterParserFactory: <TInput, TOutput> (input: TInput, ou
 	}
 }
 
+const BigIntParserNonHex: funtypes.ParsedValue<funtypes.String, bigint>['config'] = {
+	parse: value => {
+		if (!/^[0-9]+$/.test(value)) return { success: false, message: `${ value } is not a string encoded number.` }
+		else return { success: true, value: BigInt(value) }
+	},
+	serialize: value => {
+		if (typeof value !== 'bigint') return { success: false, message: `${ typeof value } is not a bigint.`}
+		return { success: true, value: `${ value.toString() }` }
+	},
+}
+
+export const NonHexBigInt = funtypes.String.withParser(BigIntParserNonHex)
+export type NonHexBigInt = funtypes.Static<typeof NonHexBigInt>
+
 //
 // Ethereum
 //
@@ -815,20 +829,6 @@ export const RequestPermissions = funtypes.ReadonlyObject({
 	method: funtypes.Literal('wallet_requestPermissions'),
 	params: funtypes.Tuple( funtypes.ReadonlyObject({ eth_accounts: funtypes.ReadonlyObject({ }) }) )
 }).asReadonly()
-
-const BigIntParserNonHex: funtypes.ParsedValue<funtypes.String, bigint>['config'] = {
-	parse: value => {
-		if (!/^[0-9]+$/.test(value)) return { success: false, message: `${ value } is not a string encoded number.` }
-		else return { success: true, value: BigInt(value) }
-	},
-	serialize: value => {
-		if (typeof value !== 'bigint') return { success: false, message: `${ typeof value } is not a bigint.`}
-		return { success: true, value: `${ value.toString() }` }
-	},
-}
-
-export const NonHexBigInt = funtypes.String.withParser(BigIntParserNonHex)
-export type NonHexBigInt = funtypes.Static<typeof NonHexBigInt>
 
 export type GetTransactionCount = funtypes.Static<typeof GetTransactionCount>
 export const GetTransactionCount = funtypes.ReadonlyObject({

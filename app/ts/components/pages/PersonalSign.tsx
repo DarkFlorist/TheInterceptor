@@ -19,7 +19,7 @@ import { isSupportedChain } from '../../utils/constants.js'
 import { PersonalSignRequestData, PersonalSignRequestDataPermit, PersonalSignRequestDataPermit2, PersonalSignRequestDataSafeTx } from '../../utils/personal-message-definitions.js'
 import { OrderComponents, OrderComponentsExtraDetails } from '../simulationExplaining/customExplainers/OpenSeaOrder.js'
 import { Ether } from '../subcomponents/coins.js'
-import { EnrichedEIP712Message, GroupedSolidityType } from '../../utils/eip712Parsing.js'
+import { EnrichedEIP712, EnrichedEIP712Message, GroupedSolidityType } from '../../utils/eip712Parsing.js'
 
 type SignatureCardParams = {
 	personalSignRequestData: PersonalSignRequestData
@@ -45,11 +45,14 @@ function identifySignature(data: PersonalSignRequestData) {
 			simulationAction: 'Simulate Gnosis Safe message',
 			signingAction: 'Sign Gnosis Safe message',
 		}
-		case 'EIP712': return {
-			title: 'Arbitary EIP712 message signing request',
-			rejectAction: 'Reject EIP712 message',
-			simulationAction: 'Simulate EIP712 message',
-			signingAction: 'Sign EIP712 message',
+		case 'EIP712': {
+			const name = data.message.domain.name?.type === 'string' ? data.message.domain.name.value : 'Arbitary EIP712 message'
+			return {
+				title: `${ name } signing request`,
+				rejectAction: `Reject ${ name }`,
+				simulationAction: `Simulate ${ name }`,
+				signingAction: `Sign ${ name }`,
+			}
 		}
 		case 'NotParsed': return {
 			title: 'Arbitary Ethereum message signing request',
@@ -134,11 +137,7 @@ function SignRequest({ personalSignRequestData, renameAddressCallBack }: SignReq
 			renameAddressCallBack = { renameAddressCallBack }
 		/>
 		case 'EIP712': {
-			return <ArbitaryEIP712
-				enrichedEIP712Message = { personalSignRequestData.message }
-				renameAddressCallBack = { renameAddressCallBack }
-				isSubTable = { false }
-			/>
+			return <ArbitaryEIP712 enrichedEIP712 = { personalSignRequestData.message } renameAddressCallBack = { renameAddressCallBack } />
 		}
 		case 'OrderComponents': {
 			return <OrderComponents
@@ -220,11 +219,6 @@ function SafeTx({ personalSignRequestDataSafeTx, renameAddressCallBack }: { pers
 	</>
 }
 
-type ArbitaryEIP712Params = {
-	enrichedEIP712Message: EnrichedEIP712Message
-	renameAddressCallBack: RenameAddressCallBack
-	isSubTable: boolean
-}
 function visualizeEIP712Component(valueType: GroupedSolidityType, renameAddressCallBack: RenameAddressCallBack) {
 	switch(valueType.type) {
 		case 'address': return <SmallAddress addressBookEntry = { valueType.value } renameAddressCallBack = { renameAddressCallBack } />
@@ -242,22 +236,47 @@ function visualizeEIP712Component(valueType: GroupedSolidityType, renameAddressC
 		default: assertNever(valueType)
 	}
 }
+type EIP712Table = {
+	enrichedEIP712Message: EnrichedEIP712Message
+	renameAddressCallBack: RenameAddressCallBack
+	isSubTable: boolean
+}
 
-function ArbitaryEIP712({ enrichedEIP712Message, renameAddressCallBack, isSubTable }: ArbitaryEIP712Params) {
+function EIP712Table({ enrichedEIP712Message, renameAddressCallBack, isSubTable }: EIP712Table) {
 	return <span class = 'eip-712-table' style = { isSubTable ? 'justify-content: space-between;' : '' }>
 		<>{ Object.entries(enrichedEIP712Message).map(([key, entry]) => <>
 			{ entry === undefined ? <></> : <>
 				<CellElement text = { `${ key }: ` }/>
 				{ entry.type === 'record' || entry.type === 'record[]' ?
 					entry.type === 'record[]' ?
-						<CellElement text = { entry.value.map((value) => <ArbitaryEIP712 enrichedEIP712Message = { value } renameAddressCallBack = { renameAddressCallBack } isSubTable = { true }/>) } />
-						: <CellElement text = { <ArbitaryEIP712 enrichedEIP712Message = { entry.value } renameAddressCallBack = { renameAddressCallBack } isSubTable = { true }/>
+						<CellElement text = { entry.value.map((value) => <EIP712Table enrichedEIP712Message = { value } renameAddressCallBack = { renameAddressCallBack } isSubTable = { true }/>) } />
+						: <CellElement text = { <EIP712Table enrichedEIP712Message = { entry.value } renameAddressCallBack = { renameAddressCallBack } isSubTable = { true }/>
 					} />
 					: <CellElement text = { visualizeEIP712Component(entry, renameAddressCallBack) }/>
 				}
 			</> }
 		</>) } </>
 	</span>
+}
+
+type ArbitaryEIP712Params = {
+	enrichedEIP712: EnrichedEIP712
+	renameAddressCallBack: RenameAddressCallBack
+}
+
+function ArbitaryEIP712({ enrichedEIP712, renameAddressCallBack }: ArbitaryEIP712Params) {
+	return <>
+		<EIP712Table 
+			enrichedEIP712Message = { enrichedEIP712.domain }
+			renameAddressCallBack = { renameAddressCallBack }
+			isSubTable = { false }
+		/>
+		<EIP712Table 
+			enrichedEIP712Message = { enrichedEIP712.message }
+			renameAddressCallBack = { renameAddressCallBack }
+			isSubTable = { false }
+		/>
+	</>
 }
 
 const CellElement = (param: { text: ComponentChildren }) => {
