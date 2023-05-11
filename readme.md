@@ -1,4 +1,4 @@
-<img src = "extension/app/img/LOGOA_400x400.png" alt = "The cutest dino" style = "width: 200px;"/>
+<img src = "app/img/LOGOA_400x400.png" alt = "The cutest dino" style = "width: 200px;"/>
 
 # The Interceptor Alpha
 Introducing The Interceptor - the ultimate browser extension for Ethereum! Say goodbye to the confusion of making transactions with our intuitive tool that provides clear explanations of the type of Ethereum transactions you're making. The Interceptor can be used alongside with Metamask or as a standalone transaction simulation tool. With Metamask integration, you can easily send transactions by forwarding them for signing. But what really sets The Interceptor apart is its Simulation Mode. This powerful feature allows you to simulate multiple transactions and see exactly what they will do - even using DApps for free! Our extension is currently available on Chrome, Firefox, and Brave, and supports Ethereum Mainnet, Sepolia and Görli networks. Experience seamless Ethereum transactions like never before with The Interceptor.
@@ -25,8 +25,6 @@ We value your privacy highly. The Interceptor is designed to minimize privacy le
 
 ## Setup
 
-Browse to the `/extension` folder and then:
-
 Install:
 `npm ci --ignore-scripts`
 
@@ -34,9 +32,9 @@ Build:
 `npm run setup-chrome` for Chrome or `npm run setup-firefox` for firefox
 
 Then depending on your browser:
-- Chrome: Browse to `chrome://extensions/` and click `Load unpacked` and point to `\extension\app\manifest.json`.
-- Firefox: Browse to `about:debugging` and click `Load Temporary Add-on` and point to `\extension\app\manifest.json`.
-- Brave: Browse to `brave://extensions/` and click `Load unpacked` and point to `\extension\app\manifest.json`.
+- Chrome: Browse to `chrome://extensions/` and click `Load unpacked` and point to `\app\manifest.json`.
+- Firefox: Browse to `about:debugging` and click `Load Temporary Add-on` and point to `\app\manifest.json`.
+- Brave: Browse to `brave://extensions/` and click `Load unpacked` and point to `\app\manifest.json`.
 
 # Contact Us!
 You can reach us [Dark Florsts](https://www.dark.florist/) via [Discord](https://discord.gg/b66SwRZAbu) and twitter [@DarkFlorist](https://twitter.com/DarkFlorist)!

@@ -39,7 +39,7 @@ const SolidityType = funtypes.Union(
 	funtypes.Literal('uint240'),
 	funtypes.Literal('uint248'),
 	funtypes.Literal('uint256'),
-    funtypes.Literal('int8'),
+	funtypes.Literal('int8'),
 	funtypes.Literal('int16'),
 	funtypes.Literal('int24'),
 	funtypes.Literal('int32'),
@@ -110,7 +110,7 @@ const SolidityType = funtypes.Union(
 )
 
 function findType(name: string, types: readonly { readonly name: string, readonly type: string}[]) {
-    return types.find((x) => x.name === name)?.type
+	return types.find((x) => x.name === name)?.type
 }
 
 function separateArraySuffix(typeWithMaybeArraySuffix: string) {
@@ -120,65 +120,64 @@ function separateArraySuffix(typeWithMaybeArraySuffix: string) {
 }
 
 function validateEIP712TypesSubset(depth: number, message: JSONEncodeableObject, currentType: string, types: { [x: string]: readonly { readonly name: string, readonly type: string}[] | undefined }): boolean {
-    if (depth > 2) return false // do not allow too deep messages
-    const currentTypes = types[currentType]
-    if (currentTypes === undefined) return false
-    const keys = Object.keys(message)
-    for (const key of keys) {
-        const fullType = findType(key, currentTypes)
-        if (fullType === undefined) continue//TODO; PUT FALSE return false
-        const subMessage = message[key]
-        if (subMessage === undefined) return false
+	if (depth > 2) return false // do not allow too deep messages
+	const currentTypes = types[currentType]
+	if (currentTypes === undefined) return false
+	const keys = Object.keys(message)
+	for (const key of keys) {
+		const fullType = findType(key, currentTypes)
+		if (fullType === undefined) return false
+		const subMessage = message[key]
+		if (subMessage === undefined) return false
 		const arraylessType = separateArraySuffix(fullType)
 		if (arraylessType.isArray !== Array.isArray(subMessage)) return false
-        if (SolidityType.test(arraylessType.arraylessType)) continue
+		if (SolidityType.test(arraylessType.arraylessType)) continue
 		if (Array.isArray(subMessage)) {
 			if (subMessage.map((arrayElement) => validateEIP712TypesSubset(depth, arrayElement, arraylessType.arraylessType, types)).every((v) => v === true) === false) {
 				return false
 			}
 		} else {
 			if (!JSONEncodeableObject.test(subMessage)) return false
-       		if (validateEIP712TypesSubset(depth + 1, subMessage, arraylessType.arraylessType, types) === false) return false
+			if (validateEIP712TypesSubset(depth + 1, subMessage, arraylessType.arraylessType, types) === false) return false
 		}
-    }
-    return true
+	}
+	return true
 }
 
 export function validateEIP712Types(message: EIP712Message) {
-    return validateEIP712TypesSubset(0, message.message, message.primaryType, message.types)
+	return validateEIP712TypesSubset(0, message.message, message.primaryType, message.types)
 }
 
 export type GroupedSolidityType = funtypes.Static<typeof GroupedSolidityType>
 export const GroupedSolidityType = funtypes.Union(
-    funtypes.ReadonlyObject({ type: funtypes.Literal('integer'), value: EthereumQuantity }),
-    funtypes.ReadonlyObject({ type: funtypes.Literal('bytes'), value: EthereumData }),
+	funtypes.ReadonlyObject({ type: funtypes.Literal('integer'), value: EthereumQuantity }),
+	funtypes.ReadonlyObject({ type: funtypes.Literal('bytes'), value: EthereumData }),
 	funtypes.ReadonlyObject({ type: funtypes.Literal('fixedBytes'), value: EthereumData }),
-    funtypes.ReadonlyObject({ type: funtypes.Literal('bool'), value: funtypes.Boolean }),
-    funtypes.ReadonlyObject({ type: funtypes.Literal('string'), value: funtypes.String }),
-    funtypes.ReadonlyObject({ type: funtypes.Literal('address'), value: AddressBookEntry }),
+	funtypes.ReadonlyObject({ type: funtypes.Literal('bool'), value: funtypes.Boolean }),
+	funtypes.ReadonlyObject({ type: funtypes.Literal('string'), value: funtypes.String }),
+	funtypes.ReadonlyObject({ type: funtypes.Literal('address'), value: AddressBookEntry }),
 	
-    funtypes.ReadonlyObject({ type: funtypes.Literal('integer[]'), value: funtypes.ReadonlyArray(EthereumQuantity) }),
-    funtypes.ReadonlyObject({ type: funtypes.Literal('bytes[]'), value: funtypes.ReadonlyArray(EthereumData) }),
+	funtypes.ReadonlyObject({ type: funtypes.Literal('integer[]'), value: funtypes.ReadonlyArray(EthereumQuantity) }),
+	funtypes.ReadonlyObject({ type: funtypes.Literal('bytes[]'), value: funtypes.ReadonlyArray(EthereumData) }),
 	funtypes.ReadonlyObject({ type: funtypes.Literal('fixedBytes[]'), value: funtypes.ReadonlyArray(EthereumData) }),
-    funtypes.ReadonlyObject({ type: funtypes.Literal('bool[]'), value: funtypes.ReadonlyArray(funtypes.Boolean) }),
-    funtypes.ReadonlyObject({ type: funtypes.Literal('string[]'), value: funtypes.ReadonlyArray(funtypes.String) }),
-    funtypes.ReadonlyObject({ type: funtypes.Literal('address[]'), value: funtypes.ReadonlyArray(AddressBookEntry) }),
+	funtypes.ReadonlyObject({ type: funtypes.Literal('bool[]'), value: funtypes.ReadonlyArray(funtypes.Boolean) }),
+	funtypes.ReadonlyObject({ type: funtypes.Literal('string[]'), value: funtypes.ReadonlyArray(funtypes.String) }),
+	funtypes.ReadonlyObject({ type: funtypes.Literal('address[]'), value: funtypes.ReadonlyArray(AddressBookEntry) }),
 )
 
-type EnrichedEIP712MessageRecord = funtypes.Static<typeof EnrichedEIP712Message>
-const EnrichedEIP712MessageRecord = funtypes.ReadonlyRecord(
-    funtypes.String,
-    GroupedSolidityType
-)
+
+type typeEnrichedEIP712MessageRecord = GroupedSolidityType | { type: 'record', value: { [x: string]: typeEnrichedEIP712MessageRecord | undefined } } | { type: 'record[]', value: ReadonlyArray<{ [x: string]: typeEnrichedEIP712MessageRecord | undefined }> }
+type EnrichedEIP712MessageRecord = funtypes.Static<typeof EnrichedEIP712MessageRecord>
+const EnrichedEIP712MessageRecord: funtypes.Runtype<typeEnrichedEIP712MessageRecord> = funtypes.Lazy(() => funtypes.Union(
+	GroupedSolidityType,
+	funtypes.ReadonlyObject({ type: funtypes.Literal('record'), value: funtypes.ReadonlyRecord(funtypes.String, EnrichedEIP712MessageRecord) }),
+	funtypes.ReadonlyObject({ type: funtypes.Literal('record[]'), value: funtypes.ReadonlyArray(funtypes.ReadonlyRecord(funtypes.String, EnrichedEIP712MessageRecord)) }),
+))
 
 export type EnrichedEIP712Message = funtypes.Static<typeof EnrichedEIP712Message>
 export const EnrichedEIP712Message = funtypes.ReadonlyRecord(
-    funtypes.String,
-    funtypes.Union(
-        GroupedSolidityType,
-        funtypes.ReadonlyObject({ type: funtypes.Literal('record'), value: EnrichedEIP712MessageRecord }),
-        funtypes.ReadonlyObject({ type: funtypes.Literal('record[]'), value: funtypes.ReadonlyArray(EnrichedEIP712MessageRecord) })
-    )
+	funtypes.String,
+	EnrichedEIP712MessageRecord,
 )
 
 function getSolidityTypeCategory(type: SolidityType) {
@@ -313,28 +312,28 @@ function parseSolidityValueByType(type: SolidityType, value: unknown, userAddres
 }
 
 function extractEIP712MessageSubset(depth: number, message: JSONEncodeableObject, currentType: string, types: { [x: string]: readonly { readonly name: string, readonly type: string}[] | undefined }, userAddressBook: UserAddressBook): EnrichedEIP712Message {
-    if (depth > 2) throw new Error('Too deep EIP712 message')
-    const currentTypes = types[currentType]
-    if (currentTypes === undefined) throw new Error(`Types not found: ${ currentType }`)
-    const keys = Object.keys(message)
-    return Object.fromEntries(Array.from(keys).map((key) => {
-        const fullType = findType(key, currentTypes)
-        if (fullType === undefined) return [key, { 'type': 'string', value: message[key] }]//TODO PUT ERROR BACK throw new Error(`Type not found for key: ${ key }`)
+	if (depth > 2) throw new Error('Too deep EIP712 message')
+	const currentTypes = types[currentType]
+	if (currentTypes === undefined) throw new Error(`Types not found: ${ currentType }`)
+	const messageEntries = Object.entries(message)
+	const pairArray: [string, EnrichedEIP712MessageRecord][] = Array.from(messageEntries).map(([key, messageEntry]) => {
+		if (messageEntry === undefined) throw new Error(`Subtype not found: ${ key }`)
+		const fullType = findType(key, currentTypes)
+		if (fullType === undefined) throw new Error(`Type not found for key: ${ key }`)
 		const arraylessType = separateArraySuffix(fullType)
-        if (SolidityType.test(arraylessType.arraylessType)) {
-			return [key, parseSolidityValueByType(SolidityType.parse(arraylessType.arraylessType), message[key], userAddressBook, arraylessType.isArray)]
-		}
-        const subMessage = message[key]
-        if (subMessage === undefined) throw new Error(`Subtype not found: ${ key }`)
-		if (arraylessType.isArray) {
-			if (!Array.isArray(subMessage)) throw new Error(`Type was defined to be an array but it was not: ${ subMessage }`)
-			return [key, { 'type': 'record[]', value: subMessage.map((subSubMessage) => extractEIP712MessageSubset(depth + 1, subSubMessage, arraylessType.arraylessType, types, userAddressBook)) }]
-		}
-        if (!JSONEncodeableObject.test(subMessage)) throw new Error(`Not a JSON type: ${ subMessage }`)
-        return [key, { 'type': 'record', value: extractEIP712MessageSubset(depth + 1, subMessage, fullType, types, userAddressBook) }]
-    }))
+		if (SolidityType.test(arraylessType.arraylessType)) {
+				return [key, parseSolidityValueByType(SolidityType.parse(arraylessType.arraylessType), messageEntry, userAddressBook, arraylessType.isArray)]
+			}
+			if (arraylessType.isArray) {
+				if (!Array.isArray(messageEntry)) throw new Error(`Type was defined to be an array but it was not: ${ messageEntry }`)
+				return [key, { type: 'record[]', value: messageEntry.map((subSubMessage) => extractEIP712MessageSubset(depth + 1, subSubMessage, arraylessType.arraylessType, types, userAddressBook)) }]
+			}
+		if (!JSONEncodeableObject.test(messageEntry)) throw new Error(`Not a JSON type: ${ messageEntry }`)
+		return [key, { type: 'record', value: extractEIP712MessageSubset(depth + 1, messageEntry, fullType, types, userAddressBook) }]
+	})
+	return pairArray.reduce((accumulator, [key, value]) => ({ ...accumulator, [key]: value}), {} as EnrichedEIP712Message)
 }
 
 export function extractEIP712Message(message: EIP712Message, userAddressBook: UserAddressBook): EnrichedEIP712Message {
-    return extractEIP712MessageSubset(0, message.message, message.primaryType, message.types, userAddressBook)
+	return extractEIP712MessageSubset(0, message.message, message.primaryType, message.types, userAddressBook)
 }
