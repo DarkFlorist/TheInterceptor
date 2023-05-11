@@ -734,6 +734,9 @@ export const JSONEncodeable: funtypes.Runtype<typeJSONEncodeable> = funtypes.Laz
 export type JSONEncodeableObject = funtypes.Static<typeof JSONEncodeableObject>
 export const JSONEncodeableObject = funtypes.ReadonlyRecord(funtypes.String, JSONEncodeable)
 
+export type JSONEncodeableObjectOrArray = funtypes.Static<typeof JSONEncodeableObjectOrArray>
+export const JSONEncodeableObjectOrArray = funtypes.Union(funtypes.ReadonlyArray(JSONEncodeable), funtypes.ReadonlyRecord(funtypes.String, JSONEncodeable))
+
 export type EIP712MessageUnderlying = funtypes.Static<typeof EIP712MessageUnderlying>
 export const EIP712MessageUnderlying = funtypes.ReadonlyObject({
 	types: funtypes.Record(funtypes.String, funtypes.ReadonlyArray(

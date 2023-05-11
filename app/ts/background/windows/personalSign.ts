@@ -10,6 +10,7 @@ import { AddressBookEntry, SignerName, Website, WebsiteSocket, WebsiteTabConnect
 import { OldSignTypedDataParams, PersonalSignParams, SignTypedDataParams } from '../../utils/wire-types.js'
 import { personalSignWithSimulator, sendMessageToContentScript } from '../background.js'
 import { getHtmlFile, sendPopupMessageToOpenWindows } from '../backgroundUtils.js'
+import { extractEIP712Message, validateEIP712Types } from '../../utils/eip712Parsing.js'
 import { getAddressMetaData, getTokenMetadata } from '../metadataUtils.js'
 import { getPendingPersonalSignPromise, getSettings, getSignerName, setPendingPersonalSignPromise } from '../settings.js'
 
@@ -119,13 +120,14 @@ export async function craftPersonalSignPopupMessage(ethereumClientService: Ether
 		parsed = PersonalSignRequestIdentifiedEIP712Message.parse(namedParams.param)
 	} catch {
 		// if we fail to parse the message, that means it's a message type we do not identify, let's just show it as a nonidentified EIP712 message
+		if (validateEIP712Types(namedParams.param) === false) throw new Error('Not a valid EIP712 Message')
 		return {
 			method: 'popup_personal_sign_request',
 			data: {
 				originalParams,
 				...basicParams,
 				type: 'EIP712' as const,
-				message: namedParams.param,
+				message: extractEIP712Message(namedParams.param, userAddressBook),
 				account,
 				quarantine: false,
 				quarantineCodes: []
