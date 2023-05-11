@@ -31,29 +31,24 @@ type SignerExplanationParams = {
 function SignerExplanation(param: SignerExplanationParams) {
 	if (param.activeAddress !== undefined) return <></>
 	if (param.tabIcon === ICON_NOT_ACTIVE) {
-		return <div class = 'content'>
-			<p class = 'paragraph' style = 'color: var(--subtitle-text-color)'>(The page you are looking at has not yet connected to the wallet, or you do not have a browser wallet installed)</p>
-		</div>
+		return <>
+			<div class = 'notification' style = 'background-color: var(--card-content-bg-color); padding: 10px; margin: 10px;'>
+				<DinoSays text = 'The page you are looking at has not connected to a wallet, or you do not have a browser wallet installed.'/>
+			</div>
+		</>
 	}
 	if (param.useSignersAddressAsActiveAddress || !param.simulationMode) {
-		<div class = 'content'>
-			<p class = 'paragraph' style = 'color: var(--subtitle-text-color)'>
-				{ param.signerName === 'NoSigner'
-					? 'Please make sure that you have gone through the wallet connection process on the page and allowed the page to see your signer account.'
-					: `Please make sure that you have gone through the wallet connection process on the page and allowed the page to see your ${ getPrettySignerName(param.signerName) } account.`
-				}
-			</p>
-		</div>
+		return  <>
+			<div class = 'notification' style = 'background-color: var(--card-content-bg-color); padding: 10px; margin: 10px;'>
+				<DinoSays text = { `Please make sure that you have gone through the wallet connection process on the page and allowed the page to see your ${ param.signerName === 'NoSigner' ? 'signer' : getPrettySignerName(param.signerName) } account.` }/>
+			</div>
+		</>
 	}
 	return <></>
 }
 
-function FirstCard(param: FirstCardParams) {
-	function connectToSigner() {
-		sendPopupMessageToBackgroundPage({ method: 'popup_requestAccountsFromSigner', options: true })
-	}
-
-	return <div class = 'card' style = 'margin: 10px;'>
+function FirstCardHeader(param: FirstCardParams) {
+	return <>
 		<header class = 'card-header'>
 			<div class = 'card-header-icon unset-cursor'>
 				<span class = 'icon' style = 'height: 3rem; width: 3rem;'>
@@ -83,58 +78,77 @@ function FirstCard(param: FirstCardParams) {
 			<div class = 'card-header-icon unset-cursor'>
 				<ChainSelector currentChain = { param.activeChain } changeChain = { (chainId: bigint) => { param.changeActiveChain(chainId) } }/>
 			</div>
-
 		</header>
-		<div class = 'card-content'>
-			{ param.useSignersAddressAsActiveAddress || !param.simulationMode ?
-				<p style = 'color: var(--text-color); text-align: left'>
-					<span class = 'vertical-center' style = 'display: inline-flex;' >
-						{ param.signerName === 'NoSigner' ? 'Trying to retrieve from a signer, but signer is not connected' :
-							<>Retrieving from&nbsp;
-								<SignersLogoName signerName = { param.signerName } />
-							</>
-						}
-					</span>
-					{ param.signerAccounts !== undefined && param.signerAccounts.length > 0 && param.tabIconDetails.icon !== ICON_NOT_ACTIVE ? <span style = 'float: right; color: var(--primary-color);'> CONNECTED </span> :
-						param.tabIconDetails.icon === ICON_SIGNING || param.tabIconDetails.icon === ICON_SIGNING_NOT_SUPPORTED ? <span style = 'float: right; color: var(--negative-color);'> NOT CONNECTED </span> : <></>
-					}
-				</p>
-				: <></>
-			}
+	</>
+}
 
-			<ActiveAddress
-				activeAddress = { param.activeAddress !== undefined ? { type: 'addressInfo' as const, ...param.activeAddress } : undefined }
-				buttonText = { 'Change' }
-				disableButton = { !param.simulationMode }
-				changeActiveAddress = { param.changeActiveAddress }
-				renameAddressCallBack = { param.renameAddressCallBack }
-			/>
-			<SignerExplanation
-				activeAddress = { param.activeAddress }
-				simulationMode = { param.simulationMode }
-				signerName = { param.signerName }
-				useSignersAddressAsActiveAddress = { param.useSignersAddressAsActiveAddress }
-				tabIcon = { param.tabIconDetails.icon }
-			/>
-			{ !param.simulationMode ?
-				( (param.signerAccounts === undefined || param.signerAccounts.length == 0) && param.tabIconDetails.icon !== ICON_NOT_ACTIVE ) ?
-					<div style = 'margin-top: 5px'>
-						<button className = 'button is-primary' onClick = { connectToSigner } >
-							<SignerLogoText
-								signerName = { param.signerName }
-								text = { `Connect to ${ getPrettySignerName(param.signerName) }` }
-							/>
-						</button>
-					</div>
-				: <p style = 'color: var(--subtitle-text-color);' class = 'subtitle is-7'> { ` You can change active address by changing it directly from ${ getPrettySignerName(param.signerName) }` } </p>
-			:
-				<label class = 'form-control' style = 'padding-top: 10px'>
-					<input type = 'checkbox' checked = { param.makeMeRich } onInput = { e => { if (e.target instanceof HTMLInputElement && e.target !== null) { enableMakeMeRich(e.target.checked) } } } />
-					<p class = 'paragraph checkbox-text'>Make me rich</p>
-				</label>
-			}
+function FirstCard(param: FirstCardParams) {
+	function connectToSigner() {
+		sendPopupMessageToBackgroundPage({ method: 'popup_requestAccountsFromSigner', options: true })
+	}
+
+	if (param.signerName === 'NoSigner' && param.simulationMode === false) {
+		return <>
+			<div class = 'card' style = 'margin: 10px;'>
+				<FirstCardHeader { ...param }/>
+				<div class = 'card-content'>
+					<DinoSays text = { 'No signer connnected. You can use Interceptor in simulation mode without a signer, but signing mode requires a browser wallet.' } />
+				</div>
+			</div>
+		</>
+	}
+
+	return <>
+		<div class = 'card' style = 'margin: 10px;'>
+			<FirstCardHeader { ...param }/>
+			<div class = 'card-content'>
+				{ param.useSignersAddressAsActiveAddress || !param.simulationMode ?
+					<p style = 'color: var(--text-color); text-align: left; padding-bottom: 10px'>
+						{ param.signerName === 'NoSigner' ? 'Retrieving address from a signer' :
+							<>Retrieving from&nbsp;<SignersLogoName signerName = { param.signerName } /></>
+						}
+						{ param.signerAccounts !== undefined && param.signerAccounts.length > 0 && param.tabIconDetails.icon !== ICON_NOT_ACTIVE ? <span style = 'float: right; color: var(--primary-color);'> CONNECTED </span> :
+							param.tabIconDetails.icon === ICON_SIGNING || param.tabIconDetails.icon === ICON_SIGNING_NOT_SUPPORTED ? <span style = 'float: right; color: var(--negative-color);'> NOT CONNECTED </span> : <></>
+						}
+					</p>
+					: <></>
+				}
+
+				<ActiveAddress
+					activeAddress = { param.activeAddress !== undefined ? { type: 'addressInfo' as const, ...param.activeAddress } : undefined }
+					buttonText = { 'Change' }
+					disableButton = { !param.simulationMode }
+					changeActiveAddress = { param.changeActiveAddress }
+					renameAddressCallBack = { param.renameAddressCallBack }
+				/>
+				{ !param.simulationMode ?
+					( (param.signerAccounts === undefined || param.signerAccounts.length == 0) && param.tabIconDetails.icon !== ICON_NOT_ACTIVE ) ?
+						<div style = 'margin-top: 5px'>
+							<button className = 'button is-primary' onClick = { connectToSigner } >
+								<SignerLogoText
+									signerName = { param.signerName }
+									text = { `Connect to ${ getPrettySignerName(param.signerName) }` }
+								/>
+							</button>
+						</div>
+					: <p style = 'color: var(--subtitle-text-color);' class = 'subtitle is-7'> { ` You can change active address by changing it directly from ${ getPrettySignerName(param.signerName) }` } </p>
+				:
+					<label class = 'form-control' style = 'padding-top: 10px'>
+						<input type = 'checkbox' checked = { param.makeMeRich } onInput = { e => { if (e.target instanceof HTMLInputElement && e.target !== null) { enableMakeMeRich(e.target.checked) } } } />
+						<p class = 'paragraph checkbox-text'>Make me rich</p>
+					</label>
+				}
+			</div>
 		</div>
-	</div>
+	
+		<SignerExplanation
+			activeAddress = { param.activeAddress }
+			simulationMode = { param.simulationMode }
+			signerName = { param.signerName }
+			useSignersAddressAsActiveAddress = { param.useSignersAddressAsActiveAddress }
+			tabIcon = { param.tabIconDetails.icon }
+		/>
+	</>
 }
 
 function SimulationResults(param: SimulationStateParam) {
@@ -285,7 +299,7 @@ export function Home(param: HomeParams) {
 		{ simulationMode && simulationAndVisualisationResults === undefined && activeSimulationAddress !== undefined ?
 			<div style = 'margin-top: 0px; margin-left: 10px; margin-right: 10px;'>
 				<div class = 'vertical-center'>
-					<Spinner/>
+					<Spinner height = '1em'/>
 					<span style = 'margin-left: 0.2em' > Simulating... </span>
 				</div>
 			</div>

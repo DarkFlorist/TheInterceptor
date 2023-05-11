@@ -374,10 +374,9 @@ svg.spinner > circle {
 }
 
 .center-to-page {
-	position: absolute;
+	position: fixed;
 	top: 50%;
 	left: 50%;
-	margin-right: -50%;
 	transform: translate(-50%, -50%);
 }
 /* Scrollbar */
@@ -666,4 +665,16 @@ svg.spinner > circle {
 	margin-right: 10px;
 	margin-top: 0px;
 	margin-bottom: 0px;
+}
+
+.eip-712-table {
+	display: grid;
+	grid-template-columns: max-content auto auto auto auto;
+	justify-content: center;
+	column-gap: 5px;
+	grid-template-columns: auto auto;
+	background-color: var(--alpha-005);
+	margin: 5px;
+	padding: 5px;
+	border-radius: 5px;
 }
