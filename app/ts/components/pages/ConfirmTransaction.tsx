@@ -3,7 +3,7 @@ import { ConfirmTransactionDialogState, ConfirmTransactionSimulationBaseData, Ex
 import { SimulatedAndVisualizedTransaction, SimulationAndVisualisationResults } from '../../utils/visualizer-types.js'
 import Hint from '../subcomponents/Hint.js'
 import { ExtraDetailsTransactionCard, GasFee, LogAnalysisCard, SimulatedInBlockNumber, TransactionHeader, TransactionsAccountChangesCard } from '../simulationExplaining/SimulationSummary.js'
-import { Spinner } from '../subcomponents/Spinner.js'
+import { CenterToPageTextSpinner } from '../subcomponents/Spinner.js'
 import { AddNewAddress } from './AddNewAddress.js'
 import { AddingNewAddressType, AddressBookEntry } from '../../utils/user-interface-types.js'
 import { sendPopupMessageToBackgroundPage } from '../../background/backgroundUtils.js'
@@ -196,23 +196,8 @@ export function ConfirmTransaction() {
 		</div>
 	}
 
-	if (dialogState === undefined) {
-		return <main class = 'center-to-page'>
-			<div class = 'vertical-center' style = 'scale: 3'>
-				<Spinner/>
-				<span style = 'margin-left: 0.2em' > Simulating... </span>
-			</div>
-		</main>
-	}
-
-	if (dialogState.state === 'failed') {
-		return <main class = 'center-to-page'>
-			<div class = 'vertical-center' style = 'scale: 3'>
-				<Spinner/>
-				<span style = 'margin-left: 0.2em' > Failed to simulate transaction. Retrying... </span>
-			</div>
-		</main>
-	}
+	if (dialogState === undefined) return <CenterToPageTextSpinner text = 'Simulating...'/>
+	if (dialogState.state === 'failed') return <CenterToPageTextSpinner text = 'Failed to simulate. Retrying...'/>
 
 	return (
 		<main>
