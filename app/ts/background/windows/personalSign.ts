@@ -10,6 +10,7 @@ import { AddressBookEntry, SignerName, Website, WebsiteSocket, WebsiteTabConnect
 import { OldSignTypedDataParams, PersonalSignParams, SignTypedDataParams } from '../../utils/wire-types.js'
 import { personalSignWithSimulator, sendMessageToContentScript } from '../background.js'
 import { getHtmlFile, sendPopupMessageToOpenWindows } from '../backgroundUtils.js'
+import { extractEIP712Message, validateEIP712Types } from '../../utils/eip712Parsing.js'
 import { getAddressMetaData, getTokenMetadata } from '../metadataUtils.js'
 import { getPendingPersonalSignPromise, getSettings, getSignerName, setPendingPersonalSignPromise } from '../settings.js'
 
@@ -114,24 +115,26 @@ export async function craftPersonalSignPopupMessage(ethereumClientService: Ether
 	const namedParams = { param: originalParams.params[1], account: originalParams.params[0] }
 	const account = getAddressMetaData(namedParams.account, userAddressBook)
 	
-	let parsed 
-	try {
-		parsed = PersonalSignRequestIdentifiedEIP712Message.parse(namedParams.param)
-	} catch {
+	const maybeParsed = PersonalSignRequestIdentifiedEIP712Message.safeParse(namedParams.param)
+	if (maybeParsed.success === false) {
 		// if we fail to parse the message, that means it's a message type we do not identify, let's just show it as a nonidentified EIP712 message
+		if (validateEIP712Types(namedParams.param) === false) throw new Error('Not a valid EIP712 Message')
+		const message = extractEIP712Message(namedParams.param, userAddressBook)
+		const chainid = message.domain.chainId?.type === 'integer' ? BigInt(message.domain.chainId?.value) : undefined
+
 		return {
 			method: 'popup_personal_sign_request',
 			data: {
 				originalParams,
 				...basicParams,
 				type: 'EIP712' as const,
-				message: namedParams.param,
+				message,
 				account,
-				quarantine: false,
-				quarantineCodes: []
+				...chainid === undefined ? { quarantine: false, quarantineCodes: [] } : await getQuarrantineCodes(chainid, account, activeAddressWithMetadata, undefined)
 			}
 		} as const
 	}
+	const parsed = maybeParsed.value
 	switch (parsed.primaryType) {
 		case 'Permit': {
 			const token = await getTokenMetadata(ethereumClientService, parsed.domain.verifyingContract)
