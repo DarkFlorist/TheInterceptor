@@ -48,7 +48,7 @@ export async function main() {
 	}
 
 	const exampleTransaction = {
-		type: '1559' as const,
+		type: '1559',
 		from: 0xd8da6bf26964af9d7eed9e03e53415d37aa96045n,
 		nonce: 0n,
 		maxFeePerGas: 1n,
@@ -58,7 +58,7 @@ export async function main() {
 		value: 10n,
 		input: new Uint8Array(0),
 		chainId: 5n,
-	}
+	} as const
 
 	describe('Nethermind testing', () => {
 

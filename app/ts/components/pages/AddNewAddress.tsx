@@ -151,7 +151,7 @@ export function AddNewAddress(param: AddAddressParam) {
 				await sendPopupMessageToBackgroundPage({
 					method: 'popup_addOrModifyAddressBookEntry',
 					options: {
-						type: 'contact' as const,
+						type: 'contact',
 						name: nameInput ? nameInput : ethers.getAddress(addressInput),
 						address: BigInt(addressInput),
 					}
@@ -162,7 +162,7 @@ export function AddNewAddress(param: AddAddressParam) {
 				await sendPopupMessageToBackgroundPage({
 					method: 'popup_addOrModifyAddressBookEntry',
 					options: {
-						type: 'addressInfo' as const,
+						type: 'addressInfo',
 						name: nameInput ? nameInput : ethers.getAddress(addressInput),
 						address: BigInt(addressInput),
 						askForAddressAccess: askForAddressAccess,

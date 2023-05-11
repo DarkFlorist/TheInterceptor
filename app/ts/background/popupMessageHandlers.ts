@@ -172,7 +172,7 @@ export async function refreshPopupConfirmTransactionMetadata(ethereumClientServi
 	console.log('refreshPopupConfirmTransactionMetadata')
 	const addressMetadata = await getAddressBookEntriesForVisualiser(ethereumClientService, data.visualizerResults.map((x) => x.visualizerResults), data.simulationState, userAddressBook)
 	return await sendPopupMessageToOpenWindows({
-		method: 'popup_confirm_transaction_simulation_state_changed' as const,
+		method: 'popup_confirm_transaction_simulation_state_changed',
 		data: { ...data, addressBookEntries: addressMetadata }
 	})
 }

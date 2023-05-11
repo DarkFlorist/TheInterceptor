@@ -89,13 +89,13 @@ export async function craftPersonalSignPopupMessage(ethereumClientService: Ether
 			data: {
 				originalParams,
 				...basicParams,
-				type: 'NotParsed' as const,
+				type: 'NotParsed',
 				message: stringifyJSONWithBigInts(originalParams.params[0], 4),
 				account: getAddressMetaData(originalParams.params[1], userAddressBook),
 				quarantine: false,
 				quarantineCodes: [],
 			}
-		} as const
+		}
 	}
 
 	if (originalParams.method === 'personal_sign') {
@@ -104,13 +104,13 @@ export async function craftPersonalSignPopupMessage(ethereumClientService: Ether
 			data: {
 				originalParams,
 				...basicParams,
-				type: 'NotParsed' as const,
+				type: 'NotParsed',
 				message: originalParams.params[0],
 				account: getAddressMetaData(originalParams.params[1], userAddressBook),
 				quarantine: false,
 				quarantineCodes: [],
 			}
-		} as const
+		}
 	}
 	const namedParams = { param: originalParams.params[1], account: originalParams.params[0] }
 	const account = getAddressMetaData(namedParams.account, userAddressBook)
@@ -127,12 +127,12 @@ export async function craftPersonalSignPopupMessage(ethereumClientService: Ether
 			data: {
 				originalParams,
 				...basicParams,
-				type: 'EIP712' as const,
+				type: 'EIP712',
 				message,
 				account,
 				...chainid === undefined ? { quarantine: false, quarantineCodes: [] } : await getQuarrantineCodes(chainid, account, activeAddressWithMetadata, undefined)
 			}
-		} as const
+		}
 	}
 	const parsed = maybeParsed.value
 	switch (parsed.primaryType) {
@@ -145,7 +145,7 @@ export async function craftPersonalSignPopupMessage(ethereumClientService: Ether
 				data: {
 					originalParams,
 					...basicParams,
-					type: 'Permit' as const,
+					type: 'Permit',
 					message: parsed,
 					account,
 					addressBookEntries: {
@@ -155,7 +155,7 @@ export async function craftPersonalSignPopupMessage(ethereumClientService: Ether
 					},
 					...await getQuarrantineCodes(BigInt(parsed.domain.chainId), account, activeAddressWithMetadata, owner),
 				}
-			} as const
+			}
 		}
 		case 'PermitSingle': {
 			const token = await getTokenMetadata(ethereumClientService, parsed.message.details.token)
@@ -165,7 +165,7 @@ export async function craftPersonalSignPopupMessage(ethereumClientService: Ether
 				data: {
 					originalParams,
 					...basicParams,
-					type: 'Permit2' as const,
+					type: 'Permit2',
 					message: parsed,
 					account,
 					addressBookEntries: {
@@ -175,14 +175,14 @@ export async function craftPersonalSignPopupMessage(ethereumClientService: Ether
 					},
 					...await getQuarrantineCodes(parsed.domain.chainId, account, activeAddressWithMetadata, undefined),
 				}
-			} as const
+			}
 		}
 		case 'SafeTx': return {
 			method: 'popup_personal_sign_request',
 			data: {
 				originalParams,
 				...basicParams,
-				type: 'SafeTx' as const,
+				type: 'SafeTx',
 				message: parsed,
 				account,
 				addressBookEntries: {
@@ -194,18 +194,18 @@ export async function craftPersonalSignPopupMessage(ethereumClientService: Ether
 				quarantine: false,
 				quarantineCodes: [],
 			}
-		} as const
+		}
 		case 'OrderComponents': return {
 			method: 'popup_personal_sign_request',
 			data: {
 				originalParams,
 				...basicParams,
-				type: 'OrderComponents' as const,
+				type: 'OrderComponents',
 				message: await addMetadataToOpenSeaOrder(ethereumClientService, parsed.message, userAddressBook),
 				account,
 				...await getQuarrantineCodes(parsed.domain.chainId, account, activeAddressWithMetadata, undefined),
 			}
-		} as const
+		}
 		default: assertNever(parsed)
 	}
 }
@@ -293,7 +293,7 @@ async function resolve(reply: PersonalSign, simulationMode: boolean, params: Per
 			if (result === undefined) return reject()
 			return { result: result }
 		}
-		return { forward: true as const }
+		return { forward: true } as const
 	}
 	return reject()
 }

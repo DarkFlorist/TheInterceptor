@@ -329,7 +329,7 @@ export const getSimulatedCode = async (ethereumClientService: EthereumClientServ
 	const input = stringToUint8Array(atInterface.encodeFunctionData('at', [addressString(address)]))
 
 	const getCodeTransaction = {
-		type: '1559' as const,
+		type: '1559',
 		from: MOCK_ADDRESS,
 		chainId: ethereumClientService.getChainId(),
 		nonce: await ethereumClientService.getTransactionCount(MOCK_ADDRESS),
@@ -514,7 +514,7 @@ export const getTokenDecimals = async (ethereumClientService: EthereumClientServ
 export const simulatedCall = async (ethereumClientService: EthereumClientService, simulationState: SimulationState, params: Pick<IUnsignedTransaction1559, 'to' | 'from' | 'input' | 'value' | 'maxFeePerGas' | 'maxPriorityFeePerGas' | 'gasLimit'>, blockTag: EthereumBlockTag = 'latest') => {
 	const transaction = {
 		...params,
-		type: '1559' as const,
+		type: '1559',
 		gas: params.gasLimit,
 		nonce: await getSimulatedTransactionCount(ethereumClientService, simulationState, params.from, blockTag),
 		chainId: ethereumClientService.getChainId(),
