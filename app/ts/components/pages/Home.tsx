@@ -285,7 +285,7 @@ export function Home(param: HomeParams) {
 		{ simulationMode && simulationAndVisualisationResults === undefined && activeSimulationAddress !== undefined ?
 			<div style = 'margin-top: 0px; margin-left: 10px; margin-right: 10px;'>
 				<div class = 'vertical-center'>
-					<Spinner/>
+					<Spinner height = '1em'/>
 					<span style = 'margin-left: 0.2em' > Simulating... </span>
 				</div>
 			</div>
