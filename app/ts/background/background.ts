@@ -167,22 +167,18 @@ async function handleSimulationMode(
 	request: InterceptedRequest,
 	settings: Settings
 ): Promise<HandleSimulationModeReturnValue> {
-	let parsedRequest // separate request parsing and request handling. If there's a parse error, throw that to API user
-	try {
-		parsedRequest = EthereumJsonRpcRequest.parse(request.options)
-	} catch (error) {
+	const maybeParsedRequest = EthereumJsonRpcRequest.safeParse(request.options)
+	if (maybeParsedRequest.success === false) {
 		console.log(request)
-		console.warn(error)
-		if (error instanceof Error) {
-			return {
-				error: {
-					message: error.message,
-					code: 400,
-				}
+		console.warn(maybeParsedRequest.fullError)
+		return {
+			error: {
+				message: maybeParsedRequest.fullError === undefined ? 'Unknown parsing error' : maybeParsedRequest.fullError.toString(),
+				code: 400,
 			}
 		}
-		throw error
 	}
+	const parsedRequest = maybeParsedRequest.value
 
 	switch (parsedRequest.method) {
 		case 'eth_getBlockByNumber': return await getBlockByNumber(simulator.ethereum, simulationState, parsedRequest)
@@ -254,22 +250,18 @@ async function handleSigningMode(
 	request: InterceptedRequest,
 	settings: Settings
 ): Promise<HandleSimulationModeReturnValue> {
-	let parsedRequest // separate request parsing and request handling. If there's a parse error, throw that to API user
-	try {
-		parsedRequest = EthereumJsonRpcRequest.parse(request.options)
-	} catch (error) {
-		console.warn(request)
-		console.warn(error)
-		if (error instanceof Error) {
-			return {
-				error: {
-					message: error.message,
-					code: 400,
-				}
+	const maybeParsedRequest = EthereumJsonRpcRequest.safeParse(request.options)
+	if (maybeParsedRequest.success === false) {
+		console.log(request)
+		console.warn(maybeParsedRequest.fullError)
+		return {
+			error: {
+				message: maybeParsedRequest.fullError === undefined ? 'Unknown parsing error' : maybeParsedRequest.fullError.toString(),
+				code: 400,
 			}
 		}
-		throw error
 	}
+	const parsedRequest = maybeParsedRequest.value
 
 	const forwardToSigner = () => ({ forward: true } as const)
 
@@ -585,22 +577,18 @@ async function popupMessageHandler(
 	request: unknown,
 	settings: Settings
 ) {
-	let parsedRequest // separate request parsing and request handling. If there's a parse error, throw that to API user
-	try {
-		parsedRequest = PopupMessage.parse(request)
-	} catch (error) {
-		console.warn(request)
-		console.warn(error)
-		if (error instanceof Error) {
-			return {
-				error: {
-					message: error.message,
-					code: 400,
-				}
+	const maybeParsedRequest = PopupMessage.safeParse(request)
+	if (maybeParsedRequest.success === false) {
+		console.log(request)
+		console.warn(maybeParsedRequest.fullError)
+		return {
+			error: {
+				message: maybeParsedRequest.fullError === undefined ? 'Unknown parsing error' : maybeParsedRequest.fullError.toString(),
+				code: 400,
 			}
 		}
-		throw error
 	}
+	const parsedRequest = maybeParsedRequest.value
 
 	switch (parsedRequest.method) {
 		case 'popup_confirmDialog': return await confirmDialog(simulator.ethereum, websiteTabConnections, parsedRequest)
