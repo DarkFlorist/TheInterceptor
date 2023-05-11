@@ -12,7 +12,7 @@ export function Spinner({ height } : { height: string }) {
 
 export function CenterToPageTextSpinner({ text } : { text: string }) {
 	return <main class = 'center-to-page'>
-		<div style = 'display: grid;'>
+		<div style = 'display: grid; place-items: center;'>
 			<Spinner height = '3em'/>
 			<p class = 'paragraph' style = 'font-size: 2em; word-break: break-word; color: var(--unimportant-text-color); padding-top: 10px; text-align: center;'> { text } </p>
 		</div>
