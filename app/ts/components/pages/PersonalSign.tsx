@@ -11,7 +11,7 @@ import { assertNever } from '../../utils/typescript.js'
 import { SimpleTokenApprovalVisualisation } from '../simulationExplaining/customExplainers/SimpleTokenApprovalVisualisation.js'
 import { SmallAddress, WebsiteOriginText } from '../subcomponents/address.js'
 import { SignerLogoText } from '../subcomponents/signers.js'
-import { Spinner } from '../subcomponents/Spinner.js'
+import { CenterToPageTextSpinner } from '../subcomponents/Spinner.js'
 import { SomeTimeAgo } from '../subcomponents/SomeTimeAgo.js'
 import { QuarantineCodes } from '../simulationExplaining/Transactions.js'
 import { ComponentChildren } from 'preact'
@@ -443,14 +443,7 @@ export function PersonalSign() {
 		setAddingNewAddress({ addingAddress: false, entry: entry })
 	}
 
-	if (personalSignRequestData === undefined) {
-		return <main class = 'center-to-page'>
-			<div class = 'vertical-center' style = 'scale: 3'>
-				<Spinner/>
-				<span style = 'margin-left: 0.2em' > Visualizing... </span>
-			</div>
-		</main>
-	}
+	if (personalSignRequestData === undefined) return <CenterToPageTextSpinner text = 'Visualizing...'/>
 	
 	return (
 		<main>

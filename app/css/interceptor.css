@@ -374,10 +374,9 @@ svg.spinner > circle {
 }
 
 .center-to-page {
-	position: absolute;
+	position: fixed;
 	top: 50%;
 	left: 50%;
-	margin-right: -50%;
 	transform: translate(-50%, -50%);
 }
 /* Scrollbar */
