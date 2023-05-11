@@ -8,7 +8,7 @@ import { changeAccess, getAddressMetadataForAccess, removePendingAccessRequestAn
 import { resolveChainChange } from './windows/changeChain.js'
 import { getAssociatedAddresses, sendMessageToApprovedWebsitePorts, updateWebsiteApprovalAccesses } from './accessManagement.js'
 import { getHtmlFile, sendPopupMessageToOpenWindows } from './backgroundUtils.js'
-import { isSupportedChain } from '../utils/constants.js'
+import { CHROME_NO_TAB_WITH_ID_ERROR, isSupportedChain } from '../utils/constants.js'
 import { getMetadataForAddressBookData } from './medataSearch.js'
 import { findAddressInfo, getAddressBookEntriesForVisualiser } from './metadataUtils.js'
 import { assertUnreachable } from '../utils/typescript.js'
@@ -270,7 +270,14 @@ export async function openAddressBook() {
 	const addressBookTab = allTabs.find((tab) => tab.id === tabId)
 
 	if (addressBookTab?.id === undefined) return await openInNewTab()
-	return await browser.tabs.update(addressBookTab.id, { active: true })
+	try {
+		return await browser.tabs.update(addressBookTab.id, { active: true })
+	} catch (error) {
+		if (!(error instanceof Error)) throw error
+		if (!error.message?.includes(CHROME_NO_TAB_WITH_ID_ERROR)) throw error
+		// if tab is not found (user might have closed it)
+		return await openInNewTab()
+	}
 }
 
 export async function homeOpened(simulator: Simulator) {
