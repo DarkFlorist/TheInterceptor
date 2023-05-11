@@ -20,6 +20,7 @@ import { PersonalSignRequestData, PersonalSignRequestDataPermit, PersonalSignReq
 import { OrderComponents, OrderComponentsExtraDetails } from '../simulationExplaining/customExplainers/OpenSeaOrder.js'
 import { Ether } from '../subcomponents/coins.js'
 import { EnrichedEIP712, EnrichedEIP712Message, GroupedSolidityType } from '../../utils/eip712Parsing.js'
+import { humanReadableDate } from '../ui-utils.js'
 
 type SignatureCardParams = {
 	personalSignRequestData: PersonalSignRequestData
@@ -296,7 +297,7 @@ export function Permit2ExtraDetails({ permit2 }: { permit2: PersonalSignRequestD
 		<CellElement text = 'Spender can spend for:'/>
 		<CellElement text = { <>
 			<SomeTimeAgo priorTimestamp = { new Date(Number(permit2.message.message.details.expiration) * 1000) } countBackwards = { true }/>
-			{` (until ${ new Date(Number(permit2.message.message.details.expiration) * 1000).toISOString().split('T')[0] })`}
+			{` (until ${ humanReadableDate(permit2.message.message.details.expiration) })`}
 		</> }/>
 	</>
 }
