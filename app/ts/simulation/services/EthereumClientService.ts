@@ -165,7 +165,7 @@ export class EthereumClientService {
 		])
 		const balanceOfCallData = stringToUint8Array(tokenInterface.encodeFunctionData('decimals'))
 		const callTransaction = {
-			type: '1559' as const,
+			type: '1559',
 			from: MOCK_ADDRESS,
 			to: token,
 			value: 0n,
@@ -173,7 +173,7 @@ export class EthereumClientService {
 			maxFeePerGas: 0n,
 			maxPriorityFeePerGas: 0n,
 			gasLimit: 15_000_000n,
-		} as const
+		}
 		const response = await this.call(callTransaction)
 		return EthereumQuantity.parse(response)
 	}

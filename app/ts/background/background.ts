@@ -112,8 +112,8 @@ export async function refreshConfirmTransactionSimulation(
 		signerName: await getSignerName(),
 		website: website,
 	}
-	if (simulator === undefined) return { method: 'popup_confirm_transaction_simulation_failed' as const, data: info }
-	sendPopupMessageToOpenWindows({ method: 'popup_confirm_transaction_simulation_started' })
+	if (simulator === undefined) return { method: 'popup_confirm_transaction_simulation_failed', data: info } as const
+	sendPopupMessageToOpenWindows({ method: 'popup_confirm_transaction_simulation_started' } as const)
 
 	const getCopiedSimulationState = async (simulationMode: boolean) => {
 		if (simulationMode === false) return undefined

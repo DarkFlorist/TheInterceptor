@@ -38,7 +38,7 @@ export function App() {
 	const [isSettingsLoaded, setIsSettingsLoaded] = useState<boolean>(false)
 	const [currentBlockNumber, setCurrentBlockNumber] = useState<bigint | undefined>(undefined)
 	const [signerName, setSignerName] = useState<SignerName>('NoSignerDetected')
-	const [addingNewAddress, setAddingNewAddress] = useState<AddingNewAddressType> ({ addingAddress: true, type: 'addressInfo' as const })
+	const [addingNewAddress, setAddingNewAddress] = useState<AddingNewAddressType> ({ addingAddress: true, type: 'addressInfo' })
 	const [isConnected, setIsConnected] = useState<IsConnected>(undefined)
 
 	async function setActiveAddressAndInformAboutIt(address: bigint | 'signer') {
@@ -184,7 +184,7 @@ export function App() {
 		const addressString = ethers.getAddress(trimmed)
 		setAndSaveAppPage('AddNewAddress')
 		setAddingNewAddress({ addingAddress: false, entry: {
-			type: 'addressInfo' as const,
+			type: 'addressInfo',
 			name: `Pasted ${ truncateAddr(addressString) }`,
 			address: bigIntReprentation,
 			askForAddressAccess: true,

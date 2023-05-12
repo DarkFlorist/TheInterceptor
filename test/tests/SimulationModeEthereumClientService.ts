@@ -9,7 +9,7 @@ import { mockSignTransaction } from '../../app/ts/simulation/services/Simulation
 export async function main() {
 	describe('SimulationModeEthereumClientService', () => {
 		const exampleTransaction = {
-			type: '1559' as const,
+			type: '1559',
 			from: 0xd8da6bf26964af9d7eed9e03e53415d37aa96045n,
 			nonce: 0n,
 			maxFeePerGas: 1n,
@@ -19,7 +19,7 @@ export async function main() {
 			value: 10n,
 			input: new Uint8Array(0),
 			chainId: 1n,
-		}
+		} as const
 
 		should('mockSignTransaction should have r=0, s=0 and yParity = "even"', async () => {
 			const signed = await mockSignTransaction(exampleTransaction)

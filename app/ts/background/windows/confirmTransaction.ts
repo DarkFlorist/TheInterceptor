@@ -126,7 +126,7 @@ export async function openConfirmTransactionDialog(
 async function resolve(ethereumClientService: EthereumClientService, reply: Confirmation, simulationMode: boolean, transactionToSimulate: EthereumUnsignedTransaction, website: Website, activeAddress: bigint) {
 	await setConfirmationWindowPromise(undefined)
 	if (reply !== 'Approved') return reject()
-	if (!simulationMode) return { forward: true as const }
+	if (!simulationMode) return { forward: true } as const
 	const newState = await updateSimulationState(async () => {
 		const simulationState = (await getSimulationResults()).simulationState
 		if (simulationState === undefined) return undefined

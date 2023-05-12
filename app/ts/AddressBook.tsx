@@ -190,7 +190,7 @@ export function AddressBook() {
 	const searchStringRef = useRef<string | undefined>(searchString)
 	const currentPageRef = useRef<number>(currentPage)
 
-	const [addingNewAddressType, setAddingNewAddressType] = useState<AddingNewAddressType>({ addingAddress: true, type: 'addressInfo' as const })
+	const [addingNewAddressType, setAddingNewAddressType] = useState<AddingNewAddressType>({ addingAddress: true, type: 'addressInfo' })
 
 	const scrollTimer = useRef<NodeJS.Timeout | undefined>(undefined)
 
@@ -336,11 +336,11 @@ export function AddressBook() {
 	function openNewAddress(filter: ActiveFilter) {
 		setModalState('addNewAddress')
 		switch(filter) {
-			case 'My Active Addresses': return setAddingNewAddressType({ addingAddress: true, type: 'addressInfo' as const })
-			case 'My Contacts': return setAddingNewAddressType({ addingAddress: true, type: 'contact' as const })
-			case 'Tokens': return setAddingNewAddressType({ addingAddress: true, type: 'token' as const })
-			case 'Non Fungible Tokens': return setAddingNewAddressType({ addingAddress: true, type: 'NFT' as const })
-			case 'Other Contracts': return setAddingNewAddressType({ addingAddress: true, type: 'other contract' as const })
+			case 'My Active Addresses': return setAddingNewAddressType({ addingAddress: true, type: 'addressInfo' })
+			case 'My Contacts': return setAddingNewAddressType({ addingAddress: true, type: 'contact' })
+			case 'Tokens': return setAddingNewAddressType({ addingAddress: true, type: 'token' })
+			case 'Non Fungible Tokens': return setAddingNewAddressType({ addingAddress: true, type: 'NFT' })
+			case 'Other Contracts': return setAddingNewAddressType({ addingAddress: true, type: 'other contract' })
 		}
 	}
 
