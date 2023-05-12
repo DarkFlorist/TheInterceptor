@@ -316,7 +316,7 @@ export const EthereumBlockHeader = funtypes.ReadonlyObject({
 	totalDifficulty: EthereumQuantity,
 	transactions: funtypes.ReadonlyArray(EthereumSignedTransaction),
 	uncles: funtypes.ReadonlyArray(EthereumBytes32),
-	baseFeePerGas: EthereumQuantity,
+	baseFeePerGas: funtypes.Union(EthereumQuantity, funtypes.Undefined),
 	transactionsRoot: EthereumBytes32
 }).asReadonly()
 
@@ -330,7 +330,7 @@ export type EthGetLogsRequest = funtypes.Static<typeof EthGetLogsRequest>
 export const EthGetLogsRequest = funtypes.Intersect(
 	funtypes.Union(
 		funtypes.ReadonlyObject({ blockHash: EthereumBytes32 }).asReadonly(),
-		funtypes.ReadonlyObject({ fromBlock: EthereumQuantity, toBlock: funtypes.Union(EthereumQuantity, funtypes.Literal('latest')) }).asReadonly(),
+		funtypes.Partial({ fromBlock: EthereumBlockTag, toBlock: EthereumBlockTag }).asReadonly(),
 	),
 	funtypes.Partial({
 		address: funtypes.Union(EthereumAddress, funtypes.ReadonlyArray(EthereumAddress)),
@@ -571,7 +571,7 @@ export const EthereumBlockHeaderWithTransactionHashes = funtypes.ReadonlyObject(
 	totalDifficulty: EthereumQuantity,
 	transactions: funtypes.ReadonlyArray(EthereumBytes32),
 	uncles: funtypes.ReadonlyArray(EthereumBytes32),
-	baseFeePerGas: EthereumQuantity,
+	baseFeePerGas: funtypes.Union(EthereumQuantity, funtypes.Undefined),
 	transactionsRoot: EthereumBytes32
 }).asReadonly()
 

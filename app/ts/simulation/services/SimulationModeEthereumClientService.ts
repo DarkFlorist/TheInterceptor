@@ -1,7 +1,7 @@
 import { EthereumClientService } from './EthereumClientService.js'
 import { EthGetLogsResponse, EthereumUnsignedTransaction, EthereumSignedTransactionWithBlockData, EthereumBlockTag, EthGetLogsRequest, EthTransactionReceiptResponse, EstimateGasParamsVariables, PersonalSignParams, SignTypedDataParams, EthereumSignedTransaction, EthereumData, EthereumQuantity, MulticallResponseEventLogs, MulticallResponse, EthereumAddress, EthereumBlockHeader, EthereumBlockHeaderWithTransactionHashes, OldSignTypedDataParams } from '../../utils/wire-types.js'
 import { addressString, bytes32String, bytesToUnsigned, dataStringWith0xStart, max, min, stringToUint8Array } from '../../utils/bigint.js'
-import { MOCK_ADDRESS } from '../../utils/constants.js'
+import { CANNOT_SIMULATE_OFF_LEGACY_BLOCK, MOCK_ADDRESS } from '../../utils/constants.js'
 import { ethers, keccak256 } from 'ethers'
 import { EthereumUnsignedTransactionWithWebsite, SimulatedTransaction, SimulationState, TokenBalancesAfter } from '../../utils/visualizer-types.js'
 import { EthereumUnsignedTransactionToUnsignedTransaction, IUnsignedTransaction1559, serializeSignedTransactionToBytes } from '../../utils/ethereum.js'
@@ -91,6 +91,8 @@ export const mockSignTransaction = async (transaction: EthereumUnsignedTransacti
 export const appendTransaction = async (ethereumClientService: EthereumClientService, simulationState: SimulationState | undefined, transaction: EthereumUnsignedTransactionWithWebsite): Promise<SimulationState> => {
 	const signed = await mockSignTransaction(transaction.transaction)
 	const parentBlock = await ethereumClientService.getBlock()
+	const parentBaseFeePerGas = parentBlock.baseFeePerGas
+	if (parentBaseFeePerGas === undefined) throw new Error(CANNOT_SIMULATE_OFF_LEGACY_BLOCK)
 	const signedTxs = simulationState === undefined ? [signed] : simulationState.simulatedTransactions.map((x) => x.signedTransaction).concat([signed])
 	const multicallResult = await ethereumClientService.multicall(signedTxs, parentBlock.number)
 	const websites = simulationState === undefined ? [transaction.website] : simulationState.simulatedTransactions.map((x) => x.website).concat(transaction.website)
@@ -109,7 +111,7 @@ export const appendTransaction = async (ethereumClientService: EthereumClientSer
 		simulatedTransactions: multicallResult.map((singleResult, index) => ({
 			multicallResponse: singleResult,
 			signedTransaction: signedTxs[index],
-			realizedGasPrice: calculateGasPrice(signedTxs[index], parentBlock.gasUsed, parentBlock.gasLimit, parentBlock.baseFeePerGas),
+			realizedGasPrice: calculateGasPrice(signedTxs[index], parentBlock.gasUsed, parentBlock.gasLimit, parentBaseFeePerGas),
 			website: websites[index],
 			tokenBalancesAfter: tokenBalancesAfter[index],
 		})),
@@ -139,6 +141,8 @@ export const setSimulationTransactions = async (ethereumClientService: EthereumC
 		signedTxs.push(await mockSignTransaction(transaction.transaction))
 	}
 	const parentBlock = await ethereumClientService.getBlock()
+	const parentBaseFeePerGas = parentBlock.baseFeePerGas
+	if (parentBaseFeePerGas === undefined) throw new Error(CANNOT_SIMULATE_OFF_LEGACY_BLOCK)
 	const multicallResult = await ethereumClientService.multicall(newTransactionsToSimulate.map((x) => x.transaction), parentBlock.number)
 	if (multicallResult.length !== signedTxs.length) throw 'multicall length does not match in setSimulationTransactions'
 	const chainId = ethereumClientService.getChain()
@@ -160,7 +164,7 @@ export const setSimulationTransactions = async (ethereumClientService: EthereumC
 			multicallResponse: singleResult,
 			unsignedTransaction: newTransactionsToSimulate[index],
 			signedTransaction: signedTxs[index],
-			realizedGasPrice: calculateGasPrice(newTransactionsToSimulate[index].transaction, parentBlock.gasUsed, parentBlock.gasLimit, parentBlock.baseFeePerGas),
+			realizedGasPrice: calculateGasPrice(newTransactionsToSimulate[index].transaction, parentBlock.gasUsed, parentBlock.gasLimit, parentBaseFeePerGas),
 			website: newTransactionsToSimulate[index].website,
 			tokenBalancesAfter: tokenBalancesAfter[index]
 		})),
@@ -377,6 +381,8 @@ export async function getSimulatedBlock(ethereumClientService: EthereumClientSer
 
 	// make a mock block based on the previous block
 	const parentBlock = await ethereumClientService.getBlock()
+	if (parentBlock.baseFeePerGas === undefined) throw new Error(CANNOT_SIMULATE_OFF_LEGACY_BLOCK)
+
 	const block = {
 		author: parentBlock.miner,
 		difficulty: parentBlock.difficulty,
@@ -407,24 +413,23 @@ export async function getSimulatedBlock(ethereumClientService: EthereumClientSer
 }
 
 const getLogsOfSimulatedBlock = (simulationState: SimulationState, logFilter: EthGetLogsRequest): EthGetLogsResponse => {
-	let events: unknown[] = []
-	if (simulationState !== undefined) {
-		for (const [index, sim] of simulationState.simulatedTransactions.entries()) {
-			if (!('events' in sim.multicallResponse)) continue
-			for (const event of sim.multicallResponse.events) {
-				events.push({
-					logIndex: BigInt(events.length),
-					transactionIndex: BigInt(index),
-					transactionHash: sim.signedTransaction.hash,
-					blockHash: getHashOfSimulatedBlock(),
-					blockNumber: simulationState.blockNumber,
-					address: event.loggersAddress,
-					data: event.data,
-					topics: event.topics
-				})
-			}
-		}
-	}
+	const events: EthGetLogsResponse = simulationState?.simulatedTransactions.reduce((acc, sim, transactionIndex) => {
+		if (!('events' in sim.multicallResponse)) return acc
+		return [
+			...acc,
+			...sim.multicallResponse.events.map((event, logIndex) => ({
+				removed: false,
+				logIndex: BigInt(acc.length + logIndex),
+				transactionIndex: BigInt(transactionIndex),
+				transactionHash: sim.signedTransaction.hash,
+				blockHash: getHashOfSimulatedBlock(),
+				blockNumber: simulationState.blockNumber,
+				address: event.loggersAddress,
+				data: event.data,
+				topics: event.topics
+			}))
+		]
+	}, [] as EthGetLogsResponse) || []
 
 	const includeLogByTopic = (logsTopics: readonly bigint[], filtersTopics: readonly (bigint | readonly bigint[] | null)[] | undefined) => {
 		if (filtersTopics === undefined || filtersTopics.length === 0) return true
@@ -437,7 +442,7 @@ const getLogsOfSimulatedBlock = (simulationState: SimulationState, logFilter: Et
 		return true
 	}
 
-	return EthGetLogsResponse.parse(events).filter((x) =>
+	return events.filter((x) =>
 		(logFilter.address === undefined
 			|| x.address === logFilter.address
 			|| (Array.isArray(logFilter.address) && logFilter.address.includes(x.address))
@@ -447,20 +452,16 @@ const getLogsOfSimulatedBlock = (simulationState: SimulationState, logFilter: Et
 }
 
 export const getSimulatedLogs = async (ethereumClientService: EthereumClientService, simulationState: SimulationState, logFilter: EthGetLogsRequest): Promise<EthGetLogsResponse> => {
-	if ('blockHash' in logFilter) {
-		if (logFilter.blockHash === getHashOfSimulatedBlock()) {
-			return getLogsOfSimulatedBlock(simulationState, logFilter)
-		}
+	const toBlock = 'toBlock' in logFilter && logFilter.toBlock !== undefined ? logFilter.toBlock : 'latest'
+	const fromBlock = 'fromBlock' in logFilter && logFilter.fromBlock !== undefined ? logFilter.fromBlock : 'latest'
+	if (toBlock === 'pending' || fromBlock === 'pending') return await ethereumClientService.getLogs(logFilter)
+	if ((fromBlock === 'latest' && toBlock !== 'latest') || (fromBlock !== 'latest' && toBlock !== 'latest' && fromBlock > toBlock )) throw new Error(`From block '${ fromBlock }' is later than to block '${ toBlock }' `)
+	if ('blockHash' in logFilter && logFilter.blockHash === getHashOfSimulatedBlock()) return getLogsOfSimulatedBlock(simulationState, logFilter)
+	const logs = await ethereumClientService.getLogs(logFilter)
+	if (simulationState && (toBlock === 'latest' || toBlock >= simulationState.blockNumber)) {
+		return [...logs, ...getLogsOfSimulatedBlock(simulationState, logFilter)]
 	}
-	if('fromBlock' in logFilter) {
-		const logs = await ethereumClientService.getLogs(logFilter)
-		if (simulationState && (logFilter.toBlock === 'latest' || logFilter.toBlock >= simulationState.blockNumber)) {
-			return [...logs, ...getLogsOfSimulatedBlock(simulationState, logFilter)]
-		} else {
-			return logs
-		}
-	}
-	return await ethereumClientService.getLogs(logFilter)
+	return logs
 }
 
 export const getSimulatedBlockNumber = async (ethereumClientService: EthereumClientService, simulationState: SimulationState, ) => {
