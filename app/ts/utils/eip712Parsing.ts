@@ -299,7 +299,7 @@ function parseSolidityValueByType(type: SolidityType, value: unknown, userAddres
 			case 'bool': return { type: `${ categorized }[]`, value: funtypes.ReadonlyArray(NonHexBigInt).parse(value).map((a) => a === 1n) }
 			case 'bytes': return { type: `${ categorized }[]`, value: funtypes.ReadonlyArray(EthereumData).parse(value) }
 			case 'fixedBytes': return { type: `${ categorized }[]`, value: funtypes.ReadonlyArray(EthereumData).parse(value) }
-			case 'integer': return { type: `${ categorized }[]`, value: funtypes.ReadonlyArray(NonHexBigInt).parse(value) }
+			case 'integer': return { type: `${ categorized }[]`, value: funtypes.ReadonlyArray(funtypes.Union(NonHexBigInt, funtypes.Number)).parse(value).map((x) => BigInt(x)) }
 			case 'string': return { type: `${ categorized }[]`, value: funtypes.ReadonlyArray(funtypes.String).parse(value) }
 			default: assertNever(categorized)
 		}
@@ -310,7 +310,7 @@ function parseSolidityValueByType(type: SolidityType, value: unknown, userAddres
 		case 'bool': return { type: categorized, value: NonHexBigInt.parse(value) === 1n }
 		case 'bytes': return { type: categorized, value: EthereumData.parse(value) }
 		case 'fixedBytes': return { type: categorized, value: EthereumData.parse(value) }
-		case 'integer': return { type: categorized, value: NonHexBigInt.parse(value) }
+		case 'integer': return { type: categorized, value: BigInt(funtypes.Union(NonHexBigInt, funtypes.Number).parse(value)) }
 		case 'string': return { type: categorized, value: funtypes.String.parse(value) }
 		default: assertNever(categorized)
 	}
