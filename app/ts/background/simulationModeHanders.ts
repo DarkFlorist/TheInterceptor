@@ -3,7 +3,7 @@ import { createEthereumSubscription, removeEthereumSubscription } from '../simul
 import { getSimulatedBalance, getSimulatedBlock, getSimulatedBlockNumber, getSimulatedCode, getSimulatedLogs, getSimulatedStack, getSimulatedTransactionByHash, getSimulatedTransactionCount, getSimulatedTransactionReceipt, simulatedCall, simulateEstimateGas } from '../simulation/services/SimulationModeEthereumClientService.js'
 import { Simulator } from '../simulation/simulator.js'
 import { bytes32String } from '../utils/bigint.js'
-import { ERROR_INTERCEPTOR_GET_CODE_FAILED, KNOWN_CONTRACT_CALLER_ADDRESSES } from '../utils/constants.js'
+import { CANNOT_SIMULATE_OFF_LEGACY_BLOCK, ERROR_INTERCEPTOR_GET_CODE_FAILED, KNOWN_CONTRACT_CALLER_ADDRESSES } from '../utils/constants.js'
 import { InterceptedRequest, Settings, WebsiteAccessArray } from '../utils/interceptor-messages.js'
 import { Website, WebsiteSocket, WebsiteTabConnections } from '../utils/user-interface-types.js'
 import { SimulationState } from '../utils/visualizer-types.js'
@@ -62,7 +62,9 @@ export async function sendTransaction(
 		const from = getFromField(websiteTabConnections, simulationMode, sendTransactionParams, getActiveAddressForDomain, socket, settings)
 		const transactionCount = getSimulatedTransactionCount(ethereumClientService, simulationState, from)
 
-		const maxFeePerGas = (await block).baseFeePerGas * 2n
+		const parentBlock = await block
+		if (parentBlock.baseFeePerGas === undefined) throw new Error(CANNOT_SIMULATE_OFF_LEGACY_BLOCK)
+		const maxFeePerGas = parentBlock.baseFeePerGas * 2n
 		return {
 			type: '1559' as const,
 			from: from,
