@@ -522,6 +522,9 @@ async function onContentScriptConnected(port: browser.runtime.Port, websiteTabCo
 			websiteTabConnections.delete(socket.tabId)
 		}
 	})
+
+	const pendingRequestLimiter = new Semaphore(20) // only allow 20 requests pending at the time for a port
+
 	port.onMessage.addListener(async (payload) => {
 		if(!(
 			'data' in payload
@@ -529,26 +532,28 @@ async function onContentScriptConnected(port: browser.runtime.Port, websiteTabCo
 			&& payload.data !== null
 			&& 'interceptorRequest' in payload.data
 		)) return
-		const request = InterceptedRequest.parse(payload.data)
-		const providerHandler = providerHandlers.get(request.options.method)
-		if (providerHandler) {
-			await providerHandler(websiteTabConnections, port, request)
-			return sendMessageToContentScript(websiteTabConnections, socket, { 'result': '0x' }, request)
-		}
+		await pendingRequestLimiter.execute(async () => {
+			const request = InterceptedRequest.parse(payload.data)
+			const providerHandler = providerHandlers.get(request.options.method)
+			if (providerHandler) {
+				await providerHandler(websiteTabConnections, port, request)
+				return sendMessageToContentScript(websiteTabConnections, socket, { 'result': '0x' }, request)
+			}
 
-		const access = verifyAccess(websiteTabConnections, socket, request.options.method, websiteOrigin, await getSettings())
+			const access = verifyAccess(websiteTabConnections, socket, request.options.method, websiteOrigin, await getSettings())
 
-		if (access === 'askAccess' && request.options.method === 'eth_accounts') {
-			// do not prompt for eth_accounts, just reply with no accounts.
-			return sendMessageToContentScript(websiteTabConnections, socket, { 'result': [] }, request)
-		}
+			if (access === 'askAccess' && request.options.method === 'eth_accounts') {
+				// do not prompt for eth_accounts, just reply with no accounts.
+				return sendMessageToContentScript(websiteTabConnections, socket, { 'result': [] }, request)
+			}
 
-		switch (access) {
-			case 'noAccess': return refuseAccess(websiteTabConnections, socket, request)
-			case 'askAccess': return await gateKeepRequestBehindAccessDialog(socket, request, await websitePromise, await getSettings())
-			case 'hasAccess': return await handleContentScriptMessage(websiteTabConnections, socket, request, await websitePromise)
-			default: assertNever(access)
-		}
+			switch (access) {
+				case 'noAccess': return refuseAccess(websiteTabConnections, socket, request)
+				case 'askAccess': return await gateKeepRequestBehindAccessDialog(socket, request, await websitePromise, await getSettings())
+				case 'hasAccess': return await handleContentScriptMessage(websiteTabConnections, socket, request, await websitePromise)
+				default: assertNever(access)
+			}
+		})
 	})
 
 	if (tabConnection === undefined) {
