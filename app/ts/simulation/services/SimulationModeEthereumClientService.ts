@@ -329,7 +329,7 @@ export const getSimulatedCode = async (ethereumClientService: EthereumClientServ
 	}
 	const blockNum = await ethereumClientService.getBlockNumber()
 
-	const atInterface = new ethers.Interface(['function at(address) returns (uint256)'])
+	const atInterface = new ethers.Interface(['function at(address) returns (bytes)'])
 	const input = stringToUint8Array(atInterface.encodeFunctionData('at', [addressString(address)]))
 
 	const getCodeTransaction = {
@@ -346,9 +346,12 @@ export const getSimulatedCode = async (ethereumClientService: EthereumClientServ
 		accessList: []
 	} as const
 	const multiCall = await simulatedMulticall(ethereumClientService, simulationState, [getCodeTransaction], blockNum + 1n)
+	const lastResult = multiCall[multiCall.length - 1]
+	const parsed = atInterface.decodeFunctionResult('at', lastResult.returnValue)
+
 	return {
-		statusCode: multiCall[multiCall.length - 1].statusCode,
-		getCodeReturn: multiCall[multiCall.length - 1].returnValue
+		statusCode: lastResult.statusCode,
+		getCodeReturn: EthereumData.parse(parsed.toString())
 	}
 }
 
@@ -452,6 +455,7 @@ const getLogsOfSimulatedBlock = (simulationState: SimulationState, logFilter: Et
 }
 
 export const getSimulatedLogs = async (ethereumClientService: EthereumClientService, simulationState: SimulationState, logFilter: EthGetLogsRequest): Promise<EthGetLogsResponse> => {
+	console.log(logFilter)
 	const toBlock = 'toBlock' in logFilter && logFilter.toBlock !== undefined ? logFilter.toBlock : 'latest'
 	const fromBlock = 'fromBlock' in logFilter && logFilter.fromBlock !== undefined ? logFilter.fromBlock : 'latest'
 	if (toBlock === 'pending' || fromBlock === 'pending') return await ethereumClientService.getLogs(logFilter)
