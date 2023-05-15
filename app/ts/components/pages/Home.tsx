@@ -58,7 +58,7 @@ function FirstCardHeader(param: FirstCardParams) {
 				</span>
 			</div>
 			<div class = 'card-header-title px-0 is-justify-content-center'>
-				<div class = 'buttons has-addons' style = 'border-style: solid; border-color: var(--primary-color); border-radius: 4px; padding: 1px; border-width: 1px; margin-bottom: 0px' >
+				<div class = 'buttons has-addons' style = 'border-style: solid; border-color: var(--primary-color); border-radius: 4px; padding: 1px; border-width: 1px; margin-bottom: 0px; flex-wrap: nowrap;' >
 					<button
 						class = { `button is-primary ${ param.simulationMode ? '' : 'is-outlined' }` }
 						style = { `margin-bottom: 0px; ${ param.simulationMode ? 'opacity: 1;' : 'border-style: none;' }` }
