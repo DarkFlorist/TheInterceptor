@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'preact/hooks'
-import { ConfirmTransactionDialogState, ConfirmTransactionSimulationBaseData, ExternalPopupMessage, IsConnected } from '../../utils/interceptor-messages.js'
+import { ConfirmTransactionDialogState, ConfirmTransactionSimulationBaseData, ConfirmTransactionTransactionSingleVisualizationArray, ExternalPopupMessage, IsConnected } from '../../utils/interceptor-messages.js'
 import { SimulatedAndVisualizedTransaction, SimulationAndVisualisationResults } from '../../utils/visualizer-types.js'
 import Hint from '../subcomponents/Hint.js'
 import { ExtraDetailsTransactionCard, GasFee, LogAnalysisCard, SimulatedInBlockNumber, TransactionHeader, TransactionsAccountChangesCard } from '../simulationExplaining/SimulationSummary.js'
@@ -7,18 +7,45 @@ import { CenterToPageTextSpinner } from '../subcomponents/Spinner.js'
 import { AddNewAddress } from './AddNewAddress.js'
 import { AddingNewAddressType, AddressBookEntry } from '../../utils/user-interface-types.js'
 import { sendPopupMessageToBackgroundPage } from '../../background/backgroundUtils.js'
-import { formSimulatedAndVisualizedTransaction } from '../formVisualizerResults.js'
-import { addressString } from '../../utils/bigint.js'
 import { SignerLogoText } from '../subcomponents/signers.js'
-import { SmallAddress, WebsiteOriginText } from '../subcomponents/address.js'
 import { Error as ErrorComponent, ErrorCheckBox } from '../subcomponents/Error.js'
-import { QuarantineCodes, TransactionImportanceBlock } from '../simulationExplaining/Transactions.js'
+import { QuarantineCodes, SenderReceiver, TransactionImportanceBlock } from '../simulationExplaining/Transactions.js'
 import { identifyTransaction } from '../simulationExplaining/identifyTransaction.js'
 import { SomeTimeAgo } from '../subcomponents/SomeTimeAgo.js'
 import { TIME_BETWEEN_BLOCKS } from '../../utils/constants.js'
 
+type UnderTransactionsParams = {
+	pendingTransactions: ConfirmTransactionTransactionSingleVisualizationArray
+}
+
+const HALF_HEADER_HEIGHT = 48 / 2
+
+function UnderTransactions(param: UnderTransactionsParams) {
+	const nTx = param.pendingTransactions.length
+	return <div style = {`position: relative; top: ${ nTx * -HALF_HEADER_HEIGHT }px;`}>
+		{ param.pendingTransactions.map((transactionSimulation, index) => {
+			const style = `margin-right: 10px; margin-left: 10px; margin-bottom: 0px; scale: ${ Math.pow(0.95, nTx - index) }; position: relative; top: ${ (nTx - index) * HALF_HEADER_HEIGHT }px;`
+			if (transactionSimulation.statusCode === 'success') {
+				const simTx = transactionSimulation.data.simulatedAndVisualizedTransactions.at(-1)
+				if (simTx !== undefined) {
+					return <div class = 'card' style = { style }>
+						<TransactionHeader simTx = { simTx } />
+						<div style = 'background-color: var(--disabled-card-color); position: absolute; width: 100%; height: 100%; top: 0px'></div>
+					</div>
+				}
+			}
+			return <div class = 'card' style = { style }>
+				TODO! failed simulation!
+				<div style = 'background-color: var(--disabled-card-color); position: absolute; width: 100%; height: 100%; top: 0px'></div>
+			</div>
+		}) }
+	</div>
+}
+
+
 type TransactionCardParams = {
 	simulationAndVisualisationResults: SimulationAndVisualisationResults,
+	pendingTransactions: ConfirmTransactionTransactionSingleVisualizationArray,
 	renameAddressCallBack: (entry: AddressBookEntry) => void,
 	activeAddress: bigint,
 	resetButton: boolean,
@@ -47,10 +74,10 @@ function TransactionCard(param: TransactionCardParams) {
 			</nav>
 		</div>
 
-		<div class = 'card' style = 'margin: 10px;'>
+		<UnderTransactions pendingTransactions = { param.pendingTransactions }/>
+		<div class = 'card' style = { `margin: 10px; margin-top: 0px; top: ${ param.pendingTransactions.length * -HALF_HEADER_HEIGHT }px` }>
 			<TransactionHeader
 				simTx = { simTx }
-				renameAddressCallBack = { param.renameAddressCallBack }
 			/>
 			<div class = 'card-content' style = 'padding-bottom: 5px;'>
 				<div class = 'container'>
@@ -76,6 +103,12 @@ function TransactionCard(param: TransactionCardParams) {
 
 				<ExtraDetailsTransactionCard transaction = { simTx.transaction } />
 
+				<SenderReceiver
+					from = { simTx.transaction.from }
+					to = { simTx.transaction.to }
+					renameAddressCallBack = { param.renameAddressCallBack }
+				/>
+
 				<span class = 'log-table' style = 'margin-top: 10px; grid-template-columns: min-content min-content min-content auto;'>
 					<GasFee
 						tx = { simTx }
@@ -100,7 +133,7 @@ type DialogState = { state: 'success', data: ConfirmTransactionDialogState } | {
 export function ConfirmTransaction() {
 	const [dialogState, setDialogState] = useState<DialogState>(undefined)
 	const [simulatedAndVisualizedTransactions, setSimulatedAndVisualizedTransactions] = useState<readonly SimulatedAndVisualizedTransaction[]>([])
-	const [sender, setSender] = useState<AddressBookEntry | undefined>(undefined)
+	const [pendingTransactions, setPendingTransactions] = useState<ConfirmTransactionTransactionSingleVisualizationArray>([])
 	const [forceSend, setForceSend] = useState<boolean>(false)
 	const [currentBlockNumber, setCurrentBlockNumber] = useState<undefined | bigint>(undefined)
 	const [addingNewAddress, setAddingNewAddress] = useState<AddingNewAddressType | 'renameAddressModalClosed'> ('renameAddressModalClosed')
@@ -119,19 +152,17 @@ export function ConfirmTransaction() {
 			if (message.method === 'popup_failed_to_get_block') {
 				setIsConnected({ isConnected: false, lastConnnectionAttempt: Date.now() })
 			}
-			if (message.method === 'popup_confirm_transaction_simulation_failed') {
-				return setDialogState({ state: 'failed', data: message.data })
-			}
-			if (message.method !== 'popup_confirm_transaction_simulation_state_changed') return
+			if (message.method !== 'popup_update_confirm_transaction_dialog') return
+			setPendingTransactions(message.data.slice(1))
+			const firstMessage = message.data[0]
 
-			if (currentBlockNumber === undefined || message.data.simulationState.blockNumber > currentBlockNumber) {
-				setCurrentBlockNumber(message.data.simulationState.blockNumber)
+			if (firstMessage.statusCode === 'failed') return setDialogState({ state: 'failed', data: firstMessage.data })
+
+			if (currentBlockNumber === undefined || firstMessage.data.simulationState.blockNumber > currentBlockNumber) {
+				setCurrentBlockNumber(firstMessage.data.simulationState.blockNumber)
 			}
-			const addressMetaData = new Map(message.data.addressBookEntries.map((x) => [addressString(x.address), x]))
-			const txs = formSimulatedAndVisualizedTransaction(message.data.simulationState, message.data.visualizerResults, addressMetaData)
-			setSender(txs.at(-1)?.transaction.from)
-			setSimulatedAndVisualizedTransactions(txs)
-			setDialogState({ state: 'success', data: message.data })
+			setSimulatedAndVisualizedTransactions(firstMessage.data.simulatedAndVisualizedTransactions)
+			setDialogState({ state: 'success', data: firstMessage.data })
 		}
 		browser.runtime.onMessage.addListener(popupMessageListener)
 
@@ -142,13 +173,15 @@ export function ConfirmTransaction() {
 
 	async function approve() {
 		if (dialogState === undefined) throw new Error('dialogState is not set')
-		await sendPopupMessageToBackgroundPage({ method: 'popup_confirmDialog', options: { requestId: dialogState.data.requestId, accept: true } })
-		globalThis.close()
+		const ourId = await browser.windows.getCurrent()
+		if (ourId.id === undefined) throw new Error('could not get our own Id!')
+		await sendPopupMessageToBackgroundPage({ method: 'popup_confirmDialog', options: { requestId: dialogState.data.requestId, accept: true, windowId: ourId.id } })
 	}
 	async function reject() {
 		if (dialogState === undefined) throw new Error('dialogState is not set')
-		await sendPopupMessageToBackgroundPage({ method: 'popup_confirmDialog', options: { requestId: dialogState.data.requestId, accept: false } })
-		globalThis.close()
+		const ourId = await browser.windows.getCurrent()
+		if (ourId.id === undefined) throw new Error('could not get our own Id!')
+		await sendPopupMessageToBackgroundPage({ method: 'popup_confirmDialog', options: { requestId: dialogState.data.requestId, accept: false, windowId: ourId.id } })
 	}
 	const refreshMetadata = () => {
 		if (dialogState === undefined || dialogState.state === 'failed') return
@@ -215,18 +248,6 @@ export function ConfirmTransaction() {
 
 				<div className = 'block' style = 'margin-bottom: 0px; display: flex; justify-content: space-between; flex-direction: column; height: 100%; position: fixed; width: 100%'>
 					<div style = 'overflow-y: auto'>
-						<header class = 'card-header window-header' style = 'height: 40px; border-top-left-radius: 0px; border-top-right-radius: 0px'>
-							<div class = 'card-header-icon noselect nopointer' style = 'overflow: hidden; padding: 0px;'>
-								<WebsiteOriginText { ...dialogState.data.website } />
-							</div>
-							<p class = 'card-header-title' style = 'overflow: hidden; font-weight: unset; flex-direction: row-reverse;'>
-								{ sender === undefined ? <></> : <SmallAddress
-									addressBookEntry = { sender }
-									renameAddressCallBack = { renameAddressCallBack }
-								/> }
-							</p>
-						</header>
-
 						{ isConnected?.isConnected === false ?
 							<div style = 'margin: 10px; background-color: var(--bg-color);'>
 								<ErrorComponent warning = { true } text = { <>Unable to connect to a Ethereum node. Retrying in <SomeTimeAgo priorTimestamp = { new Date(isConnected.lastConnnectionAttempt + TIME_BETWEEN_BLOCKS * 1000) } countBackwards = { true }/>.</> }/>
@@ -244,6 +265,7 @@ export function ConfirmTransaction() {
 								activeAddress: dialogState.data.activeAddress,
 								simulatedAndVisualizedTransactions: simulatedAndVisualizedTransactions
 							} }
+							pendingTransactions = { pendingTransactions }
 							renameAddressCallBack = { renameAddressCallBack }
 							activeAddress = { dialogState.data.activeAddress }
 							resetButton = { false }
