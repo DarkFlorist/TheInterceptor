@@ -13,6 +13,7 @@ import { QuarantineCodes, SenderReceiver, TransactionImportanceBlock } from '../
 import { identifyTransaction } from '../simulationExplaining/identifyTransaction.js'
 import { SomeTimeAgo } from '../subcomponents/SomeTimeAgo.js'
 import { TIME_BETWEEN_BLOCKS } from '../../utils/constants.js'
+import { DinoSaysNotification } from '../subcomponents/DinoSays.js'
 
 type UnderTransactionsParams = {
 	pendingTransactions: ConfirmTransactionTransactionSingleVisualizationArray
@@ -136,6 +137,7 @@ export function ConfirmTransaction() {
 	const [currentBlockNumber, setCurrentBlockNumber] = useState<undefined | bigint>(undefined)
 	const [addingNewAddress, setAddingNewAddress] = useState<AddingNewAddressType | 'renameAddressModalClosed'> ('renameAddressModalClosed')
 	const [isConnected, setIsConnected] = useState<IsConnected>(undefined)
+	const [pendingTransactionAddedNotification, setPendingTransactionAddedNotification] = useState<boolean>(false)
 
 	useEffect(() => {
 		async function popupMessageListener(msg: unknown) {
@@ -154,6 +156,7 @@ export function ConfirmTransaction() {
 				setPendingTransactions(message.data.slice(1))
 				const currentWindow = await browser.windows.getCurrent()
 				if (currentWindow.id === undefined) throw new Error('could not get our own Id!')
+				setPendingTransactionAddedNotification(true)
 				browser.windows.update(currentWindow.id, { focused: true })
 				return
 			}
@@ -254,6 +257,12 @@ export function ConfirmTransaction() {
 							<div style = 'margin: 10px; background-color: var(--bg-color);'>
 								<ErrorComponent warning = { true } text = { <>Unable to connect to a Ethereum node. Retrying in <SomeTimeAgo priorTimestamp = { new Date(isConnected.lastConnnectionAttempt + TIME_BETWEEN_BLOCKS * 1000) } countBackwards = { true }/>.</> }/>
 							</div>
+						: <></> }
+						{ pendingTransactionAddedNotification === true ? 
+							<DinoSaysNotification
+								text = { `Hey! A new transaction request was queued. Accept or Reject the previous transaction${ pendingTransactions.length > 1 ? 's' : '' } to see the new one.` }
+								close = { () => setPendingTransactionAddedNotification(false)}
+							/>
 						: <></> }
 						<TransactionCard
 							simulationAndVisualisationResults = { {
