@@ -2,7 +2,7 @@ import { useState, useEffect } from 'preact/hooks'
 import { ConfirmTransactionDialogState, ConfirmTransactionSimulationBaseData, ConfirmTransactionTransactionSingleVisualizationArray, ExternalPopupMessage, IsConnected } from '../../utils/interceptor-messages.js'
 import { SimulatedAndVisualizedTransaction, SimulationAndVisualisationResults } from '../../utils/visualizer-types.js'
 import Hint from '../subcomponents/Hint.js'
-import { ExtraDetailsTransactionCard, GasFee, LogAnalysisCard, SimulatedInBlockNumber, TransactionHeader, TransactionHeaderForFailedToSimulate, TransactionsAccountChangesCard } from '../simulationExplaining/SimulationSummary.js'
+import { ExtraDetailsTransactionCard, GasFee, LogAnalysisCard, SimulatedInBlockNumber, TransactionCreated, TransactionHeader, TransactionHeaderForFailedToSimulate, TransactionsAccountChangesCard } from '../simulationExplaining/SimulationSummary.js'
 import { CenterToPageTextSpinner } from '../subcomponents/Spinner.js'
 import { AddNewAddress } from './AddNewAddress.js'
 import { AddingNewAddressType, AddressBookEntry } from '../../utils/user-interface-types.js'
@@ -35,7 +35,7 @@ function UnderTransactions(param: UnderTransactionsParams) {
 				</div>
 			}
 			return <div class = 'card' style = { style }>
-				<TransactionHeaderForFailedToSimulate website = { transactionSimulation.data.website } />
+				<TransactionHeaderForFailedToSimulate website = { transactionSimulation.data.transactionToSimulate.website } />
 				<div style = 'background-color: var(--disabled-card-color); position: absolute; width: 100%; height: 100%; top: 0px'></div>
 			</div>
 		}) }
@@ -108,11 +108,18 @@ function TransactionCard(param: TransactionCardParams) {
 					renameAddressCallBack = { param.renameAddressCallBack }
 				/>
 
-				<span class = 'log-table' style = 'margin-top: 10px; grid-template-columns: min-content min-content min-content auto;'>
-					<GasFee
-						tx = { simTx }
-						chain = { param.simulationAndVisualisationResults.chain }
-					/>
+				<span class = 'log-table' style = 'margin-top: 10px; grid-template-columns: 33.33% 33.33% 33.33%;'>
+					<div class = 'log-cell'>
+						<span class = 'log-table' style = 'grid-template-columns: min-content min-content min-content'>
+							<GasFee
+								tx = { simTx }
+								chain = { param.simulationAndVisualisationResults.chain }
+							/>
+						</span>
+					</div>
+					<div class = 'log-cell' style = 'justify-content: center;'>
+						<TransactionCreated transactionCreated = { simTx.transactionCreated } />
+					</div>
 					<div class = 'log-cell' style = 'justify-content: right;'>
 						<SimulatedInBlockNumber
 							simulationBlockNumber = { param.simulationAndVisualisationResults.blockNumber }
