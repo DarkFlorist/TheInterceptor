@@ -2,7 +2,7 @@ import { useState, useEffect } from 'preact/hooks'
 import { ConfirmTransactionDialogState, ConfirmTransactionSimulationBaseData, ConfirmTransactionTransactionSingleVisualizationArray, ExternalPopupMessage, IsConnected } from '../../utils/interceptor-messages.js'
 import { SimulatedAndVisualizedTransaction, SimulationAndVisualisationResults } from '../../utils/visualizer-types.js'
 import Hint from '../subcomponents/Hint.js'
-import { ExtraDetailsTransactionCard, GasFee, LogAnalysisCard, SimulatedInBlockNumber, TransactionHeader, TransactionsAccountChangesCard } from '../simulationExplaining/SimulationSummary.js'
+import { ExtraDetailsTransactionCard, GasFee, LogAnalysisCard, SimulatedInBlockNumber, TransactionHeader, TransactionHeaderForFailedToSimulate, TransactionsAccountChangesCard } from '../simulationExplaining/SimulationSummary.js'
 import { CenterToPageTextSpinner } from '../subcomponents/Spinner.js'
 import { AddNewAddress } from './AddNewAddress.js'
 import { AddingNewAddressType, AddressBookEntry } from '../../utils/user-interface-types.js'
@@ -27,21 +27,19 @@ function UnderTransactions(param: UnderTransactionsParams) {
 			const style = `margin-right: 10px; margin-left: 10px; margin-bottom: 0px; scale: ${ Math.pow(0.95, nTx - index) }; position: relative; top: ${ (nTx - index) * HALF_HEADER_HEIGHT }px;`
 			if (transactionSimulation.statusCode === 'success') {
 				const simTx = transactionSimulation.data.simulatedAndVisualizedTransactions.at(-1)
-				if (simTx !== undefined) {
-					return <div class = 'card' style = { style }>
-						<TransactionHeader simTx = { simTx } />
-						<div style = 'background-color: var(--disabled-card-color); position: absolute; width: 100%; height: 100%; top: 0px'></div>
-					</div>
-				}
+				if (simTx === undefined) throw new Error('No simulated and visualized transactions')
+				return <div class = 'card' style = { style }>
+					<TransactionHeader simTx = { simTx } />
+					<div style = 'background-color: var(--disabled-card-color); position: absolute; width: 100%; height: 100%; top: 0px'></div>
+				</div>
 			}
 			return <div class = 'card' style = { style }>
-				TODO! failed simulation!
+				<TransactionHeaderForFailedToSimulate website = { transactionSimulation.data.website } />
 				<div style = 'background-color: var(--disabled-card-color); position: absolute; width: 100%; height: 100%; top: 0px'></div>
 			</div>
 		}) }
 	</div>
 }
-
 
 type TransactionCardParams = {
 	simulationAndVisualisationResults: SimulationAndVisualisationResults,
