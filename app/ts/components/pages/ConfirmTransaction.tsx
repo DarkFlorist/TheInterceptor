@@ -13,7 +13,6 @@ import { QuarantineCodes, SenderReceiver, TransactionImportanceBlock } from '../
 import { identifyTransaction } from '../simulationExplaining/identifyTransaction.js'
 import { SomeTimeAgo } from '../subcomponents/SomeTimeAgo.js'
 import { TIME_BETWEEN_BLOCKS } from '../../utils/constants.js'
-import { DinoSays } from '../subcomponents/DinoSays.js'
 
 type UnderTransactionsParams = {
 	pendingTransactions: ConfirmTransactionTransactionSingleVisualizationArray
