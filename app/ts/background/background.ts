@@ -21,6 +21,7 @@ import { appendTransaction, copySimulationState, setPrependTransactionsQueue, si
 import { Semaphore } from '../utils/semaphore.js'
 import { isFailedToFetchError } from '../utils/errors.js'
 import { sendSubscriptionMessagesForNewBlock } from '../simulation/services/EthereumSubscriptionService.js'
+import { formSimulatedAndVisualizedTransaction } from '../components/formVisualizerResults.js'
 
 const websiteTabConnections = new Map<number, TabConnection>()
 
@@ -39,6 +40,7 @@ async function visualizeSimulatorState(simulationState: SimulationState, simulat
 	const visualizerResult = await simulator.visualizeTransactionChain(simulationState, transactions, simulationState.blockNumber, simulationState.simulatedTransactions.map((x) => x.multicallResponse))
 	const visualizerResults = visualizerResult.map((x, i) => ({ ...x, website: simulationState.simulatedTransactions[i].website }))
 	const addressBookEntries = await getAddressBookEntriesForVisualiser(simulator.ethereum, visualizerResult.map((x) => x.visualizerResults), simulationState, (await getSettings()).userAddressBook)
+	const simulatedAndVisualizedTransactions = formSimulatedAndVisualizedTransaction(simulationState, visualizerResults, addressBookEntries)
 
 	function onlyTokensAndTokensWithKnownDecimals(metadata: AddressBookEntry) : metadata is AddressBookEntry & { type: 'token', decimals: `0x${ string }` } {
 		if (metadata.type !== 'token') return false
@@ -54,6 +56,7 @@ async function visualizeSimulatorState(simulationState: SimulationState, simulat
 		addressBookEntries,
 		visualizerResults,
 		simulationState,
+		simulatedAndVisualizedTransactions,
 	}
 }
 
@@ -112,7 +115,7 @@ export async function refreshConfirmTransactionSimulation(
 		signerName: await getSignerName(),
 		website: website,
 	}
-	if (simulator === undefined) return { method: 'popup_confirm_transaction_simulation_failed', data: info } as const
+	if (simulator === undefined) return { statusCode: 'failed', data: info } as const
 	sendPopupMessageToOpenWindows({ method: 'popup_confirm_transaction_simulation_started' } as const)
 
 	const getCopiedSimulationState = async (simulationMode: boolean) => {
@@ -125,13 +128,13 @@ export async function refreshConfirmTransactionSimulation(
 	try {
 		const simulationStateWithNewTransaction = await appendTransaction(ethereumClientService, await getCopiedSimulationState(simulationMode), { transaction: transactionToSimulate, website: website })
 		return {
-			method: 'popup_confirm_transaction_simulation_state_changed' as const,
+			statusCode: 'success' as const,
 			data: { ...info, ...await visualizeSimulatorState(simulationStateWithNewTransaction, simulator) }
 		}
 	} catch(error) {
 		if (!(error instanceof Error)) throw error
 		if (!isFailedToFetchError(error)) throw error
-		return { method: 'popup_confirm_transaction_simulation_failed' as const, data: info }
+		return { statusCode: 'failed' as const, data: info }
 	}
 }
 

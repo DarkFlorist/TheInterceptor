@@ -1,9 +1,9 @@
 import { useState, useEffect } from 'preact/hooks'
 import { defaultAddresses } from '../background/settings.js'
-import { SimResults, SimulationAndVisualisationResults, SimulationState, TokenPriceEstimate } from '../utils/visualizer-types.js'
+import { SimulatedAndVisualizedTransaction, SimulationAndVisualisationResults, SimulationState, TokenPriceEstimate } from '../utils/visualizer-types.js'
 import { ChangeActiveAddress } from './pages/ChangeActiveAddress.js'
 import { Home } from './pages/Home.js'
-import { AddressInfo, AddressInfoEntry, AddressBookEntry, AddingNewAddressType, AddressBookEntries, SignerName } from '../utils/user-interface-types.js'
+import { AddressInfo, AddressInfoEntry, AddressBookEntry, AddingNewAddressType, SignerName, AddressBookEntries } from '../utils/user-interface-types.js'
 import Hint from './subcomponents/Hint.js'
 import { AddNewAddress } from './pages/AddNewAddress.js'
 import { InterceptorAccessList } from './pages/InterceptorAccessList.js'
@@ -14,9 +14,7 @@ import { NotificationCenter } from './pages/NotificationCenter.js'
 import { DEFAULT_TAB_CONNECTION } from '../utils/constants.js'
 import { ExternalPopupMessage, TabIconDetails, UpdateHomePage, Page, WebsiteAccessArray, PendingAccessRequestArray, Settings, WebsiteIconChanged, IsConnected } from '../utils/interceptor-messages.js'
 import { version, gitCommitSha } from '../version.js'
-import { formSimulatedAndVisualizedTransaction } from './formVisualizerResults.js'
 import { sendPopupMessageToBackgroundPage } from '../background/backgroundUtils.js'
-import { addressString } from '../utils/bigint.js'
 import { EthereumAddress } from '../utils/wire-types.js'
 
 export function App() {
@@ -75,22 +73,18 @@ export function App() {
 	useEffect(() => {
 		const setSimulationState = (
 			simState: SimulationState | undefined,
-			visualizerResults: readonly SimResults[] | undefined,
 			addressBookEntries: AddressBookEntries,
 			tokenPrices: readonly TokenPriceEstimate[],
+			simulatedAndVisualizedTransactions: readonly SimulatedAndVisualizedTransaction[],
 			activeSimulationAddress: EthereumAddress | undefined,
 		) => {
-			if (simState === undefined) return setSimVisResults(undefined)
-			if (visualizerResults === undefined) return setSimVisResults(undefined)
 			if (activeSimulationAddress === undefined) return setSimVisResults(undefined)
-
-			const addressMetaData = new Map(addressBookEntries.map( (x) => [addressString(x.address), x]))
-			const txs = formSimulatedAndVisualizedTransaction(simState, visualizerResults, addressMetaData)
+			if (simState === undefined) return setSimVisResults(undefined)
 			setSimVisResults({
 				blockNumber: simState.blockNumber,
 				blockTimestamp: simState.blockTimestamp,
 				simulationConductedTimestamp: simState.simulationConductedTimestamp,
-				simulatedAndVisualizedTransactions: txs,
+				simulatedAndVisualizedTransactions: simulatedAndVisualizedTransactions,
 				chain: simState.chain,
 				tokenPrices: tokenPrices,
 				activeAddress: activeSimulationAddress,
@@ -110,10 +104,10 @@ export function App() {
 				}
 				setSimulationState(
 					data.simulation.simulationState,
-					data.simulation.visualizerResults,
 					data.simulation.addressBookEntries,
 					data.simulation.tokenPrices,
-					data.simulation.activeAddress,
+					data.simulation.simulatedAndVisualizedTransactions,
+					data.simulation.activeAddress
 				)
 				setMakeMeRich(data.makeMeRich)
 				setPendingAccessMetadata(data.pendingAccessMetadata)

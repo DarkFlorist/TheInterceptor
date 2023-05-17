@@ -1,7 +1,7 @@
 import { LogSummarizer, SummaryOutcome } from '../../simulation/services/LogSummarizer.js'
-import { AddressBookEntry, CHAIN, RenameAddressCallBack } from '../../utils/user-interface-types.js'
+import { AddressBookEntry, CHAIN, RenameAddressCallBack, Website } from '../../utils/user-interface-types.js'
 import { ERC721TokenApprovalChange, ERC721TokenDefinitionParams, SimulatedAndVisualizedTransaction, SimulationAndVisualisationResults, TokenApprovalChange, TokenBalanceChange, TokenDefinitionParams, TransactionWithAddressBookEntries } from '../../utils/visualizer-types.js'
-import { BigAddress, SmallAddress } from '../subcomponents/address.js'
+import { BigAddress, SmallAddress, WebsiteOriginText } from '../subcomponents/address.js'
 import { ERC721Token, Ether, EtherAmount, EtherSymbol, Token, TokenAmount, TokenPrice, TokenSymbol } from '../subcomponents/coins.js'
 import { LogAnalysis } from './Transactions.js'
 import { CopyToClipboard } from '../subcomponents/CopyToClipboard.js'
@@ -517,28 +517,22 @@ export function GasFee({ tx, chain }: { tx: TransactionGasses, chain: CHAIN } ) 
 
 type TransactionHeaderParams = {
 	simTx: SimulatedAndVisualizedTransaction
-	renameAddressCallBack: RenameAddressCallBack
 	removeTransaction?: () => void
 }
 
-export function TransactionHeader( { simTx, renameAddressCallBack, removeTransaction } : TransactionHeaderParams) {
-	return <header class = 'card-header' style = 'height: 40px;'>
+export function TransactionHeader({ simTx, removeTransaction } : TransactionHeaderParams) {
+	return <header class = 'card-header'>
 		<div class = 'card-header-icon unset-cursor'>
 			<span class = 'icon'>
 				<img src = { simTx.statusCode === 'success' ? ( simTx.quarantine ? '../img/warning-sign.svg' : '../img/success-icon.svg' ) : '../img/error-icon.svg' } />
 			</span>
 		</div>
-
 		<p class = 'card-header-title' style = 'white-space: nowrap;'>
 			{ identifyTransaction(simTx).title }
 		</p>
 		{ simTx.transaction.to  === undefined || identifyTransaction(simTx).type === 'MakeYouRichTransaction' ? <></> :
 			<p class = 'card-header-icon' style = 'margin-left: auto; margin-right: 0; padding-right: 10px; padding-left: 0px; overflow: hidden'>
-				<SmallAddress
-					addressBookEntry = { simTx.transaction.to }
-					renameAddressCallBack = { renameAddressCallBack }
-					style = { { 'background-color': 'unset' } }
-				/>
+				<WebsiteOriginText { ...simTx.website } />
 			</p>
 		}
 		{ removeTransaction !== undefined ?
@@ -546,6 +540,20 @@ export function TransactionHeader( { simTx, renameAddressCallBack, removeTransac
 				<span class = 'icon' style = 'color: var(--text-color);'> X </span>
 			</button>
 		: <></> }
+	</header>
+}
+
+export function TransactionHeaderForFailedToSimulate({ website } : { website: Website }) {
+	return <header class = 'card-header'>
+		<div class = 'card-header-icon unset-cursor'>
+			<span class = 'icon'>
+				<img src = { '../img/error-icon.svg' } />
+			</span>
+		</div>
+		<p class = 'card-header-title' style = 'white-space: nowrap;'> Not simulated </p>
+		<p class = 'card-header-icon' style = 'margin-left: auto; margin-right: 0; padding-right: 10px; padding-left: 0px; overflow: hidden'>
+			<WebsiteOriginText { ...website } />
+		</p>
 	</header>
 }
 
@@ -636,6 +644,7 @@ export function SimulationSummary(param: SimulationSummaryParams) {
 						</div>
 					}
 				</div>
+				
 				<p style = 'color: var(--subtitle-text-color); line-height: 28px; display: flex; margin: 0 0 0 auto; width: fit-content; margin-top: 10px'>
 					<SimulatedInBlockNumber
 						simulationBlockNumber = { param.simulationAndVisualisationResults.blockNumber }

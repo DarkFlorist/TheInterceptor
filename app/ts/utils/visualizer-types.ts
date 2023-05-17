@@ -116,12 +116,12 @@ export const SimulationState = funtypes.ReadonlyObject({
 	chain: CHAIN,
 	simulationConductedTimestamp: EthereumTimestamp,
 })
-
-export type EthBalanceChangesWithMetadata = {
+export type EthBalanceChangesWithMetadata = funtypes.Static<typeof EthBalanceChangesWithMetadata>
+export const EthBalanceChangesWithMetadata = funtypes.ReadonlyObject({
 	address: AddressBookEntry,
-	before: bigint,
-	after: bigint,
-}
+	before: EthereumQuantity,
+	after: EthereumQuantity,
+})
 
 export type TransactionWithAddressBookEntries = funtypes.Static<typeof TransactionWithAddressBookEntries>
 export const TransactionWithAddressBookEntries = funtypes.Intersect(
@@ -144,20 +144,28 @@ export const TransactionWithAddressBookEntries = funtypes.Intersect(
 		funtypes.ReadonlyObject({ type: funtypes.Union(funtypes.Literal('legacy'), funtypes.Literal('2930')) })
 	)
 )
-
-export type SimulatedAndVisualizedTransaction = {
-	transaction: TransactionWithAddressBookEntries
-	ethBalanceChanges: readonly EthBalanceChangesWithMetadata[]
-	tokenBalancesAfter: TokenBalancesAfter
-	tokenResults: readonly TokenVisualizerResultWithMetadata[]
-	website: Website
-	gasSpent: EthereumQuantity
-	realizedGasPrice: EthereumQuantity,
-	quarantine: boolean
-	quarantineCodes: readonly QUARANTINE_CODE[]
-} & (
-	{ statusCode: 'failure', error: string } |
-	{ statusCode: 'success' }
+export type SimulatedAndVisualizedTransaction = funtypes.Static<typeof SimulatedAndVisualizedTransaction>
+export const SimulatedAndVisualizedTransaction = funtypes.Intersect(
+	funtypes.ReadonlyObject({
+		transaction: TransactionWithAddressBookEntries,
+		ethBalanceChanges: funtypes.ReadonlyArray(EthBalanceChangesWithMetadata),
+		tokenBalancesAfter: TokenBalancesAfter,
+		tokenResults: funtypes.ReadonlyArray(TokenVisualizerResultWithMetadata),
+		website: Website,
+		gasSpent: EthereumQuantity,
+		realizedGasPrice: EthereumQuantity,
+		quarantine: funtypes.Boolean,
+		quarantineCodes: funtypes.ReadonlyArray(QUARANTINE_CODE),
+	}),
+	funtypes.Union(
+		funtypes.ReadonlyObject({
+			statusCode: funtypes.Literal('success'),
+		}),
+		funtypes.ReadonlyObject({
+			statusCode: funtypes.Literal('failure'),
+			error: funtypes.String
+		})
+	)
 )
 
 export type SimulationAndVisualisationResults = {
@@ -239,4 +247,3 @@ export const EthereumSubscription = funtypes.Union(NewHeadsSubscription)
 
 export type EthereumSubscriptions = funtypes.Static<typeof EthereumSubscriptions>
 export const EthereumSubscriptions = funtypes.ReadonlyArray(EthereumSubscription)
-

@@ -1,5 +1,5 @@
 import { changeActiveAddressAndChainAndResetSimulation, changeActiveChain, getPrependTrasactions, refreshConfirmTransactionSimulation, updateSimulationState } from './background.js'
-import { getCurrentTabId, getIsConnected, getMakeMeRich, getOpenedAddressBookTabId, getSettings, getSignerName, getSimulationResults, getTabState, saveCurrentTabId, setMakeMeRich, setOpenedAddressBookTabId, setPage, setUseSignersAddressAsActiveAddress, updateAddressInfos, updateContacts, updateWebsiteAccess } from './settings.js'
+import { getPendingTransactions, getCurrentTabId, getIsConnected, getMakeMeRich, getOpenedAddressBookTabId, getSettings, getSignerName, getSimulationResults, getTabState, saveCurrentTabId, setMakeMeRich, setOpenedAddressBookTabId, setPage, setUseSignersAddressAsActiveAddress, updateAddressInfos, updateContacts, updateWebsiteAccess } from './settings.js'
 import { Simulator } from '../simulation/simulator.js'
 import { ChangeActiveAddress, ChangeMakeMeRich, ChangePage, PersonalSign, RemoveTransaction, RequestAccountsFromSigner, TransactionConfirmation, InterceptorAccess, ChangeInterceptorAccess, ChainChangeConfirmation, EnableSimulationMode, ReviewNotification, RejectNotification, ChangeActiveChain, AddOrEditAddressBookEntry, GetAddressBookData, RemoveAddressBookEntry, RefreshConfirmTransactionDialogSimulation, UserAddressBook, InterceptorAccessRefresh, InterceptorAccessChangeAddress, Settings, RefreshConfirmTransactionMetadata, RefreshPersonalSignMetadata, RefreshInterceptorAccessMetadata } from '../utils/interceptor-messages.js'
 import { resolvePendingTransaction } from './windows/confirmTransaction.js'
@@ -17,9 +17,10 @@ import { AddressInfoEntry, WebsiteTabConnections } from '../utils/user-interface
 import { EthereumClientService } from '../simulation/services/EthereumClientService.js'
 import { refreshSimulationState, removeTransactionAndUpdateTransactionNonces, resetSimulationState } from '../simulation/services/SimulationModeEthereumClientService.js'
 import { isFailedToFetchError } from '../utils/errors.js'
+import { formSimulatedAndVisualizedTransaction } from '../components/formVisualizerResults.js'
 
 export async function confirmDialog(ethereumClientService: EthereumClientService, websiteTabConnections: WebsiteTabConnections, confirmation: TransactionConfirmation) {
-	await resolvePendingTransaction(ethereumClientService, websiteTabConnections, confirmation.options.accept ? 'Approved' : 'Rejected')
+	await resolvePendingTransaction(ethereumClientService, websiteTabConnections, confirmation)
 }
 
 export async function confirmPersonalSign(websiteTabConnections: WebsiteTabConnections, confirmation: PersonalSign) {
@@ -169,17 +170,34 @@ export async function refreshSimulation(ethereumClientService: EthereumClientSer
 }
 
 export async function refreshPopupConfirmTransactionMetadata(ethereumClientService: EthereumClientService, userAddressBook: UserAddressBook, { data }: RefreshConfirmTransactionMetadata) {
-	console.log('refreshPopupConfirmTransactionMetadata')
-	const addressMetadata = await getAddressBookEntriesForVisualiser(ethereumClientService, data.visualizerResults.map((x) => x.visualizerResults), data.simulationState, userAddressBook)
+	const addressBookEntries = await getAddressBookEntriesForVisualiser(ethereumClientService, data.visualizerResults.map((x) => x.visualizerResults), data.simulationState, userAddressBook)
+	const promises = await getPendingTransactions()
+	if (promises.length === 0) return
+	const first = promises[0]
+	if (first.simulationResults.statusCode !== 'success') return
 	return await sendPopupMessageToOpenWindows({
-		method: 'popup_confirm_transaction_simulation_state_changed',
-		data: { ...data, addressBookEntries: addressMetadata }
+		method: 'popup_update_confirm_transaction_dialog',
+		data: [{
+			statusCode: 'success',
+			data: {
+				...first.simulationResults.data,
+				simulatedAndVisualizedTransactions: formSimulatedAndVisualizedTransaction(first.simulationResults.data.simulationState, first.simulationResults.data.visualizerResults, addressBookEntries),
+				addressBookEntries,
+			}
+		}, ...promises.slice(1).map((p) => p.simulationResults)]
 	})
 }
 
 export async function refreshPopupConfirmTransactionSimulation(ethereumClientService: EthereumClientService, { data }: RefreshConfirmTransactionDialogSimulation) {
 	const refreshMessage = await refreshConfirmTransactionSimulation(ethereumClientService, data.activeAddress, data.simulationMode, data.requestId, data.transactionToSimulate, data.website)
-	return await sendPopupMessageToOpenWindows(refreshMessage)
+	const promises = await getPendingTransactions()
+	if (promises.length === 0) return
+	const first = promises[0]
+	if (first.simulationResults.data.requestId !== data.requestId) throw new Error('request id\'s do not match in refreshPopupConfirmTransactionSimulation')
+	return await sendPopupMessageToOpenWindows({
+		method: 'popup_update_confirm_transaction_dialog',
+		data: [refreshMessage, ...promises.slice(1).map((p) => p.simulationResults)]
+	})
 }
 
 export async function popupChangeActiveChain(websiteTabConnections: WebsiteTabConnections, params: ChangeActiveChain, settings: Settings) {
@@ -295,11 +313,16 @@ export async function homeOpened(simulator: Simulator) {
 		if (!isFailedToFetchError(error)) throw error
 		await sendPopupMessageToOpenWindows({ method: 'popup_failed_to_get_block' })
 	}
+	const simResults = await getSimulationResults()
+	const simulatedAndVisualizedTransactions = simResults.simulationState === undefined || simResults.visualizerResults === undefined ? [] : formSimulatedAndVisualizedTransaction(simResults.simulationState, simResults.visualizerResults, simResults.addressBookEntries)
 
 	await sendPopupMessageToOpenWindows({
 		method: 'popup_UpdateHomePage',
 		data: {
-			simulation: await getSimulationResults(),
+			simulation: {
+				...simResults,
+				simulatedAndVisualizedTransactions: simulatedAndVisualizedTransactions,
+			},
 			websiteAccessAddressMetadata: getAddressMetadataForAccess(settings.websiteAccess, settings.userAddressBook.addressInfos),
 			pendingAccessMetadata: pendingAccessMetadata,
 			signerAccounts: tabState?.signerAccounts,

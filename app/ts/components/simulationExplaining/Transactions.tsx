@@ -1,7 +1,7 @@
 import { SimulatedAndVisualizedTransaction, SimulationAndVisualisationResults, TokenVisualizerResultWithMetadata, TransactionVisualizationParameters } from '../../utils/visualizer-types.js'
-import { SmallAddress, WebsiteOriginText } from '../subcomponents/address.js'
+import { SmallAddress } from '../subcomponents/address.js'
 import { TokenSymbol, TokenAmount, Token721AmountField } from '../subcomponents/coins.js'
-import { LogAnalysisParams, RenameAddressCallBack } from '../../utils/user-interface-types.js'
+import { AddressBookEntry, LogAnalysisParams, RenameAddressCallBack } from '../../utils/user-interface-types.js'
 import { QUARANTINE_CODE, QUARANTINE_CODES_DICT } from '../../simulation/protectors/quarantine-codes.js'
 import { Error as ErrorComponent } from '../subcomponents/Error.js'
 import { identifyRoutes, identifySwap, SwapVisualization } from './SwapTransactions.js'
@@ -95,13 +95,49 @@ export function TransactionImportanceBlock(param: TransactionImportanceBlockPara
 	}
 }
 
+export function SenderReceiver({ from, to, renameAddressCallBack }: { from: AddressBookEntry, to: AddressBookEntry | undefined, renameAddressCallBack: (entry: AddressBookEntry) => void, }) {
+	const textColor = 'var(--text-color)'
+	if (to === undefined) {
+		return <span class = 'log-table' style = 'margin-top: 10px; column-gap: 5px; justify-content: space-between; grid-template-columns: auto auto'>
+			<div class = 'log-cell' style = ''>
+				<p style = { `color: var(--subtitle-text-color);` }> Transaction sender: </p>
+			</div>
+			<div class = 'log-cell' style = ''>
+				<SmallAddress
+					addressBookEntry = { from }
+					textColor = { 'var(--subtitle-text-color)' }
+					renameAddressCallBack = { renameAddressCallBack }
+				/>
+			</div>
+		</span>
+	}
+	return <span class = 'log-table' style = 'justify-content: center; column-gap: 5px;'>
+		<div class = 'log-cell-flexless' style = 'margin: 2px;'>
+			<SmallAddress
+				addressBookEntry = { from }
+				textColor = { textColor }
+				renameAddressCallBack = { renameAddressCallBack }
+			/>
+		</div>
+		<div class = 'log-cell' style = 'padding-right: 0.2em; padding-left: 0.2em'>
+			<ArrowIcon color = { textColor } />
+		</div>
+		<div class = 'log-cell-flexless' style = 'margin: 2px;'>
+			<SmallAddress
+				addressBookEntry = { to }
+				textColor = { textColor }
+				renameAddressCallBack = { renameAddressCallBack }
+			/>
+		</div>
+	</span>
+}
+
 export function Transaction(param: TransactionVisualizationParameters) {
 	const identifiedTransaction = identifyTransaction(param.simTx).type
 	return (
 		<div class = 'card'>
 			<TransactionHeader
 				simTx = { param.simTx }
-				renameAddressCallBack =  { param.renameAddressCallBack }
 				removeTransaction = { () => param.removeTransaction(param.simTx) }
 			/>
 			<div class = 'card-content' style = 'padding-bottom: 5px;'>
@@ -116,24 +152,14 @@ export function Transaction(param: TransactionVisualizationParameters) {
 					/>
 					<ExtraDetailsTransactionCard transaction = { param.simTx.transaction } />
 
-					<span class = 'log-table' style = 'margin-top: 10px; column-gap: 5px; justify-content: space-between; grid-template-columns: auto auto'>
-						<div class = 'log-cell' style = ''>
-							<p style = { `color: var(--subtitle-text-color);` }> Transaction sender: </p>
-						</div>
-						<div class = 'log-cell' style = ''>
-							<SmallAddress
-								addressBookEntry = { param.simTx.transaction.from }
-								textColor = { 'var(--subtitle-text-color)' }
-								renameAddressCallBack = { param.renameAddressCallBack }
-							/>
-						</div>
-					</span>
+					<SenderReceiver
+						from = { param.simTx.transaction.from }
+						to = { param.simTx.transaction.to }
+						renameAddressCallBack = { param.renameAddressCallBack }
+					/>
 
-					<span class = 'log-table' style = 'grid-template-columns: min-content min-content min-content auto;'>
+					<span class = 'log-table' style = 'margin-top: 10px; grid-template-columns: min-content min-content min-content; justify-content: end;'>
 						<GasFee tx = { param.simTx } chain = { param.simulationAndVisualisationResults.chain } />
-						<div class = 'log-cell' style = 'justify-content: right;'>
-							<WebsiteOriginText { ...param.simTx.website } textColor = { 'var(--subtitle-text-color)' }  />
-						</div>
 					</span>
 				</> }
 			</div>

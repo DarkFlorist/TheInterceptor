@@ -227,11 +227,15 @@ export function FromSmallAddressToSmallAddress({ from, to, renameAddressCallBack
 	</span>
 }
 
-export function WebsiteOriginText( { icon, websiteOrigin, textColor }: Website & { textColor?: string }) {
-	return <a style = 'margin: 2px; border-radius: 40px 40px 40px 40px; display: flex; padding: 4px 10px 4px 10px; overflow: hidden;'>
-		<span style = 'margin-right: 5px; width: 24px; height: 24px; min-width: 24px'>
+export function WebsiteOriginText( { icon, websiteOrigin, title }: Website) {
+	return <div class = 'card-header-icon noselect nopointer'>
+		<span style = 'width: 24px; height: 24px; min-width: 24px'>
 			<img src = { icon } style = 'width: 24px; height: 24px;'/>
 		</span>
-		<p class = 'address-text' style = {`color: ${ textColor === undefined ? 'var(--text-color)' : textColor }; padding-left: 5px;` }>{ websiteOrigin }</p>
-	</a>
+
+		<div class = 'media-content' style = 'overflow-y: hidden; overflow-x: clip; display: block; padding-left: 10px;'>
+			<p class = 'title is-5 is-spaced address-text' style = 'overflow: visible;'>{ websiteOrigin }</p>
+			<p class = 'subtitle is-7' style = 'text-overflow: ellipsis; white-space: nowrap; overflow: visible;'> { title } </p>
+		</div>
+	</div>
 }

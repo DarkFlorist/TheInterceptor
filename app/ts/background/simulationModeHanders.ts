@@ -81,7 +81,6 @@ export async function sendTransaction(
 	}
 	return await openConfirmTransactionDialog(
 		ethereumClientService,
-		websiteTabConnections,
 		socket,
 		request,
 		website,
