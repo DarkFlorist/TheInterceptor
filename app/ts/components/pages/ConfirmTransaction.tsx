@@ -13,6 +13,7 @@ import { QuarantineCodes, SenderReceiver, TransactionImportanceBlock } from '../
 import { identifyTransaction } from '../simulationExplaining/identifyTransaction.js'
 import { SomeTimeAgo } from '../subcomponents/SomeTimeAgo.js'
 import { TIME_BETWEEN_BLOCKS } from '../../utils/constants.js'
+import { DinoSays } from '../subcomponents/DinoSays.js'
 
 type UnderTransactionsParams = {
 	pendingTransactions: ConfirmTransactionTransactionSingleVisualizationArray
@@ -139,8 +140,8 @@ export function ConfirmTransaction() {
 	const [addingNewAddress, setAddingNewAddress] = useState<AddingNewAddressType | 'renameAddressModalClosed'> ('renameAddressModalClosed')
 	const [isConnected, setIsConnected] = useState<IsConnected>(undefined)
 
-	useEffect( () => {
-		function popupMessageListener(msg: unknown) {
+	useEffect(() => {
+		async function popupMessageListener(msg: unknown) {
 			const message = ExternalPopupMessage.parse(msg)
 
 			if (message.method === 'popup_addressBookEntriesChanged') return refreshMetadata()
@@ -151,6 +152,13 @@ export function ConfirmTransaction() {
 			}
 			if (message.method === 'popup_failed_to_get_block') {
 				setIsConnected({ isConnected: false, lastConnnectionAttempt: Date.now() })
+			}
+			if (message.method === 'popup_confirm_transaction_dialog_pending_changed') {
+				setPendingTransactions(message.data.slice(1))
+				const currentWindow = await browser.windows.getCurrent()
+				if (currentWindow.id === undefined) throw new Error('could not get our own Id!')
+				browser.windows.update(currentWindow.id, { focused: true })
+				return
 			}
 			if (message.method !== 'popup_update_confirm_transaction_dialog') return
 			setPendingTransactions(message.data.slice(1))
@@ -169,19 +177,19 @@ export function ConfirmTransaction() {
 		return () => browser.runtime.onMessage.removeListener(popupMessageListener)
 	})
 
-	useEffect( () => { sendPopupMessageToBackgroundPage({ method: 'popup_confirmTransactionReadyAndListening' }) }, [])
+	useEffect(() => { sendPopupMessageToBackgroundPage({ method: 'popup_confirmTransactionReadyAndListening' }) }, [])
 
 	async function approve() {
 		if (dialogState === undefined) throw new Error('dialogState is not set')
-		const ourId = await browser.windows.getCurrent()
-		if (ourId.id === undefined) throw new Error('could not get our own Id!')
-		await sendPopupMessageToBackgroundPage({ method: 'popup_confirmDialog', options: { requestId: dialogState.data.requestId, accept: true, windowId: ourId.id } })
+		const currentWindow = await browser.windows.getCurrent()
+		if (currentWindow.id === undefined) throw new Error('could not get our own Id!')
+		await sendPopupMessageToBackgroundPage({ method: 'popup_confirmDialog', options: { requestId: dialogState.data.requestId, accept: true, windowId: currentWindow.id } })
 	}
 	async function reject() {
 		if (dialogState === undefined) throw new Error('dialogState is not set')
-		const ourId = await browser.windows.getCurrent()
-		if (ourId.id === undefined) throw new Error('could not get our own Id!')
-		await sendPopupMessageToBackgroundPage({ method: 'popup_confirmDialog', options: { requestId: dialogState.data.requestId, accept: false, windowId: ourId.id } })
+		const currentWindow = await browser.windows.getCurrent()
+		if (currentWindow.id === undefined) throw new Error('could not get our own Id!')
+		await sendPopupMessageToBackgroundPage({ method: 'popup_confirmDialog', options: { requestId: dialogState.data.requestId, accept: false, windowId: currentWindow.id } })
 	}
 	const refreshMetadata = () => {
 		if (dialogState === undefined || dialogState.state === 'failed') return
@@ -189,10 +197,7 @@ export function ConfirmTransaction() {
 	}
 	const refreshSimulation = () => {
 		if (dialogState === undefined) return
-		sendPopupMessageToBackgroundPage({
-			method: 'popup_refreshConfirmTransactionDialogSimulation',
-			data: dialogState.data,
-		})
+		sendPopupMessageToBackgroundPage({ method: 'popup_refreshConfirmTransactionDialogSimulation', data: dialogState.data })
 	}
 
 	function isConfirmDisabled() {
@@ -253,7 +258,6 @@ export function ConfirmTransaction() {
 								<ErrorComponent warning = { true } text = { <>Unable to connect to a Ethereum node. Retrying in <SomeTimeAgo priorTimestamp = { new Date(isConnected.lastConnnectionAttempt + TIME_BETWEEN_BLOCKS * 1000) } countBackwards = { true }/>.</> }/>
 							</div>
 						: <></> }
-
 						<TransactionCard
 							simulationAndVisualisationResults = { {
 								blockNumber: dialogState.data.simulationState.blockNumber,

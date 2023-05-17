@@ -54,7 +54,8 @@ export const TransactionConfirmation = funtypes.ReadonlyObject({
 	method: funtypes.Literal('popup_confirmDialog'),
 	options: funtypes.ReadonlyObject({
 		requestId: funtypes.Number,
-		accept: funtypes.Boolean
+		accept: funtypes.Boolean,
+		windowId: funtypes.Number,
 	})
 }).asReadonly()
 
@@ -464,6 +465,12 @@ export const UpdateConfirmTransactionDialog = funtypes.ReadonlyObject({
 	data: ConfirmTransactionTransactionSingleVisualizationArray,
 }).asReadonly()
 
+export type ConfirmTransactionDialogPendingChanged = funtypes.Static<typeof ConfirmTransactionDialogPendingChanged>
+export const ConfirmTransactionDialogPendingChanged = funtypes.ReadonlyObject({
+	method: funtypes.Literal('popup_confirm_transaction_dialog_pending_changed'),
+	data: ConfirmTransactionTransactionSingleVisualizationArray,
+}).asReadonly()
+
 export type WebsiteAddressAccess = funtypes.Static<typeof WebsiteAddressAccess>
 export const WebsiteAddressAccess = funtypes.ReadonlyObject({
 	address: EthereumAddress,
@@ -683,6 +690,7 @@ export const MessageToPopup = funtypes.Union(
 	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_failed_to_get_block') }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_failed_to_update_simulation_state') }),
 	UpdateConfirmTransactionDialog,
+	ConfirmTransactionDialogPendingChanged,
 )
 
 export type ExternalPopupMessage = funtypes.Static<typeof MessageToPopup>

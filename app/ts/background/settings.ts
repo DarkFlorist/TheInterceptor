@@ -106,7 +106,7 @@ export async function getPendingTransactions(): Promise<readonly PendingTransact
 
 const pendingTransactionsSemaphore = new Semaphore(1)
 export async function clearPendingTransactions() {
-	await pendingTransactionsSemaphore.execute(async () => {
+	return await pendingTransactionsSemaphore.execute(async () => {
 		return await browserStorageLocalSet('pendingTransactions', funtypes.ReadonlyArray(PendingTransaction).serialize([]) as string)
 	})
 }
