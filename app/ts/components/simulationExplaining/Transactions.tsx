@@ -111,18 +111,18 @@ export function SenderReceiver({ from, to, renameAddressCallBack }: { from: Addr
 			</div>
 		</span>
 	}
-	return <span class = 'log-table' style = 'justify-content: center; column-gap: 5px;'>
-		<div class = 'log-cell-flexless' style = 'margin: 2px;'>
+	return <span class = 'log-table' style = 'justify-content: center; column-gap: 5px; grid-template-columns: 33.33% 33.33% 33.33%;'>
+		<div class = 'log-cell' style = 'margin: 2px;'>
 			<SmallAddress
 				addressBookEntry = { from }
 				textColor = { textColor }
 				renameAddressCallBack = { renameAddressCallBack }
 			/>
 		</div>
-		<div class = 'log-cell' style = 'padding-right: 0.2em; padding-left: 0.2em'>
+		<div class = 'log-cell' style = 'padding-right: 0.2em; padding-left: 0.2em; justify-content: center;'>
 			<ArrowIcon color = { textColor } />
 		</div>
-		<div class = 'log-cell-flexless' style = 'margin: 2px;'>
+		<div class = 'log-cell' style = 'margin: 2px; justify-content: end;'>
 			<SmallAddress
 				addressBookEntry = { to }
 				textColor = { textColor }

@@ -55,7 +55,7 @@ export async function sendTransaction(
 	website: Website,
 	settings: Settings,
 ) {
-	async function formTransaction() {
+	const formTransaction = async() => {
 		const simulationState = (await getSimulationResults()).simulationState
 		if (simulationState === undefined) return undefined
 		const block = getSimulatedBlock(ethereumClientService, simulationState)
@@ -65,19 +65,23 @@ export async function sendTransaction(
 		const parentBlock = await block
 		if (parentBlock.baseFeePerGas === undefined) throw new Error(CANNOT_SIMULATE_OFF_LEGACY_BLOCK)
 		const maxFeePerGas = parentBlock.baseFeePerGas * 2n
+		const transactionDetails = sendTransactionParams.params[0]
+		const transactionWithoutGas = {
+			type: '1559' as const,
+			from: from,
+			chainId: ethereumClientService.getChainId(),
+			nonce: await transactionCount,
+			maxFeePerGas: transactionDetails.maxFeePerGas ? transactionDetails.maxFeePerGas : maxFeePerGas,
+			maxPriorityFeePerGas: transactionDetails.maxPriorityFeePerGas ? transactionDetails.maxPriorityFeePerGas : 1n,
+			to: transactionDetails.to === undefined ? null : transactionDetails.to,
+			value: transactionDetails.value ? transactionDetails.value : 0n,
+			input: 'data' in transactionDetails && transactionDetails.data !== undefined ? transactionDetails.data : new Uint8Array(),
+			accessList: [],
+		}
 		return {
 			transaction: {
-				type: '1559' as const,
-				from: from,
-				chainId: ethereumClientService.getChainId(),
-				nonce: await transactionCount,
-				maxFeePerGas: sendTransactionParams.params[0].maxFeePerGas ? sendTransactionParams.params[0].maxFeePerGas : maxFeePerGas,
-				maxPriorityFeePerGas: sendTransactionParams.params[0].maxPriorityFeePerGas ? sendTransactionParams.params[0].maxPriorityFeePerGas : 1n,
-				gas: sendTransactionParams.params[0].gas ? sendTransactionParams.params[0].gas : 90000n,
-				to: sendTransactionParams.params[0].to === undefined ? null : sendTransactionParams.params[0].to,
-				value: sendTransactionParams.params[0].value ? sendTransactionParams.params[0].value : 0n,
-				input: 'data' in sendTransactionParams.params[0] && sendTransactionParams.params[0].data !== undefined ? sendTransactionParams.params[0].data : new Uint8Array(),
-				accessList: []
+				...transactionWithoutGas,
+				...(transactionDetails.gas !== undefined ? { gas: transactionDetails.gas } : { gas: await simulateEstimateGas(ethereumClientService, simulationState, transactionWithoutGas) })
 			},
 			website: website,
 			transactionCreated: new Date(),
