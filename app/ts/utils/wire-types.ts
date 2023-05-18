@@ -663,7 +663,7 @@ export const TransactionReceiptParams = funtypes.ReadonlyObject({
 export type EstimateGasParamsVariables = funtypes.Static<typeof EstimateGasParamsVariables>
 export const EstimateGasParamsVariables = funtypes.Intersect(
 	funtypes.Partial({
-		to: EthereumAddress,
+		to: funtypes.Union(EthereumAddress, funtypes.Null),
 		from: EthereumAddress,
 		data: EthereumData,
 		value: EthereumQuantity,
