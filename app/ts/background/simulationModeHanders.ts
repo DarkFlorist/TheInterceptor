@@ -1,13 +1,14 @@
+import { ethers } from 'ethers'
 import { EthereumClientService } from '../simulation/services/EthereumClientService.js'
 import { createEthereumSubscription, removeEthereumSubscription } from '../simulation/services/EthereumSubscriptionService.js'
 import { getSimulatedBalance, getSimulatedBlock, getSimulatedBlockNumber, getSimulatedCode, getSimulatedLogs, getSimulatedStack, getSimulatedTransactionByHash, getSimulatedTransactionCount, getSimulatedTransactionReceipt, simulatedCall, simulateEstimateGas } from '../simulation/services/SimulationModeEthereumClientService.js'
 import { Simulator } from '../simulation/simulator.js'
-import { bytes32String } from '../utils/bigint.js'
+import { bytes32String, dataStringWith0xStart, stringToUint8Array } from '../utils/bigint.js'
 import { CANNOT_SIMULATE_OFF_LEGACY_BLOCK, ERROR_INTERCEPTOR_GET_CODE_FAILED, KNOWN_CONTRACT_CALLER_ADDRESSES } from '../utils/constants.js'
 import { InterceptedRequest, Settings, WebsiteAccessArray } from '../utils/interceptor-messages.js'
 import { Website, WebsiteSocket, WebsiteTabConnections } from '../utils/user-interface-types.js'
 import { SimulationState } from '../utils/visualizer-types.js'
-import { EstimateGasParams, EthBalanceParams, EthBlockByNumberParams, EthCallParams, EthereumAddress, EthereumData, EthereumQuantity, EthereumSignedTransactionWithBlockData, EthGetLogsParams, EthGetLogsResponse, EthSubscribeParams, EthTransactionReceiptResponse, EthUnSubscribeParams, GetBlockReturn, GetCode, GetSimulationStack, GetSimulationStackReply, GetTransactionCount, OldSignTypedDataParams, PersonalSignParams, SendTransactionParams, SignTypedDataParams, SwitchEthereumChainParams, TransactionByHashParams, TransactionReceiptParams } from '../utils/wire-types.js'
+import { EstimateGasParams, EthBalanceParams, EthBlockByNumberParams, EthCallParams, EthereumAddress, EthereumData, EthereumQuantity, EthereumSignedTransactionWithBlockData, EthGetLogsParams, EthGetLogsResponse, EthSubscribeParams, EthTransactionReceiptResponse, EthUnSubscribeParams, GetBlockReturn, GetCode, GetSimulationStack, GetSimulationStackReply, GetTransactionCount, OldSignTypedDataParams, PersonalSignParams, SendRawTransaction, SendTransactionParams, SignTypedDataParams, SwitchEthereumChainParams, TransactionByHashParams, TransactionReceiptParams } from '../utils/wire-types.js'
 import { getConnectionDetails } from './accessManagement.js'
 import { getSimulationResults } from './settings.js'
 import { openChangeChainDialog } from './windows/changeChain.js'
@@ -31,9 +32,9 @@ export async function getTransactionReceipt(ethereumClientService: EthereumClien
 	return { result: EthTransactionReceiptResponse.serialize(await getSimulatedTransactionReceipt(ethereumClientService, simulationState, request.params[0])) }
 }
 
-function getFromField(websiteTabConnections: WebsiteTabConnections, simulationMode: boolean, request: SendTransactionParams, getActiveAddressForDomain: (websiteAccess: WebsiteAccessArray, websiteOrigin: string, settings: Settings) => bigint | undefined, socket: WebsiteSocket, settings: Settings) {
-	if (simulationMode && 'from' in request.params[0] && request.params[0].from !== undefined) {
-		return request.params[0].from // use `from` field directly from the dapp if we are in simulation mode and its available
+function getFromField(websiteTabConnections: WebsiteTabConnections, simulationMode: boolean, transactionFrom: bigint | undefined, getActiveAddressForDomain: (websiteAccess: WebsiteAccessArray, websiteOrigin: string, settings: Settings) => bigint | undefined, socket: WebsiteSocket, settings: Settings) {
+	if (simulationMode && transactionFrom !== undefined) {
+		return transactionFrom // use `from` field directly from the dapp if we are in simulation mode and its available
 	} else {
 		const connection = getConnectionDetails(websiteTabConnections, socket)
 		if (connection === undefined) throw new Error('Not connected')
@@ -59,13 +60,13 @@ export async function sendTransaction(
 		const simulationState = (await getSimulationResults()).simulationState
 		if (simulationState === undefined) return undefined
 		const block = getSimulatedBlock(ethereumClientService, simulationState)
-		const from = getFromField(websiteTabConnections, simulationMode, sendTransactionParams, getActiveAddressForDomain, socket, settings)
+		const transactionDetails = sendTransactionParams.params[0]
+		const from = getFromField(websiteTabConnections, simulationMode, transactionDetails.from, getActiveAddressForDomain, socket, settings)
 		const transactionCount = getSimulatedTransactionCount(ethereumClientService, simulationState, from)
 
 		const parentBlock = await block
 		if (parentBlock.baseFeePerGas === undefined) throw new Error(CANNOT_SIMULATE_OFF_LEGACY_BLOCK)
 		const maxFeePerGas = parentBlock.baseFeePerGas * 2n
-		const transactionDetails = sendTransactionParams.params[0]
 		const transactionWithoutGas = {
 			type: '1559' as const,
 			from: from,
@@ -96,6 +97,36 @@ export async function sendTransaction(
 		formTransaction,
 		settings,
 	)
+}
+
+export async function sendRawTransaction(
+	websiteTabConnections: WebsiteTabConnections,
+	getActiveAddressForDomain: (websiteAccess: WebsiteAccessArray, websiteOrigin: string, settings: Settings) => bigint | undefined,
+	ethereumClientService: EthereumClientService,
+	sendRawTransactionParams: SendRawTransaction,
+	socket: WebsiteSocket,
+	request: InterceptedRequest,
+	simulationMode: boolean,
+	website: Website,
+	settings: Settings
+) {
+	const transaction = ethers.Transaction.from(dataStringWith0xStart(sendRawTransactionParams.params[0]))
+	
+	const from = getFromField(websiteTabConnections, simulationMode, transaction.from === null ? undefined : EthereumAddress.parse(transaction.from), getActiveAddressForDomain, socket, settings)
+	const sendTransactionParams: SendTransactionParams = {
+		method: 'eth_sendTransaction',
+		params: [{
+			from: from,
+			data: stringToUint8Array(transaction.data),
+			...transaction.gasLimit === null ? { gas: transaction.gasLimit } : {},
+			value: transaction.value,
+			...transaction.to === null ? {} : { to: EthereumAddress.parse(transaction.to) },
+			...transaction.gasPrice === null ? {} : { gasPrice: transaction.gasPrice },
+			...transaction.maxPriorityFeePerGas === null ? {} : { maxPriorityFeePerGas: transaction.maxPriorityFeePerGas },
+			...transaction.maxFeePerGas === null ? {} : { maxFeePerGas: transaction.maxFeePerGas },
+		}]
+	}
+	return sendTransaction(websiteTabConnections, getActiveAddressForDomain, ethereumClientService, sendTransactionParams, socket, request, simulationMode, website, settings)
 }
 
 async function singleCallWithFromOverride(ethereumClientService: EthereumClientService, simulationState: SimulationState, request: EthCallParams, from: bigint) {
