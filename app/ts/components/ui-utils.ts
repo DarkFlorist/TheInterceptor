@@ -1,5 +1,7 @@
 import { ethers } from 'ethers'
 import { Ref, useEffect } from 'preact/hooks'
+import { getUseTabsInsteadOfPopup } from '../background/settings.js'
+import { assertNever } from '../utils/typescript.js'
 
 function assertIsNode(e: EventTarget | null): asserts e is Node {
 	if (!e || !('nodeType' in e)) {
@@ -68,4 +70,104 @@ export function convertNumberToCharacterRepresentationIfSmallEnough(num: number)
 
 export function humanReadableDate(timeInSeconds: bigint) {
 	return new Date(Number(timeInSeconds) * 1000).toISOString().split('T')[0]
+}
+
+export type PopupOrTabId = {
+	id: number,
+	type: 'tab' | 'popup'
+}
+
+export type PopupOrTab = {
+	windowOrTab: browser.windows.Window,
+	type: 'popup'
+} | {
+	windowOrTab: browser.tabs.Tab,
+	type: 'tab'
+}
+
+export async function openPopupOrTab(createData: browser.windows._CreateCreateData & { url: string }) : Promise<PopupOrTab | undefined> {
+	if (await getUseTabsInsteadOfPopup()) {
+		const tab = await browser.tabs.create({ url: createData.url })
+		if (tab === undefined || tab === null) return undefined
+		return { type: 'tab', windowOrTab: tab }
+	}
+	const window = await browser.windows.create(createData)
+	if (window === undefined || window === null) return undefined
+	return { type: 'popup', windowOrTab: window }
+}
+
+export async function getPopupOrTabById(popupOrTabId: PopupOrTabId) : Promise<PopupOrTab | undefined> {
+	switch (popupOrTabId.type) {
+		case 'tab': {
+			try {
+				const tabs = await browser.tabs.query({ windowId: popupOrTabId.id })
+				if (tabs.length === 0) return undefined
+				return { type: 'tab', windowOrTab: tabs[0] }
+			} catch(e) {
+				return undefined
+			}
+		}
+		case 'popup': {
+			try {
+				const window = await browser.windows.get(popupOrTabId.id)
+				if (window === undefined || window === null) return undefined
+				return { type: 'popup', windowOrTab: window }
+			} catch(e) {
+				return undefined
+			}
+		}
+		default: assertNever(popupOrTabId.type)
+	}
+}
+
+export async function getPopupOrTabOnlyById(id: number) : Promise<PopupOrTab | undefined> {
+	try {
+		const tabs = await browser.tabs.query({ windowId: id })
+		if (tabs.length !== 0) return { type: 'tab', windowOrTab: tabs[0] }
+	} catch(e) {}
+	try {
+		const window = await browser.windows.get(id)
+		if (window === undefined || window === null) return undefined
+		return { type: 'popup', windowOrTab: window }
+	} catch(e) {}
+	return undefined
+}
+
+export async function closePopupOrTabById(popupOrTabId: PopupOrTabId) {
+	try {
+		switch (popupOrTabId.type) {
+			case 'tab': return await browser.tabs.remove(popupOrTabId.id)
+			case 'popup': return await browser.windows.remove(popupOrTabId.id)
+			default: assertNever(popupOrTabId.type)
+		}
+	} catch(e) {}
+}
+
+export async function closePopupOrTab(popupOrTab: PopupOrTab) {
+	if (popupOrTab.windowOrTab.id === undefined) return
+	try {
+		switch (popupOrTab.type) {
+			case 'tab': return await browser.tabs.remove(popupOrTab.windowOrTab.id)
+			case 'popup': return await browser.windows.remove(popupOrTab.windowOrTab.id)
+			default: assertNever(popupOrTab)
+		}
+	} catch(e) {}
+}
+
+export async function addWindowTabListener(onCloseWindow: (id: number) => void) {
+	browser.windows.onRemoved.addListener(onCloseWindow)
+	browser.tabs.onRemoved.addListener(onCloseWindow)
+}
+
+export async function removeWindowTabListener(onCloseWindow: (id: number) => void) {
+	browser.windows.onRemoved.addListener(onCloseWindow)
+	browser.tabs.onRemoved.addListener(onCloseWindow)
+}
+
+export async function tryFocusingWindow(windowId: number) {
+	try {
+		await browser.windows.update(windowId, { focused: true })
+	} catch(e) {
+
+	}
 }

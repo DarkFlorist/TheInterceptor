@@ -5,7 +5,7 @@ import { AddressInfoEntry, AddressBookEntry, AddingNewAddressType, RenameAddress
 import { ExternalPopupMessage } from '../../utils/interceptor-messages.js'
 import { sendPopupMessageToBackgroundPage } from '../../background/backgroundUtils.js'
 import Hint from '../subcomponents/Hint.js'
-import { convertNumberToCharacterRepresentationIfSmallEnough } from '../ui-utils.js'
+import { convertNumberToCharacterRepresentationIfSmallEnough, tryFocusingWindow } from '../ui-utils.js'
 import { ChangeActiveAddress } from './ChangeActiveAddress.js'
 import { DinoSays } from '../subcomponents/DinoSays.js'
 import { getPrettySignerName } from '../subcomponents/signers.js'
@@ -114,6 +114,7 @@ interface InterceptorAccessRequest {
 	signerName: SignerName
 	simulationMode: boolean
 	socket: WebsiteSocket
+	windowIdOpenedFrom: number,
 }
 
 const DISABLED_DELAY_MS = 3000
@@ -149,6 +150,7 @@ export function InterceptorAccess() {
 			originalRequestAccessToAddress: accessRequest.originalRequestAccessToAddress?.address,
 		}
 		await sendPopupMessageToBackgroundPage({ method: 'popup_interceptorAccess', options })
+		await tryFocusingWindow(accessRequest.windowIdOpenedFrom)
 		globalThis.close()
 	}
 
@@ -161,6 +163,7 @@ export function InterceptorAccess() {
 			originalRequestAccessToAddress: accessRequest.originalRequestAccessToAddress?.address,
 		}
 		await sendPopupMessageToBackgroundPage({ method: 'popup_interceptorAccess', options })
+		await tryFocusingWindow(accessRequest.windowIdOpenedFrom)
 		globalThis.close()
 	}
 

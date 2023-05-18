@@ -1,3 +1,4 @@
+import { PopupOrTab, addWindowTabListener, openPopupOrTab, removeWindowTabListener } from '../../components/ui-utils.js'
 import { METAMASK_ERROR_USER_REJECTED_REQUEST } from '../../utils/constants.js'
 import { Future } from '../../utils/future.js'
 import { ChainChangeConfirmation, InterceptedRequest, ExternalPopupMessage, SignerChainChangeConfirmation } from '../../utils/interceptor-messages.js'
@@ -9,7 +10,7 @@ import { getChainChangeConfirmationPromise, setChainChangeConfirmationPromise } 
 let pendForUserReply: Future<ChainChangeConfirmation> | undefined = undefined
 let pendForSignerReply: Future<SignerChainChangeConfirmation> | undefined = undefined
 
-let openedWindow: browser.windows.Window | null = null
+let openedDialog: PopupOrTab | undefined = undefined
 
 export async function resolveChainChange(websiteTabConnections: WebsiteTabConnections, confirmation: ChainChangeConfirmation) {
 	if (pendForUserReply !== undefined) {
@@ -52,13 +53,13 @@ export const openChangeChainDialog = async (
 	website: Website,
 	chainId: bigint
 ) => {
-	if (openedWindow !== null || pendForUserReply || pendForSignerReply) return userDeniedChange
+	if (openedDialog !== undefined || pendForUserReply || pendForSignerReply) return userDeniedChange
 
 	pendForUserReply = new Future<ChainChangeConfirmation>()
 
 	const onCloseWindow = (windowId: number) => { // check if user has closed the window on their own, if so, reject signature
-		if (openedWindow === null || openedWindow.id !== windowId) return
-		openedWindow = null
+		if (openedDialog === undefined || openedDialog.windowOrTab.id !== windowId) return
+		openedDialog = undefined
 		if (pendForUserReply === undefined) return
 		resolveChainChange(websiteTabConnections, rejectMessage(request.requestId))
 	}
@@ -90,19 +91,19 @@ export const openChangeChainDialog = async (
 
 		browser.runtime.onMessage.addListener(changeChainWindowReadyAndListening)
 
-		openedWindow = await browser.windows.create({
+		openedDialog = await openPopupOrTab({
 			url: getHtmlFile('changeChain'),
 			type: 'popup',
 			height: 450,
 			width: 520,
 		})
 
-		if (openedWindow && openedWindow.id !== undefined) {
-			browser.windows.onRemoved.addListener(onCloseWindow)
+		if (openedDialog?.windowOrTab.id !== undefined) {
+			addWindowTabListener(onCloseWindow)
 
 			setChainChangeConfirmationPromise({
 				website: website,
-				dialogId: openedWindow.id,
+				dialogId: openedDialog?.windowOrTab.id,
 				socket: socket,
 				request: request,
 				simulationMode: simulationMode,
@@ -117,10 +118,10 @@ export const openChangeChainDialog = async (
 		// forward message to content script
 		return resolve(websiteTabConnections, reply, simulationMode)
 	} finally {
-		browser.windows.onRemoved.removeListener(onCloseWindow)
-		browser.windows.onRemoved.removeListener(changeChainWindowReadyAndListening)
+		removeWindowTabListener(onCloseWindow)
+		browser.runtime.onMessage.removeListener(changeChainWindowReadyAndListening)
 		pendForUserReply = undefined
-		openedWindow = null
+		openedDialog = undefined
 	}
 }
 

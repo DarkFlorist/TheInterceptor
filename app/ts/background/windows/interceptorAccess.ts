@@ -1,3 +1,4 @@
+import { PopupOrTab, addWindowTabListener, openPopupOrTab, removeWindowTabListener } from '../../components/ui-utils.js'
 import { Future } from '../../utils/future.js'
 import { ExternalPopupMessage, InterceptedRequest, InterceptorAccessChangeAddress, InterceptorAccessRefresh, InterceptorAccessReply, PendingAccessRequest, RefreshInterceptorAccessMetadata, Settings, WebsiteAccessArray, WindowMessage } from '../../utils/interceptor-messages.js'
 import { AddressInfo, AddressInfoEntry, Website, WebsiteSocket, WebsiteTabConnections } from '../../utils/user-interface-types.js'
@@ -8,7 +9,7 @@ import { updateExtensionBadge } from '../iconHandler.js'
 import { findAddressInfo } from '../metadataUtils.js'
 import { getPendingInterceptorAccessRequestPromise, setPendingInterceptorAccessRequestPromise, getSignerName, getTabState, getSettings, updatePendingAccessRequests } from '../settings.js'
 
-let openedInterceptorAccessWindow: browser.windows.Window | null = null
+let openedDialog: PopupOrTab | undefined = undefined
 
 let pendingInterceptorAccess: {
 	future: Future<InterceptorAccessReply>
@@ -17,7 +18,7 @@ let pendingInterceptorAccess: {
 } | undefined = undefined
 
 const onCloseWindow = async (windowId: number) => { // check if user has closed the window on their own, if so, reject signature
-	if (openedInterceptorAccessWindow === null || openedInterceptorAccessWindow.id !== windowId) return
+	if (openedDialog?.windowOrTab.id !== windowId) return
 	if (pendingInterceptorAccess !== undefined) pendingInterceptorAccess.future.resolve({
 		approval: 'NoResponse',
 		websiteOrigin: pendingInterceptorAccess.websiteOrigin,
@@ -25,7 +26,7 @@ const onCloseWindow = async (windowId: number) => { // check if user has closed 
 		originalRequestAccessToAddress: pendingInterceptorAccess.requestAccessToAddress
 	})
 	pendingInterceptorAccess = undefined
-	openedInterceptorAccessWindow = null
+	openedDialog = undefined
 	browser.windows.onRemoved.removeListener(onCloseWindow)
 }
 
@@ -204,20 +205,18 @@ export async function requestAccessFromUser(
 
 		browser.runtime.onMessage.addListener(windowReadyAndListening)
 
-		openedInterceptorAccessWindow = await browser.windows.create({
+		openedDialog = await openPopupOrTab({
 			url: getHtmlFile('interceptorAccess'),
 			type: 'popup',
-			height: 600,
+			height: 800,
 			width: 600,
 		})
 
-		if (openedInterceptorAccessWindow?.id === undefined) {
-			return rejectReply()
-		}
-		browser.windows.onRemoved.addListener(onCloseWindow)
+		if (openedDialog?.windowOrTab.id === undefined) return rejectReply()
+		addWindowTabListener(onCloseWindow)
 		await setPendingInterceptorAccessRequestPromise({
 			website: website,
-			dialogId: openedInterceptorAccessWindow.id,
+			dialogId: openedDialog.windowOrTab.id,
 			socket: socket,
 			requestAccessToAddress: accessAddress,
 			request: request,
@@ -226,15 +225,15 @@ export async function requestAccessFromUser(
 		return await resolve(websiteTabConnections, confirmation)
 	} finally {
 		pendingInterceptorAccess = undefined
-		browser.windows.onRemoved.removeListener(onCloseWindow)
-		browser.windows.onRemoved.removeListener(windowReadyAndListening)
+		removeWindowTabListener(onCloseWindow)
+		browser.runtime.onMessage.removeListener(windowReadyAndListening)
 	}
 }
 
 async function resolve(websiteTabConnections: WebsiteTabConnections, confirmation: InterceptorAccessReply) {
 	const data = await getPendingInterceptorAccessRequestPromise()
 	await setPendingInterceptorAccessRequestPromise(undefined)
-	openedInterceptorAccessWindow = null
+	openedDialog = undefined
 	if (data === undefined) throw new Error('data was undefined')
 
 	if (confirmation.approval === 'NoResponse') {

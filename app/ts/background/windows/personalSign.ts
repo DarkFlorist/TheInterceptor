@@ -13,10 +13,11 @@ import { getHtmlFile, sendPopupMessageToOpenWindows } from '../backgroundUtils.j
 import { extractEIP712Message, validateEIP712Types } from '../../utils/eip712Parsing.js'
 import { getAddressMetaData, getTokenMetadata } from '../metadataUtils.js'
 import { getPendingPersonalSignPromise, getSettings, getSignerName, setPendingPersonalSignPromise } from '../settings.js'
+import { PopupOrTab, addWindowTabListener, openPopupOrTab, removeWindowTabListener } from '../../components/ui-utils.js'
 
 let pendingPersonalSign: Future<PersonalSign> | undefined = undefined
 
-let openedPersonalSignDialogWindow: browser.windows.Window | null = null
+let openedDialog: PopupOrTab | undefined = undefined
 
 export async function resolvePersonalSign(websiteTabConnections: WebsiteTabConnections, confirmation: PersonalSign) {
 	if (pendingPersonalSign !== undefined) {
@@ -27,7 +28,7 @@ export async function resolvePersonalSign(websiteTabConnections: WebsiteTabConne
 		const resolved = await resolve(confirmation, data.simulationMode, data.params)
 		sendMessageToContentScript(websiteTabConnections, data.socket, resolved, data.request)
 	}
-	openedPersonalSignDialogWindow = null
+	openedDialog = undefined
 }
 
 function rejectMessage(requestId: number) {
@@ -223,9 +224,9 @@ export const openPersonalSignDialog = async (
 	if (pendingPersonalSign !== undefined) return reject()
 
 	const onCloseWindow = (windowId: number) => {
-		if (openedPersonalSignDialogWindow === null || openedPersonalSignDialogWindow.id !== windowId) return
+		if (openedDialog?.windowOrTab.id !== windowId) return
 		if (pendingPersonalSign === undefined) return
-		openedPersonalSignDialogWindow = null
+		openedDialog = undefined
 		return resolvePersonalSign(websiteTabConnections, rejectMessage(request.requestId))
 	}
 
@@ -253,18 +254,18 @@ export const openPersonalSignDialog = async (
 
 		browser.runtime.onMessage.addListener(personalSignWindowReadyAndListening)
 
-		openedPersonalSignDialogWindow = await browser.windows.create({
+		openedDialog = await openPopupOrTab({
 			url: getHtmlFile('personalSign'),
 			type: 'popup',
 			height: 800,
 			width: 600,
 		})
-		if (openedPersonalSignDialogWindow && openedPersonalSignDialogWindow.id !== undefined) {
-			browser.windows.onRemoved.addListener(onCloseWindow)
+		if (openedDialog?.windowOrTab.id !== undefined) {
+			addWindowTabListener(onCloseWindow)
 
 			await setPendingPersonalSignPromise({
 				website: website,
-				dialogId: openedPersonalSignDialogWindow.id,
+				dialogId: openedDialog?.windowOrTab.id,
 				socket: socket,
 				request: request,
 				simulationMode: simulationMode,
@@ -279,7 +280,7 @@ export const openPersonalSignDialog = async (
 		return resolve(reply, simulationMode, params)
 	} finally {
 		browser.runtime.onMessage.removeListener(personalSignWindowReadyAndListening)
-		browser.runtime.onMessage.removeListener(onCloseWindow)
+		removeWindowTabListener(onCloseWindow)
 		pendingPersonalSign = undefined
 	}
 }

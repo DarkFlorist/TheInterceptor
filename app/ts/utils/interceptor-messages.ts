@@ -390,6 +390,7 @@ export const ChangeChainRequest = funtypes.ReadonlyObject({
 		simulationMode: funtypes.Boolean,
 		chainId: EthereumQuantity,
 		website: Website,
+		windowIdOpenedFrom: funtypes.Number,
 	})
 })
 
@@ -412,6 +413,7 @@ export const InterceptorAccessDialog = funtypes.ReadonlyObject({
 		signerName: SignerName,
 		simulationMode: funtypes.Boolean,
 		socket: WebsiteSocket,
+		windowIdOpenedFrom: funtypes.Number,
 	})
 })
 
@@ -422,6 +424,7 @@ export const ConfirmTransactionSimulationBaseData = funtypes.ReadonlyObject({
 	requestId: funtypes.Number,
 	transactionToSimulate: WebsiteCreatedEthereumUnsignedTransaction,
 	signerName: SignerName,
+	windowIdOpenedFrom: funtypes.Number,
 })
 
 export type ConfirmTransactionDialogState = funtypes.Static<typeof ConfirmTransactionDialogState>

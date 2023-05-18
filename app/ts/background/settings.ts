@@ -298,3 +298,11 @@ export async function updateEthereumSubscriptions(updateFunc: (prevState: Ethere
 		return await browserStorageLocalSet('ethereumSubscriptions', EthereumSubscriptions.serialize(updateFunc(subscriptions)) as string)
 	})
 }
+
+export async function getUseTabsInsteadOfPopup() {
+	return funtypes.Boolean.parse(await browserStorageLocalSingleGetWithDefault('useTabsInsteadOfPopup', true))
+}
+
+export async function setUseTabsInsteadOfPopup(useTabsInsteadOfPopup: boolean) {
+	return await browserStorageLocalSet('useTabsInsteadOfPopup', funtypes.Boolean.serialize(useTabsInsteadOfPopup) as string)
+}
