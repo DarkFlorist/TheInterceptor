@@ -1,4 +1,4 @@
-import { addressString, checksummedAddress } from '../../utils/bigint.js'
+import { checksummedAddress } from '../../utils/bigint.js'
 import Blockie from './PreactBlocky.js'
 import { AddressBookEntry, AddressInfo, RenameAddressCallBack, Website } from '../../utils/user-interface-types.js'
 import { CopyToClipboard } from './CopyToClipboard.js'
@@ -29,11 +29,7 @@ export function AddressIcon(param: AddressIconParams) {
 	const style = `background-color: var(--unimportant-text-color); ${ param.isBig ? `width: 40px; height: 40px;` : `width: 24px; height: 24px;` }`
 	if (param.address !== undefined && param.logoUri === undefined) {
 		return <div style = { style } class = 'noselect nopointer'>
-			<Blockie
-				seed = { addressString(param.address).toLowerCase() }
-				size = { 8 }
-				scale = { param.isBig ? 5 : 3 }
-			/>
+			<Blockie address = { param.address } scale = { param.isBig ? 5 : 3 } />
 		</div>
 	}
 	if (param.logoUri !== undefined) {

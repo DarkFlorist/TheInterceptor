@@ -121,8 +121,7 @@ export function TokenSymbol(param: TokenSymbolParams) {
 			<CopyToClipboard content = { tokenString } copyMessage = 'Token address copied!' >
 				{ param.logoUri === undefined ?
 					<Blockie
-						seed = { tokenString.toLowerCase() }
-						size = { 8 }
+						address = { param.address }
 						scale = { 3 }
 						borderRadius = { '50%' }
 						style = { { 'vertical-align': 'middle' } }

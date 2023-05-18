@@ -1,15 +1,13 @@
 import { useEffect, useState } from 'preact/hooks'
 import { DataURLCache } from './DataURLCache.js'
 import { JSX } from 'preact/jsx-runtime'
+import { addressString } from '../../utils/bigint.js'
 const dataURLCache = new DataURLCache()
 
 interface BlockieProps {
-	seed: string,
-	size?: number,
+	address: bigint,
 	scale?: number,
 	color?: string,
-	bgColor?: string,
-	spotColor?: string,
 	borderRadius?: string,
 	style?: JSX.CSSProperties
 }
@@ -111,16 +109,15 @@ function generateIdenticon(options: BlockieProps, canvasRef: HTMLCanvasElement) 
 	}
 
 	const opts = options || {}
-	const size = opts.size || 8
 	const scale = opts.scale || 4
-	const seed = opts.seed || Math.floor((Math.random()*Math.pow(10,16))).toString(16)
+	const seed = addressString(opts.address)
 
 	seedrand(seed)
 
 	const color = opts.color || createColor()
-	const bgcolor = opts.bgColor || createColor()
-	const spotcolor = opts.spotColor || createColor()
-	const imageData = createImageData(size)
+	const bgcolor = createColor()
+	const spotcolor = createColor()
+	const imageData = createImageData(8)
 	const canvas = setCanvas(canvasRef, imageData, color, scale, bgcolor, spotcolor)
 
 	return canvas
@@ -128,23 +125,23 @@ function generateIdenticon(options: BlockieProps, canvasRef: HTMLCanvasElement) 
 
 export default function Blockie(props: BlockieProps) {
 	const scale = props.scale || 4
-	const dimension = (props.size || 8) * scale
-	const [seed, setSeed] = useState<string | undefined>(props.seed)
-	const [dataURL, setDataURL] = useState<string | undefined>(dataURLCache.get(`${ props.seed }!${ dimension }`))
+	const dimension = 8 * scale
+	const [address, setAddress] = useState<bigint | undefined>(props.address)
+	const [dataURL, setDataURL] = useState<string | undefined>(dataURLCache.get(`${ props.address }!${ dimension }`))
 
 	useEffect(() => {
-		if (dataURL === undefined || seed !== props.seed) {
-			setSeed(props.seed)
+		if (dataURL === undefined || address !== props.address) {
+			setAddress(props.address)
 			const element = document.createElement('canvas')
 			generateIdenticon(props, element)
 			element.toBlob((blob) => {
 				if (!blob) return
 				const dataUrl = URL.createObjectURL(blob)
 				setDataURL(dataUrl)
-				dataURLCache.set(dataUrl, `${ props.seed }!${ dimension }`)
+				dataURLCache.set(dataUrl, `${ props.address }!${ dimension }`)
 			})
 		}
-	}, [props.seed])
+	}, [props.address])
 	return <img
 		src = { dataURL === undefined ? 'data:image/gif;base64,R0lGODlhAQABAAAAACwAAAAAAQABAAA=' : dataURL}
 		style = {
