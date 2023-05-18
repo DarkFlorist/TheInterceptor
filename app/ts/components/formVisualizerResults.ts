@@ -76,6 +76,7 @@ export function formSimulatedAndVisualizedTransaction(simState: SimulationState,
 				statusCode: simulatedTx.multicallResponse.statusCode,
 			}),
 			website: visualizerResults[index].website,
+			transactionCreated: simulatedTx.transactionCreated,
 		}
 	})
 }

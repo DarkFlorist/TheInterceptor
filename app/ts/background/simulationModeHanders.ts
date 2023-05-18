@@ -66,17 +66,21 @@ export async function sendTransaction(
 		if (parentBlock.baseFeePerGas === undefined) throw new Error(CANNOT_SIMULATE_OFF_LEGACY_BLOCK)
 		const maxFeePerGas = parentBlock.baseFeePerGas * 2n
 		return {
-			type: '1559' as const,
-			from: from,
-			chainId: ethereumClientService.getChainId(),
-			nonce: await transactionCount,
-			maxFeePerGas: sendTransactionParams.params[0].maxFeePerGas ? sendTransactionParams.params[0].maxFeePerGas : maxFeePerGas,
-			maxPriorityFeePerGas: sendTransactionParams.params[0].maxPriorityFeePerGas ? sendTransactionParams.params[0].maxPriorityFeePerGas : 1n,
-			gas: sendTransactionParams.params[0].gas ? sendTransactionParams.params[0].gas : 90000n,
-			to: sendTransactionParams.params[0].to === undefined ? null : sendTransactionParams.params[0].to,
-			value: sendTransactionParams.params[0].value ? sendTransactionParams.params[0].value : 0n,
-			input: 'data' in sendTransactionParams.params[0] && sendTransactionParams.params[0].data !== undefined ? sendTransactionParams.params[0].data : new Uint8Array(),
-			accessList: []
+			transaction: {
+				type: '1559' as const,
+				from: from,
+				chainId: ethereumClientService.getChainId(),
+				nonce: await transactionCount,
+				maxFeePerGas: sendTransactionParams.params[0].maxFeePerGas ? sendTransactionParams.params[0].maxFeePerGas : maxFeePerGas,
+				maxPriorityFeePerGas: sendTransactionParams.params[0].maxPriorityFeePerGas ? sendTransactionParams.params[0].maxPriorityFeePerGas : 1n,
+				gas: sendTransactionParams.params[0].gas ? sendTransactionParams.params[0].gas : 90000n,
+				to: sendTransactionParams.params[0].to === undefined ? null : sendTransactionParams.params[0].to,
+				value: sendTransactionParams.params[0].value ? sendTransactionParams.params[0].value : 0n,
+				input: 'data' in sendTransactionParams.params[0] && sendTransactionParams.params[0].data !== undefined ? sendTransactionParams.params[0].data : new Uint8Array(),
+				accessList: []
+			},
+			website: website,
+			transactionCreated: new Date(),
 		}
 	}
 	return await openConfirmTransactionDialog(

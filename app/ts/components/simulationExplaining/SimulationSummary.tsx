@@ -5,7 +5,7 @@ import { BigAddress, SmallAddress, WebsiteOriginText } from '../subcomponents/ad
 import { ERC721Token, Ether, EtherAmount, EtherSymbol, Token, TokenAmount, TokenPrice, TokenSymbol } from '../subcomponents/coins.js'
 import { LogAnalysis } from './Transactions.js'
 import { CopyToClipboard } from '../subcomponents/CopyToClipboard.js'
-import { SomeTimeAgo } from '../subcomponents/SomeTimeAgo.js'
+import { SomeTimeAgo, humanReadableDateDeltaLessDetailed } from '../subcomponents/SomeTimeAgo.js'
 import { CHAINS, MAKE_YOU_RICH_TRANSACTION } from '../../utils/constants.js'
 import { addressString, dataStringWith0xStart, nanoString } from '../../utils/bigint.js'
 import { identifyTransaction } from './identifyTransaction.js'
@@ -13,6 +13,7 @@ import { identifySwap } from './SwapTransactions.js'
 import { useState } from 'preact/hooks'
 import { convertNumberToCharacterRepresentationIfSmallEnough, upperCaseFirstCharacter } from '../ui-utils.js'
 import { IsConnected } from '../../utils/interceptor-messages.js'
+import { EthereumTimestamp } from '../../utils/wire-types.js'
 
 type EtherChangeParams = {
 	textColor: string,
@@ -555,6 +556,13 @@ export function TransactionHeaderForFailedToSimulate({ website } : { website: We
 			<WebsiteOriginText { ...website } />
 		</p>
 	</header>
+}
+
+export function TransactionCreated({ transactionCreated } : { transactionCreated: EthereumTimestamp }) {
+	return <p class = 'noselect nopointer' style = 'color: var(--subtitle-text-color); text-align: right; display: inline'>
+		{ 'Created ' }
+		<SomeTimeAgo priorTimestamp = { transactionCreated } diffToText = { humanReadableDateDeltaLessDetailed }/>
+	</p>
 }
 
 export function SimulatedInBlockNumber({ simulationBlockNumber, currentBlockNumber, simulationConductedTimestamp, isConnected } : { simulationBlockNumber: bigint, currentBlockNumber: bigint | undefined, simulationConductedTimestamp: Date, isConnected: IsConnected }) {
