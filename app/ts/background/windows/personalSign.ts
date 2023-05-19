@@ -60,7 +60,7 @@ export async function addMetadataToOpenSeaOrder(ethereumClientService: EthereumC
 	 }
 }
 
-export async function craftPersonalSignPopupMessage(ethereumClientService: EthereumClientService, originalParams: PersonalSignParams | SignTypedDataParams | OldSignTypedDataParams, activeAddress: bigint, userAddressBook: UserAddressBook, simulationMode: boolean, requestId: number, signerName: SignerName, website: Website): Promise<PersonalSignRequest> {
+export async function craftPersonalSignPopupMessage(ethereumClientService: EthereumClientService, originalParams: PersonalSignParams | SignTypedDataParams | OldSignTypedDataParams, tabIdOpenedFrom: number, activeAddress: bigint, userAddressBook: UserAddressBook, simulationMode: boolean, requestId: number, signerName: SignerName, website: Website): Promise<PersonalSignRequest> {
 	const activeAddressWithMetadata = getAddressMetaData(activeAddress, userAddressBook)
 	const basicParams = {
 		activeAddress: activeAddressWithMetadata,
@@ -69,6 +69,7 @@ export async function craftPersonalSignPopupMessage(ethereumClientService: Ether
 		website,
 		signerName,
 		activeChainId: ethereumClientService.getChain(),
+		tabIdOpenedFrom,
 	}
 
 	const getQuarrantineCodes = async (messageChainId: bigint, account: AddressBookEntry, activeAddress: AddressBookEntry, owner: AddressBookEntry | undefined): Promise<{ quarantine: boolean, quarantineCodes: readonly QUARANTINE_CODE[] }> => {
@@ -131,7 +132,7 @@ export async function craftPersonalSignPopupMessage(ethereumClientService: Ether
 				type: 'EIP712',
 				message,
 				account,
-				...chainid === undefined ? { quarantine: false, quarantineCodes: [] } : await getQuarrantineCodes(chainid, account, activeAddressWithMetadata, undefined)
+				...chainid === undefined ? { quarantine: false, quarantineCodes: [] } : await getQuarrantineCodes(chainid, account, activeAddressWithMetadata, undefined),
 			}
 		}
 	}
@@ -232,7 +233,7 @@ export const openPersonalSignDialog = async (
 
 	const activeAddress = simulationMode ? settings.activeSimulationAddress : settings.activeSigningAddress
 	if (activeAddress === undefined) return reject()
-	const popupMessage = await craftPersonalSignPopupMessage(ethereumClientService, params, activeAddress, settings.userAddressBook, simulationMode, request.requestId, await getSignerName(), website)
+	const popupMessage = await craftPersonalSignPopupMessage(ethereumClientService, params, socket.tabId, activeAddress, settings.userAddressBook, simulationMode, request.requestId, await getSignerName(), website)
 
 	const personalSignWindowReadyAndListening = async function popupMessageListener(msg: unknown) {
 		const message = ExternalPopupMessage.parse(msg)

@@ -97,7 +97,7 @@ export async function openConfirmTransactionDialog(
 					}
 				}
 			}
-			const refreshSimulationPromise = refreshConfirmTransactionSimulation(ethereumClientService, activeAddress, simulationMode, request.requestId, transactionToSimulate)
+			const refreshSimulationPromise = refreshConfirmTransactionSimulation(ethereumClientService, activeAddress, simulationMode, request.requestId, transactionToSimulate, socket.tabId)
 
 			const resolveAppendPromise = async (WindowId: number, simulationResults: ConfirmTransactionTransactionSingleVisualization) => {
 				appendPromise.resolve(await appendPendingTransaction({

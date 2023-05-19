@@ -4,7 +4,7 @@ import { Error as ErrorContainer, ErrorCheckBox } from '../subcomponents/Error.j
 import { ChangeChainRequest, ExternalPopupMessage } from '../../utils/interceptor-messages.js'
 import { sendPopupMessageToBackgroundPage } from '../../background/backgroundUtils.js'
 import { Website } from '../../utils/user-interface-types.js'
-import { tryFocusingWindow } from '../ui-utils.js'
+import { tryFocusingTab } from '../ui-utils.js'
 
 interface InterceptorChainChangeRequest {
 	isInterceptorSupport: boolean,
@@ -13,7 +13,7 @@ interface InterceptorChainChangeRequest {
 	website: Website,
 	simulationMode: boolean,
 	requestId: number,
-	windowIdOpenedFrom: number,
+	tabIdOpenedFrom: number,
 }
 
 export function ChangeChain() {
@@ -29,7 +29,7 @@ export function ChangeChain() {
 				website: message.data.website,
 				simulationMode: message.data.simulationMode,
 				requestId: message.data.requestId,
-				windowIdOpenedFrom: message.data.windowIdOpenedFrom,
+				tabIdOpenedFrom: message.data.tabIdOpenedFrom,
 			})
 		}
 
@@ -45,15 +45,15 @@ export function ChangeChain() {
 
 	async function approve() {
 		if (chainChangeData === undefined) return
+		await tryFocusingTab(chainChangeData.tabIdOpenedFrom)
 		await sendPopupMessageToBackgroundPage({ method: 'popup_changeChainDialog', options: { accept: true, requestId: chainChangeData.requestId, chainId: chainChangeData.chainId } })
-		await tryFocusingWindow(chainChangeData.windowIdOpenedFrom)
 		globalThis.close()
 	}
 
 	async function reject() {
 		if (chainChangeData === undefined) return
+		await tryFocusingTab(chainChangeData.tabIdOpenedFrom)
 		await sendPopupMessageToBackgroundPage({ method: 'popup_changeChainDialog', options: { accept: false, requestId: chainChangeData.requestId } })
-		await tryFocusingWindow(chainChangeData.windowIdOpenedFrom)
 		globalThis.close()
 	}
 

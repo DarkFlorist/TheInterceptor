@@ -75,6 +75,7 @@ export const openChangeChainDialog = async (
 				chainId: chainId,
 				website: website,
 				simulationMode: simulationMode,
+				tabIdOpenedFrom: socket.tabId,
 			}
 		})
 	}

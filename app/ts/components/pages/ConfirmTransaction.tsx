@@ -14,7 +14,7 @@ import { identifyTransaction } from '../simulationExplaining/identifyTransaction
 import { SomeTimeAgo } from '../subcomponents/SomeTimeAgo.js'
 import { TIME_BETWEEN_BLOCKS } from '../../utils/constants.js'
 import { DinoSaysNotification } from '../subcomponents/DinoSays.js'
-import { tryFocusingWindow } from '../ui-utils.js'
+import { tryFocusingTab } from '../ui-utils.js'
 
 type UnderTransactionsParams = {
 	pendingTransactions: ConfirmTransactionTransactionSingleVisualizationArray
@@ -194,15 +194,15 @@ export function ConfirmTransaction() {
 		if (dialogState === undefined) throw new Error('dialogState is not set')
 		const currentWindow = await browser.windows.getCurrent()
 		if (currentWindow.id === undefined) throw new Error('could not get our own Id!')
+		if (pendingTransactions.length == 0) await tryFocusingTab(dialogState.data.tabIdOpenedFrom)
 		await sendPopupMessageToBackgroundPage({ method: 'popup_confirmDialog', options: { requestId: dialogState.data.requestId, accept: true, windowId: currentWindow.id } })
-		await tryFocusingWindow(dialogState.data.windowIdOpenedFrom)
 	}
 	async function reject() {
 		if (dialogState === undefined) throw new Error('dialogState is not set')
 		const currentWindow = await browser.windows.getCurrent()
 		if (currentWindow.id === undefined) throw new Error('could not get our own Id!')
+		if (pendingTransactions.length == 0) await tryFocusingTab(dialogState.data.tabIdOpenedFrom)
 		await sendPopupMessageToBackgroundPage({ method: 'popup_confirmDialog', options: { requestId: dialogState.data.requestId, accept: false, windowId: currentWindow.id } })
-		await tryFocusingWindow(dialogState.data.windowIdOpenedFrom)
 	}
 	const refreshMetadata = () => {
 		if (dialogState === undefined || dialogState.state === 'failed') return

@@ -20,7 +20,7 @@ import { PersonalSignRequestData, PersonalSignRequestDataPermit, PersonalSignReq
 import { OrderComponents, OrderComponentsExtraDetails } from '../simulationExplaining/customExplainers/OpenSeaOrder.js'
 import { Ether } from '../subcomponents/coins.js'
 import { EnrichedEIP712, EnrichedEIP712Message, GroupedSolidityType } from '../../utils/eip712Parsing.js'
-import { tryFocusingWindow, humanReadableDate } from '../ui-utils.js'
+import { tryFocusingTab, humanReadableDate } from '../ui-utils.js'
 
 type SignatureCardParams = {
 	personalSignRequestData: PersonalSignRequestData
@@ -398,15 +398,15 @@ export function PersonalSign() {
 
 	async function approve() {
 		if (personalSignRequestData === undefined) throw new Error('personalSignRequestData is missing')
+		await tryFocusingTab(personalSignRequestData.tabIdOpenedFrom)
 		await sendPopupMessageToBackgroundPage({ method: 'popup_personalSign', options: { requestId: personalSignRequestData.requestId, accept: true } })
-		await tryFocusingWindow(personalSignRequestData.windowIdOpenedFrom)
 		globalThis.close()
 	}
 
 	async function reject() {
 		if (personalSignRequestData === undefined) throw new Error('personalSignRequestData is missing')
+		await tryFocusingTab(personalSignRequestData.tabIdOpenedFrom)
 		await sendPopupMessageToBackgroundPage({ method: 'popup_personalSign', options: { requestId: personalSignRequestData.requestId, accept: false } })
-		await tryFocusingWindow(personalSignRequestData.windowIdOpenedFrom)
 		globalThis.close()
 	}
 

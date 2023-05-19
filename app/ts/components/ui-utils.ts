@@ -164,10 +164,11 @@ export async function removeWindowTabListener(onCloseWindow: (id: number) => voi
 	browser.tabs.onRemoved.addListener(onCloseWindow)
 }
 
-export async function tryFocusingWindow(windowId: number) {
+export async function tryFocusingTab(tabId: number) {
 	try {
-		await browser.windows.update(windowId, { focused: true })
+		browser.tabs.update(tabId, { active: true })
 	} catch(e) {
-
+		console.warn('failed to focus tab', tabId)
+		console.warn(e)
 	}
 }

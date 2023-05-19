@@ -105,6 +105,7 @@ export async function refreshConfirmTransactionSimulation(
 	simulationMode: boolean,
 	requestId: number,
 	transactionToSimulate: WebsiteCreatedEthereumUnsignedTransaction,
+	tabIdOpenedFrom: number,
 ): Promise<ConfirmTransactionTransactionSingleVisualization> {
 	const info = {
 		requestId: requestId,
@@ -112,6 +113,7 @@ export async function refreshConfirmTransactionSimulation(
 		simulationMode: simulationMode,
 		activeAddress: activeAddress,
 		signerName: await getSignerName(),
+		tabIdOpenedFrom,
 	}
 	if (simulator === undefined) return { statusCode: 'failed', data: info } as const
 	sendPopupMessageToOpenWindows({ method: 'popup_confirm_transaction_simulation_started' } as const)

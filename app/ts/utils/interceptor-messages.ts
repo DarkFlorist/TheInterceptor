@@ -326,6 +326,7 @@ export const RefreshConfirmTransactionDialogSimulation = funtypes.ReadonlyObject
 		simulationMode: funtypes.Boolean,
 		requestId: funtypes.Number,
 		transactionToSimulate: WebsiteCreatedEthereumUnsignedTransaction,
+		tabIdOpenedFrom: funtypes.Number,
 	}),
 }).asReadonly()
 
@@ -390,14 +391,14 @@ export const ChangeChainRequest = funtypes.ReadonlyObject({
 		simulationMode: funtypes.Boolean,
 		chainId: EthereumQuantity,
 		website: Website,
-		windowIdOpenedFrom: funtypes.Number,
+		tabIdOpenedFrom: funtypes.Number,
 	})
 })
 
 export type RefreshPersonalSignMetadata = funtypes.Static<typeof RefreshPersonalSignMetadata>
 export const RefreshPersonalSignMetadata = funtypes.ReadonlyObject({
 	method: funtypes.Literal('popup_refreshPersonalSignMetadata'),
-	data: PersonalSignRequestData
+	data: PersonalSignRequestData,
 })
 
 export type InterceptorAccessDialog = funtypes.Static<typeof InterceptorAccessDialog>
@@ -413,7 +414,7 @@ export const InterceptorAccessDialog = funtypes.ReadonlyObject({
 		signerName: SignerName,
 		simulationMode: funtypes.Boolean,
 		socket: WebsiteSocket,
-		windowIdOpenedFrom: funtypes.Number,
+		tabIdOpenedFrom: funtypes.Number,
 	})
 })
 
@@ -424,7 +425,7 @@ export const ConfirmTransactionSimulationBaseData = funtypes.ReadonlyObject({
 	requestId: funtypes.Number,
 	transactionToSimulate: WebsiteCreatedEthereumUnsignedTransaction,
 	signerName: SignerName,
-	windowIdOpenedFrom: funtypes.Number,
+	tabIdOpenedFrom: funtypes.Number,
 })
 
 export type ConfirmTransactionDialogState = funtypes.Static<typeof ConfirmTransactionDialogState>

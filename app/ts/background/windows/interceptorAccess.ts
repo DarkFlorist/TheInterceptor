@@ -143,6 +143,7 @@ export async function requestAccessFromUser(
 				signerName: await getSignerName(),
 				simulationMode: settings.simulationMode,
 				socket: socket,
+				tabIdOpenedFrom: socket.tabId,
 			}
 		})
 	}
@@ -190,6 +191,7 @@ export async function requestAccessFromUser(
 							signerName: await getSignerName(),
 							simulationMode: settings.simulationMode,
 							socket: socket,
+							tabIdOpenedFrom: socket.tabId,
 						}
 					})
 					return await resolve(websiteTabConnections, await pendingInterceptorAccess.future)
@@ -296,6 +298,7 @@ export async function requestAddressChange(websiteTabConnections: WebsiteTabConn
 			signerName: await getSignerName(),
 			simulationMode: settings.simulationMode,
 			socket: message.options.socket,
+			tabIdOpenedFrom: message.options.socket.tabId,
 		}
 	})
 }
@@ -316,6 +319,7 @@ export async function interceptorAccessMetadataRefresh(message: RefreshIntercept
 			signerName: await getSignerName(),
 			simulationMode: settings.simulationMode,
 			socket: message.options.socket,
+			tabIdOpenedFrom: message.options.socket.tabId,
 		}
 	})
 }

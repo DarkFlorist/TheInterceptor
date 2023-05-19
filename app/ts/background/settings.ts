@@ -300,7 +300,7 @@ export async function updateEthereumSubscriptions(updateFunc: (prevState: Ethere
 }
 
 export async function getUseTabsInsteadOfPopup() {
-	return funtypes.Boolean.parse(await browserStorageLocalSingleGetWithDefault('useTabsInsteadOfPopup', true))
+	return funtypes.Boolean.parse(await browserStorageLocalSingleGetWithDefault('useTabsInsteadOfPopup', false))
 }
 
 export async function setUseTabsInsteadOfPopup(useTabsInsteadOfPopup: boolean) {
