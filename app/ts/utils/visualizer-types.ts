@@ -98,18 +98,20 @@ export const SimulatedTransaction = funtypes.ReadonlyObject({
 	signedTransaction: EthereumSignedTransaction,
 	realizedGasPrice: EthereumQuantity,
 	website: Website,
+	transactionCreated: EthereumTimestamp,
 	tokenBalancesAfter: TokenBalancesAfter,
 })
 
-export type EthereumUnsignedTransactionWithWebsite = funtypes.Static<typeof EthereumUnsignedTransactionWithWebsite>
-export const EthereumUnsignedTransactionWithWebsite = funtypes.ReadonlyObject({
+export type WebsiteCreatedEthereumUnsignedTransaction = funtypes.Static<typeof WebsiteCreatedEthereumUnsignedTransaction>
+export const WebsiteCreatedEthereumUnsignedTransaction = funtypes.ReadonlyObject({
 	transaction: EthereumUnsignedTransaction,
-	website: Website
+	website: Website,
+	transactionCreated: EthereumTimestamp,
 })
 
 export type SimulationState = funtypes.Static<typeof SimulationState>
 export const SimulationState = funtypes.ReadonlyObject({
-	prependTransactionsQueue: funtypes.ReadonlyArray(EthereumUnsignedTransactionWithWebsite),
+	prependTransactionsQueue: funtypes.ReadonlyArray(WebsiteCreatedEthereumUnsignedTransaction),
 	simulatedTransactions: funtypes.ReadonlyArray(SimulatedTransaction),
 	blockNumber: EthereumQuantity,
 	blockTimestamp: EthereumTimestamp,
@@ -152,6 +154,7 @@ export const SimulatedAndVisualizedTransaction = funtypes.Intersect(
 		tokenBalancesAfter: TokenBalancesAfter,
 		tokenResults: funtypes.ReadonlyArray(TokenVisualizerResultWithMetadata),
 		website: Website,
+		transactionCreated: EthereumTimestamp,
 		gasSpent: EthereumQuantity,
 		realizedGasPrice: EthereumQuantity,
 		quarantine: funtypes.Boolean,

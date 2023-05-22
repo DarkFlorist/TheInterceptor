@@ -189,7 +189,7 @@ export async function refreshPopupConfirmTransactionMetadata(ethereumClientServi
 }
 
 export async function refreshPopupConfirmTransactionSimulation(ethereumClientService: EthereumClientService, { data }: RefreshConfirmTransactionDialogSimulation) {
-	const refreshMessage = await refreshConfirmTransactionSimulation(ethereumClientService, data.activeAddress, data.simulationMode, data.requestId, data.transactionToSimulate, data.website)
+	const refreshMessage = await refreshConfirmTransactionSimulation(ethereumClientService, data.activeAddress, data.simulationMode, data.requestId, data.transactionToSimulate, data.tabIdOpenedFrom)
 	const promises = await getPendingTransactions()
 	if (promises.length === 0) return
 	const first = promises[0]
@@ -349,6 +349,7 @@ export async function refreshPersonalSignMetadata(ethereumClientService: Ethereu
 	return await sendPopupMessageToOpenWindows(await craftPersonalSignPopupMessage(
 		ethereumClientService,
 		refreshPersonalSignMetadata.data.originalParams,
+		refreshPersonalSignMetadata.data.tabIdOpenedFrom,
 		refreshPersonalSignMetadata.data.activeAddress.address,
 		settings.userAddressBook,
 		refreshPersonalSignMetadata.data.simulationMode,

@@ -5,7 +5,7 @@ import { AddressBookEntry, LogAnalysisParams, RenameAddressCallBack } from '../.
 import { QUARANTINE_CODE, QUARANTINE_CODES_DICT } from '../../simulation/protectors/quarantine-codes.js'
 import { Error as ErrorComponent } from '../subcomponents/Error.js'
 import { identifyRoutes, identifySwap, SwapVisualization } from './SwapTransactions.js'
-import { ExtraDetailsTransactionCard, GasFee, LogAnalysisCard, TransactionHeader } from './SimulationSummary.js'
+import { ExtraDetailsTransactionCard, GasFee, LogAnalysisCard, TransactionCreated, TransactionHeader } from './SimulationSummary.js'
 import { identifyTransaction } from './identifyTransaction.js'
 import { makeYouRichTransaction } from './customExplainers/MakeMeRich.js'
 import { ApproveIcon, ArrowIcon } from '../subcomponents/icons.js'
@@ -111,18 +111,18 @@ export function SenderReceiver({ from, to, renameAddressCallBack }: { from: Addr
 			</div>
 		</span>
 	}
-	return <span class = 'log-table' style = 'justify-content: center; column-gap: 5px;'>
-		<div class = 'log-cell-flexless' style = 'margin: 2px;'>
+	return <span class = 'log-table' style = 'justify-content: center; column-gap: 5px; grid-template-columns: 33.33% 33.33% 33.33%;'>
+		<div class = 'log-cell' style = 'margin: 2px;'>
 			<SmallAddress
 				addressBookEntry = { from }
 				textColor = { textColor }
 				renameAddressCallBack = { renameAddressCallBack }
 			/>
 		</div>
-		<div class = 'log-cell' style = 'padding-right: 0.2em; padding-left: 0.2em'>
+		<div class = 'log-cell' style = 'padding-right: 0.2em; padding-left: 0.2em; justify-content: center;'>
 			<ArrowIcon color = { textColor } />
 		</div>
-		<div class = 'log-cell-flexless' style = 'margin: 2px;'>
+		<div class = 'log-cell' style = 'margin: 2px; justify-content: end;'>
 			<SmallAddress
 				addressBookEntry = { to }
 				textColor = { textColor }
@@ -158,8 +158,13 @@ export function Transaction(param: TransactionVisualizationParameters) {
 						renameAddressCallBack = { param.renameAddressCallBack }
 					/>
 
-					<span class = 'log-table' style = 'margin-top: 10px; grid-template-columns: min-content min-content min-content; justify-content: end;'>
-						<GasFee tx = { param.simTx } chain = { param.simulationAndVisualisationResults.chain } />
+					<span class = 'log-table' style = 'margin-top: 10px; grid-template-columns: auto auto;'>
+						<div class = 'log-cell'>
+							<TransactionCreated transactionCreated = { param.simTx.transactionCreated } />
+						</div>
+						<div class = 'log-cell' style = 'justify-content: right;'>
+							<GasFee tx = { param.simTx } chain = { param.simulationAndVisualisationResults.chain } />
+						</div>
 					</span>
 				</> }
 			</div>

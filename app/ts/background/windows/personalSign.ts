@@ -13,10 +13,11 @@ import { getHtmlFile, sendPopupMessageToOpenWindows } from '../backgroundUtils.j
 import { extractEIP712Message, validateEIP712Types } from '../../utils/eip712Parsing.js'
 import { getAddressMetaData, getTokenMetadata } from '../metadataUtils.js'
 import { getPendingPersonalSignPromise, getSettings, getSignerName, setPendingPersonalSignPromise } from '../settings.js'
+import { PopupOrTab, addWindowTabListener, openPopupOrTab, removeWindowTabListener } from '../../components/ui-utils.js'
 
 let pendingPersonalSign: Future<PersonalSign> | undefined = undefined
 
-let openedPersonalSignDialogWindow: browser.windows.Window | null = null
+let openedDialog: PopupOrTab | undefined = undefined
 
 export async function resolvePersonalSign(websiteTabConnections: WebsiteTabConnections, confirmation: PersonalSign) {
 	if (pendingPersonalSign !== undefined) {
@@ -27,7 +28,7 @@ export async function resolvePersonalSign(websiteTabConnections: WebsiteTabConne
 		const resolved = await resolve(confirmation, data.simulationMode, data.params)
 		sendMessageToContentScript(websiteTabConnections, data.socket, resolved, data.request)
 	}
-	openedPersonalSignDialogWindow = null
+	openedDialog = undefined
 }
 
 function rejectMessage(requestId: number) {
@@ -59,7 +60,7 @@ export async function addMetadataToOpenSeaOrder(ethereumClientService: EthereumC
 	 }
 }
 
-export async function craftPersonalSignPopupMessage(ethereumClientService: EthereumClientService, originalParams: PersonalSignParams | SignTypedDataParams | OldSignTypedDataParams, activeAddress: bigint, userAddressBook: UserAddressBook, simulationMode: boolean, requestId: number, signerName: SignerName, website: Website): Promise<PersonalSignRequest> {
+export async function craftPersonalSignPopupMessage(ethereumClientService: EthereumClientService, originalParams: PersonalSignParams | SignTypedDataParams | OldSignTypedDataParams, tabIdOpenedFrom: number, activeAddress: bigint, userAddressBook: UserAddressBook, simulationMode: boolean, requestId: number, signerName: SignerName, website: Website): Promise<PersonalSignRequest> {
 	const activeAddressWithMetadata = getAddressMetaData(activeAddress, userAddressBook)
 	const basicParams = {
 		activeAddress: activeAddressWithMetadata,
@@ -68,6 +69,7 @@ export async function craftPersonalSignPopupMessage(ethereumClientService: Ether
 		website,
 		signerName,
 		activeChainId: ethereumClientService.getChain(),
+		tabIdOpenedFrom,
 	}
 
 	const getQuarrantineCodes = async (messageChainId: bigint, account: AddressBookEntry, activeAddress: AddressBookEntry, owner: AddressBookEntry | undefined): Promise<{ quarantine: boolean, quarantineCodes: readonly QUARANTINE_CODE[] }> => {
@@ -130,7 +132,7 @@ export async function craftPersonalSignPopupMessage(ethereumClientService: Ether
 				type: 'EIP712',
 				message,
 				account,
-				...chainid === undefined ? { quarantine: false, quarantineCodes: [] } : await getQuarrantineCodes(chainid, account, activeAddressWithMetadata, undefined)
+				...chainid === undefined ? { quarantine: false, quarantineCodes: [] } : await getQuarrantineCodes(chainid, account, activeAddressWithMetadata, undefined),
 			}
 		}
 	}
@@ -223,15 +225,15 @@ export const openPersonalSignDialog = async (
 	if (pendingPersonalSign !== undefined) return reject()
 
 	const onCloseWindow = (windowId: number) => {
-		if (openedPersonalSignDialogWindow === null || openedPersonalSignDialogWindow.id !== windowId) return
+		if (openedDialog?.windowOrTab.id !== windowId) return
 		if (pendingPersonalSign === undefined) return
-		openedPersonalSignDialogWindow = null
+		openedDialog = undefined
 		return resolvePersonalSign(websiteTabConnections, rejectMessage(request.requestId))
 	}
 
 	const activeAddress = simulationMode ? settings.activeSimulationAddress : settings.activeSigningAddress
 	if (activeAddress === undefined) return reject()
-	const popupMessage = await craftPersonalSignPopupMessage(ethereumClientService, params, activeAddress, settings.userAddressBook, simulationMode, request.requestId, await getSignerName(), website)
+	const popupMessage = await craftPersonalSignPopupMessage(ethereumClientService, params, socket.tabId, activeAddress, settings.userAddressBook, simulationMode, request.requestId, await getSignerName(), website)
 
 	const personalSignWindowReadyAndListening = async function popupMessageListener(msg: unknown) {
 		const message = ExternalPopupMessage.parse(msg)
@@ -253,18 +255,18 @@ export const openPersonalSignDialog = async (
 
 		browser.runtime.onMessage.addListener(personalSignWindowReadyAndListening)
 
-		openedPersonalSignDialogWindow = await browser.windows.create({
+		openedDialog = await openPopupOrTab({
 			url: getHtmlFile('personalSign'),
 			type: 'popup',
 			height: 800,
 			width: 600,
 		})
-		if (openedPersonalSignDialogWindow && openedPersonalSignDialogWindow.id !== undefined) {
-			browser.windows.onRemoved.addListener(onCloseWindow)
+		if (openedDialog?.windowOrTab.id !== undefined) {
+			addWindowTabListener(onCloseWindow)
 
 			await setPendingPersonalSignPromise({
 				website: website,
-				dialogId: openedPersonalSignDialogWindow.id,
+				dialogId: openedDialog?.windowOrTab.id,
 				socket: socket,
 				request: request,
 				simulationMode: simulationMode,
@@ -279,7 +281,7 @@ export const openPersonalSignDialog = async (
 		return resolve(reply, simulationMode, params)
 	} finally {
 		browser.runtime.onMessage.removeListener(personalSignWindowReadyAndListening)
-		browser.runtime.onMessage.removeListener(onCloseWindow)
+		removeWindowTabListener(onCloseWindow)
 		pendingPersonalSign = undefined
 	}
 }

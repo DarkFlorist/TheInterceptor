@@ -1,7 +1,7 @@
 import * as funtypes from 'funtypes'
 import { AddressBookEntries, AddressBookEntry, AddressInfo, AddressInfoEntry, ContactEntries, SignerName, Website, WebsiteSocket } from './user-interface-types.js'
-import { EthereumAddress, EthereumQuantity, EthereumUnsignedTransaction, OldSignTypedDataParams, PersonalSignParams, SignTypedDataParams } from './wire-types.js'
-import { SimulationState, OptionalEthereumAddress, SimulatedAndVisualizedTransaction, SimResults, TokenPriceEstimate } from './visualizer-types.js'
+import { EthereumAddress, EthereumQuantity, OldSignTypedDataParams, PersonalSignParams, SignTypedDataParams } from './wire-types.js'
+import { SimulationState, OptionalEthereumAddress, SimulatedAndVisualizedTransaction, SimResults, TokenPriceEstimate, WebsiteCreatedEthereumUnsignedTransaction } from './visualizer-types.js'
 import { ICON_ACCESS_DENIED, ICON_ACTIVE, ICON_NOT_ACTIVE, ICON_SIGNING, ICON_SIGNING_NOT_SUPPORTED, ICON_SIMULATING } from './constants.js'
 import { PersonalSignRequestData } from './personal-message-definitions.js'
 
@@ -325,8 +325,8 @@ export const RefreshConfirmTransactionDialogSimulation = funtypes.ReadonlyObject
 		activeAddress: EthereumAddress,
 		simulationMode: funtypes.Boolean,
 		requestId: funtypes.Number,
-		transactionToSimulate: EthereumUnsignedTransaction,
-		website: Website,
+		transactionToSimulate: WebsiteCreatedEthereumUnsignedTransaction,
+		tabIdOpenedFrom: funtypes.Number,
 	}),
 }).asReadonly()
 
@@ -391,13 +391,14 @@ export const ChangeChainRequest = funtypes.ReadonlyObject({
 		simulationMode: funtypes.Boolean,
 		chainId: EthereumQuantity,
 		website: Website,
+		tabIdOpenedFrom: funtypes.Number,
 	})
 })
 
 export type RefreshPersonalSignMetadata = funtypes.Static<typeof RefreshPersonalSignMetadata>
 export const RefreshPersonalSignMetadata = funtypes.ReadonlyObject({
 	method: funtypes.Literal('popup_refreshPersonalSignMetadata'),
-	data: PersonalSignRequestData
+	data: PersonalSignRequestData,
 })
 
 export type InterceptorAccessDialog = funtypes.Static<typeof InterceptorAccessDialog>
@@ -413,6 +414,7 @@ export const InterceptorAccessDialog = funtypes.ReadonlyObject({
 		signerName: SignerName,
 		simulationMode: funtypes.Boolean,
 		socket: WebsiteSocket,
+		tabIdOpenedFrom: funtypes.Number,
 	})
 })
 
@@ -421,9 +423,9 @@ export const ConfirmTransactionSimulationBaseData = funtypes.ReadonlyObject({
 	activeAddress: EthereumAddress,
 	simulationMode: funtypes.Boolean,
 	requestId: funtypes.Number,
-	transactionToSimulate: EthereumUnsignedTransaction,
-	website: Website,
+	transactionToSimulate: WebsiteCreatedEthereumUnsignedTransaction,
 	signerName: SignerName,
+	tabIdOpenedFrom: funtypes.Number,
 })
 
 export type ConfirmTransactionDialogState = funtypes.Static<typeof ConfirmTransactionDialogState>
@@ -595,11 +597,10 @@ export const WindowMessage = WindowMessageSignerAccountsChanged
 
 export type PendingTransaction = funtypes.Static<typeof PendingTransaction>
 export const PendingTransaction = funtypes.ReadonlyObject({
-	website: Website,
 	dialogId: funtypes.Number,
 	socket: WebsiteSocket,
 	request: InterceptedRequest,
-	transactionToSimulate: EthereumUnsignedTransaction,
+	transactionToSimulate: WebsiteCreatedEthereumUnsignedTransaction,
 	simulationMode: funtypes.Boolean,
 	activeAddress: EthereumAddress,
 	simulationResults: ConfirmTransactionTransactionSingleVisualization
