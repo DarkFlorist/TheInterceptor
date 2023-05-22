@@ -146,10 +146,9 @@ export const TransactionWithAddressBookEntries = funtypes.Intersect(
 		funtypes.ReadonlyObject({ type: funtypes.Union(funtypes.Literal('legacy'), funtypes.Literal('2930')) })
 	)
 )
-export type SimulatedAndVisualizedTransaction = funtypes.Static<typeof SimulatedAndVisualizedTransaction>
-export const SimulatedAndVisualizedTransaction = funtypes.Intersect(
+export type SimulatedAndVisualizedTransactionBase = funtypes.Static<typeof SimulatedAndVisualizedTransactionBase>
+export const SimulatedAndVisualizedTransactionBase = funtypes.Intersect(
 	funtypes.ReadonlyObject({
-		transaction: TransactionWithAddressBookEntries,
 		ethBalanceChanges: funtypes.ReadonlyArray(EthBalanceChangesWithMetadata),
 		tokenBalancesAfter: TokenBalancesAfter,
 		tokenResults: funtypes.ReadonlyArray(TokenVisualizerResultWithMetadata),
@@ -169,6 +168,14 @@ export const SimulatedAndVisualizedTransaction = funtypes.Intersect(
 			error: funtypes.String
 		})
 	)
+)
+
+export type SimulatedAndVisualizedTransaction = funtypes.Static<typeof SimulatedAndVisualizedTransaction>
+export const SimulatedAndVisualizedTransaction = funtypes.Intersect(
+	SimulatedAndVisualizedTransactionBase,
+	funtypes.ReadonlyObject({
+		transaction: TransactionWithAddressBookEntries,
+	})
 )
 
 export type SimulationAndVisualisationResults = {
