@@ -92,3 +92,7 @@ export async function browserStorageLocalSingleGetWithDefault(key: StorageKey, v
 	if (value[key] === undefined) return valueIfMissing
 	return value[key]
 }
+
+export function sleep(milliseconds: number) {
+    return new Promise(resolve => setTimeout(resolve, milliseconds))
+}
