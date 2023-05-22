@@ -16,6 +16,7 @@ import { ExternalPopupMessage, TabIconDetails, UpdateHomePage, Page, WebsiteAcce
 import { version, gitCommitSha } from '../version.js'
 import { sendPopupMessageToBackgroundPage } from '../background/backgroundUtils.js'
 import { EthereumAddress } from '../utils/wire-types.js'
+import { SettingsView } from './pages/SettingsView.js'
 
 export function App() {
 	const [appPage, setAppPage] = useState<Page>('Home')
@@ -38,6 +39,7 @@ export function App() {
 	const [signerName, setSignerName] = useState<SignerName>('NoSignerDetected')
 	const [addingNewAddress, setAddingNewAddress] = useState<AddingNewAddressType> ({ addingAddress: true, type: 'addressInfo' })
 	const [isConnected, setIsConnected] = useState<IsConnected>(undefined)
+	const [useTabsInsteadOfPopup, setUseTabsInsteadOfPopup] = useState<boolean | undefined>(undefined)
 
 	async function setActiveAddressAndInformAboutIt(address: bigint | 'signer') {
 		setUseSignersAddressAsActiveAddress(address === 'signer')
@@ -116,6 +118,7 @@ export function App() {
 				setWebsiteAccessAddressMetadata(data.websiteAccessAddressMetadata)
 				setSignerAccounts(data.signerAccounts)
 				setIsConnected(data.isConnected)
+				setUseTabsInsteadOfPopup(data.useTabsInsteadOfPopup)
 				return true
 			})
 		}
@@ -194,24 +197,25 @@ export function App() {
 		await sendPopupMessageToBackgroundPage( { method: 'popup_openAddressBook' } )
 		return globalThis.close() // close extension popup, chrome closes it by default, but firefox does not
 	}
-
+	
 	return (
 		<main>
 			<Hint>
 				<PasteCatcher enabled = { appPage === 'Home' } onPaste = { addressPaste } />
-				<div style = { `background-color: var(--bg-color); width: 520px; height: 600px; ${ appPage !== 'Home' ? 'overflow: hidden;' : 'overflow: auto;' }` }>
+				<div style = { `background-color: var(--bg-color); width: 520px; height: 600px; ${ appPage !== 'Home' ? 'overflow: hidden;' : 'overflow-y: auto; overflow-x: hidden' }` }>
 					{ !isSettingsLoaded ? <></> : <>
 						<nav class = 'navbar window-header' role = 'navigation' aria-label = 'main navigation'>
 							<div class = 'navbar-brand'>
 								<a class = 'navbar-item' style = 'cursor: unset'>
 									<img src = '../img/LOGOA.svg' alt = 'Logo' width = '32'/>
 									<p style = 'color: #FFFFFF; padding-left: 5px;'>THE INTERCEPTOR
-										<span style = 'color: var(--unimportant-text-color);' > { ` alpha ${ version } - ${ gitCommitSha.slice(0, 8) }`  } </span>
+										<span style = 'color: var(--unimportant-text-color); font-size: 0.8em; padding-left: 5px;' > { ` alpha ${ version } - ${ gitCommitSha.slice(0, 8) }`  } </span>
 									</p>
 								</a>
 								<a class = 'navbar-item' style = 'margin-left: auto; margin-right: 0;'>
 									<img src = '../img/internet.svg' width = '32' onClick = { () => setAndSaveAppPage('AccessList') }/>
 									<img src = '../img/address-book.svg' width = '32' onClick = { openAddressBook }/>
+									<img src = '../img/settings.svg' width = '32' onClick = { () => setAndSaveAppPage('Settings') }/>
 									<div>
 										<img src = '../img/notification-bell.svg' width = '32' onClick = { () => setAndSaveAppPage('NotificationCenter') }/>
 										{ pendingAccessRequests === undefined || pendingAccessRequests.length <= 0 ? <> </> : <span class = 'badge' style = 'transform: translate(-75%, 75%);'> { pendingAccessRequests.length } </span> }
@@ -239,6 +243,12 @@ export function App() {
 						/>
 
 						<div class = { `modal ${ appPage !== 'Home' ? 'is-active' : ''}` }>
+							{ appPage === 'Settings' ?
+								<SettingsView
+									setAndSaveAppPage = { setAndSaveAppPage }
+									useTabsInsteadOfPopup = { useTabsInsteadOfPopup } 
+								/>
+							: <></> }
 							{ appPage === 'NotificationCenter' ?
 								<NotificationCenter
 									setAndSaveAppPage = { setAndSaveAppPage }

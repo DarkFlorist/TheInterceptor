@@ -4,7 +4,7 @@ import { Simulator } from '../simulation/simulator.js'
 import { EthereumJsonRpcRequest, EthereumQuantity, OldSignTypedDataParams, PersonalSignParams, SignTypedDataParams } from '../utils/wire-types.js'
 import { changeSimulationMode, clearTabStates, getMakeMeRich, getSettings, getSignerName, getSimulationResults, removeTabState, setIsConnected, updateSimulationResults, updateTabState } from './settings.js'
 import { blockNumber, call, chainId, estimateGas, gasPrice, getAccounts, getBalance, getBlockByNumber, getCode, getLogs, getPermissions, getSimulationStack, getTransactionByHash, getTransactionCount, getTransactionReceipt, personalSign, requestPermissions, sendTransaction, subscribe, switchEthereumChain, unsubscribe } from './simulationModeHanders.js'
-import { changeActiveAddress, changeMakeMeRich, changePage, resetSimulation, confirmDialog, refreshSimulation, removeTransaction, requestAccountsFromSigner, refreshPopupConfirmTransactionSimulation, confirmPersonalSign, confirmRequestAccess, changeInterceptorAccess, changeChainDialog, popupChangeActiveChain, enableSimulationMode, reviewNotification, rejectNotification, addOrModifyAddressInfo, getAddressBookData, removeAddressBookEntry, openAddressBook, homeOpened, interceptorAccessChangeAddressOrRefresh, refreshPopupConfirmTransactionMetadata, refreshPersonalSignMetadata } from './popupMessageHandlers.js'
+import { changeActiveAddress, changeMakeMeRich, changePage, resetSimulation, confirmDialog, refreshSimulation, removeTransaction, requestAccountsFromSigner, refreshPopupConfirmTransactionSimulation, confirmPersonalSign, confirmRequestAccess, changeInterceptorAccess, changeChainDialog, popupChangeActiveChain, enableSimulationMode, reviewNotification, rejectNotification, addOrModifyAddressInfo, getAddressBookData, removeAddressBookEntry, openAddressBook, homeOpened, interceptorAccessChangeAddressOrRefresh, refreshPopupConfirmTransactionMetadata, refreshPersonalSignMetadata, changeSettings } from './popupMessageHandlers.js'
 import { WebsiteCreatedEthereumUnsignedTransaction, SimulationState } from '../utils/visualizer-types.js'
 import { AddressBookEntry, Website, TabConnection, WebsiteSocket, WebsiteTabConnections } from '../utils/user-interface-types.js'
 import { interceptorAccessMetadataRefresh, requestAccessFromUser } from './windows/interceptorAccess.js'
@@ -631,6 +631,7 @@ async function popupMessageHandler(
 		case 'popup_interceptorAccessChangeAddress': return await interceptorAccessChangeAddressOrRefresh(websiteTabConnections, parsedRequest)
 		case 'popup_interceptorAccessRefresh': return await interceptorAccessChangeAddressOrRefresh(websiteTabConnections, parsedRequest)
 		case 'popup_refreshPersonalSignMetadata': return await refreshPersonalSignMetadata(simulator.ethereum, parsedRequest, settings)
+		case 'popup_ChangeSettings': return await changeSettings(simulator, parsedRequest)
 		default: assertUnreachable(parsedRequest)
 	}
 }

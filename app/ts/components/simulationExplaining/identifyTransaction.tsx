@@ -2,8 +2,9 @@ import { get4Byte } from '../../utils/calldata.js'
 import { CHAINS, FourByteExplanations, isSupportedChain, MAKE_YOU_RICH_TRANSACTION } from '../../utils/constants.js'
 import { assertNever } from '../../utils/typescript.js'
 import { AddressBookEntry } from '../../utils/user-interface-types.js'
-import { SimulatedAndVisualizedTransaction, TokenVisualizerResultWithMetadata } from '../../utils/visualizer-types.js'
+import { SimulatedAndVisualizedTransaction, SimulatedAndVisualizedTransactionBase, TokenVisualizerERC20Event, TokenVisualizerERC721Event, TokenVisualizerResultWithMetadata, TransactionWithAddressBookEntries } from '../../utils/visualizer-types.js'
 import { getSwapName, identifySwap } from './SwapTransactions.js'
+import * as funtypes from 'funtypes'
 
 type IdentifiedTransactionBase = {
 	title: string
@@ -69,11 +70,19 @@ export function identifySimpleApproval(simTx: SimulatedAndVisualizedTransaction)
 	return undefined
 }
 
-export type SimulatedAndVisualizedSimpleApprovalTransaction = SimulatedAndVisualizedTransaction & {
-	to: AddressBookEntry
-	value: 0n
-	tokenResults: [TokenVisualizerResultWithMetadata & { isApproval: true }]
-}
+export type SimulatedAndVisualizedSimpleApprovalTransaction = funtypes.Static<typeof SimulatedAndVisualizedSimpleApprovalTransaction>
+export const SimulatedAndVisualizedSimpleApprovalTransaction = funtypes.Intersect(
+	SimulatedAndVisualizedTransactionBase,
+	funtypes.ReadonlyObject({
+		transaction: funtypes.Intersect(
+			TransactionWithAddressBookEntries,
+			funtypes.ReadonlyObject({
+				to: AddressBookEntry,
+				tokenResults: funtypes.ReadonlyArray(funtypes.Union(TokenVisualizerResultWithMetadata, funtypes.ReadonlyObject({ isApproval: funtypes.Literal(true) })))
+			}),
+		),
+	})
+)
 
 export function isSimpleTokenApproval(simTx: SimulatedAndVisualizedTransaction): simTx is SimulatedAndVisualizedSimpleApprovalTransaction {
 	if (! (simTx.transaction.value === 0n
@@ -85,11 +94,18 @@ export function isSimpleTokenApproval(simTx: SimulatedAndVisualizedTransaction):
 	return true
 }
 
-export type SimulatedAndVisualizedEtherTransferTransaction = SimulatedAndVisualizedTransaction & {
-	to: AddressBookEntry
-	input: []
-	tokenResults: []
-}
+export type SimulatedAndVisualizedEtherTransferTransaction = funtypes.Static<typeof SimulatedAndVisualizedEtherTransferTransaction>
+export const SimulatedAndVisualizedEtherTransferTransaction = funtypes.Intersect(
+	SimulatedAndVisualizedTransactionBase,
+	funtypes.ReadonlyObject({
+		transaction: funtypes.Intersect(
+			TransactionWithAddressBookEntries,
+			funtypes.ReadonlyObject({
+				to: AddressBookEntry,
+			}),
+		),
+	})
+)
 
 export function isEtherTransfer(simTx: SimulatedAndVisualizedTransaction): simTx is SimulatedAndVisualizedEtherTransferTransaction {
 	if (simTx.transaction.input.length == 0
@@ -99,11 +115,18 @@ export function isEtherTransfer(simTx: SimulatedAndVisualizedTransaction): simTx
 	return false
 }
 
-export type SimulatedAndVisualizedSimpleTokenTransferTransaction = SimulatedAndVisualizedTransaction & {
-	to: AddressBookEntry
-	value: 0n
-	tokenResults: [TokenVisualizerResultWithMetadata & { isApproval: false }]
-}
+export type SimulatedAndVisualizedSimpleTokenTransferTransaction = funtypes.Static<typeof SimulatedAndVisualizedSimpleTokenTransferTransaction>
+export const SimulatedAndVisualizedSimpleTokenTransferTransaction = funtypes.Intersect(
+	funtypes.Intersect(
+		SimulatedAndVisualizedTransactionBase,
+		funtypes.ReadonlyObject({
+			tokenResults: funtypes.ReadonlyArray(funtypes.Intersect(funtypes.Union(TokenVisualizerERC20Event, TokenVisualizerERC721Event), funtypes.ReadonlyObject({ isApproval: funtypes.Literal(false) })))
+		})
+	),
+	funtypes.ReadonlyObject({
+		transaction: funtypes.Intersect(TransactionWithAddressBookEntries, funtypes.ReadonlyObject({ to: AddressBookEntry })),
+	})
+)
 
 export function isSimpleTokenTransfer(transaction: SimulatedAndVisualizedTransaction): transaction is SimulatedAndVisualizedSimpleTokenTransferTransaction {
 	if ( transaction.transaction.value === 0n
