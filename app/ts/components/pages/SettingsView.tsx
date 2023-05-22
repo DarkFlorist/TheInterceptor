@@ -58,7 +58,7 @@ export function SettingsView(param: SettingsParam) {
 				<ul>
 					<li>
 						<CheckBoxSetting
-							text = { 'Open popups as tabs (experimetal)' }
+							text = { 'Open popups as tabs (experimental)' }
 							checked = { param.useTabsInsteadOfPopup === true }
 							onInput = { setUseTabsInsteadOfPopups }
 						/>
