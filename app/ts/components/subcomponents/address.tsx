@@ -1,9 +1,11 @@
 import { checksummedAddress } from '../../utils/bigint.js'
-import Blockie from './PreactBlocky.js'
+import { Blockie } from './PreactBlocky.js'
 import { AddressBookEntry, AddressInfo, RenameAddressCallBack, Website } from '../../utils/user-interface-types.js'
 import { CopyToClipboard } from './CopyToClipboard.js'
 import { ApproveIcon, ArrowIcon } from '../subcomponents/icons.js'
 import { JSX } from 'preact/jsx-runtime'
+import { useSignal } from '@preact/signals'
+import { useEffect } from 'preact/hooks'
 
 export function findAddressInfo(addressToFind: bigint, addressInfos: readonly AddressInfo[]) {
 	for (const info of addressInfos) {
@@ -27,9 +29,12 @@ export type AddressIconParams = {
 
 export function AddressIcon(param: AddressIconParams) {
 	const style = `background-color: var(--unimportant-text-color); ${ param.isBig ? `width: 40px; height: 40px;` : `width: 24px; height: 24px;` }`
-	if (param.address !== undefined && param.logoUri === undefined) {
+	const addr = param.address
+	if (addr !== undefined && param.logoUri === undefined) {
+		const address = useSignal<bigint>(addr)
+		useEffect(() => { address.value = addr }, [param.address])
 		return <div style = { style } class = 'noselect nopointer'>
-			<Blockie address = { param.address } scale = { param.isBig ? 5 : 3 } />
+			<Blockie address = { address } scale = { useSignal(param.isBig ? 5 : 3) } />
 		</div>
 	}
 	if (param.logoUri !== undefined) {

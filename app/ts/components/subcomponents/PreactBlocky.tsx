@@ -1,18 +1,18 @@
-import { useEffect, useState } from 'preact/hooks'
 import { DataURLCache } from './DataURLCache.js'
 import { JSX } from 'preact/jsx-runtime'
 import { addressString } from '../../utils/bigint.js'
+import { useAsyncState } from '../../utils/preact-utilities.js'
+import { Signal, useSignalEffect } from '@preact/signals'
+import { Future } from '../../utils/future.js'
 const dataURLCache = new DataURLCache()
 
 interface BlockieProps {
-	address: bigint,
-	scale?: number,
-	color?: string,
-	borderRadius?: string,
+	address: Signal<bigint>,
+	scale?: Signal<number>,
 	style?: JSX.CSSProperties
 }
 
-function generateIdenticon(options: BlockieProps, canvasRef: HTMLCanvasElement) {
+function generateIdenticon(address: bigint, scale: number, canvasRef: HTMLCanvasElement) {
 	// NOTE -- Majority of this code is referenced from: https://github.com/alexvandesande/blockies
 	// Mostly to ensure congruence to Ethereum Mist's Identicons
 
@@ -108,13 +108,11 @@ function generateIdenticon(options: BlockieProps, canvasRef: HTMLCanvasElement) 
 		}
 	}
 
-	const opts = options || {}
-	const scale = opts.scale || 4
-	const seed = addressString(opts.address)
+	const seed = addressString(address)
 
 	seedrand(seed)
 
-	const color = opts.color || createColor()
+	const color = createColor()
 	const bgcolor = createColor()
 	const spotcolor = createColor()
 	const imageData = createImageData(8)
@@ -123,27 +121,31 @@ function generateIdenticon(options: BlockieProps, canvasRef: HTMLCanvasElement) 
 	return canvas
 }
 
-export default function Blockie(props: BlockieProps) {
-	const scale = props.scale || 4
-	const dimension = 8 * scale
-	const [address, setAddress] = useState<bigint | undefined>(props.address)
-	const [dataURL, setDataURL] = useState<string | undefined>(dataURLCache.get(`${ props.address }!${ dimension }`))
+async function renderBlockieToUrl(address: Signal<bigint>, scale: Signal<number> | undefined) {
+	const key = `${ address.value }!${ scale?.value || 4 }`
+	const cacheResult = dataURLCache.get(key)
+	if (cacheResult !== undefined) return cacheResult
+	const future = new Future<string>()
+	const element = document.createElement('canvas')
+	generateIdenticon(address.value, scale?.value || 4, element)
+	element.toBlob((blob) => {
+		if (!blob) return
+		const dataUrl = URL.createObjectURL(blob)
+		dataURLCache.set(dataUrl, key)
+		future.resolve(dataUrl)
+	})
+	return await future
+}
 
-	useEffect(() => {
-		if (dataURL === undefined || address !== props.address) {
-			setAddress(props.address)
-			const element = document.createElement('canvas')
-			generateIdenticon(props, element)
-			element.toBlob((blob) => {
-				if (!blob) return
-				const dataUrl = URL.createObjectURL(blob)
-				setDataURL(dataUrl)
-				dataURLCache.set(dataUrl, `${ props.address }!${ dimension }`)
-			})
-		}
-	}, [props.address])
+export function Blockie(props: BlockieProps) {
+	const dimension = 8 * (props.scale?.value || 4)
+    const { value: dataURL, waitFor } = useAsyncState<string>()
+    useSignalEffect(() => {
+		props.address.value
+		waitFor(async () => renderBlockieToUrl(props.address, props.scale))
+	})
 	return <img
-		src = { dataURL === undefined ? 'data:image/gif;base64,R0lGODlhAQABAAAAACwAAAAAAQABAAA=' : dataURL}
+		src = { dataURL.value.state !== 'resolved' ? 'data:image/gif;base64,R0lGODlhAQABAAAAACwAAAAAAQABAAA=' : dataURL.value.value }
 		style = {
 			{
 				...props.style,
@@ -151,7 +153,6 @@ export default function Blockie(props: BlockieProps) {
 				height: `${ dimension }px`,
 				minWidth: `${ dimension }px`,
 				minHeight: `${ dimension }px`,
-				borderRadius: props.borderRadius ? props.borderRadius : '0%',
 			}
 		}
 	/>

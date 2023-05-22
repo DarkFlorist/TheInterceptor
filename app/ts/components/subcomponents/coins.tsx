@@ -1,11 +1,13 @@
+import { useSignal } from '@preact/signals'
 import { getTokenAmountsWorth } from '../../simulation/priceEstimator.js'
 import { abs, bigintToDecimalString, bigintToRoundedPrettyDecimalString, checksummedAddress } from '../../utils/bigint.js'
 import { CHAINS } from '../../utils/constants.js'
 import { CHAIN } from '../../utils/user-interface-types.js'
 import { ERC721TokenDefinitionParams, TokenDefinitionParams, TokenPriceEstimate } from '../../utils/visualizer-types.js'
 import { CopyToClipboard } from './CopyToClipboard.js'
-import Blockie from './PreactBlocky.js'
+import { Blockie } from './PreactBlocky.js'
 import { JSX } from 'preact/jsx-runtime'
+import { useEffect } from 'preact/hooks'
 
 type EtherParams = {
 	amount: bigint
@@ -106,6 +108,9 @@ export type TokenSymbolParams = {
 }
 
 export function TokenSymbol(param: TokenSymbolParams) {
+	const address = useSignal<bigint>(param.address)
+	useEffect(() => { address.value = param.address }, [param.address])
+	
 	const tokenString = checksummedAddress(param.address)
 
 	const style = {
@@ -121,10 +126,9 @@ export function TokenSymbol(param: TokenSymbolParams) {
 			<CopyToClipboard content = { tokenString } copyMessage = 'Token address copied!' >
 				{ param.logoUri === undefined ?
 					<Blockie
-						address = { param.address }
-						scale = { 3 }
-						borderRadius = { '50%' }
-						style = { { 'vertical-align': 'middle' } }
+						address = { useSignal(param.address) }
+						scale = { useSignal(3) }
+						style = { { 'vertical-align': 'middle', borderRadius: '50%' } }
 					/>
 				:
 				<img class = 'noselect nopointer vertical-center' style = 'max-height: 25px; max-width: 25px;' src = { param.logoUri }/>
