@@ -20,7 +20,7 @@ import { PersonalSignRequestData, PersonalSignRequestDataPermit, PersonalSignReq
 import { OrderComponents, OrderComponentsExtraDetails } from '../simulationExplaining/customExplainers/OpenSeaOrder.js'
 import { Ether } from '../subcomponents/coins.js'
 import { EnrichedEIP712, EnrichedEIP712Message, GroupedSolidityType } from '../../utils/eip712Parsing.js'
-import { humanReadableDate } from '../ui-utils.js'
+import { tryFocusingTab, humanReadableDate } from '../ui-utils.js'
 
 type SignatureCardParams = {
 	personalSignRequestData: PersonalSignRequestData
@@ -375,7 +375,6 @@ type ButtonsParams = {
 }
 
 export function PersonalSign() {
-	const [requestIdToConfirm, setRequestIdToConfirm] = useState<number | undefined>(undefined)
 	const [addingNewAddress, setAddingNewAddress] = useState<AddingNewAddressType | 'renameAddressModalClosed'> ('renameAddressModalClosed')
 	const [personalSignRequestData, setPersonalSignRequestData] = useState<PersonalSignRequestData | undefined>(undefined)
 	const [forceSend, setForceSend] = useState<boolean>(false)
@@ -386,7 +385,6 @@ export function PersonalSign() {
 			if (message.method === 'popup_addressBookEntriesChanged') return refreshMetadata()
 			if (message.method !== 'popup_personal_sign_request') return
 			setPersonalSignRequestData(message.data)
-			setRequestIdToConfirm(message.data.requestId)
 		}
 		browser.runtime.onMessage.addListener(popupMessageListener)
 		sendPopupMessageToBackgroundPage({ method: 'popup_personalSignReadyAndListening' })
@@ -399,14 +397,16 @@ export function PersonalSign() {
 	}
 
 	async function approve() {
-		if ( requestIdToConfirm === undefined) throw new Error('Request id is missing')
-		await sendPopupMessageToBackgroundPage({ method: 'popup_personalSign', options: { requestId: requestIdToConfirm, accept: true } })
+		if (personalSignRequestData === undefined) throw new Error('personalSignRequestData is missing')
+		await tryFocusingTab(personalSignRequestData.tabIdOpenedFrom)
+		await sendPopupMessageToBackgroundPage({ method: 'popup_personalSign', options: { requestId: personalSignRequestData.requestId, accept: true } })
 		globalThis.close()
 	}
 
 	async function reject() {
-		if ( requestIdToConfirm === undefined) throw new Error('Request id is missing')
-		await sendPopupMessageToBackgroundPage({ method: 'popup_personalSign', options: { requestId: requestIdToConfirm, accept: false } })
+		if (personalSignRequestData === undefined) throw new Error('personalSignRequestData is missing')
+		await tryFocusingTab(personalSignRequestData.tabIdOpenedFrom)
+		await sendPopupMessageToBackgroundPage({ method: 'popup_personalSign', options: { requestId: personalSignRequestData.requestId, accept: false } })
 		globalThis.close()
 	}
 

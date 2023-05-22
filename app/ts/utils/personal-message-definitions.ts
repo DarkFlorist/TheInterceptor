@@ -364,6 +364,7 @@ export const PersonalSignRequestBase = funtypes.Intersect(
 		quarantineCodes: funtypes.ReadonlyArray(QUARANTINE_CODE),
 		quarantine: funtypes.Boolean,
 		account: AddressBookEntry,
+		tabIdOpenedFrom: funtypes.Number,
 	}),
 )
 

@@ -162,6 +162,7 @@ export const Page = funtypes.Union(
 	funtypes.Literal('AccessList'),
 	funtypes.Literal('NotificationCenter'),
 	funtypes.Literal('ModifyAddress'),
+	funtypes.Literal('Settings'),
 )
 
 export type ChangePage = funtypes.Static<typeof ChangePage>
@@ -326,6 +327,7 @@ export const RefreshConfirmTransactionDialogSimulation = funtypes.ReadonlyObject
 		simulationMode: funtypes.Boolean,
 		requestId: funtypes.Number,
 		transactionToSimulate: WebsiteCreatedEthereumUnsignedTransaction,
+		tabIdOpenedFrom: funtypes.Number,
 	}),
 }).asReadonly()
 
@@ -390,13 +392,14 @@ export const ChangeChainRequest = funtypes.ReadonlyObject({
 		simulationMode: funtypes.Boolean,
 		chainId: EthereumQuantity,
 		website: Website,
+		tabIdOpenedFrom: funtypes.Number,
 	})
 })
 
 export type RefreshPersonalSignMetadata = funtypes.Static<typeof RefreshPersonalSignMetadata>
 export const RefreshPersonalSignMetadata = funtypes.ReadonlyObject({
 	method: funtypes.Literal('popup_refreshPersonalSignMetadata'),
-	data: PersonalSignRequestData
+	data: PersonalSignRequestData,
 })
 
 export type InterceptorAccessDialog = funtypes.Static<typeof InterceptorAccessDialog>
@@ -412,6 +415,7 @@ export const InterceptorAccessDialog = funtypes.ReadonlyObject({
 		signerName: SignerName,
 		simulationMode: funtypes.Boolean,
 		socket: WebsiteSocket,
+		tabIdOpenedFrom: funtypes.Number,
 	})
 })
 
@@ -422,6 +426,7 @@ export const ConfirmTransactionSimulationBaseData = funtypes.ReadonlyObject({
 	requestId: funtypes.Number,
 	transactionToSimulate: WebsiteCreatedEthereumUnsignedTransaction,
 	signerName: SignerName,
+	tabIdOpenedFrom: funtypes.Number,
 })
 
 export type ConfirmTransactionDialogState = funtypes.Static<typeof ConfirmTransactionDialogState>
@@ -560,6 +565,7 @@ export const UpdateHomePage = funtypes.ReadonlyObject({
 		tabIconDetails: funtypes.Union(TabIconDetails, funtypes.Undefined),
 		makeMeRich: funtypes.Boolean,
 		isConnected: IsConnected,
+		useTabsInsteadOfPopup: funtypes.Boolean,
 	})
 })
 
@@ -638,6 +644,14 @@ export const TabState = funtypes.ReadonlyObject({
 	tabIconDetails: TabIconDetails,
 })
 
+export type ChangeSettings = funtypes.Static<typeof ChangeSettings>
+export const ChangeSettings = funtypes.ReadonlyObject({
+	method: funtypes.Literal('popup_ChangeSettings'),
+	data: funtypes.ReadonlyObject({
+		useTabsInsteadOfPopup: funtypes.Union(funtypes.Boolean, funtypes.Undefined),
+	})
+})
+
 export type PopupMessage = funtypes.Static<typeof PopupMessage>
 export const PopupMessage = funtypes.Union(
 	ChangeMakeMeRich,
@@ -671,6 +685,7 @@ export const PopupMessage = funtypes.Union(
 	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_interceptorAccessReadyAndListening') }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_confirmTransactionReadyAndListening') }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_requestNewHomeData') }),
+	ChangeSettings,
 )
 
 export type MessageToPopup = funtypes.Static<typeof MessageToPopup>
