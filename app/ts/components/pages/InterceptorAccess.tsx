@@ -5,7 +5,7 @@ import { AddressInfoEntry, AddressBookEntry, AddingNewAddressType, RenameAddress
 import { ExternalPopupMessage } from '../../utils/interceptor-messages.js'
 import { sendPopupMessageToBackgroundPage } from '../../background/backgroundUtils.js'
 import Hint from '../subcomponents/Hint.js'
-import { convertNumberToCharacterRepresentationIfSmallEnough } from '../ui-utils.js'
+import { convertNumberToCharacterRepresentationIfSmallEnough, tryFocusingTab } from '../ui-utils.js'
 import { ChangeActiveAddress } from './ChangeActiveAddress.js'
 import { DinoSays } from '../subcomponents/DinoSays.js'
 import { getPrettySignerName } from '../subcomponents/signers.js'
@@ -114,6 +114,7 @@ interface InterceptorAccessRequest {
 	signerName: SignerName
 	simulationMode: boolean
 	socket: WebsiteSocket
+	tabIdOpenedFrom: number,
 }
 
 const DISABLED_DELAY_MS = 3000
@@ -148,6 +149,7 @@ export function InterceptorAccess() {
 			requestAccessToAddress: accessRequest.requestAccessToAddress?.address,
 			originalRequestAccessToAddress: accessRequest.originalRequestAccessToAddress?.address,
 		}
+		await tryFocusingTab(accessRequest.tabIdOpenedFrom)
 		await sendPopupMessageToBackgroundPage({ method: 'popup_interceptorAccess', options })
 		globalThis.close()
 	}
@@ -160,6 +162,7 @@ export function InterceptorAccess() {
 			requestAccessToAddress: accessRequest.requestAccessToAddress?.address,
 			originalRequestAccessToAddress: accessRequest.originalRequestAccessToAddress?.address,
 		}
+		await tryFocusingTab(accessRequest.tabIdOpenedFrom)
 		await sendPopupMessageToBackgroundPage({ method: 'popup_interceptorAccess', options })
 		globalThis.close()
 	}

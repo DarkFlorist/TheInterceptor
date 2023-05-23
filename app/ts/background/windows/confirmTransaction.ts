@@ -1,3 +1,4 @@
+import { PopupOrTab, addWindowTabListener, closePopupOrTab, getPopupOrTabOnlyById, openPopupOrTab, removeWindowTabListener } from '../../components/ui-utils.js'
 import { EthereumClientService } from '../../simulation/services/EthereumClientService.js'
 import { appendTransaction } from '../../simulation/services/SimulationModeEthereumClientService.js'
 import { bytes32String } from '../../utils/bigint.js'
@@ -13,7 +14,7 @@ import { getHtmlFile, sendPopupMessageToOpenWindows } from '../backgroundUtils.j
 import { appendPendingTransaction, clearPendingTransactions, getPendingTransactions, getSimulationResults, removePendingTransaction } from '../settings.js'
 
 export type Confirmation = 'Approved' | 'Rejected' | 'NoResponse'
-let openedConfirmTransactionDialogWindow: browser.windows.Window | null = null
+let openedDialog: PopupOrTab | undefined = undefined
 let pendingTransactions = new Map<number, Future<Confirmation>>()
 const pendingConfirmationSemaphore = new Semaphore(1)
 
@@ -25,14 +26,8 @@ async function updateConfirmTransactionViewWithPendingTransactionOrClose() {
 			data: promises.map((p) => p.simulationResults),
 		})
 	}
-	if (openedConfirmTransactionDialogWindow?.id !== undefined) {
-		try {
-			browser.windows.remove(openedConfirmTransactionDialogWindow.id)
-		} catch (error) {
-			console.warn(error)
-		}
-	}
-	openedConfirmTransactionDialogWindow = null
+	if (openedDialog) closePopupOrTab(openedDialog)
+	openedDialog = undefined
 }
 
 export async function resolvePendingTransaction(ethereumClientService: EthereumClientService, websiteTabConnections: WebsiteTabConnections, confirmation: TransactionConfirmation) {
@@ -46,17 +41,12 @@ export async function resolvePendingTransaction(ethereumClientService: EthereumC
 		// we have not been tracking this window, forward its message directly to content script (or signer)
 		const resolvedPromise = await resolve(ethereumClientService, pendingTransaction.simulationMode, pendingTransaction.activeAddress, pendingTransaction.transactionToSimulate, confirmation.options.accept)
 		sendMessageToContentScript(websiteTabConnections, pendingTransaction.socket, resolvedPromise, pendingTransaction.request)
-		try {
-			openedConfirmTransactionDialogWindow = await browser.windows.get(confirmation.options.windowId)
-		} catch(e) {
-			console.warn(e)
-		}
+		openedDialog = await getPopupOrTabOnlyById(confirmation.options.windowId)
 	}
 }
-
 const onCloseWindow = async (windowId: number) => { // check if user has closed the window on their own, if so, reject all signatures
-	if (openedConfirmTransactionDialogWindow === null || openedConfirmTransactionDialogWindow.id !== windowId) return
-	openedConfirmTransactionDialogWindow = null
+	if (openedDialog === undefined || openedDialog.windowOrTab.id !== windowId) return
+	openedDialog = undefined
 	await clearPendingTransactions()
 	pendingTransactions.forEach((pending) => pending.resolve('NoResponse'))
 	pendingTransactions.clear()
@@ -101,14 +91,14 @@ export async function openConfirmTransactionDialog(
 			if (!justAddToPending) {
 				const oldPromise = await getPendingTransactions()
 				if (oldPromise.length !== 0) {
-					if ((await browser.tabs.query({ windowId: oldPromise[0].dialogId })).length > 0) {
+					if (await getPopupOrTabOnlyById(oldPromise[0].dialogId) !== undefined) {
 						justAddToPending = true
 					} else {
 						await clearPendingTransactions()
 					}
 				}
 			}
-			const refreshSimulationPromise = refreshConfirmTransactionSimulation(ethereumClientService, activeAddress, simulationMode, request.requestId, transactionToSimulate, requestMethod)
+			const refreshSimulationPromise = refreshConfirmTransactionSimulation(ethereumClientService, activeAddress, simulationMode, request.requestId, transactionToSimulate, socket.tabId, requestMethod)
 
 			const resolveAppendPromise = async (WindowId: number, simulationResults: ConfirmTransactionTransactionSingleVisualization) => {
 				appendPromise.resolve(await appendPendingTransaction({
@@ -124,16 +114,16 @@ export async function openConfirmTransactionDialog(
 
 			if (!justAddToPending) {
 				browser.runtime.onMessage.addListener(windowReadyAndListening)
-				browser.windows.onRemoved.addListener(onCloseWindow)
-				openedConfirmTransactionDialogWindow = await browser.windows.create({
+				addWindowTabListener(onCloseWindow)
+				openedDialog = await openPopupOrTab({
 					url: getHtmlFile('confirmTransaction'),
 					type: 'popup',
 					height: 800,
 					width: 600,
 				})
 			}
-			if (openedConfirmTransactionDialogWindow === null || openedConfirmTransactionDialogWindow.id === undefined) return false
-			await resolveAppendPromise(openedConfirmTransactionDialogWindow.id, await refreshSimulationPromise)
+			if (openedDialog?.windowOrTab.id === undefined) return false
+			await resolveAppendPromise(openedDialog.windowOrTab.id, await refreshSimulationPromise)
 			if (justAddToPending) sendPopupMessageToOpenWindows({ method: 'popup_confirm_transaction_dialog_pending_changed', data: (await getPendingTransactions()).map((p) => p.simulationResults) })
 			return true
 		})
@@ -142,8 +132,8 @@ export async function openConfirmTransactionDialog(
 		const resolvedPromise = await resolve(ethereumClientService, simulationMode, activeAddress, transactionToSimulate, reply === 'Approved' ? true : false)
 		return resolvedPromise
 	} finally {
-		browser.windows.onRemoved.removeListener(windowReadyAndListening)
-		browser.windows.onRemoved.removeListener(onCloseWindow)
+		browser.runtime.onMessage.removeListener(windowReadyAndListening)
+		removeWindowTabListener(onCloseWindow)
 		pendingTransactions.delete(request.requestId)
 		updateConfirmTransactionViewWithPendingTransactionOrClose()
 	}

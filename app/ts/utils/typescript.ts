@@ -72,6 +72,7 @@ type StorageKey = 'activeSigningAddress'
 	| `tabState_${ number }`
 	| 'isConnectedToNode'
 	| 'ethereumSubscriptions'
+	| 'useTabsInsteadOfPopup'
 
 export async function browserStorageLocalGet(keys: StorageKey | StorageKey[]) {
 	return await browser.storage.local.get(keys) as Promise<Partial<Record<StorageKey, JSONEncodeable>>>
@@ -90,4 +91,8 @@ export async function browserStorageLocalSingleGetWithDefault(key: StorageKey, v
 	const value = await browser.storage.local.get(key) as Partial<Record<StorageKey, unknown>>
 	if (value[key] === undefined) return valueIfMissing
 	return value[key]
+}
+
+export function sleep(milliseconds: number) {
+    return new Promise(resolve => setTimeout(resolve, milliseconds))
 }
