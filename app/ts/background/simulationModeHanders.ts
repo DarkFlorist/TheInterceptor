@@ -96,12 +96,11 @@ export async function sendTransaction(
 		simulationMode,
 		formTransaction,
 		settings,
+		'eth_sendTransaction'
 	)
 }
 
 export async function sendRawTransaction(
-	websiteTabConnections: WebsiteTabConnections,
-	getActiveAddressForDomain: (websiteAccess: WebsiteAccessArray, websiteOrigin: string, settings: Settings) => bigint | undefined,
 	ethereumClientService: EthereumClientService,
 	sendRawTransactionParams: SendRawTransaction,
 	socket: WebsiteSocket,
@@ -110,13 +109,10 @@ export async function sendRawTransaction(
 	website: Website,
 	settings: Settings
 ) {
-	const transaction = ethers.Transaction.from(dataStringWith0xStart(sendRawTransactionParams.params[0]))
-	
-	const from = getFromField(websiteTabConnections, simulationMode, transaction.from === null ? undefined : EthereumAddress.parse(transaction.from), getActiveAddressForDomain, socket, settings)
-	const sendTransactionParams: SendTransactionParams = {
-		method: 'eth_sendTransaction',
-		params: [{
-			from: from,
+	const formTransaction = async() => {	
+		const transaction = ethers.Transaction.from(dataStringWith0xStart(sendRawTransactionParams.params[0]))
+		const transactionDetails = {
+			from: EthereumAddress.parse(transaction.from),
 			data: stringToUint8Array(transaction.data),
 			...transaction.gasLimit === null ? { gas: transaction.gasLimit } : {},
 			value: transaction.value,
@@ -124,9 +120,45 @@ export async function sendRawTransaction(
 			...transaction.gasPrice === null ? {} : { gasPrice: transaction.gasPrice },
 			...transaction.maxPriorityFeePerGas === null ? {} : { maxPriorityFeePerGas: transaction.maxPriorityFeePerGas },
 			...transaction.maxFeePerGas === null ? {} : { maxFeePerGas: transaction.maxFeePerGas },
-		}]
+		}
+
+		const simulationState = (await getSimulationResults()).simulationState
+		if (simulationState === undefined) return undefined
+		const block = getSimulatedBlock(ethereumClientService, simulationState)
+		const parentBlock = await block
+		if (parentBlock.baseFeePerGas === undefined) throw new Error(CANNOT_SIMULATE_OFF_LEGACY_BLOCK)
+		const maxFeePerGas = parentBlock.baseFeePerGas * 2n
+		const transactionWithoutGas = {
+			type: '1559' as const,
+			from: transactionDetails.from,
+			chainId: ethereumClientService.getChainId(),
+			nonce: BigInt(transaction.nonce),
+			maxFeePerGas: transactionDetails.maxFeePerGas ? transactionDetails.maxFeePerGas : maxFeePerGas,
+			maxPriorityFeePerGas: transactionDetails.maxPriorityFeePerGas ? transactionDetails.maxPriorityFeePerGas : 1n,
+			to: transactionDetails.to === undefined ? null : transactionDetails.to,
+			value: transactionDetails.value ? transactionDetails.value : 0n,
+			input: 'data' in transactionDetails && transactionDetails.data !== undefined ? transactionDetails.data : new Uint8Array(),
+			accessList: [],
+		}
+		return {
+			transaction: {
+				...transactionWithoutGas,
+				...(transactionDetails.gas !== undefined ? { gas: transactionDetails.gas } : { gas: await simulateEstimateGas(ethereumClientService, simulationState, transactionWithoutGas) })
+			},
+			website: website,
+			transactionCreated: new Date(),
+		}
 	}
-	return sendTransaction(websiteTabConnections, getActiveAddressForDomain, ethereumClientService, sendTransactionParams, socket, request, simulationMode, website, settings)
+	return await openConfirmTransactionDialog(
+		ethereumClientService,
+		socket,
+		request,
+		website,
+		simulationMode,
+		formTransaction,
+		settings,
+		'eth_sendRawTransaction'
+	)
 }
 
 async function singleCallWithFromOverride(ethereumClientService: EthereumClientService, simulationState: SimulationState, request: EthCallParams, from: bigint) {

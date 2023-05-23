@@ -232,7 +232,7 @@ export const refreshSimulationState = async (ethereumClientService: EthereumClie
 		// if block number is the same, we don't need to compute anything as nothing has changed, but let's update timestamp to show the simulation was refreshed for this time
 		return { ...simulationState, simulationConductedTimestamp: new Date() }
 	}
-	return await setSimulationTransactions(ethereumClientService, simulationState,  getNonPrependedSimulatedTransactions(simulationState).map((x) => convertSimulatedTransactionToWebsiteCreatedEthereumUnsignedTransaction(x)))
+	return await setSimulationTransactions(ethereumClientService, simulationState, getNonPrependedSimulatedTransactions(simulationState).map((x) => convertSimulatedTransactionToWebsiteCreatedEthereumUnsignedTransaction(x)))
 }
 
 export const resetSimulationState = async (ethereumClientService: EthereumClientService, simulationState: SimulationState): Promise<SimulationState> => {

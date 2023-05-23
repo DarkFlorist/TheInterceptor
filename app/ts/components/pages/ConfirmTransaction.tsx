@@ -265,6 +265,13 @@ export function ConfirmTransaction() {
 								<ErrorComponent warning = { true } text = { <>Unable to connect to a Ethereum node. Retrying in <SomeTimeAgo priorTimestamp = { new Date(isConnected.lastConnnectionAttempt + TIME_BETWEEN_BLOCKS * 1000) } countBackwards = { true }/>.</> }/>
 							</div>
 						: <></> }
+						
+						{ dialogState.data.requestMethod === 'eth_sendRawTransaction' ? 
+							<DinoSaysNotification
+								text = { `This transaction is signed already. No extra signing required to forward it to chain.` }
+								close = { () => setPendingTransactionAddedNotification(false)}
+							/>
+						: <></> }
 						{ pendingTransactionAddedNotification === true ? 
 							<DinoSaysNotification
 								text = { `Hey! A new transaction request was queued. Accept or Reject the previous transaction${ pendingTransactions.length > 1 ? 's' : '' } to see the new one.` }

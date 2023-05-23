@@ -105,6 +105,7 @@ export async function refreshConfirmTransactionSimulation(
 	simulationMode: boolean,
 	requestId: number,
 	transactionToSimulate: WebsiteCreatedEthereumUnsignedTransaction,
+	requestMethod: 'eth_sendRawTransaction' | 'eth_sendTransaction',
 ): Promise<ConfirmTransactionTransactionSingleVisualization> {
 	const info = {
 		requestId: requestId,
@@ -112,6 +113,7 @@ export async function refreshConfirmTransactionSimulation(
 		simulationMode: simulationMode,
 		activeAddress: activeAddress,
 		signerName: await getSignerName(),
+		requestMethod,
 	}
 	if (simulator === undefined) return { statusCode: 'failed', data: info } as const
 	sendPopupMessageToOpenWindows({ method: 'popup_confirm_transaction_simulation_started' } as const)
@@ -188,7 +190,7 @@ async function handleSimulationMode(
 		case 'eth_estimateGas': return await estimateGas(simulator.ethereum, simulationState, parsedRequest)
 		case 'eth_getTransactionByHash': return await getTransactionByHash(simulator.ethereum, simulationState, parsedRequest)
 		case 'eth_getTransactionReceipt': return await getTransactionReceipt(simulator.ethereum, simulationState, parsedRequest)
-		case 'eth_sendRawTransaction': return sendRawTransaction(websiteTabConnections, getActiveAddressForDomain, simulator.ethereum, parsedRequest, socket, request, true, website, settings)
+		case 'eth_sendRawTransaction': return sendRawTransaction(simulator.ethereum, parsedRequest, socket, request, true, website, settings)
 		case 'eth_sendTransaction': return sendTransaction(websiteTabConnections, getActiveAddressForDomain, simulator.ethereum, parsedRequest, socket, request, true, website, settings)
 		case 'eth_call': return await call(simulator.ethereum, simulationState, parsedRequest)
 		case 'eth_blockNumber': return await blockNumber(simulator.ethereum, simulationState)
@@ -302,7 +304,7 @@ async function handleSigningMode(
 		case 'wallet_switchEthereumChain': return await switchEthereumChain(websiteTabConnections, socket, ethereumClientService, parsedRequest, request, false, website)
 		case 'eth_sendRawTransaction': {
 			if (isSupportedChain(settings.activeChain.toString()) ) {
-				return sendRawTransaction(websiteTabConnections, getActiveAddressForDomain, ethereumClientService, parsedRequest, socket, request, false, website, settings)
+				return sendRawTransaction(ethereumClientService, parsedRequest, socket, request, false, website, settings)
 			}
 			return forwardToSigner()
 		}
