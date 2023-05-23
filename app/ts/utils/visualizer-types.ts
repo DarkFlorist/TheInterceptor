@@ -3,6 +3,7 @@ import { EthBalanceChanges, EthereumAddress, EthereumData, EthereumQuantity, Eth
 import * as funtypes from 'funtypes'
 import { QUARANTINE_CODE } from '../simulation/protectors/quarantine-codes.js'
 import { AddressBookEntry, CHAIN, NFTEntry, RenameAddressCallBack, TokenEntry, Website, WebsiteSocket } from './user-interface-types.js'
+import { ERROR_INTERCEPTOR_GAS_ESTIMATION_FAILED } from './constants.js'
 
 export type OptionalEthereumAddress = funtypes.Static<typeof OptionalEthereumAddress>
 export const OptionalEthereumAddress = funtypes.Union(EthereumAddress, funtypes.Undefined)
@@ -104,9 +105,17 @@ export const SimulatedTransaction = funtypes.ReadonlyObject({
 
 export type WebsiteCreatedEthereumUnsignedTransaction = funtypes.Static<typeof WebsiteCreatedEthereumUnsignedTransaction>
 export const WebsiteCreatedEthereumUnsignedTransaction = funtypes.ReadonlyObject({
-	transaction: EthereumUnsignedTransaction,
 	website: Website,
 	transactionCreated: EthereumTimestamp,
+	transaction: EthereumUnsignedTransaction,
+})
+
+export type EstimateGasError = funtypes.Static<typeof EstimateGasError>
+export const EstimateGasError = funtypes.ReadonlyObject({
+	error: funtypes.ReadonlyObject({
+		code: funtypes.Literal(ERROR_INTERCEPTOR_GAS_ESTIMATION_FAILED),
+		message: funtypes.String
+	})
 })
 
 export type SimulationState = funtypes.Static<typeof SimulationState>
