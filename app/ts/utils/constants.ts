@@ -77,6 +77,7 @@ export const ERROR_INTERCEPTOR_NO_ACTIVE_ADDRESS = { error: { code: 2, message: 
 export const ERROR_INTERCEPTOR_UNKNOWN_ORIGIN = { error: { code: 400, message: 'Interceptor: Unkown website origin' } }
 export const METAMASK_ERROR_NOT_CONNECTED_TO_CHAIN = { error: { code: 4900, message: 'Interceptor: Not connected to chain' } }
 export const ERROR_INTERCEPTOR_GET_CODE_FAILED = { error: { code: 40001, message: 'Interceptor: Get code failed' } } // I wonder how we should come up with these numbers?
+export const ERROR_INTERCEPTOR_GAS_ESTIMATION_FAILED = 40002
 
 function get4Byte(functionAbi: string) {
 	return Number(ethers.keccak256(ethers.toUtf8Bytes(functionAbi)).slice(0, 10))

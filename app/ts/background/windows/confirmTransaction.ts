@@ -7,7 +7,7 @@ import { Future } from '../../utils/future.js'
 import { ConfirmTransactionTransactionSingleVisualization, ExternalPopupMessage, InterceptedRequest, PendingTransaction, Settings, TransactionConfirmation } from '../../utils/interceptor-messages.js'
 import { Semaphore } from '../../utils/semaphore.js'
 import { Website, WebsiteSocket, WebsiteTabConnections } from '../../utils/user-interface-types.js'
-import { WebsiteCreatedEthereumUnsignedTransaction } from '../../utils/visualizer-types.js'
+import { EstimateGasError, WebsiteCreatedEthereumUnsignedTransaction } from '../../utils/visualizer-types.js'
 import { getActiveAddressForDomain } from '../accessManagement.js'
 import { refreshConfirmTransactionSimulation, sendMessageToContentScript, updateSimulationState } from '../background.js'
 import { getHtmlFile, sendPopupMessageToOpenWindows } from '../backgroundUtils.js'
@@ -65,7 +65,7 @@ export async function openConfirmTransactionDialog(
 	request: InterceptedRequest,
 	website: Website,
 	simulationMode: boolean,
-	transactionToSimulatePromise: () => Promise<WebsiteCreatedEthereumUnsignedTransaction | undefined>,
+	transactionToSimulatePromise: () => Promise<WebsiteCreatedEthereumUnsignedTransaction | undefined | EstimateGasError>,
 	settings: Settings,
 	requestMethod: 'eth_sendRawTransaction' | 'eth_sendTransaction',
 ) {
@@ -86,6 +86,7 @@ export async function openConfirmTransactionDialog(
 		if (activeAddress === undefined) return ERROR_INTERCEPTOR_NO_ACTIVE_ADDRESS
 		const transactionToSimulate = await transactionToSimulatePromise()
 		if (transactionToSimulate === undefined) return rejectMessage
+		if ('error' in transactionToSimulate) return transactionToSimulate
 
 		const addedPendingTransaction = await pendingConfirmationSemaphore.execute(async () => {
 			if (!justAddToPending) {

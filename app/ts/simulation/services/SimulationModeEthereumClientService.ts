@@ -1,9 +1,9 @@
 import { EthereumClientService } from './EthereumClientService.js'
 import { EthGetLogsResponse, EthereumUnsignedTransaction, EthereumSignedTransactionWithBlockData, EthereumBlockTag, EthGetLogsRequest, EthTransactionReceiptResponse, EstimateGasParamsVariables, PersonalSignParams, SignTypedDataParams, EthereumSignedTransaction, EthereumData, EthereumQuantity, MulticallResponseEventLogs, MulticallResponse, EthereumAddress, EthereumBlockHeader, EthereumBlockHeaderWithTransactionHashes, OldSignTypedDataParams } from '../../utils/wire-types.js'
 import { addressString, bytes32String, bytesToUnsigned, dataStringWith0xStart, max, min, stringToUint8Array } from '../../utils/bigint.js'
-import { CANNOT_SIMULATE_OFF_LEGACY_BLOCK, MOCK_ADDRESS } from '../../utils/constants.js'
+import { CANNOT_SIMULATE_OFF_LEGACY_BLOCK, ERROR_INTERCEPTOR_GAS_ESTIMATION_FAILED, MOCK_ADDRESS } from '../../utils/constants.js'
 import { ethers, keccak256 } from 'ethers'
-import { WebsiteCreatedEthereumUnsignedTransaction, SimulatedTransaction, SimulationState, TokenBalancesAfter } from '../../utils/visualizer-types.js'
+import { WebsiteCreatedEthereumUnsignedTransaction, SimulatedTransaction, SimulationState, TokenBalancesAfter, EstimateGasError } from '../../utils/visualizer-types.js'
 import { EthereumUnsignedTransactionToUnsignedTransaction, IUnsignedTransaction1559, serializeSignedTransactionToBytes } from '../../utils/ethereum.js'
 
 const MOCK_PRIVATE_KEY = 0x1n // key used to sign mock transactions
@@ -41,7 +41,7 @@ export const transactionQueueTotalGasLimit = (simulationState: SimulationState) 
 	return simulationState.simulatedTransactions.reduce((a, b) => a + b.signedTransaction.gas, 0n)
 }
 //
-export const simulateEstimateGas = async (ethereumClientService: EthereumClientService, simulationState: SimulationState, data: EstimateGasParamsVariables) => {
+export const simulateEstimateGas = async (ethereumClientService: EthereumClientService, simulationState: SimulationState, data: EstimateGasParamsVariables): Promise<EstimateGasError | { gas: bigint }> => {
 	const sendAddress = data.from !== undefined ? data.from : MOCK_ADDRESS
 	const transactionCount = getSimulatedTransactionCount(ethereumClientService, simulationState, sendAddress)
 	const block = await ethereumClientService.getBlock()
@@ -52,7 +52,7 @@ export const simulateEstimateGas = async (ethereumClientService: EthereumClientS
 		chainId: ethereumClientService.getChainId(),
 		nonce: await transactionCount,
 		maxFeePerGas: data.gasPrice !== undefined ? data.gasPrice : 0n,
-		maxPriorityFeePerGas: 2n,
+		maxPriorityFeePerGas: 0n,
 		gas: data.gas === undefined ? maxGas : data.gas,
 		to: data.to === undefined ? null : data.to,
 		value: data.value === undefined ? 0n : data.value,
@@ -60,8 +60,12 @@ export const simulateEstimateGas = async (ethereumClientService: EthereumClientS
 		accessList: []
 	}
 	const multiCall = await simulatedMulticall(ethereumClientService, simulationState, [tmp], block.number + 1n)
-	const gasSpent = multiCall[multiCall.length - 1].gasSpent * 12n / 10n
-	return gasSpent < maxGas ? gasSpent : maxGas
+	const lastResult = multiCall[multiCall.length - 1]
+	const gasSpent = lastResult.gasSpent * 12n / 10n
+	if (lastResult.statusCode === 'failure') {
+		return { error: { code: ERROR_INTERCEPTOR_GAS_ESTIMATION_FAILED, message: `Interceptor: Gas estimation failed: "${ lastResult.error }" ` } } as const 
+	}
+	return { gas: gasSpent < maxGas ? gasSpent : maxGas }
 }
 
 // calculates gas price for receipts
