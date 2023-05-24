@@ -272,7 +272,7 @@ export function ConfirmTransaction() {
 							</div>
 						: <></> }
 						
-						{ dialogState.data.requestMethod === 'eth_sendRawTransaction' ? 
+						{ dialogState.data.transactionToSimulate.transactionSendingFormat === 'eth_sendRawTransaction' ? 
 							<DinoSaysNotification
 								text = { `This transaction is signed already. No extra signing required to forward it to ${ dialogState.data.transactionToSimulate.transaction.chainId === undefined ? getChainName(BigInt(dialogState.data.simulationState.chain)) : getChainName(dialogState.data.transactionToSimulate.transaction.chainId) }.` }
 								close = { () => setPendingTransactionAddedNotification(false)}

@@ -36,7 +36,7 @@ let simulator: Simulator | undefined = undefined
 
 async function visualizeSimulatorState(simulationState: SimulationState, simulator: Simulator) {
 	const priceEstimator = new PriceEstimator(simulator.ethereum)
-	const transactions = simulationState.simulatedTransactions.map((x) => ({ transaction: x.signedTransaction, website: x.website, transactionCreated: x.transactionCreated, }))
+	const transactions = simulationState.simulatedTransactions.map((x) => ({ transaction: x.signedTransaction, website: x.website, transactionCreated: x.transactionCreated, transactionSendingFormat: x.transactionSendingFormat}))
 	const visualizerResult = await simulator.visualizeTransactionChain(simulationState, transactions, simulationState.blockNumber, simulationState.simulatedTransactions.map((x) => x.multicallResponse))
 	const visualizerResults = visualizerResult.map((x, i) => ({ ...x, website: simulationState.simulatedTransactions[i].website }))
 	const addressBookEntries = await getAddressBookEntriesForVisualiser(simulator.ethereum, visualizerResult.map((x) => x.visualizerResults), simulationState, (await getSettings()).userAddressBook)
@@ -106,7 +106,6 @@ export async function refreshConfirmTransactionSimulation(
 	requestId: number,
 	transactionToSimulate: WebsiteCreatedEthereumUnsignedTransaction,
 	tabIdOpenedFrom: number,
-	requestMethod: 'eth_sendRawTransaction' | 'eth_sendTransaction',
 ): Promise<ConfirmTransactionTransactionSingleVisualization> {
 	const info = {
 		requestId: requestId,
@@ -115,7 +114,6 @@ export async function refreshConfirmTransactionSimulation(
 		activeAddress: activeAddress,
 		signerName: await getSignerName(),
 		tabIdOpenedFrom,
-		requestMethod,
 	}
 	if (simulator === undefined) return { statusCode: 'failed', data: info } as const
 	sendPopupMessageToOpenWindows({ method: 'popup_confirm_transaction_simulation_started' } as const)
@@ -157,6 +155,7 @@ export async function getPrependTrasactions(ethereumClientService: EthereumClien
 		},
 		website: MAKE_YOU_RICH_TRANSACTION.website,
 		transactionCreated: new Date(),
+		transactionSendingFormat: MAKE_YOU_RICH_TRANSACTION.transactionSendingFormat,
 	}]
 }
 
@@ -221,15 +220,12 @@ async function handleSimulationMode(
 		case 'eth_sign': return { error: { code: 10000, message: 'eth_sign is deprecated' } }
 		/*
 		Missing methods:
-		case 'eth_sendRawTransaction': return
 		case 'eth_getProof': return
 		case 'eth_getBlockTransactionCountByNumber': return
 		case 'eth_getTransactionByBlockHashAndIndex': return
 		case 'eth_getTransactionByBlockNumberAndIndex': return
 		case 'eth_getBlockReceipts': return
-		case 'eth_getStorageAt': return
 
-		case 'eth_getLogs': return
 		case 'eth_getFilterChanges': return
 		case 'eth_getFilterLogs': return
 		case 'eth_newBlockFilter': return
