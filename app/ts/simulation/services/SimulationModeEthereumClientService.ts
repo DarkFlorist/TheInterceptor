@@ -234,7 +234,7 @@ export const removeTransactionAndUpdateTransactionNonces = async (ethereumClient
 	return await setSimulationTransactions(ethereumClientService, simulationState, newTransactions)
 }
 
-export const getNonceFixedNonPrependedSimulatedTransactions = async(ethereumClientService: EthereumClientService, simulatedTransactions: readonly SimulatedTransaction[]) => {
+export const getNonceFixedSimulatedTransactions = async(ethereumClientService: EthereumClientService, simulatedTransactions: readonly SimulatedTransaction[]) => {
 	const isNonceError = (multicallResponse: SingleMulticallResponse) => multicallResponse.statusCode === 'failure' && multicallResponse.error === 'wrong transaction nonce'
 	if (simulatedTransactions.find((transaction) => isNonceError(transaction.multicallResponse)) === undefined) return 'NoNonceErrors' as const
 	const nonceFixedTransactions: SimulatedTransaction[] = []
@@ -264,7 +264,7 @@ export const refreshSimulationState = async (ethereumClientService: EthereumClie
 		return { ...simulationState, simulationConductedTimestamp: new Date() }
 	}
 	const nonPrepended = getNonPrependedSimulatedTransactions(simulationState)
-	const nonceFixedTransactions = await getNonceFixedNonPrependedSimulatedTransactions(ethereumClientService, nonPrepended)
+	const nonceFixedTransactions = await getNonceFixedSimulatedTransactions(ethereumClientService, nonPrepended)
 	if (nonceFixedTransactions === 'NoNonceErrors') {
 		return await setSimulationTransactions(ethereumClientService, simulationState, nonPrepended.map((x) => convertSimulatedTransactionToWebsiteCreatedEthereumUnsignedTransaction(x)))
 	} else {
