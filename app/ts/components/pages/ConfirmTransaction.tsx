@@ -12,7 +12,7 @@ import { Error as ErrorComponent, ErrorCheckBox } from '../subcomponents/Error.j
 import { QuarantineCodes, SenderReceiver, TransactionImportanceBlock } from '../simulationExplaining/Transactions.js'
 import { identifyTransaction } from '../simulationExplaining/identifyTransaction.js'
 import { SomeTimeAgo } from '../subcomponents/SomeTimeAgo.js'
-import { TIME_BETWEEN_BLOCKS } from '../../utils/constants.js'
+import { TIME_BETWEEN_BLOCKS, getChainName } from '../../utils/constants.js'
 import { DinoSaysNotification } from '../subcomponents/DinoSays.js'
 import { tryFocusingTab } from '../ui-utils.js'
 
@@ -270,6 +270,13 @@ export function ConfirmTransaction() {
 							<div style = 'margin: 10px; background-color: var(--bg-color);'>
 								<ErrorComponent warning = { true } text = { <>Unable to connect to a Ethereum node. Retrying in <SomeTimeAgo priorTimestamp = { new Date(isConnected.lastConnnectionAttempt + TIME_BETWEEN_BLOCKS * 1000) } countBackwards = { true }/>.</> }/>
 							</div>
+						: <></> }
+						
+						{ dialogState.data.requestMethod === 'eth_sendRawTransaction' ? 
+							<DinoSaysNotification
+								text = { `This transaction is signed already. No extra signing required to forward it to ${ dialogState.data.transactionToSimulate.transaction.chainId === undefined ? getChainName(BigInt(dialogState.data.simulationState.chain)) : getChainName(dialogState.data.transactionToSimulate.transaction.chainId) }.` }
+								close = { () => setPendingTransactionAddedNotification(false)}
+							/>
 						: <></> }
 						{ pendingTransactionAddedNotification === true ? 
 							<DinoSaysNotification

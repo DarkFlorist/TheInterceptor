@@ -100,20 +100,20 @@ export async function getOpenedAddressBookTabId() {
 }
 
 export async function getPendingTransactions(): Promise<readonly PendingTransaction[]> {
-	const results = await browserStorageLocalSingleGetWithDefault('pendingTransactions', [])
+	const results = await browserStorageLocalSingleGetWithDefault('transactionsPendingForUserConfirmation', [])
 	return funtypes.ReadonlyArray(PendingTransaction).parse(results)
 }
 
 const pendingTransactionsSemaphore = new Semaphore(1)
 export async function clearPendingTransactions() {
 	return await pendingTransactionsSemaphore.execute(async () => {
-		return await browserStorageLocalSet('pendingTransactions', funtypes.ReadonlyArray(PendingTransaction).serialize([]) as string)
+		return await browserStorageLocalSet('transactionsPendingForUserConfirmation', funtypes.ReadonlyArray(PendingTransaction).serialize([]) as string)
 	})
 }
 export async function appendPendingTransaction(promise: PendingTransaction) {
 	return await pendingTransactionsSemaphore.execute(async () => {
 		const promises = [...await getPendingTransactions(), promise]
-		await browserStorageLocalSet('pendingTransactions', funtypes.ReadonlyArray(PendingTransaction).serialize(promises) as string)
+		await browserStorageLocalSet('transactionsPendingForUserConfirmation', funtypes.ReadonlyArray(PendingTransaction).serialize(promises) as string)
 		return promises
 	})
 }
@@ -123,7 +123,7 @@ export async function removePendingTransaction(requestId: number) {
 		const foundPromise = promises.find((promise) => promise.request.requestId === requestId)
 		if (foundPromise !== undefined) {
 			const filteredPromises = promises.filter((promise) => promise.request.requestId !== requestId)
-			await browserStorageLocalSet('pendingTransactions', funtypes.ReadonlyArray(PendingTransaction).serialize(filteredPromises) as string)
+			await browserStorageLocalSet('transactionsPendingForUserConfirmation', funtypes.ReadonlyArray(PendingTransaction).serialize(filteredPromises) as string)
 		}
 		return foundPromise
 	})

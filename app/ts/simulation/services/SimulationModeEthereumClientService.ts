@@ -236,7 +236,7 @@ export const refreshSimulationState = async (ethereumClientService: EthereumClie
 		// if block number is the same, we don't need to compute anything as nothing has changed, but let's update timestamp to show the simulation was refreshed for this time
 		return { ...simulationState, simulationConductedTimestamp: new Date() }
 	}
-	return await setSimulationTransactions(ethereumClientService, simulationState,  getNonPrependedSimulatedTransactions(simulationState).map((x) => convertSimulatedTransactionToWebsiteCreatedEthereumUnsignedTransaction(x)))
+	return await setSimulationTransactions(ethereumClientService, simulationState, getNonPrependedSimulatedTransactions(simulationState).map((x) => convertSimulatedTransactionToWebsiteCreatedEthereumUnsignedTransaction(x)))
 }
 
 export const resetSimulationState = async (ethereumClientService: EthereumClientService, simulationState: SimulationState): Promise<SimulationState> => {
@@ -329,9 +329,9 @@ export const getSimulatedBalance = async (ethereumClientService: EthereumClientS
 export const getSimulatedCode = async (ethereumClientService: EthereumClientService, simulationState: SimulationState, address: bigint, blockTag: EthereumBlockTag = 'latest') => {
 	if (await canQueryNodeDirectly(ethereumClientService, simulationState, blockTag)) {
 		return {
-			statusCode: 'success' as const,
+			statusCode: 'success',
 			getCodeReturn: await ethereumClientService.getCode(address, blockTag)
-		}
+		} as const
 	}
 	const blockNum = await ethereumClientService.getBlockNumber()
 
@@ -353,12 +353,12 @@ export const getSimulatedCode = async (ethereumClientService: EthereumClientServ
 	} as const
 	const multiCall = await simulatedMulticall(ethereumClientService, simulationState, [getCodeTransaction], blockNum + 1n)
 	const lastResult = multiCall[multiCall.length - 1]
+	if (lastResult.statusCode === 'failure') return { statusCode: 'failure' } as const
 	const parsed = atInterface.decodeFunctionResult('at', lastResult.returnValue)
-
 	return {
 		statusCode: lastResult.statusCode,
 		getCodeReturn: EthereumData.parse(parsed.toString())
-	}
+	} as const
 }
 
 const getBaseFeePerGasForNewBlock = (parent_gas_used: bigint, parent_gas_limit: bigint, parent_base_fee_per_gas: bigint) => {
