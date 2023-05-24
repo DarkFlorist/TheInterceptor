@@ -67,6 +67,7 @@ export async function openConfirmTransactionDialog(
 	simulationMode: boolean,
 	transactionToSimulatePromise: () => Promise<WebsiteCreatedEthereumUnsignedTransaction | undefined>,
 	settings: Settings,
+	requestMethod: 'eth_sendRawTransaction' | 'eth_sendTransaction',
 ) {
 	let justAddToPending = false
 	if (pendingTransactions.size !== 0) justAddToPending = true
@@ -97,7 +98,7 @@ export async function openConfirmTransactionDialog(
 					}
 				}
 			}
-			const refreshSimulationPromise = refreshConfirmTransactionSimulation(ethereumClientService, activeAddress, simulationMode, request.requestId, transactionToSimulate, socket.tabId)
+			const refreshSimulationPromise = refreshConfirmTransactionSimulation(ethereumClientService, activeAddress, simulationMode, request.requestId, transactionToSimulate, socket.tabId, requestMethod)
 
 			const resolveAppendPromise = async (WindowId: number, simulationResults: ConfirmTransactionTransactionSingleVisualization) => {
 				appendPromise.resolve(await appendPendingTransaction({

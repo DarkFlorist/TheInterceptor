@@ -328,6 +328,7 @@ export const RefreshConfirmTransactionDialogSimulation = funtypes.ReadonlyObject
 		requestId: funtypes.Number,
 		transactionToSimulate: WebsiteCreatedEthereumUnsignedTransaction,
 		tabIdOpenedFrom: funtypes.Number,
+		requestMethod: funtypes.Union(funtypes.Literal('eth_sendRawTransaction'), funtypes.Literal('eth_sendTransaction')),
 	}),
 }).asReadonly()
 
@@ -424,6 +425,7 @@ export const ConfirmTransactionSimulationBaseData = funtypes.ReadonlyObject({
 	activeAddress: EthereumAddress,
 	simulationMode: funtypes.Boolean,
 	requestId: funtypes.Number,
+	requestMethod: funtypes.Union(funtypes.Literal('eth_sendRawTransaction'), funtypes.Literal('eth_sendTransaction')),
 	transactionToSimulate: WebsiteCreatedEthereumUnsignedTransaction,
 	signerName: SignerName,
 	tabIdOpenedFrom: funtypes.Number,
