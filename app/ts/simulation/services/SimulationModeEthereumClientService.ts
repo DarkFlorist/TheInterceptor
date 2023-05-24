@@ -1,5 +1,5 @@
 import { EthereumClientService } from './EthereumClientService.js'
-import { EthGetLogsResponse, EthereumUnsignedTransaction, EthereumSignedTransactionWithBlockData, EthereumBlockTag, EthGetLogsRequest, EthTransactionReceiptResponse, EstimateGasParamsVariables, PersonalSignParams, SignTypedDataParams, EthereumSignedTransaction, EthereumData, EthereumQuantity, MulticallResponseEventLogs, MulticallResponse, EthereumAddress, EthereumBlockHeader, EthereumBlockHeaderWithTransactionHashes, OldSignTypedDataParams } from '../../utils/wire-types.js'
+import { EthGetLogsResponse, EthereumUnsignedTransaction, EthereumSignedTransactionWithBlockData, EthereumBlockTag, EthGetLogsRequest, EthTransactionReceiptResponse, EstimateGasParamsVariables, PersonalSignParams, SignTypedDataParams, EthereumSignedTransaction, EthereumData, EthereumQuantity, MulticallResponseEventLogs, MulticallResponse, EthereumAddress, EthereumBlockHeader, EthereumBlockHeaderWithTransactionHashes, OldSignTypedDataParams, SingleMulticallResponse } from '../../utils/wire-types.js'
 import { addressString, bytes32String, bytesToUnsigned, dataStringWith0xStart, max, min, stringToUint8Array } from '../../utils/bigint.js'
 import { CANNOT_SIMULATE_OFF_LEGACY_BLOCK, ERROR_INTERCEPTOR_GAS_ESTIMATION_FAILED, MOCK_ADDRESS } from '../../utils/constants.js'
 import { ethers, keccak256 } from 'ethers'
@@ -40,12 +40,16 @@ export const getSimulatedStack = (simulationState: SimulationState) => {
 export const transactionQueueTotalGasLimit = (simulationState: SimulationState) => {
 	return simulationState.simulatedTransactions.reduce((a, b) => a + b.signedTransaction.gas, 0n)
 }
-//
+
+export const simulationGasLeft = (simulationState: SimulationState, blockHeader: EthereumBlockHeader) => {
+	return max(blockHeader.gasLimit * 1023n / 1024n - transactionQueueTotalGasLimit(simulationState), 0n)
+}
+
 export const simulateEstimateGas = async (ethereumClientService: EthereumClientService, simulationState: SimulationState, data: EstimateGasParamsVariables): Promise<EstimateGasError | { gas: bigint }> => {
 	const sendAddress = data.from !== undefined ? data.from : MOCK_ADDRESS
 	const transactionCount = getSimulatedTransactionCount(ethereumClientService, simulationState, sendAddress)
 	const block = await ethereumClientService.getBlock()
-	const maxGas = max(block.gasLimit * 1023n / 1024n - transactionQueueTotalGasLimit(simulationState), 0n)
+	const maxGas = simulationGasLeft(simulationState, block)
 	const tmp = {
 		type: '1559' as const,
 		from: sendAddress,
@@ -230,13 +234,42 @@ export const removeTransactionAndUpdateTransactionNonces = async (ethereumClient
 	return await setSimulationTransactions(ethereumClientService, simulationState, newTransactions)
 }
 
+export const getNonceFixedNonPrependedSimulatedTransactions = async(ethereumClientService: EthereumClientService, simulatedTransactions: readonly SimulatedTransaction[]) => {
+	const isNonceError = (multicallResponse: SingleMulticallResponse) => multicallResponse.statusCode === 'failure' && multicallResponse.error === 'wrong transaction nonce'
+	if (simulatedTransactions.find((transaction) => isNonceError(transaction.multicallResponse)) === undefined) return 'NoNonceErrors' as const
+	const nonceFixedTransactions: SimulatedTransaction[] = []
+	const knownPreviousNonce = new Map<string, bigint>()
+	for (const transaction of simulatedTransactions) {
+		const signedTransaction = transaction.signedTransaction
+		const fromString = addressString(signedTransaction.from)
+		if (isNonceError(transaction.multicallResponse)) {
+			const previousNonce = knownPreviousNonce.get(fromString)
+			if (previousNonce !== undefined) {
+				nonceFixedTransactions.push({ ...transaction, signedTransaction: { ...signedTransaction, nonce: previousNonce + 1n } })
+			} else {
+				nonceFixedTransactions.push({ ...transaction, signedTransaction: { ...signedTransaction, nonce: await ethereumClientService.getTransactionCount(signedTransaction.from) } })
+			}
+		} else {
+			nonceFixedTransactions.push(transaction)
+		}
+		knownPreviousNonce.set(fromString, nonceFixedTransactions[nonceFixedTransactions.length - 1].signedTransaction.nonce)
+	}
+	return nonceFixedTransactions
+}
+
 export const refreshSimulationState = async (ethereumClientService: EthereumClientService, simulationState: SimulationState): Promise<SimulationState>  => {
 	if (ethereumClientService.getChain() !== simulationState.chain) return simulationState // don't refresh if we don't have the same chain to refresh from
 	if (simulationState.blockNumber == await ethereumClientService.getBlockNumber()) {
 		// if block number is the same, we don't need to compute anything as nothing has changed, but let's update timestamp to show the simulation was refreshed for this time
 		return { ...simulationState, simulationConductedTimestamp: new Date() }
 	}
-	return await setSimulationTransactions(ethereumClientService, simulationState, getNonPrependedSimulatedTransactions(simulationState).map((x) => convertSimulatedTransactionToWebsiteCreatedEthereumUnsignedTransaction(x)))
+	const nonPrepended = getNonPrependedSimulatedTransactions(simulationState)
+	const nonceFixedTransactions = await getNonceFixedNonPrependedSimulatedTransactions(ethereumClientService, nonPrepended)
+	if (nonceFixedTransactions === 'NoNonceErrors') {
+		return await setSimulationTransactions(ethereumClientService, simulationState, nonPrepended.map((x) => convertSimulatedTransactionToWebsiteCreatedEthereumUnsignedTransaction(x)))
+	} else {
+		return await setSimulationTransactions(ethereumClientService, simulationState, nonceFixedTransactions.map((x) => convertSimulatedTransactionToWebsiteCreatedEthereumUnsignedTransaction(x)))
+	}
 }
 
 export const resetSimulationState = async (ethereumClientService: EthereumClientService, simulationState: SimulationState): Promise<SimulationState> => {

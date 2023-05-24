@@ -1,7 +1,7 @@
 import { ethers } from 'ethers'
 import { EthereumClientService } from '../simulation/services/EthereumClientService.js'
 import { createEthereumSubscription, removeEthereumSubscription } from '../simulation/services/EthereumSubscriptionService.js'
-import { getSimulatedBalance, getSimulatedBlock, getSimulatedBlockNumber, getSimulatedCode, getSimulatedLogs, getSimulatedStack, getSimulatedTransactionByHash, getSimulatedTransactionCount, getSimulatedTransactionReceipt, simulatedCall, simulateEstimateGas } from '../simulation/services/SimulationModeEthereumClientService.js'
+import { simulationGasLeft, getSimulatedBalance, getSimulatedBlock, getSimulatedBlockNumber, getSimulatedCode, getSimulatedLogs, getSimulatedStack, getSimulatedTransactionByHash, getSimulatedTransactionCount, getSimulatedTransactionReceipt, simulatedCall, simulateEstimateGas } from '../simulation/services/SimulationModeEthereumClientService.js'
 import { Simulator } from '../simulation/simulator.js'
 import { bytes32String, dataStringWith0xStart, stringToUint8Array } from '../utils/bigint.js'
 import { CANNOT_SIMULATE_OFF_LEGACY_BLOCK, ERROR_INTERCEPTOR_GAS_ESTIMATION_FAILED, ERROR_INTERCEPTOR_GET_CODE_FAILED, KNOWN_CONTRACT_CALLER_ADDRESSES } from '../utils/constants.js'
@@ -171,7 +171,7 @@ async function singleCallWithFromOverride(ethereumClientService: EthereumClientS
 	const gasPrice = callParams.gasPrice !== undefined ? callParams.gasPrice : 0n
 	const value = callParams.value !== undefined ? callParams.value : 0n
 
-	const transactionWithoutGas = {
+	const callTransaction = {
 		type: '1559' as const,
 		from,
 		chainId: ethereumClientService.getChainId(),
@@ -182,13 +182,10 @@ async function singleCallWithFromOverride(ethereumClientService: EthereumClientS
 		value,
 		input,
 		accessList: [],
+		gasLimit: callParams.gas === undefined ? simulationGasLeft(simulationState, await ethereumClientService.getBlock()) : callParams.gas
 	}
-	if (callParams.gas !== undefined) {
-		return await simulatedCall(ethereumClientService, simulationState, { ...transactionWithoutGas, gasLimit: callParams.gas }, blockTag)
-	}
-	const estimatedGas = await simulateEstimateGas(ethereumClientService, simulationState, transactionWithoutGas)
-	if ('error' in estimatedGas) return estimatedGas
-	return await simulatedCall(ethereumClientService, simulationState, { ...transactionWithoutGas, gasLimit: estimatedGas.gas }, blockTag)
+
+	return await simulatedCall(ethereumClientService, simulationState, callTransaction, blockTag)
 }
 
 export async function call(ethereumClientService: EthereumClientService, simulationState: SimulationState, request: EthCallParams) {
