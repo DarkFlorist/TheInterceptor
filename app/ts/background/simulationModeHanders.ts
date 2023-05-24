@@ -85,12 +85,14 @@ export async function sendTransaction(
 				transaction: { ...transactionWithoutGas, gas: estimateGas.gas },
 				website: website,
 				transactionCreated: new Date(),
+				transactionSendingFormat: 'eth_sendTransaction' as const,
 			}
 		}
 		return {
 			transaction: { ...transactionWithoutGas, gas: transactionDetails.gas },
 			website: website,
 			transactionCreated: new Date(),
+			transactionSendingFormat: 'eth_sendTransaction' as const,
 		}
 	}
 	return await openConfirmTransactionDialog(
@@ -101,7 +103,6 @@ export async function sendTransaction(
 		simulationMode,
 		formTransaction,
 		settings,
-		'eth_sendTransaction'
 	)
 }
 
@@ -150,6 +151,7 @@ export async function sendRawTransaction(
 			transaction,
 			website: website,
 			transactionCreated: new Date(),
+			transactionSendingFormat: 'eth_sendRawTransaction' as const,
 		}
 	}
 	return await openConfirmTransactionDialog(
@@ -160,7 +162,6 @@ export async function sendRawTransaction(
 		simulationMode,
 		formTransaction,
 		settings,
-		'eth_sendRawTransaction'
 	)
 }
 

@@ -80,7 +80,7 @@ export async function main() {
 
 		should('adding transaction and getting the next block should include all the same fields as Nethermind', async () => {
 			const block = await getSimulatedBlock(ethereum, simulationState, blockNumber, true)
-			const newState = await appendTransaction(ethereum, simulationState, { transaction: exampleTransaction, website: { websiteOrigin: 'test', icon: undefined, title: undefined }, transactionCreated: new Date() })
+			const newState = await appendTransaction(ethereum, simulationState, { transaction: exampleTransaction, website: { websiteOrigin: 'test', icon: undefined, title: undefined }, transactionCreated: new Date(), transactionSendingFormat: 'eth_sendTransaction' })
 			const nextBlock = await getSimulatedBlock(ethereum, newState, blockNumber + 1n, true)
 			assert.equal(JSON.stringify(Object.keys(nextBlock).sort()), JSON.stringify(Object.keys(block).sort()))
 

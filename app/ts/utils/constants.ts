@@ -122,6 +122,7 @@ export const MAKE_YOU_RICH_TRANSACTION = {
 		title: 'The Interceptor',
 		icon: undefined,
 	},
+	transactionSendingFormat: 'eth_sendTransaction' as const,
 }
 
 export const TIME_BETWEEN_BLOCKS = 12

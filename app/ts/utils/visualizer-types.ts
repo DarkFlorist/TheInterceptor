@@ -101,6 +101,7 @@ export const SimulatedTransaction = funtypes.ReadonlyObject({
 	website: Website,
 	transactionCreated: EthereumTimestamp,
 	tokenBalancesAfter: TokenBalancesAfter,
+	transactionSendingFormat: funtypes.Union(funtypes.Literal('eth_sendRawTransaction'), funtypes.Literal('eth_sendTransaction')),
 })
 
 export type WebsiteCreatedEthereumUnsignedTransaction = funtypes.Static<typeof WebsiteCreatedEthereumUnsignedTransaction>
@@ -108,6 +109,7 @@ export const WebsiteCreatedEthereumUnsignedTransaction = funtypes.ReadonlyObject
 	website: Website,
 	transactionCreated: EthereumTimestamp,
 	transaction: EthereumUnsignedTransaction,
+	transactionSendingFormat: funtypes.Union(funtypes.Literal('eth_sendRawTransaction'), funtypes.Literal('eth_sendTransaction')),
 })
 
 export type EstimateGasError = funtypes.Static<typeof EstimateGasError>
