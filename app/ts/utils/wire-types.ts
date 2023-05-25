@@ -1,6 +1,7 @@
 import * as funtypes from 'funtypes'
 import { UnionToIntersection, assertNever } from './typescript.js'
 import { IUnsignedTransaction } from './ethereum.js'
+import { ExecutionSpec383MultiCallParams } from './multicall-types.js'
 
 const BigIntParser: funtypes.ParsedValue<funtypes.String, bigint>['config'] = {
 	parse: value => {
@@ -382,7 +383,7 @@ export const EthTransactionReceiptResponse = funtypes.Union(
 	}).asReadonly()
 )
 
-const RevertErrorParser: funtypes.ParsedValue<funtypes.String, string>['config'] = {
+export const RevertErrorParser: funtypes.ParsedValue<funtypes.String, string>['config'] = {
 	parse: value => {
 		if (!value.startsWith('Reverted ')) return { success: true, value }
 		const parseResult = BytesParser.parse(value.slice('Reverted '.length))
@@ -888,6 +889,7 @@ export const EthereumJsonRpcRequest = funtypes.Union(
 	EthGetStorageAtParams,
 	EthGetLogsParams,
 	EthSign,
+	ExecutionSpec383MultiCallParams,
 )
 
 export const SupportedETHRPCCalls = [

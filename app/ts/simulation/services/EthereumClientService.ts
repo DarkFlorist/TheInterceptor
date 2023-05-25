@@ -5,6 +5,8 @@ import { CHAIN } from '../../utils/user-interface-types.js'
 import { IEthereumJSONRpcRequestHandler } from './EthereumJSONRpcRequestHandler.js'
 import { ethers } from 'ethers'
 import { stringToUint8Array } from '../../utils/bigint.js'
+import { BlockCalls, ExecutionSpec383MultiCallResult } from '../../utils/multicall-types.js'
+import { assertNever } from '../../utils/typescript.js'
 
 export type IEthereumClientService = Pick<EthereumClientService, keyof EthereumClientService>
 export class EthereumClientService {
@@ -202,5 +204,50 @@ export class EthereumClientService {
 		const blockAuthor: bigint = MOCK_ADDRESS
 		const unvalidatedResult = await this.requestHandler.jsonRpcRequest({ method: 'eth_multicall', params: [blockNumber, blockAuthor, transactions] })
 		return MulticallResponse.parse(unvalidatedResult)
+	}
+
+	public readonly executionSpec383MultiCall = async (version: EthereumQuantity, calls: readonly BlockCalls[], blockTag: EthereumBlockTag) => {
+		const unvalidatedResult = await this.requestHandler.jsonRpcRequest({ method: 'eth_multicall', params: [version, calls, blockTag] })
+		return ExecutionSpec383MultiCallResult.parse(unvalidatedResult)
+	}
+	
+	//intended drop in replacement of the old multicall
+	public readonly executionSpec383MultiCallOnlyTransactions = async (transactions: readonly EthereumUnsignedTransaction[], blockNumber: bigint): Promise<MulticallResponse> => {
+		const parentBlock = await this.getBlock()
+		const multicallResults = await this.executionSpec383MultiCall(1n, [{
+			calls: transactions,
+			blockOverride: {
+				number: blockNumber,
+				prevRandao: 0x1n,
+				time: new Date(parentBlock.timestamp.getTime() + 12 * 1000),
+				gasLimit: parentBlock.gasLimit,
+				feeRecipient: parentBlock.miner,
+				baseFee: parentBlock.baseFeePerGas === undefined ? 15000000n : parentBlock.baseFeePerGas
+			},
+		}], blockNumber)
+		if (multicallResults.length !== 1) throw new Error('Multicalled for one block but did not get one block')
+		return multicallResults[0].calls.map((singleResult) => {
+			switch(singleResult.status) {
+				case 'success': return {
+					statusCode: 'success' as const,
+					gasSpent: singleResult.gasUsed,
+					returnValue: singleResult.return,
+					events: (singleResult.logs === undefined ? [] : singleResult.logs).map((log) => ({
+						loggersAddress: log.address,
+						data: 'data' in log && log.data !== undefined ? log.data : new Uint8Array(),
+						topics: 'topics' in log && log.topics !== undefined ? log.topics : [],
+					})),
+					balanceChanges: [], // not supported in new multicall atm...
+				}
+				case 'failure': return {
+					statusCode: 'failure' as const,
+					gasSpent: singleResult.gasUsed,
+					error: singleResult.error.message,
+					returnValue: singleResult.return,
+				}
+				case 'invalid': throw new Error(`Invalid multicall: ${ singleResult.error }`)
+				default: assertNever(singleResult)
+			}
+		})
 	}
 }
