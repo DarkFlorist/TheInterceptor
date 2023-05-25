@@ -116,7 +116,8 @@ export type EstimateGasError = funtypes.Static<typeof EstimateGasError>
 export const EstimateGasError = funtypes.ReadonlyObject({
 	error: funtypes.ReadonlyObject({
 		code: funtypes.Literal(ERROR_INTERCEPTOR_GAS_ESTIMATION_FAILED),
-		message: funtypes.String
+		message: funtypes.String,
+		data: funtypes.String
 	})
 })
 
