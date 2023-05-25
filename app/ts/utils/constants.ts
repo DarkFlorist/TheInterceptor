@@ -84,7 +84,7 @@ function get4Byte(functionAbi: string) {
 }
 
 export const FourByteExplanations = new Map<number, string >([
-	[get4Byte('transferFrom(address,address,uint256)'), 'ERC20 Transfer From'],
+	[get4Byte('transferFrom(address,address,uint256)'), 'ERC20/ERC721 Transfer From'],
 	[get4Byte('transfer(address,uint256)'), 'ERC20 Transfer'],
 	[get4Byte('approve(address,uint256)'), 'ERC20 Approval'],
 	[get4Byte('setApprovalForAll(address,bool)'), 'ERC721 Approval For All'],
