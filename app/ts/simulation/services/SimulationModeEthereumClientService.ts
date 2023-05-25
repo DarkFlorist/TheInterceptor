@@ -1,6 +1,6 @@
 import { EthereumClientService } from './EthereumClientService.js'
-import { EthGetLogsResponse, EthereumUnsignedTransaction, EthereumSignedTransactionWithBlockData, EthereumBlockTag, EthGetLogsRequest, EthTransactionReceiptResponse, EstimateGasParamsVariables, PersonalSignParams, SignTypedDataParams, EthereumSignedTransaction, EthereumData, EthereumQuantity, MulticallResponseEventLogs, MulticallResponse, EthereumAddress, EthereumBlockHeader, EthereumBlockHeaderWithTransactionHashes, OldSignTypedDataParams } from '../../utils/wire-types.js'
-import { addressString, bytes32String, bytesToUnsigned, dataStringWith0xStart, max, min, stringToUint8Array } from '../../utils/bigint.js'
+import { EthGetLogsResponse, EthereumUnsignedTransaction, EthereumSignedTransactionWithBlockData, EthereumBlockTag, EthGetLogsRequest, EthTransactionReceiptResponse, PersonalSignParams, SignTypedDataParams, EthereumSignedTransaction, EthereumData, EthereumQuantity, MulticallResponseEventLogs, MulticallResponse, EthereumAddress, EthereumBlockHeader, EthereumBlockHeaderWithTransactionHashes, OldSignTypedDataParams, DappRequestTransaction } from '../../utils/wire-types.js'
+import { addressString, bytes32String, bytesToUnsigned, dataString, dataStringWith0xStart, max, min, stringToUint8Array } from '../../utils/bigint.js'
 import { CANNOT_SIMULATE_OFF_LEGACY_BLOCK, ERROR_INTERCEPTOR_GAS_ESTIMATION_FAILED, MOCK_ADDRESS } from '../../utils/constants.js'
 import { ethers, keccak256 } from 'ethers'
 import { WebsiteCreatedEthereumUnsignedTransaction, SimulatedTransaction, SimulationState, TokenBalancesAfter, EstimateGasError } from '../../utils/visualizer-types.js'
@@ -45,7 +45,17 @@ export const simulationGasLeft = (simulationState: SimulationState, blockHeader:
 	return max(blockHeader.gasLimit * 1023n / 1024n - transactionQueueTotalGasLimit(simulationState), 0n)
 }
 
-export const simulateEstimateGas = async (ethereumClientService: EthereumClientService, simulationState: SimulationState, data: EstimateGasParamsVariables): Promise<EstimateGasError | { gas: bigint }> => {
+export function getInputFieldFromDataOrInput(request: {input?: Uint8Array, data?: Uint8Array }) {
+	if ('data' in request && request.data !== undefined) {
+		return request.data
+	}
+	if ('input' in request && request.input !== undefined) {
+		return request.input
+	}
+	return new Uint8Array()
+}
+
+export const simulateEstimateGas = async (ethereumClientService: EthereumClientService, simulationState: SimulationState, data: DappRequestTransaction): Promise<EstimateGasError | { gas: bigint }> => {
 	const sendAddress = data.from !== undefined ? data.from : MOCK_ADDRESS
 	const transactionCount = getSimulatedTransactionCount(ethereumClientService, simulationState, sendAddress)
 	const block = await ethereumClientService.getBlock()
@@ -60,15 +70,21 @@ export const simulateEstimateGas = async (ethereumClientService: EthereumClientS
 		gas: data.gas === undefined ? maxGas : data.gas,
 		to: data.to === undefined ? null : data.to,
 		value: data.value === undefined ? 0n : data.value,
-		input: data.data === undefined ? new Uint8Array(0) : data.data,
+		input: getInputFieldFromDataOrInput(data),
 		accessList: []
 	}
 	const multiCall = await simulatedMulticall(ethereumClientService, simulationState, [tmp], block.number + 1n)
 	const lastResult = multiCall[multiCall.length - 1]
-	const gasSpent = lastResult.gasSpent * 12n / 10n
 	if (lastResult.statusCode === 'failure') {
-		return { error: { code: ERROR_INTERCEPTOR_GAS_ESTIMATION_FAILED, message: `Interceptor: Gas estimation failed: "${ lastResult.error }" ` } } as const 
+		return {
+			error: {
+				code: ERROR_INTERCEPTOR_GAS_ESTIMATION_FAILED,
+				message: `Interceptor: Gas estimation failed: "${ lastResult.error }" `,
+				data: dataString(lastResult.returnValue),
+			}
+		} as const 
 	}
+	const gasSpent = lastResult.gasSpent * 12n / 10n // add 20% extra to account for gas savings
 	return { gas: gasSpent < maxGas ? gasSpent : maxGas }
 }
 

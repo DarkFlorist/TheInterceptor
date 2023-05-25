@@ -538,16 +538,21 @@ export type ToWireType<T> =
 
 
 export type DappRequestTransaction = funtypes.Static<typeof DappRequestTransaction>
-export const DappRequestTransaction = funtypes.Partial({
-	from: EthereumAddress,
-	data: EthereumData,
-	gas: EthereumQuantity,
-	value: EthereumQuantity,
-	to: EthereumAddress,
-	gasPrice: EthereumQuantity,
-	maxPriorityFeePerGas: EthereumQuantity,
-	maxFeePerGas: EthereumQuantity,
-}).asReadonly()
+export const DappRequestTransaction = funtypes.Intersect(
+	funtypes.ReadonlyPartial({
+		from: EthereumAddress,
+		gas: EthereumQuantity,
+		value: EthereumQuantity,
+		to: funtypes.Union(EthereumAddress, funtypes.Null),
+		gasPrice: EthereumQuantity,
+		maxPriorityFeePerGas: EthereumQuantity,
+		maxFeePerGas: EthereumQuantity,
+	}),
+	funtypes.Union(
+		funtypes.ReadonlyPartial({ data: EthereumData }),
+		funtypes.ReadonlyPartial({ input: EthereumData })
+	)
+)
 
 export type EthereumBlockHeaderWithTransactionHashes = funtypes.Static<typeof EthereumBlockHeaderWithTransactionHashes>
 export const EthereumBlockHeaderWithTransactionHashes = funtypes.ReadonlyObject({
@@ -666,29 +671,17 @@ export const TransactionReceiptParams = funtypes.ReadonlyObject({
 	params: funtypes.Tuple(EthereumBytes32)
 })
 
-export type EstimateGasParamsVariables = funtypes.Static<typeof EstimateGasParamsVariables>
-export const EstimateGasParamsVariables = funtypes.Intersect(
-	funtypes.Partial({
-		to: funtypes.Union(EthereumAddress, funtypes.Null),
-		from: EthereumAddress,
-		data: EthereumData,
-		value: EthereumQuantity,
-		gasPrice: EthereumQuantity,
-		gas: EthereumQuantity
-	})
-)
-
 export type EstimateGasParams = funtypes.Static<typeof EstimateGasParams>
 export const EstimateGasParams = funtypes.ReadonlyObject({
 	method: funtypes.Literal('eth_estimateGas'),
-	params: funtypes.Union(funtypes.Tuple(EstimateGasParamsVariables), funtypes.Tuple(EstimateGasParamsVariables, EthereumBlockTag))
+	params: funtypes.Union(funtypes.Tuple(DappRequestTransaction), funtypes.Tuple(DappRequestTransaction, EthereumBlockTag))
 })
 
 export type EthCallParams = funtypes.Static<typeof EthCallParams>
 export const EthCallParams = funtypes.ReadonlyObject({
 	method: funtypes.Literal('eth_call'),
 	params: funtypes.Tuple(
-		EstimateGasParamsVariables,
+		DappRequestTransaction,
 		EthereumBlockTag
 	)
 }).asReadonly()
