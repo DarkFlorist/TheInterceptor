@@ -103,11 +103,9 @@ export function identifySwap(simTransaction: SimulatedAndVisualizedTransaction):
 	const tokenAddressesReceived = dropDuplicates<TokenVisualizerResultWithMetadata>(tokensReceived, isSameTokenAddress).map((x) => x.token)
 
 	const etherChange = simTransaction.ethBalanceChanges.filter((x) => x.address.address === sender)
-	const ethDiff = etherChange !== undefined && etherChange.length >= 1 ? etherChange[etherChange.length - 1].after - etherChange[0].before : 0n
-
 	const transactionGasCost = simTransaction.realizedGasPrice * simTransaction.transaction.gas
-
-	if (tokenAddressesSent.length === 1 && tokenAddressesReceived.length === 1 && -ethDiff <= transactionGasCost) {
+	const ethDiff = (etherChange !== undefined && etherChange.length >= 1 ? etherChange[etherChange.length - 1].after - etherChange[0].before : 0n) + transactionGasCost
+	if (tokenAddressesSent.length === 1 && tokenAddressesReceived.length === 1 && abs(ethDiff) === 0n) {
 		// user swapped one token to another and eth didn't change more than gas fees
 		const sentToken = tokenAddressesSent[0]
 		const receiveToken = tokenAddressesReceived[0]
@@ -140,7 +138,7 @@ export function identifySwap(simTransaction: SimulatedAndVisualizedTransaction):
 		}
 	}
 
-	if (tokenAddressesSent.length === 0 && tokenAddressesReceived.length === 1 && ethDiff < transactionGasCost ) {
+	if (tokenAddressesSent.length === 0 && tokenAddressesReceived.length === 1 && ethDiff < 0 ) {
 		// user bought token with eth
 		const receiveToken = tokenAddressesReceived[0]
 		const receiveBalanceAfter = simTransaction.tokenBalancesAfter.find((balance) => balance.owner === simTransaction.transaction.from.address && balance.token === receiveToken.address)?.balance
