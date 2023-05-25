@@ -45,12 +45,21 @@ export const simulationGasLeft = (simulationState: SimulationState, blockHeader:
 	return max(blockHeader.gasLimit * 1023n / 1024n - transactionQueueTotalGasLimit(simulationState), 0n)
 }
 
+export function getInputFieldFromDataOrInput(request: {input?: Uint8Array, data?: Uint8Array }) {
+	if ('data' in request && request.data !== undefined) {
+		return request.data
+	}
+	if ('input' in request && request.input !== undefined) {
+		return request.input
+	}
+	return new Uint8Array()
+}
+
 export const simulateEstimateGas = async (ethereumClientService: EthereumClientService, simulationState: SimulationState, data: DappRequestTransaction): Promise<EstimateGasError | { gas: bigint }> => {
 	const sendAddress = data.from !== undefined ? data.from : MOCK_ADDRESS
 	const transactionCount = getSimulatedTransactionCount(ethereumClientService, simulationState, sendAddress)
 	const block = await ethereumClientService.getBlock()
 	const maxGas = simulationGasLeft(simulationState, block)
-	const inputAndDataMerged = 'data' in data && data.data !== undefined ? data.data : 'input' in data && data.input !== undefined ? data.input : new Uint8Array()
 	const tmp = {
 		type: '1559' as const,
 		from: sendAddress,
@@ -61,7 +70,7 @@ export const simulateEstimateGas = async (ethereumClientService: EthereumClientS
 		gas: data.gas === undefined ? maxGas : data.gas,
 		to: data.to === undefined ? null : data.to,
 		value: data.value === undefined ? 0n : data.value,
-		input: inputAndDataMerged,
+		input: getInputFieldFromDataOrInput(data),
 		accessList: []
 	}
 	const multiCall = await simulatedMulticall(ethereumClientService, simulationState, [tmp], block.number + 1n)
