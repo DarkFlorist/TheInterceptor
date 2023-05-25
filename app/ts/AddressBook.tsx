@@ -95,7 +95,7 @@ type ListElementParam = (AddressBookEntry | { type: 'empty' }) & {
 export function ListElement(entry: ListElementParam) {
 	return <li style = { `margin: 0px; padding-bottom: ${ ELEMENT_PADDING_PX }px` } key = { entry.listKey }>
 		<div class = 'card' style = { `height: ${ ELEMENT_SIZE_PX[entry.category] }px` }>
-			<div class = 'card-content' style = 'height: 100%;'>
+			<div class = 'card-content' style = 'height: 100%; width: 500px;'>
 				<div class = 'media' style = 'height: 100%;'>
 					<div class = 'media-content' style = 'overflow-y: visible; overflow-x: unset; height: 100%;'>
 						<div style = 'padding-bottom: 10px; height: 40px'>
@@ -367,8 +367,8 @@ export function AddressBook() {
 	return (
 		<main>
 			<Hint>
-				<div class = 'columns' style = 'margin: 10px'>
-					<div class = 'column is-2'>
+				<div class = 'columns' style = 'margin: 10px; width: fit-content; margin: auto;'>
+					<div style = 'padding: 10px'>
 						<aside class = 'menu'>
 							<ul class = 'menu-list'>
 								<p class = 'paragraph' style = 'color: var(--disabled-text-color)'> My Addresses </p>
@@ -387,7 +387,7 @@ export function AddressBook() {
 							</ul>
 						</aside>
 					</div>
-					<div class = 'column'>
+					<div style = 'padding: 10px'>
 						<div style = 'display: flex; padding-bottom: 10px'>
 							<div class = 'field is-grouped' style = 'max-width: 400px; margin: 10px'>
 								<p class = 'control is-expanded'>
