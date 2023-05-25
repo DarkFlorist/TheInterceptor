@@ -66,16 +66,17 @@ export async function sendTransaction(
 
 		const parentBlock = await block
 		if (parentBlock.baseFeePerGas === undefined) throw new Error(CANNOT_SIMULATE_OFF_LEGACY_BLOCK)
+		const inputAndDataMerged = 'data' in transactionDetails && transactionDetails.data !== undefined ? transactionDetails.data : 'input' in transactionDetails && transactionDetails.input !== undefined ? transactionDetails.input : new Uint8Array()
 		const transactionWithoutGas = {
 			type: '1559' as const,
-			from: from,
+			from,
 			chainId: ethereumClientService.getChainId(),
 			nonce: await transactionCount,
-			maxFeePerGas: transactionDetails.maxFeePerGas ? transactionDetails.maxFeePerGas : parentBlock.baseFeePerGas * 2n,
-			maxPriorityFeePerGas: transactionDetails.maxPriorityFeePerGas ? transactionDetails.maxPriorityFeePerGas : 10n**8n, // 0.1 nanoEth/gas
+			maxFeePerGas: transactionDetails.maxFeePerGas != undefined ? transactionDetails.maxFeePerGas : parentBlock.baseFeePerGas * 2n,
+			maxPriorityFeePerGas: transactionDetails.maxPriorityFeePerGas != undefined  ? transactionDetails.maxPriorityFeePerGas : 10n**8n, // 0.1 nanoEth/gas
 			to: transactionDetails.to === undefined ? null : transactionDetails.to,
-			value: transactionDetails.value ? transactionDetails.value : 0n,
-			input: 'data' in transactionDetails && transactionDetails.data !== undefined ? transactionDetails.data : new Uint8Array(),
+			value: transactionDetails.value != undefined  ? transactionDetails.value : 0n,
+			input: inputAndDataMerged,
 			accessList: [],
 		}
 		if (transactionDetails.gas === undefined) {
@@ -119,7 +120,7 @@ export async function sendRawTransaction(
 		const ethersTransaction = ethers.Transaction.from(dataStringWith0xStart(sendRawTransactionParams.params[0]))
 		const transactionDetails = {
 			from: EthereumAddress.parse(ethersTransaction.from),
-			data: stringToUint8Array(ethersTransaction.data),
+			input: stringToUint8Array(ethersTransaction.data),
 			...ethersTransaction.gasLimit === null ? { gas: ethersTransaction.gasLimit } : {},
 			value: ethersTransaction.value,
 			...ethersTransaction.to === null ? {} : { to: EthereumAddress.parse(ethersTransaction.to) },
@@ -143,7 +144,7 @@ export async function sendRawTransaction(
 			maxPriorityFeePerGas: transactionDetails.maxPriorityFeePerGas ? transactionDetails.maxPriorityFeePerGas : 1n,
 			to: transactionDetails.to === undefined ? null : transactionDetails.to,
 			value: transactionDetails.value ? transactionDetails.value : 0n,
-			input: 'data' in transactionDetails && transactionDetails.data !== undefined ? transactionDetails.data : new Uint8Array(),
+			input: transactionDetails.input,
 			accessList: [],
 			gas: ethersTransaction.gasLimit,
 		}
@@ -168,7 +169,7 @@ export async function sendRawTransaction(
 async function singleCallWithFromOverride(ethereumClientService: EthereumClientService, simulationState: SimulationState, request: EthCallParams, from: bigint) {
 	const callParams = request.params[0]
 	const blockTag = request.params.length > 1 ? request.params[1] : 'latest' as const
-	const input = callParams.data !== undefined ? callParams.data : new Uint8Array()
+	const inputAndDataMerged = 'data' in callParams && callParams.data !== undefined ? callParams.data : 'input' in callParams && callParams.input !== undefined ? callParams.input : new Uint8Array()
 	const gasPrice = callParams.gasPrice !== undefined ? callParams.gasPrice : 0n
 	const value = callParams.value !== undefined ? callParams.value : 0n
 
@@ -181,7 +182,7 @@ async function singleCallWithFromOverride(ethereumClientService: EthereumClientS
 		maxPriorityFeePerGas: 0n,
 		to: callParams.to === undefined ? null : callParams.to,
 		value,
-		input,
+		input: inputAndDataMerged,
 		accessList: [],
 		gasLimit: callParams.gas === undefined ? simulationGasLeft(simulationState, await ethereumClientService.getBlock()) : callParams.gas
 	}
