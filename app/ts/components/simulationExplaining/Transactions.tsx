@@ -111,7 +111,7 @@ export function SenderReceiver({ from, to, renameAddressCallBack }: { from: Addr
 			</div>
 		</span>
 	}
-	return <span class = 'log-table' style = 'justify-content: center; column-gap: 5px; grid-template-columns: 33.33% 33.33% 33.33%;'>
+	return <span class = 'log-table' style = 'justify-content: space-between; column-gap: 5px; grid-template-columns: auto auto auto;'>
 		<div class = 'log-cell' style = 'margin: 2px;'>
 			<SmallAddress
 				addressBookEntry = { from }

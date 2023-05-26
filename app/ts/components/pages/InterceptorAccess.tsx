@@ -242,7 +242,7 @@ export function InterceptorAccess() {
 
 			<div className = 'block' style = 'margin-bottom: 0px; display: flex; justify-content: space-between; flex-direction: column; height: 100%; position: fixed; width: 100%; background-color: var(--card-content-bg-color);'>
 				<header class = 'card-header window-header' style = 'height: 40px; border-top-left-radius: 0px; border-top-right-radius: 0px'>
-					<div class = 'card-header-icon noselect nopointer' style = 'overflow: hidden; padding: 0px;'>
+					<div class = 'card-header-icon noselect nopointer' style = 'width: 100%'>
 						<WebsiteOriginText { ...accessRequest.website } />
 					</div>
 				</header>
