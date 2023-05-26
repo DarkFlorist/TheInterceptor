@@ -132,6 +132,7 @@ input[type = 'checkbox']:checked::before {
 	overflow: hidden;
 	color:var(--text-color);
 	white-space: unset;
+	line-height: 1.3em;
 }
 
 .paragraph {
