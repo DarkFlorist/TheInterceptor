@@ -296,13 +296,15 @@ type SummarizeAddressParams = {
 
 export function SummarizeAddress(param: SummarizeAddressParams) {
 	const isOwnAddress = param.balanceSummary.summaryFor.type === 'addressInfo' || param.balanceSummary.summaryFor.address === param.simulationAndVisualisationResults.activeAddress
-	const positiveNegativeColors = isOwnAddress ? {
-		textColor: 'var(--text-color)',
-		negativeColor: 'var(--text-color)'
-	} : {
-		textColor: 'var(--disabled-text-color)',
-		negativeColor: 'var(--negative-dim-color)'
-	}
+	const positiveNegativeColors = isOwnAddress
+		? {
+			textColor: 'var(--text-color)',
+			negativeColor: 'var(--text-color)'
+		}
+		: {
+			textColor: 'var(--disabled-text-color)',
+			negativeColor: 'var(--negative-dim-color)'
+		}
 
 	return <div>
 		{ isOwnAddress ?
@@ -403,15 +405,16 @@ export function LogAnalysisCard({ simTx, renameAddressCallBack }: LogAnalysisCar
 					<span class = 'icon' style = 'color: var(--text-color); font-weight: unset; font-size: 0.8em;'> V </span>
 				</div>
 			</header>
-			{ !showLogs ? <></> : <>
-				<div class = 'card-content' style = 'border-bottom-left-radius: 0.25rem; border-bottom-right-radius: 0.25rem; border-left: 2px solid var(--card-bg-color); border-right: 2px solid var(--card-bg-color); border-bottom: 2px solid var(--card-bg-color);'>
+			{ !showLogs
+				? <></>
+				: <div class = 'card-content' style = 'border-bottom-left-radius: 0.25rem; border-bottom-right-radius: 0.25rem; border-left: 2px solid var(--card-bg-color); border-right: 2px solid var(--card-bg-color); border-bottom: 2px solid var(--card-bg-color);'>
 					<LogAnalysis
 						simulatedAndVisualizedTransaction = { simTx }
 						identifiedSwap = { identifiedSwap }
 						renameAddressCallBack = { renameAddressCallBack }
 					/>
 				</div>
-			</> }
+			}
 		</div>
 	</>
 }
@@ -455,8 +458,9 @@ export function TransactionsAccountChangesCard({ simTx, renameAddressCallBack, a
 				<span class = 'icon' style = 'color: var(--text-color); font-weight: unset; font-size: 0.8em;'> V </span>
 			</div>
 		</header>
-		{ !showSummary ? <></> : <>
-			<div class = 'card-content'>
+		{ !showSummary
+			? <></>
+			: <div class = 'card-content'>
 				<div class = 'container' style = 'margin-bottom: 10px;'>
 					{ ownAddresses.length == 0 ? <p class = 'paragraph'> No changes to your accounts </p>
 						: <div class = 'notification transaction-importance-box'>
@@ -472,8 +476,9 @@ export function TransactionsAccountChangesCard({ simTx, renameAddressCallBack, a
 					}
 				</div>
 
-				{ notOwnAddresses.length == 0 ? <></> :
-					<div class = 'container'>
+				{ notOwnAddresses.length == 0
+					? <></>
+					: <div class = 'container'>
 						{ notOwnAddresses.map( ([_index, balanceSummary]) => {
 							return <>
 								<SummarizeAddress
@@ -487,7 +492,7 @@ export function TransactionsAccountChangesCard({ simTx, renameAddressCallBack, a
 					</div>
 				}
 			</div>
-		</> }
+		}
 	</div>
 }
 
@@ -531,16 +536,18 @@ export function TransactionHeader({ simTx, removeTransaction } : TransactionHead
 		<p class = 'card-header-title' style = 'white-space: nowrap;'>
 			{ identifyTransaction(simTx).title }
 		</p>
-		{ simTx.transaction.to  === undefined || identifyTransaction(simTx).type === 'MakeYouRichTransaction' ? <></> :
-			<p class = 'card-header-icon unsetcursor' style = { `margin-left: auto; margin-right: 0; overflow: hidden; ${ removeTransaction !== undefined ? 'padding: 0' : ''}` }>
+		{ simTx.transaction.to  === undefined || identifyTransaction(simTx).type === 'MakeYouRichTransaction'
+			? <></>
+			: <p class = 'card-header-icon unsetcursor' style = { `margin-left: auto; margin-right: 0; overflow: hidden; ${ removeTransaction !== undefined ? 'padding: 0' : ''}` }>
 				<WebsiteOriginText { ...simTx.website } />
 			</p>
 		}
-		{ removeTransaction !== undefined ?
-			<button class = 'card-header-icon' aria-label = 'remove' onClick = { removeTransaction }>
+		{ removeTransaction !== undefined
+			? <button class = 'card-header-icon' aria-label = 'remove' onClick = { removeTransaction }>
 				<span class = 'icon' style = 'color: var(--text-color);'> X </span>
 			</button>
-		: <></> }
+			: <></>
+		}
 	</header>
 }
 
@@ -606,7 +613,7 @@ export function SimulationSummary(param: SimulationSummaryParams) {
 			<header class = 'card-header'>
 				<div class = 'card-header-icon unset-cursor'>
 					<span class = 'icon'>
-						<img src = { param.simulationAndVisualisationResults.simulatedAndVisualizedTransactions.find( (x) => x.statusCode !== 'success') === undefined ? ( param.simulationAndVisualisationResults.simulatedAndVisualizedTransactions.find( (x) => x.quarantine ) !== undefined ? '../img/warning-sign.svg' : '../img/success-icon.svg' ) : '../img/error-icon.svg' } />
+						<img src = { param.simulationAndVisualisationResults.simulatedAndVisualizedTransactions.find((x) => x.statusCode !== 'success') === undefined ? ( param.simulationAndVisualisationResults.simulatedAndVisualizedTransactions.find( (x) => x.quarantine ) !== undefined ? '../img/warning-sign.svg' : '../img/success-icon.svg' ) : '../img/error-icon.svg' } />
 					</span>
 				</div>
 				<p class = 'card-header-title'>
@@ -637,8 +644,9 @@ export function SimulationSummary(param: SimulationSummaryParams) {
 							<span class = 'icon' style = 'color: var(--text-color); font-weight: unset; font-size: 0.8em;'> V </span>
 						</div>
 					</header>
-					{ !showOtherAccountChanges ? <></> :
-						<div class = 'card-content'>
+					{ !showOtherAccountChanges
+						? <></>
+						: <div class = 'card-content'>
 							<div class = 'container'>
 								{ notOwnAddresses.length == 0 ? <p class = 'paragraph'>No changes to other accounts</p> : notOwnAddresses.map( ([_index, balanceSummary]) => (<>
 									<SummarizeAddress
@@ -683,8 +691,9 @@ export function RawTransactionDetailsCard({ transaction, renameAddressCallBack, 
 				<span class = 'icon' style = 'color: var(--text-color); font-weight: unset; font-size: 0.8em;'> V </span>
 			</div>
 		</header>
-		{ !showSummary ? <></> : <>
-			<div class = 'card-content'>
+		{ !showSummary
+			? <></>
+			: <div class = 'card-content'>
 				<div class = 'container' style = 'margin-bottom: 10px;'>
 					<span class = 'log-table' style = 'justify-content: center; column-gap: 5px; row-gap: 5px; grid-template-columns: auto auto'>
 						<CellElement text = 'Transaction type: '/>
@@ -707,12 +716,15 @@ export function RawTransactionDetailsCard({ transaction, renameAddressCallBack, 
 						<CellElement text = { bytes32String(transaction.hash) }/>
 						
 
-						{ transaction.type !== '1559' ? <></> : <>
-							<CellElement text = 'Max Fee Per Gas: '/>
-							<CellElement text = { `${ nanoString(transaction.maxFeePerGas) } nanoeth/gas` }/>
-							<CellElement text = 'Max Priority Fee Per Gas: '/>
-							<CellElement text = { `${ nanoString(transaction.maxPriorityFeePerGas) } nanoeth/gas` }/>
-						</> }
+						{ transaction.type !== '1559'
+							? <></>
+							: <>
+								<CellElement text = 'Max Fee Per Gas: '/>
+								<CellElement text = { `${ nanoString(transaction.maxFeePerGas) } nanoeth/gas` }/>
+								<CellElement text = 'Max Priority Fee Per Gas: '/>
+								<CellElement text = { `${ nanoString(transaction.maxPriorityFeePerGas) } nanoeth/gas` }/>
+							</>
+						}
 					</span>
 
 					<p class = 'paragraph' style = 'color: var(--subtitle-text-color)'>Raw transaction input: </p>
@@ -722,6 +734,6 @@ export function RawTransactionDetailsCard({ transaction, renameAddressCallBack, 
 					</div>
 				</div>
 			</div>
-		</> }
+		}
 	</div>
 }

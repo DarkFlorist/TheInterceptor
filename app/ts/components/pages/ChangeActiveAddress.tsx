@@ -74,24 +74,27 @@ export function ChangeActiveAddress(param: ChangeActiveAddressParam) {
 						</div>
 					</li>
 
-					{ param.addressInfos === undefined ? <></> : param.addressInfos.map( (addressInfo) => (
-						<li>
-							<div class = 'card hoverable' onClick = { () => { ChangeAndStoreActiveAddress(addressInfo.address) } }>
-								<div class = 'card-content hoverable ' style = 'cursor: pointer;'>
-									<BigAddress
-										addressBookEntry = { { ...addressInfo, type: 'addressInfo' } }
-										noCopying = { true }
-										renameAddressCallBack = { param.renameAddressCallBack }
-									/>
-									{ isSignerConnected(addressInfo.address) ?
-										<div class = 'content' style = 'color: var(--text-color)'>
-											<SignerLogoText signerName = { param.signerName } text = { ` ${ getPrettySignerName(param.signerName) } connected` }/>
-										</div> : <></>
-									}
+					{ param.addressInfos === undefined
+						? <></>
+						: param.addressInfos.map((addressInfo) => (
+							<li>
+								<div class = 'card hoverable' onClick = { () => { ChangeAndStoreActiveAddress(addressInfo.address) } }>
+									<div class = 'card-content hoverable ' style = 'cursor: pointer;'>
+										<BigAddress
+											addressBookEntry = { { ...addressInfo, type: 'addressInfo' } }
+											noCopying = { true }
+											renameAddressCallBack = { param.renameAddressCallBack }
+										/>
+										{ isSignerConnected(addressInfo.address) ?
+											<div class = 'content' style = 'color: var(--text-color)'>
+												<SignerLogoText signerName = { param.signerName } text = { ` ${ getPrettySignerName(param.signerName) } connected` }/>
+											</div> : <></>
+										}
+									</div>
 								</div>
-							</div>
-						</li>
-					) ) }
+							</li>
+						) )
+					}
 
 				</ul>
 			</section>

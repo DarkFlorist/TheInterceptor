@@ -145,7 +145,7 @@ export function Transaction(param: TransactionVisualizationParameters) {
 					<TransactionImportanceBlock { ...param }/>
 					<QuarantineCodes quarantineCodes = { param.simTx.quarantineCodes }/>
 				</div>
-				{ identifiedTransaction === 'MakeYouRichTransaction' ? <></> :<>
+				{ identifiedTransaction === 'MakeYouRichTransaction' ? <></> : <>
 					<LogAnalysisCard
 						simTx = { param.simTx }
 						renameAddressCallBack = { param.renameAddressCallBack }

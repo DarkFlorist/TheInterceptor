@@ -237,8 +237,9 @@ export function ConfirmTransaction() {
 				{ identified.rejectAction }
 			</button>
 			<button className = 'button is-primary button-overflow dialog-button-right' onClick = { approve } disabled = { isConfirmDisabled() }>
-				{ dialogState.data.simulationMode ? `${ identified.simulationAction }!` :
-					<SignerLogoText {...{
+				{ dialogState.data.simulationMode
+					? `${ identified.simulationAction }!`
+					: <SignerLogoText {...{
 						signerName: dialogState.data.signerName,
 						text: identified.signingAction,
 					}}/>
@@ -254,8 +255,9 @@ export function ConfirmTransaction() {
 		<main>
 			<Hint>
 				<div class = { `modal ${ addingNewAddress !== 'renameAddressModalClosed' ? 'is-active' : ''}` }>
-					{ addingNewAddress === 'renameAddressModalClosed' ? <></> :
-						<AddNewAddress
+					{ addingNewAddress === 'renameAddressModalClosed'
+						? <></>
+						: <AddNewAddress
 							setActiveAddressAndInformAboutIt = { undefined }
 							addingNewAddress = { addingNewAddress }
 							close = { () => { setAddingNewAddress('renameAddressModalClosed') } }
@@ -272,18 +274,20 @@ export function ConfirmTransaction() {
 							</div>
 						: <></> }
 						
-						{ dialogState.data.transactionToSimulate.transactionSendingFormat === 'eth_sendRawTransaction' ? 
-							<DinoSaysNotification
+						{ dialogState.data.transactionToSimulate.transactionSendingFormat === 'eth_sendRawTransaction'
+							? <DinoSaysNotification
 								text = { `This transaction is signed already. No extra signing required to forward it to ${ dialogState.data.transactionToSimulate.transaction.chainId === undefined ? getChainName(BigInt(dialogState.data.simulationState.chain)) : getChainName(dialogState.data.transactionToSimulate.transaction.chainId) }.` }
 								close = { () => setPendingTransactionAddedNotification(false)}
 							/>
-						: <></> }
-						{ pendingTransactionAddedNotification === true ? 
-							<DinoSaysNotification
+							: <></>
+						}
+						{ pendingTransactionAddedNotification === true
+							? <DinoSaysNotification
 								text = { `Hey! A new transaction request was queued. Accept or Reject the previous transaction${ pendingTransactions.length > 1 ? 's' : '' } to see the new one.` }
 								close = { () => setPendingTransactionAddedNotification(false)}
 							/>
-						: <></> }
+							: <></>
+						}
 						<TransactionCard
 							simulationAndVisualisationResults = { {
 								blockNumber: dialogState.data.simulationState.blockNumber,
@@ -305,15 +309,15 @@ export function ConfirmTransaction() {
 					</div>
 
 					<nav class = 'window-header' style = 'display: flex; justify-content: space-around; width: 100%; flex-direction: column; padding-bottom: 10px; padding-top: 10px;'>
-						{ dialogState && simulatedAndVisualizedTransactions[simulatedAndVisualizedTransactions.length - 1 ].statusCode === 'success' ?
-							dialogState && simulatedAndVisualizedTransactions[simulatedAndVisualizedTransactions.length - 1 ].quarantine !== true ? <></> :
-							<div style = 'display: grid'>
-								<div style = 'margin: 0px; margin-bottom: 10px; margin-left: 20px; margin-right: 20px; '>
-									<ErrorCheckBox text = { 'I understand that there are issues with this transaction but I want to send it anyway against Interceptors recommendations.' } checked = { forceSend } onInput = { setForceSend } />
+						{ dialogState && simulatedAndVisualizedTransactions[simulatedAndVisualizedTransactions.length - 1 ].statusCode === 'success'
+							? dialogState && simulatedAndVisualizedTransactions[simulatedAndVisualizedTransactions.length - 1 ].quarantine !== true
+								? <></>
+								: <div style = 'display: grid'>
+									<div style = 'margin: 0px; margin-bottom: 10px; margin-left: 20px; margin-right: 20px; '>
+										<ErrorCheckBox text = { 'I understand that there are issues with this transaction but I want to send it anyway against Interceptors recommendations.' } checked = { forceSend } onInput = { setForceSend } />
+									</div>
 								</div>
-							</div>
-						:
-							<div style = 'display: grid'>
+							: <div style = 'display: grid'>
 								<div style = 'margin: 0px; margin-bottom: 10px; margin-left: 20px; margin-right: 20px; '>
 									<ErrorCheckBox text = { 'I understand that the transaction will fail but I want to send it anyway.' } checked = { forceSend } onInput = { setForceSend } />
 								</div>

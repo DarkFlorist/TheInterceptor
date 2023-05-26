@@ -76,8 +76,9 @@ export function ChangeChain() {
 				<div class = 'card-content'>
 					<article class = 'media'>
 						{
-							chainChangeData.website.icon === undefined ? <></> :
-								<figure class = 'media-left' style = 'margin: auto; display: block; padding: 20px'>
+							chainChangeData.website.icon === undefined
+								? <></>
+								: <figure class = 'media-left' style = 'margin: auto; display: block; padding: 20px'>
 									<p class = 'image is-64x64'>
 										<img src = { chainChangeData.website.icon }/>
 									</p>

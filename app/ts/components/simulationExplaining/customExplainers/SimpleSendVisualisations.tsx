@@ -25,8 +25,9 @@ export function AddressBeforeAfter({ address, beforeAndAfter, renameAddressCallB
 			addressBookEntry = { address }
 			renameAddressCallBack = { renameAddressCallBack }
 		/>
-		{ beforeAndAfter === undefined ? <></> :
-			<span style = 'grid-template-columns: auto auto; display: grid; justify-content: space-between; margin-top: 10px'>
+		{ beforeAndAfter === undefined
+			? <></>
+			: <span style = 'grid-template-columns: auto auto; display: grid; justify-content: space-between; margin-top: 10px'>
 				<span style = 'grid-template-columns: auto; display: grid;'>
 					<p class = 'paragraph' style = 'color: var(--subtitle-text-color);'> Before:</p>
 					<TokenOrEth { ... { ...tokenOrEtherDefinition, amount: beforeAndAfter.before } }/>

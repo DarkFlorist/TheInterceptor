@@ -350,17 +350,19 @@ export const getSimulatedTransactionReceipt = async (ethereumClientService: Ethe
 				effectiveGasPrice: 0x2n,
 				from: simulatedTransaction.signedTransaction.from,
 				to: simulatedTransaction.signedTransaction.to,
-				logs: simulatedTransaction.multicallResponse.statusCode === 'success' ? simulatedTransaction.multicallResponse.events.map((x, logIndex) => ({
-					removed: false,
-					blockHash: getHashOfSimulatedBlock(),
-					address: x.loggersAddress,
-					logIndex: BigInt(currentLogIndex + logIndex),
-					data: x.data,
-					topics: x.topics,
-					blockNumber: blockNum,
-					transactionIndex: BigInt(index),
-					transactionHash: simulatedTransaction.signedTransaction.hash
-				})) : [],
+				logs: simulatedTransaction.multicallResponse.statusCode === 'success'
+					? simulatedTransaction.multicallResponse.events.map((x, logIndex) => ({
+						removed: false,
+						blockHash: getHashOfSimulatedBlock(),
+						address: x.loggersAddress,
+						logIndex: BigInt(currentLogIndex + logIndex),
+						data: x.data,
+						topics: x.topics,
+						blockNumber: blockNum,
+						transactionIndex: BigInt(index),
+						transactionHash: simulatedTransaction.signedTransaction.hash
+					}))
+					: [],
 				logsBloom: 0x0n, //TODO: what should this be?
 				status: simulatedTransaction.multicallResponse.statusCode
 			}
