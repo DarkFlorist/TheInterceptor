@@ -2,7 +2,7 @@ import { useState, useEffect } from 'preact/hooks'
 import { ConfirmTransactionDialogState, ConfirmTransactionSimulationBaseData, ConfirmTransactionTransactionSingleVisualizationArray, ExternalPopupMessage, IsConnected } from '../../utils/interceptor-messages.js'
 import { SimulatedAndVisualizedTransaction, SimulationAndVisualisationResults } from '../../utils/visualizer-types.js'
 import Hint from '../subcomponents/Hint.js'
-import { ExtraDetailsTransactionCard, GasFee, LogAnalysisCard, SimulatedInBlockNumber, TransactionCreated, TransactionHeader, TransactionHeaderForFailedToSimulate, TransactionsAccountChangesCard } from '../simulationExplaining/SimulationSummary.js'
+import { RawTransactionDetailsCard, GasFee, LogAnalysisCard, SimulatedInBlockNumber, TransactionCreated, TransactionHeader, TransactionHeaderForFailedToSimulate, TransactionsAccountChangesCard } from '../simulationExplaining/SimulationSummary.js'
 import { CenterToPageTextSpinner } from '../subcomponents/Spinner.js'
 import { AddNewAddress } from './AddNewAddress.js'
 import { AddingNewAddressType, AddressBookEntry } from '../../utils/user-interface-types.js'
@@ -101,7 +101,7 @@ function TransactionCard(param: TransactionCardParams) {
 					renameAddressCallBack = { param.renameAddressCallBack }
 				/>
 
-				<ExtraDetailsTransactionCard transaction = { simTx.transaction } />
+				<RawTransactionDetailsCard transaction = { simTx.transaction } renameAddressCallBack = { param.renameAddressCallBack } gasSpent = { simTx.gasSpent }/>
 
 				<SenderReceiver
 					from = { simTx.transaction.from }

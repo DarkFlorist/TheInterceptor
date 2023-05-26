@@ -6,12 +6,12 @@ import { ERC721Token, Ether, EtherAmount, EtherSymbol, Token, TokenAmount, Token
 import { LogAnalysis } from './Transactions.js'
 import { CopyToClipboard } from '../subcomponents/CopyToClipboard.js'
 import { SomeTimeAgo, humanReadableDateDeltaLessDetailed } from '../subcomponents/SomeTimeAgo.js'
-import { CHAINS, MAKE_YOU_RICH_TRANSACTION } from '../../utils/constants.js'
-import { addressString, dataStringWith0xStart, nanoString } from '../../utils/bigint.js'
+import { CHAINS, MAKE_YOU_RICH_TRANSACTION, getChainName } from '../../utils/constants.js'
+import { addressString, bytes32String, dataStringWith0xStart, nanoString } from '../../utils/bigint.js'
 import { identifyTransaction } from './identifyTransaction.js'
 import { identifySwap } from './SwapTransactions.js'
 import { useState } from 'preact/hooks'
-import { convertNumberToCharacterRepresentationIfSmallEnough, upperCaseFirstCharacter } from '../ui-utils.js'
+import { CellElement, convertNumberToCharacterRepresentationIfSmallEnough, upperCaseFirstCharacter } from '../ui-utils.js'
 import { IsConnected } from '../../utils/interceptor-messages.js'
 import { EthereumTimestamp } from '../../utils/wire-types.js'
 
@@ -666,20 +666,18 @@ export function SimulationSummary(param: SimulationSummaryParams) {
 	)
 }
 
-type ExtraDetailsTransactionCardParams = {
-	transaction: TransactionWithAddressBookEntries;
+type RawTransactionDetailsCardParams = {
+	transaction: TransactionWithAddressBookEntries
+	renameAddressCallBack: RenameAddressCallBack
+	gasSpent: bigint
 }
-export function ExtraDetailsTransactionCard({ transaction }: ExtraDetailsTransactionCardParams) {
+export function RawTransactionDetailsCard({ transaction, renameAddressCallBack, gasSpent }: RawTransactionDetailsCardParams) {
 	const [showSummary, setShowSummary] = useState<boolean>(false)
-
-	const CellElement = (param: { text: string }) => {
-		return <div class = 'log-cell' style = 'justify-content: right;'> <p class = 'paragraph' style = 'color: var(--subtitle-text-color)'> { param.text }</p></div>
-	}
 
 	return <div class = 'card' style = 'margin-top: 10px; margin-bottom: 10px'>
 		<header class = 'card-header noselect' style = 'cursor: pointer; height: 30px;' onClick = { () => setShowSummary((prevValue) => !prevValue) }>
 			<p class = 'card-header-title' style = 'font-weight: unset; font-size: 0.8em;'>
-				Extra details
+				Raw transaction information
 			</p>
 			<div class = 'card-header-icon'>
 				<span class = 'icon' style = 'color: var(--text-color); font-weight: unset; font-size: 0.8em;'> V </span>
@@ -688,13 +686,26 @@ export function ExtraDetailsTransactionCard({ transaction }: ExtraDetailsTransac
 		{ !showSummary ? <></> : <>
 			<div class = 'card-content'>
 				<div class = 'container' style = 'margin-bottom: 10px;'>
-					<span class = 'log-table' style = 'justify-content: center; column-gap: 5px; grid-template-columns: auto auto'>
-						<CellElement text = 'Transaction Type: '/>
+					<span class = 'log-table' style = 'justify-content: center; column-gap: 5px; row-gap: 5px; grid-template-columns: auto auto'>
+						<CellElement text = 'Transaction type: '/>
 						<CellElement text =  { transaction.type }/>
-						<CellElement text = 'Nonce: '/>
-						<CellElement text = { transaction.nonce.toString(10) }/>
+						<CellElement text = 'From: '/>
+						<CellElement text = { <SmallAddress addressBookEntry = { transaction.from } renameAddressCallBack = { renameAddressCallBack } textColor = { 'var(--subtitle-text-color)' } /> } />
+						<CellElement text = 'To: '/>
+						<CellElement text = { transaction.to === undefined ? 'No receiving Address' : <SmallAddress addressBookEntry = { transaction.to } renameAddressCallBack = { renameAddressCallBack } textColor = { 'var(--subtitle-text-color)' }/> } />
+						<CellElement text = 'Value: '/>
+						<CellElement text = { <Ether amount = { transaction.value } useFullTokenName = { true } chain = { transaction.chainId } textColor = { 'var(--subtitle-text-color)' }/> } />
+						<CellElement text = 'Gas used: '/>
+						<CellElement text = { `${ gasSpent.toString(10) } gas (${ Number(gasSpent * 10000n / transaction.gas) / 100 }%)` }/>
 						<CellElement text = 'Gas limit: '/>
 						<CellElement text = { `${ transaction.gas.toString(10) } gas` }/>
+						<CellElement text = 'Nonce: '/>
+						<CellElement text = { transaction.nonce.toString(10) }/>
+						<CellElement text = 'Chain: '/>
+						<CellElement text = { getChainName(BigInt(transaction.chainId)) }/>
+						<CellElement text = 'Unsigned transaction hash: '/>
+						<CellElement text = { bytes32String(transaction.hash) }/>
+						
 
 						{ transaction.type !== '1559' ? <></> : <>
 							<CellElement text = 'Max Fee Per Gas: '/>
