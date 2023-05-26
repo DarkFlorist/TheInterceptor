@@ -104,8 +104,9 @@ function FirstCard(param: FirstCardParams) {
 			<div class = 'card-content'>
 				{ param.useSignersAddressAsActiveAddress || !param.simulationMode ?
 					<p style = 'color: var(--text-color); text-align: left; padding-bottom: 10px'>
-						{ param.signerName === 'NoSigner' ? 'Retrieving address from a signer' :
-							<>Retrieving from&nbsp;<SignersLogoName signerName = { param.signerName } /></>
+						{ param.signerName === 'NoSigner'
+							? 'Retrieving address from a signer'
+							: <>Retrieving from&nbsp;<SignersLogoName signerName = { param.signerName } /></>
 						}
 						{ param.signerAccounts !== undefined && param.signerAccounts.length > 0 && param.tabIconDetails.icon !== ICON_NOT_ACTIVE ? <span style = 'float: right; color: var(--primary-color);'> CONNECTED </span> :
 							param.tabIconDetails.icon === ICON_SIGNING || param.tabIconDetails.icon === ICON_SIGNING_NOT_SUPPORTED ? <span style = 'float: right; color: var(--negative-color);'> NOT CONNECTED </span> : <></>
@@ -181,8 +182,9 @@ function SimulationResults(param: SimulationStateParam) {
 			renameAddressCallBack = { param.renameAddressCallBack }
 			removeTransactionHashes = { param.removeTransactionHashes }
 		/>
-		{ param.removeTransactionHashes.length > 0 ? <></> :
-			<SimulationSummary
+		{ param.removeTransactionHashes.length > 0
+			? <></>
+			: <SimulationSummary
 				simulationAndVisualisationResults = { param.simulationAndVisualisationResults }
 				currentBlockNumber = { param.currentBlockNumber }
 				renameAddressCallBack = { param.renameAddressCallBack }
@@ -306,8 +308,9 @@ export function Home(param: HomeParams) {
 		: <></> }
 
 		{ simulationMode && currentBlockNumber === undefined ? <div style = 'padding: 10px'> <DinoSays text = { 'Not connected to a network..' } /> </div> : <></> }
-		{ !simulationMode || activeSimulationAddress === undefined || currentBlockNumber === undefined ? <></> :
-			<SimulationResults
+		{ !simulationMode || activeSimulationAddress === undefined || currentBlockNumber === undefined
+			? <></>
+			: <SimulationResults
 				simulationAndVisualisationResults = { simulationAndVisualisationResults }
 				removeTransaction = { removeTransaction }
 				disableReset = { disableReset }

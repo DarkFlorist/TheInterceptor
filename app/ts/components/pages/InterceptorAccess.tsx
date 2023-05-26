@@ -17,20 +17,24 @@ function AssociatedTogether({ associatedAddresses, renameAddressCallBack }: { as
 		<div class = 'card' style = 'margin-top: 10px; margin-bottom: 10px'>
 			<header class = 'card-header noselect' style = 'cursor: pointer; height: 30px;' onClick = { () => setShowLogs((prevValue) => !prevValue) }>
 				<p class = 'card-header-title' style = 'font-weight: unset; font-size: 0.8em;'>
-					{ associatedAddresses.length <= 1 ? 'The website cannot associate any addresses with each other' : <>
-						There are&nbsp;
-						<p style = 'font-weight: 700'>{ convertNumberToCharacterRepresentationIfSmallEnough(associatedAddresses.length).toUpperCase() } </p>
-						&nbsp;addresses that the website can associate together with
-					</> }
+					{ associatedAddresses.length <= 1
+						? 'The website cannot associate any addresses with each other'
+						: <> There are&nbsp;
+							<p style = 'font-weight: 700'>{ convertNumberToCharacterRepresentationIfSmallEnough(associatedAddresses.length).toUpperCase() } </p>
+							&nbsp;addresses that the website can associate together with
+						</>
+					}
 				</p>
 				<div class = 'card-header-icon'>
 					<span class = 'icon' style = 'color: var(--text-color); font-weight: unset; font-size: 0.8em;'> V </span>
 				</div>
 			</header>
-			{ !showLogs ? <></> : <>
-				<div class = 'card-content' style = 'border-bottom-left-radius: 0.25rem; border-bottom-right-radius: 0.25rem; border-left: 2px solid var(--card-bg-color); border-right: 2px solid var(--card-bg-color); border-bottom: 2px solid var(--card-bg-color);'>
-					{ associatedAddresses.length <= 1 ? <DinoSays text = { 'Given its size, a tiny dinosaur wouldn\'t be expected to know any...' } /> :
-						<ul>
+			{ !showLogs
+				? <></>
+				: <div class = 'card-content' style = 'border-bottom-left-radius: 0.25rem; border-bottom-right-radius: 0.25rem; border-left: 2px solid var(--card-bg-color); border-right: 2px solid var(--card-bg-color); border-bottom: 2px solid var(--card-bg-color);'>
+					{ associatedAddresses.length <= 1
+						? <DinoSays text = { 'Given its size, a tiny dinosaur wouldn\'t be expected to know any...' } />
+						: <ul>
 							{ associatedAddresses.map( (info, index) => (
 								<li style = { `margin: 0px; margin-bottom: ${ index < associatedAddresses.length - 1  ? '10px;' : '0px' }` } >
 									<BigAddress
@@ -42,15 +46,16 @@ function AssociatedTogether({ associatedAddresses, renameAddressCallBack }: { as
 						</ul>
 					}
 				</div>
-			</> }
+			}
 		</div>
 	</>
 }
 
 function Title({ icon, title} : {icon: string | undefined, title: string}) {
 	return <p style = 'font-weight: 700; line-height: 48px'>
-		{ icon === undefined ? <></> :
-			<img src = { icon } style = 'width: 48px; height: 48px; vertical-align: bottom; margin-right: 10px;'/>
+		{ icon === undefined
+			? <></>
+			: <img src = { icon } style = 'width: 48px; height: 48px; vertical-align: bottom; margin-right: 10px;'/>
 		}
 		{ title }
 	</p>
@@ -219,17 +224,18 @@ export function InterceptorAccess() {
 	return <main>
 		<Hint>
 			<div class = { `modal ${ appPage !== 'Home' ? 'is-active' : ''}` }>
-				{ appPage === 'AddNewAddress' || appPage === 'ModifyAddress' ?
-					<AddNewAddress
+				{ appPage === 'AddNewAddress' || appPage === 'ModifyAddress'
+					? <AddNewAddress
 						setActiveAddressAndInformAboutIt = { setActiveAddressAndInformAboutIt }
 						addingNewAddress = { appPage === 'AddNewAddress' ? { addingAddress: true, type: 'addressInfo' } : addingNewAddress }
 						close = { () => setAppPage('Home') }
 						activeAddress = { accessRequest.requestAccessToAddress?.address }
 					/>
-					: <></> }
+					: <></>
+				}
 
-				{ appPage === 'ChangeActiveAddress' ?
-					<ChangeActiveAddress
+				{ appPage === 'ChangeActiveAddress'
+					? <ChangeActiveAddress
 						setActiveAddressAndInformAboutIt = { setActiveAddressAndInformAboutIt }
 						signerAccounts = { accessRequest.signerAccounts }
 						setAndSaveAppPage = { setAppPage }
@@ -237,7 +243,8 @@ export function InterceptorAccess() {
 						signerName = { accessRequest.signerName }
 						renameAddressCallBack = { renameAddressCallBack }
 					/>
-				: <></> }
+					: <></>
+				}
 			</div>
 
 			<div className = 'block' style = 'margin-bottom: 0px; display: flex; justify-content: space-between; flex-direction: column; height: 100%; position: fixed; width: 100%; background-color: var(--card-content-bg-color);'>
