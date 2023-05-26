@@ -229,14 +229,14 @@ export function FromSmallAddressToSmallAddress({ from, to, renameAddressCallBack
 }
 
 export function WebsiteOriginText( { icon, websiteOrigin, title }: Website) {
-	return <div class = 'card-header-icon noselect nopointer'>
+	return <div class = 'card-header-icon noselect nopointer' style = 'width: 100%;'>
 		<span style = 'width: 24px; height: 24px; min-width: 24px'>
 			<img src = { icon } style = 'width: 24px; height: 24px;'/>
 		</span>
 
 		<div class = 'media-content' style = 'overflow-y: hidden; overflow-x: clip; display: block; padding-left: 10px;'>
-			<p class = 'title is-5 is-spaced address-text' style = 'overflow: visible;'>{ websiteOrigin }</p>
-			<p class = 'subtitle is-7' style = 'text-overflow: ellipsis; white-space: nowrap; overflow: visible;'> { title } </p>
+			<p class = 'title is-5 is-spaced address-text' style = 'overflow: hidden;'>{ websiteOrigin }</p>
+			<p class = 'subtitle is-7' style = 'text-overflow: ellipsis; white-space: nowrap; overflow: hidden;'> { title } </p>
 		</div>
 	</div>
 }
