@@ -14,13 +14,12 @@ import { SignerLogoText } from '../subcomponents/signers.js'
 import { CenterToPageTextSpinner } from '../subcomponents/Spinner.js'
 import { SomeTimeAgo } from '../subcomponents/SomeTimeAgo.js'
 import { QuarantineCodes } from '../simulationExplaining/Transactions.js'
-import { ComponentChildren } from 'preact'
 import { isSupportedChain } from '../../utils/constants.js'
 import { PersonalSignRequestData, PersonalSignRequestDataPermit, PersonalSignRequestDataPermit2, PersonalSignRequestDataSafeTx } from '../../utils/personal-message-definitions.js'
 import { OrderComponents, OrderComponentsExtraDetails } from '../simulationExplaining/customExplainers/OpenSeaOrder.js'
 import { Ether } from '../subcomponents/coins.js'
 import { EnrichedEIP712, EnrichedEIP712Message, GroupedSolidityType } from '../../utils/eip712Parsing.js'
-import { tryFocusingTab, humanReadableDate } from '../ui-utils.js'
+import { tryFocusingTab, humanReadableDate, CellElement } from '../ui-utils.js'
 
 type SignatureCardParams = {
 	personalSignRequestData: PersonalSignRequestData
@@ -278,12 +277,6 @@ function ArbitaryEIP712({ enrichedEIP712, renameAddressCallBack }: ArbitaryEIP71
 			isSubTable = { false }
 		/>
 	</>
-}
-
-const CellElement = (param: { text: ComponentChildren }) => {
-	return <div class = 'log-cell' style = 'justify-content: right; align-self: flex-start;'>
-		<p class = 'paragraph' style = 'text-overflow: ellipsis; overflow: hidden;'>{ param.text }</p>
-	</div>
 }
 
 export function Permit2ExtraDetails({ permit2 }: { permit2: PersonalSignRequestDataPermit2 }) {
