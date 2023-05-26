@@ -1,6 +1,6 @@
 import { get4Byte } from '../../utils/calldata.js'
 import { CHAINS, FourByteExplanations, isSupportedChain, MAKE_YOU_RICH_TRANSACTION } from '../../utils/constants.js'
-import { assertNever } from '../../utils/typescript.js'
+import { assertNever, createGuard } from '../../utils/typescript.js'
 import { AddressBookEntry } from '../../utils/user-interface-types.js'
 import { SimulatedAndVisualizedTransaction, SimulatedAndVisualizedTransactionBase, TokenVisualizerERC20Event, TokenVisualizerERC721Event, TokenVisualizerResultWithMetadata, TransactionWithAddressBookEntries } from '../../utils/visualizer-types.js'
 import { getSwapName, identifySwap } from './SwapTransactions.js'
@@ -24,7 +24,7 @@ type IdentifiedTransaction =
 	| IdentifiedTransactionBase & { type: 'ContractDeployment' }
 
 export function identifySimpleApproval(simTx: SimulatedAndVisualizedTransaction) {
-	if (isSimpleTokenApproval(simTx)) {
+	if (getSimpleTokenApprovalOrUndefined(simTx)) {
 		const tokenResult = simTx.tokenResults[0]
 		const symbol = tokenResult.token.symbol
 		switch (tokenResult.type) {
@@ -84,8 +84,8 @@ export const SimulatedAndVisualizedSimpleApprovalTransaction = funtypes.Intersec
 	})
 )
 
-export function isSimpleTokenApproval(simTx: SimulatedAndVisualizedTransaction): simTx is SimulatedAndVisualizedSimpleApprovalTransaction {
-	if (! (simTx.transaction.value === 0n
+function isSimpleTokenApproval(simTx: SimulatedAndVisualizedTransaction): simTx is SimulatedAndVisualizedSimpleApprovalTransaction {
+	if (!(simTx.transaction.value === 0n
 		&& simTx.tokenResults.length === 1
 		&& simTx.tokenResults[0].isApproval == true
 		&& simTx.tokenResults[0].from.address !== simTx.tokenResults[0].to.address
@@ -93,6 +93,7 @@ export function isSimpleTokenApproval(simTx: SimulatedAndVisualizedTransaction):
 	)) return false
 	return true
 }
+const getSimpleTokenApprovalOrUndefined = createGuard<SimulatedAndVisualizedTransaction, SimulatedAndVisualizedSimpleApprovalTransaction>((simTx) => isSimpleTokenApproval(simTx) ? simTx : undefined)
 
 export type SimulatedAndVisualizedEtherTransferTransaction = funtypes.Static<typeof SimulatedAndVisualizedEtherTransferTransaction>
 export const SimulatedAndVisualizedEtherTransferTransaction = funtypes.Intersect(
@@ -107,13 +108,15 @@ export const SimulatedAndVisualizedEtherTransferTransaction = funtypes.Intersect
 	})
 )
 
-export function isEtherTransfer(simTx: SimulatedAndVisualizedTransaction): simTx is SimulatedAndVisualizedEtherTransferTransaction {
+function isEtherTransfer(simTx: SimulatedAndVisualizedTransaction): simTx is SimulatedAndVisualizedEtherTransferTransaction {
 	if (simTx.transaction.input.length == 0
 		&& simTx.tokenResults.length == 0
 		&& simTx.transaction.to
 		&& simTx.gasSpent == 21000n) return true
 	return false
 }
+const getEtherTransferOrUndefined = createGuard<SimulatedAndVisualizedTransaction, SimulatedAndVisualizedEtherTransferTransaction>((simTx) => isEtherTransfer(simTx) ? simTx : undefined)
+
 
 export type SimulatedAndVisualizedSimpleTokenTransferTransaction = funtypes.Static<typeof SimulatedAndVisualizedSimpleTokenTransferTransaction>
 export const SimulatedAndVisualizedSimpleTokenTransferTransaction = funtypes.Intersect(
@@ -136,6 +139,8 @@ export function isSimpleTokenTransfer(transaction: SimulatedAndVisualizedTransac
 		&& transaction.tokenResults[0].from === transaction.transaction.from) return true
 	return false
 }
+const getSimpleTokenTransferOrUndefined = createGuard<SimulatedAndVisualizedTransaction, SimulatedAndVisualizedSimpleTokenTransferTransaction>((simTx) => isSimpleTokenTransfer(simTx) ? simTx : undefined)
+
 
 export function identifyTransaction(simTx: SimulatedAndVisualizedTransaction): IdentifiedTransaction {
 	const chainString = simTx.transaction.chainId.toString()
@@ -158,7 +163,7 @@ export function identifyTransaction(simTx: SimulatedAndVisualizedTransaction): I
 		}
 	}
 
-	if (isEtherTransfer(simTx)) return {
+	if (getEtherTransferOrUndefined(simTx)) return {
 		type: 'EtherTransfer',
 		title: 'Ether Transfer',
 		signingAction: 'Transfer Ether',
@@ -179,7 +184,7 @@ export function identifyTransaction(simTx: SimulatedAndVisualizedTransaction): I
 		}
 	}
 
-	if (isSimpleTokenTransfer(simTx)) {
+	if (getSimpleTokenTransferOrUndefined(simTx)) {
 		const symbol = simTx.tokenResults[0].token.symbol
 		return {
 			type: 'SimpleTokenTransfer',
@@ -187,7 +192,7 @@ export function identifyTransaction(simTx: SimulatedAndVisualizedTransaction): I
 			signingAction: `Transfer ${ symbol }`,
 			simulationAction: `Simulate ${ symbol } Transfer`,
 			rejectAction: `Reject ${ symbol } Transfer`,
-			identifiedTransaction: simTx
+			identifiedTransaction: simTx,
 		}
 	}
 

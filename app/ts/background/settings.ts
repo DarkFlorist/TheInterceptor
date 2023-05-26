@@ -1,7 +1,7 @@
 import { ICON_NOT_ACTIVE, MOCK_PRIVATE_KEYS_ADDRESS } from '../utils/constants.js'
 import { LegacyWebsiteAccessArray, Page, PendingAccessRequestArray, PendingChainChangeConfirmationPromise, PendingInterceptorAccessRequestPromise, PendingPersonalSignPromise, PendingTransaction, Settings, WebsiteAccessArray, WebsiteAccessArrayWithLegacy, TabState, IsConnected } from '../utils/interceptor-messages.js'
 import { Semaphore } from '../utils/semaphore.js'
-import { browserStorageLocalGet, browserStorageLocalSet, browserStorageLocalSetKeys, browserStorageLocalSingleGetWithDefault } from '../utils/typescript.js'
+import { browserStorageLocalGet, browserStorageLocalSet, browserStorageLocalSetKeys, browserStorageLocalSingleGetWithDefault } from '../utils/storageUtils.js'
 import { AddressInfoArray, ContactEntries, SignerName } from '../utils/user-interface-types.js'
 import { EthereumSubscriptions, SimulationResults } from '../utils/visualizer-types.js'
 import { EthereumAddress, EthereumAddressOrMissing, EthereumQuantity } from '../utils/wire-types.js'
