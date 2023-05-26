@@ -462,7 +462,7 @@ export function PersonalSign() {
 				<div className = 'block' style = 'margin-bottom: 0px; display: flex; justify-content: space-between; flex-direction: column; height: 100%; position: fixed; width: 100%'>
 					<div style = 'overflow-y: auto'>
 						<header class = 'card-header window-header' style = 'height: 40px; border-top-left-radius: 0px; border-top-right-radius: 0px'>
-							<div class = 'card-header-icon noselect nopointer' style = 'overflow: hidden; padding: 0px;'>
+							<div class = 'card-header-icon noselect nopointer' style = 'overflow: hidden;'>
 								<WebsiteOriginText { ...personalSignRequestData.website } />
 							</div>
 							<p class = 'card-header-title' style = 'overflow: hidden; font-weight: unset; flex-direction: row-reverse;'>

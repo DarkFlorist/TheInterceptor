@@ -532,7 +532,7 @@ export function TransactionHeader({ simTx, removeTransaction } : TransactionHead
 			{ identifyTransaction(simTx).title }
 		</p>
 		{ simTx.transaction.to  === undefined || identifyTransaction(simTx).type === 'MakeYouRichTransaction' ? <></> :
-			<p class = 'card-header-icon' style = 'margin-left: auto; margin-right: 0; padding-right: 10px; padding-left: 0px; overflow: hidden'>
+			<p class = 'card-header-icon unsetcursor' style = { `margin-left: auto; margin-right: 0; overflow: hidden; ${ removeTransaction !== undefined ? 'padding: 0' : ''}` }>
 				<WebsiteOriginText { ...simTx.website } />
 			</p>
 		}
@@ -552,14 +552,14 @@ export function TransactionHeaderForFailedToSimulate({ website } : { website: We
 			</span>
 		</div>
 		<p class = 'card-header-title' style = 'white-space: nowrap;'> Not simulated </p>
-		<p class = 'card-header-icon' style = 'margin-left: auto; margin-right: 0; padding-right: 10px; padding-left: 0px; overflow: hidden'>
+		<p class = 'card-header-icon unsetcursor' style = 'margin-left: auto; margin-right: 0; overflow: hidden;'>
 			<WebsiteOriginText { ...website } />
 		</p>
 	</header>
 }
 
 export function TransactionCreated({ transactionCreated } : { transactionCreated: EthereumTimestamp }) {
-	return <p class = 'noselect nopointer' style = 'color: var(--subtitle-text-color); text-align: right; display: inline'>
+	return <p style = 'color: var(--subtitle-text-color); text-align: right; display: inline'>
 		{ 'Created ' }
 		<SomeTimeAgo priorTimestamp = { transactionCreated } diffToText = { humanReadableDateDeltaLessDetailed }/>
 	</p>
@@ -571,7 +571,7 @@ export function SimulatedInBlockNumber({ simulationBlockNumber, currentBlockNumb
 		contentDisplayOverride = { `Simulated in block number ${ simulationBlockNumber }` }
 		copyMessage = 'Block number copied!'
 	>
-		<p class = 'noselect nopointer' style = 'color: var(--subtitle-text-color); text-align: right; display: inline'>
+		<p style = 'color: var(--subtitle-text-color); text-align: right; display: inline'>
 			{ 'Simulated ' }
 			<span style = { `font-weight: bold; font-family: monospace; color: ${
 				(simulationBlockNumber === currentBlockNumber || currentBlockNumber === undefined) && (isConnected === undefined || isConnected?.isConnected) ? 'var(--positive-color)' :

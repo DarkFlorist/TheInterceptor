@@ -58,13 +58,13 @@ function TransactionCard(param: TransactionCardParams) {
 	if (simTx === undefined) return <></>
 
 	return <>
-		<div class = 'block' style = 'margin: 10px; margin-top: 10px; margin-bottom: 10px;'>
+		<div class = 'block' style = 'margin: 10px;'>
 			<nav class = 'breadcrumb has-succeeds-separator is-small'>
 				<ul>
 					{ param.simulationAndVisualisationResults.simulatedAndVisualizedTransactions.map((simTx, index) => (
 						<li style = 'margin: 0px;'>
-							<div class = 'card' style = { `padding: 5px;${ index !== param.simulationAndVisualisationResults.simulatedAndVisualizedTransactions.length - 1 ? 'background-color: var(--disabled-card-color)' : ''}` }>
-								<p class = 'paragraph' style = {`margin: 0px;${ index !== param.simulationAndVisualisationResults.simulatedAndVisualizedTransactions.length - 1 ? 'color: var(--disabled-text-color)' : ''}` }>
+							<div class = 'card' style = { `padding: 5px; margin: 5px; ${ index !== param.simulationAndVisualisationResults.simulatedAndVisualizedTransactions.length - 1 ? 'background-color: var(--disabled-card-color)' : ''}` }>
+								<p class = 'paragraph' style = {`margin: 0px; ${ index !== param.simulationAndVisualisationResults.simulatedAndVisualizedTransactions.length - 1 ? 'color: var(--disabled-text-color)' : ''}` }>
 									{ identifyTransaction(simTx).title }
 								</p>
 							</div>
