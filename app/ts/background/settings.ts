@@ -1,5 +1,5 @@
 import { ICON_NOT_ACTIVE, MOCK_PRIVATE_KEYS_ADDRESS } from '../utils/constants.js'
-import { LegacyWebsiteAccessArray, Page, PendingAccessRequestArray, PendingChainChangeConfirmationPromise, PendingInterceptorAccessRequestPromise, PendingPersonalSignPromise, PendingTransaction, Settings, WebsiteAccessArray, WebsiteAccessArrayWithLegacy, TabState, IsConnected } from '../utils/interceptor-messages.js'
+import { LegacyWebsiteAccessArray, Page, PendingAccessRequestArray, PendingChainChangeConfirmationPromise, PendingPersonalSignPromise, PendingTransaction, Settings, WebsiteAccessArray, WebsiteAccessArrayWithLegacy, TabState, IsConnected, PendingAccessRequest } from '../utils/interceptor-messages.js'
 import { Semaphore } from '../utils/semaphore.js'
 import { browserStorageLocalGet, browserStorageLocalSet, browserStorageLocalSetKeys, browserStorageLocalSingleGetWithDefault } from '../utils/storageUtils.js'
 import { AddressInfoArray, ContactEntries, SignerName } from '../utils/user-interface-types.js'
@@ -48,7 +48,6 @@ export async function getSettings() : Promise<Settings> {
 		'websiteAccess',
 		'activeChain',
 		'simulationMode',
-		'pendingAccessRequests',
 		'contacts',
 	])
 	const useSignersAddressAsActiveAddress = results.useSignersAddressAsActiveAddress !== undefined ? funtypes.Boolean.parse(results.useSignersAddressAsActiveAddress) : false
@@ -60,7 +59,6 @@ export async function getSettings() : Promise<Settings> {
 		websiteAccess: results.websiteAccess !== undefined ? parseAccessWithLegacySupport(results.websiteAccess) : [],
 		activeChain: results.activeChain !== undefined ? EthereumQuantity.parse(results.activeChain) : 1n,
 		simulationMode: results.simulationMode !== undefined ? funtypes.Boolean.parse(results.simulationMode) : true,
-		pendingAccessRequests: PendingAccessRequestArray.parse(results.pendingAccessRequests !== undefined ? results.pendingAccessRequests : []),
 		userAddressBook: {
 			addressInfos: results.addressInfos !== undefined ? AddressInfoArray.parse(results.addressInfos): defaultAddresses,
 			contacts: ContactEntries.parse(results.contacts !== undefined ? results.contacts : []),
@@ -153,18 +151,6 @@ export async function setPendingPersonalSignPromise(promise: PendingPersonalSign
 	return await browserStorageLocalSet('PersonalSignPromise', PendingPersonalSignPromise.serialize(promise) as string)
 }
 
-export async function getPendingInterceptorAccessRequestPromise(): Promise<PendingInterceptorAccessRequestPromise | undefined> {
-	const results = await browserStorageLocalSingleGetWithDefault('InterceptorAccessRequestPromise', undefined)
-	return funtypes.Union(funtypes.Undefined, PendingInterceptorAccessRequestPromise).parse(results)
-}
-
-export async function setPendingInterceptorAccessRequestPromise(promise: PendingInterceptorAccessRequestPromise | undefined) {
-	if (promise === undefined) {
-		return await browser.storage.local.remove('InterceptorAccessRequestPromise')
-	}
-	return await browserStorageLocalSet('InterceptorAccessRequestPromise', PendingInterceptorAccessRequestPromise.serialize(promise) as string)
-}
-
 export async function getSimulationResults() {
 	const results = await browserStorageLocalSingleGetWithDefault('simulationResults', undefined)
 	const emptyResults = {
@@ -240,10 +226,29 @@ export async function updateTabState(tabId: number, updateFunc: (prevState: TabS
 }
 
 const pendingAccessRequestsSemaphore = new Semaphore(1)
-export async function updatePendingAccessRequests(updateFunc: (prevState: PendingAccessRequestArray) => PendingAccessRequestArray) {
-	await pendingAccessRequestsSemaphore.execute(async () => {
-		const pendingAccessRequests = PendingAccessRequestArray.parse(await browserStorageLocalSingleGetWithDefault('pendingAccessRequests', []))
-		return await browserStorageLocalSet('pendingAccessRequests', PendingAccessRequestArray.serialize(updateFunc(pendingAccessRequests)) as string)
+export async function updatePendingAccessRequests(updateFunc: (prevState: PendingAccessRequestArray) => Promise<PendingAccessRequestArray>) {
+	return await pendingAccessRequestsSemaphore.execute(async () => {
+		const pendingAccessRequests = PendingAccessRequestArray.parse(await browserStorageLocalSingleGetWithDefault('pendingInterceptorAccessRequests', []))
+		await browserStorageLocalSet('pendingInterceptorAccessRequests', PendingAccessRequestArray.serialize(await updateFunc(pendingAccessRequests)) as string)
+		return pendingAccessRequests
+	})
+}
+export async function getPendingAccessRequests() {
+	return PendingAccessRequestArray.parse(await browserStorageLocalSingleGetWithDefault('pendingInterceptorAccessRequests', []))
+}
+export async function appendPendingAccessRequests(promise: PendingAccessRequest) {
+	return await pendingAccessRequestsSemaphore.execute(async () => {
+		const promises = [...await getPendingAccessRequests(), promise]
+		await browserStorageLocalSet('pendingInterceptorAccessRequests', PendingAccessRequestArray.serialize(promises) as string)
+		return promises
+	})
+}
+
+export async function clearPendingAccessRequests() {
+	return await pendingAccessRequestsSemaphore.execute(async () => {
+		const pending = getPendingAccessRequests()
+		await browserStorageLocalSet('pendingInterceptorAccessRequests', PendingAccessRequestArray.serialize([]) as string)
+		return pending
 	})
 }
 

@@ -161,7 +161,7 @@ export function ConfirmTransaction() {
 				setIsConnected({ isConnected: false, lastConnnectionAttempt: Date.now() })
 			}
 			if (message.method === 'popup_confirm_transaction_dialog_pending_changed') {
-				setPendingTransactions(message.data.slice(1))
+				setPendingTransactions(message.data.slice(1).reverse())
 				const currentWindowId = (await browser.windows.getCurrent()).id
 				const currentTabId = (await browser.tabs.getCurrent()).id
 				if (currentWindowId === undefined) throw new Error('could not get current window Id!')
@@ -172,7 +172,7 @@ export function ConfirmTransaction() {
 				return
 			}
 			if (message.method !== 'popup_update_confirm_transaction_dialog') return
-			setPendingTransactions(message.data.slice(1))
+			setPendingTransactions(message.data.slice(1).reverse())
 			const firstMessage = message.data[0]
 
 			if (firstMessage.statusCode === 'failed') return setDialogState({ state: 'failed', data: firstMessage.data })
@@ -266,7 +266,7 @@ export function ConfirmTransaction() {
 					}
 				</div>
 
-				<div className = 'block' style = 'margin-bottom: 0px; display: flex; justify-content: space-between; flex-direction: column; height: 100%; position: fixed; width: 100%'>
+				<div class = 'block popup-block'>
 					<div style = 'overflow-y: auto'>
 						{ isConnected?.isConnected === false ?
 							<div style = 'margin: 10px; background-color: var(--bg-color);'>
@@ -308,7 +308,7 @@ export function ConfirmTransaction() {
 						/>
 					</div>
 
-					<nav class = 'window-header' style = 'display: flex; justify-content: space-around; width: 100%; flex-direction: column; padding-bottom: 10px; padding-top: 10px;'>
+					<nav class = 'window-header popup-button-row'>
 						{ dialogState && simulatedAndVisualizedTransactions[simulatedAndVisualizedTransactions.length - 1 ].statusCode === 'success'
 							? dialogState && simulatedAndVisualizedTransactions[simulatedAndVisualizedTransactions.length - 1 ].quarantine !== true
 								? <></>

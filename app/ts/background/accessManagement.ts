@@ -242,7 +242,7 @@ async function askUserForAccessOnConnectionUpdate(websiteTabConnections: Website
 	if (details === undefined) return
 
 	const website = await retrieveWebsiteDetails(details.port, websiteOrigin)
-	await requestAccessFromUser(websiteTabConnections, socket, website, undefined, activeAddress, getAssociatedAddresses(settings, websiteOrigin, activeAddress), settings)
+	await requestAccessFromUser(websiteTabConnections, socket, website, undefined, activeAddress, settings)
 }
 
 function updateTabConnections(websiteTabConnections: WebsiteTabConnections, tabConnection: TabConnection, promptForAccessesIfNeeded: boolean, settings: Settings) {

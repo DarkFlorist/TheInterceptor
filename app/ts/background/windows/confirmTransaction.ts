@@ -50,6 +50,7 @@ const onCloseWindow = async (windowId: number) => { // check if user has closed 
 	await clearPendingTransactions()
 	pendingTransactions.forEach((pending) => pending.resolve('NoResponse'))
 	pendingTransactions.clear()
+	//todo, on clearing, we need to report dapps on ones we aren ot trackign with futures too
 }
 
 const rejectMessage = {

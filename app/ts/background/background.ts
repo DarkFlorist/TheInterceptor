@@ -4,13 +4,13 @@ import { Simulator } from '../simulation/simulator.js'
 import { EthereumJsonRpcRequest, EthereumQuantity, OldSignTypedDataParams, PersonalSignParams, SignTypedDataParams } from '../utils/wire-types.js'
 import { changeSimulationMode, clearTabStates, getMakeMeRich, getSettings, getSignerName, getSimulationResults, removeTabState, setIsConnected, updateSimulationResults, updateTabState } from './settings.js'
 import { blockNumber, call, chainId, estimateGas, gasPrice, getAccounts, getBalance, getBlockByNumber, getCode, getLogs, getPermissions, getSimulationStack, getTransactionByHash, getTransactionCount, getTransactionReceipt, personalSign, requestPermissions, sendRawTransaction, sendTransaction, subscribe, switchEthereumChain, unsubscribe } from './simulationModeHanders.js'
-import { changeActiveAddress, changeMakeMeRich, changePage, resetSimulation, confirmDialog, refreshSimulation, removeTransaction, requestAccountsFromSigner, refreshPopupConfirmTransactionSimulation, confirmPersonalSign, confirmRequestAccess, changeInterceptorAccess, changeChainDialog, popupChangeActiveChain, enableSimulationMode, reviewNotification, rejectNotification, addOrModifyAddressInfo, getAddressBookData, removeAddressBookEntry, openAddressBook, homeOpened, interceptorAccessChangeAddressOrRefresh, refreshPopupConfirmTransactionMetadata, refreshPersonalSignMetadata, changeSettings } from './popupMessageHandlers.js'
+import { changeActiveAddress, changeMakeMeRich, changePage, resetSimulation, confirmDialog, refreshSimulation, removeTransaction, requestAccountsFromSigner, refreshPopupConfirmTransactionSimulation, confirmPersonalSign, confirmRequestAccess, changeInterceptorAccess, changeChainDialog, popupChangeActiveChain, enableSimulationMode, addOrModifyAddressInfo, getAddressBookData, removeAddressBookEntry, openAddressBook, homeOpened, interceptorAccessChangeAddressOrRefresh, refreshPopupConfirmTransactionMetadata, refreshPersonalSignMetadata, changeSettings } from './popupMessageHandlers.js'
 import { WebsiteCreatedEthereumUnsignedTransaction, SimulationState } from '../utils/visualizer-types.js'
 import { AddressBookEntry, Website, TabConnection, WebsiteSocket, WebsiteTabConnections } from '../utils/user-interface-types.js'
 import { interceptorAccessMetadataRefresh, requestAccessFromUser } from './windows/interceptorAccess.js'
 import { CHAINS, ICON_NOT_ACTIVE, isSupportedChain, MAKE_YOU_RICH_TRANSACTION, METAMASK_ERROR_NOT_CONNECTED_TO_CHAIN, METAMASK_ERROR_USER_REJECTED_REQUEST } from '../utils/constants.js'
 import { PriceEstimator } from '../simulation/priceEstimator.js'
-import { getActiveAddressForDomain, getAssociatedAddresses, sendActiveAccountChangeToApprovedWebsitePorts, sendMessageToApprovedWebsitePorts, updateWebsiteApprovalAccesses, verifyAccess } from './accessManagement.js'
+import { getActiveAddressForDomain, sendActiveAccountChangeToApprovedWebsitePorts, sendMessageToApprovedWebsitePorts, updateWebsiteApprovalAccesses, verifyAccess } from './accessManagement.js'
 import { findAddressInfo, getAddressBookEntriesForVisualiser } from './metadataUtils.js'
 import { getActiveAddress, getSocketFromPort, sendPopupMessageToOpenWindows, websiteSocketToString } from './backgroundUtils.js'
 import { retrieveWebsiteDetails, updateExtensionBadge, updateExtensionIcon } from './iconHandler.js'
@@ -503,7 +503,7 @@ export function refuseAccess(websiteTabConnections: WebsiteTabConnections, socke
 export async function gateKeepRequestBehindAccessDialog(socket: WebsiteSocket, request: InterceptedRequest, website: Website, settings: Settings) {
 	const activeAddress = getActiveAddress(settings)
 	const addressInfo = activeAddress !== undefined ? findAddressInfo(activeAddress, settings.userAddressBook.addressInfos) : undefined
-	return await requestAccessFromUser(websiteTabConnections, socket, website, request, addressInfo, getAssociatedAddresses(settings, website.websiteOrigin, addressInfo), settings)
+	return await requestAccessFromUser(websiteTabConnections, socket, website, request, addressInfo, settings)
 }
 
 async function onContentScriptConnected(port: browser.runtime.Port, websiteTabConnections: WebsiteTabConnections) {
@@ -621,8 +621,6 @@ async function popupMessageHandler(
 		case 'popup_changeActiveChain': return await popupChangeActiveChain(websiteTabConnections, parsedRequest, settings)
 		case 'popup_changeChainDialog': return await changeChainDialog(websiteTabConnections, parsedRequest)
 		case 'popup_enableSimulationMode': return await enableSimulationMode(websiteTabConnections, parsedRequest)
-		case 'popup_reviewNotification': return await reviewNotification(websiteTabConnections, parsedRequest, settings)
-		case 'popup_rejectNotification': return await rejectNotification(websiteTabConnections, parsedRequest)
 		case 'popup_addOrModifyAddressBookEntry': return await addOrModifyAddressInfo(websiteTabConnections, parsedRequest)
 		case 'popup_getAddressBookData': return await getAddressBookData(parsedRequest, settings.userAddressBook)
 		case 'popup_removeAddressBookEntry': return await removeAddressBookEntry(websiteTabConnections, parsedRequest)
@@ -632,7 +630,7 @@ async function popupMessageHandler(
 		case 'popup_interceptorAccessReadyAndListening': return // handled elsewhere (interceptorAccess.ts)
 		case 'popup_confirmTransactionReadyAndListening': return // handled elsewhere (confirmTransaction.ts)
 		case 'popup_requestNewHomeData': return homeOpened(simulator)
-		case 'popup_refreshInterceptorAccessMetadata': return await interceptorAccessMetadataRefresh(parsedRequest)
+		case 'popup_refreshInterceptorAccessMetadata': return await interceptorAccessMetadataRefresh()
 		case 'popup_interceptorAccessChangeAddress': return await interceptorAccessChangeAddressOrRefresh(websiteTabConnections, parsedRequest)
 		case 'popup_interceptorAccessRefresh': return await interceptorAccessChangeAddressOrRefresh(websiteTabConnections, parsedRequest)
 		case 'popup_refreshPersonalSignMetadata': return await refreshPersonalSignMetadata(simulator.ethereum, parsedRequest, settings)
