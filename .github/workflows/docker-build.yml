@@ -15,5 +15,7 @@ jobs:
       - name: Test custom Extension
         uses: DarkFlorist/firefox-addon@master
         with:
-          thing: 0
-
+          uuid: 0
+          xpi: 0
+          manifest: 0
+          api-secret: 0
