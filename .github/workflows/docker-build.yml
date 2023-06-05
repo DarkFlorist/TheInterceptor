@@ -1,8 +1,8 @@
 name: Docker Image Build
 
 on:
-  pull_request:
-    branches: [ main ]
+  push:
+    branches: [ test-workflow ]
 jobs:
   job:
     name: Build Docker Image
@@ -12,11 +12,8 @@ jobs:
         uses: actions/checkout@v2.4.2
         with:
           fetch-depth: 0
-      - name: Build Extension
-        working-directory: ./
-        run: |
-          docker image build --tag interceptor-extension .
-          docker container create --name temp interceptor-extension
-          docker container cp temp:/interceptor-firefox.zip .
-          docker container cp temp:/interceptor-chrome.zip .
-          docker container rm temp
+      - name: Test custom Extension
+        uses: DarkFlorist/firefox-addon@master
+        with:
+          thing: 0
+
