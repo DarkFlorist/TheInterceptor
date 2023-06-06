@@ -16,6 +16,7 @@ const pendingInterceptorAccessSemaphore = new Semaphore(1)
 
 const onCloseWindow = async (windowId: number, websiteTabConnections: WebsiteTabConnections) => { // check if user has closed the window on their own, if so, reject signature
 	if (openedDialog?.windowOrTab.id !== windowId) return
+	openedDialog = undefined
 	const pendingRequests = await clearPendingAccessRequests()
 	pendingRequests.forEach((pending) => {
 		const reply = {
@@ -27,7 +28,6 @@ const onCloseWindow = async (windowId: number, websiteTabConnections: WebsiteTab
 		resolveInterceptorAccess(websiteTabConnections, reply)
 	})
 	pendingInterceptorAccess.clear()
-	openedDialog = undefined
 }
 
 async function updateViewOrClose() {

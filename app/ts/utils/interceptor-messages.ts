@@ -493,7 +493,6 @@ export const InterceptorAccessDialog = funtypes.ReadonlyObject({
 	data: PendingAccessRequestArray
 })
 
-
 export interface PendingAccessRequestWithMetadata extends PendingAccessRequest {
 	addressMetadata: [string, AddressInfoEntry][],
 }

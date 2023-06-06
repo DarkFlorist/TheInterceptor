@@ -35,7 +35,6 @@ type UnderTransactionsParams = {
 	reversedPendingAccessRequestArray: PendingAccessRequestArray
 }
 
-//todo, maybe make generic component out if this (shares code with same in confirm transaction)
 function UnderAccesses(param: UnderTransactionsParams) {
 	const nTx = param.reversedPendingAccessRequestArray.length
 	return <div style = {`position: relative; top: ${ nTx * -HALF_HEADER_HEIGHT }px;`}>
