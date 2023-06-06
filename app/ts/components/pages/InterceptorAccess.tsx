@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'preact/hooks'
 import { ActiveAddress, BigAddress, WebsiteOriginText } from '../subcomponents/address.js'
 import { AddNewAddress } from './AddNewAddress.js'
-import { AddressInfoEntry, AddressBookEntry, AddingNewAddressType, RenameAddressCallBack } from '../../utils/user-interface-types.js'
+import { AddressInfoEntry, AddressBookEntry, AddingNewAddressType, RenameAddressCallBack, Website } from '../../utils/user-interface-types.js'
 import { ExternalPopupMessage, PendingAccessRequest, PendingAccessRequestArray } from '../../utils/interceptor-messages.js'
 import { sendPopupMessageToBackgroundPage } from '../../background/backgroundUtils.js'
 import Hint from '../subcomponents/Hint.js'
@@ -12,9 +12,6 @@ import { getPrettySignerName } from '../subcomponents/signers.js'
 
 const HALF_HEADER_HEIGHT = 48 / 2
 
-type AccessRequestHeaderParams = {
-	pendingAccessRequest: PendingAccessRequest
-}
 
 function Title({ icon, title} : {icon: string | undefined, title: string}) {
 	return <p style = 'font-weight: 700; line-height: 48px'>
@@ -26,17 +23,11 @@ function Title({ icon, title} : {icon: string | undefined, title: string}) {
 	</p>
 }
 
-function AccessRequestHeader(param: AccessRequestHeaderParams) {
-	return <header class = 'card-header'>
-		<div class = 'card-header-icon unset-cursor'>
-			{ param.pendingAccessRequest.website.icon === undefined
-				? <></>
-				: <img src = { param.pendingAccessRequest.website.icon } style = 'width: 48px; height: 48px; vertical-align: bottom; margin-right: 10px;'/>
-			}
+function AccessRequestHeader(website: Website) {
+	return <header class = 'card-header' style = 'height: 40px'>
+		<div class = 'card-header-icon noselect nopointer' style = 'width: 100%;'>
+			<WebsiteOriginText { ...website } />
 		</div>
-		<p class = 'card-header-title' style = 'white-space: nowrap;'>
-			<WebsiteOriginText { ...param.pendingAccessRequest.website } />
-		</p>
 	</header>
 }
 
@@ -49,9 +40,9 @@ function UnderAccesses(param: UnderTransactionsParams) {
 	const nTx = param.reversedPendingAccessRequestArray.length
 	return <div style = {`position: relative; top: ${ nTx * -HALF_HEADER_HEIGHT }px;`}>
 		{ param.reversedPendingAccessRequestArray.map((pendingAccessRequest, index) => {
-			const style = `margin-right: 10px; margin-left: 10px; margin-bottom: 0px; scale: ${ Math.pow(0.95, nTx - index) }; position: relative; top: ${ (nTx - index) * HALF_HEADER_HEIGHT }px;`
+			const style = `margin-bottom: 0px; scale: ${ Math.pow(0.95, nTx - index) }; position: relative; top: ${ (nTx - index) * HALF_HEADER_HEIGHT }px;`
 			return <div class = 'card' style = { style }>
-				<AccessRequestHeader pendingAccessRequest = { pendingAccessRequest } />
+				<AccessRequestHeader { ...pendingAccessRequest.website } />
 				<div style = 'background-color: var(--disabled-card-color); position: absolute; width: 100%; height: 100%; top: 0px'></div>
 			</div>
 		}) }
@@ -62,7 +53,7 @@ function AssociatedTogether({ associatedAddresses, renameAddressCallBack }: { as
 	const [showLogs, setShowLogs] = useState<boolean>(associatedAddresses.length > 1)
 
 	return <>
-		<div class = 'card' style = 'margin-top: 10px; margin-bottom: 10px'>
+		<div class = 'card' style = 'margin-top: 10px; margin-bottom: 10px;'>
 			<header class = 'card-header noselect' style = 'cursor: pointer; height: 30px;' onClick = { () => setShowLogs((prevValue) => !prevValue) }>
 				<p class = 'card-header-title' style = 'font-weight: unset; font-size: 0.8em;'>
 					{ associatedAddresses.length <= 1
@@ -161,13 +152,9 @@ function AccessRequests(param: AccessRequestParam) {
 		<UnderAccesses
 			reversedPendingAccessRequestArray = { param.pendingAccessRequestArray.slice(1).reverse() }
 		/>
-		<div class = 'card' style = { `margin: 10px; margin-top: 0px; top: ${ (param.pendingAccessRequestArray.length - 1) * -HALF_HEADER_HEIGHT }px` }>
-			<header class = 'card-header window-header' style = 'height: 40px; border-top-left-radius: 0px; border-top-right-radius: 0px'>
-				<div class = 'card-header-icon noselect nopointer' style = 'width: 100%'>
-					<WebsiteOriginText { ...firstPendingRequest.website } />
-				</div>
-			</header>
-			<div style = 'overflow-y: auto; padding: 10px'>
+		<div class = 'card' style = { `top: ${ (param.pendingAccessRequestArray.length - 1) * -HALF_HEADER_HEIGHT }px` }>
+			<AccessRequestHeader { ...firstPendingRequest.website } />
+			<div class = 'card-content' style = 'padding-bottom: 5px;'>
 				<AccessRequest
 					renameAddressCallBack = { param.renameAddressCallBack }
 					accessRequest = { firstPendingRequest }
@@ -182,29 +169,40 @@ function AccessRequests(param: AccessRequestParam) {
 const DISABLED_DELAY_MS = 3000
 
 export function InterceptorAccess() {
-	const [pendingAccessRequestArray, setAccessRequest] = useState<PendingAccessRequestArray | undefined>(undefined)
+	const [pendingAccessRequestArray, setAccessRequest] = useState<PendingAccessRequestArray>([])
 	const [addingNewAddress, setAddingNewAddress] = useState<AddingNewAddressType> ({ addingAddress: true, type: 'addressInfo' })
 	const [appPage, setAppPage] = useState('Home')
 	const [informationUpdatedTimestamp, setInformationUpdatedTimestamp] = useState(0)
 	const [, setTimeSinceInformationUpdate] = useState(0)
+	const [pendingRequestAddedNotification, setPendingRequestAddedNotification] = useState<boolean>(false)
 
 	useEffect(() => {
 		async function popupMessageListener(msg: unknown) {
 			const message = ExternalPopupMessage.parse(msg)
 			if (message.method === 'popup_addressBookEntriesChanged') return refreshMetadata()
-			if (message.method !== 'popup_interceptorAccessDialog') return
-			setAccessRequest(message.data)
-			if (pendingAccessRequestArray !== undefined) {
-				setInformationUpdatedTimestamp(Date.now())
+			if (message.method === 'popup_websiteAccess_changed') return refreshMetadata()
+			if (message.method === 'popup_popup_interceptor_access_dialog_pending_changed') {
+				setAccessRequest(message.data)
+				if (pendingAccessRequestArray.length > 0) setInformationUpdatedTimestamp(Date.now())
+				const currentWindowId = (await browser.windows.getCurrent()).id
+				const currentTabId = (await browser.tabs.getCurrent()).id
+				if (currentWindowId === undefined) throw new Error('could not get current window Id!')
+				if (currentTabId === undefined) throw new Error('could not get current tab Id!')
+				setPendingRequestAddedNotification(true)
+				browser.windows.update(currentWindowId, { focused: true })
+				browser.tabs.update(currentTabId, { active: true })
+				return
 			}
+			if (message.method === 'popup_interceptorAccessDialog') return setAccessRequest(message.data)
 		}
 		browser.runtime.onMessage.addListener(popupMessageListener)
-		sendPopupMessageToBackgroundPage( { method: 'popup_interceptorAccessReadyAndListening' } )
+		sendPopupMessageToBackgroundPage({ method: 'popup_interceptorAccessReadyAndListening' })
 		return () => browser.runtime.onMessage.removeListener(popupMessageListener)
 	})
 
-	async function approve(accessRequest: PendingAccessRequest) {
-		if (pendingAccessRequestArray === undefined) return
+	async function approve() {
+		if (pendingAccessRequestArray.length === 0) throw Error('access request not loaded')
+		const accessRequest = pendingAccessRequestArray[0]
 		const options = {
 			userReply: 'Approved' as const,
 			websiteOrigin: accessRequest.website.websiteOrigin,
@@ -212,13 +210,14 @@ export function InterceptorAccess() {
 			originalRequestAccessToAddress: accessRequest.originalRequestAccessToAddress?.address,
 			requestId: accessRequest.requestId,
 		}
-		await tryFocusingTab(accessRequest.dialogId)
+		setPendingRequestAddedNotification(false)
+		if (pendingAccessRequestArray.length === 1) await tryFocusingTab(accessRequest.socket.tabId)
 		await sendPopupMessageToBackgroundPage({ method: 'popup_interceptorAccess', options })
-		globalThis.close()
 	}
 
-	async function reject(accessRequest: PendingAccessRequest) {
-		if (pendingAccessRequestArray === undefined) return
+	async function reject() {
+		if (pendingAccessRequestArray.length === 0) throw Error('access request not loaded')
+		const accessRequest = pendingAccessRequestArray[0]
 		const options = {
 			userReply: 'Rejected' as const,
 			websiteOrigin: accessRequest.website.websiteOrigin,
@@ -226,9 +225,9 @@ export function InterceptorAccess() {
 			originalRequestAccessToAddress: accessRequest.originalRequestAccessToAddress?.address,
 			requestId: accessRequest.requestId,
 		}
-		await tryFocusingTab(accessRequest.dialogId)
+		setPendingRequestAddedNotification(false)
+		if (pendingAccessRequestArray.length === 1) await tryFocusingTab(accessRequest.socket.tabId)
 		await sendPopupMessageToBackgroundPage({ method: 'popup_interceptorAccess', options })
-		globalThis.close()
 	}
 
 	function renameAddressCallBack(entry: AddressBookEntry) {
@@ -244,8 +243,9 @@ export function InterceptorAccess() {
 		await sendPopupMessageToBackgroundPage({ method: 'popup_refreshInterceptorAccessMetadata' })
 	}
 
-	async function refreshActiveAddress(accessRequest: PendingAccessRequest) {
-		if (accessRequest === undefined) throw Error('access request not loaded')
+	async function refreshActiveAddress() {
+		if (pendingAccessRequestArray.length === 0) throw Error('access request not loaded')
+		const accessRequest = pendingAccessRequestArray[0]
 		await sendPopupMessageToBackgroundPage({ method: 'popup_interceptorAccessRefresh', options: {
 			socket: accessRequest.socket,
 			website: accessRequest.website,
@@ -254,8 +254,9 @@ export function InterceptorAccess() {
 		} } )
 	}
 
-	async function setActiveAddressAndInformAboutIt(accessRequest: PendingAccessRequest, address: bigint | 'signer') {
-		if (accessRequest === undefined) throw Error('access request not loaded')
+	async function setActiveAddressAndInformAboutIt(address: bigint | 'signer') {
+		if (pendingAccessRequestArray.length === 0) throw Error('access request not loaded')
+		const accessRequest = pendingAccessRequestArray[0]
 		await sendPopupMessageToBackgroundPage({ method: 'popup_interceptorAccessChangeAddress', options: {
 			socket: accessRequest.socket,
 			website: accessRequest.website,
@@ -283,7 +284,7 @@ export function InterceptorAccess() {
 		</div>
 	}
 
-	if (pendingAccessRequestArray === undefined) return <main></main>
+	if (pendingAccessRequestArray.length === 0) return <main></main>
 
 	return <main>
 		<Hint>
@@ -293,7 +294,7 @@ export function InterceptorAccess() {
 						setActiveAddressAndInformAboutIt = { setActiveAddressAndInformAboutIt }
 						addingNewAddress = { appPage === 'AddNewAddress' ? { addingAddress: true, type: 'addressInfo' } : addingNewAddress }
 						close = { () => setAppPage('Home') }
-						activeAddress = { accessRequest.requestAccessToAddress?.address }
+						activeAddress = { pendingAccessRequestArray[0].requestAccessToAddress?.address }
 					/>
 					: <></>
 				}
@@ -301,10 +302,10 @@ export function InterceptorAccess() {
 				{ appPage === 'ChangeActiveAddress'
 					? <ChangeActiveAddress
 						setActiveAddressAndInformAboutIt = { setActiveAddressAndInformAboutIt }
-						signerAccounts = { accessRequest.signerAccounts }
+						signerAccounts = { pendingAccessRequestArray[0].signerAccounts }
 						setAndSaveAppPage = { setAppPage }
-						addressInfos = { accessRequest.addressInfos }
-						signerName = { accessRequest.signerName }
+						addressInfos = { pendingAccessRequestArray[0].addressInfos }
+						signerName = { pendingAccessRequestArray[0].signerName }
 						renameAddressCallBack = { renameAddressCallBack }
 					/>
 					: <></>
@@ -313,10 +314,10 @@ export function InterceptorAccess() {
 
 			<div class = 'block popup-block'>
 				<div style = 'overflow-y: auto'>
-					{ pendingTransactionAddedNotification === true
+					{ pendingRequestAddedNotification === true
 						? <DinoSaysNotification
-							text = { `Hey! A new transaction request was queued. Accept or Reject the previous transaction${ pendingTransactions.length > 1 ? 's' : '' } to see the new one.` }
-							close = { () => setPendingTransactionAddedNotification(false)}
+							text = { `Hey! A new request was queued. Accept or Reject the previous request${ pendingAccessRequestArray.length > 1 ? 's' : '' } to see the new one.` }
+							close = { () => setPendingRequestAddedNotification(false)}
 						/>
 						: <></>
 					}

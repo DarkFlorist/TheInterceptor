@@ -26,7 +26,7 @@ function UnderTransactions(param: UnderTransactionsParams) {
 	const nTx = param.pendingTransactions.length
 	return <div style = {`position: relative; top: ${ nTx * -HALF_HEADER_HEIGHT }px;`}>
 		{ param.pendingTransactions.map((transactionSimulation, index) => {
-			const style = `margin-right: 10px; margin-left: 10px; margin-bottom: 0px; scale: ${ Math.pow(0.95, nTx - index) }; position: relative; top: ${ (nTx - index) * HALF_HEADER_HEIGHT }px;`
+			const style = `margin-bottom: 0px; scale: ${ Math.pow(0.95, nTx - index) }; position: relative; top: ${ (nTx - index) * HALF_HEADER_HEIGHT }px;`
 			if (transactionSimulation.statusCode === 'success') {
 				const simTx = transactionSimulation.data.simulatedAndVisualizedTransactions.at(-1)
 				if (simTx === undefined) throw new Error('No simulated and visualized transactions')
@@ -58,7 +58,7 @@ function TransactionCard(param: TransactionCardParams) {
 	if (simTx === undefined) return <></>
 
 	return <>
-		<div class = 'block' style = 'margin: 10px;'>
+		<div class = 'block' style = 'margin-bottom: 10px;'>
 			<nav class = 'breadcrumb has-succeeds-separator is-small'>
 				<ul>
 					{ param.simulationAndVisualisationResults.simulatedAndVisualizedTransactions.map((simTx, index) => (
@@ -75,7 +75,7 @@ function TransactionCard(param: TransactionCardParams) {
 		</div>
 
 		<UnderTransactions pendingTransactions = { param.pendingTransactions }/>
-		<div class = 'card' style = { `margin: 10px; margin-top: 0px; top: ${ param.pendingTransactions.length * -HALF_HEADER_HEIGHT }px` }>
+		<div class = 'card' style = { `top: ${ param.pendingTransactions.length * -HALF_HEADER_HEIGHT }px` }>
 			<TransactionHeader
 				simTx = { simTx }
 			/>
@@ -192,16 +192,18 @@ export function ConfirmTransaction() {
 
 	async function approve() {
 		if (dialogState === undefined) throw new Error('dialogState is not set')
+		setPendingTransactionAddedNotification(false)
 		const currentWindow = await browser.windows.getCurrent()
 		if (currentWindow.id === undefined) throw new Error('could not get our own Id!')
-		if (pendingTransactions.length == 0) await tryFocusingTab(dialogState.data.tabIdOpenedFrom)
+		if (pendingTransactions.length === 0) await tryFocusingTab(dialogState.data.tabIdOpenedFrom)
 		await sendPopupMessageToBackgroundPage({ method: 'popup_confirmDialog', options: { requestId: dialogState.data.requestId, accept: true, windowId: currentWindow.id } })
 	}
 	async function reject() {
 		if (dialogState === undefined) throw new Error('dialogState is not set')
+		setPendingTransactionAddedNotification(false)
 		const currentWindow = await browser.windows.getCurrent()
 		if (currentWindow.id === undefined) throw new Error('could not get our own Id!')
-		if (pendingTransactions.length == 0) await tryFocusingTab(dialogState.data.tabIdOpenedFrom)
+		if (pendingTransactions.length === 0) await tryFocusingTab(dialogState.data.tabIdOpenedFrom)
 		await sendPopupMessageToBackgroundPage({ method: 'popup_confirmDialog', options: { requestId: dialogState.data.requestId, accept: false, windowId: currentWindow.id } })
 	}
 	const refreshMetadata = () => {

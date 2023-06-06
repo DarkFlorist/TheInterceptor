@@ -33,10 +33,7 @@ const onCloseWindow = async (windowId: number, websiteTabConnections: WebsiteTab
 async function updateViewOrClose() {
 	const promises = await getPendingAccessRequests()
 	if (promises.length >= 1) {
-		return sendPopupMessageToOpenWindows({
-			method: 'popup_update_access_dialog',
-			data: promises,
-		})
+		return sendPopupMessageToOpenWindows({ method: 'popup_update_access_dialog', data: promises })
 	}
 	if (openedDialog) closePopupOrTab(openedDialog)
 	openedDialog = undefined
@@ -50,7 +47,6 @@ export async function resolveInterceptorAccess(websiteTabConnections: WebsiteTab
 	const future = pendingInterceptorAccess.get(reply.requestId)
 	if (future === undefined) return resolve(websiteTabConnections, reply, pendingRequest.socket, undefined, pendingRequest.website)
 	return future.resolve(reply)
-
 }
 
 export function getAddressMetadataForAccess(websiteAccess: WebsiteAccessArray, addressInfos: readonly AddressInfo[]): AddressInfoEntry[] {
@@ -61,7 +57,7 @@ export function getAddressMetadataForAccess(websiteAccess: WebsiteAccessArray, a
 
 export async function removePendingAccessRequest(websiteOrigin: string, requestAccessToAddress: bigint | undefined) {
 	await updatePendingAccessRequests(async (previousPendingAccessRequests) => {
-		return previousPendingAccessRequests.filter((x) => !(x.website.websiteOrigin === websiteOrigin && x.requestAccessToAddress === requestAccessToAddress))
+		return previousPendingAccessRequests.filter((x) => !(x.website.websiteOrigin === websiteOrigin && x.requestAccessToAddress?.address === requestAccessToAddress))
 	})
 }
 
@@ -170,13 +166,14 @@ export async function requestAccessFromUser(
 			}
 
 			const requests = await updatePendingAccessRequests(async (previousPendingAccessRequests) => {
-				if (previousPendingAccessRequests.find((x) => x.website.websiteOrigin === pendingRequest.website.websiteOrigin && x.requestAccessToAddress === pendingRequest.requestAccessToAddress) === undefined) {
+				if (previousPendingAccessRequests.find((x) => x.website.websiteOrigin === pendingRequest.website.websiteOrigin && x.requestAccessToAddress?.address === pendingRequest.requestAccessToAddress?.address) === undefined) {
 					return previousPendingAccessRequests.concat(pendingRequest)
 				}
 				return previousPendingAccessRequests
 			})
-			pendingAccessRequests.resolve(requests)
 
+			if (justAddToPending) return await sendPopupMessageToOpenWindows({ method: 'popup_popup_interceptor_access_dialog_pending_changed', data: requests })
+			pendingAccessRequests.resolve(requests)
 			return true
 		})
 		if (addedPending === false) {
@@ -189,7 +186,7 @@ export async function requestAccessFromUser(
 		browser.runtime.onMessage.removeListener(windowReadyAndListening)
 		removeWindowTabListener(closeWindowCallback)
 		pendingInterceptorAccess.delete(requestId)
-		updateViewOrClose()
+		await updateViewOrClose()
 	}
 }
 

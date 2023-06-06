@@ -489,7 +489,7 @@ export const UpdateAccessDialog = funtypes.ReadonlyObject({
 
 export type InterceptorAccessDialog = funtypes.Static<typeof InterceptorAccessDialog>
 export const InterceptorAccessDialog = funtypes.ReadonlyObject({
-	method: funtypes.Literal('popup_interceptorAccessDialog'),
+	method: funtypes.Union(funtypes.Literal('popup_interceptorAccessDialog'), funtypes.Literal('popup_popup_interceptor_access_dialog_pending_changed')),
 	data: PendingAccessRequestArray
 })
 

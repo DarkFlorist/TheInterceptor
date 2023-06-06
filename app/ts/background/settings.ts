@@ -228,8 +228,8 @@ export async function updateTabState(tabId: number, updateFunc: (prevState: TabS
 const pendingAccessRequestsSemaphore = new Semaphore(1)
 export async function updatePendingAccessRequests(updateFunc: (prevState: PendingAccessRequestArray) => Promise<PendingAccessRequestArray>) {
 	return await pendingAccessRequestsSemaphore.execute(async () => {
-		const pendingAccessRequests = PendingAccessRequestArray.parse(await browserStorageLocalSingleGetWithDefault('pendingInterceptorAccessRequests', []))
-		await browserStorageLocalSet('pendingInterceptorAccessRequests', PendingAccessRequestArray.serialize(await updateFunc(pendingAccessRequests)) as string)
+		const pendingAccessRequests = await updateFunc(PendingAccessRequestArray.parse(await browserStorageLocalSingleGetWithDefault('pendingInterceptorAccessRequests', [])))
+		await browserStorageLocalSet('pendingInterceptorAccessRequests', PendingAccessRequestArray.serialize(pendingAccessRequests) as string)
 		return pendingAccessRequests
 	})
 }

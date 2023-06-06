@@ -686,7 +686,7 @@ svg.spinner > circle {
 }
 
 .popup-block {
-	margin-bottom: 0px;
+	padding: 10px;
 	display: flex;
 	justify-content: space-between;
 	flex-direction: column;
