@@ -40,7 +40,7 @@ export class PriceEstimator {
 			if ( token.token === CHAINS[chainString].weth ) {
 				inOutResults.push({
 					token: addressString(CHAINS[chainString].weth),
-					inOutAmount: [10n ** 18n, 10n ** 18n] as const,
+					inOutAmount: [10n ** 18n, 10n ** 18n],
 					decimals: 18n,
 				})
 				continue
@@ -101,7 +101,7 @@ export class PriceEstimator {
 				if(inOut.amounts[0] <= 0n || inOut.amounts[1] <= 0n || token.decimals <= 0n) return []
 				inOutResults.push( {
 					token: addressString(token.token ),
-					inOutAmount: [inOut.amounts[1], inOut.amounts[0]] as const,
+					inOutAmount: [inOut.amounts[1], inOut.amounts[0]],
 					decimals: token.decimals
 				})
 			}

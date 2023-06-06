@@ -3,6 +3,7 @@ import { EthBalanceChanges, EthereumAddress, EthereumData, EthereumQuantity, Eth
 import * as funtypes from 'funtypes'
 import { QUARANTINE_CODE } from '../simulation/protectors/quarantine-codes.js'
 import { AddressBookEntry, CHAIN, NFTEntry, RenameAddressCallBack, TokenEntry, Website, WebsiteSocket } from './user-interface-types.js'
+import { ERROR_INTERCEPTOR_GAS_ESTIMATION_FAILED } from './constants.js'
 
 export type OptionalEthereumAddress = funtypes.Static<typeof OptionalEthereumAddress>
 export const OptionalEthereumAddress = funtypes.Union(EthereumAddress, funtypes.Undefined)
@@ -98,30 +99,43 @@ export const SimulatedTransaction = funtypes.ReadonlyObject({
 	signedTransaction: EthereumSignedTransaction,
 	realizedGasPrice: EthereumQuantity,
 	website: Website,
+	transactionCreated: EthereumTimestamp,
 	tokenBalancesAfter: TokenBalancesAfter,
+	transactionSendingFormat: funtypes.Union(funtypes.Literal('eth_sendRawTransaction'), funtypes.Literal('eth_sendTransaction')),
 })
 
-export type EthereumUnsignedTransactionWithWebsite = funtypes.Static<typeof EthereumUnsignedTransactionWithWebsite>
-export const EthereumUnsignedTransactionWithWebsite = funtypes.ReadonlyObject({
+export type WebsiteCreatedEthereumUnsignedTransaction = funtypes.Static<typeof WebsiteCreatedEthereumUnsignedTransaction>
+export const WebsiteCreatedEthereumUnsignedTransaction = funtypes.ReadonlyObject({
+	website: Website,
+	transactionCreated: EthereumTimestamp,
 	transaction: EthereumUnsignedTransaction,
-	website: Website
+	transactionSendingFormat: funtypes.Union(funtypes.Literal('eth_sendRawTransaction'), funtypes.Literal('eth_sendTransaction')),
+})
+
+export type EstimateGasError = funtypes.Static<typeof EstimateGasError>
+export const EstimateGasError = funtypes.ReadonlyObject({
+	error: funtypes.ReadonlyObject({
+		code: funtypes.Literal(ERROR_INTERCEPTOR_GAS_ESTIMATION_FAILED),
+		message: funtypes.String,
+		data: funtypes.String
+	})
 })
 
 export type SimulationState = funtypes.Static<typeof SimulationState>
 export const SimulationState = funtypes.ReadonlyObject({
-	prependTransactionsQueue: funtypes.ReadonlyArray(EthereumUnsignedTransactionWithWebsite),
+	prependTransactionsQueue: funtypes.ReadonlyArray(WebsiteCreatedEthereumUnsignedTransaction),
 	simulatedTransactions: funtypes.ReadonlyArray(SimulatedTransaction),
 	blockNumber: EthereumQuantity,
 	blockTimestamp: EthereumTimestamp,
 	chain: CHAIN,
 	simulationConductedTimestamp: EthereumTimestamp,
 })
-
-export type EthBalanceChangesWithMetadata = {
+export type EthBalanceChangesWithMetadata = funtypes.Static<typeof EthBalanceChangesWithMetadata>
+export const EthBalanceChangesWithMetadata = funtypes.ReadonlyObject({
 	address: AddressBookEntry,
-	before: bigint,
-	after: bigint,
-}
+	before: EthereumQuantity,
+	after: EthereumQuantity,
+})
 
 export type TransactionWithAddressBookEntries = funtypes.Static<typeof TransactionWithAddressBookEntries>
 export const TransactionWithAddressBookEntries = funtypes.Intersect(
@@ -144,20 +158,36 @@ export const TransactionWithAddressBookEntries = funtypes.Intersect(
 		funtypes.ReadonlyObject({ type: funtypes.Union(funtypes.Literal('legacy'), funtypes.Literal('2930')) })
 	)
 )
+export type SimulatedAndVisualizedTransactionBase = funtypes.Static<typeof SimulatedAndVisualizedTransactionBase>
+export const SimulatedAndVisualizedTransactionBase = funtypes.Intersect(
+	funtypes.ReadonlyObject({
+		ethBalanceChanges: funtypes.ReadonlyArray(EthBalanceChangesWithMetadata),
+		tokenBalancesAfter: TokenBalancesAfter,
+		tokenResults: funtypes.ReadonlyArray(TokenVisualizerResultWithMetadata),
+		website: Website,
+		transactionCreated: EthereumTimestamp,
+		gasSpent: EthereumQuantity,
+		realizedGasPrice: EthereumQuantity,
+		quarantine: funtypes.Boolean,
+		quarantineCodes: funtypes.ReadonlyArray(QUARANTINE_CODE),
+	}),
+	funtypes.Union(
+		funtypes.ReadonlyObject({
+			statusCode: funtypes.Literal('success'),
+		}),
+		funtypes.ReadonlyObject({
+			statusCode: funtypes.Literal('failure'),
+			error: funtypes.String
+		})
+	)
+)
 
-export type SimulatedAndVisualizedTransaction = {
-	transaction: TransactionWithAddressBookEntries
-	ethBalanceChanges: readonly EthBalanceChangesWithMetadata[]
-	tokenBalancesAfter: TokenBalancesAfter
-	tokenResults: readonly TokenVisualizerResultWithMetadata[]
-	website: Website
-	gasSpent: EthereumQuantity
-	realizedGasPrice: EthereumQuantity,
-	quarantine: boolean
-	quarantineCodes: readonly QUARANTINE_CODE[]
-} & (
-	{ statusCode: 'failure', error: string } |
-	{ statusCode: 'success' }
+export type SimulatedAndVisualizedTransaction = funtypes.Static<typeof SimulatedAndVisualizedTransaction>
+export const SimulatedAndVisualizedTransaction = funtypes.Intersect(
+	SimulatedAndVisualizedTransactionBase,
+	funtypes.ReadonlyObject({
+		transaction: TransactionWithAddressBookEntries,
+	})
 )
 
 export type SimulationAndVisualisationResults = {
@@ -239,4 +269,3 @@ export const EthereumSubscription = funtypes.Union(NewHeadsSubscription)
 
 export type EthereumSubscriptions = funtypes.Static<typeof EthereumSubscriptions>
 export const EthereumSubscriptions = funtypes.ReadonlyArray(EthereumSubscription)
-

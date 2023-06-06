@@ -1,11 +1,11 @@
-import { HandleSimulationModeReturnValue, InterceptedRequest, InterceptedRequestForward, PopupMessage, ProviderMessage, Settings, TabState } from '../utils/interceptor-messages.js'
+import { ConfirmTransactionTransactionSingleVisualization, HandleSimulationModeReturnValue, InterceptedRequest, InterceptedRequestForward, PopupMessage, ProviderMessage, Settings, TabState } from '../utils/interceptor-messages.js'
 import 'webextension-polyfill'
 import { Simulator } from '../simulation/simulator.js'
-import { EthereumJsonRpcRequest, EthereumQuantity, EthereumUnsignedTransaction, OldSignTypedDataParams, PersonalSignParams, SignTypedDataParams } from '../utils/wire-types.js'
+import { EthereumJsonRpcRequest, EthereumQuantity, OldSignTypedDataParams, PersonalSignParams, SignTypedDataParams } from '../utils/wire-types.js'
 import { changeSimulationMode, clearTabStates, getMakeMeRich, getSettings, getSignerName, getSimulationResults, removeTabState, setIsConnected, updateSimulationResults, updateTabState } from './settings.js'
-import { blockNumber, call, chainId, estimateGas, gasPrice, getAccounts, getBalance, getBlockByNumber, getCode, getLogs, getPermissions, getSimulationStack, getTransactionByHash, getTransactionCount, getTransactionReceipt, personalSign, requestPermissions, sendTransaction, subscribe, switchEthereumChain, unsubscribe } from './simulationModeHanders.js'
-import { changeActiveAddress, changeMakeMeRich, changePage, resetSimulation, confirmDialog, refreshSimulation, removeTransaction, requestAccountsFromSigner, refreshPopupConfirmTransactionSimulation, confirmPersonalSign, confirmRequestAccess, changeInterceptorAccess, changeChainDialog, popupChangeActiveChain, enableSimulationMode, reviewNotification, rejectNotification, addOrModifyAddressInfo, getAddressBookData, removeAddressBookEntry, openAddressBook, homeOpened, interceptorAccessChangeAddressOrRefresh, refreshPopupConfirmTransactionMetadata, refreshPersonalSignMetadata } from './popupMessageHandlers.js'
-import { SimulationState } from '../utils/visualizer-types.js'
+import { blockNumber, call, chainId, estimateGas, gasPrice, getAccounts, getBalance, getBlockByNumber, getCode, getLogs, getPermissions, getSimulationStack, getTransactionByHash, getTransactionCount, getTransactionReceipt, personalSign, requestPermissions, sendRawTransaction, sendTransaction, subscribe, switchEthereumChain, unsubscribe } from './simulationModeHanders.js'
+import { changeActiveAddress, changeMakeMeRich, changePage, resetSimulation, confirmDialog, refreshSimulation, removeTransaction, requestAccountsFromSigner, refreshPopupConfirmTransactionSimulation, confirmPersonalSign, confirmRequestAccess, changeInterceptorAccess, changeChainDialog, popupChangeActiveChain, enableSimulationMode, reviewNotification, rejectNotification, addOrModifyAddressInfo, getAddressBookData, removeAddressBookEntry, openAddressBook, homeOpened, interceptorAccessChangeAddressOrRefresh, refreshPopupConfirmTransactionMetadata, refreshPersonalSignMetadata, changeSettings } from './popupMessageHandlers.js'
+import { WebsiteCreatedEthereumUnsignedTransaction, SimulationState } from '../utils/visualizer-types.js'
 import { AddressBookEntry, Website, TabConnection, WebsiteSocket, WebsiteTabConnections } from '../utils/user-interface-types.js'
 import { interceptorAccessMetadataRefresh, requestAccessFromUser } from './windows/interceptorAccess.js'
 import { CHAINS, ICON_NOT_ACTIVE, isSupportedChain, MAKE_YOU_RICH_TRANSACTION, METAMASK_ERROR_NOT_CONNECTED_TO_CHAIN, METAMASK_ERROR_USER_REJECTED_REQUEST } from '../utils/constants.js'
@@ -21,6 +21,7 @@ import { appendTransaction, copySimulationState, setPrependTransactionsQueue, si
 import { Semaphore } from '../utils/semaphore.js'
 import { isFailedToFetchError } from '../utils/errors.js'
 import { sendSubscriptionMessagesForNewBlock } from '../simulation/services/EthereumSubscriptionService.js'
+import { formSimulatedAndVisualizedTransaction } from '../components/formVisualizerResults.js'
 
 const websiteTabConnections = new Map<number, TabConnection>()
 
@@ -35,10 +36,11 @@ let simulator: Simulator | undefined = undefined
 
 async function visualizeSimulatorState(simulationState: SimulationState, simulator: Simulator) {
 	const priceEstimator = new PriceEstimator(simulator.ethereum)
-	const transactions = simulationState.simulatedTransactions.map((x) => ({ transaction: x.signedTransaction, website: x.website }))
+	const transactions = simulationState.simulatedTransactions.map((x) => ({ transaction: x.signedTransaction, website: x.website, transactionCreated: x.transactionCreated, transactionSendingFormat: x.transactionSendingFormat}))
 	const visualizerResult = await simulator.visualizeTransactionChain(simulationState, transactions, simulationState.blockNumber, simulationState.simulatedTransactions.map((x) => x.multicallResponse))
 	const visualizerResults = visualizerResult.map((x, i) => ({ ...x, website: simulationState.simulatedTransactions[i].website }))
 	const addressBookEntries = await getAddressBookEntriesForVisualiser(simulator.ethereum, visualizerResult.map((x) => x.visualizerResults), simulationState, (await getSettings()).userAddressBook)
+	const simulatedAndVisualizedTransactions = formSimulatedAndVisualizedTransaction(simulationState, visualizerResults, addressBookEntries)
 
 	function onlyTokensAndTokensWithKnownDecimals(metadata: AddressBookEntry) : metadata is AddressBookEntry & { type: 'token', decimals: `0x${ string }` } {
 		if (metadata.type !== 'token') return false
@@ -54,6 +56,7 @@ async function visualizeSimulatorState(simulationState: SimulationState, simulat
 		addressBookEntries,
 		visualizerResults,
 		simulationState,
+		simulatedAndVisualizedTransactions,
 	}
 }
 
@@ -98,33 +101,40 @@ export function setEthereumNodeBlockPolling(enabled: boolean) {
 
 export async function refreshConfirmTransactionSimulation(
 	ethereumClientService: EthereumClientService,
-	simulationState: SimulationState,
 	activeAddress: bigint,
 	simulationMode: boolean,
 	requestId: number,
-	transactionToSimulate: EthereumUnsignedTransaction,
-	website: Website,
-) {
+	transactionToSimulate: WebsiteCreatedEthereumUnsignedTransaction,
+	tabIdOpenedFrom: number,
+): Promise<ConfirmTransactionTransactionSingleVisualization> {
 	const info = {
 		requestId: requestId,
 		transactionToSimulate: transactionToSimulate,
 		simulationMode: simulationMode,
 		activeAddress: activeAddress,
 		signerName: await getSignerName(),
-		website: website,
+		tabIdOpenedFrom,
 	}
-	if (simulator === undefined) return { method: 'popup_confirm_transaction_simulation_failed' as const, data: info }
-	sendPopupMessageToOpenWindows({ method: 'popup_confirm_transaction_simulation_started' })
+	if (simulator === undefined) return { statusCode: 'failed', data: info } as const
+	sendPopupMessageToOpenWindows({ method: 'popup_confirm_transaction_simulation_started' } as const)
+
+	const getCopiedSimulationState = async (simulationMode: boolean) => {
+		if (simulationMode === false) return undefined
+		const simResults = await getSimulationResults()
+		if (simResults.simulationState === undefined) return undefined
+		return copySimulationState(simResults.simulationState)
+	}
+
 	try {
-		const simulationStateWithNewTransaction = await appendTransaction(ethereumClientService, copySimulationState(simulationState), { transaction: transactionToSimulate, website: website })
+		const simulationStateWithNewTransaction = await appendTransaction(ethereumClientService, await getCopiedSimulationState(simulationMode), transactionToSimulate)
 		return {
-			method: 'popup_confirm_transaction_simulation_state_changed' as const,
+			statusCode: 'success' as const,
 			data: { ...info, ...await visualizeSimulatorState(simulationStateWithNewTransaction, simulator) }
 		}
 	} catch(error) {
 		if (!(error instanceof Error)) throw error
 		if (!isFailedToFetchError(error)) throw error
-		return { method: 'popup_confirm_transaction_simulation_failed' as const, data: info }
+		return { statusCode: 'failed' as const, data: info }
 	}
 }
 
@@ -143,7 +153,9 @@ export async function getPrependTrasactions(ethereumClientService: EthereumClien
 			to: activeAddress,
 			...MAKE_YOU_RICH_TRANSACTION.transaction,
 		},
-		website: MAKE_YOU_RICH_TRANSACTION.website
+		website: MAKE_YOU_RICH_TRANSACTION.website,
+		transactionCreated: new Date(),
+		transactionSendingFormat: MAKE_YOU_RICH_TRANSACTION.transactionSendingFormat,
 	}]
 }
 
@@ -160,22 +172,18 @@ async function handleSimulationMode(
 	request: InterceptedRequest,
 	settings: Settings
 ): Promise<HandleSimulationModeReturnValue> {
-	let parsedRequest // separate request parsing and request handling. If there's a parse error, throw that to API user
-	try {
-		parsedRequest = EthereumJsonRpcRequest.parse(request.options)
-	} catch (error) {
+	const maybeParsedRequest = EthereumJsonRpcRequest.safeParse(request.options)
+	if (maybeParsedRequest.success === false) {
 		console.log(request)
-		console.warn(error)
-		if (error instanceof Error) {
-			return {
-				error: {
-					message: error.message,
-					code: 400,
-				}
+		console.warn(maybeParsedRequest.fullError)
+		return {
+			error: {
+				message: maybeParsedRequest.fullError === undefined ? 'Unknown parsing error' : maybeParsedRequest.fullError.toString(),
+				code: 400,
 			}
 		}
-		throw error
 	}
+	const parsedRequest = maybeParsedRequest.value
 
 	switch (parsedRequest.method) {
 		case 'eth_getBlockByNumber': return await getBlockByNumber(simulator.ethereum, simulationState, parsedRequest)
@@ -183,6 +191,7 @@ async function handleSimulationMode(
 		case 'eth_estimateGas': return await estimateGas(simulator.ethereum, simulationState, parsedRequest)
 		case 'eth_getTransactionByHash': return await getTransactionByHash(simulator.ethereum, simulationState, parsedRequest)
 		case 'eth_getTransactionReceipt': return await getTransactionReceipt(simulator.ethereum, simulationState, parsedRequest)
+		case 'eth_sendRawTransaction': return sendRawTransaction(simulator.ethereum, parsedRequest, socket, request, true, website, settings)
 		case 'eth_sendTransaction': return sendTransaction(websiteTabConnections, getActiveAddressForDomain, simulator.ethereum, parsedRequest, socket, request, true, website, settings)
 		case 'eth_call': return await call(simulator.ethereum, simulationState, parsedRequest)
 		case 'eth_blockNumber': return await blockNumber(simulator.ethereum, simulationState)
@@ -211,15 +220,12 @@ async function handleSimulationMode(
 		case 'eth_sign': return { error: { code: 10000, message: 'eth_sign is deprecated' } }
 		/*
 		Missing methods:
-		case 'eth_sendRawTransaction': return
 		case 'eth_getProof': return
 		case 'eth_getBlockTransactionCountByNumber': return
 		case 'eth_getTransactionByBlockHashAndIndex': return
 		case 'eth_getTransactionByBlockNumberAndIndex': return
 		case 'eth_getBlockReceipts': return
-		case 'eth_getStorageAt': return
 
-		case 'eth_getLogs': return
 		case 'eth_getFilterChanges': return
 		case 'eth_getFilterLogs': return
 		case 'eth_newBlockFilter': return
@@ -247,22 +253,18 @@ async function handleSigningMode(
 	request: InterceptedRequest,
 	settings: Settings
 ): Promise<HandleSimulationModeReturnValue> {
-	let parsedRequest // separate request parsing and request handling. If there's a parse error, throw that to API user
-	try {
-		parsedRequest = EthereumJsonRpcRequest.parse(request.options)
-	} catch (error) {
-		console.warn(request)
-		console.warn(error)
-		if (error instanceof Error) {
-			return {
-				error: {
-					message: error.message,
-					code: 400,
-				}
+	const maybeParsedRequest = EthereumJsonRpcRequest.safeParse(request.options)
+	if (maybeParsedRequest.success === false) {
+		console.log(request)
+		console.warn(maybeParsedRequest.fullError)
+		return {
+			error: {
+				message: maybeParsedRequest.fullError === undefined ? 'Unknown parsing error' : maybeParsedRequest.fullError.toString(),
+				code: 400,
 			}
 		}
-		throw error
 	}
+	const parsedRequest = maybeParsedRequest.value
 
 	const forwardToSigner = () => ({ forward: true } as const)
 
@@ -298,8 +300,14 @@ async function handleSigningMode(
 		case 'eth_signTypedData_v3':
 		case 'eth_signTypedData_v4': return await personalSign(ethereumClientService, websiteTabConnections, socket, parsedRequest, request, false, website, settings)
 		case 'wallet_switchEthereumChain': return await switchEthereumChain(websiteTabConnections, socket, ethereumClientService, parsedRequest, request, false, website)
+		case 'eth_sendRawTransaction': {
+			if (isSupportedChain(settings.activeChain.toString()) ) {
+				return sendRawTransaction(ethereumClientService, parsedRequest, socket, request, false, website, settings)
+			}
+			return forwardToSigner()
+		}
 		case 'eth_sendTransaction': {
-			if (settings && isSupportedChain(settings.activeChain.toString()) ) {
+			if (isSupportedChain(settings.activeChain.toString()) ) {
 				return sendTransaction(websiteTabConnections, getActiveAddressForDomain, ethereumClientService, parsedRequest, socket, request, false, website, settings)
 			}
 			return forwardToSigner()
@@ -523,6 +531,9 @@ async function onContentScriptConnected(port: browser.runtime.Port, websiteTabCo
 			websiteTabConnections.delete(socket.tabId)
 		}
 	})
+
+	const pendingRequestLimiter = new Semaphore(20) // only allow 20 requests pending at the time for a port
+
 	port.onMessage.addListener(async (payload) => {
 		if(!(
 			'data' in payload
@@ -530,26 +541,28 @@ async function onContentScriptConnected(port: browser.runtime.Port, websiteTabCo
 			&& payload.data !== null
 			&& 'interceptorRequest' in payload.data
 		)) return
-		const request = InterceptedRequest.parse(payload.data)
-		const providerHandler = providerHandlers.get(request.options.method)
-		if (providerHandler) {
-			await providerHandler(websiteTabConnections, port, request)
-			return sendMessageToContentScript(websiteTabConnections, socket, { 'result': '0x' }, request)
-		}
+		await pendingRequestLimiter.execute(async () => {
+			const request = InterceptedRequest.parse(payload.data)
+			const providerHandler = providerHandlers.get(request.options.method)
+			if (providerHandler) {
+				await providerHandler(websiteTabConnections, port, request)
+				return sendMessageToContentScript(websiteTabConnections, socket, { 'result': '0x' }, request)
+			}
 
-		const access = verifyAccess(websiteTabConnections, socket, request.options.method, websiteOrigin, await getSettings())
+			const access = verifyAccess(websiteTabConnections, socket, request.options.method, websiteOrigin, await getSettings())
 
-		if (access === 'askAccess' && request.options.method === 'eth_accounts') {
-			// do not prompt for eth_accounts, just reply with no accounts.
-			return sendMessageToContentScript(websiteTabConnections, socket, { 'result': [] }, request)
-		}
+			if (access === 'askAccess' && request.options.method === 'eth_accounts') {
+				// do not prompt for eth_accounts, just reply with no accounts.
+				return sendMessageToContentScript(websiteTabConnections, socket, { 'result': [] }, request)
+			}
 
-		switch (access) {
-			case 'noAccess': return refuseAccess(websiteTabConnections, socket, request)
-			case 'askAccess': return await gateKeepRequestBehindAccessDialog(socket, request, await websitePromise, await getSettings())
-			case 'hasAccess': return await handleContentScriptMessage(websiteTabConnections, socket, request, await websitePromise)
-			default: assertNever(access)
-		}
+			switch (access) {
+				case 'noAccess': return refuseAccess(websiteTabConnections, socket, request)
+				case 'askAccess': return await gateKeepRequestBehindAccessDialog(socket, request, await websitePromise, await getSettings())
+				case 'hasAccess': return await handleContentScriptMessage(websiteTabConnections, socket, request, await websitePromise)
+				default: assertNever(access)
+			}
+		})
 	})
 
 	if (tabConnection === undefined) {
@@ -578,22 +591,18 @@ async function popupMessageHandler(
 	request: unknown,
 	settings: Settings
 ) {
-	let parsedRequest // separate request parsing and request handling. If there's a parse error, throw that to API user
-	try {
-		parsedRequest = PopupMessage.parse(request)
-	} catch (error) {
-		console.warn(request)
-		console.warn(error)
-		if (error instanceof Error) {
-			return {
-				error: {
-					message: error.message,
-					code: 400,
-				}
+	const maybeParsedRequest = PopupMessage.safeParse(request)
+	if (maybeParsedRequest.success === false) {
+		console.log(request)
+		console.warn(maybeParsedRequest.fullError)
+		return {
+			error: {
+				message: maybeParsedRequest.fullError === undefined ? 'Unknown parsing error' : maybeParsedRequest.fullError.toString(),
+				code: 400,
 			}
 		}
-		throw error
 	}
+	const parsedRequest = maybeParsedRequest.value
 
 	switch (parsedRequest.method) {
 		case 'popup_confirmDialog': return await confirmDialog(simulator.ethereum, websiteTabConnections, parsedRequest)
@@ -627,6 +636,7 @@ async function popupMessageHandler(
 		case 'popup_interceptorAccessChangeAddress': return await interceptorAccessChangeAddressOrRefresh(websiteTabConnections, parsedRequest)
 		case 'popup_interceptorAccessRefresh': return await interceptorAccessChangeAddressOrRefresh(websiteTabConnections, parsedRequest)
 		case 'popup_refreshPersonalSignMetadata': return await refreshPersonalSignMetadata(simulator.ethereum, parsedRequest, settings)
+		case 'popup_ChangeSettings': return await changeSettings(simulator, parsedRequest)
 		default: assertUnreachable(parsedRequest)
 	}
 }

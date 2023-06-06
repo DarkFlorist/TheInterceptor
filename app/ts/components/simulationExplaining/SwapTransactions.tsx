@@ -67,10 +67,12 @@ export function formSwapAsset(tokenResult: TokenVisualizerERC20Event[] | TokenVi
 			type: 'Token',
 			tokenAddress: tokenResult[0].token,
 			amount: total,
-			beforeAfterBalance: sendBalanceAfter !== undefined ? {
-				previousBalance: sendBalanceAfter - total,
-				afterBalance: sendBalanceAfter
-			} : undefined
+			beforeAfterBalance: sendBalanceAfter !== undefined
+				? {
+					previousBalance: sendBalanceAfter - total,
+					afterBalance: sendBalanceAfter
+				}
+				: undefined
 		}
 	} else {
 		return {
@@ -289,7 +291,7 @@ export function identifyRoutes(simulatedAndVisualizedTransaction: SimulatedAndVi
 	function sortAccordingArrayIfNotMaintainOrder(a: TokenVisualizerResultWithMetadata, b: TokenVisualizerResultWithMetadata) {
 		const indexOfA = route.findIndex( (x) => a.from.address === BigInt(x.fromAddress) && BigInt(x.toAddress) === a.to.address && addressString(a.token.address) === x.currentTokenAddress )
 		const indexOfB = route.findIndex( (x) => b.from.address === BigInt(x.fromAddress) && BigInt(x.toAddress) === b.to.address && addressString(b.token.address) === x.currentTokenAddress )
-		const v =  (indexOfA >= 0 ? indexOfA : route.length + tokenResults.indexOf(a) ) - (indexOfB >= 0 ? indexOfB : route.length + tokenResults.indexOf(b))
+		const v = (indexOfA >= 0 ? indexOfA : route.length + tokenResults.indexOf(a) ) - (indexOfB >= 0 ? indexOfB : route.length + tokenResults.indexOf(b))
 		return v
 	}
 

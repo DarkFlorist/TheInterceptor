@@ -13,8 +13,9 @@ type EtherTransferEventParams = {
 
 function EtherTransferEvent(param: EtherTransferEventParams) {
 	return <>
-		{ param.valueSent === 0n ? <></> :
-			<div class = 'vertical-center'>
+		{ param.valueSent === 0n
+			? <></>
+			: <div class = 'vertical-center'>
 				<div class = { `box token-box negative-box vertical-center` } style = 'display: inline-block'>
 					<table class = 'log-table'>
 						<div class = 'log-cell'>
@@ -36,8 +37,9 @@ function EtherTransferEvent(param: EtherTransferEventParams) {
 				</div>
 			</div>
 		}
-		{ param.totalReceived <= 0n ? <></> :
-			<div class = 'vertical-center'>
+		{ param.totalReceived <= 0n
+			? <></>
+			: <div class = 'vertical-center'>
 				<div class = 'box token-box positive-box vertical-center' style = 'display: inline-block'>
 					<table class = 'log-table'>
 						<div class = 'log-cell'>

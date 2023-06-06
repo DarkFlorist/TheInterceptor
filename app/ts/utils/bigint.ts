@@ -90,6 +90,7 @@ export function bytes32String(bytes32: bigint) {
 
 export function stringToUint8Array(data: string) {
 	const dataLength = (data.length - 2) / 2
+	if (dataLength === 0) return new Uint8Array()
     return bigintToUint8Array(BigInt(data), dataLength)
 }
 

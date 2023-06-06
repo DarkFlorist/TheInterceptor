@@ -161,6 +161,11 @@ export type ChangeActiveAddressParam = {
 	renameAddressCallBack: RenameAddressCallBack,
 }
 
+export type SettingsParam = {
+	useTabsInsteadOfPopup: boolean | undefined,
+	setAndSaveAppPage: (page: Page) => void
+}
+
 export type FirstCardParams = {
 	activeAddress: AddressInfo | undefined,
 	enableSimulationMode: (x: boolean) => void,

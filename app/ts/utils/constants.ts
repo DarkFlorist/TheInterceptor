@@ -77,13 +77,14 @@ export const ERROR_INTERCEPTOR_NO_ACTIVE_ADDRESS = { error: { code: 2, message: 
 export const ERROR_INTERCEPTOR_UNKNOWN_ORIGIN = { error: { code: 400, message: 'Interceptor: Unkown website origin' } }
 export const METAMASK_ERROR_NOT_CONNECTED_TO_CHAIN = { error: { code: 4900, message: 'Interceptor: Not connected to chain' } }
 export const ERROR_INTERCEPTOR_GET_CODE_FAILED = { error: { code: 40001, message: 'Interceptor: Get code failed' } } // I wonder how we should come up with these numbers?
+export const ERROR_INTERCEPTOR_GAS_ESTIMATION_FAILED = 40002
 
 function get4Byte(functionAbi: string) {
 	return Number(ethers.keccak256(ethers.toUtf8Bytes(functionAbi)).slice(0, 10))
 }
 
 export const FourByteExplanations = new Map<number, string >([
-	[get4Byte('transferFrom(address,address,uint256)'), 'ERC20 Transfer From'],
+	[get4Byte('transferFrom(address,address,uint256)'), 'ERC20/ERC721 Transfer From'],
 	[get4Byte('transfer(address,uint256)'), 'ERC20 Transfer'],
 	[get4Byte('approve(address,uint256)'), 'ERC20 Approval'],
 	[get4Byte('setApprovalForAll(address,bool)'), 'ERC721 Approval For All'],
@@ -121,6 +122,7 @@ export const MAKE_YOU_RICH_TRANSACTION = {
 		title: 'The Interceptor',
 		icon: undefined,
 	},
+	transactionSendingFormat: 'eth_sendTransaction' as const,
 }
 
 export const TIME_BETWEEN_BLOCKS = 12
@@ -216,3 +218,6 @@ export const KNOWN_CONTRACT_CALLER_ADDRESSES = [
 
 export const WARNING_COLOR = '#FFC107'
 export const PRIMARY_COLOR = '#58a5b3'
+
+export const CHROME_NO_TAB_WITH_ID_ERROR = 'No tab with id'
+export const CANNOT_SIMULATE_OFF_LEGACY_BLOCK = 'Cannot simulate off a legacy block'

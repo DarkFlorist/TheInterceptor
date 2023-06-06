@@ -1,8 +1,9 @@
 import * as funtypes from 'funtypes'
-import { EIP712Message, EthereumAddress, EthereumBytes32, LiteralConverterParserFactory, NonHexBigInt, OldSignTypedDataParams, PersonalSignParams, SignTypedDataParams } from './wire-types.js'
+import { EthereumAddress, EthereumBytes32, LiteralConverterParserFactory, NonHexBigInt, OldSignTypedDataParams, PersonalSignParams, SignTypedDataParams } from './wire-types.js'
 import { AddressBookEntry, CHAIN, NFTEntry, SignerName, TokenEntry, Website } from './user-interface-types.js'
 import { QUARANTINE_CODE } from '../simulation/protectors/quarantine-codes.js'
 import { EthereumInput } from './wire-types.js'
+import { EnrichedEIP712 } from './eip712Parsing.js'
 
 export type EIP2612Message = funtypes.Static<typeof EIP2612Message>
 export const EIP2612Message = funtypes.ReadonlyObject({
@@ -363,6 +364,7 @@ export const PersonalSignRequestBase = funtypes.Intersect(
 		quarantineCodes: funtypes.ReadonlyArray(QUARANTINE_CODE),
 		quarantine: funtypes.Boolean,
 		account: AddressBookEntry,
+		tabIdOpenedFrom: funtypes.Number,
 	}),
 )
 
@@ -382,7 +384,7 @@ export const PersonalSignRequestDataEIP712 = funtypes.Intersect(
 	funtypes.ReadonlyObject({
 		originalParams: SignTypedDataParams,
 		type: funtypes.Literal('EIP712'),
-		message: EIP712Message,
+		message: EnrichedEIP712,
 	})
 )
 

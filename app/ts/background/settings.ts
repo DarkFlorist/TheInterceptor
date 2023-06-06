@@ -1,7 +1,7 @@
 import { ICON_NOT_ACTIVE, MOCK_PRIVATE_KEYS_ADDRESS } from '../utils/constants.js'
-import { LegacyWebsiteAccessArray, Page, PendingAccessRequestArray, PendingChainChangeConfirmationPromise, PendingInterceptorAccessRequestPromise, PendingPersonalSignPromise, PendingUserRequestPromise, Settings, WebsiteAccessArray, WebsiteAccessArrayWithLegacy, TabState, IsConnected } from '../utils/interceptor-messages.js'
+import { LegacyWebsiteAccessArray, Page, PendingAccessRequestArray, PendingChainChangeConfirmationPromise, PendingInterceptorAccessRequestPromise, PendingPersonalSignPromise, PendingTransaction, Settings, WebsiteAccessArray, WebsiteAccessArrayWithLegacy, TabState, IsConnected } from '../utils/interceptor-messages.js'
 import { Semaphore } from '../utils/semaphore.js'
-import { browserStorageLocalGet, browserStorageLocalSet, browserStorageLocalSetKeys, browserStorageLocalSingleGetWithDefault } from '../utils/typescript.js'
+import { browserStorageLocalGet, browserStorageLocalSet, browserStorageLocalSetKeys, browserStorageLocalSingleGetWithDefault } from '../utils/storageUtils.js'
 import { AddressInfoArray, ContactEntries, SignerName } from '../utils/user-interface-types.js'
 import { EthereumSubscriptions, SimulationResults } from '../utils/visualizer-types.js'
 import { EthereumAddress, EthereumAddressOrMissing, EthereumQuantity } from '../utils/wire-types.js'
@@ -99,16 +99,34 @@ export async function getOpenedAddressBookTabId() {
 	return funtypes.Union(funtypes.Undefined, funtypes.Number).parse(tabIdData)
 }
 
-export async function getConfirmationWindowPromise(): Promise<PendingUserRequestPromise | undefined> {
-	const results = await browserStorageLocalSingleGetWithDefault('ConfirmationWindowPromise', undefined)
-	return funtypes.Union(funtypes.Undefined, PendingUserRequestPromise).parse(results)
+export async function getPendingTransactions(): Promise<readonly PendingTransaction[]> {
+	const results = await browserStorageLocalSingleGetWithDefault('transactionsPendingForUserConfirmation', [])
+	return funtypes.ReadonlyArray(PendingTransaction).parse(results)
 }
 
-export async function setConfirmationWindowPromise(promise: PendingUserRequestPromise | undefined) {
-	if (promise === undefined) {
-		return await browser.storage.local.remove('ConfirmationWindowPromise')
-	}
-	return await browserStorageLocalSet('ConfirmationWindowPromise', PendingUserRequestPromise.serialize(promise) as string)
+const pendingTransactionsSemaphore = new Semaphore(1)
+export async function clearPendingTransactions() {
+	return await pendingTransactionsSemaphore.execute(async () => {
+		return await browserStorageLocalSet('transactionsPendingForUserConfirmation', funtypes.ReadonlyArray(PendingTransaction).serialize([]) as string)
+	})
+}
+export async function appendPendingTransaction(promise: PendingTransaction) {
+	return await pendingTransactionsSemaphore.execute(async () => {
+		const promises = [...await getPendingTransactions(), promise]
+		await browserStorageLocalSet('transactionsPendingForUserConfirmation', funtypes.ReadonlyArray(PendingTransaction).serialize(promises) as string)
+		return promises
+	})
+}
+export async function removePendingTransaction(requestId: number) {
+	return await pendingTransactionsSemaphore.execute(async () => {
+		const promises = await getPendingTransactions()
+		const foundPromise = promises.find((promise) => promise.request.requestId === requestId)
+		if (foundPromise !== undefined) {
+			const filteredPromises = promises.filter((promise) => promise.request.requestId !== requestId)
+			await browserStorageLocalSet('transactionsPendingForUserConfirmation', funtypes.ReadonlyArray(PendingTransaction).serialize(filteredPromises) as string)
+		}
+		return foundPromise
+	})
 }
 
 export async function getChainChangeConfirmationPromise(): Promise<PendingChainChangeConfirmationPromise | undefined> {
@@ -279,4 +297,12 @@ export async function updateEthereumSubscriptions(updateFunc: (prevState: Ethere
 		const subscriptions = EthereumSubscriptions.parse(await browserStorageLocalSingleGetWithDefault('ethereumSubscriptions', []))
 		return await browserStorageLocalSet('ethereumSubscriptions', EthereumSubscriptions.serialize(updateFunc(subscriptions)) as string)
 	})
+}
+
+export async function getUseTabsInsteadOfPopup() {
+	return funtypes.Boolean.parse(await browserStorageLocalSingleGetWithDefault('useTabsInsteadOfPopup', false))
+}
+
+export async function setUseTabsInsteadOfPopup(useTabsInsteadOfPopup: boolean) {
+	return await browserStorageLocalSet('useTabsInsteadOfPopup', funtypes.Boolean.serialize(useTabsInsteadOfPopup) as string)
 }

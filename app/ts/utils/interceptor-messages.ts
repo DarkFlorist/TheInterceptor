@@ -1,7 +1,7 @@
 import * as funtypes from 'funtypes'
 import { AddressBookEntries, AddressBookEntry, AddressInfo, AddressInfoEntry, ContactEntries, SignerName, Website, WebsiteSocket } from './user-interface-types.js'
-import { EthereumAddress, EthereumQuantity, EthereumUnsignedTransaction, OldSignTypedDataParams, PersonalSignParams, SignTypedDataParams } from './wire-types.js'
-import { SimulationState, TokenPriceEstimate, SimResults, OptionalEthereumAddress } from './visualizer-types.js'
+import { EthereumAddress, EthereumQuantity, OldSignTypedDataParams, PersonalSignParams, SignTypedDataParams } from './wire-types.js'
+import { SimulationState, OptionalEthereumAddress, SimulatedAndVisualizedTransaction, SimResults, TokenPriceEstimate, WebsiteCreatedEthereumUnsignedTransaction } from './visualizer-types.js'
 import { ICON_ACCESS_DENIED, ICON_ACTIVE, ICON_NOT_ACTIVE, ICON_SIGNING, ICON_SIGNING_NOT_SUPPORTED, ICON_SIMULATING } from './constants.js'
 import { PersonalSignRequestData } from './personal-message-definitions.js'
 
@@ -54,7 +54,8 @@ export const TransactionConfirmation = funtypes.ReadonlyObject({
 	method: funtypes.Literal('popup_confirmDialog'),
 	options: funtypes.ReadonlyObject({
 		requestId: funtypes.Number,
-		accept: funtypes.Boolean
+		accept: funtypes.Boolean,
+		windowId: funtypes.Number,
 	})
 }).asReadonly()
 
@@ -161,6 +162,7 @@ export const Page = funtypes.Union(
 	funtypes.Literal('AccessList'),
 	funtypes.Literal('NotificationCenter'),
 	funtypes.Literal('ModifyAddress'),
+	funtypes.Literal('Settings'),
 )
 
 export type ChangePage = funtypes.Static<typeof ChangePage>
@@ -324,8 +326,8 @@ export const RefreshConfirmTransactionDialogSimulation = funtypes.ReadonlyObject
 		activeAddress: EthereumAddress,
 		simulationMode: funtypes.Boolean,
 		requestId: funtypes.Number,
-		transactionToSimulate: EthereumUnsignedTransaction,
-		website: Website,
+		transactionToSimulate: WebsiteCreatedEthereumUnsignedTransaction,
+		tabIdOpenedFrom: funtypes.Number,
 	}),
 }).asReadonly()
 
@@ -390,13 +392,14 @@ export const ChangeChainRequest = funtypes.ReadonlyObject({
 		simulationMode: funtypes.Boolean,
 		chainId: EthereumQuantity,
 		website: Website,
+		tabIdOpenedFrom: funtypes.Number,
 	})
 })
 
 export type RefreshPersonalSignMetadata = funtypes.Static<typeof RefreshPersonalSignMetadata>
 export const RefreshPersonalSignMetadata = funtypes.ReadonlyObject({
 	method: funtypes.Literal('popup_refreshPersonalSignMetadata'),
-	data: PersonalSignRequestData
+	data: PersonalSignRequestData,
 })
 
 export type InterceptorAccessDialog = funtypes.Static<typeof InterceptorAccessDialog>
@@ -412,6 +415,7 @@ export const InterceptorAccessDialog = funtypes.ReadonlyObject({
 		signerName: SignerName,
 		simulationMode: funtypes.Boolean,
 		socket: WebsiteSocket,
+		tabIdOpenedFrom: funtypes.Number,
 	})
 })
 
@@ -420,9 +424,9 @@ export const ConfirmTransactionSimulationBaseData = funtypes.ReadonlyObject({
 	activeAddress: EthereumAddress,
 	simulationMode: funtypes.Boolean,
 	requestId: funtypes.Number,
-	transactionToSimulate: EthereumUnsignedTransaction,
-	website: Website,
+	transactionToSimulate: WebsiteCreatedEthereumUnsignedTransaction,
 	signerName: SignerName,
+	tabIdOpenedFrom: funtypes.Number,
 })
 
 export type ConfirmTransactionDialogState = funtypes.Static<typeof ConfirmTransactionDialogState>
@@ -431,11 +435,12 @@ export const ConfirmTransactionDialogState = funtypes.Intersect(ConfirmTransacti
 	visualizerResults: funtypes.ReadonlyArray(SimResults),
 	addressBookEntries: AddressBookEntries,
 	tokenPrices: funtypes.ReadonlyArray(TokenPriceEstimate),
+	simulatedAndVisualizedTransactions: funtypes.ReadonlyArray(SimulatedAndVisualizedTransaction),
 }))
 
 export type ConfirmTransactionSimulationStateChanged = funtypes.Static<typeof ConfirmTransactionSimulationStateChanged>
 export const ConfirmTransactionSimulationStateChanged = funtypes.ReadonlyObject({
-	method: funtypes.Literal('popup_confirm_transaction_simulation_state_changed'),
+	statusCode: funtypes.Literal('success'),
 	data: ConfirmTransactionDialogState
 })
 
@@ -447,8 +452,26 @@ export const RefreshConfirmTransactionMetadata = funtypes.ReadonlyObject({
 
 export type ConfirmTransactionSimulationFailed = funtypes.Static<typeof ConfirmTransactionSimulationFailed>
 export const ConfirmTransactionSimulationFailed = funtypes.ReadonlyObject({
-	method: funtypes.Literal('popup_confirm_transaction_simulation_failed'),
+	statusCode: funtypes.Literal('failed'),
 	data: ConfirmTransactionSimulationBaseData,
+}).asReadonly()
+
+export type ConfirmTransactionTransactionSingleVisualization = funtypes.Static<typeof ConfirmTransactionTransactionSingleVisualization>
+export const ConfirmTransactionTransactionSingleVisualization = funtypes.Union(ConfirmTransactionSimulationFailed, ConfirmTransactionSimulationStateChanged)
+
+export type ConfirmTransactionTransactionSingleVisualizationArray = funtypes.Static<typeof ConfirmTransactionTransactionSingleVisualizationArray>
+export const ConfirmTransactionTransactionSingleVisualizationArray = funtypes.ReadonlyArray(ConfirmTransactionTransactionSingleVisualization)
+
+export type UpdateConfirmTransactionDialog = funtypes.Static<typeof UpdateConfirmTransactionDialog>
+export const UpdateConfirmTransactionDialog = funtypes.ReadonlyObject({
+	method: funtypes.Literal('popup_update_confirm_transaction_dialog'),
+	data: ConfirmTransactionTransactionSingleVisualizationArray,
+}).asReadonly()
+
+export type ConfirmTransactionDialogPendingChanged = funtypes.Static<typeof ConfirmTransactionDialogPendingChanged>
+export const ConfirmTransactionDialogPendingChanged = funtypes.ReadonlyObject({
+	method: funtypes.Literal('popup_confirm_transaction_dialog_pending_changed'),
+	data: ConfirmTransactionTransactionSingleVisualizationArray,
 }).asReadonly()
 
 export type WebsiteAddressAccess = funtypes.Static<typeof WebsiteAddressAccess>
@@ -530,6 +553,7 @@ export const UpdateHomePage = funtypes.ReadonlyObject({
 			addressBookEntries: AddressBookEntries,
 			tokenPrices: funtypes.ReadonlyArray(TokenPriceEstimate),
 			activeAddress: OptionalEthereumAddress,
+			simulatedAndVisualizedTransactions: funtypes.ReadonlyArray(SimulatedAndVisualizedTransaction),
 		}),
 		websiteAccessAddressMetadata: funtypes.ReadonlyArray(AddressInfoEntry),
 		pendingAccessMetadata: funtypes.ReadonlyArray(funtypes.Tuple(funtypes.String, AddressInfoEntry)),
@@ -541,6 +565,7 @@ export const UpdateHomePage = funtypes.ReadonlyObject({
 		tabIconDetails: funtypes.Union(TabIconDetails, funtypes.Undefined),
 		makeMeRich: funtypes.Boolean,
 		isConnected: IsConnected,
+		useTabsInsteadOfPopup: funtypes.Boolean,
 	})
 })
 
@@ -572,15 +597,15 @@ export const WindowMessageSignerAccountsChanged = funtypes.ReadonlyObject({
 export type WindowMessage = funtypes.Static<typeof WindowMessage>
 export const WindowMessage = WindowMessageSignerAccountsChanged
 
-export type PendingUserRequestPromise = funtypes.Static<typeof PendingUserRequestPromise>
-export const PendingUserRequestPromise = funtypes.ReadonlyObject({
-	website: Website,
+export type PendingTransaction = funtypes.Static<typeof PendingTransaction>
+export const PendingTransaction = funtypes.ReadonlyObject({
 	dialogId: funtypes.Number,
 	socket: WebsiteSocket,
 	request: InterceptedRequest,
-	transactionToSimulate: EthereumUnsignedTransaction,
+	transactionToSimulate: WebsiteCreatedEthereumUnsignedTransaction,
 	simulationMode: funtypes.Boolean,
 	activeAddress: EthereumAddress,
+	simulationResults: ConfirmTransactionTransactionSingleVisualization
 })
 
 export type PendingChainChangeConfirmationPromise = funtypes.Static<typeof PendingChainChangeConfirmationPromise>
@@ -619,6 +644,14 @@ export const TabState = funtypes.ReadonlyObject({
 	tabIconDetails: TabIconDetails,
 })
 
+export type ChangeSettings = funtypes.Static<typeof ChangeSettings>
+export const ChangeSettings = funtypes.ReadonlyObject({
+	method: funtypes.Literal('popup_ChangeSettings'),
+	data: funtypes.ReadonlyObject({
+		useTabsInsteadOfPopup: funtypes.Union(funtypes.Boolean, funtypes.Undefined),
+	})
+})
+
 export type PopupMessage = funtypes.Static<typeof PopupMessage>
 export const PopupMessage = funtypes.Union(
 	ChangeMakeMeRich,
@@ -652,6 +685,7 @@ export const PopupMessage = funtypes.Union(
 	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_interceptorAccessReadyAndListening') }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_confirmTransactionReadyAndListening') }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_requestNewHomeData') }),
+	ChangeSettings,
 )
 
 export type MessageToPopup = funtypes.Static<typeof MessageToPopup>
@@ -662,13 +696,13 @@ export const MessageToPopup = funtypes.Union(
 	PersonalSignRequest,
 	ChangeChainRequest,
 	InterceptorAccessDialog,
-	ConfirmTransactionSimulationStateChanged,
 	NewBlockArrived,
 	UpdateHomePage,
 	SettingsUpdated,
 	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_failed_to_get_block') }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_failed_to_update_simulation_state') }),
-	ConfirmTransactionSimulationFailed,
+	UpdateConfirmTransactionDialog,
+	ConfirmTransactionDialogPendingChanged,
 )
 
 export type ExternalPopupMessage = funtypes.Static<typeof MessageToPopup>

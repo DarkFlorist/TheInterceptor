@@ -28,7 +28,7 @@ export function NotificationCenter(param: NotificationCenterParams) {
 			socket: x.socket,
 			request: x.request,
 			...(x.requestAccessToAddress === undefined ? { address: undefined } : metadata.get(addressString(x.requestAccessToAddress)) || { // TODO, refactor away when we are using messaging instead of globals for these
-				type: 'addressInfo' as const,
+				type: 'addressInfo',
 				name: checksummedAddress(x.requestAccessToAddress),
 				address: x.requestAccessToAddress,
 				askForAddressAccess: false,

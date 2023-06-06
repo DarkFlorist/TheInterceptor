@@ -128,10 +128,15 @@ input[type = 'checkbox']:checked::before {
 	pointer-events: none;
 }
 
+.unsetcursor {
+	cursor: unset
+}
+
 .title {
 	overflow: hidden;
-	color:var(--text-color);
+	color: var(--text-color);
 	white-space: unset;
+	line-height: 1.3em;
 }
 
 .paragraph {
@@ -227,6 +232,7 @@ li {
 
 .card {
 	background-color: var(--card-bg-color);
+	box-shadow: 0 1px 4px 1px rgba(0, 0, 0, 0.5);
 }
 
 .card-content {
@@ -334,7 +340,7 @@ a.dropdown-item.is-active, button.dropdown-item.is-active {
 }
 
 .card-header-icon {
-	padding: unset;
+	padding: 0;
 	padding-left: 0.75rem;
 	padding-right: 0.75rem;
 }
@@ -374,10 +380,9 @@ svg.spinner > circle {
 }
 
 .center-to-page {
-	position: absolute;
+	position: fixed;
 	top: 50%;
 	left: 50%;
-	margin-right: -50%;
 	transform: translate(-50%, -50%);
 }
 /* Scrollbar */
@@ -559,7 +564,7 @@ svg.spinner > circle {
 	display: block;
 	visibility: hidden;
 	height: 0px;
-	margin-left: 47px;
+	padding-left: 43px;
 }
 
 .rename-address-button {
@@ -602,8 +607,8 @@ svg.spinner > circle {
 }
 
 .breadcrumb li + li::before {
-	margin-left: 5px;
-	margin-right: 5px;
+	margin-left: 0px;
+	margin-right: 0px;
 }
 
 .button.is-primary:focus:not(:active) {
@@ -666,4 +671,16 @@ svg.spinner > circle {
 	margin-right: 10px;
 	margin-top: 0px;
 	margin-bottom: 0px;
+}
+
+.eip-712-table {
+	display: grid;
+	grid-template-columns: max-content auto auto auto auto;
+	justify-content: center;
+	column-gap: 5px;
+	grid-template-columns: auto auto;
+	background-color: var(--alpha-005);
+	margin: 5px;
+	padding: 5px;
+	border-radius: 5px;
 }

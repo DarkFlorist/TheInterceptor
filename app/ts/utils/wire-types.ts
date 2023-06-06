@@ -115,6 +115,20 @@ export const LiteralConverterParserFactory: <TInput, TOutput> (input: TInput, ou
 	}
 }
 
+const BigIntParserNonHex: funtypes.ParsedValue<funtypes.String, bigint>['config'] = {
+	parse: value => {
+		if (!/^[0-9]+$/.test(value)) return { success: false, message: `${ value } is not a string encoded number.` }
+		else return { success: true, value: BigInt(value) }
+	},
+	serialize: value => {
+		if (typeof value !== 'bigint') return { success: false, message: `${ typeof value } is not a bigint.`}
+		return { success: true, value: `${ value.toString() }` }
+	},
+}
+
+export const NonHexBigInt = funtypes.String.withParser(BigIntParserNonHex)
+export type NonHexBigInt = funtypes.Static<typeof NonHexBigInt>
+
 //
 // Ethereum
 //
@@ -302,7 +316,7 @@ export const EthereumBlockHeader = funtypes.ReadonlyObject({
 	totalDifficulty: EthereumQuantity,
 	transactions: funtypes.ReadonlyArray(EthereumSignedTransaction),
 	uncles: funtypes.ReadonlyArray(EthereumBytes32),
-	baseFeePerGas: EthereumQuantity,
+	baseFeePerGas: funtypes.Union(EthereumQuantity, funtypes.Undefined),
 	transactionsRoot: EthereumBytes32
 }).asReadonly()
 
@@ -316,7 +330,7 @@ export type EthGetLogsRequest = funtypes.Static<typeof EthGetLogsRequest>
 export const EthGetLogsRequest = funtypes.Intersect(
 	funtypes.Union(
 		funtypes.ReadonlyObject({ blockHash: EthereumBytes32 }).asReadonly(),
-		funtypes.ReadonlyObject({ fromBlock: EthereumQuantity, toBlock: funtypes.Union(EthereumQuantity, funtypes.Literal('latest')) }).asReadonly(),
+		funtypes.Partial({ fromBlock: EthereumBlockTag, toBlock: EthereumBlockTag }).asReadonly(),
 	),
 	funtypes.Partial({
 		address: funtypes.Union(EthereumAddress, funtypes.ReadonlyArray(EthereumAddress)),
@@ -524,16 +538,21 @@ export type ToWireType<T> =
 
 
 export type DappRequestTransaction = funtypes.Static<typeof DappRequestTransaction>
-export const DappRequestTransaction = funtypes.Partial({
-	from: EthereumAddress,
-	data: EthereumData,
-	gas: EthereumQuantity,
-	value: EthereumQuantity,
-	to: EthereumAddress,
-	gasPrice: EthereumQuantity,
-	maxPriorityFeePerGas: EthereumQuantity,
-	maxFeePerGas: EthereumQuantity,
-}).asReadonly()
+export const DappRequestTransaction = funtypes.Intersect(
+	funtypes.ReadonlyPartial({
+		from: EthereumAddress,
+		gas: EthereumQuantity,
+		value: EthereumQuantity,
+		to: funtypes.Union(EthereumAddress, funtypes.Null),
+		gasPrice: EthereumQuantity,
+		maxPriorityFeePerGas: EthereumQuantity,
+		maxFeePerGas: EthereumQuantity,
+	}),
+	funtypes.Union(
+		funtypes.ReadonlyPartial({ data: EthereumData }),
+		funtypes.ReadonlyPartial({ input: EthereumData })
+	)
+)
 
 export type EthereumBlockHeaderWithTransactionHashes = funtypes.Static<typeof EthereumBlockHeaderWithTransactionHashes>
 export const EthereumBlockHeaderWithTransactionHashes = funtypes.ReadonlyObject({
@@ -557,7 +576,7 @@ export const EthereumBlockHeaderWithTransactionHashes = funtypes.ReadonlyObject(
 	totalDifficulty: EthereumQuantity,
 	transactions: funtypes.ReadonlyArray(EthereumBytes32),
 	uncles: funtypes.ReadonlyArray(EthereumBytes32),
-	baseFeePerGas: EthereumQuantity,
+	baseFeePerGas: funtypes.Union(EthereumQuantity, funtypes.Undefined),
 	transactionsRoot: EthereumBytes32
 }).asReadonly()
 
@@ -634,6 +653,12 @@ export const SendTransactionParams = funtypes.ReadonlyObject({
 	params: funtypes.Tuple(DappRequestTransaction)
 })
 
+export type SendRawTransaction = funtypes.Static<typeof SendRawTransaction>
+export const SendRawTransaction = funtypes.ReadonlyObject({
+	method: funtypes.Literal('eth_sendRawTransaction'),
+	params: funtypes.Tuple(EthereumData),
+}).asReadonly()
+
 export type EthereumAccountsReply = funtypes.Static<typeof EthereumAccountsReply>
 export const EthereumAccountsReply = funtypes.ReadonlyArray(EthereumAddress)
 
@@ -646,29 +671,17 @@ export const TransactionReceiptParams = funtypes.ReadonlyObject({
 	params: funtypes.Tuple(EthereumBytes32)
 })
 
-export type EstimateGasParamsVariables = funtypes.Static<typeof EstimateGasParamsVariables>
-export const EstimateGasParamsVariables = funtypes.Intersect(
-	funtypes.Partial({
-		to: EthereumAddress,
-		from: EthereumAddress,
-		data: EthereumData,
-		value: EthereumQuantity,
-		gasPrice: EthereumQuantity,
-		gas: EthereumQuantity
-	})
-)
-
 export type EstimateGasParams = funtypes.Static<typeof EstimateGasParams>
 export const EstimateGasParams = funtypes.ReadonlyObject({
 	method: funtypes.Literal('eth_estimateGas'),
-	params: funtypes.Union(funtypes.Tuple(EstimateGasParamsVariables), funtypes.Tuple(EstimateGasParamsVariables, EthereumBlockTag))
+	params: funtypes.Union(funtypes.Tuple(DappRequestTransaction), funtypes.Tuple(DappRequestTransaction, EthereumBlockTag))
 })
 
 export type EthCallParams = funtypes.Static<typeof EthCallParams>
 export const EthCallParams = funtypes.ReadonlyObject({
 	method: funtypes.Literal('eth_call'),
 	params: funtypes.Tuple(
-		EstimateGasParamsVariables,
+		DappRequestTransaction,
 		EthereumBlockTag
 	)
 }).asReadonly()
@@ -733,6 +746,9 @@ export const JSONEncodeable: funtypes.Runtype<typeJSONEncodeable> = funtypes.Laz
 
 export type JSONEncodeableObject = funtypes.Static<typeof JSONEncodeableObject>
 export const JSONEncodeableObject = funtypes.ReadonlyRecord(funtypes.String, JSONEncodeable)
+
+export type JSONEncodeableObjectOrArray = funtypes.Static<typeof JSONEncodeableObjectOrArray>
+export const JSONEncodeableObjectOrArray = funtypes.Union(funtypes.ReadonlyArray(JSONEncodeable), funtypes.ReadonlyRecord(funtypes.String, JSONEncodeable))
 
 export type EIP712MessageUnderlying = funtypes.Static<typeof EIP712MessageUnderlying>
 export const EIP712MessageUnderlying = funtypes.ReadonlyObject({
@@ -813,20 +829,6 @@ export const RequestPermissions = funtypes.ReadonlyObject({
 	params: funtypes.Tuple( funtypes.ReadonlyObject({ eth_accounts: funtypes.ReadonlyObject({ }) }) )
 }).asReadonly()
 
-const BigIntParserNonHex: funtypes.ParsedValue<funtypes.String, bigint>['config'] = {
-	parse: value => {
-		if (!/^[0-9]+$/.test(value)) return { success: false, message: `${ value } is not a string encoded number.` }
-		else return { success: true, value: BigInt(value) }
-	},
-	serialize: value => {
-		if (typeof value !== 'bigint') return { success: false, message: `${ typeof value } is not a bigint.`}
-		return { success: true, value: `${ value.toString() }` }
-	},
-}
-
-export const NonHexBigInt = funtypes.String.withParser(BigIntParserNonHex)
-export type NonHexBigInt = funtypes.Static<typeof NonHexBigInt>
-
 export type GetTransactionCount = funtypes.Static<typeof GetTransactionCount>
 export const GetTransactionCount = funtypes.ReadonlyObject({
 	method: funtypes.Literal('eth_getTransactionCount'),
@@ -863,6 +865,7 @@ export const EthereumJsonRpcRequest = funtypes.Union(
 	TransactionByHashParams,
 	TransactionReceiptParams,
 	SendTransactionParams,
+	SendRawTransaction,
 	EthCallParams,
 	EthSubscribeParams,
 	EthUnSubscribeParams,

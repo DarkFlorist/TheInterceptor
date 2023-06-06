@@ -1,4 +1,4 @@
-import { MulticallResponse, EthereumUnsignedTransaction, EthereumSignedTransactionWithBlockData, EthGetStorageAtResponse, EthereumQuantity, EthereumBlockTag, EthTransactionReceiptResponse, EthereumData, EthereumBlockHeader, EstimateGasParamsVariables, EthereumBlockHeaderWithTransactionHashes, EthGetLogsRequest, EthGetLogsResponse } from '../../utils/wire-types.js'
+import { MulticallResponse, EthereumUnsignedTransaction, EthereumSignedTransactionWithBlockData, EthGetStorageAtResponse, EthereumQuantity, EthereumBlockTag, EthTransactionReceiptResponse, EthereumData, EthereumBlockHeader, EthereumBlockHeaderWithTransactionHashes, EthGetLogsRequest, EthGetLogsResponse, DappRequestTransaction } from '../../utils/wire-types.js'
 import { IUnsignedTransaction1559 } from '../../utils/ethereum.js'
 import { TIME_BETWEEN_BLOCKS, CHAINS, MOCK_ADDRESS } from '../../utils/constants.js'
 import { CHAIN } from '../../utils/user-interface-types.js'
@@ -85,7 +85,7 @@ export class EthereumClientService {
 		}
 	}
 
-	public readonly estimateGas = async (data: EstimateGasParamsVariables) => {
+	public readonly estimateGas = async (data: DappRequestTransaction) => {
 		const response = await this.requestHandler.jsonRpcRequest({ method: 'eth_estimateGas', params: [data] } )
 		return EthereumQuantity.parse(response)
 	}
@@ -165,7 +165,7 @@ export class EthereumClientService {
 		])
 		const balanceOfCallData = stringToUint8Array(tokenInterface.encodeFunctionData('decimals'))
 		const callTransaction = {
-			type: '1559' as const,
+			type: '1559',
 			from: MOCK_ADDRESS,
 			to: token,
 			value: 0n,
@@ -173,7 +173,7 @@ export class EthereumClientService {
 			maxFeePerGas: 0n,
 			maxPriorityFeePerGas: 0n,
 			gasLimit: 15_000_000n,
-		} as const
+		}
 		const response = await this.call(callTransaction)
 		return EthereumQuantity.parse(response)
 	}

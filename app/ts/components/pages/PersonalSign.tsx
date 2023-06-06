@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'preact/hooks'
-import { dataStringWith0xStart, stringToUint8Array, stringifyJSONWithBigInts } from '../../utils/bigint.js'
+import { dataStringWith0xStart, stringToUint8Array } from '../../utils/bigint.js'
 import { AddingNewAddressType, AddressBookEntry, RenameAddressCallBack, SignerName } from '../../utils/user-interface-types.js'
 import Hint from '../subcomponents/Hint.js'
 import { ErrorCheckBox, Error as ErrorComponent} from '../subcomponents/Error.js'
@@ -11,14 +11,15 @@ import { assertNever } from '../../utils/typescript.js'
 import { SimpleTokenApprovalVisualisation } from '../simulationExplaining/customExplainers/SimpleTokenApprovalVisualisation.js'
 import { SmallAddress, WebsiteOriginText } from '../subcomponents/address.js'
 import { SignerLogoText } from '../subcomponents/signers.js'
-import { Spinner } from '../subcomponents/Spinner.js'
+import { CenterToPageTextSpinner } from '../subcomponents/Spinner.js'
 import { SomeTimeAgo } from '../subcomponents/SomeTimeAgo.js'
 import { QuarantineCodes } from '../simulationExplaining/Transactions.js'
-import { ComponentChildren } from 'preact'
 import { isSupportedChain } from '../../utils/constants.js'
 import { PersonalSignRequestData, PersonalSignRequestDataPermit, PersonalSignRequestDataPermit2, PersonalSignRequestDataSafeTx } from '../../utils/personal-message-definitions.js'
 import { OrderComponents, OrderComponentsExtraDetails } from '../simulationExplaining/customExplainers/OpenSeaOrder.js'
 import { Ether } from '../subcomponents/coins.js'
+import { EnrichedEIP712, EnrichedEIP712Message, GroupedSolidityType } from '../../utils/eip712Parsing.js'
+import { tryFocusingTab, humanReadableDate, CellElement } from '../ui-utils.js'
 
 type SignatureCardParams = {
 	personalSignRequestData: PersonalSignRequestData
@@ -44,11 +45,14 @@ function identifySignature(data: PersonalSignRequestData) {
 			simulationAction: 'Simulate Gnosis Safe message',
 			signingAction: 'Sign Gnosis Safe message',
 		}
-		case 'EIP712': return {
-			title: 'Arbitary EIP712 message signing request',
-			rejectAction: 'Reject EIP712 message',
-			simulationAction: 'Simulate EIP712 message',
-			signingAction: 'Sign EIP712 message',
+		case 'EIP712': {
+			const name = data.message.domain.name?.type === 'string' ? data.message.domain.name.value : 'Arbitary EIP712 message'
+			return {
+				title: `${ name } signing request`,
+				rejectAction: `Reject ${ name }`,
+				simulationAction: `Simulate ${ name }`,
+				signingAction: `Sign ${ name }`,
+			}
 		}
 		case 'NotParsed': return {
 			title: 'Arbitary Ethereum message signing request',
@@ -133,9 +137,7 @@ function SignRequest({ personalSignRequestData, renameAddressCallBack }: SignReq
 			renameAddressCallBack = { renameAddressCallBack }
 		/>
 		case 'EIP712': {
-			return <div class = 'textbox'>
-				<p class = 'paragraph' style = 'color: var(--subtitle-text-color)'>{ stringifyJSONWithBigInts(personalSignRequestData.message, 4) }</p>
-			</div>
+			return <ArbitaryEIP712 enrichedEIP712 = { personalSignRequestData.message } renameAddressCallBack = { renameAddressCallBack } />
 		}
 		case 'OrderComponents': {
 			return <OrderComponents
@@ -183,26 +185,35 @@ function SignRequest({ personalSignRequestData, renameAddressCallBack }: SignReq
 function SafeTx({ personalSignRequestDataSafeTx, renameAddressCallBack }: { personalSignRequestDataSafeTx: PersonalSignRequestDataSafeTx, renameAddressCallBack: RenameAddressCallBack }) {
 	return <>
 		<span class = 'log-table' style = 'justify-content: center; column-gap: 5px; grid-template-columns: auto auto'>
-			{ personalSignRequestDataSafeTx.message.domain.chainId !== undefined ? <>
-				<CellElement text = 'Chain: '/>
-				<CellElement text = { getChainName(BigInt(personalSignRequestDataSafeTx.message.domain.chainId)) }/>
-			</> : <></>}
+			{ personalSignRequestDataSafeTx.message.domain.chainId !== undefined
+				? <>
+					<CellElement text = 'Chain: '/>
+					<CellElement text = { getChainName(BigInt(personalSignRequestDataSafeTx.message.domain.chainId)) }/>
+				</>
+				: <></>
+			}
 			<CellElement text = 'baseGas: '/>
 			<CellElement text = { personalSignRequestDataSafeTx.message.message.baseGas }/>
 			<CellElement text = 'gasPrice: '/>
 			<CellElement text = { personalSignRequestDataSafeTx.message.message.gasPrice }/>
-			{ personalSignRequestDataSafeTx.message.message.gasToken !== 0n ? <>
-				<CellElement text = 'gasToken: '/>
-				<CellElement text = { <SmallAddress addressBookEntry = { personalSignRequestDataSafeTx.addressBookEntries.gasToken } renameAddressCallBack = { renameAddressCallBack } /> }/>
-			</> : <></> }
+			{ personalSignRequestDataSafeTx.message.message.gasToken !== 0n
+				? <>
+					<CellElement text = 'gasToken: '/>
+					<CellElement text = { <SmallAddress addressBookEntry = { personalSignRequestDataSafeTx.addressBookEntries.gasToken } renameAddressCallBack = { renameAddressCallBack } /> }/>
+				</>
+				: <></>
+			}
 			<CellElement text = 'nonce: '/>
 			<CellElement text = { personalSignRequestDataSafeTx.message.message.nonce }/>
 			<CellElement text = 'operation: '/>
 			<CellElement text = { personalSignRequestDataSafeTx.message.message.operation }/>
-			{ personalSignRequestDataSafeTx.message.message.refundReceiver !== 0n ? <>
-				<CellElement text = 'refundReceiver: '/>
-				<CellElement text = { <SmallAddress addressBookEntry = { personalSignRequestDataSafeTx.addressBookEntries.refundReceiver } renameAddressCallBack = { renameAddressCallBack } /> }/>
-			</> : <></> }
+			{ personalSignRequestDataSafeTx.message.message.refundReceiver !== 0n ?
+				<>
+					<CellElement text = 'refundReceiver: '/>
+					<CellElement text = { <SmallAddress addressBookEntry = { personalSignRequestDataSafeTx.addressBookEntries.refundReceiver } renameAddressCallBack = { renameAddressCallBack } /> }/>
+				</>
+				: <></>
+			}
 			<CellElement text = 'safeTxGas: '/>
 			<CellElement text = { personalSignRequestDataSafeTx.message.message.safeTxGas }/>
 			<CellElement text = 'to: '/>
@@ -217,8 +228,67 @@ function SafeTx({ personalSignRequestDataSafeTx, renameAddressCallBack }: { pers
 	</>
 }
 
-const CellElement = (param: { text: ComponentChildren }) => {
-	return <div class = 'log-cell' style = 'justify-content: right;'> <p class = 'paragraph' style = 'color: var(--subtitle-text-color)'> { param.text }</p></div>
+function visualizeEIP712Component(valueType: GroupedSolidityType, renameAddressCallBack: RenameAddressCallBack) {
+	switch(valueType.type) {
+		case 'address': return <SmallAddress addressBookEntry = { valueType.value } renameAddressCallBack = { renameAddressCallBack } />
+		case 'bool': return valueType.value
+		case 'bytes': return <div class = 'textbox' style = 'white-space: normal;'> <p class = 'paragraph' style = 'color: var(--subtitle-text-color)'>{ dataStringWith0xStart(valueType.value) }</p> </div>
+		case 'fixedBytes': return dataStringWith0xStart(valueType.value)
+		case 'integer': return valueType.value
+		case 'string': return valueType.value
+		case 'address[]': return valueType.value.map((value) => <SmallAddress addressBookEntry = { value } renameAddressCallBack = { renameAddressCallBack } />)
+		case 'bool[]': return `[ ${valueType.value.toString() }]`
+		case 'bytes[]':  return valueType.value.map((value) => <div class = 'textbox' style = 'white-space: normal;'> <p class = 'paragraph' style = 'color: var(--subtitle-text-color)'>{ dataStringWith0xStart(value) }</p> </div>)
+		case 'fixedBytes[]': return `[ ${valueType.value.toString() }]`
+		case 'integer[]': return `[ ${valueType.value.toString() }]`
+		case 'string[]': return `[ ${valueType.value.toString() }]`
+		default: assertNever(valueType)
+	}
+}
+type EIP712Table = {
+	enrichedEIP712Message: EnrichedEIP712Message
+	renameAddressCallBack: RenameAddressCallBack
+	isSubTable: boolean
+}
+
+function EIP712Table({ enrichedEIP712Message, renameAddressCallBack, isSubTable }: EIP712Table) {
+	return <span class = 'eip-712-table' style = { isSubTable ? 'justify-content: space-between;' : '' }>
+		<>{ Object.entries(enrichedEIP712Message).map(([key, entry]) => <>
+			{ entry === undefined
+				? <></>
+				: <>
+					<CellElement text = { `${ key }: ` }/>
+					{ entry.type === 'record' || entry.type === 'record[]' ?
+						entry.type === 'record[]' ?
+							<CellElement text = { entry.value.map((value) => <EIP712Table enrichedEIP712Message = { value } renameAddressCallBack = { renameAddressCallBack } isSubTable = { true }/>) } />
+							: <CellElement text = { <EIP712Table enrichedEIP712Message = { entry.value } renameAddressCallBack = { renameAddressCallBack } isSubTable = { true }/>
+						} />
+						: <CellElement text = { visualizeEIP712Component(entry, renameAddressCallBack) }/>
+					}
+				</>
+			}
+		</>) } </>
+	</span>
+}
+
+type ArbitaryEIP712Params = {
+	enrichedEIP712: EnrichedEIP712
+	renameAddressCallBack: RenameAddressCallBack
+}
+
+function ArbitaryEIP712({ enrichedEIP712, renameAddressCallBack }: ArbitaryEIP712Params) {
+	return <>
+		<EIP712Table 
+			enrichedEIP712Message = { enrichedEIP712.domain }
+			renameAddressCallBack = { renameAddressCallBack }
+			isSubTable = { false }
+		/>
+		<EIP712Table 
+			enrichedEIP712Message = { enrichedEIP712.message }
+			renameAddressCallBack = { renameAddressCallBack }
+			isSubTable = { false }
+		/>
+	</>
 }
 
 export function Permit2ExtraDetails({ permit2 }: { permit2: PersonalSignRequestDataPermit2 }) {
@@ -232,7 +302,7 @@ export function Permit2ExtraDetails({ permit2 }: { permit2: PersonalSignRequestD
 		<CellElement text = 'Spender can spend for:'/>
 		<CellElement text = { <>
 			<SomeTimeAgo priorTimestamp = { new Date(Number(permit2.message.message.details.expiration) * 1000) } countBackwards = { true }/>
-			{` (until ${ new Date(Number(permit2.message.message.details.expiration) * 1000).toISOString().split('T')[0] })`}
+			{` (until ${ humanReadableDate(permit2.message.message.details.expiration) })`}
 		</> }/>
 	</>
 }
@@ -271,17 +341,20 @@ export function ExtraDetails({ personalSignRequestData, renameAddressCallBack }:
 				<span class = 'icon' style = 'color: var(--text-color); font-weight: unset; font-size: 0.8em;'> V </span>
 			</div>
 		</header>
-		{ !showSummary ? <></> : <>
-			<div class = 'card-content'>
-				<div class = 'container' style = 'margin-bottom: 10px;'>
-					<span class = 'log-table' style = 'justify-content: center; column-gap: 5px; grid-template-columns: auto auto'>
-						{ personalSignRequestData.type !== 'Permit2' ? <></> : <Permit2ExtraDetails permit2 = { personalSignRequestData }/> }
-						{ personalSignRequestData.type !== 'Permit' ? <></> : <PermitExtraDetails permit = { personalSignRequestData }/> }
-						{ personalSignRequestData.type !== 'OrderComponents' ? <></> : <OrderComponentsExtraDetails orderComponents = { personalSignRequestData.message } renameAddressCallBack = { renameAddressCallBack }/> }
-					</span>
+		{ !showSummary
+			? <></>
+			: <>
+				<div class = 'card-content'>
+					<div class = 'container' style = 'margin-bottom: 10px;'>
+						<span class = 'log-table' style = 'justify-content: center; column-gap: 5px; grid-template-columns: auto auto'>
+							{ personalSignRequestData.type !== 'Permit2' ? <></> : <Permit2ExtraDetails permit2 = { personalSignRequestData }/> }
+							{ personalSignRequestData.type !== 'Permit' ? <></> : <PermitExtraDetails permit = { personalSignRequestData }/> }
+							{ personalSignRequestData.type !== 'OrderComponents' ? <></> : <OrderComponentsExtraDetails orderComponents = { personalSignRequestData.message } renameAddressCallBack = { renameAddressCallBack }/> }
+						</span>
+					</div>
 				</div>
-			</div>
-		</> }
+			</>
+		}
 	</div>
 }
 
@@ -310,7 +383,6 @@ type ButtonsParams = {
 }
 
 export function PersonalSign() {
-	const [requestIdToConfirm, setRequestIdToConfirm] = useState<number | undefined>(undefined)
 	const [addingNewAddress, setAddingNewAddress] = useState<AddingNewAddressType | 'renameAddressModalClosed'> ('renameAddressModalClosed')
 	const [personalSignRequestData, setPersonalSignRequestData] = useState<PersonalSignRequestData | undefined>(undefined)
 	const [forceSend, setForceSend] = useState<boolean>(false)
@@ -321,7 +393,6 @@ export function PersonalSign() {
 			if (message.method === 'popup_addressBookEntriesChanged') return refreshMetadata()
 			if (message.method !== 'popup_personal_sign_request') return
 			setPersonalSignRequestData(message.data)
-			setRequestIdToConfirm(message.data.requestId)
 		}
 		browser.runtime.onMessage.addListener(popupMessageListener)
 		sendPopupMessageToBackgroundPage({ method: 'popup_personalSignReadyAndListening' })
@@ -334,14 +405,16 @@ export function PersonalSign() {
 	}
 
 	async function approve() {
-		if ( requestIdToConfirm === undefined) throw new Error('Request id is missing')
-		await sendPopupMessageToBackgroundPage({ method: 'popup_personalSign', options: { requestId: requestIdToConfirm, accept: true } })
+		if (personalSignRequestData === undefined) throw new Error('personalSignRequestData is missing')
+		await tryFocusingTab(personalSignRequestData.tabIdOpenedFrom)
+		await sendPopupMessageToBackgroundPage({ method: 'popup_personalSign', options: { requestId: personalSignRequestData.requestId, accept: true } })
 		globalThis.close()
 	}
 
 	async function reject() {
-		if ( requestIdToConfirm === undefined) throw new Error('Request id is missing')
-		await sendPopupMessageToBackgroundPage({ method: 'popup_personalSign', options: { requestId: requestIdToConfirm, accept: false } })
+		if (personalSignRequestData === undefined) throw new Error('personalSignRequestData is missing')
+		await tryFocusingTab(personalSignRequestData.tabIdOpenedFrom)
+		await sendPopupMessageToBackgroundPage({ method: 'popup_personalSign', options: { requestId: personalSignRequestData.requestId, accept: false } })
 		globalThis.close()
 	}
 
@@ -363,8 +436,9 @@ export function PersonalSign() {
 			<button className = 'button is-primary button-overflow dialog-button-right'
 				onClick = { params.approve }
 				disabled = { isConfirmDisabled(params.personalSignRequestData, params.activeAddress.address) }>
-				{ params.personalSignRequestData.simulationMode ? `${ identified.simulationAction }!` :
-					<SignerLogoText { ...{
+				{ params.personalSignRequestData.simulationMode
+					? `${ identified.simulationAction }!`
+					: <SignerLogoText { ...{
 						signerName: params.signerName,
 						text: identified.signingAction,
 					}}/>
@@ -378,21 +452,15 @@ export function PersonalSign() {
 		setAddingNewAddress({ addingAddress: false, entry: entry })
 	}
 
-	if (personalSignRequestData === undefined) {
-		return <main class = 'center-to-page'>
-			<div class = 'vertical-center' style = 'scale: 3'>
-				<Spinner/>
-				<span style = 'margin-left: 0.2em' > Visualizing... </span>
-			</div>
-		</main>
-	}
+	if (personalSignRequestData === undefined) return <CenterToPageTextSpinner text = 'Visualizing...'/>
 	
 	return (
 		<main>
 			<Hint>
 				<div class = { `modal ${ addingNewAddress !== 'renameAddressModalClosed' ? 'is-active' : ''}` }>
-					{ addingNewAddress === 'renameAddressModalClosed' ? <></> :
-						<AddNewAddress
+					{ addingNewAddress === 'renameAddressModalClosed'
+						? <></>
+						: <AddNewAddress
 							setActiveAddressAndInformAboutIt = { undefined }
 							addingNewAddress = { addingNewAddress }
 							close = { () => { setAddingNewAddress('renameAddressModalClosed') } }
@@ -404,7 +472,7 @@ export function PersonalSign() {
 				<div className = 'block' style = 'margin-bottom: 0px; display: flex; justify-content: space-between; flex-direction: column; height: 100%; position: fixed; width: 100%'>
 					<div style = 'overflow-y: auto'>
 						<header class = 'card-header window-header' style = 'height: 40px; border-top-left-radius: 0px; border-top-right-radius: 0px'>
-							<div class = 'card-header-icon noselect nopointer' style = 'overflow: hidden; padding: 0px;'>
+							<div class = 'card-header-icon noselect nopointer' style = 'overflow: hidden;'>
 								<WebsiteOriginText { ...personalSignRequestData.website } />
 							</div>
 							<p class = 'card-header-title' style = 'overflow: hidden; font-weight: unset; flex-direction: row-reverse;'>
@@ -422,15 +490,16 @@ export function PersonalSign() {
 
 					<nav class = 'window-header' style = 'display: flex; justify-content: space-around; width: 100%; flex-direction: column; padding-bottom: 10px; padding-top: 10px;'>
 						
-						{ isPossibleToSend(personalSignRequestData, personalSignRequestData.activeAddress.address) && personalSignRequestData.quarantine ? 
-							<div style = 'display: grid'>
+						{ isPossibleToSend(personalSignRequestData, personalSignRequestData.activeAddress.address) && personalSignRequestData.quarantine
+							? <div style = 'display: grid'>
 								<div style = 'margin: 0px; margin-bottom: 10px; margin-left: 20px; margin-right: 20px; '>
 									<ErrorCheckBox text = { 'I understand that there are issues with this signature request but I want to send it anyway against Interceptors recommendations.' } checked = { forceSend } onInput = { setForceSend } />
 								</div>
 							</div>
-						: <></> }
-						{ personalSignRequestData.simulationMode && (personalSignRequestData.activeAddress.address === undefined || personalSignRequestData.activeAddress.address !== MOCK_PRIVATE_KEYS_ADDRESS || personalSignRequestData.originalParams.method != 'personal_sign')  ?
-							<div style = 'display: grid'>
+							: <></>
+						}
+						{ personalSignRequestData.simulationMode && (personalSignRequestData.activeAddress.address === undefined || personalSignRequestData.activeAddress.address !== MOCK_PRIVATE_KEYS_ADDRESS || personalSignRequestData.originalParams.method != 'personal_sign')
+							? <div style = 'display: grid'>
 								<div style = 'margin: 0px; margin-bottom: 10px; margin-left: 20px; margin-right: 20px; '>
 									<ErrorComponent text = 'Unfortunately we cannot simulate message signing as it requires private key access 😢.'/>
 								</div>

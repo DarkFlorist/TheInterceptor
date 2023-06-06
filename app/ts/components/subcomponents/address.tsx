@@ -1,9 +1,11 @@
-import { addressString, checksummedAddress } from '../../utils/bigint.js'
-import Blockie from './PreactBlocky.js'
+import { checksummedAddress } from '../../utils/bigint.js'
+import { Blockie } from './PreactBlocky.js'
 import { AddressBookEntry, AddressInfo, RenameAddressCallBack, Website } from '../../utils/user-interface-types.js'
 import { CopyToClipboard } from './CopyToClipboard.js'
 import { ApproveIcon, ArrowIcon } from '../subcomponents/icons.js'
 import { JSX } from 'preact/jsx-runtime'
+import { useSignal } from '@preact/signals'
+import { useEffect } from 'preact/hooks'
 
 export function findAddressInfo(addressToFind: bigint, addressInfos: readonly AddressInfo[]) {
 	for (const info of addressInfos) {
@@ -27,13 +29,12 @@ export type AddressIconParams = {
 
 export function AddressIcon(param: AddressIconParams) {
 	const style = `background-color: var(--unimportant-text-color); ${ param.isBig ? `width: 40px; height: 40px;` : `width: 24px; height: 24px;` }`
-	if (param.address !== undefined && param.logoUri === undefined) {
+	const addr = param.address
+	if (addr !== undefined && param.logoUri === undefined) {
+		const address = useSignal<bigint>(addr)
+		useEffect(() => { address.value = addr }, [param.address])
 		return <div style = { style } class = 'noselect nopointer'>
-			<Blockie
-				seed = { addressString(param.address).toLowerCase() }
-				size = { 8 }
-				scale = { param.isBig ? 5 : 3 }
-			/>
+			<Blockie address = { address } scale = { useSignal(param.isBig ? 5 : 3) } />
 		</div>
 	}
 	if (param.logoUri !== undefined) {
@@ -164,9 +165,9 @@ export function SmallAddress(params: SmallAddressParams) {
 						</CopyToClipboard>
 					</span>
 					<CopyToClipboard content = { checksummedAddress(params.addressBookEntry.address) } copyMessage = 'Address copied!' style = { { 'text-overflow': 'ellipsis', overflow: 'hidden' } }>
-						<p class = 'paragraph address-text noselect nopointer'>{ params.addressBookEntry.name }</p>
+						<p class = 'paragraph address-text noselect nopointer' style = { `color: ${ textColor }` }>{ params.addressBookEntry.name }</p>
 					</CopyToClipboard>
-					<button className = 'button is-primary is-small rename-address-button' onClick ={ () => params.renameAddressCallBack(params.addressBookEntry) }>
+					<button className = 'button is-primary is-small rename-address-button' onClick = { () => params.renameAddressCallBack(params.addressBookEntry) }>
 						<span class = 'icon'>
 							<img src = '../img/rename.svg'/>
 						</span>
@@ -227,11 +228,15 @@ export function FromSmallAddressToSmallAddress({ from, to, renameAddressCallBack
 	</span>
 }
 
-export function WebsiteOriginText( { icon, websiteOrigin, textColor }: Website & { textColor?: string }) {
-	return <a style = 'margin: 2px; border-radius: 40px 40px 40px 40px; display: flex; padding: 4px 10px 4px 10px; overflow: hidden;'>
-		<span style = 'margin-right: 5px; width: 24px; height: 24px; min-width: 24px'>
+export function WebsiteOriginText( { icon, websiteOrigin, title }: Website) {
+	return <div class = 'card-header-icon unsetcursor' style = 'width: 100%; padding: 0'>
+		<span style = 'width: 24px; height: 24px; min-width: 24px'>
 			<img src = { icon } style = 'width: 24px; height: 24px;'/>
 		</span>
-		<p class = 'address-text' style = {`color: ${ textColor === undefined ? 'var(--text-color)' : textColor }; padding-left: 5px;` }>{ websiteOrigin }</p>
-	</a>
+
+		<div class = 'media-content' style = 'overflow-y: hidden; overflow-x: clip; display: block; padding-left: 10px;'>
+			<p class = 'title is-5 is-spaced address-text' style = 'overflow: hidden;'>{ websiteOrigin }</p>
+			<p class = 'subtitle is-7' style = 'text-overflow: ellipsis; white-space: nowrap; overflow: hidden;'> { title } </p>
+		</div>
+	</div>
 }

@@ -3,7 +3,8 @@ import { EthBalanceChangesWithMetadata, SimResults, SimulatedAndVisualizedTransa
 import { AddressBookEntry } from '../utils/user-interface-types.js'
 
 // todo, move this to background page (and refacor hard) to form when simulation is made and we can get rid of most of the validations done here
-export function formSimulatedAndVisualizedTransaction(simState: SimulationState, visualizerResults: readonly SimResults[], addressMetaData: Map<string, AddressBookEntry> ): readonly SimulatedAndVisualizedTransaction[] {
+export function formSimulatedAndVisualizedTransaction(simState: SimulationState, visualizerResults: readonly SimResults[], addressBookEntries: readonly AddressBookEntry[] ): readonly SimulatedAndVisualizedTransaction[] {
+	const addressMetaData = new Map(addressBookEntries.map((x) => [addressString(x.address), x]))
 	return simState.simulatedTransactions.map( (simulatedTx, index) => {
 
 		const from = addressMetaData.get(addressString(simulatedTx.signedTransaction.from))
@@ -52,11 +53,14 @@ export function formSimulatedAndVisualizedTransaction(simState: SimulationState,
 				chainId: simState.chain,
 				gas: simulatedTx.signedTransaction.gas,
 				input: simulatedTx.signedTransaction.input,
-				...(simulatedTx.signedTransaction.type === '1559' ? {
-					type: simulatedTx.signedTransaction.type,
-					maxFeePerGas: simulatedTx.signedTransaction.maxFeePerGas,
-					maxPriorityFeePerGas: simulatedTx.signedTransaction.maxPriorityFeePerGas,
-				} : { type: simulatedTx.signedTransaction.type }),
+				...(simulatedTx.signedTransaction.type === '1559'
+					? {
+						type: simulatedTx.signedTransaction.type,
+						maxFeePerGas: simulatedTx.signedTransaction.maxFeePerGas,
+						maxPriorityFeePerGas: simulatedTx.signedTransaction.maxPriorityFeePerGas,
+					}
+					: { type: simulatedTx.signedTransaction.type }
+				),
 				hash: simulatedTx.signedTransaction.hash,
 				nonce: simulatedTx.signedTransaction.nonce,
 			},
@@ -68,13 +72,17 @@ export function formSimulatedAndVisualizedTransaction(simState: SimulationState,
 			gasSpent: simulatedTx.multicallResponse.gasSpent,
 			quarantine: visualizerResults[index].quarantine,
 			quarantineCodes: visualizerResults[index].quarantineCodes,
-			...(simulatedTx.multicallResponse.statusCode === 'failure' ? {
-				error: simulatedTx.multicallResponse.error,
-				statusCode: simulatedTx.multicallResponse.statusCode,
-			} : {
-				statusCode: simulatedTx.multicallResponse.statusCode,
-			}),
+			...(simulatedTx.multicallResponse.statusCode === 'failure'
+				? {
+					error: simulatedTx.multicallResponse.error,
+					statusCode: simulatedTx.multicallResponse.statusCode,
+				}
+				: {
+					statusCode: simulatedTx.multicallResponse.statusCode,
+				}
+			),
 			website: visualizerResults[index].website,
+			transactionCreated: simulatedTx.transactionCreated,
 		}
 	})
 }

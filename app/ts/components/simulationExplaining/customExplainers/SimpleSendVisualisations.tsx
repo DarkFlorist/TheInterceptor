@@ -25,8 +25,9 @@ export function AddressBeforeAfter({ address, beforeAndAfter, renameAddressCallB
 			addressBookEntry = { address }
 			renameAddressCallBack = { renameAddressCallBack }
 		/>
-		{ beforeAndAfter === undefined ? <></> :
-			<span style = 'grid-template-columns: auto auto; display: grid; justify-content: space-between; margin-top: 10px'>
+		{ beforeAndAfter === undefined
+			? <></>
+			: <span style = 'grid-template-columns: auto auto; display: grid; justify-content: space-between; margin-top: 10px'>
 				<span style = 'grid-template-columns: auto; display: grid;'>
 					<p class = 'paragraph' style = 'color: var(--subtitle-text-color);'> Before:</p>
 					<TokenOrEth { ... { ...tokenOrEtherDefinition, amount: beforeAndAfter.before } }/>
@@ -91,7 +92,7 @@ function getBeforeAndAfterBalanceForAddress(ethBalances: readonly EthBalanceChan
 
 export function EtherTransferVisualisation({ simTx, renameAddressCallBack }: { simTx: SimulatedAndVisualizedEtherTransferTransaction, renameAddressCallBack: RenameAddressCallBack }) {
 	const senderBalanceChanges = getBeforeAndAfterBalanceForAddress(simTx.ethBalanceChanges, simTx.transaction.from.address)
-	const receiverBalanceChanges = getBeforeAndAfterBalanceForAddress(simTx.ethBalanceChanges, simTx.to.address)
+	const receiverBalanceChanges = getBeforeAndAfterBalanceForAddress(simTx.ethBalanceChanges, simTx.transaction.to.address)
 	if (senderBalanceChanges === undefined || receiverBalanceChanges === undefined) return <></>
 	return <SimpleSend
 		transaction = { { ...simTx, chainId: simTx.transaction.chainId } }
@@ -101,14 +102,14 @@ export function EtherTransferVisualisation({ simTx, renameAddressCallBack }: { s
 			useFullTokenName: false,
 		} }
 		sender = { { beforeAndAfter: senderBalanceChanges, address: simTx.transaction.from } }
-		receiver = { { beforeAndAfter: receiverBalanceChanges, address: simTx.to } }
+		receiver = { { beforeAndAfter: receiverBalanceChanges, address: simTx.transaction.to } }
 		renameAddressCallBack = { renameAddressCallBack }
 	/>
 }
 
 export function SimpleTokenTransferVisualisation({ simTx, renameAddressCallBack }: { simTx: SimulatedAndVisualizedSimpleTokenTransferTransaction, renameAddressCallBack: RenameAddressCallBack }) {
 	const transfer = simTx.tokenResults[0]
-	const asset = { ...('amount' in transfer ? { ...transfer.token, amount: transfer.amount } : { ...transfer.token, received: false, id: transfer.tokenId }) }
+	const asset = { ...(transfer.type === 'Token' ? { ...transfer.token, amount: transfer.amount } : { ...transfer.token, received: false, id: transfer.tokenId }) }
 
 	return <SimpleSend
 		transaction = { { ...simTx, chainId: simTx.transaction.chainId } }
