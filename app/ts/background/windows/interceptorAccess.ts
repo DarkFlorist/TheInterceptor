@@ -172,7 +172,13 @@ export async function requestAccessFromUser(
 				return previousPendingAccessRequests
 			})
 
-			if (justAddToPending) return await sendPopupMessageToOpenWindows({ method: 'popup_popup_interceptor_access_dialog_pending_changed', data: requests })
+			if (justAddToPending) {
+				if (requests.findIndex((req) => req.requestId === requestId) === 0) {
+					// this request is actually the first request, just highlight the dialog
+					return await sendPopupMessageToOpenWindows({ method: 'popup_interceptorAccessDialog', data: requests })
+				}
+				return await sendPopupMessageToOpenWindows({ method: 'popup_popup_interceptor_access_dialog_pending_changed', data: requests })
+			}
 			pendingAccessRequests.resolve(requests)
 			return true
 		})

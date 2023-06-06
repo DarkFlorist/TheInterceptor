@@ -180,19 +180,20 @@ export function InterceptorAccess() {
 			const message = ExternalPopupMessage.parse(msg)
 			if (message.method === 'popup_addressBookEntriesChanged') return refreshMetadata()
 			if (message.method === 'popup_websiteAccess_changed') return refreshMetadata()
-			if (message.method === 'popup_popup_interceptor_access_dialog_pending_changed') {
+			if (message.method === 'popup_interceptorAccessDialog' || message.method === 'popup_popup_interceptor_access_dialog_pending_changed') {
+				if (message.method === 'popup_popup_interceptor_access_dialog_pending_changed') {
+					if (pendingAccessRequestArray.length > 0) setInformationUpdatedTimestamp(Date.now())
+					setPendingRequestAddedNotification(true)
+				}
 				setAccessRequest(message.data)
-				if (pendingAccessRequestArray.length > 0) setInformationUpdatedTimestamp(Date.now())
 				const currentWindowId = (await browser.windows.getCurrent()).id
 				const currentTabId = (await browser.tabs.getCurrent()).id
 				if (currentWindowId === undefined) throw new Error('could not get current window Id!')
 				if (currentTabId === undefined) throw new Error('could not get current tab Id!')
-				setPendingRequestAddedNotification(true)
 				browser.windows.update(currentWindowId, { focused: true })
 				browser.tabs.update(currentTabId, { active: true })
 				return
 			}
-			if (message.method === 'popup_interceptorAccessDialog') return setAccessRequest(message.data)
 		}
 		browser.runtime.onMessage.addListener(popupMessageListener)
 		sendPopupMessageToBackgroundPage({ method: 'popup_interceptorAccessReadyAndListening' })
@@ -210,6 +211,7 @@ export function InterceptorAccess() {
 			requestId: accessRequest.requestId,
 		}
 		setPendingRequestAddedNotification(false)
+		setInformationUpdatedTimestamp(Date.now())
 		if (pendingAccessRequestArray.length === 1) await tryFocusingTab(accessRequest.socket.tabId)
 		await sendPopupMessageToBackgroundPage({ method: 'popup_interceptorAccess', options })
 	}
@@ -225,6 +227,7 @@ export function InterceptorAccess() {
 			requestId: accessRequest.requestId,
 		}
 		setPendingRequestAddedNotification(false)
+		setInformationUpdatedTimestamp(Date.now())
 		if (pendingAccessRequestArray.length === 1) await tryFocusingTab(accessRequest.socket.tabId)
 		await sendPopupMessageToBackgroundPage({ method: 'popup_interceptorAccess', options })
 	}
