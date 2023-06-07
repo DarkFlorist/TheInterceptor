@@ -180,8 +180,8 @@ export function InterceptorAccess() {
 			const message = ExternalPopupMessage.parse(msg)
 			if (message.method === 'popup_addressBookEntriesChanged') return refreshMetadata()
 			if (message.method === 'popup_websiteAccess_changed') return refreshMetadata()
-			if (message.method === 'popup_interceptorAccessDialog' || message.method === 'popup_popup_interceptor_access_dialog_pending_changed') {
-				if (message.method === 'popup_popup_interceptor_access_dialog_pending_changed') {
+			if (message.method === 'popup_interceptorAccessDialog' || message.method === 'popup_interceptor_access_dialog_pending_changed') {
+				if (message.method === 'popup_interceptor_access_dialog_pending_changed') {
 					if (pendingAccessRequestArray.length > 0) setInformationUpdatedTimestamp(Date.now())
 					setPendingRequestAddedNotification(true)
 				}

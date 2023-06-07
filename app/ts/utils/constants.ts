@@ -72,6 +72,7 @@ export const METAMASK_ERROR_TRANSACTION_REJECTD = 32003
 export const METAMASK_ERROR_METHOD_NOT_SUPPORTED = 32004
 export const METAMASK_ERROR_RATE_LIMITED = 32005
 
+export const METAMASK_ERROR_ALREADY_PENDING = { error: { code: 32002, message: `Access request pending already.` } }
 export const ERROR_INTERCEPTOR_NOT_READY = { error: { code: 1, message: 'Interceptor: Not ready' } }
 export const ERROR_INTERCEPTOR_NO_ACTIVE_ADDRESS = { error: { code: 2, message: 'Interceptor: No active address' } }
 export const ERROR_INTERCEPTOR_UNKNOWN_ORIGIN = { error: { code: 400, message: 'Interceptor: Unkown website origin' } }

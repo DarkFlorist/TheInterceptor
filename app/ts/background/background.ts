@@ -549,11 +549,11 @@ async function onContentScriptConnected(port: browser.runtime.Port, websiteTabCo
 				return sendMessageToContentScript(websiteTabConnections, socket, { 'result': '0x' }, request)
 			}
 
-			const access = verifyAccess(websiteTabConnections, socket, request.options.method, websiteOrigin, await getSettings())
-
-			if (access === 'askAccess' && request.options.method === 'eth_accounts') {
-				// do not prompt for eth_accounts, just reply with no accounts.
-				return sendMessageToContentScript(websiteTabConnections, socket, { 'result': [] }, request)
+			const access = verifyAccess(websiteTabConnections, socket, request.options.method === 'eth_requestAccounts', websiteOrigin, await getSettings())
+			if (access === 'noAccess') {
+				if (request.options.method === 'eth_accounts') return sendMessageToContentScript(websiteTabConnections, socket, { 'result': [] }, request)
+				// if user has not given access, assume we are on chain 1
+				if (request.options.method === 'eth_chainId') return sendMessageToContentScript(websiteTabConnections, socket, { 'result': EthereumQuantity.serialize(1n) }, request)
 			}
 
 			switch (access) {

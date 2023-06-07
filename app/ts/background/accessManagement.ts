@@ -1,4 +1,4 @@
-import { EthereumAddress, SupportedETHRPCCalls } from '../utils/wire-types.js'
+import { EthereumAddress } from '../utils/wire-types.js'
 import { postMessageIfStillConnected } from './background.js'
 import { getActiveAddress, websiteSocketToString } from './backgroundUtils.js'
 import { findAddressInfo } from './metadataUtils.js'
@@ -18,21 +18,19 @@ export function getConnectionDetails(websiteTabConnections: WebsiteTabConnection
 
 function setWebsitePortApproval(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, approved: boolean) {
 	const connection = getConnectionDetails(websiteTabConnections, socket)
-	if (connection == undefined) return
+	if (connection === undefined) return
 	if (approved) connection.wantsToConnect = true
 	connection.approved = approved
 }
 
-export function verifyAccess(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, callMethod: string, websiteOrigin: string, settings: Settings): 'hasAccess' | 'noAccess' | 'askAccess' {
+export function verifyAccess(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, isEthRequestAccounts: boolean, websiteOrigin: string, settings: Settings): 'hasAccess' | 'noAccess' | 'askAccess' {
 	const connection = getConnectionDetails(websiteTabConnections, socket)
 	if (connection && connection.approved) return 'hasAccess'
-
-	const isRpcMethod = SupportedETHRPCCalls.includes(callMethod) !== undefined
 	const activeAddress = getActiveAddress(settings)
 	const access = activeAddress !== undefined ? hasAddressAccess(settings.websiteAccess, websiteOrigin, activeAddress, settings) : hasAccess(settings.websiteAccess, websiteOrigin)
 	if (access === 'hasAccess') return connectToPort(websiteTabConnections, socket, websiteOrigin, settings) ? 'hasAccess' : 'noAccess'
 	if (access === 'noAccess') return 'noAccess'
-	return isRpcMethod ? 'askAccess' : 'noAccess'
+	return isEthRequestAccounts ? 'askAccess' : 'noAccess'
 }
 
 export function sendMessageToApprovedWebsitePorts(websiteTabConnections: WebsiteTabConnections, method: string, data: unknown) {
