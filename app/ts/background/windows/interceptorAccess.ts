@@ -168,7 +168,7 @@ export async function requestAccessFromUser(
 			return previousPendingAccessRequests
 		})
 
-		if (requests.find((x) => x.requestId === requestId) === undefined) {
+		if (requests.find((x) => x.requestId === requestId && x.socket.connectionName === socket.connectionName) === undefined) {
 			if (request !== undefined) {
 				postMessageIfStillConnected(websiteTabConnections, socket, {
 					interceptorApproved: false,
