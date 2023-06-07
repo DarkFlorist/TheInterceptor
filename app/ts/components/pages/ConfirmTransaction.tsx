@@ -269,7 +269,7 @@ export function ConfirmTransaction() {
 				</div>
 
 				<div class = 'block popup-block'>
-					<div style = 'overflow-y: auto'>
+					<div class = 'popup-block-scroll'>
 						{ isConnected?.isConnected === false ?
 							<div style = 'margin: 10px; background-color: var(--bg-color);'>
 								<ErrorComponent warning = { true } text = { <>Unable to connect to a Ethereum node. Retrying in <SomeTimeAgo priorTimestamp = { new Date(isConnected.lastConnnectionAttempt + TIME_BETWEEN_BLOCKS * 1000) } countBackwards = { true }/>.</> }/>

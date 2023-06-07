@@ -315,7 +315,7 @@ export function InterceptorAccess() {
 			</div>
 
 			<div class = 'block popup-block'>
-				<div style = 'overflow-y: auto'>
+				<div class = 'popup-block-scroll'>
 					{ pendingRequestAddedNotification === true
 						? <DinoSaysNotification
 							text = { `Hey! A new request was queued. Accept or Reject the previous request${ pendingAccessRequestArray.length > 1 ? 's' : '' } to see the new one.` }

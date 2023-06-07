@@ -686,13 +686,17 @@ svg.spinner > circle {
 }
 
 .popup-block {
-	padding: 10px;
 	display: flex;
 	justify-content: space-between;
 	flex-direction: column;
 	height: 100%;
 	position: fixed;
 	width: 100%
+}
+
+.popup-block-scroll {
+	overflow-y: auto;
+	padding: 10px;
 }
 
 .popup-button-row {
