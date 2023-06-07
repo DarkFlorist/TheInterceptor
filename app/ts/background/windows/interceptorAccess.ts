@@ -31,19 +31,18 @@ const onCloseWindow = async (windowId: number, websiteTabConnections: WebsiteTab
 		const reply = {
 			originalRequestAccessToAddress: pendingRequest.originalRequestAccessToAddress?.address,
 			requestAccessToAddress: pendingRequest.requestAccessToAddress?.address,
-			requestId: pendingRequest.requestId,
+			accessRequestId: pendingRequest.accessRequestId,
 			userReply: 'NoResponse' as const
 		}
-		await resolve(websiteTabConnections, reply, pendingRequest.socket, undefined, pendingRequest.website)
+		await resolve(websiteTabConnections, reply, pendingRequest.socket, pendingRequest.request, pendingRequest.website)
 	}
 }
 
 export async function resolveInterceptorAccess(websiteTabConnections: WebsiteTabConnections, reply: InterceptorAccessReply) {
 	const promises = await getPendingAccessRequests()
-	const pendingRequest = promises.find((req) => req.requestId === reply.requestId)
+	const pendingRequest = promises.find((req) => req.accessRequestId === reply.accessRequestId)
 	if (pendingRequest == undefined) return
-	
-	return await resolve(websiteTabConnections, reply, pendingRequest.socket, undefined, pendingRequest.website)
+	return await resolve(websiteTabConnections, reply, pendingRequest.socket, pendingRequest.request, pendingRequest.website)
 }
 
 export function getAddressMetadataForAccess(websiteAccess: WebsiteAccessArray, addressInfos: readonly AddressInfo[]): AddressInfoEntry[] {
@@ -146,11 +145,12 @@ export async function requestAccessFromUser(
 			if (request !== undefined) refuseAccess(websiteTabConnections, socket, request)
 			throw new Error('Opened dialog does not exist')
 		}
-		const requestId = request === undefined ? -Math.random() : request.requestId // if there's no particular request requesting this access, generate random ID for it
+		const accessRequestId =  `${ accessAddress } || ${ website.websiteOrigin }`
 		const pendingRequest = {
 			dialogId: openedDialog.popupOrTab.windowOrTab.id,
 			socket,
-			requestId,
+			request,
+			accessRequestId,
 			website,
 			requestAccessToAddress: accessAddress,
 			originalRequestAccessToAddress: accessAddress,
@@ -162,13 +162,13 @@ export async function requestAccessFromUser(
 		}
 
 		const requests = await updatePendingAccessRequests(async (previousPendingAccessRequests) => {
-			if (previousPendingAccessRequests.find((x) => x.website.websiteOrigin === pendingRequest.website.websiteOrigin && x.requestAccessToAddress?.address === pendingRequest.requestAccessToAddress?.address) === undefined) {
+			if (previousPendingAccessRequests.find((x) => x.accessRequestId === accessRequestId) === undefined) {
 				return previousPendingAccessRequests.concat(pendingRequest)
 			}
 			return previousPendingAccessRequests
 		})
 
-		if (requests.find((x) => x.requestId === requestId && x.socket.connectionName === socket.connectionName) === undefined) {
+		if (requests.find((x) => x.accessRequestId === accessRequestId) === undefined) {
 			if (request !== undefined) {
 				postMessageIfStillConnected(websiteTabConnections, socket, {
 					interceptorApproved: false,
@@ -205,7 +205,6 @@ async function resolve(websiteTabConnections: WebsiteTabConnections, accessReply
 		const userRequestedAddressChange = accessReply.requestAccessToAddress !== accessReply.originalRequestAccessToAddress
 		if (!userRequestedAddressChange) {
 			await changeAccess(websiteTabConnections, accessReply, website)
-			if (request !== undefined) await handleContentScriptMessage(websiteTabConnections, socket, request, website)
 		} else {
 			if (accessReply.requestAccessToAddress === undefined) throw new Error('Changed request to page level')
 			await changeAccess(websiteTabConnections, accessReply, website, false)
@@ -215,6 +214,7 @@ async function resolve(websiteTabConnections: WebsiteTabConnections, accessReply
 				activeAddress: accessReply.requestAccessToAddress,
 			})
 		}
+		if (request !== undefined) await handleContentScriptMessage(websiteTabConnections, socket, request, website)
 	}
 	await updateViewOrClose()
 }
@@ -237,7 +237,7 @@ export async function requestAddressChange(websiteTabConnections: WebsiteTabConn
 		const associatedAddresses = getAssociatedAddresses(settings, message.options.website.websiteOrigin, newActiveAddressAddressInfo)
 		
 		return previousPendingAccessRequests.map((request) => {
-			if (request.requestId === message.options.requestId) {
+			if (request.accessRequestId === message.options.accessRequestId) {
 				return {
 					...request,
 					associatedAddresses,

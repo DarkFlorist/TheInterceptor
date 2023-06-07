@@ -208,7 +208,7 @@ export function InterceptorAccess() {
 			websiteOrigin: accessRequest.website.websiteOrigin,
 			requestAccessToAddress: accessRequest.requestAccessToAddress?.address,
 			originalRequestAccessToAddress: accessRequest.originalRequestAccessToAddress?.address,
-			requestId: accessRequest.requestId,
+			accessRequestId: accessRequest.accessRequestId,
 		}
 		setPendingRequestAddedNotification(false)
 		setInformationUpdatedTimestamp(Date.now())
@@ -224,7 +224,7 @@ export function InterceptorAccess() {
 			websiteOrigin: accessRequest.website.websiteOrigin,
 			requestAccessToAddress: accessRequest.requestAccessToAddress?.address,
 			originalRequestAccessToAddress: accessRequest.originalRequestAccessToAddress?.address,
-			requestId: accessRequest.requestId,
+			accessRequestId: accessRequest.accessRequestId,
 		}
 		setPendingRequestAddedNotification(false)
 		setInformationUpdatedTimestamp(Date.now())
@@ -252,7 +252,7 @@ export function InterceptorAccess() {
 			socket: accessRequest.socket,
 			website: accessRequest.website,
 			requestAccessToAddress: accessRequest.requestAccessToAddress?.address,
-			requestId: accessRequest.requestId,
+			accessRequestId: accessRequest.accessRequestId,
 		} } )
 	}
 
@@ -264,7 +264,7 @@ export function InterceptorAccess() {
 			website: accessRequest.website,
 			requestAccessToAddress: accessRequest.requestAccessToAddress?.address,
 			newActiveAddress: address,
-			requestId: accessRequest.requestId,
+			accessRequestId: accessRequest.accessRequestId,
 		} } )
 	}
 

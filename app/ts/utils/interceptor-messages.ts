@@ -75,7 +75,7 @@ export const InterceptorAccessRefresh = funtypes.ReadonlyObject({
 		socket: WebsiteSocket,
 		website: Website,
 		requestAccessToAddress: OptionalEthereumAddress,
-		requestId: funtypes.Number,
+		accessRequestId: funtypes.String,
 	}),
 }).asReadonly()
 
@@ -90,7 +90,7 @@ export const InterceptorAccessChangeAddress = funtypes.ReadonlyObject({
 		website: Website,
 		requestAccessToAddress: OptionalEthereumAddress,
 		newActiveAddress: funtypes.Union(EthereumAddress, funtypes.Literal('signer')),
-		requestId: funtypes.Number,
+		accessRequestId: funtypes.String,
 	}),
 }).asReadonly()
 
@@ -461,12 +461,13 @@ export const PendingAccessRequest = funtypes.ReadonlyObject({
 	simulationMode: funtypes.Boolean,
 	socket: WebsiteSocket,
 	dialogId: funtypes.Number,
-	requestId: funtypes.Number,
+	request: funtypes.Union(InterceptedRequest, funtypes.Undefined),
+	accessRequestId: funtypes.String,
 }).asReadonly()
 
 export type InterceptorAccessReply = funtypes.Static<typeof InterceptorAccessReply>
 export const InterceptorAccessReply = funtypes.ReadonlyObject({
-	requestId: funtypes.Number, 
+	accessRequestId: funtypes.String,
 	originalRequestAccessToAddress: OptionalEthereumAddress,
 	requestAccessToAddress: OptionalEthereumAddress,
 	userReply: funtypes.Union(funtypes.Literal('Approved'), funtypes.Literal('Rejected'), funtypes.Literal('NoResponse') ),
