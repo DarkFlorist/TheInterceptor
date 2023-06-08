@@ -9,6 +9,15 @@ import { EthereumUnsignedTransactionToUnsignedTransaction, IUnsignedTransaction1
 const MOCK_PRIVATE_KEY = 0x1n // key used to sign mock transactions
 const GET_CODE_CONTRACT = 0x1ce438391307f908756fefe0fe220c0f0d51508an
 
+export const getWebsiteCreatedEthereumUnsignedTransactions = (simulatedTransactions: readonly SimulatedTransaction[]) => {
+	return simulatedTransactions.map((simulatedTransaction) => ({
+		transaction: simulatedTransaction.signedTransaction,
+		website: simulatedTransaction.website,
+		transactionCreated: simulatedTransaction.transactionCreated,
+		transactionSendingFormat: simulatedTransaction.transactionSendingFormat
+	}))
+}
+
 function convertSimulatedTransactionToWebsiteCreatedEthereumUnsignedTransaction(tx: SimulatedTransaction) {
 	return { transaction: tx.signedTransaction, website: tx.website, transactionCreated: tx.transactionCreated, transactionSendingFormat: tx.transactionSendingFormat, }
 }
@@ -24,8 +33,12 @@ export const copySimulationState = (simulationState: SimulationState): Simulatio
 	}
 }
 
-const getNonPrependedSimulatedTransactions = (simulationState: SimulationState) => {
-	return simulationState.simulatedTransactions.slice(simulationState.prependTransactionsQueue.length, simulationState.simulatedTransactions.length)
+const getNonPrependedSimulatedTransactionsFromState = (simulationState: SimulationState) => {
+	return getNonPrependedSimulatedTransactions(simulationState.prependTransactionsQueue, simulationState.simulatedTransactions)
+}
+
+export const getNonPrependedSimulatedTransactions = (prependTransactionsQueue: readonly WebsiteCreatedEthereumUnsignedTransaction[], simulatedTransactions: readonly SimulatedTransaction[]) => {
+	return simulatedTransactions.slice(prependTransactionsQueue.length, simulatedTransactions.length)
 }
 
 export const getSimulatedStack = (simulationState: SimulationState) => {
@@ -229,7 +242,7 @@ export const setPrependTransactionsQueue = async (ethereumClientService: Ethereu
 }
 
 export const removeTransaction = async (ethereumClientService: EthereumClientService, simulationState: SimulationState, transactionHash: bigint): Promise<SimulationState>  => {
-	const filtered = getNonPrependedSimulatedTransactions(simulationState).filter( (transaction) => transaction.signedTransaction.hash !== transactionHash)
+	const filtered = getNonPrependedSimulatedTransactionsFromState(simulationState).filter( (transaction) => transaction.signedTransaction.hash !== transactionHash)
 	return await setSimulationTransactions(ethereumClientService, simulationState, filtered.map((x) => convertSimulatedTransactionToWebsiteCreatedEthereumUnsignedTransaction(x)))
 }
 
@@ -240,7 +253,7 @@ export const removeTransactionAndUpdateTransactionNonces = async (ethereumClient
 	let newTransactions: WebsiteCreatedEthereumUnsignedTransaction[] = []
 	let transactionWasFound = false
 
-	for (const transaction of getNonPrependedSimulatedTransactions(simulationState)) {
+	for (const transaction of getNonPrependedSimulatedTransactionsFromState(simulationState)) {
 		if (transactionHash === transaction.signedTransaction.hash) {
 			transactionWasFound = true
 			continue
@@ -290,12 +303,13 @@ export const refreshSimulationState = async (ethereumClientService: EthereumClie
 		// if block number is the same, we don't need to compute anything as nothing has changed, but let's update timestamp to show the simulation was refreshed for this time
 		return { ...simulationState, simulationConductedTimestamp: new Date() }
 	}
-	const nonPrepended = getNonPrependedSimulatedTransactions(simulationState)
-	const nonceFixedTransactions = await getNonceFixedSimulatedTransactions(ethereumClientService, nonPrepended)
+	const nonPrepended = getNonPrependedSimulatedTransactionsFromState(simulationState)
+	const nonceFixedTransactions = await getNonceFixedSimulatedTransactions(ethereumClientService, simulationState.simulatedTransactions)
 	if (nonceFixedTransactions === 'NoNonceErrors') {
 		return await setSimulationTransactions(ethereumClientService, simulationState, nonPrepended.map((x) => convertSimulatedTransactionToWebsiteCreatedEthereumUnsignedTransaction(x)))
 	} else {
-		return await setSimulationTransactions(ethereumClientService, simulationState, nonceFixedTransactions.map((x) => convertSimulatedTransactionToWebsiteCreatedEthereumUnsignedTransaction(x)))
+		const nonPrependedNonceFixedTransactions = getNonPrependedSimulatedTransactions(simulationState.prependTransactionsQueue, nonceFixedTransactions)
+		return await setSimulationTransactions(ethereumClientService, simulationState, nonPrependedNonceFixedTransactions.map((x) => convertSimulatedTransactionToWebsiteCreatedEthereumUnsignedTransaction(x)))
 	}
 }
 
