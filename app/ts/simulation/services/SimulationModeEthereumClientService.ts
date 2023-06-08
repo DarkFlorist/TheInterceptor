@@ -55,7 +55,8 @@ export function getInputFieldFromDataOrInput(request: {input?: Uint8Array, data?
 	return new Uint8Array()
 }
 
-export const simulateEstimateGas = async (ethereumClientService: EthereumClientService, simulationState: SimulationState, data: DappRequestTransaction): Promise<EstimateGasError | { gas: bigint }> => {
+export const simulateEstimateGas = async (ethereumClientService: EthereumClientService, simulationState: SimulationState | undefined, data: DappRequestTransaction): Promise<EstimateGasError | { gas: bigint }> => {
+	if (simulationState === undefined) return { gas: await ethereumClientService.estimateGas(data) }
 	const sendAddress = data.from !== undefined ? data.from : MOCK_ADDRESS
 	const transactionCount = getSimulatedTransactionCount(ethereumClientService, simulationState, sendAddress)
 	const block = await ethereumClientService.getBlock()
@@ -442,10 +443,10 @@ const getBaseFeePerGasForNewBlock = (parent_gas_used: bigint, parent_gas_limit: 
 	return parent_base_fee_per_gas - base_fee_per_gas_delta
 }
 
-export async function getSimulatedBlock(ethereumClientService: EthereumClientService, simulationState: SimulationState, blockTag?: EthereumBlockTag, fullObjects?: true): Promise<EthereumBlockHeader>
-export async function getSimulatedBlock(ethereumClientService: EthereumClientService, simulationState: SimulationState, blockTag: EthereumBlockTag, fullObjects: boolean): Promise<EthereumBlockHeader | EthereumBlockHeaderWithTransactionHashes>
-export async function getSimulatedBlock(ethereumClientService: EthereumClientService, simulationState: SimulationState, blockTag: EthereumBlockTag, fullObjects: false): Promise<EthereumBlockHeaderWithTransactionHashes>
-export async function getSimulatedBlock(ethereumClientService: EthereumClientService, simulationState: SimulationState, blockTag: EthereumBlockTag = 'latest', fullObjects: boolean = true): Promise<EthereumBlockHeader | EthereumBlockHeaderWithTransactionHashes>  {
+export async function getSimulatedBlock(ethereumClientService: EthereumClientService, simulationState: SimulationState | undefined, blockTag?: EthereumBlockTag, fullObjects?: true): Promise<EthereumBlockHeader>
+export async function getSimulatedBlock(ethereumClientService: EthereumClientService, simulationState: SimulationState | undefined, blockTag: EthereumBlockTag, fullObjects: boolean): Promise<EthereumBlockHeader | EthereumBlockHeaderWithTransactionHashes>
+export async function getSimulatedBlock(ethereumClientService: EthereumClientService, simulationState: SimulationState | undefined, blockTag: EthereumBlockTag, fullObjects: false): Promise<EthereumBlockHeaderWithTransactionHashes>
+export async function getSimulatedBlock(ethereumClientService: EthereumClientService, simulationState: SimulationState | undefined, blockTag: EthereumBlockTag = 'latest', fullObjects: boolean = true): Promise<EthereumBlockHeader | EthereumBlockHeaderWithTransactionHashes>  {
 	if (simulationState === undefined || await canQueryNodeDirectly(ethereumClientService, simulationState, blockTag)) {
 		return await ethereumClientService.getBlock(blockTag, fullObjects)
 	}
