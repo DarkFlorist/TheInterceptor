@@ -238,7 +238,7 @@ export async function getAccounts(websiteTabConnections: WebsiteTabConnections, 
 }
 
 export async function chainId(simulator: Simulator) {
-	return { result: EthereumQuantity.serialize(await simulator.ethereum.getChainId()) }
+	return { result: EthereumQuantity.serialize(simulator.ethereum.getChainId()) }
 }
 
 export async function gasPrice(simulator: Simulator) {

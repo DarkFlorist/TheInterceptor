@@ -155,14 +155,14 @@ export async function closePopupOrTab(popupOrTab: PopupOrTab) {
 	} catch(e) {}
 }
 
-export async function addWindowTabListener(onCloseWindow: (id: number) => void) {
+export function addWindowTabListener(onCloseWindow: (id: number) => void) {
 	browser.windows.onRemoved.addListener(onCloseWindow)
 	browser.tabs.onRemoved.addListener(onCloseWindow)
 }
 
-export async function removeWindowTabListener(onCloseWindow: (id: number) => void) {
-	browser.windows.onRemoved.addListener(onCloseWindow)
-	browser.tabs.onRemoved.addListener(onCloseWindow)
+export function removeWindowTabListener(onCloseWindow: (id: number) => void) {
+	browser.windows.onRemoved.removeListener(onCloseWindow)
+	browser.tabs.onRemoved.removeListener(onCloseWindow)
 }
 
 export async function tryFocusingTab(tabId: number) {

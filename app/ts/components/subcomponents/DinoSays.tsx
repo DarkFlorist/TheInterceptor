@@ -10,10 +10,12 @@ export function DinoSays( { text } : { text: string }) {
 }
 
 export function DinoSaysNotification( { text, close } : { text: string, close: () => void }) {
-	return <div class = 'notification transaction-importance-box' style = 'margin: 10px; display: flex'>
-		<DinoSays text = { text }/>
-		<button class = 'card-header-icon' aria-label = 'remove' onClick = { close }>
-			<span class = 'icon' style = 'color: var(--text-color);'> X </span>
-		</button>
+	return <div style = 'display: flex; align-items: center; justify-content: center;'>
+		<div class = 'notification transaction-importance-box' style = 'padding: 10px; display: flex;'>
+			<DinoSays text = { text }/>
+			<button class = 'card-header-icon' aria-label = 'remove' onClick = { close }>
+				<span class = 'icon' style = 'color: var(--text-color);'> X </span>
+			</button>
+		</div>
 	</div>
 }
