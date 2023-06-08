@@ -9,6 +9,12 @@
 			"128": "img/head-not-active.png"
 		}
 	},
+	"browser_specific_settings": {
+		"gecko": {
+			"id": "3c236fbc-9114-43ed-a224-0cd1834aec4d",
+			"strict_min_version": "100.0"
+		}
+	},
 	"background": {
 		"page": "html/background.html"
 	},
