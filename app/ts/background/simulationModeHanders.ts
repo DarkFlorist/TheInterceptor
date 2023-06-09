@@ -57,8 +57,7 @@ export async function sendTransaction(
 	settings: Settings,
 ) {
 	const formTransaction = async() => {
-		const simulationState = (await getSimulationResults()).simulationState
-		if (simulationState === undefined) return undefined
+		const simulationState = simulationMode ? (await getSimulationResults()).simulationState : undefined
 		const block = getSimulatedBlock(ethereumClientService, simulationState)
 		const transactionDetails = sendTransactionParams.params[0]
 		const from = getFromField(websiteTabConnections, simulationMode, transactionDetails.from, getActiveAddressForDomain, socket, settings)
