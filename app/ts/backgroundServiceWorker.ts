@@ -1,6 +1,6 @@
 import './background/background.js'
 import { getHtmlFile } from './background/backgroundUtils.js'
-import { clearTabStates } from './background/settings.js'
+import { clearTabStates } from './background/storageVariables.js'
 import { sleep } from './utils/sleep.js'
 
 browser.action.setPopup({ popup: getHtmlFile('popup') })

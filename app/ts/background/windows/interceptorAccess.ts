@@ -8,7 +8,8 @@ import { getAssociatedAddresses, setAccess, updateWebsiteApprovalAccesses } from
 import { changeActiveAddressAndChainAndResetSimulation, handleContentScriptMessage, postMessageIfStillConnected, refuseAccess } from '../background.js'
 import { INTERNAL_CHANNEL_NAME, createInternalMessageListener, getHtmlFile, sendPopupMessageToOpenWindows, websiteSocketToString } from '../backgroundUtils.js'
 import { findAddressInfo } from '../metadataUtils.js'
-import { getSignerName, getTabState, getSettings, updatePendingAccessRequests, getPendingAccessRequests, clearPendingAccessRequests } from '../settings.js'
+import { getSettings } from '../settings.js'
+import { getSignerName, getTabState, updatePendingAccessRequests, getPendingAccessRequests, clearPendingAccessRequests } from '../storageVariables.js'
 
 type OpenedDialogWithListeners = {
 	popupOrTab: PopupOrTab
@@ -179,7 +180,12 @@ export async function requestAccessFromUser(
 			}
 			return
 		}
-		if (justAddToPending) return await sendPopupMessageToOpenWindows({ method: 'popup_interceptor_access_dialog_pending_changed', data: requests })
+		if (justAddToPending) {
+			if (requests.findIndex((x) => x.accessRequestId === accessRequestId) === 0) {
+				await sendPopupMessageToOpenWindows({ method: 'popup_interceptorAccessDialog', data: requests })
+			}
+			return await sendPopupMessageToOpenWindows({ method: 'popup_interceptor_access_dialog_pending_changed', data: requests })
+		}
 		pendingAccessRequests.resolve(requests)
 	})
 }

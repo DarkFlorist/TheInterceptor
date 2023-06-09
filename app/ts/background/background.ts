@@ -2,7 +2,8 @@ import { ConfirmTransactionTransactionSingleVisualization, HandleSimulationModeR
 import 'webextension-polyfill'
 import { Simulator } from '../simulation/simulator.js'
 import { EthereumJsonRpcRequest, EthereumQuantity, OldSignTypedDataParams, PersonalSignParams, SignTypedDataParams } from '../utils/wire-types.js'
-import { changeSimulationMode, clearTabStates, getMakeMeRich, getSettings, getSignerName, getSimulationResults, removeTabState, setIsConnected, updateSimulationResults, updateTabState } from './settings.js'
+import { clearTabStates, getSignerName, getSimulationResults, removeTabState, setIsConnected, updateSimulationResults, updateTabState } from './storageVariables.js'
+import { changeSimulationMode, getSettings, getMakeMeRich } from './settings.js'
 import { blockNumber, call, chainId, estimateGas, gasPrice, getAccounts, getBalance, getBlockByNumber, getCode, getLogs, getPermissions, getSimulationStack, getTransactionByHash, getTransactionCount, getTransactionReceipt, personalSign, requestPermissions, sendRawTransaction, sendTransaction, subscribe, switchEthereumChain, unsubscribe } from './simulationModeHanders.js'
 import { changeActiveAddress, changeMakeMeRich, changePage, resetSimulation, confirmDialog, refreshSimulation, removeTransaction, requestAccountsFromSigner, refreshPopupConfirmTransactionSimulation, confirmPersonalSign, confirmRequestAccess, changeInterceptorAccess, changeChainDialog, popupChangeActiveChain, enableSimulationMode, addOrModifyAddressInfo, getAddressBookData, removeAddressBookEntry, openAddressBook, homeOpened, interceptorAccessChangeAddressOrRefresh, refreshPopupConfirmTransactionMetadata, refreshPersonalSignMetadata, changeSettings } from './popupMessageHandlers.js'
 import { WebsiteCreatedEthereumUnsignedTransaction, SimulationState } from '../utils/visualizer-types.js'
@@ -17,7 +18,7 @@ import { retrieveWebsiteDetails, updateExtensionBadge, updateExtensionIcon } fro
 import { connectedToSigner, ethAccountsReply, signerChainChanged, walletSwitchEthereumChainReply } from './providerMessageHandlers.js'
 import { assertNever, assertUnreachable } from '../utils/typescript.js'
 import { EthereumClientService } from '../simulation/services/EthereumClientService.js'
-import { appendTransaction, copySimulationState, setPrependTransactionsQueue, simulatePersonalSign } from '../simulation/services/SimulationModeEthereumClientService.js'
+import { appendTransaction, copySimulationState, getNonPrependedSimulatedTransactions, getNonceFixedSimulatedTransactions, getWebsiteCreatedEthereumUnsignedTransactions, setPrependTransactionsQueue, setSimulationTransactions, simulatePersonalSign } from '../simulation/services/SimulationModeEthereumClientService.js'
 import { Semaphore } from '../utils/semaphore.js'
 import { isFailedToFetchError } from '../utils/errors.js'
 import { sendSubscriptionMessagesForNewBlock } from '../simulation/services/EthereumSubscriptionService.js'
@@ -36,7 +37,7 @@ let simulator: Simulator | undefined = undefined
 
 async function visualizeSimulatorState(simulationState: SimulationState, simulator: Simulator) {
 	const priceEstimator = new PriceEstimator(simulator.ethereum)
-	const transactions = simulationState.simulatedTransactions.map((x) => ({ transaction: x.signedTransaction, website: x.website, transactionCreated: x.transactionCreated, transactionSendingFormat: x.transactionSendingFormat}))
+	const transactions = getWebsiteCreatedEthereumUnsignedTransactions(simulationState.simulatedTransactions)
 	const visualizerResult = await simulator.visualizeTransactionChain(simulationState, transactions, simulationState.blockNumber, simulationState.simulatedTransactions.map((x) => x.multicallResponse))
 	const visualizerResults = visualizerResult.map((x, i) => ({ ...x, website: simulationState.simulatedTransactions[i].website }))
 	const addressBookEntries = await getAddressBookEntriesForVisualiser(simulator.ethereum, visualizerResult.map((x) => x.visualizerResults), simulationState, (await getSettings()).userAddressBook)
@@ -127,9 +128,28 @@ export async function refreshConfirmTransactionSimulation(
 
 	try {
 		const simulationStateWithNewTransaction = await appendTransaction(ethereumClientService, await getCopiedSimulationState(simulationMode), transactionToSimulate)
+		const noncefixed = await getNonceFixedSimulatedTransactions(ethereumClientService, simulationStateWithNewTransaction.simulatedTransactions)
+		if (noncefixed === 'NoNonceErrors') {
+			return {
+				statusCode: 'success' as const,
+				data: { ...info, ...await visualizeSimulatorState(simulationStateWithNewTransaction, simulator) }
+			}
+		}
+		const noncefixedNotPrepended = getWebsiteCreatedEthereumUnsignedTransactions(getNonPrependedSimulatedTransactions(simulationStateWithNewTransaction.prependTransactionsQueue, noncefixed))
+		const nonceFixedState = await setSimulationTransactions(ethereumClientService, simulationStateWithNewTransaction, noncefixedNotPrepended)
 		return {
 			statusCode: 'success' as const,
-			data: { ...info, ...await visualizeSimulatorState(simulationStateWithNewTransaction, simulator) }
+			data: {
+				...info,
+				...await visualizeSimulatorState(nonceFixedState, simulator),
+				transactionToSimulate: {
+					...transactionToSimulate,
+					transaction : {
+						...transactionToSimulate.transaction,
+						nonce: noncefixed[noncefixed.length - 1].signedTransaction.nonce,
+					}
+				}
+			}
 		}
 	} catch(error) {
 		if (!(error instanceof Error)) throw error
