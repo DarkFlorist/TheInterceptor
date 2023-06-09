@@ -8,7 +8,8 @@ import { getAssociatedAddresses, setAccess, updateWebsiteApprovalAccesses } from
 import { changeActiveAddressAndChainAndResetSimulation, handleContentScriptMessage, postMessageIfStillConnected, refuseAccess } from '../background.js'
 import { INTERNAL_CHANNEL_NAME, createInternalMessageListener, getHtmlFile, sendPopupMessageToOpenWindows, websiteSocketToString } from '../backgroundUtils.js'
 import { findAddressInfo } from '../metadataUtils.js'
-import { getSignerName, getTabState, getSettings, updatePendingAccessRequests, getPendingAccessRequests, clearPendingAccessRequests } from '../settings.js'
+import { getSettings } from '../settings.js'
+import { getSignerName, getTabState, updatePendingAccessRequests, getPendingAccessRequests, clearPendingAccessRequests } from '../storageVariables.js'
 
 type OpenedDialogWithListeners = {
 	popupOrTab: PopupOrTab

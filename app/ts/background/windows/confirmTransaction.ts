@@ -11,7 +11,7 @@ import { EstimateGasError, WebsiteCreatedEthereumUnsignedTransaction } from '../
 import { getActiveAddressForDomain } from '../accessManagement.js'
 import { refreshConfirmTransactionSimulation, sendMessageToContentScript, updateSimulationState } from '../background.js'
 import { getHtmlFile, sendPopupMessageToOpenWindows } from '../backgroundUtils.js'
-import { appendPendingTransaction, clearPendingTransactions, getPendingTransactions, getSimulationResults, removePendingTransaction } from '../settings.js'
+import { appendPendingTransaction, clearPendingTransactions, getPendingTransactions, getSimulationResults, removePendingTransaction } from '../storageVariables.js'
 
 export type Confirmation = 'Approved' | 'Rejected' | 'NoResponse'
 let openedDialog: PopupOrTab | undefined = undefined

@@ -1,7 +1,7 @@
 import { EthSubscribeParams, NewHeadsSubscriptionData } from '../../utils/wire-types.js'
 import { assertNever } from '../../utils/typescript.js'
 import { EthereumClientService } from './EthereumClientService.js'
-import { getEthereumSubscriptions, updateEthereumSubscriptions } from '../../background/settings.js'
+import { getEthereumSubscriptions, updateEthereumSubscriptions } from '../../background/storageVariables.js'
 import { EthereumSubscriptions, SimulationState } from '../../utils/visualizer-types.js'
 import { postMessageIfStillConnected } from '../../background/background.js'
 import { WebsiteSocket, WebsiteTabConnections } from '../../utils/user-interface-types.js'
