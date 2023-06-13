@@ -6,7 +6,8 @@ import { getAddressMetaData } from './metadataUtils.js'
 import { imageToUri } from '../utils/imageToUri.js'
 import { Future } from '../utils/future.js'
 import { WebsiteSocket, WebsiteTabConnections } from '../utils/user-interface-types.js'
-import { getIsConnected, getSettings, getSignerName, updateTabState } from './settings.js'
+import { getSettings } from './settings.js'
+import { getIsConnected, getSignerName, updateTabState } from './storageVariables.js'
 import { TabIcon, TabState } from '../utils/interceptor-messages.js'
 import { getLastKnownCurrentTabId } from './popupMessageHandlers.js'
 
@@ -66,9 +67,8 @@ export async function updateExtensionBadge() {
 		await setExtensionBadgeBackgroundColor({ color: WARNING_COLOR })
 		return await setExtensionBadgeText({ text: '!' })
 	}
-	const count = (await getSettings()).pendingAccessRequests.length
 	await setExtensionBadgeBackgroundColor({ color: PRIMARY_COLOR })
-	return await setExtensionBadgeText( { text: count === 0 ? '' : count.toString() } )
+	return await setExtensionBadgeText( { text: '' } )
 }
 
 export async function retrieveWebsiteDetails(port: browser.runtime.Port, websiteOrigin: string) {

@@ -10,9 +10,8 @@ import { InterceptorAccessList } from './pages/InterceptorAccessList.js'
 import { ethers } from 'ethers'
 import { PasteCatcher } from './subcomponents/PasteCatcher.js'
 import { truncateAddr } from '../utils/ethereum.js'
-import { NotificationCenter } from './pages/NotificationCenter.js'
 import { DEFAULT_TAB_CONNECTION } from '../utils/constants.js'
-import { ExternalPopupMessage, TabIconDetails, UpdateHomePage, Page, WebsiteAccessArray, PendingAccessRequestArray, Settings, WebsiteIconChanged, IsConnected } from '../utils/interceptor-messages.js'
+import { ExternalPopupMessage, TabIconDetails, UpdateHomePage, Page, WebsiteAccessArray, Settings, WebsiteIconChanged, IsConnected } from '../utils/interceptor-messages.js'
 import { version, gitCommitSha } from '../version.js'
 import { sendPopupMessageToBackgroundPage } from '../background/backgroundUtils.js'
 import { EthereumAddress } from '../utils/wire-types.js'
@@ -31,8 +30,6 @@ export function App() {
 	const [websiteAccessAddressMetadata, setWebsiteAccessAddressMetadata] = useState<readonly AddressInfoEntry[]>([])
 	const [activeChain, setActiveChain] = useState<bigint>(1n)
 	const [simulationMode, setSimulationMode] = useState<boolean>(true)
-	const [pendingAccessRequests, setPendingAccessRequests] = useState<PendingAccessRequestArray | undefined>(undefined)
-	const [pendingAccessMetadata, setPendingAccessMetadata] = useState<readonly [string, AddressInfoEntry][]>([])
 	const [tabIconDetails, setTabConnection] = useState<TabIconDetails>(DEFAULT_TAB_CONNECTION)
 	const [isSettingsLoaded, setIsSettingsLoaded] = useState<boolean>(false)
 	const [currentBlockNumber, setCurrentBlockNumber] = useState<bigint | undefined>(undefined)
@@ -112,7 +109,6 @@ export function App() {
 					data.simulation.activeAddress
 				)
 				setMakeMeRich(data.makeMeRich)
-				setPendingAccessMetadata(data.pendingAccessMetadata)
 				setSignerName(data.signerName)
 				setCurrentBlockNumber(data.currentBlockNumber)
 				setWebsiteAccessAddressMetadata(data.websiteAccessAddressMetadata)
@@ -133,7 +129,6 @@ export function App() {
 			setUseSignersAddressAsActiveAddress(settings.useSignersAddressAsActiveAddress)
 			setAddressInfos(settings.userAddressBook.addressInfos)
 			setWebsiteAccess(settings.websiteAccess)
-			setPendingAccessRequests(settings.pendingAccessRequests)
 		}
 
 		const updateTabIcon = ({ data }: WebsiteIconChanged) => {
@@ -216,10 +211,6 @@ export function App() {
 									<img src = '../img/internet.svg' width = '32' onClick = { () => setAndSaveAppPage('AccessList') }/>
 									<img src = '../img/address-book.svg' width = '32' onClick = { openAddressBook }/>
 									<img src = '../img/settings.svg' width = '32' onClick = { () => setAndSaveAppPage('Settings') }/>
-									<div>
-										<img src = '../img/notification-bell.svg' width = '32' onClick = { () => setAndSaveAppPage('NotificationCenter') }/>
-										{ pendingAccessRequests === undefined || pendingAccessRequests.length <= 0 ? <> </> : <span class = 'badge' style = 'transform: translate(-75%, 75%);'> { pendingAccessRequests.length } </span> }
-									</div>
 								</a>
 							</div>
 						</nav>
@@ -247,14 +238,6 @@ export function App() {
 								<SettingsView
 									setAndSaveAppPage = { setAndSaveAppPage }
 									useTabsInsteadOfPopup = { useTabsInsteadOfPopup } 
-								/>
-							: <></> }
-							{ appPage === 'NotificationCenter' ?
-								<NotificationCenter
-									setAndSaveAppPage = { setAndSaveAppPage }
-									renameAddressCallBack = { renameAddressCallBack }
-									pendingAccessRequests = { pendingAccessRequests }
-									pendingAccessMetadata = { pendingAccessMetadata }
 								/>
 							: <></> }
 							{ appPage === 'AccessList' ?

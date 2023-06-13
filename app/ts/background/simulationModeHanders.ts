@@ -10,7 +10,7 @@ import { Website, WebsiteSocket, WebsiteTabConnections } from '../utils/user-int
 import { SimulationState } from '../utils/visualizer-types.js'
 import { EstimateGasParams, EthBalanceParams, EthBlockByNumberParams, EthCallParams, EthereumAddress, EthereumData, EthereumQuantity, EthereumSignedTransactionWithBlockData, EthGetLogsParams, EthGetLogsResponse, EthSubscribeParams, EthTransactionReceiptResponse, EthUnSubscribeParams, GetBlockReturn, GetCode, GetSimulationStack, GetSimulationStackReply, GetTransactionCount, OldSignTypedDataParams, PersonalSignParams, SendRawTransaction, SendTransactionParams, SignTypedDataParams, SwitchEthereumChainParams, TransactionByHashParams, TransactionReceiptParams } from '../utils/wire-types.js'
 import { getConnectionDetails } from './accessManagement.js'
-import { getSimulationResults } from './settings.js'
+import { getSimulationResults } from './storageVariables.js'
 import { openChangeChainDialog } from './windows/changeChain.js'
 import { openConfirmTransactionDialog } from './windows/confirmTransaction.js'
 import { openPersonalSignDialog } from './windows/personalSign.js'
@@ -57,8 +57,7 @@ export async function sendTransaction(
 	settings: Settings,
 ) {
 	const formTransaction = async() => {
-		const simulationState = (await getSimulationResults()).simulationState
-		if (simulationState === undefined) return undefined
+		const simulationState = simulationMode ? (await getSimulationResults()).simulationState : undefined
 		const block = getSimulatedBlock(ethereumClientService, simulationState)
 		const transactionDetails = sendTransactionParams.params[0]
 		const from = getFromField(websiteTabConnections, simulationMode, transactionDetails.from, getActiveAddressForDomain, socket, settings)
@@ -238,7 +237,7 @@ export async function getAccounts(websiteTabConnections: WebsiteTabConnections, 
 }
 
 export async function chainId(simulator: Simulator) {
-	return { result: EthereumQuantity.serialize(await simulator.ethereum.getChainId()) }
+	return { result: EthereumQuantity.serialize(simulator.ethereum.getChainId()) }
 }
 
 export async function gasPrice(simulator: Simulator) {

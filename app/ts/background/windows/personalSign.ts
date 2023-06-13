@@ -12,7 +12,8 @@ import { personalSignWithSimulator, sendMessageToContentScript } from '../backgr
 import { getHtmlFile, sendPopupMessageToOpenWindows } from '../backgroundUtils.js'
 import { extractEIP712Message, validateEIP712Types } from '../../utils/eip712Parsing.js'
 import { getAddressMetaData, getTokenMetadata } from '../metadataUtils.js'
-import { getPendingPersonalSignPromise, getSettings, getSignerName, setPendingPersonalSignPromise } from '../settings.js'
+import { getPendingPersonalSignPromise, getSignerName, setPendingPersonalSignPromise } from '../storageVariables.js'
+import { getSettings } from '../settings.js'
 import { PopupOrTab, addWindowTabListener, openPopupOrTab, removeWindowTabListener } from '../../components/ui-utils.js'
 
 let pendingPersonalSign: Future<PersonalSign> | undefined = undefined
