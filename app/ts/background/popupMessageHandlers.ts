@@ -1,8 +1,8 @@
 import { changeActiveAddressAndChainAndResetSimulation, changeActiveChain, getPrependTrasactions, refreshConfirmTransactionSimulation, updateSimulationState } from './background.js'
-import { getSettings, getMakeMeRich, getUseTabsInsteadOfPopup, setUseTabsInsteadOfPopup, setMakeMeRich, setOpenedAddressBookTabId, setPage, setUseSignersAddressAsActiveAddress, updateAddressInfos, updateContacts, updateWebsiteAccess } from './settings.js'
-import { getPendingTransactions, getCurrentTabId, getIsConnected, getOpenedAddressBookTabId, getSignerName, getSimulationResults, getTabState, saveCurrentTabId } from './storageVariables.js'
+import { getSettings, getMakeMeRich, getUseTabsInsteadOfPopup, setUseTabsInsteadOfPopup, setMakeMeRich, setPage, setUseSignersAddressAsActiveAddress, updateAddressInfos, updateContacts, updateWebsiteAccess, exportSettingsAndAddressBook, ExportedSettings, importSettingsAndAddressBook } from './settings.js'
+import { getPendingTransactions, getCurrentTabId, getIsConnected, getOpenedAddressBookTabId, getSignerName, getSimulationResults, getTabState, saveCurrentTabId, setOpenedAddressBookTabId } from './storageVariables.js'
 import { Simulator } from '../simulation/simulator.js'
-import { ChangeActiveAddress, ChangeMakeMeRich, ChangePage, PersonalSign, RemoveTransaction, RequestAccountsFromSigner, TransactionConfirmation, InterceptorAccess, ChangeInterceptorAccess, ChainChangeConfirmation, EnableSimulationMode, ChangeActiveChain, AddOrEditAddressBookEntry, GetAddressBookData, RemoveAddressBookEntry, RefreshConfirmTransactionDialogSimulation, UserAddressBook, InterceptorAccessRefresh, InterceptorAccessChangeAddress, Settings, RefreshConfirmTransactionMetadata, RefreshPersonalSignMetadata, RefreshInterceptorAccessMetadata, ChangeSettings } from '../utils/interceptor-messages.js'
+import { ChangeActiveAddress, ChangeMakeMeRich, ChangePage, PersonalSign, RemoveTransaction, RequestAccountsFromSigner, TransactionConfirmation, InterceptorAccess, ChangeInterceptorAccess, ChainChangeConfirmation, EnableSimulationMode, ChangeActiveChain, AddOrEditAddressBookEntry, GetAddressBookData, RemoveAddressBookEntry, RefreshConfirmTransactionDialogSimulation, UserAddressBook, InterceptorAccessRefresh, InterceptorAccessChangeAddress, Settings, RefreshConfirmTransactionMetadata, RefreshPersonalSignMetadata, RefreshInterceptorAccessMetadata, ChangeSettings, ImportSettings } from '../utils/interceptor-messages.js'
 import { resolvePendingTransaction } from './windows/confirmTransaction.js'
 import { craftPersonalSignPopupMessage, resolvePersonalSign } from './windows/personalSign.js'
 import { getAddressMetadataForAccess, requestAddressChange, resolveInterceptorAccess } from './windows/interceptorAccess.js'
@@ -18,6 +18,7 @@ import { EthereumClientService } from '../simulation/services/EthereumClientServ
 import { refreshSimulationState, removeTransactionAndUpdateTransactionNonces, resetSimulationState } from '../simulation/services/SimulationModeEthereumClientService.js'
 import { isFailedToFetchError } from '../utils/errors.js'
 import { formSimulatedAndVisualizedTransaction } from '../components/formVisualizerResults.js'
+import { isJSON } from '../utils/wire-types.js'
 
 export async function confirmDialog(ethereumClientService: EthereumClientService, websiteTabConnections: WebsiteTabConnections, confirmation: TransactionConfirmation) {
 	await resolvePendingTransaction(ethereumClientService, websiteTabConnections, confirmation)
@@ -327,4 +328,35 @@ export async function refreshPersonalSignMetadata(ethereumClientService: Ethereu
 export async function changeSettings(simulator: Simulator, parsedRequest: ChangeSettings) {
 	if (parsedRequest.data.useTabsInsteadOfPopup !== undefined) setUseTabsInsteadOfPopup(parsedRequest.data.useTabsInsteadOfPopup)
 	return await homeOpened(simulator)
+}
+
+export async function importSettings(settingsData: ImportSettings) {
+	console.log(settingsData.data.fileContents)
+	if (!isJSON(settingsData.data.fileContents)) {
+		return await sendPopupMessageToOpenWindows({
+			method: 'popup_initiate_export_settings_reply',
+			data: { success: false, errorMessage: 'Failed to read the file. It is not a valid JSOn file.' }
+		})
+	}
+	const parsed = ExportedSettings.safeParse(JSON.parse(settingsData.data.fileContents))
+	if (!parsed.success) {
+		return await sendPopupMessageToOpenWindows({
+			method: 'popup_initiate_export_settings_reply',
+			data: { success: false, errorMessage: 'Failed to read the file. Is it a valid interceptor settings file?' }
+		})
+	}
+	await importSettingsAndAddressBook(parsed.value)
+	return await sendPopupMessageToOpenWindows({
+		method: 'popup_initiate_export_settings_reply',
+		data: { success: true }
+	})
+}
+
+export async function exportSettings() {
+	const exportedSettings = await exportSettingsAndAddressBook()
+	//const blobData = new Blob([JSON.stringify(ExportedSettings.serialize(exportedSettings))], { type: 'text/json; charset=utf-8' })
+	await sendPopupMessageToOpenWindows({
+		method: 'popup_initiate_export_settings',
+		data: { fileContents: JSON.stringify(ExportedSettings.serialize(exportedSettings), undefined, 4) }
+	})
 }
