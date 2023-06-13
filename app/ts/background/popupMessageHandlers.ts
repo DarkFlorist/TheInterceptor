@@ -342,7 +342,7 @@ export async function importSettings(settingsData: ImportSettings) {
 	if (!parsed.success) {
 		return await sendPopupMessageToOpenWindows({
 			method: 'popup_initiate_export_settings_reply',
-			data: { success: false, errorMessage: 'Failed to read the file. Is it a valid interceptor settings file?' }
+			data: { success: false, errorMessage: 'Failed to read the file. It is not a valid interceptor settings file' }
 		})
 	}
 	await importSettingsAndAddressBook(parsed.value)
@@ -354,7 +354,6 @@ export async function importSettings(settingsData: ImportSettings) {
 
 export async function exportSettings() {
 	const exportedSettings = await exportSettingsAndAddressBook()
-	//const blobData = new Blob([JSON.stringify(ExportedSettings.serialize(exportedSettings))], { type: 'text/json; charset=utf-8' })
 	await sendPopupMessageToOpenWindows({
 		method: 'popup_initiate_export_settings',
 		data: { fileContents: JSON.stringify(ExportedSettings.serialize(exportedSettings), undefined, 4) }
