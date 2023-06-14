@@ -361,7 +361,7 @@ export const EIP712MessageUnderlying = funtypes.ReadonlyObject({
 	message: JSONEncodeableObject,
 })
 
-function isJSON(text: string){
+export function isJSON(text: string){
 	if (typeof text !== 'string') return false
 	try {
 		JSON.parse(text)
