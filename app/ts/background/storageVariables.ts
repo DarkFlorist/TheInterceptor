@@ -194,3 +194,7 @@ export async function updateEthereumSubscriptions(updateFunc: (prevState: Ethere
 		return await browserStorageLocalSet('ethereumSubscriptions', EthereumSubscriptions.serialize(updateFunc(subscriptions)) as string)
 	})
 }
+
+export async function setOpenedAddressBookTabId(addressbookTabId: number) {
+	return await browserStorageLocalSet('addressbookTabId', addressbookTabId)
+}

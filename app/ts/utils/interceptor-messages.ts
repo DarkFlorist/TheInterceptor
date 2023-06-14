@@ -616,6 +616,21 @@ export const ChangeSettings = funtypes.ReadonlyObject({
 	})
 })
 
+export type ImportSettings = funtypes.Static<typeof ImportSettings>
+export const ImportSettings = funtypes.ReadonlyObject({
+	method: funtypes.Literal('popup_import_settings'),
+	data: funtypes.ReadonlyObject({ fileContents: funtypes.String })
+})
+
+export type ImportSettingsReply = funtypes.Static<typeof ImportSettingsReply>
+export const ImportSettingsReply = funtypes.ReadonlyObject({
+	method: funtypes.Literal('popup_initiate_export_settings_reply'),
+	data: funtypes.Union(
+		funtypes.ReadonlyObject({ success: funtypes.Literal(true) }),
+		funtypes.ReadonlyObject({ success: funtypes.Literal(false), errorMessage: funtypes.String })
+	)
+})
+
 export type PopupMessage = funtypes.Static<typeof PopupMessage>
 export const PopupMessage = funtypes.Union(
 	ChangeMakeMeRich,
@@ -647,6 +662,8 @@ export const PopupMessage = funtypes.Union(
 	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_interceptorAccessReadyAndListening') }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_confirmTransactionReadyAndListening') }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_requestNewHomeData') }),
+	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_import_settings'), data: funtypes.ReadonlyObject({ fileContents: funtypes.String }) }),
+	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_get_export_settings') }),
 	ChangeSettings,
 )
 
@@ -666,6 +683,8 @@ export const MessageToPopup = funtypes.Union(
 	UpdateConfirmTransactionDialog,
 	UpdateAccessDialog,
 	ConfirmTransactionDialogPendingChanged,
+	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_initiate_export_settings'), data: funtypes.ReadonlyObject({ fileContents: funtypes.String }) }),
+	ImportSettingsReply
 )
 
 export type ExternalPopupMessage = funtypes.Static<typeof MessageToPopup>
