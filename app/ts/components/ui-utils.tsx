@@ -2,6 +2,7 @@ import { ethers } from 'ethers'
 import { Ref, useEffect } from 'preact/hooks'
 import { getUseTabsInsteadOfPopup } from '../background/settings.js'
 import { assertNever } from '../utils/typescript.js'
+import { ComponentChildren } from 'preact'
 
 function assertIsNode(e: EventTarget | null): asserts e is Node {
 	if (!e || !('nodeType' in e)) {
@@ -154,14 +155,14 @@ export async function closePopupOrTab(popupOrTab: PopupOrTab) {
 	} catch(e) {}
 }
 
-export async function addWindowTabListener(onCloseWindow: (id: number) => void) {
+export function addWindowTabListener(onCloseWindow: (id: number) => void) {
 	browser.windows.onRemoved.addListener(onCloseWindow)
 	browser.tabs.onRemoved.addListener(onCloseWindow)
 }
 
-export async function removeWindowTabListener(onCloseWindow: (id: number) => void) {
-	browser.windows.onRemoved.addListener(onCloseWindow)
-	browser.tabs.onRemoved.addListener(onCloseWindow)
+export function removeWindowTabListener(onCloseWindow: (id: number) => void) {
+	browser.windows.onRemoved.removeListener(onCloseWindow)
+	browser.tabs.onRemoved.removeListener(onCloseWindow)
 }
 
 export async function tryFocusingTab(tabId: number) {
@@ -171,4 +172,10 @@ export async function tryFocusingTab(tabId: number) {
 		console.warn('failed to focus tab', tabId)
 		console.warn(e)
 	}
+}
+
+export const CellElement = (param: { text: ComponentChildren }) => {
+	return <div class = 'log-cell' style = 'justify-content: right;'>
+		<p class = 'paragraph' style = 'color: var(--subtitle-text-color); text-overflow: ellipsis; overflow: hidden;'>{ param.text }</p>
+	</div>
 }

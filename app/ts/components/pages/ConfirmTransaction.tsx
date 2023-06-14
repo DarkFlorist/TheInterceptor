@@ -2,7 +2,7 @@ import { useState, useEffect } from 'preact/hooks'
 import { ConfirmTransactionDialogState, ConfirmTransactionSimulationBaseData, ConfirmTransactionTransactionSingleVisualizationArray, ExternalPopupMessage, IsConnected } from '../../utils/interceptor-messages.js'
 import { SimulatedAndVisualizedTransaction, SimulationAndVisualisationResults } from '../../utils/visualizer-types.js'
 import Hint from '../subcomponents/Hint.js'
-import { ExtraDetailsTransactionCard, GasFee, LogAnalysisCard, SimulatedInBlockNumber, TransactionCreated, TransactionHeader, TransactionHeaderForFailedToSimulate, TransactionsAccountChangesCard } from '../simulationExplaining/SimulationSummary.js'
+import { RawTransactionDetailsCard, GasFee, LogAnalysisCard, SimulatedInBlockNumber, TransactionCreated, TransactionHeader, TransactionHeaderForFailedToSimulate, TransactionsAccountChangesCard } from '../simulationExplaining/SimulationSummary.js'
 import { CenterToPageTextSpinner } from '../subcomponents/Spinner.js'
 import { AddNewAddress } from './AddNewAddress.js'
 import { AddingNewAddressType, AddressBookEntry } from '../../utils/user-interface-types.js'
@@ -26,7 +26,7 @@ function UnderTransactions(param: UnderTransactionsParams) {
 	const nTx = param.pendingTransactions.length
 	return <div style = {`position: relative; top: ${ nTx * -HALF_HEADER_HEIGHT }px;`}>
 		{ param.pendingTransactions.map((transactionSimulation, index) => {
-			const style = `margin-right: 10px; margin-left: 10px; margin-bottom: 0px; scale: ${ Math.pow(0.95, nTx - index) }; position: relative; top: ${ (nTx - index) * HALF_HEADER_HEIGHT }px;`
+			const style = `margin-bottom: 0px; scale: ${ Math.pow(0.95, nTx - index) }; position: relative; top: ${ (nTx - index) * HALF_HEADER_HEIGHT }px;`
 			if (transactionSimulation.statusCode === 'success') {
 				const simTx = transactionSimulation.data.simulatedAndVisualizedTransactions.at(-1)
 				if (simTx === undefined) throw new Error('No simulated and visualized transactions')
@@ -58,13 +58,13 @@ function TransactionCard(param: TransactionCardParams) {
 	if (simTx === undefined) return <></>
 
 	return <>
-		<div class = 'block' style = 'margin: 10px; margin-top: 10px; margin-bottom: 10px;'>
+		<div class = 'block' style = 'margin-bottom: 10px;'>
 			<nav class = 'breadcrumb has-succeeds-separator is-small'>
 				<ul>
 					{ param.simulationAndVisualisationResults.simulatedAndVisualizedTransactions.map((simTx, index) => (
 						<li style = 'margin: 0px;'>
-							<div class = 'card' style = { `padding: 5px;${ index !== param.simulationAndVisualisationResults.simulatedAndVisualizedTransactions.length - 1 ? 'background-color: var(--disabled-card-color)' : ''}` }>
-								<p class = 'paragraph' style = {`margin: 0px;${ index !== param.simulationAndVisualisationResults.simulatedAndVisualizedTransactions.length - 1 ? 'color: var(--disabled-text-color)' : ''}` }>
+							<div class = 'card' style = { `padding: 5px; margin: 5px; ${ index !== param.simulationAndVisualisationResults.simulatedAndVisualizedTransactions.length - 1 ? 'background-color: var(--disabled-card-color)' : ''}` }>
+								<p class = 'paragraph' style = {`margin: 0px; ${ index !== param.simulationAndVisualisationResults.simulatedAndVisualizedTransactions.length - 1 ? 'color: var(--disabled-text-color)' : ''}` }>
 									{ identifyTransaction(simTx).title }
 								</p>
 							</div>
@@ -75,7 +75,7 @@ function TransactionCard(param: TransactionCardParams) {
 		</div>
 
 		<UnderTransactions pendingTransactions = { param.pendingTransactions }/>
-		<div class = 'card' style = { `margin: 10px; margin-top: 0px; top: ${ param.pendingTransactions.length * -HALF_HEADER_HEIGHT }px` }>
+		<div class = 'card' style = { `top: ${ param.pendingTransactions.length * -HALF_HEADER_HEIGHT }px` }>
 			<TransactionHeader
 				simTx = { simTx }
 			/>
@@ -101,7 +101,7 @@ function TransactionCard(param: TransactionCardParams) {
 					renameAddressCallBack = { param.renameAddressCallBack }
 				/>
 
-				<ExtraDetailsTransactionCard transaction = { simTx.transaction } />
+				<RawTransactionDetailsCard transaction = { simTx.transaction } renameAddressCallBack = { param.renameAddressCallBack } gasSpent = { simTx.gasSpent }/>
 
 				<SenderReceiver
 					from = { simTx.transaction.from }
@@ -161,7 +161,7 @@ export function ConfirmTransaction() {
 				setIsConnected({ isConnected: false, lastConnnectionAttempt: Date.now() })
 			}
 			if (message.method === 'popup_confirm_transaction_dialog_pending_changed') {
-				setPendingTransactions(message.data.slice(1))
+				setPendingTransactions(message.data.slice(1).reverse())
 				const currentWindowId = (await browser.windows.getCurrent()).id
 				const currentTabId = (await browser.tabs.getCurrent()).id
 				if (currentWindowId === undefined) throw new Error('could not get current window Id!')
@@ -172,7 +172,7 @@ export function ConfirmTransaction() {
 				return
 			}
 			if (message.method !== 'popup_update_confirm_transaction_dialog') return
-			setPendingTransactions(message.data.slice(1))
+			setPendingTransactions(message.data.slice(1).reverse())
 			const firstMessage = message.data[0]
 
 			if (firstMessage.statusCode === 'failed') return setDialogState({ state: 'failed', data: firstMessage.data })
@@ -192,16 +192,18 @@ export function ConfirmTransaction() {
 
 	async function approve() {
 		if (dialogState === undefined) throw new Error('dialogState is not set')
+		setPendingTransactionAddedNotification(false)
 		const currentWindow = await browser.windows.getCurrent()
 		if (currentWindow.id === undefined) throw new Error('could not get our own Id!')
-		if (pendingTransactions.length == 0) await tryFocusingTab(dialogState.data.tabIdOpenedFrom)
+		if (pendingTransactions.length === 0) await tryFocusingTab(dialogState.data.tabIdOpenedFrom)
 		await sendPopupMessageToBackgroundPage({ method: 'popup_confirmDialog', options: { requestId: dialogState.data.requestId, accept: true, windowId: currentWindow.id } })
 	}
 	async function reject() {
 		if (dialogState === undefined) throw new Error('dialogState is not set')
+		setPendingTransactionAddedNotification(false)
 		const currentWindow = await browser.windows.getCurrent()
 		if (currentWindow.id === undefined) throw new Error('could not get our own Id!')
-		if (pendingTransactions.length == 0) await tryFocusingTab(dialogState.data.tabIdOpenedFrom)
+		if (pendingTransactions.length === 0) await tryFocusingTab(dialogState.data.tabIdOpenedFrom)
 		await sendPopupMessageToBackgroundPage({ method: 'popup_confirmDialog', options: { requestId: dialogState.data.requestId, accept: false, windowId: currentWindow.id } })
 	}
 	const refreshMetadata = () => {
@@ -237,8 +239,9 @@ export function ConfirmTransaction() {
 				{ identified.rejectAction }
 			</button>
 			<button className = 'button is-primary button-overflow dialog-button-right' onClick = { approve } disabled = { isConfirmDisabled() }>
-				{ dialogState.data.simulationMode ? `${ identified.simulationAction }!` :
-					<SignerLogoText {...{
+				{ dialogState.data.simulationMode
+					? `${ identified.simulationAction }!`
+					: <SignerLogoText {...{
 						signerName: dialogState.data.signerName,
 						text: identified.signingAction,
 					}}/>
@@ -254,8 +257,9 @@ export function ConfirmTransaction() {
 		<main>
 			<Hint>
 				<div class = { `modal ${ addingNewAddress !== 'renameAddressModalClosed' ? 'is-active' : ''}` }>
-					{ addingNewAddress === 'renameAddressModalClosed' ? <></> :
-						<AddNewAddress
+					{ addingNewAddress === 'renameAddressModalClosed'
+						? <></>
+						: <AddNewAddress
 							setActiveAddressAndInformAboutIt = { undefined }
 							addingNewAddress = { addingNewAddress }
 							close = { () => { setAddingNewAddress('renameAddressModalClosed') } }
@@ -264,26 +268,28 @@ export function ConfirmTransaction() {
 					}
 				</div>
 
-				<div className = 'block' style = 'margin-bottom: 0px; display: flex; justify-content: space-between; flex-direction: column; height: 100%; position: fixed; width: 100%'>
-					<div style = 'overflow-y: auto'>
+				<div class = 'block popup-block'>
+					<div class = 'popup-block-scroll'>
 						{ isConnected?.isConnected === false ?
 							<div style = 'margin: 10px; background-color: var(--bg-color);'>
 								<ErrorComponent warning = { true } text = { <>Unable to connect to a Ethereum node. Retrying in <SomeTimeAgo priorTimestamp = { new Date(isConnected.lastConnnectionAttempt + TIME_BETWEEN_BLOCKS * 1000) } countBackwards = { true }/>.</> }/>
 							</div>
 						: <></> }
 						
-						{ dialogState.data.transactionToSimulate.transactionSendingFormat === 'eth_sendRawTransaction' ? 
-							<DinoSaysNotification
+						{ dialogState.data.transactionToSimulate.transactionSendingFormat === 'eth_sendRawTransaction'
+							? <DinoSaysNotification
 								text = { `This transaction is signed already. No extra signing required to forward it to ${ dialogState.data.transactionToSimulate.transaction.chainId === undefined ? getChainName(BigInt(dialogState.data.simulationState.chain)) : getChainName(dialogState.data.transactionToSimulate.transaction.chainId) }.` }
 								close = { () => setPendingTransactionAddedNotification(false)}
 							/>
-						: <></> }
-						{ pendingTransactionAddedNotification === true ? 
-							<DinoSaysNotification
+							: <></>
+						}
+						{ pendingTransactionAddedNotification === true
+							? <DinoSaysNotification
 								text = { `Hey! A new transaction request was queued. Accept or Reject the previous transaction${ pendingTransactions.length > 1 ? 's' : '' } to see the new one.` }
 								close = { () => setPendingTransactionAddedNotification(false)}
 							/>
-						: <></> }
+							: <></>
+						}
 						<TransactionCard
 							simulationAndVisualisationResults = { {
 								blockNumber: dialogState.data.simulationState.blockNumber,
@@ -304,16 +310,16 @@ export function ConfirmTransaction() {
 						/>
 					</div>
 
-					<nav class = 'window-header' style = 'display: flex; justify-content: space-around; width: 100%; flex-direction: column; padding-bottom: 10px; padding-top: 10px;'>
-						{ dialogState && simulatedAndVisualizedTransactions[simulatedAndVisualizedTransactions.length - 1 ].statusCode === 'success' ?
-							dialogState && simulatedAndVisualizedTransactions[simulatedAndVisualizedTransactions.length - 1 ].quarantine !== true ? <></> :
-							<div style = 'display: grid'>
-								<div style = 'margin: 0px; margin-bottom: 10px; margin-left: 20px; margin-right: 20px; '>
-									<ErrorCheckBox text = { 'I understand that there are issues with this transaction but I want to send it anyway against Interceptors recommendations.' } checked = { forceSend } onInput = { setForceSend } />
+					<nav class = 'window-header popup-button-row'>
+						{ dialogState && simulatedAndVisualizedTransactions[simulatedAndVisualizedTransactions.length - 1 ].statusCode === 'success'
+							? dialogState && simulatedAndVisualizedTransactions[simulatedAndVisualizedTransactions.length - 1 ].quarantine !== true
+								? <></>
+								: <div style = 'display: grid'>
+									<div style = 'margin: 0px; margin-bottom: 10px; margin-left: 20px; margin-right: 20px; '>
+										<ErrorCheckBox text = { 'I understand that there are issues with this transaction but I want to send it anyway against Interceptors recommendations.' } checked = { forceSend } onInput = { setForceSend } />
+									</div>
 								</div>
-							</div>
-						:
-							<div style = 'display: grid'>
+							: <div style = 'display: grid'>
 								<div style = 'margin: 0px; margin-bottom: 10px; margin-left: 20px; margin-right: 20px; '>
 									<ErrorCheckBox text = { 'I understand that the transaction will fail but I want to send it anyway.' } checked = { forceSend } onInput = { setForceSend } />
 								</div>

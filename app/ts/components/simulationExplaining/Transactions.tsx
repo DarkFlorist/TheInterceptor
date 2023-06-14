@@ -5,7 +5,7 @@ import { AddressBookEntry, LogAnalysisParams, RenameAddressCallBack } from '../.
 import { QUARANTINE_CODE, QUARANTINE_CODES_DICT } from '../../simulation/protectors/quarantine-codes.js'
 import { Error as ErrorComponent } from '../subcomponents/Error.js'
 import { identifyRoutes, identifySwap, SwapVisualization } from './SwapTransactions.js'
-import { ExtraDetailsTransactionCard, GasFee, LogAnalysisCard, TransactionCreated, TransactionHeader } from './SimulationSummary.js'
+import { RawTransactionDetailsCard, GasFee, LogAnalysisCard, TransactionCreated, TransactionHeader } from './SimulationSummary.js'
 import { identifyTransaction } from './identifyTransaction.js'
 import { makeYouRichTransaction } from './customExplainers/MakeMeRich.js'
 import { ApproveIcon, ArrowIcon } from '../subcomponents/icons.js'
@@ -111,7 +111,7 @@ export function SenderReceiver({ from, to, renameAddressCallBack }: { from: Addr
 			</div>
 		</span>
 	}
-	return <span class = 'log-table' style = 'justify-content: center; column-gap: 5px; grid-template-columns: 33.33% 33.33% 33.33%;'>
+	return <span class = 'log-table' style = 'justify-content: space-between; column-gap: 5px; grid-template-columns: auto auto auto;'>
 		<div class = 'log-cell' style = 'margin: 2px;'>
 			<SmallAddress
 				addressBookEntry = { from }
@@ -145,12 +145,12 @@ export function Transaction(param: TransactionVisualizationParameters) {
 					<TransactionImportanceBlock { ...param }/>
 					<QuarantineCodes quarantineCodes = { param.simTx.quarantineCodes }/>
 				</div>
-				{ identifiedTransaction === 'MakeYouRichTransaction' ? <></> :<>
+				{ identifiedTransaction === 'MakeYouRichTransaction' ? <></> : <>
 					<LogAnalysisCard
 						simTx = { param.simTx }
 						renameAddressCallBack = { param.renameAddressCallBack }
 					/>
-					<ExtraDetailsTransactionCard transaction = { param.simTx.transaction } />
+					<RawTransactionDetailsCard transaction = { param.simTx.transaction } renameAddressCallBack = { param.renameAddressCallBack } gasSpent = { param.simTx.gasSpent } />
 
 					<SenderReceiver
 						from = { param.simTx.transaction.from }

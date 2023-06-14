@@ -42,6 +42,14 @@ jobs:
           release_name: ${{ steps.derive_tag.outputs.TAG }}
           draft: false
           prerelease: false
+      - name: Upload Firefox extension to mozilla addon
+        uses: DarkFlorist/firefox-addon@v1-body-size-increase
+        with:
+          uuid: '{3c236fbc-9114-43ed-a224-0cd1834aec4d}'
+          xpi: ./interceptor-firefox.zip
+          manifest: app/manifestV2.json
+          api-key: ${{ secrets.MOZILLA_ADDON_USER }}
+          api-secret: ${{ secrets.MOZILLA_ADDON_SECRET }}
       - name: Upload Chrome Extension to Release
         uses: actions/upload-release-asset@v1.0.1
         env:

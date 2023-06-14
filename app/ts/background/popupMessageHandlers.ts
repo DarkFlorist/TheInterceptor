@@ -1,19 +1,19 @@
 import { changeActiveAddressAndChainAndResetSimulation, changeActiveChain, getPrependTrasactions, refreshConfirmTransactionSimulation, updateSimulationState } from './background.js'
-import { getPendingTransactions, getCurrentTabId, getIsConnected, getMakeMeRich, getOpenedAddressBookTabId, getSettings, getSignerName, getSimulationResults, getTabState, saveCurrentTabId, setMakeMeRich, setOpenedAddressBookTabId, setPage, setUseSignersAddressAsActiveAddress, updateAddressInfos, updateContacts, updateWebsiteAccess, getUseTabsInsteadOfPopup, setUseTabsInsteadOfPopup } from './settings.js'
+import { getSettings, getMakeMeRich, getUseTabsInsteadOfPopup, setUseTabsInsteadOfPopup, setMakeMeRich, setOpenedAddressBookTabId, setPage, setUseSignersAddressAsActiveAddress, updateAddressInfos, updateContacts, updateWebsiteAccess } from './settings.js'
+import { getPendingTransactions, getCurrentTabId, getIsConnected, getOpenedAddressBookTabId, getSignerName, getSimulationResults, getTabState, saveCurrentTabId } from './storageVariables.js'
 import { Simulator } from '../simulation/simulator.js'
-import { ChangeActiveAddress, ChangeMakeMeRich, ChangePage, PersonalSign, RemoveTransaction, RequestAccountsFromSigner, TransactionConfirmation, InterceptorAccess, ChangeInterceptorAccess, ChainChangeConfirmation, EnableSimulationMode, ReviewNotification, RejectNotification, ChangeActiveChain, AddOrEditAddressBookEntry, GetAddressBookData, RemoveAddressBookEntry, RefreshConfirmTransactionDialogSimulation, UserAddressBook, InterceptorAccessRefresh, InterceptorAccessChangeAddress, Settings, RefreshConfirmTransactionMetadata, RefreshPersonalSignMetadata, RefreshInterceptorAccessMetadata, ChangeSettings } from '../utils/interceptor-messages.js'
+import { ChangeActiveAddress, ChangeMakeMeRich, ChangePage, PersonalSign, RemoveTransaction, RequestAccountsFromSigner, TransactionConfirmation, InterceptorAccess, ChangeInterceptorAccess, ChainChangeConfirmation, EnableSimulationMode, ChangeActiveChain, AddOrEditAddressBookEntry, GetAddressBookData, RemoveAddressBookEntry, RefreshConfirmTransactionDialogSimulation, UserAddressBook, InterceptorAccessRefresh, InterceptorAccessChangeAddress, Settings, RefreshConfirmTransactionMetadata, RefreshPersonalSignMetadata, RefreshInterceptorAccessMetadata, ChangeSettings } from '../utils/interceptor-messages.js'
 import { resolvePendingTransaction } from './windows/confirmTransaction.js'
 import { craftPersonalSignPopupMessage, resolvePersonalSign } from './windows/personalSign.js'
-import { changeAccess, getAddressMetadataForAccess, removePendingAccessRequestAndUpdateBadge, requestAccessFromUser, requestAddressChange, resolveExistingInterceptorAccessAsNoResponse, resolveInterceptorAccess } from './windows/interceptorAccess.js'
+import { getAddressMetadataForAccess, requestAddressChange, resolveInterceptorAccess } from './windows/interceptorAccess.js'
 import { resolveChainChange } from './windows/changeChain.js'
-import { getAssociatedAddresses, sendMessageToApprovedWebsitePorts, updateWebsiteApprovalAccesses } from './accessManagement.js'
+import { sendMessageToApprovedWebsitePorts, updateWebsiteApprovalAccesses } from './accessManagement.js'
 import { getHtmlFile, sendPopupMessageToOpenWindows } from './backgroundUtils.js'
 import { CHROME_NO_TAB_WITH_ID_ERROR, isSupportedChain } from '../utils/constants.js'
 import { getMetadataForAddressBookData } from './medataSearch.js'
-import { findAddressInfo, getAddressBookEntriesForVisualiser } from './metadataUtils.js'
+import { getAddressBookEntriesForVisualiser } from './metadataUtils.js'
 import { assertUnreachable } from '../utils/typescript.js'
-import { addressString } from '../utils/bigint.js'
-import { AddressInfoEntry, WebsiteTabConnections } from '../utils/user-interface-types.js'
+import { WebsiteTabConnections } from '../utils/user-interface-types.js'
 import { EthereumClientService } from '../simulation/services/EthereumClientService.js'
 import { refreshSimulationState, removeTransactionAndUpdateTransactionNonces, resetSimulationState } from '../simulation/services/SimulationModeEthereumClientService.js'
 import { isFailedToFetchError } from '../utils/errors.js'
@@ -230,37 +230,6 @@ export async function enableSimulationMode(websiteTabConnections: WebsiteTabConn
 	}
 }
 
-export async function reviewNotification(websiteTabConnections: WebsiteTabConnections, params: ReviewNotification, settings: Settings) {
-	const notification = settings.pendingAccessRequests.find( (x) => x.website.websiteOrigin === params.options.website.websiteOrigin && x.requestAccessToAddress === params.options.requestAccessToAddress)
-	if (notification === undefined) return
-	await resolveExistingInterceptorAccessAsNoResponse(websiteTabConnections)
-
-	const addressInfo = notification.requestAccessToAddress === undefined ? undefined : findAddressInfo(BigInt(notification.requestAccessToAddress), settings.userAddressBook.addressInfos)
-	const metadata = getAssociatedAddresses(settings, notification.website.websiteOrigin, addressInfo)
-	await requestAccessFromUser(websiteTabConnections, params.options.socket, notification.website, params.options.request, addressInfo, metadata, settings)
-}
-export async function rejectNotification(websiteTabConnections: WebsiteTabConnections, params: RejectNotification) {
-	if (params.options.removeOnly) {
-		await removePendingAccessRequestAndUpdateBadge(params.options.website.websiteOrigin, params.options.requestAccessToAddress)
-	}
-
-	await resolveInterceptorAccess(websiteTabConnections, {
-		websiteOrigin : params.options.website.websiteOrigin,
-		requestAccessToAddress: params.options.requestAccessToAddress,
-		originalRequestAccessToAddress: params.options.requestAccessToAddress,
-		approval: params.options.removeOnly ? 'NoResponse' : 'Rejected'
-	}) // close pending access for this request if its open
-	if (!params.options.removeOnly) {
-		await changeAccess(websiteTabConnections, {
-			websiteOrigin : params.options.website.websiteOrigin,
-			requestAccessToAddress: params.options.requestAccessToAddress,
-			originalRequestAccessToAddress: params.options.requestAccessToAddress,
-			approval: 'Rejected'
-		}, params.options.website )
-	}
-	await sendPopupMessageToOpenWindows({ method: 'popup_notification_removed' })
-}
-
 export async function getAddressBookData(parsed: GetAddressBookData, userAddressBook: UserAddressBook | undefined) {
 	if (userAddressBook === undefined) throw new Error('Interceptor is not ready')
 	const data = getMetadataForAddressBookData(parsed.options, userAddressBook)
@@ -301,10 +270,6 @@ export async function homeOpened(simulator: Simulator) {
 	const tabState = tabId === undefined ? undefined : await getTabState(tabId)
 
 	const settings = await getSettings()
-	const pendingAccessRequestsAddresses = new Set(settings.pendingAccessRequests.map((x) => x.requestAccessToAddress === undefined ? [] : x.requestAccessToAddress).flat())
-	const addressInfos = settings.userAddressBook.addressInfos
-	const pendingAccessMetadata: [string, AddressInfoEntry][] = Array.from(pendingAccessRequestsAddresses).map((x) => [addressString(x), findAddressInfo(BigInt(x), addressInfos)])
-
 	let blockNumber = undefined
 	try {
 		blockNumber = await simulator.ethereum.getBlockNumber()
@@ -324,7 +289,6 @@ export async function homeOpened(simulator: Simulator) {
 				simulatedAndVisualizedTransactions: simulatedAndVisualizedTransactions,
 			},
 			websiteAccessAddressMetadata: getAddressMetadataForAccess(settings.websiteAccess, settings.userAddressBook.addressInfos),
-			pendingAccessMetadata: pendingAccessMetadata,
 			signerAccounts: tabState?.signerAccounts,
 			signerChain: tabState?.signerChain,
 			signerName: await getSignerName(),

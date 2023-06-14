@@ -95,12 +95,13 @@ type ListElementParam = (AddressBookEntry | { type: 'empty' }) & {
 export function ListElement(entry: ListElementParam) {
 	return <li style = { `margin: 0px; padding-bottom: ${ ELEMENT_PADDING_PX }px` } key = { entry.listKey }>
 		<div class = 'card' style = { `height: ${ ELEMENT_SIZE_PX[entry.category] }px` }>
-			<div class = 'card-content' style = 'height: 100%;'>
+			<div class = 'card-content' style = 'height: 100%; width: 500px;'>
 				<div class = 'media' style = 'height: 100%;'>
 					<div class = 'media-content' style = 'overflow-y: visible; overflow-x: unset; height: 100%;'>
 						<div style = 'padding-bottom: 10px; height: 40px'>
-							{ entry.type === 'empty' ? <></> :
-								<BigAddress
+							{ entry.type === 'empty'
+								? <></>
+								: <BigAddress
 									addressBookEntry = { { ...entry, ...{ name: `${ entry.name }${ 'symbol' in entry ? ` (${ entry.symbol })` : '' }`} } }
 									noCopying = { false }
 									renameAddressCallBack = { entry.renameAddressCallBack }
@@ -108,16 +109,21 @@ export function ListElement(entry: ListElementParam) {
 							}
 						</div>
 
-						{ entry.category === 'Tokens' ? <div>
-							<p class = 'paragraph' style = 'display: inline-block; font-size: 13px; vertical-align: top;'>{ `Decimals: ${ 'decimals' in entry ? entry.decimals.toString() : 'MISSING' }` }</p>
-						</div> : <></> }
+						{ entry.category === 'Tokens'
+							? <div>
+								<p class = 'paragraph' style = 'display: inline-block; font-size: 13px; vertical-align: top;'>{ `Decimals: ${ 'decimals' in entry ? entry.decimals.toString() : 'MISSING' }` }</p>
+							</div>
+							: <></>
+						}
 
-						{ entry.category === 'Non Fungible Tokens' || entry.category === 'Other Contracts' ? <div>
-							<p class = 'paragraph' style = 'display: inline-block; font-size: 13px; vertical-align: top;'>
-								{ `Protocol: ${ 'protocol' in entry ? entry.protocol : '' } ` }
-							</p>
-						</div>
-						: <> </> }
+						{ entry.category === 'Non Fungible Tokens' || entry.category === 'Other Contracts'
+							? <div>
+								<p class = 'paragraph' style = 'display: inline-block; font-size: 13px; vertical-align: top;'>
+									{ `Protocol: ${ 'protocol' in entry ? entry.protocol : '' } ` }
+								</p>
+							</div>
+							: <></>
+						}
 
 						{ entry.category === 'My Active Addresses' ?
 							<label class = 'form-control' style = 'padding-top: 10px'>
@@ -156,9 +162,11 @@ type AddressList = {
 }
 
 export function AddressList({ addressBookEntries, numberOfEntries, startIndex, listName, filter, removeEntry, renameAddressCallBack }: AddressList) {
-	const entries = addressBookEntries === undefined || addressBookEntries === 'fetching' ? Array.from(new Array(numberOfEntries + 1)).map(() => ({
-		type: 'empty' as const
-	})) : addressBookEntries
+	const entries = addressBookEntries === undefined || addressBookEntries === 'fetching'
+		? Array.from(new Array(numberOfEntries + 1)).map(() => ({
+			type: 'empty' as const
+		}))
+		: addressBookEntries
 	return <>
 		{ entries.map( (entry, index) => <ListElement
 			{ ...entry }
@@ -367,8 +375,8 @@ export function AddressBook() {
 	return (
 		<main>
 			<Hint>
-				<div class = 'columns' style = 'margin: 10px'>
-					<div class = 'column is-2'>
+				<div class = 'columns' style = 'margin: 10px; width: fit-content; margin: auto;'>
+					<div style = 'padding: 10px'>
 						<aside class = 'menu'>
 							<ul class = 'menu-list'>
 								<p class = 'paragraph' style = 'color: var(--disabled-text-color)'> My Addresses </p>
@@ -387,7 +395,7 @@ export function AddressBook() {
 							</ul>
 						</aside>
 					</div>
-					<div class = 'column'>
+					<div style = 'padding: 10px'>
 						<div style = 'display: flex; padding-bottom: 10px'>
 							<div class = 'field is-grouped' style = 'max-width: 400px; margin: 10px'>
 								<p class = 'control is-expanded'>
@@ -405,13 +413,16 @@ export function AddressBook() {
 								</button> : <></> }
 							</div>
 						</div>
-						{ addressBookState === undefined ? <></> : <>
-							{ addressBookState.maxIndex === 0 ? <p class = 'paragraph'> { getNoResultsError() } </p> : <></> }
-							<ul style = { `height: ${ addressBookState.maxIndex * (ELEMENT_SIZE_PX[addressBookState.activeFilter] + ELEMENT_PADDING_PX) }px; overflow: hidden;` }>
-								<li style = { `margin: 0px; height: ${ getPageSizeInPixels(addressBookState.activeFilter) * Math.max(0, currentPage - getWindowSizeInPages(addressBookState.activeFilter) ) }px` } key = { -1 }> </li>
-								{ Array(2 * getWindowSizeInPages(addressBookState.activeFilter) + 1).fill(0).map((_, i) => renderAddressList(currentPage + ( i - getWindowSizeInPages(addressBookState.activeFilter) ))) }
-							</ul>
-						</> }
+						{ addressBookState === undefined
+							? <></>
+							: <>
+								{ addressBookState.maxIndex === 0 ? <p class = 'paragraph'> { getNoResultsError() } </p> : <></> }
+								<ul style = { `height: ${ addressBookState.maxIndex * (ELEMENT_SIZE_PX[addressBookState.activeFilter] + ELEMENT_PADDING_PX) }px; overflow: hidden;` }>
+									<li style = { `margin: 0px; height: ${ getPageSizeInPixels(addressBookState.activeFilter) * Math.max(0, currentPage - getWindowSizeInPages(addressBookState.activeFilter) ) }px` } key = { -1 }> </li>
+									{ Array(2 * getWindowSizeInPages(addressBookState.activeFilter) + 1).fill(0).map((_, i) => renderAddressList(currentPage + ( i - getWindowSizeInPages(addressBookState.activeFilter) ))) }
+								</ul>
+							</>
+						}
 					</div>
 				</div>
 

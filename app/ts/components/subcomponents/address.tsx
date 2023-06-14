@@ -165,9 +165,9 @@ export function SmallAddress(params: SmallAddressParams) {
 						</CopyToClipboard>
 					</span>
 					<CopyToClipboard content = { checksummedAddress(params.addressBookEntry.address) } copyMessage = 'Address copied!' style = { { 'text-overflow': 'ellipsis', overflow: 'hidden' } }>
-						<p class = 'paragraph address-text noselect nopointer'>{ params.addressBookEntry.name }</p>
+						<p class = 'paragraph address-text noselect nopointer' style = { `color: ${ textColor }` }>{ params.addressBookEntry.name }</p>
 					</CopyToClipboard>
-					<button className = 'button is-primary is-small rename-address-button' onClick ={ () => params.renameAddressCallBack(params.addressBookEntry) }>
+					<button className = 'button is-primary is-small rename-address-button' onClick = { () => params.renameAddressCallBack(params.addressBookEntry) }>
 						<span class = 'icon'>
 							<img src = '../img/rename.svg'/>
 						</span>
@@ -229,7 +229,7 @@ export function FromSmallAddressToSmallAddress({ from, to, renameAddressCallBack
 }
 
 export function WebsiteOriginText( { icon, websiteOrigin, title }: Website) {
-	return <div class = 'card-header-icon noselect nopointer' style = 'width: 100%;'>
+	return <div class = 'card-header-icon unsetcursor' style = 'width: 100%; padding: 0'>
 		<span style = 'width: 24px; height: 24px; min-width: 24px'>
 			<img src = { icon } style = 'width: 24px; height: 24px;'/>
 		</span>

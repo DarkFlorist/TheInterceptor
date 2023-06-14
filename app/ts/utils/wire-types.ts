@@ -891,33 +891,3 @@ export const EthereumJsonRpcRequest = funtypes.Union(
 	EthSign,
 	ExecutionSpec383MultiCallParams,
 )
-
-export const SupportedETHRPCCalls = [
-	'eth_getBlockByNumber',
-	'eth_getBalance',
-	'eth_estimateGas',
-	'eth_getTransactionByHash',
-	'eth_getTransactionReceipt',
-	'eth_sendTransaction',
-	'eth_call',
-	'eth_subscribe',
-	'eth_unsubscribe',
-	'eth_blockNumber',
-	'eth_chainId',
-	'net_version',
-	'eth_getCode',
-	'personal_sign',
-	'eth_signTypedData',
-	'eth_signTypedData_v1',
-	'eth_signTypedData_v2',
-	'eth_signTypedData_v3',
-	'eth_signTypedData_v4',
-	'wallet_switchEthereumChain',
-	'wallet_requestPermissions',
-	'wallet_getPermissions',
-	'eth_accounts',
-	'eth_requestAccounts',
-	'eth_gasPrice',
-	'eth_getTransactionCount',
-	'interceptor_getSimulationStack'
-]

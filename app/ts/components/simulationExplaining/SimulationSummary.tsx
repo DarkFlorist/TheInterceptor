@@ -6,12 +6,12 @@ import { ERC721Token, Ether, EtherAmount, EtherSymbol, Token, TokenAmount, Token
 import { LogAnalysis } from './Transactions.js'
 import { CopyToClipboard } from '../subcomponents/CopyToClipboard.js'
 import { SomeTimeAgo, humanReadableDateDeltaLessDetailed } from '../subcomponents/SomeTimeAgo.js'
-import { CHAINS, MAKE_YOU_RICH_TRANSACTION } from '../../utils/constants.js'
-import { addressString, dataStringWith0xStart, nanoString } from '../../utils/bigint.js'
+import { CHAINS, MAKE_YOU_RICH_TRANSACTION, getChainName } from '../../utils/constants.js'
+import { addressString, bytes32String, dataStringWith0xStart, nanoString } from '../../utils/bigint.js'
 import { identifyTransaction } from './identifyTransaction.js'
 import { identifySwap } from './SwapTransactions.js'
 import { useState } from 'preact/hooks'
-import { convertNumberToCharacterRepresentationIfSmallEnough, upperCaseFirstCharacter } from '../ui-utils.js'
+import { CellElement, convertNumberToCharacterRepresentationIfSmallEnough, upperCaseFirstCharacter } from '../ui-utils.js'
 import { IsConnected } from '../../utils/interceptor-messages.js'
 import { EthereumTimestamp } from '../../utils/wire-types.js'
 
@@ -296,13 +296,15 @@ type SummarizeAddressParams = {
 
 export function SummarizeAddress(param: SummarizeAddressParams) {
 	const isOwnAddress = param.balanceSummary.summaryFor.type === 'addressInfo' || param.balanceSummary.summaryFor.address === param.simulationAndVisualisationResults.activeAddress
-	const positiveNegativeColors = isOwnAddress ? {
-		textColor: 'var(--text-color)',
-		negativeColor: 'var(--text-color)'
-	} : {
-		textColor: 'var(--disabled-text-color)',
-		negativeColor: 'var(--negative-dim-color)'
-	}
+	const positiveNegativeColors = isOwnAddress
+		? {
+			textColor: 'var(--text-color)',
+			negativeColor: 'var(--text-color)'
+		}
+		: {
+			textColor: 'var(--disabled-text-color)',
+			negativeColor: 'var(--negative-dim-color)'
+		}
 
 	return <div>
 		{ isOwnAddress ?
@@ -403,15 +405,16 @@ export function LogAnalysisCard({ simTx, renameAddressCallBack }: LogAnalysisCar
 					<span class = 'icon' style = 'color: var(--text-color); font-weight: unset; font-size: 0.8em;'> V </span>
 				</div>
 			</header>
-			{ !showLogs ? <></> : <>
-				<div class = 'card-content' style = 'border-bottom-left-radius: 0.25rem; border-bottom-right-radius: 0.25rem; border-left: 2px solid var(--card-bg-color); border-right: 2px solid var(--card-bg-color); border-bottom: 2px solid var(--card-bg-color);'>
+			{ !showLogs
+				? <></>
+				: <div class = 'card-content' style = 'border-bottom-left-radius: 0.25rem; border-bottom-right-radius: 0.25rem; border-left: 2px solid var(--card-bg-color); border-right: 2px solid var(--card-bg-color); border-bottom: 2px solid var(--card-bg-color);'>
 					<LogAnalysis
 						simulatedAndVisualizedTransaction = { simTx }
 						identifiedSwap = { identifiedSwap }
 						renameAddressCallBack = { renameAddressCallBack }
 					/>
 				</div>
-			</> }
+			}
 		</div>
 	</>
 }
@@ -455,8 +458,9 @@ export function TransactionsAccountChangesCard({ simTx, renameAddressCallBack, a
 				<span class = 'icon' style = 'color: var(--text-color); font-weight: unset; font-size: 0.8em;'> V </span>
 			</div>
 		</header>
-		{ !showSummary ? <></> : <>
-			<div class = 'card-content'>
+		{ !showSummary
+			? <></>
+			: <div class = 'card-content'>
 				<div class = 'container' style = 'margin-bottom: 10px;'>
 					{ ownAddresses.length == 0 ? <p class = 'paragraph'> No changes to your accounts </p>
 						: <div class = 'notification transaction-importance-box'>
@@ -472,8 +476,9 @@ export function TransactionsAccountChangesCard({ simTx, renameAddressCallBack, a
 					}
 				</div>
 
-				{ notOwnAddresses.length == 0 ? <></> :
-					<div class = 'container'>
+				{ notOwnAddresses.length == 0
+					? <></>
+					: <div class = 'container'>
 						{ notOwnAddresses.map( ([_index, balanceSummary]) => {
 							return <>
 								<SummarizeAddress
@@ -487,7 +492,7 @@ export function TransactionsAccountChangesCard({ simTx, renameAddressCallBack, a
 					</div>
 				}
 			</div>
-		</> }
+		}
 	</div>
 }
 
@@ -531,16 +536,18 @@ export function TransactionHeader({ simTx, removeTransaction } : TransactionHead
 		<p class = 'card-header-title' style = 'white-space: nowrap;'>
 			{ identifyTransaction(simTx).title }
 		</p>
-		{ simTx.transaction.to  === undefined || identifyTransaction(simTx).type === 'MakeYouRichTransaction' ? <></> :
-			<p class = 'card-header-icon' style = 'margin-left: auto; margin-right: 0; padding-right: 10px; padding-left: 0px; overflow: hidden'>
+		{ simTx.transaction.to  === undefined || identifyTransaction(simTx).type === 'MakeYouRichTransaction'
+			? <></>
+			: <p class = 'card-header-icon unsetcursor' style = { `margin-left: auto; margin-right: 0; overflow: hidden; ${ removeTransaction !== undefined ? 'padding: 0' : ''}` }>
 				<WebsiteOriginText { ...simTx.website } />
 			</p>
 		}
-		{ removeTransaction !== undefined ?
-			<button class = 'card-header-icon' aria-label = 'remove' onClick = { removeTransaction }>
+		{ removeTransaction !== undefined
+			? <button class = 'card-header-icon' aria-label = 'remove' onClick = { removeTransaction }>
 				<span class = 'icon' style = 'color: var(--text-color);'> X </span>
 			</button>
-		: <></> }
+			: <></>
+		}
 	</header>
 }
 
@@ -552,14 +559,14 @@ export function TransactionHeaderForFailedToSimulate({ website } : { website: We
 			</span>
 		</div>
 		<p class = 'card-header-title' style = 'white-space: nowrap;'> Not simulated </p>
-		<p class = 'card-header-icon' style = 'margin-left: auto; margin-right: 0; padding-right: 10px; padding-left: 0px; overflow: hidden'>
+		<p class = 'card-header-icon unsetcursor' style = 'margin-left: auto; margin-right: 0; overflow: hidden;'>
 			<WebsiteOriginText { ...website } />
 		</p>
 	</header>
 }
 
 export function TransactionCreated({ transactionCreated } : { transactionCreated: EthereumTimestamp }) {
-	return <p class = 'noselect nopointer' style = 'color: var(--subtitle-text-color); text-align: right; display: inline'>
+	return <p style = 'color: var(--subtitle-text-color); text-align: right; display: inline'>
 		{ 'Created ' }
 		<SomeTimeAgo priorTimestamp = { transactionCreated } diffToText = { humanReadableDateDeltaLessDetailed }/>
 	</p>
@@ -571,7 +578,7 @@ export function SimulatedInBlockNumber({ simulationBlockNumber, currentBlockNumb
 		contentDisplayOverride = { `Simulated in block number ${ simulationBlockNumber }` }
 		copyMessage = 'Block number copied!'
 	>
-		<p class = 'noselect nopointer' style = 'color: var(--subtitle-text-color); text-align: right; display: inline'>
+		<p style = 'color: var(--subtitle-text-color); text-align: right; display: inline'>
 			{ 'Simulated ' }
 			<span style = { `font-weight: bold; font-family: monospace; color: ${
 				(simulationBlockNumber === currentBlockNumber || currentBlockNumber === undefined) && (isConnected === undefined || isConnected?.isConnected) ? 'var(--positive-color)' :
@@ -606,7 +613,7 @@ export function SimulationSummary(param: SimulationSummaryParams) {
 			<header class = 'card-header'>
 				<div class = 'card-header-icon unset-cursor'>
 					<span class = 'icon'>
-						<img src = { param.simulationAndVisualisationResults.simulatedAndVisualizedTransactions.find( (x) => x.statusCode !== 'success') === undefined ? ( param.simulationAndVisualisationResults.simulatedAndVisualizedTransactions.find( (x) => x.quarantine ) !== undefined ? '../img/warning-sign.svg' : '../img/success-icon.svg' ) : '../img/error-icon.svg' } />
+						<img src = { param.simulationAndVisualisationResults.simulatedAndVisualizedTransactions.find((x) => x.statusCode !== 'success') === undefined ? ( param.simulationAndVisualisationResults.simulatedAndVisualizedTransactions.find( (x) => x.quarantine ) !== undefined ? '../img/warning-sign.svg' : '../img/success-icon.svg' ) : '../img/error-icon.svg' } />
 					</span>
 				</div>
 				<p class = 'card-header-title'>
@@ -637,8 +644,9 @@ export function SimulationSummary(param: SimulationSummaryParams) {
 							<span class = 'icon' style = 'color: var(--text-color); font-weight: unset; font-size: 0.8em;'> V </span>
 						</div>
 					</header>
-					{ !showOtherAccountChanges ? <></> :
-						<div class = 'card-content'>
+					{ !showOtherAccountChanges
+						? <></>
+						: <div class = 'card-content'>
 							<div class = 'container'>
 								{ notOwnAddresses.length == 0 ? <p class = 'paragraph'>No changes to other accounts</p> : notOwnAddresses.map( ([_index, balanceSummary]) => (<>
 									<SummarizeAddress
@@ -666,42 +674,57 @@ export function SimulationSummary(param: SimulationSummaryParams) {
 	)
 }
 
-type ExtraDetailsTransactionCardParams = {
-	transaction: TransactionWithAddressBookEntries;
+type RawTransactionDetailsCardParams = {
+	transaction: TransactionWithAddressBookEntries
+	renameAddressCallBack: RenameAddressCallBack
+	gasSpent: bigint
 }
-export function ExtraDetailsTransactionCard({ transaction }: ExtraDetailsTransactionCardParams) {
+export function RawTransactionDetailsCard({ transaction, renameAddressCallBack, gasSpent }: RawTransactionDetailsCardParams) {
 	const [showSummary, setShowSummary] = useState<boolean>(false)
-
-	const CellElement = (param: { text: string }) => {
-		return <div class = 'log-cell' style = 'justify-content: right;'> <p class = 'paragraph' style = 'color: var(--subtitle-text-color)'> { param.text }</p></div>
-	}
 
 	return <div class = 'card' style = 'margin-top: 10px; margin-bottom: 10px'>
 		<header class = 'card-header noselect' style = 'cursor: pointer; height: 30px;' onClick = { () => setShowSummary((prevValue) => !prevValue) }>
 			<p class = 'card-header-title' style = 'font-weight: unset; font-size: 0.8em;'>
-				Extra details
+				Raw transaction information
 			</p>
 			<div class = 'card-header-icon'>
 				<span class = 'icon' style = 'color: var(--text-color); font-weight: unset; font-size: 0.8em;'> V </span>
 			</div>
 		</header>
-		{ !showSummary ? <></> : <>
-			<div class = 'card-content'>
+		{ !showSummary
+			? <></>
+			: <div class = 'card-content'>
 				<div class = 'container' style = 'margin-bottom: 10px;'>
-					<span class = 'log-table' style = 'justify-content: center; column-gap: 5px; grid-template-columns: auto auto'>
-						<CellElement text = 'Transaction Type: '/>
+					<span class = 'log-table' style = 'justify-content: center; column-gap: 5px; row-gap: 5px; grid-template-columns: auto auto'>
+						<CellElement text = 'Transaction type: '/>
 						<CellElement text =  { transaction.type }/>
-						<CellElement text = 'Nonce: '/>
-						<CellElement text = { transaction.nonce.toString(10) }/>
+						<CellElement text = 'From: '/>
+						<CellElement text = { <SmallAddress addressBookEntry = { transaction.from } renameAddressCallBack = { renameAddressCallBack } textColor = { 'var(--subtitle-text-color)' } /> } />
+						<CellElement text = 'To: '/>
+						<CellElement text = { transaction.to === undefined ? 'No receiving Address' : <SmallAddress addressBookEntry = { transaction.to } renameAddressCallBack = { renameAddressCallBack } textColor = { 'var(--subtitle-text-color)' }/> } />
+						<CellElement text = 'Value: '/>
+						<CellElement text = { <Ether amount = { transaction.value } useFullTokenName = { true } chain = { transaction.chainId } textColor = { 'var(--subtitle-text-color)' }/> } />
+						<CellElement text = 'Gas used: '/>
+						<CellElement text = { `${ gasSpent.toString(10) } gas (${ Number(gasSpent * 10000n / transaction.gas) / 100 }%)` }/>
 						<CellElement text = 'Gas limit: '/>
 						<CellElement text = { `${ transaction.gas.toString(10) } gas` }/>
+						<CellElement text = 'Nonce: '/>
+						<CellElement text = { transaction.nonce.toString(10) }/>
+						<CellElement text = 'Chain: '/>
+						<CellElement text = { getChainName(BigInt(transaction.chainId)) }/>
+						<CellElement text = 'Unsigned transaction hash: '/>
+						<CellElement text = { bytes32String(transaction.hash) }/>
+						
 
-						{ transaction.type !== '1559' ? <></> : <>
-							<CellElement text = 'Max Fee Per Gas: '/>
-							<CellElement text = { `${ nanoString(transaction.maxFeePerGas) } nanoeth/gas` }/>
-							<CellElement text = 'Max Priority Fee Per Gas: '/>
-							<CellElement text = { `${ nanoString(transaction.maxPriorityFeePerGas) } nanoeth/gas` }/>
-						</> }
+						{ transaction.type !== '1559'
+							? <></>
+							: <>
+								<CellElement text = 'Max Fee Per Gas: '/>
+								<CellElement text = { `${ nanoString(transaction.maxFeePerGas) } nanoeth/gas` }/>
+								<CellElement text = 'Max Priority Fee Per Gas: '/>
+								<CellElement text = { `${ nanoString(transaction.maxPriorityFeePerGas) } nanoeth/gas` }/>
+							</>
+						}
 					</span>
 
 					<p class = 'paragraph' style = 'color: var(--subtitle-text-color)'>Raw transaction input: </p>
@@ -711,6 +734,6 @@ export function ExtraDetailsTransactionCard({ transaction }: ExtraDetailsTransac
 					</div>
 				</div>
 			</div>
-		</> }
+		}
 	</div>
 }

@@ -5,7 +5,7 @@ import { ChainChangeConfirmation, InterceptedRequest, ExternalPopupMessage, Sign
 import { Website, WebsiteSocket, WebsiteTabConnections } from '../../utils/user-interface-types.js'
 import { changeActiveChain, sendMessageToContentScript } from '../background.js'
 import { getHtmlFile, sendPopupMessageToOpenWindows } from '../backgroundUtils.js'
-import { getChainChangeConfirmationPromise, setChainChangeConfirmationPromise } from '../settings.js'
+import { getChainChangeConfirmationPromise, setChainChangeConfirmationPromise } from '../storageVariables.js'
 
 let pendForUserReply: Future<ChainChangeConfirmation> | undefined = undefined
 let pendForSignerReply: Future<SignerChainChangeConfirmation> | undefined = undefined

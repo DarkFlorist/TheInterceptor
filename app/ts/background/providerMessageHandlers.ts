@@ -3,7 +3,8 @@ import { WebsiteTabConnections } from '../utils/user-interface-types.js'
 import { EthereumAccountsReply, EthereumChainReply } from '../utils/wire-types.js'
 import { changeActiveAddressAndChainAndResetSimulation } from './background.js'
 import { getSocketFromPort, sendInternalWindowMessage, sendPopupMessageToOpenWindows } from './backgroundUtils.js'
-import { getSettings, getTabState, setSignerName, updateTabState } from './settings.js'
+import { getTabState, setSignerName, updateTabState } from './storageVariables.js'
+import { getSettings } from './settings.js'
 import { resolveSignerChainChange } from './windows/changeChain.js'
 
 export async function ethAccountsReply(websiteTabConnections: WebsiteTabConnections, port: browser.runtime.Port, request: ProviderMessage) {

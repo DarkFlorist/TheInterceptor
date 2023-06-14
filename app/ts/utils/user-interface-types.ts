@@ -4,7 +4,7 @@ import { EthereumAddress, EthereumQuantity, LiteralConverterParserFactory } from
 import { SimulatedAndVisualizedTransaction, SimulationAndVisualisationResults } from './visualizer-types.js'
 import { IdentifiedSwapWithMetadata } from '../components/simulationExplaining/SwapTransactions.js'
 import { CHAINS } from './constants.js'
-import { IsConnected, Page, PendingAccessRequestArray, TabIconDetails, WebsiteAccessArray } from './interceptor-messages.js'
+import { IsConnected, Page, TabIconDetails, WebsiteAccessArray } from './interceptor-messages.js'
 
 export type SignerName = funtypes.Static<typeof SignerName>
 export const SignerName = funtypes.Union(
@@ -198,14 +198,6 @@ export type LogAnalysisParams = {
 	identifiedSwap: IdentifiedSwapWithMetadata,
 	renameAddressCallBack: RenameAddressCallBack,
 }
-
-export type NotificationCenterParams = {
-	setAndSaveAppPage: (page: Page) => void
-	renameAddressCallBack: RenameAddressCallBack
-	pendingAccessRequests: PendingAccessRequestArray | undefined
-	pendingAccessMetadata: readonly [string, AddressInfoEntry][]
-}
-
 
 export type RenameAddressCallBack = (addressBookEntry: AddressBookEntry) => void
 

@@ -128,10 +128,15 @@ input[type = 'checkbox']:checked::before {
 	pointer-events: none;
 }
 
+.unsetcursor {
+	cursor: unset
+}
+
 .title {
 	overflow: hidden;
-	color:var(--text-color);
+	color: var(--text-color);
 	white-space: unset;
+	line-height: 1.3em;
 }
 
 .paragraph {
@@ -335,7 +340,7 @@ a.dropdown-item.is-active, button.dropdown-item.is-active {
 }
 
 .card-header-icon {
-	padding: unset;
+	padding: 0;
 	padding-left: 0.75rem;
 	padding-right: 0.75rem;
 }
@@ -559,7 +564,7 @@ svg.spinner > circle {
 	display: block;
 	visibility: hidden;
 	height: 0px;
-	margin-left: 47px;
+	padding-left: 43px;
 }
 
 .rename-address-button {
@@ -602,8 +607,8 @@ svg.spinner > circle {
 }
 
 .breadcrumb li + li::before {
-	margin-left: 5px;
-	margin-right: 5px;
+	margin-left: 0px;
+	margin-right: 0px;
 }
 
 .button.is-primary:focus:not(:active) {
@@ -678,4 +683,27 @@ svg.spinner > circle {
 	margin: 5px;
 	padding: 5px;
 	border-radius: 5px;
+}
+
+.popup-block {
+	display: flex;
+	justify-content: space-between;
+	flex-direction: column;
+	height: 100%;
+	position: fixed;
+	width: 100%
+}
+
+.popup-block-scroll {
+	overflow-y: auto;
+	padding: 10px;
+}
+
+.popup-button-row {
+	display: flex;
+	justify-content: space-around;
+	width: 100%;
+	flex-direction: column;
+	padding-bottom: 10px;
+	padding-top: 10px;
 }
