@@ -103,7 +103,7 @@ type InjectFunctions = {
 	sendAsync: unknown
 	on: (kind: OnMessage, callback: AnyCallBack) => WindowEthereum
 	removeListener: (kind: OnMessage, callback: AnyCallBack) => WindowEthereum
-	isConnected: () => boolean
+	isConnected?: () => boolean
 	enable: () => void
 }
 
@@ -431,7 +431,7 @@ class InterceptorMessageListener {
 			this.WindowEthereumRequest({ method: 'signer_chainChanged', params: [chainId] })
 		})
 
-		this.connected = window.ethereum.isConnected()
+		this.connected = window.ethereum.isConnected !== undefined ? window.ethereum.isConnected() : true
 		this.signerWindowEthereumRequest = window.ethereum.request.bind(window.ethereum) // store the request object to signer
 
 		if (window.ethereum.isBraveWallet) {
