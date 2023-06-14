@@ -15,7 +15,9 @@ function parseRequest(data: string) {
 }
 
 class MockEthereumJSONRpcRequestHandler {
-	constructor(_endpoint: string) {}
+	constructor(_endpoint: string, _useES383: false) {}
+
+	public getUseES383 = () => false
 
 	public readonly jsonRpcRequest = async (rpcRequest: EthereumJsonRpcRequest) => {
 		switch (rpcRequest.method) {
@@ -38,7 +40,7 @@ class MockEthereumJSONRpcRequestHandler {
 export async function main() {
 	const blockNumber = 8443561n
 	const chain = '5' as const
-	const ethereum = new EthereumClientService(new MockEthereumJSONRpcRequestHandler(CHAINS[chain].https_rpc), chain, () => {}, () => {})
+	const ethereum = new EthereumClientService(new MockEthereumJSONRpcRequestHandler(CHAINS[chain].https_rpc, false), chain, () => {}, () => {})
 	const simulationState = {
 		prependTransactionsQueue: [],
 		simulatedTransactions: [],
