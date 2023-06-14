@@ -707,7 +707,3 @@ svg.spinner > circle {
 	padding-bottom: 10px;
 	padding-top: 10px;
 }
-
-input[type = 'file'] {
-	opacity: 0    
-}

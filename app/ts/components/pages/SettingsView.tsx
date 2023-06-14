@@ -82,10 +82,10 @@ function ImportExport() {
 		: <></> }
 		<div class = 'popup-button-row'>
 			<div style = 'display: flex; flex-direction: row;'>
-				<button className = 'button is-primary is-danger' style = 'flex-grow: 1; margin-left: 5px; margin-right: 5px;'>
+				<label className = 'button is-primary is-danger' style = 'flex-grow: 1; margin-left: 5px; margin-right: 5px;'>
 					Import settings
-					<input type = 'file' accept = '.json' onInput = { importSettings } style = 'position: absolute; width: 100%; height: 100%;'/>
-				</button>
+					<input type = 'file' accept = '.json' onInput = { importSettings } style = 'position: absolute; width: 100%; height: 100%; opacity: 0;'/>
+				</label>
 				<button className = 'button is-primary' style = 'flex-grow: 1; margin-left: 5px; margin-right: 5px;' onClick = { exportSettings }>
 					Export settings
 				</button>
