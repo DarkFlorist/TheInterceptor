@@ -1,9 +1,10 @@
 
-import { EthBalanceChanges, EthereumAddress, EthereumData, EthereumQuantity, EthereumSignedTransaction, EthereumTimestamp, EthereumUnsignedTransaction, EthSubscribeParams, SingleMulticallResponse } from './wire-types.js'
+import { EthereumAddress, EthereumData, EthereumQuantity, EthereumSignedTransaction, EthereumTimestamp, EthereumUnsignedTransaction } from './wire-types.js'
 import * as funtypes from 'funtypes'
 import { QUARANTINE_CODE } from '../simulation/protectors/quarantine-codes.js'
 import { AddressBookEntry, CHAIN, NFTEntry, RenameAddressCallBack, TokenEntry, Website, WebsiteSocket } from './user-interface-types.js'
 import { ERROR_INTERCEPTOR_GAS_ESTIMATION_FAILED } from './constants.js'
+import { EthBalanceChanges, EthSubscribeParams, SingleMulticallResponse } from './JSONRPC-types.js'
 
 export type OptionalEthereumAddress = funtypes.Static<typeof OptionalEthereumAddress>
 export const OptionalEthereumAddress = funtypes.Union(EthereumAddress, funtypes.Undefined)

@@ -1,11 +1,12 @@
-import { MulticallResponse, EthereumUnsignedTransaction, EthereumSignedTransactionWithBlockData, EthGetStorageAtResponse, EthereumQuantity, EthereumBlockTag, EthTransactionReceiptResponse, EthereumData, EthereumBlockHeader, EthereumBlockHeaderWithTransactionHashes, EthGetLogsRequest, EthGetLogsResponse, DappRequestTransaction } from '../../utils/wire-types.js'
+import { EthereumUnsignedTransaction, EthereumSignedTransactionWithBlockData, EthereumQuantity, EthereumBlockTag, EthereumData, EthereumBlockHeader } from '../../utils/wire-types.js'
+import { MulticallResponse, EthGetStorageAtResponse, EthTransactionReceiptResponse, EthereumBlockHeaderWithTransactionHashes, EthGetLogsRequest, EthGetLogsResponse, DappRequestTransaction } from '../../utils/JSONRPC-types.js'
 import { IUnsignedTransaction1559 } from '../../utils/ethereum.js'
 import { TIME_BETWEEN_BLOCKS, CHAINS, MOCK_ADDRESS } from '../../utils/constants.js'
 import { CHAIN } from '../../utils/user-interface-types.js'
 import { IEthereumJSONRpcRequestHandler } from './EthereumJSONRpcRequestHandler.js'
 import { ethers } from 'ethers'
 import { stringToUint8Array } from '../../utils/bigint.js'
-import { BlockCalls, ExecutionSpec383MultiCallResult } from '../../utils/multicall-types.js'
+import { BlockCalls, ExecutionSpec383MultiCallParams, ExecutionSpec383MultiCallResult } from '../../utils/multicall-types.js'
 import { assertNever } from '../../utils/typescript.js'
 
 export type IEthereumClientService = Pick<EthereumClientService, keyof EthereumClientService>
@@ -201,20 +202,26 @@ export class EthereumClientService {
 	}
 
 	public readonly multicall = async (transactions: readonly EthereumUnsignedTransaction[], blockNumber: bigint) => {
+		if (this.requestHandler.getUseES383()) return this.executionSpec383MultiCallOnlyTransactions(transactions, blockNumber)
 		const blockAuthor: bigint = MOCK_ADDRESS
 		const unvalidatedResult = await this.requestHandler.jsonRpcRequest({ method: 'eth_multicall', params: [blockNumber, blockAuthor, transactions] })
 		return MulticallResponse.parse(unvalidatedResult)
 	}
 
-	public readonly executionSpec383MultiCall = async (version: EthereumQuantity, calls: readonly BlockCalls[], blockTag: EthereumBlockTag) => {
-		const unvalidatedResult = await this.requestHandler.jsonRpcRequest({ method: 'eth_multicall', params: [version, calls, blockTag] })
+	public readonly executionSpec383MultiCall = async (calls: readonly BlockCalls[], blockTag: EthereumBlockTag) => {
+		const call = { method: 'eth_multicall', params: [0, calls, blockTag] } as const
+		console.log(calls)
+		console.log(JSON.stringify(ExecutionSpec383MultiCallParams.serialize(call)))
+		const unvalidatedResult = await this.requestHandler.jsonRpcRequest(call)
+		console.log([0, calls, blockTag])
+		console.log(unvalidatedResult)
 		return ExecutionSpec383MultiCallResult.parse(unvalidatedResult)
 	}
 	
 	//intended drop in replacement of the old multicall
 	public readonly executionSpec383MultiCallOnlyTransactions = async (transactions: readonly EthereumUnsignedTransaction[], blockNumber: bigint): Promise<MulticallResponse> => {
 		const parentBlock = await this.getBlock()
-		const multicallResults = await this.executionSpec383MultiCall(1n, [{
+		const multicallResults = await this.executionSpec383MultiCall([{
 			calls: transactions,
 			blockOverride: {
 				number: blockNumber,

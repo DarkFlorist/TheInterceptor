@@ -1,7 +1,8 @@
 import { ConfirmTransactionTransactionSingleVisualization, HandleSimulationModeReturnValue, InterceptedRequest, InterceptedRequestForward, PopupMessage, ProviderMessage, Settings, TabState } from '../utils/interceptor-messages.js'
 import 'webextension-polyfill'
 import { Simulator } from '../simulation/simulator.js'
-import { EthereumJsonRpcRequest, EthereumQuantity, OldSignTypedDataParams, PersonalSignParams, SignTypedDataParams } from '../utils/wire-types.js'
+import { EthereumQuantity } from '../utils/wire-types.js'
+import { EthereumJsonRpcRequest, OldSignTypedDataParams, PersonalSignParams, SignTypedDataParams } from '../utils/JSONRPC-types.js'
 import { clearTabStates, getSignerName, getSimulationResults, removeTabState, setIsConnected, updateSimulationResults, updateTabState } from './storageVariables.js'
 import { changeSimulationMode, getSettings, getMakeMeRich } from './settings.js'
 import { blockNumber, call, chainId, estimateGas, gasPrice, getAccounts, getBalance, getBlockByNumber, getCode, getLogs, getPermissions, getSimulationStack, getTransactionByHash, getTransactionCount, getTransactionReceipt, personalSign, requestPermissions, sendRawTransaction, sendTransaction, subscribe, switchEthereumChain, unsubscribe } from './simulationModeHanders.js'
@@ -384,7 +385,7 @@ export async function changeActiveAddressAndChainAndResetSimulation(
 			const chainString = change.activeChain.toString()
 			if (isSupportedChain(chainString)) {
 				simulator.cleanup()
-				simulator = new Simulator(chainString, newBlockCallback, onErrorBlockCallback)
+				simulator = new Simulator(chainString, true, newBlockCallback, onErrorBlockCallback)
 			}
 			sendMessageToApprovedWebsitePorts(websiteTabConnections, 'chainChanged', EthereumQuantity.serialize(change.activeChain))
 			sendPopupMessageToOpenWindows({ method: 'popup_chain_update' })
@@ -662,7 +663,7 @@ async function popupMessageHandler(
 async function startup() {
 	const settings = await getSettings()
 	const chainString = settings.activeChain.toString()
-	simulator = new Simulator(isSupportedChain(chainString) ? chainString : '1', newBlockCallback, onErrorBlockCallback)
+	simulator = new Simulator(isSupportedChain(chainString) ? chainString : '1', true, newBlockCallback, onErrorBlockCallback)
 
 	browser.runtime.onMessage.addListener(async function(message: unknown) {
 		if (simulator === undefined) throw new Error('Interceptor not ready yet')
