@@ -3,6 +3,7 @@ import { LegacyWebsiteAccessArray, Page, Settings, WebsiteAccessArray, WebsiteAc
 import { Semaphore } from '../utils/semaphore.js'
 import { browserStorageLocalGet, browserStorageLocalSet, browserStorageLocalSetKeys, browserStorageLocalSingleGetWithDefault } from '../utils/storageUtils.js'
 import { AddressInfoArray, ContactEntries } from '../utils/user-interface-types.js'
+import { OptionalEthereumAddress } from '../utils/visualizer-types.js'
 import { EthereumAddress, EthereumAddressOrMissing, EthereumQuantity } from '../utils/wire-types.js'
 import * as funtypes from 'funtypes'
 
@@ -68,6 +69,7 @@ export async function getSettings() : Promise<Settings> {
 export async function setPage(page: Page) {
 	return await browserStorageLocalSet('page', page)
 }
+
 export async function setMakeMeRich(makeMeRich: boolean) {
 	return await browserStorageLocalSet('makeMeRich', makeMeRich)
 }
@@ -76,10 +78,6 @@ export async function getMakeMeRich() {
 }
 export async function setUseSignersAddressAsActiveAddress(useSignersAddressAsActiveAddress: boolean) {
 	return await browserStorageLocalSet('useSignersAddressAsActiveAddress', useSignersAddressAsActiveAddress)
-}
-
-export async function setOpenedAddressBookTabId(addressbookTabId: number) {
-	return await browserStorageLocalSet('addressbookTabId', addressbookTabId)
 }
 
 export async function changeSimulationMode(changes: { simulationMode: boolean, activeChain?: EthereumQuantity, activeSimulationAddress?: EthereumAddress | undefined, activeSigningAddress?: EthereumAddress | undefined }) {
@@ -121,4 +119,59 @@ export async function getUseTabsInsteadOfPopup() {
 
 export async function setUseTabsInsteadOfPopup(useTabsInsteadOfPopup: boolean) {
 	return await browserStorageLocalSet('useTabsInsteadOfPopup', funtypes.Boolean.serialize(useTabsInsteadOfPopup) as string)
+}
+
+export type ExportedSettings = funtypes.Static<typeof ExportedSettings>
+export const ExportedSettings = funtypes.ReadonlyObject({
+	name: funtypes.Literal('InterceptorSettingsAndAddressBook'),
+	version: funtypes.Literal('1.0'),
+	exportedDate: funtypes.String,
+	settings: funtypes.ReadonlyObject({
+		activeSimulationAddress: OptionalEthereumAddress,
+		activeSigningAddress: OptionalEthereumAddress,
+		activeChain: EthereumQuantity,
+		page: Page,
+		useSignersAddressAsActiveAddress: funtypes.Boolean,
+		websiteAccess: WebsiteAccessArray,
+		simulationMode: funtypes.Boolean,
+		addressInfos: AddressInfoArray,
+		contacts: funtypes.Union(funtypes.Undefined, ContactEntries),
+		useTabsInsteadOfPopup: funtypes.Boolean,
+	})
+})
+
+export async function exportSettingsAndAddressBook() {
+	const results = {
+		name: 'InterceptorSettingsAndAddressBook' as const,
+		version: '1.0' as const,
+		exportedDate: (new Date).toISOString().split('T')[0],
+		settings: await browserStorageLocalGet([
+			'activeSigningAddress',
+			'activeSimulationAddress',
+			'addressInfos',
+			'page',
+			'useSignersAddressAsActiveAddress',
+			'websiteAccess',
+			'activeChain',
+			'simulationMode',
+			'contacts',
+			'useTabsInsteadOfPopup',
+		])
+	}
+	return ExportedSettings.parse(results)
+}
+
+export async function importSettingsAndAddressBook(exportedSetings: ExportedSettings) {
+	await changeSimulationMode({
+		simulationMode: exportedSetings.settings.simulationMode,
+		activeChain: exportedSetings.settings.activeChain,
+		activeSimulationAddress: exportedSetings.settings.activeSimulationAddress,
+		activeSigningAddress: exportedSetings.settings.activeSigningAddress,
+	})
+	await setPage(exportedSetings.settings.page)
+	await updateAddressInfos(() => exportedSetings.settings.addressInfos)
+	await setUseSignersAddressAsActiveAddress(exportedSetings.settings.useSignersAddressAsActiveAddress)
+	await updateWebsiteAccess(() => exportedSetings.settings.websiteAccess)
+	await updateContacts(() => exportedSetings.settings.contacts === undefined ? [] : exportedSetings.settings.contacts)
+	await setUseTabsInsteadOfPopup(exportedSetings.settings.useTabsInsteadOfPopup)
 }
