@@ -431,7 +431,7 @@ class InterceptorMessageListener {
 			this.WindowEthereumRequest({ method: 'signer_chainChanged', params: [chainId] })
 		})
 
-		this.connected = window.ethereum.isConnected !== undefined ? window.ethereum.isConnected() : true
+		this.connected = !window.ethereum.isConnected || window.ethereum.isConnected()
 		this.signerWindowEthereumRequest = window.ethereum.request.bind(window.ethereum) // store the request object to signer
 
 		if (window.ethereum.isBraveWallet) {
