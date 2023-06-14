@@ -422,25 +422,30 @@ const providerHandlers = new Map<string, ProviderHandler>([
 	['wallet_switchEthereumChain_reply', walletSwitchEthereumChainReply],
 	['connected_to_signer', connectedToSigner]
 ])
+
+export function postMessageToPortIfConnected(port: browser.runtime.Port, message: InterceptedRequestForward) {
+	try {
+		port.postMessage(message)
+	} catch (error) {
+		if (error instanceof Error) {
+			if (error.message?.includes('Attempting to use a disconnected port object')) {
+				return
+			}
+			if (error.message?.includes('Could not establish connection. Receiving end does not exist')) {
+				return
+			}
+		}
+		throw error
+	}
+}
+
 export function postMessageIfStillConnected(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, message: InterceptedRequestForward) {
 	const tabConnection = websiteTabConnections.get(socket.tabId)
 	const identifier = websiteSocketToString(socket)
 	if (tabConnection === undefined) return false
 	for (const [socketAsString, connection] of Object.entries(tabConnection.connections)) {
 		if (socketAsString !== identifier) continue
-		try {
-			connection.port.postMessage(message)
-		} catch (error) {
-			if (error instanceof Error) {
-				if (error.message?.includes('Attempting to use a disconnected port object')) {
-					return
-				}
-				if (error.message?.includes('Could not establish connection. Receiving end does not exist')) {
-					return
-				}
-			}
-			throw error
-		}
+		postMessageToPortIfConnected(connection.port, message)
 	}
 	return true
 }

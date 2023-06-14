@@ -1,7 +1,7 @@
 import { ConnectedToSigner, ProviderMessage, WalletSwitchEthereumChainReply, TabState } from '../utils/interceptor-messages.js'
 import { WebsiteTabConnections } from '../utils/user-interface-types.js'
 import { EthereumAccountsReply, EthereumChainReply } from '../utils/wire-types.js'
-import { changeActiveAddressAndChainAndResetSimulation } from './background.js'
+import { changeActiveAddressAndChainAndResetSimulation, postMessageToPortIfConnected } from './background.js'
 import { getSocketFromPort, sendInternalWindowMessage, sendPopupMessageToOpenWindows } from './backgroundUtils.js'
 import { getTabState, setSignerName, updateTabState } from './storageVariables.js'
 import { getSettings } from './settings.js'
@@ -71,7 +71,20 @@ export async function walletSwitchEthereumChainReply(websiteTabConnections: Webs
 	})
 }
 
-export async function connectedToSigner(_websiteTabConnections: WebsiteTabConnections, _port: browser.runtime.Port, request: ProviderMessage) {
+export async function connectedToSigner(_websiteTabConnections: WebsiteTabConnections, port: browser.runtime.Port, request: ProviderMessage) {
 	await setSignerName(ConnectedToSigner.parse(request.options).params[0])
 	await sendPopupMessageToOpenWindows({ method: 'popup_signer_name_changed' })
+	const settings = await getSettings()
+	if (!settings.simulationMode || settings.useSignersAddressAsActiveAddress) {
+		postMessageToPortIfConnected(port, {
+			interceptorApproved: true,
+			options: { method: 'request_signer_to_eth_requestAccounts' },
+			result: []
+		})
+		postMessageToPortIfConnected(port, {
+			interceptorApproved: true,
+			options: { method: 'request_signer_chainId' },
+			result: []
+		})
+	}
 }

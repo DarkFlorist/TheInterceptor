@@ -51,18 +51,21 @@ export async function getSignerAccount() {
 }
 
 export async function changeActiveAddress(websiteTabConnections: WebsiteTabConnections, addressChange: ChangeActiveAddress) {
-	await setUseSignersAddressAsActiveAddress(addressChange.options.activeAddress === 'signer')
 
 	// if using signers address, set the active address to signers address if available, otherwise we don't know active address and set it to be undefined
 	if (addressChange.options.activeAddress === 'signer') {
+		const signerAccount = await getSignerAccount()
+		await setUseSignersAddressAsActiveAddress(addressChange.options.activeAddress === 'signer', signerAccount)
+
 		sendMessageToApprovedWebsitePorts(websiteTabConnections, 'request_signer_to_eth_requestAccounts', [])
 		sendMessageToApprovedWebsitePorts(websiteTabConnections, 'request_signer_chainId', [])
-		const signerAccount = await getSignerAccount()
+		
 		await changeActiveAddressAndChainAndResetSimulation(websiteTabConnections, {
 			simulationMode: addressChange.options.simulationMode,
 			activeAddress: signerAccount,
 		})
 	} else {
+		await setUseSignersAddressAsActiveAddress(false)
 		await changeActiveAddressAndChainAndResetSimulation(websiteTabConnections, {
 			simulationMode: addressChange.options.simulationMode,
 			activeAddress: addressChange.options.activeAddress,
