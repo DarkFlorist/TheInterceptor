@@ -76,8 +76,11 @@ export async function setMakeMeRich(makeMeRich: boolean) {
 export async function getMakeMeRich() {
 	return funtypes.Boolean.parse(await browserStorageLocalSingleGetWithDefault('makeMeRich', false))
 }
-export async function setUseSignersAddressAsActiveAddress(useSignersAddressAsActiveAddress: boolean) {
-	return await browserStorageLocalSet('useSignersAddressAsActiveAddress', useSignersAddressAsActiveAddress)
+export async function setUseSignersAddressAsActiveAddress(useSignersAddressAsActiveAddress: boolean, currentSignerAddress: bigint | undefined = undefined) {
+	return await browserStorageLocalSetKeys({
+		'useSignersAddressAsActiveAddress': useSignersAddressAsActiveAddress,
+		...useSignersAddressAsActiveAddress === true ? { 'activeSigningAddress': EthereumAddressOrMissing.serialize(currentSignerAddress) as string } : {}
+	})
 }
 
 export async function changeSimulationMode(changes: { simulationMode: boolean, activeChain?: EthereumQuantity, activeSimulationAddress?: EthereumAddress | undefined, activeSigningAddress?: EthereumAddress | undefined }) {
@@ -162,6 +165,7 @@ export async function exportSettingsAndAddressBook() {
 }
 
 export async function importSettingsAndAddressBook(exportedSetings: ExportedSettings) {
+	await setUseSignersAddressAsActiveAddress(exportedSetings.settings.useSignersAddressAsActiveAddress)
 	await changeSimulationMode({
 		simulationMode: exportedSetings.settings.simulationMode,
 		activeChain: exportedSetings.settings.activeChain,
@@ -170,7 +174,6 @@ export async function importSettingsAndAddressBook(exportedSetings: ExportedSett
 	})
 	await setPage(exportedSetings.settings.page)
 	await updateAddressInfos(() => exportedSetings.settings.addressInfos)
-	await setUseSignersAddressAsActiveAddress(exportedSetings.settings.useSignersAddressAsActiveAddress)
 	await updateWebsiteAccess(() => exportedSetings.settings.websiteAccess)
 	await updateContacts(() => exportedSetings.settings.contacts === undefined ? [] : exportedSetings.settings.contacts)
 	await setUseTabsInsteadOfPopup(exportedSetings.settings.useTabsInsteadOfPopup)
