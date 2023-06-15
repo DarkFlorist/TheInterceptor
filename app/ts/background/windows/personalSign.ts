@@ -222,6 +222,7 @@ export const openPersonalSignDialog = async (
 	simulationMode: boolean,
 	website: Website,
 	settings: Settings,
+	activeAddress: bigint | undefined
 ): Promise<HandleSimulationModeReturnValue> => {
 	if (pendingPersonalSign !== undefined) return reject()
 
@@ -232,7 +233,6 @@ export const openPersonalSignDialog = async (
 		return resolvePersonalSign(websiteTabConnections, rejectMessage(request.requestId))
 	}
 
-	const activeAddress = simulationMode ? settings.activeSimulationAddress : settings.activeSigningAddress
 	if (activeAddress === undefined) return reject()
 	const popupMessage = await craftPersonalSignPopupMessage(ethereumClientService, params, socket.tabId, activeAddress, settings.userAddressBook, simulationMode, request.requestId, await getSignerName(), website)
 

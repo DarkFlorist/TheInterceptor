@@ -23,12 +23,11 @@ function setWebsitePortApproval(websiteTabConnections: WebsiteTabConnections, so
 	connection.approved = approved
 }
 
-export function verifyAccess(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, isEthRequestAccounts: boolean, websiteOrigin: string, settings: Settings): 'hasAccess' | 'noAccess' | 'askAccess' {
+export function verifyAccess(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, isEthRequestAccounts: boolean, websiteOrigin: string, requestAccessForAddress: bigint | undefined, settings: Settings): 'hasAccess' | 'noAccess' | 'askAccess' {
 	const connection = getConnectionDetails(websiteTabConnections, socket)
 	if (connection && connection.approved) return 'hasAccess'
-	const activeAddress = getActiveAddress(settings)
-	const access = activeAddress !== undefined ? hasAddressAccess(settings.websiteAccess, websiteOrigin, activeAddress, settings) : hasAccess(settings.websiteAccess, websiteOrigin)
-	if (access === 'hasAccess') return connectToPort(websiteTabConnections, socket, websiteOrigin, settings) ? 'hasAccess' : 'noAccess'
+	const access = requestAccessForAddress !== undefined ? hasAddressAccess(settings.websiteAccess, websiteOrigin, requestAccessForAddress, settings) : hasAccess(settings.websiteAccess, websiteOrigin)
+	if (access === 'hasAccess') return  connectToPort(websiteTabConnections, socket, websiteOrigin, settings, requestAccessForAddress) ? 'hasAccess' : 'noAccess'
 	if (access === 'noAccess') return 'noAccess'
 	return isEthRequestAccounts ? 'askAccess' : 'noAccess'
 }
@@ -46,12 +45,12 @@ export function sendMessageToApprovedWebsitePorts(websiteTabConnections: Website
 		}
 	}
 }
-export function sendActiveAccountChangeToApprovedWebsitePorts(websiteTabConnections: WebsiteTabConnections, settings: Settings) {
+export async function sendActiveAccountChangeToApprovedWebsitePorts(websiteTabConnections: WebsiteTabConnections, settings: Settings) {
 	// inform all the tabs about the address change
 	for (const [_tab, tabConnection] of websiteTabConnections.entries() ) {
 		for (const [_string, connection] of Object.entries(tabConnection.connections) ) {
-			if ( !connection.approved ) continue
-			const activeAddress = getActiveAddressForDomain(settings.websiteAccess, connection.websiteOrigin, settings)
+			if (!connection.approved) continue
+			const activeAddress = await getActiveAddressForDomain(connection.websiteOrigin, settings, connection.socket)
 			postMessageIfStillConnected(websiteTabConnections, connection.socket, {
 				interceptorApproved: true,
 				options: { method: 'accountsChanged' },
@@ -165,17 +164,15 @@ export async function setAccess(website: Website, access: boolean, address: bigi
 
 // gets active address if the website has been give access for it, otherwise returns undefined
 // this is to guard websites from seeing addresses without access
-export function getActiveAddressForDomain(websiteAccess: WebsiteAccessArray, websiteOrigin: string, settings: Settings) {
-	const activeAddress = getActiveAddress(settings)
-	if ( activeAddress === undefined) return undefined
-	const hasAccess = hasAddressAccess(websiteAccess, websiteOrigin, activeAddress, settings)
-	if( hasAccess === 'hasAccess' ) {
-		return activeAddress
-	}
+export async function getActiveAddressForDomain(websiteOrigin: string, settings: Settings, socket: WebsiteSocket) {
+	const activeAddress = await getActiveAddress(settings, socket.tabId)
+	if (activeAddress === undefined) return undefined
+	const hasAccess = hasAddressAccess(settings.websiteAccess, websiteOrigin, activeAddress, settings)
+	if (hasAccess === 'hasAccess') return activeAddress
 	return undefined
 }
 
-function connectToPort(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, websiteOrigin: string, settings: Settings): true {
+function connectToPort(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, websiteOrigin: string, settings: Settings, connectWithActiveAddress: bigint | undefined): true {
 	setWebsitePortApproval(websiteTabConnections, socket, true)
 	updateExtensionIcon(websiteTabConnections, socket, websiteOrigin)
 
@@ -188,11 +185,10 @@ function connectToPort(websiteTabConnections: WebsiteTabConnections, socket: Web
 	})
 
 	// seems like dapps also want to get account changed and chain changed events after we connect again, so let's send them too
-	const activeAddress = getActiveAddressForDomain(settings.websiteAccess, websiteOrigin, settings)
 	postMessageIfStillConnected(websiteTabConnections, socket, {
 		interceptorApproved: true,
 		options: { method: 'accountsChanged' },
-		result: activeAddress !== undefined ? [EthereumAddress.serialize(activeAddress)] : []
+		result: connectWithActiveAddress !== undefined ? [EthereumAddress.serialize(connectWithActiveAddress)] : []
 	})
 
 	postMessageIfStillConnected(websiteTabConnections, socket, {
@@ -240,19 +236,19 @@ async function askUserForAccessOnConnectionUpdate(websiteTabConnections: Website
 	if (details === undefined) return
 
 	const website = await retrieveWebsiteDetails(details.port, websiteOrigin)
-	await requestAccessFromUser(websiteTabConnections, socket, website, undefined, activeAddress, settings)
+	await requestAccessFromUser(websiteTabConnections, socket, website, undefined, activeAddress, settings, activeAddress?.address)
 }
 
-function updateTabConnections(websiteTabConnections: WebsiteTabConnections, tabConnection: TabConnection, promptForAccessesIfNeeded: boolean, settings: Settings) {
-	const activeAddress = getActiveAddress(settings)
+async function updateTabConnections(websiteTabConnections: WebsiteTabConnections, tabConnection: TabConnection, promptForAccessesIfNeeded: boolean, settings: Settings) {
 	for (const [_string, connection] of Object.entries(tabConnection.connections) ) {
+		const activeAddress = await getActiveAddress(settings, connection.socket.tabId)
 		updateExtensionIcon(websiteTabConnections, connection.socket, connection.websiteOrigin)
 		const access = activeAddress ? hasAddressAccess(settings.websiteAccess, connection.websiteOrigin, activeAddress, settings) : hasAccess(settings.websiteAccess, connection.websiteOrigin)
 
 		if (access !== 'hasAccess' && connection.approved) {
 			disconnectFromPort(websiteTabConnections, connection.socket, connection.websiteOrigin)
 		} else if (access === 'hasAccess' && !connection.approved) {
-			connectToPort(websiteTabConnections, connection.socket, connection.websiteOrigin, settings)
+			connectToPort(websiteTabConnections, connection.socket, connection.websiteOrigin, settings, activeAddress)
 		}
 
 		if (access === 'notFound' && connection.wantsToConnect && promptForAccessesIfNeeded) {

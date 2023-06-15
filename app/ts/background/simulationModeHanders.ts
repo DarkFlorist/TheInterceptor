@@ -5,7 +5,7 @@ import { simulationGasLeft, getSimulatedBalance, getSimulatedBlock, getSimulated
 import { Simulator } from '../simulation/simulator.js'
 import { bytes32String, dataStringWith0xStart, stringToUint8Array } from '../utils/bigint.js'
 import { CANNOT_SIMULATE_OFF_LEGACY_BLOCK, ERROR_INTERCEPTOR_GAS_ESTIMATION_FAILED, ERROR_INTERCEPTOR_GET_CODE_FAILED, KNOWN_CONTRACT_CALLER_ADDRESSES } from '../utils/constants.js'
-import { InterceptedRequest, Settings, WebsiteAccessArray } from '../utils/interceptor-messages.js'
+import { InterceptedRequest, Settings } from '../utils/interceptor-messages.js'
 import { Website, WebsiteSocket, WebsiteTabConnections } from '../utils/user-interface-types.js'
 import { SimulationState } from '../utils/visualizer-types.js'
 import { EstimateGasParams, EthBalanceParams, EthBlockByNumberParams, EthCallParams, EthereumAddress, EthereumData, EthereumQuantity, EthereumSignedTransactionWithBlockData, EthGetLogsParams, EthGetLogsResponse, EthSubscribeParams, EthTransactionReceiptResponse, EthUnSubscribeParams, GetBlockReturn, GetCode, GetSimulationStack, GetSimulationStackReply, GetTransactionCount, OldSignTypedDataParams, PersonalSignParams, SendRawTransaction, SendTransactionParams, SignTypedDataParams, SwitchEthereumChainParams, TransactionByHashParams, TransactionReceiptParams } from '../utils/wire-types.js'
@@ -32,35 +32,32 @@ export async function getTransactionReceipt(ethereumClientService: EthereumClien
 	return { result: EthTransactionReceiptResponse.serialize(await getSimulatedTransactionReceipt(ethereumClientService, simulationState, request.params[0])) }
 }
 
-function getFromField(websiteTabConnections: WebsiteTabConnections, simulationMode: boolean, transactionFrom: bigint | undefined, getActiveAddressForDomain: (websiteAccess: WebsiteAccessArray, websiteOrigin: string, settings: Settings) => bigint | undefined, socket: WebsiteSocket, settings: Settings) {
+function getFromField(websiteTabConnections: WebsiteTabConnections, simulationMode: boolean, transactionFrom: bigint | undefined, activeAddress: bigint | undefined, socket: WebsiteSocket) {
 	if (simulationMode && transactionFrom !== undefined) {
 		return transactionFrom // use `from` field directly from the dapp if we are in simulation mode and its available
 	} else {
 		const connection = getConnectionDetails(websiteTabConnections, socket)
 		if (connection === undefined) throw new Error('Not connected')
-
-		const from = getActiveAddressForDomain(settings.websiteAccess, connection.websiteOrigin, settings)
-		if (from === undefined) throw new Error('Access to active address is denied')
-		return from
+		if (activeAddress === undefined) throw new Error('Access to active address is denied')
+		return activeAddress
 	}
 }
 
 export async function sendTransaction(
 	websiteTabConnections: WebsiteTabConnections,
-	getActiveAddressForDomain: (websiteAccess: WebsiteAccessArray, websiteOrigin: string, settings: Settings) => bigint | undefined,
+	activeAddress: bigint | undefined,
 	ethereumClientService: EthereumClientService,
 	sendTransactionParams: SendTransactionParams,
 	socket: WebsiteSocket,
 	request: InterceptedRequest,
 	simulationMode: boolean = true,
 	website: Website,
-	settings: Settings,
 ) {
 	const formTransaction = async() => {
 		const simulationState = simulationMode ? (await getSimulationResults()).simulationState : undefined
 		const block = getSimulatedBlock(ethereumClientService, simulationState)
 		const transactionDetails = sendTransactionParams.params[0]
-		const from = getFromField(websiteTabConnections, simulationMode, transactionDetails.from, getActiveAddressForDomain, socket, settings)
+		const from = getFromField(websiteTabConnections, simulationMode, transactionDetails.from, activeAddress, socket)
 		const transactionCount = getSimulatedTransactionCount(ethereumClientService, simulationState, from)
 
 		const parentBlock = await block
@@ -98,10 +95,9 @@ export async function sendTransaction(
 		ethereumClientService,
 		socket,
 		request,
-		website,
 		simulationMode,
 		formTransaction,
-		settings,
+		activeAddress,
 	)
 }
 
@@ -112,7 +108,7 @@ export async function sendRawTransaction(
 	request: InterceptedRequest,
 	simulationMode: boolean,
 	website: Website,
-	settings: Settings
+	activeAddress: bigint | undefined,
 ) {
 	const formTransaction = async() => {	
 		const ethersTransaction = ethers.Transaction.from(dataStringWith0xStart(sendRawTransactionParams.params[0]))
@@ -157,10 +153,9 @@ export async function sendRawTransaction(
 		ethereumClientService,
 		socket,
 		request,
-		website,
 		simulationMode,
 		formTransaction,
-		settings,
+		activeAddress,
 	)
 }
 
@@ -223,17 +218,9 @@ export async function unsubscribe(socket: WebsiteSocket, request: EthUnSubscribe
 	return { result: removeEthereumSubscription(socket, request.params[0]) }
 }
 
-export async function getAccounts(websiteTabConnections: WebsiteTabConnections, getActiveAddressForDomain: (websiteAccess: WebsiteAccessArray, websiteOrigin: string, settings: Settings) => bigint | undefined, socket: WebsiteSocket, settings: Settings) {
-	const connection = getConnectionDetails(websiteTabConnections, socket)
-	if (connection === undefined) {
-		return { result: [] }
-	}
-	const account = getActiveAddressForDomain(settings.websiteAccess, connection.websiteOrigin, settings)
-	if (account === undefined) {
-		return { result: [] }
-	}
-
-	return { result: [EthereumAddress.serialize(account)] }
+export async function getAccounts(activeAddress: bigint | undefined) {
+	if (activeAddress === undefined) return { result: [] }
+	return { result: [EthereumAddress.serialize(activeAddress)] }
 }
 
 export async function chainId(simulator: Simulator) {
@@ -244,8 +231,8 @@ export async function gasPrice(simulator: Simulator) {
 	return { result: EthereumQuantity.serialize(await simulator.ethereum.getGasPrice()) }
 }
 
-export async function personalSign(ethereumClientService: EthereumClientService, websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, params: PersonalSignParams | SignTypedDataParams | OldSignTypedDataParams, request: InterceptedRequest, simulationMode: boolean, website: Website, settings: Settings) {
-	return await openPersonalSignDialog(ethereumClientService, websiteTabConnections, socket, params, request, simulationMode, website, settings)
+export async function personalSign(ethereumClientService: EthereumClientService, websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, params: PersonalSignParams | SignTypedDataParams | OldSignTypedDataParams, request: InterceptedRequest, simulationMode: boolean, website: Website, settings: Settings, activeAddress: bigint | undefined) {
+	return await openPersonalSignDialog(ethereumClientService, websiteTabConnections, socket, params, request, simulationMode, website, settings, activeAddress)
 }
 
 export async function switchEthereumChain(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, ethereumClientService: EthereumClientService, params: SwitchEthereumChainParams, request: InterceptedRequest, simulationMode: boolean, website: Website) {
@@ -260,10 +247,6 @@ export async function getCode(ethereumClientService: EthereumClientService, simu
 	const code = await getSimulatedCode(ethereumClientService, simulationState, request.params[0], request.params[1])
 	if (code.statusCode === 'failure') return ERROR_INTERCEPTOR_GET_CODE_FAILED
 	return { result: EthereumData.serialize(code.getCodeReturn) }
-}
-
-export async function requestPermissions(websiteTabConnections: WebsiteTabConnections, getActiveAddressForDomain: (websiteAccess: WebsiteAccessArray, websiteOrigin: string, settings: Settings) => bigint | undefined, socket: WebsiteSocket, settings: Settings) {
-	return await getAccounts(websiteTabConnections, getActiveAddressForDomain, socket, settings)
 }
 
 export async function getPermissions() {

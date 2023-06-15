@@ -35,7 +35,7 @@ const onCloseWindow = async (windowId: number, websiteTabConnections: WebsiteTab
 			accessRequestId: pendingRequest.accessRequestId,
 			userReply: 'NoResponse' as const
 		}
-		await resolve(websiteTabConnections, reply, pendingRequest.socket, pendingRequest.request, pendingRequest.website)
+		await resolve(websiteTabConnections, reply, pendingRequest.socket, pendingRequest.request, pendingRequest.website, pendingRequest.activeAddress)
 	}
 }
 
@@ -43,7 +43,7 @@ export async function resolveInterceptorAccess(websiteTabConnections: WebsiteTab
 	const promises = await getPendingAccessRequests()
 	const pendingRequest = promises.find((req) => req.accessRequestId === reply.accessRequestId)
 	if (pendingRequest == undefined) return
-	return await resolve(websiteTabConnections, reply, pendingRequest.socket, pendingRequest.request, pendingRequest.website)
+	return await resolve(websiteTabConnections, reply, pendingRequest.socket, pendingRequest.request, pendingRequest.website, pendingRequest.activeAddress)
 }
 
 export function getAddressMetadataForAccess(websiteAccess: WebsiteAccessArray, addressInfos: readonly AddressInfo[]): AddressInfoEntry[] {
@@ -90,6 +90,7 @@ export async function requestAccessFromUser(
 	request: InterceptedRequest | undefined,
 	requestAccessToAddress: AddressInfoEntry | undefined,
 	settings: Settings,
+	activeAddress: bigint | undefined,
 ) {
 	// check if we need to ask address access or not. If address is put to never need to have address specific permision, we don't need to ask for it
 	const askForAddressAccess = requestAccessToAddress !== undefined && settings.userAddressBook.addressInfos.find((x) => x.address === requestAccessToAddress.address)?.askForAddressAccess !== false
@@ -160,6 +161,7 @@ export async function requestAccessFromUser(
 			signerAccounts: [],
 			signerName: await getSignerName(),
 			simulationMode: settings.simulationMode,
+			activeAddress: activeAddress,
 		}
 
 		const requests = await updatePendingAccessRequests(async (previousPendingAccessRequests) => {
@@ -201,7 +203,7 @@ async function updateViewOrClose() {
 	}
 }
 
-async function resolve(websiteTabConnections: WebsiteTabConnections, accessReply: InterceptorAccessReply, socket: WebsiteSocket, request: InterceptedRequest | undefined, website: Website) {
+async function resolve(websiteTabConnections: WebsiteTabConnections, accessReply: InterceptorAccessReply, socket: WebsiteSocket, request: InterceptedRequest | undefined, website: Website, activeAddress: bigint | undefined) {
 	await updatePendingAccessRequests(async (previousPendingAccessRequests) => {
 		return previousPendingAccessRequests.filter((x) => !(x.website.websiteOrigin === website.websiteOrigin && (x.requestAccessToAddress?.address === accessReply.requestAccessToAddress || x.requestAccessToAddress?.address === accessReply.originalRequestAccessToAddress)))
 	})
@@ -220,7 +222,7 @@ async function resolve(websiteTabConnections: WebsiteTabConnections, accessReply
 				activeAddress: accessReply.requestAccessToAddress,
 			})
 		}
-		if (request !== undefined) await handleContentScriptMessage(websiteTabConnections, socket, request, website)
+		if (request !== undefined) await handleContentScriptMessage(websiteTabConnections, socket, request, website, activeAddress)
 	}
 	await updateViewOrClose()
 }

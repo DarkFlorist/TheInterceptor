@@ -4,11 +4,10 @@ import { appendTransaction } from '../../simulation/services/SimulationModeEther
 import { bytes32String } from '../../utils/bigint.js'
 import { ERROR_INTERCEPTOR_NO_ACTIVE_ADDRESS, METAMASK_ERROR_NOT_CONNECTED_TO_CHAIN, METAMASK_ERROR_USER_REJECTED_REQUEST } from '../../utils/constants.js'
 import { Future } from '../../utils/future.js'
-import { ConfirmTransactionTransactionSingleVisualization, ExternalPopupMessage, InterceptedRequest, PendingTransaction, Settings, TransactionConfirmation } from '../../utils/interceptor-messages.js'
+import { ConfirmTransactionTransactionSingleVisualization, ExternalPopupMessage, InterceptedRequest, PendingTransaction, TransactionConfirmation } from '../../utils/interceptor-messages.js'
 import { Semaphore } from '../../utils/semaphore.js'
-import { Website, WebsiteSocket, WebsiteTabConnections } from '../../utils/user-interface-types.js'
+import { WebsiteSocket, WebsiteTabConnections } from '../../utils/user-interface-types.js'
 import { EstimateGasError, WebsiteCreatedEthereumUnsignedTransaction } from '../../utils/visualizer-types.js'
-import { getActiveAddressForDomain } from '../accessManagement.js'
 import { refreshConfirmTransactionSimulation, sendMessageToContentScript, updateSimulationState } from '../background.js'
 import { getHtmlFile, sendPopupMessageToOpenWindows } from '../backgroundUtils.js'
 import { appendPendingTransaction, clearPendingTransactions, getPendingTransactions, getSimulationResults, removePendingTransaction } from '../storageVariables.js'
@@ -63,10 +62,9 @@ export async function openConfirmTransactionDialog(
 	ethereumClientService: EthereumClientService,
 	socket: WebsiteSocket,
 	request: InterceptedRequest,
-	website: Website,
 	simulationMode: boolean,
 	transactionToSimulatePromise: () => Promise<WebsiteCreatedEthereumUnsignedTransaction | undefined | EstimateGasError>,
-	settings: Settings,
+	activeAddress: bigint | undefined,
 ) {
 	let justAddToPending = false
 	if (pendingTransactions.size !== 0) justAddToPending = true
@@ -81,7 +79,6 @@ export async function openConfirmTransactionDialog(
 		return sendPopupMessageToOpenWindows({ method: 'popup_update_confirm_transaction_dialog', data: (await appendPromise).map((p) => p.simulationResults) })
 	}
 	try {
-		const activeAddress = getActiveAddressForDomain(settings.websiteAccess, website.websiteOrigin, settings)
 		if (activeAddress === undefined) return ERROR_INTERCEPTOR_NO_ACTIVE_ADDRESS
 		const transactionToSimulate = await transactionToSimulatePromise()
 		if (transactionToSimulate === undefined) return rejectMessage

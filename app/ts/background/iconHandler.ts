@@ -1,6 +1,6 @@
 import { getPrettySignerName } from '../components/subcomponents/signers.js'
 import { CHROME_NO_TAB_WITH_ID_ERROR, ICON_ACCESS_DENIED, ICON_NOT_ACTIVE, ICON_SIGNING, ICON_SIGNING_NOT_SUPPORTED, ICON_SIMULATING, isSupportedChain, PRIMARY_COLOR, WARNING_COLOR } from '../utils/constants.js'
-import { getActiveAddressForDomain, hasAccess, hasAddressAccess } from './accessManagement.js'
+import { hasAccess, hasAddressAccess } from './accessManagement.js'
 import { getActiveAddress, sendPopupMessageToOpenWindows, setExtensionBadgeBackgroundColor, setExtensionBadgeText, setExtensionIcon } from './backgroundUtils.js'
 import { getAddressMetaData } from './metadataUtils.js'
 import { imageToUri } from '../utils/imageToUri.js'
@@ -42,15 +42,15 @@ async function setInterceptorIcon(websiteTabConnections: WebsiteTabConnections, 
 
 export async function updateExtensionIcon(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, websiteOrigin: string) {
 	const settings = await getSettings()
-	const activeAddress = getActiveAddress(settings)
-	const censoredActiveAddress = getActiveAddressForDomain(settings.websiteAccess, websiteOrigin, settings)
+	const activeAddress = await getActiveAddress(settings, socket.tabId)
 	if (activeAddress === undefined) return setInterceptorIcon(websiteTabConnections, socket.tabId, ICON_NOT_ACTIVE, 'No active address selected.')
 	if (hasAddressAccess(settings.websiteAccess, websiteOrigin, activeAddress, settings)  === 'notFound') {
 		// we don't have active address selected, or no access specified
 		return setInterceptorIcon(websiteTabConnections, socket.tabId, ICON_NOT_ACTIVE, `${ websiteOrigin } has PENDING access request for ${ getAddressMetaData(activeAddress, settings.userAddressBook).name }!`)
 	}
 
-	if (censoredActiveAddress === undefined) {
+	const addressAccess = hasAddressAccess(settings.websiteAccess, websiteOrigin, activeAddress, settings)
+	if (addressAccess !== 'hasAccess') {
 		if (hasAccess(settings.websiteAccess, websiteOrigin) === 'noAccess') {
 			return setInterceptorIcon(websiteTabConnections, socket.tabId, ICON_ACCESS_DENIED, `The access for ${ websiteOrigin } has been DENIED!`)
 		}
