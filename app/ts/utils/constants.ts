@@ -29,7 +29,8 @@ export const CHAINS = {
 	'1': {
 		name: 'Ethereum Mainnet',
 		chainId: 1n,
-		https_rpc_ES383: 'https://rpc.dark.florist/flipcardtrustone',
+		//https_rpc_ES383: 'https://rpc.dark.florist/flipcardtrustone', //nethermind
+		https_rpc_ES383: 'https://rpc.dark.florist/winedancemuffinborrow', //geth
 		https_rpc: 'https://rpc.dark.florist/birdchalkrenewtip',
 		eth_donator: 0xda9dfa130df4de4673b89022ee50ff26f6ea73cfn, // Kraken
 		currencyName: 'Ether',
@@ -39,7 +40,8 @@ export const CHAINS = {
 	'5': {
 		name: 'Goerli',
 		chainId: 5n,
-		https_rpc_ES383: 'https://rpc.dark.florist/flipcardtrustone',
+		//https_rpc_ES383: 'https://rpc.dark.florist/flipcardtrustone', //nethermind
+		https_rpc_ES383: 'https://rpc.dark.florist/winedancemuffinborrow', //geth
 		https_rpc: 'https://rpc-goerli.dark.florist/flipcardtrustone',
 		eth_donator: 0xf36F155486299eCAff2D4F5160ed5114C1f66000n, // Some Goerli validator
 		currencyName: 'Goerli Testnet ETH',
@@ -49,7 +51,8 @@ export const CHAINS = {
 	'11155111': {
 		name: 'Sepolia',
 		chainId: 11155111n,
-		https_rpc_ES383: 'https://rpc.dark.florist/flipcardtrustone',
+		//https_rpc_ES383: 'https://rpc.dark.florist/flipcardtrustone', //nethermind
+		https_rpc_ES383: 'https://rpc.dark.florist/winedancemuffinborrow', //geth
 		https_rpc: 'https://rpc-sepolia.dark.florist/flipcardtrustone',
 		eth_donator: 0xb21c33de1fab3fa15499c62b59fe0cc3250020d1n, // Richest address on Sepolia
 		currencyName: 'Sepolia Testnet ETH',

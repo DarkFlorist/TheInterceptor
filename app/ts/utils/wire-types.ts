@@ -231,12 +231,17 @@ export type EthereumUnsignedTransaction = funtypes.Static<typeof EthereumUnsigne
 export const EthereumUnsignedTransaction = funtypes.Union(EthereumUnsignedTransactionLegacy, EthereumUnsignedTransaction2930, EthereumUnsignedTransaction1559)
 
 export type EthereumTransaction2930And1559Signature = funtypes.Static<typeof EthereumTransaction2930And1559Signature>
-export const EthereumTransaction2930And1559Signature = funtypes.ReadonlyObject({
-	r: EthereumQuantity,
-	s: EthereumQuantity,
-	hash: EthereumBytes32,
-	yParity: funtypes.Union(funtypes.Literal('0x0').withParser(LiteralConverterParserFactory('0x0', 'even' as const)), funtypes.Literal('0x1').withParser(LiteralConverterParserFactory('0x1', 'odd' as const))),
-})
+export const EthereumTransaction2930And1559Signature = funtypes.Intersect(
+	funtypes.ReadonlyObject({
+		r: EthereumQuantity,
+		s: EthereumQuantity,
+		hash: EthereumBytes32,
+	}),
+	funtypes.Union(
+		funtypes.ReadonlyObject({ yParity: funtypes.Union(funtypes.Literal('0x0').withParser(LiteralConverterParserFactory('0x0', 'even' as const)), funtypes.Literal('0x1').withParser(LiteralConverterParserFactory('0x1', 'odd' as const))) }),
+		funtypes.ReadonlyObject({ v: EthereumQuantity }),
+	)
+)
 
 export type EthereumTransactionLegacySignature = funtypes.Static<typeof EthereumTransactionLegacySignature>
 export const EthereumTransactionLegacySignature = funtypes.Intersect(
@@ -294,31 +299,56 @@ export const EthereumSignedTransactionWithBlockData = funtypes.Intersect(
 	})
 )
 
+export type EthereumWithdrawal = funtypes.Static<typeof EthereumWithdrawal>
+export const EthereumWithdrawal = funtypes.ReadonlyObject({
+	index: EthereumQuantity,
+	validatorIndex: EthereumQuantity,
+	address: EthereumAddress,
+	amount: EthereumQuantity,
+})
+
+type EthereumBlockHeaderWithoutTransactions = funtypes.Static<typeof EthereumBlockHeaderWithoutTransactions>
+const EthereumBlockHeaderWithoutTransactions = funtypes.Intersect(
+	funtypes.MutablePartial({
+		author: EthereumAddress,
+	}),
+	funtypes.ReadonlyObject({
+		difficulty: EthereumQuantity,
+		extraData: EthereumData,
+		gasLimit: EthereumQuantity,
+		gasUsed: EthereumQuantity,
+		hash: EthereumBytes32,
+		logsBloom: EthereumBytes256,
+		miner: EthereumAddress,
+		mixHash: EthereumBytes32,
+		nonce: EthereumBytes16,
+		number: EthereumQuantity,
+		parentHash: EthereumBytes32,
+		receiptsRoot: EthereumBytes32,
+		sha3Uncles: EthereumBytes32,
+		stateRoot: EthereumBytes32,
+		timestamp: EthereumTimestamp,
+		size: EthereumQuantity,
+		totalDifficulty: EthereumQuantity,
+		uncles: funtypes.ReadonlyArray(EthereumBytes32),
+		baseFeePerGas: funtypes.Union(EthereumQuantity, funtypes.Undefined),
+		transactionsRoot: EthereumBytes32,
+		withdrawalsRoot: EthereumBytes32,
+		withdrawals: funtypes.ReadonlyArray(EthereumWithdrawal),
+	})
+)
+
+export type EthereumBlockHeaderWithTransactionHashes = funtypes.Static<typeof EthereumBlockHeaderWithTransactionHashes>
+export const EthereumBlockHeaderWithTransactionHashes = funtypes.Intersect(
+	EthereumBlockHeaderWithoutTransactions,
+	funtypes.ReadonlyObject({ transactions: funtypes.ReadonlyArray(EthereumBytes32) })
+)
+
 export type EthereumBlockHeader = funtypes.Static<typeof EthereumBlockHeader>
-export const EthereumBlockHeader = funtypes.ReadonlyObject({
-	author: EthereumAddress,
-	difficulty: EthereumQuantity,
-	extraData: EthereumData,
-	gasLimit: EthereumQuantity,
-	gasUsed: EthereumQuantity,
-	hash: EthereumBytes32,
-	logsBloom: EthereumBytes256,
-	miner: EthereumAddress,
-	mixHash: EthereumBytes32,
-	nonce: EthereumBytes16,
-	number: EthereumQuantity,
-	parentHash: EthereumBytes32,
-	receiptsRoot: EthereumBytes32,
-	sha3Uncles: EthereumBytes32,
-	stateRoot: EthereumBytes32,
-	timestamp: EthereumTimestamp,
-	size: EthereumQuantity,
-	totalDifficulty: EthereumQuantity,
-	transactions: funtypes.ReadonlyArray(EthereumSignedTransaction),
-	uncles: funtypes.ReadonlyArray(EthereumBytes32),
-	baseFeePerGas: funtypes.Union(EthereumQuantity, funtypes.Undefined),
-	transactionsRoot: EthereumBytes32
-}).asReadonly()
+export const EthereumBlockHeader = funtypes.Intersect(
+	EthereumBlockHeaderWithoutTransactions,
+	funtypes.ReadonlyObject({ transactions: funtypes.ReadonlyArray(EthereumSignedTransaction) })
+)
 
 export function serializeUnsignedTransactionToJson(transaction: IUnsignedTransaction): unknown {
 	switch (transaction.type) {

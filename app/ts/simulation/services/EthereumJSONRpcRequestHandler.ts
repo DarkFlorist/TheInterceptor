@@ -30,7 +30,11 @@ export class EthereumJSONRpcRequestHandler {
 			body: requestBodyJson
 		})
 		if (!response.ok) throw new Error(`Ethereum Client Error: ${ response.status }: ${ response.statusText }`)
-		const jsonRpcResponse = JsonRpcResponse.parse(await response.json())
+		const resp = await response.json()
+		console.log('jsonRpcRequest:')
+		console.log(rpcRequest)
+		console.log(resp)
+		const jsonRpcResponse = JsonRpcResponse.parse(resp)
 		if ('error' in jsonRpcResponse) throw Error(`Ethereum Client Error: ${ jsonRpcResponse.error.message }`)
 		return jsonRpcResponse.result
 	}

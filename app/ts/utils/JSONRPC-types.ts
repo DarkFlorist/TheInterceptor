@@ -1,6 +1,6 @@
 import * as funtypes from 'funtypes'
 import { ExecutionSpec383MultiCallParams } from './multicall-types.js'
-import { EthereumAddress, EthereumBlockHeader, EthereumBlockTag, EthereumBytes16, EthereumBytes256, EthereumBytes32, EthereumData, EthereumInput, EthereumQuantity, EthereumTimestamp, EthereumUnsignedTransaction, LiteralConverterParserFactory, RevertErrorParser } from './wire-types.js'
+import { EthereumAddress, EthereumBlockHeader, EthereumBlockHeaderWithTransactionHashes, EthereumBlockTag, EthereumBytes32, EthereumData, EthereumInput, EthereumQuantity, EthereumUnsignedTransaction, LiteralConverterParserFactory, RevertErrorParser } from './wire-types.js'
 
 export type EthGetStorageAtResponse = funtypes.Static<typeof EthGetStorageAtResponse>
 export const EthGetStorageAtResponse = funtypes.Union(
@@ -151,32 +151,6 @@ export const DappRequestTransaction = funtypes.Intersect(
 		funtypes.ReadonlyPartial({ input: EthereumData })
 	)
 )
-
-export type EthereumBlockHeaderWithTransactionHashes = funtypes.Static<typeof EthereumBlockHeaderWithTransactionHashes>
-export const EthereumBlockHeaderWithTransactionHashes = funtypes.ReadonlyObject({
-	author: EthereumAddress,
-	difficulty: EthereumQuantity,
-	extraData: EthereumData,
-	gasLimit: EthereumQuantity,
-	gasUsed: EthereumQuantity,
-	hash: EthereumBytes32,
-	logsBloom: EthereumBytes256,
-	miner: EthereumAddress,
-	mixHash: EthereumBytes32,
-	nonce: EthereumBytes16,
-	number: EthereumQuantity,
-	parentHash: EthereumBytes32,
-	receiptsRoot: EthereumBytes32,
-	sha3Uncles: EthereumBytes32,
-	stateRoot: EthereumBytes32,
-	timestamp: EthereumTimestamp,
-	size: EthereumQuantity,
-	totalDifficulty: EthereumQuantity,
-	transactions: funtypes.ReadonlyArray(EthereumBytes32),
-	uncles: funtypes.ReadonlyArray(EthereumBytes32),
-	baseFeePerGas: funtypes.Union(EthereumQuantity, funtypes.Undefined),
-	transactionsRoot: EthereumBytes32
-}).asReadonly()
 
 export type GetBlockReturn = funtypes.Static<typeof GetBlockReturn>
 export const GetBlockReturn = funtypes.Union(EthereumBlockHeader, EthereumBlockHeaderWithTransactionHashes)

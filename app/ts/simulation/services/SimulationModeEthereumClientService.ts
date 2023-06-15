@@ -1,6 +1,6 @@
 import { EthereumClientService } from './EthereumClientService.js'
-import { EthereumUnsignedTransaction, EthereumSignedTransactionWithBlockData, EthereumBlockTag, EthereumSignedTransaction, EthereumData, EthereumQuantity, EthereumAddress, EthereumBlockHeader } from '../../utils/wire-types.js'
-import { EthGetLogsResponse, EthGetLogsRequest, EthTransactionReceiptResponse, PersonalSignParams, SignTypedDataParams, MulticallResponseEventLogs, MulticallResponse, EthereumBlockHeaderWithTransactionHashes, OldSignTypedDataParams, DappRequestTransaction } from '../../utils/JSONRPC-types.js'
+import { EthereumUnsignedTransaction, EthereumSignedTransactionWithBlockData, EthereumBlockTag, EthereumSignedTransaction, EthereumData, EthereumQuantity, EthereumAddress, EthereumBlockHeader, EthereumBlockHeaderWithTransactionHashes } from '../../utils/wire-types.js'
+import { EthGetLogsResponse, EthGetLogsRequest, EthTransactionReceiptResponse, PersonalSignParams, SignTypedDataParams, MulticallResponseEventLogs, MulticallResponse, OldSignTypedDataParams, DappRequestTransaction } from '../../utils/JSONRPC-types.js'
 import { addressString, bytes32String, bytesToUnsigned, dataString, dataStringWith0xStart, max, min, stringToUint8Array } from '../../utils/bigint.js'
 import { CANNOT_SIMULATE_OFF_LEGACY_BLOCK, ERROR_INTERCEPTOR_GAS_ESTIMATION_FAILED, MOCK_ADDRESS } from '../../utils/constants.js'
 import { ethers, keccak256 } from 'ethers'
@@ -492,7 +492,9 @@ export async function getSimulatedBlock(ethereumClientService: EthereumClientSer
 		uncles: [],
 		baseFeePerGas: getBaseFeePerGasForNewBlock(parentBlock.gasUsed, parentBlock.gasLimit, parentBlock.baseFeePerGas),
 		transactionsRoot: parentBlock.transactionsRoot, // TODO: this is wrong
-		transactions: simulationState.simulatedTransactions.map((simulatedTransaction) => simulatedTransaction.signedTransaction)
+		transactions: simulationState.simulatedTransactions.map((simulatedTransaction) => simulatedTransaction.signedTransaction),
+		withdrawals: [],
+		withdrawalsRoot: 0n,
 	} as const
 
 	if (fullObjects) return block

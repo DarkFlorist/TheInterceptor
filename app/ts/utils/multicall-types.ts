@@ -54,7 +54,7 @@ export const BlockCalls = funtypes.Union(
 export type ExecutionSpec383MultiCallParams = funtypes.Static<typeof ExecutionSpec383MultiCallParams>
 export const ExecutionSpec383MultiCallParams = funtypes.ReadonlyObject({
 	method: funtypes.Literal('eth_multicall'),
-	params: funtypes.ReadonlyTuple(funtypes.Number, funtypes.ReadonlyArray(BlockCalls), EthereumBlockTag) 
+	params: funtypes.ReadonlyTuple(funtypes.ReadonlyArray(BlockCalls), EthereumBlockTag)
 })
 
 export type CallResultLog = funtypes.Static<typeof CallResultLog>

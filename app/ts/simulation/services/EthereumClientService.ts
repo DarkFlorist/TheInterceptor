@@ -1,5 +1,5 @@
-import { EthereumUnsignedTransaction, EthereumSignedTransactionWithBlockData, EthereumQuantity, EthereumBlockTag, EthereumData, EthereumBlockHeader } from '../../utils/wire-types.js'
-import { MulticallResponse, EthGetStorageAtResponse, EthTransactionReceiptResponse, EthereumBlockHeaderWithTransactionHashes, EthGetLogsRequest, EthGetLogsResponse, DappRequestTransaction } from '../../utils/JSONRPC-types.js'
+import { EthereumUnsignedTransaction, EthereumSignedTransactionWithBlockData, EthereumQuantity, EthereumBlockTag, EthereumData, EthereumBlockHeader, EthereumBlockHeaderWithTransactionHashes } from '../../utils/wire-types.js'
+import { MulticallResponse, EthGetStorageAtResponse, EthTransactionReceiptResponse, EthGetLogsRequest, EthGetLogsResponse, DappRequestTransaction } from '../../utils/JSONRPC-types.js'
 import { IUnsignedTransaction1559 } from '../../utils/ethereum.js'
 import { TIME_BETWEEN_BLOCKS, CHAINS, MOCK_ADDRESS } from '../../utils/constants.js'
 import { CHAIN } from '../../utils/user-interface-types.js'
@@ -209,7 +209,7 @@ export class EthereumClientService {
 	}
 
 	public readonly executionSpec383MultiCall = async (calls: readonly BlockCalls[], blockTag: EthereumBlockTag) => {
-		const call = { method: 'eth_multicall', params: [0, calls, blockTag] } as const
+		const call = { method: 'eth_multicall', params: [calls, blockTag] } as const
 		console.log(calls)
 		console.log(JSON.stringify(ExecutionSpec383MultiCallParams.serialize(call)))
 		const unvalidatedResult = await this.requestHandler.jsonRpcRequest(call)
