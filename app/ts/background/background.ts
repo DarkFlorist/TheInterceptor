@@ -578,7 +578,7 @@ async function onContentScriptConnected(port: browser.runtime.Port, websiteTabCo
 			if (access === 'noAccess') {
 				if (request.options.method === 'eth_accounts') return sendMessageToContentScript(websiteTabConnections, socket, { 'result': [] }, request)
 				// if user has not given access, assume we are on chain 1
-				if (request.options.method === 'eth_chainId') return sendMessageToContentScript(websiteTabConnections, socket, { 'result': EthereumQuantity.serialize(1n) }, request)
+				if (request.options.method === 'eth_chainId' || request.options.method === 'net_version') return sendMessageToContentScript(websiteTabConnections, socket, { 'result': EthereumQuantity.serialize(1n) }, request)
 			}
 
 			switch (access) {
