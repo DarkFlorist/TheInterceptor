@@ -3,7 +3,7 @@ import { EthereumClientService } from '../../simulation/services/EthereumClientS
 import { stringifyJSONWithBigInts } from '../../utils/bigint.js'
 import { METAMASK_ERROR_USER_REJECTED_REQUEST } from '../../utils/constants.js'
 import { Future } from '../../utils/future.js'
-import { HandleSimulationModeReturnValue, InterceptedRequest, PersonalSign, ExternalPopupMessage, Settings, UserAddressBook, PersonalSignRequest } from '../../utils/interceptor-messages.js'
+import { InterceptedRequest, PersonalSign, ExternalPopupMessage, Settings, UserAddressBook, PersonalSignRequest, HandleRPCRequestReturnValue } from '../../utils/interceptor-messages.js'
 import { OpenSeaOrderMessage, PersonalSignRequestIdentifiedEIP712Message } from '../../utils/personal-message-definitions.js'
 import { assertNever } from '../../utils/typescript.js'
 import { AddressBookEntry, SignerName, Website, WebsiteSocket, WebsiteTabConnections } from '../../utils/user-interface-types.js'
@@ -223,7 +223,7 @@ export const openPersonalSignDialog = async (
 	website: Website,
 	settings: Settings,
 	activeAddress: bigint | undefined
-): Promise<HandleSimulationModeReturnValue> => {
+): Promise<HandleRPCRequestReturnValue> => {
 	if (pendingPersonalSign !== undefined) return reject()
 
 	const onCloseWindow = (windowId: number) => {

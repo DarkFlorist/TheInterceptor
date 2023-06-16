@@ -1,6 +1,6 @@
 import * as funtypes from 'funtypes'
 import { AddressBookEntries, AddressBookEntry, AddressInfo, AddressInfoEntry, ContactEntries, SignerName, Website, WebsiteSocket } from './user-interface-types.js'
-import { EthereumAddress, EthereumQuantity, OldSignTypedDataParams, PersonalSignParams, SignTypedDataParams } from './wire-types.js'
+import { EthTransactionReceiptResponse, EthereumAddress, EthereumData, EthereumQuantity, EthereumSignedTransactionWithBlockData, GetBlockReturn, OldSignTypedDataParams, PersonalSignParams, SignTypedDataParams } from './wire-types.js'
 import { SimulationState, OptionalEthereumAddress, SimulatedAndVisualizedTransaction, SimResults, TokenPriceEstimate, WebsiteCreatedEthereumUnsignedTransaction } from './visualizer-types.js'
 import { ICON_ACCESS_DENIED, ICON_ACTIVE, ICON_NOT_ACTIVE, ICON_SIGNING, ICON_SIGNING_NOT_SUPPORTED, ICON_SIMULATING } from './constants.js'
 import { PersonalSignRequestData } from './personal-message-definitions.js'
@@ -25,28 +25,54 @@ export const InterceptedRequest = funtypes.Intersect(
 )
 export type ProviderMessage = InterceptedRequest
 
+export type NonForwardingRPCRequestReturnValue = funtypes.Static<typeof NonForwardingRPCRequestReturnValue>
+export const NonForwardingRPCRequestReturnValue = funtypes.Union(
+	funtypes.Union(
+		funtypes.ReadonlyObject({ method: funtypes.Literal('method!'), result: funtypes.ReadonlyTuple(EthereumAddress) }),
+		funtypes.ReadonlyObject({ method: funtypes.Literal('eth_getBlockByNumber'), result: GetBlockReturn }),
+		funtypes.ReadonlyObject({ method: funtypes.Literal('eth_getBalance'), result: EthereumQuantity }),
+		funtypes.ReadonlyObject({ method: funtypes.Literal('eth_estimateGas'), result: EthereumQuantity }),
+		funtypes.ReadonlyObject({ method: funtypes.Literal('eth_getTransactionByHash'), result: funtypes.Union(EthereumSignedTransactionWithBlockData, funtypes.Undefined) }),
+		funtypes.ReadonlyObject({ method: funtypes.Literal('eth_getTransactionReceipt'), result: EthTransactionReceiptResponse }),
+		funtypes.ReadonlyObject({ method: funtypes.Literal('eth_subscribe'), result: funtypes.String }),
+		funtypes.ReadonlyObject({ method: funtypes.Literal('eth_unsubscribe'), result: funtypes.Boolean }),
+		funtypes.ReadonlyObject({ method: funtypes.Literal('eth_chainId'), result: EthereumQuantity }),
+		funtypes.ReadonlyObject({ method: funtypes.Literal('net_version'), result: EthereumQuantity }),
+		funtypes.ReadonlyObject({ method: funtypes.Literal('eth_blockNumber'), result: EthereumQuantity }),
+		funtypes.ReadonlyObject({ method: funtypes.Literal('eth_getCode'), result: EthereumData }),
+		funtypes.ReadonlyObject({ method: funtypes.Literal('wallet_switchEthereumChain'), result: funtypes.Null }),
+	),
+	funtypes.ReadonlyObject({
+		error: funtypes.Intersect(
+			funtypes.ReadonlyObject({
+				code: funtypes.Number,
+				message: funtypes.String,
+			}),
+			funtypes.ReadonlyPartial({
+				data: funtypes.String,
+			})
+		)
+	}),
+)
+
+export type HandleRPCRequestReturnValue = funtypes.Static<typeof HandleRPCRequestReturnValue>
+export const HandleRPCRequestReturnValue = funtypes.Union(
+	NonForwardingRPCRequestReturnValue,
+	funtypes.ReadonlyObject({ forward: funtypes.Literal(true) }) //todo, add check here that we can only forward specific requets
+)
+
 export type InterceptedRequestForward = funtypes.Static<typeof InterceptedRequestForward>
 export const InterceptedRequestForward = funtypes.Intersect(
 	funtypes.ReadonlyObject({
 		interceptorApproved: funtypes.Boolean,
 		options: MessageMethodAndParams,
 	}).asReadonly(),
-	funtypes.Union(
-		funtypes.ReadonlyObject({
-			result: funtypes.Unknown,
-		}),
-		funtypes.ReadonlyObject({
-			error: funtypes.ReadonlyObject({
-				code: funtypes.Number,
-				message: funtypes.String
-			}).asReadonly(),
-		}).asReadonly(),
-		funtypes.ReadonlyObject({ })
-	),
+	funtypes.Union(NonForwardingRPCRequestReturnValue, funtypes.ReadonlyObject({})),
 	funtypes.Partial({
 		subscription: funtypes.String,
 		usingInterceptorWithoutSigner: funtypes.Boolean,
-		requestId: funtypes.Number}).asReadonly()
+		requestId: funtypes.Number
+	}).asReadonly()
 )
 
 export type TransactionConfirmation = funtypes.Static<typeof TransactionConfirmation>
@@ -557,17 +583,6 @@ export const ActiveSigningAddressChanged = funtypes.ReadonlyObject({
 		activeSigningAddress: OptionalEthereumAddress,
 	})
 })
-
-export type HandleSimulationModeReturnValue = {
-	result: unknown,
-} | {
-	error: {
-		code: number,
-		message: string,
-	}
-} | {
-	forward: true,
-}
 
 export type WindowMessageSignerAccountsChanged = funtypes.Static<typeof WindowMessageSignerAccountsChanged>
 export const WindowMessageSignerAccountsChanged = funtypes.ReadonlyObject({

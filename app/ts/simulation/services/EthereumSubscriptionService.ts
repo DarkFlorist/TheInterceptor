@@ -16,12 +16,18 @@ function generateId(len: number) {
 }
 
 export async function removeEthereumSubscription(socket: WebsiteSocket, subscriptionId: string) {
-	await updateEthereumSubscriptions((subscriptions: EthereumSubscriptions) => {
+	const changes = await updateEthereumSubscriptions((subscriptions: EthereumSubscriptions) => {
 		return subscriptions.filter((subscription) => subscription.subscriptionId !== subscriptionId
 			&& subscription.subscriptionCreatorSocket.tabId === socket.tabId // only allow the same tab and connection to remove the subscription
 			&& subscription.subscriptionCreatorSocket.connectionName === socket.connectionName
 		)
 	})
+	if (changes.oldSubscriptions.find((sub) => sub.subscriptionId === subscriptionId) !== undefined
+		&& changes.newSubscriptions.find((sub) => sub.subscriptionId === subscriptionId) === undefined
+	) {
+		return true // subscription was found and removed
+	}
+	return false
 }
 
 export async function sendSubscriptionMessagesForNewBlock(blockNumber: bigint, ethereumClientService: EthereumClientService, simulationState: SimulationState | undefined, websiteTabConnections: WebsiteTabConnections) {
@@ -59,7 +65,6 @@ export async function sendSubscriptionMessagesForNewBlock(blockNumber: bigint, e
 	return
 }
 export async function createEthereumSubscription(params: EthSubscribeParams, subscriptionCreatorSocket: WebsiteSocket) {
-	console.log('createsub tabid', subscriptionCreatorSocket.tabId)
 	switch(params.params[0]) {
 		case 'newHeads': {
 			const subscriptionId = generateId(40)
