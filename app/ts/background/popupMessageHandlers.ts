@@ -57,8 +57,8 @@ export async function changeActiveAddress(websiteTabConnections: WebsiteTabConne
 		const signerAccount = await getSignerAccount()
 		await setUseSignersAddressAsActiveAddress(addressChange.options.activeAddress === 'signer', signerAccount)
 
-		sendMessageToApprovedWebsitePorts(websiteTabConnections, 'request_signer_to_eth_requestAccounts', [])
-		sendMessageToApprovedWebsitePorts(websiteTabConnections, 'request_signer_chainId', [])
+		sendMessageToApprovedWebsitePorts(websiteTabConnections, { method: 'request_signer_to_eth_requestAccounts', result: [] })
+		sendMessageToApprovedWebsitePorts(websiteTabConnections, { method: 'request_signer_chainId', result: [] })
 		
 		await changeActiveAddressAndChainAndResetSimulation(websiteTabConnections, {
 			simulationMode: addressChange.options.simulationMode,
@@ -144,8 +144,8 @@ export async function changePage(page: ChangePage) {
 
 export async function requestAccountsFromSigner(websiteTabConnections: WebsiteTabConnections, params: RequestAccountsFromSigner) {
 	if (params.options) {
-		sendMessageToApprovedWebsitePorts(websiteTabConnections, 'request_signer_to_eth_requestAccounts', [])
-		sendMessageToApprovedWebsitePorts(websiteTabConnections, 'request_signer_chainId', [])
+		sendMessageToApprovedWebsitePorts(websiteTabConnections, { method: 'request_signer_to_eth_requestAccounts', result: [] })
+		sendMessageToApprovedWebsitePorts(websiteTabConnections, { method: 'request_signer_chainId', result: [] })
 	}
 }
 
@@ -216,8 +216,8 @@ export async function enableSimulationMode(websiteTabConnections: WebsiteTabConn
 	const settings = await getSettings()
 	// if we are on unsupported chain, force change to a supported one
 	if (settings.useSignersAddressAsActiveAddress || params.options === false) {
-		sendMessageToApprovedWebsitePorts(websiteTabConnections, 'request_signer_to_eth_requestAccounts', [])
-		sendMessageToApprovedWebsitePorts(websiteTabConnections, 'request_signer_chainId', [])
+		sendMessageToApprovedWebsitePorts(websiteTabConnections, { method: 'request_signer_to_eth_requestAccounts' as const, result: [] })
+		sendMessageToApprovedWebsitePorts(websiteTabConnections, { method: 'request_signer_chainId' as const, result: [] })
 		const tabId = await getLastKnownCurrentTabId()
 		const chainToSwitch = tabId === undefined ? undefined : (await getTabState(tabId)).signerChain
 		await changeActiveAddressAndChainAndResetSimulation(websiteTabConnections, {

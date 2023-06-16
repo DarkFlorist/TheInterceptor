@@ -2,17 +2,18 @@ import { ethers } from 'ethers'
 import { EthereumClientService } from '../simulation/services/EthereumClientService.js'
 import { createEthereumSubscription, removeEthereumSubscription } from '../simulation/services/EthereumSubscriptionService.js'
 import { simulationGasLeft, getSimulatedBalance, getSimulatedBlock, getSimulatedBlockNumber, getSimulatedCode, getSimulatedLogs, getSimulatedStack, getSimulatedTransactionByHash, getSimulatedTransactionCount, getSimulatedTransactionReceipt, simulatedCall, simulateEstimateGas, getInputFieldFromDataOrInput } from '../simulation/services/SimulationModeEthereumClientService.js'
-import { bytes32String, dataStringWith0xStart, stringToUint8Array } from '../utils/bigint.js'
+import { dataStringWith0xStart, stringToUint8Array } from '../utils/bigint.js'
 import { CANNOT_SIMULATE_OFF_LEGACY_BLOCK, ERROR_INTERCEPTOR_GAS_ESTIMATION_FAILED, ERROR_INTERCEPTOR_GET_CODE_FAILED, KNOWN_CONTRACT_CALLER_ADDRESSES } from '../utils/constants.js'
 import { InterceptedRequest, Settings } from '../utils/interceptor-messages.js'
 import { Website, WebsiteSocket, WebsiteTabConnections } from '../utils/user-interface-types.js'
 import { SimulationState } from '../utils/visualizer-types.js'
-import { EstimateGasParams, EthBalanceParams, EthBlockByNumberParams, EthCallParams, EthereumAddress, EthereumData, EthereumQuantity, EthGetLogsParams, EthGetLogsResponse, EthSubscribeParams, EthUnSubscribeParams, GetCode, GetSimulationStack, GetSimulationStackReply, GetTransactionCount, OldSignTypedDataParams, PersonalSignParams, SendRawTransaction, SendTransactionParams, SignTypedDataParams, SwitchEthereumChainParams, TransactionByHashParams, TransactionReceiptParams } from '../utils/wire-types.js'
+import { EstimateGasParams, EthBalanceParams, EthBlockByNumberParams, EthCallParams, EthereumAddress, EthGetLogsParams, EthSubscribeParams, EthUnSubscribeParams, GetCode, GetSimulationStack, GetTransactionCount, OldSignTypedDataParams, PersonalSignParams, SendRawTransaction, SendTransactionParams, SignTypedDataParams, SwitchEthereumChainParams, TransactionByHashParams, TransactionReceiptParams } from '../utils/wire-types.js'
 import { getConnectionDetails } from './accessManagement.js'
 import { getSimulationResults } from './storageVariables.js'
 import { openChangeChainDialog } from './windows/changeChain.js'
 import { openConfirmTransactionDialog } from './windows/confirmTransaction.js'
 import { openPersonalSignDialog } from './windows/personalSign.js'
+import { assertNever } from '../utils/typescript.js'
 
 const defaultCallAddress = 0x1n
 
@@ -193,9 +194,11 @@ export async function call(ethereumClientService: EthereumClientService, simulat
 	// if we fail our call because we are calling from a contract, retry and change address to our default calling address
 	// TODO: Remove this logic and KNOWN_CONTRACT_CALLER_ADDRESSES when multicall supports calling from contracts
 	if (callResult.error !== undefined && 'data' in callResult.error && callResult.error?.data === 'sender has deployed code' && from !== defaultCallAddress) {
-		return await singleCallWithFromOverride(ethereumClientService, simulationState, request, defaultCallAddress)
+		const callerChangeResult = await singleCallWithFromOverride(ethereumClientService, simulationState, request, defaultCallAddress)
+		if (callerChangeResult.error !== undefined) return callerChangeResult
+		return { method: 'eth_call' as const, ...callerChangeResult }
 	}
-	return callResult
+	return { method: 'eth_call' as const, ...callResult }
 }
 
 export async function blockNumber(ethereumClientService: EthereumClientService, simulationState: SimulationState | undefined) {
@@ -217,8 +220,8 @@ export async function unsubscribe(socket: WebsiteSocket, request: EthUnSubscribe
 }
 
 export async function getAccounts(activeAddress: bigint | undefined) {
-	if (activeAddress === undefined) return { result: [] }
-	return { result: [EthereumAddress.serialize(activeAddress)] }
+	if (activeAddress === undefined) return { method: 'eth_accounts' as const, result: [] }
+	return { method: 'eth_accounts' as const, result: [activeAddress] }
 }
 
 export async function chainId(ethereumClientService: EthereumClientService) {
@@ -226,7 +229,7 @@ export async function chainId(ethereumClientService: EthereumClientService) {
 }
 
 export async function gasPrice(ethereumClientService: EthereumClientService) {
-	return { result: EthereumQuantity.serialize(await ethereumClientService.getGasPrice()) }
+	return { method: 'eth_gasPrice' as const, result: await ethereumClientService.getGasPrice() }
 }
 
 export async function personalSign(ethereumClientService: EthereumClientService, websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, params: PersonalSignParams | SignTypedDataParams | OldSignTypedDataParams, request: InterceptedRequest, simulationMode: boolean, website: Website, settings: Settings, activeAddress: bigint | undefined) {
@@ -248,24 +251,26 @@ export async function getCode(ethereumClientService: EthereumClientService, simu
 }
 
 export async function getPermissions() {
-	return { result: [ { "eth_accounts": {} } ] }
+	return { method: 'wallet_getPermissions' as const, result: [ { "eth_accounts": {} } ] } as const
 }
 
 export async function getTransactionCount(ethereumClientService: EthereumClientService, simulationState: SimulationState | undefined, request: GetTransactionCount) {
-	return { result: EthereumQuantity.serialize(await getSimulatedTransactionCount(ethereumClientService, simulationState, request.params[0], request.params[1])) }
+	return { method: 'eth_getTransactionCount' as const, result: await getSimulatedTransactionCount(ethereumClientService, simulationState, request.params[0], request.params[1]) }
 }
 
 export async function getSimulationStack(simulationState: SimulationState | undefined, request: GetSimulationStack) {
 	switch (request.params[0]) {
 		case '1.0.0': return {
+			method: 'interceptor_getSimulationStack' as const,
 			result: {
 				version: '1.0.0',
-				payload: GetSimulationStackReply.serialize(simulationState === undefined ? [] : getSimulatedStack(simulationState)),
-			}
+				payload: simulationState === undefined ? [] : getSimulatedStack(simulationState),
+			} as const
 		}
+		default: assertNever(request.params[0])
 	}
 }
 
 export async function getLogs(ethereumClientService: EthereumClientService, simulationState: SimulationState | undefined, request: EthGetLogsParams) {
-	return { result: EthGetLogsResponse.serialize(await getSimulatedLogs(ethereumClientService, simulationState, request.params[0])) }
+	return { method: 'eth_getLogs' as const, result: await getSimulatedLogs(ethereumClientService, simulationState, request.params[0]) }
 }

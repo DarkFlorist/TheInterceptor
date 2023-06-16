@@ -80,12 +80,10 @@ export async function connectedToSigner(_websiteTabConnections: WebsiteTabConnec
 	const settings = await getSettings()
 	if (!settings.simulationMode || settings.useSignersAddressAsActiveAddress) {
 		postMessageToPortIfConnected(port, {
-			interceptorApproved: true,
 			options: { method: 'request_signer_to_eth_requestAccounts' },
 			result: []
 		})
 		postMessageToPortIfConnected(port, {
-			interceptorApproved: true,
 			options: { method: 'request_signer_chainId' },
 			result: []
 		})

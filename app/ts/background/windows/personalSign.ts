@@ -8,13 +8,14 @@ import { OpenSeaOrderMessage, PersonalSignRequestIdentifiedEIP712Message } from 
 import { assertNever } from '../../utils/typescript.js'
 import { AddressBookEntry, SignerName, Website, WebsiteSocket, WebsiteTabConnections } from '../../utils/user-interface-types.js'
 import { OldSignTypedDataParams, PersonalSignParams, SignTypedDataParams } from '../../utils/wire-types.js'
-import { personalSignWithSimulator, sendMessageToContentScript } from '../background.js'
+import { sendMessageToContentScript } from '../background.js'
 import { getHtmlFile, sendPopupMessageToOpenWindows } from '../backgroundUtils.js'
 import { extractEIP712Message, validateEIP712Types } from '../../utils/eip712Parsing.js'
 import { getAddressMetaData, getTokenMetadata } from '../metadataUtils.js'
 import { getPendingPersonalSignPromise, getSignerName, setPendingPersonalSignPromise } from '../storageVariables.js'
 import { getSettings } from '../settings.js'
 import { PopupOrTab, addWindowTabListener, openPopupOrTab, removeWindowTabListener } from '../../components/ui-utils.js'
+import { simulatePersonalSign } from '../../simulation/services/SimulationModeEthereumClientService.js'
 
 let pendingPersonalSign: Future<PersonalSign> | undefined = undefined
 
@@ -292,9 +293,9 @@ async function resolve(reply: PersonalSign, simulationMode: boolean, params: Per
 	// forward message to content script
 	if (reply.options.accept) {
 		if (simulationMode) {
-			const result = await personalSignWithSimulator(params)
+			const result = await simulatePersonalSign(params)
 			if (result === undefined) return reject()
-			return { result: result }
+			return { method: params.method, result: result }
 		}
 		return { forward: true } as const
 	}

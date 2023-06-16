@@ -636,10 +636,8 @@ export const getHashOfSimulatedBlock = () => {
 }
 
 export const simulatePersonalSign = async (params: PersonalSignParams | SignTypedDataParams | OldSignTypedDataParams) => {
-	if (params.method === 'personal_sign') {
-		return await new ethers.Wallet(bytes32String(MOCK_PRIVATE_KEY)).signMessage(params.params[0])
-	}
-	return 'NOT IMPLEMENTED'
+	if (params.method === 'personal_sign') return await new ethers.Wallet(bytes32String(MOCK_PRIVATE_KEY)).signMessage(params.params[0])
+	throw new Error(`Simulated signing not implemented for method ${ params.method }`)
 }
 
 const getSimulatedTokenBalances = async (ethereumClientService: EthereumClientService, transactionQueue: EthereumUnsignedTransaction[], balances: { token: bigint, owner: bigint }[], blockNumber: bigint): Promise<TokenBalancesAfter> => {

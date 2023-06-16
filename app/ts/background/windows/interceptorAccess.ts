@@ -71,7 +71,6 @@ async function askForSignerAccountsFromSignerIfNotAvailable(websiteTabConnection
 	try {
 		channel.addEventListener('message', listener)
 		const messageSent = postMessageIfStillConnected(websiteTabConnections, socket, {
-			interceptorApproved: true,
 			options: { method: 'request_signer_to_eth_requestAccounts' },
 			result: []
 		})
@@ -174,7 +173,6 @@ export async function requestAccessFromUser(
 		if (requests.find((x) => x.accessRequestId === accessRequestId) === undefined) {
 			if (request !== undefined) {
 				postMessageIfStillConnected(websiteTabConnections, socket, {
-					interceptorApproved: false,
 					requestId: request.requestId,
 					options: request.options,
 					error: METAMASK_ERROR_ALREADY_PENDING.error

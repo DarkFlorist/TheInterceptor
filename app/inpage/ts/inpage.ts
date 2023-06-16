@@ -62,7 +62,7 @@ type MessageMethodAndParams = {
 }
 
 interface InterceptedRequestForward {
-	readonly interceptorApproved: boolean,
+	readonly interceptorApproved: true,
 	readonly usingInterceptorWithoutSigner?: boolean,
 	readonly requestId: number,
 	options: MessageMethodAndParams,

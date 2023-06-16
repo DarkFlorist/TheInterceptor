@@ -1,13 +1,11 @@
-import { EthereumAddress } from '../utils/wire-types.js'
 import { postMessageIfStillConnected } from './background.js'
 import { getActiveAddress, websiteSocketToString } from './backgroundUtils.js'
 import { findAddressInfo } from './metadataUtils.js'
 import { requestAccessFromUser } from './windows/interceptorAccess.js'
 import { METAMASK_ERROR_USER_REJECTED_REQUEST } from '../utils/constants.js'
-import { EthereumQuantity } from '../utils/wire-types.js'
 import { retrieveWebsiteDetails, updateExtensionIcon } from './iconHandler.js'
 import { AddressInfoEntry, TabConnection, Website, WebsiteSocket, WebsiteTabConnections } from '../utils/user-interface-types.js'
-import { Settings, WebsiteAccessArray, WebsiteAddressAccess } from '../utils/interceptor-messages.js'
+import { InpageScriptRequestAndCallBacks, Settings, WebsiteAccessArray, WebsiteAddressAccess } from '../utils/interceptor-messages.js'
 import { updateWebsiteAccess } from './settings.js'
 
 export function getConnectionDetails(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket) {
@@ -32,15 +30,14 @@ export function verifyAccess(websiteTabConnections: WebsiteTabConnections, socke
 	return isEthRequestAccounts ? 'askAccess' : 'noAccess'
 }
 
-export function sendMessageToApprovedWebsitePorts(websiteTabConnections: WebsiteTabConnections, method: string, data: unknown) {
+export function sendMessageToApprovedWebsitePorts(websiteTabConnections: WebsiteTabConnections, message: InpageScriptRequestAndCallBacks) {
 	// inform all the tabs about the address change
 	for (const [_tab, tabConnection] of websiteTabConnections.entries() ) {
 		for (const [_string, connection] of Object.entries(tabConnection.connections) ) {
 			if ( !connection.approved ) continue
 			postMessageIfStillConnected(websiteTabConnections, connection.socket, {
-				interceptorApproved: true,
-				options: { method: method },
-				result: data
+				options: { method: message.method },
+				...message
 			})
 		}
 	}
@@ -52,9 +49,8 @@ export async function sendActiveAccountChangeToApprovedWebsitePorts(websiteTabCo
 			if (!connection.approved) continue
 			const activeAddress = await getActiveAddressForDomain(connection.websiteOrigin, settings, connection.socket)
 			postMessageIfStillConnected(websiteTabConnections, connection.socket, {
-				interceptorApproved: true,
 				options: { method: 'accountsChanged' },
-				result: activeAddress !== undefined ? [EthereumAddress.serialize(activeAddress)] : []
+				result: activeAddress !== undefined ? [activeAddress] : []
 			})
 		}
 	}
@@ -179,32 +175,30 @@ function connectToPort(websiteTabConnections: WebsiteTabConnections, socket: Web
 	if (settings.activeChain === undefined) return true
 
 	postMessageIfStillConnected(websiteTabConnections, socket, {
-		interceptorApproved: true,
 		options: { method: 'connect' },
-		result: [EthereumQuantity.serialize(settings.activeChain)]
+		method: 'connect',
+		result: [settings.activeChain]
 	})
 
 	// seems like dapps also want to get account changed and chain changed events after we connect again, so let's send them too
 	postMessageIfStillConnected(websiteTabConnections, socket, {
-		interceptorApproved: true,
 		options: { method: 'accountsChanged' },
-		result: connectWithActiveAddress !== undefined ? [EthereumAddress.serialize(connectWithActiveAddress)] : []
+		method: 'accountsChanged',
+		result: connectWithActiveAddress !== undefined ? [connectWithActiveAddress] : []
 	})
 
 	postMessageIfStillConnected(websiteTabConnections, socket, {
-		interceptorApproved: true,
 		options: { method: 'chainChanged' },
-		result: EthereumQuantity.serialize(settings.activeChain)
+		method: 'chainChanged' as const,
+		result: settings.activeChain,
 	})
 
 	if (!settings.simulationMode || settings.useSignersAddressAsActiveAddress) {
 		postMessageIfStillConnected(websiteTabConnections, socket, {
-			interceptorApproved: true,
 			options: { method: 'request_signer_to_eth_requestAccounts' },
 			result: []
 		})
 		postMessageIfStillConnected(websiteTabConnections, socket, {
-			interceptorApproved: true,
 			options: { method: 'request_signer_chainId' },
 			result: []
 		})
@@ -216,9 +210,8 @@ function disconnectFromPort(websiteTabConnections: WebsiteTabConnections, socket
 	setWebsitePortApproval(websiteTabConnections, socket, false)
 	updateExtensionIcon(websiteTabConnections, socket, websiteOrigin)
 	postMessageIfStillConnected(websiteTabConnections, socket, {
-		interceptorApproved: true,
 		options: { method: 'disconnect' },
-		result: { code: METAMASK_ERROR_USER_REJECTED_REQUEST, message: 'User refused access to the wallet' }
+		error: { code: METAMASK_ERROR_USER_REJECTED_REQUEST, message: 'User refused access to the wallet' }
 	})
 	return false
 }

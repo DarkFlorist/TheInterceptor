@@ -1,4 +1,4 @@
-import { EthSubscribeParams, NewHeadsSubscriptionData } from '../../utils/wire-types.js'
+import { EthSubscribeParams } from '../../utils/wire-types.js'
 import { assertNever } from '../../utils/typescript.js'
 import { EthereumClientService } from './EthereumClientService.js'
 import { getEthereumSubscriptions, updateEthereumSubscriptions } from '../../background/storageVariables.js'
@@ -41,9 +41,9 @@ export async function sendSubscriptionMessagesForNewBlock(blockNumber: bigint, e
 				const newBlock = await ethereumClientService.getBlock(blockNumber, false)
 
 				postMessageIfStillConnected(websiteTabConnections, subscription.subscriptionCreatorSocket, {
-					interceptorApproved: true,
 					options: subscription.params,
-					result: NewHeadsSubscriptionData.serialize({ subscription: subscription.type, result: newBlock }),
+					method: 'newHeads' as const, 
+					result: { subscription: subscription.type, result: newBlock } as const,
 					subscription: subscription.subscriptionId,
 				})
 
@@ -51,9 +51,9 @@ export async function sendSubscriptionMessagesForNewBlock(blockNumber: bigint, e
 					const simulatedBlock = await getSimulatedBlock(ethereumClientService, simulationState, blockNumber + 1n, false)
 					// post our simulated block on top (reorg it)
 					postMessageIfStillConnected(websiteTabConnections, subscription.subscriptionCreatorSocket, {
-						interceptorApproved: true,
 						options: subscription.params,
-						result: NewHeadsSubscriptionData.serialize({ subscription: subscription.type, result: simulatedBlock }),
+						method: 'newHeads' as const, 
+						result: { subscription: subscription.type, result: simulatedBlock },
 						subscription: subscription.subscriptionId,
 					})
 				}
