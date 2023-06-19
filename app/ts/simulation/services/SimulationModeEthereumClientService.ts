@@ -58,7 +58,7 @@ export const simulationGasLeft = (simulationState: SimulationState, blockHeader:
 	return max(blockHeader.gasLimit * 1023n / 1024n - transactionQueueTotalGasLimit(simulationState), 0n)
 }
 
-export function getInputFieldFromDataOrInput(request: {input?: Uint8Array, data?: Uint8Array }) {
+export function getInputFieldFromDataOrInput(request: { input?: Uint8Array} | { data?: Uint8Array } | {}) {
 	if ('data' in request && request.data !== undefined) {
 		return request.data
 	}
