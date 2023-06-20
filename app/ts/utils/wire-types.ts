@@ -551,7 +551,7 @@ export const DappRequestTransaction = funtypes.Intersect(
 	funtypes.Union(
 		funtypes.ReadonlyObject({ data: EthereumData }),
 		funtypes.ReadonlyObject({ input: EthereumData }),
-		funtypes.ReadonlyObject({}),
+		funtypes.ReadonlyObject({})
 	)
 )
 
