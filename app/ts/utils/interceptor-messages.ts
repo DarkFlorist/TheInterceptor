@@ -1,6 +1,6 @@
 import * as funtypes from 'funtypes'
 import { AddressBookEntries, AddressBookEntry, AddressInfo, AddressInfoEntry, ContactEntries, SignerName, Website, WebsiteSocket } from './user-interface-types.js'
-import { EthGetLogsResponse, EthTransactionReceiptResponse, EthereumAddress, EthereumBlockHeaderWithTransactionHashes, EthereumBytes32, EthereumData, EthereumQuantity, EthereumSignedTransactionWithBlockData, GetBlockReturn, GetSimulationStackReply, OldSignTypedDataParams, PersonalSignParams, SignTypedDataParams } from './wire-types.js'
+import { EstimateGasParams, EthBalanceParams, EthBlockByNumberParams, EthCallParams, EthGetLogsParams, EthGetLogsResponse, EthSubscribeParams, EthTransactionReceiptResponse, EthUnSubscribeParams, EthereumAddress, EthereumBlockHeaderWithTransactionHashes, EthereumBytes32, EthereumData, EthereumQuantity, EthereumSignedTransactionWithBlockData, GetBlockReturn, GetCode, GetSimulationStack, GetSimulationStackReply, GetTransactionCount, OldSignTypedDataParams, PersonalSignParams, SendRawTransaction, SendTransactionParams, SignTypedDataParams, SwitchEthereumChainParams, TransactionByHashParams, TransactionReceiptParams } from './wire-types.js'
 import { SimulationState, OptionalEthereumAddress, SimulatedAndVisualizedTransaction, SimResults, TokenPriceEstimate, WebsiteCreatedEthereumUnsignedTransaction } from './visualizer-types.js'
 import { ICON_ACCESS_DENIED, ICON_ACTIVE, ICON_NOT_ACTIVE, ICON_SIGNING, ICON_SIGNING_NOT_SUPPORTED, ICON_SIMULATING } from './constants.js'
 import { PersonalSignRequestData } from './personal-message-definitions.js'
@@ -14,6 +14,15 @@ export const MessageMethodAndParams = funtypes.Union(
 	funtypes.ReadonlyObject({ method: funtypes.String }).asReadonly()
 )
 
+export type WalletSwitchEthereumChainReply = funtypes.Static<typeof WalletSwitchEthereumChainReply>
+export const WalletSwitchEthereumChainReply = funtypes.ReadonlyObject({
+	method: funtypes.Literal('wallet_switchEthereumChain_reply'),
+	params: funtypes.Tuple(funtypes.ReadonlyObject({
+		accept: funtypes.Boolean,
+		chainId: EthereumQuantity,
+	}))
+}).asReadonly()
+
 export type InterceptedRequest = funtypes.Static<typeof InterceptedRequest>
 export const InterceptedRequest = funtypes.Intersect(
 	funtypes.ReadonlyObject({
@@ -25,89 +34,120 @@ export const InterceptedRequest = funtypes.Intersect(
 )
 export type ProviderMessage = InterceptedRequest
 
-export type InpageScriptRequestAndCallBacks = funtypes.Static<typeof InpageScriptRequestAndCallBacks>
-export const InpageScriptRequestAndCallBacks = funtypes.Union(
-	funtypes.ReadonlyObject({ method: funtypes.Literal('request_signer_chainId'), result: funtypes.ReadonlyTuple() }),
-	funtypes.ReadonlyObject({ method: funtypes.Literal('request_signer_to_eth_requestAccounts'), result: funtypes.ReadonlyTuple() }),
-	funtypes.ReadonlyObject({ method: funtypes.Literal('request_signer_to_wallet_switchEthereumChain'), result: EthereumQuantity }),
-	funtypes.ReadonlyObject({ method: funtypes.Literal('connect'), result: funtypes.ReadonlyTuple(EthereumQuantity) }),
-	funtypes.ReadonlyObject({ method: funtypes.Literal('accountsChanged'), result: funtypes.ReadonlyArray(EthereumAddress) }),
-	funtypes.ReadonlyObject({ method: funtypes.Literal('chainChanged'), result: EthereumQuantity }),
+export type InpageScriptRequest = funtypes.Static<typeof InpageScriptRequest>
+export const InpageScriptRequest = funtypes.Union(
+	funtypes.ReadonlyObject({ options: funtypes.ReadonlyObject({ method: funtypes.Literal('request_signer_chainId'), params: funtypes.ReadonlyTuple() }) }),
+	funtypes.ReadonlyObject({ options: funtypes.ReadonlyObject({ method: funtypes.Literal('request_signer_to_eth_requestAccounts'), params: funtypes.ReadonlyTuple() }) }),
+	funtypes.ReadonlyObject({ options: funtypes.ReadonlyObject({ method: funtypes.Literal('request_signer_to_wallet_switchEthereumChain'), params: EthereumQuantity }) }),
 )
 
-export type NonForwardingRPCRequestSuccessfullReturnValue = funtypes.Static<typeof NonForwardingRPCRequestSuccessfullReturnValue>
-export const NonForwardingRPCRequestSuccessfullReturnValue = funtypes.Union(
-	funtypes.ReadonlyObject({ method: funtypes.Literal('method!'), result: funtypes.ReadonlyTuple(EthereumAddress) }),
-	funtypes.ReadonlyObject({ method: funtypes.Literal('eth_getBlockByNumber'), result: GetBlockReturn }),
-	funtypes.ReadonlyObject({ method: funtypes.Literal('eth_getBalance'), result: EthereumQuantity }),
-	funtypes.ReadonlyObject({ method: funtypes.Literal('eth_estimateGas'), result: EthereumQuantity }),
-	funtypes.ReadonlyObject({ method: funtypes.Literal('eth_getTransactionByHash'), result: funtypes.Union(EthereumSignedTransactionWithBlockData, funtypes.Undefined) }),
-	funtypes.ReadonlyObject({ method: funtypes.Literal('eth_getTransactionReceipt'), result: EthTransactionReceiptResponse }),
-	funtypes.ReadonlyObject({ method: funtypes.Literal('eth_subscribe'), result: funtypes.String }),
-	funtypes.ReadonlyObject({ method: funtypes.Literal('eth_unsubscribe'), result: funtypes.Boolean }),
-	funtypes.ReadonlyObject({ method: funtypes.Literal('eth_chainId'), result: EthereumQuantity }),
-	funtypes.ReadonlyObject({ method: funtypes.Literal('net_version'), result: EthereumQuantity }),
-	funtypes.ReadonlyObject({ method: funtypes.Literal('eth_blockNumber'), result: EthereumQuantity }),
-	funtypes.ReadonlyObject({ method: funtypes.Literal('eth_getCode'), result: EthereumData }),
-	funtypes.ReadonlyObject({ method: funtypes.Literal('wallet_switchEthereumChain'), result: funtypes.Null }),
-	funtypes.ReadonlyObject({ method: funtypes.Literal('eth_accounts'), result: funtypes.ReadonlyArray(EthereumAddress) }),
-	funtypes.ReadonlyObject({ method: funtypes.Literal('wallet_getPermissions'), result: funtypes.ReadonlyTuple(funtypes.ReadonlyObject({ eth_accounts: funtypes.ReadonlyObject({}) })) }),
-	funtypes.ReadonlyObject({ method: funtypes.Literal('eth_gasPrice'), result: EthereumQuantity }),
-	funtypes.ReadonlyObject({ method: funtypes.Literal('eth_getTransactionCount'), result: EthereumQuantity }),
-	funtypes.ReadonlyObject({ method: funtypes.Literal('interceptor_getSimulationStack'), result: funtypes.ReadonlyObject({ version: funtypes.Literal('1.0.0'), payload: GetSimulationStackReply }) }),
-	funtypes.ReadonlyObject({ method: funtypes.Literal('eth_getLogs'), result: EthGetLogsResponse }),
-	funtypes.ReadonlyObject({ method: funtypes.Literal('eth_sendTransaction'), result: EthereumBytes32 }),
-	funtypes.ReadonlyObject({ method: funtypes.Literal('eth_sendRawTransaction'), result: EthereumBytes32 }),
-	funtypes.ReadonlyObject({ method: funtypes.Literal('eth_accounts_reply'), result: funtypes.Literal('0x') }),
-	funtypes.ReadonlyObject({ method: funtypes.Literal('signer_chainChanged'), result: funtypes.Literal('0x') }),
-	funtypes.ReadonlyObject({ method: funtypes.Literal('wallet_switchEthereumChain_reply'), result: funtypes.Literal('0x') }),
-	funtypes.ReadonlyObject({ method: funtypes.Literal('connected_to_signer'), result: funtypes.Literal('0x') }),
-	funtypes.ReadonlyObject({ method: funtypes.Literal('eth_call'), result: EthereumData }),
-	funtypes.ReadonlyObject({ method: funtypes.Union(
-		funtypes.Literal('personal_sign'),
-		funtypes.Literal('eth_signTypedData'),
-		funtypes.Literal('eth_signTypedData_v1'),
-		funtypes.Literal('eth_signTypedData_v2'),
-		funtypes.Literal('eth_signTypedData_v3'),
-		funtypes.Literal('eth_signTypedData_v4')
-	), result: funtypes.String }),
-	funtypes.ReadonlyObject({ method: funtypes.Literal('newHeads'), result: funtypes.ReadonlyObject({ subscription: funtypes.Literal('newHeads'), result: EthereumBlockHeaderWithTransactionHashes }) }),
-	InpageScriptRequestAndCallBacks,
+export type InpageScriptCallBack = funtypes.Static<typeof InpageScriptCallBack>
+export const InpageScriptCallBack = funtypes.Union(
+	funtypes.ReadonlyObject({ options: funtypes.ReadonlyObject({ method: funtypes.Literal('connect'), params: funtypes.ReadonlyTuple() }), result: funtypes.ReadonlyTuple(EthereumQuantity) }),
+	funtypes.ReadonlyObject({ options: funtypes.ReadonlyObject({ method: funtypes.Literal('accountsChanged'), params: funtypes.ReadonlyTuple() }), result: funtypes.ReadonlyArray(EthereumAddress) }),
+	funtypes.ReadonlyObject({ options: funtypes.ReadonlyObject({ method: funtypes.Literal('chainChanged'), params: funtypes.ReadonlyTuple() }), result: EthereumQuantity }),
+	funtypes.ReadonlyObject({ options: funtypes.ReadonlyObject({ method: funtypes.Literal('disconnect'), params: funtypes.ReadonlyTuple() }), result: funtypes.ReadonlyTuple() }),
+	funtypes.ReadonlyObject({ options: funtypes.ReadonlyObject({ method: funtypes.Literal('eth_accounts_reply'), params: funtypes.ReadonlyTuple() }), result: funtypes.Literal('0x') }),
+	funtypes.ReadonlyObject({ options: funtypes.ReadonlyObject({ method: funtypes.Literal('signer_chainChanged'), params: funtypes.ReadonlyTuple() }), result: funtypes.Literal('0x') }),
+	funtypes.ReadonlyObject({ options: WalletSwitchEthereumChainReply, result: funtypes.Literal('0x') }),
+	funtypes.ReadonlyObject({ options: funtypes.ReadonlyObject({ method: funtypes.Literal('connected_to_signer'), params: funtypes.ReadonlyTuple() }), result: funtypes.Literal('0x') }),
 )
+
+export type ErrorReturn = funtypes.Static<typeof ErrorReturn>
+export const ErrorReturn = funtypes.ReadonlyObject({
+	error: funtypes.Intersect(
+		funtypes.ReadonlyObject({
+			code: funtypes.Number,
+			message: funtypes.String,
+		}),
+		funtypes.ReadonlyPartial({
+			data: funtypes.String,
+		})
+	)
+})
+
 export type NonForwardingRPCRequestReturnValue = funtypes.Static<typeof NonForwardingRPCRequestReturnValue>
 export const NonForwardingRPCRequestReturnValue = funtypes.Union(
-	NonForwardingRPCRequestSuccessfullReturnValue,
-	funtypes.ReadonlyObject({
-		error: funtypes.Intersect(
-			funtypes.ReadonlyObject({
-				code: funtypes.Number,
-				message: funtypes.String,
-			}),
-			funtypes.ReadonlyPartial({
-				data: funtypes.String,
-			})
-		)
-	}),
+	funtypes.Intersect(funtypes.ReadonlyObject({ options: EthBlockByNumberParams}), funtypes.Union(funtypes.ReadonlyObject({ result: GetBlockReturn }), ErrorReturn)),
+	funtypes.Intersect(funtypes.ReadonlyObject({ options: EthBalanceParams}), funtypes.Union(funtypes.ReadonlyObject({ result: EthereumQuantity }), ErrorReturn)),
+	funtypes.Intersect(funtypes.ReadonlyObject({ options: EstimateGasParams}), funtypes.Union(funtypes.ReadonlyObject({ result: EthereumQuantity }), ErrorReturn)),
+	funtypes.Intersect(funtypes.ReadonlyObject({ options: TransactionByHashParams}), funtypes.Union(funtypes.ReadonlyObject({ result: funtypes.Union(EthereumSignedTransactionWithBlockData, funtypes.Undefined) }), ErrorReturn)),
+	funtypes.Intersect(funtypes.ReadonlyObject({ options: TransactionReceiptParams}), funtypes.Union(funtypes.ReadonlyObject({ result: EthTransactionReceiptResponse }), ErrorReturn)),
+	funtypes.Intersect(funtypes.ReadonlyObject({ options: EthSubscribeParams}), funtypes.Union(funtypes.ReadonlyObject({ result: funtypes.String }), ErrorReturn)),
+	funtypes.Intersect(funtypes.ReadonlyObject({ options: EthUnSubscribeParams}), funtypes.Union(funtypes.ReadonlyObject({ result: funtypes.Boolean }), ErrorReturn)),
+	funtypes.Intersect(funtypes.ReadonlyObject({ options: funtypes.ReadonlyObject({ method: funtypes.Literal('eth_chainId') })}), funtypes.Union(funtypes.ReadonlyObject({ result: EthereumQuantity }), ErrorReturn)),
+	funtypes.Intersect(funtypes.ReadonlyObject({ options: funtypes.ReadonlyObject({ method: funtypes.Literal('net_version') })}), funtypes.Union(funtypes.ReadonlyObject({ result: EthereumQuantity }), ErrorReturn)),
+	funtypes.Intersect(funtypes.ReadonlyObject({ options: funtypes.ReadonlyObject({ method: funtypes.Literal('eth_blockNumber') })}), funtypes.Union(funtypes.ReadonlyObject({ result: EthereumQuantity }), ErrorReturn)),
+	funtypes.Intersect(funtypes.ReadonlyObject({ options: GetCode}), funtypes.Union(funtypes.ReadonlyObject({ result: EthereumData }), ErrorReturn)),
+	funtypes.Intersect(funtypes.ReadonlyObject({ options: SwitchEthereumChainParams}), funtypes.Union(funtypes.ReadonlyObject({ result: funtypes.Null }), ErrorReturn)),
+	funtypes.Intersect(funtypes.ReadonlyObject({ options: funtypes.ReadonlyObject({ method: funtypes.Literal('eth_accounts') })}), funtypes.Union(funtypes.ReadonlyObject({ result: funtypes.ReadonlyArray(EthereumAddress) }), ErrorReturn)),
+	funtypes.Intersect(funtypes.ReadonlyObject({ options: funtypes.ReadonlyObject({ method: funtypes.Literal('wallet_getPermissions') })}), funtypes.Union(funtypes.ReadonlyObject({ result: funtypes.ReadonlyTuple(funtypes.ReadonlyObject({ eth_accounts: funtypes.ReadonlyObject({}) })) }), ErrorReturn)),
+	funtypes.Intersect(funtypes.ReadonlyObject({ options: funtypes.ReadonlyObject({ method: funtypes.Literal('eth_gasPrice') })}), funtypes.Union(funtypes.ReadonlyObject({ result: EthereumQuantity }), ErrorReturn)),
+	funtypes.Intersect(funtypes.ReadonlyObject({ options: GetTransactionCount }), funtypes.Union(funtypes.ReadonlyObject({ result: EthereumQuantity }), ErrorReturn)),
+	funtypes.Intersect(funtypes.ReadonlyObject({ options: GetSimulationStack }), funtypes.Union(funtypes.ReadonlyObject({ result: funtypes.ReadonlyObject({ version: funtypes.Literal('1.0.0'), payload: GetSimulationStackReply }) }), ErrorReturn)),
+	funtypes.Intersect(funtypes.ReadonlyObject({ options: EthGetLogsParams }), funtypes.Union(funtypes.ReadonlyObject({ result: EthGetLogsResponse }), ErrorReturn)),
+	funtypes.Intersect(funtypes.ReadonlyObject({ options: SendTransactionParams }), funtypes.Union(funtypes.ReadonlyObject({ result: EthereumBytes32 }), ErrorReturn)),
+	funtypes.Intersect(funtypes.ReadonlyObject({ options: SendRawTransaction }), funtypes.Union(funtypes.ReadonlyObject({ result: EthereumBytes32 }), ErrorReturn)),
+	funtypes.Intersect(funtypes.ReadonlyObject({ options: EthCallParams }), funtypes.Union(funtypes.ReadonlyObject({ result: EthereumData }), ErrorReturn)),
+	funtypes.Intersect(funtypes.ReadonlyObject({ options: funtypes.Union(PersonalSignParams, SignTypedDataParams, OldSignTypedDataParams) }), funtypes.Union(funtypes.ReadonlyObject({ result: funtypes.String }), ErrorReturn)),
 )
 
-export type HandleRPCRequestReturnValue = funtypes.Static<typeof HandleRPCRequestReturnValue>
-export const HandleRPCRequestReturnValue = funtypes.Union(
+export type SubscriptionReturnValue = funtypes.Static<typeof SubscriptionReturnValue>
+export const SubscriptionReturnValue = funtypes.ReadonlyObject({
+	method: funtypes.Literal('newHeads'),
+	result: funtypes.ReadonlyObject({
+		subscription: funtypes.Literal('newHeads'),
+		result: EthereumBlockHeaderWithTransactionHashes
+	})
+})
+
+export type RPCReply = funtypes.Static<typeof RPCReply>
+export const RPCReply = funtypes.Union(
 	NonForwardingRPCRequestReturnValue,
-	funtypes.ReadonlyObject({ forward: funtypes.Literal(true) }) //todo, add check here that we can only forward specific requets
+	funtypes.ReadonlyObject({ forward: funtypes.Literal(true) }), //todo, add check here that we can only forward specific requets
+)
+
+export type RPCReplyWithRequestId = funtypes.Static<typeof RPCReply>
+export const RPCReplyWithRequestId = funtypes.Intersect(
+	funtypes.ReadonlyObject({ requestId: funtypes.Number }),
+	RPCReply,
+)
+
+export type InpageMessage = funtypes.Static<typeof InpageMessage>
+export const InpageMessage = funtypes.Union(
+	InpageScriptCallBack,
+	RPCReplyWithRequestId,
+)
+
+export type InterceptorMessageToInpage = funtypes.Static<typeof InterceptorMessageToInpage>
+export const InterceptorMessageToInpage = funtypes.Intersect(
+	funtypes.ReadonlyObject({ interceptorApproved: funtypes.Literal(true) }),
+	funtypes.Union(RPCReply, InpageScriptCallBack)
 )
 
 export type InterceptedRequestForward = funtypes.Static<typeof InterceptedRequestForward>
-export const InterceptedRequestForward = funtypes.Intersect(
-	funtypes.ReadonlyObject({
-		interceptorApproved: funtypes.Literal(true),
-		options: MessageMethodAndParams,
-	}).asReadonly(),
-	funtypes.Union(NonForwardingRPCRequestReturnValue, funtypes.ReadonlyObject({})),
-	funtypes.Partial({
-		subscription: funtypes.String,
-		usingInterceptorWithoutSigner: funtypes.Boolean,
+export const InterceptedRequestForward =  funtypes.Union(
+	funtypes.ReadonlyObject({ // forward directly to wallet
+		forward: funtypes.Literal(true),
+		methodAndParams: MessageMethodAndParams,
 		requestId: funtypes.Number
-	}).asReadonly()
+	}).asReadonly(),
+	funtypes.Intersect( // respond with a result
+		funtypes.ReadonlyObject({
+			methodAndParams: MessageMethodAndParams,
+			requestId: funtypes.Number
+		}).asReadonly(),
+		NonForwardingRPCRequestReturnValue,
+	),
+	funtypes.Intersect( // subscriptions
+		funtypes.ReadonlyObject({
+			methodAndParams: MessageMethodAndParams,
+			subscription: funtypes.String,
+		}).asReadonly(),
+		SubscriptionReturnValue,
+	),
+	InpageScriptRequest, // request Interceptors inpage script for something
+	InpageScriptCallBack, // send callback
 )
 
 export type TransactionConfirmation = funtypes.Static<typeof TransactionConfirmation>
@@ -265,17 +305,11 @@ export const ChangeActiveChain = funtypes.ReadonlyObject({
 export type ChainChangeConfirmation = funtypes.Static<typeof ChainChangeConfirmation>
 export const ChainChangeConfirmation = funtypes.ReadonlyObject({
 	method: funtypes.Literal('popup_changeChainDialog'),
-	options: funtypes.Union(
-		funtypes.ReadonlyObject({
-			chainId: EthereumQuantity,
-			requestId: funtypes.Number,
-			accept: funtypes.Literal(true),
-		}),
-		funtypes.ReadonlyObject({
-			requestId: funtypes.Number,
-			accept: funtypes.Literal(false),
-		}),
-	)
+	options: funtypes.ReadonlyObject({
+		chainId: EthereumQuantity,
+		requestId: funtypes.Number,
+		accept: funtypes.Boolean,
+	}),	
 }).asReadonly()
 
 export type SignerChainChangeConfirmation = funtypes.Static<typeof SignerChainChangeConfirmation>
@@ -291,15 +325,6 @@ export type ConnectedToSigner = funtypes.Static<typeof ConnectedToSigner>
 export const ConnectedToSigner = funtypes.ReadonlyObject({
 	method: funtypes.Literal('connected_to_signer'),
 	params: funtypes.Tuple(SignerName),
-}).asReadonly()
-
-export type WalletSwitchEthereumChainReply = funtypes.Static<typeof WalletSwitchEthereumChainReply>
-export const WalletSwitchEthereumChainReply = funtypes.ReadonlyObject({
-	method: funtypes.Literal('wallet_switchEthereumChain_reply'),
-	params: funtypes.Tuple(funtypes.ReadonlyObject({
-		accept: funtypes.Boolean,
-		chainId: EthereumQuantity,
-	}))
 }).asReadonly()
 
 export type GetAddressBookDataFilter = funtypes.Static<typeof GetAddressBookDataFilter>

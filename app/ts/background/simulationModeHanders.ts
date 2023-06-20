@@ -18,18 +18,18 @@ import { assertNever } from '../utils/typescript.js'
 const defaultCallAddress = 0x1n
 
 export async function getBlockByNumber(ethereumClientService: EthereumClientService, simulationState: SimulationState | undefined, request: EthBlockByNumberParams) {
-	return { method: 'eth_getBlockByNumber' as const, result: await getSimulatedBlock(ethereumClientService, simulationState, request.params[0], request.params[1]) }
+	return { options: request, result: await getSimulatedBlock(ethereumClientService, simulationState, request.params[0], request.params[1]) }
 }
 export async function getBalance(ethereumClientService: EthereumClientService, simulationState: SimulationState | undefined, request: EthBalanceParams) {
-	return { method: 'eth_getBalance' as const, result: await getSimulatedBalance(ethereumClientService, simulationState, request.params[0]) }
+	return { options: request, result: await getSimulatedBalance(ethereumClientService, simulationState, request.params[0]) }
 }
 export async function getTransactionByHash(ethereumClientService: EthereumClientService, simulationState: SimulationState | undefined, request: TransactionByHashParams) {
 	const result = await getSimulatedTransactionByHash(ethereumClientService, simulationState, request.params[0])
-	if (result === undefined) return { method: 'eth_getTransactionByHash' as const, result: undefined }
-	return { method: 'eth_getTransactionByHash' as const, result: result }
+	if (result === undefined) return { options: request, result: undefined }
+	return { options: request, result: result }
 }
 export async function getTransactionReceipt(ethereumClientService: EthereumClientService, simulationState: SimulationState | undefined, request: TransactionReceiptParams) {
-	return { method: 'eth_getTransactionReceipt' as const, result: await getSimulatedTransactionReceipt(ethereumClientService, simulationState, request.params[0]) }
+	return { options: request, result: await getSimulatedTransactionReceipt(ethereumClientService, simulationState, request.params[0]) }
 }
 
 function getFromField(websiteTabConnections: WebsiteTabConnections, simulationMode: boolean, transactionFrom: bigint | undefined, activeAddress: bigint | undefined, socket: WebsiteSocket) {
@@ -91,14 +91,15 @@ export async function sendTransaction(
 			transactionSendingFormat: 'eth_sendTransaction' as const,
 		}
 	}
-	return await openConfirmTransactionDialog(
+	return { options: sendTransactionParams, ...await openConfirmTransactionDialog(
 		ethereumClientService,
 		socket,
 		request,
 		simulationMode,
 		formTransaction,
 		activeAddress,
-	)
+		sendTransactionParams,
+	) }
 }
 
 export async function sendRawTransaction(
@@ -149,14 +150,15 @@ export async function sendRawTransaction(
 			transactionSendingFormat: 'eth_sendRawTransaction' as const,
 		}
 	}
-	return await openConfirmTransactionDialog(
+	return { options: sendRawTransactionParams, ...await openConfirmTransactionDialog(
 		ethereumClientService,
 		socket,
 		request,
 		simulationMode,
 		formTransaction,
 		activeAddress,
-	)
+		sendRawTransactionParams,
+	) }
 }
 
 async function singleCallWithFromOverride(ethereumClientService: EthereumClientService, simulationState: SimulationState | undefined, request: EthCallParams, from: bigint) {
@@ -196,40 +198,40 @@ export async function call(ethereumClientService: EthereumClientService, simulat
 	if (callResult.error !== undefined && 'data' in callResult.error && callResult.error?.data === 'sender has deployed code' && from !== defaultCallAddress) {
 		const callerChangeResult = await singleCallWithFromOverride(ethereumClientService, simulationState, request, defaultCallAddress)
 		if (callerChangeResult.error !== undefined) return callerChangeResult
-		return { method: 'eth_call' as const, ...callerChangeResult }
+		return { options: request, ...callerChangeResult }
 	}
-	return { method: 'eth_call' as const, ...callResult }
+	return { options: request, ...callResult }
 }
 
 export async function blockNumber(ethereumClientService: EthereumClientService, simulationState: SimulationState | undefined) {
-	return { method: 'eth_blockNumber' as const, result: await getSimulatedBlockNumber(ethereumClientService, simulationState) }
+	return { options: { method: 'eth_blockNumber' } as const, result: await getSimulatedBlockNumber(ethereumClientService, simulationState) }
 }
 
 export async function estimateGas(ethereumClientService: EthereumClientService, simulationState: SimulationState | undefined, request: EstimateGasParams) {
 	const estimatedGas = await simulateEstimateGas(ethereumClientService, simulationState, request.params[0])
 	if ('error' in estimatedGas) return estimatedGas
-	return { method: 'eth_estimateGas' as const, result: estimatedGas.gas }
+	return { options: request, result: estimatedGas.gas }
 }
 
 export async function subscribe(socket: WebsiteSocket, request: EthSubscribeParams) {
-	return { method: 'eth_subscribe' as const, result: await createEthereumSubscription(request, socket) }
+	return { options: request, result: await createEthereumSubscription(request, socket) }
 }
 
 export async function unsubscribe(socket: WebsiteSocket, request: EthUnSubscribeParams) {
-	return { method: 'eth_unsubscribe' as const, result: await removeEthereumSubscription(socket, request.params[0]) }
+	return { options: request, result: await removeEthereumSubscription(socket, request.params[0]) }
 }
 
 export async function getAccounts(activeAddress: bigint | undefined) {
-	if (activeAddress === undefined) return { method: 'eth_accounts' as const, result: [] }
-	return { method: 'eth_accounts' as const, result: [activeAddress] }
+	if (activeAddress === undefined) return { options: { method: 'eth_accounts' } as const, result: [] }
+	return { options: { method: 'eth_accounts' } as const, result: [activeAddress] }
 }
 
 export async function chainId(ethereumClientService: EthereumClientService) {
-	return { method: 'eth_chainId' as const, result: ethereumClientService.getChainId() }
+	return { options: { method: 'eth_chainId' } as const, result: ethereumClientService.getChainId() }
 }
 
 export async function gasPrice(ethereumClientService: EthereumClientService) {
-	return { method: 'eth_gasPrice' as const, result: await ethereumClientService.getGasPrice() }
+	return { options: { method: 'eth_gasPrice' } as const, result: await ethereumClientService.getGasPrice() }
 }
 
 export async function personalSign(ethereumClientService: EthereumClientService, websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, params: PersonalSignParams | SignTypedDataParams | OldSignTypedDataParams, request: InterceptedRequest, simulationMode: boolean, website: Website, settings: Settings, activeAddress: bigint | undefined) {
@@ -237,31 +239,31 @@ export async function personalSign(ethereumClientService: EthereumClientService,
 }
 
 export async function switchEthereumChain(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, ethereumClientService: EthereumClientService, params: SwitchEthereumChainParams, request: InterceptedRequest, simulationMode: boolean, website: Website) {
-	if (ethereumClientService.getChainId() === params.params[0].chainId) {
+	if (ethereumClientService.getChainId() === params.params[0]) {
 		// we are already on the right chain
-		return { method: 'wallet_switchEthereumChain' as const, result: null }
+		return { options: params, result: null }
 	}
-	return await openChangeChainDialog(websiteTabConnections, socket, request, simulationMode, website, params.params[0].chainId)
+	return { options: params, ... await openChangeChainDialog(websiteTabConnections, socket, request, simulationMode, website, params) }
 }
 
 export async function getCode(ethereumClientService: EthereumClientService, simulationState: SimulationState | undefined, request: GetCode) {
 	const code = await getSimulatedCode(ethereumClientService, simulationState, request.params[0], request.params[1])
 	if (code.statusCode === 'failure') return ERROR_INTERCEPTOR_GET_CODE_FAILED
-	return { method: 'eth_getCode' as const, result: code.getCodeReturn }
+	return { options: request, result: code.getCodeReturn }
 }
 
 export async function getPermissions() {
-	return { method: 'wallet_getPermissions' as const, result: [ { "eth_accounts": {} } ] } as const
+	return { options: { method: 'wallet_getPermissions' } as const, result: [ { "eth_accounts": {} } ] } as const
 }
 
 export async function getTransactionCount(ethereumClientService: EthereumClientService, simulationState: SimulationState | undefined, request: GetTransactionCount) {
-	return { method: 'eth_getTransactionCount' as const, result: await getSimulatedTransactionCount(ethereumClientService, simulationState, request.params[0], request.params[1]) }
+	return { options: request, result: await getSimulatedTransactionCount(ethereumClientService, simulationState, request.params[0], request.params[1]) }
 }
 
 export async function getSimulationStack(simulationState: SimulationState | undefined, request: GetSimulationStack) {
 	switch (request.params[0]) {
 		case '1.0.0': return {
-			method: 'interceptor_getSimulationStack' as const,
+			options: request,
 			result: {
 				version: '1.0.0',
 				payload: simulationState === undefined ? [] : getSimulatedStack(simulationState),
@@ -272,5 +274,5 @@ export async function getSimulationStack(simulationState: SimulationState | unde
 }
 
 export async function getLogs(ethereumClientService: EthereumClientService, simulationState: SimulationState | undefined, request: EthGetLogsParams) {
-	return { method: 'eth_getLogs' as const, result: await getSimulatedLogs(ethereumClientService, simulationState, request.params[0]) }
+	return { options: request, result: await getSimulatedLogs(ethereumClientService, simulationState, request.params[0]) }
 }

@@ -70,10 +70,7 @@ async function askForSignerAccountsFromSignerIfNotAvailable(websiteTabConnection
 	const channel = new BroadcastChannel(INTERNAL_CHANNEL_NAME)
 	try {
 		channel.addEventListener('message', listener)
-		const messageSent = postMessageIfStillConnected(websiteTabConnections, socket, {
-			options: { method: 'request_signer_to_eth_requestAccounts' },
-			result: []
-		})
+		const messageSent = postMessageIfStillConnected(websiteTabConnections, socket, { method: 'request_signer_to_eth_requestAccounts' })
 		if (messageSent) await future
 	} finally {
 		channel.removeEventListener('message', listener)
@@ -175,7 +172,7 @@ export async function requestAccessFromUser(
 				postMessageIfStillConnected(websiteTabConnections, socket, {
 					requestId: request.requestId,
 					options: request.options,
-					error: METAMASK_ERROR_ALREADY_PENDING.error
+					error: METAMASK_ERROR_ALREADY_PENDING.error,
 				})
 			}
 			return

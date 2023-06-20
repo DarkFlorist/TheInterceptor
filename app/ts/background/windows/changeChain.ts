@@ -3,7 +3,8 @@ import { METAMASK_ERROR_USER_REJECTED_REQUEST } from '../../utils/constants.js'
 import { Future } from '../../utils/future.js'
 import { ChainChangeConfirmation, InterceptedRequest, ExternalPopupMessage, SignerChainChangeConfirmation } from '../../utils/interceptor-messages.js'
 import { Website, WebsiteSocket, WebsiteTabConnections } from '../../utils/user-interface-types.js'
-import { changeActiveChain, sendMessageToContentScript } from '../background.js'
+import { SwitchEthereumChainParams } from '../../utils/wire-types.js'
+import { changeActiveChain, postMessageIfStillConnected } from '../background.js'
 import { getHtmlFile, sendPopupMessageToOpenWindows } from '../backgroundUtils.js'
 import { getChainChangeConfirmationPromise, setChainChangeConfirmationPromise } from '../storageVariables.js'
 
@@ -20,7 +21,7 @@ export async function resolveChainChange(websiteTabConnections: WebsiteTabConnec
 	const data = await getChainChangeConfirmationPromise()
 	if (data === undefined || confirmation.options.requestId !== data.request.requestId) return
 	const resolved = await resolve(websiteTabConnections, confirmation, data.simulationMode)
-	sendMessageToContentScript(websiteTabConnections, data.socket, resolved, data.request)
+	postMessageIfStillConnected(websiteTabConnections, data.socket, { options: { method: 'wallet_switchEthereumChain' as const, params: [confirmation.options.chainId] }, ...resolved, requestId: data.request.requestId })
 }
 
 export async function resolveSignerChainChange(confirmation: SignerChainChangeConfirmation) {
@@ -28,10 +29,11 @@ export async function resolveSignerChainChange(confirmation: SignerChainChangeCo
 	pendForSignerReply = undefined
 }
 
-function rejectMessage(requestId: number) {
+function rejectMessage(chainId: bigint, requestId: number) {
 	return {
 		method: 'popup_changeChainDialog',
 		options: {
+			chainId,
 			requestId,
 			accept: false,
 		},
@@ -51,7 +53,7 @@ export const openChangeChainDialog = async (
 	request: InterceptedRequest,
 	simulationMode: boolean,
 	website: Website,
-	chainId: bigint
+	params: SwitchEthereumChainParams,
 ) => {
 	if (openedDialog !== undefined || pendForUserReply || pendForSignerReply) return userDeniedChange
 
@@ -61,7 +63,7 @@ export const openChangeChainDialog = async (
 		if (openedDialog === undefined || openedDialog.windowOrTab.id !== windowId) return
 		openedDialog = undefined
 		if (pendForUserReply === undefined) return
-		resolveChainChange(websiteTabConnections, rejectMessage(request.requestId))
+		resolveChainChange(websiteTabConnections, rejectMessage(params.params[0], request.requestId))
 	}
 
 	const changeChainWindowReadyAndListening = async function popupMessageListener(msg: unknown) {
@@ -72,7 +74,7 @@ export const openChangeChainDialog = async (
 			method: 'popup_ChangeChainRequest',
 			data: {
 				requestId: request.requestId,
-				chainId: chainId,
+				chainId: params.params[0],
 				website: website,
 				simulationMode: simulationMode,
 				tabIdOpenedFrom: socket.tabId,
@@ -110,7 +112,7 @@ export const openChangeChainDialog = async (
 				simulationMode: simulationMode,
 			})
 		} else {
-			resolveChainChange(websiteTabConnections, rejectMessage(request.requestId))
+			resolveChainChange(websiteTabConnections, rejectMessage(params.params[0], request.requestId))
 		}
 		pendForSignerReply = undefined
 
@@ -131,13 +133,13 @@ async function resolve(websiteTabConnections: WebsiteTabConnections, reply: Chai
 	if (reply.options.accept) {
 		if (simulationMode) {
 			await changeActiveChain(websiteTabConnections, reply.options.chainId, simulationMode)
-			return { method: 'wallet_switchEthereumChain' as const, result: null }
+			return { result: null }
 		}
 		pendForSignerReply = new Future<SignerChainChangeConfirmation>() // when not in simulation mode, we need to get reply from the signer too
 		await changeActiveChain(websiteTabConnections, reply.options.chainId, simulationMode)
 		const signerReply = await pendForSignerReply
 		if (signerReply.options.accept && signerReply.options.chainId === reply.options.chainId) {
-			return { method: 'wallet_switchEthereumChain' as const, result: null }
+			return { result: null }
 		}
 	}
 	return userDeniedChange

@@ -79,13 +79,7 @@ export async function connectedToSigner(_websiteTabConnections: WebsiteTabConnec
 	await sendPopupMessageToOpenWindows({ method: 'popup_signer_name_changed' })
 	const settings = await getSettings()
 	if (!settings.simulationMode || settings.useSignersAddressAsActiveAddress) {
-		postMessageToPortIfConnected(port, {
-			options: { method: 'request_signer_to_eth_requestAccounts' },
-			result: []
-		})
-		postMessageToPortIfConnected(port, {
-			options: { method: 'request_signer_chainId' },
-			result: []
-		})
+		postMessageToPortIfConnected(port, { requestId: request.requestId, options: { method: 'request_signer_to_eth_requestAccounts' as const, params: [] } })
+		postMessageToPortIfConnected(port, { requestId: request.requestId, options: { method: 'request_signer_chainId' as const, params: [] } })
 	}
 }

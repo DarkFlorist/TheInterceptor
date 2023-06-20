@@ -1,4 +1,4 @@
-import { ConfirmTransactionTransactionSingleVisualization, HandleRPCRequestReturnValue, InterceptedRequest, InterceptedRequestForward, PopupMessage, Settings, TabState } from '../utils/interceptor-messages.js'
+import { ConfirmTransactionTransactionSingleVisualization, InpageMessage, InterceptedRequest, InterceptorMessageToInpage, PopupMessage, RPCReply, Settings, TabState } from '../utils/interceptor-messages.js'
 import 'webextension-polyfill'
 import { Simulator } from '../simulation/simulator.js'
 import { EthereumJsonRpcRequest } from '../utils/wire-types.js'
@@ -16,7 +16,7 @@ import { findAddressInfo, getAddressBookEntriesForVisualiser } from './metadataU
 import { getSocketFromPort, sendPopupMessageToOpenWindows, websiteSocketToString } from './backgroundUtils.js'
 import { retrieveWebsiteDetails, updateExtensionBadge, updateExtensionIcon } from './iconHandler.js'
 import { connectedToSigner, ethAccountsReply, signerChainChanged, walletSwitchEthereumChainReply } from './providerMessageHandlers.js'
-import { DistributedOmit, assertNever, assertUnreachable } from '../utils/typescript.js'
+import { assertNever, assertUnreachable } from '../utils/typescript.js'
 import { EthereumClientService } from '../simulation/services/EthereumClientService.js'
 import { appendTransaction, copySimulationState, getNonPrependedSimulatedTransactions, getNonceFixedSimulatedTransactions, getWebsiteCreatedEthereumUnsignedTransactions, setPrependTransactionsQueue, setSimulationTransactions } from '../simulation/services/SimulationModeEthereumClientService.js'
 import { Semaphore } from '../utils/semaphore.js'
@@ -188,7 +188,7 @@ async function handleRPCRequest(
 	request: InterceptedRequest,
 	settings: Settings,
 	activeAddress: bigint | undefined,
-): Promise<HandleRPCRequestReturnValue> {
+): Promise<RPCReply> {
 	const maybeParsedRequest = EthereumJsonRpcRequest.safeParse(request.options)
 	const isForwardToSigner = !settings.simulationMode && !request.usingInterceptorWithoutSigner
 	if (maybeParsedRequest.success === false) {
@@ -334,7 +334,7 @@ export async function changeActiveAddressAndChainAndResetSimulation(
 				simulator.cleanup()
 				simulator = new Simulator(chainString, newBlockCallback, onErrorBlockCallback)
 			}
-			sendMessageToApprovedWebsitePorts(websiteTabConnections, { method: 'chainChanged', result: change.activeChain })
+			sendMessageToApprovedWebsitePorts(websiteTabConnections, { options: { method: 'chainChanged', params: [] } as const, result: change.activeChain })
 			sendPopupMessageToOpenWindows({ method: 'popup_chain_update' })
 		}
 
@@ -359,13 +359,13 @@ export async function changeActiveChain(websiteTabConnections: WebsiteTabConnect
 		simulationMode: simulationMode,
 		activeChain: chainId
 	})
-	sendMessageToApprovedWebsitePorts(websiteTabConnections, { method: 'request_signer_to_wallet_switchEthereumChain', result: chainId })
+	sendMessageToApprovedWebsitePorts(websiteTabConnections, { options: { method: 'request_signer_to_wallet_switchEthereumChain' as const, params: chainId } })
 	await sendPopupMessageToOpenWindows({ method: 'popup_settingsUpdated', data: await getSettings() })
 }
 
-export function postMessageToPortIfConnected(port: browser.runtime.Port, message: DistributedOmit<InterceptedRequestForward, 'interceptorApproved'>) {
+export function postMessageToPortIfConnected(port: browser.runtime.Port, message: InpageMessage) {
 	try {
-		port.postMessage(message)
+		port.postMessage(InterceptorMessageToInpage.serialize({ interceptorApproved: true, ...message }) as Object)
 	} catch (error) {
 		if (error instanceof Error) {
 			if (error.message?.includes('Attempting to use a disconnected port object')) {
@@ -378,8 +378,7 @@ export function postMessageToPortIfConnected(port: browser.runtime.Port, message
 		throw error
 	}
 }
-
-export function postMessageIfStillConnected(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, message: DistributedOmit<InterceptedRequestForward, 'interceptorApproved'>) {
+export function postMessageIfStillConnected(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, message: InpageMessage) {
 	const tabConnection = websiteTabConnections.get(socket.tabId)
 	const identifier = websiteSocketToString(socket)
 	if (tabConnection === undefined) return false
@@ -390,28 +389,6 @@ export function postMessageIfStillConnected(websiteTabConnections: WebsiteTabCon
 	return true
 }
 
-export function sendMessageToContentScript(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, resolved: HandleRPCRequestReturnValue, request: InterceptedRequest) {
-	if ('error' in resolved) {
-		return postMessageIfStillConnected(websiteTabConnections, socket, {
-			...resolved,
-			requestId: request.requestId,
-			options: request.options
-		})
-	}
-	if (!('forward' in resolved)) {
-		return postMessageIfStillConnected(websiteTabConnections, socket, {
-			result: resolved.result,
-			requestId: request.requestId,
-			options: request.options
-		})
-	}
-
-	return postMessageIfStillConnected(websiteTabConnections, socket, {
-		requestId: request.requestId,
-		options: request.options
-	})
-}
-
 export async function handleContentScriptMessage(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, request: InterceptedRequest, website: Website, activeAddress: bigint | undefined) {
 	try {
 		if (simulator === undefined) throw 'Interceptor not ready'
@@ -420,10 +397,10 @@ export async function handleContentScriptMessage(websiteTabConnections: WebsiteT
 			const simulationState = (await getSimulationResults()).simulationState
 			if (simulationState === undefined) throw new Error('no simulation state')
 			const resolved = await handleRPCRequest(simulationState, websiteTabConnections, simulator.ethereum, socket, website, request, settings, activeAddress)
-			return sendMessageToContentScript(websiteTabConnections, socket, resolved, request)
+			return postMessageIfStillConnected(websiteTabConnections, socket, { requestId: request.requestId, ...resolved })
 		}
 		const resolved = await handleRPCRequest(undefined, websiteTabConnections, simulator.ethereum, socket, website, request, settings, activeAddress)
-		return sendMessageToContentScript(websiteTabConnections, socket, resolved, request)
+		return postMessageIfStillConnected(websiteTabConnections, socket, { requestId: request.requestId, ...resolved })
 	} catch(error) {
 		console.log(request)
 		console.warn(error)
@@ -442,7 +419,7 @@ export async function handleContentScriptMessage(websiteTabConnections: WebsiteT
 			error: {
 				code: 123456,
 				message: 'Unknown error'
-			}
+			},
 		})
 		return undefined
 	}
@@ -450,13 +427,12 @@ export async function handleContentScriptMessage(websiteTabConnections: WebsiteT
 
 export function refuseAccess(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, request: InterceptedRequest) {
 	return postMessageIfStillConnected(websiteTabConnections, socket, {
-		requestId: request.requestId,
 		options: request.options,
 		error: {
 			code: METAMASK_ERROR_USER_REJECTED_REQUEST,
 			message: 'User refused access to the wallet'
-		}
-	})
+		},
+	}, request.requestId)
 }
 
 export async function gateKeepRequestBehindAccessDialog(socket: WebsiteSocket, request: InterceptedRequest, website: Website, activeAddress: bigint | undefined, settings: Settings) {
@@ -514,14 +490,19 @@ async function onContentScriptConnected(port: browser.runtime.Port, websiteTabCo
 			const providerHandler = getProviderHandler(request.options.method)
 			if (providerHandler.method !== 'notProviderMethod') {
 				await providerHandler.func(websiteTabConnections, port, request)
-				return sendMessageToContentScript(websiteTabConnections, socket, { method: providerHandler.method, result: '0x' as const }, request)
+				return postMessageIfStillConnected(websiteTabConnections, socket, {
+					requestId: request.requestId,
+					method: providerHandler.method,
+					result: '0x' as const,
+					options: request.options,
+				})
 			}
 			const activeAddress = await getActiveAddressForDomain(websiteOrigin, await getSettings(), socket)
 			const access = verifyAccess(websiteTabConnections, socket, request.options.method === 'eth_requestAccounts', websiteOrigin, activeAddress, await getSettings())
 			if (access === 'noAccess' || activeAddress === undefined) {
-				if (request.options.method === 'eth_accounts') return sendMessageToContentScript(websiteTabConnections, socket, { method: 'eth_accounts', 'result': [] }, request)
+				if (request.options.method === 'eth_accounts') return postMessageIfStillConnected(websiteTabConnections, socket, { options: { method: 'eth_accounts' }, result: [] }, request.requestId)
 				// if user has not given access, assume we are on chain 1
-				if (request.options.method === 'eth_chainId') return sendMessageToContentScript(websiteTabConnections, socket, { method: 'eth_chainId', 'result': 1n }, request)
+				if (request.options.method === 'eth_chainId') return postMessageIfStillConnected(websiteTabConnections, socket, { options: { method: 'eth_chainId' }, result: 1n }, request.requestId)
 			}
 			if (activeAddress === undefined) return refuseAccess(websiteTabConnections, socket, request)
 
@@ -623,8 +604,8 @@ async function startup() {
 	await updateExtensionBadge()
 
 	if (!settings.simulationMode || settings.useSignersAddressAsActiveAddress) {
-		sendMessageToApprovedWebsitePorts(websiteTabConnections, { method: 'request_signer_to_eth_requestAccounts', result: []})
-		sendMessageToApprovedWebsitePorts(websiteTabConnections, { method: 'request_signer_chainId', result: [] })
+		sendMessageToApprovedWebsitePorts(websiteTabConnections, { options: { method: 'request_signer_to_eth_requestAccounts', params: [] } })
+		sendMessageToApprovedWebsitePorts(websiteTabConnections, { options: { method: 'request_signer_chainId', params: [] } })
 	}
 	if (settings.simulationMode) {
 		// update prepend mode as our active address has changed, so we need to be sure the rich modes money is sent to right address
