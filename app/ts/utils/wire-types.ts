@@ -1,6 +1,5 @@
 import * as funtypes from 'funtypes'
-import { UnionToIntersection, assertNever } from './typescript.js'
-import { IUnsignedTransaction } from './ethereum.js'
+import { UnionToIntersection } from './typescript.js'
 
 const BigIntParser: funtypes.ParsedValue<funtypes.String, bigint>['config'] = {
 	parse: value => {
@@ -473,51 +472,6 @@ export const NFTDataResponse = funtypes.ReadonlyObject({
 // Helpers
 //
 
-export function serializeUnsignedTransactionToJson(transaction: IUnsignedTransaction): unknown {
-	switch (transaction.type) {
-		case 'legacy':
-			return {
-				type: '0x0',
-				from: serialize(EthereumAddress, transaction.from),
-				nonce: serialize(EthereumQuantity, transaction.nonce),
-				gasPrice: serialize(EthereumQuantity, transaction.gasPrice),
-				gas: serialize(EthereumQuantity, transaction.gasLimit),
-				to: transaction.to !== null ? serialize(EthereumAddress, transaction.to) : null,
-				value: serialize(EthereumQuantity, transaction.value),
-				data: serialize(EthereumData, transaction.input),
-				...'chainId' in transaction && transaction.chainId !== undefined ? { chainId: serialize(EthereumQuantity, transaction.chainId) } : {},
-			}
-		case '2930':
-			return {
-				type: '0x1',
-				from: serialize(EthereumAddress, transaction.from),
-				nonce: serialize(EthereumQuantity, transaction.nonce),
-				gasPrice: serialize(EthereumQuantity, transaction.gasPrice),
-				gas: serialize(EthereumQuantity, transaction.gasLimit),
-				to: transaction.to !== null ? serialize(EthereumAddress, transaction.to) : null,
-				value: serialize(EthereumQuantity, transaction.value),
-				data: serialize(EthereumData, transaction.input),
-				chainId: serialize(EthereumQuantity, transaction.chainId),
-				accessList: serialize(EthereumAccessList, transaction.accessList),
-			}
-		case '1559':
-			return {
-				type: '0x2',
-				from: serialize(EthereumAddress, transaction.from),
-				nonce: serialize(EthereumQuantity, transaction.nonce),
-				maxFeePerGas: serialize(EthereumQuantity, transaction.maxFeePerGas),
-				maxPriorityFeePerGas: serialize(EthereumQuantity, transaction.maxPriorityFeePerGas),
-				gas: serialize(EthereumQuantity, transaction.gasLimit),
-				to: transaction.to !== null ? serialize(EthereumAddress, transaction.to) : null,
-				value: serialize(EthereumQuantity, transaction.value),
-				data: serialize(EthereumData, transaction.input),
-				chainId: serialize(EthereumQuantity, transaction.chainId),
-				accessList: serialize(EthereumAccessList, transaction.accessList),
-			}
-		default: assertNever(transaction)
-	}
-}
-
 export function serialize<T, U extends funtypes.Codec<T>>(funtype: U, value: T) {
 	return funtype.serialize(value) as ToWireType<U>
 }
@@ -658,7 +612,7 @@ export type SendRawTransaction = funtypes.Static<typeof SendRawTransaction>
 export const SendRawTransaction = funtypes.ReadonlyObject({
 	method: funtypes.Literal('eth_sendRawTransaction'),
 	params: funtypes.ReadonlyTuple(EthereumData),
-}).asReadonly()
+})
 
 export type EthereumAccountsReply = funtypes.Static<typeof EthereumAccountsReply>
 export const EthereumAccountsReply = funtypes.ReadonlyArray(EthereumAddress)

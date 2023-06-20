@@ -611,7 +611,7 @@ export const simulatedCall = async (ethereumClientService: EthereumClientService
 	} as const
 
 	const multicallResult = blockTag === 'latest' || blockTag === 'pending' ?
-		await simulatedMulticall(ethereumClientService, simulationState, [transaction], await ethereumClientService.getBlockNumber() + 1n)
+		await simulatedMulticall(ethereumClientService, simulationState, [transaction], await ethereumClientService.getBlockNumber() + (simulationState === undefined ? 0n : 1n))
 		: await simulatedMulticall(ethereumClientService, simulationState, [transaction], blockTag)
 	const callResult = multicallResult[multicallResult.length - 1]
 	if (callResult.statusCode === 'failure') {

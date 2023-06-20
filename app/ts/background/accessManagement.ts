@@ -1,4 +1,4 @@
-import { postMessageIfStillConnected, postMessageToPortIfConnectedWithoutRequestId } from './background.js'
+import { postMessageIfStillConnected } from './background.js'
 import { getActiveAddress, websiteSocketToString } from './backgroundUtils.js'
 import { findAddressInfo } from './metadataUtils.js'
 import { requestAccessFromUser } from './windows/interceptorAccess.js'
@@ -33,7 +33,7 @@ export function sendMessageToApprovedWebsitePorts(websiteTabConnections: Website
 	// inform all the tabs about the address change
 	for (const [_tab, tabConnection] of websiteTabConnections.entries() ) {
 		for (const [_string, connection] of Object.entries(tabConnection.connections) ) {
-			if ( !connection.approved ) continue
+			if (!connection.approved) continue
 			postMessageIfStillConnected(websiteTabConnections, connection.socket, message)
 		}
 	}
@@ -170,16 +170,16 @@ function connectToPort(websiteTabConnections: WebsiteTabConnections, socket: Web
 
 	if (settings.activeChain === undefined) return true
 
-	postMessageToPortIfConnectedWithoutRequestId(websiteTabConnections, socket, { options: { method: 'connect', params: [] } as const, result: [settings.activeChain] })
+	postMessageIfStillConnected(websiteTabConnections, socket, { method: 'connect', result: [settings.activeChain] })
 
 	// seems like dapps also want to get account changed and chain changed events after we connect again, so let's send them too
-	postMessageToPortIfConnectedWithoutRequestId(websiteTabConnections, socket, { options: { method: 'accountsChanged', params: [] } as const, result: connectWithActiveAddress !== undefined ? [connectWithActiveAddress] : [] })
+	postMessageIfStillConnected(websiteTabConnections, socket, { method: 'accountsChanged', result: connectWithActiveAddress !== undefined ? [connectWithActiveAddress] : [] })
 
-	postMessageToPortIfConnectedWithoutRequestId(websiteTabConnections, socket, { options: { method: 'chainChanged', params: [] } as const, result: settings.activeChain })
+	postMessageIfStillConnected(websiteTabConnections, socket, { method: 'chainChanged', result: settings.activeChain })
 
 	if (!settings.simulationMode || settings.useSignersAddressAsActiveAddress) {
-		postMessageToPortIfConnectedWithoutRequestId(websiteTabConnections, socket, { options: { method: 'request_signer_to_eth_requestAccounts', params: [] } })
-		postMessageToPortIfConnectedWithoutRequestId(websiteTabConnections, socket, { options: { method: 'request_signer_chainId', params: [] } })
+		postMessageIfStillConnected(websiteTabConnections, socket, { method: 'request_signer_to_eth_requestAccounts', result: [] })
+		postMessageIfStillConnected(websiteTabConnections, socket, { method: 'request_signer_chainId', result: [] })
 	}
 	return true
 }
@@ -187,7 +187,7 @@ function connectToPort(websiteTabConnections: WebsiteTabConnections, socket: Web
 function disconnectFromPort(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, websiteOrigin: string): false {
 	setWebsitePortApproval(websiteTabConnections, socket, false)
 	updateExtensionIcon(websiteTabConnections, socket, websiteOrigin)
-	postMessageToPortIfConnectedWithoutRequestId(websiteTabConnections, socket, { method: 'disconnect' })
+	postMessageIfStillConnected(websiteTabConnections, socket, { method: 'disconnect', result: [] })
 	return false
 }
 

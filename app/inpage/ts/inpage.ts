@@ -64,7 +64,8 @@ type MessageMethodAndParams = {
 interface InterceptedRequestForward {
 	readonly interceptorApproved: true,
 	readonly requestId?: number,
-	methodAndParams: MessageMethodAndParams,
+	readonly method: string,
+	readonly params?: readonly unknown[]
 	error?: {
 		readonly code: number,
 		readonly message: string
@@ -155,10 +156,8 @@ class InterceptorMessageListener {
 		try {
 			window.postMessage({
 				interceptorRequest: true,
-				methodAndParams: {
-					method: messageMethodAndParams.method,
-					params: messageMethodAndParams.params,
-				},
+				method: messageMethodAndParams.method,
+				params: messageMethodAndParams.params,
 				usingInterceptorWithoutSigner: this.signerWindowEthereumRequest === undefined,
 				requestId: pendingRequestId,
 			}, '*')
@@ -290,7 +289,7 @@ class InterceptorMessageListener {
 			if (reply !== null) return
 			await this.sendMessageToBackgroundPage({ method: 'wallet_switchEthereumChain_reply', params: [ { accept: true, chainId: chainId } ] })
 		} catch (error) {
-			if(InterceptorMessageListener.checkErrorForCode(error) && ( error.code === METAMASK_ERROR_USER_REJECTED_REQUEST || error.code === METAMASK_ERROR_CHAIN_NOT_ADDED_TO_METAMASK)) {
+			if (InterceptorMessageListener.checkErrorForCode(error) && ( error.code === METAMASK_ERROR_USER_REJECTED_REQUEST || error.code === METAMASK_ERROR_CHAIN_NOT_ADDED_TO_METAMASK)) {
 				await this.sendMessageToBackgroundPage({ method: 'wallet_switchEthereumChain_reply', params: [ { accept: false, chainId: chainId } ] })
 			}
 			throw error
@@ -303,7 +302,7 @@ class InterceptorMessageListener {
 				return this.onMessageCallBacks.forEach((f) => f({ type: 'eth_subscription', data: replyRequest.result }))
 			}
 			// inform callbacks
-			switch (replyRequest.methodAndParams.method) {
+			switch (replyRequest.method) {
 				case 'accountsChanged': return this.onAccountsChangedCallBacks.forEach((f) => f(replyRequest.result as readonly string[]))
 				case 'connect': {
 					this.connected = true
@@ -328,7 +327,7 @@ class InterceptorMessageListener {
 			const pending = this.outstandingRequests.get(replyRequest.requestId)
 			if (pending === undefined) return
 			if (replyRequest.error !== undefined) {
-				return pending.reject(new EthereumJsonRpcError(replyRequest.error.code, replyRequest.error.message, { request: replyRequest.methodAndParams }))
+				return pending.reject(new EthereumJsonRpcError(replyRequest.error.code, replyRequest.error.message, { request: replyRequest }))
 			}
 			return pending.resolve(replyRequest.result)
 		}
@@ -344,21 +343,20 @@ class InterceptorMessageListener {
 			|| !('interceptorApproved' in messageEvent.data)
 		) return
 		if (!('ethereum' in window) || !window.ethereum) throw new Error('window.ethereum missing')
-		if (!('methodAndParams' in messageEvent.data && typeof messageEvent.data.methodAndParams === 'object' && messageEvent.data.methodAndParams !== null)) throw new Error('missing methodAndParams field')
-		if (!('method' in messageEvent.data.methodAndParams)) throw new Error('missing method field')
+		if (!('method' in messageEvent.data)) throw new Error('missing method field')
 		const forwardRequest = messageEvent.data as InterceptedRequestForward //use "as" here as we don't want to inject funtypes here
 		if (forwardRequest.error !== undefined) {
 			if (forwardRequest.requestId === undefined) throw new EthereumJsonRpcError(forwardRequest.error.code, forwardRequest.error.message)
 			const pending = this.outstandingRequests.get(forwardRequest.requestId)
 			if (pending === undefined) throw new EthereumJsonRpcError(forwardRequest.error.code, forwardRequest.error.message)
-			return pending.reject(new EthereumJsonRpcError(forwardRequest.error.code, forwardRequest.error.message, { request: forwardRequest.methodAndParams }))
+			return pending.reject(new EthereumJsonRpcError(forwardRequest.error.code, forwardRequest.error.message, { request: forwardRequest }))
 		}
 
 		if (forwardRequest.result !== undefined) return this.handleReplyRequest(forwardRequest)
 
 		try {
 			if (this.signerWindowEthereumRequest == undefined) throw 'Interceptor is in wallet mode and should not forward to an external wallet'
-			const reply = await this.signerWindowEthereumRequest(forwardRequest.methodAndParams)
+			const reply = await this.signerWindowEthereumRequest(forwardRequest)
 			if (forwardRequest.requestId !== undefined) this.outstandingRequests.get(forwardRequest.requestId)!.resolve(reply)
 		} catch (error) {
 			// if it is an Error, add context to it if context doesn't already exist
@@ -367,15 +365,15 @@ class InterceptorMessageListener {
 			if (forwardRequest.requestId === undefined) return
 			if (error instanceof Error) {
 				if (!('code' in error)) (error as any).code = -32603
-				if (!('data' in error) || (error as any).data === undefined || (error as any).data === null) (error as any).data = { request: forwardRequest.methodAndParams }
-				else if (!('request' in (error as any).data)) (error as any).data.request = forwardRequest.methodAndParams
+				if (!('data' in error) || (error as any).data === undefined || (error as any).data === null) (error as any).data = { request: forwardRequest }
+				else if (!('request' in (error as any).data)) (error as any).data.request = forwardRequest
 				return this.outstandingRequests.get(forwardRequest.requestId)!.reject(error)
 			}
 			if ((error as any).code !== undefined && (error as any).message !== undefined) {
-				return this.outstandingRequests.get(forwardRequest.requestId)!.reject(new EthereumJsonRpcError((error as any).code, (error as any).message, { request: forwardRequest.methodAndParams }))
+				return this.outstandingRequests.get(forwardRequest.requestId)!.reject(new EthereumJsonRpcError((error as any).code, (error as any).message, { request: forwardRequest }))
 			}
 			// if the signer we are connected threw something besides an Error, wrap it up in an error
-			this.outstandingRequests.get(forwardRequest.requestId)!.reject(new EthereumJsonRpcError(-32603, `Unexpected thrown value.`, { error: error, request: forwardRequest.methodAndParams }))
+			this.outstandingRequests.get(forwardRequest.requestId)!.reject(new EthereumJsonRpcError(-32603, `Unexpected thrown value.`, { error: error, request: forwardRequest }))
 		}
 	}
 

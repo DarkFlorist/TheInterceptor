@@ -407,14 +407,14 @@ export function PersonalSign() {
 	async function approve() {
 		if (personalSignRequestData === undefined) throw new Error('personalSignRequestData is missing')
 		await tryFocusingTab(personalSignRequestData.tabIdOpenedFrom)
-		await sendPopupMessageToBackgroundPage({ method: 'popup_personalSign', options: { requestId: personalSignRequestData.requestId, accept: true } })
+		await sendPopupMessageToBackgroundPage({ method: 'popup_personalSign', data: { requestId: personalSignRequestData.requestId, accept: true } })
 		globalThis.close()
 	}
 
 	async function reject() {
 		if (personalSignRequestData === undefined) throw new Error('personalSignRequestData is missing')
 		await tryFocusingTab(personalSignRequestData.tabIdOpenedFrom)
-		await sendPopupMessageToBackgroundPage({ method: 'popup_personalSign', options: { requestId: personalSignRequestData.requestId, accept: false } })
+		await sendPopupMessageToBackgroundPage({ method: 'popup_personalSign', data: { requestId: personalSignRequestData.requestId, accept: false } })
 		globalThis.close()
 	}
 

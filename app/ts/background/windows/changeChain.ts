@@ -19,9 +19,9 @@ export async function resolveChainChange(websiteTabConnections: WebsiteTabConnec
 		return
 	}
 	const data = await getChainChangeConfirmationPromise()
-	if (data === undefined || confirmation.options.requestId !== data.request.requestId) return
+	if (data === undefined || confirmation.data.requestId !== data.request.requestId) return
 	const resolved = await resolve(websiteTabConnections, confirmation, data.simulationMode)
-	postMessageIfStillConnected(websiteTabConnections, data.socket, { options: { method: 'wallet_switchEthereumChain' as const, params: [confirmation.options.chainId] }, ...resolved, requestId: data.request.requestId })
+	postMessageIfStillConnected(websiteTabConnections, data.socket, { method: 'wallet_switchEthereumChain' as const, ...resolved, requestId: data.request.requestId })
 }
 
 export async function resolveSignerChainChange(confirmation: SignerChainChangeConfirmation) {
@@ -32,7 +32,7 @@ export async function resolveSignerChainChange(confirmation: SignerChainChangeCo
 function rejectMessage(chainId: bigint, requestId: number) {
 	return {
 		method: 'popup_changeChainDialog',
-		options: {
+		data: {
 			chainId,
 			requestId,
 			accept: false,
@@ -130,15 +130,15 @@ export const openChangeChainDialog = async (
 
 async function resolve(websiteTabConnections: WebsiteTabConnections, reply: ChainChangeConfirmation, simulationMode: boolean) {
 	await setChainChangeConfirmationPromise(undefined)
-	if (reply.options.accept) {
+	if (reply.data.accept) {
 		if (simulationMode) {
-			await changeActiveChain(websiteTabConnections, reply.options.chainId, simulationMode)
+			await changeActiveChain(websiteTabConnections, reply.data.chainId, simulationMode)
 			return { result: null }
 		}
 		pendForSignerReply = new Future<SignerChainChangeConfirmation>() // when not in simulation mode, we need to get reply from the signer too
-		await changeActiveChain(websiteTabConnections, reply.options.chainId, simulationMode)
+		await changeActiveChain(websiteTabConnections, reply.data.chainId, simulationMode)
 		const signerReply = await pendForSignerReply
-		if (signerReply.options.accept && signerReply.options.chainId === reply.options.chainId) {
+		if (signerReply.data.accept && signerReply.data.chainId === reply.data.chainId) {
 			return { result: null }
 		}
 	}

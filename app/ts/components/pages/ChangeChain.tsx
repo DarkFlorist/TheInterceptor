@@ -46,14 +46,14 @@ export function ChangeChain() {
 	async function approve() {
 		if (chainChangeData === undefined) return
 		await tryFocusingTab(chainChangeData.tabIdOpenedFrom)
-		await sendPopupMessageToBackgroundPage({ method: 'popup_changeChainDialog', options: { accept: true, requestId: chainChangeData.requestId, chainId: chainChangeData.chainId } })
+		await sendPopupMessageToBackgroundPage({ method: 'popup_changeChainDialog', data: { accept: true, requestId: chainChangeData.requestId, chainId: chainChangeData.chainId } })
 		globalThis.close()
 	}
 
 	async function reject() {
 		if (chainChangeData === undefined) return
 		await tryFocusingTab(chainChangeData.tabIdOpenedFrom)
-		await sendPopupMessageToBackgroundPage({ method: 'popup_changeChainDialog', options: { accept: false, requestId: chainChangeData.requestId } })
+		await sendPopupMessageToBackgroundPage({ method: 'popup_changeChainDialog', data: { accept: false, requestId: chainChangeData.requestId, chainId: chainChangeData.chainId } })
 		globalThis.close()
 	}
 
