@@ -19,6 +19,15 @@ jobs:
           GIT_COMMIT_SHA="${{ github.sha }}"
           TAG=$(basename "${{ github.ref }}")
           VERSION=${TAG#v}
+
+          RELEASE_SHA=$(git rev-parse origin/release)
+          if [ "RELEASE_SHA" != "$GIT_COMMIT_SHA" ]; then
+            echo "Not cutting release from the release/ branch"
+            echo "origin/release: $RELEASE_SHA"
+            echo "tag: $GIT_COMMIT_SHA"
+            exit 1
+          fi
+
           echo "TAG=$TAG" >> $GITHUB_OUTPUT
           echo export const gitCommitSha = \"$GIT_COMMIT_SHA\" > $VERSION_FILE
           echo export const version = \"$VERSION\" >> $VERSION_FILE
