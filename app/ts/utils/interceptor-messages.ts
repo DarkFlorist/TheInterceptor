@@ -53,12 +53,6 @@ export const InpageScriptCallBack = funtypes.Union(
 	funtypes.ReadonlyObject({ method: funtypes.Literal('accountsChanged'), result: funtypes.ReadonlyArray(EthereumAddress) }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('chainChanged'), result: EthereumQuantity }),
 )
-/*
-export type NonForwardingRPCRequestSuccessfullReturnValue = funtypes.Static<typeof NonForwardingRPCRequestSuccessfullReturnValue>
-export const NonForwardingRPCRequestSuccessfullReturnValue = funtypes.Union(
-funtypes.ReadonlyObject({ data: SendRawTransaction, result: EthereumBytes32 }),
-funtypes.ReadonlyObject({ data: SendTransactionParams, result: EthereumBytes32 })
-*/
 
 export type NonForwardingRPCRequestSuccessfullReturnValue = funtypes.Static<typeof NonForwardingRPCRequestSuccessfullReturnValue>
 export const NonForwardingRPCRequestSuccessfullReturnValue = funtypes.Union(
@@ -118,7 +112,7 @@ export const RPCReply = funtypes.Union(
 	funtypes.ReadonlyObject({ // forward directly to wallet
 		forward: funtypes.Literal(true),
 		method: funtypes.String,
-	}), //todo, add check here that we can only forward specific requets
+	}), // TODO, add check here that we can only forward specific requests (send transaction and signatures)
 )
 
 export type RPCReplyWithRequestId = funtypes.Static<typeof RPCReply>

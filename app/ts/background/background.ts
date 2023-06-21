@@ -456,7 +456,7 @@ async function onContentScriptConnected(port: browser.runtime.Port, websiteTabCo
 	const websitePromise = retrieveWebsiteDetails(port, websiteOrigin)
 	const identifier = websiteSocketToString(socket)
 
-	console.log(`content script connected ${websiteOrigin}`)
+	console.log(`content script connected ${ websiteOrigin }`)
 
 	const tabConnection = websiteTabConnections.get(socket.tabId)
 	const newConnection = {
