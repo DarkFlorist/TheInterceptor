@@ -40,7 +40,6 @@ function parseAccessWithLegacySupport(data: unknown): WebsiteAccessArray {
 
 export async function getSettings() : Promise<Settings> {
 	const results = await browserStorageLocalGet([
-		'activeSigningAddress',
 		'activeSimulationAddress',
 		'addressInfos',
 		'page',
@@ -53,7 +52,6 @@ export async function getSettings() : Promise<Settings> {
 	const useSignersAddressAsActiveAddress = results.useSignersAddressAsActiveAddress !== undefined ? funtypes.Boolean.parse(results.useSignersAddressAsActiveAddress) : false
 	return {
 		activeSimulationAddress: results.activeSimulationAddress !== undefined ? EthereumAddressOrMissing.parse(results.activeSimulationAddress) : defaultAddresses[0].address,
-		activeSigningAddress: results.activeSigningAddress === undefined ? undefined : EthereumAddressOrMissing.parse(results.activeSigningAddress),
 		page: results.page !== undefined ? Page.parse(results.page) : 'Home',
 		useSignersAddressAsActiveAddress: useSignersAddressAsActiveAddress,
 		websiteAccess: results.websiteAccess !== undefined ? parseAccessWithLegacySupport(results.websiteAccess) : [],
@@ -131,7 +129,6 @@ export const ExportedSettings = funtypes.ReadonlyObject({
 	exportedDate: funtypes.String,
 	settings: funtypes.ReadonlyObject({
 		activeSimulationAddress: OptionalEthereumAddress,
-		activeSigningAddress: OptionalEthereumAddress,
 		activeChain: EthereumQuantity,
 		page: Page,
 		useSignersAddressAsActiveAddress: funtypes.Boolean,
@@ -149,7 +146,6 @@ export async function exportSettingsAndAddressBook() {
 		version: '1.0' as const,
 		exportedDate: (new Date).toISOString().split('T')[0],
 		settings: await browserStorageLocalGet([
-			'activeSigningAddress',
 			'activeSimulationAddress',
 			'addressInfos',
 			'page',
@@ -170,7 +166,7 @@ export async function importSettingsAndAddressBook(exportedSetings: ExportedSett
 		simulationMode: exportedSetings.settings.simulationMode,
 		activeChain: exportedSetings.settings.activeChain,
 		activeSimulationAddress: exportedSetings.settings.activeSimulationAddress,
-		activeSigningAddress: exportedSetings.settings.activeSigningAddress,
+		activeSigningAddress: undefined,
 	})
 	await setPage(exportedSetings.settings.page)
 	await updateAddressInfos(() => exportedSetings.settings.addressInfos)

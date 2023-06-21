@@ -463,6 +463,7 @@ export const PendingAccessRequest = funtypes.ReadonlyObject({
 	dialogId: funtypes.Number,
 	request: funtypes.Union(InterceptedRequest, funtypes.Undefined),
 	accessRequestId: funtypes.String,
+	activeAddress: OptionalEthereumAddress,
 }).asReadonly()
 
 export type InterceptorAccessReply = funtypes.Static<typeof InterceptorAccessReply>
@@ -501,7 +502,6 @@ export interface PendingAccessRequestWithMetadata extends PendingAccessRequest {
 export type Settings = funtypes.Static<typeof Settings>
 export const Settings = funtypes.ReadonlyObject({
 	activeSimulationAddress: OptionalEthereumAddress,
-	activeSigningAddress: OptionalEthereumAddress,
 	activeChain: EthereumQuantity,
 	page: Page,
 	useSignersAddressAsActiveAddress: funtypes.Boolean,
@@ -538,6 +538,8 @@ export const UpdateHomePage = funtypes.ReadonlyObject({
 		makeMeRich: funtypes.Boolean,
 		isConnected: IsConnected,
 		useTabsInsteadOfPopup: funtypes.Boolean,
+		activeSigningAddressInThisTab: OptionalEthereumAddress,
+		tabId: funtypes.Union(funtypes.Number, funtypes.Undefined),
 	})
 })
 
@@ -545,6 +547,15 @@ export type SettingsUpdated = funtypes.Static<typeof SettingsUpdated>
 export const SettingsUpdated = funtypes.ReadonlyObject({
 	method: funtypes.Literal('popup_settingsUpdated'),
 	data: Settings,
+})
+
+export type ActiveSigningAddressChanged = funtypes.Static<typeof ActiveSigningAddressChanged>
+export const ActiveSigningAddressChanged = funtypes.ReadonlyObject({
+	method: funtypes.Literal('popup_activeSigningAddressChanged'),
+	data: funtypes.ReadonlyObject({
+		tabId: funtypes.Number,
+		activeSigningAddress: OptionalEthereumAddress,
+	})
 })
 
 export type HandleSimulationModeReturnValue = {
@@ -605,6 +616,7 @@ export const TabState = funtypes.ReadonlyObject({
 	signerAccounts: funtypes.ReadonlyArray(EthereumAddress),
 	signerChain: funtypes.Union(EthereumQuantity, funtypes.Undefined),
 	tabIconDetails: TabIconDetails,
+	activeSigningAddress: OptionalEthereumAddress,
 })
 
 export type ChangeSettings = funtypes.Static<typeof ChangeSettings>
@@ -683,7 +695,8 @@ export const MessageToPopup = funtypes.Union(
 	UpdateAccessDialog,
 	ConfirmTransactionDialogPendingChanged,
 	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_initiate_export_settings'), data: funtypes.ReadonlyObject({ fileContents: funtypes.String }) }),
-	ImportSettingsReply
+	ImportSettingsReply,
+	ActiveSigningAddressChanged,
 )
 
 export type ExternalPopupMessage = funtypes.Static<typeof MessageToPopup>

@@ -116,6 +116,7 @@ export async function getTabState(tabId: number) : Promise<TabState> {
 			icon: ICON_NOT_ACTIVE,
 			iconReason: 'No active address selected.',
 		},
+		activeSigningAddress: undefined
 	}
 }
 export async function setTabState(tabId: number, tabState: TabState) {
@@ -134,8 +135,11 @@ export async function clearTabStates() {
 
 const tabStateSemaphore = new Semaphore(1)
 export async function updateTabState(tabId: number, updateFunc: (prevState: TabState) => TabState) {
-	await tabStateSemaphore.execute(async () => {
-		await setTabState(tabId, updateFunc(await getTabState(tabId)))
+	return await tabStateSemaphore.execute(async () => {
+		const previousState = await getTabState(tabId)
+		const newState = updateFunc(previousState)
+		await setTabState(tabId, newState)
+		return { previousState, newState }
 	})
 }
 

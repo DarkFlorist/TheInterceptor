@@ -302,6 +302,8 @@ export async function homeOpened(simulator: Simulator) {
 			makeMeRich: await getMakeMeRich(),
 			isConnected: await getIsConnected(),
 			useTabsInsteadOfPopup: await getUseTabsInsteadOfPopup(),
+			activeSigningAddressInThisTab: tabState?.activeSigningAddress,
+			tabId,
 		}
 	})
 }

@@ -37,6 +37,7 @@ export function App() {
 	const [addingNewAddress, setAddingNewAddress] = useState<AddingNewAddressType> ({ addingAddress: true, type: 'addressInfo' })
 	const [isConnected, setIsConnected] = useState<IsConnected>(undefined)
 	const [useTabsInsteadOfPopup, setUseTabsInsteadOfPopup] = useState<boolean | undefined>(undefined)
+	const [currentTabId, setCurrentTabId] = useState<number | undefined>(undefined)
 
 	async function setActiveAddressAndInformAboutIt(address: bigint | 'signer') {
 		setUseSignersAddressAsActiveAddress(address === 'signer')
@@ -94,6 +95,8 @@ export function App() {
 		const updateHomePage = ({ data }: UpdateHomePage) => {
 			setIsSettingsLoaded((isSettingsLoaded) => {
 				updateHomePageSettings(data.settings, !isSettingsLoaded)
+				setCurrentTabId(data.tabId)
+				setActiveSigningAddress(data.activeSigningAddressInThisTab)
 				if (isSettingsLoaded === false) {
 					if (data.tabIconDetails === undefined) {
 						setTabConnection(DEFAULT_TAB_CONNECTION)
@@ -125,7 +128,6 @@ export function App() {
 			}
 			setActiveChain(settings.activeChain)
 			setActiveSimulationAddress(settings.activeSimulationAddress)
-			setActiveSigningAddress(settings.activeSigningAddress)
 			setUseSignersAddressAsActiveAddress(settings.useSignersAddressAsActiveAddress)
 			setAddressInfos(settings.userAddressBook.addressInfos)
 			setWebsiteAccess(settings.websiteAccess)
@@ -138,15 +140,14 @@ export function App() {
 		const popupMessageListener = async (msg: unknown) => {
 			const message = ExternalPopupMessage.parse(msg)
 			if (message.method === 'popup_settingsUpdated') return updateHomePageSettings(message.data, true)
+			if (message.method === 'popup_activeSigningAddressChanged' && message.data.tabId === currentTabId) return setActiveSigningAddress(message.data.activeSigningAddress)
 			if (message.method === 'popup_websiteIconChanged') return updateTabIcon(message)
 			if (message.method === 'popup_failed_to_get_block') return setIsConnected({ isConnected: false, lastConnnectionAttempt: Date.now() })
 			if (message.method !== 'popup_UpdateHomePage') return await sendPopupMessageToBackgroundPage( { method: 'popup_requestNewHomeData' } )
 			return updateHomePage(message)
 		}
 		browser.runtime.onMessage.addListener(popupMessageListener)
-		return () => {
-			browser.runtime.onMessage.removeListener(popupMessageListener)
-		}
+		return () => browser.runtime.onMessage.removeListener(popupMessageListener)
 	})
 
 	useEffect(() => {

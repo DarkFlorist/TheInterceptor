@@ -12,20 +12,23 @@ export async function ethAccountsReply(websiteTabConnections: WebsiteTabConnecti
 	if (port.sender?.tab?.id === undefined) return
 
 	const signerAccounts = EthereumAccountsReply.parse(request.options.params)
-	await updateTabState(port.sender.tab.id, (previousState: TabState) => {
+	const activeSigningAddress = signerAccounts.length > 0 ? signerAccounts[0] : undefined
+	const tabStateChange = await updateTabState(port.sender.tab.id, (previousState: TabState) => {
 		return {
 			...previousState,
 			signerAccounts: signerAccounts,
+			activeSigningAddress: activeSigningAddress,
 		}
 	})
+	sendPopupMessageToOpenWindows({ method: 'popup_activeSigningAddressChanged', data: { tabId: port.sender.tab.id, activeSigningAddress } })
 	sendInternalWindowMessage({ method: 'window_signer_accounts_changed', data: { socket: getSocketFromPort(port) } })
 	// update active address if we are using signers address
 	const settings = await getSettings()
 	if ( (settings.useSignersAddressAsActiveAddress && settings.activeSimulationAddress !== signerAccounts[0])
-	|| (settings.simulationMode === false && settings.activeSigningAddress !== signerAccounts[0])) {
+	|| (settings.simulationMode === false && tabStateChange.previousState.activeSigningAddress !== tabStateChange.newState.activeSigningAddress)) {
 		await changeActiveAddressAndChainAndResetSimulation(websiteTabConnections, {
 			simulationMode: settings.simulationMode,
-			activeAddress: signerAccounts[0],
+			activeAddress: tabStateChange.newState.activeSigningAddress,
 		})
 		await sendPopupMessageToOpenWindows({ method: 'popup_accounts_update' })
 	}
