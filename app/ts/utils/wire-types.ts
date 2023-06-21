@@ -767,7 +767,7 @@ export const SignTypedDataParams = funtypes.ReadonlyObject({
 export type SwitchEthereumChainParams = funtypes.Static<typeof SwitchEthereumChainParams>
 export const SwitchEthereumChainParams = funtypes.ReadonlyObject({
 	method: funtypes.Literal('wallet_switchEthereumChain'),
-	params: funtypes.ReadonlyTuple(EthereumQuantity),
+	params: funtypes.Tuple(funtypes.ReadonlyObject({ chainId: EthereumQuantity }).asReadonly()),
 }).asReadonly()
 
 export type GetCode = funtypes.Static<typeof GetCode>

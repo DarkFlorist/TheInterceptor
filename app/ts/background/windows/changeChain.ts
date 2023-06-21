@@ -63,7 +63,7 @@ export const openChangeChainDialog = async (
 		if (openedDialog === undefined || openedDialog.windowOrTab.id !== windowId) return
 		openedDialog = undefined
 		if (pendForUserReply === undefined) return
-		resolveChainChange(websiteTabConnections, rejectMessage(params.params[0], request.requestId))
+		resolveChainChange(websiteTabConnections, rejectMessage(params.params[0].chainId, request.requestId))
 	}
 
 	const changeChainWindowReadyAndListening = async function popupMessageListener(msg: unknown) {
@@ -74,7 +74,7 @@ export const openChangeChainDialog = async (
 			method: 'popup_ChangeChainRequest',
 			data: {
 				requestId: request.requestId,
-				chainId: params.params[0],
+				chainId: params.params[0].chainId,
 				website: website,
 				simulationMode: simulationMode,
 				tabIdOpenedFrom: socket.tabId,
@@ -112,7 +112,7 @@ export const openChangeChainDialog = async (
 				simulationMode: simulationMode,
 			})
 		} else {
-			resolveChainChange(websiteTabConnections, rejectMessage(params.params[0], request.requestId))
+			resolveChainChange(websiteTabConnections, rejectMessage(params.params[0].chainId, request.requestId))
 		}
 		pendForSignerReply = undefined
 
