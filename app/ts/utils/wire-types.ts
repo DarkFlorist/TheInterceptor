@@ -545,12 +545,13 @@ export const DappRequestTransaction = funtypes.Intersect(
 		value: EthereumQuantity,
 		to: funtypes.Union(EthereumAddress, funtypes.Null),
 		gasPrice: EthereumQuantity,
-		maxPriorityFeePerGas: EthereumQuantity,
-		maxFeePerGas: EthereumQuantity,
+		maxPriorityFeePerGas: funtypes.Union(EthereumQuantity, funtypes.Null), // etherscan sets this field to null, remove this if etherscan fixes this
+		maxFeePerGas: funtypes.Union(EthereumQuantity, funtypes.Null), // etherscan sets this field to null, remove this if etherscan fixes this
 	}),
 	funtypes.Union(
-		funtypes.ReadonlyPartial({ data: EthereumData }),
-		funtypes.ReadonlyPartial({ input: EthereumData })
+		funtypes.ReadonlyObject({ data: EthereumData }),
+		funtypes.ReadonlyObject({ input: EthereumData }),
+		funtypes.ReadonlyObject({})
 	)
 )
 
