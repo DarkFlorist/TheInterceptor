@@ -258,12 +258,12 @@ class InterceptorMessageListener {
 
 	private readonly WindowEthereumEnable = async () => this.WindowEthereumRequest({ method: 'eth_requestAccounts' })
 
-	private readonly requestAccountsFromSigner = async () => {
+	private readonly requestAccountsFromSigner = async (ask_eth_requestAccounts: boolean) => {
 		if (this.signerWindowEthereumRequest === undefined) return
-		const reply = await this.signerWindowEthereumRequest({ method: 'eth_requestAccounts', params: [] })
+		const reply = await this.signerWindowEthereumRequest({ method: ask_eth_requestAccounts ? 'eth_requestAccounts' : 'eth_accounts', params: [] })
 
 		if (!Array.isArray(reply)) return
-		return await this.sendMessageToBackgroundPage({ method: 'eth_accounts_reply', params: reply })
+		return await this.sendMessageToBackgroundPage({ method: 'eth_accounts_reply', params: [reply, ask_eth_requestAccounts]  })
 	}
 
 	private readonly requestChainIdFromSigner = async () => {
@@ -317,7 +317,8 @@ class InterceptorMessageListener {
 					}))
 				}
 				case 'chainChanged': return this.onChainChangedCallBacks.forEach((f) => f(replyRequest.result as string))
-				case 'request_signer_to_eth_requestAccounts': return await this.requestAccountsFromSigner()
+				case 'request_signer_to_eth_requestAccounts': return await this.requestAccountsFromSigner(true)
+				case 'request_signer_to_eth_accounts':  return await this.requestAccountsFromSigner(false)
 				case 'request_signer_to_wallet_switchEthereumChain': return await this.requestChangeChainFromSigner(replyRequest.result as string)
 				case 'request_signer_chainId': return await this.requestChainIdFromSigner()
 				default: break
@@ -419,13 +420,13 @@ class InterceptorMessageListener {
 
 		// subscribe for signers events
 		window.ethereum.on('accountsChanged', (accounts: readonly string[]) => {
-			this.WindowEthereumRequest({ method: 'eth_accounts_reply', params: accounts })
+			this.WindowEthereumRequest({ method: 'eth_accounts_reply', params: [accounts, false] })
 		})
 		window.ethereum.on('connect', (_connectInfo: ProviderConnectInfo) => {
 
 		})
 		window.ethereum.on('disconnect', (_error: ProviderRpcError) => {
-			this.WindowEthereumRequest({ method: 'eth_accounts_reply', params: [] })
+			this.WindowEthereumRequest({ method: 'eth_accounts_reply', params: [[], false] })
 		})
 		window.ethereum.on('chainChanged', (chainId: string) => {
 			this.WindowEthereumRequest({ method: 'signer_chainChanged', params: [chainId] })

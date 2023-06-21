@@ -486,10 +486,12 @@ async function onContentScriptConnected(port: browser.runtime.Port, websiteTabCo
 		)) return
 		await pendingRequestLimiter.execute(async () => {
 			const request = InterceptedRequest.parse(payload.data)
+			const activeAddress = await getActiveAddressForDomain(websiteOrigin, await getSettings(), socket)
+			const access = verifyAccess(websiteTabConnections, socket, request.method === 'eth_requestAccounts', websiteOrigin, activeAddress, await getSettings())
 			const providerHandler = getProviderHandler(request.method)
 			const identifiedMethod = providerHandler.method
 			if (identifiedMethod !== 'notProviderMethod') {
-				await providerHandler.func(websiteTabConnections, port, request)
+				await providerHandler.func(websiteTabConnections, port, request, access)
 				const message: InpageScriptRequest = {
 					requestId: request.requestId,
 					method: identifiedMethod,
@@ -497,8 +499,6 @@ async function onContentScriptConnected(port: browser.runtime.Port, websiteTabCo
 				}
 				return postMessageIfStillConnected(websiteTabConnections, socket, message)
 			}
-			const activeAddress = await getActiveAddressForDomain(websiteOrigin, await getSettings(), socket)
-			const access = verifyAccess(websiteTabConnections, socket, request.method === 'eth_requestAccounts', websiteOrigin, activeAddress, await getSettings())
 			if (access === 'noAccess' || activeAddress === undefined) {
 				if (request.method === 'eth_accounts') {
 					return postMessageIfStillConnected(websiteTabConnections, socket, { method: 'eth_accounts' as const, result: [], requestId: request.requestId })
@@ -608,7 +608,7 @@ async function startup() {
 	await updateExtensionBadge()
 
 	if (!settings.simulationMode || settings.useSignersAddressAsActiveAddress) {
-		sendMessageToApprovedWebsitePorts(websiteTabConnections, { method: 'request_signer_to_eth_requestAccounts', result: [] })
+		sendMessageToApprovedWebsitePorts(websiteTabConnections, { method: 'request_signer_to_eth_accounts', result: [] })
 		sendMessageToApprovedWebsitePorts(websiteTabConnections, { method: 'request_signer_chainId', result: [] })
 	}
 	if (settings.simulationMode) {

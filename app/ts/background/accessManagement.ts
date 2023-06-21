@@ -20,7 +20,9 @@ function setWebsitePortApproval(websiteTabConnections: WebsiteTabConnections, so
 	connection.approved = approved
 }
 
-export function verifyAccess(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, isEthRequestAccounts: boolean, websiteOrigin: string, requestAccessForAddress: bigint | undefined, settings: Settings): 'hasAccess' | 'noAccess' | 'askAccess' {
+export type ApprovalState = 'hasAccess' | 'noAccess' | 'askAccess'
+
+export function verifyAccess(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, isEthRequestAccounts: boolean, websiteOrigin: string, requestAccessForAddress: bigint | undefined, settings: Settings): ApprovalState {
 	const connection = getConnectionDetails(websiteTabConnections, socket)
 	if (connection && connection.approved) return 'hasAccess'
 	const access = requestAccessForAddress !== undefined ? hasAddressAccess(settings.websiteAccess, websiteOrigin, requestAccessForAddress, settings) : hasAccess(settings.websiteAccess, websiteOrigin)

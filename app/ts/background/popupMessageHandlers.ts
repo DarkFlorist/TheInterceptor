@@ -57,7 +57,7 @@ export async function changeActiveAddress(websiteTabConnections: WebsiteTabConne
 		const signerAccount = await getSignerAccount()
 		await setUseSignersAddressAsActiveAddress(addressChange.data.activeAddress === 'signer', signerAccount)
 
-		sendMessageToApprovedWebsitePorts(websiteTabConnections, { method: 'request_signer_to_eth_requestAccounts', result: [] })
+		sendMessageToApprovedWebsitePorts(websiteTabConnections, { method: 'request_signer_to_eth_accounts', result: [] })
 		sendMessageToApprovedWebsitePorts(websiteTabConnections, { method: 'request_signer_chainId', result: [] } )
 		
 		await changeActiveAddressAndChainAndResetSimulation(websiteTabConnections, {
@@ -216,7 +216,7 @@ export async function enableSimulationMode(websiteTabConnections: WebsiteTabConn
 	const settings = await getSettings()
 	// if we are on unsupported chain, force change to a supported one
 	if (settings.useSignersAddressAsActiveAddress || params.data === false) {
-		sendMessageToApprovedWebsitePorts(websiteTabConnections, { method: 'request_signer_to_eth_requestAccounts', result: [] })
+		sendMessageToApprovedWebsitePorts(websiteTabConnections, { method: 'request_signer_to_eth_accounts', result: [] })
 		sendMessageToApprovedWebsitePorts(websiteTabConnections, { method: 'request_signer_chainId', result: [] })
 		const tabId = await getLastKnownCurrentTabId()
 		const chainToSwitch = tabId === undefined ? undefined : (await getTabState(tabId)).signerChain
