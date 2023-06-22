@@ -61,18 +61,24 @@ type MessageMethodAndParams = {
 	readonly params?: readonly unknown[]
 }
 
-interface InterceptedRequestForward {
+type InterceptedRequestBase = {
 	readonly interceptorApproved: true,
 	readonly requestId?: number,
 	readonly method: string,
 	readonly params?: readonly unknown[]
-	error?: {
-		readonly code: number,
-		readonly message: string
-	}
-	readonly result?: unknown,
 	readonly subscription?: string
 }
+
+type InterceptedRequestForwardWithResult = InterceptedRequestBase & {
+	readonly result: unknown,
+}
+
+type InterceptedRequestForward = InterceptedRequestBase & ({ error?: {
+	readonly code: number,
+	readonly message: string
+} } | {
+	readonly result: unknown,
+} | {} )
 
 interface ProviderConnectInfo {
 	readonly chainId: string
@@ -296,27 +302,27 @@ class InterceptorMessageListener {
 		}
 	}
 
-	private readonly handleReplyRequest = async(replyRequest: InterceptedRequestForward) => {
+	private readonly handleReplyRequest = async(replyRequest: InterceptedRequestForwardWithResult) => {
 		try {
 			if (replyRequest.subscription !== undefined) {
-				return this.onMessageCallBacks.forEach((f) => f({ type: 'eth_subscription', data: replyRequest.result }))
+				return this.onMessageCallBacks.forEach((callback) => callback({ type: 'eth_subscription', data: replyRequest.result }))
 			}
 			// inform callbacks
 			switch (replyRequest.method) {
-				case 'accountsChanged': return this.onAccountsChangedCallBacks.forEach((f) => f(replyRequest.result as readonly string[]))
+				case 'accountsChanged': return this.onAccountsChangedCallBacks.forEach((callback) => callback(replyRequest.result as readonly string[]))
 				case 'connect': {
 					this.connected = true
-					return this.onConnectCallBacks.forEach((f) => f({ chainId: replyRequest.result as string }))
+					return this.onConnectCallBacks.forEach((callback) => callback({ chainId: replyRequest.result as string }))
 				}
 				case 'disconnect': {
 					this.connected = false
-					return this.onDisconnectCallBacks.forEach((f) => f({
+					return this.onDisconnectCallBacks.forEach((callback) => callback({
 						name: 'disconnect',
 						code: METAMASK_ERROR_USER_REJECTED_REQUEST,
 						message: 'User refused access to the wallet'
 					}))
 				}
-				case 'chainChanged': return this.onChainChangedCallBacks.forEach((f) => f(replyRequest.result as string))
+				case 'chainChanged': return this.onChainChangedCallBacks.forEach((callback) => callback(replyRequest.result as string))
 				case 'request_signer_to_eth_requestAccounts': return await this.requestAccountsFromSigner(true)
 				case 'request_signer_to_eth_accounts':  return await this.requestAccountsFromSigner(false)
 				case 'request_signer_to_wallet_switchEthereumChain': return await this.requestChangeChainFromSigner(replyRequest.result as string)
@@ -327,9 +333,6 @@ class InterceptorMessageListener {
 			if (replyRequest.requestId === undefined) return
 			const pending = this.outstandingRequests.get(replyRequest.requestId)
 			if (pending === undefined) return
-			if (replyRequest.error !== undefined) {
-				return pending.reject(new EthereumJsonRpcError(replyRequest.error.code, replyRequest.error.message, { request: replyRequest }))
-			}
 			return pending.resolve(replyRequest.result)
 		}
 	}
@@ -346,14 +349,14 @@ class InterceptorMessageListener {
 		if (!('ethereum' in window) || !window.ethereum) throw new Error('window.ethereum missing')
 		if (!('method' in messageEvent.data)) throw new Error('missing method field')
 		const forwardRequest = messageEvent.data as InterceptedRequestForward //use "as" here as we don't want to inject funtypes here
-		if (forwardRequest.error !== undefined) {
+		if ('error' in forwardRequest && forwardRequest.error !== undefined) {
 			if (forwardRequest.requestId === undefined) throw new EthereumJsonRpcError(forwardRequest.error.code, forwardRequest.error.message)
 			const pending = this.outstandingRequests.get(forwardRequest.requestId)
 			if (pending === undefined) throw new EthereumJsonRpcError(forwardRequest.error.code, forwardRequest.error.message)
 			return pending.reject(new EthereumJsonRpcError(forwardRequest.error.code, forwardRequest.error.message, { request: forwardRequest }))
 		}
 
-		if (forwardRequest.result !== undefined) return this.handleReplyRequest(forwardRequest)
+		if ('result' in forwardRequest && forwardRequest.result !== undefined) return await this.handleReplyRequest(forwardRequest)
 
 		try {
 			if (this.signerWindowEthereumRequest == undefined) throw 'Interceptor is in wallet mode and should not forward to an external wallet'
