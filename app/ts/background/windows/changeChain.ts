@@ -97,8 +97,8 @@ export const openChangeChainDialog = async (
 		openedDialog = await openPopupOrTab({
 			url: getHtmlFile('changeChain'),
 			type: 'popup',
-			height: 450,
-			width: 520,
+			height: 800,
+			width: 600,
 		})
 
 		if (openedDialog?.windowOrTab.id !== undefined) {

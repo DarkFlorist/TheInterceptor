@@ -87,7 +87,7 @@ export function ChangeChain() {
 					</article>
 					<div class = 'media-content' style = 'padding-bottom: 10px'>
 						<div class = 'content'>
-							<p className = 'title' style = 'white-space: normal; text-align: center;'>
+							<p className = 'title' style = 'white-space: normal; text-align: center; padding: 10px;'>
 								<p className = 'title' style = 'white-space: normal; text-align: center; font-weight: bold;'>
 									{ chainChangeData.website.websiteOrigin }
 								</p>
@@ -95,23 +95,19 @@ export function ChangeChain() {
 								<p className = 'title' style = 'white-space: normal; text-align: center; font-weight: bold;'>
 									{ chainChangeData.chainName }
 								</p>
-								{ !chainChangeData.isInterceptorSupport && chainChangeData.simulationMode ?
-									<div style = 'font-size: 0.5em;'>
-										<ErrorContainer
-											text = { 'This chain is not supported by The Interceptor. If you want to use this chain anyway. Select Signing mode instead of Simulation mode and attempt to change the chain again. You will then be able to disable The Interceptor and send transactions without protection of The Interceptor.' }
-										/>
-									</div>
-								: <></> }
-								{ !chainChangeData.isInterceptorSupport && !chainChangeData.simulationMode ?
-									<div style = 'font-size: 1em;'>
-										<ErrorCheckBox
-											text = { 'This chain is not supported by The Interceptor. Would you like to disable The Interceptor and attempt to connect anyway?' }
-											checked = { connectAnyway }
-											onInput = { setConnectAnyway }
-										/>
-									</div>
-								: <></> }
 							</p>
+							{ !chainChangeData.isInterceptorSupport && chainChangeData.simulationMode ?
+								<ErrorContainer
+									text = { 'This chain is not supported by The Interceptor. If you want to use this chain anyway. Select Signing mode instead of Simulation mode and attempt to change the chain again. You will then be able to disable The Interceptor and send transactions without protection of The Interceptor.' }
+								/>
+							: <></> }
+							{ !chainChangeData.isInterceptorSupport && !chainChangeData.simulationMode ?
+								<ErrorCheckBox
+									text = { 'This chain is not supported by The Interceptor. Would you like to disable The Interceptor and attempt to connect anyway?' }
+									checked = { connectAnyway }
+									onInput = { setConnectAnyway }
+								/>
+							: <></> }
 						</div>
 					</div>
 					<div style = 'overflow: auto; display: flex; justify-content: space-around; width: 100%; height: 40px;'>
