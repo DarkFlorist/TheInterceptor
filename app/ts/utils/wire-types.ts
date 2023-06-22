@@ -1,5 +1,6 @@
 import * as funtypes from 'funtypes'
 import { UnionToIntersection } from './typescript.js'
+import { areEqual } from './typed-arrays.js'
 
 const BigIntParser: funtypes.ParsedValue<funtypes.String, bigint>['config'] = {
 	parse: value => {
@@ -502,7 +503,7 @@ export const DappRequestTransaction = funtypes.ReadonlyPartial({
 	maxFeePerGas: funtypes.Union(EthereumQuantity, funtypes.Null), // etherscan sets this field to null, remove this if etherscan fixes this
 	data: EthereumData,
 	input: EthereumData,
-}).withConstraint((dappRequestTransaction) => 'input' in dappRequestTransaction && 'data' in dappRequestTransaction ? dappRequestTransaction.input === dappRequestTransaction.data : true)
+}).withConstraint((dappRequestTransaction) => dappRequestTransaction.input !== undefined && dappRequestTransaction.data !== undefined ? areEqual(dappRequestTransaction.input, dappRequestTransaction.data) : true)
 
 export type EthereumBlockHeaderWithTransactionHashes = funtypes.Static<typeof EthereumBlockHeaderWithTransactionHashes>
 export const EthereumBlockHeaderWithTransactionHashes = funtypes.ReadonlyObject({
