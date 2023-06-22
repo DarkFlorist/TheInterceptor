@@ -6,12 +6,14 @@ import { getSocketFromPort, sendInternalWindowMessage, sendPopupMessageToOpenWin
 import { getTabState, setSignerName, updateTabState } from './storageVariables.js'
 import { getSettings } from './settings.js'
 import { resolveSignerChainChange } from './windows/changeChain.js'
+import { ApprovalState } from './accessManagement.js'
 
-export async function ethAccountsReply(websiteTabConnections: WebsiteTabConnections, port: browser.runtime.Port, request: ProviderMessage) {
-	if (!('params' in request.options)) return
+export async function ethAccountsReply(websiteTabConnections: WebsiteTabConnections, port: browser.runtime.Port, request: ProviderMessage, _connectInfoapproval: ApprovalState) {
+	if (!('params' in request)) return
 	if (port.sender?.tab?.id === undefined) return
 
-	const signerAccounts = EthereumAccountsReply.parse(request.options.params)
+	const signerAccountsReply = EthereumAccountsReply.parse(request.params)
+	const signerAccounts = signerAccountsReply[0]
 	const activeSigningAddress = signerAccounts.length > 0 ? signerAccounts[0] : undefined
 	const tabStateChange = await updateTabState(port.sender.tab.id, (previousState: TabState) => {
 		return {
@@ -34,7 +36,8 @@ export async function ethAccountsReply(websiteTabConnections: WebsiteTabConnecti
 	}
 }
 
-async function changeSignerChain(websiteTabConnections: WebsiteTabConnections, port: browser.runtime.Port, signerChain: bigint) {
+async function changeSignerChain(websiteTabConnections: WebsiteTabConnections, port: browser.runtime.Port, signerChain: bigint, approval: ApprovalState) {
+	if (approval !== 'hasAccess') return
 	if (port.sender?.tab?.id === undefined) return
 	if ((await getTabState(port.sender.tab.id)).signerChain === signerChain) return
 
@@ -56,38 +59,35 @@ async function changeSignerChain(websiteTabConnections: WebsiteTabConnections, p
 	sendPopupMessageToOpenWindows({ method: 'popup_chain_update' })
 }
 
-export async function signerChainChanged(websiteTabConnections: WebsiteTabConnections, port: browser.runtime.Port, request: ProviderMessage) {
-	if (!('params' in request.options)) return
-	const signerChain = EthereumChainReply.parse(request.options.params)[0]
-	await changeSignerChain(websiteTabConnections, port, signerChain)
+export async function signerChainChanged(websiteTabConnections: WebsiteTabConnections, port: browser.runtime.Port, request: ProviderMessage, approval: ApprovalState) {
+	if (!('params' in request)) return
+	const signerChain = EthereumChainReply.parse(request.params)[0]
+	await changeSignerChain(websiteTabConnections, port, signerChain, approval)
 }
 
-export async function walletSwitchEthereumChainReply(websiteTabConnections: WebsiteTabConnections, port: browser.runtime.Port, request: ProviderMessage) {
-	const params = WalletSwitchEthereumChainReply.parse(request.options).params[0]
-	if (params.accept) await changeSignerChain(websiteTabConnections, port, params.chainId)
+export async function walletSwitchEthereumChainReply(websiteTabConnections: WebsiteTabConnections, port: browser.runtime.Port, request: ProviderMessage, approval: ApprovalState) {
+	if (approval !== 'hasAccess') return
+	const params = WalletSwitchEthereumChainReply.parse(request).params[0]
+	if (params.accept) await changeSignerChain(websiteTabConnections, port, params.chainId, approval)
 	await resolveSignerChainChange({
 		method: 'popup_signerChangeChainDialog',
-		options: {
+		data: {
 			chainId: params.chainId,
 			accept: params.accept,
 		}
 	})
 }
 
-export async function connectedToSigner(_websiteTabConnections: WebsiteTabConnections, port: browser.runtime.Port, request: ProviderMessage) {
-	await setSignerName(ConnectedToSigner.parse(request.options).params[0])
+export async function connectedToSigner(_websiteTabConnections: WebsiteTabConnections, port: browser.runtime.Port, request: ProviderMessage, approval: ApprovalState) {
+	await setSignerName(ConnectedToSigner.parse(request).params[0])
 	await sendPopupMessageToOpenWindows({ method: 'popup_signer_name_changed' })
 	const settings = await getSettings()
 	if (!settings.simulationMode || settings.useSignersAddressAsActiveAddress) {
-		postMessageToPortIfConnected(port, {
-			interceptorApproved: true,
-			options: { method: 'request_signer_to_eth_requestAccounts' },
-			result: []
-		})
-		postMessageToPortIfConnected(port, {
-			interceptorApproved: true,
-			options: { method: 'request_signer_chainId' },
-			result: []
-		})
+		if (approval === 'hasAccess') {
+			postMessageToPortIfConnected(port, { method: 'request_signer_to_eth_requestAccounts' as const, result: [] })
+		} else {
+			postMessageToPortIfConnected(port, { method: 'request_signer_to_eth_accounts' as const, result: [] })
+		}
+		postMessageToPortIfConnected(port, { method: 'request_signer_chainId' as const, result: [] })
 	}
 }

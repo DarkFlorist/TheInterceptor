@@ -193,9 +193,11 @@ export async function getEthereumSubscriptions() {
 
 const ethereumSubscriptionsSemaphore = new Semaphore(1)
 export async function updateEthereumSubscriptions(updateFunc: (prevState: EthereumSubscriptions) => EthereumSubscriptions) {
-	await ethereumSubscriptionsSemaphore.execute(async () => {
-		const subscriptions = EthereumSubscriptions.parse(await browserStorageLocalSingleGetWithDefault('ethereumSubscriptions', []))
-		return await browserStorageLocalSet('ethereumSubscriptions', EthereumSubscriptions.serialize(updateFunc(subscriptions)) as string)
+	return await ethereumSubscriptionsSemaphore.execute(async () => {
+		const oldSubscriptions = EthereumSubscriptions.parse(await browserStorageLocalSingleGetWithDefault('ethereumSubscriptions', []))
+		const newSubscriptions = updateFunc(oldSubscriptions)
+		await browserStorageLocalSet('ethereumSubscriptions', EthereumSubscriptions.serialize(newSubscriptions) as string)
+		return { oldSubscriptions, newSubscriptions }
 	})
 }
 

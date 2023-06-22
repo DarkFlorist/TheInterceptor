@@ -42,13 +42,13 @@ export function App() {
 	async function setActiveAddressAndInformAboutIt(address: bigint | 'signer') {
 		setUseSignersAddressAsActiveAddress(address === 'signer')
 		if (address === 'signer') {
-			sendPopupMessageToBackgroundPage({ method: 'popup_changeActiveAddress', options: { activeAddress: 'signer', simulationMode: simulationMode } })
+			sendPopupMessageToBackgroundPage({ method: 'popup_changeActiveAddress', data: { activeAddress: 'signer', simulationMode: simulationMode } })
 			if (simulationMode) {
 				return setActiveSimulationAddress(signerAccounts && signerAccounts.length > 0 ? signerAccounts[0] : undefined)
 			}
 			return setActiveSigningAddress(signerAccounts && signerAccounts.length > 0 ? signerAccounts[0] : undefined)
 		}
-		sendPopupMessageToBackgroundPage({ method: 'popup_changeActiveAddress', options: { activeAddress: address, simulationMode: simulationMode } })
+		sendPopupMessageToBackgroundPage({ method: 'popup_changeActiveAddress', data: { activeAddress: address, simulationMode: simulationMode } })
 		if (simulationMode) {
 			return setActiveSimulationAddress(address)
 		}
@@ -64,7 +64,7 @@ export function App() {
 	}
 
 	async function setActiveChainAndInformAboutIt(chainId: bigint) {
-		sendPopupMessageToBackgroundPage( { method: 'popup_changeActiveChain', options: chainId } )
+		sendPopupMessageToBackgroundPage( { method: 'popup_changeActiveChain', data: chainId } )
 		if(!isSignerConnected()) {
 			setActiveChain(chainId)
 		}
@@ -156,7 +156,7 @@ export function App() {
 
 	function setAndSaveAppPage(page: Page) {
 		setAppPage(page)
-		sendPopupMessageToBackgroundPage({ method: 'popup_changePage', options: page })
+		sendPopupMessageToBackgroundPage({ method: 'popup_changePage', data: page })
 	}
 
 	async function addressPaste(address: string) {

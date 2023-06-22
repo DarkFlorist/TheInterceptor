@@ -203,7 +203,7 @@ export function InterceptorAccess() {
 	async function approve() {
 		if (pendingAccessRequestArray.length === 0) throw Error('access request not loaded')
 		const accessRequest = pendingAccessRequestArray[0]
-		const options = {
+		const data = {
 			userReply: 'Approved' as const,
 			websiteOrigin: accessRequest.website.websiteOrigin,
 			requestAccessToAddress: accessRequest.requestAccessToAddress?.address,
@@ -213,13 +213,13 @@ export function InterceptorAccess() {
 		setPendingRequestAddedNotification(false)
 		setInformationUpdatedTimestamp(Date.now())
 		if (pendingAccessRequestArray.length === 1) await tryFocusingTab(accessRequest.socket.tabId)
-		await sendPopupMessageToBackgroundPage({ method: 'popup_interceptorAccess', options })
+		await sendPopupMessageToBackgroundPage({ method: 'popup_interceptorAccess', data })
 	}
 
 	async function reject() {
 		if (pendingAccessRequestArray.length === 0) throw Error('access request not loaded')
 		const accessRequest = pendingAccessRequestArray[0]
-		const options = {
+		const data = {
 			userReply: 'Rejected' as const,
 			websiteOrigin: accessRequest.website.websiteOrigin,
 			requestAccessToAddress: accessRequest.requestAccessToAddress?.address,
@@ -229,7 +229,7 @@ export function InterceptorAccess() {
 		setPendingRequestAddedNotification(false)
 		setInformationUpdatedTimestamp(Date.now())
 		if (pendingAccessRequestArray.length === 1) await tryFocusingTab(accessRequest.socket.tabId)
-		await sendPopupMessageToBackgroundPage({ method: 'popup_interceptorAccess', options })
+		await sendPopupMessageToBackgroundPage({ method: 'popup_interceptorAccess', data })
 	}
 
 	function renameAddressCallBack(entry: AddressBookEntry) {
@@ -248,7 +248,7 @@ export function InterceptorAccess() {
 	async function refreshActiveAddress() {
 		if (pendingAccessRequestArray.length === 0) throw Error('access request not loaded')
 		const accessRequest = pendingAccessRequestArray[0]
-		await sendPopupMessageToBackgroundPage({ method: 'popup_interceptorAccessRefresh', options: {
+		await sendPopupMessageToBackgroundPage({ method: 'popup_interceptorAccessRefresh', data: {
 			socket: accessRequest.socket,
 			website: accessRequest.website,
 			requestAccessToAddress: accessRequest.requestAccessToAddress?.address,
@@ -259,7 +259,7 @@ export function InterceptorAccess() {
 	async function setActiveAddressAndInformAboutIt(address: bigint | 'signer') {
 		if (pendingAccessRequestArray.length === 0) throw Error('access request not loaded')
 		const accessRequest = pendingAccessRequestArray[0]
-		await sendPopupMessageToBackgroundPage({ method: 'popup_interceptorAccessChangeAddress', options: {
+		await sendPopupMessageToBackgroundPage({ method: 'popup_interceptorAccessChangeAddress', data: {
 			socket: accessRequest.socket,
 			website: accessRequest.website,
 			requestAccessToAddress: accessRequest.requestAccessToAddress?.address,

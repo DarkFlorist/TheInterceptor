@@ -3,18 +3,19 @@ import { EthereumClientService } from '../../simulation/services/EthereumClientS
 import { stringifyJSONWithBigInts } from '../../utils/bigint.js'
 import { METAMASK_ERROR_USER_REJECTED_REQUEST } from '../../utils/constants.js'
 import { Future } from '../../utils/future.js'
-import { HandleSimulationModeReturnValue, InterceptedRequest, PersonalSign, ExternalPopupMessage, Settings, UserAddressBook, PersonalSignRequest } from '../../utils/interceptor-messages.js'
+import { InterceptedRequest, PersonalSign, ExternalPopupMessage, Settings, UserAddressBook, PersonalSignRequest } from '../../utils/interceptor-messages.js'
 import { OpenSeaOrderMessage, PersonalSignRequestIdentifiedEIP712Message } from '../../utils/personal-message-definitions.js'
 import { assertNever } from '../../utils/typescript.js'
 import { AddressBookEntry, SignerName, Website, WebsiteSocket, WebsiteTabConnections } from '../../utils/user-interface-types.js'
 import { OldSignTypedDataParams, PersonalSignParams, SignTypedDataParams } from '../../utils/wire-types.js'
-import { personalSignWithSimulator, sendMessageToContentScript } from '../background.js'
 import { getHtmlFile, sendPopupMessageToOpenWindows } from '../backgroundUtils.js'
 import { extractEIP712Message, validateEIP712Types } from '../../utils/eip712Parsing.js'
 import { getAddressMetaData, getTokenMetadata } from '../metadataUtils.js'
 import { getPendingPersonalSignPromise, getSignerName, setPendingPersonalSignPromise } from '../storageVariables.js'
 import { getSettings } from '../settings.js'
 import { PopupOrTab, addWindowTabListener, openPopupOrTab, removeWindowTabListener } from '../../components/ui-utils.js'
+import { simulatePersonalSign } from '../../simulation/services/SimulationModeEthereumClientService.js'
+import { postMessageIfStillConnected } from '../background.js'
 
 let pendingPersonalSign: Future<PersonalSign> | undefined = undefined
 
@@ -25,9 +26,9 @@ export async function resolvePersonalSign(websiteTabConnections: WebsiteTabConne
 		pendingPersonalSign.resolve(confirmation)
 	} else {
 		const data = await getPendingPersonalSignPromise()
-		if (data === undefined || confirmation.options.requestId !== data.request.requestId) return
+		if (data === undefined || confirmation.data.requestId !== data.request.requestId) return
 		const resolved = await resolve(confirmation, data.simulationMode, data.params)
-		sendMessageToContentScript(websiteTabConnections, data.socket, resolved, data.request)
+		postMessageIfStillConnected(websiteTabConnections, data.socket, { method: data.params.method, ...resolved, requestId: confirmation.data.requestId })
 	}
 	openedDialog = undefined
 }
@@ -35,7 +36,7 @@ export async function resolvePersonalSign(websiteTabConnections: WebsiteTabConne
 function rejectMessage(requestId: number) {
 	return {
 		method: 'popup_personalSign',
-		options: {
+		data: {
 			requestId,
 			accept: false,
 		},
@@ -217,13 +218,13 @@ export const openPersonalSignDialog = async (
 	ethereumClientService: EthereumClientService,
 	websiteTabConnections: WebsiteTabConnections,
 	socket: WebsiteSocket,
-	params: PersonalSignParams | SignTypedDataParams | OldSignTypedDataParams,
+	signingParams: PersonalSignParams | SignTypedDataParams | OldSignTypedDataParams,
 	request: InterceptedRequest,
 	simulationMode: boolean,
 	website: Website,
 	settings: Settings,
 	activeAddress: bigint | undefined
-): Promise<HandleSimulationModeReturnValue> => {
+) => {
 	if (pendingPersonalSign !== undefined) return reject()
 
 	const onCloseWindow = (windowId: number) => {
@@ -234,7 +235,7 @@ export const openPersonalSignDialog = async (
 	}
 
 	if (activeAddress === undefined) return reject()
-	const popupMessage = await craftPersonalSignPopupMessage(ethereumClientService, params, socket.tabId, activeAddress, settings.userAddressBook, simulationMode, request.requestId, await getSignerName(), website)
+	const popupMessage = await craftPersonalSignPopupMessage(ethereumClientService, signingParams, socket.tabId, activeAddress, settings.userAddressBook, simulationMode, request.requestId, await getSignerName(), website)
 
 	const personalSignWindowReadyAndListening = async function popupMessageListener(msg: unknown) {
 		const message = ExternalPopupMessage.parse(msg)
@@ -271,7 +272,7 @@ export const openPersonalSignDialog = async (
 				socket: socket,
 				request: request,
 				simulationMode: simulationMode,
-				params: params,
+				params: signingParams,
 			})
 		} else {
 			await resolvePersonalSign(websiteTabConnections, rejectMessage(request.requestId))
@@ -279,7 +280,7 @@ export const openPersonalSignDialog = async (
 
 		const reply = await pendingPersonalSign
 
-		return resolve(reply, simulationMode, params)
+		return resolve(reply, simulationMode, signingParams)
 	} finally {
 		browser.runtime.onMessage.removeListener(personalSignWindowReadyAndListening)
 		removeWindowTabListener(onCloseWindow)
@@ -287,12 +288,12 @@ export const openPersonalSignDialog = async (
 	}
 }
 
-async function resolve(reply: PersonalSign, simulationMode: boolean, params: PersonalSignParams | SignTypedDataParams | OldSignTypedDataParams) {
+async function resolve(reply: PersonalSign, simulationMode: boolean, params: PersonalSignParams | SignTypedDataParams | OldSignTypedDataParams): Promise<{ forward: true } | { error: { code: number, message: string } } | { result: string }> {
 	await setPendingPersonalSignPromise(undefined)
 	// forward message to content script
-	if (reply.options.accept) {
+	if (reply.data.accept) {
 		if (simulationMode) {
-			const result = await personalSignWithSimulator(params)
+			const result = await simulatePersonalSign(params)
 			if (result === undefined) return reject()
 			return { result: result }
 		}

@@ -229,22 +229,22 @@ export function AddressBook() {
 			if (parsed.method !== 'popup_getAddressBookDataReply') return
 			const reply = GetAddressBookDataReply.parse(msg)
 			setAddressBookState((previousState) => {
-				if ( activeFilterRef.current !== reply.data.options.filter || searchStringRef.current !== reply.data.options.searchString) return previousState
+				if ( activeFilterRef.current !== reply.data.data.filter || searchStringRef.current !== reply.data.data.searchString) return previousState
 
-				const startPageIndex = Math.ceil(reply.data.options.startIndex / PAGE_SIZE)
+				const startPageIndex = Math.ceil(reply.data.data.startIndex / PAGE_SIZE)
 				const chunkedresults = arrayToChunks(reply.data.entries, PAGE_SIZE)
 
 				const newPages = (previousState !== undefined
-					&& reply.data.options.filter === previousState.activeFilter
-					&& reply.data.options.searchString === previousState.searchString ? new Map(previousState.pages) : new Map())
+					&& reply.data.data.filter === previousState.activeFilter
+					&& reply.data.data.searchString === previousState.searchString ? new Map(previousState.pages) : new Map())
 
 				Array.from(chunkedresults).forEach((entries, pageOffset) => newPages.set(startPageIndex + pageOffset, entries))
 				const newData = {
 					pages: newPages,
 					maxIndex: reply.data.maxDataLength,
 					maxPages: Math.ceil( (reply.data.maxDataLength) / PAGE_SIZE),
-					searchString: reply.data.options.searchString,
-					activeFilter: reply.data.options.filter,
+					searchString: reply.data.data.searchString,
+					activeFilter: reply.data.data.filter,
 				}
 				return newData
 			})
@@ -293,7 +293,7 @@ export function AddressBook() {
 	}
 
 	function sendQuery(filter: ActiveFilter, searchString: string | undefined, startPage: number, endPage: number) {
-		sendPopupMessageToBackgroundPage({ method: 'popup_getAddressBookData', options: {
+		sendPopupMessageToBackgroundPage({ method: 'popup_getAddressBookData', data: {
 			filter: filter,
 			searchString: searchString,
 			startIndex: startPage * PAGE_SIZE,
@@ -365,7 +365,7 @@ export function AddressBook() {
 	function removeAddressBookEntry(entry: AddressBookEntry) {
 		sendPopupMessageToBackgroundPage({
 			method: 'popup_removeAddressBookEntry',
-			options: {
+			data: {
 				address: entry.address,
 				addressBookCategory: activeFilter,
 			}

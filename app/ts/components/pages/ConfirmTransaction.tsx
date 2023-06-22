@@ -196,7 +196,7 @@ export function ConfirmTransaction() {
 		const currentWindow = await browser.windows.getCurrent()
 		if (currentWindow.id === undefined) throw new Error('could not get our own Id!')
 		if (pendingTransactions.length === 0) await tryFocusingTab(dialogState.data.tabIdOpenedFrom)
-		await sendPopupMessageToBackgroundPage({ method: 'popup_confirmDialog', options: { requestId: dialogState.data.requestId, accept: true, windowId: currentWindow.id } })
+		await sendPopupMessageToBackgroundPage({ method: 'popup_confirmDialog', data: { requestId: dialogState.data.requestId, accept: true, windowId: currentWindow.id } })
 	}
 	async function reject() {
 		if (dialogState === undefined) throw new Error('dialogState is not set')
@@ -204,7 +204,7 @@ export function ConfirmTransaction() {
 		const currentWindow = await browser.windows.getCurrent()
 		if (currentWindow.id === undefined) throw new Error('could not get our own Id!')
 		if (pendingTransactions.length === 0) await tryFocusingTab(dialogState.data.tabIdOpenedFrom)
-		await sendPopupMessageToBackgroundPage({ method: 'popup_confirmDialog', options: { requestId: dialogState.data.requestId, accept: false, windowId: currentWindow.id } })
+		await sendPopupMessageToBackgroundPage({ method: 'popup_confirmDialog', data: { requestId: dialogState.data.requestId, accept: false, windowId: currentWindow.id } })
 	}
 	const refreshMetadata = () => {
 		if (dialogState === undefined || dialogState.state === 'failed') return

@@ -29,7 +29,7 @@ export async function confirmPersonalSign(websiteTabConnections: WebsiteTabConne
 }
 
 export async function confirmRequestAccess(websiteTabConnections: WebsiteTabConnections, confirmation: InterceptorAccess) {
-	await resolveInterceptorAccess(websiteTabConnections, confirmation.options)
+	await resolveInterceptorAccess(websiteTabConnections, confirmation.data)
 }
 
 export async function getLastKnownCurrentTabId() {
@@ -53,63 +53,63 @@ export async function getSignerAccount() {
 export async function changeActiveAddress(websiteTabConnections: WebsiteTabConnections, addressChange: ChangeActiveAddress) {
 
 	// if using signers address, set the active address to signers address if available, otherwise we don't know active address and set it to be undefined
-	if (addressChange.options.activeAddress === 'signer') {
+	if (addressChange.data.activeAddress === 'signer') {
 		const signerAccount = await getSignerAccount()
-		await setUseSignersAddressAsActiveAddress(addressChange.options.activeAddress === 'signer', signerAccount)
+		await setUseSignersAddressAsActiveAddress(addressChange.data.activeAddress === 'signer', signerAccount)
 
-		sendMessageToApprovedWebsitePorts(websiteTabConnections, 'request_signer_to_eth_requestAccounts', [])
-		sendMessageToApprovedWebsitePorts(websiteTabConnections, 'request_signer_chainId', [])
+		sendMessageToApprovedWebsitePorts(websiteTabConnections, { method: 'request_signer_to_eth_accounts', result: [] })
+		sendMessageToApprovedWebsitePorts(websiteTabConnections, { method: 'request_signer_chainId', result: [] } )
 		
 		await changeActiveAddressAndChainAndResetSimulation(websiteTabConnections, {
-			simulationMode: addressChange.options.simulationMode,
+			simulationMode: addressChange.data.simulationMode,
 			activeAddress: signerAccount,
 		})
 	} else {
 		await setUseSignersAddressAsActiveAddress(false)
 		await changeActiveAddressAndChainAndResetSimulation(websiteTabConnections, {
-			simulationMode: addressChange.options.simulationMode,
-			activeAddress: addressChange.options.activeAddress,
+			simulationMode: addressChange.data.simulationMode,
+			activeAddress: addressChange.data.activeAddress,
 		})
 	}
 }
 
 export async function changeMakeMeRich(ethereumClientService: EthereumClientService, makeMeRichChange: ChangeMakeMeRich, settings: Settings) {
-	await setMakeMeRich(makeMeRichChange.options)
+	await setMakeMeRich(makeMeRichChange.data)
 	await updateSimulationState(async () => {
 		const simulationState = (await getSimulationResults()).simulationState
 		if (simulationState === undefined) return undefined
-		const prependQueue = await getPrependTrasactions(ethereumClientService, settings, makeMeRichChange.options)
+		const prependQueue = await getPrependTrasactions(ethereumClientService, settings, makeMeRichChange.data)
 		return await resetSimulationState(ethereumClientService, { ...simulationState, prependTransactionsQueue: prependQueue })
 	}, settings.activeSimulationAddress)
 }
 
 export async function removeAddressBookEntry(websiteTabConnections: WebsiteTabConnections, removeAddressBookEntry: RemoveAddressBookEntry) {
-	switch(removeAddressBookEntry.options.addressBookCategory) {
+	switch(removeAddressBookEntry.data.addressBookCategory) {
 		case 'My Active Addresses': {
-			await updateAddressInfos((previousAddressInfos) => previousAddressInfos.filter((info) => info.address !== removeAddressBookEntry.options.address))
+			await updateAddressInfos((previousAddressInfos) => previousAddressInfos.filter((info) => info.address !== removeAddressBookEntry.data.address))
 			updateWebsiteApprovalAccesses(websiteTabConnections, undefined, await getSettings())
 			return await sendPopupMessageToOpenWindows({ method: 'popup_addressBookEntriesChanged' })
 		}
 		case 'My Contacts': {
-			await updateContacts((previousContacts) => previousContacts.filter((contact) => contact.address !== removeAddressBookEntry.options.address))
+			await updateContacts((previousContacts) => previousContacts.filter((contact) => contact.address !== removeAddressBookEntry.data.address))
 			return await sendPopupMessageToOpenWindows({ method: 'popup_addressBookEntriesChanged' })
 		}
 		case 'Non Fungible Tokens':
 		case 'Other Contracts':
 		case 'Tokens': throw new Error('Tried to remove addressbook category that is not supported yet!')
-		default: assertUnreachable(removeAddressBookEntry.options.addressBookCategory)
+		default: assertUnreachable(removeAddressBookEntry.data.addressBookCategory)
 	}
 }
 
 export async function addOrModifyAddressInfo(websiteTabConnections: WebsiteTabConnections, entry: AddOrEditAddressBookEntry) {
-	const newEntry = entry.options
+	const newEntry = entry.data
 	switch (newEntry.type) {
 		case 'NFT':
 		case 'other contract':
 		case 'token': throw new Error(`No support to modify this entry yet! ${ newEntry.type }`)
 		case 'addressInfo': {
 			await updateAddressInfos((previousAddressInfos) => {
-				if (previousAddressInfos.find((x) => x.address === entry.options.address) ) {
+				if (previousAddressInfos.find((x) => x.address === entry.data.address) ) {
 					return previousAddressInfos.map((x) => x.address === newEntry.address ? newEntry : x )
 				} else {
 					return previousAddressInfos.concat([newEntry])
@@ -120,7 +120,7 @@ export async function addOrModifyAddressInfo(websiteTabConnections: WebsiteTabCo
 		}
 		case 'contact': {
 			await updateContacts((previousContacts) => {
-				if (previousContacts.find( (x) => x.address === entry.options.address) ) {
+				if (previousContacts.find( (x) => x.address === entry.data.address) ) {
 					return previousContacts.map( (x) => x.address === newEntry.address ? newEntry : x )
 				} else {
 					return previousContacts.concat([newEntry])
@@ -133,19 +133,19 @@ export async function addOrModifyAddressInfo(websiteTabConnections: WebsiteTabCo
 }
 
 export async function changeInterceptorAccess(websiteTabConnections: WebsiteTabConnections, accessChange: ChangeInterceptorAccess) {
-	await updateWebsiteAccess(() => accessChange.options) // TODO: update 'popup_changeInterceptorAccess' to return list of changes instead of a new list
+	await updateWebsiteAccess(() => accessChange.data) // TODO: update 'popup_changeInterceptorAccess' to return list of changes instead of a new list
 	updateWebsiteApprovalAccesses(websiteTabConnections, undefined, await getSettings())
 	return await sendPopupMessageToOpenWindows({ method: 'popup_interceptor_access_changed' })
 }
 
 export async function changePage(page: ChangePage) {
-	await setPage(page.options)
+	await setPage(page.data)
 }
 
 export async function requestAccountsFromSigner(websiteTabConnections: WebsiteTabConnections, params: RequestAccountsFromSigner) {
-	if (params.options) {
-		sendMessageToApprovedWebsitePorts(websiteTabConnections, 'request_signer_to_eth_requestAccounts', [])
-		sendMessageToApprovedWebsitePorts(websiteTabConnections, 'request_signer_chainId', [])
+	if (params.data) {
+		sendMessageToApprovedWebsitePorts(websiteTabConnections, { method: 'request_signer_to_eth_requestAccounts', result: [] })
+		sendMessageToApprovedWebsitePorts(websiteTabConnections, { method: 'request_signer_chainId', result: [] })
 	}
 }
 
@@ -161,7 +161,7 @@ export async function removeTransaction(ethereumClientService: EthereumClientSer
 	await updateSimulationState(async () => {
 		const simulationState = (await getSimulationResults()).simulationState
 		if (simulationState === undefined) return
-		return await removeTransactionAndUpdateTransactionNonces(ethereumClientService, simulationState, params.options)
+		return await removeTransactionAndUpdateTransactionNonces(ethereumClientService, simulationState, params.data)
 	}, settings.activeSimulationAddress)
 }
 
@@ -205,7 +205,7 @@ export async function refreshPopupConfirmTransactionSimulation(ethereumClientSer
 }
 
 export async function popupChangeActiveChain(websiteTabConnections: WebsiteTabConnections, params: ChangeActiveChain, settings: Settings) {
-	return await changeActiveChain(websiteTabConnections, params.options, settings.simulationMode)
+	return await changeActiveChain(websiteTabConnections, params.data, settings.simulationMode)
 }
 
 export async function changeChainDialog(websiteTabConnections: WebsiteTabConnections, chainChange: ChainChangeConfirmation) {
@@ -215,20 +215,20 @@ export async function changeChainDialog(websiteTabConnections: WebsiteTabConnect
 export async function enableSimulationMode(websiteTabConnections: WebsiteTabConnections, params: EnableSimulationMode) {
 	const settings = await getSettings()
 	// if we are on unsupported chain, force change to a supported one
-	if (settings.useSignersAddressAsActiveAddress || params.options === false) {
-		sendMessageToApprovedWebsitePorts(websiteTabConnections, 'request_signer_to_eth_requestAccounts', [])
-		sendMessageToApprovedWebsitePorts(websiteTabConnections, 'request_signer_chainId', [])
+	if (settings.useSignersAddressAsActiveAddress || params.data === false) {
+		sendMessageToApprovedWebsitePorts(websiteTabConnections, { method: 'request_signer_to_eth_accounts', result: [] })
+		sendMessageToApprovedWebsitePorts(websiteTabConnections, { method: 'request_signer_chainId', result: [] })
 		const tabId = await getLastKnownCurrentTabId()
 		const chainToSwitch = tabId === undefined ? undefined : (await getTabState(tabId)).signerChain
 		await changeActiveAddressAndChainAndResetSimulation(websiteTabConnections, {
-			simulationMode: params.options,
+			simulationMode: params.data,
 			activeAddress: await getSignerAccount(),
 			...chainToSwitch === undefined ? {} :  { activeChain: chainToSwitch },
 		})
 	} else {
 		const chainToSwitch = isSupportedChain(settings.activeChain.toString()) ? settings.activeChain : 1n
 		await changeActiveAddressAndChainAndResetSimulation(websiteTabConnections, {
-			simulationMode: params.options,
+			simulationMode: params.data,
 			...settings.activeChain === chainToSwitch ? {} : { activeChain: chainToSwitch }
 		})
 	}
@@ -236,11 +236,11 @@ export async function enableSimulationMode(websiteTabConnections: WebsiteTabConn
 
 export async function getAddressBookData(parsed: GetAddressBookData, userAddressBook: UserAddressBook | undefined) {
 	if (userAddressBook === undefined) throw new Error('Interceptor is not ready')
-	const data = getMetadataForAddressBookData(parsed.options, userAddressBook)
+	const data = getMetadataForAddressBookData(parsed.data, userAddressBook)
 	await sendPopupMessageToOpenWindows({
 		method: 'popup_getAddressBookDataReply',
 		data: {
-			options: parsed.options,
+			data: parsed.data,
 			entries: data.entries,
 			maxDataLength: data.maxDataLength,
 		}

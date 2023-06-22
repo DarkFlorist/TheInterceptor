@@ -1,4 +1,4 @@
-import { EthSubscribeParams, NewHeadsSubscriptionData } from '../../utils/wire-types.js'
+import { EthSubscribeParams } from '../../utils/wire-types.js'
 import { assertNever } from '../../utils/typescript.js'
 import { EthereumClientService } from './EthereumClientService.js'
 import { getEthereumSubscriptions, updateEthereumSubscriptions } from '../../background/storageVariables.js'
@@ -16,12 +16,18 @@ function generateId(len: number) {
 }
 
 export async function removeEthereumSubscription(socket: WebsiteSocket, subscriptionId: string) {
-	await updateEthereumSubscriptions((subscriptions: EthereumSubscriptions) => {
+	const changes = await updateEthereumSubscriptions((subscriptions: EthereumSubscriptions) => {
 		return subscriptions.filter((subscription) => subscription.subscriptionId !== subscriptionId
 			&& subscription.subscriptionCreatorSocket.tabId === socket.tabId // only allow the same tab and connection to remove the subscription
 			&& subscription.subscriptionCreatorSocket.connectionName === socket.connectionName
 		)
 	})
+	if (changes.oldSubscriptions.find((sub) => sub.subscriptionId === subscriptionId) !== undefined
+		&& changes.newSubscriptions.find((sub) => sub.subscriptionId === subscriptionId) === undefined
+	) {
+		return true // subscription was found and removed
+	}
+	return false
 }
 
 export async function sendSubscriptionMessagesForNewBlock(blockNumber: bigint, ethereumClientService: EthereumClientService, simulationState: SimulationState | undefined, websiteTabConnections: WebsiteTabConnections) {
@@ -35,9 +41,8 @@ export async function sendSubscriptionMessagesForNewBlock(blockNumber: bigint, e
 				const newBlock = await ethereumClientService.getBlock(blockNumber, false)
 
 				postMessageIfStillConnected(websiteTabConnections, subscription.subscriptionCreatorSocket, {
-					interceptorApproved: true,
-					options: subscription.params,
-					result: NewHeadsSubscriptionData.serialize({ subscription: subscription.type, result: newBlock }),
+					method: 'newHeads' as const, 
+					result: { subscription: subscription.type, result: newBlock } as const,
 					subscription: subscription.subscriptionId,
 				})
 
@@ -45,9 +50,8 @@ export async function sendSubscriptionMessagesForNewBlock(blockNumber: bigint, e
 					const simulatedBlock = await getSimulatedBlock(ethereumClientService, simulationState, blockNumber + 1n, false)
 					// post our simulated block on top (reorg it)
 					postMessageIfStillConnected(websiteTabConnections, subscription.subscriptionCreatorSocket, {
-						interceptorApproved: true,
-						options: subscription.params,
-						result: NewHeadsSubscriptionData.serialize({ subscription: subscription.type, result: simulatedBlock }),
+						method: 'newHeads' as const, 
+						result: { subscription: subscription.type, result: simulatedBlock },
 						subscription: subscription.subscriptionId,
 					})
 				}
@@ -59,7 +63,6 @@ export async function sendSubscriptionMessagesForNewBlock(blockNumber: bigint, e
 	return
 }
 export async function createEthereumSubscription(params: EthSubscribeParams, subscriptionCreatorSocket: WebsiteSocket) {
-	console.log('createsub tabid', subscriptionCreatorSocket.tabId)
 	switch(params.params[0]) {
 		case 'newHeads': {
 			const subscriptionId = generateId(40)

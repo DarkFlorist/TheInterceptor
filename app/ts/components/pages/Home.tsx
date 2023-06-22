@@ -17,7 +17,7 @@ import { identifyTransaction } from '../simulationExplaining/identifyTransaction
 import { SomeTimeAgo } from '../subcomponents/SomeTimeAgo.js'
 
 async function enableMakeMeRich(enabled: boolean) {
-	sendPopupMessageToBackgroundPage( { method: 'popup_changeMakeMeRich', options: enabled } )
+	sendPopupMessageToBackgroundPage( { method: 'popup_changeMakeMeRich', data: enabled } )
 }
 
 type SignerExplanationParams = {
@@ -84,7 +84,7 @@ function FirstCardHeader(param: FirstCardParams) {
 
 function FirstCard(param: FirstCardParams) {
 	function connectToSigner() {
-		sendPopupMessageToBackgroundPage({ method: 'popup_requestAccountsFromSigner', options: true })
+		sendPopupMessageToBackgroundPage({ method: 'popup_requestAccountsFromSigner', data: true })
 	}
 
 	if (param.signerName === 'NoSigner' && param.simulationMode === false) {
@@ -249,7 +249,7 @@ export function Home(param: HomeParams) {
 	}
 
 	function enableSimulationMode(enabled: boolean ) {
-		sendPopupMessageToBackgroundPage( { method: 'popup_enableSimulationMode', options: enabled } )
+		sendPopupMessageToBackgroundPage( { method: 'popup_enableSimulationMode', data: enabled } )
 		setSimulationMode(enabled)
 	}
 
@@ -263,7 +263,7 @@ export function Home(param: HomeParams) {
 		if (identifyTransaction(tx).type === 'MakeYouRichTransaction') {
 			return await enableMakeMeRich(false)
 		} else {
-			return await sendPopupMessageToBackgroundPage({ method: 'popup_removeTransaction', options: tx.transaction.hash })
+			return await sendPopupMessageToBackgroundPage({ method: 'popup_removeTransaction', data: tx.transaction.hash })
 		}
 	}
 

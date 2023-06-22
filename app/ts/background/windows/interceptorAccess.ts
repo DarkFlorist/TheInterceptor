@@ -70,11 +70,7 @@ async function askForSignerAccountsFromSignerIfNotAvailable(websiteTabConnection
 	const channel = new BroadcastChannel(INTERNAL_CHANNEL_NAME)
 	try {
 		channel.addEventListener('message', listener)
-		const messageSent = postMessageIfStillConnected(websiteTabConnections, socket, {
-			interceptorApproved: true,
-			options: { method: 'request_signer_to_eth_requestAccounts' },
-			result: []
-		})
+		const messageSent = postMessageIfStillConnected(websiteTabConnections, socket, { method: 'request_signer_to_eth_requestAccounts' as const, result: [] })
 		if (messageSent) await future
 	} finally {
 		channel.removeEventListener('message', listener)
@@ -174,10 +170,9 @@ export async function requestAccessFromUser(
 		if (requests.find((x) => x.accessRequestId === accessRequestId) === undefined) {
 			if (request !== undefined) {
 				postMessageIfStillConnected(websiteTabConnections, socket, {
-					interceptorApproved: false,
 					requestId: request.requestId,
-					options: request.options,
-					error: METAMASK_ERROR_ALREADY_PENDING.error
+					method: request.method,
+					error: METAMASK_ERROR_ALREADY_PENDING.error,
 				})
 			}
 			return
@@ -229,23 +224,23 @@ async function resolve(websiteTabConnections: WebsiteTabConnections, accessReply
 
 export async function requestAddressChange(websiteTabConnections: WebsiteTabConnections, message: InterceptorAccessChangeAddress | InterceptorAccessRefresh) {
 	const newRequests = await updatePendingAccessRequests(async (previousPendingAccessRequests) => {
-		if (message.options.requestAccessToAddress === undefined) throw new Error('Requesting account change on site level access request')
+		if (message.data.requestAccessToAddress === undefined) throw new Error('Requesting account change on site level access request')
 		async function getProposedAddress() {
-			if (message.method === 'popup_interceptorAccessRefresh' || message.options.newActiveAddress === 'signer') {
-				const signerAccounts = await askForSignerAccountsFromSignerIfNotAvailable(websiteTabConnections, message.options.socket)
+			if (message.method === 'popup_interceptorAccessRefresh' || message.data.newActiveAddress === 'signer') {
+				const signerAccounts = await askForSignerAccountsFromSignerIfNotAvailable(websiteTabConnections, message.data.socket)
 				return signerAccounts === undefined || signerAccounts.length == 0 ? undefined : signerAccounts[0]
 			}
-			return message.options.newActiveAddress
+			return message.data.newActiveAddress
 		}
 
 		const proposedAddress = await getProposedAddress()
 		const settings = await getSettings()
-		const newActiveAddress = proposedAddress === undefined ? message.options.requestAccessToAddress : proposedAddress
+		const newActiveAddress = proposedAddress === undefined ? message.data.requestAccessToAddress : proposedAddress
 		const newActiveAddressAddressInfo = findAddressInfo(newActiveAddress, settings.userAddressBook.addressInfos)
-		const associatedAddresses = getAssociatedAddresses(settings, message.options.website.websiteOrigin, newActiveAddressAddressInfo)
+		const associatedAddresses = getAssociatedAddresses(settings, message.data.website.websiteOrigin, newActiveAddressAddressInfo)
 		
 		return previousPendingAccessRequests.map((request) => {
-			if (request.accessRequestId === message.options.accessRequestId) {
+			if (request.accessRequestId === message.data.accessRequestId) {
 				return {
 					...request,
 					associatedAddresses,

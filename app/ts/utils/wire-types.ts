@@ -1,6 +1,5 @@
 import * as funtypes from 'funtypes'
-import { UnionToIntersection, assertNever } from './typescript.js'
-import { IUnsignedTransaction } from './ethereum.js'
+import { UnionToIntersection } from './typescript.js'
 
 const BigIntParser: funtypes.ParsedValue<funtypes.String, bigint>['config'] = {
 	parse: value => {
@@ -399,11 +398,11 @@ const RevertErrorParser: funtypes.ParsedValue<funtypes.String, string>['config']
 }
 
 export type MulticallRequestParameters = funtypes.Static<typeof MulticallRequestParameters>
-export const MulticallRequestParameters = funtypes.Readonly(funtypes.Tuple(
+export const MulticallRequestParameters = funtypes.ReadonlyTuple(
 	EthereumQuantity, // block number
 	EthereumAddress, // miner
 	funtypes.ReadonlyArray(EthereumUnsignedTransaction),
-))
+)
 
 export type MulticallResponseEventLog = funtypes.Static<typeof MulticallResponseEventLog>
 export const MulticallResponseEventLog =  funtypes.ReadonlyObject({
@@ -472,51 +471,6 @@ export const NFTDataResponse = funtypes.ReadonlyObject({
 //
 // Helpers
 //
-
-export function serializeUnsignedTransactionToJson(transaction: IUnsignedTransaction): unknown {
-	switch (transaction.type) {
-		case 'legacy':
-			return {
-				type: '0x0',
-				from: serialize(EthereumAddress, transaction.from),
-				nonce: serialize(EthereumQuantity, transaction.nonce),
-				gasPrice: serialize(EthereumQuantity, transaction.gasPrice),
-				gas: serialize(EthereumQuantity, transaction.gasLimit),
-				to: transaction.to !== null ? serialize(EthereumAddress, transaction.to) : null,
-				value: serialize(EthereumQuantity, transaction.value),
-				data: serialize(EthereumData, transaction.input),
-				...'chainId' in transaction && transaction.chainId !== undefined ? { chainId: serialize(EthereumQuantity, transaction.chainId) } : {},
-			}
-		case '2930':
-			return {
-				type: '0x1',
-				from: serialize(EthereumAddress, transaction.from),
-				nonce: serialize(EthereumQuantity, transaction.nonce),
-				gasPrice: serialize(EthereumQuantity, transaction.gasPrice),
-				gas: serialize(EthereumQuantity, transaction.gasLimit),
-				to: transaction.to !== null ? serialize(EthereumAddress, transaction.to) : null,
-				value: serialize(EthereumQuantity, transaction.value),
-				data: serialize(EthereumData, transaction.input),
-				chainId: serialize(EthereumQuantity, transaction.chainId),
-				accessList: serialize(EthereumAccessList, transaction.accessList),
-			}
-		case '1559':
-			return {
-				type: '0x2',
-				from: serialize(EthereumAddress, transaction.from),
-				nonce: serialize(EthereumQuantity, transaction.nonce),
-				maxFeePerGas: serialize(EthereumQuantity, transaction.maxFeePerGas),
-				maxPriorityFeePerGas: serialize(EthereumQuantity, transaction.maxPriorityFeePerGas),
-				gas: serialize(EthereumQuantity, transaction.gasLimit),
-				to: transaction.to !== null ? serialize(EthereumAddress, transaction.to) : null,
-				value: serialize(EthereumQuantity, transaction.value),
-				data: serialize(EthereumData, transaction.input),
-				chainId: serialize(EthereumQuantity, transaction.chainId),
-				accessList: serialize(EthereumAccessList, transaction.accessList),
-			}
-		default: assertNever(transaction)
-	}
-}
 
 export function serialize<T, U extends funtypes.Codec<T>>(funtype: U, value: T) {
 	return funtype.serialize(value) as ToWireType<U>
@@ -645,23 +599,23 @@ export const JsonRpcMessage = funtypes.Union(JsonRpcResponse, JsonRpcNotificatio
 export type TransactionByHashParams = funtypes.Static<typeof TransactionByHashParams>
 export const TransactionByHashParams = funtypes.ReadonlyObject({
 	method: funtypes.Literal('eth_getTransactionByHash'),
-	params: funtypes.Tuple(EthereumBytes32)
+	params: funtypes.ReadonlyTuple(EthereumBytes32)
 })
 
 export type SendTransactionParams = funtypes.Static<typeof SendTransactionParams>
 export const SendTransactionParams = funtypes.ReadonlyObject({
 	method: funtypes.Literal('eth_sendTransaction'),
-	params: funtypes.Tuple(DappRequestTransaction)
+	params: funtypes.ReadonlyTuple(DappRequestTransaction)
 })
 
 export type SendRawTransaction = funtypes.Static<typeof SendRawTransaction>
 export const SendRawTransaction = funtypes.ReadonlyObject({
 	method: funtypes.Literal('eth_sendRawTransaction'),
-	params: funtypes.Tuple(EthereumData),
-}).asReadonly()
+	params: funtypes.ReadonlyTuple(EthereumData),
+})
 
 export type EthereumAccountsReply = funtypes.Static<typeof EthereumAccountsReply>
-export const EthereumAccountsReply = funtypes.ReadonlyArray(EthereumAddress)
+export const EthereumAccountsReply = funtypes.ReadonlyTuple(funtypes.ReadonlyArray(EthereumAddress), funtypes.Boolean)
 
 export type EthereumChainReply = funtypes.Static<typeof EthereumChainReply>
 export const EthereumChainReply = funtypes.ReadonlyArray(EthereumQuantity)
@@ -669,19 +623,19 @@ export const EthereumChainReply = funtypes.ReadonlyArray(EthereumQuantity)
 export type TransactionReceiptParams = funtypes.Static<typeof TransactionReceiptParams>
 export const TransactionReceiptParams = funtypes.ReadonlyObject({
 	method: funtypes.Literal('eth_getTransactionReceipt'),
-	params: funtypes.Tuple(EthereumBytes32)
+	params: funtypes.ReadonlyTuple(EthereumBytes32)
 })
 
 export type EstimateGasParams = funtypes.Static<typeof EstimateGasParams>
 export const EstimateGasParams = funtypes.ReadonlyObject({
 	method: funtypes.Literal('eth_estimateGas'),
-	params: funtypes.Union(funtypes.Tuple(DappRequestTransaction), funtypes.Tuple(DappRequestTransaction, EthereumBlockTag))
+	params: funtypes.Union(funtypes.ReadonlyTuple(DappRequestTransaction), funtypes.ReadonlyTuple(DappRequestTransaction, EthereumBlockTag))
 })
 
 export type EthCallParams = funtypes.Static<typeof EthCallParams>
 export const EthCallParams = funtypes.ReadonlyObject({
 	method: funtypes.Literal('eth_call'),
-	params: funtypes.Tuple(
+	params: funtypes.ReadonlyTuple(
 		DappRequestTransaction,
 		EthereumBlockTag
 	)
@@ -690,37 +644,37 @@ export const EthCallParams = funtypes.ReadonlyObject({
 export type EthGetLogsParams = funtypes.Static<typeof EthGetLogsParams>
 export const EthGetLogsParams = funtypes.ReadonlyObject({
 	method: funtypes.Literal('eth_getLogs'),
-	params: funtypes.Tuple(EthGetLogsRequest)
+	params: funtypes.ReadonlyTuple(EthGetLogsRequest)
 }).asReadonly()
 
 export type EthBalanceParams = funtypes.Static<typeof EthBalanceParams>
 export const EthBalanceParams = funtypes.ReadonlyObject({
 	method: funtypes.Literal('eth_getBalance'),
-	params: funtypes.Tuple(EthereumAddress, EthereumBlockTag)
+	params: funtypes.ReadonlyTuple(EthereumAddress, EthereumBlockTag)
 })
 
 export type EthBlockByNumberParams = funtypes.Static<typeof EthBlockByNumberParams>
 export const EthBlockByNumberParams = funtypes.ReadonlyObject({
 	method: funtypes.Literal('eth_getBlockByNumber'),
-	params: funtypes.Tuple(EthereumBlockTag, funtypes.Boolean)
+	params: funtypes.ReadonlyTuple(EthereumBlockTag, funtypes.Boolean)
 })
 
 export type EthSubscribeParams = funtypes.Static<typeof EthSubscribeParams>
 export const EthSubscribeParams = funtypes.ReadonlyObject({
 	method: funtypes.Literal('eth_subscribe'),
-	params: funtypes.Tuple(funtypes.Union(funtypes.Literal('newHeads'), funtypes.Literal('logs'), funtypes.Literal('newPendingTransactions'), funtypes.Literal('syncing')))
+	params: funtypes.ReadonlyTuple(funtypes.Union(funtypes.Literal('newHeads'), funtypes.Literal('logs'), funtypes.Literal('newPendingTransactions'), funtypes.Literal('syncing')))
 })
 
 export type EthUnSubscribeParams = funtypes.Static<typeof EthUnSubscribeParams>
 export const EthUnSubscribeParams = funtypes.ReadonlyObject({
 	method: funtypes.Literal('eth_unsubscribe'),
-	params: funtypes.Tuple(funtypes.String)
+	params: funtypes.ReadonlyTuple(funtypes.String)
 })
 
 export type EthGetStorageAtParams = funtypes.Static<typeof EthGetStorageAtParams>
 export const EthGetStorageAtParams = funtypes.ReadonlyObject({
 	method: funtypes.Literal('eth_getStorageAt'),
-	params: funtypes.Tuple(EthereumAddress, EthereumQuantity, EthereumBlockTag)
+	params: funtypes.ReadonlyTuple(EthereumAddress, EthereumQuantity, EthereumBlockTag)
 })
 
 export const EthSubscriptionResponse = funtypes.String
@@ -730,8 +684,8 @@ export type PersonalSignParams = funtypes.Static<typeof PersonalSignParams>
 export const PersonalSignParams = funtypes.ReadonlyObject({
 	method: funtypes.Literal('personal_sign'),
 	params: funtypes.Union(
-		funtypes.Tuple(funtypes.String, EthereumAddress, funtypes.Union(funtypes.String, funtypes.Undefined, funtypes.Null)), // message, account, password
-		funtypes.Tuple(funtypes.String, EthereumAddress) // message, account
+		funtypes.ReadonlyTuple(funtypes.String, EthereumAddress, funtypes.Union(funtypes.String, funtypes.Undefined, funtypes.Null)), // message, account, password
+		funtypes.ReadonlyTuple(funtypes.String, EthereumAddress) // message, account
 	)
 })
 
@@ -792,7 +746,7 @@ export const EIP712Message = funtypes.String.withParser(EIP712MessageParser)
 export type OldSignTypedDataParams = funtypes.Static<typeof OldSignTypedDataParams>
 export const OldSignTypedDataParams = funtypes.ReadonlyObject({
 	method: funtypes.Literal('eth_signTypedData'),
-	params: funtypes.Tuple(funtypes.ReadonlyArray(
+	params: funtypes.ReadonlyTuple(funtypes.ReadonlyArray(
 		funtypes.ReadonlyObject({
 			name: funtypes.String,
 			type: funtypes.String,
@@ -808,38 +762,36 @@ export const SignTypedDataParams = funtypes.ReadonlyObject({
 		funtypes.Literal('eth_signTypedData_v3'),
 		funtypes.Literal('eth_signTypedData_v4'),
 	),
-	params: funtypes.Tuple(EthereumAddress, EIP712Message), // address that will sign the message, typed data
+	params: funtypes.ReadonlyTuple(EthereumAddress, EIP712Message), // address that will sign the message, typed data
 })
 export type SwitchEthereumChainParams = funtypes.Static<typeof SwitchEthereumChainParams>
 export const SwitchEthereumChainParams = funtypes.ReadonlyObject({
 	method: funtypes.Literal('wallet_switchEthereumChain'),
-	params: funtypes.Tuple(funtypes.ReadonlyObject({
-		chainId: EthereumQuantity
-	}).asReadonly()),
+	params: funtypes.Tuple(funtypes.ReadonlyObject({ chainId: EthereumQuantity }).asReadonly()),
 }).asReadonly()
 
 export type GetCode = funtypes.Static<typeof GetCode>
 export const GetCode = funtypes.ReadonlyObject({
 	method: funtypes.Literal('eth_getCode'),
-	params: funtypes.Tuple(EthereumAddress, EthereumBlockTag)
+	params: funtypes.ReadonlyTuple(EthereumAddress, EthereumBlockTag)
 }).asReadonly()
 
 export type RequestPermissions = funtypes.Static<typeof RequestPermissions>
 export const RequestPermissions = funtypes.ReadonlyObject({
 	method: funtypes.Literal('wallet_requestPermissions'),
-	params: funtypes.Tuple( funtypes.ReadonlyObject({ eth_accounts: funtypes.ReadonlyObject({ }) }) )
+	params: funtypes.ReadonlyTuple( funtypes.ReadonlyObject({ eth_accounts: funtypes.ReadonlyObject({ }) }) )
 }).asReadonly()
 
 export type GetTransactionCount = funtypes.Static<typeof GetTransactionCount>
 export const GetTransactionCount = funtypes.ReadonlyObject({
 	method: funtypes.Literal('eth_getTransactionCount'),
-	params: funtypes.Tuple(EthereumAddress, EthereumBlockTag)
+	params: funtypes.ReadonlyTuple(EthereumAddress, EthereumBlockTag)
 }).asReadonly()
 
 export type EthSign = funtypes.Static<typeof EthSign>
 export const EthSign = funtypes.ReadonlyObject({
 	method: funtypes.Literal('eth_sign'),
-	params: funtypes.Tuple(EthereumAddress, funtypes.String),
+	params: funtypes.ReadonlyTuple(EthereumAddress, funtypes.String),
 }).asReadonly()
 
 export type GetSimulationStackReply = funtypes.Static<typeof GetSimulationStackReply>
@@ -855,7 +807,7 @@ export const GetSimulationStackReply = funtypes.ReadonlyArray(funtypes.Intersect
 export type GetSimulationStack = funtypes.Static<typeof GetSimulationStack>
 export const GetSimulationStack = funtypes.ReadonlyObject({
 	method: funtypes.Literal('interceptor_getSimulationStack'),
-	params: funtypes.Tuple(funtypes.Literal('1.0.0')),
+	params: funtypes.ReadonlyTuple(funtypes.Literal('1.0.0')),
 }).asReadonly()
 
 export type EthereumJsonRpcRequest = funtypes.Static<typeof EthereumJsonRpcRequest>

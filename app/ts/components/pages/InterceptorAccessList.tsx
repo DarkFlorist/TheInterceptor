@@ -158,7 +158,7 @@ export function InterceptorAccessList(param: InterceptorAccessListParams) {
 				access: addr.access,
 			})),
 		}))
-		sendPopupMessageToBackgroundPage({ method: 'popup_changeInterceptorAccess', options: newEntries })
+		sendPopupMessageToBackgroundPage({ method: 'popup_changeInterceptorAccess', data: newEntries })
 		updateEditableAccessList(newEntries)
 		param.setWebsiteAccess(newEntries)
 		return goHome()

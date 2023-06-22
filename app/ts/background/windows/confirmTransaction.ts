@@ -1,14 +1,14 @@
 import { PopupOrTab, addWindowTabListener, closePopupOrTab, getPopupOrTabOnlyById, openPopupOrTab, removeWindowTabListener } from '../../components/ui-utils.js'
 import { EthereumClientService } from '../../simulation/services/EthereumClientService.js'
 import { appendTransaction } from '../../simulation/services/SimulationModeEthereumClientService.js'
-import { bytes32String } from '../../utils/bigint.js'
 import { ERROR_INTERCEPTOR_NO_ACTIVE_ADDRESS, METAMASK_ERROR_NOT_CONNECTED_TO_CHAIN, METAMASK_ERROR_USER_REJECTED_REQUEST } from '../../utils/constants.js'
 import { Future } from '../../utils/future.js'
 import { ConfirmTransactionTransactionSingleVisualization, ExternalPopupMessage, InterceptedRequest, PendingTransaction, TransactionConfirmation } from '../../utils/interceptor-messages.js'
 import { Semaphore } from '../../utils/semaphore.js'
 import { WebsiteSocket, WebsiteTabConnections } from '../../utils/user-interface-types.js'
 import { EstimateGasError, WebsiteCreatedEthereumUnsignedTransaction } from '../../utils/visualizer-types.js'
-import { refreshConfirmTransactionSimulation, sendMessageToContentScript, updateSimulationState } from '../background.js'
+import { SendRawTransaction, SendTransactionParams } from '../../utils/wire-types.js'
+import { postMessageIfStillConnected, refreshConfirmTransactionSimulation, updateSimulationState } from '../background.js'
 import { getHtmlFile, sendPopupMessageToOpenWindows } from '../backgroundUtils.js'
 import { appendPendingTransaction, clearPendingTransactions, getPendingTransactions, getSimulationResults, removePendingTransaction } from '../storageVariables.js'
 
@@ -30,17 +30,21 @@ async function updateConfirmTransactionViewWithPendingTransactionOrClose() {
 }
 
 export async function resolvePendingTransaction(ethereumClientService: EthereumClientService, websiteTabConnections: WebsiteTabConnections, confirmation: TransactionConfirmation) {
-	const pending = pendingTransactions.get(confirmation.options.requestId)
-	const pendingTransaction = await removePendingTransaction(confirmation.options.requestId)
+	const pending = pendingTransactions.get(confirmation.data.requestId)
+	const pendingTransaction = await removePendingTransaction(confirmation.data.requestId)
 	if (pendingTransaction === undefined) return
 	await updateConfirmTransactionViewWithPendingTransactionOrClose()
 	if (pending) {
-		return pending.resolve(confirmation.options.accept === true ? 'Approved' : 'Rejected')
+		return pending.resolve(confirmation.data.accept === true ? 'Approved' : 'Rejected')
 	} else {
 		// we have not been tracking this window, forward its message directly to content script (or signer)
-		const resolvedPromise = await resolve(ethereumClientService, pendingTransaction.simulationMode, pendingTransaction.activeAddress, pendingTransaction.transactionToSimulate, confirmation.options.accept)
-		sendMessageToContentScript(websiteTabConnections, pendingTransaction.socket, resolvedPromise, pendingTransaction.request)
-		openedDialog = await getPopupOrTabOnlyById(confirmation.options.windowId)
+		const resolvedPromise = await resolve(ethereumClientService, pendingTransaction.simulationMode, pendingTransaction.activeAddress, pendingTransaction.transactionToSimulate, confirmation.data.accept)
+		if (pendingTransaction.transactionParams.method === 'eth_sendRawTransaction') { // nore sure how to get rid of this silly if
+			postMessageIfStillConnected(websiteTabConnections, pendingTransaction.socket, { method: pendingTransaction.transactionParams.method, ...resolvedPromise, requestId: confirmation.data.requestId })
+		} else {
+			postMessageIfStillConnected(websiteTabConnections, pendingTransaction.socket, { method: pendingTransaction.transactionParams.method, ...resolvedPromise, requestId: confirmation.data.requestId })
+		}
+		openedDialog = await getPopupOrTabOnlyById(confirmation.data.windowId)
 	}
 }
 const onCloseWindow = async (windowId: number) => { // check if user has closed the window on their own, if so, reject all signatures
@@ -62,6 +66,7 @@ export async function openConfirmTransactionDialog(
 	ethereumClientService: EthereumClientService,
 	socket: WebsiteSocket,
 	request: InterceptedRequest,
+	transactionParams: SendTransactionParams | SendRawTransaction,
 	simulationMode: boolean,
 	transactionToSimulatePromise: () => Promise<WebsiteCreatedEthereumUnsignedTransaction | undefined | EstimateGasError>,
 	activeAddress: bigint | undefined,
@@ -101,6 +106,7 @@ export async function openConfirmTransactionDialog(
 				appendPromise.resolve(await appendPendingTransaction({
 					dialogId: WindowId,
 					socket: socket,
+					transactionParams: transactionParams,
 					request: request,
 					transactionToSimulate: transactionToSimulate,
 					simulationMode: simulationMode,
@@ -136,9 +142,9 @@ export async function openConfirmTransactionDialog(
 	}
 }
 
-async function resolve(ethereumClientService: EthereumClientService, simulationMode: boolean, activeAddress: bigint, transactionToSimulate: WebsiteCreatedEthereumUnsignedTransaction, accept: boolean) {
+async function resolve(ethereumClientService: EthereumClientService, simulationMode: boolean, activeAddress: bigint, transactionToSimulate: WebsiteCreatedEthereumUnsignedTransaction, accept: boolean): Promise<{ forward: true } | { error: { code: number, message: string } } | { result: bigint }> {
 	if (accept === false) return rejectMessage
-	if (!simulationMode) return { forward: true } as const
+	if (!simulationMode) return { forward: true }
 	const newState = await updateSimulationState(async () => {
 		const simulationState = (await getSimulationResults()).simulationState
 		if (simulationState === undefined) return undefined
@@ -147,5 +153,5 @@ async function resolve(ethereumClientService: EthereumClientService, simulationM
 	if (newState === undefined || newState.simulatedTransactions === undefined || newState.simulatedTransactions.length === 0) {
 		return METAMASK_ERROR_NOT_CONNECTED_TO_CHAIN
 	}
-	return { result: bytes32String(newState.simulatedTransactions[newState.simulatedTransactions.length - 1].signedTransaction.hash) }
+	return { result: newState.simulatedTransactions[newState.simulatedTransactions.length - 1].signedTransaction.hash }
 }
