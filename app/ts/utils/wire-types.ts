@@ -492,22 +492,17 @@ export type ToWireType<T> =
 
 
 export type DappRequestTransaction = funtypes.Static<typeof DappRequestTransaction>
-export const DappRequestTransaction = funtypes.Intersect(
-	funtypes.ReadonlyPartial({
-		from: EthereumAddress,
-		gas: EthereumQuantity,
-		value: EthereumQuantity,
-		to: funtypes.Union(EthereumAddress, funtypes.Null),
-		gasPrice: EthereumQuantity,
-		maxPriorityFeePerGas: funtypes.Union(EthereumQuantity, funtypes.Null), // etherscan sets this field to null, remove this if etherscan fixes this
-		maxFeePerGas: funtypes.Union(EthereumQuantity, funtypes.Null), // etherscan sets this field to null, remove this if etherscan fixes this
-	}),
-	funtypes.Union(
-		funtypes.ReadonlyObject({ data: EthereumData }),
-		funtypes.ReadonlyObject({ input: EthereumData }),
-		funtypes.ReadonlyObject({})
-	)
-)
+export const DappRequestTransaction = funtypes.ReadonlyPartial({
+	from: EthereumAddress,
+	gas: EthereumQuantity,
+	value: EthereumQuantity,
+	to: funtypes.Union(EthereumAddress, funtypes.Null),
+	gasPrice: EthereumQuantity,
+	maxPriorityFeePerGas: funtypes.Union(EthereumQuantity, funtypes.Null), // etherscan sets this field to null, remove this if etherscan fixes this
+	maxFeePerGas: funtypes.Union(EthereumQuantity, funtypes.Null), // etherscan sets this field to null, remove this if etherscan fixes this
+	data: EthereumData,
+	input: EthereumData,
+}).withConstraint((dappRequestTransaction) => 'input' in dappRequestTransaction && 'data' in dappRequestTransaction ? dappRequestTransaction.input === dappRequestTransaction.data : true)
 
 export type EthereumBlockHeaderWithTransactionHashes = funtypes.Static<typeof EthereumBlockHeaderWithTransactionHashes>
 export const EthereumBlockHeaderWithTransactionHashes = funtypes.ReadonlyObject({
