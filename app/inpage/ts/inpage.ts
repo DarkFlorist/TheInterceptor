@@ -148,6 +148,8 @@ class InterceptorMessageListener {
 	private readonly onDisconnectCallBacks: Set<((error: ProviderRpcError) => void)> = new Set()
 	private readonly onChainChangedCallBacks: Set<((chainId: string) => void)> = new Set()
 
+	private waitForAccountsFromWallet: InterceptorFuture<boolean> | undefined = undefined
+
 	public constructor() {
 		this.injectEthereumIntoWindow()
 	}
@@ -175,8 +177,9 @@ class InterceptorMessageListener {
 		}
 	}
 
-	// sends messag to The Interceptor background page
+	// sends a message to interceptors background script
 	private readonly WindowEthereumRequest = async (methodAndParams: { readonly method: string, readonly params?: readonly unknown[] }) => {
+		if (this.waitForAccountsFromWallet !== undefined) await this.waitForAccountsFromWallet // wait for wallet to return to us before continuing with other requests
 		try {
 			// make a message that the background script will catch and reply us. We'll wait until the background script replies to us and return only after that
 			return await this.sendMessageToBackgroundPage({ method: methodAndParams.method, params: methodAndParams.params })
@@ -268,9 +271,12 @@ class InterceptorMessageListener {
 	private readonly requestAccountsFromSigner = async (ask_eth_requestAccounts: boolean) => {
 		if (this.signerWindowEthereumRequest === undefined) return
 		const reply = await this.signerWindowEthereumRequest({ method: ask_eth_requestAccounts ? 'eth_requestAccounts' : 'eth_accounts', params: [] })
-
 		if (!Array.isArray(reply)) return
-		return await this.sendMessageToBackgroundPage({ method: 'eth_accounts_reply', params: [reply, ask_eth_requestAccounts]  })
+		await this.sendMessageToBackgroundPage({ method: 'eth_accounts_reply', params: [reply, ask_eth_requestAccounts] })
+		if (this.waitForAccountsFromWallet !== undefined) {
+			this.waitForAccountsFromWallet.resolve(true)
+			this.waitForAccountsFromWallet = undefined
+		}
 	}
 
 	private readonly requestChainIdFromSigner = async () => {
@@ -387,8 +393,15 @@ class InterceptorMessageListener {
 		}
 	}
 
-	private readonly sendConnectedMessage = async (signerName: 'NoSigner' | 'NotRecognizedSigner' | 'MetaMask' | 'Brave') => {
-		return await this.sendMessageToBackgroundPage({ method: 'connected_to_signer', params: [signerName] })
+	private readonly connectToSigner = async (signerName: 'NoSigner' | 'NotRecognizedSigner' | 'MetaMask' | 'Brave') => {
+		if (signerName !== 'NoSigner') {
+			this.waitForAccountsFromWallet = new InterceptorFuture()
+			await this.sendMessageToBackgroundPage({ method: 'connected_to_signer', params: [signerName] })
+			await this.requestChainIdFromSigner()
+			await this.requestAccountsFromSigner(false)
+		} else {
+			await this.sendMessageToBackgroundPage({ method: 'connected_to_signer', params: [signerName] })
+		}
 	}
 
 	private readonly unsupportedMethods = (windowEthereum: WindowEthereum & UnsupportedWindowEthereumMethods | undefined) => {
@@ -423,7 +436,7 @@ class InterceptorMessageListener {
 				...this.unsupportedMethods(window.ethereum),
 			}
 			this.connected = true
-			this.sendConnectedMessage('NoSigner')
+			this.connectToSigner('NoSigner')
 			return
 		}
 
@@ -455,7 +468,7 @@ class InterceptorMessageListener {
 				enable: this.WindowEthereumEnable.bind(window.ethereum),
 				...this.unsupportedMethods(window.ethereum),
 			}
-			this.sendConnectedMessage('Brave')
+			this.connectToSigner('Brave')
 			return
 		}
 		// we cannot inject window.ethereum alone here as it seems like window.ethereum is cached (maybe ethers.js does that?)
@@ -469,7 +482,7 @@ class InterceptorMessageListener {
 			enable: this.WindowEthereumEnable.bind(window.ethereum),
 			...this.unsupportedMethods(window.ethereum),
 		})
-		this.sendConnectedMessage(window.ethereum.isMetaMask ? 'MetaMask' : 'NotRecognizedSigner')
+		this.connectToSigner(window.ethereum.isMetaMask ? 'MetaMask' : 'NotRecognizedSigner')
 	}
 }
 
