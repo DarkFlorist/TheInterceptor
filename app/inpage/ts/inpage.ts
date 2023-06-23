@@ -129,7 +129,7 @@ type WindowEthereum = InjectFunctions & {
 	isMetaMask?: boolean,
 }
 interface Window {
-	dispatchEvent: any,
+	dispatchEvent: (event: Event) => boolean
 	ethereum?: WindowEthereum
 }
 
@@ -168,7 +168,7 @@ class InterceptorMessageListener {
 				requestId: pendingRequestId,
 			}, '*')
 			return await future
-		} catch (error) {
+		} catch (error: unknown) {
 			throw error
 		} finally {
 			this.outstandingRequests.delete(pendingRequestId)
@@ -180,13 +180,14 @@ class InterceptorMessageListener {
 		try {
 			// make a message that the background script will catch and reply us. We'll wait until the background script replies to us and return only after that
 			return await this.sendMessageToBackgroundPage({ method: methodAndParams.method, params: methodAndParams.params })
-		} catch (error) {
+		} catch (error: unknown) {
 			// if it is an Error, add context to it if context doesn't already exist
 			if (error instanceof Error) {
-				if (!('code' in error)) (error as any).code = -32603
-				if (!('data' in error) || (error as any).data === undefined || (error as any).data === null) (error as any).data = { request: methodAndParams }
-				else if (!('request' in (error as any).data)) (error as any).data.request = methodAndParams
-				throw error
+				throw {
+					...error,
+					code: ('code' in error && typeof error.code !== 'number') ? error.code : -32603,
+					data: !('data' in error) || error.data === undefined || error.data === null || typeof error.data !== 'object' ? { request: methodAndParams } : { ...error.data, request: methodAndParams }
+				}
 			}
 			// if someone threw something besides an Error, wrap it up in an error
 			throw new EthereumJsonRpcError(-32603, `Unexpected thrown value.`, { error: error, request: methodAndParams })
@@ -294,7 +295,7 @@ class InterceptorMessageListener {
 			const reply = await this.signerWindowEthereumRequest({ method: 'wallet_switchEthereumChain', params: [ { 'chainId': chainId } ] })
 			if (reply !== null) return
 			await this.sendMessageToBackgroundPage({ method: 'wallet_switchEthereumChain_reply', params: [ { accept: true, chainId: chainId } ] })
-		} catch (error) {
+		} catch (error: unknown) {
 			if (InterceptorMessageListener.checkErrorForCode(error) && ( error.code === METAMASK_ERROR_USER_REJECTED_REQUEST || error.code === METAMASK_ERROR_CHAIN_NOT_ADDED_TO_METAMASK)) {
 				await this.sendMessageToBackgroundPage({ method: 'wallet_switchEthereumChain_reply', params: [ { accept: false, chainId: chainId } ] })
 			}
@@ -362,19 +363,24 @@ class InterceptorMessageListener {
 			if (this.signerWindowEthereumRequest == undefined) throw 'Interceptor is in wallet mode and should not forward to an external wallet'
 			const reply = await this.signerWindowEthereumRequest(forwardRequest)
 			if (forwardRequest.requestId !== undefined) this.outstandingRequests.get(forwardRequest.requestId)!.resolve(reply)
-		} catch (error) {
+		} catch (error: unknown) {
 			// if it is an Error, add context to it if context doesn't already exist
 			console.log(error)
 			console.log(messageEvent)
 			if (forwardRequest.requestId === undefined) return
 			if (error instanceof Error) {
-				if (!('code' in error)) (error as any).code = -32603
-				if (!('data' in error) || (error as any).data === undefined || (error as any).data === null) (error as any).data = { request: forwardRequest }
-				else if (!('request' in (error as any).data)) (error as any).data.request = forwardRequest
-				return this.outstandingRequests.get(forwardRequest.requestId)!.reject(error)
+				const inputedErrorObject = {
+					...error,
+					code: ('code' in error && typeof error.code !== 'number') ? error.code : -32603,
+					data: !('data' in error) || error.data === undefined || error.data === null || typeof error.data !== 'object' ? { request: forwardRequest } : { ...error.data, request: forwardRequest }
+				}
+				return this.outstandingRequests.get(forwardRequest.requestId)!.reject(inputedErrorObject)
 			}
-			if ((error as any).code !== undefined && (error as any).message !== undefined) {
-				return this.outstandingRequests.get(forwardRequest.requestId)!.reject(new EthereumJsonRpcError((error as any).code, (error as any).message, { request: forwardRequest }))
+			if (typeof error === 'object' && error !== null
+				&& 'code' in error && error.code !== undefined && typeof error.code === 'number'
+				&& 'message' in error && error.message !== undefined && typeof error.message === 'string'
+			) {
+				return this.outstandingRequests.get(forwardRequest.requestId)!.reject(new EthereumJsonRpcError(error.code, error.message, { request: forwardRequest }))
 			}
 			// if the signer we are connected threw something besides an Error, wrap it up in an error
 			this.outstandingRequests.get(forwardRequest.requestId)!.reject(new EthereumJsonRpcError(-32603, `Unexpected thrown value.`, { error: error, request: forwardRequest }))
@@ -473,12 +479,13 @@ function injectInterceptor() {
 
 	// listen if Metamask injects their payload, and if so, reinject Interceptor
 	const interceptorCapturedDispatcher = window.dispatchEvent
-	window.dispatchEvent = (event: unknown) => {
+	window.dispatchEvent = (event: Event) => {
 		interceptorCapturedDispatcher(event)
-		if ( !(typeof event === 'object' && event !== null && 'type' in event && typeof event.type === 'string')) return
-		if (event.type !== 'ethereum#initialized') return
+		if (!(typeof event === 'object' && event !== null && 'type' in event && typeof event.type === 'string')) return true
+		if (event.type !== 'ethereum#initialized') return true
 		interceptorMessageListener.injectEthereumIntoWindow()
 		window.dispatchEvent = interceptorCapturedDispatcher
+		return true
 	}
 }
 
