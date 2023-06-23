@@ -350,7 +350,7 @@ export async function changeActiveAddressAndChainAndResetSimulation(
 				return await setPrependTransactionsQueue(ethereumClientService, simulationState, prependQueue)
 			}, updatedSettings.activeSimulationAddress)
 		}
-		// inform website abou this only after we have updated simulation, as they often query the balance right after
+		// inform website about this only after we have updated simulation, as they often query the balance right after
 		sendActiveAccountChangeToApprovedWebsitePorts(websiteTabConnections, updatedSettings)
 	})
 }
@@ -607,10 +607,6 @@ async function startup() {
 
 	await updateExtensionBadge()
 
-	if (!settings.simulationMode || settings.useSignersAddressAsActiveAddress) {
-		sendMessageToApprovedWebsitePorts(websiteTabConnections, { method: 'request_signer_to_eth_accounts', result: [] })
-		sendMessageToApprovedWebsitePorts(websiteTabConnections, { method: 'request_signer_chainId', result: [] })
-	}
 	if (settings.simulationMode) {
 		// update prepend mode as our active address has changed, so we need to be sure the rich modes money is sent to right address
 		const ethereumClientService = simulator.ethereum
