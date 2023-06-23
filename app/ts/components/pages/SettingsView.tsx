@@ -94,6 +94,76 @@ function ImportExport() {
 	</>
 }
 
+
+type InputParams = {
+	input: string
+}
+function TextField({ input }: InputParams) {
+	return <input
+		className = 'input title is-5 is-spaced'
+		type = 'text'
+		value = { input }
+		maxLength = { 42 }
+		disabled = { true }
+	/>
+}
+
+function RPCs() {
+	
+	const RPCs = [
+		{
+			name: 'Ethereum Mainnet',
+			chainId: 1n,
+			https_rpc: 'https://rpc.dark.florist/flipcardtrustone',
+			currencyName: 'Ether',
+			currencyTicker: 'ETH',
+			primary: true,
+		},
+		{
+			name: 'Goerli',
+			chainId: 5n,
+			https_rpc: 'https://rpc-goerli.dark.florist/flipcardtrustone',
+			currencyName: 'Goerli Testnet ETH',
+			currencyTicker: 'GÖETH',
+			primary: true,
+		},
+		{
+			name: 'Sepolia',
+			chainId: 11155111n,
+			https_rpc: 'https://rpc-sepolia.dark.florist/flipcardtrustone',
+			currencyName: 'Sepolia Testnet ETH',
+			currencyTicker: 'SEETH',
+			primary: true,
+		}
+	]
+
+	return <>
+		<p className = 'paragraph'>RPC Connections </p>
+		<ul> { RPCs.map((rpc) => <li>
+			<div class = 'card'>
+				<div class = 'card-content'>
+					<div class = 'paragraph'>Network</div>
+					<TextField input = { rpc.name }/>
+					<div class = 'paragraph'>RPC URL</div>
+					<TextField input = { rpc.https_rpc }/>
+					<div class = 'paragraph'>Chain ID</div>
+					<TextField input = { String(rpc.chainId) }/>
+					<div class = 'paragraph'>Currency Name</div>
+					<TextField input = { rpc.currencyName }/>
+					<div class = 'paragraph'>Currency Ticker</div>
+					<TextField input = { rpc.currencyTicker }/>
+					<CheckBoxSetting
+						text = { `Primary RPC for Chain ID ${ String(rpc.chainId) }` }
+						checked = { rpc.primary }
+						onInput = { () => {} }
+					/>
+				</div>
+			</div>
+		</li>)
+		} </ul>
+	</>
+}
+
 export function SettingsView(param: SettingsParam) {
 	function goHome() {
 		param.setAndSaveAppPage('Home')
@@ -137,6 +207,9 @@ export function SettingsView(param: SettingsParam) {
 					</li>
 					<li>
 						<ImportExport/>
+					</li>
+					<li>
+						<RPCs/>
 					</li>
 				</ul>
 			</section>

@@ -87,6 +87,7 @@ export class EthereumClientService {
 
 	public readonly estimateGas = async (data: DappRequestTransaction) => {
 		const response = await this.requestHandler.jsonRpcRequest({ method: 'eth_estimateGas', params: [data] } )
+		console.log(response)
 		return EthereumQuantity.parse(response)
 	}
 
