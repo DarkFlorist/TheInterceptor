@@ -3,11 +3,10 @@ import { WebsiteSocket } from '../utils/user-interface-types.js'
 import { EthereumQuantity } from '../utils/wire-types.js'
 import { getTabState } from './storageVariables.js'
 
-export async function getActiveAddress(settings: Settings, tabId: number | undefined) {
+export async function getActiveAddress(settings: Settings, tabId: number) {
 	if (settings.simulationMode && !settings.useSignersAddressAsActiveAddress) {
 		return settings.activeSimulationAddress
 	}
-	if (tabId === undefined) return undefined
 	return (await getTabState(tabId)).activeSigningAddress
 }
 

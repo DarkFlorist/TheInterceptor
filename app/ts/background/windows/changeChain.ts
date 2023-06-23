@@ -136,9 +136,9 @@ async function resolve(websiteTabConnections: WebsiteTabConnections, reply: Chai
 			return { result: null }
 		}
 		pendForSignerReply = new Future<SignerChainChangeConfirmation>() // when not in simulation mode, we need to get reply from the signer too
-		await changeActiveChain(websiteTabConnections, reply.data.chainId, simulationMode)
 		const signerReply = await pendForSignerReply
 		if (signerReply.data.accept && signerReply.data.chainId === reply.data.chainId) {
+			await changeActiveChain(websiteTabConnections, reply.data.chainId, simulationMode)
 			return { result: null }
 		}
 	}

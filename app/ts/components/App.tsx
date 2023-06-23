@@ -93,6 +93,7 @@ export function App() {
 		}
 
 		const updateHomePage = ({ data }: UpdateHomePage) => {
+			if (data.tabId !== currentTabId && currentTabId !== undefined) return
 			setIsSettingsLoaded((isSettingsLoaded) => {
 				updateHomePageSettings(data.settings, !isSettingsLoaded)
 				setCurrentTabId(data.tabId)
