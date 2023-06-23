@@ -1,5 +1,6 @@
 import * as funtypes from 'funtypes'
 import { UnionToIntersection } from './typescript.js'
+import { areEqual } from './typed-arrays.js'
 
 const BigIntParser: funtypes.ParsedValue<funtypes.String, bigint>['config'] = {
 	parse: value => {
@@ -492,22 +493,28 @@ export type ToWireType<T> =
 
 
 export type DappRequestTransaction = funtypes.Static<typeof DappRequestTransaction>
-export const DappRequestTransaction = funtypes.Intersect(
-	funtypes.ReadonlyPartial({
-		from: EthereumAddress,
-		gas: EthereumQuantity,
-		value: EthereumQuantity,
-		to: funtypes.Union(EthereumAddress, funtypes.Null),
-		gasPrice: EthereumQuantity,
-		maxPriorityFeePerGas: funtypes.Union(EthereumQuantity, funtypes.Null), // etherscan sets this field to null, remove this if etherscan fixes this
-		maxFeePerGas: funtypes.Union(EthereumQuantity, funtypes.Null), // etherscan sets this field to null, remove this if etherscan fixes this
-	}),
-	funtypes.Union(
-		funtypes.ReadonlyObject({ data: EthereumData }),
-		funtypes.ReadonlyObject({ input: EthereumData }),
-		funtypes.ReadonlyObject({})
-	)
-)
+export const DappRequestTransaction = funtypes.ReadonlyPartial({
+	from: EthereumAddress,
+	gas: EthereumQuantity,
+	value: EthereumQuantity,
+	to: funtypes.Union(EthereumAddress, funtypes.Null),
+	gasPrice: EthereumQuantity,
+	maxPriorityFeePerGas: funtypes.Union(EthereumQuantity, funtypes.Null), // etherscan sets this field to null, remove this if etherscan fixes this
+	maxFeePerGas: funtypes.Union(EthereumQuantity, funtypes.Null), // etherscan sets this field to null, remove this if etherscan fixes this
+	data: EthereumData,
+	input: EthereumData,
+}).withConstraint((dappRequestTransaction) => dappRequestTransaction.input !== undefined && dappRequestTransaction.data !== undefined ? areEqual(dappRequestTransaction.input, dappRequestTransaction.data) : true)
+.withConstraint((x) => {
+	if (x.gasPrice !== undefined) {
+		return x.maxPriorityFeePerGas === undefined && x.maxFeePerGas === undefined
+	} else if (x.maxPriorityFeePerGas !== undefined) {
+		return x.maxFeePerGas !== undefined && x.gasPrice === undefined
+	} else if (x.maxFeePerGas !== undefined) {
+		return x.maxPriorityFeePerGas !== undefined && x.gasPrice === undefined
+	} else {
+		return true
+	}
+})
 
 export type EthereumBlockHeaderWithTransactionHashes = funtypes.Static<typeof EthereumBlockHeaderWithTransactionHashes>
 export const EthereumBlockHeaderWithTransactionHashes = funtypes.ReadonlyObject({
