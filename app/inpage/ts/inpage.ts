@@ -189,7 +189,11 @@ class InterceptorMessageListener {
 				throw {
 					...error,
 					code: ('code' in error && typeof error.code !== 'number') ? error.code : -32603,
-					data: !('data' in error) || error.data === undefined || error.data === null || typeof error.data !== 'object' ? { request: methodAndParams } : { ...error.data, request: methodAndParams }
+					data: !('data' in error) || error.data === undefined || error.data === null || typeof error.data !== 'object' ? {
+						request: methodAndParams,
+						...('data' in error) ? { data: error.data } : {}
+					}
+					: { ...error.data, request: methodAndParams }
 				}
 			}
 			// if someone threw something besides an Error, wrap it up in an error
