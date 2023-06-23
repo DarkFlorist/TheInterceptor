@@ -98,7 +98,7 @@ export function ChangeChain() {
 							</p>
 							{ !chainChangeData.isInterceptorSupport && chainChangeData.simulationMode ?
 								<ErrorContainer
-									text = { 'This chain is not supported by The Interceptor. If you want to use this chain anyway. Select Signing mode instead of Simulation mode and attempt to change the chain again. You will then be able to disable The Interceptor and send transactions without protection of The Interceptor.' }
+									text = { 'This chain is not supported by The Interceptor. If you want to use this chain anyway. Select Signing mode instead of Simulation mode and attempt to change the chain again. You will then be able to disable The Interceptor and send transactions without its protection.' }
 								/>
 							: <></> }
 							{ !chainChangeData.isInterceptorSupport && !chainChangeData.simulationMode ?
