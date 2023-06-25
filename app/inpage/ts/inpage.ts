@@ -371,7 +371,10 @@ class InterceptorMessageListener {
 
 		try {
 			if (this.signerWindowEthereumRequest == undefined) throw 'Interceptor is in wallet mode and should not forward to an external wallet'
-			const reply = await this.signerWindowEthereumRequest(forwardRequest)
+			const reply = await this.signerWindowEthereumRequest({
+				method: forwardRequest.method,
+				params: 'params' in forwardRequest ? forwardRequest.params : []
+			})
 			if (forwardRequest.requestId !== undefined) this.outstandingRequests.get(forwardRequest.requestId)!.resolve(reply)
 		} catch (error: unknown) {
 			// if it is an Error, add context to it if context doesn't already exist
