@@ -204,7 +204,7 @@ async function handleRPCRequest(
 	}
 	const getForwardingMessage = (request: SendRawTransaction | SendTransactionParams) => {
 		if (!forwardToSigner) throw new Error('Should not forward to signer')
-		return { forward: true as const, method: request.method }
+		return { forward: true as const, ...request }
 	}
 	const parsedRequest = maybeParsedRequest.value
 
@@ -240,22 +240,16 @@ async function handleRPCRequest(
 		case 'eth_getLogs': return await getLogs(ethereumClientService, simulationState, parsedRequest)
 		case 'eth_sign': return { method: parsedRequest.method, error: { code: 10000, message: 'eth_sign is deprecated' } }
 		case 'eth_sendRawTransaction': {
-			if (forwardToSigner) {
-				if (isSupportedChain(settings.activeChain.toString())) {
-					return sendRawTransaction(ethereumClientService, parsedRequest, socket, request, false, website, activeAddress)
-				}
-				return getForwardingMessage(parsedRequest)
-			}
-			return sendRawTransaction(ethereumClientService, parsedRequest, socket, request, true, website, activeAddress)
+			if (forwardToSigner && !isSupportedChain(settings.activeChain.toString())) return getForwardingMessage(parsedRequest)
+			const message = await sendRawTransaction(ethereumClientService, parsedRequest, socket, request, !forwardToSigner, website, activeAddress)
+			if ('forward' in message) return getForwardingMessage(parsedRequest)
+			return message
 		}
 		case 'eth_sendTransaction': {
-			if (forwardToSigner) {
-				if (isSupportedChain(settings.activeChain.toString())) {
-					return sendTransaction(websiteTabConnections, activeAddress, ethereumClientService, parsedRequest, socket, request, false, website)
-				}
-				return getForwardingMessage(parsedRequest)
-			}
-			return sendTransaction(websiteTabConnections, activeAddress, ethereumClientService, parsedRequest, socket, request, true, website)
+			if (forwardToSigner && !isSupportedChain(settings.activeChain.toString())) return getForwardingMessage(parsedRequest)
+			const message = await sendTransaction(websiteTabConnections, activeAddress, ethereumClientService, parsedRequest, socket, request, !forwardToSigner, website)
+			if ('forward' in message) return getForwardingMessage(parsedRequest)
+			return message
 		}
 		/*
 		Missing methods:
