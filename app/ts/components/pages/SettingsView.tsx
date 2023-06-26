@@ -171,7 +171,7 @@ function RPCs() {
 						<TextField input = { rpc.currencyName }/>
 						<div class = 'paragraph'>Currency Ticker</div>
 						<TextField input = { rpc.currencyTicker }/>
-						<div class = 'paragraph'>`Primary RPC for Chain ID ${ String(rpc.chainId) }`</div>
+						<div class = 'paragraph'>{ `Primary RPC for Chain ID ${ String(rpc.chainId) }` }</div>
 						<CheckBoxSetting
 							text = ''
 							checked = { rpc.primary }
