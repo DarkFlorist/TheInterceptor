@@ -1,8 +1,6 @@
 import { useSignal } from '@preact/signals'
 import { getTokenAmountsWorth } from '../../simulation/priceEstimator.js'
 import { abs, bigintToDecimalString, bigintToRoundedPrettyDecimalString, checksummedAddress } from '../../utils/bigint.js'
-import { CHAINS } from '../../utils/constants.js'
-import { CHAIN } from '../../utils/user-interface-types.js'
 import { ERC721TokenDefinitionParams, TokenDefinitionParams, TokenPriceEstimate } from '../../utils/visualizer-types.js'
 import { CopyToClipboard } from './CopyToClipboard.js'
 import { Blockie } from './PreactBlocky.js'
@@ -13,8 +11,7 @@ type EtherParams = {
 	amount: bigint
 	showSign?: boolean
 	textColor?: string
-	useFullTokenName?: boolean
-	chain: CHAIN
+	etherCurrencyName: string
 	style?: JSX.CSSProperties
 }
 
@@ -53,8 +50,7 @@ export function EtherAmount(param: EtherAmountParams) {
 
 type EtherSymbolParams = {
 	textColor?: string
-	useFullTokenName?: boolean
-	chain: CHAIN
+	etherCurrencyName: string
 	style?: JSX.CSSProperties
 }
 
@@ -71,14 +67,14 @@ export function EtherSymbol(param: EtherSymbolParams) {
 		<div style = 'overflow: initial; height: 28px;'>
 			<img class = 'noselect nopointer vertical-center' style = 'max-height: 25px; max-width: 25px;' src = '../../img/coins/ethereum.png'/>
 		</div>
-		<p class = 'noselect nopointer' style = { style }> { param.useFullTokenName ? CHAINS[param.chain].currencyName : CHAINS[param.chain].currencyTicker } </p>
+		<p class = 'noselect nopointer' style = { style }> { param.etherCurrencyName } </p>
 	</>
 }
 
 type TokenPriceParams = {
-	textColor?: string,
-	amount: bigint,
-	chain: CHAIN,
+	textColor?: string
+	amount: bigint
+	etherCurrencyName: string
 	tokenPriceEstimate: TokenPriceEstimate | undefined
 }
 
@@ -90,8 +86,8 @@ export function TokenPrice(param: TokenPriceParams) {
 		<p style = { `color: ${ color }` }>&nbsp;(</p>
 		<Ether
 			amount = { value }
-			chain = { param.chain }
 			textColor = { color }
+			etherCurrencyName = { param.etherCurrencyName }
 		/>
 		<p style = { `color: ${ color }` }>)</p>
 	</>

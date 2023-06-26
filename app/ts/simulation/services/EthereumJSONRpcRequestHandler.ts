@@ -9,6 +9,7 @@ export class EthereumJSONRpcRequestHandler {
 	constructor(endpoint: string) {
 		this.endpoint = endpoint
     }
+	public readonly getRPCUrl = () => this.endpoint
 
 	public readonly jsonRpcRequest = async (rpcRequest: EthereumJsonRpcRequest) => {
 		const serialized = EthereumJsonRpcRequest.serialize(rpcRequest)

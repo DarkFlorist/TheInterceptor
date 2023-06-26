@@ -1,6 +1,6 @@
 import * as funtypes from 'funtypes'
-import { EthereumAddress, EthereumBytes32, LiteralConverterParserFactory, NonHexBigInt, OldSignTypedDataParams, PersonalSignParams, SignTypedDataParams } from './wire-types.js'
-import { AddressBookEntry, CHAIN, NFTEntry, SignerName, TokenEntry, Website } from './user-interface-types.js'
+import { EthereumAddress, EthereumBytes32, EthereumQuantity, LiteralConverterParserFactory, NonHexBigInt, OldSignTypedDataParams, PersonalSignParams, SignTypedDataParams } from './wire-types.js'
+import { AddressBookEntry, NFTEntry, SignerName, TokenEntry, Website } from './user-interface-types.js'
 import { QUARANTINE_CODE } from '../simulation/protectors/quarantine-codes.js'
 import { EthereumInput } from './wire-types.js'
 import { EnrichedEIP712 } from './eip712Parsing.js'
@@ -356,7 +356,8 @@ export type PersonalSignRequestBase = funtypes.Static<typeof PersonalSignRequest
 export const PersonalSignRequestBase = funtypes.Intersect(
 	funtypes.ReadonlyObject({
 		activeAddress: AddressBookEntry,
-		activeChainId: CHAIN,
+		activeChainId: EthereumQuantity,
+		isInterceptorSupportForChainId: funtypes.Boolean,
 		requestId: funtypes.Number,
 		simulationMode: funtypes.Boolean,
 		signerName: SignerName,

@@ -14,7 +14,6 @@ import { SignerLogoText } from '../subcomponents/signers.js'
 import { CenterToPageTextSpinner } from '../subcomponents/Spinner.js'
 import { SomeTimeAgo } from '../subcomponents/SomeTimeAgo.js'
 import { QuarantineCodes } from '../simulationExplaining/Transactions.js'
-import { isSupportedChain } from '../../utils/constants.js'
 import { PersonalSignRequestData, PersonalSignRequestDataPermit, PersonalSignRequestDataPermit2, PersonalSignRequestDataSafeTx } from '../../utils/personal-message-definitions.js'
 import { OrderComponents, OrderComponentsExtraDetails } from '../simulationExplaining/customExplainers/OpenSeaOrder.js'
 import { Ether } from '../subcomponents/coins.js'
@@ -142,12 +141,11 @@ function SignRequest({ personalSignRequestData, renameAddressCallBack }: SignReq
 		case 'OrderComponents': {
 			return <OrderComponents
 				openSeaOrderMessage = { personalSignRequestData.message }
-				chainId = { isSupportedChain(personalSignRequestData.activeChainId) ? personalSignRequestData.activeChainId : '1' }
+				chainId = { personalSignRequestData.isInterceptorSupportForChainId ? personalSignRequestData.activeChainId : 1n }
 				renameAddressCallBack = { renameAddressCallBack }
 			/>
 		}
 		case 'Permit': {
-			const chainId = personalSignRequestData.message.domain.chainId.toString()
 			return <SimpleTokenApprovalVisualisation
 				approval = { {
 					type: 'Token',
@@ -158,12 +156,11 @@ function SignRequest({ personalSignRequestData, renameAddressCallBack }: SignReq
 					isApproval: true
 				} }
 				transactionGasses = { { gasSpent: 0n, realizedGasPrice: 0n } }
-				chainId = { isSupportedChain(chainId) ? chainId : '1' }
+				chainId = { personalSignRequestData.isInterceptorSupportForChainId ? personalSignRequestData.message.domain.chainId : 1n }
 				renameAddressCallBack = { renameAddressCallBack }
 			/>
 		}
 		case 'Permit2': {
-			const chainId = personalSignRequestData.message.domain.chainId.toString()
 			return <SimpleTokenApprovalVisualisation
 				approval = { {
 					type: 'Token',
@@ -174,7 +171,7 @@ function SignRequest({ personalSignRequestData, renameAddressCallBack }: SignReq
 					isApproval: true
 				} }
 				transactionGasses = { { gasSpent: 0n, realizedGasPrice: 0n } }
-				chainId = { isSupportedChain(chainId) ? chainId : '1' }
+				chainId = { personalSignRequestData.isInterceptorSupportForChainId ? personalSignRequestData.message.domain.chainId : 1n }
 				renameAddressCallBack = { renameAddressCallBack }
 			/>
 		}

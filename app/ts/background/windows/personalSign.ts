@@ -70,7 +70,7 @@ export async function craftPersonalSignPopupMessage(ethereumClientService: Ether
 		requestId,
 		website,
 		signerName,
-		activeChainId: ethereumClientService.getChain(),
+		activeChainId: ethereumClientService.getChainId(),
 		tabIdOpenedFrom,
 	}
 

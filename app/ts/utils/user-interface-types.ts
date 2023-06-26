@@ -3,7 +3,6 @@ import * as funtypes from 'funtypes'
 import { EthereumAddress, EthereumQuantity, LiteralConverterParserFactory } from './wire-types.js'
 import { SimulatedAndVisualizedTransaction, SimulationAndVisualisationResults } from './visualizer-types.js'
 import { IdentifiedSwapWithMetadata } from '../components/simulationExplaining/SwapTransactions.js'
-import { CHAINS } from './constants.js'
 import { IsConnected, Page, TabIconDetails, WebsiteAccessArray } from './interceptor-messages.js'
 
 export type SignerName = funtypes.Static<typeof SignerName>
@@ -27,9 +26,6 @@ export const Website = funtypes.ReadonlyObject({
 	icon: funtypes.Union(funtypes.String, funtypes.Undefined),
 	title: funtypes.Union(funtypes.String, funtypes.Undefined),
 })
-
-export type CHAIN = keyof typeof CHAINS
-export const CHAIN = funtypes.Union(funtypes.Literal('1'), funtypes.Literal('5'), funtypes.Literal('11155111'))
 
 export type AddressInfo = funtypes.Static<typeof AddressInfo>
 export const AddressInfo = funtypes.ReadonlyObject({
@@ -150,6 +146,7 @@ export type HomeParams = {
 	signerName: SignerName,
 	renameAddressCallBack: RenameAddressCallBack,
 	isConnected: IsConnected,
+	interceptorSupportForChainId: boolean,
 }
 
 export type ChangeActiveAddressParam = {

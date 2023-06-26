@@ -6,7 +6,7 @@ import { Website, WebsiteSocket, WebsiteTabConnections } from '../../utils/user-
 import { SwitchEthereumChainParams } from '../../utils/wire-types.js'
 import { changeActiveChain, postMessageIfStillConnected } from '../background.js'
 import { getHtmlFile, sendPopupMessageToOpenWindows } from '../backgroundUtils.js'
-import { getChainChangeConfirmationPromise, setChainChangeConfirmationPromise } from '../storageVariables.js'
+import { getChainChangeConfirmationPromise, getPrimaryRPCForChain, setChainChangeConfirmationPromise } from '../storageVariables.js'
 
 let pendForUserReply: Future<ChainChangeConfirmation> | undefined = undefined
 let pendForSignerReply: Future<SignerChainChangeConfirmation> | undefined = undefined
@@ -78,6 +78,7 @@ export const openChangeChainDialog = async (
 				website: website,
 				simulationMode: simulationMode,
 				tabIdOpenedFrom: socket.tabId,
+				isInterceptorSupport: await getPrimaryRPCForChain(params.params[0].chainId) !== undefined,
 			}
 		})
 	}

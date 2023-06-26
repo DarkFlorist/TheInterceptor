@@ -1,17 +1,18 @@
-import { CHAIN, RenameAddressCallBack } from '../../../utils/user-interface-types.js'
+import { RenameAddressCallBack } from '../../../utils/user-interface-types.js'
 import { OpenSeaOrderMessageWithAddressBookEntries, SeaPortSingleConsiderationWithAddressBookEntries, SeaPortSingleOfferWithAddressBookEntries } from '../../../utils/personal-message-definitions.js'
 import { Token721AmountField, TokenOrEthSymbol, TokenOrEthValue } from '../../subcomponents/coins.js'
 import { SmallAddress } from '../../subcomponents/address.js'
 import { bytes32String } from '../../../utils/bigint.js'
 import { ArrowIcon } from '../../subcomponents/icons.js'
 import { CellElement, humanReadableDate } from '../../ui-utils.js'
+import { EthereumQuantity } from '../../../utils/wire-types.js'
 
 const tokenStyle = { 'font-size': '28px', 'font-weight': '500', 'color:': 'var(--text-color)' }
 
 type VisualizeOpenSeaAssetParams = {
 	orderOrConsideration: SeaPortSingleOfferWithAddressBookEntries | SeaPortSingleConsiderationWithAddressBookEntries
 	renameAddressCallBack: RenameAddressCallBack
-	chainId: CHAIN
+	chainId: EthereumQuantity
 }
 
 function ValueField({ orderOrConsideration }: { orderOrConsideration: SeaPortSingleOfferWithAddressBookEntries | SeaPortSingleConsiderationWithAddressBookEntries }) {
@@ -49,7 +50,7 @@ function SwapGrid(param: VisualizeOpenSeaAssetParams) {
 type VisualizeOpenSeaConsiderationAssetParams = {
 	consideration: SeaPortSingleConsiderationWithAddressBookEntries
 	renameAddressCallBack: RenameAddressCallBack
-	chainId: CHAIN
+	chainId: EthereumQuantity
 }
 
 export function VisualizeOpenSeaAsset(param: VisualizeOpenSeaConsiderationAssetParams) {
@@ -75,7 +76,7 @@ export function VisualizeOpenSeaAsset(param: VisualizeOpenSeaConsiderationAssetP
 type OrderComponentsParams = {
 	openSeaOrderMessage: OpenSeaOrderMessageWithAddressBookEntries
 	renameAddressCallBack: RenameAddressCallBack
-	chainId: CHAIN
+	chainId: EthereumQuantity
 }
 
 export function OrderComponents(param: OrderComponentsParams) {

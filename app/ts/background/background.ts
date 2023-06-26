@@ -2,14 +2,14 @@ import { ConfirmTransactionTransactionSingleVisualization, InpageScriptRequest, 
 import 'webextension-polyfill'
 import { Simulator } from '../simulation/simulator.js'
 import { EthereumJsonRpcRequest, SendRawTransaction, SendTransactionParams } from '../utils/wire-types.js'
-import { clearTabStates, getSignerName, getSimulationResults, removeTabState, setIsConnected, updateSimulationResults, updateTabState } from './storageVariables.js'
+import { clearTabStates, getEthDonator, getPrimaryRPCForChain, getSignerName, getSimulationResults, removeTabState, setIsConnected, updateSimulationResults, updateTabState } from './storageVariables.js'
 import { changeSimulationMode, getSettings, getMakeMeRich } from './settings.js'
 import { blockNumber, call, chainId, estimateGas, gasPrice, getAccounts, getBalance, getBlockByNumber, getCode, getLogs, getPermissions, getSimulationStack, getTransactionByHash, getTransactionCount, getTransactionReceipt, personalSign, sendRawTransaction, sendTransaction, subscribe, switchEthereumChain, unsubscribe } from './simulationModeHanders.js'
 import { changeActiveAddress, changeMakeMeRich, changePage, resetSimulation, confirmDialog, refreshSimulation, removeTransaction, requestAccountsFromSigner, refreshPopupConfirmTransactionSimulation, confirmPersonalSign, confirmRequestAccess, changeInterceptorAccess, changeChainDialog, popupChangeActiveChain, enableSimulationMode, addOrModifyAddressInfo, getAddressBookData, removeAddressBookEntry, openAddressBook, homeOpened, interceptorAccessChangeAddressOrRefresh, refreshPopupConfirmTransactionMetadata, refreshPersonalSignMetadata, changeSettings, importSettings, exportSettings, setNewRPCList } from './popupMessageHandlers.js'
 import { WebsiteCreatedEthereumUnsignedTransaction, SimulationState } from '../utils/visualizer-types.js'
 import { AddressBookEntry, Website, TabConnection, WebsiteSocket, WebsiteTabConnections } from '../utils/user-interface-types.js'
 import { interceptorAccessMetadataRefresh, requestAccessFromUser } from './windows/interceptorAccess.js'
-import { CHAINS, ICON_NOT_ACTIVE, isSupportedChain, MAKE_YOU_RICH_TRANSACTION, METAMASK_ERROR_NOT_CONNECTED_TO_CHAIN, METAMASK_ERROR_USER_REJECTED_REQUEST } from '../utils/constants.js'
+import { ICON_NOT_ACTIVE, MAKE_YOU_RICH_TRANSACTION, METAMASK_ERROR_NOT_CONNECTED_TO_CHAIN, METAMASK_ERROR_USER_REJECTED_REQUEST } from '../utils/constants.js'
 import { PriceEstimator } from '../simulation/priceEstimator.js'
 import { getActiveAddressForDomain, sendActiveAccountChangeToApprovedWebsitePorts, sendMessageToApprovedWebsitePorts, updateWebsiteApprovalAccesses, verifyAccess } from './accessManagement.js'
 import { findAddressInfo, getAddressBookEntriesForVisualiser } from './metadataUtils.js'
@@ -162,14 +162,15 @@ export async function refreshConfirmTransactionSimulation(
 export async function getPrependTrasactions(ethereumClientService: EthereumClientService, settings: Settings, richMode: boolean) {
 	if (!settings.simulationMode || !richMode) return []
 	const activeAddress = settings.activeSimulationAddress
-	const chainId = settings.activeChain.toString()
-	if (!isSupportedChain(chainId)) return []
+	const chainId = settings.activeChain
+	const donatorAddress = getEthDonator(chainId)
+	if (donatorAddress === undefined) return []
 	if (activeAddress === undefined) return []
 	return [{
 		transaction: {
-			from: CHAINS[chainId].eth_donator,
-			chainId: CHAINS[chainId].chainId,
-			nonce: await ethereumClientService.getTransactionCount(CHAINS[chainId].eth_donator),
+			from: donatorAddress,
+			chainId: chainId,
+			nonce: await ethereumClientService.getTransactionCount(donatorAddress),
 			to: activeAddress,
 			...MAKE_YOU_RICH_TRANSACTION.transaction,
 		},
@@ -241,7 +242,7 @@ async function handleRPCRequest(
 		case 'eth_sign': return { method: parsedRequest.method, error: { code: 10000, message: 'eth_sign is deprecated' } }
 		case 'eth_sendRawTransaction': {
 			if (forwardToSigner) {
-				if (isSupportedChain(settings.activeChain.toString())) {
+				if (await getPrimaryRPCForChain(settings.activeChain) !== undefined) {
 					return sendRawTransaction(ethereumClientService, parsedRequest, socket, request, false, website, activeAddress)
 				}
 				return getForwardingMessage(parsedRequest)
@@ -250,7 +251,7 @@ async function handleRPCRequest(
 		}
 		case 'eth_sendTransaction': {
 			if (forwardToSigner) {
-				if (isSupportedChain(settings.activeChain.toString())) {
+				if (await getPrimaryRPCForChain(settings.activeChain) !== undefined) {
 					return sendTransaction(websiteTabConnections, activeAddress, ethereumClientService, parsedRequest, socket, request, false, website)
 				}
 				return getForwardingMessage(parsedRequest)
@@ -303,6 +304,14 @@ async function onErrorBlockCallback(_ethereumClientService: EthereumClientServic
 	throw error
 }
 
+
+export async function resetSimulator(chainID: bigint) {
+	const primaryChain = await getPrimaryRPCForChain(chainID)
+	if (simulator !== undefined) simulator.cleanup()
+	if (primaryChain === undefined) throw new Error(`No primary chain for ${ chainID }`)
+	simulator = new Simulator(chainID, primaryChain.https_rpc, newBlockCallback, onErrorBlockCallback)
+}
+
 const changeActiveAddressAndChainAndResetSimulationSemaphore = new Semaphore(1)
 export async function changeActiveAddressAndChainAndResetSimulation(
 	websiteTabConnections: WebsiteTabConnections,
@@ -330,10 +339,8 @@ export async function changeActiveAddressAndChainAndResetSimulation(
 		updateWebsiteApprovalAccesses(websiteTabConnections, undefined, updatedSettings)
 		sendPopupMessageToOpenWindows({ method: 'popup_settingsUpdated', data: updatedSettings })
 		if (change.activeChain !== undefined) {
-			const chainString = change.activeChain.toString()
-			if (isSupportedChain(chainString)) {
-				simulator.cleanup()
-				simulator = new Simulator(chainString, newBlockCallback, onErrorBlockCallback)
+			if (await getPrimaryRPCForChain(change.activeChain) !== undefined) {
+				await resetSimulator(change.activeChain)
 			}
 			sendMessageToApprovedWebsitePorts(websiteTabConnections, { method: 'chainChanged' as const, result: change.activeChain })
 			sendPopupMessageToOpenWindows({ method: 'popup_chain_update' })
@@ -591,16 +598,16 @@ async function popupMessageHandler(
 		case 'popup_ChangeSettings': return await changeSettings(simulator, parsedRequest)
 		case 'popup_import_settings': return await importSettings(parsedRequest)
 		case 'popup_get_export_settings': return await exportSettings()
-		case 'popup_set_rpc_list': return await setNewRPCList(parsedRequest)
+		case 'popup_set_rpc_list': return await setNewRPCList(parsedRequest, settings, simulator)
 		default: assertUnreachable(parsedRequest)
 	}
 }
 
 async function startup() {
 	const settings = await getSettings()
-	const chainString = settings.activeChain.toString()
-	simulator = new Simulator(isSupportedChain(chainString) ? chainString : '1', newBlockCallback, onErrorBlockCallback)
-
+	const primaryRPC = await getPrimaryRPCForChain(settings.activeChain)
+	await resetSimulator(primaryRPC === undefined ? 1n : settings.activeChain)
+	if (simulator === undefined) throw new Error('simulator not found')
 	browser.runtime.onMessage.addListener(async function (message: unknown) {
 		if (simulator === undefined) throw new Error('Interceptor not ready yet')
 		await popupMessageHandler(websiteTabConnections, simulator, message, await getSettings())

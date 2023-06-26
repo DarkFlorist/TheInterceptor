@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'preact/hooks'
-import { getChainName, isSupportedChain } from '../../utils/constants.js'
+import { getChainName } from '../../utils/constants.js'
 import { Error as ErrorContainer, ErrorCheckBox } from '../subcomponents/Error.js'
 import { ChangeChainRequest, ExternalPopupMessage } from '../../utils/interceptor-messages.js'
 import { sendPopupMessageToBackgroundPage } from '../../background/backgroundUtils.js'
@@ -23,7 +23,7 @@ export function ChangeChain() {
 	useEffect(() => {
 		async function updatePage(message: ChangeChainRequest) {
 			setChainChangeData({
-				isInterceptorSupport : isSupportedChain(message.data.chainId.toString()),
+				isInterceptorSupport : message.data.isInterceptorSupport,
 				chainId: message.data.chainId,
 				chainName : getChainName(message.data.chainId),
 				website: message.data.website,

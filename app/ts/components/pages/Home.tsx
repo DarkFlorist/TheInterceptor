@@ -5,7 +5,7 @@ import { ActiveAddress, findAddressInfo } from '../subcomponents/address.js'
 import { SimulationSummary } from '../simulationExplaining/SimulationSummary.js'
 import { ChainSelector } from '../subcomponents/ChainSelector.js'
 import { Spinner } from '../subcomponents/Spinner.js'
-import { DEFAULT_TAB_CONNECTION, getChainName, ICON_NOT_ACTIVE, ICON_SIGNING, ICON_SIGNING_NOT_SUPPORTED, isSupportedChain, TIME_BETWEEN_BLOCKS } from '../../utils/constants.js'
+import { DEFAULT_TAB_CONNECTION, getChainName, ICON_NOT_ACTIVE, ICON_SIGNING, ICON_SIGNING_NOT_SUPPORTED, TIME_BETWEEN_BLOCKS } from '../../utils/constants.js'
 import { IsConnected, TabIcon, TabIconDetails } from '../../utils/interceptor-messages.js'
 import { getPrettySignerName, SignerLogoText, SignersLogoName } from '../subcomponents/signers.js'
 import { Error } from '../subcomponents/Error.js'
@@ -201,6 +201,7 @@ export function Home(param: HomeParams) {
 	const [useSignersAddressAsActiveAddress, setUseSignersAddressAsActiveAddress] = useState(false)
 	const [simulationAndVisualisationResults, setSimulationAndVisualisationResults] = useState<SimulationAndVisualisationResults | undefined>(undefined)
 	const [activeChain, setActiveChain] = useState<bigint>(1n)
+	const [interceptorSupportForChainId, setInterceptorSupportForChainId] = useState<boolean>(true)
 	const [simulationMode, setSimulationMode] = useState<boolean>(true)
 	const [tabIconDetails, setTabConnection] = useState<TabIconDetails>(DEFAULT_TAB_CONNECTION)
 	const [signerAccounts, setSignerAccounts] = useState<readonly bigint[] | undefined>(undefined)
@@ -230,6 +231,7 @@ export function Home(param: HomeParams) {
 		setDisableReset(false)
 		setRemoveTransactionHashes([])
 		setIsConnected(param.isConnected)
+		setInterceptorSupportForChainId(param.interceptorSupportForChainId)
 	}, [param.activeSigningAddress,
 		param.activeSimulationAddress,
 		param.signerAccounts,
@@ -242,6 +244,7 @@ export function Home(param: HomeParams) {
 		param.signerName,
 		param.simVisResults,
 		param.isConnected,
+		param.interceptorSupportForChainId,
 	])
 
 	function changeActiveAddress() {
@@ -270,7 +273,7 @@ export function Home(param: HomeParams) {
 	if (!isLoaded) return <></>
 
 	return <>
-		{ !isSupportedChain(activeChain.toString()) ?
+		{ !interceptorSupportForChainId ?
 			<div style = 'margin: 10px; background-color: var(--bg-color);'>
 				<Error text = { `${ getChainName(activeChain) } is not a supported network. The Interceptors is disabled while you are using the network.` }/>
 			</div>

@@ -3,8 +3,7 @@ import * as funtypes from 'funtypes'
 import { EthereumQuantity } from '../../utils/wire-types.js'
 import { abs, addressString } from '../../utils/bigint.js'
 import { ERC721TokenNumber, EtherAmount, EtherSymbol, TokenAmount, TokenOrEthValue, TokenSymbol } from '../subcomponents/coins.js'
-import { AddressBookEntry, CHAIN, NFTEntry, TokenEntry } from '../../utils/user-interface-types.js'
-import { CHAINS } from '../../utils/constants.js'
+import { AddressBookEntry, NFTEntry, TokenEntry } from '../../utils/user-interface-types.js'
 import { assertNever } from '../../utils/typescript.js'
 
 export type BeforeAfterBalance = funtypes.Static<typeof SwapAsset>

@@ -1,5 +1,5 @@
 import { get4Byte } from '../../utils/calldata.js'
-import { CHAINS, FourByteExplanations, isSupportedChain, MAKE_YOU_RICH_TRANSACTION } from '../../utils/constants.js'
+import { FourByteExplanations, MAKE_YOU_RICH_TRANSACTION } from '../../utils/constants.js'
 import { assertNever, createGuard } from '../../utils/typescript.js'
 import { AddressBookEntry } from '../../utils/user-interface-types.js'
 import { SimulatedAndVisualizedTransaction, SimulatedAndVisualizedTransactionBase, TokenVisualizerERC20Event, TokenVisualizerERC721Event, TokenVisualizerResultWithMetadata, TransactionWithAddressBookEntries } from '../../utils/visualizer-types.js'

@@ -1,5 +1,5 @@
 import { getPrettySignerName } from '../components/subcomponents/signers.js'
-import { CHROME_NO_TAB_WITH_ID_ERROR, ICON_ACCESS_DENIED, ICON_NOT_ACTIVE, ICON_SIGNING, ICON_SIGNING_NOT_SUPPORTED, ICON_SIMULATING, isSupportedChain, PRIMARY_COLOR, WARNING_COLOR } from '../utils/constants.js'
+import { CHROME_NO_TAB_WITH_ID_ERROR, ICON_ACCESS_DENIED, ICON_NOT_ACTIVE, ICON_SIGNING, ICON_SIGNING_NOT_SUPPORTED, ICON_SIMULATING, PRIMARY_COLOR, WARNING_COLOR } from '../utils/constants.js'
 import { hasAccess, hasAddressAccess } from './accessManagement.js'
 import { getActiveAddress, sendPopupMessageToOpenWindows, setExtensionBadgeBackgroundColor, setExtensionBadgeText, setExtensionIcon } from './backgroundUtils.js'
 import { getAddressMetaData } from './metadataUtils.js'
@@ -7,7 +7,7 @@ import { imageToUri } from '../utils/imageToUri.js'
 import { Future } from '../utils/future.js'
 import { WebsiteSocket, WebsiteTabConnections } from '../utils/user-interface-types.js'
 import { getSettings } from './settings.js'
-import { getIsConnected, getSignerName, updateTabState } from './storageVariables.js'
+import { getIsConnected, getPrimaryRPCForChain, getSignerName, updateTabState } from './storageVariables.js'
 import { TabIcon, TabState } from '../utils/interceptor-messages.js'
 import { getLastKnownCurrentTabId } from './popupMessageHandlers.js'
 
@@ -57,7 +57,7 @@ export async function updateExtensionIcon(websiteTabConnections: WebsiteTabConne
 		return setInterceptorIcon(websiteTabConnections, socket.tabId, ICON_ACCESS_DENIED, `The access to ${ getAddressMetaData(activeAddress, settings.userAddressBook).name } for ${ websiteOrigin } has been DENIED!`)
 	}
 	if (settings.simulationMode) return setInterceptorIcon(websiteTabConnections, socket.tabId, ICON_SIMULATING, `The Interceptor simulates your sent transactions.`)
-	if (!isSupportedChain(settings.activeChain.toString())) return setInterceptorIcon(websiteTabConnections, socket.tabId, ICON_SIGNING_NOT_SUPPORTED, `Interceptor is on an unsupported network and simulation mode is disabled.`)
+	if (await getPrimaryRPCForChain(settings.activeChain) === undefined) return setInterceptorIcon(websiteTabConnections, socket.tabId, ICON_SIGNING_NOT_SUPPORTED, `Interceptor is on an unsupported network and simulation mode is disabled.`)
 
 	return setInterceptorIcon(websiteTabConnections, socket.tabId, ICON_SIGNING, `The Interceptor forwards your transactions to ${ getPrettySignerName(await getSignerName()) } once sent.`)
 }

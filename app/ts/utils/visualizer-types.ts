@@ -2,7 +2,7 @@
 import { EthBalanceChanges, EthereumAddress, EthereumData, EthereumQuantity, EthereumSignedTransaction, EthereumTimestamp, EthereumUnsignedTransaction, EthSubscribeParams, SingleMulticallResponse } from './wire-types.js'
 import * as funtypes from 'funtypes'
 import { QUARANTINE_CODE } from '../simulation/protectors/quarantine-codes.js'
-import { AddressBookEntry, CHAIN, NFTEntry, RenameAddressCallBack, TokenEntry, Website, WebsiteSocket } from './user-interface-types.js'
+import { AddressBookEntry, NFTEntry, RenameAddressCallBack, TokenEntry, Website, WebsiteSocket } from './user-interface-types.js'
 import { ERROR_INTERCEPTOR_GAS_ESTIMATION_FAILED } from './constants.js'
 
 export type OptionalEthereumAddress = funtypes.Static<typeof OptionalEthereumAddress>
@@ -127,7 +127,7 @@ export const SimulationState = funtypes.ReadonlyObject({
 	simulatedTransactions: funtypes.ReadonlyArray(SimulatedTransaction),
 	blockNumber: EthereumQuantity,
 	blockTimestamp: EthereumTimestamp,
-	chain: CHAIN,
+	chain: EthereumQuantity,
 	simulationConductedTimestamp: EthereumTimestamp,
 })
 export type EthBalanceChangesWithMetadata = funtypes.Static<typeof EthBalanceChangesWithMetadata>
@@ -144,7 +144,7 @@ export const TransactionWithAddressBookEntries = funtypes.Intersect(
 		to: funtypes.Union(AddressBookEntry, funtypes.Undefined),
 		value: EthereumQuantity,
 		input: EthereumData,
-		chainId: CHAIN,
+		chainId: EthereumQuantity,
 		hash: EthereumQuantity,
 		gas: EthereumQuantity,
 		nonce: EthereumQuantity,
@@ -196,7 +196,7 @@ export type SimulationAndVisualisationResults = {
 	simulationConductedTimestamp: Date,
 	addressMetaData: readonly AddressBookEntry[],
 	simulatedAndVisualizedTransactions: readonly SimulatedAndVisualizedTransaction[],
-	chain: CHAIN,
+	chain: EthereumQuantity,
 	tokenPrices: readonly TokenPriceEstimate[],
 	activeAddress: bigint,
 }

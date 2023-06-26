@@ -218,6 +218,7 @@ export async function getRPCList() {
 			currencyTicker: 'ETH',
 			primary: true,
 			minimized: true,
+			weth: 0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2n,
 		},
 		{
 			name: 'Ethereum (geth, multicall)',
@@ -227,6 +228,7 @@ export async function getRPCList() {
 			currencyTicker: 'ETH',
 			primary: false,
 			minimized: true,
+			weth: 0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2n,
 		},
 		{
 			name: 'Ethereum (nethermind, multicall)',
@@ -236,6 +238,7 @@ export async function getRPCList() {
 			currencyTicker: 'ETH',
 			primary: false,
 			minimized: true,
+			weth: 0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2n,
 		},
 		{
 			name: 'Goerli',
@@ -245,6 +248,7 @@ export async function getRPCList() {
 			currencyTicker: 'GÖETH',
 			primary: true,
 			minimized: true,
+			weth: 0xb4fbf271143f4fbf7b91a5ded31805e42b2208d6n,
 		},
 		{
 			name: 'Sepolia',
@@ -254,9 +258,34 @@ export async function getRPCList() {
 			currencyTicker: 'SEETH',
 			primary: true,
 			minimized: true,
+			weth: 0x105083929bf9bb22c26cb1777ec92661170d4285n,
 		}
 	]
 	const entries = await browserStorageLocalSingleGetWithDefault('RPCEntries', undefined)
 	if (entries === undefined) return defaultRPCs
 	return RPCEntries.parse(entries)
+}
+
+export const getPrimaryRPCForChain = async (chainId: bigint) => {
+	const rpcs = await getRPCList()
+	return rpcs.find((rpc) => rpc.chainId === chainId && rpc.primary)
+}
+
+//TODO, remove when we start to use multicall completely. Decide on what to do with WETH then
+export const ethDonator = [{
+		chainId: 1n,
+		eth_donator: 0xda9dfa130df4de4673b89022ee50ff26f6ea73cfn, // Kraken
+	},
+	{
+		chainId: 5n,
+		eth_donator: 0xf36F155486299eCAff2D4F5160ed5114C1f66000n, // Some Goerli validator
+	},
+	{
+		chainId: 11155111n,
+		eth_donator: 0xb21c33de1fab3fa15499c62b59fe0cc3250020d1n, // Richest address on Sepolia
+	}
+] as const
+
+export function getEthDonator(chainId: bigint) {
+	return ethDonator.find((rpc) => rpc.chainId === chainId)?.chainId
 }

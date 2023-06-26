@@ -1,6 +1,6 @@
-import { changeActiveAddressAndChainAndResetSimulation, changeActiveChain, getPrependTrasactions, refreshConfirmTransactionSimulation, updateSimulationState } from './background.js'
+import { changeActiveAddressAndChainAndResetSimulation, changeActiveChain, getPrependTrasactions, refreshConfirmTransactionSimulation, resetSimulator, updateSimulationState } from './background.js'
 import { getSettings, getMakeMeRich, getUseTabsInsteadOfPopup, setUseTabsInsteadOfPopup, setMakeMeRich, setPage, setUseSignersAddressAsActiveAddress, updateAddressInfos, updateContacts, updateWebsiteAccess, exportSettingsAndAddressBook, ExportedSettings, importSettingsAndAddressBook } from './settings.js'
-import { getPendingTransactions, getCurrentTabId, getIsConnected, getOpenedAddressBookTabId, getSignerName, getSimulationResults, getTabState, saveCurrentTabId, setOpenedAddressBookTabId, setRPCList, getRPCList } from './storageVariables.js'
+import { getPendingTransactions, getCurrentTabId, getIsConnected, getOpenedAddressBookTabId, getSignerName, getSimulationResults, getTabState, saveCurrentTabId, setOpenedAddressBookTabId, setRPCList, getRPCList, getPrimaryRPCForChain } from './storageVariables.js'
 import { Simulator } from '../simulation/simulator.js'
 import { ChangeActiveAddress, ChangeMakeMeRich, ChangePage, PersonalSign, RemoveTransaction, RequestAccountsFromSigner, TransactionConfirmation, InterceptorAccess, ChangeInterceptorAccess, ChainChangeConfirmation, EnableSimulationMode, ChangeActiveChain, AddOrEditAddressBookEntry, GetAddressBookData, RemoveAddressBookEntry, RefreshConfirmTransactionDialogSimulation, UserAddressBook, InterceptorAccessRefresh, InterceptorAccessChangeAddress, Settings, RefreshConfirmTransactionMetadata, RefreshPersonalSignMetadata, RefreshInterceptorAccessMetadata, ChangeSettings, ImportSettings, SetRPCList } from '../utils/interceptor-messages.js'
 import { resolvePendingTransaction } from './windows/confirmTransaction.js'
@@ -9,7 +9,7 @@ import { getAddressMetadataForAccess, requestAddressChange, resolveInterceptorAc
 import { resolveChainChange } from './windows/changeChain.js'
 import { sendMessageToApprovedWebsitePorts, updateWebsiteApprovalAccesses } from './accessManagement.js'
 import { getHtmlFile, sendPopupMessageToOpenWindows } from './backgroundUtils.js'
-import { CHROME_NO_TAB_WITH_ID_ERROR, isSupportedChain } from '../utils/constants.js'
+import { CHROME_NO_TAB_WITH_ID_ERROR } from '../utils/constants.js'
 import { getMetadataForAddressBookData } from './medataSearch.js'
 import { getAddressBookEntriesForVisualiser } from './metadataUtils.js'
 import { assertUnreachable } from '../utils/typescript.js'
@@ -226,7 +226,7 @@ export async function enableSimulationMode(websiteTabConnections: WebsiteTabConn
 			...chainToSwitch === undefined ? {} :  { activeChain: chainToSwitch },
 		})
 	} else {
-		const chainToSwitch = isSupportedChain(settings.activeChain.toString()) ? settings.activeChain : 1n
+		const chainToSwitch = await getPrimaryRPCForChain(settings.activeChain) ? settings.activeChain : 1n
 		await changeActiveAddressAndChainAndResetSimulation(websiteTabConnections, {
 			simulationMode: params.data,
 			...settings.activeChain === chainToSwitch ? {} : { activeChain: chainToSwitch }
@@ -304,6 +304,7 @@ export async function homeOpened(simulator: Simulator) {
 			useTabsInsteadOfPopup: await getUseTabsInsteadOfPopup(),
 			activeSigningAddressInThisTab: tabState?.activeSigningAddress,
 			tabId,
+			interceptorSupportForChainId: await getPrimaryRPCForChain(settings.activeChain) !== undefined,
 		}
 	})
 	await sendPopupMessageToOpenWindows({ method: 'popup_update_rpc_list', data: await getRPCList() })
@@ -366,7 +367,12 @@ export async function exportSettings() {
 	})
 }
 
-export async function setNewRPCList(request: SetRPCList) {
+export async function setNewRPCList(request: SetRPCList, settings: Settings, simulator: Simulator) {
 	await setRPCList(request.data)
 	await sendPopupMessageToOpenWindows({ method: 'popup_update_rpc_list', data: request.data })
+	const primary = await getPrimaryRPCForChain(settings.activeChain)
+	if (primary !== undefined && primary.https_rpc !== simulator.ethereum.getRPCUrl()) {
+		// reset simulator if the rpc url changed
+		await resetSimulator(settings.activeChain)
+	}
 }

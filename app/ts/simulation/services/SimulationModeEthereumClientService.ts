@@ -158,7 +158,7 @@ export const appendTransaction = async (ethereumClientService: EthereumClientSer
 		})),
 		blockNumber: parentBlock.number,
 		blockTimestamp: parentBlock.timestamp,
-		chain: ethereumClientService.getChain(),
+		chain: ethereumClientService.getChainId(),
 		simulationConductedTimestamp: new Date(),
 	}
 }
@@ -171,7 +171,7 @@ export const setSimulationTransactions = async (ethereumClientService: EthereumC
 			simulatedTransactions: [],
 			blockNumber: block.number,
 			blockTimestamp: block.timestamp,
-			chain: ethereumClientService.getChain(),
+			chain: ethereumClientService.getChainId(),
 			simulationConductedTimestamp: new Date(),
 		}
 	}
@@ -186,7 +186,7 @@ export const setSimulationTransactions = async (ethereumClientService: EthereumC
 	if (parentBaseFeePerGas === undefined) throw new Error(CANNOT_SIMULATE_OFF_LEGACY_BLOCK)
 	const multicallResult = await ethereumClientService.multicall(newTransactionsToSimulate.map((x) => x.transaction), parentBlock.number)
 	if (multicallResult.length !== signedTxs.length) throw 'multicall length does not match in setSimulationTransactions'
-	const chainId = ethereumClientService.getChain()
+	const chainId = ethereumClientService.getChainId()
 
 	const tokenBalancesAfter: TokenBalancesAfter[] = []
 	for (let resultIndex = 0; resultIndex < multicallResult.length; resultIndex++) {
@@ -234,7 +234,7 @@ export const setPrependTransactionsQueue = async (ethereumClientService: Ethereu
 		simulatedTransactions: [],
 		blockNumber: block.number,
 		blockTimestamp: block.timestamp,
-		chain: ethereumClientService.getChain(),
+		chain: ethereumClientService.getChainId(),
 		simulationConductedTimestamp: new Date(),
 	}
 
@@ -301,7 +301,7 @@ export const getNonceFixedSimulatedTransactions = async(ethereumClientService: E
 }
 
 export const refreshSimulationState = async (ethereumClientService: EthereumClientService, simulationState: SimulationState): Promise<SimulationState>  => {
-	if (ethereumClientService.getChain() !== simulationState.chain) return simulationState // don't refresh if we don't have the same chain to refresh from
+	if (ethereumClientService.getChainId() !== simulationState.chain) return simulationState // don't refresh if we don't have the same chain to refresh from
 	if (simulationState.blockNumber == await ethereumClientService.getBlockNumber()) {
 		// if block number is the same, we don't need to compute anything as nothing has changed, but let's update timestamp to show the simulation was refreshed for this time
 		return { ...simulationState, simulationConductedTimestamp: new Date() }

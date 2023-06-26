@@ -1,8 +1,8 @@
 import { EthereumClientService } from './services/EthereumClientService.js'
 import { unverifiedApproval } from './protectors/unverifiedApproval.js'
 import { selfTokenOops } from './protectors/selfTokenOops.js'
-import { EthereumUnsignedTransaction, MulticallResponse, MulticallResponseEventLog, SingleMulticallResponse } from '../utils/wire-types.js'
-import { TRANSFER_LOG, APPROVAL_LOG, ERC721_APPROVAL_FOR_ALL_LOG, DEPOSIT_LOG, WITHDRAWAL_LOG, CHAINS } from '../utils/constants.js'
+import { EthereumQuantity, EthereumUnsignedTransaction, MulticallResponse, MulticallResponseEventLog, SingleMulticallResponse } from '../utils/wire-types.js'
+import { TRANSFER_LOG, APPROVAL_LOG, ERC721_APPROVAL_FOR_ALL_LOG, DEPOSIT_LOG, WITHDRAWAL_LOG } from '../utils/constants.js'
 import { bytes32String } from '../utils/bigint.js'
 import { feeOops } from './protectors/feeOops.js'
 import { commonTokenOops } from './protectors/commonTokenOops.js'
@@ -12,7 +12,6 @@ import { tokenToContract } from './protectors/tokenToContract.js'
 import { simulatedMulticall } from './services/SimulationModeEthereumClientService.js'
 import { WebsiteCreatedEthereumUnsignedTransaction, SimResults, SimulationState, TokenVisualizerResult, VisualizerResult } from '../utils/visualizer-types.js'
 import { handleApprovalLog, handleDepositLog, handleERC721ApprovalForAllLog, handleTransferLog, handleWithdrawalLog } from './logHandlers.js'
-import { CHAIN } from '../utils/user-interface-types.js'
 import { QUARANTINE_CODE } from './protectors/quarantine-codes.js'
 import { EthereumJSONRpcRequestHandler } from './services/EthereumJSONRpcRequestHandler.js'
 
@@ -39,8 +38,8 @@ const logHandler = new Map<string, Loghandler >([
 export class Simulator {
 	public readonly ethereum
 
-	public constructor(chain: CHAIN, newBlockCallback: (blockNumber: bigint, ethereumClientService: EthereumClientService) => void, onErrorBlockCallback: (ethereumClientService: EthereumClientService, error: Error) => void) {
-		this.ethereum = new EthereumClientService(new EthereumJSONRpcRequestHandler(CHAINS[chain].https_rpc), chain, newBlockCallback, onErrorBlockCallback)
+	public constructor(chain: EthereumQuantity, https_rpc: string, newBlockCallback: (blockNumber: bigint, ethereumClientService: EthereumClientService) => void, onErrorBlockCallback: (ethereumClientService: EthereumClientService, error: Error) => void) {
+		this.ethereum = new EthereumClientService(new EthereumJSONRpcRequestHandler(https_rpc), chain, newBlockCallback, onErrorBlockCallback)
 	}
 
 	public cleanup = () => {

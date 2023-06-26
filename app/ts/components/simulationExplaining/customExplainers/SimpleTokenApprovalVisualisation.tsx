@@ -1,14 +1,15 @@
-import { CHAIN, RenameAddressCallBack } from '../../../utils/user-interface-types.js'
+import { RenameAddressCallBack } from '../../../utils/user-interface-types.js'
 import { BigAddress } from '../../subcomponents/address.js'
 import { Token721AmountField, TokenAmount, TokenSymbol } from '../../subcomponents/coins.js'
 import { GasFee, TransactionGasses } from '../SimulationSummary.js'
 import { TokenVisualizerResultWithMetadata } from '../../../utils/visualizer-types.js'
+import { EthereumQuantity } from '../../../utils/wire-types.js'
 
 type SimpleTokenApprovalVisualisation = {
 	approval: TokenVisualizerResultWithMetadata
 	renameAddressCallBack: RenameAddressCallBack
 	transactionGasses: TransactionGasses
-	chainId: CHAIN
+	chainId: EthereumQuantity
 }
 
 export function SimpleTokenApprovalVisualisation(params: SimpleTokenApprovalVisualisation) {

@@ -1,6 +1,7 @@
 import { DistributedOmit } from '../../../utils/typescript.js'
-import { AddressBookEntry, CHAIN, RenameAddressCallBack } from '../../../utils/user-interface-types.js'
+import { AddressBookEntry, RenameAddressCallBack } from '../../../utils/user-interface-types.js'
 import { EthBalanceChangesWithMetadata } from '../../../utils/visualizer-types.js'
+import { EthereumQuantity } from '../../../utils/wire-types.js'
 import { BigAddress } from '../../subcomponents/address.js'
 import { TokenOrEth, TokenOrEtherParams } from '../../subcomponents/coins.js'
 import { GasFee, TransactionGasses } from '../SimulationSummary.js'
@@ -42,7 +43,7 @@ export function AddressBeforeAfter({ address, beforeAndAfter, renameAddressCallB
 }
 
 type SimpleSendParams = {
-	transaction: TransactionGasses & { chainId: CHAIN }
+	transaction: TransactionGasses & { chainId: EthereumQuantity }
 	asset: TokenOrEtherParams
 	sender: BeforeAfterAddress
 	receiver: BeforeAfterAddress

@@ -432,6 +432,7 @@ export type ChangeChainRequest = funtypes.Static<typeof ChangeChainRequest>
 export const ChangeChainRequest = funtypes.ReadonlyObject({
 	method: funtypes.Literal('popup_ChangeChainRequest'),
 	data: funtypes.ReadonlyObject({
+		isInterceptorSupport: funtypes.Boolean,
 		requestId: funtypes.Number,
 		simulationMode: funtypes.Boolean,
 		chainId: EthereumQuantity,
@@ -621,6 +622,7 @@ export const UpdateHomePage = funtypes.ReadonlyObject({
 		signerName: SignerName,
 		currentBlockNumber: funtypes.Union(EthereumQuantity, funtypes.Undefined),
 		settings: Settings,
+		interceptorSupportForChainId: funtypes.Boolean,
 		tabIconDetails: funtypes.Union(TabIconDetails, funtypes.Undefined),
 		makeMeRich: funtypes.Boolean,
 		isConnected: IsConnected,
@@ -728,6 +730,7 @@ export const RPCEntry = funtypes.ReadonlyObject({
 	currencyTicker: funtypes.String,
 	primary: funtypes.Boolean,
 	minimized: funtypes.Boolean,
+	weth: EthereumQuantity,
 })
 
 export type RPCEntries = funtypes.Static<typeof RPCEntries>

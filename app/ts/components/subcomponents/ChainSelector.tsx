@@ -1,14 +1,22 @@
 import { useRef, useState } from 'preact/hooks'
-import { CHAINS, getChainName, isSupportedChain } from '../../utils/constants.js'
+import { getChainName } from '../../utils/constants.js'
 import { clickOutsideAlerter } from '../ui-utils.js'
+import { RPCEntries } from '../../utils/interceptor-messages.js'
 
 interface ChainSelectorParams {
 	currentChain: bigint,
 	changeChain: (chain: bigint) => void
+	RPCs: RPCEntries
 }
+
+type Networks = {
+	name: funtypes.String,
+	chainId: EthereumQuantity,
+}[]
 
 export function ChainSelector(params: ChainSelectorParams) {
 	const [isOpen, setIsOpen] = useState(false)
+	const [isOpen, setNetworks] = useState<Networks | undefined>(Networks)
 
 	const wrapperRef = useRef<HTMLDivElement>(null);
 	clickOutsideAlerter(wrapperRef, () => setIsOpen(false));
@@ -16,6 +24,10 @@ export function ChainSelector(params: ChainSelectorParams) {
 	function changeChain(chainName: bigint) {
 		params.changeChain(chainName)
 		setIsOpen(false)
+	}
+
+	function setNetworks(RPC:RPCEntries) {
+		setNetworks(rpc.dasdas)
 	}
 
 	return <div ref = { wrapperRef } class = { `dropdown ${ isOpen ? 'is-active' : '' }` }  style = 'width: 160px; text-align: end;'>

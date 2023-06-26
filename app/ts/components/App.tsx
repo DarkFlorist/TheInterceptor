@@ -29,6 +29,7 @@ export function App() {
 	const [websiteAccess, setWebsiteAccess] = useState<WebsiteAccessArray | undefined>(undefined)
 	const [websiteAccessAddressMetadata, setWebsiteAccessAddressMetadata] = useState<readonly AddressInfoEntry[]>([])
 	const [activeChain, setActiveChain] = useState<bigint>(1n)
+	const [interceptorSupportForChainId, setInterceptorSupportForChainId] = useState<boolean>(true)
 	const [simulationMode, setSimulationMode] = useState<boolean>(true)
 	const [tabIconDetails, setTabConnection] = useState<TabIconDetails>(DEFAULT_TAB_CONNECTION)
 	const [isSettingsLoaded, setIsSettingsLoaded] = useState<boolean>(false)
@@ -95,6 +96,7 @@ export function App() {
 		const updateHomePage = ({ data }: UpdateHomePage) => {
 			setIsSettingsLoaded((isSettingsLoaded) => {
 				updateHomePageSettings(data.settings, !isSettingsLoaded)
+				setInterceptorSupportForChainId(data.interceptorSupportForChainId)
 				setCurrentTabId(data.tabId)
 				setActiveSigningAddress(data.activeSigningAddressInThisTab)
 				if (isSettingsLoaded === false) {
@@ -231,7 +233,8 @@ export function App() {
 							currentBlockNumber = { currentBlockNumber }
 							signerName = { signerName }
 							renameAddressCallBack = { renameAddressCallBack }
-							isConnected = { isConnected}
+							isConnected = { isConnected }
+							interceptorSupportForChainId = { interceptorSupportForChainId }
 						/>
 
 						<div class = { `modal ${ appPage !== 'Home' ? 'is-active' : ''}` }>

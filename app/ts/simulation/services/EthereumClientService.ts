@@ -1,14 +1,13 @@
 import { MulticallResponse, EthereumUnsignedTransaction, EthereumSignedTransactionWithBlockData, EthGetStorageAtResponse, EthereumQuantity, EthereumBlockTag, EthTransactionReceiptResponse, EthereumData, EthereumBlockHeader, EthereumBlockHeaderWithTransactionHashes, EthGetLogsRequest, EthGetLogsResponse, DappRequestTransaction } from '../../utils/wire-types.js'
 import { IUnsignedTransaction1559 } from '../../utils/ethereum.js'
-import { TIME_BETWEEN_BLOCKS, CHAINS, MOCK_ADDRESS } from '../../utils/constants.js'
-import { CHAIN } from '../../utils/user-interface-types.js'
+import { TIME_BETWEEN_BLOCKS, MOCK_ADDRESS } from '../../utils/constants.js'
 import { IEthereumJSONRpcRequestHandler } from './EthereumJSONRpcRequestHandler.js'
 import { ethers } from 'ethers'
 import { stringToUint8Array } from '../../utils/bigint.js'
 
 export type IEthereumClientService = Pick<EthereumClientService, keyof EthereumClientService>
 export class EthereumClientService {
-	private chain: CHAIN
+	private chainId: EthereumQuantity
 	private cachedBlock: EthereumBlockHeader | undefined = undefined
 	private cacheRefreshTimer: NodeJS.Timer | undefined = undefined
 	private lastCacheAccess: number = 0
@@ -18,12 +17,14 @@ export class EthereumClientService {
 	private requestHandler
 	private cleanedUp = false
 
-    constructor(requestHandler: IEthereumJSONRpcRequestHandler, chain: CHAIN, newBlockCallback: (blockNumber: bigint, ethereumClientService: EthereumClientService) => void, onErrorBlockCallback: (ethereumClientService: EthereumClientService, error: Error) => void) {
+    constructor(requestHandler: IEthereumJSONRpcRequestHandler, chainId: EthereumQuantity, newBlockCallback: (blockNumber: bigint, ethereumClientService: EthereumClientService) => void, onErrorBlockCallback: (ethereumClientService: EthereumClientService, error: Error) => void) {
 		this.requestHandler = requestHandler
-		this.chain = chain
+		this.chainId = chainId
 		this.newBlockCallback = newBlockCallback
 		this.onErrorBlockCallback = onErrorBlockCallback
     }
+
+	public readonly getRPCUrl = () => this.requestHandler.getRPCUrl()
 
 	public getCachedBlock() {
 		if (this.cleanedUp === false) {
@@ -133,13 +134,7 @@ export class EthereumClientService {
 		return EthereumBlockHeader.parse(await this.requestHandler.jsonRpcRequest({ method: 'eth_getBlockByNumber', params: [blockTag, fullObjects] }))
 	}
 
-	public readonly getChainId = () => {
-		return CHAINS[this.chain].chainId
-	}
-
-	public readonly getChain = () => {
-		return this.chain
-	}
+	public readonly getChainId = () => this.chainId
 
 	public readonly getLogs = async (logFilter: EthGetLogsRequest) => {
 		const response = await this.requestHandler.jsonRpcRequest({ method: 'eth_getLogs', params: [logFilter] })

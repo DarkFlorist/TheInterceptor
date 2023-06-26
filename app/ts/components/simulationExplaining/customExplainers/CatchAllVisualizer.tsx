@@ -2,13 +2,14 @@ import { TransactionImportanceBlockParams } from '../Transactions.js'
 import { Erc20ApprovalChanges, ERC721OperatorChange, ERC721OperatorChanges, ERC721TokenIdApprovalChanges } from '../SimulationSummary.js'
 import { ERC721TokenApprovalChange, TokenApprovalChange, TokenVisualizerERC20Event, TokenVisualizerERC721AllApprovalEvent, TokenVisualizerERC721Event, TokenVisualizerResultWithMetadata } from '../../../utils/visualizer-types.js'
 import { EtherSymbol, TokenSymbol, TokenAmount, EtherAmount, ERC721TokenNumber } from '../../subcomponents/coins.js'
-import { CHAIN, RenameAddressCallBack } from '../../../utils/user-interface-types.js'
+import { RenameAddressCallBack } from '../../../utils/user-interface-types.js'
+import { EthereumQuantity } from '../../../utils/wire-types.js'
 
 type EtherTransferEventParams = {
 	valueSent: bigint,
 	totalReceived: bigint,
 	textColor: string,
-	chain: CHAIN,
+	chain: EthereumQuantity,
 }
 
 function EtherTransferEvent(param: EtherTransferEventParams) {
