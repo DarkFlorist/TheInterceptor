@@ -232,7 +232,7 @@ export function SettingsView(param: SettingsParam) {
 						<ImportExport/>
 					</li>
 					<li>
-						<p className = 'paragraph'>RPC Connections </p>
+						<p className = 'paragraph'>RPC Connections (experimental, does not work yet)</p>
 						<RPCs/>
 					</li>
 				</ul>
