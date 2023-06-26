@@ -1,0 +1,5 @@
+target
+.github
+.git
+node_modules
+.env

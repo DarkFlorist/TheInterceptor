@@ -1,6 +1,8 @@
-FROM node:18.16.0-alpine3.17@sha256:44aaf1ccc80eaed6572a0f2ef7d6b5a2982d54481e4255480041ac92221e2f11
+# syntax=docker/dockerfile:1.4
 
-RUN apk --no-cache add zip
+FROM node:18-alpine@sha256:9036ddb8252ba7089c2c83eb2b0dcaf74ff1069e8ddf86fe2bd6dc5fecc9492d
+
+RUN apk add --no-cache zip
 
 COPY ./build/package.json /build/package.json
 COPY ./build/package-lock.json /build/package-lock.json
@@ -37,3 +39,14 @@ RUN npm run setup-chrome
 
 WORKDIR /app
 RUN zip ../interceptor-chrome.zip -r .
+
+
+LABEL org.label-schema.build-date=$BUILD_DATE \
+      org.label-schema.name="The Interceptor Browser Extenstion" \
+      org.label-schema.description="TheInterceptor" \
+      org.label-schema.url="https://dark.florist/" \
+      org.label-schema.vcs-ref=$VCS_REF \
+      org.label-schema.vcs-url="https://github.com/DarkFlorist/TheInterceptor.git" \
+      org.label-schema.vendor="Dark Florist" \
+      org.label-schema.version=$VERSION \
+      org.label-schema.schema-version="1.0"
