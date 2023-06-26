@@ -1,5 +1,5 @@
 import { ICON_NOT_ACTIVE } from '../utils/constants.js'
-import { PendingAccessRequestArray, PendingChainChangeConfirmationPromise, PendingPersonalSignPromise, PendingTransaction, TabState, IsConnected, PendingAccessRequest } from '../utils/interceptor-messages.js'
+import { PendingAccessRequestArray, PendingChainChangeConfirmationPromise, PendingPersonalSignPromise, PendingTransaction, TabState, IsConnected, PendingAccessRequest, RPCEntries } from '../utils/interceptor-messages.js'
 import { Semaphore } from '../utils/semaphore.js'
 import { browserStorageLocalSet, browserStorageLocalSingleGetWithDefault } from '../utils/storageUtils.js'
 import { SignerName } from '../utils/user-interface-types.js'
@@ -203,4 +203,60 @@ export async function updateEthereumSubscriptions(updateFunc: (prevState: Ethere
 
 export async function setOpenedAddressBookTabId(addressbookTabId: number) {
 	return await browserStorageLocalSet('addressbookTabId', addressbookTabId)
+}
+
+export async function setRPCList(entries: RPCEntries) {
+	return await browserStorageLocalSet('RPCEntries', RPCEntries.serialize(entries) as string)
+}
+export async function getRPCList() {	
+	const defaultRPCs: RPCEntries = [
+		{
+			name: 'Ethereum Mainnet',
+			chainId: 1n,
+			https_rpc: 'https://rpc.dark.florist/flipcardtrustone',
+			currencyName: 'Ether',
+			currencyTicker: 'ETH',
+			primary: true,
+			minimized: true,
+		},
+		{
+			name: 'Ethereum (geth, multicall)',
+			chainId: 1n,
+			https_rpc: 'https://rpc.dark.florist/winedancemuffinborrow',
+			currencyName: 'Ether',
+			currencyTicker: 'ETH',
+			primary: false,
+			minimized: true,
+		},
+		{
+			name: 'Ethereum (nethermind, multicall)',
+			chainId: 1n,
+			https_rpc: 'https://rpc.dark.florist/birdchalkrenewtip',
+			currencyName: 'Ether',
+			currencyTicker: 'ETH',
+			primary: false,
+			minimized: true,
+		},
+		{
+			name: 'Goerli',
+			chainId: 5n,
+			https_rpc: 'https://rpc-goerli.dark.florist/flipcardtrustone',
+			currencyName: 'Goerli Testnet ETH',
+			currencyTicker: 'GÖETH',
+			primary: true,
+			minimized: true,
+		},
+		{
+			name: 'Sepolia',
+			chainId: 11155111n,
+			https_rpc: 'https://rpc-sepolia.dark.florist/flipcardtrustone',
+			currencyName: 'Sepolia Testnet ETH',
+			currencyTicker: 'SEETH',
+			primary: true,
+			minimized: true,
+		}
+	]
+	const entries = await browserStorageLocalSingleGetWithDefault('RPCEntries', undefined)
+	if (entries === undefined) return defaultRPCs
+	return RPCEntries.parse(entries)
 }

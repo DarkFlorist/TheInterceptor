@@ -1,7 +1,7 @@
 
 import { sendPopupMessageToBackgroundPage } from '../../background/backgroundUtils.js'
 import { SettingsParam } from '../../utils/user-interface-types.js'
-import { ExternalPopupMessage, ImportSettingsReply } from '../../utils/interceptor-messages.js'
+import { ExternalPopupMessage, ImportSettingsReply, RPCEntries } from '../../utils/interceptor-messages.js'
 import { useEffect, useState } from 'preact/hooks' 
 import { Error as ErrorComponent} from '../subcomponents/Error.js'
 import { DinoSays } from '../subcomponents/DinoSays.js'
@@ -109,55 +109,76 @@ function TextField({ input }: InputParams) {
 }
 
 function RPCs() {
-	
-	const RPCs = [
-		{
-			name: 'Ethereum Mainnet',
-			chainId: 1n,
-			https_rpc: 'https://rpc.dark.florist/flipcardtrustone',
-			currencyName: 'Ether',
-			currencyTicker: 'ETH',
-			primary: true,
-		},
-		{
-			name: 'Goerli',
-			chainId: 5n,
-			https_rpc: 'https://rpc-goerli.dark.florist/flipcardtrustone',
-			currencyName: 'Goerli Testnet ETH',
-			currencyTicker: 'GÖETH',
-			primary: true,
-		},
-		{
-			name: 'Sepolia',
-			chainId: 11155111n,
-			https_rpc: 'https://rpc-sepolia.dark.florist/flipcardtrustone',
-			currencyName: 'Sepolia Testnet ETH',
-			currencyTicker: 'SEETH',
-			primary: true,
+	const [rpcList, setRPCList] = useState<RPCEntries | undefined>(undefined)
+
+	useEffect(() => {
+		const popupMessageListener = async (msg: unknown) => {
+			const message = ExternalPopupMessage.parse(msg)
+			if (message.method === 'popup_update_rpc_list') return setRPCList(message.data)
 		}
-	]
+		browser.runtime.onMessage.addListener(popupMessageListener)
+		return () => browser.runtime.onMessage.removeListener(popupMessageListener)
+	})
+
+	const expandMinimize = (rpcUrl: string, minimize: boolean) => {
+		if (rpcList === undefined) return
+		sendPopupMessageToBackgroundPage({
+			method: 'popup_set_rpc_list',
+			data: rpcList.map((rpc) => ({ ...rpc, minimized: rpcUrl === rpc.https_rpc ? minimize : rpc.minimized, }))
+		})
+	}
+
+	const setAsPrimary = (rpcUrl: string) => {
+		if (rpcList === undefined) return
+		const rpcInQuestion = rpcList.find((rpc) => rpcUrl === rpc.https_rpc)
+		if (rpcInQuestion === undefined) return
+		if (rpcInQuestion.primary) return // already primary
+		sendPopupMessageToBackgroundPage({
+			method: 'popup_set_rpc_list',
+			data: rpcList.map((rpc) => {
+				if (rpcUrl === rpc.https_rpc) return { ...rpc, primary: true }
+				if (rpcInQuestion.chainId === rpc.chainId) return { ...rpc, primary: false } 
+				return rpc
+			})
+		})
+	}
+
+	if (rpcList === undefined) return <></>
 
 	return <>
-		<p className = 'paragraph'>RPC Connections </p>
-		<ul> { RPCs.map((rpc) => <li>
+		<ul> { rpcList.map((rpc) => <li>
 			<div class = 'card'>
-				<div class = 'card-content'>
-					<div class = 'paragraph'>Network</div>
-					<TextField input = { rpc.name }/>
-					<div class = 'paragraph'>RPC URL</div>
-					<TextField input = { rpc.https_rpc }/>
-					<div class = 'paragraph'>Chain ID</div>
-					<TextField input = { String(rpc.chainId) }/>
-					<div class = 'paragraph'>Currency Name</div>
-					<TextField input = { rpc.currencyName }/>
-					<div class = 'paragraph'>Currency Ticker</div>
-					<TextField input = { rpc.currencyTicker }/>
-					<CheckBoxSetting
-						text = { `Primary RPC for Chain ID ${ String(rpc.chainId) }` }
-						checked = { rpc.primary }
-						onInput = { () => {} }
-					/>
-				</div>
+				<header class = 'card-header'>		
+					<div class = 'card-header-icon unset-cursor'>
+						<input type = 'checkbox' checked = { rpc.primary } onInput = { () => { setAsPrimary(rpc.https_rpc) } } />
+					</div>
+					<div class = 'card-header-title' style = 'white-space: nowrap; overflow: hidden;'>
+						<p className = 'paragraph' style = 'text-overflow: ellipsis; overflow: hidden; overflow: hidden;'> { rpc.name } </p>
+					</div>
+					<button class = 'card-header-icon' aria-label = 'remove' onClick = { () => expandMinimize(rpc.https_rpc, !rpc.minimized) }>
+						<span class = 'icon' style = 'color: var(--text-color);'> V </span>
+					</button>
+				</header>
+				{ rpc.minimized ? <></> :
+					<div class = 'card-content'>
+						<div class = 'paragraph'>Network</div>
+						<TextField input = { rpc.name }/>
+						<div class = 'paragraph'>RPC URL</div>
+						<TextField input = { rpc.https_rpc }/>
+						<div class = 'paragraph'>Chain ID</div>
+						<TextField input = { String(rpc.chainId) }/>
+						<div class = 'paragraph'>Currency Name</div>
+						<TextField input = { rpc.currencyName }/>
+						<div class = 'paragraph'>Currency Ticker</div>
+						<TextField input = { rpc.currencyTicker }/>
+						<div class = 'paragraph'>`Primary RPC for Chain ID ${ String(rpc.chainId) }`</div>
+						<CheckBoxSetting
+							text = ''
+							checked = { rpc.primary }
+							onInput = { () => { setAsPrimary(rpc.https_rpc) } }
+						/>
+					</div>
+				}
 			</div>
 		</li>)
 		} </ul>
@@ -199,6 +220,7 @@ export function SettingsView(param: SettingsParam) {
 			<section class = 'modal-card-body'>
 				<ul>
 					<li>
+						<p className = 'paragraph'>Misc</p>
 						<CheckBoxSetting
 							text = { 'Open popups as tabs (experimental)' }
 							checked = { param.useTabsInsteadOfPopup === true }
@@ -206,9 +228,11 @@ export function SettingsView(param: SettingsParam) {
 						/>
 					</li>
 					<li>
+						<p className = 'paragraph'>Export & Import</p>
 						<ImportExport/>
 					</li>
 					<li>
+						<p className = 'paragraph'>RPC Connections </p>
 						<RPCs/>
 					</li>
 				</ul>
