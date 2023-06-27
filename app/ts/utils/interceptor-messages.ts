@@ -106,13 +106,16 @@ export const SubscriptionReturnValue = funtypes.ReadonlyObject({
 export type NonForwardingRPCRequestReturnValue = funtypes.Static<typeof NonForwardingRPCRequestReturnValue>
 export const NonForwardingRPCRequestReturnValue = funtypes.Union(NonForwardingRPCRequestSuccessfullReturnValue, ErrorReturn)
 
+export type ForwardToWallet = funtypes.Static<typeof ForwardToWallet>
+export const ForwardToWallet = 	funtypes.Intersect( // forward directly to wallet
+	funtypes.ReadonlyObject({ forward: funtypes.Literal(true) }),
+	funtypes.Union(SendRawTransaction, SendTransactionParams, PersonalSignParams, SignTypedDataParams, OldSignTypedDataParams),
+)
+
 export type RPCReply = funtypes.Static<typeof RPCReply>
 export const RPCReply = funtypes.Union(
 	NonForwardingRPCRequestReturnValue,
-	funtypes.ReadonlyObject({ // forward directly to wallet
-		forward: funtypes.Literal(true),
-		method: funtypes.String,
-	}), // TODO, add check here that we can only forward specific requests (send transaction and signatures)
+	ForwardToWallet,
 )
 
 export type RPCReplyWithRequestId = funtypes.Static<typeof RPCReply>
@@ -123,16 +126,9 @@ export const RPCReplyWithRequestId = funtypes.Intersect(
 
 export type InterceptedRequestForward = funtypes.Static<typeof InterceptedRequestForward>
 export const InterceptedRequestForward = funtypes.Union(
-	funtypes.ReadonlyObject({ // forward directly to wallet
-		forward: funtypes.Literal(true),
-		method: funtypes.String,
-		requestId: funtypes.Number
-	}),
-	funtypes.Intersect( // respond with a result
-		funtypes.ReadonlyObject({
-			requestId: funtypes.Number
-		}),
-		NonForwardingRPCRequestReturnValue,
+	funtypes.Intersect(
+		funtypes.ReadonlyObject({ requestId: funtypes.Number }),
+		funtypes.Union(NonForwardingRPCRequestReturnValue, ForwardToWallet),
 	),
 	funtypes.Intersect( // subscriptions
 		funtypes.ReadonlyObject({
