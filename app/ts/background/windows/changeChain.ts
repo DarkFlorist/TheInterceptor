@@ -1,12 +1,12 @@
 import { PopupOrTab, addWindowTabListener, openPopupOrTab, removeWindowTabListener } from '../../components/ui-utils.js'
 import { METAMASK_ERROR_USER_REJECTED_REQUEST } from '../../utils/constants.js'
 import { Future } from '../../utils/future.js'
-import { ChainChangeConfirmation, InterceptedRequest, ExternalPopupMessage, SignerChainChangeConfirmation } from '../../utils/interceptor-messages.js'
+import { ChainChangeConfirmation, InterceptedRequest, ExternalPopupMessage, SignerChainChangeConfirmation, SelectedNetwork } from '../../utils/interceptor-messages.js'
 import { Website, WebsiteSocket, WebsiteTabConnections } from '../../utils/user-interface-types.js'
 import { SwitchEthereumChainParams } from '../../utils/wire-types.js'
 import { changeActiveChain, postMessageIfStillConnected } from '../background.js'
 import { getHtmlFile, sendPopupMessageToOpenWindows } from '../backgroundUtils.js'
-import { getChainChangeConfirmationPromise, getPrimaryRPCForChain, setChainChangeConfirmationPromise } from '../storageVariables.js'
+import { getChainChangeConfirmationPromise, getSelectedNetworkForChain, setChainChangeConfirmationPromise } from '../storageVariables.js'
 
 let pendForUserReply: Future<ChainChangeConfirmation> | undefined = undefined
 let pendForSignerReply: Future<SignerChainChangeConfirmation> | undefined = undefined
@@ -29,11 +29,11 @@ export async function resolveSignerChainChange(confirmation: SignerChainChangeCo
 	pendForSignerReply = undefined
 }
 
-function rejectMessage(chainId: bigint, requestId: number) {
+function rejectMessage(selectedNetwork: SelectedNetwork, requestId: number) {
 	return {
 		method: 'popup_changeChainDialog',
 		data: {
-			chainId,
+			selectedNetwork,
 			requestId,
 			accept: false,
 		},
@@ -59,11 +59,11 @@ export const openChangeChainDialog = async (
 
 	pendForUserReply = new Future<ChainChangeConfirmation>()
 
-	const onCloseWindow = (windowId: number) => { // check if user has closed the window on their own, if so, reject signature
+	const onCloseWindow = async (windowId: number) => { // check if user has closed the window on their own, if so, reject signature
 		if (openedDialog === undefined || openedDialog.windowOrTab.id !== windowId) return
 		openedDialog = undefined
 		if (pendForUserReply === undefined) return
-		resolveChainChange(websiteTabConnections, rejectMessage(params.params[0].chainId, request.requestId))
+		resolveChainChange(websiteTabConnections, rejectMessage(await getSelectedNetworkForChain(params.params[0].chainId), request.requestId))
 	}
 
 	const changeChainWindowReadyAndListening = async function popupMessageListener(msg: unknown) {
@@ -74,11 +74,10 @@ export const openChangeChainDialog = async (
 			method: 'popup_ChangeChainRequest',
 			data: {
 				requestId: request.requestId,
-				chainId: params.params[0].chainId,
+				selectedNetwork: await getSelectedNetworkForChain(params.params[0].chainId),
 				website: website,
 				simulationMode: simulationMode,
 				tabIdOpenedFrom: socket.tabId,
-				isInterceptorSupport: await getPrimaryRPCForChain(params.params[0].chainId) !== undefined,
 			}
 		})
 	}
@@ -113,7 +112,7 @@ export const openChangeChainDialog = async (
 				simulationMode: simulationMode,
 			})
 		} else {
-			resolveChainChange(websiteTabConnections, rejectMessage(params.params[0].chainId, request.requestId))
+			resolveChainChange(websiteTabConnections, rejectMessage(await getSelectedNetworkForChain(params.params[0].chainId), request.requestId))
 		}
 		pendForSignerReply = undefined
 
@@ -133,13 +132,13 @@ async function resolve(websiteTabConnections: WebsiteTabConnections, reply: Chai
 	await setChainChangeConfirmationPromise(undefined)
 	if (reply.data.accept) {
 		if (simulationMode) {
-			await changeActiveChain(websiteTabConnections, reply.data.chainId, simulationMode)
+			await changeActiveChain(websiteTabConnections, reply.data.selectedNetwork, simulationMode)
 			return { result: null }
 		}
 		pendForSignerReply = new Future<SignerChainChangeConfirmation>() // when not in simulation mode, we need to get reply from the signer too
-		await changeActiveChain(websiteTabConnections, reply.data.chainId, simulationMode)
+		await changeActiveChain(websiteTabConnections, reply.data.selectedNetwork, simulationMode)
 		const signerReply = await pendForSignerReply
-		if (signerReply.data.accept && signerReply.data.chainId === reply.data.chainId) {
+		if (signerReply.data.accept && signerReply.data.chainId === reply.data.selectedNetwork.chainId) {
 			return { result: null }
 		}
 	}

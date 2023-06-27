@@ -11,7 +11,7 @@ import { ethers } from 'ethers'
 import { PasteCatcher } from './subcomponents/PasteCatcher.js'
 import { truncateAddr } from '../utils/ethereum.js'
 import { DEFAULT_TAB_CONNECTION } from '../utils/constants.js'
-import { ExternalPopupMessage, TabIconDetails, UpdateHomePage, Page, WebsiteAccessArray, Settings, WebsiteIconChanged, IsConnected } from '../utils/interceptor-messages.js'
+import { ExternalPopupMessage, TabIconDetails, UpdateHomePage, Page, WebsiteAccessArray, WebsiteIconChanged, IsConnected, RPCEntry, SelectedNetwork, SettingsWithMetadata } from '../utils/interceptor-messages.js'
 import { version, gitCommitSha } from '../version.js'
 import { sendPopupMessageToBackgroundPage } from '../background/backgroundUtils.js'
 import { EthereumAddress } from '../utils/wire-types.js'
@@ -28,7 +28,7 @@ export function App() {
 	const [simVisResults, setSimVisResults] = useState<SimulationAndVisualisationResults | undefined >(undefined)
 	const [websiteAccess, setWebsiteAccess] = useState<WebsiteAccessArray | undefined>(undefined)
 	const [websiteAccessAddressMetadata, setWebsiteAccessAddressMetadata] = useState<readonly AddressInfoEntry[]>([])
-	const [activeChain, setActiveChain] = useState<bigint>(1n)
+	const [selectedNetwork, setSelectedNetwork] = useState<SelectedNetwork | undefined>(undefined)
 	const [interceptorSupportForChainId, setInterceptorSupportForChainId] = useState<boolean>(true)
 	const [simulationMode, setSimulationMode] = useState<boolean>(true)
 	const [tabIconDetails, setTabConnection] = useState<TabIconDetails>(DEFAULT_TAB_CONNECTION)
@@ -64,10 +64,10 @@ export function App() {
 			)
 	}
 
-	async function setActiveChainAndInformAboutIt(chainId: bigint) {
-		sendPopupMessageToBackgroundPage( { method: 'popup_changeActiveChain', data: chainId } )
+	async function setActiveRPCAndInformAboutIt(entry: RPCEntry) {
+		sendPopupMessageToBackgroundPage({ method: 'popup_changeActiveRPC', data: entry })
 		if(!isSignerConnected()) {
-			setActiveChain(chainId)
+			setSelectedNetwork(entry)
 		}
 	}
 
@@ -123,16 +123,16 @@ export function App() {
 				return true
 			})
 		}
-		const updateHomePageSettings = (settings: Settings, updateQuery: boolean) => {
+		const updateHomePageSettings = (settingsWithMetadata: SettingsWithMetadata, updateQuery: boolean) => {
 			if (updateQuery) {
-				setSimulationMode(settings.simulationMode)
-				setAppPage(settings.page)
+				setSimulationMode(settingsWithMetadata.settings.simulationMode)
+				setAppPage(settingsWithMetadata.settings.page)
 			}
-			setActiveChain(settings.activeChain)
-			setActiveSimulationAddress(settings.activeSimulationAddress)
-			setUseSignersAddressAsActiveAddress(settings.useSignersAddressAsActiveAddress)
-			setAddressInfos(settings.userAddressBook.addressInfos)
-			setWebsiteAccess(settings.websiteAccess)
+			setSelectedNetwork(settingsWithMetadata.selectedNetwork)
+			setActiveSimulationAddress(settingsWithMetadata.settings.activeSimulationAddress)
+			setUseSignersAddressAsActiveAddress(settingsWithMetadata.settings.useSignersAddressAsActiveAddress)
+			setAddressInfos(settingsWithMetadata.settings.userAddressBook.addressInfos)
+			setWebsiteAccess(settingsWithMetadata.settings.websiteAccess)
 		}
 
 		const updateTabIcon = ({ data }: WebsiteIconChanged) => {
@@ -218,8 +218,8 @@ export function App() {
 							</div>
 						</nav>
 						<Home
-							setActiveChainAndInformAboutIt = { setActiveChainAndInformAboutIt }
-							activeChain = { activeChain }
+							setActiveRPCAndInformAboutIt = { setActiveRPCAndInformAboutIt }
+							selectedNetwork = { selectedNetwork }
 							simVisResults = { simVisResults }
 							useSignersAddressAsActiveAddress = { useSignersAddressAsActiveAddress }
 							activeSigningAddress = { activeSigningAddress }

@@ -3,7 +3,7 @@ import * as funtypes from 'funtypes'
 import { EthereumAddress, EthereumQuantity, LiteralConverterParserFactory } from './wire-types.js'
 import { SimulatedAndVisualizedTransaction, SimulationAndVisualisationResults } from './visualizer-types.js'
 import { IdentifiedSwapWithMetadata } from '../components/simulationExplaining/SwapTransactions.js'
-import { IsConnected, Page, TabIconDetails, WebsiteAccessArray } from './interceptor-messages.js'
+import { IsConnected, Page, RPCEntry, SelectedNetwork, TabIconDetails, WebsiteAccessArray } from './interceptor-messages.js'
 
 export type SignerName = funtypes.Static<typeof SignerName>
 export const SignerName = funtypes.Union(
@@ -138,8 +138,8 @@ export type HomeParams = {
 	activeSigningAddress: bigint | undefined,
 	useSignersAddressAsActiveAddress: boolean,
 	simVisResults: SimulationAndVisualisationResults | undefined,
-	activeChain: bigint,
-	setActiveChainAndInformAboutIt: (network: bigint) => void,
+	selectedNetwork: SelectedNetwork | undefined,
+	setActiveRPCAndInformAboutIt: (entry: RPCEntry) => void,
 	simulationMode: boolean,
 	tabIconDetails: TabIconDetails,
 	currentBlockNumber: bigint | undefined,
@@ -168,8 +168,8 @@ export type FirstCardParams = {
 	enableSimulationMode: (x: boolean) => void,
 	useSignersAddressAsActiveAddress: boolean,
 	addressInfos: readonly AddressInfo[] | undefined,
-	changeActiveChain: (chain: bigint) => void,
-	activeChain: bigint,
+	changeActiveRPC: (rpcEntry: RPCEntry) => void,
+	selectedNetwork: SelectedNetwork,
 	simulationMode: boolean,
 	changeActiveAddress: () => void,
 	makeMeRich: boolean,

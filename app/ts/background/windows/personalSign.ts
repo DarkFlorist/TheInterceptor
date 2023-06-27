@@ -11,7 +11,7 @@ import { OldSignTypedDataParams, PersonalSignParams, SignTypedDataParams } from 
 import { getHtmlFile, sendPopupMessageToOpenWindows } from '../backgroundUtils.js'
 import { extractEIP712Message, validateEIP712Types } from '../../utils/eip712Parsing.js'
 import { getAddressMetaData, getTokenMetadata } from '../metadataUtils.js'
-import { getPendingPersonalSignPromise, getSignerName, setPendingPersonalSignPromise } from '../storageVariables.js'
+import { getPendingPersonalSignPromise, getSelectedNetwork, getSignerName, setPendingPersonalSignPromise } from '../storageVariables.js'
 import { getSettings } from '../settings.js'
 import { PopupOrTab, addWindowTabListener, openPopupOrTab, removeWindowTabListener } from '../../components/ui-utils.js'
 import { simulatePersonalSign } from '../../simulation/services/SimulationModeEthereumClientService.js'
@@ -70,7 +70,7 @@ export async function craftPersonalSignPopupMessage(ethereumClientService: Ether
 		requestId,
 		website,
 		signerName,
-		activeChainId: ethereumClientService.getChainId(),
+		selectedNetwork: await getSelectedNetwork(),
 		tabIdOpenedFrom,
 	}
 

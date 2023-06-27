@@ -1,10 +1,11 @@
-import { ICON_NOT_ACTIVE } from '../utils/constants.js'
-import { PendingAccessRequestArray, PendingChainChangeConfirmationPromise, PendingPersonalSignPromise, PendingTransaction, TabState, IsConnected, PendingAccessRequest, RPCEntries } from '../utils/interceptor-messages.js'
+import { ICON_NOT_ACTIVE, getChainName } from '../utils/constants.js'
+import { PendingAccessRequestArray, PendingChainChangeConfirmationPromise, PendingPersonalSignPromise, PendingTransaction, TabState, IsConnected, PendingAccessRequest, RPCEntries, SelectedNetwork } from '../utils/interceptor-messages.js'
 import { Semaphore } from '../utils/semaphore.js'
 import { browserStorageLocalSet, browserStorageLocalSingleGetWithDefault } from '../utils/storageUtils.js'
 import { SignerName } from '../utils/user-interface-types.js'
 import { EthereumSubscriptions, SimulationResults } from '../utils/visualizer-types.js'
 import * as funtypes from 'funtypes'
+import { getSettings } from './settings.js'
 
 export async function getOpenedAddressBookTabId() {
 	const tabIdData = await browserStorageLocalSingleGetWithDefault('addressbookTabId', undefined)
@@ -208,6 +209,7 @@ export async function setOpenedAddressBookTabId(addressbookTabId: number) {
 export async function setRPCList(entries: RPCEntries) {
 	return await browserStorageLocalSet('RPCEntries', RPCEntries.serialize(entries) as string)
 }
+
 export async function getRPCList() {	
 	const defaultRPCs: RPCEntries = [
 		{
@@ -269,6 +271,22 @@ export async function getRPCList() {
 export const getPrimaryRPCForChain = async (chainId: bigint) => {
 	const rpcs = await getRPCList()
 	return rpcs.find((rpc) => rpc.chainId === chainId && rpc.primary)
+}
+
+export async function getSelectedNetwork(): Promise<SelectedNetwork> {
+	const settings = await getSettings()
+	return getSelectedNetworkForChain(settings.activeChain)
+}
+
+export const getSelectedNetworkForChain = async (chainId: bigint): Promise<SelectedNetwork> => {
+	const rpcs = await getRPCList()
+	const rpc =  rpcs.find((rpc) => rpc.chainId === chainId && rpc.primary)
+	if (rpc !== undefined) return rpc
+	return {
+		chainId: chainId,
+		name: getChainName(chainId),
+		https_rpc: undefined,
+	}
 }
 
 //TODO, remove when we start to use multicall completely. Decide on what to do with WETH then

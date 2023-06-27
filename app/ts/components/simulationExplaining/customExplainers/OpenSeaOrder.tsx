@@ -5,14 +5,14 @@ import { SmallAddress } from '../../subcomponents/address.js'
 import { bytes32String } from '../../../utils/bigint.js'
 import { ArrowIcon } from '../../subcomponents/icons.js'
 import { CellElement, humanReadableDate } from '../../ui-utils.js'
-import { EthereumQuantity } from '../../../utils/wire-types.js'
+import { SelectedNetwork } from '../../../utils/interceptor-messages.js'
 
 const tokenStyle = { 'font-size': '28px', 'font-weight': '500', 'color:': 'var(--text-color)' }
 
 type VisualizeOpenSeaAssetParams = {
 	orderOrConsideration: SeaPortSingleOfferWithAddressBookEntries | SeaPortSingleConsiderationWithAddressBookEntries
 	renameAddressCallBack: RenameAddressCallBack
-	chainId: EthereumQuantity
+	selectedNetwork: SelectedNetwork
 }
 
 function ValueField({ orderOrConsideration }: { orderOrConsideration: SeaPortSingleOfferWithAddressBookEntries | SeaPortSingleConsiderationWithAddressBookEntries }) {
@@ -50,7 +50,7 @@ function SwapGrid(param: VisualizeOpenSeaAssetParams) {
 type VisualizeOpenSeaConsiderationAssetParams = {
 	consideration: SeaPortSingleConsiderationWithAddressBookEntries
 	renameAddressCallBack: RenameAddressCallBack
-	chainId: EthereumQuantity
+	selectedNetwork: SelectedNetwork
 }
 
 export function VisualizeOpenSeaAsset(param: VisualizeOpenSeaConsiderationAssetParams) {
@@ -76,7 +76,7 @@ export function VisualizeOpenSeaAsset(param: VisualizeOpenSeaConsiderationAssetP
 type OrderComponentsParams = {
 	openSeaOrderMessage: OpenSeaOrderMessageWithAddressBookEntries
 	renameAddressCallBack: RenameAddressCallBack
-	chainId: EthereumQuantity
+	selectedNetwork: SelectedNetwork
 }
 
 export function OrderComponents(param: OrderComponentsParams) {

@@ -3,7 +3,7 @@ import { WebsiteTabConnections } from '../utils/user-interface-types.js'
 import { EthereumAccountsReply, EthereumChainReply } from '../utils/wire-types.js'
 import { changeActiveAddressAndChainAndResetSimulation, postMessageToPortIfConnected } from './background.js'
 import { getSocketFromPort, sendInternalWindowMessage, sendPopupMessageToOpenWindows } from './backgroundUtils.js'
-import { getTabState, setSignerName, updateTabState } from './storageVariables.js'
+import { getSelectedNetworkForChain, getTabState, setSignerName, updateTabState } from './storageVariables.js'
 import { getSettings } from './settings.js'
 import { resolveSignerChainChange } from './windows/changeChain.js'
 import { ApprovalState } from './accessManagement.js'
@@ -50,10 +50,10 @@ async function changeSignerChain(websiteTabConnections: WebsiteTabConnections, p
 
 	// update active address if we are using signers address
 	const settings = await getSettings()
-	if ( (settings.useSignersAddressAsActiveAddress || !settings.simulationMode) && settings.activeChain !== signerChain) {
+	if ((settings.useSignersAddressAsActiveAddress || !settings.simulationMode) && settings.activeChain !== signerChain) {
 		return changeActiveAddressAndChainAndResetSimulation(websiteTabConnections, {
 			simulationMode: settings.simulationMode,
-			activeChain: signerChain,
+			selectedNetwork: await getSelectedNetworkForChain(signerChain),
 		})
 	}
 	sendPopupMessageToOpenWindows({ method: 'popup_chain_update' })

@@ -1,6 +1,6 @@
 import { changeActiveAddressAndChainAndResetSimulation, changeActiveChain, getPrependTrasactions, refreshConfirmTransactionSimulation, resetSimulator, updateSimulationState } from './background.js'
 import { getSettings, getMakeMeRich, getUseTabsInsteadOfPopup, setUseTabsInsteadOfPopup, setMakeMeRich, setPage, setUseSignersAddressAsActiveAddress, updateAddressInfos, updateContacts, updateWebsiteAccess, exportSettingsAndAddressBook, ExportedSettings, importSettingsAndAddressBook } from './settings.js'
-import { getPendingTransactions, getCurrentTabId, getIsConnected, getOpenedAddressBookTabId, getSignerName, getSimulationResults, getTabState, saveCurrentTabId, setOpenedAddressBookTabId, setRPCList, getRPCList, getPrimaryRPCForChain } from './storageVariables.js'
+import { getPendingTransactions, getCurrentTabId, getIsConnected, getOpenedAddressBookTabId, getSignerName, getSimulationResults, getTabState, saveCurrentTabId, setOpenedAddressBookTabId, setRPCList, getRPCList, getPrimaryRPCForChain, getSelectedNetwork } from './storageVariables.js'
 import { Simulator } from '../simulation/simulator.js'
 import { ChangeActiveAddress, ChangeMakeMeRich, ChangePage, PersonalSign, RemoveTransaction, RequestAccountsFromSigner, TransactionConfirmation, InterceptorAccess, ChangeInterceptorAccess, ChainChangeConfirmation, EnableSimulationMode, ChangeActiveChain, AddOrEditAddressBookEntry, GetAddressBookData, RemoveAddressBookEntry, RefreshConfirmTransactionDialogSimulation, UserAddressBook, InterceptorAccessRefresh, InterceptorAccessChangeAddress, Settings, RefreshConfirmTransactionMetadata, RefreshPersonalSignMetadata, RefreshInterceptorAccessMetadata, ChangeSettings, ImportSettings, SetRPCList } from '../utils/interceptor-messages.js'
 import { resolvePendingTransaction } from './windows/confirmTransaction.js'
@@ -297,7 +297,7 @@ export async function homeOpened(simulator: Simulator) {
 			signerChain: tabState?.signerChain,
 			signerName: await getSignerName(),
 			currentBlockNumber: blockNumber,
-			settings: settings,
+			settings: { settings: await getSettings(), selectedNetwork: await getSelectedNetwork() },
 			tabIconDetails: tabState?.tabIconDetails,
 			makeMeRich: await getMakeMeRich(),
 			isConnected: await getIsConnected(),
@@ -373,6 +373,6 @@ export async function setNewRPCList(request: SetRPCList, settings: Settings, sim
 	const primary = await getPrimaryRPCForChain(settings.activeChain)
 	if (primary !== undefined && primary.https_rpc !== simulator.ethereum.getRPCUrl()) {
 		// reset simulator if the rpc url changed
-		await resetSimulator(settings.activeChain)
+		await resetSimulator(primary)
 	}
 }

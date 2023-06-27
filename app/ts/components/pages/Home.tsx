@@ -5,8 +5,8 @@ import { ActiveAddress, findAddressInfo } from '../subcomponents/address.js'
 import { SimulationSummary } from '../simulationExplaining/SimulationSummary.js'
 import { ChainSelector } from '../subcomponents/ChainSelector.js'
 import { Spinner } from '../subcomponents/Spinner.js'
-import { DEFAULT_TAB_CONNECTION, getChainName, ICON_NOT_ACTIVE, ICON_SIGNING, ICON_SIGNING_NOT_SUPPORTED, TIME_BETWEEN_BLOCKS } from '../../utils/constants.js'
-import { IsConnected, TabIcon, TabIconDetails } from '../../utils/interceptor-messages.js'
+import { DEFAULT_TAB_CONNECTION, ICON_NOT_ACTIVE, ICON_SIGNING, ICON_SIGNING_NOT_SUPPORTED, TIME_BETWEEN_BLOCKS } from '../../utils/constants.js'
+import { IsConnected, RPCEntry, SelectedNetwork, TabIcon, TabIconDetails } from '../../utils/interceptor-messages.js'
 import { getPrettySignerName, SignerLogoText, SignersLogoName } from '../subcomponents/signers.js'
 import { Error } from '../subcomponents/Error.js'
 import { ToolTip } from '../subcomponents/CopyToClipboard.js'
@@ -76,7 +76,7 @@ function FirstCardHeader(param: FirstCardParams) {
 				</div>
 			</div>
 			<div class = 'card-header-icon unset-cursor'>
-				<ChainSelector currentChain = { param.activeChain } changeChain = { (chainId: bigint) => { param.changeActiveChain(chainId) } }/>
+				<ChainSelector selectedNetwork = { param.selectedNetwork } changeRPC = { (entry: RPCEntry) => { param.changeActiveRPC(entry) } }/>
 			</div>
 		</header>
 	</>
@@ -200,7 +200,7 @@ export function Home(param: HomeParams) {
 	const [activeSigningAddress, setActiveSigningAddress] = useState<AddressInfo | undefined>(undefined)
 	const [useSignersAddressAsActiveAddress, setUseSignersAddressAsActiveAddress] = useState(false)
 	const [simulationAndVisualisationResults, setSimulationAndVisualisationResults] = useState<SimulationAndVisualisationResults | undefined>(undefined)
-	const [activeChain, setActiveChain] = useState<bigint>(1n)
+	const [selectedNetwork, setSelectedNetwork] = useState<SelectedNetwork | undefined>()
 	const [interceptorSupportForChainId, setInterceptorSupportForChainId] = useState<boolean>(true)
 	const [simulationMode, setSimulationMode] = useState<boolean>(true)
 	const [tabIconDetails, setTabConnection] = useState<TabIconDetails>(DEFAULT_TAB_CONNECTION)
@@ -219,7 +219,7 @@ export function Home(param: HomeParams) {
 		setUseSignersAddressAsActiveAddress(param.useSignersAddressAsActiveAddress)
 		setActiveSimulationAddress(param.activeSimulationAddress !== undefined ? findAddressInfo(param.activeSimulationAddress, param.addressInfos) : undefined)
 		setActiveSigningAddress(param.activeSigningAddress !== undefined ? findAddressInfo(param.activeSigningAddress, param.addressInfos) : undefined)
-		setActiveChain(param.activeChain)
+		setSelectedNetwork(param.selectedNetwork)
 		setSimulationMode(param.simulationMode)
 		setTabConnection(param.tabIconDetails)
 		setSignerAccounts(param.signerAccounts)
@@ -237,7 +237,7 @@ export function Home(param: HomeParams) {
 		param.signerAccounts,
 		param.addressInfos,
 		param.useSignersAddressAsActiveAddress,
-		param.activeChain,
+		param.selectedNetwork,
 		param.simulationMode,
 		param.tabIconDetails,
 		param.currentBlockNumber,
@@ -271,11 +271,12 @@ export function Home(param: HomeParams) {
 	}
 
 	if (!isLoaded) return <></>
+	if (selectedNetwork === undefined) return <></>
 
 	return <>
 		{ !interceptorSupportForChainId ?
 			<div style = 'margin: 10px; background-color: var(--bg-color);'>
-				<Error text = { `${ getChainName(activeChain) } is not a supported network. The Interceptors is disabled while you are using the network.` }/>
+				<Error text = { `${ selectedNetwork.name } is not a supported network. The Interceptors is disabled while you are using the network.` }/>
 			</div>
 		: <></> }
 
@@ -290,8 +291,8 @@ export function Home(param: HomeParams) {
 			useSignersAddressAsActiveAddress = { useSignersAddressAsActiveAddress }
 			enableSimulationMode = { enableSimulationMode }
 			activeAddress = { simulationMode ? activeSimulationAddress : activeSigningAddress }
-			activeChain = { activeChain }
-			changeActiveChain = { param.setActiveChainAndInformAboutIt }
+			selectedNetwork = { selectedNetwork }
+			changeActiveRPC = { param.setActiveRPCAndInformAboutIt }
 			simulationMode = { simulationMode }
 			changeActiveAddress = { changeActiveAddress }
 			makeMeRich = { makeMeRich }
