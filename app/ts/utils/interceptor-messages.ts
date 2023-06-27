@@ -715,6 +715,33 @@ export const ImportSettingsReply = funtypes.ReadonlyObject({
 	)
 })
 
+export type RPCEntry = funtypes.Static<typeof RPCEntry>
+export const RPCEntry = funtypes.ReadonlyObject({
+	name: funtypes.String,
+	chainId: EthereumQuantity,
+	https_rpc: funtypes.String,
+	currencyName: funtypes.String,
+	currencyTicker: funtypes.String,
+	primary: funtypes.Boolean,
+	minimized: funtypes.Boolean,
+})
+
+export type RPCEntries = funtypes.Static<typeof RPCEntries>
+export const RPCEntries = funtypes.ReadonlyArray(RPCEntry)
+
+export type SetRPCList = funtypes.Static<typeof SetRPCList>
+export const SetRPCList = funtypes.ReadonlyObject({
+	method: funtypes.Union(funtypes.Literal('popup_set_rpc_list')),
+	data: RPCEntries,
+})
+
+export type UpdateRPCList = funtypes.Static<typeof UpdateRPCList>
+export const UpdateRPCList = funtypes.ReadonlyObject({
+	method: funtypes.Union(funtypes.Literal('popup_update_rpc_list')),
+	data: RPCEntries,
+})
+
+
 export type PopupMessage = funtypes.Static<typeof PopupMessage>
 export const PopupMessage = funtypes.Union(
 	ChangeMakeMeRich,
@@ -749,6 +776,7 @@ export const PopupMessage = funtypes.Union(
 	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_import_settings'), data: funtypes.ReadonlyObject({ fileContents: funtypes.String }) }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_get_export_settings') }),
 	ChangeSettings,
+	SetRPCList,
 )
 
 export type MessageToPopup = funtypes.Static<typeof MessageToPopup>
@@ -770,6 +798,7 @@ export const MessageToPopup = funtypes.Union(
 	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_initiate_export_settings'), data: funtypes.ReadonlyObject({ fileContents: funtypes.String }) }),
 	ImportSettingsReply,
 	ActiveSigningAddressChanged,
+	UpdateRPCList,
 )
 
 export type ExternalPopupMessage = funtypes.Static<typeof MessageToPopup>
