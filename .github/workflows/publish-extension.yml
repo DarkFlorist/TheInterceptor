@@ -6,6 +6,10 @@ jobs:
   release:
     runs-on: ubuntu-latest
     steps:
+      - name: Checkout
+        uses: actions/checkout@v2.4.2
+        with:
+            fetch-depth: 0
       - name: Derive Tag Name And Populate version.ts
         id: derive_tag
         run: |
