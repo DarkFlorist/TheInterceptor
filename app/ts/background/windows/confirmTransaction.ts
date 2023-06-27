@@ -39,11 +39,7 @@ export async function resolvePendingTransaction(ethereumClientService: EthereumC
 	} else {
 		// we have not been tracking this window, forward its message directly to content script (or signer)
 		const resolvedPromise = await resolve(ethereumClientService, pendingTransaction.simulationMode, pendingTransaction.activeAddress, pendingTransaction.transactionToSimulate, confirmation.data.accept)
-		if (pendingTransaction.transactionParams.method === 'eth_sendRawTransaction') { // nore sure how to get rid of this silly if
-			postMessageIfStillConnected(websiteTabConnections, pendingTransaction.socket, { method: pendingTransaction.transactionParams.method, ...resolvedPromise, requestId: confirmation.data.requestId })
-		} else {
-			postMessageIfStillConnected(websiteTabConnections, pendingTransaction.socket, { method: pendingTransaction.transactionParams.method, ...resolvedPromise, requestId: confirmation.data.requestId })
-		}
+		postMessageIfStillConnected(websiteTabConnections, pendingTransaction.socket, { ...pendingTransaction.transactionParams, ...resolvedPromise, requestId: confirmation.data.requestId })
 		openedDialog = await getPopupOrTabOnlyById(confirmation.data.windowId)
 	}
 }

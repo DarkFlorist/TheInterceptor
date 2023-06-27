@@ -11,9 +11,9 @@ import { AddressBookEntry, Website, TabConnection, WebsiteSocket, WebsiteTabConn
 import { interceptorAccessMetadataRefresh, requestAccessFromUser } from './windows/interceptorAccess.js'
 import { ICON_NOT_ACTIVE, MAKE_YOU_RICH_TRANSACTION, METAMASK_ERROR_NOT_CONNECTED_TO_CHAIN, METAMASK_ERROR_USER_REJECTED_REQUEST } from '../utils/constants.js'
 import { PriceEstimator } from '../simulation/priceEstimator.js'
-import { getActiveAddressForDomain, sendActiveAccountChangeToApprovedWebsitePorts, sendMessageToApprovedWebsitePorts, updateWebsiteApprovalAccesses, verifyAccess } from './accessManagement.js'
+import { sendActiveAccountChangeToApprovedWebsitePorts, sendMessageToApprovedWebsitePorts, updateWebsiteApprovalAccesses, verifyAccess } from './accessManagement.js'
 import { findAddressInfo, getAddressBookEntriesForVisualiser } from './metadataUtils.js'
-import { getSocketFromPort, sendPopupMessageToOpenWindows, websiteSocketToString } from './backgroundUtils.js'
+import { getActiveAddress, getSocketFromPort, sendPopupMessageToOpenWindows, websiteSocketToString } from './backgroundUtils.js'
 import { retrieveWebsiteDetails, updateExtensionBadge, updateExtensionIcon } from './iconHandler.js'
 import { connectedToSigner, ethAccountsReply, signerChainChanged, walletSwitchEthereumChainReply } from './providerMessageHandlers.js'
 import { assertNever, assertUnreachable } from '../utils/typescript.js'
@@ -205,7 +205,7 @@ async function handleRPCRequest(
 	}
 	const getForwardingMessage = (request: SendRawTransaction | SendTransactionParams) => {
 		if (!forwardToSigner) throw new Error('Should not forward to signer')
-		return { forward: true as const, method: request.method }
+		return { forward: true as const, ...request }
 	}
 	const parsedRequest = maybeParsedRequest.value
 
@@ -241,22 +241,16 @@ async function handleRPCRequest(
 		case 'eth_getLogs': return await getLogs(ethereumClientService, simulationState, parsedRequest)
 		case 'eth_sign': return { method: parsedRequest.method, error: { code: 10000, message: 'eth_sign is deprecated' } }
 		case 'eth_sendRawTransaction': {
-			if (forwardToSigner) {
-				if (settings.selectedNetwork.https_rpc !== undefined) {
-					return sendRawTransaction(ethereumClientService, parsedRequest, socket, request, false, website, activeAddress)
-				}
-				return getForwardingMessage(parsedRequest)
-			}
-			return sendRawTransaction(ethereumClientService, parsedRequest, socket, request, true, website, activeAddress)
+			if (forwardToSigner && settings.selectedNetwork.https_rpc === undefined) return getForwardingMessage(parsedRequest)
+			const message = await sendRawTransaction(ethereumClientService, parsedRequest, socket, request, !forwardToSigner, website, activeAddress)
+			if ('forward' in message) return getForwardingMessage(parsedRequest)
+			return message
 		}
 		case 'eth_sendTransaction': {
-			if (forwardToSigner) {
-				if (settings.selectedNetwork.https_rpc !== undefined) {
-					return sendTransaction(websiteTabConnections, activeAddress, ethereumClientService, parsedRequest, socket, request, false, website)
-				}
-				return getForwardingMessage(parsedRequest)
-			}
-			return sendTransaction(websiteTabConnections, activeAddress, ethereumClientService, parsedRequest, socket, request, true, website)
+			if (forwardToSigner && settings.selectedNetwork.https_rpc === undefined) return getForwardingMessage(parsedRequest)
+			const message = await sendTransaction(websiteTabConnections, activeAddress, ethereumClientService, parsedRequest, socket, request, !forwardToSigner, website)
+			if ('forward' in message) return getForwardingMessage(parsedRequest)
+			return message
 		}
 		/*
 		Missing methods:
@@ -353,7 +347,7 @@ export async function changeActiveAddressAndChainAndResetSimulation(
 				return await setPrependTransactionsQueue(ethereumClientService, simulationState, prependQueue)
 			}, updatedSettings.activeSimulationAddress)
 		}
-		// inform website abou this only after we have updated simulation, as they often query the balance right after
+		// inform website about this only after we have updated simulation, as they often query the balance right after
 		sendActiveAccountChangeToApprovedWebsitePorts(websiteTabConnections, updatedSettings)
 	})
 }
@@ -489,7 +483,7 @@ async function onContentScriptConnected(port: browser.runtime.Port, websiteTabCo
 		)) return
 		await pendingRequestLimiter.execute(async () => {
 			const request = InterceptedRequest.parse(payload.data)
-			const activeAddress = await getActiveAddressForDomain(websiteOrigin, await getSettings(), socket)
+			const activeAddress = await getActiveAddress(await getSettings(), socket.tabId)
 			const access = verifyAccess(websiteTabConnections, socket, request.method === 'eth_requestAccounts', websiteOrigin, activeAddress, await getSettings())
 			const providerHandler = getProviderHandler(request.method)
 			const identifiedMethod = providerHandler.method
@@ -610,10 +604,6 @@ async function startup() {
 
 	await updateExtensionBadge()
 
-	if (!settings.simulationMode || settings.useSignersAddressAsActiveAddress) {
-		sendMessageToApprovedWebsitePorts(websiteTabConnections, { method: 'request_signer_to_eth_accounts', result: [] })
-		sendMessageToApprovedWebsitePorts(websiteTabConnections, { method: 'request_signer_chainId', result: [] })
-	}
 	if (settings.simulationMode) {
 		// update prepend mode as our active address has changed, so we need to be sure the rich modes money is sent to right address
 		const ethereumClientService = simulator.ethereum

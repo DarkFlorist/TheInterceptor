@@ -28,7 +28,7 @@ export async function resolvePersonalSign(websiteTabConnections: WebsiteTabConne
 		const data = await getPendingPersonalSignPromise()
 		if (data === undefined || confirmation.data.requestId !== data.request.requestId) return
 		const resolved = await resolve(confirmation, data.simulationMode, data.params)
-		postMessageIfStillConnected(websiteTabConnections, data.socket, { method: data.params.method, ...resolved, requestId: confirmation.data.requestId })
+		postMessageIfStillConnected(websiteTabConnections, data.socket, { ...data.params, ...resolved, requestId: confirmation.data.requestId })
 	}
 	openedDialog = undefined
 }
@@ -43,8 +43,9 @@ function rejectMessage(requestId: number) {
 	} as const
 }
 
-function reject() {
+function reject(signingParams: PersonalSignParams | SignTypedDataParams | OldSignTypedDataParams,) {
 	return {
+		method: signingParams.method,
 		error: {
 			code: METAMASK_ERROR_USER_REJECTED_REQUEST,
 			message: 'Interceptor Personal Signature: User denied personal signature.'
@@ -231,7 +232,7 @@ export const openPersonalSignDialog = async (
 	settings: Settings,
 	activeAddress: bigint | undefined
 ) => {
-	if (pendingPersonalSign !== undefined) return reject()
+	if (pendingPersonalSign !== undefined) return reject(signingParams)
 
 	const onCloseWindow = (windowId: number) => {
 		if (openedDialog?.windowOrTab.id !== windowId) return
@@ -240,7 +241,7 @@ export const openPersonalSignDialog = async (
 		return resolvePersonalSign(websiteTabConnections, rejectMessage(request.requestId))
 	}
 
-	if (activeAddress === undefined) return reject()
+	if (activeAddress === undefined) return reject(signingParams)
 	const popupMessage = await craftPersonalSignPopupMessage(ethereumClientService, signingParams, socket.tabId, activeAddress, settings.userAddressBook, simulationMode, request.requestId, await getSignerName(), website)
 
 	const personalSignWindowReadyAndListening = async function popupMessageListener(msg: unknown) {
@@ -255,7 +256,7 @@ export const openPersonalSignDialog = async (
 		const oldPromise = await getPendingPersonalSignPromise()
 		if (oldPromise !== undefined) {
 			if ((await browser.tabs.query({ windowId: oldPromise.dialogId })).length > 0) {
-				return reject()
+				return reject(signingParams)
 			} else {
 				await setPendingPersonalSignPromise(undefined)
 			}
@@ -294,16 +295,16 @@ export const openPersonalSignDialog = async (
 	}
 }
 
-async function resolve(reply: PersonalSign, simulationMode: boolean, params: PersonalSignParams | SignTypedDataParams | OldSignTypedDataParams): Promise<{ forward: true } | { error: { code: number, message: string } } | { result: string }> {
+async function resolve(reply: PersonalSign, simulationMode: boolean, signingParams: PersonalSignParams | SignTypedDataParams | OldSignTypedDataParams) {
 	await setPendingPersonalSignPromise(undefined)
 	// forward message to content script
 	if (reply.data.accept) {
 		if (simulationMode) {
-			const result = await simulatePersonalSign(params)
-			if (result === undefined) return reject()
-			return { result: result }
+			const result = await simulatePersonalSign(signingParams)
+			if (result === undefined) return reject(signingParams)
+			return { result, method: signingParams.method }
 		}
-		return { forward: true } as const
+		return { forward: true, ...signingParams } as const
 	}
-	return reject()
+	return reject(signingParams)
 }

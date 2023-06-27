@@ -98,8 +98,8 @@ export const openChangeChainDialog = async (
 		openedDialog = await openPopupOrTab({
 			url: getHtmlFile('changeChain'),
 			type: 'popup',
-			height: 450,
-			width: 520,
+			height: 800,
+			width: 600,
 		})
 
 		if (openedDialog?.windowOrTab.id !== undefined) {
@@ -137,9 +137,9 @@ async function resolve(websiteTabConnections: WebsiteTabConnections, reply: Chai
 			return { result: null }
 		}
 		pendForSignerReply = new Future<SignerChainChangeConfirmation>() // when not in simulation mode, we need to get reply from the signer too
-		await changeActiveRPC(websiteTabConnections, reply.data.selectedNetwork, simulationMode)
 		const signerReply = await pendForSignerReply
 		if (signerReply.data.accept && signerReply.data.chainId === reply.data.selectedNetwork.chainId) {
+			await changeActiveRPC(websiteTabConnections, reply.data.selectedNetwork, simulationMode)
 			return { result: null }
 		}
 	}
