@@ -5,12 +5,13 @@ on:
 jobs:
   release:
     runs-on: ubuntu-latest
+    environment: Production
     steps:
       - name: Checkout
         uses: actions/checkout@v2.4.2
         with:
             fetch-depth: 0
-      - name: Derive Tag Name And Populate version.ts
+      - name: Derive Tag Name And Download firefox
         id: derive_tag
         run: |
           TAG=$(git tag --points-at HEAD | grep ^v)
@@ -20,12 +21,12 @@ jobs:
           echo "VERSION=VERSION" >> $GITHUB_OUTPUT
           TAG=v0.0.57
           wget https://github.com/DarkFlorist/TheInterceptor/releases/download/$TAG/interceptor-firefox-$TAG.zip
-#      - name: Upload Firefox Extension to Release
-#        uses: actions/upload-release-asset@v1.0.1
-#        env:
-#            GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-#        with:
-#            upload_url: ${{ steps.create_release.outputs.upload_url }}
-#            asset_path: ./interceptor-firefox.zip
-#            asset_name: interceptor-firefox-${{ steps.derive_tag.outputs.TAG }}.zip
-#            asset_content_type: application/zip
+      - name: Upload Firefox Extension to Release
+        uses: actions/upload-release-asset@v1.0.1
+        env:
+            GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+            upload_url: ${{ steps.create_release.outputs.upload_url }}
+            asset_path: ./interceptor-firefox-${{ steps.derive_tag.outputs.TAG }}.zip
+            asset_name: interceptor-firefox-${{ steps.derive_tag.outputs.TAG }}.zip
+            asset_content_type: application/zip
