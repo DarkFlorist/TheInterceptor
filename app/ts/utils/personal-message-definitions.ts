@@ -4,7 +4,7 @@ import { AddressBookEntry, NFTEntry, SignerName, TokenEntry, Website } from './u
 import { QUARANTINE_CODE } from '../simulation/protectors/quarantine-codes.js'
 import { EthereumInput } from './wire-types.js'
 import { EnrichedEIP712 } from './eip712Parsing.js'
-import { SelectedNetwork } from './interceptor-messages.js'
+import { SelectedNetwork } from './visualizer-types.js'
 
 export type EIP2612Message = funtypes.Static<typeof EIP2612Message>
 export const EIP2612Message = funtypes.ReadonlyObject({

@@ -1,4 +1,4 @@
-import { SelectedNetwork } from '../../utils/interceptor-messages.js'
+import { SelectedNetwork } from '../../utils/visualizer-types.js'
 import { assertIsObject } from '../../utils/typescript.js'
 import { EthereumJsonRpcRequest, JsonRpcResponse } from '../../utils/wire-types.js'
 

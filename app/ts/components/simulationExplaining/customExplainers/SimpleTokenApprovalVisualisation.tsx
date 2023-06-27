@@ -2,8 +2,7 @@ import { RenameAddressCallBack } from '../../../utils/user-interface-types.js'
 import { BigAddress } from '../../subcomponents/address.js'
 import { Token721AmountField, TokenAmount, TokenSymbol } from '../../subcomponents/coins.js'
 import { GasFee, TransactionGasses } from '../SimulationSummary.js'
-import { TokenVisualizerResultWithMetadata } from '../../../utils/visualizer-types.js'
-import { SelectedNetwork } from '../../../utils/interceptor-messages.js'
+import { TokenVisualizerResultWithMetadata, SelectedNetwork } from '../../../utils/visualizer-types.js'
 
 type SimpleTokenApprovalVisualisation = {
 	approval: TokenVisualizerResultWithMetadata

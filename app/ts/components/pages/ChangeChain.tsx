@@ -1,9 +1,10 @@
 import { useState, useEffect } from 'preact/hooks'
 import { Error as ErrorContainer, ErrorCheckBox } from '../subcomponents/Error.js'
-import { ChangeChainRequest, ExternalPopupMessage, SelectedNetwork } from '../../utils/interceptor-messages.js'
+import { ChangeChainRequest, ExternalPopupMessage } from '../../utils/interceptor-messages.js'
 import { sendPopupMessageToBackgroundPage } from '../../background/backgroundUtils.js'
 import { Website } from '../../utils/user-interface-types.js'
 import { tryFocusingTab } from '../ui-utils.js'
+import { SelectedNetwork } from '../../utils/visualizer-types.js'
 
 interface InterceptorChainChangeRequest {
 	selectedNetwork: SelectedNetwork,

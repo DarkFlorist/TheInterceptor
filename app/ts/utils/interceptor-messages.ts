@@ -1,7 +1,7 @@
 import * as funtypes from 'funtypes'
 import { AddressBookEntries, AddressBookEntry, AddressInfo, AddressInfoEntry, ContactEntries, SignerName, Website, WebsiteSocket } from './user-interface-types.js'
 import { EthGetLogsResponse, EthTransactionReceiptResponse, EthereumAddress, EthereumBlockHeaderWithTransactionHashes, EthereumBytes32, EthereumData, EthereumQuantity, EthereumSignedTransactionWithBlockData, GetBlockReturn, GetSimulationStackReply, OldSignTypedDataParams, PersonalSignParams, SendRawTransaction, SendTransactionParams, SignTypedDataParams } from './wire-types.js'
-import { SimulationState, OptionalEthereumAddress, SimulatedAndVisualizedTransaction, SimResults, TokenPriceEstimate, WebsiteCreatedEthereumUnsignedTransaction } from './visualizer-types.js'
+import { SimulationState, OptionalEthereumAddress, SimulatedAndVisualizedTransaction, SimResults, TokenPriceEstimate, WebsiteCreatedEthereumUnsignedTransaction, SelectedNetwork, RPCEntries, RPCEntry } from './visualizer-types.js'
 import { ICON_ACCESS_DENIED, ICON_ACTIVE, ICON_NOT_ACTIVE, ICON_SIGNING, ICON_SIGNING_NOT_SUPPORTED, ICON_SIMULATING } from './constants.js'
 import { PersonalSignRequestData } from './personal-message-definitions.js'
 
@@ -561,7 +561,7 @@ export interface PendingAccessRequestWithMetadata extends PendingAccessRequest {
 export type Settings = funtypes.Static<typeof Settings>
 export const Settings = funtypes.ReadonlyObject({
 	activeSimulationAddress: OptionalEthereumAddress,
-	activeChain: EthereumQuantity,
+	selectedNetwork: SelectedNetwork,
 	page: Page,
 	useSignersAddressAsActiveAddress: funtypes.Boolean,
 	websiteAccess: WebsiteAccessArray,
@@ -574,39 +574,6 @@ export const IsConnected = funtypes.Union(funtypes.Undefined, funtypes.ReadonlyO
 	isConnected: funtypes.Boolean,
 	lastConnnectionAttempt: funtypes.Number,
 }))
-
-export type RPCEntry = funtypes.Static<typeof RPCEntry>
-export const RPCEntry = funtypes.ReadonlyObject({
-	name: funtypes.String,
-	chainId: EthereumQuantity,
-	https_rpc: funtypes.String,
-	currencyName: funtypes.String,
-	currencyTicker: funtypes.String,
-	primary: funtypes.Boolean,
-	minimized: funtypes.Boolean,
-	weth: EthereumQuantity,
-})
-
-export type RPCEntries = funtypes.Static<typeof RPCEntries>
-export const RPCEntries = funtypes.ReadonlyArray(RPCEntry)
-
-export type SelectedNetwork = funtypes.Static<typeof SelectedNetwork>
-export const SelectedNetwork = funtypes.Union(
-	RPCEntry,
-	funtypes.ReadonlyObject({
-		https_rpc: funtypes.Undefined,
-		chainId: EthereumQuantity,
-		name: funtypes.String,
-		currencyName: funtypes.Literal('Ether?'),
-    	currencyTicker: funtypes.Literal('ETH?'),
-	})
-)
-
-export type SettingsWithMetadata = funtypes.Static<typeof SettingsWithMetadata>
-export const SettingsWithMetadata = funtypes.ReadonlyObject({
-	settings: Settings,
-	selectedNetwork: SelectedNetwork
-})
 
 export type UpdateHomePage = funtypes.Static<typeof UpdateHomePage>
 export const UpdateHomePage = funtypes.ReadonlyObject({
@@ -625,8 +592,7 @@ export const UpdateHomePage = funtypes.ReadonlyObject({
 		signerChain: funtypes.Union(EthereumQuantity, funtypes.Undefined),
 		signerName: SignerName,
 		currentBlockNumber: funtypes.Union(EthereumQuantity, funtypes.Undefined),
-		settings: SettingsWithMetadata,
-		interceptorSupportForChainId: funtypes.Boolean,
+		settings: Settings,
 		tabIconDetails: funtypes.Union(TabIconDetails, funtypes.Undefined),
 		makeMeRich: funtypes.Boolean,
 		isConnected: IsConnected,
@@ -762,7 +728,7 @@ export const ChangeChainRequest = funtypes.ReadonlyObject({
 export type SettingsUpdated = funtypes.Static<typeof SettingsUpdated>
 export const SettingsUpdated = funtypes.ReadonlyObject({
 	method: funtypes.Literal('popup_settingsUpdated'),
-	data: SettingsWithMetadata
+	data: Settings
 })
 
 export type PopupMessage = funtypes.Static<typeof PopupMessage>

@@ -1,7 +1,6 @@
-import { SelectedNetwork } from '../../../utils/interceptor-messages.js'
 import { DistributedOmit } from '../../../utils/typescript.js'
 import { AddressBookEntry, RenameAddressCallBack } from '../../../utils/user-interface-types.js'
-import { EthBalanceChangesWithMetadata } from '../../../utils/visualizer-types.js'
+import { EthBalanceChangesWithMetadata, SelectedNetwork } from '../../../utils/visualizer-types.js'
 import { BigAddress } from '../../subcomponents/address.js'
 import { TokenOrEth, TokenOrEtherParams } from '../../subcomponents/coins.js'
 import { GasFee, TransactionGasses } from '../SimulationSummary.js'

@@ -1,7 +1,8 @@
 
 import { sendPopupMessageToBackgroundPage } from '../../background/backgroundUtils.js'
 import { SettingsParam } from '../../utils/user-interface-types.js'
-import { ExternalPopupMessage, ImportSettingsReply, RPCEntries } from '../../utils/interceptor-messages.js'
+import { ExternalPopupMessage, ImportSettingsReply } from '../../utils/interceptor-messages.js'
+import { RPCEntries } from '../../utils/visualizer-types.js'
 import { useEffect, useState } from 'preact/hooks' 
 import { Error as ErrorComponent} from '../subcomponents/Error.js'
 import { DinoSays } from '../subcomponents/DinoSays.js'

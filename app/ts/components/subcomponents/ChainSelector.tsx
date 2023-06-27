@@ -1,6 +1,7 @@
 import { useRef, useState, useEffect } from 'preact/hooks'
 import { clickOutsideAlerter } from '../ui-utils.js'
-import { ExternalPopupMessage, RPCEntries, RPCEntry, SelectedNetwork } from '../../utils/interceptor-messages.js'
+import { ExternalPopupMessage } from '../../utils/interceptor-messages.js'
+import { RPCEntries, RPCEntry, SelectedNetwork } from '../../utils/visualizer-types.js'
 
 interface ChainSelectorParams {
 	selectedNetwork: SelectedNetwork

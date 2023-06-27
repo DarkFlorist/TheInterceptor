@@ -12,9 +12,10 @@ import { identifyTransaction } from './identifyTransaction.js'
 import { identifySwap } from './SwapTransactions.js'
 import { useState } from 'preact/hooks'
 import { CellElement, convertNumberToCharacterRepresentationIfSmallEnough, upperCaseFirstCharacter } from '../ui-utils.js'
-import { IsConnected, SelectedNetwork } from '../../utils/interceptor-messages.js'
+import { IsConnected } from '../../utils/interceptor-messages.js'
 import { EthereumTimestamp } from '../../utils/wire-types.js'
 import { getEthDonator } from '../../background/storageVariables.js'
+import { SelectedNetwork } from '../../utils/visualizer-types.js'
 
 type EtherChangeParams = {
 	textColor: string,

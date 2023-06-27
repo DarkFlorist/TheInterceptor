@@ -1,12 +1,12 @@
 import { HomeParams, AddressInfo, FirstCardParams, SimulationStateParam, SignerName } from '../../utils/user-interface-types.js'
 import { useEffect, useState } from 'preact/hooks'
-import { SimulatedAndVisualizedTransaction, SimulationAndVisualisationResults } from '../../utils/visualizer-types.js'
+import { SimulatedAndVisualizedTransaction, SimulationAndVisualisationResults, RPCEntry, SelectedNetwork } from '../../utils/visualizer-types.js'
 import { ActiveAddress, findAddressInfo } from '../subcomponents/address.js'
 import { SimulationSummary } from '../simulationExplaining/SimulationSummary.js'
 import { ChainSelector } from '../subcomponents/ChainSelector.js'
 import { Spinner } from '../subcomponents/Spinner.js'
 import { DEFAULT_TAB_CONNECTION, ICON_NOT_ACTIVE, ICON_SIGNING, ICON_SIGNING_NOT_SUPPORTED, TIME_BETWEEN_BLOCKS } from '../../utils/constants.js'
-import { IsConnected, RPCEntry, SelectedNetwork, TabIcon, TabIconDetails } from '../../utils/interceptor-messages.js'
+import { IsConnected, TabIcon, TabIconDetails } from '../../utils/interceptor-messages.js'
 import { getPrettySignerName, SignerLogoText, SignersLogoName } from '../subcomponents/signers.js'
 import { Error } from '../subcomponents/Error.js'
 import { ToolTip } from '../subcomponents/CopyToClipboard.js'
@@ -201,7 +201,6 @@ export function Home(param: HomeParams) {
 	const [useSignersAddressAsActiveAddress, setUseSignersAddressAsActiveAddress] = useState(false)
 	const [simulationAndVisualisationResults, setSimulationAndVisualisationResults] = useState<SimulationAndVisualisationResults | undefined>(undefined)
 	const [selectedNetwork, setSelectedNetwork] = useState<SelectedNetwork | undefined>()
-	const [interceptorSupportForChainId, setInterceptorSupportForChainId] = useState<boolean>(true)
 	const [simulationMode, setSimulationMode] = useState<boolean>(true)
 	const [tabIconDetails, setTabConnection] = useState<TabIconDetails>(DEFAULT_TAB_CONNECTION)
 	const [signerAccounts, setSignerAccounts] = useState<readonly bigint[] | undefined>(undefined)
@@ -231,7 +230,6 @@ export function Home(param: HomeParams) {
 		setDisableReset(false)
 		setRemoveTransactionHashes([])
 		setIsConnected(param.isConnected)
-		setInterceptorSupportForChainId(param.interceptorSupportForChainId)
 	}, [param.activeSigningAddress,
 		param.activeSimulationAddress,
 		param.signerAccounts,
@@ -244,7 +242,6 @@ export function Home(param: HomeParams) {
 		param.signerName,
 		param.simVisResults,
 		param.isConnected,
-		param.interceptorSupportForChainId,
 	])
 
 	function changeActiveAddress() {
@@ -274,7 +271,7 @@ export function Home(param: HomeParams) {
 	if (selectedNetwork === undefined) return <></>
 
 	return <>
-		{ !interceptorSupportForChainId ?
+		{ selectedNetwork.https_rpc === undefined ?
 			<div style = 'margin: 10px; background-color: var(--bg-color);'>
 				<Error text = { `${ selectedNetwork.name } is not a supported network. The Interceptors is disabled while you are using the network.` }/>
 			</div>

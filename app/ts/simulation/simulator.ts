@@ -10,11 +10,10 @@ import { eoaApproval } from './protectors/eoaApproval.js'
 import { eoaCalldata } from './protectors/eoaCalldata.js'
 import { tokenToContract } from './protectors/tokenToContract.js'
 import { simulatedMulticall } from './services/SimulationModeEthereumClientService.js'
-import { WebsiteCreatedEthereumUnsignedTransaction, SimResults, SimulationState, TokenVisualizerResult, VisualizerResult } from '../utils/visualizer-types.js'
+import { WebsiteCreatedEthereumUnsignedTransaction, SimResults, SimulationState, TokenVisualizerResult, VisualizerResult, SelectedNetwork } from '../utils/visualizer-types.js'
 import { handleApprovalLog, handleDepositLog, handleERC721ApprovalForAllLog, handleTransferLog, handleWithdrawalLog } from './logHandlers.js'
 import { QUARANTINE_CODE } from './protectors/quarantine-codes.js'
 import { EthereumJSONRpcRequestHandler } from './services/EthereumJSONRpcRequestHandler.js'
-import { SelectedNetwork } from '../utils/interceptor-messages.js'
 
 const PROTECTORS = [
 	selfTokenOops,

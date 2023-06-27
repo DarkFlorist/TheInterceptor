@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'preact/hooks'
 import { defaultAddresses } from '../background/settings.js'
-import { SimulatedAndVisualizedTransaction, SimulationAndVisualisationResults, SimulationState, TokenPriceEstimate } from '../utils/visualizer-types.js'
+import { SimulatedAndVisualizedTransaction, SimulationAndVisualisationResults, SimulationState, TokenPriceEstimate, RPCEntry, SelectedNetwork } from '../utils/visualizer-types.js'
 import { ChangeActiveAddress } from './pages/ChangeActiveAddress.js'
 import { Home } from './pages/Home.js'
 import { AddressInfo, AddressInfoEntry, AddressBookEntry, AddingNewAddressType, SignerName, AddressBookEntries } from '../utils/user-interface-types.js'
@@ -11,7 +11,7 @@ import { ethers } from 'ethers'
 import { PasteCatcher } from './subcomponents/PasteCatcher.js'
 import { truncateAddr } from '../utils/ethereum.js'
 import { DEFAULT_TAB_CONNECTION } from '../utils/constants.js'
-import { ExternalPopupMessage, TabIconDetails, UpdateHomePage, Page, WebsiteAccessArray, WebsiteIconChanged, IsConnected, RPCEntry, SelectedNetwork, SettingsWithMetadata } from '../utils/interceptor-messages.js'
+import { ExternalPopupMessage, TabIconDetails, UpdateHomePage, Page, WebsiteAccessArray, WebsiteIconChanged, IsConnected, Settings } from '../utils/interceptor-messages.js'
 import { version, gitCommitSha } from '../version.js'
 import { sendPopupMessageToBackgroundPage } from '../background/backgroundUtils.js'
 import { EthereumAddress } from '../utils/wire-types.js'
@@ -29,7 +29,6 @@ export function App() {
 	const [websiteAccess, setWebsiteAccess] = useState<WebsiteAccessArray | undefined>(undefined)
 	const [websiteAccessAddressMetadata, setWebsiteAccessAddressMetadata] = useState<readonly AddressInfoEntry[]>([])
 	const [selectedNetwork, setSelectedNetwork] = useState<SelectedNetwork | undefined>(undefined)
-	const [interceptorSupportForChainId, setInterceptorSupportForChainId] = useState<boolean>(true)
 	const [simulationMode, setSimulationMode] = useState<boolean>(true)
 	const [tabIconDetails, setTabConnection] = useState<TabIconDetails>(DEFAULT_TAB_CONNECTION)
 	const [isSettingsLoaded, setIsSettingsLoaded] = useState<boolean>(false)
@@ -96,7 +95,6 @@ export function App() {
 		const updateHomePage = ({ data }: UpdateHomePage) => {
 			setIsSettingsLoaded((isSettingsLoaded) => {
 				updateHomePageSettings(data.settings, !isSettingsLoaded)
-				setInterceptorSupportForChainId(data.interceptorSupportForChainId)
 				setCurrentTabId(data.tabId)
 				setActiveSigningAddress(data.activeSigningAddressInThisTab)
 				if (isSettingsLoaded === false) {
@@ -123,16 +121,16 @@ export function App() {
 				return true
 			})
 		}
-		const updateHomePageSettings = (settingsWithMetadata: SettingsWithMetadata, updateQuery: boolean) => {
+		const updateHomePageSettings = (settings: Settings, updateQuery: boolean) => {
 			if (updateQuery) {
-				setSimulationMode(settingsWithMetadata.settings.simulationMode)
-				setAppPage(settingsWithMetadata.settings.page)
+				setSimulationMode(settings.simulationMode)
+				setAppPage(settings.page)
 			}
-			setSelectedNetwork(settingsWithMetadata.selectedNetwork)
-			setActiveSimulationAddress(settingsWithMetadata.settings.activeSimulationAddress)
-			setUseSignersAddressAsActiveAddress(settingsWithMetadata.settings.useSignersAddressAsActiveAddress)
-			setAddressInfos(settingsWithMetadata.settings.userAddressBook.addressInfos)
-			setWebsiteAccess(settingsWithMetadata.settings.websiteAccess)
+			setSelectedNetwork(settings.selectedNetwork)
+			setActiveSimulationAddress(settings.activeSimulationAddress)
+			setUseSignersAddressAsActiveAddress(settings.useSignersAddressAsActiveAddress)
+			setAddressInfos(settings.userAddressBook.addressInfos)
+			setWebsiteAccess(settings.websiteAccess)
 		}
 
 		const updateTabIcon = ({ data }: WebsiteIconChanged) => {
@@ -234,7 +232,6 @@ export function App() {
 							signerName = { signerName }
 							renameAddressCallBack = { renameAddressCallBack }
 							isConnected = { isConnected }
-							interceptorSupportForChainId = { interceptorSupportForChainId }
 						/>
 
 						<div class = { `modal ${ appPage !== 'Home' ? 'is-active' : ''}` }>

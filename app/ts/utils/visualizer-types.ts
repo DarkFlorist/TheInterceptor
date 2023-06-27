@@ -4,7 +4,33 @@ import * as funtypes from 'funtypes'
 import { QUARANTINE_CODE } from '../simulation/protectors/quarantine-codes.js'
 import { AddressBookEntry, NFTEntry, RenameAddressCallBack, TokenEntry, Website, WebsiteSocket } from './user-interface-types.js'
 import { ERROR_INTERCEPTOR_GAS_ESTIMATION_FAILED } from './constants.js'
-import { SelectedNetwork } from './interceptor-messages.js'
+
+export type RPCEntry = funtypes.Static<typeof RPCEntry>
+export const RPCEntry = funtypes.ReadonlyObject({
+	name: funtypes.String,
+	chainId: EthereumQuantity,
+	https_rpc: funtypes.String,
+	currencyName: funtypes.String,
+	currencyTicker: funtypes.String,
+	primary: funtypes.Boolean,
+	minimized: funtypes.Boolean,
+	weth: EthereumQuantity,
+})
+
+export type RPCEntries = funtypes.Static<typeof RPCEntries>
+export const RPCEntries = funtypes.ReadonlyArray(RPCEntry)
+
+export type SelectedNetwork = funtypes.Static<typeof SelectedNetwork>
+export const SelectedNetwork = funtypes.Union(
+	RPCEntry,
+	funtypes.ReadonlyObject({
+		https_rpc: funtypes.Undefined,
+		chainId: EthereumQuantity,
+		name: funtypes.String,
+		currencyName: funtypes.Literal('Ether?'),
+    	currencyTicker: funtypes.Literal('ETH?'),
+	})
+)
 
 export type OptionalEthereumAddress = funtypes.Static<typeof OptionalEthereumAddress>
 export const OptionalEthereumAddress = funtypes.Union(EthereumAddress, funtypes.Undefined)

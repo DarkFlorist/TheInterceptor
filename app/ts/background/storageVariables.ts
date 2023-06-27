@@ -1,11 +1,11 @@
 import { ICON_NOT_ACTIVE, getChainName } from '../utils/constants.js'
-import { PendingAccessRequestArray, PendingChainChangeConfirmationPromise, PendingPersonalSignPromise, PendingTransaction, TabState, IsConnected, PendingAccessRequest, RPCEntries, SelectedNetwork } from '../utils/interceptor-messages.js'
+import { PendingAccessRequestArray, PendingChainChangeConfirmationPromise, PendingPersonalSignPromise, PendingTransaction, TabState, IsConnected, PendingAccessRequest } from '../utils/interceptor-messages.js'
 import { Semaphore } from '../utils/semaphore.js'
 import { browserStorageLocalSet, browserStorageLocalSingleGetWithDefault } from '../utils/storageUtils.js'
 import { SignerName } from '../utils/user-interface-types.js'
-import { EthereumSubscriptions, SimulationResults } from '../utils/visualizer-types.js'
+import { EthereumSubscriptions, SimulationResults, RPCEntries, SelectedNetwork } from '../utils/visualizer-types.js'
 import * as funtypes from 'funtypes'
-import { getSettings } from './settings.js'
+import { defaultRPCs, getSettings } from './settings.js'
 
 export async function getOpenedAddressBookTabId() {
 	const tabIdData = await browserStorageLocalSingleGetWithDefault('addressbookTabId', undefined)
@@ -210,62 +210,10 @@ export async function setRPCList(entries: RPCEntries) {
 	return await browserStorageLocalSet('RPCEntries', RPCEntries.serialize(entries) as string)
 }
 
-export async function getRPCList() {	
-	const defaultRPCs: RPCEntries = [
-		{
-			name: 'Ethereum Mainnet',
-			chainId: 1n,
-			https_rpc: 'https://rpc.dark.florist/flipcardtrustone',
-			currencyName: 'Ether',
-			currencyTicker: 'ETH',
-			primary: true,
-			minimized: true,
-			weth: 0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2n,
-		},
-		{
-			name: 'Ethereum (geth, multicall)',
-			chainId: 1n,
-			https_rpc: 'https://rpc.dark.florist/winedancemuffinborrow',
-			currencyName: 'Ether',
-			currencyTicker: 'ETH',
-			primary: false,
-			minimized: true,
-			weth: 0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2n,
-		},
-		{
-			name: 'Ethereum (nethermind, multicall)',
-			chainId: 1n,
-			https_rpc: 'https://rpc.dark.florist/birdchalkrenewtip',
-			currencyName: 'Ether',
-			currencyTicker: 'ETH',
-			primary: false,
-			minimized: true,
-			weth: 0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2n,
-		},
-		{
-			name: 'Goerli',
-			chainId: 5n,
-			https_rpc: 'https://rpc-goerli.dark.florist/flipcardtrustone',
-			currencyName: 'Goerli Testnet ETH',
-			currencyTicker: 'GÖETH',
-			primary: true,
-			minimized: true,
-			weth: 0xb4fbf271143f4fbf7b91a5ded31805e42b2208d6n,
-		},
-		{
-			name: 'Sepolia',
-			chainId: 11155111n,
-			https_rpc: 'https://rpc-sepolia.dark.florist/flipcardtrustone',
-			currencyName: 'Sepolia Testnet ETH',
-			currencyTicker: 'SEETH',
-			primary: true,
-			minimized: true,
-			weth: 0x105083929bf9bb22c26cb1777ec92661170d4285n,
-		}
-	]
+export async function getRPCList() {
 	const entries = await browserStorageLocalSingleGetWithDefault('RPCEntries', undefined)
 	if (entries === undefined) return defaultRPCs
-	return RPCEntries.parse(entries)
+	try { return RPCEntries.parse(entries) } catch(e) { return defaultRPCs }
 }
 
 export const getPrimaryRPCForChain = async (chainId: bigint) => {
@@ -274,8 +222,7 @@ export const getPrimaryRPCForChain = async (chainId: bigint) => {
 }
 
 export async function getSelectedNetwork(): Promise<SelectedNetwork> {
-	const settings = await getSettings()
-	return getSelectedNetworkForChain(settings.activeChain)
+	return (await getSettings()).selectedNetwork
 }
 
 export const getSelectedNetworkForChain = async (chainId: bigint): Promise<SelectedNetwork> => {

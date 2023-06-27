@@ -5,7 +5,7 @@ import { SmallAddress } from '../../subcomponents/address.js'
 import { bytes32String } from '../../../utils/bigint.js'
 import { ArrowIcon } from '../../subcomponents/icons.js'
 import { CellElement, humanReadableDate } from '../../ui-utils.js'
-import { SelectedNetwork } from '../../../utils/interceptor-messages.js'
+import { SelectedNetwork } from '../../../utils/visualizer-types.js'
 
 const tokenStyle = { 'font-size': '28px', 'font-weight': '500', 'color:': 'var(--text-color)' }
 

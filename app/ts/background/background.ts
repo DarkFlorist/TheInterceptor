@@ -1,12 +1,12 @@
-import { ConfirmTransactionTransactionSingleVisualization, InpageScriptRequest, InterceptedRequest, InterceptedRequestForward, InterceptorMessageToInpage, PopupMessage, RPCEntry, RPCReply, SelectedNetwork, Settings, TabState } from '../utils/interceptor-messages.js'
+import { ConfirmTransactionTransactionSingleVisualization, InpageScriptRequest, InterceptedRequest, InterceptedRequestForward, InterceptorMessageToInpage, PopupMessage, RPCReply, Settings, TabState } from '../utils/interceptor-messages.js'
 import 'webextension-polyfill'
 import { Simulator } from '../simulation/simulator.js'
 import { EthereumJsonRpcRequest, SendRawTransaction, SendTransactionParams } from '../utils/wire-types.js'
-import { clearTabStates, getEthDonator, getPrimaryRPCForChain, getSelectedNetwork, getSignerName, getSimulationResults, removeTabState, setIsConnected, updateSimulationResults, updateTabState } from './storageVariables.js'
+import { clearTabStates, getEthDonator, getSignerName, getSimulationResults, removeTabState, setIsConnected, updateSimulationResults, updateTabState } from './storageVariables.js'
 import { changeSimulationMode, getSettings, getMakeMeRich } from './settings.js'
 import { blockNumber, call, chainId, estimateGas, gasPrice, getAccounts, getBalance, getBlockByNumber, getCode, getLogs, getPermissions, getSimulationStack, getTransactionByHash, getTransactionCount, getTransactionReceipt, personalSign, sendRawTransaction, sendTransaction, subscribe, switchEthereumChain, unsubscribe } from './simulationModeHanders.js'
-import { changeActiveAddress, changeMakeMeRich, changePage, resetSimulation, confirmDialog, refreshSimulation, removeTransaction, requestAccountsFromSigner, refreshPopupConfirmTransactionSimulation, confirmPersonalSign, confirmRequestAccess, changeInterceptorAccess, changeChainDialog, popupChangeActiveChain, enableSimulationMode, addOrModifyAddressInfo, getAddressBookData, removeAddressBookEntry, openAddressBook, homeOpened, interceptorAccessChangeAddressOrRefresh, refreshPopupConfirmTransactionMetadata, refreshPersonalSignMetadata, changeSettings, importSettings, exportSettings, setNewRPCList } from './popupMessageHandlers.js'
-import { WebsiteCreatedEthereumUnsignedTransaction, SimulationState } from '../utils/visualizer-types.js'
+import { changeActiveAddress, changeMakeMeRich, changePage, resetSimulation, confirmDialog, refreshSimulation, removeTransaction, requestAccountsFromSigner, refreshPopupConfirmTransactionSimulation, confirmPersonalSign, confirmRequestAccess, changeInterceptorAccess, changeChainDialog, popupChangeActiveRPC, enableSimulationMode, addOrModifyAddressInfo, getAddressBookData, removeAddressBookEntry, openAddressBook, homeOpened, interceptorAccessChangeAddressOrRefresh, refreshPopupConfirmTransactionMetadata, refreshPersonalSignMetadata, changeSettings, importSettings, exportSettings, setNewRPCList } from './popupMessageHandlers.js'
+import { WebsiteCreatedEthereumUnsignedTransaction, SimulationState, RPCEntry, SelectedNetwork } from '../utils/visualizer-types.js'
 import { AddressBookEntry, Website, TabConnection, WebsiteSocket, WebsiteTabConnections } from '../utils/user-interface-types.js'
 import { interceptorAccessMetadataRefresh, requestAccessFromUser } from './windows/interceptorAccess.js'
 import { ICON_NOT_ACTIVE, MAKE_YOU_RICH_TRANSACTION, METAMASK_ERROR_NOT_CONNECTED_TO_CHAIN, METAMASK_ERROR_USER_REJECTED_REQUEST } from '../utils/constants.js'
@@ -162,14 +162,14 @@ export async function refreshConfirmTransactionSimulation(
 export async function getPrependTrasactions(ethereumClientService: EthereumClientService, settings: Settings, richMode: boolean) {
 	if (!settings.simulationMode || !richMode) return []
 	const activeAddress = settings.activeSimulationAddress
-	const chainId = settings.activeChain
+	const chainId = settings.selectedNetwork.chainId
 	const donatorAddress = getEthDonator(chainId)
 	if (donatorAddress === undefined) return []
 	if (activeAddress === undefined) return []
 	return [{
 		transaction: {
 			from: donatorAddress,
-			chainId: chainId,
+			chainId: settings.selectedNetwork.chainId,
 			nonce: await ethereumClientService.getTransactionCount(donatorAddress),
 			to: activeAddress,
 			...MAKE_YOU_RICH_TRANSACTION.transaction,
@@ -242,7 +242,7 @@ async function handleRPCRequest(
 		case 'eth_sign': return { method: parsedRequest.method, error: { code: 10000, message: 'eth_sign is deprecated' } }
 		case 'eth_sendRawTransaction': {
 			if (forwardToSigner) {
-				if (await getPrimaryRPCForChain(settings.activeChain) !== undefined) {
+				if (settings.selectedNetwork.https_rpc !== undefined) {
 					return sendRawTransaction(ethereumClientService, parsedRequest, socket, request, false, website, activeAddress)
 				}
 				return getForwardingMessage(parsedRequest)
@@ -251,7 +251,7 @@ async function handleRPCRequest(
 		}
 		case 'eth_sendTransaction': {
 			if (forwardToSigner) {
-				if (await getPrimaryRPCForChain(settings.activeChain) !== undefined) {
+				if (settings.selectedNetwork.https_rpc !== undefined) {
 					return sendTransaction(websiteTabConnections, activeAddress, ethereumClientService, parsedRequest, socket, request, false, website)
 				}
 				return getForwardingMessage(parsedRequest)
@@ -335,11 +335,9 @@ export async function changeActiveAddressAndChainAndResetSimulation(
 		}
 		const updatedSettings = await getSettings()
 		updateWebsiteApprovalAccesses(websiteTabConnections, undefined, updatedSettings)
-		sendPopupMessageToOpenWindows({ method: 'popup_settingsUpdated', data: { settings: updatedSettings, selectedNetwork: await getSelectedNetwork() } })
+		sendPopupMessageToOpenWindows({ method: 'popup_settingsUpdated', data: updatedSettings })
 		if (change.selectedNetwork !== undefined) {
-			if (change.selectedNetwork.https_rpc !== undefined) {
-				await resetSimulator(change.selectedNetwork)
-			}
+			if (change.selectedNetwork.https_rpc !== undefined) await resetSimulator(change.selectedNetwork)
 			sendMessageToApprovedWebsitePorts(websiteTabConnections, { method: 'chainChanged' as const, result: change.selectedNetwork.chainId })
 			sendPopupMessageToOpenWindows({ method: 'popup_chain_update' })
 		}
@@ -360,13 +358,13 @@ export async function changeActiveAddressAndChainAndResetSimulation(
 	})
 }
 
-export async function changeActiveChain(websiteTabConnections: WebsiteTabConnections, selectedNetwork: SelectedNetwork, simulationMode: boolean) {
+export async function changeActiveRPC(websiteTabConnections: WebsiteTabConnections, selectedNetwork: SelectedNetwork, simulationMode: boolean) {
 	if (simulationMode) return await changeActiveAddressAndChainAndResetSimulation(websiteTabConnections, {
 		simulationMode: simulationMode,
 		selectedNetwork: selectedNetwork
 	})
 	sendMessageToApprovedWebsitePorts(websiteTabConnections, { method: 'request_signer_to_wallet_switchEthereumChain', result: selectedNetwork.chainId })
-	await sendPopupMessageToOpenWindows({ method: 'popup_settingsUpdated', data: { settings: await getSettings(), selectedNetwork: await getSelectedNetwork() } })
+	await sendPopupMessageToOpenWindows({ method: 'popup_settingsUpdated', data: await getSettings() })
 }
 
 export function postMessageToPortIfConnected(port: browser.runtime.Port, message: InterceptedRequestForward) {
@@ -577,7 +575,7 @@ async function popupMessageHandler(
 		case 'popup_personalSign': return await confirmPersonalSign(websiteTabConnections, parsedRequest)
 		case 'popup_interceptorAccess': return await confirmRequestAccess(websiteTabConnections, parsedRequest)
 		case 'popup_changeInterceptorAccess': return await changeInterceptorAccess(websiteTabConnections, parsedRequest)
-		case 'popup_changeActiveRPC': return await popupChangeActiveChain(websiteTabConnections, parsedRequest, settings)
+		case 'popup_changeActiveRPC': return await popupChangeActiveRPC(websiteTabConnections, parsedRequest, settings)
 		case 'popup_changeChainDialog': return await changeChainDialog(websiteTabConnections, parsedRequest)
 		case 'popup_enableSimulationMode': return await enableSimulationMode(websiteTabConnections, parsedRequest)
 		case 'popup_addOrModifyAddressBookEntry': return await addOrModifyAddressInfo(websiteTabConnections, parsedRequest)
@@ -596,15 +594,14 @@ async function popupMessageHandler(
 		case 'popup_ChangeSettings': return await changeSettings(simulator, parsedRequest)
 		case 'popup_import_settings': return await importSettings(parsedRequest)
 		case 'popup_get_export_settings': return await exportSettings()
-		case 'popup_set_rpc_list': return await setNewRPCList(parsedRequest, settings, simulator)
+		case 'popup_set_rpc_list': return await setNewRPCList(parsedRequest, settings)
 		default: assertUnreachable(parsedRequest)
 	}
 }
 
 async function startup() {
 	const settings = await getSettings()
-	const primaryRPC = await getPrimaryRPCForChain(settings.activeChain)
-	if (primaryRPC !== undefined) await resetSimulator(primaryRPC)
+	if (settings.selectedNetwork.https_rpc !== undefined) await resetSimulator(settings.selectedNetwork)
 	if (simulator === undefined) throw new Error('simulator not found')
 	browser.runtime.onMessage.addListener(async function (message: unknown) {
 		if (simulator === undefined) throw new Error('Interceptor not ready yet')

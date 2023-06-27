@@ -1,9 +1,9 @@
 import { StateUpdater } from 'preact/hooks'
 import * as funtypes from 'funtypes'
 import { EthereumAddress, EthereumQuantity, LiteralConverterParserFactory } from './wire-types.js'
-import { SimulatedAndVisualizedTransaction, SimulationAndVisualisationResults } from './visualizer-types.js'
+import { SimulatedAndVisualizedTransaction, SimulationAndVisualisationResults, RPCEntry, SelectedNetwork } from './visualizer-types.js'
 import { IdentifiedSwapWithMetadata } from '../components/simulationExplaining/SwapTransactions.js'
-import { IsConnected, Page, RPCEntry, SelectedNetwork, TabIconDetails, WebsiteAccessArray } from './interceptor-messages.js'
+import { IsConnected, Page, TabIconDetails, WebsiteAccessArray } from './interceptor-messages.js'
 
 export type SignerName = funtypes.Static<typeof SignerName>
 export const SignerName = funtypes.Union(
@@ -146,7 +146,6 @@ export type HomeParams = {
 	signerName: SignerName,
 	renameAddressCallBack: RenameAddressCallBack,
 	isConnected: IsConnected,
-	interceptorSupportForChainId: boolean,
 }
 
 export type ChangeActiveAddressParam = {

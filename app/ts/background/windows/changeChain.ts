@@ -1,12 +1,13 @@
 import { PopupOrTab, addWindowTabListener, openPopupOrTab, removeWindowTabListener } from '../../components/ui-utils.js'
 import { METAMASK_ERROR_USER_REJECTED_REQUEST } from '../../utils/constants.js'
 import { Future } from '../../utils/future.js'
-import { ChainChangeConfirmation, InterceptedRequest, ExternalPopupMessage, SignerChainChangeConfirmation, SelectedNetwork } from '../../utils/interceptor-messages.js'
+import { ChainChangeConfirmation, InterceptedRequest, ExternalPopupMessage, SignerChainChangeConfirmation } from '../../utils/interceptor-messages.js'
 import { Website, WebsiteSocket, WebsiteTabConnections } from '../../utils/user-interface-types.js'
 import { SwitchEthereumChainParams } from '../../utils/wire-types.js'
-import { changeActiveChain, postMessageIfStillConnected } from '../background.js'
+import { changeActiveRPC, postMessageIfStillConnected } from '../background.js'
 import { getHtmlFile, sendPopupMessageToOpenWindows } from '../backgroundUtils.js'
 import { getChainChangeConfirmationPromise, getSelectedNetworkForChain, setChainChangeConfirmationPromise } from '../storageVariables.js'
+import { SelectedNetwork } from '../../utils/visualizer-types.js'
 
 let pendForUserReply: Future<ChainChangeConfirmation> | undefined = undefined
 let pendForSignerReply: Future<SignerChainChangeConfirmation> | undefined = undefined
@@ -132,11 +133,11 @@ async function resolve(websiteTabConnections: WebsiteTabConnections, reply: Chai
 	await setChainChangeConfirmationPromise(undefined)
 	if (reply.data.accept) {
 		if (simulationMode) {
-			await changeActiveChain(websiteTabConnections, reply.data.selectedNetwork, simulationMode)
+			await changeActiveRPC(websiteTabConnections, reply.data.selectedNetwork, simulationMode)
 			return { result: null }
 		}
 		pendForSignerReply = new Future<SignerChainChangeConfirmation>() // when not in simulation mode, we need to get reply from the signer too
-		await changeActiveChain(websiteTabConnections, reply.data.selectedNetwork, simulationMode)
+		await changeActiveRPC(websiteTabConnections, reply.data.selectedNetwork, simulationMode)
 		const signerReply = await pendForSignerReply
 		if (signerReply.data.accept && signerReply.data.chainId === reply.data.selectedNetwork.chainId) {
 			return { result: null }

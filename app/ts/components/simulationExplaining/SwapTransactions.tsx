@@ -5,7 +5,7 @@ import { abs, addressString } from '../../utils/bigint.js'
 import { ERC721TokenNumber, EtherAmount, EtherSymbol, TokenAmount, TokenOrEthValue, TokenSymbol } from '../subcomponents/coins.js'
 import { AddressBookEntry, NFTEntry, TokenEntry } from '../../utils/user-interface-types.js'
 import { assertNever } from '../../utils/typescript.js'
-import { SelectedNetwork } from '../../utils/interceptor-messages.js'
+import { SelectedNetwork } from '../../utils/visualizer-types.js'
 
 export type BeforeAfterBalance = funtypes.Static<typeof SwapAsset>
 export const BeforeAfterBalance = funtypes.ReadonlyObject({

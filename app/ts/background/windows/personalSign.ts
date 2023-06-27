@@ -75,7 +75,7 @@ export async function craftPersonalSignPopupMessage(ethereumClientService: Ether
 
 	const getQuarrantineCodes = async (messageChainId: bigint, account: AddressBookEntry, activeAddress: AddressBookEntry, owner: AddressBookEntry | undefined): Promise<{ quarantine: boolean, quarantineCodes: readonly QUARANTINE_CODE[] }> => {
 		let quarantineCodes: QUARANTINE_CODE[] = []
-		if (BigInt(messageChainId) !== (await getSettings()).activeChain) {
+		if (BigInt(messageChainId) !== (await getSettings()).selectedNetwork.chainId) {
 			quarantineCodes.push('SIGNATURE_CHAIN_ID_DOES_NOT_MATCH')
 		}
 		if (account.address !== activeAddress.address || (owner != undefined && account.address !== owner.address)) {

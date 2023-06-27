@@ -1,12 +1,11 @@
 import { useSignal } from '@preact/signals'
 import { getTokenAmountsWorth } from '../../simulation/priceEstimator.js'
 import { abs, bigintToDecimalString, bigintToRoundedPrettyDecimalString, checksummedAddress } from '../../utils/bigint.js'
-import { ERC721TokenDefinitionParams, TokenDefinitionParams, TokenPriceEstimate } from '../../utils/visualizer-types.js'
+import { ERC721TokenDefinitionParams, TokenDefinitionParams, TokenPriceEstimate, SelectedNetwork } from '../../utils/visualizer-types.js'
 import { CopyToClipboard } from './CopyToClipboard.js'
 import { Blockie } from './PreactBlocky.js'
 import { JSX } from 'preact/jsx-runtime'
 import { useEffect } from 'preact/hooks'
-import { SelectedNetwork } from '../../utils/interceptor-messages.js'
 
 type EtherParams = {
 	amount: bigint

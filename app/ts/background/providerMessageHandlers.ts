@@ -50,7 +50,7 @@ async function changeSignerChain(websiteTabConnections: WebsiteTabConnections, p
 
 	// update active address if we are using signers address
 	const settings = await getSettings()
-	if ((settings.useSignersAddressAsActiveAddress || !settings.simulationMode) && settings.activeChain !== signerChain) {
+	if ((settings.useSignersAddressAsActiveAddress || !settings.simulationMode) && settings.selectedNetwork.chainId !== signerChain) {
 		return changeActiveAddressAndChainAndResetSimulation(websiteTabConnections, {
 			simulationMode: settings.simulationMode,
 			selectedNetwork: await getSelectedNetworkForChain(signerChain),
