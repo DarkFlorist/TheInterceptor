@@ -59,15 +59,6 @@ jobs:
           asset_path: ./interceptor-chrome.zip
           asset_name: interceptor-chrome-${{ steps.derive_tag.outputs.TAG }}.zip
           asset_content_type: application/zip
-      - name: Upload Firefox Extension to Release
-        uses: actions/upload-release-asset@v1.0.1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: ./interceptor-firefox.zip
-          asset_name: interceptor-firefox-${{ steps.derive_tag.outputs.TAG }}.zip
-          asset_content_type: application/zip
       - name: Upload Source to Release
         uses: actions/upload-release-asset@v1.0.1
         env:
@@ -77,3 +68,14 @@ jobs:
           asset_path: ./source.zip
           asset_name: source-${{ steps.derive_tag.outputs.TAG }}.zip
           asset_content_type: application/zip
+
+
+      - name: Upload Firefox Extension to Release
+        uses: actions/upload-release-asset@v1.0.1
+        env:
+            GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+            upload_url: ${{ steps.create_release.outputs.upload_url }}
+            asset_path: ./interceptor-firefox.zip
+            asset_name: interceptor-firefox-${{ steps.derive_tag.outputs.TAG }}.zip
+            asset_content_type: application/zip
