@@ -3,13 +3,13 @@ import { BigAddress } from '../../subcomponents/address.js'
 import { Token721AmountField, TokenAmount, TokenSymbol } from '../../subcomponents/coins.js'
 import { GasFee, TransactionGasses } from '../SimulationSummary.js'
 import { TokenVisualizerResultWithMetadata } from '../../../utils/visualizer-types.js'
-import { EthereumQuantity } from '../../../utils/wire-types.js'
+import { SelectedNetwork } from '../../../utils/interceptor-messages.js'
 
 type SimpleTokenApprovalVisualisation = {
 	approval: TokenVisualizerResultWithMetadata
 	renameAddressCallBack: RenameAddressCallBack
 	transactionGasses: TransactionGasses
-	chainId: EthereumQuantity
+	selectedNetwork: SelectedNetwork
 }
 
 export function SimpleTokenApprovalVisualisation(params: SimpleTokenApprovalVisualisation) {
@@ -60,7 +60,7 @@ export function SimpleTokenApprovalVisualisation(params: SimpleTokenApprovalVisu
 			</span>
 		</div>
 		<span class = 'log-table' style = 'grid-template-columns: min-content min-content min-content; margin-top: 5px;'>
-			<GasFee tx = { params.transactionGasses } chain = { params.chainId } />
+			<GasFee tx = { params.transactionGasses } selectedNetwork = { params.selectedNetwork } />
 		</span>
 	</div>
 }

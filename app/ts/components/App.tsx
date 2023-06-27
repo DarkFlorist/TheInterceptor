@@ -86,7 +86,7 @@ export function App() {
 				blockTimestamp: simState.blockTimestamp,
 				simulationConductedTimestamp: simState.simulationConductedTimestamp,
 				simulatedAndVisualizedTransactions: simulatedAndVisualizedTransactions,
-				chain: simState.chain,
+				selectedNetwork: simState.selectedNetwork,
 				tokenPrices: tokenPrices,
 				activeAddress: activeSimulationAddress,
 				addressMetaData: addressBookEntries,

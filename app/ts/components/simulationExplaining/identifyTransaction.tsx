@@ -1,3 +1,4 @@
+import { getEthDonator } from '../../background/storageVariables.js'
 import { get4Byte } from '../../utils/calldata.js'
 import { FourByteExplanations, MAKE_YOU_RICH_TRANSACTION } from '../../utils/constants.js'
 import { assertNever, createGuard } from '../../utils/typescript.js'
@@ -143,10 +144,9 @@ const getSimpleTokenTransferOrUndefined = createGuard<SimulatedAndVisualizedTran
 
 
 export function identifyTransaction(simTx: SimulatedAndVisualizedTransaction): IdentifiedTransaction {
-	const chainString = simTx.transaction.chainId.toString()
 	const richTxParams = MAKE_YOU_RICH_TRANSACTION.transaction
-	if (isSupportedChain(chainString)
-		&& CHAINS[chainString].eth_donator === simTx.transaction.from.address
+	if (simTx.transaction.selectedNetwork.https_rpc !== undefined
+		&& getEthDonator(simTx.transaction.selectedNetwork.chainId) === simTx.transaction.from.address
 		&& simTx.transaction.type === richTxParams.type
 		&& simTx.transaction.maxFeePerGas === richTxParams.maxFeePerGas
 		&& simTx.transaction.maxPriorityFeePerGas === richTxParams.maxPriorityFeePerGas
@@ -174,7 +174,7 @@ export function identifyTransaction(simTx: SimulatedAndVisualizedTransaction): I
 
 	const identifiedSwap = identifySwap(simTx)
 	if (identifiedSwap) {
-		const swapname = getSwapName(identifiedSwap, simTx.transaction.chainId)
+		const swapname = getSwapName(identifiedSwap, simTx.transaction.selectedNetwork)
 		return {
 			type: 'Swap',
 			title: swapname === undefined ? 'Swap' : swapname,

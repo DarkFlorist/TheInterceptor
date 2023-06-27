@@ -5,6 +5,7 @@ import { abs, addressString } from '../../utils/bigint.js'
 import { ERC721TokenNumber, EtherAmount, EtherSymbol, TokenAmount, TokenOrEthValue, TokenSymbol } from '../subcomponents/coins.js'
 import { AddressBookEntry, NFTEntry, TokenEntry } from '../../utils/user-interface-types.js'
 import { assertNever } from '../../utils/typescript.js'
+import { SelectedNetwork } from '../../utils/interceptor-messages.js'
 
 export type BeforeAfterBalance = funtypes.Static<typeof SwapAsset>
 export const BeforeAfterBalance = funtypes.ReadonlyObject({
@@ -46,7 +47,7 @@ export const IdentifiedSwapWithMetadata = funtypes.Union(
 
 interface SwapVisualizationParams {
 	identifiedSwap: IdentifiedSwapWithMetadata,
-	chain: CHAIN
+	selectedNetwork: SelectedNetwork
 }
 
 function dropDuplicates<T>(array: T[], isEqual: (a: T, b: T) => boolean): T[] {
@@ -299,14 +300,14 @@ export function identifyRoutes(simulatedAndVisualizedTransaction: SimulatedAndVi
 	return sorted
 }
 
-export function getSwapName(identifiedSwap: IdentifiedSwapWithMetadata, chain: CHAIN) {
+export function getSwapName(identifiedSwap: IdentifiedSwapWithMetadata, selectedNetwork: SelectedNetwork) {
 	if (identifiedSwap === false) return undefined
-	const sent = identifiedSwap.sendAsset.type !== 'Ether' ? identifiedSwap.sendAsset.tokenAddress.symbol : CHAINS[chain].currencyTicker
-	const to = identifiedSwap.receiveAsset.type !== 'Ether' ? identifiedSwap.receiveAsset.tokenAddress.symbol : CHAINS[chain].currencyTicker
+	const sent = identifiedSwap.sendAsset.type !== 'Ether' ? identifiedSwap.sendAsset.tokenAddress.symbol : selectedNetwork.currencyTicker
+	const to = identifiedSwap.receiveAsset.type !== 'Ether' ? identifiedSwap.receiveAsset.tokenAddress.symbol : selectedNetwork.currencyTicker
 	return `Swap ${ sent } for ${ to }`
 }
 
-export function VisualizeSwapAsset({ swapAsset, chain }: { swapAsset: SwapAsset, chain: CHAIN }) {
+export function VisualizeSwapAsset({ swapAsset, selectedNetwork }: { swapAsset: SwapAsset, selectedNetwork: SelectedNetwork }) {
 	const tokenStyle = { 'font-size': '28px', 'font-weight': '500' }
 	const balanceTextStyle = { 'font-size': '14px', 'color': 'var(--subtitle-text-color)' }
 
@@ -322,7 +323,7 @@ export function VisualizeSwapAsset({ swapAsset, chain }: { swapAsset: SwapAsset,
 					</div>
 					<div class = 'log-cell' style = 'justify-content: right;'>
 						<EtherSymbol
-							chain = { chain }
+							selectedNetwork = { selectedNetwork }
 							useFullTokenName = { false }
 							style = { tokenStyle}
 						/>
@@ -399,11 +400,11 @@ export function SwapVisualization(param: SwapVisualizationParams) {
 		<div style = 'display: grid; grid-template-rows: max-content max-content max-content max-content;'>
 			<p class = 'paragraph'> Swap </p>
 			<div class = 'box swap-box'>
-				<VisualizeSwapAsset swapAsset = { param.identifiedSwap.sendAsset } chain = { param.chain } />
+				<VisualizeSwapAsset swapAsset = { param.identifiedSwap.sendAsset } selectedNetwork = { param.selectedNetwork } />
 			</div>
 			<p class = 'paragraph'> For </p>
 			<div class = 'box swap-box'>
-				<VisualizeSwapAsset swapAsset = { param.identifiedSwap.receiveAsset } chain = { param.chain } />
+				<VisualizeSwapAsset swapAsset = { param.identifiedSwap.receiveAsset } selectedNetwork = { param.selectedNetwork } />
 			</div>
 		</div>
 	</div>

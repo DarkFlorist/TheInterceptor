@@ -6,12 +6,14 @@ import { CopyToClipboard } from './CopyToClipboard.js'
 import { Blockie } from './PreactBlocky.js'
 import { JSX } from 'preact/jsx-runtime'
 import { useEffect } from 'preact/hooks'
+import { SelectedNetwork } from '../../utils/interceptor-messages.js'
 
 type EtherParams = {
 	amount: bigint
 	showSign?: boolean
 	textColor?: string
-	etherCurrencyName: string
+	useFullTokenName?: boolean
+	selectedNetwork: SelectedNetwork
 	style?: JSX.CSSProperties
 }
 
@@ -50,7 +52,8 @@ export function EtherAmount(param: EtherAmountParams) {
 
 type EtherSymbolParams = {
 	textColor?: string
-	etherCurrencyName: string
+	useFullTokenName?: boolean
+	selectedNetwork: SelectedNetwork
 	style?: JSX.CSSProperties
 }
 
@@ -63,18 +66,20 @@ export function EtherSymbol(param: EtherSymbolParams) {
 		'margin-left': '2px',
 		...(param.style === undefined ? {} : param.style),
 	}
+	const etheName = param.useFullTokenName ? param.selectedNetwork.currencyName : param.selectedNetwork.currencyTicker
+
 	return <>
 		<div style = 'overflow: initial; height: 28px;'>
 			<img class = 'noselect nopointer vertical-center' style = 'max-height: 25px; max-width: 25px;' src = '../../img/coins/ethereum.png'/>
 		</div>
-		<p class = 'noselect nopointer' style = { style }> { param.etherCurrencyName } </p>
+		<p class = 'noselect nopointer' style = { style }> { etheName } </p>
 	</>
 }
 
 type TokenPriceParams = {
-	textColor?: string
-	amount: bigint
-	etherCurrencyName: string
+	textColor?: string,
+	amount: bigint,
+	selectedNetwork: SelectedNetwork
 	tokenPriceEstimate: TokenPriceEstimate | undefined
 }
 
@@ -86,8 +91,8 @@ export function TokenPrice(param: TokenPriceParams) {
 		<p style = { `color: ${ color }` }>&nbsp;(</p>
 		<Ether
 			amount = { value }
+			selectedNetwork = { param.selectedNetwork }
 			textColor = { color }
-			etherCurrencyName = { param.etherCurrencyName }
 		/>
 		<p style = { `color: ${ color }` }>)</p>
 	</>

@@ -6,14 +6,15 @@ import { ERC721Token, Ether, EtherAmount, EtherSymbol, Token, TokenAmount, Token
 import { LogAnalysis } from './Transactions.js'
 import { CopyToClipboard } from '../subcomponents/CopyToClipboard.js'
 import { SomeTimeAgo, humanReadableDateDeltaLessDetailed } from '../subcomponents/SomeTimeAgo.js'
-import { MAKE_YOU_RICH_TRANSACTION, getChainName } from '../../utils/constants.js'
+import { MAKE_YOU_RICH_TRANSACTION } from '../../utils/constants.js'
 import { addressString, bytes32String, dataStringWith0xStart, nanoString } from '../../utils/bigint.js'
 import { identifyTransaction } from './identifyTransaction.js'
 import { identifySwap } from './SwapTransactions.js'
 import { useState } from 'preact/hooks'
 import { CellElement, convertNumberToCharacterRepresentationIfSmallEnough, upperCaseFirstCharacter } from '../ui-utils.js'
-import { IsConnected } from '../../utils/interceptor-messages.js'
+import { IsConnected, SelectedNetwork } from '../../utils/interceptor-messages.js'
 import { EthereumTimestamp } from '../../utils/wire-types.js'
+import { getEthDonator } from '../../background/storageVariables.js'
 
 type EtherChangeParams = {
 	textColor: string,
@@ -23,7 +24,7 @@ type EtherChangeParams = {
 		balanceBefore: bigint;
 		balanceAfter: bigint;
 	} | undefined,
-	chain: CHAIN,
+	selectedNetwork: SelectedNetwork,
 }
 
 function EtherChange(param: EtherChangeParams) {
@@ -37,7 +38,7 @@ function EtherChange(param: EtherChangeParams) {
 				textColor = { amount >= 0 ? param.textColor : param.negativeColor }
 				showSign = { true }
 				useFullTokenName = { true }
-				chain = { param.chain }
+				selectedNetwork = { param.selectedNetwork }
 			/>
 		</div>
 	</div>
@@ -48,7 +49,7 @@ type Erc20BalanceChangeParams = {
 	textColor: string,
 	negativeColor: string,
 	isImportant: boolean,
-	chain: CHAIN,
+	selectedNetwork: SelectedNetwork,
 }
 
 function Erc20BalanceChange(param: Erc20BalanceChangeParams) {
@@ -68,7 +69,7 @@ function Erc20BalanceChange(param: Erc20BalanceChangeParams) {
 						amount = { tokenBalanceChange.changeAmount }
 						tokenPriceEstimate = { tokenBalanceChange.tokenPriceEstimate }
 						textColor = { tokenBalanceChange.changeAmount > 0n ? param.textColor : param.negativeColor }
-						chain = { param.chain }
+						selectedNetwork = { param.selectedNetwork }
 					/>
 				</div>
 			</div>
@@ -325,14 +326,14 @@ export function SummarizeAddress(param: SummarizeAddressParams) {
 				negativeColor = { positiveNegativeColors.negativeColor }
 				isImportant = { isOwnAddress }
 				etherResults =  { param.balanceSummary.etherResults }
-				chain = { param.simulationAndVisualisationResults.chain }
+				selectedNetwork = { param.simulationAndVisualisationResults.selectedNetwork }
 			/>
 			<Erc20BalanceChange
 				tokenBalanceChanges = { param.balanceSummary.tokenBalanceChanges }
 				textColor = { positiveNegativeColors.textColor }
 				negativeColor = { positiveNegativeColors.negativeColor }
 				isImportant = { isOwnAddress }
-				chain = { param.simulationAndVisualisationResults.chain }
+				selectedNetwork = { param.simulationAndVisualisationResults.selectedNetwork }
 			/>
 			<Erc20ApprovalChanges
 				tokenApprovalChanges = { param.balanceSummary.tokenApprovalChanges }
@@ -365,8 +366,8 @@ export function SummarizeAddress(param: SummarizeAddressParams) {
 	</div>
 }
 
-export function removeEthDonator(chain: CHAIN, summary: SummaryOutcome[]) {
-	const donatorSummary = summary.find((x) => x.summaryFor.address === CHAINS[chain].eth_donator)
+export function removeEthDonator(selectedNetwork: SelectedNetwork, summary: SummaryOutcome[]) {
+	const donatorSummary = summary.find((x) => x.summaryFor.address === getEthDonator(selectedNetwork.chainId))
 	if (donatorSummary === undefined || donatorSummary.etherResults === undefined) return
 	if (donatorSummary.etherResults.balanceAfter + MAKE_YOU_RICH_TRANSACTION.transaction.value === donatorSummary.etherResults.balanceBefore) {
 		if (donatorSummary.erc721OperatorChanges.length === 0 &&
@@ -419,10 +420,10 @@ export function LogAnalysisCard({ simTx, renameAddressCallBack }: LogAnalysisCar
 	</>
 }
 
-function splitToOwnAndNotOwnAndCleanSummary(firstTx: SimulatedAndVisualizedTransaction | undefined, summary: SummaryOutcome[], activeAddress: bigint, chain: CHAIN) {
+function splitToOwnAndNotOwnAndCleanSummary(firstTx: SimulatedAndVisualizedTransaction | undefined, summary: SummaryOutcome[], activeAddress: bigint, selectedNetwork: SelectedNetwork) {
 	//remove eth donator if we are in rich mode
 	if (firstTx && identifyTransaction(firstTx).type === 'MakeYouRichTransaction') {
-		removeEthDonator(chain, summary)
+		removeEthDonator(selectedNetwork, summary)
 	}
 
 	const ownAddresses = Array.from(summary.entries()).filter( ([_index, balanceSummary]) =>
@@ -446,7 +447,7 @@ export function TransactionsAccountChangesCard({ simTx, renameAddressCallBack, a
 	const addressMetaDataMap = new Map(addressMetaData.map( (x) => [addressString(x.address), x]))
 	const originalSummary = logSummarizer.getSummary(addressMetaDataMap, simulationAndVisualisationResults.tokenPrices)
 	const [showSummary, setShowSummary] = useState<boolean>(false)
-	const [ownAddresses, notOwnAddresses] = splitToOwnAndNotOwnAndCleanSummary(simTx, originalSummary, simulationAndVisualisationResults.activeAddress, simulationAndVisualisationResults.chain)
+	const [ownAddresses, notOwnAddresses] = splitToOwnAndNotOwnAndCleanSummary(simTx, originalSummary, simulationAndVisualisationResults.activeAddress, simulationAndVisualisationResults.selectedNetwork)
 	const numberOfChanges = notOwnAddresses.length + ownAddresses.length
 
 	return <div class = 'card' style = 'margin-top: 10px; margin-bottom: 10px'>
@@ -501,7 +502,7 @@ export type TransactionGasses = {
 	realizedGasPrice: bigint
 }
 
-export function GasFee({ tx, chain }: { tx: TransactionGasses, chain: CHAIN } ) {
+export function GasFee({ tx, selectedNetwork }: { tx: TransactionGasses, selectedNetwork: SelectedNetwork } ) {
 	return <>
 		<div class = 'log-cell'>
 			<p class = 'ellipsis' style = { `color: var(--subtitle-text-color); margin-bottom: 0px` }> Gas fee:&nbsp;</p>
@@ -515,7 +516,7 @@ export function GasFee({ tx, chain }: { tx: TransactionGasses, chain: CHAIN } ) 
 		<div class = 'log-cell'>
 			<EtherSymbol
 				textColor = { 'var(--subtitle-text-color)' }
-				chain = { chain }
+				selectedNetwork = { selectedNetwork }
 			/>
 		</div>
 	</>
@@ -604,7 +605,7 @@ export function SimulationSummary(param: SimulationSummaryParams) {
 	const logSummarizer = new LogSummarizer(param.simulationAndVisualisationResults.simulatedAndVisualizedTransactions)
 	const addressMetaData = new Map(param.simulationAndVisualisationResults.addressMetaData.map((x) => [addressString(x.address), x]))
 	const originalSummary = logSummarizer.getSummary(addressMetaData, param.simulationAndVisualisationResults.tokenPrices)
-	const [ownAddresses, notOwnAddresses] = splitToOwnAndNotOwnAndCleanSummary(param.simulationAndVisualisationResults.simulatedAndVisualizedTransactions.at(0), originalSummary, param.simulationAndVisualisationResults.activeAddress, param.simulationAndVisualisationResults.chain)
+	const [ownAddresses, notOwnAddresses] = splitToOwnAndNotOwnAndCleanSummary(param.simulationAndVisualisationResults.simulatedAndVisualizedTransactions.at(0), originalSummary, param.simulationAndVisualisationResults.activeAddress, param.simulationAndVisualisationResults.selectedNetwork)
 
 	const [showOtherAccountChanges, setShowOtherAccountChange] = useState<boolean>(false)
 
@@ -703,7 +704,7 @@ export function RawTransactionDetailsCard({ transaction, renameAddressCallBack, 
 						<CellElement text = 'To: '/>
 						<CellElement text = { transaction.to === undefined ? 'No receiving Address' : <SmallAddress addressBookEntry = { transaction.to } renameAddressCallBack = { renameAddressCallBack } textColor = { 'var(--subtitle-text-color)' }/> } />
 						<CellElement text = 'Value: '/>
-						<CellElement text = { <Ether amount = { transaction.value } useFullTokenName = { true } chain = { transaction.chainId } textColor = { 'var(--subtitle-text-color)' }/> } />
+						<CellElement text = { <Ether amount = { transaction.value } useFullTokenName = { true } selectedNetwork = { transaction.selectedNetwork } textColor = { 'var(--subtitle-text-color)' }/> } />
 						<CellElement text = 'Gas used: '/>
 						<CellElement text = { `${ gasSpent.toString(10) } gas (${ Number(gasSpent * 10000n / transaction.gas) / 100 }%)` }/>
 						<CellElement text = 'Gas limit: '/>
@@ -711,7 +712,7 @@ export function RawTransactionDetailsCard({ transaction, renameAddressCallBack, 
 						<CellElement text = 'Nonce: '/>
 						<CellElement text = { transaction.nonce.toString(10) }/>
 						<CellElement text = 'Chain: '/>
-						<CellElement text = { getChainName(BigInt(transaction.chainId)) }/>
+						<CellElement text = { transaction.selectedNetwork.name }/>
 						<CellElement text = 'Unsigned transaction hash: '/>
 						<CellElement text = { bytes32String(transaction.hash) }/>
 						

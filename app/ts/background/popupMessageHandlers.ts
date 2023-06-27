@@ -371,7 +371,7 @@ export async function setNewRPCList(request: SetRPCList, settings: Settings, sim
 	await setRPCList(request.data)
 	await sendPopupMessageToOpenWindows({ method: 'popup_update_rpc_list', data: request.data })
 	const primary = await getPrimaryRPCForChain(settings.activeChain)
-	if (primary !== undefined && primary.https_rpc !== simulator.ethereum.getRPCUrl()) {
+	if (primary !== undefined && primary.https_rpc !== simulator.ethereum.getSelectedNetwork().https_rpc) {
 		// reset simulator if the rpc url changed
 		await resetSimulator(primary)
 	}

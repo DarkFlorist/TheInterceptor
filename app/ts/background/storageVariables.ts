@@ -284,6 +284,8 @@ export const getSelectedNetworkForChain = async (chainId: bigint): Promise<Selec
 	if (rpc !== undefined) return rpc
 	return {
 		chainId: chainId,
+		currencyName: 'Ether?',
+		currencyTicker: 'ETH?',
 		name: getChainName(chainId),
 		https_rpc: undefined,
 	}

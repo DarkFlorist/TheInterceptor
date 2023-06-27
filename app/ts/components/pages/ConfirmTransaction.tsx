@@ -12,7 +12,7 @@ import { Error as ErrorComponent, ErrorCheckBox } from '../subcomponents/Error.j
 import { QuarantineCodes, SenderReceiver, TransactionImportanceBlock } from '../simulationExplaining/Transactions.js'
 import { identifyTransaction } from '../simulationExplaining/identifyTransaction.js'
 import { SomeTimeAgo } from '../subcomponents/SomeTimeAgo.js'
-import { TIME_BETWEEN_BLOCKS, getChainName } from '../../utils/constants.js'
+import { TIME_BETWEEN_BLOCKS } from '../../utils/constants.js'
 import { DinoSaysNotification } from '../subcomponents/DinoSays.js'
 import { tryFocusingTab } from '../ui-utils.js'
 
@@ -114,7 +114,7 @@ function TransactionCard(param: TransactionCardParams) {
 						<span class = 'log-table' style = 'grid-template-columns: min-content min-content min-content'>
 							<GasFee
 								tx = { simTx }
-								chain = { param.simulationAndVisualisationResults.chain }
+								selectedNetwork = { param.simulationAndVisualisationResults.selectedNetwork }
 							/>
 						</span>
 					</div>
@@ -278,7 +278,7 @@ export function ConfirmTransaction() {
 						
 						{ dialogState.data.transactionToSimulate.transactionSendingFormat === 'eth_sendRawTransaction'
 							? <DinoSaysNotification
-								text = { `This transaction is signed already. No extra signing required to forward it to ${ dialogState.data.transactionToSimulate.transaction.chainId === undefined ? getChainName(BigInt(dialogState.data.simulationState.chain)) : getChainName(dialogState.data.transactionToSimulate.transaction.chainId) }.` }
+								text = { `This transaction is signed already. No extra signing required to forward it to ${ dialogState.data.simulationState.selectedNetwork }.` }
 								close = { () => setPendingTransactionAddedNotification(false)}
 							/>
 							: <></>
@@ -296,7 +296,7 @@ export function ConfirmTransaction() {
 								blockTimestamp: dialogState.data.simulationState.blockTimestamp,
 								simulationConductedTimestamp: dialogState.data.simulationState.simulationConductedTimestamp,
 								addressMetaData: dialogState.data.addressBookEntries,
-								chain: dialogState.data.simulationState.chain,
+								selectedNetwork: dialogState.data.simulationState.selectedNetwork,
 								tokenPrices: dialogState.data.tokenPrices,
 								activeAddress: dialogState.data.activeAddress,
 								simulatedAndVisualizedTransactions: simulatedAndVisualizedTransactions

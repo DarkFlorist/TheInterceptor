@@ -1,15 +1,16 @@
+import { SelectedNetwork } from '../../utils/interceptor-messages.js'
 import { assertIsObject } from '../../utils/typescript.js'
 import { EthereumJsonRpcRequest, JsonRpcResponse } from '../../utils/wire-types.js'
 
 export type IEthereumJSONRpcRequestHandler = Pick<EthereumJSONRpcRequestHandler, keyof EthereumJSONRpcRequestHandler>
 export class EthereumJSONRpcRequestHandler {
 	private nextRequestId: number = 1
-	private endpoint: string
+	private selectedNetwork: SelectedNetwork
 
-	constructor(endpoint: string) {
-		this.endpoint = endpoint
+	constructor(selectedNetwork: SelectedNetwork) {
+		this.selectedNetwork = selectedNetwork
     }
-	public readonly getRPCUrl = () => this.endpoint
+	public readonly getSelectedNetwork = () => this.selectedNetwork
 
 	public readonly jsonRpcRequest = async (rpcRequest: EthereumJsonRpcRequest) => {
 		const serialized = EthereumJsonRpcRequest.serialize(rpcRequest)
@@ -19,7 +20,7 @@ export class EthereumJSONRpcRequestHandler {
 			id: ++this.nextRequestId,
 			...serialized,
 		})
-		const response = await fetch(`${ this.endpoint }`, {
+		const response = await fetch(`${ this.selectedNetwork.https_rpc }`, {
 			method: 'POST',
 			headers: {
 				'Content-Type': 'application/json'

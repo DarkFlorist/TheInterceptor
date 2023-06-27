@@ -307,7 +307,7 @@ async function onErrorBlockCallback(_ethereumClientService: EthereumClientServic
 
 export async function resetSimulator(entry: RPCEntry) {
 	if (simulator !== undefined) simulator.cleanup()
-	simulator = new Simulator(entry.chainId, entry.https_rpc, newBlockCallback, onErrorBlockCallback)
+	simulator = new Simulator(entry, newBlockCallback, onErrorBlockCallback)
 }
 
 const changeActiveAddressAndChainAndResetSimulationSemaphore = new Semaphore(1)

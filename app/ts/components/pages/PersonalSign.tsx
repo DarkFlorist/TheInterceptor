@@ -141,7 +141,7 @@ function SignRequest({ personalSignRequestData, renameAddressCallBack }: SignReq
 		case 'OrderComponents': {
 			return <OrderComponents
 				openSeaOrderMessage = { personalSignRequestData.message }
-				chainId = { personalSignRequestData.isInterceptorSupportForChainId ? personalSignRequestData.activeChainId : 1n }
+				selectedNetwork = { personalSignRequestData.selectedNetwork }
 				renameAddressCallBack = { renameAddressCallBack }
 			/>
 		}
@@ -156,7 +156,7 @@ function SignRequest({ personalSignRequestData, renameAddressCallBack }: SignReq
 					isApproval: true
 				} }
 				transactionGasses = { { gasSpent: 0n, realizedGasPrice: 0n } }
-				chainId = { personalSignRequestData.isInterceptorSupportForChainId ? personalSignRequestData.message.domain.chainId : 1n }
+				selectedNetwork = { personalSignRequestData.selectedNetwork }
 				renameAddressCallBack = { renameAddressCallBack }
 			/>
 		}
@@ -171,7 +171,7 @@ function SignRequest({ personalSignRequestData, renameAddressCallBack }: SignReq
 					isApproval: true
 				} }
 				transactionGasses = { { gasSpent: 0n, realizedGasPrice: 0n } }
-				chainId = { personalSignRequestData.isInterceptorSupportForChainId ? personalSignRequestData.message.domain.chainId : 1n }
+				selectedNetwork = { personalSignRequestData.selectedNetwork }
 				renameAddressCallBack = { renameAddressCallBack }
 			/>
 		}
@@ -216,7 +216,7 @@ function SafeTx({ personalSignRequestDataSafeTx, renameAddressCallBack }: { pers
 			<CellElement text = 'to: '/>
 			<CellElement text = { <SmallAddress addressBookEntry = { personalSignRequestDataSafeTx.addressBookEntries.to } renameAddressCallBack = { renameAddressCallBack } /> }/>
 			<CellElement text = 'value: '/>
-			<CellElement text = { <Ether amount = { personalSignRequestDataSafeTx.message.message.value } chain = { personalSignRequestDataSafeTx.activeChainId }/>  }/>
+			<CellElement text = { <Ether amount = { personalSignRequestDataSafeTx.message.message.value } selectedNetwork = { personalSignRequestDataSafeTx.selectedNetwork }/>  }/>
 		</span>
 		<p class = 'paragraph' style = 'color: var(--subtitle-text-color)'>Raw transaction input: </p>
 		<div class = 'textbox'>

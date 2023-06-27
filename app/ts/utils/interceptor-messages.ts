@@ -596,7 +596,9 @@ export const SelectedNetwork = funtypes.Union(
 	funtypes.ReadonlyObject({
 		https_rpc: funtypes.Undefined,
 		chainId: EthereumQuantity,
-		name: funtypes.String
+		name: funtypes.String,
+		currencyName: funtypes.Literal('Ether?'),
+    	currencyTicker: funtypes.Literal('ETH?'),
 	})
 )
 

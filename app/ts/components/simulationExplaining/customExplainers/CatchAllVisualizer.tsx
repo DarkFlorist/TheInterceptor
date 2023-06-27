@@ -3,13 +3,13 @@ import { Erc20ApprovalChanges, ERC721OperatorChange, ERC721OperatorChanges, ERC7
 import { ERC721TokenApprovalChange, TokenApprovalChange, TokenVisualizerERC20Event, TokenVisualizerERC721AllApprovalEvent, TokenVisualizerERC721Event, TokenVisualizerResultWithMetadata } from '../../../utils/visualizer-types.js'
 import { EtherSymbol, TokenSymbol, TokenAmount, EtherAmount, ERC721TokenNumber } from '../../subcomponents/coins.js'
 import { RenameAddressCallBack } from '../../../utils/user-interface-types.js'
-import { EthereumQuantity } from '../../../utils/wire-types.js'
+import { SelectedNetwork } from '../../../utils/interceptor-messages.js'
 
 type EtherTransferEventParams = {
 	valueSent: bigint,
 	totalReceived: bigint,
 	textColor: string,
-	chain: EthereumQuantity,
+	selectedNetwork: SelectedNetwork,
 }
 
 function EtherTransferEvent(param: EtherTransferEventParams) {
@@ -31,7 +31,7 @@ function EtherTransferEvent(param: EtherTransferEventParams) {
 						<div class = 'log-cell'>
 							<EtherSymbol
 								textColor = { param.textColor }
-								chain = { param.chain }
+								selectedNetwork = { param.selectedNetwork }
 							/>
 						</div>
 					</table>
@@ -55,7 +55,7 @@ function EtherTransferEvent(param: EtherTransferEventParams) {
 						<div class = 'log-cell'>
 							<EtherSymbol
 								textColor = { param.textColor }
-								chain = { param.chain }
+								selectedNetwork = { param.selectedNetwork }
 							/>
 						</div>
 					</table>
@@ -175,7 +175,7 @@ export function CatchAllVisualizer(param: TransactionImportanceBlockParams) {
 					valueSent = { param.simTx.transaction.value }
 					totalReceived = { totalEthReceived }
 					textColor = { textColor }
-					chain = { param.simulationAndVisualisationResults.chain }
+					selectedNetwork = { param.simulationAndVisualisationResults.selectedNetwork }
 				/>
 			</div>
 

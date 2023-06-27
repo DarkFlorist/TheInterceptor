@@ -11,7 +11,7 @@ import { OldSignTypedDataParams, PersonalSignParams, SignTypedDataParams } from 
 import { getHtmlFile, sendPopupMessageToOpenWindows } from '../backgroundUtils.js'
 import { extractEIP712Message, validateEIP712Types } from '../../utils/eip712Parsing.js'
 import { getAddressMetaData, getTokenMetadata } from '../metadataUtils.js'
-import { getPendingPersonalSignPromise, getSelectedNetwork, getSignerName, setPendingPersonalSignPromise } from '../storageVariables.js'
+import { getPendingPersonalSignPromise, getSelectedNetwork, getSelectedNetworkForChain, getSignerName, setPendingPersonalSignPromise } from '../storageVariables.js'
 import { getSettings } from '../settings.js'
 import { PopupOrTab, addWindowTabListener, openPopupOrTab, removeWindowTabListener } from '../../components/ui-utils.js'
 import { simulatePersonalSign } from '../../simulation/services/SimulationModeEthereumClientService.js'
@@ -70,7 +70,6 @@ export async function craftPersonalSignPopupMessage(ethereumClientService: Ether
 		requestId,
 		website,
 		signerName,
-		selectedNetwork: await getSelectedNetwork(),
 		tabIdOpenedFrom,
 	}
 
@@ -93,6 +92,7 @@ export async function craftPersonalSignPopupMessage(ethereumClientService: Ether
 			data: {
 				originalParams,
 				...basicParams,
+				selectedNetwork: await getSelectedNetwork(),
 				type: 'NotParsed',
 				message: stringifyJSONWithBigInts(originalParams.params[0], 4),
 				account: getAddressMetaData(originalParams.params[1], userAddressBook),
@@ -108,6 +108,7 @@ export async function craftPersonalSignPopupMessage(ethereumClientService: Ether
 			data: {
 				originalParams,
 				...basicParams,
+				selectedNetwork: await getSelectedNetwork(),
 				type: 'NotParsed',
 				message: originalParams.params[0],
 				account: getAddressMetaData(originalParams.params[1], userAddressBook),
@@ -131,6 +132,7 @@ export async function craftPersonalSignPopupMessage(ethereumClientService: Ether
 			data: {
 				originalParams,
 				...basicParams,
+				selectedNetwork: chainid !== undefined ? await getSelectedNetworkForChain(chainid) : await getSelectedNetwork(),
 				type: 'EIP712',
 				message,
 				account,
@@ -149,6 +151,7 @@ export async function craftPersonalSignPopupMessage(ethereumClientService: Ether
 				data: {
 					originalParams,
 					...basicParams,
+					selectedNetwork: await getSelectedNetworkForChain(parsed.domain.chainId),
 					type: 'Permit',
 					message: parsed,
 					account,
@@ -169,6 +172,7 @@ export async function craftPersonalSignPopupMessage(ethereumClientService: Ether
 				data: {
 					originalParams,
 					...basicParams,
+					selectedNetwork: await getSelectedNetworkForChain(parsed.domain.chainId),
 					type: 'Permit2',
 					message: parsed,
 					account,
@@ -186,6 +190,7 @@ export async function craftPersonalSignPopupMessage(ethereumClientService: Ether
 			data: {
 				originalParams,
 				...basicParams,
+				selectedNetwork: parsed.domain.chainId !== undefined ? await getSelectedNetworkForChain(parsed.domain.chainId) : await getSelectedNetwork(),
 				type: 'SafeTx',
 				message: parsed,
 				account,
@@ -205,6 +210,7 @@ export async function craftPersonalSignPopupMessage(ethereumClientService: Ether
 				originalParams,
 				...basicParams,
 				type: 'OrderComponents',
+				selectedNetwork: await getSelectedNetworkForChain(parsed.domain.chainId),
 				message: await addMetadataToOpenSeaOrder(ethereumClientService, parsed.message, userAddressBook),
 				account,
 				...await getQuarrantineCodes(parsed.domain.chainId, account, activeAddressWithMetadata, undefined),

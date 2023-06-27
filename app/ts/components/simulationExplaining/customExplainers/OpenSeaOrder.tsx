@@ -40,8 +40,8 @@ function SwapGrid(param: VisualizeOpenSeaAssetParams) {
 			</div>
 			<div class = 'log-cell' style = 'justify-content: right;'>
 				{ param.orderOrConsideration.itemType === 'ERC721' || param.orderOrConsideration.itemType === 'ERC1155' ?
-					<TokenOrEthSymbol { ...param.orderOrConsideration.token } chain = { param.chainId } id = { param.orderOrConsideration.identifierOrCriteria } style = { tokenStyle }/>
-				: <TokenOrEthSymbol { ...param.orderOrConsideration.token } chain = { param.chainId } style = { tokenStyle }/> }
+					<TokenOrEthSymbol { ...param.orderOrConsideration.token } selectedNetwork = { param.selectedNetwork } id = { param.orderOrConsideration.identifierOrCriteria } style = { tokenStyle }/>
+				: <TokenOrEthSymbol { ...param.orderOrConsideration.token } selectedNetwork = { param.selectedNetwork } style = { tokenStyle }/> }
 			</div>
 		</span>
 	</>
@@ -61,8 +61,8 @@ export function VisualizeOpenSeaAsset(param: VisualizeOpenSeaConsiderationAssetP
 		</div>
 		<div class = 'log-cell' style = 'padding-right: 0.2em'>
 			{ param.consideration.itemType === 'ERC721' || param.consideration.itemType === 'ERC1155' ?
-				<TokenOrEthSymbol { ...param.consideration.token } chain = { param.chainId } id = { param.consideration.identifierOrCriteria } style = { tokenStyle }/>
-			: <TokenOrEthSymbol { ...param.consideration.token } chain = { param.chainId } style = { tokenStyle }/> }
+				<TokenOrEthSymbol { ...param.consideration.token } selectedNetwork = { param.selectedNetwork } id = { param.consideration.identifierOrCriteria } style = { tokenStyle }/>
+			: <TokenOrEthSymbol { ...param.consideration.token } selectedNetwork = { param.selectedNetwork } style = { tokenStyle }/> }
 		</div>
 		<div class = 'log-cell' style = 'padding-right: 0.2em; padding-left: 0.2em'>
 			{ <ArrowIcon color = { textColor } /> }
@@ -84,12 +84,12 @@ export function OrderComponents(param: OrderComponentsParams) {
 		<div style = 'display: grid; grid-template-rows: max-content max-content max-content max-content;'>
 			<p class = 'paragraph'> Offer </p>
 			<div class = 'box swap-box'>
-				{ param.openSeaOrderMessage.offer.map((offer) => <SwapGrid orderOrConsideration = { offer } renameAddressCallBack = { param.renameAddressCallBack } chainId = { param.chainId }/> ) }
+				{ param.openSeaOrderMessage.offer.map((offer) => <SwapGrid orderOrConsideration = { offer } renameAddressCallBack = { param.renameAddressCallBack } selectedNetwork = { param.selectedNetwork }/> ) }
 			</div>
 			<p class = 'paragraph'> For </p>
 			<div class = 'box swap-box'>
 				<span class = 'log-table-4' style = 'justify-content: center; column-gap: 5px;'>
-					{ param.openSeaOrderMessage.consideration.map((consideration) => <VisualizeOpenSeaAsset consideration = { consideration } renameAddressCallBack = { param.renameAddressCallBack } chainId = { param.chainId } /> ) }
+					{ param.openSeaOrderMessage.consideration.map((consideration) => <VisualizeOpenSeaAsset consideration = { consideration } renameAddressCallBack = { param.renameAddressCallBack } selectedNetwork = { param.selectedNetwork } /> ) }
 				</span>
 			</div>
 		</div>

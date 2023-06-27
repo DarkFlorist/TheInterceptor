@@ -7,7 +7,6 @@ import { stringToUint8Array } from '../../utils/bigint.js'
 
 export type IEthereumClientService = Pick<EthereumClientService, keyof EthereumClientService>
 export class EthereumClientService {
-	private chainId: EthereumQuantity
 	private cachedBlock: EthereumBlockHeader | undefined = undefined
 	private cacheRefreshTimer: NodeJS.Timer | undefined = undefined
 	private lastCacheAccess: number = 0
@@ -17,14 +16,13 @@ export class EthereumClientService {
 	private requestHandler
 	private cleanedUp = false
 
-    constructor(requestHandler: IEthereumJSONRpcRequestHandler, chainId: EthereumQuantity, newBlockCallback: (blockNumber: bigint, ethereumClientService: EthereumClientService) => void, onErrorBlockCallback: (ethereumClientService: EthereumClientService, error: Error) => void) {
+    constructor(requestHandler: IEthereumJSONRpcRequestHandler, newBlockCallback: (blockNumber: bigint, ethereumClientService: EthereumClientService) => void, onErrorBlockCallback: (ethereumClientService: EthereumClientService, error: Error) => void) {
 		this.requestHandler = requestHandler
-		this.chainId = chainId
 		this.newBlockCallback = newBlockCallback
 		this.onErrorBlockCallback = onErrorBlockCallback
     }
 
-	public readonly getRPCUrl = () => this.requestHandler.getRPCUrl()
+	public readonly getSelectedNetwork = () => this.requestHandler.getSelectedNetwork()
 
 	public getCachedBlock() {
 		if (this.cleanedUp === false) {
@@ -134,7 +132,7 @@ export class EthereumClientService {
 		return EthereumBlockHeader.parse(await this.requestHandler.jsonRpcRequest({ method: 'eth_getBlockByNumber', params: [blockTag, fullObjects] }))
 	}
 
-	public readonly getChainId = () => this.chainId
+	public readonly getChainId = () => this.requestHandler.getSelectedNetwork().chainId
 
 	public readonly getLogs = async (logFilter: EthGetLogsRequest) => {
 		const response = await this.requestHandler.jsonRpcRequest({ method: 'eth_getLogs', params: [logFilter] })
