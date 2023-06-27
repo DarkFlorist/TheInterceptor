@@ -17,9 +17,10 @@ jobs:
           TAG=$(git tag --points-at HEAD | grep ^v)
           VERSION=${TAG#v}
           echo $TAG
+          TAG=v0.0.57
+
           echo "TAG=$TAG" >> $GITHUB_OUTPUT
           echo "VERSION=VERSION" >> $GITHUB_OUTPUT
-          TAG=v0.0.57
           wget https://github.com/DarkFlorist/TheInterceptor/releases/download/$TAG/interceptor-firefox-$TAG.zip
       - name: Upload Firefox Extension to Release
         uses: actions/upload-release-asset@v1.0.1
