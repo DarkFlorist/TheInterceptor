@@ -254,5 +254,5 @@ export const ethDonator = [{
 ] as const
 
 export function getEthDonator(chainId: bigint) {
-	return ethDonator.find((rpc) => rpc.chainId === chainId)?.chainId
+	return ethDonator.find((rpc) => rpc.chainId === chainId)?.eth_donator
 }
