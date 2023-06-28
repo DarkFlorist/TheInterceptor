@@ -5,7 +5,7 @@ import { abs, addressString } from '../../utils/bigint.js'
 import { ERC721TokenNumber, EtherAmount, EtherSymbol, TokenAmount, TokenOrEthValue, TokenSymbol } from '../subcomponents/coins.js'
 import { AddressBookEntry, NFTEntry, TokenEntry } from '../../utils/user-interface-types.js'
 import { assertNever } from '../../utils/typescript.js'
-import { SelectedNetwork } from '../../utils/visualizer-types.js'
+import { RpcNetwork } from '../../utils/visualizer-types.js'
 
 export type BeforeAfterBalance = funtypes.Static<typeof SwapAsset>
 export const BeforeAfterBalance = funtypes.ReadonlyObject({
@@ -47,7 +47,7 @@ export const IdentifiedSwapWithMetadata = funtypes.Union(
 
 interface SwapVisualizationParams {
 	identifiedSwap: IdentifiedSwapWithMetadata,
-	selectedNetwork: SelectedNetwork
+	rpcNetwork: RpcNetwork
 }
 
 function dropDuplicates<T>(array: T[], isEqual: (a: T, b: T) => boolean): T[] {
@@ -300,14 +300,14 @@ export function identifyRoutes(simulatedAndVisualizedTransaction: SimulatedAndVi
 	return sorted
 }
 
-export function getSwapName(identifiedSwap: IdentifiedSwapWithMetadata, selectedNetwork: SelectedNetwork) {
+export function getSwapName(identifiedSwap: IdentifiedSwapWithMetadata, rpcNetwork: RpcNetwork) {
 	if (identifiedSwap === false) return undefined
-	const sent = identifiedSwap.sendAsset.type !== 'Ether' ? identifiedSwap.sendAsset.tokenAddress.symbol : selectedNetwork.currencyTicker
-	const to = identifiedSwap.receiveAsset.type !== 'Ether' ? identifiedSwap.receiveAsset.tokenAddress.symbol : selectedNetwork.currencyTicker
+	const sent = identifiedSwap.sendAsset.type !== 'Ether' ? identifiedSwap.sendAsset.tokenAddress.symbol : rpcNetwork.currencyTicker
+	const to = identifiedSwap.receiveAsset.type !== 'Ether' ? identifiedSwap.receiveAsset.tokenAddress.symbol : rpcNetwork.currencyTicker
 	return `Swap ${ sent } for ${ to }`
 }
 
-export function VisualizeSwapAsset({ swapAsset, selectedNetwork }: { swapAsset: SwapAsset, selectedNetwork: SelectedNetwork }) {
+export function VisualizeSwapAsset({ swapAsset, rpcNetwork }: { swapAsset: SwapAsset, rpcNetwork: RpcNetwork }) {
 	const tokenStyle = { 'font-size': '28px', 'font-weight': '500' }
 	const balanceTextStyle = { 'font-size': '14px', 'color': 'var(--subtitle-text-color)' }
 
@@ -323,7 +323,7 @@ export function VisualizeSwapAsset({ swapAsset, selectedNetwork }: { swapAsset: 
 					</div>
 					<div class = 'log-cell' style = 'justify-content: right;'>
 						<EtherSymbol
-							selectedNetwork = { selectedNetwork }
+							rpcNetwork = { rpcNetwork }
 							useFullTokenName = { false }
 							style = { tokenStyle}
 						/>
@@ -400,11 +400,11 @@ export function SwapVisualization(param: SwapVisualizationParams) {
 		<div style = 'display: grid; grid-template-rows: max-content max-content max-content max-content;'>
 			<p class = 'paragraph'> Swap </p>
 			<div class = 'box swap-box'>
-				<VisualizeSwapAsset swapAsset = { param.identifiedSwap.sendAsset } selectedNetwork = { param.selectedNetwork } />
+				<VisualizeSwapAsset swapAsset = { param.identifiedSwap.sendAsset } rpcNetwork = { param.rpcNetwork } />
 			</div>
 			<p class = 'paragraph'> For </p>
 			<div class = 'box swap-box'>
-				<VisualizeSwapAsset swapAsset = { param.identifiedSwap.receiveAsset } selectedNetwork = { param.selectedNetwork } />
+				<VisualizeSwapAsset swapAsset = { param.identifiedSwap.receiveAsset } rpcNetwork = { param.rpcNetwork } />
 			</div>
 		</div>
 	</div>

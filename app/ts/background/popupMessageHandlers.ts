@@ -1,8 +1,8 @@
-import { changeActiveAddressAndChainAndResetSimulation, changeActiveRPC, getPrependTrasactions, refreshConfirmTransactionSimulation, resetSimulator, updateSimulationState } from './background.js'
+import { changeActiveAddressAndChainAndResetSimulation, changeActiveRpc, getPrependTrasactions, refreshConfirmTransactionSimulation, resetSimulator, updateSimulationState } from './background.js'
 import { getSettings, getMakeMeRich, getUseTabsInsteadOfPopup, setUseTabsInsteadOfPopup, setMakeMeRich, setPage, setUseSignersAddressAsActiveAddress, updateAddressInfos, updateContacts, updateWebsiteAccess, exportSettingsAndAddressBook, ExportedSettings, importSettingsAndAddressBook } from './settings.js'
-import { getPendingTransactions, getCurrentTabId, getIsConnected, getOpenedAddressBookTabId, getSignerName, getSimulationResults, getTabState, saveCurrentTabId, setOpenedAddressBookTabId, setRPCList, getRPCList, getPrimaryRPCForChain } from './storageVariables.js'
+import { getPendingTransactions, getCurrentTabId, getIsConnected, getOpenedAddressBookTabId, getSignerName, getSimulationResults, getTabState, saveCurrentTabId, setOpenedAddressBookTabId, setRpcList, getRpcList, getPrimaryRpcForChain } from './storageVariables.js'
 import { Simulator } from '../simulation/simulator.js'
-import { ChangeActiveAddress, ChangeMakeMeRich, ChangePage, PersonalSign, RemoveTransaction, RequestAccountsFromSigner, TransactionConfirmation, InterceptorAccess, ChangeInterceptorAccess, ChainChangeConfirmation, EnableSimulationMode, ChangeActiveChain, AddOrEditAddressBookEntry, GetAddressBookData, RemoveAddressBookEntry, RefreshConfirmTransactionDialogSimulation, UserAddressBook, InterceptorAccessRefresh, InterceptorAccessChangeAddress, Settings, RefreshConfirmTransactionMetadata, RefreshPersonalSignMetadata, RefreshInterceptorAccessMetadata, ChangeSettings, ImportSettings, SetRPCList } from '../utils/interceptor-messages.js'
+import { ChangeActiveAddress, ChangeMakeMeRich, ChangePage, PersonalSign, RemoveTransaction, RequestAccountsFromSigner, TransactionConfirmation, InterceptorAccess, ChangeInterceptorAccess, ChainChangeConfirmation, EnableSimulationMode, ChangeActiveChain, AddOrEditAddressBookEntry, GetAddressBookData, RemoveAddressBookEntry, RefreshConfirmTransactionDialogSimulation, UserAddressBook, InterceptorAccessRefresh, InterceptorAccessChangeAddress, Settings, RefreshConfirmTransactionMetadata, RefreshPersonalSignMetadata, RefreshInterceptorAccessMetadata, ChangeSettings, ImportSettings, SetRpcList } from '../utils/interceptor-messages.js'
 import { resolvePendingTransaction } from './windows/confirmTransaction.js'
 import { craftPersonalSignPopupMessage, resolvePersonalSign } from './windows/personalSign.js'
 import { getAddressMetadataForAccess, requestAddressChange, resolveInterceptorAccess } from './windows/interceptorAccess.js'
@@ -204,8 +204,8 @@ export async function refreshPopupConfirmTransactionSimulation(ethereumClientSer
 	})
 }
 
-export async function popupChangeActiveRPC(websiteTabConnections: WebsiteTabConnections, params: ChangeActiveChain, settings: Settings) {
-	return await changeActiveRPC(websiteTabConnections, params.data, settings.simulationMode)
+export async function popupChangeActiveRpc(websiteTabConnections: WebsiteTabConnections, params: ChangeActiveChain, settings: Settings) {
+	return await changeActiveRpc(websiteTabConnections, params.data, settings.simulationMode)
 }
 
 export async function changeChainDialog(websiteTabConnections: WebsiteTabConnections, chainChange: ChainChangeConfirmation) {
@@ -220,17 +220,17 @@ export async function enableSimulationMode(websiteTabConnections: WebsiteTabConn
 		sendMessageToApprovedWebsitePorts(websiteTabConnections, { method: 'request_signer_chainId', result: [] })
 		const tabId = await getLastKnownCurrentTabId()
 		const chainToSwitch = tabId === undefined ? undefined : (await getTabState(tabId)).signerChain
-		const networkToSwitch = chainToSwitch === undefined ? (await getRPCList())[0] : await getPrimaryRPCForChain(chainToSwitch)
+		const networkToSwitch = chainToSwitch === undefined ? (await getRpcList())[0] : await getPrimaryRpcForChain(chainToSwitch)
 		await changeActiveAddressAndChainAndResetSimulation(websiteTabConnections, {
 			simulationMode: params.data,
 			activeAddress: await getSignerAccount(),
-			...chainToSwitch === undefined ? {} :  { selectedNetwork: networkToSwitch },
+			...chainToSwitch === undefined ? {} :  { rpcNetwork: networkToSwitch },
 		})
 	} else {
-		const selectedNetworkToSwitch = settings.selectedNetwork.https_rpc !== undefined ? settings.selectedNetwork : (await getRPCList())[0]
+		const selectedNetworkToSwitch = settings.rpcNetwork.httpsRpc !== undefined ? settings.rpcNetwork : (await getRpcList())[0]
 		await changeActiveAddressAndChainAndResetSimulation(websiteTabConnections, {
 			simulationMode: params.data,
-			...settings.selectedNetwork === selectedNetworkToSwitch ? {} : { selectedNetwork: selectedNetworkToSwitch }
+			...settings.rpcNetwork === selectedNetworkToSwitch ? {} : { rpcNetwork: selectedNetworkToSwitch }
 		})
 	}
 }
@@ -307,7 +307,7 @@ export async function homeOpened(simulator: Simulator) {
 			tabId,
 		}
 	})
-	await sendPopupMessageToOpenWindows({ method: 'popup_update_rpc_list', data: await getRPCList() })
+	await sendPopupMessageToOpenWindows({ method: 'popup_update_rpc_list', data: await getRpcList() })
 }
 
 export async function interceptorAccessChangeAddressOrRefresh(websiteTabConnections: WebsiteTabConnections, params: InterceptorAccessChangeAddress | InterceptorAccessRefresh) {
@@ -367,10 +367,10 @@ export async function exportSettings() {
 	})
 }
 
-export async function setNewRPCList(request: SetRPCList, settings: Settings) {
-	await setRPCList(request.data)
+export async function setNewRpcList(request: SetRpcList, settings: Settings) {
+	await setRpcList(request.data)
 	await sendPopupMessageToOpenWindows({ method: 'popup_update_rpc_list', data: request.data })
-	const primary = await getPrimaryRPCForChain(settings.selectedNetwork.chainId)
+	const primary = await getPrimaryRpcForChain(settings.rpcNetwork.chainId)
 	if (primary !== undefined) {
 		// reset to primary on update
 		await resetSimulator(primary)

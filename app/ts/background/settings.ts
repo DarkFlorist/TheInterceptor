@@ -3,7 +3,7 @@ import { LegacyWebsiteAccessArray, Page, Settings, WebsiteAccessArray, WebsiteAc
 import { Semaphore } from '../utils/semaphore.js'
 import { browserStorageLocalGet, browserStorageLocalSet, browserStorageLocalSetKeys, browserStorageLocalSingleGetWithDefault } from '../utils/storageUtils.js'
 import { AddressInfoArray, ContactEntries } from '../utils/user-interface-types.js'
-import { OptionalEthereumAddress, RPCEntries, SelectedNetwork } from '../utils/visualizer-types.js'
+import { OptionalEthereumAddress, RpcEntries, RpcNetwork } from '../utils/visualizer-types.js'
 import { EthereumAddress, EthereumAddressOrMissing, EthereumQuantity } from '../utils/wire-types.js'
 import * as funtypes from 'funtypes'
 
@@ -20,11 +20,11 @@ export const defaultAddresses = [
 	}
 ]
 
-export const defaultRPCs: RPCEntries = [
+export const defaultRpcs: RpcEntries = [
 	{
 		name: 'Ethereum Mainnet',
 		chainId: 1n,
-		https_rpc: 'https://rpc.dark.florist/flipcardtrustone',
+		httpsRpc: 'https://rpc.dark.florist/flipcardtrustone',
 		currencyName: 'Ether',
 		currencyTicker: 'ETH',
 		primary: true,
@@ -34,7 +34,7 @@ export const defaultRPCs: RPCEntries = [
 	{
 		name: 'Goerli',
 		chainId: 5n,
-		https_rpc: 'https://rpc-goerli.dark.florist/flipcardtrustone',
+		httpsRpc: 'https://rpc-goerli.dark.florist/flipcardtrustone',
 		currencyName: 'Goerli Testnet ETH',
 		currencyTicker: 'GÖETH',
 		primary: true,
@@ -44,7 +44,7 @@ export const defaultRPCs: RPCEntries = [
 	{
 		name: 'Sepolia',
 		chainId: 11155111n,
-		https_rpc: 'https://rpc-sepolia.dark.florist/flipcardtrustone',
+		httpsRpc: 'https://rpc-sepolia.dark.florist/flipcardtrustone',
 		currencyName: 'Sepolia Testnet ETH',
 		currencyTicker: 'SEETH',
 		primary: true,
@@ -55,7 +55,7 @@ export const defaultRPCs: RPCEntries = [
 	{
 		name: 'Eth (geth-multi)',
 		chainId: 1n,
-		https_rpc: 'https://rpc.dark.florist/winedancemuffinborrow',
+		httpsRpc: 'https://rpc.dark.florist/winedancemuffinborrow',
 		currencyName: 'Ether',
 		currencyTicker: 'ETH',
 		primary: false,
@@ -65,7 +65,7 @@ export const defaultRPCs: RPCEntries = [
 	{
 		name: 'Eth (neth-multi)',
 		chainId: 1n,
-		https_rpc: 'https://rpc.dark.florist/birdchalkrenewtip',
+		httpsRpc: 'https://rpc.dark.florist/birdchalkrenewtip',
 		currencyName: 'Ether',
 		currencyTicker: 'ETH',
 		primary: false,
@@ -100,7 +100,7 @@ export async function getSettings() : Promise<Settings> {
 		'page',
 		'useSignersAddressAsActiveAddress',
 		'websiteAccess',
-		'selectedNetwork',
+		'rpcNetwork',
 		'simulationMode',
 		'contacts',
 	])
@@ -110,7 +110,7 @@ export async function getSettings() : Promise<Settings> {
 		page: results.page !== undefined ? Page.parse(results.page) : 'Home',
 		useSignersAddressAsActiveAddress: useSignersAddressAsActiveAddress,
 		websiteAccess: results.websiteAccess !== undefined ? parseAccessWithLegacySupport(results.websiteAccess) : [],
-		selectedNetwork: results.selectedNetwork !== undefined ? SelectedNetwork.parse(results.selectedNetwork) : defaultRPCs[0],
+		rpcNetwork: results.rpcNetwork !== undefined ? RpcNetwork.parse(results.rpcNetwork) : defaultRpcs[0],
 		simulationMode: results.simulationMode !== undefined ? funtypes.Boolean.parse(results.simulationMode) : true,
 		userAddressBook: {
 			addressInfos: results.addressInfos !== undefined ? AddressInfoArray.parse(results.addressInfos): defaultAddresses,
@@ -136,10 +136,10 @@ export async function setUseSignersAddressAsActiveAddress(useSignersAddressAsAct
 	})
 }
 
-export async function changeSimulationMode(changes: { simulationMode: boolean, selectedNetwork?: SelectedNetwork, activeSimulationAddress?: EthereumAddress | undefined, activeSigningAddress?: EthereumAddress | undefined }) {
+export async function changeSimulationMode(changes: { simulationMode: boolean, rpcNetwork?: RpcNetwork, activeSimulationAddress?: EthereumAddress | undefined, activeSigningAddress?: EthereumAddress | undefined }) {
 	return await browserStorageLocalSetKeys({
 		simulationMode: changes.simulationMode,
-		...changes.selectedNetwork ? { selectedNetwork: SelectedNetwork.serialize(changes.selectedNetwork) as string }: {},
+		...changes.rpcNetwork ? { rpcNetwork: RpcNetwork.serialize(changes.rpcNetwork) as string }: {},
 		...'activeSimulationAddress' in changes ? { activeSimulationAddress: EthereumAddressOrMissing.serialize(changes.activeSimulationAddress) as string }: {},
 		...'activeSigningAddress' in changes ? { activeSigningAddress: EthereumAddressOrMissing.serialize(changes.activeSigningAddress) as string }: {},
 	})
@@ -201,7 +201,7 @@ export const ExportedSettings = funtypes.Union(
 		exportedDate: funtypes.String,
 		settings: funtypes.ReadonlyObject({
 			activeSimulationAddress: OptionalEthereumAddress,
-			selectedNetwork: SelectedNetwork,
+			rpcNetwork: RpcNetwork,
 			page: Page,
 			useSignersAddressAsActiveAddress: funtypes.Boolean,
 			websiteAccess: WebsiteAccessArray,
@@ -224,7 +224,7 @@ export async function exportSettingsAndAddressBook() {
 			'page',
 			'useSignersAddressAsActiveAddress',
 			'websiteAccess',
-			'selectedNetwork',
+			'rpcNetwork',
 			'simulationMode',
 			'contacts',
 			'useTabsInsteadOfPopup',
@@ -237,14 +237,14 @@ export async function importSettingsAndAddressBook(exportedSetings: ExportedSett
 	if (exportedSetings.version === '1.0') {
 		await changeSimulationMode({
 			simulationMode: exportedSetings.settings.simulationMode,
-			selectedNetwork: defaultRPCs[0],
+			rpcNetwork: defaultRpcs[0],
 			activeSimulationAddress: exportedSetings.settings.activeSimulationAddress,
 			activeSigningAddress: undefined,
 		})
 	} else {
 		await changeSimulationMode({
 			simulationMode: exportedSetings.settings.simulationMode,
-			selectedNetwork: exportedSetings.settings.selectedNetwork,
+			rpcNetwork: exportedSetings.settings.rpcNetwork,
 			activeSimulationAddress: exportedSetings.settings.activeSimulationAddress,
 			activeSigningAddress: undefined,
 		})

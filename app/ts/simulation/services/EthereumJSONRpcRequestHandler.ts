@@ -1,16 +1,16 @@
-import { SelectedNetwork } from '../../utils/visualizer-types.js'
+import { RpcNetwork } from '../../utils/visualizer-types.js'
 import { assertIsObject } from '../../utils/typescript.js'
 import { EthereumJsonRpcRequest, JsonRpcResponse } from '../../utils/wire-types.js'
 
 export type IEthereumJSONRpcRequestHandler = Pick<EthereumJSONRpcRequestHandler, keyof EthereumJSONRpcRequestHandler>
 export class EthereumJSONRpcRequestHandler {
 	private nextRequestId: number = 1
-	private selectedNetwork: SelectedNetwork
+	private rpcNetwork: RpcNetwork
 
-	constructor(selectedNetwork: SelectedNetwork) {
-		this.selectedNetwork = selectedNetwork
+	constructor(rpcNetwork: RpcNetwork) {
+		this.rpcNetwork = rpcNetwork
     }
-	public readonly getSelectedNetwork = () => this.selectedNetwork
+	public readonly getSelectedNetwork = () => this.rpcNetwork
 
 	public readonly jsonRpcRequest = async (rpcRequest: EthereumJsonRpcRequest) => {
 		const serialized = EthereumJsonRpcRequest.serialize(rpcRequest)
@@ -20,7 +20,7 @@ export class EthereumJSONRpcRequestHandler {
 			id: ++this.nextRequestId,
 			...serialized,
 		})
-		const response = await fetch(`${ this.selectedNetwork.https_rpc }`, {
+		const response = await fetch(`${ this.rpcNetwork.httpsRpc }`, {
 			method: 'POST',
 			headers: {
 				'Content-Type': 'application/json'

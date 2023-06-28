@@ -141,7 +141,7 @@ function SignRequest({ personalSignRequestData, renameAddressCallBack }: SignReq
 		case 'OrderComponents': {
 			return <OrderComponents
 				openSeaOrderMessage = { personalSignRequestData.message }
-				selectedNetwork = { personalSignRequestData.selectedNetwork }
+				rpcNetwork = { personalSignRequestData.rpcNetwork }
 				renameAddressCallBack = { renameAddressCallBack }
 			/>
 		}
@@ -156,7 +156,7 @@ function SignRequest({ personalSignRequestData, renameAddressCallBack }: SignReq
 					isApproval: true
 				} }
 				transactionGasses = { { gasSpent: 0n, realizedGasPrice: 0n } }
-				selectedNetwork = { personalSignRequestData.selectedNetwork }
+				rpcNetwork = { personalSignRequestData.rpcNetwork }
 				renameAddressCallBack = { renameAddressCallBack }
 			/>
 		}
@@ -171,7 +171,7 @@ function SignRequest({ personalSignRequestData, renameAddressCallBack }: SignReq
 					isApproval: true
 				} }
 				transactionGasses = { { gasSpent: 0n, realizedGasPrice: 0n } }
-				selectedNetwork = { personalSignRequestData.selectedNetwork }
+				rpcNetwork = { personalSignRequestData.rpcNetwork }
 				renameAddressCallBack = { renameAddressCallBack }
 			/>
 		}
@@ -216,7 +216,7 @@ function SafeTx({ personalSignRequestDataSafeTx, renameAddressCallBack }: { pers
 			<CellElement text = 'to: '/>
 			<CellElement text = { <SmallAddress addressBookEntry = { personalSignRequestDataSafeTx.addressBookEntries.to } renameAddressCallBack = { renameAddressCallBack } /> }/>
 			<CellElement text = 'value: '/>
-			<CellElement text = { <Ether amount = { personalSignRequestDataSafeTx.message.message.value } selectedNetwork = { personalSignRequestDataSafeTx.selectedNetwork }/>  }/>
+			<CellElement text = { <Ether amount = { personalSignRequestDataSafeTx.message.message.value } rpcNetwork = { personalSignRequestDataSafeTx.rpcNetwork }/>  }/>
 		</span>
 		<p class = 'paragraph' style = 'color: var(--subtitle-text-color)'>Raw transaction input: </p>
 		<div class = 'textbox'>

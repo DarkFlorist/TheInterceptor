@@ -1,6 +1,6 @@
 import { TransactionImportanceBlockParams } from '../Transactions.js'
 import { Erc20ApprovalChanges, ERC721OperatorChange, ERC721OperatorChanges, ERC721TokenIdApprovalChanges } from '../SimulationSummary.js'
-import { ERC721TokenApprovalChange, TokenApprovalChange, TokenVisualizerERC20Event, TokenVisualizerERC721AllApprovalEvent, TokenVisualizerERC721Event, TokenVisualizerResultWithMetadata, SelectedNetwork } from '../../../utils/visualizer-types.js'
+import { ERC721TokenApprovalChange, TokenApprovalChange, TokenVisualizerERC20Event, TokenVisualizerERC721AllApprovalEvent, TokenVisualizerERC721Event, TokenVisualizerResultWithMetadata, RpcNetwork } from '../../../utils/visualizer-types.js'
 import { EtherSymbol, TokenSymbol, TokenAmount, EtherAmount, ERC721TokenNumber } from '../../subcomponents/coins.js'
 import { RenameAddressCallBack } from '../../../utils/user-interface-types.js'
 
@@ -8,7 +8,7 @@ type EtherTransferEventParams = {
 	valueSent: bigint,
 	totalReceived: bigint,
 	textColor: string,
-	selectedNetwork: SelectedNetwork,
+	rpcNetwork: RpcNetwork,
 }
 
 function EtherTransferEvent(param: EtherTransferEventParams) {
@@ -30,7 +30,7 @@ function EtherTransferEvent(param: EtherTransferEventParams) {
 						<div class = 'log-cell'>
 							<EtherSymbol
 								textColor = { param.textColor }
-								selectedNetwork = { param.selectedNetwork }
+								rpcNetwork = { param.rpcNetwork }
 							/>
 						</div>
 					</table>
@@ -54,7 +54,7 @@ function EtherTransferEvent(param: EtherTransferEventParams) {
 						<div class = 'log-cell'>
 							<EtherSymbol
 								textColor = { param.textColor }
-								selectedNetwork = { param.selectedNetwork }
+								rpcNetwork = { param.rpcNetwork }
 							/>
 						</div>
 					</table>
@@ -174,7 +174,7 @@ export function CatchAllVisualizer(param: TransactionImportanceBlockParams) {
 					valueSent = { param.simTx.transaction.value }
 					totalReceived = { totalEthReceived }
 					textColor = { textColor }
-					selectedNetwork = { param.simulationAndVisualisationResults.selectedNetwork }
+					rpcNetwork = { param.simulationAndVisualisationResults.rpcNetwork }
 				/>
 			</div>
 

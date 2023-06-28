@@ -3,7 +3,7 @@ import { EthereumClientService } from './services/EthereumClientService.js'
 import { TokenPriceEstimate } from '../utils/visualizer-types.js'
 import { addressString, stringToUint8Array } from '../utils/bigint.js'
 import { ethers } from 'ethers'
-import { getEthDonator, getPrimaryRPCForChain } from '../background/storageVariables.js'
+import { getEthDonator, getPrimaryRpcForChain } from '../background/storageVariables.js'
 
 interface TokenDecimals {
 	token: bigint,
@@ -27,7 +27,7 @@ export class PriceEstimator {
 
 		const chainId = this.ethereum.getChainId()
 		const donator = getEthDonator(chainId)
-		const weth = (await getPrimaryRPCForChain(chainId))?.weth
+		const weth = (await getPrimaryRpcForChain(chainId))?.weth
 
 		if (donator === undefined || weth === undefined) return []
 

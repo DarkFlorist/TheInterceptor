@@ -29,7 +29,7 @@ export function makeYouRichTransaction(param: TransactionImportanceBlockParams) 
 					<EtherAmount amount = { param.simTx.transaction.value } />
 				</div>
 				<div class = 'log-cell'>
-					<EtherSymbol selectedNetwork = { param.simulationAndVisualisationResults.selectedNetwork } />
+					<EtherSymbol rpcNetwork = { param.simulationAndVisualisationResults.rpcNetwork } />
 				</div>
 				<div class = 'log-cell'>
 					<p class = 'ellipsis' style = {`color: var(--text-color); margin-bottom: 0px`}> &nbsp;{ explainer[1] } </p>

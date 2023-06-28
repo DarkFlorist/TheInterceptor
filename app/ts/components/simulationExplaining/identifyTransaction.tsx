@@ -145,8 +145,8 @@ const getSimpleTokenTransferOrUndefined = createGuard<SimulatedAndVisualizedTran
 
 export function identifyTransaction(simTx: SimulatedAndVisualizedTransaction): IdentifiedTransaction {
 	const richTxParams = MAKE_YOU_RICH_TRANSACTION.transaction
-	if (simTx.transaction.selectedNetwork.https_rpc !== undefined
-		&& getEthDonator(simTx.transaction.selectedNetwork.chainId) === simTx.transaction.from.address
+	if (simTx.transaction.rpcNetwork.httpsRpc !== undefined
+		&& getEthDonator(simTx.transaction.rpcNetwork.chainId) === simTx.transaction.from.address
 		&& simTx.transaction.type === richTxParams.type
 		&& simTx.transaction.maxFeePerGas === richTxParams.maxFeePerGas
 		&& simTx.transaction.maxPriorityFeePerGas === richTxParams.maxPriorityFeePerGas
@@ -174,7 +174,7 @@ export function identifyTransaction(simTx: SimulatedAndVisualizedTransaction): I
 
 	const identifiedSwap = identifySwap(simTx)
 	if (identifiedSwap) {
-		const swapname = getSwapName(identifiedSwap, simTx.transaction.selectedNetwork)
+		const swapname = getSwapName(identifiedSwap, simTx.transaction.rpcNetwork)
 		return {
 			type: 'Swap',
 			title: swapname === undefined ? 'Swap' : swapname,

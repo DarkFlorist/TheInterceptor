@@ -1,6 +1,6 @@
 import { HomeParams, AddressInfo, FirstCardParams, SimulationStateParam, SignerName } from '../../utils/user-interface-types.js'
 import { useEffect, useState } from 'preact/hooks'
-import { SimulatedAndVisualizedTransaction, SimulationAndVisualisationResults, RPCEntry, SelectedNetwork } from '../../utils/visualizer-types.js'
+import { SimulatedAndVisualizedTransaction, SimulationAndVisualisationResults, RpcEntry, RpcNetwork } from '../../utils/visualizer-types.js'
 import { ActiveAddress, findAddressInfo } from '../subcomponents/address.js'
 import { SimulationSummary } from '../simulationExplaining/SimulationSummary.js'
 import { ChainSelector } from '../subcomponents/ChainSelector.js'
@@ -76,7 +76,7 @@ function FirstCardHeader(param: FirstCardParams) {
 				</div>
 			</div>
 			<div class = 'card-header-icon unset-cursor'>
-				<ChainSelector selectedNetwork = { param.selectedNetwork } changeRPC = { (entry: RPCEntry) => { param.changeActiveRPC(entry) } }/>
+				<ChainSelector rpcNetwork = { param.rpcNetwork } changeRpc = { (entry: RpcEntry) => { param.changeActiveRpc(entry) } }/>
 			</div>
 		</header>
 	</>
@@ -200,7 +200,7 @@ export function Home(param: HomeParams) {
 	const [activeSigningAddress, setActiveSigningAddress] = useState<AddressInfo | undefined>(undefined)
 	const [useSignersAddressAsActiveAddress, setUseSignersAddressAsActiveAddress] = useState(false)
 	const [simulationAndVisualisationResults, setSimulationAndVisualisationResults] = useState<SimulationAndVisualisationResults | undefined>(undefined)
-	const [selectedNetwork, setSelectedNetwork] = useState<SelectedNetwork | undefined>()
+	const [rpcNetwork, setSelectedNetwork] = useState<RpcNetwork | undefined>()
 	const [simulationMode, setSimulationMode] = useState<boolean>(true)
 	const [tabIconDetails, setTabConnection] = useState<TabIconDetails>(DEFAULT_TAB_CONNECTION)
 	const [signerAccounts, setSignerAccounts] = useState<readonly bigint[] | undefined>(undefined)
@@ -218,7 +218,7 @@ export function Home(param: HomeParams) {
 		setUseSignersAddressAsActiveAddress(param.useSignersAddressAsActiveAddress)
 		setActiveSimulationAddress(param.activeSimulationAddress !== undefined ? findAddressInfo(param.activeSimulationAddress, param.addressInfos) : undefined)
 		setActiveSigningAddress(param.activeSigningAddress !== undefined ? findAddressInfo(param.activeSigningAddress, param.addressInfos) : undefined)
-		setSelectedNetwork(param.selectedNetwork)
+		setSelectedNetwork(param.rpcNetwork)
 		setSimulationMode(param.simulationMode)
 		setTabConnection(param.tabIconDetails)
 		setSignerAccounts(param.signerAccounts)
@@ -235,7 +235,7 @@ export function Home(param: HomeParams) {
 		param.signerAccounts,
 		param.addressInfos,
 		param.useSignersAddressAsActiveAddress,
-		param.selectedNetwork,
+		param.rpcNetwork,
 		param.simulationMode,
 		param.tabIconDetails,
 		param.currentBlockNumber,
@@ -268,12 +268,12 @@ export function Home(param: HomeParams) {
 	}
 
 	if (!isLoaded) return <></>
-	if (selectedNetwork === undefined) return <></>
+	if (rpcNetwork === undefined) return <></>
 
 	return <>
-		{ selectedNetwork.https_rpc === undefined ?
+		{ rpcNetwork.httpsRpc === undefined ?
 			<div style = 'margin: 10px; background-color: var(--bg-color);'>
-				<Error text = { `${ selectedNetwork.name } is not a supported network. The Interceptors is disabled while you are using the network.` }/>
+				<Error text = { `${ rpcNetwork.name } is not a supported network. The Interceptors is disabled while you are using the network.` }/>
 			</div>
 		: <></> }
 
@@ -288,8 +288,8 @@ export function Home(param: HomeParams) {
 			useSignersAddressAsActiveAddress = { useSignersAddressAsActiveAddress }
 			enableSimulationMode = { enableSimulationMode }
 			activeAddress = { simulationMode ? activeSimulationAddress : activeSigningAddress }
-			selectedNetwork = { selectedNetwork }
-			changeActiveRPC = { param.setActiveRPCAndInformAboutIt }
+			rpcNetwork = { rpcNetwork }
+			changeActiveRpc = { param.setActiveRpcAndInformAboutIt }
 			simulationMode = { simulationMode }
 			changeActiveAddress = { changeActiveAddress }
 			makeMeRich = { makeMeRich }

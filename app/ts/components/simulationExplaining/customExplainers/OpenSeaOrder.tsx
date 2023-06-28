@@ -5,14 +5,14 @@ import { SmallAddress } from '../../subcomponents/address.js'
 import { bytes32String } from '../../../utils/bigint.js'
 import { ArrowIcon } from '../../subcomponents/icons.js'
 import { CellElement, humanReadableDate } from '../../ui-utils.js'
-import { SelectedNetwork } from '../../../utils/visualizer-types.js'
+import { RpcNetwork } from '../../../utils/visualizer-types.js'
 
 const tokenStyle = { 'font-size': '28px', 'font-weight': '500', 'color:': 'var(--text-color)' }
 
 type VisualizeOpenSeaAssetParams = {
 	orderOrConsideration: SeaPortSingleOfferWithAddressBookEntries | SeaPortSingleConsiderationWithAddressBookEntries
 	renameAddressCallBack: RenameAddressCallBack
-	selectedNetwork: SelectedNetwork
+	rpcNetwork: RpcNetwork
 }
 
 function ValueField({ orderOrConsideration }: { orderOrConsideration: SeaPortSingleOfferWithAddressBookEntries | SeaPortSingleConsiderationWithAddressBookEntries }) {
@@ -40,8 +40,8 @@ function SwapGrid(param: VisualizeOpenSeaAssetParams) {
 			</div>
 			<div class = 'log-cell' style = 'justify-content: right;'>
 				{ param.orderOrConsideration.itemType === 'ERC721' || param.orderOrConsideration.itemType === 'ERC1155' ?
-					<TokenOrEthSymbol { ...param.orderOrConsideration.token } selectedNetwork = { param.selectedNetwork } id = { param.orderOrConsideration.identifierOrCriteria } style = { tokenStyle }/>
-				: <TokenOrEthSymbol { ...param.orderOrConsideration.token } selectedNetwork = { param.selectedNetwork } style = { tokenStyle }/> }
+					<TokenOrEthSymbol { ...param.orderOrConsideration.token } rpcNetwork = { param.rpcNetwork } id = { param.orderOrConsideration.identifierOrCriteria } style = { tokenStyle }/>
+				: <TokenOrEthSymbol { ...param.orderOrConsideration.token } rpcNetwork = { param.rpcNetwork } style = { tokenStyle }/> }
 			</div>
 		</span>
 	</>
@@ -50,7 +50,7 @@ function SwapGrid(param: VisualizeOpenSeaAssetParams) {
 type VisualizeOpenSeaConsiderationAssetParams = {
 	consideration: SeaPortSingleConsiderationWithAddressBookEntries
 	renameAddressCallBack: RenameAddressCallBack
-	selectedNetwork: SelectedNetwork
+	rpcNetwork: RpcNetwork
 }
 
 export function VisualizeOpenSeaAsset(param: VisualizeOpenSeaConsiderationAssetParams) {
@@ -61,8 +61,8 @@ export function VisualizeOpenSeaAsset(param: VisualizeOpenSeaConsiderationAssetP
 		</div>
 		<div class = 'log-cell' style = 'padding-right: 0.2em'>
 			{ param.consideration.itemType === 'ERC721' || param.consideration.itemType === 'ERC1155' ?
-				<TokenOrEthSymbol { ...param.consideration.token } selectedNetwork = { param.selectedNetwork } id = { param.consideration.identifierOrCriteria } style = { tokenStyle }/>
-			: <TokenOrEthSymbol { ...param.consideration.token } selectedNetwork = { param.selectedNetwork } style = { tokenStyle }/> }
+				<TokenOrEthSymbol { ...param.consideration.token } rpcNetwork = { param.rpcNetwork } id = { param.consideration.identifierOrCriteria } style = { tokenStyle }/>
+			: <TokenOrEthSymbol { ...param.consideration.token } rpcNetwork = { param.rpcNetwork } style = { tokenStyle }/> }
 		</div>
 		<div class = 'log-cell' style = 'padding-right: 0.2em; padding-left: 0.2em'>
 			{ <ArrowIcon color = { textColor } /> }
@@ -76,7 +76,7 @@ export function VisualizeOpenSeaAsset(param: VisualizeOpenSeaConsiderationAssetP
 type OrderComponentsParams = {
 	openSeaOrderMessage: OpenSeaOrderMessageWithAddressBookEntries
 	renameAddressCallBack: RenameAddressCallBack
-	selectedNetwork: SelectedNetwork
+	rpcNetwork: RpcNetwork
 }
 
 export function OrderComponents(param: OrderComponentsParams) {
@@ -84,12 +84,12 @@ export function OrderComponents(param: OrderComponentsParams) {
 		<div style = 'display: grid; grid-template-rows: max-content max-content max-content max-content;'>
 			<p class = 'paragraph'> Offer </p>
 			<div class = 'box swap-box'>
-				{ param.openSeaOrderMessage.offer.map((offer) => <SwapGrid orderOrConsideration = { offer } renameAddressCallBack = { param.renameAddressCallBack } selectedNetwork = { param.selectedNetwork }/> ) }
+				{ param.openSeaOrderMessage.offer.map((offer) => <SwapGrid orderOrConsideration = { offer } renameAddressCallBack = { param.renameAddressCallBack } rpcNetwork = { param.rpcNetwork }/> ) }
 			</div>
 			<p class = 'paragraph'> For </p>
 			<div class = 'box swap-box'>
 				<span class = 'log-table-4' style = 'justify-content: center; column-gap: 5px;'>
-					{ param.openSeaOrderMessage.consideration.map((consideration) => <VisualizeOpenSeaAsset consideration = { consideration } renameAddressCallBack = { param.renameAddressCallBack } selectedNetwork = { param.selectedNetwork } /> ) }
+					{ param.openSeaOrderMessage.consideration.map((consideration) => <VisualizeOpenSeaAsset consideration = { consideration } renameAddressCallBack = { param.renameAddressCallBack } rpcNetwork = { param.rpcNetwork } /> ) }
 				</span>
 			</div>
 		</div>

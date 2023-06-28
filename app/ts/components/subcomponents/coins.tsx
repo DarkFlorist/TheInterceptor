@@ -1,7 +1,7 @@
 import { useSignal } from '@preact/signals'
 import { getTokenAmountsWorth } from '../../simulation/priceEstimator.js'
 import { abs, bigintToDecimalString, bigintToRoundedPrettyDecimalString, checksummedAddress } from '../../utils/bigint.js'
-import { ERC721TokenDefinitionParams, TokenDefinitionParams, TokenPriceEstimate, SelectedNetwork } from '../../utils/visualizer-types.js'
+import { ERC721TokenDefinitionParams, TokenDefinitionParams, TokenPriceEstimate, RpcNetwork } from '../../utils/visualizer-types.js'
 import { CopyToClipboard } from './CopyToClipboard.js'
 import { Blockie } from './PreactBlocky.js'
 import { JSX } from 'preact/jsx-runtime'
@@ -12,7 +12,7 @@ type EtherParams = {
 	showSign?: boolean
 	textColor?: string
 	useFullTokenName?: boolean
-	selectedNetwork: SelectedNetwork
+	rpcNetwork: RpcNetwork
 	style?: JSX.CSSProperties
 }
 
@@ -52,7 +52,7 @@ export function EtherAmount(param: EtherAmountParams) {
 type EtherSymbolParams = {
 	textColor?: string
 	useFullTokenName?: boolean
-	selectedNetwork: SelectedNetwork
+	rpcNetwork: RpcNetwork
 	style?: JSX.CSSProperties
 }
 
@@ -65,7 +65,7 @@ export function EtherSymbol(param: EtherSymbolParams) {
 		'margin-left': '2px',
 		...(param.style === undefined ? {} : param.style),
 	}
-	const etheName = param.useFullTokenName ? param.selectedNetwork.currencyName : param.selectedNetwork.currencyTicker
+	const etheName = param.useFullTokenName ? param.rpcNetwork.currencyName : param.rpcNetwork.currencyTicker
 
 	return <>
 		<div style = 'overflow: initial; height: 28px;'>
@@ -78,7 +78,7 @@ export function EtherSymbol(param: EtherSymbolParams) {
 type TokenPriceParams = {
 	textColor?: string,
 	amount: bigint,
-	selectedNetwork: SelectedNetwork
+	rpcNetwork: RpcNetwork
 	tokenPriceEstimate: TokenPriceEstimate | undefined
 }
 
@@ -90,7 +90,7 @@ export function TokenPrice(param: TokenPriceParams) {
 		<p style = { `color: ${ color }` }>&nbsp;(</p>
 		<Ether
 			amount = { value }
-			selectedNetwork = { param.selectedNetwork }
+			rpcNetwork = { param.rpcNetwork }
 			textColor = { color }
 		/>
 		<p style = { `color: ${ color }` }>)</p>

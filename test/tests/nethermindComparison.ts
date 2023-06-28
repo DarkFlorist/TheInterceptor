@@ -5,7 +5,7 @@ import { eth_getBlockByNumber_goerli_8443561_false, eth_getBlockByNumber_goerli_
 import { describe, should } from '../micro-should.js'
 import * as assert from 'assert'
 import { assertIsObject } from '../../app/ts/utils/typescript.js'
-import { SelectedNetwork } from '../../app/ts/utils/visualizer-types.js'
+import { RpcNetwork } from '../../app/ts/utils/visualizer-types.js'
 
 function parseRequest(data: string) {
 	const jsonRpcResponse = JsonRpcResponse.parse(JSON.parse(data))
@@ -14,9 +14,9 @@ function parseRequest(data: string) {
 }
 
 class MockEthereumJSONRpcRequestHandler {
-	private selectedNetwork: SelectedNetwork
-	constructor(selectedNetwork: SelectedNetwork) {
-		this.selectedNetwork = selectedNetwork
+	private rpcNetwork: RpcNetwork
+	constructor(rpcNetwork: RpcNetwork) {
+		this.rpcNetwork = rpcNetwork
 	}
 
 	public readonly jsonRpcRequest = async (rpcRequest: EthereumJsonRpcRequest) => {
@@ -35,28 +35,28 @@ class MockEthereumJSONRpcRequestHandler {
 			}
 		}
 	}
-	public readonly getSelectedNetwork = () => this.selectedNetwork
+	public readonly getSelectedNetwork = () => this.rpcNetwork
 }
 
 export async function main() {
 	const blockNumber = 8443561n
-	const selectedNetwork = {
+	const rpcNetwork = {
 		name: 'Goerli',
 		chainId: 5n,
-		https_rpc: 'https://rpc-goerli.dark.florist/flipcardtrustone',
+		httpsRpc: 'https://rpc-goerli.dark.florist/flipcardtrustone',
 		currencyName: 'Goerli Testnet ETH',
 		currencyTicker: 'GÖETH',
 		primary: true,
 		minimized: true,
 		weth: 0xb4fbf271143f4fbf7b91a5ded31805e42b2208d6n,
 	}
-	const ethereum = new EthereumClientService(new MockEthereumJSONRpcRequestHandler(selectedNetwork), () => {}, () => {})
+	const ethereum = new EthereumClientService(new MockEthereumJSONRpcRequestHandler(rpcNetwork), () => {}, () => {})
 	const simulationState = {
 		prependTransactionsQueue: [],
 		simulatedTransactions: [],
 		blockNumber: blockNumber,
 		blockTimestamp: new Date(0),
-		selectedNetwork: selectedNetwork,
+		rpcNetwork: rpcNetwork,
 		simulationConductedTimestamp: new Date(0),
 	}
 

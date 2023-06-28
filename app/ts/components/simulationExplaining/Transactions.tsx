@@ -75,7 +75,7 @@ export function TransactionImportanceBlock(param: TransactionImportanceBlockPara
 			return <SimpleTokenApprovalVisualisation
 				approval = { transactionIdentification.identifiedTransaction.tokenResults[0] }
 				transactionGasses = { transactionIdentification.identifiedTransaction }
-				selectedNetwork = { transactionIdentification.identifiedTransaction.transaction.selectedNetwork }
+				rpcNetwork = { transactionIdentification.identifiedTransaction.transaction.rpcNetwork }
 				renameAddressCallBack = { param.renameAddressCallBack }
 			/>
 		}
@@ -84,7 +84,7 @@ export function TransactionImportanceBlock(param: TransactionImportanceBlockPara
 			if (identifiedSwap === undefined) throw new Error('Not a swap!')
 			return <SwapVisualization
 				identifiedSwap = { identifiedSwap }
-				selectedNetwork = { param.simulationAndVisualisationResults.selectedNetwork }
+				rpcNetwork = { param.simulationAndVisualisationResults.rpcNetwork }
 			/>
 		}
 		case 'MakeYouRichTransaction': return makeYouRichTransaction(param)
@@ -163,7 +163,7 @@ export function Transaction(param: TransactionVisualizationParameters) {
 							<TransactionCreated transactionCreated = { param.simTx.transactionCreated } />
 						</div>
 						<div class = 'log-cell' style = 'justify-content: right;'>
-							<GasFee tx = { param.simTx } selectedNetwork = { param.simulationAndVisualisationResults.selectedNetwork } />
+							<GasFee tx = { param.simTx } rpcNetwork = { param.simulationAndVisualisationResults.rpcNetwork } />
 						</div>
 					</span>
 				</> }

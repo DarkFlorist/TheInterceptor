@@ -50,7 +50,7 @@ export function formSimulatedAndVisualizedTransaction(simState: SimulationState,
 				from: from,
 				to: to,
 				value: simulatedTx.signedTransaction.value,
-				selectedNetwork: simState.selectedNetwork,
+				rpcNetwork: simState.rpcNetwork,
 				gas: simulatedTx.signedTransaction.gas,
 				input: simulatedTx.signedTransaction.input,
 				...(simulatedTx.signedTransaction.type === '1559'

@@ -1,6 +1,6 @@
 import { DistributedOmit } from '../../../utils/typescript.js'
 import { AddressBookEntry, RenameAddressCallBack } from '../../../utils/user-interface-types.js'
-import { EthBalanceChangesWithMetadata, SelectedNetwork } from '../../../utils/visualizer-types.js'
+import { EthBalanceChangesWithMetadata, RpcNetwork } from '../../../utils/visualizer-types.js'
 import { BigAddress } from '../../subcomponents/address.js'
 import { TokenOrEth, TokenOrEtherParams } from '../../subcomponents/coins.js'
 import { GasFee, TransactionGasses } from '../SimulationSummary.js'
@@ -42,7 +42,7 @@ export function AddressBeforeAfter({ address, beforeAndAfter, renameAddressCallB
 }
 
 type SimpleSendParams = {
-	transaction: TransactionGasses & { selectedNetwork: SelectedNetwork }
+	transaction: TransactionGasses & { rpcNetwork: RpcNetwork }
 	asset: TokenOrEtherParams
 	sender: BeforeAfterAddress
 	receiver: BeforeAfterAddress
@@ -76,7 +76,7 @@ function SimpleSend({ transaction, asset, sender, receiver, renameAddressCallBac
 			/>
 		</div>
 		<span class = 'log-table' style = 'grid-template-columns: min-content min-content min-content; margin-top: 5px;'>
-			<GasFee tx = { transaction } selectedNetwork = { transaction.selectedNetwork } />
+			<GasFee tx = { transaction } rpcNetwork = { transaction.rpcNetwork } />
 		</span>
 	</div>
 }
@@ -95,10 +95,10 @@ export function EtherTransferVisualisation({ simTx, renameAddressCallBack }: { s
 	const receiverBalanceChanges = getBeforeAndAfterBalanceForAddress(simTx.ethBalanceChanges, simTx.transaction.to.address)
 	if (senderBalanceChanges === undefined || receiverBalanceChanges === undefined) return <></>
 	return <SimpleSend
-		transaction = { { ...simTx, selectedNetwork: simTx.transaction.selectedNetwork } }
+		transaction = { { ...simTx, rpcNetwork: simTx.transaction.rpcNetwork } }
 		asset = { {
 			amount: simTx.transaction.value,
-			selectedNetwork: simTx.transaction.selectedNetwork,
+			rpcNetwork: simTx.transaction.rpcNetwork,
 			useFullTokenName: false,
 		} }
 		sender = { { beforeAndAfter: senderBalanceChanges, address: simTx.transaction.from } }
@@ -112,7 +112,7 @@ export function SimpleTokenTransferVisualisation({ simTx, renameAddressCallBack 
 	const asset = { ...(transfer.type === 'Token' ? { ...transfer.token, amount: transfer.amount } : { ...transfer.token, received: false, id: transfer.tokenId }) }
 
 	return <SimpleSend
-		transaction = { { ...simTx, selectedNetwork: simTx.transaction.selectedNetwork } }
+		transaction = { { ...simTx, rpcNetwork: simTx.transaction.rpcNetwork } }
 		asset = { {
 			...asset,
 			useFullTokenName: false

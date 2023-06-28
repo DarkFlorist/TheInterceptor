@@ -114,7 +114,7 @@ function TransactionCard(param: TransactionCardParams) {
 						<span class = 'log-table' style = 'grid-template-columns: min-content min-content min-content'>
 							<GasFee
 								tx = { simTx }
-								selectedNetwork = { param.simulationAndVisualisationResults.selectedNetwork }
+								rpcNetwork = { param.simulationAndVisualisationResults.rpcNetwork }
 							/>
 						</span>
 					</div>
@@ -278,7 +278,7 @@ export function ConfirmTransaction() {
 						
 						{ dialogState.data.transactionToSimulate.transactionSendingFormat === 'eth_sendRawTransaction'
 							? <DinoSaysNotification
-								text = { `This transaction is signed already. No extra signing required to forward it to ${ dialogState.data.simulationState.selectedNetwork }.` }
+								text = { `This transaction is signed already. No extra signing required to forward it to ${ dialogState.data.simulationState.rpcNetwork }.` }
 								close = { () => setPendingTransactionAddedNotification(false)}
 							/>
 							: <></>
@@ -296,7 +296,7 @@ export function ConfirmTransaction() {
 								blockTimestamp: dialogState.data.simulationState.blockTimestamp,
 								simulationConductedTimestamp: dialogState.data.simulationState.simulationConductedTimestamp,
 								addressMetaData: dialogState.data.addressBookEntries,
-								selectedNetwork: dialogState.data.simulationState.selectedNetwork,
+								rpcNetwork: dialogState.data.simulationState.rpcNetwork,
 								tokenPrices: dialogState.data.tokenPrices,
 								activeAddress: dialogState.data.activeAddress,
 								simulatedAndVisualizedTransactions: simulatedAndVisualizedTransactions

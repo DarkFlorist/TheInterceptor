@@ -28,7 +28,7 @@ export const copySimulationState = (simulationState: SimulationState): Simulatio
 		simulatedTransactions: [...simulationState.simulatedTransactions],
 		blockNumber: simulationState.blockNumber,
 		blockTimestamp: simulationState.blockTimestamp,
-		selectedNetwork: simulationState.selectedNetwork,
+		rpcNetwork: simulationState.rpcNetwork,
 		simulationConductedTimestamp: simulationState.simulationConductedTimestamp,
 	}
 }
@@ -158,7 +158,7 @@ export const appendTransaction = async (ethereumClientService: EthereumClientSer
 		})),
 		blockNumber: parentBlock.number,
 		blockTimestamp: parentBlock.timestamp,
-		selectedNetwork: ethereumClientService.getSelectedNetwork(),
+		rpcNetwork: ethereumClientService.getSelectedNetwork(),
 		simulationConductedTimestamp: new Date(),
 	}
 }
@@ -171,7 +171,7 @@ export const setSimulationTransactions = async (ethereumClientService: EthereumC
 			simulatedTransactions: [],
 			blockNumber: block.number,
 			blockTimestamp: block.timestamp,
-			selectedNetwork: simulationState.selectedNetwork,
+			rpcNetwork: simulationState.rpcNetwork,
 			simulationConductedTimestamp: new Date(),
 		}
 	}
@@ -212,7 +212,7 @@ export const setSimulationTransactions = async (ethereumClientService: EthereumC
 		})),
 		blockNumber: parentBlock.number,
 		blockTimestamp: parentBlock.timestamp,
-		selectedNetwork: simulationState.selectedNetwork,
+		rpcNetwork: simulationState.rpcNetwork,
 		simulationConductedTimestamp: new Date(),
 	}
 }
@@ -233,7 +233,7 @@ export const setPrependTransactionsQueue = async (ethereumClientService: Ethereu
 		simulatedTransactions: [],
 		blockNumber: block.number,
 		blockTimestamp: block.timestamp,
-		selectedNetwork: ethereumClientService.getSelectedNetwork(),
+		rpcNetwork: ethereumClientService.getSelectedNetwork(),
 		simulationConductedTimestamp: new Date(),
 	}
 
@@ -300,7 +300,7 @@ export const getNonceFixedSimulatedTransactions = async(ethereumClientService: E
 }
 
 export const refreshSimulationState = async (ethereumClientService: EthereumClientService, simulationState: SimulationState): Promise<SimulationState>  => {
-	if (ethereumClientService.getChainId() !== simulationState.selectedNetwork.chainId) return simulationState // don't refresh if we don't have the same chain to refresh from
+	if (ethereumClientService.getChainId() !== simulationState.rpcNetwork.chainId) return simulationState // don't refresh if we don't have the same chain to refresh from
 	if (simulationState.blockNumber == await ethereumClientService.getBlockNumber()) {
 		// if block number is the same, we don't need to compute anything as nothing has changed, but let's update timestamp to show the simulation was refreshed for this time
 		return { ...simulationState, simulationConductedTimestamp: new Date() }

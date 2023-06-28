@@ -76,7 +76,7 @@ export async function craftPersonalSignPopupMessage(ethereumClientService: Ether
 
 	const getQuarrantineCodes = async (messageChainId: bigint, account: AddressBookEntry, activeAddress: AddressBookEntry, owner: AddressBookEntry | undefined): Promise<{ quarantine: boolean, quarantineCodes: readonly QUARANTINE_CODE[] }> => {
 		let quarantineCodes: QUARANTINE_CODE[] = []
-		if (BigInt(messageChainId) !== (await getSettings()).selectedNetwork.chainId) {
+		if (BigInt(messageChainId) !== (await getSettings()).rpcNetwork.chainId) {
 			quarantineCodes.push('SIGNATURE_CHAIN_ID_DOES_NOT_MATCH')
 		}
 		if (account.address !== activeAddress.address || (owner != undefined && account.address !== owner.address)) {
@@ -93,7 +93,7 @@ export async function craftPersonalSignPopupMessage(ethereumClientService: Ether
 			data: {
 				originalParams,
 				...basicParams,
-				selectedNetwork: await getSelectedNetwork(),
+				rpcNetwork: await getSelectedNetwork(),
 				type: 'NotParsed',
 				message: stringifyJSONWithBigInts(originalParams.params[0], 4),
 				account: getAddressMetaData(originalParams.params[1], userAddressBook),
@@ -109,7 +109,7 @@ export async function craftPersonalSignPopupMessage(ethereumClientService: Ether
 			data: {
 				originalParams,
 				...basicParams,
-				selectedNetwork: await getSelectedNetwork(),
+				rpcNetwork: await getSelectedNetwork(),
 				type: 'NotParsed',
 				message: originalParams.params[0],
 				account: getAddressMetaData(originalParams.params[1], userAddressBook),
@@ -133,7 +133,7 @@ export async function craftPersonalSignPopupMessage(ethereumClientService: Ether
 			data: {
 				originalParams,
 				...basicParams,
-				selectedNetwork: chainid !== undefined ? await getSelectedNetworkForChain(chainid) : await getSelectedNetwork(),
+				rpcNetwork: chainid !== undefined ? await getSelectedNetworkForChain(chainid) : await getSelectedNetwork(),
 				type: 'EIP712',
 				message,
 				account,
@@ -152,7 +152,7 @@ export async function craftPersonalSignPopupMessage(ethereumClientService: Ether
 				data: {
 					originalParams,
 					...basicParams,
-					selectedNetwork: await getSelectedNetworkForChain(parsed.domain.chainId),
+					rpcNetwork: await getSelectedNetworkForChain(parsed.domain.chainId),
 					type: 'Permit',
 					message: parsed,
 					account,
@@ -173,7 +173,7 @@ export async function craftPersonalSignPopupMessage(ethereumClientService: Ether
 				data: {
 					originalParams,
 					...basicParams,
-					selectedNetwork: await getSelectedNetworkForChain(parsed.domain.chainId),
+					rpcNetwork: await getSelectedNetworkForChain(parsed.domain.chainId),
 					type: 'Permit2',
 					message: parsed,
 					account,
@@ -191,7 +191,7 @@ export async function craftPersonalSignPopupMessage(ethereumClientService: Ether
 			data: {
 				originalParams,
 				...basicParams,
-				selectedNetwork: parsed.domain.chainId !== undefined ? await getSelectedNetworkForChain(parsed.domain.chainId) : await getSelectedNetwork(),
+				rpcNetwork: parsed.domain.chainId !== undefined ? await getSelectedNetworkForChain(parsed.domain.chainId) : await getSelectedNetwork(),
 				type: 'SafeTx',
 				message: parsed,
 				account,
@@ -211,7 +211,7 @@ export async function craftPersonalSignPopupMessage(ethereumClientService: Ether
 				originalParams,
 				...basicParams,
 				type: 'OrderComponents',
-				selectedNetwork: await getSelectedNetworkForChain(parsed.domain.chainId),
+				rpcNetwork: await getSelectedNetworkForChain(parsed.domain.chainId),
 				message: await addMetadataToOpenSeaOrder(ethereumClientService, parsed.message, userAddressBook),
 				account,
 				...await getQuarrantineCodes(parsed.domain.chainId, account, activeAddressWithMetadata, undefined),

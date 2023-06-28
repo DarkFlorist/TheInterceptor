@@ -3,9 +3,9 @@ import { PendingAccessRequestArray, PendingChainChangeConfirmationPromise, Pendi
 import { Semaphore } from '../utils/semaphore.js'
 import { browserStorageLocalSet, browserStorageLocalSingleGetWithDefault } from '../utils/storageUtils.js'
 import { SignerName } from '../utils/user-interface-types.js'
-import { EthereumSubscriptions, SimulationResults, RPCEntries, SelectedNetwork } from '../utils/visualizer-types.js'
+import { EthereumSubscriptions, SimulationResults, RpcEntries, RpcNetwork } from '../utils/visualizer-types.js'
 import * as funtypes from 'funtypes'
-import { defaultRPCs, getSettings } from './settings.js'
+import { defaultRpcs, getSettings } from './settings.js'
 
 export async function getOpenedAddressBookTabId() {
 	const tabIdData = await browserStorageLocalSingleGetWithDefault('addressbookTabId', undefined)
@@ -206,27 +206,27 @@ export async function setOpenedAddressBookTabId(addressbookTabId: number) {
 	return await browserStorageLocalSet('addressbookTabId', addressbookTabId)
 }
 
-export async function setRPCList(entries: RPCEntries) {
-	return await browserStorageLocalSet('RPCEntries', RPCEntries.serialize(entries) as string)
+export async function setRpcList(entries: RpcEntries) {
+	return await browserStorageLocalSet('RpcEntries', RpcEntries.serialize(entries) as string)
 }
 
-export async function getRPCList() {
-	const entries = await browserStorageLocalSingleGetWithDefault('RPCEntries', undefined)
-	if (entries === undefined) return defaultRPCs
-	try { return RPCEntries.parse(entries) } catch(e) { return defaultRPCs }
+export async function getRpcList() {
+	const entries = await browserStorageLocalSingleGetWithDefault('RpcEntries', undefined)
+	if (entries === undefined) return defaultRpcs
+	try { return RpcEntries.parse(entries) } catch(e) { return defaultRpcs }
 }
 
-export const getPrimaryRPCForChain = async (chainId: bigint) => {
-	const rpcs = await getRPCList()
+export const getPrimaryRpcForChain = async (chainId: bigint) => {
+	const rpcs = await getRpcList()
 	return rpcs.find((rpc) => rpc.chainId === chainId && rpc.primary)
 }
 
-export async function getSelectedNetwork(): Promise<SelectedNetwork> {
-	return (await getSettings()).selectedNetwork
+export async function getSelectedNetwork(): Promise<RpcNetwork> {
+	return (await getSettings()).rpcNetwork
 }
 
-export const getSelectedNetworkForChain = async (chainId: bigint): Promise<SelectedNetwork> => {
-	const rpcs = await getRPCList()
+export const getSelectedNetworkForChain = async (chainId: bigint): Promise<RpcNetwork> => {
+	const rpcs = await getRpcList()
 	const rpc =  rpcs.find((rpc) => rpc.chainId === chainId && rpc.primary)
 	if (rpc !== undefined) return rpc
 	return {
@@ -234,7 +234,7 @@ export const getSelectedNetworkForChain = async (chainId: bigint): Promise<Selec
 		currencyName: 'Ether?',
 		currencyTicker: 'ETH?',
 		name: getChainName(chainId),
-		https_rpc: undefined,
+		httpsRpc: undefined,
 	}
 }
 

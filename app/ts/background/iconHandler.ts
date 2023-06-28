@@ -57,7 +57,7 @@ export async function updateExtensionIcon(websiteTabConnections: WebsiteTabConne
 		return setInterceptorIcon(websiteTabConnections, socket.tabId, ICON_ACCESS_DENIED, `The access to ${ getAddressMetaData(activeAddress, settings.userAddressBook).name } for ${ websiteOrigin } has been DENIED!`)
 	}
 	if (settings.simulationMode) return setInterceptorIcon(websiteTabConnections, socket.tabId, ICON_SIMULATING, `The Interceptor simulates your sent transactions.`)
-	if (settings.selectedNetwork.https_rpc === undefined) return setInterceptorIcon(websiteTabConnections, socket.tabId, ICON_SIGNING_NOT_SUPPORTED, `Interceptor is on an unsupported network and simulation mode is disabled.`)
+	if (settings.rpcNetwork.httpsRpc === undefined) return setInterceptorIcon(websiteTabConnections, socket.tabId, ICON_SIGNING_NOT_SUPPORTED, `Interceptor is on an unsupported network and simulation mode is disabled.`)
 
 	return setInterceptorIcon(websiteTabConnections, socket.tabId, ICON_SIGNING, `The Interceptor forwards your transactions to ${ getPrettySignerName(await getSignerName()) } once sent.`)
 }

@@ -1,7 +1,7 @@
 import { StateUpdater } from 'preact/hooks'
 import * as funtypes from 'funtypes'
 import { EthereumAddress, EthereumQuantity, LiteralConverterParserFactory } from './wire-types.js'
-import { SimulatedAndVisualizedTransaction, SimulationAndVisualisationResults, RPCEntry, SelectedNetwork } from './visualizer-types.js'
+import { SimulatedAndVisualizedTransaction, SimulationAndVisualisationResults, RpcEntry, RpcNetwork } from './visualizer-types.js'
 import { IdentifiedSwapWithMetadata } from '../components/simulationExplaining/SwapTransactions.js'
 import { IsConnected, Page, TabIconDetails, WebsiteAccessArray } from './interceptor-messages.js'
 
@@ -138,8 +138,8 @@ export type HomeParams = {
 	activeSigningAddress: bigint | undefined,
 	useSignersAddressAsActiveAddress: boolean,
 	simVisResults: SimulationAndVisualisationResults | undefined,
-	selectedNetwork: SelectedNetwork | undefined,
-	setActiveRPCAndInformAboutIt: (entry: RPCEntry) => void,
+	rpcNetwork: RpcNetwork | undefined,
+	setActiveRpcAndInformAboutIt: (entry: RpcEntry) => void,
 	simulationMode: boolean,
 	tabIconDetails: TabIconDetails,
 	currentBlockNumber: bigint | undefined,
@@ -167,8 +167,8 @@ export type FirstCardParams = {
 	enableSimulationMode: (x: boolean) => void,
 	useSignersAddressAsActiveAddress: boolean,
 	addressInfos: readonly AddressInfo[] | undefined,
-	changeActiveRPC: (rpcEntry: RPCEntry) => void,
-	selectedNetwork: SelectedNetwork,
+	changeActiveRpc: (rpcEntry: RpcEntry) => void,
+	rpcNetwork: RpcNetwork,
 	simulationMode: boolean,
 	changeActiveAddress: () => void,
 	makeMeRich: boolean,

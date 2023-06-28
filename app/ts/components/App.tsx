@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'preact/hooks'
 import { defaultAddresses } from '../background/settings.js'
-import { SimulatedAndVisualizedTransaction, SimulationAndVisualisationResults, SimulationState, TokenPriceEstimate, RPCEntry, SelectedNetwork } from '../utils/visualizer-types.js'
+import { SimulatedAndVisualizedTransaction, SimulationAndVisualisationResults, SimulationState, TokenPriceEstimate, RpcEntry, RpcNetwork } from '../utils/visualizer-types.js'
 import { ChangeActiveAddress } from './pages/ChangeActiveAddress.js'
 import { Home } from './pages/Home.js'
 import { AddressInfo, AddressInfoEntry, AddressBookEntry, AddingNewAddressType, SignerName, AddressBookEntries } from '../utils/user-interface-types.js'
@@ -28,7 +28,7 @@ export function App() {
 	const [simVisResults, setSimVisResults] = useState<SimulationAndVisualisationResults | undefined >(undefined)
 	const [websiteAccess, setWebsiteAccess] = useState<WebsiteAccessArray | undefined>(undefined)
 	const [websiteAccessAddressMetadata, setWebsiteAccessAddressMetadata] = useState<readonly AddressInfoEntry[]>([])
-	const [selectedNetwork, setSelectedNetwork] = useState<SelectedNetwork | undefined>(undefined)
+	const [rpcNetwork, setSelectedNetwork] = useState<RpcNetwork | undefined>(undefined)
 	const [simulationMode, setSimulationMode] = useState<boolean>(true)
 	const [tabIconDetails, setTabConnection] = useState<TabIconDetails>(DEFAULT_TAB_CONNECTION)
 	const [isSettingsLoaded, setIsSettingsLoaded] = useState<boolean>(false)
@@ -63,8 +63,8 @@ export function App() {
 			)
 	}
 
-	async function setActiveRPCAndInformAboutIt(entry: RPCEntry) {
-		sendPopupMessageToBackgroundPage({ method: 'popup_changeActiveRPC', data: entry })
+	async function setActiveRpcAndInformAboutIt(entry: RpcEntry) {
+		sendPopupMessageToBackgroundPage({ method: 'popup_changeActiveRpc', data: entry })
 		if(!isSignerConnected()) {
 			setSelectedNetwork(entry)
 		}
@@ -85,7 +85,7 @@ export function App() {
 				blockTimestamp: simState.blockTimestamp,
 				simulationConductedTimestamp: simState.simulationConductedTimestamp,
 				simulatedAndVisualizedTransactions: simulatedAndVisualizedTransactions,
-				selectedNetwork: simState.selectedNetwork,
+				rpcNetwork: simState.rpcNetwork,
 				tokenPrices: tokenPrices,
 				activeAddress: activeSimulationAddress,
 				addressMetaData: addressBookEntries,
@@ -127,7 +127,7 @@ export function App() {
 				setSimulationMode(settings.simulationMode)
 				setAppPage(settings.page)
 			}
-			setSelectedNetwork(settings.selectedNetwork)
+			setSelectedNetwork(settings.rpcNetwork)
 			setActiveSimulationAddress(settings.activeSimulationAddress)
 			setUseSignersAddressAsActiveAddress(settings.useSignersAddressAsActiveAddress)
 			setAddressInfos(settings.userAddressBook.addressInfos)
@@ -217,8 +217,8 @@ export function App() {
 							</div>
 						</nav>
 						<Home
-							setActiveRPCAndInformAboutIt = { setActiveRPCAndInformAboutIt }
-							selectedNetwork = { selectedNetwork }
+							setActiveRpcAndInformAboutIt = { setActiveRpcAndInformAboutIt }
+							rpcNetwork = { rpcNetwork }
 							simVisResults = { simVisResults }
 							useSignersAddressAsActiveAddress = { useSignersAddressAsActiveAddress }
 							activeSigningAddress = { activeSigningAddress }

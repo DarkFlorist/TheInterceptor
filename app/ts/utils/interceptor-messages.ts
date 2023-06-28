@@ -1,7 +1,7 @@
 import * as funtypes from 'funtypes'
 import { AddressBookEntries, AddressBookEntry, AddressInfo, AddressInfoEntry, ContactEntries, SignerName, Website, WebsiteSocket } from './user-interface-types.js'
 import { EthGetLogsResponse, EthTransactionReceiptResponse, EthereumAddress, EthereumBlockHeaderWithTransactionHashes, EthereumBytes32, EthereumData, EthereumQuantity, EthereumSignedTransactionWithBlockData, GetBlockReturn, GetSimulationStackReply, OldSignTypedDataParams, PersonalSignParams, SendRawTransaction, SendTransactionParams, SignTypedDataParams } from './wire-types.js'
-import { SimulationState, OptionalEthereumAddress, SimulatedAndVisualizedTransaction, SimResults, TokenPriceEstimate, WebsiteCreatedEthereumUnsignedTransaction, SelectedNetwork, RPCEntries, RPCEntry } from './visualizer-types.js'
+import { SimulationState, OptionalEthereumAddress, SimulatedAndVisualizedTransaction, SimResults, TokenPriceEstimate, WebsiteCreatedEthereumUnsignedTransaction, RpcNetwork, RpcEntries, RpcEntry } from './visualizer-types.js'
 import { ICON_ACCESS_DENIED, ICON_ACTIVE, ICON_NOT_ACTIVE, ICON_SIGNING, ICON_SIGNING_NOT_SUPPORTED, ICON_SIMULATING } from './constants.js'
 import { PersonalSignRequestData } from './personal-message-definitions.js'
 
@@ -557,7 +557,7 @@ export interface PendingAccessRequestWithMetadata extends PendingAccessRequest {
 export type Settings = funtypes.Static<typeof Settings>
 export const Settings = funtypes.ReadonlyObject({
 	activeSimulationAddress: OptionalEthereumAddress,
-	selectedNetwork: SelectedNetwork,
+	rpcNetwork: RpcNetwork,
 	page: Page,
 	useSignersAddressAsActiveAddress: funtypes.Boolean,
 	websiteAccess: WebsiteAccessArray,
@@ -681,29 +681,29 @@ export const ImportSettingsReply = funtypes.ReadonlyObject({
 	)
 })
 
-export type SetRPCList = funtypes.Static<typeof SetRPCList>
-export const SetRPCList = funtypes.ReadonlyObject({
+export type SetRpcList = funtypes.Static<typeof SetRpcList>
+export const SetRpcList = funtypes.ReadonlyObject({
 	method: funtypes.Union(funtypes.Literal('popup_set_rpc_list')),
-	data: RPCEntries,
+	data: RpcEntries,
 })
 
 export type UpdateRPCList = funtypes.Static<typeof UpdateRPCList>
 export const UpdateRPCList = funtypes.ReadonlyObject({
 	method: funtypes.Union(funtypes.Literal('popup_update_rpc_list')),
-	data: RPCEntries,
+	data: RpcEntries,
 })
 
 export type ChangeActiveChain = funtypes.Static<typeof ChangeActiveChain>
 export const ChangeActiveChain = funtypes.ReadonlyObject({
-	method: funtypes.Literal('popup_changeActiveRPC'),
-	data: RPCEntry,
+	method: funtypes.Literal('popup_changeActiveRpc'),
+	data: RpcEntry,
 }).asReadonly()
 
 export type ChainChangeConfirmation = funtypes.Static<typeof ChainChangeConfirmation>
 export const ChainChangeConfirmation = funtypes.ReadonlyObject({
 	method: funtypes.Literal('popup_changeChainDialog'),
 	data: funtypes.ReadonlyObject({
-		selectedNetwork: SelectedNetwork,
+		rpcNetwork: RpcNetwork,
 		requestId: funtypes.Number,
 		accept: funtypes.Boolean,
 	}),	
@@ -713,7 +713,7 @@ export type ChangeChainRequest = funtypes.Static<typeof ChangeChainRequest>
 export const ChangeChainRequest = funtypes.ReadonlyObject({
 	method: funtypes.Literal('popup_ChangeChainRequest'),
 	data: funtypes.ReadonlyObject({
-		selectedNetwork: SelectedNetwork,
+		rpcNetwork: RpcNetwork,
 		requestId: funtypes.Number,
 		simulationMode: funtypes.Boolean,
 		website: Website,
@@ -761,7 +761,7 @@ export const PopupMessage = funtypes.Union(
 	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_import_settings'), data: funtypes.ReadonlyObject({ fileContents: funtypes.String }) }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_get_export_settings') }),
 	ChangeSettings,
-	SetRPCList,
+	SetRpcList,
 )
 
 export type MessageToPopup = funtypes.Static<typeof MessageToPopup>
