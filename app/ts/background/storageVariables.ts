@@ -221,11 +221,11 @@ export const getPrimaryRpcForChain = async (chainId: bigint) => {
 	return rpcs.find((rpc) => rpc.chainId === chainId && rpc.primary)
 }
 
-export async function getSelectedNetwork(): Promise<RpcNetwork> {
+export async function getRpcNetwork(): Promise<RpcNetwork> {
 	return (await getSettings()).rpcNetwork
 }
 
-export const getSelectedNetworkForChain = async (chainId: bigint): Promise<RpcNetwork> => {
+export const getRpcNetworkForChain = async (chainId: bigint): Promise<RpcNetwork> => {
 	const rpcs = await getRpcList()
 	const rpc =  rpcs.find((rpc) => rpc.chainId === chainId && rpc.primary)
 	if (rpc !== undefined) return rpc

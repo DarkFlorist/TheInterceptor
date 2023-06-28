@@ -22,7 +22,7 @@ export class EthereumClientService {
 		this.onErrorBlockCallback = onErrorBlockCallback
     }
 
-	public readonly getSelectedNetwork = () => this.requestHandler.getSelectedNetwork()
+	public readonly getRpcNetwork = () => this.requestHandler.getRpcNetwork()
 
 	public getCachedBlock() {
 		if (this.cleanedUp === false) {
@@ -131,7 +131,7 @@ export class EthereumClientService {
 		return EthereumBlockHeader.parse(await this.requestHandler.jsonRpcRequest({ method: 'eth_getBlockByNumber', params: [blockTag, fullObjects] }))
 	}
 
-	public readonly getChainId = () => this.requestHandler.getSelectedNetwork().chainId
+	public readonly getChainId = () => this.requestHandler.getRpcNetwork().chainId
 
 	public readonly getLogs = async (logFilter: EthGetLogsRequest) => {
 		const response = await this.requestHandler.jsonRpcRequest({ method: 'eth_getLogs', params: [logFilter] })

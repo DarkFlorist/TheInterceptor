@@ -3,7 +3,7 @@ import { WebsiteTabConnections } from '../utils/user-interface-types.js'
 import { EthereumAccountsReply, EthereumChainReply } from '../utils/wire-types.js'
 import { changeActiveAddressAndChainAndResetSimulation, postMessageToPortIfConnected } from './background.js'
 import { getSocketFromPort, sendInternalWindowMessage, sendPopupMessageToOpenWindows } from './backgroundUtils.js'
-import { getSelectedNetworkForChain, getTabState, setSignerName, updateTabState } from './storageVariables.js'
+import { getRpcNetworkForChain, getTabState, setSignerName, updateTabState } from './storageVariables.js'
 import { getSettings } from './settings.js'
 import { resolveSignerChainChange } from './windows/changeChain.js'
 import { ApprovalState } from './accessManagement.js'
@@ -53,7 +53,7 @@ async function changeSignerChain(websiteTabConnections: WebsiteTabConnections, p
 	if ((settings.useSignersAddressAsActiveAddress || !settings.simulationMode) && settings.rpcNetwork.chainId !== signerChain) {
 		return changeActiveAddressAndChainAndResetSimulation(websiteTabConnections, {
 			simulationMode: settings.simulationMode,
-			rpcNetwork: await getSelectedNetworkForChain(signerChain),
+			rpcNetwork: await getRpcNetworkForChain(signerChain),
 		})
 	}
 	sendPopupMessageToOpenWindows({ method: 'popup_chain_update' })

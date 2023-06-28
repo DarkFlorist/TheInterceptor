@@ -126,10 +126,7 @@ export const RPCReplyWithRequestId = funtypes.Intersect(
 
 export type InterceptedRequestForward = funtypes.Static<typeof InterceptedRequestForward>
 export const InterceptedRequestForward = funtypes.Union(
-	funtypes.Intersect(
-		funtypes.ReadonlyObject({ requestId: funtypes.Number }),
-		funtypes.Union(NonForwardingRPCRequestReturnValue, ForwardToWallet),
-	),
+	RPCReplyWithRequestId,
 	funtypes.Intersect( // subscriptions
 		funtypes.ReadonlyObject({
 			method: funtypes.String,

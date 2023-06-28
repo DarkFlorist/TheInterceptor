@@ -10,7 +10,7 @@ export class EthereumJSONRpcRequestHandler {
 	constructor(rpcNetwork: RpcNetwork) {
 		this.rpcNetwork = rpcNetwork
     }
-	public readonly getSelectedNetwork = () => this.rpcNetwork
+	public readonly getRpcNetwork = () => this.rpcNetwork
 
 	public readonly jsonRpcRequest = async (rpcRequest: EthereumJsonRpcRequest) => {
 		const serialized = EthereumJsonRpcRequest.serialize(rpcRequest)

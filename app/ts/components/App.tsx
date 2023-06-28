@@ -144,6 +144,7 @@ export function App() {
 			if (message.method === 'popup_activeSigningAddressChanged' && message.data.tabId === currentTabId) return setActiveSigningAddress(message.data.activeSigningAddress)
 			if (message.method === 'popup_websiteIconChanged') return updateTabIcon(message)
 			if (message.method === 'popup_failed_to_get_block') return setIsConnected({ isConnected: false, lastConnnectionAttempt: Date.now() })
+			if (message.method === 'popup_update_rpc_list') return
 			if (message.method !== 'popup_UpdateHomePage') return await sendPopupMessageToBackgroundPage( { method: 'popup_requestNewHomeData' } )
 			return updateHomePage(message)
 		}

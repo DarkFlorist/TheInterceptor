@@ -11,7 +11,7 @@ import { OldSignTypedDataParams, PersonalSignParams, SignTypedDataParams } from 
 import { getHtmlFile, sendPopupMessageToOpenWindows } from '../backgroundUtils.js'
 import { extractEIP712Message, validateEIP712Types } from '../../utils/eip712Parsing.js'
 import { getAddressMetaData, getTokenMetadata } from '../metadataUtils.js'
-import { getPendingPersonalSignPromise, getSelectedNetwork, getSelectedNetworkForChain, getSignerName, setPendingPersonalSignPromise } from '../storageVariables.js'
+import { getPendingPersonalSignPromise, getRpcNetwork, getRpcNetworkForChain, getSignerName, setPendingPersonalSignPromise } from '../storageVariables.js'
 import { getSettings } from '../settings.js'
 import { PopupOrTab, addWindowTabListener, openPopupOrTab, removeWindowTabListener } from '../../components/ui-utils.js'
 import { simulatePersonalSign } from '../../simulation/services/SimulationModeEthereumClientService.js'
@@ -93,7 +93,7 @@ export async function craftPersonalSignPopupMessage(ethereumClientService: Ether
 			data: {
 				originalParams,
 				...basicParams,
-				rpcNetwork: await getSelectedNetwork(),
+				rpcNetwork: await getRpcNetwork(),
 				type: 'NotParsed',
 				message: stringifyJSONWithBigInts(originalParams.params[0], 4),
 				account: getAddressMetaData(originalParams.params[1], userAddressBook),
@@ -109,7 +109,7 @@ export async function craftPersonalSignPopupMessage(ethereumClientService: Ether
 			data: {
 				originalParams,
 				...basicParams,
-				rpcNetwork: await getSelectedNetwork(),
+				rpcNetwork: await getRpcNetwork(),
 				type: 'NotParsed',
 				message: originalParams.params[0],
 				account: getAddressMetaData(originalParams.params[1], userAddressBook),
@@ -133,7 +133,7 @@ export async function craftPersonalSignPopupMessage(ethereumClientService: Ether
 			data: {
 				originalParams,
 				...basicParams,
-				rpcNetwork: chainid !== undefined ? await getSelectedNetworkForChain(chainid) : await getSelectedNetwork(),
+				rpcNetwork: chainid !== undefined ? await getRpcNetworkForChain(chainid) : await getRpcNetwork(),
 				type: 'EIP712',
 				message,
 				account,
@@ -152,7 +152,7 @@ export async function craftPersonalSignPopupMessage(ethereumClientService: Ether
 				data: {
 					originalParams,
 					...basicParams,
-					rpcNetwork: await getSelectedNetworkForChain(parsed.domain.chainId),
+					rpcNetwork: await getRpcNetworkForChain(parsed.domain.chainId),
 					type: 'Permit',
 					message: parsed,
 					account,
@@ -173,7 +173,7 @@ export async function craftPersonalSignPopupMessage(ethereumClientService: Ether
 				data: {
 					originalParams,
 					...basicParams,
-					rpcNetwork: await getSelectedNetworkForChain(parsed.domain.chainId),
+					rpcNetwork: await getRpcNetworkForChain(parsed.domain.chainId),
 					type: 'Permit2',
 					message: parsed,
 					account,
@@ -191,7 +191,7 @@ export async function craftPersonalSignPopupMessage(ethereumClientService: Ether
 			data: {
 				originalParams,
 				...basicParams,
-				rpcNetwork: parsed.domain.chainId !== undefined ? await getSelectedNetworkForChain(parsed.domain.chainId) : await getSelectedNetwork(),
+				rpcNetwork: parsed.domain.chainId !== undefined ? await getRpcNetworkForChain(parsed.domain.chainId) : await getRpcNetwork(),
 				type: 'SafeTx',
 				message: parsed,
 				account,
@@ -211,7 +211,7 @@ export async function craftPersonalSignPopupMessage(ethereumClientService: Ether
 				originalParams,
 				...basicParams,
 				type: 'OrderComponents',
-				rpcNetwork: await getSelectedNetworkForChain(parsed.domain.chainId),
+				rpcNetwork: await getRpcNetworkForChain(parsed.domain.chainId),
 				message: await addMetadataToOpenSeaOrder(ethereumClientService, parsed.message, userAddressBook),
 				account,
 				...await getQuarrantineCodes(parsed.domain.chainId, account, activeAddressWithMetadata, undefined),

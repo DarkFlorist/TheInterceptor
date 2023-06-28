@@ -6,7 +6,7 @@ import { Website, WebsiteSocket, WebsiteTabConnections } from '../../utils/user-
 import { SwitchEthereumChainParams } from '../../utils/wire-types.js'
 import { changeActiveRpc, postMessageIfStillConnected } from '../background.js'
 import { getHtmlFile, sendPopupMessageToOpenWindows } from '../backgroundUtils.js'
-import { getChainChangeConfirmationPromise, getSelectedNetworkForChain, setChainChangeConfirmationPromise } from '../storageVariables.js'
+import { getChainChangeConfirmationPromise, getRpcNetworkForChain, setChainChangeConfirmationPromise } from '../storageVariables.js'
 import { RpcNetwork } from '../../utils/visualizer-types.js'
 
 let pendForUserReply: Future<ChainChangeConfirmation> | undefined = undefined
@@ -64,7 +64,7 @@ export const openChangeChainDialog = async (
 		if (openedDialog === undefined || openedDialog.windowOrTab.id !== windowId) return
 		openedDialog = undefined
 		if (pendForUserReply === undefined) return
-		resolveChainChange(websiteTabConnections, rejectMessage(await getSelectedNetworkForChain(params.params[0].chainId), request.requestId))
+		resolveChainChange(websiteTabConnections, rejectMessage(await getRpcNetworkForChain(params.params[0].chainId), request.requestId))
 	}
 
 	const changeChainWindowReadyAndListening = async function popupMessageListener(msg: unknown) {
@@ -75,7 +75,7 @@ export const openChangeChainDialog = async (
 			method: 'popup_ChangeChainRequest',
 			data: {
 				requestId: request.requestId,
-				rpcNetwork: await getSelectedNetworkForChain(params.params[0].chainId),
+				rpcNetwork: await getRpcNetworkForChain(params.params[0].chainId),
 				website: website,
 				simulationMode: simulationMode,
 				tabIdOpenedFrom: socket.tabId,
@@ -113,7 +113,7 @@ export const openChangeChainDialog = async (
 				simulationMode: simulationMode,
 			})
 		} else {
-			resolveChainChange(websiteTabConnections, rejectMessage(await getSelectedNetworkForChain(params.params[0].chainId), request.requestId))
+			resolveChainChange(websiteTabConnections, rejectMessage(await getRpcNetworkForChain(params.params[0].chainId), request.requestId))
 		}
 		pendForSignerReply = undefined
 

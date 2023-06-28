@@ -158,7 +158,7 @@ export const appendTransaction = async (ethereumClientService: EthereumClientSer
 		})),
 		blockNumber: parentBlock.number,
 		blockTimestamp: parentBlock.timestamp,
-		rpcNetwork: ethereumClientService.getSelectedNetwork(),
+		rpcNetwork: ethereumClientService.getRpcNetwork(),
 		simulationConductedTimestamp: new Date(),
 	}
 }
@@ -171,7 +171,7 @@ export const setSimulationTransactions = async (ethereumClientService: EthereumC
 			simulatedTransactions: [],
 			blockNumber: block.number,
 			blockTimestamp: block.timestamp,
-			rpcNetwork: simulationState.rpcNetwork,
+			rpcNetwork: ethereumClientService.getRpcNetwork(),
 			simulationConductedTimestamp: new Date(),
 		}
 	}
@@ -212,7 +212,7 @@ export const setSimulationTransactions = async (ethereumClientService: EthereumC
 		})),
 		blockNumber: parentBlock.number,
 		blockTimestamp: parentBlock.timestamp,
-		rpcNetwork: simulationState.rpcNetwork,
+		rpcNetwork: ethereumClientService.getRpcNetwork(),
 		simulationConductedTimestamp: new Date(),
 	}
 }
@@ -233,7 +233,7 @@ export const setPrependTransactionsQueue = async (ethereumClientService: Ethereu
 		simulatedTransactions: [],
 		blockNumber: block.number,
 		blockTimestamp: block.timestamp,
-		rpcNetwork: ethereumClientService.getSelectedNetwork(),
+		rpcNetwork: ethereumClientService.getRpcNetwork(),
 		simulationConductedTimestamp: new Date(),
 	}
 

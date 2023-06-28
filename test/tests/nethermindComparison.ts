@@ -35,7 +35,7 @@ class MockEthereumJSONRpcRequestHandler {
 			}
 		}
 	}
-	public readonly getSelectedNetwork = () => this.rpcNetwork
+	public readonly getRpcNetwork = () => this.rpcNetwork
 }
 
 export async function main() {
