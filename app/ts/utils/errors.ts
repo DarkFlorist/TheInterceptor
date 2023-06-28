@@ -17,6 +17,16 @@ export class JsonRpcResponseError extends ErrorWithData {
 	}
 }
 
+export class FetchResponseError extends ErrorWithData {
+	public readonly id: string | number
+	public readonly code: number
+	public constructor(response: Response, id: number) {
+		super(response.statusText, undefined)
+		this.code = response.status
+		this.id = id
+	}
+}
+
 export function isFailedToFetchError(error: Error) {
 	if (error.message.includes('Failed to fetch')) return true
 	return false
