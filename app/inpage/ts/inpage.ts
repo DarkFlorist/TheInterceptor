@@ -368,9 +368,11 @@ class InterceptorMessageListener {
 				method: forwardRequest.method,
 				params: 'params' in forwardRequest ? forwardRequest.params : []
 			})
-			const pendingRequest = this.outstandingRequests.get(forwardRequest.requestId)
-			if (pendingRequest === undefined) throw new Error('Request did not exist anymore')
-			if (forwardRequest.requestId !== undefined) pendingRequest.resolve(reply)
+			if (forwardRequest.requestId !== undefined) {
+				const pendingRequest = this.outstandingRequests.get(forwardRequest.requestId)
+				if (pendingRequest === undefined) throw new Error('Request did not exist anymore')
+				pendingRequest.resolve(reply)
+			}
 		} catch (error: unknown) {
 			if (forwardRequest.requestId === undefined) return
 			const pendingRequest = this.outstandingRequests.get(forwardRequest.requestId)
