@@ -186,7 +186,7 @@ class InterceptorMessageListener {
 			// if it is an Error, add context to it if context doesn't already exist
 			if (error instanceof Error) {
 				if (!('data' in error) || error.data === undefined || error.data === null) (error as ProviderRpcError).data = { request: methodAndParams }
-				else if ('data' in error) error.data = { data: error.data, request: methodAndParams }
+				else error.data = { data: error.data, request: methodAndParams }
 				throw error
 			}
 			// if someone threw something besides an Error, wrap it up in an error
