@@ -363,23 +363,27 @@ class InterceptorMessageListener {
 		if ('result' in forwardRequest && forwardRequest.result !== undefined) return await this.handleReplyRequest(forwardRequest)
 
 		try {
-			if (this.signerWindowEthereumRequest == undefined) throw 'Interceptor is in wallet mode and should not forward to an external wallet'
+			if (this.signerWindowEthereumRequest == undefined) throw new Error('Interceptor is in wallet mode and should not forward to an external wallet')
 			const reply = await this.signerWindowEthereumRequest({
 				method: forwardRequest.method,
 				params: 'params' in forwardRequest ? forwardRequest.params : []
 			})
-			if (forwardRequest.requestId !== undefined) this.outstandingRequests.get(forwardRequest.requestId)!.resolve(reply)
+			const pendingRequest = this.outstandingRequests.get(forwardRequest.requestId)
+			if (pendingRequest === undefined) throw new Error('Request did not exist anymore')
+			if (forwardRequest.requestId !== undefined) pendingRequest.resolve(reply)
 		} catch (error: unknown) {
 			if (forwardRequest.requestId === undefined) return
-			if (error instanceof Error) return this.outstandingRequests.get(forwardRequest.requestId).reject(error)
+			const pendingRequest = this.outstandingRequests.get(forwardRequest.requestId)
+			if (pendingRequest === undefined) throw new EthereumJsonRpcError(METAMASK_ERROR_BLANKET_ERROR, `Unexpected thrown value and request was not found anymore`, { error: error }) 
+			if (error instanceof Error) return pendingRequest.reject(error)
 			if (typeof error === 'object' && error !== null
 				&& 'code' in error && error.code !== undefined && typeof error.code === 'number'
 				&& 'message' in error && error.message !== undefined && typeof error.message === 'string'
 			) {
-				return this.outstandingRequests.get(forwardRequest.requestId)!.reject(new EthereumJsonRpcError(error.code, error.message))
+				return pendingRequest.reject(new EthereumJsonRpcError(error.code, error.message))
 			}
 			// if the signer we are connected threw something besides an Error, wrap it up in an error
-			this.outstandingRequests.get(forwardRequest.requestId)!.reject(new EthereumJsonRpcError(METAMASK_ERROR_BLANKET_ERROR, `Unexpected thrown value.`, { error: error }))
+			pendingRequest.reject(new EthereumJsonRpcError(METAMASK_ERROR_BLANKET_ERROR, `Unexpected thrown value.`, { error: error }))
 		}
 	}
 
