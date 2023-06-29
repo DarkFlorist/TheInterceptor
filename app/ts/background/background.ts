@@ -5,10 +5,10 @@ import { EthereumJsonRpcRequest, SendRawTransaction, SendTransactionParams } fro
 import { clearTabStates, getEthDonator, getSignerName, getSimulationResults, removeTabState, setIsConnected, updateSimulationResults, updateTabState } from './storageVariables.js'
 import { changeSimulationMode, getSettings, getMakeMeRich } from './settings.js'
 import { blockNumber, call, chainId, estimateGas, gasPrice, getAccounts, getBalance, getBlockByNumber, getCode, getLogs, getPermissions, getSimulationStack, getTransactionByHash, getTransactionCount, getTransactionReceipt, personalSign, sendRawTransaction, sendTransaction, subscribe, switchEthereumChain, unsubscribe } from './simulationModeHanders.js'
-import { changeActiveAddress, changeMakeMeRich, changePage, resetSimulation, confirmDialog, refreshSimulation, removeTransaction, requestAccountsFromSigner, refreshPopupConfirmTransactionSimulation, confirmPersonalSign, confirmRequestAccess, changeInterceptorAccess, changeChainDialog, popupChangeActiveRpc, enableSimulationMode, addOrModifyAddressInfo, getAddressBookData, removeAddressBookEntry, openAddressBook, homeOpened, interceptorAccessChangeAddressOrRefresh, refreshPopupConfirmTransactionMetadata, refreshPersonalSignMetadata, changeSettings, importSettings, exportSettings, setNewRpcList } from './popupMessageHandlers.js'
+import { changeActiveAddress, changeMakeMeRich, changePage, resetSimulation, confirmDialog, refreshSimulation, removeTransaction, requestAccountsFromSigner, refreshPopupConfirmTransactionSimulation, confirmPersonalSign, confirmRequestAccess, changeInterceptorAccess, changeChainDialog, popupChangeActiveRpc, enableSimulationMode, addOrModifyAddressInfo, getAddressBookData, removeAddressBookEntry, openAddressBook, homeOpened, interceptorAccessChangeAddressOrRefresh, refreshPopupConfirmTransactionMetadata, changeSettings, importSettings, exportSettings, setNewRpcList } from './popupMessageHandlers.js'
 import { WebsiteCreatedEthereumUnsignedTransaction, SimulationState, RpcEntry, RpcNetwork } from '../utils/visualizer-types.js'
 import { AddressBookEntry, Website, TabConnection, WebsiteSocket, WebsiteTabConnections } from '../utils/user-interface-types.js'
-import { interceptorAccessMetadataRefresh, requestAccessFromUser } from './windows/interceptorAccess.js'
+import { interceptorAccessMetadataRefresh, requestAccessFromUser, updateInterceptorAccessViewWithPendingRequests } from './windows/interceptorAccess.js'
 import { ICON_NOT_ACTIVE, MAKE_YOU_RICH_TRANSACTION, METAMASK_ERROR_NOT_CONNECTED_TO_CHAIN, METAMASK_ERROR_USER_REJECTED_REQUEST } from '../utils/constants.js'
 import { PriceEstimator } from '../simulation/priceEstimator.js'
 import { sendActiveAccountChangeToApprovedWebsitePorts, sendMessageToApprovedWebsitePorts, updateWebsiteApprovalAccesses, verifyAccess } from './accessManagement.js'
@@ -23,6 +23,9 @@ import { Semaphore } from '../utils/semaphore.js'
 import { isFailedToFetchError } from '../utils/errors.js'
 import { sendSubscriptionMessagesForNewBlock } from '../simulation/services/EthereumSubscriptionService.js'
 import { formSimulatedAndVisualizedTransaction } from '../components/formVisualizerResults.js'
+import { updateConfirmTransactionViewWithPendingTransaction } from './windows/confirmTransaction.js'
+import { updateChainChangeViewWithPendingRequest } from './windows/changeChain.js'
+import { updatePendingPersonalSignViewWithPendingRequests } from './windows/personalSign.js'
 
 const websiteTabConnections = new Map<number, TabConnection>()
 
@@ -227,7 +230,7 @@ async function handleRPCRequest(
 		case 'eth_signTypedData_v1':
 		case 'eth_signTypedData_v2':
 		case 'eth_signTypedData_v3':
-		case 'eth_signTypedData_v4': return await personalSign(ethereumClientService, websiteTabConnections, socket, parsedRequest, request, settings.simulationMode, website, settings, activeAddress)
+		case 'eth_signTypedData_v4': return await personalSign(ethereumClientService, websiteTabConnections, socket, parsedRequest, request, settings.simulationMode, website, activeAddress)
 		case 'wallet_switchEthereumChain': return await switchEthereumChain(websiteTabConnections, socket, ethereumClientService, parsedRequest, request, settings.simulationMode, website)
 		case 'wallet_requestPermissions': return await getAccounts(activeAddress)
 		case 'wallet_getPermissions': return await getPermissions()
@@ -576,15 +579,15 @@ async function popupMessageHandler(
 		case 'popup_getAddressBookData': return await getAddressBookData(parsedRequest, settings.userAddressBook)
 		case 'popup_removeAddressBookEntry': return await removeAddressBookEntry(websiteTabConnections, parsedRequest)
 		case 'popup_openAddressBook': return await openAddressBook()
-		case 'popup_personalSignReadyAndListening': return // handled elsewhere (personalSign.ts)
-		case 'popup_changeChainReadyAndListening': return // handled elsewhere (changeChain.ts)
-		case 'popup_interceptorAccessReadyAndListening': return // handled elsewhere (interceptorAccess.ts)
-		case 'popup_confirmTransactionReadyAndListening': return // handled elsewhere (confirmTransaction.ts)
+		case 'popup_personalSignReadyAndListening': return await updatePendingPersonalSignViewWithPendingRequests(simulator.ethereum)
+		case 'popup_changeChainReadyAndListening': return await updateChainChangeViewWithPendingRequest()
+		case 'popup_interceptorAccessReadyAndListening': return await updateInterceptorAccessViewWithPendingRequests()
+		case 'popup_confirmTransactionReadyAndListening': return await updateConfirmTransactionViewWithPendingTransaction()
 		case 'popup_requestNewHomeData': return homeOpened(simulator)
 		case 'popup_refreshInterceptorAccessMetadata': return await interceptorAccessMetadataRefresh()
 		case 'popup_interceptorAccessChangeAddress': return await interceptorAccessChangeAddressOrRefresh(websiteTabConnections, parsedRequest)
 		case 'popup_interceptorAccessRefresh': return await interceptorAccessChangeAddressOrRefresh(websiteTabConnections, parsedRequest)
-		case 'popup_refreshPersonalSignMetadata': return await refreshPersonalSignMetadata(simulator.ethereum, parsedRequest, settings)
+		case 'popup_refreshPersonalSignMetadata': return await updatePendingPersonalSignViewWithPendingRequests(simulator.ethereum)
 		case 'popup_ChangeSettings': return await changeSettings(simulator, parsedRequest)
 		case 'popup_import_settings': return await importSettings(parsedRequest)
 		case 'popup_get_export_settings': return await exportSettings()

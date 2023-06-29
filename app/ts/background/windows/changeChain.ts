@@ -1,7 +1,7 @@
-import { PopupOrTab, addWindowTabListener, openPopupOrTab, removeWindowTabListener } from '../../components/ui-utils.js'
+import { PopupOrTab, addWindowTabListener, closePopupOrTab, openPopupOrTab, removeWindowTabListener } from '../../components/ui-utils.js'
 import { METAMASK_ERROR_USER_REJECTED_REQUEST } from '../../utils/constants.js'
 import { Future } from '../../utils/future.js'
-import { ChainChangeConfirmation, InterceptedRequest, ExternalPopupMessage, SignerChainChangeConfirmation } from '../../utils/interceptor-messages.js'
+import { ChainChangeConfirmation, InterceptedRequest, SignerChainChangeConfirmation } from '../../utils/interceptor-messages.js'
 import { Website, WebsiteSocket, WebsiteTabConnections } from '../../utils/user-interface-types.js'
 import { SwitchEthereumChainParams } from '../../utils/wire-types.js'
 import { changeActiveRpc, postMessageIfStillConnected } from '../background.js'
@@ -14,6 +14,11 @@ let pendForSignerReply: Future<SignerChainChangeConfirmation> | undefined = unde
 
 let openedDialog: PopupOrTab | undefined = undefined
 
+export async function updateChainChangeViewWithPendingRequest() {
+	const promise = await getChainChangeConfirmationPromise()
+	if (promise) return sendPopupMessageToOpenWindows({ method: 'popup_ChangeChainRequest', data: promise })
+}
+
 export async function resolveChainChange(websiteTabConnections: WebsiteTabConnections, confirmation: ChainChangeConfirmation) {
 	if (pendForUserReply !== undefined) {
 		pendForUserReply.resolve(confirmation)
@@ -23,6 +28,8 @@ export async function resolveChainChange(websiteTabConnections: WebsiteTabConnec
 	if (data === undefined || confirmation.data.requestId !== data.request.requestId) return
 	const resolved = await resolve(websiteTabConnections, confirmation, data.simulationMode)
 	postMessageIfStillConnected(websiteTabConnections, data.socket, { method: 'wallet_switchEthereumChain' as const, ...resolved, requestId: data.request.requestId })
+	if (openedDialog) await closePopupOrTab(openedDialog)
+	openedDialog = undefined
 }
 
 export async function resolveSignerChainChange(confirmation: SignerChainChangeConfirmation) {
@@ -67,22 +74,6 @@ export const openChangeChainDialog = async (
 		resolveChainChange(websiteTabConnections, rejectMessage(await getRpcNetworkForChain(params.params[0].chainId), request.requestId))
 	}
 
-	const changeChainWindowReadyAndListening = async function popupMessageListener(msg: unknown) {
-		const message = ExternalPopupMessage.parse(msg)
-		if ( message.method !== 'popup_changeChainReadyAndListening') return
-		browser.runtime.onMessage.removeListener(changeChainWindowReadyAndListening)
-		return sendPopupMessageToOpenWindows({
-			method: 'popup_ChangeChainRequest',
-			data: {
-				requestId: request.requestId,
-				rpcNetwork: await getRpcNetworkForChain(params.params[0].chainId),
-				website: website,
-				simulationMode: simulationMode,
-				tabIdOpenedFrom: socket.tabId,
-			}
-		})
-	}
-
 	try {
 		const oldPromise = await getChainChangeConfirmationPromise()
 		if (oldPromise !== undefined) {
@@ -92,8 +83,6 @@ export const openChangeChainDialog = async (
 				await setChainChangeConfirmationPromise(undefined)
 			}
 		}
-
-		browser.runtime.onMessage.addListener(changeChainWindowReadyAndListening)
 
 		openedDialog = await openPopupOrTab({
 			url: getHtmlFile('changeChain'),
@@ -105,15 +94,17 @@ export const openChangeChainDialog = async (
 		if (openedDialog?.windowOrTab.id !== undefined) {
 			addWindowTabListener(onCloseWindow)
 
-			setChainChangeConfirmationPromise({
+			await setChainChangeConfirmationPromise({
 				website: website,
 				dialogId: openedDialog?.windowOrTab.id,
 				socket: socket,
 				request: request,
 				simulationMode: simulationMode,
+				rpcNetwork: await getRpcNetworkForChain(params.params[0].chainId),
 			})
+			await updateChainChangeViewWithPendingRequest()
 		} else {
-			resolveChainChange(websiteTabConnections, rejectMessage(await getRpcNetworkForChain(params.params[0].chainId), request.requestId))
+			await resolveChainChange(websiteTabConnections, rejectMessage(await getRpcNetworkForChain(params.params[0].chainId), request.requestId))
 		}
 		pendForSignerReply = undefined
 
@@ -123,7 +114,6 @@ export const openChangeChainDialog = async (
 		return resolve(websiteTabConnections, reply, simulationMode)
 	} finally {
 		removeWindowTabListener(onCloseWindow)
-		browser.runtime.onMessage.removeListener(changeChainWindowReadyAndListening)
 		pendForUserReply = undefined
 		openedDialog = undefined
 	}
