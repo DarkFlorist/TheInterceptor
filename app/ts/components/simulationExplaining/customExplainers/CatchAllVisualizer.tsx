@@ -109,7 +109,7 @@ function SendOrReceiveTokensImportanceBox(param: SendOrReceiveTokensImportanceBo
 						</div>
 						<div class = 'log-cell'>
 							<p class = 'ellipsis' style = { `color: ${ param.textColor }; margin-bottom: 0px; display: inline-block` }>
-								{ param.sending ? 'To' : 'From' }&nbsp;
+								{ param.sending ? 'to' : 'from' }&nbsp;
 							</p>
 						</div>
 						<div class = 'log-cell'>
