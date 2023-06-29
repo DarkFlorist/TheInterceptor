@@ -42,14 +42,6 @@ jobs:
           release_name: ${{ steps.derive_tag.outputs.TAG }}
           draft: false
           prerelease: false
-      - name: Upload Firefox extension to mozilla addon
-        uses: DarkFlorist/firefox-addon@v1-body-size-increase
-        with:
-          uuid: '{3c236fbc-9114-43ed-a224-0cd1834aec4d}'
-          xpi: ./interceptor-firefox.zip
-          manifest: app/manifestV2.json
-          api-key: ${{ secrets.MOZILLA_ADDON_USER }}
-          api-secret: ${{ secrets.MOZILLA_ADDON_SECRET }}
       - name: Upload Chrome Extension to Release
         uses: actions/upload-release-asset@v1.0.1
         env:
@@ -77,3 +69,48 @@ jobs:
           asset_path: ./source.zip
           asset_name: source-${{ steps.derive_tag.outputs.TAG }}.zip
           asset_content_type: application/zip
+  approve1:
+      runs-on: ubuntu-latest
+      environment: Approve1
+      needs: release
+      steps:
+        - name: No Op
+          id: no_op
+          run: |
+            echo Do Nothing
+  approve2:
+      runs-on: ubuntu-latest
+      environment: Approve2
+      needs: release
+      steps:
+        - name: No Op
+          id: no_op
+          run: |
+            echo Do Nothing
+  upload:
+    runs-on: ubuntu-latest
+    needs:
+      - approve1
+      - approve2
+    steps:
+      - uses: actions/github-script@v4
+        with:
+          script: |
+            // Get the approvals for this run
+            const approvals = await github.request('GET /repos/{owner}/{repo}/actions/runs/{run_id}/approvals', {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              run_id: context.runId
+            })
+            if (approvals.data.length < 2){
+              core.setFailed(`There are not 2 distinct approvals for this deployment. This is not allowed.`);
+              return;
+            }
+      - name: Upload Firefox extension to mozilla addon
+        uses: DarkFlorist/firefox-addon@v1-body-size-increase
+        with:
+            uuid: '{3c236fbc-9114-43ed-a224-0cd1834aec4d}'
+            xpi: ./interceptor-firefox.zip
+            manifest: app/manifestV2.json
+            api-key: ${{ secrets.MOZILLA_ADDON_USER }}
+            api-secret: ${{ secrets.MOZILLA_ADDON_SECRET }}
