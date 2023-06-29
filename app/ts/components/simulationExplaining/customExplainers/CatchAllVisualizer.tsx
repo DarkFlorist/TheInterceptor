@@ -3,6 +3,7 @@ import { Erc20ApprovalChanges, ERC721OperatorChange, ERC721OperatorChanges, ERC7
 import { ERC721TokenApprovalChange, TokenApprovalChange, TokenVisualizerERC20Event, TokenVisualizerERC721AllApprovalEvent, TokenVisualizerERC721Event, TokenVisualizerResultWithMetadata, RpcNetwork } from '../../../utils/visualizer-types.js'
 import { EtherSymbol, TokenSymbol, TokenAmount, EtherAmount, ERC721TokenNumber } from '../../subcomponents/coins.js'
 import { RenameAddressCallBack } from '../../../utils/user-interface-types.js'
+import { SmallAddress } from '../../subcomponents/address.js'
 
 type EtherTransferEventParams = {
 	valueSent: bigint,
@@ -104,6 +105,17 @@ function SendOrReceiveTokensImportanceBox(param: SendOrReceiveTokensImportanceBo
 								{ ...tokenEvent.token }
 								textColor = { param.textColor }
 								useFullTokenName = { false }
+							/>
+						</div>
+						<div class = 'log-cell'>
+							<p class = 'ellipsis' style = { `color: ${ param.textColor }; margin-bottom: 0px; display: inline-block` }>
+								{ param.sending ? 'To' : 'From' }&nbsp;
+							</p>
+						</div>
+						<div class = 'log-cell'>
+							<SmallAddress 
+								addressBookEntry = { param.sending ? tokenEvent.to : tokenEvent.from }
+								renameAddressCallBack = { param.renameAddressCallBack }
 							/>
 						</div>
 					</table>
