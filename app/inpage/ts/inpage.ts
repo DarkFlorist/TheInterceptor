@@ -371,7 +371,7 @@ class InterceptorMessageListener {
 			if (forwardRequest.requestId !== undefined) this.outstandingRequests.get(forwardRequest.requestId)!.resolve(reply)
 		} catch (error: unknown) {
 			if (forwardRequest.requestId === undefined) return
-			if (error instanceof Error) return this.outstandingRequests.get(forwardRequest.requestId)!.reject(error)
+			if (error instanceof Error) return this.outstandingRequests.get(forwardRequest.requestId).reject(error)
 			if (typeof error === 'object' && error !== null
 				&& 'code' in error && error.code !== undefined && typeof error.code === 'number'
 				&& 'message' in error && error.message !== undefined && typeof error.message === 'string'
