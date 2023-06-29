@@ -1,9 +1,7 @@
 import { useSignal } from '@preact/signals'
 import { getTokenAmountsWorth } from '../../simulation/priceEstimator.js'
 import { abs, bigintToDecimalString, bigintToRoundedPrettyDecimalString, checksummedAddress } from '../../utils/bigint.js'
-import { CHAINS } from '../../utils/constants.js'
-import { CHAIN } from '../../utils/user-interface-types.js'
-import { ERC721TokenDefinitionParams, TokenDefinitionParams, TokenPriceEstimate } from '../../utils/visualizer-types.js'
+import { ERC721TokenDefinitionParams, TokenDefinitionParams, TokenPriceEstimate, RpcNetwork } from '../../utils/visualizer-types.js'
 import { CopyToClipboard } from './CopyToClipboard.js'
 import { Blockie } from './PreactBlocky.js'
 import { JSX } from 'preact/jsx-runtime'
@@ -14,7 +12,7 @@ type EtherParams = {
 	showSign?: boolean
 	textColor?: string
 	useFullTokenName?: boolean
-	chain: CHAIN
+	rpcNetwork: RpcNetwork
 	style?: JSX.CSSProperties
 }
 
@@ -54,7 +52,7 @@ export function EtherAmount(param: EtherAmountParams) {
 type EtherSymbolParams = {
 	textColor?: string
 	useFullTokenName?: boolean
-	chain: CHAIN
+	rpcNetwork: RpcNetwork
 	style?: JSX.CSSProperties
 }
 
@@ -67,18 +65,20 @@ export function EtherSymbol(param: EtherSymbolParams) {
 		'margin-left': '2px',
 		...(param.style === undefined ? {} : param.style),
 	}
+	const etheName = param.useFullTokenName ? param.rpcNetwork.currencyName : param.rpcNetwork.currencyTicker
+
 	return <>
 		<div style = 'overflow: initial; height: 28px;'>
 			<img class = 'noselect nopointer vertical-center' style = 'max-height: 25px; max-width: 25px;' src = '../../img/coins/ethereum.png'/>
 		</div>
-		<p class = 'noselect nopointer' style = { style }> { param.useFullTokenName ? CHAINS[param.chain].currencyName : CHAINS[param.chain].currencyTicker } </p>
+		<p class = 'noselect nopointer' style = { style }> { etheName } </p>
 	</>
 }
 
 type TokenPriceParams = {
 	textColor?: string,
 	amount: bigint,
-	chain: CHAIN,
+	rpcNetwork: RpcNetwork
 	tokenPriceEstimate: TokenPriceEstimate | undefined
 }
 
@@ -90,7 +90,7 @@ export function TokenPrice(param: TokenPriceParams) {
 		<p style = { `color: ${ color }` }>&nbsp;(</p>
 		<Ether
 			amount = { value }
-			chain = { param.chain }
+			rpcNetwork = { param.rpcNetwork }
 			textColor = { color }
 		/>
 		<p style = { `color: ${ color }` }>)</p>

@@ -1,9 +1,8 @@
 import { StateUpdater } from 'preact/hooks'
 import * as funtypes from 'funtypes'
 import { EthereumAddress, EthereumQuantity, LiteralConverterParserFactory } from './wire-types.js'
-import { SimulatedAndVisualizedTransaction, SimulationAndVisualisationResults } from './visualizer-types.js'
+import { SimulatedAndVisualizedTransaction, SimulationAndVisualisationResults, RpcEntry, RpcNetwork } from './visualizer-types.js'
 import { IdentifiedSwapWithMetadata } from '../components/simulationExplaining/SwapTransactions.js'
-import { CHAINS } from './constants.js'
 import { IsConnected, Page, TabIconDetails, WebsiteAccessArray } from './interceptor-messages.js'
 
 export type SignerName = funtypes.Static<typeof SignerName>
@@ -27,9 +26,6 @@ export const Website = funtypes.ReadonlyObject({
 	icon: funtypes.Union(funtypes.String, funtypes.Undefined),
 	title: funtypes.Union(funtypes.String, funtypes.Undefined),
 })
-
-export type CHAIN = keyof typeof CHAINS
-export const CHAIN = funtypes.Union(funtypes.Literal('1'), funtypes.Literal('5'), funtypes.Literal('11155111'))
 
 export type AddressInfo = funtypes.Static<typeof AddressInfo>
 export const AddressInfo = funtypes.ReadonlyObject({
@@ -142,8 +138,8 @@ export type HomeParams = {
 	activeSigningAddress: bigint | undefined,
 	useSignersAddressAsActiveAddress: boolean,
 	simVisResults: SimulationAndVisualisationResults | undefined,
-	activeChain: bigint,
-	setActiveChainAndInformAboutIt: (network: bigint) => void,
+	rpcNetwork: RpcNetwork | undefined,
+	setActiveRpcAndInformAboutIt: (entry: RpcEntry) => void,
 	simulationMode: boolean,
 	tabIconDetails: TabIconDetails,
 	currentBlockNumber: bigint | undefined,
@@ -171,8 +167,8 @@ export type FirstCardParams = {
 	enableSimulationMode: (x: boolean) => void,
 	useSignersAddressAsActiveAddress: boolean,
 	addressInfos: readonly AddressInfo[] | undefined,
-	changeActiveChain: (chain: bigint) => void,
-	activeChain: bigint,
+	changeActiveRpc: (rpcEntry: RpcEntry) => void,
+	rpcNetwork: RpcNetwork,
 	simulationMode: boolean,
 	changeActiveAddress: () => void,
 	makeMeRich: boolean,

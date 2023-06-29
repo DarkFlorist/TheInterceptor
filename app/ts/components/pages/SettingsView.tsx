@@ -1,7 +1,8 @@
 
 import { sendPopupMessageToBackgroundPage } from '../../background/backgroundUtils.js'
 import { SettingsParam } from '../../utils/user-interface-types.js'
-import { ExternalPopupMessage, ImportSettingsReply, RPCEntries } from '../../utils/interceptor-messages.js'
+import { ExternalPopupMessage, ImportSettingsReply } from '../../utils/interceptor-messages.js'
+import { RpcEntries } from '../../utils/visualizer-types.js'
 import { useEffect, useState } from 'preact/hooks' 
 import { Error as ErrorComponent} from '../subcomponents/Error.js'
 import { DinoSays } from '../subcomponents/DinoSays.js'
@@ -108,13 +109,13 @@ function TextField({ input }: InputParams) {
 	/>
 }
 
-function RPCs() {
-	const [rpcList, setRPCList] = useState<RPCEntries | undefined>(undefined)
+function Rpcs() {
+	const [rpcList, setRpcList] = useState<RpcEntries | undefined>(undefined)
 
 	useEffect(() => {
 		const popupMessageListener = async (msg: unknown) => {
 			const message = ExternalPopupMessage.parse(msg)
-			if (message.method === 'popup_update_rpc_list') return setRPCList(message.data)
+			if (message.method === 'popup_update_rpc_list') return setRpcList(message.data)
 		}
 		browser.runtime.onMessage.addListener(popupMessageListener)
 		return () => browser.runtime.onMessage.removeListener(popupMessageListener)
@@ -124,19 +125,19 @@ function RPCs() {
 		if (rpcList === undefined) return
 		sendPopupMessageToBackgroundPage({
 			method: 'popup_set_rpc_list',
-			data: rpcList.map((rpc) => ({ ...rpc, minimized: rpcUrl === rpc.https_rpc ? minimize : rpc.minimized, }))
+			data: rpcList.map((rpc) => ({ ...rpc, minimized: rpcUrl === rpc.httpsRpc ? minimize : rpc.minimized, }))
 		})
 	}
 
 	const setAsPrimary = (rpcUrl: string) => {
 		if (rpcList === undefined) return
-		const rpcInQuestion = rpcList.find((rpc) => rpcUrl === rpc.https_rpc)
+		const rpcInQuestion = rpcList.find((rpc) => rpcUrl === rpc.httpsRpc)
 		if (rpcInQuestion === undefined) return
 		if (rpcInQuestion.primary) return // already primary
 		sendPopupMessageToBackgroundPage({
 			method: 'popup_set_rpc_list',
 			data: rpcList.map((rpc) => {
-				if (rpcUrl === rpc.https_rpc) return { ...rpc, primary: true }
+				if (rpcUrl === rpc.httpsRpc) return { ...rpc, primary: true }
 				if (rpcInQuestion.chainId === rpc.chainId) return { ...rpc, primary: false } 
 				return rpc
 			})
@@ -150,12 +151,12 @@ function RPCs() {
 			<div class = 'card'>
 				<header class = 'card-header'>		
 					<div class = 'card-header-icon unset-cursor'>
-						<input type = 'checkbox' checked = { rpc.primary } onInput = { () => { setAsPrimary(rpc.https_rpc) } } />
+						<input type = 'checkbox' checked = { rpc.primary } onInput = { () => { setAsPrimary(rpc.httpsRpc) } } />
 					</div>
 					<div class = 'card-header-title' style = 'white-space: nowrap; overflow: hidden;'>
 						<p className = 'paragraph' style = 'text-overflow: ellipsis; overflow: hidden; overflow: hidden;'> { rpc.name } </p>
 					</div>
-					<button class = 'card-header-icon' aria-label = 'remove' onClick = { () => expandMinimize(rpc.https_rpc, !rpc.minimized) }>
+					<button class = 'card-header-icon' aria-label = 'remove' onClick = { () => expandMinimize(rpc.httpsRpc, !rpc.minimized) }>
 						<span class = 'icon' style = 'color: var(--text-color);'> V </span>
 					</button>
 				</header>
@@ -164,7 +165,7 @@ function RPCs() {
 						<div class = 'paragraph'>Network</div>
 						<TextField input = { rpc.name }/>
 						<div class = 'paragraph'>RPC URL</div>
-						<TextField input = { rpc.https_rpc }/>
+						<TextField input = { rpc.httpsRpc }/>
 						<div class = 'paragraph'>Chain ID</div>
 						<TextField input = { String(rpc.chainId) }/>
 						<div class = 'paragraph'>Currency Name</div>
@@ -175,7 +176,7 @@ function RPCs() {
 						<CheckBoxSetting
 							text = ''
 							checked = { rpc.primary }
-							onInput = { () => { setAsPrimary(rpc.https_rpc) } }
+							onInput = { () => { setAsPrimary(rpc.httpsRpc) } }
 						/>
 					</div>
 				}
@@ -233,7 +234,7 @@ export function SettingsView(param: SettingsParam) {
 					</li>
 					<li>
 						<p className = 'paragraph'>RPC Connections (experimental, does not work yet)</p>
-						<RPCs/>
+						<Rpcs/>
 					</li>
 				</ul>
 			</section>

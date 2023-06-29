@@ -4,7 +4,7 @@ type StorageKey = 'activeSigningAddress'
 	| 'page'
 	| 'useSignersAddressAsActiveAddress'
 	| 'websiteAccess'
-	| 'activeChain'
+	| 'rpcNetwork'
 	| 'simulationMode'
 	| 'pendingInterceptorAccessRequests'
 	| 'contacts'
@@ -21,7 +21,7 @@ type StorageKey = 'activeSigningAddress'
 	| 'isConnectedToNode'
 	| 'ethereumSubscriptions'
 	| 'useTabsInsteadOfPopup'
-	| 'RPCEntries'
+	| 'RpcEntries'
 
 export async function browserStorageLocalGet(keys: StorageKey | StorageKey[]) {
 	return await browser.storage.local.get(keys) as Promise<Partial<Record<StorageKey, JSONEncodeable>>>

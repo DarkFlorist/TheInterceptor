@@ -25,38 +25,6 @@ export const WITHDRAWAL_LOG = ethers.keccak256(ethers.toUtf8Bytes('Withdrawal(ad
 // Other
 export const MOCK_ADDRESS = 0xdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefn
 
-export const CHAINS = {
-	'1': {
-		name: 'Ethereum Mainnet',
-		chainId: 1n,
-		https_rpc: 'https://rpc.dark.florist/flipcardtrustone',
-		eth_donator: 0xda9dfa130df4de4673b89022ee50ff26f6ea73cfn, // Kraken
-		currencyName: 'Ether',
-		currencyTicker: 'ETH',
-		weth: 0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2n,
-	},
-	'5': {
-		name: 'Goerli',
-		chainId: 5n,
-		https_rpc: 'https://rpc-goerli.dark.florist/flipcardtrustone',
-		eth_donator: 0xf36F155486299eCAff2D4F5160ed5114C1f66000n, // Some Goerli validator
-		currencyName: 'Goerli Testnet ETH',
-		currencyTicker: 'GÖETH',
-		weth: 0xb4fbf271143f4fbf7b91a5ded31805e42b2208d6n,
-	},
-	'11155111': {
-		name: 'Sepolia',
-		chainId: 11155111n,
-		https_rpc: 'https://rpc-sepolia.dark.florist/flipcardtrustone',
-		eth_donator: 0xb21c33de1fab3fa15499c62b59fe0cc3250020d1n, // Richest address on Sepolia
-		currencyName: 'Sepolia Testnet ETH',
-		currencyTicker: 'SEETH',
-		weth: 0x105083929bf9bb22c26cb1777ec92661170d4285n,
-	}
-} as const
-
-export function isSupportedChain(chainId: string): chainId is keyof typeof CHAINS { return chainId in CHAINS }
-
 // https://blog.logrocket.com/understanding-resolving-metamask-error-codes/#4001
 export const METAMASK_ERROR_USER_REJECTED_REQUEST = 4001
 export const METAMASK_ERROR_NOT_AUTHORIZED = 4100
