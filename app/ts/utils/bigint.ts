@@ -84,6 +84,13 @@ export function checksummedAddress(address: bigint) {
 	return ethers.getAddress(addressString(address))
 }
 
+export function stringToAddress(addressString: string | undefined) {
+	if (addressString === undefined) return undefined
+	const trimmedAddress = addressString.trim()
+	if (!ethers.isAddress(trimmedAddress)) return undefined
+	return BigInt(trimmedAddress)
+}
+
 export function bytes32String(bytes32: bigint) {
 	return `0x${bytes32.toString(16).padStart(64, '0')}`
 }
