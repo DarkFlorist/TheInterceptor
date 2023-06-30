@@ -1,5 +1,6 @@
 const METAMASK_ERROR_USER_REJECTED_REQUEST = 4001
 const METAMASK_ERROR_CHAIN_NOT_ADDED_TO_METAMASK = 4902
+const METAMASK_ERROR_BLANKET_ERROR = -32603
 
 interface IJsonRpcSuccess<TResult> {
 	readonly jsonrpc: '2.0'
@@ -170,8 +171,6 @@ class InterceptorMessageListener {
 				requestId: pendingRequestId,
 			}, '*')
 			return await future
-		} catch (error: unknown) {
-			throw error
 		} finally {
 			this.outstandingRequests.delete(pendingRequestId)
 		}
@@ -186,18 +185,12 @@ class InterceptorMessageListener {
 		} catch (error: unknown) {
 			// if it is an Error, add context to it if context doesn't already exist
 			if (error instanceof Error) {
-				throw {
-					...error,
-					code: ('code' in error && typeof error.code !== 'number') ? error.code : -32603,
-					data: !('data' in error) || error.data === undefined || error.data === null || typeof error.data !== 'object' ? {
-						request: methodAndParams,
-						...('data' in error) ? { data: error.data } : {}
-					}
-					: { ...error.data, request: methodAndParams }
-				}
+				if (!('data' in error) || error.data === undefined || error.data === null) (error as ProviderRpcError).data = { request: methodAndParams }
+				else error.data = { data: error.data, request: methodAndParams }
+				throw error
 			}
 			// if someone threw something besides an Error, wrap it up in an error
-			throw new EthereumJsonRpcError(-32603, `Unexpected thrown value.`, { error: error, request: methodAndParams })
+			throw new EthereumJsonRpcError(METAMASK_ERROR_BLANKET_ERROR, `Unexpected thrown value.`, { error: error, request: methodAndParams })
 		}
 	}
 
@@ -364,39 +357,35 @@ class InterceptorMessageListener {
 			if (forwardRequest.requestId === undefined) throw new EthereumJsonRpcError(forwardRequest.error.code, forwardRequest.error.message)
 			const pending = this.outstandingRequests.get(forwardRequest.requestId)
 			if (pending === undefined) throw new EthereumJsonRpcError(forwardRequest.error.code, forwardRequest.error.message)
-			return pending.reject(new EthereumJsonRpcError(forwardRequest.error.code, forwardRequest.error.message, { request: forwardRequest }))
+			return pending.reject(new EthereumJsonRpcError(forwardRequest.error.code, forwardRequest.error.message))
 		}
 
 		if ('result' in forwardRequest && forwardRequest.result !== undefined) return await this.handleReplyRequest(forwardRequest)
 
 		try {
-			if (this.signerWindowEthereumRequest == undefined) throw 'Interceptor is in wallet mode and should not forward to an external wallet'
+			if (this.signerWindowEthereumRequest == undefined) throw new Error('Interceptor is in wallet mode and should not forward to an external wallet')
 			const reply = await this.signerWindowEthereumRequest({
 				method: forwardRequest.method,
 				params: 'params' in forwardRequest ? forwardRequest.params : []
 			})
-			if (forwardRequest.requestId !== undefined) this.outstandingRequests.get(forwardRequest.requestId)!.resolve(reply)
-		} catch (error: unknown) {
-			// if it is an Error, add context to it if context doesn't already exist
-			console.log(error)
-			console.log(messageEvent)
-			if (forwardRequest.requestId === undefined) return
-			if (error instanceof Error) {
-				const inputedErrorObject = {
-					...error,
-					code: ('code' in error && typeof error.code !== 'number') ? error.code : -32603,
-					data: !('data' in error) || error.data === undefined || error.data === null || typeof error.data !== 'object' ? { request: forwardRequest } : { ...error.data, request: forwardRequest }
-				}
-				return this.outstandingRequests.get(forwardRequest.requestId)!.reject(inputedErrorObject)
+			if (forwardRequest.requestId !== undefined) {
+				const pendingRequest = this.outstandingRequests.get(forwardRequest.requestId)
+				if (pendingRequest === undefined) throw new Error('Request did not exist anymore')
+				pendingRequest.resolve(reply)
 			}
+		} catch (error: unknown) {
+			if (forwardRequest.requestId === undefined) return
+			const pendingRequest = this.outstandingRequests.get(forwardRequest.requestId)
+			if (pendingRequest === undefined) throw new EthereumJsonRpcError(METAMASK_ERROR_BLANKET_ERROR, `Unexpected thrown value and request was not found anymore`, { error: error }) 
+			if (error instanceof Error) return pendingRequest.reject(error)
 			if (typeof error === 'object' && error !== null
 				&& 'code' in error && error.code !== undefined && typeof error.code === 'number'
 				&& 'message' in error && error.message !== undefined && typeof error.message === 'string'
 			) {
-				return this.outstandingRequests.get(forwardRequest.requestId)!.reject(new EthereumJsonRpcError(error.code, error.message, { request: forwardRequest }))
+				return pendingRequest.reject(new EthereumJsonRpcError(error.code, error.message))
 			}
 			// if the signer we are connected threw something besides an Error, wrap it up in an error
-			this.outstandingRequests.get(forwardRequest.requestId)!.reject(new EthereumJsonRpcError(-32603, `Unexpected thrown value.`, { error: error, request: forwardRequest }))
+			pendingRequest.reject(new EthereumJsonRpcError(METAMASK_ERROR_BLANKET_ERROR, `Unexpected thrown value.`, { error: error }))
 		}
 	}
 
