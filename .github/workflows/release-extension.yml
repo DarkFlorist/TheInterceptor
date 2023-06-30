@@ -102,8 +102,11 @@ jobs:
               repo: context.repo.repo,
               run_id: context.runId
             })
-            if (approvals.data.length < 2){
-              core.setFailed(`There are not 2 distinct approvals for this deployment. This is not allowed.`);
+            const users = approvals.data.filter(approval => approval.user.type === 'User')
+            const distinctUsernames = Array.from(new Set(users.map(user => user.user.login)))
+            // Empty check
+            if (usernames.length < 2){
+              core.setFailed(`Did not receive the required 2 distinct approvals for this deployment. Approved Users: ${distinctUsernames.join(",")}`);
               return;
             }
       - name: Upload Firefox extension to mozilla addon
