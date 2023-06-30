@@ -203,9 +203,15 @@ export type SimulationAndVisualisationResults = {
 
 export type TokenPriceEstimate = funtypes.Static<typeof TokenPriceEstimate>
 export const TokenPriceEstimate = funtypes.ReadonlyObject({
-	token: funtypes.String,
-	inOutAmount: funtypes.ReadonlyTuple(EthereumQuantity, EthereumQuantity),
-	decimals: EthereumQuantity,
+	token: funtypes.ReadonlyObject({
+		address: EthereumAddress,
+		decimals: EthereumQuantity
+	}),
+	quoteToken: funtypes.ReadonlyObject({
+		address: EthereumAddress,
+		decimals: EthereumQuantity
+	}),
+	price: EthereumQuantity
 })
 
 export type TransactionVisualizationParameters = {
