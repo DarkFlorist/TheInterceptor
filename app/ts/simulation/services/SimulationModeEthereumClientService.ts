@@ -99,7 +99,7 @@ export const simulateEstimateGas = async (ethereumClientService: EthereumClientS
 			}
 		} as const 
 	}
-	const gasSpent = lastResult.gasSpent * 12n / 10n // add 20% extra to account for gas savings
+	const gasSpent = lastResult.gasSpent * 125n / 100n // add 25% extra to account for gas savings
 	return { gas: gasSpent < maxGas ? gasSpent : maxGas }
 }
 
