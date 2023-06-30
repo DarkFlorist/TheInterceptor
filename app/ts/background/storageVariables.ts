@@ -14,7 +14,13 @@ export async function getOpenedAddressBookTabId() {
 
 export async function getPendingTransactions(): Promise<readonly PendingTransaction[]> {
 	const results = await browserStorageLocalSingleGetWithDefault('transactionsPendingForUserConfirmation', [])
-	return funtypes.ReadonlyArray(PendingTransaction).parse(results)
+	try {
+		return funtypes.ReadonlyArray(PendingTransaction).parse(results)
+	} catch(e) {
+		console.warn('Pending transactions were corrupt:')
+		console.warn(e)
+		return []
+	}
 }
 
 const pendingTransactionsSemaphore = new Semaphore(1)
@@ -81,6 +87,7 @@ export async function getSimulationResults() {
 		if (parsed === undefined) return emptyResults
 		return parsed
 	} catch (error) {
+		console.warn('Simulation results were corrupt:')
 		console.warn(error)
 		return emptyResults
 	}
