@@ -75,13 +75,21 @@ export const simulateEstimateGas = async (ethereumClientService: EthereumClientS
 	const transactionCount = getSimulatedTransactionCount(ethereumClientService, simulationState, sendAddress)
 	const block = await ethereumClientService.getBlock()
 	const maxGas = simulationGasLeft(simulationState, block)
+
+	const getGasPriceFields = (data: DappRequestTransaction) => {
+		if (data.gasPrice !== undefined) return { maxFeePerGas: data.gasPrice, maxPriorityFeePerGas: data.gasPrice }
+		if (data.maxPriorityFeePerGas !== undefined && data.maxPriorityFeePerGas !== null && data.maxFeePerGas !== undefined && data.maxFeePerGas !== null) {
+			return { maxFeePerGas: data.maxFeePerGas, maxPriorityFeePerGas: data.maxPriorityFeePerGas }
+		}
+		return { maxFeePerGas: 0n, maxPriorityFeePerGas: 0n }
+	}
+
 	const tmp = {
 		type: '1559' as const,
 		from: sendAddress,
 		chainId: ethereumClientService.getChainId(),
 		nonce: await transactionCount,
-		maxFeePerGas: data.gasPrice !== undefined ? data.gasPrice : 0n,
-		maxPriorityFeePerGas: 0n,
+		...getGasPriceFields(data),
 		gas: data.gas === undefined ? maxGas : data.gas,
 		to: data.to === undefined ? null : data.to,
 		value: data.value === undefined ? 0n : data.value,
@@ -99,7 +107,7 @@ export const simulateEstimateGas = async (ethereumClientService: EthereumClientS
 			}
 		} as const 
 	}
-	const gasSpent = lastResult.gasSpent * 12n / 10n // add 20% extra to account for gas savings
+	const gasSpent = lastResult.gasSpent * 125n / 100n // add 25% extra to account for gas savings <https://eips.ethereum.org/EIPS/eip-3529>
 	return { gas: gasSpent < maxGas ? gasSpent : maxGas }
 }
 
