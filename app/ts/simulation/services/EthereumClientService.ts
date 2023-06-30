@@ -11,12 +11,12 @@ export class EthereumClientService {
 	private cacheRefreshTimer: NodeJS.Timer | undefined = undefined
 	private lastCacheAccess: number = 0
 	private retrievingBlock: boolean = false
-	private newBlockCallback: (blockNumber: bigint, ethereumClientService: EthereumClientService) => void
+	private newBlockCallback: (blockHeader: EthereumBlockHeader, ethereumClientService: EthereumClientService) => void
 	private onErrorBlockCallback: (ethereumClientService: EthereumClientService, error: Error) => void
 	private requestHandler
 	private cleanedUp = false
 
-    constructor(requestHandler: IEthereumJSONRpcRequestHandler, newBlockCallback: (blockNumber: bigint, ethereumClientService: EthereumClientService) => void, onErrorBlockCallback: (ethereumClientService: EthereumClientService, error: Error) => void) {
+    constructor(requestHandler: IEthereumJSONRpcRequestHandler, newBlockCallback: (blockHeader: EthereumBlockHeader, ethereumClientService: EthereumClientService) => void, onErrorBlockCallback: (ethereumClientService: EthereumClientService, error: Error) => void) {
 		this.requestHandler = requestHandler
 		this.newBlockCallback = newBlockCallback
 		this.onErrorBlockCallback = onErrorBlockCallback
@@ -72,7 +72,7 @@ export class EthereumClientService {
 			console.log(`Current block number: ${ newBlock.number }`)
 			if (this.cachedBlock?.number != newBlock.number) {
 				this.cachedBlock = newBlock
-				this.newBlockCallback(newBlock.number, this)
+				this.newBlockCallback(newBlock, this)
 			}
 		} catch(error) {
 			if (error instanceof Error) {
