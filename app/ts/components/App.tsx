@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'preact/hooks'
 import { defaultAddresses } from '../background/settings.js'
-import { SimulatedAndVisualizedTransaction, SimulationAndVisualisationResults, SimulationState, TokenPriceEstimate } from '../utils/visualizer-types.js'
+import { SimulatedAndVisualizedTransaction, SimulationAndVisualisationResults, SimulationState, TokenPriceEstimate, RpcEntry, RpcNetwork } from '../utils/visualizer-types.js'
 import { ChangeActiveAddress } from './pages/ChangeActiveAddress.js'
 import { Home } from './pages/Home.js'
 import { AddressInfo, AddressInfoEntry, AddressBookEntry, AddingNewAddressType, SignerName, AddressBookEntries } from '../utils/user-interface-types.js'
@@ -11,7 +11,7 @@ import { ethers } from 'ethers'
 import { PasteCatcher } from './subcomponents/PasteCatcher.js'
 import { truncateAddr } from '../utils/ethereum.js'
 import { DEFAULT_TAB_CONNECTION } from '../utils/constants.js'
-import { ExternalPopupMessage, TabIconDetails, UpdateHomePage, Page, WebsiteAccessArray, Settings, WebsiteIconChanged, IsConnected } from '../utils/interceptor-messages.js'
+import { ExternalPopupMessage, TabIconDetails, UpdateHomePage, Page, WebsiteAccessArray, WebsiteIconChanged, IsConnected, Settings } from '../utils/interceptor-messages.js'
 import { version, gitCommitSha } from '../version.js'
 import { sendPopupMessageToBackgroundPage } from '../background/backgroundUtils.js'
 import { EthereumAddress } from '../utils/wire-types.js'
@@ -28,7 +28,7 @@ export function App() {
 	const [simVisResults, setSimVisResults] = useState<SimulationAndVisualisationResults | undefined >(undefined)
 	const [websiteAccess, setWebsiteAccess] = useState<WebsiteAccessArray | undefined>(undefined)
 	const [websiteAccessAddressMetadata, setWebsiteAccessAddressMetadata] = useState<readonly AddressInfoEntry[]>([])
-	const [activeChain, setActiveChain] = useState<bigint>(1n)
+	const [rpcNetwork, setSelectedNetwork] = useState<RpcNetwork | undefined>(undefined)
 	const [simulationMode, setSimulationMode] = useState<boolean>(true)
 	const [tabIconDetails, setTabConnection] = useState<TabIconDetails>(DEFAULT_TAB_CONNECTION)
 	const [isSettingsLoaded, setIsSettingsLoaded] = useState<boolean>(false)
@@ -63,10 +63,10 @@ export function App() {
 			)
 	}
 
-	async function setActiveChainAndInformAboutIt(chainId: bigint) {
-		sendPopupMessageToBackgroundPage( { method: 'popup_changeActiveChain', data: chainId } )
+	async function setActiveRpcAndInformAboutIt(entry: RpcEntry) {
+		sendPopupMessageToBackgroundPage({ method: 'popup_changeActiveRpc', data: entry })
 		if(!isSignerConnected()) {
-			setActiveChain(chainId)
+			setSelectedNetwork(entry)
 		}
 	}
 
@@ -85,7 +85,7 @@ export function App() {
 				blockTimestamp: simState.blockTimestamp,
 				simulationConductedTimestamp: simState.simulationConductedTimestamp,
 				simulatedAndVisualizedTransactions: simulatedAndVisualizedTransactions,
-				chain: simState.chain,
+				rpcNetwork: simState.rpcNetwork,
 				tokenPrices: tokenPrices,
 				activeAddress: activeSimulationAddress,
 				addressMetaData: addressBookEntries,
@@ -127,7 +127,7 @@ export function App() {
 				setSimulationMode(settings.simulationMode)
 				setAppPage(settings.page)
 			}
-			setActiveChain(settings.activeChain)
+			setSelectedNetwork(settings.rpcNetwork)
 			setActiveSimulationAddress(settings.activeSimulationAddress)
 			setUseSignersAddressAsActiveAddress(settings.useSignersAddressAsActiveAddress)
 			setAddressInfos(settings.userAddressBook.addressInfos)
@@ -144,6 +144,7 @@ export function App() {
 			if (message.method === 'popup_activeSigningAddressChanged' && message.data.tabId === currentTabId) return setActiveSigningAddress(message.data.activeSigningAddress)
 			if (message.method === 'popup_websiteIconChanged') return updateTabIcon(message)
 			if (message.method === 'popup_failed_to_get_block') return setIsConnected({ isConnected: false, lastConnnectionAttempt: Date.now() })
+			if (message.method === 'popup_update_rpc_list') return
 			if (message.method !== 'popup_UpdateHomePage') return await sendPopupMessageToBackgroundPage( { method: 'popup_requestNewHomeData' } )
 			return updateHomePage(message)
 		}
@@ -217,8 +218,8 @@ export function App() {
 							</div>
 						</nav>
 						<Home
-							setActiveChainAndInformAboutIt = { setActiveChainAndInformAboutIt }
-							activeChain = { activeChain }
+							setActiveRpcAndInformAboutIt = { setActiveRpcAndInformAboutIt }
+							rpcNetwork = { rpcNetwork }
 							simVisResults = { simVisResults }
 							useSignersAddressAsActiveAddress = { useSignersAddressAsActiveAddress }
 							activeSigningAddress = { activeSigningAddress }
@@ -232,7 +233,7 @@ export function App() {
 							currentBlockNumber = { currentBlockNumber }
 							signerName = { signerName }
 							renameAddressCallBack = { renameAddressCallBack }
-							isConnected = { isConnected}
+							isConnected = { isConnected }
 						/>
 
 						<div class = { `modal ${ appPage !== 'Home' ? 'is-active' : ''}` }>

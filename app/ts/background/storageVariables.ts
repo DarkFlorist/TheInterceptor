@@ -1,10 +1,11 @@
-import { ICON_NOT_ACTIVE } from '../utils/constants.js'
-import { PendingAccessRequestArray, PendingChainChangeConfirmationPromise, PendingPersonalSignPromise, PendingTransaction, TabState, IsConnected, PendingAccessRequest, RPCEntries } from '../utils/interceptor-messages.js'
+import { ICON_NOT_ACTIVE, getChainName } from '../utils/constants.js'
+import { PendingAccessRequestArray, PendingChainChangeConfirmationPromise, PendingPersonalSignPromise, PendingTransaction, TabState, IsConnected, PendingAccessRequest } from '../utils/interceptor-messages.js'
 import { Semaphore } from '../utils/semaphore.js'
 import { browserStorageLocalSet, browserStorageLocalSingleGetWithDefault } from '../utils/storageUtils.js'
 import { SignerName } from '../utils/user-interface-types.js'
-import { EthereumSubscriptions, SimulationResults } from '../utils/visualizer-types.js'
+import { EthereumSubscriptions, SimulationResults, RpcEntries, RpcNetwork } from '../utils/visualizer-types.js'
 import * as funtypes from 'funtypes'
+import { defaultRpcs, getSettings } from './settings.js'
 
 export async function getOpenedAddressBookTabId() {
 	const tabIdData = await browserStorageLocalSingleGetWithDefault('addressbookTabId', undefined)
@@ -13,7 +14,13 @@ export async function getOpenedAddressBookTabId() {
 
 export async function getPendingTransactions(): Promise<readonly PendingTransaction[]> {
 	const results = await browserStorageLocalSingleGetWithDefault('transactionsPendingForUserConfirmation', [])
-	return funtypes.ReadonlyArray(PendingTransaction).parse(results)
+	try {
+		return funtypes.ReadonlyArray(PendingTransaction).parse(results)
+	} catch(e) {
+		console.warn('Pending transactions were corrupt:')
+		console.warn(e)
+		return []
+	}
 }
 
 const pendingTransactionsSemaphore = new Semaphore(1)
@@ -80,6 +87,7 @@ export async function getSimulationResults() {
 		if (parsed === undefined) return emptyResults
 		return parsed
 	} catch (error) {
+		console.warn('Simulation results were corrupt:')
 		console.warn(error)
 		return emptyResults
 	}
@@ -205,58 +213,53 @@ export async function setOpenedAddressBookTabId(addressbookTabId: number) {
 	return await browserStorageLocalSet('addressbookTabId', addressbookTabId)
 }
 
-export async function setRPCList(entries: RPCEntries) {
-	return await browserStorageLocalSet('RPCEntries', RPCEntries.serialize(entries) as string)
+export async function setRpcList(entries: RpcEntries) {
+	return await browserStorageLocalSet('RpcEntries', RpcEntries.serialize(entries) as string)
 }
-export async function getRPCList() {	
-	const defaultRPCs: RPCEntries = [
-		{
-			name: 'Ethereum Mainnet',
-			chainId: 1n,
-			https_rpc: 'https://rpc.dark.florist/flipcardtrustone',
-			currencyName: 'Ether',
-			currencyTicker: 'ETH',
-			primary: true,
-			minimized: true,
-		},
-		{
-			name: 'Ethereum (geth, multicall)',
-			chainId: 1n,
-			https_rpc: 'https://rpc.dark.florist/winedancemuffinborrow',
-			currencyName: 'Ether',
-			currencyTicker: 'ETH',
-			primary: false,
-			minimized: true,
-		},
-		{
-			name: 'Ethereum (nethermind, multicall)',
-			chainId: 1n,
-			https_rpc: 'https://rpc.dark.florist/birdchalkrenewtip',
-			currencyName: 'Ether',
-			currencyTicker: 'ETH',
-			primary: false,
-			minimized: true,
-		},
-		{
-			name: 'Goerli',
-			chainId: 5n,
-			https_rpc: 'https://rpc-goerli.dark.florist/flipcardtrustone',
-			currencyName: 'Goerli Testnet ETH',
-			currencyTicker: 'GÖETH',
-			primary: true,
-			minimized: true,
-		},
-		{
-			name: 'Sepolia',
-			chainId: 11155111n,
-			https_rpc: 'https://rpc-sepolia.dark.florist/flipcardtrustone',
-			currencyName: 'Sepolia Testnet ETH',
-			currencyTicker: 'SEETH',
-			primary: true,
-			minimized: true,
-		}
-	]
-	const entries = await browserStorageLocalSingleGetWithDefault('RPCEntries', undefined)
-	if (entries === undefined) return defaultRPCs
-	return RPCEntries.parse(entries)
+
+export async function getRpcList() {
+	const entries = await browserStorageLocalSingleGetWithDefault('RpcEntries', undefined)
+	if (entries === undefined) return defaultRpcs
+	try { return RpcEntries.parse(entries) } catch(e) { return defaultRpcs }
+}
+
+export const getPrimaryRpcForChain = async (chainId: bigint) => {
+	const rpcs = await getRpcList()
+	return rpcs.find((rpc) => rpc.chainId === chainId && rpc.primary)
+}
+
+export async function getRpcNetwork(): Promise<RpcNetwork> {
+	return (await getSettings()).rpcNetwork
+}
+
+export const getRpcNetworkForChain = async (chainId: bigint): Promise<RpcNetwork> => {
+	const rpcs = await getRpcList()
+	const rpc =  rpcs.find((rpc) => rpc.chainId === chainId && rpc.primary)
+	if (rpc !== undefined) return rpc
+	return {
+		chainId: chainId,
+		currencyName: 'Ether?',
+		currencyTicker: 'ETH?',
+		name: getChainName(chainId),
+		httpsRpc: undefined,
+	}
+}
+
+//TODO, remove when we start to use multicall completely. Decide on what to do with WETH then
+export const ethDonator = [{
+		chainId: 1n,
+		eth_donator: 0xda9dfa130df4de4673b89022ee50ff26f6ea73cfn, // Kraken
+	},
+	{
+		chainId: 5n,
+		eth_donator: 0xf36F155486299eCAff2D4F5160ed5114C1f66000n, // Some Goerli validator
+	},
+	{
+		chainId: 11155111n,
+		eth_donator: 0xb21c33de1fab3fa15499c62b59fe0cc3250020d1n, // Richest address on Sepolia
+	}
+] as const
+
+export function getEthDonator(chainId: bigint) {
+	return ethDonator.find((rpc) => rpc.chainId === chainId)?.eth_donator
 }

@@ -11,7 +11,7 @@ import { OldSignTypedDataParams, PersonalSignParams, SignTypedDataParams } from 
 import { getHtmlFile, sendPopupMessageToOpenWindows } from '../backgroundUtils.js'
 import { extractEIP712Message, validateEIP712Types } from '../../utils/eip712Parsing.js'
 import { getAddressMetaData, getTokenMetadata } from '../metadataUtils.js'
-import { getPendingPersonalSignPromise, getSignerName, setPendingPersonalSignPromise } from '../storageVariables.js'
+import { getPendingPersonalSignPromise, getRpcNetwork, getRpcNetworkForChain, getSignerName, setPendingPersonalSignPromise } from '../storageVariables.js'
 import { getSettings } from '../settings.js'
 import { PopupOrTab, addWindowTabListener, openPopupOrTab, removeWindowTabListener } from '../../components/ui-utils.js'
 import { simulatePersonalSign } from '../../simulation/services/SimulationModeEthereumClientService.js'
@@ -71,13 +71,12 @@ export async function craftPersonalSignPopupMessage(ethereumClientService: Ether
 		requestId,
 		website,
 		signerName,
-		activeChainId: ethereumClientService.getChain(),
 		tabIdOpenedFrom,
 	}
 
 	const getQuarrantineCodes = async (messageChainId: bigint, account: AddressBookEntry, activeAddress: AddressBookEntry, owner: AddressBookEntry | undefined): Promise<{ quarantine: boolean, quarantineCodes: readonly QUARANTINE_CODE[] }> => {
 		let quarantineCodes: QUARANTINE_CODE[] = []
-		if (BigInt(messageChainId) !== (await getSettings()).activeChain) {
+		if (BigInt(messageChainId) !== (await getSettings()).rpcNetwork.chainId) {
 			quarantineCodes.push('SIGNATURE_CHAIN_ID_DOES_NOT_MATCH')
 		}
 		if (account.address !== activeAddress.address || (owner != undefined && account.address !== owner.address)) {
@@ -94,6 +93,7 @@ export async function craftPersonalSignPopupMessage(ethereumClientService: Ether
 			data: {
 				originalParams,
 				...basicParams,
+				rpcNetwork: await getRpcNetwork(),
 				type: 'NotParsed',
 				message: stringifyJSONWithBigInts(originalParams.params[0], 4),
 				account: getAddressMetaData(originalParams.params[1], userAddressBook),
@@ -109,6 +109,7 @@ export async function craftPersonalSignPopupMessage(ethereumClientService: Ether
 			data: {
 				originalParams,
 				...basicParams,
+				rpcNetwork: await getRpcNetwork(),
 				type: 'NotParsed',
 				message: originalParams.params[0],
 				account: getAddressMetaData(originalParams.params[1], userAddressBook),
@@ -132,6 +133,7 @@ export async function craftPersonalSignPopupMessage(ethereumClientService: Ether
 			data: {
 				originalParams,
 				...basicParams,
+				rpcNetwork: chainid !== undefined ? await getRpcNetworkForChain(chainid) : await getRpcNetwork(),
 				type: 'EIP712',
 				message,
 				account,
@@ -150,6 +152,7 @@ export async function craftPersonalSignPopupMessage(ethereumClientService: Ether
 				data: {
 					originalParams,
 					...basicParams,
+					rpcNetwork: await getRpcNetworkForChain(parsed.domain.chainId),
 					type: 'Permit',
 					message: parsed,
 					account,
@@ -170,6 +173,7 @@ export async function craftPersonalSignPopupMessage(ethereumClientService: Ether
 				data: {
 					originalParams,
 					...basicParams,
+					rpcNetwork: await getRpcNetworkForChain(parsed.domain.chainId),
 					type: 'Permit2',
 					message: parsed,
 					account,
@@ -187,6 +191,7 @@ export async function craftPersonalSignPopupMessage(ethereumClientService: Ether
 			data: {
 				originalParams,
 				...basicParams,
+				rpcNetwork: parsed.domain.chainId !== undefined ? await getRpcNetworkForChain(parsed.domain.chainId) : await getRpcNetwork(),
 				type: 'SafeTx',
 				message: parsed,
 				account,
@@ -206,6 +211,7 @@ export async function craftPersonalSignPopupMessage(ethereumClientService: Ether
 				originalParams,
 				...basicParams,
 				type: 'OrderComponents',
+				rpcNetwork: await getRpcNetworkForChain(parsed.domain.chainId),
 				message: await addMetadataToOpenSeaOrder(ethereumClientService, parsed.message, userAddressBook),
 				account,
 				...await getQuarrantineCodes(parsed.domain.chainId, account, activeAddressWithMetadata, undefined),

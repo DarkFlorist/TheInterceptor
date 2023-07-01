@@ -1,8 +1,9 @@
-import { CHAINS, isSupportedChain, UNISWAP_V2_ROUTER_ADDRESS } from '../utils/constants.js'
+import { UNISWAP_V2_ROUTER_ADDRESS } from '../utils/constants.js'
 import { EthereumClientService } from './services/EthereumClientService.js'
 import { TokenPriceEstimate } from '../utils/visualizer-types.js'
 import { addressString, stringToUint8Array } from '../utils/bigint.js'
 import { ethers } from 'ethers'
+import { getEthDonator, getPrimaryRpcForChain } from '../background/storageVariables.js'
 
 interface TokenDecimals {
 	token: bigint,
@@ -24,22 +25,24 @@ export class PriceEstimator {
 	public async estimateEthereumPricesForTokens(tokens: TokenDecimals[]) : Promise<TokenPriceEstimate[]> {
 		if (tokens.length == 0) return []
 
-		const chainId = await this.ethereum.getChainId()
-		const chainString = chainId.toString()
-		if (!isSupportedChain(chainString)) return []
+		const chainId = this.ethereum.getChainId()
+		const donator = getEthDonator(chainId)
+		const weth = (await getPrimaryRpcForChain(chainId))?.weth
+
+		if (donator === undefined || weth === undefined) return []
 
 		const amountOutMin = 0n
-		const sender = CHAINS[chainString].eth_donator
+		const sender = donator
 		const block = await this.ethereum.getBlock()
 		const deadline = BigInt( block.timestamp.getTime() + 1000 * 1000)
 
 		const transactionCount = await this.ethereum.getTransactionCount(sender)
 		let inOutResults: TokenPriceEstimate[] = []
 		const swapInterface = new ethers.Interface(ABI)
-		for ( const token of tokens) {
-			if ( token.token === CHAINS[chainString].weth ) {
+		for (const token of tokens) {
+			if (token.token === weth) {
 				inOutResults.push({
-					token: addressString(CHAINS[chainString].weth),
+					token: addressString(weth),
 					inOutAmount: [10n ** 18n, 10n ** 18n],
 					decimals: 18n,
 				})
@@ -58,7 +61,7 @@ export class PriceEstimator {
 					value: 10n ** 18n,
 					input: stringToUint8Array(swapInterface.encodeFunctionData(
 						'swapExactETHForTokens',
-						[amountOutMin, [addressString(CHAINS[chainString].weth), addressString(token.token)], addressString(sender), deadline]
+						[amountOutMin, [addressString(weth), addressString(token.token)], addressString(sender), deadline]
 					)),
 					accessList: [],
 				},
@@ -87,7 +90,7 @@ export class PriceEstimator {
 					value: 0n,
 					input: stringToUint8Array(swapInterface.encodeFunctionData(
 						'swapTokensForExactETH',
-						[10n ** 18n / 2n, 2n ** 127n, [addressString(token.token), addressString(CHAINS[chainString].weth)], addressString(sender), deadline]
+						[10n ** 18n / 2n, 2n ** 127n, [addressString(token.token), addressString(weth)], addressString(sender), deadline]
 					)),
 					accessList: [],
 				},

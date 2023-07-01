@@ -1,14 +1,14 @@
-import { CHAIN, RenameAddressCallBack } from '../../../utils/user-interface-types.js'
+import { RenameAddressCallBack } from '../../../utils/user-interface-types.js'
 import { BigAddress } from '../../subcomponents/address.js'
 import { Token721AmountField, TokenAmount, TokenSymbol } from '../../subcomponents/coins.js'
 import { GasFee, TransactionGasses } from '../SimulationSummary.js'
-import { TokenVisualizerResultWithMetadata } from '../../../utils/visualizer-types.js'
+import { TokenVisualizerResultWithMetadata, RpcNetwork } from '../../../utils/visualizer-types.js'
 
 type SimpleTokenApprovalVisualisation = {
 	approval: TokenVisualizerResultWithMetadata
 	renameAddressCallBack: RenameAddressCallBack
 	transactionGasses: TransactionGasses
-	chainId: CHAIN
+	rpcNetwork: RpcNetwork
 }
 
 export function SimpleTokenApprovalVisualisation(params: SimpleTokenApprovalVisualisation) {
@@ -59,7 +59,7 @@ export function SimpleTokenApprovalVisualisation(params: SimpleTokenApprovalVisu
 			</span>
 		</div>
 		<span class = 'log-table' style = 'grid-template-columns: min-content min-content min-content; margin-top: 5px;'>
-			<GasFee tx = { params.transactionGasses } chain = { params.chainId } />
+			<GasFee tx = { params.transactionGasses } rpcNetwork = { params.rpcNetwork } />
 		</span>
 	</div>
 }
