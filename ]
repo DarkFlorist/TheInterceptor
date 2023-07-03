@@ -42,6 +42,7 @@ export class PriceEstimator {
 		const IUniswapV2Pool = new Interface(UniswapV2PairABI)
 		const IUniswapV3Pool = new Interface(UniswapV3PairABI)
 		const IMulticall3 = new Interface(Multicall3ABI)
+		const IERC20Bal = new Interface(['function balanceOf(address) external view returns (uint256)'])
 
 		for (const token of tokens) {
 			if (token.address === quoteToken.address) {
@@ -68,7 +69,7 @@ export class PriceEstimator {
 			}
 			const multicallReturnData: { success: boolean, returnData: string }[] = IMulticall3.decodeFunctionResult('aggregate3', await this.ethereum.call(callTransaction, 'latest'))[0]
 
-			const prices = multicallReturnData.reduce((prices, { success, returnData }, index): { price: bigint, k: bigint }[] => {
+			const prices = multicallReturnData.reduce((prices: { price: bigint, k: bigint }[], { success, returnData }: { success: boolean, returnData: string }, index) => {
 				if (index > 4) return prices
 
 				// V2 Pool
@@ -79,28 +80,27 @@ export class PriceEstimator {
 						? (reserve1 * (10n ** BigInt(token.decimals))) / reserve0
 						: (reserve0 * (10n ** BigInt(token.decimals))) / reserve1
 
-					return [...prices, { price, k: BigInt(reserve0 * reserve1) }]
+					return [...prices, { price, k: reserve0 * reserve1 }]
 				}
 
 				// V3 Pool
-				if (success && multicallReturnData[index * 2 + 3].success && multicallReturnData[index * 2 + 4].success) {
+				if (success && multicallReturnData[index + 4].success && multicallReturnData[index + 5].success) {
 					const { sqrtPriceX96 } = IUniswapV3Pool.decodeFunctionResult('slot0', returnData)
 
 					const price = poolAddresses.token0IsQuote
 						? ((sqrtPriceX96 * (10n ** BigInt(token.decimals)) / (2n ** 96n)) ** 2n) / (10n ** BigInt(token.decimals))
 						: (10n ** (18n)) / ((sqrtPriceX96 / (2n ** 96n)) ** 2n)
 
-					const reserve0 = BigInt(multicallReturnData[index * 2 + 3].returnData)
-					const reserve1 = BigInt(multicallReturnData[index * 2 + 4].returnData)
+					const reserve0 = IERC20Bal.decodeFunctionResult('balanceOf', multicallReturnData[index + 4].returnData)[0]
+					const reserve1 = IERC20Bal.decodeFunctionResult('balanceOf', multicallReturnData[index + 5].returnData)[0]
 
 					return [...prices, { price, k: reserve0 * reserve1 }]
 				}
 
 				return prices
-			}, [] as { price: bigint, k: bigint }[])
+			}, [] as  { price: bigint, k: bigint }[])
 
-			// Use pool with most TVL
-			const price = prices.length > 0 ? prices.reduce((highestLiq, p) => p.k > highestLiq.k ? p : highestLiq).price : undefined
+			const price = prices.reduce((sum, p) => sum + (p.price * p.k), 0n) / BigInt(prices.length)
 
 			if (price) tokenPrices.push({
 				token,

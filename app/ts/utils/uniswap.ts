@@ -82,11 +82,13 @@ export const UniswapV3PairABI = [
 	'function slot0() view returns (uint160 sqrtPriceX96, int24 tick, uint16 observationIndex, uint16 observationCardinality, uint16 observationCardinalityNext, uint8 feeProtocol, bool unlocked)'
 ]
 
-export function getUniswapSpotCalls(poolAddresses: UniswapPools): Multicall3Call[] {
+export function getUniswapSpotCalls(tokenA: EthereumAddress, tokenB: EthereumAddress, poolAddresses: UniswapPools): Multicall3Call[] {
 	const IUniswapV2Pool = new Interface(UniswapV2PairABI)
 	const IUniswapV3Pool = new Interface(UniswapV3PairABI)
+	const IERC20Bal = new Interface(['function balanceOf(address) external view returns (uint256)'])
 
 	return [
+		// Pool calls
 		{
 			target: addressString(poolAddresses.v2),
 			allowFailure: true,
@@ -111,6 +113,47 @@ export function getUniswapSpotCalls(poolAddresses: UniswapPools): Multicall3Call
 			target: addressString(poolAddresses.v3[10000]),
 			allowFailure: true,
 			callData: IUniswapV3Pool.encodeFunctionData('slot0')
+		},
+		// balance calls for v3 pool TVL
+		{
+			target: addressString(tokenA),
+			allowFailure: true,
+			callData: IERC20Bal.encodeFunctionData('balanceOf', [addressString(poolAddresses.v3[100])])
+		},
+		{
+			target: addressString(tokenB),
+			allowFailure: true,
+			callData: IERC20Bal.encodeFunctionData('balanceOf', [addressString(poolAddresses.v3[100])])
+		},
+		{
+			target: addressString(tokenA),
+			allowFailure: true,
+			callData: IERC20Bal.encodeFunctionData('balanceOf', [addressString(poolAddresses.v3[500])])
+		},
+		{
+			target: addressString(tokenB),
+			allowFailure: true,
+			callData: IERC20Bal.encodeFunctionData('balanceOf', [addressString(poolAddresses.v3[500])])
+		},
+		{
+			target: addressString(tokenA),
+			allowFailure: true,
+			callData: IERC20Bal.encodeFunctionData('balanceOf', [addressString(poolAddresses.v3[3000])])
+		},
+		{
+			target: addressString(tokenB),
+			allowFailure: true,
+			callData: IERC20Bal.encodeFunctionData('balanceOf', [addressString(poolAddresses.v3[3000])])
+		},
+		{
+			target: addressString(tokenA),
+			allowFailure: true,
+			callData: IERC20Bal.encodeFunctionData('balanceOf', [addressString(poolAddresses.v3[10000])])
+		},
+		{
+			target: addressString(tokenB),
+			allowFailure: true,
+			callData: IERC20Bal.encodeFunctionData('balanceOf', [addressString(poolAddresses.v3[10000])])
 		}
 	]
 }
