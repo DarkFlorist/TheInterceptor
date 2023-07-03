@@ -1,0 +1,39 @@
+{
+  "jsonrpc": "2.0",
+  "result": [
+    {
+      "calls": [
+        {
+          "type": 0,
+          "logs": [
+            {
+              "logIndex": "0x0",
+              "blockHash": "0xcfa7c88ddaca60e547aa98172d847479ee750a8a7f1f5cf5bcadbb68bad94908",
+              "blockNumber": "0x10caed0",
+              "address": "0x0000000000000000000000000000000000000000",
+              "data": "0x70d5ccc14a1a264c05ff48b3ec6751b0959541aac02aaa39b223fe8d0a0e5c4f27ead9083c756cc20000000000000000000000000000000000000000000000000000000000000000",
+              "topics": [
+                "0x0000000000000000000000000000000000000000000000000000000000000000"
+              ]
+            }
+          ],
+          "status": "0",
+          "return": "0x",
+          "error": {
+            "code": 0,
+            "message": "OutOfGas"
+          },
+          "gasUsed": "0x536f"
+        }
+      ],
+      "hash": "0xcfa7c88ddaca60e547aa98172d847479ee750a8a7f1f5cf5bcadbb68bad94908",
+      "number": "0x10caed0",
+      "timestamp": "0x64a1cf9c",
+      "gasLimit": "0x1c9c380",
+      "gasUsed": "0x536f",
+      "feeRecipient": "0x0000000000000000000000000000000000000000",
+      "baseFeePerGas": "0x34e112eda"
+    }
+  ],
+  "id": 1
+}

@@ -1,0 +1,21 @@
+{
+  "jsonrpc": "2.0",
+  "method": "eth_multicallV1",
+  "params": [
+    [
+      {
+        "calls": [
+          {
+            "from": "0x70d5ccc14a1a264c05ff48b3ec6751b0959541aa",
+            "to": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
+            "data": "0x18160ddd",
+            "gas": "0x636f",
+            "gasPrice": "0x1000000000"
+          }
+        ]
+      }
+    ],
+    17608399
+  ],
+  "id": 1
+}
