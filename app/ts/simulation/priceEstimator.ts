@@ -1,9 +1,7 @@
-import { CHAINS, MOCK_ADDRESS, MULTICALL3  } from '../utils/constants.js'
+import { CHAINS, MULTICALL3, isSupportedChain } from '../utils/constants.js'
 import { EthereumClientService } from './services/EthereumClientService.js'
 import { TokenPriceEstimate } from '../utils/visualizer-types.js'
-import { UniswapV2PairABI, UniswapV3PairABI, calculateUniswapPools } from '../utils/uniswap.js'
-import { isSupportedChain } from '../utils/constants.js'
-import { getUniswapSpotCalls } from '../utils/uniswap.js'
+import { UniswapV2PairABI, UniswapV3PairABI, calculateUniswapPools, getUniswapSpotCalls } from '../utils/uniswap.js'
 import { Interface } from 'ethers'
 import { stringToUint8Array } from '../utils/bigint.js'
 
@@ -28,8 +26,8 @@ export class PriceEstimator {
 		const chainId = this.ethereum.getChainId()
 		const chainString = chainId.toString()
 		if (!isSupportedChain(chainString)) return []
-		// Support only mainnet for now
-		// TODO: fix this
+
+		// TODO: Support only mainnet for now as we only know Uniswap V2 and V3 on mainnet for pricing.
 		if (chainId !== 1n) return []
 
 		const quoteToken = quote ?? {
@@ -58,13 +56,9 @@ export class PriceEstimator {
 			const callData = stringToUint8Array(IMulticall3.encodeFunctionData('aggregate3', [uniswapSpotCalls]))
 			const callTransaction = {
 				type: '1559',
-				from: MOCK_ADDRESS,
 				to: MULTICALL3,
 				value: 0n,
 				input: callData,
-				maxFeePerGas: 0n,
-				maxPriorityFeePerGas: 0n,
-				gasLimit: 15_000_000n,
 			}
 			const multicallReturnData: { success: boolean, returnData: string }[] = IMulticall3.decodeFunctionResult('aggregate3', await this.ethereum.call(callTransaction, 'latest'))[0]
 

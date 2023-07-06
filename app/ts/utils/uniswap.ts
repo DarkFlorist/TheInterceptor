@@ -1,6 +1,5 @@
-import { AbiCoder, getCreate2Address, keccak256, solidityPacked } from "ethers"
+import { AbiCoder, getCreate2Address, keccak256, solidityPacked, Interface } from "ethers"
 import { EthereumAddress } from "./wire-types.js"
-import { Interface } from "ethers"
 import { UNISWAP_V2_FACTORY_ADDRESS, UNISWAP_V3_FACTORY_ADDRESS } from "./constants.js"
 import { addressString } from "./bigint.js"
 
@@ -34,30 +33,22 @@ export function calculateUniswapPools(tokenA: EthereumAddress, tokenB: EthereumA
 	const v3 = {
 		'100': getCreate2Address(
 			addressString(UNISWAP_V3_FACTORY_ADDRESS),
-			keccak256(
-				abi.encode(['address', 'address', 'uint24'], [token0, token1, 100])
-			),
+			keccak256(abi.encode(['address', 'address', 'uint24'], [token0, token1, 100])),
 			'0xe34f199b19b2b4f47f68442619d555527d244f78a3297ea89325f843f87b8b54'
 		),
 		'500': getCreate2Address(
 			addressString(UNISWAP_V3_FACTORY_ADDRESS),
-			keccak256(
-				abi.encode(['address', 'address', 'uint24'], [token0, token1, 500])
-			),
+			keccak256(abi.encode(['address', 'address', 'uint24'], [token0, token1, 500])),
 			'0xe34f199b19b2b4f47f68442619d555527d244f78a3297ea89325f843f87b8b54'
 		),
 		'3000': getCreate2Address(
 			addressString(UNISWAP_V3_FACTORY_ADDRESS),
-			keccak256(
-				abi.encode(['address', 'address', 'uint24'], [token0, token1, 3000])
-			),
+			keccak256(abi.encode(['address', 'address', 'uint24'], [token0, token1, 3000])),
 			'0xe34f199b19b2b4f47f68442619d555527d244f78a3297ea89325f843f87b8b54'
 		),
 		'10000': getCreate2Address(
 			addressString(UNISWAP_V3_FACTORY_ADDRESS),
-			keccak256(
-				abi.encode(['address', 'address', 'uint24'], [token0, token1, 10000])
-			),
+			keccak256(abi.encode(['address', 'address', 'uint24'], [token0, token1, 10000])),
 			'0xe34f199b19b2b4f47f68442619d555527d244f78a3297ea89325f843f87b8b54'
 		)
 	}
@@ -74,13 +65,8 @@ export function calculateUniswapPools(tokenA: EthereumAddress, tokenB: EthereumA
 	}
 }
 
-export const UniswapV2PairABI = [
-	'function getReserves() external view returns (uint112 reserve0, uint112 reserve1, uint32 blockTimestampLast)'
-]
-
-export const UniswapV3PairABI = [
-	'function slot0() view returns (uint160 sqrtPriceX96, int24 tick, uint16 observationIndex, uint16 observationCardinality, uint16 observationCardinalityNext, uint8 feeProtocol, bool unlocked)'
-]
+export const UniswapV2PairABI = ['function getReserves() external view returns (uint112 reserve0, uint112 reserve1, uint32 blockTimestampLast)']
+export const UniswapV3PairABI = ['function slot0() view returns (uint160 sqrtPriceX96, int24 tick, uint16 observationIndex, uint16 observationCardinality, uint16 observationCardinalityNext, uint8 feeProtocol, bool unlocked)']
 
 export function getUniswapSpotCalls(tokenA: EthereumAddress, tokenB: EthereumAddress, poolAddresses: UniswapPools): Multicall3Call[] {
 	const IUniswapV2Pool = new Interface(UniswapV2PairABI)
