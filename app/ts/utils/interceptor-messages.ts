@@ -535,12 +535,6 @@ export const InterceptorAccess = funtypes.ReadonlyObject({
 export type PendingAccessRequestArray = funtypes.Static<typeof PendingAccessRequestArray>
 export const PendingAccessRequestArray = funtypes.ReadonlyArray(PendingAccessRequest)
 
-export type UpdateAccessDialog = funtypes.Static<typeof UpdateAccessDialog>
-export const UpdateAccessDialog = funtypes.ReadonlyObject({
-	method: funtypes.Literal('popup_update_access_dialog'),
-	data: PendingAccessRequestArray,
-}).asReadonly()
-
 export type InterceptorAccessDialog = funtypes.Static<typeof InterceptorAccessDialog>
 export const InterceptorAccessDialog = funtypes.ReadonlyObject({
 	method: funtypes.Union(funtypes.Literal('popup_interceptorAccessDialog'), funtypes.Literal('popup_interceptor_access_dialog_pending_changed')),
@@ -592,6 +586,7 @@ export const UpdateHomePage = funtypes.ReadonlyObject({
 		useTabsInsteadOfPopup: funtypes.Boolean,
 		activeSigningAddressInThisTab: OptionalEthereumAddress,
 		tabId: funtypes.Union(funtypes.Number, funtypes.Undefined),
+		rpcEntries: RpcEntries,
 	})
 })
 
@@ -633,6 +628,7 @@ export const PendingChainChangeConfirmationPromise = funtypes.ReadonlyObject({
 	dialogId: funtypes.Number,
 	socket: WebsiteSocket,
 	request: InterceptedRequest,
+	rpcNetwork: RpcNetwork,
 	simulationMode: funtypes.Boolean,
 })
 
@@ -643,7 +639,8 @@ export const PendingPersonalSignPromise = funtypes.ReadonlyObject({
 	socket: WebsiteSocket,
 	request: InterceptedRequest,
 	simulationMode: funtypes.Boolean,
-	params: funtypes.Union(PersonalSignParams, SignTypedDataParams, OldSignTypedDataParams)
+	params: funtypes.Union(PersonalSignParams, SignTypedDataParams, OldSignTypedDataParams),
+	activeAddress: EthereumAddress,
 })
 
 export type TabState = funtypes.Static<typeof TabState>
@@ -709,13 +706,7 @@ export const ChainChangeConfirmation = funtypes.ReadonlyObject({
 export type ChangeChainRequest = funtypes.Static<typeof ChangeChainRequest>
 export const ChangeChainRequest = funtypes.ReadonlyObject({
 	method: funtypes.Literal('popup_ChangeChainRequest'),
-	data: funtypes.ReadonlyObject({
-		rpcNetwork: RpcNetwork,
-		requestId: funtypes.Number,
-		simulationMode: funtypes.Boolean,
-		website: Website,
-		tabIdOpenedFrom: funtypes.Number,
-	})
+	data: PendingChainChangeConfirmationPromise,
 })
 
 export type SettingsUpdated = funtypes.Static<typeof SettingsUpdated>
@@ -775,7 +766,6 @@ export const MessageToPopup = funtypes.Union(
 	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_failed_to_get_block') }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_failed_to_update_simulation_state') }),
 	UpdateConfirmTransactionDialog,
-	UpdateAccessDialog,
 	ConfirmTransactionDialogPendingChanged,
 	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_initiate_export_settings'), data: funtypes.ReadonlyObject({ fileContents: funtypes.String }) }),
 	ImportSettingsReply,
