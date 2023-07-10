@@ -36,7 +36,7 @@ export async function resolvePersonalSign(websiteTabConnections: WebsiteTabConne
 
 export async function updatePendingPersonalSignViewWithPendingRequests(ethereumClientService: EthereumClientService) {
 	const request = await getPendingPersonalSignPromise()
-	if (request != undefined) {
+	if (request !== undefined) {
 		return await sendPopupMessageToOpenWindows(await craftPersonalSignPopupMessage(ethereumClientService, request.params, request.socket.tabId, request.activeAddress, request.simulationMode, request.request.requestId, await getSignerName(), request.website))
 	}
 }
