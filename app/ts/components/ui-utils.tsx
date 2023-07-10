@@ -3,6 +3,7 @@ import { Ref, useEffect } from 'preact/hooks'
 import { getUseTabsInsteadOfPopup } from '../background/settings.js'
 import { assertNever } from '../utils/typescript.js'
 import { ComponentChildren } from 'preact'
+import { WindowOrTabId } from '../utils/user-interface-types.js'
 
 function assertIsNode(e: EventTarget | null): asserts e is Node {
 	if (!e || !('nodeType' in e)) {
@@ -165,11 +166,15 @@ export function removeWindowTabListener(onCloseWindow: (id: number) => void) {
 	browser.tabs.onRemoved.removeListener(onCloseWindow)
 }
 
-export async function tryFocusingTab(tabId: number) {
+export async function tryFocusingTabOrWindow(windowOrTab: WindowOrTabId) {
 	try {
-		browser.tabs.update(tabId, { active: true })
+		if (windowOrTab.type === 'tab') {
+			browser.tabs.update(windowOrTab.id, { active: true })
+		} else {
+			browser.windows.update(windowOrTab.id, { focused: true })
+		}
 	} catch(e) {
-		console.warn('failed to focus tab', tabId)
+		console.warn('failed to focus', windowOrTab.type, ': ', windowOrTab.id)
 		console.warn(e)
 	}
 }

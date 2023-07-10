@@ -4,7 +4,7 @@ import { createEthereumSubscription, removeEthereumSubscription } from '../simul
 import { simulationGasLeft, getSimulatedBalance, getSimulatedBlock, getSimulatedBlockNumber, getSimulatedCode, getSimulatedLogs, getSimulatedStack, getSimulatedTransactionByHash, getSimulatedTransactionCount, getSimulatedTransactionReceipt, simulatedCall, simulateEstimateGas, getInputFieldFromDataOrInput } from '../simulation/services/SimulationModeEthereumClientService.js'
 import { dataStringWith0xStart, stringToUint8Array } from '../utils/bigint.js'
 import { CANNOT_SIMULATE_OFF_LEGACY_BLOCK, ERROR_INTERCEPTOR_GAS_ESTIMATION_FAILED, ERROR_INTERCEPTOR_GET_CODE_FAILED, KNOWN_CONTRACT_CALLER_ADDRESSES } from '../utils/constants.js'
-import { InterceptedRequest, RPCReply, Settings } from '../utils/interceptor-messages.js'
+import { InterceptedRequest, RPCReply } from '../utils/interceptor-messages.js'
 import { Website, WebsiteSocket, WebsiteTabConnections } from '../utils/user-interface-types.js'
 import { SimulationState } from '../utils/visualizer-types.js'
 import { EstimateGasParams, EthBalanceParams, EthBlockByNumberParams, EthCallParams, EthereumAddress, EthGetLogsParams, EthSubscribeParams, EthUnSubscribeParams, GetCode, GetSimulationStack, GetTransactionCount, OldSignTypedDataParams, PersonalSignParams, SendRawTransaction, SendTransactionParams, SignTypedDataParams, SwitchEthereumChainParams, TransactionByHashParams, TransactionReceiptParams } from '../utils/wire-types.js'
@@ -237,8 +237,8 @@ export async function gasPrice(ethereumClientService: EthereumClientService) {
 	return { method: 'eth_gasPrice' as const, result: await ethereumClientService.getGasPrice() }
 }
 
-export async function personalSign(ethereumClientService: EthereumClientService, websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, params: PersonalSignParams | SignTypedDataParams | OldSignTypedDataParams, request: InterceptedRequest, simulationMode: boolean, website: Website, settings: Settings, activeAddress: bigint | undefined): Promise<RPCReply> {
-	return await openPersonalSignDialog(ethereumClientService, websiteTabConnections, socket, params, request, simulationMode, website, settings, activeAddress)
+export async function personalSign(ethereumClientService: EthereumClientService, websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, params: PersonalSignParams | SignTypedDataParams | OldSignTypedDataParams, request: InterceptedRequest, simulationMode: boolean, website: Website, activeAddress: bigint | undefined): Promise<RPCReply> {
+	return await openPersonalSignDialog(ethereumClientService, websiteTabConnections, socket, params, request, simulationMode, website, activeAddress)
 }
 
 export async function switchEthereumChain(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, ethereumClientService: EthereumClientService, params: SwitchEthereumChainParams, request: InterceptedRequest, simulationMode: boolean, website: Website) {

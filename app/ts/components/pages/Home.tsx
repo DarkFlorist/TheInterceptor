@@ -1,6 +1,6 @@
 import { HomeParams, AddressInfo, FirstCardParams, SimulationStateParam, SignerName } from '../../utils/user-interface-types.js'
 import { useEffect, useState } from 'preact/hooks'
-import { SimulatedAndVisualizedTransaction, SimulationAndVisualisationResults, RpcEntry, RpcNetwork } from '../../utils/visualizer-types.js'
+import { SimulatedAndVisualizedTransaction, SimulationAndVisualisationResults, RpcEntry, RpcNetwork, RpcEntries } from '../../utils/visualizer-types.js'
 import { ActiveAddress, findAddressInfo } from '../subcomponents/address.js'
 import { SimulationSummary } from '../simulationExplaining/SimulationSummary.js'
 import { ChainSelector } from '../subcomponents/ChainSelector.js'
@@ -76,7 +76,7 @@ function FirstCardHeader(param: FirstCardParams) {
 				</div>
 			</div>
 			<div class = 'card-header-icon unset-cursor'>
-				<ChainSelector rpcNetwork = { param.rpcNetwork } changeRpc = { (entry: RpcEntry) => { param.changeActiveRpc(entry) } }/>
+				<ChainSelector rpcEntries = { param.rpcEntries } rpcNetwork = { param.rpcNetwork } changeRpc = { (entry: RpcEntry) => { param.changeActiveRpc(entry) } }/>
 			</div>
 		</header>
 	</>
@@ -212,6 +212,7 @@ export function Home(param: HomeParams) {
 	const [disableReset, setDisableReset] = useState<boolean>(false)
 	const [removeTransactionHashes, setRemoveTransactionHashes] = useState<bigint[]>([])
 	const [isConnected, setIsConnected] = useState<IsConnected>(undefined)
+	const [rpcEntries, setRPCEntries] = useState<RpcEntries>([])
 
 	useEffect(() => {
 		setSimulationAndVisualisationResults(param.simVisResults)
@@ -230,6 +231,7 @@ export function Home(param: HomeParams) {
 		setDisableReset(false)
 		setRemoveTransactionHashes([])
 		setIsConnected(param.isConnected)
+		setRPCEntries(param.rpcEntries)
 	}, [param.activeSigningAddress,
 		param.activeSimulationAddress,
 		param.signerAccounts,
@@ -242,6 +244,7 @@ export function Home(param: HomeParams) {
 		param.signerName,
 		param.simVisResults,
 		param.isConnected,
+		param.rpcEntries,
 	])
 
 	function changeActiveAddress() {
@@ -297,6 +300,7 @@ export function Home(param: HomeParams) {
 			tabIconDetails = { tabIconDetails }
 			signerName = { signerName }
 			renameAddressCallBack = { param.renameAddressCallBack }
+			rpcEntries = { rpcEntries }
 		/>
 
 		{ simulationMode && simulationAndVisualisationResults === undefined && activeSimulationAddress !== undefined ?

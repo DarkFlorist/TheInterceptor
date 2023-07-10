@@ -1,26 +1,15 @@
-import { useRef, useState, useEffect } from 'preact/hooks'
+import { useRef, useState } from 'preact/hooks'
 import { clickOutsideAlerter } from '../ui-utils.js'
-import { ExternalPopupMessage } from '../../utils/interceptor-messages.js'
 import { RpcEntries, RpcEntry, RpcNetwork } from '../../utils/visualizer-types.js'
 
 interface ChainSelectorParams {
 	rpcNetwork: RpcNetwork
+	rpcEntries: RpcEntries
 	changeRpc: (entry: RpcEntry) => void
 }
 
 export function ChainSelector(params: ChainSelectorParams) {
 	const [isOpen, setIsOpen] = useState(false)
-	const [rpcEntries, setRpcEntries] = useState<RpcEntries | undefined>(undefined)
-
-	useEffect(() => {
-		async function popupMessageListener(msg: unknown) {
-			const message = ExternalPopupMessage.parse(msg)
-			if (message.method === 'popup_update_rpc_list') return setRpcEntries(message.data)
-		}
-		browser.runtime.onMessage.addListener(popupMessageListener)
-
-		return () => browser.runtime.onMessage.removeListener(popupMessageListener)
-	})
 
 	const wrapperRef = useRef<HTMLDivElement>(null);
 	clickOutsideAlerter(wrapperRef, () => setIsOpen(false));
@@ -42,7 +31,7 @@ export function ChainSelector(params: ChainSelectorParams) {
 		<div class = 'dropdown-menu' id = 'dropdown-menu' role = 'menu' style = 'right: -10px; min-width: 160px; left: unset'>
 			<div class = 'dropdown-content'>
 				{
-					rpcEntries === undefined ? <></> : rpcEntries.map((rpcEntry) => { return (
+					params.rpcEntries.map((rpcEntry) => { return (
 						<a href = '#' class = { `dropdown-item ${ rpcEntry.httpsRpc === params.rpcNetwork.httpsRpc ? 'is-active' : '' }` } onClick = { () => changeRpc(rpcEntry) } >
 							{ rpcEntry.name }
 						</a>

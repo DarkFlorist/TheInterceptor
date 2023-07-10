@@ -5,7 +5,7 @@ import { AddressInfoEntry, AddressBookEntry, AddingNewAddressType, RenameAddress
 import { ExternalPopupMessage, PendingAccessRequest, PendingAccessRequestArray } from '../../utils/interceptor-messages.js'
 import { sendPopupMessageToBackgroundPage } from '../../background/backgroundUtils.js'
 import Hint from '../subcomponents/Hint.js'
-import { convertNumberToCharacterRepresentationIfSmallEnough, tryFocusingTab } from '../ui-utils.js'
+import { convertNumberToCharacterRepresentationIfSmallEnough, tryFocusingTabOrWindow } from '../ui-utils.js'
 import { ChangeActiveAddress } from './ChangeActiveAddress.js'
 import { DinoSays, DinoSaysNotification } from '../subcomponents/DinoSays.js'
 import { getPrettySignerName } from '../subcomponents/signers.js'
@@ -190,15 +190,15 @@ export function InterceptorAccess() {
 				const currentTabId = (await browser.tabs.getCurrent()).id
 				if (currentWindowId === undefined) throw new Error('could not get current window Id!')
 				if (currentTabId === undefined) throw new Error('could not get current tab Id!')
-				browser.windows.update(currentWindowId, { focused: true })
-				browser.tabs.update(currentTabId, { active: true })
 				return
 			}
 		}
 		browser.runtime.onMessage.addListener(popupMessageListener)
-		sendPopupMessageToBackgroundPage({ method: 'popup_interceptorAccessReadyAndListening' })
 		return () => browser.runtime.onMessage.removeListener(popupMessageListener)
 	})
+
+	
+	useEffect(() => { sendPopupMessageToBackgroundPage({ method: 'popup_interceptorAccessReadyAndListening' }) }, [])
 
 	async function approve() {
 		if (pendingAccessRequestArray.length === 0) throw Error('access request not loaded')
@@ -212,7 +212,7 @@ export function InterceptorAccess() {
 		}
 		setPendingRequestAddedNotification(false)
 		setInformationUpdatedTimestamp(Date.now())
-		if (pendingAccessRequestArray.length === 1) await tryFocusingTab(accessRequest.socket.tabId)
+		if (pendingAccessRequestArray.length === 1) await tryFocusingTabOrWindow({ type: 'tab', id: accessRequest.socket.tabId })
 		await sendPopupMessageToBackgroundPage({ method: 'popup_interceptorAccess', data })
 	}
 
@@ -228,7 +228,7 @@ export function InterceptorAccess() {
 		}
 		setPendingRequestAddedNotification(false)
 		setInformationUpdatedTimestamp(Date.now())
-		if (pendingAccessRequestArray.length === 1) await tryFocusingTab(accessRequest.socket.tabId)
+		if (pendingAccessRequestArray.length === 1) await tryFocusingTabOrWindow({ type: 'tab', id: accessRequest.socket.tabId })
 		await sendPopupMessageToBackgroundPage({ method: 'popup_interceptorAccess', data })
 	}
 
