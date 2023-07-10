@@ -1,5 +1,5 @@
 import { ICON_NOT_ACTIVE, getChainName } from '../utils/constants.js'
-import { PendingAccessRequestArray, PendingChainChangeConfirmationPromise, PendingPersonalSignPromise, PendingTransaction, TabState, IsConnected, PendingAccessRequest } from '../utils/interceptor-messages.js'
+import { PendingAccessRequestArray, PendingChainChangeConfirmationPromise, PendingPersonalSignPromise, PendingTransaction, TabState, RpcConnectionStatus, PendingAccessRequest } from '../utils/interceptor-messages.js'
 import { Semaphore } from '../utils/semaphore.js'
 import { browserStorageLocalSet, browserStorageLocalSingleGetWithDefault } from '../utils/storageUtils.js'
 import { SignerName } from '../utils/user-interface-types.js'
@@ -187,12 +187,12 @@ export async function getCurrentTabId() {
 	return funtypes.Union(funtypes.Undefined, funtypes.Number).parse(await browserStorageLocalSingleGetWithDefault('currentTabId', undefined))
 }
 
-export async function setIsConnected(isConnected: boolean) {
-	return await browserStorageLocalSet('isConnectedToNode', IsConnected.serialize({ isConnected, lastConnnectionAttempt: Date.now() }) as string )
+export async function setRpcConnectionStatus(rpcConnectionStatus: RpcConnectionStatus) {
+	return await browserStorageLocalSet('rpcConnectionStatus', RpcConnectionStatus.serialize(rpcConnectionStatus) as string )
 }
 
-export async function getIsConnected() {
-	return IsConnected.parse(await browserStorageLocalSingleGetWithDefault('isConnectedToNode', undefined))
+export async function getRpcConnectionStatus() {
+	return RpcConnectionStatus.parse(await browserStorageLocalSingleGetWithDefault('rpcConnectionStatus', undefined))
 }
 
 export async function getEthereumSubscriptions() {

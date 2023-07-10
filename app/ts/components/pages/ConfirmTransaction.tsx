@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'preact/hooks'
-import { ConfirmTransactionDialogState, ConfirmTransactionSimulationBaseData, ConfirmTransactionTransactionSingleVisualizationArray, ExternalPopupMessage, IsConnected } from '../../utils/interceptor-messages.js'
+import { ConfirmTransactionDialogState, ConfirmTransactionSimulationBaseData, ConfirmTransactionTransactionSingleVisualizationArray, ExternalPopupMessage, RpcConnectionStatus } from '../../utils/interceptor-messages.js'
 import { SimulatedAndVisualizedTransaction, SimulationAndVisualisationResults } from '../../utils/visualizer-types.js'
 import Hint from '../subcomponents/Hint.js'
 import { RawTransactionDetailsCard, GasFee, LogAnalysisCard, SimulatedInBlockNumber, TransactionCreated, TransactionHeader, TransactionHeaderForFailedToSimulate, TransactionsAccountChangesCard } from '../simulationExplaining/SimulationSummary.js'
@@ -8,13 +8,12 @@ import { AddNewAddress } from './AddNewAddress.js'
 import { AddingNewAddressType, AddressBookEntry } from '../../utils/user-interface-types.js'
 import { sendPopupMessageToBackgroundPage } from '../../background/backgroundUtils.js'
 import { SignerLogoText } from '../subcomponents/signers.js'
-import { Error as ErrorComponent, ErrorCheckBox } from '../subcomponents/Error.js'
+import { ErrorCheckBox } from '../subcomponents/Error.js'
 import { QuarantineCodes, SenderReceiver, TransactionImportanceBlock } from '../simulationExplaining/Transactions.js'
 import { identifyTransaction } from '../simulationExplaining/identifyTransaction.js'
-import { SomeTimeAgo } from '../subcomponents/SomeTimeAgo.js'
-import { TIME_BETWEEN_BLOCKS } from '../../utils/constants.js'
 import { DinoSaysNotification } from '../subcomponents/DinoSays.js'
 import { tryFocusingTab } from '../ui-utils.js'
+import { NetworkErrors } from './Home.js'
 
 type UnderTransactionsParams = {
 	pendingTransactions: ConfirmTransactionTransactionSingleVisualizationArray
@@ -50,7 +49,7 @@ type TransactionCardParams = {
 	activeAddress: bigint,
 	resetButton: boolean,
 	currentBlockNumber: bigint | undefined,
-	isConnected: IsConnected,
+	rpcConnectionStatus: RpcConnectionStatus,
 }
 
 function TransactionCard(param: TransactionCardParams) {
@@ -126,7 +125,7 @@ function TransactionCard(param: TransactionCardParams) {
 							simulationBlockNumber = { param.simulationAndVisualisationResults.blockNumber }
 							currentBlockNumber = { param.currentBlockNumber }
 							simulationConductedTimestamp = { param.simulationAndVisualisationResults.simulationConductedTimestamp }
-							isConnected = { param.isConnected }
+							rpcConnectionStatus = { param.rpcConnectionStatus }
 						/>
 					</div>
 				</span>
@@ -144,7 +143,7 @@ export function ConfirmTransaction() {
 	const [forceSend, setForceSend] = useState<boolean>(false)
 	const [currentBlockNumber, setCurrentBlockNumber] = useState<undefined | bigint>(undefined)
 	const [addingNewAddress, setAddingNewAddress] = useState<AddingNewAddressType | 'renameAddressModalClosed'> ('renameAddressModalClosed')
-	const [isConnected, setIsConnected] = useState<IsConnected>(undefined)
+	const [rpcConnectionStatus, setRpcConnectionStatus] = useState<RpcConnectionStatus>(undefined)
 	const [pendingTransactionAddedNotification, setPendingTransactionAddedNotification] = useState<boolean>(false)
 
 	useEffect(() => {
@@ -153,12 +152,12 @@ export function ConfirmTransaction() {
 
 			if (message.method === 'popup_addressBookEntriesChanged') return refreshMetadata()
 			if (message.method === 'popup_new_block_arrived') {
-				setIsConnected({ isConnected: true, lastConnnectionAttempt: Date.now() })
+				setRpcConnectionStatus(message.data.rpcConnectionStatus)
 				refreshSimulation()
-				return setCurrentBlockNumber(message.data.blockNumber)
+				return setCurrentBlockNumber(message.data.rpcConnectionStatus?.latestBlock?.number)
 			}
 			if (message.method === 'popup_failed_to_get_block') {
-				setIsConnected({ isConnected: false, lastConnnectionAttempt: Date.now() })
+				setRpcConnectionStatus(message.data.rpcConnectionStatus)
 			}
 			if (message.method === 'popup_confirm_transaction_dialog_pending_changed') {
 				setPendingTransactions(message.data.slice(1).reverse())
@@ -270,11 +269,7 @@ export function ConfirmTransaction() {
 
 				<div class = 'block popup-block'>
 					<div class = 'popup-block-scroll'>
-						{ isConnected?.isConnected === false ?
-							<div style = 'margin: 10px; background-color: var(--bg-color);'>
-								<ErrorComponent warning = { true } text = { <>Unable to connect to a Ethereum node. Retrying in <SomeTimeAgo priorTimestamp = { new Date(isConnected.lastConnnectionAttempt + TIME_BETWEEN_BLOCKS * 1000) } countBackwards = { true }/>.</> }/>
-							</div>
-						: <></> }
+						<NetworkErrors rpcConnectionStatus = { rpcConnectionStatus }/>
 						
 						{ dialogState.data.transactionToSimulate.transactionSendingFormat === 'eth_sendRawTransaction'
 							? <DinoSaysNotification
@@ -306,7 +301,7 @@ export function ConfirmTransaction() {
 							activeAddress = { dialogState.data.activeAddress }
 							resetButton = { false }
 							currentBlockNumber = { currentBlockNumber }
-							isConnected = { isConnected }
+							rpcConnectionStatus = { rpcConnectionStatus }
 						/>
 					</div>
 

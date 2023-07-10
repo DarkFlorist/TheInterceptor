@@ -1,6 +1,6 @@
 import * as funtypes from 'funtypes'
 import { AddressBookEntries, AddressBookEntry, AddressInfo, AddressInfoEntry, ContactEntries, SignerName, Website, WebsiteSocket } from './user-interface-types.js'
-import { EthGetLogsResponse, EthTransactionReceiptResponse, EthereumAddress, EthereumBlockHeaderWithTransactionHashes, EthereumBytes32, EthereumData, EthereumQuantity, EthereumSignedTransactionWithBlockData, GetBlockReturn, GetSimulationStackReply, OldSignTypedDataParams, PersonalSignParams, SendRawTransaction, SendTransactionParams, SignTypedDataParams } from './wire-types.js'
+import { EthGetLogsResponse, EthTransactionReceiptResponse, EthereumAddress, EthereumBlockHeader, EthereumBlockHeaderWithTransactionHashes, EthereumBytes32, EthereumData, EthereumQuantity, EthereumSignedTransactionWithBlockData, EthereumTimestamp, GetBlockReturn, GetSimulationStackReply, OldSignTypedDataParams, PersonalSignParams, SendRawTransaction, SendTransactionParams, SignTypedDataParams } from './wire-types.js'
 import { SimulationState, OptionalEthereumAddress, SimulatedAndVisualizedTransaction, SimResults, TokenPriceEstimate, WebsiteCreatedEthereumUnsignedTransaction, RpcNetwork, RpcEntries, RpcEntry } from './visualizer-types.js'
 import { ICON_ACCESS_DENIED, ICON_ACTIVE, ICON_NOT_ACTIVE, ICON_SIGNING, ICON_SIGNING_NOT_SUPPORTED, ICON_SIMULATING } from './constants.js'
 import { PersonalSignRequestData } from './personal-message-definitions.js'
@@ -353,12 +353,18 @@ export const RefreshConfirmTransactionDialogSimulation = funtypes.ReadonlyObject
 	}),
 }).asReadonly()
 
-export type NewBlockArrived = funtypes.Static<typeof NewBlockArrived>
-export const NewBlockArrived = funtypes.ReadonlyObject({
-	method: funtypes.Literal('popup_new_block_arrived'),
-	data: funtypes.ReadonlyObject({
-		blockNumber: EthereumQuantity,
-	}),
+export type RpcConnectionStatus = funtypes.Static<typeof RpcConnectionStatus>
+export const RpcConnectionStatus = funtypes.Union(funtypes.Undefined, funtypes.ReadonlyObject({
+	isConnected: funtypes.Boolean,
+	lastConnnectionAttempt: EthereumTimestamp,
+	rpcNetwork: RpcNetwork,
+	latestBlock: funtypes.Union(funtypes.Undefined, EthereumBlockHeader),
+}))
+
+export type NewBlockArrivedOrFailedToArrive = funtypes.Static<typeof NewBlockArrivedOrFailedToArrive>
+export const NewBlockArrivedOrFailedToArrive = funtypes.ReadonlyObject({
+	method: funtypes.Union(funtypes.Literal('popup_new_block_arrived'), funtypes.Literal('popup_failed_to_get_block')),
+	data: funtypes.ReadonlyObject({ rpcConnectionStatus: RpcConnectionStatus }),
 }).asReadonly()
 
 export type TabIcon = funtypes.Static<typeof TabIcon>
@@ -562,12 +568,6 @@ export const Settings = funtypes.ReadonlyObject({
 	userAddressBook: UserAddressBook,
 })
 
-export type IsConnected = funtypes.Static<typeof IsConnected>
-export const IsConnected = funtypes.Union(funtypes.Undefined, funtypes.ReadonlyObject({
-	isConnected: funtypes.Boolean,
-	lastConnnectionAttempt: funtypes.Number,
-}))
-
 export type UpdateHomePage = funtypes.Static<typeof UpdateHomePage>
 export const UpdateHomePage = funtypes.ReadonlyObject({
 	method: funtypes.Literal('popup_UpdateHomePage'),
@@ -588,7 +588,7 @@ export const UpdateHomePage = funtypes.ReadonlyObject({
 		settings: Settings,
 		tabIconDetails: funtypes.Union(TabIconDetails, funtypes.Undefined),
 		makeMeRich: funtypes.Boolean,
-		isConnected: IsConnected,
+		rpcConnectionStatus: RpcConnectionStatus,
 		useTabsInsteadOfPopup: funtypes.Boolean,
 		activeSigningAddressInThisTab: OptionalEthereumAddress,
 		tabId: funtypes.Union(funtypes.Number, funtypes.Undefined),
@@ -769,10 +769,9 @@ export const MessageToPopup = funtypes.Union(
 	PersonalSignRequest,
 	ChangeChainRequest,
 	InterceptorAccessDialog,
-	NewBlockArrived,
+	NewBlockArrivedOrFailedToArrive,
 	UpdateHomePage,
 	SettingsUpdated,
-	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_failed_to_get_block') }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_failed_to_update_simulation_state') }),
 	UpdateConfirmTransactionDialog,
 	UpdateAccessDialog,

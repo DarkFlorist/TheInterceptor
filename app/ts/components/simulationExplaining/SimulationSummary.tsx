@@ -12,7 +12,7 @@ import { identifyTransaction } from './identifyTransaction.js'
 import { identifySwap } from './SwapTransactions.js'
 import { useState } from 'preact/hooks'
 import { CellElement, convertNumberToCharacterRepresentationIfSmallEnough, upperCaseFirstCharacter } from '../ui-utils.js'
-import { IsConnected } from '../../utils/interceptor-messages.js'
+import { RpcConnectionStatus } from '../../utils/interceptor-messages.js'
 import { EthereumTimestamp } from '../../utils/wire-types.js'
 import { getEthDonator } from '../../background/storageVariables.js'
 import { RpcNetwork } from '../../utils/visualizer-types.js'
@@ -574,7 +574,7 @@ export function TransactionCreated({ transactionCreated } : { transactionCreated
 	</p>
 }
 
-export function SimulatedInBlockNumber({ simulationBlockNumber, currentBlockNumber, simulationConductedTimestamp, isConnected } : { simulationBlockNumber: bigint, currentBlockNumber: bigint | undefined, simulationConductedTimestamp: Date, isConnected: IsConnected }) {
+export function SimulatedInBlockNumber({ simulationBlockNumber, currentBlockNumber, simulationConductedTimestamp, rpcConnectionStatus } : { simulationBlockNumber: bigint, currentBlockNumber: bigint | undefined, simulationConductedTimestamp: Date, rpcConnectionStatus: RpcConnectionStatus }) {
 	return <CopyToClipboard
 		content = { simulationBlockNumber.toString() }
 		contentDisplayOverride = { `Simulated in block number ${ simulationBlockNumber }` }
@@ -583,7 +583,7 @@ export function SimulatedInBlockNumber({ simulationBlockNumber, currentBlockNumb
 		<p style = 'color: var(--subtitle-text-color); text-align: right; display: inline'>
 			{ 'Simulated ' }
 			<span style = { `font-weight: bold; font-family: monospace; color: ${
-				(simulationBlockNumber === currentBlockNumber || currentBlockNumber === undefined) && (isConnected === undefined || isConnected?.isConnected) ? 'var(--positive-color)' :
+				(simulationBlockNumber === currentBlockNumber || currentBlockNumber === undefined) && (rpcConnectionStatus === undefined || rpcConnectionStatus.isConnected) ? 'var(--positive-color)' :
 				simulationBlockNumber + 1n === currentBlockNumber ? 'var(--warning-color)' : 'var(--negative-color)'
 			} ` }>
 				<SomeTimeAgo priorTimestamp = { simulationConductedTimestamp }/>
@@ -597,7 +597,7 @@ type SimulationSummaryParams = {
 	simulationAndVisualisationResults: SimulationAndVisualisationResults,
 	currentBlockNumber: bigint | undefined,
 	renameAddressCallBack: RenameAddressCallBack,
-	isConnected: IsConnected,
+	rpcConnectionStatus: RpcConnectionStatus,
 }
 
 export function SimulationSummary(param: SimulationSummaryParams) {
@@ -668,7 +668,7 @@ export function SimulationSummary(param: SimulationSummaryParams) {
 						simulationBlockNumber = { param.simulationAndVisualisationResults.blockNumber }
 						currentBlockNumber = { param.currentBlockNumber }
 						simulationConductedTimestamp = { param.simulationAndVisualisationResults.simulationConductedTimestamp }
-						isConnected = { param.isConnected }
+						rpcConnectionStatus = { param.rpcConnectionStatus }
 					/>
 				</p>
 			</div>

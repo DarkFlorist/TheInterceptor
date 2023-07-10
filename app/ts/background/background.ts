@@ -1,8 +1,8 @@
 import { ConfirmTransactionTransactionSingleVisualization, InpageScriptRequest, InterceptedRequest, InterceptedRequestForward, InterceptorMessageToInpage, PopupMessage, RPCReply, Settings, TabState } from '../utils/interceptor-messages.js'
 import 'webextension-polyfill'
 import { Simulator } from '../simulation/simulator.js'
-import { EthereumJsonRpcRequest, SendRawTransaction, SendTransactionParams } from '../utils/wire-types.js'
-import { clearTabStates, getEthDonator, getSignerName, getSimulationResults, removeTabState, setIsConnected, updateSimulationResults, updateTabState } from './storageVariables.js'
+import { EthereumBlockHeader, EthereumJsonRpcRequest, SendRawTransaction, SendTransactionParams } from '../utils/wire-types.js'
+import { clearTabStates, getEthDonator, getSignerName, getSimulationResults, removeTabState, setRpcConnectionStatus, updateSimulationResults, updateTabState } from './storageVariables.js'
 import { changeSimulationMode, getSettings, getMakeMeRich } from './settings.js'
 import { blockNumber, call, chainId, estimateGas, gasPrice, getAccounts, getBalance, getBlockByNumber, getCode, getLogs, getPermissions, getSimulationStack, getTransactionByHash, getTransactionCount, getTransactionReceipt, personalSign, sendRawTransaction, sendTransaction, subscribe, switchEthereumChain, unsubscribe } from './simulationModeHanders.js'
 import { changeActiveAddress, changeMakeMeRich, changePage, resetSimulation, confirmDialog, refreshSimulation, removeTransaction, requestAccountsFromSigner, refreshPopupConfirmTransactionSimulation, confirmPersonalSign, confirmRequestAccess, changeInterceptorAccess, changeChainDialog, popupChangeActiveRpc, enableSimulationMode, addOrModifyAddressInfo, getAddressBookData, removeAddressBookEntry, openAddressBook, homeOpened, interceptorAccessChangeAddressOrRefresh, refreshPopupConfirmTransactionMetadata, refreshPersonalSignMetadata, changeSettings, importSettings, exportSettings, setNewRpcList } from './popupMessageHandlers.js'
@@ -280,20 +280,33 @@ async function handleRPCRequest(
 	}
 }
 
-async function newBlockCallback(blockNumber: bigint, ethereumClientService: EthereumClientService) {
-	await setIsConnected(true)
+async function newBlockAttemptCallback(blockheader: EthereumBlockHeader, ethereumClientService: EthereumClientService, isNewBlock: boolean) {
+	const rpcConnectionStatus = {
+		isConnected: true,
+		lastConnnectionAttempt: new Date(),
+		latestBlock: blockheader,
+		rpcNetwork: ethereumClientService.getRpcNetwork(),
+	}
+	await setRpcConnectionStatus(rpcConnectionStatus)
 	await updateExtensionBadge()
-	const settings = await getSettings()
-	const updatedSimulationState = await refreshSimulation(ethereumClientService, settings)
-	await sendPopupMessageToOpenWindows({ method: 'popup_new_block_arrived', data: { blockNumber } })
-	await sendSubscriptionMessagesForNewBlock(blockNumber, ethereumClientService, settings.simulationMode ? updatedSimulationState : undefined, websiteTabConnections)
+	await sendPopupMessageToOpenWindows({ method: 'popup_new_block_arrived', data: { rpcConnectionStatus } })
+	if (isNewBlock) {
+		const settings = await getSettings()
+		await sendSubscriptionMessagesForNewBlock(blockheader.number, ethereumClientService, settings.simulationMode ? await refreshSimulation(ethereumClientService, settings) : undefined, websiteTabConnections)
+	}
 }
 
-async function onErrorBlockCallback(_ethereumClientService: EthereumClientService, error: Error) {
+async function onErrorBlockCallback(ethereumClientService: EthereumClientService, error: Error) {
 	if (isFailedToFetchError(error)) {
-		await setIsConnected(false)
+		const rpcConnectionStatus = {
+			isConnected: false,
+			lastConnnectionAttempt: new Date(),
+			latestBlock: ethereumClientService.getLastKnownCachedBlockOrUndefined(),
+			rpcNetwork: ethereumClientService.getRpcNetwork(),
+		}
+		await setRpcConnectionStatus(rpcConnectionStatus)
 		await updateExtensionBadge()
-		return await sendPopupMessageToOpenWindows({ method: 'popup_failed_to_get_block' })
+		return await sendPopupMessageToOpenWindows({ method: 'popup_failed_to_get_block', data: { rpcConnectionStatus } })
 	}
 	throw error
 }
@@ -301,7 +314,7 @@ async function onErrorBlockCallback(_ethereumClientService: EthereumClientServic
 
 export async function resetSimulator(entry: RpcEntry) {
 	if (simulator !== undefined) simulator.cleanup()
-	simulator = new Simulator(entry, newBlockCallback, onErrorBlockCallback)
+	simulator = new Simulator(entry, newBlockAttemptCallback, onErrorBlockCallback)
 }
 
 const changeActiveAddressAndChainAndResetSimulationSemaphore = new Semaphore(1)

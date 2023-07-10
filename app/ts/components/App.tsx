@@ -11,7 +11,7 @@ import { ethers } from 'ethers'
 import { PasteCatcher } from './subcomponents/PasteCatcher.js'
 import { truncateAddr } from '../utils/ethereum.js'
 import { DEFAULT_TAB_CONNECTION } from '../utils/constants.js'
-import { ExternalPopupMessage, TabIconDetails, UpdateHomePage, Page, WebsiteAccessArray, WebsiteIconChanged, IsConnected, Settings } from '../utils/interceptor-messages.js'
+import { ExternalPopupMessage, TabIconDetails, UpdateHomePage, Page, WebsiteAccessArray, WebsiteIconChanged, RpcConnectionStatus, Settings } from '../utils/interceptor-messages.js'
 import { version, gitCommitSha } from '../version.js'
 import { sendPopupMessageToBackgroundPage } from '../background/backgroundUtils.js'
 import { EthereumAddress } from '../utils/wire-types.js'
@@ -35,7 +35,7 @@ export function App() {
 	const [currentBlockNumber, setCurrentBlockNumber] = useState<bigint | undefined>(undefined)
 	const [signerName, setSignerName] = useState<SignerName>('NoSignerDetected')
 	const [addingNewAddress, setAddingNewAddress] = useState<AddingNewAddressType> ({ addingAddress: true, type: 'addressInfo' })
-	const [isConnected, setIsConnected] = useState<IsConnected>(undefined)
+	const [rpcConnectionStatus, setRpcConnectionStatus] = useState<RpcConnectionStatus>(undefined)
 	const [useTabsInsteadOfPopup, setUseTabsInsteadOfPopup] = useState<boolean | undefined>(undefined)
 	const [currentTabId, setCurrentTabId] = useState<number | undefined>(undefined)
 
@@ -117,7 +117,7 @@ export function App() {
 				setCurrentBlockNumber(data.currentBlockNumber)
 				setWebsiteAccessAddressMetadata(data.websiteAccessAddressMetadata)
 				setSignerAccounts(data.signerAccounts)
-				setIsConnected(data.isConnected)
+				setRpcConnectionStatus(data.rpcConnectionStatus)
 				setUseTabsInsteadOfPopup(data.useTabsInsteadOfPopup)
 				return true
 			})
@@ -143,7 +143,7 @@ export function App() {
 			if (message.method === 'popup_settingsUpdated') return updateHomePageSettings(message.data, true)
 			if (message.method === 'popup_activeSigningAddressChanged' && message.data.tabId === currentTabId) return setActiveSigningAddress(message.data.activeSigningAddress)
 			if (message.method === 'popup_websiteIconChanged') return updateTabIcon(message)
-			if (message.method === 'popup_failed_to_get_block') return setIsConnected({ isConnected: false, lastConnnectionAttempt: Date.now() })
+			if (message.method === 'popup_failed_to_get_block') return setRpcConnectionStatus(message.data.rpcConnectionStatus)
 			if (message.method === 'popup_update_rpc_list') return
 			if (message.method !== 'popup_UpdateHomePage') return await sendPopupMessageToBackgroundPage( { method: 'popup_requestNewHomeData' } )
 			return updateHomePage(message)
@@ -233,7 +233,7 @@ export function App() {
 							currentBlockNumber = { currentBlockNumber }
 							signerName = { signerName }
 							renameAddressCallBack = { renameAddressCallBack }
-							isConnected = { isConnected }
+							rpcConnectionStatus = { rpcConnectionStatus }
 						/>
 
 						<div class = { `modal ${ appPage !== 'Home' ? 'is-active' : ''}` }>

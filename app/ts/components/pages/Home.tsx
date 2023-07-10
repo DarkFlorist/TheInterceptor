@@ -6,7 +6,7 @@ import { SimulationSummary } from '../simulationExplaining/SimulationSummary.js'
 import { ChainSelector } from '../subcomponents/ChainSelector.js'
 import { Spinner } from '../subcomponents/Spinner.js'
 import { DEFAULT_TAB_CONNECTION, ICON_NOT_ACTIVE, ICON_SIGNING, ICON_SIGNING_NOT_SUPPORTED, TIME_BETWEEN_BLOCKS } from '../../utils/constants.js'
-import { IsConnected, TabIcon, TabIconDetails } from '../../utils/interceptor-messages.js'
+import { RpcConnectionStatus, TabIcon, TabIconDetails } from '../../utils/interceptor-messages.js'
 import { getPrettySignerName, SignerLogoText, SignersLogoName } from '../subcomponents/signers.js'
 import { Error } from '../subcomponents/Error.js'
 import { ToolTip } from '../subcomponents/CopyToClipboard.js'
@@ -15,6 +15,7 @@ import { Transactions } from '../simulationExplaining/Transactions.js'
 import { DinoSays } from '../subcomponents/DinoSays.js'
 import { identifyTransaction } from '../simulationExplaining/identifyTransaction.js'
 import { SomeTimeAgo } from '../subcomponents/SomeTimeAgo.js'
+import { noNewBlockForOverTwoMins } from '../../background/iconHandler.js'
 
 async function enableMakeMeRich(enabled: boolean) {
 	sendPopupMessageToBackgroundPage( { method: 'popup_changeMakeMeRich', data: enabled } )
@@ -188,11 +189,33 @@ function SimulationResults(param: SimulationStateParam) {
 				simulationAndVisualisationResults = { param.simulationAndVisualisationResults }
 				currentBlockNumber = { param.currentBlockNumber }
 				renameAddressCallBack = { param.renameAddressCallBack }
-				isConnected = { param.isConnected }
+				rpcConnectionStatus = { param.rpcConnectionStatus }
 			/>
 		}
 		<div class = 'content' style = 'height: 0.1px'/>
 	</div>
+}
+
+type NetworkErrorParams = {
+	rpcConnectionStatus: RpcConnectionStatus
+}
+
+export function NetworkErrors({ rpcConnectionStatus } : NetworkErrorParams) {
+	if (rpcConnectionStatus === undefined) return <></>
+	const priorDate = new Date(rpcConnectionStatus.lastConnnectionAttempt.getTime() + TIME_BETWEEN_BLOCKS * 1000)
+	return <>
+		{ rpcConnectionStatus.isConnected === false ?
+			<div style = 'margin: 10px; background-color: var(--bg-color);'>
+				<Error warning = { true } text = { <>Unable to connect to { rpcConnectionStatus.rpcNetwork.name }. Retrying in <SomeTimeAgo priorTimestamp = { priorDate } countBackwards = { true }/>.</> }/>
+			</div>
+		: <></> }
+
+		{ rpcConnectionStatus.latestBlock !== undefined && noNewBlockForOverTwoMins(rpcConnectionStatus) ?
+			<div style = 'margin: 10px; background-color: var(--bg-color);'>
+				<Error warning = { true } text = { <>The connected RPC ({ rpcConnectionStatus.rpcNetwork.name }) seem to be stuck at block { rpcConnectionStatus.latestBlock.number }. Retrying in <SomeTimeAgo priorTimestamp = { priorDate } countBackwards = { true }/>.</> }/>
+			</div>
+		: <></> }
+	</>
 }
 
 export function Home(param: HomeParams) {
@@ -211,7 +234,7 @@ export function Home(param: HomeParams) {
 	const [makeMeRich, setMakeMeRich] = useState<boolean>(false)
 	const [disableReset, setDisableReset] = useState<boolean>(false)
 	const [removeTransactionHashes, setRemoveTransactionHashes] = useState<bigint[]>([])
-	const [isConnected, setIsConnected] = useState<IsConnected>(undefined)
+	const [rpcConnectionStatus, setRpcConnectionStatus] = useState<RpcConnectionStatus>(undefined)
 
 	useEffect(() => {
 		setSimulationAndVisualisationResults(param.simVisResults)
@@ -229,7 +252,7 @@ export function Home(param: HomeParams) {
 		setMakeMeRich(param.makeMeRich)
 		setDisableReset(false)
 		setRemoveTransactionHashes([])
-		setIsConnected(param.isConnected)
+		setRpcConnectionStatus(param.rpcConnectionStatus)
 	}, [param.activeSigningAddress,
 		param.activeSimulationAddress,
 		param.signerAccounts,
@@ -241,7 +264,7 @@ export function Home(param: HomeParams) {
 		param.currentBlockNumber,
 		param.signerName,
 		param.simVisResults,
-		param.isConnected,
+		param.rpcConnectionStatus,
 	])
 
 	function changeActiveAddress() {
@@ -277,11 +300,7 @@ export function Home(param: HomeParams) {
 			</div>
 		: <></> }
 
-		{ isConnected?.isConnected === false ?
-			<div style = 'margin: 10px; background-color: var(--bg-color);'>
-				<Error warning = { true } text = { <>Unable to connect to a Ethereum node. Retrying in <SomeTimeAgo priorTimestamp = { new Date(isConnected.lastConnnectionAttempt + TIME_BETWEEN_BLOCKS * 1000) } countBackwards = { true }/>.</> }/>
-			</div>
-		: <></> }
+		<NetworkErrors rpcConnectionStatus = { rpcConnectionStatus }/>
 
 		<FirstCard
 			addressInfos = { addressInfos }
@@ -319,7 +338,7 @@ export function Home(param: HomeParams) {
 				currentBlockNumber = { currentBlockNumber }
 				renameAddressCallBack = { param.renameAddressCallBack }
 				removeTransactionHashes = { removeTransactionHashes }
-				isConnected = { isConnected }
+				rpcConnectionStatus = { rpcConnectionStatus }
 			/>
 		}
 	</>

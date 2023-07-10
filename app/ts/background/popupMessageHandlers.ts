@@ -1,6 +1,6 @@
 import { changeActiveAddressAndChainAndResetSimulation, changeActiveRpc, getPrependTrasactions, refreshConfirmTransactionSimulation, resetSimulator, updateSimulationState } from './background.js'
 import { getSettings, getMakeMeRich, getUseTabsInsteadOfPopup, setUseTabsInsteadOfPopup, setMakeMeRich, setPage, setUseSignersAddressAsActiveAddress, updateAddressInfos, updateContacts, updateWebsiteAccess, exportSettingsAndAddressBook, ExportedSettings, importSettingsAndAddressBook } from './settings.js'
-import { getPendingTransactions, getCurrentTabId, getIsConnected, getOpenedAddressBookTabId, getSignerName, getSimulationResults, getTabState, saveCurrentTabId, setOpenedAddressBookTabId, setRpcList, getRpcList, getPrimaryRpcForChain } from './storageVariables.js'
+import { getPendingTransactions, getCurrentTabId, getOpenedAddressBookTabId, getSignerName, getSimulationResults, getTabState, saveCurrentTabId, setOpenedAddressBookTabId, setRpcList, getRpcList, getPrimaryRpcForChain, getRpcConnectionStatus, setRpcConnectionStatus } from './storageVariables.js'
 import { Simulator } from '../simulation/simulator.js'
 import { ChangeActiveAddress, ChangeMakeMeRich, ChangePage, PersonalSign, RemoveTransaction, RequestAccountsFromSigner, TransactionConfirmation, InterceptorAccess, ChangeInterceptorAccess, ChainChangeConfirmation, EnableSimulationMode, ChangeActiveChain, AddOrEditAddressBookEntry, GetAddressBookData, RemoveAddressBookEntry, RefreshConfirmTransactionDialogSimulation, UserAddressBook, InterceptorAccessRefresh, InterceptorAccessChangeAddress, Settings, RefreshConfirmTransactionMetadata, RefreshPersonalSignMetadata, RefreshInterceptorAccessMetadata, ChangeSettings, ImportSettings, SetRpcList } from '../utils/interceptor-messages.js'
 import { resolvePendingTransaction } from './windows/confirmTransaction.js'
@@ -281,7 +281,14 @@ export async function homeOpened(simulator: Simulator) {
 	} catch (error) {
 		if (!(error instanceof Error)) throw error
 		if (!isFailedToFetchError(error)) throw error
-		await sendPopupMessageToOpenWindows({ method: 'popup_failed_to_get_block' })
+		const rpcConnectionStatus = {
+			isConnected: false,
+			lastConnnectionAttempt: new Date(),
+			latestBlock: simulator.ethereum.getLastKnownCachedBlockOrUndefined(),
+			rpcNetwork: simulator.ethereum.getRpcNetwork(),
+		}
+		await setRpcConnectionStatus(rpcConnectionStatus)
+		await sendPopupMessageToOpenWindows({ method: 'popup_failed_to_get_block', data: { rpcConnectionStatus } })
 	}
 	const simResults = await getSimulationResults()
 	const simulatedAndVisualizedTransactions = simResults.simulationState === undefined || simResults.visualizerResults === undefined ? [] : formSimulatedAndVisualizedTransaction(simResults.simulationState, simResults.visualizerResults, simResults.addressBookEntries)
@@ -301,7 +308,7 @@ export async function homeOpened(simulator: Simulator) {
 			settings: await getSettings(),
 			tabIconDetails: tabState?.tabIconDetails,
 			makeMeRich: await getMakeMeRich(),
-			isConnected: await getIsConnected(),
+			rpcConnectionStatus: await getRpcConnectionStatus(),
 			useTabsInsteadOfPopup: await getUseTabsInsteadOfPopup(),
 			activeSigningAddressInThisTab: tabState?.activeSigningAddress,
 			tabId,

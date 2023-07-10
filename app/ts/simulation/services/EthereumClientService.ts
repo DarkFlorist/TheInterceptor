@@ -11,18 +11,20 @@ export class EthereumClientService {
 	private cacheRefreshTimer: NodeJS.Timer | undefined = undefined
 	private lastCacheAccess: number = 0
 	private retrievingBlock: boolean = false
-	private newBlockCallback: (blockHeader: EthereumBlockHeader, ethereumClientService: EthereumClientService) => void
+	private newBlockAttemptCallback: (blockHeader: EthereumBlockHeader, ethereumClientService: EthereumClientService, isNewBlock: boolean) => void
 	private onErrorBlockCallback: (ethereumClientService: EthereumClientService, error: Error) => void
 	private requestHandler
 	private cleanedUp = false
 
-    constructor(requestHandler: IEthereumJSONRpcRequestHandler, newBlockCallback: (blockHeader: EthereumBlockHeader, ethereumClientService: EthereumClientService) => void, onErrorBlockCallback: (ethereumClientService: EthereumClientService, error: Error) => void) {
+    constructor(requestHandler: IEthereumJSONRpcRequestHandler, newBlockAttemptCallback: (blockHeader: EthereumBlockHeader, ethereumClientService: EthereumClientService, isNewBlock: boolean) => void, onErrorBlockCallback: (ethereumClientService: EthereumClientService, error: Error) => void) {
 		this.requestHandler = requestHandler
-		this.newBlockCallback = newBlockCallback
+		this.newBlockAttemptCallback = newBlockAttemptCallback
 		this.onErrorBlockCallback = onErrorBlockCallback
     }
 
 	public readonly getRpcNetwork = () => this.requestHandler.getRpcNetwork()
+
+	public getLastKnownCachedBlockOrUndefined = () => this.cachedBlock
 
 	public getCachedBlock() {
 		if (this.cleanedUp === false) {
@@ -70,10 +72,8 @@ export class EthereumClientService {
 			if (this.cacheRefreshTimer === undefined) return
 			const newBlock = EthereumBlockHeader.parse(response)
 			console.log(`Current block number: ${ newBlock.number }`)
-			if (this.cachedBlock?.number != newBlock.number) {
-				this.cachedBlock = newBlock
-				this.newBlockCallback(newBlock, this)
-			}
+			this.cachedBlock = newBlock
+			this.newBlockAttemptCallback(newBlock, this, this.cachedBlock?.number != newBlock.number)
 		} catch(error) {
 			if (error instanceof Error) {
 				return this.onErrorBlockCallback(this, error)
