@@ -9,7 +9,7 @@ import { changeActiveAddress, changeMakeMeRich, changePage, resetSimulation, con
 import { WebsiteCreatedEthereumUnsignedTransaction, SimulationState, RpcEntry, RpcNetwork } from '../utils/visualizer-types.js'
 import { AddressBookEntry, Website, TabConnection, WebsiteSocket, WebsiteTabConnections } from '../utils/user-interface-types.js'
 import { interceptorAccessMetadataRefresh, requestAccessFromUser, updateInterceptorAccessViewWithPendingRequests } from './windows/interceptorAccess.js'
-import { ICON_NOT_ACTIVE, MAKE_YOU_RICH_TRANSACTION, METAMASK_ERROR_NOT_CONNECTED_TO_CHAIN, METAMASK_ERROR_USER_REJECTED_REQUEST } from '../utils/constants.js'
+import { ICON_NOT_ACTIVE, MAKE_YOU_RICH_TRANSACTION, METAMASK_ERROR_FAILED_TO_PARSE_REQUEST, METAMASK_ERROR_NOT_AUTHORIZED, METAMASK_ERROR_NOT_CONNECTED_TO_CHAIN } from '../utils/constants.js'
 import { PriceEstimator } from '../simulation/priceEstimator.js'
 import { sendActiveAccountChangeToApprovedWebsitePorts, sendMessageToApprovedWebsitePorts, updateWebsiteApprovalAccesses, verifyAccess } from './accessManagement.js'
 import { findAddressInfo, getAddressBookEntriesForVisualiser } from './metadataUtils.js'
@@ -20,7 +20,7 @@ import { assertNever, assertUnreachable } from '../utils/typescript.js'
 import { EthereumClientService } from '../simulation/services/EthereumClientService.js'
 import { appendTransaction, copySimulationState, getNonPrependedSimulatedTransactions, getNonceFixedSimulatedTransactions, getWebsiteCreatedEthereumUnsignedTransactions, setPrependTransactionsQueue, setSimulationTransactions } from '../simulation/services/SimulationModeEthereumClientService.js'
 import { Semaphore } from '../utils/semaphore.js'
-import { isFailedToFetchError } from '../utils/errors.js'
+import { FetchResponseError, JsonRpcResponseError, isFailedToFetchError } from '../utils/errors.js'
 import { sendSubscriptionMessagesForNewBlock } from '../simulation/services/EthereumSubscriptionService.js'
 import { formSimulatedAndVisualizedTransaction } from '../components/formVisualizerResults.js'
 import { updateConfirmTransactionViewWithPendingTransaction } from './windows/confirmTransaction.js'
@@ -172,7 +172,7 @@ export async function getPrependTrasactions(ethereumClientService: EthereumClien
 	return [{
 		transaction: {
 			from: donatorAddress,
-			chainId: settings.rpcNetwork.chainId,
+			chainId: chainId,
 			nonce: await ethereumClientService.getTransactionCount(donatorAddress),
 			to: activeAddress,
 			...MAKE_YOU_RICH_TRANSACTION.transaction,
@@ -201,8 +201,8 @@ async function handleRPCRequest(
 		return {
 			method: request.method,
 			error: {
-				message: maybeParsedRequest.fullError === undefined ? 'Unknown parsing error' : maybeParsedRequest.fullError.toString(),
-				code: 400,
+				message: maybeParsedRequest.fullError === undefined ? 'Failed to parse RPC request ' : maybeParsedRequest.fullError.toString(),
+				code: METAMASK_ERROR_FAILED_TO_PARSE_REQUEST,
 			}
 		}
 	}
@@ -346,12 +346,12 @@ export async function changeActiveAddressAndChainAndResetSimulation(
 			const ethereumClientService = simulator.ethereum
 			await updateSimulationState(async () => {
 				const simulationState = (await getSimulationResults()).simulationState
-				const prependQueue = await getPrependTrasactions(ethereumClientService, updatedSettings, await getMakeMeRich())
+				const prependQueue = await getPrependTrasactions(ethereumClientService, await getSettings(), await getMakeMeRich())
 				return await setPrependTransactionsQueue(ethereumClientService, simulationState, prependQueue)
 			}, updatedSettings.activeSimulationAddress)
 		}
 		// inform website about this only after we have updated simulation, as they often query the balance right after
-		sendActiveAccountChangeToApprovedWebsitePorts(websiteTabConnections, updatedSettings)
+		sendActiveAccountChangeToApprovedWebsitePorts(websiteTabConnections, await getSettings())
 	})
 }
 
@@ -405,6 +405,16 @@ export async function handleContentScriptMessage(websiteTabConnections: WebsiteT
 	} catch (error) {
 		console.log(request)
 		console.warn(error)
+		if (error instanceof JsonRpcResponseError || error instanceof FetchResponseError) {
+			postMessageIfStillConnected(websiteTabConnections, socket, {
+				...request,
+				error: {
+					code: error.code,
+					message: error.message,
+					data: JSON.stringify(error.data)
+				},
+			})
+		}
 		if (error instanceof Error) {
 			if (isFailedToFetchError(error)) {
 				return postMessageIfStillConnected(websiteTabConnections, socket, {
@@ -428,7 +438,7 @@ export function refuseAccess(websiteTabConnections: WebsiteTabConnections, socke
 	return postMessageIfStillConnected(websiteTabConnections, socket, {
 		...request,
 		error: {
-			code: METAMASK_ERROR_USER_REJECTED_REQUEST,
+			code: METAMASK_ERROR_NOT_AUTHORIZED,
 			message: 'User refused access to the wallet'
 		},
 	})
@@ -552,7 +562,7 @@ async function popupMessageHandler(
 		return {
 			error: {
 				message: maybeParsedRequest.fullError === undefined ? 'Unknown parsing error' : maybeParsedRequest.fullError.toString(),
-				code: 400,
+				code: METAMASK_ERROR_FAILED_TO_PARSE_REQUEST,
 			}
 		}
 	}

@@ -133,11 +133,11 @@ export const SimulatedAndVisualizedSimpleTokenTransferTransaction = funtypes.Int
 )
 
 export function isSimpleTokenTransfer(transaction: SimulatedAndVisualizedTransaction): transaction is SimulatedAndVisualizedSimpleTokenTransferTransaction {
-	if ( transaction.transaction.value === 0n
+	if (transaction.transaction.value === 0n
 		&& transaction.tokenResults.length === 1
 		&& transaction.tokenResults[0].isApproval == false
 		&& transaction.tokenResults[0].from.address !== transaction.tokenResults[0].to.address
-		&& transaction.tokenResults[0].from === transaction.transaction.from) return true
+		&& transaction.tokenResults[0].from.address === transaction.transaction.from.address) return true
 	return false
 }
 const getSimpleTokenTransferOrUndefined = createGuard<SimulatedAndVisualizedTransaction, SimulatedAndVisualizedSimpleTokenTransferTransaction>((simTx) => isSimpleTokenTransfer(simTx) ? simTx : undefined)

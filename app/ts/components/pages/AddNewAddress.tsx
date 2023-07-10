@@ -3,7 +3,7 @@ import { StateUpdater, useEffect, useState } from 'preact/hooks'
 import { AddAddressParam, AddressBookEntryCategory } from '../../utils/user-interface-types.js'
 import { Notice } from '../subcomponents/Error.js'
 import { getIssueWithAddressString } from '../ui-utils.js'
-import { checksummedAddress } from '../../utils/bigint.js'
+import { checksummedAddress, stringToAddress } from '../../utils/bigint.js'
 import { sendPopupMessageToBackgroundPage } from '../../background/backgroundUtils.js'
 import { AddressIcon } from '../subcomponents/address.js'
 import { assertUnreachable } from '../../utils/typescript.js'
@@ -23,16 +23,8 @@ type IncompleteAddressIconParams = {
 }
 
 export function IncompleteAddressIcon({ addressInput, logoUri }: IncompleteAddressIconParams) {
-	if (addressInput !== undefined && ethers.isAddress(addressInput.trim())) {
-		return <AddressIcon
-			address = { BigInt(addressInput) }
-			logoUri = { logoUri }
-			isBig = { true }
-			backgroundColor = { 'var(--text-color)' }
-		/>
-	}
 	return <AddressIcon
-		address = { undefined }
+		address = { stringToAddress(addressInput) }
 		logoUri = { logoUri }
 		isBig = { true }
 		backgroundColor = { 'var(--text-color)' }
@@ -139,7 +131,8 @@ export function AddNewAddress(param: AddAddressParam) {
 	const [addressType, setAddressType] = useState<AddressBookEntryCategory>('addressInfo')
 
 	async function add() {
-		if (addressInput === undefined) return
+		const inputedAddressBigInt = stringToAddress(addressInput)
+		if (inputedAddressBigInt === undefined) return
 		if (!areInputValid()) return
 
 		param.close()
@@ -152,8 +145,8 @@ export function AddNewAddress(param: AddAddressParam) {
 					method: 'popup_addOrModifyAddressBookEntry',
 					data: {
 						type: 'contact',
-						name: nameInput ? nameInput : ethers.getAddress(addressInput),
-						address: BigInt(addressInput),
+						name: nameInput ? nameInput : checksummedAddress(inputedAddressBigInt),
+						address: inputedAddressBigInt,
 					}
 				} )
 				break
@@ -163,8 +156,8 @@ export function AddNewAddress(param: AddAddressParam) {
 					method: 'popup_addOrModifyAddressBookEntry',
 					data: {
 						type: 'addressInfo',
-						name: nameInput ? nameInput : ethers.getAddress(addressInput),
-						address: BigInt(addressInput),
+						name: nameInput ? nameInput : checksummedAddress(inputedAddressBigInt),
+						address: inputedAddressBigInt,
 						askForAddressAccess: askForAddressAccess,
 					}
 				} )
@@ -179,10 +172,10 @@ export function AddNewAddress(param: AddAddressParam) {
 	}
 
 	async function createAndSwitch() {
-		if (addressInput === undefined) return
-		if (!areInputValid()) return
+		const inputedAddressBigInt = stringToAddress(addressInput)
+		if (inputedAddressBigInt === undefined) return
 		await add()
-		if (param.setActiveAddressAndInformAboutIt !== undefined) await param.setActiveAddressAndInformAboutIt(BigInt(addressInput))
+		if (param.setActiveAddressAndInformAboutIt !== undefined) await param.setActiveAddressAndInformAboutIt(inputedAddressBigInt)
 	}
 
 	useEffect(() => {
@@ -202,8 +195,7 @@ export function AddNewAddress(param: AddAddressParam) {
 	}, [param.addingNewAddress, param.activeAddress])
 
 	function areInputValid() {
-		if (addressInput === undefined) return false
-		if (!ethers.isAddress(addressInput)) return false
+		if (stringToAddress(addressInput) === undefined) return false
 		if (nameInput !== undefined && nameInput.length > 42) return false
 		return true
 	}
@@ -212,10 +204,10 @@ export function AddNewAddress(param: AddAddressParam) {
 		setAddressInput(input)
 
 		if (input === undefined) return setErrorString(undefined)
+		const trimmed = input.trim()
+		if (ethers.isAddress(trimmed)) return setErrorString(undefined)
 
-		if (ethers.isAddress(input)) return setErrorString(undefined)
-
-		const issue = getIssueWithAddressString(input)
+		const issue = getIssueWithAddressString(trimmed)
 		if (issue === undefined) return setErrorString('Unknown issue.')
 		return setErrorString(`${ issue }`)
 	}
@@ -273,7 +265,7 @@ export function AddNewAddress(param: AddAddressParam) {
 				</div>
 			</section>
 			<footer class = 'modal-card-foot window-footer' style = 'border-bottom-left-radius: unset; border-bottom-right-radius: unset; border-top: unset; padding: 10px;'>
-				{ param.setActiveAddressAndInformAboutIt === undefined || addressInput === undefined || activeAddress === BigInt(addressInput) ? <></> : <button class = 'button is-success is-primary' onClick = { createAndSwitch } disabled = { ! (areInputValid()) }> { param.addingNewAddress.addingAddress ? 'Create and switch' : 'Modify and switch' } </button> }
+				{ param.setActiveAddressAndInformAboutIt === undefined || addressInput === undefined || activeAddress === stringToAddress(addressInput) ? <></> : <button class = 'button is-success is-primary' onClick = { createAndSwitch } disabled = { ! (areInputValid()) }> { param.addingNewAddress.addingAddress ? 'Create and switch' : 'Modify and switch' } </button> }
 				<button class = 'button is-success is-primary' onClick = { add } disabled = { ! (areInputValid()) }> { param.addingNewAddress.addingAddress ? 'Create' : 'Modify' } </button>
 				<button class = 'button is-primary' style = 'background-color: var(--negative-color)' onClick = { param.close }>Cancel</button>
 			</footer>
