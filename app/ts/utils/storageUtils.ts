@@ -18,7 +18,7 @@ type StorageKey = 'activeSigningAddress'
 	| 'signerName'
 	| 'currentTabId'
 	| `tabState_${ number }`
-	| 'isConnectedToNode'
+	| 'rpcConnectionStatus'
 	| 'ethereumSubscriptions'
 	| 'useTabsInsteadOfPopup'
 	| 'RpcEntries'

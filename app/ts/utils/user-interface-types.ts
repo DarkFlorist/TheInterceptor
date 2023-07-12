@@ -3,7 +3,7 @@ import * as funtypes from 'funtypes'
 import { EthereumAddress, EthereumQuantity, LiteralConverterParserFactory } from './wire-types.js'
 import { SimulatedAndVisualizedTransaction, SimulationAndVisualisationResults, RpcEntry, RpcNetwork, RpcEntries } from './visualizer-types.js'
 import { IdentifiedSwapWithMetadata } from '../components/simulationExplaining/SwapTransactions.js'
-import { IsConnected, Page, TabIconDetails, WebsiteAccessArray } from './interceptor-messages.js'
+import { RpcConnectionStatus, Page, TabIconDetails, WebsiteAccessArray } from './interceptor-messages.js'
 
 export type SignerName = funtypes.Static<typeof SignerName>
 export const SignerName = funtypes.Union(
@@ -145,7 +145,7 @@ export type HomeParams = {
 	currentBlockNumber: bigint | undefined,
 	signerName: SignerName,
 	renameAddressCallBack: RenameAddressCallBack,
-	isConnected: IsConnected,
+	rpcConnectionStatus: RpcConnectionStatus,
 	rpcEntries: RpcEntries,
 }
 
@@ -188,7 +188,7 @@ export type SimulationStateParam = {
 	disableReset: boolean,
 	resetSimulation: () => void,
 	removeTransactionHashes: bigint[],
-	isConnected: IsConnected,
+	rpcConnectionStatus: RpcConnectionStatus,
 }
 
 export type LogAnalysisParams = {

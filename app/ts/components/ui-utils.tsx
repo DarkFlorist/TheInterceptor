@@ -70,8 +70,10 @@ export function convertNumberToCharacterRepresentationIfSmallEnough(num: number)
 	return convertTens(num)
 }
 
-export function humanReadableDate(timeInSeconds: bigint) {
-	return new Date(Number(timeInSeconds) * 1000).toISOString().split('T')[0]
+export const humanReadableDate = (date: Date) => date.toISOString()
+
+export function humanReadableDateFromSeconds(timeInSeconds: bigint) {
+	return humanReadableDate(new Date(Number(timeInSeconds) * 1000))
 }
 
 export type PopupOrTabId = {
