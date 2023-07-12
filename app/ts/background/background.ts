@@ -2,7 +2,7 @@ import { ConfirmTransactionTransactionSingleVisualization, InpageScriptRequest, 
 import 'webextension-polyfill'
 import { Simulator } from '../simulation/simulator.js'
 import { EthereumBlockHeader, EthereumJsonRpcRequest, SendRawTransaction, SendTransactionParams } from '../utils/wire-types.js'
-import { clearTabStates, getEthDonator, getSignerName, getSimulationResults, removeTabState, setRpcConnectionStatus, updateSimulationResults, updateTabState } from './storageVariables.js'
+import { clearTabStates, getEthDonator, getSignerName, getSimulationResults, removeTabState, setRpcConnectionStatus, setSimulationUpdatingState, updateSimulationResults, updateTabState } from './storageVariables.js'
 import { changeSimulationMode, getSettings, getMakeMeRich } from './settings.js'
 import { blockNumber, call, chainId, estimateGas, gasPrice, getAccounts, getBalance, getBlockByNumber, getCode, getLogs, getPermissions, getSimulationStack, getTransactionByHash, getTransactionCount, getTransactionReceipt, personalSign, sendRawTransaction, sendTransaction, subscribe, switchEthereumChain, unsubscribe } from './simulationModeHanders.js'
 import { changeActiveAddress, changeMakeMeRich, changePage, resetSimulation, confirmDialog, refreshSimulation, removeTransaction, requestAccountsFromSigner, refreshPopupConfirmTransactionSimulation, confirmPersonalSign, confirmRequestAccess, changeInterceptorAccess, changeChainDialog, popupChangeActiveRpc, enableSimulationMode, addOrModifyAddressInfo, getAddressBookData, removeAddressBookEntry, openAddressBook, homeOpened, interceptorAccessChangeAddressOrRefresh, refreshPopupConfirmTransactionMetadata, changeSettings, importSettings, exportSettings, setNewRpcList } from './popupMessageHandlers.js'
@@ -68,18 +68,22 @@ async function visualizeSimulatorState(simulationState: SimulationState, simulat
 
 export async function updateSimulationState(getUpdatedSimulationState: () => Promise<SimulationState | undefined>, activeAddress: bigint | undefined) {
 	if (simulator === undefined) return
-	const simId = (await getSimulationResults()).simulationId + 1
+	const simulationId = (await getSimulationResults()).simulationId + 1
+	await setSimulationUpdatingState(simulationId, 'updating')
+	sendPopupMessageToOpenWindows({ method: 'popup_simulation_state_changed', data: { simulationId } })
 	try {
 		const updatedSimulationState = await getUpdatedSimulationState()
 		if (updatedSimulationState !== undefined) {
 			await updateSimulationResults({
-				simulationId: simId,
+				simulationUpdatingState: 'done',
+				simulationId,
 				...await visualizeSimulatorState(updatedSimulationState, simulator),
 				activeAddress: activeAddress,
 			})
 		} else {
 			await updateSimulationResults({
-				simulationId: simId,
+				simulationUpdatingState: 'done',
+				simulationId,
 				addressBookEntries: [],
 				tokenPrices: [],
 				visualizerResults: [],
@@ -87,12 +91,13 @@ export async function updateSimulationState(getUpdatedSimulationState: () => Pro
 				activeAddress: activeAddress,
 			})
 		}
-		sendPopupMessageToOpenWindows({ method: 'popup_simulation_state_changed' })
+		sendPopupMessageToOpenWindows({ method: 'popup_simulation_state_changed', data: { simulationId } })
 		return updatedSimulationState
 	} catch (error) {
 		if (error instanceof Error) {
 			if (isFailedToFetchError(error)) {
-				await sendPopupMessageToOpenWindows({ method: 'popup_failed_to_update_simulation_state' })
+				await setSimulationUpdatingState(simulationId, 'failed')
+				await sendPopupMessageToOpenWindows({ method: 'popup_simulation_state_changed', data: { simulationId }  })
 				return undefined
 			}
 		}

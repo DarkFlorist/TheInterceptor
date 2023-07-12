@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'preact/hooks'
 import { defaultAddresses } from '../background/settings.js'
-import { SimulatedAndVisualizedTransaction, SimulationAndVisualisationResults, SimulationState, TokenPriceEstimate, RpcEntry, RpcNetwork, RpcEntries } from '../utils/visualizer-types.js'
+import { SimulatedAndVisualizedTransaction, SimulationAndVisualisationResults, SimulationState, TokenPriceEstimate, RpcEntry, RpcNetwork, RpcEntries, SimulationUpdatingState } from '../utils/visualizer-types.js'
 import { ChangeActiveAddress } from './pages/ChangeActiveAddress.js'
 import { Home } from './pages/Home.js'
 import { AddressInfo, AddressInfoEntry, AddressBookEntry, AddingNewAddressType, SignerName, AddressBookEntries } from '../utils/user-interface-types.js'
@@ -39,6 +39,7 @@ export function App() {
 	const [useTabsInsteadOfPopup, setUseTabsInsteadOfPopup] = useState<boolean | undefined>(undefined)
 	const [currentTabId, setCurrentTabId] = useState<number | undefined>(undefined)
 	const [rpcEntries, setRpcEntries] = useState<RpcEntries>([])
+	const [simulationUpdatingState, setSimulationUpdatingState] = useState<SimulationUpdatingState | undefined>(undefined)
 
 	async function setActiveAddressAndInformAboutIt(address: bigint | 'signer') {
 		setUseSignersAddressAsActiveAddress(address === 'signer')
@@ -114,6 +115,7 @@ export function App() {
 					data.simulation.simulatedAndVisualizedTransactions,
 					data.simulation.activeAddress
 				)
+				setSimulationUpdatingState(data.simulation.simulationUpdatingState)
 				setMakeMeRich(data.makeMeRich)
 				setSignerName(data.signerName)
 				setCurrentBlockNumber(data.currentBlockNumber)
@@ -235,6 +237,7 @@ export function App() {
 							renameAddressCallBack = { renameAddressCallBack }
 							rpcConnectionStatus = { rpcConnectionStatus }
 							rpcEntries = { rpcEntries }
+							simulationUpdatingState = { simulationUpdatingState }
 						/>
 
 						<div class = { `modal ${ appPage !== 'Home' ? 'is-active' : ''}` }>

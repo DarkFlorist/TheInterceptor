@@ -3,7 +3,7 @@ import { PendingAccessRequestArray, PendingChainChangeConfirmationPromise, Pendi
 import { Semaphore } from '../utils/semaphore.js'
 import { browserStorageLocalSet, browserStorageLocalSingleGetWithDefault } from '../utils/storageUtils.js'
 import { SignerName } from '../utils/user-interface-types.js'
-import { EthereumSubscriptions, SimulationResults, RpcEntries, RpcNetwork } from '../utils/visualizer-types.js'
+import { EthereumSubscriptions, SimulationResults, RpcEntries, RpcNetwork, SimulationUpdatingState } from '../utils/visualizer-types.js'
 import * as funtypes from 'funtypes'
 import { defaultRpcs, getSettings } from './settings.js'
 import { UniqueRequestIdentifier, doesUniqueRequestIdentifiersMatch } from '../utils/requests.js'
@@ -76,6 +76,7 @@ export async function setPendingPersonalSignPromise(promise: PendingPersonalSign
 export async function getSimulationResults() {
 	const results = await browserStorageLocalSingleGetWithDefault('simulationResults', undefined)
 	const emptyResults = {
+		simulationUpdatingState: 'done' as const,
 		simulationId: 0,
 		simulationState: undefined,
 		visualizerResults: undefined,
@@ -100,6 +101,14 @@ export async function updateSimulationResults(newResults: SimulationResults) {
 		const oldResults = await getSimulationResults()
 		if (newResults.simulationId < oldResults.simulationId) return // do not update state with older state
 		return await browserStorageLocalSet('simulationResults', SimulationResults.serialize(newResults) as string)
+	})
+}
+
+export async function setSimulationUpdatingState(simulationId: number, simulationUpdatingState: SimulationUpdatingState) {
+	await simulationResultsSemaphore.execute(async () => {
+		const oldResults = await getSimulationResults()
+		if (simulationId < oldResults.simulationId) return // do not update state with older state
+		return await browserStorageLocalSet('simulationResults', SimulationResults.serialize({ ...oldResults, simulationId, simulationUpdatingState }) as string)
 	})
 }
 

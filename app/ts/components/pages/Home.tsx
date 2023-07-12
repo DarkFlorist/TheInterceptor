@@ -1,6 +1,6 @@
 import { HomeParams, AddressInfo, FirstCardParams, SimulationStateParam, SignerName } from '../../utils/user-interface-types.js'
 import { useEffect, useState } from 'preact/hooks'
-import { SimulatedAndVisualizedTransaction, SimulationAndVisualisationResults, RpcEntry, RpcNetwork, RpcEntries } from '../../utils/visualizer-types.js'
+import { SimulatedAndVisualizedTransaction, SimulationAndVisualisationResults, RpcEntry, RpcNetwork, RpcEntries, SimulationUpdatingState } from '../../utils/visualizer-types.js'
 import { ActiveAddress, findAddressInfo } from '../subcomponents/address.js'
 import { SimulationSummary } from '../simulationExplaining/SimulationSummary.js'
 import { ChainSelector } from '../subcomponents/ChainSelector.js'
@@ -176,22 +176,24 @@ function SimulationResults(param: SimulationStateParam) {
 			</div>
 		</p>
 
-		<Transactions
-			simulationAndVisualisationResults = { param.simulationAndVisualisationResults }
-			removeTransaction = { param.removeTransaction }
-			activeAddress = { param.simulationAndVisualisationResults.activeAddress }
-			renameAddressCallBack = { param.renameAddressCallBack }
-			removeTransactionHashes = { param.removeTransactionHashes }
-		/>
-		{ param.removeTransactionHashes.length > 0
-			? <></>
-			: <SimulationSummary
+		<div class = { param.simulationUpdatingState === 'updating' || param.simulationUpdatingState === 'failed' ? 'blur' : '' }>
+			<Transactions
 				simulationAndVisualisationResults = { param.simulationAndVisualisationResults }
-				currentBlockNumber = { param.currentBlockNumber }
+				removeTransaction = { param.removeTransaction }
+				activeAddress = { param.simulationAndVisualisationResults.activeAddress }
 				renameAddressCallBack = { param.renameAddressCallBack }
-				rpcConnectionStatus = { param.rpcConnectionStatus }
+				removeTransactionHashes = { param.removeTransactionHashes }
 			/>
-		}
+			{ param.removeTransactionHashes.length > 0
+				? <></>
+				: <SimulationSummary
+					simulationAndVisualisationResults = { param.simulationAndVisualisationResults }
+					currentBlockNumber = { param.currentBlockNumber }
+					renameAddressCallBack = { param.renameAddressCallBack }
+					rpcConnectionStatus = { param.rpcConnectionStatus }
+				/>
+			}
+		</div>
 		<div class = 'content' style = 'height: 0.1px'/>
 	</div>
 }
@@ -236,6 +238,7 @@ export function Home(param: HomeParams) {
 	const [removeTransactionHashes, setRemoveTransactionHashes] = useState<bigint[]>([])
 	const [rpcConnectionStatus, setRpcConnectionStatus] = useState<RpcConnectionStatus>(undefined)
 	const [rpcEntries, setRPCEntries] = useState<RpcEntries>([])
+	const [simulationUpdatingState, setSimulationUpdatingState] = useState<SimulationUpdatingState | undefined>(undefined)
 
 	useEffect(() => {
 		setSimulationAndVisualisationResults(param.simVisResults)
@@ -255,6 +258,7 @@ export function Home(param: HomeParams) {
 		setRemoveTransactionHashes([])
 		setRpcConnectionStatus(param.rpcConnectionStatus)
 		setRPCEntries(param.rpcEntries)
+		setSimulationUpdatingState(param.simulationUpdatingState)
 	}, [param.activeSigningAddress,
 		param.activeSimulationAddress,
 		param.signerAccounts,
@@ -268,6 +272,7 @@ export function Home(param: HomeParams) {
 		param.simVisResults,
 		param.rpcConnectionStatus,
 		param.rpcEntries,
+		param.simulationUpdatingState,
 	])
 
 	function changeActiveAddress() {
@@ -343,6 +348,7 @@ export function Home(param: HomeParams) {
 				renameAddressCallBack = { param.renameAddressCallBack }
 				removeTransactionHashes = { removeTransactionHashes }
 				rpcConnectionStatus = { rpcConnectionStatus }
+				simulationUpdatingState = { simulationUpdatingState }
 			/>
 		}
 	</>
