@@ -49,6 +49,17 @@ const Bytes32Parser: funtypes.ParsedValue<funtypes.String, bigint>['config'] = {
 	},
 }
 
+const Bytes65Parser: funtypes.ParsedValue<funtypes.String, bigint>['config'] = {
+	parse: value => {
+		if (!/^0x([a-fA-F0-9]{130})$/.test(value)) return { success: false, message: `${value} is not a hex string encoded 32 byte value.` }
+		else return { success: true, value: BigInt(value) }
+	},
+	serialize: value => {
+		if (typeof value !== 'bigint') return { success: false, message: `${typeof value} is not a bigint.`}
+		return { success: true, value: `0x${value.toString(16).padStart(130, '0')}` }
+	},
+}
+
 const Bytes256Parser: funtypes.ParsedValue<funtypes.String, bigint>['config'] = {
 	parse: value => {
 		if (!/^0x([a-fA-F0-9]{512})$/.test(value)) return { success: false, message: `${value} is not a hex string encoded 256 byte value.` }
@@ -150,6 +161,9 @@ export type EthereumAddressOrMissing = funtypes.Static<typeof EthereumAddressOrM
 
 export const EthereumBytes32 = funtypes.String.withParser(Bytes32Parser)
 export type EthereumBytes32 = funtypes.Static<typeof EthereumBytes32>
+
+export const EthereumBytes65 = funtypes.String.withParser(Bytes65Parser)
+export type EthereumBytes65 = funtypes.Static<typeof EthereumBytes65>
 
 export const EthereumBytes256 = funtypes.String.withParser(Bytes256Parser)
 export type EthereumBytes256 = funtypes.Static<typeof EthereumBytes256>
@@ -283,14 +297,16 @@ export const EthereumSignedTransactionWithBlockData = funtypes.Intersect(
 	funtypes.Union(
 		EthereumSignedTransactionLegacy,
 		EthereumSignedTransaction2930,
-		funtypes.Intersect(EthereumSignedTransaction1559, funtypes.ReadonlyObject({gasPrice: EthereumQuantity})),
+		funtypes.Intersect(EthereumSignedTransaction1559, funtypes.ReadonlyObject({ gasPrice: EthereumQuantity })),
 	),
 	funtypes.ReadonlyObject({
 		data: EthereumInput,
 		blockHash: funtypes.Union(EthereumBytes32, funtypes.Null),
 		blockNumber: funtypes.Union(EthereumQuantity, funtypes.Null),
 		transactionIndex: funtypes.Union(EthereumQuantity, funtypes.Null),
-		v: EthereumQuantity,
+	}),
+	funtypes.ReadonlyPartial({
+		signature: EthereumBytes65,
 	})
 )
 

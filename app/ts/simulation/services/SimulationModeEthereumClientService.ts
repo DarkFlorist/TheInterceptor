@@ -566,18 +566,17 @@ export const getSimulatedBlockNumber = async (ethereumClientService: EthereumCli
 	return await ethereumClientService.getBlockNumber()
 }
 
-export const getSimulatedTransactionByHash = async (ethereumClientService: EthereumClientService, simulationState: SimulationState | undefined, hash: bigint): Promise<EthereumSignedTransactionWithBlockData|undefined> => {
+export const getSimulatedTransactionByHash = async (ethereumClientService: EthereumClientService, simulationState: SimulationState | undefined, hash: bigint): Promise<EthereumSignedTransactionWithBlockData | undefined> => {
 	// try to see if the transaction is in our queue
 	if (simulationState === undefined) return await ethereumClientService.getTransactionByHash(hash)
 	for (const [index, simulatedTransaction] of simulationState.simulatedTransactions.entries()) {
 		if (hash === simulatedTransaction.signedTransaction.hash) {
-			const v = 'v' in simulatedTransaction.signedTransaction ? simulatedTransaction.signedTransaction.v : (simulatedTransaction.signedTransaction.yParity === 'even' ? 0n : 1n)
 			const additionalParams = {
 				blockHash: getHashOfSimulatedBlock(),
 				blockNumber: await ethereumClientService.getBlockNumber(),
 				transactionIndex: BigInt(index),
 				data: simulatedTransaction.signedTransaction.input,
-				v : v,
+				signature: 378356n, // signature field to fix ethers. TODO, remove when ethers is fixed
 			}
 			if ('gasPrice' in simulatedTransaction.signedTransaction) {
 				return {
