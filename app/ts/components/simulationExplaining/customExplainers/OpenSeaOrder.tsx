@@ -4,7 +4,7 @@ import { Token721AmountField, TokenOrEthSymbol, TokenOrEthValue } from '../../su
 import { SmallAddress } from '../../subcomponents/address.js'
 import { bytes32String } from '../../../utils/bigint.js'
 import { ArrowIcon } from '../../subcomponents/icons.js'
-import { CellElement, humanReadableDate } from '../../ui-utils.js'
+import { CellElement, humanReadableDateFromSeconds } from '../../ui-utils.js'
 import { RpcNetwork } from '../../../utils/visualizer-types.js'
 
 const tokenStyle = { 'font-size': '28px', 'font-weight': '500', 'color:': 'var(--text-color)' }
@@ -103,9 +103,9 @@ export function OrderComponentsExtraDetails({ orderComponents, renameAddressCall
 		<CellElement text = 'Counter: '/>
 		<CellElement text = { orderComponents.counter }/>
 		<CellElement text = 'Start time: '/>
-		<CellElement text = { humanReadableDate(orderComponents.startTime) }/>
+		<CellElement text = { humanReadableDateFromSeconds(orderComponents.startTime) }/>
 		<CellElement text = 'End time: '/>
-		<CellElement text = { humanReadableDate(orderComponents.endTime) }/>
+		<CellElement text = { humanReadableDateFromSeconds(orderComponents.endTime) }/>
 		<CellElement text = 'Offerer: '/>
 		<CellElement text = { <SmallAddress addressBookEntry = { orderComponents.offerer } renameAddressCallBack = { renameAddressCallBack } /> } />
 		<CellElement text = 'Order type: '/>
