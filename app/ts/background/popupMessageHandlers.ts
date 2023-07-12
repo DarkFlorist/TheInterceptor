@@ -19,6 +19,7 @@ import { refreshSimulationState, removeTransactionAndUpdateTransactionNonces, re
 import { isFailedToFetchError } from '../utils/errors.js'
 import { formSimulatedAndVisualizedTransaction } from '../components/formVisualizerResults.js'
 import { isJSON } from '../utils/wire-types.js'
+import { doesUniqueRequestIdentifiersMatch } from '../utils/requests.js'
 
 export async function confirmDialog(ethereumClientService: EthereumClientService, websiteTabConnections: WebsiteTabConnections, confirmation: TransactionConfirmation) {
 	await resolvePendingTransaction(ethereumClientService, websiteTabConnections, confirmation)
@@ -193,11 +194,11 @@ export async function refreshPopupConfirmTransactionMetadata(ethereumClientServi
 }
 
 export async function refreshPopupConfirmTransactionSimulation(ethereumClientService: EthereumClientService, { data }: RefreshConfirmTransactionDialogSimulation) {
-	const refreshMessage = await refreshConfirmTransactionSimulation(ethereumClientService, data.activeAddress, data.simulationMode, data.requestId, data.transactionToSimulate, data.tabIdOpenedFrom)
+	const refreshMessage = await refreshConfirmTransactionSimulation(ethereumClientService, data.activeAddress, data.simulationMode, data.uniqueRequestIdentifier, data.transactionToSimulate)
 	const promises = await getPendingTransactions()
 	if (promises.length === 0) return
 	const first = promises[0]
-	if (first.simulationResults.data.requestId !== data.requestId) throw new Error('request id\'s do not match in refreshPopupConfirmTransactionSimulation')
+	if (!doesUniqueRequestIdentifiersMatch(first.simulationResults.data.uniqueRequestIdentifier, data.uniqueRequestIdentifier)) throw new Error('request id\'s do not match in refreshPopupConfirmTransactionSimulation')
 	return await sendPopupMessageToOpenWindows({
 		method: 'popup_update_confirm_transaction_dialog',
 		data: [refreshMessage, ...promises.slice(1).map((p) => p.simulationResults)]

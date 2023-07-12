@@ -195,16 +195,16 @@ export function ConfirmTransaction() {
 		setPendingTransactionAddedNotification(false)
 		const currentWindow = await browser.windows.getCurrent()
 		if (currentWindow.id === undefined) throw new Error('could not get our own Id!')
-		if (pendingTransactions.length === 0) await tryFocusingTabOrWindow({ type: 'tab', id: dialogState.data.tabIdOpenedFrom })
-		await sendPopupMessageToBackgroundPage({ method: 'popup_confirmDialog', data: { requestId: dialogState.data.requestId, accept: true, windowId: currentWindow.id } })
+		if (pendingTransactions.length === 0) await tryFocusingTabOrWindow({ type: 'tab', id: dialogState.data.uniqueRequestIdentifier.requestSocket.tabId })
+		await sendPopupMessageToBackgroundPage({ method: 'popup_confirmDialog', data: { uniqueRequestIdentifier: dialogState.data.uniqueRequestIdentifier, accept: true, windowId: currentWindow.id } })
 	}
 	async function reject() {
 		if (dialogState === undefined) throw new Error('dialogState is not set')
 		setPendingTransactionAddedNotification(false)
 		const currentWindow = await browser.windows.getCurrent()
 		if (currentWindow.id === undefined) throw new Error('could not get our own Id!')
-		if (pendingTransactions.length === 0) await tryFocusingTabOrWindow({ type: 'tab', id: dialogState.data.tabIdOpenedFrom })
-		await sendPopupMessageToBackgroundPage({ method: 'popup_confirmDialog', data: { requestId: dialogState.data.requestId, accept: false, windowId: currentWindow.id } })
+		if (pendingTransactions.length === 0) await tryFocusingTabOrWindow({ type: 'tab', id: dialogState.data.uniqueRequestIdentifier.requestSocket.tabId })
+		await sendPopupMessageToBackgroundPage({ method: 'popup_confirmDialog', data: { uniqueRequestIdentifier: dialogState.data.uniqueRequestIdentifier, accept: false, windowId: currentWindow.id } })
 	}
 	const refreshMetadata = () => {
 		if (dialogState === undefined || dialogState.state === 'failed') return
