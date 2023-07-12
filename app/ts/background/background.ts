@@ -471,7 +471,6 @@ async function onContentScriptConnected(port: browser.runtime.Port, websiteTabCo
 		)) return
 		await pendingRequestLimiter.execute(async () => {
 			const rawMessage = RawInterceptedRequest.parse(payload.data)
-			console.log(rawMessage.method)
 			const request = {
 				method: rawMessage.method,
 				...'params' in rawMessage ? { params: rawMessage.params } : {},
