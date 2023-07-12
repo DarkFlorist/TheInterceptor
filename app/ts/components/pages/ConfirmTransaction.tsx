@@ -12,8 +12,8 @@ import { ErrorCheckBox } from '../subcomponents/Error.js'
 import { QuarantineCodes, SenderReceiver, TransactionImportanceBlock } from '../simulationExplaining/Transactions.js'
 import { identifyTransaction } from '../simulationExplaining/identifyTransaction.js'
 import { DinoSaysNotification } from '../subcomponents/DinoSays.js'
-import { tryFocusingTab } from '../ui-utils.js'
 import { NetworkErrors } from './Home.js'
+import { tryFocusingTabOrWindow } from '../ui-utils.js'
 
 type UnderTransactionsParams = {
 	pendingTransactions: ConfirmTransactionTransactionSingleVisualizationArray
@@ -194,7 +194,7 @@ export function ConfirmTransaction() {
 		setPendingTransactionAddedNotification(false)
 		const currentWindow = await browser.windows.getCurrent()
 		if (currentWindow.id === undefined) throw new Error('could not get our own Id!')
-		if (pendingTransactions.length === 0) await tryFocusingTab(dialogState.data.tabIdOpenedFrom)
+		if (pendingTransactions.length === 0) await tryFocusingTabOrWindow({ type: 'tab', id: dialogState.data.tabIdOpenedFrom })
 		await sendPopupMessageToBackgroundPage({ method: 'popup_confirmDialog', data: { requestId: dialogState.data.requestId, accept: true, windowId: currentWindow.id } })
 	}
 	async function reject() {
@@ -202,7 +202,7 @@ export function ConfirmTransaction() {
 		setPendingTransactionAddedNotification(false)
 		const currentWindow = await browser.windows.getCurrent()
 		if (currentWindow.id === undefined) throw new Error('could not get our own Id!')
-		if (pendingTransactions.length === 0) await tryFocusingTab(dialogState.data.tabIdOpenedFrom)
+		if (pendingTransactions.length === 0) await tryFocusingTabOrWindow({ type: 'tab', id: dialogState.data.tabIdOpenedFrom })
 		await sendPopupMessageToBackgroundPage({ method: 'popup_confirmDialog', data: { requestId: dialogState.data.requestId, accept: false, windowId: currentWindow.id } })
 	}
 	const refreshMetadata = () => {
@@ -234,7 +234,7 @@ export function ConfirmTransaction() {
 		const identified = identifyTransaction(tx)
 
 		return <div style = 'display: flex; flex-direction: row;'>
-			<button className = 'button is-primary is-danger button-overflow dialog-button-left' onClick = { reject} >
+			<button className = 'button is-primary is-danger button-overflow dialog-button-left' onClick = { reject } >
 				{ identified.rejectAction }
 			</button>
 			<button className = 'button is-primary button-overflow dialog-button-right' onClick = { approve } disabled = { isConfirmDisabled() }>

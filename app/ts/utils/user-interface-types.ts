@@ -1,7 +1,7 @@
 import { StateUpdater } from 'preact/hooks'
 import * as funtypes from 'funtypes'
 import { EthereumAddress, EthereumQuantity, LiteralConverterParserFactory } from './wire-types.js'
-import { SimulatedAndVisualizedTransaction, SimulationAndVisualisationResults, RpcEntry, RpcNetwork } from './visualizer-types.js'
+import { SimulatedAndVisualizedTransaction, SimulationAndVisualisationResults, RpcEntry, RpcNetwork, RpcEntries } from './visualizer-types.js'
 import { IdentifiedSwapWithMetadata } from '../components/simulationExplaining/SwapTransactions.js'
 import { RpcConnectionStatus, Page, TabIconDetails, WebsiteAccessArray } from './interceptor-messages.js'
 
@@ -146,6 +146,7 @@ export type HomeParams = {
 	signerName: SignerName,
 	renameAddressCallBack: RenameAddressCallBack,
 	rpcConnectionStatus: RpcConnectionStatus,
+	rpcEntries: RpcEntries,
 }
 
 export type ChangeActiveAddressParam = {
@@ -176,6 +177,7 @@ export type FirstCardParams = {
 	tabIconDetails: TabIconDetails,
 	signerName: SignerName,
 	renameAddressCallBack: RenameAddressCallBack,
+	rpcEntries: RpcEntries,
 }
 
 export type SimulationStateParam = {
@@ -210,3 +212,9 @@ export type TabConnection = {
 }
 
 export type WebsiteTabConnections = Map<number, TabConnection>
+
+export type WindowOrTabId = funtypes.Static<typeof WindowOrTabId>
+export const WindowOrTabId = funtypes.ReadonlyObject({
+	id: funtypes.Number,
+	type: funtypes.Union(funtypes.Literal('tab'), funtypes.Literal('window'))
+})

@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'preact/hooks'
 import { dataStringWith0xStart, stringToUint8Array } from '../../utils/bigint.js'
-import { AddingNewAddressType, AddressBookEntry, RenameAddressCallBack, SignerName } from '../../utils/user-interface-types.js'
+import { AddingNewAddressType, AddressBookEntry, RenameAddressCallBack } from '../../utils/user-interface-types.js'
 import Hint from '../subcomponents/Hint.js'
 import { ErrorCheckBox, Error as ErrorComponent} from '../subcomponents/Error.js'
 import { MOCK_PRIVATE_KEYS_ADDRESS, getChainName } from '../../utils/constants.js'
@@ -18,7 +18,7 @@ import { PersonalSignRequestData, PersonalSignRequestDataPermit, PersonalSignReq
 import { OrderComponents, OrderComponentsExtraDetails } from '../simulationExplaining/customExplainers/OpenSeaOrder.js'
 import { Ether } from '../subcomponents/coins.js'
 import { EnrichedEIP712, EnrichedEIP712Message, GroupedSolidityType } from '../../utils/eip712Parsing.js'
-import { tryFocusingTab, humanReadableDateFromSeconds, CellElement } from '../ui-utils.js'
+import { tryFocusingTabOrWindow, humanReadableDateFromSeconds, CellElement } from '../ui-utils.js'
 
 type SignatureCardParams = {
 	personalSignRequestData: PersonalSignRequestData
@@ -370,15 +370,6 @@ function SignatureCard(params: SignatureCardParams) {
 	</>
 }
 
-type ButtonsParams = {
-	signerName: SignerName
-	personalSignRequestData: PersonalSignRequestData
-	activeAddress: AddressBookEntry
-	renameAddressCallBack: RenameAddressCallBack
-	reject: () => void
-	approve: () => void
-}
-
 export function PersonalSign() {
 	const [addingNewAddress, setAddingNewAddress] = useState<AddingNewAddressType | 'renameAddressModalClosed'> ('renameAddressModalClosed')
 	const [personalSignRequestData, setPersonalSignRequestData] = useState<PersonalSignRequestData | undefined>(undefined)
@@ -392,9 +383,10 @@ export function PersonalSign() {
 			setPersonalSignRequestData(message.data)
 		}
 		browser.runtime.onMessage.addListener(popupMessageListener)
-		sendPopupMessageToBackgroundPage({ method: 'popup_personalSignReadyAndListening' })
 		return () => browser.runtime.onMessage.removeListener(popupMessageListener)
 	})
+
+	useEffect(() => { sendPopupMessageToBackgroundPage({ method: 'popup_personalSignReadyAndListening' }) }, [])
 
 	function refreshMetadata() {
 		if (personalSignRequestData === undefined) return
@@ -403,16 +395,14 @@ export function PersonalSign() {
 
 	async function approve() {
 		if (personalSignRequestData === undefined) throw new Error('personalSignRequestData is missing')
-		await tryFocusingTab(personalSignRequestData.tabIdOpenedFrom)
+		await tryFocusingTabOrWindow({ type: 'tab', id: personalSignRequestData.tabIdOpenedFrom })
 		await sendPopupMessageToBackgroundPage({ method: 'popup_personalSign', data: { requestId: personalSignRequestData.requestId, accept: true } })
-		globalThis.close()
 	}
 
 	async function reject() {
 		if (personalSignRequestData === undefined) throw new Error('personalSignRequestData is missing')
-		await tryFocusingTab(personalSignRequestData.tabIdOpenedFrom)
+		await tryFocusingTabOrWindow({ type: 'tab', id: personalSignRequestData.tabIdOpenedFrom })
 		await sendPopupMessageToBackgroundPage({ method: 'popup_personalSign', data: { requestId: personalSignRequestData.requestId, accept: false } })
-		globalThis.close()
 	}
 
 	function isPossibleToSend(personalSignRequestData: PersonalSignRequestData, activeAddress: bigint) {
@@ -423,22 +413,20 @@ export function PersonalSign() {
 		return !isPossibleToSend(personalSignRequestData, activeAddress) && !forceSend
 	}
 	
-	function Buttons(params: ButtonsParams) {
-		const identified = identifySignature(params.personalSignRequestData)
+	function Buttons() {
+		if (personalSignRequestData === undefined) return <></>
+		const identified = identifySignature(personalSignRequestData)
 	
 		return <div style = 'display: flex; flex-direction: row;'>
-			<button className = 'button is-primary is-danger button-overflow dialog-button-left' onClick = { params.reject} >
+			<button className = 'button is-primary is-danger button-overflow dialog-button-left' onClick = { reject } >
 				{ identified.rejectAction }
 			</button>
 			<button className = 'button is-primary button-overflow dialog-button-right'
-				onClick = { params.approve }
-				disabled = { isConfirmDisabled(params.personalSignRequestData, params.activeAddress.address) }>
-				{ params.personalSignRequestData.simulationMode
+				onClick = { approve }
+				disabled = { isConfirmDisabled(personalSignRequestData, personalSignRequestData.activeAddress.address) }>
+				{ personalSignRequestData.simulationMode
 					? `${ identified.simulationAction }!`
-					: <SignerLogoText { ...{
-						signerName: params.signerName,
-						text: identified.signingAction,
-					}}/>
+					: <SignerLogoText { ...{ signerName: personalSignRequestData.signerName, text: identified.signingAction, } }/>
 				}
 			</button>
 		</div>
@@ -503,14 +491,7 @@ export function PersonalSign() {
 							</div>
 							: <></>
 						}
-						<Buttons
-							signerName = { personalSignRequestData.signerName }
-							personalSignRequestData = { personalSignRequestData }
-							activeAddress = { personalSignRequestData.activeAddress }
-							renameAddressCallBack = { renameAddressCallBack }
-							reject = { reject }
-							approve = { approve }
-						/>
+						<Buttons/>
 					</nav>
 				</div>
 			</Hint>

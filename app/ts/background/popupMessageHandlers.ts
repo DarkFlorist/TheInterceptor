@@ -2,9 +2,9 @@ import { changeActiveAddressAndChainAndResetSimulation, changeActiveRpc, getPrep
 import { getSettings, getMakeMeRich, getUseTabsInsteadOfPopup, setUseTabsInsteadOfPopup, setMakeMeRich, setPage, setUseSignersAddressAsActiveAddress, updateAddressInfos, updateContacts, updateWebsiteAccess, exportSettingsAndAddressBook, ExportedSettings, importSettingsAndAddressBook } from './settings.js'
 import { getPendingTransactions, getCurrentTabId, getOpenedAddressBookTabId, getSignerName, getSimulationResults, getTabState, saveCurrentTabId, setOpenedAddressBookTabId, setRpcList, getRpcList, getPrimaryRpcForChain, getRpcConnectionStatus, setRpcConnectionStatus } from './storageVariables.js'
 import { Simulator } from '../simulation/simulator.js'
-import { ChangeActiveAddress, ChangeMakeMeRich, ChangePage, PersonalSign, RemoveTransaction, RequestAccountsFromSigner, TransactionConfirmation, InterceptorAccess, ChangeInterceptorAccess, ChainChangeConfirmation, EnableSimulationMode, ChangeActiveChain, AddOrEditAddressBookEntry, GetAddressBookData, RemoveAddressBookEntry, RefreshConfirmTransactionDialogSimulation, UserAddressBook, InterceptorAccessRefresh, InterceptorAccessChangeAddress, Settings, RefreshConfirmTransactionMetadata, RefreshPersonalSignMetadata, RefreshInterceptorAccessMetadata, ChangeSettings, ImportSettings, SetRpcList } from '../utils/interceptor-messages.js'
+import { ChangeActiveAddress, ChangeMakeMeRich, ChangePage, PersonalSign, RemoveTransaction, RequestAccountsFromSigner, TransactionConfirmation, InterceptorAccess, ChangeInterceptorAccess, ChainChangeConfirmation, EnableSimulationMode, ChangeActiveChain, AddOrEditAddressBookEntry, GetAddressBookData, RemoveAddressBookEntry, RefreshConfirmTransactionDialogSimulation, UserAddressBook, InterceptorAccessRefresh, InterceptorAccessChangeAddress, Settings, RefreshConfirmTransactionMetadata, RefreshInterceptorAccessMetadata, ChangeSettings, ImportSettings, SetRpcList } from '../utils/interceptor-messages.js'
 import { resolvePendingTransaction } from './windows/confirmTransaction.js'
-import { craftPersonalSignPopupMessage, resolvePersonalSign } from './windows/personalSign.js'
+import { resolvePersonalSign } from './windows/personalSign.js'
 import { getAddressMetadataForAccess, requestAddressChange, resolveInterceptorAccess } from './windows/interceptorAccess.js'
 import { resolveChainChange } from './windows/changeChain.js'
 import { sendMessageToApprovedWebsitePorts, updateWebsiteApprovalAccesses } from './accessManagement.js'
@@ -305,16 +305,16 @@ export async function homeOpened(simulator: Simulator) {
 			signerChain: tabState?.signerChain,
 			signerName: await getSignerName(),
 			currentBlockNumber: blockNumber,
-			settings: await getSettings(),
+			settings: settings,
 			tabIconDetails: tabState?.tabIconDetails,
 			makeMeRich: await getMakeMeRich(),
 			rpcConnectionStatus: await getRpcConnectionStatus(),
 			useTabsInsteadOfPopup: await getUseTabsInsteadOfPopup(),
 			activeSigningAddressInThisTab: tabState?.activeSigningAddress,
 			tabId,
+			rpcEntries: await getRpcList(),
 		}
 	})
-	await sendPopupMessageToOpenWindows({ method: 'popup_update_rpc_list', data: await getRpcList() })
 }
 
 export async function interceptorAccessChangeAddressOrRefresh(websiteTabConnections: WebsiteTabConnections, params: InterceptorAccessChangeAddress | InterceptorAccessRefresh) {
@@ -323,20 +323,6 @@ export async function interceptorAccessChangeAddressOrRefresh(websiteTabConnecti
 
 export async function refreshInterceptorAccessMetadata(params: RefreshInterceptorAccessMetadata) {
 	await refreshInterceptorAccessMetadata(params)
-}
-
-export async function refreshPersonalSignMetadata(ethereumClientService: EthereumClientService, refreshPersonalSignMetadata: RefreshPersonalSignMetadata, settings: Settings) {
-	return await sendPopupMessageToOpenWindows(await craftPersonalSignPopupMessage(
-		ethereumClientService,
-		refreshPersonalSignMetadata.data.originalParams,
-		refreshPersonalSignMetadata.data.tabIdOpenedFrom,
-		refreshPersonalSignMetadata.data.activeAddress.address,
-		settings.userAddressBook,
-		refreshPersonalSignMetadata.data.simulationMode,
-		refreshPersonalSignMetadata.data.requestId,
-		await getSignerName(),
-		refreshPersonalSignMetadata.data.website,
-	))
 }
 
 export async function changeSettings(simulator: Simulator, parsedRequest: ChangeSettings) {

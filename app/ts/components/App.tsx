@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'preact/hooks'
 import { defaultAddresses } from '../background/settings.js'
-import { SimulatedAndVisualizedTransaction, SimulationAndVisualisationResults, SimulationState, TokenPriceEstimate, RpcEntry, RpcNetwork } from '../utils/visualizer-types.js'
+import { SimulatedAndVisualizedTransaction, SimulationAndVisualisationResults, SimulationState, TokenPriceEstimate, RpcEntry, RpcNetwork, RpcEntries } from '../utils/visualizer-types.js'
 import { ChangeActiveAddress } from './pages/ChangeActiveAddress.js'
 import { Home } from './pages/Home.js'
 import { AddressInfo, AddressInfoEntry, AddressBookEntry, AddingNewAddressType, SignerName, AddressBookEntries } from '../utils/user-interface-types.js'
@@ -38,6 +38,7 @@ export function App() {
 	const [rpcConnectionStatus, setRpcConnectionStatus] = useState<RpcConnectionStatus>(undefined)
 	const [useTabsInsteadOfPopup, setUseTabsInsteadOfPopup] = useState<boolean | undefined>(undefined)
 	const [currentTabId, setCurrentTabId] = useState<number | undefined>(undefined)
+	const [rpcEntries, setRpcEntries] = useState<RpcEntries>([])
 
 	async function setActiveAddressAndInformAboutIt(address: bigint | 'signer') {
 		setUseSignersAddressAsActiveAddress(address === 'signer')
@@ -95,6 +96,7 @@ export function App() {
 		const updateHomePage = ({ data }: UpdateHomePage) => {
 			if (data.tabId !== currentTabId && currentTabId !== undefined) return
 			setIsSettingsLoaded((isSettingsLoaded) => {
+				setRpcEntries(data.rpcEntries)
 				updateHomePageSettings(data.settings, !isSettingsLoaded)
 				setCurrentTabId(data.tabId)
 				setActiveSigningAddress(data.activeSigningAddressInThisTab)
@@ -152,9 +154,7 @@ export function App() {
 		return () => browser.runtime.onMessage.removeListener(popupMessageListener)
 	})
 
-	useEffect(() => {
-		sendPopupMessageToBackgroundPage({ method: 'popup_requestNewHomeData' })
-	}, [])
+	useEffect(() => { sendPopupMessageToBackgroundPage({ method: 'popup_requestNewHomeData' }) }, [])
 
 	function setAndSaveAppPage(page: Page) {
 		setAppPage(page)
@@ -234,6 +234,7 @@ export function App() {
 							signerName = { signerName }
 							renameAddressCallBack = { renameAddressCallBack }
 							rpcConnectionStatus = { rpcConnectionStatus }
+							rpcEntries = { rpcEntries }
 						/>
 
 						<div class = { `modal ${ appPage !== 'Home' ? 'is-active' : ''}` }>
