@@ -53,7 +53,7 @@ export const BlockCalls = funtypes.Union(
 
 export type ExecutionSpec383MultiCallParams = funtypes.Static<typeof ExecutionSpec383MultiCallParams>
 export const ExecutionSpec383MultiCallParams = funtypes.ReadonlyObject({
-	method: funtypes.Literal('eth_multicall'),
+	method: funtypes.Literal('eth_multicallV1'),
 	params: funtypes.ReadonlyTuple(funtypes.ReadonlyArray(BlockCalls), EthereumBlockTag)
 })
 
@@ -86,11 +86,11 @@ export const ExecutionSpec383CallResultFailure = funtypes.ReadonlyObject({
 export type ExecutionSpec383CallResultSuccess = funtypes.Static<typeof ExecutionSpec383CallResultSuccess>
 export const ExecutionSpec383CallResultSuccess = funtypes.Intersect(
 	funtypes.ReadonlyObject({
-		status: funtypes.Literal('0x1').withParser(LiteralConverterParserFactory('0x1', 'success' as const)),
 	  	return: EthereumData,
 	  	gasUsed: EthereumQuantitySmall,
 	}),
 	funtypes.ReadonlyPartial({
+		status: funtypes.Literal('0x1').withParser(LiteralConverterParserFactory('0x1', 'success' as const)),
 		logs: funtypes.ReadonlyArray(CallResultLog)
 	})
 )

@@ -209,7 +209,7 @@ export class EthereumClientService {
 	}
 
 	public readonly executionSpec383MultiCall = async (calls: readonly BlockCalls[], blockTag: EthereumBlockTag) => {
-		const call = { method: 'eth_multicall', params: [calls, blockTag] } as const
+		const call = { method: 'eth_multicallV1', params: [calls, blockTag] } as const
 		console.log(calls)
 		console.log(JSON.stringify(ExecutionSpec383MultiCallParams.serialize(call)))
 		const unvalidatedResult = await this.requestHandler.jsonRpcRequest(call)
@@ -235,6 +235,7 @@ export class EthereumClientService {
 		if (multicallResults.length !== 1) throw new Error('Multicalled for one block but did not get one block')
 		return multicallResults[0].calls.map((singleResult) => {
 			switch(singleResult.status) {
+				case undefined:
 				case 'success': return {
 					statusCode: 'success' as const,
 					gasSpent: singleResult.gasUsed,

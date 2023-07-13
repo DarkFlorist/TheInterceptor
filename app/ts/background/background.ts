@@ -236,6 +236,7 @@ async function handleSimulationMode(
 		case 'eth_getTransactionCount': return await getTransactionCount(simulator.ethereum, simulationState, parsedRequest)
 		case 'interceptor_getSimulationStack': return await getSimulationStack(simulationState, parsedRequest)
 		case 'eth_multicall': return { error: { code: 10000, message: 'Cannot call eth_multicall directly' } }
+		case 'eth_multicallV1': return { error: { code: 10000, message: 'Cannot call eth_multicallV1 directly' } }
 		case 'eth_getStorageAt': return { error: { code: 10000, message: 'eth_getStorageAt not implemented' } }
 		case 'eth_getLogs': return await getLogs(simulator.ethereum, simulationState, parsedRequest)
 		case 'eth_sign': return { error: { code: 10000, message: 'eth_sign is deprecated' } }
@@ -309,6 +310,7 @@ async function handleSigningMode(
 		case 'eth_gasPrice':
 		case 'eth_getTransactionCount':
 		case 'eth_multicall':
+		case 'eth_multicallV1':
 		case 'eth_getStorageAt':
 		case 'eth_getLogs':
 		case 'eth_sign':
