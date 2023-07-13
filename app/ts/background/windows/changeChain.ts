@@ -3,13 +3,13 @@ import { METAMASK_ERROR_USER_REJECTED_REQUEST } from '../../utils/constants.js'
 import { Future } from '../../utils/future.js'
 import { ChainChangeConfirmation, SignerChainChangeConfirmation } from '../../utils/interceptor-messages.js'
 import { Website, WebsiteTabConnections } from '../../utils/user-interface-types.js'
-import { SwitchEthereumChainParams } from '../../utils/wire-types.js'
 import { changeActiveRpc } from '../background.js'
 import { getHtmlFile, sendPopupMessageToOpenWindows } from '../backgroundUtils.js'
 import { getChainChangeConfirmationPromise, getRpcNetworkForChain, setChainChangeConfirmationPromise } from '../storageVariables.js'
 import { RpcNetwork } from '../../utils/visualizer-types.js'
 import { InterceptedRequest, UniqueRequestIdentifier, doesUniqueRequestIdentifiersMatch } from '../../utils/requests.js'
 import { replyToInterceptedRequest } from '../messageSending.js'
+import { SwitchEthereumChainParams } from '../../utils/JsonRpc-types.js'
 
 let pendForUserReply: Future<ChainChangeConfirmation> | undefined = undefined
 let pendForSignerReply: Future<SignerChainChangeConfirmation> | undefined = undefined

@@ -18,8 +18,8 @@ import { EthereumClientService } from '../simulation/services/EthereumClientServ
 import { refreshSimulationState, removeTransactionAndUpdateTransactionNonces, resetSimulationState } from '../simulation/services/SimulationModeEthereumClientService.js'
 import { isFailedToFetchError } from '../utils/errors.js'
 import { formSimulatedAndVisualizedTransaction } from '../components/formVisualizerResults.js'
-import { isJSON } from '../utils/wire-types.js'
 import { doesUniqueRequestIdentifiersMatch } from '../utils/requests.js'
+import { isJSON } from '../utils/JsonRpc-types.js'
 
 export async function confirmDialog(ethereumClientService: EthereumClientService, websiteTabConnections: WebsiteTabConnections, confirmation: TransactionConfirmation) {
 	await resolvePendingTransaction(ethereumClientService, websiteTabConnections, confirmation)

@@ -7,7 +7,7 @@ import { PersonalSign, UserAddressBook, PersonalSignRequest, PendingPersonalSign
 import { OpenSeaOrderMessage, PersonalSignRequestIdentifiedEIP712Message } from '../../utils/personal-message-definitions.js'
 import { assertNever } from '../../utils/typescript.js'
 import { AddressBookEntry, SignerName, Website, WebsiteTabConnections } from '../../utils/user-interface-types.js'
-import { OldSignTypedDataParams, PersonalSignParams, SignTypedDataParams } from '../../utils/wire-types.js'
+import { OldSignTypedDataParams, PersonalSignParams, SignTypedDataParams } from '../../utils/JsonRpc-types.js'
 import { getHtmlFile, sendPopupMessageToOpenWindows } from '../backgroundUtils.js'
 import { extractEIP712Message, validateEIP712Types } from '../../utils/eip712Parsing.js'
 import { getAddressMetaData, getTokenMetadata } from '../metadataUtils.js'

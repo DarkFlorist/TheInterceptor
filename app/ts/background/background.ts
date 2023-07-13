@@ -1,7 +1,7 @@
 import { ConfirmTransactionTransactionSingleVisualization, InpageScriptRequest, PopupMessage, RPCReply, Settings, TabState } from '../utils/interceptor-messages.js'
 import 'webextension-polyfill'
 import { Simulator } from '../simulation/simulator.js'
-import { EthereumBlockHeader, EthereumJsonRpcRequest, SendRawTransaction, SendTransactionParams } from '../utils/wire-types.js'
+import { EthereumBlockHeader } from '../utils/wire-types.js'
 import { clearTabStates, getEthDonator, getSignerName, getSimulationResults, removeTabState, setRpcConnectionStatus, setSimulationUpdatingState, updateSimulationResults, updateTabState } from './storageVariables.js'
 import { changeSimulationMode, getSettings, getMakeMeRich } from './settings.js'
 import { blockNumber, call, chainId, estimateGas, gasPrice, getAccounts, getBalance, getBlockByNumber, getCode, getLogs, getPermissions, getSimulationStack, getTransactionByHash, getTransactionCount, getTransactionReceipt, personalSign, sendRawTransaction, sendTransaction, subscribe, switchEthereumChain, unsubscribe } from './simulationModeHanders.js'
@@ -28,6 +28,7 @@ import { updateChainChangeViewWithPendingRequest } from './windows/changeChain.j
 import { updatePendingPersonalSignViewWithPendingRequests } from './windows/personalSign.js'
 import { InterceptedRequest, RawInterceptedRequest, UniqueRequestIdentifier } from '../utils/requests.js'
 import { replyToInterceptedRequest } from './messageSending.js'
+import { EthereumJsonRpcRequest, SendRawTransaction, SendTransactionParams } from '../utils/JsonRpc-types.js'
 
 const websiteTabConnections = new Map<number, TabConnection>()
 
@@ -246,6 +247,7 @@ async function handleRPCRequest(
 		case 'eth_getTransactionCount': return await getTransactionCount(ethereumClientService, simulationState, parsedRequest)
 		case 'interceptor_getSimulationStack': return await getSimulationStack(simulationState, parsedRequest)
 		case 'eth_multicall': return { method: parsedRequest.method, error: { code: 10000, message: 'Cannot call eth_multicall directly' } }
+		case 'eth_multicallV1': return { method: parsedRequest.method, error: { code: 10000, message: 'Cannot call eth_multicallV1 directly' } }
 		case 'eth_getStorageAt': return { method: parsedRequest.method, error: { code: 10000, message: 'eth_getStorageAt not implemented' } }
 		case 'eth_getLogs': return await getLogs(ethereumClientService, simulationState, parsedRequest)
 		case 'eth_sign': return { method: parsedRequest.method, error: { code: 10000, message: 'eth_sign is deprecated' } }

@@ -1,7 +1,7 @@
 import { EthereumClientService } from './services/EthereumClientService.js'
 import { unverifiedApproval } from './protectors/unverifiedApproval.js'
 import { selfTokenOops } from './protectors/selfTokenOops.js'
-import { EthereumBlockHeader, EthereumUnsignedTransaction, MulticallResponse, MulticallResponseEventLog, SingleMulticallResponse } from '../utils/wire-types.js'
+import { EthereumBlockHeader, EthereumUnsignedTransaction } from '../utils/wire-types.js'
 import { TRANSFER_LOG, APPROVAL_LOG, ERC721_APPROVAL_FOR_ALL_LOG, DEPOSIT_LOG, WITHDRAWAL_LOG } from '../utils/constants.js'
 import { bytes32String } from '../utils/bigint.js'
 import { feeOops } from './protectors/feeOops.js'
@@ -14,6 +14,7 @@ import { WebsiteCreatedEthereumUnsignedTransaction, SimResults, SimulationState,
 import { handleApprovalLog, handleDepositLog, handleERC721ApprovalForAllLog, handleTransferLog, handleWithdrawalLog } from './logHandlers.js'
 import { QUARANTINE_CODE } from './protectors/quarantine-codes.js'
 import { EthereumJSONRpcRequestHandler } from './services/EthereumJSONRpcRequestHandler.js'
+import { MulticallResponse, MulticallResponseEventLog, SingleMulticallResponse } from '../utils/JsonRpc-types.js'
 
 const PROTECTORS = [
 	selfTokenOops,

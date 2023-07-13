@@ -236,6 +236,7 @@ export function EthereumSignedTransactionToSignedTransaction(transaction: Ethere
 		case '2930':
 		case '1559': return {
 			...transaction,
+			yParity: 'yParity' in transaction ? transaction.yParity : (transaction.v === 0n ? 'even' : 'odd'),
 			gasLimit: transaction.gas,
 			accessList: transaction.accessList !== undefined ? transaction.accessList : [],
 		}

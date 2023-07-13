@@ -1,6 +1,6 @@
 import { ConnectedToSigner, WalletSwitchEthereumChainReply, TabState } from '../utils/interceptor-messages.js'
 import { WebsiteTabConnections } from '../utils/user-interface-types.js'
-import { EthereumAccountsReply, EthereumChainReply } from '../utils/wire-types.js'
+import { EthereumAccountsReply, EthereumChainReply } from '../utils/JsonRpc-types.js'
 import { changeActiveAddressAndChainAndResetSimulation } from './background.js'
 import { getSocketFromPort, sendInternalWindowMessage, sendPopupMessageToOpenWindows } from './backgroundUtils.js'
 import { getRpcNetworkForChain, getTabState, setSignerName, updateTabState } from './storageVariables.js'
