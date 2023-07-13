@@ -1,14 +1,12 @@
 import { ethers } from 'ethers'
 
 // common contract addresses
-export const UNISWAP_V2_FACTORY_ADDRESS = 0x5C69bEe701ef814a2B6a3EDD4B1652CB9cc5aA6fn
 export const SUSHISWAP_FACTORY_ADDRESS = 0xC0AEe478e3658e2610c5F7A4A2E1777cE9e4f2Acn
 export const UNISWAP_V2_ROUTER_ADDRESS = 0x7a250d5630B4cF539739dF2C5dAcb4c659F2488Dn
 export const SUSHISWAP_V2_ROUTER_ADDRESS = 0xd9e1cE17f2641f24aE83637ab66a2cca9C378B9Fn
-export const UNISWAP_V3_FACTORY_ADDRESS = 0x1F98431c8aD98523631AE4a59f267346ea31F984n
 export const UNISWAP_V3_ROUTER = 0xE592427A0AEce92De3Edee1F18E0157C05861564n
 export const UNISWAP_V3_NFT_ROUTER = 0xC36442b4a4522E871399CD717aBDD847Ab11FE88n
-export const MULTICALL3 = 0xcA11bde05977b3631167028862bE2a173976CA11n
+export const MULTICALL3 = 0xcA11bde05977b3631167028862bE2a173976CA11n // Contract for bundling bulk call transactions, deployed on every chain. https://github.com/mds1/multicall
 
 // common 4-byte function sigs
 export const ERC20_TRANSFER_FROM_4BYTES = 0x23b872dd
@@ -26,6 +24,8 @@ export const WITHDRAWAL_LOG = ethers.keccak256(ethers.toUtf8Bytes('Withdrawal(ad
 // Other
 export const MOCK_ADDRESS = 0xdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefn
 
+// TODO: Metadata for quote,
+// UI shows WETH name and symbols for price quotes the quoteToken could be an asset that is not WETH
 export const CHAINS = {
 	'1': {
 		name: 'Ethereum Mainnet',
@@ -34,7 +34,15 @@ export const CHAINS = {
 		eth_donator: 0xda9dfa130df4de4673b89022ee50ff26f6ea73cfn, // Kraken
 		currencyName: 'Ether',
 		currencyTicker: 'ETH',
-		weth: 0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2n,
+		quoteToken: { address: 0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2n, decimals: 18n, symbol: 'ETH' },
+		priceSources: {
+			uniswapV2like: [
+				{ factory: 0x5C69bEe701ef814a2B6a3EDD4B1652CB9cc5aA6fn, initCodeHash: '0x96e8ac4277198ff8b6f785478aa9a39f403cb768dd02cbee326c3e7da348845f' }, // Uniswap V2
+			],
+			uniswapV3Like: [
+				{ factory: 0x1F98431c8aD98523631AE4a59f267346ea31F984n, initCodeHash: '0xe34f199b19b2b4f47f68442619d555527d244f78a3297ea89325f843f87b8b54' } // Uniswap V3
+			]
+		}
 	},
 	'5': {
 		name: 'Goerli',
@@ -43,7 +51,13 @@ export const CHAINS = {
 		eth_donator: 0xf36F155486299eCAff2D4F5160ed5114C1f66000n, // Some Goerli validator
 		currencyName: 'Goerli Testnet ETH',
 		currencyTicker: 'GÖETH',
-		weth: 0xb4fbf271143f4fbf7b91a5ded31805e42b2208d6n,
+		quoteToken: { address: 0xb4fbf271143f4fbf7b91a5ded31805e42b2208d6n, decimals: 18n },
+		priceSources: {
+			uniswapV2like: [
+				{ factory: 0x5C69bEe701ef814a2B6a3EDD4B1652CB9cc5aA6fn, initCodeHash: '0x96e8ac4277198ff8b6f785478aa9a39f403cb768dd02cbee326c3e7da348845f' }, // Uniswap V2 Goerli deployment
+			],
+			uniswapV3Like: []
+		}
 	},
 	'11155111': {
 		name: 'Sepolia',
@@ -52,7 +66,11 @@ export const CHAINS = {
 		eth_donator: 0xb21c33de1fab3fa15499c62b59fe0cc3250020d1n, // Richest address on Sepolia
 		currencyName: 'Sepolia Testnet ETH',
 		currencyTicker: 'SEETH',
-		weth: 0x105083929bf9bb22c26cb1777ec92661170d4285n,
+		quoteToken: { address: 0x105083929bf9bb22c26cb1777ec92661170d4285n, decimals: 18n },
+		priceSources: {
+			uniswapV2like: [],
+			uniswapV3Like: []
+		}
 	}
 } as const
 
