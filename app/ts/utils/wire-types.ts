@@ -503,7 +503,7 @@ export const DappRequestTransaction = funtypes.ReadonlyPartial({
 	maxFeePerGas: funtypes.Union(EthereumQuantity, funtypes.Null), // etherscan sets this field to null, remove this if etherscan fixes this
 	data: EthereumData,
 	input: EthereumData,
-}).withConstraint((dappRequestTransaction) => dappRequestTransaction.input !== undefined && dappRequestTransaction.data !== undefined ? areEqual(dappRequestTransaction.input, dappRequestTransaction.data) : true)
+}).withConstraint((dappRequestTransaction) => areEqual(dappRequestTransaction.input, dappRequestTransaction.data))
 .withConstraint((x) => {
 	if (x.gasPrice !== undefined) {
 		return x.maxPriorityFeePerGas === undefined && x.maxFeePerGas === undefined

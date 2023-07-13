@@ -118,7 +118,7 @@ export async function openConfirmTransactionDialog(
 				simulationResults: await refreshSimulationPromise,
 			})
 			await updateConfirmTransactionViewWithPendingTransaction()
-			if (justAddToPending) sendPopupMessageToOpenWindows({ method: 'popup_confirm_transaction_dialog_pending_changed', data: (await getPendingTransactions()).map((p) => p.simulationResults) })
+			if (justAddToPending) await sendPopupMessageToOpenWindows({ method: 'popup_confirm_transaction_dialog_pending_changed', data: (await getPendingTransactions()).map((p) => p.simulationResults) })
 			return true
 		})
 		if (addedPendingTransaction === false) return rejectMessage
