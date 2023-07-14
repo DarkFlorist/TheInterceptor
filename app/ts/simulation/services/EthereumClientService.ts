@@ -1,12 +1,13 @@
-import { EthereumUnsignedTransaction, EthereumSignedTransactionWithBlockData, EthereumQuantity, EthereumBlockTag, EthereumData, EthereumBlockHeader, EthereumBlockHeaderWithTransactionHashes } from '../../utils/wire-types.js'
+import { EthereumUnsignedTransaction, EthereumSignedTransactionWithBlockData, EthereumQuantity, EthereumBlockTag, EthereumData, EthereumBlockHeader, EthereumBlockHeaderWithTransactionHashes, EthereumAddress } from '../../utils/wire-types.js'
 import { IUnsignedTransaction1559 } from '../../utils/ethereum.js'
 import { TIME_BETWEEN_BLOCKS, MOCK_ADDRESS } from '../../utils/constants.js'
 import { IEthereumJSONRpcRequestHandler } from './EthereumJSONRpcRequestHandler.js'
-import { ethers } from 'ethers'
-import { stringToUint8Array } from '../../utils/bigint.js'
-import { BlockCalls, ExecutionSpec383MultiCallParams, ExecutionSpec383MultiCallResult } from '../../utils/multicall-types.js'
+import { Interface, LogDescription, ethers } from 'ethers'
+import { addressString, bytes32String, dataStringWith0xStart, stringToUint8Array } from '../../utils/bigint.js'
+import { BlockCalls, CallResultLog, ExecutionSpec383MultiCallParams, ExecutionSpec383MultiCallResult } from '../../utils/multicall-types.js'
 import { MulticallResponse, EthGetStorageAtResponse, EthTransactionReceiptResponse, EthGetLogsRequest, EthGetLogsResponse, DappRequestTransaction } from '../../utils/JsonRpc-types.js'
 import { assertNever } from '../../utils/typescript.js'
+import { parseLogIfPossible } from './SimulationModeEthereumClientService.js'
 
 export type IEthereumClientService = Pick<EthereumClientService, keyof EthereumClientService>
 export class EthereumClientService {
@@ -207,7 +208,8 @@ export class EthereumClientService {
 	}
 
 	public readonly executionSpec383MultiCall = async (calls: readonly BlockCalls[], blockTag: EthereumBlockTag) => {
-		const call = { method: 'eth_multicallV1', params: [calls, blockTag] } as const
+		const parentBlock = await this.getBlock()
+		const call = { method: 'eth_multicallV1', params: [calls, blockTag === parentBlock.number + 1n ? blockTag - 1n : blockTag] } as const
 		console.log(calls)
 		console.log(JSON.stringify(ExecutionSpec383MultiCallParams.serialize(call)))
 		const unvalidatedResult = await this.requestHandler.jsonRpcRequest(call)
@@ -216,13 +218,113 @@ export class EthereumClientService {
 		return ExecutionSpec383MultiCallResult.parse(unvalidatedResult)
 	}
 
-	//intended drop in replacement of the old multicall
+	public readonly getEthBalancesOfAccounts = async (blockNumber: bigint, accounts: readonly EthereumAddress[]) => {
+		if (accounts.length === 0) return []
+		//TODO, these are in Jimmys code too, get them from the same location
+		const MULTICALL3 = 0xcA11bde05977b3631167028862bE2a173976CA11n
+		const Multicall3ABI = [
+			'function aggregate3(tuple(address target, bool allowFailure, bytes callData)[] calls) payable returns (tuple(bool success, bytes returnData)[] returnData)',
+			'function getEthBalance(address) returns (uint256)',
+		]
+		const IMulticall3 = new Interface(Multicall3ABI)
+		const ethBalanceQueryInput = stringToUint8Array(IMulticall3.encodeFunctionData('aggregate3', [accounts.map((account) => ({
+			target: addressString(MULTICALL3),
+			allowFailure: false,
+			callData: IMulticall3.encodeFunctionData('getEthBalance', [addressString(account)])
+		}))]))
+		const callTransaction: EthereumUnsignedTransaction = {
+			type: '1559' as const,
+			from: MOCK_ADDRESS,
+			to: MULTICALL3,
+			value: 0n,
+			input: ethBalanceQueryInput,
+			maxFeePerGas: 0n,
+			maxPriorityFeePerGas: 0n,
+			gas: 15_000_000n,
+			nonce: 0n,
+			chainId: this.getChainId(),
+		} as const
+		const parentBlock = await this.getBlock()
+		const multicallResults = await this.executionSpec383MultiCall([{
+			calls: [callTransaction],
+			blockOverride: {
+				number: blockNumber + 1n,
+				prevRandao: 0x1n,
+				time: new Date(parentBlock.timestamp.getTime() + 12 * 1000),
+				gasLimit: parentBlock.gasLimit,
+				feeRecipient: parentBlock.miner,
+				baseFee: parentBlock.baseFeePerGas === undefined ? 15000000n : parentBlock.baseFeePerGas
+			},
+		}], blockNumber)
+		if (multicallResults.length !== 1) throw new Error('multicall returned too many or too few blocks')
+		const callResults = multicallResults[0]
+		if (callResults.calls.length !== 1) throw new Error('invalid multicall results length')
+		const aggregate3CallResult = callResults.calls[0]
+		if (aggregate3CallResult.status === 'failure' || aggregate3CallResult.status === 'invalid') throw Error('Failed aggregate3')
+		const multicallReturnData: { success: boolean, returnData: string }[] = IMulticall3.decodeFunctionResult('aggregate3', dataStringWith0xStart(aggregate3CallResult.return))[0]
+		
+		if (multicallReturnData.length !== accounts.length) throw Error('Got wrong number of balances back')
+		return multicallReturnData.map((singleCallResult, callIndex) => {
+			if (singleCallResult.success === false) throw new Error('aggregate3 failed to get eth balance')
+			return { address: accounts[callIndex], balance: EthereumQuantity.parse(singleCallResult.returnData) }
+		})
+	}
+
+	public readonly getBalanceChanges = async (blockNumber: bigint, events: readonly (readonly CallResultLog[])[], senders: readonly EthereumAddress[]) => {
+		const parseEthLogs = (logs: readonly CallResultLog[]) => {
+			return logs.filter((log) => log.address == 0n).map((log) => parseLogIfPossible(erc20, { topics: log.topics.map((x) => bytes32String(x)), data: dataStringWith0xStart(log.data) })).filter((x): x is LogDescription => x !== null)
+		}
+		const erc20ABI = ['event Transfer(address indexed from, address indexed to, uint256 value)']
+		const erc20 = new ethers.Interface(erc20ABI)
+		const flattenedLogs = events.flat() 
+		const parsedEthLogs = parseEthLogs(flattenedLogs)
+		const addressesWithEthTransfers = new Set<bigint>(parsedEthLogs.map(log => log.args[0]).concat(parsedEthLogs.map(log => log.args[1]).concat(senders)))
+		const initialBalances = await this.getEthBalancesOfAccounts(blockNumber, Array.from(addressesWithEthTransfers))
+		const currentBalance = new Map<string, bigint>(initialBalances.map((balance) => [addressString(balance.address), balance.balance]))
+		
+		const balanceChanges = []
+		for (const [index, logs] of events.entries()) {
+			const senderBalance = currentBalance.get(addressString(senders[index]))
+			if (senderBalance === undefined) throw new Error('sender ETH balance is missing')
+			const changesForCall = [{
+				address: senders[index],
+				before: senderBalance,
+				after: senderBalance,
+			}]
+			const parsedLogsForCall = parseEthLogs(logs)
+			for (const parsed of parsedLogsForCall) {
+				if (parsed === null) continue
+				if (parsed.name !== 'Transfer') throw new Error(`wrong name: ${ parsed.name }`)
+				const from = EthereumAddress.parse(parsed.args[0])
+				const to = EthereumAddress.parse(parsed.args[1])
+				const amount = EthereumQuantity.parse(parsed.args[2])
+				const previousFromBalance = currentBalance.get(parsed.args[0])
+				const previousToBalance = currentBalance.get(parsed.args[1])
+				if (previousFromBalance === undefined || previousToBalance === undefined) throw new Error('Did not find previous ETH balance')
+				changesForCall.push({
+					address: from,
+					before: previousFromBalance,
+					after: previousFromBalance - amount,
+				})
+				changesForCall.push({
+					address: to,
+					before: previousToBalance,
+					after: previousToBalance + amount,
+				})
+			}
+			balanceChanges.push(changesForCall)
+		}
+		return balanceChanges
+	}
+
+	// intended drop in replacement of the old multicall
 	public readonly executionSpec383MultiCallOnlyTransactions = async (transactions: readonly EthereumUnsignedTransaction[], blockNumber: bigint): Promise<MulticallResponse> => {
+		console.log('executionSpec383MultiCallOnlyTransactions')
 		const parentBlock = await this.getBlock()
 		const multicallResults = await this.executionSpec383MultiCall([{
 			calls: transactions,
 			blockOverride: {
-				number: blockNumber,
+				number: blockNumber + 1n,
 				prevRandao: 0x1n,
 				time: new Date(parentBlock.timestamp.getTime() + 12 * 1000),
 				gasLimit: parentBlock.gasLimit,
@@ -231,8 +333,11 @@ export class EthereumClientService {
 			},
 		}], blockNumber)
 		if (multicallResults.length !== 1) throw new Error('Multicalled for one block but did not get one block')
-		return multicallResults[0].calls.map((singleResult) => {
-			switch(singleResult.status) {
+		const calls = multicallResults[0].calls
+		const allLogs = calls.map((singleResult) => singleResult.status !== 'success' || singleResult.logs === undefined ? [] : singleResult.logs)
+		const balanceChanges = await this.getBalanceChanges(blockNumber, allLogs, transactions.map((tx) => tx.from))
+		const endResult = calls.map((singleResult, callIndex) => {
+			switch (singleResult.status) {
 				case undefined: //TODO, remove this, Geth currently doesn't return status
 				case 'success': return {
 					statusCode: 'success' as const,
@@ -243,7 +348,7 @@ export class EthereumClientService {
 						data: 'data' in log && log.data !== undefined ? log.data : new Uint8Array(),
 						topics: 'topics' in log && log.topics !== undefined ? log.topics : [],
 					})),
-					balanceChanges: [], // not supported in new multicall atm...
+					balanceChanges: balanceChanges[callIndex],
 				}
 				case 'failure': return {
 					statusCode: 'failure' as const,
@@ -255,5 +360,8 @@ export class EthereumClientService {
 				default: assertNever(singleResult)
 			}
 		})
+		console.log(endResult)
+		console.log('executionSpec383MultiCallOnlyTransactions D')
+		return endResult
 	}
 }

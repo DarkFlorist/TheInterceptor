@@ -62,8 +62,6 @@ export const CallResultLog = funtypes.Intersect(
 	funtypes.ReadonlyObject({
 		logIndex: EthereumQuantity,
 		address: EthereumAddress,
-	}),
-	funtypes.ReadonlyPartial({
 		blockHash: EthereumQuantitySmall,
 		blockNumber: EthereumQuantity,
 		data: EthereumData,
@@ -86,11 +84,11 @@ export const ExecutionSpec383CallResultFailure = funtypes.ReadonlyObject({
 export type ExecutionSpec383CallResultSuccess = funtypes.Static<typeof ExecutionSpec383CallResultSuccess>
 export const ExecutionSpec383CallResultSuccess = funtypes.Intersect(
 	funtypes.ReadonlyObject({
-		status: funtypes.Literal('0x1').withParser(LiteralConverterParserFactory('0x1', 'success' as const)),
 	  	return: EthereumData,
 	  	gasUsed: EthereumQuantitySmall,
 	}),
 	funtypes.ReadonlyPartial({
+		status: funtypes.Literal('0x1').withParser(LiteralConverterParserFactory('0x1', 'success' as const)), // TODO, a bug in GETH, this is missing in GETH
 		logs: funtypes.ReadonlyArray(CallResultLog)
 	})
 )
