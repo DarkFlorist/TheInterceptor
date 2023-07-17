@@ -26,7 +26,7 @@ export function verifyAccess(websiteTabConnections: WebsiteTabConnections, socke
 	const connection = getConnectionDetails(websiteTabConnections, socket)
 	if (connection && connection.approved) return 'hasAccess'
 	const access = requestAccessForAddress !== undefined ? hasAddressAccess(settings.websiteAccess, websiteOrigin, requestAccessForAddress, settings) : hasAccess(settings.websiteAccess, websiteOrigin)
-	if (access === 'hasAccess') return  connectToPort(websiteTabConnections, socket, websiteOrigin, settings, requestAccessForAddress) ? 'hasAccess' : 'noAccess'
+	if (access === 'hasAccess') return connectToPort(websiteTabConnections, socket, websiteOrigin, settings, requestAccessForAddress) ? 'hasAccess' : 'noAccess'
 	if (access === 'noAccess') return 'noAccess'
 	return isEthRequestAccounts ? 'askAccess' : 'noAccess'
 }
@@ -34,7 +34,8 @@ export function verifyAccess(websiteTabConnections: WebsiteTabConnections, socke
 export function sendMessageToApprovedWebsitePorts(websiteTabConnections: WebsiteTabConnections, message:  InpageScriptCallBack) {
 	// inform all the tabs about the address change
 	for (const [_tab, tabConnection] of websiteTabConnections.entries() ) {
-		for (const [_string, connection] of Object.entries(tabConnection.connections) ) {
+		for (const key in tabConnection.connections) {
+			const connection = tabConnection.connections[key]
 			if (!connection.approved) continue
 			sendSubscriptionReplyOrCallBack(websiteTabConnections, connection.socket, message)
 		}
@@ -43,7 +44,8 @@ export function sendMessageToApprovedWebsitePorts(websiteTabConnections: Website
 export async function sendActiveAccountChangeToApprovedWebsitePorts(websiteTabConnections: WebsiteTabConnections, settings: Settings) {
 	// inform all the tabs about the address change
 	for (const [_tab, tabConnection] of websiteTabConnections.entries() ) {
-		for (const [_string, connection] of Object.entries(tabConnection.connections) ) {
+		for (const key in tabConnection.connections) {
+			const connection = tabConnection.connections[key]
 			if (!connection.approved) continue
 			const activeAddress = await getActiveAddressForDomain(connection.websiteOrigin, settings, connection.socket)
 			sendSubscriptionReplyOrCallBack(websiteTabConnections, connection.socket, {
@@ -208,7 +210,8 @@ async function askUserForAccessOnConnectionUpdate(websiteTabConnections: Website
 }
 
 async function updateTabConnections(websiteTabConnections: WebsiteTabConnections, tabConnection: TabConnection, promptForAccessesIfNeeded: boolean, settings: Settings) {
-	for (const [_string, connection] of Object.entries(tabConnection.connections) ) {
+	for (const key in tabConnection.connections) {
+		const connection = tabConnection.connections[key]
 		const activeAddress = await getActiveAddress(settings, connection.socket.tabId)
 		updateExtensionIcon(websiteTabConnections, connection.socket, connection.websiteOrigin)
 		const access = activeAddress ? hasAddressAccess(settings.websiteAccess, connection.websiteOrigin, activeAddress, settings) : hasAccess(settings.websiteAccess, connection.websiteOrigin)
