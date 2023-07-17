@@ -3,18 +3,20 @@ import { EthereumClientService } from '../../simulation/services/EthereumClientS
 import { appendTransaction } from '../../simulation/services/SimulationModeEthereumClientService.js'
 import { ERROR_INTERCEPTOR_NO_ACTIVE_ADDRESS, METAMASK_ERROR_NOT_CONNECTED_TO_CHAIN, METAMASK_ERROR_USER_REJECTED_REQUEST } from '../../utils/constants.js'
 import { Future } from '../../utils/future.js'
-import { InterceptedRequest, TransactionConfirmation } from '../../utils/interceptor-messages.js'
+import { TransactionConfirmation } from '../../utils/interceptor-messages.js'
 import { Semaphore } from '../../utils/semaphore.js'
-import { WebsiteSocket, WebsiteTabConnections } from '../../utils/user-interface-types.js'
+import { WebsiteTabConnections } from '../../utils/user-interface-types.js'
 import { EstimateGasError, WebsiteCreatedEthereumUnsignedTransaction } from '../../utils/visualizer-types.js'
 import { SendRawTransaction, SendTransactionParams } from '../../utils/wire-types.js'
-import { postMessageIfStillConnected, refreshConfirmTransactionSimulation, updateSimulationState } from '../background.js'
+import { refreshConfirmTransactionSimulation, updateSimulationState } from '../background.js'
 import { getHtmlFile, sendPopupMessageToOpenWindows } from '../backgroundUtils.js'
 import { appendPendingTransaction, clearPendingTransactions, getPendingTransactions, getSimulationResults, removePendingTransaction } from '../storageVariables.js'
+import { InterceptedRequest, getUniqueRequestIdentifierString } from '../../utils/requests.js'
+import { replyToInterceptedRequest } from '../messageSending.js'
 
 export type Confirmation = 'Approved' | 'Rejected' | 'NoResponse'
 let openedDialog: PopupOrTab | undefined = undefined
-let pendingTransactions = new Map<number, Future<Confirmation>>()
+let pendingTransactions = new Map<string, Future<Confirmation>>()
 const pendingConfirmationSemaphore = new Semaphore(1)
 
 export async function updateConfirmTransactionViewWithPendingTransaction() {
@@ -36,16 +38,16 @@ async function updateConfirmTransactionViewWithPendingTransactionOrClose() {
 }
 
 export async function resolvePendingTransaction(ethereumClientService: EthereumClientService, websiteTabConnections: WebsiteTabConnections, confirmation: TransactionConfirmation) {
-	const pending = pendingTransactions.get(confirmation.data.requestId)
-	const pendingTransaction = await removePendingTransaction(confirmation.data.requestId)
-	if (pendingTransaction === undefined) return
+	const pending = pendingTransactions.get(getUniqueRequestIdentifierString(confirmation.data.uniqueRequestIdentifier))
+	const pendingTransaction = await removePendingTransaction(confirmation.data.uniqueRequestIdentifier)
+	if (pendingTransaction === undefined) throw new Error('Failed to find pending transaction')
 	await updateConfirmTransactionViewWithPendingTransactionOrClose()
 	if (pending) {
 		return pending.resolve(confirmation.data.accept === true ? 'Approved' : 'Rejected')
 	} else {
 		// we have not been tracking this window, forward its message directly to content script (or signer)
 		const resolvedPromise = await resolve(ethereumClientService, pendingTransaction.simulationMode, pendingTransaction.activeAddress, pendingTransaction.transactionToSimulate, confirmation.data.accept)
-		postMessageIfStillConnected(websiteTabConnections, pendingTransaction.socket, { ...pendingTransaction.transactionParams, ...resolvedPromise, requestId: confirmation.data.requestId })
+		replyToInterceptedRequest(websiteTabConnections, { ...pendingTransaction.transactionParams, ...resolvedPromise, uniqueRequestIdentifier: confirmation.data.uniqueRequestIdentifier })
 		openedDialog = await getPopupOrTabOnlyById(confirmation.data.windowId)
 	}
 }
@@ -66,7 +68,6 @@ const rejectMessage = {
 
 export async function openConfirmTransactionDialog(
 	ethereumClientService: EthereumClientService,
-	socket: WebsiteSocket,
 	request: InterceptedRequest,
 	transactionParams: SendTransactionParams | SendRawTransaction,
 	simulationMode: boolean,
@@ -76,7 +77,8 @@ export async function openConfirmTransactionDialog(
 	let justAddToPending = false
 	if (pendingTransactions.size !== 0) justAddToPending = true
 	const pendingTransaction = new Future<Confirmation>()
-	pendingTransactions.set(request.requestId, pendingTransaction)
+	const uniqueRequestIdentifier = getUniqueRequestIdentifierString(request.uniqueRequestIdentifier)
+	pendingTransactions.set(uniqueRequestIdentifier, pendingTransaction)
 	try {
 		if (activeAddress === undefined) return ERROR_INTERCEPTOR_NO_ACTIVE_ADDRESS
 		const transactionToSimulate = await transactionToSimulatePromise()
@@ -94,7 +96,7 @@ export async function openConfirmTransactionDialog(
 					}
 				}
 			}
-			const refreshSimulationPromise = refreshConfirmTransactionSimulation(ethereumClientService, activeAddress, simulationMode, request.requestId, transactionToSimulate, socket.tabId)
+			const refreshSimulationPromise = refreshConfirmTransactionSimulation(ethereumClientService, activeAddress, simulationMode, request.uniqueRequestIdentifier, transactionToSimulate)
 
 			if (!justAddToPending) {
 				addWindowTabListener(onCloseWindow)
@@ -108,7 +110,6 @@ export async function openConfirmTransactionDialog(
 			if (openedDialog?.windowOrTab.id === undefined) return false
 			await appendPendingTransaction({
 				dialogId: openedDialog.windowOrTab.id,
-				socket: socket,
 				transactionParams: transactionParams,
 				request: request,
 				transactionToSimulate: transactionToSimulate,
@@ -126,7 +127,7 @@ export async function openConfirmTransactionDialog(
 		return resolvedPromise
 	} finally {
 		removeWindowTabListener(onCloseWindow)
-		pendingTransactions.delete(request.requestId)
+		pendingTransactions.delete(uniqueRequestIdentifier)
 		updateConfirmTransactionViewWithPendingTransactionOrClose()
 	}
 }

@@ -395,14 +395,14 @@ export function PersonalSign() {
 
 	async function approve() {
 		if (personalSignRequestData === undefined) throw new Error('personalSignRequestData is missing')
-		await tryFocusingTabOrWindow({ type: 'tab', id: personalSignRequestData.tabIdOpenedFrom })
-		await sendPopupMessageToBackgroundPage({ method: 'popup_personalSign', data: { requestId: personalSignRequestData.requestId, accept: true } })
+		await tryFocusingTabOrWindow({ type: 'tab', id: personalSignRequestData.request.uniqueRequestIdentifier.requestSocket.tabId })
+		await sendPopupMessageToBackgroundPage({ method: 'popup_personalSign', data: { uniqueRequestIdentifier: personalSignRequestData.request.uniqueRequestIdentifier, accept: true } })
 	}
 
 	async function reject() {
 		if (personalSignRequestData === undefined) throw new Error('personalSignRequestData is missing')
-		await tryFocusingTabOrWindow({ type: 'tab', id: personalSignRequestData.tabIdOpenedFrom })
-		await sendPopupMessageToBackgroundPage({ method: 'popup_personalSign', data: { requestId: personalSignRequestData.requestId, accept: false } })
+		await tryFocusingTabOrWindow({ type: 'tab', id: personalSignRequestData.request.uniqueRequestIdentifier.requestSocket.tabId })
+		await sendPopupMessageToBackgroundPage({ method: 'popup_personalSign', data: { uniqueRequestIdentifier: personalSignRequestData.request.uniqueRequestIdentifier, accept: false } })
 	}
 
 	function isPossibleToSend(personalSignRequestData: PersonalSignRequestData, activeAddress: bigint) {

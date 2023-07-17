@@ -1,15 +1,17 @@
 import { PopupOrTab, addWindowTabListener, closePopupOrTab, getPopupOrTabOnlyById, openPopupOrTab, removeWindowTabListener, tryFocusingTabOrWindow } from '../../components/ui-utils.js'
 import { METAMASK_ERROR_ALREADY_PENDING } from '../../utils/constants.js'
 import { Future } from '../../utils/future.js'
-import { InterceptedRequest, InterceptorAccessChangeAddress, InterceptorAccessRefresh, InterceptorAccessReply, PendingAccessRequestArray, Settings, WebsiteAccessArray, WindowMessage } from '../../utils/interceptor-messages.js'
+import { InterceptorAccessChangeAddress, InterceptorAccessRefresh, InterceptorAccessReply, PendingAccessRequestArray, Settings, WebsiteAccessArray, WindowMessage } from '../../utils/interceptor-messages.js'
 import { Semaphore } from '../../utils/semaphore.js'
 import { AddressInfo, AddressInfoEntry, Website, WebsiteSocket, WebsiteTabConnections } from '../../utils/user-interface-types.js'
 import { getAssociatedAddresses, setAccess, updateWebsiteApprovalAccesses } from '../accessManagement.js'
-import { changeActiveAddressAndChainAndResetSimulation, handleContentScriptMessage, postMessageIfStillConnected, refuseAccess } from '../background.js'
+import { changeActiveAddressAndChainAndResetSimulation, handleContentScriptMessage, refuseAccess } from '../background.js'
 import { INTERNAL_CHANNEL_NAME, createInternalMessageListener, getHtmlFile, sendPopupMessageToOpenWindows, websiteSocketToString } from '../backgroundUtils.js'
 import { findAddressInfo } from '../metadataUtils.js'
 import { getSettings } from '../settings.js'
 import { getSignerName, getTabState, updatePendingAccessRequests, getPendingAccessRequests, clearPendingAccessRequests } from '../storageVariables.js'
+import { InterceptedRequest } from '../../utils/requests.js'
+import { replyToInterceptedRequest, sendSubscriptionReplyOrCallBack } from '../messageSending.js'
 
 type OpenedDialogWithListeners = {
 	popupOrTab: PopupOrTab
@@ -27,21 +29,21 @@ const onCloseWindow = async (windowId: number, websiteTabConnections: WebsiteTab
 	openedDialog = undefined
 	const pendingRequests = await clearPendingAccessRequests()
 	for (const pendingRequest of pendingRequests) {
-		const reply = {
+		const reply: InterceptorAccessReply = {
 			originalRequestAccessToAddress: pendingRequest.originalRequestAccessToAddress?.address,
 			requestAccessToAddress: pendingRequest.requestAccessToAddress?.address,
 			accessRequestId: pendingRequest.accessRequestId,
 			userReply: 'NoResponse' as const
 		}
-		await resolve(websiteTabConnections, reply, pendingRequest.socket, pendingRequest.request, pendingRequest.website, pendingRequest.activeAddress)
+		await resolve(websiteTabConnections, reply, pendingRequest.request, pendingRequest.website, pendingRequest.activeAddress)
 	}
 }
 
 export async function resolveInterceptorAccess(websiteTabConnections: WebsiteTabConnections, reply: InterceptorAccessReply) {
 	const promises = await getPendingAccessRequests()
 	const pendingRequest = promises.find((req) => req.accessRequestId === reply.accessRequestId)
-	if (pendingRequest == undefined) return
-	return await resolve(websiteTabConnections, reply, pendingRequest.socket, pendingRequest.request, pendingRequest.website, pendingRequest.activeAddress)
+	if (pendingRequest === undefined) throw new Error('Access request missing!')
+	return await resolve(websiteTabConnections, reply, pendingRequest.request, pendingRequest.website, pendingRequest.activeAddress)
 }
 
 export function getAddressMetadataForAccess(websiteAccess: WebsiteAccessArray, addressInfos: readonly AddressInfo[]): AddressInfoEntry[] {
@@ -73,7 +75,7 @@ async function askForSignerAccountsFromSignerIfNotAvailable(websiteTabConnection
 	const channel = new BroadcastChannel(INTERNAL_CHANNEL_NAME)
 	try {
 		channel.addEventListener('message', listener)
-		const messageSent = postMessageIfStillConnected(websiteTabConnections, socket, { method: 'request_signer_to_eth_requestAccounts' as const, result: [] })
+		const messageSent = sendSubscriptionReplyOrCallBack(websiteTabConnections, socket, { method: 'request_signer_to_eth_requestAccounts' as const, result: [] })
 		if (messageSent) await future
 	} finally {
 		channel.removeEventListener('message', listener)
@@ -122,7 +124,7 @@ export async function requestAccessFromUser(
 				width: 600,
 			})
 			if (popupOrTab?.windowOrTab.id === undefined) {
-				if (request !== undefined) refuseAccess(websiteTabConnections, socket, request)
+				if (request !== undefined) refuseAccess(websiteTabConnections, request)
 				throw new Error('Opened dialog does not exist')
 			}
 			if (openedDialog) {
@@ -133,7 +135,7 @@ export async function requestAccessFromUser(
 		}
 
 		if (openedDialog?.popupOrTab.windowOrTab.id === undefined) {
-			if (request !== undefined) refuseAccess(websiteTabConnections, socket, request)
+			if (request !== undefined) refuseAccess(websiteTabConnections, request)
 			throw new Error('Opened dialog does not exist')
 		}
 		const accessRequestId =  `${ accessAddress } || ${ website.websiteOrigin }`
@@ -162,8 +164,8 @@ export async function requestAccessFromUser(
 
 		if (requests.find((x) => x.accessRequestId === accessRequestId) === undefined) {
 			if (request !== undefined) {
-				postMessageIfStillConnected(websiteTabConnections, socket, {
-					requestId: request.requestId,
+				replyToInterceptedRequest(websiteTabConnections, {
+					uniqueRequestIdentifier: request.uniqueRequestIdentifier,
 					method: request.method,
 					error: METAMASK_ERROR_ALREADY_PENDING.error,
 				})
@@ -191,12 +193,12 @@ async function updateViewOrClose() {
 	}
 }
 
-async function resolve(websiteTabConnections: WebsiteTabConnections, accessReply: InterceptorAccessReply, socket: WebsiteSocket, request: InterceptedRequest | undefined, website: Website, activeAddress: bigint | undefined) {
+async function resolve(websiteTabConnections: WebsiteTabConnections, accessReply: InterceptorAccessReply, request: InterceptedRequest | undefined, website: Website, activeAddress: bigint | undefined) {
 	await updatePendingAccessRequests(async (previousPendingAccessRequests) => {
 		return previousPendingAccessRequests.filter((x) => !(x.website.websiteOrigin === website.websiteOrigin && (x.requestAccessToAddress?.address === accessReply.requestAccessToAddress || x.requestAccessToAddress?.address === accessReply.originalRequestAccessToAddress)))
 	})
 	if (accessReply.userReply === 'NoResponse') {
-		if (request !== undefined) refuseAccess(websiteTabConnections, socket, request)
+		if (request !== undefined) refuseAccess(websiteTabConnections, request)
 	} else {
 		const userRequestedAddressChange = accessReply.requestAccessToAddress !== accessReply.originalRequestAccessToAddress
 		if (!userRequestedAddressChange) {
@@ -210,7 +212,7 @@ async function resolve(websiteTabConnections: WebsiteTabConnections, accessReply
 				activeAddress: accessReply.requestAccessToAddress,
 			})
 		}
-		if (request !== undefined) await handleContentScriptMessage(websiteTabConnections, socket, request, website, activeAddress)
+		if (request !== undefined) await handleContentScriptMessage(websiteTabConnections, request, website, activeAddress)
 	}
 	await updateViewOrClose()
 }

@@ -1,4 +1,4 @@
-import { ConfirmTransactionTransactionSingleVisualization, InpageScriptRequest, InterceptedRequest, InterceptedRequestForward, InterceptorMessageToInpage, PopupMessage, RPCReply, Settings, TabState } from '../utils/interceptor-messages.js'
+import { ConfirmTransactionTransactionSingleVisualization, InpageScriptRequest, PopupMessage, RPCReply, Settings, TabState } from '../utils/interceptor-messages.js'
 import 'webextension-polyfill'
 import { Simulator } from '../simulation/simulator.js'
 import { EthereumBlockHeader, EthereumJsonRpcRequest, SendRawTransaction, SendTransactionParams } from '../utils/wire-types.js'
@@ -26,6 +26,8 @@ import { formSimulatedAndVisualizedTransaction } from '../components/formVisuali
 import { updateConfirmTransactionViewWithPendingTransaction } from './windows/confirmTransaction.js'
 import { updateChainChangeViewWithPendingRequest } from './windows/changeChain.js'
 import { updatePendingPersonalSignViewWithPendingRequests } from './windows/personalSign.js'
+import { InterceptedRequest, RawInterceptedRequest, UniqueRequestIdentifier } from '../utils/requests.js'
+import { replyToInterceptedRequest } from './messageSending.js'
 
 const websiteTabConnections = new Map<number, TabConnection>()
 
@@ -107,17 +109,16 @@ export async function refreshConfirmTransactionSimulation(
 	ethereumClientService: EthereumClientService,
 	activeAddress: bigint,
 	simulationMode: boolean,
-	requestId: number,
+	uniqueRequestIdentifier: UniqueRequestIdentifier,
 	transactionToSimulate: WebsiteCreatedEthereumUnsignedTransaction,
-	tabIdOpenedFrom: number,
 ): Promise<ConfirmTransactionTransactionSingleVisualization> {
 	const info = {
-		requestId: requestId,
+		uniqueRequestIdentifier,
 		transactionToSimulate: transactionToSimulate,
 		simulationMode: simulationMode,
 		activeAddress: activeAddress,
 		signerName: await getSignerName(),
-		tabIdOpenedFrom,
+		tabIdOpenedFrom: uniqueRequestIdentifier.requestSocket.tabId,
 	}
 	if (simulator === undefined) return { statusCode: 'failed', data: info } as const
 	sendPopupMessageToOpenWindows({ method: 'popup_confirm_transaction_simulation_started' } as const)
@@ -230,8 +231,8 @@ async function handleRPCRequest(
 		case 'eth_signTypedData_v1':
 		case 'eth_signTypedData_v2':
 		case 'eth_signTypedData_v3':
-		case 'eth_signTypedData_v4': return await personalSign(ethereumClientService, websiteTabConnections, socket, parsedRequest, request, settings.simulationMode, website, activeAddress)
-		case 'wallet_switchEthereumChain': return await switchEthereumChain(websiteTabConnections, socket, ethereumClientService, parsedRequest, request, settings.simulationMode, website)
+		case 'eth_signTypedData_v4': return await personalSign(ethereumClientService, websiteTabConnections, parsedRequest, request, settings.simulationMode, website, activeAddress)
+		case 'wallet_switchEthereumChain': return await switchEthereumChain(websiteTabConnections, ethereumClientService, parsedRequest, request, settings.simulationMode, website)
 		case 'wallet_requestPermissions': return await getAccounts(activeAddress)
 		case 'wallet_getPermissions': return await getPermissions()
 		case 'eth_accounts': return await getAccounts(activeAddress)
@@ -245,13 +246,13 @@ async function handleRPCRequest(
 		case 'eth_sign': return { method: parsedRequest.method, error: { code: 10000, message: 'eth_sign is deprecated' } }
 		case 'eth_sendRawTransaction': {
 			if (forwardToSigner && settings.rpcNetwork.httpsRpc === undefined) return getForwardingMessage(parsedRequest)
-			const message = await sendRawTransaction(ethereumClientService, parsedRequest, socket, request, !forwardToSigner, website, activeAddress)
+			const message = await sendRawTransaction(ethereumClientService, parsedRequest, request, !forwardToSigner, website, activeAddress)
 			if ('forward' in message) return getForwardingMessage(parsedRequest)
 			return message
 		}
 		case 'eth_sendTransaction': {
 			if (forwardToSigner && settings.rpcNetwork.httpsRpc === undefined) return getForwardingMessage(parsedRequest)
-			const message = await sendTransaction(websiteTabConnections, activeAddress, ethereumClientService, parsedRequest, socket, request, !forwardToSigner, website)
+			const message = await sendTransaction(websiteTabConnections, activeAddress, ethereumClientService, parsedRequest, request, !forwardToSigner, website)
 			if ('forward' in message) return getForwardingMessage(parsedRequest)
 			return message
 		}
@@ -377,49 +378,23 @@ export async function changeActiveRpc(websiteTabConnections: WebsiteTabConnectio
 	await sendPopupMessageToOpenWindows({ method: 'popup_settingsUpdated', data: await getSettings() })
 }
 
-export function postMessageToPortIfConnected(port: browser.runtime.Port, message: InterceptedRequestForward) {
-	try {
-		port.postMessage(InterceptorMessageToInpage.serialize({ interceptorApproved: true, ...message }) as Object)
-	} catch (error) {
-		if (error instanceof Error) {
-			if (error.message?.includes('Attempting to use a disconnected port object')) {
-				return
-			}
-			if (error.message?.includes('Could not establish connection. Receiving end does not exist')) {
-				return
-			}
-		}
-		throw error
-	}
-}
-export function postMessageIfStillConnected(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, message: InterceptedRequestForward) {
-	const tabConnection = websiteTabConnections.get(socket.tabId)
-	const identifier = websiteSocketToString(socket)
-	if (tabConnection === undefined) return false
-	for (const [socketAsString, connection] of Object.entries(tabConnection.connections)) {
-		if (socketAsString !== identifier) continue
-		postMessageToPortIfConnected(connection.port, message)
-	}
-	return true
-}
-
-export async function handleContentScriptMessage(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, request: InterceptedRequest, website: Website, activeAddress: bigint | undefined) {
+export async function handleContentScriptMessage(websiteTabConnections: WebsiteTabConnections, request: InterceptedRequest, website: Website, activeAddress: bigint | undefined) {
 	try {
 		if (simulator === undefined) throw 'Interceptor not ready'
 		const settings = await getSettings()
 		if (settings.simulationMode) {
 			const simulationState = (await getSimulationResults()).simulationState
 			if (simulationState === undefined) throw new Error('no simulation state')
-			const resolved = await handleRPCRequest(simulationState, websiteTabConnections, simulator.ethereum, socket, website, request, settings, activeAddress)
-			return postMessageIfStillConnected(websiteTabConnections, socket, { ...request, ...resolved })
+			const resolved = await handleRPCRequest(simulationState, websiteTabConnections, simulator.ethereum, request.uniqueRequestIdentifier.requestSocket, website, request, settings, activeAddress)
+			return replyToInterceptedRequest(websiteTabConnections, { ...request, ...resolved })
 		}
-		const resolved = await handleRPCRequest(undefined, websiteTabConnections, simulator.ethereum, socket, website, request, settings, activeAddress)
-		return postMessageIfStillConnected(websiteTabConnections, socket, { ...request, ...resolved })
+		const resolved = await handleRPCRequest(undefined, websiteTabConnections, simulator.ethereum, request.uniqueRequestIdentifier.requestSocket, website, request, settings, activeAddress)
+		return replyToInterceptedRequest(websiteTabConnections, { ...request, ...resolved })
 	} catch (error) {
 		console.log(request)
 		console.warn(error)
 		if (error instanceof JsonRpcResponseError || error instanceof FetchResponseError) {
-			postMessageIfStillConnected(websiteTabConnections, socket, {
+			replyToInterceptedRequest(websiteTabConnections, {
 				...request,
 				error: {
 					code: error.code,
@@ -430,13 +405,13 @@ export async function handleContentScriptMessage(websiteTabConnections: WebsiteT
 		}
 		if (error instanceof Error) {
 			if (isFailedToFetchError(error)) {
-				return postMessageIfStillConnected(websiteTabConnections, socket, {
+				return replyToInterceptedRequest(websiteTabConnections, {
 					...request,
 					...METAMASK_ERROR_NOT_CONNECTED_TO_CHAIN,
 				})
 			}
 		}
-		postMessageIfStillConnected(websiteTabConnections, socket, {
+		replyToInterceptedRequest(websiteTabConnections, {
 			...request,
 			error: {
 				code: 123456,
@@ -447,8 +422,8 @@ export async function handleContentScriptMessage(websiteTabConnections: WebsiteT
 	}
 }
 
-export function refuseAccess(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, request: InterceptedRequest) {
-	return postMessageIfStillConnected(websiteTabConnections, socket, {
+export function refuseAccess(websiteTabConnections: WebsiteTabConnections, request: InterceptedRequest) {
+	return replyToInterceptedRequest(websiteTabConnections, {
 		...request,
 		error: {
 			code: METAMASK_ERROR_NOT_AUTHORIZED,
@@ -508,7 +483,14 @@ async function onContentScriptConnected(port: browser.runtime.Port, websiteTabCo
 			&& 'interceptorRequest' in payload.data
 		)) return
 		await pendingRequestLimiter.execute(async () => {
-			const request = InterceptedRequest.parse(payload.data)
+			const rawMessage = RawInterceptedRequest.parse(payload.data)
+			const request = {
+				method: rawMessage.method,
+				...'params' in rawMessage ? { params: rawMessage.params } : {},
+				interceptorRequest: rawMessage.interceptorRequest,
+				usingInterceptorWithoutSigner: rawMessage.usingInterceptorWithoutSigner,
+				uniqueRequestIdentifier: { requestId: rawMessage.requestId, requestSocket: socket },
+			}
 			const activeAddress = await getActiveAddress(await getSettings(), socket.tabId)
 			const access = verifyAccess(websiteTabConnections, socket, request.method === 'eth_requestAccounts', websiteOrigin, activeAddress, await getSettings())
 			const providerHandler = getProviderHandler(request.method)
@@ -516,27 +498,27 @@ async function onContentScriptConnected(port: browser.runtime.Port, websiteTabCo
 			if (identifiedMethod !== 'notProviderMethod') {
 				await providerHandler.func(websiteTabConnections, port, request, access)
 				const message: InpageScriptRequest = {
-					requestId: request.requestId,
+					uniqueRequestIdentifier: request.uniqueRequestIdentifier,
 					method: identifiedMethod,
 					result: '0x' as const,
 				}
-				return postMessageIfStillConnected(websiteTabConnections, socket, message)
+				return replyToInterceptedRequest(websiteTabConnections, message)
 			}
 			if (access === 'noAccess' || activeAddress === undefined) {
 				if (request.method === 'eth_accounts') {
-					return postMessageIfStillConnected(websiteTabConnections, socket, { method: 'eth_accounts' as const, result: [], requestId: request.requestId })
+					return replyToInterceptedRequest(websiteTabConnections, { method: 'eth_accounts' as const, result: [], uniqueRequestIdentifier: request.uniqueRequestIdentifier })
 				}
 				// if user has not given access, assume we are on chain 1
 				if (request.method === 'eth_chainId' || request.method === 'net_version') {
-					return postMessageIfStillConnected(websiteTabConnections, socket, { method: 'eth_chainId' as const, result: 1n, requestId: request.requestId })
+					return replyToInterceptedRequest(websiteTabConnections, { method: 'eth_chainId' as const, result: 1n, uniqueRequestIdentifier: request.uniqueRequestIdentifier })
 				}
 			}
-			if (activeAddress === undefined) return refuseAccess(websiteTabConnections, socket, request)
+			if (activeAddress === undefined) return refuseAccess(websiteTabConnections, request)
 
 			switch (access) {
-				case 'noAccess': return refuseAccess(websiteTabConnections, socket, request)
+				case 'noAccess': return refuseAccess(websiteTabConnections, request)
 				case 'askAccess': return await gateKeepRequestBehindAccessDialog(socket, request, await websitePromise, activeAddress, await getSettings())
-				case 'hasAccess': return await handleContentScriptMessage(websiteTabConnections, socket, request, await websitePromise, activeAddress)
+				case 'hasAccess': return await handleContentScriptMessage(websiteTabConnections, request, await websitePromise, activeAddress)
 				default: assertNever(access)
 			}
 		})
