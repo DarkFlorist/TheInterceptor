@@ -16,6 +16,7 @@ import { DinoSays } from '../subcomponents/DinoSays.js'
 import { identifyTransaction } from '../simulationExplaining/identifyTransaction.js'
 import { SomeTimeAgo } from '../subcomponents/SomeTimeAgo.js'
 import { humanReadableDate } from '../ui-utils.js'
+import { noNewBlockForOverTwoMins } from '../../background/iconHandler.js'
 
 async function enableMakeMeRich(enabled: boolean) {
 	sendPopupMessageToBackgroundPage( { method: 'popup_changeMakeMeRich', data: enabled } )
@@ -212,7 +213,7 @@ export function NetworkErrors({ rpcConnectionStatus } : NetworkErrorParams) {
 			</div>
 		: <></> }
 
-		{ rpcConnectionStatus.latestBlock !== undefined ?
+		{ rpcConnectionStatus.latestBlock !== undefined && noNewBlockForOverTwoMins(rpcConnectionStatus) ?
 			<div style = 'margin: 10px; background-color: var(--bg-color);'>
 				<Error warning = { true } text = { <>The connected RPC ({ rpcConnectionStatus.rpcNetwork.name }) seem to be stuck at block { rpcConnectionStatus.latestBlock.number } (occured on: { humanReadableDate(rpcConnectionStatus.latestBlock.timestamp) }). Retrying in <SomeTimeAgo priorTimestamp = { priorDate } countBackwards = { true }/>.</> }/>
 			</div>

@@ -21,7 +21,8 @@ export function postMessageIfStillConnected(websiteTabConnections: WebsiteTabCon
 	const tabConnection = websiteTabConnections.get(socket.tabId)
 	const identifier = websiteSocketToString(socket)
 	if (tabConnection === undefined) return false
-	for (const [socketAsString, connection] of Object.entries(tabConnection.connections)) {
+	for (const socketAsString in tabConnection.connections) {
+		const connection = tabConnection.connections[socketAsString]
 		if (socketAsString !== identifier) continue
 		postMessageToPortIfConnected(connection.port, message)
 	}
@@ -32,7 +33,8 @@ export function replyToInterceptedRequest(websiteTabConnections: WebsiteTabConne
 	const tabConnection = websiteTabConnections.get(message.uniqueRequestIdentifier.requestSocket.tabId)
 	const identifier = websiteSocketToString(message.uniqueRequestIdentifier.requestSocket)
 	if (tabConnection === undefined) return false
-	for (const [socketAsString, connection] of Object.entries(tabConnection.connections)) {
+	for (const socketAsString in tabConnection.connections) {
+		const connection = tabConnection.connections[socketAsString]
 		if (socketAsString !== identifier) continue
 		postMessageToPortIfConnected(connection.port, { ...message, interceptorApproved: true, requestId: message.uniqueRequestIdentifier.requestId })
 	}
@@ -47,7 +49,8 @@ export function sendSubscriptionReplyOrCallBack(websiteTabConnections: WebsiteTa
 	const tabConnection = websiteTabConnections.get(socket.tabId)
 	const identifier = websiteSocketToString(socket)
 	if (tabConnection === undefined) return false
-	for (const [socketAsString, connection] of Object.entries(tabConnection.connections)) {
+	for (const socketAsString in tabConnection.connections) {
+		const connection = tabConnection.connections[socketAsString]
 		if (socketAsString !== identifier) continue
 		postMessageToPortIfConnected(connection.port, { ...message, interceptorApproved: true })
 	}
