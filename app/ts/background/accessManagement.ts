@@ -1,11 +1,11 @@
-import { postMessageIfStillConnected } from './background.js'
 import { getActiveAddress, websiteSocketToString } from './backgroundUtils.js'
 import { findAddressInfo } from './metadataUtils.js'
 import { requestAccessFromUser } from './windows/interceptorAccess.js'
 import { retrieveWebsiteDetails, updateExtensionIcon } from './iconHandler.js'
 import { AddressInfoEntry, TabConnection, Website, WebsiteSocket, WebsiteTabConnections } from '../utils/user-interface-types.js'
-import { InpageScriptCallBack, InpageScriptRequest, Settings, WebsiteAccessArray, WebsiteAddressAccess } from '../utils/interceptor-messages.js'
+import { InpageScriptCallBack, Settings, WebsiteAccessArray, WebsiteAddressAccess } from '../utils/interceptor-messages.js'
 import { updateWebsiteAccess } from './settings.js'
+import { sendSubscriptionReplyOrCallBack } from './messageSending.js'
 
 export function getConnectionDetails(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket) {
 	const identifier = websiteSocketToString(socket)
@@ -26,27 +26,29 @@ export function verifyAccess(websiteTabConnections: WebsiteTabConnections, socke
 	const connection = getConnectionDetails(websiteTabConnections, socket)
 	if (connection && connection.approved) return 'hasAccess'
 	const access = requestAccessForAddress !== undefined ? hasAddressAccess(settings.websiteAccess, websiteOrigin, requestAccessForAddress, settings) : hasAccess(settings.websiteAccess, websiteOrigin)
-	if (access === 'hasAccess') return  connectToPort(websiteTabConnections, socket, websiteOrigin, settings, requestAccessForAddress) ? 'hasAccess' : 'noAccess'
+	if (access === 'hasAccess') return connectToPort(websiteTabConnections, socket, websiteOrigin, settings, requestAccessForAddress) ? 'hasAccess' : 'noAccess'
 	if (access === 'noAccess') return 'noAccess'
 	return isEthRequestAccounts ? 'askAccess' : 'noAccess'
 }
 
-export function sendMessageToApprovedWebsitePorts(websiteTabConnections: WebsiteTabConnections, message: InpageScriptRequest | InpageScriptCallBack) {
+export function sendMessageToApprovedWebsitePorts(websiteTabConnections: WebsiteTabConnections, message:  InpageScriptCallBack) {
 	// inform all the tabs about the address change
 	for (const [_tab, tabConnection] of websiteTabConnections.entries() ) {
-		for (const [_string, connection] of Object.entries(tabConnection.connections) ) {
+		for (const key in tabConnection.connections) {
+			const connection = tabConnection.connections[key]
 			if (!connection.approved) continue
-			postMessageIfStillConnected(websiteTabConnections, connection.socket, message)
+			sendSubscriptionReplyOrCallBack(websiteTabConnections, connection.socket, message)
 		}
 	}
 }
 export async function sendActiveAccountChangeToApprovedWebsitePorts(websiteTabConnections: WebsiteTabConnections, settings: Settings) {
 	// inform all the tabs about the address change
 	for (const [_tab, tabConnection] of websiteTabConnections.entries() ) {
-		for (const [_string, connection] of Object.entries(tabConnection.connections) ) {
+		for (const key in tabConnection.connections) {
+			const connection = tabConnection.connections[key]
 			if (!connection.approved) continue
 			const activeAddress = await getActiveAddressForDomain(connection.websiteOrigin, settings, connection.socket)
-			postMessageIfStillConnected(websiteTabConnections, connection.socket, {
+			sendSubscriptionReplyOrCallBack(websiteTabConnections, connection.socket, {
 				method: 'accountsChanged',
 				result: activeAddress !== undefined ? [activeAddress] : []
 			})
@@ -170,16 +172,16 @@ function connectToPort(websiteTabConnections: WebsiteTabConnections, socket: Web
 	setWebsitePortApproval(websiteTabConnections, socket, true)
 	updateExtensionIcon(websiteTabConnections, socket, websiteOrigin)
 
-	postMessageIfStillConnected(websiteTabConnections, socket, { method: 'connect', result: [settings.rpcNetwork.chainId] })
+	sendSubscriptionReplyOrCallBack(websiteTabConnections, socket, { method: 'connect', result: [settings.rpcNetwork.chainId] })
 
 	// seems like dapps also want to get account changed and chain changed events after we connect again, so let's send them too
-	postMessageIfStillConnected(websiteTabConnections, socket, { method: 'accountsChanged', result: connectWithActiveAddress !== undefined ? [connectWithActiveAddress] : [] })
+	sendSubscriptionReplyOrCallBack(websiteTabConnections, socket, { method: 'accountsChanged', result: connectWithActiveAddress !== undefined ? [connectWithActiveAddress] : [] })
 
-	postMessageIfStillConnected(websiteTabConnections, socket, { method: 'chainChanged', result: settings.rpcNetwork.chainId })
+	sendSubscriptionReplyOrCallBack(websiteTabConnections, socket, { method: 'chainChanged', result: settings.rpcNetwork.chainId })
 
 	if (!settings.simulationMode || settings.useSignersAddressAsActiveAddress) {
-		postMessageIfStillConnected(websiteTabConnections, socket, { method: 'request_signer_to_eth_requestAccounts', result: [] })
-		postMessageIfStillConnected(websiteTabConnections, socket, { method: 'request_signer_chainId', result: [] })
+		sendSubscriptionReplyOrCallBack(websiteTabConnections, socket, { method: 'request_signer_to_eth_requestAccounts', result: [] })
+		sendSubscriptionReplyOrCallBack(websiteTabConnections, socket, { method: 'request_signer_chainId', result: [] })
 	}
 	return true
 }
@@ -187,7 +189,7 @@ function connectToPort(websiteTabConnections: WebsiteTabConnections, socket: Web
 function disconnectFromPort(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, websiteOrigin: string): false {
 	setWebsitePortApproval(websiteTabConnections, socket, false)
 	updateExtensionIcon(websiteTabConnections, socket, websiteOrigin)
-	postMessageIfStillConnected(websiteTabConnections, socket, { method: 'disconnect', result: [] })
+	sendSubscriptionReplyOrCallBack(websiteTabConnections, socket, { method: 'disconnect', result: [] })
 	return false
 }
 
@@ -208,7 +210,8 @@ async function askUserForAccessOnConnectionUpdate(websiteTabConnections: Website
 }
 
 async function updateTabConnections(websiteTabConnections: WebsiteTabConnections, tabConnection: TabConnection, promptForAccessesIfNeeded: boolean, settings: Settings) {
-	for (const [_string, connection] of Object.entries(tabConnection.connections) ) {
+	for (const key in tabConnection.connections) {
+		const connection = tabConnection.connections[key]
 		const activeAddress = await getActiveAddress(settings, connection.socket.tabId)
 		updateExtensionIcon(websiteTabConnections, connection.socket, connection.websiteOrigin)
 		const access = activeAddress ? hasAddressAccess(settings.websiteAccess, connection.websiteOrigin, activeAddress, settings) : hasAccess(settings.websiteAccess, connection.websiteOrigin)

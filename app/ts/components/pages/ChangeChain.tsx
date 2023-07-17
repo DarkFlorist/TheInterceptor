@@ -23,14 +23,14 @@ export function ChangeChain() {
 
 	async function approve() {
 		if (chainChangeData === undefined) return
-		await tryFocusingTabOrWindow({ type: 'tab', id: chainChangeData.socket.tabId })
-		await sendPopupMessageToBackgroundPage({ method: 'popup_changeChainDialog', data: { accept: true, requestId: chainChangeData.request.requestId, rpcNetwork: chainChangeData.rpcNetwork } })
+		await tryFocusingTabOrWindow({ type: 'tab', id: chainChangeData.request.uniqueRequestIdentifier.requestSocket.tabId })
+		await sendPopupMessageToBackgroundPage({ method: 'popup_changeChainDialog', data: { accept: true, uniqueRequestIdentifier: chainChangeData.request.uniqueRequestIdentifier, rpcNetwork: chainChangeData.rpcNetwork } })
 	}
 
 	async function reject() {
 		if (chainChangeData === undefined) return
-		await tryFocusingTabOrWindow({ type: 'tab', id: chainChangeData.socket.tabId })
-		await sendPopupMessageToBackgroundPage({ method: 'popup_changeChainDialog', data: { accept: false, requestId: chainChangeData.request.requestId, rpcNetwork: chainChangeData.rpcNetwork } })
+		await tryFocusingTabOrWindow({ type: 'tab', id: chainChangeData.request.uniqueRequestIdentifier.requestSocket.tabId })
+		await sendPopupMessageToBackgroundPage({ method: 'popup_changeChainDialog', data: { accept: false, uniqueRequestIdentifier: chainChangeData.request.uniqueRequestIdentifier, rpcNetwork: chainChangeData.rpcNetwork } })
 	}
 
 	if (chainChangeData === undefined) return <main></main>

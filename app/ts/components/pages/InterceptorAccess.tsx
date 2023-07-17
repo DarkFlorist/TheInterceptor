@@ -12,7 +12,6 @@ import { getPrettySignerName } from '../subcomponents/signers.js'
 
 const HALF_HEADER_HEIGHT = 48 / 2
 
-
 function Title({ icon, title} : {icon: string | undefined, title: string}) {
 	return <p style = 'font-weight: 700; line-height: 48px'>
 		{ icon === undefined

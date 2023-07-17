@@ -1,12 +1,14 @@
-import { ConnectedToSigner, ProviderMessage, WalletSwitchEthereumChainReply, TabState } from '../utils/interceptor-messages.js'
+import { ConnectedToSigner, WalletSwitchEthereumChainReply, TabState } from '../utils/interceptor-messages.js'
 import { WebsiteTabConnections } from '../utils/user-interface-types.js'
 import { EthereumAccountsReply, EthereumChainReply } from '../utils/wire-types.js'
-import { changeActiveAddressAndChainAndResetSimulation, postMessageToPortIfConnected } from './background.js'
+import { changeActiveAddressAndChainAndResetSimulation } from './background.js'
 import { getSocketFromPort, sendInternalWindowMessage, sendPopupMessageToOpenWindows } from './backgroundUtils.js'
 import { getRpcNetworkForChain, getTabState, setSignerName, updateTabState } from './storageVariables.js'
 import { getSettings } from './settings.js'
 import { resolveSignerChainChange } from './windows/changeChain.js'
 import { ApprovalState } from './accessManagement.js'
+import { ProviderMessage } from '../utils/requests.js'
+import { sendSubscriptionReplyOrCallBackToPort } from './messageSending.js'
 
 export async function ethAccountsReply(websiteTabConnections: WebsiteTabConnections, port: browser.runtime.Port, request: ProviderMessage, _connectInfoapproval: ApprovalState) {
 	if (!('params' in request)) return
@@ -84,10 +86,10 @@ export async function connectedToSigner(_websiteTabConnections: WebsiteTabConnec
 	const settings = await getSettings()
 	if (!settings.simulationMode || settings.useSignersAddressAsActiveAddress) {
 		if (approval === 'hasAccess') {
-			postMessageToPortIfConnected(port, { method: 'request_signer_to_eth_requestAccounts' as const, result: [] })
+			sendSubscriptionReplyOrCallBackToPort(port, { method: 'request_signer_to_eth_requestAccounts' as const, result: [] })
 		} else {
-			postMessageToPortIfConnected(port, { method: 'request_signer_to_eth_accounts' as const, result: [] })
+			sendSubscriptionReplyOrCallBackToPort(port, { method: 'request_signer_to_eth_accounts' as const, result: [] })
 		}
-		postMessageToPortIfConnected(port, { method: 'request_signer_chainId' as const, result: [] })
+		sendSubscriptionReplyOrCallBackToPort(port, { method: 'request_signer_chainId' as const, result: [] })
 	}
 }

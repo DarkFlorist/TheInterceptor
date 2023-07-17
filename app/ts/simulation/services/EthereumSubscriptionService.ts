@@ -3,9 +3,9 @@ import { assertNever } from '../../utils/typescript.js'
 import { EthereumClientService } from './EthereumClientService.js'
 import { getEthereumSubscriptions, updateEthereumSubscriptions } from '../../background/storageVariables.js'
 import { EthereumSubscriptions, SimulationState } from '../../utils/visualizer-types.js'
-import { postMessageIfStillConnected } from '../../background/background.js'
 import { WebsiteSocket, WebsiteTabConnections } from '../../utils/user-interface-types.js'
 import { getSimulatedBlock } from './SimulationModeEthereumClientService.js'
+import { sendSubscriptionReplyOrCallBack } from '../../background/messageSending.js'
 
 const dec2hex = (dec: number) => dec.toString(16).padStart(2, '0')
 
@@ -40,7 +40,7 @@ export async function sendSubscriptionMessagesForNewBlock(blockNumber: bigint, e
 				}
 				const newBlock = await ethereumClientService.getBlock(blockNumber, false)
 
-				postMessageIfStillConnected(websiteTabConnections, subscription.subscriptionCreatorSocket, {
+				sendSubscriptionReplyOrCallBack(websiteTabConnections, subscription.subscriptionCreatorSocket, {
 					method: 'newHeads' as const, 
 					result: { subscription: subscription.type, result: newBlock } as const,
 					subscription: subscription.subscriptionId,
@@ -49,7 +49,7 @@ export async function sendSubscriptionMessagesForNewBlock(blockNumber: bigint, e
 				if (simulationState !== undefined) {
 					const simulatedBlock = await getSimulatedBlock(ethereumClientService, simulationState, blockNumber + 1n, false)
 					// post our simulated block on top (reorg it)
-					postMessageIfStillConnected(websiteTabConnections, subscription.subscriptionCreatorSocket, {
+					sendSubscriptionReplyOrCallBack(websiteTabConnections, subscription.subscriptionCreatorSocket, {
 						method: 'newHeads' as const, 
 						result: { subscription: subscription.type, result: simulatedBlock },
 						subscription: subscription.subscriptionId,
