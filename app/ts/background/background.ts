@@ -1,22 +1,20 @@
-import { ConfirmTransactionTransactionSingleVisualization, InpageScriptRequest, PopupMessage, RPCReply, Settings, TabState } from '../utils/interceptor-messages.js'
+import { ConfirmTransactionTransactionSingleVisualization, PopupMessage, RPCReply, Settings } from '../utils/interceptor-messages.js'
 import 'webextension-polyfill'
 import { Simulator } from '../simulation/simulator.js'
 import { EthereumJsonRpcRequest, SendRawTransaction, SendTransactionParams } from '../utils/wire-types.js'
-import { getEthDonator, getSignerName, getSimulationResults, updateSimulationResults, updateTabState } from './storageVariables.js'
+import { getEthDonator, getSignerName, getSimulationResults, updateSimulationResults } from './storageVariables.js'
 import { changeSimulationMode, getSettings, getMakeMeRich } from './settings.js'
 import { blockNumber, call, chainId, estimateGas, gasPrice, getAccounts, getBalance, getBlockByNumber, getCode, getLogs, getPermissions, getSimulationStack, getTransactionByHash, getTransactionCount, getTransactionReceipt, personalSign, sendRawTransaction, sendTransaction, subscribe, switchEthereumChain, unsubscribe } from './simulationModeHanders.js'
 import { changeActiveAddress, changeMakeMeRich, changePage, resetSimulation, confirmDialog, refreshSimulation, removeTransaction, requestAccountsFromSigner, refreshPopupConfirmTransactionSimulation, confirmPersonalSign, confirmRequestAccess, changeInterceptorAccess, changeChainDialog, popupChangeActiveRpc, enableSimulationMode, addOrModifyAddressInfo, getAddressBookData, removeAddressBookEntry, openAddressBook, homeOpened, interceptorAccessChangeAddressOrRefresh, refreshPopupConfirmTransactionMetadata, changeSettings, importSettings, exportSettings, setNewRpcList } from './popupMessageHandlers.js'
 import { WebsiteCreatedEthereumUnsignedTransaction, SimulationState, RpcNetwork } from '../utils/visualizer-types.js'
 import { AddressBookEntry, Website, WebsiteSocket, WebsiteTabConnections } from '../utils/user-interface-types.js'
 import { interceptorAccessMetadataRefresh, requestAccessFromUser, updateInterceptorAccessViewWithPendingRequests } from './windows/interceptorAccess.js'
-import { ICON_NOT_ACTIVE, MAKE_YOU_RICH_TRANSACTION, METAMASK_ERROR_FAILED_TO_PARSE_REQUEST, METAMASK_ERROR_NOT_AUTHORIZED, METAMASK_ERROR_NOT_CONNECTED_TO_CHAIN } from '../utils/constants.js'
+import { MAKE_YOU_RICH_TRANSACTION, METAMASK_ERROR_FAILED_TO_PARSE_REQUEST, METAMASK_ERROR_NOT_AUTHORIZED, METAMASK_ERROR_NOT_CONNECTED_TO_CHAIN } from '../utils/constants.js'
 import { PriceEstimator } from '../simulation/priceEstimator.js'
-import { sendActiveAccountChangeToApprovedWebsitePorts, sendMessageToApprovedWebsitePorts, updateWebsiteApprovalAccesses, verifyAccess } from './accessManagement.js'
+import { sendActiveAccountChangeToApprovedWebsitePorts, sendMessageToApprovedWebsitePorts, updateWebsiteApprovalAccesses } from './accessManagement.js'
 import { findAddressInfo, getAddressBookEntriesForVisualiser } from './metadataUtils.js'
-import { getActiveAddress, getSocketFromPort, sendPopupMessageToOpenWindows, websiteSocketToString } from './backgroundUtils.js'
-import { retrieveWebsiteDetails, updateExtensionIcon } from './iconHandler.js'
-import { connectedToSigner, ethAccountsReply, signerChainChanged, walletSwitchEthereumChainReply } from './providerMessageHandlers.js'
-import { assertNever, assertUnreachable } from '../utils/typescript.js'
+import { sendPopupMessageToOpenWindows } from './backgroundUtils.js'
+import { assertUnreachable } from '../utils/typescript.js'
 import { EthereumClientService } from '../simulation/services/EthereumClientService.js'
 import { appendTransaction, copySimulationState, getNonPrependedSimulatedTransactions, getNonceFixedSimulatedTransactions, getWebsiteCreatedEthereumUnsignedTransactions, setPrependTransactionsQueue, setSimulationTransactions } from '../simulation/services/SimulationModeEthereumClientService.js'
 import { Semaphore } from '../utils/semaphore.js'
@@ -25,7 +23,7 @@ import { formSimulatedAndVisualizedTransaction } from '../components/formVisuali
 import { updateConfirmTransactionViewWithPendingTransaction } from './windows/confirmTransaction.js'
 import { updateChainChangeViewWithPendingRequest } from './windows/changeChain.js'
 import { updatePendingPersonalSignViewWithPendingRequests } from './windows/personalSign.js'
-import { InterceptedRequest, RawInterceptedRequest, UniqueRequestIdentifier } from '../utils/requests.js'
+import { InterceptedRequest, UniqueRequestIdentifier } from '../utils/requests.js'
 import { replyToInterceptedRequest } from './messageSending.js'
 
 async function visualizeSimulatorState(simulationState: SimulationState, simulator: Simulator) {
@@ -400,113 +398,6 @@ export function refuseAccess(websiteTabConnections: WebsiteTabConnections, reque
 export async function gateKeepRequestBehindAccessDialog(simulator: Simulator | undefined, websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, request: InterceptedRequest, website: Website, activeAddress: bigint | undefined, settings: Settings) {
 	const addressInfo = activeAddress !== undefined ? findAddressInfo(activeAddress, settings.userAddressBook.addressInfos) : undefined
 	return await requestAccessFromUser(simulator, websiteTabConnections, socket, website, request, addressInfo, settings, activeAddress)
-}
-
-function getProviderHandler(method: string) {
-	switch (method) {
-		case 'eth_accounts_reply': return { method: 'eth_accounts_reply' as const, func: ethAccountsReply }
-		case 'signer_chainChanged': return { method: 'signer_chainChanged' as const, func: signerChainChanged }
-		case 'wallet_switchEthereumChain_reply': return { method: 'wallet_switchEthereumChain_reply' as const, func: walletSwitchEthereumChainReply }
-		case 'connected_to_signer': return { method: 'connected_to_signer' as const, func: connectedToSigner }
-		default: return { method: 'notProviderMethod' as const }
-	}
-}
-
-export async function onContentScriptConnected(simulator: Simulator | undefined, port: browser.runtime.Port, websiteTabConnections: WebsiteTabConnections) {
-	const socket = getSocketFromPort(port)
-	if (port?.sender?.url === undefined) return
-	const websiteOrigin = (new URL(port.sender.url)).hostname
-	const websitePromise = retrieveWebsiteDetails(port, websiteOrigin)
-	const identifier = websiteSocketToString(socket)
-
-	console.log(`content script connected ${ websiteOrigin }`)
-
-	const tabConnection = websiteTabConnections.get(socket.tabId)
-	const newConnection = {
-		port: port,
-		socket: socket,
-		websiteOrigin: websiteOrigin,
-		approved: false,
-		wantsToConnect: false,
-	}
-	port.onDisconnect.addListener(() => {
-		const tabConnection = websiteTabConnections.get(socket.tabId)
-		if (tabConnection === undefined) return
-		delete tabConnection.connections[websiteSocketToString(socket)]
-		if (Object.keys(tabConnection).length === 0) {
-			websiteTabConnections.delete(socket.tabId)
-		}
-	})
-
-	const pendingRequestLimiter = new Semaphore(20) // only allow 20 requests pending at the time for a port
-
-	port.onMessage.addListener(async (payload) => {
-		if (!(
-			'data' in payload
-			&& typeof payload.data === 'object'
-			&& payload.data !== null
-			&& 'interceptorRequest' in payload.data
-		)) return
-		await pendingRequestLimiter.execute(async () => {
-			const rawMessage = RawInterceptedRequest.parse(payload.data)
-			const request = {
-				method: rawMessage.method,
-				...'params' in rawMessage ? { params: rawMessage.params } : {},
-				interceptorRequest: rawMessage.interceptorRequest,
-				usingInterceptorWithoutSigner: rawMessage.usingInterceptorWithoutSigner,
-				uniqueRequestIdentifier: { requestId: rawMessage.requestId, requestSocket: socket },
-			}
-			const activeAddress = await getActiveAddress(await getSettings(), socket.tabId)
-			const access = verifyAccess(websiteTabConnections, socket, request.method === 'eth_requestAccounts', websiteOrigin, activeAddress, await getSettings())
-			const providerHandler = getProviderHandler(request.method)
-			const identifiedMethod = providerHandler.method
-			if (identifiedMethod !== 'notProviderMethod') {
-				await providerHandler.func(simulator, websiteTabConnections, port, request, access)
-				const message: InpageScriptRequest = {
-					uniqueRequestIdentifier: request.uniqueRequestIdentifier,
-					method: identifiedMethod,
-					result: '0x' as const,
-				}
-				return replyToInterceptedRequest(websiteTabConnections, message)
-			}
-			if (access === 'noAccess' || activeAddress === undefined) {
-				if (request.method === 'eth_accounts') {
-					return replyToInterceptedRequest(websiteTabConnections, { method: 'eth_accounts' as const, result: [], uniqueRequestIdentifier: request.uniqueRequestIdentifier })
-				}
-				// if user has not given access, assume we are on chain 1
-				if (request.method === 'eth_chainId' || request.method === 'net_version') {
-					return replyToInterceptedRequest(websiteTabConnections, { method: 'eth_chainId' as const, result: 1n, uniqueRequestIdentifier: request.uniqueRequestIdentifier })
-				}
-			}
-			if (activeAddress === undefined) return refuseAccess(websiteTabConnections, request)
-
-			switch (access) {
-				case 'noAccess': return refuseAccess(websiteTabConnections, request)
-				case 'askAccess': return await gateKeepRequestBehindAccessDialog(simulator, websiteTabConnections, socket, request, await websitePromise, activeAddress, await getSettings())
-				case 'hasAccess': return await handleContentScriptMessage(simulator, websiteTabConnections, request, await websitePromise, activeAddress)
-				default: assertNever(access)
-			}
-		})
-	})
-
-	if (tabConnection === undefined) {
-		websiteTabConnections.set(socket.tabId, {
-			connections: { [identifier]: newConnection },
-		})
-		await updateTabState(socket.tabId, (previousState: TabState) => {
-			return {
-				...previousState,
-				tabIconDetails: {
-					icon: ICON_NOT_ACTIVE,
-					iconReason: 'No active address selected.',
-				}
-			}
-		})
-		updateExtensionIcon(websiteTabConnections, socket, websiteOrigin)
-	} else {
-		tabConnection.connections[identifier] = newConnection
-	}
-
 }
 
 export async function popupMessageHandler(
