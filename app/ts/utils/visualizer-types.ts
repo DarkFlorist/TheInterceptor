@@ -273,8 +273,16 @@ export type ERC721TokenApprovalChange = {
 	approvedEntry: AddressBookEntry
 }
 
+export type SimulationUpdatingState = funtypes.Static<typeof SimulationUpdatingState>
+export const SimulationUpdatingState = funtypes.Union(funtypes.Literal('updating'), funtypes.Literal('done'), funtypes.Literal('failed'))
+
+export type SimulationResultState = funtypes.Static<typeof SimulationResultState>
+export const SimulationResultState = funtypes.Union(funtypes.Literal('done'), funtypes.Literal('invalid'))
+
 export type SimulationResults = funtypes.Static<typeof SimulationResults>
 export const SimulationResults = funtypes.ReadonlyObject({
+	simulationUpdatingState: SimulationUpdatingState, 
+	simulationResultState: SimulationResultState,
 	simulationId: funtypes.Number,
 	simulationState: funtypes.Union(SimulationState, funtypes.Undefined),
 	visualizerResults: funtypes.Union(funtypes.ReadonlyArray(SimResults), funtypes.Undefined),

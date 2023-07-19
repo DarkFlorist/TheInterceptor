@@ -76,6 +76,8 @@ export async function setPendingPersonalSignPromise(promise: PendingPersonalSign
 export async function getSimulationResults() {
 	const results = await browserStorageLocalSingleGetWithDefault('simulationResults', undefined)
 	const emptyResults = {
+		simulationUpdatingState: 'done' as const,
+		simulationResultState: 'invalid' as const,
 		simulationId: 0,
 		simulationState: undefined,
 		visualizerResults: undefined,
