@@ -6,6 +6,7 @@ import { AddressInfoEntry, TabConnection, Website, WebsiteSocket, WebsiteTabConn
 import { InpageScriptCallBack, Settings, WebsiteAccessArray, WebsiteAddressAccess } from '../utils/interceptor-messages.js'
 import { updateWebsiteAccess } from './settings.js'
 import { sendSubscriptionReplyOrCallBack } from './messageSending.js'
+import { Simulator } from '../simulation/simulator.js'
 
 export function getConnectionDetails(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket) {
 	const identifier = websiteSocketToString(socket)
@@ -201,15 +202,15 @@ export function getAssociatedAddresses(settings: Settings, websiteOrigin: string
 	return Array.from(new Set(all)).map(x => findAddressInfo(x, settings.userAddressBook.addressInfos))
 }
 
-async function askUserForAccessOnConnectionUpdate(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, websiteOrigin: string, activeAddress: AddressInfoEntry | undefined, settings: Settings) {
+async function askUserForAccessOnConnectionUpdate(simulator: Simulator, websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, websiteOrigin: string, activeAddress: AddressInfoEntry | undefined, settings: Settings) {
 	const details = getConnectionDetails(websiteTabConnections, socket)
 	if (details === undefined) return
 
 	const website = await retrieveWebsiteDetails(details.port, websiteOrigin)
-	await requestAccessFromUser(websiteTabConnections, socket, website, undefined, activeAddress, settings, activeAddress?.address)
+	await requestAccessFromUser(simulator, websiteTabConnections, socket, website, undefined, activeAddress, settings, activeAddress?.address)
 }
 
-async function updateTabConnections(websiteTabConnections: WebsiteTabConnections, tabConnection: TabConnection, promptForAccessesIfNeeded: boolean, settings: Settings) {
+async function updateTabConnections(simulator: Simulator, websiteTabConnections: WebsiteTabConnections, tabConnection: TabConnection, promptForAccessesIfNeeded: boolean, settings: Settings) {
 	for (const key in tabConnection.connections) {
 		const connection = tabConnection.connections[key]
 		const activeAddress = await getActiveAddress(settings, connection.socket.tabId)
@@ -224,14 +225,14 @@ async function updateTabConnections(websiteTabConnections: WebsiteTabConnections
 
 		if (access === 'notFound' && connection.wantsToConnect && promptForAccessesIfNeeded) {
 			const addressInfo = activeAddress ? findAddressInfo(activeAddress, settings.userAddressBook.addressInfos) : undefined
-			askUserForAccessOnConnectionUpdate(websiteTabConnections, connection.socket, connection.websiteOrigin, addressInfo, settings)
+			askUserForAccessOnConnectionUpdate(simulator, websiteTabConnections, connection.socket, connection.websiteOrigin, addressInfo, settings)
 		}
 	}
 }
 
-export function updateWebsiteApprovalAccesses(websiteTabConnections: WebsiteTabConnections, promptForAccessesIfNeeded: boolean = true, settings: Settings) {
+export function updateWebsiteApprovalAccesses(simulator: Simulator, websiteTabConnections: WebsiteTabConnections, promptForAccessesIfNeeded: boolean = true, settings: Settings) {
 	// update port connections and disconnect from ports that should not have access anymore
 	for (const [_tab, tabConnection] of websiteTabConnections.entries() ) {
-		updateTabConnections(websiteTabConnections, tabConnection, promptForAccessesIfNeeded, settings)
+		updateTabConnections(simulator, websiteTabConnections, tabConnection, promptForAccessesIfNeeded, settings)
 	}
 }
