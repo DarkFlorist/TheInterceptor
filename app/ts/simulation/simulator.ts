@@ -36,14 +36,17 @@ const logHandler = new Map<string, Loghandler >([
 ])
 
 export class Simulator {
-	public readonly ethereum
+	public ethereum: EthereumClientService
 
 	public constructor(rpcNetwork: RpcNetwork, newBlockAttemptCallback: (blockHeader: EthereumBlockHeader, ethereumClientService: EthereumClientService, isNewBlock: boolean) => void, onErrorBlockCallback: (ethereumClientService: EthereumClientService, error: Error) => void) {
 		this.ethereum = new EthereumClientService(new EthereumJSONRpcRequestHandler(rpcNetwork), newBlockAttemptCallback, onErrorBlockCallback)
 	}
 
-	public cleanup = () => {
-		this.ethereum.cleanup()
+	public cleanup = () => this.ethereum.cleanup()
+
+	public reset = (rpcNetwork: RpcNetwork) => {
+		this.cleanup()
+		this.ethereum = new EthereumClientService(new EthereumJSONRpcRequestHandler(rpcNetwork), this.ethereum.getNewBlockAttemptCallback(), this.ethereum.getOnErrorBlockCallback())
 	}
 
 	public async visualizeTransactionChain(simulationState: SimulationState, transactions: WebsiteCreatedEthereumUnsignedTransaction[], blockNumber: bigint, multicallResults: MulticallResponse) {
