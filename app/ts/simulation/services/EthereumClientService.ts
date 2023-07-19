@@ -208,11 +208,7 @@ export class EthereumClientService {
 
 	public readonly executionSpec383MultiCall = async (calls: readonly BlockCalls[], blockTag: EthereumBlockTag) => {
 		const call = { method: 'eth_multicallV1', params: [calls, blockTag] } as const
-		console.log(calls)
-		console.log(JSON.stringify(ExecutionSpec383MultiCallParams.serialize(call)))
 		const unvalidatedResult = await this.requestHandler.jsonRpcRequest(call)
-		console.log([0, calls, blockTag])
-		console.log(unvalidatedResult)
 		return ExecutionSpec383MultiCallResult.parse(unvalidatedResult)
 	}
 
