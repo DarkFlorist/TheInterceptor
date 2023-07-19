@@ -46,7 +46,7 @@ function getFromField(websiteTabConnections: WebsiteTabConnections, simulationMo
 }
 
 export async function sendTransaction(
-	simulator: Simulator | undefined,
+	simulator: Simulator,
 	websiteTabConnections: WebsiteTabConnections,
 	activeAddress: bigint | undefined,
 	ethereumClientService: EthereumClientService,
@@ -108,7 +108,7 @@ export async function sendTransaction(
 }
 
 export async function sendRawTransaction(
-	simulator: Simulator | undefined,
+	simulator: Simulator,
 	ethereumClientService: EthereumClientService,
 	sendRawTransactionParams: SendRawTransaction,
 	request: InterceptedRequest,
@@ -243,7 +243,7 @@ export async function personalSign(ethereumClientService: EthereumClientService,
 	return await openPersonalSignDialog(ethereumClientService, websiteTabConnections, params, request, simulationMode, website, activeAddress)
 }
 
-export async function switchEthereumChain(simulator: Simulator | undefined, websiteTabConnections: WebsiteTabConnections, ethereumClientService: EthereumClientService, params: SwitchEthereumChainParams, request: InterceptedRequest, simulationMode: boolean, website: Website) {
+export async function switchEthereumChain(simulator: Simulator, websiteTabConnections: WebsiteTabConnections, ethereumClientService: EthereumClientService, params: SwitchEthereumChainParams, request: InterceptedRequest, simulationMode: boolean, website: Website) {
 	if (ethereumClientService.getChainId() === params.params[0].chainId) {
 		// we are already on the right chain
 		return { method: params.method, result: null }

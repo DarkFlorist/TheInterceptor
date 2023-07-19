@@ -53,8 +53,7 @@ async function visualizeSimulatorState(simulationState: SimulationState, simulat
 }
 
 const updateSimulationStateSemaphore = new Semaphore(1)
-export async function updateSimulationState(simulator: Simulator | undefined, getUpdatedSimulationState: (simulationState: SimulationState | undefined) => Promise<SimulationState | undefined>, activeAddress: bigint | undefined, invalidateOldState: boolean) {
-	if (simulator === undefined) return undefined
+export async function updateSimulationState(simulator: Simulator, getUpdatedSimulationState: (simulationState: SimulationState | undefined) => Promise<SimulationState | undefined>, activeAddress: bigint | undefined, invalidateOldState: boolean) {
 	return await updateSimulationStateSemaphore.execute(async () => {
 		const simulationResults = await getSimulationResults()
 		const simulationId = simulationResults.simulationId + 1
@@ -102,7 +101,7 @@ export async function updateSimulationState(simulator: Simulator | undefined, ge
 }
 
 export async function refreshConfirmTransactionSimulation(
-	simulator: Simulator | undefined,
+	simulator: Simulator,
 	ethereumClientService: EthereumClientService,
 	activeAddress: bigint,
 	simulationMode: boolean,
@@ -117,7 +116,6 @@ export async function refreshConfirmTransactionSimulation(
 		signerName: await getSignerName(),
 		tabIdOpenedFrom: uniqueRequestIdentifier.requestSocket.tabId,
 	}
-	if (simulator === undefined) return { statusCode: 'failed', data: info } as const
 	sendPopupMessageToOpenWindows({ method: 'popup_confirm_transaction_simulation_started' } as const)
 
 	const getCopiedSimulationState = async (simulationMode: boolean) => {
@@ -182,7 +180,7 @@ export async function getPrependTrasactions(ethereumClientService: EthereumClien
 }
 
 async function handleRPCRequest(
-	simulator: Simulator | undefined,
+	simulator: Simulator,
 	simulationState: SimulationState | undefined,
 	websiteTabConnections: WebsiteTabConnections,
 	ethereumClientService: EthereumClientService,
@@ -284,7 +282,7 @@ async function handleRPCRequest(
 
 const changeActiveAddressAndChainAndResetSimulationSemaphore = new Semaphore(1)
 export async function changeActiveAddressAndChainAndResetSimulation(
-	simulator: Simulator | undefined,
+	simulator: Simulator,
 	websiteTabConnections: WebsiteTabConnections,
 	change: {
 		simulationMode: boolean,
@@ -293,8 +291,6 @@ export async function changeActiveAddressAndChainAndResetSimulation(
 	},
 ) {
 	await changeActiveAddressAndChainAndResetSimulationSemaphore.execute(async () => {
-		if (simulator === undefined) return
-
 		if (change.simulationMode) {
 			await changeSimulationMode({
 				...change,
@@ -331,7 +327,7 @@ export async function changeActiveAddressAndChainAndResetSimulation(
 	})
 }
 
-export async function changeActiveRpc(simulator: Simulator | undefined, websiteTabConnections: WebsiteTabConnections, rpcNetwork: RpcNetwork, simulationMode: boolean) {
+export async function changeActiveRpc(simulator: Simulator, websiteTabConnections: WebsiteTabConnections, rpcNetwork: RpcNetwork, simulationMode: boolean) {
 	
 	if (simulationMode) return await changeActiveAddressAndChainAndResetSimulation(simulator, websiteTabConnections, {
 		simulationMode: simulationMode,
@@ -341,9 +337,8 @@ export async function changeActiveRpc(simulator: Simulator | undefined, websiteT
 	await sendPopupMessageToOpenWindows({ method: 'popup_settingsUpdated', data: await getSettings() })
 }
 
-export async function handleContentScriptMessage(simulator: Simulator | undefined, websiteTabConnections: WebsiteTabConnections, request: InterceptedRequest, website: Website, activeAddress: bigint | undefined) {
+export async function handleContentScriptMessage(simulator: Simulator, websiteTabConnections: WebsiteTabConnections, request: InterceptedRequest, website: Website, activeAddress: bigint | undefined) {
 	try {
-		if (simulator === undefined) throw 'Interceptor not ready'
 		const settings = await getSettings()
 		if (settings.simulationMode) {
 			const simulationState = (await getSimulationResults()).simulationState
@@ -395,7 +390,7 @@ export function refuseAccess(websiteTabConnections: WebsiteTabConnections, reque
 	})
 }
 
-export async function gateKeepRequestBehindAccessDialog(simulator: Simulator | undefined, websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, request: InterceptedRequest, website: Website, activeAddress: bigint | undefined, settings: Settings) {
+export async function gateKeepRequestBehindAccessDialog(simulator: Simulator, websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, request: InterceptedRequest, website: Website, activeAddress: bigint | undefined, settings: Settings) {
 	const addressInfo = activeAddress !== undefined ? findAddressInfo(activeAddress, settings.userAddressBook.addressInfos) : undefined
 	return await requestAccessFromUser(simulator, websiteTabConnections, socket, website, request, addressInfo, settings, activeAddress)
 }

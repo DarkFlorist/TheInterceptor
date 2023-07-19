@@ -22,7 +22,7 @@ export async function updateChainChangeViewWithPendingRequest() {
 	if (promise) return sendPopupMessageToOpenWindows({ method: 'popup_ChangeChainRequest', data: promise })
 }
 
-export async function resolveChainChange(simulator: Simulator | undefined, websiteTabConnections: WebsiteTabConnections, confirmation: ChainChangeConfirmation) {
+export async function resolveChainChange(simulator: Simulator, websiteTabConnections: WebsiteTabConnections, confirmation: ChainChangeConfirmation) {
 	if (pendForUserReply !== undefined) {
 		pendForUserReply.resolve(confirmation)
 		return
@@ -59,7 +59,7 @@ const userDeniedChange = {
 } as const
 
 export const openChangeChainDialog = async (
-	simulator: Simulator | undefined,
+	simulator: Simulator,
 	websiteTabConnections: WebsiteTabConnections,
 	request: InterceptedRequest,
 	simulationMode: boolean,
@@ -121,7 +121,7 @@ export const openChangeChainDialog = async (
 	}
 }
 
-async function resolve(simulator: Simulator | undefined, websiteTabConnections: WebsiteTabConnections, reply: ChainChangeConfirmation, simulationMode: boolean) {
+async function resolve(simulator: Simulator, websiteTabConnections: WebsiteTabConnections, reply: ChainChangeConfirmation, simulationMode: boolean) {
 	await setChainChangeConfirmationPromise(undefined)
 	if (reply.data.accept) {
 		if (simulationMode) {

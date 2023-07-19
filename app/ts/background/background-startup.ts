@@ -39,7 +39,7 @@ function getProviderHandler(method: string) {
 	}
 }
 
-export async function onContentScriptConnected(simulator: Simulator | undefined, port: browser.runtime.Port, websiteTabConnections: WebsiteTabConnections) {
+export async function onContentScriptConnected(simulator: Simulator, port: browser.runtime.Port, websiteTabConnections: WebsiteTabConnections) {
 	const socket = getSocketFromPort(port)
 	if (port?.sender?.url === undefined) return
 	const websiteOrigin = (new URL(port.sender.url)).hostname
@@ -171,9 +171,7 @@ async function startup() {
 	if (settings.rpcNetwork.httpsRpc === undefined) throw new Error('RPC not set')
 	const simulator = new Simulator(settings.rpcNetwork, newBlockAttemptCallback, onErrorBlockCallback)
 	browser.runtime.onConnect.addListener(port => onContentScriptConnected(simulator, port, websiteTabConnections).catch(console.error))
-	if (simulator === undefined) throw new Error('simulator not found')
 	browser.runtime.onMessage.addListener(async function (message: unknown) {
-		if (simulator === undefined) throw new Error('Interceptor not ready yet')
 		await popupMessageHandler(websiteTabConnections, simulator, message, await getSettings())
 	})
 

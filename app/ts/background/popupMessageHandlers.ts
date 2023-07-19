@@ -22,7 +22,7 @@ import { doesUniqueRequestIdentifiersMatch } from '../utils/requests.js'
 import { SimulationState } from '../utils/visualizer-types.js'
 import { isFailedToFetchError } from '../utils/errors.js'
 
-export async function confirmDialog(simulator: Simulator | undefined, ethereumClientService: EthereumClientService, websiteTabConnections: WebsiteTabConnections, confirmation: TransactionConfirmation) {
+export async function confirmDialog(simulator: Simulator, ethereumClientService: EthereumClientService, websiteTabConnections: WebsiteTabConnections, confirmation: TransactionConfirmation) {
 	await resolvePendingTransaction(simulator, ethereumClientService, websiteTabConnections, confirmation)
 }
 
@@ -30,7 +30,7 @@ export async function confirmPersonalSign(websiteTabConnections: WebsiteTabConne
 	await resolvePersonalSign(websiteTabConnections, confirmation)
 }
 
-export async function confirmRequestAccess(simulator: Simulator | undefined, websiteTabConnections: WebsiteTabConnections, confirmation: InterceptorAccess) {
+export async function confirmRequestAccess(simulator: Simulator, websiteTabConnections: WebsiteTabConnections, confirmation: InterceptorAccess) {
 	await resolveInterceptorAccess(simulator, websiteTabConnections, confirmation.data)
 }
 
@@ -84,7 +84,7 @@ export async function changeMakeMeRich(simulator: Simulator, ethereumClientServi
 	}, settings.activeSimulationAddress, true)
 }
 
-export async function removeAddressBookEntry(simulator: Simulator | undefined, websiteTabConnections: WebsiteTabConnections, removeAddressBookEntry: RemoveAddressBookEntry) {
+export async function removeAddressBookEntry(simulator: Simulator, websiteTabConnections: WebsiteTabConnections, removeAddressBookEntry: RemoveAddressBookEntry) {
 	switch(removeAddressBookEntry.data.addressBookCategory) {
 		case 'My Active Addresses': {
 			await updateAddressInfos((previousAddressInfos) => previousAddressInfos.filter((info) => info.address !== removeAddressBookEntry.data.address))
@@ -102,7 +102,7 @@ export async function removeAddressBookEntry(simulator: Simulator | undefined, w
 	}
 }
 
-export async function addOrModifyAddressInfo(simulator: Simulator | undefined, websiteTabConnections: WebsiteTabConnections, entry: AddOrEditAddressBookEntry) {
+export async function addOrModifyAddressInfo(simulator: Simulator, websiteTabConnections: WebsiteTabConnections, entry: AddOrEditAddressBookEntry) {
 	const newEntry = entry.data
 	switch (newEntry.type) {
 		case 'NFT':
@@ -133,7 +133,7 @@ export async function addOrModifyAddressInfo(simulator: Simulator | undefined, w
 	}
 }
 
-export async function changeInterceptorAccess(simulator: Simulator | undefined, websiteTabConnections: WebsiteTabConnections, accessChange: ChangeInterceptorAccess) {
+export async function changeInterceptorAccess(simulator: Simulator, websiteTabConnections: WebsiteTabConnections, accessChange: ChangeInterceptorAccess) {
 	await updateWebsiteAccess(() => accessChange.data) // TODO: update 'popup_changeInterceptorAccess' to return list of changes instead of a new list
 	updateWebsiteApprovalAccesses(simulator, websiteTabConnections, undefined, await getSettings())
 	return await sendPopupMessageToOpenWindows({ method: 'popup_interceptor_access_changed' })
@@ -164,7 +164,7 @@ export async function removeTransaction(simulator: Simulator, ethereumClientServ
 	}, settings.activeSimulationAddress, true)
 }
 
-export async function refreshSimulation(simulator: Simulator | undefined, ethereumClientService: EthereumClientService, settings: Settings): Promise<SimulationState | undefined> {
+export async function refreshSimulation(simulator: Simulator, ethereumClientService: EthereumClientService, settings: Settings): Promise<SimulationState | undefined> {
 	return await updateSimulationState(simulator, async (simulationState) => {
 		if (simulationState === undefined) return
 		return await refreshSimulationState(ethereumClientService, simulationState)
@@ -190,7 +190,7 @@ export async function refreshPopupConfirmTransactionMetadata(ethereumClientServi
 	})
 }
 
-export async function refreshPopupConfirmTransactionSimulation(simulator: Simulator | undefined, ethereumClientService: EthereumClientService, { data }: RefreshConfirmTransactionDialogSimulation) {
+export async function refreshPopupConfirmTransactionSimulation(simulator: Simulator, ethereumClientService: EthereumClientService, { data }: RefreshConfirmTransactionDialogSimulation) {
 	const refreshMessage = await refreshConfirmTransactionSimulation(simulator, ethereumClientService, data.activeAddress, data.simulationMode, data.uniqueRequestIdentifier, data.transactionToSimulate)
 	const promises = await getPendingTransactions()
 	if (promises.length === 0) return
@@ -202,15 +202,15 @@ export async function refreshPopupConfirmTransactionSimulation(simulator: Simula
 	})
 }
 
-export async function popupChangeActiveRpc(simulator: Simulator | undefined, websiteTabConnections: WebsiteTabConnections, params: ChangeActiveChain, settings: Settings) {
+export async function popupChangeActiveRpc(simulator: Simulator, websiteTabConnections: WebsiteTabConnections, params: ChangeActiveChain, settings: Settings) {
 	return await changeActiveRpc(simulator, websiteTabConnections, params.data, settings.simulationMode)
 }
 
-export async function changeChainDialog(simulator: Simulator | undefined, websiteTabConnections: WebsiteTabConnections, chainChange: ChainChangeConfirmation) {
+export async function changeChainDialog(simulator: Simulator, websiteTabConnections: WebsiteTabConnections, chainChange: ChainChangeConfirmation) {
 	await resolveChainChange(simulator, websiteTabConnections, chainChange)
 }
 
-export async function enableSimulationMode(simulator: Simulator | undefined, websiteTabConnections: WebsiteTabConnections, params: EnableSimulationMode) {
+export async function enableSimulationMode(simulator: Simulator, websiteTabConnections: WebsiteTabConnections, params: EnableSimulationMode) {
 	const settings = await getSettings()
 	// if we are on unsupported chain, force change to a supported one
 	if (settings.useSignersAddressAsActiveAddress || params.data === false) {
@@ -357,7 +357,7 @@ export async function exportSettings() {
 	})
 }
 
-export async function setNewRpcList(simulator: Simulator | undefined, request: SetRpcList, settings: Settings) {
+export async function setNewRpcList(simulator: Simulator, request: SetRpcList, settings: Settings) {
 	await setRpcList(request.data)
 	await sendPopupMessageToOpenWindows({ method: 'popup_update_rpc_list', data: request.data })
 	const primary = await getPrimaryRpcForChain(settings.rpcNetwork.chainId)

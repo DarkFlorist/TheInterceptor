@@ -38,7 +38,7 @@ async function updateConfirmTransactionViewWithPendingTransactionOrClose() {
 	openedDialog = undefined
 }
 
-export async function resolvePendingTransaction(simulator: Simulator | undefined, ethereumClientService: EthereumClientService, websiteTabConnections: WebsiteTabConnections, confirmation: TransactionConfirmation) {
+export async function resolvePendingTransaction(simulator: Simulator, ethereumClientService: EthereumClientService, websiteTabConnections: WebsiteTabConnections, confirmation: TransactionConfirmation) {
 	const pending = pendingTransactions.get(getUniqueRequestIdentifierString(confirmation.data.uniqueRequestIdentifier))
 	const pendingTransaction = await removePendingTransaction(confirmation.data.uniqueRequestIdentifier)
 	if (pendingTransaction === undefined) throw new Error('Failed to find pending transaction')
@@ -68,7 +68,7 @@ const rejectMessage = {
 }
 
 export async function openConfirmTransactionDialog(
-	simulator: Simulator | undefined,
+	simulator: Simulator,
 	ethereumClientService: EthereumClientService,
 	request: InterceptedRequest,
 	transactionParams: SendTransactionParams | SendRawTransaction,
@@ -134,7 +134,7 @@ export async function openConfirmTransactionDialog(
 	}
 }
 
-async function resolve(simulator: Simulator | undefined, ethereumClientService: EthereumClientService, simulationMode: boolean, activeAddress: bigint, transactionToSimulate: WebsiteCreatedEthereumUnsignedTransaction, accept: boolean): Promise<{ forward: true } | { error: { code: number, message: string } } | { result: bigint }> {
+async function resolve(simulator: Simulator, ethereumClientService: EthereumClientService, simulationMode: boolean, activeAddress: bigint, transactionToSimulate: WebsiteCreatedEthereumUnsignedTransaction, accept: boolean): Promise<{ forward: true } | { error: { code: number, message: string } } | { result: bigint }> {
 	if (accept === false) return rejectMessage
 	if (!simulationMode) return { forward: true }
 	const newState = await updateSimulationState(simulator, async (simulationState) => {

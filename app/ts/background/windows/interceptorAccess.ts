@@ -23,7 +23,7 @@ let openedDialog: OpenedDialogWithListeners = undefined
 
 const pendingInterceptorAccessSemaphore = new Semaphore(1)
 
-const onCloseWindow = async (simulator: Simulator | undefined, windowId: number, websiteTabConnections: WebsiteTabConnections) => { // check if user has closed the window on their own, if so, reject signature
+const onCloseWindow = async (simulator: Simulator, windowId: number, websiteTabConnections: WebsiteTabConnections) => { // check if user has closed the window on their own, if so, reject signature
 	if (openedDialog?.popupOrTab.windowOrTab.id !== windowId) return
 	removeWindowTabListener(openedDialog.onCloseWindow)
 
@@ -40,7 +40,7 @@ const onCloseWindow = async (simulator: Simulator | undefined, windowId: number,
 	}
 }
 
-export async function resolveInterceptorAccess(simulator: Simulator | undefined, websiteTabConnections: WebsiteTabConnections, reply: InterceptorAccessReply) {
+export async function resolveInterceptorAccess(simulator: Simulator, websiteTabConnections: WebsiteTabConnections, reply: InterceptorAccessReply) {
 	const promises = await getPendingAccessRequests()
 	const pendingRequest = promises.find((req) => req.accessRequestId === reply.accessRequestId)
 	if (pendingRequest === undefined) throw new Error('Access request missing!')
@@ -53,7 +53,7 @@ export function getAddressMetadataForAccess(websiteAccess: WebsiteAccessArray, a
 	return Array.from(addressSet).map((x) => findAddressInfo(x, addressInfos))
 }
 
-export async function changeAccess(simulator: Simulator | undefined, websiteTabConnections: WebsiteTabConnections, confirmation: InterceptorAccessReply, website: Website, promptForAccessesIfNeeded: boolean = true) {
+export async function changeAccess(simulator: Simulator, websiteTabConnections: WebsiteTabConnections, confirmation: InterceptorAccessReply, website: Website, promptForAccessesIfNeeded: boolean = true) {
 	if (confirmation.userReply === 'NoResponse') return
 	await setAccess(website, confirmation.userReply === 'Approved', confirmation.requestAccessToAddress)
 	updateWebsiteApprovalAccesses(simulator, websiteTabConnections, promptForAccessesIfNeeded, await getSettings())
@@ -86,7 +86,7 @@ async function askForSignerAccountsFromSignerIfNotAvailable(websiteTabConnection
 }
 
 export async function requestAccessFromUser(
-	simulator: Simulator | undefined,
+	simulator: Simulator,
 	websiteTabConnections: WebsiteTabConnections,
 	socket: WebsiteSocket,
 	website: Website,
@@ -195,7 +195,7 @@ async function updateViewOrClose() {
 	}
 }
 
-async function resolve(simulator: Simulator | undefined, websiteTabConnections: WebsiteTabConnections, accessReply: InterceptorAccessReply, request: InterceptedRequest | undefined, website: Website, activeAddress: bigint | undefined) {
+async function resolve(simulator: Simulator, websiteTabConnections: WebsiteTabConnections, accessReply: InterceptorAccessReply, request: InterceptedRequest | undefined, website: Website, activeAddress: bigint | undefined) {
 	await updatePendingAccessRequests(async (previousPendingAccessRequests) => {
 		return previousPendingAccessRequests.filter((x) => !(x.website.websiteOrigin === website.websiteOrigin && (x.requestAccessToAddress?.address === accessReply.requestAccessToAddress || x.requestAccessToAddress?.address === accessReply.originalRequestAccessToAddress)))
 	})

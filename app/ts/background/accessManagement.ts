@@ -202,7 +202,7 @@ export function getAssociatedAddresses(settings: Settings, websiteOrigin: string
 	return Array.from(new Set(all)).map(x => findAddressInfo(x, settings.userAddressBook.addressInfos))
 }
 
-async function askUserForAccessOnConnectionUpdate(simulator: Simulator | undefined, websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, websiteOrigin: string, activeAddress: AddressInfoEntry | undefined, settings: Settings) {
+async function askUserForAccessOnConnectionUpdate(simulator: Simulator, websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, websiteOrigin: string, activeAddress: AddressInfoEntry | undefined, settings: Settings) {
 	const details = getConnectionDetails(websiteTabConnections, socket)
 	if (details === undefined) return
 
@@ -210,7 +210,7 @@ async function askUserForAccessOnConnectionUpdate(simulator: Simulator | undefin
 	await requestAccessFromUser(simulator, websiteTabConnections, socket, website, undefined, activeAddress, settings, activeAddress?.address)
 }
 
-async function updateTabConnections(simulator: Simulator | undefined, websiteTabConnections: WebsiteTabConnections, tabConnection: TabConnection, promptForAccessesIfNeeded: boolean, settings: Settings) {
+async function updateTabConnections(simulator: Simulator, websiteTabConnections: WebsiteTabConnections, tabConnection: TabConnection, promptForAccessesIfNeeded: boolean, settings: Settings) {
 	for (const key in tabConnection.connections) {
 		const connection = tabConnection.connections[key]
 		const activeAddress = await getActiveAddress(settings, connection.socket.tabId)
@@ -230,7 +230,7 @@ async function updateTabConnections(simulator: Simulator | undefined, websiteTab
 	}
 }
 
-export function updateWebsiteApprovalAccesses(simulator: Simulator | undefined, websiteTabConnections: WebsiteTabConnections, promptForAccessesIfNeeded: boolean = true, settings: Settings) {
+export function updateWebsiteApprovalAccesses(simulator: Simulator, websiteTabConnections: WebsiteTabConnections, promptForAccessesIfNeeded: boolean = true, settings: Settings) {
 	// update port connections and disconnect from ports that should not have access anymore
 	for (const [_tab, tabConnection] of websiteTabConnections.entries() ) {
 		updateTabConnections(simulator, websiteTabConnections, tabConnection, promptForAccessesIfNeeded, settings)
