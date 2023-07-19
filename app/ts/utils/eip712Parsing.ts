@@ -1,9 +1,10 @@
-import { UserAddressBook } from "./interceptor-messages.js"
-import { assertNever } from "./typescript.js"
-import { AddressBookEntry } from "./user-interface-types.js"
-import { EIP712Message, EthereumAddress, EthereumData, EthereumQuantity, JSONEncodeableObject, NonHexBigInt } from "./wire-types.js"
+import { UserAddressBook } from './interceptor-messages.js'
+import { assertNever } from './typescript.js'
+import { AddressBookEntry } from './user-interface-types.js'
+import { EthereumAddress, EthereumData, EthereumQuantity, NonHexBigInt } from './wire-types.js'
+import { EIP712Message, JSONEncodeableObject } from './JsonRpc-types.js'
 import * as funtypes from 'funtypes'
-import { getAddressMetaData } from "../background/metadataUtils.js"
+import { getAddressMetaData } from '../background/metadataUtils.js'
 
 type SolidityType = funtypes.Static<typeof SolidityType>
 const SolidityType = funtypes.Union(

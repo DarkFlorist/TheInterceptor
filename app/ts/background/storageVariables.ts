@@ -195,7 +195,13 @@ export async function setRpcConnectionStatus(rpcConnectionStatus: RpcConnectionS
 }
 
 export async function getRpcConnectionStatus() {
-	return RpcConnectionStatus.parse(await browserStorageLocalSingleGetWithDefault('rpcConnectionStatus', undefined))
+	try {
+		return RpcConnectionStatus.parse(await browserStorageLocalSingleGetWithDefault('rpcConnectionStatus', undefined))
+	} catch (e) {
+		console.warn('Connection status was corrupt:')
+		console.warn(e)
+		return undefined
+	}
 }
 
 export async function getEthereumSubscriptions() {

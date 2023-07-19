@@ -1,4 +1,4 @@
-import { EthSubscribeParams } from '../../utils/wire-types.js'
+import { EthSubscribeParams } from '../../utils/JsonRpc-types.js'
 import { assertNever } from '../../utils/typescript.js'
 import { EthereumClientService } from './EthereumClientService.js'
 import { getEthereumSubscriptions, updateEthereumSubscriptions } from '../../background/storageVariables.js'

@@ -1,9 +1,12 @@
-import { MulticallResponse, EthereumUnsignedTransaction, EthereumSignedTransactionWithBlockData, EthGetStorageAtResponse, EthereumQuantity, EthereumBlockTag, EthTransactionReceiptResponse, EthereumData, EthereumBlockHeader, EthereumBlockHeaderWithTransactionHashes, EthGetLogsRequest, EthGetLogsResponse, DappRequestTransaction } from '../../utils/wire-types.js'
+import { EthereumUnsignedTransaction, EthereumSignedTransactionWithBlockData, EthereumQuantity, EthereumBlockTag, EthereumData, EthereumBlockHeader, EthereumBlockHeaderWithTransactionHashes } from '../../utils/wire-types.js'
 import { IUnsignedTransaction1559 } from '../../utils/ethereum.js'
 import { TIME_BETWEEN_BLOCKS, MOCK_ADDRESS } from '../../utils/constants.js'
 import { IEthereumJSONRpcRequestHandler } from './EthereumJSONRpcRequestHandler.js'
 import { ethers } from 'ethers'
 import { stringToUint8Array } from '../../utils/bigint.js'
+import { BlockCalls, ExecutionSpec383MultiCallResult } from '../../utils/multicall-types.js'
+import { MulticallResponse, EthGetStorageAtResponse, EthTransactionReceiptResponse, EthGetLogsRequest, EthGetLogsResponse, DappRequestTransaction } from '../../utils/JsonRpc-types.js'
+import { assertNever } from '../../utils/typescript.js'
 
 export type IEthereumClientService = Pick<EthereumClientService, keyof EthereumClientService>
 export class EthereumClientService {
@@ -195,8 +198,61 @@ export class EthereumClientService {
 	}
 
 	public readonly multicall = async (transactions: readonly EthereumUnsignedTransaction[], blockNumber: bigint) => {
+		const httpsRpc = this.requestHandler.getRpcNetwork().httpsRpc
+		if (httpsRpc === 'https://rpc.dark.florist/winedancemuffinborrow' || httpsRpc === 'https://rpc.dark.florist/birdchalkrenewtip') {
+			//TODO: Remove this when we get rid of our old multicall
+			return this.executionSpec383MultiCallOnlyTransactions(transactions, blockNumber)
+		}
+
 		const blockAuthor: bigint = MOCK_ADDRESS
 		const unvalidatedResult = await this.requestHandler.jsonRpcRequest({ method: 'eth_multicall', params: [blockNumber, blockAuthor, transactions] })
 		return MulticallResponse.parse(unvalidatedResult)
+	}
+
+	public readonly executionSpec383MultiCall = async (calls: readonly BlockCalls[], blockTag: EthereumBlockTag) => {
+		const call = { method: 'eth_multicallV1', params: [calls, blockTag] } as const
+		const unvalidatedResult = await this.requestHandler.jsonRpcRequest(call)
+		return ExecutionSpec383MultiCallResult.parse(unvalidatedResult)
+	}
+
+	//intended drop in replacement of the old multicall
+	public readonly executionSpec383MultiCallOnlyTransactions = async (transactions: readonly EthereumUnsignedTransaction[], blockNumber: bigint): Promise<MulticallResponse> => {
+		const parentBlock = await this.getBlock()
+		const multicallResults = await this.executionSpec383MultiCall([{
+			calls: transactions,
+			blockOverride: {
+				number: blockNumber,
+				prevRandao: 0x1n,
+				time: new Date(parentBlock.timestamp.getTime() + 12 * 1000),
+				gasLimit: parentBlock.gasLimit,
+				feeRecipient: parentBlock.miner,
+				baseFee: parentBlock.baseFeePerGas === undefined ? 15000000n : parentBlock.baseFeePerGas
+			},
+		}], blockNumber)
+		if (multicallResults.length !== 1) throw new Error('Multicalled for one block but did not get one block')
+		return multicallResults[0].calls.map((singleResult) => {
+			switch(singleResult.status) {
+				case undefined: //TODO, remove this, Geth currently doesn't return status
+				case 'success': return {
+					statusCode: 'success' as const,
+					gasSpent: singleResult.gasUsed,
+					returnValue: singleResult.return,
+					events: (singleResult.logs === undefined ? [] : singleResult.logs).map((log) => ({
+						loggersAddress: log.address,
+						data: 'data' in log && log.data !== undefined ? log.data : new Uint8Array(),
+						topics: 'topics' in log && log.topics !== undefined ? log.topics : [],
+					})),
+					balanceChanges: [], // not supported in new multicall atm...
+				}
+				case 'failure': return {
+					statusCode: 'failure' as const,
+					gasSpent: singleResult.gasUsed,
+					error: singleResult.error.message,
+					returnValue: singleResult.return,
+				}
+				case 'invalid': throw new Error(`Invalid multicall: ${ singleResult.error }`)
+				default: assertNever(singleResult)
+			}
+		})
 	}
 }
