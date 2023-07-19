@@ -4,7 +4,7 @@ import { TIME_BETWEEN_BLOCKS, MOCK_ADDRESS } from '../../utils/constants.js'
 import { IEthereumJSONRpcRequestHandler } from './EthereumJSONRpcRequestHandler.js'
 import { ethers } from 'ethers'
 import { stringToUint8Array } from '../../utils/bigint.js'
-import { BlockCalls, ExecutionSpec383MultiCallParams, ExecutionSpec383MultiCallResult } from '../../utils/multicall-types.js'
+import { BlockCalls, ExecutionSpec383MultiCallResult } from '../../utils/multicall-types.js'
 import { MulticallResponse, EthGetStorageAtResponse, EthTransactionReceiptResponse, EthGetLogsRequest, EthGetLogsResponse, DappRequestTransaction } from '../../utils/JsonRpc-types.js'
 import { assertNever } from '../../utils/typescript.js'
 
