@@ -10,9 +10,10 @@ import { EstimateGasError, WebsiteCreatedEthereumUnsignedTransaction } from '../
 import { SendRawTransaction, SendTransactionParams } from '../../utils/wire-types.js'
 import { refreshConfirmTransactionSimulation, updateSimulationState } from '../background.js'
 import { getHtmlFile, sendPopupMessageToOpenWindows } from '../backgroundUtils.js'
-import { appendPendingTransaction, clearPendingTransactions, getPendingTransactions, getSimulationResults, removePendingTransaction } from '../storageVariables.js'
+import { appendPendingTransaction, clearPendingTransactions, getPendingTransactions, removePendingTransaction } from '../storageVariables.js'
 import { InterceptedRequest, getUniqueRequestIdentifierString } from '../../utils/requests.js'
 import { replyToInterceptedRequest } from '../messageSending.js'
+import { Simulator } from '../../simulation/simulator.js'
 
 export type Confirmation = 'Approved' | 'Rejected' | 'NoResponse'
 let openedDialog: PopupOrTab | undefined = undefined
@@ -37,7 +38,7 @@ async function updateConfirmTransactionViewWithPendingTransactionOrClose() {
 	openedDialog = undefined
 }
 
-export async function resolvePendingTransaction(ethereumClientService: EthereumClientService, websiteTabConnections: WebsiteTabConnections, confirmation: TransactionConfirmation) {
+export async function resolvePendingTransaction(simulator: Simulator, ethereumClientService: EthereumClientService, websiteTabConnections: WebsiteTabConnections, confirmation: TransactionConfirmation) {
 	const pending = pendingTransactions.get(getUniqueRequestIdentifierString(confirmation.data.uniqueRequestIdentifier))
 	const pendingTransaction = await removePendingTransaction(confirmation.data.uniqueRequestIdentifier)
 	if (pendingTransaction === undefined) throw new Error('Failed to find pending transaction')
@@ -46,7 +47,7 @@ export async function resolvePendingTransaction(ethereumClientService: EthereumC
 		return pending.resolve(confirmation.data.accept === true ? 'Approved' : 'Rejected')
 	} else {
 		// we have not been tracking this window, forward its message directly to content script (or signer)
-		const resolvedPromise = await resolve(ethereumClientService, pendingTransaction.simulationMode, pendingTransaction.activeAddress, pendingTransaction.transactionToSimulate, confirmation.data.accept)
+		const resolvedPromise = await resolve(simulator, ethereumClientService, pendingTransaction.simulationMode, pendingTransaction.activeAddress, pendingTransaction.transactionToSimulate, confirmation.data.accept)
 		replyToInterceptedRequest(websiteTabConnections, { ...pendingTransaction.transactionParams, ...resolvedPromise, uniqueRequestIdentifier: confirmation.data.uniqueRequestIdentifier })
 		openedDialog = await getPopupOrTabOnlyById(confirmation.data.windowId)
 	}
@@ -67,6 +68,7 @@ const rejectMessage = {
 }
 
 export async function openConfirmTransactionDialog(
+	simulator: Simulator,
 	ethereumClientService: EthereumClientService,
 	request: InterceptedRequest,
 	transactionParams: SendTransactionParams | SendRawTransaction,
@@ -96,7 +98,7 @@ export async function openConfirmTransactionDialog(
 					}
 				}
 			}
-			const refreshSimulationPromise = refreshConfirmTransactionSimulation(ethereumClientService, activeAddress, simulationMode, request.uniqueRequestIdentifier, transactionToSimulate)
+			const refreshSimulationPromise = refreshConfirmTransactionSimulation(simulator, ethereumClientService, activeAddress, simulationMode, request.uniqueRequestIdentifier, transactionToSimulate)
 
 			if (!justAddToPending) {
 				addWindowTabListener(onCloseWindow)
@@ -123,7 +125,7 @@ export async function openConfirmTransactionDialog(
 		})
 		if (addedPendingTransaction === false) return rejectMessage
 		const reply = await pendingTransaction
-		const resolvedPromise = await resolve(ethereumClientService, simulationMode, activeAddress, transactionToSimulate, reply === 'Approved' ? true : false)
+		const resolvedPromise = await resolve(simulator, ethereumClientService, simulationMode, activeAddress, transactionToSimulate, reply === 'Approved' ? true : false)
 		return resolvedPromise
 	} finally {
 		removeWindowTabListener(onCloseWindow)
@@ -132,14 +134,13 @@ export async function openConfirmTransactionDialog(
 	}
 }
 
-async function resolve(ethereumClientService: EthereumClientService, simulationMode: boolean, activeAddress: bigint, transactionToSimulate: WebsiteCreatedEthereumUnsignedTransaction, accept: boolean): Promise<{ forward: true } | { error: { code: number, message: string } } | { result: bigint }> {
+async function resolve(simulator: Simulator, ethereumClientService: EthereumClientService, simulationMode: boolean, activeAddress: bigint, transactionToSimulate: WebsiteCreatedEthereumUnsignedTransaction, accept: boolean): Promise<{ forward: true } | { error: { code: number, message: string } } | { result: bigint }> {
 	if (accept === false) return rejectMessage
 	if (!simulationMode) return { forward: true }
-	const newState = await updateSimulationState(async () => {
-		const simulationState = (await getSimulationResults()).simulationState
+	const newState = await updateSimulationState(simulator, async (simulationState) => {
 		if (simulationState === undefined) return undefined
 		return await appendTransaction(ethereumClientService, simulationState, transactionToSimulate)
-	}, activeAddress)
+	}, activeAddress, true)
 	if (newState === undefined || newState.simulatedTransactions === undefined || newState.simulatedTransactions.length === 0) {
 		return METAMASK_ERROR_NOT_CONNECTED_TO_CHAIN
 	}

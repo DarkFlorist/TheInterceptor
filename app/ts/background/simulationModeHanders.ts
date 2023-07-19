@@ -15,6 +15,7 @@ import { openConfirmTransactionDialog } from './windows/confirmTransaction.js'
 import { openPersonalSignDialog } from './windows/personalSign.js'
 import { assertNever } from '../utils/typescript.js'
 import { InterceptedRequest } from '../utils/requests.js'
+import { Simulator } from '../simulation/simulator.js'
 
 const defaultCallAddress = 0x1n
 
@@ -45,6 +46,7 @@ function getFromField(websiteTabConnections: WebsiteTabConnections, simulationMo
 }
 
 export async function sendTransaction(
+	simulator: Simulator,
 	websiteTabConnections: WebsiteTabConnections,
 	activeAddress: bigint | undefined,
 	ethereumClientService: EthereumClientService,
@@ -94,6 +96,7 @@ export async function sendTransaction(
 	return {
 		method: sendTransactionParams.method,
 		...await openConfirmTransactionDialog(
+			simulator,
 			ethereumClientService,
 			request,
 			sendTransactionParams,
@@ -105,6 +108,7 @@ export async function sendTransaction(
 }
 
 export async function sendRawTransaction(
+	simulator: Simulator,
 	ethereumClientService: EthereumClientService,
 	sendRawTransactionParams: SendRawTransaction,
 	request: InterceptedRequest,
@@ -153,6 +157,7 @@ export async function sendRawTransaction(
 	}
 	return { method: sendRawTransactionParams.method,
 		...await openConfirmTransactionDialog(
+			simulator,
 			ethereumClientService,
 			request,
 			sendRawTransactionParams,
@@ -238,12 +243,12 @@ export async function personalSign(ethereumClientService: EthereumClientService,
 	return await openPersonalSignDialog(ethereumClientService, websiteTabConnections, params, request, simulationMode, website, activeAddress)
 }
 
-export async function switchEthereumChain(websiteTabConnections: WebsiteTabConnections, ethereumClientService: EthereumClientService, params: SwitchEthereumChainParams, request: InterceptedRequest, simulationMode: boolean, website: Website) {
+export async function switchEthereumChain(simulator: Simulator, websiteTabConnections: WebsiteTabConnections, ethereumClientService: EthereumClientService, params: SwitchEthereumChainParams, request: InterceptedRequest, simulationMode: boolean, website: Website) {
 	if (ethereumClientService.getChainId() === params.params[0].chainId) {
 		// we are already on the right chain
 		return { method: params.method, result: null }
 	}
-	const change = await openChangeChainDialog(websiteTabConnections, request, simulationMode, website, params)
+	const change = await openChangeChainDialog(simulator, websiteTabConnections, request, simulationMode, website, params)
 	return { method: params.method, ...change }
 }
 
