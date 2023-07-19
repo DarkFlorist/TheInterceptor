@@ -71,7 +71,8 @@ export function getInputFieldFromDataOrInput(request: { input?: Uint8Array} | { 
 }
 
 export const simulateEstimateGas = async (ethereumClientService: EthereumClientService, simulationState: SimulationState | undefined, data: DappRequestTransaction): Promise<EstimateGasError | { gas: bigint }> => {
-	//if (simulationState === undefined) return { gas: await ethereumClientService.estimateGas(data) } // commented out because of nethermind not estimating gas correctly https://github.com/NethermindEth/nethermind/issues/5946
+	// commented out because of nethermind not estimating gas correctly https://github.com/NethermindEth/nethermind/issues/5946
+	//if (simulationState === undefined) return { gas: await ethereumClientService.estimateGas(data) }
 	const sendAddress = data.from !== undefined ? data.from : MOCK_ADDRESS
 	const transactionCount = getSimulatedTransactionCount(ethereumClientService, simulationState, sendAddress)
 	const block = await ethereumClientService.getBlock()
