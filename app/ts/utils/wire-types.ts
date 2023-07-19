@@ -503,7 +503,16 @@ export const DappRequestTransaction = funtypes.ReadonlyPartial({
 	maxFeePerGas: funtypes.Union(EthereumQuantity, funtypes.Null), // etherscan sets this field to null, remove this if etherscan fixes this
 	data: EthereumData,
 	input: EthereumData,
-}).withConstraint((dappRequestTransaction) => dappRequestTransaction.input !== undefined && dappRequestTransaction.data !== undefined ? areEqual(dappRequestTransaction.input, dappRequestTransaction.data) : true)
+}).withConstraint((dappRequestTransaction) => {
+	if (dappRequestTransaction.input !== undefined && dappRequestTransaction.data !== undefined) {
+		if (typeof dappRequestTransaction.input === 'string') {
+			// workaround for https://github.com/ForbesLindesay/funtypes/issues/62
+			return dappRequestTransaction.input === dappRequestTransaction.data
+		}
+		return areEqual(dappRequestTransaction.input, dappRequestTransaction.data)
+	}
+	return true
+})
 .withConstraint((x) => {
 	if (x.gasPrice !== undefined) {
 		return x.maxPriorityFeePerGas === undefined && x.maxFeePerGas === undefined

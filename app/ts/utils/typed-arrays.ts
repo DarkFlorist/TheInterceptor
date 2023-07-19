@@ -1,4 +1,5 @@
 export function areEqual(first?: Uint8Array, second?: Uint8Array) {
+	if (first === second) return true
 	if (first === undefined) return second === undefined
 	if (second === undefined) return first === undefined
 	if (first.length !== second.length) return false
