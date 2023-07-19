@@ -149,7 +149,9 @@ export const eth_getBlockByNumber_goerli_8443561_true = `
             }
         ],
         "transactionsRoot": "0x326f75273fb880b00edec6d45dcfa0f9f75b86600ddfefba16998fce49dcad14",
-        "uncles": []
+        "uncles": [],
+        "withdrawalsRoot": "0x326f75273fb880b00edec6d45dcfa0f9f75b86600ddfefba16998fce49dcad14",
+        "withdrawals": []
     },
     "id": 2
 }
