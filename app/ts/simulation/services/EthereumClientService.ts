@@ -26,6 +26,9 @@ export class EthereumClientService {
     }
 
 	public readonly getRpcNetwork = () => this.requestHandler.getRpcNetwork()
+	
+	public readonly getNewBlockAttemptCallback = () => this.newBlockAttemptCallback
+	public readonly getOnErrorBlockCallback = () => this.onErrorBlockCallback
 
 	public getLastKnownCachedBlockOrUndefined = () => this.cachedBlock
 
@@ -75,8 +78,8 @@ export class EthereumClientService {
 			if (this.cacheRefreshTimer === undefined) return
 			const newBlock = EthereumBlockHeader.parse(response)
 			console.log(`Current block number: ${ newBlock.number }`)
-			this.cachedBlock = newBlock
 			this.newBlockAttemptCallback(newBlock, this, this.cachedBlock?.number != newBlock.number)
+			this.cachedBlock = newBlock
 		} catch(error) {
 			if (error instanceof Error) {
 				return this.onErrorBlockCallback(this, error)

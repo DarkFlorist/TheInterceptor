@@ -9,8 +9,9 @@ import { resolveSignerChainChange } from './windows/changeChain.js'
 import { ApprovalState } from './accessManagement.js'
 import { ProviderMessage } from '../utils/requests.js'
 import { sendSubscriptionReplyOrCallBackToPort } from './messageSending.js'
+import { Simulator } from '../simulation/simulator.js'
 
-export async function ethAccountsReply(websiteTabConnections: WebsiteTabConnections, port: browser.runtime.Port, request: ProviderMessage, _connectInfoapproval: ApprovalState) {
+export async function ethAccountsReply(simulator: Simulator, websiteTabConnections: WebsiteTabConnections, port: browser.runtime.Port, request: ProviderMessage, _connectInfoapproval: ApprovalState) {
 	if (!('params' in request)) return
 	if (port.sender?.tab?.id === undefined) return
 
@@ -28,9 +29,9 @@ export async function ethAccountsReply(websiteTabConnections: WebsiteTabConnecti
 	sendInternalWindowMessage({ method: 'window_signer_accounts_changed', data: { socket: getSocketFromPort(port) } })
 	// update active address if we are using signers address
 	const settings = await getSettings()
-	if ( (settings.useSignersAddressAsActiveAddress && settings.activeSimulationAddress !== signerAccounts[0])
+	if ((settings.useSignersAddressAsActiveAddress && settings.activeSimulationAddress !== signerAccounts[0])
 	|| (settings.simulationMode === false && tabStateChange.previousState.activeSigningAddress !== tabStateChange.newState.activeSigningAddress)) {
-		await changeActiveAddressAndChainAndResetSimulation(websiteTabConnections, {
+		await changeActiveAddressAndChainAndResetSimulation(simulator, websiteTabConnections, {
 			simulationMode: settings.simulationMode,
 			activeAddress: tabStateChange.newState.activeSigningAddress,
 		})
@@ -38,7 +39,7 @@ export async function ethAccountsReply(websiteTabConnections: WebsiteTabConnecti
 	}
 }
 
-async function changeSignerChain(websiteTabConnections: WebsiteTabConnections, port: browser.runtime.Port, signerChain: bigint, approval: ApprovalState) {
+async function changeSignerChain(simulator: Simulator, websiteTabConnections: WebsiteTabConnections, port: browser.runtime.Port, signerChain: bigint, approval: ApprovalState) {
 	if (approval !== 'hasAccess') return
 	if (port.sender?.tab?.id === undefined) return
 	if ((await getTabState(port.sender.tab.id)).signerChain === signerChain) return
@@ -53,7 +54,7 @@ async function changeSignerChain(websiteTabConnections: WebsiteTabConnections, p
 	// update active address if we are using signers address
 	const settings = await getSettings()
 	if ((settings.useSignersAddressAsActiveAddress || !settings.simulationMode) && settings.rpcNetwork.chainId !== signerChain) {
-		return changeActiveAddressAndChainAndResetSimulation(websiteTabConnections, {
+		return changeActiveAddressAndChainAndResetSimulation(simulator, websiteTabConnections, {
 			simulationMode: settings.simulationMode,
 			rpcNetwork: await getRpcNetworkForChain(signerChain),
 		})
@@ -61,16 +62,16 @@ async function changeSignerChain(websiteTabConnections: WebsiteTabConnections, p
 	sendPopupMessageToOpenWindows({ method: 'popup_chain_update' })
 }
 
-export async function signerChainChanged(websiteTabConnections: WebsiteTabConnections, port: browser.runtime.Port, request: ProviderMessage, approval: ApprovalState) {
+export async function signerChainChanged(simulator: Simulator, websiteTabConnections: WebsiteTabConnections, port: browser.runtime.Port, request: ProviderMessage, approval: ApprovalState) {
 	if (!('params' in request)) return
 	const signerChain = EthereumChainReply.parse(request.params)[0]
-	await changeSignerChain(websiteTabConnections, port, signerChain, approval)
+	await changeSignerChain(simulator, websiteTabConnections, port, signerChain, approval)
 }
 
-export async function walletSwitchEthereumChainReply(websiteTabConnections: WebsiteTabConnections, port: browser.runtime.Port, request: ProviderMessage, approval: ApprovalState) {
+export async function walletSwitchEthereumChainReply(simulator: Simulator, websiteTabConnections: WebsiteTabConnections, port: browser.runtime.Port, request: ProviderMessage, approval: ApprovalState) {
 	if (approval !== 'hasAccess') return
 	const params = WalletSwitchEthereumChainReply.parse(request).params[0]
-	if (params.accept) await changeSignerChain(websiteTabConnections, port, params.chainId, approval)
+	if (params.accept) await changeSignerChain(simulator, websiteTabConnections, port, params.chainId, approval)
 	await resolveSignerChainChange({
 		method: 'popup_signerChangeChainDialog',
 		data: {
@@ -80,7 +81,7 @@ export async function walletSwitchEthereumChainReply(websiteTabConnections: Webs
 	})
 }
 
-export async function connectedToSigner(_websiteTabConnections: WebsiteTabConnections, port: browser.runtime.Port, request: ProviderMessage, approval: ApprovalState) {
+export async function connectedToSigner(_simulator: Simulator, _websiteTabConnections: WebsiteTabConnections, port: browser.runtime.Port, request: ProviderMessage, approval: ApprovalState) {
 	await setSignerName(ConnectedToSigner.parse(request).params[0])
 	await sendPopupMessageToOpenWindows({ method: 'popup_signer_name_changed' })
 	const settings = await getSettings()

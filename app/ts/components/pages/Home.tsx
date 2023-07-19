@@ -1,6 +1,6 @@
 import { HomeParams, AddressInfo, FirstCardParams, SimulationStateParam, SignerName } from '../../utils/user-interface-types.js'
 import { useEffect, useState } from 'preact/hooks'
-import { SimulatedAndVisualizedTransaction, SimulationAndVisualisationResults, RpcEntry, RpcNetwork, RpcEntries, SimulationUpdatingState } from '../../utils/visualizer-types.js'
+import { SimulatedAndVisualizedTransaction, SimulationAndVisualisationResults, RpcEntry, RpcNetwork, RpcEntries, SimulationUpdatingState, SimulationResultState } from '../../utils/visualizer-types.js'
 import { ActiveAddress, findAddressInfo } from '../subcomponents/address.js'
 import { SimulationSummary } from '../simulationExplaining/SimulationSummary.js'
 import { ChainSelector } from '../subcomponents/ChainSelector.js'
@@ -16,6 +16,7 @@ import { DinoSays } from '../subcomponents/DinoSays.js'
 import { identifyTransaction } from '../simulationExplaining/identifyTransaction.js'
 import { SomeTimeAgo } from '../subcomponents/SomeTimeAgo.js'
 import { humanReadableDate } from '../ui-utils.js'
+import { noNewBlockForOverTwoMins } from '../../background/iconHandler.js'
 
 async function enableMakeMeRich(enabled: boolean) {
 	sendPopupMessageToBackgroundPage( { method: 'popup_changeMakeMeRich', data: enabled } )
@@ -176,7 +177,7 @@ function SimulationResults(param: SimulationStateParam) {
 			</div>
 		</p>
 
-		<div class = { param.simulationUpdatingState === 'updating' || param.simulationUpdatingState === 'failed' ? 'blur' : '' }>
+		<div class = { param.simulationResultState === 'invalid' || param.simulationUpdatingState === 'failed' ? 'blur' : '' }>
 			<Transactions
 				simulationAndVisualisationResults = { param.simulationAndVisualisationResults }
 				removeTransaction = { param.removeTransaction }
@@ -212,7 +213,7 @@ export function NetworkErrors({ rpcConnectionStatus } : NetworkErrorParams) {
 			</div>
 		: <></> }
 
-		{ rpcConnectionStatus.latestBlock !== undefined ?
+		{ rpcConnectionStatus.latestBlock !== undefined && noNewBlockForOverTwoMins(rpcConnectionStatus) ?
 			<div style = 'margin: 10px; background-color: var(--bg-color);'>
 				<Error warning = { true } text = { <>The connected RPC ({ rpcConnectionStatus.rpcNetwork.name }) seem to be stuck at block { rpcConnectionStatus.latestBlock.number } (occured on: { humanReadableDate(rpcConnectionStatus.latestBlock.timestamp) }). Retrying in <SomeTimeAgo priorTimestamp = { priorDate } countBackwards = { true }/>.</> }/>
 			</div>
@@ -239,7 +240,8 @@ export function Home(param: HomeParams) {
 	const [rpcConnectionStatus, setRpcConnectionStatus] = useState<RpcConnectionStatus>(undefined)
 	const [rpcEntries, setRPCEntries] = useState<RpcEntries>([])
 	const [simulationUpdatingState, setSimulationUpdatingState] = useState<SimulationUpdatingState | undefined>(undefined)
-
+	const [simulationResultState, setSimulationResultState] = useState<SimulationResultState | undefined>(undefined)
+	
 	useEffect(() => {
 		setSimulationAndVisualisationResults(param.simVisResults)
 		setUseSignersAddressAsActiveAddress(param.useSignersAddressAsActiveAddress)
@@ -259,6 +261,7 @@ export function Home(param: HomeParams) {
 		setRpcConnectionStatus(param.rpcConnectionStatus)
 		setRPCEntries(param.rpcEntries)
 		setSimulationUpdatingState(param.simulationUpdatingState)
+		setSimulationResultState(param.simulationResultState)
 	}, [param.activeSigningAddress,
 		param.activeSimulationAddress,
 		param.signerAccounts,
@@ -273,6 +276,7 @@ export function Home(param: HomeParams) {
 		param.rpcConnectionStatus,
 		param.rpcEntries,
 		param.simulationUpdatingState,
+		param.simulationResultState,
 	])
 
 	function changeActiveAddress() {
@@ -349,6 +353,7 @@ export function Home(param: HomeParams) {
 				removeTransactionHashes = { removeTransactionHashes }
 				rpcConnectionStatus = { rpcConnectionStatus }
 				simulationUpdatingState = { simulationUpdatingState }
+				simulationResultState = { simulationResultState }
 			/>
 		}
 	</>
