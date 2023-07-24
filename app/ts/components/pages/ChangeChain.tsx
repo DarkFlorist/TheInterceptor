@@ -43,11 +43,11 @@ export function ChangeChain() {
 							<img src = '../img/access-key.svg'/>
 						</span>
 					</div>
-					<p class = 'card-header-title'>
+					<div class = 'card-header-title'>
 						<p className = 'paragraph'>
 							Chain Change Request
 						</p>
-					</p>
+					</div>
 				</header>
 				<div class = 'card-content'>
 					<article class = 'media'>
@@ -55,22 +55,18 @@ export function ChangeChain() {
 							chainChangeData.website.icon === undefined
 								? <></>
 								: <figure class = 'media-left' style = 'margin: auto; display: block; padding: 20px'>
-									<p class = 'image is-64x64'>
+									<div class = 'image is-64x64'>
 										<img src = { chainChangeData.website.icon }/>
-									</p>
+									</div>
 								</figure>
 						}
 					</article>
 					<div class = 'media-content' style = 'padding-bottom: 10px'>
 						<div class = 'content'>
 							<p className = 'title' style = 'white-space: normal; text-align: center; padding: 10px;'>
-								<p className = 'title' style = 'white-space: normal; text-align: center; font-weight: bold;'>
-									{ chainChangeData.website.websiteOrigin }
-								</p>
+								<b>	{ chainChangeData.website.websiteOrigin } </b>
 								would like to switch to
-								<p className = 'title' style = 'white-space: normal; text-align: center; font-weight: bold;'>
-									{ chainChangeData.rpcNetwork.name }
-								</p>
+								<b> { chainChangeData.rpcNetwork.name } </b>
 							</p>
 							{ chainChangeData.rpcNetwork.httpsRpc === undefined && chainChangeData.simulationMode ?
 								<ErrorContainer
