@@ -105,7 +105,7 @@ jobs:
             const users = approvals.data.filter(approval => approval.user.type === 'User')
             const distinctUsernames = Array.from(new Set(users.map(user => user.user.login)))
             // Empty check
-            if (usernames.length < 2){
+            if (distinctUsernames.length < 2){
               core.setFailed(`Did not receive the required 2 distinct approvals for this deployment. Approved Users: ${distinctUsernames.join(",")}`);
               return;
             }
