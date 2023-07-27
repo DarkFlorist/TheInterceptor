@@ -114,6 +114,6 @@ jobs:
         with:
             uuid: '{3c236fbc-9114-43ed-a224-0cd1834aec4d}'
             xpi: ./interceptor-firefox.zip
-            manifest: app/manifestV2.json
+            manifest: manifestV2.json
             api-key: ${{ secrets.MOZILLA_ADDON_USER }}
             api-secret: ${{ secrets.MOZILLA_ADDON_SECRET }}
