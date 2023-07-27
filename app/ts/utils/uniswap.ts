@@ -1,7 +1,7 @@
 import { AbiCoder, getCreate2Address, keccak256, solidityPacked, Interface } from "ethers"
 import { EthereumAddress } from "./wire-types.js"
 import { addressString } from "./bigint.js"
-import { CHAINS, isSupportedChain } from "./constants.js"
+import { networkPriceSources } from "../background/settings.js"
 
 interface UniswapPools {
 	token0IsQuote: boolean
@@ -17,15 +17,18 @@ interface Multicall3Call {
 
 const isSuccessfulCall = ({ returnData, success }: { returnData: string, success: boolean }) => success && returnData !== '0x'
 
-export function calculateUniswapLikePools(token: EthereumAddress, quoteToken: EthereumAddress, chainString: string): UniswapPools | undefined {
+export function calculateUniswapLikePools(token: EthereumAddress, quoteToken: EthereumAddress, chainId: bigint): UniswapPools | undefined {
+	const chainIdString = chainId.toString()
+	if (!(chainIdString in networkPriceSources)) return undefined
+	const network = networkPriceSources[chainIdString]
+
+
 	const [token0, token1] = token < quoteToken ? [addressString(token), addressString(quoteToken)] : [addressString(quoteToken), addressString(token)]
 	const abi = new AbiCoder()
 
-	if (!isSupportedChain(chainString)) return undefined
+	const v2Pools = network.priceSources.uniswapV2Like.map(({ factory, initCodeHash }) => EthereumAddress.parse(getCreate2Address(addressString(factory), keccak256(solidityPacked(['address', 'address'], [token0, token1])), initCodeHash)))
 
-	const v2Pools = CHAINS[chainString].priceSources.uniswapV2like.map(({ factory, initCodeHash }) => EthereumAddress.parse(getCreate2Address(addressString(factory), keccak256(solidityPacked(['address', 'address'], [token0, token1])), initCodeHash)))
-
-	const v3Pools = CHAINS[chainString].priceSources.uniswapV3Like.map(({ factory, initCodeHash }) => [
+	const v3Pools = network.priceSources.uniswapV3Like.map(({ factory, initCodeHash }) => [
 		getCreate2Address(addressString(factory), keccak256(abi.encode(['address', 'address', 'uint24'], [token0, token1, 100])), initCodeHash),
 		getCreate2Address(addressString(factory), keccak256(abi.encode(['address', 'address', 'uint24'], [token0, token1, 500])), initCodeHash),
 		getCreate2Address(addressString(factory), keccak256(abi.encode(['address', 'address', 'uint24'], [token0, token1, 3000])), initCodeHash),

@@ -1,60 +1,36 @@
 import { useState, useEffect } from 'preact/hooks'
-import { getChainName, isSupportedChain } from '../../utils/constants.js'
 import { Error as ErrorContainer, ErrorCheckBox } from '../subcomponents/Error.js'
-import { ChangeChainRequest, ExternalPopupMessage } from '../../utils/interceptor-messages.js'
+import { ExternalPopupMessage, PendingChainChangeConfirmationPromise } from '../../utils/interceptor-messages.js'
 import { sendPopupMessageToBackgroundPage } from '../../background/backgroundUtils.js'
-import { Website } from '../../utils/user-interface-types.js'
-import { tryFocusingTab } from '../ui-utils.js'
+import { tryFocusingTabOrWindow } from '../ui-utils.js'
 
-interface InterceptorChainChangeRequest {
-	isInterceptorSupport: boolean,
-	chainName: string,
-	chainId: bigint,
-	website: Website,
-	simulationMode: boolean,
-	requestId: number,
-	tabIdOpenedFrom: number,
-}
 
 export function ChangeChain() {
-	const [chainChangeData, setChainChangeData] = useState<InterceptorChainChangeRequest | undefined>(undefined)
+	const [chainChangeData, setChainChangeData] = useState<PendingChainChangeConfirmationPromise | undefined>(undefined)
 	const [connectAnyway, setConnectAnyway] = useState<boolean>(false)
 
 	useEffect(() => {
-		async function updatePage(message: ChangeChainRequest) {
-			setChainChangeData({
-				isInterceptorSupport : isSupportedChain(message.data.chainId.toString()),
-				chainId: message.data.chainId,
-				chainName : getChainName(message.data.chainId),
-				website: message.data.website,
-				simulationMode: message.data.simulationMode,
-				requestId: message.data.requestId,
-				tabIdOpenedFrom: message.data.tabIdOpenedFrom,
-			})
-		}
-
 		async function popupMessageListener(msg: unknown) {
 			const message = ExternalPopupMessage.parse(msg)
 			if (message.method !== 'popup_ChangeChainRequest') return
-			await updatePage(message)
+			setChainChangeData(message.data)
 		}
 		browser.runtime.onMessage.addListener(popupMessageListener)
-		sendPopupMessageToBackgroundPage({ method: 'popup_changeChainReadyAndListening' })
 		return () => browser.runtime.onMessage.removeListener(popupMessageListener)
 	})
 
+	useEffect(() => { sendPopupMessageToBackgroundPage({ method: 'popup_changeChainReadyAndListening' }) }, [])
+
 	async function approve() {
 		if (chainChangeData === undefined) return
-		await tryFocusingTab(chainChangeData.tabIdOpenedFrom)
-		await sendPopupMessageToBackgroundPage({ method: 'popup_changeChainDialog', data: { accept: true, requestId: chainChangeData.requestId, chainId: chainChangeData.chainId } })
-		globalThis.close()
+		await tryFocusingTabOrWindow({ type: 'tab', id: chainChangeData.socket.tabId })
+		await sendPopupMessageToBackgroundPage({ method: 'popup_changeChainDialog', data: { accept: true, requestId: chainChangeData.request.requestId, rpcNetwork: chainChangeData.rpcNetwork } })
 	}
 
 	async function reject() {
 		if (chainChangeData === undefined) return
-		await tryFocusingTab(chainChangeData.tabIdOpenedFrom)
-		await sendPopupMessageToBackgroundPage({ method: 'popup_changeChainDialog', data: { accept: false, requestId: chainChangeData.requestId, chainId: chainChangeData.chainId } })
-		globalThis.close()
+		await tryFocusingTabOrWindow({ type: 'tab', id: chainChangeData.socket.tabId })
+		await sendPopupMessageToBackgroundPage({ method: 'popup_changeChainDialog', data: { accept: false, requestId: chainChangeData.request.requestId, rpcNetwork: chainChangeData.rpcNetwork } })
 	}
 
 	if (chainChangeData === undefined) return <main></main>
@@ -93,15 +69,15 @@ export function ChangeChain() {
 								</p>
 								would like to switch to
 								<p className = 'title' style = 'white-space: normal; text-align: center; font-weight: bold;'>
-									{ chainChangeData.chainName }
+									{ chainChangeData.rpcNetwork.name }
 								</p>
 							</p>
-							{ !chainChangeData.isInterceptorSupport && chainChangeData.simulationMode ?
+							{ chainChangeData.rpcNetwork.httpsRpc === undefined && chainChangeData.simulationMode ?
 								<ErrorContainer
 									text = { 'This chain is not supported by The Interceptor. If you want to use this chain anyway. Select Signing mode instead of Simulation mode and attempt to change the chain again. You will then be able to disable The Interceptor and send transactions without its protection.' }
 								/>
 							: <></> }
-							{ !chainChangeData.isInterceptorSupport && !chainChangeData.simulationMode ?
+							{ chainChangeData.rpcNetwork.httpsRpc === undefined && !chainChangeData.simulationMode ?
 								<ErrorCheckBox
 									text = { 'This chain is not supported by The Interceptor. Would you like to disable The Interceptor and attempt to connect anyway?' }
 									checked = { connectAnyway }
@@ -112,17 +88,17 @@ export function ChangeChain() {
 					</div>
 					<div style = 'overflow: auto; display: flex; justify-content: space-around; width: 100%; height: 40px;'>
 						<button
-							className = { `button is-primary ${ chainChangeData.isInterceptorSupport ? 'is-danger' : '' }` }
+							className = { `button is-danger` }
 							style = { `flex-grow: 1; margin-left: 5px; margin-right: 5px;` }
 							onClick = { reject } >
 							Don't change
 						</button>
 						<button
-							className = { `button is-primary ${ !chainChangeData.isInterceptorSupport ? 'is-danger' : '' }` }
-							disabled = { !chainChangeData.isInterceptorSupport && ( (!connectAnyway && !chainChangeData.simulationMode ) || chainChangeData.simulationMode ) }
+							className = { `button is-primary` }
+							disabled = { chainChangeData.rpcNetwork.httpsRpc === undefined && ( (!connectAnyway && !chainChangeData.simulationMode ) || chainChangeData.simulationMode ) }
 							style = 'flex-grow: 1; margin-left: 5px; margin-right: 5px;'
 							onClick = { approve }>
-							{ chainChangeData.isInterceptorSupport ? 'Change chain' : 'Disable The Interceptor and change' }
+							{ chainChangeData.rpcNetwork.httpsRpc !== undefined? 'Change chain' : 'Disable The Interceptor and change' }
 						</button>
 					</div>
 				</div>

@@ -28,7 +28,7 @@ export const copySimulationState = (simulationState: SimulationState): Simulatio
 		simulatedTransactions: [...simulationState.simulatedTransactions],
 		blockNumber: simulationState.blockNumber,
 		blockTimestamp: simulationState.blockTimestamp,
-		chain: simulationState.chain,
+		rpcNetwork: simulationState.rpcNetwork,
 		simulationConductedTimestamp: simulationState.simulationConductedTimestamp,
 	}
 }
@@ -75,13 +75,21 @@ export const simulateEstimateGas = async (ethereumClientService: EthereumClientS
 	const transactionCount = getSimulatedTransactionCount(ethereumClientService, simulationState, sendAddress)
 	const block = await ethereumClientService.getBlock()
 	const maxGas = simulationGasLeft(simulationState, block)
+
+	const getGasPriceFields = (data: DappRequestTransaction) => {
+		if (data.gasPrice !== undefined) return { maxFeePerGas: data.gasPrice, maxPriorityFeePerGas: data.gasPrice }
+		if (data.maxPriorityFeePerGas !== undefined && data.maxPriorityFeePerGas !== null && data.maxFeePerGas !== undefined && data.maxFeePerGas !== null) {
+			return { maxFeePerGas: data.maxFeePerGas, maxPriorityFeePerGas: data.maxPriorityFeePerGas }
+		}
+		return { maxFeePerGas: 0n, maxPriorityFeePerGas: 0n }
+	}
+
 	const tmp = {
 		type: '1559' as const,
 		from: sendAddress,
 		chainId: ethereumClientService.getChainId(),
 		nonce: await transactionCount,
-		maxFeePerGas: data.gasPrice !== undefined ? data.gasPrice : 0n,
-		maxPriorityFeePerGas: 0n,
+		...getGasPriceFields(data),
 		gas: data.gas === undefined ? maxGas : data.gas,
 		to: data.to === undefined ? null : data.to,
 		value: data.value === undefined ? 0n : data.value,
@@ -99,7 +107,7 @@ export const simulateEstimateGas = async (ethereumClientService: EthereumClientS
 			}
 		} as const 
 	}
-	const gasSpent = lastResult.gasSpent * 12n / 10n // add 20% extra to account for gas savings
+	const gasSpent = lastResult.gasSpent * 125n / 100n // add 25% extra to account for gas savings <https://eips.ethereum.org/EIPS/eip-3529>
 	return { gas: gasSpent < maxGas ? gasSpent : maxGas }
 }
 
@@ -158,7 +166,7 @@ export const appendTransaction = async (ethereumClientService: EthereumClientSer
 		})),
 		blockNumber: parentBlock.number,
 		blockTimestamp: parentBlock.timestamp,
-		chain: ethereumClientService.getChain(),
+		rpcNetwork: ethereumClientService.getRpcNetwork(),
 		simulationConductedTimestamp: new Date(),
 	}
 }
@@ -171,7 +179,7 @@ export const setSimulationTransactions = async (ethereumClientService: EthereumC
 			simulatedTransactions: [],
 			blockNumber: block.number,
 			blockTimestamp: block.timestamp,
-			chain: ethereumClientService.getChain(),
+			rpcNetwork: ethereumClientService.getRpcNetwork(),
 			simulationConductedTimestamp: new Date(),
 		}
 	}
@@ -186,7 +194,6 @@ export const setSimulationTransactions = async (ethereumClientService: EthereumC
 	if (parentBaseFeePerGas === undefined) throw new Error(CANNOT_SIMULATE_OFF_LEGACY_BLOCK)
 	const multicallResult = await ethereumClientService.multicall(newTransactionsToSimulate.map((x) => x.transaction), parentBlock.number)
 	if (multicallResult.length !== signedTxs.length) throw 'multicall length does not match in setSimulationTransactions'
-	const chainId = ethereumClientService.getChain()
 
 	const tokenBalancesAfter: TokenBalancesAfter[] = []
 	for (let resultIndex = 0; resultIndex < multicallResult.length; resultIndex++) {
@@ -213,7 +220,7 @@ export const setSimulationTransactions = async (ethereumClientService: EthereumC
 		})),
 		blockNumber: parentBlock.number,
 		blockTimestamp: parentBlock.timestamp,
-		chain: chainId,
+		rpcNetwork: ethereumClientService.getRpcNetwork(),
 		simulationConductedTimestamp: new Date(),
 	}
 }
@@ -234,7 +241,7 @@ export const setPrependTransactionsQueue = async (ethereumClientService: Ethereu
 		simulatedTransactions: [],
 		blockNumber: block.number,
 		blockTimestamp: block.timestamp,
-		chain: ethereumClientService.getChain(),
+		rpcNetwork: ethereumClientService.getRpcNetwork(),
 		simulationConductedTimestamp: new Date(),
 	}
 
@@ -301,7 +308,7 @@ export const getNonceFixedSimulatedTransactions = async(ethereumClientService: E
 }
 
 export const refreshSimulationState = async (ethereumClientService: EthereumClientService, simulationState: SimulationState): Promise<SimulationState>  => {
-	if (ethereumClientService.getChain() !== simulationState.chain) return simulationState // don't refresh if we don't have the same chain to refresh from
+	if (ethereumClientService.getChainId() !== simulationState.rpcNetwork.chainId) return simulationState // don't refresh if we don't have the same chain to refresh from
 	if (simulationState.blockNumber == await ethereumClientService.getBlockNumber()) {
 		// if block number is the same, we don't need to compute anything as nothing has changed, but let's update timestamp to show the simulation was refreshed for this time
 		return { ...simulationState, simulationConductedTimestamp: new Date() }

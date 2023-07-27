@@ -1,33 +1,36 @@
+import { RpcNetwork } from '../../utils/visualizer-types.js'
 import { assertIsObject } from '../../utils/typescript.js'
 import { EthereumJsonRpcRequest, JsonRpcResponse } from '../../utils/wire-types.js'
+import { FetchResponseError, JsonRpcResponseError } from '../../utils/errors.js'
 
 export type IEthereumJSONRpcRequestHandler = Pick<EthereumJSONRpcRequestHandler, keyof EthereumJSONRpcRequestHandler>
 export class EthereumJSONRpcRequestHandler {
 	private nextRequestId: number = 1
-	private endpoint: string
+	private rpcNetwork: RpcNetwork
 
-	constructor(endpoint: string) {
-		this.endpoint = endpoint
+	constructor(rpcNetwork: RpcNetwork) {
+		this.rpcNetwork = rpcNetwork
     }
+	public readonly getRpcNetwork = () => this.rpcNetwork
 
 	public readonly jsonRpcRequest = async (rpcRequest: EthereumJsonRpcRequest) => {
 		const serialized = EthereumJsonRpcRequest.serialize(rpcRequest)
 		assertIsObject(serialized)
-		const requestBodyJson = JSON.stringify({
+		const requestBodyJson = {
 			jsonrpc: '2.0',
 			id: ++this.nextRequestId,
 			...serialized,
-		})
-		const response = await fetch(`${ this.endpoint }`, {
+		}
+		const response = await fetch(`${ this.rpcNetwork.httpsRpc }`, {
 			method: 'POST',
 			headers: {
 				'Content-Type': 'application/json'
 			},
-			body: requestBodyJson
+			body: JSON.stringify(requestBodyJson)
 		})
-		if (!response.ok) throw new Error(`Ethereum Client Error: ${ response.status }: ${ response.statusText }`)
+		if (!response.ok) throw new FetchResponseError(response, requestBodyJson.id)
 		const jsonRpcResponse = JsonRpcResponse.parse(await response.json())
-		if ('error' in jsonRpcResponse) throw Error(`Ethereum Client Error: ${ jsonRpcResponse.error.message }`)
+		if ('error' in jsonRpcResponse) throw new JsonRpcResponseError(jsonRpcResponse)
 		return jsonRpcResponse.result
 	}
 }

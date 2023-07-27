@@ -2,8 +2,44 @@
 import { EthBalanceChanges, EthereumAddress, EthereumData, EthereumQuantity, EthereumSignedTransaction, EthereumTimestamp, EthereumUnsignedTransaction, EthSubscribeParams, SingleMulticallResponse } from './wire-types.js'
 import * as funtypes from 'funtypes'
 import { QUARANTINE_CODE } from '../simulation/protectors/quarantine-codes.js'
-import { AddressBookEntry, CHAIN, NFTEntry, RenameAddressCallBack, TokenEntry, Website, WebsiteSocket } from './user-interface-types.js'
+import { AddressBookEntry, NFTEntry, RenameAddressCallBack, TokenEntry, Website, WebsiteSocket } from './user-interface-types.js'
 import { ERROR_INTERCEPTOR_GAS_ESTIMATION_FAILED } from './constants.js'
+
+export type NetworkPrice = funtypes.Static<typeof NetworkPrice>
+export const NetworkPrice = funtypes.ReadonlyObject({
+	quoteToken: funtypes.ReadonlyObject({ address: EthereumAddress, decimals: EthereumQuantity, symbol: funtypes.String }),
+	priceSources: funtypes.ReadonlyObject({
+		uniswapV2Like: funtypes.ReadonlyArray(funtypes.ReadonlyObject({ factory: EthereumQuantity, initCodeHash: funtypes.String })),
+		uniswapV3Like: funtypes.ReadonlyArray(funtypes.ReadonlyObject({ factory: EthereumQuantity, initCodeHash: funtypes.String }))
+	})
+})
+
+export type RpcEntry = funtypes.Static<typeof RpcEntry>
+export const RpcEntry = funtypes.ReadonlyObject({
+	name: funtypes.String,
+	chainId: EthereumQuantity,
+	httpsRpc: funtypes.String,
+	currencyName: funtypes.String,
+	currencyTicker: funtypes.String,
+	primary: funtypes.Boolean,
+	minimized: funtypes.Boolean,
+	weth: EthereumQuantity,
+})
+
+export type RpcEntries = funtypes.Static<typeof RpcEntries>
+export const RpcEntries = funtypes.ReadonlyArray(RpcEntry)
+
+export type RpcNetwork = funtypes.Static<typeof RpcNetwork>
+export const RpcNetwork = funtypes.Union(
+	RpcEntry,
+	funtypes.ReadonlyObject({
+		httpsRpc: funtypes.Undefined,
+		chainId: EthereumQuantity,
+		name: funtypes.String,
+		currencyName: funtypes.Literal('Ether?'),
+    	currencyTicker: funtypes.Literal('ETH?'),
+	})
+)
 
 export type OptionalEthereumAddress = funtypes.Static<typeof OptionalEthereumAddress>
 export const OptionalEthereumAddress = funtypes.Union(EthereumAddress, funtypes.Undefined)
@@ -127,7 +163,7 @@ export const SimulationState = funtypes.ReadonlyObject({
 	simulatedTransactions: funtypes.ReadonlyArray(SimulatedTransaction),
 	blockNumber: EthereumQuantity,
 	blockTimestamp: EthereumTimestamp,
-	chain: CHAIN,
+	rpcNetwork: RpcNetwork,
 	simulationConductedTimestamp: EthereumTimestamp,
 })
 export type EthBalanceChangesWithMetadata = funtypes.Static<typeof EthBalanceChangesWithMetadata>
@@ -144,7 +180,7 @@ export const TransactionWithAddressBookEntries = funtypes.Intersect(
 		to: funtypes.Union(AddressBookEntry, funtypes.Undefined),
 		value: EthereumQuantity,
 		input: EthereumData,
-		chainId: CHAIN,
+		rpcNetwork: RpcNetwork,
 		hash: EthereumQuantity,
 		gas: EthereumQuantity,
 		nonce: EthereumQuantity,
@@ -196,7 +232,7 @@ export type SimulationAndVisualisationResults = {
 	simulationConductedTimestamp: Date,
 	addressMetaData: readonly AddressBookEntry[],
 	simulatedAndVisualizedTransactions: readonly SimulatedAndVisualizedTransaction[],
-	chain: CHAIN,
+	rpcNetwork: RpcNetwork,
 	tokenPrices: readonly TokenPriceEstimate[],
 	activeAddress: bigint,
 }

@@ -1,14 +1,15 @@
 import { TransactionImportanceBlockParams } from '../Transactions.js'
 import { Erc20ApprovalChanges, ERC721OperatorChange, ERC721OperatorChanges, ERC721TokenIdApprovalChanges } from '../SimulationSummary.js'
-import { ERC721TokenApprovalChange, TokenApprovalChange, TokenVisualizerERC20Event, TokenVisualizerERC721AllApprovalEvent, TokenVisualizerERC721Event, TokenVisualizerResultWithMetadata } from '../../../utils/visualizer-types.js'
+import { ERC721TokenApprovalChange, TokenApprovalChange, TokenVisualizerERC20Event, TokenVisualizerERC721AllApprovalEvent, TokenVisualizerERC721Event, TokenVisualizerResultWithMetadata, RpcNetwork } from '../../../utils/visualizer-types.js'
 import { EtherSymbol, TokenSymbol, TokenAmount, EtherAmount, ERC721TokenNumber } from '../../subcomponents/coins.js'
-import { CHAIN, RenameAddressCallBack } from '../../../utils/user-interface-types.js'
+import { RenameAddressCallBack } from '../../../utils/user-interface-types.js'
+import { SmallAddress } from '../../subcomponents/address.js'
 
 type EtherTransferEventParams = {
 	valueSent: bigint,
 	totalReceived: bigint,
 	textColor: string,
-	chain: CHAIN,
+	rpcNetwork: RpcNetwork,
 }
 
 function EtherTransferEvent(param: EtherTransferEventParams) {
@@ -30,7 +31,7 @@ function EtherTransferEvent(param: EtherTransferEventParams) {
 						<div class = 'log-cell'>
 							<EtherSymbol
 								textColor = { param.textColor }
-								chain = { param.chain }
+								rpcNetwork = { param.rpcNetwork }
 							/>
 						</div>
 					</table>
@@ -54,7 +55,7 @@ function EtherTransferEvent(param: EtherTransferEventParams) {
 						<div class = 'log-cell'>
 							<EtherSymbol
 								textColor = { param.textColor }
-								chain = { param.chain }
+								rpcNetwork = { param.rpcNetwork }
 							/>
 						</div>
 					</table>
@@ -104,6 +105,17 @@ function SendOrReceiveTokensImportanceBox(param: SendOrReceiveTokensImportanceBo
 								{ ...tokenEvent.token }
 								textColor = { param.textColor }
 								useFullTokenName = { false }
+							/>
+						</div>
+						<div class = 'log-cell'>
+							<p class = 'ellipsis' style = { `color: ${ param.textColor }; margin-bottom: 0px; display: inline-block` }>
+								{ param.sending ? 'to' : 'from' }&nbsp;
+							</p>
+						</div>
+						<div class = 'log-cell'>
+							<SmallAddress 
+								addressBookEntry = { param.sending ? tokenEvent.to : tokenEvent.from }
+								renameAddressCallBack = { param.renameAddressCallBack }
 							/>
 						</div>
 					</table>
@@ -174,7 +186,7 @@ export function CatchAllVisualizer(param: TransactionImportanceBlockParams) {
 					valueSent = { param.simTx.transaction.value }
 					totalReceived = { totalEthReceived }
 					textColor = { textColor }
-					chain = { param.simulationAndVisualisationResults.chain }
+					rpcNetwork = { param.simulationAndVisualisationResults.rpcNetwork }
 				/>
 			</div>
 

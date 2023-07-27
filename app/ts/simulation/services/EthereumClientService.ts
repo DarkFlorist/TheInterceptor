@@ -1,29 +1,30 @@
 import { MulticallResponse, EthereumUnsignedTransaction, EthereumSignedTransactionWithBlockData, EthGetStorageAtResponse, EthereumQuantity, EthereumBlockTag, EthTransactionReceiptResponse, EthereumData, EthereumBlockHeader, EthereumBlockHeaderWithTransactionHashes, EthGetLogsRequest, EthGetLogsResponse, DappRequestTransaction } from '../../utils/wire-types.js'
 import { IUnsignedTransaction1559 } from '../../utils/ethereum.js'
-import { TIME_BETWEEN_BLOCKS, CHAINS, MOCK_ADDRESS } from '../../utils/constants.js'
-import { CHAIN } from '../../utils/user-interface-types.js'
+import { TIME_BETWEEN_BLOCKS, MOCK_ADDRESS } from '../../utils/constants.js'
 import { IEthereumJSONRpcRequestHandler } from './EthereumJSONRpcRequestHandler.js'
 import { ethers } from 'ethers'
 import { stringToUint8Array } from '../../utils/bigint.js'
 
 export type IEthereumClientService = Pick<EthereumClientService, keyof EthereumClientService>
 export class EthereumClientService {
-	private chain: CHAIN
 	private cachedBlock: EthereumBlockHeader | undefined = undefined
 	private cacheRefreshTimer: NodeJS.Timer | undefined = undefined
 	private lastCacheAccess: number = 0
 	private retrievingBlock: boolean = false
-	private newBlockCallback: (blockNumber: bigint, ethereumClientService: EthereumClientService) => void
+	private newBlockAttemptCallback: (blockHeader: EthereumBlockHeader, ethereumClientService: EthereumClientService, isNewBlock: boolean) => void
 	private onErrorBlockCallback: (ethereumClientService: EthereumClientService, error: Error) => void
 	private requestHandler
 	private cleanedUp = false
 
-    constructor(requestHandler: IEthereumJSONRpcRequestHandler, chain: CHAIN, newBlockCallback: (blockNumber: bigint, ethereumClientService: EthereumClientService) => void, onErrorBlockCallback: (ethereumClientService: EthereumClientService, error: Error) => void) {
+    constructor(requestHandler: IEthereumJSONRpcRequestHandler, newBlockAttemptCallback: (blockHeader: EthereumBlockHeader, ethereumClientService: EthereumClientService, isNewBlock: boolean) => void, onErrorBlockCallback: (ethereumClientService: EthereumClientService, error: Error) => void) {
 		this.requestHandler = requestHandler
-		this.chain = chain
-		this.newBlockCallback = newBlockCallback
+		this.newBlockAttemptCallback = newBlockAttemptCallback
 		this.onErrorBlockCallback = onErrorBlockCallback
     }
+
+	public readonly getRpcNetwork = () => this.requestHandler.getRpcNetwork()
+
+	public getLastKnownCachedBlockOrUndefined = () => this.cachedBlock
 
 	public getCachedBlock() {
 		if (this.cleanedUp === false) {
@@ -71,10 +72,8 @@ export class EthereumClientService {
 			if (this.cacheRefreshTimer === undefined) return
 			const newBlock = EthereumBlockHeader.parse(response)
 			console.log(`Current block number: ${ newBlock.number }`)
-			if (this.cachedBlock?.number != newBlock.number) {
-				this.cachedBlock = newBlock
-				this.newBlockCallback(newBlock.number, this)
-			}
+			this.cachedBlock = newBlock
+			this.newBlockAttemptCallback(newBlock, this, this.cachedBlock?.number != newBlock.number)
 		} catch(error) {
 			if (error instanceof Error) {
 				return this.onErrorBlockCallback(this, error)
@@ -132,13 +131,7 @@ export class EthereumClientService {
 		return EthereumBlockHeader.parse(await this.requestHandler.jsonRpcRequest({ method: 'eth_getBlockByNumber', params: [blockTag, fullObjects] }))
 	}
 
-	public readonly getChainId = () => {
-		return CHAINS[this.chain].chainId
-	}
-
-	public readonly getChain = () => {
-		return this.chain
-	}
+	public readonly getChainId = () => this.requestHandler.getRpcNetwork().chainId
 
 	public readonly getLogs = async (logFilter: EthGetLogsRequest) => {
 		const response = await this.requestHandler.jsonRpcRequest({ method: 'eth_getLogs', params: [logFilter] })

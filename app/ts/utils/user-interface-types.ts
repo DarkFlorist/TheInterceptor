@@ -1,10 +1,9 @@
 import { StateUpdater } from 'preact/hooks'
 import * as funtypes from 'funtypes'
 import { EthereumAddress, EthereumQuantity, LiteralConverterParserFactory } from './wire-types.js'
-import { SimulatedAndVisualizedTransaction, SimulationAndVisualisationResults } from './visualizer-types.js'
+import { SimulatedAndVisualizedTransaction, SimulationAndVisualisationResults, RpcEntry, RpcNetwork, RpcEntries } from './visualizer-types.js'
 import { IdentifiedSwapWithMetadata } from '../components/simulationExplaining/SwapTransactions.js'
-import { CHAINS } from './constants.js'
-import { IsConnected, Page, TabIconDetails, WebsiteAccessArray } from './interceptor-messages.js'
+import { RpcConnectionStatus, Page, TabIconDetails, WebsiteAccessArray } from './interceptor-messages.js'
 
 export type SignerName = funtypes.Static<typeof SignerName>
 export const SignerName = funtypes.Union(
@@ -27,9 +26,6 @@ export const Website = funtypes.ReadonlyObject({
 	icon: funtypes.Union(funtypes.String, funtypes.Undefined),
 	title: funtypes.Union(funtypes.String, funtypes.Undefined),
 })
-
-export type CHAIN = keyof typeof CHAINS
-export const CHAIN = funtypes.Union(funtypes.Literal('1'), funtypes.Literal('5'), funtypes.Literal('11155111'))
 
 export type AddressInfo = funtypes.Static<typeof AddressInfo>
 export const AddressInfo = funtypes.ReadonlyObject({
@@ -142,14 +138,15 @@ export type HomeParams = {
 	activeSigningAddress: bigint | undefined,
 	useSignersAddressAsActiveAddress: boolean,
 	simVisResults: SimulationAndVisualisationResults | undefined,
-	activeChain: bigint,
-	setActiveChainAndInformAboutIt: (network: bigint) => void,
+	rpcNetwork: RpcNetwork | undefined,
+	setActiveRpcAndInformAboutIt: (entry: RpcEntry) => void,
 	simulationMode: boolean,
 	tabIconDetails: TabIconDetails,
 	currentBlockNumber: bigint | undefined,
 	signerName: SignerName,
 	renameAddressCallBack: RenameAddressCallBack,
-	isConnected: IsConnected,
+	rpcConnectionStatus: RpcConnectionStatus,
+	rpcEntries: RpcEntries,
 }
 
 export type ChangeActiveAddressParam = {
@@ -171,8 +168,8 @@ export type FirstCardParams = {
 	enableSimulationMode: (x: boolean) => void,
 	useSignersAddressAsActiveAddress: boolean,
 	addressInfos: readonly AddressInfo[] | undefined,
-	changeActiveChain: (chain: bigint) => void,
-	activeChain: bigint,
+	changeActiveRpc: (rpcEntry: RpcEntry) => void,
+	rpcNetwork: RpcNetwork,
 	simulationMode: boolean,
 	changeActiveAddress: () => void,
 	makeMeRich: boolean,
@@ -180,6 +177,7 @@ export type FirstCardParams = {
 	tabIconDetails: TabIconDetails,
 	signerName: SignerName,
 	renameAddressCallBack: RenameAddressCallBack,
+	rpcEntries: RpcEntries,
 }
 
 export type SimulationStateParam = {
@@ -190,7 +188,7 @@ export type SimulationStateParam = {
 	disableReset: boolean,
 	resetSimulation: () => void,
 	removeTransactionHashes: bigint[],
-	isConnected: IsConnected,
+	rpcConnectionStatus: RpcConnectionStatus,
 }
 
 export type LogAnalysisParams = {
@@ -214,3 +212,9 @@ export type TabConnection = {
 }
 
 export type WebsiteTabConnections = Map<number, TabConnection>
+
+export type WindowOrTabId = funtypes.Static<typeof WindowOrTabId>
+export const WindowOrTabId = funtypes.ReadonlyObject({
+	id: funtypes.Number,
+	type: funtypes.Union(funtypes.Literal('tab'), funtypes.Literal('window'))
+})

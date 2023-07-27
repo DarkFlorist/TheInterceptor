@@ -1,9 +1,10 @@
-import { CHAINS, MULTICALL3, isSupportedChain } from '../utils/constants.js'
+import { Interface } from 'ethers'
+import { MULTICALL3 } from '../utils/constants.js'
 import { EthereumClientService } from './services/EthereumClientService.js'
 import { TokenPriceEstimate } from '../utils/visualizer-types.js'
 import { calculatePricesFromUniswapLikeReturnData, calculateUniswapLikePools, constructUniswapLikeSpotCalls } from '../utils/uniswap.js'
-import { Interface } from 'ethers'
 import { stringToUint8Array } from '../utils/bigint.js'
+import { networkPriceSources } from '../background/settings.js'
 
 interface TokenDecimals {
 	address: bigint,
@@ -24,10 +25,11 @@ export class PriceEstimator {
 		if (tokens.length == 0) return []
 
 		const chainId = this.ethereum.getChainId()
-		const chainString = chainId.toString()
-		if (!isSupportedChain(chainString)) return []
+		const chainIdString = chainId.toString()
+		if (!(chainIdString in networkPriceSources)) return []
+		const network = networkPriceSources[chainIdString]
 
-		const quoteToken = quote ?? CHAINS[chainString].quoteToken
+		const quoteToken = quote ?? network.quoteToken
 		const tokenPrices: TokenPriceEstimate[] = []
 
 		const IMulticall3 = new Interface(Multicall3ABI)
@@ -42,7 +44,7 @@ export class PriceEstimator {
 				continue
 			}
 
-			const poolAddresses = calculateUniswapLikePools(token.address, quoteToken.address, chainString)
+			const poolAddresses = calculateUniswapLikePools(token.address, quoteToken.address, chainId)
 			if (!poolAddresses) continue
 
 			const uniswapSpotCalls = constructUniswapLikeSpotCalls(token.address, quoteToken.address, poolAddresses)
