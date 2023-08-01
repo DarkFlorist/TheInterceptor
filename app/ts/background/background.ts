@@ -40,7 +40,7 @@ async function visualizeSimulatorState(simulationState: SimulationState, simulat
 		return true
 	}
 	function metadataRestructure(metadata: AddressBookEntry & { type: 'token', decimals: bigint }) {
-		return { token: metadata.address, decimals: metadata.decimals }
+		return { address: metadata.address, decimals: metadata.decimals }
 	}
 	const tokenPrices = await priceEstimator.estimateEthereumPricesForTokens(addressBookEntries.filter(onlyTokensAndTokensWithKnownDecimals).map(metadataRestructure))
 	return {
