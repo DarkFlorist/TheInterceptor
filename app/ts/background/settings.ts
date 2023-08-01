@@ -79,7 +79,7 @@ export const defaultRpcs: RpcEntries = [
 		currencyTicker: 'SEETH',
 		primary: true,
 		minimized: true,
-		weth: 0x105083929bf9bb22c26cb1777ec92661170d4285n
+		weth: 0x105083929bf9bb22c26cb1777ec92661170d4285n,
 	},
 	/*
 	{
