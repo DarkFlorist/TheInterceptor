@@ -707,3 +707,7 @@ svg.spinner > circle {
 	padding-bottom: 10px;
 	padding-top: 10px;
 }
+
+.blur {
+	filter: blur(3px);
+}

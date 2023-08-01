@@ -1,9 +1,11 @@
 
-import { EthBalanceChanges, EthereumAddress, EthereumData, EthereumQuantity, EthereumSignedTransaction, EthereumTimestamp, EthereumUnsignedTransaction, EthSubscribeParams, SingleMulticallResponse } from './wire-types.js'
+import { EthereumAddress, EthereumData, EthereumQuantity, EthereumSignedTransaction, EthereumTimestamp, EthereumUnsignedTransaction } from './wire-types.js'
 import * as funtypes from 'funtypes'
 import { QUARANTINE_CODE } from '../simulation/protectors/quarantine-codes.js'
 import { AddressBookEntry, NFTEntry, RenameAddressCallBack, TokenEntry, Website, WebsiteSocket } from './user-interface-types.js'
 import { ERROR_INTERCEPTOR_GAS_ESTIMATION_FAILED } from './constants.js'
+import { EthBalanceChanges, EthSubscribeParams, SingleMulticallResponse } from './JsonRpc-types.js'
+
 
 export type NetworkPrice = funtypes.Static<typeof NetworkPrice>
 export const NetworkPrice = funtypes.ReadonlyObject({
@@ -288,8 +290,16 @@ export type ERC721TokenApprovalChange = {
 	approvedEntry: AddressBookEntry
 }
 
+export type SimulationUpdatingState = funtypes.Static<typeof SimulationUpdatingState>
+export const SimulationUpdatingState = funtypes.Union(funtypes.Literal('updating'), funtypes.Literal('done'), funtypes.Literal('failed'))
+
+export type SimulationResultState = funtypes.Static<typeof SimulationResultState>
+export const SimulationResultState = funtypes.Union(funtypes.Literal('done'), funtypes.Literal('invalid'))
+
 export type SimulationResults = funtypes.Static<typeof SimulationResults>
 export const SimulationResults = funtypes.ReadonlyObject({
+	simulationUpdatingState: SimulationUpdatingState, 
+	simulationResultState: SimulationResultState,
 	simulationId: funtypes.Number,
 	simulationState: funtypes.Union(SimulationState, funtypes.Undefined),
 	visualizerResults: funtypes.Union(funtypes.ReadonlyArray(SimResults), funtypes.Undefined),

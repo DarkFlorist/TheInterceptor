@@ -26,6 +26,7 @@ export async function main() {
 			assert.equal(signed.type, '1559')
 			assert.equal(signed.r, 0n)
 			assert.equal(signed.s, 0n)
+			if (!('yParity' in signed)) throw new Error('yParity missing')
 			if (signed.type === '1559') assert.equal(signed.yParity, 'even')
 		})
 

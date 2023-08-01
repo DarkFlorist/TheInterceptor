@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'preact/hooks'
 import { defaultAddresses } from '../background/settings.js'
-import { SimulatedAndVisualizedTransaction, SimulationAndVisualisationResults, SimulationState, TokenPriceEstimate, RpcEntry, RpcNetwork, RpcEntries } from '../utils/visualizer-types.js'
+import { SimulatedAndVisualizedTransaction, SimulationAndVisualisationResults, SimulationState, TokenPriceEstimate, RpcEntry, RpcNetwork, RpcEntries, SimulationUpdatingState, SimulationResultState } from '../utils/visualizer-types.js'
 import { ChangeActiveAddress } from './pages/ChangeActiveAddress.js'
 import { Home } from './pages/Home.js'
 import { AddressInfo, AddressInfoEntry, AddressBookEntry, AddingNewAddressType, SignerName, AddressBookEntries } from '../utils/user-interface-types.js'
@@ -39,6 +39,8 @@ export function App() {
 	const [useTabsInsteadOfPopup, setUseTabsInsteadOfPopup] = useState<boolean | undefined>(undefined)
 	const [currentTabId, setCurrentTabId] = useState<number | undefined>(undefined)
 	const [rpcEntries, setRpcEntries] = useState<RpcEntries>([])
+	const [simulationUpdatingState, setSimulationUpdatingState] = useState<SimulationUpdatingState | undefined>(undefined)
+	const [simulationResultState, setSimulationResultState] = useState<SimulationResultState | undefined>(undefined)
 
 	async function setActiveAddressAndInformAboutIt(address: bigint | 'signer') {
 		setUseSignersAddressAsActiveAddress(address === 'signer')
@@ -114,6 +116,8 @@ export function App() {
 					data.simulation.simulatedAndVisualizedTransactions,
 					data.simulation.activeAddress
 				)
+				setSimulationUpdatingState(data.simulation.simulationUpdatingState)
+				setSimulationResultState(data.simulation.simulationResultState)
 				setMakeMeRich(data.makeMeRich)
 				setSignerName(data.signerName)
 				setCurrentBlockNumber(data.currentBlockNumber)
@@ -147,7 +151,7 @@ export function App() {
 			if (message.method === 'popup_websiteIconChanged') return updateTabIcon(message)
 			if (message.method === 'popup_failed_to_get_block') return setRpcConnectionStatus(message.data.rpcConnectionStatus)
 			if (message.method === 'popup_update_rpc_list') return
-			if (message.method !== 'popup_UpdateHomePage') return await sendPopupMessageToBackgroundPage( { method: 'popup_requestNewHomeData' } )
+			if (message.method !== 'popup_UpdateHomePage') return await sendPopupMessageToBackgroundPage({ method: 'popup_requestNewHomeData' })
 			return updateHomePage(message)
 		}
 		browser.runtime.onMessage.addListener(popupMessageListener)
@@ -235,6 +239,8 @@ export function App() {
 							renameAddressCallBack = { renameAddressCallBack }
 							rpcConnectionStatus = { rpcConnectionStatus }
 							rpcEntries = { rpcEntries }
+							simulationUpdatingState = { simulationUpdatingState }
+							simulationResultState = { simulationResultState }
 						/>
 
 						<div class = { `modal ${ appPage !== 'Home' ? 'is-active' : ''}` }>

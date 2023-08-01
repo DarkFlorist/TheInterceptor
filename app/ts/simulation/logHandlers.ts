@@ -1,6 +1,6 @@
 import { bytesToUnsigned } from '../utils/bigint.js'
 import { TokenVisualizerResult } from '../utils/visualizer-types.js'
-import { MulticallResponseEventLog } from '../utils/wire-types.js'
+import { MulticallResponseEventLog } from '../utils/JsonRpc-types.js'
 
 export function handleTransferLog(eventLog: MulticallResponseEventLog): TokenVisualizerResult {
 	const is721 = eventLog.topics.length === 4

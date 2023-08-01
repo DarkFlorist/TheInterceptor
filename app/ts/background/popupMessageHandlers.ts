@@ -1,6 +1,6 @@
-import { changeActiveAddressAndChainAndResetSimulation, changeActiveRpc, getPrependTrasactions, refreshConfirmTransactionSimulation, resetSimulator, updateSimulationState } from './background.js'
-import { getSettings, getMakeMeRich, getUseTabsInsteadOfPopup, setUseTabsInsteadOfPopup, setMakeMeRich, setPage, setUseSignersAddressAsActiveAddress, updateAddressInfos, updateContacts, updateWebsiteAccess, exportSettingsAndAddressBook, ExportedSettings, importSettingsAndAddressBook } from './settings.js'
-import { getPendingTransactions, getCurrentTabId, getOpenedAddressBookTabId, getSignerName, getSimulationResults, getTabState, saveCurrentTabId, setOpenedAddressBookTabId, setRpcList, getRpcList, getPrimaryRpcForChain, getRpcConnectionStatus, setRpcConnectionStatus } from './storageVariables.js'
+import { changeActiveAddressAndChainAndResetSimulation, changeActiveRpc, getPrependTrasactions, refreshConfirmTransactionSimulation, updateSimulationState } from './background.js'
+import { getSettings, setUseTabsInsteadOfPopup, setMakeMeRich, setPage, setUseSignersAddressAsActiveAddress, updateAddressInfos, updateContacts, updateWebsiteAccess, exportSettingsAndAddressBook, ExportedSettings, importSettingsAndAddressBook, getMakeMeRich, getUseTabsInsteadOfPopup } from './settings.js'
+import { getPendingTransactions, getCurrentTabId, getOpenedAddressBookTabId, getSimulationResults, getTabState, saveCurrentTabId, setOpenedAddressBookTabId, setRpcList, getRpcList, getPrimaryRpcForChain, setRpcConnectionStatus, getSignerName, getRpcConnectionStatus } from './storageVariables.js'
 import { Simulator } from '../simulation/simulator.js'
 import { ChangeActiveAddress, ChangeMakeMeRich, ChangePage, PersonalSign, RemoveTransaction, RequestAccountsFromSigner, TransactionConfirmation, InterceptorAccess, ChangeInterceptorAccess, ChainChangeConfirmation, EnableSimulationMode, ChangeActiveChain, AddOrEditAddressBookEntry, GetAddressBookData, RemoveAddressBookEntry, RefreshConfirmTransactionDialogSimulation, UserAddressBook, InterceptorAccessRefresh, InterceptorAccessChangeAddress, Settings, RefreshConfirmTransactionMetadata, RefreshInterceptorAccessMetadata, ChangeSettings, ImportSettings, SetRpcList } from '../utils/interceptor-messages.js'
 import { resolvePendingTransaction } from './windows/confirmTransaction.js'
@@ -16,20 +16,22 @@ import { assertUnreachable } from '../utils/typescript.js'
 import { WebsiteTabConnections } from '../utils/user-interface-types.js'
 import { EthereumClientService } from '../simulation/services/EthereumClientService.js'
 import { refreshSimulationState, removeTransactionAndUpdateTransactionNonces, resetSimulationState } from '../simulation/services/SimulationModeEthereumClientService.js'
-import { isFailedToFetchError } from '../utils/errors.js'
 import { formSimulatedAndVisualizedTransaction } from '../components/formVisualizerResults.js'
-import { isJSON } from '../utils/wire-types.js'
+import { doesUniqueRequestIdentifiersMatch } from '../utils/requests.js'
+import { isJSON } from '../utils/JsonRpc-types.js'
+import { SimulationState } from '../utils/visualizer-types.js'
+import { isFailedToFetchError } from '../utils/errors.js'
 
-export async function confirmDialog(ethereumClientService: EthereumClientService, websiteTabConnections: WebsiteTabConnections, confirmation: TransactionConfirmation) {
-	await resolvePendingTransaction(ethereumClientService, websiteTabConnections, confirmation)
+export async function confirmDialog(simulator: Simulator, ethereumClientService: EthereumClientService, websiteTabConnections: WebsiteTabConnections, confirmation: TransactionConfirmation) {
+	await resolvePendingTransaction(simulator, ethereumClientService, websiteTabConnections, confirmation)
 }
 
 export async function confirmPersonalSign(websiteTabConnections: WebsiteTabConnections, confirmation: PersonalSign) {
 	await resolvePersonalSign(websiteTabConnections, confirmation)
 }
 
-export async function confirmRequestAccess(websiteTabConnections: WebsiteTabConnections, confirmation: InterceptorAccess) {
-	await resolveInterceptorAccess(websiteTabConnections, confirmation.data)
+export async function confirmRequestAccess(simulator: Simulator, websiteTabConnections: WebsiteTabConnections, confirmation: InterceptorAccess) {
+	await resolveInterceptorAccess(simulator, websiteTabConnections, confirmation.data)
 }
 
 export async function getLastKnownCurrentTabId() {
@@ -50,7 +52,7 @@ export async function getSignerAccount() {
 	return signerAccounts !== undefined && signerAccounts.length > 0 ? signerAccounts[0] : undefined
 }
 
-export async function changeActiveAddress(websiteTabConnections: WebsiteTabConnections, addressChange: ChangeActiveAddress) {
+export async function changeActiveAddress(simulator: Simulator, websiteTabConnections: WebsiteTabConnections, addressChange: ChangeActiveAddress) {
 
 	// if using signers address, set the active address to signers address if available, otherwise we don't know active address and set it to be undefined
 	if (addressChange.data.activeAddress === 'signer') {
@@ -60,34 +62,33 @@ export async function changeActiveAddress(websiteTabConnections: WebsiteTabConne
 		sendMessageToApprovedWebsitePorts(websiteTabConnections, { method: 'request_signer_to_eth_accounts', result: [] })
 		sendMessageToApprovedWebsitePorts(websiteTabConnections, { method: 'request_signer_chainId', result: [] } )
 		
-		await changeActiveAddressAndChainAndResetSimulation(websiteTabConnections, {
+		await changeActiveAddressAndChainAndResetSimulation(simulator, websiteTabConnections, {
 			simulationMode: addressChange.data.simulationMode,
 			activeAddress: signerAccount,
 		})
 	} else {
 		await setUseSignersAddressAsActiveAddress(false)
-		await changeActiveAddressAndChainAndResetSimulation(websiteTabConnections, {
+		await changeActiveAddressAndChainAndResetSimulation(simulator, websiteTabConnections, {
 			simulationMode: addressChange.data.simulationMode,
 			activeAddress: addressChange.data.activeAddress,
 		})
 	}
 }
 
-export async function changeMakeMeRich(ethereumClientService: EthereumClientService, makeMeRichChange: ChangeMakeMeRich, settings: Settings) {
+export async function changeMakeMeRich(simulator: Simulator, ethereumClientService: EthereumClientService, makeMeRichChange: ChangeMakeMeRich, settings: Settings) {
 	await setMakeMeRich(makeMeRichChange.data)
-	await updateSimulationState(async () => {
-		const simulationState = (await getSimulationResults()).simulationState
+	await updateSimulationState(simulator, async (simulationState) => {
 		if (simulationState === undefined) return undefined
 		const prependQueue = await getPrependTrasactions(ethereumClientService, settings, makeMeRichChange.data)
 		return await resetSimulationState(ethereumClientService, { ...simulationState, prependTransactionsQueue: prependQueue })
-	}, settings.activeSimulationAddress)
+	}, settings.activeSimulationAddress, true)
 }
 
-export async function removeAddressBookEntry(websiteTabConnections: WebsiteTabConnections, removeAddressBookEntry: RemoveAddressBookEntry) {
+export async function removeAddressBookEntry(simulator: Simulator, websiteTabConnections: WebsiteTabConnections, removeAddressBookEntry: RemoveAddressBookEntry) {
 	switch(removeAddressBookEntry.data.addressBookCategory) {
 		case 'My Active Addresses': {
 			await updateAddressInfos((previousAddressInfos) => previousAddressInfos.filter((info) => info.address !== removeAddressBookEntry.data.address))
-			updateWebsiteApprovalAccesses(websiteTabConnections, undefined, await getSettings())
+			updateWebsiteApprovalAccesses(simulator, websiteTabConnections, undefined, await getSettings())
 			return await sendPopupMessageToOpenWindows({ method: 'popup_addressBookEntriesChanged' })
 		}
 		case 'My Contacts': {
@@ -101,7 +102,7 @@ export async function removeAddressBookEntry(websiteTabConnections: WebsiteTabCo
 	}
 }
 
-export async function addOrModifyAddressInfo(websiteTabConnections: WebsiteTabConnections, entry: AddOrEditAddressBookEntry) {
+export async function addOrModifyAddressInfo(simulator: Simulator, websiteTabConnections: WebsiteTabConnections, entry: AddOrEditAddressBookEntry) {
 	const newEntry = entry.data
 	switch (newEntry.type) {
 		case 'NFT':
@@ -115,7 +116,7 @@ export async function addOrModifyAddressInfo(websiteTabConnections: WebsiteTabCo
 					return previousAddressInfos.concat([newEntry])
 				}
 			})
-			updateWebsiteApprovalAccesses(websiteTabConnections, undefined, await getSettings())
+			updateWebsiteApprovalAccesses(simulator, websiteTabConnections, undefined, await getSettings())
 			return await sendPopupMessageToOpenWindows({ method: 'popup_addressBookEntriesChanged' })
 		}
 		case 'contact': {
@@ -132,9 +133,9 @@ export async function addOrModifyAddressInfo(websiteTabConnections: WebsiteTabCo
 	}
 }
 
-export async function changeInterceptorAccess(websiteTabConnections: WebsiteTabConnections, accessChange: ChangeInterceptorAccess) {
+export async function changeInterceptorAccess(simulator: Simulator, websiteTabConnections: WebsiteTabConnections, accessChange: ChangeInterceptorAccess) {
 	await updateWebsiteAccess(() => accessChange.data) // TODO: update 'popup_changeInterceptorAccess' to return list of changes instead of a new list
-	updateWebsiteApprovalAccesses(websiteTabConnections, undefined, await getSettings())
+	updateWebsiteApprovalAccesses(simulator, websiteTabConnections, undefined, await getSettings())
 	return await sendPopupMessageToOpenWindows({ method: 'popup_interceptor_access_changed' })
 }
 
@@ -149,28 +150,25 @@ export async function requestAccountsFromSigner(websiteTabConnections: WebsiteTa
 	}
 }
 
-export async function resetSimulation(ethereumClientService: EthereumClientService, settings: Settings) {
-	await updateSimulationState(async () => {
-		const simulationState = (await getSimulationResults()).simulationState
+export async function resetSimulation(simulator: Simulator, ethereumClientService: EthereumClientService, settings: Settings) {
+	await updateSimulationState(simulator, async (simulationState) => {
 		if (simulationState === undefined) return undefined
 		return await resetSimulationState(ethereumClientService, simulationState)
-	}, settings.activeSimulationAddress)
+	}, settings.activeSimulationAddress, true)
 }
 
-export async function removeTransaction(ethereumClientService: EthereumClientService, params: RemoveTransaction, settings: Settings) {
-	await updateSimulationState(async () => {
-		const simulationState = (await getSimulationResults()).simulationState
+export async function removeTransaction(simulator: Simulator, ethereumClientService: EthereumClientService, params: RemoveTransaction, settings: Settings) {
+	await updateSimulationState(simulator, async (simulationState) => {
 		if (simulationState === undefined) return
 		return await removeTransactionAndUpdateTransactionNonces(ethereumClientService, simulationState, params.data)
-	}, settings.activeSimulationAddress)
+	}, settings.activeSimulationAddress, true)
 }
 
-export async function refreshSimulation(ethereumClientService: EthereumClientService, settings: Settings) {
-	return await updateSimulationState(async() => {
-		const simulationState = (await getSimulationResults()).simulationState
+export async function refreshSimulation(simulator: Simulator, ethereumClientService: EthereumClientService, settings: Settings): Promise<SimulationState | undefined> {
+	return await updateSimulationState(simulator, async (simulationState) => {
 		if (simulationState === undefined) return
 		return await refreshSimulationState(ethereumClientService, simulationState)
-	}, settings.activeSimulationAddress)
+	}, settings.activeSimulationAddress, false)
 }
 
 export async function refreshPopupConfirmTransactionMetadata(ethereumClientService: EthereumClientService, userAddressBook: UserAddressBook, { data }: RefreshConfirmTransactionMetadata) {
@@ -192,27 +190,27 @@ export async function refreshPopupConfirmTransactionMetadata(ethereumClientServi
 	})
 }
 
-export async function refreshPopupConfirmTransactionSimulation(ethereumClientService: EthereumClientService, { data }: RefreshConfirmTransactionDialogSimulation) {
-	const refreshMessage = await refreshConfirmTransactionSimulation(ethereumClientService, data.activeAddress, data.simulationMode, data.requestId, data.transactionToSimulate, data.tabIdOpenedFrom)
+export async function refreshPopupConfirmTransactionSimulation(simulator: Simulator, ethereumClientService: EthereumClientService, { data }: RefreshConfirmTransactionDialogSimulation) {
+	const refreshMessage = await refreshConfirmTransactionSimulation(simulator, ethereumClientService, data.activeAddress, data.simulationMode, data.uniqueRequestIdentifier, data.transactionToSimulate)
 	const promises = await getPendingTransactions()
 	if (promises.length === 0) return
 	const first = promises[0]
-	if (first.simulationResults.data.requestId !== data.requestId) throw new Error('request id\'s do not match in refreshPopupConfirmTransactionSimulation')
+	if (!doesUniqueRequestIdentifiersMatch(first.simulationResults.data.uniqueRequestIdentifier, data.uniqueRequestIdentifier)) throw new Error('request id\'s do not match in refreshPopupConfirmTransactionSimulation')
 	return await sendPopupMessageToOpenWindows({
 		method: 'popup_update_confirm_transaction_dialog',
 		data: [refreshMessage, ...promises.slice(1).map((p) => p.simulationResults)]
 	})
 }
 
-export async function popupChangeActiveRpc(websiteTabConnections: WebsiteTabConnections, params: ChangeActiveChain, settings: Settings) {
-	return await changeActiveRpc(websiteTabConnections, params.data, settings.simulationMode)
+export async function popupChangeActiveRpc(simulator: Simulator, websiteTabConnections: WebsiteTabConnections, params: ChangeActiveChain, settings: Settings) {
+	return await changeActiveRpc(simulator, websiteTabConnections, params.data, settings.simulationMode)
 }
 
-export async function changeChainDialog(websiteTabConnections: WebsiteTabConnections, chainChange: ChainChangeConfirmation) {
-	await resolveChainChange(websiteTabConnections, chainChange)
+export async function changeChainDialog(simulator: Simulator, websiteTabConnections: WebsiteTabConnections, chainChange: ChainChangeConfirmation) {
+	await resolveChainChange(simulator, websiteTabConnections, chainChange)
 }
 
-export async function enableSimulationMode(websiteTabConnections: WebsiteTabConnections, params: EnableSimulationMode) {
+export async function enableSimulationMode(simulator: Simulator, websiteTabConnections: WebsiteTabConnections, params: EnableSimulationMode) {
 	const settings = await getSettings()
 	// if we are on unsupported chain, force change to a supported one
 	if (settings.useSignersAddressAsActiveAddress || params.data === false) {
@@ -221,14 +219,14 @@ export async function enableSimulationMode(websiteTabConnections: WebsiteTabConn
 		const tabId = await getLastKnownCurrentTabId()
 		const chainToSwitch = tabId === undefined ? undefined : (await getTabState(tabId)).signerChain
 		const networkToSwitch = chainToSwitch === undefined ? (await getRpcList())[0] : await getPrimaryRpcForChain(chainToSwitch)
-		await changeActiveAddressAndChainAndResetSimulation(websiteTabConnections, {
+		await changeActiveAddressAndChainAndResetSimulation(simulator, websiteTabConnections, {
 			simulationMode: params.data,
 			activeAddress: await getSignerAccount(),
 			...chainToSwitch === undefined ? {} :  { rpcNetwork: networkToSwitch },
 		})
 	} else {
 		const selectedNetworkToSwitch = settings.rpcNetwork.httpsRpc !== undefined ? settings.rpcNetwork : (await getRpcList())[0]
-		await changeActiveAddressAndChainAndResetSimulation(websiteTabConnections, {
+		await changeActiveAddressAndChainAndResetSimulation(simulator, websiteTabConnections, {
 			simulationMode: params.data,
 			...settings.rpcNetwork === selectedNetworkToSwitch ? {} : { rpcNetwork: selectedNetworkToSwitch }
 		})
@@ -292,7 +290,6 @@ export async function homeOpened(simulator: Simulator) {
 	}
 	const simResults = await getSimulationResults()
 	const simulatedAndVisualizedTransactions = simResults.simulationState === undefined || simResults.visualizerResults === undefined ? [] : formSimulatedAndVisualizedTransaction(simResults.simulationState, simResults.visualizerResults, simResults.addressBookEntries)
-
 	await sendPopupMessageToOpenWindows({
 		method: 'popup_UpdateHomePage',
 		data: {
@@ -360,12 +357,12 @@ export async function exportSettings() {
 	})
 }
 
-export async function setNewRpcList(request: SetRpcList, settings: Settings) {
+export async function setNewRpcList(simulator: Simulator, request: SetRpcList, settings: Settings) {
 	await setRpcList(request.data)
 	await sendPopupMessageToOpenWindows({ method: 'popup_update_rpc_list', data: request.data })
 	const primary = await getPrimaryRpcForChain(settings.rpcNetwork.chainId)
 	if (primary !== undefined) {
 		// reset to primary on update
-		await resetSimulator(primary)
+		simulator?.reset(primary)
 	}
 }

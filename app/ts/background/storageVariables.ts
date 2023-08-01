@@ -6,6 +6,7 @@ import { SignerName } from '../utils/user-interface-types.js'
 import { EthereumSubscriptions, SimulationResults, RpcEntries, RpcNetwork } from '../utils/visualizer-types.js'
 import * as funtypes from 'funtypes'
 import { defaultRpcs, getSettings } from './settings.js'
+import { UniqueRequestIdentifier, doesUniqueRequestIdentifiersMatch } from '../utils/requests.js'
 
 export async function getOpenedAddressBookTabId() {
 	const tabIdData = await browserStorageLocalSingleGetWithDefault('addressbookTabId', undefined)
@@ -36,12 +37,12 @@ export async function appendPendingTransaction(promise: PendingTransaction) {
 		return promises
 	})
 }
-export async function removePendingTransaction(requestId: number) {
+export async function removePendingTransaction(uniqueRequestIdentifier: UniqueRequestIdentifier) {
 	return await pendingTransactionsSemaphore.execute(async () => {
 		const promises = await getPendingTransactions()
-		const foundPromise = promises.find((promise) => promise.request.requestId === requestId)
+		const foundPromise = promises.find((promise) => doesUniqueRequestIdentifiersMatch(promise.request.uniqueRequestIdentifier, uniqueRequestIdentifier))
 		if (foundPromise !== undefined) {
-			const filteredPromises = promises.filter((promise) => promise.request.requestId !== requestId)
+			const filteredPromises = promises.filter((promise) => !doesUniqueRequestIdentifiersMatch(promise.request.uniqueRequestIdentifier, uniqueRequestIdentifier))
 			await browserStorageLocalSet('transactionsPendingForUserConfirmation', funtypes.ReadonlyArray(PendingTransaction).serialize(filteredPromises) as string)
 		}
 		return foundPromise
@@ -75,6 +76,8 @@ export async function setPendingPersonalSignPromise(promise: PendingPersonalSign
 export async function getSimulationResults() {
 	const results = await browserStorageLocalSingleGetWithDefault('simulationResults', undefined)
 	const emptyResults = {
+		simulationUpdatingState: 'done' as const,
+		simulationResultState: 'invalid' as const,
 		simulationId: 0,
 		simulationState: undefined,
 		visualizerResults: undefined,
@@ -192,7 +195,13 @@ export async function setRpcConnectionStatus(rpcConnectionStatus: RpcConnectionS
 }
 
 export async function getRpcConnectionStatus() {
-	return RpcConnectionStatus.parse(await browserStorageLocalSingleGetWithDefault('rpcConnectionStatus', undefined))
+	try {
+		return RpcConnectionStatus.parse(await browserStorageLocalSingleGetWithDefault('rpcConnectionStatus', undefined))
+	} catch (e) {
+		console.warn('Connection status was corrupt:')
+		console.warn(e)
+		return undefined
+	}
 }
 
 export async function getEthereumSubscriptions() {

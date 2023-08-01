@@ -4,16 +4,19 @@ import { createEthereumSubscription, removeEthereumSubscription } from '../simul
 import { simulationGasLeft, getSimulatedBalance, getSimulatedBlock, getSimulatedBlockNumber, getSimulatedCode, getSimulatedLogs, getSimulatedStack, getSimulatedTransactionByHash, getSimulatedTransactionCount, getSimulatedTransactionReceipt, simulatedCall, simulateEstimateGas, getInputFieldFromDataOrInput } from '../simulation/services/SimulationModeEthereumClientService.js'
 import { dataStringWith0xStart, stringToUint8Array } from '../utils/bigint.js'
 import { CANNOT_SIMULATE_OFF_LEGACY_BLOCK, ERROR_INTERCEPTOR_GAS_ESTIMATION_FAILED, ERROR_INTERCEPTOR_GET_CODE_FAILED, KNOWN_CONTRACT_CALLER_ADDRESSES } from '../utils/constants.js'
-import { InterceptedRequest, RPCReply } from '../utils/interceptor-messages.js'
+import { RPCReply } from '../utils/interceptor-messages.js'
 import { Website, WebsiteSocket, WebsiteTabConnections } from '../utils/user-interface-types.js'
 import { SimulationState } from '../utils/visualizer-types.js'
-import { EstimateGasParams, EthBalanceParams, EthBlockByNumberParams, EthCallParams, EthereumAddress, EthGetLogsParams, EthSubscribeParams, EthUnSubscribeParams, GetCode, GetSimulationStack, GetTransactionCount, OldSignTypedDataParams, PersonalSignParams, SendRawTransaction, SendTransactionParams, SignTypedDataParams, SwitchEthereumChainParams, TransactionByHashParams, TransactionReceiptParams } from '../utils/wire-types.js'
+import { EthereumAddress } from '../utils/wire-types.js'
 import { getConnectionDetails } from './accessManagement.js'
 import { getSimulationResults } from './storageVariables.js'
 import { openChangeChainDialog } from './windows/changeChain.js'
 import { openConfirmTransactionDialog } from './windows/confirmTransaction.js'
 import { openPersonalSignDialog } from './windows/personalSign.js'
 import { assertNever } from '../utils/typescript.js'
+import { InterceptedRequest } from '../utils/requests.js'
+import { EstimateGasParams, EthBalanceParams, EthBlockByNumberParams, EthCallParams, EthGetLogsParams, EthSubscribeParams, EthUnSubscribeParams, GetCode, GetSimulationStack, GetTransactionCount, OldSignTypedDataParams, PersonalSignParams, SendRawTransaction, SendTransactionParams, SignTypedDataParams, SwitchEthereumChainParams, TransactionByHashParams, TransactionReceiptParams } from '../utils/JsonRpc-types.js'
+import { Simulator } from '../simulation/simulator.js'
 
 const defaultCallAddress = 0x1n
 
@@ -44,11 +47,11 @@ function getFromField(websiteTabConnections: WebsiteTabConnections, simulationMo
 }
 
 export async function sendTransaction(
+	simulator: Simulator,
 	websiteTabConnections: WebsiteTabConnections,
 	activeAddress: bigint | undefined,
 	ethereumClientService: EthereumClientService,
 	sendTransactionParams: SendTransactionParams,
-	socket: WebsiteSocket,
 	request: InterceptedRequest,
 	simulationMode: boolean = true,
 	website: Website,
@@ -57,7 +60,7 @@ export async function sendTransaction(
 		const simulationState = simulationMode ? (await getSimulationResults()).simulationState : undefined
 		const block = getSimulatedBlock(ethereumClientService, simulationState)
 		const transactionDetails = sendTransactionParams.params[0]
-		const from = getFromField(websiteTabConnections, simulationMode, transactionDetails.from, activeAddress, socket)
+		const from = getFromField(websiteTabConnections, simulationMode, transactionDetails.from, activeAddress, request.uniqueRequestIdentifier.requestSocket)
 		const transactionCount = getSimulatedTransactionCount(ethereumClientService, simulationState, from)
 
 		const parentBlock = await block
@@ -94,8 +97,8 @@ export async function sendTransaction(
 	return {
 		method: sendTransactionParams.method,
 		...await openConfirmTransactionDialog(
+			simulator,
 			ethereumClientService,
-			socket,
 			request,
 			sendTransactionParams,
 			simulationMode,
@@ -106,9 +109,9 @@ export async function sendTransaction(
 }
 
 export async function sendRawTransaction(
+	simulator: Simulator,
 	ethereumClientService: EthereumClientService,
 	sendRawTransactionParams: SendRawTransaction,
-	socket: WebsiteSocket,
 	request: InterceptedRequest,
 	simulationMode: boolean,
 	website: Website,
@@ -155,8 +158,8 @@ export async function sendRawTransaction(
 	}
 	return { method: sendRawTransactionParams.method,
 		...await openConfirmTransactionDialog(
+			simulator,
 			ethereumClientService,
-			socket,
 			request,
 			sendRawTransactionParams,
 			simulationMode,
@@ -237,16 +240,16 @@ export async function gasPrice(ethereumClientService: EthereumClientService) {
 	return { method: 'eth_gasPrice' as const, result: await ethereumClientService.getGasPrice() }
 }
 
-export async function personalSign(ethereumClientService: EthereumClientService, websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, params: PersonalSignParams | SignTypedDataParams | OldSignTypedDataParams, request: InterceptedRequest, simulationMode: boolean, website: Website, activeAddress: bigint | undefined): Promise<RPCReply> {
-	return await openPersonalSignDialog(ethereumClientService, websiteTabConnections, socket, params, request, simulationMode, website, activeAddress)
+export async function personalSign(ethereumClientService: EthereumClientService, websiteTabConnections: WebsiteTabConnections, params: PersonalSignParams | SignTypedDataParams | OldSignTypedDataParams, request: InterceptedRequest, simulationMode: boolean, website: Website, activeAddress: bigint | undefined): Promise<RPCReply> {
+	return await openPersonalSignDialog(ethereumClientService, websiteTabConnections, params, request, simulationMode, website, activeAddress)
 }
 
-export async function switchEthereumChain(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, ethereumClientService: EthereumClientService, params: SwitchEthereumChainParams, request: InterceptedRequest, simulationMode: boolean, website: Website) {
+export async function switchEthereumChain(simulator: Simulator, websiteTabConnections: WebsiteTabConnections, ethereumClientService: EthereumClientService, params: SwitchEthereumChainParams, request: InterceptedRequest, simulationMode: boolean, website: Website) {
 	if (ethereumClientService.getChainId() === params.params[0].chainId) {
 		// we are already on the right chain
 		return { method: params.method, result: null }
 	}
-	const change = await openChangeChainDialog(websiteTabConnections, socket, request, simulationMode, website, params)
+	const change = await openChangeChainDialog(simulator, websiteTabConnections, request, simulationMode, website, params)
 	return { method: params.method, ...change }
 }
 

@@ -1,7 +1,7 @@
 import { StateUpdater } from 'preact/hooks'
 import * as funtypes from 'funtypes'
 import { EthereumAddress, EthereumQuantity, LiteralConverterParserFactory } from './wire-types.js'
-import { SimulatedAndVisualizedTransaction, SimulationAndVisualisationResults, RpcEntry, RpcNetwork, RpcEntries } from './visualizer-types.js'
+import { SimulatedAndVisualizedTransaction, SimulationAndVisualisationResults, RpcEntry, RpcNetwork, RpcEntries, SimulationUpdatingState, SimulationResultState } from './visualizer-types.js'
 import { IdentifiedSwapWithMetadata } from '../components/simulationExplaining/SwapTransactions.js'
 import { RpcConnectionStatus, Page, TabIconDetails, WebsiteAccessArray } from './interceptor-messages.js'
 
@@ -147,6 +147,8 @@ export type HomeParams = {
 	renameAddressCallBack: RenameAddressCallBack,
 	rpcConnectionStatus: RpcConnectionStatus,
 	rpcEntries: RpcEntries,
+	simulationUpdatingState: SimulationUpdatingState | undefined,
+	simulationResultState: SimulationResultState | undefined,
 }
 
 export type ChangeActiveAddressParam = {
@@ -189,6 +191,8 @@ export type SimulationStateParam = {
 	resetSimulation: () => void,
 	removeTransactionHashes: bigint[],
 	rpcConnectionStatus: RpcConnectionStatus,
+	simulationUpdatingState: SimulationUpdatingState | undefined,
+	simulationResultState: SimulationResultState | undefined,
 }
 
 export type LogAnalysisParams = {

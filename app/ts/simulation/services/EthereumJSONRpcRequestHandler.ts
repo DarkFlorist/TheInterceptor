@@ -1,6 +1,6 @@
 import { RpcNetwork } from '../../utils/visualizer-types.js'
 import { assertIsObject } from '../../utils/typescript.js'
-import { EthereumJsonRpcRequest, JsonRpcResponse } from '../../utils/wire-types.js'
+import { EthereumJsonRpcRequest, JsonRpcResponse } from '../../utils/JsonRpc-types.js'
 import { FetchResponseError, JsonRpcResponseError } from '../../utils/errors.js'
 
 export type IEthereumJSONRpcRequestHandler = Pick<EthereumJSONRpcRequestHandler, keyof EthereumJSONRpcRequestHandler>

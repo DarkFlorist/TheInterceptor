@@ -1,10 +1,12 @@
 import * as funtypes from 'funtypes'
-import { EthereumAddress, EthereumBytes32, LiteralConverterParserFactory, NonHexBigInt, OldSignTypedDataParams, PersonalSignParams, SignTypedDataParams } from './wire-types.js'
+import { EthereumAddress, EthereumBytes32, LiteralConverterParserFactory, NonHexBigInt } from './wire-types.js'
 import { AddressBookEntry, NFTEntry, SignerName, TokenEntry, Website } from './user-interface-types.js'
 import { QUARANTINE_CODE } from '../simulation/protectors/quarantine-codes.js'
 import { EthereumInput } from './wire-types.js'
 import { EnrichedEIP712 } from './eip712Parsing.js'
 import { RpcNetwork } from './visualizer-types.js'
+import { InterceptedRequest } from './requests.js'
+import { OldSignTypedDataParams, PersonalSignParams, SignTypedDataParams } from './JsonRpc-types.js'
 
 export type EIP2612Message = funtypes.Static<typeof EIP2612Message>
 export const EIP2612Message = funtypes.ReadonlyObject({
@@ -358,14 +360,13 @@ export const PersonalSignRequestBase = funtypes.Intersect(
 	funtypes.ReadonlyObject({
 		activeAddress: AddressBookEntry,
 		rpcNetwork: RpcNetwork,
-		requestId: funtypes.Number,
+		request: InterceptedRequest,
 		simulationMode: funtypes.Boolean,
 		signerName: SignerName,
-		website: Website,
 		quarantineCodes: funtypes.ReadonlyArray(QUARANTINE_CODE),
 		quarantine: funtypes.Boolean,
 		account: AddressBookEntry,
-		tabIdOpenedFrom: funtypes.Number,
+		website: Website,
 	}),
 )
 
