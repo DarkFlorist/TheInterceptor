@@ -173,11 +173,11 @@ export function InterceptorAccessList(param: InterceptorAccessListParams) {
 						<img src = '../img/internet.svg'/>
 					</span>
 				</div>
-				<p class = 'card-header-title'>
+				<div class = 'card-header-title'>
 					<p className = 'paragraph'>
-					Website Access
+						Website Access
 					</p>
-				</p>
+				</div>
 				<button class = 'card-header-icon' aria-label = 'close' onClick = { goHome }>
 					<span class = 'icon' style = 'color: var(--text-color);'> X </span>
 				</button>
@@ -207,7 +207,7 @@ export function InterceptorAccessList(param: InterceptorAccessListParams) {
 												<img src = { access.websiteAccess.website.icon === undefined ? '../../img/question-mark-sign.svg' : access.websiteAccess.website.icon }/>
 											</p>
 										</div>
-										<p class = 'card-header-title' style = 'width: 13em'>
+										<div class = 'card-header-title' style = 'width: 13em'>
 											<CopyToClipboard
 												content = { access.websiteAccess.website.websiteOrigin }
 												copyMessage = 'Website address copied!'
@@ -216,7 +216,7 @@ export function InterceptorAccessList(param: InterceptorAccessListParams) {
 													{ access.websiteAccess.website.websiteOrigin }
 												</p>
 											</CopyToClipboard>
-										</p>
+										</div>
 										<div class = 'card-header-icon unset-cursor'>
 											<label class = 'form-control' style = 'width: 8em;'>
 												<input type = 'checkbox' checked = { access.access } onInput = { e => { if (e.target instanceof HTMLInputElement && e.target !== null) { setWebsiteAccess(accessListIndex, e.target.checked, undefined) } } } />

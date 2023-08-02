@@ -60,9 +60,9 @@ export function ConfirmaddressBookEntryToBeRemoved(param: ConfirmaddressBookEntr
 						<img src = '../img/address-book.svg'/>
 					</span>
 				</div>
-				<p class = 'card-header-title'>
+				<div class = 'card-header-title'>
 					<p className = 'paragraph'> { `Remove ${ ActiveFilterSingle[param.category] }` } </p>
-				</p>
+				</div>
 				<button class = 'card-header-icon' aria-label = 'close' onClick = { param.close }>
 					<span class = 'icon' style = 'color: var(--text-color);'> X </span>
 				</button>
@@ -398,9 +398,9 @@ export function AddressBook() {
 					<div style = 'padding: 10px'>
 						<div style = 'display: flex; padding-bottom: 10px'>
 							<div class = 'field is-grouped' style = 'max-width: 400px; margin: 10px'>
-								<p class = 'control is-expanded'>
+								<div class = 'control is-expanded'>
 									<input class = 'input' type = 'text' placeholder = 'Search In Category' value = { searchString === undefined ? '' : searchString } onInput = { e => search((e.target as HTMLInputElement).value) } />
-								</p>
+								</div>
 							</div>
 							<div style = 'margin-left: auto;'>
 								{ addressBookState !== undefined ?

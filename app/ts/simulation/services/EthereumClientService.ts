@@ -3,8 +3,8 @@ import { IUnsignedTransaction1559 } from '../../utils/ethereum.js'
 import { TIME_BETWEEN_BLOCKS, MOCK_ADDRESS } from '../../utils/constants.js'
 import { IEthereumJSONRpcRequestHandler } from './EthereumJSONRpcRequestHandler.js'
 import { Interface, LogDescription, ethers } from 'ethers'
-import { addressString, bytes32String, dataStringWith0xStart, stringToUint8Array } from '../../utils/bigint.js'
-import { BlockCalls, CallResultLog, ExecutionSpec383MultiCallParams, ExecutionSpec383MultiCallResult } from '../../utils/multicall-types.js'
+import { stringToUint8Array, addressString, bytes32String, dataStringWith0xStart } from '../../utils/bigint.js'
+import { BlockCalls, ExecutionSpec383MultiCallResult, CallResultLog, ExecutionSpec383MultiCallParams } from '../../utils/multicall-types.js'
 import { MulticallResponse, EthGetStorageAtResponse, EthTransactionReceiptResponse, EthGetLogsRequest, EthGetLogsResponse, DappRequestTransaction } from '../../utils/JsonRpc-types.js'
 import { assertNever } from '../../utils/typescript.js'
 import { parseLogIfPossible } from './SimulationModeEthereumClientService.js'
@@ -27,6 +27,9 @@ export class EthereumClientService {
     }
 
 	public readonly getRpcNetwork = () => this.requestHandler.getRpcNetwork()
+	
+	public readonly getNewBlockAttemptCallback = () => this.newBlockAttemptCallback
+	public readonly getOnErrorBlockCallback = () => this.onErrorBlockCallback
 
 	public getLastKnownCachedBlockOrUndefined = () => this.cachedBlock
 
@@ -76,8 +79,8 @@ export class EthereumClientService {
 			if (this.cacheRefreshTimer === undefined) return
 			const newBlock = EthereumBlockHeader.parse(response)
 			console.log(`Current block number: ${ newBlock.number }`)
-			this.cachedBlock = newBlock
 			this.newBlockAttemptCallback(newBlock, this, this.cachedBlock?.number != newBlock.number)
+			this.cachedBlock = newBlock
 		} catch(error) {
 			if (error instanceof Error) {
 				return this.onErrorBlockCallback(this, error)
@@ -213,8 +216,6 @@ export class EthereumClientService {
 		console.log(calls)
 		console.log(JSON.stringify(ExecutionSpec383MultiCallParams.serialize(call)))
 		const unvalidatedResult = await this.requestHandler.jsonRpcRequest(call)
-		console.log([0, calls, blockTag])
-		console.log(unvalidatedResult)
 		return ExecutionSpec383MultiCallResult.parse(unvalidatedResult)
 	}
 

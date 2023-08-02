@@ -209,11 +209,11 @@ export function SettingsView(param: SettingsParam) {
 						<img src = '../img/settings.svg'/>
 					</span>
 				</div>
-				<p class = 'card-header-title'>
+				<div class = 'card-header-title'>
 					<p className = 'paragraph'>
-					Settings
+						Settings
 					</p>
-				</p>
+				</div>
 				<button class = 'card-header-icon' aria-label = 'close' onClick = { goHome }>
 					<span class = 'icon' style = 'color: var(--text-color);'> X </span>
 				</button>

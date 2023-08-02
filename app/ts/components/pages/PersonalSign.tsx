@@ -91,10 +91,10 @@ function SignatureHeader(params: SignatureHeaderParams) {
 			</span>
 		</div>
 
-		<p class = 'card-header-title' style = 'white-space: nowrap;'>
+		<div class = 'card-header-title' style = 'white-space: nowrap;'>
 			{ identifySignature(params.personalSignRequestData).title }
-		</p>
-		<p class = 'card-header-icon' style = 'margin-left: auto; margin-right: 0; padding-right: 10px; padding-left: 0px; overflow: hidden'>
+		</div>
+		<div class = 'card-header-icon' style = 'margin-left: auto; margin-right: 0; padding-right: 10px; padding-left: 0px; overflow: hidden'>
 			{'addressBookEntries' in params.personalSignRequestData && 'spender' in params.personalSignRequestData.addressBookEntries ?
 				<SmallAddress
 					addressBookEntry = { params.personalSignRequestData.addressBookEntries.spender }
@@ -102,7 +102,7 @@ function SignatureHeader(params: SignatureHeaderParams) {
 					style = { { 'background-color': 'unset' } }
 				/>
 			: <></>}
-		</p>
+		</div>
 	</header>
 }
 

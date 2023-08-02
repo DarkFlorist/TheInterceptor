@@ -13,13 +13,13 @@ import { getPrettySignerName } from '../subcomponents/signers.js'
 const HALF_HEADER_HEIGHT = 48 / 2
 
 function Title({ icon, title} : {icon: string | undefined, title: string}) {
-	return <p style = 'font-weight: 700; line-height: 48px'>
+	return <span style = 'font-weight: 700; line-height: 48px'>
 		{ icon === undefined
 			? <></>
 			: <img src = { icon } style = 'width: 48px; height: 48px; vertical-align: bottom; margin-right: 10px;'/>
 		}
 		{ title }
-	</p>
+	</span>
 }
 
 function AccessRequestHeader(website: Website) {
@@ -57,7 +57,7 @@ function AssociatedTogether({ associatedAddresses, renameAddressCallBack }: { as
 					{ associatedAddresses.length <= 1
 						? 'The website cannot associate any addresses with each other'
 						: <> There are&nbsp;
-							<p style = 'font-weight: 700'>{ convertNumberToCharacterRepresentationIfSmallEnough(associatedAddresses.length).toUpperCase() } </p>
+							<b>{ convertNumberToCharacterRepresentationIfSmallEnough(associatedAddresses.length).toUpperCase() } </b>
 							&nbsp;addresses that the website can associate together with
 						</>
 					}
@@ -94,14 +94,14 @@ function AccessRequest({ renameAddressCallBack, accessRequest, changeActiveAddre
 		<div style = 'margin: 10px'>
 			<p className = 'title is-4' style = 'text-align: center; margin-top: 40px; margin-bottom: 40px;'>
 				<Title icon = { accessRequest.website.icon } title = { accessRequest.website.title === undefined ? accessRequest.website.websiteOrigin : accessRequest.website.title }/>
-				would like to connect to The Interceptor
+				&nbsp;would like to connect to The Interceptor
 			</p>
 		</div> :
 			<>
 				<div class = 'notification' style = 'background-color: var(--importance-box-color); color: var(--text-color)'>
 					<p className = 'title is-3' style = 'text-align: center; margin-bottom: 10px;'>
 						<Title icon = { accessRequest.website.icon } title = { accessRequest.website.title === undefined ? accessRequest.website.websiteOrigin : accessRequest.website.title }/>
-						would like to connect to your account:
+						&nbsp;would like to connect to your account:
 					</p>
 					<div class = 'notification' style = 'padding: 10px; background-color: var(--alpha-015); justify-content: center; '>
 						{ accessRequest.simulationMode ?

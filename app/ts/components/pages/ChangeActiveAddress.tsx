@@ -39,11 +39,11 @@ export function ChangeActiveAddress(param: ChangeActiveAddressParam) {
 						<img src = '../img/address-book.svg'/>
 					</span>
 				</div>
-				<p class = 'card-header-title'>
+				<div class = 'card-header-title'>
 					<p className = 'paragraph'>
 					Change Active Address
 					</p>
-				</p>
+				</div>
 				<button class = 'card-header-icon' aria-label = 'close' onClick = { goHome }>
 					<span class = 'icon' style = 'color: var(--text-color);'> X </span>
 				</button>

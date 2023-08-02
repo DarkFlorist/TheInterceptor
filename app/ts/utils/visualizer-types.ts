@@ -7,6 +7,15 @@ import { ERROR_INTERCEPTOR_GAS_ESTIMATION_FAILED } from './constants.js'
 import { EthBalanceChanges, EthSubscribeParams, SingleMulticallResponse } from './JsonRpc-types.js'
 
 
+export type NetworkPrice = funtypes.Static<typeof NetworkPrice>
+export const NetworkPrice = funtypes.ReadonlyObject({
+	quoteToken: funtypes.ReadonlyObject({ address: EthereumAddress, decimals: EthereumQuantity, symbol: funtypes.String }),
+	priceSources: funtypes.ReadonlyObject({
+		uniswapV2Like: funtypes.ReadonlyArray(funtypes.ReadonlyObject({ factory: EthereumQuantity, initCodeHash: funtypes.String })),
+		uniswapV3Like: funtypes.ReadonlyArray(funtypes.ReadonlyObject({ factory: EthereumQuantity, initCodeHash: funtypes.String }))
+	})
+})
+
 export type RpcEntry = funtypes.Static<typeof RpcEntry>
 export const RpcEntry = funtypes.ReadonlyObject({
 	name: funtypes.String,
@@ -232,9 +241,15 @@ export type SimulationAndVisualisationResults = {
 
 export type TokenPriceEstimate = funtypes.Static<typeof TokenPriceEstimate>
 export const TokenPriceEstimate = funtypes.ReadonlyObject({
-	token: funtypes.String,
-	inOutAmount: funtypes.ReadonlyTuple(EthereumQuantity, EthereumQuantity),
-	decimals: EthereumQuantity,
+	token: funtypes.ReadonlyObject({
+		address: EthereumAddress,
+		decimals: EthereumQuantity
+	}),
+	quoteToken: funtypes.ReadonlyObject({
+		address: EthereumAddress,
+		decimals: EthereumQuantity
+	}),
+	price: EthereumQuantity
 })
 
 export type TransactionVisualizationParameters = {
@@ -278,9 +293,13 @@ export type ERC721TokenApprovalChange = {
 export type SimulationUpdatingState = funtypes.Static<typeof SimulationUpdatingState>
 export const SimulationUpdatingState = funtypes.Union(funtypes.Literal('updating'), funtypes.Literal('done'), funtypes.Literal('failed'))
 
+export type SimulationResultState = funtypes.Static<typeof SimulationResultState>
+export const SimulationResultState = funtypes.Union(funtypes.Literal('done'), funtypes.Literal('invalid'))
+
 export type SimulationResults = funtypes.Static<typeof SimulationResults>
 export const SimulationResults = funtypes.ReadonlyObject({
 	simulationUpdatingState: SimulationUpdatingState, 
+	simulationResultState: SimulationResultState,
 	simulationId: funtypes.Number,
 	simulationState: funtypes.Union(SimulationState, funtypes.Undefined),
 	visualizerResults: funtypes.Union(funtypes.ReadonlyArray(SimResults), funtypes.Undefined),
