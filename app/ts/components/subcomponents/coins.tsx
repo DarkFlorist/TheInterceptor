@@ -110,7 +110,7 @@ export type TokenSymbolParams = {
 export function TokenSymbol(param: TokenSymbolParams) {
 	const address = useSignal<bigint>(param.address)
 	useEffect(() => { address.value = param.address }, [param.address])
-	
+
 	const tokenString = checksummedAddress(param.address)
 
 	const style = {

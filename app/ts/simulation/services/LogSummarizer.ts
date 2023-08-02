@@ -1,4 +1,3 @@
-
 import { addressString } from '../../utils/bigint.js'
 import { AddressBookEntry } from '../../utils/user-interface-types.js'
 import { ERC721TokenApprovalChange, ERC721TokenDefinitionParams, SimulatedAndVisualizedTransaction, TokenApprovalChange, TokenBalanceChange, TokenPriceEstimate, TokenVisualizerResultWithMetadata } from '../../utils/visualizer-types.js'
@@ -207,7 +206,7 @@ export class LogSummarizer {
 			return {
 				...metadata,
 				changeAmount: changeAmount,
-				tokenPriceEstimate: tokenPrices.find((x) => x.token === tokenAddress)
+				tokenPriceEstimate: tokenPrices.find((x) => addressString(x.token.address) === tokenAddress)
 			}
 		})
 
