@@ -1,6 +1,6 @@
 import { EthereumUnsignedTransaction, EthereumSignedTransactionWithBlockData, EthereumQuantity, EthereumBlockTag, EthereumData, EthereumBlockHeader, EthereumBlockHeaderWithTransactionHashes, EthereumAddress } from '../../utils/wire-types.js'
 import { IUnsignedTransaction1559 } from '../../utils/ethereum.js'
-import { TIME_BETWEEN_BLOCKS, MOCK_ADDRESS } from '../../utils/constants.js'
+import { TIME_BETWEEN_BLOCKS, MOCK_ADDRESS, MULTICALL3, Multicall3ABI } from '../../utils/constants.js'
 import { IEthereumJSONRpcRequestHandler } from './EthereumJSONRpcRequestHandler.js'
 import { Interface, LogDescription, ethers } from 'ethers'
 import { stringToUint8Array, addressString, bytes32String, dataStringWith0xStart } from '../../utils/bigint.js'
@@ -221,12 +221,6 @@ export class EthereumClientService {
 
 	public readonly getEthBalancesOfAccounts = async (blockNumber: bigint, accounts: readonly EthereumAddress[]) => {
 		if (accounts.length === 0) return []
-		//TODO, these are in Jimmys code too, get them from the same location
-		const MULTICALL3 = 0xcA11bde05977b3631167028862bE2a173976CA11n
-		const Multicall3ABI = [
-			'function aggregate3(tuple(address target, bool allowFailure, bytes callData)[] calls) payable returns (tuple(bool success, bytes returnData)[] returnData)',
-			'function getEthBalance(address) returns (uint256)',
-		]
 		const IMulticall3 = new Interface(Multicall3ABI)
 		const ethBalanceQueryInput = stringToUint8Array(IMulticall3.encodeFunctionData('aggregate3', [accounts.map((account) => ({
 			target: addressString(MULTICALL3),

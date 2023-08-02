@@ -8,6 +8,11 @@ export const UNISWAP_V3_ROUTER = 0xE592427A0AEce92De3Edee1F18E0157C05861564n
 export const UNISWAP_V3_NFT_ROUTER = 0xC36442b4a4522E871399CD717aBDD847Ab11FE88n
 export const MULTICALL3 = 0xcA11bde05977b3631167028862bE2a173976CA11n // Contract for bundling bulk call transactions, deployed on every chain. https://github.com/mds1/multicall
 
+export const Multicall3ABI = [
+	'function aggregate3(tuple(address target, bool allowFailure, bytes callData)[] calls) payable returns (tuple(bool success, bytes returnData)[] returnData)',
+	'function getEthBalance(address) returns (uint256)',
+]
+
 // common 4-byte function sigs
 export const ERC20_TRANSFER_FROM_4BYTES = 0x23b872dd
 export const ERC20_TRANSFER_4BYTES = 0xa9059cbb

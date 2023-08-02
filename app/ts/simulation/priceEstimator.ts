@@ -1,5 +1,5 @@
 import { Interface } from 'ethers'
-import { MULTICALL3 } from '../utils/constants.js'
+import { MULTICALL3, Multicall3ABI } from '../utils/constants.js'
 import { EthereumClientService } from './services/EthereumClientService.js'
 import { TokenPriceEstimate } from '../utils/visualizer-types.js'
 import { calculatePricesFromUniswapLikeReturnData, calculateUniswapLikePools, constructUniswapLikeSpotCalls } from '../utils/uniswap.js'
@@ -10,10 +10,6 @@ interface TokenDecimals {
 	address: bigint,
 	decimals: bigint,
 }
-
-const Multicall3ABI = [
-	'function aggregate3(tuple(address target, bool allowFailure, bytes callData)[] calls) payable returns (tuple(bool success, bytes returnData)[] returnData)'
-]
 
 export class PriceEstimator {
 	private readonly ethereum
