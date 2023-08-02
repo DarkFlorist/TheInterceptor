@@ -618,9 +618,9 @@ export function SimulationSummary(param: SimulationSummaryParams) {
 						<img src = { param.simulationAndVisualisationResults.simulatedAndVisualizedTransactions.find((x) => x.statusCode !== 'success') === undefined ? ( param.simulationAndVisualisationResults.simulatedAndVisualizedTransactions.find( (x) => x.quarantine ) !== undefined ? '../img/warning-sign.svg' : '../img/success-icon.svg' ) : '../img/error-icon.svg' } />
 					</span>
 				</div>
-				<p class = 'card-header-title'>
+				<div class = 'card-header-title'>
 					<p className = 'paragraph'> Simulation Outcome </p>
-				</p>
+				</div>
 			</header>
 			<div class = 'card-content'>
 				<div class = 'container' style = 'margin-bottom: 10px'>
@@ -663,14 +663,14 @@ export function SimulationSummary(param: SimulationSummaryParams) {
 					}
 				</div>
 				
-				<p style = 'color: var(--subtitle-text-color); line-height: 28px; display: flex; margin: 0 0 0 auto; width: fit-content; margin-top: 10px'>
+				<span style = 'color: var(--subtitle-text-color); line-height: 28px; display: flex; margin: 0 0 0 auto; width: fit-content; margin-top: 10px'>
 					<SimulatedInBlockNumber
 						simulationBlockNumber = { param.simulationAndVisualisationResults.blockNumber }
 						currentBlockNumber = { param.currentBlockNumber }
 						simulationConductedTimestamp = { param.simulationAndVisualisationResults.simulationConductedTimestamp }
 						rpcConnectionStatus = { param.rpcConnectionStatus }
 					/>
-				</p>
+				</span>
 			</div>
 		</div>
 	)

@@ -221,9 +221,9 @@ export function AddNewAddress(param: AddAddressParam) {
 						<img src = '../img/address-book.svg'/>
 					</span>
 				</div>
-				<p class = 'card-header-title'>
+				<div class = 'card-header-title'>
 					<p className = 'paragraph'> { param.addingNewAddress.addingAddress ? `Add New ${ readableAddressType[param.addingNewAddress.type] }` : `Modify ${ readableAddressType[param.addingNewAddress.entry.type] }` } </p>
-				</p>
+				</div>
 				<button class = 'card-header-icon' aria-label = 'close' onClick = { param.close }>
 					<span class = 'icon' style = 'color: var(--text-color);'> X </span>
 				</button>

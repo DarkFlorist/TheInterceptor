@@ -161,7 +161,7 @@ function SimulationResults(param: SimulationStateParam) {
 	}
 
 	return <div>
-		<p style = 'display: grid; grid-template-columns: auto auto; padding-left: 10px; padding-right: 10px' >
+		<div style = 'display: grid; grid-template-columns: auto auto; padding-left: 10px; padding-right: 10px' >
 			<div class = 'log-cell' style = 'justify-content: left;'>
 				<p className = 'h1'> Simulation Results </p>
 			</div>
@@ -175,7 +175,7 @@ function SimulationResults(param: SimulationStateParam) {
 					</span>
 				</button>
 			</div>
-		</p>
+		</div>
 
 		<div class = { param.simulationResultState === 'invalid' || param.simulationUpdatingState === 'failed' ? 'blur' : '' }>
 			<Transactions
