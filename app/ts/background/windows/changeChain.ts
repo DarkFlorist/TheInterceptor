@@ -1,4 +1,4 @@
-import { PopupOrTab, addWindowTabListener, closePopupOrTab, openPopupOrTab, removeWindowTabListener } from '../../components/ui-utils.js'
+import { PopupOrTab, addWindowTabListener, browserTabsQueryById, closePopupOrTab, openPopupOrTab, removeWindowTabListener } from '../../components/ui-utils.js'
 import { METAMASK_ERROR_USER_REJECTED_REQUEST } from '../../utils/constants.js'
 import { Future } from '../../utils/future.js'
 import { ChainChangeConfirmation, SignerChainChangeConfirmation } from '../../utils/interceptor-messages.js'
@@ -80,7 +80,7 @@ export const openChangeChainDialog = async (
 	try {
 		const oldPromise = await getChainChangeConfirmationPromise()
 		if (oldPromise !== undefined) {
-			if ((await browser.tabs.query({ windowId: oldPromise.dialogId })).length > 0) {
+			if (await browserTabsQueryById(oldPromise.dialogId) !== undefined) {
 				return userDeniedChange
 			} else {
 				await setChainChangeConfirmationPromise(undefined)

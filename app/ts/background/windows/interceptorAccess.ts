@@ -4,7 +4,7 @@ import { Future } from '../../utils/future.js'
 import { InterceptorAccessChangeAddress, InterceptorAccessRefresh, InterceptorAccessReply, PendingAccessRequestArray, Settings, WebsiteAccessArray, WindowMessage } from '../../utils/interceptor-messages.js'
 import { Semaphore } from '../../utils/semaphore.js'
 import { AddressInfo, AddressInfoEntry, Website, WebsiteSocket, WebsiteTabConnections } from '../../utils/user-interface-types.js'
-import { getAssociatedAddresses, setAccess, updateWebsiteApprovalAccesses } from '../accessManagement.js'
+import { getAssociatedAddresses, setAccess, updateWebsiteApprovalAccesses, verifyAccess } from '../accessManagement.js'
 import { changeActiveAddressAndChainAndResetSimulation, handleContentScriptMessage, refuseAccess } from '../background.js'
 import { INTERNAL_CHANNEL_NAME, createInternalMessageListener, getHtmlFile, sendPopupMessageToOpenWindows, websiteSocketToString } from '../backgroundUtils.js'
 import { findAddressInfo } from '../metadataUtils.js'
@@ -116,7 +116,7 @@ export async function requestAccessFromUser(
 		}
 
 		const justAddToPending = await verifyPendingRequests()
-
+		if (verifyAccess(websiteTabConnections, socket, true, website.websiteOrigin, activeAddress, await getSettings()) !== 'askAccess') return
 		if (!justAddToPending) {
 			addWindowTabListener(closeWindowCallback)
 			const popupOrTab = await openPopupOrTab({
@@ -140,7 +140,7 @@ export async function requestAccessFromUser(
 			if (request !== undefined) refuseAccess(websiteTabConnections, request)
 			throw new Error('Opened dialog does not exist')
 		}
-		const accessRequestId =  `${ accessAddress } || ${ website.websiteOrigin }`
+		const accessRequestId =  `${ accessAddress?.address } || ${ website.websiteOrigin }`
 		const pendingRequest = {
 			dialogId: openedDialog.popupOrTab.windowOrTab.id,
 			socket,
@@ -158,13 +158,18 @@ export async function requestAccessFromUser(
 		}
 
 		const requests = await updatePendingAccessRequests(async (previousPendingAccessRequests) => {
+			// check that it doesn't have access already
+			if (verifyAccess(websiteTabConnections, socket, true, website.websiteOrigin, activeAddress, await getSettings()) !== 'askAccess') return previousPendingAccessRequests
+			
+			// check that we are not tracking it already
 			if (previousPendingAccessRequests.find((x) => x.accessRequestId === accessRequestId) === undefined) {
 				return previousPendingAccessRequests.concat(pendingRequest)
 			}
 			return previousPendingAccessRequests
 		})
+		if (requests.current.find((x) => x.accessRequestId === accessRequestId) === undefined) return pendingAccessRequests.resolve(requests.current)
 
-		if (requests.find((x) => x.accessRequestId === accessRequestId) === undefined) {
+		if (requests.previous.find((x) => x.accessRequestId === accessRequestId) !== undefined) {
 			if (request !== undefined) {
 				replyToInterceptedRequest(websiteTabConnections, {
 					uniqueRequestIdentifier: request.uniqueRequestIdentifier,
@@ -175,30 +180,17 @@ export async function requestAccessFromUser(
 			return
 		}
 		if (justAddToPending) {
-			if (requests.findIndex((x) => x.accessRequestId === accessRequestId) === 0) {
-				await sendPopupMessageToOpenWindows({ method: 'popup_interceptorAccessDialog', data: requests })
+			if (requests.current.findIndex((x) => x.accessRequestId === accessRequestId) === 0) {
+				await sendPopupMessageToOpenWindows({ method: 'popup_interceptorAccessDialog', data: requests.current })
 			}
-			await sendPopupMessageToOpenWindows({ method: 'popup_interceptor_access_dialog_pending_changed', data: requests })
+			await sendPopupMessageToOpenWindows({ method: 'popup_interceptor_access_dialog_pending_changed', data: requests.current })
 			return await tryFocusingTabOrWindow({ type: openedDialog.popupOrTab.type === 'tab' ? 'tab' : 'window', id: openedDialog.popupOrTab.windowOrTab.id })
 		}
-		pendingAccessRequests.resolve(requests)
+		pendingAccessRequests.resolve(requests.current)
 	})
-}
-
-async function updateViewOrClose() {
-	const promises = await getPendingAccessRequests()
-	if (promises.length > 0) return sendPopupMessageToOpenWindows({ method: 'popup_interceptorAccessDialog', data: promises })
-	if (openedDialog) {
-		removeWindowTabListener(openedDialog.onCloseWindow)
-		await closePopupOrTab(openedDialog.popupOrTab)
-		openedDialog = undefined
-	}
 }
 
 async function resolve(simulator: Simulator, websiteTabConnections: WebsiteTabConnections, accessReply: InterceptorAccessReply, request: InterceptedRequest | undefined, website: Website, activeAddress: bigint | undefined) {
-	await updatePendingAccessRequests(async (previousPendingAccessRequests) => {
-		return previousPendingAccessRequests.filter((x) => !(x.website.websiteOrigin === website.websiteOrigin && (x.requestAccessToAddress?.address === accessReply.requestAccessToAddress || x.requestAccessToAddress?.address === accessReply.originalRequestAccessToAddress)))
-	})
 	if (accessReply.userReply === 'NoResponse') {
 		if (request !== undefined) refuseAccess(websiteTabConnections, request)
 	} else {
@@ -216,7 +208,18 @@ async function resolve(simulator: Simulator, websiteTabConnections: WebsiteTabCo
 		}
 		if (request !== undefined) await handleContentScriptMessage(simulator, websiteTabConnections, request, website, activeAddress)
 	}
-	await updateViewOrClose()
+	
+	const pendingRequests = await updatePendingAccessRequests(async (previousPendingAccessRequests) => {
+		return previousPendingAccessRequests.filter((x) => !(x.website.websiteOrigin === website.websiteOrigin && (x.requestAccessToAddress?.address === accessReply.requestAccessToAddress || x.requestAccessToAddress?.address === accessReply.originalRequestAccessToAddress)))
+	})
+
+	if (pendingRequests.current.length > 0) return sendPopupMessageToOpenWindows({ method: 'popup_interceptorAccessDialog', data: pendingRequests.current })
+
+	if (openedDialog) {
+		removeWindowTabListener(openedDialog.onCloseWindow)
+		await closePopupOrTab(openedDialog.popupOrTab)
+		openedDialog = undefined
+	}
 }
 
 export async function requestAddressChange(websiteTabConnections: WebsiteTabConnections, message: InterceptorAccessChangeAddress | InterceptorAccessRefresh) {
@@ -249,7 +252,7 @@ export async function requestAddressChange(websiteTabConnections: WebsiteTabConn
 	})
 	return await sendPopupMessageToOpenWindows({
 		method: 'popup_interceptorAccessDialog',
-		data: newRequests,
+		data: newRequests.current,
 	})
 }
 
