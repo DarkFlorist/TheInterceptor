@@ -1,9 +1,10 @@
-import { BRAVE_LOGO, METAMASK_LOGO } from '../../utils/constants.js'
+import { BRAVE_LOGO, COINBASEWALLET_LOGO, METAMASK_LOGO } from '../../utils/constants.js'
 import { SignerName } from '../../utils/user-interface-types.js'
 
 const signerLogos = {
 	'MetaMask': METAMASK_LOGO,
-	'Brave': BRAVE_LOGO
+	'Brave': BRAVE_LOGO,
+	'CoinbaseWallet': COINBASEWALLET_LOGO,
 }
 
 export function getPrettySignerName(signerName: SignerName) {
