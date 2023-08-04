@@ -5,7 +5,7 @@ import { SimulationState, OptionalEthereumAddress, SimulatedAndVisualizedTransac
 import { ICON_ACCESS_DENIED, ICON_ACTIVE, ICON_NOT_ACTIVE, ICON_SIGNING, ICON_SIGNING_NOT_SUPPORTED, ICON_SIMULATING } from './constants.js'
 import { PersonalSignRequestData } from './personal-message-definitions.js'
 import { InterceptedRequest, UniqueRequestIdentifier } from './requests.js'
-import { EthGetLogsResponse, EthTransactionReceiptResponse, GetBlockReturn, GetSimulationStackReply, OldSignTypedDataParams, PersonalSignParams, SendRawTransaction, SendTransactionParams, SignTypedDataParams } from './JsonRpc-types.js'
+import { EthGetLogsResponse, EthGetStorageAtParams, EthTransactionReceiptResponse, GetBlockReturn, GetSimulationStackReply, OldSignTypedDataParams, PersonalSignParams, SendRawTransaction, SendTransactionParams, SignTypedDataParams, WalletAddEthereumChain } from './JsonRpc-types.js'
 
 export type WalletSwitchEthereumChainReply = funtypes.Static<typeof WalletSwitchEthereumChainReply>
 export const WalletSwitchEthereumChainReply = funtypes.ReadonlyObject({
@@ -97,7 +97,7 @@ export const NonForwardingRPCRequestReturnValue = funtypes.Union(NonForwardingRP
 export type ForwardToWallet = funtypes.Static<typeof ForwardToWallet>
 export const ForwardToWallet = 	funtypes.Intersect( // forward directly to wallet
 	funtypes.ReadonlyObject({ forward: funtypes.Literal(true) }),
-	funtypes.Union(SendRawTransaction, SendTransactionParams, PersonalSignParams, SignTypedDataParams, OldSignTypedDataParams),
+	funtypes.Union(SendRawTransaction, SendTransactionParams, PersonalSignParams, SignTypedDataParams, OldSignTypedDataParams, WalletAddEthereumChain, EthGetStorageAtParams),
 )
 
 export type UnknownMethodForward = funtypes.Static<typeof UnknownMethodForward>

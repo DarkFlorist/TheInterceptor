@@ -483,6 +483,6 @@ export const EthereumJsonRpcRequest = funtypes.Union(
 // should be same as the above list, except with `params: funtypes.Unknown`
 export type SupportedEthereumJsonRpcRequestMethods = funtypes.Static<typeof SupportedEthereumJsonRpcRequestMethods>
 export const SupportedEthereumJsonRpcRequestMethods = funtypes.ReadonlyObject({
-	method:  EthereumJsonRpcRequest.fields.methods,
+	method: funtypes.Union(EthereumJsonRpcRequest.alternatives[0].fields.method, ...EthereumJsonRpcRequest.alternatives.map(x => x.fields.method)),
 	params: funtypes.Unknown,
 })
