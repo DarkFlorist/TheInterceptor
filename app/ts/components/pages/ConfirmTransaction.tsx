@@ -209,7 +209,7 @@ export function ConfirmTransaction() {
 			uniqueRequestIdentifier: dialogState.data.uniqueRequestIdentifier,
 			accept: false,
 			windowId: currentWindow.id,
-			transactionErrorString: transactionErrorString,
+			transactionErrorString,
 		} })
 	}
 	const refreshMetadata = () => {
