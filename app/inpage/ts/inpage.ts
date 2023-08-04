@@ -472,11 +472,9 @@ class InterceptorMessageListener {
 			this.WindowEthereumRequest({ method: 'eth_accounts_reply', params: [[], false] })
 		})
 		window.ethereum.on('chainChanged', (chainId: string) => {
-			if (/\d/.test(chainId)) { //TODO: this is a hack to get coinbase working that calls this numbers in base 10 instead of in base 16
-				this.WindowEthereumRequest({ method: 'signer_chainChanged', params: [`0x${parseInt(chainId).toString(16)}`] })
-			} else {
-				this.WindowEthereumRequest({ method: 'signer_chainChanged', params: [chainId] })
-			}
+			// TODO: this is a hack to get coinbase working that calls this numbers in base 10 instead of in base 16
+			const params = /\d/.test(chainId) ? [`0x${parseInt(chainId).toString(16)}`] : [chainId]
+			this.WindowEthereumRequest({ method: 'signer_chainChanged', params })
 		})
 
 		this.connected = !window.ethereum.isConnected || window.ethereum.isConnected()
