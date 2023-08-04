@@ -11,6 +11,7 @@ export const SignerName = funtypes.Union(
 	funtypes.Literal('NotRecognizedSigner'),
 	funtypes.Literal('MetaMask'),
 	funtypes.Literal('Brave'),
+	funtypes.Literal('CoinbaseWallet'),
 	funtypes.Literal('NoSignerDetected'),
 )
 

@@ -101,6 +101,7 @@ export const MAKE_YOU_RICH_TRANSACTION = {
 export const TIME_BETWEEN_BLOCKS = 12
 export const METAMASK_LOGO = '../img/signers/metamask.svg'
 export const BRAVE_LOGO = '../img/signers/brave.svg'
+export const COINBASEWALLET_LOGO = '../img/signers/coinbasewallet.svg'
 
 export const CHAIN_NAMES = new Map<string, string>( [
 	['0', 'Kardia'],
