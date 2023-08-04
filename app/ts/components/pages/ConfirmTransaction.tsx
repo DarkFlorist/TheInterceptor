@@ -203,7 +203,14 @@ export function ConfirmTransaction() {
 		const currentWindow = await browser.windows.getCurrent()
 		if (currentWindow.id === undefined) throw new Error('could not get our own Id!')
 		if (pendingTransactions.length === 0) await tryFocusingTabOrWindow({ type: 'tab', id: dialogState.data.uniqueRequestIdentifier.requestSocket.tabId })
-		await sendPopupMessageToBackgroundPage({ method: 'popup_confirmDialog', data: { uniqueRequestIdentifier: dialogState.data.uniqueRequestIdentifier, accept: false, windowId: currentWindow.id } })
+		const rejectedTransaction = simulatedAndVisualizedTransactions.at(-1)
+		const transactionErrorString = rejectedTransaction !== undefined && rejectedTransaction.statusCode === 'failure' ? rejectedTransaction.error : undefined
+		await sendPopupMessageToBackgroundPage({ method: 'popup_confirmDialog', data: {
+			uniqueRequestIdentifier: dialogState.data.uniqueRequestIdentifier,
+			accept: false,
+			windowId: currentWindow.id,
+			transactionErrorString: transactionErrorString,
+		} })
 	}
 	const refreshMetadata = () => {
 		if (dialogState === undefined || dialogState.state === 'failed') return
