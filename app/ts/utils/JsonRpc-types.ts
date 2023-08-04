@@ -424,6 +424,27 @@ export const GetSimulationStack = funtypes.ReadonlyObject({
 	params: funtypes.ReadonlyTuple(funtypes.Literal('1.0.0')),
 }).asReadonly()
 
+export type WalletAddEthereumChain = funtypes.Static<typeof WalletAddEthereumChain>
+export const WalletAddEthereumChain = funtypes.ReadonlyObject({
+	method: funtypes.Literal('wallet_addEthereumChain'),
+	params: funtypes.Intersect(
+		funtypes.ReadonlyObject({
+			chainId: EthereumQuantity,
+			chainName: funtypes.String,
+			nativeCurrency: funtypes.ReadonlyObject({
+				name: funtypes.String,
+				symbol: funtypes.String,
+				decimals: funtypes.Number,
+			}),
+			rpcUrls: funtypes.ReadonlyArray(EthereumAddress),
+		}),
+		funtypes.Partial({
+			blockExplorerUrls: funtypes.ReadonlyArray(funtypes.String),
+			iconUrls: funtypes.ReadonlyArray(funtypes.String),
+		}).asReadonly()
+	)
+})
+
 export type EthereumJsonRpcRequest = funtypes.Static<typeof EthereumJsonRpcRequest>
 export const EthereumJsonRpcRequest = funtypes.Union(
 	EthBlockByNumberParams,
@@ -456,4 +477,12 @@ export const EthereumJsonRpcRequest = funtypes.Union(
 	EthGetLogsParams,
 	EthSign,
 	ExecutionSpec383MultiCallParams,
+	WalletAddEthereumChain,
 )
+
+// should be same as the above list, except with `params: funtypes.Unknown`
+export type SupportedEthereumJsonRpcRequestMethods = funtypes.Static<typeof SupportedEthereumJsonRpcRequestMethods>
+export const SupportedEthereumJsonRpcRequestMethods = funtypes.ReadonlyObject({
+	method:  EthereumJsonRpcRequest.fields.methods,
+	params: funtypes.Unknown,
+})

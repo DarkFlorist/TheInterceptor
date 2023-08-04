@@ -100,10 +100,23 @@ export const ForwardToWallet = 	funtypes.Intersect( // forward directly to walle
 	funtypes.Union(SendRawTransaction, SendTransactionParams, PersonalSignParams, SignTypedDataParams, OldSignTypedDataParams),
 )
 
+export type UnknownMethodForward = funtypes.Static<typeof UnknownMethodForward>
+export const UnknownMethodForward = funtypes.Intersect(
+	funtypes.ReadonlyObject({
+		forward: funtypes.Literal(true),
+		unknownMethod: funtypes.Literal(true),
+		method: funtypes.String,
+	}),
+	funtypes.Partial({
+		params: funtypes.Unknown,
+	})
+)
+
 export type RPCReply = funtypes.Static<typeof RPCReply>
 export const RPCReply = funtypes.Union(
 	NonForwardingRPCRequestReturnValue,
 	ForwardToWallet,
+	UnknownMethodForward,
 )
 
 export type SubscriptionReplyOrCallBack = funtypes.Static<typeof SubscriptionReplyOrCallBack>
