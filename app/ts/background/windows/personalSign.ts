@@ -13,7 +13,7 @@ import { extractEIP712Message, validateEIP712Types } from '../../utils/eip712Par
 import { getAddressMetaData, getTokenMetadata } from '../metadataUtils.js'
 import { getPendingPersonalSignPromise, getRpcNetwork, getRpcNetworkForChain, getSignerName, setPendingPersonalSignPromise } from '../storageVariables.js'
 import { getSettings } from '../settings.js'
-import { PopupOrTab, addWindowTabListener, closePopupOrTab, openPopupOrTab, removeWindowTabListener } from '../../components/ui-utils.js'
+import { PopupOrTab, addWindowTabListener, browserTabsQueryById, closePopupOrTab, openPopupOrTab, removeWindowTabListener } from '../../components/ui-utils.js'
 import { simulatePersonalSign } from '../../simulation/services/SimulationModeEthereumClientService.js'
 import { InterceptedRequest, UniqueRequestIdentifier, doesUniqueRequestIdentifiersMatch } from '../../utils/requests.js'
 import { replyToInterceptedRequest } from '../messageSending.js'
@@ -255,7 +255,7 @@ export const openPersonalSignDialog = async (
 	try {
 		const oldPromise = await getPendingPersonalSignPromise()
 		if (oldPromise !== undefined) {
-			if ((await browser.tabs.query({ windowId: oldPromise.dialogId })).length > 0) {
+			if (await browserTabsQueryById(oldPromise.dialogId) !== undefined) {
 				return reject(signingParams)
 			} else {
 				await setPendingPersonalSignPromise(undefined)

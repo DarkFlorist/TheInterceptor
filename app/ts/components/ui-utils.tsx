@@ -100,13 +100,17 @@ export async function openPopupOrTab(createData: browser.windows._CreateCreateDa
 	return { type: 'popup', windowOrTab: window }
 }
 
+export async function browserTabsQueryById(id: number) {
+	return (await browser.tabs.query({})).find((x) => x.id === id)
+}
+
 export async function getPopupOrTabById(popupOrTabId: PopupOrTabId) : Promise<PopupOrTab | undefined> {
 	switch (popupOrTabId.type) {
 		case 'tab': {
 			try {
-				const tabs = await browser.tabs.query({ windowId: popupOrTabId.id })
-				if (tabs.length === 0) return undefined
-				return { type: 'tab', windowOrTab: tabs[0] }
+				const tab = await browserTabsQueryById(popupOrTabId.id)
+				if (tab === undefined) return undefined
+				return { type: 'tab', windowOrTab: tab }
 			} catch(e) {
 				return undefined
 			}
@@ -126,8 +130,8 @@ export async function getPopupOrTabById(popupOrTabId: PopupOrTabId) : Promise<Po
 
 export async function getPopupOrTabOnlyById(id: number) : Promise<PopupOrTab | undefined> {
 	try {
-		const tabs = await browser.tabs.query({ windowId: id })
-		if (tabs.length !== 0) return { type: 'tab', windowOrTab: tabs[0] }
+		const tab = await browserTabsQueryById(id)
+		if (tab !== undefined) return { type: 'tab', windowOrTab: tab }
 	} catch(e) {}
 	try {
 		const window = await browser.windows.get(id)
