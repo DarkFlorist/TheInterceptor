@@ -117,6 +117,7 @@ export const openChangeChainDialog = async (
 	} finally {
 		removeWindowTabListener(onCloseWindow)
 		pendForUserReply = undefined
+		if (openedDialog) await closePopupOrTab(openedDialog)
 		openedDialog = undefined
 	}
 }
