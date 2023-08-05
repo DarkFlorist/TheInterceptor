@@ -2,7 +2,7 @@ import { EthereumClientService } from './services/EthereumClientService.js'
 import { unverifiedApproval } from './protectors/unverifiedApproval.js'
 import { selfTokenOops } from './protectors/selfTokenOops.js'
 import { EthereumBlockHeader, EthereumUnsignedTransaction } from '../utils/wire-types.js'
-import { TRANSFER_LOG, APPROVAL_LOG, Erc721_APPROVAL_FOR_ALL_LOG, DEPOSIT_LOG, WITHDRAWAL_LOG } from '../utils/constants.js'
+import { TRANSFER_LOG, APPROVAL_LOG, ERC721_APPROVAL_FOR_ALL_LOG, DEPOSIT_LOG, WITHDRAWAL_LOG } from '../utils/constants.js'
 import { bytes32String } from '../utils/bigint.js'
 import { feeOops } from './protectors/feeOops.js'
 import { commonTokenOops } from './protectors/commonTokenOops.js'
@@ -31,7 +31,7 @@ type Loghandler = (event: MulticallResponseEventLog) => TokenVisualizerResult
 const logHandler = new Map<string, Loghandler >([
 	[TRANSFER_LOG, handleTransferLog],
 	[APPROVAL_LOG, handleApprovalLog],
-	[Erc721_APPROVAL_FOR_ALL_LOG, handleErc721ApprovalForAllLog],
+	[ERC721_APPROVAL_FOR_ALL_LOG, handleErc721ApprovalForAllLog],
 	[DEPOSIT_LOG, handleDepositLog],
 	[WITHDRAWAL_LOG, handleWithdrawalLog],
 ])
