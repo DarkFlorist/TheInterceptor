@@ -1,7 +1,7 @@
 import { useSignal } from '@preact/signals'
 import { getTokenAmountsWorth } from '../../simulation/priceEstimator.js'
 import { abs, bigintToDecimalString, bigintToRoundedPrettyDecimalString, checksummedAddress } from '../../utils/bigint.js'
-import { ERC721TokenDefinitionParams, TokenDefinitionParams, TokenPriceEstimate, RpcNetwork } from '../../utils/visualizer-types.js'
+import { Erc721TokenDefinitionParams, TokenDefinitionParams, TokenPriceEstimate, RpcNetwork } from '../../utils/visualizer-types.js'
 import { CopyToClipboard } from './CopyToClipboard.js'
 import { Blockie } from './PreactBlocky.js'
 import { JSX } from 'preact/jsx-runtime'
@@ -194,19 +194,19 @@ export function Token(param: TokenParams) {
 	</table>
 }
 
-export type TokenOrEtherParams = TokenParams | EtherParams | ERC721TokenParams
+export type TokenOrEtherParams = TokenParams | EtherParams | Erc721TokenParams
 
 export function TokenOrEth(param: TokenOrEtherParams) {
 	if ('decimals' in param) {
 		return <Token { ...param }/>
 	}
 	if ('id' in param) {
-		return <ERC721Token { ...param }/>
+		return <Erc721Token { ...param }/>
 	}
 	return <Ether { ...param }/>
 }
 
-export function TokenOrEthSymbol(param: TokenDefinitionParams | ERC721TokenDefinitionParams | EtherSymbolParams) {
+export function TokenOrEthSymbol(param: TokenDefinitionParams | Erc721TokenDefinitionParams | EtherSymbolParams) {
 	if ('decimals' in param || 'id' in param) {
 		return <TokenSymbol { ...param }/>
 	}
@@ -224,7 +224,7 @@ function truncate(str: string, n: number){
 	return (str.length > n) ? `${str.slice(0, n-1)}…` : str;
 }
 
-type ERC721TokenNumberParams = {
+type Erc721TokenNumberParams = {
 	id: bigint
 	received: boolean
 	textColor?: string
@@ -232,7 +232,7 @@ type ERC721TokenNumberParams = {
 	style?: JSX.CSSProperties
 }
 
-export function ERC721TokenNumber(param: ERC721TokenNumberParams) {
+export function Erc721TokenNumber(param: Erc721TokenNumberParams) {
 	const sign = param.showSign ? (param.received ? ' + ' : ' - ') : ''
 	const style = {
 		display: 'inline',
@@ -247,7 +247,7 @@ export function ERC721TokenNumber(param: ERC721TokenNumberParams) {
 	</CopyToClipboard>
 }
 
-type ERC721TokenParams = ERC721TokenDefinitionParams & {
+type Erc721TokenParams = Erc721TokenDefinitionParams & {
 	received: boolean
 	textColor?: string
 	useFullTokenName: boolean
@@ -255,10 +255,10 @@ type ERC721TokenParams = ERC721TokenDefinitionParams & {
 	style?: JSX.CSSProperties
 }
 
-export function ERC721Token(param: ERC721TokenParams) {
+export function Erc721Token(param: Erc721TokenParams) {
 	return <table class = 'log-table'>
 		<div class = 'log-cell' style = 'justify-content: right;'>
-			<ERC721TokenNumber { ... param }/>
+			<Erc721TokenNumber { ... param }/>
 		</div>
 		<div class = 'log-cell'>
 			<TokenSymbol { ...param }/>

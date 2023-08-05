@@ -97,7 +97,7 @@ export async function removeAddressBookEntry(simulator: Simulator, websiteTabCon
 		}
 		case 'Non Fungible Tokens':
 		case 'Other Contracts':
-		case 'Tokens': throw new Error('Tried to remove addressbook category that is not supported yet!')
+		case 'Erc20Tokens': throw new Error('Tried to remove addressbook category that is not supported yet!')
 		default: assertUnreachable(removeAddressBookEntry.data.addressBookCategory)
 	}
 }
@@ -107,7 +107,7 @@ export async function addOrModifyAddressInfo(simulator: Simulator, websiteTabCon
 	switch (newEntry.type) {
 		case 'NFT':
 		case 'other contract':
-		case 'token': throw new Error(`No support to modify this entry yet! ${ newEntry.type }`)
+		case 'Erc20Token': throw new Error(`No support to modify this entry yet! ${ newEntry.type }`)
 		case 'addressInfo': {
 			await updateAddressInfos((previousAddressInfos) => {
 				if (previousAddressInfos.find((x) => x.address === entry.data.address) ) {

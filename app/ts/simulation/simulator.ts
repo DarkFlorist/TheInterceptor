@@ -2,7 +2,7 @@ import { EthereumClientService } from './services/EthereumClientService.js'
 import { unverifiedApproval } from './protectors/unverifiedApproval.js'
 import { selfTokenOops } from './protectors/selfTokenOops.js'
 import { EthereumBlockHeader, EthereumUnsignedTransaction } from '../utils/wire-types.js'
-import { TRANSFER_LOG, APPROVAL_LOG, ERC721_APPROVAL_FOR_ALL_LOG, DEPOSIT_LOG, WITHDRAWAL_LOG } from '../utils/constants.js'
+import { TRANSFER_LOG, APPROVAL_LOG, Erc721_APPROVAL_FOR_ALL_LOG, DEPOSIT_LOG, WITHDRAWAL_LOG } from '../utils/constants.js'
 import { bytes32String } from '../utils/bigint.js'
 import { feeOops } from './protectors/feeOops.js'
 import { commonTokenOops } from './protectors/commonTokenOops.js'
@@ -11,7 +11,7 @@ import { eoaCalldata } from './protectors/eoaCalldata.js'
 import { tokenToContract } from './protectors/tokenToContract.js'
 import { simulatedMulticall } from './services/SimulationModeEthereumClientService.js'
 import { WebsiteCreatedEthereumUnsignedTransaction, SimResults, SimulationState, TokenVisualizerResult, VisualizerResult, RpcNetwork } from '../utils/visualizer-types.js'
-import { handleApprovalLog, handleDepositLog, handleERC721ApprovalForAllLog, handleTransferLog, handleWithdrawalLog } from './logHandlers.js'
+import { handleApprovalLog, handleDepositLog, handleErc721ApprovalForAllLog, handleTransferLog, handleWithdrawalLog } from './logHandlers.js'
 import { QUARANTINE_CODE } from './protectors/quarantine-codes.js'
 import { EthereumJSONRpcRequestHandler } from './services/EthereumJSONRpcRequestHandler.js'
 import { MulticallResponse, MulticallResponseEventLog, SingleMulticallResponse } from '../utils/JsonRpc-types.js'
@@ -31,7 +31,7 @@ type Loghandler = (event: MulticallResponseEventLog) => TokenVisualizerResult
 const logHandler = new Map<string, Loghandler >([
 	[TRANSFER_LOG, handleTransferLog],
 	[APPROVAL_LOG, handleApprovalLog],
-	[ERC721_APPROVAL_FOR_ALL_LOG, handleERC721ApprovalForAllLog],
+	[Erc721_APPROVAL_FOR_ALL_LOG, handleErc721ApprovalForAllLog],
 	[DEPOSIT_LOG, handleDepositLog],
 	[WITHDRAWAL_LOG, handleWithdrawalLog],
 ])

@@ -203,7 +203,7 @@ export const setSimulationTransactions = async (ethereumClientService: EthereumC
 		const balances = await getSimulatedTokenBalances(
 			ethereumClientService,
 			signedTxs.slice(0, resultIndex + 1),
-			getAddressesInteractedWithERC20s(singleResult.statusCode === 'success' ? singleResult.events : []),
+			getAddressesInteractedWithErc20s(singleResult.statusCode === 'success' ? singleResult.events : []),
 			parentBlock.number
 		)
 		tokenBalancesAfter.push(balances)
@@ -690,7 +690,7 @@ export const parseLogIfPossible = (ethersInterface: ethers.Interface, log: { top
 	}
 }
 
-const getAddressesInteractedWithERC20s = (events: MulticallResponseEventLogs): { token: bigint, owner: bigint }[] => {
+const getAddressesInteractedWithErc20s = (events: MulticallResponseEventLogs): { token: bigint, owner: bigint }[] => {
 	const erc20ABI = [
 		'event Transfer(address indexed from, address indexed to, uint256 value)',
 		'event Approval(address indexed owner, address indexed spender, uint256 value)',
@@ -725,7 +725,7 @@ const getTokenBalancesAfter = async (
 		const balances = await getSimulatedTokenBalances(
 			ethereumClientService,
 			signedTxs.slice(0, resultIndex + 1),
-			getAddressesInteractedWithERC20s(singleResult.statusCode === 'success' ? singleResult.events : []),
+			getAddressesInteractedWithErc20s(singleResult.statusCode === 'success' ? singleResult.events : []),
 			blockNumber
 		)
 		tokenBalancesAfter.push(balances)

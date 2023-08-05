@@ -1,5 +1,5 @@
 import { addressString, checksummedAddress } from '../utils/bigint.js'
-import { AddressInfoEntry, AddressBookEntry, AddressInfo, TokenEntry, NFTEntry } from '../utils/user-interface-types.js'
+import { AddressInfoEntry, AddressBookEntry, AddressInfo, Erc20TokenEntry, NFTEntry } from '../utils/user-interface-types.js'
 import { SimulationState, VisualizerResult } from '../utils/visualizer-types.js'
 import { nftMetadata, tokenMetadata, contractMetadata } from '@darkflorist/address-metadata'
 import { ethers } from 'ethers'
@@ -74,7 +74,7 @@ export function getAddressMetaData(address: bigint, userAddressBook: UserAddress
 		...tokenData,
 		address: address,
 		logoUri: tokenData.logoUri ? `${ getFullLogoUri(tokenData.logoUri) }` : undefined,
-		type: 'token',
+		type: 'Erc20Token',
 	}
 
 	const nftTokenData = nftMetadata.get(addrString)
@@ -92,14 +92,14 @@ export function getAddressMetaData(address: bigint, userAddressBook: UserAddress
 	}
 }
 
-export async function getTokenMetadata(ethereumClientService: EthereumClientService, address: bigint) : Promise<TokenEntry | NFTEntry> {
+export async function getTokenMetadata(ethereumClientService: EthereumClientService, address: bigint) : Promise<Erc20TokenEntry | NFTEntry> {
 	const addrString = addressString(address)
 	const tokenData = tokenMetadata.get(addrString)
 	if (tokenData) return {
 		...tokenData,
 		address: address,
 		logoUri: tokenData.logoUri ? `${ getFullLogoUri(tokenData.logoUri) }` : undefined,
-		type: 'token',
+		type: 'Erc20Token',
 	}
 	const nftTokenData = nftMetadata.get(addrString)
 	if (nftTokenData) return {
@@ -118,7 +118,7 @@ export async function getTokenMetadata(ethereumClientService: EthereumClientServ
 			address: BigInt(addrString),
 			symbol: '???',
 			decimals: decimals,
-			type: 'token',
+			type: 'Erc20Token',
 		}
 	}
 	return { //if we don't know decimals, assume it's NFT

@@ -1,7 +1,7 @@
 import { TransactionImportanceBlockParams } from '../Transactions.js'
-import { Erc20ApprovalChanges, ERC721OperatorChange, ERC721OperatorChanges, ERC721TokenIdApprovalChanges } from '../SimulationSummary.js'
-import { ERC721TokenApprovalChange, TokenApprovalChange, TokenVisualizerERC20Event, TokenVisualizerERC721AllApprovalEvent, TokenVisualizerERC721Event, TokenVisualizerResultWithMetadata, RpcNetwork } from '../../../utils/visualizer-types.js'
-import { EtherSymbol, TokenSymbol, TokenAmount, EtherAmount, ERC721TokenNumber } from '../../subcomponents/coins.js'
+import { Erc20ApprovalChanges, Erc721OperatorChange, Erc721OperatorChanges, Erc721TokenIdApprovalChanges } from '../SimulationSummary.js'
+import { Erc721TokenApprovalChange, TokenApprovalChange, TokenVisualizerErc20Event, TokenVisualizerErc721AllApprovalEvent, TokenVisualizerErc721Event, TokenVisualizerResultWithMetadata, RpcNetwork } from '../../../utils/visualizer-types.js'
+import { EtherSymbol, TokenSymbol, TokenAmount, EtherAmount, Erc721TokenNumber } from '../../subcomponents/coins.js'
 import { RenameAddressCallBack } from '../../../utils/user-interface-types.js'
 import { SmallAddress } from '../../subcomponents/address.js'
 
@@ -85,8 +85,8 @@ function SendOrReceiveTokensImportanceBox(param: SendOrReceiveTokensImportanceBo
 							</p>
 						</div>
 						<div class = 'log-cell'>
-							{ tokenEvent.type !== 'Token' ?
-								<ERC721TokenNumber
+							{ tokenEvent.type !== 'Erc20Token' ?
+								<Erc721TokenNumber
 									id = { tokenEvent.tokenId }
 									received = { !param.sending }
 									textColor = { param.textColor }
@@ -131,14 +131,14 @@ export function CatchAllVisualizer(param: TransactionImportanceBlockParams) {
 	const sendingTokenResults = param.simTx.tokenResults.filter((x) => x.from.address === msgSender)
 	const receivingTokenResults = param.simTx.tokenResults.filter((x) => x.to.address === msgSender)
 
-	const erc20tokenApprovalChanges: TokenApprovalChange[] = sendingTokenResults.filter((x): x is TokenVisualizerERC20Event  => x.isApproval && x.type === 'Token').map((entry) => {
+	const erc20tokenApprovalChanges: TokenApprovalChange[] = sendingTokenResults.filter((x): x is TokenVisualizerErc20Event  => x.isApproval && x.type === 'Erc20Token').map((entry) => {
 		return {
 			...entry.token,
 			approvals: [ {...entry.to, change: entry.amount } ]
 		}
 	})
 
-	const operatorChanges: ERC721OperatorChange[] = sendingTokenResults.filter((x): x is TokenVisualizerERC721AllApprovalEvent  => x.type === 'NFT All approval').map((entry) => {
+	const operatorChanges: Erc721OperatorChange[] = sendingTokenResults.filter((x): x is TokenVisualizerErc721AllApprovalEvent  => x.type === 'NFT All approval').map((entry) => {
 		return {
 			...entry.token,
 			operator: 'allApprovalAdded' in entry && entry.allApprovalAdded ? entry.to : undefined
@@ -146,7 +146,7 @@ export function CatchAllVisualizer(param: TransactionImportanceBlockParams) {
 	})
 
 	// token address, tokenId, approved address
-	const tokenIdApprovalChanges: ERC721TokenApprovalChange[] = sendingTokenResults.filter((x): x is TokenVisualizerERC721Event  => 'tokenId' in x && x.isApproval).map((entry) => {
+	const tokenIdApprovalChanges: Erc721TokenApprovalChange[] = sendingTokenResults.filter((x): x is TokenVisualizerErc721Event  => 'tokenId' in x && x.isApproval).map((entry) => {
 		return {
 			token: {
 				...entry.token,
@@ -210,8 +210,8 @@ export function CatchAllVisualizer(param: TransactionImportanceBlockParams) {
 				/>
 			</div>
 			<div class = 'log-cell' style = 'justify-content: left; display: grid;'>
-				<ERC721OperatorChanges
-					ERC721OperatorChanges = { operatorChanges }
+				<Erc721OperatorChanges
+					Erc721OperatorChanges = { operatorChanges }
 					textColor = { textColor }
 					negativeColor = { textColor }
 					isImportant = { true }
@@ -219,8 +219,8 @@ export function CatchAllVisualizer(param: TransactionImportanceBlockParams) {
 				/>
 			</div>
 			<div class = 'log-cell' style = 'justify-content: left; display: grid;'>
-				<ERC721TokenIdApprovalChanges
-					ERC721TokenIdApprovalChanges = { tokenIdApprovalChanges }
+				<Erc721TokenIdApprovalChanges
+					Erc721TokenIdApprovalChanges = { tokenIdApprovalChanges }
 					textColor = { textColor }
 					negativeColor = { textColor }
 					isImportant = { true }

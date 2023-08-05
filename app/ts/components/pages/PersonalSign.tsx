@@ -148,7 +148,7 @@ function SignRequest({ personalSignRequestData, renameAddressCallBack }: SignReq
 		case 'Permit': {
 			return <SimpleTokenApprovalVisualisation
 				approval = { {
-					type: 'Token',
+					type: 'Erc20Token',
 					from: personalSignRequestData.account,
 					to: personalSignRequestData.addressBookEntries.spender,
 					token: personalSignRequestData.addressBookEntries.verifyingContract,
@@ -163,7 +163,7 @@ function SignRequest({ personalSignRequestData, renameAddressCallBack }: SignReq
 		case 'Permit2': {
 			return <SimpleTokenApprovalVisualisation
 				approval = { {
-					type: 'Token',
+					type: 'Erc20Token',
 					token: personalSignRequestData.addressBookEntries.token,
 					amount: personalSignRequestData.message.message.details.amount,
 					from: personalSignRequestData.account,

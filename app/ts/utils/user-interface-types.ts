@@ -46,9 +46,9 @@ export const AddressInfoEntry = funtypes.ReadonlyObject({
 	askForAddressAccess: funtypes.Union(funtypes.Boolean, funtypes.Literal(undefined).withParser(LiteralConverterParserFactory(undefined, true))),
 })
 
-export type TokenEntry = funtypes.Static<typeof TokenEntry>
-export const TokenEntry = funtypes.ReadonlyObject({
-	type: funtypes.Literal('token'),
+export type Erc20TokenEntry = funtypes.Static<typeof Erc20TokenEntry>
+export const Erc20TokenEntry = funtypes.ReadonlyObject({
+	type: funtypes.Literal('Erc20Token'),
 	name: funtypes.String,
 	address: EthereumAddress,
 	symbol: funtypes.String,
@@ -80,13 +80,13 @@ export const ContactEntry = funtypes.ReadonlyObject({
 export type ContactEntries = funtypes.Static<typeof ContactEntries>
 export const ContactEntries = funtypes.ReadonlyArray(ContactEntry)
 
-export type AddressBookEntryCategory = 'contact' | 'addressInfo' | 'token' | 'NFT' | 'other contract'
+export type AddressBookEntryCategory = 'contact' | 'addressInfo' | 'Erc20Token' | 'NFT' | 'other contract'
 
 export type AddressBookEntry = funtypes.Static<typeof AddressBookEntry>
 export const AddressBookEntry = funtypes.Union(
 	AddressInfoEntry,
 	ContactEntry,
-	TokenEntry,
+	Erc20TokenEntry,
 	NFTEntry,
 	funtypes.ReadonlyObject({
 		type: funtypes.Literal('other contract'),
@@ -117,7 +117,7 @@ export type InterceptorAccessListParams = {
 
 export type AddingNewAddressType = {
 	addingAddress: true,
-	type: 'contact' | 'addressInfo' | 'token' | 'NFT' | 'other contract'
+	type: 'contact' | 'addressInfo' | 'Erc20Token' | 'NFT' | 'other contract'
 } | {
 	addingAddress: false,
 	entry: AddressBookEntry,

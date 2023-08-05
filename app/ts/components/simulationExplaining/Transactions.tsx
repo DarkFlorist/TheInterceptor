@@ -15,7 +15,7 @@ import { assertNever } from '../../utils/typescript.js'
 import { CatchAllVisualizer } from './customExplainers/CatchAllVisualizer.js'
 
 function isPositiveEvent(visResult: TokenVisualizerResultWithMetadata, ourAddressInReferenceFrame: bigint) {
-	if (visResult.type === 'Token') {
+	if (visResult.type === 'Erc20Token') {
 		if (!visResult.isApproval) {
 			return visResult.amount >= 0 // simple transfer
 		}
@@ -207,7 +207,7 @@ export function TokenLogEvent(params: TokenLogEventParams ) {
 
 	return <>
 		<div class = 'log-cell' style = 'justify-content: right;'>
-			{ params.tokenVisualizerResult.type !== 'Token' ?
+			{ params.tokenVisualizerResult.type !== 'Erc20Token' ?
 				<Token721AmountField
 					{ ...params.tokenVisualizerResult }
 					textColor = { textColor }

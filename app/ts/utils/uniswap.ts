@@ -50,7 +50,7 @@ export const UniswapV3PairABI = ['function slot0() view returns (uint160 sqrtPri
 export function constructUniswapLikeSpotCalls(tokenA: EthereumAddress, tokenB: EthereumAddress, poolAddresses: UniswapPools): Multicall3Call[] {
 	const IUniswapV2Pool = new Interface(UniswapV2PairABI)
 	const IUniswapV3Pool = new Interface(UniswapV3PairABI)
-	const IERC20Bal = new Interface(['function balanceOf(address) external view returns (uint256)'])
+	const IErc20Bal = new Interface(['function balanceOf(address) external view returns (uint256)'])
 
 	return [
 		// Pool calls
@@ -70,12 +70,12 @@ export function constructUniswapLikeSpotCalls(tokenA: EthereumAddress, tokenB: E
 			{
 				target: addressString(tokenA),
 				allowFailure: true,
-				callData: IERC20Bal.encodeFunctionData('balanceOf', [addressString(poolAddress)])
+				callData: IErc20Bal.encodeFunctionData('balanceOf', [addressString(poolAddress)])
 			},
 			{
 				target: addressString(tokenB),
 				allowFailure: true,
-				callData: IERC20Bal.encodeFunctionData('balanceOf', [addressString(poolAddress)])
+				callData: IErc20Bal.encodeFunctionData('balanceOf', [addressString(poolAddress)])
 			}
 		]).flat(),
 	]

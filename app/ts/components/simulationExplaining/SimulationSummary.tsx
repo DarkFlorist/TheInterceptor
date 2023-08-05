@@ -1,8 +1,8 @@
 import { LogSummarizer, SummaryOutcome } from '../../simulation/services/LogSummarizer.js'
 import { AddressBookEntry, RenameAddressCallBack, Website } from '../../utils/user-interface-types.js'
-import { ERC721TokenApprovalChange, ERC721TokenDefinitionParams, SimulatedAndVisualizedTransaction, SimulationAndVisualisationResults, TokenApprovalChange, TokenBalanceChange, TokenDefinitionParams, TransactionWithAddressBookEntries } from '../../utils/visualizer-types.js'
+import { Erc721TokenApprovalChange, Erc721TokenDefinitionParams, SimulatedAndVisualizedTransaction, SimulationAndVisualisationResults, TokenApprovalChange, TokenBalanceChange, TokenDefinitionParams, TransactionWithAddressBookEntries } from '../../utils/visualizer-types.js'
 import { BigAddress, SmallAddress, WebsiteOriginText } from '../subcomponents/address.js'
-import { ERC721Token, Ether, EtherAmount, EtherSymbol, Token, TokenAmount, TokenPrice, TokenSymbol } from '../subcomponents/coins.js'
+import { Erc721Token, Ether, EtherAmount, EtherSymbol, Token, TokenAmount, TokenPrice, TokenSymbol } from '../subcomponents/coins.js'
 import { LogAnalysis } from './Transactions.js'
 import { CopyToClipboard } from '../subcomponents/CopyToClipboard.js'
 import { SomeTimeAgo, humanReadableDateDeltaLessDetailed } from '../subcomponents/SomeTimeAgo.js'
@@ -156,23 +156,23 @@ export function Erc20ApprovalChanges(param: Erc20ApprovalChangesParams ) {
 	</>
 }
 
-export type ERC721TokenBalanceChange = (ERC721TokenDefinitionParams & { received: boolean })
+export type Erc721TokenBalanceChange = (Erc721TokenDefinitionParams & { received: boolean })
 
-type ERC721TokenChangesParams = {
-	ERC721TokenBalanceChanges: ERC721TokenBalanceChange[],
+type Erc721TokenChangesParams = {
+	Erc721TokenBalanceChanges: Erc721TokenBalanceChange[],
 	textColor: string,
 	negativeColor: string,
 	isImportant: boolean,
 }
 
-function ERC721TokenChanges(param: ERC721TokenChangesParams ) {
-	if ( param.ERC721TokenBalanceChanges.length == 0 ) return <></>
+function Erc721TokenChanges(param: Erc721TokenChangesParams ) {
+	if ( param.Erc721TokenBalanceChanges.length == 0 ) return <></>
 
 	return <>
-		{ param.ERC721TokenBalanceChanges.map( (tokenChange) => (
+		{ param.Erc721TokenBalanceChanges.map( (tokenChange) => (
 			<div class = 'vertical-center' style = 'display: flex'>
 				<div class = { param.isImportant ? `box token-box ${ !tokenChange.received ? 'negative-box' : 'positive-box' }`: '' } style = 'display: flex'>
-					<ERC721Token
+					<Erc721Token
 						{ ...tokenChange }
 						received = { tokenChange.received }
 						textColor = { param.textColor }
@@ -185,20 +185,20 @@ function ERC721TokenChanges(param: ERC721TokenChangesParams ) {
 	</>
 }
 
-export type ERC721OperatorChange = Omit<ERC721TokenDefinitionParams, 'id'> & { operator: AddressBookEntry | undefined }
+export type Erc721OperatorChange = Omit<Erc721TokenDefinitionParams, 'id'> & { operator: AddressBookEntry | undefined }
 
-type ERC721OperatorChangesParams = {
-	ERC721OperatorChanges: ERC721OperatorChange[]
+type Erc721OperatorChangesParams = {
+	Erc721OperatorChanges: Erc721OperatorChange[]
 	textColor: string,
 	negativeColor: string,
 	isImportant: boolean,
 	renameAddressCallBack: RenameAddressCallBack,
 }
 
-export function ERC721OperatorChanges(param: ERC721OperatorChangesParams) {
-	if (param.ERC721OperatorChanges.length === 0) return <></>
+export function Erc721OperatorChanges(param: Erc721OperatorChangesParams) {
+	if (param.Erc721OperatorChanges.length === 0) return <></>
 	return <>
-		{ param.ERC721OperatorChanges.map((token) => (
+		{ param.Erc721OperatorChanges.map((token) => (
 			<div class = 'vertical-center' style = 'display: flex'>
 				{ token.operator !== undefined ?
 					<div class = { param.isImportant ? 'box token-box negative-box': '' } style = 'display: flex'>
@@ -246,18 +246,18 @@ export function ERC721OperatorChanges(param: ERC721OperatorChangesParams) {
 	</>
 }
 
-type ERC721TokenIdApprovalChangesParams = {
-	ERC721TokenIdApprovalChanges: ERC721TokenApprovalChange[]
+type Erc721TokenIdApprovalChangesParams = {
+	Erc721TokenIdApprovalChanges: Erc721TokenApprovalChange[]
 	textColor: string,
 	negativeColor: string,
 	isImportant: boolean,
 	renameAddressCallBack: RenameAddressCallBack,
 }
 
-export function ERC721TokenIdApprovalChanges(param: ERC721TokenIdApprovalChangesParams ) {
-	return <> { param.ERC721TokenIdApprovalChanges.length > 0 ?
+export function Erc721TokenIdApprovalChanges(param: Erc721TokenIdApprovalChangesParams ) {
+	return <> { param.Erc721TokenIdApprovalChanges.length > 0 ?
 		<>
-			{ param.ERC721TokenIdApprovalChanges.map( (approvalsChange) => (
+			{ param.Erc721TokenIdApprovalChanges.map( (approvalsChange) => (
 				<div class = 'vertical-center' style = 'display: flex'>
 					<div class = { param.isImportant ? 'box token-box negative-box': '' } style = 'display: flex'>
 						<table class = 'log-table'>
@@ -275,7 +275,7 @@ export function ERC721TokenIdApprovalChanges(param: ERC721TokenIdApprovalChanges
 								<p class = 'ellipsis' style = {`color: ${ param.negativeColor }` }>&nbsp;for&nbsp;</p>
 							</div>
 							<div class = 'log-cell'>
-								<ERC721Token
+								<Erc721Token
 									{ ...approvalsChange.token }
 									received = { true }
 									textColor = { param.negativeColor }
@@ -343,21 +343,21 @@ export function SummarizeAddress(param: SummarizeAddressParams) {
 				isImportant = { isOwnAddress }
 				renameAddressCallBack = { param.renameAddressCallBack }
 			/>
-			<ERC721TokenChanges
-				ERC721TokenBalanceChanges = { param.balanceSummary.erc721TokenBalanceChanges }
+			<Erc721TokenChanges
+				Erc721TokenBalanceChanges = { param.balanceSummary.erc721TokenBalanceChanges }
 				textColor = { positiveNegativeColors.textColor }
 				negativeColor = { positiveNegativeColors.negativeColor }
 				isImportant = { isOwnAddress }
 			/>
-			<ERC721OperatorChanges
-				ERC721OperatorChanges = { param.balanceSummary.erc721OperatorChanges }
+			<Erc721OperatorChanges
+				Erc721OperatorChanges = { param.balanceSummary.erc721OperatorChanges }
 				textColor = { positiveNegativeColors.textColor }
 				negativeColor = { positiveNegativeColors.negativeColor }
 				isImportant = { isOwnAddress }
 				renameAddressCallBack = { param.renameAddressCallBack }
 			/>
-			<ERC721TokenIdApprovalChanges
-				ERC721TokenIdApprovalChanges = { param.balanceSummary.erc721TokenIdApprovalChanges }
+			<Erc721TokenIdApprovalChanges
+				Erc721TokenIdApprovalChanges = { param.balanceSummary.erc721TokenIdApprovalChanges }
 				textColor = { positiveNegativeColors.textColor }
 				negativeColor = { positiveNegativeColors.negativeColor }
 				isImportant = { isOwnAddress }

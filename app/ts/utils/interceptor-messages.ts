@@ -200,7 +200,7 @@ export type AddressBookCategory = funtypes.Static<typeof AddressBookCategory>
 export const AddressBookCategory = funtypes.Union(
 	funtypes.Literal('My Active Addresses'),
 	funtypes.Literal('My Contacts'),
-	funtypes.Literal('Tokens'),
+	funtypes.Literal('Erc20Tokens'),
 	funtypes.Literal('Non Fungible Tokens'),
 	funtypes.Literal('Other Contracts')
 )

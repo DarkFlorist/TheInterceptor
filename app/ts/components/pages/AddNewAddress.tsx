@@ -12,7 +12,7 @@ import { createRef } from 'preact'
 const readableAddressType = {
 	'contact': 'Contact',
 	'addressInfo': 'Active Address',
-	'token': 'ERC20 Token',
+	'Erc20Token': 'Erc20 Token',
 	'NFT': 'NFT',
 	'other contract': 'Other Contract',
 }
@@ -137,7 +137,7 @@ export function AddNewAddress(param: AddAddressParam) {
 
 		param.close()
 		switch(addressType) {
-			case 'token':
+			case 'Erc20Token':
 			case 'NFT':
 			case 'other contract': throw new Error(`not upported address type! ${ addressType }`)
 			case 'contact': {
