@@ -40,7 +40,7 @@ const convertTokenDefinitionToAddressBookEntry = ([address, def]: [string, Token
 	address: BigInt(address),
 	...def,
 	logoUri: def.logoUri ? `${ getFullLogoUri(def.logoUri) }` : undefined,
-	type: 'token' as const,
+	type: 'Erc20Token' as const,
 })
 
 const convertNftDefinitionToAddressBookEntry = ([address, def]: [string, NftDefinition]) => ({
