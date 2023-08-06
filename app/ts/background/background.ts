@@ -201,18 +201,8 @@ async function handleRPCRequest(
 		console.log(request)
 		console.warn(maybeParsedRequest.fullError)
 		const maybePartiallyParsedRequest = SupportedEthereumJsonRpcRequestMethods.safeParse(request)
-		if (maybePartiallyParsedRequest.success === false) {
-			// the method is some method that we are not supporting, forward it to the wallet if signer is available
-			if (forwardToSigner) return { forward: true as const, unknownMethod: true, ...request }
-			return {
-				method: request.method,
-				error: {
-					message: `Failed to parse RPC request: ${ JSON.stringify(request) }`,
-					data: maybeParsedRequest.fullError === undefined ? 'Failed to parse RPC request' : maybeParsedRequest.fullError.toString(),
-					code: METAMASK_ERROR_FAILED_TO_PARSE_REQUEST,
-				}
-			}
-		}
+		// the method is some method that we are not supporting, forward it to the wallet if signer is available
+		if (maybePartiallyParsedRequest.success === false && forwardToSigner) return { forward: true as const, unknownMethod: true, ...request }
 		return {
 			method: request.method,
 			error: {
