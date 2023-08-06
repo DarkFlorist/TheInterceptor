@@ -128,6 +128,9 @@ type UnsupportedWindowEthereumMethods = {
 type WindowEthereum = InjectFunctions & {
 	isBraveWallet?: boolean,
 	isMetaMask?: boolean,
+	isInterceptor?: boolean,
+	providerMap?: unknown, // coinbase does not inject `isCoinbaseWallet` to the window.ethereum if there's already other wallets present (eg, Interceptor or Metamask), but instead injects a provider map that contains all these providers
+	isCoinbaseWallet?: boolean,
 }
 interface Window {
 	dispatchEvent: (event: Event) => boolean
@@ -341,7 +344,28 @@ class InterceptorMessageListener {
 		}
 	}
 
+	// coinbase wallet sends different kind of message on inject, this function identifies that and reinjects
+	private checkIfCoinbaseInjectionMessageAndInject(messageEvent: unknown) {
+		if (
+			typeof messageEvent !== 'object'
+			|| messageEvent === null
+			|| !('data' in messageEvent)
+			|| typeof messageEvent.data !== 'object'
+			|| messageEvent.data === null
+			|| !('type' in messageEvent.data)
+			|| !('data' in messageEvent.data)
+			|| messageEvent.data.data === null
+			|| typeof messageEvent.data.data !== 'object'
+			|| !('action' in messageEvent.data.data)
+		) return
+		if (messageEvent.data.type === 'extensionUIRequest' && messageEvent.data.data.action === 'loadWalletLinkProvider') {
+			return this.injectEthereumIntoWindow()
+		}
+		return
+	}
+
 	public readonly onMessage = async (messageEvent: unknown) => {
+		this.checkIfCoinbaseInjectionMessageAndInject(messageEvent)
 		if (
 			typeof messageEvent !== 'object'
 			|| messageEvent === null
@@ -389,7 +413,7 @@ class InterceptorMessageListener {
 		}
 	}
 
-	private readonly connectToSigner = async (signerName: 'NoSigner' | 'NotRecognizedSigner' | 'MetaMask' | 'Brave') => {
+	private readonly connectToSigner = async (signerName: 'NoSigner' | 'NotRecognizedSigner' | 'MetaMask' | 'Brave' | 'CoinbaseWallet') => {
 		if (signerName !== 'NoSigner') {
 			this.waitForAccountsFromWallet = new InterceptorFuture()
 			await this.sendMessageToBackgroundPage({ method: 'connected_to_signer', params: [signerName] })
@@ -422,6 +446,7 @@ class InterceptorMessageListener {
 		if (!('ethereum' in window) || !window.ethereum) {
 			// no existing signer found
 			window.ethereum = {
+				isInterceptor: true,
 				isConnected: this.WindowEthereumIsConnected.bind(window.ethereum),
 				request: this.WindowEthereumRequest.bind(window.ethereum),
 				send: this.WindowEthereumSend.bind(window.ethereum),
@@ -447,14 +472,18 @@ class InterceptorMessageListener {
 			this.WindowEthereumRequest({ method: 'eth_accounts_reply', params: [[], false] })
 		})
 		window.ethereum.on('chainChanged', (chainId: string) => {
-			this.WindowEthereumRequest({ method: 'signer_chainChanged', params: [chainId] })
+			// TODO: this is a hack to get coinbase working that calls this numbers in base 10 instead of in base 16
+			const params = /\d/.test(chainId) ? [`0x${parseInt(chainId).toString(16)}`] : [chainId]
+			this.WindowEthereumRequest({ method: 'signer_chainChanged', params })
 		})
 
 		this.connected = !window.ethereum.isConnected || window.ethereum.isConnected()
 		this.signerWindowEthereumRequest = window.ethereum.request.bind(window.ethereum) // store the request object to signer
 
-		if (window.ethereum.isBraveWallet) {
+		if (window.ethereum.isBraveWallet || window.ethereum.providerMap || window.ethereum.isCoinbaseWallet) {
+			const signerName = window.ethereum.providerMap || window.ethereum.isCoinbaseWallet ? 'CoinbaseWallet' : 'Brave'
 			window.ethereum = {
+				isInterceptor: true,
 				isConnected: this.WindowEthereumIsConnected.bind(window.ethereum),
 				request: this.WindowEthereumRequest.bind(window.ethereum),
 				send: this.WindowEthereumSend.bind(window.ethereum),
@@ -464,11 +493,12 @@ class InterceptorMessageListener {
 				enable: this.WindowEthereumEnable.bind(window.ethereum),
 				...this.unsupportedMethods(window.ethereum),
 			}
-			this.connectToSigner('Brave')
+			this.connectToSigner(signerName)
 			return
 		}
 		// we cannot inject window.ethereum alone here as it seems like window.ethereum is cached (maybe ethers.js does that?)
 		Object.assign(window.ethereum, {
+			isInterceptor: true,
 			isConnected: this.WindowEthereumIsConnected.bind(window.ethereum),
 			request: this.WindowEthereumRequest.bind(window.ethereum),
 			send: this.WindowEthereumSend.bind(window.ethereum),
@@ -485,8 +515,9 @@ class InterceptorMessageListener {
 function injectInterceptor() {
 	const interceptorMessageListener = new InterceptorMessageListener()
 	window.addEventListener('message', interceptorMessageListener.onMessage)
-
-	// listen if Metamask injects their payload, and if so, reinject Interceptor
+	window.dispatchEvent(new Event('ethereum#initialized'))
+	
+	// listen if Metamask injects (I think this method of injection is only supported by Metamask currently) their payload, and if so, reinject Interceptor
 	const interceptorCapturedDispatcher = window.dispatchEvent
 	window.dispatchEvent = (event: Event) => {
 		interceptorCapturedDispatcher(event)
