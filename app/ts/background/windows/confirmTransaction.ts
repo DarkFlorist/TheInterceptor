@@ -15,7 +15,7 @@ import { InterceptedRequest, getUniqueRequestIdentifierString } from '../../util
 import { replyToInterceptedRequest } from '../messageSending.js'
 import { Simulator } from '../../simulation/simulator.js'
 
-export type Confirmation = 'Approved' | 'Rejected' | 'NoResponse'
+type Confirmation = TransactionConfirmation | 'NoResponse'
 let openedDialog: PopupOrTab | undefined = undefined
 let pendingTransactions = new Map<string, Future<Confirmation>>()
 const pendingConfirmationSemaphore = new Semaphore(1)
@@ -44,10 +44,10 @@ export async function resolvePendingTransaction(simulator: Simulator, ethereumCl
 	if (pendingTransaction === undefined) throw new Error('Failed to find pending transaction')
 	await updateConfirmTransactionViewWithPendingTransactionOrClose()
 	if (pending) {
-		return pending.resolve(confirmation.data.accept === true ? 'Approved' : 'Rejected')
+		return pending.resolve(confirmation)
 	} else {
 		// we have not been tracking this window, forward its message directly to content script (or signer)
-		const resolvedPromise = await resolve(simulator, ethereumClientService, pendingTransaction.simulationMode, pendingTransaction.activeAddress, pendingTransaction.transactionToSimulate, confirmation.data.accept)
+		const resolvedPromise = await resolve(simulator, ethereumClientService, pendingTransaction.simulationMode, pendingTransaction.activeAddress, pendingTransaction.transactionToSimulate, confirmation)
 		replyToInterceptedRequest(websiteTabConnections, { ...pendingTransaction.transactionParams, ...resolvedPromise, uniqueRequestIdentifier: confirmation.data.uniqueRequestIdentifier })
 		openedDialog = await getPopupOrTabOnlyById(confirmation.data.windowId)
 	}
@@ -60,10 +60,12 @@ const onCloseWindow = async (windowId: number) => { // check if user has closed 
 	pendingTransactions.clear()
 }
 
-const rejectMessage = {
-	error: {
-		code: METAMASK_ERROR_USER_REJECTED_REQUEST,
-		message: 'Interceptor Tx Signature: User denied transaction signature.'
+const formRejectMessage = (errorString: undefined | string) => {
+	return {
+		error: {
+			code: METAMASK_ERROR_USER_REJECTED_REQUEST,
+			message: errorString === undefined ? 'Interceptor Tx Signature: User denied transaction signature.' : `Interceptor Tx Signature: User denied reverting transaction: ${ errorString }.`
+		}
 	}
 }
 
@@ -73,7 +75,7 @@ export async function openConfirmTransactionDialog(
 	request: InterceptedRequest,
 	transactionParams: SendTransactionParams | SendRawTransaction,
 	simulationMode: boolean,
-	transactionToSimulatePromise: () => Promise<WebsiteCreatedEthereumUnsignedTransaction | undefined | EstimateGasError>,
+	transactionToSimulatePromise: () => Promise<WebsiteCreatedEthereumUnsignedTransaction | EstimateGasError>,
 	activeAddress: bigint | undefined,
 ) {
 	let justAddToPending = false
@@ -84,7 +86,6 @@ export async function openConfirmTransactionDialog(
 	try {
 		if (activeAddress === undefined) return ERROR_INTERCEPTOR_NO_ACTIVE_ADDRESS
 		const transactionToSimulate = await transactionToSimulatePromise()
-		if (transactionToSimulate === undefined) return rejectMessage
 		if ('error' in transactionToSimulate) return transactionToSimulate
 
 		const addedPendingTransaction = await pendingConfirmationSemaphore.execute(async () => {
@@ -123,9 +124,9 @@ export async function openConfirmTransactionDialog(
 			if (justAddToPending) await sendPopupMessageToOpenWindows({ method: 'popup_confirm_transaction_dialog_pending_changed', data: (await getPendingTransactions()).map((p) => p.simulationResults) })
 			return true
 		})
-		if (addedPendingTransaction === false) return rejectMessage
+		if (addedPendingTransaction === false) return formRejectMessage(undefined)
 		const reply = await pendingTransaction
-		const resolvedPromise = await resolve(simulator, ethereumClientService, simulationMode, activeAddress, transactionToSimulate, reply === 'Approved' ? true : false)
+		const resolvedPromise = await resolve(simulator, ethereumClientService, simulationMode, activeAddress, transactionToSimulate, reply)
 		return resolvedPromise
 	} finally {
 		removeWindowTabListener(onCloseWindow)
@@ -134,8 +135,9 @@ export async function openConfirmTransactionDialog(
 	}
 }
 
-async function resolve(simulator: Simulator, ethereumClientService: EthereumClientService, simulationMode: boolean, activeAddress: bigint, transactionToSimulate: WebsiteCreatedEthereumUnsignedTransaction, accept: boolean): Promise<{ forward: true } | { error: { code: number, message: string } } | { result: bigint }> {
-	if (accept === false) return rejectMessage
+async function resolve(simulator: Simulator, ethereumClientService: EthereumClientService, simulationMode: boolean, activeAddress: bigint, transactionToSimulate: WebsiteCreatedEthereumUnsignedTransaction, confirmation: Confirmation): Promise<{ forward: true } | { error: { code: number, message: string } } | { result: bigint }> {
+	if (confirmation === 'NoResponse') return formRejectMessage(undefined)
+	if (confirmation.data.accept === false) return formRejectMessage(confirmation.data.transactionErrorString)
 	if (!simulationMode) return { forward: true }
 	const newState = await updateSimulationState(simulator, async (simulationState) => {
 		if (simulationState === undefined) return undefined

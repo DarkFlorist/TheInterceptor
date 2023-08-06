@@ -152,11 +152,19 @@ export const InterceptorMessageToInpage = funtypes.Intersect(
 export type TransactionConfirmation = funtypes.Static<typeof TransactionConfirmation>
 export const TransactionConfirmation = funtypes.ReadonlyObject({
 	method: funtypes.Literal('popup_confirmDialog'),
-	data: funtypes.ReadonlyObject({
-		uniqueRequestIdentifier: UniqueRequestIdentifier,
-		accept: funtypes.Boolean,
-		windowId: funtypes.Number,
-	})
+	data: funtypes.Union(
+		funtypes.ReadonlyObject({
+			uniqueRequestIdentifier: UniqueRequestIdentifier,
+			accept: funtypes.Literal(true),
+			windowId: funtypes.Number,
+		}),
+		funtypes.ReadonlyObject({
+			uniqueRequestIdentifier: UniqueRequestIdentifier,
+			accept: funtypes.Literal(false),
+			windowId: funtypes.Number,
+			transactionErrorString: funtypes.Union(funtypes.String, funtypes.Undefined),
+		})
+	)
 }).asReadonly()
 
 export type PersonalSign = funtypes.Static<typeof PersonalSign>
