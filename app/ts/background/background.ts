@@ -24,7 +24,7 @@ import { updateChainChangeViewWithPendingRequest } from './windows/changeChain.j
 import { updatePendingPersonalSignViewWithPendingRequests } from './windows/personalSign.js'
 import { InterceptedRequest, UniqueRequestIdentifier } from '../utils/requests.js'
 import { replyToInterceptedRequest } from './messageSending.js'
-import { EthereumJsonRpcRequest, SendRawTransaction, SendTransactionParams } from '../utils/JsonRpc-types.js'
+import { EthGetStorageAtParams, EthereumJsonRpcRequest, SendRawTransaction, SendTransactionParams, SupportedEthereumJsonRpcRequestMethods, WalletAddEthereumChain } from '../utils/JsonRpc-types.js'
 
 async function visualizeSimulatorState(simulationState: SimulationState, simulator: Simulator) {
 	const priceEstimator = new PriceEstimator(simulator.ethereum)
@@ -192,20 +192,25 @@ async function handleRPCRequest(
 ): Promise<RPCReply> {
 	const maybeParsedRequest = EthereumJsonRpcRequest.safeParse(request)
 	const forwardToSigner = !settings.simulationMode && !request.usingInterceptorWithoutSigner
+	const getForwardingMessage = (request: SendRawTransaction | SendTransactionParams | WalletAddEthereumChain | EthGetStorageAtParams) => {
+		if (!forwardToSigner) throw new Error('Should not forward to signer')
+		return { forward: true as const, ...request }
+	}
+
 	if (maybeParsedRequest.success === false) {
 		console.log(request)
 		console.warn(maybeParsedRequest.fullError)
+		const maybePartiallyParsedRequest = SupportedEthereumJsonRpcRequestMethods.safeParse(request)
+		// the method is some method that we are not supporting, forward it to the wallet if signer is available
+		if (maybePartiallyParsedRequest.success === false && forwardToSigner) return { forward: true as const, unknownMethod: true, ...request }
 		return {
 			method: request.method,
 			error: {
-				message: maybeParsedRequest.fullError === undefined ? 'Failed to parse RPC request ' : maybeParsedRequest.fullError.toString(),
+				message: `Failed to parse RPC request: ${ JSON.stringify(request) }`,
+				data: maybeParsedRequest.fullError === undefined ? 'Failed to parse RPC request' : maybeParsedRequest.fullError.toString(),
 				code: METAMASK_ERROR_FAILED_TO_PARSE_REQUEST,
 			}
 		}
-	}
-	const getForwardingMessage = (request: SendRawTransaction | SendTransactionParams) => {
-		if (!forwardToSigner) throw new Error('Should not forward to signer')
-		return { forward: true as const, ...request }
 	}
 	const parsedRequest = maybeParsedRequest.value
 
@@ -238,7 +243,14 @@ async function handleRPCRequest(
 		case 'interceptor_getSimulationStack': return await getSimulationStack(simulationState, parsedRequest)
 		case 'eth_multicall': return { method: parsedRequest.method, error: { code: 10000, message: 'Cannot call eth_multicall directly' } }
 		case 'eth_multicallV1': return { method: parsedRequest.method, error: { code: 10000, message: 'Cannot call eth_multicallV1 directly' } }
-		case 'eth_getStorageAt': return { method: parsedRequest.method, error: { code: 10000, message: 'eth_getStorageAt not implemented' } }
+		case 'wallet_addEthereumChain': {
+			if (forwardToSigner) return getForwardingMessage(parsedRequest)
+			return { method: parsedRequest.method, error: { code: 10000, message: 'wallet_addEthereumChain not implemented' } }
+		}
+		case 'eth_getStorageAt': {
+			if (forwardToSigner) return getForwardingMessage(parsedRequest)
+			return { method: parsedRequest.method, error: { code: 10000, message: 'eth_getStorageAt not implemented' } }
+		}
 		case 'eth_getLogs': return await getLogs(ethereumClientService, simulationState, parsedRequest)
 		case 'eth_sign': return { method: parsedRequest.method, error: { code: 10000, message: 'eth_sign is deprecated' } }
 		case 'eth_sendRawTransaction': {

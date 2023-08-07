@@ -131,7 +131,6 @@ export async function sendRawTransaction(
 		}
 
 		const simulationState = (await getSimulationResults()).simulationState
-		if (simulationState === undefined) return undefined
 		const block = getSimulatedBlock(ethereumClientService, simulationState)
 		const parentBlock = await block
 		if (parentBlock.baseFeePerGas === undefined) throw new Error(CANNOT_SIMULATE_OFF_LEGACY_BLOCK)
