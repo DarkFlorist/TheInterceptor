@@ -25,22 +25,22 @@ export function formSimulatedAndVisualizedTransaction(simState: SimulationState,
 		const tokenResults: TokenVisualizerResultWithMetadata[] = visualiser === undefined ? [] : visualiser.tokenResults.map((change): TokenVisualizerResultWithMetadata | undefined => {
 			const fromEntry = addressMetaData.get(addressString(change.from))
 			const toEntry = addressMetaData.get(addressString(change.to))
-			const tokenEntry = addressMetaData.get(addressString(change.tokenAddress))
-			if (fromEntry === undefined || toEntry === undefined || tokenEntry === undefined) throw new Error('missing metadata')
-			if (change.type !== 'Token' && tokenEntry.type === 'NFT') {
+			const erc20TokenEntry = addressMetaData.get(addressString(change.tokenAddress))
+			if (fromEntry === undefined || toEntry === undefined || erc20TokenEntry === undefined) throw new Error('missing metadata')
+			if (change.type !== 'Erc20Token' && erc20TokenEntry.type === 'NFT') {
 				return {
 					...change,
 					from: fromEntry,
 					to: toEntry,
-					token: tokenEntry
+					token: erc20TokenEntry
 				}
 			}
-			if (change.type === 'Token' && tokenEntry.type === 'token') {
+			if (change.type === 'Erc20Token' && erc20TokenEntry.type === 'Erc20Token') {
 				return {
 					...change,
 					from: fromEntry,
 					to: toEntry,
-					token: tokenEntry
+					token: erc20TokenEntry
 				}
 			}
 			return undefined // a token that is not NFT, but does not have decimals either, let's just not visualize them

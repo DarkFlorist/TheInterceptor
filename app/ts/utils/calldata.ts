@@ -3,7 +3,7 @@ import { dataStringWith0xStart, stringifyJSONWithBigInts } from './bigint.js'
 import * as funtypes from 'funtypes'
 import { EthereumAddress, EthereumQuantity } from './wire-types.js'
 
-const erc20andERC721FunctionSignatures = [
+const erc20andErc721FunctionSignatures = [
 	'function transfer(address to, uint256 value) public returns (bool success)',
 	'function transferFrom(address from, address to, uint256 value) public returns (bool success)',
 	'function approve(address spender, uint256 value) public returns (bool success)',
@@ -45,7 +45,7 @@ const CallDataType = funtypes.Union(
 
 export function parseTransaction(transaction: { input?: Uint8Array, from: bigint }) {
 	if (!('input' in transaction) || transaction.input === undefined || transaction.input.length < 4) return undefined
-	const iface = new ethers.Interface(erc20andERC721FunctionSignatures)
+	const iface = new ethers.Interface(erc20andErc721FunctionSignatures)
 	const parsed = iface.parseTransaction({ data: dataStringWith0xStart(transaction.input) })
 	if (parsed === null) return undefined
 

@@ -11,7 +11,7 @@ import { eoaCalldata } from './protectors/eoaCalldata.js'
 import { tokenToContract } from './protectors/tokenToContract.js'
 import { simulatedMulticall } from './services/SimulationModeEthereumClientService.js'
 import { WebsiteCreatedEthereumUnsignedTransaction, SimResults, SimulationState, TokenVisualizerResult, VisualizerResult, RpcNetwork } from '../utils/visualizer-types.js'
-import { handleApprovalLog, handleDepositLog, handleERC721ApprovalForAllLog, handleTransferLog, handleWithdrawalLog } from './logHandlers.js'
+import { handleApprovalLog, handleDepositLog, handleErc721ApprovalForAllLog, handleTransferLog, handleWithdrawalLog } from './logHandlers.js'
 import { QUARANTINE_CODE } from './protectors/quarantine-codes.js'
 import { EthereumJSONRpcRequestHandler } from './services/EthereumJSONRpcRequestHandler.js'
 import { MulticallResponse, MulticallResponseEventLog, SingleMulticallResponse } from '../utils/JsonRpc-types.js'
@@ -31,7 +31,7 @@ type Loghandler = (event: MulticallResponseEventLog) => TokenVisualizerResult
 const logHandler = new Map<string, Loghandler >([
 	[TRANSFER_LOG, handleTransferLog],
 	[APPROVAL_LOG, handleApprovalLog],
-	[ERC721_APPROVAL_FOR_ALL_LOG, handleERC721ApprovalForAllLog],
+	[ERC721_APPROVAL_FOR_ALL_LOG, handleErc721ApprovalForAllLog],
 	[DEPOSIT_LOG, handleDepositLog],
 	[WITHDRAWAL_LOG, handleWithdrawalLog],
 ])

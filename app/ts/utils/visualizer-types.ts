@@ -2,7 +2,7 @@
 import { EthereumAddress, EthereumData, EthereumQuantity, EthereumSignedTransaction, EthereumTimestamp, EthereumUnsignedTransaction } from './wire-types.js'
 import * as funtypes from 'funtypes'
 import { QUARANTINE_CODE } from '../simulation/protectors/quarantine-codes.js'
-import { AddressBookEntry, NFTEntry, RenameAddressCallBack, TokenEntry, Website, WebsiteSocket } from './user-interface-types.js'
+import { AddressBookEntry, NFTEntry, RenameAddressCallBack, Erc20TokenEntry, Website, WebsiteSocket } from './user-interface-types.js'
 import { ERROR_INTERCEPTOR_GAS_ESTIMATION_FAILED } from './constants.js'
 import { EthBalanceChanges, EthSubscribeParams, SingleMulticallResponse } from './JsonRpc-types.js'
 
@@ -56,7 +56,7 @@ export const TokenVisualizerResult = funtypes.Intersect(
 	funtypes.Union(
 		funtypes.ReadonlyObject({ // ERC20 transfer / approval
 			amount: EthereumQuantity,
-			type: funtypes.Literal('Token'),
+			type: funtypes.Literal('Erc20Token'),
 			isApproval: funtypes.Boolean,
 		}),
 		funtypes.ReadonlyObject({ // ERC721 transfer / approval
@@ -72,18 +72,18 @@ export const TokenVisualizerResult = funtypes.Intersect(
 	)
 )
 
-export type TokenVisualizerERC20Event  = funtypes.Static<typeof TokenVisualizerERC20Event>
-export const TokenVisualizerERC20Event = funtypes.ReadonlyObject({
-	type: funtypes.Literal('Token'),
+export type TokenVisualizerErc20Event  = funtypes.Static<typeof TokenVisualizerErc20Event>
+export const TokenVisualizerErc20Event = funtypes.ReadonlyObject({
+	type: funtypes.Literal('Erc20Token'),
 	from: AddressBookEntry,
 	to: AddressBookEntry,
-	token: TokenEntry,
+	token: Erc20TokenEntry,
 	amount: EthereumQuantity,
 	isApproval: funtypes.Boolean,
 })
 
-export type TokenVisualizerERC721Event  = funtypes.Static<typeof TokenVisualizerERC721Event>
-export const TokenVisualizerERC721Event = funtypes.ReadonlyObject({
+export type TokenVisualizerErc721Event  = funtypes.Static<typeof TokenVisualizerErc721Event>
+export const TokenVisualizerErc721Event = funtypes.ReadonlyObject({
 	type: funtypes.Literal('NFT'),
 	from: AddressBookEntry,
 	to: AddressBookEntry,
@@ -92,8 +92,8 @@ export const TokenVisualizerERC721Event = funtypes.ReadonlyObject({
 	isApproval: funtypes.Boolean,
 })
 
-export type TokenVisualizerERC721AllApprovalEvent  = funtypes.Static<typeof TokenVisualizerERC721AllApprovalEvent>
-export const TokenVisualizerERC721AllApprovalEvent = funtypes.ReadonlyObject({
+export type TokenVisualizerErc721AllApprovalEvent  = funtypes.Static<typeof TokenVisualizerErc721AllApprovalEvent>
+export const TokenVisualizerErc721AllApprovalEvent = funtypes.ReadonlyObject({
 	type: funtypes.Literal('NFT All approval'),
 	from: AddressBookEntry,
 	to: AddressBookEntry,
@@ -104,9 +104,9 @@ export const TokenVisualizerERC721AllApprovalEvent = funtypes.ReadonlyObject({
 
 export type TokenVisualizerResultWithMetadata = funtypes.Static<typeof TokenVisualizerResultWithMetadata>
 export const TokenVisualizerResultWithMetadata = funtypes.Union(
-	TokenVisualizerERC20Event,
-	TokenVisualizerERC721Event,
-	TokenVisualizerERC721AllApprovalEvent,
+	TokenVisualizerErc20Event,
+	TokenVisualizerErc721Event,
+	TokenVisualizerErc721AllApprovalEvent,
 )
 
 export type VisualizerResult  = funtypes.Static<typeof VisualizerResult>
@@ -277,7 +277,7 @@ export type TokenApprovalChange = TokenDefinitionParams & {
 	approvals: (AddressBookEntry & { change: bigint })[]
 }
 
-export type ERC721TokenDefinitionParams = {
+export type Erc721TokenDefinitionParams = {
 	id: bigint
 	name: string
 	address: bigint
@@ -285,8 +285,8 @@ export type ERC721TokenDefinitionParams = {
 	logoUri?: string
 }
 
-export type ERC721TokenApprovalChange = {
-	token: ERC721TokenDefinitionParams
+export type Erc721TokenApprovalChange = {
+	token: Erc721TokenDefinitionParams
 	approvedEntry: AddressBookEntry
 }
 

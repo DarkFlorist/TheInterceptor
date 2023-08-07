@@ -3,7 +3,7 @@ import { get4Byte } from '../../utils/calldata.js'
 import { FourByteExplanations, MAKE_YOU_RICH_TRANSACTION } from '../../utils/constants.js'
 import { assertNever, createGuard } from '../../utils/typescript.js'
 import { AddressBookEntry } from '../../utils/user-interface-types.js'
-import { SimulatedAndVisualizedTransaction, SimulatedAndVisualizedTransactionBase, TokenVisualizerERC20Event, TokenVisualizerERC721Event, TokenVisualizerResultWithMetadata, TransactionWithAddressBookEntries } from '../../utils/visualizer-types.js'
+import { SimulatedAndVisualizedTransaction, SimulatedAndVisualizedTransactionBase, TokenVisualizerErc20Event, TokenVisualizerErc721Event, TokenVisualizerResultWithMetadata, TransactionWithAddressBookEntries } from '../../utils/visualizer-types.js'
 import { getSwapName, identifySwap } from './SwapTransactions.js'
 import * as funtypes from 'funtypes'
 
@@ -29,7 +29,7 @@ export function identifySimpleApproval(simTx: SimulatedAndVisualizedTransaction)
 		const tokenResult = simTx.tokenResults[0]
 		const symbol = tokenResult.token.symbol
 		switch (tokenResult.type) {
-			case 'Token': return {
+			case 'Erc20Token': return {
 				type: 'SimpleTokenApproval' as const,
 				title: `${ symbol } Approval`,
 				signingAction: `Approve ${ symbol }`,
@@ -124,7 +124,7 @@ export const SimulatedAndVisualizedSimpleTokenTransferTransaction = funtypes.Int
 	funtypes.Intersect(
 		SimulatedAndVisualizedTransactionBase,
 		funtypes.ReadonlyObject({
-			tokenResults: funtypes.ReadonlyArray(funtypes.Intersect(funtypes.Union(TokenVisualizerERC20Event, TokenVisualizerERC721Event), funtypes.ReadonlyObject({ isApproval: funtypes.Literal(false) })))
+			tokenResults: funtypes.ReadonlyArray(funtypes.Intersect(funtypes.Union(TokenVisualizerErc20Event, TokenVisualizerErc721Event), funtypes.ReadonlyObject({ isApproval: funtypes.Literal(false) })))
 		})
 	),
 	funtypes.ReadonlyObject({

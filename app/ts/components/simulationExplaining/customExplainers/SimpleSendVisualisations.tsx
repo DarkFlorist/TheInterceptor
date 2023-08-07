@@ -109,7 +109,7 @@ export function EtherTransferVisualisation({ simTx, renameAddressCallBack }: { s
 
 export function SimpleTokenTransferVisualisation({ simTx, renameAddressCallBack }: { simTx: SimulatedAndVisualizedSimpleTokenTransferTransaction, renameAddressCallBack: RenameAddressCallBack }) {
 	const transfer = simTx.tokenResults[0]
-	const asset = { ...(transfer.type === 'Token' ? { ...transfer.token, amount: transfer.amount } : { ...transfer.token, received: false, id: transfer.tokenId }) }
+	const asset = { ...(transfer.type === 'Erc20Token' ? { ...transfer.token, amount: transfer.amount } : { ...transfer.token, received: false, id: transfer.tokenId }) }
 
 	return <SimpleSend
 		transaction = { { ...simTx, rpcNetwork: simTx.transaction.rpcNetwork } }

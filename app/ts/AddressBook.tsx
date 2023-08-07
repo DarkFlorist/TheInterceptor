@@ -9,11 +9,11 @@ import { sendPopupMessageToBackgroundPage } from './background/backgroundUtils.j
 
 type Modals = 'noModal' | 'addNewAddress' | 'ConfirmaddressBookEntryToBeRemoved'
 
-type ActiveFilter = 'My Active Addresses' | 'My Contacts' | 'Tokens' | 'Non Fungible Tokens' | 'Other Contracts'
+type ActiveFilter = 'My Active Addresses' | 'My Contacts' | 'Erc20Tokens' | 'Non Fungible Tokens' | 'Other Contracts'
 const ActiveFilterSingle = {
 	'My Active Addresses': 'Active Address',
 	'My Contacts': 'Contact',
-	'Tokens': 'Token',
+	'Erc20Tokens': 'Token',
 	'Non Fungible Tokens': 'Non Fungible Token',
 	'Other Contracts': 'Other Contract',
 }
@@ -22,7 +22,7 @@ const PAGE_SIZE = 20
 const ELEMENT_SIZE_PX = {
 	'My Active Addresses': 83,
 	'My Contacts': 83,
-	'Tokens': 92,
+	'Erc20Tokens': 92,
 	'Non Fungible Tokens': 92,
 	'Other Contracts': 92,
 }
@@ -109,7 +109,7 @@ export function ListElement(entry: ListElementParam) {
 							}
 						</div>
 
-						{ entry.category === 'Tokens'
+						{ entry.category === 'Erc20Tokens'
 							? <div>
 								<p class = 'paragraph' style = 'display: inline-block; font-size: 13px; vertical-align: top;'>{ `Decimals: ${ 'decimals' in entry ? entry.decimals.toString() : 'MISSING' }` }</p>
 							</div>
@@ -346,7 +346,7 @@ export function AddressBook() {
 		switch(filter) {
 			case 'My Active Addresses': return setAddingNewAddressType({ addingAddress: true, type: 'addressInfo' })
 			case 'My Contacts': return setAddingNewAddressType({ addingAddress: true, type: 'contact' })
-			case 'Tokens': return setAddingNewAddressType({ addingAddress: true, type: 'token' })
+			case 'Erc20Tokens': return setAddingNewAddressType({ addingAddress: true, type: 'Erc20Token' })
 			case 'Non Fungible Tokens': return setAddingNewAddressType({ addingAddress: true, type: 'NFT' })
 			case 'Other Contracts': return setAddingNewAddressType({ addingAddress: true, type: 'other contract' })
 		}
@@ -388,7 +388,7 @@ export function AddressBook() {
 							<ul class = 'menu-list'>
 								<p class = 'paragraph' style = 'color: var(--disabled-text-color)'> Contracts </p>
 								<ul>
-									<li> <FilterLink name = 'Tokens' currentFilter = { activeFilter } setActiveFilter = { changeFilter }/> </li>
+									<li> <FilterLink name = 'Erc20Tokens' currentFilter = { activeFilter } setActiveFilter = { changeFilter }/> </li>
 									<li> <FilterLink name = 'Non Fungible Tokens' currentFilter = { activeFilter } setActiveFilter = { changeFilter }/> </li>
 									<li> <FilterLink name = 'Other Contracts' currentFilter = { activeFilter } setActiveFilter = { changeFilter }/> </li>
 								</ul>

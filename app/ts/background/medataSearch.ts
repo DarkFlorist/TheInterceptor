@@ -40,7 +40,7 @@ const convertTokenDefinitionToAddressBookEntry = ([address, def]: [string, Token
 	address: BigInt(address),
 	...def,
 	logoUri: def.logoUri ? `${ getFullLogoUri(def.logoUri) }` : undefined,
-	type: 'token' as const,
+	type: 'Erc20Token' as const,
 })
 
 const convertNftDefinitionToAddressBookEntry = ([address, def]: [string, NftDefinition]) => ({
@@ -78,7 +78,7 @@ function filterAddressBookDataByCategoryAndSearchString(addressBookCategory: Add
 			})
 			return search(userAddressBook.addressInfos, searchFunction).map(convertAddressInfoToAddressBookEntry)
 		}
-		case 'Tokens': {
+		case 'Erc20Tokens': {
 			if (searchingDisabled) return Array.from(tokenMetadata).map(convertTokenDefinitionToAddressBookEntry)
 			const searchFunction = (element: [string, TokenDefinition]) => ({
 				comparison: fuzzyCompare(searchPattern, trimmedSearch, `${ element[1].symbol.toLowerCase()} ${ element[1].name.toLowerCase()}`, element[0]),
