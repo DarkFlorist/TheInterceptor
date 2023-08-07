@@ -1,11 +1,14 @@
 import { addressString } from '../../utils/bigint.js'
 import { AddressBookEntry } from '../../utils/user-interface-types.js'
-import { Erc721TokenApprovalChange, Erc721TokenDefinitionParams, SimulatedAndVisualizedTransaction, TokenApprovalChange, TokenBalanceChange, TokenPriceEstimate, TokenVisualizerResultWithMetadata } from '../../utils/visualizer-types.js'
+import { Erc721TokenApprovalChange, Erc721Definition, SimulatedAndVisualizedTransaction, ERC20TokenApprovalChange, Erc20TokenBalanceChange, TokenPriceEstimate, TokenVisualizerResultWithMetadata, Erc1155Definition } from '../../utils/visualizer-types.js'
 
 export type BalanceChangeSummary = {
-	Erc721TokenBalanceChanges: Map<string, Map<string, boolean > >, // token address, token id, {true if received, false if sent}
-	Erc721OperatorChanges: Map<string, string | undefined> // token address, operator
-	Erc721TokenIdApprovalChanges: Map<string, Map<string, string > > // token address, tokenId, approved address
+	erc721TokenBalanceChanges: Map<string, Map<string, boolean > >, // token address, token id, {true if received, false if sent}
+	erc721OperatorChanges: Map<string, string | undefined> // token address, operator
+	erc721TokenIdApprovalChanges: Map<string, Map<string, string > > // token address, tokenId, approved address
+
+	erc1155TokenBalanceChanges: Map<string, Map<string, bigint > >, // token address, token id, { amount }
+	erc1155OperatorChanges: Map<string, string | undefined> // token address, operator
 
 	tokenBalanceChanges: Map<string, bigint>, // token address, amount
 	tokenApprovalChanges: Map<string, Map<string, bigint > > // token address, approved address, amount
@@ -17,11 +20,16 @@ export type BalanceChangeSummary = {
 
 export type SummaryOutcome = {
 	summaryFor: AddressBookEntry
-	tokenBalanceChanges: TokenBalanceChange[]
-	tokenApprovalChanges: TokenApprovalChange[]
-	erc721TokenBalanceChanges: (Erc721TokenDefinitionParams & { received: boolean })[]
-	erc721OperatorChanges: (Omit<Erc721TokenDefinitionParams, 'id'> & { operator: AddressBookEntry | undefined })[]
+	tokenBalanceChanges: Erc20TokenBalanceChange[]
+	tokenApprovalChanges: ERC20TokenApprovalChange[]
+
+	erc721TokenBalanceChanges: (Erc721Definition & { received: boolean })[]
+	erc721OperatorChanges: (Omit<Erc721Definition, 'id'> & { operator: AddressBookEntry | undefined })[]
 	erc721TokenIdApprovalChanges: Erc721TokenApprovalChange[]
+	
+	erc1155TokenBalanceChanges: Erc1155Definition[]
+	erc1155OperatorChanges: (Omit<Erc1155Definition, 'id'> & { operator: AddressBookEntry | undefined })[]
+
 	etherResults: {
 		balanceBefore: bigint,
 		balanceAfter: bigint,
@@ -34,9 +42,13 @@ export class LogSummarizer {
 	private ensureAddressInSummary = (address: string) => {
 		if ( !this.summary.has(address)) {
 			this.summary.set(address, {
-				Erc721TokenBalanceChanges: new Map(),
-				Erc721OperatorChanges: new Map(),
-				Erc721TokenIdApprovalChanges: new Map(),
+				erc721TokenBalanceChanges: new Map(),
+				erc721OperatorChanges: new Map(),
+				erc721TokenIdApprovalChanges: new Map(),
+
+				erc1155TokenBalanceChanges: new Map(),
+				erc1155OperatorChanges: new Map(),
+
 				tokenApprovalChanges: new Map(),
 				tokenBalanceChanges: new Map(),
 				etherResults: undefined
@@ -71,39 +83,39 @@ export class LogSummarizer {
 	}
 
 	private updateErc721 = (from: string, to: string, tokenAddress: string, change: TokenVisualizerResultWithMetadata) => {
-		if (change.type !== 'NFT' && change.type !== 'NFT All approval') return
+		if (change.type !== 'ERC721' && change.type !== 'NFT All approval') return
 		if (change.isApproval) {
 			const fromSummary = this.summary.get(from)!
 			if (change.type === 'NFT All approval') {
 				if (change.allApprovalAdded) {
-					fromSummary.Erc721OperatorChanges.set(tokenAddress, to)
+					fromSummary.erc721OperatorChanges.set(tokenAddress, to)
 				} else {
-					fromSummary.Erc721OperatorChanges.set(tokenAddress, undefined)
+					fromSummary.erc721OperatorChanges.set(tokenAddress, undefined)
 				}
 				return
 			}
-			if(!fromSummary.Erc721TokenIdApprovalChanges.has(tokenAddress)) {
-				fromSummary.Erc721TokenIdApprovalChanges.set(tokenAddress, new Map())
+			if(!fromSummary.erc721TokenIdApprovalChanges.has(tokenAddress)) {
+				fromSummary.erc721TokenIdApprovalChanges.set(tokenAddress, new Map())
 			}
-			const thisToken = fromSummary.Erc721TokenIdApprovalChanges.get(tokenAddress)!
+			const thisToken = fromSummary.erc721TokenIdApprovalChanges.get(tokenAddress)!
 			thisToken.set(change.tokenId.toString(), to)
 		} else {
 			const tokenId = change.tokenId.toString()
 			// track balance changes
 			for (const val of [ { addr: from, received: false }, { addr: to, received: true } ]) {
 				const addrSummary = this.summary.get(val.addr)!
-				if (!addrSummary.Erc721TokenBalanceChanges.has(tokenAddress)) {
-					addrSummary.Erc721TokenBalanceChanges.set(tokenAddress, new Map())
+				if (!addrSummary.erc721TokenBalanceChanges.has(tokenAddress)) {
+					addrSummary.erc721TokenBalanceChanges.set(tokenAddress, new Map())
 				}
-				const token = addrSummary.Erc721TokenBalanceChanges.get(tokenAddress)!
+				const token = addrSummary.erc721TokenBalanceChanges.get(tokenAddress)!
 				if ( token.get(tokenId) === !val.received) { // if we have received and sent, we can clear the entry as there's no change to state
 					token.delete(tokenId)
 				} else {
-					addrSummary.Erc721TokenBalanceChanges.get(tokenAddress)?.set(tokenId, val.received)
+					addrSummary.erc721TokenBalanceChanges.get(tokenAddress)?.set(tokenId, val.received)
 				}
 				// clear added approvals if any on transfer
 				if (!val.received) {
-					const approvalChanges = this.summary.get(val.addr)?.Erc721TokenIdApprovalChanges.get(tokenAddress)
+					const approvalChanges = this.summary.get(val.addr)?.erc721TokenIdApprovalChanges.get(tokenAddress)
 					if(approvalChanges) {
 						approvalChanges.delete(tokenId)
 					}
@@ -113,7 +125,7 @@ export class LogSummarizer {
 	}
 
 	private updateErc20 = (from: string, to: string, tokenAddress: string, change: TokenVisualizerResultWithMetadata) => {
-		if (change.type !== 'Erc20Token') return
+		if (change.type !== 'ERC20') return
 		if (change.isApproval) {
 			// track approvals
 			const tokenChanges = this.summary.get(from)!.tokenApprovalChanges.get(tokenAddress)
@@ -172,10 +184,10 @@ export class LogSummarizer {
 		// remove addresses that ended up with no changes
 		Array.from(this.summary.entries()).forEach( ([address, addressSummary]) => {
 			if (addressSummary.etherResults === undefined
-				&& addressSummary.Erc721OperatorChanges.size === 0
-				&& addressSummary.Erc721TokenBalanceChanges.size === 0
-				&& addressSummary.Erc721OperatorChanges.size === 0
-				&& addressSummary.Erc721TokenIdApprovalChanges.size === 0
+				&& addressSummary.erc721OperatorChanges.size === 0
+				&& addressSummary.erc721TokenBalanceChanges.size === 0
+				&& addressSummary.erc721OperatorChanges.size === 0
+				&& addressSummary.erc721TokenIdApprovalChanges.size === 0
 				&& addressSummary.tokenApprovalChanges.size === 0
 				&& addressSummary.tokenBalanceChanges.size === 0
 			) {
@@ -200,9 +212,9 @@ export class LogSummarizer {
 		const addressSummary = this.summary.get(address)
 		if (addressSummary === undefined) return undefined
 
-		const tokenBalanceChanges: TokenBalanceChange[] = Array.from(addressSummary.tokenBalanceChanges).map(([tokenAddress, changeAmount]) => {
+		const tokenBalanceChanges: Erc20TokenBalanceChange[] = Array.from(addressSummary.tokenBalanceChanges).map(([tokenAddress, changeAmount]) => {
 			const metadata = addressMetaData.get(tokenAddress)
-			if (metadata === undefined || metadata.type !== 'Erc20Token') throw new Error('Missing metadata for token')
+			if (metadata === undefined || metadata.type !== 'ERC20') throw new Error('Missing metadata for token')
 			return {
 				...metadata,
 				changeAmount: changeAmount,
@@ -210,9 +222,9 @@ export class LogSummarizer {
 			}
 		})
 
-		const tokenApprovalChanges: TokenApprovalChange[] = Array.from(addressSummary.tokenApprovalChanges).map( ([tokenAddress, approvals]) => {
+		const tokenApprovalChanges: ERC20TokenApprovalChange[] = Array.from(addressSummary.tokenApprovalChanges).map( ([tokenAddress, approvals]) => {
 			const metadata = addressMetaData.get(tokenAddress)
-			if (metadata === undefined || metadata.type !== 'Erc20Token') throw new Error('Missing metadata for token')
+			if (metadata === undefined || metadata.type !== 'ERC20') throw new Error('Missing metadata for token')
 			return {
 				...metadata,
 				approvals: Array.from(approvals).map( ([addressToApprove, change]) => {
@@ -223,9 +235,9 @@ export class LogSummarizer {
 			}
 		})
 
-		const erc721TokenBalanceChanges: (Erc721TokenDefinitionParams & { received: boolean })[] = Array.from(addressSummary.Erc721TokenBalanceChanges).map( ([tokenAddress, tokenIds]) => {
+		const erc721TokenBalanceChanges: (Erc721Definition & { received: boolean })[] = Array.from(addressSummary.erc721TokenBalanceChanges).map( ([tokenAddress, tokenIds]) => {
 			const metadata = addressMetaData.get(tokenAddress)
-			if (metadata === undefined || metadata.type !== 'NFT') throw new Error('Missing metadata for token')
+			if (metadata === undefined || metadata.type !== 'ERC721') throw new Error('Missing metadata for token')
 			return Array.from(tokenIds).map(([tokenId, received]) => ({
 				...metadata,
 				id: BigInt(tokenId),
@@ -233,9 +245,9 @@ export class LogSummarizer {
 			}))
 		}).reduce((accumulator, value) => accumulator.concat(value), [])
 
-		const erc721OperatorChanges: (Omit<Erc721TokenDefinitionParams, 'id'> & { operator: AddressBookEntry | undefined })[] = Array.from(addressSummary.Erc721OperatorChanges).map( ([tokenAddress, operator]) => {
+		const erc721OperatorChanges: (Omit<Erc721Definition, 'id'> & { operator: AddressBookEntry | undefined })[] = Array.from(addressSummary.erc721OperatorChanges).map( ([tokenAddress, operator]) => {
 			const metadata = addressMetaData.get(tokenAddress)
-			if (metadata === undefined || metadata.type !== 'NFT') throw new Error('Missing metadata for token')
+			if (metadata === undefined || metadata.type !== 'ERC721') throw new Error('Missing metadata for token')
 
 			if (operator === undefined) {
 				return {
@@ -251,9 +263,9 @@ export class LogSummarizer {
 			}
 		})
 
-		const erc721TokenIdApprovalChanges: Erc721TokenApprovalChange[] = Array.from(addressSummary.Erc721TokenIdApprovalChanges).map( ([tokenAddress, approvals]) => {
+		const erc721TokenIdApprovalChanges: Erc721TokenApprovalChange[] = Array.from(addressSummary.erc721TokenIdApprovalChanges).map( ([tokenAddress, approvals]) => {
 			const metadata = addressMetaData.get(tokenAddress)
-			if (metadata === undefined || metadata.type !== 'NFT') throw new Error('Missing metadata for token')
+			if (metadata === undefined || metadata.type !== 'ERC721') throw new Error('Missing metadata for token')
 			return Array.from(approvals).map( ([tokenId, approvedAddress]) => {
 				const approvedMetadata = addressMetaData.get(approvedAddress)
 				if (approvedMetadata === undefined) throw new Error('Missing metadata for token')
@@ -267,12 +279,42 @@ export class LogSummarizer {
 			})
 		}).reduce((accumulator, value) => accumulator.concat(value), [])
 
+		const erc1155TokenBalanceChanges: Erc1155Definition[] = Array.from(addressSummary.erc1155TokenBalanceChanges).map(([tokenAddress, tokenIds]) => {
+			const metadata = addressMetaData.get(tokenAddress)
+			if (metadata === undefined || metadata.type !== 'ERC1155') throw new Error('Missing metadata for token')
+			return Array.from(tokenIds).map(([tokenId, amount]) => ({
+				...metadata,
+				id: BigInt(tokenId),
+				amount,
+			}))
+		}).reduce((accumulator, value) => accumulator.concat(value), [])
+
+		const erc1155OperatorChanges: (Omit<Omit<Erc1155Definition, 'id'>, 'amount'> & { operator: AddressBookEntry | undefined })[] = Array.from(addressSummary.erc721OperatorChanges).map(([tokenAddress, operator]) => {
+			const metadata = addressMetaData.get(tokenAddress)
+			if (metadata === undefined || metadata.type !== 'ERC1155') throw new Error('Missing metadata for token')
+
+			if (operator === undefined) {
+				return {
+					...metadata,
+					operator: undefined,
+				}
+			}
+			const operatorMetadata = addressMetaData.get(operator)
+			if (operatorMetadata === undefined) throw new Error('Missing metadata for token')
+			return {
+				...metadata,
+				operator: operatorMetadata,
+			}
+		})
+
 		return {
 			tokenBalanceChanges,
 			tokenApprovalChanges,
 			erc721TokenBalanceChanges,
 			erc721OperatorChanges,
 			erc721TokenIdApprovalChanges,
+			erc1155TokenBalanceChanges,
+			erc1155OperatorChanges,
 			etherResults: addressSummary.etherResults
 		}
 	}

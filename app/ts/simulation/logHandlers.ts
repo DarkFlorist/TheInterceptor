@@ -2,14 +2,14 @@ import { bytesToUnsigned } from '../utils/bigint.js'
 import { TokenVisualizerResult } from '../utils/visualizer-types.js'
 import { MulticallResponseEventLog } from '../utils/JsonRpc-types.js'
 
-export function handleTransferLog(eventLog: MulticallResponseEventLog): TokenVisualizerResult {
+export function handleERC20TransferLog(eventLog: MulticallResponseEventLog): TokenVisualizerResult {
 	const is721 = eventLog.topics.length === 4
 	return {
 		from: eventLog.topics[1],
 		to: eventLog.topics[2],
 		tokenAddress: eventLog.loggersAddress,
 		isApproval: false,
-		...(is721 ? { tokenId: eventLog.topics[3], type: 'NFT' } : { amount: bytesToUnsigned(eventLog.data), type: 'Erc20Token' }),
+		...(is721 ? { tokenId: eventLog.topics[3], type: 'ERC721' } : { amount: bytesToUnsigned(eventLog.data), type: 'ERC20' }),
 	}
 }
 
@@ -19,7 +19,7 @@ export function handleApprovalLog(eventLog: MulticallResponseEventLog): TokenVis
 		from: eventLog.topics[1],
 		to: eventLog.topics[2],
 		tokenAddress: eventLog.loggersAddress,
-		...(is721 ? { tokenId: eventLog.topics[3], type: 'NFT' } : { amount: bytesToUnsigned(eventLog.data), type: 'Erc20Token' }),
+		...(is721 ? { tokenId: eventLog.topics[3], type: 'ERC721' } : { amount: bytesToUnsigned(eventLog.data), type: 'ERC20' }),
 		isApproval: true,
 	}
 }
@@ -42,7 +42,7 @@ export function handleDepositLog(eventLog: MulticallResponseEventLog): TokenVisu
 		tokenAddress: eventLog.loggersAddress,
 		isApproval: false,
 		amount: bytesToUnsigned(eventLog.data),
-		type: 'Erc20Token'
+		type: 'ERC20'
 	}
 }
 
@@ -53,6 +53,32 @@ export function handleWithdrawalLog(eventLog: MulticallResponseEventLog): TokenV
 		tokenAddress: eventLog.loggersAddress,
 		isApproval: false,
 		amount: bytesToUnsigned(eventLog.data),
-		type: 'Erc20Token'
+		type: 'ERC20'
+	}
+}
+
+export function handleERC1155TransferBatch(eventLog: MulticallResponseEventLog): TokenVisualizerResult {
+	return {
+		type: 'ERC1155 Transfer Batch',
+		operator: eventLog.topics[0],
+		from: eventLog.topics[1],
+		to: eventLog.topics[2],
+		tokenAddress: eventLog.loggersAddress,
+		isApproval: false,
+		ids: [],//eventLog.topics[3],//TODO FIXME
+		amounts: [], //eventLog.topics[4],//TODO FIXME
+	}
+}
+
+export function handleERC1155TransferSingle(eventLog: MulticallResponseEventLog): TokenVisualizerResult {
+	return {
+		type: 'ERC1155 Transfer Single',
+		operator: eventLog.topics[0],
+		from: eventLog.topics[1],
+		to: eventLog.topics[2],
+		tokenAddress: eventLog.loggersAddress,
+		isApproval: false,
+		id: eventLog.topics[3],
+		amount: eventLog.topics[4],
 	}
 }

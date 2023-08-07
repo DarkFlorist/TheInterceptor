@@ -3,7 +3,7 @@ import * as funtypes from 'funtypes'
 import { EthereumQuantity } from '../../utils/wire-types.js'
 import { abs, addressString } from '../../utils/bigint.js'
 import { Erc721TokenNumber, EtherAmount, EtherSymbol, TokenAmount, TokenOrEthValue, TokenSymbol } from '../subcomponents/coins.js'
-import { AddressBookEntry, NFTEntry, Erc20TokenEntry } from '../../utils/user-interface-types.js'
+import { AddressBookEntry, Erc721Entry, Erc20TokenEntry } from '../../utils/user-interface-types.js'
 import { assertNever } from '../../utils/typescript.js'
 import { RpcNetwork } from '../../utils/visualizer-types.js'
 
@@ -23,9 +23,9 @@ export const SwapAsset = funtypes.Intersect(
 			beforeAfterBalance: funtypes.Union(BeforeAfterBalance, funtypes.Undefined),
 		}),
 		funtypes.ReadonlyObject({
-			type: funtypes.Literal('NFT'),
+			type: funtypes.Literal('ERC721'),
 			tokenId: EthereumQuantity,
-			tokenAddress: NFTEntry,
+			tokenAddress: Erc721Entry,
 		}),
 		funtypes.ReadonlyObject({
 			type: funtypes.Literal('Ether'),
@@ -76,7 +76,7 @@ export function formSwapAsset(tokenResult: TokenVisualizerErc20Event[] | TokenVi
 		}
 	} else {
 		return {
-			type: 'NFT',
+			type: 'ERC721',
 			tokenAddress: tokenResult.token,
 			tokenId: tokenResult.tokenId
 		}
@@ -95,8 +95,8 @@ export function identifySwap(simTransaction: SimulatedAndVisualizedTransaction):
 	const tokensSent = simTransaction.tokenResults.filter((token): token is TokenVisualizerErc20Event | TokenVisualizerErc721Event => token.from.address === sender && !token.isApproval)
 	const tokensReceived = simTransaction.tokenResults.filter((token): token is TokenVisualizerErc20Event | TokenVisualizerErc721Event => token.to.address === sender && !token.isApproval)
 
-	const nftsSent = tokensSent.reduce((total, current) => total + (current.type === 'NFT' ? 1 : 0), 0)
-	const nftsReceived = tokensSent.reduce((total, current) => total + (current.type === 'NFT' ? 1 : 0), 0)
+	const nftsSent = tokensSent.reduce((total, current) => total + (current.type === 'ERC721' ? 1 : 0), 0)
+	const nftsReceived = tokensSent.reduce((total, current) => total + (current.type === 'ERC721' ? 1 : 0), 0)
 	if (nftsSent > 1 || nftsReceived > 1) return false //its not a pure 1 to 1 swap if we get multiple NFT's
 
 	const isSameTokenAddress = (a: TokenVisualizerResultWithMetadata, b: TokenVisualizerResultWithMetadata) => a.token.address === b.token.address
@@ -118,8 +118,8 @@ export function identifySwap(simTransaction: SimulatedAndVisualizedTransaction):
 			const receiveBalanceAfter = simTransaction.tokenBalancesAfter.find((balance) => balance.owner === simTransaction.transaction.from.address && balance.token === receiveToken.address)?.balance
 			return {
 				sender: simTransaction.transaction.from,
-				sendAsset: formSwapAsset(tokensSent[0].type === 'NFT' ? tokensSent[0] : tokensSent.filter((token): token is TokenVisualizerErc20Event => token.type === 'Erc20Token'), sendBalanceAfter),
-				receiveAsset: formSwapAsset(tokensReceived[0].type === 'NFT' ? tokensReceived[0] : tokensReceived.filter((token): token is TokenVisualizerErc20Event => token.type === 'Erc20Token'), receiveBalanceAfter),
+				sendAsset: formSwapAsset(tokensSent[0].type === 'ERC721' ? tokensSent[0] : tokensSent.filter((token): token is TokenVisualizerErc20Event => token.type === 'ERC20'), sendBalanceAfter),
+				receiveAsset: formSwapAsset(tokensReceived[0].type === 'ERC721' ? tokensReceived[0] : tokensReceived.filter((token): token is TokenVisualizerErc20Event => token.type === 'ERC20'), receiveBalanceAfter),
 			}
 		}
 	}
@@ -130,7 +130,7 @@ export function identifySwap(simTransaction: SimulatedAndVisualizedTransaction):
 		const sendBalanceAfter = simTransaction.tokenBalancesAfter.find((balance) => balance.owner === simTransaction.transaction.from.address && balance.token === tokenAddressSent.address)?.balance
 		return {
 			sender: simTransaction.transaction.from,
-			sendAsset: formSwapAsset(tokensSent[0].type === 'NFT' ? tokensSent[0] : tokensSent.filter((token): token is TokenVisualizerErc20Event => token.type === 'Erc20Token'), sendBalanceAfter),
+			sendAsset: formSwapAsset(tokensSent[0].type === 'ERC721' ? tokensSent[0] : tokensSent.filter((token): token is TokenVisualizerErc20Event => token.type === 'ERC20'), sendBalanceAfter),
 			receiveAsset: {
 				type: 'Ether',
 				amount: ethDiff,
@@ -156,7 +156,7 @@ export function identifySwap(simTransaction: SimulatedAndVisualizedTransaction):
 					afterBalance: etherChange[0].before + ethDiff
 				}
 			},
-			receiveAsset: formSwapAsset(tokensReceived[0].type === 'NFT' ? tokensReceived[0] : tokensReceived.filter((token): token is TokenVisualizerErc20Event => token.type === 'Erc20Token'), receiveBalanceAfter),
+			receiveAsset: formSwapAsset(tokensReceived[0].type === 'ERC721' ? tokensReceived[0] : tokensReceived.filter((token): token is TokenVisualizerErc20Event => token.type === 'ERC20'), receiveBalanceAfter),
 		}
 	}
 	return false
@@ -341,7 +341,7 @@ export function VisualizeSwapAsset({ swapAsset, rpcNetwork }: { swapAsset: SwapA
 				</span>
 			</>
 		}
-		case 'NFT': {
+		case 'ERC721': {
 			return <span class = 'grid swap-grid'>
 				<div class = 'log-cell' style = 'justify-content: left;'>
 					<Erc721TokenNumber

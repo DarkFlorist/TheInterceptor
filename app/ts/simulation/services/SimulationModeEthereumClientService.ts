@@ -682,7 +682,7 @@ const getSimulatedTokenBalances = async (ethereumClientService: EthereumClientSe
 	}))
 }
 
-export const parseLogIfPossible = (ethersInterface: ethers.Interface, log: { topics: string[], data: string}) => {
+export const parseLogIfPossible = (ethersInterface: ethers.Interface, log: { topics: string[], data: string }) => {
 	try {
 		return ethersInterface.parseLog(log)
 	} catch (error) {

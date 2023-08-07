@@ -1,7 +1,7 @@
 import { useSignal } from '@preact/signals'
 import { getTokenAmountsWorth } from '../../simulation/priceEstimator.js'
 import { abs, bigintToDecimalString, bigintToRoundedPrettyDecimalString, checksummedAddress } from '../../utils/bigint.js'
-import { Erc721TokenDefinitionParams, TokenDefinitionParams, TokenPriceEstimate, RpcNetwork } from '../../utils/visualizer-types.js'
+import { Erc721Definition, TokenPriceEstimate, RpcNetwork, Erc20WithAmount } from '../../utils/visualizer-types.js'
 import { CopyToClipboard } from './CopyToClipboard.js'
 import { Blockie } from './PreactBlocky.js'
 import { JSX } from 'preact/jsx-runtime'
@@ -175,8 +175,7 @@ export function TokenAmount(param: TokenAmountParams) {
 	</>
 }
 
-type TokenParams = TokenDefinitionParams & {
-	amount: bigint
+type TokenParams = Erc20WithAmount & {
 	showSign?: boolean
 	textColor?: string
 	useFullTokenName: boolean
@@ -206,8 +205,8 @@ export function TokenOrEth(param: TokenOrEtherParams) {
 	return <Ether { ...param }/>
 }
 
-export function TokenOrEthSymbol(param: TokenDefinitionParams | Erc721TokenDefinitionParams | EtherSymbolParams) {
-	if ('decimals' in param || 'id' in param) {
+export function TokenOrEthSymbol(param: TokenSymbolParams | EtherSymbolParams) {
+	if ('symbol' in param) {
 		return <TokenSymbol { ...param }/>
 	}
 	return <EtherSymbol { ...param }/>
@@ -247,7 +246,7 @@ export function Erc721TokenNumber(param: Erc721TokenNumberParams) {
 	</CopyToClipboard>
 }
 
-type Erc721TokenParams = Erc721TokenDefinitionParams & {
+type Erc721TokenParams = Erc721Definition & {
 	received: boolean
 	textColor?: string
 	useFullTokenName: boolean
@@ -270,7 +269,7 @@ type Token721AmountFieldParams = {
 	textColor?: string
 	style?: JSX.CSSProperties
 } & ({
-	type: 'NFT'
+	type: 'ERC721'
 	tokenId: bigint
 } | {
 	type: 'NFT All approval'
@@ -279,6 +278,29 @@ type Token721AmountFieldParams = {
 
 
 export function Token721AmountField(param: Token721AmountFieldParams ) {
+	const style = {
+		color: param.textColor ? param.textColor : 'var(--text-color)',
+		...(param.style === undefined ? {} : param.style),
+	}
+	if (param.type === 'NFT All approval') {
+		if (!param.allApprovalAdded) return <p style = { style }><b>NONE</b></p>
+		return <p style = { style }><b>ALL</b></p>
+	}
+	return <p style = { style }>{ `NFT #${ truncate(param.tokenId.toString(), 9) }` }</p>
+}
+
+type Token1155AmountFieldParams = {
+	textColor?: string
+	style?: JSX.CSSProperties
+} & ({
+	type: 'ERC1155'
+	tokenId: bigint
+} | {
+	type: 'NFT All approval'
+	allApprovalAdded: boolean
+})
+
+export function Token1155AmountField(param: Token1155AmountFieldParams) {
 	const style = {
 		color: param.textColor ? param.textColor : 'var(--text-color)',
 		...(param.style === undefined ? {} : param.style),

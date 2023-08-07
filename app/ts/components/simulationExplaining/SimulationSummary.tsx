@@ -1,6 +1,6 @@
 import { LogSummarizer, SummaryOutcome } from '../../simulation/services/LogSummarizer.js'
 import { AddressBookEntry, RenameAddressCallBack, Website } from '../../utils/user-interface-types.js'
-import { Erc721TokenApprovalChange, Erc721TokenDefinitionParams, SimulatedAndVisualizedTransaction, SimulationAndVisualisationResults, TokenApprovalChange, TokenBalanceChange, TokenDefinitionParams, TransactionWithAddressBookEntries } from '../../utils/visualizer-types.js'
+import { Erc721TokenApprovalChange, Erc721Definition, SimulatedAndVisualizedTransaction, SimulationAndVisualisationResults, ERC20TokenApprovalChange, Erc20TokenBalanceChange, Erc20Definition, TransactionWithAddressBookEntries } from '../../utils/visualizer-types.js'
 import { BigAddress, SmallAddress, WebsiteOriginText } from '../subcomponents/address.js'
 import { Erc721Token, Ether, EtherAmount, EtherSymbol, Token, TokenAmount, TokenPrice, TokenSymbol } from '../subcomponents/coins.js'
 import { LogAnalysis } from './Transactions.js'
@@ -46,7 +46,7 @@ function EtherChange(param: EtherChangeParams) {
 }
 
 type Erc20BalanceChangeParams = {
-	tokenBalanceChanges: TokenBalanceChange[]
+	tokenBalanceChanges: Erc20TokenBalanceChange[]
 	textColor: string,
 	negativeColor: string,
 	isImportant: boolean,
@@ -56,20 +56,20 @@ type Erc20BalanceChangeParams = {
 function Erc20BalanceChange(param: Erc20BalanceChangeParams) {
 	if ( param.tokenBalanceChanges.length === 0 ) return <></>
 	return <>
-		{ Array.from(param.tokenBalanceChanges).map((tokenBalanceChange) => (
+		{ Array.from(param.tokenBalanceChanges).map((Erc20TokenBalanceChange) => (
 			<div class = 'vertical-center' style = 'display: flex'>
-				<div class = { param.isImportant ? `box token-box ${ tokenBalanceChange.changeAmount < 0n ? 'negative-box' : 'positive-box' }`: '' } style = 'display: flex' >
+				<div class = { param.isImportant ? `box token-box ${ Erc20TokenBalanceChange.changeAmount < 0n ? 'negative-box' : 'positive-box' }`: '' } style = 'display: flex' >
 					<Token
-						{ ...tokenBalanceChange }
-						amount = { tokenBalanceChange.changeAmount }
+						{ ...Erc20TokenBalanceChange }
+						amount = { Erc20TokenBalanceChange.changeAmount }
 						showSign = { true }
-						textColor = { tokenBalanceChange.changeAmount > 0n ? param.textColor : param.negativeColor }
+						textColor = { Erc20TokenBalanceChange.changeAmount > 0n ? param.textColor : param.negativeColor }
 						useFullTokenName = { true }
 					/>
 					<TokenPrice
-						amount = { tokenBalanceChange.changeAmount }
-						tokenPriceEstimate = { tokenBalanceChange.tokenPriceEstimate }
-						textColor = { tokenBalanceChange.changeAmount > 0n ? param.textColor : param.negativeColor }
+						amount = { Erc20TokenBalanceChange.changeAmount }
+						tokenPriceEstimate = { Erc20TokenBalanceChange.tokenPriceEstimate }
+						textColor = { Erc20TokenBalanceChange.changeAmount > 0n ? param.textColor : param.negativeColor }
 						rpcNetwork = { param.rpcNetwork }
 					/>
 				</div>
@@ -78,7 +78,7 @@ function Erc20BalanceChange(param: Erc20BalanceChangeParams) {
 	</>
 }
 
-type Erc20ApprovalChangeParams = TokenDefinitionParams & {
+type Erc20ApprovalChangeParams = Erc20Definition & {
 	change: bigint,
 	entryToApprove: AddressBookEntry,
 	textColor: string,
@@ -129,7 +129,7 @@ export function Erc20ApprovalChange(param: Erc20ApprovalChangeParams) {
 }
 
 type Erc20ApprovalChangesParams = {
-	tokenApprovalChanges: TokenApprovalChange[]
+	tokenApprovalChanges: ERC20TokenApprovalChange[]
 	textColor: string,
 	negativeColor: string,
 	isImportant: boolean,
@@ -156,7 +156,7 @@ export function Erc20ApprovalChanges(param: Erc20ApprovalChangesParams ) {
 	</>
 }
 
-export type Erc721TokenBalanceChange = (Erc721TokenDefinitionParams & { received: boolean })
+export type Erc721TokenBalanceChange = (Erc721Definition & { received: boolean })
 
 type Erc721TokenChangesParams = {
 	Erc721TokenBalanceChanges: Erc721TokenBalanceChange[],
@@ -185,7 +185,7 @@ function Erc721TokenChanges(param: Erc721TokenChangesParams ) {
 	</>
 }
 
-export type Erc721OperatorChange = Omit<Erc721TokenDefinitionParams, 'id'> & { operator: AddressBookEntry | undefined }
+export type Erc721OperatorChange = Omit<Erc721Definition, 'id'> & { operator: AddressBookEntry | undefined }
 
 type Erc721OperatorChangesParams = {
 	Erc721OperatorChanges: Erc721OperatorChange[]

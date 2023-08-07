@@ -156,7 +156,7 @@ export async function craftPersonalSignPopupMessage(ethereumClientService: Ether
 		case 'Permit': {
 			const token = await getTokenMetadata(ethereumClientService, parsed.domain.verifyingContract)
 			const owner = getAddressMetaData(parsed.message.owner, userAddressBook)
-			if (token.type === 'NFT') throw 'Attempted to perform Permit to an NFT'
+			if (token.type === 'ERC721') throw 'Attempted to perform Permit to an NFT'
 			return {
 				method: 'popup_personal_sign_request',
 				data: {
@@ -177,7 +177,7 @@ export async function craftPersonalSignPopupMessage(ethereumClientService: Ether
 		}
 		case 'PermitSingle': {
 			const token = await getTokenMetadata(ethereumClientService, parsed.message.details.token)
-			if (token.type === 'NFT') throw 'Attempted to perform Permit2 to an NFT'
+			if (token.type === 'ERC721') throw 'Attempted to perform Permit2 to an NFT'
 			return {
 				method: 'popup_personal_sign_request',
 				data: {

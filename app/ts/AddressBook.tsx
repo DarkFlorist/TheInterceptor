@@ -346,8 +346,8 @@ export function AddressBook() {
 		switch(filter) {
 			case 'My Active Addresses': return setAddingNewAddressType({ addingAddress: true, type: 'addressInfo' })
 			case 'My Contacts': return setAddingNewAddressType({ addingAddress: true, type: 'contact' })
-			case 'Erc20Tokens': return setAddingNewAddressType({ addingAddress: true, type: 'Erc20Token' })
-			case 'Non Fungible Tokens': return setAddingNewAddressType({ addingAddress: true, type: 'NFT' })
+			case 'Erc20Tokens': return setAddingNewAddressType({ addingAddress: true, type: 'ERC20' })
+			case 'Non Fungible Tokens': return setAddingNewAddressType({ addingAddress: true, type: 'ERC721' })
 			case 'Other Contracts': return setAddingNewAddressType({ addingAddress: true, type: 'other contract' })
 		}
 	}

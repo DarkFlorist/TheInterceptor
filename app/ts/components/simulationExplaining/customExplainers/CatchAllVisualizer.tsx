@@ -1,6 +1,6 @@
 import { TransactionImportanceBlockParams } from '../Transactions.js'
 import { Erc20ApprovalChanges, Erc721OperatorChange, Erc721OperatorChanges, Erc721TokenIdApprovalChanges } from '../SimulationSummary.js'
-import { Erc721TokenApprovalChange, TokenApprovalChange, TokenVisualizerErc20Event, TokenVisualizerErc721AllApprovalEvent, TokenVisualizerErc721Event, TokenVisualizerResultWithMetadata, RpcNetwork } from '../../../utils/visualizer-types.js'
+import { Erc721TokenApprovalChange, ERC20TokenApprovalChange, TokenVisualizerErc20Event, TokenVisualizerErc721AllApprovalEvent, TokenVisualizerErc721Event, TokenVisualizerResultWithMetadata, RpcNetwork } from '../../../utils/visualizer-types.js'
 import { EtherSymbol, TokenSymbol, TokenAmount, EtherAmount, Erc721TokenNumber } from '../../subcomponents/coins.js'
 import { RenameAddressCallBack } from '../../../utils/user-interface-types.js'
 import { SmallAddress } from '../../subcomponents/address.js'
@@ -85,7 +85,7 @@ function SendOrReceiveTokensImportanceBox(param: SendOrReceiveTokensImportanceBo
 							</p>
 						</div>
 						<div class = 'log-cell'>
-							{ tokenEvent.type !== 'Erc20Token' ?
+							{ tokenEvent.type !== 'ERC20' ?
 								<Erc721TokenNumber
 									id = { tokenEvent.tokenId }
 									received = { !param.sending }
@@ -131,7 +131,7 @@ export function CatchAllVisualizer(param: TransactionImportanceBlockParams) {
 	const sendingTokenResults = param.simTx.tokenResults.filter((x) => x.from.address === msgSender)
 	const receivingTokenResults = param.simTx.tokenResults.filter((x) => x.to.address === msgSender)
 
-	const erc20tokenApprovalChanges: TokenApprovalChange[] = sendingTokenResults.filter((x): x is TokenVisualizerErc20Event  => x.isApproval && x.type === 'Erc20Token').map((entry) => {
+	const erc20tokenApprovalChanges: ERC20TokenApprovalChange[] = sendingTokenResults.filter((x): x is TokenVisualizerErc20Event  => x.isApproval && x.type === 'ERC20').map((entry) => {
 		return {
 			...entry.token,
 			approvals: [ {...entry.to, change: entry.amount } ]

@@ -30,7 +30,7 @@ export function SimpleTokenApprovalVisualisation(params: SimpleTokenApprovalVisu
 		<div class = 'box' style = 'background-color: var(--alpha-005); box-shadow: unset; margin-bottom: 0px;'>
 			<span class = 'log-table' style = 'justify-content: center; column-gap: 5px;'>
 				<div class = 'log-cell' style = 'justify-content: right;'>
-					{ params.approval.type !== 'Erc20Token' ?
+					{ params.approval.type !== 'ERC20' ?
 						<Token721AmountField
 							{ ...params.approval }
 							textColor = { textColor }

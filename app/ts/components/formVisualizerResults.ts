@@ -27,7 +27,7 @@ export function formSimulatedAndVisualizedTransaction(simState: SimulationState,
 			const toEntry = addressMetaData.get(addressString(change.to))
 			const erc20TokenEntry = addressMetaData.get(addressString(change.tokenAddress))
 			if (fromEntry === undefined || toEntry === undefined || erc20TokenEntry === undefined) throw new Error('missing metadata')
-			if (change.type !== 'Erc20Token' && erc20TokenEntry.type === 'NFT') {
+			if (change.type === 'ERC721' && erc20TokenEntry.type === 'ERC721') {
 				return {
 					...change,
 					from: fromEntry,
@@ -35,7 +35,7 @@ export function formSimulatedAndVisualizedTransaction(simState: SimulationState,
 					token: erc20TokenEntry
 				}
 			}
-			if (change.type === 'Erc20Token' && erc20TokenEntry.type === 'Erc20Token') {
+			if (change.type === 'ERC20' && erc20TokenEntry.type === 'ERC20') {
 				return {
 					...change,
 					from: fromEntry,

@@ -29,7 +29,7 @@ export function identifySimpleApproval(simTx: SimulatedAndVisualizedTransaction)
 		const tokenResult = simTx.tokenResults[0]
 		const symbol = tokenResult.token.symbol
 		switch (tokenResult.type) {
-			case 'Erc20Token': return {
+			case 'ERC20': return {
 				type: 'SimpleTokenApproval' as const,
 				title: `${ symbol } Approval`,
 				signingAction: `Approve ${ symbol }`,
@@ -57,7 +57,7 @@ export function identifySimpleApproval(simTx: SimulatedAndVisualizedTransaction)
 					identifiedTransaction: simTx,
 				}
 			}
-			case 'NFT': return {
+			case 'ERC721': return {
 				type: 'SimpleTokenApproval' as const,
 				title: `#${ tokenResult.tokenId } ${ symbol } Approval`,
 				signingAction: `Approve #${ tokenResult.tokenId } ${ symbol }`,
