@@ -25,24 +25,36 @@ export function formSimulatedAndVisualizedTransaction(simState: SimulationState,
 		const tokenResults: TokenVisualizerResultWithMetadata[] = visualiser === undefined ? [] : visualiser.tokenResults.map((change): TokenVisualizerResultWithMetadata | undefined => {
 			const fromEntry = addressMetaData.get(addressString(change.from))
 			const toEntry = addressMetaData.get(addressString(change.to))
-			const erc20TokenEntry = addressMetaData.get(addressString(change.tokenAddress))
-			if (fromEntry === undefined || toEntry === undefined || erc20TokenEntry === undefined) throw new Error('missing metadata')
-			if (change.type === 'ERC721' && erc20TokenEntry.type === 'ERC721') {
+			const tokenEntry = addressMetaData.get(addressString(change.tokenAddress))
+			if (fromEntry === undefined || toEntry === undefined || tokenEntry === undefined) throw new Error('missing metadata')
+			if (change.type === 'ERC721' && tokenEntry.type === 'ERC721') {
 				return {
 					...change,
 					from: fromEntry,
 					to: toEntry,
-					token: erc20TokenEntry
+					token: tokenEntry
 				}
 			}
-			if (change.type === 'ERC20' && erc20TokenEntry.type === 'ERC20') {
+			if (change.type === 'ERC20' && tokenEntry.type === 'ERC20') {
 				return {
 					...change,
 					from: fromEntry,
 					to: toEntry,
-					token: erc20TokenEntry
+					token: tokenEntry
 				}
 			}
+			if (change.type === 'ERC1155' && tokenEntry.type === 'ERC1155') {
+				return {
+					...change,
+					from: fromEntry,
+					to: toEntry,
+					token: tokenEntry,
+					tokenId: change.id,
+				}
+			}
+			console.warn('unknown token in token results:')
+			console.log(change)
+			console.log(tokenEntry)
 			return undefined // a token that is not NFT, but does not have decimals either, let's just not visualize them
 		}).filter(<T>(x: T | undefined): x is T => x !== undefined)
 		return {

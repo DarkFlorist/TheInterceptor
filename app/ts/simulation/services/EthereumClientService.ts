@@ -159,25 +159,6 @@ export class EthereumClientService {
 		return EthereumQuantity.parse(response)
 	}
 
-	public readonly getTokenDecimals = async (token: bigint) => {
-		const tokenInterface = new ethers.Interface([
-			'function decimals() view returns (uint8)',
-		])
-		const balanceOfCallData = stringToUint8Array(tokenInterface.encodeFunctionData('decimals'))
-		const callTransaction = {
-			type: '1559',
-			from: MOCK_ADDRESS,
-			to: token,
-			value: 0n,
-			input: balanceOfCallData,
-			maxFeePerGas: 0n,
-			maxPriorityFeePerGas: 0n,
-			gasLimit: 15_000_000n,
-		}
-		const response = await this.call(callTransaction)
-		return EthereumQuantity.parse(response)
-	}
-
 	public readonly getTransactionByHash = async (hash: bigint) => {
 		const response = await this.requestHandler.jsonRpcRequest({ method: 'eth_getTransactionByHash', params: [hash] })
 		if( response === null) return undefined

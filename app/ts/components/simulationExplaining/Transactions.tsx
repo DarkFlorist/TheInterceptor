@@ -134,6 +134,9 @@ export function SenderReceiver({ from, to, renameAddressCallBack }: { from: Addr
 
 export function Transaction(param: TransactionVisualizationParameters) {
 	const identifiedTransaction = identifyTransaction(param.simTx).type
+	console.log('Transaction')
+	console.log(param)
+	console.log(identifiedTransaction)
 	return (
 		<div class = 'card'>
 			<TransactionHeader
@@ -207,7 +210,7 @@ export function TokenLogEvent(params: TokenLogEventParams ) {
 
 	return <>
 		<div class = 'log-cell' style = 'justify-content: right;'>
-			{ params.tokenVisualizerResult.type !== 'ERC20' ?
+			{ params.tokenVisualizerResult.type === 'ERC721' || params.tokenVisualizerResult.type === 'NFT All approval' ?
 				<Token721AmountField
 					{ ...params.tokenVisualizerResult }
 					textColor = { textColor }

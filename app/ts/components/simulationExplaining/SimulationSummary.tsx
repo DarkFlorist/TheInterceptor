@@ -46,7 +46,7 @@ function EtherChange(param: EtherChangeParams) {
 }
 
 type Erc20BalanceChangeParams = {
-	tokenBalanceChanges: Erc20TokenBalanceChange[]
+	erc20TokenBalanceChanges: Erc20TokenBalanceChange[]
 	textColor: string,
 	negativeColor: string,
 	isImportant: boolean,
@@ -54,9 +54,9 @@ type Erc20BalanceChangeParams = {
 }
 
 function Erc20BalanceChange(param: Erc20BalanceChangeParams) {
-	if ( param.tokenBalanceChanges.length === 0 ) return <></>
+	if ( param.erc20TokenBalanceChanges.length === 0 ) return <></>
 	return <>
-		{ Array.from(param.tokenBalanceChanges).map((Erc20TokenBalanceChange) => (
+		{ Array.from(param.erc20TokenBalanceChanges).map((Erc20TokenBalanceChange) => (
 			<div class = 'vertical-center' style = 'display: flex'>
 				<div class = { param.isImportant ? `box token-box ${ Erc20TokenBalanceChange.changeAmount < 0n ? 'negative-box' : 'positive-box' }`: '' } style = 'display: flex' >
 					<Token
@@ -129,7 +129,7 @@ export function Erc20ApprovalChange(param: Erc20ApprovalChangeParams) {
 }
 
 type Erc20ApprovalChangesParams = {
-	tokenApprovalChanges: ERC20TokenApprovalChange[]
+	erc20TokenApprovalChanges: ERC20TokenApprovalChange[]
 	textColor: string,
 	negativeColor: string,
 	isImportant: boolean,
@@ -137,9 +137,9 @@ type Erc20ApprovalChangesParams = {
 }
 
 export function Erc20ApprovalChanges(param: Erc20ApprovalChangesParams ) {
-	if ( param.tokenApprovalChanges.length === 0 ) return <></>
+	if ( param.erc20TokenApprovalChanges.length === 0 ) return <></>
 	return <>
-		{ param.tokenApprovalChanges.map( (token) => (
+		{ param.erc20TokenApprovalChanges.map( (token) => (
 			token.approvals.map( (entryToApprove) => (
 				<Erc20ApprovalChange { ...{
 					...token,
@@ -330,14 +330,14 @@ export function SummarizeAddress(param: SummarizeAddressParams) {
 				rpcNetwork = { param.simulationAndVisualisationResults.rpcNetwork }
 			/>
 			<Erc20BalanceChange
-				tokenBalanceChanges = { param.balanceSummary.tokenBalanceChanges }
+				erc20TokenBalanceChanges = { param.balanceSummary.erc20TokenBalanceChanges }
 				textColor = { positiveNegativeColors.textColor }
 				negativeColor = { positiveNegativeColors.negativeColor }
 				isImportant = { isOwnAddress }
 				rpcNetwork = { param.simulationAndVisualisationResults.rpcNetwork }
 			/>
 			<Erc20ApprovalChanges
-				tokenApprovalChanges = { param.balanceSummary.tokenApprovalChanges }
+				erc20TokenApprovalChanges = { param.balanceSummary.erc20TokenApprovalChanges }
 				textColor = { positiveNegativeColors.textColor }
 				negativeColor = { positiveNegativeColors.negativeColor }
 				isImportant = { isOwnAddress }
@@ -374,8 +374,8 @@ export function removeEthDonator(rpcNetwork: RpcNetwork, summary: SummaryOutcome
 		if (donatorSummary.erc721OperatorChanges.length === 0 &&
 			donatorSummary.erc721TokenBalanceChanges.length === 0 &&
 			donatorSummary.erc721TokenIdApprovalChanges.length === 0 &&
-			donatorSummary.tokenApprovalChanges.length === 0 &&
-			donatorSummary.tokenBalanceChanges.length === 0
+			donatorSummary.erc20TokenApprovalChanges.length === 0 &&
+			donatorSummary.erc20TokenBalanceChanges.length === 0
 		) {
 			summary.splice(summary.indexOf(donatorSummary), 1)
 			return

@@ -111,7 +111,7 @@ export function ListElement(entry: ListElementParam) {
 
 						{ entry.category === 'Erc20Tokens'
 							? <div>
-								<p class = 'paragraph' style = 'display: inline-block; font-size: 13px; vertical-align: top;'>{ `Decimals: ${ 'decimals' in entry ? entry.decimals.toString() : 'MISSING' }` }</p>
+								<p class = 'paragraph' style = 'display: inline-block; font-size: 13px; vertical-align: top;'>{ `Decimals: ${ 'decimals' in entry && entry.decimals !== undefined ? entry.decimals.toString() : 'MISSING' }` }</p>
 							</div>
 							: <></>
 						}

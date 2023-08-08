@@ -601,18 +601,6 @@ export const getSimulatedTransactionByHash = async (ethereumClientService: Ether
 	return await ethereumClientService.getTransactionByHash(hash)
 }
 
-export const getTokenDecimals = async (ethereumClientService: EthereumClientService, token: bigint) => {
-	const tokenInterface = new ethers.Interface(['function decimals() view returns (uint8)'])
-	const balanceOfCallData = stringToUint8Array(tokenInterface.encodeFunctionData('decimals'))
-	const callParams = {
-		from: MOCK_ADDRESS,
-		to: token,
-		input: balanceOfCallData,
-	} as const
-	const response = await ethereumClientService.call(callParams)
-	return EthereumQuantity.parse(response)
-}
-
 export const simulatedCall = async (ethereumClientService: EthereumClientService, simulationState: SimulationState | undefined, params: Pick<IUnsignedTransaction1559, 'to' | 'from' | 'input' | 'value' | 'maxFeePerGas' | 'maxPriorityFeePerGas' | 'gasLimit'>, blockTag: EthereumBlockTag = 'latest') => {
 	const currentBlock = await ethereumClientService.getBlockNumber()
 	const blockNumToUse = blockTag === 'latest' || blockTag === 'pending' ? currentBlock : min(blockTag, currentBlock)

@@ -26,7 +26,7 @@ const PROTECTORS = [
 	tokenToContract
 ]
 
-type Loghandler = (event: MulticallResponseEventLog) => TokenVisualizerResult
+type Loghandler = (event: MulticallResponseEventLog) => TokenVisualizerResult[]
 
 const logHandler = new Map<string, Loghandler>([
 	[TRANSFER_LOG, handleERC20TransferLog],
@@ -89,14 +89,14 @@ export class Simulator {
 			//TODO, we should first identify via our addressbook and only as last effort identify via chain
 			//const promises = Array.from(uniqueLoggerAddresses).map((address) => itentifyAddressViaOnChainInformation(this.ethereum, address))
 			//const identifications = await Promise.all(promises)
-			const tokenResults = []
+			let tokenResults: TokenVisualizerResult[] = []
 			for (const eventLog of singleMulticallResponse.events) {
 				//const contractType = identifications.find((identification) => identification.address === eventLog.loggersAddress)
 				//if (contractType === undefined) throw new Error('Contract was not found in identification list')
 				const logSignature = eventLog.topics[0]
 				const handler = logHandler.get(bytes32String(logSignature))
 				if (handler === undefined) continue
-				tokenResults.push(handler(eventLog))
+				tokenResults = tokenResults.concat(handler(eventLog))
 			}
 			visualizerResults = {
 				ethBalanceChanges: singleMulticallResponse.balanceChanges,

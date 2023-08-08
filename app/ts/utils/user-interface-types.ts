@@ -68,12 +68,13 @@ export const Erc721Entry = funtypes.ReadonlyObject({
 	logoUri: funtypes.String,
 }))
 
-export type Erc1155Entry = funtypes.Static<typeof Erc721Entry>
+export type Erc1155Entry = funtypes.Static<typeof Erc1155Entry>
 export const Erc1155Entry = funtypes.ReadonlyObject({
 	type: funtypes.Literal('ERC1155'),
 	name: funtypes.String,
 	address: EthereumAddress,
 	symbol: funtypes.String,
+	decimals: funtypes.Undefined,
 }).And(funtypes.Partial({
 	protocol: funtypes.String,
 	logoUri: funtypes.String,
@@ -129,7 +130,7 @@ export type InterceptorAccessListParams = {
 
 export type AddingNewAddressType = {
 	addingAddress: true,
-	type: 'contact' | 'addressInfo' | 'ERC20' | 'ERC721' | 'other contract'
+	type: 'contact' | 'addressInfo' | 'ERC20' | 'ERC721' | 'other contract' | 'ERC1155'
 } | {
 	addingAddress: false,
 	entry: AddressBookEntry,

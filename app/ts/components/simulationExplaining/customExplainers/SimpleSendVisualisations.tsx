@@ -1,10 +1,10 @@
-import { DistributedOmit } from '../../../utils/typescript.js'
+import { DistributedOmit, assertNever } from '../../../utils/typescript.js'
 import { AddressBookEntry, RenameAddressCallBack } from '../../../utils/user-interface-types.js'
 import { EthBalanceChangesWithMetadata, RpcNetwork } from '../../../utils/visualizer-types.js'
 import { BigAddress } from '../../subcomponents/address.js'
 import { TokenOrEth, TokenOrEtherParams } from '../../subcomponents/coins.js'
 import { GasFee, TransactionGasses } from '../SimulationSummary.js'
-import { SimulatedAndVisualizedEtherTransferTransaction, SimulatedAndVisualizedSimpleTokenTransferTransaction } from '../identifyTransaction.js'
+import { SimulatedAndVisualizedEtherTransferTransaction, SimulatedAndVisualizedSimpleTokenTransferTransaction, TokenResult } from '../identifyTransaction.js'
 
 type BeforeAfterAddress = {
 	address: AddressBookEntry
@@ -109,12 +109,19 @@ export function EtherTransferVisualisation({ simTx, renameAddressCallBack }: { s
 
 export function SimpleTokenTransferVisualisation({ simTx, renameAddressCallBack }: { simTx: SimulatedAndVisualizedSimpleTokenTransferTransaction, renameAddressCallBack: RenameAddressCallBack }) {
 	const transfer = simTx.tokenResults[0]
-	const asset = { ...(transfer.type === 'ERC20' ? { ...transfer.token, amount: transfer.amount } : { ...transfer.token, received: false, id: transfer.tokenId }) }
+	const getAsset = (transfer: TokenResult) => {
+		switch (transfer.type) {
+			case 'ERC1155': return { ...transfer.token, id: transfer.tokenId, amount: transfer.amount }
+			case 'ERC20': return { ...transfer.token, amount: transfer.amount }
+			case 'ERC721': return { ...transfer.token, received: false, id: transfer.tokenId }
+			default: assertNever(transfer)
+		}
+	}
 
 	return <SimpleSend
 		transaction = { { ...simTx, rpcNetwork: simTx.transaction.rpcNetwork } }
 		asset = { {
-			...asset,
+			...getAsset(transfer),
 			useFullTokenName: false
 		} }
 		sender = { {

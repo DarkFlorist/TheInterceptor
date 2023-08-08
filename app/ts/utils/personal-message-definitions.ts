@@ -1,6 +1,6 @@
 import * as funtypes from 'funtypes'
 import { EthereumAddress, EthereumBytes32, LiteralConverterParserFactory, NonHexBigInt } from './wire-types.js'
-import { AddressBookEntry, Erc721Entry, SignerName, Erc20TokenEntry, Website } from './user-interface-types.js'
+import { AddressBookEntry, Erc721Entry, SignerName, Erc20TokenEntry, Website, Erc1155Entry } from './user-interface-types.js'
 import { QUARANTINE_CODE } from '../simulation/protectors/quarantine-codes.js'
 import { EthereumInput } from './wire-types.js'
 import { EnrichedEIP712 } from './eip712Parsing.js'
@@ -322,7 +322,7 @@ export type SeaPortSingleOfferWithAddressBookEntries  = funtypes.Static<typeof S
 export const SeaPortSingleOfferWithAddressBookEntries  = funtypes.Union(
 	funtypes.ReadonlyObject({
 		itemType: SeaPortItemType,
-		token: funtypes.Union(Erc20TokenEntry, Erc721Entry, funtypes.Undefined),
+		token: funtypes.Union(Erc20TokenEntry, Erc721Entry, Erc1155Entry, funtypes.Undefined),
 		identifierOrCriteria: NonHexBigInt,
 		startAmount: NonHexBigInt,
 		endAmount: NonHexBigInt
@@ -332,7 +332,7 @@ export const SeaPortSingleOfferWithAddressBookEntries  = funtypes.Union(
 export type SeaPortSingleConsiderationWithAddressBookEntries  = funtypes.Static<typeof SeaPortSingleConsiderationWithAddressBookEntries >
 export const SeaPortSingleConsiderationWithAddressBookEntries  = funtypes.ReadonlyObject({
 	itemType: SeaPortItemType,
-	token: funtypes.Union(Erc20TokenEntry, Erc721Entry, funtypes.Undefined),
+	token: funtypes.Union(Erc20TokenEntry, Erc721Entry, Erc1155Entry, funtypes.Undefined),
 	identifierOrCriteria: NonHexBigInt,
 	startAmount: NonHexBigInt,
 	endAmount: NonHexBigInt,
@@ -481,7 +481,7 @@ export const PersonalSignRequestDataSafeTx = funtypes.Intersect(
 		type: funtypes.Literal('SafeTx'),
 		message: SafeTx,
 		addressBookEntries: funtypes.ReadonlyObject({
-			gasToken: funtypes.Union(Erc20TokenEntry, Erc721Entry),
+			gasToken: funtypes.Union(Erc20TokenEntry, Erc721Entry, Erc1155Entry),
 			to: AddressBookEntry,
 			refundReceiver: AddressBookEntry,
 			verifyingContract: AddressBookEntry,

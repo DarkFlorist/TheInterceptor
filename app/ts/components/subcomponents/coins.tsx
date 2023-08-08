@@ -1,7 +1,7 @@
 import { useSignal } from '@preact/signals'
 import { getTokenAmountsWorth } from '../../simulation/priceEstimator.js'
 import { abs, bigintToDecimalString, bigintToRoundedPrettyDecimalString, checksummedAddress } from '../../utils/bigint.js'
-import { Erc721Definition, TokenPriceEstimate, RpcNetwork, Erc20WithAmount } from '../../utils/visualizer-types.js'
+import { Erc721Definition, TokenPriceEstimate, RpcNetwork, Erc20WithAmount, Erc1155Definition } from '../../utils/visualizer-types.js'
 import { CopyToClipboard } from './CopyToClipboard.js'
 import { Blockie } from './PreactBlocky.js'
 import { JSX } from 'preact/jsx-runtime'
@@ -158,6 +158,8 @@ type TokenAmountParams = {
 }
 
 export function TokenAmount(param: TokenAmountParams) {
+	console.log('TokenAmount')
+	console.log(param)
 	const sign = param.showSign ? (param.amount >= 0 ? ' + ' : ' - '): ''
 	const style = {
 		color: param.textColor ? param.textColor : 'var(--text-color)',
@@ -166,7 +168,11 @@ export function TokenAmount(param: TokenAmountParams) {
 	}
 
 	if (param.decimals === undefined) {
-		return <p class = 'noselect nopointer ellipsis' style = { style }> &nbsp;Unknown Amount&nbsp; </p>
+		return <>
+			<CopyToClipboard content = { `${ abs(param.amount) } (decimals unknown)`} copyMessage = 'Token amount copied!' >
+				<p class = 'noselect nopointer' style = { style }>{ `${ sign }${ abs(param.amount).toString() }` }&nbsp; </p>
+			</CopyToClipboard>
+		</>
 	}
 	return <>
 		<CopyToClipboard content = { bigintToDecimalString(abs(param.amount), param.decimals) } copyMessage = 'Token amount copied!' >
@@ -175,14 +181,20 @@ export function TokenAmount(param: TokenAmountParams) {
 	</>
 }
 
-type TokenParams = Erc20WithAmount & {
+type Erc20TokenParams = Erc20WithAmount & {
+	showSign?: boolean
+	textColor?: string
+	useFullTokenName: boolean
+	style?: JSX.CSSProperties
+}
+type Erc1155Params = Erc1155Definition & {
 	showSign?: boolean
 	textColor?: string
 	useFullTokenName: boolean
 	style?: JSX.CSSProperties
 }
 
-export function Token(param: TokenParams) {
+export function Token(param: Erc20TokenParams | Erc1155Params) {
 	return <table class = 'log-table' style = 'width: fit-content'>
 		<div class = 'log-cell' style = 'justify-content: right;'>
 			<TokenAmount { ...param } />
@@ -193,7 +205,7 @@ export function Token(param: TokenParams) {
 	</table>
 }
 
-export type TokenOrEtherParams = TokenParams | EtherParams | Erc721TokenParams
+export type TokenOrEtherParams = Erc20TokenParams | EtherParams | Erc721TokenParams | Erc1155Params
 
 export function TokenOrEth(param: TokenOrEtherParams) {
 	if ('decimals' in param) {

@@ -2,7 +2,7 @@
 import { EthereumAddress, EthereumData, EthereumQuantity, EthereumSignedTransaction, EthereumTimestamp, EthereumUnsignedTransaction } from './wire-types.js'
 import * as funtypes from 'funtypes'
 import { QUARANTINE_CODE } from '../simulation/protectors/quarantine-codes.js'
-import { AddressBookEntry, Erc721Entry, RenameAddressCallBack, Erc20TokenEntry, Website, WebsiteSocket } from './user-interface-types.js'
+import { AddressBookEntry, Erc721Entry, RenameAddressCallBack, Erc20TokenEntry, Website, WebsiteSocket, Erc1155Entry } from './user-interface-types.js'
 import { ERROR_INTERCEPTOR_GAS_ESTIMATION_FAILED } from './constants.js'
 import { EthBalanceChanges, EthSubscribeParams, SingleMulticallResponse } from './JsonRpc-types.js'
 
@@ -70,14 +70,7 @@ export const TokenVisualizerResult = funtypes.Intersect(
 			isApproval: funtypes.Literal(true),
 		}),
 		funtypes.ReadonlyObject({
-			type: funtypes.Literal('ERC1155 Transfer Batch'),
-			operator: EthereumAddress,
-			ids: funtypes.ReadonlyArray(EthereumQuantity),
-			amounts: funtypes.ReadonlyArray(EthereumQuantity),
-			isApproval: funtypes.Literal(false),
-		}),
-		funtypes.ReadonlyObject({
-			type: funtypes.Literal('ERC1155 Transfer Single'),
+			type: funtypes.Literal('ERC1155'),
 			operator: EthereumAddress,
 			id: EthereumQuantity,
 			amount: EthereumQuantity,
@@ -106,6 +99,17 @@ export const TokenVisualizerErc721Event = funtypes.ReadonlyObject({
 	isApproval: funtypes.Boolean,
 })
 
+export type TokenVisualizerErc1155Event  = funtypes.Static<typeof TokenVisualizerErc1155Event>
+export const TokenVisualizerErc1155Event = funtypes.ReadonlyObject({
+	type: funtypes.Literal('ERC1155'),
+	from: AddressBookEntry,
+	to: AddressBookEntry,
+	token: Erc1155Entry,
+	tokenId: EthereumQuantity,
+	amount: EthereumQuantity,
+	isApproval: funtypes.Literal(false),
+})
+
 export type TokenVisualizerErc721AllApprovalEvent  = funtypes.Static<typeof TokenVisualizerErc721AllApprovalEvent>
 export const TokenVisualizerErc721AllApprovalEvent = funtypes.ReadonlyObject({
 	type: funtypes.Literal('NFT All approval'),
@@ -120,6 +124,7 @@ export type TokenVisualizerResultWithMetadata = funtypes.Static<typeof TokenVisu
 export const TokenVisualizerResultWithMetadata = funtypes.Union(
 	TokenVisualizerErc20Event,
 	TokenVisualizerErc721Event,
+	TokenVisualizerErc1155Event,
 	TokenVisualizerErc721AllApprovalEvent,
 )
 
@@ -320,6 +325,7 @@ export type Erc1155Definition = {
 	symbol: string
 	logoUri?: string
 	tokenURI?: string
+	decimals: undefined,
 }
 
 export type Erc1155WithBalance = Erc1155Definition & { balance: bigint }

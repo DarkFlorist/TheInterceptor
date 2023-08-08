@@ -53,6 +53,8 @@ type TransactionCardParams = {
 }
 
 function TransactionCard(param: TransactionCardParams) {
+	console.log('TransactionCard')
+	console.log(param)
 	const simTx = param.simulationAndVisualisationResults.simulatedAndVisualizedTransactions.at(-1)
 	if (simTx === undefined) return <></>
 

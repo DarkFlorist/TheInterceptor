@@ -75,7 +75,7 @@ type SendOrReceiveTokensImportanceBoxParams = {
 function SendOrReceiveTokensImportanceBox(param: SendOrReceiveTokensImportanceBoxParams ) {
 	if (param.tokenVisualizerResults === undefined) return <></>
 	return <>
-		{ param.tokenVisualizerResults.map( (tokenEvent) => (
+		{ param.tokenVisualizerResults.map((tokenEvent) => (
 			tokenEvent.isApproval ? <></> : <div class = 'vertical-center'>
 				<div class = { `box token-box ${ param.sending ? 'negative-box' : 'positive-box' } vertical-center` } style = 'display: inline-block'>
 					<table class = 'log-table'>
@@ -85,7 +85,7 @@ function SendOrReceiveTokensImportanceBox(param: SendOrReceiveTokensImportanceBo
 							</p>
 						</div>
 						<div class = 'log-cell'>
-							{ tokenEvent.type !== 'ERC20' ?
+							{ tokenEvent.type === 'ERC721' ?
 								<Erc721TokenNumber
 									id = { tokenEvent.tokenId }
 									received = { !param.sending }
@@ -127,11 +127,17 @@ function SendOrReceiveTokensImportanceBox(param: SendOrReceiveTokensImportanceBo
 
 export function CatchAllVisualizer(param: TransactionImportanceBlockParams) {
 	const msgSender = param.simTx.transaction.from.address
-
+	console.log('CatchAllVisualizer')
+	console.log(msgSender)
+	console.log(param.simTx.tokenResults)
+	console.log(param)
 	const sendingTokenResults = param.simTx.tokenResults.filter((x) => x.from.address === msgSender)
 	const receivingTokenResults = param.simTx.tokenResults.filter((x) => x.to.address === msgSender)
+	console.log(sendingTokenResults)
+	console.log(receivingTokenResults)
 
-	const erc20tokenApprovalChanges: ERC20TokenApprovalChange[] = sendingTokenResults.filter((x): x is TokenVisualizerErc20Event  => x.isApproval && x.type === 'ERC20').map((entry) => {
+
+	const erc20TokenApprovalChanges: ERC20TokenApprovalChange[] = sendingTokenResults.filter((x): x is TokenVisualizerErc20Event  => x.isApproval && x.type === 'ERC20').map((entry) => {
 		return {
 			...entry.token,
 			approvals: [ {...entry.to, change: entry.amount } ]
@@ -202,7 +208,7 @@ export function CatchAllVisualizer(param: TransactionImportanceBlockParams) {
 			{ /* us approving other addresses */ }
 			<div class = 'log-cell' style = 'justify-content: left; display: grid;'>
 				<Erc20ApprovalChanges
-					tokenApprovalChanges = { erc20tokenApprovalChanges }
+					erc20TokenApprovalChanges = { erc20TokenApprovalChanges }
 					textColor = { textColor }
 					negativeColor = { textColor }
 					isImportant = { true }

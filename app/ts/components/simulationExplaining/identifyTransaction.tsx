@@ -3,7 +3,7 @@ import { get4Byte } from '../../utils/calldata.js'
 import { FourByteExplanations, MAKE_YOU_RICH_TRANSACTION } from '../../utils/constants.js'
 import { assertNever, createGuard } from '../../utils/typescript.js'
 import { AddressBookEntry } from '../../utils/user-interface-types.js'
-import { SimulatedAndVisualizedTransaction, SimulatedAndVisualizedTransactionBase, TokenVisualizerErc20Event, TokenVisualizerErc721Event, TokenVisualizerResultWithMetadata, TransactionWithAddressBookEntries } from '../../utils/visualizer-types.js'
+import { SimulatedAndVisualizedTransaction, SimulatedAndVisualizedTransactionBase, TokenVisualizerErc1155Event, TokenVisualizerErc20Event, TokenVisualizerErc721Event, TokenVisualizerResultWithMetadata, TransactionWithAddressBookEntries } from '../../utils/visualizer-types.js'
 import { getSwapName, identifySwap } from './SwapTransactions.js'
 import * as funtypes from 'funtypes'
 
@@ -65,6 +65,14 @@ export function identifySimpleApproval(simTx: SimulatedAndVisualizedTransaction)
 				rejectAction: `Reject #${ tokenResult.tokenId } ${ symbol } Approval`,
 				identifiedTransaction: simTx,
 			}
+			case 'ERC1155': return {
+				type: 'SimpleTokenApproval' as const,
+				title: `#${ tokenResult.tokenId } ${ symbol } Approval`,
+				signingAction: `Approve #${ tokenResult.tokenId } ${ symbol }`,
+				simulationAction: `Simulate #${ tokenResult.tokenId } ${ symbol } Approval`,
+				rejectAction: `Reject #${ tokenResult.tokenId } ${ symbol } Approval`,
+				identifiedTransaction: simTx,
+			}
 			default: assertNever(tokenResult)
 		}
 	}
@@ -118,13 +126,15 @@ function isEtherTransfer(simTx: SimulatedAndVisualizedTransaction): simTx is Sim
 }
 const getEtherTransferOrUndefined = createGuard<SimulatedAndVisualizedTransaction, SimulatedAndVisualizedEtherTransferTransaction>((simTx) => isEtherTransfer(simTx) ? simTx : undefined)
 
+export type TokenResult = funtypes.Static<typeof TokenResult>
+export const TokenResult = funtypes.Intersect(funtypes.Union(TokenVisualizerErc20Event, TokenVisualizerErc721Event, TokenVisualizerErc1155Event), funtypes.ReadonlyObject({ isApproval: funtypes.Literal(false) }))
 
 export type SimulatedAndVisualizedSimpleTokenTransferTransaction = funtypes.Static<typeof SimulatedAndVisualizedSimpleTokenTransferTransaction>
 export const SimulatedAndVisualizedSimpleTokenTransferTransaction = funtypes.Intersect(
 	funtypes.Intersect(
 		SimulatedAndVisualizedTransactionBase,
 		funtypes.ReadonlyObject({
-			tokenResults: funtypes.ReadonlyArray(funtypes.Intersect(funtypes.Union(TokenVisualizerErc20Event, TokenVisualizerErc721Event), funtypes.ReadonlyObject({ isApproval: funtypes.Literal(false) })))
+			tokenResults: funtypes.ReadonlyArray(TokenResult)
 		})
 	),
 	funtypes.ReadonlyObject({
