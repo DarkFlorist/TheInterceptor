@@ -27,14 +27,6 @@ type identifiedErc1155 = { type: 'ERC1155', address: EthereumAddress }
 
 type IdentifiedAddress = (EOA | Erc20Definition | identifiedErc721 | identifiedErc1155 | UnknownContract)
 
-/*
-async function erc1155balanceOf(ethereumClientService: IEthereumClientService, contractAddress: EthereumAddress, userAddress: EthereumAddress, id: bigint): Promise<bigint> {
-	const erc1155Interface = new Interface(Erc1155ABI)
-	const returnData = await ethereumClientService.call({ to: contractAddress, input: stringToUint8Array(erc1155Interface.encodeFunctionData('balanceOf', [userAddress, id])) })
-	const balance: bigint = erc1155Interface.decodeFunctionResult('balanceOf', returnData)[0]
-	return balance
-}*/
-
 async function tryAggregateMulticall(ethereumClientService: IEthereumClientService, calls: { target: string, callData: string }[]): Promise<{ success: boolean, returnData: string }[]> {
 	const multicallInterface = new Interface(MulticallABI)
 	const tryAggregate = multicallInterface.getFunction('tryAggregate')
@@ -89,6 +81,6 @@ export async function itentifyAddressViaOnChainInformation(ethereumClientService
 		return { type: 'contract', address }
 	}
 
-	// If doesn't pass checks being an Erc20Definition or Erc721Definition, then we only know its a contract
+	// If doesn't pass checks being an ERC20, ERC721 or ERC1155, then we only know its a contract
 	return { type: 'contract', address }
 }

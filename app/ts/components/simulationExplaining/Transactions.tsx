@@ -134,9 +134,6 @@ export function SenderReceiver({ from, to, renameAddressCallBack }: { from: Addr
 
 export function Transaction(param: TransactionVisualizationParameters) {
 	const identifiedTransaction = identifyTransaction(param.simTx).type
-	console.log('Transaction')
-	console.log(param)
-	console.log(identifiedTransaction)
 	return (
 		<div class = 'card'>
 			<TransactionHeader

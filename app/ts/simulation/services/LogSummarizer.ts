@@ -247,8 +247,6 @@ export class LogSummarizer {
 			if (summaryFor === undefined) throw new Error('Missing metadata')
 			summaries.push({ summaryFor: summaryFor, ...summary })
 		}
-		console.log('getSummary')
-		console.log(summaries)
 		return summaries
 	}
 

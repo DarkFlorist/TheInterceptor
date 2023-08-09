@@ -121,16 +121,8 @@ function SendOrReceiveTokensImportanceBox(param: SendOrReceiveTokensImportanceBo
 
 export function CatchAllVisualizer(param: TransactionImportanceBlockParams) {
 	const msgSender = param.simTx.transaction.from.address
-	console.log('CatchAllVisualizer')
-	console.log(msgSender)
-	console.log(param.simTx.tokenResults)
-	console.log(param)
 	const sendingTokenResults = param.simTx.tokenResults.filter((x) => x.from.address === msgSender)
 	const receivingTokenResults = param.simTx.tokenResults.filter((x) => x.to.address === msgSender)
-	console.log(sendingTokenResults)
-	console.log(receivingTokenResults)
-
-
 	const erc20TokenApprovalChanges: ERC20TokenApprovalChange[] = sendingTokenResults.filter((x): x is TokenVisualizerErc20Event  => x.isApproval && x.type === 'ERC20').map((entry) => {
 		return {
 			...entry.token,

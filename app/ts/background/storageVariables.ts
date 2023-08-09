@@ -33,7 +33,6 @@ export async function clearPendingTransactions() {
 export async function appendPendingTransaction(promise: PendingTransaction) {
 	return await pendingTransactionsSemaphore.execute(async () => {
 		const promises = [...await getPendingTransactions(), promise]
-		console.log(promises)
 		await browserStorageLocalSet('transactionsPendingForUserConfirmation', funtypes.ReadonlyArray(PendingTransaction).serialize(promises) as string)
 		return promises
 	})

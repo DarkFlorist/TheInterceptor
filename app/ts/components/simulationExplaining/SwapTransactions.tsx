@@ -96,7 +96,7 @@ export function identifySwap(simTransaction: SimulatedAndVisualizedTransaction):
 	const tokensReceived = simTransaction.tokenResults.filter((token): token is TokenVisualizerErc20Event | TokenVisualizerErc721Event => token.to.address === sender && !token.isApproval)
 
 	const nftsSent = tokensSent.reduce((total, current) => total + (current.type === 'ERC721' ? 1 : 0), 0)
-	const nftsReceived = tokensSent.reduce((total, current) => total + (current.type === 'ERC721' ? 1 : 0), 0)
+	const nftsReceived = tokensReceived.reduce((total, current) => total + (current.type === 'ERC721' ? 1 : 0), 0)
 	if (nftsSent > 1 || nftsReceived > 1) return false //its not a pure 1 to 1 swap if we get multiple NFT's
 
 	const isSameTokenAddress = (a: TokenVisualizerResultWithMetadata, b: TokenVisualizerResultWithMetadata) => a.token.address === b.token.address

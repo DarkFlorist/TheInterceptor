@@ -166,8 +166,6 @@ type TokenAmountParams = {
 }
 
 export function TokenAmount(param: TokenAmountParams) {
-	console.log('TokenAmount')
-	console.log(param)
 	const sign = param.showSign ? (param.amount >= 0 ? ' + ' : ' - '): ''
 	const style = {
 		color: param.textColor ? param.textColor : 'var(--text-color)',

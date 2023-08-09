@@ -12,7 +12,7 @@ import { createRef } from 'preact'
 const readableAddressType = {
 	'contact': 'Contact',
 	'addressInfo': 'Active Address',
-	'ERC20': 'Erc20Definition Token',
+	'ERC20': 'ERC20',
 	'ERC721': 'ERC721',
 	'ERC1155': 'ERC1155',
 	'other contract': 'Other Contract',
