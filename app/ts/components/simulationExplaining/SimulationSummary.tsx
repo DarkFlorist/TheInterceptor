@@ -2,7 +2,7 @@ import { Erc1155TokenBalanceChange, Erc721and1155OperatorChange, LogSummarizer, 
 import { AddressBookEntry, RenameAddressCallBack, Website } from '../../utils/user-interface-types.js'
 import { Erc721TokenApprovalChange, Erc721Definition, SimulatedAndVisualizedTransaction, SimulationAndVisualisationResults, ERC20TokenApprovalChange, Erc20TokenBalanceChange, Erc20Definition, TransactionWithAddressBookEntries, Erc1155Definition } from '../../utils/visualizer-types.js'
 import { BigAddress, SmallAddress, WebsiteOriginText } from '../subcomponents/address.js'
-import { Erc721Token, Ether, EtherAmount, EtherSymbol, TokenWithAmount, TokenAmount, TokenPrice, TokenSymbol } from '../subcomponents/coins.js'
+import { Ether, EtherAmount, EtherSymbol, TokenWithAmount, TokenAmount, TokenPrice, TokenSymbol, TokenOrEth } from '../subcomponents/coins.js'
 import { LogAnalysis } from './Transactions.js'
 import { CopyToClipboard } from '../subcomponents/CopyToClipboard.js'
 import { SomeTimeAgo, humanReadableDateDeltaLessDetailed } from '../subcomponents/SomeTimeAgo.js'
@@ -171,9 +171,12 @@ function Erc721TokenChanges(param: Erc721TokenChangesParams ) {
 		{ param.Erc721TokenBalanceChanges.map( (tokenChange) => (
 			<div class = 'vertical-center' style = 'display: flex'>
 				<div class = { param.isImportant ? `box token-box ${ !tokenChange.received ? 'negative-box' : 'positive-box' }`: '' } style = 'display: flex'>
-					<Erc721Token
+					<p class = 'noselect nopointer' style = { `color: ${ param.textColor };` }>
+						{ `${ tokenChange.received ? ' + ' : ' - ' }` }
+					</p>
+					<TokenOrEth
 						{ ...tokenChange }
-						received = { tokenChange.received }
+						tokenId = { tokenChange.tokenId }
 						textColor = { param.textColor }
 						useFullTokenName = { true }
 						showSign = { true }
@@ -275,9 +278,8 @@ export function Erc721TokenIdApprovalChanges(param: Erc721TokenIdApprovalChanges
 								<p class = 'ellipsis' style = {`color: ${ param.negativeColor }` }>&nbsp;for&nbsp;</p>
 							</div>
 							<div class = 'log-cell'>
-								<Erc721Token
+								<TokenOrEth
 									{ ...approvalsChange.token }
-									received = { true }
 									textColor = { param.negativeColor }
 									useFullTokenName = { true }
 								/>

@@ -2,7 +2,7 @@ import { SimulatedAndVisualizedTransaction, TokenVisualizerErc20Event, TokenVisu
 import * as funtypes from 'funtypes'
 import { EthereumQuantity } from '../../utils/wire-types.js'
 import { abs, addressString } from '../../utils/bigint.js'
-import { Erc721TokenNumber, EtherAmount, EtherSymbol, TokenAmount, TokenOrEthValue, TokenSymbol } from '../subcomponents/coins.js'
+import { EtherAmount, EtherSymbol, TokenAmount, TokenOrEthValue, TokenSymbol } from '../subcomponents/coins.js'
 import { AddressBookEntry, Erc721Entry, Erc20TokenEntry } from '../../utils/user-interface-types.js'
 import { assertNever } from '../../utils/typescript.js'
 import { RpcNetwork } from '../../utils/visualizer-types.js'
@@ -344,15 +344,11 @@ export function VisualizeSwapAsset({ swapAsset, rpcNetwork }: { swapAsset: SwapA
 		case 'ERC721': {
 			return <span class = 'grid swap-grid'>
 				<div class = 'log-cell' style = 'justify-content: left;'>
-					<Erc721TokenNumber
-						tokenId = { swapAsset.tokenId }
-						received = { false }
-						style = { tokenStyle }
-					/>
 				</div>
 				<div class = 'log-cell' style = 'justify-content: right;'>
 					<TokenSymbol
 						{ ...swapAsset.tokenAddress }
+						tokenId = { swapAsset.tokenId }
 						useFullTokenName = { false }
 						style = { tokenStyle }
 					/>

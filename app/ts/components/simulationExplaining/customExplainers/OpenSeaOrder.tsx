@@ -1,6 +1,6 @@
 import { RenameAddressCallBack } from '../../../utils/user-interface-types.js'
 import { OpenSeaOrderMessageWithAddressBookEntries, SeaPortSingleConsiderationWithAddressBookEntries, SeaPortSingleOfferWithAddressBookEntries } from '../../../utils/personal-message-definitions.js'
-import { Token1155AmountField, Token721AmountField, TokenOrEthSymbol, TokenOrEthValue } from '../../subcomponents/coins.js'
+import { TokenOrEthSymbol, TokenOrEthValue } from '../../subcomponents/coins.js'
 import { SmallAddress } from '../../subcomponents/address.js'
 import { bytes32String } from '../../../utils/bigint.js'
 import { ArrowIcon } from '../../subcomponents/icons.js'
@@ -17,10 +17,7 @@ type VisualizeOpenSeaAssetParams = {
 
 function ValueField({ orderOrConsideration }: { orderOrConsideration: SeaPortSingleOfferWithAddressBookEntries | SeaPortSingleConsiderationWithAddressBookEntries }) {
 	if (orderOrConsideration.itemType === 'ERC721') {
-		return <Token721AmountField { ...orderOrConsideration.token } tokenId = { orderOrConsideration.identifierOrCriteria } type = { orderOrConsideration.itemType } style = { tokenStyle }/>
-	}
-	if (orderOrConsideration.itemType === 'ERC1155') {
-		return <Token1155AmountField { ...orderOrConsideration.token } tokenId = { orderOrConsideration.identifierOrCriteria } type = { orderOrConsideration.itemType } style = { tokenStyle }/>
+		return <></>
 	}
 	if (orderOrConsideration.itemType === 'ERC721_WITH_CRITERIA' || orderOrConsideration.itemType === 'ERC1155_WITH_CRITERIA') {
 		return <p class = 'paragraph' style = { tokenStyle }> 'Criteria: { bytes32String(orderOrConsideration.identifierOrCriteria) } </p>

@@ -51,7 +51,7 @@ type SimpleSendParams = {
 
 function SimpleSend({ transaction, asset, sender, receiver, renameAddressCallBack } : SimpleSendParams) {
 	return <div class = 'notification transaction-importance-box'>
-		<span style = 'grid-template-columns: auto auto; display: grid;'>
+		<span style = 'grid-template-columns: auto auto auto auto; justify-content: center; display: grid; align-items: baseline;'>
 			<p class = 'paragraph' style = 'font-size: 28px; font-weight: 500; justify-self: right;'> Send&nbsp;</p>
 			<TokenOrEth
 				{ ...asset }

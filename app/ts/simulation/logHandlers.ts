@@ -1,6 +1,9 @@
-import { bytesToUnsigned } from '../utils/bigint.js'
+import { bytes32String, bytesToUnsigned, dataStringWith0xStart } from '../utils/bigint.js'
 import { TokenVisualizerResult } from '../utils/visualizer-types.js'
 import { MulticallResponseEventLog } from '../utils/JsonRpc-types.js'
+import { Interface } from 'ethers'
+import { Erc1155ABI } from '../utils/abi.js'
+import { parseLogIfPossible } from './services/SimulationModeEthereumClientService.js'
 
 export function handleERC20TransferLog(eventLog: MulticallResponseEventLog): TokenVisualizerResult[] {
 	const is721 = eventLog.topics.length === 4
@@ -59,19 +62,17 @@ export function handleWithdrawalLog(eventLog: MulticallResponseEventLog): TokenV
 
 export function handleERC1155TransferBatch(eventLog: MulticallResponseEventLog): TokenVisualizerResult[] {
 	if (eventLog.topics.length !== 4) throw new Error('Malformed ERC1155 TransferBatch Event')
-	console.log('handleERC1155TransferBatch')
-	console.log(eventLog)
-	const nEvents = Math.floor(eventLog.data.length / 64)
-	console.log(nEvents)
-	return Array(nEvents).map((index) => ({
-		type: 'ERC1155',
+	const parsed = parseLogIfPossible(new Interface(Erc1155ABI), { topics: eventLog.topics.map((x) => bytes32String(x)), data: dataStringWith0xStart(eventLog.data) })
+	if (parsed === null || parsed.name !== 'TransferBatch') throw new Error('Malformed ERC1155 TransferBatch Event')
+	return [...Array(parsed.args._ids.length)].map((_, index) => ({
+		type: 'ERC1155' as const,
 		operator: eventLog.topics[1],
 		from: eventLog.topics[2],
 		to: eventLog.topics[3],
 		tokenAddress: eventLog.loggersAddress,
-		isApproval: false,
-		tokenId: bytesToUnsigned(eventLog.data.slice(index * 32 + 0, index * 32 + 32)),// TODO FIXME, this is wrong
-		amount: bytesToUnsigned(eventLog.data.slice(nEvents * 32 + index * 32 + 32, nEvents * 32 + index * 32 + 64)), // TODO FIXME, this is wrong
+		isApproval: false as const,
+		tokenId: BigInt(parsed.args._ids[index]),
+		amount: BigInt(parsed.args._values[index]),
 	}))
 }
 //operator, from, to, id, value)

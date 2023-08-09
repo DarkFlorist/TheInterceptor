@@ -1,6 +1,6 @@
 import { SimulatedAndVisualizedTransaction, SimulationAndVisualisationResults, TokenVisualizerResultWithMetadata, TransactionVisualizationParameters } from '../../utils/visualizer-types.js'
 import { SmallAddress } from '../subcomponents/address.js'
-import { TokenSymbol, TokenAmount, Token721AmountField } from '../subcomponents/coins.js'
+import { TokenSymbol, TokenAmount, AllApproval } from '../subcomponents/coins.js'
 import { AddressBookEntry, LogAnalysisParams, RenameAddressCallBack } from '../../utils/user-interface-types.js'
 import { QUARANTINE_CODE, QUARANTINE_CODES_DICT } from '../../simulation/protectors/quarantine-codes.js'
 import { Error as ErrorComponent } from '../subcomponents/Error.js'
@@ -210,25 +210,28 @@ export function TokenLogEvent(params: TokenLogEventParams ) {
 
 	return <>
 		<div class = 'log-cell' style = 'justify-content: right;'>
-			{ params.tokenVisualizerResult.type === 'ERC721' || params.tokenVisualizerResult.type === 'NFT All approval' ?
-				<Token721AmountField
+			{ params.tokenVisualizerResult.type === 'NFT All approval' ?
+				<AllApproval
 					{ ...params.tokenVisualizerResult }
 					textColor = { textColor }
 				/>
-			: <> { params.tokenVisualizerResult.amount >= (2n ** 96n - 1n ) && params.tokenVisualizerResult.isApproval ?
+			: <> { 'amount' in params.tokenVisualizerResult && params.tokenVisualizerResult.amount >= (2n ** 96n - 1n ) && params.tokenVisualizerResult.isApproval ?
 					<p class = 'ellipsis' style = { `color: ${ textColor }` }><b>ALL</b></p>
 				:
-					<TokenAmount
-						amount = { params.tokenVisualizerResult.amount }
-						decimals = { params.tokenVisualizerResult.token.decimals }
-						textColor = { textColor }
-					/>
+					'amount' in params.tokenVisualizerResult ?
+						<TokenAmount
+							amount = { params.tokenVisualizerResult.amount }
+							decimals = { params.tokenVisualizerResult.token.decimals }
+							textColor = { textColor }
+						/>
+					: <></>
 				} </>
 			}
 		</div>
 		<div class = 'log-cell' style = 'padding-right: 0.2em'>
 			<TokenSymbol
 				{ ...params.tokenVisualizerResult.token }
+				{ ...'tokenId' in params.tokenVisualizerResult ? { tokenId: params.tokenVisualizerResult.tokenId } : {} }
 				textColor = { textColor }
 				useFullTokenName = { false }
 			/>

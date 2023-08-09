@@ -1,7 +1,7 @@
 import { TransactionImportanceBlockParams } from '../Transactions.js'
 import { Erc1155OperatorChange, Erc20ApprovalChanges, Erc721OperatorChange, Erc721TokenIdApprovalChanges, Erc721or1155OperatorChanges } from '../SimulationSummary.js'
 import { Erc721TokenApprovalChange, ERC20TokenApprovalChange, TokenVisualizerErc20Event, TokenVisualizerErc721Event, TokenVisualizerResultWithMetadata, RpcNetwork, TokenVisualizerNFTAllApprovalEvent } from '../../../utils/visualizer-types.js'
-import { EtherSymbol, TokenSymbol, TokenAmount, EtherAmount, Erc721TokenNumber } from '../../subcomponents/coins.js'
+import { EtherSymbol, TokenSymbol, TokenAmount, EtherAmount } from '../../subcomponents/coins.js'
 import { RenameAddressCallBack } from '../../../utils/user-interface-types.js'
 import { SmallAddress } from '../../subcomponents/address.js'
 
@@ -72,7 +72,7 @@ type SendOrReceiveTokensImportanceBoxParams = {
 	renameAddressCallBack: RenameAddressCallBack,
 }
 
-function SendOrReceiveTokensImportanceBox(param: SendOrReceiveTokensImportanceBoxParams ) {
+function SendOrReceiveTokensImportanceBox(param: SendOrReceiveTokensImportanceBoxParams) {
 	if (param.tokenVisualizerResults === undefined) return <></>
 	return <>
 		{ param.tokenVisualizerResults.map((tokenEvent) => (
@@ -85,24 +85,18 @@ function SendOrReceiveTokensImportanceBox(param: SendOrReceiveTokensImportanceBo
 							</p>
 						</div>
 						<div class = 'log-cell'>
-							{ tokenEvent.type === 'ERC721' ?
-								<Erc721TokenNumber
-									tokenId = { tokenEvent.tokenId }
-									received = { !param.sending }
-									textColor = { param.textColor }
-									showSign = { false }
-								/>
-							:
+							{ 'amount' in tokenEvent ?
 								<TokenAmount
 									amount = { tokenEvent.amount }
 									decimals = { tokenEvent.token.decimals }
 									textColor = { param.textColor }
 								/>
-							}
+							: <></>}
 						</div>
 						<div class = 'log-cell' style = 'padding-right: 0.2em'>
 							<TokenSymbol
 								{ ...tokenEvent.token }
+								{ ...'tokenId' in tokenEvent ? { tokenId: tokenEvent.tokenId } : {} }
 								textColor = { param.textColor }
 								useFullTokenName = { false }
 							/>
