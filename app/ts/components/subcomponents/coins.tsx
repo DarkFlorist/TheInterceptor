@@ -1,7 +1,7 @@
 import { useSignal } from '@preact/signals'
 import { getTokenAmountsWorth } from '../../simulation/priceEstimator.js'
 import { abs, bigintToDecimalString, bigintToRoundedPrettyDecimalString, checksummedAddress } from '../../utils/bigint.js'
-import { Erc721Definition, TokenPriceEstimate, RpcNetwork, Erc20WithAmount, Erc1155Definition } from '../../utils/visualizer-types.js'
+import { Erc721Definition, TokenPriceEstimate, RpcNetwork, Erc20WithAmount, Erc1155WithAmount } from '../../utils/visualizer-types.js'
 import { CopyToClipboard } from './CopyToClipboard.js'
 import { Blockie } from './PreactBlocky.js'
 import { JSX } from 'preact/jsx-runtime'
@@ -181,20 +181,14 @@ export function TokenAmount(param: TokenAmountParams) {
 	</>
 }
 
-type Erc20TokenParams = Erc20WithAmount & {
-	showSign?: boolean
-	textColor?: string
-	useFullTokenName: boolean
-	style?: JSX.CSSProperties
-}
-type Erc1155Params = Erc1155Definition & {
+type TokenWithAmountParams = (Erc20WithAmount | Erc1155WithAmount) & {
 	showSign?: boolean
 	textColor?: string
 	useFullTokenName: boolean
 	style?: JSX.CSSProperties
 }
 
-export function Token(param: Erc20TokenParams | Erc1155Params) {
+export function TokenWithAmount(param: TokenWithAmountParams) {
 	return <table class = 'log-table' style = 'width: fit-content'>
 		<div class = 'log-cell' style = 'justify-content: right;'>
 			<TokenAmount { ...param } />
@@ -205,11 +199,11 @@ export function Token(param: Erc20TokenParams | Erc1155Params) {
 	</table>
 }
 
-export type TokenOrEtherParams = Erc20TokenParams | EtherParams | Erc721TokenParams | Erc1155Params
+export type TokenOrEtherParams = TokenWithAmountParams | EtherParams | Erc721TokenParams
 
 export function TokenOrEth(param: TokenOrEtherParams) {
 	if ('decimals' in param) {
-		return <Token { ...param }/>
+		return <TokenWithAmount { ...param }/>
 	}
 	if ('id' in param) {
 		return <Erc721Token { ...param }/>

@@ -1,8 +1,8 @@
-import { LogSummarizer, SummaryOutcome } from '../../simulation/services/LogSummarizer.js'
+import { Erc1155TokenBalanceChange, LogSummarizer, SummaryOutcome } from '../../simulation/services/LogSummarizer.js'
 import { AddressBookEntry, RenameAddressCallBack, Website } from '../../utils/user-interface-types.js'
-import { Erc721TokenApprovalChange, Erc721Definition, SimulatedAndVisualizedTransaction, SimulationAndVisualisationResults, ERC20TokenApprovalChange, Erc20TokenBalanceChange, Erc20Definition, TransactionWithAddressBookEntries } from '../../utils/visualizer-types.js'
+import { Erc721TokenApprovalChange, Erc721Definition, SimulatedAndVisualizedTransaction, SimulationAndVisualisationResults, ERC20TokenApprovalChange, Erc20TokenBalanceChange, Erc20Definition, TransactionWithAddressBookEntries, Erc1155Definition } from '../../utils/visualizer-types.js'
 import { BigAddress, SmallAddress, WebsiteOriginText } from '../subcomponents/address.js'
-import { Erc721Token, Ether, EtherAmount, EtherSymbol, Token, TokenAmount, TokenPrice, TokenSymbol } from '../subcomponents/coins.js'
+import { Erc721Token, Ether, EtherAmount, EtherSymbol, TokenWithAmount, TokenAmount, TokenPrice, TokenSymbol } from '../subcomponents/coins.js'
 import { LogAnalysis } from './Transactions.js'
 import { CopyToClipboard } from '../subcomponents/CopyToClipboard.js'
 import { SomeTimeAgo, humanReadableDateDeltaLessDetailed } from '../subcomponents/SomeTimeAgo.js'
@@ -59,7 +59,7 @@ function Erc20BalanceChange(param: Erc20BalanceChangeParams) {
 		{ Array.from(param.erc20TokenBalanceChanges).map((Erc20TokenBalanceChange) => (
 			<div class = 'vertical-center' style = 'display: flex'>
 				<div class = { param.isImportant ? `box token-box ${ Erc20TokenBalanceChange.changeAmount < 0n ? 'negative-box' : 'positive-box' }`: '' } style = 'display: flex' >
-					<Token
+					<TokenWithAmount
 						{ ...Erc20TokenBalanceChange }
 						amount = { Erc20TokenBalanceChange.changeAmount }
 						showSign = { true }
@@ -88,7 +88,6 @@ type Erc20ApprovalChangeParams = Erc20Definition & {
 }
 
 export function Erc20ApprovalChange(param: Erc20ApprovalChangeParams) {
-
 	const textColor = param.change > 0 ? param.negativeColor : param.textColor
 
 	return <div class = { param.isImportant ? `box token-box ${ param.change > 0 ? 'negative-box' : 'positive-box' }`: '' } style = 'display: inline-flex'>
@@ -186,19 +185,20 @@ function Erc721TokenChanges(param: Erc721TokenChangesParams ) {
 }
 
 export type Erc721OperatorChange = Omit<Erc721Definition, 'id'> & { operator: AddressBookEntry | undefined }
+export type Erc1155OperatorChange = (Omit<Erc1155Definition, 'id'> & { operator: AddressBookEntry | undefined })
 
-type Erc721OperatorChangesParams = {
-	Erc721OperatorChanges: Erc721OperatorChange[]
+type Erc721Or1155OperatorChangesParams = {
+	erc721or1155OperatorChanges: (Erc721OperatorChange | Erc1155OperatorChange)[]
 	textColor: string,
 	negativeColor: string,
 	isImportant: boolean,
 	renameAddressCallBack: RenameAddressCallBack,
 }
 
-export function Erc721OperatorChanges(param: Erc721OperatorChangesParams) {
-	if (param.Erc721OperatorChanges.length === 0) return <></>
+export function Erc721or1155OperatorChanges(param: Erc721Or1155OperatorChangesParams) {
+	if (param.erc721or1155OperatorChanges.length === 0) return <></>
 	return <>
-		{ param.Erc721OperatorChanges.map((token) => (
+		{ param.erc721or1155OperatorChanges.map((token) => (
 			<div class = 'vertical-center' style = 'display: flex'>
 				{ token.operator !== undefined ?
 					<div class = { param.isImportant ? 'box token-box negative-box': '' } style = 'display: flex'>
@@ -290,6 +290,35 @@ export function Erc721TokenIdApprovalChanges(param: Erc721TokenIdApprovalChanges
 	: <></> } </>
 }
 
+
+type Erc1155TokenChangesParams = {
+	Erc1155TokenBalanceChanges: Erc1155TokenBalanceChange[],
+	textColor: string,
+	negativeColor: string,
+	isImportant: boolean,
+}
+
+function Erc1155TokenChanges(param: Erc1155TokenChangesParams ) {
+	if (param.Erc1155TokenBalanceChanges.length == 0) return <></>
+
+	return <>
+		{ param.Erc1155TokenBalanceChanges.map((tokenChange) => (
+			<div class = 'vertical-center' style = 'display: flex'>
+				<div class = { param.isImportant ? `box token-box ${ tokenChange.changeAmount < 0n ? 'negative-box' : 'positive-box' }`: '' } style = 'display: flex'>
+					<TokenWithAmount
+						{ ...tokenChange }
+						amount = { tokenChange.changeAmount }
+						textColor = { param.textColor }
+						useFullTokenName = { true }
+						showSign = { true }
+					/>
+				</div>
+			</div>
+		)) }
+	</>
+}
+
+
 type SummarizeAddressParams = {
 	balanceSummary: SummaryOutcome,
 	simulationAndVisualisationResults: SimulationAndVisualisationResults,
@@ -349,8 +378,8 @@ export function SummarizeAddress(param: SummarizeAddressParams) {
 				negativeColor = { positiveNegativeColors.negativeColor }
 				isImportant = { isOwnAddress }
 			/>
-			<Erc721OperatorChanges
-				Erc721OperatorChanges = { param.balanceSummary.erc721OperatorChanges }
+			<Erc721or1155OperatorChanges
+				erc721or1155OperatorChanges = { param.balanceSummary.erc721OperatorChanges }
 				textColor = { positiveNegativeColors.textColor }
 				negativeColor = { positiveNegativeColors.negativeColor }
 				isImportant = { isOwnAddress }
@@ -358,6 +387,19 @@ export function SummarizeAddress(param: SummarizeAddressParams) {
 			/>
 			<Erc721TokenIdApprovalChanges
 				Erc721TokenIdApprovalChanges = { param.balanceSummary.erc721TokenIdApprovalChanges }
+				textColor = { positiveNegativeColors.textColor }
+				negativeColor = { positiveNegativeColors.negativeColor }
+				isImportant = { isOwnAddress }
+				renameAddressCallBack = { param.renameAddressCallBack }
+			/>
+			<Erc1155TokenChanges
+				Erc1155TokenBalanceChanges = { param.balanceSummary.erc1155TokenBalanceChanges }
+				textColor = { positiveNegativeColors.textColor }
+				negativeColor = { positiveNegativeColors.negativeColor }
+				isImportant = { isOwnAddress }
+			/>
+			<Erc721or1155OperatorChanges
+				erc721or1155OperatorChanges = { param.balanceSummary.erc1155OperatorChanges }
 				textColor = { positiveNegativeColors.textColor }
 				negativeColor = { positiveNegativeColors.negativeColor }
 				isImportant = { isOwnAddress }
@@ -375,7 +417,9 @@ export function removeEthDonator(rpcNetwork: RpcNetwork, summary: SummaryOutcome
 			donatorSummary.erc721TokenBalanceChanges.length === 0 &&
 			donatorSummary.erc721TokenIdApprovalChanges.length === 0 &&
 			donatorSummary.erc20TokenApprovalChanges.length === 0 &&
-			donatorSummary.erc20TokenBalanceChanges.length === 0
+			donatorSummary.erc20TokenBalanceChanges.length === 0 &&
+			donatorSummary.erc1155OperatorChanges.length === 0 &&
+			donatorSummary.erc1155TokenBalanceChanges.length === 0
 		) {
 			summary.splice(summary.indexOf(donatorSummary), 1)
 			return

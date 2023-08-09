@@ -71,11 +71,9 @@ export async function itentifyAddressViaOnChainInformation(ethereumClientService
 				symbol: hasMetadata.success ? nftInterface.decodeFunctionResult('symbol', symbol.returnData)[0] : undefined,
 			}
 		}
-		console.log(nftInterface.decodeFunctionResult('supportsInterface', isErc1155.returnData))
 		if (isErc1155.success && nftInterface.decodeFunctionResult('supportsInterface', isErc1155.returnData)[0] === true) {
 			return { type: 'ERC1155', address }
 		}
-
 		if (name.success && decimals.success && symbol.success && totalSupply.success) {
 			return {
 				type: 'ERC20',
@@ -85,7 +83,6 @@ export async function itentifyAddressViaOnChainInformation(ethereumClientService
 				decimals: BigInt(erc20Interface.decodeFunctionResult('decimals', decimals.returnData)[0]),
 			}
 		}
-
 	} catch (error) {
 		// For any reason decoding txing fails catch and return as unknown contract
 		console.error(error)

@@ -99,7 +99,7 @@ export const TokenVisualizerErc721Event = funtypes.ReadonlyObject({
 	isApproval: funtypes.Boolean,
 })
 
-export type TokenVisualizerErc1155Event  = funtypes.Static<typeof TokenVisualizerErc1155Event>
+export type TokenVisualizerErc1155Event = funtypes.Static<typeof TokenVisualizerErc1155Event>
 export const TokenVisualizerErc1155Event = funtypes.ReadonlyObject({
 	type: funtypes.Literal('ERC1155'),
 	from: AddressBookEntry,
@@ -110,12 +110,12 @@ export const TokenVisualizerErc1155Event = funtypes.ReadonlyObject({
 	isApproval: funtypes.Literal(false),
 })
 
-export type TokenVisualizerErc721AllApprovalEvent  = funtypes.Static<typeof TokenVisualizerErc721AllApprovalEvent>
-export const TokenVisualizerErc721AllApprovalEvent = funtypes.ReadonlyObject({
+export type TokenVisualizerNFTAllApprovalEvent = funtypes.Static<typeof TokenVisualizerNFTAllApprovalEvent>
+export const TokenVisualizerNFTAllApprovalEvent = funtypes.ReadonlyObject({
 	type: funtypes.Literal('NFT All approval'),
 	from: AddressBookEntry,
 	to: AddressBookEntry,
-	token: Erc721Entry,
+	token: funtypes.Union(Erc721Entry, Erc1155Entry),
 	allApprovalAdded: funtypes.Boolean, // true if approval is added, and false if removed
 	isApproval: funtypes.Literal(true),
 })
@@ -125,7 +125,7 @@ export const TokenVisualizerResultWithMetadata = funtypes.Union(
 	TokenVisualizerErc20Event,
 	TokenVisualizerErc721Event,
 	TokenVisualizerErc1155Event,
-	TokenVisualizerErc721AllApprovalEvent,
+	TokenVisualizerNFTAllApprovalEvent,
 )
 
 export type VisualizerResult  = funtypes.Static<typeof VisualizerResult>
@@ -319,7 +319,6 @@ export type Erc721TokenApprovalChange = {
 export type Erc1155Definition = {
 	type: 'ERC1155'
 	id: bigint
-	amount: bigint
 	name: string
 	address: bigint
 	symbol: string
@@ -328,7 +327,7 @@ export type Erc1155Definition = {
 	decimals: undefined,
 }
 
-export type Erc1155WithBalance = Erc1155Definition & { balance: bigint }
+export type Erc1155WithAmount = Erc1155Definition & { amount: bigint }
 
 export type SimulationUpdatingState = funtypes.Static<typeof SimulationUpdatingState>
 export const SimulationUpdatingState = funtypes.Union(funtypes.Literal('updating'), funtypes.Literal('done'), funtypes.Literal('failed'))

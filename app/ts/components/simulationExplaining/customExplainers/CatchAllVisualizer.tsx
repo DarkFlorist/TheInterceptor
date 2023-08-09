@@ -1,6 +1,6 @@
 import { TransactionImportanceBlockParams } from '../Transactions.js'
-import { Erc20ApprovalChanges, Erc721OperatorChange, Erc721OperatorChanges, Erc721TokenIdApprovalChanges } from '../SimulationSummary.js'
-import { Erc721TokenApprovalChange, ERC20TokenApprovalChange, TokenVisualizerErc20Event, TokenVisualizerErc721AllApprovalEvent, TokenVisualizerErc721Event, TokenVisualizerResultWithMetadata, RpcNetwork } from '../../../utils/visualizer-types.js'
+import { Erc1155OperatorChange, Erc20ApprovalChanges, Erc721OperatorChange, Erc721TokenIdApprovalChanges, Erc721or1155OperatorChanges } from '../SimulationSummary.js'
+import { Erc721TokenApprovalChange, ERC20TokenApprovalChange, TokenVisualizerErc20Event, TokenVisualizerErc721Event, TokenVisualizerResultWithMetadata, RpcNetwork, TokenVisualizerNFTAllApprovalEvent } from '../../../utils/visualizer-types.js'
 import { EtherSymbol, TokenSymbol, TokenAmount, EtherAmount, Erc721TokenNumber } from '../../subcomponents/coins.js'
 import { RenameAddressCallBack } from '../../../utils/user-interface-types.js'
 import { SmallAddress } from '../../subcomponents/address.js'
@@ -144,7 +144,7 @@ export function CatchAllVisualizer(param: TransactionImportanceBlockParams) {
 		}
 	})
 
-	const operatorChanges: Erc721OperatorChange[] = sendingTokenResults.filter((x): x is TokenVisualizerErc721AllApprovalEvent  => x.type === 'NFT All approval').map((entry) => {
+	const operatorChanges: (Erc721OperatorChange | Erc1155OperatorChange)[] = sendingTokenResults.filter((x): x is TokenVisualizerNFTAllApprovalEvent  => x.type === 'NFT All approval').map((entry) => {
 		return {
 			...entry.token,
 			operator: 'allApprovalAdded' in entry && entry.allApprovalAdded ? entry.to : undefined
@@ -216,8 +216,8 @@ export function CatchAllVisualizer(param: TransactionImportanceBlockParams) {
 				/>
 			</div>
 			<div class = 'log-cell' style = 'justify-content: left; display: grid;'>
-				<Erc721OperatorChanges
-					Erc721OperatorChanges = { operatorChanges }
+				<Erc721or1155OperatorChanges
+					erc721or1155OperatorChanges = { operatorChanges }
 					textColor = { textColor }
 					negativeColor = { textColor }
 					isImportant = { true }
