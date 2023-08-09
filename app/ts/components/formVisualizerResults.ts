@@ -27,7 +27,7 @@ export function formSimulatedAndVisualizedTransaction(simState: SimulationState,
 			const toEntry = addressMetaData.get(addressString(change.to))
 			const tokenEntry = addressMetaData.get(addressString(change.tokenAddress))
 			if (fromEntry === undefined || toEntry === undefined || tokenEntry === undefined) throw new Error('missing metadata')
-			if (change.type === 'ERC721' && tokenEntry.type === 'ERC721') {
+			if ((change.type === 'ERC721' && tokenEntry.type === 'ERC721')) {
 				return {
 					...change,
 					from: fromEntry,
@@ -51,10 +51,18 @@ export function formSimulatedAndVisualizedTransaction(simState: SimulationState,
 					token: tokenEntry,
 				}
 			}
+			if (change.type === 'NFT All approval' && (tokenEntry.type === 'ERC1155' || tokenEntry.type === 'ERC721')) {
+				return {
+					...change,
+					from: fromEntry,
+					to: toEntry,
+					token: tokenEntry,
+				}
+			}
 			console.warn('unknown token in token results:')
 			console.log(change)
 			console.log(tokenEntry)
-			return undefined // a token that is not NFT, but does not have decimals either, let's just not visualize them
+			return undefined
 		}).filter(<T>(x: T | undefined): x is T => x !== undefined)
 		return {
 			transaction: {

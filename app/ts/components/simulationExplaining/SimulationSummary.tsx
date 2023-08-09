@@ -1,4 +1,4 @@
-import { Erc1155TokenBalanceChange, LogSummarizer, SummaryOutcome } from '../../simulation/services/LogSummarizer.js'
+import { Erc1155TokenBalanceChange, Erc721and1155OperatorChange, LogSummarizer, SummaryOutcome } from '../../simulation/services/LogSummarizer.js'
 import { AddressBookEntry, RenameAddressCallBack, Website } from '../../utils/user-interface-types.js'
 import { Erc721TokenApprovalChange, Erc721Definition, SimulatedAndVisualizedTransaction, SimulationAndVisualisationResults, ERC20TokenApprovalChange, Erc20TokenBalanceChange, Erc20Definition, TransactionWithAddressBookEntries, Erc1155Definition } from '../../utils/visualizer-types.js'
 import { BigAddress, SmallAddress, WebsiteOriginText } from '../subcomponents/address.js'
@@ -188,7 +188,7 @@ export type Erc721OperatorChange = Omit<Erc721Definition, 'tokenId'> & { operato
 export type Erc1155OperatorChange = (Omit<Erc1155Definition, 'tokenId'> & { operator: AddressBookEntry | undefined })
 
 type Erc721Or1155OperatorChangesParams = {
-	erc721or1155OperatorChanges: (Erc721OperatorChange | Erc1155OperatorChange)[]
+	erc721or1155OperatorChanges: Erc721and1155OperatorChange[]
 	textColor: string,
 	negativeColor: string,
 	isImportant: boolean,
@@ -379,7 +379,7 @@ export function SummarizeAddress(param: SummarizeAddressParams) {
 				isImportant = { isOwnAddress }
 			/>
 			<Erc721or1155OperatorChanges
-				erc721or1155OperatorChanges = { param.balanceSummary.erc721OperatorChanges }
+				erc721or1155OperatorChanges = { param.balanceSummary.erc721and1155OperatorChanges }
 				textColor = { positiveNegativeColors.textColor }
 				negativeColor = { positiveNegativeColors.negativeColor }
 				isImportant = { isOwnAddress }
@@ -398,13 +398,6 @@ export function SummarizeAddress(param: SummarizeAddressParams) {
 				negativeColor = { positiveNegativeColors.negativeColor }
 				isImportant = { isOwnAddress }
 			/>
-			<Erc721or1155OperatorChanges
-				erc721or1155OperatorChanges = { param.balanceSummary.erc1155OperatorChanges }
-				textColor = { positiveNegativeColors.textColor }
-				negativeColor = { positiveNegativeColors.negativeColor }
-				isImportant = { isOwnAddress }
-				renameAddressCallBack = { param.renameAddressCallBack }
-			/>
 		</div>
 	</div>
 }
@@ -413,12 +406,11 @@ export function removeEthDonator(rpcNetwork: RpcNetwork, summary: SummaryOutcome
 	const donatorSummary = summary.find((x) => x.summaryFor.address === getEthDonator(rpcNetwork.chainId))
 	if (donatorSummary === undefined || donatorSummary.etherResults === undefined) return
 	if (donatorSummary.etherResults.balanceAfter + MAKE_YOU_RICH_TRANSACTION.transaction.value === donatorSummary.etherResults.balanceBefore) {
-		if (donatorSummary.erc721OperatorChanges.length === 0 &&
+		if (donatorSummary.erc721and1155OperatorChanges.length === 0 &&
 			donatorSummary.erc721TokenBalanceChanges.length === 0 &&
 			donatorSummary.erc721TokenIdApprovalChanges.length === 0 &&
 			donatorSummary.erc20TokenApprovalChanges.length === 0 &&
 			donatorSummary.erc20TokenBalanceChanges.length === 0 &&
-			donatorSummary.erc1155OperatorChanges.length === 0 &&
 			donatorSummary.erc1155TokenBalanceChanges.length === 0
 		) {
 			summary.splice(summary.indexOf(donatorSummary), 1)
