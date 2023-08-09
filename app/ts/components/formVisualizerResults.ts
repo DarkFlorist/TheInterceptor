@@ -49,7 +49,6 @@ export function formSimulatedAndVisualizedTransaction(simState: SimulationState,
 					from: fromEntry,
 					to: toEntry,
 					token: tokenEntry,
-					tokenId: change.id,
 				}
 			}
 			console.warn('unknown token in token results:')

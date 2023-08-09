@@ -111,9 +111,9 @@ export function SimpleTokenTransferVisualisation({ simTx, renameAddressCallBack 
 	const transfer = simTx.tokenResults[0]
 	const getAsset = (transfer: TokenResult) => {
 		switch (transfer.type) {
-			case 'ERC1155': return { ...transfer.token, id: transfer.tokenId, amount: transfer.amount }
+			case 'ERC1155': return { ...transfer.token, tokenId: transfer.tokenId, amount: transfer.amount }
 			case 'ERC20': return { ...transfer.token, amount: transfer.amount }
-			case 'ERC721': return { ...transfer.token, received: false, id: transfer.tokenId }
+			case 'ERC721': return { ...transfer.token, received: false, tokenId: transfer.tokenId }
 			default: assertNever(transfer)
 		}
 	}

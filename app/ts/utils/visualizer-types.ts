@@ -72,7 +72,7 @@ export const TokenVisualizerResult = funtypes.Intersect(
 		funtypes.ReadonlyObject({
 			type: funtypes.Literal('ERC1155'),
 			operator: EthereumAddress,
-			id: EthereumQuantity,
+			tokenId: EthereumQuantity,
 			amount: EthereumQuantity,
 			isApproval: funtypes.Literal(false),
 		})
@@ -303,7 +303,7 @@ export type ERC20TokenApprovalChange = Erc20Definition & {
 
 export type Erc721Definition = {
 	type: 'ERC721'
-	id: bigint
+	tokenId: bigint
 	name: string
 	address: bigint
 	symbol: string
@@ -318,7 +318,7 @@ export type Erc721TokenApprovalChange = {
 
 export type Erc1155Definition = {
 	type: 'ERC1155'
-	id: bigint
+	tokenId: bigint
 	name: string
 	address: bigint
 	symbol: string

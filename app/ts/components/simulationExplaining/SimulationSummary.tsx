@@ -184,8 +184,8 @@ function Erc721TokenChanges(param: Erc721TokenChangesParams ) {
 	</>
 }
 
-export type Erc721OperatorChange = Omit<Erc721Definition, 'id'> & { operator: AddressBookEntry | undefined }
-export type Erc1155OperatorChange = (Omit<Erc1155Definition, 'id'> & { operator: AddressBookEntry | undefined })
+export type Erc721OperatorChange = Omit<Erc721Definition, 'tokenId'> & { operator: AddressBookEntry | undefined }
+export type Erc1155OperatorChange = (Omit<Erc1155Definition, 'tokenId'> & { operator: AddressBookEntry | undefined })
 
 type Erc721Or1155OperatorChangesParams = {
 	erc721or1155OperatorChanges: (Erc721OperatorChange | Erc1155OperatorChange)[]

@@ -103,6 +103,7 @@ export type TokenSymbolParams = {
 	address: bigint
 	symbol: string
 	logoUri?: string
+	tokenId?: bigint
 	useFullTokenName?: boolean
 	style?: JSX.CSSProperties
 }
@@ -136,6 +137,11 @@ export function TokenSymbol(param: TokenSymbolParams) {
 			</CopyToClipboard>
 		</div>
 		<CopyToClipboard content = { tokenString } copyMessage = 'Token address copied!' >
+			{ param.tokenId !== undefined ? 
+				<p class = 'noselect nopointer' style = { style }>
+					{ `${ param.tokenId.toString() }@` }
+				</p>
+			: <></> }
 			{ param.useFullTokenName ?
 				<p class = 'noselect nopointer' style = { style }>
 					{ `${ param.name === undefined ? tokenString : param.name }` }
@@ -205,7 +211,7 @@ export function TokenOrEth(param: TokenOrEtherParams) {
 	if ('decimals' in param) {
 		return <TokenWithAmount { ...param }/>
 	}
-	if ('id' in param) {
+	if ('tokenId' in param) {
 		return <Erc721Token { ...param }/>
 	}
 	return <Ether { ...param }/>
@@ -230,7 +236,7 @@ function truncate(str: string, n: number){
 }
 
 type Erc721TokenNumberParams = {
-	id: bigint
+	tokenId: bigint
 	received: boolean
 	textColor?: string
 	showSign?: boolean
@@ -245,9 +251,9 @@ export function Erc721TokenNumber(param: Erc721TokenNumberParams) {
 		...(param.style === undefined ? {} : param.style),
 	}
 
-	return <CopyToClipboard content = { param.id.toString() } copyMessage = 'Token ID copied!' >
+	return <CopyToClipboard content = { param.tokenId.toString() } copyMessage = 'Token ID copied!' >
 		<p class = 'noselect nopointer' style = { style }>
-			{ `${ sign } NFT #${ truncate(param.id.toString(), 9) }`}&nbsp;
+			{ `${ sign } NFT #${ truncate(param.tokenId.toString(), 9) }`}&nbsp;
 		</p>
 	</CopyToClipboard>
 }

@@ -70,7 +70,7 @@ export function handleERC1155TransferBatch(eventLog: MulticallResponseEventLog):
 		to: eventLog.topics[3],
 		tokenAddress: eventLog.loggersAddress,
 		isApproval: false,
-		id: bytesToUnsigned(eventLog.data.slice(index * 32 + 0, index * 32 + 32)),// TODO FIXME, this is wrong
+		tokenId: bytesToUnsigned(eventLog.data.slice(index * 32 + 0, index * 32 + 32)),// TODO FIXME, this is wrong
 		amount: bytesToUnsigned(eventLog.data.slice(nEvents * 32 + index * 32 + 32, nEvents * 32 + index * 32 + 64)), // TODO FIXME, this is wrong
 	}))
 }
@@ -84,7 +84,7 @@ export function handleERC1155TransferSingle(eventLog: MulticallResponseEventLog)
 		to: eventLog.topics[3],
 		tokenAddress: eventLog.loggersAddress,
 		isApproval: false,
-		id: bytesToUnsigned(eventLog.data.slice(0, 32)),
+		tokenId: bytesToUnsigned(eventLog.data.slice(0, 32)),
 		amount: bytesToUnsigned(eventLog.data.slice(32, 64)),
 	}]
 }

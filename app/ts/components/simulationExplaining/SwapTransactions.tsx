@@ -345,7 +345,7 @@ export function VisualizeSwapAsset({ swapAsset, rpcNetwork }: { swapAsset: SwapA
 			return <span class = 'grid swap-grid'>
 				<div class = 'log-cell' style = 'justify-content: left;'>
 					<Erc721TokenNumber
-						id = { swapAsset.tokenId }
+						tokenId = { swapAsset.tokenId }
 						received = { false }
 						style = { tokenStyle }
 					/>

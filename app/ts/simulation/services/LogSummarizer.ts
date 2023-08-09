@@ -27,11 +27,11 @@ export type SummaryOutcome = {
 	erc20TokenApprovalChanges: ERC20TokenApprovalChange[]
 
 	erc721TokenBalanceChanges: (Erc721Definition & { received: boolean })[]
-	erc721OperatorChanges: (Omit<Erc721Definition, 'id'> & { operator: AddressBookEntry | undefined })[]
+	erc721OperatorChanges: (Omit<Erc721Definition, 'tokenId'> & { operator: AddressBookEntry | undefined })[]
 	erc721TokenIdApprovalChanges: Erc721TokenApprovalChange[]
 	
 	erc1155TokenBalanceChanges: Erc1155TokenBalanceChange[]
-	erc1155OperatorChanges: (Omit<Erc1155Definition, 'id'> & { operator: AddressBookEntry | undefined })[]
+	erc1155OperatorChanges: (Omit<Erc1155Definition, 'tokenId'> & { operator: AddressBookEntry | undefined })[]
 
 	etherResults: {
 		balanceBefore: bigint,
@@ -290,12 +290,12 @@ export class LogSummarizer {
 			if (metadata === undefined || metadata.type !== 'ERC721') throw new Error('Missing metadata for token')
 			return Array.from(tokenIds).map(([tokenId, received]) => ({
 				...metadata,
-				id: BigInt(tokenId),
+				tokenId: BigInt(tokenId),
 				received,
 			}))
 		}).reduce((accumulator, value) => accumulator.concat(value), [])
 
-		const erc721OperatorChanges: (Omit<Erc721Definition, 'id'> & { operator: AddressBookEntry | undefined })[] = Array.from(addressSummary.erc721OperatorChanges).map( ([tokenAddress, operator]) => {
+		const erc721OperatorChanges: (Omit<Erc721Definition, 'tokenId'> & { operator: AddressBookEntry | undefined })[] = Array.from(addressSummary.erc721OperatorChanges).map( ([tokenAddress, operator]) => {
 			const metadata = addressMetaData.get(tokenAddress)
 			if (metadata === undefined || metadata.type !== 'ERC721') throw new Error('Missing metadata for token')
 
@@ -322,7 +322,7 @@ export class LogSummarizer {
 				return {
 					token: {
 						...metadata,
-						id: BigInt(tokenId),
+						tokenId: BigInt(tokenId),
 					},
 					approvedEntry: approvedMetadata
 				}
@@ -334,12 +334,12 @@ export class LogSummarizer {
 			if (metadata === undefined || metadata.type !== 'ERC1155') throw new Error('Missing metadata for token')
 			return Array.from(tokenIds).map(([tokenId, changeAmount]) => ({
 				...metadata,
-				id: BigInt(tokenId),
+				tokenId: BigInt(tokenId),
 				changeAmount,
 			}))
 		}).reduce((accumulator, value) => accumulator.concat(value), [])
 
-		const erc1155OperatorChanges: (Omit<Omit<Erc1155Definition, 'id'>, 'amount'> & { operator: AddressBookEntry | undefined })[] = Array.from(addressSummary.erc721OperatorChanges).map(([tokenAddress, operator]) => {
+		const erc1155OperatorChanges: (Omit<Omit<Erc1155Definition, 'tokenId'>, 'amount'> & { operator: AddressBookEntry | undefined })[] = Array.from(addressSummary.erc721OperatorChanges).map(([tokenAddress, operator]) => {
 			const metadata = addressMetaData.get(tokenAddress)
 			if (metadata === undefined || metadata.type !== 'ERC1155') throw new Error('Missing metadata for token')
 

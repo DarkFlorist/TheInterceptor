@@ -87,7 +87,7 @@ function SendOrReceiveTokensImportanceBox(param: SendOrReceiveTokensImportanceBo
 						<div class = 'log-cell'>
 							{ tokenEvent.type === 'ERC721' ?
 								<Erc721TokenNumber
-									id = { tokenEvent.tokenId }
+									tokenId = { tokenEvent.tokenId }
 									received = { !param.sending }
 									textColor = { param.textColor }
 									showSign = { false }
@@ -156,7 +156,7 @@ export function CatchAllVisualizer(param: TransactionImportanceBlockParams) {
 		return {
 			token: {
 				...entry.token,
-				id: entry.tokenId,
+				tokenId: entry.tokenId,
 			},
 			approvedEntry: entry.to
 		}
