@@ -17,7 +17,7 @@ type VisualizeOpenSeaAssetParams = {
 
 function ValueField({ orderOrConsideration }: { orderOrConsideration: SeaPortSingleOfferWithAddressBookEntries | SeaPortSingleConsiderationWithAddressBookEntries }) {
 	if (orderOrConsideration.itemType === 'ERC721') {
-		return <></>
+		return null
 	}
 	if (orderOrConsideration.itemType === 'ERC721_WITH_CRITERIA' || orderOrConsideration.itemType === 'ERC1155_WITH_CRITERIA') {
 		return <p class = 'paragraph' style = { tokenStyle }> 'Criteria: { bytes32String(orderOrConsideration.identifierOrCriteria) } </p>
