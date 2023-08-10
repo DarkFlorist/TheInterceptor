@@ -48,7 +48,7 @@ export const AddressInfoEntry = funtypes.ReadonlyObject({
 
 export type Erc20TokenEntry = funtypes.Static<typeof Erc20TokenEntry>
 export const Erc20TokenEntry = funtypes.ReadonlyObject({
-	type: funtypes.Literal('Erc20Token'),
+	type: funtypes.Literal('ERC20'),
 	name: funtypes.String,
 	address: EthereumAddress,
 	symbol: funtypes.String,
@@ -57,12 +57,24 @@ export const Erc20TokenEntry = funtypes.ReadonlyObject({
 	logoUri: funtypes.String,
 }))
 
-export type NFTEntry = funtypes.Static<typeof NFTEntry>
-export const NFTEntry = funtypes.ReadonlyObject({
-	type: funtypes.Literal('NFT'),
+export type Erc721Entry = funtypes.Static<typeof Erc721Entry>
+export const Erc721Entry = funtypes.ReadonlyObject({
+	type: funtypes.Literal('ERC721'),
 	name: funtypes.String,
 	address: EthereumAddress,
 	symbol: funtypes.String,
+}).And(funtypes.Partial({
+	protocol: funtypes.String,
+	logoUri: funtypes.String,
+}))
+
+export type Erc1155Entry = funtypes.Static<typeof Erc1155Entry>
+export const Erc1155Entry = funtypes.ReadonlyObject({
+	type: funtypes.Literal('ERC1155'),
+	name: funtypes.String,
+	address: EthereumAddress,
+	symbol: funtypes.String,
+	decimals: funtypes.Undefined,
 }).And(funtypes.Partial({
 	protocol: funtypes.String,
 	logoUri: funtypes.String,
@@ -80,14 +92,15 @@ export const ContactEntry = funtypes.ReadonlyObject({
 export type ContactEntries = funtypes.Static<typeof ContactEntries>
 export const ContactEntries = funtypes.ReadonlyArray(ContactEntry)
 
-export type AddressBookEntryCategory = 'contact' | 'addressInfo' | 'Erc20Token' | 'NFT' | 'other contract'
+export type AddressBookEntryCategory = 'contact' | 'addressInfo' | 'ERC20' | 'ERC721' | 'other contract' | 'ERC1155'
 
 export type AddressBookEntry = funtypes.Static<typeof AddressBookEntry>
 export const AddressBookEntry = funtypes.Union(
 	AddressInfoEntry,
 	ContactEntry,
 	Erc20TokenEntry,
-	NFTEntry,
+	Erc721Entry,
+	Erc1155Entry,
 	funtypes.ReadonlyObject({
 		type: funtypes.Literal('other contract'),
 		name: funtypes.String,
@@ -117,7 +130,7 @@ export type InterceptorAccessListParams = {
 
 export type AddingNewAddressType = {
 	addingAddress: true,
-	type: 'contact' | 'addressInfo' | 'Erc20Token' | 'NFT' | 'other contract'
+	type: 'contact' | 'addressInfo' | 'ERC20' | 'ERC721' | 'other contract' | 'ERC1155'
 } | {
 	addingAddress: false,
 	entry: AddressBookEntry,

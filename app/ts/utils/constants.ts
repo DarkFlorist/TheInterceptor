@@ -12,6 +12,7 @@ export const Multicall3ABI = [
 	'function aggregate3(tuple(address target, bool allowFailure, bytes callData)[] calls) payable returns (tuple(bool success, bytes returnData)[] returnData)',
 	'function getEthBalance(address) returns (uint256)',
 ]
+export const UniswapV3Multicall2 = 0x5ba1e12693dc8f9c48aad8770482f4739beed696n
 
 // common 4-byte function sigs
 export const ERC20_TRANSFER_FROM_4BYTES = 0x23b872dd
@@ -25,7 +26,8 @@ export const APPROVAL_LOG = ethers.keccak256(ethers.toUtf8Bytes('Approval(addres
 export const ERC721_APPROVAL_FOR_ALL_LOG = ethers.keccak256(ethers.toUtf8Bytes('ApprovalForAll(address,address,bool)'))
 export const DEPOSIT_LOG = ethers.keccak256(ethers.toUtf8Bytes('Deposit(address,uint256)'))
 export const WITHDRAWAL_LOG = ethers.keccak256(ethers.toUtf8Bytes('Withdrawal(address,uint256)'))
-
+export const ERC1155_TRANSFERBATCH_LOG = ethers.keccak256(ethers.toUtf8Bytes('TransferBatch(address,address,address,uint256[],uint256[])'))
+export const ERC1155_TRANSFERSINGLE_LOG = ethers.keccak256(ethers.toUtf8Bytes('TransferSingle(address,address,address,uint256,uint256)'))
 // Other
 export const MOCK_ADDRESS = 0xdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefn
 

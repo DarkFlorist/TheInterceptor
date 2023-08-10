@@ -34,12 +34,12 @@ async function visualizeSimulatorState(simulationState: SimulationState, simulat
 	const addressBookEntries = await getAddressBookEntriesForVisualiser(simulator.ethereum, visualizerResult.map((x) => x.visualizerResults), simulationState, (await getSettings()).userAddressBook)
 	const simulatedAndVisualizedTransactions = formSimulatedAndVisualizedTransaction(simulationState, visualizerResults, addressBookEntries)
 
-	function onlyTokensAndTokensWithKnownDecimals(metadata: AddressBookEntry): metadata is AddressBookEntry & { type: 'Erc20Token', decimals: `0x${string}` } {
-		if (metadata.type !== 'Erc20Token') return false
+	function onlyTokensAndTokensWithKnownDecimals(metadata: AddressBookEntry): metadata is AddressBookEntry & { type: 'ERC20', decimals: `0x${string}` } {
+		if (metadata.type !== 'ERC20') return false
 		if (metadata.decimals === undefined) return false
 		return true
 	}
-	function metadataRestructure(metadata: AddressBookEntry & { type: 'Erc20Token', decimals: bigint }) {
+	function metadataRestructure(metadata: AddressBookEntry & { type: 'ERC20', decimals: bigint }) {
 		return { address: metadata.address, decimals: metadata.decimals }
 	}
 	const tokenPrices = await priceEstimator.estimateEthereumPricesForTokens(addressBookEntries.filter(onlyTokensAndTokensWithKnownDecimals).map(metadataRestructure))

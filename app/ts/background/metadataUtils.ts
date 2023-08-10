@@ -1,12 +1,13 @@
 import { addressString, checksummedAddress } from '../utils/bigint.js'
-import { AddressInfoEntry, AddressBookEntry, AddressInfo, Erc20TokenEntry, NFTEntry } from '../utils/user-interface-types.js'
+import { AddressInfoEntry, AddressBookEntry, AddressInfo, Erc20TokenEntry, Erc721Entry, Erc1155Entry } from '../utils/user-interface-types.js'
 import { SimulationState, VisualizerResult } from '../utils/visualizer-types.js'
 import { nftMetadata, tokenMetadata, contractMetadata } from '@darkflorist/address-metadata'
 import { ethers } from 'ethers'
 import { MOCK_ADDRESS } from '../utils/constants.js'
 import { UserAddressBook } from '../utils/interceptor-messages.js'
-import { getTokenDecimals } from '../simulation/services/SimulationModeEthereumClientService.js'
 import { EthereumClientService } from '../simulation/services/EthereumClientService.js'
+import { itentifyAddressViaOnChainInformation } from '../utils/tokenIdentification.js'
+import { assertNever } from '../utils/typescript.js'
 export const LOGO_URI_PREFIX = `../vendor/@darkflorist/address-metadata`
 
 export function getFullLogoUri(logoURI: string) {
@@ -74,7 +75,7 @@ export function getAddressMetaData(address: bigint, userAddressBook: UserAddress
 		...tokenData,
 		address: address,
 		logoUri: tokenData.logoUri ? `${ getFullLogoUri(tokenData.logoUri) }` : undefined,
-		type: 'Erc20Token',
+		type: 'ERC20',
 	}
 
 	const nftTokenData = nftMetadata.get(addrString)
@@ -82,7 +83,7 @@ export function getAddressMetaData(address: bigint, userAddressBook: UserAddress
 		...nftTokenData,
 		address: address,
 		logoUri: nftTokenData.logoUri ? `${ getFullLogoUri(nftTokenData.logoUri) }` : undefined,
-		type: 'NFT'
+		type: 'ERC721'
 	}
 
 	return {
@@ -92,40 +93,52 @@ export function getAddressMetaData(address: bigint, userAddressBook: UserAddress
 	}
 }
 
-export async function getTokenMetadata(ethereumClientService: EthereumClientService, address: bigint) : Promise<Erc20TokenEntry | NFTEntry> {
+export async function getTokenMetadata(ethereumClientService: EthereumClientService, address: bigint) : Promise<Erc20TokenEntry | Erc721Entry | Erc1155Entry> {
 	const addrString = addressString(address)
 	const tokenData = tokenMetadata.get(addrString)
 	if (tokenData) return {
 		...tokenData,
 		address: address,
 		logoUri: tokenData.logoUri ? `${ getFullLogoUri(tokenData.logoUri) }` : undefined,
-		type: 'Erc20Token',
+		type: 'ERC20',
 	}
 	const nftTokenData = nftMetadata.get(addrString)
 	if (nftTokenData) return {
 		...nftTokenData,
 		address: address,
 		logoUri: nftTokenData.logoUri ? `${ getFullLogoUri(nftTokenData.logoUri) }` : undefined,
-		type: 'NFT',
+		type: 'ERC721',
 	}
-	const decimals = await getTokenDecimals(ethereumClientService, address).catch(() => {
-		console.log(`could not fetch decimals for ${ address }`)
-		return undefined
-	})
-	if (decimals !== undefined) {
-		return {
-			name: ethers.getAddress(addrString),
+	const tokenIdentification = await itentifyAddressViaOnChainInformation(ethereumClientService, address)
+
+	switch(tokenIdentification.type) {
+		case 'ERC20': return {
+			name: ethers.getAddress(addrString), // todo, we could add the name from contract here, but we should check that it doesn't exist with us already
 			address: BigInt(addrString),
-			symbol: '???',
-			decimals: decimals,
-			type: 'Erc20Token',
+			symbol: '???', // todo, we could add the name from contract here, but we should check that it doesn't exist with us already
+			decimals: tokenIdentification.decimals,
+			type: 'ERC20',
 		}
-	}
-	return { //if we don't know decimals, assume it's NFT
-		name: ethers.getAddress(addrString),
-		address: BigInt(addrString),
-		symbol: '???',
-		type: 'NFT',
+		case 'ERC1155': {
+			return {
+				name: ethers.getAddress(addrString),
+				address: BigInt(addrString),
+				symbol: '???',
+				type: 'ERC1155',
+				decimals: undefined,
+			}
+		}
+		case 'ERC721':
+		case 'EOA':
+		case 'contract': {
+			return { // Lets just assume its ERC721 if we don't really know what it is
+				name: ethers.getAddress(addrString),
+				address: BigInt(addrString),
+				symbol: '???',
+				type: 'ERC721',
+			}
+		}
+		default: assertNever(tokenIdentification)
 	}
 }
 

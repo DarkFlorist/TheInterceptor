@@ -40,14 +40,14 @@ const convertTokenDefinitionToAddressBookEntry = ([address, def]: [string, Token
 	address: BigInt(address),
 	...def,
 	logoUri: def.logoUri ? `${ getFullLogoUri(def.logoUri) }` : undefined,
-	type: 'Erc20Token' as const,
+	type: 'ERC20' as const,
 })
 
-const convertNftDefinitionToAddressBookEntry = ([address, def]: [string, NftDefinition]) => ({
+const convertErc721DefinitionToAddressBookEntry = ([address, def]: [string, NftDefinition]) => ({
 	address: BigInt(address),
 	...def,
 	logoUri: def.logoUri ? `${ getFullLogoUri(def.logoUri) }` : undefined,
-	type: 'NFT' as const,
+	type: 'ERC721' as const,
 })
 
 const convertContractDefinitionToAddressBookEntry = ([address, def]: [string, ContractDefinition]) => ({
@@ -87,12 +87,12 @@ function filterAddressBookDataByCategoryAndSearchString(addressBookCategory: Add
 			return search(Array.from(tokenMetadata), searchFunction).map(convertTokenDefinitionToAddressBookEntry)
 		}
 		case 'Non Fungible Tokens': {
-			if (searchingDisabled) return Array.from(nftMetadata).map(convertNftDefinitionToAddressBookEntry)
+			if (searchingDisabled) return Array.from(nftMetadata).map(convertErc721DefinitionToAddressBookEntry)
 			const searchFunction = (element: [string, NftDefinition]) => ({
 				comparison: fuzzyCompare(searchPattern, trimmedSearch, `${ element[1].symbol.toLowerCase()} ${ element[1].name.toLowerCase()}`, element[0]),
 				element,
 			})
-			return search(Array.from(nftMetadata), searchFunction).map(convertNftDefinitionToAddressBookEntry)
+			return search(Array.from(nftMetadata), searchFunction).map(convertErc721DefinitionToAddressBookEntry)
 		}
 		case 'Other Contracts': {
 			if (searchingDisabled) return Array.from(contractMetadata).map(convertContractDefinitionToAddressBookEntry)

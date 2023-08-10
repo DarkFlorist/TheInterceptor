@@ -105,9 +105,10 @@ export async function removeAddressBookEntry(simulator: Simulator, websiteTabCon
 export async function addOrModifyAddressInfo(simulator: Simulator, websiteTabConnections: WebsiteTabConnections, entry: AddOrEditAddressBookEntry) {
 	const newEntry = entry.data
 	switch (newEntry.type) {
-		case 'NFT':
+		case 'ERC721':
 		case 'other contract':
-		case 'Erc20Token': throw new Error(`No support to modify this entry yet! ${ newEntry.type }`)
+		case 'ERC1155':
+		case 'ERC20': throw new Error(`No support to modify this entry yet! ${ newEntry.type }`)
 		case 'addressInfo': {
 			await updateAddressInfos((previousAddressInfos) => {
 				if (previousAddressInfos.find((x) => x.address === entry.data.address) ) {

@@ -1,7 +1,7 @@
 import { useSignal } from '@preact/signals'
 import { getTokenAmountsWorth } from '../../simulation/priceEstimator.js'
 import { abs, bigintToDecimalString, bigintToRoundedPrettyDecimalString, checksummedAddress } from '../../utils/bigint.js'
-import { Erc721TokenDefinitionParams, TokenDefinitionParams, TokenPriceEstimate, RpcNetwork } from '../../utils/visualizer-types.js'
+import { TokenPriceEstimate, RpcNetwork, Erc20WithAmount, Erc1155WithAmount } from '../../utils/visualizer-types.js'
 import { CopyToClipboard } from './CopyToClipboard.js'
 import { Blockie } from './PreactBlocky.js'
 import { JSX } from 'preact/jsx-runtime'
@@ -103,6 +103,7 @@ export type TokenSymbolParams = {
 	address: bigint
 	symbol: string
 	logoUri?: string
+	tokenId?: bigint
 	useFullTokenName?: boolean
 	style?: JSX.CSSProperties
 }
@@ -122,16 +123,23 @@ export function TokenSymbol(param: TokenSymbolParams) {
 		...(param.style === undefined ? {} : param.style),
 	}
 	return <>
+		<CopyToClipboard content = { tokenString } copyMessage = 'Token address copied!' >
+			{ param.tokenId !== undefined ? 
+				<p class = 'noselect nopointer' style = { style }>
+					{ `#${ truncate(param.tokenId.toString(), 9) } ` }
+				</p>
+			: <></> }
+		</CopyToClipboard>
 		<div style = 'overflow: initial; height: 28px;'>
 			<CopyToClipboard content = { tokenString } copyMessage = 'Token address copied!' >
 				{ param.logoUri === undefined ?
 					<Blockie
 						address = { useSignal(param.address) }
 						scale = { useSignal(3) }
-						style = { { 'vertical-align': 'middle', borderRadius: '50%' } }
+						style = { { 'vertical-align': 'baseline', borderRadius: '50%' } }
 					/>
 				:
-				<img class = 'noselect nopointer vertical-center' style = 'max-height: 25px; max-width: 25px;' src = { param.logoUri }/>
+					<img class = 'noselect nopointer vertical-center' style = 'max-height: 25px; max-width: 25px;' src = { param.logoUri }/>
 				}
 			</CopyToClipboard>
 		</div>
@@ -166,7 +174,11 @@ export function TokenAmount(param: TokenAmountParams) {
 	}
 
 	if (param.decimals === undefined) {
-		return <p class = 'noselect nopointer ellipsis' style = { style }> &nbsp;Unknown Amount&nbsp; </p>
+		return <>
+			<CopyToClipboard content = { `${ abs(param.amount) } (decimals unknown)`} copyMessage = 'Token amount copied!' >
+				<p class = 'noselect nopointer' style = { style }>{ `${ sign }${ abs(param.amount).toString() }` }&nbsp; </p>
+			</CopyToClipboard>
+		</>
 	}
 	return <>
 		<CopyToClipboard content = { bigintToDecimalString(abs(param.amount), param.decimals) } copyMessage = 'Token amount copied!' >
@@ -175,15 +187,14 @@ export function TokenAmount(param: TokenAmountParams) {
 	</>
 }
 
-type TokenParams = TokenDefinitionParams & {
-	amount: bigint
+type TokenWithAmountParams = (Erc20WithAmount | Erc1155WithAmount) & {
 	showSign?: boolean
 	textColor?: string
 	useFullTokenName: boolean
 	style?: JSX.CSSProperties
 }
 
-export function Token(param: TokenParams) {
+export function TokenWithAmount(param: TokenWithAmountParams) {
 	return <table class = 'log-table' style = 'width: fit-content'>
 		<div class = 'log-cell' style = 'justify-content: right;'>
 			<TokenAmount { ...param } />
@@ -194,20 +205,20 @@ export function Token(param: TokenParams) {
 	</table>
 }
 
-export type TokenOrEtherParams = TokenParams | EtherParams | Erc721TokenParams
+export type TokenOrEtherParams = TokenWithAmountParams | EtherParams | TokenSymbolParams
 
 export function TokenOrEth(param: TokenOrEtherParams) {
 	if ('decimals' in param) {
-		return <Token { ...param }/>
+		return <TokenWithAmount { ...param }/>
 	}
-	if ('id' in param) {
-		return <Erc721Token { ...param }/>
+	if ('symbol' in param) {
+		return <TokenSymbol { ...param }/>
 	}
 	return <Ether { ...param }/>
 }
 
-export function TokenOrEthSymbol(param: TokenDefinitionParams | Erc721TokenDefinitionParams | EtherSymbolParams) {
-	if ('decimals' in param || 'id' in param) {
+export function TokenOrEthSymbol(param: TokenSymbolParams | EtherSymbolParams) {
+	if ('symbol' in param) {
 		return <TokenSymbol { ...param }/>
 	}
 	return <EtherSymbol { ...param }/>
@@ -224,68 +235,18 @@ function truncate(str: string, n: number){
 	return (str.length > n) ? `${str.slice(0, n-1)}…` : str;
 }
 
-type Erc721TokenNumberParams = {
-	id: bigint
-	received: boolean
-	textColor?: string
-	showSign?: boolean
-	style?: JSX.CSSProperties
-}
-
-export function Erc721TokenNumber(param: Erc721TokenNumberParams) {
-	const sign = param.showSign ? (param.received ? ' + ' : ' - ') : ''
-	const style = {
-		display: 'inline',
-		color: param.textColor ? param.textColor : 'var(--text-color)',
-		...(param.style === undefined ? {} : param.style),
-	}
-
-	return <CopyToClipboard content = { param.id.toString() } copyMessage = 'Token ID copied!' >
-		<p class = 'noselect nopointer' style = { style }>
-			{ `${ sign } NFT #${ truncate(param.id.toString(), 9) }`}&nbsp;
-		</p>
-	</CopyToClipboard>
-}
-
-type Erc721TokenParams = Erc721TokenDefinitionParams & {
-	received: boolean
-	textColor?: string
-	useFullTokenName: boolean
-	showSign?: boolean
-	style?: JSX.CSSProperties
-}
-
-export function Erc721Token(param: Erc721TokenParams) {
-	return <table class = 'log-table'>
-		<div class = 'log-cell' style = 'justify-content: right;'>
-			<Erc721TokenNumber { ... param }/>
-		</div>
-		<div class = 'log-cell'>
-			<TokenSymbol { ...param }/>
-		</div>
-	</table>
-}
-
-type Token721AmountFieldParams = {
+type AllApprovalParams = {
 	textColor?: string
 	style?: JSX.CSSProperties
-} & ({
-	type: 'NFT'
-	tokenId: bigint
-} | {
 	type: 'NFT All approval'
 	allApprovalAdded: boolean
-})
+}
 
-
-export function Token721AmountField(param: Token721AmountFieldParams ) {
+export function AllApproval(param: AllApprovalParams ) {
 	const style = {
 		color: param.textColor ? param.textColor : 'var(--text-color)',
 		...(param.style === undefined ? {} : param.style),
 	}
-	if (param.type === 'NFT All approval') {
-		if (!param.allApprovalAdded) return <p style = { style }><b>NONE</b></p>
-		return <p style = { style }><b>ALL</b></p>
-	}
-	return <p style = { style }>{ `NFT #${ truncate(param.tokenId.toString(), 9) }` }</p>
+	if (!param.allApprovalAdded) return <p style = { style }><b>NONE</b></p>
+	return <p style = { style }><b>ALL</b></p>
 }
