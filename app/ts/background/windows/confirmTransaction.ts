@@ -177,31 +177,17 @@ export async function openConfirmTransactionDialog(
 				return await openPopupOrTab({ url: getHtmlFile('confirmTransaction'), type: 'popup', height: 800, width: 600 })
 			}
 			const refreshSimulationPromise = refreshConfirmTransactionSimulation(simulator, ethereumClientService, activeAddress, simulationMode, request.uniqueRequestIdentifier, transactionToSimulate)
-			if ('error' in transactionToSimulate) {
-				if (!justAddToPending) openedDialog = await openDialog()
-				if (openedDialog?.windowOrTab.id === undefined) return false
-				await appendPendingTransaction({
-					dialogId: openedDialog.windowOrTab.id,
-					request,
-					simulationMode,
-					activeAddress,
-					transactionToSimulate,
-					simulationResults: await refreshSimulationPromise,
-					transactionCreated,
-				})
-			} else {
-				if (!justAddToPending) openedDialog = await openDialog()
-				if (openedDialog?.windowOrTab.id === undefined) return false
-				await appendPendingTransaction({
-					dialogId: openedDialog.windowOrTab.id,
-					request,
-					simulationMode,
-					activeAddress,
-					transactionToSimulate,
-					simulationResults: await refreshSimulationPromise,
-					transactionCreated,
-				})
-			}
+			if (!justAddToPending) openedDialog = await openDialog()
+			if (openedDialog?.windowOrTab.id === undefined) return false
+			await appendPendingTransaction({
+				dialogId: openedDialog.windowOrTab.id,
+				request,
+				simulationMode,
+				activeAddress,
+				transactionToSimulate,
+				simulationResults: await refreshSimulationPromise,
+				transactionCreated,
+			})
 
 			await updateConfirmTransactionViewWithPendingTransaction()
 			if (justAddToPending) await sendPopupMessageToOpenWindows({ method: 'popup_confirm_transaction_dialog_pending_changed', data: await getPendingTransactions() })
