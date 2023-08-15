@@ -1,5 +1,5 @@
 import { changeActiveAddressAndChainAndResetSimulation, changeActiveRpc, getPrependTrasactions, refreshConfirmTransactionSimulation, updateSimulationState } from './background.js'
-import { getSettings, setUseTabsInsteadOfPopup, setMakeMeRich, setPage, setUseSignersAddressAsActiveAddress, updateAddressInfos, updateContacts, updateWebsiteAccess, exportSettingsAndAddressBook, ExportedSettings, importSettingsAndAddressBook, getMakeMeRich, getUseTabsInsteadOfPopup } from './settings.js'
+import { getSettings, setUseTabsInsteadOfPopup, setMakeMeRich, setPage, setUseSignersAddressAsActiveAddress, updateAddressInfos, updateContacts, updateWebsiteAccess, exportSettingsAndAddressBook, ExportedSettings, importSettingsAndAddressBook, getMakeMeRich, getUseTabsInsteadOfPopup, getMetamaskCompatibilityMode, setMetamaskCompatibilityMode } from './settings.js'
 import { getPendingTransactions, getCurrentTabId, getOpenedAddressBookTabId, getSimulationResults, getTabState, saveCurrentTabId, setOpenedAddressBookTabId, setRpcList, getRpcList, getPrimaryRpcForChain, setRpcConnectionStatus, getSignerName, getRpcConnectionStatus } from './storageVariables.js'
 import { Simulator } from '../simulation/simulator.js'
 import { ChangeActiveAddress, ChangeMakeMeRich, ChangePage, PersonalSign, RemoveTransaction, RequestAccountsFromSigner, TransactionConfirmation, InterceptorAccess, ChangeInterceptorAccess, ChainChangeConfirmation, EnableSimulationMode, ChangeActiveChain, AddOrEditAddressBookEntry, GetAddressBookData, RemoveAddressBookEntry, RefreshConfirmTransactionDialogSimulation, UserAddressBook, InterceptorAccessRefresh, InterceptorAccessChangeAddress, Settings, RefreshConfirmTransactionMetadata, RefreshInterceptorAccessMetadata, ChangeSettings, ImportSettings, SetRpcList } from '../utils/interceptor-messages.js'
@@ -308,6 +308,7 @@ export async function homeOpened(simulator: Simulator) {
 			makeMeRich: await getMakeMeRich(),
 			rpcConnectionStatus: await getRpcConnectionStatus(),
 			useTabsInsteadOfPopup: await getUseTabsInsteadOfPopup(),
+			metamaskCompatibilityMode: await getMetamaskCompatibilityMode(),
 			activeSigningAddressInThisTab: tabState?.activeSigningAddress,
 			tabId,
 			rpcEntries: await getRpcList(),
@@ -324,7 +325,8 @@ export async function refreshInterceptorAccessMetadata(params: RefreshIntercepto
 }
 
 export async function changeSettings(simulator: Simulator, parsedRequest: ChangeSettings) {
-	if (parsedRequest.data.useTabsInsteadOfPopup !== undefined) setUseTabsInsteadOfPopup(parsedRequest.data.useTabsInsteadOfPopup)
+	if (parsedRequest.data.useTabsInsteadOfPopup !== undefined) await setUseTabsInsteadOfPopup(parsedRequest.data.useTabsInsteadOfPopup)
+	if (parsedRequest.data.metamaskCompatibilityMode !== undefined) await setMetamaskCompatibilityMode(parsedRequest.data.metamaskCompatibilityMode)
 	return await homeOpened(simulator)
 }
 

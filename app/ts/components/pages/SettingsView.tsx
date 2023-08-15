@@ -187,15 +187,21 @@ function Rpcs() {
 }
 
 export function SettingsView(param: SettingsParam) {
-	function goHome() {
-		param.setAndSaveAppPage('Home')
-	}
+	const goHome = () => param.setAndSaveAppPage('Home')
 
 	async function setUseTabsInsteadOfPopups(checked: boolean) {
 		await sendPopupMessageToBackgroundPage({
 			method: 'popup_ChangeSettings',
 			data: {
 				useTabsInsteadOfPopup: checked
+			}
+		})
+	}
+	async function setMetamaskCompatibilityMode(checked: boolean) {
+		await sendPopupMessageToBackgroundPage({
+			method: 'popup_ChangeSettings',
+			data: {
+				metamaskCompatibilityMode: checked
 			}
 		})
 	}
@@ -226,6 +232,11 @@ export function SettingsView(param: SettingsParam) {
 							text = { 'Open popups as tabs (experimental)' }
 							checked = { param.useTabsInsteadOfPopup === true }
 							onInput = { setUseTabsInsteadOfPopups }
+						/>
+						<CheckBoxSetting
+							text = { 'Metamask compatibility mode (mimics Metamask\'s behaviour on websites). After enabling or disabling this, please refresh the active tab to switch the behaviour on the site' }
+							checked = { param.metamaskCompatibilityMode === true }
+							onInput = { setMetamaskCompatibilityMode }
 						/>
 					</li>
 					<li>
