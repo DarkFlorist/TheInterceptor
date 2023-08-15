@@ -413,13 +413,15 @@ class InterceptorMessageListener {
 				switch (messageEvent.data.method) {
 					case 'eth_requestAccounts':
 					case 'eth_accounts': {
-						const addrArray = forwardRequest.result as string[] //TODO add parsing
+						if (!Array.isArray(forwardRequest.result) || forwardRequest.result === null) throw new Error('wrong type')
+						const addrArray = forwardRequest.result as string[]
 						window.ethereum.selectedAddress = addrArray.length > 0 ? addrArray[0] : ''
 						if ('web3' in window && window.web3 !== undefined) window.web3.accounts = addrArray
 						break
 					}
 					case 'eth_chainId': {
-						const chainId = forwardRequest.result as string //TODO add parsing
+						if (typeof forwardRequest.result !== 'string') throw new Error('wrong type')
+						const chainId = forwardRequest.result as string
 						window.ethereum.chainId = chainId
 						window.ethereum.networkVersion = Number(chainId).toString(10)
 					}
