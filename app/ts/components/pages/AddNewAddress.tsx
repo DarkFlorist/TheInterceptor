@@ -12,8 +12,9 @@ import { createRef } from 'preact'
 const readableAddressType = {
 	'contact': 'Contact',
 	'addressInfo': 'Active Address',
-	'Erc20Token': 'Erc20 Token',
-	'NFT': 'NFT',
+	'ERC20': 'ERC20',
+	'ERC721': 'ERC721',
+	'ERC1155': 'ERC1155',
 	'other contract': 'Other Contract',
 }
 
@@ -137,8 +138,9 @@ export function AddNewAddress(param: AddAddressParam) {
 
 		param.close()
 		switch(addressType) {
-			case 'Erc20Token':
-			case 'NFT':
+			case 'ERC20':
+			case 'ERC721':
+			case 'ERC1155':
 			case 'other contract': throw new Error(`not upported address type! ${ addressType }`)
 			case 'contact': {
 				await sendPopupMessageToBackgroundPage({

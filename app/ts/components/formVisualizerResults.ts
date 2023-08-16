@@ -25,25 +25,44 @@ export function formSimulatedAndVisualizedTransaction(simState: SimulationState,
 		const tokenResults: TokenVisualizerResultWithMetadata[] = visualiser === undefined ? [] : visualiser.tokenResults.map((change): TokenVisualizerResultWithMetadata | undefined => {
 			const fromEntry = addressMetaData.get(addressString(change.from))
 			const toEntry = addressMetaData.get(addressString(change.to))
-			const erc20TokenEntry = addressMetaData.get(addressString(change.tokenAddress))
-			if (fromEntry === undefined || toEntry === undefined || erc20TokenEntry === undefined) throw new Error('missing metadata')
-			if (change.type !== 'Erc20Token' && erc20TokenEntry.type === 'NFT') {
+			const tokenEntry = addressMetaData.get(addressString(change.tokenAddress))
+			if (fromEntry === undefined || toEntry === undefined || tokenEntry === undefined) throw new Error('missing metadata')
+			if ((change.type === 'ERC721' && tokenEntry.type === 'ERC721')) {
 				return {
 					...change,
 					from: fromEntry,
 					to: toEntry,
-					token: erc20TokenEntry
+					token: tokenEntry
 				}
 			}
-			if (change.type === 'Erc20Token' && erc20TokenEntry.type === 'Erc20Token') {
+			if (change.type === 'ERC20' && tokenEntry.type === 'ERC20') {
 				return {
 					...change,
 					from: fromEntry,
 					to: toEntry,
-					token: erc20TokenEntry
+					token: tokenEntry
 				}
 			}
-			return undefined // a token that is not NFT, but does not have decimals either, let's just not visualize them
+			if (change.type === 'ERC1155' && tokenEntry.type === 'ERC1155') {
+				return {
+					...change,
+					from: fromEntry,
+					to: toEntry,
+					token: tokenEntry,
+				}
+			}
+			if (change.type === 'NFT All approval' && (tokenEntry.type === 'ERC1155' || tokenEntry.type === 'ERC721')) {
+				return {
+					...change,
+					from: fromEntry,
+					to: toEntry,
+					token: tokenEntry,
+				}
+			}
+			console.warn('unknown token in token results:')
+			console.log(change)
+			console.log(tokenEntry)
+			return undefined
 		}).filter(<T>(x: T | undefined): x is T => x !== undefined)
 		return {
 			transaction: {
