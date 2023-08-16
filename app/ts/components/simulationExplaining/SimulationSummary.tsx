@@ -642,7 +642,7 @@ export function SimulationSummary(param: SimulationSummaryParams) {
 	if (param.simulationAndVisualisationResults === undefined) return <></>
 
 	const logSummarizer = new LogSummarizer(param.simulationAndVisualisationResults.simulatedAndVisualizedTransactions)
-	const addressMetaData = new Map(param.simulationAndVisualisationResults.addressMetaData.map((x) => [addressString(x.address), x]))
+	const addressMetaData = new Map(param.simulationAndVisualisationResults.addressBookEntries.map((x) => [addressString(x.address), x]))
 	const originalSummary = logSummarizer.getSummary(addressMetaData, param.simulationAndVisualisationResults.tokenPrices)
 	const [ownAddresses, notOwnAddresses] = splitToOwnAndNotOwnAndCleanSummary(param.simulationAndVisualisationResults.simulatedAndVisualizedTransactions.at(0), originalSummary, param.simulationAndVisualisationResults.activeAddress, param.simulationAndVisualisationResults.rpcNetwork)
 

@@ -91,7 +91,7 @@ export function App() {
 				rpcNetwork: simState.rpcNetwork,
 				tokenPrices: tokenPrices,
 				activeAddress: activeSimulationAddress,
-				addressMetaData: addressBookEntries,
+				addressBookEntries: addressBookEntries,
 			})
 		}
 

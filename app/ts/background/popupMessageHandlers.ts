@@ -3,7 +3,7 @@ import { getSettings, setUseTabsInsteadOfPopup, setMakeMeRich, setPage, setUseSi
 import { getPendingTransactions, getCurrentTabId, getOpenedAddressBookTabId, getSimulationResults, getTabState, saveCurrentTabId, setOpenedAddressBookTabId, setRpcList, getRpcList, getPrimaryRpcForChain, setRpcConnectionStatus, getSignerName, getRpcConnectionStatus } from './storageVariables.js'
 import { Simulator } from '../simulation/simulator.js'
 import { ChangeActiveAddress, ChangeMakeMeRich, ChangePage, PersonalSign, RemoveTransaction, RequestAccountsFromSigner, TransactionConfirmation, InterceptorAccess, ChangeInterceptorAccess, ChainChangeConfirmation, EnableSimulationMode, ChangeActiveChain, AddOrEditAddressBookEntry, GetAddressBookData, RemoveAddressBookEntry, RefreshConfirmTransactionDialogSimulation, UserAddressBook, InterceptorAccessRefresh, InterceptorAccessChangeAddress, Settings, RefreshConfirmTransactionMetadata, RefreshInterceptorAccessMetadata, ChangeSettings, ImportSettings, SetRpcList } from '../utils/interceptor-messages.js'
-import { resolvePendingTransaction } from './windows/confirmTransaction.js'
+import { formEthSendTransaction, formSendRawTransaction, resolvePendingTransaction } from './windows/confirmTransaction.js'
 import { resolvePersonalSign } from './windows/personalSign.js'
 import { getAddressMetadataForAccess, requestAddressChange, resolveInterceptorAccess } from './windows/interceptorAccess.js'
 import { resolveChainChange } from './windows/changeChain.js'
@@ -177,29 +177,39 @@ export async function refreshPopupConfirmTransactionMetadata(ethereumClientServi
 	const promises = await getPendingTransactions()
 	if (promises.length === 0) return
 	const first = promises[0]
-	if (first.simulationResults.statusCode !== 'success') return
+	if (first.simulationResults === undefined || first.simulationResults.statusCode !== 'success') return
 	return await sendPopupMessageToOpenWindows({
 		method: 'popup_update_confirm_transaction_dialog',
 		data: [{
-			statusCode: 'success',
-			data: {
-				...first.simulationResults.data,
-				simulatedAndVisualizedTransactions: formSimulatedAndVisualizedTransaction(first.simulationResults.data.simulationState, first.simulationResults.data.visualizerResults, addressBookEntries),
-				addressBookEntries,
+			...first,
+			simulationResults: {
+				statusCode: 'success',
+				data: {
+					...first.simulationResults.data,
+					simulatedAndVisualizedTransactions: formSimulatedAndVisualizedTransaction(first.simulationResults.data.simulationState, first.simulationResults.data.visualizerResults, addressBookEntries),
+					addressBookEntries,
+				}
 			}
-		}, ...promises.slice(1).map((p) => p.simulationResults)]
+		}, ...promises.slice(1)]
 	})
 }
 
 export async function refreshPopupConfirmTransactionSimulation(simulator: Simulator, ethereumClientService: EthereumClientService, { data }: RefreshConfirmTransactionDialogSimulation) {
-	const refreshMessage = await refreshConfirmTransactionSimulation(simulator, ethereumClientService, data.activeAddress, data.simulationMode, data.uniqueRequestIdentifier, data.transactionToSimulate)
+	const transactionToSimulate = data.originalTransactionRequestParameters.method === 'eth_sendTransaction' ? await formEthSendTransaction(ethereumClientService, data.activeAddress, data.simulationMode, data.website, data.originalTransactionRequestParameters, data.transactionCreated) : await formSendRawTransaction(ethereumClientService, data.originalTransactionRequestParameters, data.website, data.transactionCreated)
 	const promises = await getPendingTransactions()
 	if (promises.length === 0) return
 	const first = promises[0]
-	if (!doesUniqueRequestIdentifiersMatch(first.simulationResults.data.uniqueRequestIdentifier, data.uniqueRequestIdentifier)) throw new Error('request id\'s do not match in refreshPopupConfirmTransactionSimulation')
+	if (!doesUniqueRequestIdentifiersMatch(first.request.uniqueRequestIdentifier, data.uniqueRequestIdentifier)) throw new Error('request id\'s do not match in refreshPopupConfirmTransactionSimulation')
+	const refreshMessage = await refreshConfirmTransactionSimulation(simulator, ethereumClientService, data.activeAddress, data.simulationMode, data.uniqueRequestIdentifier, transactionToSimulate)
+	if ('error' in transactionToSimulate) {
+		return await sendPopupMessageToOpenWindows({
+			method: 'popup_update_confirm_transaction_dialog',
+			data: [{...first, transactionToSimulate, simulationResults: refreshMessage }, ...promises.slice(1)]
+		})
+	}
 	return await sendPopupMessageToOpenWindows({
 		method: 'popup_update_confirm_transaction_dialog',
-		data: [refreshMessage, ...promises.slice(1).map((p) => p.simulationResults)]
+		data: [ {...first, transactionToSimulate, simulationResults: refreshMessage }, ...promises.slice(1)]
 	})
 }
 
