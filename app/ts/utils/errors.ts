@@ -28,6 +28,6 @@ export class FetchResponseError extends ErrorWithData {
 }
 
 export function isFailedToFetchError(error: Error) {
-	if (error.message.includes('Failed to fetch')) return true
+	if (error.message.includes('Failed to fetch') || error.message.includes('NetworkError when attempting to fetch resource')) return true
 	return false
 }
