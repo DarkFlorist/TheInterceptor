@@ -1,10 +1,10 @@
-import { SimulatedAndVisualizedTransaction, TokenVisualizerErc20Event, TokenVisualizerErc721Event, TokenVisualizerResultWithMetadata } from '../../utils/visualizer-types.js'
+import { SimulatedAndVisualizedTransaction, TokenVisualizerResultWithMetadata } from '../../utils/visualizer-types.js'
 import * as funtypes from 'funtypes'
 import { EthereumQuantity } from '../../utils/wire-types.js'
 import { abs, addressString } from '../../utils/bigint.js'
 import { EtherAmount, EtherSymbol, TokenAmount, TokenOrEthValue, TokenSymbol } from '../subcomponents/coins.js'
-import { AddressBookEntry, Erc721Entry, Erc20TokenEntry } from '../../utils/user-interface-types.js'
-import { assertNever } from '../../utils/typescript.js'
+import { AddressBookEntry, Erc1155Entry, Erc20TokenEntry, Erc721Entry } from '../../utils/user-interface-types.js'
+import { assertNever, getWithDefault } from '../../utils/typescript.js'
 import { RpcNetwork } from '../../utils/visualizer-types.js'
 
 export type BeforeAfterBalance = funtypes.Static<typeof SwapAsset>
@@ -13,26 +13,23 @@ export const BeforeAfterBalance = funtypes.ReadonlyObject({
 	afterBalance: EthereumQuantity,
 })
 
+const getUniqueSwapAssetIdentifier = (metadata: TokenVisualizerResultWithMetadata) => {
+	return `${ metadata.token.type }|${ metadata.token.address }|${ 'tokenId' in metadata.token ? metadata.token.tokenId : 'noTokenid'}`
+}
+
 export type SwapAsset = funtypes.Static<typeof SwapAsset>
 export const SwapAsset = funtypes.Intersect(
 	funtypes.Union(
-		funtypes.ReadonlyObject({
-			type: funtypes.Literal('Token'),
-			amount: EthereumQuantity,
-			tokenAddress: Erc20TokenEntry,
-			beforeAfterBalance: funtypes.Union(BeforeAfterBalance, funtypes.Undefined),
-		}),
-		funtypes.ReadonlyObject({
-			type: funtypes.Literal('ERC721'),
-			tokenId: EthereumQuantity,
-			tokenAddress: Erc721Entry,
-		}),
-		funtypes.ReadonlyObject({
-			type: funtypes.Literal('Ether'),
-			amount: EthereumQuantity,
-			beforeAfterBalance: funtypes.Union(BeforeAfterBalance, funtypes.Undefined),
-		}),
-	)
+		funtypes.ReadonlyObject({ type: funtypes.Literal('ERC1155'), token: Erc1155Entry }),
+		funtypes.ReadonlyObject({ type: funtypes.Literal('ERC20'), token: Erc20TokenEntry }),
+		funtypes.ReadonlyObject({ type: funtypes.Literal('ERC721'), token: Erc721Entry }),
+		funtypes.ReadonlyObject({ type: funtypes.Literal('Ether'), token: funtypes.Undefined }),
+	),
+	funtypes.ReadonlyObject({
+		amount: EthereumQuantity,
+		tokenId: funtypes.Union(funtypes.Undefined, EthereumQuantity),
+		beforeAfterBalance: funtypes.Union(BeforeAfterBalance, funtypes.Undefined),
+	})
 )
 
 export type IdentifiedSwapWithMetadata = funtypes.Static<typeof IdentifiedSwapWithMetadata>
@@ -50,39 +47,6 @@ interface SwapVisualizationParams {
 	rpcNetwork: RpcNetwork
 }
 
-function dropDuplicates<T>(array: T[], isEqual: (a: T, b: T) => boolean): T[] {
-    const result: T[] = [];
-    for (const item of array) {
-        const found = result.some((value) => isEqual(value, item));
-        if (!found) {
-            result.push(item);
-        }
-    }
-    return result;
-}
-export function formSwapAsset(tokenResult: TokenVisualizerErc20Event[] | TokenVisualizerErc721Event, sendBalanceAfter: bigint | undefined): SwapAsset {
-	if (Array.isArray(tokenResult)) {
-		const total = tokenResult.reduce((total, current) => total + current.amount, 0n)
-		return {
-			type: 'Token',
-			tokenAddress: tokenResult[0].token,
-			amount: total,
-			beforeAfterBalance: sendBalanceAfter !== undefined
-				? {
-					previousBalance: sendBalanceAfter - total,
-					afterBalance: sendBalanceAfter
-				}
-				: undefined
-		}
-	} else {
-		return {
-			type: 'ERC721',
-			tokenAddress: tokenResult.token,
-			tokenId: tokenResult.tokenId
-		}
-	}
-}
-
 export function identifySwap(simTransaction: SimulatedAndVisualizedTransaction): IdentifiedSwapWithMetadata {
 	const sender = simTransaction.transaction.from.address
 
@@ -90,62 +54,91 @@ export function identifySwap(simTransaction: SimulatedAndVisualizedTransaction):
 		if (tokenTransaction.isApproval && tokenTransaction.from.address === sender) return false // if the transaction includes us approving something, its not a simple swap
 	}
 
-	// check if sender sends one token type/ether and receives one token type/ether
+	// aggregate sent and received assets
+	const aggregatedSentAssets = new Map<string, SwapAsset>()
+	const aggregatedReceivedAssets = new Map<string, SwapAsset>()
+	const aggregate = (aggregateTo: Map<string, SwapAsset>, logEntry: TokenVisualizerResultWithMetadata) => {
+		if (logEntry.isApproval) throw new Error('was approval')
+		const identifier = getUniqueSwapAssetIdentifier(logEntry)
+		const previousValue = getWithDefault(aggregateTo, identifier, {
+			...logEntry,
+			amount: 0n,
+			tokenId: 'tokenId' in logEntry ? logEntry.tokenId : -1n,
+			beforeAfterBalance: undefined,
+		})
+		aggregateTo.set(identifier, {
+			...logEntry,
+			amount: previousValue.amount + ('amount' in logEntry ? logEntry.amount : 1n),
+			tokenId: 'tokenId' in logEntry ? logEntry.tokenId : -1n,
+			beforeAfterBalance: undefined,
+		})
+	}
+	simTransaction.tokenResults.forEach((logEntry) => {
+		if (logEntry.isApproval || logEntry.from.address !== sender) return
+		aggregate(aggregatedSentAssets, logEntry)
+	})
+	simTransaction.tokenResults.forEach((logEntry) => {
+		if (logEntry.isApproval || logEntry.to.address !== sender) return
+		aggregate(aggregatedReceivedAssets, logEntry)
+	})
+	const sentAssets = Array.from(aggregatedSentAssets, function (entry) { return { identifier: entry[0], value: entry[1] } })
+	const receivedAssets = Array.from(aggregatedReceivedAssets, function (entry) { return { identifier: entry[0], value: entry[1] } })
 
-	const tokensSent = simTransaction.tokenResults.filter((token): token is TokenVisualizerErc20Event | TokenVisualizerErc721Event => token.from.address === sender && !token.isApproval)
-	const tokensReceived = simTransaction.tokenResults.filter((token): token is TokenVisualizerErc20Event | TokenVisualizerErc721Event => token.to.address === sender && !token.isApproval)
-
-	const nftsSent = tokensSent.reduce((total, current) => total + (current.type === 'ERC721' ? 1 : 0), 0)
-	const nftsReceived = tokensReceived.reduce((total, current) => total + (current.type === 'ERC721' ? 1 : 0), 0)
-	if (nftsSent > 1 || nftsReceived > 1) return false //its not a pure 1 to 1 swap if we get multiple NFT's
-
-	const isSameTokenAddress = (a: TokenVisualizerResultWithMetadata, b: TokenVisualizerResultWithMetadata) => a.token.address === b.token.address
-
-	const tokenAddressesSent = dropDuplicates<TokenVisualizerResultWithMetadata>(tokensSent, isSameTokenAddress).map((x) => x.token)
-	const tokenAddressesReceived = dropDuplicates<TokenVisualizerResultWithMetadata>(tokensReceived, isSameTokenAddress).map((x) => x.token)
+	if (aggregatedSentAssets.size > 1 || aggregatedReceivedAssets.size > 1) return false // its not a pure 1 to 1 swap if we receive or send multiple assets
 
 	const etherChange = simTransaction.ethBalanceChanges.filter((x) => x.address.address === sender)
 	const ethDiff = etherChange !== undefined && etherChange.length >= 1 ? etherChange[etherChange.length - 1].after - etherChange[0].before : 0n
 
 	const transactionGasCost = simTransaction.realizedGasPrice * simTransaction.transaction.gas
 
-	if (tokenAddressesSent.length === 1 && tokenAddressesReceived.length === 1 && -ethDiff <= transactionGasCost) {
+	if (sentAssets.length === 1 && receivedAssets.length === 1 && -ethDiff <= transactionGasCost) {
 		// user swapped one token to another and eth didn't change more than gas fees
-		const sentToken = tokenAddressesSent[0]
-		const receiveToken = tokenAddressesReceived[0]
-		if (sentToken.address !== receiveToken.address) {
-			const sendBalanceAfter = simTransaction.tokenBalancesAfter.find((balance) => balance.owner === simTransaction.transaction.from.address && balance.token === sentToken.address)?.balance
-			const receiveBalanceAfter = simTransaction.tokenBalancesAfter.find((balance) => balance.owner === simTransaction.transaction.from.address && balance.token === receiveToken.address)?.balance
+		const sentToken = sentAssets[0]
+		const receiveToken = receivedAssets[0]
+		if (sentToken.identifier !== receiveToken.identifier) {
+			const sendBalanceAfter = simTransaction.tokenBalancesAfter.find((balance) => balance.owner === simTransaction.transaction.from.address && balance.token === sentToken.value.token?.address && balance.tokenId === sentToken.value.tokenId)?.balance
+			const receiveBalanceAfter = simTransaction.tokenBalancesAfter.find((balance) => balance.owner === simTransaction.transaction.from.address && balance.token === receiveToken.value.token?.address && balance.tokenId === receiveToken.value.tokenId)?.balance
 			return {
 				sender: simTransaction.transaction.from,
-				sendAsset: formSwapAsset(tokensSent[0].type === 'ERC721' ? tokensSent[0] : tokensSent.filter((token): token is TokenVisualizerErc20Event => token.type === 'ERC20'), sendBalanceAfter),
-				receiveAsset: formSwapAsset(tokensReceived[0].type === 'ERC721' ? tokensReceived[0] : tokensReceived.filter((token): token is TokenVisualizerErc20Event => token.type === 'ERC20'), receiveBalanceAfter),
+				sendAsset: { ...sentToken.value, beforeAfterBalance: sendBalanceAfter !== undefined
+					? { previousBalance: sendBalanceAfter - sentToken.value.amount, afterBalance: sendBalanceAfter }
+					: undefined
+				},
+				receiveAsset: { ...receiveToken.value, beforeAfterBalance: receiveBalanceAfter !== undefined
+					? { previousBalance: receiveBalanceAfter - receiveToken.value.amount, afterBalance: receiveBalanceAfter }
+					: undefined
+				},
 			}
 		}
 	}
 
-	if (tokenAddressesSent.length === 1 && tokenAddressesReceived.length === 0 && ethDiff > 0n ) {
+	if (sentAssets.length === 1 && receivedAssets.length === 0 && ethDiff > 0n ) {
 		// user sold token for eth
-		const tokenAddressSent = Array.from(tokenAddressesSent.values())[0]
-		const sendBalanceAfter = simTransaction.tokenBalancesAfter.find((balance) => balance.owner === simTransaction.transaction.from.address && balance.token === tokenAddressSent.address)?.balance
+		const sentToken = sentAssets[0]
+		const sendBalanceAfter = simTransaction.tokenBalancesAfter.find((balance) => balance.owner === simTransaction.transaction.from.address && balance.token === sentToken.value.token?.address && balance.tokenId === sentToken.value.tokenId)?.balance
 		return {
 			sender: simTransaction.transaction.from,
-			sendAsset: formSwapAsset(tokensSent[0].type === 'ERC721' ? tokensSent[0] : tokensSent.filter((token): token is TokenVisualizerErc20Event => token.type === 'ERC20'), sendBalanceAfter),
+			sendAsset: { ...sentToken.value, beforeAfterBalance: sendBalanceAfter !== undefined
+				? { previousBalance: sendBalanceAfter - sentToken.value.amount, afterBalance: sendBalanceAfter }
+				: undefined
+			},
 			receiveAsset: {
 				type: 'Ether',
 				amount: ethDiff,
 				beforeAfterBalance: {
 					previousBalance: etherChange[0].before,
 					afterBalance: etherChange[0].before + ethDiff
-				}
+				},
+				token: undefined,
+				tokenId: undefined,
 			},
 		}
 	}
 
-	if (tokenAddressesSent.length === 0 && tokenAddressesReceived.length === 1 && ethDiff < transactionGasCost ) {
+	if (sentAssets.length === 0 && receivedAssets.length === 1 && ethDiff < transactionGasCost ) {
 		// user bought token with eth
-		const receiveToken = tokenAddressesReceived[0]
-		const receiveBalanceAfter = simTransaction.tokenBalancesAfter.find((balance) => balance.owner === simTransaction.transaction.from.address && balance.token === receiveToken.address)?.balance
+		const receiveToken = receivedAssets[0]
+		const receiveBalanceAfter = simTransaction.tokenBalancesAfter.find((balance) => balance.owner === simTransaction.transaction.from.address && balance.token === receiveToken.value.token?.address && balance.tokenId === receiveToken.value.tokenId)?.balance
 		return {
 			sender: simTransaction.transaction.from,
 			sendAsset: {
@@ -154,9 +147,14 @@ export function identifySwap(simTransaction: SimulatedAndVisualizedTransaction):
 				beforeAfterBalance: {
 					previousBalance: etherChange[0].before,
 					afterBalance: etherChange[0].before + ethDiff
-				}
+				},
+				token: undefined,
+				tokenId: undefined,
 			},
-			receiveAsset: formSwapAsset(tokensReceived[0].type === 'ERC721' ? tokensReceived[0] : tokensReceived.filter((token): token is TokenVisualizerErc20Event => token.type === 'ERC20'), receiveBalanceAfter),
+			receiveAsset: { ...receiveToken.value, beforeAfterBalance: receiveBalanceAfter !== undefined
+				? { previousBalance: receiveBalanceAfter - receiveToken.value.amount, afterBalance: receiveBalanceAfter }
+				: undefined
+			},
 		}
 	}
 	return false
@@ -260,8 +258,8 @@ export function identifyRoutes(simulatedAndVisualizedTransaction: SimulatedAndVi
 	}
 	Map<string, Map<string | undefined, {to: string, tokenResultIndex: number | undefined } > >
 	// traverse chain
-	const startToken = identifiedSwap.sendAsset.type !== 'Ether' ? addressString(identifiedSwap.sendAsset.tokenAddress.address) : undefined
-	const endToken = identifiedSwap.receiveAsset.type !== 'Ether' ? addressString(identifiedSwap.receiveAsset.tokenAddress.address) : undefined
+	const startToken = identifiedSwap.sendAsset.type !== 'Ether' ? addressString(identifiedSwap.sendAsset.token.address) : undefined
+	const endToken = identifiedSwap.receiveAsset.type !== 'Ether' ? addressString(identifiedSwap.receiveAsset.token.address) : undefined
 	const lastIndex = endToken !== undefined ? tokenResults.findIndex((x) => (x.to.address === identifiedSwap.sender.address && addressString(x.token.address) === endToken ) ) : -1
 	const routes = [...findSwapRoutes(graph,
 		{
@@ -302,8 +300,8 @@ export function identifyRoutes(simulatedAndVisualizedTransaction: SimulatedAndVi
 
 export function getSwapName(identifiedSwap: IdentifiedSwapWithMetadata, rpcNetwork: RpcNetwork) {
 	if (identifiedSwap === false) return undefined
-	const sent = identifiedSwap.sendAsset.type !== 'Ether' ? identifiedSwap.sendAsset.tokenAddress.symbol : rpcNetwork.currencyTicker
-	const to = identifiedSwap.receiveAsset.type !== 'Ether' ? identifiedSwap.receiveAsset.tokenAddress.symbol : rpcNetwork.currencyTicker
+	const sent = identifiedSwap.sendAsset.type !== 'Ether' ? identifiedSwap.sendAsset.token.symbol : rpcNetwork.currencyTicker
+	const to = identifiedSwap.receiveAsset.type !== 'Ether' ? identifiedSwap.receiveAsset.token.symbol : rpcNetwork.currencyTicker
 	return `Swap ${ sent } for ${ to }`
 }
 
@@ -347,7 +345,7 @@ export function VisualizeSwapAsset({ swapAsset, rpcNetwork }: { swapAsset: SwapA
 				</div>
 				<div class = 'log-cell' style = 'justify-content: right;'>
 					<TokenSymbol
-						{ ...swapAsset.tokenAddress }
+						{ ...swapAsset.token }
 						tokenId = { swapAsset.tokenId }
 						useFullTokenName = { false }
 						style = { tokenStyle }
@@ -355,19 +353,12 @@ export function VisualizeSwapAsset({ swapAsset, rpcNetwork }: { swapAsset: SwapA
 				</div>
 			</span>
 		}
-		case 'Token': {
+		case 'ERC1155': {
 			return <>
 				<span class = 'grid swap-grid'>
-					<div class = 'log-cell' style = 'justify-content: left;'>
-						<TokenAmount
-							amount = { swapAsset.amount }
-							decimals = { swapAsset.tokenAddress.decimals }
-							style = { tokenStyle }
-						/>
-					</div>
 					<div class = 'log-cell' style = 'justify-content: right;'>
 						<TokenSymbol
-							{ ...swapAsset.tokenAddress }
+							{ ...swapAsset.token }
 							useFullTokenName = { false }
 							style = { tokenStyle }
 						/>
@@ -377,9 +368,39 @@ export function VisualizeSwapAsset({ swapAsset, rpcNetwork }: { swapAsset: SwapA
 					<div class = 'log-cell'/>
 					{ swapAsset.beforeAfterBalance !== undefined ? <div class = 'log-cell' style = 'justify-content: right;'>
 						<p class = 'paragraph' style = { balanceTextStyle }>Balance:&nbsp;</p>
-						<TokenOrEthValue { ...swapAsset.tokenAddress } amount = { swapAsset.beforeAfterBalance?.previousBalance } style = { balanceTextStyle } />
+						<TokenOrEthValue { ...swapAsset.token } amount = { swapAsset.beforeAfterBalance?.previousBalance } style = { balanceTextStyle } />
 						<p class = 'paragraph' style = { balanceTextStyle }>&nbsp;{'->'}&nbsp;</p>
-						<TokenOrEthValue { ...swapAsset.tokenAddress } amount = { swapAsset.beforeAfterBalance?.afterBalance } style = { balanceTextStyle } />
+						<TokenOrEthValue { ...swapAsset.token } amount = { swapAsset.beforeAfterBalance?.afterBalance } style = { balanceTextStyle } />
+						</div> : <></>
+					}
+				</span>
+			</>
+		}
+		case 'ERC20': {
+			return <>
+				<span class = 'grid swap-grid'>
+					<div class = 'log-cell' style = 'justify-content: left;'>
+						<TokenAmount
+							amount = { swapAsset.amount }
+							decimals = { swapAsset.token.decimals }
+							style = { tokenStyle }
+						/>
+					</div>
+					<div class = 'log-cell' style = 'justify-content: right;'>
+						<TokenSymbol
+							{ ...swapAsset.token }
+							useFullTokenName = { false }
+							style = { tokenStyle }
+						/>
+					</div>
+				</span>
+				<span class = 'grid swap-grid'>
+					<div class = 'log-cell'/>
+					{ swapAsset.beforeAfterBalance !== undefined ? <div class = 'log-cell' style = 'justify-content: right;'>
+						<p class = 'paragraph' style = { balanceTextStyle }>Balance:&nbsp;</p>
+						<TokenOrEthValue { ...swapAsset.token } amount = { swapAsset.beforeAfterBalance?.previousBalance } style = { balanceTextStyle } />
+						<p class = 'paragraph' style = { balanceTextStyle }>&nbsp;{'->'}&nbsp;</p>
+						<TokenOrEthValue { ...swapAsset.token } amount = { swapAsset.beforeAfterBalance?.afterBalance } style = { balanceTextStyle } />
 						</div> : <></>
 					}
 				</span>
