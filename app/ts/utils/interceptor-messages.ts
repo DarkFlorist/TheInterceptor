@@ -5,7 +5,7 @@ import { SimulationState, OptionalEthereumAddress, SimulatedAndVisualizedTransac
 import { ICON_ACCESS_DENIED, ICON_ACTIVE, ICON_NOT_ACTIVE, ICON_SIGNING, ICON_SIGNING_NOT_SUPPORTED, ICON_SIMULATING } from './constants.js'
 import { PersonalSignRequestData } from './personal-message-definitions.js'
 import { InterceptedRequest, UniqueRequestIdentifier } from './requests.js'
-import { EthGetLogsResponse, EthGetStorageAtParams, EthTransactionReceiptResponse, GetBlockReturn, GetSimulationStackReply, OldSignTypedDataParams, PersonalSignParams, SendRawTransaction, SendTransactionParams, SignTypedDataParams, WalletAddEthereumChain } from './JsonRpc-types.js'
+import { EthGetLogsResponse, EthGetStorageAtParams, EthTransactionReceiptResponse, GetBlockReturn, GetSimulationStackReply, OldSignTypedDataParams, PersonalSignParams, SendRawTransactionParams, SendTransactionParams, SignTypedDataParams, WalletAddEthereumChain } from './JsonRpc-types.js'
 
 export type WalletSwitchEthereumChainReply = funtypes.Static<typeof WalletSwitchEthereumChainReply>
 export const WalletSwitchEthereumChainReply = funtypes.ReadonlyObject({
@@ -97,7 +97,7 @@ export const NonForwardingRPCRequestReturnValue = funtypes.Union(NonForwardingRP
 export type ForwardToWallet = funtypes.Static<typeof ForwardToWallet>
 export const ForwardToWallet = 	funtypes.Intersect( // forward directly to wallet
 	funtypes.ReadonlyObject({ forward: funtypes.Literal(true) }),
-	funtypes.Union(SendRawTransaction, SendTransactionParams, PersonalSignParams, SignTypedDataParams, OldSignTypedDataParams, WalletAddEthereumChain, EthGetStorageAtParams),
+	funtypes.Union(SendRawTransactionParams, SendTransactionParams, PersonalSignParams, SignTypedDataParams, OldSignTypedDataParams, WalletAddEthereumChain, EthGetStorageAtParams),
 )
 
 export type UnknownMethodForward = funtypes.Static<typeof UnknownMethodForward>
@@ -354,17 +354,6 @@ export const GetAddressBookDataReply = funtypes.ReadonlyObject({
 	data: GetAddressBookDataReplyData,
 }).asReadonly()
 
-export type RefreshConfirmTransactionDialogSimulation = funtypes.Static<typeof RefreshConfirmTransactionDialogSimulation>
-export const RefreshConfirmTransactionDialogSimulation = funtypes.ReadonlyObject({
-	method: funtypes.Literal('popup_refreshConfirmTransactionDialogSimulation'),
-	data: funtypes.ReadonlyObject({
-		activeAddress: EthereumAddress,
-		simulationMode: funtypes.Boolean,
-		uniqueRequestIdentifier: UniqueRequestIdentifier,
-		transactionToSimulate: WebsiteCreatedEthereumUnsignedTransaction,
-	}),
-}).asReadonly()
-
 export type RpcConnectionStatus = funtypes.Static<typeof RpcConnectionStatus>
 export const RpcConnectionStatus = funtypes.Union(funtypes.Undefined, funtypes.ReadonlyObject({
 	isConnected: funtypes.Boolean,
@@ -472,19 +461,40 @@ export const ConfirmTransactionSimulationFailed = funtypes.ReadonlyObject({
 export type ConfirmTransactionTransactionSingleVisualization = funtypes.Static<typeof ConfirmTransactionTransactionSingleVisualization>
 export const ConfirmTransactionTransactionSingleVisualization = funtypes.Union(ConfirmTransactionSimulationFailed, ConfirmTransactionSimulationStateChanged)
 
-export type ConfirmTransactionTransactionSingleVisualizationArray = funtypes.Static<typeof ConfirmTransactionTransactionSingleVisualizationArray>
-export const ConfirmTransactionTransactionSingleVisualizationArray = funtypes.ReadonlyArray(ConfirmTransactionTransactionSingleVisualization)
+export type PendingTransaction = funtypes.Static<typeof PendingTransaction>
+export const PendingTransaction = funtypes.ReadonlyObject({
+	dialogId: funtypes.Number,
+	request: InterceptedRequest,
+	simulationMode: funtypes.Boolean,
+	activeAddress: EthereumAddress,
+	transactionCreated: EthereumTimestamp,
+	simulationResults: ConfirmTransactionTransactionSingleVisualization,
+	transactionToSimulate: WebsiteCreatedEthereumUnsignedTransaction,
+})
+
+export type RefreshConfirmTransactionDialogSimulation = funtypes.Static<typeof RefreshConfirmTransactionDialogSimulation>
+export const RefreshConfirmTransactionDialogSimulation = funtypes.ReadonlyObject({
+	method: funtypes.Literal('popup_refreshConfirmTransactionDialogSimulation'),
+	data: funtypes.ReadonlyObject({
+		uniqueRequestIdentifier: UniqueRequestIdentifier,
+		activeAddress: EthereumAddress,
+		simulationMode: funtypes.Boolean,
+		originalTransactionRequestParameters: funtypes.Union(SendTransactionParams, SendRawTransactionParams),
+		website: Website,
+		transactionCreated: EthereumTimestamp,
+	})
+}).asReadonly()
 
 export type UpdateConfirmTransactionDialog = funtypes.Static<typeof UpdateConfirmTransactionDialog>
 export const UpdateConfirmTransactionDialog = funtypes.ReadonlyObject({
 	method: funtypes.Literal('popup_update_confirm_transaction_dialog'),
-	data: ConfirmTransactionTransactionSingleVisualizationArray,
+	data: funtypes.ReadonlyArray(PendingTransaction),
 }).asReadonly()
 
 export type ConfirmTransactionDialogPendingChanged = funtypes.Static<typeof ConfirmTransactionDialogPendingChanged>
 export const ConfirmTransactionDialogPendingChanged = funtypes.ReadonlyObject({
 	method: funtypes.Literal('popup_confirm_transaction_dialog_pending_changed'),
-	data: ConfirmTransactionTransactionSingleVisualizationArray,
+	data: funtypes.ReadonlyArray(PendingTransaction),
 }).asReadonly()
 
 export type WebsiteAddressAccess = funtypes.Static<typeof WebsiteAddressAccess>
@@ -626,17 +636,6 @@ export const WindowMessageSignerAccountsChanged = funtypes.ReadonlyObject({
 
 export type WindowMessage = funtypes.Static<typeof WindowMessage>
 export const WindowMessage = WindowMessageSignerAccountsChanged
-
-export type PendingTransaction = funtypes.Static<typeof PendingTransaction>
-export const PendingTransaction = funtypes.ReadonlyObject({
-	dialogId: funtypes.Number,
-	request: InterceptedRequest,
-	transactionParams: funtypes.Union(SendTransactionParams, SendRawTransaction),
-	transactionToSimulate: WebsiteCreatedEthereumUnsignedTransaction,
-	simulationMode: funtypes.Boolean,
-	activeAddress: EthereumAddress,
-	simulationResults: ConfirmTransactionTransactionSingleVisualization
-})
 
 export type PendingChainChangeConfirmationPromise = funtypes.Static<typeof PendingChainChangeConfirmationPromise>
 export const PendingChainChangeConfirmationPromise = funtypes.ReadonlyObject({

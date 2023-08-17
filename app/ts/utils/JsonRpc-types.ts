@@ -222,8 +222,8 @@ export const SendTransactionParams = funtypes.ReadonlyObject({
 	params: funtypes.ReadonlyTuple(DappRequestTransaction)
 })
 
-export type SendRawTransaction = funtypes.Static<typeof SendRawTransaction>
-export const SendRawTransaction = funtypes.ReadonlyObject({
+export type SendRawTransactionParams = funtypes.Static<typeof SendRawTransactionParams>
+export const SendRawTransactionParams = funtypes.ReadonlyObject({
 	method: funtypes.Literal('eth_sendRawTransaction'),
 	params: funtypes.ReadonlyTuple(EthereumData),
 })
@@ -453,7 +453,7 @@ export const EthereumJsonRpcRequest = funtypes.Union(
 	TransactionByHashParams,
 	TransactionReceiptParams,
 	SendTransactionParams,
-	SendRawTransaction,
+	SendRawTransactionParams,
 	EthCallParams,
 	EthSubscribeParams,
 	EthUnSubscribeParams,

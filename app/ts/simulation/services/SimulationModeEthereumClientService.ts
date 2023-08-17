@@ -1,6 +1,6 @@
 import { EthereumClientService } from './EthereumClientService.js'
 import { EthereumUnsignedTransaction, EthereumSignedTransactionWithBlockData, EthereumBlockTag, EthereumAddress, EthereumBlockHeader, EthereumBlockHeaderWithTransactionHashes, EthereumSignedTransaction, EthereumData, EthereumQuantity } from '../../utils/wire-types.js'
-import { addressString, bytes32String, bytesToUnsigned, dataString, dataStringWith0xStart, max, min, stringToUint8Array } from '../../utils/bigint.js'
+import { addressString, bytes32String, bytesToUnsigned, dataStringWith0xStart, max, min, stringToUint8Array } from '../../utils/bigint.js'
 import { CANNOT_SIMULATE_OFF_LEGACY_BLOCK, ERROR_INTERCEPTOR_GAS_ESTIMATION_FAILED, MOCK_ADDRESS } from '../../utils/constants.js'
 import { ethers, keccak256 } from 'ethers'
 import { WebsiteCreatedEthereumUnsignedTransaction, SimulatedTransaction, SimulationState, TokenBalancesAfter, EstimateGasError } from '../../utils/visualizer-types.js'
@@ -15,12 +15,13 @@ export const getWebsiteCreatedEthereumUnsignedTransactions = (simulatedTransacti
 		transaction: simulatedTransaction.signedTransaction,
 		website: simulatedTransaction.website,
 		transactionCreated: simulatedTransaction.transactionCreated,
-		transactionSendingFormat: simulatedTransaction.transactionSendingFormat
+		originalTransactionRequestParameters: simulatedTransaction.originalTransactionRequestParameters,
+		error: undefined,
 	}))
 }
 
 function convertSimulatedTransactionToWebsiteCreatedEthereumUnsignedTransaction(tx: SimulatedTransaction) {
-	return { transaction: tx.signedTransaction, website: tx.website, transactionCreated: tx.transactionCreated, transactionSendingFormat: tx.transactionSendingFormat, }
+	return { transaction: tx.signedTransaction, website: tx.website, transactionCreated: tx.transactionCreated, originalTransactionRequestParameters: tx.originalTransactionRequestParameters, error: undefined, }
 }
 
 export const copySimulationState = (simulationState: SimulationState): SimulationState => {
@@ -104,9 +105,10 @@ export const simulateEstimateGas = async (ethereumClientService: EthereumClientS
 		return {
 			error: {
 				code: ERROR_INTERCEPTOR_GAS_ESTIMATION_FAILED,
-				message: `Interceptor: Gas estimation failed: "${ lastResult.error }" `,
-				data: dataString(lastResult.returnValue),
-			}
+				message: `execution reverted: failed to estimate gas.`,
+				data: dataStringWith0xStart(lastResult.returnValue),
+			},
+			gas: maxGas,
 		} as const 
 	}
 	const gasSpent = lastResult.gasSpent * 125n / 100n // add 25% extra to account for gas savings <https://eips.ethereum.org/EIPS/eip-3529>
@@ -164,7 +166,7 @@ export const appendTransaction = async (ethereumClientService: EthereumClientSer
 			realizedGasPrice: calculateGasPrice(signedTxs[index], parentBlock.gasUsed, parentBlock.gasLimit, parentBaseFeePerGas),
 			tokenBalancesAfter: tokenBalancesAfter[index],
 			...websiteData[index],
-			transactionSendingFormat: transaction.transactionSendingFormat,
+			originalTransactionRequestParameters: transaction.originalTransactionRequestParameters,
 		})),
 		blockNumber: parentBlock.number,
 		blockTimestamp: parentBlock.timestamp,
@@ -218,7 +220,7 @@ export const setSimulationTransactions = async (ethereumClientService: EthereumC
 			tokenBalancesAfter: tokenBalancesAfter[index],
 			website: newTransactionsToSimulate[index].website,
 			transactionCreated: newTransactionsToSimulate[index].transactionCreated,
-			transactionSendingFormat: newTransactionsToSimulate[index].transactionSendingFormat,
+			originalTransactionRequestParameters: newTransactionsToSimulate[index].originalTransactionRequestParameters,
 		})),
 		blockNumber: parentBlock.number,
 		blockTimestamp: parentBlock.timestamp,
@@ -276,7 +278,8 @@ export const removeTransactionAndUpdateTransactionNonces = async (ethereumClient
 			transaction: newTransaction,
 			website: transaction.website,
 			transactionCreated: transaction.transactionCreated,
-			transactionSendingFormat: transaction.transactionSendingFormat
+			originalTransactionRequestParameters: transaction.originalTransactionRequestParameters,
+			error: undefined,
 		})
 	}
 	return await setSimulationTransactions(ethereumClientService, simulationState, newTransactions)
@@ -286,7 +289,7 @@ export const getNonceFixedSimulatedTransactions = async(ethereumClientService: E
 	const isFixableNonceError = (transaction: SimulatedTransaction) => {
 		return transaction.multicallResponse.statusCode === 'failure'
 		&& transaction.multicallResponse.error === 'wrong transaction nonce'
-		&& transaction.transactionSendingFormat === 'eth_sendTransaction'
+		&& transaction.originalTransactionRequestParameters.method === 'eth_sendTransaction'
 	}
 	if (simulatedTransactions.find((transaction) => isFixableNonceError(transaction)) === undefined) return 'NoNonceErrors' as const
 	const nonceFixedTransactions: SimulatedTransaction[] = []

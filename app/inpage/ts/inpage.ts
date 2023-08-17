@@ -76,7 +76,8 @@ type InterceptedRequestForwardWithResult = InterceptedRequestBase & {
 
 type InterceptedRequestForward = InterceptedRequestBase & ({ error?: {
 	readonly code: number,
-	readonly message: string
+	readonly message: string,
+	readonly data?: object
 } } | {
 	readonly result: unknown,
 } | {} )
@@ -186,13 +187,7 @@ class InterceptorMessageListener {
 			// make a message that the background script will catch and reply us. We'll wait until the background script replies to us and return only after that
 			return await this.sendMessageToBackgroundPage({ method: methodAndParams.method, params: methodAndParams.params })
 		} catch (error: unknown) {
-			// if it is an Error, add context to it if context doesn't already exist
-			if (error instanceof Error) {
-				if (!('data' in error) || error.data === undefined || error.data === null) (error as ProviderRpcError).data = { request: methodAndParams }
-				else error.data = { data: error.data, request: methodAndParams }
-				throw error
-			}
-			// if someone threw something besides an Error, wrap it up in an error
+			if (error instanceof Error) throw error
 			throw new EthereumJsonRpcError(METAMASK_ERROR_BLANKET_ERROR, `Unexpected thrown value.`, { error: error, request: methodAndParams })
 		}
 	}
@@ -378,10 +373,10 @@ class InterceptorMessageListener {
 		if (!('method' in messageEvent.data)) throw new Error('missing method field')
 		const forwardRequest = messageEvent.data as InterceptedRequestForward //use "as" here as we don't want to inject funtypes here
 		if ('error' in forwardRequest && forwardRequest.error !== undefined) {
-			if (forwardRequest.requestId === undefined) throw new EthereumJsonRpcError(forwardRequest.error.code, forwardRequest.error.message)
+			if (forwardRequest.requestId === undefined) throw new EthereumJsonRpcError(forwardRequest.error.code, forwardRequest.error.message, forwardRequest.error.data)
 			const pending = this.outstandingRequests.get(forwardRequest.requestId)
-			if (pending === undefined) throw new EthereumJsonRpcError(forwardRequest.error.code, forwardRequest.error.message)
-			return pending.reject(new EthereumJsonRpcError(forwardRequest.error.code, forwardRequest.error.message))
+			if (pending === undefined) throw new EthereumJsonRpcError(forwardRequest.error.code, forwardRequest.error.message, forwardRequest.error.data)
+			return pending.reject(new EthereumJsonRpcError(forwardRequest.error.code, forwardRequest.error.message, forwardRequest.error.data))
 		}
 
 		if ('result' in forwardRequest && forwardRequest.result !== undefined) return await this.handleReplyRequest(forwardRequest)
@@ -406,7 +401,7 @@ class InterceptorMessageListener {
 				&& 'code' in error && error.code !== undefined && typeof error.code === 'number'
 				&& 'message' in error && error.message !== undefined && typeof error.message === 'string'
 			) {
-				return pendingRequest.reject(new EthereumJsonRpcError(error.code, error.message))
+				return pendingRequest.reject(new EthereumJsonRpcError(error.code, error.message, 'data' in error && typeof error.data === 'object' && error.data !== null ? error.data : undefined))
 			}
 			// if the signer we are connected threw something besides an Error, wrap it up in an error
 			pendingRequest.reject(new EthereumJsonRpcError(METAMASK_ERROR_BLANKET_ERROR, `Unexpected thrown value.`, { error: error }))
