@@ -176,6 +176,7 @@ export type ChangeActiveAddressParam = {
 
 export type SettingsParam = {
 	useTabsInsteadOfPopup: boolean | undefined,
+	metamaskCompatibilityMode: boolean | undefined,
 	setAndSaveAppPage: (page: Page) => void
 }
 

@@ -4,7 +4,7 @@ import { EthereumAccountsReply, EthereumChainReply } from '../utils/JsonRpc-type
 import { changeActiveAddressAndChainAndResetSimulation } from './background.js'
 import { getSocketFromPort, sendInternalWindowMessage, sendPopupMessageToOpenWindows } from './backgroundUtils.js'
 import { getRpcNetworkForChain, getTabState, setSignerName, updateTabState } from './storageVariables.js'
-import { getSettings } from './settings.js'
+import { getMetamaskCompatibilityMode, getSettings } from './settings.js'
 import { resolveSignerChainChange } from './windows/changeChain.js'
 import { ApprovalState } from './accessManagement.js'
 import { ProviderMessage } from '../utils/requests.js'
@@ -12,8 +12,9 @@ import { sendSubscriptionReplyOrCallBackToPort } from './messageSending.js'
 import { Simulator } from '../simulation/simulator.js'
 
 export async function ethAccountsReply(simulator: Simulator, websiteTabConnections: WebsiteTabConnections, port: browser.runtime.Port, request: ProviderMessage, _connectInfoapproval: ApprovalState) {
-	if (!('params' in request)) return
-	if (port.sender?.tab?.id === undefined) return
+	const returnValue = { method: 'eth_accounts_reply' as const, result: '0x' as const }
+	if (!('params' in request)) return returnValue
+	if (port.sender?.tab?.id === undefined) return returnValue
 
 	const signerAccountsReply = EthereumAccountsReply.parse(request.params)
 	const signerAccounts = signerAccountsReply[0]
@@ -37,6 +38,7 @@ export async function ethAccountsReply(simulator: Simulator, websiteTabConnectio
 		})
 		await sendPopupMessageToOpenWindows({ method: 'popup_accounts_update' })
 	}
+	return returnValue
 }
 
 async function changeSignerChain(simulator: Simulator, websiteTabConnections: WebsiteTabConnections, port: browser.runtime.Port, signerChain: bigint, approval: ApprovalState) {
@@ -63,13 +65,16 @@ async function changeSignerChain(simulator: Simulator, websiteTabConnections: We
 }
 
 export async function signerChainChanged(simulator: Simulator, websiteTabConnections: WebsiteTabConnections, port: browser.runtime.Port, request: ProviderMessage, approval: ApprovalState) {
-	if (!('params' in request)) return
+	const returnValue = { method: 'signer_chainChanged' as const, result: '0x' as const }
+	if (!('params' in request)) return returnValue
 	const signerChain = EthereumChainReply.parse(request.params)[0]
 	await changeSignerChain(simulator, websiteTabConnections, port, signerChain, approval)
+	return returnValue
 }
 
 export async function walletSwitchEthereumChainReply(simulator: Simulator, websiteTabConnections: WebsiteTabConnections, port: browser.runtime.Port, request: ProviderMessage, approval: ApprovalState) {
-	if (approval !== 'hasAccess') return
+	const returnValue = { method: 'wallet_switchEthereumChain_reply' as const, result: '0x' as const }
+	if (approval !== 'hasAccess') return returnValue
 	const params = WalletSwitchEthereumChainReply.parse(request).params[0]
 	if (params.accept) await changeSignerChain(simulator, websiteTabConnections, port, params.chainId, approval)
 	await resolveSignerChainChange({
@@ -79,6 +84,7 @@ export async function walletSwitchEthereumChainReply(simulator: Simulator, websi
 			accept: params.accept,
 		}
 	})
+	return returnValue
 }
 
 export async function connectedToSigner(_simulator: Simulator, _websiteTabConnections: WebsiteTabConnections, port: browser.runtime.Port, request: ProviderMessage, approval: ApprovalState) {
@@ -93,4 +99,5 @@ export async function connectedToSigner(_simulator: Simulator, _websiteTabConnec
 		}
 		sendSubscriptionReplyOrCallBackToPort(port, { method: 'request_signer_chainId' as const, result: [] })
 	}
+	return { method: 'connected_to_signer' as const, result: { metamaskCompatibilityMode: await getMetamaskCompatibilityMode() } }
 }
