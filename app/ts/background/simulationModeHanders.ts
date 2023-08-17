@@ -119,6 +119,10 @@ export async function chainId(ethereumClientService: EthereumClientService) {
 	return { method: 'eth_chainId' as const, result: ethereumClientService.getChainId() }
 }
 
+export async function netVersion(ethereumClientService: EthereumClientService) {
+	return { method: 'net_version' as const, result: (await chainId(ethereumClientService)).result }
+}
+
 export async function gasPrice(ethereumClientService: EthereumClientService) {
 	return { method: 'eth_gasPrice' as const, result: await ethereumClientService.getGasPrice() }
 }

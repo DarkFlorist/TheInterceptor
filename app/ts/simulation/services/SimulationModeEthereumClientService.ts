@@ -614,7 +614,7 @@ export const simulatedCall = async (ethereumClientService: EthereumClientService
 		...params,
 		type: '1559',
 		gas: params.gasLimit,
-		nonce: await getSimulatedTransactionCount(ethereumClientService, simulationStateToUse, params.from, blockNumToUse),
+		nonce: await getSimulatedTransactionCount(ethereumClientService, simulationStateToUse, params.from, blockTag),
 		chainId: ethereumClientService.getChainId(),
 	} as const
 	const multicallResult = await simulatedMulticall(ethereumClientService, simulationStateToUse, [transaction], blockNumToUse)

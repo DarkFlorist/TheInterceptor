@@ -28,6 +28,7 @@ export class FetchResponseError extends ErrorWithData {
 }
 
 export function isFailedToFetchError(error: Error) {
-	if (error.message.includes('Failed to fetch')) return true
+	// failed to fetch is thrown by Chrome if there's no connection to node and FireFox throws NetworkError instead
+	if (error.message.includes('Failed to fetch') || error.message.includes('NetworkError when attempting to fetch resource')) return true
 	return false
 }
