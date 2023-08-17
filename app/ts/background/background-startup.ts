@@ -104,12 +104,14 @@ export async function onContentScriptConnected(simulator: Simulator, port: brows
 					return replyToInterceptedRequest(websiteTabConnections, { method: 'eth_chainId' as const, result: 1n, uniqueRequestIdentifier: request.uniqueRequestIdentifier })
 				}
 			}
-			if (activeAddress === undefined) return refuseAccess(websiteTabConnections, request)
 
 			switch (access) {
-				case 'noAccess': return refuseAccess(websiteTabConnections, request)
 				case 'askAccess': return await gateKeepRequestBehindAccessDialog(simulator, websiteTabConnections, socket, request, await websitePromise, activeAddress, await getSettings())
-				case 'hasAccess': return await handleContentScriptMessage(simulator, websiteTabConnections, request, await websitePromise, activeAddress)
+				case 'noAccess': return refuseAccess(websiteTabConnections, request)
+				case 'hasAccess': {
+					if (activeAddress === undefined) return refuseAccess(websiteTabConnections, request)
+					return await handleContentScriptMessage(simulator, websiteTabConnections, request, await websitePromise, activeAddress)
+				}
 				default: assertNever(access)
 			}
 		})

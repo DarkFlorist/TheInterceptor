@@ -3,9 +3,9 @@ import 'webextension-polyfill'
 import { Simulator } from '../simulation/simulator.js'
 import { getEthDonator, getSignerName, getSimulationResults, updateSimulationResults } from './storageVariables.js'
 import { changeSimulationMode, getSettings, getMakeMeRich } from './settings.js'
-import { blockNumber, call, chainId, estimateGas, gasPrice, getAccounts, getBalance, getBlockByNumber, getCode, getLogs, getPermissions, getSimulationStack, getTransactionByHash, getTransactionCount, getTransactionReceipt, netVersion, personalSign, sendRawTransaction, sendTransaction, subscribe, switchEthereumChain, unsubscribe } from './simulationModeHanders.js'
+import { blockNumber, call, chainId, estimateGas, gasPrice, getAccounts, getBalance, getBlockByNumber, getCode, getLogs, getPermissions, getSimulationStack, getTransactionByHash, getTransactionCount, getTransactionReceipt, netVersion, personalSign, sendTransaction, subscribe, switchEthereumChain, unsubscribe } from './simulationModeHanders.js'
 import { changeActiveAddress, changeMakeMeRich, changePage, resetSimulation, confirmDialog, refreshSimulation, removeTransaction, requestAccountsFromSigner, refreshPopupConfirmTransactionSimulation, confirmPersonalSign, confirmRequestAccess, changeInterceptorAccess, changeChainDialog, popupChangeActiveRpc, enableSimulationMode, addOrModifyAddressInfo, getAddressBookData, removeAddressBookEntry, openAddressBook, homeOpened, interceptorAccessChangeAddressOrRefresh, refreshPopupConfirmTransactionMetadata, changeSettings, importSettings, exportSettings, setNewRpcList } from './popupMessageHandlers.js'
-import { WebsiteCreatedEthereumUnsignedTransaction, SimulationState, RpcNetwork } from '../utils/visualizer-types.js'
+import { SimulationState, RpcNetwork, WebsiteCreatedEthereumUnsignedTransaction } from '../utils/visualizer-types.js'
 import { AddressBookEntry, Website, WebsiteSocket, WebsiteTabConnections } from '../utils/user-interface-types.js'
 import { interceptorAccessMetadataRefresh, requestAccessFromUser, updateInterceptorAccessViewWithPendingRequests } from './windows/interceptorAccess.js'
 import { MAKE_YOU_RICH_TRANSACTION, METAMASK_ERROR_FAILED_TO_PARSE_REQUEST, METAMASK_ERROR_NOT_AUTHORIZED, METAMASK_ERROR_NOT_CONNECTED_TO_CHAIN } from '../utils/constants.js'
@@ -24,7 +24,7 @@ import { updateChainChangeViewWithPendingRequest } from './windows/changeChain.j
 import { updatePendingPersonalSignViewWithPendingRequests } from './windows/personalSign.js'
 import { InterceptedRequest, UniqueRequestIdentifier } from '../utils/requests.js'
 import { replyToInterceptedRequest } from './messageSending.js'
-import { EthGetStorageAtParams, EthereumJsonRpcRequest, SendRawTransaction, SendTransactionParams, SupportedEthereumJsonRpcRequestMethods, WalletAddEthereumChain } from '../utils/JsonRpc-types.js'
+import { EthGetStorageAtParams, EthereumJsonRpcRequest, SendRawTransactionParams, SendTransactionParams, SupportedEthereumJsonRpcRequestMethods, WalletAddEthereumChain } from '../utils/JsonRpc-types.js'
 
 async function visualizeSimulatorState(simulationState: SimulationState, simulator: Simulator) {
 	const priceEstimator = new PriceEstimator(simulator.ethereum)
@@ -158,7 +158,7 @@ export async function refreshConfirmTransactionSimulation(
 }
 
 // returns true if simulation state was changed
-export async function getPrependTrasactions(ethereumClientService: EthereumClientService, settings: Settings, richMode: boolean) {
+export async function getPrependTrasactions(ethereumClientService: EthereumClientService, settings: Settings, richMode: boolean): Promise<WebsiteCreatedEthereumUnsignedTransaction[]> {
 	if (!settings.simulationMode || !richMode) return []
 	const activeAddress = settings.activeSimulationAddress
 	const chainId = settings.rpcNetwork.chainId
@@ -175,7 +175,8 @@ export async function getPrependTrasactions(ethereumClientService: EthereumClien
 		},
 		website: MAKE_YOU_RICH_TRANSACTION.website,
 		transactionCreated: new Date(),
-		transactionSendingFormat: MAKE_YOU_RICH_TRANSACTION.transactionSendingFormat,
+		originalTransactionRequestParameters: { method: MAKE_YOU_RICH_TRANSACTION.transactionSendingFormat, params: [{}] },
+		error: undefined,
 	}]
 }
 
@@ -192,7 +193,7 @@ async function handleRPCRequest(
 ): Promise<RPCReply> {
 	const maybeParsedRequest = EthereumJsonRpcRequest.safeParse(request)
 	const forwardToSigner = !settings.simulationMode && !request.usingInterceptorWithoutSigner
-	const getForwardingMessage = (request: SendRawTransaction | SendTransactionParams | WalletAddEthereumChain | EthGetStorageAtParams) => {
+	const getForwardingMessage = (request: SendRawTransactionParams | SendTransactionParams | WalletAddEthereumChain | EthGetStorageAtParams) => {
 		if (!forwardToSigner) throw new Error('Should not forward to signer')
 		return { forward: true as const, ...request }
 	}
@@ -253,15 +254,10 @@ async function handleRPCRequest(
 		}
 		case 'eth_getLogs': return await getLogs(ethereumClientService, simulationState, parsedRequest)
 		case 'eth_sign': return { method: parsedRequest.method, error: { code: 10000, message: 'eth_sign is deprecated' } }
-		case 'eth_sendRawTransaction': {
-			if (forwardToSigner && settings.rpcNetwork.httpsRpc === undefined) return getForwardingMessage(parsedRequest)
-			const message = await sendRawTransaction(simulator, ethereumClientService, parsedRequest, request, !forwardToSigner, website, activeAddress)
-			if ('forward' in message) return getForwardingMessage(parsedRequest)
-			return message
-		}
+		case 'eth_sendRawTransaction':
 		case 'eth_sendTransaction': {
 			if (forwardToSigner && settings.rpcNetwork.httpsRpc === undefined) return getForwardingMessage(parsedRequest)
-			const message = await sendTransaction(simulator, websiteTabConnections, activeAddress, ethereumClientService, parsedRequest, request, !forwardToSigner, website)
+			const message = await sendTransaction(simulator, activeAddress, ethereumClientService, parsedRequest, request, !forwardToSigner, website)
 			if ('forward' in message) return getForwardingMessage(parsedRequest)
 			return message
 		}
