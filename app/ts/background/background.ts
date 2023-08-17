@@ -351,7 +351,6 @@ export async function handleContentScriptMessage(simulator: Simulator, websiteTa
 		const settings = await getSettings()
 		if (settings.simulationMode) {
 			const simulationState = (await getSimulationResults()).simulationState
-			if (simulationState === undefined) throw new Error('no simulation state')
 			const resolved = await handleRPCRequest(simulator, simulationState, websiteTabConnections, simulator.ethereum, request.uniqueRequestIdentifier.requestSocket, website, request, settings, activeAddress)
 			return replyToInterceptedRequest(websiteTabConnections, { ...request, ...resolved })
 		}
@@ -448,7 +447,7 @@ export async function popupMessageHandler(
 		case 'popup_changeChainReadyAndListening': return await updateChainChangeViewWithPendingRequest()
 		case 'popup_interceptorAccessReadyAndListening': return await updateInterceptorAccessViewWithPendingRequests()
 		case 'popup_confirmTransactionReadyAndListening': return await updateConfirmTransactionViewWithPendingTransaction()
-		case 'popup_requestNewHomeData': return homeOpened(simulator)
+		case 'popup_requestNewHomeData': return await homeOpened(simulator)
 		case 'popup_refreshInterceptorAccessMetadata': return await interceptorAccessMetadataRefresh()
 		case 'popup_interceptorAccessChangeAddress': return await interceptorAccessChangeAddressOrRefresh(websiteTabConnections, parsedRequest)
 		case 'popup_interceptorAccessRefresh': return await interceptorAccessChangeAddressOrRefresh(websiteTabConnections, parsedRequest)
