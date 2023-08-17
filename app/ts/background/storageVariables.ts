@@ -1,22 +1,17 @@
 import { ICON_NOT_ACTIVE, getChainName } from '../utils/constants.js'
 import { PendingAccessRequestArray, PendingChainChangeConfirmationPromise, PendingPersonalSignPromise, PendingTransaction, TabState, RpcConnectionStatus, PendingAccessRequest } from '../utils/interceptor-messages.js'
 import { Semaphore } from '../utils/semaphore.js'
-import { browserStorageLocalSet, browserStorageLocalSingleGetWithDefault } from '../utils/storageUtils.js'
+import { browserStorageLocalGet, browserStorageLocalRemove, browserStorageLocalSet, getTabStateFromStorage, removeTabStateFromStorage, setTabStateFromStorage } from '../utils/storageUtils.js'
 import { SignerName } from '../utils/user-interface-types.js'
 import { EthereumSubscriptions, SimulationResults, RpcEntries, RpcNetwork } from '../utils/visualizer-types.js'
-import * as funtypes from 'funtypes'
 import { defaultRpcs, getSettings } from './settings.js'
 import { UniqueRequestIdentifier, doesUniqueRequestIdentifiersMatch } from '../utils/requests.js'
 
-export async function getOpenedAddressBookTabId() {
-	const tabIdData = await browserStorageLocalSingleGetWithDefault('addressbookTabId', undefined)
-	return funtypes.Union(funtypes.Undefined, funtypes.Number).parse(tabIdData)
-}
+export const getOpenedAddressBookTabId = async() => (await browserStorageLocalGet('addressbookTabId'))?.['addressbookTabId'] ?? undefined
 
 export async function getPendingTransactions(): Promise<readonly PendingTransaction[]> {
-	const results = await browserStorageLocalSingleGetWithDefault('transactionsPendingForUserConfirmation', [])
 	try {
-		return funtypes.ReadonlyArray(PendingTransaction).parse(results)
+		return (await browserStorageLocalGet('transactionsPendingForUserConfirmation'))?.['transactionsPendingForUserConfirmation'] ?? []
 	} catch(e) {
 		console.warn('Pending transactions were corrupt:')
 		console.warn(e)
@@ -27,13 +22,13 @@ export async function getPendingTransactions(): Promise<readonly PendingTransact
 const pendingTransactionsSemaphore = new Semaphore(1)
 export async function clearPendingTransactions() {
 	return await pendingTransactionsSemaphore.execute(async () => {
-		return await browserStorageLocalSet('transactionsPendingForUserConfirmation', funtypes.ReadonlyArray(PendingTransaction).serialize([]) as string)
+		return await browserStorageLocalSet({ transactionsPendingForUserConfirmation: [] })
 	})
 }
 export async function appendPendingTransaction(promise: PendingTransaction) {
 	return await pendingTransactionsSemaphore.execute(async () => {
 		const promises = [...await getPendingTransactions(), promise]
-		await browserStorageLocalSet('transactionsPendingForUserConfirmation', funtypes.ReadonlyArray(PendingTransaction).serialize(promises) as string)
+		await browserStorageLocalSet({ transactionsPendingForUserConfirmation: promises })
 		return promises
 	})
 }
@@ -43,38 +38,27 @@ export async function removePendingTransaction(uniqueRequestIdentifier: UniqueRe
 		const foundPromise = promises.find((promise) => doesUniqueRequestIdentifiersMatch(promise.request.uniqueRequestIdentifier, uniqueRequestIdentifier))
 		if (foundPromise !== undefined) {
 			const filteredPromises = promises.filter((promise) => !doesUniqueRequestIdentifiersMatch(promise.request.uniqueRequestIdentifier, uniqueRequestIdentifier))
-			await browserStorageLocalSet('transactionsPendingForUserConfirmation', funtypes.ReadonlyArray(PendingTransaction).serialize(filteredPromises) as string)
+			await browserStorageLocalSet({ transactionsPendingForUserConfirmation: filteredPromises })
 		}
 		return foundPromise
 	})
 }
 
-export async function getChainChangeConfirmationPromise(): Promise<PendingChainChangeConfirmationPromise | undefined> {
-	const results = await browserStorageLocalSingleGetWithDefault('ChainChangeConfirmationPromise', undefined)
-	return funtypes.Union(funtypes.Undefined, PendingChainChangeConfirmationPromise).parse(results)
-}
+export const getChainChangeConfirmationPromise = async() => (await browserStorageLocalGet('ChainChangeConfirmationPromise'))?.['ChainChangeConfirmationPromise'] ?? undefined
 
 export async function setChainChangeConfirmationPromise(promise: PendingChainChangeConfirmationPromise | undefined) {
-	if (promise === undefined) {
-		return await browser.storage.local.remove('ChainChangeConfirmationPromise')
-	}
-	return await browserStorageLocalSet('ChainChangeConfirmationPromise', PendingChainChangeConfirmationPromise.serialize(promise) as string)
+	if (promise === undefined) return await browserStorageLocalRemove('ChainChangeConfirmationPromise')
+	return await browserStorageLocalSet({ ChainChangeConfirmationPromise: promise })
 }
+export const getPendingPersonalSignPromise = async() => (await browserStorageLocalGet('PersonalSignPromise'))?.['PersonalSignPromise'] ?? undefined
 
-export async function getPendingPersonalSignPromise(): Promise<PendingPersonalSignPromise | undefined> {
-	const results = await browserStorageLocalSingleGetWithDefault('PersonalSignPromise', undefined)
-	return funtypes.Union(funtypes.Undefined, PendingPersonalSignPromise).parse(results)
-}
 
 export async function setPendingPersonalSignPromise(promise: PendingPersonalSignPromise | undefined) {
-	if (promise === undefined) {
-		return await browser.storage.local.remove('PersonalSignPromise')
-	}
-	return await browserStorageLocalSet('PersonalSignPromise', PendingPersonalSignPromise.serialize(promise) as string)
+	if (promise === undefined) return await browserStorageLocalRemove('PersonalSignPromise')
+	return await browserStorageLocalSet({ PersonalSignPromise: promise })
 }
 
 export async function getSimulationResults() {
-	const results = await browserStorageLocalSingleGetWithDefault('simulationResults', undefined)
 	const emptyResults = {
 		simulationUpdatingState: 'done' as const,
 		simulationResultState: 'invalid' as const,
@@ -86,9 +70,7 @@ export async function getSimulationResults() {
 		activeAddress: undefined
 	}
 	try {
-		const parsed = funtypes.Union(funtypes.Undefined, SimulationResults).parse(results)
-		if (parsed === undefined) return emptyResults
-		return parsed
+		return (await browserStorageLocalGet('simulationResults'))?.['simulationResults'] ?? emptyResults
 	} catch (error) {
 		console.warn('Simulation results were corrupt:')
 		console.warn(error)
@@ -101,25 +83,15 @@ export async function updateSimulationResults(newResults: SimulationResults) {
 	await simulationResultsSemaphore.execute(async () => {
 		const oldResults = await getSimulationResults()
 		if (newResults.simulationId < oldResults.simulationId) return // do not update state with older state
-		return await browserStorageLocalSet('simulationResults', SimulationResults.serialize(newResults) as string)
+		return await browserStorageLocalSet({ simulationResults: newResults })
 	})
 }
 
-export async function setSignerName(signerName: SignerName) {
-	return await browserStorageLocalSet('signerName', signerName)
-}
-
-export async function getSignerName() {
-	return SignerName.parse(await browserStorageLocalSingleGetWithDefault('signerName', 'NoSignerDetected'))
-}
-
-const getTabStateKey = (tabId: number): `tabState_${ number }` => `tabState_${ tabId }`
+export const setSignerName = async (signerName: SignerName) => await browserStorageLocalSet({ signerName })
+export const getSignerName = async () => (await browserStorageLocalGet('signerName'))?.['signerName'] ?? 'NoSignerDetected'
 
 export async function getTabState(tabId: number) : Promise<TabState> {
-	const results = await browserStorageLocalSingleGetWithDefault(getTabStateKey(tabId), undefined)
-	const parsed = funtypes.Union(funtypes.Undefined, TabState).parse(results)
-	if (parsed !== undefined) return parsed
-	return {
+	return await getTabStateFromStorage(tabId) ?? {
 		signerName: 'NoSigner',
 		signerAccounts: [],
 		signerChain: undefined,
@@ -130,13 +102,8 @@ export async function getTabState(tabId: number) : Promise<TabState> {
 		activeSigningAddress: undefined
 	}
 }
-export async function setTabState(tabId: number, tabState: TabState) {
-	return await browserStorageLocalSet(getTabStateKey(tabId), TabState.serialize(tabState) as string)
-}
-
-export async function removeTabState(tabId: number) {
-	await browser.storage.local.remove(getTabStateKey(tabId))
-}
+export const setTabState = async(tabId: number, tabState: TabState) => await setTabStateFromStorage(tabId, tabState)
+export const removeTabState = async(tabId: number) => removeTabStateFromStorage(tabId)
 
 export async function clearTabStates() {
 	const allStorage = Object.keys(await browser.storage.local.get())
@@ -154,50 +121,41 @@ export async function updateTabState(tabId: number, updateFunc: (prevState: TabS
 	})
 }
 
+export const getPendingAccessRequests = async () => (await browserStorageLocalGet('pendingInterceptorAccessRequests'))?.['pendingInterceptorAccessRequests'] ?? []
 const pendingAccessRequestsSemaphore = new Semaphore(1)
 export async function updatePendingAccessRequests(updateFunc: (prevState: PendingAccessRequestArray) => Promise<PendingAccessRequestArray>) {
 	return await pendingAccessRequestsSemaphore.execute(async () => {
-		const previous = PendingAccessRequestArray.parse(await browserStorageLocalSingleGetWithDefault('pendingInterceptorAccessRequests', []))
+		const previous = await getPendingAccessRequests()
 		const pendingAccessRequests = await updateFunc(previous)
-		await browserStorageLocalSet('pendingInterceptorAccessRequests', PendingAccessRequestArray.serialize(pendingAccessRequests) as string)
+		await browserStorageLocalSet({ pendingInterceptorAccessRequests: pendingAccessRequests })
 		return { previous: previous, current: pendingAccessRequests }
 	})
-}
-export async function getPendingAccessRequests() {
-	return PendingAccessRequestArray.parse(await browserStorageLocalSingleGetWithDefault('pendingInterceptorAccessRequests', []))
 }
 
 export async function appendPendingAccessRequests(promise: PendingAccessRequest) {
 	return await pendingAccessRequestsSemaphore.execute(async () => {
 		const promises = [...await getPendingAccessRequests(), promise]
-		await browserStorageLocalSet('pendingInterceptorAccessRequests', PendingAccessRequestArray.serialize(promises) as string)
+		await browserStorageLocalSet({ pendingInterceptorAccessRequests: promises })
 		return promises
 	})
 }
 
 export async function clearPendingAccessRequests() {
 	return await pendingAccessRequestsSemaphore.execute(async () => {
-		const pending = getPendingAccessRequests()
-		await browserStorageLocalSet('pendingInterceptorAccessRequests', PendingAccessRequestArray.serialize([]) as string)
+		const pending = await getPendingAccessRequests()
+		await browserStorageLocalSet({ pendingInterceptorAccessRequests: [] })
 		return pending
 	})
 }
 
-export async function saveCurrentTabId(tabId: number) {
-	return browserStorageLocalSet('currentTabId', tabId)
-}
+export const saveCurrentTabId = async (tabId: number) => browserStorageLocalSet({ currentTabId: tabId })
+export const getCurrentTabId = async () => (await browserStorageLocalGet('currentTabId'))?.['currentTabId'] ?? undefined
 
-export async function getCurrentTabId() {
-	return funtypes.Union(funtypes.Undefined, funtypes.Number).parse(await browserStorageLocalSingleGetWithDefault('currentTabId', undefined))
-}
-
-export async function setRpcConnectionStatus(rpcConnectionStatus: RpcConnectionStatus) {
-	return await browserStorageLocalSet('rpcConnectionStatus', RpcConnectionStatus.serialize(rpcConnectionStatus) as string )
-}
+export const setRpcConnectionStatus = async (rpcConnectionStatus: RpcConnectionStatus) => browserStorageLocalSet({ rpcConnectionStatus })
 
 export async function getRpcConnectionStatus() {
 	try {
-		return RpcConnectionStatus.parse(await browserStorageLocalSingleGetWithDefault('rpcConnectionStatus', undefined))
+		return (await browserStorageLocalGet('rpcConnectionStatus'))?.['rpcConnectionStatus'] ?? undefined
 	} catch (e) {
 		console.warn('Connection status was corrupt:')
 		console.warn(e)
@@ -205,32 +163,30 @@ export async function getRpcConnectionStatus() {
 	}
 }
 
-export async function getEthereumSubscriptions() {
-	return EthereumSubscriptions.parse(await browserStorageLocalSingleGetWithDefault('ethereumSubscriptions', []))
-}
+export const getEthereumSubscriptions = async () => (await browserStorageLocalGet('ethereumSubscriptions'))?.['ethereumSubscriptions'] ?? []
 
 const ethereumSubscriptionsSemaphore = new Semaphore(1)
 export async function updateEthereumSubscriptions(updateFunc: (prevState: EthereumSubscriptions) => EthereumSubscriptions) {
 	return await ethereumSubscriptionsSemaphore.execute(async () => {
-		const oldSubscriptions = EthereumSubscriptions.parse(await browserStorageLocalSingleGetWithDefault('ethereumSubscriptions', []))
+		const oldSubscriptions = await getEthereumSubscriptions()
 		const newSubscriptions = updateFunc(oldSubscriptions)
-		await browserStorageLocalSet('ethereumSubscriptions', EthereumSubscriptions.serialize(newSubscriptions) as string)
+		await browserStorageLocalSet({ ethereumSubscriptions: newSubscriptions })
 		return { oldSubscriptions, newSubscriptions }
 	})
 }
 
-export async function setOpenedAddressBookTabId(addressbookTabId: number) {
-	return await browserStorageLocalSet('addressbookTabId', addressbookTabId)
-}
+export const setOpenedAddressBookTabId = async(addressbookTabId: number) => await browserStorageLocalSet({ addressbookTabId })
 
-export async function setRpcList(entries: RpcEntries) {
-	return await browserStorageLocalSet('RpcEntries', RpcEntries.serialize(entries) as string)
-}
+export const setRpcList = async(entries: RpcEntries) => await browserStorageLocalSet({ RpcEntries: entries })
 
 export async function getRpcList() {
-	const entries = await browserStorageLocalSingleGetWithDefault('RpcEntries', undefined)
-	if (entries === undefined) return defaultRpcs
-	try { return RpcEntries.parse(entries) } catch(e) { return defaultRpcs }
+	try {
+		return (await browserStorageLocalGet('RpcEntries'))?.['RpcEntries'] ?? defaultRpcs
+	} catch(e) {
+		console.warn('Rpc entries were corrupt:')
+		console.warn(e)
+		return defaultRpcs
+	}
 }
 
 export const getPrimaryRpcForChain = async (chainId: bigint) => {
