@@ -37,6 +37,7 @@ export function App() {
 	const [addingNewAddress, setAddingNewAddress] = useState<AddingNewAddressType> ({ addingAddress: true, type: 'addressInfo' })
 	const [rpcConnectionStatus, setRpcConnectionStatus] = useState<RpcConnectionStatus>(undefined)
 	const [useTabsInsteadOfPopup, setUseTabsInsteadOfPopup] = useState<boolean | undefined>(undefined)
+	const [metamaskCompatibilityMode, setMetamaskCompatibilityMode] = useState<boolean | undefined>(undefined)
 	const [currentTabId, setCurrentTabId] = useState<number | undefined>(undefined)
 	const [rpcEntries, setRpcEntries] = useState<RpcEntries>([])
 	const [simulationUpdatingState, setSimulationUpdatingState] = useState<SimulationUpdatingState | undefined>(undefined)
@@ -125,6 +126,7 @@ export function App() {
 				setSignerAccounts(data.signerAccounts)
 				setRpcConnectionStatus(data.rpcConnectionStatus)
 				setUseTabsInsteadOfPopup(data.useTabsInsteadOfPopup)
+				setMetamaskCompatibilityMode(data.metamaskCompatibilityMode)
 				return true
 			})
 		}
@@ -248,6 +250,7 @@ export function App() {
 								<SettingsView
 									setAndSaveAppPage = { setAndSaveAppPage }
 									useTabsInsteadOfPopup = { useTabsInsteadOfPopup } 
+									metamaskCompatibilityMode = { metamaskCompatibilityMode } 
 								/>
 							: <></> }
 							{ appPage === 'AccessList' ?

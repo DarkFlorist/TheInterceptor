@@ -199,6 +199,14 @@ export async function updateContacts(updateFunc: (prevState: ContactEntries) => 
 	})
 }
 
+export async function getMetamaskCompatibilityMode() {
+	return funtypes.Boolean.parse(await browserStorageLocalSingleGetWithDefault('metamaskCompatibilityMode', false))
+}
+
+export async function setMetamaskCompatibilityMode(metamaskCompatibilityMode: boolean) {
+	return await browserStorageLocalSet('metamaskCompatibilityMode', funtypes.Boolean.serialize(metamaskCompatibilityMode) as string)
+}
+
 export async function getUseTabsInsteadOfPopup() {
 	return funtypes.Boolean.parse(await browserStorageLocalSingleGetWithDefault('useTabsInsteadOfPopup', false))
 }
@@ -241,12 +249,29 @@ export const ExportedSettings = funtypes.Union(
 			useTabsInsteadOfPopup: funtypes.Boolean,
 		})
 	}),
+	funtypes.ReadonlyObject({
+		name: funtypes.Literal('InterceptorSettingsAndAddressBook'),
+		version: funtypes.Literal('1.2'),
+		exportedDate: funtypes.String,
+		settings: funtypes.ReadonlyObject({
+			activeSimulationAddress: OptionalEthereumAddress,
+			rpcNetwork: RpcNetwork,
+			page: Page,
+			useSignersAddressAsActiveAddress: funtypes.Boolean,
+			websiteAccess: WebsiteAccessArray,
+			simulationMode: funtypes.Boolean,
+			addressInfos: AddressInfoArray,
+			contacts: funtypes.Union(funtypes.Undefined, ContactEntries),
+			useTabsInsteadOfPopup: funtypes.Boolean,
+			metamaskCompatibilityMode: funtypes.Boolean,
+		})
+	}),
 )
 
 export async function exportSettingsAndAddressBook() {
 	const results = {
 		name: 'InterceptorSettingsAndAddressBook' as const,
-		version: '1.1' as const,
+		version: '1.2' as const,
 		exportedDate: (new Date).toISOString().split('T')[0],
 		settings: await browserStorageLocalGet([
 			'activeSimulationAddress',
@@ -258,6 +283,7 @@ export async function exportSettingsAndAddressBook() {
 			'simulationMode',
 			'contacts',
 			'useTabsInsteadOfPopup',
+			'metamaskCompatibilityMode',
 		])
 	}
 	return ExportedSettings.parse(results)
@@ -286,4 +312,7 @@ export async function importSettingsAndAddressBook(exportedSetings: ExportedSett
 	await updateWebsiteAccess(() => exportedSetings.settings.websiteAccess)
 	await updateContacts(() => exportedSetings.settings.contacts === undefined ? [] : exportedSetings.settings.contacts)
 	await setUseTabsInsteadOfPopup(exportedSetings.settings.useTabsInsteadOfPopup)
+	if (exportedSetings.version === '1.2') {
+		await setUseTabsInsteadOfPopup(exportedSetings.settings.metamaskCompatibilityMode)
+	}
 }
