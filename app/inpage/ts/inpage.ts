@@ -132,10 +132,19 @@ type WindowEthereum = InjectFunctions & {
 	isInterceptor?: boolean,
 	providerMap?: unknown, // coinbase does not inject `isCoinbaseWallet` to the window.ethereum if there's already other wallets present (eg, Interceptor or Metamask), but instead injects a provider map that contains all these providers
 	isCoinbaseWallet?: boolean,
+	
+	// for metamask compatibility mode
+	selectedAddress?: string,
+	chainId?: string,
+	networkVersion?: string,
 }
 interface Window {
 	dispatchEvent: (event: Event) => boolean
 	ethereum?: WindowEthereum
+	web3?: {
+		currentProvider: WindowEthereum
+		accounts: readonly string[]
+	}
 }
 
 type OnMessage = 'accountsChanged' | 'message' | 'connect' | 'close' | 'disconnect' | 'chainChanged'
@@ -143,6 +152,7 @@ type OnMessage = 'accountsChanged' | 'message' | 'connect' | 'close' | 'disconne
 class InterceptorMessageListener {
 	private connected: boolean = false
 	private requestId: number = 0
+	private metamaskCompatibilityMode: boolean = false
 	private signerWindowEthereumRequest: EthereumRequest | undefined = undefined
 
 	private readonly outstandingRequests: Map<number, InterceptorFuture<unknown> > = new Map()
@@ -196,8 +206,9 @@ class InterceptorMessageListener {
 	// To make matters worse, some versions of send will have a first parameter that is an object (like `request`) and others will have a first and second parameter.
 	// On top of all that, some applications have a mix of both!
 	private readonly WindowEthereumSend = async (method: string | { readonly method: string, readonly params: readonly unknown[] }, params: readonly unknown[]) => {
-		if (typeof method === 'object') return await this.WindowEthereumRequest({ method: method.method, params: method.params })
-		return await this.WindowEthereumRequest({ method, params })
+		console.warn('A deprecated method window.ethereum.send called')
+		const result = typeof method === 'object' ? await this.WindowEthereumRequest({ method: method.method, params: method.params }) : await this.WindowEthereumRequest({ method, params })
+		return { jsonrpc: '2.0', id: undefined, result }
 	}
 
 	private readonly WindowEthereumSendAsync = async (payload: { readonly id: string | number | null, readonly method: string, readonly params: readonly unknown[] }, callback: (error: IJsonRpcError | null, response: IJsonRpcSuccess<unknown> | null) => void) => {
@@ -311,7 +322,14 @@ class InterceptorMessageListener {
 			}
 			// inform callbacks
 			switch (replyRequest.method) {
-				case 'accountsChanged': return this.onAccountsChangedCallBacks.forEach((callback) => callback(replyRequest.result as readonly string[]))
+				case 'accountsChanged': {
+					const reply = replyRequest.result as readonly string[]
+					if (this.metamaskCompatibilityMode && this.signerWindowEthereumRequest === undefined && window.ethereum !== undefined) {
+						window.ethereum.selectedAddress = reply.length > 0 ? reply[0] : ''
+						if ('web3' in window && window.web3 !== undefined) window.web3.accounts = reply
+					}
+					return this.onAccountsChangedCallBacks.forEach((callback) => callback(reply))
+				}
 				case 'connect': {
 					this.connected = true
 					return this.onConnectCallBacks.forEach((callback) => callback({ chainId: replyRequest.result as string }))
@@ -324,7 +342,14 @@ class InterceptorMessageListener {
 						message: 'User refused access to the wallet'
 					}))
 				}
-				case 'chainChanged': return this.onChainChangedCallBacks.forEach((callback) => callback(replyRequest.result as string))
+				case 'chainChanged': {
+					const reply = replyRequest.result as string
+					if (this.metamaskCompatibilityMode && this.signerWindowEthereumRequest === undefined && window.ethereum !== undefined) {
+						window.ethereum.chainId = reply
+						window.ethereum.networkVersion = Number(reply).toString(10)
+					}
+					return this.onChainChangedCallBacks.forEach((callback) => callback(reply))
+				}
 				case 'request_signer_to_eth_requestAccounts': return await this.requestAccountsFromSigner(true)
 				case 'request_signer_to_eth_accounts':  return await this.requestAccountsFromSigner(false)
 				case 'request_signer_to_wallet_switchEthereumChain': return await this.requestChangeChainFromSigner(replyRequest.result as string)
@@ -371,15 +396,35 @@ class InterceptorMessageListener {
 		) return
 		if (!('ethereum' in window) || !window.ethereum) throw new Error('window.ethereum missing')
 		if (!('method' in messageEvent.data)) throw new Error('missing method field')
-		const forwardRequest = messageEvent.data as InterceptedRequestForward //use "as" here as we don't want to inject funtypes here
+		const forwardRequest = messageEvent.data as InterceptedRequestForward //use 'as' here as we don't want to inject funtypes here
 		if ('error' in forwardRequest && forwardRequest.error !== undefined) {
 			if (forwardRequest.requestId === undefined) throw new EthereumJsonRpcError(forwardRequest.error.code, forwardRequest.error.message, forwardRequest.error.data)
 			const pending = this.outstandingRequests.get(forwardRequest.requestId)
 			if (pending === undefined) throw new EthereumJsonRpcError(forwardRequest.error.code, forwardRequest.error.message, forwardRequest.error.data)
 			return pending.reject(new EthereumJsonRpcError(forwardRequest.error.code, forwardRequest.error.message, forwardRequest.error.data))
 		}
-
-		if ('result' in forwardRequest && forwardRequest.result !== undefined) return await this.handleReplyRequest(forwardRequest)
+		if ('result' in forwardRequest && forwardRequest.result !== undefined) {
+			if (this.metamaskCompatibilityMode && this.signerWindowEthereumRequest === undefined && window.ethereum !== undefined) {
+				switch (messageEvent.data.method) {
+					case 'eth_requestAccounts':
+					case 'eth_accounts': {
+						if (!Array.isArray(forwardRequest.result) || forwardRequest.result === null) throw new Error('wrong type')
+						const addrArray = forwardRequest.result as string[]
+						window.ethereum.selectedAddress = addrArray.length > 0 ? addrArray[0] : ''
+						if ('web3' in window && window.web3 !== undefined) window.web3.accounts = addrArray
+						break
+					}
+					case 'eth_chainId': {
+						if (typeof forwardRequest.result !== 'string') throw new Error('wrong type')
+						const chainId = forwardRequest.result as string
+						window.ethereum.chainId = chainId
+						window.ethereum.networkVersion = Number(chainId).toString(10)
+					}
+					default:
+				}
+			}
+			return await this.handleReplyRequest(forwardRequest)
+		}
 
 		try {
 			if (this.signerWindowEthereumRequest == undefined) throw new Error('Interceptor is in wallet mode and should not forward to an external wallet')
@@ -408,20 +453,42 @@ class InterceptorMessageListener {
 		}
 	}
 
+	private enableMetamaskCompatibilityMode(enable: boolean) {
+		this.metamaskCompatibilityMode = enable
+		if (enable) {
+			if (window.ethereum === undefined) return
+			if (!('isMetamask' in window.ethereum)) window.ethereum.isMetaMask = true
+			if ('web3' in window && window.web3 !== undefined) {
+				window.web3.currentProvider = window.ethereum
+			} else {
+				window.web3 = { accounts: [], currentProvider: window.ethereum }
+			}
+		}
+	}
+
 	private readonly connectToSigner = async (signerName: 'NoSigner' | 'NotRecognizedSigner' | 'MetaMask' | 'Brave' | 'CoinbaseWallet') => {
+		const connectToSigner = async (): Promise<{ metamaskCompatibilityMode: boolean }> => {
+			const comppatibilityMode = await this.sendMessageToBackgroundPage({ method: 'connected_to_signer', params: [signerName] })
+			if (typeof comppatibilityMode === 'object' && comppatibilityMode !== null
+				&& 'metamaskCompatibilityMode' in comppatibilityMode && comppatibilityMode.metamaskCompatibilityMode !== null && comppatibilityMode.metamaskCompatibilityMode !== undefined && typeof comppatibilityMode.metamaskCompatibilityMode === 'boolean') {
+				return comppatibilityMode as { metamaskCompatibilityMode: boolean }
+			}
+			throw new Error('Failed to parse connected_to_signer reply')
+		}
+
 		if (signerName !== 'NoSigner') {
 			this.waitForAccountsFromWallet = new InterceptorFuture()
-			await this.sendMessageToBackgroundPage({ method: 'connected_to_signer', params: [signerName] })
+			this.enableMetamaskCompatibilityMode((await connectToSigner()).metamaskCompatibilityMode)
 			await this.requestChainIdFromSigner()
 			await this.requestAccountsFromSigner(false)
 		} else {
-			await this.sendMessageToBackgroundPage({ method: 'connected_to_signer', params: [signerName] })
+			this.enableMetamaskCompatibilityMode((await connectToSigner()).metamaskCompatibilityMode)
 		}
 	}
 
 	private readonly unsupportedMethods = (windowEthereum: WindowEthereum & UnsupportedWindowEthereumMethods | undefined) => {
 		const unsupportedError = (method: string) => {
-			return console.error(`The application tried to call a deprecated or non-standard method: "${ method }". Please contact the application developer to fix this issue.`)
+			return console.error(`The application tried to call a deprecated or non-standard method: '${ method }'. Please contact the application developer to fix this issue.`)
 		}
 		return {
 			once: (() => { return unsupportedError('window.ethereum.once()') }).bind(windowEthereum),
