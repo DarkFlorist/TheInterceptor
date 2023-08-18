@@ -146,6 +146,7 @@ export const SimResults = funtypes.ReadonlyObject( {
 export type TokenBalancesAfter = funtypes.Static<typeof TokenBalancesAfter>
 export const TokenBalancesAfter = funtypes.ReadonlyArray(funtypes.ReadonlyObject({
 	token: EthereumAddress,
+	tokenId: funtypes.Union(EthereumQuantity, funtypes.Undefined),
 	owner: EthereumAddress,
 	balance: funtypes.Union(EthereumQuantity, funtypes.Undefined),
 }))
