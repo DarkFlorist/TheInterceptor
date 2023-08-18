@@ -3,6 +3,7 @@ import { AddressBookEntries, AddressInfo, ContactEntry } from '../utils/user-int
 import { nftMetadata, tokenMetadata, contractMetadata, NftDefinition, ContractDefinition, TokenDefinition } from '@darkflorist/address-metadata'
 import { AddressBookCategory, GetAddressBookDataFilter, UserAddressBook } from '../utils/interceptor-messages.js'
 import { getFullLogoUri } from './metadataUtils.js'
+import { assertNever } from '../utils/typescript.js'
 
 type PartialResult = {
 	bestMatchLength: number,
@@ -78,7 +79,10 @@ function filterAddressBookDataByCategoryAndSearchString(addressBookCategory: Add
 			})
 			return search(userAddressBook.addressInfos, searchFunction).map(convertAddressInfoToAddressBookEntry)
 		}
-		case 'Erc20Tokens': {
+		case 'ERC1155 Tokens': {
+			return []
+		}
+		case 'ERC20 Tokens': {
 			if (searchingDisabled) return Array.from(tokenMetadata).map(convertTokenDefinitionToAddressBookEntry)
 			const searchFunction = (element: [string, TokenDefinition]) => ({
 				comparison: fuzzyCompare(searchPattern, trimmedSearch, `${ element[1].symbol.toLowerCase()} ${ element[1].name.toLowerCase()}`, element[0]),
@@ -102,6 +106,7 @@ function filterAddressBookDataByCategoryAndSearchString(addressBookCategory: Add
 			})
 			return search(Array.from(contractMetadata), searchFunction).map(convertContractDefinitionToAddressBookEntry)
 		}
+		default: assertNever(addressBookCategory)
 	}
 }
 

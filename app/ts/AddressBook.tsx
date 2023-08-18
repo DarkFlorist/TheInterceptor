@@ -6,14 +6,16 @@ import { AddNewAddress } from './components/pages/AddNewAddress.js'
 import { BigAddress } from './components/subcomponents/address.js'
 import Hint from './components/subcomponents/Hint.js'
 import { sendPopupMessageToBackgroundPage } from './background/backgroundUtils.js'
+import { assertNever } from './utils/typescript.js'
 
 type Modals = 'noModal' | 'addNewAddress' | 'ConfirmaddressBookEntryToBeRemoved'
 
-type ActiveFilter = 'My Active Addresses' | 'My Contacts' | 'Erc20Tokens' | 'Non Fungible Tokens' | 'Other Contracts'
+type ActiveFilter = 'My Active Addresses' | 'My Contacts' | 'ERC20 Tokens' | 'ERC1155 Tokens' | 'Non Fungible Tokens' | 'Other Contracts'
 const ActiveFilterSingle = {
 	'My Active Addresses': 'Active Address',
 	'My Contacts': 'Contact',
-	'Erc20Tokens': 'Token',
+	'ERC20 Tokens': 'ERC20 Token',
+	'ERC1155 Tokens': 'ERC1155 Token',
 	'Non Fungible Tokens': 'Non Fungible Token',
 	'Other Contracts': 'Other Contract',
 }
@@ -22,7 +24,8 @@ const PAGE_SIZE = 20
 const ELEMENT_SIZE_PX = {
 	'My Active Addresses': 83,
 	'My Contacts': 83,
-	'Erc20Tokens': 92,
+	'ERC20 Tokens': 92,
+	'ERC1155 Tokens': 92,
 	'Non Fungible Tokens': 92,
 	'Other Contracts': 92,
 }
@@ -109,7 +112,7 @@ export function ListElement(entry: ListElementParam) {
 							}
 						</div>
 
-						{ entry.category === 'Erc20Tokens'
+						{ entry.category === 'ERC20 Tokens'
 							? <div>
 								<p class = 'paragraph' style = 'display: inline-block; font-size: 13px; vertical-align: top;'>{ `Decimals: ${ 'decimals' in entry && entry.decimals !== undefined ? entry.decimals.toString() : 'MISSING' }` }</p>
 							</div>
@@ -242,7 +245,7 @@ export function AddressBook() {
 				const newData = {
 					pages: newPages,
 					maxIndex: reply.data.maxDataLength,
-					maxPages: Math.ceil( (reply.data.maxDataLength) / PAGE_SIZE),
+					maxPages: Math.ceil((reply.data.maxDataLength) / PAGE_SIZE),
 					searchString: reply.data.data.searchString,
 					activeFilter: reply.data.data.filter,
 				}
@@ -346,9 +349,11 @@ export function AddressBook() {
 		switch(filter) {
 			case 'My Active Addresses': return setAddingNewAddressType({ addingAddress: true, type: 'addressInfo' })
 			case 'My Contacts': return setAddingNewAddressType({ addingAddress: true, type: 'contact' })
-			case 'Erc20Tokens': return setAddingNewAddressType({ addingAddress: true, type: 'ERC20' })
+			case 'ERC20 Tokens': return setAddingNewAddressType({ addingAddress: true, type: 'ERC20' })
+			case 'ERC1155 Tokens': return setAddingNewAddressType({ addingAddress: true, type: 'ERC1155' })
 			case 'Non Fungible Tokens': return setAddingNewAddressType({ addingAddress: true, type: 'ERC721' })
 			case 'Other Contracts': return setAddingNewAddressType({ addingAddress: true, type: 'other contract' })
+			default: assertNever(filter)
 		}
 	}
 
@@ -388,14 +393,15 @@ export function AddressBook() {
 							<ul class = 'menu-list'>
 								<p class = 'paragraph' style = 'color: var(--disabled-text-color)'> Contracts </p>
 								<ul>
-									<li> <FilterLink name = 'Erc20Tokens' currentFilter = { activeFilter } setActiveFilter = { changeFilter }/> </li>
+									<li> <FilterLink name = 'ERC20 Tokens' currentFilter = { activeFilter } setActiveFilter = { changeFilter }/> </li>
 									<li> <FilterLink name = 'Non Fungible Tokens' currentFilter = { activeFilter } setActiveFilter = { changeFilter }/> </li>
+									<li> <FilterLink name = 'ERC1155 Tokens' currentFilter = { activeFilter } setActiveFilter = { changeFilter }/> </li>
 									<li> <FilterLink name = 'Other Contracts' currentFilter = { activeFilter } setActiveFilter = { changeFilter }/> </li>
 								</ul>
 							</ul>
 						</aside>
 					</div>
-					<div style = 'padding: 10px'>
+					<div style = 'padding: 10px; width: 520px;'>
 						<div style = 'display: flex; padding-bottom: 10px'>
 							<div class = 'field is-grouped' style = 'max-width: 400px; margin: 10px'>
 								<div class = 'control is-expanded'>
