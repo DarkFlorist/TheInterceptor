@@ -244,7 +244,7 @@ export function AddNewAddress(param: AddAddressParam) {
 								disableAddress = { param.addingNewAddress.addingAddress === false }
 								logoUri = { param.addingNewAddress.addingAddress === false && 'logoUri' in param.addingNewAddress.entry ? param.addingNewAddress.entry.logoUri : undefined }
 							/>
-						: <></> }
+						: null }
 
 						{ addressType === 'contact' ?
 							<ContactFields
@@ -255,19 +255,19 @@ export function AddNewAddress(param: AddAddressParam) {
 								disableAddress = { param.addingNewAddress.addingAddress === false }
 								logoUri = { param.addingNewAddress.addingAddress === false && 'logoUri' in param.addingNewAddress.entry ? param.addingNewAddress.entry.logoUri : undefined }
 							/>
-						: <></> }
+						: null }
 
 						{ addressType !== 'contact' && addressType !== 'addressInfo' ?
 							<p class = 'paragraph'> { `No support to rename this address type yet 😢 (${ addressType })` } </p>
-						: <></> }
+						: null }
 					</div>
 				</div>
 				<div style = 'padding-left: 10px; padding-right: 10px; margin-bottom: 10px; height: 50px'>
-					{ errorString === undefined ? <></> : <Notice text = { errorString } /> }
+					{ errorString === undefined ? null : <Notice text = { errorString } /> }
 				</div>
 			</section>
 			<footer class = 'modal-card-foot window-footer' style = 'border-bottom-left-radius: unset; border-bottom-right-radius: unset; border-top: unset; padding: 10px;'>
-				{ param.setActiveAddressAndInformAboutIt === undefined || addressInput === undefined || activeAddress === stringToAddress(addressInput) ? <></> : <button class = 'button is-success is-primary' onClick = { createAndSwitch } disabled = { ! (areInputValid()) }> { param.addingNewAddress.addingAddress ? 'Create and switch' : 'Modify and switch' } </button> }
+				{ param.setActiveAddressAndInformAboutIt === undefined || addressInput === undefined || activeAddress === stringToAddress(addressInput) ? null : <button class = 'button is-success is-primary' onClick = { createAndSwitch } disabled = { ! (areInputValid()) }> { param.addingNewAddress.addingAddress ? 'Create and switch' : 'Modify and switch' } </button> }
 				<button class = 'button is-success is-primary' onClick = { add } disabled = { ! (areInputValid()) }> { param.addingNewAddress.addingAddress ? 'Create' : 'Modify' } </button>
 				<button class = 'button is-primary' style = 'background-color: var(--negative-color)' onClick = { param.close }>Cancel</button>
 			</footer>

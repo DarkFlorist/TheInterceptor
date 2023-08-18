@@ -334,7 +334,7 @@ export function VisualizeSwapAsset({ swapAsset, rpcNetwork }: { swapAsset: SwapA
 						<TokenOrEthValue amount = { swapAsset.beforeAfterBalance?.beforeBalance } style = { balanceTextStyle } />
 						<p class = 'paragraph' style = { balanceTextStyle }>&nbsp;{'->'}&nbsp;</p>
 						<TokenOrEthValue amount = { swapAsset.beforeAfterBalance?.afterBalance } style = { balanceTextStyle } />
-						</div> : <></>
+						</div> : null
 					}
 				</span>
 			</>
@@ -371,7 +371,7 @@ export function VisualizeSwapAsset({ swapAsset, rpcNetwork }: { swapAsset: SwapA
 						<TokenOrEthValue { ...swapAsset.token } amount = { swapAsset.beforeAfterBalance?.beforeBalance } style = { balanceTextStyle } />
 						<p class = 'paragraph' style = { balanceTextStyle }>&nbsp;{'->'}&nbsp;</p>
 						<TokenOrEthValue { ...swapAsset.token } amount = { swapAsset.beforeAfterBalance?.afterBalance } style = { balanceTextStyle } />
-						</div> : <></>
+						</div> : null
 					}
 				</span>
 			</>
@@ -401,7 +401,7 @@ export function VisualizeSwapAsset({ swapAsset, rpcNetwork }: { swapAsset: SwapA
 						<TokenOrEthValue { ...swapAsset.token } amount = { swapAsset.beforeAfterBalance?.beforeBalance } style = { balanceTextStyle } />
 						<p class = 'paragraph' style = { balanceTextStyle }>&nbsp;{'->'}&nbsp;</p>
 						<TokenOrEthValue { ...swapAsset.token } amount = { swapAsset.beforeAfterBalance?.afterBalance } style = { balanceTextStyle } />
-						</div> : <></>
+						</div> : null
 					}
 				</span>
 			</>
@@ -411,7 +411,7 @@ export function VisualizeSwapAsset({ swapAsset, rpcNetwork }: { swapAsset: SwapA
 }
 
 export function SwapVisualization(param: SwapVisualizationParams) {
-	if ( param.identifiedSwap === false ) return <></>
+	if ( param.identifiedSwap === false ) return null
 
 	return <div class = 'notification transaction-importance-box'>
 		<div style = 'display: grid; grid-template-rows: max-content max-content max-content max-content;'>

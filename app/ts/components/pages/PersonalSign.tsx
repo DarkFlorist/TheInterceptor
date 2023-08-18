@@ -101,7 +101,7 @@ function SignatureHeader(params: SignatureHeaderParams) {
 					renameAddressCallBack = { params.renameAddressCallBack }
 					style = { { 'background-color': 'unset' } }
 				/>
-			: <></>}
+			: null}
 		</div>
 	</header>
 }
@@ -187,7 +187,7 @@ function SafeTx({ personalSignRequestDataSafeTx, renameAddressCallBack }: { pers
 					<CellElement text = 'Chain: '/>
 					<CellElement text = { getChainName(BigInt(personalSignRequestDataSafeTx.message.domain.chainId)) }/>
 				</>
-				: <></>
+				: null
 			}
 			<CellElement text = 'baseGas: '/>
 			<CellElement text = { personalSignRequestDataSafeTx.message.message.baseGas }/>
@@ -198,7 +198,7 @@ function SafeTx({ personalSignRequestDataSafeTx, renameAddressCallBack }: { pers
 					<CellElement text = 'gasToken: '/>
 					<CellElement text = { <SmallAddress addressBookEntry = { personalSignRequestDataSafeTx.addressBookEntries.gasToken } renameAddressCallBack = { renameAddressCallBack } /> }/>
 				</>
-				: <></>
+				: null
 			}
 			<CellElement text = 'nonce: '/>
 			<CellElement text = { personalSignRequestDataSafeTx.message.message.nonce }/>
@@ -209,7 +209,7 @@ function SafeTx({ personalSignRequestDataSafeTx, renameAddressCallBack }: { pers
 					<CellElement text = 'refundReceiver: '/>
 					<CellElement text = { <SmallAddress addressBookEntry = { personalSignRequestDataSafeTx.addressBookEntries.refundReceiver } renameAddressCallBack = { renameAddressCallBack } /> }/>
 				</>
-				: <></>
+				: null
 			}
 			<CellElement text = 'safeTxGas: '/>
 			<CellElement text = { personalSignRequestDataSafeTx.message.message.safeTxGas }/>
@@ -252,7 +252,7 @@ function EIP712Table({ enrichedEIP712Message, renameAddressCallBack, isSubTable 
 	return <span class = 'eip-712-table' style = { isSubTable ? 'justify-content: space-between;' : '' }>
 		<>{ Object.entries(enrichedEIP712Message).map(([key, entry]) => <>
 			{ entry === undefined
-				? <></>
+				? null
 				: <>
 					<CellElement text = { `${ key }: ` }/>
 					{ entry.type === 'record' || entry.type === 'record[]' ?
@@ -326,7 +326,7 @@ export function ExtraDetails({ personalSignRequestData, renameAddressCallBack }:
 	if (personalSignRequestData.type !== 'Permit2'
 		&& personalSignRequestData.type !== 'Permit'
 		&& personalSignRequestData.type !== 'OrderComponents') {
-		return <></>
+		return null
 	}
 
 	return <div class = 'card' style = 'margin-top: 10px; margin-bottom: 10px'>
@@ -339,14 +339,14 @@ export function ExtraDetails({ personalSignRequestData, renameAddressCallBack }:
 			</div>
 		</header>
 		{ !showSummary
-			? <></>
+			? null
 			: <>
 				<div class = 'card-content'>
 					<div class = 'container' style = 'margin-bottom: 10px;'>
 						<span class = 'log-table' style = 'justify-content: center; column-gap: 5px; grid-template-columns: auto auto'>
-							{ personalSignRequestData.type !== 'Permit2' ? <></> : <Permit2ExtraDetails permit2 = { personalSignRequestData }/> }
-							{ personalSignRequestData.type !== 'Permit' ? <></> : <PermitExtraDetails permit = { personalSignRequestData }/> }
-							{ personalSignRequestData.type !== 'OrderComponents' ? <></> : <OrderComponentsExtraDetails orderComponents = { personalSignRequestData.message } renameAddressCallBack = { renameAddressCallBack }/> }
+							{ personalSignRequestData.type !== 'Permit2' ? null : <Permit2ExtraDetails permit2 = { personalSignRequestData }/> }
+							{ personalSignRequestData.type !== 'Permit' ? null : <PermitExtraDetails permit = { personalSignRequestData }/> }
+							{ personalSignRequestData.type !== 'OrderComponents' ? null : <OrderComponentsExtraDetails orderComponents = { personalSignRequestData.message } renameAddressCallBack = { renameAddressCallBack }/> }
 						</span>
 					</div>
 				</div>
@@ -414,7 +414,7 @@ export function PersonalSign() {
 	}
 	
 	function Buttons() {
-		if (personalSignRequestData === undefined) return <></>
+		if (personalSignRequestData === undefined) return null
 		const identified = identifySignature(personalSignRequestData)
 	
 		return <div style = 'display: flex; flex-direction: row;'>
@@ -444,7 +444,7 @@ export function PersonalSign() {
 			<Hint>
 				<div class = { `modal ${ addingNewAddress !== 'renameAddressModalClosed' ? 'is-active' : ''}` }>
 					{ addingNewAddress === 'renameAddressModalClosed'
-						? <></>
+						? null
 						: <AddNewAddress
 							setActiveAddressAndInformAboutIt = { undefined }
 							addingNewAddress = { addingNewAddress }
@@ -461,7 +461,7 @@ export function PersonalSign() {
 								<WebsiteOriginText { ...personalSignRequestData.website } />
 							</div>
 							<p class = 'card-header-title' style = 'overflow: hidden; font-weight: unset; flex-direction: row-reverse;'>
-								{ personalSignRequestData.activeAddress === undefined ? <></> : <SmallAddress
+								{ personalSignRequestData.activeAddress === undefined ? null : <SmallAddress
 									addressBookEntry = { personalSignRequestData.activeAddress }
 									renameAddressCallBack = { renameAddressCallBack }
 								/> }
@@ -481,7 +481,7 @@ export function PersonalSign() {
 									<ErrorCheckBox text = { 'I understand that there are issues with this signature request but I want to send it anyway against Interceptors recommendations.' } checked = { forceSend } onInput = { setForceSend } />
 								</div>
 							</div>
-							: <></>
+							: null
 						}
 						{ personalSignRequestData.simulationMode && (personalSignRequestData.activeAddress.address === undefined || personalSignRequestData.activeAddress.address !== MOCK_PRIVATE_KEYS_ADDRESS || personalSignRequestData.originalParams.method != 'personal_sign')
 							? <div style = 'display: grid'>
@@ -489,7 +489,7 @@ export function PersonalSign() {
 									<ErrorComponent text = 'Unfortunately we cannot simulate message signing as it requires private key access 😢.'/>
 								</div>
 							</div>
-							: <></>
+							: null
 						}
 						<Buttons/>
 					</nav>

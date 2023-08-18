@@ -29,7 +29,7 @@ type EtherChangeParams = {
 }
 
 function EtherChange(param: EtherChangeParams) {
-	if ( param.etherResults === undefined ) return <></>
+	if ( param.etherResults === undefined ) return null
 	const amount = param.etherResults.balanceAfter - param.etherResults.balanceBefore
 	const boxColor = amount < 0n ? 'negative-box' : 'positive-box'
 	return <div class = 'vertical-center' style = 'display: flex'>
@@ -54,7 +54,7 @@ type Erc20BalanceChangeParams = {
 }
 
 function Erc20BalanceChange(param: Erc20BalanceChangeParams) {
-	if ( param.erc20TokenBalanceChanges.length === 0 ) return <></>
+	if ( param.erc20TokenBalanceChanges.length === 0 ) return null
 	return <>
 		{ Array.from(param.erc20TokenBalanceChanges).map((Erc20TokenBalanceChange) => (
 			<div class = 'vertical-center' style = 'display: flex'>
@@ -136,7 +136,7 @@ type Erc20ApprovalChangesParams = {
 }
 
 export function Erc20ApprovalChanges(param: Erc20ApprovalChangesParams ) {
-	if ( param.erc20TokenApprovalChanges.length === 0 ) return <></>
+	if ( param.erc20TokenApprovalChanges.length === 0 ) return null
 	return <>
 		{ param.erc20TokenApprovalChanges.map( (token) => (
 			token.approvals.map( (entryToApprove) => (
@@ -165,7 +165,7 @@ type Erc721TokenChangesParams = {
 }
 
 function Erc721TokenChanges(param: Erc721TokenChangesParams ) {
-	if ( param.Erc721TokenBalanceChanges.length == 0 ) return <></>
+	if ( param.Erc721TokenBalanceChanges.length == 0 ) return null
 
 	return <>
 		{ param.Erc721TokenBalanceChanges.map( (tokenChange) => (
@@ -199,7 +199,7 @@ type Erc721Or1155OperatorChangesParams = {
 }
 
 export function Erc721or1155OperatorChanges(param: Erc721Or1155OperatorChangesParams) {
-	if (param.erc721or1155OperatorChanges.length === 0) return <></>
+	if (param.erc721or1155OperatorChanges.length === 0) return null
 	return <>
 		{ param.erc721or1155OperatorChanges.map((token) => (
 			<div class = 'vertical-center' style = 'display: flex'>
@@ -289,7 +289,7 @@ export function Erc721TokenIdApprovalChanges(param: Erc721TokenIdApprovalChanges
 				</div>
 			)) }
 		</>
-	: <></> } </>
+	: null } </>
 }
 
 
@@ -301,7 +301,7 @@ type Erc1155TokenChangesParams = {
 }
 
 function Erc1155TokenChanges(param: Erc1155TokenChangesParams ) {
-	if (param.Erc1155TokenBalanceChanges.length == 0) return <></>
+	if (param.Erc1155TokenBalanceChanges.length == 0) return null
 
 	return <>
 		{ param.Erc1155TokenBalanceChanges.map((tokenChange) => (
@@ -433,7 +433,7 @@ type LogAnalysisCardParams = {
 export function LogAnalysisCard({ simTx, renameAddressCallBack }: LogAnalysisCardParams) {
 	const [showLogs, setShowLogs] = useState<boolean>(false)
 	const identifiedSwap = identifySwap(simTx)
-	if (simTx === undefined) return <></>
+	if (simTx === undefined) return null
 
 	return <>
 		<div class = 'card' style = 'margin-top: 10px; margin-bottom: 10px'>
@@ -446,7 +446,7 @@ export function LogAnalysisCard({ simTx, renameAddressCallBack }: LogAnalysisCar
 				</div>
 			</header>
 			{ !showLogs
-				? <></>
+				? null
 				: <div class = 'card-content' style = 'border-bottom-left-radius: 0.25rem; border-bottom-right-radius: 0.25rem; border-left: 2px solid var(--card-bg-color); border-right: 2px solid var(--card-bg-color); border-bottom: 2px solid var(--card-bg-color);'>
 					<LogAnalysis
 						simulatedAndVisualizedTransaction = { simTx }
@@ -499,7 +499,7 @@ export function TransactionsAccountChangesCard({ simTx, renameAddressCallBack, a
 			</div>
 		</header>
 		{ !showSummary
-			? <></>
+			? null
 			: <div class = 'card-content'>
 				<div class = 'container' style = 'margin-bottom: 10px;'>
 					{ ownAddresses.length == 0 ? <p class = 'paragraph'> No changes to your accounts </p>
@@ -510,14 +510,14 @@ export function TransactionsAccountChangesCard({ simTx, renameAddressCallBack, a
 									simulationAndVisualisationResults = { simulationAndVisualisationResults }
 									renameAddressCallBack = { renameAddressCallBack }
 								/>
-								{ index + 1 !== ownAddresses.length ? <div class = 'is-divider' style = 'margin-top: 8px; margin-bottom: 8px'/> : <></> }
+								{ index + 1 !== ownAddresses.length ? <div class = 'is-divider' style = 'margin-top: 8px; margin-bottom: 8px'/> : null }
 							</> ) }
 						</div>
 					}
 				</div>
 
 				{ notOwnAddresses.length == 0
-					? <></>
+					? null
 					: <div class = 'container'>
 						{ notOwnAddresses.map( ([_index, balanceSummary]) => {
 							return <>
@@ -577,7 +577,7 @@ export function TransactionHeader({ simTx, removeTransaction } : TransactionHead
 			{ identifyTransaction(simTx).title }
 		</p>
 		{ simTx.transaction.to  === undefined || identifyTransaction(simTx).type === 'MakeYouRichTransaction'
-			? <></>
+			? null
 			: <p class = 'card-header-icon unsetcursor' style = { `margin-left: auto; margin-right: 0; overflow: hidden; ${ removeTransaction !== undefined ? 'padding: 0' : ''}` }>
 				<WebsiteOriginText { ...simTx.website } />
 			</p>
@@ -586,7 +586,7 @@ export function TransactionHeader({ simTx, removeTransaction } : TransactionHead
 			? <button class = 'card-header-icon' aria-label = 'remove' onClick = { removeTransaction }>
 				<span class = 'icon' style = 'color: var(--text-color);'> X </span>
 			</button>
-			: <></>
+			: null
 		}
 	</header>
 }
@@ -639,7 +639,7 @@ type SimulationSummaryParams = {
 }
 
 export function SimulationSummary(param: SimulationSummaryParams) {
-	if (param.simulationAndVisualisationResults === undefined) return <></>
+	if (param.simulationAndVisualisationResults === undefined) return null
 
 	const logSummarizer = new LogSummarizer(param.simulationAndVisualisationResults.simulatedAndVisualizedTransactions)
 	const addressMetaData = new Map(param.simulationAndVisualisationResults.addressBookEntries.map((x) => [addressString(x.address), x]))
@@ -670,7 +670,7 @@ export function SimulationSummary(param: SimulationSummaryParams) {
 									simulationAndVisualisationResults = { param.simulationAndVisualisationResults }
 									renameAddressCallBack = { param.renameAddressCallBack }
 								/>
-								{ index + 1 !== ownAddresses.length ? <div class = 'is-divider' style = 'margin-top: 8px; margin-bottom: 8px'/> : <></> }
+								{ index + 1 !== ownAddresses.length ? <div class = 'is-divider' style = 'margin-top: 8px; margin-bottom: 8px'/> : null }
 							</> ) }
 						</div>
 					}
@@ -685,7 +685,7 @@ export function SimulationSummary(param: SimulationSummaryParams) {
 						</div>
 					</header>
 					{ !showOtherAccountChanges
-						? <></>
+						? null
 						: <div class = 'card-content'>
 							<div class = 'container'>
 								{ notOwnAddresses.length == 0 ? <p class = 'paragraph'>No changes to other accounts</p> : notOwnAddresses.map( ([_index, balanceSummary]) => (<>
@@ -732,7 +732,7 @@ export function RawTransactionDetailsCard({ transaction, renameAddressCallBack, 
 			</div>
 		</header>
 		{ !showSummary
-			? <></>
+			? null
 			: <div class = 'card-content'>
 				<div class = 'container' style = 'margin-bottom: 10px;'>
 					<span class = 'log-table' style = 'justify-content: center; column-gap: 5px; row-gap: 5px; grid-template-columns: auto auto'>
@@ -757,7 +757,7 @@ export function RawTransactionDetailsCard({ transaction, renameAddressCallBack, 
 						
 
 						{ transaction.type !== '1559'
-							? <></>
+							? null
 							: <>
 								<CellElement text = 'Max Fee Per Gas: '/>
 								<CellElement text = { `${ nanoString(transaction.maxFeePerGas) } nanoeth/gas` }/>

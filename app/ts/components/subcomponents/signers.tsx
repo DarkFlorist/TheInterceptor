@@ -20,7 +20,7 @@ export function getSignerLogo(signerName: SignerName) {
 export function SignerLogoText(param: { signerName: SignerName, text: string }) {
 	const signerLogo = getSignerLogo(param.signerName)
 	return <p style = 'line-height: 24px; display: inline-block;'>
-		{ signerLogo ? <img style = 'width: 24px; height: 24px; vertical-align: text-top;' src = { signerLogo }/> : <></> }
+		{ signerLogo ? <img style = 'width: 24px; height: 24px; vertical-align: text-top;' src = { signerLogo }/> : null }
 		{ param.text }
 	</p>
 }

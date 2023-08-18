@@ -15,7 +15,7 @@ type EtherTransferEventParams = {
 function EtherTransferEvent(param: EtherTransferEventParams) {
 	return <>
 		{ param.valueSent === 0n
-			? <></>
+			? null
 			: <div class = 'vertical-center'>
 				<div class = { `box token-box negative-box vertical-center` } style = 'display: inline-block'>
 					<table class = 'log-table'>
@@ -39,7 +39,7 @@ function EtherTransferEvent(param: EtherTransferEventParams) {
 			</div>
 		}
 		{ param.totalReceived <= 0n
-			? <></>
+			? null
 			: <div class = 'vertical-center'>
 				<div class = 'box token-box positive-box vertical-center' style = 'display: inline-block'>
 					<table class = 'log-table'>
@@ -73,10 +73,10 @@ type SendOrReceiveTokensImportanceBoxParams = {
 }
 
 function SendOrReceiveTokensImportanceBox(param: SendOrReceiveTokensImportanceBoxParams) {
-	if (param.tokenVisualizerResults === undefined) return <></>
+	if (param.tokenVisualizerResults === undefined) return null
 	return <>
 		{ param.tokenVisualizerResults.map((tokenEvent) => (
-			tokenEvent.isApproval ? <></> : <div class = 'vertical-center'>
+			tokenEvent.isApproval ? null : <div class = 'vertical-center'>
 				<div class = { `box token-box ${ param.sending ? 'negative-box' : 'positive-box' } vertical-center` } style = 'display: inline-block'>
 					<table class = 'log-table'>
 						<div class = 'log-cell'>
@@ -91,7 +91,7 @@ function SendOrReceiveTokensImportanceBox(param: SendOrReceiveTokensImportanceBo
 									decimals = { tokenEvent.token.decimals }
 									textColor = { param.textColor }
 								/>
-							: <></>}
+							: null}
 						</div>
 						<div class = 'log-cell' style = 'padding-right: 0.2em'>
 							<TokenSymbol
@@ -167,7 +167,7 @@ export function CatchAllVisualizer(param: TransactionImportanceBlockParams) {
 	return <div class = 'notification transaction-importance-box'>
 		<div style = 'display: grid; grid-template-rows: max-content max-content' >
 			{ /* contract creation */}
-			{ param.simTx.transaction.to !== undefined ? <></> : <>
+			{ param.simTx.transaction.to !== undefined ? null : <>
 				<div class = 'log-cell' style = 'justify-content: left; display: grid;'>
 					<p class = 'paragraph'> The transaction deploys a contract </p>
 				</div>

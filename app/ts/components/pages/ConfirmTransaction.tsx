@@ -55,7 +55,7 @@ type TransactionCardParams = {
 
 function TransactionCard(param: TransactionCardParams) {
 	const simTx = param.simulationAndVisualisationResults.simulatedAndVisualizedTransactions.at(-1)
-	if (simTx === undefined) return <></>
+	if (simTx === undefined) return null
 
 	return <>
 		<div class = 'block' style = 'margin-bottom: 10px;'>
@@ -280,7 +280,7 @@ export function ConfirmTransaction() {
 			<Hint>
 				<div class = { `modal ${ addingNewAddress !== 'renameAddressModalClosed' ? 'is-active' : ''}` }>
 					{ addingNewAddress === 'renameAddressModalClosed'
-						? <></>
+						? null
 						: <AddNewAddress
 							setActiveAddressAndInformAboutIt = { undefined }
 							addingNewAddress = { addingNewAddress }
@@ -299,14 +299,14 @@ export function ConfirmTransaction() {
 								text = { `This transaction is signed already. No extra signing required to forward it to ${ simulationResults === undefined ? 'network' : simulationResults.data.simulationState.rpcNetwork.name }.` }
 								close = { () => setPendingTransactionAddedNotification(false)}
 							/>
-							: <></>
+							: null
 						}
 						{ pendingTransactionAddedNotification === true
 							? <DinoSaysNotification
 								text = { `Hey! A new transaction request was queued. Accept or Reject the previous transaction${ pendingTransactions.length > 1 ? 's' : '' } to see the new one.` }
 								close = { () => setPendingTransactionAddedNotification(false)}
 							/>
-							: <></>
+							: null
 						}
 						{ currentPendingTransaction.transactionToSimulate.error !== undefined ? <>
 							<DinoSaysNotification
@@ -339,7 +339,7 @@ export function ConfirmTransaction() {
 						{ simulationResults.data.transactionToSimulate.error === undefined ? 
 							simulationResults.data.simulatedAndVisualizedTransactions.at(-1)?.statusCode === 'success'
 								? simulationResults.data.simulatedAndVisualizedTransactions.at(-1)?.quarantine !== true
-									? <></>
+									? null
 									: <div style = 'display: grid'>
 										<div style = 'margin: 0px; margin-bottom: 10px; margin-left: 20px; margin-right: 20px; '>
 											<ErrorCheckBox text = { 'I understand that there are issues with this transaction but I want to send it anyway against Interceptors recommendations.' } checked = { forceSend } onInput = { setForceSend } />
@@ -350,7 +350,7 @@ export function ConfirmTransaction() {
 										<ErrorCheckBox text = { 'I understand that the transaction will fail but I want to send it anyway.' } checked = { forceSend } onInput = { setForceSend } />
 									</div>
 								</div>
-						: <></> }
+						: null }
 						<Buttons/>
 					</nav>
 				</div>

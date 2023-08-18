@@ -83,7 +83,7 @@ type TokenPriceParams = {
 }
 
 export function TokenPrice(param: TokenPriceParams) {
-	if ( param.tokenPriceEstimate === undefined ) return <></>
+	if ( param.tokenPriceEstimate === undefined ) return null
 	const value = getTokenAmountsWorth(param.amount, param.tokenPriceEstimate)
 	const color = param.textColor ? param.textColor : 'var(--text-color)'
 	return <>
@@ -128,7 +128,7 @@ export function TokenSymbol(param: TokenSymbolParams) {
 				<p class = 'noselect nopointer' style = { style }>
 					{ `#${ truncate(param.tokenId.toString(), 9) } ` }
 				</p>
-			: <></> }
+			: null }
 		</CopyToClipboard>
 		<div style = 'overflow: initial; height: 28px;'>
 			<CopyToClipboard content = { tokenString } copyMessage = 'Token address copied!' >

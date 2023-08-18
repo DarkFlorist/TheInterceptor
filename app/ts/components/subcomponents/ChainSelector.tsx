@@ -24,7 +24,7 @@ export function ChainSelector(params: ChainSelectorParams) {
 			<button className = { `button is-primary ${ params.rpcNetwork.httpsRpc === undefined ? 'is-danger' : '' }` } style = 'padding-left: 6px; padding-right: 6px;' aria-haspopup = 'true' aria-controls = 'dropdown-menu' onClick = { () => setIsOpen(!isOpen) }>
 				{ params.rpcNetwork.httpsRpc === undefined ? <span class = 'icon' style = 'margin-left: 0em; margin-right: 0.5em;'>
 					<img src = '../img/warning-sign-white.svg' />
-				</span> : <></> }
+				</span> : null }
 				{ params.rpcNetwork.name } ▼
 			</button>
 		</div>

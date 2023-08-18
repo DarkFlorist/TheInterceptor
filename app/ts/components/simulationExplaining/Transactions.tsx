@@ -145,7 +145,7 @@ export function Transaction(param: TransactionVisualizationParameters) {
 					<TransactionImportanceBlock { ...param }/>
 					<QuarantineCodes quarantineCodes = { param.simTx.quarantineCodes }/>
 				</div>
-				{ identifiedTransaction === 'MakeYouRichTransaction' ? <></> : <>
+				{ identifiedTransaction === 'MakeYouRichTransaction' ? null : <>
 					<LogAnalysisCard
 						simTx = { param.simTx }
 						renameAddressCallBack = { param.renameAddressCallBack }
@@ -221,7 +221,7 @@ export function TokenLogEvent(params: TokenLogEventParams ) {
 							decimals = { params.tokenVisualizerResult.token.decimals }
 							textColor = { textColor }
 						/>
-					: <></>
+					: null
 				} </>
 			}
 		</div>

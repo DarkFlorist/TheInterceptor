@@ -75,7 +75,7 @@ export function ChangeActiveAddress(param: ChangeActiveAddressParam) {
 					</li>
 
 					{ param.addressInfos === undefined
-						? <></>
+						? null
 						: param.addressInfos.map((addressInfo) => (
 							<li>
 								<div class = 'card hoverable' onClick = { () => { ChangeAndStoreActiveAddress(addressInfo.address) } }>
@@ -88,7 +88,7 @@ export function ChangeActiveAddress(param: ChangeActiveAddressParam) {
 										{ isSignerConnected(addressInfo.address) ?
 											<div class = 'content' style = 'color: var(--text-color)'>
 												<SignerLogoText signerName = { param.signerName } text = { ` ${ getPrettySignerName(param.signerName) } connected` }/>
-											</div> : <></>
+											</div> : null
 										}
 									</div>
 								</div>

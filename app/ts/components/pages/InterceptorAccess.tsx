@@ -15,7 +15,7 @@ const HALF_HEADER_HEIGHT = 48 / 2
 function Title({ icon, title} : {icon: string | undefined, title: string}) {
 	return <span style = 'font-weight: 700; line-height: 48px'>
 		{ icon === undefined
-			? <></>
+			? null
 			: <img src = { icon } style = 'width: 48px; height: 48px; vertical-align: bottom; margin-right: 10px;'/>
 		}
 		{ title }
@@ -67,7 +67,7 @@ function AssociatedTogether({ associatedAddresses, renameAddressCallBack }: { as
 				</div>
 			</header>
 			{ !showLogs
-				? <></>
+				? null
 				: <div class = 'card-content' style = 'border-bottom-left-radius: 0.25rem; border-bottom-right-radius: 0.25rem; border-left: 2px solid var(--card-bg-color); border-right: 2px solid var(--card-bg-color); border-bottom: 2px solid var(--card-bg-color);'>
 					{ associatedAddresses.length <= 1
 						? <DinoSays text = { 'Given its size, a tiny dinosaur wouldn\'t be expected to know any...' } />
@@ -145,7 +145,7 @@ type AccessRequestParam = {
 
 function AccessRequests(param: AccessRequestParam) {
 	const firstPendingRequest = param.pendingAccessRequestArray.at(0)
-	if (firstPendingRequest === undefined) return <></>
+	if (firstPendingRequest === undefined) return null
 	return <>
 		<UnderAccesses
 			reversedPendingAccessRequestArray = { param.pendingAccessRequestArray.slice(1).reverse() }
@@ -297,7 +297,7 @@ export function InterceptorAccess() {
 						close = { () => setAppPage('Home') }
 						activeAddress = { pendingAccessRequestArray[0].requestAccessToAddress?.address }
 					/>
-					: <></>
+					: null
 				}
 
 				{ appPage === 'ChangeActiveAddress'
@@ -309,7 +309,7 @@ export function InterceptorAccess() {
 						signerName = { pendingAccessRequestArray[0].signerName }
 						renameAddressCallBack = { renameAddressCallBack }
 					/>
-					: <></>
+					: null
 				}
 			</div>
 
@@ -320,7 +320,7 @@ export function InterceptorAccess() {
 							text = { `Hey! A new request was queued. Accept or Reject the previous request${ pendingAccessRequestArray.length > 1 ? 's' : '' } to see the new one.` }
 							close = { () => setPendingRequestAddedNotification(false)}
 						/>
-						: <></>
+						: null
 					}
 					<AccessRequests
 						changeActiveAddress = { changeActiveAddress }

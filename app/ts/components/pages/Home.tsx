@@ -31,7 +31,7 @@ type SignerExplanationParams = {
 }
 
 function SignerExplanation(param: SignerExplanationParams) {
-	if (param.activeAddress !== undefined) return <></>
+	if (param.activeAddress !== undefined) return null
 	if (param.tabIcon === ICON_NOT_ACTIVE) {
 		return <>
 			<div class = 'notification' style = 'background-color: var(--card-content-bg-color); padding: 10px; margin: 10px;'>
@@ -46,7 +46,7 @@ function SignerExplanation(param: SignerExplanationParams) {
 			</div>
 		</>
 	}
-	return <></>
+	return null
 }
 
 function FirstCardHeader(param: FirstCardParams) {
@@ -111,10 +111,10 @@ function FirstCard(param: FirstCardParams) {
 							: <>Retrieving from&nbsp;<SignersLogoName signerName = { param.signerName } /></>
 						}
 						{ param.signerAccounts !== undefined && param.signerAccounts.length > 0 && param.tabIconDetails.icon !== ICON_NOT_ACTIVE ? <span style = 'float: right; color: var(--primary-color);'> CONNECTED </span> :
-							param.tabIconDetails.icon === ICON_SIGNING || param.tabIconDetails.icon === ICON_SIGNING_NOT_SUPPORTED ? <span style = 'float: right; color: var(--negative-color);'> NOT CONNECTED </span> : <></>
+							param.tabIconDetails.icon === ICON_SIGNING || param.tabIconDetails.icon === ICON_SIGNING_NOT_SUPPORTED ? <span style = 'float: right; color: var(--negative-color);'> NOT CONNECTED </span> : null
 						}
 					</p>
-					: <></>
+					: null
 				}
 
 				<ActiveAddress
@@ -155,7 +155,7 @@ function FirstCard(param: FirstCardParams) {
 }
 
 function SimulationResults(param: SimulationStateParam) {
-	if (param.simulationAndVisualisationResults === undefined) return <></>
+	if (param.simulationAndVisualisationResults === undefined) return null
 	if (param.simulationAndVisualisationResults.simulatedAndVisualizedTransactions.length === 0) {
 		return <div style = 'padding: 10px'> <DinoSays text = { 'Give me some transactions to munch on!' } /> </div>
 	}
@@ -186,7 +186,7 @@ function SimulationResults(param: SimulationStateParam) {
 				removeTransactionHashes = { param.removeTransactionHashes }
 			/>
 			{ param.removeTransactionHashes.length > 0
-				? <></>
+				? null
 				: <SimulationSummary
 					simulationAndVisualisationResults = { param.simulationAndVisualisationResults }
 					currentBlockNumber = { param.currentBlockNumber }
@@ -204,20 +204,20 @@ type NetworkErrorParams = {
 }
 
 export function NetworkErrors({ rpcConnectionStatus } : NetworkErrorParams) {
-	if (rpcConnectionStatus === undefined) return <></>
+	if (rpcConnectionStatus === undefined) return null
 	const priorDate = new Date(rpcConnectionStatus.lastConnnectionAttempt.getTime() + TIME_BETWEEN_BLOCKS * 1000)
 	return <>
 		{ rpcConnectionStatus.isConnected === false ?
 			<div style = 'margin: 10px; background-color: var(--bg-color);'>
 				<Error warning = { true } text = { <>Unable to connect to { rpcConnectionStatus.rpcNetwork.name }. Retrying in <SomeTimeAgo priorTimestamp = { priorDate } countBackwards = { true }/>.</> }/>
 			</div>
-		: <></> }
+		: null }
 
 		{ rpcConnectionStatus.latestBlock !== undefined && noNewBlockForOverTwoMins(rpcConnectionStatus) ?
 			<div style = 'margin: 10px; background-color: var(--bg-color);'>
 				<Error warning = { true } text = { <>The connected RPC ({ rpcConnectionStatus.rpcNetwork.name }) seem to be stuck at block { rpcConnectionStatus.latestBlock.number } (occured on: { humanReadableDate(rpcConnectionStatus.latestBlock.timestamp) }). Retrying in <SomeTimeAgo priorTimestamp = { priorDate } countBackwards = { true }/>.</> }/>
 			</div>
-		: <></> }
+		: null }
 	</>
 }
 
@@ -302,15 +302,15 @@ export function Home(param: HomeParams) {
 		}
 	}
 
-	if (!isLoaded) return <></>
-	if (rpcNetwork === undefined) return <></>
+	if (!isLoaded) return null
+	if (rpcNetwork === undefined) return null
 
 	return <>
 		{ rpcNetwork.httpsRpc === undefined ?
 			<div style = 'margin: 10px; background-color: var(--bg-color);'>
 				<Error text = { `${ rpcNetwork.name } is not a supported network. The Interceptors is disabled while you are using the network.` }/>
 			</div>
-		: <></> }
+		: null }
 
 		<NetworkErrors rpcConnectionStatus = { rpcConnectionStatus }/>
 
@@ -338,11 +338,11 @@ export function Home(param: HomeParams) {
 					<span style = 'margin-left: 0.2em' > Simulating... </span>
 				</div>
 			</div>
-		: <></> }
+		: null }
 
-		{ simulationMode && currentBlockNumber === undefined ? <div style = 'padding: 10px'> <DinoSays text = { 'Not connected to a network..' } /> </div> : <></> }
+		{ simulationMode && currentBlockNumber === undefined ? <div style = 'padding: 10px'> <DinoSays text = { 'Not connected to a network..' } /> </div> : null }
 		{ !simulationMode || activeSimulationAddress === undefined || currentBlockNumber === undefined
-			? <></>
+			? null
 			: <SimulationResults
 				simulationAndVisualisationResults = { simulationAndVisualisationResults }
 				removeTransaction = { removeTransaction }

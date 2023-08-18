@@ -207,7 +207,7 @@ export function App() {
 			<Hint>
 				<PasteCatcher enabled = { appPage === 'Home' } onPaste = { addressPaste } />
 				<div style = { `background-color: var(--bg-color); width: 520px; height: 600px; ${ appPage !== 'Home' ? 'overflow: hidden;' : 'overflow-y: auto; overflow-x: hidden' }` }>
-					{ !isSettingsLoaded ? <></> : <>
+					{ !isSettingsLoaded ? null : <>
 						<nav class = 'navbar window-header' role = 'navigation' aria-label = 'main navigation'>
 							<div class = 'navbar-brand'>
 								<a class = 'navbar-item' style = 'cursor: unset'>
@@ -252,7 +252,7 @@ export function App() {
 									useTabsInsteadOfPopup = { useTabsInsteadOfPopup } 
 									metamaskCompatibilityMode = { metamaskCompatibilityMode } 
 								/>
-							: <></> }
+							: null }
 							{ appPage === 'AccessList' ?
 								<InterceptorAccessList
 									setAndSaveAppPage = { setAndSaveAppPage }
@@ -261,7 +261,7 @@ export function App() {
 									websiteAccessAddressMetadata = { websiteAccessAddressMetadata }
 									renameAddressCallBack = { renameAddressCallBack }
 								/>
-							: <></> }
+							: null }
 							{ appPage === 'ChangeActiveAddress' ?
 								<ChangeActiveAddress
 									setActiveAddressAndInformAboutIt = { setActiveAddressAndInformAboutIt }
@@ -271,7 +271,7 @@ export function App() {
 									signerName = { signerName }
 									renameAddressCallBack = { renameAddressCallBack }
 								/>
-							: <></> }
+							: null }
 							{ appPage === 'AddNewAddress' || appPage === 'ModifyAddress' ?
 								<AddNewAddress
 									setActiveAddressAndInformAboutIt = { setActiveAddressAndInformAboutIt }
@@ -279,7 +279,7 @@ export function App() {
 									close = { () => setAndSaveAppPage('Home') }
 									activeAddress = { simulationMode ? activeSimulationAddress : activeSigningAddress }
 								/>
-							: <></> }
+							: null }
 						</div>
 
 					</> }

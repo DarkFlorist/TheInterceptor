@@ -53,7 +53,7 @@ export function ChangeChain() {
 					<article class = 'media'>
 						{
 							chainChangeData.website.icon === undefined
-								? <></>
+								? null
 								: <figure class = 'media-left' style = 'margin: auto; display: block; padding: 20px'>
 									<div class = 'image is-64x64'>
 										<img src = { chainChangeData.website.icon }/>
@@ -72,14 +72,14 @@ export function ChangeChain() {
 								<ErrorContainer
 									text = { 'This chain is not supported by The Interceptor. If you want to use this chain anyway. Select Signing mode instead of Simulation mode and attempt to change the chain again. You will then be able to disable The Interceptor and send transactions without its protection.' }
 								/>
-							: <></> }
+							: null }
 							{ chainChangeData.rpcNetwork.httpsRpc === undefined && !chainChangeData.simulationMode ?
 								<ErrorCheckBox
 									text = { 'This chain is not supported by The Interceptor. Would you like to disable The Interceptor and attempt to connect anyway?' }
 									checked = { connectAnyway }
 									onInput = { setConnectAnyway }
 								/>
-							: <></> }
+							: null }
 						</div>
 					</div>
 					<div style = 'overflow: auto; display: flex; justify-content: space-around; width: 100%; height: 40px;'>

@@ -100,7 +100,7 @@ export function ListElement(entry: ListElementParam) {
 					<div class = 'media-content' style = 'overflow-y: visible; overflow-x: unset; height: 100%;'>
 						<div style = 'padding-bottom: 10px; height: 40px'>
 							{ entry.type === 'empty'
-								? <></>
+								? null
 								: <BigAddress
 									addressBookEntry = { { ...entry, ...{ name: `${ entry.name }${ 'symbol' in entry ? ` (${ entry.symbol })` : '' }`} } }
 									noCopying = { false }
@@ -113,7 +113,7 @@ export function ListElement(entry: ListElementParam) {
 							? <div>
 								<p class = 'paragraph' style = 'display: inline-block; font-size: 13px; vertical-align: top;'>{ `Decimals: ${ 'decimals' in entry && entry.decimals !== undefined ? entry.decimals.toString() : 'MISSING' }` }</p>
 							</div>
-							: <></>
+							: null
 						}
 
 						{ entry.category === 'Non Fungible Tokens' || entry.category === 'Other Contracts'
@@ -122,7 +122,7 @@ export function ListElement(entry: ListElementParam) {
 									{ `Protocol: ${ 'protocol' in entry ? entry.protocol : '' } ` }
 								</p>
 							</div>
-							: <></>
+							: null
 						}
 
 						{ entry.category === 'My Active Addresses' ?
@@ -130,7 +130,7 @@ export function ListElement(entry: ListElementParam) {
 								<input type = 'checkbox' checked = { 'askForAddressAccess' in entry && !entry.askForAddressAccess } disabled = { true }/>
 								<p class = 'paragraph checkbox-text'>Don't request for an access (insecure) </p>
 							</label>
-							: <></>
+							: null
 						}
 					</div>
 
@@ -329,7 +329,7 @@ export function AddressBook() {
 				listName = { `${ addressBookState.searchString }|${ addressBookState.activeFilter }` }
 				removeEntry = { openConfirmaddressBookEntryToBeRemoved }
 				renameAddressCallBack = { renameAddressCallBack }
-			/> : <></>
+			/> : null
 		} </>
 	}
 
@@ -410,13 +410,13 @@ export function AddressBook() {
 										disabled = { addressBookState.activeFilter !== 'My Active Addresses' && addressBookState.activeFilter !== 'My Contacts' }
 									>
 									{ `Add New ${ ActiveFilterSingle[addressBookState.activeFilter] }` }
-								</button> : <></> }
+								</button> : null }
 							</div>
 						</div>
 						{ addressBookState === undefined
-							? <></>
+							? null
 							: <>
-								{ addressBookState.maxIndex === 0 ? <p class = 'paragraph'> { getNoResultsError() } </p> : <></> }
+								{ addressBookState.maxIndex === 0 ? <p class = 'paragraph'> { getNoResultsError() } </p> : null }
 								<ul style = { `height: ${ addressBookState.maxIndex * (ELEMENT_SIZE_PX[addressBookState.activeFilter] + ELEMENT_PADDING_PX) }px; overflow: hidden;` }>
 									<li style = { `margin: 0px; height: ${ getPageSizeInPixels(addressBookState.activeFilter) * Math.max(0, currentPage - getWindowSizeInPages(addressBookState.activeFilter) ) }px` } key = { -1 }> </li>
 									{ Array(2 * getWindowSizeInPages(addressBookState.activeFilter) + 1).fill(0).map((_, i) => renderAddressList(currentPage + ( i - getWindowSizeInPages(addressBookState.activeFilter) ))) }
@@ -434,7 +434,7 @@ export function AddressBook() {
 							close = { () => setModalState('noModal') }
 							activeAddress = { undefined }
 						/>
-					: <></> }
+					: null }
 					{ modalState === 'ConfirmaddressBookEntryToBeRemoved' && addressBookEntryToBeRemoved !== undefined ?
 						<ConfirmaddressBookEntryToBeRemoved
 							category = { activeFilter }
@@ -443,7 +443,7 @@ export function AddressBook() {
 							close = { () => setModalState('noModal') }
 							renameAddressCallBack = { renameAddressCallBack }
 						/>
-					: <></> }
+					: null }
 				</div>
 			</Hint>
 		</main>

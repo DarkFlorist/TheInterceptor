@@ -75,12 +75,12 @@ function ImportExport() {
 			<div style = 'margin: 10px; background-color: var(--bg-color);'>
 				<ErrorComponent warning = { true } text = { settingsReply.data.errorMessage }/>
 			</div>
-		: <></> }
+		: null }
 		{ settingsReply !== undefined && settingsReply.data.success === true ?
 			<div style = 'margin: 10px; background-color: var(--bg-color);'>
 				<DinoSays text = { 'Settings and address book loaded!' }/>
 			</div>
-		: <></> }
+		: null }
 		<div class = 'popup-button-row'>
 			<div style = 'display: flex; flex-direction: row;'>
 				<label className = 'button is-primary is-danger' style = 'flex-grow: 1; margin-left: 5px; margin-right: 5px;'>
@@ -144,7 +144,7 @@ function Rpcs() {
 		})
 	}
 
-	if (rpcList === undefined) return <></>
+	if (rpcList === undefined) return null
 
 	return <>
 		<ul> { rpcList.map((rpc) => <li>
@@ -160,7 +160,7 @@ function Rpcs() {
 						<span class = 'icon' style = 'color: var(--text-color);'> V </span>
 					</button>
 				</header>
-				{ rpc.minimized ? <></> :
+				{ rpc.minimized ? null :
 					<div class = 'card-content'>
 						<div class = 'paragraph'>Network</div>
 						<TextField input = { rpc.name }/>

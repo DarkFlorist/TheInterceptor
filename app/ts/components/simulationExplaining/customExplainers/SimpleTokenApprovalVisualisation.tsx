@@ -46,7 +46,7 @@ export function SimpleTokenApprovalVisualisation(params: SimpleTokenApprovalVisu
 									textColor = { textColor }
 									style = { { 'font-size': '28px', 'font-weight': '500' } }
 								/>
-							: <></>
+							: null
 						} </>
 					}
 				</div>

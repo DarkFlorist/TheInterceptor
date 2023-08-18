@@ -26,7 +26,7 @@ export function AddressBeforeAfter({ address, beforeAndAfter, renameAddressCallB
 			renameAddressCallBack = { renameAddressCallBack }
 		/>
 		{ beforeAndAfter === undefined
-			? <></>
+			? null
 			: <span style = 'grid-template-columns: auto auto; display: grid; justify-content: space-between; margin-top: 10px'>
 				<span style = 'grid-template-columns: auto; display: grid;'>
 					<p class = 'paragraph' style = 'color: var(--subtitle-text-color);'> Before:</p>
@@ -93,7 +93,7 @@ function getBeforeAndAfterBalanceForAddress(ethBalances: readonly EthBalanceChan
 export function EtherTransferVisualisation({ simTx, renameAddressCallBack }: { simTx: SimulatedAndVisualizedEtherTransferTransaction, renameAddressCallBack: RenameAddressCallBack }) {
 	const senderBalanceChanges = getBeforeAndAfterBalanceForAddress(simTx.ethBalanceChanges, simTx.transaction.from.address)
 	const receiverBalanceChanges = getBeforeAndAfterBalanceForAddress(simTx.ethBalanceChanges, simTx.transaction.to.address)
-	if (senderBalanceChanges === undefined || receiverBalanceChanges === undefined) return <></>
+	if (senderBalanceChanges === undefined || receiverBalanceChanges === undefined) return null
 	return <SimpleSend
 		transaction = { { ...simTx, rpcNetwork: simTx.transaction.rpcNetwork } }
 		asset = { {
