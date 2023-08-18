@@ -9,7 +9,7 @@ import { RpcNetwork } from '../../utils/visualizer-types.js'
 
 export type BeforeAfterBalance = funtypes.Static<typeof SwapAsset>
 export const BeforeAfterBalance = funtypes.ReadonlyObject({
-	previousBalance: EthereumQuantity,
+	beforeBalance: EthereumQuantity,
 	afterBalance: EthereumQuantity,
 })
 
@@ -58,7 +58,7 @@ export function identifySwap(simTransaction: SimulatedAndVisualizedTransaction):
 	const aggregatedSentAssets = new Map<string, SwapAsset>()
 	const aggregatedReceivedAssets = new Map<string, SwapAsset>()
 	const aggregate = (aggregateTo: Map<string, SwapAsset>, logEntry: TokenVisualizerResultWithMetadata) => {
-		if (logEntry.isApproval) throw new Error('was approval')
+		if (logEntry.isApproval) throw new Error('the log entry included an approval even thought it never should as we check it before')
 		const identifier = getUniqueSwapAssetIdentifier(logEntry)
 		const previousValue = getWithDefault(aggregateTo, identifier, {
 			...logEntry,
@@ -101,11 +101,11 @@ export function identifySwap(simTransaction: SimulatedAndVisualizedTransaction):
 			return {
 				sender: simTransaction.transaction.from,
 				sendAsset: { ...sentToken.value, beforeAfterBalance: sendBalanceAfter !== undefined
-					? { previousBalance: sendBalanceAfter - sentToken.value.amount, afterBalance: sendBalanceAfter }
+					? { beforeBalance: sendBalanceAfter - sentToken.value.amount, afterBalance: sendBalanceAfter }
 					: undefined
 				},
 				receiveAsset: { ...receiveToken.value, beforeAfterBalance: receiveBalanceAfter !== undefined
-					? { previousBalance: receiveBalanceAfter - receiveToken.value.amount, afterBalance: receiveBalanceAfter }
+					? { beforeBalance: receiveBalanceAfter - receiveToken.value.amount, afterBalance: receiveBalanceAfter }
 					: undefined
 				},
 			}
@@ -119,14 +119,14 @@ export function identifySwap(simTransaction: SimulatedAndVisualizedTransaction):
 		return {
 			sender: simTransaction.transaction.from,
 			sendAsset: { ...sentToken.value, beforeAfterBalance: sendBalanceAfter !== undefined
-				? { previousBalance: sendBalanceAfter - sentToken.value.amount, afterBalance: sendBalanceAfter }
+				? { beforeBalance: sendBalanceAfter - sentToken.value.amount, afterBalance: sendBalanceAfter }
 				: undefined
 			},
 			receiveAsset: {
 				type: 'Ether',
 				amount: ethDiff,
 				beforeAfterBalance: {
-					previousBalance: etherChange[0].before,
+					beforeBalance: etherChange[0].before,
 					afterBalance: etherChange[0].before + ethDiff
 				},
 				token: undefined,
@@ -145,14 +145,14 @@ export function identifySwap(simTransaction: SimulatedAndVisualizedTransaction):
 				type: 'Ether',
 				amount: -ethDiff,
 				beforeAfterBalance: {
-					previousBalance: etherChange[0].before,
+					beforeBalance: etherChange[0].before,
 					afterBalance: etherChange[0].before + ethDiff
 				},
 				token: undefined,
 				tokenId: undefined,
 			},
 			receiveAsset: { ...receiveToken.value, beforeAfterBalance: receiveBalanceAfter !== undefined
-				? { previousBalance: receiveBalanceAfter - receiveToken.value.amount, afterBalance: receiveBalanceAfter }
+				? { beforeBalance: receiveBalanceAfter - receiveToken.value.amount, afterBalance: receiveBalanceAfter }
 				: undefined
 			},
 		}
@@ -331,7 +331,7 @@ export function VisualizeSwapAsset({ swapAsset, rpcNetwork }: { swapAsset: SwapA
 					<div class = 'log-cell'/>
 					{ swapAsset.beforeAfterBalance !== undefined ? <div class = 'log-cell' style = 'justify-content: right;'>
 						<p class = 'paragraph' style = { balanceTextStyle }>Balance:&nbsp;</p>
-						<TokenOrEthValue amount = { swapAsset.beforeAfterBalance?.previousBalance } style = { balanceTextStyle } />
+						<TokenOrEthValue amount = { swapAsset.beforeAfterBalance?.beforeBalance } style = { balanceTextStyle } />
 						<p class = 'paragraph' style = { balanceTextStyle }>&nbsp;{'->'}&nbsp;</p>
 						<TokenOrEthValue amount = { swapAsset.beforeAfterBalance?.afterBalance } style = { balanceTextStyle } />
 						</div> : <></>
@@ -368,7 +368,7 @@ export function VisualizeSwapAsset({ swapAsset, rpcNetwork }: { swapAsset: SwapA
 					<div class = 'log-cell'/>
 					{ swapAsset.beforeAfterBalance !== undefined ? <div class = 'log-cell' style = 'justify-content: right;'>
 						<p class = 'paragraph' style = { balanceTextStyle }>Balance:&nbsp;</p>
-						<TokenOrEthValue { ...swapAsset.token } amount = { swapAsset.beforeAfterBalance?.previousBalance } style = { balanceTextStyle } />
+						<TokenOrEthValue { ...swapAsset.token } amount = { swapAsset.beforeAfterBalance?.beforeBalance } style = { balanceTextStyle } />
 						<p class = 'paragraph' style = { balanceTextStyle }>&nbsp;{'->'}&nbsp;</p>
 						<TokenOrEthValue { ...swapAsset.token } amount = { swapAsset.beforeAfterBalance?.afterBalance } style = { balanceTextStyle } />
 						</div> : <></>
@@ -398,7 +398,7 @@ export function VisualizeSwapAsset({ swapAsset, rpcNetwork }: { swapAsset: SwapA
 					<div class = 'log-cell'/>
 					{ swapAsset.beforeAfterBalance !== undefined ? <div class = 'log-cell' style = 'justify-content: right;'>
 						<p class = 'paragraph' style = { balanceTextStyle }>Balance:&nbsp;</p>
-						<TokenOrEthValue { ...swapAsset.token } amount = { swapAsset.beforeAfterBalance?.previousBalance } style = { balanceTextStyle } />
+						<TokenOrEthValue { ...swapAsset.token } amount = { swapAsset.beforeAfterBalance?.beforeBalance } style = { balanceTextStyle } />
 						<p class = 'paragraph' style = { balanceTextStyle }>&nbsp;{'->'}&nbsp;</p>
 						<TokenOrEthValue { ...swapAsset.token } amount = { swapAsset.beforeAfterBalance?.afterBalance } style = { balanceTextStyle } />
 						</div> : <></>
