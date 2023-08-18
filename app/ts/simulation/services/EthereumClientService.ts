@@ -16,11 +16,11 @@ export class EthereumClientService {
 	private lastCacheAccess: number = 0
 	private retrievingBlock: boolean = false
 	private newBlockAttemptCallback: (blockHeader: EthereumBlockHeader, ethereumClientService: EthereumClientService, isNewBlock: boolean) => void
-	private onErrorBlockCallback: (ethereumClientService: EthereumClientService, error: Error) => void
+	private onErrorBlockCallback: (ethereumClientService: EthereumClientService) => void
 	private requestHandler
 	private cleanedUp = false
 
-    constructor(requestHandler: IEthereumJSONRpcRequestHandler, newBlockAttemptCallback: (blockHeader: EthereumBlockHeader, ethereumClientService: EthereumClientService, isNewBlock: boolean) => void, onErrorBlockCallback: (ethereumClientService: EthereumClientService, error: Error) => void) {
+    constructor(requestHandler: IEthereumJSONRpcRequestHandler, newBlockAttemptCallback: (blockHeader: EthereumBlockHeader, ethereumClientService: EthereumClientService, isNewBlock: boolean) => void, onErrorBlockCallback: (ethereumClientService: EthereumClientService) => void) {
 		this.requestHandler = requestHandler
 		this.newBlockAttemptCallback = newBlockAttemptCallback
 		this.onErrorBlockCallback = onErrorBlockCallback
@@ -82,10 +82,8 @@ export class EthereumClientService {
 			this.newBlockAttemptCallback(newBlock, this, this.cachedBlock?.number != newBlock.number)
 			this.cachedBlock = newBlock
 		} catch(error) {
-			if (error instanceof Error) {
-				return this.onErrorBlockCallback(this, error)
-			}
-			throw error
+			console.warn(error)
+			return this.onErrorBlockCallback(this)
 		} finally {
 			this.retrievingBlock = false
 		}

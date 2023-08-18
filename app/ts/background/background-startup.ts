@@ -11,7 +11,6 @@ import { EthereumClientService } from '../simulation/services/EthereumClientServ
 import { getActiveAddress, getSocketFromPort, sendPopupMessageToOpenWindows, websiteSocketToString } from './backgroundUtils.js'
 import { sendSubscriptionMessagesForNewBlock } from '../simulation/services/EthereumSubscriptionService.js'
 import { refreshSimulation } from './popupMessageHandlers.js'
-import { isFailedToFetchError } from '../utils/errors.js'
 import { Semaphore } from '../utils/semaphore.js'
 import { RawInterceptedRequest } from '../utils/requests.js'
 import { verifyAccess } from './accessManagement.js'
@@ -152,19 +151,16 @@ async function newBlockAttemptCallback(blockheader: EthereumBlockHeader, ethereu
 	}
 }
 
-async function onErrorBlockCallback(ethereumClientService: EthereumClientService, error: Error) {
-	if (isFailedToFetchError(error)) {
-		const rpcConnectionStatus = {
-			isConnected: false,
-			lastConnnectionAttempt: new Date(),
-			latestBlock: ethereumClientService.getLastKnownCachedBlockOrUndefined(),
-			rpcNetwork: ethereumClientService.getRpcNetwork(),
-		}
-		await setRpcConnectionStatus(rpcConnectionStatus)
-		await updateExtensionBadge()
-		return await sendPopupMessageToOpenWindows({ method: 'popup_failed_to_get_block', data: { rpcConnectionStatus } })
+async function onErrorBlockCallback(ethereumClientService: EthereumClientService) {
+	const rpcConnectionStatus = {
+		isConnected: false,
+		lastConnnectionAttempt: new Date(),
+		latestBlock: ethereumClientService.getLastKnownCachedBlockOrUndefined(),
+		rpcNetwork: ethereumClientService.getRpcNetwork(),
 	}
-	throw error
+	await setRpcConnectionStatus(rpcConnectionStatus)
+	await updateExtensionBadge()
+	return await sendPopupMessageToOpenWindows({ method: 'popup_failed_to_get_block', data: { rpcConnectionStatus } })
 }
 
 async function startup() {
