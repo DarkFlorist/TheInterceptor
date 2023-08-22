@@ -129,7 +129,73 @@ export function AddNewAddress(param: AddAddressParam) {
 	const [askForAddressAccess, setAskForAddressAccess] = useState<boolean>(true)
 	const [errorString, setErrorString] = useState<string | undefined>(undefined)
 	const [activeAddress, setActiveAddress] = useState<bigint | undefined>(undefined)
+<<<<<<< Updated upstream
 	const [addressType, setAddressType] = useState<AddressBookEntryCategory>('addressInfo')
+=======
+	const [inCompleteAddressBookEntry, setInCompleteAddressBookEntry] = useState<InCompleteAddressBookEntry>({ addingAddress: false, type: 'addressInfo', address: undefined, askForAddressAccess: false, name: undefined, symbol: undefined, decimals: undefined, logoUri: undefined })
+
+	function getCompleteAddressBookEntry(): AddressBookEntry | undefined {
+		if (inCompleteAddressBookEntry.name !== undefined && inCompleteAddressBookEntry.name.length > 42) return undefined
+		const inputedAddressBigInt = stringToAddress(inCompleteAddressBookEntry.address)
+		if (inputedAddressBigInt === undefined) return undefined
+		const name = inCompleteAddressBookEntry.name ? inCompleteAddressBookEntry.name : checksummedAddress(inputedAddressBigInt)
+		switch(inCompleteAddressBookEntry.type) {
+			case 'ERC721': {
+				if (inCompleteAddressBookEntry.symbol === undefined) return undefined
+				return {
+					type: 'ERC721' as const,
+					name,
+					address: inputedAddressBigInt,
+					symbol: inCompleteAddressBookEntry.symbol,
+					logoUri: inCompleteAddressBookEntry.logoUri,
+					entrySource: 'User',
+				}
+			}
+			case 'ERC1155': {
+				if (inCompleteAddressBookEntry.symbol === undefined) return undefined
+				return {
+					type: 'ERC1155' as const,
+					name,
+					address: inputedAddressBigInt,
+					symbol: inCompleteAddressBookEntry.symbol,
+					logoUri: inCompleteAddressBookEntry.logoUri,
+					decimals: undefined,
+					entrySource: 'User',
+				}
+			}
+			case 'ERC20': {
+				if (inCompleteAddressBookEntry.symbol === undefined || inCompleteAddressBookEntry.decimals === undefined) return undefined
+				return {
+					type: 'ERC20' as const,
+					name,
+					address: inputedAddressBigInt,
+					symbol: inCompleteAddressBookEntry.symbol,
+					decimals: inCompleteAddressBookEntry.decimals,
+					logoUri: inCompleteAddressBookEntry.logoUri,
+					entrySource: 'User',
+				}
+			}
+			case 'contact':
+			case 'contract': return {
+				type: inCompleteAddressBookEntry.type,
+				name,
+				address: inputedAddressBigInt,
+				logoUri: inCompleteAddressBookEntry.logoUri,
+				entrySource: 'User',
+			}
+			case 'addressInfo': {
+				return {
+					type: 'addressInfo' as const,
+					name,
+					address: inputedAddressBigInt,
+					askForAddressAccess: inCompleteAddressBookEntry.askForAddressAccess,
+					entrySource: 'User',
+				}
+			}
+			default: assertUnreachable(inCompleteAddressBookEntry.type)
+		}
+	}
+>>>>>>> Stashed changes
 
 	async function add() {
 		const inputedAddressBigInt = stringToAddress(addressInput)

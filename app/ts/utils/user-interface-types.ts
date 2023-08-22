@@ -3,7 +3,18 @@ import * as funtypes from 'funtypes'
 import { EthereumAddress, EthereumQuantity, LiteralConverterParserFactory } from './wire-types.js'
 import { SimulatedAndVisualizedTransaction, SimulationAndVisualisationResults, RpcEntry, RpcNetwork, RpcEntries, SimulationUpdatingState, SimulationResultState } from './visualizer-types.js'
 import { IdentifiedSwapWithMetadata } from '../components/simulationExplaining/SwapTransactions.js'
-import { RpcConnectionStatus, Page, TabIconDetails, WebsiteAccessArray } from './interceptor-messages.js'
+import { RpcConnectionStatus, TabIconDetails } from './interceptor-messages.js'
+
+export const pages = ['Home', 'AddNewAddress', 'ChangeActiveAddress', 'AccessList', 'ModifyAddress', 'Settings']
+export type Page = funtypes.Static<typeof Page>
+export const Page = funtypes.Union(
+	funtypes.Literal('Home'),
+	funtypes.Literal('AddNewAddress'),
+	funtypes.Literal('ChangeActiveAddress'),
+	funtypes.Literal('AccessList'),
+	funtypes.Literal('ModifyAddress'),
+	funtypes.Literal('Settings'),
+)
 
 export type SignerName = funtypes.Static<typeof SignerName>
 export const SignerName = funtypes.Union(
@@ -38,12 +49,22 @@ export const AddressInfo = funtypes.ReadonlyObject({
 export type AddressInfoArray = funtypes.Static<typeof AddressInfoArray>
 export const AddressInfoArray = funtypes.ReadonlyArray(AddressInfo)
 
+export type AddressBookEntrySource = funtypes.Static<typeof AddressBookEntrySource>
+export const AddressBookEntrySource = funtypes.Union(
+	funtypes.Literal('Unknown'),
+	funtypes.Literal('DarkFloristMetadata'),
+	funtypes.Literal('User'),
+	funtypes.Literal('OnChain'),
+	funtypes.Literal('Interceptor'),
+)
+
 export type AddressInfoEntry = funtypes.Static<typeof AddressInfoEntry>
 export const AddressInfoEntry = funtypes.ReadonlyObject({
 	type: funtypes.Literal('addressInfo'),
 	name: funtypes.String,
 	address: EthereumAddress,
 	askForAddressAccess: funtypes.Union(funtypes.Boolean, funtypes.Literal(undefined).withParser(LiteralConverterParserFactory(undefined, true))),
+	entrySource: AddressBookEntrySource,
 })
 
 export type Erc20TokenEntry = funtypes.Static<typeof Erc20TokenEntry>
@@ -53,6 +74,7 @@ export const Erc20TokenEntry = funtypes.ReadonlyObject({
 	address: EthereumAddress,
 	symbol: funtypes.String,
 	decimals: EthereumQuantity,
+	entrySource: AddressBookEntrySource,
 }).And(funtypes.Partial({
 	logoUri: funtypes.String,
 }))
@@ -63,6 +85,7 @@ export const Erc721Entry = funtypes.ReadonlyObject({
 	name: funtypes.String,
 	address: EthereumAddress,
 	symbol: funtypes.String,
+	entrySource: AddressBookEntrySource,
 }).And(funtypes.Partial({
 	protocol: funtypes.String,
 	logoUri: funtypes.String,
@@ -75,6 +98,7 @@ export const Erc1155Entry = funtypes.ReadonlyObject({
 	address: EthereumAddress,
 	symbol: funtypes.String,
 	decimals: funtypes.Undefined,
+	entrySource: AddressBookEntrySource,
 }).And(funtypes.Partial({
 	protocol: funtypes.String,
 	logoUri: funtypes.String,
@@ -85,6 +109,7 @@ export const ContactEntry = funtypes.ReadonlyObject({
 	type: funtypes.Literal('contact'),
 	name: funtypes.String,
 	address: EthereumAddress,
+	entrySource: AddressBookEntrySource,
 }).And(funtypes.Partial({
 	logoUri: funtypes.String,
 }))
@@ -92,7 +117,23 @@ export const ContactEntry = funtypes.ReadonlyObject({
 export type ContactEntries = funtypes.Static<typeof ContactEntries>
 export const ContactEntries = funtypes.ReadonlyArray(ContactEntry)
 
+<<<<<<< Updated upstream
 export type AddressBookEntryCategory = 'contact' | 'addressInfo' | 'ERC20' | 'ERC721' | 'other contract' | 'ERC1155'
+=======
+export type ContractEntry = funtypes.Static<typeof ContractEntry>
+export const ContractEntry = 
+funtypes.ReadonlyObject({
+	type: funtypes.Literal('contract'),
+	name: funtypes.String,
+	address: EthereumAddress,
+	entrySource: AddressBookEntrySource,
+}).And(funtypes.Partial({
+	protocol: funtypes.String,
+	logoUri: funtypes.String,
+}))
+
+export type AddressBookEntryCategory = 'contact' | 'addressInfo' | 'ERC20' | 'ERC721' | 'contract' | 'ERC1155'
+>>>>>>> Stashed changes
 
 export type AddressBookEntry = funtypes.Static<typeof AddressBookEntry>
 export const AddressBookEntry = funtypes.Union(
@@ -101,6 +142,7 @@ export const AddressBookEntry = funtypes.Union(
 	Erc20TokenEntry,
 	Erc721Entry,
 	Erc1155Entry,
+<<<<<<< Updated upstream
 	funtypes.ReadonlyObject({
 		type: funtypes.Literal('other contract'),
 		name: funtypes.String,
@@ -109,6 +151,9 @@ export const AddressBookEntry = funtypes.Union(
 		protocol: funtypes.String,
 		logoUri: funtypes.String,
 	}))
+=======
+	ContractEntry,
+>>>>>>> Stashed changes
 )
 
 export type AddressBookEntries = funtypes.Static<typeof AddressBookEntries>
@@ -237,3 +282,32 @@ export const WindowOrTabId = funtypes.ReadonlyObject({
 	id: funtypes.Number,
 	type: funtypes.Union(funtypes.Literal('tab'), funtypes.Literal('window'))
 })
+
+export type WebsiteAddressAccess = funtypes.Static<typeof WebsiteAddressAccess>
+export const WebsiteAddressAccess = funtypes.ReadonlyObject({
+	address: EthereumAddress,
+	access: funtypes.Boolean,
+}).asReadonly()
+
+export type LegacyWebsiteAccess = funtypes.Static<typeof WebsiteAccess>
+export const LegacyWebsiteAccess = funtypes.ReadonlyObject({
+	origin: funtypes.String,
+	originIcon: funtypes.Union(funtypes.String, funtypes.Undefined),
+	access: funtypes.Boolean,
+	addressAccess: funtypes.Union(funtypes.ReadonlyArray(WebsiteAddressAccess), funtypes.Undefined),
+})
+export type LegacyWebsiteAccessArray = funtypes.Static<typeof LegacyWebsiteAccessArray>
+export const LegacyWebsiteAccessArray = funtypes.ReadonlyArray(LegacyWebsiteAccess)
+
+export type WebsiteAccess = funtypes.Static<typeof WebsiteAccess>
+export const WebsiteAccess = funtypes.ReadonlyObject({
+	website: Website,
+	access: funtypes.Boolean,
+	addressAccess: funtypes.Union(funtypes.ReadonlyArray(WebsiteAddressAccess), funtypes.Undefined),
+}).asReadonly()
+
+export type WebsiteAccessArray = funtypes.Static<typeof WebsiteAccessArray>
+export const WebsiteAccessArray = funtypes.ReadonlyArray(WebsiteAccess)
+
+export type WebsiteAccessArrayWithLegacy = funtypes.Static<typeof WebsiteAccessArrayWithLegacy>
+export const WebsiteAccessArrayWithLegacy = funtypes.Union(LegacyWebsiteAccessArray, WebsiteAccessArray)

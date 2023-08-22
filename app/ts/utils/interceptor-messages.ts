@@ -1,5 +1,9 @@
 import * as funtypes from 'funtypes'
+<<<<<<< Updated upstream
 import { AddressBookEntries, AddressBookEntry, AddressInfo, AddressInfoEntry, ContactEntries, SignerName, Website, WebsiteSocket } from './user-interface-types.js'
+=======
+import { AddressBookEntries, AddressBookEntry, AddressInfo, AddressInfoEntry, ContactEntries, Page, SignerName, Website, WebsiteAccessArray, WebsiteSocket } from './user-interface-types.js'
+>>>>>>> Stashed changes
 import { EthereumAddress, EthereumBlockHeader, EthereumBlockHeaderWithTransactionHashes, EthereumBytes32, EthereumData, EthereumQuantity, EthereumSignedTransactionWithBlockData, EthereumTimestamp, NonHexBigInt } from './wire-types.js'
 import { SimulationState, OptionalEthereumAddress, SimulatedAndVisualizedTransaction, SimResults, TokenPriceEstimate, WebsiteCreatedEthereumUnsignedTransaction, RpcNetwork, RpcEntries, RpcEntry, SimulationUpdatingState, SimulationResultState } from './visualizer-types.js'
 import { ICON_ACCESS_DENIED, ICON_ACTIVE, ICON_NOT_ACTIVE, ICON_SIGNING, ICON_SIGNING_NOT_SUPPORTED, ICON_SIMULATING } from './constants.js'
@@ -240,17 +244,6 @@ export const AddOrEditAddressBookEntry = funtypes.ReadonlyObject({
 	method: funtypes.Literal('popup_addOrModifyAddressBookEntry'),
 	data: AddressBookEntry,
 }).asReadonly()
-
-export const pages = ['Home', 'AddNewAddress', 'ChangeActiveAddress', 'AccessList', 'ModifyAddress']
-export type Page = funtypes.Static<typeof Page>
-export const Page = funtypes.Union(
-	funtypes.Literal('Home'),
-	funtypes.Literal('AddNewAddress'),
-	funtypes.Literal('ChangeActiveAddress'),
-	funtypes.Literal('AccessList'),
-	funtypes.Literal('ModifyAddress'),
-	funtypes.Literal('Settings'),
-)
 
 export type ChangePage = funtypes.Static<typeof ChangePage>
 export const ChangePage = funtypes.ReadonlyObject({
@@ -496,35 +489,6 @@ export const ConfirmTransactionDialogPendingChanged = funtypes.ReadonlyObject({
 	method: funtypes.Literal('popup_confirm_transaction_dialog_pending_changed'),
 	data: funtypes.ReadonlyArray(PendingTransaction),
 }).asReadonly()
-
-export type WebsiteAddressAccess = funtypes.Static<typeof WebsiteAddressAccess>
-export const WebsiteAddressAccess = funtypes.ReadonlyObject({
-	address: EthereumAddress,
-	access: funtypes.Boolean,
-}).asReadonly()
-
-export type LegacyWebsiteAccess = funtypes.Static<typeof WebsiteAccess>
-export const LegacyWebsiteAccess = funtypes.ReadonlyObject({
-	origin: funtypes.String,
-	originIcon: funtypes.Union(funtypes.String, funtypes.Undefined),
-	access: funtypes.Boolean,
-	addressAccess: funtypes.Union(funtypes.ReadonlyArray(WebsiteAddressAccess), funtypes.Undefined),
-})
-export type LegacyWebsiteAccessArray = funtypes.Static<typeof LegacyWebsiteAccessArray>
-export const LegacyWebsiteAccessArray = funtypes.ReadonlyArray(LegacyWebsiteAccess)
-
-export type WebsiteAccess = funtypes.Static<typeof WebsiteAccess>
-export const WebsiteAccess = funtypes.ReadonlyObject({
-	website: Website,
-	access: funtypes.Boolean,
-	addressAccess: funtypes.Union(funtypes.ReadonlyArray(WebsiteAddressAccess), funtypes.Undefined),
-}).asReadonly()
-
-export type WebsiteAccessArray = funtypes.Static<typeof WebsiteAccessArray>
-export const WebsiteAccessArray = funtypes.ReadonlyArray(WebsiteAccess)
-
-export type WebsiteAccessArrayWithLegacy = funtypes.Static<typeof WebsiteAccessArrayWithLegacy>
-export const WebsiteAccessArrayWithLegacy = funtypes.Union(LegacyWebsiteAccessArray, WebsiteAccessArray)
 
 export type UserAddressBook = funtypes.Static<typeof UserAddressBook>
 export const UserAddressBook = funtypes.ReadonlyObject({

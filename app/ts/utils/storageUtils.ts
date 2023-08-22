@@ -1,7 +1,12 @@
 import * as funtypes from 'funtypes'
 import { EthereumAddressOrMissing } from './wire-types.js'
+<<<<<<< Updated upstream
 import { AddressInfoArray, ContactEntries, SignerName } from './user-interface-types.js'
 import { Page, PendingAccessRequestArray, PendingChainChangeConfirmationPromise, PendingPersonalSignPromise, PendingTransaction, RpcConnectionStatus, TabState, WebsiteAccessArray } from './interceptor-messages.js'
+=======
+import { AddressBookEntries, AddressInfoArray, ContactEntries, Page, SignerName, WebsiteAccessArray } from './user-interface-types.js'
+import { PendingAccessRequestArray, PendingChainChangeConfirmationPromise, PendingPersonalSignPromise, PendingTransaction, RpcConnectionStatus, TabState } from './interceptor-messages.js'
+>>>>>>> Stashed changes
 import { EthereumSubscriptions, RpcEntries, RpcNetwork, SimulationResults } from './visualizer-types.js'
 
 export type LocalStorageItems = funtypes.Static<typeof LocalStorageItems>

@@ -1,3 +1,4 @@
+<<<<<<< Updated upstream
 import {  MOCK_PRIVATE_KEYS_ADDRESS } from '../utils/constants.js'
 import { Page, Settings, WebsiteAccessArray } from '../utils/interceptor-messages.js'
 import { Semaphore } from '../utils/semaphore.js'
@@ -6,6 +7,16 @@ import { AddressInfoArray, ContactEntries } from '../utils/user-interface-types.
 import { NetworkPrice, OptionalEthereumAddress, RpcEntries, RpcNetwork } from '../utils/visualizer-types.js'
 import { EthereumAddress, EthereumQuantity } from '../utils/wire-types.js'
 import * as funtypes from 'funtypes'
+=======
+import { MOCK_PRIVATE_KEYS_ADDRESS } from '../utils/constants.js'
+import { ExportedSettings } from '../utils/exported-settings-types.js'
+import { Settings } from '../utils/interceptor-messages.js'
+import { Semaphore } from '../utils/semaphore.js'
+import { browserStorageLocalGet, browserStorageLocalSet } from '../utils/storageUtils.js'
+import { AddressInfoArray, ContactEntries, Page, WebsiteAccessArray } from '../utils/user-interface-types.js'
+import { NetworkPrice, RpcEntries, RpcNetwork } from '../utils/visualizer-types.js'
+import { EthereumAddress } from '../utils/wire-types.js'
+>>>>>>> Stashed changes
 
 export const defaultAddresses = [
 	{

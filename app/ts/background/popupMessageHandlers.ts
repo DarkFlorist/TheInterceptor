@@ -20,6 +20,11 @@ import { formSimulatedAndVisualizedTransaction } from '../components/formVisuali
 import { doesUniqueRequestIdentifiersMatch } from '../utils/requests.js'
 import { isJSON } from '../utils/JsonRpc-types.js'
 import { SimulationState } from '../utils/visualizer-types.js'
+<<<<<<< Updated upstream
+=======
+import { isFailedToFetchError } from '../utils/errors.js'
+import { ExportedSettings } from '../utils/exported-settings-types.js'
+>>>>>>> Stashed changes
 
 export async function confirmDialog(simulator: Simulator, ethereumClientService: EthereumClientService, websiteTabConnections: WebsiteTabConnections, confirmation: TransactionConfirmation) {
 	await resolvePendingTransaction(simulator, ethereumClientService, websiteTabConnections, confirmation)
@@ -245,7 +250,7 @@ export async function enableSimulationMode(simulator: Simulator, websiteTabConne
 
 export async function getAddressBookData(parsed: GetAddressBookData, userAddressBook: UserAddressBook | undefined) {
 	if (userAddressBook === undefined) throw new Error('Interceptor is not ready')
-	const data = getMetadataForAddressBookData(parsed.data, userAddressBook)
+	const data = await getMetadataForAddressBookData(parsed.data, userAddressBook)
 	await sendPopupMessageToOpenWindows({
 		method: 'popup_getAddressBookDataReply',
 		data: {
