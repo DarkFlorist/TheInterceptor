@@ -35,7 +35,7 @@ export function findAddressInfo(address: bigint, addressInfos: readonly AddressI
 }
 
 // todo, add caching here, if we find new address, store it
-export async function identifyAddress(ethereumClientService: EthereumClientService, userAddressBook: UserAddressBook, address: bigint) : Promise<AddressBookEntry> {
+export async function identifyAddress(ethereumClientService: EthereumClientService, userAddressBook: UserAddressBook, address: bigint, useLocalStorage: boolean = true) : Promise<AddressBookEntry> {
 	for (const info of userAddressBook.addressInfos) {
 		if (info.address === address) {
 			return {
@@ -52,9 +52,10 @@ export async function identifyAddress(ethereumClientService: EthereumClientServi
 			}
 		}
 	}
-	const userEntry = (await getUserAddressBookEntries()).find((entry) => entry.address === address)
-	if (userEntry !== undefined) return userEntry
-
+	if (useLocalStorage) {
+		const userEntry = (await getUserAddressBookEntries()).find((entry) => entry.address === address)
+		if (userEntry !== undefined) return userEntry
+	}
 	const addrString = addressString(address)
 
 	const addressData = contractMetadata.get(addrString)
@@ -86,6 +87,13 @@ export async function identifyAddress(ethereumClientService: EthereumClientServi
 			address: address,
 			name: 'Ethereum Validator',
 			logoUri: '../../img/contracts/rhino.png',
+			type: 'contact',
+		}
+	}
+	if (address === 0n) {
+		return {
+			address: address,
+			name: '0x0 Address',
 			type: 'contact',
 		}
 	}

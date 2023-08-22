@@ -1,7 +1,9 @@
-import { EthereumJsonRpcRequest } from '../../app/ts/utils/JsonRpc-types.js'
+import { EthereumJsonRpcRequest } from '../app/ts/utils/JsonRpc-types.js'
 
 export class MockRequestHandler {
-	public readonly jsonRpcRequest = async (_rpcRequest: EthereumJsonRpcRequest) => {
+	public readonly jsonRpcRequest = async (rpcRequest: EthereumJsonRpcRequest) => {
+		if (rpcRequest.method === 'eth_getCode') return '0x'
+		console.log(rpcRequest)
 		throw new Error(`should not be called`)
 	}
 	

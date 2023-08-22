@@ -293,11 +293,11 @@ function getSolidityTypeCategory(type: SolidityType) {
 	}
 }
 
-async function parseSolidityValueByType(ethereumClientService: EthereumClientService, type: SolidityType, value: unknown, userAddressBook: UserAddressBook, isArray: boolean): Promise<GroupedSolidityType> {	
+async function parseSolidityValueByType(ethereumClientService: EthereumClientService, type: SolidityType, value: unknown, userAddressBook: UserAddressBook, isArray: boolean, useLocalStorage: boolean = true): Promise<GroupedSolidityType> {	
 	const categorized = getSolidityTypeCategory(type)
 	if (isArray) {
 		switch (categorized) {
-			case 'address': return { type: `${ categorized }[]`, value: await Promise.all(funtypes.ReadonlyArray(EthereumAddress).parse(value).map((value) => identifyAddress(ethereumClientService, userAddressBook, value))) }
+			case 'address': return { type: `${ categorized }[]`, value: await Promise.all(funtypes.ReadonlyArray(EthereumAddress).parse(value).map((value) => identifyAddress(ethereumClientService, userAddressBook, value, useLocalStorage))) }
 			case 'bool': return { type: `${ categorized }[]`, value: funtypes.ReadonlyArray(NonHexBigInt).parse(value).map((a) => a === 1n) }
 			case 'bytes': return { type: `${ categorized }[]`, value: funtypes.ReadonlyArray(EthereumData).parse(value) }
 			case 'fixedBytes': return { type: `${ categorized }[]`, value: funtypes.ReadonlyArray(EthereumData).parse(value) }
@@ -308,7 +308,7 @@ async function parseSolidityValueByType(ethereumClientService: EthereumClientSer
 
 	}
 	switch (categorized) {
-		case 'address': return { type: categorized, value: await identifyAddress(ethereumClientService, userAddressBook, EthereumAddress.parse(value)) }
+		case 'address': return { type: categorized, value: await identifyAddress(ethereumClientService, userAddressBook, EthereumAddress.parse(value), useLocalStorage) }
 		case 'bool': return { type: categorized, value: NonHexBigInt.parse(value) === 1n }
 		case 'bytes': return { type: categorized, value: EthereumData.parse(value) }
 		case 'fixedBytes': return { type: categorized, value: EthereumData.parse(value) }
@@ -318,7 +318,7 @@ async function parseSolidityValueByType(ethereumClientService: EthereumClientSer
 	}
 }
 
-async function extractEIP712MessageSubset(ethereumClientService: EthereumClientService, depth: number, message: JSONEncodeableObject, currentType: string, types: { [x: string]: readonly { readonly name: string, readonly type: string}[] | undefined }, userAddressBook: UserAddressBook): Promise<EnrichedEIP712Message> {
+async function extractEIP712MessageSubset(ethereumClientService: EthereumClientService, depth: number, message: JSONEncodeableObject, currentType: string, types: { [x: string]: readonly { readonly name: string, readonly type: string}[] | undefined }, userAddressBook: UserAddressBook, useLocalStorage: boolean = true): Promise<EnrichedEIP712Message> {
 	if (depth > 2) throw new Error('Too deep EIP712 message')
 	const currentTypes = types[currentType]
 	if (currentTypes === undefined) throw new Error(`Types not found: ${ currentType }`)
@@ -329,21 +329,21 @@ async function extractEIP712MessageSubset(ethereumClientService: EthereumClientS
 		if (fullType === undefined) throw new Error(`Type not found for key: ${ key }`)
 		const arraylessType = separateArraySuffix(fullType)
 		if (SolidityType.test(arraylessType.arraylessType)) {
-			return [key, await parseSolidityValueByType(ethereumClientService, SolidityType.parse(arraylessType.arraylessType), messageEntry, userAddressBook, arraylessType.isArray)]
+			return [key, await parseSolidityValueByType(ethereumClientService, SolidityType.parse(arraylessType.arraylessType), messageEntry, userAddressBook, arraylessType.isArray, useLocalStorage)]
 		}
 		if (arraylessType.isArray) {
 			if (!Array.isArray(messageEntry)) throw new Error(`Type was defined to be an array but it was not: ${ messageEntry }`)
-			return [key, { type: 'record[]', value: await Promise.all(messageEntry.map((subSubMessage) => extractEIP712MessageSubset(ethereumClientService, depth + 1, subSubMessage, arraylessType.arraylessType, types, userAddressBook))) }]
+			return [key, { type: 'record[]', value: await Promise.all(messageEntry.map((subSubMessage) => extractEIP712MessageSubset(ethereumClientService, depth + 1, subSubMessage, arraylessType.arraylessType, types, userAddressBook, useLocalStorage))) }]
 		}
 		if (!JSONEncodeableObject.test(messageEntry)) throw new Error(`Not a JSON type: ${ messageEntry }`)
-		return [key, { type: 'record', value: await extractEIP712MessageSubset(ethereumClientService, depth + 1, messageEntry, fullType, types, userAddressBook) }]
+		return [key, { type: 'record', value: await extractEIP712MessageSubset(ethereumClientService, depth + 1, messageEntry, fullType, types, userAddressBook, useLocalStorage) }]
 	}))
 	return pairArray.reduce((accumulator, [key, value]) => ({ ...accumulator, [key]: value}), {} as Promise<EnrichedEIP712Message>)
 }
 
-export async function extractEIP712Message(ethereumClientService: EthereumClientService, message: EIP712Message, userAddressBook: UserAddressBook): Promise<EnrichedEIP712> {
+export async function extractEIP712Message(ethereumClientService: EthereumClientService, message: EIP712Message, userAddressBook: UserAddressBook, useLocalStorage: boolean = true): Promise<EnrichedEIP712> {
 	return {
-		message: await extractEIP712MessageSubset(ethereumClientService, 0, message.message, message.primaryType, message.types, userAddressBook),
-		domain: await extractEIP712MessageSubset(ethereumClientService, 0, message.domain, 'EIP712Domain', message.types, userAddressBook),
+		message: await extractEIP712MessageSubset(ethereumClientService, 0, message.message, message.primaryType, message.types, userAddressBook, useLocalStorage),
+		domain: await extractEIP712MessageSubset(ethereumClientService, 0, message.domain, 'EIP712Domain', message.types, userAddressBook, useLocalStorage),
 	}
 }
