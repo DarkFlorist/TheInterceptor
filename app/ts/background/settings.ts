@@ -1,10 +1,10 @@
 import {  MOCK_PRIVATE_KEYS_ADDRESS } from '../utils/constants.js'
-import { LegacyWebsiteAccessArray, Page, Settings, WebsiteAccessArray, WebsiteAccessArrayWithLegacy } from '../utils/interceptor-messages.js'
+import { Page, Settings, WebsiteAccessArray } from '../utils/interceptor-messages.js'
 import { Semaphore } from '../utils/semaphore.js'
-import { browserStorageLocalGet, browserStorageLocalSet, browserStorageLocalSetKeys, browserStorageLocalSingleGetWithDefault } from '../utils/storageUtils.js'
+import { browserStorageLocalGet, browserStorageLocalSet } from '../utils/storageUtils.js'
 import { AddressInfoArray, ContactEntries } from '../utils/user-interface-types.js'
 import { NetworkPrice, OptionalEthereumAddress, RpcEntries, RpcNetwork } from '../utils/visualizer-types.js'
-import { EthereumAddress, EthereumAddressOrMissing, EthereumQuantity } from '../utils/wire-types.js'
+import { EthereumAddress, EthereumQuantity } from '../utils/wire-types.js'
 import * as funtypes from 'funtypes'
 
 export const defaultAddresses = [
@@ -105,24 +105,6 @@ export const defaultRpcs: RpcEntries = [
 	*/
 ]
 
-function parseAccessWithLegacySupport(data: unknown): WebsiteAccessArray {
-	const parsed = WebsiteAccessArrayWithLegacy.parse(data)
-	if (parsed.length === 0) return []
-	if ('origin' in parsed[0]) {
-		const legacy = LegacyWebsiteAccessArray.parse(data)
-		return legacy.map((x) => ({
-			access: x.access,
-			addressAccess: x.addressAccess,
-			website: {
-				websiteOrigin: x.origin,
-				icon: x.originIcon,
-				title: undefined,
-			},
-		}))
-	}
-	return WebsiteAccessArray.parse(data)
-}
-
 export async function getSettings() : Promise<Settings> {
 	const results = await browserStorageLocalGet([
 		'activeSimulationAddress',
@@ -134,86 +116,71 @@ export async function getSettings() : Promise<Settings> {
 		'simulationMode',
 		'contacts',
 	])
-	const useSignersAddressAsActiveAddress = results.useSignersAddressAsActiveAddress !== undefined ? funtypes.Boolean.parse(results.useSignersAddressAsActiveAddress) : false
 	return {
-		activeSimulationAddress: results.activeSimulationAddress !== undefined ? EthereumAddressOrMissing.parse(results.activeSimulationAddress) : defaultAddresses[0].address,
-		page: results.page !== undefined ? Page.parse(results.page) : 'Home',
-		useSignersAddressAsActiveAddress: useSignersAddressAsActiveAddress,
-		websiteAccess: results.websiteAccess !== undefined ? parseAccessWithLegacySupport(results.websiteAccess) : [],
-		rpcNetwork: results.rpcNetwork !== undefined ? RpcNetwork.parse(results.rpcNetwork) : defaultRpcs[0],
-		simulationMode: results.simulationMode !== undefined ? funtypes.Boolean.parse(results.simulationMode) : true,
+		activeSimulationAddress: 'activeSimulationAddress' in results ? results.activeSimulationAddress : defaultAddresses[0].address,
+		page: results.page ?? 'Home',
+		useSignersAddressAsActiveAddress: results.useSignersAddressAsActiveAddress ?? false,
+		websiteAccess: results.websiteAccess ?? [],
+		rpcNetwork: results.rpcNetwork ?? defaultRpcs[0],
+		simulationMode: results.simulationMode ?? true,
 		userAddressBook: {
-			addressInfos: results.addressInfos !== undefined ? AddressInfoArray.parse(results.addressInfos): defaultAddresses,
-			contacts: ContactEntries.parse(results.contacts !== undefined ? results.contacts : []),
+			addressInfos: results.addressInfos ?? defaultAddresses,
+			contacts: results.contacts ?? [],
 		}
 	}
 }
 
-export async function setPage(page: Page) {
-	return await browserStorageLocalSet('page', page)
-}
+export const setPage = async (page: Page) => await browserStorageLocalSet({page})
 
-export async function setMakeMeRich(makeMeRich: boolean) {
-	return await browserStorageLocalSet('makeMeRich', makeMeRich)
-}
-export async function getMakeMeRich() {
-	return funtypes.Boolean.parse(await browserStorageLocalSingleGetWithDefault('makeMeRich', false))
-}
+export const setMakeMeRich = async (makeMeRich: boolean) => await browserStorageLocalSet({ makeMeRich })
+export const getMakeMeRich = async() => (await browserStorageLocalGet('makeMeRich'))?.['makeMeRich'] ?? false
+
 export async function setUseSignersAddressAsActiveAddress(useSignersAddressAsActiveAddress: boolean, currentSignerAddress: bigint | undefined = undefined) {
-	return await browserStorageLocalSetKeys({
-		'useSignersAddressAsActiveAddress': useSignersAddressAsActiveAddress,
-		...useSignersAddressAsActiveAddress === true ? { 'activeSigningAddress': EthereumAddressOrMissing.serialize(currentSignerAddress) as string } : {}
+	return await browserStorageLocalSet({
+		useSignersAddressAsActiveAddress,
+		...useSignersAddressAsActiveAddress === true ? { activeSigningAddress: currentSignerAddress } : {}
 	})
 }
 
 export async function changeSimulationMode(changes: { simulationMode: boolean, rpcNetwork?: RpcNetwork, activeSimulationAddress?: EthereumAddress | undefined, activeSigningAddress?: EthereumAddress | undefined }) {
-	return await browserStorageLocalSetKeys({
+	return await browserStorageLocalSet({
 		simulationMode: changes.simulationMode,
-		...changes.rpcNetwork ? { rpcNetwork: RpcNetwork.serialize(changes.rpcNetwork) as string }: {},
-		...'activeSimulationAddress' in changes ? { activeSimulationAddress: EthereumAddressOrMissing.serialize(changes.activeSimulationAddress) as string }: {},
-		...'activeSigningAddress' in changes ? { activeSigningAddress: EthereumAddressOrMissing.serialize(changes.activeSigningAddress) as string }: {},
+		...changes.rpcNetwork ? { rpcNetwork: changes.rpcNetwork }: {},
+		...'activeSimulationAddress' in changes ? { activeSimulationAddress: changes.activeSimulationAddress }: {},
+		...'activeSigningAddress' in changes ? { activeSigningAddress: changes.activeSigningAddress }: {},
 	})
 }
 
+export const getWebsiteAccess = async() => (await browserStorageLocalGet('websiteAccess'))?.['websiteAccess'] ?? []
 const websiteAccessSemaphore = new Semaphore(1)
 export async function updateWebsiteAccess(updateFunc: (prevState: WebsiteAccessArray) => WebsiteAccessArray) {
 	await websiteAccessSemaphore.execute(async () => {
-		const websiteAccess = WebsiteAccessArray.parse(await browserStorageLocalSingleGetWithDefault('websiteAccess', []))
-		return await browserStorageLocalSet('websiteAccess', WebsiteAccessArray.serialize(updateFunc(websiteAccess)) as string)
+		return await browserStorageLocalSet({ websiteAccess: updateFunc(await getWebsiteAccess()) })
 	})
 }
 
+const getAddressInfos = async() => (await browserStorageLocalGet('addressInfos'))?.['addressInfos'] ?? defaultAddresses
 const addressInfosSemaphore = new Semaphore(1)
 export async function updateAddressInfos(updateFunc: (prevState: AddressInfoArray) => AddressInfoArray) {
 	await addressInfosSemaphore.execute(async () => {
-		const addressInfos = AddressInfoArray.parse(await browserStorageLocalSingleGetWithDefault('addressInfos', AddressInfoArray.serialize(defaultAddresses)))
-		return await browserStorageLocalSet('addressInfos', AddressInfoArray.serialize(updateFunc(addressInfos)) as string)
+		return await browserStorageLocalSet({ addressInfos: updateFunc(await getAddressInfos()) })
 	})
 }
 
+const getContacts = async() => (await browserStorageLocalGet('contacts'))?.['contacts'] ?? []
 const contactsSemaphore = new Semaphore(1)
 export async function updateContacts(updateFunc: (prevState: ContactEntries) => ContactEntries) {
 	await contactsSemaphore.execute(async () => {
-		const contacts = ContactEntries.parse(await browserStorageLocalSingleGetWithDefault('contacts', []))
-		return await browserStorageLocalSet('contacts', ContactEntries.serialize(updateFunc(contacts)) as string)
+		return await browserStorageLocalSet({ contacts: updateFunc(await getContacts()) })
 	})
 }
 
-export async function getMetamaskCompatibilityMode() {
-	return funtypes.Boolean.parse(await browserStorageLocalSingleGetWithDefault('metamaskCompatibilityMode', false))
-}
+export const getUseTabsInsteadOfPopup = async() => (await browserStorageLocalGet('useTabsInsteadOfPopup'))?.['useTabsInsteadOfPopup'] ?? false
+export const setUseTabsInsteadOfPopup = async(useTabsInsteadOfPopup: boolean) => await browserStorageLocalSet({ useTabsInsteadOfPopup })
 
-export async function setMetamaskCompatibilityMode(metamaskCompatibilityMode: boolean) {
-	return await browserStorageLocalSet('metamaskCompatibilityMode', funtypes.Boolean.serialize(metamaskCompatibilityMode) as string)
-}
+export const getMetamaskCompatibilityMode = async() => (await browserStorageLocalGet('metamaskCompatibilityMode'))?.['metamaskCompatibilityMode'] ?? false
+export const setMetamaskCompatibilityMode = async(metamaskCompatibilityMode: boolean) => await browserStorageLocalSet({ metamaskCompatibilityMode })
 
-export async function getUseTabsInsteadOfPopup() {
-	return funtypes.Boolean.parse(await browserStorageLocalSingleGetWithDefault('useTabsInsteadOfPopup', false))
-}
-
-export async function setUseTabsInsteadOfPopup(useTabsInsteadOfPopup: boolean) {
-	return await browserStorageLocalSet('useTabsInsteadOfPopup', funtypes.Boolean.serialize(useTabsInsteadOfPopup) as string)
-}
 
 export type ExportedSettings = funtypes.Static<typeof ExportedSettings>
 export const ExportedSettings = funtypes.Union(
