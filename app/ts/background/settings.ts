@@ -179,10 +179,7 @@ export const getUseTabsInsteadOfPopup = async() => (await browserStorageLocalGet
 export const setUseTabsInsteadOfPopup = async(useTabsInsteadOfPopup: boolean) => await browserStorageLocalSet({ useTabsInsteadOfPopup })
 
 export const getMetamaskCompatibilityMode = async() => (await browserStorageLocalGet('metamaskCompatibilityMode'))?.['metamaskCompatibilityMode'] ?? false
-
-export async function setMetamaskCompatibilityMode(metamaskCompatibilityMode: boolean) {
-	return await browserStorageLocalSet('metamaskCompatibilityMode', funtypes.Boolean.serialize(metamaskCompatibilityMode) as string)
-}
+export const setMetamaskCompatibilityMode = async(metamaskCompatibilityMode: boolean) => await browserStorageLocalSet({ metamaskCompatibilityMode })
 
 
 export type ExportedSettings = funtypes.Static<typeof ExportedSettings>
