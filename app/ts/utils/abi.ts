@@ -60,6 +60,7 @@ export const Erc1155ABI: InterfaceAbi = [
 	...Erc165ABI,
 	'function uri(uint256 _id) view returns (string memory)',
 	'event TransferBatch(address indexed _operator, address indexed _from, address indexed _to, uint256[] _ids, uint256[] _values)',
+	'event TransferSingle(address operator, address from, address to, uint256 id, uint256 value)',
 	'event ApprovalForAll(address indexed _owner, address indexed _operator, bool _approved)',
 	'event URI(string _value, uint256 indexed _id)',
 	'function safeTransferFrom(address _from, address _to, uint256 _id, uint256 _value, bytes calldata _data) external',
