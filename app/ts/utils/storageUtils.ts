@@ -23,6 +23,7 @@ type StorageKey = 'activeSigningAddress'
 	| 'useTabsInsteadOfPopup'
 	| 'RpcEntries'
 	| 'metamaskCompatibilityMode'
+	| 'userAddressBookEntries'
 
 export async function browserStorageLocalGet(keys: StorageKey | StorageKey[]) {
 	return await browser.storage.local.get(keys) as Promise<Partial<Record<StorageKey, JSONEncodeable>>>

@@ -4,7 +4,8 @@ import { AddressBookEntry } from './user-interface-types.js'
 import { EthereumAddress, EthereumData, EthereumQuantity, NonHexBigInt } from './wire-types.js'
 import { EIP712Message, JSONEncodeableObject } from './JsonRpc-types.js'
 import * as funtypes from 'funtypes'
-import { getAddressMetaData } from '../background/metadataUtils.js'
+import { identifyAddress } from '../background/metadataUtils.js'
+import { EthereumClientService } from '../simulation/services/EthereumClientService.js'
 
 type SolidityType = funtypes.Static<typeof SolidityType>
 const SolidityType = funtypes.Union(
@@ -292,11 +293,11 @@ function getSolidityTypeCategory(type: SolidityType) {
 	}
 }
 
-function parseSolidityValueByType(type: SolidityType, value: unknown, userAddressBook: UserAddressBook, isArray: boolean): GroupedSolidityType {	
+async function parseSolidityValueByType(ethereumClientService: EthereumClientService, type: SolidityType, value: unknown, userAddressBook: UserAddressBook, isArray: boolean): Promise<GroupedSolidityType> {	
 	const categorized = getSolidityTypeCategory(type)
 	if (isArray) {
 		switch (categorized) {
-			case 'address': return { type: `${ categorized }[]`, value: funtypes.ReadonlyArray(EthereumAddress).parse(value).map((value) => getAddressMetaData(value, userAddressBook)) }
+			case 'address': return { type: `${ categorized }[]`, value: await Promise.all(funtypes.ReadonlyArray(EthereumAddress).parse(value).map((value) => identifyAddress(ethereumClientService, userAddressBook, value))) }
 			case 'bool': return { type: `${ categorized }[]`, value: funtypes.ReadonlyArray(NonHexBigInt).parse(value).map((a) => a === 1n) }
 			case 'bytes': return { type: `${ categorized }[]`, value: funtypes.ReadonlyArray(EthereumData).parse(value) }
 			case 'fixedBytes': return { type: `${ categorized }[]`, value: funtypes.ReadonlyArray(EthereumData).parse(value) }
@@ -307,7 +308,7 @@ function parseSolidityValueByType(type: SolidityType, value: unknown, userAddres
 
 	}
 	switch (categorized) {
-		case 'address': return { type: categorized, value: getAddressMetaData(EthereumAddress.parse(value), userAddressBook) }
+		case 'address': return { type: categorized, value: await identifyAddress(ethereumClientService, userAddressBook, EthereumAddress.parse(value)) }
 		case 'bool': return { type: categorized, value: NonHexBigInt.parse(value) === 1n }
 		case 'bytes': return { type: categorized, value: EthereumData.parse(value) }
 		case 'fixedBytes': return { type: categorized, value: EthereumData.parse(value) }
@@ -317,32 +318,32 @@ function parseSolidityValueByType(type: SolidityType, value: unknown, userAddres
 	}
 }
 
-function extractEIP712MessageSubset(depth: number, message: JSONEncodeableObject, currentType: string, types: { [x: string]: readonly { readonly name: string, readonly type: string}[] | undefined }, userAddressBook: UserAddressBook): EnrichedEIP712Message {
+async function extractEIP712MessageSubset(ethereumClientService: EthereumClientService, depth: number, message: JSONEncodeableObject, currentType: string, types: { [x: string]: readonly { readonly name: string, readonly type: string}[] | undefined }, userAddressBook: UserAddressBook): Promise<EnrichedEIP712Message> {
 	if (depth > 2) throw new Error('Too deep EIP712 message')
 	const currentTypes = types[currentType]
 	if (currentTypes === undefined) throw new Error(`Types not found: ${ currentType }`)
 	const messageEntries = Object.entries(message)
-	const pairArray: [string, EnrichedEIP712MessageRecord][] = Array.from(messageEntries).map(([key, messageEntry]) => {
+	const pairArray: [string, EnrichedEIP712MessageRecord][] = await Promise.all(Array.from(messageEntries).map(async([key, messageEntry]) => {
 		if (messageEntry === undefined) throw new Error(`Subtype not found: ${ key }`)
 		const fullType = findType(key, currentTypes)
 		if (fullType === undefined) throw new Error(`Type not found for key: ${ key }`)
 		const arraylessType = separateArraySuffix(fullType)
 		if (SolidityType.test(arraylessType.arraylessType)) {
-				return [key, parseSolidityValueByType(SolidityType.parse(arraylessType.arraylessType), messageEntry, userAddressBook, arraylessType.isArray)]
-			}
-			if (arraylessType.isArray) {
-				if (!Array.isArray(messageEntry)) throw new Error(`Type was defined to be an array but it was not: ${ messageEntry }`)
-				return [key, { type: 'record[]', value: messageEntry.map((subSubMessage) => extractEIP712MessageSubset(depth + 1, subSubMessage, arraylessType.arraylessType, types, userAddressBook)) }]
-			}
+			return [key, await parseSolidityValueByType(ethereumClientService, SolidityType.parse(arraylessType.arraylessType), messageEntry, userAddressBook, arraylessType.isArray)]
+		}
+		if (arraylessType.isArray) {
+			if (!Array.isArray(messageEntry)) throw new Error(`Type was defined to be an array but it was not: ${ messageEntry }`)
+			return [key, { type: 'record[]', value: await Promise.all(messageEntry.map((subSubMessage) => extractEIP712MessageSubset(ethereumClientService, depth + 1, subSubMessage, arraylessType.arraylessType, types, userAddressBook))) }]
+		}
 		if (!JSONEncodeableObject.test(messageEntry)) throw new Error(`Not a JSON type: ${ messageEntry }`)
-		return [key, { type: 'record', value: extractEIP712MessageSubset(depth + 1, messageEntry, fullType, types, userAddressBook) }]
-	})
-	return pairArray.reduce((accumulator, [key, value]) => ({ ...accumulator, [key]: value}), {} as EnrichedEIP712Message)
+		return [key, { type: 'record', value: await extractEIP712MessageSubset(ethereumClientService, depth + 1, messageEntry, fullType, types, userAddressBook) }]
+	}))
+	return pairArray.reduce((accumulator, [key, value]) => ({ ...accumulator, [key]: value}), {} as Promise<EnrichedEIP712Message>)
 }
 
-export function extractEIP712Message(message: EIP712Message, userAddressBook: UserAddressBook): EnrichedEIP712 {
+export async function extractEIP712Message(ethereumClientService: EthereumClientService, message: EIP712Message, userAddressBook: UserAddressBook): Promise<EnrichedEIP712> {
 	return {
-		message: extractEIP712MessageSubset(0, message.message, message.primaryType, message.types, userAddressBook),
-		domain: extractEIP712MessageSubset(0, message.domain, 'EIP712Domain', message.types, userAddressBook),
+		message: await extractEIP712MessageSubset(ethereumClientService, 0, message.message, message.primaryType, message.types, userAddressBook),
+		domain: await extractEIP712MessageSubset(ethereumClientService, 0, message.domain, 'EIP712Domain', message.types, userAddressBook),
 	}
 }

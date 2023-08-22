@@ -1,5 +1,5 @@
 import * as funtypes from 'funtypes'
-import { AddressBookEntries, AddressBookEntry, AddressInfo, AddressInfoEntry, ContactEntries, SignerName, Website, WebsiteSocket } from './user-interface-types.js'
+import { AddressBookEntries, AddressBookEntry, AddressInfo, AddressInfoArray, AddressInfoEntry, ContactEntries, SignerName, Website, WebsiteSocket } from './user-interface-types.js'
 import { EthereumAddress, EthereumBlockHeader, EthereumBlockHeaderWithTransactionHashes, EthereumBytes32, EthereumData, EthereumQuantity, EthereumSignedTransactionWithBlockData, EthereumTimestamp, NonHexBigInt } from './wire-types.js'
 import { SimulationState, OptionalEthereumAddress, SimulatedAndVisualizedTransaction, SimResults, TokenPriceEstimate, WebsiteCreatedEthereumUnsignedTransaction, RpcNetwork, RpcEntries, RpcEntry, SimulationUpdatingState, SimulationResultState } from './visualizer-types.js'
 import { ICON_ACCESS_DENIED, ICON_ACTIVE, ICON_NOT_ACTIVE, ICON_SIGNING, ICON_SIGNING_NOT_SUPPORTED, ICON_SIMULATING } from './constants.js'
@@ -790,3 +790,57 @@ export const MessageToPopup = funtypes.Union(
 
 export type ExternalPopupMessage = funtypes.Static<typeof MessageToPopup>
 export const ExternalPopupMessage = funtypes.Union(MessageToPopup, PopupMessage) // message that moves from popup to another, or from background page to popup, or from popup to background page
+
+
+export type ExportedSettings = funtypes.Static<typeof ExportedSettings>
+export const ExportedSettings = funtypes.Union(
+	funtypes.ReadonlyObject({
+		name: funtypes.Literal('InterceptorSettingsAndAddressBook'),
+		version: funtypes.Literal('1.0'),
+		exportedDate: funtypes.String,
+		settings: funtypes.ReadonlyObject({
+			activeSimulationAddress: OptionalEthereumAddress,
+			activeChain: EthereumQuantity,
+			page: Page,
+			useSignersAddressAsActiveAddress: funtypes.Boolean,
+			websiteAccess: WebsiteAccessArray,
+			simulationMode: funtypes.Boolean,
+			addressInfos: AddressInfoArray,
+			contacts: funtypes.Union(funtypes.Undefined, ContactEntries),
+			useTabsInsteadOfPopup: funtypes.Boolean,
+		})
+	}),
+	funtypes.ReadonlyObject({
+		name: funtypes.Literal('InterceptorSettingsAndAddressBook'),
+		version: funtypes.Literal('1.1'),
+		exportedDate: funtypes.String,
+		settings: funtypes.ReadonlyObject({
+			activeSimulationAddress: OptionalEthereumAddress,
+			rpcNetwork: RpcNetwork,
+			page: Page,
+			useSignersAddressAsActiveAddress: funtypes.Boolean,
+			websiteAccess: WebsiteAccessArray,
+			simulationMode: funtypes.Boolean,
+			addressInfos: AddressInfoArray,
+			contacts: funtypes.Union(funtypes.Undefined, ContactEntries),
+			useTabsInsteadOfPopup: funtypes.Boolean,
+		})
+	}),
+	funtypes.ReadonlyObject({
+		name: funtypes.Literal('InterceptorSettingsAndAddressBook'),
+		version: funtypes.Literal('1.2'),
+		exportedDate: funtypes.String,
+		settings: funtypes.ReadonlyObject({
+			activeSimulationAddress: OptionalEthereumAddress,
+			rpcNetwork: RpcNetwork,
+			page: Page,
+			useSignersAddressAsActiveAddress: funtypes.Boolean,
+			websiteAccess: WebsiteAccessArray,
+			simulationMode: funtypes.Boolean,
+			addressInfos: AddressInfoArray,
+			contacts: funtypes.Union(funtypes.Undefined, ContactEntries),
+			useTabsInsteadOfPopup: funtypes.Boolean,
+			metamaskCompatibilityMode: funtypes.Boolean,
+		})
+	}),
+)

@@ -2,7 +2,7 @@ import { ICON_NOT_ACTIVE, getChainName } from '../utils/constants.js'
 import { PendingAccessRequestArray, PendingChainChangeConfirmationPromise, PendingPersonalSignPromise, PendingTransaction, TabState, RpcConnectionStatus, PendingAccessRequest } from '../utils/interceptor-messages.js'
 import { Semaphore } from '../utils/semaphore.js'
 import { browserStorageLocalSet, browserStorageLocalSingleGetWithDefault } from '../utils/storageUtils.js'
-import { SignerName } from '../utils/user-interface-types.js'
+import { AddressBookEntries, SignerName } from '../utils/user-interface-types.js'
 import { EthereumSubscriptions, SimulationResults, RpcEntries, RpcNetwork } from '../utils/visualizer-types.js'
 import * as funtypes from 'funtypes'
 import { defaultRpcs, getSettings } from './settings.js'
@@ -34,6 +34,7 @@ export async function appendPendingTransaction(promise: PendingTransaction) {
 	return await pendingTransactionsSemaphore.execute(async () => {
 		const promises = [...await getPendingTransactions(), promise]
 		await browserStorageLocalSet('transactionsPendingForUserConfirmation', funtypes.ReadonlyArray(PendingTransaction).serialize(promises) as string)
+		funtypes.ReadonlyArray(PendingTransaction).parse(await browserStorageLocalSingleGetWithDefault('transactionsPendingForUserConfirmation', []))
 		return promises
 	})
 }
@@ -272,4 +273,16 @@ export const ethDonator = [{
 
 export function getEthDonator(chainId: bigint) {
 	return ethDonator.find((rpc) => rpc.chainId === chainId)?.eth_donator
+}
+
+export async function getUserAddressBookEntries() {
+	return AddressBookEntries.parse(await browserStorageLocalSingleGetWithDefault('userAddressBookEntries', []))
+}
+
+const userAddressBookEntriesSemaphore = new Semaphore(1)
+export async function updateUserAddressBookEntries(updateFunc: (prevState: AddressBookEntries) => AddressBookEntries) {
+	await userAddressBookEntriesSemaphore.execute(async () => {
+		const entries = AddressBookEntries.parse(await browserStorageLocalSingleGetWithDefault('userAddressBookEntries', []))
+		return await browserStorageLocalSet('userAddressBookEntries', AddressBookEntries.serialize(updateFunc(entries)) as string)
+	})
 }

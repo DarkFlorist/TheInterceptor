@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'preact/hooks'
-import { dataStringWith0xStart, stringToUint8Array } from '../../utils/bigint.js'
-import { AddingNewAddressType, AddressBookEntry, RenameAddressCallBack } from '../../utils/user-interface-types.js'
+import { checksummedAddress, dataStringWith0xStart, stringToUint8Array } from '../../utils/bigint.js'
+import { AddressBookEntry, InCompleteAddressBookEntry, RenameAddressCallBack } from '../../utils/user-interface-types.js'
 import Hint from '../subcomponents/Hint.js'
 import { ErrorCheckBox, Error as ErrorComponent} from '../subcomponents/Error.js'
 import { MOCK_PRIVATE_KEYS_ADDRESS, getChainName } from '../../utils/constants.js'
@@ -70,7 +70,7 @@ function identifySignature(data: PersonalSignRequestData) {
 			}
 		}
 		case 'Permit2': {
-			const symbol = data.addressBookEntries.token.symbol
+			const symbol = 'symbol' in data.addressBookEntries.token ? data.addressBookEntries.token.symbol : '???'
 			return {
 				title: `${ symbol } Permit`,
 				signingAction: `Sign ${ symbol } Permit`,
@@ -146,6 +146,7 @@ function SignRequest({ personalSignRequestData, renameAddressCallBack }: SignReq
 			/>
 		}
 		case 'Permit': {
+			if (personalSignRequestData.addressBookEntries.verifyingContract.type !== 'ERC20') throw new Error('Malformed sign request')
 			return <SimpleTokenApprovalVisualisation
 				approval = { {
 					type: 'ERC20',
@@ -161,6 +162,7 @@ function SignRequest({ personalSignRequestData, renameAddressCallBack }: SignReq
 			/>
 		}
 		case 'Permit2': {
+			if (personalSignRequestData.addressBookEntries.token.type !== 'ERC20') throw new Error('Malformed sign request')
 			return <SimpleTokenApprovalVisualisation
 				approval = { {
 					type: 'ERC20',
@@ -371,7 +373,7 @@ function SignatureCard(params: SignatureCardParams) {
 }
 
 export function PersonalSign() {
-	const [addingNewAddress, setAddingNewAddress] = useState<AddingNewAddressType | 'renameAddressModalClosed'> ('renameAddressModalClosed')
+	const [addingNewAddress, setAddingNewAddress] = useState<InCompleteAddressBookEntry | 'renameAddressModalClosed'> ('renameAddressModalClosed')
 	const [personalSignRequestData, setPersonalSignRequestData] = useState<PersonalSignRequestData | undefined>(undefined)
 	const [forceSend, setForceSend] = useState<boolean>(false)
 
@@ -434,7 +436,15 @@ export function PersonalSign() {
 	
 
 	function renameAddressCallBack(entry: AddressBookEntry) {
-		setAddingNewAddress({ addingAddress: false, entry: entry })
+		setAddingNewAddress({
+			addingAddress: false,
+			askForAddressAccess: false,
+			symbol: undefined,
+			decimals: undefined,
+			logoUri: undefined,
+			...entry,
+			address: checksummedAddress(entry.address)
+		})
 	}
 
 	if (personalSignRequestData === undefined) return <CenterToPageTextSpinner text = 'Visualizing...'/>
@@ -447,7 +457,7 @@ export function PersonalSign() {
 						? <></>
 						: <AddNewAddress
 							setActiveAddressAndInformAboutIt = { undefined }
-							addingNewAddress = { addingNewAddress }
+							inCompleteAddressBookEntry = { addingNewAddress }
 							close = { () => { setAddingNewAddress('renameAddressModalClosed') } }
 							activeAddress = { undefined }
 						/>

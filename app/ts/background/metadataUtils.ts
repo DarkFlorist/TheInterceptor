@@ -1,5 +1,5 @@
 import { addressString, checksummedAddress } from '../utils/bigint.js'
-import { AddressInfoEntry, AddressBookEntry, AddressInfo, Erc20TokenEntry, Erc721Entry, Erc1155Entry } from '../utils/user-interface-types.js'
+import { AddressInfoEntry, AddressBookEntry, AddressInfo } from '../utils/user-interface-types.js'
 import { SimulationState, VisualizerResult } from '../utils/visualizer-types.js'
 import { nftMetadata, tokenMetadata, contractMetadata } from '@darkflorist/address-metadata'
 import { ethers } from 'ethers'
@@ -8,6 +8,7 @@ import { UserAddressBook } from '../utils/interceptor-messages.js'
 import { EthereumClientService } from '../simulation/services/EthereumClientService.js'
 import { itentifyAddressViaOnChainInformation } from '../utils/tokenIdentification.js'
 import { assertNever } from '../utils/typescript.js'
+import { getUserAddressBookEntries } from './storageVariables.js'
 export const LOGO_URI_PREFIX = `../vendor/@darkflorist/address-metadata`
 
 export function getFullLogoUri(logoURI: string) {
@@ -33,15 +34,8 @@ export function findAddressInfo(address: bigint, addressInfos: readonly AddressI
 	}
 }
 
-export function getAddressMetaData(address: bigint, userAddressBook: UserAddressBook) : AddressBookEntry {
-	if ( address === MOCK_ADDRESS) {
-		return {
-			address: address,
-			name: 'Ethereum Validator',
-			logoUri: '../../img/contracts/rhino.png',
-			type: 'contact',
-		}
-	}
+// todo, add caching here, if we find new address, store it
+export async function identifyAddress(ethereumClientService: EthereumClientService, userAddressBook: UserAddressBook, address: bigint) : Promise<AddressBookEntry> {
 	for (const info of userAddressBook.addressInfos) {
 		if (info.address === address) {
 			return {
@@ -50,7 +44,6 @@ export function getAddressMetaData(address: bigint, userAddressBook: UserAddress
 			}
 		}
 	}
-
 	for (const contact of userAddressBook.contacts) {
 		if (contact.address === address) {
 			return {
@@ -59,6 +52,8 @@ export function getAddressMetaData(address: bigint, userAddressBook: UserAddress
 			}
 		}
 	}
+	const userEntry = (await getUserAddressBookEntries()).find((entry) => entry.address === address)
+	if (userEntry !== undefined) return userEntry
 
 	const addrString = addressString(address)
 
@@ -67,7 +62,7 @@ export function getAddressMetaData(address: bigint, userAddressBook: UserAddress
 		...addressData,
 		address: address,
 		logoUri: addressData.logoUri ? `${ getFullLogoUri(addressData.logoUri) }` : undefined,
-		type: 'other contract',
+		type: 'contract',
 	}
 
 	const tokenData = tokenMetadata.get(addrString)
@@ -86,29 +81,15 @@ export function getAddressMetaData(address: bigint, userAddressBook: UserAddress
 		type: 'ERC721'
 	}
 
-	return {
-		address: address,
-		name: ethers.getAddress(addrString),
-		type: 'contact',
+	if (address === MOCK_ADDRESS) {
+		return {
+			address: address,
+			name: 'Ethereum Validator',
+			logoUri: '../../img/contracts/rhino.png',
+			type: 'contact',
+		}
 	}
-}
 
-export async function getTokenMetadata(ethereumClientService: EthereumClientService, address: bigint) : Promise<Erc20TokenEntry | Erc721Entry | Erc1155Entry> {
-	const addrString = addressString(address)
-	const tokenData = tokenMetadata.get(addrString)
-	if (tokenData) return {
-		...tokenData,
-		address: address,
-		logoUri: tokenData.logoUri ? `${ getFullLogoUri(tokenData.logoUri) }` : undefined,
-		type: 'ERC20',
-	}
-	const nftTokenData = nftMetadata.get(addrString)
-	if (nftTokenData) return {
-		...nftTokenData,
-		address: address,
-		logoUri: nftTokenData.logoUri ? `${ getFullLogoUri(nftTokenData.logoUri) }` : undefined,
-		type: 'ERC721',
-	}
 	const tokenIdentification = await itentifyAddressViaOnChainInformation(ethereumClientService, address)
 
 	switch(tokenIdentification.type) {
@@ -119,24 +100,28 @@ export async function getTokenMetadata(ethereumClientService: EthereumClientServ
 			decimals: tokenIdentification.decimals,
 			type: 'ERC20',
 		}
-		case 'ERC1155': {
-			return {
-				name: ethers.getAddress(addrString),
-				address: BigInt(addrString),
-				symbol: '???',
-				type: 'ERC1155',
-				decimals: undefined,
-			}
+		case 'ERC1155': return {
+			name: ethers.getAddress(addrString),
+			address: BigInt(addrString),
+			symbol: '???',
+			type: 'ERC1155',
+			decimals: undefined,
 		}
-		case 'ERC721':
-		case 'EOA':
-		case 'contract': {
-			return { // Lets just assume its ERC721 if we don't really know what it is
-				name: ethers.getAddress(addrString),
-				address: BigInt(addrString),
-				symbol: '???',
-				type: 'ERC721',
-			}
+		case 'ERC721': return {
+			name: ethers.getAddress(addrString),
+			address: BigInt(addrString),
+			symbol: '???',
+			type: 'ERC721',
+		}
+		case 'contract': return {
+			address: address,
+			name: ethers.getAddress(addrString),
+			type: 'contract',
+		}
+		case 'EOA': return {
+			address: address,
+			name: ethers.getAddress(addrString),
+			type: 'contact',
 		}
 		default: assertNever(tokenIdentification)
 	}
@@ -163,13 +148,13 @@ export async function getAddressBookEntriesForVisualiser(ethereumClientService: 
 	})
 
 	const deDuplicatedTokens = Array.from(new Set<bigint>(tokenAddresses).values())
-	const tokenPromises = deDuplicatedTokens.map ((addr) => getTokenMetadata(ethereumClientService, addr))
+	const tokenPromises = deDuplicatedTokens.map ((addr) => identifyAddress(ethereumClientService, userAddressBook, addr))
 	const tokens = await Promise.all(tokenPromises)
 
 	const deDuplicated = new Set<bigint>(addressesToFetchMetadata)
-	const addresses: AddressBookEntry[] = Array.from(deDuplicated.values()).filter( (address) => !deDuplicatedTokens.includes(address) ).map( ( address ) =>
-		getAddressMetaData(address, userAddressBook)
+	const addresses: Promise<AddressBookEntry>[] = Array.from(deDuplicated.values()).filter( (address) => !deDuplicatedTokens.includes(address) ).map( ( address ) =>
+		identifyAddress(ethereumClientService, userAddressBook, address)
 	)
 
-	return addresses.concat(tokens)
+	return (await Promise.all(addresses)).concat(tokens)
 }
