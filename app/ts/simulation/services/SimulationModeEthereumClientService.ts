@@ -6,6 +6,7 @@ import { ethers, keccak256 } from 'ethers'
 import { WebsiteCreatedEthereumUnsignedTransaction, SimulatedTransaction, SimulationState, TokenBalancesAfter, EstimateGasError } from '../../utils/visualizer-types.js'
 import { EthereumUnsignedTransactionToUnsignedTransaction, IUnsignedTransaction1559, serializeSignedTransactionToBytes } from '../../utils/ethereum.js'
 import { EthGetLogsResponse, EthGetLogsRequest, EthTransactionReceiptResponse, PersonalSignParams, SignTypedDataParams, MulticallResponseEventLogs, MulticallResponse, OldSignTypedDataParams, DappRequestTransaction } from '../../utils/JsonRpc-types.js'
+import { handleERC1155TransferBatch, handleERC1155TransferSingle } from '../logHandlers.js'
 
 const MOCK_PRIVATE_KEY = 0x1n // key used to sign mock transactions
 const GET_CODE_CONTRACT = 0x1ce438391307f908756fefe0fe220c0f0d51508an
@@ -613,7 +614,7 @@ export const simulatedCall = async (ethereumClientService: EthereumClientService
 		...params,
 		type: '1559',
 		gas: params.gasLimit,
-		nonce: await getSimulatedTransactionCount(ethereumClientService, simulationStateToUse, params.from, blockNumToUse),
+		nonce: await getSimulatedTransactionCount(ethereumClientService, simulationStateToUse, params.from, blockTag),
 		chainId: ethereumClientService.getChainId(),
 	} as const
 	const multicallResult = await simulatedMulticall(ethereumClientService, simulationStateToUse, [transaction], blockNumToUse)
@@ -644,17 +645,27 @@ export const simulatePersonalSign = async (params: PersonalSignParams | SignType
 	throw new Error(`Simulated signing not implemented for method ${ params.method }`)
 }
 
-const getSimulatedTokenBalances = async (ethereumClientService: EthereumClientService, transactionQueue: EthereumUnsignedTransaction[], balances: { token: bigint, owner: bigint }[], blockNumber: bigint): Promise<TokenBalancesAfter> => {
+type BalanceQuery = {
+	type: 'ERC20',
+	token: bigint,
+	owner: bigint,
+} | {
+	type: 'ERC1155',
+	token: bigint,
+	owner: bigint,
+	tokenId: bigint,
+}
+
+const getSimulatedTokenBalances = async (ethereumClientService: EthereumClientService, transactionQueue: EthereumUnsignedTransaction[], balances: BalanceQuery[], blockNumber: bigint): Promise<TokenBalancesAfter> => {
 	if (balances.length === 0) return []
-	const tokenInterface = new ethers.Interface(['function balanceOf(address account) view returns (uint256)'])
+	const erc20TokenInterface = new ethers.Interface(['function balanceOf(address account) view returns (uint256)'])
+	const erc1155TokenInterface = new ethers.Interface(['function balanceOf(address _owner, uint256 _id) external view returns(uint256)'])
 	const transactions = balances.map((balanceRequest, index) => {
-		const balanceOfCallData = stringToUint8Array(tokenInterface.encodeFunctionData('balanceOf', [addressString(balanceRequest.owner)]))
-		return {
+		const base = {
 			type: '1559' as const,
 			from: MOCK_ADDRESS + BigInt(index) + 1n,
 			to: balanceRequest.token,
 			value: 0n,
-			input: balanceOfCallData,
 			maxFeePerGas: 0n,
 			maxPriorityFeePerGas: 0n,
 			accessList: [],
@@ -662,12 +673,23 @@ const getSimulatedTokenBalances = async (ethereumClientService: EthereumClientSe
 			chainId: 0n,
 			nonce: 0n,
 		}
+		if (balanceRequest.type === 'ERC20') {
+			return {
+				...base,
+				input: stringToUint8Array(erc20TokenInterface.encodeFunctionData('balanceOf', [addressString(balanceRequest.owner)])),
+			}
+		}
+		return {
+			...base,
+			input: stringToUint8Array(erc1155TokenInterface.encodeFunctionData('balanceOf', [addressString(balanceRequest.owner), balanceRequest.tokenId])),
+		}
 	})
 	const transactionQueueSize = transactionQueue.length
 	const response = await ethereumClientService.multicall(transactionQueue.concat(transactions), blockNumber)
 	if (response.length !== transactions.length + transactionQueueSize) throw new Error('Multicall length mismatch')
 	return balances.map((balance, index) => ({
 		token: balance.token,
+		tokenId: 'tokenId' in balance ? balance.tokenId : undefined,
 		owner: balance.owner,
 		balance: response[transactionQueueSize + index].statusCode === 'success' ? bytesToUnsigned(response[transactionQueueSize + index].returnValue) : undefined
 	}))
@@ -681,21 +703,55 @@ export const parseLogIfPossible = (ethersInterface: ethers.Interface, log: { top
 	}
 }
 
-const getAddressesInteractedWithErc20s = (events: MulticallResponseEventLogs): { token: bigint, owner: bigint }[] => {
+const getAddressesInteractedWithErc20s = (events: MulticallResponseEventLogs): { token: bigint, owner: bigint, tokenId: undefined, type: 'ERC20' }[] => {
 	const erc20ABI = [
 		'event Transfer(address indexed from, address indexed to, uint256 value)',
 		'event Approval(address indexed owner, address indexed spender, uint256 value)',
 	]
 	const erc20 = new ethers.Interface(erc20ABI)
-	const tokenOwners: { token: bigint, owner: bigint }[] = []
+	const tokenOwners: { token: bigint, owner: bigint, tokenId: undefined, type: 'ERC20' }[] = []
 	for (const log of events) {
 		const parsed = parseLogIfPossible(erc20, { topics: log.topics.map((x) => bytes32String(x)), data: dataStringWith0xStart(log.data) })
 		if (parsed === null) continue
+		const base = { token: log.loggersAddress, tokenId: undefined, type: 'ERC20' as const }
 		switch (parsed.name) {
 			case 'Approval':
 			case 'Transfer': {
-				tokenOwners.push({ token: log.loggersAddress, owner: EthereumAddress.parse(parsed.args[0]) })
-				tokenOwners.push({ token: log.loggersAddress, owner: EthereumAddress.parse(parsed.args[1]) })
+				tokenOwners.push({ ...base, owner: EthereumAddress.parse(parsed.args[0]) })
+				tokenOwners.push({ ...base, owner: EthereumAddress.parse(parsed.args[1]) })
+				break
+			}
+			default: throw new Error(`wrong name: ${ parsed.name }`)
+		}
+	}
+	return tokenOwners
+}
+
+const getAddressesAndTokensIdsInteractedWithErc1155s = (events: MulticallResponseEventLogs): { token: bigint, owner: bigint, tokenId: bigint, type: 'ERC1155' }[] => {
+	const erc1155ABI = [
+		'event TransferSingle(address operator, address from, address to, uint256 id, uint256 value)',
+		'event TransferBatch(address indexed _operator, address indexed _from, address indexed _to, uint256[] _ids, uint256[] _values)',
+	]
+	const erc20 = new ethers.Interface(erc1155ABI)
+	const tokenOwners: { token: bigint, owner: bigint, tokenId: bigint, type: 'ERC1155' }[] = []
+	for (const log of events) {
+		const parsed = parseLogIfPossible(erc20, { topics: log.topics.map((x) => bytes32String(x)), data: dataStringWith0xStart(log.data) })
+		if (parsed === null) continue
+		const base = { token: log.loggersAddress, type: 'ERC1155' as const }
+		switch (parsed.name) {
+			case 'TransferSingle': {
+				const parsedLog = handleERC1155TransferSingle(log)[0]
+				if (parsedLog.type !== 'ERC1155') continue
+				tokenOwners.push({ ...base, owner: parsedLog.from, tokenId: parsedLog.tokenId })
+				tokenOwners.push({ ...base, owner: parsedLog.to, tokenId: parsedLog.tokenId })
+				break
+			}
+			case 'TransferBatch': {
+				handleERC1155TransferBatch(log).forEach((parsedLog) => {
+					if (parsedLog.type !== 'ERC1155') return
+					tokenOwners.push({ ...base, owner: parsedLog.from, tokenId: parsedLog.tokenId })
+					tokenOwners.push({ ...base, owner: parsedLog.to, tokenId: parsedLog.tokenId })
+				})
 				break
 			}
 			default: throw new Error(`wrong name: ${ parsed.name }`)
@@ -713,10 +769,13 @@ const getTokenBalancesAfter = async (
 	const tokenBalancesAfter: TokenBalancesAfter[] = []
 	for (let resultIndex = 0; resultIndex < multicallResult.length; resultIndex++) {
 		const singleResult = multicallResult[resultIndex]
+		const events = singleResult.statusCode === 'success' ? singleResult.events : []
+		const erc20sAddresses: BalanceQuery[] = getAddressesInteractedWithErc20s(events)
+		const erc1155AddressIds: BalanceQuery[] = getAddressesAndTokensIdsInteractedWithErc1155s(events)
 		const balances = await getSimulatedTokenBalances(
 			ethereumClientService,
 			signedTxs.slice(0, resultIndex + 1),
-			getAddressesInteractedWithErc20s(singleResult.statusCode === 'success' ? singleResult.events : []),
+			erc20sAddresses.concat(erc1155AddressIds),
 			blockNumber
 		)
 		tokenBalancesAfter.push(balances)

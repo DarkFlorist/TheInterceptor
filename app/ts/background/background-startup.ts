@@ -88,11 +88,10 @@ export async function onContentScriptConnected(simulator: Simulator, port: brows
 			const providerHandler = getProviderHandler(request.method)
 			const identifiedMethod = providerHandler.method
 			if (identifiedMethod !== 'notProviderMethod') {
-				await providerHandler.func(simulator, websiteTabConnections, port, request, access)
+				const providerHandlerReturn = await providerHandler.func(simulator, websiteTabConnections, port, request, access)
 				const message: InpageScriptRequest = {
 					uniqueRequestIdentifier: request.uniqueRequestIdentifier,
-					method: identifiedMethod,
-					result: '0x' as const,
+					...providerHandlerReturn,
 				}
 				return replyToInterceptedRequest(websiteTabConnections, message)
 			}

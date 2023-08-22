@@ -28,6 +28,7 @@ export const LocalStorageItems = funtypes.Partial({
 	ethereumSubscriptions: EthereumSubscriptions,
 	useTabsInsteadOfPopup: funtypes.Boolean,
 	RpcEntries: RpcEntries,
+	metamaskCompatibilityMode: funtypes.Boolean,
 })
 
 export type LocalStorageKey = funtypes.Static<typeof LocalStorageKey>
@@ -54,6 +55,7 @@ export const LocalStorageKey = funtypes.Union(
 	funtypes.Literal('ethereumSubscriptions'),
 	funtypes.Literal('useTabsInsteadOfPopup'),
 	funtypes.Literal('RpcEntries'),
+	funtypes.Literal('metamaskCompatibilityMode'),
 )
 
 export async function browserStorageLocalGet(keys: LocalStorageKey | LocalStorageKey[]): Promise<LocalStorageItems> {

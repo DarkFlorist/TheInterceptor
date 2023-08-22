@@ -3,7 +3,7 @@ import 'webextension-polyfill'
 import { Simulator } from '../simulation/simulator.js'
 import { getEthDonator, getSignerName, getSimulationResults, updateSimulationResults } from './storageVariables.js'
 import { changeSimulationMode, getSettings, getMakeMeRich } from './settings.js'
-import { blockNumber, call, chainId, estimateGas, gasPrice, getAccounts, getBalance, getBlockByNumber, getCode, getLogs, getPermissions, getSimulationStack, getTransactionByHash, getTransactionCount, getTransactionReceipt, personalSign, sendTransaction, subscribe, switchEthereumChain, unsubscribe } from './simulationModeHanders.js'
+import { blockNumber, call, chainId, estimateGas, gasPrice, getAccounts, getBalance, getBlockByNumber, getCode, getLogs, getPermissions, getSimulationStack, getTransactionByHash, getTransactionCount, getTransactionReceipt, netVersion, personalSign, sendTransaction, subscribe, switchEthereumChain, unsubscribe } from './simulationModeHanders.js'
 import { changeActiveAddress, changeMakeMeRich, changePage, resetSimulation, confirmDialog, refreshSimulation, removeTransaction, requestAccountsFromSigner, refreshPopupConfirmTransactionSimulation, confirmPersonalSign, confirmRequestAccess, changeInterceptorAccess, changeChainDialog, popupChangeActiveRpc, enableSimulationMode, addOrModifyAddressInfo, getAddressBookData, removeAddressBookEntry, openAddressBook, homeOpened, interceptorAccessChangeAddressOrRefresh, refreshPopupConfirmTransactionMetadata, changeSettings, importSettings, exportSettings, setNewRpcList } from './popupMessageHandlers.js'
 import { SimulationState, RpcNetwork, WebsiteCreatedEthereumUnsignedTransaction } from '../utils/visualizer-types.js'
 import { AddressBookEntry, Website, WebsiteSocket, WebsiteTabConnections } from '../utils/user-interface-types.js'
@@ -207,7 +207,7 @@ async function handleRPCRequest(
 		return {
 			method: request.method,
 			error: {
-				message: `Failed to parse RPC request: ${ JSON.stringify(request) }`,
+				message: `Failed to parse RPC request: ${ InterceptedRequest.serialize(request) }`,
 				data: maybeParsedRequest.fullError === undefined ? 'Failed to parse RPC request' : maybeParsedRequest.fullError.toString(),
 				code: METAMASK_ERROR_FAILED_TO_PARSE_REQUEST,
 			}
@@ -226,7 +226,7 @@ async function handleRPCRequest(
 		case 'eth_subscribe': return await subscribe(socket, parsedRequest)
 		case 'eth_unsubscribe': return await unsubscribe(socket, parsedRequest)
 		case 'eth_chainId': return await chainId(ethereumClientService)
-		case 'net_version': return await chainId(ethereumClientService)
+		case 'net_version': return await netVersion(ethereumClientService)
 		case 'eth_getCode': return await getCode(ethereumClientService, simulationState, parsedRequest)
 		case 'personal_sign':
 		case 'eth_signTypedData':
@@ -351,7 +351,6 @@ export async function handleContentScriptMessage(simulator: Simulator, websiteTa
 		const settings = await getSettings()
 		if (settings.simulationMode) {
 			const simulationState = (await getSimulationResults()).simulationState
-			if (simulationState === undefined) throw new Error('no simulation state')
 			const resolved = await handleRPCRequest(simulator, simulationState, websiteTabConnections, simulator.ethereum, request.uniqueRequestIdentifier.requestSocket, website, request, settings, activeAddress)
 			return replyToInterceptedRequest(websiteTabConnections, { ...request, ...resolved })
 		}
@@ -448,7 +447,7 @@ export async function popupMessageHandler(
 		case 'popup_changeChainReadyAndListening': return await updateChainChangeViewWithPendingRequest()
 		case 'popup_interceptorAccessReadyAndListening': return await updateInterceptorAccessViewWithPendingRequests()
 		case 'popup_confirmTransactionReadyAndListening': return await updateConfirmTransactionViewWithPendingTransaction()
-		case 'popup_requestNewHomeData': return homeOpened(simulator)
+		case 'popup_requestNewHomeData': return await homeOpened(simulator)
 		case 'popup_refreshInterceptorAccessMetadata': return await interceptorAccessMetadataRefresh()
 		case 'popup_interceptorAccessChangeAddress': return await interceptorAccessChangeAddressOrRefresh(websiteTabConnections, parsedRequest)
 		case 'popup_interceptorAccessRefresh': return await interceptorAccessChangeAddressOrRefresh(websiteTabConnections, parsedRequest)
