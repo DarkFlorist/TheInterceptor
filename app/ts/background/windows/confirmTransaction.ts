@@ -188,7 +188,6 @@ export async function openConfirmTransactionDialog(
 				simulationResults: await refreshSimulationPromise,
 				transactionCreated,
 			})
-
 			await updateConfirmTransactionViewWithPendingTransaction()
 			if (justAddToPending) await sendPopupMessageToOpenWindows({ method: 'popup_confirm_transaction_dialog_pending_changed', data: await getPendingTransactions() })
 			return true
@@ -200,7 +199,7 @@ export async function openConfirmTransactionDialog(
 	} finally {
 		removeWindowTabListener(onCloseWindow)
 		pendingTransactions.delete(uniqueRequestIdentifier)
-		updateConfirmTransactionViewWithPendingTransactionOrClose()
+		await updateConfirmTransactionViewWithPendingTransactionOrClose()
 	}
 }
 

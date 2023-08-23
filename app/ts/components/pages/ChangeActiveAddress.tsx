@@ -25,7 +25,7 @@ export function ChangeActiveAddress(param: ChangeActiveAddressParam) {
 	}
 
 	function changePageToAddAddress() {
-		param.setAndSaveAppPage('AddNewAddress')
+		param.addNewAddress()
 	}
 
 	const signerAddressName = param.addressInfos.find( (x) => x.address === getSignerAccount() )?.name

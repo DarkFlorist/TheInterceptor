@@ -5,7 +5,7 @@ import Hint from '../subcomponents/Hint.js'
 import { RawTransactionDetailsCard, GasFee, LogAnalysisCard, SimulatedInBlockNumber, TransactionCreated, TransactionHeader, TransactionHeaderForFailedToSimulate, TransactionsAccountChangesCard } from '../simulationExplaining/SimulationSummary.js'
 import { CenterToPageTextSpinner } from '../subcomponents/Spinner.js'
 import { AddNewAddress } from './AddNewAddress.js'
-import { AddingNewAddressType, AddressBookEntry } from '../../utils/user-interface-types.js'
+import { AddressBookEntry, InCompleteAddressBookEntry } from '../../utils/user-interface-types.js'
 import { sendPopupMessageToBackgroundPage } from '../../background/backgroundUtils.js'
 import { SignerLogoText } from '../subcomponents/signers.js'
 import { ErrorCheckBox } from '../subcomponents/Error.js'
@@ -14,6 +14,7 @@ import { identifyTransaction } from '../simulationExplaining/identifyTransaction
 import { DinoSaysNotification } from '../subcomponents/DinoSays.js'
 import { NetworkErrors } from './Home.js'
 import { tryFocusingTabOrWindow } from '../ui-utils.js'
+import { checksummedAddress } from '../../utils/bigint.js'
 
 type UnderTransactionsParams = {
 	pendingTransactions: PendingTransaction[]
@@ -137,14 +138,13 @@ export function ConfirmTransaction() {
 	const [pendingTransactions, setPendingTransactions] = useState<PendingTransaction[]>([])
 	const [forceSend, setForceSend] = useState<boolean>(false)
 	const [currentBlockNumber, setCurrentBlockNumber] = useState<undefined | bigint>(undefined)
-	const [addingNewAddress, setAddingNewAddress] = useState<AddingNewAddressType | 'renameAddressModalClosed'> ('renameAddressModalClosed')
+	const [addingNewAddress, setAddingNewAddress] = useState<InCompleteAddressBookEntry | 'renameAddressModalClosed'> ('renameAddressModalClosed')
 	const [rpcConnectionStatus, setRpcConnectionStatus] = useState<RpcConnectionStatus>(undefined)
 	const [pendingTransactionAddedNotification, setPendingTransactionAddedNotification] = useState<boolean>(false)
 
 	useEffect(() => {
 		async function popupMessageListener(msg: unknown) {
 			const message = ExternalPopupMessage.parse(msg)
-
 			if (message.method === 'popup_addressBookEntriesChanged') return refreshMetadata()
 			if (message.method === 'popup_new_block_arrived') {
 				setRpcConnectionStatus(message.data.rpcConnectionStatus)
@@ -240,7 +240,15 @@ export function ConfirmTransaction() {
 	}
 
 	function renameAddressCallBack(entry: AddressBookEntry) {
-		setAddingNewAddress({ addingAddress: false, entry: entry })
+		setAddingNewAddress({
+			addingAddress: false,
+			askForAddressAccess: false,
+			symbol: undefined,
+			decimals: undefined,
+			logoUri: undefined,
+			...entry,
+			address: checksummedAddress(entry.address)
+		})
 	}
 
 	function Buttons() {
@@ -283,7 +291,7 @@ export function ConfirmTransaction() {
 						? <></>
 						: <AddNewAddress
 							setActiveAddressAndInformAboutIt = { undefined }
-							addingNewAddress = { addingNewAddress }
+							inCompleteAddressBookEntry = { addingNewAddress }
 							close = { () => { setAddingNewAddress('renameAddressModalClosed') } }
 							activeAddress = { undefined }
 						/>

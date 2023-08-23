@@ -1,8 +1,8 @@
 import { ICON_NOT_ACTIVE, getChainName } from '../utils/constants.js'
 import { PendingAccessRequestArray, PendingChainChangeConfirmationPromise, PendingPersonalSignPromise, PendingTransaction, TabState, RpcConnectionStatus, PendingAccessRequest } from '../utils/interceptor-messages.js'
 import { Semaphore } from '../utils/semaphore.js'
+import { AddressBookEntries, SignerName } from '../utils/user-interface-types.js'
 import { browserStorageLocalGet, browserStorageLocalRemove, browserStorageLocalSet, getTabStateFromStorage, removeTabStateFromStorage, setTabStateFromStorage } from '../utils/storageUtils.js'
-import { SignerName } from '../utils/user-interface-types.js'
 import { EthereumSubscriptions, SimulationResults, RpcEntries, RpcNetwork } from '../utils/visualizer-types.js'
 import { defaultRpcs, getSettings } from './settings.js'
 import { UniqueRequestIdentifier, doesUniqueRequestIdentifiersMatch } from '../utils/requests.js'
@@ -228,4 +228,14 @@ export const ethDonator = [{
 
 export function getEthDonator(chainId: bigint) {
 	return ethDonator.find((rpc) => rpc.chainId === chainId)?.eth_donator
+}
+
+export const getUserAddressBookEntries = async () => (await browserStorageLocalGet('userAddressBookEntries'))?.['userAddressBookEntries'] ?? []
+
+const userAddressBookEntriesSemaphore = new Semaphore(1)
+export async function updateUserAddressBookEntries(updateFunc: (prevState: AddressBookEntries) => AddressBookEntries) {
+	await userAddressBookEntriesSemaphore.execute(async () => {
+		const entries = await getUserAddressBookEntries()
+		return await browserStorageLocalSet({ userAddressBookEntries: updateFunc(entries) })
+	})
 }

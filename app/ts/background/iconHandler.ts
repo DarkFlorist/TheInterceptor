@@ -2,7 +2,6 @@ import { getPrettySignerName } from '../components/subcomponents/signers.js'
 import { CHROME_NO_TAB_WITH_ID_ERROR, ICON_ACCESS_DENIED, ICON_NOT_ACTIVE, ICON_SIGNING, ICON_SIGNING_NOT_SUPPORTED, ICON_SIMULATING, PRIMARY_COLOR, WARNING_COLOR } from '../utils/constants.js'
 import { hasAccess, hasAddressAccess } from './accessManagement.js'
 import { getActiveAddress, sendPopupMessageToOpenWindows, setExtensionBadgeBackgroundColor, setExtensionBadgeText, setExtensionIcon } from './backgroundUtils.js'
-import { getAddressMetaData } from './metadataUtils.js'
 import { imageToUri } from '../utils/imageToUri.js'
 import { Future } from '../utils/future.js'
 import { WebsiteSocket, WebsiteTabConnections } from '../utils/user-interface-types.js'
@@ -10,6 +9,7 @@ import { getSettings } from './settings.js'
 import { getRpcConnectionStatus, getSignerName, updateTabState } from './storageVariables.js'
 import { RpcConnectionStatus, TabIcon, TabState } from '../utils/interceptor-messages.js'
 import { getLastKnownCurrentTabId } from './popupMessageHandlers.js'
+import { findAddressInfo } from './metadataUtils.js'
 
 async function setInterceptorIcon(websiteTabConnections: WebsiteTabConnections, tabId: number, icon: TabIcon, iconReason: string) {
 	const previousValue = websiteTabConnections.get(tabId)
@@ -46,7 +46,7 @@ export async function updateExtensionIcon(websiteTabConnections: WebsiteTabConne
 	if (activeAddress === undefined) return setInterceptorIcon(websiteTabConnections, socket.tabId, ICON_NOT_ACTIVE, 'No active address selected.')
 	if (hasAddressAccess(settings.websiteAccess, websiteOrigin, activeAddress, settings)  === 'notFound') {
 		// we don't have active address selected, or no access specified
-		return setInterceptorIcon(websiteTabConnections, socket.tabId, ICON_NOT_ACTIVE, `${ websiteOrigin } has PENDING access request for ${ getAddressMetaData(activeAddress, settings.userAddressBook).name }!`)
+		return setInterceptorIcon(websiteTabConnections, socket.tabId, ICON_NOT_ACTIVE, `${ websiteOrigin } has PENDING access request for ${ findAddressInfo(activeAddress, settings.userAddressBook.addressInfos).name }!`)
 	}
 
 	const addressAccess = hasAddressAccess(settings.websiteAccess, websiteOrigin, activeAddress, settings)
@@ -54,7 +54,7 @@ export async function updateExtensionIcon(websiteTabConnections: WebsiteTabConne
 		if (hasAccess(settings.websiteAccess, websiteOrigin) === 'noAccess') {
 			return setInterceptorIcon(websiteTabConnections, socket.tabId, ICON_ACCESS_DENIED, `The access for ${ websiteOrigin } has been DENIED!`)
 		}
-		return setInterceptorIcon(websiteTabConnections, socket.tabId, ICON_ACCESS_DENIED, `The access to ${ getAddressMetaData(activeAddress, settings.userAddressBook).name } for ${ websiteOrigin } has been DENIED!`)
+		return setInterceptorIcon(websiteTabConnections, socket.tabId, ICON_ACCESS_DENIED, `The access to ${ findAddressInfo(activeAddress, settings.userAddressBook.addressInfos).name } for ${ websiteOrigin } has been DENIED!`)
 	}
 	if (settings.simulationMode) return setInterceptorIcon(websiteTabConnections, socket.tabId, ICON_SIMULATING, `The Interceptor simulates your sent transactions.`)
 	if (settings.rpcNetwork.httpsRpc === undefined) return setInterceptorIcon(websiteTabConnections, socket.tabId, ICON_SIGNING_NOT_SUPPORTED, `Interceptor is on an unsupported network and simulation mode is disabled.`)

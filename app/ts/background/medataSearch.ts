@@ -55,7 +55,7 @@ const convertContractDefinitionToAddressBookEntry = ([address, def]: [string, Co
 	address: BigInt(address),
 	...def,
 	logoUri: def.logoUri ? `${ getFullLogoUri(def.logoUri) }` : undefined,
-	type: 'other contract' as const,
+	type: 'contract' as const,
 })
 
 function filterAddressBookDataByCategoryAndSearchString(addressBookCategory: AddressBookCategory, searchString: string | undefined, userAddressBook: UserAddressBook): AddressBookEntries {

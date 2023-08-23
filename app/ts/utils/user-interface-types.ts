@@ -92,7 +92,7 @@ export const ContactEntry = funtypes.ReadonlyObject({
 export type ContactEntries = funtypes.Static<typeof ContactEntries>
 export const ContactEntries = funtypes.ReadonlyArray(ContactEntry)
 
-export type AddressBookEntryCategory = 'contact' | 'addressInfo' | 'ERC20' | 'ERC721' | 'other contract' | 'ERC1155'
+export type AddressBookEntryCategory = 'contact' | 'addressInfo' | 'ERC20' | 'ERC721' | 'contract' | 'ERC1155'
 
 export type AddressBookEntry = funtypes.Static<typeof AddressBookEntry>
 export const AddressBookEntry = funtypes.Union(
@@ -102,7 +102,7 @@ export const AddressBookEntry = funtypes.Union(
 	Erc721Entry,
 	Erc1155Entry,
 	funtypes.ReadonlyObject({
-		type: funtypes.Literal('other contract'),
+		type: funtypes.Literal('contract'),
 		name: funtypes.String,
 		address: EthereumAddress,
 	}).And(funtypes.Partial({
@@ -128,18 +128,21 @@ export type InterceptorAccessListParams = {
 	renameAddressCallBack: RenameAddressCallBack,
 }
 
-export type AddingNewAddressType = {
-	addingAddress: true,
-	type: 'contact' | 'addressInfo' | 'ERC20' | 'ERC721' | 'other contract' | 'ERC1155'
-} | {
-	addingAddress: false,
-	entry: AddressBookEntry,
+export type InCompleteAddressBookEntry = {
+	addingAddress: boolean, // if false, we are editing addess
+	type: 'addressInfo' | 'contact' | 'contract' | 'ERC20' | 'ERC1155' | 'ERC721'
+	address: string | undefined
+	askForAddressAccess: boolean
+	name: string | undefined
+	symbol: string | undefined
+	decimals: bigint | undefined
+	logoUri: string | undefined
 }
 
 export type AddAddressParam = {
 	close: () => void,
 	setActiveAddressAndInformAboutIt: ((address: bigint | 'signer') => Promise<void>) | undefined,
-	addingNewAddress: AddingNewAddressType,
+	inCompleteAddressBookEntry: InCompleteAddressBookEntry,
 	activeAddress: bigint | undefined,
 }
 
@@ -172,6 +175,7 @@ export type ChangeActiveAddressParam = {
 	signerAccounts: readonly bigint[] | undefined,
 	signerName: SignerName,
 	renameAddressCallBack: RenameAddressCallBack,
+	addNewAddress: () => void,
 }
 
 export type SettingsParam = {

@@ -10,13 +10,13 @@ import { AddressBookEntry, SignerName, Website, WebsiteTabConnections } from '..
 import { OldSignTypedDataParams, PersonalSignParams, SignTypedDataParams } from '../../utils/JsonRpc-types.js'
 import { getHtmlFile, sendPopupMessageToOpenWindows } from '../backgroundUtils.js'
 import { extractEIP712Message, validateEIP712Types } from '../../utils/eip712Parsing.js'
-import { getAddressMetaData, getTokenMetadata } from '../metadataUtils.js'
 import { getPendingPersonalSignPromise, getRpcNetwork, getRpcNetworkForChain, getSignerName, setPendingPersonalSignPromise } from '../storageVariables.js'
 import { getSettings } from '../settings.js'
 import { PopupOrTab, addWindowTabListener, browserTabsQueryById, closePopupOrTab, openPopupOrTab, removeWindowTabListener } from '../../components/ui-utils.js'
 import { simulatePersonalSign } from '../../simulation/services/SimulationModeEthereumClientService.js'
 import { InterceptedRequest, UniqueRequestIdentifier, doesUniqueRequestIdentifiersMatch } from '../../utils/requests.js'
 import { replyToInterceptedRequest } from '../messageSending.js'
+import { identifyAddress } from '../metadataUtils.js'
 
 let pendingPersonalSign: Future<PersonalSign> | undefined = undefined
 
@@ -64,17 +64,17 @@ function reject(signingParams: PersonalSignParams | SignTypedDataParams | OldSig
 export async function addMetadataToOpenSeaOrder(ethereumClientService: EthereumClientService, openSeaOrder: OpenSeaOrderMessage, userAddressBook: UserAddressBook) {
 	return {
 		...openSeaOrder,
-		zone: getAddressMetaData(openSeaOrder.zone, userAddressBook),
-		offerer: getAddressMetaData(openSeaOrder.offerer, userAddressBook),
-		offer: await Promise.all(openSeaOrder.offer.map( async (offer) => ({ ...offer, token: await getTokenMetadata(ethereumClientService, offer.token) }))),
-		consideration: await Promise.all(openSeaOrder.consideration.map(async (offer) => ({ ...offer, token: await getTokenMetadata(ethereumClientService, offer.token), recipient: getAddressMetaData(offer.recipient, userAddressBook) })))
+		zone: await identifyAddress(ethereumClientService, userAddressBook, openSeaOrder.zone),
+		offerer: await identifyAddress(ethereumClientService, userAddressBook, openSeaOrder.offerer),
+		offer: await Promise.all(openSeaOrder.offer.map( async (offer) => ({ ...offer, token: await identifyAddress(ethereumClientService, userAddressBook, offer.token) }))),
+		consideration: await Promise.all(openSeaOrder.consideration.map(async (offer) => ({ ...offer, token: await identifyAddress(ethereumClientService, userAddressBook, offer.token), recipient: await identifyAddress(ethereumClientService, userAddressBook, offer.recipient) })))
 	 }
 }
 
 export async function craftPersonalSignPopupMessage(ethereumClientService: EthereumClientService, personalSignPromise: PendingPersonalSignPromise, signerName: SignerName): Promise<PersonalSignRequest> {
 	const settings = await getSettings()
 	const userAddressBook = settings.userAddressBook
-	const activeAddressWithMetadata = getAddressMetaData(personalSignPromise.activeAddress, userAddressBook)
+	const activeAddressWithMetadata = await identifyAddress(ethereumClientService, userAddressBook, personalSignPromise.activeAddress)
 	const basicParams = {
 		activeAddress: activeAddressWithMetadata,
 		simulationMode: personalSignPromise.simulationMode,
@@ -106,7 +106,7 @@ export async function craftPersonalSignPopupMessage(ethereumClientService: Ether
 				rpcNetwork: await getRpcNetwork(),
 				type: 'NotParsed',
 				message: stringifyJSONWithBigInts(originalParams.params[0], 4),
-				account: getAddressMetaData(originalParams.params[1], userAddressBook),
+				account: await identifyAddress(ethereumClientService, userAddressBook, originalParams.params[1]),
 				quarantine: false,
 				quarantineCodes: [],
 			}
@@ -122,20 +122,20 @@ export async function craftPersonalSignPopupMessage(ethereumClientService: Ether
 				rpcNetwork: await getRpcNetwork(),
 				type: 'NotParsed',
 				message: originalParams.params[0],
-				account: getAddressMetaData(originalParams.params[1], userAddressBook),
+				account: await identifyAddress(ethereumClientService, userAddressBook, originalParams.params[1]),
 				quarantine: false,
 				quarantineCodes: [],
 			}
 		}
 	}
 	const namedParams = { param: originalParams.params[1], account: originalParams.params[0] }
-	const account = getAddressMetaData(namedParams.account, userAddressBook)
+	const account = await identifyAddress(ethereumClientService, userAddressBook, namedParams.account)
 	
 	const maybeParsed = PersonalSignRequestIdentifiedEIP712Message.safeParse(namedParams.param)
 	if (maybeParsed.success === false) {
 		// if we fail to parse the message, that means it's a message type we do not identify, let's just show it as a nonidentified EIP712 message
 		if (validateEIP712Types(namedParams.param) === false) throw new Error('Not a valid EIP712 Message')
-		const message = extractEIP712Message(namedParams.param, userAddressBook)
+		const message = await extractEIP712Message(ethereumClientService, namedParams.param, userAddressBook)
 		const chainid = message.domain.chainId?.type === 'integer' ? BigInt(message.domain.chainId?.value) : undefined
 
 		return {
@@ -154,8 +154,8 @@ export async function craftPersonalSignPopupMessage(ethereumClientService: Ether
 	const parsed = maybeParsed.value
 	switch (parsed.primaryType) {
 		case 'Permit': {
-			const token = await getTokenMetadata(ethereumClientService, parsed.domain.verifyingContract)
-			const owner = getAddressMetaData(parsed.message.owner, userAddressBook)
+			const token = await identifyAddress(ethereumClientService, userAddressBook, parsed.domain.verifyingContract)
+			const owner = await identifyAddress(ethereumClientService, userAddressBook, parsed.message.owner)
 			if (token.type === 'ERC721') throw 'Attempted to perform Permit to an ERC721'
 			if (token.type === 'ERC1155') throw 'Attempted to perform Permit to an ERC1155'
 			return {
@@ -169,7 +169,7 @@ export async function craftPersonalSignPopupMessage(ethereumClientService: Ether
 					account,
 					addressBookEntries: {
 						owner,
-						spender: getAddressMetaData(parsed.message.spender, userAddressBook),
+						spender: await identifyAddress(ethereumClientService, userAddressBook, parsed.message.spender),
 						verifyingContract: token,
 					},
 					...await getQuarrantineCodes(BigInt(parsed.domain.chainId), account, activeAddressWithMetadata, owner),
@@ -177,7 +177,7 @@ export async function craftPersonalSignPopupMessage(ethereumClientService: Ether
 			}
 		}
 		case 'PermitSingle': {
-			const token = await getTokenMetadata(ethereumClientService, parsed.message.details.token)
+			const token = await identifyAddress(ethereumClientService, userAddressBook, parsed.message.details.token)
 			if (token.type === 'ERC721') throw 'Attempted to perform Permit to an ERC721'
 			if (token.type === 'ERC1155') throw 'Attempted to perform Permit to an ERC1155'
 			return {
@@ -191,8 +191,8 @@ export async function craftPersonalSignPopupMessage(ethereumClientService: Ether
 					account,
 					addressBookEntries: {
 						token: token,
-						spender: getAddressMetaData(parsed.message.spender, userAddressBook),
-						verifyingContract: getAddressMetaData(parsed.domain.verifyingContract, userAddressBook)
+						spender: await identifyAddress(ethereumClientService, userAddressBook, parsed.message.spender),
+						verifyingContract: await identifyAddress(ethereumClientService, userAddressBook, parsed.domain.verifyingContract)
 					},
 					...await getQuarrantineCodes(parsed.domain.chainId, account, activeAddressWithMetadata, undefined),
 				}
@@ -208,10 +208,10 @@ export async function craftPersonalSignPopupMessage(ethereumClientService: Ether
 				message: parsed,
 				account,
 				addressBookEntries: {
-					to: getAddressMetaData(parsed.message.to, userAddressBook),
-					gasToken: await getTokenMetadata(ethereumClientService, parsed.message.gasToken),
-					refundReceiver: getAddressMetaData(parsed.message.refundReceiver, userAddressBook),
-					verifyingContract: getAddressMetaData(parsed.domain.verifyingContract, userAddressBook),
+					to: await identifyAddress(ethereumClientService, userAddressBook, parsed.message.to),
+					gasToken: await identifyAddress(ethereumClientService, userAddressBook, parsed.message.gasToken),
+					refundReceiver: await identifyAddress(ethereumClientService, userAddressBook, parsed.message.refundReceiver),
+					verifyingContract: await identifyAddress(ethereumClientService, userAddressBook, parsed.domain.verifyingContract),
 				},
 				quarantine: false,
 				quarantineCodes: [],

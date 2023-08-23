@@ -1,6 +1,6 @@
 import * as funtypes from 'funtypes'
 import { EthereumAddressOrMissing } from './wire-types.js'
-import { AddressInfoArray, ContactEntries, SignerName } from './user-interface-types.js'
+import { AddressBookEntries, AddressInfoArray, ContactEntries, SignerName } from './user-interface-types.js'
 import { Page, PendingAccessRequestArray, PendingChainChangeConfirmationPromise, PendingPersonalSignPromise, PendingTransaction, RpcConnectionStatus, TabState, WebsiteAccessArray } from './interceptor-messages.js'
 import { EthereumSubscriptions, RpcEntries, RpcNetwork, SimulationResults } from './visualizer-types.js'
 
@@ -29,6 +29,7 @@ export const LocalStorageItems = funtypes.Partial({
 	useTabsInsteadOfPopup: funtypes.Boolean,
 	RpcEntries: RpcEntries,
 	metamaskCompatibilityMode: funtypes.Boolean,
+	userAddressBookEntries: AddressBookEntries,
 })
 
 export type LocalStorageKey = funtypes.Static<typeof LocalStorageKey>
@@ -56,6 +57,7 @@ export const LocalStorageKey = funtypes.Union(
 	funtypes.Literal('useTabsInsteadOfPopup'),
 	funtypes.Literal('RpcEntries'),
 	funtypes.Literal('metamaskCompatibilityMode'),
+	funtypes.Literal('userAddressBookEntries'),
 )
 
 export async function browserStorageLocalGet(keys: LocalStorageKey | LocalStorageKey[]): Promise<LocalStorageItems> {

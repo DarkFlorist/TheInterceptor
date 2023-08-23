@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'preact/hooks'
 import { ActiveAddress, BigAddress, WebsiteOriginText } from '../subcomponents/address.js'
 import { AddNewAddress } from './AddNewAddress.js'
-import { AddressInfoEntry, AddressBookEntry, AddingNewAddressType, RenameAddressCallBack, Website } from '../../utils/user-interface-types.js'
+import { AddressInfoEntry, AddressBookEntry, RenameAddressCallBack, Website, InCompleteAddressBookEntry } from '../../utils/user-interface-types.js'
 import { ExternalPopupMessage, PendingAccessRequest, PendingAccessRequestArray } from '../../utils/interceptor-messages.js'
 import { sendPopupMessageToBackgroundPage } from '../../background/backgroundUtils.js'
 import Hint from '../subcomponents/Hint.js'
@@ -9,6 +9,7 @@ import { convertNumberToCharacterRepresentationIfSmallEnough, tryFocusingTabOrWi
 import { ChangeActiveAddress } from './ChangeActiveAddress.js'
 import { DinoSays, DinoSaysNotification } from '../subcomponents/DinoSays.js'
 import { getPrettySignerName } from '../subcomponents/signers.js'
+import { checksummedAddress } from '../../utils/bigint.js'
 
 const HALF_HEADER_HEIGHT = 48 / 2
 
@@ -168,7 +169,7 @@ const DISABLED_DELAY_MS = 3000
 
 export function InterceptorAccess() {
 	const [pendingAccessRequestArray, setAccessRequest] = useState<PendingAccessRequestArray>([])
-	const [addingNewAddress, setAddingNewAddress] = useState<AddingNewAddressType> ({ addingAddress: true, type: 'addressInfo' })
+	const [addingNewAddress, setAddingNewAddress] = useState<InCompleteAddressBookEntry> ({ addingAddress: false, type: 'addressInfo', address: undefined, askForAddressAccess: false, name: undefined, symbol: undefined, decimals: undefined, logoUri: undefined })
 	const [appPage, setAppPage] = useState('Home')
 	const [informationUpdatedTimestamp, setInformationUpdatedTimestamp] = useState(0)
 	const [, setTimeSinceInformationUpdate] = useState(0)
@@ -233,7 +234,15 @@ export function InterceptorAccess() {
 
 	function renameAddressCallBack(entry: AddressBookEntry) {
 		setAppPage('ModifyAddress')
-		setAddingNewAddress({ addingAddress: false, entry: entry })
+		setAddingNewAddress({
+			addingAddress: false,
+			askForAddressAccess: false,
+			symbol: undefined,
+			decimals: undefined,
+			logoUri: undefined,
+			...entry,
+			address: checksummedAddress(entry.address)
+		})
 	}
 
 	function changeActiveAddress() {
@@ -283,6 +292,19 @@ export function InterceptorAccess() {
 				Grant Access
 			</button>
 		</div>
+	}	
+	function addNewAddress() {
+		setAppPage('AddNewAddress')
+		setAddingNewAddress({
+			addingAddress: true,
+			symbol: undefined,
+			decimals: undefined,
+			logoUri: undefined,
+			type: 'addressInfo',
+			name: undefined,
+			address: undefined,
+			askForAddressAccess: true,
+		} )
 	}
 
 	if (pendingAccessRequestArray.length === 0) return <main></main>
@@ -293,7 +315,7 @@ export function InterceptorAccess() {
 				{ appPage === 'AddNewAddress' || appPage === 'ModifyAddress'
 					? <AddNewAddress
 						setActiveAddressAndInformAboutIt = { setActiveAddressAndInformAboutIt }
-						addingNewAddress = { appPage === 'AddNewAddress' ? { addingAddress: true, type: 'addressInfo' } : addingNewAddress }
+						inCompleteAddressBookEntry = { addingNewAddress }
 						close = { () => setAppPage('Home') }
 						activeAddress = { pendingAccessRequestArray[0].requestAccessToAddress?.address }
 					/>
@@ -308,6 +330,7 @@ export function InterceptorAccess() {
 						addressInfos = { pendingAccessRequestArray[0].addressInfos }
 						signerName = { pendingAccessRequestArray[0].signerName }
 						renameAddressCallBack = { renameAddressCallBack }
+						addNewAddress = { addNewAddress }
 					/>
 					: <></>
 				}
