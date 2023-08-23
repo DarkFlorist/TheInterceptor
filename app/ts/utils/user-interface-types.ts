@@ -5,7 +5,7 @@ import { SimulatedAndVisualizedTransaction, SimulationAndVisualisationResults, R
 import { IdentifiedSwapWithMetadata } from '../components/simulationExplaining/SwapTransactions.js'
 import { InterceptedRequest, UniqueRequestIdentifier, WebsiteSocket } from './requests.js'
 import { OldSignTypedDataParams, PersonalSignParams, SignTypedDataParams } from './JsonRpc-types.js'
-import { AddressInfo, AddressInfoEntry, AddressBookEntry, AddressBookEntries } from './addressBookTypes.js'
+import { AddressInfo, AddressInfoEntry, AddressBookEntry, AddressBookEntries, InCompleteAddressBookEntry } from './addressBookTypes.js'
 import { Page } from './exportedSettingsTypes.js'
 import { Website, WebsiteAccessArray } from './websiteAccessTypes.js'
 import { SignerName } from './signerTypes.js'
@@ -56,17 +56,6 @@ export type InterceptorAccessListParams = {
 	websiteAccess: WebsiteAccessArray | undefined,
 	websiteAccessAddressMetadata: readonly AddressInfoEntry[],
 	renameAddressCallBack: RenameAddressCallBack,
-}
-
-export type InCompleteAddressBookEntry = {
-	addingAddress: boolean, // if false, we are editing addess
-	type: 'addressInfo' | 'contact' | 'contract' | 'ERC20' | 'ERC1155' | 'ERC721'
-	address: string | undefined
-	askForAddressAccess: boolean
-	name: string | undefined
-	symbol: string | undefined
-	decimals: bigint | undefined
-	logoUri: string | undefined
 }
 
 export type AddAddressParam = {

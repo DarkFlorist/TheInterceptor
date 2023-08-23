@@ -1,6 +1,6 @@
 import { ethers } from 'ethers'
 import { useEffect, useState } from 'preact/hooks'
-import { AddAddressParam, InCompleteAddressBookEntry } from '../../utils/user-interface-types.js'
+import { AddAddressParam } from '../../utils/user-interface-types.js'
 import { Notice } from '../subcomponents/Error.js'
 import { getIssueWithAddressString } from '../ui-utils.js'
 import { checksummedAddress, stringToAddress } from '../../utils/bigint.js'
@@ -8,7 +8,7 @@ import { sendPopupMessageToBackgroundPage } from '../../background/backgroundUti
 import { AddressIcon } from '../subcomponents/address.js'
 import { assertUnreachable } from '../../utils/typescript.js'
 import { ComponentChildren, createRef } from 'preact'
-import { AddressBookEntry } from '../../utils/addressBookTypes.js'
+import { AddressBookEntry, InCompleteAddressBookEntry } from '../../utils/addressBookTypes.js'
 
 const readableAddressType = {
 	'contact': 'Contact',
@@ -36,9 +36,10 @@ export function IncompleteAddressIcon({ addressInput, logoUri }: IncompleteAddre
 type NameInputParams = {
 	nameInput: string | undefined
 	setNameInput: (input: string) => void
+	disabled: boolean,
 }
 
-export function NameInput({ nameInput, setNameInput }: NameInputParams) {
+export function NameInput({ nameInput, setNameInput, disabled }: NameInputParams) {
 	const ref = createRef<HTMLInputElement>()
     useEffect(() => { ref.current && ref.current.focus() }, [])
 	return <input
@@ -50,18 +51,19 @@ export function NameInput({ nameInput, setNameInput }: NameInputParams) {
 		maxLength = { 42 }
 		ref = { ref }
 		style = { 'width: 100%' }
+		disabled = { disabled }
 	/>
 }
 
 type AddressInputParams = {
-	disableAddress: boolean
+	disabled: boolean
 	addressInput: string | undefined
 	setAddress: (input: string) => void
 }
 
-export function AddressInput({ disableAddress, addressInput, setAddress }: AddressInputParams) {
+export function AddressInput({ disabled, addressInput, setAddress }: AddressInputParams) {
 	return <input
-		disabled = { disableAddress }
+		disabled = { disabled }
 		className = 'input subtitle is-7 is-spaced'
 		type = 'text'
 		value = { addressInput }
@@ -72,7 +74,7 @@ export function AddressInput({ disableAddress, addressInput, setAddress }: Addre
 }
 
 type RenderInCompleteAddressBookParams = {
-	inCompleteAddressBookEntry: InCompleteAddressBookEntry
+	inCompleteAddressBookEntry: InCompleteAddressBookEntry,
 	setName: (name: string) => void,
 	setAddress: (name: string) => void,
 	setAskForAddressAccess: (name: boolean) => void,
@@ -92,7 +94,7 @@ function RenderInCompleteAddressBookEntry({ inCompleteAddressBookEntry, setName,
 			{ param.text }
 		</p>
 	}
-	
+	const disableDueToSource = inCompleteAddressBookEntry.entrySource === 'DarkFloristMetadata' || inCompleteAddressBookEntry.entrySource === 'Interceptor'
 	const logoUri = inCompleteAddressBookEntry.addingAddress === false && 'logoUri' in inCompleteAddressBookEntry ? inCompleteAddressBookEntry.logoUri : undefined
 	return <div class = 'media'>
 		<div class = 'media-left'>
@@ -104,9 +106,9 @@ function RenderInCompleteAddressBookEntry({ inCompleteAddressBookEntry, setName,
 			<div class = 'container' style = 'margin-bottom: 10px;'>
 				<span class = 'log-table' style = 'justify-content: left; column-gap: 5px; row-gap: 5px; grid-template-columns: max-content 400px;'>
 					<CellElement element = { <Text text = { 'Name: ' }/> }/>
-					<CellElement element = { <NameInput nameInput = { inCompleteAddressBookEntry.name } setNameInput = { setName } /> } />
+					<CellElement element = { <NameInput nameInput = { inCompleteAddressBookEntry.name } setNameInput = { setName } disabled = { disableDueToSource }/> } />
 					<CellElement element = { <Text text = { 'Address: ' }/> }/> 
-					<CellElement element = { <AddressInput disableAddress = { inCompleteAddressBookEntry.addingAddress === false } addressInput = { inCompleteAddressBookEntry.address } setAddress = { setAddress } /> } />
+					<CellElement element = { <AddressInput disabled = { inCompleteAddressBookEntry.addingAddress === false || disableDueToSource } addressInput = { inCompleteAddressBookEntry.address } setAddress = { setAddress } /> } />
 					{ inCompleteAddressBookEntry.type === 'ERC20' || inCompleteAddressBookEntry.type === 'ERC1155' ? <>
 						<CellElement element = { <Text text = { 'Symbol: ' }/> }/>
 						<CellElement element = { <input disabled = { true } className = 'input subtitle is-7 is-spaced' style = 'width: 100%' type = 'text' value = { inCompleteAddressBookEntry.symbol } placeholder = { '...' } /> } />
@@ -119,7 +121,7 @@ function RenderInCompleteAddressBookEntry({ inCompleteAddressBookEntry, setName,
 			</div>
 			{ inCompleteAddressBookEntry.type === 'addressInfo' ? <>
 				<label class = 'form-control'>
-					<input type = 'checkbox' checked = { !inCompleteAddressBookEntry.askForAddressAccess } onInput = { e => { if (e.target instanceof HTMLInputElement && e.target !== null) { setAskForAddressAccess(!e.target.checked) } } } />
+					<input type = 'checkbox'  disabled = { disableDueToSource } checked = { !inCompleteAddressBookEntry.askForAddressAccess } onInput = { e => { if (e.target instanceof HTMLInputElement && e.target !== null) { setAskForAddressAccess(!e.target.checked) } } } />
 					<p class = 'paragraph checkbox-text'>Don't request for an access (insecure)</p>
 				</label>
 			</> : <></> }
@@ -130,7 +132,7 @@ function RenderInCompleteAddressBookEntry({ inCompleteAddressBookEntry, setName,
 export function AddNewAddress(param: AddAddressParam) {
 	const [errorString, setErrorString] = useState<string | undefined>(undefined)
 	const [activeAddress, setActiveAddress] = useState<bigint | undefined>(undefined)
-	const [inCompleteAddressBookEntry, setInCompleteAddressBookEntry] = useState<InCompleteAddressBookEntry>({ addingAddress: false, type: 'addressInfo', address: undefined, askForAddressAccess: false, name: undefined, symbol: undefined, decimals: undefined, logoUri: undefined })
+	const [inCompleteAddressBookEntry, setInCompleteAddressBookEntry] = useState<InCompleteAddressBookEntry>({ addingAddress: false, type: 'addressInfo', address: undefined, askForAddressAccess: false, name: undefined, symbol: undefined, decimals: undefined, logoUri: undefined, entrySource: 'FilledIn' })
 
 	function getCompleteAddressBookEntry(): AddressBookEntry | undefined {
 		if (inCompleteAddressBookEntry.name !== undefined && inCompleteAddressBookEntry.name.length > 42) return undefined
@@ -199,7 +201,7 @@ export function AddNewAddress(param: AddAddressParam) {
 		const entryToAdd = getCompleteAddressBookEntry()
 		if (entryToAdd === undefined) return
 		await sendPopupMessageToBackgroundPage({ method: 'popup_addOrModifyAddressBookEntry', data: entryToAdd } )
-		setInCompleteAddressBookEntry({ addingAddress: false, type: 'addressInfo', address: undefined, askForAddressAccess: false, name: undefined, symbol: undefined, decimals: undefined, logoUri: undefined })
+		setInCompleteAddressBookEntry({ addingAddress: false, type: 'addressInfo', address: undefined, askForAddressAccess: false, name: undefined, symbol: undefined, decimals: undefined, logoUri: undefined, entrySource: 'FilledIn' })
 	}
 
 	async function createAndSwitch() {
@@ -216,6 +218,11 @@ export function AddNewAddress(param: AddAddressParam) {
 	useEffect(() => {
 		setInCompleteAddressBookEntry(param.inCompleteAddressBookEntry)
 		setActiveAddress(param.activeAddress)
+		if (param.inCompleteAddressBookEntry.entrySource === 'DarkFloristMetadata' || param.inCompleteAddressBookEntry.entrySource === 'Interceptor') {
+			setErrorString(`The address information for ${ param.inCompleteAddressBookEntry.name } originates from The Interceptor and cannot be modified.`)
+		} else {
+			setErrorString(undefined)
+		}
 	}, [param.inCompleteAddressBookEntry, param.activeAddress])
 
 	function areInputValid() {
@@ -267,7 +274,7 @@ export function AddNewAddress(param: AddAddressParam) {
 					</span>
 				</div>
 				<div class = 'card-header-title'>
-					<p className = 'paragraph'> { param.inCompleteAddressBookEntry.addingAddress ? `Add New ${ readableAddressType[param.inCompleteAddressBookEntry.type] }` : `Modify ${ readableAddressType[param.inCompleteAddressBookEntry.type] }` } </p>
+					<p className = 'paragraph'> { param.inCompleteAddressBookEntry.addingAddress ? `Add New ${ readableAddressType[param.inCompleteAddressBookEntry.type] }` : `Modify ${ param.inCompleteAddressBookEntry.name !== undefined ? param.inCompleteAddressBookEntry.name : readableAddressType[param.inCompleteAddressBookEntry.type] }` } </p>
 				</div>
 				<button class = 'card-header-icon' aria-label = 'close' onClick = { param.close }>
 					<span class = 'icon' style = 'color: var(--text-color);'> X </span>
@@ -290,7 +297,7 @@ export function AddNewAddress(param: AddAddressParam) {
 			</section>
 			<footer class = 'modal-card-foot window-footer' style = 'border-bottom-left-radius: unset; border-bottom-right-radius: unset; border-top: unset; padding: 10px;'>
 				{ param.setActiveAddressAndInformAboutIt === undefined || inCompleteAddressBookEntry === undefined || activeAddress === stringToAddress(inCompleteAddressBookEntry.address) ? <></> : <button class = 'button is-success is-primary' onClick = { createAndSwitch } disabled = { ! (areInputValid()) }> { param.inCompleteAddressBookEntry.addingAddress ? 'Create and switch' : 'Modify and switch' } </button> }
-				<button class = 'button is-success is-primary' onClick = { add } disabled = { ! (areInputValid()) }> { param.inCompleteAddressBookEntry.addingAddress ? 'Create' : 'Modify' } </button>
+				<button class = 'button is-success is-primary' onClick = { add } disabled = { !areInputValid() || param.inCompleteAddressBookEntry.entrySource === 'DarkFloristMetadata' || param.inCompleteAddressBookEntry.entrySource === 'Interceptor' }> { param.inCompleteAddressBookEntry.addingAddress ? 'Create' : 'Modify' } </button>
 				<button class = 'button is-primary' style = 'background-color: var(--negative-color)' onClick = { param.close }>Cancel</button>
 			</footer>
 		</div>

@@ -3,7 +3,7 @@ import { defaultAddresses } from '../background/settings.js'
 import { SimulatedAndVisualizedTransaction, SimulationAndVisualisationResults, SimulationState, TokenPriceEstimate, RpcEntry, RpcNetwork, RpcEntries, SimulationUpdatingState, SimulationResultState } from '../utils/visualizer-types.js'
 import { ChangeActiveAddress } from './pages/ChangeActiveAddress.js'
 import { Home } from './pages/Home.js'
-import { InCompleteAddressBookEntry, RpcConnectionStatus, TabIconDetails } from '../utils/user-interface-types.js'
+import { RpcConnectionStatus, TabIconDetails } from '../utils/user-interface-types.js'
 import Hint from './subcomponents/Hint.js'
 import { AddNewAddress } from './pages/AddNewAddress.js'
 import { InterceptorAccessList } from './pages/InterceptorAccessList.js'
@@ -17,7 +17,7 @@ import { sendPopupMessageToBackgroundPage } from '../background/backgroundUtils.
 import { EthereumAddress } from '../utils/wire-types.js'
 import { SettingsView } from './pages/SettingsView.js'
 import { checksummedAddress } from '../utils/bigint.js'
-import { AddressInfo, AddressInfoEntry, AddressBookEntry, AddressBookEntries } from '../utils/addressBookTypes.js'
+import { AddressInfo, AddressInfoEntry, AddressBookEntry, AddressBookEntries, InCompleteAddressBookEntry } from '../utils/addressBookTypes.js'
 import { WebsiteAccessArray } from '../utils/websiteAccessTypes.js'
 import { Page } from '../utils/exportedSettingsTypes.js'
 import { SignerName } from '../utils/signerTypes.js'
@@ -39,7 +39,7 @@ export function App() {
 	const [isSettingsLoaded, setIsSettingsLoaded] = useState<boolean>(false)
 	const [currentBlockNumber, setCurrentBlockNumber] = useState<bigint | undefined>(undefined)
 	const [signerName, setSignerName] = useState<SignerName>('NoSignerDetected')
-	const [addingNewAddress, setAddingNewAddress] = useState<InCompleteAddressBookEntry> ({ addingAddress: false, type: 'addressInfo', address: undefined, askForAddressAccess: false, name: undefined, symbol: undefined, decimals: undefined, logoUri: undefined })
+	const [addingNewAddress, setAddingNewAddress] = useState<InCompleteAddressBookEntry> ({ addingAddress: false, type: 'addressInfo', address: undefined, askForAddressAccess: false, name: undefined, symbol: undefined, decimals: undefined, logoUri: undefined, entrySource: 'FilledIn' })
 	const [rpcConnectionStatus, setRpcConnectionStatus] = useState<RpcConnectionStatus>(undefined)
 	const [useTabsInsteadOfPopup, setUseTabsInsteadOfPopup] = useState<boolean | undefined>(undefined)
 	const [metamaskCompatibilityMode, setMetamaskCompatibilityMode] = useState<boolean | undefined>(undefined)
@@ -198,6 +198,7 @@ export function App() {
 			name: `Pasted ${ truncateAddr(addressString) }`,
 			address: checksummedAddress(bigIntReprentation),
 			askForAddressAccess: true,
+			entrySource: 'FilledIn',
 		} )
 	}
 
@@ -225,6 +226,7 @@ export function App() {
 			name: undefined,
 			address: undefined,
 			askForAddressAccess: true,
+			entrySource: 'FilledIn',
 		} )
 	}
 

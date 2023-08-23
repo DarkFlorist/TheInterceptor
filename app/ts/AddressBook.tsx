@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'preact/hooks'
-import { InCompleteAddressBookEntry, RenameAddressCallBack } from './utils/user-interface-types.js'
+import { RenameAddressCallBack } from './utils/user-interface-types.js'
 import { GetAddressBookDataReply, ExternalPopupMessage } from './utils/interceptor-messages.js'
 import { arrayToChunks } from './utils/typed-arrays.js'
 import { AddNewAddress } from './components/pages/AddNewAddress.js'
@@ -8,7 +8,7 @@ import Hint from './components/subcomponents/Hint.js'
 import { sendPopupMessageToBackgroundPage } from './background/backgroundUtils.js'
 import { assertNever } from './utils/typescript.js'
 import { checksummedAddress } from './utils/bigint.js'
-import { AddressBookEntries, AddressBookEntry } from './utils/addressBookTypes.js'
+import { AddressBookEntries, AddressBookEntry, InCompleteAddressBookEntry } from './utils/addressBookTypes.js'
 
 type Modals = 'noModal' | 'addNewAddress' | 'ConfirmaddressBookEntryToBeRemoved'
 
@@ -203,7 +203,7 @@ export function AddressBook() {
 	const searchStringRef = useRef<string | undefined>(searchString)
 	const currentPageRef = useRef<number>(currentPage)
 
-	const [addingNewAddress, setAddingNewAddress] = useState<InCompleteAddressBookEntry>({ addingAddress: false, type: 'addressInfo', address: undefined, askForAddressAccess: false, name: undefined, symbol: undefined, decimals: undefined, logoUri: undefined })
+	const [addingNewAddress, setAddingNewAddress] = useState<InCompleteAddressBookEntry>({ addingAddress: false, type: 'addressInfo', address: undefined, askForAddressAccess: false, name: undefined, symbol: undefined, decimals: undefined, logoUri: undefined, entrySource: 'FilledIn' })
 
 	const scrollTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
 
@@ -368,6 +368,7 @@ export function AddressBook() {
 			name: undefined,
 			address: undefined,
 			askForAddressAccess: true,
+			entrySource: 'FilledIn',
 		})
 	}
 
