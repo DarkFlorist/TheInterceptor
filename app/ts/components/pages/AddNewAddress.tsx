@@ -150,18 +150,12 @@ export function AddNewAddress(param: AddAddressParam) {
 			const parsed = ExternalPopupMessage.parse(msg)
 			if (parsed.method === 'popup_findAddressBookEntryWithSymbolOrNameReply') {
 				setInCompleteAddressBookEntry((previous) => {
-					console.log('popup_findAddressBookEntryWithSymbolOrNameReply')
-					console.log(parsed)
-					console.log(previous)
 					if (parsed.data.query.name === previous.name && parsed.data.query.symbol === previous.symbol) { 
 						if (parsed.data.addressBookEntryOrUndefined === undefined) {
-							console.log('no duplicates!')
 							return { ...previous, duplicateStatus: 'NoDuplicates' }
 						}
-						console.log('dulpicates!')
 						return { ...previous, duplicateStatus: 'Duplicates', duplicateEntry: parsed.data.addressBookEntryOrUndefined }
 					}
-					console.log('no change!')
 					return previous
 				})
 			}
@@ -287,9 +281,6 @@ export function AddNewAddress(param: AddAddressParam) {
 		await sendPopupMessageToBackgroundPage({ method: 'popup_identifyAddress', data: { address } })
 	}
 	async function checkForDuplicatedNameOrSymbol(name: string | undefined, symbol: string | undefined) {
-		console.log('checkForDuplicatedNameOrSymbol')
-		console.log(name)
-		console.log(symbol)
 		if (name === undefined && symbol === undefined) return
 		await sendPopupMessageToBackgroundPage({ method: 'popup_findAddressBookEntryWithSymbolOrName', data: { name, symbol } })
 	}
