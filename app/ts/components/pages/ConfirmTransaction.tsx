@@ -145,8 +145,6 @@ export function ConfirmTransaction() {
 	useEffect(() => {
 		async function popupMessageListener(msg: unknown) {
 			const message = ExternalPopupMessage.parse(msg)
-			console.log(message.method)
-
 			if (message.method === 'popup_addressBookEntriesChanged') return refreshMetadata()
 			if (message.method === 'popup_new_block_arrived') {
 				setRpcConnectionStatus(message.data.rpcConnectionStatus)
@@ -168,7 +166,6 @@ export function ConfirmTransaction() {
 				return
 			}
 			if (message.method !== 'popup_update_confirm_transaction_dialog') return
-			console.log('updsd')
 			setPendingTransactions(message.data.slice(1).reverse())
 			const firstMessage = message.data[0]
 			setCurrentPendingTransaction(firstMessage)
