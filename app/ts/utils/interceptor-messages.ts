@@ -158,6 +158,17 @@ export const RefreshConfirmTransactionMetadata = funtypes.ReadonlyObject({
 	data: ConfirmTransactionDialogState
 }).asReadonly()
 
+export type IdentifyAddress = funtypes.Static<typeof IdentifyAddress>
+export const IdentifyAddress = funtypes.ReadonlyObject({
+	method: funtypes.Literal('popup_identifyAddress'),
+	data: funtypes.ReadonlyObject({ address: EthereumAddress })
+}).asReadonly()
+
+export type IdentifyAddressReply = funtypes.Static<typeof IdentifyAddressReply>
+export const IdentifyAddressReply = funtypes.ReadonlyObject({
+	method: funtypes.Literal('popup_identifyAddressReply'),
+	data: funtypes.ReadonlyObject({ addressBookEntry: AddressBookEntry })
+}).asReadonly()
 
 export type TransactionConfirmation = funtypes.Static<typeof TransactionConfirmation>
 export const TransactionConfirmation = funtypes.ReadonlyObject({
@@ -615,6 +626,7 @@ export const PopupMessage = funtypes.Union(
 	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_get_export_settings') }),
 	ChangeSettings,
 	SetRpcList,
+	IdentifyAddress,
 )
 
 export type MessageToPopup = funtypes.Static<typeof MessageToPopup>
@@ -635,6 +647,7 @@ export const MessageToPopup = funtypes.Union(
 	ActiveSigningAddressChanged,
 	UpdateRPCList,
 	SimulationUpdateStartedOrEnded,
+	IdentifyAddressReply,
 )
 
 export type ExternalPopupMessage = funtypes.Static<typeof MessageToPopup>

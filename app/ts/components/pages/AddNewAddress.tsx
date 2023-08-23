@@ -9,6 +9,7 @@ import { AddressIcon } from '../subcomponents/address.js'
 import { assertUnreachable } from '../../utils/typescript.js'
 import { ComponentChildren, createRef } from 'preact'
 import { AddressBookEntry, InCompleteAddressBookEntry } from '../../utils/addressBookTypes.js'
+import { ExternalPopupMessage } from '../../utils/interceptor-messages.js'
 
 const readableAddressType = {
 	'contact': 'Contact',
@@ -134,6 +135,34 @@ export function AddNewAddress(param: AddAddressParam) {
 	const [activeAddress, setActiveAddress] = useState<bigint | undefined>(undefined)
 	const [inCompleteAddressBookEntry, setInCompleteAddressBookEntry] = useState<InCompleteAddressBookEntry>({ addingAddress: false, type: 'addressInfo', address: undefined, askForAddressAccess: false, name: undefined, symbol: undefined, decimals: undefined, logoUri: undefined, entrySource: 'FilledIn' })
 
+	useEffect(() => {
+		const popupMessageListener = async (msg: unknown) => {
+			const parsed = ExternalPopupMessage.parse(msg)
+			if (parsed.method !== 'popup_identifyAddressReply') return
+			return setInCompleteAddressBookEntry((prevEntry) => {	
+				if (parsed.data.addressBookEntry.address !== stringToAddress(prevEntry.address)) return prevEntry
+				if (parsed.data.addressBookEntry.type !== prevEntry.type) {
+					setErrorString(`The address ${ checksummedAddress(parsed.data.addressBookEntry.address) } is a ${ parsed.data.addressBookEntry.type } while you are trying to add ${ prevEntry.type }.`)
+					return prevEntry
+				}
+				if (parsed.data.addressBookEntry.entrySource !== 'OnChain' && parsed.data.addressBookEntry.entrySource !== 'FilledIn') {
+					setErrorString(`The address ${ checksummedAddress(parsed.data.addressBookEntry.address) } you are trying to add already exists. Edit the existing record instead trying to add it again.`)
+					return prevEntry
+				}
+				return {
+					...prevEntry,
+					decimals: 'decimals' in parsed.data.addressBookEntry ? parsed.data.addressBookEntry.decimals : prevEntry.decimals,
+					logoUri: 'logoUri' in parsed.data.addressBookEntry ? parsed.data.addressBookEntry.logoUri : prevEntry.logoUri,
+					symbol: 'symbol' in parsed.data.addressBookEntry ? parsed.data.addressBookEntry.symbol : prevEntry.symbol,
+				}
+			})
+		}
+		browser.runtime.onMessage.addListener(popupMessageListener)
+		return () => {
+			browser.runtime.onMessage.removeListener(popupMessageListener)
+		}
+	}, [])
+
 	function getCompleteAddressBookEntry(): AddressBookEntry | undefined {
 		if (inCompleteAddressBookEntry.name !== undefined && inCompleteAddressBookEntry.name.length > 42) return undefined
 		const inputedAddressBigInt = stringToAddress(inCompleteAddressBookEntry.address)
@@ -210,23 +239,27 @@ export function AddNewAddress(param: AddAddressParam) {
 		await add()
 		if (param.setActiveAddressAndInformAboutIt !== undefined) await param.setActiveAddressAndInformAboutIt(inputedAddressBigInt)
 	}
-/*
-	function identifyAddress(address: bigint) {
-		sendPopupMessageToBackgroundPage({ method: 'popup_identifyAddress', data: { address } })
-	}*/
 
 	useEffect(() => {
-		setInCompleteAddressBookEntry(param.inCompleteAddressBookEntry)
 		setActiveAddress(param.activeAddress)
-		if (param.inCompleteAddressBookEntry.entrySource === 'DarkFloristMetadata' || param.inCompleteAddressBookEntry.entrySource === 'Interceptor') {
-			setErrorString(`The address information for ${ param.inCompleteAddressBookEntry.name } originates from The Interceptor and cannot be modified.`)
-		} else {
-			setErrorString(undefined)
-		}
+		setInCompleteAddressBookEntry((_previous) => {
+			console.log(param.inCompleteAddressBookEntry)
+			if (param.inCompleteAddressBookEntry.entrySource === 'DarkFloristMetadata' || param.inCompleteAddressBookEntry.entrySource === 'Interceptor') {
+				setErrorString(`The address information for ${ param.inCompleteAddressBookEntry.name } originates from The Interceptor and cannot be modified.`)
+			} else {
+				setErrorString(undefined)
+			}
+			return param.inCompleteAddressBookEntry
+		})
 	}, [param.inCompleteAddressBookEntry, param.activeAddress])
 
 	function areInputValid() {
 		return getCompleteAddressBookEntry() !== undefined
+	}
+
+	async function queryAddressInformation(address: bigint | undefined) {
+		if (address === undefined) return
+		await sendPopupMessageToBackgroundPage({ method: 'popup_identifyAddress', data: { address } })
 	}
 
 	function setAddress(input: string) {
@@ -236,7 +269,9 @@ export function AddNewAddress(param: AddAddressParam) {
 				return { ... prevEntry, address: input }
 			}
 			const trimmed = input.trim()
+
 			if (ethers.isAddress(trimmed)) {
+				queryAddressInformation(stringToAddress(trimmed))
 				setErrorString(undefined)
 				return { ... prevEntry, address: input }
 			}
@@ -297,7 +332,7 @@ export function AddNewAddress(param: AddAddressParam) {
 			</section>
 			<footer class = 'modal-card-foot window-footer' style = 'border-bottom-left-radius: unset; border-bottom-right-radius: unset; border-top: unset; padding: 10px;'>
 				{ param.setActiveAddressAndInformAboutIt === undefined || inCompleteAddressBookEntry === undefined || activeAddress === stringToAddress(inCompleteAddressBookEntry.address) ? <></> : <button class = 'button is-success is-primary' onClick = { createAndSwitch } disabled = { ! (areInputValid()) }> { param.inCompleteAddressBookEntry.addingAddress ? 'Create and switch' : 'Modify and switch' } </button> }
-				<button class = 'button is-success is-primary' onClick = { add } disabled = { !areInputValid() || param.inCompleteAddressBookEntry.entrySource === 'DarkFloristMetadata' || param.inCompleteAddressBookEntry.entrySource === 'Interceptor' }> { param.inCompleteAddressBookEntry.addingAddress ? 'Create' : 'Modify' } </button>
+				<button class = 'button is-success is-primary' onClick = { add } disabled = { !areInputValid() || param.inCompleteAddressBookEntry.entrySource === 'DarkFloristMetadata' || param.inCompleteAddressBookEntry.entrySource === 'Interceptor' || errorString !== undefined }> { param.inCompleteAddressBookEntry.addingAddress ? 'Create' : 'Modify' } </button>
 				<button class = 'button is-primary' style = 'background-color: var(--negative-color)' onClick = { param.close }>Cancel</button>
 			</footer>
 		</div>

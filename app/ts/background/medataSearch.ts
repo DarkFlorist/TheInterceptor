@@ -37,7 +37,7 @@ function search<ElementType>(searchArray: readonly ElementType[], searchFunction
 const convertAddressInfoToAddressBookEntry = (info: AddressInfo) => ({
 	...info,
 	type: 'addressInfo' as const,
-	entrySource: 'DarkFloristMetadata' as const,
+	entrySource: 'User' as const,
 })
 
 const convertTokenDefinitionToAddressBookEntry = ([address, def]: [string, TokenDefinition]) => ({
