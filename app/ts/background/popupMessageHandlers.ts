@@ -96,7 +96,8 @@ export async function removeAddressBookEntry(simulator: Simulator, websiteTabCon
 		}
 		case 'Non Fungible Tokens':
 		case 'Other Contracts':
-		case 'Erc20Tokens': throw new Error('Tried to remove addressbook category that is not supported yet!')
+		case 'ERC1155 Tokens':
+		case 'ERC20 Tokens': throw new Error('Tried to remove addressbook category that is not supported yet!')
 		default: assertUnreachable(removeAddressBookEntry.data.addressBookCategory)
 	}
 }
