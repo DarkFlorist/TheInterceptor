@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'preact/hooks'
 import { Error as ErrorContainer, ErrorCheckBox } from '../subcomponents/Error.js'
-import { ExternalPopupMessage, PendingChainChangeConfirmationPromise } from '../../utils/interceptor-messages.js'
+import { ExternalPopupMessage } from '../../utils/interceptor-messages.js'
 import { sendPopupMessageToBackgroundPage } from '../../background/backgroundUtils.js'
 import { tryFocusingTabOrWindow } from '../ui-utils.js'
+import { PendingChainChangeConfirmationPromise } from '../../utils/user-interface-types.js'
 
 
 export function ChangeChain() {

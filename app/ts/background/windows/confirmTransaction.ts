@@ -5,7 +5,7 @@ import { CANNOT_SIMULATE_OFF_LEGACY_BLOCK, ERROR_INTERCEPTOR_NO_ACTIVE_ADDRESS, 
 import { Future } from '../../utils/future.js'
 import { TransactionConfirmation } from '../../utils/interceptor-messages.js'
 import { Semaphore } from '../../utils/semaphore.js'
-import { Website, WebsiteTabConnections } from '../../utils/user-interface-types.js'
+import { WebsiteTabConnections } from '../../utils/user-interface-types.js'
 import { WebsiteCreatedEthereumUnsignedTransaction } from '../../utils/visualizer-types.js'
 import { SendRawTransactionParams, SendTransactionParams } from '../../utils/JsonRpc-types.js'
 import { refreshConfirmTransactionSimulation, updateSimulationState } from '../background.js'
@@ -17,6 +17,7 @@ import { Simulator } from '../../simulation/simulator.js'
 import { ethers } from 'ethers'
 import { dataStringWith0xStart, stringToUint8Array } from '../../utils/bigint.js'
 import { EthereumAddress } from '../../utils/wire-types.js'
+import { Website } from '../../utils/websiteAccessTypes.js'
 
 type Confirmation = TransactionConfirmation | 'NoResponse'
 let openedDialog: PopupOrTab | undefined = undefined

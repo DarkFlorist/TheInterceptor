@@ -1,10 +1,11 @@
-import { AddressInfoEntry, InterceptorAccessListParams } from '../../utils/user-interface-types.js'
+import { InterceptorAccessListParams } from '../../utils/user-interface-types.js'
 import { useEffect, useState } from 'preact/hooks'
 import { SmallAddress } from '../subcomponents/address.js'
 import { CopyToClipboard } from '../subcomponents/CopyToClipboard.js'
 import { addressString, checksummedAddress } from '../../utils/bigint.js'
 import { sendPopupMessageToBackgroundPage } from '../../background/backgroundUtils.js'
-import { WebsiteAccess, WebsiteAccessArray, WebsiteAddressAccess } from '../../utils/interceptor-messages.js'
+import { AddressInfoEntry } from '../../utils/addressBookTypes.js'
+import { WebsiteAccess, WebsiteAccessArray, WebsiteAddressAccess } from '../../utils/websiteAccessTypes.js'
 
 interface ModifiedAddressAccess {
 	address: bigint,
@@ -238,7 +239,8 @@ export function InterceptorAccessList(param: InterceptorAccessListParams) {
 																	type: 'addressInfo',
 																	name: checksummedAddress(websiteAccessAddress.address),
 																	address: BigInt(websiteAccessAddress.address),
-																	askForAddressAccess: false
+																	askForAddressAccess: false,
+																	entrySource: 'FilledIn',
 																}}
 																renameAddressCallBack = { param.renameAddressCallBack }
 															/>

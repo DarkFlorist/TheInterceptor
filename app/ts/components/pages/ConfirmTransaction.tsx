@@ -1,11 +1,11 @@
 import { useState, useEffect } from 'preact/hooks'
-import { ExternalPopupMessage, PendingTransaction, RpcConnectionStatus } from '../../utils/interceptor-messages.js'
+import { ExternalPopupMessage } from '../../utils/interceptor-messages.js'
 import { SimulationAndVisualisationResults } from '../../utils/visualizer-types.js'
 import Hint from '../subcomponents/Hint.js'
 import { RawTransactionDetailsCard, GasFee, LogAnalysisCard, SimulatedInBlockNumber, TransactionCreated, TransactionHeader, TransactionHeaderForFailedToSimulate, TransactionsAccountChangesCard } from '../simulationExplaining/SimulationSummary.js'
 import { CenterToPageTextSpinner } from '../subcomponents/Spinner.js'
 import { AddNewAddress } from './AddNewAddress.js'
-import { AddressBookEntry, InCompleteAddressBookEntry } from '../../utils/user-interface-types.js'
+import { InCompleteAddressBookEntry, PendingTransaction, RpcConnectionStatus } from '../../utils/user-interface-types.js'
 import { sendPopupMessageToBackgroundPage } from '../../background/backgroundUtils.js'
 import { SignerLogoText } from '../subcomponents/signers.js'
 import { ErrorCheckBox } from '../subcomponents/Error.js'
@@ -15,6 +15,7 @@ import { DinoSaysNotification } from '../subcomponents/DinoSays.js'
 import { NetworkErrors } from './Home.js'
 import { tryFocusingTabOrWindow } from '../ui-utils.js'
 import { checksummedAddress } from '../../utils/bigint.js'
+import { AddressBookEntry } from '../../utils/addressBookTypes.js'
 
 type UnderTransactionsParams = {
 	pendingTransactions: PendingTransaction[]

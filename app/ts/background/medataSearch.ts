@@ -1,9 +1,11 @@
 import { addressString } from '../utils/bigint.js'
-import { AddressBookEntries, AddressInfo, ContactEntry } from '../utils/user-interface-types.js'
+import { AddressBookEntries, AddressInfo, AddressInfoEntry, ContactEntry, ContractEntry, Erc1155Entry, Erc20TokenEntry, Erc721Entry } from '../utils/addressBookTypes.js'
 import { nftMetadata, tokenMetadata, contractMetadata, NftDefinition, ContractDefinition, TokenDefinition } from '@darkflorist/address-metadata'
 import { AddressBookCategory, GetAddressBookDataFilter, UserAddressBook } from '../utils/interceptor-messages.js'
 import { getFullLogoUri } from './metadataUtils.js'
 import { assertNever } from '../utils/typescript.js'
+import { getUserAddressBookEntries } from './storageVariables.js'
+
 
 type PartialResult = {
 	bestMatchLength: number,
@@ -26,15 +28,16 @@ function bestMatch(matches: RegExpMatchArray | null) {
 	return undefined
 }
 
-function search<ElementType>(searchArray: readonly ElementType[], searchFunction: (elementType: ElementType) => { comparison: PartialResult | undefined, element: ElementType }) {
+function search<ElementType>(searchArray: readonly ElementType[], searchFunction: (elementType: ElementType) => { comparison: PartialResult | undefined, entry: ElementType }) {
 	const results = searchArray.map((x) => searchFunction(x))
-	const undefinedRemoved = results.filter((searchResult): searchResult is { comparison: PartialResult, element: ElementType } => searchResult.comparison !== undefined)
-	return undefinedRemoved.sort((a, b) => (a.comparison.bestMatchLength - b.comparison.bestMatchLength) || (a.comparison.locationOfBestMatch - b.comparison.locationOfBestMatch)).map((x) => x.element)
+	const undefinedRemoved = results.filter((searchResult): searchResult is { comparison: PartialResult, entry: ElementType } => searchResult.comparison !== undefined)
+	return undefinedRemoved.sort((a, b) => (a.comparison.bestMatchLength - b.comparison.bestMatchLength) || (a.comparison.locationOfBestMatch - b.comparison.locationOfBestMatch)).map((x) => x.entry)
 }
 
 const convertAddressInfoToAddressBookEntry = (info: AddressInfo) => ({
 	...info,
-	type: 'addressInfo' as const
+	type: 'addressInfo' as const,
+	entrySource: 'DarkFloristMetadata' as const,
 })
 
 const convertTokenDefinitionToAddressBookEntry = ([address, def]: [string, TokenDefinition]) => ({
@@ -42,6 +45,7 @@ const convertTokenDefinitionToAddressBookEntry = ([address, def]: [string, Token
 	...def,
 	logoUri: def.logoUri ? `${ getFullLogoUri(def.logoUri) }` : undefined,
 	type: 'ERC20' as const,
+	entrySource: 'DarkFloristMetadata' as const,
 })
 
 const convertErc721DefinitionToAddressBookEntry = ([address, def]: [string, NftDefinition]) => ({
@@ -49,6 +53,7 @@ const convertErc721DefinitionToAddressBookEntry = ([address, def]: [string, NftD
 	...def,
 	logoUri: def.logoUri ? `${ getFullLogoUri(def.logoUri) }` : undefined,
 	type: 'ERC721' as const,
+	entrySource: 'DarkFloristMetadata' as const,
 })
 
 const convertContractDefinitionToAddressBookEntry = ([address, def]: [string, ContractDefinition]) => ({
@@ -56,62 +61,75 @@ const convertContractDefinitionToAddressBookEntry = ([address, def]: [string, Co
 	...def,
 	logoUri: def.logoUri ? `${ getFullLogoUri(def.logoUri) }` : undefined,
 	type: 'contract' as const,
+	entrySource: 'DarkFloristMetadata' as const,
 })
 
-function filterAddressBookDataByCategoryAndSearchString(addressBookCategory: AddressBookCategory, searchString: string | undefined, userAddressBook: UserAddressBook): AddressBookEntries {
+async function filterAddressBookDataByCategoryAndSearchString(addressBookCategory: AddressBookCategory, searchString: string | undefined, userAddressBook: UserAddressBook): Promise<AddressBookEntries> {
 	const trimmedSearch = searchString !== undefined && searchString.trim().length > 0 ? searchString.trim().toLowerCase() : undefined
 	const searchPattern = trimmedSearch ? new RegExp(`(?=(${ trimmedSearch.split('').join('.*?') }))`) : undefined
 	const searchingDisabled = trimmedSearch === undefined || searchPattern === undefined
+	const userEntries = await getUserAddressBookEntries()
 	switch(addressBookCategory) {
 		case 'My Contacts': {
-			if (searchingDisabled) return userAddressBook.contacts
-			const searchFunction = (element: ContactEntry) => ({
-				comparison: fuzzyCompare(searchPattern, trimmedSearch, element.name.toLowerCase(), addressString(element.address)),
-				element,
+			const entries = userEntries.filter((entry): entry is ContactEntry => entry.type === 'contact').concat(userAddressBook.contacts)
+			if (searchingDisabled) return entries
+			const searchFunction = (entry: ContactEntry) => ({
+				comparison: fuzzyCompare(searchPattern, trimmedSearch, entry.name.toLowerCase(), addressString(entry.address)),
+				entry,
 			})
-			return search(userAddressBook.contacts, searchFunction)
+			return search(entries, searchFunction)
 		}
 		case 'My Active Addresses': {
-			if (searchingDisabled) return userAddressBook.addressInfos.map(convertAddressInfoToAddressBookEntry)
-			const searchFunction = (element: AddressInfo) => ({
-				comparison: fuzzyCompare(searchPattern, trimmedSearch, element.name.toLowerCase(), addressString(element.address)),
-				element,
+			const entries = userEntries.filter((entry): entry is AddressInfoEntry => entry.type === 'addressInfo').concat(userAddressBook.addressInfos.map(convertAddressInfoToAddressBookEntry))
+			if (searchingDisabled) return entries
+			const searchFunction = (entry: AddressInfoEntry) => ({
+				comparison: fuzzyCompare(searchPattern, trimmedSearch, entry.name.toLowerCase(), addressString(entry.address)),
+				entry,
 			})
-			return search(userAddressBook.addressInfos, searchFunction).map(convertAddressInfoToAddressBookEntry)
+			return search(entries, searchFunction)
 		}
 		case 'ERC1155 Tokens': {
-			return []
+			const entries = userEntries.filter((entry): entry is Erc1155Entry => entry.type === 'ERC1155')
+			if (searchingDisabled) return entries
+			const searchFunction = (entry: Erc1155Entry) => ({
+				comparison: fuzzyCompare(searchPattern, trimmedSearch, entry.name.toLowerCase(), addressString(entry.address)),
+				entry,
+			})
+			return search(entries, searchFunction)
 		}
 		case 'ERC20 Tokens': {
-			if (searchingDisabled) return Array.from(tokenMetadata).map(convertTokenDefinitionToAddressBookEntry)
-			const searchFunction = (element: [string, TokenDefinition]) => ({
-				comparison: fuzzyCompare(searchPattern, trimmedSearch, `${ element[1].symbol.toLowerCase()} ${ element[1].name.toLowerCase()}`, element[0]),
-				element,
+			const entries = userEntries.filter((entry): entry is Erc20TokenEntry => entry.type === 'ERC20').concat(Array.from(tokenMetadata).map(convertTokenDefinitionToAddressBookEntry))
+			if (searchingDisabled) return entries
+			const searchFunction = (entry: Erc20TokenEntry) => ({
+				comparison: fuzzyCompare(searchPattern, trimmedSearch, `${ entry.symbol.toLowerCase()} ${ entry.name.toLowerCase()}`, addressString(entry.address)),
+				entry,
 			})
-			return search(Array.from(tokenMetadata), searchFunction).map(convertTokenDefinitionToAddressBookEntry)
+			return search(entries, searchFunction)
 		}
 		case 'Non Fungible Tokens': {
-			if (searchingDisabled) return Array.from(nftMetadata).map(convertErc721DefinitionToAddressBookEntry)
-			const searchFunction = (element: [string, NftDefinition]) => ({
-				comparison: fuzzyCompare(searchPattern, trimmedSearch, `${ element[1].symbol.toLowerCase()} ${ element[1].name.toLowerCase()}`, element[0]),
-				element,
+			const entries = userEntries.filter((entry): entry is Erc721Entry => entry.type === 'ERC721').concat(Array.from(nftMetadata).map(convertErc721DefinitionToAddressBookEntry))
+			if (searchingDisabled) return entries
+			const searchFunction = (entry: Erc721Entry) => ({
+				comparison: fuzzyCompare(searchPattern, trimmedSearch, `${ entry.symbol.toLowerCase()} ${ entry.name.toLowerCase()}`, addressString(entry.address)),
+				entry,
 			})
-			return search(Array.from(nftMetadata), searchFunction).map(convertErc721DefinitionToAddressBookEntry)
+			return search(entries, searchFunction)
 		}
 		case 'Other Contracts': {
-			if (searchingDisabled) return Array.from(contractMetadata).map(convertContractDefinitionToAddressBookEntry)
-			const searchFunction = (element: [string, ContractDefinition]) => ({
-				comparison: fuzzyCompare(searchPattern, trimmedSearch, `${ 'protocol' in element[1] && element[1].protocol !== undefined ? element[1].protocol.toLowerCase() : ''} ${ element[1].name.toLowerCase() }`, element[0]),
-				element,
+			const entries = userEntries.filter((entry): entry is ContractEntry => entry.type === 'contract').concat(Array.from(contractMetadata).map(convertContractDefinitionToAddressBookEntry))
+			if (searchingDisabled) return entries
+			const searchFunction = (entry: ContractEntry) => ({
+				comparison: fuzzyCompare(searchPattern, trimmedSearch, `${ 'protocol' in entry && entry.protocol !== undefined ? entry.protocol.toLowerCase() : ''} ${ entry.name.toLowerCase() }`, addressString(entry.address)),
+				entry,
 			})
-			return search(Array.from(contractMetadata), searchFunction).map(convertContractDefinitionToAddressBookEntry)
+			return search(entries, searchFunction)
 		}
 		default: assertNever(addressBookCategory)
 	}
 }
 
-export function getMetadataForAddressBookData(filter: GetAddressBookDataFilter, userAddressBook: UserAddressBook) {
-	const filtered = filterAddressBookDataByCategoryAndSearchString(filter.filter, filter.searchString, userAddressBook)
+export async function getMetadataForAddressBookData(filter: GetAddressBookDataFilter, userAddressBook: UserAddressBook) {
+	const filtered = await filterAddressBookDataByCategoryAndSearchString(filter.filter, filter.searchString, userAddressBook)
 	return {
 		entries: filtered.slice(filter.startIndex, filter.maxIndex),
 		maxDataLength: filtered.length,

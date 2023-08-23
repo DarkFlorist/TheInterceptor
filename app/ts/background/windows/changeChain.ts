@@ -2,7 +2,7 @@ import { PopupOrTab, addWindowTabListener, browserTabsQueryById, closePopupOrTab
 import { METAMASK_ERROR_USER_REJECTED_REQUEST } from '../../utils/constants.js'
 import { Future } from '../../utils/future.js'
 import { ChainChangeConfirmation, SignerChainChangeConfirmation } from '../../utils/interceptor-messages.js'
-import { Website, WebsiteTabConnections } from '../../utils/user-interface-types.js'
+import { WebsiteTabConnections } from '../../utils/user-interface-types.js'
 import { changeActiveRpc } from '../background.js'
 import { getHtmlFile, sendPopupMessageToOpenWindows } from '../backgroundUtils.js'
 import { getChainChangeConfirmationPromise, getRpcNetworkForChain, setChainChangeConfirmationPromise } from '../storageVariables.js'
@@ -11,6 +11,7 @@ import { InterceptedRequest, UniqueRequestIdentifier, doesUniqueRequestIdentifie
 import { replyToInterceptedRequest } from '../messageSending.js'
 import { SwitchEthereumChainParams } from '../../utils/JsonRpc-types.js'
 import { Simulator } from '../../simulation/simulator.js'
+import { Website } from '../../utils/websiteAccessTypes.js'
 
 let pendForUserReply: Future<ChainChangeConfirmation> | undefined = undefined
 let pendForSignerReply: Future<SignerChainChangeConfirmation> | undefined = undefined

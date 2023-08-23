@@ -1,8 +1,8 @@
 import { useState, useEffect } from 'preact/hooks'
 import { ActiveAddress, BigAddress, WebsiteOriginText } from '../subcomponents/address.js'
 import { AddNewAddress } from './AddNewAddress.js'
-import { AddressInfoEntry, AddressBookEntry, RenameAddressCallBack, Website, InCompleteAddressBookEntry } from '../../utils/user-interface-types.js'
-import { ExternalPopupMessage, PendingAccessRequest, PendingAccessRequestArray } from '../../utils/interceptor-messages.js'
+import { RenameAddressCallBack, InCompleteAddressBookEntry, PendingAccessRequestArray, PendingAccessRequest } from '../../utils/user-interface-types.js'
+import { ExternalPopupMessage } from '../../utils/interceptor-messages.js'
 import { sendPopupMessageToBackgroundPage } from '../../background/backgroundUtils.js'
 import Hint from '../subcomponents/Hint.js'
 import { convertNumberToCharacterRepresentationIfSmallEnough, tryFocusingTabOrWindow } from '../ui-utils.js'
@@ -10,6 +10,8 @@ import { ChangeActiveAddress } from './ChangeActiveAddress.js'
 import { DinoSays, DinoSaysNotification } from '../subcomponents/DinoSays.js'
 import { getPrettySignerName } from '../subcomponents/signers.js'
 import { checksummedAddress } from '../../utils/bigint.js'
+import { AddressInfoEntry, AddressBookEntry } from '../../utils/addressBookTypes.js'
+import { Website } from '../../utils/websiteAccessTypes.js'
 
 const HALF_HEADER_HEIGHT = 48 / 2
 

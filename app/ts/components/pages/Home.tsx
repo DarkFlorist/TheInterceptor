@@ -1,4 +1,4 @@
-import { HomeParams, AddressInfo, FirstCardParams, SimulationStateParam, SignerName } from '../../utils/user-interface-types.js'
+import { HomeParams, FirstCardParams, SimulationStateParam, RpcConnectionStatus, TabIconDetails, TabIcon } from '../../utils/user-interface-types.js'
 import { useEffect, useState } from 'preact/hooks'
 import { SimulatedAndVisualizedTransaction, SimulationAndVisualisationResults, RpcEntry, RpcNetwork, RpcEntries, SimulationUpdatingState, SimulationResultState } from '../../utils/visualizer-types.js'
 import { ActiveAddress, findAddressInfo } from '../subcomponents/address.js'
@@ -6,7 +6,6 @@ import { SimulationSummary } from '../simulationExplaining/SimulationSummary.js'
 import { ChainSelector } from '../subcomponents/ChainSelector.js'
 import { Spinner } from '../subcomponents/Spinner.js'
 import { DEFAULT_TAB_CONNECTION, ICON_NOT_ACTIVE, ICON_SIGNING, ICON_SIGNING_NOT_SUPPORTED, TIME_BETWEEN_BLOCKS } from '../../utils/constants.js'
-import { RpcConnectionStatus, TabIcon, TabIconDetails } from '../../utils/interceptor-messages.js'
 import { getPrettySignerName, SignerLogoText, SignersLogoName } from '../subcomponents/signers.js'
 import { Error } from '../subcomponents/Error.js'
 import { ToolTip } from '../subcomponents/CopyToClipboard.js'
@@ -17,6 +16,8 @@ import { identifyTransaction } from '../simulationExplaining/identifyTransaction
 import { SomeTimeAgo } from '../subcomponents/SomeTimeAgo.js'
 import { humanReadableDate } from '../ui-utils.js'
 import { noNewBlockForOverTwoMins } from '../../background/iconHandler.js'
+import { AddressInfo } from '../../utils/addressBookTypes.js'
+import { SignerName } from '../../utils/signerTypes.js'
 
 async function enableMakeMeRich(enabled: boolean) {
 	sendPopupMessageToBackgroundPage( { method: 'popup_changeMakeMeRich', data: enabled } )
@@ -118,7 +119,7 @@ function FirstCard(param: FirstCardParams) {
 				}
 
 				<ActiveAddress
-					activeAddress = { param.activeAddress !== undefined ? { type: 'addressInfo', ...param.activeAddress } : undefined }
+					activeAddress = { param.activeAddress !== undefined ? { type: 'addressInfo', ...param.activeAddress, entrySource: 'User' } : undefined }
 					buttonText = { 'Change' }
 					disableButton = { !param.simulationMode }
 					changeActiveAddress = { param.changeActiveAddress }

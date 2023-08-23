@@ -1,5 +1,5 @@
 import { BRAVE_LOGO, COINBASEWALLET_LOGO, METAMASK_LOGO } from '../../utils/constants.js'
-import { SignerName } from '../../utils/user-interface-types.js'
+import { SignerName } from '../../utils/signerTypes.js'
 
 const signerLogos = {
 	'MetaMask': METAMASK_LOGO,

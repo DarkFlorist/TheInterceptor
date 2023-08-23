@@ -2,10 +2,10 @@ import { getEthDonator } from '../../background/storageVariables.js'
 import { get4Byte } from '../../utils/calldata.js'
 import { FourByteExplanations, MAKE_YOU_RICH_TRANSACTION } from '../../utils/constants.js'
 import { assertNever, createGuard } from '../../utils/typescript.js'
-import { AddressBookEntry } from '../../utils/user-interface-types.js'
 import { SimulatedAndVisualizedTransaction, SimulatedAndVisualizedTransactionBase, TokenVisualizerErc1155Event, TokenVisualizerErc20Event, TokenVisualizerErc721Event, TokenVisualizerResultWithMetadata, TransactionWithAddressBookEntries } from '../../utils/visualizer-types.js'
 import { getSwapName, identifySwap } from './SwapTransactions.js'
 import * as funtypes from 'funtypes'
+import { AddressBookEntry } from '../../utils/addressBookTypes.js'
 
 type IdentifiedTransactionBase = {
 	title: string
