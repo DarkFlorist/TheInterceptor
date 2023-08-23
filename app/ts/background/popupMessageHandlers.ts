@@ -390,7 +390,6 @@ export async function setNewRpcList(simulator: Simulator, request: SetRpcList, s
 }
 
 export async function popupIdentifyAddress(simulator: Simulator, parsedRequest: IdentifyAddress, settings: Settings) {
-	console.log('popupIdentifyAddress')
 	const addressBookEntry = await identifyAddress(simulator.ethereum, settings.userAddressBook, parsedRequest.data.address)
 	return await sendPopupMessageToOpenWindows({ method: 'popup_identifyAddressReply', data: { addressBookEntry } })
 }

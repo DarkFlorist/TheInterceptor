@@ -112,7 +112,7 @@ function RenderInCompleteAddressBookEntry({ inCompleteAddressBookEntry, setName,
 					<CellElement element = { <AddressInput disabled = { inCompleteAddressBookEntry.addingAddress === false || disableDueToSource } addressInput = { inCompleteAddressBookEntry.address } setAddress = { setAddress } /> } />
 					{ inCompleteAddressBookEntry.type === 'ERC20' || inCompleteAddressBookEntry.type === 'ERC1155' ? <>
 						<CellElement element = { <Text text = { 'Symbol: ' }/> }/>
-						<CellElement element = { <input disabled = { true } className = 'input subtitle is-7 is-spaced' style = 'width: 100%' type = 'text' value = { inCompleteAddressBookEntry.symbol } placeholder = { '...' } /> } />
+						<CellElement element = { <input disabled = { false } className = 'input subtitle is-7 is-spaced' style = 'width: 100%' type = 'text' value = { inCompleteAddressBookEntry.symbol } placeholder = { '...' } /> } />
 					</> : <></> }
 					{ inCompleteAddressBookEntry.type === 'ERC20' ? <>
 						<CellElement element = { <Text text = { 'Decimals: ' }/> }/>
@@ -243,7 +243,6 @@ export function AddNewAddress(param: AddAddressParam) {
 	useEffect(() => {
 		setActiveAddress(param.activeAddress)
 		setInCompleteAddressBookEntry((_previous) => {
-			console.log(param.inCompleteAddressBookEntry)
 			if (param.inCompleteAddressBookEntry.entrySource === 'DarkFloristMetadata' || param.inCompleteAddressBookEntry.entrySource === 'Interceptor') {
 				setErrorString(`The address information for ${ param.inCompleteAddressBookEntry.name } originates from The Interceptor and cannot be modified.`)
 			} else {
