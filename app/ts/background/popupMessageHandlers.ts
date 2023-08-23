@@ -20,7 +20,6 @@ import { formSimulatedAndVisualizedTransaction } from '../components/formVisuali
 import { doesUniqueRequestIdentifiersMatch } from '../utils/requests.js'
 import { isJSON } from '../utils/JsonRpc-types.js'
 import { SimulationState } from '../utils/visualizer-types.js'
-import { isFailedToFetchError } from '../utils/errors.js'
 
 export async function confirmDialog(simulator: Simulator, ethereumClientService: EthereumClientService, websiteTabConnections: WebsiteTabConnections, confirmation: TransactionConfirmation) {
 	await resolvePendingTransaction(simulator, ethereumClientService, websiteTabConnections, confirmation)
@@ -298,8 +297,7 @@ export async function homeOpened(simulator: Simulator) {
 	try {
 		blockNumber = await simulator.ethereum.getBlockNumber()
 	} catch (error) {
-		if (!(error instanceof Error)) throw error
-		if (!isFailedToFetchError(error)) throw error
+		console.warn(error)
 		const rpcConnectionStatus = {
 			isConnected: false,
 			lastConnnectionAttempt: new Date(),
