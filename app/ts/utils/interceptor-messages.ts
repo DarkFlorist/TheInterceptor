@@ -591,6 +591,28 @@ export const SettingsUpdated = funtypes.ReadonlyObject({
 	data: Settings
 })
 
+export type FindAddressBookEntryWithSymbolOrName = funtypes.Static<typeof FindAddressBookEntryWithSymbolOrName>
+export const FindAddressBookEntryWithSymbolOrName = funtypes.ReadonlyObject({
+	method: funtypes.Literal('popup_findAddressBookEntryWithSymbolOrName'),
+	data: funtypes.ReadonlyObject({
+		symbol: funtypes.Union(funtypes.String, funtypes.Undefined),
+		name: funtypes.Union(funtypes.String, funtypes.Undefined),
+	})
+})
+
+export type FindAddressBookEntryWithSymbolOrNameReply = funtypes.Static<typeof FindAddressBookEntryWithSymbolOrNameReply>
+export const FindAddressBookEntryWithSymbolOrNameReply = funtypes.ReadonlyObject({
+	method: funtypes.Literal('popup_findAddressBookEntryWithSymbolOrNameReply'),
+	data: funtypes.ReadonlyObject({
+		query: funtypes.ReadonlyObject({ 
+			symbol: funtypes.Union(funtypes.String, funtypes.Undefined),
+			name: funtypes.Union(funtypes.String, funtypes.Undefined),
+		}),
+		addressBookEntryOrUndefined: funtypes.Union(funtypes.Undefined, AddressBookEntry),
+	})
+}).asReadonly()
+
+
 export type PopupMessage = funtypes.Static<typeof PopupMessage>
 export const PopupMessage = funtypes.Union(
 	ChangeMakeMeRich,
@@ -627,6 +649,7 @@ export const PopupMessage = funtypes.Union(
 	ChangeSettings,
 	SetRpcList,
 	IdentifyAddress,
+	FindAddressBookEntryWithSymbolOrName,
 )
 
 export type MessageToPopup = funtypes.Static<typeof MessageToPopup>
@@ -648,6 +671,7 @@ export const MessageToPopup = funtypes.Union(
 	UpdateRPCList,
 	SimulationUpdateStartedOrEnded,
 	IdentifyAddressReply,
+	FindAddressBookEntryWithSymbolOrNameReply,
 )
 
 export type ExternalPopupMessage = funtypes.Static<typeof MessageToPopup>

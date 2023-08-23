@@ -77,7 +77,8 @@ export function AddressInput({ disabled, addressInput, setAddress }: AddressInpu
 type RenderInCompleteAddressBookParams = {
 	inCompleteAddressBookEntry: InCompleteAddressBookEntry,
 	setName: (name: string) => void,
-	setAddress: (name: string) => void,
+	setAddress: (address: string) => void,
+	setSymbol: (symbol: string) => void
 	setAskForAddressAccess: (name: boolean) => void,
 }
 
@@ -89,7 +90,7 @@ export const CellElement = (param: { element: ComponentChildren }) => {
 
 <p class = 'paragraph' style = 'color: var(--subtitle-text-color); text-overflow: ellipsis; overflow: hidden; width:100%'></p>
 
-function RenderInCompleteAddressBookEntry({ inCompleteAddressBookEntry, setName, setAddress, setAskForAddressAccess }: RenderInCompleteAddressBookParams) {
+function RenderInCompleteAddressBookEntry({ inCompleteAddressBookEntry, setName, setAddress, setSymbol, setAskForAddressAccess }: RenderInCompleteAddressBookParams) {
 	const Text = (param: { text: ComponentChildren }) => {
 		return <p class = 'paragraph' style = 'color: var(--subtitle-text-color); text-overflow: ellipsis; overflow: hidden; width:100%'>
 			{ param.text }
@@ -112,7 +113,7 @@ function RenderInCompleteAddressBookEntry({ inCompleteAddressBookEntry, setName,
 					<CellElement element = { <AddressInput disabled = { inCompleteAddressBookEntry.addingAddress === false || disableDueToSource } addressInput = { inCompleteAddressBookEntry.address } setAddress = { setAddress } /> } />
 					{ inCompleteAddressBookEntry.type === 'ERC20' || inCompleteAddressBookEntry.type === 'ERC1155' ? <>
 						<CellElement element = { <Text text = { 'Symbol: ' }/> }/>
-						<CellElement element = { <input disabled = { false } className = 'input subtitle is-7 is-spaced' style = 'width: 100%' type = 'text' value = { inCompleteAddressBookEntry.symbol } placeholder = { '...' } /> } />
+						<CellElement element = { <input disabled = { false } className = 'input subtitle is-7 is-spaced' style = 'width: 100%' type = 'text' value = { inCompleteAddressBookEntry.symbol } placeholder = { '...' } onInput = { e => { if (e.target instanceof HTMLInputElement && e.target !== null) { setSymbol(e.target.value) } } } /> } />
 					</> : <></> }
 					{ inCompleteAddressBookEntry.type === 'ERC20' ? <>
 						<CellElement element = { <Text text = { 'Decimals: ' }/> }/>
@@ -130,23 +131,49 @@ function RenderInCompleteAddressBookEntry({ inCompleteAddressBookEntry, setName,
 	</div>
 }
 
+type DuplicateCheck = {
+	duplicateStatus: 'Pending'
+} | {
+	duplicateStatus: 'NoDuplicates'
+} | {
+	duplicateStatus: 'Duplicates'
+	duplicateEntry: AddressBookEntry
+}
+
 export function AddNewAddress(param: AddAddressParam) {
 	const [errorString, setErrorString] = useState<string | undefined>(undefined)
 	const [activeAddress, setActiveAddress] = useState<bigint | undefined>(undefined)
-	const [inCompleteAddressBookEntry, setInCompleteAddressBookEntry] = useState<InCompleteAddressBookEntry>({ addingAddress: false, type: 'addressInfo', address: undefined, askForAddressAccess: false, name: undefined, symbol: undefined, decimals: undefined, logoUri: undefined, entrySource: 'FilledIn' })
+	const [inCompleteAddressBookEntry, setInCompleteAddressBookEntry] = useState<InCompleteAddressBookEntry & DuplicateCheck>({ addingAddress: false, type: 'addressInfo', address: undefined, askForAddressAccess: false, name: undefined, symbol: undefined, decimals: undefined, logoUri: undefined, entrySource: 'FilledIn', duplicateStatus: 'NoDuplicates' })
 
 	useEffect(() => {
 		const popupMessageListener = async (msg: unknown) => {
 			const parsed = ExternalPopupMessage.parse(msg)
+			if (parsed.method === 'popup_findAddressBookEntryWithSymbolOrNameReply') {
+				setInCompleteAddressBookEntry((previous) => {
+					console.log('popup_findAddressBookEntryWithSymbolOrNameReply')
+					console.log(parsed)
+					console.log(previous)
+					if (parsed.data.query.name === previous.name && parsed.data.query.symbol === previous.symbol) { 
+						if (parsed.data.addressBookEntryOrUndefined === undefined) {
+							console.log('no duplicates!')
+							return { ...previous, duplicateStatus: 'NoDuplicates' }
+						}
+						console.log('dulpicates!')
+						return { ...previous, duplicateStatus: 'Duplicates', duplicateEntry: parsed.data.addressBookEntryOrUndefined }
+					}
+					console.log('no change!')
+					return previous
+				})
+			}
 			if (parsed.method !== 'popup_identifyAddressReply') return
 			return setInCompleteAddressBookEntry((prevEntry) => {	
 				if (parsed.data.addressBookEntry.address !== stringToAddress(prevEntry.address)) return prevEntry
-				if (parsed.data.addressBookEntry.type !== prevEntry.type) {
-					setErrorString(`The address ${ checksummedAddress(parsed.data.addressBookEntry.address) } is a ${ parsed.data.addressBookEntry.type } while you are trying to add ${ prevEntry.type }.`)
-					return prevEntry
-				}
 				if (parsed.data.addressBookEntry.entrySource !== 'OnChain' && parsed.data.addressBookEntry.entrySource !== 'FilledIn') {
 					setErrorString(`The address ${ checksummedAddress(parsed.data.addressBookEntry.address) } you are trying to add already exists. Edit the existing record instead trying to add it again.`)
+					return prevEntry
+				}
+				if (parsed.data.addressBookEntry.type !== prevEntry.type && !(prevEntry.type === 'addressInfo' && parsed.data.addressBookEntry.type === 'contact') ) {
+					setErrorString(`The address ${ checksummedAddress(parsed.data.addressBookEntry.address) } is a ${ parsed.data.addressBookEntry.type } while you are trying to add ${ prevEntry.type }.`)
 					return prevEntry
 				}
 				return {
@@ -230,7 +257,6 @@ export function AddNewAddress(param: AddAddressParam) {
 		const entryToAdd = getCompleteAddressBookEntry()
 		if (entryToAdd === undefined) return
 		await sendPopupMessageToBackgroundPage({ method: 'popup_addOrModifyAddressBookEntry', data: entryToAdd } )
-		setInCompleteAddressBookEntry({ addingAddress: false, type: 'addressInfo', address: undefined, askForAddressAccess: false, name: undefined, symbol: undefined, decimals: undefined, logoUri: undefined, entrySource: 'FilledIn' })
 	}
 
 	async function createAndSwitch() {
@@ -242,13 +268,13 @@ export function AddNewAddress(param: AddAddressParam) {
 
 	useEffect(() => {
 		setActiveAddress(param.activeAddress)
-		setInCompleteAddressBookEntry((_previous) => {
+		setInCompleteAddressBookEntry((previous) => {
 			if (param.inCompleteAddressBookEntry.entrySource === 'DarkFloristMetadata' || param.inCompleteAddressBookEntry.entrySource === 'Interceptor') {
 				setErrorString(`The address information for ${ param.inCompleteAddressBookEntry.name } originates from The Interceptor and cannot be modified.`)
 			} else {
 				setErrorString(undefined)
 			}
-			return param.inCompleteAddressBookEntry
+			return { ...previous, ...param.inCompleteAddressBookEntry }
 		})
 	}, [param.inCompleteAddressBookEntry, param.activeAddress])
 
@@ -259,6 +285,13 @@ export function AddNewAddress(param: AddAddressParam) {
 	async function queryAddressInformation(address: bigint | undefined) {
 		if (address === undefined) return
 		await sendPopupMessageToBackgroundPage({ method: 'popup_identifyAddress', data: { address } })
+	}
+	async function checkForDuplicatedNameOrSymbol(name: string | undefined, symbol: string | undefined) {
+		console.log('checkForDuplicatedNameOrSymbol')
+		console.log(name)
+		console.log(symbol)
+		if (name === undefined && symbol === undefined) return
+		await sendPopupMessageToBackgroundPage({ method: 'popup_findAddressBookEntryWithSymbolOrName', data: { name, symbol } })
 	}
 
 	function setAddress(input: string) {
@@ -287,10 +320,18 @@ export function AddNewAddress(param: AddAddressParam) {
 
 	function setName(name: string) {
 		setInCompleteAddressBookEntry((entry) => {
-			if (entry === undefined) return entry
-			return { ...entry, name }
+			checkForDuplicatedNameOrSymbol(name, entry.symbol)
+			return { ...entry, name, duplicateStatus: 'Pending' }
 		})
 	}
+
+	function setSymbol(symbol: string) {
+		setInCompleteAddressBookEntry((entry) => {
+			checkForDuplicatedNameOrSymbol(entry.name, symbol)
+			return { ...entry, symbol, duplicateStatus: 'Pending'  }
+		})
+	}
+
 	function setAskForAddressAccess(askForAddressAccess: boolean) {
 		setInCompleteAddressBookEntry((entry) => {
 			if (entry === undefined) return entry
@@ -321,17 +362,21 @@ export function AddNewAddress(param: AddAddressParam) {
 							inCompleteAddressBookEntry = { inCompleteAddressBookEntry }
 							setAddress = { setAddress }
 							setName = { setName }
+							setSymbol = { setSymbol }
 							setAskForAddressAccess = { setAskForAddressAccess }
 						/>
 					</div>
 				</div>
 				<div style = 'padding-left: 10px; padding-right: 10px; margin-bottom: 10px; height: 50px'>
 					{ errorString === undefined ? <></> : <Notice text = { errorString } /> }
+					{ errorString === undefined && inCompleteAddressBookEntry.duplicateStatus === 'Duplicates' ? <Notice text = { 
+						`There already exists ${ inCompleteAddressBookEntry.duplicateEntry.type === 'addressInfo' ? 'an address' : inCompleteAddressBookEntry.duplicateEntry.type} with ${ 'symbol' in inCompleteAddressBookEntry.duplicateEntry ? `symbol "${ inCompleteAddressBookEntry.duplicateEntry.symbol }" and` : '' } name "${ inCompleteAddressBookEntry.duplicateEntry.name }".`
+					 } /> : <></> }
 				</div>
 			</section>
 			<footer class = 'modal-card-foot window-footer' style = 'border-bottom-left-radius: unset; border-bottom-right-radius: unset; border-top: unset; padding: 10px;'>
 				{ param.setActiveAddressAndInformAboutIt === undefined || inCompleteAddressBookEntry === undefined || activeAddress === stringToAddress(inCompleteAddressBookEntry.address) ? <></> : <button class = 'button is-success is-primary' onClick = { createAndSwitch } disabled = { ! (areInputValid()) }> { param.inCompleteAddressBookEntry.addingAddress ? 'Create and switch' : 'Modify and switch' } </button> }
-				<button class = 'button is-success is-primary' onClick = { add } disabled = { !areInputValid() || param.inCompleteAddressBookEntry.entrySource === 'DarkFloristMetadata' || param.inCompleteAddressBookEntry.entrySource === 'Interceptor' || errorString !== undefined }> { param.inCompleteAddressBookEntry.addingAddress ? 'Create' : 'Modify' } </button>
+				<button class = 'button is-success is-primary' onClick = { inCompleteAddressBookEntry.duplicateStatus === 'Pending' ? () => {} : add } disabled = { !areInputValid() || param.inCompleteAddressBookEntry.entrySource === 'DarkFloristMetadata' || param.inCompleteAddressBookEntry.entrySource === 'Interceptor' || errorString !== undefined || inCompleteAddressBookEntry.duplicateStatus === 'Duplicates' }> { param.inCompleteAddressBookEntry.addingAddress ? 'Create' : 'Modify' } </button>
 				<button class = 'button is-primary' style = 'background-color: var(--negative-color)' onClick = { param.close }>Cancel</button>
 			</footer>
 		</div>

@@ -1,5 +1,5 @@
 import { addressString } from '../utils/bigint.js'
-import { AddressBookEntries, AddressInfo, AddressInfoEntry, ContactEntry, ContractEntry, Erc1155Entry, Erc20TokenEntry, Erc721Entry } from '../utils/addressBookTypes.js'
+import { AddressBookEntries, AddressBookEntry, AddressInfo, AddressInfoEntry, ContactEntry, ContractEntry, Erc1155Entry, Erc20TokenEntry, Erc721Entry } from '../utils/addressBookTypes.js'
 import { nftMetadata, tokenMetadata, contractMetadata, NftDefinition, ContractDefinition, TokenDefinition } from '@darkflorist/address-metadata'
 import { AddressBookCategory, GetAddressBookDataFilter, UserAddressBook } from '../utils/interceptor-messages.js'
 import { getFullLogoUri } from './metadataUtils.js'
@@ -134,4 +134,30 @@ export async function getMetadataForAddressBookData(filter: GetAddressBookDataFi
 		entries: filtered.slice(filter.startIndex, filter.maxIndex),
 		maxDataLength: filtered.length,
 	}
+}
+
+export async function findEntryWithSymbolOrName(symbol: string | undefined, name: string | undefined, userAddressBook: UserAddressBook): Promise<AddressBookEntry | undefined> {
+	const lowerCasedName = name?.toLowerCase()
+	const lowerCasedSymbol = symbol?.toLowerCase()
+
+	const tokenMetadataEntry = Array.from(tokenMetadata).find((entry) => entry[1].symbol.toLowerCase() === lowerCasedSymbol || entry[1].name.toLowerCase() === lowerCasedName)
+	if (tokenMetadataEntry !== undefined) return convertTokenDefinitionToAddressBookEntry(tokenMetadataEntry)
+
+	const nftMetadataEntry = Array.from(nftMetadata).find((entry) => entry[1].symbol.toLowerCase() === lowerCasedSymbol || entry[1].name.toLowerCase() === lowerCasedName)
+	if (nftMetadataEntry !== undefined) return convertErc721DefinitionToAddressBookEntry(nftMetadataEntry)
+
+	const contractMetadataEntry = Array.from(contractMetadata).find((entry) => entry[1].name.toLowerCase() === lowerCasedName)
+	if (contractMetadataEntry !== undefined) return convertContractDefinitionToAddressBookEntry(contractMetadataEntry)
+
+	const addressInfo = userAddressBook.addressInfos.find((entry) => entry.name.toLowerCase() === lowerCasedName)
+	if (addressInfo !== undefined) return convertAddressInfoToAddressBookEntry(addressInfo)
+
+	const contact = userAddressBook.contacts.find((entry) =>  entry.name.toLowerCase() === lowerCasedName)
+	if (contact !== undefined) return contact
+
+	const userEntries = await getUserAddressBookEntries()
+	const userEntry = userEntries.find((entry) => ('symbol' in entry && entry.symbol.toLowerCase() === lowerCasedSymbol) || entry.name.toLowerCase() === lowerCasedName)
+	if (userEntry !== undefined) return userEntry
+	
+	return undefined
 }
