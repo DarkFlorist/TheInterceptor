@@ -320,7 +320,7 @@ export function AddressBook() {
 	}
 
 	function getNoResultsError() {
-		if ( searchString && searchString.trim().length > 0 ) return `No entries found for "${ searchString }" in ${ activeFilter }`
+		if (searchString && searchString.trim().length > 0 ) return `No entries found for "${ searchString }" in ${ activeFilter }`
 		return `No cute dinosaurs in ${ activeFilter }`
 	}
 
@@ -436,7 +436,6 @@ export function AddressBook() {
 									<button
 										class = 'button is-primary'
 										onClick = { () => openNewAddress(addressBookState.activeFilter) }
-										disabled = { addressBookState.activeFilter !== 'My Active Addresses' && addressBookState.activeFilter !== 'My Contacts'  && addressBookState.activeFilter !== 'ERC20 Tokens' }
 									>
 									{ `Add New ${ ActiveFilterSingle[addressBookState.activeFilter] }` }
 								</button> : <></> }

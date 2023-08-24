@@ -2,7 +2,7 @@ import { changeActiveAddressAndChainAndResetSimulation, changeActiveRpc, getPrep
 import { getSettings, setUseTabsInsteadOfPopup, setMakeMeRich, setPage, setUseSignersAddressAsActiveAddress, updateAddressInfos, updateContacts, updateWebsiteAccess, exportSettingsAndAddressBook, importSettingsAndAddressBook, getMakeMeRich, getUseTabsInsteadOfPopup, getMetamaskCompatibilityMode, setMetamaskCompatibilityMode } from './settings.js'
 import { getPendingTransactions, getCurrentTabId, getOpenedAddressBookTabId, getSimulationResults, getTabState, saveCurrentTabId, setOpenedAddressBookTabId, setRpcList, getRpcList, getPrimaryRpcForChain, setRpcConnectionStatus, getSignerName, getRpcConnectionStatus, updateUserAddressBookEntries } from './storageVariables.js'
 import { Simulator } from '../simulation/simulator.js'
-import { ChangeActiveAddress, ChangeMakeMeRich, ChangePage, PersonalSign, RemoveTransaction, RequestAccountsFromSigner, TransactionConfirmation, InterceptorAccess, ChangeInterceptorAccess, ChainChangeConfirmation, EnableSimulationMode, ChangeActiveChain, AddOrEditAddressBookEntry, GetAddressBookData, RemoveAddressBookEntry, RefreshConfirmTransactionDialogSimulation, UserAddressBook, InterceptorAccessRefresh, InterceptorAccessChangeAddress, Settings, RefreshConfirmTransactionMetadata, RefreshInterceptorAccessMetadata, ChangeSettings, ImportSettings, SetRpcList } from '../utils/interceptor-messages.js'
+import { ChangeActiveAddress, ChangeMakeMeRich, ChangePage, PersonalSign, RemoveTransaction, RequestAccountsFromSigner, TransactionConfirmation, InterceptorAccess, ChangeInterceptorAccess, ChainChangeConfirmation, EnableSimulationMode, ChangeActiveChain, AddOrEditAddressBookEntry, GetAddressBookData, RemoveAddressBookEntry, RefreshConfirmTransactionDialogSimulation, UserAddressBook, InterceptorAccessRefresh, InterceptorAccessChangeAddress, Settings, RefreshConfirmTransactionMetadata, RefreshInterceptorAccessMetadata, ChangeSettings, ImportSettings, SetRpcList, IdentifyAddress } from '../utils/interceptor-messages.js'
 import { formEthSendTransaction, formSendRawTransaction, resolvePendingTransaction } from './windows/confirmTransaction.js'
 import { resolvePersonalSign } from './windows/personalSign.js'
 import { getAddressMetadataForAccess, requestAddressChange, resolveInterceptorAccess } from './windows/interceptorAccess.js'
@@ -11,7 +11,7 @@ import { sendMessageToApprovedWebsitePorts, updateWebsiteApprovalAccesses } from
 import { getHtmlFile, sendPopupMessageToOpenWindows } from './backgroundUtils.js'
 import { CHROME_NO_TAB_WITH_ID_ERROR } from '../utils/constants.js'
 import { getMetadataForAddressBookData } from './medataSearch.js'
-import { getAddressBookEntriesForVisualiser } from './metadataUtils.js'
+import { getAddressBookEntriesForVisualiser, identifyAddress } from './metadataUtils.js'
 import { assertUnreachable } from '../utils/typescript.js'
 import { WebsiteTabConnections } from '../utils/user-interface-types.js'
 import { EthereumClientService } from '../simulation/services/EthereumClientService.js'
@@ -387,4 +387,9 @@ export async function setNewRpcList(simulator: Simulator, request: SetRpcList, s
 		// reset to primary on update
 		simulator?.reset(primary)
 	}
+}
+
+export async function popupIdentifyAddress(simulator: Simulator, parsedRequest: IdentifyAddress, settings: Settings) {
+	const addressBookEntry = await identifyAddress(simulator.ethereum, settings.userAddressBook, parsedRequest.data.address)
+	return await sendPopupMessageToOpenWindows({ method: 'popup_identifyAddressReply', data: { addressBookEntry } })
 }

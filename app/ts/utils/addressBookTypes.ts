@@ -71,7 +71,7 @@ export const ContactEntry = funtypes.ReadonlyObject({
 	type: funtypes.Literal('contact'),
 	name: funtypes.String,
 	address: EthereumAddress,
-	entrySource: EntrySource,
+	entrySource: funtypes.Union(EntrySource, funtypes.Literal(undefined).withParser(LiteralConverterParserFactory(undefined, 'User' as const))),
 }).And(funtypes.Partial({
 	logoUri: funtypes.String,
 }))
