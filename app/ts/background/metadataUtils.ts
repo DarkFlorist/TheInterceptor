@@ -88,9 +88,9 @@ export async function identifyAddress(ethereumClientService: EthereumClientServi
 
 	switch(tokenIdentification.type) {
 		case 'ERC20': return {
-			name: ethers.getAddress(addrString), // todo, we could add the name from contract here, but we should check that it doesn't exist with us already
+			name: tokenIdentification.name,
 			address: BigInt(addrString),
-			symbol: '???', // todo, we could add the name from contract here, but we should check that it doesn't exist with us already
+			symbol: tokenIdentification.symbol,
 			decimals: tokenIdentification.decimals,
 			type: 'ERC20',
 			entrySource: 'OnChain',
@@ -104,9 +104,9 @@ export async function identifyAddress(ethereumClientService: EthereumClientServi
 			entrySource: 'OnChain',
 		}
 		case 'ERC721': return {
-			name: ethers.getAddress(addrString),
+			name: tokenIdentification.name,
 			address: BigInt(addrString),
-			symbol: '???',
+			symbol: tokenIdentification.symbol,
 			type: 'ERC721',
 			entrySource: 'OnChain',
 		}

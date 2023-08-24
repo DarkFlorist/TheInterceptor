@@ -21,9 +21,10 @@ type identifiedErc721 = {
 	address: EthereumAddress
 	name: string
 	symbol: string
+	entrySource: 'OnChain'
 }
 
-type identifiedErc1155 = { type: 'ERC1155', address: EthereumAddress }
+type identifiedErc1155 = { type: 'ERC1155', address: EthereumAddress, entrySource: 'OnChain' }
 
 type IdentifiedAddress = (EOA | Erc20Definition | identifiedErc721 | identifiedErc1155 | UnknownContract)
 
@@ -61,10 +62,11 @@ export async function itentifyAddressViaOnChainInformation(ethereumClientService
 				address,
 				name: hasMetadata.success ? nftInterface.decodeFunctionResult('name', name.returnData)[0] : undefined,
 				symbol: hasMetadata.success ? nftInterface.decodeFunctionResult('symbol', symbol.returnData)[0] : undefined,
+				entrySource: 'OnChain'
 			}
 		}
 		if (isErc1155.success && nftInterface.decodeFunctionResult('supportsInterface', isErc1155.returnData)[0] === true) {
-			return { type: 'ERC1155', address }
+			return { type: 'ERC1155', address, entrySource: 'OnChain' }
 		}
 		if (name.success && decimals.success && symbol.success && totalSupply.success) {
 			return {
@@ -73,6 +75,7 @@ export async function itentifyAddressViaOnChainInformation(ethereumClientService
 				name: erc20Interface.decodeFunctionResult('name', name.returnData)[0],
 				symbol: erc20Interface.decodeFunctionResult('name', symbol.returnData)[0],
 				decimals: BigInt(erc20Interface.decodeFunctionResult('decimals', decimals.returnData)[0]),
+				entrySource: 'OnChain'
 			}
 		}
 	} catch (error) {

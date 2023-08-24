@@ -6,6 +6,7 @@ import { CopyToClipboard } from './CopyToClipboard.js'
 import { Blockie } from './PreactBlocky.js'
 import { JSX } from 'preact/jsx-runtime'
 import { useEffect } from 'preact/hooks'
+import { EntrySource } from '../../utils/addressBookTypes.js'
 
 type EtherParams = {
 	amount: bigint
@@ -102,6 +103,7 @@ export type TokenSymbolParams = {
 	name: string
 	address: bigint
 	symbol: string
+	entrySource: EntrySource,
 	logoUri?: string
 	tokenId?: bigint
 	useFullTokenName?: boolean
@@ -113,7 +115,7 @@ export function TokenSymbol(param: TokenSymbolParams) {
 	useEffect(() => { address.value = param.address }, [param.address])
 
 	const tokenString = checksummedAddress(param.address)
-
+	const unTrusted = param.entrySource === 'OnChain'
 	const style = {
 		color: param.textColor ? param.textColor : 'var(--text-color)',
 		display: 'inline-block',
@@ -121,6 +123,7 @@ export function TokenSymbol(param: TokenSymbolParams) {
 		'text-overflow': 'ellipsis',
 		'margin-left': '2px',
 		...(param.style === undefined ? {} : param.style),
+		...unTrusted ? { color: 'var(--warning-color)' } : {}
 	}
 	return <>
 		<CopyToClipboard content = { tokenString } copyMessage = 'Token address copied!' >
@@ -139,13 +142,14 @@ export function TokenSymbol(param: TokenSymbolParams) {
 						style = { { 'vertical-align': 'baseline', borderRadius: '50%' } }
 					/>
 				:
-					<img class = 'noselect nopointer vertical-center' style = 'max-height: 25px; max-width: 25px;' src = { param.logoUri }/>
+					<img class = 'noselect nopointer vertical-center' style = { { 'max-height': '25px', 'max-width': '25px' } } src = { param.logoUri }/>
 				}
 			</CopyToClipboard>
 		</div>
 		<CopyToClipboard content = { tokenString } copyMessage = 'Token address copied!' >
+			{ unTrusted ? <p class = 'noselect nopointer blink' style = { style } >⚠</p> : <></> }
 			{ param.useFullTokenName ?
-				<p class = 'noselect nopointer' style = { style }>
+				<p class = 'noselect nopointer' style = { style } >
 					{ `${ param.name === undefined ? tokenString : param.name }` }
 				</p>
 			:
