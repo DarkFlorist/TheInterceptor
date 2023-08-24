@@ -24,12 +24,12 @@ const ActiveFilterSingle = {
 
 const PAGE_SIZE = 20
 const ELEMENT_SIZE_PX = {
-	'My Active Addresses': 83,
-	'My Contacts': 83,
-	'ERC20 Tokens': 92,
-	'ERC1155 Tokens': 92,
-	'Non Fungible Tokens': 92,
-	'Other Contracts': 92,
+	'My Active Addresses': 105,
+	'My Contacts': 96,
+	'ERC20 Tokens': 105,
+	'ERC1155 Tokens': 105,
+	'Non Fungible Tokens': 105,
+	'Other Contracts': 107,
 }
 const ELEMENT_PADDING_PX = 10
 const UNLOAD_DISTANCE = 8
@@ -102,7 +102,7 @@ export function ListElement(entry: ListElementParam) {
 		<div class = 'card' style = { `height: ${ ELEMENT_SIZE_PX[entry.category] }px` }>
 			<div class = 'card-content' style = 'height: 100%; width: 500px;'>
 				<div class = 'media' style = 'height: 100%;'>
-					<div class = 'media-content' style = 'overflow-y: visible; overflow-x: unset; height: 100%;'>
+					<div class = 'media-content' style = 'overflow-y: visible; overflow-x: unset; height: 100%; display: flex; flex-direction: column; justify-content: space-between;'>
 						<div style = 'padding-bottom: 10px; height: 40px'>
 							{ entry.type === 'empty'
 								? <></>
@@ -137,6 +137,11 @@ export function ListElement(entry: ListElementParam) {
 							</label>
 							: <></>
 						}
+						<div>
+							<p class = 'paragraph' style = 'display: inline-block; font-size: 13px; color: var(--subtitle-text-color);'>
+								{ `Source: ${ 'entrySource' in entry ? `${ entry.entrySource }${ entry.entrySource === 'Interceptor' || entry.entrySource === 'DarkFloristMetadata' ? ' (editing is not allowed)' : '' }` : '...' } `}
+							</p>
+						</div>
 					</div>
 
 					<div class = 'content' style = 'color: var(--text-color); display: flex; height: 100%; flex-direction: column; justify-content: space-between;'>
@@ -148,7 +153,7 @@ export function ListElement(entry: ListElementParam) {
 								X
 							</span>
 						</button>
-						<button class = 'button is-primary is-small' disabled = { entry.type !== 'addressInfo' && entry.type !== 'empty' } onClick = { entry.type != 'empty' ? () => entry.renameAddressCallBack(entry) : () => {} }>Edit</button>
+						<button class = 'button is-primary is-small' disabled = { entry.type !== 'empty' && (entry.entrySource === 'DarkFloristMetadata' || entry.entrySource === 'Interceptor')  } onClick = { entry.type != 'empty' ? () => entry.renameAddressCallBack(entry) : () => {} }>Edit</button>
 					</div>
 				</div>
 			</div>
