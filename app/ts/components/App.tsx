@@ -3,7 +3,7 @@ import { defaultAddresses } from '../background/settings.js'
 import { SimulatedAndVisualizedTransaction, SimulationAndVisualisationResults, SimulationState, TokenPriceEstimate, RpcEntry, RpcNetwork, RpcEntries, SimulationUpdatingState, SimulationResultState } from '../utils/visualizer-types.js'
 import { ChangeActiveAddress } from './pages/ChangeActiveAddress.js'
 import { Home } from './pages/Home.js'
-import { AddressInfo, AddressInfoEntry, AddressBookEntry, AddingNewAddressType, SignerName, AddressBookEntries } from '../utils/user-interface-types.js'
+import { AddressInfo, AddressInfoEntry, AddressBookEntry, SignerName, AddressBookEntries, InCompleteAddressBookEntry } from '../utils/user-interface-types.js'
 import Hint from './subcomponents/Hint.js'
 import { AddNewAddress } from './pages/AddNewAddress.js'
 import { InterceptorAccessList } from './pages/InterceptorAccessList.js'
@@ -16,6 +16,7 @@ import { version, gitCommitSha } from '../version.js'
 import { sendPopupMessageToBackgroundPage } from '../background/backgroundUtils.js'
 import { EthereumAddress } from '../utils/wire-types.js'
 import { SettingsView } from './pages/SettingsView.js'
+import { checksummedAddress } from '../utils/bigint.js'
 
 export function App() {
 	const [appPage, setAppPage] = useState<Page>('Home')
@@ -34,7 +35,7 @@ export function App() {
 	const [isSettingsLoaded, setIsSettingsLoaded] = useState<boolean>(false)
 	const [currentBlockNumber, setCurrentBlockNumber] = useState<bigint | undefined>(undefined)
 	const [signerName, setSignerName] = useState<SignerName>('NoSignerDetected')
-	const [addingNewAddress, setAddingNewAddress] = useState<AddingNewAddressType> ({ addingAddress: true, type: 'addressInfo' })
+	const [addingNewAddress, setAddingNewAddress] = useState<InCompleteAddressBookEntry> ({ addingAddress: false, type: 'addressInfo', address: undefined, askForAddressAccess: false, name: undefined, symbol: undefined, decimals: undefined, logoUri: undefined })
 	const [rpcConnectionStatus, setRpcConnectionStatus] = useState<RpcConnectionStatus>(undefined)
 	const [useTabsInsteadOfPopup, setUseTabsInsteadOfPopup] = useState<boolean | undefined>(undefined)
 	const [metamaskCompatibilityMode, setMetamaskCompatibilityMode] = useState<boolean | undefined>(undefined)
@@ -184,17 +185,43 @@ export function App() {
 		// address not found, let's promt user to create it
 		const addressString = ethers.getAddress(trimmed)
 		setAndSaveAppPage('AddNewAddress')
-		setAddingNewAddress({ addingAddress: false, entry: {
+		setAddingNewAddress({
+			addingAddress: true,
+			symbol: undefined,
+			decimals: undefined,
+			logoUri: undefined,
 			type: 'addressInfo',
 			name: `Pasted ${ truncateAddr(addressString) }`,
-			address: bigIntReprentation,
+			address: checksummedAddress(bigIntReprentation),
 			askForAddressAccess: true,
-		} } )
+		} )
 	}
 
 	function renameAddressCallBack(entry: AddressBookEntry) {
 		setAndSaveAppPage('ModifyAddress')
-		setAddingNewAddress({ addingAddress: false, entry: entry })
+		setAddingNewAddress({
+			addingAddress: false,
+			askForAddressAccess: false,
+			symbol: undefined,
+			decimals: undefined,
+			logoUri: undefined,
+			...entry,
+			address: checksummedAddress(entry.address)
+		})
+	}
+
+	function addNewAddress() {
+		setAndSaveAppPage('AddNewAddress')
+		setAddingNewAddress({
+			addingAddress: true,
+			symbol: undefined,
+			decimals: undefined,
+			logoUri: undefined,
+			type: 'addressInfo',
+			name: undefined,
+			address: undefined,
+			askForAddressAccess: true,
+		} )
 	}
 
 	async function openAddressBook() {
@@ -270,12 +297,13 @@ export function App() {
 									addressInfos = { addressInfos }
 									signerName = { signerName }
 									renameAddressCallBack = { renameAddressCallBack }
+									addNewAddress = { addNewAddress }
 								/>
 							: <></> }
 							{ appPage === 'AddNewAddress' || appPage === 'ModifyAddress' ?
 								<AddNewAddress
 									setActiveAddressAndInformAboutIt = { setActiveAddressAndInformAboutIt }
-									addingNewAddress = { addingNewAddress }
+									inCompleteAddressBookEntry = { addingNewAddress }
 									close = { () => setAndSaveAppPage('Home') }
 									activeAddress = { simulationMode ? activeSimulationAddress : activeSigningAddress }
 								/>

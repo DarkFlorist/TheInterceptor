@@ -1,8 +1,8 @@
 import { changeActiveAddressAndChainAndResetSimulation, changeActiveRpc, getPrependTrasactions, refreshConfirmTransactionSimulation, updateSimulationState } from './background.js'
-import { getSettings, setUseTabsInsteadOfPopup, setMakeMeRich, setPage, setUseSignersAddressAsActiveAddress, updateAddressInfos, updateContacts, updateWebsiteAccess, exportSettingsAndAddressBook, ExportedSettings, importSettingsAndAddressBook, getMakeMeRich, getUseTabsInsteadOfPopup, getMetamaskCompatibilityMode, setMetamaskCompatibilityMode } from './settings.js'
-import { getPendingTransactions, getCurrentTabId, getOpenedAddressBookTabId, getSimulationResults, getTabState, saveCurrentTabId, setOpenedAddressBookTabId, setRpcList, getRpcList, getPrimaryRpcForChain, setRpcConnectionStatus, getSignerName, getRpcConnectionStatus } from './storageVariables.js'
+import { getSettings, setUseTabsInsteadOfPopup, setMakeMeRich, setPage, setUseSignersAddressAsActiveAddress, updateAddressInfos, updateContacts, updateWebsiteAccess, exportSettingsAndAddressBook, importSettingsAndAddressBook, getMakeMeRich, getUseTabsInsteadOfPopup, getMetamaskCompatibilityMode, setMetamaskCompatibilityMode } from './settings.js'
+import { getPendingTransactions, getCurrentTabId, getOpenedAddressBookTabId, getSimulationResults, getTabState, saveCurrentTabId, setOpenedAddressBookTabId, setRpcList, getRpcList, getPrimaryRpcForChain, setRpcConnectionStatus, getSignerName, getRpcConnectionStatus, updateUserAddressBookEntries } from './storageVariables.js'
 import { Simulator } from '../simulation/simulator.js'
-import { ChangeActiveAddress, ChangeMakeMeRich, ChangePage, PersonalSign, RemoveTransaction, RequestAccountsFromSigner, TransactionConfirmation, InterceptorAccess, ChangeInterceptorAccess, ChainChangeConfirmation, EnableSimulationMode, ChangeActiveChain, AddOrEditAddressBookEntry, GetAddressBookData, RemoveAddressBookEntry, RefreshConfirmTransactionDialogSimulation, UserAddressBook, InterceptorAccessRefresh, InterceptorAccessChangeAddress, Settings, RefreshConfirmTransactionMetadata, RefreshInterceptorAccessMetadata, ChangeSettings, ImportSettings, SetRpcList } from '../utils/interceptor-messages.js'
+import { ChangeActiveAddress, ChangeMakeMeRich, ChangePage, PersonalSign, RemoveTransaction, RequestAccountsFromSigner, TransactionConfirmation, InterceptorAccess, ChangeInterceptorAccess, ChainChangeConfirmation, EnableSimulationMode, ChangeActiveChain, AddOrEditAddressBookEntry, GetAddressBookData, RemoveAddressBookEntry, RefreshConfirmTransactionDialogSimulation, UserAddressBook, InterceptorAccessRefresh, InterceptorAccessChangeAddress, Settings, RefreshConfirmTransactionMetadata, RefreshInterceptorAccessMetadata, ChangeSettings, ImportSettings, SetRpcList, ExportedSettings } from '../utils/interceptor-messages.js'
 import { formEthSendTransaction, formSendRawTransaction, resolvePendingTransaction } from './windows/confirmTransaction.js'
 import { resolvePersonalSign } from './windows/personalSign.js'
 import { getAddressMetadataForAccess, requestAddressChange, resolveInterceptorAccess } from './windows/interceptorAccess.js'
@@ -20,7 +20,6 @@ import { formSimulatedAndVisualizedTransaction } from '../components/formVisuali
 import { doesUniqueRequestIdentifiersMatch } from '../utils/requests.js'
 import { isJSON } from '../utils/JsonRpc-types.js'
 import { SimulationState } from '../utils/visualizer-types.js'
-import { isFailedToFetchError } from '../utils/errors.js'
 
 export async function confirmDialog(simulator: Simulator, ethereumClientService: EthereumClientService, websiteTabConnections: WebsiteTabConnections, confirmation: TransactionConfirmation) {
 	await resolvePendingTransaction(simulator, ethereumClientService, websiteTabConnections, confirmation)
@@ -97,7 +96,8 @@ export async function removeAddressBookEntry(simulator: Simulator, websiteTabCon
 		}
 		case 'Non Fungible Tokens':
 		case 'Other Contracts':
-		case 'Erc20Tokens': throw new Error('Tried to remove addressbook category that is not supported yet!')
+		case 'ERC1155 Tokens':
+		case 'ERC20 Tokens': throw new Error('Tried to remove addressbook category that is not supported yet!')
 		default: assertUnreachable(removeAddressBookEntry.data.addressBookCategory)
 	}
 }
@@ -105,10 +105,6 @@ export async function removeAddressBookEntry(simulator: Simulator, websiteTabCon
 export async function addOrModifyAddressInfo(simulator: Simulator, websiteTabConnections: WebsiteTabConnections, entry: AddOrEditAddressBookEntry) {
 	const newEntry = entry.data
 	switch (newEntry.type) {
-		case 'ERC721':
-		case 'other contract':
-		case 'ERC1155':
-		case 'ERC20': throw new Error(`No support to modify this entry yet! ${ newEntry.type }`)
 		case 'addressInfo': {
 			await updateAddressInfos((previousAddressInfos) => {
 				if (previousAddressInfos.find((x) => x.address === entry.data.address) ) {
@@ -120,10 +116,23 @@ export async function addOrModifyAddressInfo(simulator: Simulator, websiteTabCon
 			updateWebsiteApprovalAccesses(simulator, websiteTabConnections, undefined, await getSettings())
 			return await sendPopupMessageToOpenWindows({ method: 'popup_addressBookEntriesChanged' })
 		}
+		case 'ERC721':
+		case 'ERC1155':
+		case 'ERC20':
+		case 'contract': {
+			await updateUserAddressBookEntries((previousContacts) => {
+				if (previousContacts.find((x) => x.address === entry.data.address) ) {
+					return previousContacts.map((x) => x.address === newEntry.address ? newEntry : x )
+				} else {
+					return previousContacts.concat([newEntry])
+				}
+			})
+			return await sendPopupMessageToOpenWindows({ method: 'popup_addressBookEntriesChanged' })
+		}
 		case 'contact': {
 			await updateContacts((previousContacts) => {
-				if (previousContacts.find( (x) => x.address === entry.data.address) ) {
-					return previousContacts.map( (x) => x.address === newEntry.address ? newEntry : x )
+				if (previousContacts.find((x) => x.address === entry.data.address) ) {
+					return previousContacts.map((x) => x.address === newEntry.address ? newEntry : x )
 				} else {
 					return previousContacts.concat([newEntry])
 				}
@@ -288,8 +297,7 @@ export async function homeOpened(simulator: Simulator) {
 	try {
 		blockNumber = await simulator.ethereum.getBlockNumber()
 	} catch (error) {
-		if (!(error instanceof Error)) throw error
-		if (!isFailedToFetchError(error)) throw error
+		console.warn(error)
 		const rpcConnectionStatus = {
 			isConnected: false,
 			lastConnnectionAttempt: new Date(),
