@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'preact/hooks'
-import { AddressBookEntries, AddressBookEntry, InCompleteAddressBookEntry, RenameAddressCallBack } from './utils/user-interface-types.js'
+import { InCompleteAddressBookEntry, RenameAddressCallBack } from './utils/user-interface-types.js'
 import { GetAddressBookDataReply, ExternalPopupMessage } from './utils/interceptor-messages.js'
 import { arrayToChunks } from './utils/typed-arrays.js'
 import { AddNewAddress } from './components/pages/AddNewAddress.js'
@@ -8,6 +8,7 @@ import Hint from './components/subcomponents/Hint.js'
 import { sendPopupMessageToBackgroundPage } from './background/backgroundUtils.js'
 import { assertNever } from './utils/typescript.js'
 import { checksummedAddress } from './utils/bigint.js'
+import { AddressBookEntries, AddressBookEntry } from './utils/addressBookTypes.js'
 
 type Modals = 'noModal' | 'addNewAddress' | 'ConfirmaddressBookEntryToBeRemoved'
 

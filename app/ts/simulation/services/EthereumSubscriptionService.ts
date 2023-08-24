@@ -3,9 +3,10 @@ import { assertNever } from '../../utils/typescript.js'
 import { EthereumClientService } from './EthereumClientService.js'
 import { getEthereumSubscriptions, updateEthereumSubscriptions } from '../../background/storageVariables.js'
 import { EthereumSubscriptions, SimulationState } from '../../utils/visualizer-types.js'
-import { WebsiteSocket, WebsiteTabConnections } from '../../utils/user-interface-types.js'
+import { WebsiteTabConnections } from '../../utils/user-interface-types.js'
 import { getSimulatedBlock } from './SimulationModeEthereumClientService.js'
 import { sendSubscriptionReplyOrCallBack } from '../../background/messageSending.js'
+import { WebsiteSocket } from '../../utils/requests.js'
 
 const dec2hex = (dec: number) => dec.toString(16).padStart(2, '0')
 

@@ -3,7 +3,7 @@ import * as funtypes from 'funtypes'
 import { EthereumQuantity } from '../../utils/wire-types.js'
 import { abs, addressString } from '../../utils/bigint.js'
 import { EtherAmount, EtherSymbol, TokenAmount, TokenOrEthValue, TokenSymbol } from '../subcomponents/coins.js'
-import { AddressBookEntry, Erc1155Entry, Erc20TokenEntry, Erc721Entry } from '../../utils/user-interface-types.js'
+import { AddressBookEntry, Erc1155Entry, Erc20TokenEntry, Erc721Entry } from '../../utils/addressBookTypes.js'
 import { assertNever, getWithDefault } from '../../utils/typescript.js'
 import { RpcNetwork } from '../../utils/visualizer-types.js'
 

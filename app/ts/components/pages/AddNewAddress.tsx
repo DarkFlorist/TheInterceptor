@@ -1,6 +1,6 @@
 import { ethers } from 'ethers'
 import { useEffect, useState } from 'preact/hooks'
-import { AddAddressParam, AddressBookEntry, InCompleteAddressBookEntry } from '../../utils/user-interface-types.js'
+import { AddAddressParam, InCompleteAddressBookEntry } from '../../utils/user-interface-types.js'
 import { Notice } from '../subcomponents/Error.js'
 import { getIssueWithAddressString } from '../ui-utils.js'
 import { checksummedAddress, stringToAddress } from '../../utils/bigint.js'
@@ -8,6 +8,7 @@ import { sendPopupMessageToBackgroundPage } from '../../background/backgroundUti
 import { AddressIcon } from '../subcomponents/address.js'
 import { assertUnreachable } from '../../utils/typescript.js'
 import { ComponentChildren, createRef } from 'preact'
+import { AddressBookEntry } from '../../utils/addressBookTypes.js'
 
 const readableAddressType = {
 	'contact': 'Contact',
@@ -145,6 +146,7 @@ export function AddNewAddress(param: AddAddressParam) {
 					address: inputedAddressBigInt,
 					symbol: inCompleteAddressBookEntry.symbol,
 					logoUri: inCompleteAddressBookEntry.logoUri,
+					entrySource: 'User',
 				}
 			}
 			case 'ERC1155': {
@@ -156,6 +158,7 @@ export function AddNewAddress(param: AddAddressParam) {
 					symbol: inCompleteAddressBookEntry.symbol,
 					logoUri: inCompleteAddressBookEntry.logoUri,
 					decimals: undefined,
+					entrySource: 'User',
 				}
 			}
 			case 'ERC20': {
@@ -167,6 +170,7 @@ export function AddNewAddress(param: AddAddressParam) {
 					symbol: inCompleteAddressBookEntry.symbol,
 					decimals: inCompleteAddressBookEntry.decimals,
 					logoUri: inCompleteAddressBookEntry.logoUri,
+					entrySource: 'User',
 				}
 			}
 			case 'contact':
@@ -175,6 +179,7 @@ export function AddNewAddress(param: AddAddressParam) {
 				name,
 				address: inputedAddressBigInt,
 				logoUri: inCompleteAddressBookEntry.logoUri,
+				entrySource: 'User',
 			}
 			case 'addressInfo': {
 				return {
@@ -182,6 +187,7 @@ export function AddNewAddress(param: AddAddressParam) {
 					name,
 					address: inputedAddressBigInt,
 					askForAddressAccess: inCompleteAddressBookEntry.askForAddressAccess,
+					entrySource: 'User',
 				}
 			}
 			default: assertUnreachable(inCompleteAddressBookEntry.type)

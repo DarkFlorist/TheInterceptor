@@ -1,5 +1,5 @@
 import { addressString, checksummedAddress } from '../utils/bigint.js'
-import { AddressInfoEntry, AddressBookEntry, AddressInfo } from '../utils/user-interface-types.js'
+import { AddressInfoEntry, AddressBookEntry, AddressInfo } from '../utils/addressBookTypes.js'
 import { SimulationState, VisualizerResult } from '../utils/visualizer-types.js'
 import { nftMetadata, tokenMetadata, contractMetadata } from '@darkflorist/address-metadata'
 import { ethers } from 'ethers'
@@ -17,41 +17,26 @@ export function getFullLogoUri(logoURI: string) {
 
 export function findAddressInfo(address: bigint, addressInfos: readonly AddressInfo[] | undefined) : AddressInfoEntry{
 	if (addressInfos !== undefined) {
-		for (const info of addressInfos) {
-			if (info.address === address) {
-				return {
-					...info,
-					type: 'addressInfo'
-				}
-			}
-		}
+		const entry = addressInfos.find((entry) => entry.address === address)
+		if (entry !== undefined) return { ...entry, type: 'addressInfo', entrySource: 'User' }
 	}
 	return {
 		type: 'addressInfo' as const,
 		name: checksummedAddress(address),
 		address: address,
 		askForAddressAccess: false,
+		entrySource: 'FilledIn'
 	}
 }
 
 // todo, add caching here, if we find new address, store it
 export async function identifyAddress(ethereumClientService: EthereumClientService, userAddressBook: UserAddressBook, address: bigint, useLocalStorage: boolean = true) : Promise<AddressBookEntry> {
-	for (const info of userAddressBook.addressInfos) {
-		if (info.address === address) {
-			return {
-				...info,
-				type: 'addressInfo'
-			}
-		}
-	}
-	for (const contact of userAddressBook.contacts) {
-		if (contact.address === address) {
-			return {
-				...contact,
-				type: 'contact'
-			}
-		}
-	}
+	const addressInfo = userAddressBook.addressInfos.find((entry) => entry.address === address)
+	if (addressInfo !== undefined) return { ...addressInfo, type: 'addressInfo', entrySource: 'User' }
+
+	const contact = userAddressBook.contacts.find((entry) => entry.address === address)
+	if (contact !== undefined) return { ...contact, type: 'contact', entrySource: 'User' }
+
 	if (useLocalStorage) {
 		const userEntry = (await getUserAddressBookEntries()).find((entry) => entry.address === address)
 		if (userEntry !== undefined) return userEntry
@@ -64,6 +49,7 @@ export async function identifyAddress(ethereumClientService: EthereumClientServi
 		address: address,
 		logoUri: addressData.logoUri ? `${ getFullLogoUri(addressData.logoUri) }` : undefined,
 		type: 'contract',
+		entrySource: 'DarkFloristMetadata',
 	}
 
 	const tokenData = tokenMetadata.get(addrString)
@@ -72,6 +58,7 @@ export async function identifyAddress(ethereumClientService: EthereumClientServi
 		address: address,
 		logoUri: tokenData.logoUri ? `${ getFullLogoUri(tokenData.logoUri) }` : undefined,
 		type: 'ERC20',
+		entrySource: 'DarkFloristMetadata',
 	}
 
 	const nftTokenData = nftMetadata.get(addrString)
@@ -79,23 +66,22 @@ export async function identifyAddress(ethereumClientService: EthereumClientServi
 		...nftTokenData,
 		address: address,
 		logoUri: nftTokenData.logoUri ? `${ getFullLogoUri(nftTokenData.logoUri) }` : undefined,
-		type: 'ERC721'
+		type: 'ERC721',
+		entrySource: 'DarkFloristMetadata',
 	}
 
-	if (address === MOCK_ADDRESS) {
-		return {
-			address: address,
-			name: 'Ethereum Validator',
-			logoUri: '../../img/contracts/rhino.png',
-			type: 'contact',
-		}
+	if (address === MOCK_ADDRESS) return {
+		address: address,
+		name: 'Ethereum Validator',
+		logoUri: '../../img/contracts/rhino.png',
+		type: 'contact',
+		entrySource: 'Interceptor',
 	}
-	if (address === 0n) {
-		return {
-			address: address,
-			name: '0x0 Address',
-			type: 'contact',
-		}
+	if (address === 0n) return {
+		address: address,
+		name: '0x0 Address',
+		type: 'contact',
+		entrySource: 'Interceptor',
 	}
 
 	const tokenIdentification = await itentifyAddressViaOnChainInformation(ethereumClientService, address)
@@ -107,6 +93,7 @@ export async function identifyAddress(ethereumClientService: EthereumClientServi
 			symbol: '???', // todo, we could add the name from contract here, but we should check that it doesn't exist with us already
 			decimals: tokenIdentification.decimals,
 			type: 'ERC20',
+			entrySource: 'OnChain',
 		}
 		case 'ERC1155': return {
 			name: ethers.getAddress(addrString),
@@ -114,22 +101,26 @@ export async function identifyAddress(ethereumClientService: EthereumClientServi
 			symbol: '???',
 			type: 'ERC1155',
 			decimals: undefined,
+			entrySource: 'OnChain',
 		}
 		case 'ERC721': return {
 			name: ethers.getAddress(addrString),
 			address: BigInt(addrString),
 			symbol: '???',
 			type: 'ERC721',
+			entrySource: 'OnChain',
 		}
 		case 'contract': return {
 			address: address,
 			name: ethers.getAddress(addrString),
 			type: 'contract',
+			entrySource: 'OnChain',
 		}
 		case 'EOA': return {
 			address: address,
 			name: ethers.getAddress(addrString),
 			type: 'contact',
+			entrySource: 'OnChain',
 		}
 		default: assertNever(tokenIdentification)
 	}

@@ -1,10 +1,13 @@
 
-import { EthereumAddress, EthereumData, EthereumQuantity, EthereumSignedTransaction, EthereumTimestamp, EthereumUnsignedTransaction } from './wire-types.js'
 import * as funtypes from 'funtypes'
+import { EthereumAddress, EthereumData, EthereumQuantity, EthereumSignedTransaction, EthereumTimestamp, EthereumUnsignedTransaction, OptionalEthereumAddress } from './wire-types.js'
 import { QUARANTINE_CODE } from '../simulation/protectors/quarantine-codes.js'
-import { AddressBookEntry, Erc721Entry, RenameAddressCallBack, Erc20TokenEntry, Website, WebsiteSocket, Erc1155Entry } from './user-interface-types.js'
+import { RenameAddressCallBack } from './user-interface-types.js'
 import { ERROR_INTERCEPTOR_GAS_ESTIMATION_FAILED } from './constants.js'
 import { EthBalanceChanges, EthSubscribeParams, SendRawTransactionParams, SendTransactionParams, SingleMulticallResponse } from './JsonRpc-types.js'
+import { WebsiteSocket } from './requests.js'
+import { AddressBookEntry, Erc721Entry, Erc20TokenEntry, Erc1155Entry } from './addressBookTypes.js'
+import { Website } from './websiteAccessTypes.js'
 
 
 export type NetworkPrice = funtypes.Static<typeof NetworkPrice>
@@ -42,9 +45,6 @@ export const RpcNetwork = funtypes.Union(
     	currencyTicker: funtypes.Literal('ETH?'),
 	})
 )
-
-export type OptionalEthereumAddress = funtypes.Static<typeof OptionalEthereumAddress>
-export const OptionalEthereumAddress = funtypes.Union(EthereumAddress, funtypes.Undefined)
 
 export type TokenVisualizerResult = funtypes.Static<typeof TokenVisualizerResult>
 export const TokenVisualizerResult = funtypes.Intersect(

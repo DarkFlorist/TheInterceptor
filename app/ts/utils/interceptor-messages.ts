@@ -1,11 +1,14 @@
 import * as funtypes from 'funtypes'
-import { AddressBookEntries, AddressBookEntry, AddressInfo, AddressInfoArray, AddressInfoEntry, ContactEntries, SignerName, Website, WebsiteSocket } from './user-interface-types.js'
-import { EthereumAddress, EthereumBlockHeader, EthereumBlockHeaderWithTransactionHashes, EthereumBytes32, EthereumData, EthereumQuantity, EthereumSignedTransactionWithBlockData, EthereumTimestamp, NonHexBigInt } from './wire-types.js'
-import { SimulationState, OptionalEthereumAddress, SimulatedAndVisualizedTransaction, SimResults, TokenPriceEstimate, WebsiteCreatedEthereumUnsignedTransaction, RpcNetwork, RpcEntries, RpcEntry, SimulationUpdatingState, SimulationResultState } from './visualizer-types.js'
-import { ICON_ACCESS_DENIED, ICON_ACTIVE, ICON_NOT_ACTIVE, ICON_SIGNING, ICON_SIGNING_NOT_SUPPORTED, ICON_SIMULATING } from './constants.js'
+import { ConfirmTransactionDialogState, PendingAccessRequest, PendingAccessRequestArray, PendingChainChangeConfirmationPromise, PendingTransaction, RpcConnectionStatus, TabIconDetails } from './user-interface-types.js'
+import { EthereumAddress, EthereumBlockHeaderWithTransactionHashes, EthereumBytes32, EthereumData, EthereumQuantity, EthereumSignedTransactionWithBlockData, EthereumTimestamp, NonHexBigInt, OptionalEthereumAddress } from './wire-types.js'
+import { SimulationState, SimulatedAndVisualizedTransaction, SimResults, TokenPriceEstimate, RpcNetwork, RpcEntries, RpcEntry, SimulationUpdatingState, SimulationResultState } from './visualizer-types.js'
 import { PersonalSignRequestData } from './personal-message-definitions.js'
-import { InterceptedRequest, UniqueRequestIdentifier } from './requests.js'
+import { UniqueRequestIdentifier, WebsiteSocket } from './requests.js'
 import { EthGetLogsResponse, EthGetStorageAtParams, EthTransactionReceiptResponse, GetBlockReturn, GetSimulationStackReply, OldSignTypedDataParams, PersonalSignParams, SendRawTransactionParams, SendTransactionParams, SignTypedDataParams, WalletAddEthereumChain } from './JsonRpc-types.js'
+import { AddressBookEntries, AddressBookEntry, AddressInfo, AddressInfoEntry, ContactEntries } from './addressBookTypes.js'
+import { Page } from './exportedSettingsTypes.js'
+import { Website, WebsiteAccessArray } from './websiteAccessTypes.js'
+import { SignerName } from './signerTypes.js'
 
 export type WalletSwitchEthereumChainReply = funtypes.Static<typeof WalletSwitchEthereumChainReply>
 export const WalletSwitchEthereumChainReply = funtypes.ReadonlyObject({
@@ -149,6 +152,13 @@ export const InterceptorMessageToInpage = funtypes.Intersect(
 	funtypes.Union(InterceptedRequestForwardWithRequestId, SubscriptionReplyOrCallBack)
 )
 
+export type RefreshConfirmTransactionMetadata = funtypes.Static<typeof RefreshConfirmTransactionMetadata>
+export const RefreshConfirmTransactionMetadata = funtypes.ReadonlyObject({
+	method: funtypes.Literal('popup_refreshConfirmTransactionMetadata'),
+	data: ConfirmTransactionDialogState
+}).asReadonly()
+
+
 export type TransactionConfirmation = funtypes.Static<typeof TransactionConfirmation>
 export const TransactionConfirmation = funtypes.ReadonlyObject({
 	method: funtypes.Literal('popup_confirmDialog'),
@@ -241,17 +251,6 @@ export const AddOrEditAddressBookEntry = funtypes.ReadonlyObject({
 	method: funtypes.Literal('popup_addOrModifyAddressBookEntry'),
 	data: AddressBookEntry,
 }).asReadonly()
-
-export const pages = ['Home', 'AddNewAddress', 'ChangeActiveAddress', 'AccessList', 'ModifyAddress']
-export type Page = funtypes.Static<typeof Page>
-export const Page = funtypes.Union(
-	funtypes.Literal('Home'),
-	funtypes.Literal('AddNewAddress'),
-	funtypes.Literal('ChangeActiveAddress'),
-	funtypes.Literal('AccessList'),
-	funtypes.Literal('ModifyAddress'),
-	funtypes.Literal('Settings'),
-)
 
 export type ChangePage = funtypes.Static<typeof ChangePage>
 export const ChangePage = funtypes.ReadonlyObject({
@@ -355,35 +354,11 @@ export const GetAddressBookDataReply = funtypes.ReadonlyObject({
 	data: GetAddressBookDataReplyData,
 }).asReadonly()
 
-export type RpcConnectionStatus = funtypes.Static<typeof RpcConnectionStatus>
-export const RpcConnectionStatus = funtypes.Union(funtypes.Undefined, funtypes.ReadonlyObject({
-	isConnected: funtypes.Boolean,
-	lastConnnectionAttempt: EthereumTimestamp,
-	rpcNetwork: RpcNetwork,
-	latestBlock: funtypes.Union(funtypes.Undefined, EthereumBlockHeader),
-}))
-
 export type NewBlockArrivedOrFailedToArrive = funtypes.Static<typeof NewBlockArrivedOrFailedToArrive>
 export const NewBlockArrivedOrFailedToArrive = funtypes.ReadonlyObject({
 	method: funtypes.Union(funtypes.Literal('popup_new_block_arrived'), funtypes.Literal('popup_failed_to_get_block')),
 	data: funtypes.ReadonlyObject({ rpcConnectionStatus: RpcConnectionStatus }),
 }).asReadonly()
-
-export type TabIcon = funtypes.Static<typeof TabIcon>
-export const TabIcon = funtypes.Union(
-	funtypes.Literal(ICON_ACTIVE),
-	funtypes.Literal(ICON_ACCESS_DENIED),
-	funtypes.Literal(ICON_NOT_ACTIVE),
-	funtypes.Literal(ICON_SIMULATING),
-	funtypes.Literal(ICON_SIGNING),
-	funtypes.Literal(ICON_SIGNING_NOT_SUPPORTED),
-)
-
-export type TabIconDetails = funtypes.Static<typeof TabIconDetails>
-export const TabIconDetails = funtypes.ReadonlyObject({
-	icon: TabIcon,
-	iconReason: funtypes.String,
-})
 
 export type WebsiteIconChanged = funtypes.Static<typeof WebsiteIconChanged>
 export const WebsiteIconChanged = funtypes.ReadonlyObject({
@@ -423,56 +398,6 @@ export const RefreshPersonalSignMetadata = funtypes.ReadonlyObject({
 	data: PersonalSignRequestData,
 })
 
-export type ConfirmTransactionSimulationBaseData = funtypes.Static<typeof ConfirmTransactionSimulationBaseData>
-export const ConfirmTransactionSimulationBaseData = funtypes.ReadonlyObject({
-	activeAddress: EthereumAddress,
-	simulationMode: funtypes.Boolean,
-	uniqueRequestIdentifier: UniqueRequestIdentifier,
-	transactionToSimulate: WebsiteCreatedEthereumUnsignedTransaction,
-	signerName: SignerName,
-})
-
-export type ConfirmTransactionDialogState = funtypes.Static<typeof ConfirmTransactionDialogState>
-export const ConfirmTransactionDialogState = funtypes.Intersect(ConfirmTransactionSimulationBaseData, funtypes.ReadonlyObject({
-	simulationState: SimulationState,
-	visualizerResults: funtypes.ReadonlyArray(SimResults),
-	addressBookEntries: AddressBookEntries,
-	tokenPrices: funtypes.ReadonlyArray(TokenPriceEstimate),
-	simulatedAndVisualizedTransactions: funtypes.ReadonlyArray(SimulatedAndVisualizedTransaction),
-}))
-
-export type ConfirmTransactionSimulationStateChanged = funtypes.Static<typeof ConfirmTransactionSimulationStateChanged>
-export const ConfirmTransactionSimulationStateChanged = funtypes.ReadonlyObject({
-	statusCode: funtypes.Literal('success'),
-	data: ConfirmTransactionDialogState
-})
-
-export type RefreshConfirmTransactionMetadata = funtypes.Static<typeof RefreshConfirmTransactionMetadata>
-export const RefreshConfirmTransactionMetadata = funtypes.ReadonlyObject({
-	method: funtypes.Literal('popup_refreshConfirmTransactionMetadata'),
-	data: ConfirmTransactionDialogState
-}).asReadonly()
-
-export type ConfirmTransactionSimulationFailed = funtypes.Static<typeof ConfirmTransactionSimulationFailed>
-export const ConfirmTransactionSimulationFailed = funtypes.ReadonlyObject({
-	statusCode: funtypes.Literal('failed'),
-	data: ConfirmTransactionSimulationBaseData,
-}).asReadonly()
-
-export type ConfirmTransactionTransactionSingleVisualization = funtypes.Static<typeof ConfirmTransactionTransactionSingleVisualization>
-export const ConfirmTransactionTransactionSingleVisualization = funtypes.Union(ConfirmTransactionSimulationFailed, ConfirmTransactionSimulationStateChanged)
-
-export type PendingTransaction = funtypes.Static<typeof PendingTransaction>
-export const PendingTransaction = funtypes.ReadonlyObject({
-	dialogId: funtypes.Number,
-	request: InterceptedRequest,
-	simulationMode: funtypes.Boolean,
-	activeAddress: EthereumAddress,
-	transactionCreated: EthereumTimestamp,
-	simulationResults: ConfirmTransactionTransactionSingleVisualization,
-	transactionToSimulate: WebsiteCreatedEthereumUnsignedTransaction,
-})
-
 export type RefreshConfirmTransactionDialogSimulation = funtypes.Static<typeof RefreshConfirmTransactionDialogSimulation>
 export const RefreshConfirmTransactionDialogSimulation = funtypes.ReadonlyObject({
 	method: funtypes.Literal('popup_refreshConfirmTransactionDialogSimulation'),
@@ -498,57 +423,11 @@ export const ConfirmTransactionDialogPendingChanged = funtypes.ReadonlyObject({
 	data: funtypes.ReadonlyArray(PendingTransaction),
 }).asReadonly()
 
-export type WebsiteAddressAccess = funtypes.Static<typeof WebsiteAddressAccess>
-export const WebsiteAddressAccess = funtypes.ReadonlyObject({
-	address: EthereumAddress,
-	access: funtypes.Boolean,
-}).asReadonly()
-
-export type LegacyWebsiteAccess = funtypes.Static<typeof WebsiteAccess>
-export const LegacyWebsiteAccess = funtypes.ReadonlyObject({
-	origin: funtypes.String,
-	originIcon: funtypes.Union(funtypes.String, funtypes.Undefined),
-	access: funtypes.Boolean,
-	addressAccess: funtypes.Union(funtypes.ReadonlyArray(WebsiteAddressAccess), funtypes.Undefined),
-})
-export type LegacyWebsiteAccessArray = funtypes.Static<typeof LegacyWebsiteAccessArray>
-export const LegacyWebsiteAccessArray = funtypes.ReadonlyArray(LegacyWebsiteAccess)
-
-export type WebsiteAccess = funtypes.Static<typeof WebsiteAccess>
-export const WebsiteAccess = funtypes.ReadonlyObject({
-	website: Website,
-	access: funtypes.Boolean,
-	addressAccess: funtypes.Union(funtypes.ReadonlyArray(WebsiteAddressAccess), funtypes.Undefined),
-}).asReadonly()
-
-export type WebsiteAccessArray = funtypes.Static<typeof WebsiteAccessArray>
-export const WebsiteAccessArray = funtypes.ReadonlyArray(WebsiteAccess)
-
-export type WebsiteAccessArrayWithLegacy = funtypes.Static<typeof WebsiteAccessArrayWithLegacy>
-export const WebsiteAccessArrayWithLegacy = funtypes.Union(LegacyWebsiteAccessArray, WebsiteAccessArray)
-
 export type UserAddressBook = funtypes.Static<typeof UserAddressBook>
 export const UserAddressBook = funtypes.ReadonlyObject({
 	addressInfos: funtypes.ReadonlyArray(AddressInfo),
 	contacts: ContactEntries,
 })
-
-export type PendingAccessRequest = funtypes.Static<typeof PendingAccessRequest>
-export const PendingAccessRequest = funtypes.ReadonlyObject({
-	website: Website,
-	requestAccessToAddress: funtypes.Union(AddressInfoEntry, funtypes.Undefined),
-	originalRequestAccessToAddress: funtypes.Union(AddressInfoEntry, funtypes.Undefined),
-	associatedAddresses: funtypes.ReadonlyArray(AddressInfoEntry),
-	addressInfos: funtypes.ReadonlyArray(AddressInfo),
-	signerAccounts: funtypes.ReadonlyArray(EthereumAddress),
-	signerName: SignerName,
-	simulationMode: funtypes.Boolean,
-	dialogId: funtypes.Number,
-	socket: WebsiteSocket,
-	request: funtypes.Union(InterceptedRequest, funtypes.Undefined),
-	activeAddress: OptionalEthereumAddress,
-	accessRequestId: funtypes.String,
-}).asReadonly()
 
 export type InterceptorAccessReply = funtypes.Static<typeof InterceptorAccessReply>
 export const InterceptorAccessReply = funtypes.ReadonlyObject({
@@ -564,8 +443,6 @@ export const InterceptorAccess = funtypes.ReadonlyObject({
 	data: InterceptorAccessReply,
 }).asReadonly()
 
-export type PendingAccessRequestArray = funtypes.Static<typeof PendingAccessRequestArray>
-export const PendingAccessRequestArray = funtypes.ReadonlyArray(PendingAccessRequest)
 
 export type InterceptorAccessDialog = funtypes.Static<typeof InterceptorAccessDialog>
 export const InterceptorAccessDialog = funtypes.ReadonlyObject({
@@ -638,34 +515,6 @@ export const WindowMessageSignerAccountsChanged = funtypes.ReadonlyObject({
 
 export type WindowMessage = funtypes.Static<typeof WindowMessage>
 export const WindowMessage = WindowMessageSignerAccountsChanged
-
-export type PendingChainChangeConfirmationPromise = funtypes.Static<typeof PendingChainChangeConfirmationPromise>
-export const PendingChainChangeConfirmationPromise = funtypes.ReadonlyObject({
-	website: Website,
-	dialogId: funtypes.Number,
-	request: InterceptedRequest,
-	rpcNetwork: RpcNetwork,
-	simulationMode: funtypes.Boolean,
-})
-
-export type PendingPersonalSignPromise = funtypes.Static<typeof PendingPersonalSignPromise>
-export const PendingPersonalSignPromise = funtypes.ReadonlyObject({
-	website: Website,
-	dialogId: funtypes.Number,
-	request: InterceptedRequest,
-	simulationMode: funtypes.Boolean,
-	params: funtypes.Union(PersonalSignParams, SignTypedDataParams, OldSignTypedDataParams),
-	activeAddress: EthereumAddress,
-})
-
-export type TabState = funtypes.Static<typeof TabState>
-export const TabState = funtypes.ReadonlyObject({
-	signerName: SignerName,
-	signerAccounts: funtypes.ReadonlyArray(EthereumAddress),
-	signerChain: funtypes.Union(EthereumQuantity, funtypes.Undefined),
-	tabIconDetails: TabIconDetails,
-	activeSigningAddress: OptionalEthereumAddress,
-})
 
 export type ChangeSettings = funtypes.Static<typeof ChangeSettings>
 export const ChangeSettings = funtypes.ReadonlyObject({
@@ -790,57 +639,3 @@ export const MessageToPopup = funtypes.Union(
 
 export type ExternalPopupMessage = funtypes.Static<typeof MessageToPopup>
 export const ExternalPopupMessage = funtypes.Union(MessageToPopup, PopupMessage) // message that moves from popup to another, or from background page to popup, or from popup to background page
-
-
-export type ExportedSettings = funtypes.Static<typeof ExportedSettings>
-export const ExportedSettings = funtypes.Union(
-	funtypes.ReadonlyObject({
-		name: funtypes.Literal('InterceptorSettingsAndAddressBook'),
-		version: funtypes.Literal('1.0'),
-		exportedDate: funtypes.String,
-		settings: funtypes.ReadonlyObject({
-			activeSimulationAddress: OptionalEthereumAddress,
-			activeChain: EthereumQuantity,
-			page: Page,
-			useSignersAddressAsActiveAddress: funtypes.Boolean,
-			websiteAccess: WebsiteAccessArray,
-			simulationMode: funtypes.Boolean,
-			addressInfos: AddressInfoArray,
-			contacts: funtypes.Union(funtypes.Undefined, ContactEntries),
-			useTabsInsteadOfPopup: funtypes.Boolean,
-		})
-	}),
-	funtypes.ReadonlyObject({
-		name: funtypes.Literal('InterceptorSettingsAndAddressBook'),
-		version: funtypes.Literal('1.1'),
-		exportedDate: funtypes.String,
-		settings: funtypes.ReadonlyObject({
-			activeSimulationAddress: OptionalEthereumAddress,
-			rpcNetwork: RpcNetwork,
-			page: Page,
-			useSignersAddressAsActiveAddress: funtypes.Boolean,
-			websiteAccess: WebsiteAccessArray,
-			simulationMode: funtypes.Boolean,
-			addressInfos: AddressInfoArray,
-			contacts: funtypes.Union(funtypes.Undefined, ContactEntries),
-			useTabsInsteadOfPopup: funtypes.Boolean,
-		})
-	}),
-	funtypes.ReadonlyObject({
-		name: funtypes.Literal('InterceptorSettingsAndAddressBook'),
-		version: funtypes.Literal('1.2'),
-		exportedDate: funtypes.String,
-		settings: funtypes.ReadonlyObject({
-			activeSimulationAddress: OptionalEthereumAddress,
-			rpcNetwork: RpcNetwork,
-			page: Page,
-			useSignersAddressAsActiveAddress: funtypes.Boolean,
-			websiteAccess: WebsiteAccessArray,
-			simulationMode: funtypes.Boolean,
-			addressInfos: AddressInfoArray,
-			contacts: funtypes.Union(funtypes.Undefined, ContactEntries),
-			useTabsInsteadOfPopup: funtypes.Boolean,
-			metamaskCompatibilityMode: funtypes.Boolean,
-		})
-	}),
-)

@@ -1,10 +1,11 @@
 import { DistributedOmit, assertNever } from '../../../utils/typescript.js'
-import { AddressBookEntry, RenameAddressCallBack } from '../../../utils/user-interface-types.js'
+import { RenameAddressCallBack } from '../../../utils/user-interface-types.js'
 import { EthBalanceChangesWithMetadata, RpcNetwork } from '../../../utils/visualizer-types.js'
 import { BigAddress } from '../../subcomponents/address.js'
 import { TokenOrEth, TokenOrEtherParams } from '../../subcomponents/coins.js'
 import { GasFee, TransactionGasses } from '../SimulationSummary.js'
 import { SimulatedAndVisualizedEtherTransferTransaction, SimulatedAndVisualizedSimpleTokenTransferTransaction, TokenResult } from '../identifyTransaction.js'
+import { AddressBookEntry } from '../../../utils/addressBookTypes.js'
 
 type BeforeAfterAddress = {
 	address: AddressBookEntry

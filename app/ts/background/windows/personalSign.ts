@@ -3,10 +3,10 @@ import { EthereumClientService } from '../../simulation/services/EthereumClientS
 import { stringifyJSONWithBigInts } from '../../utils/bigint.js'
 import { METAMASK_ERROR_USER_REJECTED_REQUEST } from '../../utils/constants.js'
 import { Future } from '../../utils/future.js'
-import { PersonalSign, UserAddressBook, PersonalSignRequest, PendingPersonalSignPromise } from '../../utils/interceptor-messages.js'
+import { PersonalSign, UserAddressBook, PersonalSignRequest } from '../../utils/interceptor-messages.js'
 import { OpenSeaOrderMessage, PersonalSignRequestIdentifiedEIP712Message } from '../../utils/personal-message-definitions.js'
 import { assertNever } from '../../utils/typescript.js'
-import { AddressBookEntry, SignerName, Website, WebsiteTabConnections } from '../../utils/user-interface-types.js'
+import { PendingPersonalSignPromise, WebsiteTabConnections } from '../../utils/user-interface-types.js'
 import { OldSignTypedDataParams, PersonalSignParams, SignTypedDataParams } from '../../utils/JsonRpc-types.js'
 import { getHtmlFile, sendPopupMessageToOpenWindows } from '../backgroundUtils.js'
 import { extractEIP712Message, validateEIP712Types } from '../../utils/eip712Parsing.js'
@@ -17,6 +17,9 @@ import { simulatePersonalSign } from '../../simulation/services/SimulationModeEt
 import { InterceptedRequest, UniqueRequestIdentifier, doesUniqueRequestIdentifiersMatch } from '../../utils/requests.js'
 import { replyToInterceptedRequest } from '../messageSending.js'
 import { identifyAddress } from '../metadataUtils.js'
+import { AddressBookEntry } from '../../utils/addressBookTypes.js'
+import { Website } from '../../utils/websiteAccessTypes.js'
+import { SignerName } from '../../utils/signerTypes.js'
 
 let pendingPersonalSign: Future<PersonalSign> | undefined = undefined
 

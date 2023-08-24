@@ -1,8 +1,11 @@
 import * as funtypes from 'funtypes'
 import { EthereumAddressOrMissing } from './wire-types.js'
-import { AddressBookEntries, AddressInfoArray, ContactEntries, SignerName } from './user-interface-types.js'
-import { Page, PendingAccessRequestArray, PendingChainChangeConfirmationPromise, PendingPersonalSignPromise, PendingTransaction, RpcConnectionStatus, TabState, WebsiteAccessArray } from './interceptor-messages.js'
+import { PendingAccessRequestArray, PendingChainChangeConfirmationPromise, PendingPersonalSignPromise, PendingTransaction, RpcConnectionStatus, TabState } from './user-interface-types.js'
 import { EthereumSubscriptions, RpcEntries, RpcNetwork, SimulationResults } from './visualizer-types.js'
+import { AddressBookEntries, AddressInfoArray, ContactEntries } from './addressBookTypes.js'
+import { Page } from './exportedSettingsTypes.js'
+import { WebsiteAccessArray } from './websiteAccessTypes.js'
+import { SignerName } from './signerTypes.js'
 
 export type LocalStorageItems = funtypes.Static<typeof LocalStorageItems>
 export const LocalStorageItems = funtypes.Partial({

@@ -2,7 +2,7 @@ import { changeActiveAddressAndChainAndResetSimulation, changeActiveRpc, getPrep
 import { getSettings, setUseTabsInsteadOfPopup, setMakeMeRich, setPage, setUseSignersAddressAsActiveAddress, updateAddressInfos, updateContacts, updateWebsiteAccess, exportSettingsAndAddressBook, importSettingsAndAddressBook, getMakeMeRich, getUseTabsInsteadOfPopup, getMetamaskCompatibilityMode, setMetamaskCompatibilityMode } from './settings.js'
 import { getPendingTransactions, getCurrentTabId, getOpenedAddressBookTabId, getSimulationResults, getTabState, saveCurrentTabId, setOpenedAddressBookTabId, setRpcList, getRpcList, getPrimaryRpcForChain, setRpcConnectionStatus, getSignerName, getRpcConnectionStatus, updateUserAddressBookEntries } from './storageVariables.js'
 import { Simulator } from '../simulation/simulator.js'
-import { ChangeActiveAddress, ChangeMakeMeRich, ChangePage, PersonalSign, RemoveTransaction, RequestAccountsFromSigner, TransactionConfirmation, InterceptorAccess, ChangeInterceptorAccess, ChainChangeConfirmation, EnableSimulationMode, ChangeActiveChain, AddOrEditAddressBookEntry, GetAddressBookData, RemoveAddressBookEntry, RefreshConfirmTransactionDialogSimulation, UserAddressBook, InterceptorAccessRefresh, InterceptorAccessChangeAddress, Settings, RefreshConfirmTransactionMetadata, RefreshInterceptorAccessMetadata, ChangeSettings, ImportSettings, SetRpcList, ExportedSettings } from '../utils/interceptor-messages.js'
+import { ChangeActiveAddress, ChangeMakeMeRich, ChangePage, PersonalSign, RemoveTransaction, RequestAccountsFromSigner, TransactionConfirmation, InterceptorAccess, ChangeInterceptorAccess, ChainChangeConfirmation, EnableSimulationMode, ChangeActiveChain, AddOrEditAddressBookEntry, GetAddressBookData, RemoveAddressBookEntry, RefreshConfirmTransactionDialogSimulation, UserAddressBook, InterceptorAccessRefresh, InterceptorAccessChangeAddress, Settings, RefreshConfirmTransactionMetadata, RefreshInterceptorAccessMetadata, ChangeSettings, ImportSettings, SetRpcList } from '../utils/interceptor-messages.js'
 import { formEthSendTransaction, formSendRawTransaction, resolvePendingTransaction } from './windows/confirmTransaction.js'
 import { resolvePersonalSign } from './windows/personalSign.js'
 import { getAddressMetadataForAccess, requestAddressChange, resolveInterceptorAccess } from './windows/interceptorAccess.js'
@@ -20,6 +20,7 @@ import { formSimulatedAndVisualizedTransaction } from '../components/formVisuali
 import { doesUniqueRequestIdentifiersMatch } from '../utils/requests.js'
 import { isJSON } from '../utils/JsonRpc-types.js'
 import { SimulationState } from '../utils/visualizer-types.js'
+import { ExportedSettings } from '../utils/exportedSettingsTypes.js'
 
 export async function confirmDialog(simulator: Simulator, ethereumClientService: EthereumClientService, websiteTabConnections: WebsiteTabConnections, confirmation: TransactionConfirmation) {
 	await resolvePendingTransaction(simulator, ethereumClientService, websiteTabConnections, confirmation)
@@ -255,7 +256,7 @@ export async function enableSimulationMode(simulator: Simulator, websiteTabConne
 
 export async function getAddressBookData(parsed: GetAddressBookData, userAddressBook: UserAddressBook | undefined) {
 	if (userAddressBook === undefined) throw new Error('Interceptor is not ready')
-	const data = getMetadataForAddressBookData(parsed.data, userAddressBook)
+	const data = await getMetadataForAddressBookData(parsed.data, userAddressBook)
 	await sendPopupMessageToOpenWindows({
 		method: 'popup_getAddressBookDataReply',
 		data: {

@@ -2,11 +2,14 @@ import { getActiveAddress, websiteSocketToString } from './backgroundUtils.js'
 import { findAddressInfo } from './metadataUtils.js'
 import { requestAccessFromUser } from './windows/interceptorAccess.js'
 import { retrieveWebsiteDetails, updateExtensionIcon } from './iconHandler.js'
-import { AddressInfoEntry, TabConnection, Website, WebsiteSocket, WebsiteTabConnections } from '../utils/user-interface-types.js'
-import { InpageScriptCallBack, Settings, WebsiteAccessArray, WebsiteAddressAccess } from '../utils/interceptor-messages.js'
+import { TabConnection, WebsiteTabConnections } from '../utils/user-interface-types.js'
+import { InpageScriptCallBack, Settings } from '../utils/interceptor-messages.js'
 import { updateWebsiteAccess } from './settings.js'
 import { sendSubscriptionReplyOrCallBack } from './messageSending.js'
 import { Simulator } from '../simulation/simulator.js'
+import { WebsiteSocket } from '../utils/requests.js'
+import { AddressInfoEntry } from '../utils/addressBookTypes.js'
+import { Website, WebsiteAccessArray, WebsiteAddressAccess } from '../utils/websiteAccessTypes.js'
 
 export function getConnectionDetails(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket) {
 	const identifier = websiteSocketToString(socket)

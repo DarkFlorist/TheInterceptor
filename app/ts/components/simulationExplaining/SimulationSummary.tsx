@@ -1,5 +1,5 @@
 import { Erc1155TokenBalanceChange, Erc721and1155OperatorChange, LogSummarizer, SummaryOutcome } from '../../simulation/services/LogSummarizer.js'
-import { AddressBookEntry, RenameAddressCallBack, Website } from '../../utils/user-interface-types.js'
+import { RenameAddressCallBack, RpcConnectionStatus } from '../../utils/user-interface-types.js'
 import { Erc721TokenApprovalChange, Erc721Definition, SimulatedAndVisualizedTransaction, SimulationAndVisualisationResults, ERC20TokenApprovalChange, Erc20TokenBalanceChange, Erc20Definition, TransactionWithAddressBookEntries, Erc1155Definition } from '../../utils/visualizer-types.js'
 import { BigAddress, SmallAddress, WebsiteOriginText } from '../subcomponents/address.js'
 import { Ether, EtherAmount, EtherSymbol, TokenWithAmount, TokenAmount, TokenPrice, TokenSymbol, TokenOrEth } from '../subcomponents/coins.js'
@@ -12,10 +12,11 @@ import { identifyTransaction } from './identifyTransaction.js'
 import { identifySwap } from './SwapTransactions.js'
 import { useState } from 'preact/hooks'
 import { CellElement, convertNumberToCharacterRepresentationIfSmallEnough, upperCaseFirstCharacter } from '../ui-utils.js'
-import { RpcConnectionStatus } from '../../utils/interceptor-messages.js'
 import { EthereumTimestamp } from '../../utils/wire-types.js'
 import { getEthDonator } from '../../background/storageVariables.js'
 import { RpcNetwork } from '../../utils/visualizer-types.js'
+import { AddressBookEntry } from '../../utils/addressBookTypes.js'
+import { Website } from '../../utils/websiteAccessTypes.js'
 
 type EtherChangeParams = {
 	textColor: string,

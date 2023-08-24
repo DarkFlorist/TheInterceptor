@@ -1,5 +1,5 @@
 import { MessageToPopup, PopupMessage, Settings, WindowMessage } from '../utils/interceptor-messages.js'
-import { WebsiteSocket } from '../utils/user-interface-types.js'
+import { WebsiteSocket } from '../utils/requests.js'
 import { EthereumQuantity } from '../utils/wire-types.js'
 import { getTabState } from './storageVariables.js'
 

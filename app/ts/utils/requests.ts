@@ -1,5 +1,11 @@
 import * as funtypes from 'funtypes'
-import { WebsiteSocket } from './user-interface-types.js'
+import { EthereumQuantity } from './wire-types.js'
+
+export type WebsiteSocket = funtypes.Static<typeof WebsiteSocket>
+export const WebsiteSocket = funtypes.ReadonlyObject({
+	tabId: funtypes.Number,
+	connectionName: EthereumQuantity,
+})
 
 export type UniqueRequestIdentifier = funtypes.Static<typeof UniqueRequestIdentifier>
 export const UniqueRequestIdentifier = funtypes.ReadonlyObject({

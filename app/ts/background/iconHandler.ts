@@ -4,12 +4,12 @@ import { hasAccess, hasAddressAccess } from './accessManagement.js'
 import { getActiveAddress, sendPopupMessageToOpenWindows, setExtensionBadgeBackgroundColor, setExtensionBadgeText, setExtensionIcon } from './backgroundUtils.js'
 import { imageToUri } from '../utils/imageToUri.js'
 import { Future } from '../utils/future.js'
-import { WebsiteSocket, WebsiteTabConnections } from '../utils/user-interface-types.js'
+import { RpcConnectionStatus, TabIcon, TabState, WebsiteTabConnections } from '../utils/user-interface-types.js'
 import { getSettings } from './settings.js'
 import { getRpcConnectionStatus, getSignerName, updateTabState } from './storageVariables.js'
-import { RpcConnectionStatus, TabIcon, TabState } from '../utils/interceptor-messages.js'
 import { getLastKnownCurrentTabId } from './popupMessageHandlers.js'
 import { findAddressInfo } from './metadataUtils.js'
+import { WebsiteSocket } from '../utils/requests.js'
 
 async function setInterceptorIcon(websiteTabConnections: WebsiteTabConnections, tabId: number, icon: TabIcon, iconReason: string) {
 	const previousValue = websiteTabConnections.get(tabId)
