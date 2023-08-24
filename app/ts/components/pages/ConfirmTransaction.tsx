@@ -15,7 +15,7 @@ import { DinoSaysNotification } from '../subcomponents/DinoSays.js'
 import { NetworkErrors } from './Home.js'
 import { tryFocusingTabOrWindow } from '../ui-utils.js'
 import { checksummedAddress } from '../../utils/bigint.js'
-import { AddressBookEntry, InCompleteAddressBookEntry } from '../../utils/addressBookTypes.js'
+import { AddressBookEntry, IncompleteAddressBookEntry } from '../../utils/addressBookTypes.js'
 
 type UnderTransactionsParams = {
 	pendingTransactions: PendingTransaction[]
@@ -139,7 +139,7 @@ export function ConfirmTransaction() {
 	const [pendingTransactions, setPendingTransactions] = useState<PendingTransaction[]>([])
 	const [forceSend, setForceSend] = useState<boolean>(false)
 	const [currentBlockNumber, setCurrentBlockNumber] = useState<undefined | bigint>(undefined)
-	const [addingNewAddress, setAddingNewAddress] = useState<InCompleteAddressBookEntry | 'renameAddressModalClosed'> ('renameAddressModalClosed')
+	const [addingNewAddress, setAddingNewAddress] = useState<IncompleteAddressBookEntry | 'renameAddressModalClosed'> ('renameAddressModalClosed')
 	const [rpcConnectionStatus, setRpcConnectionStatus] = useState<RpcConnectionStatus>(undefined)
 	const [pendingTransactionAddedNotification, setPendingTransactionAddedNotification] = useState<boolean>(false)
 
@@ -292,7 +292,7 @@ export function ConfirmTransaction() {
 						? <></>
 						: <AddNewAddress
 							setActiveAddressAndInformAboutIt = { undefined }
-							inCompleteAddressBookEntry = { addingNewAddress }
+							incompleteAddressBookEntry = { addingNewAddress }
 							close = { () => { setAddingNewAddress('renameAddressModalClosed') } }
 							activeAddress = { undefined }
 						/>

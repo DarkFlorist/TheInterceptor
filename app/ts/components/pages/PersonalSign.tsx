@@ -19,7 +19,7 @@ import { OrderComponents, OrderComponentsExtraDetails } from '../simulationExpla
 import { Ether } from '../subcomponents/coins.js'
 import { EnrichedEIP712, EnrichedEIP712Message, GroupedSolidityType } from '../../utils/eip712Parsing.js'
 import { tryFocusingTabOrWindow, humanReadableDateFromSeconds, CellElement } from '../ui-utils.js'
-import { AddressBookEntry, InCompleteAddressBookEntry } from '../../utils/addressBookTypes.js'
+import { AddressBookEntry, IncompleteAddressBookEntry } from '../../utils/addressBookTypes.js'
 
 type SignatureCardParams = {
 	personalSignRequestData: PersonalSignRequestData
@@ -374,7 +374,7 @@ function SignatureCard(params: SignatureCardParams) {
 }
 
 export function PersonalSign() {
-	const [addingNewAddress, setAddingNewAddress] = useState<InCompleteAddressBookEntry | 'renameAddressModalClosed'> ('renameAddressModalClosed')
+	const [addingNewAddress, setAddingNewAddress] = useState<IncompleteAddressBookEntry | 'renameAddressModalClosed'> ('renameAddressModalClosed')
 	const [personalSignRequestData, setPersonalSignRequestData] = useState<PersonalSignRequestData | undefined>(undefined)
 	const [forceSend, setForceSend] = useState<boolean>(false)
 
@@ -458,7 +458,7 @@ export function PersonalSign() {
 						? <></>
 						: <AddNewAddress
 							setActiveAddressAndInformAboutIt = { undefined }
-							inCompleteAddressBookEntry = { addingNewAddress }
+							incompleteAddressBookEntry = { addingNewAddress }
 							close = { () => { setAddingNewAddress('renameAddressModalClosed') } }
 							activeAddress = { undefined }
 						/>
