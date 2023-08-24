@@ -8,7 +8,7 @@ import { sendPopupMessageToBackgroundPage } from '../../background/backgroundUti
 import { AddressIcon } from '../subcomponents/address.js'
 import { assertUnreachable } from '../../utils/typescript.js'
 import { ComponentChildren, createRef } from 'preact'
-import { AddressBookEntry, InCompleteAddressBookEntry } from '../../utils/addressBookTypes.js'
+import { AddressBookEntry, IncompleteAddressBookEntry } from '../../utils/addressBookTypes.js'
 
 const readableAddressType = {
 	'contact': 'Contact',
@@ -74,7 +74,7 @@ export function AddressInput({ disabled, addressInput, setAddress }: AddressInpu
 }
 
 type RenderInCompleteAddressBookParams = {
-	inCompleteAddressBookEntry: InCompleteAddressBookEntry,
+	incompleteAddressBookEntry: IncompleteAddressBookEntry,
 	setName: (name: string) => void,
 	setAddress: (name: string) => void,
 	setAskForAddressAccess: (name: boolean) => void,
@@ -88,40 +88,40 @@ export const CellElement = (param: { element: ComponentChildren }) => {
 
 <p class = 'paragraph' style = 'color: var(--subtitle-text-color); text-overflow: ellipsis; overflow: hidden; width:100%'></p>
 
-function RenderInCompleteAddressBookEntry({ inCompleteAddressBookEntry, setName, setAddress, setAskForAddressAccess }: RenderInCompleteAddressBookParams) {
+function RenderIncompleteAddressBookEntry({ incompleteAddressBookEntry, setName, setAddress, setAskForAddressAccess }: RenderInCompleteAddressBookParams) {
 	const Text = (param: { text: ComponentChildren }) => {
 		return <p class = 'paragraph' style = 'color: var(--subtitle-text-color); text-overflow: ellipsis; overflow: hidden; width:100%'>
 			{ param.text }
 		</p>
 	}
-	const disableDueToSource = inCompleteAddressBookEntry.entrySource === 'DarkFloristMetadata' || inCompleteAddressBookEntry.entrySource === 'Interceptor'
-	const logoUri = inCompleteAddressBookEntry.addingAddress === false && 'logoUri' in inCompleteAddressBookEntry ? inCompleteAddressBookEntry.logoUri : undefined
+	const disableDueToSource = incompleteAddressBookEntry.entrySource === 'DarkFloristMetadata' || incompleteAddressBookEntry.entrySource === 'Interceptor'
+	const logoUri = incompleteAddressBookEntry.addingAddress === false && 'logoUri' in incompleteAddressBookEntry ? incompleteAddressBookEntry.logoUri : undefined
 	return <div class = 'media'>
 		<div class = 'media-left'>
 			<figure class = 'image'>
-				<IncompleteAddressIcon addressInput = { inCompleteAddressBookEntry.address } logoUri = { logoUri }/>
+				<IncompleteAddressIcon addressInput = { incompleteAddressBookEntry.address } logoUri = { logoUri }/>
 			</figure>
 		</div>
 		<div class = 'media-content' style = 'overflow-y: unset; overflow-x: unset;'>
 			<div class = 'container' style = 'margin-bottom: 10px;'>
 				<span class = 'log-table' style = 'justify-content: left; column-gap: 5px; row-gap: 5px; grid-template-columns: max-content 400px;'>
 					<CellElement element = { <Text text = { 'Name: ' }/> }/>
-					<CellElement element = { <NameInput nameInput = { inCompleteAddressBookEntry.name } setNameInput = { setName } disabled = { disableDueToSource }/> } />
+					<CellElement element = { <NameInput nameInput = { incompleteAddressBookEntry.name } setNameInput = { setName } disabled = { disableDueToSource }/> } />
 					<CellElement element = { <Text text = { 'Address: ' }/> }/> 
-					<CellElement element = { <AddressInput disabled = { inCompleteAddressBookEntry.addingAddress === false || disableDueToSource } addressInput = { inCompleteAddressBookEntry.address } setAddress = { setAddress } /> } />
-					{ inCompleteAddressBookEntry.type === 'ERC20' || inCompleteAddressBookEntry.type === 'ERC1155' ? <>
+					<CellElement element = { <AddressInput disabled = { incompleteAddressBookEntry.addingAddress === false || disableDueToSource } addressInput = { incompleteAddressBookEntry.address } setAddress = { setAddress } /> } />
+					{ incompleteAddressBookEntry.type === 'ERC20' || incompleteAddressBookEntry.type === 'ERC1155' ? <>
 						<CellElement element = { <Text text = { 'Symbol: ' }/> }/>
-						<CellElement element = { <input disabled = { true } className = 'input subtitle is-7 is-spaced' style = 'width: 100%' type = 'text' value = { inCompleteAddressBookEntry.symbol } placeholder = { '...' } /> } />
+						<CellElement element = { <input disabled = { true } className = 'input subtitle is-7 is-spaced' style = 'width: 100%' type = 'text' value = { incompleteAddressBookEntry.symbol } placeholder = { '...' } /> } />
 					</> : <></> }
-					{ inCompleteAddressBookEntry.type === 'ERC20' ? <>
+					{ incompleteAddressBookEntry.type === 'ERC20' ? <>
 						<CellElement element = { <Text text = { 'Decimals: ' }/> }/>
-						<CellElement element = { <input disabled = { true } className = 'input subtitle is-7 is-spaced' style = 'width: 100%' type = 'text' value = { inCompleteAddressBookEntry.decimals !== undefined ? inCompleteAddressBookEntry.decimals.toString() : inCompleteAddressBookEntry.decimals } placeholder = { '...' } /> } />
+						<CellElement element = { <input disabled = { true } className = 'input subtitle is-7 is-spaced' style = 'width: 100%' type = 'text' value = { incompleteAddressBookEntry.decimals !== undefined ? incompleteAddressBookEntry.decimals.toString() : incompleteAddressBookEntry.decimals } placeholder = { '...' } /> } />
 					</> : <></> }
 				</span>
 			</div>
-			{ inCompleteAddressBookEntry.type === 'addressInfo' ? <>
+			{ incompleteAddressBookEntry.type === 'addressInfo' ? <>
 				<label class = 'form-control'>
-					<input type = 'checkbox'  disabled = { disableDueToSource } checked = { !inCompleteAddressBookEntry.askForAddressAccess } onInput = { e => { if (e.target instanceof HTMLInputElement && e.target !== null) { setAskForAddressAccess(!e.target.checked) } } } />
+					<input type = 'checkbox'  disabled = { disableDueToSource } checked = { !incompleteAddressBookEntry.askForAddressAccess } onInput = { e => { if (e.target instanceof HTMLInputElement && e.target !== null) { setAskForAddressAccess(!e.target.checked) } } } />
 					<p class = 'paragraph checkbox-text'>Don't request for an access (insecure)</p>
 				</label>
 			</> : <></> }
@@ -132,55 +132,55 @@ function RenderInCompleteAddressBookEntry({ inCompleteAddressBookEntry, setName,
 export function AddNewAddress(param: AddAddressParam) {
 	const [errorString, setErrorString] = useState<string | undefined>(undefined)
 	const [activeAddress, setActiveAddress] = useState<bigint | undefined>(undefined)
-	const [inCompleteAddressBookEntry, setInCompleteAddressBookEntry] = useState<InCompleteAddressBookEntry>({ addingAddress: false, type: 'addressInfo', address: undefined, askForAddressAccess: false, name: undefined, symbol: undefined, decimals: undefined, logoUri: undefined, entrySource: 'FilledIn' })
+	const [incompleteAddressBookEntry, setIncompleteAddressBookEntry] = useState<IncompleteAddressBookEntry>({ addingAddress: false, type: 'addressInfo', address: undefined, askForAddressAccess: false, name: undefined, symbol: undefined, decimals: undefined, logoUri: undefined, entrySource: 'FilledIn' })
 
 	function getCompleteAddressBookEntry(): AddressBookEntry | undefined {
-		if (inCompleteAddressBookEntry.name !== undefined && inCompleteAddressBookEntry.name.length > 42) return undefined
-		const inputedAddressBigInt = stringToAddress(inCompleteAddressBookEntry.address)
+		if (incompleteAddressBookEntry.name !== undefined && incompleteAddressBookEntry.name.length > 42) return undefined
+		const inputedAddressBigInt = stringToAddress(incompleteAddressBookEntry.address)
 		if (inputedAddressBigInt === undefined) return undefined
-		const name = inCompleteAddressBookEntry.name ? inCompleteAddressBookEntry.name : checksummedAddress(inputedAddressBigInt)
-		switch(inCompleteAddressBookEntry.type) {
+		const name = incompleteAddressBookEntry.name ? incompleteAddressBookEntry.name : checksummedAddress(inputedAddressBigInt)
+		switch(incompleteAddressBookEntry.type) {
 			case 'ERC721': {
-				if (inCompleteAddressBookEntry.symbol === undefined) return undefined
+				if (incompleteAddressBookEntry.symbol === undefined) return undefined
 				return {
 					type: 'ERC721' as const,
 					name,
 					address: inputedAddressBigInt,
-					symbol: inCompleteAddressBookEntry.symbol,
-					logoUri: inCompleteAddressBookEntry.logoUri,
+					symbol: incompleteAddressBookEntry.symbol,
+					logoUri: incompleteAddressBookEntry.logoUri,
 					entrySource: 'User',
 				}
 			}
 			case 'ERC1155': {
-				if (inCompleteAddressBookEntry.symbol === undefined) return undefined
+				if (incompleteAddressBookEntry.symbol === undefined) return undefined
 				return {
 					type: 'ERC1155' as const,
 					name,
 					address: inputedAddressBigInt,
-					symbol: inCompleteAddressBookEntry.symbol,
-					logoUri: inCompleteAddressBookEntry.logoUri,
+					symbol: incompleteAddressBookEntry.symbol,
+					logoUri: incompleteAddressBookEntry.logoUri,
 					decimals: undefined,
 					entrySource: 'User',
 				}
 			}
 			case 'ERC20': {
-				if (inCompleteAddressBookEntry.symbol === undefined || inCompleteAddressBookEntry.decimals === undefined) return undefined
+				if (incompleteAddressBookEntry.symbol === undefined || incompleteAddressBookEntry.decimals === undefined) return undefined
 				return {
 					type: 'ERC20' as const,
 					name,
 					address: inputedAddressBigInt,
-					symbol: inCompleteAddressBookEntry.symbol,
-					decimals: inCompleteAddressBookEntry.decimals,
-					logoUri: inCompleteAddressBookEntry.logoUri,
+					symbol: incompleteAddressBookEntry.symbol,
+					decimals: incompleteAddressBookEntry.decimals,
+					logoUri: incompleteAddressBookEntry.logoUri,
 					entrySource: 'User',
 				}
 			}
 			case 'contact':
 			case 'contract': return {
-				type: inCompleteAddressBookEntry.type,
+				type: incompleteAddressBookEntry.type,
 				name,
 				address: inputedAddressBigInt,
-				logoUri: inCompleteAddressBookEntry.logoUri,
+				logoUri: incompleteAddressBookEntry.logoUri,
 				entrySource: 'User',
 			}
 			case 'addressInfo': {
@@ -188,11 +188,11 @@ export function AddNewAddress(param: AddAddressParam) {
 					type: 'addressInfo' as const,
 					name,
 					address: inputedAddressBigInt,
-					askForAddressAccess: inCompleteAddressBookEntry.askForAddressAccess,
+					askForAddressAccess: incompleteAddressBookEntry.askForAddressAccess,
 					entrySource: 'User',
 				}
 			}
-			default: assertUnreachable(inCompleteAddressBookEntry.type)
+			default: assertUnreachable(incompleteAddressBookEntry.type)
 		}
 	}
 
@@ -201,11 +201,11 @@ export function AddNewAddress(param: AddAddressParam) {
 		const entryToAdd = getCompleteAddressBookEntry()
 		if (entryToAdd === undefined) return
 		await sendPopupMessageToBackgroundPage({ method: 'popup_addOrModifyAddressBookEntry', data: entryToAdd } )
-		setInCompleteAddressBookEntry({ addingAddress: false, type: 'addressInfo', address: undefined, askForAddressAccess: false, name: undefined, symbol: undefined, decimals: undefined, logoUri: undefined, entrySource: 'FilledIn' })
+		setIncompleteAddressBookEntry({ addingAddress: false, type: 'addressInfo', address: undefined, askForAddressAccess: false, name: undefined, symbol: undefined, decimals: undefined, logoUri: undefined, entrySource: 'FilledIn' })
 	}
 
 	async function createAndSwitch() {
-		const inputedAddressBigInt = stringToAddress(inCompleteAddressBookEntry?.address)
+		const inputedAddressBigInt = stringToAddress(incompleteAddressBookEntry?.address)
 		if (inputedAddressBigInt === undefined) return
 		await add()
 		if (param.setActiveAddressAndInformAboutIt !== undefined) await param.setActiveAddressAndInformAboutIt(inputedAddressBigInt)
@@ -216,21 +216,21 @@ export function AddNewAddress(param: AddAddressParam) {
 	}*/
 
 	useEffect(() => {
-		setInCompleteAddressBookEntry(param.inCompleteAddressBookEntry)
+		setIncompleteAddressBookEntry(param.incompleteAddressBookEntry)
 		setActiveAddress(param.activeAddress)
-		if (param.inCompleteAddressBookEntry.entrySource === 'DarkFloristMetadata' || param.inCompleteAddressBookEntry.entrySource === 'Interceptor') {
-			setErrorString(`The address information for ${ param.inCompleteAddressBookEntry.name } originates from The Interceptor and cannot be modified.`)
+		if (param.incompleteAddressBookEntry.entrySource === 'DarkFloristMetadata' || param.incompleteAddressBookEntry.entrySource === 'Interceptor') {
+			setErrorString(`The address information for ${ param.incompleteAddressBookEntry.name } originates from The Interceptor and cannot be modified.`)
 		} else {
 			setErrorString(undefined)
 		}
-	}, [param.inCompleteAddressBookEntry, param.activeAddress])
+	}, [param.incompleteAddressBookEntry, param.activeAddress])
 
 	function areInputValid() {
 		return getCompleteAddressBookEntry() !== undefined
 	}
 
 	function setAddress(input: string) {
-		setInCompleteAddressBookEntry((prevEntry) => {
+		setIncompleteAddressBookEntry((prevEntry) => {
 			if (input === undefined) {
 				setErrorString(undefined)
 				return { ... prevEntry, address: input }
@@ -252,13 +252,13 @@ export function AddNewAddress(param: AddAddressParam) {
 	}
 
 	function setName(name: string) {
-		setInCompleteAddressBookEntry((entry) => {
+		setIncompleteAddressBookEntry((entry) => {
 			if (entry === undefined) return entry
 			return { ...entry, name }
 		})
 	}
 	function setAskForAddressAccess(askForAddressAccess: boolean) {
-		setInCompleteAddressBookEntry((entry) => {
+		setIncompleteAddressBookEntry((entry) => {
 			if (entry === undefined) return entry
 			return { ...entry, askForAddressAccess }
 		})
@@ -274,7 +274,7 @@ export function AddNewAddress(param: AddAddressParam) {
 					</span>
 				</div>
 				<div class = 'card-header-title'>
-					<p className = 'paragraph'> { param.inCompleteAddressBookEntry.addingAddress ? `Add New ${ readableAddressType[param.inCompleteAddressBookEntry.type] }` : `Modify ${ param.inCompleteAddressBookEntry.name !== undefined ? param.inCompleteAddressBookEntry.name : readableAddressType[param.inCompleteAddressBookEntry.type] }` } </p>
+					<p className = 'paragraph'> { param.incompleteAddressBookEntry.addingAddress ? `Add New ${ readableAddressType[param.incompleteAddressBookEntry.type] }` : `Modify ${ param.incompleteAddressBookEntry.name !== undefined ? param.incompleteAddressBookEntry.name : readableAddressType[param.incompleteAddressBookEntry.type] }` } </p>
 				</div>
 				<button class = 'card-header-icon' aria-label = 'close' onClick = { param.close }>
 					<span class = 'icon' style = 'color: var(--text-color);'> X </span>
@@ -283,8 +283,8 @@ export function AddNewAddress(param: AddAddressParam) {
 			<section class = 'modal-card-body' style = 'overflow: visible;'>
 				<div class = 'card' style = 'margin: 10px;'>
 					<div class = 'card-content'>
-						<RenderInCompleteAddressBookEntry
-							inCompleteAddressBookEntry = { inCompleteAddressBookEntry }
+						<RenderIncompleteAddressBookEntry
+							incompleteAddressBookEntry = { incompleteAddressBookEntry }
 							setAddress = { setAddress }
 							setName = { setName }
 							setAskForAddressAccess = { setAskForAddressAccess }
@@ -296,8 +296,8 @@ export function AddNewAddress(param: AddAddressParam) {
 				</div>
 			</section>
 			<footer class = 'modal-card-foot window-footer' style = 'border-bottom-left-radius: unset; border-bottom-right-radius: unset; border-top: unset; padding: 10px;'>
-				{ param.setActiveAddressAndInformAboutIt === undefined || inCompleteAddressBookEntry === undefined || activeAddress === stringToAddress(inCompleteAddressBookEntry.address) ? <></> : <button class = 'button is-success is-primary' onClick = { createAndSwitch } disabled = { ! (areInputValid()) }> { param.inCompleteAddressBookEntry.addingAddress ? 'Create and switch' : 'Modify and switch' } </button> }
-				<button class = 'button is-success is-primary' onClick = { add } disabled = { !areInputValid() || param.inCompleteAddressBookEntry.entrySource === 'DarkFloristMetadata' || param.inCompleteAddressBookEntry.entrySource === 'Interceptor' }> { param.inCompleteAddressBookEntry.addingAddress ? 'Create' : 'Modify' } </button>
+				{ param.setActiveAddressAndInformAboutIt === undefined || incompleteAddressBookEntry === undefined || activeAddress === stringToAddress(incompleteAddressBookEntry.address) ? <></> : <button class = 'button is-success is-primary' onClick = { createAndSwitch } disabled = { ! (areInputValid()) }> { param.incompleteAddressBookEntry.addingAddress ? 'Create and switch' : 'Modify and switch' } </button> }
+				<button class = 'button is-success is-primary' onClick = { add } disabled = { !areInputValid() || param.incompleteAddressBookEntry.entrySource === 'DarkFloristMetadata' || param.incompleteAddressBookEntry.entrySource === 'Interceptor' }> { param.incompleteAddressBookEntry.addingAddress ? 'Create' : 'Modify' } </button>
 				<button class = 'button is-primary' style = 'background-color: var(--negative-color)' onClick = { param.close }>Cancel</button>
 			</footer>
 		</div>

@@ -8,7 +8,7 @@ import Hint from './components/subcomponents/Hint.js'
 import { sendPopupMessageToBackgroundPage } from './background/backgroundUtils.js'
 import { assertNever } from './utils/typescript.js'
 import { checksummedAddress } from './utils/bigint.js'
-import { AddressBookEntries, AddressBookEntry, InCompleteAddressBookEntry } from './utils/addressBookTypes.js'
+import { AddressBookEntries, AddressBookEntry, IncompleteAddressBookEntry } from './utils/addressBookTypes.js'
 
 type Modals = 'noModal' | 'addNewAddress' | 'ConfirmaddressBookEntryToBeRemoved'
 
@@ -203,7 +203,7 @@ export function AddressBook() {
 	const searchStringRef = useRef<string | undefined>(searchString)
 	const currentPageRef = useRef<number>(currentPage)
 
-	const [addingNewAddress, setAddingNewAddress] = useState<InCompleteAddressBookEntry>({ addingAddress: false, type: 'addressInfo', address: undefined, askForAddressAccess: false, name: undefined, symbol: undefined, decimals: undefined, logoUri: undefined, entrySource: 'FilledIn' })
+	const [addingNewAddress, setAddingNewAddress] = useState<IncompleteAddressBookEntry>({ addingAddress: false, type: 'addressInfo', address: undefined, askForAddressAccess: false, name: undefined, symbol: undefined, decimals: undefined, logoUri: undefined, entrySource: 'FilledIn' })
 
 	const scrollTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
 
@@ -459,7 +459,7 @@ export function AddressBook() {
 					{ modalState === 'addNewAddress' ?
 						<AddNewAddress
 							setActiveAddressAndInformAboutIt = { undefined }
-							inCompleteAddressBookEntry = { addingNewAddress }
+							incompleteAddressBookEntry = { addingNewAddress }
 							close = { () => setModalState('noModal') }
 							activeAddress = { undefined }
 						/>
