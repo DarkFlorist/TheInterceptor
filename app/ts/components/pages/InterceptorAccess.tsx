@@ -10,7 +10,7 @@ import { ChangeActiveAddress } from './ChangeActiveAddress.js'
 import { DinoSays, DinoSaysNotification } from '../subcomponents/DinoSays.js'
 import { getPrettySignerName } from '../subcomponents/signers.js'
 import { checksummedAddress } from '../../utils/bigint.js'
-import { AddressInfoEntry, AddressBookEntry, InCompleteAddressBookEntry } from '../../utils/addressBookTypes.js'
+import { AddressInfoEntry, AddressBookEntry, IncompleteAddressBookEntry } from '../../utils/addressBookTypes.js'
 import { Website } from '../../utils/websiteAccessTypes.js'
 
 const HALF_HEADER_HEIGHT = 48 / 2
@@ -171,7 +171,7 @@ const DISABLED_DELAY_MS = 3000
 
 export function InterceptorAccess() {
 	const [pendingAccessRequestArray, setAccessRequest] = useState<PendingAccessRequestArray>([])
-	const [addingNewAddress, setAddingNewAddress] = useState<InCompleteAddressBookEntry> ({ addingAddress: false, type: 'addressInfo', address: undefined, askForAddressAccess: false, name: undefined, symbol: undefined, decimals: undefined, logoUri: undefined, entrySource: 'FilledIn' })
+	const [addingNewAddress, setAddingNewAddress] = useState<IncompleteAddressBookEntry> ({ addingAddress: false, type: 'addressInfo', address: undefined, askForAddressAccess: false, name: undefined, symbol: undefined, decimals: undefined, logoUri: undefined, entrySource: 'FilledIn' })
 	const [appPage, setAppPage] = useState('Home')
 	const [informationUpdatedTimestamp, setInformationUpdatedTimestamp] = useState(0)
 	const [, setTimeSinceInformationUpdate] = useState(0)
@@ -318,7 +318,7 @@ export function InterceptorAccess() {
 				{ appPage === 'AddNewAddress' || appPage === 'ModifyAddress'
 					? <AddNewAddress
 						setActiveAddressAndInformAboutIt = { setActiveAddressAndInformAboutIt }
-						inCompleteAddressBookEntry = { addingNewAddress }
+						incompleteAddressBookEntry = { addingNewAddress }
 						close = { () => setAppPage('Home') }
 						activeAddress = { pendingAccessRequestArray[0].requestAccessToAddress?.address }
 					/>
