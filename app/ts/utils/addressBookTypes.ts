@@ -104,3 +104,15 @@ export const AddressBookEntry = funtypes.Union(
 
 export type AddressBookEntries = funtypes.Static<typeof AddressBookEntries>
 export const AddressBookEntries = funtypes.ReadonlyArray(AddressBookEntry)
+
+export type IncompleteAddressBookEntry = {
+	addingAddress: boolean, // if false, we are editing addess
+	type: 'addressInfo' | 'contact' | 'contract' | 'ERC20' | 'ERC1155' | 'ERC721'
+	address: string | undefined
+	askForAddressAccess: boolean
+	name: string | undefined
+	symbol: string | undefined
+	decimals: bigint | undefined
+	logoUri: string | undefined
+	entrySource: EntrySource
+}

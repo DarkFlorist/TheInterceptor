@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'preact/hooks'
 import { checksummedAddress, dataStringWith0xStart, stringToUint8Array } from '../../utils/bigint.js'
-import { InCompleteAddressBookEntry, RenameAddressCallBack } from '../../utils/user-interface-types.js'
+import { RenameAddressCallBack } from '../../utils/user-interface-types.js'
 import Hint from '../subcomponents/Hint.js'
 import { ErrorCheckBox, Error as ErrorComponent} from '../subcomponents/Error.js'
 import { MOCK_PRIVATE_KEYS_ADDRESS, getChainName } from '../../utils/constants.js'
@@ -19,7 +19,7 @@ import { OrderComponents, OrderComponentsExtraDetails } from '../simulationExpla
 import { Ether } from '../subcomponents/coins.js'
 import { EnrichedEIP712, EnrichedEIP712Message, GroupedSolidityType } from '../../utils/eip712Parsing.js'
 import { tryFocusingTabOrWindow, humanReadableDateFromSeconds, CellElement } from '../ui-utils.js'
-import { AddressBookEntry } from '../../utils/addressBookTypes.js'
+import { AddressBookEntry, IncompleteAddressBookEntry } from '../../utils/addressBookTypes.js'
 
 type SignatureCardParams = {
 	personalSignRequestData: PersonalSignRequestData
@@ -374,7 +374,7 @@ function SignatureCard(params: SignatureCardParams) {
 }
 
 export function PersonalSign() {
-	const [addingNewAddress, setAddingNewAddress] = useState<InCompleteAddressBookEntry | 'renameAddressModalClosed'> ('renameAddressModalClosed')
+	const [addingNewAddress, setAddingNewAddress] = useState<IncompleteAddressBookEntry | 'renameAddressModalClosed'> ('renameAddressModalClosed')
 	const [personalSignRequestData, setPersonalSignRequestData] = useState<PersonalSignRequestData | undefined>(undefined)
 	const [forceSend, setForceSend] = useState<boolean>(false)
 
@@ -458,7 +458,7 @@ export function PersonalSign() {
 						? <></>
 						: <AddNewAddress
 							setActiveAddressAndInformAboutIt = { undefined }
-							inCompleteAddressBookEntry = { addingNewAddress }
+							incompleteAddressBookEntry = { addingNewAddress }
 							close = { () => { setAddingNewAddress('renameAddressModalClosed') } }
 							activeAddress = { undefined }
 						/>
