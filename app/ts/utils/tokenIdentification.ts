@@ -1,10 +1,10 @@
 import { Interface } from 'ethers'
 import { Erc20ABI, Erc721ABI, MulticallABI } from './abi.js'
 import { EthereumAddress } from './wire-types.js'
-import { Erc20Definition } from './visualizer-types.js'
 import { IEthereumClientService } from '../simulation/services/EthereumClientService.js'
 import { UniswapV3Multicall2 } from './constants.js'
-import { addressString, stringToUint8Array } from './bigint.js'
+import { addressString, checksummedAddress, stringToUint8Array } from './bigint.js'
+import { Erc1155Entry, Erc20TokenEntry, Erc721Entry } from './addressBookTypes.js'
 
 type EOA = {
 	type: 'EOA'
@@ -16,17 +16,7 @@ type UnknownContract = {
 	address: EthereumAddress
 }
 
-type identifiedErc721 = {
-	type: 'ERC721'
-	address: EthereumAddress
-	name: string
-	symbol: string
-	entrySource: 'OnChain'
-}
-
-type identifiedErc1155 = { type: 'ERC1155', address: EthereumAddress, entrySource: 'OnChain' }
-
-type IdentifiedAddress = (EOA | Erc20Definition | identifiedErc721 | identifiedErc1155 | UnknownContract)
+type IdentifiedAddress = (EOA | Erc20TokenEntry | Erc721Entry | Erc1155Entry | UnknownContract)
 
 async function tryAggregateMulticall(ethereumClientService: IEthereumClientService, calls: { target: string, callData: string }[]): Promise<{ success: boolean, returnData: string }[]> {
 	const multicallInterface = new Interface(MulticallABI)
@@ -66,7 +56,14 @@ export async function itentifyAddressViaOnChainInformation(ethereumClientService
 			}
 		}
 		if (isErc1155.success && nftInterface.decodeFunctionResult('supportsInterface', isErc1155.returnData)[0] === true) {
-			return { type: 'ERC1155', address, entrySource: 'OnChain' }
+			return {
+				type: 'ERC1155',
+				address,
+				entrySource: 'OnChain',
+				name: checksummedAddress(address),
+				symbol: '???',
+				decimals: undefined
+			}
 		}
 		if (name.success && decimals.success && symbol.success && totalSupply.success) {
 			return {

@@ -197,3 +197,5 @@ export const PRIMARY_COLOR = '#58a5b3'
 
 export const CHROME_NO_TAB_WITH_ID_ERROR = 'No tab with id'
 export const CANNOT_SIMULATE_OFF_LEGACY_BLOCK = 'Cannot simulate off a legacy block'
+
+export const BIG_FONT_SIZE = '28px'

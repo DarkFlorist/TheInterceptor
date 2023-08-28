@@ -187,6 +187,6 @@ export async function tryFocusingTabOrWindow(windowOrTab: WindowOrTabId) {
 
 export const CellElement = (param: { text: ComponentChildren }) => {
 	return <div class = 'log-cell' style = 'justify-content: right;'>
-		<p class = 'paragraph' style = 'color: var(--subtitle-text-color); text-overflow: ellipsis; overflow: hidden;width: 100%;'>{ param.text }</p>
+		<p class = 'paragraph' style = 'color: var(--subtitle-text-color); text-overflow: ellipsis; overflow: hidden;'>{ param.text }</p>
 	</div>
 }

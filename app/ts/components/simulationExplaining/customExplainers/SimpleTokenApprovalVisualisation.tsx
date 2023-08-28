@@ -3,6 +3,7 @@ import { BigAddress } from '../../subcomponents/address.js'
 import { AllApproval, TokenAmount, TokenSymbol } from '../../subcomponents/coins.js'
 import { GasFee, TransactionGasses } from '../SimulationSummary.js'
 import { TokenVisualizerResultWithMetadata, RpcNetwork } from '../../../utils/visualizer-types.js'
+import { BIG_FONT_SIZE } from '../../../utils/constants.js'
 
 type SimpleTokenApprovalVisualisation = {
 	approval: TokenVisualizerResultWithMetadata
@@ -33,8 +34,7 @@ export function SimpleTokenApprovalVisualisation(params: SimpleTokenApprovalVisu
 					{ params.approval.type === 'NFT All approval' ?
 						<AllApproval
 							{ ...params.approval }
-							textColor = { textColor }
-							style = { { 'font-size': '28px', 'font-weight': '500' } }
+							style = { { 'font-size': BIG_FONT_SIZE, 'font-weight': '500', color: textColor } }
 						/>
 					: <> { 'amount' in params.approval && params.approval.amount >= (2n ** 96n - 1n ) ?
 							<p class = 'ellipsis' style = { `color: ${ textColor }; font-size: 28px; font-weight: 500` }><b>ALL</b></p>
@@ -42,9 +42,8 @@ export function SimpleTokenApprovalVisualisation(params: SimpleTokenApprovalVisu
 							'amount' in params.approval ?
 								<TokenAmount
 									amount = { params.approval.amount }
-									decimals = { params.approval.token.decimals }
-									textColor = { textColor }
-									style = { { 'font-size': '28px', 'font-weight': '500' } }
+									tokenEntry = { params.approval.token }
+									style = { { 'font-size': BIG_FONT_SIZE, 'font-weight': '500', color: textColor } }
 								/>
 							: <></>
 						} </>
@@ -52,10 +51,10 @@ export function SimpleTokenApprovalVisualisation(params: SimpleTokenApprovalVisu
 				</div>
 				<div class = 'log-cell' style = 'padding-right: 0.2em'>
 					<TokenSymbol
-						{ ...params.approval.token }
-						textColor = { textColor }
+						{ ...'tokenId' in params.approval ? { tokenId: params.approval.tokenId, tokenEntry: params.approval.token } : ( params.approval.type === 'NFT All approval' ? { tokenEntry: params.approval.token, tokenId: undefined } : { tokenEntry: params.approval.token }) }
 						useFullTokenName = { false }
-						style = { { 'font-size': '28px', 'font-weight': '500' } }
+						style = { { 'font-size': BIG_FONT_SIZE, 'font-weight': '500', color: textColor } }
+						renameAddressCallBack = { params.renameAddressCallBack }
 					/>
 				</div>
 			</span>

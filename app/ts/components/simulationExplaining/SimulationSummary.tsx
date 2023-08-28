@@ -1,6 +1,6 @@
 import { Erc1155TokenBalanceChange, Erc721and1155OperatorChange, LogSummarizer, SummaryOutcome } from '../../simulation/services/LogSummarizer.js'
 import { RenameAddressCallBack, RpcConnectionStatus } from '../../utils/user-interface-types.js'
-import { Erc721TokenApprovalChange, Erc721Definition, SimulatedAndVisualizedTransaction, SimulationAndVisualisationResults, ERC20TokenApprovalChange, Erc20TokenBalanceChange, Erc20Definition, TransactionWithAddressBookEntries, Erc1155Definition } from '../../utils/visualizer-types.js'
+import { Erc721TokenApprovalChange, SimulatedAndVisualizedTransaction, SimulationAndVisualisationResults, ERC20TokenApprovalChange, Erc20TokenBalanceChange, TransactionWithAddressBookEntries } from '../../utils/visualizer-types.js'
 import { BigAddress, SmallAddress, WebsiteOriginText } from '../subcomponents/address.js'
 import { Ether, EtherAmount, EtherSymbol, TokenWithAmount, TokenAmount, TokenPrice, TokenSymbol, TokenOrEth } from '../subcomponents/coins.js'
 import { LogAnalysis } from './Transactions.js'
@@ -15,7 +15,7 @@ import { CellElement, convertNumberToCharacterRepresentationIfSmallEnough, upper
 import { EthereumTimestamp } from '../../utils/wire-types.js'
 import { getEthDonator } from '../../background/storageVariables.js'
 import { RpcNetwork } from '../../utils/visualizer-types.js'
-import { AddressBookEntry } from '../../utils/addressBookTypes.js'
+import { AddressBookEntry, Erc1155Entry, Erc20TokenEntry, Erc721Entry } from '../../utils/addressBookTypes.js'
 import { Website } from '../../utils/websiteAccessTypes.js'
 
 type EtherChangeParams = {
@@ -37,7 +37,7 @@ function EtherChange(param: EtherChangeParams) {
 		<div class = { param.isImportant ? `box token-box ${ boxColor }`: '' } style = 'display: flex'>
 			<Ether
 				amount = { amount }
-				textColor = { amount >= 0 ? param.textColor : param.negativeColor }
+				style = { { color: amount >= 0 ? param.textColor : param.negativeColor } }
 				showSign = { true }
 				useFullTokenName = { true }
 				rpcNetwork = { param.rpcNetwork }
@@ -52,25 +52,27 @@ type Erc20BalanceChangeParams = {
 	negativeColor: string,
 	isImportant: boolean,
 	rpcNetwork: RpcNetwork,
+	renameAddressCallBack: RenameAddressCallBack
 }
 
 function Erc20BalanceChange(param: Erc20BalanceChangeParams) {
 	if ( param.erc20TokenBalanceChanges.length === 0 ) return <></>
 	return <>
-		{ Array.from(param.erc20TokenBalanceChanges).map((Erc20TokenBalanceChange) => (
+		{ Array.from(param.erc20TokenBalanceChanges).map((erc20TokenBalanceChange) => (
 			<div class = 'vertical-center' style = 'display: flex'>
-				<div class = { param.isImportant ? `box token-box ${ Erc20TokenBalanceChange.changeAmount < 0n ? 'negative-box' : 'positive-box' }`: '' } style = 'display: flex' >
+				<div class = { param.isImportant ? `box token-box ${ erc20TokenBalanceChange.changeAmount < 0n ? 'negative-box' : 'positive-box' }`: '' } style = 'display: flex' >
 					<TokenWithAmount
-						{ ...Erc20TokenBalanceChange }
-						amount = { Erc20TokenBalanceChange.changeAmount }
+						tokenEntry = { erc20TokenBalanceChange }
+						amount = { erc20TokenBalanceChange.changeAmount }
 						showSign = { true }
-						textColor = { Erc20TokenBalanceChange.changeAmount > 0n ? param.textColor : param.negativeColor }
+						style = { { color: erc20TokenBalanceChange.changeAmount > 0n ? param.textColor : param.negativeColor } }
 						useFullTokenName = { true }
+						renameAddressCallBack = { param.renameAddressCallBack }
 					/>
 					<TokenPrice
-						amount = { Erc20TokenBalanceChange.changeAmount }
-						tokenPriceEstimate = { Erc20TokenBalanceChange.tokenPriceEstimate }
-						textColor = { Erc20TokenBalanceChange.changeAmount > 0n ? param.textColor : param.negativeColor }
+						amount = { erc20TokenBalanceChange.changeAmount }
+						tokenPriceEstimate = { erc20TokenBalanceChange.tokenPriceEstimate }
+						style = { { color: erc20TokenBalanceChange.changeAmount > 0n ? param.textColor : param.negativeColor } }
 						rpcNetwork = { param.rpcNetwork }
 					/>
 				</div>
@@ -79,7 +81,7 @@ function Erc20BalanceChange(param: Erc20BalanceChangeParams) {
 	</>
 }
 
-type Erc20ApprovalChangeParams = Erc20Definition & {
+type Erc20ApprovalChangeParams = Erc20TokenEntry & {
 	change: bigint,
 	entryToApprove: AddressBookEntry,
 	textColor: string,
@@ -111,17 +113,18 @@ export function Erc20ApprovalChange(param: Erc20ApprovalChangeParams) {
 					<p class = 'ellipsis' style = {`color: ${ textColor };` }> <b>ALL</b>&nbsp;</p>
 					:
 					<TokenAmount
-						{ ...param }
+						tokenEntry = { param }
 						amount = { param.change }
-						textColor = { textColor }
+						style = { { color: textColor } }
 					/>
 				}
 			</div>
 			<div class = 'log-cell'>
 				<TokenSymbol
-					{ ...param }
-					textColor = { textColor }
+					tokenEntry = { param }
+					style = { { color: textColor } }
 					useFullTokenName = { true }
+					renameAddressCallBack = { param.renameAddressCallBack }
 				/>
 			</div>
 		</table>
@@ -156,31 +159,33 @@ export function Erc20ApprovalChanges(param: Erc20ApprovalChangesParams ) {
 	</>
 }
 
-export type Erc721TokenBalanceChange = (Erc721Definition & { received: boolean })
+export type Erc721TokenBalanceChange = (Erc721Entry & { received: boolean, tokenId: bigint })
 
 type Erc721TokenChangesParams = {
 	Erc721TokenBalanceChanges: Erc721TokenBalanceChange[],
 	textColor: string,
 	negativeColor: string,
 	isImportant: boolean,
+	renameAddressCallBack: RenameAddressCallBack,
 }
 
 function Erc721TokenChanges(param: Erc721TokenChangesParams ) {
 	if ( param.Erc721TokenBalanceChanges.length == 0 ) return <></>
 
 	return <>
-		{ param.Erc721TokenBalanceChanges.map( (tokenChange) => (
+		{ param.Erc721TokenBalanceChanges.map((tokenChange) => (
 			<div class = 'vertical-center' style = 'display: flex'>
 				<div class = { param.isImportant ? `box token-box ${ !tokenChange.received ? 'negative-box' : 'positive-box' }`: '' } style = 'display: flex'>
 					<p class = 'noselect nopointer' style = { `color: ${ param.textColor };` }>
 						{ `${ tokenChange.received ? ' + ' : ' - ' }` }
 					</p>
 					<TokenOrEth
-						{ ...tokenChange }
+						tokenEntry = { tokenChange }
 						tokenId = { tokenChange.tokenId }
-						textColor = { param.textColor }
+						style = { { color: param.textColor } }
 						useFullTokenName = { true }
 						showSign = { true }
+						renameAddressCallBack = { param.renameAddressCallBack }
 					/>
 				</div>
 			</div>
@@ -188,8 +193,8 @@ function Erc721TokenChanges(param: Erc721TokenChangesParams ) {
 	</>
 }
 
-export type Erc721OperatorChange = Omit<Erc721Definition, 'tokenId'> & { operator: AddressBookEntry | undefined }
-export type Erc1155OperatorChange = (Omit<Erc1155Definition, 'tokenId'> & { operator: AddressBookEntry | undefined })
+export type Erc721OperatorChange = Erc721Entry & { operator: AddressBookEntry | undefined }
+export type Erc1155OperatorChange = (Erc1155Entry & { operator: AddressBookEntry | undefined })
 
 type Erc721Or1155OperatorChangesParams = {
 	erc721or1155OperatorChanges: Erc721and1155OperatorChange[]
@@ -222,9 +227,11 @@ export function Erc721or1155OperatorChanges(param: Erc721Or1155OperatorChangesPa
 							</div>
 							<div class = 'log-cell'>
 								<TokenSymbol
-									{ ...token }
-									textColor = { param.negativeColor }
+									tokenEntry = { token }
+									tokenId = { undefined }
+									style = { { color: param.negativeColor } }
 									useFullTokenName = { true }
+									renameAddressCallBack = { param.renameAddressCallBack }
 								/>
 							</div>
 						</table>
@@ -237,9 +244,11 @@ export function Erc721or1155OperatorChanges(param: Erc721Or1155OperatorChangesPa
 							</div>
 							<div class = 'log-cell'>
 								<TokenSymbol
-									{ ...token }
-									textColor = { param.textColor }
+									tokenEntry = { token }
+									tokenId = { undefined }
+									style = { { color: param.textColor } }
 									useFullTokenName = { true }
+									renameAddressCallBack = { param.renameAddressCallBack }
 								/>
 							</div>
 						</table>
@@ -280,9 +289,11 @@ export function Erc721TokenIdApprovalChanges(param: Erc721TokenIdApprovalChanges
 							</div>
 							<div class = 'log-cell'>
 								<TokenOrEth
-									{ ...approvalsChange.token }
-									textColor = { param.negativeColor }
+									tokenEntry = { approvalsChange.tokenEntry }
+									tokenId = { approvalsChange.tokenId }
+									style = { { color: param.negativeColor } }
 									useFullTokenName = { true }
+									renameAddressCallBack = { param.renameAddressCallBack }
 								/>
 							</div>
 						</table>
@@ -299,6 +310,7 @@ type Erc1155TokenChangesParams = {
 	textColor: string,
 	negativeColor: string,
 	isImportant: boolean,
+	renameAddressCallBack: RenameAddressCallBack,
 }
 
 function Erc1155TokenChanges(param: Erc1155TokenChangesParams ) {
@@ -309,11 +321,13 @@ function Erc1155TokenChanges(param: Erc1155TokenChangesParams ) {
 			<div class = 'vertical-center' style = 'display: flex'>
 				<div class = { param.isImportant ? `box token-box ${ tokenChange.changeAmount < 0n ? 'negative-box' : 'positive-box' }`: '' } style = 'display: flex'>
 					<TokenWithAmount
-						{ ...tokenChange }
+						tokenEntry = { tokenChange }
+						tokenId = { tokenChange.tokenId }
 						amount = { tokenChange.changeAmount }
-						textColor = { param.textColor }
+						style = { { color: param.textColor } }
 						useFullTokenName = { true }
 						showSign = { true }
+						renameAddressCallBack = { param.renameAddressCallBack }
 					/>
 				</div>
 			</div>
@@ -367,6 +381,7 @@ export function SummarizeAddress(param: SummarizeAddressParams) {
 				negativeColor = { positiveNegativeColors.negativeColor }
 				isImportant = { isOwnAddress }
 				rpcNetwork = { param.simulationAndVisualisationResults.rpcNetwork }
+				renameAddressCallBack = { param.renameAddressCallBack }
 			/>
 			<Erc20ApprovalChanges
 				erc20TokenApprovalChanges = { param.balanceSummary.erc20TokenApprovalChanges }
@@ -380,6 +395,7 @@ export function SummarizeAddress(param: SummarizeAddressParams) {
 				textColor = { positiveNegativeColors.textColor }
 				negativeColor = { positiveNegativeColors.negativeColor }
 				isImportant = { isOwnAddress }
+				renameAddressCallBack = { param.renameAddressCallBack }
 			/>
 			<Erc721or1155OperatorChanges
 				erc721or1155OperatorChanges = { param.balanceSummary.erc721and1155OperatorChanges }
@@ -400,6 +416,7 @@ export function SummarizeAddress(param: SummarizeAddressParams) {
 				textColor = { positiveNegativeColors.textColor }
 				negativeColor = { positiveNegativeColors.negativeColor }
 				isImportant = { isOwnAddress }
+				renameAddressCallBack = { param.renameAddressCallBack }
 			/>
 		</div>
 	</div>
@@ -550,12 +567,12 @@ export function GasFee({ tx, rpcNetwork }: { tx: TransactionGasses, rpcNetwork: 
 		<div class = 'log-cell'>
 			<EtherAmount
 				amount = { tx.gasSpent * tx.realizedGasPrice  }
-				textColor = { 'var(--subtitle-text-color)' }
+				style = { { color: 'var(--subtitle-text-color)' } }
 			/>
 		</div>
 		<div class = 'log-cell'>
 			<EtherSymbol
-				textColor = { 'var(--subtitle-text-color)' }
+				style = { { color: 'var(--subtitle-text-color)' } }
 				rpcNetwork = { rpcNetwork }
 			/>
 		</div>
@@ -744,7 +761,7 @@ export function RawTransactionDetailsCard({ transaction, renameAddressCallBack, 
 						<CellElement text = 'To: '/>
 						<CellElement text = { transaction.to === undefined ? 'No receiving Address' : <SmallAddress addressBookEntry = { transaction.to } renameAddressCallBack = { renameAddressCallBack } textColor = { 'var(--subtitle-text-color)' }/> } />
 						<CellElement text = 'Value: '/>
-						<CellElement text = { <Ether amount = { transaction.value } useFullTokenName = { true } rpcNetwork = { transaction.rpcNetwork } textColor = { 'var(--subtitle-text-color)' }/> } />
+						<CellElement text = { <Ether amount = { transaction.value } useFullTokenName = { true } rpcNetwork = { transaction.rpcNetwork } style = { { color: 'var(--subtitle-text-color)' } } /> } />
 						<CellElement text = 'Gas used: '/>
 						<CellElement text = { `${ gasSpent.toString(10) } gas (${ Number(gasSpent * 10000n / transaction.gas) / 100 }%)` }/>
 						<CellElement text = 'Gas limit: '/>

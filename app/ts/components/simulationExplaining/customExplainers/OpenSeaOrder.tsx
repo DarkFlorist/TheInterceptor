@@ -6,8 +6,9 @@ import { bytes32String } from '../../../utils/bigint.js'
 import { ArrowIcon } from '../../subcomponents/icons.js'
 import { CellElement, humanReadableDateFromSeconds } from '../../ui-utils.js'
 import { RpcNetwork } from '../../../utils/visualizer-types.js'
+import { BIG_FONT_SIZE } from '../../../utils/constants.js'
 
-const tokenStyle = { 'font-size': '28px', 'font-weight': '500', 'color:': 'var(--text-color)' }
+const tokenStyle = { 'font-size': BIG_FONT_SIZE, 'font-weight': '500', 'color:': 'var(--text-color)' }
 
 type VisualizeOpenSeaAssetParams = {
 	orderOrConsideration: SeaPortSingleOfferWithAddressBookEntries | SeaPortSingleConsiderationWithAddressBookEntries
