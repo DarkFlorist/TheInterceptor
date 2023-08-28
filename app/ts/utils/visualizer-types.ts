@@ -6,7 +6,7 @@ import { RenameAddressCallBack } from './user-interface-types.js'
 import { ERROR_INTERCEPTOR_GAS_ESTIMATION_FAILED } from './constants.js'
 import { EthBalanceChanges, EthSubscribeParams, SendRawTransactionParams, SendTransactionParams, SingleMulticallResponse } from './JsonRpc-types.js'
 import { WebsiteSocket } from './requests.js'
-import { AddressBookEntry, Erc721Entry, Erc20TokenEntry, Erc1155Entry } from './addressBookTypes.js'
+import { AddressBookEntry, Erc721Entry, Erc20TokenEntry, Erc1155Entry, EntrySource } from './addressBookTypes.js'
 import { Website } from './websiteAccessTypes.js'
 
 
@@ -290,6 +290,7 @@ export type Erc20Definition = {
 	symbol: string
 	decimals: bigint
 	logoUri?: string
+	entrySource: EntrySource
 }
 
 export type Erc20WithAmount = Erc20Definition & {
@@ -313,6 +314,7 @@ export type Erc721Definition = {
 	symbol: string
 	logoUri?: string
 	tokenURI?: string
+	entrySource: EntrySource
 }
 
 export type Erc721TokenApprovalChange = {
@@ -328,7 +330,8 @@ export type Erc1155Definition = {
 	symbol: string
 	logoUri?: string
 	tokenURI?: string
-	decimals: undefined,
+	decimals: undefined
+	entrySource: EntrySource
 }
 
 export type Erc1155WithAmount = Erc1155Definition & { amount: bigint }

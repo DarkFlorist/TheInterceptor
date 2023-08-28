@@ -711,3 +711,13 @@ svg.spinner > circle {
 .blur {
 	filter: blur(3px);
 }
+
+.blink {
+	animation: blinker 1s linear infinite;
+}
+  
+@keyframes blinker {
+	50% {
+		opacity: 0;
+	}
+}
