@@ -140,23 +140,25 @@ export async function findEntryWithSymbolOrName(symbol: string | undefined, name
 	const lowerCasedName = name?.toLowerCase()
 	const lowerCasedSymbol = symbol?.toLowerCase()
 
-	const tokenMetadataEntry = Array.from(tokenMetadata).find((entry) => entry[1].symbol.toLowerCase() === lowerCasedSymbol || entry[1].name.toLowerCase() === lowerCasedName)
+	const lowerCasedEqual = (nonLowerCased: string, lowerCased: string | undefined) => nonLowerCased.toLowerCase() === lowerCased
+
+	const tokenMetadataEntry = Array.from(tokenMetadata).find((entry) => lowerCasedEqual(entry[1].symbol, lowerCasedSymbol) || lowerCasedEqual(entry[1].name, lowerCasedName))
 	if (tokenMetadataEntry !== undefined) return convertTokenDefinitionToAddressBookEntry(tokenMetadataEntry)
 
-	const nftMetadataEntry = Array.from(nftMetadata).find((entry) => entry[1].symbol.toLowerCase() === lowerCasedSymbol || entry[1].name.toLowerCase() === lowerCasedName)
+	const nftMetadataEntry = Array.from(nftMetadata).find((entry) => lowerCasedEqual(entry[1].symbol, lowerCasedSymbol) || lowerCasedEqual(entry[1].name.toLowerCase(), lowerCasedName))
 	if (nftMetadataEntry !== undefined) return convertErc721DefinitionToAddressBookEntry(nftMetadataEntry)
 
-	const contractMetadataEntry = Array.from(contractMetadata).find((entry) => entry[1].name.toLowerCase() === lowerCasedName)
+	const contractMetadataEntry = Array.from(contractMetadata).find((entry) => lowerCasedEqual(entry[1].name, lowerCasedName))
 	if (contractMetadataEntry !== undefined) return convertContractDefinitionToAddressBookEntry(contractMetadataEntry)
 
-	const addressInfo = userAddressBook.addressInfos.find((entry) => entry.name.toLowerCase() === lowerCasedName)
+	const addressInfo = userAddressBook.addressInfos.find((entry) => lowerCasedEqual(entry.name, lowerCasedName))
 	if (addressInfo !== undefined) return convertAddressInfoToAddressBookEntry(addressInfo)
 
-	const contact = userAddressBook.contacts.find((entry) =>  entry.name.toLowerCase() === lowerCasedName)
+	const contact = userAddressBook.contacts.find((entry) => lowerCasedEqual(entry.name, lowerCasedName))
 	if (contact !== undefined) return contact
 
 	const userEntries = await getUserAddressBookEntries()
-	const userEntry = userEntries.find((entry) => ('symbol' in entry && entry.symbol.toLowerCase() === lowerCasedSymbol) || entry.name.toLowerCase() === lowerCasedName)
+	const userEntry = userEntries.find((entry) => ('symbol' in entry && lowerCasedEqual(entry.symbol, lowerCasedSymbol)) || lowerCasedEqual(entry.name, lowerCasedName))
 	if (userEntry !== undefined) return userEntry
 	
 	return undefined
