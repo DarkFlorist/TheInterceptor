@@ -12,7 +12,7 @@ import { ApproveIcon, ArrowIcon } from '../subcomponents/icons.js'
 import { EtherTransferVisualisation, SimpleTokenTransferVisualisation } from './customExplainers/SimpleSendVisualisations.js'
 import { SimpleTokenApprovalVisualisation } from './customExplainers/SimpleTokenApprovalVisualisation.js'
 import { assertNever } from '../../utils/typescript.js'
-import { CatchAllVisualizer } from './customExplainers/CatchAllVisualizer.js'
+import { CatchAllVisualizer, tokenEventToTokenSymbolParams } from './customExplainers/CatchAllVisualizer.js'
 import { AddressBookEntry } from '../../utils/addressBookTypes.js'
 
 function isPositiveEvent(visResult: TokenVisualizerResultWithMetadata, ourAddressInReferenceFrame: bigint) {
@@ -229,7 +229,7 @@ export function TokenLogEvent(params: TokenLogEventParams ) {
 		</div>
 		<div class = 'log-cell' style = 'padding-right: 0.2em'>
 			<TokenSymbol
-				{ ...'tokenId' in params.tokenVisualizerResult ? { tokenId: params.tokenVisualizerResult.tokenId, tokenEntry: params.tokenVisualizerResult.token } : ( params.tokenVisualizerResult.type === 'NFT All approval' ? { tokenEntry: params.tokenVisualizerResult.token, tokenId: undefined } : { tokenEntry: params.tokenVisualizerResult.token }) }
+				{ ...tokenEventToTokenSymbolParams(params.tokenVisualizerResult) }
 				style = { style }
 				useFullTokenName = { false }
 				renameAddressCallBack = { params.renameAddressCallBack }

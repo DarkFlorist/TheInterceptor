@@ -23,3 +23,7 @@ export function arrayToChunks<Type>(array: readonly Type[], chunkSize: number) {
 		{ length: Math.ceil(array.length / chunkSize) }, (_, i) => array.slice(i * chunkSize, i * chunkSize + chunkSize)
 	)
 }
+
+const isPropValuesEqual = <T>(subject: T, target: T, propNames: (keyof T)[]): boolean => propNames.every(propName => subject[propName] === target[propName])
+
+export const getUniqueItemsByProperties = <T>(items: T[], propNames: (keyof T)[]): T[] => items.filter((item, index, array) => index === array.findIndex(foundItem => isPropValuesEqual(foundItem, item, propNames)))

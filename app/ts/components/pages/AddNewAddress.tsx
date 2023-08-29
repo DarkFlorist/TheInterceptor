@@ -106,7 +106,7 @@ function RenderIncompleteAddressBookEntry({ incompleteAddressBookEntry, setName,
 		</div>
 		<div class = 'media-content' style = 'overflow-y: unset; overflow-x: unset;'>
 			<div class = 'container' style = 'margin-bottom: 10px;'>
-				<span class = 'log-table' style = 'justify-content: left; column-gap: 5px; row-gap: 5px; grid-template-columns: max-content 400px;'>
+				<span class = 'log-table' style = 'column-gap: 5px; row-gap: 5px; grid-template-columns: max-content auto;'>
 					<CellElement element = { <Text text = { 'Name: ' }/> }/>
 					<CellElement element = { <NameInput nameInput = { incompleteAddressBookEntry.name } setNameInput = { setName } disabled = { disableDueToSource }/> } />
 					<CellElement element = { <Text text = { 'Address: ' }/> }/> 

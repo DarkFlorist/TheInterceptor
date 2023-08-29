@@ -1,7 +1,7 @@
 import { StateUpdater } from 'preact/hooks'
 import * as funtypes from 'funtypes'
 import { EthereumAddress, EthereumBlockHeader, EthereumQuantity, EthereumTimestamp, OptionalEthereumAddress } from './wire-types.js'
-import { SimulatedAndVisualizedTransaction, SimulationAndVisualisationResults, RpcEntry, RpcNetwork, RpcEntries, SimulationUpdatingState, SimulationResultState, WebsiteCreatedEthereumUnsignedTransaction, SimulationState, SimResults, TokenPriceEstimate } from './visualizer-types.js'
+import { SimulatedAndVisualizedTransaction, SimulationAndVisualisationResults, RpcEntry, RpcNetwork, RpcEntries, SimulationUpdatingState, SimulationResultState, WebsiteCreatedEthereumUnsignedTransaction, SimulationState, SimResults, TokenPriceEstimate, NamedTokenId } from './visualizer-types.js'
 import { IdentifiedSwapWithMetadata } from '../components/simulationExplaining/SwapTransactions.js'
 import { InterceptedRequest, UniqueRequestIdentifier, WebsiteSocket } from './requests.js'
 import { OldSignTypedDataParams, PersonalSignParams, SignTypedDataParams } from './JsonRpc-types.js'
@@ -27,6 +27,7 @@ export const ConfirmTransactionDialogState = funtypes.Intersect(ConfirmTransacti
 	addressBookEntries: AddressBookEntries,
 	tokenPrices: funtypes.ReadonlyArray(TokenPriceEstimate),
 	simulatedAndVisualizedTransactions: funtypes.ReadonlyArray(SimulatedAndVisualizedTransaction),
+	namedTokenIds: funtypes.ReadonlyArray(NamedTokenId),
 }))
 
 export type ConfirmTransactionSimulationStateChanged = funtypes.Static<typeof ConfirmTransactionSimulationStateChanged>
