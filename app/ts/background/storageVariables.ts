@@ -68,7 +68,8 @@ export async function getSimulationResults() {
 		visualizerResults: undefined,
 		addressBookEntries: [],
 		tokenPrices: [],
-		activeAddress: undefined
+		activeAddress: undefined,
+		namedTokenIds: [],
 	}
 	try {
 		return (await browserStorageLocalGet('simulationResults'))?.['simulationResults'] ?? emptyResults

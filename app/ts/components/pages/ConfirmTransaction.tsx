@@ -96,6 +96,7 @@ function TransactionCard(param: TransactionCardParams) {
 					simulationAndVisualisationResults = { param.simulationAndVisualisationResults }
 					renameAddressCallBack = { param.renameAddressCallBack }
 					addressMetaData = { param.simulationAndVisualisationResults.addressBookEntries }
+					namedTokenIds = { param.simulationAndVisualisationResults.namedTokenIds }
 				/>
 
 				<LogAnalysisCard
@@ -333,7 +334,8 @@ export function ConfirmTransaction() {
 								rpcNetwork: simulationResults.data.simulationState.rpcNetwork,
 								tokenPrices: simulationResults.data.tokenPrices,
 								activeAddress: simulationResults.data.activeAddress,
-								simulatedAndVisualizedTransactions: simulationResults.data.simulatedAndVisualizedTransactions
+								simulatedAndVisualizedTransactions: simulationResults.data.simulatedAndVisualizedTransactions,
+								namedTokenIds: simulationResults.data.namedTokenIds,
 							} }
 							pendingTransactions = { pendingTransactions }
 							renameAddressCallBack = { renameAddressCallBack }
