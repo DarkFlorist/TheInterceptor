@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'preact/hooks'
-import { ExternalPopupMessage } from '../../utils/interceptor-messages.js'
+import { ConfirmTransactionDialogPendingChanged, ExternalPopupMessage, UpdateConfirmTransactionDialog } from '../../utils/interceptor-messages.js'
 import { SimulationAndVisualisationResults } from '../../utils/visualizer-types.js'
 import Hint from '../subcomponents/Hint.js'
 import { RawTransactionDetailsCard, GasFee, LogAnalysisCard, SimulatedInBlockNumber, TransactionCreated, TransactionHeader, TransactionHeaderForFailedToSimulate, TransactionsAccountChangesCard } from '../simulationExplaining/SimulationSummary.js'
@@ -143,6 +143,15 @@ export function ConfirmTransaction() {
 	const [rpcConnectionStatus, setRpcConnectionStatus] = useState<RpcConnectionStatus>(undefined)
 	const [pendingTransactionAddedNotification, setPendingTransactionAddedNotification] = useState<boolean>(false)
 
+	const updatePendingTransactions = (message: ConfirmTransactionDialogPendingChanged | UpdateConfirmTransactionDialog) => {
+		setPendingTransactions(message.data.slice(1).reverse())
+		const firstMessage = message.data[0]
+		setCurrentPendingTransaction(firstMessage)
+		if (firstMessage.simulationResults !== undefined && firstMessage.simulationResults.statusCode === 'success' && (currentBlockNumber === undefined || firstMessage.simulationResults.data.simulationState.blockNumber > currentBlockNumber)) {
+			setCurrentBlockNumber(firstMessage.simulationResults.data.simulationState.blockNumber)
+		}
+	}
+
 	useEffect(() => {
 		async function popupMessageListener(msg: unknown) {
 			const message = ExternalPopupMessage.parse(msg)
@@ -156,7 +165,7 @@ export function ConfirmTransaction() {
 				setRpcConnectionStatus(message.data.rpcConnectionStatus)
 			}
 			if (message.method === 'popup_confirm_transaction_dialog_pending_changed') {
-				setPendingTransactions(message.data.slice(1).reverse())
+				updatePendingTransactions(message)
 				const currentWindowId = (await browser.windows.getCurrent()).id
 				const currentTabId = (await browser.tabs.getCurrent()).id
 				if (currentWindowId === undefined) throw new Error('could not get current window Id!')
@@ -167,12 +176,7 @@ export function ConfirmTransaction() {
 				return
 			}
 			if (message.method !== 'popup_update_confirm_transaction_dialog') return
-			setPendingTransactions(message.data.slice(1).reverse())
-			const firstMessage = message.data[0]
-			setCurrentPendingTransaction(firstMessage)
-			if (firstMessage.simulationResults !== undefined && firstMessage.simulationResults.statusCode === 'success' && (currentBlockNumber === undefined || firstMessage.simulationResults.data.simulationState.blockNumber > currentBlockNumber)) {
-				setCurrentBlockNumber(firstMessage.simulationResults.data.simulationState.blockNumber)
-			}
+			updatePendingTransactions(message)
 		}
 		browser.runtime.onMessage.addListener(popupMessageListener)
 
