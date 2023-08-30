@@ -6,7 +6,7 @@ import { RenameAddressCallBack } from './user-interface-types.js'
 import { ERROR_INTERCEPTOR_GAS_ESTIMATION_FAILED } from './constants.js'
 import { EthBalanceChanges, EthSubscribeParams, SendRawTransactionParams, SendTransactionParams, SingleMulticallResponse } from './JsonRpc-types.js'
 import { WebsiteSocket } from './requests.js'
-import { AddressBookEntry, Erc721Entry, Erc20TokenEntry, Erc1155Entry, EntrySource } from './addressBookTypes.js'
+import { AddressBookEntry, Erc721Entry, Erc20TokenEntry, Erc1155Entry } from './addressBookTypes.js'
 import { Website } from './websiteAccessTypes.js'
 
 
@@ -283,58 +283,27 @@ export type TransactionVisualizationParameters = {
 	renameAddressCallBack: RenameAddressCallBack,
 }
 
-export type Erc20Definition = {
-	type: 'ERC20'
-	name: string
-	address: bigint
-	symbol: string
-	decimals: bigint
-	logoUri?: string
-	entrySource: EntrySource
-}
 
-export type Erc20WithAmount = Erc20Definition & {
+export type Erc20WithAmount = Erc20TokenEntry & {
 	amount: bigint,
 }
 
-export type Erc20TokenBalanceChange = Erc20Definition & {
+export type Erc20TokenBalanceChange = Erc20TokenEntry & {
 	changeAmount: bigint
 	tokenPriceEstimate: TokenPriceEstimate | undefined
 }
 
-export type ERC20TokenApprovalChange = Erc20Definition & {
+export type ERC20TokenApprovalChange = Erc20TokenEntry & {
 	approvals: (AddressBookEntry & { change: bigint })[]
 }
 
-export type Erc721Definition = {
-	type: 'ERC721'
-	tokenId: bigint
-	name: string
-	address: bigint
-	symbol: string
-	logoUri?: string
-	tokenURI?: string
-	entrySource: EntrySource
-}
-
 export type Erc721TokenApprovalChange = {
-	token: Erc721Definition
+	tokenId: bigint
+	tokenEntry: Erc721Entry
 	approvedEntry: AddressBookEntry
 }
 
-export type Erc1155Definition = {
-	type: 'ERC1155'
-	tokenId: bigint
-	name: string
-	address: bigint
-	symbol: string
-	logoUri?: string
-	tokenURI?: string
-	decimals: undefined
-	entrySource: EntrySource
-}
-
-export type Erc1155WithAmount = Erc1155Definition & { amount: bigint }
+export type Erc1155WithAmount = Erc1155Entry & { tokenId: bigint, amount: bigint }
 
 export type SimulationUpdatingState = funtypes.Static<typeof SimulationUpdatingState>
 export const SimulationUpdatingState = funtypes.Union(funtypes.Literal('updating'), funtypes.Literal('done'), funtypes.Literal('failed'))

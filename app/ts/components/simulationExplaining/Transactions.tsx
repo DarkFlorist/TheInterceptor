@@ -86,6 +86,7 @@ export function TransactionImportanceBlock(param: TransactionImportanceBlockPara
 			return <SwapVisualization
 				identifiedSwap = { identifiedSwap }
 				rpcNetwork = { param.simulationAndVisualisationResults.rpcNetwork }
+				renameAddressCallBack = { param.renameAddressCallBack }
 			/>
 		}
 		case 'MakeYouRichTransaction': return makeYouRichTransaction(param)
@@ -204,23 +205,23 @@ type TokenLogEventParams = {
 }
 
 export function TokenLogEvent(params: TokenLogEventParams ) {
-	const textColor = isPositiveEvent(params.tokenVisualizerResult, params.ourAddressInReferenceFrame) ? 'var(--dim-text-color)' : 'var(--negative-dim-color)'
+	const style = { color: isPositiveEvent(params.tokenVisualizerResult, params.ourAddressInReferenceFrame) ? 'var(--dim-text-color)' : 'var(--negative-dim-color)' }
 
 	return <>
 		<div class = 'log-cell' style = 'justify-content: right;'>
 			{ params.tokenVisualizerResult.type === 'NFT All approval' ?
 				<AllApproval
 					{ ...params.tokenVisualizerResult }
-					textColor = { textColor }
+					style = { style }
 				/>
 			: <> { 'amount' in params.tokenVisualizerResult && params.tokenVisualizerResult.amount >= (2n ** 96n - 1n ) && params.tokenVisualizerResult.isApproval ?
-					<p class = 'ellipsis' style = { `color: ${ textColor }` }><b>ALL</b></p>
+					<p class = 'ellipsis' style = { `color: ${ style.color }` }><b>ALL</b></p>
 				:
 					'amount' in params.tokenVisualizerResult ?
 						<TokenAmount
 							amount = { params.tokenVisualizerResult.amount }
-							decimals = { params.tokenVisualizerResult.token.decimals }
-							textColor = { textColor }
+							tokenEntry = { params.tokenVisualizerResult.token }
+							style = { style }
 						/>
 					: <></>
 				} </>
@@ -228,26 +229,26 @@ export function TokenLogEvent(params: TokenLogEventParams ) {
 		</div>
 		<div class = 'log-cell' style = 'padding-right: 0.2em'>
 			<TokenSymbol
-				{ ...params.tokenVisualizerResult.token }
-				{ ...'tokenId' in params.tokenVisualizerResult ? { tokenId: params.tokenVisualizerResult.tokenId } : {} }
-				textColor = { textColor }
+				{ ...'tokenId' in params.tokenVisualizerResult ? { tokenId: params.tokenVisualizerResult.tokenId, tokenEntry: params.tokenVisualizerResult.token } : ( params.tokenVisualizerResult.type === 'NFT All approval' ? { tokenEntry: params.tokenVisualizerResult.token, tokenId: undefined } : { tokenEntry: params.tokenVisualizerResult.token }) }
+				style = { style }
 				useFullTokenName = { false }
+				renameAddressCallBack = { params.renameAddressCallBack }
 			/>
 		</div>
 		<div class = 'log-cell-flexless' style = 'margin: 2px;'>
 			<SmallAddress
 				addressBookEntry = { params.tokenVisualizerResult.from }
-				textColor = { textColor }
+				textColor = { style.color }
 				renameAddressCallBack = { params.renameAddressCallBack }
 			/>
 		</div>
 		<div class = 'log-cell' style = 'padding-right: 0.2em; padding-left: 0.2em'>
-			{ params.tokenVisualizerResult.isApproval ? <ApproveIcon color = { textColor } /> : <ArrowIcon color = { textColor } /> }
+			{ params.tokenVisualizerResult.isApproval ? <ApproveIcon color = { style.color } /> : <ArrowIcon color = { style.color } /> }
 		</div>
 		<div class = 'log-cell-flexless' style = 'margin: 2px;'>
 			<SmallAddress
 				addressBookEntry = { params.tokenVisualizerResult.to }
-				textColor = { textColor }
+				textColor = { style.color }
 				renameAddressCallBack = { params.renameAddressCallBack }
 			/>
 		</div>

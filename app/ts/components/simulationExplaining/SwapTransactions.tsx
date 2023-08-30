@@ -6,6 +6,8 @@ import { EtherAmount, EtherSymbol, TokenAmount, TokenOrEthValue, TokenSymbol } f
 import { AddressBookEntry, Erc1155Entry, Erc20TokenEntry, Erc721Entry } from '../../utils/addressBookTypes.js'
 import { assertNever, getWithDefault } from '../../utils/typescript.js'
 import { RpcNetwork } from '../../utils/visualizer-types.js'
+import { RenameAddressCallBack } from '../../utils/user-interface-types.js'
+import { BIG_FONT_SIZE } from '../../utils/constants.js'
 
 export type BeforeAfterBalance = funtypes.Static<typeof SwapAsset>
 export const BeforeAfterBalance = funtypes.ReadonlyObject({
@@ -43,8 +45,9 @@ export const IdentifiedSwapWithMetadata = funtypes.Union(
 )
 
 interface SwapVisualizationParams {
-	identifiedSwap: IdentifiedSwapWithMetadata,
+	identifiedSwap: IdentifiedSwapWithMetadata
 	rpcNetwork: RpcNetwork
+	renameAddressCallBack: RenameAddressCallBack
 }
 
 export function identifySwap(simTransaction: SimulatedAndVisualizedTransaction): IdentifiedSwapWithMetadata {
@@ -63,13 +66,13 @@ export function identifySwap(simTransaction: SimulatedAndVisualizedTransaction):
 		const previousValue = getWithDefault(aggregateTo, identifier, {
 			...logEntry,
 			amount: 0n,
-			tokenId: 'tokenId' in logEntry ? logEntry.tokenId : -1n,
+			tokenId: 'tokenId' in logEntry ? logEntry.tokenId : undefined,
 			beforeAfterBalance: undefined,
 		})
 		aggregateTo.set(identifier, {
 			...logEntry,
 			amount: previousValue.amount + ('amount' in logEntry ? logEntry.amount : 1n),
-			tokenId: 'tokenId' in logEntry ? logEntry.tokenId : -1n,
+			tokenId: 'tokenId' in logEntry ? logEntry.tokenId : undefined,
 			beforeAfterBalance: undefined,
 		})
 	}
@@ -90,7 +93,6 @@ export function identifySwap(simTransaction: SimulatedAndVisualizedTransaction):
 	const ethDiff = etherChange !== undefined && etherChange.length >= 1 ? etherChange[etherChange.length - 1].after - etherChange[0].before : 0n
 
 	const transactionGasCost = simTransaction.realizedGasPrice * simTransaction.transaction.gas
-
 	if (sentAssets.length === 1 && receivedAssets.length === 1 && -ethDiff <= transactionGasCost) {
 		// user swapped one token to another and eth didn't change more than gas fees
 		const sentToken = sentAssets[0]
@@ -305,8 +307,8 @@ export function getSwapName(identifiedSwap: IdentifiedSwapWithMetadata, rpcNetwo
 	return `Swap ${ sent } for ${ to }`
 }
 
-export function VisualizeSwapAsset({ swapAsset, rpcNetwork }: { swapAsset: SwapAsset, rpcNetwork: RpcNetwork }) {
-	const tokenStyle = { 'font-size': '28px', 'font-weight': '500' }
+export function VisualizeSwapAsset({ swapAsset, rpcNetwork, renameAddressCallBack }: { swapAsset: SwapAsset, rpcNetwork: RpcNetwork, renameAddressCallBack: RenameAddressCallBack }) {
+	const tokenStyle = { 'font-size': BIG_FONT_SIZE, 'font-weight': '500' }
 	const balanceTextStyle = { 'font-size': '14px', 'color': 'var(--subtitle-text-color)' }
 
 	switch (swapAsset.type) {
@@ -343,12 +345,13 @@ export function VisualizeSwapAsset({ swapAsset, rpcNetwork }: { swapAsset: SwapA
 			return <span class = 'grid swap-grid'>
 				<div class = 'log-cell' style = 'justify-content: left;'>
 				</div>
-				<div class = 'log-cell' style = 'justify-content: right;'>
+				<div class = 'log-cell-flexless' style = 'justify-content: right;'>
 					<TokenSymbol
-						{ ...swapAsset.token }
+						tokenEntry = { swapAsset.token }
 						tokenId = { swapAsset.tokenId }
 						useFullTokenName = { false }
 						style = { tokenStyle }
+						renameAddressCallBack = { renameAddressCallBack }
 					/>
 				</div>
 			</span>
@@ -356,11 +359,13 @@ export function VisualizeSwapAsset({ swapAsset, rpcNetwork }: { swapAsset: SwapA
 		case 'ERC1155': {
 			return <>
 				<span class = 'grid swap-grid'>
-					<div class = 'log-cell' style = 'justify-content: right;'>
+					<div class = 'log-cell-flexless' style = 'justify-content: right;'>
 						<TokenSymbol
-							{ ...swapAsset.token }
+							tokenEntry = { swapAsset.token }
+							tokenId = { swapAsset.tokenId }
 							useFullTokenName = { false }
 							style = { tokenStyle }
+							renameAddressCallBack = { renameAddressCallBack }
 						/>
 					</div>
 				</span>
@@ -382,15 +387,16 @@ export function VisualizeSwapAsset({ swapAsset, rpcNetwork }: { swapAsset: SwapA
 					<div class = 'log-cell' style = 'justify-content: left;'>
 						<TokenAmount
 							amount = { swapAsset.amount }
-							decimals = { swapAsset.token.decimals }
+							tokenEntry = { swapAsset.token }
 							style = { tokenStyle }
 						/>
 					</div>
-					<div class = 'log-cell' style = 'justify-content: right;'>
+					<div class = 'log-cell-flexless' style = 'justify-content: right;'>
 						<TokenSymbol
-							{ ...swapAsset.token }
+							tokenEntry = { swapAsset.token }
 							useFullTokenName = { false }
 							style = { tokenStyle }
+							renameAddressCallBack = { renameAddressCallBack }
 						/>
 					</div>
 				</span>
@@ -417,11 +423,11 @@ export function SwapVisualization(param: SwapVisualizationParams) {
 		<div style = 'display: grid; grid-template-rows: max-content max-content max-content max-content;'>
 			<p class = 'paragraph'> Swap </p>
 			<div class = 'box swap-box'>
-				<VisualizeSwapAsset swapAsset = { param.identifiedSwap.sendAsset } rpcNetwork = { param.rpcNetwork } />
+				<VisualizeSwapAsset swapAsset = { param.identifiedSwap.sendAsset } rpcNetwork = { param.rpcNetwork } renameAddressCallBack = { param.renameAddressCallBack } />
 			</div>
 			<p class = 'paragraph'> For </p>
 			<div class = 'box swap-box'>
-				<VisualizeSwapAsset swapAsset = { param.identifiedSwap.receiveAsset } rpcNetwork = { param.rpcNetwork } />
+				<VisualizeSwapAsset swapAsset = { param.identifiedSwap.receiveAsset } rpcNetwork = { param.rpcNetwork } renameAddressCallBack = { param.renameAddressCallBack } />
 			</div>
 		</div>
 	</div>

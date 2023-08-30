@@ -6,6 +6,7 @@ import { TokenOrEth, TokenOrEtherParams } from '../../subcomponents/coins.js'
 import { GasFee, TransactionGasses } from '../SimulationSummary.js'
 import { SimulatedAndVisualizedEtherTransferTransaction, SimulatedAndVisualizedSimpleTokenTransferTransaction, TokenResult } from '../identifyTransaction.js'
 import { AddressBookEntry } from '../../../utils/addressBookTypes.js'
+import { BIG_FONT_SIZE } from '../../../utils/constants.js'
 
 type BeforeAfterAddress = {
 	address: AddressBookEntry
@@ -57,7 +58,7 @@ function SimpleSend({ transaction, asset, sender, receiver, renameAddressCallBac
 			<TokenOrEth
 				{ ...asset }
 				useFullTokenName = { false }
-				style = { { 'font-size': '28px', 'font-weight': '500' } }
+				style = { { 'font-size': BIG_FONT_SIZE, 'font-weight': '500' } }
 			/>
 		</span>
 		<p class = 'paragraph'> From </p>
@@ -112,9 +113,9 @@ export function SimpleTokenTransferVisualisation({ simTx, renameAddressCallBack 
 	const transfer = simTx.tokenResults[0]
 	const getAsset = (transfer: TokenResult) => {
 		switch (transfer.type) {
-			case 'ERC1155': return { ...transfer.token, tokenId: transfer.tokenId, amount: transfer.amount }
-			case 'ERC20': return { ...transfer.token, amount: transfer.amount }
-			case 'ERC721': return { ...transfer.token, received: false, tokenId: transfer.tokenId }
+			case 'ERC1155': return { tokenEntry: transfer.token, tokenId: transfer.tokenId, amount: transfer.amount, renameAddressCallBack }
+			case 'ERC20': return { tokenEntry: transfer.token, amount: transfer.amount, renameAddressCallBack }
+			case 'ERC721': return { tokenEntry: transfer.token, received: false, tokenId: transfer.tokenId, renameAddressCallBack }
 			default: assertNever(transfer)
 		}
 	}

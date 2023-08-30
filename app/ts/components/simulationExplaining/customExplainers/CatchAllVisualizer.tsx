@@ -25,12 +25,12 @@ function EtherTransferEvent(param: EtherTransferEventParams) {
 						<div class = 'log-cell' style = 'justify-content: right;'>
 							<EtherAmount
 								amount = { param.valueSent }
-								textColor = { param.textColor }
+								style = { { color: param.textColor } }
 							/>
 						</div>
 						<div class = 'log-cell'>
 							<EtherSymbol
-								textColor = { param.textColor }
+								style = { { color: param.textColor } }
 								rpcNetwork = { param.rpcNetwork }
 							/>
 						</div>
@@ -49,12 +49,12 @@ function EtherTransferEvent(param: EtherTransferEventParams) {
 						<div class = 'log-cell' style = 'justify-content: right;'>
 							<EtherAmount
 								amount = { param.totalReceived }
-								textColor = { param.textColor }
+								style = { { color: param.textColor } }
 							/>
 						</div>
 						<div class = 'log-cell'>
 							<EtherSymbol
-								textColor = { param.textColor }
+								style = { { color: param.textColor } }
 								rpcNetwork = { param.rpcNetwork }
 							/>
 						</div>
@@ -88,17 +88,18 @@ function SendOrReceiveTokensImportanceBox(param: SendOrReceiveTokensImportanceBo
 							{ 'amount' in tokenEvent ?
 								<TokenAmount
 									amount = { tokenEvent.amount }
-									decimals = { tokenEvent.token.decimals }
-									textColor = { param.textColor }
+									{ ...'tokenId' in tokenEvent ? { tokenId: tokenEvent.tokenId } : {} }
+									tokenEntry = { tokenEvent.token }
+									style = { { color: param.textColor } }
 								/>
 							: <></>}
 						</div>
 						<div class = 'log-cell' style = 'padding-right: 0.2em'>
 							<TokenSymbol
-								{ ...tokenEvent.token }
-								{ ...'tokenId' in tokenEvent ? { tokenId: tokenEvent.tokenId } : {} }
-								textColor = { param.textColor }
+								{ ...'tokenId' in tokenEvent ? { tokenId: tokenEvent.tokenId, tokenEntry: tokenEvent.token } : { tokenEntry: tokenEvent.token } }
+								style = { { color: param.textColor } }
 								useFullTokenName = { false }
+								renameAddressCallBack = { param.renameAddressCallBack }
 							/>
 						</div>
 						<div class = 'log-cell'>
@@ -140,10 +141,8 @@ export function CatchAllVisualizer(param: TransactionImportanceBlockParams) {
 	// token address, tokenId, approved address
 	const tokenIdApprovalChanges: Erc721TokenApprovalChange[] = sendingTokenResults.filter((x): x is TokenVisualizerErc721Event  => 'tokenId' in x && x.isApproval).map((entry) => {
 		return {
-			token: {
-				...entry.token,
-				tokenId: entry.tokenId,
-			},
+			tokenEntry: entry.token,
+			tokenId: entry.tokenId,
 			approvedEntry: entry.to
 		}
 	})

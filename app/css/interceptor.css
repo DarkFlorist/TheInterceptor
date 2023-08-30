@@ -721,3 +721,61 @@ svg.spinner > circle {
 		opacity: 0;
 	}
 }
+
+.token-name-container {
+	display: flex;
+	flex-direction: column;
+	overflow: hidden;
+}
+
+.token-name-container::after {
+	content: attr(data-value);
+	display: block;
+	visibility: hidden;
+	height: 0px;
+	padding-left: 27px;
+}
+
+.rename-token-button {
+	display: none;
+	flex-shrink: 0;
+	margin-left: 5px;
+	height: 18px;
+}
+
+.token-name-container:hover > .token-name-holder > .rename-token-button {
+	display: flex;
+}
+
+.token-name-holder {
+	display: flex;
+	flex-direction: row;
+	width: 0;
+	min-width: 100%;
+}
+
+.token-name-text {
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.big-token-name-container {
+	display: flex;
+	flex-direction: column;
+	overflow: hidden;
+}
+
+.big-token-name-container::after {
+	content: attr(data-value);
+	display: block;
+	visibility: hidden;
+	height: 0px;
+}
+
+.big-token-name-container:hover > .token-name-holder > .rename-token-button {
+	display: flex;
+}
+.big-token-name-container > .token-name-holder {
+	justify-content: flex-end;
+}
