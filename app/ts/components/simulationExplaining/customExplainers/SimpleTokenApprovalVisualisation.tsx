@@ -1,8 +1,8 @@
-import { RenameAddressCallBack } from '../../../utils/user-interface-types.js'
+import { RenameAddressCallBack } from '../../../types/user-interface-types.js'
 import { BigAddress } from '../../subcomponents/address.js'
 import { AllApproval, TokenAmount, TokenSymbol } from '../../subcomponents/coins.js'
 import { GasFee, TransactionGasses } from '../SimulationSummary.js'
-import { TokenVisualizerResultWithMetadata, RpcNetwork } from '../../../utils/visualizer-types.js'
+import { TokenVisualizerResultWithMetadata, RpcNetwork } from '../../../types/visualizer-types.js'
 import { BIG_FONT_SIZE } from '../../../utils/constants.js'
 
 type SimpleTokenApprovalVisualisation = {

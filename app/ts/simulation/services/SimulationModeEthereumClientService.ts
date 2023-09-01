@@ -1,11 +1,11 @@
 import { EthereumClientService } from './EthereumClientService.js'
-import { EthereumUnsignedTransaction, EthereumSignedTransactionWithBlockData, EthereumBlockTag, EthereumAddress, EthereumBlockHeader, EthereumBlockHeaderWithTransactionHashes, EthereumSignedTransaction, EthereumData, EthereumQuantity } from '../../utils/wire-types.js'
+import { EthereumUnsignedTransaction, EthereumSignedTransactionWithBlockData, EthereumBlockTag, EthereumAddress, EthereumBlockHeader, EthereumBlockHeaderWithTransactionHashes, EthereumSignedTransaction, EthereumData, EthereumQuantity } from '../../types/wire-types.js'
 import { addressString, bytes32String, bytesToUnsigned, dataStringWith0xStart, max, min, stringToUint8Array } from '../../utils/bigint.js'
 import { CANNOT_SIMULATE_OFF_LEGACY_BLOCK, ERROR_INTERCEPTOR_GAS_ESTIMATION_FAILED, MOCK_ADDRESS } from '../../utils/constants.js'
 import { ethers, keccak256 } from 'ethers'
-import { WebsiteCreatedEthereumUnsignedTransaction, SimulatedTransaction, SimulationState, TokenBalancesAfter, EstimateGasError } from '../../utils/visualizer-types.js'
+import { WebsiteCreatedEthereumUnsignedTransaction, SimulatedTransaction, SimulationState, TokenBalancesAfter, EstimateGasError } from '../../types/visualizer-types.js'
 import { EthereumUnsignedTransactionToUnsignedTransaction, IUnsignedTransaction1559, serializeSignedTransactionToBytes } from '../../utils/ethereum.js'
-import { EthGetLogsResponse, EthGetLogsRequest, EthTransactionReceiptResponse, PersonalSignParams, SignTypedDataParams, MulticallResponseEventLogs, MulticallResponse, OldSignTypedDataParams, DappRequestTransaction } from '../../utils/JsonRpc-types.js'
+import { EthGetLogsResponse, EthGetLogsRequest, EthTransactionReceiptResponse, PersonalSignParams, SignTypedDataParams, MulticallResponseEventLogs, MulticallResponse, OldSignTypedDataParams, DappRequestTransaction } from '../../types/JsonRpc-types.js'
 import { handleERC1155TransferBatch, handleERC1155TransferSingle } from '../logHandlers.js'
 
 const MOCK_PRIVATE_KEY = 0x1n // key used to sign mock transactions

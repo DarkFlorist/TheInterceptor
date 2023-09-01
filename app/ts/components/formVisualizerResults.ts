@@ -1,6 +1,6 @@
 import { addressString } from '../utils/bigint.js'
-import { EthBalanceChangesWithMetadata, SimResults, SimulatedAndVisualizedTransaction, SimulationState, TokenVisualizerResultWithMetadata } from '../utils/visualizer-types.js'
-import { AddressBookEntry } from '../utils/addressBookTypes.js'
+import { EthBalanceChangesWithMetadata, SimResults, SimulatedAndVisualizedTransaction, SimulationState, TokenVisualizerResultWithMetadata } from '../types/visualizer-types.js'
+import { AddressBookEntry } from '../types/addressBookTypes.js'
 
 // todo, move this to background page (and refacor hard) to form when simulation is made and we can get rid of most of the validations done here
 export function formSimulatedAndVisualizedTransaction(simState: SimulationState, visualizerResults: readonly SimResults[], addressBookEntries: readonly AddressBookEntry[] ): readonly SimulatedAndVisualizedTransaction[] {

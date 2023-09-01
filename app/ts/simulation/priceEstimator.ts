@@ -1,7 +1,7 @@
 import { Interface } from 'ethers'
 import { MULTICALL3, Multicall3ABI } from '../utils/constants.js'
 import { EthereumClientService } from './services/EthereumClientService.js'
-import { TokenPriceEstimate } from '../utils/visualizer-types.js'
+import { TokenPriceEstimate } from '../types/visualizer-types.js'
 import { calculatePricesFromUniswapLikeReturnData, calculateUniswapLikePools, constructUniswapLikeSpotCalls } from '../utils/uniswap.js'
 import { stringToUint8Array } from '../utils/bigint.js'
 import { networkPriceSources } from '../background/settings.js'

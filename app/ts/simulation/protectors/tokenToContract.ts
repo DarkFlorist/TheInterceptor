@@ -1,7 +1,7 @@
 import { Simulator } from '../simulator.js'
-import { EthereumUnsignedTransaction } from '../../utils/wire-types.js'
+import { EthereumUnsignedTransaction } from '../../types/wire-types.js'
 import { parseTransaction } from '../../utils/calldata.js'
-import { SimulationState } from '../../utils/visualizer-types.js'
+import { SimulationState } from '../../types/visualizer-types.js'
 import { getSimulatedCode } from '../services/SimulationModeEthereumClientService.js'
 
 export async function tokenToContract(transaction: EthereumUnsignedTransaction, simulator: Simulator, simulationState: SimulationState) {

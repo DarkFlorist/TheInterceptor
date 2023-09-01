@@ -2,17 +2,17 @@ import { EthereumClientService } from '../simulation/services/EthereumClientServ
 import { createEthereumSubscription, removeEthereumSubscription } from '../simulation/services/EthereumSubscriptionService.js'
 import { simulationGasLeft, getSimulatedBalance, getSimulatedBlock, getSimulatedBlockNumber, getSimulatedCode, getSimulatedLogs, getSimulatedStack, getSimulatedTransactionByHash, getSimulatedTransactionCount, getSimulatedTransactionReceipt, simulatedCall, simulateEstimateGas, getInputFieldFromDataOrInput } from '../simulation/services/SimulationModeEthereumClientService.js'
 import { ERROR_INTERCEPTOR_GAS_ESTIMATION_FAILED, ERROR_INTERCEPTOR_GET_CODE_FAILED, KNOWN_CONTRACT_CALLER_ADDRESSES } from '../utils/constants.js'
-import { RPCReply } from '../utils/interceptor-messages.js'
-import { WebsiteTabConnections } from '../utils/user-interface-types.js'
-import { SimulationState } from '../utils/visualizer-types.js'
+import { RPCReply } from '../types/interceptor-messages.js'
+import { WebsiteTabConnections } from '../types/user-interface-types.js'
+import { SimulationState } from '../types/visualizer-types.js'
 import { openChangeChainDialog } from './windows/changeChain.js'
 import { openConfirmTransactionDialog } from './windows/confirmTransaction.js'
 import { openPersonalSignDialog } from './windows/personalSign.js'
 import { assertNever } from '../utils/typescript.js'
 import { InterceptedRequest, WebsiteSocket } from '../utils/requests.js'
-import { EstimateGasParams, EthBalanceParams, EthBlockByNumberParams, EthCallParams, EthGetLogsParams, EthSubscribeParams, EthUnSubscribeParams, GetCode, GetSimulationStack, GetTransactionCount, OldSignTypedDataParams, PersonalSignParams, SendRawTransactionParams, SendTransactionParams, SignTypedDataParams, SwitchEthereumChainParams, TransactionByHashParams, TransactionReceiptParams } from '../utils/JsonRpc-types.js'
+import { EstimateGasParams, EthBalanceParams, EthBlockByNumberParams, EthCallParams, EthGetLogsParams, EthSubscribeParams, EthUnSubscribeParams, GetCode, GetSimulationStack, GetTransactionCount, OldSignTypedDataParams, PersonalSignParams, SendRawTransactionParams, SendTransactionParams, SignTypedDataParams, SwitchEthereumChainParams, TransactionByHashParams, TransactionReceiptParams } from '../types/JsonRpc-types.js'
 import { Simulator } from '../simulation/simulator.js'
-import { Website } from '../utils/websiteAccessTypes.js'
+import { Website } from '../types/websiteAccessTypes.js'
 
 const defaultCallAddress = 0x1n
 

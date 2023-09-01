@@ -1,10 +1,10 @@
 import { UNISWAP_V2_ROUTER_ADDRESS, SUSHISWAP_V2_ROUTER_ADDRESS, UNISWAP_V3_ROUTER } from '../../utils/constants.js'
 import { Simulator } from '../simulator.js'
-import { EthereumUnsignedTransaction } from '../../utils/wire-types.js'
+import { EthereumUnsignedTransaction } from '../../types/wire-types.js'
 import { nftMetadata, tokenMetadata } from '@darkflorist/address-metadata'
 import { addressString } from '../../utils/bigint.js'
 import { parseTransaction } from '../../utils/calldata.js'
-import { SimulationState } from '../../utils/visualizer-types.js'
+import { SimulationState } from '../../types/visualizer-types.js'
 
 export const ADDITIONAL_BAD_TRANSFER_TARGETS = new Set<bigint>([
 	UNISWAP_V2_ROUTER_ADDRESS,

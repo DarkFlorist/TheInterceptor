@@ -1,12 +1,12 @@
-import { PopupMessage, RPCReply, Settings } from '../utils/interceptor-messages.js'
+import { PopupMessage, RPCReply, Settings } from '../types/interceptor-messages.js'
 import 'webextension-polyfill'
 import { Simulator } from '../simulation/simulator.js'
 import { getEthDonator, getSignerName, getSimulationResults, updateSimulationResults } from './storageVariables.js'
 import { changeSimulationMode, getSettings, getMakeMeRich } from './settings.js'
 import { blockNumber, call, chainId, estimateGas, gasPrice, getAccounts, getBalance, getBlockByNumber, getCode, getLogs, getPermissions, getSimulationStack, getTransactionByHash, getTransactionCount, getTransactionReceipt, netVersion, personalSign, sendTransaction, subscribe, switchEthereumChain, unsubscribe } from './simulationModeHanders.js'
 import { changeActiveAddress, changeMakeMeRich, changePage, resetSimulation, confirmDialog, refreshSimulation, removeTransaction, requestAccountsFromSigner, refreshPopupConfirmTransactionSimulation, confirmPersonalSign, confirmRequestAccess, changeInterceptorAccess, changeChainDialog, popupChangeActiveRpc, enableSimulationMode, addOrModifyAddressInfo, getAddressBookData, removeAddressBookEntry, openAddressBook, homeOpened, interceptorAccessChangeAddressOrRefresh, refreshPopupConfirmTransactionMetadata, changeSettings, importSettings, exportSettings, setNewRpcList, popupIdentifyAddress, popupFindAddressBookEntryWithSymbolOrName } from './popupMessageHandlers.js'
-import { SimulationState, RpcNetwork, WebsiteCreatedEthereumUnsignedTransaction } from '../utils/visualizer-types.js'
-import { ConfirmTransactionTransactionSingleVisualization, WebsiteTabConnections } from '../utils/user-interface-types.js'
+import { SimulationState, RpcNetwork, WebsiteCreatedEthereumUnsignedTransaction } from '../types/visualizer-types.js'
+import { ConfirmTransactionTransactionSingleVisualization, WebsiteTabConnections } from '../types/user-interface-types.js'
 import { interceptorAccessMetadataRefresh, requestAccessFromUser, updateInterceptorAccessViewWithPendingRequests } from './windows/interceptorAccess.js'
 import { MAKE_YOU_RICH_TRANSACTION, METAMASK_ERROR_FAILED_TO_PARSE_REQUEST, METAMASK_ERROR_NOT_AUTHORIZED, METAMASK_ERROR_NOT_CONNECTED_TO_CHAIN } from '../utils/constants.js'
 import { PriceEstimator } from '../simulation/priceEstimator.js'
@@ -24,9 +24,9 @@ import { updateChainChangeViewWithPendingRequest } from './windows/changeChain.j
 import { updatePendingPersonalSignViewWithPendingRequests } from './windows/personalSign.js'
 import { InterceptedRequest, UniqueRequestIdentifier, WebsiteSocket } from '../utils/requests.js'
 import { replyToInterceptedRequest } from './messageSending.js'
-import { EthGetStorageAtParams, EthereumJsonRpcRequest, SendRawTransactionParams, SendTransactionParams, SupportedEthereumJsonRpcRequestMethods, WalletAddEthereumChain } from '../utils/JsonRpc-types.js'
-import { AddressBookEntry } from '../utils/addressBookTypes.js'
-import { Website } from '../utils/websiteAccessTypes.js'
+import { EthGetStorageAtParams, EthereumJsonRpcRequest, SendRawTransactionParams, SendTransactionParams, SupportedEthereumJsonRpcRequestMethods, WalletAddEthereumChain } from '../types/JsonRpc-types.js'
+import { AddressBookEntry } from '../types/addressBookTypes.js'
+import { Website } from '../types/websiteAccessTypes.js'
 
 async function visualizeSimulatorState(simulationState: SimulationState, simulator: Simulator) {
 	const priceEstimator = new PriceEstimator(simulator.ethereum)

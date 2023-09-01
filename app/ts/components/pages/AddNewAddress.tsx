@@ -1,6 +1,6 @@
 import { ethers } from 'ethers'
 import { useEffect, useState } from 'preact/hooks'
-import { AddAddressParam } from '../../utils/user-interface-types.js'
+import { AddAddressParam } from '../../types/user-interface-types.js'
 import { Notice } from '../subcomponents/Error.js'
 import { getIssueWithAddressString } from '../ui-utils.js'
 import { checksummedAddress, stringToAddress } from '../../utils/bigint.js'
@@ -8,8 +8,8 @@ import { sendPopupMessageToBackgroundPage } from '../../background/backgroundUti
 import { AddressIcon } from '../subcomponents/address.js'
 import { assertUnreachable } from '../../utils/typescript.js'
 import { ComponentChildren, createRef } from 'preact'
-import { AddressBookEntry, IncompleteAddressBookEntry } from '../../utils/addressBookTypes.js'
-import { ExternalPopupMessage } from '../../utils/interceptor-messages.js'
+import { AddressBookEntry, IncompleteAddressBookEntry } from '../../types/addressBookTypes.js'
+import { ExternalPopupMessage } from '../../types/interceptor-messages.js'
 
 const readableAddressType = {
 	'contact': 'Contact',

@@ -1,5 +1,5 @@
 import * as funtypes from 'funtypes'
-import { EthereumQuantity } from './wire-types.js'
+import { EthereumQuantity } from '../types/wire-types.js'
 
 export type WebsiteSocket = funtypes.Static<typeof WebsiteSocket>
 export const WebsiteSocket = funtypes.ReadonlyObject({
