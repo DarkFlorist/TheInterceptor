@@ -13,7 +13,7 @@ import { ExternalPopupMessage } from '../../types/interceptor-messages.js'
 
 const readableAddressType = {
 	'contact': 'Contact',
-	'addressInfo': 'Active Address',
+	'activeAddress': 'Active Address',
 	'ERC20': 'ERC20',
 	'ERC721': 'ERC721',
 	'ERC1155': 'ERC1155',
@@ -121,7 +121,7 @@ function RenderIncompleteAddressBookEntry({ incompleteAddressBookEntry, setName,
 					</> : <></> }
 				</span>
 			</div>
-			{ incompleteAddressBookEntry.type === 'addressInfo' ? <>
+			{ incompleteAddressBookEntry.type === 'activeAddress' ? <>
 				<label class = 'form-control'>
 					<input type = 'checkbox'  disabled = { disableDueToSource } checked = { !incompleteAddressBookEntry.askForAddressAccess } onInput = { e => { if (e.target instanceof HTMLInputElement && e.target !== null) { setAskForAddressAccess(!e.target.checked) } } } />
 					<p class = 'paragraph checkbox-text'>Don't request for an access (insecure)</p>
@@ -143,7 +143,7 @@ type DuplicateCheck = {
 export function AddNewAddress(param: AddAddressParam) {
 	const [errorString, setErrorString] = useState<string | undefined>(undefined)
 	const [activeAddress, setActiveAddress] = useState<bigint | undefined>(undefined)
-	const [incompleteAddressBookEntry, setIncompleteAddressBookEntry] = useState<IncompleteAddressBookEntry & DuplicateCheck>({ addingAddress: false, type: 'addressInfo', address: undefined, askForAddressAccess: false, name: undefined, symbol: undefined, decimals: undefined, logoUri: undefined, entrySource: 'FilledIn', duplicateStatus: 'NoDuplicates' })
+	const [incompleteAddressBookEntry, setIncompleteAddressBookEntry] = useState<IncompleteAddressBookEntry & DuplicateCheck>({ addingAddress: false, type: 'activeAddress', address: undefined, askForAddressAccess: false, name: undefined, symbol: undefined, decimals: undefined, logoUri: undefined, entrySource: 'FilledIn', duplicateStatus: 'NoDuplicates' })
 
 	useEffect(() => {
 		const popupMessageListener = async (msg: unknown) => {
@@ -166,7 +166,7 @@ export function AddNewAddress(param: AddAddressParam) {
 					setErrorString(`The address ${ checksummedAddress(parsed.data.addressBookEntry.address) } you are trying to add already exists. Edit the existing record instead trying to add it again.`)
 					return prevEntry
 				}
-				if (parsed.data.addressBookEntry.type !== prevEntry.type && !(prevEntry.type === 'addressInfo' && parsed.data.addressBookEntry.type === 'contact') ) {
+				if (parsed.data.addressBookEntry.type !== prevEntry.type && !(prevEntry.type === 'activeAddress' && parsed.data.addressBookEntry.type === 'contact') ) {
 					setErrorString(`The address ${ checksummedAddress(parsed.data.addressBookEntry.address) } is a ${ parsed.data.addressBookEntry.type } while you are trying to add ${ prevEntry.type }.`)
 					return prevEntry
 				}
@@ -233,9 +233,9 @@ export function AddNewAddress(param: AddAddressParam) {
 				logoUri: incompleteAddressBookEntry.logoUri,
 				entrySource: 'User',
 			}
-			case 'addressInfo': {
+			case 'activeAddress': {
 				return {
-					type: 'addressInfo' as const,
+					type: 'activeAddress' as const,
 					name,
 					address: inputedAddressBigInt,
 					askForAddressAccess: incompleteAddressBookEntry.askForAddressAccess,
@@ -276,7 +276,7 @@ export function AddNewAddress(param: AddAddressParam) {
 		return getCompleteAddressBookEntry() !== undefined
 	}
 
-	async function queryAddressInformation(address: bigint | undefined) {
+	async function queryActiveAddressrmation(address: bigint | undefined) {
 		if (address === undefined) return
 		await sendPopupMessageToBackgroundPage({ method: 'popup_identifyAddress', data: { address } })
 	}
@@ -294,7 +294,7 @@ export function AddNewAddress(param: AddAddressParam) {
 			const trimmed = input.trim()
 
 			if (ethers.isAddress(trimmed)) {
-				queryAddressInformation(stringToAddress(trimmed))
+				queryActiveAddressrmation(stringToAddress(trimmed))
 				setErrorString(undefined)
 				return { ... prevEntry, address: input }
 			}
@@ -361,7 +361,7 @@ export function AddNewAddress(param: AddAddressParam) {
 				<div style = 'padding-left: 10px; padding-right: 10px; margin-bottom: 10px; height: 50px'>
 					{ errorString === undefined ? <></> : <Notice text = { errorString } /> }
 					{ errorString === undefined && incompleteAddressBookEntry.duplicateStatus === 'Duplicates' ? <Notice text = { 
-						`There already exists ${ incompleteAddressBookEntry.duplicateEntry.type === 'addressInfo' ? 'an address' : incompleteAddressBookEntry.duplicateEntry.type} with ${ 'symbol' in incompleteAddressBookEntry.duplicateEntry ? `symbol "${ incompleteAddressBookEntry.duplicateEntry.symbol }" and` : '' } name "${ incompleteAddressBookEntry.duplicateEntry.name }".`
+						`There already exists ${ incompleteAddressBookEntry.duplicateEntry.type === 'activeAddress' ? 'an address' : incompleteAddressBookEntry.duplicateEntry.type} with ${ 'symbol' in incompleteAddressBookEntry.duplicateEntry ? `symbol "${ incompleteAddressBookEntry.duplicateEntry.symbol }" and` : '' } name "${ incompleteAddressBookEntry.duplicateEntry.name }".`
 					 } /> : <></> }
 				</div>
 			</section>

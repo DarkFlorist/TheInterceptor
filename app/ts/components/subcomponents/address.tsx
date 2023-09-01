@@ -6,11 +6,11 @@ import { ApproveIcon, ArrowIcon } from '../subcomponents/icons.js'
 import { JSX } from 'preact/jsx-runtime'
 import { useSignal } from '@preact/signals'
 import { useEffect } from 'preact/hooks'
-import { AddressBookEntry, AddressInfo } from '../../types/addressBookTypes.js'
+import { AddressBookEntry, ActiveAddress } from '../../types/addressBookTypes.js'
 import { Website } from '../../types/websiteAccessTypes.js'
 
-export function findAddressInfo(addressToFind: bigint, addressInfos: readonly AddressInfo[]) {
-	for (const info of addressInfos) {
+export function getActiveAddressEntry(addressToFind: bigint, activeAddresses: readonly ActiveAddress[]) {
+	for (const info of activeAddresses) {
 		if (info.address === addressToFind) {
 			return info
 		}
@@ -126,7 +126,7 @@ export type ActiveAddressParams = {
 	readonly buttonText: string
 }
 
-export function ActiveAddress(params: ActiveAddressParams) {
+export function ActiveAddressComponent(params: ActiveAddressParams) {
 	return <div class = 'log-table' style = 'grid-template-columns: auto max-content'>
 		<div class = 'log-cell' style = 'display: block;'>
 			<BigAddress

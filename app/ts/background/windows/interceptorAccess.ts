@@ -7,13 +7,13 @@ import { PendingAccessRequestArray, WebsiteTabConnections } from '../../types/us
 import { getAssociatedAddresses, setAccess, updateWebsiteApprovalAccesses, verifyAccess } from '../accessManagement.js'
 import { changeActiveAddressAndChainAndResetSimulation, handleContentScriptMessage, refuseAccess } from '../background.js'
 import { INTERNAL_CHANNEL_NAME, createInternalMessageListener, getHtmlFile, sendPopupMessageToOpenWindows, websiteSocketToString } from '../backgroundUtils.js'
-import { findAddressInfo } from '../metadataUtils.js'
+import { getActiveAddressEntry } from '../metadataUtils.js'
 import { getSettings } from '../settings.js'
 import { getSignerName, getTabState, updatePendingAccessRequests, getPendingAccessRequests, clearPendingAccessRequests } from '../storageVariables.js'
 import { InterceptedRequest, WebsiteSocket } from '../../utils/requests.js'
 import { replyToInterceptedRequest, sendSubscriptionReplyOrCallBack } from '../messageSending.js'
 import { Simulator } from '../../simulation/simulator.js'
-import { AddressInfo, AddressInfoEntry } from '../../types/addressBookTypes.js'
+import { ActiveAddress, ActiveAddressEntry } from '../../types/addressBookTypes.js'
 import { Website, WebsiteAccessArray } from '../../types/websiteAccessTypes.js'
 
 type OpenedDialogWithListeners = {
@@ -49,10 +49,10 @@ export async function resolveInterceptorAccess(simulator: Simulator, websiteTabC
 	return await resolve(simulator, websiteTabConnections, reply, pendingRequest.request, pendingRequest.website, pendingRequest.activeAddress)
 }
 
-export function getAddressMetadataForAccess(websiteAccess: WebsiteAccessArray, addressInfos: readonly AddressInfo[]): AddressInfoEntry[] {
+export function getAddressMetadataForAccess(websiteAccess: WebsiteAccessArray, activeAddresses: readonly ActiveAddress[]): ActiveAddressEntry[] {
 	const addresses = websiteAccess.map((x) => x.addressAccess === undefined ? [] : x.addressAccess?.map((addr) => addr.address)).flat()
 	const addressSet = new Set(addresses)
-	return Array.from(addressSet).map((x) => findAddressInfo(x, addressInfos))
+	return Array.from(addressSet).map((x) => getActiveAddressEntry(x, activeAddresses))
 }
 
 export async function changeAccess(simulator: Simulator, websiteTabConnections: WebsiteTabConnections, confirmation: InterceptorAccessReply, website: Website, promptForAccessesIfNeeded: boolean = true) {
@@ -93,12 +93,12 @@ export async function requestAccessFromUser(
 	socket: WebsiteSocket,
 	website: Website,
 	request: InterceptedRequest | undefined,
-	requestAccessToAddress: AddressInfoEntry | undefined,
+	requestAccessToAddress: ActiveAddressEntry | undefined,
 	settings: Settings,
 	activeAddress: bigint | undefined,
 ) {
 	// check if we need to ask address access or not. If address is put to never need to have address specific permision, we don't need to ask for it
-	const askForAddressAccess = requestAccessToAddress !== undefined && settings.userAddressBook.addressInfos.find((x) => x.address === requestAccessToAddress.address)?.askForAddressAccess !== false
+	const askForAddressAccess = requestAccessToAddress !== undefined && settings.userAddressBook.activeAddresses.find((x) => x.address === requestAccessToAddress.address)?.askForAddressAccess !== false
 	const accessAddress = askForAddressAccess ? requestAccessToAddress : undefined
 	const closeWindowCallback = (windowId: number) => onCloseWindow(simulator, windowId, websiteTabConnections) 
 
@@ -152,7 +152,7 @@ export async function requestAccessFromUser(
 			requestAccessToAddress: accessAddress,
 			originalRequestAccessToAddress: accessAddress,
 			associatedAddresses: requestAccessToAddress !== undefined ? getAssociatedAddresses(settings, website.websiteOrigin, requestAccessToAddress) : [],
-			addressInfos: settings.userAddressBook.addressInfos,
+			activeAddresses: settings.userAddressBook.activeAddresses,
 			signerAccounts: [],
 			signerName: await getSignerName(),
 			simulationMode: settings.simulationMode,
@@ -238,8 +238,8 @@ export async function requestAddressChange(websiteTabConnections: WebsiteTabConn
 		const proposedAddress = await getProposedAddress()
 		const settings = await getSettings()
 		const newActiveAddress = proposedAddress === undefined ? message.data.requestAccessToAddress : proposedAddress
-		const newActiveAddressAddressInfo = findAddressInfo(newActiveAddress, settings.userAddressBook.addressInfos)
-		const associatedAddresses = getAssociatedAddresses(settings, message.data.website.websiteOrigin, newActiveAddressAddressInfo)
+		const newActiveAddressActiveAddress = getActiveAddressEntry(newActiveAddress, settings.userAddressBook.activeAddresses)
+		const associatedAddresses = getAssociatedAddresses(settings, message.data.website.websiteOrigin, newActiveAddressActiveAddress)
 		
 		return previousPendingAccessRequests.map((request) => {
 			if (request.accessRequestId === message.data.accessRequestId) {
@@ -264,7 +264,7 @@ export async function interceptorAccessMetadataRefresh() {
 	return await sendPopupMessageToOpenWindows({
 		method: 'popup_interceptorAccessDialog',
 		data: (await getPendingAccessRequests()).map((request) => {
-			const requestAccessTo = request.requestAccessToAddress === undefined ? undefined : findAddressInfo(request.requestAccessToAddress?.address, settings.userAddressBook.addressInfos)
+			const requestAccessTo = request.requestAccessToAddress === undefined ? undefined : getActiveAddressEntry(request.requestAccessToAddress?.address, settings.userAddressBook.activeAddresses)
 			const associatedAddresses = getAssociatedAddresses(settings, request.website.websiteOrigin, requestAccessTo)
 			return {
 				...request,

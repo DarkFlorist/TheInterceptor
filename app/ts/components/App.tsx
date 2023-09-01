@@ -17,7 +17,7 @@ import { sendPopupMessageToBackgroundPage } from '../background/backgroundUtils.
 import { EthereumAddress } from '../types/wire-types.js'
 import { SettingsView } from './pages/SettingsView.js'
 import { checksummedAddress } from '../utils/bigint.js'
-import { AddressInfo, AddressInfoEntry, AddressBookEntry, AddressBookEntries, IncompleteAddressBookEntry } from '../types/addressBookTypes.js'
+import { ActiveAddress, ActiveAddressEntry, AddressBookEntry, AddressBookEntries, IncompleteAddressBookEntry } from '../types/addressBookTypes.js'
 import { WebsiteAccessArray } from '../types/websiteAccessTypes.js'
 import { Page } from '../types/exportedSettingsTypes.js'
 import { SignerName } from '../types/signerTypes.js'
@@ -25,21 +25,21 @@ import { SignerName } from '../types/signerTypes.js'
 export function App() {
 	const [appPage, setAppPage] = useState<Page>('Home')
 	const [makeMeRich, setMakeMeRich] = useState(false)
-	const [addressInfos, setAddressInfos] = useState<readonly AddressInfo[]>(defaultAddresses)
+	const [activeAddresses, setActiveAddresss] = useState<readonly ActiveAddress[]>(defaultAddresses)
 	const [signerAccounts, setSignerAccounts] = useState<readonly bigint[] | undefined>(undefined)
 	const [activeSimulationAddress, setActiveSimulationAddress] = useState<bigint | undefined>(undefined)
 	const [activeSigningAddress, setActiveSigningAddress] = useState<bigint | undefined>(undefined)
 	const [useSignersAddressAsActiveAddress, setUseSignersAddressAsActiveAddress] = useState(false)
 	const [simVisResults, setSimVisResults] = useState<SimulationAndVisualisationResults | undefined >(undefined)
 	const [websiteAccess, setWebsiteAccess] = useState<WebsiteAccessArray | undefined>(undefined)
-	const [websiteAccessAddressMetadata, setWebsiteAccessAddressMetadata] = useState<readonly AddressInfoEntry[]>([])
+	const [websiteAccessAddressMetadata, setWebsiteAccessAddressMetadata] = useState<readonly ActiveAddressEntry[]>([])
 	const [rpcNetwork, setSelectedNetwork] = useState<RpcNetwork | undefined>(undefined)
 	const [simulationMode, setSimulationMode] = useState<boolean>(true)
 	const [tabIconDetails, setTabConnection] = useState<TabIconDetails>(DEFAULT_TAB_CONNECTION)
 	const [isSettingsLoaded, setIsSettingsLoaded] = useState<boolean>(false)
 	const [currentBlockNumber, setCurrentBlockNumber] = useState<bigint | undefined>(undefined)
 	const [signerName, setSignerName] = useState<SignerName>('NoSignerDetected')
-	const [addingNewAddress, setAddingNewAddress] = useState<IncompleteAddressBookEntry> ({ addingAddress: false, type: 'addressInfo', address: undefined, askForAddressAccess: false, name: undefined, symbol: undefined, decimals: undefined, logoUri: undefined, entrySource: 'FilledIn' })
+	const [addingNewAddress, setAddingNewAddress] = useState<IncompleteAddressBookEntry> ({ addingAddress: false, type: 'activeAddress', address: undefined, askForAddressAccess: false, name: undefined, symbol: undefined, decimals: undefined, logoUri: undefined, entrySource: 'FilledIn' })
 	const [rpcConnectionStatus, setRpcConnectionStatus] = useState<RpcConnectionStatus>(undefined)
 	const [useTabsInsteadOfPopup, setUseTabsInsteadOfPopup] = useState<boolean | undefined>(undefined)
 	const [metamaskCompatibilityMode, setMetamaskCompatibilityMode] = useState<boolean | undefined>(undefined)
@@ -143,7 +143,7 @@ export function App() {
 			setSelectedNetwork(settings.rpcNetwork)
 			setActiveSimulationAddress(settings.activeSimulationAddress)
 			setUseSignersAddressAsActiveAddress(settings.useSignersAddressAsActiveAddress)
-			setAddressInfos(settings.userAddressBook.addressInfos)
+			setActiveAddresss(settings.userAddressBook.activeAddresses)
 			setWebsiteAccess(settings.websiteAccess)
 		}
 
@@ -180,9 +180,9 @@ export function App() {
 
 		const bigIntReprentation = BigInt(trimmed)
 		// see if we have that address, if so, let's switch to it
-		for (const addressInfo of addressInfos) {
-			if ( addressInfo.address === bigIntReprentation) {
-				return await setActiveAddressAndInformAboutIt(addressInfo.address)
+		for (const activeAddress of activeAddresses) {
+			if ( activeAddress.address === bigIntReprentation) {
+				return await setActiveAddressAndInformAboutIt(activeAddress.address)
 			}
 		}
 
@@ -194,7 +194,7 @@ export function App() {
 			symbol: undefined,
 			decimals: undefined,
 			logoUri: undefined,
-			type: 'addressInfo',
+			type: 'activeAddress',
 			name: `Pasted ${ truncateAddr(addressString) }`,
 			address: checksummedAddress(bigIntReprentation),
 			askForAddressAccess: true,
@@ -222,7 +222,7 @@ export function App() {
 			symbol: undefined,
 			decimals: undefined,
 			logoUri: undefined,
-			type: 'addressInfo',
+			type: 'activeAddress',
 			name: undefined,
 			address: undefined,
 			askForAddressAccess: true,
@@ -266,7 +266,7 @@ export function App() {
 							signerAccounts = { signerAccounts }
 							setAndSaveAppPage = { setAndSaveAppPage }
 							makeMeRich = { makeMeRich }
-							addressInfos = { addressInfos }
+							activeAddresses = { activeAddresses }
 							simulationMode = { simulationMode }
 							tabIconDetails = { tabIconDetails }
 							currentBlockNumber = { currentBlockNumber }
@@ -300,7 +300,7 @@ export function App() {
 									setActiveAddressAndInformAboutIt = { setActiveAddressAndInformAboutIt }
 									signerAccounts = { signerAccounts }
 									setAndSaveAppPage = { setAndSaveAppPage }
-									addressInfos = { addressInfos }
+									activeAddresses = { activeAddresses }
 									signerName = { signerName }
 									renameAddressCallBack = { renameAddressCallBack }
 									addNewAddress = { addNewAddress }

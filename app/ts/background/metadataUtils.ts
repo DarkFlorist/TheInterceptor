@@ -1,5 +1,5 @@
 import { addressString, checksummedAddress } from '../utils/bigint.js'
-import { AddressInfoEntry, AddressBookEntry, AddressInfo } from '../types/addressBookTypes.js'
+import { ActiveAddressEntry, AddressBookEntry, ActiveAddress } from '../types/addressBookTypes.js'
 import { SimulationState, VisualizerResult } from '../types/visualizer-types.js'
 import { nftMetadata, tokenMetadata, contractMetadata } from '@darkflorist/address-metadata'
 import { ethers } from 'ethers'
@@ -15,13 +15,13 @@ export function getFullLogoUri(logoURI: string) {
 	return `${ LOGO_URI_PREFIX }/${ logoURI }`
 }
 
-export function findAddressInfo(address: bigint, addressInfos: readonly AddressInfo[] | undefined) : AddressInfoEntry{
-	if (addressInfos !== undefined) {
-		const entry = addressInfos.find((entry) => entry.address === address)
-		if (entry !== undefined) return { ...entry, type: 'addressInfo', entrySource: 'User' }
+export function getActiveAddressEntry(address: bigint, activeAddresses: readonly ActiveAddress[] | undefined) : ActiveAddressEntry {
+	if (activeAddresses !== undefined) {
+		const entry = activeAddresses.find((entry) => entry.address === address)
+		if (entry !== undefined) return { ...entry, type: 'activeAddress', entrySource: 'User' }
 	}
 	return {
-		type: 'addressInfo' as const,
+		type: 'activeAddress' as const,
 		name: checksummedAddress(address),
 		address: address,
 		askForAddressAccess: false,
@@ -31,8 +31,8 @@ export function findAddressInfo(address: bigint, addressInfos: readonly AddressI
 
 // todo, add caching here, if we find new address, store it
 export async function identifyAddress(ethereumClientService: EthereumClientService, userAddressBook: UserAddressBook, address: bigint, useLocalStorage: boolean = true) : Promise<AddressBookEntry> {
-	const addressInfo = userAddressBook.addressInfos.find((entry) => entry.address === address)
-	if (addressInfo !== undefined) return { ...addressInfo, type: 'addressInfo', entrySource: 'User' }
+	const activeAddress = userAddressBook.activeAddresses.find((entry) => entry.address === address)
+	if (activeAddress !== undefined) return { ...activeAddress, type: 'activeAddress', entrySource: 'User' }
 
 	const contact = userAddressBook.contacts.find((entry) => entry.address === address)
 	if (contact !== undefined) return { ...contact, type: 'contact', entrySource: 'User' }

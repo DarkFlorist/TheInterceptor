@@ -5,7 +5,7 @@ import { SimulationState, SimulatedAndVisualizedTransaction, SimResults, TokenPr
 import { PersonalSignRequestData } from './personal-message-definitions.js'
 import { UniqueRequestIdentifier, WebsiteSocket } from '../utils/requests.js'
 import { EthGetLogsResponse, EthGetStorageAtParams, EthTransactionReceiptResponse, GetBlockReturn, GetSimulationStackReply, OldSignTypedDataParams, PersonalSignParams, SendRawTransactionParams, SendTransactionParams, SignTypedDataParams, WalletAddEthereumChain } from './JsonRpc-types.js'
-import { AddressBookEntries, AddressBookEntry, AddressInfo, AddressInfoEntry, ContactEntries } from './addressBookTypes.js'
+import { AddressBookEntries, AddressBookEntry, ActiveAddress, ActiveAddressEntry, ContactEntries } from './addressBookTypes.js'
 import { Page } from './exportedSettingsTypes.js'
 import { Website, WebsiteAccessArray } from './websiteAccessTypes.js'
 import { SignerName } from './signerTypes.js'
@@ -436,7 +436,7 @@ export const ConfirmTransactionDialogPendingChanged = funtypes.ReadonlyObject({
 
 export type UserAddressBook = funtypes.Static<typeof UserAddressBook>
 export const UserAddressBook = funtypes.ReadonlyObject({
-	addressInfos: funtypes.ReadonlyArray(AddressInfo),
+	activeAddresses: funtypes.ReadonlyArray(ActiveAddress),
 	contacts: ContactEntries,
 })
 
@@ -462,7 +462,7 @@ export const InterceptorAccessDialog = funtypes.ReadonlyObject({
 })
 
 export interface PendingAccessRequestWithMetadata extends PendingAccessRequest {
-	addressMetadata: [string, AddressInfoEntry][],
+	addressMetadata: [string, ActiveAddressEntry][],
 }
 
 export type Settings = funtypes.Static<typeof Settings>
@@ -490,7 +490,7 @@ export const UpdateHomePage = funtypes.ReadonlyObject({
 			simulationUpdatingState: SimulationUpdatingState,
 			simulationResultState: SimulationResultState,
 		}),
-		websiteAccessAddressMetadata: funtypes.ReadonlyArray(AddressInfoEntry),
+		websiteAccessAddressMetadata: funtypes.ReadonlyArray(ActiveAddressEntry),
 		signerAccounts: funtypes.Union(funtypes.ReadonlyArray(EthereumAddress), funtypes.Undefined),
 		signerChain: funtypes.Union(EthereumQuantity, funtypes.Undefined),
 		signerName: SignerName,

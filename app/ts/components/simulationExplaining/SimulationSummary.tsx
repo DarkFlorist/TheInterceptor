@@ -343,7 +343,7 @@ type SummarizeAddressParams = {
 }
 
 export function SummarizeAddress(param: SummarizeAddressParams) {
-	const isOwnAddress = param.balanceSummary.summaryFor.type === 'addressInfo' || param.balanceSummary.summaryFor.address === param.simulationAndVisualisationResults.activeAddress
+	const isOwnAddress = param.balanceSummary.summaryFor.type === 'activeAddress' || param.balanceSummary.summaryFor.address === param.simulationAndVisualisationResults.activeAddress
 	const positiveNegativeColors = isOwnAddress
 		? {
 			textColor: 'var(--text-color)',
@@ -484,10 +484,10 @@ function splitToOwnAndNotOwnAndCleanSummary(firstTx: SimulatedAndVisualizedTrans
 	}
 
 	const ownAddresses = Array.from(summary.entries()).filter( ([_index, balanceSummary]) =>
-		balanceSummary.summaryFor.type === 'addressInfo' || balanceSummary.summaryFor.address === activeAddress
+		balanceSummary.summaryFor.type === 'activeAddress' || balanceSummary.summaryFor.address === activeAddress
 	)
 	const notOwnAddresses = Array.from(summary.entries()).filter( ([_index, balanceSummary]) =>
-		balanceSummary.summaryFor.type !== 'addressInfo' && balanceSummary.summaryFor.address !== activeAddress
+		balanceSummary.summaryFor.type !== 'activeAddress' && balanceSummary.summaryFor.address !== activeAddress
 	)
 	return [ownAddresses, notOwnAddresses]
 }

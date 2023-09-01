@@ -1,5 +1,5 @@
 import { changeActiveAddressAndChainAndResetSimulation, changeActiveRpc, getPrependTrasactions, refreshConfirmTransactionSimulation, updateSimulationState } from './background.js'
-import { getSettings, setUseTabsInsteadOfPopup, setMakeMeRich, setPage, setUseSignersAddressAsActiveAddress, updateAddressInfos, updateContacts, updateWebsiteAccess, exportSettingsAndAddressBook, importSettingsAndAddressBook, getMakeMeRich, getUseTabsInsteadOfPopup, getMetamaskCompatibilityMode, setMetamaskCompatibilityMode } from './settings.js'
+import { getSettings, setUseTabsInsteadOfPopup, setMakeMeRich, setPage, setUseSignersAddressAsActiveAddress, updateActiveAddresses, updateContacts, updateWebsiteAccess, exportSettingsAndAddressBook, importSettingsAndAddressBook, getMakeMeRich, getUseTabsInsteadOfPopup, getMetamaskCompatibilityMode, setMetamaskCompatibilityMode } from './settings.js'
 import { getPendingTransactions, getCurrentTabId, getOpenedAddressBookTabId, getSimulationResults, getTabState, saveCurrentTabId, setOpenedAddressBookTabId, setRpcList, getRpcList, getPrimaryRpcForChain, setRpcConnectionStatus, getSignerName, getRpcConnectionStatus, updateUserAddressBookEntries } from './storageVariables.js'
 import { Simulator } from '../simulation/simulator.js'
 import { ChangeActiveAddress, ChangeMakeMeRich, ChangePage, PersonalSign, RemoveTransaction, RequestAccountsFromSigner, TransactionConfirmation, InterceptorAccess, ChangeInterceptorAccess, ChainChangeConfirmation, EnableSimulationMode, ChangeActiveChain, AddOrEditAddressBookEntry, GetAddressBookData, RemoveAddressBookEntry, RefreshConfirmTransactionDialogSimulation, UserAddressBook, InterceptorAccessRefresh, InterceptorAccessChangeAddress, Settings, RefreshConfirmTransactionMetadata, RefreshInterceptorAccessMetadata, ChangeSettings, ImportSettings, SetRpcList, IdentifyAddress, FindAddressBookEntryWithSymbolOrName } from '../types/interceptor-messages.js'
@@ -87,7 +87,7 @@ export async function changeMakeMeRich(simulator: Simulator, ethereumClientServi
 export async function removeAddressBookEntry(simulator: Simulator, websiteTabConnections: WebsiteTabConnections, removeAddressBookEntry: RemoveAddressBookEntry) {
 	switch(removeAddressBookEntry.data.addressBookCategory) {
 		case 'My Active Addresses': {
-			await updateAddressInfos((previousAddressInfos) => previousAddressInfos.filter((info) => info.address !== removeAddressBookEntry.data.address))
+			await updateActiveAddresses((previousActiveAddresses) => previousActiveAddresses.filter((info) => info.address !== removeAddressBookEntry.data.address))
 			updateWebsiteApprovalAccesses(simulator, websiteTabConnections, undefined, await getSettings())
 			return await sendPopupMessageToOpenWindows({ method: 'popup_addressBookEntriesChanged' })
 		}
@@ -103,15 +103,15 @@ export async function removeAddressBookEntry(simulator: Simulator, websiteTabCon
 	}
 }
 
-export async function addOrModifyAddressInfo(simulator: Simulator, websiteTabConnections: WebsiteTabConnections, entry: AddOrEditAddressBookEntry) {
+export async function addOrModifyAddressBookEntry(simulator: Simulator, websiteTabConnections: WebsiteTabConnections, entry: AddOrEditAddressBookEntry) {
 	const newEntry = entry.data
 	switch (newEntry.type) {
-		case 'addressInfo': {
-			await updateAddressInfos((previousAddressInfos) => {
-				if (previousAddressInfos.find((x) => x.address === entry.data.address) ) {
-					return previousAddressInfos.map((x) => x.address === newEntry.address ? newEntry : x )
+		case 'activeAddress': {
+			await updateActiveAddresses((previousActiveAddresses) => {
+				if (previousActiveAddresses.find((x) => x.address === entry.data.address) ) {
+					return previousActiveAddresses.map((x) => x.address === newEntry.address ? newEntry : x )
 				} else {
-					return previousAddressInfos.concat([newEntry])
+					return previousActiveAddresses.concat([newEntry])
 				}
 			})
 			updateWebsiteApprovalAccesses(simulator, websiteTabConnections, undefined, await getSettings())
@@ -317,7 +317,7 @@ export async function homeOpened(simulator: Simulator) {
 				...simResults,
 				simulatedAndVisualizedTransactions: simulatedAndVisualizedTransactions,
 			},
-			websiteAccessAddressMetadata: getAddressMetadataForAccess(settings.websiteAccess, settings.userAddressBook.addressInfos),
+			websiteAccessAddressMetadata: getAddressMetadataForAccess(settings.websiteAccess, settings.userAddressBook.activeAddresses),
 			signerAccounts: tabState?.signerAccounts,
 			signerChain: tabState?.signerChain,
 			signerName: await getSignerName(),
