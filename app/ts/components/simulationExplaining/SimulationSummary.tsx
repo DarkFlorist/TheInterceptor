@@ -1,6 +1,6 @@
 import { Erc1155TokenBalanceChange, Erc721and1155OperatorChange, LogSummarizer, SummaryOutcome } from '../../simulation/services/LogSummarizer.js'
 import { RenameAddressCallBack, RpcConnectionStatus } from '../../types/user-interface-types.js'
-import { Erc721TokenApprovalChange, SimulatedAndVisualizedTransaction, SimulationAndVisualisationResults, ERC20TokenApprovalChange, Erc20TokenBalanceChange, TransactionWithAddressBookEntries } from '../../types/visualizer-types.js'
+import { Erc721TokenApprovalChange, SimulatedAndVisualizedTransaction, SimulationAndVisualisationResults, ERC20TokenApprovalChange, Erc20TokenBalanceChange, TransactionWithAddressBookEntries, NamedTokenId } from '../../utils/visualizer-types.js'
 import { BigAddress, SmallAddress, WebsiteOriginText } from '../subcomponents/address.js'
 import { Ether, EtherAmount, EtherSymbol, TokenWithAmount, TokenAmount, TokenPrice, TokenSymbol, TokenOrEth } from '../subcomponents/coins.js'
 import { LogAnalysis } from './Transactions.js'
@@ -311,6 +311,7 @@ type Erc1155TokenChangesParams = {
 	negativeColor: string,
 	isImportant: boolean,
 	renameAddressCallBack: RenameAddressCallBack,
+	namedTokenIds: readonly NamedTokenId[],
 }
 
 function Erc1155TokenChanges(param: Erc1155TokenChangesParams ) {
@@ -323,6 +324,7 @@ function Erc1155TokenChanges(param: Erc1155TokenChangesParams ) {
 					<TokenWithAmount
 						tokenEntry = { tokenChange }
 						tokenId = { tokenChange.tokenId }
+						tokenIdName = { param.namedTokenIds.find((namedTokenId) => namedTokenId.tokenAddress === tokenChange.address && namedTokenId.tokenId === tokenChange.tokenId)?.tokenIdName }
 						amount = { tokenChange.changeAmount }
 						style = { { color: param.textColor } }
 						useFullTokenName = { true }
@@ -417,6 +419,7 @@ export function SummarizeAddress(param: SummarizeAddressParams) {
 				negativeColor = { positiveNegativeColors.negativeColor }
 				isImportant = { isOwnAddress }
 				renameAddressCallBack = { param.renameAddressCallBack }
+				namedTokenIds = { param.simulationAndVisualisationResults.namedTokenIds }
 			/>
 		</div>
 	</div>
@@ -497,12 +500,13 @@ type AccountChangesCardParams = {
 	simulationAndVisualisationResults: SimulationAndVisualisationResults
 	renameAddressCallBack: RenameAddressCallBack
 	addressMetaData: readonly AddressBookEntry[]
+	namedTokenIds: readonly NamedTokenId[]
 }
 
-export function TransactionsAccountChangesCard({ simTx, renameAddressCallBack, addressMetaData, simulationAndVisualisationResults }: AccountChangesCardParams) {
+export function TransactionsAccountChangesCard({ simTx, renameAddressCallBack, addressMetaData, simulationAndVisualisationResults, namedTokenIds }: AccountChangesCardParams) {
 	const logSummarizer = new LogSummarizer([simTx])
-	const addressMetaDataMap = new Map(addressMetaData.map( (x) => [addressString(x.address), x]))
-	const originalSummary = logSummarizer.getSummary(addressMetaDataMap, simulationAndVisualisationResults.tokenPrices)
+	const addressMetaDataMap = new Map(addressMetaData.map((x) => [addressString(x.address), x]))
+	const originalSummary = logSummarizer.getSummary(addressMetaDataMap, simulationAndVisualisationResults.tokenPrices, namedTokenIds)
 	const [showSummary, setShowSummary] = useState<boolean>(false)
 	const [ownAddresses, notOwnAddresses] = splitToOwnAndNotOwnAndCleanSummary(simTx, originalSummary, simulationAndVisualisationResults.activeAddress, simulationAndVisualisationResults.rpcNetwork)
 	const numberOfChanges = notOwnAddresses.length + ownAddresses.length
@@ -661,7 +665,7 @@ export function SimulationSummary(param: SimulationSummaryParams) {
 
 	const logSummarizer = new LogSummarizer(param.simulationAndVisualisationResults.simulatedAndVisualizedTransactions)
 	const addressMetaData = new Map(param.simulationAndVisualisationResults.addressBookEntries.map((x) => [addressString(x.address), x]))
-	const originalSummary = logSummarizer.getSummary(addressMetaData, param.simulationAndVisualisationResults.tokenPrices)
+	const originalSummary = logSummarizer.getSummary(addressMetaData, param.simulationAndVisualisationResults.tokenPrices, param.simulationAndVisualisationResults.namedTokenIds)
 	const [ownAddresses, notOwnAddresses] = splitToOwnAndNotOwnAndCleanSummary(param.simulationAndVisualisationResults.simulatedAndVisualizedTransactions.at(0), originalSummary, param.simulationAndVisualisationResults.activeAddress, param.simulationAndVisualisationResults.rpcNetwork)
 
 	const [showOtherAccountChanges, setShowOtherAccountChange] = useState<boolean>(false)

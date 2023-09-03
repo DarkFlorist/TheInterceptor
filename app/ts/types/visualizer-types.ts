@@ -106,6 +106,7 @@ export const TokenVisualizerErc1155Event = funtypes.ReadonlyObject({
 	to: AddressBookEntry,
 	token: Erc1155Entry,
 	tokenId: EthereumQuantity,
+	tokenIdName: funtypes.Union(funtypes.String, funtypes.Undefined),
 	amount: EthereumQuantity,
 	isApproval: funtypes.Literal(false),
 })
@@ -260,6 +261,7 @@ export type SimulationAndVisualisationResults = {
 	rpcNetwork: RpcNetwork,
 	tokenPrices: readonly TokenPriceEstimate[],
 	activeAddress: bigint,
+	namedTokenIds: readonly NamedTokenId[]
 }
 
 export type TokenPriceEstimate = funtypes.Static<typeof TokenPriceEstimate>
@@ -311,6 +313,13 @@ export const SimulationUpdatingState = funtypes.Union(funtypes.Literal('updating
 export type SimulationResultState = funtypes.Static<typeof SimulationResultState>
 export const SimulationResultState = funtypes.Union(funtypes.Literal('done'), funtypes.Literal('invalid'))
 
+export type NamedTokenId = funtypes.Static<typeof NamedTokenId>
+export const NamedTokenId = funtypes.ReadonlyObject({
+	tokenAddress: EthereumAddress,
+	tokenId: EthereumQuantity,
+	tokenIdName: funtypes.String
+})
+
 export type SimulationResults = funtypes.Static<typeof SimulationResults>
 export const SimulationResults = funtypes.ReadonlyObject({
 	simulationUpdatingState: SimulationUpdatingState, 
@@ -320,6 +329,7 @@ export const SimulationResults = funtypes.ReadonlyObject({
 	visualizerResults: funtypes.Union(funtypes.ReadonlyArray(SimResults), funtypes.Undefined),
 	addressBookEntries: funtypes.ReadonlyArray(AddressBookEntry),
 	tokenPrices: funtypes.ReadonlyArray(TokenPriceEstimate),
+	namedTokenIds: funtypes.ReadonlyArray(NamedTokenId),
 	activeAddress: OptionalEthereumAddress,
 })
 

@@ -69,7 +69,7 @@ export function EtherSymbol(param: EtherSymbolParams) {
 
 	return <>
 		<div style = 'overflow: initial; height: 28px;'>
-			<img class = 'noselect nopointer vertical-center' style = 'max-height: 25px; max-width: 25px;' src = '../../img/coins/ethereum.png'/>
+			<img class = 'noselect nopointer' style = 'max-height: 25px; max-width: 25px;' src = '../../img/coins/ethereum.png'/>
 		</div>
 		<p class = 'noselect nopointer' style = { style }> { etheName } </p>
 	</>
@@ -83,7 +83,7 @@ type TokenPriceParams = {
 }
 
 export function TokenPrice(param: TokenPriceParams) {
-	if ( param.tokenPriceEstimate === undefined ) return <></>
+	if (param.tokenPriceEstimate === undefined) return <></>
 	const value = getTokenAmountsWorth(param.amount, param.tokenPriceEstimate)
 	const style = (param.style === undefined ? {} : param.style)
 	return <>
@@ -99,8 +99,9 @@ export function TokenPrice(param: TokenPriceParams) {
 
 export type TokenSymbolParams = (
 	{
-		tokenEntry: Erc721Entry | Erc1155Entry
+		tokenEntry: Erc1155Entry | Erc721Entry
 		tokenId: bigint | undefined
+		tokenIdName?: string
 	} | { 
 		tokenEntry: Erc20TokenEntry
 	}
@@ -108,6 +109,22 @@ export type TokenSymbolParams = (
 	useFullTokenName?: boolean
 	style?: JSX.CSSProperties
 	renameAddressCallBack: RenameAddressCallBack
+}
+
+function TokenIdOrNameOrNothing(param: TokenSymbolParams) {
+	if (!('tokenId' in param) || param.tokenId === undefined) return <></>
+	if ('tokenIdName' in param && param.tokenIdName !== undefined) return <>
+		<CopyToClipboard content = { param.tokenId.toString() } copyMessage = 'Token name copied!' >
+			<p class = 'noselect nopointer' style = { param.style }>
+				{ param.tokenIdName }
+			</p>
+		</CopyToClipboard>
+	</>
+	return <CopyToClipboard content = { param.tokenId.toString() } copyMessage = 'Token identifier copied!' >
+		<p class = 'noselect nopointer' style = { param.style }>
+			{ `#${ truncate(param.tokenId.toString(), 9) } ` }
+		</p>
+	</CopyToClipboard>
 }
 
 export function TokenSymbol(param: TokenSymbolParams) {
@@ -124,18 +141,10 @@ export function TokenSymbol(param: TokenSymbolParams) {
 	}
 
 	const name = param.useFullTokenName ? param.tokenEntry.name : param.tokenEntry.symbol
-	return <>
-		{ 'tokenId' in param && param.tokenId !== undefined ? 
-			<CopyToClipboard content = { param.tokenId.toString() } copyMessage = 'Token identifier copied!' >
-				{ param.tokenId !== undefined ? 
-					<p class = 'noselect nopointer' style = { style }>
-						{ `#${ truncate(param.tokenId.toString(), 9) } ` }
-					</p>
-				: <></> }
-			</CopyToClipboard>
-		: <></> }
+	return <span style = 'display: flex'>
+		<TokenIdOrNameOrNothing { ...param } style = { style }/>
 		<span className = { big ? 'big-token-name-container' : 'token-name-container' } data-value = { unTrusted ? `⚠${ name }` : name }>
-			<span class = 'token-name-holder vertical-center'>
+			<span class = 'token-name-holder'>
 				<span style = 'margin-right: 2px'>
 					<CopyToClipboard content = { tokenString } copyMessage = 'Token address copied!' >
 						{ param.tokenEntry.logoUri === undefined ?
@@ -145,7 +154,7 @@ export function TokenSymbol(param: TokenSymbolParams) {
 								style = { { 'vertical-align': 'baseline', borderRadius: '50%' } }
 							/>
 						:
-							<img class = 'noselect nopointer' style = { { 'max-height': '25px', 'max-width': '25px' } } src = { param.tokenEntry.logoUri }/>
+							<img class = 'noselect nopointer' style = { { 'max-height': '25px', 'max-width': '25px', 'vertical-align': 'middle;' } } src = { param.tokenEntry.logoUri }/>
 						}
 					</CopyToClipboard>
 				</span>
@@ -160,7 +169,7 @@ export function TokenSymbol(param: TokenSymbolParams) {
 				</button>
 			</span>
 		</span>
-	</>
+	</span>
 }
 
 type TokenAmountParams = Omit<TokenSymbolParams, 'renameAddressCallBack'> & {
@@ -196,14 +205,10 @@ type TokenWithAmountParams = TokenSymbolParams & {
 }
 
 export function TokenWithAmount(param: TokenWithAmountParams) {
-	return <table class = 'log-table' style = 'width: fit-content'>
-		<div class = 'log-cell' style = 'justify-content: right;'>
-			<TokenAmount { ...param } />
-		</div>
-		<div class = 'log-cell'>
-			<TokenSymbol { ... param }/>
-		</div>
-	</table>
+	return <div style = 'width: fit-content; display: flex'>
+		<TokenAmount { ...param } />
+		<TokenSymbol { ...param }/>
+	</div>
 }
 
 export type TokenOrEtherParams = TokenWithAmountParams | EtherParams | TokenSymbolParams

@@ -20,18 +20,27 @@ const getUniqueSwapAssetIdentifier = (metadata: TokenVisualizerResultWithMetadat
 }
 
 export type SwapAsset = funtypes.Static<typeof SwapAsset>
-export const SwapAsset = funtypes.Intersect(
-	funtypes.Union(
-		funtypes.ReadonlyObject({ type: funtypes.Literal('ERC1155'), token: Erc1155Entry }),
-		funtypes.ReadonlyObject({ type: funtypes.Literal('ERC20'), token: Erc20TokenEntry }),
-		funtypes.ReadonlyObject({ type: funtypes.Literal('ERC721'), token: Erc721Entry }),
-		funtypes.ReadonlyObject({ type: funtypes.Literal('Ether'), token: funtypes.Undefined }),
-	),
+export const SwapAsset = funtypes.Union(
 	funtypes.ReadonlyObject({
+		type: funtypes.Literal('ERC1155'),
+		token: Erc1155Entry,
 		amount: EthereumQuantity,
 		tokenId: funtypes.Union(funtypes.Undefined, EthereumQuantity),
+		tokenIdName: funtypes.Union(funtypes.Undefined, funtypes.String),
 		beforeAfterBalance: funtypes.Union(BeforeAfterBalance, funtypes.Undefined),
-	})
+	}),
+	funtypes.Intersect(
+		funtypes.Union(
+			funtypes.ReadonlyObject({ type: funtypes.Literal('ERC20'), token: Erc20TokenEntry }),
+			funtypes.ReadonlyObject({ type: funtypes.Literal('ERC721'), token: Erc721Entry }),
+			funtypes.ReadonlyObject({ type: funtypes.Literal('Ether'), token: funtypes.Undefined }),
+		),
+		funtypes.ReadonlyObject({
+			amount: EthereumQuantity,
+			tokenId: funtypes.Union(funtypes.Undefined, EthereumQuantity),
+			beforeAfterBalance: funtypes.Union(BeforeAfterBalance, funtypes.Undefined),
+		})
+	)
 )
 
 export type IdentifiedSwapWithMetadata = funtypes.Static<typeof IdentifiedSwapWithMetadata>
@@ -67,12 +76,14 @@ export function identifySwap(simTransaction: SimulatedAndVisualizedTransaction):
 			...logEntry,
 			amount: 0n,
 			tokenId: 'tokenId' in logEntry ? logEntry.tokenId : undefined,
+			...logEntry.type === 'ERC1155' ? { tokenIdName: logEntry.tokenIdName } : {},
 			beforeAfterBalance: undefined,
 		})
 		aggregateTo.set(identifier, {
 			...logEntry,
 			amount: previousValue.amount + ('amount' in logEntry ? logEntry.amount : 1n),
 			tokenId: 'tokenId' in logEntry ? logEntry.tokenId : undefined,
+			...logEntry.type === 'ERC1155' ? { tokenIdName: logEntry.tokenIdName } : {},
 			beforeAfterBalance: undefined,
 		})
 	}
@@ -342,10 +353,8 @@ export function VisualizeSwapAsset({ swapAsset, rpcNetwork, renameAddressCallBac
 			</>
 		}
 		case 'ERC721': {
-			return <span class = 'grid swap-grid'>
-				<div class = 'log-cell' style = 'justify-content: left;'>
-				</div>
-				<div class = 'log-cell-flexless' style = 'justify-content: right;'>
+			return <span class = 'grid swap-grid-1'>
+				<div class = 'log-cell-flexless' style = 'justify-content: center; display: flex;'>
 					<TokenSymbol
 						tokenEntry = { swapAsset.token }
 						tokenId = { swapAsset.tokenId }
@@ -358,11 +367,12 @@ export function VisualizeSwapAsset({ swapAsset, rpcNetwork, renameAddressCallBac
 		}
 		case 'ERC1155': {
 			return <>
-				<span class = 'grid swap-grid'>
-					<div class = 'log-cell-flexless' style = 'justify-content: right;'>
+				<span class = 'grid swap-grid-1'>
+					<div class = 'log-cell-flexless' style = 'justify-content: center; display: flex;'>
 						<TokenSymbol
 							tokenEntry = { swapAsset.token }
 							tokenId = { swapAsset.tokenId }
+							tokenIdName = { swapAsset.tokenIdName }
 							useFullTokenName = { false }
 							style = { tokenStyle }
 							renameAddressCallBack = { renameAddressCallBack }

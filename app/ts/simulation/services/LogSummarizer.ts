@@ -1,5 +1,5 @@
 import { addressString } from '../../utils/bigint.js'
-import { Erc721TokenApprovalChange, SimulatedAndVisualizedTransaction, ERC20TokenApprovalChange, Erc20TokenBalanceChange, TokenPriceEstimate, TokenVisualizerResultWithMetadata } from '../../types/visualizer-types.js'
+import { Erc721TokenApprovalChange, SimulatedAndVisualizedTransaction, ERC20TokenApprovalChange, Erc20TokenBalanceChange, TokenPriceEstimate, TokenVisualizerResultWithMetadata, NamedTokenId } from '../../types/visualizer-types.js'
 import { AddressBookEntry, Erc1155Entry, Erc721Entry } from '../../types/addressBookTypes.js'
 
 export type BalanceChangeSummary = {
@@ -238,10 +238,10 @@ export class LogSummarizer {
 		})
 	}
 
-	public getSummary = (addressMetaData: Map<string, AddressBookEntry>, tokenPrices: readonly TokenPriceEstimate[] ) => {
+	public getSummary = (addressMetaData: Map<string, AddressBookEntry>, tokenPrices: readonly TokenPriceEstimate[], namedTokenIds: readonly NamedTokenId[]) => {
 		const summaries: SummaryOutcome[] = []
 		for (const [address, _summary] of this.summary.entries()) {
-			const summary = this.getSummaryForAddr(address, addressMetaData, tokenPrices)
+			const summary = this.getSummaryForAddr(address, addressMetaData, tokenPrices, namedTokenIds)
 			if (summary === undefined) continue
 			const summaryFor = addressMetaData.get(address)
 			if (summaryFor === undefined) throw new Error('Missing metadata')
@@ -250,7 +250,7 @@ export class LogSummarizer {
 		return summaries
 	}
 
-	public readonly getSummaryForAddr = (address: string, addressMetaData: Map<string, AddressBookEntry>, tokenPrices: readonly TokenPriceEstimate[]): Omit<SummaryOutcome, 'summaryFor'> | undefined => {
+	public readonly getSummaryForAddr = (address: string, addressMetaData: Map<string, AddressBookEntry>, tokenPrices: readonly TokenPriceEstimate[], namedTokenIds: readonly NamedTokenId[]): Omit<SummaryOutcome, 'summaryFor'> | undefined => {
 		const addressSummary = this.summary.get(address)
 		if (addressSummary === undefined) return undefined
 
@@ -307,6 +307,7 @@ export class LogSummarizer {
 			return Array.from(tokenIds).map(([tokenId, changeAmount]) => ({
 				...metadata,
 				tokenId: BigInt(tokenId),
+				tokenIdnName: namedTokenIds.find((namedTokenId) => namedTokenId.tokenAddress === BigInt(tokenAddress) && namedTokenId.tokenId === BigInt(tokenId))?.tokenIdName,
 				changeAmount,
 			}))
 		}).reduce((accumulator, value) => accumulator.concat(value), [])

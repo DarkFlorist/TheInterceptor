@@ -1,7 +1,7 @@
 import { ethers } from 'ethers'
 import { useEffect, useState } from 'preact/hooks'
 import { AddAddressParam } from '../../types/user-interface-types.js'
-import { Notice } from '../subcomponents/Error.js'
+import { ErrorCheckBox, Notice } from '../subcomponents/Error.js'
 import { getIssueWithAddressString } from '../ui-utils.js'
 import { checksummedAddress, stringToAddress } from '../../utils/bigint.js'
 import { sendPopupMessageToBackgroundPage } from '../../background/backgroundUtils.js'
@@ -106,7 +106,7 @@ function RenderIncompleteAddressBookEntry({ incompleteAddressBookEntry, setName,
 		</div>
 		<div class = 'media-content' style = 'overflow-y: unset; overflow-x: unset;'>
 			<div class = 'container' style = 'margin-bottom: 10px;'>
-				<span class = 'log-table' style = 'justify-content: left; column-gap: 5px; row-gap: 5px; grid-template-columns: max-content 400px;'>
+				<span class = 'log-table' style = 'column-gap: 5px; row-gap: 5px; grid-template-columns: max-content auto;'>
 					<CellElement element = { <Text text = { 'Name: ' }/> }/>
 					<CellElement element = { <NameInput nameInput = { incompleteAddressBookEntry.name } setNameInput = { setName } disabled = { disableDueToSource }/> } />
 					<CellElement element = { <Text text = { 'Address: ' }/> }/> 
@@ -144,6 +144,7 @@ export function AddNewAddress(param: AddAddressParam) {
 	const [errorString, setErrorString] = useState<string | undefined>(undefined)
 	const [activeAddress, setActiveAddress] = useState<bigint | undefined>(undefined)
 	const [incompleteAddressBookEntry, setIncompleteAddressBookEntry] = useState<IncompleteAddressBookEntry & DuplicateCheck>({ addingAddress: false, type: 'addressInfo', address: undefined, askForAddressAccess: false, name: undefined, symbol: undefined, decimals: undefined, logoUri: undefined, entrySource: 'FilledIn', duplicateStatus: 'NoDuplicates' })
+	const [onChainInformationVerifiedByUser, setOnChainInformationVerifiedByUser] = useState<boolean>(false)
 
 	useEffect(() => {
 		const popupMessageListener = async (msg: unknown) => {
@@ -330,6 +331,28 @@ export function AddNewAddress(param: AddAddressParam) {
 		})
 	}
 
+	function showOnChainVerificationErrorBox() {
+		return incompleteAddressBookEntry.entrySource === 'OnChain' && (incompleteAddressBookEntry.type === 'ERC20' || incompleteAddressBookEntry.type === 'ERC721')
+	}
+
+	function isSubmitButtonDisabled() {
+		return !areInputValid()
+			|| param.incompleteAddressBookEntry.entrySource === 'DarkFloristMetadata' 
+			|| param.incompleteAddressBookEntry.entrySource === 'Interceptor' 
+			|| errorString !== undefined 
+			|| incompleteAddressBookEntry.duplicateStatus === 'Duplicates'
+			|| (showOnChainVerificationErrorBox() && !onChainInformationVerifiedByUser)
+	}
+
+	function getCardTitle() {
+		if (param.incompleteAddressBookEntry.addingAddress) {
+			return `Add New ${ readableAddressType[param.incompleteAddressBookEntry.type] }`
+		}
+		const alleged = showOnChainVerificationErrorBox() ? 'alleged ' : ''
+		const name = param.incompleteAddressBookEntry.name !== undefined ? `${ alleged }${ param.incompleteAddressBookEntry.name }` : readableAddressType[param.incompleteAddressBookEntry.type]
+		return `Modify ${ name }`
+	}
+
 	return ( <>
 		<div class = 'modal-background'> </div>
 		<div class = 'modal-card'>
@@ -340,7 +363,7 @@ export function AddNewAddress(param: AddAddressParam) {
 					</span>
 				</div>
 				<div class = 'card-header-title'>
-					<p className = 'paragraph'> { param.incompleteAddressBookEntry.addingAddress ? `Add New ${ readableAddressType[param.incompleteAddressBookEntry.type] }` : `Modify ${ param.incompleteAddressBookEntry.name !== undefined ? param.incompleteAddressBookEntry.name : readableAddressType[param.incompleteAddressBookEntry.type] }` } </p>
+					<p className = 'paragraph'> { getCardTitle() } </p>
 				</div>
 				<button class = 'card-header-icon' aria-label = 'close' onClick = { param.close }>
 					<span class = 'icon' style = 'color: var(--text-color);'> X </span>
@@ -358,16 +381,24 @@ export function AddNewAddress(param: AddAddressParam) {
 						/>
 					</div>
 				</div>
-				<div style = 'padding-left: 10px; padding-right: 10px; margin-bottom: 10px; height: 50px'>
+				<div style = 'padding-left: 10px; padding-right: 10px; margin-bottom: 10px; height: 80px'>
 					{ errorString === undefined ? <></> : <Notice text = { errorString } /> }
-					{ errorString === undefined && incompleteAddressBookEntry.duplicateStatus === 'Duplicates' ? <Notice text = { 
-						`There already exists ${ incompleteAddressBookEntry.duplicateEntry.type === 'addressInfo' ? 'an address' : incompleteAddressBookEntry.duplicateEntry.type} with ${ 'symbol' in incompleteAddressBookEntry.duplicateEntry ? `symbol "${ incompleteAddressBookEntry.duplicateEntry.symbol }" and` : '' } name "${ incompleteAddressBookEntry.duplicateEntry.name }".`
-					 } /> : <></> }
+					{ errorString === undefined && incompleteAddressBookEntry.duplicateStatus === 'Duplicates' ? <>
+						<Notice text = { `There already exists ${ incompleteAddressBookEntry.duplicateEntry.type === 'addressInfo' ? 'an address' : incompleteAddressBookEntry.duplicateEntry.type} with ${ 'symbol' in incompleteAddressBookEntry.duplicateEntry ? `symbol "${ incompleteAddressBookEntry.duplicateEntry.symbol }" and` : '' } name "${ incompleteAddressBookEntry.duplicateEntry.name }".` } />
+						</> :
+						( showOnChainVerificationErrorBox() ?
+							<ErrorCheckBox
+								text = { `The name and symbol are fetched directly from contract. This information can be WRONG and MALICIOUS, please check from the project of this token that the token address is correct.` }
+								checked = { onChainInformationVerifiedByUser }
+								onInput = { setOnChainInformationVerifiedByUser }
+							/>
+						: <></>)
+					}
 				</div>
 			</section>
 			<footer class = 'modal-card-foot window-footer' style = 'border-bottom-left-radius: unset; border-bottom-right-radius: unset; border-top: unset; padding: 10px;'>
 				{ param.setActiveAddressAndInformAboutIt === undefined || incompleteAddressBookEntry === undefined || activeAddress === stringToAddress(incompleteAddressBookEntry.address) ? <></> : <button class = 'button is-success is-primary' onClick = { createAndSwitch } disabled = { ! (areInputValid()) }> { param.incompleteAddressBookEntry.addingAddress ? 'Create and switch' : 'Modify and switch' } </button> }
-				<button class = 'button is-success is-primary' onClick = { incompleteAddressBookEntry.duplicateStatus === 'Pending' ? () => {} : add } disabled = { !areInputValid() || param.incompleteAddressBookEntry.entrySource === 'DarkFloristMetadata' || param.incompleteAddressBookEntry.entrySource === 'Interceptor' || errorString !== undefined || incompleteAddressBookEntry.duplicateStatus === 'Duplicates' }> { param.incompleteAddressBookEntry.addingAddress ? 'Create' : 'Modify' } </button>
+				<button class = 'button is-success is-primary' onClick = { incompleteAddressBookEntry.duplicateStatus === 'Pending' ? () => {} : add } disabled = { isSubmitButtonDisabled() }> { param.incompleteAddressBookEntry.addingAddress ? 'Create' : 'Modify' } </button>
 				<button class = 'button is-primary' style = 'background-color: var(--negative-color)' onClick = { param.close }>Cancel</button>
 			</footer>
 		</div>

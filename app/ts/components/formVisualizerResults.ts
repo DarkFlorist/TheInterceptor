@@ -1,12 +1,10 @@
 import { addressString } from '../utils/bigint.js'
-import { EthBalanceChangesWithMetadata, SimResults, SimulatedAndVisualizedTransaction, SimulationState, TokenVisualizerResultWithMetadata } from '../types/visualizer-types.js'
+import { EthBalanceChangesWithMetadata, NamedTokenId, SimResults, SimulatedAndVisualizedTransaction, SimulationState, TokenVisualizerResultWithMetadata } from '../types/visualizer-types.js'
 import { AddressBookEntry } from '../types/addressBookTypes.js'
 
-// todo, move this to background page (and refacor hard) to form when simulation is made and we can get rid of most of the validations done here
-export function formSimulatedAndVisualizedTransaction(simState: SimulationState, visualizerResults: readonly SimResults[], addressBookEntries: readonly AddressBookEntry[] ): readonly SimulatedAndVisualizedTransaction[] {
+export function formSimulatedAndVisualizedTransaction(simState: SimulationState, visualizerResults: readonly SimResults[], addressBookEntries: readonly AddressBookEntry[], namedTokenIds: readonly NamedTokenId[]): readonly SimulatedAndVisualizedTransaction[] {
 	const addressMetaData = new Map(addressBookEntries.map((x) => [addressString(x.address), x]))
 	return simState.simulatedTransactions.map((simulatedTx, index) => {
-
 		const from = addressMetaData.get(addressString(simulatedTx.signedTransaction.from))
 		if (from === undefined) throw new Error('missing metadata')
 
@@ -49,6 +47,7 @@ export function formSimulatedAndVisualizedTransaction(simState: SimulationState,
 					from: fromEntry,
 					to: toEntry,
 					token: tokenEntry,
+					tokenIdName: namedTokenIds.find((namedTokenId) => namedTokenId.tokenAddress === change.tokenAddress && namedTokenId.tokenId === change.tokenId)?.tokenIdName
 				}
 			}
 			if (change.type === 'NFT All approval' && (tokenEntry.type === 'ERC1155' || tokenEntry.type === 'ERC721')) {

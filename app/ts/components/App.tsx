@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'preact/hooks'
 import { defaultAddresses } from '../background/settings.js'
-import { SimulatedAndVisualizedTransaction, SimulationAndVisualisationResults, SimulationState, TokenPriceEstimate, RpcEntry, RpcNetwork, RpcEntries, SimulationUpdatingState, SimulationResultState } from '../types/visualizer-types.js'
+import { SimulatedAndVisualizedTransaction, SimulationAndVisualisationResults, SimulationState, TokenPriceEstimate, RpcEntry, RpcNetwork, RpcEntries, SimulationUpdatingState, SimulationResultState, NamedTokenId } from '../types/visualizer-types.js'
 import { ChangeActiveAddress } from './pages/ChangeActiveAddress.js'
 import { Home } from './pages/Home.js'
 import { RpcConnectionStatus, TabIconDetails } from '../types/user-interface-types.js'
@@ -86,6 +86,7 @@ export function App() {
 			tokenPrices: readonly TokenPriceEstimate[],
 			simulatedAndVisualizedTransactions: readonly SimulatedAndVisualizedTransaction[],
 			activeSimulationAddress: EthereumAddress | undefined,
+			namedTokenIds: readonly NamedTokenId[],
 		) => {
 			if (activeSimulationAddress === undefined) return setSimVisResults(undefined)
 			if (simState === undefined) return setSimVisResults(undefined)
@@ -98,6 +99,7 @@ export function App() {
 				tokenPrices: tokenPrices,
 				activeAddress: activeSimulationAddress,
 				addressBookEntries: addressBookEntries,
+				namedTokenIds,
 			})
 		}
 
@@ -120,7 +122,8 @@ export function App() {
 					data.simulation.addressBookEntries,
 					data.simulation.tokenPrices,
 					data.simulation.simulatedAndVisualizedTransactions,
-					data.simulation.activeAddress
+					data.simulation.activeAddress,
+					data.simulation.namedTokenIds,
 				)
 				setSimulationUpdatingState(data.simulation.simulationUpdatingState)
 				setSimulationResultState(data.simulation.simulationResultState)

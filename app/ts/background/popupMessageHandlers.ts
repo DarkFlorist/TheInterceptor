@@ -11,7 +11,7 @@ import { sendMessageToApprovedWebsitePorts, updateWebsiteApprovalAccesses } from
 import { getHtmlFile, sendPopupMessageToOpenWindows } from './backgroundUtils.js'
 import { CHROME_NO_TAB_WITH_ID_ERROR } from '../utils/constants.js'
 import { findEntryWithSymbolOrName, getMetadataForAddressBookData } from './medataSearch.js'
-import { getAddressBookEntriesForVisualiser, identifyAddress } from './metadataUtils.js'
+import { getAddressBookEntriesForVisualiser, identifyAddress, nameTokenIds } from './metadataUtils.js'
 import { assertUnreachable } from '../utils/typescript.js'
 import { WebsiteTabConnections } from '../types/user-interface-types.js'
 import { EthereumClientService } from '../simulation/services/EthereumClientService.js'
@@ -184,6 +184,7 @@ export async function refreshSimulation(simulator: Simulator, ethereumClientServ
 
 export async function refreshPopupConfirmTransactionMetadata(ethereumClientService: EthereumClientService, userAddressBook: UserAddressBook, { data }: RefreshConfirmTransactionMetadata) {
 	const addressBookEntries = await getAddressBookEntriesForVisualiser(ethereumClientService, data.visualizerResults.map((x) => x.visualizerResults), data.simulationState, userAddressBook)
+	const namedTokenIds = await nameTokenIds(ethereumClientService, data.visualizerResults.map((x) => x.visualizerResults))
 	const promises = await getPendingTransactions()
 	if (promises.length === 0) return
 	const first = promises[0]
@@ -196,7 +197,7 @@ export async function refreshPopupConfirmTransactionMetadata(ethereumClientServi
 				statusCode: 'success',
 				data: {
 					...first.simulationResults.data,
-					simulatedAndVisualizedTransactions: formSimulatedAndVisualizedTransaction(first.simulationResults.data.simulationState, first.simulationResults.data.visualizerResults, addressBookEntries),
+					simulatedAndVisualizedTransactions: formSimulatedAndVisualizedTransaction(first.simulationResults.data.simulationState, first.simulationResults.data.visualizerResults, addressBookEntries, namedTokenIds),
 					addressBookEntries,
 				}
 			}
@@ -309,7 +310,7 @@ export async function homeOpened(simulator: Simulator) {
 		await sendPopupMessageToOpenWindows({ method: 'popup_failed_to_get_block', data: { rpcConnectionStatus } })
 	}
 	const simResults = await getSimulationResults()
-	const simulatedAndVisualizedTransactions = simResults.simulationState === undefined || simResults.visualizerResults === undefined ? [] : formSimulatedAndVisualizedTransaction(simResults.simulationState, simResults.visualizerResults, simResults.addressBookEntries)
+	const simulatedAndVisualizedTransactions = simResults.simulationState === undefined || simResults.visualizerResults === undefined ? [] : formSimulatedAndVisualizedTransaction(simResults.simulationState, simResults.visualizerResults, simResults.addressBookEntries, simResults.namedTokenIds)
 	await sendPopupMessageToOpenWindows({
 		method: 'popup_UpdateHomePage',
 		data: {
