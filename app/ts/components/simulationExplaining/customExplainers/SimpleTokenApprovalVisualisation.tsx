@@ -4,6 +4,7 @@ import { AllApproval, TokenAmount, TokenSymbol } from '../../subcomponents/coins
 import { GasFee, TransactionGasses } from '../SimulationSummary.js'
 import { TokenVisualizerResultWithMetadata, RpcNetwork } from '../../../types/visualizer-types.js'
 import { BIG_FONT_SIZE } from '../../../utils/constants.js'
+import { tokenEventToTokenSymbolParams } from './CatchAllVisualizer.js'
 
 type SimpleTokenApprovalVisualisation = {
 	approval: TokenVisualizerResultWithMetadata
@@ -51,7 +52,7 @@ export function SimpleTokenApprovalVisualisation(params: SimpleTokenApprovalVisu
 				</div>
 				<div class = 'log-cell' style = 'padding-right: 0.2em'>
 					<TokenSymbol
-						{ ...'tokenId' in params.approval ? { tokenId: params.approval.tokenId, tokenEntry: params.approval.token } : ( params.approval.type === 'NFT All approval' ? { tokenEntry: params.approval.token, tokenId: undefined } : { tokenEntry: params.approval.token }) }
+						{ ...tokenEventToTokenSymbolParams(params.approval) }
 						useFullTokenName = { false }
 						style = { { 'font-size': BIG_FONT_SIZE, 'font-weight': '500', color: textColor } }
 						renameAddressCallBack = { params.renameAddressCallBack }

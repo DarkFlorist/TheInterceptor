@@ -1,6 +1,6 @@
 import { addressString, checksummedAddress } from '../utils/bigint.js'
-import { ActiveAddressEntry, AddressBookEntry, ActiveAddress } from '../types/addressBookTypes.js'
-import { SimulationState, VisualizerResult } from '../types/visualizer-types.js'
+import { ActiveAddress, ActiveAddressEntry, AddressBookEntry } from '../types/addressBookTypes.js'
+import { NamedTokenId, SimulationState, VisualizerResult } from '../types/visualizer-types.js'
 import { nftMetadata, tokenMetadata, contractMetadata } from '@darkflorist/address-metadata'
 import { ethers } from 'ethers'
 import { MOCK_ADDRESS } from '../utils/constants.js'
@@ -9,6 +9,8 @@ import { EthereumClientService } from '../simulation/services/EthereumClientServ
 import { itentifyAddressViaOnChainInformation } from '../utils/tokenIdentification.js'
 import { assertNever } from '../utils/typescript.js'
 import { getUserAddressBookEntries } from './storageVariables.js'
+import { getUniqueItemsByProperties } from '../utils/typed-arrays.js'
+import { EthereumNameServiceTokenWrapper, getEthereumNameServiceNameFromTokenId } from '../utils/ethereumNameService.js'
 export const LOGO_URI_PREFIX = `../vendor/@darkflorist/address-metadata`
 
 export function getFullLogoUri(logoURI: string) {
@@ -132,28 +134,47 @@ export async function getAddressBookEntriesForVisualiser(ethereumClientService: 
 
 	for (const vis of visualizerResult) {
 		if (vis === undefined) continue
-		const ethBalanceAddresses = vis.ethBalanceChanges.map( (x) => x.address )
-		const from = vis.tokenResults.map( (x) => x.from )
-		const to = vis.tokenResults.map( (x) => x.to )
-		tokenAddresses = tokenAddresses.concat( vis.tokenResults.map( (x) => x.tokenAddress ) )
+		const ethBalanceAddresses = vis.ethBalanceChanges.map((x) => x.address)
+		const from = vis.tokenResults.map((x) => x.from)
+		const to = vis.tokenResults.map((x) => x.to)
+		tokenAddresses = tokenAddresses.concat(vis.tokenResults.map((x) => x.tokenAddress))
 		addressesToFetchMetadata = addressesToFetchMetadata.concat(ethBalanceAddresses, from, to)
 	}
-	simulationState.simulatedTransactions.forEach( (tx) => {
-		if ( tx.multicallResponse.statusCode === 'success') {
+	simulationState.simulatedTransactions.forEach((tx) => {
+		if (tx.multicallResponse.statusCode === 'success') {
 			addressesToFetchMetadata.concat(tx.multicallResponse.events.map( (tx) => tx.loggersAddress ))
 		}
 		addressesToFetchMetadata.push(tx.signedTransaction.from)
 		if (tx.signedTransaction.to !== null) addressesToFetchMetadata.push(tx.signedTransaction.to)
 	})
 
-	const deDuplicatedTokens = Array.from(new Set<bigint>(tokenAddresses).values())
-	const tokenPromises = deDuplicatedTokens.map ((addr) => identifyAddress(ethereumClientService, userAddressBook, addr))
-	const tokens = await Promise.all(tokenPromises)
+	const deDuplicated = new Set<bigint>(addressesToFetchMetadata.concat(tokenAddresses))
+	const addressIdentificationPromises: Promise<AddressBookEntry>[] = Array.from(deDuplicated.values()).map((address) => identifyAddress(ethereumClientService, userAddressBook, address))
 
-	const deDuplicated = new Set<bigint>(addressesToFetchMetadata)
-	const addresses: Promise<AddressBookEntry>[] = Array.from(deDuplicated.values()).filter( (address) => !deDuplicatedTokens.includes(address) ).map( ( address ) =>
-		identifyAddress(ethereumClientService, userAddressBook, address)
-	)
+	return await Promise.all(addressIdentificationPromises)
+}
 
-	return (await Promise.all(addresses)).concat(tokens)
+export async function nameTokenIds(ethereumClientService: EthereumClientService, visualizerResult: (VisualizerResult | undefined)[]) {
+	type TokenAddressTokenIdPair = {
+		tokenAddress: bigint
+		tokenId: bigint
+	}
+	let tokenAddresses: TokenAddressTokenIdPair[] = visualizerResult.map((vis) => {
+		if (vis === undefined) return undefined
+		return vis.tokenResults.map((x) => { 
+			if (x.type !== 'ERC1155') return undefined
+			return { tokenAddress: x.tokenAddress, tokenId: x.tokenId }
+		})
+	}).flat().filter((pair): pair is TokenAddressTokenIdPair => pair !== undefined)
+
+	const pairs = getUniqueItemsByProperties(tokenAddresses, ['tokenAddress', 'tokenId'])
+	const namedPairs = (await Promise.all(pairs.map(async (pair) => {
+		if (pair.tokenAddress === EthereumNameServiceTokenWrapper && ethereumClientService.getChainId() === 1n) {
+			const tokenIdName = await getEthereumNameServiceNameFromTokenId(ethereumClientService, pair.tokenId)
+			if (tokenIdName === undefined) return undefined
+			return { ...pair, tokenIdName }
+		}
+		return undefined
+	}))).filter((pair): pair is NamedTokenId => pair !== undefined)
+	return namedPairs
 }

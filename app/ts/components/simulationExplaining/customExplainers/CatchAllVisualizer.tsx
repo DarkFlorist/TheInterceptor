@@ -4,6 +4,7 @@ import { Erc721TokenApprovalChange, ERC20TokenApprovalChange, TokenVisualizerErc
 import { EtherSymbol, TokenSymbol, TokenAmount, EtherAmount } from '../../subcomponents/coins.js'
 import { RenameAddressCallBack } from '../../../types/user-interface-types.js'
 import { SmallAddress } from '../../subcomponents/address.js'
+import { assertNever } from '../../../utils/typescript.js'
 
 type EtherTransferEventParams = {
 	valueSent: bigint,
@@ -72,6 +73,19 @@ type SendOrReceiveTokensImportanceBoxParams = {
 	renameAddressCallBack: RenameAddressCallBack,
 }
 
+export function tokenEventToTokenSymbolParams(tokenEvent: TokenVisualizerResultWithMetadata){
+	switch(tokenEvent.type) {
+		case 'ERC1155': return { tokenEntry: tokenEvent.token, tokenId: tokenEvent.tokenId, tokenIdName: tokenEvent.tokenIdName }
+		case 'ERC20': return { tokenEntry: tokenEvent.token }
+		case 'ERC721': return  { tokenEntry: tokenEvent.token, tokenId: tokenEvent.tokenId }
+		case 'NFT All approval':  {
+			if (tokenEvent.token.type === 'ERC1155') return { tokenEntry: tokenEvent.token, tokenId: undefined, tokenIdName: undefined }
+			return { tokenEntry: tokenEvent.token, tokenId: undefined }
+		}
+		default: assertNever(tokenEvent)
+	}
+}
+
 function SendOrReceiveTokensImportanceBox(param: SendOrReceiveTokensImportanceBoxParams) {
 	if (param.tokenVisualizerResults === undefined) return <></>
 	return <>
@@ -96,7 +110,7 @@ function SendOrReceiveTokensImportanceBox(param: SendOrReceiveTokensImportanceBo
 						</div>
 						<div class = 'log-cell' style = 'padding-right: 0.2em'>
 							<TokenSymbol
-								{ ...'tokenId' in tokenEvent ? { tokenId: tokenEvent.tokenId, tokenEntry: tokenEvent.token } : { tokenEntry: tokenEvent.token } }
+								{ ...tokenEventToTokenSymbolParams(tokenEvent) }
 								style = { { color: param.textColor } }
 								useFullTokenName = { false }
 								renameAddressCallBack = { param.renameAddressCallBack }

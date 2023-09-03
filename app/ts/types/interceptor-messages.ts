@@ -1,7 +1,7 @@
 import * as funtypes from 'funtypes'
 import { ConfirmTransactionDialogState, PendingAccessRequest, PendingAccessRequestArray, PendingChainChangeConfirmationPromise, PendingTransaction, RpcConnectionStatus, TabIconDetails } from './user-interface-types.js'
 import { EthereumAddress, EthereumBlockHeaderWithTransactionHashes, EthereumBytes32, EthereumData, EthereumQuantity, EthereumSignedTransactionWithBlockData, EthereumTimestamp, NonHexBigInt, OptionalEthereumAddress } from './wire-types.js'
-import { SimulationState, SimulatedAndVisualizedTransaction, SimResults, TokenPriceEstimate, RpcNetwork, RpcEntries, RpcEntry, SimulationUpdatingState, SimulationResultState } from './visualizer-types.js'
+import { SimulationState, SimulatedAndVisualizedTransaction, SimResults, TokenPriceEstimate, RpcNetwork, RpcEntries, RpcEntry, SimulationUpdatingState, SimulationResultState, NamedTokenId } from './visualizer-types.js'
 import { PersonalSignRequestData } from './personal-message-definitions.js'
 import { UniqueRequestIdentifier, WebsiteSocket } from '../utils/requests.js'
 import { EthGetLogsResponse, EthGetStorageAtParams, EthTransactionReceiptResponse, GetBlockReturn, GetSimulationStackReply, OldSignTypedDataParams, PersonalSignParams, SendRawTransactionParams, SendTransactionParams, SignTypedDataParams, WalletAddEthereumChain } from './JsonRpc-types.js'
@@ -489,6 +489,7 @@ export const UpdateHomePage = funtypes.ReadonlyObject({
 			simulatedAndVisualizedTransactions: funtypes.ReadonlyArray(SimulatedAndVisualizedTransaction),
 			simulationUpdatingState: SimulationUpdatingState,
 			simulationResultState: SimulationResultState,
+			namedTokenIds: funtypes.ReadonlyArray(NamedTokenId),
 		}),
 		websiteAccessAddressMetadata: funtypes.ReadonlyArray(ActiveAddressEntry),
 		signerAccounts: funtypes.Union(funtypes.ReadonlyArray(EthereumAddress), funtypes.Undefined),

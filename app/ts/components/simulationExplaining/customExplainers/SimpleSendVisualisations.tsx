@@ -7,6 +7,7 @@ import { GasFee, TransactionGasses } from '../SimulationSummary.js'
 import { SimulatedAndVisualizedEtherTransferTransaction, SimulatedAndVisualizedSimpleTokenTransferTransaction, TokenResult } from '../identifyTransaction.js'
 import { AddressBookEntry } from '../../../types/addressBookTypes.js'
 import { BIG_FONT_SIZE } from '../../../utils/constants.js'
+import { tokenEventToTokenSymbolParams } from './CatchAllVisualizer.js'
 
 type BeforeAfterAddress = {
 	address: AddressBookEntry
@@ -113,9 +114,9 @@ export function SimpleTokenTransferVisualisation({ simTx, renameAddressCallBack 
 	const transfer = simTx.tokenResults[0]
 	const getAsset = (transfer: TokenResult) => {
 		switch (transfer.type) {
-			case 'ERC1155': return { tokenEntry: transfer.token, tokenId: transfer.tokenId, amount: transfer.amount, renameAddressCallBack }
-			case 'ERC20': return { tokenEntry: transfer.token, amount: transfer.amount, renameAddressCallBack }
-			case 'ERC721': return { tokenEntry: transfer.token, received: false, tokenId: transfer.tokenId, renameAddressCallBack }
+			case 'ERC1155': return { ...tokenEventToTokenSymbolParams(transfer), amount: transfer.amount, renameAddressCallBack }
+			case 'ERC20': return { ...tokenEventToTokenSymbolParams(transfer), amount: transfer.amount, renameAddressCallBack }
+			case 'ERC721': return { ...tokenEventToTokenSymbolParams(transfer), received: false, renameAddressCallBack }
 			default: assertNever(transfer)
 		}
 	}

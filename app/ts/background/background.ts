@@ -11,7 +11,7 @@ import { interceptorAccessMetadataRefresh, requestAccessFromUser, updateIntercep
 import { MAKE_YOU_RICH_TRANSACTION, METAMASK_ERROR_FAILED_TO_PARSE_REQUEST, METAMASK_ERROR_NOT_AUTHORIZED, METAMASK_ERROR_NOT_CONNECTED_TO_CHAIN } from '../utils/constants.js'
 import { PriceEstimator } from '../simulation/priceEstimator.js'
 import { sendActiveAccountChangeToApprovedWebsitePorts, sendMessageToApprovedWebsitePorts, updateWebsiteApprovalAccesses } from './accessManagement.js'
-import { getActiveAddressEntry, getAddressBookEntriesForVisualiser } from './metadataUtils.js'
+import { findAddressInfo, getAddressBookEntriesForVisualiser, nameTokenIds } from './metadataUtils.js'
 import { sendPopupMessageToOpenWindows } from './backgroundUtils.js'
 import { assertUnreachable } from '../utils/typescript.js'
 import { EthereumClientService } from '../simulation/services/EthereumClientService.js'
@@ -33,10 +33,13 @@ async function visualizeSimulatorState(simulationState: SimulationState, simulat
 	const transactions = getWebsiteCreatedEthereumUnsignedTransactions(simulationState.simulatedTransactions)
 	const visualizerResult = await simulator.visualizeTransactionChain(simulationState, transactions, simulationState.blockNumber, simulationState.simulatedTransactions.map((x) => x.multicallResponse))
 	const visualizerResults = visualizerResult.map((x, i) => ({ ...x, website: simulationState.simulatedTransactions[i].website }))
-	const addressBookEntries = await getAddressBookEntriesForVisualiser(simulator.ethereum, visualizerResult.map((x) => x.visualizerResults), simulationState, (await getSettings()).userAddressBook)
-	const simulatedAndVisualizedTransactions = formSimulatedAndVisualizedTransaction(simulationState, visualizerResults, addressBookEntries)
+	const addressBookEntryPromises = getAddressBookEntriesForVisualiser(simulator.ethereum, visualizerResult.map((x) => x.visualizerResults), simulationState, (await getSettings()).userAddressBook)
+	const namedTokenIdPromises = nameTokenIds(simulator.ethereum, visualizerResult.map((x) => x.visualizerResults))
+	const addressBookEntries = await addressBookEntryPromises
+	const namedTokenIds = await namedTokenIdPromises
+	const simulatedAndVisualizedTransactions = formSimulatedAndVisualizedTransaction(simulationState, visualizerResults, addressBookEntries, namedTokenIds)
 
-	function onlyTokensAndTokensWithKnownDecimals(metadata: AddressBookEntry): metadata is AddressBookEntry & { type: 'ERC20', decimals: `0x${string}` } {
+	function onlyTokensAndTokensWithKnownDecimals(metadata: AddressBookEntry): metadata is AddressBookEntry & { type: 'ERC20', decimals: `0x${ string }` } {
 		if (metadata.type !== 'ERC20') return false
 		if (metadata.decimals === undefined) return false
 		return true
@@ -44,13 +47,14 @@ async function visualizeSimulatorState(simulationState: SimulationState, simulat
 	function metadataRestructure(metadata: AddressBookEntry & { type: 'ERC20', decimals: bigint }) {
 		return { address: metadata.address, decimals: metadata.decimals }
 	}
-	const tokenPrices = await priceEstimator.estimateEthereumPricesForTokens(addressBookEntries.filter(onlyTokensAndTokensWithKnownDecimals).map(metadataRestructure))
+	const tokenPricePromises = priceEstimator.estimateEthereumPricesForTokens(addressBookEntries.filter(onlyTokensAndTokensWithKnownDecimals).map(metadataRestructure))
 	return {
-		tokenPrices,
-		addressBookEntries,
+		tokenPrices: await tokenPricePromises,
+		addressBookEntries: addressBookEntries,
 		visualizerResults,
 		simulationState,
 		simulatedAndVisualizedTransactions,
+		namedTokenIds,
 	}
 }
 
@@ -83,6 +87,7 @@ export async function updateSimulationState(simulator: Simulator, getUpdatedSimu
 					addressBookEntries: [],
 					tokenPrices: [],
 					visualizerResults: [],
+					namedTokenIds: [],
 					simulationState: updatedSimulationState,
 					activeAddress: activeAddress,
 				})
