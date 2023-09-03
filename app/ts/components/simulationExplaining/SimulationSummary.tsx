@@ -1,6 +1,6 @@
 import { Erc1155TokenBalanceChange, Erc721and1155OperatorChange, LogSummarizer, SummaryOutcome } from '../../simulation/services/LogSummarizer.js'
 import { RenameAddressCallBack, RpcConnectionStatus } from '../../types/user-interface-types.js'
-import { Erc721TokenApprovalChange, SimulatedAndVisualizedTransaction, SimulationAndVisualisationResults, ERC20TokenApprovalChange, Erc20TokenBalanceChange, TransactionWithAddressBookEntries, NamedTokenId } from '../../utils/visualizer-types.js'
+import { Erc721TokenApprovalChange, SimulatedAndVisualizedTransaction, SimulationAndVisualisationResults, ERC20TokenApprovalChange, Erc20TokenBalanceChange, TransactionWithAddressBookEntries, NamedTokenId } from '../../types/visualizer-types.js'
 import { BigAddress, SmallAddress, WebsiteOriginText } from '../subcomponents/address.js'
 import { Ether, EtherAmount, EtherSymbol, TokenWithAmount, TokenAmount, TokenPrice, TokenSymbol, TokenOrEth } from '../subcomponents/coins.js'
 import { LogAnalysis } from './Transactions.js'
@@ -142,8 +142,8 @@ type Erc20ApprovalChangesParams = {
 export function Erc20ApprovalChanges(param: Erc20ApprovalChangesParams ) {
 	if ( param.erc20TokenApprovalChanges.length === 0 ) return <></>
 	return <>
-		{ param.erc20TokenApprovalChanges.map( (token) => (
-			token.approvals.map( (entryToApprove) => (
+		{ param.erc20TokenApprovalChanges.map((token) => (
+			token.approvals.map((entryToApprove) => (
 				<Erc20ApprovalChange { ...{
 					...token,
 					entryToApprove: entryToApprove,
