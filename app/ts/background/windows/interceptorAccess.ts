@@ -1,9 +1,9 @@
 import { PopupOrTab, addWindowTabListener, closePopupOrTab, getPopupOrTabOnlyById, openPopupOrTab, removeWindowTabListener, tryFocusingTabOrWindow } from '../../components/ui-utils.js'
 import { METAMASK_ERROR_ALREADY_PENDING } from '../../utils/constants.js'
 import { Future } from '../../utils/future.js'
-import { InterceptorAccessChangeAddress, InterceptorAccessRefresh, InterceptorAccessReply, Settings, WindowMessage } from '../../utils/interceptor-messages.js'
+import { InterceptorAccessChangeAddress, InterceptorAccessRefresh, InterceptorAccessReply, Settings, WindowMessage } from '../../types/interceptor-messages.js'
 import { Semaphore } from '../../utils/semaphore.js'
-import { PendingAccessRequestArray, WebsiteTabConnections } from '../../utils/user-interface-types.js'
+import { PendingAccessRequestArray, WebsiteTabConnections } from '../../types/user-interface-types.js'
 import { getAssociatedAddresses, setAccess, updateWebsiteApprovalAccesses, verifyAccess } from '../accessManagement.js'
 import { changeActiveAddressAndChainAndResetSimulation, handleContentScriptMessage, refuseAccess } from '../background.js'
 import { INTERNAL_CHANNEL_NAME, createInternalMessageListener, getHtmlFile, sendPopupMessageToOpenWindows, websiteSocketToString } from '../backgroundUtils.js'
@@ -13,8 +13,8 @@ import { getSignerName, getTabState, updatePendingAccessRequests, getPendingAcce
 import { InterceptedRequest, WebsiteSocket } from '../../utils/requests.js'
 import { replyToInterceptedRequest, sendSubscriptionReplyOrCallBack } from '../messageSending.js'
 import { Simulator } from '../../simulation/simulator.js'
-import { AddressInfo, AddressInfoEntry } from '../../utils/addressBookTypes.js'
-import { Website, WebsiteAccessArray } from '../../utils/websiteAccessTypes.js'
+import { AddressInfo, AddressInfoEntry } from '../../types/addressBookTypes.js'
+import { Website, WebsiteAccessArray } from '../../types/websiteAccessTypes.js'
 
 type OpenedDialogWithListeners = {
 	popupOrTab: PopupOrTab

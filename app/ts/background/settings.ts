@@ -1,12 +1,12 @@
 import { MOCK_PRIVATE_KEYS_ADDRESS } from '../utils/constants.js'
-import { ExportedSettings, Page } from '../utils/exportedSettingsTypes.js'
-import { Settings } from '../utils/interceptor-messages.js'
+import { ExportedSettings, Page } from '../types/exportedSettingsTypes.js'
+import { Settings } from '../types/interceptor-messages.js'
 import { Semaphore } from '../utils/semaphore.js'
 import { browserStorageLocalGet, browserStorageLocalSet } from '../utils/storageUtils.js'
-import { NetworkPrice, RpcEntries, RpcNetwork } from '../utils/visualizer-types.js'
-import { EthereumAddress } from '../utils/wire-types.js'
-import { AddressInfoArray, ContactEntries } from '../utils/addressBookTypes.js'
-import { WebsiteAccessArray } from '../utils/websiteAccessTypes.js'
+import { NetworkPrice, RpcEntries, RpcNetwork } from '../types/visualizer-types.js'
+import { EthereumAddress } from '../types/wire-types.js'
+import { AddressInfoArray, ContactEntries } from '../types/addressBookTypes.js'
+import { WebsiteAccessArray } from '../types/websiteAccessTypes.js'
 
 export const defaultAddresses = [
 	{

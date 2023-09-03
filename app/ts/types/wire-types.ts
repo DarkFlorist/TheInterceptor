@@ -1,5 +1,5 @@
 import * as funtypes from 'funtypes'
-import { UnionToIntersection } from './typescript.js'
+import { UnionToIntersection } from '../utils/typescript.js'
 
 const BigIntParser: funtypes.ParsedValue<funtypes.String, bigint>['config'] = {
 	parse: value => {

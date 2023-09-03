@@ -1,4 +1,4 @@
-import { EthereumJsonRpcRequest } from '../app/ts/utils/JsonRpc-types.js'
+import { EthereumJsonRpcRequest } from '../app/ts/types/JsonRpc-types.js'
 
 export class MockRequestHandler {
 	public readonly jsonRpcRequest = async (rpcRequest: EthereumJsonRpcRequest) => {

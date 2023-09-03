@@ -1,5 +1,5 @@
 
-import { ChangeActiveAddressParam } from '../../utils/user-interface-types.js'
+import { ChangeActiveAddressParam } from '../../types/user-interface-types.js'
 import { BigAddress } from '../subcomponents/address.js'
 import { getSignerLogo, getPrettySignerName, SignerLogoText } from '../subcomponents/signers.js'
 

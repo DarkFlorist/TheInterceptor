@@ -1,6 +1,6 @@
-import { HomeParams, FirstCardParams, SimulationStateParam, RpcConnectionStatus, TabIconDetails, TabIcon } from '../../utils/user-interface-types.js'
+import { HomeParams, FirstCardParams, SimulationStateParam, RpcConnectionStatus, TabIconDetails, TabIcon } from '../../types/user-interface-types.js'
 import { useEffect, useState } from 'preact/hooks'
-import { SimulatedAndVisualizedTransaction, SimulationAndVisualisationResults, RpcEntry, RpcNetwork, RpcEntries, SimulationUpdatingState, SimulationResultState } from '../../utils/visualizer-types.js'
+import { SimulatedAndVisualizedTransaction, SimulationAndVisualisationResults, RpcEntry, RpcNetwork, RpcEntries, SimulationUpdatingState, SimulationResultState } from '../../types/visualizer-types.js'
 import { ActiveAddress, findAddressInfo } from '../subcomponents/address.js'
 import { SimulationSummary } from '../simulationExplaining/SimulationSummary.js'
 import { ChainSelector } from '../subcomponents/ChainSelector.js'
@@ -16,8 +16,8 @@ import { identifyTransaction } from '../simulationExplaining/identifyTransaction
 import { SomeTimeAgo } from '../subcomponents/SomeTimeAgo.js'
 import { humanReadableDate } from '../ui-utils.js'
 import { noNewBlockForOverTwoMins } from '../../background/iconHandler.js'
-import { AddressInfo } from '../../utils/addressBookTypes.js'
-import { SignerName } from '../../utils/signerTypes.js'
+import { AddressInfo } from '../../types/addressBookTypes.js'
+import { SignerName } from '../../types/signerTypes.js'
 
 async function enableMakeMeRich(enabled: boolean) {
 	sendPopupMessageToBackgroundPage( { method: 'popup_changeMakeMeRich', data: enabled } )

@@ -1,12 +1,12 @@
 import { EthereumClientService } from '../../app/ts/simulation/services/EthereumClientService.js'
 import { appendTransaction, getSimulatedBlock, getSimulatedTransactionByHash } from '../../app/ts/simulation/services/SimulationModeEthereumClientService.js'
-import { EthereumSignedTransactionWithBlockData } from '../../app/ts/utils/wire-types.js'
-import { GetBlockReturn, JsonRpcResponse, EthereumJsonRpcRequest } from '../../app/ts/utils/JsonRpc-types.js'
+import { EthereumSignedTransactionWithBlockData } from '../../app/ts/types/wire-types.js'
+import { GetBlockReturn, JsonRpcResponse, EthereumJsonRpcRequest } from '../../app/ts/types/JsonRpc-types.js'
 import { eth_getBlockByNumber_goerli_8443561_false, eth_getBlockByNumber_goerli_8443561_true, eth_multicall_failure, eth_transactionByhash0xe10c2a85168046080235fff99e2e14ef1e90c8cf5e9d675f2ca214e49e555e0f } from '../nethermindRPCResponses.js'
 import { describe, should } from '../micro-should.js'
 import * as assert from 'assert'
 import { assertIsObject } from '../../app/ts/utils/typescript.js'
-import { RpcNetwork } from '../../app/ts/utils/visualizer-types.js'
+import { RpcNetwork } from '../../app/ts/types/visualizer-types.js'
 
 function parseRequest(data: string) {
 	const jsonRpcResponse = JsonRpcResponse.parse(JSON.parse(data))

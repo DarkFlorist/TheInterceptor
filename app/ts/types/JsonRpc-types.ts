@@ -1,6 +1,6 @@
 import * as funtypes from 'funtypes'
 import { EthereumAddress, EthereumBlockHeader, EthereumBlockHeaderWithTransactionHashes, EthereumBlockTag, EthereumBytes256, EthereumBytes32, EthereumData, EthereumInput, EthereumQuantity, EthereumUnsignedTransaction, LiteralConverterParserFactory, RevertErrorParser } from './wire-types.js'
-import { areEqual } from './typed-arrays.js'
+import { areEqual } from '../utils/typed-arrays.js'
 import { ExecutionSpec383MultiCallParams } from './multicall-types.js'
 
 export type EthGetStorageAtResponse = funtypes.Static<typeof EthGetStorageAtResponse>

@@ -3,7 +3,7 @@ import { describe, runIfRoot, should, run } from '../micro-should.js'
 import * as assert from 'assert'
 import { EthereumSignedTransactionToSignedTransaction, EthereumUnsignedTransactionToUnsignedTransaction, serializeUnsignedTransactionToBytes } from '../../app/ts/utils/ethereum.js'
 import { bytes32String } from '../../app/ts/utils/bigint.js'
-import { EthereumSignedTransaction1559, EthereumUnsignedTransaction } from '../../app/ts/utils/wire-types.js'
+import { EthereumSignedTransaction1559, EthereumUnsignedTransaction } from '../../app/ts/types/wire-types.js'
 import { mockSignTransaction } from '../../app/ts/simulation/services/SimulationModeEthereumClientService.js'
 
 export async function main() {

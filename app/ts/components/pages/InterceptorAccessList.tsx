@@ -1,11 +1,11 @@
-import { InterceptorAccessListParams } from '../../utils/user-interface-types.js'
+import { InterceptorAccessListParams } from '../../types/user-interface-types.js'
 import { useEffect, useState } from 'preact/hooks'
 import { SmallAddress } from '../subcomponents/address.js'
 import { CopyToClipboard } from '../subcomponents/CopyToClipboard.js'
 import { addressString, checksummedAddress } from '../../utils/bigint.js'
 import { sendPopupMessageToBackgroundPage } from '../../background/backgroundUtils.js'
-import { AddressInfoEntry } from '../../utils/addressBookTypes.js'
-import { WebsiteAccess, WebsiteAccessArray, WebsiteAddressAccess } from '../../utils/websiteAccessTypes.js'
+import { AddressInfoEntry } from '../../types/addressBookTypes.js'
+import { WebsiteAccess, WebsiteAccessArray, WebsiteAddressAccess } from '../../types/websiteAccessTypes.js'
 
 interface ModifiedAddressAccess {
 	address: bigint,

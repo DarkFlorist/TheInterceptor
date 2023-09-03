@@ -3,7 +3,7 @@ import { ConfirmTransactionDialogState, PendingAccessRequest, PendingAccessReque
 import { EthereumAddress, EthereumBlockHeaderWithTransactionHashes, EthereumBytes32, EthereumData, EthereumQuantity, EthereumSignedTransactionWithBlockData, EthereumTimestamp, NonHexBigInt, OptionalEthereumAddress } from './wire-types.js'
 import { SimulationState, SimulatedAndVisualizedTransaction, SimResults, TokenPriceEstimate, RpcNetwork, RpcEntries, RpcEntry, SimulationUpdatingState, SimulationResultState, NamedTokenId } from './visualizer-types.js'
 import { PersonalSignRequestData } from './personal-message-definitions.js'
-import { UniqueRequestIdentifier, WebsiteSocket } from './requests.js'
+import { UniqueRequestIdentifier, WebsiteSocket } from '../utils/requests.js'
 import { EthGetLogsResponse, EthGetStorageAtParams, EthTransactionReceiptResponse, GetBlockReturn, GetSimulationStackReply, OldSignTypedDataParams, PersonalSignParams, SendRawTransactionParams, SendTransactionParams, SignTypedDataParams, WalletAddEthereumChain } from './JsonRpc-types.js'
 import { AddressBookEntries, AddressBookEntry, AddressInfo, AddressInfoEntry, ContactEntries } from './addressBookTypes.js'
 import { Page } from './exportedSettingsTypes.js'

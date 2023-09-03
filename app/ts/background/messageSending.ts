@@ -1,6 +1,6 @@
-import { InterceptedRequestForward, InterceptorMessageToInpage, SubscriptionReplyOrCallBack } from "../utils/interceptor-messages.js"
+import { InterceptedRequestForward, InterceptorMessageToInpage, SubscriptionReplyOrCallBack } from "../types/interceptor-messages.js"
 import { WebsiteSocket } from "../utils/requests.js"
-import { WebsiteTabConnections } from "../utils/user-interface-types.js"
+import { WebsiteTabConnections } from "../types/user-interface-types.js"
 import { websiteSocketToString } from "./backgroundUtils.js"
 
 function postMessageToPortIfConnected(port: browser.runtime.Port, message: InterceptorMessageToInpage) {

@@ -1,11 +1,11 @@
 import { useState, useEffect } from 'preact/hooks'
-import { ConfirmTransactionDialogPendingChanged, ExternalPopupMessage, UpdateConfirmTransactionDialog } from '../../utils/interceptor-messages.js'
-import { SimulationAndVisualisationResults } from '../../utils/visualizer-types.js'
+import { ConfirmTransactionDialogPendingChanged, ExternalPopupMessage, UpdateConfirmTransactionDialog } from '../../types/interceptor-messages.js'
+import { SimulationAndVisualisationResults } from '../../types/visualizer-types.js'
 import Hint from '../subcomponents/Hint.js'
 import { RawTransactionDetailsCard, GasFee, LogAnalysisCard, SimulatedInBlockNumber, TransactionCreated, TransactionHeader, TransactionHeaderForFailedToSimulate, TransactionsAccountChangesCard } from '../simulationExplaining/SimulationSummary.js'
 import { CenterToPageTextSpinner } from '../subcomponents/Spinner.js'
 import { AddNewAddress } from './AddNewAddress.js'
-import { PendingTransaction, RpcConnectionStatus } from '../../utils/user-interface-types.js'
+import { PendingTransaction, RpcConnectionStatus } from '../../types/user-interface-types.js'
 import { sendPopupMessageToBackgroundPage } from '../../background/backgroundUtils.js'
 import { SignerLogoText } from '../subcomponents/signers.js'
 import { ErrorCheckBox } from '../subcomponents/Error.js'
@@ -15,7 +15,7 @@ import { DinoSaysNotification } from '../subcomponents/DinoSays.js'
 import { NetworkErrors } from './Home.js'
 import { tryFocusingTabOrWindow } from '../ui-utils.js'
 import { checksummedAddress } from '../../utils/bigint.js'
-import { AddressBookEntry, IncompleteAddressBookEntry } from '../../utils/addressBookTypes.js'
+import { AddressBookEntry, IncompleteAddressBookEntry } from '../../types/addressBookTypes.js'
 
 type UnderTransactionsParams = {
 	pendingTransactions: PendingTransaction[]

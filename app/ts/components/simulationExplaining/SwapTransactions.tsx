@@ -1,12 +1,12 @@
-import { SimulatedAndVisualizedTransaction, TokenVisualizerResultWithMetadata } from '../../utils/visualizer-types.js'
+import { SimulatedAndVisualizedTransaction, TokenVisualizerResultWithMetadata } from '../../types/visualizer-types.js'
 import * as funtypes from 'funtypes'
-import { EthereumQuantity } from '../../utils/wire-types.js'
+import { EthereumQuantity } from '../../types/wire-types.js'
 import { abs, addressString } from '../../utils/bigint.js'
 import { EtherAmount, EtherSymbol, TokenAmount, TokenOrEthValue, TokenSymbol } from '../subcomponents/coins.js'
-import { AddressBookEntry, Erc1155Entry, Erc20TokenEntry, Erc721Entry } from '../../utils/addressBookTypes.js'
+import { AddressBookEntry, Erc1155Entry, Erc20TokenEntry, Erc721Entry } from '../../types/addressBookTypes.js'
 import { assertNever, getWithDefault } from '../../utils/typescript.js'
-import { RpcNetwork } from '../../utils/visualizer-types.js'
-import { RenameAddressCallBack } from '../../utils/user-interface-types.js'
+import { RpcNetwork } from '../../types/visualizer-types.js'
+import { RenameAddressCallBack } from '../../types/user-interface-types.js'
 import { BIG_FONT_SIZE } from '../../utils/constants.js'
 
 export type BeforeAfterBalance = funtypes.Static<typeof SwapAsset>

@@ -2,7 +2,7 @@ import { ethers } from 'ethers'
 import { bigintToUint8Array, dataString, stringToUint8Array } from './bigint.js'
 import { stripLeadingZeros } from './typed-arrays.js'
 import { DistributiveOmit, assertNever } from './typescript.js'
-import { EthereumSignedTransaction, EthereumUnsignedTransaction } from './wire-types.js'
+import { EthereumSignedTransaction, EthereumUnsignedTransaction } from '../types/wire-types.js'
 
 export interface IUnsignedTransactionLegacy {
 	readonly type: 'legacy'

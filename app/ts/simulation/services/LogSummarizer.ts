@@ -1,6 +1,6 @@
 import { addressString } from '../../utils/bigint.js'
-import { Erc721TokenApprovalChange, SimulatedAndVisualizedTransaction, ERC20TokenApprovalChange, Erc20TokenBalanceChange, TokenPriceEstimate, TokenVisualizerResultWithMetadata, NamedTokenId } from '../../utils/visualizer-types.js'
-import { AddressBookEntry, Erc1155Entry, Erc721Entry } from '../../utils/addressBookTypes.js'
+import { Erc721TokenApprovalChange, SimulatedAndVisualizedTransaction, ERC20TokenApprovalChange, Erc20TokenBalanceChange, TokenPriceEstimate, TokenVisualizerResultWithMetadata, NamedTokenId } from '../../types/visualizer-types.js'
+import { AddressBookEntry, Erc1155Entry, Erc721Entry } from '../../types/addressBookTypes.js'
 
 export type BalanceChangeSummary = {
 	erc20TokenBalanceChanges: Map<string, bigint>, // token address, amount

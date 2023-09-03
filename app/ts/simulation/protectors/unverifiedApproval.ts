@@ -1,6 +1,6 @@
 import { Simulator } from '../simulator.js'
-import { EthereumUnsignedTransaction } from '../../utils/wire-types.js'
-import { SimulationState } from '../../utils/visualizer-types.js'
+import { EthereumUnsignedTransaction } from '../../types/wire-types.js'
+import { SimulationState } from '../../types/visualizer-types.js'
 
 export async function unverifiedApproval(_transaction: EthereumUnsignedTransaction, _simulator: Simulator, _simulationState: SimulationState) {
 	// TODO: how do we access etherscan?

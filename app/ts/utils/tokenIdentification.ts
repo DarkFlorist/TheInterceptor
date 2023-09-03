@@ -1,10 +1,10 @@
 import { Interface } from 'ethers'
 import { Erc20ABI, Erc721ABI, MulticallABI } from './abi.js'
-import { EthereumAddress } from './wire-types.js'
+import { EthereumAddress } from '../types/wire-types.js'
 import { IEthereumClientService } from '../simulation/services/EthereumClientService.js'
 import { UniswapV3Multicall2 } from './constants.js'
 import { addressString, checksummedAddress, stringToUint8Array } from './bigint.js'
-import { Erc1155Entry, Erc20TokenEntry, Erc721Entry } from './addressBookTypes.js'
+import { Erc1155Entry, Erc20TokenEntry, Erc721Entry } from '../types/addressBookTypes.js'
 
 type EOA = {
 	type: 'EOA'

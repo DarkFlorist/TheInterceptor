@@ -1,13 +1,13 @@
 import { checksummedAddress } from '../../utils/bigint.js'
 import { Blockie } from './PreactBlocky.js'
-import { RenameAddressCallBack } from '../../utils/user-interface-types.js'
+import { RenameAddressCallBack } from '../../types/user-interface-types.js'
 import { CopyToClipboard } from './CopyToClipboard.js'
 import { ApproveIcon, ArrowIcon } from '../subcomponents/icons.js'
 import { JSX } from 'preact/jsx-runtime'
 import { useSignal } from '@preact/signals'
 import { useEffect } from 'preact/hooks'
-import { AddressBookEntry, AddressInfo } from '../../utils/addressBookTypes.js'
-import { Website } from '../../utils/websiteAccessTypes.js'
+import { AddressBookEntry, AddressInfo } from '../../types/addressBookTypes.js'
+import { Website } from '../../types/websiteAccessTypes.js'
 
 export function findAddressInfo(addressToFind: bigint, addressInfos: readonly AddressInfo[]) {
 	for (const info of addressInfos) {
