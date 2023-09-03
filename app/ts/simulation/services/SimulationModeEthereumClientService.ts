@@ -426,7 +426,7 @@ export const getSimulatedCode = async (ethereumClientService: EthereumClientServ
 			getCodeReturn: await ethereumClientService.getCode(address, blockTag)
 		} as const
 	}
-	const blockNum = await ethereumClientService.getBlockNumber()
+	const block = await ethereumClientService.getBlock()
 
 	const atInterface = new ethers.Interface(['function at(address) returns (bytes)'])
 	const input = stringToUint8Array(atInterface.encodeFunctionData('at', [addressString(address)]))
@@ -438,13 +438,13 @@ export const getSimulatedCode = async (ethereumClientService: EthereumClientServ
 		nonce: await ethereumClientService.getTransactionCount(MOCK_ADDRESS),
 		maxFeePerGas: 0n,
 		maxPriorityFeePerGas: 0n,
-		gas: 94104n,
+		gas: simulationGasLeft(simulationState, block),
 		to: GET_CODE_CONTRACT,
 		value: 0n,
 		input: input,
 		accessList: []
 	} as const
-	const multiCall = await simulatedMulticall(ethereumClientService, simulationState, [getCodeTransaction], blockNum + 1n)
+	const multiCall = await simulatedMulticall(ethereumClientService, simulationState, [getCodeTransaction], block.number + 1n)
 	const lastResult = multiCall[multiCall.length - 1]
 	if (lastResult.statusCode === 'failure') return { statusCode: 'failure' } as const
 	const parsed = atInterface.decodeFunctionResult('at', lastResult.returnValue)
