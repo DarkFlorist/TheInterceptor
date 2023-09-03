@@ -11,7 +11,7 @@ import { interceptorAccessMetadataRefresh, requestAccessFromUser, updateIntercep
 import { MAKE_YOU_RICH_TRANSACTION, METAMASK_ERROR_FAILED_TO_PARSE_REQUEST, METAMASK_ERROR_NOT_AUTHORIZED, METAMASK_ERROR_NOT_CONNECTED_TO_CHAIN } from '../utils/constants.js'
 import { PriceEstimator } from '../simulation/priceEstimator.js'
 import { sendActiveAccountChangeToApprovedWebsitePorts, sendMessageToApprovedWebsitePorts, updateWebsiteApprovalAccesses } from './accessManagement.js'
-import { findAddressInfo, getAddressBookEntriesForVisualiser, nameTokenIds } from './metadataUtils.js'
+import { getActiveAddressEntry, getAddressBookEntriesForVisualiser, nameTokenIds } from './metadataUtils.js'
 import { sendPopupMessageToOpenWindows } from './backgroundUtils.js'
 import { assertUnreachable } from '../utils/typescript.js'
 import { EthereumClientService } from '../simulation/services/EthereumClientService.js'
