@@ -5,7 +5,7 @@ import { Semaphore } from '../utils/semaphore.js'
 import { browserStorageLocalGet, browserStorageLocalSet } from '../utils/storageUtils.js'
 import { NetworkPrice, RpcEntries, RpcNetwork } from '../types/visualizer-types.js'
 import { EthereumAddress } from '../types/wire-types.js'
-import { AddressInfoArray, ContactEntries } from '../types/addressBookTypes.js'
+import { ActiveAddressArray, ContactEntries } from '../types/addressBookTypes.js'
 import { WebsiteAccessArray } from '../types/websiteAccessTypes.js'
 
 export const defaultAddresses = [
@@ -125,7 +125,7 @@ export async function getSettings() : Promise<Settings> {
 		rpcNetwork: results.rpcNetwork ?? defaultRpcs[0],
 		simulationMode: results.simulationMode ?? true,
 		userAddressBook: {
-			addressInfos: results.addressInfos ?? defaultAddresses,
+			activeAddresses: results.addressInfos ?? defaultAddresses,
 			contacts: results.contacts ?? [],
 		}
 	}
@@ -160,11 +160,11 @@ export async function updateWebsiteAccess(updateFunc: (prevState: WebsiteAccessA
 	})
 }
 
-const getAddressInfos = async() => (await browserStorageLocalGet('addressInfos'))?.['addressInfos'] ?? defaultAddresses
-const addressInfosSemaphore = new Semaphore(1)
-export async function updateAddressInfos(updateFunc: (prevState: AddressInfoArray) => AddressInfoArray) {
-	await addressInfosSemaphore.execute(async () => {
-		return await browserStorageLocalSet({ addressInfos: updateFunc(await getAddressInfos()) })
+const getActiveAddresses = async() => (await browserStorageLocalGet('addressInfos'))?.['addressInfos'] ?? defaultAddresses
+const activeAddressesSemaphore = new Semaphore(1)
+export async function updateActiveAddresses(updateFunc: (prevState: ActiveAddressArray) => ActiveAddressArray) {
+	await activeAddressesSemaphore.execute(async () => {
+		return await browserStorageLocalSet({ addressInfos: updateFunc(await getActiveAddresses()) })
 	})
 }
 
@@ -223,7 +223,7 @@ export async function importSettingsAndAddressBook(exportedSetings: ExportedSett
 
 	await setUseSignersAddressAsActiveAddress(exportedSetings.settings.useSignersAddressAsActiveAddress)
 	await setPage(exportedSetings.settings.page)
-	await updateAddressInfos(() => exportedSetings.settings.addressInfos)
+	await updateActiveAddresses(() => exportedSetings.settings.addressInfos)
 	await updateWebsiteAccess(() => exportedSetings.settings.websiteAccess)
 	await updateContacts(() => exportedSetings.settings.contacts === undefined ? [] : exportedSetings.settings.contacts)
 	await setUseTabsInsteadOfPopup(exportedSetings.settings.useTabsInsteadOfPopup)

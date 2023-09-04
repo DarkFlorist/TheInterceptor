@@ -2,7 +2,7 @@ import * as funtypes from 'funtypes'
 import { EthereumAddressOrMissing } from '../types/wire-types.js'
 import { PendingAccessRequestArray, PendingChainChangeConfirmationPromise, PendingPersonalSignPromise, PendingTransaction, RpcConnectionStatus, TabState } from '../types/user-interface-types.js'
 import { EthereumSubscriptions, RpcEntries, RpcNetwork, SimulationResults } from '../types/visualizer-types.js'
-import { AddressBookEntries, AddressInfoArray, ContactEntries } from '../types/addressBookTypes.js'
+import { AddressBookEntries, ActiveAddressArray, ContactEntries } from '../types/addressBookTypes.js'
 import { Page } from '../types/exportedSettingsTypes.js'
 import { WebsiteAccessArray } from '../types/websiteAccessTypes.js'
 import { SignerName } from '../types/signerTypes.js'
@@ -11,7 +11,7 @@ export type LocalStorageItems = funtypes.Static<typeof LocalStorageItems>
 export const LocalStorageItems = funtypes.Partial({
 	activeSigningAddress: EthereumAddressOrMissing,
 	activeSimulationAddress: EthereumAddressOrMissing,
-	addressInfos: AddressInfoArray,
+	addressInfos: ActiveAddressArray,
 	page: Page,
 	useSignersAddressAsActiveAddress: funtypes.Boolean,
 	websiteAccess: WebsiteAccessArray,

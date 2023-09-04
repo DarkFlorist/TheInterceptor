@@ -8,7 +8,7 @@ import { RpcConnectionStatus, TabIcon, TabState, WebsiteTabConnections } from '.
 import { getSettings } from './settings.js'
 import { getRpcConnectionStatus, getSignerName, updateTabState } from './storageVariables.js'
 import { getLastKnownCurrentTabId } from './popupMessageHandlers.js'
-import { findAddressInfo } from './metadataUtils.js'
+import { getActiveAddressEntry } from './metadataUtils.js'
 import { WebsiteSocket } from '../utils/requests.js'
 
 async function setInterceptorIcon(websiteTabConnections: WebsiteTabConnections, tabId: number, icon: TabIcon, iconReason: string) {
@@ -46,7 +46,7 @@ export async function updateExtensionIcon(websiteTabConnections: WebsiteTabConne
 	if (activeAddress === undefined) return setInterceptorIcon(websiteTabConnections, socket.tabId, ICON_NOT_ACTIVE, 'No active address selected.')
 	if (hasAddressAccess(settings.websiteAccess, websiteOrigin, activeAddress, settings)  === 'notFound') {
 		// we don't have active address selected, or no access specified
-		return setInterceptorIcon(websiteTabConnections, socket.tabId, ICON_NOT_ACTIVE, `${ websiteOrigin } has PENDING access request for ${ findAddressInfo(activeAddress, settings.userAddressBook.addressInfos).name }!`)
+		return setInterceptorIcon(websiteTabConnections, socket.tabId, ICON_NOT_ACTIVE, `${ websiteOrigin } has PENDING access request for ${ getActiveAddressEntry(activeAddress, settings.userAddressBook.activeAddresses).name }!`)
 	}
 
 	const addressAccess = hasAddressAccess(settings.websiteAccess, websiteOrigin, activeAddress, settings)
@@ -54,7 +54,7 @@ export async function updateExtensionIcon(websiteTabConnections: WebsiteTabConne
 		if (hasAccess(settings.websiteAccess, websiteOrigin) === 'noAccess') {
 			return setInterceptorIcon(websiteTabConnections, socket.tabId, ICON_ACCESS_DENIED, `The access for ${ websiteOrigin } has been DENIED!`)
 		}
-		return setInterceptorIcon(websiteTabConnections, socket.tabId, ICON_ACCESS_DENIED, `The access to ${ findAddressInfo(activeAddress, settings.userAddressBook.addressInfos).name } for ${ websiteOrigin } has been DENIED!`)
+		return setInterceptorIcon(websiteTabConnections, socket.tabId, ICON_ACCESS_DENIED, `The access to ${ getActiveAddressEntry(activeAddress, settings.userAddressBook.activeAddresses).name } for ${ websiteOrigin } has been DENIED!`)
 	}
 	if (settings.simulationMode) return setInterceptorIcon(websiteTabConnections, socket.tabId, ICON_SIMULATING, `The Interceptor simulates your sent transactions.`)
 	if (settings.rpcNetwork.httpsRpc === undefined) return setInterceptorIcon(websiteTabConnections, socket.tabId, ICON_SIGNING_NOT_SUPPORTED, `Interceptor is on an unsupported network and simulation mode is disabled.`)

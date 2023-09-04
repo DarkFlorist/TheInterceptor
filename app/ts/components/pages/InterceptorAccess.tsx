@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'preact/hooks'
-import { ActiveAddress, BigAddress, WebsiteOriginText } from '../subcomponents/address.js'
+import { ActiveAddressComponent, BigAddress, WebsiteOriginText } from '../subcomponents/address.js'
 import { AddNewAddress } from './AddNewAddress.js'
 import { RenameAddressCallBack, PendingAccessRequestArray, PendingAccessRequest } from '../../types/user-interface-types.js'
 import { ExternalPopupMessage } from '../../types/interceptor-messages.js'
@@ -10,7 +10,7 @@ import { ChangeActiveAddress } from './ChangeActiveAddress.js'
 import { DinoSays, DinoSaysNotification } from '../subcomponents/DinoSays.js'
 import { getPrettySignerName } from '../subcomponents/signers.js'
 import { checksummedAddress } from '../../utils/bigint.js'
-import { AddressInfoEntry, AddressBookEntry, IncompleteAddressBookEntry } from '../../types/addressBookTypes.js'
+import { ActiveAddressEntry, AddressBookEntry, IncompleteAddressBookEntry } from '../../types/addressBookTypes.js'
 import { Website } from '../../types/websiteAccessTypes.js'
 
 const HALF_HEADER_HEIGHT = 48 / 2
@@ -50,7 +50,7 @@ function UnderAccesses(param: UnderTransactionsParams) {
 	</div>
 }
 
-function AssociatedTogether({ associatedAddresses, renameAddressCallBack }: { associatedAddresses: readonly AddressInfoEntry[], renameAddressCallBack: RenameAddressCallBack } ) {
+function AssociatedTogether({ associatedAddresses, renameAddressCallBack }: { associatedAddresses: readonly ActiveAddressEntry[], renameAddressCallBack: RenameAddressCallBack } ) {
 	const [showLogs, setShowLogs] = useState<boolean>(associatedAddresses.length > 1)
 
 	return <>
@@ -108,14 +108,14 @@ function AccessRequest({ renameAddressCallBack, accessRequest, changeActiveAddre
 					</p>
 					<div class = 'notification' style = 'padding: 10px; background-color: var(--alpha-015); justify-content: center; '>
 						{ accessRequest.simulationMode ?
-							<ActiveAddress
+							<ActiveAddressComponent
 								activeAddress = { accessRequest.requestAccessToAddress }
 								renameAddressCallBack = { renameAddressCallBack }
 								changeActiveAddress = { changeActiveAddress }
 								buttonText = { 'Change' }
 								disableButton = { false }
 							/> : <>
-								<ActiveAddress
+								<ActiveAddressComponent
 									activeAddress = { accessRequest.requestAccessToAddress }
 									renameAddressCallBack = { renameAddressCallBack }
 									changeActiveAddress = { refreshActiveAddress }
@@ -171,7 +171,7 @@ const DISABLED_DELAY_MS = 3000
 
 export function InterceptorAccess() {
 	const [pendingAccessRequestArray, setAccessRequest] = useState<PendingAccessRequestArray>([])
-	const [addingNewAddress, setAddingNewAddress] = useState<IncompleteAddressBookEntry> ({ addingAddress: false, type: 'addressInfo', address: undefined, askForAddressAccess: false, name: undefined, symbol: undefined, decimals: undefined, logoUri: undefined, entrySource: 'FilledIn' })
+	const [addingNewAddress, setAddingNewAddress] = useState<IncompleteAddressBookEntry> ({ addingAddress: false, type: 'activeAddress', address: undefined, askForAddressAccess: false, name: undefined, symbol: undefined, decimals: undefined, logoUri: undefined, entrySource: 'FilledIn' })
 	const [appPage, setAppPage] = useState('Home')
 	const [informationUpdatedTimestamp, setInformationUpdatedTimestamp] = useState(0)
 	const [, setTimeSinceInformationUpdate] = useState(0)
@@ -302,7 +302,7 @@ export function InterceptorAccess() {
 			symbol: undefined,
 			decimals: undefined,
 			logoUri: undefined,
-			type: 'addressInfo',
+			type: 'activeAddress',
 			name: undefined,
 			address: undefined,
 			askForAddressAccess: true,
@@ -330,7 +330,7 @@ export function InterceptorAccess() {
 						setActiveAddressAndInformAboutIt = { setActiveAddressAndInformAboutIt }
 						signerAccounts = { pendingAccessRequestArray[0].signerAccounts }
 						setAndSaveAppPage = { setAppPage }
-						addressInfos = { pendingAccessRequestArray[0].addressInfos }
+						activeAddresses = { pendingAccessRequestArray[0].activeAddresses }
 						signerName = { pendingAccessRequestArray[0].signerName }
 						renameAddressCallBack = { renameAddressCallBack }
 						addNewAddress = { addNewAddress }

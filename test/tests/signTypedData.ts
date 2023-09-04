@@ -312,7 +312,7 @@ export async function main() {
 	}`
 
 	const addressBook = {
-		addressInfos: [{
+		activeAddresses: [{
 			name: 'Receiver',
 			address: 0xa01fcd80503365406042456c7be1dd7e35b38f9cn,
 			askForAddressAccess: false
@@ -349,7 +349,7 @@ export async function main() {
 		should('can extract safeTx message', async () => {
 			const parsed = EIP712Message.parse(safeTx)
 			const enrichedMessage = stringifyJSONWithBigInts(await extractEIP712Message(ethereum, parsed, addressBook, false))
-			const expected = `{"message":{"to":{"type":"address","value":{"name":"Receiver","address":"0xa01fcd80503365406042456c7be1dd7e35b38f9c","askForAddressAccess":false,"type":"addressInfo","entrySource":"User"}},"value":{"type":"integer","value":"0x4563918244f40000"},"data":{"type":"bytes","value":{}},"operation":{"type":"integer","value":"0x0"},"safeTxGas":{"type":"integer","value":"0x0"},"baseGas":{"type":"integer","value":"0x0"},"gasPrice":{"type":"integer","value":"0x0"},"gasToken":{"type":"address","value":{"address":"0x0","name":"0x0 Address","type":"contact","entrySource":"Interceptor"}},"refundReceiver":{"type":"address","value":{"address":"0x0","name":"0x0 Address","type":"contact","entrySource":"Interceptor"}},"nonce":{"type":"integer","value":"0x10"}},"domain":{"chainId":{"type":"integer","value":"0x1"},"verifyingContract":{"type":"address","value":{"address":"0x8e160c8e949967d6b797cdf2a2f38f6344a5c95f","name":"0x8e160C8E949967D6B797CdF2A2F38f6344a5C95f","type":"contact","entrySource":"OnChain"}}}}`
+			const expected = `{"message":{"to":{"type":"address","value":{"name":"Receiver","address":"0xa01fcd80503365406042456c7be1dd7e35b38f9c","askForAddressAccess":false,"type":"activeAddress","entrySource":"User"}},"value":{"type":"integer","value":"0x4563918244f40000"},"data":{"type":"bytes","value":{}},"operation":{"type":"integer","value":"0x0"},"safeTxGas":{"type":"integer","value":"0x0"},"baseGas":{"type":"integer","value":"0x0"},"gasPrice":{"type":"integer","value":"0x0"},"gasToken":{"type":"address","value":{"address":"0x0","name":"0x0 Address","type":"contact","entrySource":"Interceptor"}},"refundReceiver":{"type":"address","value":{"address":"0x0","name":"0x0 Address","type":"contact","entrySource":"Interceptor"}},"nonce":{"type":"integer","value":"0x10"}},"domain":{"chainId":{"type":"integer","value":"0x1"},"verifyingContract":{"type":"address","value":{"address":"0x8e160c8e949967d6b797cdf2a2f38f6344a5c95f","name":"0x8e160C8E949967D6B797CdF2A2F38f6344a5C95f","type":"contact","entrySource":"OnChain"}}}}`
 			assert.equal(enrichedMessage, expected)
 		})
 		should('can extract permit2Message message', async () => {
