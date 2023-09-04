@@ -1,6 +1,8 @@
 const METAMASK_ERROR_USER_REJECTED_REQUEST = 4001
 const METAMASK_ERROR_CHAIN_NOT_ADDED_TO_METAMASK = 4902
 const METAMASK_ERROR_BLANKET_ERROR = -32603
+const METAMASK_METHOD_NOT_SUPPORTED = -32004
+const METAMASK_INVALID_METHOD_PARAMS = -32602
 
 interface IJsonRpcSuccess<TResult> {
 	readonly jsonrpc: '2.0'
@@ -134,7 +136,7 @@ type WindowEthereum = InjectFunctions & {
 	isCoinbaseWallet?: boolean,
 	
 	// for metamask compatibility mode
-	selectedAddress?: string,
+	selectedAddress?: string | null,
 	chainId?: string,
 	networkVersion?: string,
 }
@@ -202,13 +204,19 @@ class InterceptorMessageListener {
 		}
 	}
 
-	// 🤬 Uniswap, among others, require `send` to be implemented even though it was never part of any final specification.
-	// To make matters worse, some versions of send will have a first parameter that is an object (like `request`) and others will have a first and second parameter.
-	// On top of all that, some applications have a mix of both!
-	private readonly WindowEthereumSend = async (method: string | { readonly method: string, readonly params: readonly unknown[] }, params: readonly unknown[]) => {
+	private readonly WindowEthereumSend = (payload: { readonly id: string | number | null, readonly method: string, readonly params: readonly unknown[], _params: readonly unknown[] }) => {
 		console.warn('A deprecated method window.ethereum.send called')
-		const result = typeof method === 'object' ? await this.WindowEthereumRequest({ method: method.method, params: method.params }) : await this.WindowEthereumRequest({ method, params })
-		return { jsonrpc: '2.0', id: undefined, result }
+		if (this.metamaskCompatibilityMode) {
+			if (window.ethereum === undefined) throw new Error('window.ethereum is missing')
+			switch (payload.method) {
+				case 'eth_coinbase': 
+				case 'eth_accounts': return { jsonrpc: '2.0', id: payload.id, result: window.ethereum.selectedAddress === undefined || window.ethereum.selectedAddress === null ? [] : [window.ethereum.selectedAddress] }
+				case 'net_version': return { jsonrpc: '2.0', id: payload.id, result: window.ethereum.networkVersion }
+				case 'eth_chainId': return { jsonrpc: '2.0', id: payload.id, result: window.ethereum.chainId }
+				default: throw new EthereumJsonRpcError(METAMASK_INVALID_METHOD_PARAMS, `Invalid method parameter for window.ethereum.send: ${ payload.method }`)
+			}
+		}
+		throw new EthereumJsonRpcError(METAMASK_METHOD_NOT_SUPPORTED, 'Method not supported (window.ethereum.send).')
 	}
 
 	private readonly WindowEthereumSendAsync = async (payload: { readonly id: string | number | null, readonly method: string, readonly params: readonly unknown[] }, callback: (error: IJsonRpcError | null, response: IJsonRpcSuccess<unknown> | null) => void) => {
