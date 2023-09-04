@@ -1,6 +1,6 @@
-import { MessageToPopup, PopupMessage, Settings, WindowMessage } from '../utils/interceptor-messages.js'
+import { MessageToPopup, PopupMessage, Settings, WindowMessage } from '../types/interceptor-messages.js'
 import { WebsiteSocket } from '../utils/requests.js'
-import { EthereumQuantity } from '../utils/wire-types.js'
+import { EthereumQuantity } from '../types/wire-types.js'
 import { getTabState } from './storageVariables.js'
 
 export async function getActiveAddress(settings: Settings, tabId: number) {

@@ -1,7 +1,7 @@
 import { ethers } from 'ethers'
 import { dataStringWith0xStart, stringifyJSONWithBigInts } from './bigint.js'
 import * as funtypes from 'funtypes'
-import { EthereumAddress, EthereumQuantity } from './wire-types.js'
+import { EthereumAddress, EthereumQuantity } from '../types/wire-types.js'
 
 const erc20andErc721FunctionSignatures = [
 	'function transfer(address to, uint256 value) public returns (bool success)',

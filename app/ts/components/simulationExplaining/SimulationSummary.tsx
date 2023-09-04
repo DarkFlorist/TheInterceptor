@@ -1,6 +1,6 @@
 import { Erc1155TokenBalanceChange, Erc721and1155OperatorChange, LogSummarizer, SummaryOutcome } from '../../simulation/services/LogSummarizer.js'
-import { RenameAddressCallBack, RpcConnectionStatus } from '../../utils/user-interface-types.js'
-import { Erc721TokenApprovalChange, SimulatedAndVisualizedTransaction, SimulationAndVisualisationResults, ERC20TokenApprovalChange, Erc20TokenBalanceChange, TransactionWithAddressBookEntries, NamedTokenId } from '../../utils/visualizer-types.js'
+import { RenameAddressCallBack, RpcConnectionStatus } from '../../types/user-interface-types.js'
+import { Erc721TokenApprovalChange, SimulatedAndVisualizedTransaction, SimulationAndVisualisationResults, ERC20TokenApprovalChange, Erc20TokenBalanceChange, TransactionWithAddressBookEntries, NamedTokenId } from '../../types/visualizer-types.js'
 import { BigAddress, SmallAddress, WebsiteOriginText } from '../subcomponents/address.js'
 import { Ether, EtherAmount, EtherSymbol, TokenWithAmount, TokenAmount, TokenPrice, TokenSymbol, TokenOrEth } from '../subcomponents/coins.js'
 import { LogAnalysis } from './Transactions.js'
@@ -12,11 +12,11 @@ import { identifyTransaction } from './identifyTransaction.js'
 import { identifySwap } from './SwapTransactions.js'
 import { useState } from 'preact/hooks'
 import { CellElement, convertNumberToCharacterRepresentationIfSmallEnough, upperCaseFirstCharacter } from '../ui-utils.js'
-import { EthereumTimestamp } from '../../utils/wire-types.js'
+import { EthereumTimestamp } from '../../types/wire-types.js'
 import { getEthDonator } from '../../background/storageVariables.js'
-import { RpcNetwork } from '../../utils/visualizer-types.js'
-import { AddressBookEntry, Erc1155Entry, Erc20TokenEntry, Erc721Entry } from '../../utils/addressBookTypes.js'
-import { Website } from '../../utils/websiteAccessTypes.js'
+import { RpcNetwork } from '../../types/visualizer-types.js'
+import { AddressBookEntry, Erc1155Entry, Erc20TokenEntry, Erc721Entry } from '../../types/addressBookTypes.js'
+import { Website } from '../../types/websiteAccessTypes.js'
 
 type EtherChangeParams = {
 	textColor: string,
@@ -142,8 +142,8 @@ type Erc20ApprovalChangesParams = {
 export function Erc20ApprovalChanges(param: Erc20ApprovalChangesParams ) {
 	if ( param.erc20TokenApprovalChanges.length === 0 ) return <></>
 	return <>
-		{ param.erc20TokenApprovalChanges.map( (token) => (
-			token.approvals.map( (entryToApprove) => (
+		{ param.erc20TokenApprovalChanges.map((token) => (
+			token.approvals.map((entryToApprove) => (
 				<Erc20ApprovalChange { ...{
 					...token,
 					entryToApprove: entryToApprove,
@@ -345,7 +345,7 @@ type SummarizeAddressParams = {
 }
 
 export function SummarizeAddress(param: SummarizeAddressParams) {
-	const isOwnAddress = param.balanceSummary.summaryFor.type === 'addressInfo' || param.balanceSummary.summaryFor.address === param.simulationAndVisualisationResults.activeAddress
+	const isOwnAddress = param.balanceSummary.summaryFor.type === 'activeAddress' || param.balanceSummary.summaryFor.address === param.simulationAndVisualisationResults.activeAddress
 	const positiveNegativeColors = isOwnAddress
 		? {
 			textColor: 'var(--text-color)',
@@ -487,10 +487,10 @@ function splitToOwnAndNotOwnAndCleanSummary(firstTx: SimulatedAndVisualizedTrans
 	}
 
 	const ownAddresses = Array.from(summary.entries()).filter( ([_index, balanceSummary]) =>
-		balanceSummary.summaryFor.type === 'addressInfo' || balanceSummary.summaryFor.address === activeAddress
+		balanceSummary.summaryFor.type === 'activeAddress' || balanceSummary.summaryFor.address === activeAddress
 	)
 	const notOwnAddresses = Array.from(summary.entries()).filter( ([_index, balanceSummary]) =>
-		balanceSummary.summaryFor.type !== 'addressInfo' && balanceSummary.summaryFor.address !== activeAddress
+		balanceSummary.summaryFor.type !== 'activeAddress' && balanceSummary.summaryFor.address !== activeAddress
 	)
 	return [ownAddresses, notOwnAddresses]
 }

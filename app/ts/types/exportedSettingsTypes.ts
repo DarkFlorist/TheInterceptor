@@ -1,7 +1,7 @@
 import * as funtypes from 'funtypes'
 import { RpcNetwork } from './visualizer-types.js'
 import { EthereumQuantity, OptionalEthereumAddress } from './wire-types.js'
-import { AddressInfoArray, ContactEntries } from './addressBookTypes.js'
+import { ActiveAddressArray, ContactEntries } from './addressBookTypes.js'
 import { WebsiteAccessArray } from './websiteAccessTypes.js'
 
 export type Page = funtypes.Static<typeof Page>
@@ -27,7 +27,7 @@ export const ExportedSettings = funtypes.Union(
 			useSignersAddressAsActiveAddress: funtypes.Boolean,
 			websiteAccess: WebsiteAccessArray,
 			simulationMode: funtypes.Boolean,
-			addressInfos: AddressInfoArray,
+			addressInfos: ActiveAddressArray,
 			contacts: funtypes.Union(funtypes.Undefined, ContactEntries),
 			useTabsInsteadOfPopup: funtypes.Boolean,
 		})
@@ -43,7 +43,7 @@ export const ExportedSettings = funtypes.Union(
 			useSignersAddressAsActiveAddress: funtypes.Boolean,
 			websiteAccess: WebsiteAccessArray,
 			simulationMode: funtypes.Boolean,
-			addressInfos: AddressInfoArray,
+			addressInfos: ActiveAddressArray,
 			contacts: funtypes.Union(funtypes.Undefined, ContactEntries),
 			useTabsInsteadOfPopup: funtypes.Boolean,
 		})
@@ -59,7 +59,7 @@ export const ExportedSettings = funtypes.Union(
 			useSignersAddressAsActiveAddress: funtypes.Boolean,
 			websiteAccess: WebsiteAccessArray,
 			simulationMode: funtypes.Boolean,
-			addressInfos: AddressInfoArray,
+			addressInfos: ActiveAddressArray,
 			contacts: funtypes.Union(funtypes.Undefined, ContactEntries),
 			useTabsInsteadOfPopup: funtypes.Boolean,
 			metamaskCompatibilityMode: funtypes.Boolean,

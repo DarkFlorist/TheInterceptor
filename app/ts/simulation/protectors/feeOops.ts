@@ -1,6 +1,6 @@
 import { Simulator } from '../simulator.js'
-import { EthereumUnsignedTransaction } from '../../utils/wire-types.js'
-import { SimulationState } from '../../utils/visualizer-types.js'
+import { EthereumUnsignedTransaction } from '../../types/wire-types.js'
+import { SimulationState } from '../../types/visualizer-types.js'
 
 const MAX_FEE = 2000n * 10n**9n
 

@@ -1,5 +1,5 @@
 
-import { ChangeActiveAddressParam } from '../../utils/user-interface-types.js'
+import { ChangeActiveAddressParam } from '../../types/user-interface-types.js'
 import { BigAddress } from '../subcomponents/address.js'
 import { getSignerLogo, getPrettySignerName, SignerLogoText } from '../subcomponents/signers.js'
 
@@ -28,7 +28,7 @@ export function ChangeActiveAddress(param: ChangeActiveAddressParam) {
 		param.addNewAddress()
 	}
 
-	const signerAddressName = param.addressInfos.find( (x) => x.address === getSignerAccount() )?.name
+	const signerAddressName = param.activeAddresses.find( (x) => x.address === getSignerAccount() )?.name
 
 	return ( <>
 		<div class = 'modal-background'> </div>
@@ -74,18 +74,18 @@ export function ChangeActiveAddress(param: ChangeActiveAddressParam) {
 						</div>
 					</li>
 
-					{ param.addressInfos === undefined
+					{ param.activeAddresses === undefined
 						? <></>
-						: param.addressInfos.map((addressInfo) => (
+						: param.activeAddresses.map((activeAddress) => (
 							<li>
-								<div class = 'card hoverable' onClick = { () => { ChangeAndStoreActiveAddress(addressInfo.address) } }>
+								<div class = 'card hoverable' onClick = { () => { ChangeAndStoreActiveAddress(activeAddress.address) } }>
 									<div class = 'card-content hoverable ' style = 'cursor: pointer;'>
 										<BigAddress
-											addressBookEntry = { { ...addressInfo, type: 'addressInfo', entrySource: 'User' } }
+											addressBookEntry = { { ...activeAddress, type: 'activeAddress', entrySource: 'User' } }
 											noCopying = { true }
 											renameAddressCallBack = { param.renameAddressCallBack }
 										/>
-										{ isSignerConnected(addressInfo.address) ?
+										{ isSignerConnected(activeAddress.address) ?
 											<div class = 'content' style = 'color: var(--text-color)'>
 												<SignerLogoText signerName = { param.signerName } text = { ` ${ getPrettySignerName(param.signerName) } connected` }/>
 											</div> : <></>

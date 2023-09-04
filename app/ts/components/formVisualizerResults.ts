@@ -1,6 +1,6 @@
 import { addressString } from '../utils/bigint.js'
-import { EthBalanceChangesWithMetadata, NamedTokenId, SimResults, SimulatedAndVisualizedTransaction, SimulationState, TokenVisualizerResultWithMetadata } from '../utils/visualizer-types.js'
-import { AddressBookEntry } from '../utils/addressBookTypes.js'
+import { EthBalanceChangesWithMetadata, NamedTokenId, SimResults, SimulatedAndVisualizedTransaction, SimulationState, TokenVisualizerResultWithMetadata } from '../types/visualizer-types.js'
+import { AddressBookEntry } from '../types/addressBookTypes.js'
 
 export function formSimulatedAndVisualizedTransaction(simState: SimulationState, visualizerResults: readonly SimResults[], addressBookEntries: readonly AddressBookEntry[], namedTokenIds: readonly NamedTokenId[]): readonly SimulatedAndVisualizedTransaction[] {
 	const addressMetaData = new Map(addressBookEntries.map((x) => [addressString(x.address), x]))

@@ -1,7 +1,7 @@
-import { HomeParams, FirstCardParams, SimulationStateParam, RpcConnectionStatus, TabIconDetails, TabIcon } from '../../utils/user-interface-types.js'
+import { HomeParams, FirstCardParams, SimulationStateParam, RpcConnectionStatus, TabIconDetails, TabIcon } from '../../types/user-interface-types.js'
 import { useEffect, useState } from 'preact/hooks'
-import { SimulatedAndVisualizedTransaction, SimulationAndVisualisationResults, RpcEntry, RpcNetwork, RpcEntries, SimulationUpdatingState, SimulationResultState } from '../../utils/visualizer-types.js'
-import { ActiveAddress, findAddressInfo } from '../subcomponents/address.js'
+import { SimulatedAndVisualizedTransaction, SimulationAndVisualisationResults, RpcEntry, RpcNetwork, RpcEntries, SimulationUpdatingState, SimulationResultState } from '../../types/visualizer-types.js'
+import { ActiveAddressComponent, getActiveAddressEntry } from '../subcomponents/address.js'
 import { SimulationSummary } from '../simulationExplaining/SimulationSummary.js'
 import { ChainSelector } from '../subcomponents/ChainSelector.js'
 import { Spinner } from '../subcomponents/Spinner.js'
@@ -16,15 +16,15 @@ import { identifyTransaction } from '../simulationExplaining/identifyTransaction
 import { SomeTimeAgo } from '../subcomponents/SomeTimeAgo.js'
 import { humanReadableDate } from '../ui-utils.js'
 import { noNewBlockForOverTwoMins } from '../../background/iconHandler.js'
-import { AddressInfo } from '../../utils/addressBookTypes.js'
-import { SignerName } from '../../utils/signerTypes.js'
+import { ActiveAddress } from '../../types/addressBookTypes.js'
+import { SignerName } from '../../types/signerTypes.js'
 
 async function enableMakeMeRich(enabled: boolean) {
 	sendPopupMessageToBackgroundPage( { method: 'popup_changeMakeMeRich', data: enabled } )
 }
 
 type SignerExplanationParams = {
-	activeAddress: AddressInfo | undefined
+	activeAddress: ActiveAddress | undefined
 	simulationMode: boolean
 	signerName: SignerName
 	useSignersAddressAsActiveAddress: boolean
@@ -118,8 +118,8 @@ function FirstCard(param: FirstCardParams) {
 					: <></>
 				}
 
-				<ActiveAddress
-					activeAddress = { param.activeAddress !== undefined ? { type: 'addressInfo', ...param.activeAddress, entrySource: 'User' } : undefined }
+				<ActiveAddressComponent
+					activeAddress = { param.activeAddress !== undefined ? { type: 'activeAddress', ...param.activeAddress, entrySource: 'User' } : undefined }
 					buttonText = { 'Change' }
 					disableButton = { !param.simulationMode }
 					changeActiveAddress = { param.changeActiveAddress }
@@ -223,8 +223,8 @@ export function NetworkErrors({ rpcConnectionStatus } : NetworkErrorParams) {
 }
 
 export function Home(param: HomeParams) {
-	const [activeSimulationAddress, setActiveSimulationAddress] = useState<AddressInfo | undefined>(undefined)
-	const [activeSigningAddress, setActiveSigningAddress] = useState<AddressInfo | undefined>(undefined)
+	const [activeSimulationAddress, setActiveSimulationAddress] = useState<ActiveAddress | undefined>(undefined)
+	const [activeSigningAddress, setActiveSigningAddress] = useState<ActiveAddress | undefined>(undefined)
 	const [useSignersAddressAsActiveAddress, setUseSignersAddressAsActiveAddress] = useState(false)
 	const [simulationAndVisualisationResults, setSimulationAndVisualisationResults] = useState<SimulationAndVisualisationResults | undefined>(undefined)
 	const [rpcNetwork, setSelectedNetwork] = useState<RpcNetwork | undefined>()
@@ -234,7 +234,7 @@ export function Home(param: HomeParams) {
 	const [isLoaded, setLoaded] = useState<boolean>(false)
 	const [currentBlockNumber, setCurrentBlockNumber] = useState<bigint | undefined>(undefined)
 	const [signerName, setSignerName] = useState<SignerName>('NoSignerDetected')
-	const [addressInfos, setAddressInfos] = useState<readonly AddressInfo[] | undefined>(undefined)
+	const [activeAddresses, setActiveAddresss] = useState<readonly ActiveAddress[] | undefined>(undefined)
 	const [makeMeRich, setMakeMeRich] = useState<boolean>(false)
 	const [disableReset, setDisableReset] = useState<boolean>(false)
 	const [removeTransactionHashes, setRemoveTransactionHashes] = useState<bigint[]>([])
@@ -246,14 +246,14 @@ export function Home(param: HomeParams) {
 	useEffect(() => {
 		setSimulationAndVisualisationResults(param.simVisResults)
 		setUseSignersAddressAsActiveAddress(param.useSignersAddressAsActiveAddress)
-		setActiveSimulationAddress(param.activeSimulationAddress !== undefined ? findAddressInfo(param.activeSimulationAddress, param.addressInfos) : undefined)
-		setActiveSigningAddress(param.activeSigningAddress !== undefined ? findAddressInfo(param.activeSigningAddress, param.addressInfos) : undefined)
+		setActiveSimulationAddress(param.activeSimulationAddress !== undefined ? getActiveAddressEntry(param.activeSimulationAddress, param.activeAddresses) : undefined)
+		setActiveSigningAddress(param.activeSigningAddress !== undefined ? getActiveAddressEntry(param.activeSigningAddress, param.activeAddresses) : undefined)
 		setSelectedNetwork(param.rpcNetwork)
 		setSimulationMode(param.simulationMode)
 		setTabConnection(param.tabIconDetails)
 		setSignerAccounts(param.signerAccounts)
 		setCurrentBlockNumber(param.currentBlockNumber)
-		setAddressInfos(param.addressInfos)
+		setActiveAddresss(param.activeAddresses)
 		setSignerName(param.signerName)
 		setLoaded(true)
 		setMakeMeRich(param.makeMeRich)
@@ -266,7 +266,7 @@ export function Home(param: HomeParams) {
 	}, [param.activeSigningAddress,
 		param.activeSimulationAddress,
 		param.signerAccounts,
-		param.addressInfos,
+		param.activeAddresses,
 		param.useSignersAddressAsActiveAddress,
 		param.rpcNetwork,
 		param.simulationMode,
@@ -316,7 +316,7 @@ export function Home(param: HomeParams) {
 		<NetworkErrors rpcConnectionStatus = { rpcConnectionStatus }/>
 
 		<FirstCard
-			addressInfos = { addressInfos }
+			activeAddresses = { activeAddresses }
 			useSignersAddressAsActiveAddress = { useSignersAddressAsActiveAddress }
 			enableSimulationMode = { enableSimulationMode }
 			activeAddress = { simulationMode ? activeSimulationAddress : activeSigningAddress }

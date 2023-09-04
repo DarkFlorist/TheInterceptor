@@ -3,7 +3,7 @@ import { Ref, useEffect } from 'preact/hooks'
 import { getUseTabsInsteadOfPopup } from '../background/settings.js'
 import { assertNever } from '../utils/typescript.js'
 import { ComponentChildren } from 'preact'
-import { WindowOrTabId } from '../utils/user-interface-types.js'
+import { WindowOrTabId } from '../types/user-interface-types.js'
 
 function assertIsNode(e: EventTarget | null): asserts e is Node {
 	if (!e || !('nodeType' in e)) {

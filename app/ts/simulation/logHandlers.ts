@@ -1,6 +1,6 @@
 import { bytes32String, bytesToUnsigned, dataStringWith0xStart } from '../utils/bigint.js'
-import { TokenVisualizerResult } from '../utils/visualizer-types.js'
-import { MulticallResponseEventLog } from '../utils/JsonRpc-types.js'
+import { TokenVisualizerResult } from '../types/visualizer-types.js'
+import { MulticallResponseEventLog } from '../types/JsonRpc-types.js'
 import { Interface } from 'ethers'
 import { Erc1155ABI } from '../utils/abi.js'
 import { parseLogIfPossible } from './services/SimulationModeEthereumClientService.js'

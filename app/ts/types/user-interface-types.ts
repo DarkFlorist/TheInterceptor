@@ -3,13 +3,13 @@ import * as funtypes from 'funtypes'
 import { EthereumAddress, EthereumBlockHeader, EthereumQuantity, EthereumTimestamp, OptionalEthereumAddress } from './wire-types.js'
 import { SimulatedAndVisualizedTransaction, SimulationAndVisualisationResults, RpcEntry, RpcNetwork, RpcEntries, SimulationUpdatingState, SimulationResultState, WebsiteCreatedEthereumUnsignedTransaction, SimulationState, SimResults, TokenPriceEstimate, NamedTokenId } from './visualizer-types.js'
 import { IdentifiedSwapWithMetadata } from '../components/simulationExplaining/SwapTransactions.js'
-import { InterceptedRequest, UniqueRequestIdentifier, WebsiteSocket } from './requests.js'
+import { InterceptedRequest, UniqueRequestIdentifier, WebsiteSocket } from '../utils/requests.js'
 import { OldSignTypedDataParams, PersonalSignParams, SignTypedDataParams } from './JsonRpc-types.js'
-import { AddressInfo, AddressInfoEntry, AddressBookEntry, AddressBookEntries, IncompleteAddressBookEntry } from './addressBookTypes.js'
+import { ActiveAddress, ActiveAddressEntry, AddressBookEntry, AddressBookEntries, IncompleteAddressBookEntry } from './addressBookTypes.js'
 import { Page } from './exportedSettingsTypes.js'
 import { Website, WebsiteAccessArray } from './websiteAccessTypes.js'
 import { SignerName } from './signerTypes.js'
-import { ICON_ACCESS_DENIED, ICON_ACTIVE, ICON_NOT_ACTIVE, ICON_SIGNING, ICON_SIGNING_NOT_SUPPORTED, ICON_SIMULATING } from './constants.js'
+import { ICON_ACCESS_DENIED, ICON_ACTIVE, ICON_NOT_ACTIVE, ICON_SIGNING, ICON_SIGNING_NOT_SUPPORTED, ICON_SIMULATING } from '../utils/constants.js'
 
 export type ConfirmTransactionSimulationBaseData = funtypes.Static<typeof ConfirmTransactionSimulationBaseData>
 export const ConfirmTransactionSimulationBaseData = funtypes.ReadonlyObject({
@@ -47,15 +47,15 @@ export const ConfirmTransactionTransactionSingleVisualization = funtypes.Union(C
 
 export type AddressListParams = {
 	setAndSaveAppPage: (page: Page) => void,
-	setAddressInfos: StateUpdater<readonly AddressInfo[]>,
-	addressInfos: readonly AddressInfo[],
+	setActiveAddresss: StateUpdater<readonly ActiveAddress[]>,
+	activeAddresses: readonly ActiveAddress[],
 }
 
 export type InterceptorAccessListParams = {
 	setAndSaveAppPage: (page: Page) => void,
 	setWebsiteAccess: StateUpdater<WebsiteAccessArray | undefined>,
 	websiteAccess: WebsiteAccessArray | undefined,
-	websiteAccessAddressMetadata: readonly AddressInfoEntry[],
+	websiteAccessAddressMetadata: readonly ActiveAddressEntry[],
 	renameAddressCallBack: RenameAddressCallBack,
 }
 
@@ -69,7 +69,7 @@ export type AddAddressParam = {
 export type HomeParams = {
 	setAndSaveAppPage: (page: Page) => void,
 	makeMeRich: boolean,
-	addressInfos: readonly AddressInfo[],
+	activeAddresses: readonly ActiveAddress[],
 	signerAccounts: readonly bigint[] | undefined,
 	activeSimulationAddress: bigint | undefined,
 	activeSigningAddress: bigint | undefined,
@@ -89,7 +89,7 @@ export type HomeParams = {
 }
 
 export type ChangeActiveAddressParam = {
-	addressInfos: readonly AddressInfo[]
+	activeAddresses: readonly ActiveAddress[]
 	setAndSaveAppPage: (page: Page) => void,
 	setActiveAddressAndInformAboutIt: (address: bigint | 'signer') => void,
 	signerAccounts: readonly bigint[] | undefined,
@@ -105,10 +105,10 @@ export type SettingsParam = {
 }
 
 export type FirstCardParams = {
-	activeAddress: AddressInfo | undefined,
+	activeAddress: ActiveAddress | undefined,
 	enableSimulationMode: (x: boolean) => void,
 	useSignersAddressAsActiveAddress: boolean,
-	addressInfos: readonly AddressInfo[] | undefined,
+	activeAddresses: readonly ActiveAddress[] | undefined,
 	changeActiveRpc: (rpcEntry: RpcEntry) => void,
 	rpcNetwork: RpcNetwork,
 	simulationMode: boolean,
@@ -181,10 +181,10 @@ export const WindowOrTabId = funtypes.ReadonlyObject({
 export type PendingAccessRequest = funtypes.Static<typeof PendingAccessRequest>
 export const PendingAccessRequest = funtypes.ReadonlyObject({
 	website: Website,
-	requestAccessToAddress: funtypes.Union(AddressInfoEntry, funtypes.Undefined),
-	originalRequestAccessToAddress: funtypes.Union(AddressInfoEntry, funtypes.Undefined),
-	associatedAddresses: funtypes.ReadonlyArray(AddressInfoEntry),
-	addressInfos: funtypes.ReadonlyArray(AddressInfo),
+	requestAccessToAddress: funtypes.Union(ActiveAddressEntry, funtypes.Undefined),
+	originalRequestAccessToAddress: funtypes.Union(ActiveAddressEntry, funtypes.Undefined),
+	associatedAddresses: funtypes.ReadonlyArray(ActiveAddressEntry),
+	activeAddresses: funtypes.ReadonlyArray(ActiveAddress),
 	signerAccounts: funtypes.ReadonlyArray(EthereumAddress),
 	signerName: SignerName,
 	simulationMode: funtypes.Boolean,

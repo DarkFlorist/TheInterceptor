@@ -1,15 +1,15 @@
 import { getActiveAddress, websiteSocketToString } from './backgroundUtils.js'
-import { findAddressInfo } from './metadataUtils.js'
+import { getActiveAddressEntry } from './metadataUtils.js'
 import { requestAccessFromUser } from './windows/interceptorAccess.js'
 import { retrieveWebsiteDetails, updateExtensionIcon } from './iconHandler.js'
-import { TabConnection, WebsiteTabConnections } from '../utils/user-interface-types.js'
-import { InpageScriptCallBack, Settings } from '../utils/interceptor-messages.js'
+import { TabConnection, WebsiteTabConnections } from '../types/user-interface-types.js'
+import { InpageScriptCallBack, Settings } from '../types/interceptor-messages.js'
 import { updateWebsiteAccess } from './settings.js'
 import { sendSubscriptionReplyOrCallBack } from './messageSending.js'
 import { Simulator } from '../simulation/simulator.js'
 import { WebsiteSocket } from '../utils/requests.js'
-import { AddressInfoEntry } from '../utils/addressBookTypes.js'
-import { Website, WebsiteAccessArray, WebsiteAddressAccess } from '../utils/websiteAccessTypes.js'
+import { ActiveAddressEntry } from '../types/addressBookTypes.js'
+import { Website, WebsiteAccessArray, WebsiteAddressAccess } from '../types/websiteAccessTypes.js'
 
 export function getConnectionDetails(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket) {
 	const identifier = websiteSocketToString(socket)
@@ -80,7 +80,7 @@ export function hasAddressAccess(websiteAccess: WebsiteAccessArray, websiteOrigi
 					}
 				}
 			}
-			const askForAddressAccess = settings.userAddressBook.addressInfos.find((x) => x.address === address )?.askForAddressAccess
+			const askForAddressAccess = settings.userAddressBook.activeAddresses.find((x) => x.address === address )?.askForAddressAccess
 			if (askForAddressAccess === false) return 'hasAccess'
 			return 'notFound'
 		}
@@ -97,7 +97,7 @@ export function getAddressAccesses(websiteAccess: WebsiteAccessArray, websiteOri
 	return []
 }
 export function getAddressesThatDoNotNeedIndividualAccesses(settings: Settings) : readonly bigint[] {
-	return settings.userAddressBook.addressInfos.filter( (x) => x.askForAddressAccess === false).map( (x) => x.address)
+	return settings.userAddressBook.activeAddresses.filter( (x) => x.askForAddressAccess === false).map( (x) => x.address)
 }
 
 export async function setAccess(website: Website, access: boolean, address: bigint | undefined) {
@@ -197,15 +197,15 @@ function disconnectFromPort(websiteTabConnections: WebsiteTabConnections, socket
 	return false
 }
 
-export function getAssociatedAddresses(settings: Settings, websiteOrigin: string, activeAddress: AddressInfoEntry | undefined) : AddressInfoEntry[] {
+export function getAssociatedAddresses(settings: Settings, websiteOrigin: string, activeAddress: ActiveAddressEntry | undefined) : ActiveAddressEntry[] {
 	const addressAccess = getAddressAccesses(settings.websiteAccess, websiteOrigin).filter( (x) => x.access).map( (x) => x.address)
 	const allAccessAddresses = getAddressesThatDoNotNeedIndividualAccesses(settings)
 
 	const all = allAccessAddresses.concat(addressAccess).concat(activeAddress === undefined ? [] : [activeAddress.address])
-	return Array.from(new Set(all)).map(x => findAddressInfo(x, settings.userAddressBook.addressInfos))
+	return Array.from(new Set(all)).map(x => getActiveAddressEntry(x, settings.userAddressBook.activeAddresses))
 }
 
-async function askUserForAccessOnConnectionUpdate(simulator: Simulator, websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, websiteOrigin: string, activeAddress: AddressInfoEntry | undefined, settings: Settings) {
+async function askUserForAccessOnConnectionUpdate(simulator: Simulator, websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, websiteOrigin: string, activeAddress: ActiveAddressEntry | undefined, settings: Settings) {
 	const details = getConnectionDetails(websiteTabConnections, socket)
 	if (details === undefined) return
 
@@ -216,19 +216,19 @@ async function askUserForAccessOnConnectionUpdate(simulator: Simulator, websiteT
 async function updateTabConnections(simulator: Simulator, websiteTabConnections: WebsiteTabConnections, tabConnection: TabConnection, promptForAccessesIfNeeded: boolean, settings: Settings) {
 	for (const key in tabConnection.connections) {
 		const connection = tabConnection.connections[key]
-		const activeAddress = await getActiveAddress(settings, connection.socket.tabId)
+		const currentActiveAddress = await getActiveAddress(settings, connection.socket.tabId)
 		updateExtensionIcon(websiteTabConnections, connection.socket, connection.websiteOrigin)
-		const access = activeAddress ? hasAddressAccess(settings.websiteAccess, connection.websiteOrigin, activeAddress, settings) : hasAccess(settings.websiteAccess, connection.websiteOrigin)
+		const access = currentActiveAddress ? hasAddressAccess(settings.websiteAccess, connection.websiteOrigin, currentActiveAddress, settings) : hasAccess(settings.websiteAccess, connection.websiteOrigin)
 
 		if (access !== 'hasAccess' && connection.approved) {
 			disconnectFromPort(websiteTabConnections, connection.socket, connection.websiteOrigin)
 		} else if (access === 'hasAccess' && !connection.approved) {
-			connectToPort(websiteTabConnections, connection.socket, connection.websiteOrigin, settings, activeAddress)
+			connectToPort(websiteTabConnections, connection.socket, connection.websiteOrigin, settings, currentActiveAddress)
 		}
 
 		if (access === 'notFound' && connection.wantsToConnect && promptForAccessesIfNeeded) {
-			const addressInfo = activeAddress ? findAddressInfo(activeAddress, settings.userAddressBook.addressInfos) : undefined
-			askUserForAccessOnConnectionUpdate(simulator, websiteTabConnections, connection.socket, connection.websiteOrigin, addressInfo, settings)
+			const activeAddress = currentActiveAddress ? getActiveAddressEntry(currentActiveAddress, settings.userAddressBook.activeAddresses) : undefined
+			askUserForAccessOnConnectionUpdate(simulator, websiteTabConnections, connection.socket, connection.websiteOrigin, activeAddress, settings)
 		}
 	}
 }

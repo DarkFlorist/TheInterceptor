@@ -1,8 +1,8 @@
 import { Simulator } from '../simulator.js'
-import { EthereumUnsignedTransaction } from '../../utils/wire-types.js'
+import { EthereumUnsignedTransaction } from '../../types/wire-types.js'
 import { parseTransaction } from '../../utils/calldata.js'
 import { getSimulatedCode } from '../services/SimulationModeEthereumClientService.js'
-import { SimulationState } from '../../utils/visualizer-types.js'
+import { SimulationState } from '../../types/visualizer-types.js'
 
 export async function eoaApproval(transaction: EthereumUnsignedTransaction, controller: Simulator, simulationState: SimulationState) {
 	const approvalInfo = parseTransaction(transaction)

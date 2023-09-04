@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'preact/hooks'
-import { RenameAddressCallBack } from './utils/user-interface-types.js'
-import { GetAddressBookDataReply, ExternalPopupMessage } from './utils/interceptor-messages.js'
+import { RenameAddressCallBack } from './types/user-interface-types.js'
+import { GetAddressBookDataReply, ExternalPopupMessage } from './types/interceptor-messages.js'
 import { arrayToChunks } from './utils/typed-arrays.js'
 import { AddNewAddress } from './components/pages/AddNewAddress.js'
 import { BigAddress } from './components/subcomponents/address.js'
@@ -8,7 +8,7 @@ import Hint from './components/subcomponents/Hint.js'
 import { sendPopupMessageToBackgroundPage } from './background/backgroundUtils.js'
 import { assertNever } from './utils/typescript.js'
 import { checksummedAddress } from './utils/bigint.js'
-import { AddressBookEntries, AddressBookEntry, IncompleteAddressBookEntry } from './utils/addressBookTypes.js'
+import { AddressBookEntries, AddressBookEntry, IncompleteAddressBookEntry } from './types/addressBookTypes.js'
 
 type Modals = 'noModal' | 'addNewAddress' | 'ConfirmaddressBookEntryToBeRemoved'
 
@@ -208,7 +208,7 @@ export function AddressBook() {
 	const searchStringRef = useRef<string | undefined>(searchString)
 	const currentPageRef = useRef<number>(currentPage)
 
-	const [addingNewAddress, setAddingNewAddress] = useState<IncompleteAddressBookEntry>({ addingAddress: false, type: 'addressInfo', address: undefined, askForAddressAccess: false, name: undefined, symbol: undefined, decimals: undefined, logoUri: undefined, entrySource: 'FilledIn' })
+	const [addingNewAddress, setAddingNewAddress] = useState<IncompleteAddressBookEntry>({ addingAddress: false, type: 'activeAddress', address: undefined, askForAddressAccess: false, name: undefined, symbol: undefined, decimals: undefined, logoUri: undefined, entrySource: 'FilledIn' })
 
 	const scrollTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
 
@@ -355,7 +355,7 @@ export function AddressBook() {
 		setModalState('addNewAddress')
 		const getTypeFromFilter = (filter: ActiveFilter) => {
 			switch(filter) {
-				case 'My Active Addresses': return 'addressInfo'
+				case 'My Active Addresses': return 'activeAddress'
 				case 'My Contacts': return 'contact'
 				case 'ERC20 Tokens': return 'ERC20'
 				case 'ERC1155 Tokens': return 'ERC1155'

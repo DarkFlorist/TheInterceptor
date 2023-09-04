@@ -10,19 +10,19 @@ export const EntrySource = funtypes.Union(
 	funtypes.Literal('FilledIn'),
 )
 
-export type AddressInfo = funtypes.Static<typeof AddressInfo>
-export const AddressInfo = funtypes.ReadonlyObject({
+export type ActiveAddress = funtypes.Static<typeof ActiveAddress>
+export const ActiveAddress = funtypes.ReadonlyObject({
 	name: funtypes.String,
 	address: EthereumAddress,
 	askForAddressAccess: funtypes.Union(funtypes.Boolean, funtypes.Literal(undefined).withParser(LiteralConverterParserFactory(undefined, true))),
 }).asReadonly()
 
-export type AddressInfoArray = funtypes.Static<typeof AddressInfoArray>
-export const AddressInfoArray = funtypes.ReadonlyArray(AddressInfo)
+export type ActiveAddressArray = funtypes.Static<typeof ActiveAddressArray>
+export const ActiveAddressArray = funtypes.ReadonlyArray(ActiveAddress)
 
-export type AddressInfoEntry = funtypes.Static<typeof AddressInfoEntry>
-export const AddressInfoEntry = funtypes.ReadonlyObject({
-	type: funtypes.Literal('addressInfo'),
+export type ActiveAddressEntry = funtypes.Static<typeof ActiveAddressEntry>
+export const ActiveAddressEntry = funtypes.ReadonlyObject({
+	type: funtypes.Literal('activeAddress'),
 	name: funtypes.String,
 	address: EthereumAddress,
 	askForAddressAccess: funtypes.Union(funtypes.Boolean, funtypes.Literal(undefined).withParser(LiteralConverterParserFactory(undefined, true))),
@@ -90,11 +90,11 @@ export const ContractEntry = funtypes.ReadonlyObject({
 	logoUri: funtypes.String,
 }))
 
-export type AddressBookEntryCategory = 'contact' | 'addressInfo' | 'ERC20' | 'ERC721' | 'contract' | 'ERC1155'
+export type AddressBookEntryCategory = 'contact' | 'activeAddress' | 'ERC20' | 'ERC721' | 'contract' | 'ERC1155'
 
 export type AddressBookEntry = funtypes.Static<typeof AddressBookEntry>
 export const AddressBookEntry = funtypes.Union(
-	AddressInfoEntry,
+	ActiveAddressEntry,
 	ContactEntry,
 	Erc20TokenEntry,
 	Erc721Entry,
@@ -107,7 +107,7 @@ export const AddressBookEntries = funtypes.ReadonlyArray(AddressBookEntry)
 
 export type IncompleteAddressBookEntry = {
 	addingAddress: boolean, // if false, we are editing addess
-	type: 'addressInfo' | 'contact' | 'contract' | 'ERC20' | 'ERC1155' | 'ERC721'
+	type: 'activeAddress' | 'contact' | 'contract' | 'ERC20' | 'ERC1155' | 'ERC721'
 	address: string | undefined
 	askForAddressAccess: boolean
 	name: string | undefined
