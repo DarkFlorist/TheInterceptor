@@ -285,7 +285,7 @@ export class EthereumClientService {
 				const previousToBalance = currentBalance.get(addressString(to))
 				if (previousFromBalance === undefined || previousToBalance === undefined) throw new Error('Did not find previous ETH balance')
 				currentBalance.set(addressString(from), previousFromBalance - amount)
-				currentBalance.set(addressString(to), previousFromBalance + amount)
+				currentBalance.set(addressString(to), previousToBalance + amount)
 				changesForCall.push({
 					address: from,
 					before: previousFromBalance,
