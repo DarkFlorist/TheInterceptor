@@ -401,7 +401,7 @@ export function VisualizeSwapAsset({ swapAsset, rpcNetwork, renameAddressCallBac
 							style = { tokenStyle }
 						/>
 					</div>
-					<div class = 'log-cell-flexless' style = 'justify-content: right;'>
+					<div class = 'log-cell' style = 'justify-content: right;'>
 						<TokenSymbol
 							tokenEntry = { swapAsset.token }
 							useFullTokenName = { false }
