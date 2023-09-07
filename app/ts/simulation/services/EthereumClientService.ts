@@ -189,12 +189,21 @@ export class EthereumClientService {
 		return MulticallResponse.parse(unvalidatedResult)
 	}
 
-	public readonly executionSpec383MultiCall = async (calls: readonly BlockCalls[], blockTag: EthereumBlockTag) => {
+	public readonly executionSpec383MultiCall = async (blockStateCalls: readonly BlockCalls[], blockTag: EthereumBlockTag) => {
 		const parentBlock = await this.getBlock()
-		const call = { method: 'eth_multicallV1', params: [calls, blockTag === parentBlock.number + 1n ? blockTag - 1n : blockTag] } as const
-		console.log(calls)
+		const call = {
+			method: 'eth_multicallV1',
+			params: [{
+				blockStateCalls: blockStateCalls,
+				traceTransfers: true,
+				validation: false,
+			},
+			blockTag === parentBlock.number + 1n ? blockTag - 1n : blockTag
+		] } as const
+		console.log(blockStateCalls)
 		console.log(JSON.stringify(ExecutionSpec383MultiCallParams.serialize(call)))
 		const unvalidatedResult = await this.requestHandler.jsonRpcRequest(call)
+		console.log(unvalidatedResult)
 		return ExecutionSpec383MultiCallResult.parse(unvalidatedResult)
 	}
 
@@ -250,9 +259,9 @@ export class EthereumClientService {
 		}
 		const erc20ABI = ['event Transfer(address indexed from, address indexed to, uint256 value)']
 		const erc20 = new ethers.Interface(erc20ABI)
-		const flattenedLogs = events.flat() 
+		const flattenedLogs = events.flat()
 		const parsedEthLogs = parseEthLogs(flattenedLogs)
-		const addressesWithEthTransfers = new Set<bigint>(parsedEthLogs.map(log => log.args[0]).concat(parsedEthLogs.map(log => log.args[1]).concat(senders)))
+		const addressesWithEthTransfers = new Set<bigint>(parsedEthLogs.map(log => EthereumAddress.parse(log.args[0])).concat(parsedEthLogs.map(log => EthereumAddress.parse(log.args[1])).concat(senders)))
 		const initialBalances = await this.getEthBalancesOfAccounts(blockNumber, Array.from(addressesWithEthTransfers))
 		const currentBalance = new Map<string, bigint>(initialBalances.map((balance) => [addressString(balance.address), balance.balance]))
 		
@@ -271,10 +280,12 @@ export class EthereumClientService {
 				if (parsed.name !== 'Transfer') throw new Error(`wrong name: ${ parsed.name }`)
 				const from = EthereumAddress.parse(parsed.args[0])
 				const to = EthereumAddress.parse(parsed.args[1])
-				const amount = EthereumQuantity.parse(parsed.args[2])
-				const previousFromBalance = currentBalance.get(parsed.args[0])
-				const previousToBalance = currentBalance.get(parsed.args[1])
+				const amount = parsed.args[2]
+				const previousFromBalance = currentBalance.get(addressString(from))
+				const previousToBalance = currentBalance.get(addressString(to))
 				if (previousFromBalance === undefined || previousToBalance === undefined) throw new Error('Did not find previous ETH balance')
+				currentBalance.set(addressString(from), previousFromBalance - amount)
+				currentBalance.set(addressString(to), previousFromBalance + amount)
 				changesForCall.push({
 					address: from,
 					before: previousFromBalance,
@@ -312,7 +323,6 @@ export class EthereumClientService {
 		const balanceChanges = await this.getBalanceChanges(blockNumber, allLogs, transactions.map((tx) => tx.from))
 		const endResult = calls.map((singleResult, callIndex) => {
 			switch (singleResult.status) {
-				case undefined: //TODO, remove this, Geth currently doesn't return status
 				case 'success': return {
 					statusCode: 'success' as const,
 					gasSpent: singleResult.gasUsed,
@@ -321,7 +331,7 @@ export class EthereumClientService {
 						loggersAddress: log.address,
 						data: 'data' in log && log.data !== undefined ? log.data : new Uint8Array(),
 						topics: 'topics' in log && log.topics !== undefined ? log.topics : [],
-					})),
+					})).filter((x) => x.loggersAddress !== 0x0n), //TODO, keep eth logs
 					balanceChanges: balanceChanges[callIndex],
 				}
 				case 'failure': return {
