@@ -83,7 +83,7 @@ export const defaultRpcs: RpcEntries = [
 		weth: 0x105083929bf9bb22c26cb1777ec92661170d4285n,
 	},
 	{
-		name: 'Eth (geth-multi)',
+		name: 'Ethereum (experimental geth)',
 		chainId: 1n,
 		httpsRpc: 'https://rpc.dark.florist/winedancemuffinborrow',
 		currencyName: 'Ether',

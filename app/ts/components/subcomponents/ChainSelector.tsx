@@ -25,7 +25,7 @@ export function ChainSelector(params: ChainSelectorParams) {
 				{ params.rpcNetwork.httpsRpc === undefined ? <span class = 'icon' style = 'margin-left: 0em; margin-right: 0.5em;'>
 					<img src = '../img/warning-sign-white.svg' />
 				</span> : <></> }
-				{ params.rpcNetwork.name } ▼
+				<p style = 'overflow: hidden; white-space: nowrap; display: block; max-width: 160px; text-overflow: ellipsis;'>{ params.rpcNetwork.name } ▼ </p>
 			</button>
 		</div>
 		<div class = 'dropdown-menu' id = 'dropdown-menu' role = 'menu' style = 'right: -10px; min-width: 160px; left: unset'>

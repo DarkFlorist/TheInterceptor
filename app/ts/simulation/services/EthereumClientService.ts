@@ -4,7 +4,7 @@ import { TIME_BETWEEN_BLOCKS, MOCK_ADDRESS, MULTICALL3, Multicall3ABI } from '..
 import { IEthereumJSONRpcRequestHandler } from './EthereumJSONRpcRequestHandler.js'
 import { Interface, LogDescription, ethers } from 'ethers'
 import { stringToUint8Array, addressString, bytes32String, dataStringWith0xStart } from '../../utils/bigint.js'
-import { BlockCalls, ExecutionSpec383MultiCallResult, CallResultLog, ExecutionSpec383MultiCallParams } from '../../types/multicall-types.js'
+import { BlockCalls, ExecutionSpec383MultiCallResult, CallResultLog } from '../../types/multicall-types.js'
 import { MulticallResponse, EthGetStorageAtResponse, EthTransactionReceiptResponse, EthGetLogsRequest, EthGetLogsResponse, DappRequestTransaction } from '../../types/JsonRpc-types.js'
 import { assertNever } from '../../utils/typescript.js'
 import { parseLogIfPossible } from './SimulationModeEthereumClientService.js'
@@ -200,10 +200,7 @@ export class EthereumClientService {
 			},
 			blockTag === parentBlock.number + 1n ? blockTag - 1n : blockTag
 		] } as const
-		console.log(blockStateCalls)
-		console.log(JSON.stringify(ExecutionSpec383MultiCallParams.serialize(call)))
 		const unvalidatedResult = await this.requestHandler.jsonRpcRequest(call)
-		console.log(unvalidatedResult)
 		return ExecutionSpec383MultiCallResult.parse(unvalidatedResult)
 	}
 
@@ -261,7 +258,9 @@ export class EthereumClientService {
 		const erc20 = new ethers.Interface(erc20ABI)
 		const flattenedLogs = events.flat()
 		const parsedEthLogs = parseEthLogs(flattenedLogs)
-		const addressesWithEthTransfers = new Set<bigint>(parsedEthLogs.map(log => EthereumAddress.parse(log.args[0])).concat(parsedEthLogs.map(log => EthereumAddress.parse(log.args[1])).concat(senders)))
+		const extractEthSender = (log: LogDescription) => EthereumAddress.parse(log.args[0])
+		const extractEthReceiver = (log: LogDescription) => EthereumAddress.parse(log.args[1])
+		const addressesWithEthTransfers = new Set<bigint>(parsedEthLogs.map(extractEthSender).concat(parsedEthLogs.map(extractEthReceiver).concat(senders)))
 		const initialBalances = await this.getEthBalancesOfAccounts(blockNumber, Array.from(addressesWithEthTransfers))
 		const currentBalance = new Map<string, bigint>(initialBalances.map((balance) => [addressString(balance.address), balance.balance]))
 		
@@ -278,24 +277,16 @@ export class EthereumClientService {
 			for (const parsed of parsedLogsForCall) {
 				if (parsed === null) continue
 				if (parsed.name !== 'Transfer') throw new Error(`wrong name: ${ parsed.name }`)
-				const from = EthereumAddress.parse(parsed.args[0])
-				const to = EthereumAddress.parse(parsed.args[1])
+				const from = extractEthSender(parsed)
+				const to = extractEthReceiver(parsed)
 				const amount = parsed.args[2]
 				const previousFromBalance = currentBalance.get(addressString(from))
 				const previousToBalance = currentBalance.get(addressString(to))
 				if (previousFromBalance === undefined || previousToBalance === undefined) throw new Error('Did not find previous ETH balance')
 				currentBalance.set(addressString(from), previousFromBalance - amount)
 				currentBalance.set(addressString(to), previousToBalance + amount)
-				changesForCall.push({
-					address: from,
-					before: previousFromBalance,
-					after: previousFromBalance - amount,
-				})
-				changesForCall.push({
-					address: to,
-					before: previousToBalance,
-					after: previousToBalance + amount,
-				})
+				changesForCall.push({ address: from, before: previousFromBalance, after: previousFromBalance - amount })
+				changesForCall.push({ address: to, before: previousToBalance, after: previousToBalance + amount })
 			}
 			balanceChanges.push(changesForCall)
 		}
