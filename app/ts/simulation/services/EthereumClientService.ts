@@ -295,7 +295,6 @@ export class EthereumClientService {
 
 	// intended drop in replacement of the old multicall
 	public readonly executionSpec383MultiCallOnlyTransactions = async (transactions: readonly EthereumUnsignedTransaction[], blockNumber: bigint): Promise<MulticallResponse> => {
-		console.log('executionSpec383MultiCallOnlyTransactions')
 		const parentBlock = await this.getBlock()
 		const multicallResults = await this.executionSpec383MultiCall([{
 			calls: transactions,
@@ -335,8 +334,6 @@ export class EthereumClientService {
 				default: assertNever(singleResult)
 			}
 		})
-		console.log(endResult)
-		console.log('executionSpec383MultiCallOnlyTransactions D')
 		return endResult
 	}
 }
