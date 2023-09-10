@@ -66,6 +66,9 @@ export const LocalStorageKey = funtypes.Union(
 export async function browserStorageLocalGet(keys: LocalStorageKey | LocalStorageKey[]): Promise<LocalStorageItems> {
 	return LocalStorageItems.parse(await browser.storage.local.get(Array.isArray(keys) ? keys : [keys]))
 }
+export async function browserStorageLocalGetUnParsed(keys: LocalStorageKey | LocalStorageKey[]): Promise<unknown> {
+	return await browser.storage.local.get(Array.isArray(keys) ? keys : [keys])
+}
 export async function browserStorageLocalRemove(keys: LocalStorageKey | LocalStorageKey[]) {
 	return await browser.storage.local.remove(Array.isArray(keys) ? keys : [keys])
 }
