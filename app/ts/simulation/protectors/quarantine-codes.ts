@@ -51,6 +51,7 @@ export const QUARANTINE_CODES = Object.values(QUARANTINE_CODES_DICT)
 
 export type QUARANTINE_CODE = funtypes.Static<typeof QUARANTINE_CODE>
 export const QUARANTINE_CODE = funtypes.Union(
+	funtypes.Literal('ERC20_SEND_TO_CONTRACT'),
 	funtypes.Literal('ERC20_UNINTENDED_CONTRACT'),
 	funtypes.Literal('ERC20_ITSELF'),
 	funtypes.Literal('ERC20_DONTBELONG'),
