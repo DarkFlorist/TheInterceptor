@@ -7,7 +7,6 @@ import { PersonalSign, UserAddressBook, PersonalSignRequest } from '../../types/
 import { OpenSeaOrderMessage, PersonalSignRequestIdentifiedEIP712Message } from '../../types/personal-message-definitions.js'
 import { assertNever } from '../../utils/typescript.js'
 import { PendingPersonalSignPromise, WebsiteTabConnections } from '../../types/user-interface-types.js'
-import { OldSignTypedDataParams, PersonalSignParams, SignTypedDataParams } from '../../types/JsonRpc-types.js'
 import { getHtmlFile, sendPopupMessageToOpenWindows } from '../backgroundUtils.js'
 import { extractEIP712Message, validateEIP712Types } from '../../utils/eip712Parsing.js'
 import { getPendingPersonalSignPromise, getRpcNetwork, getRpcNetworkForChain, getSignerName, setPendingPersonalSignPromise } from '../storageVariables.js'
@@ -20,6 +19,7 @@ import { identifyAddress } from '../metadataUtils.js'
 import { AddressBookEntry } from '../../types/addressBookTypes.js'
 import { Website } from '../../types/websiteAccessTypes.js'
 import { SignerName } from '../../types/signerTypes.js'
+import { SignMessageParams } from '../../types/JsonRpc-types.js'
 
 let pendingPersonalSign: Future<PersonalSign> | undefined = undefined
 
@@ -54,7 +54,7 @@ function rejectMessage(uniqueRequestIdentifier: UniqueRequestIdentifier) {
 	} as const
 }
 
-function reject(signingParams: PersonalSignParams | SignTypedDataParams | OldSignTypedDataParams,) {
+function reject(signingParams: SignMessageParams) {
 	return {
 		method: signingParams.method,
 		error: {
@@ -239,7 +239,7 @@ export async function craftPersonalSignPopupMessage(ethereumClientService: Ether
 export const openPersonalSignDialog = async (
 	ethereumClientService: EthereumClientService,
 	websiteTabConnections: WebsiteTabConnections,
-	signingParams: PersonalSignParams | SignTypedDataParams | OldSignTypedDataParams,
+	signingParams: SignMessageParams,
 	request: InterceptedRequest,
 	simulationMode: boolean,
 	website: Website,
@@ -298,7 +298,7 @@ export const openPersonalSignDialog = async (
 	}
 }
 
-async function resolve(reply: PersonalSign, simulationMode: boolean, signingParams: PersonalSignParams | SignTypedDataParams | OldSignTypedDataParams) {
+async function resolve(reply: PersonalSign, simulationMode: boolean, signingParams: SignMessageParams) {
 	await setPendingPersonalSignPromise(undefined)
 	// forward message to content script
 	if (reply.data.accept) {

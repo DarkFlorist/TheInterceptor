@@ -5,7 +5,7 @@ import { CANNOT_SIMULATE_OFF_LEGACY_BLOCK, ERROR_INTERCEPTOR_GAS_ESTIMATION_FAIL
 import { ethers, keccak256 } from 'ethers'
 import { WebsiteCreatedEthereumUnsignedTransaction, SimulatedTransaction, SimulationState, TokenBalancesAfter, EstimateGasError } from '../../types/visualizer-types.js'
 import { EthereumUnsignedTransactionToUnsignedTransaction, IUnsignedTransaction1559, serializeSignedTransactionToBytes } from '../../utils/ethereum.js'
-import { EthGetLogsResponse, EthGetLogsRequest, EthTransactionReceiptResponse, PersonalSignParams, SignTypedDataParams, MulticallResponseEventLogs, MulticallResponse, OldSignTypedDataParams, DappRequestTransaction } from '../../types/JsonRpc-types.js'
+import { EthGetLogsResponse, EthGetLogsRequest, EthTransactionReceiptResponse, MulticallResponseEventLogs, MulticallResponse, DappRequestTransaction, SignMessageParams } from '../../types/JsonRpc-types.js'
 import { handleERC1155TransferBatch, handleERC1155TransferSingle } from '../logHandlers.js'
 
 const MOCK_PRIVATE_KEY = 0x1n // key used to sign mock transactions
@@ -640,7 +640,7 @@ export const getHashOfSimulatedBlock = () => {
 	return 0x1n
 }
 
-export const simulatePersonalSign = async (params: PersonalSignParams | SignTypedDataParams | OldSignTypedDataParams) => {
+export const simulatePersonalSign = async (params: SignMessageParams) => {
 	if (params.method === 'personal_sign') return await new ethers.Wallet(bytes32String(MOCK_PRIVATE_KEY)).signMessage(params.params[0])
 	throw new Error(`Simulated signing not implemented for method ${ params.method }`)
 }

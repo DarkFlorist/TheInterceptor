@@ -28,7 +28,12 @@ export class EthereumJSONRpcRequestHandler {
 			},
 			body: JSON.stringify(requestBodyJson)
 		})
-		if (!response.ok) throw new FetchResponseError(response, requestBodyJson.id)
+		if (!response.ok) {
+			console.log('req failed')
+			console.log(response)
+			console.log(rpcRequest)
+			throw new FetchResponseError(response, requestBodyJson.id)
+		}
 		const jsonRpcResponse = JsonRpcResponse.parse(await response.json())
 		if ('error' in jsonRpcResponse) throw new JsonRpcResponseError(jsonRpcResponse)
 		return jsonRpcResponse.result

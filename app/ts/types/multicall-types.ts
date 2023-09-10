@@ -7,10 +7,10 @@ export const AccountOverrideState = funtypes.Union(
 		state: EthereumBytes32
 	}),
 	funtypes.ReadonlyPartial({
-		address: EthereumAddress,
 		nonce: EthereumQuantitySmall,
-		Balance: EthereumQuantity,
+		balance: EthereumQuantity,
 		code: EthereumData,
+		moveToAddress: EthereumAddress,
 	})
 )
 
@@ -20,10 +20,10 @@ export const AccountOverrideStateDiff = funtypes.Union(
 		stateDiff: EthereumBytes32
 	}),
 	funtypes.ReadonlyPartial({
-		address: EthereumAddress,
 		nonce: EthereumQuantitySmall,
-		Balance: EthereumQuantity,
+		balance: EthereumQuantity,
 		code: EthereumData,
+		moveToAddress: EthereumAddress,
 	})
 )
 
@@ -46,13 +46,13 @@ export const BlockCalls = funtypes.Union(
 		calls: funtypes.ReadonlyArray(EthereumUnsignedTransaction),
 	}),
 	funtypes.ReadonlyPartial({
-		stateOverrides: funtypes.ReadonlyArray(AccountOverride),
+		stateOverrides: funtypes.ReadonlyRecord(funtypes.String, AccountOverride),
 		blockOverride: BlockOverride,
 	})
 )
 
-export type ParamObject = funtypes.Static<typeof ParamObject>
-export const ParamObject = funtypes.ReadonlyObject({
+export type  ExecutionSpec383MultiCallParamObject = funtypes.Static<typeof ExecutionSpec383MultiCallParamObject>
+export const  ExecutionSpec383MultiCallParamObject = funtypes.ReadonlyObject({
 	blockStateCalls: funtypes.ReadonlyArray(BlockCalls),
 	traceTransfers: funtypes.Boolean,
 	validation: funtypes.Boolean,
@@ -61,7 +61,7 @@ export const ParamObject = funtypes.ReadonlyObject({
 export type ExecutionSpec383MultiCallParams = funtypes.Static<typeof ExecutionSpec383MultiCallParams>
 export const ExecutionSpec383MultiCallParams = funtypes.ReadonlyObject({
 	method: funtypes.Literal('eth_multicallV1'),
-	params: funtypes.ReadonlyTuple(ParamObject, EthereumBlockTag),
+	params: funtypes.ReadonlyTuple(ExecutionSpec383MultiCallParamObject, EthereumBlockTag),
 })
 
 export type CallResultLog = funtypes.Static<typeof CallResultLog>
