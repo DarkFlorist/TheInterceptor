@@ -2,7 +2,7 @@ import { MOCK_PRIVATE_KEYS_ADDRESS } from '../utils/constants.js'
 import { ExportedSettings, Page } from '../types/exportedSettingsTypes.js'
 import { Settings } from '../types/interceptor-messages.js'
 import { Semaphore } from '../utils/semaphore.js'
-import { browserStorageLocalGet, browserStorageLocalSet } from '../utils/storageUtils.js'
+import { browserStorageLocalGet, browserStorageLocalGetUnParsed, browserStorageLocalSet } from '../utils/storageUtils.js'
 import { NetworkPrice, RpcEntries, RpcNetwork } from '../types/visualizer-types.js'
 import { EthereumAddress } from '../types/wire-types.js'
 import { ActiveAddressArray, ContactEntries } from '../types/addressBookTypes.js'
@@ -186,7 +186,7 @@ export async function exportSettingsAndAddressBook() {
 		name: 'InterceptorSettingsAndAddressBook' as const,
 		version: '1.2' as const,
 		exportedDate: (new Date).toISOString().split('T')[0],
-		settings: await browserStorageLocalGet([
+		settings: await browserStorageLocalGetUnParsed([
 			'activeSimulationAddress',
 			'addressInfos',
 			'page',
