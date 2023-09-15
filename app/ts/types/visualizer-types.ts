@@ -4,7 +4,7 @@ import { EthereumAddress, EthereumData, EthereumQuantity, EthereumSignedTransact
 import { QUARANTINE_CODE } from '../simulation/protectors/quarantine-codes.js'
 import { RenameAddressCallBack } from './user-interface-types.js'
 import { ERROR_INTERCEPTOR_GAS_ESTIMATION_FAILED } from '../utils/constants.js'
-import { EthBalanceChanges, EthSubscribeParams, SendRawTransactionParams, SendTransactionParams, SingleMulticallResponse } from './JsonRpc-types.js'
+import { EthBalanceChanges, EthSubscribeParams, SendRawTransactionParams, SendTransactionParams, SignMessageParams, SingleMulticallResponse } from './JsonRpc-types.js'
 import { WebsiteSocket } from '../utils/requests.js'
 import { AddressBookEntry, Erc721Entry, Erc20TokenEntry, Erc1155Entry } from './addressBookTypes.js'
 import { Website } from './websiteAccessTypes.js'
@@ -158,9 +158,17 @@ export const SimulatedTransaction = funtypes.ReadonlyObject({
 	signedTransaction: EthereumSignedTransaction,
 	realizedGasPrice: EthereumQuantity,
 	website: Website,
-	transactionCreated: EthereumTimestamp,
+	created: EthereumTimestamp,
 	tokenBalancesAfter: TokenBalancesAfter,
-	originalTransactionRequestParameters: funtypes.Union(SendTransactionParams, SendRawTransactionParams),
+	originalRequestParameters: funtypes.Union(SendTransactionParams, SendRawTransactionParams),
+})
+
+export type SignedMessageWithWebsite = funtypes.Static<typeof SignedMessageWithWebsite>
+export const SignedMessageWithWebsite = funtypes.ReadonlyObject({
+	website: Website,
+	created: EthereumTimestamp,
+	originalRequestParameters: SignMessageParams,
+	fakeSignedFor: EthereumAddress,
 })
 
 export type EstimateGasError = funtypes.Static<typeof EstimateGasError>
@@ -176,8 +184,8 @@ export const EstimateGasError = funtypes.ReadonlyObject({
 export type WebsiteCreatedEthereumUnsignedTransaction = funtypes.Static<typeof WebsiteCreatedEthereumUnsignedTransaction>
 export const WebsiteCreatedEthereumUnsignedTransaction = funtypes.ReadonlyObject({
 	website: Website,
-	transactionCreated: EthereumTimestamp,
-	originalTransactionRequestParameters: funtypes.Union(SendTransactionParams, SendRawTransactionParams),
+	created: EthereumTimestamp,
+	originalRequestParameters: funtypes.Union(SendTransactionParams, SendRawTransactionParams),
 	transaction: EthereumUnsignedTransaction,
 	error: funtypes.Union(funtypes.Undefined, EstimateGasError.fields.error)
 })
@@ -186,6 +194,7 @@ export type SimulationState = funtypes.Static<typeof SimulationState>
 export const SimulationState = funtypes.ReadonlyObject({
 	prependTransactionsQueue: funtypes.ReadonlyArray(WebsiteCreatedEthereumUnsignedTransaction),
 	simulatedTransactions: funtypes.ReadonlyArray(SimulatedTransaction),
+	signedMessages: funtypes.ReadonlyArray(SignedMessageWithWebsite),
 	blockNumber: EthereumQuantity,
 	blockTimestamp: EthereumTimestamp,
 	rpcNetwork: RpcNetwork,
@@ -227,7 +236,7 @@ export const SimulatedAndVisualizedTransactionBase = funtypes.Intersect(
 		tokenBalancesAfter: TokenBalancesAfter,
 		tokenResults: funtypes.ReadonlyArray(TokenVisualizerResultWithMetadata),
 		website: Website,
-		transactionCreated: EthereumTimestamp,
+		created: EthereumTimestamp,
 		gasSpent: EthereumQuantity,
 		realizedGasPrice: EthereumQuantity,
 		quarantine: funtypes.Boolean,

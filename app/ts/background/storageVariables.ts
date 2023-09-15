@@ -46,14 +46,12 @@ export async function removePendingTransaction(uniqueRequestIdentifier: UniqueRe
 }
 
 export const getChainChangeConfirmationPromise = async() => (await browserStorageLocalGet('ChainChangeConfirmationPromise'))?.['ChainChangeConfirmationPromise'] ?? undefined
-
 export async function setChainChangeConfirmationPromise(promise: PendingChainChangeConfirmationPromise | undefined) {
 	if (promise === undefined) return await browserStorageLocalRemove('ChainChangeConfirmationPromise')
 	return await browserStorageLocalSet({ ChainChangeConfirmationPromise: promise })
 }
+
 export const getPendingPersonalSignPromise = async() => (await browserStorageLocalGet('PersonalSignPromise'))?.['PersonalSignPromise'] ?? undefined
-
-
 export async function setPendingPersonalSignPromise(promise: PendingPersonalSignPromise | undefined) {
 	if (promise === undefined) return await browserStorageLocalRemove('PersonalSignPromise')
 	return await browserStorageLocalSet({ PersonalSignPromise: promise })

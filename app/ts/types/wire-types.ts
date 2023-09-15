@@ -244,14 +244,17 @@ export const EthereumTransaction2930And1559Signature = funtypes.Intersect(
 	)
 )
 
+export type MessageSignature = funtypes.Static<typeof MessageSignature>
+export const MessageSignature = funtypes.ReadonlyObject({
+	r: EthereumQuantity,
+	s: EthereumQuantity,
+	hash: EthereumBytes32,
+	v: EthereumQuantity,
+})
+
 export type EthereumTransactionLegacySignature = funtypes.Static<typeof EthereumTransactionLegacySignature>
 export const EthereumTransactionLegacySignature = funtypes.Intersect(
-	funtypes.ReadonlyObject({
-		r: EthereumQuantity,
-		s: EthereumQuantity,
-		hash: EthereumBytes32,
-		v: EthereumQuantity,
-	}),
+	MessageSignature,
 	funtypes.Union(
 		funtypes.ReadonlyObject({
 			v: EthereumQuantity,

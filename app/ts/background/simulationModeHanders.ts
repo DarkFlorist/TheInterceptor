@@ -128,8 +128,8 @@ export async function gasPrice(ethereumClientService: EthereumClientService) {
 	return { method: 'eth_gasPrice' as const, result: await ethereumClientService.getGasPrice() }
 }
 
-export async function personalSign(ethereumClientService: EthereumClientService, websiteTabConnections: WebsiteTabConnections, params: SignMessageParams, request: InterceptedRequest, simulationMode: boolean, website: Website, activeAddress: bigint | undefined): Promise<RPCReply> {
-	return await openPersonalSignDialog(ethereumClientService, websiteTabConnections, params, request, simulationMode, website, activeAddress)
+export async function personalSign(simulator: Simulator, websiteTabConnections: WebsiteTabConnections, params: SignMessageParams, request: InterceptedRequest, simulationMode: boolean, website: Website, activeAddress: bigint | undefined): Promise<RPCReply> {
+	return await openPersonalSignDialog(simulator, websiteTabConnections, params, request, simulationMode, website, activeAddress)
 }
 
 export async function switchEthereumChain(simulator: Simulator, websiteTabConnections: WebsiteTabConnections, ethereumClientService: EthereumClientService, params: SwitchEthereumChainParams, request: InterceptedRequest, simulationMode: boolean, website: Website) {

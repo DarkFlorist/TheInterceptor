@@ -97,8 +97,8 @@ export async function main() {
 			const newState = await appendTransaction(ethereum, simulationState, {
 				transaction: exampleTransaction,
 				website: { websiteOrigin: 'test', icon: undefined, title: undefined },
-				transactionCreated: new Date(),
-				originalTransactionRequestParameters: { method: 'eth_sendTransaction', params: [{}]},
+				created: new Date(),
+				originalRequestParameters: { method: 'eth_sendTransaction', params: [{}]},
 				error: undefined,
 			})
 			const nextBlock = await getSimulatedBlock(ethereum, newState, blockNumber + 1n, true)

@@ -416,9 +416,9 @@ export const RefreshConfirmTransactionDialogSimulation = funtypes.ReadonlyObject
 		uniqueRequestIdentifier: UniqueRequestIdentifier,
 		activeAddress: EthereumAddress,
 		simulationMode: funtypes.Boolean,
-		originalTransactionRequestParameters: funtypes.Union(SendTransactionParams, SendRawTransactionParams),
+		originalRequestParameters: funtypes.Union(SendTransactionParams, SendRawTransactionParams),
 		website: Website,
-		transactionCreated: EthereumTimestamp,
+		created: EthereumTimestamp,
 	})
 }).asReadonly()
 

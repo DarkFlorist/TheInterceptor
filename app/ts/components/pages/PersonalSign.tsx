@@ -412,8 +412,8 @@ export function PersonalSign() {
 		return !(personalSignRequestData.simulationMode && (activeAddress !== MOCK_PRIVATE_KEYS_ADDRESS || personalSignRequestData.originalParams.method !== 'personal_sign'))
 	}
 
-	function isConfirmDisabled(personalSignRequestData: PersonalSignRequestData, activeAddress: bigint) {
-		return !isPossibleToSend(personalSignRequestData, activeAddress) && !forceSend
+	function isConfirmDisabled(_personalSignRequestData: PersonalSignRequestData, _activeAddress: bigint) {
+		return false // !isPossibleToSend(personalSignRequestData, activeAddress) && !forceSend
 	}
 	
 	function Buttons() {

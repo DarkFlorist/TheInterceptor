@@ -100,7 +100,7 @@ export function formSimulatedAndVisualizedTransaction(simState: SimulationState,
 				}
 			),
 			website: visualizerResults[index].website,
-			transactionCreated: simulatedTx.transactionCreated,
+			created: simulatedTx.created,
 		}
 	})
 }

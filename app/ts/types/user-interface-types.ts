@@ -1,10 +1,9 @@
 import { StateUpdater } from 'preact/hooks'
 import * as funtypes from 'funtypes'
 import { EthereumAddress, EthereumBlockHeader, EthereumQuantity, EthereumTimestamp, OptionalEthereumAddress } from './wire-types.js'
-import { SimulatedAndVisualizedTransaction, SimulationAndVisualisationResults, RpcEntry, RpcNetwork, RpcEntries, SimulationUpdatingState, SimulationResultState, WebsiteCreatedEthereumUnsignedTransaction, SimulationState, SimResults, TokenPriceEstimate, NamedTokenId } from './visualizer-types.js'
+import { SimulatedAndVisualizedTransaction, SimulationAndVisualisationResults, RpcEntry, RpcNetwork, RpcEntries, SimulationUpdatingState, SimulationResultState, WebsiteCreatedEthereumUnsignedTransaction, SimulationState, SimResults, TokenPriceEstimate, NamedTokenId, SignedMessageWithWebsite } from './visualizer-types.js'
 import { IdentifiedSwapWithMetadata } from '../components/simulationExplaining/SwapTransactions.js'
 import { InterceptedRequest, UniqueRequestIdentifier, WebsiteSocket } from '../utils/requests.js'
-import { OldSignTypedDataParams, PersonalSignParams, SignTypedDataParams } from './JsonRpc-types.js'
 import { ActiveAddress, ActiveAddressEntry, AddressBookEntry, AddressBookEntries, IncompleteAddressBookEntry } from './addressBookTypes.js'
 import { Page } from './exportedSettingsTypes.js'
 import { Website, WebsiteAccessArray } from './websiteAccessTypes.js'
@@ -204,7 +203,7 @@ export const PendingTransaction = funtypes.ReadonlyObject({
 	request: InterceptedRequest,
 	simulationMode: funtypes.Boolean,
 	activeAddress: EthereumAddress,
-	transactionCreated: EthereumTimestamp,
+	created: EthereumTimestamp,
 	simulationResults: ConfirmTransactionTransactionSingleVisualization,
 	transactionToSimulate: WebsiteCreatedEthereumUnsignedTransaction,
 })
@@ -241,6 +240,6 @@ export const PendingPersonalSignPromise = funtypes.ReadonlyObject({
 	dialogId: funtypes.Number,
 	request: InterceptedRequest,
 	simulationMode: funtypes.Boolean,
-	params: funtypes.Union(PersonalSignParams, SignTypedDataParams, OldSignTypedDataParams),
+	params: SignedMessageWithWebsite,
 	activeAddress: EthereumAddress,
 })

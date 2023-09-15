@@ -22,12 +22,12 @@ import { isJSON } from '../types/JsonRpc-types.js'
 import { SimulationState } from '../types/visualizer-types.js'
 import { ExportedSettings } from '../types/exportedSettingsTypes.js'
 
-export async function confirmDialog(simulator: Simulator, ethereumClientService: EthereumClientService, websiteTabConnections: WebsiteTabConnections, confirmation: TransactionConfirmation) {
-	await resolvePendingTransaction(simulator, ethereumClientService, websiteTabConnections, confirmation)
+export async function confirmDialog(simulator: Simulator, websiteTabConnections: WebsiteTabConnections, confirmation: TransactionConfirmation) {
+	await resolvePendingTransaction(simulator, websiteTabConnections, confirmation)
 }
 
-export async function confirmPersonalSign(websiteTabConnections: WebsiteTabConnections, confirmation: PersonalSign) {
-	await resolvePersonalSign(websiteTabConnections, confirmation)
+export async function confirmPersonalSign(simulator: Simulator, websiteTabConnections: WebsiteTabConnections, confirmation: PersonalSign) {
+	await resolvePersonalSign(simulator, websiteTabConnections, confirmation)
 }
 
 export async function confirmRequestAccess(simulator: Simulator, websiteTabConnections: WebsiteTabConnections, confirmation: InterceptorAccess) {
@@ -206,7 +206,7 @@ export async function refreshPopupConfirmTransactionMetadata(ethereumClientServi
 }
 
 export async function refreshPopupConfirmTransactionSimulation(simulator: Simulator, ethereumClientService: EthereumClientService, { data }: RefreshConfirmTransactionDialogSimulation) {
-	const transactionToSimulate = data.originalTransactionRequestParameters.method === 'eth_sendTransaction' ? await formEthSendTransaction(ethereumClientService, data.activeAddress, data.simulationMode, data.website, data.originalTransactionRequestParameters, data.transactionCreated) : await formSendRawTransaction(ethereumClientService, data.originalTransactionRequestParameters, data.website, data.transactionCreated)
+	const transactionToSimulate = data.originalRequestParameters.method === 'eth_sendTransaction' ? await formEthSendTransaction(ethereumClientService, data.activeAddress, data.simulationMode, data.website, data.originalRequestParameters, data.created) : await formSendRawTransaction(ethereumClientService, data.originalRequestParameters, data.website, data.created)
 	const promises = await getPendingTransactions()
 	if (promises.length === 0) return
 	const first = promises[0]

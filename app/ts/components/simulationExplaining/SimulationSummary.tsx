@@ -627,10 +627,10 @@ export function TransactionHeaderForFailedToSimulate({ website } : { website: We
 	</header>
 }
 
-export function TransactionCreated({ transactionCreated } : { transactionCreated: EthereumTimestamp }) {
+export function TransactionCreated({ created } : { created: EthereumTimestamp }) {
 	return <p style = 'color: var(--subtitle-text-color); text-align: right; display: inline'>
 		{ 'Created ' }
-		<SomeTimeAgo priorTimestamp = { transactionCreated } diffToText = { humanReadableDateDeltaLessDetailed }/>
+		<SomeTimeAgo priorTimestamp = { created } diffToText = { humanReadableDateDeltaLessDetailed }/>
 	</p>
 }
 

@@ -2,9 +2,9 @@ import { EthereumAddress, EthereumBlockTag, EthereumBytes32, EthereumData, Ether
 import * as funtypes from 'funtypes'
 
 export type AccountOverrideState = funtypes.Static<typeof AccountOverrideState>
-export const AccountOverrideState = funtypes.Union(
+export const AccountOverrideState = funtypes.Intersect(
 	funtypes.ReadonlyObject({
-		state: EthereumBytes32
+		state: funtypes.ReadonlyRecord(funtypes.String, EthereumBytes32),
 	}),
 	funtypes.ReadonlyPartial({
 		nonce: EthereumQuantitySmall,
@@ -15,9 +15,9 @@ export const AccountOverrideState = funtypes.Union(
 )
 
 export type AccountOverrideStateDiff = funtypes.Static<typeof AccountOverrideStateDiff>
-export const AccountOverrideStateDiff = funtypes.Union(
+export const AccountOverrideStateDiff = funtypes.Intersect(
 	funtypes.ReadonlyObject({
-		stateDiff: EthereumBytes32
+		stateDiff: funtypes.ReadonlyRecord(funtypes.String, EthereumBytes32),
 	}),
 	funtypes.ReadonlyPartial({
 		nonce: EthereumQuantitySmall,
@@ -41,7 +41,7 @@ export const BlockOverride = funtypes.ReadonlyObject({
 })
 
 export type BlockCalls = funtypes.Static<typeof BlockCalls>
-export const BlockCalls = funtypes.Union(
+export const BlockCalls = funtypes.Intersect(
 	funtypes.ReadonlyObject({
 		calls: funtypes.ReadonlyArray(EthereumUnsignedTransaction),
 	}),

@@ -162,7 +162,7 @@ export function Transaction(param: TransactionVisualizationParameters) {
 
 					<span class = 'log-table' style = 'margin-top: 10px; grid-template-columns: auto auto;'>
 						<div class = 'log-cell'>
-							<TransactionCreated transactionCreated = { param.simTx.transactionCreated } />
+							<TransactionCreated created = { param.simTx.created } />
 						</div>
 						<div class = 'log-cell' style = 'justify-content: right;'>
 							<GasFee tx = { param.simTx } rpcNetwork = { param.simulationAndVisualisationResults.rpcNetwork } />
