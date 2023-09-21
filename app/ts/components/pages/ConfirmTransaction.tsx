@@ -339,7 +339,9 @@ export function ConfirmTransaction() {
 								tokenPrices: simulationResults.data.tokenPrices,
 								activeAddress: simulationResults.data.activeAddress,
 								simulatedAndVisualizedTransactions: simulationResults.data.simulatedAndVisualizedTransactions,
+								visualizedPersonalSignRequests: simulationResults.data.visualizedPersonalSignRequests,
 								namedTokenIds: simulationResults.data.namedTokenIds,
+								visualizedPersonalSignRequests: simulationResults.data.visualizedPersonalSignRequests,
 							} }
 							pendingTransactions = { pendingTransactions }
 							renameAddressCallBack = { renameAddressCallBack }

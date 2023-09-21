@@ -3,10 +3,10 @@ import { EthereumClientService } from '../../simulation/services/EthereumClientS
 import { stringifyJSONWithBigInts } from '../../utils/bigint.js'
 import { METAMASK_ERROR_USER_REJECTED_REQUEST } from '../../utils/constants.js'
 import { Future } from '../../utils/future.js'
-import { PersonalSign, UserAddressBook, PersonalSignRequest } from '../../types/interceptor-messages.js'
-import { OpenSeaOrderMessage, PersonalSignRequestIdentifiedEIP712Message } from '../../types/personal-message-definitions.js'
+import { PersonalSign, UserAddressBook } from '../../types/interceptor-messages.js'
+import { OpenSeaOrderMessage, VisualizedPersonalSignRequest, PersonalSignRequestIdentifiedEIP712Message } from '../../types/personal-message-definitions.js'
 import { assertNever } from '../../utils/typescript.js'
-import { PendingPersonalSignPromise, WebsiteTabConnections } from '../../types/user-interface-types.js'
+import { WebsiteTabConnections } from '../../types/user-interface-types.js'
 import { getHtmlFile, sendPopupMessageToOpenWindows } from '../backgroundUtils.js'
 import { extractEIP712Message, validateEIP712Types } from '../../utils/eip712Parsing.js'
 import { getPendingPersonalSignPromise, getRpcNetwork, getRpcNetworkForChain, getSignerName, setPendingPersonalSignPromise } from '../storageVariables.js'
@@ -22,7 +22,7 @@ import { SignerName } from '../../types/signerTypes.js'
 import { SignMessageParams } from '../../types/JsonRpc-types.js'
 import { updateSimulationState } from '../background.js'
 import { Simulator } from '../../simulation/simulator.js'
-import { SignedMessageWithWebsite } from '../../types/visualizer-types.js'
+import { SignedMessageTransaction } from '../../types/visualizer-types.js'
 
 let pendingPersonalSign: Future<PersonalSign> | undefined = undefined
 
@@ -33,9 +33,9 @@ export async function resolvePersonalSign(simulator: Simulator, websiteTabConnec
 		pendingPersonalSign.resolve(confirmation)
 	} else {
 		const data = await getPendingPersonalSignPromise()
-		if (data === undefined || !doesUniqueRequestIdentifiersMatch(confirmation.data.uniqueRequestIdentifier, data.request.uniqueRequestIdentifier)) return
-		const resolved = await resolve(simulator, confirmation, data.simulationMode, data.activeAddress, data.params)
-		replyToInterceptedRequest(websiteTabConnections, { ...data.params.originalRequestParameters, ...resolved, uniqueRequestIdentifier: confirmation.data.uniqueRequestIdentifier })
+		if (data === undefined || !doesUniqueRequestIdentifiersMatch(confirmation.data.uniqueRequestIdentifier, data.signedMessageTransaction.request.uniqueRequestIdentifier)) return
+		const resolved = await resolve(simulator, confirmation, data.signedMessageTransaction)
+		replyToInterceptedRequest(websiteTabConnections, { ...data.signedMessageTransaction.originalRequestParameters, ...resolved, uniqueRequestIdentifier: confirmation.data.uniqueRequestIdentifier })
 	}
 	if (openedDialog) await closePopupOrTab(openedDialog)
 	openedDialog = undefined
@@ -44,7 +44,10 @@ export async function resolvePersonalSign(simulator: Simulator, websiteTabConnec
 export async function updatePendingPersonalSignViewWithPendingRequests(ethereumClientService: EthereumClientService) {
 	const personalSignPromise = await getPendingPersonalSignPromise()
 	if (personalSignPromise === undefined) throw new Error('Missing personal sign promise from local storage')
-	return await sendPopupMessageToOpenWindows(await craftPersonalSignPopupMessage(ethereumClientService, personalSignPromise, await getSignerName()))
+	return await sendPopupMessageToOpenWindows({
+		method: 'popup_personal_sign_request',
+		data: await craftPersonalSignPopupMessage(ethereumClientService, personalSignPromise.signedMessageTransaction, await getSignerName() )
+	})
 }
 
 function rejectMessage(uniqueRequestIdentifier: UniqueRequestIdentifier) {
@@ -77,18 +80,18 @@ export async function addMetadataToOpenSeaOrder(ethereumClientService: EthereumC
 	 }
 }
 
-export async function craftPersonalSignPopupMessage(ethereumClientService: EthereumClientService, personalSignPromise: PendingPersonalSignPromise, signerName: SignerName): Promise<PersonalSignRequest> {
+export async function craftPersonalSignPopupMessage(ethereumClientService: EthereumClientService, signedMessageTransaction: SignedMessageTransaction, signerName: SignerName): Promise<VisualizedPersonalSignRequest> {
 	const settings = await getSettings()
 	const userAddressBook = settings.userAddressBook
-	const activeAddressWithMetadata = await identifyAddress(ethereumClientService, userAddressBook, personalSignPromise.activeAddress)
+	const activeAddressWithMetadata = await identifyAddress(ethereumClientService, userAddressBook, signedMessageTransaction.fakeSignedFor)
 	const basicParams = {
 		activeAddress: activeAddressWithMetadata,
-		simulationMode: personalSignPromise.simulationMode,
-		request: personalSignPromise.request,
+		simulationMode: signedMessageTransaction.simulationMode,
+		request: signedMessageTransaction.request,
 		signerName,
-		website: personalSignPromise.website,
+		website: signedMessageTransaction.website,
 	}
-	const originalParams = personalSignPromise.params
+	const originalParams = signedMessageTransaction
 
 	const getQuarrantineCodes = async (messageChainId: bigint, account: AddressBookEntry, activeAddress: AddressBookEntry, owner: AddressBookEntry | undefined): Promise<{ quarantine: boolean, quarantineCodes: readonly QUARANTINE_CODE[] }> => {
 		let quarantineCodes: QUARANTINE_CODE[] = []
@@ -105,33 +108,27 @@ export async function craftPersonalSignPopupMessage(ethereumClientService: Ether
 	}
 	if (originalParams.originalRequestParameters.method === 'eth_signTypedData') {
 		return {
-			method: 'popup_personal_sign_request',
-			data: {
-				originalParams: originalParams.originalRequestParameters,
-				...basicParams,
-				rpcNetwork: await getRpcNetwork(),
-				type: 'NotParsed',
-				message: stringifyJSONWithBigInts(originalParams.originalRequestParameters.params[0], 4),
-				account: await identifyAddress(ethereumClientService, userAddressBook, originalParams.originalRequestParameters.params[1]),
-				quarantine: false,
-				quarantineCodes: [],
-			}
+			originalParams: originalParams.originalRequestParameters,
+			...basicParams,
+			rpcNetwork: await getRpcNetwork(),
+			type: 'NotParsed',
+			message: stringifyJSONWithBigInts(originalParams.originalRequestParameters.params[0], 4),
+			account: await identifyAddress(ethereumClientService, userAddressBook, originalParams.originalRequestParameters.params[1]),
+			quarantine: false,
+			quarantineCodes: [],
 		}
 	}
 
 	if (originalParams.originalRequestParameters.method === 'personal_sign') {
 		return {
-			method: 'popup_personal_sign_request',
-			data: {
-				originalParams: originalParams.originalRequestParameters,
-				...basicParams,
-				rpcNetwork: await getRpcNetwork(),
-				type: 'NotParsed',
-				message: originalParams.originalRequestParameters.params[0],
-				account: await identifyAddress(ethereumClientService, userAddressBook, originalParams.originalRequestParameters.params[1]),
-				quarantine: false,
-				quarantineCodes: [],
-			}
+			originalParams: originalParams.originalRequestParameters,
+			...basicParams,
+			rpcNetwork: await getRpcNetwork(),
+			type: 'NotParsed',
+			message: originalParams.originalRequestParameters.params[0],
+			account: await identifyAddress(ethereumClientService, userAddressBook, originalParams.originalRequestParameters.params[1]),
+			quarantine: false,
+			quarantineCodes: [],
 		}
 	}
 	const namedParams = { param: originalParams.originalRequestParameters.params[1], account: originalParams.originalRequestParameters.params[0] }
@@ -145,16 +142,13 @@ export async function craftPersonalSignPopupMessage(ethereumClientService: Ether
 		const chainid = message.domain.chainId?.type === 'integer' ? BigInt(message.domain.chainId?.value) : undefined
 
 		return {
-			method: 'popup_personal_sign_request',
-			data: {
-				originalParams: originalParams.originalRequestParameters,
-				...basicParams,
-				rpcNetwork: chainid !== undefined ? await getRpcNetworkForChain(chainid) : await getRpcNetwork(),
-				type: 'EIP712',
-				message,
-				account,
-				...chainid === undefined ? { quarantine: false, quarantineCodes: [] } : await getQuarrantineCodes(chainid, account, activeAddressWithMetadata, undefined),
-			}
+			originalParams: originalParams.originalRequestParameters,
+			...basicParams,
+			rpcNetwork: chainid !== undefined ? await getRpcNetworkForChain(chainid) : await getRpcNetwork(),
+			type: 'EIP712',
+			message,
+			account,
+			...chainid === undefined ? { quarantine: false, quarantineCodes: [] } : await getQuarrantineCodes(chainid, account, activeAddressWithMetadata, undefined),
 		}
 	}
 	const parsed = maybeParsed.value
@@ -165,21 +159,18 @@ export async function craftPersonalSignPopupMessage(ethereumClientService: Ether
 			if (token.type === 'ERC721') throw 'Attempted to perform Permit to an ERC721'
 			if (token.type === 'ERC1155') throw 'Attempted to perform Permit to an ERC1155'
 			return {
-				method: 'popup_personal_sign_request',
-				data: {
-					originalParams: originalParams.originalRequestParameters,
-					...basicParams,
-					rpcNetwork: await getRpcNetworkForChain(parsed.domain.chainId),
-					type: 'Permit',
-					message: parsed,
-					account,
-					addressBookEntries: {
-						owner,
-						spender: await identifyAddress(ethereumClientService, userAddressBook, parsed.message.spender),
-						verifyingContract: token,
-					},
-					...await getQuarrantineCodes(BigInt(parsed.domain.chainId), account, activeAddressWithMetadata, owner),
-				}
+				originalParams: originalParams.originalRequestParameters,
+				...basicParams,
+				rpcNetwork: await getRpcNetworkForChain(parsed.domain.chainId),
+				type: 'Permit',
+				message: parsed,
+				account,
+				addressBookEntries: {
+					owner,
+					spender: await identifyAddress(ethereumClientService, userAddressBook, parsed.message.spender),
+					verifyingContract: token,
+				},
+				...await getQuarrantineCodes(BigInt(parsed.domain.chainId), account, activeAddressWithMetadata, owner),
 			}
 		}
 		case 'PermitSingle': {
@@ -187,53 +178,44 @@ export async function craftPersonalSignPopupMessage(ethereumClientService: Ether
 			if (token.type === 'ERC721') throw 'Attempted to perform Permit to an ERC721'
 			if (token.type === 'ERC1155') throw 'Attempted to perform Permit to an ERC1155'
 			return {
-				method: 'popup_personal_sign_request',
-				data: {
-					originalParams: originalParams.originalRequestParameters,
-					...basicParams,
-					rpcNetwork: await getRpcNetworkForChain(parsed.domain.chainId),
-					type: 'Permit2',
-					message: parsed,
-					account,
-					addressBookEntries: {
-						token: token,
-						spender: await identifyAddress(ethereumClientService, userAddressBook, parsed.message.spender),
-						verifyingContract: await identifyAddress(ethereumClientService, userAddressBook, parsed.domain.verifyingContract)
-					},
-					...await getQuarrantineCodes(parsed.domain.chainId, account, activeAddressWithMetadata, undefined),
-				}
-			}
-		}
-		case 'SafeTx': return {
-			method: 'popup_personal_sign_request',
-			data: {
 				originalParams: originalParams.originalRequestParameters,
 				...basicParams,
-				rpcNetwork: parsed.domain.chainId !== undefined ? await getRpcNetworkForChain(parsed.domain.chainId) : await getRpcNetwork(),
-				type: 'SafeTx',
+				rpcNetwork: await getRpcNetworkForChain(parsed.domain.chainId),
+				type: 'Permit2',
 				message: parsed,
 				account,
 				addressBookEntries: {
-					to: await identifyAddress(ethereumClientService, userAddressBook, parsed.message.to),
-					gasToken: await identifyAddress(ethereumClientService, userAddressBook, parsed.message.gasToken),
-					refundReceiver: await identifyAddress(ethereumClientService, userAddressBook, parsed.message.refundReceiver),
-					verifyingContract: await identifyAddress(ethereumClientService, userAddressBook, parsed.domain.verifyingContract),
+					token: token,
+					spender: await identifyAddress(ethereumClientService, userAddressBook, parsed.message.spender),
+					verifyingContract: await identifyAddress(ethereumClientService, userAddressBook, parsed.domain.verifyingContract)
 				},
-				quarantine: false,
-				quarantineCodes: [],
-			}
-		}
-		case 'OrderComponents': return {
-			method: 'popup_personal_sign_request',
-			data: {
-				originalParams: originalParams.originalRequestParameters,
-				...basicParams,
-				type: 'OrderComponents',
-				rpcNetwork: await getRpcNetworkForChain(parsed.domain.chainId),
-				message: await addMetadataToOpenSeaOrder(ethereumClientService, parsed.message, userAddressBook),
-				account,
 				...await getQuarrantineCodes(parsed.domain.chainId, account, activeAddressWithMetadata, undefined),
 			}
+		}
+		case 'SafeTx': return {
+			originalParams: originalParams.originalRequestParameters,
+			...basicParams,
+			rpcNetwork: parsed.domain.chainId !== undefined ? await getRpcNetworkForChain(parsed.domain.chainId) : await getRpcNetwork(),
+			type: 'SafeTx',
+			message: parsed,
+			account,
+			addressBookEntries: {
+				to: await identifyAddress(ethereumClientService, userAddressBook, parsed.message.to),
+				gasToken: await identifyAddress(ethereumClientService, userAddressBook, parsed.message.gasToken),
+				refundReceiver: await identifyAddress(ethereumClientService, userAddressBook, parsed.message.refundReceiver),
+				verifyingContract: await identifyAddress(ethereumClientService, userAddressBook, parsed.domain.verifyingContract),
+			},
+			quarantine: false,
+			quarantineCodes: [],
+		}
+		case 'OrderComponents': return {
+			originalParams: originalParams.originalRequestParameters,
+			...basicParams,
+			type: 'OrderComponents',
+			rpcNetwork: await getRpcNetworkForChain(parsed.domain.chainId),
+			message: await addMetadataToOpenSeaOrder(ethereumClientService, parsed.message, userAddressBook),
+			account,
+			...await getQuarrantineCodes(parsed.domain.chainId, account, activeAddressWithMetadata, undefined),
 		}
 		default: assertNever(parsed)
 	}
@@ -258,8 +240,14 @@ export const openPersonalSignDialog = async (
 	}
 
 	if (activeAddress === undefined) return reject(signingParams)
-
-	const signedMessageWithParams = { website, created: new Date(), originalRequestParameters: signingParams, fakeSignedFor: activeAddress }
+	const signedMessageTransaction = {
+		website,
+		created: new Date(),
+		originalRequestParameters: signingParams,
+		fakeSignedFor: activeAddress,
+		simulationMode,
+		request,
+	}
 
 	pendingPersonalSign = new Future<PersonalSign>()
 	try {
@@ -282,12 +270,8 @@ export const openPersonalSignDialog = async (
 			addWindowTabListener(onCloseWindow)
 
 			await setPendingPersonalSignPromise({
-				website: website,
-				dialogId: openedDialog?.windowOrTab.id,
-				request: request,
-				simulationMode: simulationMode,
-				params: signedMessageWithParams,
-				activeAddress,
+				dialogId: openedDialog.windowOrTab.id,
+				signedMessageTransaction,
 			})
 			await updatePendingPersonalSignViewWithPendingRequests(simulator.ethereum)
 		} else {
@@ -296,25 +280,25 @@ export const openPersonalSignDialog = async (
 
 		const reply = await pendingPersonalSign
 
-		return resolve(simulator, reply, simulationMode, activeAddress, signedMessageWithParams)
+		return resolve(simulator, reply, signedMessageTransaction)
 	} finally {
 		removeWindowTabListener(onCloseWindow)
 		pendingPersonalSign = undefined
 	}
 }
 
-async function resolve(simulator: Simulator, reply: PersonalSign, simulationMode: boolean, activeAddress: bigint, signedMessageWithWebsite: SignedMessageWithWebsite) {
+async function resolve(simulator: Simulator, reply: PersonalSign, signedMessageTransaction: SignedMessageTransaction) {
 	await setPendingPersonalSignPromise(undefined)
 	// forward message to content script
 	if (reply.data.accept) {
-		if (simulationMode) {
+		if (signedMessageTransaction.simulationMode) {
 			await updateSimulationState(simulator, async (simulationState) => {
-				return await appendSignedMessage(simulator.ethereum, simulationState, signedMessageWithWebsite)
-			}, activeAddress, true)
-			const signedMessage = await simulatePersonalSign(signedMessageWithWebsite.originalRequestParameters, activeAddress)
-			return { result: signedMessage, method: signedMessageWithWebsite.originalRequestParameters.method }
+				return await appendSignedMessage(simulator.ethereum, simulationState, signedMessageTransaction)
+			}, signedMessageTransaction.fakeSignedFor, true)
+			const signedMessage = await simulatePersonalSign(signedMessageTransaction.originalRequestParameters, signedMessageTransaction.fakeSignedFor)
+			return { result: signedMessage, method: signedMessageTransaction.originalRequestParameters.method }
 		}
-		return { forward: true, ...signedMessageWithWebsite.originalRequestParameters } as const
+		return { forward: true, ...signedMessageTransaction.originalRequestParameters } as const
 	}
-	return reject(signedMessageWithWebsite.originalRequestParameters)
+	return reject(signedMessageTransaction.originalRequestParameters)
 }

@@ -10,7 +10,7 @@ import { getPrettySignerName, SignerLogoText, SignersLogoName } from '../subcomp
 import { Error } from '../subcomponents/Error.js'
 import { ToolTip } from '../subcomponents/CopyToClipboard.js'
 import { sendPopupMessageToBackgroundPage } from '../../background/backgroundUtils.js'
-import { Transactions } from '../simulationExplaining/Transactions.js'
+import { TransactionsAndSignedMessages } from '../simulationExplaining/Transactions.js'
 import { DinoSays } from '../subcomponents/DinoSays.js'
 import { identifyTransaction } from '../simulationExplaining/identifyTransaction.js'
 import { SomeTimeAgo } from '../subcomponents/SomeTimeAgo.js'
@@ -179,7 +179,7 @@ function SimulationResults(param: SimulationStateParam) {
 		</div>
 
 		<div class = { param.simulationResultState === 'invalid' || param.simulationUpdatingState === 'failed' ? 'blur' : '' }>
-			<Transactions
+			<TransactionsAndSignedMessages
 				simulationAndVisualisationResults = { param.simulationAndVisualisationResults }
 				removeTransaction = { param.removeTransaction }
 				activeAddress = { param.simulationAndVisualisationResults.activeAddress }

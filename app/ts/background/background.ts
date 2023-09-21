@@ -21,7 +21,7 @@ import { FetchResponseError, JsonRpcResponseError, isFailedToFetchError } from '
 import { formSimulatedAndVisualizedTransaction } from '../components/formVisualizerResults.js'
 import { updateConfirmTransactionViewWithPendingTransaction } from './windows/confirmTransaction.js'
 import { updateChainChangeViewWithPendingRequest } from './windows/changeChain.js'
-import { updatePendingPersonalSignViewWithPendingRequests } from './windows/personalSign.js'
+import { craftPersonalSignPopupMessage, updatePendingPersonalSignViewWithPendingRequests } from './windows/personalSign.js'
 import { InterceptedRequest, UniqueRequestIdentifier, WebsiteSocket } from '../utils/requests.js'
 import { replyToInterceptedRequest } from './messageSending.js'
 import { EthGetStorageAtParams, EthereumJsonRpcRequest, SendRawTransactionParams, SendTransactionParams, SupportedEthereumJsonRpcRequestMethods, WalletAddEthereumChain } from '../types/JsonRpc-types.js'
@@ -48,12 +48,17 @@ async function visualizeSimulatorState(simulationState: SimulationState, simulat
 		return { address: metadata.address, decimals: metadata.decimals }
 	}
 	const tokenPricePromises = priceEstimator.estimateEthereumPricesForTokens(addressBookEntries.filter(onlyTokensAndTokensWithKnownDecimals).map(metadataRestructure))
+
+	const signerName = await getSignerName()
+	const VisualizedPersonalSignRequest = simulationState.signedMessages.map((signedMessage) => craftPersonalSignPopupMessage(simulator.ethereum, signedMessage, signerName))
+	
 	return {
 		tokenPrices: await tokenPricePromises,
 		addressBookEntries: addressBookEntries,
 		visualizerResults,
 		simulationState,
 		simulatedAndVisualizedTransactions,
+		visualizedPersonalSignRequests: await Promise.all(VisualizedPersonalSignRequest),
 		namedTokenIds,
 	}
 }

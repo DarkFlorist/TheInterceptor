@@ -3,7 +3,7 @@ import { EthereumUnsignedTransaction, EthereumSignedTransactionWithBlockData, Et
 import { addressString, bytes32String, bytesToUnsigned, dataStringWith0xStart, max, min, stringToUint8Array } from '../../utils/bigint.js'
 import { CANNOT_SIMULATE_OFF_LEGACY_BLOCK, ERROR_INTERCEPTOR_GAS_ESTIMATION_FAILED, MOCK_ADDRESS } from '../../utils/constants.js'
 import { ethers, keccak256, } from 'ethers'
-import { WebsiteCreatedEthereumUnsignedTransaction, SimulatedTransaction, SimulationState, TokenBalancesAfter, EstimateGasError, SignedMessageWithWebsite } from '../../types/visualizer-types.js'
+import { WebsiteCreatedEthereumUnsignedTransaction, SimulatedTransaction, SimulationState, TokenBalancesAfter, EstimateGasError, SignedMessageTransaction } from '../../types/visualizer-types.js'
 import { EthereumUnsignedTransactionToUnsignedTransaction, IUnsignedTransaction1559, serializeSignedTransactionToBytes } from '../../utils/ethereum.js'
 import { EthGetLogsResponse, EthGetLogsRequest, EthTransactionReceiptResponse, MulticallResponseEventLogs, MulticallResponse, DappRequestTransaction, SignMessageParams } from '../../types/JsonRpc-types.js'
 import { handleERC1155TransferBatch, handleERC1155TransferSingle } from '../logHandlers.js'
@@ -150,7 +150,7 @@ export const appendTransaction = async (ethereumClientService: EthereumClientSer
 	const parentBaseFeePerGas = parentBlock.baseFeePerGas
 	if (parentBaseFeePerGas === undefined) throw new Error(CANNOT_SIMULATE_OFF_LEGACY_BLOCK)
 	const signedTxs = simulationState === undefined ? [signed] : simulationState.simulatedTransactions.map((x) => x.signedTransaction).concat([signed])
-	const signedMessages = simulationState === undefined ? [] : simulationState.signedMessages
+	const signedMessages = getSignedMessagesWithFakeSigner(simulationState)
 	const multicallResult = await ethereumClientService.multicall(signedTxs, signedMessages, parentBlock.number)
 	const transactionWebsiteData = { website: transaction.website, created: transaction.created }
 	const websiteData = simulationState === undefined ? [transactionWebsiteData] : simulationState.simulatedTransactions.map((x) => ({ website: x.website, created: x.created })).concat(transactionWebsiteData)
@@ -206,7 +206,8 @@ export const setSimulationTransactions = async (ethereumClientService: EthereumC
 	const parentBlock = await ethereumClientService.getBlock()
 	const parentBaseFeePerGas = parentBlock.baseFeePerGas
 	if (parentBaseFeePerGas === undefined) throw new Error(CANNOT_SIMULATE_OFF_LEGACY_BLOCK)
-	const multicallResult = await ethereumClientService.multicall(newTransactionsToSimulate.map((x) => x.transaction), simulationState.signedMessages, parentBlock.number)
+	const signedMessages = getSignedMessagesWithFakeSigner(simulationState)
+	const multicallResult = await ethereumClientService.multicall(newTransactionsToSimulate.map((x) => x.transaction), signedMessages, parentBlock.number)
 	if (multicallResult.length !== signedTxs.length) throw 'multicall length does not match in setSimulationTransactions'
 
 	const tokenBalancesAfter: TokenBalancesAfter[] = []
@@ -215,7 +216,7 @@ export const setSimulationTransactions = async (ethereumClientService: EthereumC
 		const balances = await getSimulatedTokenBalances(
 			ethereumClientService,
 			signedTxs.slice(0, resultIndex + 1),
-			simulationState.signedMessages,
+			signedMessages,
 			getAddressesInteractedWithErc20s(singleResult.statusCode === 'success' ? singleResult.events : []),
 			parentBlock.number
 		)
@@ -643,10 +644,13 @@ export const simulatedCall = async (ethereumClientService: EthereumClientService
 	return { result: callResult.returnValue }
 }
 
+const getSignedMessagesWithFakeSigner = (simulationState: SimulationState | undefined) => {
+	return simulationState === undefined ? [] : simulationState.signedMessages.map((x) => ({ fakeSignedFor: x.fakeSignedFor, originalRequestParameters: x.originalRequestParameters }))
+}
+
 export const simulatedMulticall = async (ethereumClientService: EthereumClientService, simulationState: SimulationState | undefined, transactions: EthereumUnsignedTransaction[], blockNumber: bigint) => {
 	const mergedTxs: EthereumUnsignedTransaction[] = getTransactionQueue(simulationState)
-	const signedMessages = simulationState === undefined ? [] : simulationState.signedMessages
-	return await ethereumClientService.multicall(mergedTxs.concat(transactions), signedMessages, blockNumber)
+	return await ethereumClientService.multicall(mergedTxs.concat(transactions), getSignedMessagesWithFakeSigner(simulationState), blockNumber)
 }
 
 export const getHashOfSimulatedBlock = () => {
@@ -817,7 +821,7 @@ const getTokenBalancesAfter = async (
 	return tokenBalancesAfter
 }
 
-export const appendSignedMessage = async (ethereumClientService: EthereumClientService, simulationState: SimulationState | undefined, signedMessage: SignedMessageWithWebsite): Promise<SimulationState> => {
+export const appendSignedMessage = async (ethereumClientService: EthereumClientService, simulationState: SimulationState | undefined, signedMessage: SignedMessageTransaction): Promise<SimulationState> => {
 	if (simulationState === undefined) {
 		const block = await ethereumClientService.getBlock()
 		return {

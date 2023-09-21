@@ -4,7 +4,7 @@ import { getPendingTransactions, getCurrentTabId, getOpenedAddressBookTabId, get
 import { Simulator } from '../simulation/simulator.js'
 import { ChangeActiveAddress, ChangeMakeMeRich, ChangePage, PersonalSign, RemoveTransaction, RequestAccountsFromSigner, TransactionConfirmation, InterceptorAccess, ChangeInterceptorAccess, ChainChangeConfirmation, EnableSimulationMode, ChangeActiveChain, AddOrEditAddressBookEntry, GetAddressBookData, RemoveAddressBookEntry, RefreshConfirmTransactionDialogSimulation, UserAddressBook, InterceptorAccessRefresh, InterceptorAccessChangeAddress, Settings, RefreshConfirmTransactionMetadata, RefreshInterceptorAccessMetadata, ChangeSettings, ImportSettings, SetRpcList, IdentifyAddress, FindAddressBookEntryWithSymbolOrName } from '../types/interceptor-messages.js'
 import { formEthSendTransaction, formSendRawTransaction, resolvePendingTransaction } from './windows/confirmTransaction.js'
-import { resolvePersonalSign } from './windows/personalSign.js'
+import { craftPersonalSignPopupMessage, resolvePersonalSign } from './windows/personalSign.js'
 import { getAddressMetadataForAccess, requestAddressChange, resolveInterceptorAccess } from './windows/interceptorAccess.js'
 import { resolveChainChange } from './windows/changeChain.js'
 import { sendMessageToApprovedWebsitePorts, updateWebsiteApprovalAccesses } from './accessManagement.js'
@@ -311,17 +311,21 @@ export async function homeOpened(simulator: Simulator) {
 	}
 	const simResults = await getSimulationResults()
 	const simulatedAndVisualizedTransactions = simResults.simulationState === undefined || simResults.visualizerResults === undefined ? [] : formSimulatedAndVisualizedTransaction(simResults.simulationState, simResults.visualizerResults, simResults.addressBookEntries, simResults.namedTokenIds)
+	const signerName = await getSignerName()
+	const VisualizedPersonalSignRequest = simResults.simulationState === undefined ? [] : simResults.simulationState.signedMessages.map((signedMessage) => craftPersonalSignPopupMessage(simulator.ethereum, signedMessage, signerName))
+	
 	await sendPopupMessageToOpenWindows({
 		method: 'popup_UpdateHomePage',
 		data: {
 			simulation: {
 				...simResults,
 				simulatedAndVisualizedTransactions: simulatedAndVisualizedTransactions,
+				visualizedPersonalSignRequests: await Promise.all(VisualizedPersonalSignRequest),
 			},
 			websiteAccessAddressMetadata: getAddressMetadataForAccess(settings.websiteAccess, settings.userAddressBook.activeAddresses),
 			signerAccounts: tabState?.signerAccounts,
 			signerChain: tabState?.signerChain,
-			signerName: await getSignerName(),
+			signerName: signerName,
 			currentBlockNumber: blockNumber,
 			settings: settings,
 			tabIconDetails: tabState?.tabIconDetails,

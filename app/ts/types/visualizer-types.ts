@@ -5,9 +5,10 @@ import { QUARANTINE_CODE } from '../simulation/protectors/quarantine-codes.js'
 import { RenameAddressCallBack } from './user-interface-types.js'
 import { ERROR_INTERCEPTOR_GAS_ESTIMATION_FAILED } from '../utils/constants.js'
 import { EthBalanceChanges, EthSubscribeParams, SendRawTransactionParams, SendTransactionParams, SignMessageParams, SingleMulticallResponse } from './JsonRpc-types.js'
-import { WebsiteSocket } from '../utils/requests.js'
+import { InterceptedRequest, WebsiteSocket } from '../utils/requests.js'
 import { AddressBookEntry, Erc721Entry, Erc20TokenEntry, Erc1155Entry } from './addressBookTypes.js'
 import { Website } from './websiteAccessTypes.js'
+import { VisualizedPersonalSignRequest } from './personal-message-definitions.js'
 
 
 export type NetworkPrice = funtypes.Static<typeof NetworkPrice>
@@ -163,14 +164,6 @@ export const SimulatedTransaction = funtypes.ReadonlyObject({
 	originalRequestParameters: funtypes.Union(SendTransactionParams, SendRawTransactionParams),
 })
 
-export type SignedMessageWithWebsite = funtypes.Static<typeof SignedMessageWithWebsite>
-export const SignedMessageWithWebsite = funtypes.ReadonlyObject({
-	website: Website,
-	created: EthereumTimestamp,
-	originalRequestParameters: SignMessageParams,
-	fakeSignedFor: EthereumAddress,
-})
-
 export type EstimateGasError = funtypes.Static<typeof EstimateGasError>
 export const EstimateGasError = funtypes.ReadonlyObject({
 	error: funtypes.ReadonlyObject({
@@ -194,7 +187,7 @@ export type SimulationState = funtypes.Static<typeof SimulationState>
 export const SimulationState = funtypes.ReadonlyObject({
 	prependTransactionsQueue: funtypes.ReadonlyArray(WebsiteCreatedEthereumUnsignedTransaction),
 	simulatedTransactions: funtypes.ReadonlyArray(SimulatedTransaction),
-	signedMessages: funtypes.ReadonlyArray(SignedMessageWithWebsite),
+	signedMessages: funtypes.ReadonlyArray(SignedMessageTransaction),
 	blockNumber: EthereumQuantity,
 	blockTimestamp: EthereumTimestamp,
 	rpcNetwork: RpcNetwork,
@@ -267,10 +260,11 @@ export type SimulationAndVisualisationResults = {
 	simulationConductedTimestamp: Date,
 	addressBookEntries: readonly AddressBookEntry[],
 	simulatedAndVisualizedTransactions: readonly SimulatedAndVisualizedTransaction[],
+	visualizedPersonalSignRequests: readonly VisualizedPersonalSignRequest[],
 	rpcNetwork: RpcNetwork,
 	tokenPrices: readonly TokenPriceEstimate[],
 	activeAddress: bigint,
-	namedTokenIds: readonly NamedTokenId[]
+	namedTokenIds: readonly NamedTokenId[],
 }
 
 export type TokenPriceEstimate = funtypes.Static<typeof TokenPriceEstimate>
@@ -293,7 +287,6 @@ export type TransactionVisualizationParameters = {
 	activeAddress: bigint,
 	renameAddressCallBack: RenameAddressCallBack,
 }
-
 
 export type Erc20WithAmount = Erc20TokenEntry & {
 	amount: bigint,

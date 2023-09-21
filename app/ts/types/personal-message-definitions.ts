@@ -372,8 +372,8 @@ export const PersonalSignRequestBase = funtypes.Intersect(
 	}),
 )
 
-export type PersonalSignRequestDataNotParsed = funtypes.Static<typeof PersonalSignRequestData>
-export const PersonalSignRequestDataNotParsed = funtypes.Intersect(
+export type VisualizedPersonalSignRequestNotParsed = funtypes.Static<typeof VisualizedPersonalSignRequest>
+export const VisualizedPersonalSignRequestNotParsed = funtypes.Intersect(
 	PersonalSignRequestBase,
 	funtypes.ReadonlyObject({
 		originalParams: funtypes.Union(PersonalSignParams, OldSignTypedDataParams),
@@ -382,8 +382,8 @@ export const PersonalSignRequestDataNotParsed = funtypes.Intersect(
 	})
 )
 
-export type PersonalSignRequestDataEIP712 = funtypes.Static<typeof PersonalSignRequestDataEIP712>
-export const PersonalSignRequestDataEIP712 = funtypes.Intersect(
+export type VisualizedPersonalSignRequestEIP712 = funtypes.Static<typeof VisualizedPersonalSignRequestEIP712>
+export const VisualizedPersonalSignRequestEIP712 = funtypes.Intersect(
 	PersonalSignRequestBase,
 	funtypes.ReadonlyObject({
 		originalParams: SignTypedDataParams,
@@ -392,8 +392,8 @@ export const PersonalSignRequestDataEIP712 = funtypes.Intersect(
 	})
 )
 
-export type PersonalSignRequestDataPermit = funtypes.Static<typeof PersonalSignRequestDataPermit>
-export const PersonalSignRequestDataPermit = funtypes.Intersect(
+export type VisualizedPersonalSignRequestPermit = funtypes.Static<typeof VisualizedPersonalSignRequestPermit>
+export const VisualizedPersonalSignRequestPermit = funtypes.Intersect(
 	PersonalSignRequestBase,
 	funtypes.ReadonlyObject({
 		originalParams: SignTypedDataParams,
@@ -407,8 +407,8 @@ export const PersonalSignRequestDataPermit = funtypes.Intersect(
 	})
 )
 
-export type PersonalSignRequestDataPermit2 = funtypes.Static<typeof PersonalSignRequestDataPermit2>
-export const PersonalSignRequestDataPermit2 = funtypes.Intersect(
+export type VisualizedPersonalSignRequestPermit2 = funtypes.Static<typeof VisualizedPersonalSignRequestPermit2>
+export const VisualizedPersonalSignRequestPermit2 = funtypes.Intersect(
 	PersonalSignRequestBase,
 	funtypes.ReadonlyObject({
 		originalParams: SignTypedDataParams,
@@ -422,8 +422,8 @@ export const PersonalSignRequestDataPermit2 = funtypes.Intersect(
 	})
 )
 
-export type PersonalSignRequestDataOrderComponents = funtypes.Static<typeof PersonalSignRequestDataOrderComponents>
-export const PersonalSignRequestDataOrderComponents = funtypes.Intersect(
+export type VisualizedPersonalSignRequestOrderComponents = funtypes.Static<typeof VisualizedPersonalSignRequestOrderComponents>
+export const VisualizedPersonalSignRequestOrderComponents = funtypes.Intersect(
 	PersonalSignRequestBase,
 	funtypes.ReadonlyObject({
 		originalParams: SignTypedDataParams,
@@ -475,8 +475,8 @@ export const SafeTx = funtypes.ReadonlyObject({
     })
 })
 
-export type PersonalSignRequestDataSafeTx = funtypes.Static<typeof PersonalSignRequestDataSafeTx>
-export const PersonalSignRequestDataSafeTx = funtypes.Intersect(
+export type VisualizedPersonalSignRequestSafeTx = funtypes.Static<typeof VisualizedPersonalSignRequestSafeTx>
+export const VisualizedPersonalSignRequestSafeTx = funtypes.Intersect(
 	PersonalSignRequestBase,
 	funtypes.ReadonlyObject({
 		originalParams: SignTypedDataParams,
@@ -491,14 +491,14 @@ export const PersonalSignRequestDataSafeTx = funtypes.Intersect(
 	})
 )
 
-export type PersonalSignRequestData = funtypes.Static<typeof PersonalSignRequestData>
-export const PersonalSignRequestData = funtypes.Union(
-	PersonalSignRequestDataNotParsed,
-	PersonalSignRequestDataEIP712,
-	PersonalSignRequestDataPermit,
-	PersonalSignRequestDataPermit2,
-	PersonalSignRequestDataSafeTx,
-	PersonalSignRequestDataOrderComponents,
+export type VisualizedPersonalSignRequest = funtypes.Static<typeof VisualizedPersonalSignRequest>
+export const VisualizedPersonalSignRequest = funtypes.Union(
+	VisualizedPersonalSignRequestNotParsed,
+	VisualizedPersonalSignRequestEIP712,
+	VisualizedPersonalSignRequestPermit,
+	VisualizedPersonalSignRequestPermit2,
+	VisualizedPersonalSignRequestSafeTx,
+	VisualizedPersonalSignRequestOrderComponents,
 )
 
 export type PersonalSignRequestIdentifiedEIP712Message = funtypes.Static<typeof PersonalSignRequestIdentifiedEIP712Message>

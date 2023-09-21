@@ -14,7 +14,7 @@ import { SignerLogoText } from '../subcomponents/signers.js'
 import { CenterToPageTextSpinner } from '../subcomponents/Spinner.js'
 import { SomeTimeAgo } from '../subcomponents/SomeTimeAgo.js'
 import { QuarantineCodes } from '../simulationExplaining/Transactions.js'
-import { PersonalSignRequestData, PersonalSignRequestDataPermit, PersonalSignRequestDataPermit2, PersonalSignRequestDataSafeTx } from '../../types/personal-message-definitions.js'
+import { VisualizedPersonalSignRequest, VisualizedPersonalSignRequestPermit, VisualizedPersonalSignRequestPermit2, VisualizedPersonalSignRequestSafeTx } from '../../types/personal-message-definitions.js'
 import { OrderComponents, OrderComponentsExtraDetails } from '../simulationExplaining/customExplainers/OpenSeaOrder.js'
 import { Ether } from '../subcomponents/coins.js'
 import { EnrichedEIP712, EnrichedEIP712Message, GroupedSolidityType } from '../../utils/eip712Parsing.js'
@@ -22,16 +22,16 @@ import { tryFocusingTabOrWindow, humanReadableDateFromSeconds, CellElement } fro
 import { AddressBookEntry, IncompleteAddressBookEntry } from '../../types/addressBookTypes.js'
 
 type SignatureCardParams = {
-	personalSignRequestData: PersonalSignRequestData
+	VisualizedPersonalSignRequest: VisualizedPersonalSignRequest
 	renameAddressCallBack: RenameAddressCallBack
 }
 
 type SignatureHeaderParams = {
-	personalSignRequestData: PersonalSignRequestData
+	VisualizedPersonalSignRequest: VisualizedPersonalSignRequest
 	renameAddressCallBack: RenameAddressCallBack
 }
 
-function identifySignature(data: PersonalSignRequestData) {
+function identifySignature(data: VisualizedPersonalSignRequest) {
 	switch (data.type) {
 		case 'OrderComponents': return {
 			title: 'Opensea order',
@@ -88,17 +88,17 @@ function SignatureHeader(params: SignatureHeaderParams) {
 	return <header class = 'card-header' style = 'height: 40px;'>
 		<div class = 'card-header-icon unset-cursor'>
 			<span class = 'icon'>
-				<img src = { params.personalSignRequestData.simulationMode ? '../img/head-simulating.png' : '../img/head-signing.png' } />
+				<img src = { params.VisualizedPersonalSignRequest.simulationMode ? '../img/head-simulating.png' : '../img/head-signing.png' } />
 			</span>
 		</div>
 
 		<div class = 'card-header-title' style = 'white-space: nowrap;'>
-			{ identifySignature(params.personalSignRequestData).title }
+			{ identifySignature(params.VisualizedPersonalSignRequest).title }
 		</div>
 		<div class = 'card-header-icon' style = 'margin-left: auto; margin-right: 0; padding-right: 10px; padding-left: 0px; overflow: hidden'>
-			{'addressBookEntries' in params.personalSignRequestData && 'spender' in params.personalSignRequestData.addressBookEntries ?
+			{'addressBookEntries' in params.VisualizedPersonalSignRequest && 'spender' in params.VisualizedPersonalSignRequest.addressBookEntries ?
 				<SmallAddress
-					addressBookEntry = { params.personalSignRequestData.addressBookEntries.spender }
+					addressBookEntry = { params.VisualizedPersonalSignRequest.addressBookEntries.spender }
 					renameAddressCallBack = { params.renameAddressCallBack }
 					style = { { 'background-color': 'unset' } }
 				/>
@@ -108,122 +108,122 @@ function SignatureHeader(params: SignatureHeaderParams) {
 }
 
 type SignRequestParams = {
-	personalSignRequestData: PersonalSignRequestData
+	VisualizedPersonalSignRequest: VisualizedPersonalSignRequest
 	renameAddressCallBack: RenameAddressCallBack
 }
 
-function SignRequest({ personalSignRequestData, renameAddressCallBack }: SignRequestParams) {
-	switch (personalSignRequestData.type) {
+function SignRequest({ VisualizedPersonalSignRequest, renameAddressCallBack }: SignRequestParams) {
+	switch (VisualizedPersonalSignRequest.type) {
 		case 'NotParsed': {
-			if (personalSignRequestData.originalParams.method === 'personal_sign') {
+			if (VisualizedPersonalSignRequest.originalParams.method === 'personal_sign') {
 				return <>
 					<p class = 'paragraph'>Raw message: </p>
 					<div class = 'textbox'>
-						<p class = 'paragraph' style = 'color: var(--subtitle-text-color)'>{ personalSignRequestData.message }</p>
+						<p class = 'paragraph' style = 'color: var(--subtitle-text-color)'>{ VisualizedPersonalSignRequest.message }</p>
 					</div>
 					<p class = 'paragraph'>Text decoded message: </p>
 					<div class = 'textbox'>
-						<p class = 'paragraph' style = 'color: var(--subtitle-text-color)'>{ new TextDecoder().decode(stringToUint8Array(personalSignRequestData.message)) }</p>
+						<p class = 'paragraph' style = 'color: var(--subtitle-text-color)'>{ new TextDecoder().decode(stringToUint8Array(VisualizedPersonalSignRequest.message)) }</p>
 					</div>
 				</>
 			}
 			return <div class = 'textbox'>
-				<p class = 'paragraph' style = 'color: var(--subtitle-text-color)'>{ personalSignRequestData.message }</p>
+				<p class = 'paragraph' style = 'color: var(--subtitle-text-color)'>{ VisualizedPersonalSignRequest.message }</p>
 			</div>
 		}
 		
 		case 'SafeTx': return <SafeTx
-			personalSignRequestDataSafeTx = { personalSignRequestData }
+			VisualizedPersonalSignRequestSafeTx = { VisualizedPersonalSignRequest }
 			renameAddressCallBack = { renameAddressCallBack }
 		/>
 		case 'EIP712': {
-			return <ArbitaryEIP712 enrichedEIP712 = { personalSignRequestData.message } renameAddressCallBack = { renameAddressCallBack } />
+			return <ArbitaryEIP712 enrichedEIP712 = { VisualizedPersonalSignRequest.message } renameAddressCallBack = { renameAddressCallBack } />
 		}
 		case 'OrderComponents': {
 			return <OrderComponents
-				openSeaOrderMessage = { personalSignRequestData.message }
-				rpcNetwork = { personalSignRequestData.rpcNetwork }
+				openSeaOrderMessage = { VisualizedPersonalSignRequest.message }
+				rpcNetwork = { VisualizedPersonalSignRequest.rpcNetwork }
 				renameAddressCallBack = { renameAddressCallBack }
 			/>
 		}
 		case 'Permit': {
-			if (personalSignRequestData.addressBookEntries.verifyingContract.type !== 'ERC20') throw new Error('Malformed sign request')
+			if (VisualizedPersonalSignRequest.addressBookEntries.verifyingContract.type !== 'ERC20') throw new Error('Malformed sign request')
 			return <SimpleTokenApprovalVisualisation
 				approval = { {
 					type: 'ERC20',
-					from: personalSignRequestData.account,
-					to: personalSignRequestData.addressBookEntries.spender,
-					token: personalSignRequestData.addressBookEntries.verifyingContract,
-					amount: personalSignRequestData.message.message.value,
+					from: VisualizedPersonalSignRequest.account,
+					to: VisualizedPersonalSignRequest.addressBookEntries.spender,
+					token: VisualizedPersonalSignRequest.addressBookEntries.verifyingContract,
+					amount: VisualizedPersonalSignRequest.message.message.value,
 					isApproval: true
 				} }
 				transactionGasses = { { gasSpent: 0n, realizedGasPrice: 0n } }
-				rpcNetwork = { personalSignRequestData.rpcNetwork }
+				rpcNetwork = { VisualizedPersonalSignRequest.rpcNetwork }
 				renameAddressCallBack = { renameAddressCallBack }
 			/>
 		}
 		case 'Permit2': {
-			if (personalSignRequestData.addressBookEntries.token.type !== 'ERC20') throw new Error('Malformed sign request')
+			if (VisualizedPersonalSignRequest.addressBookEntries.token.type !== 'ERC20') throw new Error('Malformed sign request')
 			return <SimpleTokenApprovalVisualisation
 				approval = { {
 					type: 'ERC20',
-					token: personalSignRequestData.addressBookEntries.token,
-					amount: personalSignRequestData.message.message.details.amount,
-					from: personalSignRequestData.account,
-					to: personalSignRequestData.addressBookEntries.spender,
+					token: VisualizedPersonalSignRequest.addressBookEntries.token,
+					amount: VisualizedPersonalSignRequest.message.message.details.amount,
+					from: VisualizedPersonalSignRequest.account,
+					to: VisualizedPersonalSignRequest.addressBookEntries.spender,
 					isApproval: true
 				} }
 				transactionGasses = { { gasSpent: 0n, realizedGasPrice: 0n } }
-				rpcNetwork = { personalSignRequestData.rpcNetwork }
+				rpcNetwork = { VisualizedPersonalSignRequest.rpcNetwork }
 				renameAddressCallBack = { renameAddressCallBack }
 			/>
 		}
-		default: assertNever(personalSignRequestData)
+		default: assertNever(VisualizedPersonalSignRequest)
 	}
 }
 
-function SafeTx({ personalSignRequestDataSafeTx, renameAddressCallBack }: { personalSignRequestDataSafeTx: PersonalSignRequestDataSafeTx, renameAddressCallBack: RenameAddressCallBack }) {
+function SafeTx({ VisualizedPersonalSignRequestSafeTx, renameAddressCallBack }: { VisualizedPersonalSignRequestSafeTx: VisualizedPersonalSignRequestSafeTx, renameAddressCallBack: RenameAddressCallBack }) {
 	return <>
 		<span class = 'log-table' style = 'justify-content: center; column-gap: 5px; grid-template-columns: auto auto'>
-			{ personalSignRequestDataSafeTx.message.domain.chainId !== undefined
+			{ VisualizedPersonalSignRequestSafeTx.message.domain.chainId !== undefined
 				? <>
 					<CellElement text = 'Chain: '/>
-					<CellElement text = { getChainName(BigInt(personalSignRequestDataSafeTx.message.domain.chainId)) }/>
+					<CellElement text = { getChainName(BigInt(VisualizedPersonalSignRequestSafeTx.message.domain.chainId)) }/>
 				</>
 				: <></>
 			}
 			<CellElement text = 'baseGas: '/>
-			<CellElement text = { personalSignRequestDataSafeTx.message.message.baseGas }/>
+			<CellElement text = { VisualizedPersonalSignRequestSafeTx.message.message.baseGas }/>
 			<CellElement text = 'gasPrice: '/>
-			<CellElement text = { personalSignRequestDataSafeTx.message.message.gasPrice }/>
-			{ personalSignRequestDataSafeTx.message.message.gasToken !== 0n
+			<CellElement text = { VisualizedPersonalSignRequestSafeTx.message.message.gasPrice }/>
+			{ VisualizedPersonalSignRequestSafeTx.message.message.gasToken !== 0n
 				? <>
 					<CellElement text = 'gasToken: '/>
-					<CellElement text = { <SmallAddress addressBookEntry = { personalSignRequestDataSafeTx.addressBookEntries.gasToken } renameAddressCallBack = { renameAddressCallBack } /> }/>
+					<CellElement text = { <SmallAddress addressBookEntry = { VisualizedPersonalSignRequestSafeTx.addressBookEntries.gasToken } renameAddressCallBack = { renameAddressCallBack } /> }/>
 				</>
 				: <></>
 			}
 			<CellElement text = 'nonce: '/>
-			<CellElement text = { personalSignRequestDataSafeTx.message.message.nonce }/>
+			<CellElement text = { VisualizedPersonalSignRequestSafeTx.message.message.nonce }/>
 			<CellElement text = 'operation: '/>
-			<CellElement text = { personalSignRequestDataSafeTx.message.message.operation }/>
-			{ personalSignRequestDataSafeTx.message.message.refundReceiver !== 0n ?
+			<CellElement text = { VisualizedPersonalSignRequestSafeTx.message.message.operation }/>
+			{ VisualizedPersonalSignRequestSafeTx.message.message.refundReceiver !== 0n ?
 				<>
 					<CellElement text = 'refundReceiver: '/>
-					<CellElement text = { <SmallAddress addressBookEntry = { personalSignRequestDataSafeTx.addressBookEntries.refundReceiver } renameAddressCallBack = { renameAddressCallBack } /> }/>
+					<CellElement text = { <SmallAddress addressBookEntry = { VisualizedPersonalSignRequestSafeTx.addressBookEntries.refundReceiver } renameAddressCallBack = { renameAddressCallBack } /> }/>
 				</>
 				: <></>
 			}
 			<CellElement text = 'safeTxGas: '/>
-			<CellElement text = { personalSignRequestDataSafeTx.message.message.safeTxGas }/>
+			<CellElement text = { VisualizedPersonalSignRequestSafeTx.message.message.safeTxGas }/>
 			<CellElement text = 'to: '/>
-			<CellElement text = { <SmallAddress addressBookEntry = { personalSignRequestDataSafeTx.addressBookEntries.to } renameAddressCallBack = { renameAddressCallBack } /> }/>
+			<CellElement text = { <SmallAddress addressBookEntry = { VisualizedPersonalSignRequestSafeTx.addressBookEntries.to } renameAddressCallBack = { renameAddressCallBack } /> }/>
 			<CellElement text = 'value: '/>
-			<CellElement text = { <Ether amount = { personalSignRequestDataSafeTx.message.message.value } rpcNetwork = { personalSignRequestDataSafeTx.rpcNetwork }/>  }/>
+			<CellElement text = { <Ether amount = { VisualizedPersonalSignRequestSafeTx.message.message.value } rpcNetwork = { VisualizedPersonalSignRequestSafeTx.rpcNetwork }/>  }/>
 		</span>
 		<p class = 'paragraph' style = 'color: var(--subtitle-text-color)'>Raw transaction input: </p>
 		<div class = 'textbox'>
-			<p class = 'paragraph' style = 'color: var(--subtitle-text-color)'>{ dataStringWith0xStart(personalSignRequestDataSafeTx.message.message.data) }</p>
+			<p class = 'paragraph' style = 'color: var(--subtitle-text-color)'>{ dataStringWith0xStart(VisualizedPersonalSignRequestSafeTx.message.message.data) }</p>
 		</div>
 	</>
 }
@@ -291,7 +291,7 @@ function ArbitaryEIP712({ enrichedEIP712, renameAddressCallBack }: ArbitaryEIP71
 	</>
 }
 
-export function Permit2ExtraDetails({ permit2 }: { permit2: PersonalSignRequestDataPermit2 }) {
+export function Permit2ExtraDetails({ permit2 }: { permit2: VisualizedPersonalSignRequestPermit2 }) {
 	return <>
 		<CellElement text = 'Chain: '/>
 		<CellElement text = { getChainName(BigInt(permit2.message.domain.chainId)) }/>
@@ -307,7 +307,7 @@ export function Permit2ExtraDetails({ permit2 }: { permit2: PersonalSignRequestD
 	</>
 }
 
-export function PermitExtraDetails({ permit }: { permit: PersonalSignRequestDataPermit }) {
+export function PermitExtraDetails({ permit }: { permit: VisualizedPersonalSignRequestPermit }) {
 	return <>
 		<CellElement text = 'Chain: '/>
 		<CellElement text = { getChainName(BigInt(permit.message.domain.chainId)) }/>
@@ -319,16 +319,16 @@ export function PermitExtraDetails({ permit }: { permit: PersonalSignRequestData
 }
 
 type ExtraDetailsCardParams = {
-	personalSignRequestData: PersonalSignRequestData
+	VisualizedPersonalSignRequest: VisualizedPersonalSignRequest
 	renameAddressCallBack: RenameAddressCallBack
 }
 
-export function ExtraDetails({ personalSignRequestData, renameAddressCallBack }: ExtraDetailsCardParams) {
+export function ExtraDetails({ VisualizedPersonalSignRequest, renameAddressCallBack }: ExtraDetailsCardParams) {
 	const [showSummary, setShowSummary] = useState<boolean>(true)
 
-	if (personalSignRequestData.type !== 'Permit2'
-		&& personalSignRequestData.type !== 'Permit'
-		&& personalSignRequestData.type !== 'OrderComponents') {
+	if (VisualizedPersonalSignRequest.type !== 'Permit2'
+		&& VisualizedPersonalSignRequest.type !== 'Permit'
+		&& VisualizedPersonalSignRequest.type !== 'OrderComponents') {
 		return <></>
 	}
 
@@ -347,9 +347,9 @@ export function ExtraDetails({ personalSignRequestData, renameAddressCallBack }:
 				<div class = 'card-content'>
 					<div class = 'container' style = 'margin-bottom: 10px;'>
 						<span class = 'log-table' style = 'justify-content: center; column-gap: 5px; grid-template-columns: auto auto'>
-							{ personalSignRequestData.type !== 'Permit2' ? <></> : <Permit2ExtraDetails permit2 = { personalSignRequestData }/> }
-							{ personalSignRequestData.type !== 'Permit' ? <></> : <PermitExtraDetails permit = { personalSignRequestData }/> }
-							{ personalSignRequestData.type !== 'OrderComponents' ? <></> : <OrderComponentsExtraDetails orderComponents = { personalSignRequestData.message } renameAddressCallBack = { renameAddressCallBack }/> }
+							{ VisualizedPersonalSignRequest.type !== 'Permit2' ? <></> : <Permit2ExtraDetails permit2 = { VisualizedPersonalSignRequest }/> }
+							{ VisualizedPersonalSignRequest.type !== 'Permit' ? <></> : <PermitExtraDetails permit = { VisualizedPersonalSignRequest }/> }
+							{ VisualizedPersonalSignRequest.type !== 'OrderComponents' ? <></> : <OrderComponentsExtraDetails orderComponents = { VisualizedPersonalSignRequest.message } renameAddressCallBack = { renameAddressCallBack }/> }
 						</span>
 					</div>
 				</div>
@@ -358,14 +358,14 @@ export function ExtraDetails({ personalSignRequestData, renameAddressCallBack }:
 	</div>
 }
 
-function SignatureCard(params: SignatureCardParams) {
+export function SignatureCard(params: SignatureCardParams) {
 	return <>
 		<div class = 'card' style = 'margin: 10px;'>
 			<SignatureHeader { ...params }/>
 			<div class = 'card-content' style = 'padding-bottom: 5px;'>
 				<div class = 'container'>
 					<SignRequest { ...params }/>
-					<QuarantineCodes quarantineCodes = { params.personalSignRequestData.quarantineCodes }/>
+					<QuarantineCodes quarantineCodes = { params.VisualizedPersonalSignRequest.quarantineCodes }/>
 				</div>
 				<ExtraDetails { ...params }/>
 			</div>
@@ -375,7 +375,7 @@ function SignatureCard(params: SignatureCardParams) {
 
 export function PersonalSign() {
 	const [addingNewAddress, setAddingNewAddress] = useState<IncompleteAddressBookEntry | 'renameAddressModalClosed'> ('renameAddressModalClosed')
-	const [personalSignRequestData, setPersonalSignRequestData] = useState<PersonalSignRequestData | undefined>(undefined)
+	const [VisualizedPersonalSignRequest, setVisualizedPersonalSignRequest] = useState<VisualizedPersonalSignRequest | undefined>(undefined)
 	const [forceSend, setForceSend] = useState<boolean>(false)
 
 	useEffect(() => {
@@ -383,7 +383,7 @@ export function PersonalSign() {
 			const message = ExternalPopupMessage.parse(msg)
 			if (message.method === 'popup_addressBookEntriesChanged') return refreshMetadata()
 			if (message.method !== 'popup_personal_sign_request') return
-			setPersonalSignRequestData(message.data)
+			setVisualizedPersonalSignRequest(message.data)
 		}
 		browser.runtime.onMessage.addListener(popupMessageListener)
 		return () => browser.runtime.onMessage.removeListener(popupMessageListener)
@@ -392,33 +392,33 @@ export function PersonalSign() {
 	useEffect(() => { sendPopupMessageToBackgroundPage({ method: 'popup_personalSignReadyAndListening' }) }, [])
 
 	function refreshMetadata() {
-		if (personalSignRequestData === undefined) return
-		sendPopupMessageToBackgroundPage({ method: 'popup_refreshPersonalSignMetadata', data: personalSignRequestData })
+		if (VisualizedPersonalSignRequest === undefined) return
+		sendPopupMessageToBackgroundPage({ method: 'popup_refreshPersonalSignMetadata', data: VisualizedPersonalSignRequest })
 	}
 
 	async function approve() {
-		if (personalSignRequestData === undefined) throw new Error('personalSignRequestData is missing')
-		await tryFocusingTabOrWindow({ type: 'tab', id: personalSignRequestData.request.uniqueRequestIdentifier.requestSocket.tabId })
-		await sendPopupMessageToBackgroundPage({ method: 'popup_personalSign', data: { uniqueRequestIdentifier: personalSignRequestData.request.uniqueRequestIdentifier, accept: true } })
+		if (VisualizedPersonalSignRequest === undefined) throw new Error('VisualizedPersonalSignRequest is missing')
+		await tryFocusingTabOrWindow({ type: 'tab', id: VisualizedPersonalSignRequest.request.uniqueRequestIdentifier.requestSocket.tabId })
+		await sendPopupMessageToBackgroundPage({ method: 'popup_personalSign', data: { uniqueRequestIdentifier: VisualizedPersonalSignRequest.request.uniqueRequestIdentifier, accept: true } })
 	}
 
 	async function reject() {
-		if (personalSignRequestData === undefined) throw new Error('personalSignRequestData is missing')
-		await tryFocusingTabOrWindow({ type: 'tab', id: personalSignRequestData.request.uniqueRequestIdentifier.requestSocket.tabId })
-		await sendPopupMessageToBackgroundPage({ method: 'popup_personalSign', data: { uniqueRequestIdentifier: personalSignRequestData.request.uniqueRequestIdentifier, accept: false } })
+		if (VisualizedPersonalSignRequest === undefined) throw new Error('VisualizedPersonalSignRequest is missing')
+		await tryFocusingTabOrWindow({ type: 'tab', id: VisualizedPersonalSignRequest.request.uniqueRequestIdentifier.requestSocket.tabId })
+		await sendPopupMessageToBackgroundPage({ method: 'popup_personalSign', data: { uniqueRequestIdentifier: VisualizedPersonalSignRequest.request.uniqueRequestIdentifier, accept: false } })
 	}
 
-	function isPossibleToSend(personalSignRequestData: PersonalSignRequestData, activeAddress: bigint) {
-		return !(personalSignRequestData.simulationMode && (activeAddress !== MOCK_PRIVATE_KEYS_ADDRESS || personalSignRequestData.originalParams.method !== 'personal_sign'))
+	function isPossibleToSend(VisualizedPersonalSignRequest: VisualizedPersonalSignRequest, activeAddress: bigint) {
+		return !(VisualizedPersonalSignRequest.simulationMode && (activeAddress !== MOCK_PRIVATE_KEYS_ADDRESS || VisualizedPersonalSignRequest.originalParams.method !== 'personal_sign'))
 	}
 
-	function isConfirmDisabled(_personalSignRequestData: PersonalSignRequestData, _activeAddress: bigint) {
-		return false // !isPossibleToSend(personalSignRequestData, activeAddress) && !forceSend
+	function isConfirmDisabled(_VisualizedPersonalSignRequest: VisualizedPersonalSignRequest, _activeAddress: bigint) {
+		return false // !isPossibleToSend(VisualizedPersonalSignRequest, activeAddress) && !forceSend
 	}
 	
 	function Buttons() {
-		if (personalSignRequestData === undefined) return <></>
-		const identified = identifySignature(personalSignRequestData)
+		if (VisualizedPersonalSignRequest === undefined) return <></>
+		const identified = identifySignature(VisualizedPersonalSignRequest)
 	
 		return <div style = 'display: flex; flex-direction: row;'>
 			<button className = 'button is-primary is-danger button-overflow dialog-button-left' onClick = { reject } >
@@ -426,10 +426,10 @@ export function PersonalSign() {
 			</button>
 			<button className = 'button is-primary button-overflow dialog-button-right'
 				onClick = { approve }
-				disabled = { isConfirmDisabled(personalSignRequestData, personalSignRequestData.activeAddress.address) }>
-				{ personalSignRequestData.simulationMode
+				disabled = { isConfirmDisabled(VisualizedPersonalSignRequest, VisualizedPersonalSignRequest.activeAddress.address) }>
+				{ VisualizedPersonalSignRequest.simulationMode
 					? `${ identified.simulationAction }!`
-					: <SignerLogoText { ...{ signerName: personalSignRequestData.signerName, text: identified.signingAction, } }/>
+					: <SignerLogoText { ...{ signerName: VisualizedPersonalSignRequest.signerName, text: identified.signingAction, } }/>
 				}
 			</button>
 		</div>
@@ -448,7 +448,7 @@ export function PersonalSign() {
 		})
 	}
 
-	if (personalSignRequestData === undefined) return <CenterToPageTextSpinner text = 'Visualizing...'/>
+	if (VisualizedPersonalSignRequest === undefined) return <CenterToPageTextSpinner text = 'Visualizing...'/>
 	
 	return (
 		<main>
@@ -469,24 +469,24 @@ export function PersonalSign() {
 					<div style = 'overflow-y: auto'>
 						<header class = 'card-header window-header' style = 'height: 40px; border-top-left-radius: 0px; border-top-right-radius: 0px'>
 							<div class = 'card-header-icon noselect nopointer' style = 'overflow: hidden;'>
-								<WebsiteOriginText { ...personalSignRequestData.website } />
+								<WebsiteOriginText { ...VisualizedPersonalSignRequest.website } />
 							</div>
 							<p class = 'card-header-title' style = 'overflow: hidden; font-weight: unset; flex-direction: row-reverse;'>
-								{ personalSignRequestData.activeAddress === undefined ? <></> : <SmallAddress
-									addressBookEntry = { personalSignRequestData.activeAddress }
+								{ VisualizedPersonalSignRequest.activeAddress === undefined ? <></> : <SmallAddress
+									addressBookEntry = { VisualizedPersonalSignRequest.activeAddress }
 									renameAddressCallBack = { renameAddressCallBack }
 								/> }
 							</p>
 						</header>
 						<SignatureCard
-							personalSignRequestData = { personalSignRequestData }
+							VisualizedPersonalSignRequest = { VisualizedPersonalSignRequest }
 							renameAddressCallBack = { renameAddressCallBack }
 						/>
 					</div>
 
 					<nav class = 'window-header' style = 'display: flex; justify-content: space-around; width: 100%; flex-direction: column; padding-bottom: 10px; padding-top: 10px;'>
 						
-						{ isPossibleToSend(personalSignRequestData, personalSignRequestData.activeAddress.address) && personalSignRequestData.quarantine
+						{ isPossibleToSend(VisualizedPersonalSignRequest, VisualizedPersonalSignRequest.activeAddress.address) && VisualizedPersonalSignRequest.quarantine
 							? <div style = 'display: grid'>
 								<div style = 'margin: 0px; margin-bottom: 10px; margin-left: 20px; margin-right: 20px; '>
 									<ErrorCheckBox text = { 'I understand that there are issues with this signature request but I want to send it anyway against Interceptors recommendations.' } checked = { forceSend } onInput = { setForceSend } />
@@ -494,7 +494,7 @@ export function PersonalSign() {
 							</div>
 							: <></>
 						}
-						{ personalSignRequestData.simulationMode && (personalSignRequestData.activeAddress.address === undefined || personalSignRequestData.activeAddress.address !== MOCK_PRIVATE_KEYS_ADDRESS || personalSignRequestData.originalParams.method != 'personal_sign')
+						{ VisualizedPersonalSignRequest.simulationMode && (VisualizedPersonalSignRequest.activeAddress.address === undefined || VisualizedPersonalSignRequest.activeAddress.address !== MOCK_PRIVATE_KEYS_ADDRESS || VisualizedPersonalSignRequest.originalParams.method != 'personal_sign')
 							? <div style = 'display: grid'>
 								<div style = 'margin: 0px; margin-bottom: 10px; margin-left: 20px; margin-right: 20px; '>
 									<ErrorComponent text = 'Unfortunately we cannot simulate message signing as it requires private key access 😢.'/>

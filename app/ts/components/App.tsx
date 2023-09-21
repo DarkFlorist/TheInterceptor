@@ -21,6 +21,7 @@ import { ActiveAddress, ActiveAddressEntry, AddressBookEntry, AddressBookEntries
 import { WebsiteAccessArray } from '../types/websiteAccessTypes.js'
 import { Page } from '../types/exportedSettingsTypes.js'
 import { SignerName } from '../types/signerTypes.js'
+import { VisualizedPersonalSignRequest } from '../types/personal-message-definitions.js'
 
 export function App() {
 	const [appPage, setAppPage] = useState<Page>('Home')
@@ -85,6 +86,7 @@ export function App() {
 			addressBookEntries: AddressBookEntries,
 			tokenPrices: readonly TokenPriceEstimate[],
 			simulatedAndVisualizedTransactions: readonly SimulatedAndVisualizedTransaction[],
+			personalSignRequests: readonly VisualizedPersonalSignRequest[],
 			activeSimulationAddress: EthereumAddress | undefined,
 			namedTokenIds: readonly NamedTokenId[],
 		) => {
@@ -95,11 +97,13 @@ export function App() {
 				blockTimestamp: simState.blockTimestamp,
 				simulationConductedTimestamp: simState.simulationConductedTimestamp,
 				simulatedAndVisualizedTransactions: simulatedAndVisualizedTransactions,
+				visualizedPersonalSignRequests: personalSignRequests,
 				rpcNetwork: simState.rpcNetwork,
 				tokenPrices: tokenPrices,
 				activeAddress: activeSimulationAddress,
 				addressBookEntries: addressBookEntries,
 				namedTokenIds,
+				signedMessages: simState.signedMessages,
 			})
 		}
 
@@ -122,6 +126,7 @@ export function App() {
 					data.simulation.addressBookEntries,
 					data.simulation.tokenPrices,
 					data.simulation.simulatedAndVisualizedTransactions,
+					data.simulation.visualizedPersonalSignRequests,
 					data.simulation.activeAddress,
 					data.simulation.namedTokenIds,
 				)
