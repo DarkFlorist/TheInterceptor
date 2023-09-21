@@ -188,9 +188,9 @@ export const TransactionConfirmation = funtypes.ReadonlyObject({
 	)
 }).asReadonly()
 
-export type PersonalSign = funtypes.Static<typeof PersonalSign>
-export const PersonalSign = funtypes.ReadonlyObject({
-	method: funtypes.Literal('popup_personalSign'),
+export type PersonalSignApproval = funtypes.Static<typeof PersonalSignApproval>
+export const PersonalSignApproval = funtypes.ReadonlyObject({
+	method: funtypes.Literal('popup_personalSignApproval'),
 	data: funtypes.ReadonlyObject({
 		uniqueRequestIdentifier: UniqueRequestIdentifier,
 		accept: funtypes.Boolean
@@ -397,6 +397,18 @@ export const MessageToPopupSimple = funtypes.ReadonlyObject({
 	)
 }).asReadonly()
 
+export type PartiallyParsedPersonalSignRequest = funtypes.Static<typeof PartiallyParsedPersonalSignRequest>
+export const PartiallyParsedPersonalSignRequest = funtypes.ReadonlyObject({
+	method:funtypes.Literal('popup_personal_sign_request'),
+	data: funtypes.Unknown,
+})
+
+export type PartiallyParsedRefreshPersonalSignMetadata = funtypes.Static<typeof PartiallyParsedRefreshPersonalSignMetadata>
+export const PartiallyParsedRefreshPersonalSignMetadata = funtypes.ReadonlyObject({
+	method: funtypes.Literal('popup_refreshPersonalSignMetadata'),
+	data: funtypes.Unknown,
+})
+
 export type PersonalSignRequest = funtypes.Static<typeof PersonalSignRequest>
 export const PersonalSignRequest = funtypes.ReadonlyObject({
 	method: funtypes.Literal('popup_personal_sign_request'),
@@ -474,6 +486,13 @@ export const Settings = funtypes.ReadonlyObject({
 	websiteAccess: WebsiteAccessArray,
 	simulationMode: funtypes.Boolean,
 	userAddressBook: UserAddressBook,
+})
+
+
+export type PartialUpdateHomePage = funtypes.Static<typeof PartialUpdateHomePage>
+export const PartialUpdateHomePage = funtypes.ReadonlyObject({
+	method: funtypes.Literal('popup_UpdateHomePage'),
+	data: funtypes.Unknown,
 })
 
 export type UpdateHomePage = funtypes.Static<typeof UpdateHomePage>
@@ -614,20 +633,20 @@ export const FindAddressBookEntryWithSymbolOrNameReply = funtypes.ReadonlyObject
 	})
 }).asReadonly()
 
-
 export type PopupMessage = funtypes.Static<typeof PopupMessage>
 export const PopupMessage = funtypes.Union(
-	ChangeMakeMeRich,
-	ChangeActiveAddress,
 	TransactionConfirmation,
-	ChangePage,
-	RequestAccountsFromSigner,
 	RemoveTransaction,
 	ResetSimulation,
 	RefreshSimulation,
+	ChangeMakeMeRich,
+	ChangeActiveAddress,
+	ChangePage,
+	RequestAccountsFromSigner,
 	RefreshConfirmTransactionDialogSimulation,
 	RefreshConfirmTransactionMetadata,
-	PersonalSign,
+	PersonalSignApproval,
+	PartiallyParsedRefreshPersonalSignMetadata,
 	InterceptorAccess,
 	InterceptorAccessRefresh,
 	InterceptorAccessChangeAddress,
@@ -640,7 +659,6 @@ export const PopupMessage = funtypes.Union(
 	GetAddressBookData,
 	RemoveAddressBookEntry,
 	OpenAddressBook,
-	RefreshPersonalSignMetadata,
 	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_personalSignReadyAndListening') }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_changeChainReadyAndListening') }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_interceptorAccessReadyAndListening') }),
@@ -659,13 +677,22 @@ export const MessageToPopup = funtypes.Union(
 	MessageToPopupSimple,
 	WebsiteIconChanged,
 	GetAddressBookDataReply,
-	PersonalSignRequest,
+	ChangeChainRequest,
 	InterceptorAccessDialog,
 	NewBlockArrivedOrFailedToArrive,
-	UpdateHomePage,
 	SettingsUpdated,
 	UpdateConfirmTransactionDialog,
+	ConfirmTransactionDialogPendingChanged,	
+	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_initiate_export_settings'), data: funtypes.ReadonlyObject({ fileContents: funtypes.String }) }),	
+	ImportSettingsReply,	
+	ActiveSigningAddressChanged,	
+	UpdateRPCList,	
+	SimulationUpdateStartedOrEnded,	
+	IdentifyAddressReply,	
+	FindAddressBookEntryWithSymbolOrNameReply,
+	PartialUpdateHomePage,
+	PartiallyParsedPersonalSignRequest,
 )
 
 export type ExternalPopupMessage = funtypes.Static<typeof MessageToPopup>
-export const ExternalPopupMessage = funtypes.Union(MessageToPopup, PopupMessage) // message that moves from popup to another, or from background page to popup, or from popup to background page
+export const ExternalPopupMessage = funtypes.Union(MessageToPopup, PopupMessage) 

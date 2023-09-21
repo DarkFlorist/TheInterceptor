@@ -5,7 +5,7 @@ import Hint from '../subcomponents/Hint.js'
 import { ErrorCheckBox, Error as ErrorComponent} from '../subcomponents/Error.js'
 import { MOCK_PRIVATE_KEYS_ADDRESS, getChainName } from '../../utils/constants.js'
 import { AddNewAddress } from './AddNewAddress.js'
-import { ExternalPopupMessage } from '../../types/interceptor-messages.js'
+import { ExternalPopupMessage, PersonalSignRequest } from '../../types/interceptor-messages.js'
 import { sendPopupMessageToBackgroundPage } from '../../background/backgroundUtils.js'
 import { assertNever } from '../../utils/typescript.js'
 import { SimpleTokenApprovalVisualisation } from '../simulationExplaining/customExplainers/SimpleTokenApprovalVisualisation.js'
@@ -61,23 +61,23 @@ function identifySignature(data: VisualizedPersonalSignRequest) {
 			signingAction: 'Sign arbitary message',
 		}
 		case 'Permit': {
-			const symbol = data.addressBookEntries.verifyingContract
+			const symbol = data.verifyingContract
 			return {
 				title: `${ symbol } Permit`,
 				signingAction: `Sign ${ symbol } Permit`,
 				simulationAction: `Simulate ${ symbol } Permit`,
 				rejectAction: `Reject ${ symbol } Permit`,
-				to: data.addressBookEntries.spender
+				to: data.spender
 			}
 		}
 		case 'Permit2': {
-			const symbol = 'symbol' in data.addressBookEntries.token ? data.addressBookEntries.token.symbol : '???'
+			const symbol = 'symbol' in data.token ? data.token.symbol : '???'
 			return {
 				title: `${ symbol } Permit`,
 				signingAction: `Sign ${ symbol } Permit`,
 				simulationAction: `Simulate ${ symbol } Permit`,
 				rejectAction: `Reject ${ symbol } Permit`,
-				to: data.addressBookEntries.spender
+				to: data.spender
 			}
 		}
 		default: assertNever(data)
@@ -96,9 +96,9 @@ function SignatureHeader(params: SignatureHeaderParams) {
 			{ identifySignature(params.VisualizedPersonalSignRequest).title }
 		</div>
 		<div class = 'card-header-icon' style = 'margin-left: auto; margin-right: 0; padding-right: 10px; padding-left: 0px; overflow: hidden'>
-			{'addressBookEntries' in params.VisualizedPersonalSignRequest && 'spender' in params.VisualizedPersonalSignRequest.addressBookEntries ?
+			{'addressBookEntries' in params.VisualizedPersonalSignRequest && 'spender' in params.VisualizedPersonalSignRequest ?
 				<SmallAddress
-					addressBookEntry = { params.VisualizedPersonalSignRequest.addressBookEntries.spender }
+					addressBookEntry = { params.VisualizedPersonalSignRequest.spender }
 					renameAddressCallBack = { params.renameAddressCallBack }
 					style = { { 'background-color': 'unset' } }
 				/>
@@ -147,13 +147,13 @@ function SignRequest({ VisualizedPersonalSignRequest, renameAddressCallBack }: S
 			/>
 		}
 		case 'Permit': {
-			if (VisualizedPersonalSignRequest.addressBookEntries.verifyingContract.type !== 'ERC20') throw new Error('Malformed sign request')
+			if (VisualizedPersonalSignRequest.verifyingContract.type !== 'ERC20') throw new Error('Malformed sign request')
 			return <SimpleTokenApprovalVisualisation
 				approval = { {
 					type: 'ERC20',
 					from: VisualizedPersonalSignRequest.account,
-					to: VisualizedPersonalSignRequest.addressBookEntries.spender,
-					token: VisualizedPersonalSignRequest.addressBookEntries.verifyingContract,
+					to: VisualizedPersonalSignRequest.spender,
+					token: VisualizedPersonalSignRequest.verifyingContract,
 					amount: VisualizedPersonalSignRequest.message.message.value,
 					isApproval: true
 				} }
@@ -163,14 +163,14 @@ function SignRequest({ VisualizedPersonalSignRequest, renameAddressCallBack }: S
 			/>
 		}
 		case 'Permit2': {
-			if (VisualizedPersonalSignRequest.addressBookEntries.token.type !== 'ERC20') throw new Error('Malformed sign request')
+			if (VisualizedPersonalSignRequest.token.type !== 'ERC20') throw new Error('Malformed sign request')
 			return <SimpleTokenApprovalVisualisation
 				approval = { {
 					type: 'ERC20',
-					token: VisualizedPersonalSignRequest.addressBookEntries.token,
+					token: VisualizedPersonalSignRequest.token,
 					amount: VisualizedPersonalSignRequest.message.message.details.amount,
 					from: VisualizedPersonalSignRequest.account,
-					to: VisualizedPersonalSignRequest.addressBookEntries.spender,
+					to: VisualizedPersonalSignRequest.spender,
 					isApproval: true
 				} }
 				transactionGasses = { { gasSpent: 0n, realizedGasPrice: 0n } }
@@ -199,7 +199,7 @@ function SafeTx({ VisualizedPersonalSignRequestSafeTx, renameAddressCallBack }: 
 			{ VisualizedPersonalSignRequestSafeTx.message.message.gasToken !== 0n
 				? <>
 					<CellElement text = 'gasToken: '/>
-					<CellElement text = { <SmallAddress addressBookEntry = { VisualizedPersonalSignRequestSafeTx.addressBookEntries.gasToken } renameAddressCallBack = { renameAddressCallBack } /> }/>
+					<CellElement text = { <SmallAddress addressBookEntry = { VisualizedPersonalSignRequestSafeTx.gasToken } renameAddressCallBack = { renameAddressCallBack } /> }/>
 				</>
 				: <></>
 			}
@@ -210,14 +210,14 @@ function SafeTx({ VisualizedPersonalSignRequestSafeTx, renameAddressCallBack }: 
 			{ VisualizedPersonalSignRequestSafeTx.message.message.refundReceiver !== 0n ?
 				<>
 					<CellElement text = 'refundReceiver: '/>
-					<CellElement text = { <SmallAddress addressBookEntry = { VisualizedPersonalSignRequestSafeTx.addressBookEntries.refundReceiver } renameAddressCallBack = { renameAddressCallBack } /> }/>
+					<CellElement text = { <SmallAddress addressBookEntry = { VisualizedPersonalSignRequestSafeTx.refundReceiver } renameAddressCallBack = { renameAddressCallBack } /> }/>
 				</>
 				: <></>
 			}
 			<CellElement text = 'safeTxGas: '/>
 			<CellElement text = { VisualizedPersonalSignRequestSafeTx.message.message.safeTxGas }/>
 			<CellElement text = 'to: '/>
-			<CellElement text = { <SmallAddress addressBookEntry = { VisualizedPersonalSignRequestSafeTx.addressBookEntries.to } renameAddressCallBack = { renameAddressCallBack } /> }/>
+			<CellElement text = { <SmallAddress addressBookEntry = { VisualizedPersonalSignRequestSafeTx.to } renameAddressCallBack = { renameAddressCallBack } /> }/>
 			<CellElement text = 'value: '/>
 			<CellElement text = { <Ether amount = { VisualizedPersonalSignRequestSafeTx.message.message.value } rpcNetwork = { VisualizedPersonalSignRequestSafeTx.rpcNetwork }/>  }/>
 		</span>
@@ -383,7 +383,7 @@ export function PersonalSign() {
 			const message = ExternalPopupMessage.parse(msg)
 			if (message.method === 'popup_addressBookEntriesChanged') return refreshMetadata()
 			if (message.method !== 'popup_personal_sign_request') return
-			setVisualizedPersonalSignRequest(message.data)
+			setVisualizedPersonalSignRequest(PersonalSignRequest.parse(message).data)
 		}
 		browser.runtime.onMessage.addListener(popupMessageListener)
 		return () => browser.runtime.onMessage.removeListener(popupMessageListener)
@@ -399,13 +399,13 @@ export function PersonalSign() {
 	async function approve() {
 		if (VisualizedPersonalSignRequest === undefined) throw new Error('VisualizedPersonalSignRequest is missing')
 		await tryFocusingTabOrWindow({ type: 'tab', id: VisualizedPersonalSignRequest.request.uniqueRequestIdentifier.requestSocket.tabId })
-		await sendPopupMessageToBackgroundPage({ method: 'popup_personalSign', data: { uniqueRequestIdentifier: VisualizedPersonalSignRequest.request.uniqueRequestIdentifier, accept: true } })
+		await sendPopupMessageToBackgroundPage({ method: 'popup_personalSignApproval', data: { uniqueRequestIdentifier: VisualizedPersonalSignRequest.request.uniqueRequestIdentifier, accept: true } })
 	}
 
 	async function reject() {
 		if (VisualizedPersonalSignRequest === undefined) throw new Error('VisualizedPersonalSignRequest is missing')
 		await tryFocusingTabOrWindow({ type: 'tab', id: VisualizedPersonalSignRequest.request.uniqueRequestIdentifier.requestSocket.tabId })
-		await sendPopupMessageToBackgroundPage({ method: 'popup_personalSign', data: { uniqueRequestIdentifier: VisualizedPersonalSignRequest.request.uniqueRequestIdentifier, accept: false } })
+		await sendPopupMessageToBackgroundPage({ method: 'popup_personalSignApproval', data: { uniqueRequestIdentifier: VisualizedPersonalSignRequest.request.uniqueRequestIdentifier, accept: false } })
 	}
 
 	function isPossibleToSend(VisualizedPersonalSignRequest: VisualizedPersonalSignRequest, activeAddress: bigint) {

@@ -183,6 +183,16 @@ export const WebsiteCreatedEthereumUnsignedTransaction = funtypes.ReadonlyObject
 	error: funtypes.Union(funtypes.Undefined, EstimateGasError.fields.error)
 })
 
+export type SignedMessageTransaction = funtypes.Static<typeof SignedMessageTransaction>
+export const SignedMessageTransaction = funtypes.ReadonlyObject({
+	website: Website,
+	created: EthereumTimestamp,
+	fakeSignedFor: EthereumAddress,
+	originalRequestParameters: SignMessageParams,
+	request: InterceptedRequest,
+	simulationMode: funtypes.Boolean,
+})
+
 export type SimulationState = funtypes.Static<typeof SimulationState>
 export const SimulationState = funtypes.ReadonlyObject({
 	prependTransactionsQueue: funtypes.ReadonlyArray(WebsiteCreatedEthereumUnsignedTransaction),

@@ -1,4 +1,4 @@
-import { SignedMessageTransaction, SimulatedAndVisualizedTransaction, SimulationAndVisualisationResults, TokenVisualizerResultWithMetadata, TransactionVisualizationParameters } from '../../types/visualizer-types.js'
+import { SimulatedAndVisualizedTransaction, SimulationAndVisualisationResults, TokenVisualizerResultWithMetadata, TransactionVisualizationParameters } from '../../types/visualizer-types.js'
 import { SmallAddress } from '../subcomponents/address.js'
 import { TokenSymbol, TokenAmount, AllApproval } from '../subcomponents/coins.js'
 import { LogAnalysisParams, RenameAddressCallBack } from '../../types/user-interface-types.js'
@@ -15,6 +15,7 @@ import { assertNever } from '../../utils/typescript.js'
 import { CatchAllVisualizer, tokenEventToTokenSymbolParams } from './customExplainers/CatchAllVisualizer.js'
 import { AddressBookEntry } from '../../types/addressBookTypes.js'
 import { SignatureCard } from '../pages/PersonalSign.js'
+import { VisualizedPersonalSignRequest } from '../../types/personal-message-definitions.js'
 
 function isPositiveEvent(visResult: TokenVisualizerResultWithMetadata, ourAddressInReferenceFrame: bigint) {
 	if (visResult.type === 'ERC20') {
@@ -185,13 +186,13 @@ type TransactionsAndSignedMessagesParams = {
 
 export function TransactionsAndSignedMessages(param: TransactionsAndSignedMessagesParams) {
 	const transactions = param.simulationAndVisualisationResults.simulatedAndVisualizedTransactions.filter((tx) => !param.removeTransactionHashes.includes(tx.transaction.hash))
-	const transactionsAndMessages: readonly (SignedMessageTransaction | SimulatedAndVisualizedTransaction)[] = [...param.simulationAndVisualisationResults.visualizedPersonalSignRequests, ...transactions].sort((n1, n2) => n1.created.getTime() - n2.created.getTime())
+	const transactionsAndMessages: readonly (VisualizedPersonalSignRequest | SimulatedAndVisualizedTransaction)[] = [...param.simulationAndVisualisationResults.visualizedPersonalSignRequests, ...transactions].sort((n1, n2) => n1.created.getTime() - n2.created.getTime())
 	return <ul>
 		{ transactionsAndMessages.map((simTx, _index) => (
 			<li>
-				{ 'fakeSignedFor' in simTx ? <>
+				{ 'activeAddress' in simTx ? <>
 					<SignatureCard
-						signedMessageTransaction = { simTx }
+						VisualizedPersonalSignRequest = { simTx }
 						renameAddressCallBack = { param.renameAddressCallBack }
 					/>
 				</> : <>

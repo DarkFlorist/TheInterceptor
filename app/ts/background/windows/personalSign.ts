@@ -3,7 +3,7 @@ import { EthereumClientService } from '../../simulation/services/EthereumClientS
 import { stringifyJSONWithBigInts } from '../../utils/bigint.js'
 import { METAMASK_ERROR_USER_REJECTED_REQUEST } from '../../utils/constants.js'
 import { Future } from '../../utils/future.js'
-import { PersonalSign, UserAddressBook } from '../../types/interceptor-messages.js'
+import { PersonalSignApproval, UserAddressBook } from '../../types/interceptor-messages.js'
 import { OpenSeaOrderMessage, VisualizedPersonalSignRequest, PersonalSignRequestIdentifiedEIP712Message } from '../../types/personal-message-definitions.js'
 import { assertNever } from '../../utils/typescript.js'
 import { WebsiteTabConnections } from '../../types/user-interface-types.js'
@@ -24,11 +24,11 @@ import { updateSimulationState } from '../background.js'
 import { Simulator } from '../../simulation/simulator.js'
 import { SignedMessageTransaction } from '../../types/visualizer-types.js'
 
-let pendingPersonalSign: Future<PersonalSign> | undefined = undefined
+let pendingPersonalSign: Future<PersonalSignApproval> | undefined = undefined
 
 let openedDialog: PopupOrTab | undefined = undefined
 
-export async function resolvePersonalSign(simulator: Simulator, websiteTabConnections: WebsiteTabConnections, confirmation: PersonalSign) {
+export async function resolvePersonalSign(simulator: Simulator, websiteTabConnections: WebsiteTabConnections, confirmation: PersonalSignApproval) {
 	if (pendingPersonalSign !== undefined) {
 		pendingPersonalSign.resolve(confirmation)
 	} else {
@@ -52,7 +52,7 @@ export async function updatePendingPersonalSignViewWithPendingRequests(ethereumC
 
 function rejectMessage(uniqueRequestIdentifier: UniqueRequestIdentifier) {
 	return {
-		method: 'popup_personalSign',
+		method: 'popup_personalSignApproval',
 		data: {
 			uniqueRequestIdentifier,
 			accept: false,
@@ -84,13 +84,7 @@ export async function craftPersonalSignPopupMessage(ethereumClientService: Ether
 	const settings = await getSettings()
 	const userAddressBook = settings.userAddressBook
 	const activeAddressWithMetadata = await identifyAddress(ethereumClientService, userAddressBook, signedMessageTransaction.fakeSignedFor)
-	const basicParams = {
-		activeAddress: activeAddressWithMetadata,
-		simulationMode: signedMessageTransaction.simulationMode,
-		request: signedMessageTransaction.request,
-		signerName,
-		website: signedMessageTransaction.website,
-	}
+	const basicParams = { ...signedMessageTransaction, activeAddress: activeAddressWithMetadata, signerName }
 	const originalParams = signedMessageTransaction
 
 	const getQuarrantineCodes = async (messageChainId: bigint, account: AddressBookEntry, activeAddress: AddressBookEntry, owner: AddressBookEntry | undefined): Promise<{ quarantine: boolean, quarantineCodes: readonly QUARANTINE_CODE[] }> => {
@@ -165,11 +159,9 @@ export async function craftPersonalSignPopupMessage(ethereumClientService: Ether
 				type: 'Permit',
 				message: parsed,
 				account,
-				addressBookEntries: {
-					owner,
-					spender: await identifyAddress(ethereumClientService, userAddressBook, parsed.message.spender),
-					verifyingContract: token,
-				},
+				owner,
+				spender: await identifyAddress(ethereumClientService, userAddressBook, parsed.message.spender),
+				verifyingContract: token,
 				...await getQuarrantineCodes(BigInt(parsed.domain.chainId), account, activeAddressWithMetadata, owner),
 			}
 		}
@@ -184,11 +176,9 @@ export async function craftPersonalSignPopupMessage(ethereumClientService: Ether
 				type: 'Permit2',
 				message: parsed,
 				account,
-				addressBookEntries: {
-					token: token,
-					spender: await identifyAddress(ethereumClientService, userAddressBook, parsed.message.spender),
-					verifyingContract: await identifyAddress(ethereumClientService, userAddressBook, parsed.domain.verifyingContract)
-				},
+				token: token,
+				spender: await identifyAddress(ethereumClientService, userAddressBook, parsed.message.spender),
+				verifyingContract: await identifyAddress(ethereumClientService, userAddressBook, parsed.domain.verifyingContract),
 				...await getQuarrantineCodes(parsed.domain.chainId, account, activeAddressWithMetadata, undefined),
 			}
 		}
@@ -199,12 +189,10 @@ export async function craftPersonalSignPopupMessage(ethereumClientService: Ether
 			type: 'SafeTx',
 			message: parsed,
 			account,
-			addressBookEntries: {
-				to: await identifyAddress(ethereumClientService, userAddressBook, parsed.message.to),
-				gasToken: await identifyAddress(ethereumClientService, userAddressBook, parsed.message.gasToken),
-				refundReceiver: await identifyAddress(ethereumClientService, userAddressBook, parsed.message.refundReceiver),
-				verifyingContract: await identifyAddress(ethereumClientService, userAddressBook, parsed.domain.verifyingContract),
-			},
+			to: await identifyAddress(ethereumClientService, userAddressBook, parsed.message.to),
+			gasToken: await identifyAddress(ethereumClientService, userAddressBook, parsed.message.gasToken),
+			refundReceiver: await identifyAddress(ethereumClientService, userAddressBook, parsed.message.refundReceiver),
+			verifyingContract: await identifyAddress(ethereumClientService, userAddressBook, parsed.domain.verifyingContract),
 			quarantine: false,
 			quarantineCodes: [],
 		}
@@ -249,7 +237,7 @@ export const openPersonalSignDialog = async (
 		request,
 	}
 
-	pendingPersonalSign = new Future<PersonalSign>()
+	pendingPersonalSign = new Future<PersonalSignApproval>()
 	try {
 		const oldPromise = await getPendingPersonalSignPromise()
 		if (oldPromise !== undefined) {
@@ -287,7 +275,7 @@ export const openPersonalSignDialog = async (
 	}
 }
 
-async function resolve(simulator: Simulator, reply: PersonalSign, signedMessageTransaction: SignedMessageTransaction) {
+async function resolve(simulator: Simulator, reply: PersonalSignApproval, signedMessageTransaction: SignedMessageTransaction) {
 	await setPendingPersonalSignPromise(undefined)
 	// forward message to content script
 	if (reply.data.accept) {

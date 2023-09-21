@@ -103,7 +103,6 @@ export function App() {
 				activeAddress: activeSimulationAddress,
 				addressBookEntries: addressBookEntries,
 				namedTokenIds,
-				signedMessages: simState.signedMessages,
 			})
 		}
 
@@ -167,7 +166,7 @@ export function App() {
 			if (message.method === 'popup_failed_to_get_block') return setRpcConnectionStatus(message.data.rpcConnectionStatus)
 			if (message.method === 'popup_update_rpc_list') return
 			if (message.method !== 'popup_UpdateHomePage') return await sendPopupMessageToBackgroundPage({ method: 'popup_requestNewHomeData' })
-			return updateHomePage(message)
+			return updateHomePage(UpdateHomePage.parse(message))
 		}
 		browser.runtime.onMessage.addListener(popupMessageListener)
 		return () => browser.runtime.onMessage.removeListener(popupMessageListener)
@@ -184,7 +183,7 @@ export function App() {
 		if (appPage === 'AddNewAddress') return
 
 		const trimmed = address.trim()
-		if ( !ethers.isAddress(trimmed) ) return
+		if (!ethers.isAddress(trimmed)) return
 
 		const bigIntReprentation = BigInt(trimmed)
 		// see if we have that address, if so, let's switch to it

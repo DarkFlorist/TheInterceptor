@@ -341,7 +341,6 @@ export function ConfirmTransaction() {
 								simulatedAndVisualizedTransactions: simulationResults.data.simulatedAndVisualizedTransactions,
 								visualizedPersonalSignRequests: simulationResults.data.visualizedPersonalSignRequests,
 								namedTokenIds: simulationResults.data.namedTokenIds,
-								visualizedPersonalSignRequests: simulationResults.data.visualizedPersonalSignRequests,
 							} }
 							pendingTransactions = { pendingTransactions }
 							renameAddressCallBack = { renameAddressCallBack }

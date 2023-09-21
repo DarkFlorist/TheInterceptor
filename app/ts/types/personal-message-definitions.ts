@@ -1,5 +1,5 @@
 import * as funtypes from 'funtypes'
-import { EthereumAddress, EthereumBytes32, LiteralConverterParserFactory, NonHexBigInt } from './wire-types.js'
+import { EthereumAddress, EthereumBytes32, EthereumTimestamp, LiteralConverterParserFactory, NonHexBigInt } from './wire-types.js'
 import { QUARANTINE_CODE } from '../simulation/protectors/quarantine-codes.js'
 import { EthereumInput } from './wire-types.js'
 import { EnrichedEIP712 } from '../utils/eip712Parsing.js'
@@ -158,15 +158,13 @@ export const SeaPortOrderType = funtypes.Union(
 )
 
 export type SeaPortSingleOffer = funtypes.Static<typeof SeaPortSingleOffer>
-export const SeaPortSingleOffer = funtypes.Union(
-	funtypes.ReadonlyObject({
-		itemType: SeaPortItemType,
-		token: EthereumAddress,
-		identifierOrCriteria: NonHexBigInt,
-		startAmount: NonHexBigInt,
-		endAmount: NonHexBigInt
-	})
-)
+export const SeaPortSingleOffer = funtypes.ReadonlyObject({
+	itemType: SeaPortItemType,
+	token: EthereumAddress,
+	identifierOrCriteria: NonHexBigInt,
+	startAmount: NonHexBigInt,
+	endAmount: NonHexBigInt
+})
 
 export type SeaPortSingleConsideration = funtypes.Static<typeof SeaPortSingleConsideration>
 export const SeaPortSingleConsideration = funtypes.ReadonlyObject({
@@ -320,16 +318,14 @@ export const OpenSeaOrder = funtypes.ReadonlyObject({
 	message: OpenSeaOrderMessage
 })
 
-export type SeaPortSingleOfferWithAddressBookEntries  = funtypes.Static<typeof SeaPortSingleOfferWithAddressBookEntries >
-export const SeaPortSingleOfferWithAddressBookEntries  = funtypes.Union(
-	funtypes.ReadonlyObject({
-		itemType: SeaPortItemType,
-		token: AddressBookEntry,
-		identifierOrCriteria: NonHexBigInt,
-		startAmount: NonHexBigInt,
-		endAmount: NonHexBigInt
-	})
-)
+export type SeaPortSingleOfferWithAddressBookEntries = funtypes.Static<typeof SeaPortSingleOfferWithAddressBookEntries >
+export const SeaPortSingleOfferWithAddressBookEntries = funtypes.ReadonlyObject({
+	itemType: SeaPortItemType,
+	token: AddressBookEntry,
+	identifierOrCriteria: NonHexBigInt,
+	startAmount: NonHexBigInt,
+	endAmount: NonHexBigInt
+})
 
 export type SeaPortSingleConsiderationWithAddressBookEntries  = funtypes.Static<typeof SeaPortSingleConsiderationWithAddressBookEntries >
 export const SeaPortSingleConsiderationWithAddressBookEntries  = funtypes.ReadonlyObject({
@@ -358,19 +354,18 @@ export const OpenSeaOrderMessageWithAddressBookEntries = funtypes.ReadonlyObject
 })
 
 export type PersonalSignRequestBase = funtypes.Static<typeof PersonalSignRequestBase>
-export const PersonalSignRequestBase = funtypes.Intersect(
-	funtypes.ReadonlyObject({
-		activeAddress: AddressBookEntry,
-		rpcNetwork: RpcNetwork,
-		request: InterceptedRequest,
-		simulationMode: funtypes.Boolean,
-		signerName: SignerName,
-		quarantineCodes: funtypes.ReadonlyArray(QUARANTINE_CODE),
-		quarantine: funtypes.Boolean,
-		account: AddressBookEntry,
-		website: Website,
-	}),
-)
+export const PersonalSignRequestBase = funtypes.ReadonlyObject({
+	activeAddress: AddressBookEntry,
+	rpcNetwork: RpcNetwork,
+	request: InterceptedRequest,
+	simulationMode: funtypes.Boolean,
+	signerName: SignerName,
+	quarantineCodes: funtypes.ReadonlyArray(QUARANTINE_CODE),
+	quarantine: funtypes.Boolean,
+	account: AddressBookEntry,
+	website: Website,
+	created: EthereumTimestamp,
+})
 
 export type VisualizedPersonalSignRequestNotParsed = funtypes.Static<typeof VisualizedPersonalSignRequest>
 export const VisualizedPersonalSignRequestNotParsed = funtypes.Intersect(
@@ -399,11 +394,9 @@ export const VisualizedPersonalSignRequestPermit = funtypes.Intersect(
 		originalParams: SignTypedDataParams,
 		type: funtypes.Literal('Permit'),
 		message: EIP2612Message,
-		addressBookEntries: funtypes.ReadonlyObject({
-			owner: AddressBookEntry,
-			spender: AddressBookEntry,
-			verifyingContract: AddressBookEntry,
-		}),
+		owner: AddressBookEntry,
+		spender: AddressBookEntry,
+		verifyingContract: AddressBookEntry,
 	})
 )
 
@@ -414,11 +407,9 @@ export const VisualizedPersonalSignRequestPermit2 = funtypes.Intersect(
 		originalParams: SignTypedDataParams,
 		type: funtypes.Literal('Permit2'),
 		message: Permit2,
-		addressBookEntries: funtypes.ReadonlyObject({
-			token: AddressBookEntry,
-			spender: AddressBookEntry,
-			verifyingContract: AddressBookEntry,
-		}),
+		token: AddressBookEntry,
+		spender: AddressBookEntry,
+		verifyingContract: AddressBookEntry,
 	})
 )
 
@@ -435,7 +426,7 @@ export const VisualizedPersonalSignRequestOrderComponents = funtypes.Intersect(
 export type SafeTx = funtypes.Static<typeof SafeTx>
 export const SafeTx = funtypes.ReadonlyObject({
 	types: funtypes.ReadonlyObject({
-		SafeTx: funtypes.Tuple(
+		SafeTx: funtypes.ReadonlyTuple(
             funtypes.ReadonlyObject({ name: funtypes.Literal('to'), type: funtypes.Literal('address') }),
             funtypes.ReadonlyObject({ name: funtypes.Literal('value'), type: funtypes.Literal('uint256') }),
             funtypes.ReadonlyObject({ name: funtypes.Literal('data'), type: funtypes.Literal('bytes') }),
@@ -447,7 +438,7 @@ export const SafeTx = funtypes.ReadonlyObject({
             funtypes.ReadonlyObject({ name: funtypes.Literal('refundReceiver'), type: funtypes.Literal('address') }),
             funtypes.ReadonlyObject({ name: funtypes.Literal('nonce'), type: funtypes.Literal('uint256') })
 		),
-        EIP712Domain: funtypes.Tuple(
+        EIP712Domain: funtypes.ReadonlyTuple(
 			funtypes.Partial({ name: funtypes.Literal('chainId'), type: funtypes.Literal('uint256') }),
 			funtypes.ReadonlyObject({ name: funtypes.Literal('verifyingContract'), type: funtypes.Literal('address') })
 		),
@@ -482,12 +473,10 @@ export const VisualizedPersonalSignRequestSafeTx = funtypes.Intersect(
 		originalParams: SignTypedDataParams,
 		type: funtypes.Literal('SafeTx'),
 		message: SafeTx,
-		addressBookEntries: funtypes.ReadonlyObject({
-			gasToken: AddressBookEntry,
-			to: AddressBookEntry,
-			refundReceiver: AddressBookEntry,
-			verifyingContract: AddressBookEntry,
-		}),
+		gasToken: AddressBookEntry,
+		to: AddressBookEntry,
+		refundReceiver: AddressBookEntry,
+		verifyingContract: AddressBookEntry,
 	})
 )
 
