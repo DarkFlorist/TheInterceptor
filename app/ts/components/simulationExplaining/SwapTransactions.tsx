@@ -5,7 +5,7 @@ import { abs, addressString } from '../../utils/bigint.js'
 import { EtherAmount, EtherSymbol, TokenAmount, TokenOrEthValue, TokenSymbol } from '../subcomponents/coins.js'
 import { AddressBookEntry, Erc1155Entry, Erc20TokenEntry, Erc721Entry } from '../../types/addressBookTypes.js'
 import { assertNever, getWithDefault } from '../../utils/typescript.js'
-import { RpcNetwork } from '../../types/visualizer-types.js'
+import { RpcNetwork } from '../../types/rpc.js'
 import { RenameAddressCallBack } from '../../types/user-interface-types.js'
 import { BIG_FONT_SIZE } from '../../utils/constants.js'
 

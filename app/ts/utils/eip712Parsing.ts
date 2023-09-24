@@ -1,11 +1,11 @@
-import { UserAddressBook } from '../types/interceptor-messages.js'
 import { assertNever } from './typescript.js'
-import { EthereumAddress, EthereumData, EthereumQuantity, NonHexBigInt } from '../types/wire-types.js'
-import { EIP712Message, JSONEncodeableObject } from '../types/JsonRpc-types.js'
+import { EthereumAddress, EthereumData, NonHexBigInt } from '../types/wire-types.js'
 import * as funtypes from 'funtypes'
 import { identifyAddress } from '../background/metadataUtils.js'
 import { EthereumClientService } from '../simulation/services/EthereumClientService.js'
-import { AddressBookEntry } from '../types/addressBookTypes.js'
+import { UserAddressBook } from '../types/addressBookTypes.js'
+import { JSONEncodeableObject } from '../utils/json.js'
+import { EIP712Message, EnrichedEIP712, EnrichedEIP712Message, EnrichedEIP712MessageRecord, GroupedSolidityType } from '../types/eip721.js'
 
 type SolidityType = funtypes.Static<typeof SolidityType>
 const SolidityType = funtypes.Union(
@@ -149,43 +149,6 @@ function validateEIP712TypesSubset(depth: number, message: JSONEncodeableObject,
 export function validateEIP712Types(message: EIP712Message) {
 	return validateEIP712TypesSubset(0, message.message, message.primaryType, message.types) && validateEIP712TypesSubset(0, message.domain, 'EIP712Domain', message.types)
 }
-
-export type GroupedSolidityType = funtypes.Static<typeof GroupedSolidityType>
-export const GroupedSolidityType = funtypes.Union(
-	funtypes.ReadonlyObject({ type: funtypes.Literal('integer'), value: EthereumQuantity }),
-	funtypes.ReadonlyObject({ type: funtypes.Literal('bytes'), value: EthereumData }),
-	funtypes.ReadonlyObject({ type: funtypes.Literal('fixedBytes'), value: EthereumData }),
-	funtypes.ReadonlyObject({ type: funtypes.Literal('bool'), value: funtypes.Boolean }),
-	funtypes.ReadonlyObject({ type: funtypes.Literal('string'), value: funtypes.String }),
-	funtypes.ReadonlyObject({ type: funtypes.Literal('address'), value: AddressBookEntry }),
-	
-	funtypes.ReadonlyObject({ type: funtypes.Literal('integer[]'), value: funtypes.ReadonlyArray(EthereumQuantity) }),
-	funtypes.ReadonlyObject({ type: funtypes.Literal('bytes[]'), value: funtypes.ReadonlyArray(EthereumData) }),
-	funtypes.ReadonlyObject({ type: funtypes.Literal('fixedBytes[]'), value: funtypes.ReadonlyArray(EthereumData) }),
-	funtypes.ReadonlyObject({ type: funtypes.Literal('bool[]'), value: funtypes.ReadonlyArray(funtypes.Boolean) }),
-	funtypes.ReadonlyObject({ type: funtypes.Literal('string[]'), value: funtypes.ReadonlyArray(funtypes.String) }),
-	funtypes.ReadonlyObject({ type: funtypes.Literal('address[]'), value: funtypes.ReadonlyArray(AddressBookEntry) }),
-)
-
-type typeEnrichedEIP712MessageRecord = GroupedSolidityType | { type: 'record', value: { [x: string]: typeEnrichedEIP712MessageRecord | undefined } } | { type: 'record[]', value: ReadonlyArray<{ [x: string]: typeEnrichedEIP712MessageRecord | undefined }> }
-type EnrichedEIP712MessageRecord = funtypes.Static<typeof EnrichedEIP712MessageRecord>
-const EnrichedEIP712MessageRecord: funtypes.Runtype<typeEnrichedEIP712MessageRecord> = funtypes.Lazy(() => funtypes.Union(
-	GroupedSolidityType,
-	funtypes.ReadonlyObject({ type: funtypes.Literal('record'), value: funtypes.ReadonlyRecord(funtypes.String, EnrichedEIP712MessageRecord) }),
-	funtypes.ReadonlyObject({ type: funtypes.Literal('record[]'), value: funtypes.ReadonlyArray(funtypes.ReadonlyRecord(funtypes.String, EnrichedEIP712MessageRecord)) }),
-))
-
-export type EnrichedEIP712Message = funtypes.Static<typeof EnrichedEIP712Message>
-export const EnrichedEIP712Message = funtypes.ReadonlyRecord(
-	funtypes.String,
-	EnrichedEIP712MessageRecord,
-)
-
-export type EnrichedEIP712 = funtypes.Static<typeof EnrichedEIP712>
-export const EnrichedEIP712 = funtypes.ReadonlyObject({
-	message: EnrichedEIP712Message,
-	domain: EnrichedEIP712Message,
-})
 
 function getSolidityTypeCategory(type: SolidityType) {
 	switch(type) {

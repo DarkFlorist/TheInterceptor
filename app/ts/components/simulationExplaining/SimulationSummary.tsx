@@ -14,7 +14,7 @@ import { useState } from 'preact/hooks'
 import { CellElement, convertNumberToCharacterRepresentationIfSmallEnough, upperCaseFirstCharacter } from '../ui-utils.js'
 import { EthereumTimestamp } from '../../types/wire-types.js'
 import { getEthDonator } from '../../background/storageVariables.js'
-import { RpcNetwork } from '../../types/visualizer-types.js'
+import { RpcNetwork } from '../../types/rpc.js'
 import { AddressBookEntry, Erc1155Entry, Erc20TokenEntry, Erc721Entry } from '../../types/addressBookTypes.js'
 import { Website } from '../../types/websiteAccessTypes.js'
 

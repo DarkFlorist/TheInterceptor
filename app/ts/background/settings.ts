@@ -3,10 +3,11 @@ import { ExportedSettings, Page } from '../types/exportedSettingsTypes.js'
 import { Settings } from '../types/interceptor-messages.js'
 import { Semaphore } from '../utils/semaphore.js'
 import { browserStorageLocalGet, browserStorageLocalSet } from '../utils/storageUtils.js'
-import { NetworkPrice, RpcEntries, RpcNetwork } from '../types/visualizer-types.js'
+import { NetworkPrice } from '../types/visualizer-types.js'
 import { EthereumAddress } from '../types/wire-types.js'
 import { ActiveAddressArray, ContactEntries } from '../types/addressBookTypes.js'
 import { WebsiteAccessArray } from '../types/websiteAccessTypes.js'
+import { RpcEntries, RpcNetwork } from '../types/rpc.js'
 
 export const defaultAddresses = [
 	{
@@ -91,9 +92,9 @@ export const defaultRpcs: RpcEntries = [
 		primary: false,
 		minimized: true,
 		weth: 0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2n,
-	},/*
+	},
 	{
-		name: 'Eth (neth-multi)',
+		name: 'Ethereum (experimental nethermind)',
 		chainId: 1n,
 		httpsRpc: 'https://rpc.dark.florist/birdchalkrenewtip',
 		currencyName: 'Ether',
@@ -101,7 +102,7 @@ export const defaultRpcs: RpcEntries = [
 		primary: false,
 		minimized: true,
 		weth: 0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2n,
-	},*/
+	},
 ]
 
 export async function getSettings() : Promise<Settings> {

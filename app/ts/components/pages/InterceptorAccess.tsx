@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'preact/hooks'
 import { ActiveAddressComponent, BigAddress, WebsiteOriginText } from '../subcomponents/address.js'
 import { AddNewAddress } from './AddNewAddress.js'
-import { RenameAddressCallBack, PendingAccessRequestArray, PendingAccessRequest } from '../../types/user-interface-types.js'
+import { RenameAddressCallBack } from '../../types/user-interface-types.js'
 import { ExternalPopupMessage } from '../../types/interceptor-messages.js'
 import { sendPopupMessageToBackgroundPage } from '../../background/backgroundUtils.js'
 import Hint from '../subcomponents/Hint.js'
@@ -12,6 +12,7 @@ import { getPrettySignerName } from '../subcomponents/signers.js'
 import { checksummedAddress } from '../../utils/bigint.js'
 import { ActiveAddressEntry, AddressBookEntry, IncompleteAddressBookEntry } from '../../types/addressBookTypes.js'
 import { Website } from '../../types/websiteAccessTypes.js'
+import { PendingAccessRequest, PendingAccessRequestArray } from '../../types/accessRequest.js'
 
 const HALF_HEADER_HEIGHT = 48 / 2
 

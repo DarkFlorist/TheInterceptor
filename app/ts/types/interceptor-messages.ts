@@ -1,14 +1,17 @@
 import * as funtypes from 'funtypes'
-import { ConfirmTransactionDialogState, PendingAccessRequest, PendingAccessRequestArray, PendingChainChangeConfirmationPromise, PendingTransaction, RpcConnectionStatus, TabIconDetails } from './user-interface-types.js'
+import { PendingChainChangeConfirmationPromise, RpcConnectionStatus, TabIconDetails } from './user-interface-types.js'
 import { EthereumAddress, EthereumBlockHeaderWithTransactionHashes, EthereumBytes32, EthereumData, EthereumQuantity, EthereumSignedTransactionWithBlockData, EthereumTimestamp, NonHexBigInt, OptionalEthereumAddress } from './wire-types.js'
-import { SimulationState, SimulatedAndVisualizedTransaction, SimResults, TokenPriceEstimate, RpcNetwork, RpcEntries, RpcEntry, SimulationUpdatingState, SimulationResultState, NamedTokenId } from './visualizer-types.js'
+import { SimulationState, SimulatedAndVisualizedTransaction, SimResults, TokenPriceEstimate, SimulationUpdatingState, SimulationResultState, NamedTokenId } from './visualizer-types.js'
 import { VisualizedPersonalSignRequest } from './personal-message-definitions.js'
 import { UniqueRequestIdentifier, WebsiteSocket } from '../utils/requests.js'
-import { EthGetLogsResponse, EthGetStorageAtParams, EthTransactionReceiptResponse, GetBlockReturn, GetSimulationStackReply, OldSignTypedDataParams, PersonalSignParams, SendRawTransactionParams, SendTransactionParams, SignTypedDataParams, WalletAddEthereumChain } from './JsonRpc-types.js'
-import { AddressBookEntries, AddressBookEntry, ActiveAddress, ActiveAddressEntry, ContactEntries } from './addressBookTypes.js'
+import { EthGetLogsResponse, EthGetStorageAtParams, EthTransactionReceiptResponse, GetBlockReturn, GetSimulationStackReply, SendRawTransactionParams, SendTransactionParams, WalletAddEthereumChain } from './JsonRpc-types.js'
+import { AddressBookEntries, AddressBookEntry, ActiveAddressEntry, UserAddressBook } from './addressBookTypes.js'
 import { Page } from './exportedSettingsTypes.js'
 import { Website, WebsiteAccessArray } from './websiteAccessTypes.js'
 import { SignerName } from './signerTypes.js'
+import { ConfirmTransactionDialogState, PendingAccessRequestArray, PendingTransaction } from './accessRequest.js'
+import { RpcEntries, RpcEntry, RpcNetwork } from './rpc.js'
+import { OldSignTypedDataParams, PersonalSignParams, SignTypedDataParams } from './jsonRpc-signing-types.js'
 
 export type WalletSwitchEthereumChainReply = funtypes.Static<typeof WalletSwitchEthereumChainReply>
 export const WalletSwitchEthereumChainReply = funtypes.ReadonlyObject({
@@ -399,7 +402,7 @@ export const MessageToPopupSimple = funtypes.ReadonlyObject({
 
 export type PartiallyParsedPersonalSignRequest = funtypes.Static<typeof PartiallyParsedPersonalSignRequest>
 export const PartiallyParsedPersonalSignRequest = funtypes.ReadonlyObject({
-	method:funtypes.Literal('popup_personal_sign_request'),
+	method: funtypes.Literal('popup_personal_sign_request'),
 	data: funtypes.Unknown,
 })
 
@@ -446,12 +449,6 @@ export const ConfirmTransactionDialogPendingChanged = funtypes.ReadonlyObject({
 	data: funtypes.ReadonlyArray(PendingTransaction),
 }).asReadonly()
 
-export type UserAddressBook = funtypes.Static<typeof UserAddressBook>
-export const UserAddressBook = funtypes.ReadonlyObject({
-	activeAddresses: funtypes.ReadonlyArray(ActiveAddress),
-	contacts: ContactEntries,
-})
-
 export type InterceptorAccessReply = funtypes.Static<typeof InterceptorAccessReply>
 export const InterceptorAccessReply = funtypes.ReadonlyObject({
 	accessRequestId: funtypes.String,
@@ -473,10 +470,6 @@ export const InterceptorAccessDialog = funtypes.ReadonlyObject({
 	data: PendingAccessRequestArray
 })
 
-export interface PendingAccessRequestWithMetadata extends PendingAccessRequest {
-	addressMetadata: [string, ActiveAddressEntry][],
-}
-
 export type Settings = funtypes.Static<typeof Settings>
 export const Settings = funtypes.ReadonlyObject({
 	activeSimulationAddress: OptionalEthereumAddress,
@@ -487,7 +480,6 @@ export const Settings = funtypes.ReadonlyObject({
 	simulationMode: funtypes.Boolean,
 	userAddressBook: UserAddressBook,
 })
-
 
 export type PartialUpdateHomePage = funtypes.Static<typeof PartialUpdateHomePage>
 export const PartialUpdateHomePage = funtypes.ReadonlyObject({

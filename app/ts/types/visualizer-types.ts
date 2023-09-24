@@ -4,12 +4,13 @@ import { EthereumAddress, EthereumData, EthereumQuantity, EthereumSignedTransact
 import { QUARANTINE_CODE } from '../simulation/protectors/quarantine-codes.js'
 import { RenameAddressCallBack } from './user-interface-types.js'
 import { ERROR_INTERCEPTOR_GAS_ESTIMATION_FAILED } from '../utils/constants.js'
-import { EthBalanceChanges, EthSubscribeParams, SendRawTransactionParams, SendTransactionParams, SignMessageParams, SingleMulticallResponse } from './JsonRpc-types.js'
+import { EthBalanceChanges, EthSubscribeParams, SendRawTransactionParams, SendTransactionParams, SingleMulticallResponse } from './JsonRpc-types.js'
 import { InterceptedRequest, WebsiteSocket } from '../utils/requests.js'
 import { AddressBookEntry, Erc721Entry, Erc20TokenEntry, Erc1155Entry } from './addressBookTypes.js'
 import { Website } from './websiteAccessTypes.js'
 import { VisualizedPersonalSignRequest } from './personal-message-definitions.js'
-
+import { RpcNetwork } from './rpc.js'
+import { SignMessageParams } from './jsonRpc-signing-types.js'
 
 export type NetworkPrice = funtypes.Static<typeof NetworkPrice>
 export const NetworkPrice = funtypes.ReadonlyObject({
@@ -19,33 +20,6 @@ export const NetworkPrice = funtypes.ReadonlyObject({
 		uniswapV3Like: funtypes.ReadonlyArray(funtypes.ReadonlyObject({ factory: EthereumQuantity, initCodeHash: funtypes.String }))
 	})
 })
-
-export type RpcEntry = funtypes.Static<typeof RpcEntry>
-export const RpcEntry = funtypes.ReadonlyObject({
-	name: funtypes.String,
-	chainId: EthereumQuantity,
-	httpsRpc: funtypes.String,
-	currencyName: funtypes.String,
-	currencyTicker: funtypes.String,
-	primary: funtypes.Boolean,
-	minimized: funtypes.Boolean,
-	weth: EthereumQuantity,
-})
-
-export type RpcEntries = funtypes.Static<typeof RpcEntries>
-export const RpcEntries = funtypes.ReadonlyArray(RpcEntry)
-
-export type RpcNetwork = funtypes.Static<typeof RpcNetwork>
-export const RpcNetwork = funtypes.Union(
-	RpcEntry,
-	funtypes.ReadonlyObject({
-		httpsRpc: funtypes.Undefined,
-		chainId: EthereumQuantity,
-		name: funtypes.String,
-		currencyName: funtypes.Literal('Ether?'),
-    	currencyTicker: funtypes.Literal('ETH?'),
-	})
-)
 
 export type TokenVisualizerResult = funtypes.Static<typeof TokenVisualizerResult>
 export const TokenVisualizerResult = funtypes.Intersect(

@@ -36,7 +36,7 @@ export const getEthereumNameServiceNameFromTokenId = async (ethereumMainnet: Eth
 		maxPriorityFeePerGas: 0n,
 		accessList: [],
 		gas: 42000n,
-		chainId: 0n,
+		chainId: ethereumMainnet.getChainId(),
 		nonce: 0n,
 		input: stringToUint8Array(wrappedEthereumNameService1155TokenInterface.encodeFunctionData('names', [bytes32String(tokenId)])),
 	}

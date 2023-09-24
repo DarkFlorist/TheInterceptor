@@ -10,7 +10,7 @@ export const AccountOverrideState = funtypes.Intersect(
 		nonce: EthereumQuantitySmall,
 		balance: EthereumQuantity,
 		code: EthereumData,
-		moveToAddress: EthereumAddress,
+		movePrecompileToAddress: EthereumAddress,
 	})
 )
 
@@ -23,7 +23,7 @@ export const AccountOverrideStateDiff = funtypes.Intersect(
 		nonce: EthereumQuantitySmall,
 		balance: EthereumQuantity,
 		code: EthereumData,
-		moveToAddress: EthereumAddress,
+		movePrecompileToAddress: EthereumAddress,
 	})
 )
 
@@ -81,7 +81,7 @@ export const CallResultLog = funtypes.Intersect(
 export type ExecutionSpec383CallResultFailure = funtypes.Static<typeof ExecutionSpec383CallResultFailure>
 export const ExecutionSpec383CallResultFailure = funtypes.ReadonlyObject({
 	  status: funtypes.Literal('0x2').withParser(LiteralConverterParserFactory('0x2', 'failure' as const)),
-	  return: EthereumData,
+	  returnData: EthereumData,
 	  gasUsed: EthereumQuantitySmall,
 	  error: funtypes.ReadonlyObject({
 		  code: funtypes.Number,
@@ -93,7 +93,7 @@ export const ExecutionSpec383CallResultFailure = funtypes.ReadonlyObject({
 export type ExecutionSpec383CallResultSuccess = funtypes.Static<typeof ExecutionSpec383CallResultSuccess>
 export const ExecutionSpec383CallResultSuccess = funtypes.Intersect(
 	funtypes.ReadonlyObject({
-	  	return: EthereumData,
+	  	returnData: EthereumData,
 	  	gasUsed: EthereumQuantitySmall,
 		status: funtypes.Literal('0x1').withParser(LiteralConverterParserFactory('0x1', 'success' as const)),
 	}),

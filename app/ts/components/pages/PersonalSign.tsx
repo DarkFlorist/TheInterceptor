@@ -5,7 +5,7 @@ import Hint from '../subcomponents/Hint.js'
 import { ErrorCheckBox, Error as ErrorComponent} from '../subcomponents/Error.js'
 import { MOCK_PRIVATE_KEYS_ADDRESS, getChainName } from '../../utils/constants.js'
 import { AddNewAddress } from './AddNewAddress.js'
-import { ExternalPopupMessage, PersonalSignRequest } from '../../types/interceptor-messages.js'
+import { ExternalPopupMessage, PartiallyParsedRefreshPersonalSignMetadata, PersonalSignRequest, RefreshPersonalSignMetadata } from '../../types/interceptor-messages.js'
 import { sendPopupMessageToBackgroundPage } from '../../background/backgroundUtils.js'
 import { assertNever } from '../../utils/typescript.js'
 import { SimpleTokenApprovalVisualisation } from '../simulationExplaining/customExplainers/SimpleTokenApprovalVisualisation.js'
@@ -17,9 +17,9 @@ import { QuarantineCodes } from '../simulationExplaining/Transactions.js'
 import { VisualizedPersonalSignRequest, VisualizedPersonalSignRequestPermit, VisualizedPersonalSignRequestPermit2, VisualizedPersonalSignRequestSafeTx } from '../../types/personal-message-definitions.js'
 import { OrderComponents, OrderComponentsExtraDetails } from '../simulationExplaining/customExplainers/OpenSeaOrder.js'
 import { Ether } from '../subcomponents/coins.js'
-import { EnrichedEIP712, EnrichedEIP712Message, GroupedSolidityType } from '../../utils/eip712Parsing.js'
 import { tryFocusingTabOrWindow, humanReadableDateFromSeconds, CellElement } from '../ui-utils.js'
 import { AddressBookEntry, IncompleteAddressBookEntry } from '../../types/addressBookTypes.js'
+import { EnrichedEIP712, EnrichedEIP712Message, GroupedSolidityType } from '../../types/eip721.js'
 
 type SignatureCardParams = {
 	VisualizedPersonalSignRequest: VisualizedPersonalSignRequest
@@ -115,7 +115,7 @@ type SignRequestParams = {
 function SignRequest({ VisualizedPersonalSignRequest, renameAddressCallBack }: SignRequestParams) {
 	switch (VisualizedPersonalSignRequest.type) {
 		case 'NotParsed': {
-			if (VisualizedPersonalSignRequest.originalParams.method === 'personal_sign') {
+			if (VisualizedPersonalSignRequest.method === 'personal_sign') {
 				return <>
 					<p class = 'paragraph'>Raw message: </p>
 					<div class = 'textbox'>
@@ -393,7 +393,7 @@ export function PersonalSign() {
 
 	function refreshMetadata() {
 		if (VisualizedPersonalSignRequest === undefined) return
-		sendPopupMessageToBackgroundPage({ method: 'popup_refreshPersonalSignMetadata', data: VisualizedPersonalSignRequest })
+		sendPopupMessageToBackgroundPage(RefreshPersonalSignMetadata.serialize({ method: 'popup_refreshPersonalSignMetadata', data: VisualizedPersonalSignRequest }) as PartiallyParsedRefreshPersonalSignMetadata)
 	}
 
 	async function approve() {
@@ -409,7 +409,7 @@ export function PersonalSign() {
 	}
 
 	function isPossibleToSend(VisualizedPersonalSignRequest: VisualizedPersonalSignRequest, activeAddress: bigint) {
-		return !(VisualizedPersonalSignRequest.simulationMode && (activeAddress !== MOCK_PRIVATE_KEYS_ADDRESS || VisualizedPersonalSignRequest.originalParams.method !== 'personal_sign'))
+		return !(VisualizedPersonalSignRequest.simulationMode && (activeAddress !== MOCK_PRIVATE_KEYS_ADDRESS || VisualizedPersonalSignRequest.method !== 'personal_sign'))
 	}
 
 	function isConfirmDisabled(_VisualizedPersonalSignRequest: VisualizedPersonalSignRequest, _activeAddress: bigint) {
@@ -494,7 +494,7 @@ export function PersonalSign() {
 							</div>
 							: <></>
 						}
-						{ VisualizedPersonalSignRequest.simulationMode && (VisualizedPersonalSignRequest.activeAddress.address === undefined || VisualizedPersonalSignRequest.activeAddress.address !== MOCK_PRIVATE_KEYS_ADDRESS || VisualizedPersonalSignRequest.originalParams.method != 'personal_sign')
+						{ VisualizedPersonalSignRequest.simulationMode && (VisualizedPersonalSignRequest.activeAddress.address === undefined || VisualizedPersonalSignRequest.activeAddress.address !== MOCK_PRIVATE_KEYS_ADDRESS || VisualizedPersonalSignRequest.method != 'personal_sign')
 							? <div style = 'display: grid'>
 								<div style = 'margin: 0px; margin-bottom: 10px; margin-left: 20px; margin-right: 20px; '>
 									<ErrorComponent text = 'Unfortunately we cannot simulate message signing as it requires private key access 😢.'/>

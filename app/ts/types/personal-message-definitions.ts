@@ -1,14 +1,12 @@
 import * as funtypes from 'funtypes'
-import { EthereumAddress, EthereumBytes32, EthereumTimestamp, LiteralConverterParserFactory, NonHexBigInt } from './wire-types.js'
+import { EthereumAddress, EthereumBytes32, EthereumTimestamp, LiteralConverterParserFactory, NonHexBigInt, EthereumInput } from './wire-types.js'
 import { QUARANTINE_CODE } from '../simulation/protectors/quarantine-codes.js'
-import { EthereumInput } from './wire-types.js'
-import { EnrichedEIP712 } from '../utils/eip712Parsing.js'
-import { RpcNetwork } from './visualizer-types.js'
+import { RpcNetwork } from './rpc.js'
 import { InterceptedRequest } from '../utils/requests.js'
-import { OldSignTypedDataParams, PersonalSignParams, SignTypedDataParams } from './JsonRpc-types.js'
 import { AddressBookEntry } from './addressBookTypes.js'
 import { Website } from './websiteAccessTypes.js'
 import { SignerName } from './signerTypes.js'
+import { EnrichedEIP712 } from './eip721.js'
 
 export type EIP2612Message = funtypes.Static<typeof EIP2612Message>
 export const EIP2612Message = funtypes.ReadonlyObject({
@@ -371,17 +369,25 @@ export type VisualizedPersonalSignRequestNotParsed = funtypes.Static<typeof Visu
 export const VisualizedPersonalSignRequestNotParsed = funtypes.Intersect(
 	PersonalSignRequestBase,
 	funtypes.ReadonlyObject({
-		originalParams: funtypes.Union(PersonalSignParams, OldSignTypedDataParams),
+		method: funtypes.Union(funtypes.Literal('personal_sign'), funtypes.Literal('eth_signTypedData')),
 		type: funtypes.Literal('NotParsed'),
 		message: funtypes.String,
 	})
+)
+
+type EthSignTyped = funtypes.Static<typeof EthSignTyped>
+const EthSignTyped = funtypes.Union(
+	funtypes.Literal('eth_signTypedData_v1'),
+	funtypes.Literal('eth_signTypedData_v2'),
+	funtypes.Literal('eth_signTypedData_v3'),
+	funtypes.Literal('eth_signTypedData_v4'),
 )
 
 export type VisualizedPersonalSignRequestEIP712 = funtypes.Static<typeof VisualizedPersonalSignRequestEIP712>
 export const VisualizedPersonalSignRequestEIP712 = funtypes.Intersect(
 	PersonalSignRequestBase,
 	funtypes.ReadonlyObject({
-		originalParams: SignTypedDataParams,
+		method: EthSignTyped,
 		type: funtypes.Literal('EIP712'),
 		message: EnrichedEIP712,
 	})
@@ -391,7 +397,7 @@ export type VisualizedPersonalSignRequestPermit = funtypes.Static<typeof Visuali
 export const VisualizedPersonalSignRequestPermit = funtypes.Intersect(
 	PersonalSignRequestBase,
 	funtypes.ReadonlyObject({
-		originalParams: SignTypedDataParams,
+		method: EthSignTyped,
 		type: funtypes.Literal('Permit'),
 		message: EIP2612Message,
 		owner: AddressBookEntry,
@@ -404,7 +410,7 @@ export type VisualizedPersonalSignRequestPermit2 = funtypes.Static<typeof Visual
 export const VisualizedPersonalSignRequestPermit2 = funtypes.Intersect(
 	PersonalSignRequestBase,
 	funtypes.ReadonlyObject({
-		originalParams: SignTypedDataParams,
+		method: EthSignTyped,
 		type: funtypes.Literal('Permit2'),
 		message: Permit2,
 		token: AddressBookEntry,
@@ -417,7 +423,7 @@ export type VisualizedPersonalSignRequestOrderComponents = funtypes.Static<typeo
 export const VisualizedPersonalSignRequestOrderComponents = funtypes.Intersect(
 	PersonalSignRequestBase,
 	funtypes.ReadonlyObject({
-		originalParams: SignTypedDataParams,
+		method: EthSignTyped,
 		type: funtypes.Literal('OrderComponents'),
 		message: OpenSeaOrderMessageWithAddressBookEntries,
 	})
@@ -470,7 +476,7 @@ export type VisualizedPersonalSignRequestSafeTx = funtypes.Static<typeof Visuali
 export const VisualizedPersonalSignRequestSafeTx = funtypes.Intersect(
 	PersonalSignRequestBase,
 	funtypes.ReadonlyObject({
-		originalParams: SignTypedDataParams,
+		method: EthSignTyped,
 		type: funtypes.Literal('SafeTx'),
 		message: SafeTx,
 		gasToken: AddressBookEntry,

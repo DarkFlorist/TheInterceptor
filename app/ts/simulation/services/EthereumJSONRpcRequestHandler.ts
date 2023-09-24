@@ -1,4 +1,4 @@
-import { RpcNetwork } from '../../types/visualizer-types.js'
+import { RpcNetwork } from '../../types/rpc.js'
 import { assertIsObject } from '../../utils/typescript.js'
 import { EthereumJsonRpcRequest, JsonRpcResponse } from '../../types/JsonRpc-types.js'
 import { FetchResponseError, JsonRpcResponseError } from '../../utils/errors.js'

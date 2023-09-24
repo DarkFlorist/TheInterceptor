@@ -248,7 +248,7 @@ export class EthereumClientService {
 		if (callResults.calls.length !== 1) throw new Error('invalid multicall results length')
 		const aggregate3CallResult = callResults.calls[0]
 		if (aggregate3CallResult.status === 'failure' || aggregate3CallResult.status === 'invalid') throw Error('Failed aggregate3')
-		const multicallReturnData: { success: boolean, returnData: string }[] = IMulticall3.decodeFunctionResult('aggregate3', dataStringWith0xStart(aggregate3CallResult.return))[0]
+		const multicallReturnData: { success: boolean, returnData: string }[] = IMulticall3.decodeFunctionResult('aggregate3', dataStringWith0xStart(aggregate3CallResult.returnData))[0]
 		
 		if (multicallReturnData.length !== accounts.length) throw Error('Got wrong number of balances back')
 		return multicallReturnData.map((singleCallResult, callIndex) => {
@@ -333,7 +333,7 @@ export class EthereumClientService {
 			},
 			...signatures.length > 0 ? {
 				stateOverrides: { [addressString(ecRecoverAddress)]: {
-					moveToAddress: ecRecoverMovedToAddress,
+					movePrecompileToAddress: ecRecoverMovedToAddress,
 					code: getEcRecoverOverride(),
 					state: {}
 				} },
@@ -348,7 +348,7 @@ export class EthereumClientService {
 				case 'success': return {
 					statusCode: 'success' as const,
 					gasSpent: singleResult.gasUsed,
-					returnValue: singleResult.return,
+					returnValue: singleResult.returnData,
 					events: (singleResult.logs === undefined ? [] : singleResult.logs).map((log) => ({
 						loggersAddress: log.address,
 						data: 'data' in log && log.data !== undefined ? log.data : new Uint8Array(),
@@ -360,7 +360,7 @@ export class EthereumClientService {
 					statusCode: 'failure' as const,
 					gasSpent: singleResult.gasUsed,
 					error: singleResult.error.message,
-					returnValue: singleResult.return,
+					returnValue: singleResult.returnData,
 				}
 				case 'invalid': throw new Error(`Invalid multicall: ${ singleResult.error }`)
 				default: assertNever(singleResult)

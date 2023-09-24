@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'preact/hooks'
 import { defaultAddresses } from '../background/settings.js'
-import { SimulatedAndVisualizedTransaction, SimulationAndVisualisationResults, SimulationState, TokenPriceEstimate, RpcEntry, RpcNetwork, RpcEntries, SimulationUpdatingState, SimulationResultState, NamedTokenId } from '../types/visualizer-types.js'
+import { SimulatedAndVisualizedTransaction, SimulationAndVisualisationResults, SimulationState, TokenPriceEstimate, SimulationUpdatingState, SimulationResultState, NamedTokenId } from '../types/visualizer-types.js'
 import { ChangeActiveAddress } from './pages/ChangeActiveAddress.js'
 import { Home } from './pages/Home.js'
 import { RpcConnectionStatus, TabIconDetails } from '../types/user-interface-types.js'
@@ -22,6 +22,7 @@ import { WebsiteAccessArray } from '../types/websiteAccessTypes.js'
 import { Page } from '../types/exportedSettingsTypes.js'
 import { SignerName } from '../types/signerTypes.js'
 import { VisualizedPersonalSignRequest } from '../types/personal-message-definitions.js'
+import { RpcEntries, RpcEntry, RpcNetwork } from '../types/rpc.js'
 
 export function App() {
 	const [appPage, setAppPage] = useState<Page>('Home')

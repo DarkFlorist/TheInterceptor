@@ -1,12 +1,14 @@
 import { ICON_NOT_ACTIVE, getChainName } from '../utils/constants.js'
 import { Semaphore } from '../utils/semaphore.js'
-import { PendingAccessRequest, PendingAccessRequestArray, PendingChainChangeConfirmationPromise, PendingPersonalSignPromise, PendingTransaction, RpcConnectionStatus, TabState } from '../types/user-interface-types.js'
+import { PendingChainChangeConfirmationPromise, PendingPersonalSignPromise, RpcConnectionStatus, TabState } from '../types/user-interface-types.js'
 import { browserStorageLocalGet, browserStorageLocalRemove, browserStorageLocalSet, getTabStateFromStorage, removeTabStateFromStorage, setTabStateFromStorage } from '../utils/storageUtils.js'
-import { EthereumSubscriptions, SimulationResults, RpcEntries, RpcNetwork } from '../types/visualizer-types.js'
+import { EthereumSubscriptions, SimulationResults } from '../types/visualizer-types.js'
 import { defaultRpcs, getSettings } from './settings.js'
 import { UniqueRequestIdentifier, doesUniqueRequestIdentifiersMatch } from '../utils/requests.js'
 import { AddressBookEntries } from '../types/addressBookTypes.js'
 import { SignerName } from '../types/signerTypes.js'
+import { PendingAccessRequest, PendingAccessRequestArray, PendingTransaction } from '../types/accessRequest.js'
+import { RpcEntries, RpcNetwork } from '../types/rpc.js'
 
 export const getOpenedAddressBookTabId = async() => (await browserStorageLocalGet('addressbookTabId'))?.['addressbookTabId'] ?? undefined
 
