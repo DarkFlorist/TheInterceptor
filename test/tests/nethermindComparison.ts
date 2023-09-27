@@ -6,7 +6,7 @@ import { eth_getBlockByNumber_goerli_8443561_false, eth_getBlockByNumber_goerli_
 import { describe, should } from '../micro-should.js'
 import * as assert from 'assert'
 import { assertIsObject } from '../../app/ts/utils/typescript.js'
-import { RpcNetwork } from '../../app/ts/types/visualizer-types.js'
+import { RpcNetwork } from '../../app/ts/types/rpc.js'
 
 function parseRequest(data: string) {
 	const jsonRpcResponse = JsonRpcResponse.parse(JSON.parse(data))
@@ -59,6 +59,7 @@ export async function main() {
 		blockTimestamp: new Date(0),
 		rpcNetwork: rpcNetwork,
 		simulationConductedTimestamp: new Date(0),
+		signedMessages: [],
 	}
 
 	const exampleTransaction = {
