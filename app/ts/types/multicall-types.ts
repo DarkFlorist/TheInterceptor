@@ -44,17 +44,24 @@ export type BlockCalls = funtypes.Static<typeof BlockCalls>
 export const BlockCalls = funtypes.Union(
 	funtypes.ReadonlyObject({
 		calls: funtypes.ReadonlyArray(EthereumUnsignedTransaction),
-		blockOverride: BlockOverride,
 	}),
 	funtypes.ReadonlyPartial({
 		stateOverrides: funtypes.ReadonlyArray(AccountOverride),
+		blockOverride: BlockOverride,
 	})
 )
+
+export type ParamObject = funtypes.Static<typeof ParamObject>
+export const ParamObject = funtypes.ReadonlyObject({
+	blockStateCalls: funtypes.ReadonlyArray(BlockCalls),
+	traceTransfers: funtypes.Boolean,
+	validation: funtypes.Boolean,
+})
 
 export type ExecutionSpec383MultiCallParams = funtypes.Static<typeof ExecutionSpec383MultiCallParams>
 export const ExecutionSpec383MultiCallParams = funtypes.ReadonlyObject({
 	method: funtypes.Literal('eth_multicallV1'),
-	params: funtypes.ReadonlyTuple(funtypes.ReadonlyArray(BlockCalls), EthereumBlockTag)
+	params: funtypes.ReadonlyTuple(ParamObject, EthereumBlockTag),
 })
 
 export type CallResultLog = funtypes.Static<typeof CallResultLog>
@@ -62,10 +69,12 @@ export const CallResultLog = funtypes.Intersect(
 	funtypes.ReadonlyObject({
 		logIndex: EthereumQuantity,
 		address: EthereumAddress,
-		blockHash: EthereumQuantitySmall,
+		blockHash: EthereumQuantity,
 		blockNumber: EthereumQuantity,
 		data: EthereumData,
 		topics: funtypes.ReadonlyArray(EthereumBytes32),
+		transactionHash: EthereumQuantity,
+		transactionIndex: EthereumQuantity,
 	})
 )
 
@@ -86,9 +95,9 @@ export const ExecutionSpec383CallResultSuccess = funtypes.Intersect(
 	funtypes.ReadonlyObject({
 	  	return: EthereumData,
 	  	gasUsed: EthereumQuantitySmall,
+		status: funtypes.Literal('0x1').withParser(LiteralConverterParserFactory('0x1', 'success' as const)),
 	}),
 	funtypes.ReadonlyPartial({
-		status: funtypes.Literal('0x1').withParser(LiteralConverterParserFactory('0x1', 'success' as const)), // TODO, a bug in GETH, this is missing in GETH
 		logs: funtypes.ReadonlyArray(CallResultLog)
 	})
 )
@@ -110,6 +119,7 @@ export const ExecutionSpec383MultiCallBlockResult = funtypes.ReadonlyObject({
     number: EthereumQuantity,
     hash: EthereumQuantity,
     timestamp: EthereumQuantity,
+    prevRandao: EthereumQuantity,
     gasLimit: EthereumQuantitySmall,
     gasUsed: EthereumQuantitySmall,
     feeRecipient: EthereumAddress,

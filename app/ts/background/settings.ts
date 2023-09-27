@@ -82,9 +82,8 @@ export const defaultRpcs: RpcEntries = [
 		minimized: true,
 		weth: 0x105083929bf9bb22c26cb1777ec92661170d4285n,
 	},
-	/*
 	{
-		name: 'Eth (geth-multi)',
+		name: 'Ethereum (experimental geth)',
 		chainId: 1n,
 		httpsRpc: 'https://rpc.dark.florist/winedancemuffinborrow',
 		currencyName: 'Ether',
@@ -92,7 +91,7 @@ export const defaultRpcs: RpcEntries = [
 		primary: false,
 		minimized: true,
 		weth: 0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2n,
-	},
+	},/*
 	{
 		name: 'Eth (neth-multi)',
 		chainId: 1n,
@@ -102,8 +101,7 @@ export const defaultRpcs: RpcEntries = [
 		primary: false,
 		minimized: true,
 		weth: 0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2n,
-	},
-	*/
+	},*/
 ]
 
 export async function getSettings() : Promise<Settings> {
