@@ -687,4 +687,4 @@ export const MessageToPopup = funtypes.Union(
 )
 
 export type ExternalPopupMessage = funtypes.Static<typeof MessageToPopup>
-export const ExternalPopupMessage = funtypes.Union(MessageToPopup, PopupMessage) 
+export const ExternalPopupMessage = funtypes.Union(MessageToPopup, PopupMessage)

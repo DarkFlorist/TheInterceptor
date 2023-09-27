@@ -24,6 +24,6 @@ export const RpcNetwork = funtypes.Union(
 		chainId: EthereumQuantity,
 		name: funtypes.String,
 		currencyName: funtypes.Literal('Ether?'),
-    	currencyTicker: funtypes.Literal('ETH?'),
+		currencyTicker: funtypes.Literal('ETH?'),
 	})
 )
