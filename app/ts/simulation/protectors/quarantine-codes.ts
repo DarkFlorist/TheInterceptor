@@ -2,8 +2,12 @@ import * as funtypes from 'funtypes'
 
 export const QUARANTINE_CODES_DICT = {
 	'ERC20_UNINTENDED_CONTRACT': {
-		label: 'Attempt to send token to a contract that cannot receive such tokens',
+		label: 'Attempt to send tokens to a contract that cannot receive such tokens',
 		longExplanation: 'This transaction sends ERC20 tokens to a contract that cannot receive such tokens.',
+	},
+	'ERC20_SEND_TO_CONTRACT': {
+		label: 'Attempt to send tokens directly to a contract',
+		longExplanation: 'This transaction sends ERC20 tokens directly to a contract which is usually no what you want, unless you are transfering to a smart contract wallet (like SAFE or Argent).',
 	},
 	'ERC20_ITSELF': {
 		label: 'Attempt to send token to itself',
@@ -47,6 +51,7 @@ export const QUARANTINE_CODES = Object.values(QUARANTINE_CODES_DICT)
 
 export type QUARANTINE_CODE = funtypes.Static<typeof QUARANTINE_CODE>
 export const QUARANTINE_CODE = funtypes.Union(
+	funtypes.Literal('ERC20_SEND_TO_CONTRACT'),
 	funtypes.Literal('ERC20_UNINTENDED_CONTRACT'),
 	funtypes.Literal('ERC20_ITSELF'),
 	funtypes.Literal('ERC20_DONTBELONG'),
