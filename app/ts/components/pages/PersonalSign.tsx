@@ -412,8 +412,10 @@ export function PersonalSign() {
 		return !(VisualizedPersonalSignRequest.simulationMode && (activeAddress !== MOCK_PRIVATE_KEYS_ADDRESS || VisualizedPersonalSignRequest.method !== 'personal_sign'))
 	}
 
-	function isConfirmDisabled(_VisualizedPersonalSignRequest: VisualizedPersonalSignRequest, _activeAddress: bigint) {
-		return false // !isPossibleToSend(VisualizedPersonalSignRequest, activeAddress) && !forceSend
+	function isConfirmDisabled(VisualizedPersonalSignRequest: VisualizedPersonalSignRequest, activeAddress: bigint) {
+		return !isPossibleToSend(VisualizedPersonalSignRequest, activeAddress) && !forceSend
+			&& !(VisualizedPersonalSignRequest.rpcNetwork.httpsRpc === 'https://rpc.dark.florist/birdchalkrenewtip' // todo remove this check
+			|| VisualizedPersonalSignRequest.rpcNetwork.httpsRpc === 'https://rpc.dark.florist/winedancemuffinborrow')
 	}
 	
 	function Buttons() {
@@ -434,7 +436,6 @@ export function PersonalSign() {
 			</button>
 		</div>
 	}
-	
 
 	function renameAddressCallBack(entry: AddressBookEntry) {
 		setAddingNewAddress({

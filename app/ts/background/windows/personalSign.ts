@@ -86,6 +86,7 @@ export async function craftPersonalSignPopupMessage(ethereumClientService: Ether
 	const activeAddressWithMetadata = await identifyAddress(ethereumClientService, userAddressBook, signedMessageTransaction.fakeSignedFor)
 	const basicParams = { ...signedMessageTransaction, activeAddress: activeAddressWithMetadata, signerName }
 	const originalParams = signedMessageTransaction
+	const rpcNetwork = await getRpcNetwork()
 
 	const getQuarrantineCodes = async (messageChainId: bigint, account: AddressBookEntry, activeAddress: AddressBookEntry, owner: AddressBookEntry | undefined): Promise<{ quarantine: boolean, quarantineCodes: readonly QUARANTINE_CODE[] }> => {
 		let quarantineCodes: QUARANTINE_CODE[] = []
@@ -104,7 +105,7 @@ export async function craftPersonalSignPopupMessage(ethereumClientService: Ether
 		return {
 			method: originalParams.originalRequestParameters.method,
 			...basicParams,
-			rpcNetwork: await getRpcNetwork(),
+			rpcNetwork,
 			type: 'NotParsed' as const,
 			message: stringifyJSONWithBigInts(originalParams.originalRequestParameters.params[0], 4),
 			account: await identifyAddress(ethereumClientService, userAddressBook, originalParams.originalRequestParameters.params[1]),
@@ -117,7 +118,7 @@ export async function craftPersonalSignPopupMessage(ethereumClientService: Ether
 		return {
 			method: originalParams.originalRequestParameters.method,
 			...basicParams,
-			rpcNetwork: await getRpcNetwork(),
+			rpcNetwork,
 			type: 'NotParsed' as const,
 			message: originalParams.originalRequestParameters.params[0],
 			account: await identifyAddress(ethereumClientService, userAddressBook, originalParams.originalRequestParameters.params[1]),
@@ -134,11 +135,10 @@ export async function craftPersonalSignPopupMessage(ethereumClientService: Ether
 		if (validateEIP712Types(namedParams.param) === false) throw new Error('Not a valid EIP712 Message')
 		const message = await extractEIP712Message(ethereumClientService, namedParams.param, userAddressBook)
 		const chainid = message.domain.chainId?.type === 'integer' ? BigInt(message.domain.chainId?.value) : undefined
-
 		return {
 			method: originalParams.originalRequestParameters.method,
 			...basicParams,
-			rpcNetwork: chainid !== undefined ? await getRpcNetworkForChain(chainid) : await getRpcNetwork(),
+			rpcNetwork: chainid !== undefined && rpcNetwork.chainId !== chainid ? await getRpcNetworkForChain(chainid) : rpcNetwork,
 			type: 'EIP712' as const,
 			message,
 			account,
@@ -155,7 +155,7 @@ export async function craftPersonalSignPopupMessage(ethereumClientService: Ether
 			return {
 				method: originalParams.originalRequestParameters.method,
 				...basicParams,
-				rpcNetwork: await getRpcNetworkForChain(parsed.domain.chainId),
+				rpcNetwork: rpcNetwork.chainId !== parsed.domain.chainId ? await getRpcNetworkForChain(parsed.domain.chainId) : rpcNetwork,
 				type: 'Permit' as const,
 				message: parsed,
 				account,
@@ -172,7 +172,7 @@ export async function craftPersonalSignPopupMessage(ethereumClientService: Ether
 			return {
 				method: originalParams.originalRequestParameters.method,
 				...basicParams,
-				rpcNetwork: await getRpcNetworkForChain(parsed.domain.chainId),
+				rpcNetwork: rpcNetwork.chainId !== parsed.domain.chainId ? await getRpcNetworkForChain(parsed.domain.chainId) : rpcNetwork,
 				type: 'Permit2' as const,
 				message: parsed,
 				account,
@@ -185,7 +185,7 @@ export async function craftPersonalSignPopupMessage(ethereumClientService: Ether
 		case 'SafeTx': return {
 			method: originalParams.originalRequestParameters.method,
 			...basicParams,
-			rpcNetwork: parsed.domain.chainId !== undefined ? await getRpcNetworkForChain(parsed.domain.chainId) : await getRpcNetwork(),
+			rpcNetwork: parsed.domain.chainId !== undefined && rpcNetwork.chainId !== parsed.domain.chainId ? await getRpcNetworkForChain(parsed.domain.chainId) : rpcNetwork,
 			type: 'SafeTx' as const,
 			message: parsed,
 			account,
@@ -200,7 +200,7 @@ export async function craftPersonalSignPopupMessage(ethereumClientService: Ether
 			method: originalParams.originalRequestParameters.method,
 			...basicParams,
 			type: 'OrderComponents' as const,
-			rpcNetwork: await getRpcNetworkForChain(parsed.domain.chainId),
+			rpcNetwork: rpcNetwork.chainId !== parsed.domain.chainId ? await getRpcNetworkForChain(parsed.domain.chainId) : rpcNetwork,
 			message: await addMetadataToOpenSeaOrder(ethereumClientService, parsed.message, userAddressBook),
 			account,
 			...await getQuarrantineCodes(parsed.domain.chainId, account, activeAddressWithMetadata, undefined),
