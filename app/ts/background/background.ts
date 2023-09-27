@@ -228,8 +228,6 @@ async function handleRPCRequest(
 		}
 	}
 	const parsedRequest = maybeParsedRequest.value
-	console.log(parsedRequest.method)
-
 	switch (parsedRequest.method) {
 		case 'eth_getBlockByNumber': return await getBlockByNumber(ethereumClientService, simulationState, parsedRequest)
 		case 'eth_getBalance': return await getBalance(ethereumClientService, simulationState, parsedRequest)

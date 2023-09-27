@@ -283,7 +283,7 @@ async function resolve(simulator: Simulator, reply: PersonalSignApproval, signed
 			await updateSimulationState(simulator, async (simulationState) => {
 				return await appendSignedMessage(simulator.ethereum, simulationState, signedMessageTransaction)
 			}, signedMessageTransaction.fakeSignedFor, true)
-			const signedMessage = await simulatePersonalSign(signedMessageTransaction.originalRequestParameters, signedMessageTransaction.fakeSignedFor)
+			const signedMessage = (await simulatePersonalSign(signedMessageTransaction.originalRequestParameters, signedMessageTransaction.fakeSignedFor)).signature
 			return { result: signedMessage, method: signedMessageTransaction.originalRequestParameters.method }
 		}
 		return { forward: true, ...signedMessageTransaction.originalRequestParameters } as const

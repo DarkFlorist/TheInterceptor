@@ -360,7 +360,7 @@ export function ExtraDetails({ VisualizedPersonalSignRequest, renameAddressCallB
 
 export function SignatureCard(params: SignatureCardParams) {
 	return <>
-		<div class = 'card' style = 'margin: 10px;'>
+		<div class = 'card'>
 			<SignatureHeader { ...params }/>
 			<div class = 'card-content' style = 'padding-bottom: 5px;'>
 				<div class = 'container'>
@@ -478,10 +478,12 @@ export function PersonalSign() {
 								/> }
 							</p>
 						</header>
-						<SignatureCard
-							VisualizedPersonalSignRequest = { VisualizedPersonalSignRequest }
-							renameAddressCallBack = { renameAddressCallBack }
-						/>
+						<div style = 'margin: 10px;'>
+							<SignatureCard
+								VisualizedPersonalSignRequest = { VisualizedPersonalSignRequest }
+								renameAddressCallBack = { renameAddressCallBack }
+							/>
+						</div>
 					</div>
 
 					<nav class = 'window-header' style = 'display: flex; justify-content: space-around; width: 100%; flex-direction: column; padding-bottom: 10px; padding-top: 10px;'>

@@ -1,13 +1,13 @@
-import { EthereumUnsignedTransaction, EthereumSignedTransactionWithBlockData, EthereumQuantity, EthereumBlockTag, EthereumData, EthereumBlockHeader, EthereumBlockHeaderWithTransactionHashes, EthereumAddress } from '../../types/wire-types.js'
+import { EthereumUnsignedTransaction, EthereumSignedTransactionWithBlockData, EthereumQuantity, EthereumBlockTag, EthereumData, EthereumBlockHeader, EthereumBlockHeaderWithTransactionHashes, EthereumAddress, EthereumBytes32 } from '../../types/wire-types.js'
 import { IUnsignedTransaction1559 } from '../../utils/ethereum.js'
 import { TIME_BETWEEN_BLOCKS, MOCK_ADDRESS, MULTICALL3, Multicall3ABI } from '../../utils/constants.js'
 import { IEthereumJSONRpcRequestHandler } from './EthereumJSONRpcRequestHandler.js'
-import { Interface, LogDescription, ethers } from 'ethers'
+import { AbiCoder, Interface, LogDescription, Signature, ethers } from 'ethers'
 import { stringToUint8Array, addressString, bytes32String, dataStringWith0xStart, stringifyJSONWithBigInts } from '../../utils/bigint.js'
 import { BlockCalls, ExecutionSpec383MultiCallResult, CallResultLog, ExecutionSpec383MultiCallParams } from '../../types/multicall-types.js'
 import { MulticallResponse, EthGetStorageAtResponse, EthTransactionReceiptResponse, EthGetLogsRequest, EthGetLogsResponse, DappRequestTransaction } from '../../types/JsonRpc-types.js'
 import { assertNever } from '../../utils/typescript.js'
-import { SignatureWithFakeSignerAddress, parseLogIfPossible } from './SimulationModeEthereumClientService.js'
+import { MessageHashAndSignature, SignatureWithFakeSignerAddress, parseLogIfPossible, simulatePersonalSign } from './SimulationModeEthereumClientService.js'
 import { getEcRecoverOverride } from '../../utils/ethereumByteCodes.js'
 
 export type IEthereumClientService = Pick<EthereumClientService, keyof EthereumClientService>
@@ -305,21 +305,21 @@ export class EthereumClientService {
 		const ecRecoverMovedToAddress = 0x123456n
 		const ecRecoverAddress = 1n
 		const parentBlock = await this.getBlock()
-		/*const coder = AbiCoder.defaultAbiCoder()
+		const coder = AbiCoder.defaultAbiCoder()
 
-		const encodePackedHash = (signature: MessageSignature) => {
-			console.log([bytes32String(signature.hash), signature.v.toString(), bytes32String(signature.r), bytes32String(signature.s) ])
-			const packed = BigInt(ethers.keccak256(coder.encode([ 'bytes32', 'uint8', 'bytes32', 'bytes32' ], [bytes32String(signature.hash), signature.v.toString(), bytes32String(signature.r), bytes32String(signature.s)])))
-			console.log(packed)
+		const encodePackedHash = (messageHashAndSignature: MessageHashAndSignature) => {
+			const sig = Signature.from(messageHashAndSignature.signature)
+			const packed = BigInt(ethers.keccak256(coder.encode(['bytes32', 'uint8', 'bytes32', 'bytes32'], [messageHashAndSignature.messageHash, sig.v, sig.r, sig.s])))
 			return packed
 		}
 		
-		const getMappingsMemorySlot = (hash: EthereumBytes32) => ethers.keccak256(coder.encode([ 'uint256', 'bytes32'], [ 0n, bytes32String(hash) ])) //not sure if uint256 is right here
-		const signatureStructs = await Promise.all(signatures.map( async (sign) => ({ key: getMappingsMemorySlot(encodePackedHash(createUniqueFakeSignature(sign))), value: sign.fakeSignedFor })))
+		// set mapping storage mapping() (instructed here: https://docs.soliditylang.org/en/latest/internals/layout_in_storage.html)
+		const getMappingsMemorySlot = (hash: EthereumBytes32) => ethers.keccak256(coder.encode(['bytes32', 'uint256'], [bytes32String(hash), 0n]))
+		const signatureStructs = await Promise.all(signatures.map(async (sign) => ({ key: getMappingsMemorySlot(encodePackedHash(await simulatePersonalSign(sign.originalRequestParameters, sign.fakeSignedFor))), value: sign.fakeSignedFor })))
 		const stateSets = signatureStructs.reduce((acc, current) => {
 			acc[current.key] = current.value
 			return acc
-		}, {} as { [key: string]: bigint } )*/
+		}, {} as { [key: string]: bigint } )
 
 		const multicallResults = await this.executionSpec383MultiCall([{
 			calls: transactions,
@@ -335,7 +335,7 @@ export class EthereumClientService {
 				stateOverrides: { [addressString(ecRecoverAddress)]: {
 					movePrecompileToAddress: ecRecoverMovedToAddress,
 					code: getEcRecoverOverride(),
-					state: {}
+					state: stateSets,
 				} },
 			} : {},
 		}], blockNumber)

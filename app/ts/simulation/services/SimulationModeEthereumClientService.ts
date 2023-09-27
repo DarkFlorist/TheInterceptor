@@ -2,7 +2,7 @@ import { EthereumClientService } from './EthereumClientService.js'
 import { EthereumUnsignedTransaction, EthereumSignedTransactionWithBlockData, EthereumBlockTag, EthereumAddress, EthereumBlockHeader, EthereumBlockHeaderWithTransactionHashes, EthereumSignedTransaction, EthereumData, EthereumQuantity } from '../../types/wire-types.js'
 import { addressString, bytes32String, bytesToUnsigned, dataStringWith0xStart, max, min, stringToUint8Array } from '../../utils/bigint.js'
 import { CANNOT_SIMULATE_OFF_LEGACY_BLOCK, ERROR_INTERCEPTOR_GAS_ESTIMATION_FAILED, MOCK_ADDRESS } from '../../utils/constants.js'
-import { ethers, keccak256, } from 'ethers'
+import { TypedDataEncoder, ethers, hashMessage, keccak256, } from 'ethers'
 import { WebsiteCreatedEthereumUnsignedTransaction, SimulatedTransaction, SimulationState, TokenBalancesAfter, EstimateGasError, SignedMessageTransaction } from '../../types/visualizer-types.js'
 import { EthereumUnsignedTransactionToUnsignedTransaction, IUnsignedTransaction1559, serializeSignedTransactionToBytes } from '../../utils/ethereum.js'
 import { EthGetLogsResponse, EthGetLogsRequest, EthTransactionReceiptResponse, MulticallResponseEventLogs, MulticallResponse, DappRequestTransaction } from '../../types/JsonRpc-types.js'
@@ -659,27 +659,33 @@ export const getHashOfSimulatedBlock = () => {
 }
 
 export type SignatureWithFakeSignerAddress = { originalRequestParameters: SignMessageParams, fakeSignedFor: EthereumAddress }
+export type MessageHashAndSignature = { signature: string, messageHash: string }
 
 export const simulatePersonalSign = async (params: SignMessageParams, signingAddress: EthereumAddress) => {
 	const wallet = new ethers.Wallet(bytes32String(signingAddress === ADDRESS_FOR_PRIVATE_KEY_ONE ? MOCK_PUBLIC_PRIVATE_KEY : MOCK_SIMULATION_PRIVATE_KEY))
 	const signMessage = async () => {
 		switch (params.method) {
-			case 'eth_signTypedData': return keccak256(addressString(params.params[1]))
+			case 'eth_signTypedData': throw new Error('no support for eth_signTypedData')
 			case 'eth_signTypedData_v1':
 			case 'eth_signTypedData_v2':
 			case 'eth_signTypedData_v3':
 			case 'eth_signTypedData_v4': {
-				let typesWithoutDomain = params.params[1].types
+				const typesWithoutDomain = Object.assign({}, params.params[1].types)
 				delete typesWithoutDomain['EIP712Domain']
-				return await wallet.signTypedData(params.params[1].domain, typesWithoutDomain as { [x: string]: { name: string, type: string }[] }, params.params[1].message)
+				const castedTypesWithoutDomain = typesWithoutDomain as { [x: string]: { name: string, type: string }[] }
+				return {
+					signature: await wallet.signTypedData(params.params[1].domain, castedTypesWithoutDomain, params.params[1].message),
+					messageHash: TypedDataEncoder.hash(params.params[1].domain, castedTypesWithoutDomain, params.params[1].message)
+				}
 			}
-			case 'personal_sign': return await wallet.signMessage(params.params[0])
+			case 'personal_sign': return {
+				signature: await wallet.signMessage(params.params[0]),
+				messageHash: hashMessage(params.params[0])
+			}
 			default: assertNever(params)
 		}
 	}
-	const signedMessage = await signMessage()
-	return signedMessage
-
+	return await signMessage()
 }
 
 type BalanceQuery = {
