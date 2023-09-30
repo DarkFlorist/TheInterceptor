@@ -24,6 +24,7 @@ export class PriceEstimator {
 		const chainIdString = chainId.toString()
 		if (!(chainIdString in networkPriceSources)) return []
 		const network = networkPriceSources[chainIdString]
+		if (network === undefined) throw new Error('missing network')
 
 		const quoteToken = quote ?? network.quoteToken
 		const tokenPrices: TokenPriceEstimate[] = []

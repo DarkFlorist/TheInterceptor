@@ -133,14 +133,16 @@ function validateEIP712TypesSubset(depth: number, message: JSONEncodeableObject,
 		if (subMessage === undefined) return false
 		const arraylessType = separateArraySuffix(fullType)
 		if (arraylessType.isArray !== Array.isArray(subMessage)) return false
-		if (SolidityType.test(arraylessType.arraylessType)) continue
+		const currentType = arraylessType.arraylessType
+		if (SolidityType.test(currentType)) continue
+		if (currentType === undefined) return false
 		if (Array.isArray(subMessage)) {
-			if (subMessage.map((arrayElement) => validateEIP712TypesSubset(depth, arrayElement, arraylessType.arraylessType, types)).every((v) => v === true) === false) {
+			if (subMessage.map((arrayElement) => validateEIP712TypesSubset(depth, arrayElement, currentType, types)).every((v) => v === true) === false) {
 				return false
 			}
 		} else {
 			if (!JSONEncodeableObject.test(subMessage)) return false
-			if (validateEIP712TypesSubset(depth + 1, subMessage, arraylessType.arraylessType, types) === false) return false
+			if (validateEIP712TypesSubset(depth + 1, subMessage, currentType, types) === false) return false
 		}
 	}
 	return true
@@ -296,7 +298,9 @@ async function extractEIP712MessageSubset(ethereumClientService: EthereumClientS
 		}
 		if (arraylessType.isArray) {
 			if (!Array.isArray(messageEntry)) throw new Error(`Type was defined to be an array but it was not: ${ messageEntry }`)
-			return [key, { type: 'record[]', value: await Promise.all(messageEntry.map((subSubMessage) => extractEIP712MessageSubset(ethereumClientService, depth + 1, subSubMessage, arraylessType.arraylessType, types, userAddressBook, useLocalStorage))) }]
+			const currentType = arraylessType.arraylessType
+			if (currentType === undefined) throw new Error(`array's type is missing`)
+			return [key, { type: 'record[]', value: await Promise.all(messageEntry.map((subSubMessage) => extractEIP712MessageSubset(ethereumClientService, depth + 1, subSubMessage, currentType, types, userAddressBook, useLocalStorage))) }]
 		}
 		if (!JSONEncodeableObject.test(messageEntry)) throw new Error(`Not a JSON type: ${ messageEntry }`)
 		return [key, { type: 'record', value: await extractEIP712MessageSubset(ethereumClientService, depth + 1, messageEntry, fullType, types, userAddressBook, useLocalStorage) }]

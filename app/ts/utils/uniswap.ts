@@ -21,7 +21,7 @@ export function calculateUniswapLikePools(token: EthereumAddress, quoteToken: Et
 	const chainIdString = chainId.toString()
 	if (!(chainIdString in networkPriceSources)) return undefined
 	const network = networkPriceSources[chainIdString]
-
+	if (network === undefined) throw new Error(`Unable to find network ${ chainIdString }`)
 
 	const [token0, token1] = token < quoteToken ? [addressString(token), addressString(quoteToken)] : [addressString(quoteToken), addressString(token)]
 	const abi = new AbiCoder()
@@ -105,12 +105,15 @@ export function calculatePricesFromUniswapLikeReturnData(multicallData: { succes
 
 	const v3Prices = multicallReturnData.map(({ success, returnData }, index) => {
 		if (index >= poolAddresses.v3Pools.length) return undefined // Dont directly map over balanceOf calls
-		if (!isSuccessfulCall({ success, returnData }) || !isSuccessfulCall(multicallReturnData[(index * 2) + poolAddresses.v3Pools.length]) || !isSuccessfulCall(multicallReturnData[(index * 2) + 1 + poolAddresses.v3Pools.length])) return undefined
+		const multicallReturn1 = multicallReturnData[(index * 2) + poolAddresses.v3Pools.length]
+		const multicallReturn2 = multicallReturnData[(index * 2) + 1 + poolAddresses.v3Pools.length]
+		if (multicallReturn1 === undefined || multicallReturn2 === undefined) return undefined
+		if (!isSuccessfulCall({ success, returnData }) || !isSuccessfulCall(multicallReturn1) || !isSuccessfulCall(multicallReturn2)) return undefined
 
 		// Current
 		const { sqrtPriceX96 } = IUniswapV3Pool.decodeFunctionResult('slot0', returnData)
-		const reserve0 = BigInt(multicallReturnData[(index * 2) + poolAddresses.v3Pools.length].returnData)
-		const reserve1 = BigInt(multicallReturnData[(index * 2) + 1 + poolAddresses.v3Pools.length].returnData)
+		const reserve0 = BigInt(multicallReturn1.returnData)
+		const reserve1 = BigInt(multicallReturn2.returnData)
 
 		if (reserve0 === 0n || reserve1 === 0n || sqrtPriceX96 === 0n) return undefined
 

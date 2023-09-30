@@ -60,8 +60,10 @@ export class Simulator {
 
 	public async visualizeTransactionChain(simulationState: SimulationState, transactions: WebsiteCreatedEthereumUnsignedTransaction[], blockNumber: bigint, multicallResults: MulticallResponse) {
 		let resultPromises: Promise<SimResults>[]= []
-		for (let i = 0; i < transactions.length; i++) {
-			resultPromises.push(this.visualizeTransaction(simulationState, transactions[i], blockNumber, multicallResults[i]))
+		for (const [i, transaction] of transactions.entries()) {
+			const multicallResult = multicallResults[i]
+			if (multicallResult === undefined) throw new Error('multicall result is too short')
+			resultPromises.push(this.visualizeTransaction(simulationState, transaction, blockNumber, multicallResult))
 		}
 		return await Promise.all(resultPromises)
 	}
@@ -69,7 +71,9 @@ export class Simulator {
 	public async evaluateTransaction(ethereumClientService: EthereumClientService, simulationState: SimulationState, transaction: WebsiteCreatedEthereumUnsignedTransaction, transactionQueue: EthereumUnsignedTransaction[]) {
 		const blockNumber = await this.ethereum.getBlockNumber()
 		const multicallResults = await simulatedMulticall(ethereumClientService, simulationState, transactionQueue.concat([transaction.transaction]), blockNumber)
-		return await this.visualizeTransaction(simulationState, transaction, blockNumber, multicallResults[multicallResults.length - 1])
+		const multicallResult = multicallResults[multicallResults.length - 1]
+		if (multicallResult === undefined) throw new Error('multicall result is too short')
+		return await this.visualizeTransaction(simulationState, transaction, blockNumber, multicallResult)
 	}
 
 	public async visualizeTransaction(simulationState: SimulationState, transaction: WebsiteCreatedEthereumUnsignedTransaction, blockNumber: bigint, singleMulticallResponse: SingleMulticallResponse) {
@@ -89,6 +93,7 @@ export class Simulator {
 			let tokenResults: TokenVisualizerResult[] = []
 			for (const eventLog of singleMulticallResponse.events) {
 				const logSignature = eventLog.topics[0]
+				if (logSignature === undefined) continue
 				const handler = logHandler.get(bytes32String(logSignature))
 				if (handler === undefined) continue
 				tokenResults = tokenResults.concat(handler(eventLog))

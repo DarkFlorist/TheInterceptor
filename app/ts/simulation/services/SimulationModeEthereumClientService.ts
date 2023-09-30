@@ -107,12 +107,12 @@ export const simulateEstimateGas = async (ethereumClientService: EthereumClientS
 	}
 	const multiCall = await simulatedMulticall(ethereumClientService, simulationState, [tmp], block.number + 1n)
 	const lastResult = multiCall[multiCall.length - 1]
-	if (lastResult.statusCode === 'failure') {
+	if (lastResult === undefined || lastResult.statusCode === 'failure') {
 		return {
 			error: {
 				code: ERROR_INTERCEPTOR_GAS_ESTIMATION_FAILED,
 				message: `execution reverted: failed to estimate gas.`,
-				data: dataStringWith0xStart(lastResult.returnValue),
+				data: lastResult === undefined ? '' : dataStringWith0xStart(lastResult.returnValue),
 			},
 			gas: maxGas,
 		} as const 
