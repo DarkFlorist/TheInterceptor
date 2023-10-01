@@ -86,7 +86,7 @@ const BytesParser: funtypes.ParsedValue<funtypes.String, Uint8Array>['config'] =
 		if (!(value instanceof Uint8Array)) return { success: false, message: `${typeof value} is not a Uint8Array.`}
 		let result = ''
 		for (let i = 0; i < value.length; ++i) {
-			const val = value[1]
+			const val = value[i]
 			if (val === undefined) return { success: false, message: `${typeof value} is not a Uint8Array.`}
 			result += ('0' + val.toString(16)).slice(-2)
 		}

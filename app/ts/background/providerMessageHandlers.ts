@@ -68,6 +68,7 @@ export async function signerChainChanged(simulator: Simulator, websiteTabConnect
 	const returnValue = { method: 'signer_chainChanged' as const, result: '0x' as const }
 	if (!('params' in request)) return returnValue
 	const signerChain = EthereumChainReply.parse(request.params)[0]
+	if (signerChain === undefined) throw new Error('signer chain were undefined')
 	await changeSignerChain(simulator, websiteTabConnections, port, signerChain, approval)
 	return returnValue
 }

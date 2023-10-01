@@ -148,6 +148,7 @@ export function ConfirmTransaction() {
 	const updatePendingTransactions = (message: ConfirmTransactionDialogPendingChanged | UpdateConfirmTransactionDialog) => {
 		setPendingTransactions(message.data.slice(1).reverse())
 		const firstMessage = message.data[0]
+		if (firstMessage === undefined) throw new Error('message data was undefined')
 		setCurrentPendingTransaction(firstMessage)
 		if (firstMessage.simulationResults !== undefined && firstMessage.simulationResults.statusCode === 'success' && (currentBlockNumber === undefined || firstMessage.simulationResults.data.simulationState.blockNumber > currentBlockNumber)) {
 			setCurrentBlockNumber(firstMessage.simulationResults.data.simulationState.blockNumber)

@@ -163,7 +163,10 @@ export function CatchAllVisualizer(param: TransactionImportanceBlockParams) {
 	})
 
 	const ownBalanceChanges = param.simTx.ethBalanceChanges.filter( (change) => change.address.address === msgSender)
-	const totalEthReceived = ownBalanceChanges !== undefined && ownBalanceChanges.length > 0 ? ownBalanceChanges[ownBalanceChanges.length - 1].after - ownBalanceChanges[0].before - param.simTx.transaction.value : 0n
+	const firstBalanceChanges = ownBalanceChanges[0]
+	const lastBalanceChanges = ownBalanceChanges[ownBalanceChanges.length - 1]
+	if (firstBalanceChanges === undefined || lastBalanceChanges === undefined) throw new Error('first or last balance changes were undefined')
+	const totalEthReceived = ownBalanceChanges !== undefined && ownBalanceChanges.length > 0 ? lastBalanceChanges.after - firstBalanceChanges.before - param.simTx.transaction.value : 0n
 
 	if (param.simTx.transaction.to !== undefined
 		&& param.simTx.transaction.value === 0n

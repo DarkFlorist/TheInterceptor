@@ -59,7 +59,9 @@ function ImportExport() {
 		if (!('files' in inputElement.target)) throw new Error('Did not select one file.')
 		if (inputElement.target.files.length !== 1) throw new Error('Did not select one file.')
 		const reader = new FileReader()
-		reader.readAsText(inputElement.target.files[0])
+		const firstFile = inputElement.target.files[0]
+		if (firstFile === undefined) throw new Error('File was undefined')
+		reader.readAsText(firstFile)
 		reader.onloadend = async function() {
 			if (reader.result === null) throw new Error('failed to load file')
 			await sendPopupMessageToBackgroundPage({ method: 'popup_import_settings', data: { fileContents: reader.result as string } })

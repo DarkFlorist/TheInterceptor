@@ -75,8 +75,10 @@ export function TransactionImportanceBlock(param: TransactionImportanceBlockPara
 			/>
 		}
 		case 'SimpleTokenApproval': {
+			const approval = transactionIdentification.identifiedTransaction.tokenResults[0]
+			if (approval === undefined) throw new Error('approval was undefined')
 			return <SimpleTokenApprovalVisualisation
-				approval = { transactionIdentification.identifiedTransaction.tokenResults[0] }
+				approval = { approval }
 				transactionGasses = { transactionIdentification.identifiedTransaction }
 				rpcNetwork = { transactionIdentification.identifiedTransaction.transaction.rpcNetwork }
 				renameAddressCallBack = { param.renameAddressCallBack }

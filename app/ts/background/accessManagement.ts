@@ -40,6 +40,7 @@ export function sendMessageToApprovedWebsitePorts(websiteTabConnections: Website
 	for (const [_tab, tabConnection] of websiteTabConnections.entries() ) {
 		for (const key in tabConnection.connections) {
 			const connection = tabConnection.connections[key]
+			if (connection === undefined) throw new Error('missing connection')
 			if (!connection.approved) continue
 			sendSubscriptionReplyOrCallBack(websiteTabConnections, connection.socket, message)
 		}
@@ -50,6 +51,7 @@ export async function sendActiveAccountChangeToApprovedWebsitePorts(websiteTabCo
 	for (const [_tab, tabConnection] of websiteTabConnections.entries() ) {
 		for (const key in tabConnection.connections) {
 			const connection = tabConnection.connections[key]
+			if (connection === undefined) throw new Error('missing connection')
 			if (!connection.approved) continue
 			const activeAddress = await getActiveAddressForDomain(connection.websiteOrigin, settings, connection.socket)
 			sendSubscriptionReplyOrCallBack(websiteTabConnections, connection.socket, {
@@ -216,6 +218,7 @@ async function askUserForAccessOnConnectionUpdate(simulator: Simulator, websiteT
 async function updateTabConnections(simulator: Simulator, websiteTabConnections: WebsiteTabConnections, tabConnection: TabConnection, promptForAccessesIfNeeded: boolean, settings: Settings) {
 	for (const key in tabConnection.connections) {
 		const connection = tabConnection.connections[key]
+		if (connection === undefined) throw new Error('missing connection')
 		const currentActiveAddress = await getActiveAddress(settings, connection.socket.tabId)
 		updateExtensionIcon(websiteTabConnections, connection.socket, connection.websiteOrigin)
 		const access = currentActiveAddress ? hasAddressAccess(settings.websiteAccess, connection.websiteOrigin, currentActiveAddress, settings) : hasAccess(settings.websiteAccess, connection.websiteOrigin)

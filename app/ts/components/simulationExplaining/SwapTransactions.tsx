@@ -101,13 +101,17 @@ export function identifySwap(simTransaction: SimulatedAndVisualizedTransaction):
 	if (aggregatedSentAssets.size > 1 || aggregatedReceivedAssets.size > 1) return false // its not a pure 1 to 1 swap if we receive or send multiple assets
 
 	const etherChange = simTransaction.ethBalanceChanges.filter((x) => x.address.address === sender)
-	const ethDiff = etherChange !== undefined && etherChange.length >= 1 ? etherChange[etherChange.length - 1].after - etherChange[0].before : 0n
+	const previousEtherChange = etherChange[etherChange.length - 1]
+	const firstEtherChange = etherChange[0]
+	if (previousEtherChange === undefined || firstEtherChange === undefined) throw new Error('ether change was undefined')
+	const ethDiff = etherChange !== undefined && etherChange.length >= 1 ? previousEtherChange.after - firstEtherChange.before : 0n
 
 	const transactionGasCost = simTransaction.realizedGasPrice * simTransaction.transaction.gas
 	if (sentAssets.length === 1 && receivedAssets.length === 1 && -ethDiff <= transactionGasCost) {
 		// user swapped one token to another and eth didn't change more than gas fees
 		const sentToken = sentAssets[0]
 		const receiveToken = receivedAssets[0]
+		if (sentToken === undefined || receiveToken === undefined) throw new Error('sent token or receive token was undefined')
 		if (sentToken.identifier !== receiveToken.identifier) {
 			const sendBalanceAfter = simTransaction.tokenBalancesAfter.find((balance) => balance.owner === simTransaction.transaction.from.address && balance.token === sentToken.value.token?.address && balance.tokenId === sentToken.value.tokenId)?.balance
 			const receiveBalanceAfter = simTransaction.tokenBalancesAfter.find((balance) => balance.owner === simTransaction.transaction.from.address && balance.token === receiveToken.value.token?.address && balance.tokenId === receiveToken.value.tokenId)?.balance
@@ -128,6 +132,8 @@ export function identifySwap(simTransaction: SimulatedAndVisualizedTransaction):
 	if (sentAssets.length === 1 && receivedAssets.length === 0 && ethDiff > 0n ) {
 		// user sold token for eth
 		const sentToken = sentAssets[0]
+		const firstEtherChange = etherChange[0]
+		if (sentToken === undefined || firstEtherChange === undefined) throw new Error('sent token or ether change was undefined')
 		const sendBalanceAfter = simTransaction.tokenBalancesAfter.find((balance) => balance.owner === simTransaction.transaction.from.address && balance.token === sentToken.value.token?.address && balance.tokenId === sentToken.value.tokenId)?.balance
 		return {
 			sender: simTransaction.transaction.from,
@@ -139,8 +145,8 @@ export function identifySwap(simTransaction: SimulatedAndVisualizedTransaction):
 				type: 'Ether',
 				amount: ethDiff,
 				beforeAfterBalance: {
-					beforeBalance: etherChange[0].before,
-					afterBalance: etherChange[0].before + ethDiff
+					beforeBalance: firstEtherChange.before,
+					afterBalance: firstEtherChange.before + ethDiff
 				},
 				token: undefined,
 				tokenId: undefined,
@@ -151,6 +157,8 @@ export function identifySwap(simTransaction: SimulatedAndVisualizedTransaction):
 	if (sentAssets.length === 0 && receivedAssets.length === 1 && ethDiff < transactionGasCost ) {
 		// user bought token with eth
 		const receiveToken = receivedAssets[0]
+		const firstEtherChange = etherChange[0]
+		if (receiveToken === undefined || firstEtherChange === undefined) throw new Error('receive token or ether change was undefined')
 		const receiveBalanceAfter = simTransaction.tokenBalancesAfter.find((balance) => balance.owner === simTransaction.transaction.from.address && balance.token === receiveToken.value.token?.address && balance.tokenId === receiveToken.value.tokenId)?.balance
 		return {
 			sender: simTransaction.transaction.from,
@@ -158,8 +166,8 @@ export function identifySwap(simTransaction: SimulatedAndVisualizedTransaction):
 				type: 'Ether',
 				amount: -ethDiff,
 				beforeAfterBalance: {
-					beforeBalance: etherChange[0].before,
-					afterBalance: etherChange[0].before + ethDiff
+					beforeBalance: firstEtherChange.before,
+					afterBalance: firstEtherChange.before + ethDiff
 				},
 				token: undefined,
 				tokenId: undefined,

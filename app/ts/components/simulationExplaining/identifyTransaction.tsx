@@ -27,6 +27,7 @@ type IdentifiedTransaction =
 export function identifySimpleApproval(simTx: SimulatedAndVisualizedTransaction) {
 	if (getSimpleTokenApprovalOrUndefined(simTx)) {
 		const tokenResult = simTx.tokenResults[0]
+		if (tokenResult === undefined) throw new Error('token result were undefined')
 		const symbol = tokenResult.token.symbol
 		switch (tokenResult.type) {
 			case 'ERC20': return {
@@ -94,11 +95,13 @@ export const SimulatedAndVisualizedSimpleApprovalTransaction = funtypes.Intersec
 )
 
 function isSimpleTokenApproval(simTx: SimulatedAndVisualizedTransaction): simTx is SimulatedAndVisualizedSimpleApprovalTransaction {
+	const tokenResult = simTx.tokenResults[0]
+	if (tokenResult === undefined) return false
 	if (!(simTx.transaction.value === 0n
 		&& simTx.tokenResults.length === 1
-		&& simTx.tokenResults[0].isApproval == true
-		&& simTx.tokenResults[0].from.address !== simTx.tokenResults[0].to.address
-		&& simTx.tokenResults[0].from === simTx.transaction.from
+		&& tokenResult.isApproval == true
+		&& tokenResult.from.address !== tokenResult.to.address
+		&& tokenResult.from === simTx.transaction.from
 	)) return false
 	return true
 }
@@ -143,11 +146,13 @@ export const SimulatedAndVisualizedSimpleTokenTransferTransaction = funtypes.Int
 )
 
 export function isSimpleTokenTransfer(transaction: SimulatedAndVisualizedTransaction): transaction is SimulatedAndVisualizedSimpleTokenTransferTransaction {
+	const tokenResult = transaction.tokenResults[0]
+	if (tokenResult === undefined) return false
 	if (transaction.transaction.value === 0n
 		&& transaction.tokenResults.length === 1
-		&& transaction.tokenResults[0].isApproval == false
-		&& transaction.tokenResults[0].from.address !== transaction.tokenResults[0].to.address
-		&& transaction.tokenResults[0].from.address === transaction.transaction.from.address) return true
+		&& tokenResult.isApproval == false
+		&& tokenResult.from.address !== tokenResult.to.address
+		&& tokenResult.from.address === transaction.transaction.from.address) return true
 	return false
 }
 const getSimpleTokenTransferOrUndefined = createGuard<SimulatedAndVisualizedTransaction, SimulatedAndVisualizedSimpleTokenTransferTransaction>((simTx) => isSimpleTokenTransfer(simTx) ? simTx : undefined)
@@ -195,7 +200,9 @@ export function identifyTransaction(simTx: SimulatedAndVisualizedTransaction): I
 	}
 
 	if (getSimpleTokenTransferOrUndefined(simTx)) {
-		const symbol = simTx.tokenResults[0].token.symbol
+		const tokenResult = simTx.tokenResults[0]
+		if (tokenResult === undefined) throw new Error('token result were undefined')
+		const symbol = tokenResult.token.symbol
 		return {
 			type: 'SimpleTokenTransfer',
 			title: `${ symbol } Transfer`,

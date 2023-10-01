@@ -189,7 +189,7 @@ export async function refreshPopupConfirmTransactionMetadata(ethereumClientServi
 	const promises = await getPendingTransactions()
 	if (promises.length === 0) return
 	const first = promises[0]
-	if (first.simulationResults === undefined || first.simulationResults.statusCode !== 'success') return
+	if (first === undefined || first.simulationResults === undefined || first.simulationResults.statusCode !== 'success') return
 	return await sendPopupMessageToOpenWindows({
 		method: 'popup_update_confirm_transaction_dialog',
 		data: [{
@@ -211,6 +211,7 @@ export async function refreshPopupConfirmTransactionSimulation(simulator: Simula
 	const promises = await getPendingTransactions()
 	if (promises.length === 0) return
 	const first = promises[0]
+	if (first === undefined) throw new Error('first was undefined')
 	if (!doesUniqueRequestIdentifiersMatch(first.request.uniqueRequestIdentifier, data.uniqueRequestIdentifier)) throw new Error('request id\'s do not match in refreshPopupConfirmTransactionSimulation')
 	const refreshMessage = await refreshConfirmTransactionSimulation(simulator, ethereumClientService, data.activeAddress, data.simulationMode, data.uniqueRequestIdentifier, transactionToSimulate)
 	if ('error' in transactionToSimulate) {

@@ -53,21 +53,23 @@ export function upperCaseFirstCharacter(text: string) {
 }
 
 export function convertNumberToCharacterRepresentationIfSmallEnough(num: number) {
-	const ones = ['', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine'];
-	const tens = ['', '', 'twenty', 'thirty', 'forty', 'fifty', 'sixty', 'seventy', 'eighty', 'ninety'];
-	const teens = ['ten', 'eleven', 'twelve', 'thirteen', 'fourteen', 'fifteen', 'sixteen', 'seventeen', 'eighteen', 'nineteen'];
+	const ones = ['', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine']
+	const tens = ['', '', 'twenty', 'thirty', 'forty', 'fifty', 'sixty', 'seventy', 'eighty', 'ninety']
+	const teens = ['ten', 'eleven', 'twelve', 'thirteen', 'fourteen', 'fifteen', 'sixteen', 'seventeen', 'eighteen', 'nineteen']
 
 	function convertTens(num: number) {
-		if (num < 10) return ones[num];
-		else if (num >= 10 && num < 20) return teens[num - 10];
+		if (num < 10) return ones[num]
+		else if (num >= 10 && num < 20) return teens[num - 10]
 		else {
-			return tens[Math.floor(num / 10)] + " " + ones[num % 10];
+			return tens[Math.floor(num / 10)] + " " + ones[num % 10]
 		}
 	}
 
 	if (num == 0) return 'zero'
 	if (num > 99) return num.toString()
-	return convertTens(num)
+	const convertedNumber = convertTens(num)
+	if (convertedNumber === undefined) throw new Error('index error when trying to convert number into a string')
+	return convertedNumber
 }
 
 export const humanReadableDate = (date: Date) => date.toISOString()

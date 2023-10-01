@@ -34,7 +34,11 @@ async function visualizeSimulatorState(simulationState: SimulationState, simulat
 	const priceEstimator = new PriceEstimator(simulator.ethereum)
 	const transactions = getWebsiteCreatedEthereumUnsignedTransactions(simulationState.simulatedTransactions)
 	const visualizerResult = await simulator.visualizeTransactionChain(simulationState, transactions, simulationState.blockNumber, simulationState.simulatedTransactions.map((x) => x.multicallResponse))
-	const visualizerResults = visualizerResult.map((x, i) => ({ ...x, website: simulationState.simulatedTransactions[i].website }))
+	const visualizerResults = visualizerResult.map((x, i) => {
+		const simulatedTransaction = simulationState.simulatedTransactions[i]
+		if (simulatedTransaction === undefined) throw new Error('simulated transaction was undefined')
+		return { ...x, website: simulatedTransaction.website }
+	})
 	const addressBookEntryPromises = getAddressBookEntriesForVisualiser(simulator.ethereum, visualizerResult.map((x) => x.visualizerResults), simulationState, (await getSettings()).userAddressBook)
 	const namedTokenIdPromises = nameTokenIds(simulator.ethereum, visualizerResult.map((x) => x.visualizerResults))
 	const addressBookEntries = await addressBookEntryPromises
@@ -150,6 +154,8 @@ export async function refreshConfirmTransactionSimulation(
 		}
 		const noncefixedNotPrepended = getWebsiteCreatedEthereumUnsignedTransactions(getNonPrependedSimulatedTransactions(simulationStateWithNewTransaction.prependTransactionsQueue, noncefixed))
 		const nonceFixedState = await setSimulationTransactions(ethereumClientService, simulationStateWithNewTransaction, noncefixedNotPrepended)
+		const lastNonceFixed = noncefixed[noncefixed.length - 1]
+		if (lastNonceFixed === undefined) throw new Error('last nonce fixed was undefined')
 		return {
 			statusCode: 'success' as const,
 			data: {
@@ -159,7 +165,7 @@ export async function refreshConfirmTransactionSimulation(
 					...transactionToSimulate,
 					transaction: {
 						...transactionToSimulate.transaction,
-						nonce: noncefixed[noncefixed.length - 1].signedTransaction.nonce,
+						nonce: lastNonceFixed.signedTransaction.nonce,
 					}
 				}
 			}

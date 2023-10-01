@@ -509,6 +509,8 @@ export function TransactionsAccountChangesCard({ simTx, renameAddressCallBack, a
 	const originalSummary = logSummarizer.getSummary(addressMetaDataMap, simulationAndVisualisationResults.tokenPrices, namedTokenIds)
 	const [showSummary, setShowSummary] = useState<boolean>(false)
 	const [ownAddresses, notOwnAddresses] = splitToOwnAndNotOwnAndCleanSummary(simTx, originalSummary, simulationAndVisualisationResults.activeAddress, simulationAndVisualisationResults.rpcNetwork)
+	
+	if (notOwnAddresses === undefined || ownAddresses === undefined) throw new Error('addresses were undefined')
 	const numberOfChanges = notOwnAddresses.length + ownAddresses.length
 
 	return <div class = 'card' style = 'margin-top: 10px; margin-bottom: 10px'>
@@ -670,6 +672,8 @@ export function SimulationSummary(param: SimulationSummaryParams) {
 
 	const [showOtherAccountChanges, setShowOtherAccountChange] = useState<boolean>(false)
 
+	if (ownAddresses === undefined || notOwnAddresses === undefined) throw new Error('addresses were undefined')
+
 	return (
 		<div class = 'card' style = 'background-color: var(--card-bg-color); margin: 10px;'>
 			<header class = 'card-header'>
@@ -684,7 +688,7 @@ export function SimulationSummary(param: SimulationSummaryParams) {
 			</header>
 			<div class = 'card-content'>
 				<div class = 'container' style = 'margin-bottom: 10px'>
-					{ ownAddresses.length == 0 ?<p class = 'paragraph'> No changes to your accounts </p>
+					{ ownAddresses.length == 0 ? <p class = 'paragraph'> No changes to your accounts </p>
 						: <div class = 'notification transaction-importance-box'>
 							{ ownAddresses.map( ([_index, balanceSummary], index) => <>
 								<SummarizeAddress
