@@ -28,12 +28,14 @@ function EtherTransferEvent(param: EtherTransferEventParams) {
 							<EtherAmount
 								amount = { param.valueSent }
 								style = { { color: param.textColor } }
+								fontSize = { 'normal' }
 							/>
 						</div>
 						<div class = 'log-cell'>
 							<EtherSymbol
 								style = { { color: param.textColor } }
 								rpcNetwork = { param.rpcNetwork }
+								fontSize = { 'normal' }
 							/>
 						</div>
 					</table>
@@ -52,12 +54,14 @@ function EtherTransferEvent(param: EtherTransferEventParams) {
 							<EtherAmount
 								amount = { param.totalReceived }
 								style = { { color: param.textColor } }
+								fontSize = { 'normal' }
 							/>
 						</div>
 						<div class = 'log-cell'>
 							<EtherSymbol
 								style = { { color: param.textColor } }
 								rpcNetwork = { param.rpcNetwork }
+								fontSize = { 'normal' }
 							/>
 						</div>
 					</table>
@@ -106,6 +110,7 @@ function SendOrReceiveTokensImportanceBox(param: SendOrReceiveTokensImportanceBo
 									{ ...'tokenId' in tokenEvent ? { tokenId: tokenEvent.tokenId } : {} }
 									tokenEntry = { tokenEvent.token }
 									style = { { color: param.textColor } }
+									fontSize = { 'normal' }
 								/>
 							: <></>}
 						</div>
@@ -115,6 +120,7 @@ function SendOrReceiveTokensImportanceBox(param: SendOrReceiveTokensImportanceBo
 								style = { { color: param.textColor } }
 								useFullTokenName = { false }
 								renameAddressCallBack = { param.renameAddressCallBack }
+								fontSize = { 'normal' }
 							/>
 						</div>
 						<div class = 'log-cell'>

@@ -8,7 +8,7 @@ import { JSX } from 'preact/jsx-runtime'
 import { useEffect } from 'preact/hooks'
 import { Erc1155Entry, Erc20TokenEntry, Erc721Entry } from '../../types/addressBookTypes.js'
 import { RenameAddressCallBack } from '../../types/user-interface-types.js'
-import { BIG_FONT_SIZE } from '../../utils/constants.js'
+import { BIG_FONT_SIZE, NORMAL_FONT_SIZE } from '../../utils/constants.js'
 import { RpcNetwork } from '../../types/rpc.js'
 
 type EtherParams = {
@@ -17,6 +17,7 @@ type EtherParams = {
 	useFullTokenName?: boolean
 	rpcNetwork: RpcNetwork
 	style?: JSX.CSSProperties
+	fontSize: 'normal' | 'big'
 }
 
 export function Ether(param: EtherParams) {
@@ -33,6 +34,7 @@ type EtherAmountParams = {
 	amount: bigint
 	showSign?: boolean
 	style?: JSX.CSSProperties
+	fontSize: 'normal' | 'big'
 }
 
 export function EtherAmount(param: EtherAmountParams) {
@@ -55,6 +57,7 @@ type EtherSymbolParams = {
 	useFullTokenName?: boolean
 	rpcNetwork: RpcNetwork
 	style?: JSX.CSSProperties
+	fontSize: 'normal' | 'big'
 }
 
 export function EtherSymbol(param: EtherSymbolParams) {
@@ -65,6 +68,7 @@ export function EtherSymbol(param: EtherSymbolParams) {
 		'text-overflow': 'ellipsis',
 		'margin-left': '2px',
 		...(param.style === undefined ? {} : param.style),
+		'font-size': param.fontSize === 'big' ? BIG_FONT_SIZE : NORMAL_FONT_SIZE
 	}
 	const etheName = param.useFullTokenName ? param.rpcNetwork.currencyName : param.rpcNetwork.currencyTicker
 
@@ -93,6 +97,7 @@ export function TokenPrice(param: TokenPriceParams) {
 			amount = { value }
 			rpcNetwork = { param.rpcNetwork }
 			style = { style }
+			fontSize = { 'normal' }
 		/>
 		<p style = { style }>)</p>
 	</>
@@ -110,6 +115,7 @@ export type TokenSymbolParams = (
 	useFullTokenName?: boolean
 	style?: JSX.CSSProperties
 	renameAddressCallBack: RenameAddressCallBack
+	fontSize: 'normal' | 'big'
 }
 
 function TokenIdOrNameOrNothing(param: TokenSymbolParams) {
@@ -134,17 +140,17 @@ export function TokenSymbol(param: TokenSymbolParams) {
 
 	const tokenString = checksummedAddress(param.tokenEntry.address)
 	const unTrusted = param.tokenEntry.entrySource === 'OnChain'
-	const big = 'style' in param && param.style !== undefined && 'font-size' in param.style && param.style['font-size'] === BIG_FONT_SIZE
 	const style = {
 		color: 'var(--text-color)',
 		...(param.style === undefined ? {} : param.style),
 		...unTrusted ? { color: 'var(--warning-color)' } : {},
+		'font-size': param.fontSize === 'big' ? BIG_FONT_SIZE : NORMAL_FONT_SIZE
 	}
 
 	const name = param.useFullTokenName ? param.tokenEntry.name : param.tokenEntry.symbol
 	return <span style = 'display: flex'>
 		<TokenIdOrNameOrNothing { ...param } style = { style }/>
-		<span className = { big ? 'big-token-name-container' : 'token-name-container' } data-value = { unTrusted ? `⚠${ name }` : name }>
+		<span className = { param.fontSize === 'big' ? 'big-token-name-container' : 'token-name-container' } data-value = { unTrusted ? `⚠${ name }` : name }>
 			<span class = 'token-name-holder'>
 				<span style = 'margin-right: 2px'>
 					<CopyToClipboard content = { tokenString } copyMessage = 'Token address copied!' >
@@ -244,12 +250,14 @@ type AllApprovalParams = {
 	style?: JSX.CSSProperties
 	type: 'NFT All approval'
 	allApprovalAdded: boolean
+	fontSize: 'normal' | 'big'
 }
 
 export function AllApproval(param: AllApprovalParams ) {
 	const style = {
 		color: 'var(--text-color)',
 		...(param.style === undefined ? {} : param.style),
+		'font-size': param.fontSize === 'big' ? BIG_FONT_SIZE : NORMAL_FONT_SIZE
 	}
 	if (!param.allApprovalAdded) return <p style = { style }><b>NONE</b></p>
 	return <p style = { style }><b>ALL</b></p>
