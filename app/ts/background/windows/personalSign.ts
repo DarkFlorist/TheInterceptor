@@ -4,7 +4,7 @@ import { stringifyJSONWithBigInts } from '../../utils/bigint.js'
 import { METAMASK_ERROR_USER_REJECTED_REQUEST } from '../../utils/constants.js'
 import { Future } from '../../utils/future.js'
 import { PartiallyParsedPersonalSignRequest, PersonalSignApproval, PersonalSignRequest } from '../../types/interceptor-messages.js'
-import { OpenSeaOrderMessage, PersonalSignRequestIdentifiedEIP712Message } from '../../types/personal-message-definitions.js'
+import { OpenSeaOrderMessage, PersonalSignRequestIdentifiedEIP712Message, VisualizedPersonalSignRequest } from '../../types/personal-message-definitions.js'
 import { assertNever } from '../../utils/typescript.js'
 import { WebsiteTabConnections } from '../../types/user-interface-types.js'
 import { getHtmlFile, sendPopupMessageToOpenWindows } from '../backgroundUtils.js'
@@ -23,6 +23,7 @@ import { updateSimulationState } from '../background.js'
 import { Simulator } from '../../simulation/simulator.js'
 import { SignedMessageTransaction } from '../../types/visualizer-types.js'
 import { SignMessageParams } from '../../types/jsonRpc-signing-types.js'
+import { serialize } from '../../types/wire-types.js'
 
 let pendingPersonalSign: Future<PersonalSignApproval> | undefined = undefined
 
@@ -44,8 +45,8 @@ export async function resolvePersonalSign(simulator: Simulator, websiteTabConnec
 export async function updatePendingPersonalSignViewWithPendingRequests(ethereumClientService: EthereumClientService) {
 	const personalSignPromise = await getPendingPersonalSignPromise()
 	if (personalSignPromise === undefined) throw new Error('Missing personal sign promise from local storage')
-	return await sendPopupMessageToOpenWindows(PersonalSignRequest.serialize({
-		method: 'popup_personal_sign_request',
+	return await sendPopupMessageToOpenWindows(serialize(PersonalSignRequest, {
+		method: 'popup_personal_sign_request' as const,
 		data: await craftPersonalSignPopupMessage(ethereumClientService, personalSignPromise.signedMessageTransaction, await getSignerName() )
 	}) as PartiallyParsedPersonalSignRequest)
 }
@@ -80,7 +81,7 @@ export async function addMetadataToOpenSeaOrder(ethereumClientService: EthereumC
 	 }
 }
 
-export async function craftPersonalSignPopupMessage(ethereumClientService: EthereumClientService, signedMessageTransaction: SignedMessageTransaction, signerName: SignerName) {
+export async function craftPersonalSignPopupMessage(ethereumClientService: EthereumClientService, signedMessageTransaction: SignedMessageTransaction, signerName: SignerName): Promise<VisualizedPersonalSignRequest> {
 	const settings = await getSettings()
 	const userAddressBook = settings.userAddressBook
 	const activeAddressWithMetadata = await identifyAddress(ethereumClientService, userAddressBook, signedMessageTransaction.fakeSignedFor)

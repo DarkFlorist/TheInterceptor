@@ -29,6 +29,7 @@ import { AddressBookEntry } from '../types/addressBookTypes.js'
 import { Website } from '../types/websiteAccessTypes.js'
 import { ConfirmTransactionTransactionSingleVisualization } from '../types/accessRequest.js'
 import { RpcNetwork } from '../types/rpc.js'
+import { serialize } from '../types/wire-types.js'
 
 async function visualizeSimulatorState(simulationState: SimulationState, simulator: Simulator) {
 	const priceEstimator = new PriceEstimator(simulator.ethereum)
@@ -227,7 +228,7 @@ async function handleRPCRequest(
 		return {
 			method: request.method,
 			error: {
-				message: `Failed to parse RPC request: ${ InterceptedRequest.serialize(request) }`,
+				message: `Failed to parse RPC request: ${ serialize(InterceptedRequest, request) }`,
 				data: maybeParsedRequest.fullError === undefined ? 'Failed to parse RPC request' : maybeParsedRequest.fullError.toString(),
 				code: METAMASK_ERROR_FAILED_TO_PARSE_REQUEST,
 			}

@@ -2,10 +2,11 @@ import { InterceptedRequestForward, InterceptorMessageToInpage, SubscriptionRepl
 import { WebsiteSocket } from "../utils/requests.js"
 import { WebsiteTabConnections } from "../types/user-interface-types.js"
 import { websiteSocketToString } from "./backgroundUtils.js"
+import { serialize } from "../types/wire-types.js"
 
 function postMessageToPortIfConnected(port: browser.runtime.Port, message: InterceptorMessageToInpage) {
 	try {
-		port.postMessage(InterceptorMessageToInpage.serialize(message) as Object)
+		port.postMessage(serialize(InterceptorMessageToInpage, message) as Object)
 	} catch (error) {
 		if (error instanceof Error) {
 			if (error.message?.includes('Attempting to use a disconnected port object')) {

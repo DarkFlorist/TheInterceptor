@@ -2,7 +2,7 @@ import { changeActiveAddressAndChainAndResetSimulation, changeActiveRpc, getPrep
 import { getSettings, setUseTabsInsteadOfPopup, setMakeMeRich, setPage, setUseSignersAddressAsActiveAddress, updateActiveAddresses, updateContacts, updateWebsiteAccess, exportSettingsAndAddressBook, importSettingsAndAddressBook, getMakeMeRich, getUseTabsInsteadOfPopup, getMetamaskCompatibilityMode, setMetamaskCompatibilityMode } from './settings.js'
 import { getPendingTransactions, getCurrentTabId, getOpenedAddressBookTabId, getSimulationResults, getTabState, saveCurrentTabId, setOpenedAddressBookTabId, setRpcList, getRpcList, getPrimaryRpcForChain, setRpcConnectionStatus, getSignerName, getRpcConnectionStatus, updateUserAddressBookEntries } from './storageVariables.js'
 import { Simulator } from '../simulation/simulator.js'
-import { ChangeActiveAddress, ChangeMakeMeRich, ChangePage, RemoveTransaction, RequestAccountsFromSigner, TransactionConfirmation, InterceptorAccess, ChangeInterceptorAccess, ChainChangeConfirmation, EnableSimulationMode, ChangeActiveChain, AddOrEditAddressBookEntry, GetAddressBookData, RemoveAddressBookEntry, RefreshConfirmTransactionDialogSimulation, InterceptorAccessRefresh, InterceptorAccessChangeAddress, Settings, RefreshConfirmTransactionMetadata, RefreshInterceptorAccessMetadata, ChangeSettings, ImportSettings, SetRpcList, IdentifyAddress, FindAddressBookEntryWithSymbolOrName, PersonalSignApproval, UpdateHomePage, PartiallyParsedPersonalSignRequest } from '../types/interceptor-messages.js'
+import { ChangeActiveAddress, ChangeMakeMeRich, ChangePage, RemoveTransaction, RequestAccountsFromSigner, TransactionConfirmation, InterceptorAccess, ChangeInterceptorAccess, ChainChangeConfirmation, EnableSimulationMode, ChangeActiveChain, AddOrEditAddressBookEntry, GetAddressBookData, RemoveAddressBookEntry, RefreshConfirmTransactionDialogSimulation, InterceptorAccessRefresh, InterceptorAccessChangeAddress, Settings, RefreshConfirmTransactionMetadata, RefreshInterceptorAccessMetadata, ChangeSettings, ImportSettings, SetRpcList, IdentifyAddress, FindAddressBookEntryWithSymbolOrName, PersonalSignApproval, UpdateHomePage } from '../types/interceptor-messages.js'
 import { formEthSendTransaction, formSendRawTransaction, resolvePendingTransaction } from './windows/confirmTransaction.js'
 import { craftPersonalSignPopupMessage, resolvePersonalSign } from './windows/personalSign.js'
 import { getAddressMetadataForAccess, requestAddressChange, resolveInterceptorAccess } from './windows/interceptorAccess.js'
@@ -22,6 +22,8 @@ import { SimulationState } from '../types/visualizer-types.js'
 import { ExportedSettings } from '../types/exportedSettingsTypes.js'
 import { isJSON } from '../utils/json.js'
 import { UserAddressBook } from '../types/addressBookTypes.js'
+import { serialize } from '../types/wire-types.js'
+import { VisualizedPersonalSignRequest } from '../types/personal-message-definitions.js'
 
 export async function confirmDialog(simulator: Simulator, websiteTabConnections: WebsiteTabConnections, confirmation: TransactionConfirmation) {
 	await resolvePendingTransaction(simulator, websiteTabConnections, confirmation)
@@ -315,14 +317,14 @@ export async function homeOpened(simulator: Simulator) {
 	const simulatedAndVisualizedTransactions = simResults.simulationState === undefined || simResults.visualizerResults === undefined ? [] : formSimulatedAndVisualizedTransaction(simResults.simulationState, simResults.visualizerResults, simResults.addressBookEntries, simResults.namedTokenIds)
 	const signerName = await getSignerName()
 	const VisualizedPersonalSignRequest = simResults.simulationState === undefined ? [] : simResults.simulationState.signedMessages.map((signedMessage) => craftPersonalSignPopupMessage(simulator.ethereum, signedMessage, signerName))
-	
-	await sendPopupMessageToOpenWindows(UpdateHomePage.serialize({
-		method: 'popup_UpdateHomePage',
+	const visualizedPersonalSignRequests: readonly VisualizedPersonalSignRequest[] = await Promise.all(VisualizedPersonalSignRequest)
+	await sendPopupMessageToOpenWindows(serialize(UpdateHomePage, {
+		method: 'popup_UpdateHomePage' as const,
 		data: {
 			simulation: {
 				...simResults,
 				simulatedAndVisualizedTransactions: simulatedAndVisualizedTransactions,
-				visualizedPersonalSignRequests: await Promise.all(VisualizedPersonalSignRequest),
+				visualizedPersonalSignRequests,
 			},
 			websiteAccessAddressMetadata: getAddressMetadataForAccess(settings.websiteAccess, settings.userAddressBook.activeAddresses),
 			signerAccounts: tabState?.signerAccounts,
@@ -339,7 +341,7 @@ export async function homeOpened(simulator: Simulator) {
 			tabId,
 			rpcEntries: await getRpcList(),
 		}
-	}) as PartiallyParsedPersonalSignRequest)
+	}))
 }
 
 export async function interceptorAccessChangeAddressOrRefresh(websiteTabConnections: WebsiteTabConnections, params: InterceptorAccessChangeAddress | InterceptorAccessRefresh) {
@@ -382,7 +384,7 @@ export async function exportSettings() {
 	const exportedSettings = await exportSettingsAndAddressBook()
 	await sendPopupMessageToOpenWindows({
 		method: 'popup_initiate_export_settings',
-		data: { fileContents: JSON.stringify(ExportedSettings.serialize(exportedSettings), undefined, 4) }
+		data: { fileContents: JSON.stringify(serialize(ExportedSettings, exportedSettings), undefined, 4) }
 	})
 }
 

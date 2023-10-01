@@ -1,6 +1,6 @@
 import { EthereumClientService } from '../../app/ts/simulation/services/EthereumClientService.js'
 import { appendTransaction, getSimulatedBlock, getSimulatedTransactionByHash } from '../../app/ts/simulation/services/SimulationModeEthereumClientService.js'
-import { EthereumSignedTransactionWithBlockData } from '../../app/ts/types/wire-types.js'
+import { EthereumSignedTransactionWithBlockData, serialize } from '../../app/ts/types/wire-types.js'
 import { GetBlockReturn, JsonRpcResponse, EthereumJsonRpcRequest } from '../../app/ts/types/JsonRpc-types.js'
 import { eth_getBlockByNumber_goerli_8443561_false, eth_getBlockByNumber_goerli_8443561_true, eth_multicall_failure, eth_transactionByhash0xe10c2a85168046080235fff99e2e14ef1e90c8cf5e9d675f2ca214e49e555e0f } from '../nethermindRPCResponses.js'
 import { describe, should } from '../micro-should.js'
@@ -115,7 +115,7 @@ export async function main() {
 			const transaction = await getSimulatedTransactionByHash(ethereum, simulationState, 0xe10c2a85168046080235fff99e2e14ef1e90c8cf5e9d675f2ca214e49e555e0fn)
 			if (transaction === undefined) throw new Error('Transaction is undefined')
 
-			const serialized = EthereumSignedTransactionWithBlockData.serialize(transaction)
+			const serialized = serialize(EthereumSignedTransactionWithBlockData, transaction)
 			const expected = parseRequest(eth_transactionByhash0xe10c2a85168046080235fff99e2e14ef1e90c8cf5e9d675f2ca214e49e555e0f)
 			assertIsObject(expected)
 			assertIsObject(serialized)

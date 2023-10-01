@@ -1,6 +1,6 @@
 import * as funtypes from 'funtypes'
 import { JSONEncodeableObject, isJSON } from '../utils/json.js'
-import { EthereumData, EthereumQuantity } from './wire-types.js'
+import { EthereumData, EthereumQuantity, serialize } from './wire-types.js'
 import { AddressBookEntry } from './addressBookTypes.js'
 
 export type EIP712MessageUnderlying = funtypes.Static<typeof EIP712MessageUnderlying>
@@ -23,7 +23,7 @@ const EIP712MessageParser: funtypes.ParsedValue<funtypes.String, EIP712MessageUn
 	},
 	serialize: value => {
 		if (!EIP712MessageUnderlying.test(value)) return { success: false, message: `${ value } is not a EIP712 message.`}
-		return { success: true, value: JSON.stringify(EIP712MessageUnderlying.serialize(value)) }
+		return { success: true, value: JSON.stringify(serialize(EIP712MessageUnderlying, value)) }
 	},
 }
 
