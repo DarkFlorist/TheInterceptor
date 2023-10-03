@@ -28,7 +28,7 @@ export function ChainSelector(params: ChainSelectorParams) {
 				<p style = 'overflow: hidden; white-space: nowrap; display: block; max-width: 160px; text-overflow: ellipsis;'>{ params.rpcNetwork.name } ▼ </p>
 			</button>
 		</div>
-		<div class = 'dropdown-menu' id = 'dropdown-menu' role = 'menu' style = 'right: -10px; min-width: 15sss0px; left: unset'>
+		<div class = 'dropdown-menu' id = 'dropdown-menu' role = 'menu' style = 'right: -10px; min-width: 160px; left: unset'>
 			<div class = 'dropdown-content'>
 				{
 					params.rpcEntries.map((rpcEntry) => { return (
