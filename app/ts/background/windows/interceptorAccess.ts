@@ -3,7 +3,7 @@ import { METAMASK_ERROR_ALREADY_PENDING } from '../../utils/constants.js'
 import { Future } from '../../utils/future.js'
 import { InterceptorAccessChangeAddress, InterceptorAccessRefresh, InterceptorAccessReply, Settings, WindowMessage } from '../../types/interceptor-messages.js'
 import { Semaphore } from '../../utils/semaphore.js'
-import { PendingAccessRequestArray, WebsiteTabConnections } from '../../types/user-interface-types.js'
+import { WebsiteTabConnections } from '../../types/user-interface-types.js'
 import { getAssociatedAddresses, setAccess, updateWebsiteApprovalAccesses, verifyAccess } from '../accessManagement.js'
 import { changeActiveAddressAndChainAndResetSimulation, handleContentScriptMessage, refuseAccess } from '../background.js'
 import { INTERNAL_CHANNEL_NAME, createInternalMessageListener, getHtmlFile, sendPopupMessageToOpenWindows, websiteSocketToString } from '../backgroundUtils.js'
@@ -15,6 +15,7 @@ import { replyToInterceptedRequest, sendSubscriptionReplyOrCallBack } from '../m
 import { Simulator } from '../../simulation/simulator.js'
 import { ActiveAddress, ActiveAddressEntry } from '../../types/addressBookTypes.js'
 import { Website, WebsiteAccessArray } from '../../types/websiteAccessTypes.js'
+import { PendingAccessRequestArray } from '../../types/accessRequest.js'
 
 type OpenedDialogWithListeners = {
 	popupOrTab: PopupOrTab

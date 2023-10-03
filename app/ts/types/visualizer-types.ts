@@ -5,10 +5,12 @@ import { QUARANTINE_CODE } from '../simulation/protectors/quarantine-codes.js'
 import { RenameAddressCallBack } from './user-interface-types.js'
 import { ERROR_INTERCEPTOR_GAS_ESTIMATION_FAILED } from '../utils/constants.js'
 import { EthBalanceChanges, EthSubscribeParams, SendRawTransactionParams, SendTransactionParams, SingleMulticallResponse } from './JsonRpc-types.js'
-import { WebsiteSocket } from '../utils/requests.js'
+import { InterceptedRequest, WebsiteSocket } from '../utils/requests.js'
 import { AddressBookEntry, Erc721Entry, Erc20TokenEntry, Erc1155Entry } from './addressBookTypes.js'
 import { Website } from './websiteAccessTypes.js'
-
+import { VisualizedPersonalSignRequest } from './personal-message-definitions.js'
+import { RpcNetwork } from './rpc.js'
+import { SignMessageParams } from './jsonRpc-signing-types.js'
 
 export type NetworkPrice = funtypes.Static<typeof NetworkPrice>
 export const NetworkPrice = funtypes.ReadonlyObject({
@@ -18,33 +20,6 @@ export const NetworkPrice = funtypes.ReadonlyObject({
 		uniswapV3Like: funtypes.ReadonlyArray(funtypes.ReadonlyObject({ factory: EthereumQuantity, initCodeHash: funtypes.String }))
 	})
 })
-
-export type RpcEntry = funtypes.Static<typeof RpcEntry>
-export const RpcEntry = funtypes.ReadonlyObject({
-	name: funtypes.String,
-	chainId: EthereumQuantity,
-	httpsRpc: funtypes.String,
-	currencyName: funtypes.String,
-	currencyTicker: funtypes.String,
-	primary: funtypes.Boolean,
-	minimized: funtypes.Boolean,
-	weth: EthereumQuantity,
-})
-
-export type RpcEntries = funtypes.Static<typeof RpcEntries>
-export const RpcEntries = funtypes.ReadonlyArray(RpcEntry)
-
-export type RpcNetwork = funtypes.Static<typeof RpcNetwork>
-export const RpcNetwork = funtypes.Union(
-	RpcEntry,
-	funtypes.ReadonlyObject({
-		httpsRpc: funtypes.Undefined,
-		chainId: EthereumQuantity,
-		name: funtypes.String,
-		currencyName: funtypes.Literal('Ether?'),
-    	currencyTicker: funtypes.Literal('ETH?'),
-	})
-)
 
 export type TokenVisualizerResult = funtypes.Static<typeof TokenVisualizerResult>
 export const TokenVisualizerResult = funtypes.Intersect(
@@ -158,9 +133,9 @@ export const SimulatedTransaction = funtypes.ReadonlyObject({
 	signedTransaction: EthereumSignedTransaction,
 	realizedGasPrice: EthereumQuantity,
 	website: Website,
-	transactionCreated: EthereumTimestamp,
+	created: EthereumTimestamp,
 	tokenBalancesAfter: TokenBalancesAfter,
-	originalTransactionRequestParameters: funtypes.Union(SendTransactionParams, SendRawTransactionParams),
+	originalRequestParameters: funtypes.Union(SendTransactionParams, SendRawTransactionParams),
 })
 
 export type EstimateGasError = funtypes.Static<typeof EstimateGasError>
@@ -176,16 +151,27 @@ export const EstimateGasError = funtypes.ReadonlyObject({
 export type WebsiteCreatedEthereumUnsignedTransaction = funtypes.Static<typeof WebsiteCreatedEthereumUnsignedTransaction>
 export const WebsiteCreatedEthereumUnsignedTransaction = funtypes.ReadonlyObject({
 	website: Website,
-	transactionCreated: EthereumTimestamp,
-	originalTransactionRequestParameters: funtypes.Union(SendTransactionParams, SendRawTransactionParams),
+	created: EthereumTimestamp,
+	originalRequestParameters: funtypes.Union(SendTransactionParams, SendRawTransactionParams),
 	transaction: EthereumUnsignedTransaction,
 	error: funtypes.Union(funtypes.Undefined, EstimateGasError.fields.error)
+})
+
+export type SignedMessageTransaction = funtypes.Static<typeof SignedMessageTransaction>
+export const SignedMessageTransaction = funtypes.ReadonlyObject({
+	website: Website,
+	created: EthereumTimestamp,
+	fakeSignedFor: EthereumAddress,
+	originalRequestParameters: SignMessageParams,
+	request: InterceptedRequest,
+	simulationMode: funtypes.Boolean,
 })
 
 export type SimulationState = funtypes.Static<typeof SimulationState>
 export const SimulationState = funtypes.ReadonlyObject({
 	prependTransactionsQueue: funtypes.ReadonlyArray(WebsiteCreatedEthereumUnsignedTransaction),
 	simulatedTransactions: funtypes.ReadonlyArray(SimulatedTransaction),
+	signedMessages: funtypes.ReadonlyArray(SignedMessageTransaction),
 	blockNumber: EthereumQuantity,
 	blockTimestamp: EthereumTimestamp,
 	rpcNetwork: RpcNetwork,
@@ -227,7 +213,7 @@ export const SimulatedAndVisualizedTransactionBase = funtypes.Intersect(
 		tokenBalancesAfter: TokenBalancesAfter,
 		tokenResults: funtypes.ReadonlyArray(TokenVisualizerResultWithMetadata),
 		website: Website,
-		transactionCreated: EthereumTimestamp,
+		created: EthereumTimestamp,
 		gasSpent: EthereumQuantity,
 		realizedGasPrice: EthereumQuantity,
 		quarantine: funtypes.Boolean,
@@ -258,10 +244,11 @@ export type SimulationAndVisualisationResults = {
 	simulationConductedTimestamp: Date,
 	addressBookEntries: readonly AddressBookEntry[],
 	simulatedAndVisualizedTransactions: readonly SimulatedAndVisualizedTransaction[],
+	visualizedPersonalSignRequests: readonly VisualizedPersonalSignRequest[],
 	rpcNetwork: RpcNetwork,
 	tokenPrices: readonly TokenPriceEstimate[],
 	activeAddress: bigint,
-	namedTokenIds: readonly NamedTokenId[]
+	namedTokenIds: readonly NamedTokenId[],
 }
 
 export type TokenPriceEstimate = funtypes.Static<typeof TokenPriceEstimate>
@@ -284,7 +271,6 @@ export type TransactionVisualizationParameters = {
 	activeAddress: bigint,
 	renameAddressCallBack: RenameAddressCallBack,
 }
-
 
 export type Erc20WithAmount = Erc20TokenEntry & {
 	amount: bigint,

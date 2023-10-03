@@ -14,7 +14,7 @@ import { useState } from 'preact/hooks'
 import { CellElement, convertNumberToCharacterRepresentationIfSmallEnough, upperCaseFirstCharacter } from '../ui-utils.js'
 import { EthereumTimestamp } from '../../types/wire-types.js'
 import { getEthDonator } from '../../background/storageVariables.js'
-import { RpcNetwork } from '../../types/visualizer-types.js'
+import { RpcNetwork } from '../../types/rpc.js'
 import { AddressBookEntry, Erc1155Entry, Erc20TokenEntry, Erc721Entry } from '../../types/addressBookTypes.js'
 import { Website } from '../../types/websiteAccessTypes.js'
 
@@ -627,10 +627,10 @@ export function TransactionHeaderForFailedToSimulate({ website } : { website: We
 	</header>
 }
 
-export function TransactionCreated({ transactionCreated } : { transactionCreated: EthereumTimestamp }) {
+export function TransactionCreated({ created } : { created: EthereumTimestamp }) {
 	return <p style = 'color: var(--subtitle-text-color); text-align: right; display: inline'>
 		{ 'Created ' }
-		<SomeTimeAgo priorTimestamp = { transactionCreated } diffToText = { humanReadableDateDeltaLessDetailed }/>
+		<SomeTimeAgo priorTimestamp = { created } diffToText = { humanReadableDateDeltaLessDetailed }/>
 	</p>
 }
 

@@ -1,6 +1,6 @@
 import { useRef, useState } from 'preact/hooks'
 import { clickOutsideAlerter } from '../ui-utils.js'
-import { RpcEntries, RpcEntry, RpcNetwork } from '../../types/visualizer-types.js'
+import { RpcEntries, RpcEntry, RpcNetwork } from '../../types/rpc.js'
 
 interface ChainSelectorParams {
 	rpcNetwork: RpcNetwork

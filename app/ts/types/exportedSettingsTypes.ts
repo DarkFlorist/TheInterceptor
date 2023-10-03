@@ -1,5 +1,5 @@
 import * as funtypes from 'funtypes'
-import { RpcNetwork } from './visualizer-types.js'
+import { RpcNetwork } from './rpc.js'
 import { EthereumQuantity, OptionalEthereumAddress } from './wire-types.js'
 import { ActiveAddressArray, ContactEntries } from './addressBookTypes.js'
 import { WebsiteAccessArray } from './websiteAccessTypes.js'

@@ -1,6 +1,6 @@
 import { DistributedOmit, assertNever } from '../../../utils/typescript.js'
 import { RenameAddressCallBack } from '../../../types/user-interface-types.js'
-import { EthBalanceChangesWithMetadata, RpcNetwork } from '../../../types/visualizer-types.js'
+import { EthBalanceChangesWithMetadata } from '../../../types/visualizer-types.js'
 import { BigAddress } from '../../subcomponents/address.js'
 import { TokenOrEth, TokenOrEtherParams } from '../../subcomponents/coins.js'
 import { GasFee, TransactionGasses } from '../SimulationSummary.js'
@@ -8,6 +8,7 @@ import { SimulatedAndVisualizedEtherTransferTransaction, SimulatedAndVisualizedS
 import { AddressBookEntry } from '../../../types/addressBookTypes.js'
 import { BIG_FONT_SIZE } from '../../../utils/constants.js'
 import { tokenEventToTokenSymbolParams } from './CatchAllVisualizer.js'
+import { RpcNetwork } from '../../../types/rpc.js'
 
 type BeforeAfterAddress = {
 	address: AddressBookEntry

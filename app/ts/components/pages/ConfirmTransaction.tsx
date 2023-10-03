@@ -5,7 +5,7 @@ import Hint from '../subcomponents/Hint.js'
 import { RawTransactionDetailsCard, GasFee, LogAnalysisCard, SimulatedInBlockNumber, TransactionCreated, TransactionHeader, TransactionHeaderForFailedToSimulate, TransactionsAccountChangesCard } from '../simulationExplaining/SimulationSummary.js'
 import { CenterToPageTextSpinner } from '../subcomponents/Spinner.js'
 import { AddNewAddress } from './AddNewAddress.js'
-import { PendingTransaction, RpcConnectionStatus } from '../../types/user-interface-types.js'
+import { RpcConnectionStatus } from '../../types/user-interface-types.js'
 import { sendPopupMessageToBackgroundPage } from '../../background/backgroundUtils.js'
 import { SignerLogoText } from '../subcomponents/signers.js'
 import { ErrorCheckBox } from '../subcomponents/Error.js'
@@ -16,6 +16,7 @@ import { NetworkErrors } from './Home.js'
 import { tryFocusingTabOrWindow } from '../ui-utils.js'
 import { checksummedAddress } from '../../utils/bigint.js'
 import { AddressBookEntry, IncompleteAddressBookEntry } from '../../types/addressBookTypes.js'
+import { PendingTransaction } from '../../types/accessRequest.js'
 
 type UnderTransactionsParams = {
 	pendingTransactions: PendingTransaction[]
@@ -119,7 +120,7 @@ function TransactionCard(param: TransactionCardParams) {
 						</span>
 					</div>
 					<div class = 'log-cell' style = 'justify-content: center;'>
-						<TransactionCreated transactionCreated = { simTx.transactionCreated } />
+						<TransactionCreated created = { simTx.created } />
 					</div>
 					<div class = 'log-cell' style = 'justify-content: right;'>
 						<SimulatedInBlockNumber
@@ -227,9 +228,9 @@ export function ConfirmTransaction() {
 			uniqueRequestIdentifier: currentPendingTransaction.request.uniqueRequestIdentifier,
 			activeAddress: currentPendingTransaction.activeAddress,
 			simulationMode: currentPendingTransaction.simulationMode,
-			originalTransactionRequestParameters: currentPendingTransaction.transactionToSimulate.originalTransactionRequestParameters,
+			originalRequestParameters: currentPendingTransaction.transactionToSimulate.originalRequestParameters,
 			website: currentPendingTransaction.transactionToSimulate.website,
-			transactionCreated: currentPendingTransaction.transactionCreated,
+			created: currentPendingTransaction.created,
 		} })
 	}
 
@@ -308,7 +309,7 @@ export function ConfirmTransaction() {
 					<div class = 'popup-block-scroll'>
 						<NetworkErrors rpcConnectionStatus = { rpcConnectionStatus }/>
 
-						{ currentPendingTransaction.transactionToSimulate.originalTransactionRequestParameters.method === 'eth_sendRawTransaction'
+						{ currentPendingTransaction.transactionToSimulate.originalRequestParameters.method === 'eth_sendRawTransaction'
 							? <DinoSaysNotification
 								text = { `This transaction is signed already. No extra signing required to forward it to ${ simulationResults === undefined ? 'network' : simulationResults.data.simulationState.rpcNetwork.name }.` }
 								close = { () => setPendingTransactionAddedNotification(false)}
@@ -339,6 +340,7 @@ export function ConfirmTransaction() {
 								tokenPrices: simulationResults.data.tokenPrices,
 								activeAddress: simulationResults.data.activeAddress,
 								simulatedAndVisualizedTransactions: simulationResults.data.simulatedAndVisualizedTransactions,
+								visualizedPersonalSignRequests: simulationResults.data.visualizedPersonalSignRequests,
 								namedTokenIds: simulationResults.data.namedTokenIds,
 							} }
 							pendingTransactions = { pendingTransactions }

@@ -14,6 +14,8 @@ import { SimpleTokenApprovalVisualisation } from './customExplainers/SimpleToken
 import { assertNever } from '../../utils/typescript.js'
 import { CatchAllVisualizer, tokenEventToTokenSymbolParams } from './customExplainers/CatchAllVisualizer.js'
 import { AddressBookEntry } from '../../types/addressBookTypes.js'
+import { SignatureCard } from '../pages/PersonalSign.js'
+import { VisualizedPersonalSignRequest } from '../../types/personal-message-definitions.js'
 
 function isPositiveEvent(visResult: TokenVisualizerResultWithMetadata, ourAddressInReferenceFrame: bigint) {
 	if (visResult.type === 'ERC20') {
@@ -162,7 +164,7 @@ export function Transaction(param: TransactionVisualizationParameters) {
 
 					<span class = 'log-table' style = 'margin-top: 10px; grid-template-columns: auto auto;'>
 						<div class = 'log-cell'>
-							<TransactionCreated transactionCreated = { param.simTx.transactionCreated } />
+							<TransactionCreated created = { param.simTx.created } />
 						</div>
 						<div class = 'log-cell' style = 'justify-content: right;'>
 							<GasFee tx = { param.simTx } rpcNetwork = { param.simulationAndVisualisationResults.rpcNetwork } />
@@ -174,7 +176,7 @@ export function Transaction(param: TransactionVisualizationParameters) {
 	)
 }
 
-type TransactionsParams = {
+type TransactionsAndSignedMessagesParams = {
 	simulationAndVisualisationResults: SimulationAndVisualisationResults,
 	removeTransaction: (tx: SimulatedAndVisualizedTransaction) => void,
 	activeAddress: bigint,
@@ -182,17 +184,26 @@ type TransactionsParams = {
 	removeTransactionHashes: bigint[],
 }
 
-export function Transactions(param: TransactionsParams) {
+export function TransactionsAndSignedMessages(param: TransactionsAndSignedMessagesParams) {
+	const transactions = param.simulationAndVisualisationResults.simulatedAndVisualizedTransactions.filter((tx) => !param.removeTransactionHashes.includes(tx.transaction.hash))
+	const transactionsAndMessages: readonly (VisualizedPersonalSignRequest | SimulatedAndVisualizedTransaction)[] = [...param.simulationAndVisualisationResults.visualizedPersonalSignRequests, ...transactions].sort((n1, n2) => n1.created.getTime() - n2.created.getTime())
 	return <ul>
-		{ param.simulationAndVisualisationResults.simulatedAndVisualizedTransactions.filter((tx) => !param.removeTransactionHashes.includes(tx.transaction.hash)).map((simTx, _index) => (
+		{ transactionsAndMessages.map((simTx, _index) => (
 			<li>
-				<Transaction
-					simTx = { simTx }
-					simulationAndVisualisationResults = { param.simulationAndVisualisationResults }
-					removeTransaction = { param.removeTransaction }
-					activeAddress = { param.activeAddress }
-					renameAddressCallBack = { param.renameAddressCallBack }
-				/>
+				{ 'activeAddress' in simTx ? <>
+					<SignatureCard
+						VisualizedPersonalSignRequest = { simTx }
+						renameAddressCallBack = { param.renameAddressCallBack }
+					/>
+				</> : <>
+					<Transaction
+						simTx = { simTx }
+						simulationAndVisualisationResults = { param.simulationAndVisualisationResults }
+						removeTransaction = { param.removeTransaction }
+						activeAddress = { param.activeAddress }
+						renameAddressCallBack = { param.renameAddressCallBack }
+					/>
+				</> }
 			</li>
 		)) }
 	</ul>

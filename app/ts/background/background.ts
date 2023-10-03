@@ -5,8 +5,8 @@ import { getEthDonator, getSignerName, getSimulationResults, updateSimulationRes
 import { changeSimulationMode, getSettings, getMakeMeRich } from './settings.js'
 import { blockNumber, call, chainId, estimateGas, gasPrice, getAccounts, getBalance, getBlockByNumber, getCode, getLogs, getPermissions, getSimulationStack, getTransactionByHash, getTransactionCount, getTransactionReceipt, netVersion, personalSign, sendTransaction, subscribe, switchEthereumChain, unsubscribe } from './simulationModeHanders.js'
 import { changeActiveAddress, changeMakeMeRich, changePage, resetSimulation, confirmDialog, refreshSimulation, removeTransaction, requestAccountsFromSigner, refreshPopupConfirmTransactionSimulation, confirmPersonalSign, confirmRequestAccess, changeInterceptorAccess, changeChainDialog, popupChangeActiveRpc, enableSimulationMode, addOrModifyAddressBookEntry, getAddressBookData, removeAddressBookEntry, openAddressBook, homeOpened, interceptorAccessChangeAddressOrRefresh, refreshPopupConfirmTransactionMetadata, changeSettings, importSettings, exportSettings, setNewRpcList, popupIdentifyAddress, popupFindAddressBookEntryWithSymbolOrName } from './popupMessageHandlers.js'
-import { SimulationState, RpcNetwork, WebsiteCreatedEthereumUnsignedTransaction } from '../types/visualizer-types.js'
-import { ConfirmTransactionTransactionSingleVisualization, WebsiteTabConnections } from '../types/user-interface-types.js'
+import { SimulationState, WebsiteCreatedEthereumUnsignedTransaction } from '../types/visualizer-types.js'
+import { WebsiteTabConnections } from '../types/user-interface-types.js'
 import { interceptorAccessMetadataRefresh, requestAccessFromUser, updateInterceptorAccessViewWithPendingRequests } from './windows/interceptorAccess.js'
 import { MAKE_YOU_RICH_TRANSACTION, METAMASK_ERROR_FAILED_TO_PARSE_REQUEST, METAMASK_ERROR_NOT_AUTHORIZED, METAMASK_ERROR_NOT_CONNECTED_TO_CHAIN } from '../utils/constants.js'
 import { PriceEstimator } from '../simulation/priceEstimator.js'
@@ -21,12 +21,14 @@ import { FetchResponseError, JsonRpcResponseError, isFailedToFetchError } from '
 import { formSimulatedAndVisualizedTransaction } from '../components/formVisualizerResults.js'
 import { updateConfirmTransactionViewWithPendingTransaction } from './windows/confirmTransaction.js'
 import { updateChainChangeViewWithPendingRequest } from './windows/changeChain.js'
-import { updatePendingPersonalSignViewWithPendingRequests } from './windows/personalSign.js'
+import { craftPersonalSignPopupMessage, updatePendingPersonalSignViewWithPendingRequests } from './windows/personalSign.js'
 import { InterceptedRequest, UniqueRequestIdentifier, WebsiteSocket } from '../utils/requests.js'
 import { replyToInterceptedRequest } from './messageSending.js'
 import { EthGetStorageAtParams, EthereumJsonRpcRequest, SendRawTransactionParams, SendTransactionParams, SupportedEthereumJsonRpcRequestMethods, WalletAddEthereumChain } from '../types/JsonRpc-types.js'
 import { AddressBookEntry } from '../types/addressBookTypes.js'
 import { Website } from '../types/websiteAccessTypes.js'
+import { ConfirmTransactionTransactionSingleVisualization } from '../types/accessRequest.js'
+import { RpcNetwork } from '../types/rpc.js'
 
 async function visualizeSimulatorState(simulationState: SimulationState, simulator: Simulator) {
 	const priceEstimator = new PriceEstimator(simulator.ethereum)
@@ -48,12 +50,17 @@ async function visualizeSimulatorState(simulationState: SimulationState, simulat
 		return { address: metadata.address, decimals: metadata.decimals }
 	}
 	const tokenPricePromises = priceEstimator.estimateEthereumPricesForTokens(addressBookEntries.filter(onlyTokensAndTokensWithKnownDecimals).map(metadataRestructure))
+
+	const signerName = await getSignerName()
+	const VisualizedPersonalSignRequest = simulationState.signedMessages.map((signedMessage) => craftPersonalSignPopupMessage(simulator.ethereum, signedMessage, signerName))
+	
 	return {
 		tokenPrices: await tokenPricePromises,
 		addressBookEntries: addressBookEntries,
 		visualizerResults,
 		simulationState,
 		simulatedAndVisualizedTransactions,
+		visualizedPersonalSignRequests: await Promise.all(VisualizedPersonalSignRequest),
 		namedTokenIds,
 	}
 }
@@ -181,8 +188,8 @@ export async function getPrependTrasactions(ethereumClientService: EthereumClien
 			...MAKE_YOU_RICH_TRANSACTION.transaction,
 		},
 		website: MAKE_YOU_RICH_TRANSACTION.website,
-		transactionCreated: new Date(),
-		originalTransactionRequestParameters: { method: MAKE_YOU_RICH_TRANSACTION.transactionSendingFormat, params: [{}] },
+		created: new Date(),
+		originalRequestParameters: { method: MAKE_YOU_RICH_TRANSACTION.transactionSendingFormat, params: [{}] },
 		error: undefined,
 	}]
 }
@@ -221,7 +228,6 @@ async function handleRPCRequest(
 		}
 	}
 	const parsedRequest = maybeParsedRequest.value
-
 	switch (parsedRequest.method) {
 		case 'eth_getBlockByNumber': return await getBlockByNumber(ethereumClientService, simulationState, parsedRequest)
 		case 'eth_getBalance': return await getBalance(ethereumClientService, simulationState, parsedRequest)
@@ -240,7 +246,7 @@ async function handleRPCRequest(
 		case 'eth_signTypedData_v1':
 		case 'eth_signTypedData_v2':
 		case 'eth_signTypedData_v3':
-		case 'eth_signTypedData_v4': return await personalSign(ethereumClientService, websiteTabConnections, parsedRequest, request, settings.simulationMode, website, activeAddress)
+		case 'eth_signTypedData_v4': return await personalSign(simulator, websiteTabConnections, parsedRequest, request, settings.simulationMode, website, activeAddress)
 		case 'wallet_switchEthereumChain': return await switchEthereumChain(simulator, websiteTabConnections, ethereumClientService, parsedRequest, request, settings.simulationMode, website)
 		case 'wallet_requestPermissions': return await getAccounts(activeAddress)
 		case 'wallet_getPermissions': return await getPermissions()
@@ -430,7 +436,7 @@ export async function popupMessageHandler(
 	const parsedRequest = maybeParsedRequest.value
 
 	switch (parsedRequest.method) {
-		case 'popup_confirmDialog': return await confirmDialog(simulator, simulator.ethereum, websiteTabConnections, parsedRequest)
+		case 'popup_confirmDialog': return await confirmDialog(simulator, websiteTabConnections, parsedRequest)
 		case 'popup_changeActiveAddress': return await changeActiveAddress(simulator, websiteTabConnections, parsedRequest)
 		case 'popup_changeMakeMeRich': return await changeMakeMeRich(simulator, simulator.ethereum, parsedRequest, settings)
 		case 'popup_changePage': return await changePage(parsedRequest)
@@ -440,7 +446,7 @@ export async function popupMessageHandler(
 		case 'popup_refreshSimulation': return await refreshSimulation(simulator, simulator.ethereum, settings)
 		case 'popup_refreshConfirmTransactionDialogSimulation': return await refreshPopupConfirmTransactionSimulation(simulator, simulator.ethereum, parsedRequest)
 		case 'popup_refreshConfirmTransactionMetadata': return refreshPopupConfirmTransactionMetadata(simulator.ethereum, settings.userAddressBook, parsedRequest)
-		case 'popup_personalSign': return await confirmPersonalSign(websiteTabConnections, parsedRequest)
+		case 'popup_personalSignApproval': return await confirmPersonalSign(simulator, websiteTabConnections, parsedRequest)
 		case 'popup_interceptorAccess': return await confirmRequestAccess(simulator, websiteTabConnections, parsedRequest)
 		case 'popup_changeInterceptorAccess': return await changeInterceptorAccess(simulator, websiteTabConnections, parsedRequest)
 		case 'popup_changeActiveRpc': return await popupChangeActiveRpc(simulator, websiteTabConnections, parsedRequest, settings)

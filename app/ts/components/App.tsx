@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'preact/hooks'
 import { defaultAddresses } from '../background/settings.js'
-import { SimulatedAndVisualizedTransaction, SimulationAndVisualisationResults, SimulationState, TokenPriceEstimate, RpcEntry, RpcNetwork, RpcEntries, SimulationUpdatingState, SimulationResultState, NamedTokenId } from '../types/visualizer-types.js'
+import { SimulatedAndVisualizedTransaction, SimulationAndVisualisationResults, SimulationState, TokenPriceEstimate, SimulationUpdatingState, SimulationResultState, NamedTokenId } from '../types/visualizer-types.js'
 import { ChangeActiveAddress } from './pages/ChangeActiveAddress.js'
 import { Home } from './pages/Home.js'
 import { RpcConnectionStatus, TabIconDetails } from '../types/user-interface-types.js'
@@ -21,6 +21,8 @@ import { ActiveAddress, ActiveAddressEntry, AddressBookEntry, AddressBookEntries
 import { WebsiteAccessArray } from '../types/websiteAccessTypes.js'
 import { Page } from '../types/exportedSettingsTypes.js'
 import { SignerName } from '../types/signerTypes.js'
+import { VisualizedPersonalSignRequest } from '../types/personal-message-definitions.js'
+import { RpcEntries, RpcEntry, RpcNetwork } from '../types/rpc.js'
 
 export function App() {
 	const [appPage, setAppPage] = useState<Page>('Home')
@@ -85,6 +87,7 @@ export function App() {
 			addressBookEntries: AddressBookEntries,
 			tokenPrices: readonly TokenPriceEstimate[],
 			simulatedAndVisualizedTransactions: readonly SimulatedAndVisualizedTransaction[],
+			personalSignRequests: readonly VisualizedPersonalSignRequest[],
 			activeSimulationAddress: EthereumAddress | undefined,
 			namedTokenIds: readonly NamedTokenId[],
 		) => {
@@ -95,6 +98,7 @@ export function App() {
 				blockTimestamp: simState.blockTimestamp,
 				simulationConductedTimestamp: simState.simulationConductedTimestamp,
 				simulatedAndVisualizedTransactions: simulatedAndVisualizedTransactions,
+				visualizedPersonalSignRequests: personalSignRequests,
 				rpcNetwork: simState.rpcNetwork,
 				tokenPrices: tokenPrices,
 				activeAddress: activeSimulationAddress,
@@ -122,6 +126,7 @@ export function App() {
 					data.simulation.addressBookEntries,
 					data.simulation.tokenPrices,
 					data.simulation.simulatedAndVisualizedTransactions,
+					data.simulation.visualizedPersonalSignRequests,
 					data.simulation.activeAddress,
 					data.simulation.namedTokenIds,
 				)
@@ -162,7 +167,7 @@ export function App() {
 			if (message.method === 'popup_failed_to_get_block') return setRpcConnectionStatus(message.data.rpcConnectionStatus)
 			if (message.method === 'popup_update_rpc_list') return
 			if (message.method !== 'popup_UpdateHomePage') return await sendPopupMessageToBackgroundPage({ method: 'popup_requestNewHomeData' })
-			return updateHomePage(message)
+			return updateHomePage(UpdateHomePage.parse(message))
 		}
 		browser.runtime.onMessage.addListener(popupMessageListener)
 		return () => browser.runtime.onMessage.removeListener(popupMessageListener)
@@ -179,7 +184,7 @@ export function App() {
 		if (appPage === 'AddNewAddress') return
 
 		const trimmed = address.trim()
-		if ( !ethers.isAddress(trimmed) ) return
+		if (!ethers.isAddress(trimmed)) return
 
 		const bigIntReprentation = BigInt(trimmed)
 		// see if we have that address, if so, let's switch to it

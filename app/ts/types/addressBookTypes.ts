@@ -116,3 +116,10 @@ export type IncompleteAddressBookEntry = {
 	logoUri: string | undefined
 	entrySource: EntrySource
 }
+
+export type UserAddressBook = funtypes.Static<typeof UserAddressBook>
+export const UserAddressBook = funtypes.ReadonlyObject({
+	activeAddresses: funtypes.ReadonlyArray(ActiveAddress),
+	contacts: ContactEntries,
+})
+

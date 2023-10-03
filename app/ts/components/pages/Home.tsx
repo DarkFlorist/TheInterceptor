@@ -1,6 +1,6 @@
 import { HomeParams, FirstCardParams, SimulationStateParam, RpcConnectionStatus, TabIconDetails, TabIcon } from '../../types/user-interface-types.js'
 import { useEffect, useState } from 'preact/hooks'
-import { SimulatedAndVisualizedTransaction, SimulationAndVisualisationResults, RpcEntry, RpcNetwork, RpcEntries, SimulationUpdatingState, SimulationResultState } from '../../types/visualizer-types.js'
+import { SimulatedAndVisualizedTransaction, SimulationAndVisualisationResults, SimulationUpdatingState, SimulationResultState } from '../../types/visualizer-types.js'
 import { ActiveAddressComponent, getActiveAddressEntry } from '../subcomponents/address.js'
 import { SimulationSummary } from '../simulationExplaining/SimulationSummary.js'
 import { ChainSelector } from '../subcomponents/ChainSelector.js'
@@ -10,7 +10,7 @@ import { getPrettySignerName, SignerLogoText, SignersLogoName } from '../subcomp
 import { Error } from '../subcomponents/Error.js'
 import { ToolTip } from '../subcomponents/CopyToClipboard.js'
 import { sendPopupMessageToBackgroundPage } from '../../background/backgroundUtils.js'
-import { Transactions } from '../simulationExplaining/Transactions.js'
+import { TransactionsAndSignedMessages } from '../simulationExplaining/Transactions.js'
 import { DinoSays } from '../subcomponents/DinoSays.js'
 import { identifyTransaction } from '../simulationExplaining/identifyTransaction.js'
 import { SomeTimeAgo } from '../subcomponents/SomeTimeAgo.js'
@@ -18,6 +18,7 @@ import { humanReadableDate } from '../ui-utils.js'
 import { noNewBlockForOverTwoMins } from '../../background/iconHandler.js'
 import { ActiveAddress } from '../../types/addressBookTypes.js'
 import { SignerName } from '../../types/signerTypes.js'
+import { RpcEntries, RpcEntry, RpcNetwork } from '../../types/rpc.js'
 
 async function enableMakeMeRich(enabled: boolean) {
 	sendPopupMessageToBackgroundPage( { method: 'popup_changeMakeMeRich', data: enabled } )
@@ -179,7 +180,7 @@ function SimulationResults(param: SimulationStateParam) {
 		</div>
 
 		<div class = { param.simulationResultState === 'invalid' || param.simulationUpdatingState === 'failed' ? 'blur' : '' }>
-			<Transactions
+			<TransactionsAndSignedMessages
 				simulationAndVisualisationResults = { param.simulationAndVisualisationResults }
 				removeTransaction = { param.removeTransaction }
 				activeAddress = { param.simulationAndVisualisationResults.activeAddress }

@@ -2,6 +2,7 @@ import * as funtypes from 'funtypes'
 import { EthereumAddress, EthereumBlockHeader, EthereumBlockHeaderWithTransactionHashes, EthereumBlockTag, EthereumBytes256, EthereumBytes32, EthereumData, EthereumInput, EthereumQuantity, EthereumUnsignedTransaction, LiteralConverterParserFactory, RevertErrorParser } from './wire-types.js'
 import { areEqual } from '../utils/typed-arrays.js'
 import { ExecutionSpec383MultiCallParams } from './multicall-types.js'
+import { OldSignTypedDataParams, PersonalSignParams, SignTypedDataParams } from './jsonRpc-signing-types.js'
 
 export type EthGetStorageAtResponse = funtypes.Static<typeof EthGetStorageAtResponse>
 export const EthGetStorageAtResponse = funtypes.Union(
@@ -294,90 +295,6 @@ export const EthGetStorageAtParams = funtypes.ReadonlyObject({
 export const EthSubscriptionResponse = funtypes.String
 export type EthSubscriptionResponse = funtypes.Static<typeof EthSubscriptionResponse>
 
-export type PersonalSignParams = funtypes.Static<typeof PersonalSignParams>
-export const PersonalSignParams = funtypes.ReadonlyObject({
-	method: funtypes.Literal('personal_sign'),
-	params: funtypes.Union(
-		funtypes.ReadonlyTuple(funtypes.String, EthereumAddress, funtypes.Union(funtypes.String, funtypes.Undefined, funtypes.Null)), // message, account, password
-		funtypes.ReadonlyTuple(funtypes.String, EthereumAddress) // message, account
-	)
-})
-
-type typeJSONEncodeable = string | number | boolean | { [x: string]: typeJSONEncodeable | undefined } | ReadonlyArray<typeJSONEncodeable>
-export type JSONEncodeable = funtypes.Static<typeof JSONEncodeable>
-export const JSONEncodeable: funtypes.Runtype<typeJSONEncodeable> = funtypes.Lazy(() => funtypes.Union(
-	funtypes.String,
-	funtypes.Boolean,
-	funtypes.Number,
-	funtypes.ReadonlyArray(JSONEncodeable),
-	funtypes.ReadonlyRecord(funtypes.String, JSONEncodeable),
-))
-
-export type JSONEncodeableObject = funtypes.Static<typeof JSONEncodeableObject>
-export const JSONEncodeableObject = funtypes.ReadonlyRecord(funtypes.String, JSONEncodeable)
-
-export type JSONEncodeableObjectOrArray = funtypes.Static<typeof JSONEncodeableObjectOrArray>
-export const JSONEncodeableObjectOrArray = funtypes.Union(funtypes.ReadonlyArray(JSONEncodeable), funtypes.ReadonlyRecord(funtypes.String, JSONEncodeable))
-
-export type EIP712MessageUnderlying = funtypes.Static<typeof EIP712MessageUnderlying>
-export const EIP712MessageUnderlying = funtypes.ReadonlyObject({
-	types: funtypes.Record(funtypes.String, funtypes.ReadonlyArray(
-		funtypes.ReadonlyObject({
-			name: funtypes.String,
-			type: funtypes.String,
-		})
-	)),
-	primaryType: funtypes.String,
-	domain: JSONEncodeableObject,
-	message: JSONEncodeableObject,
-})
-
-export function isJSON(text: string){
-	if (typeof text !== 'string') return false
-	try {
-		JSON.parse(text)
-		return true
-	}
-	catch (error) {
-		return false
-	}
-}
-
-const EIP712MessageParser: funtypes.ParsedValue<funtypes.String, EIP712MessageUnderlying>['config'] = {
-	parse: value => {
-		if (!isJSON(value) || !EIP712MessageUnderlying.test(JSON.parse(value))) return { success: false, message: `${ value } is not EIP712 message` }
-		else return { success: true, value: EIP712MessageUnderlying.parse(JSON.parse(value)) }
-	},
-	serialize: value => {
-		if (!EIP712MessageUnderlying.test(value)) return { success: false, message: `${ value } is not a EIP712 message.`}
-		return { success: true, value: JSON.stringify(EIP712MessageUnderlying.serialize(value)) }
-	},
-}
-
-export type EIP712Message = funtypes.Static<typeof EIP712Message>
-export const EIP712Message = funtypes.String.withParser(EIP712MessageParser)
-
-export type OldSignTypedDataParams = funtypes.Static<typeof OldSignTypedDataParams>
-export const OldSignTypedDataParams = funtypes.ReadonlyObject({
-	method: funtypes.Literal('eth_signTypedData'),
-	params: funtypes.ReadonlyTuple(funtypes.ReadonlyArray(
-		funtypes.ReadonlyObject({
-			name: funtypes.String,
-			type: funtypes.String,
-		})
-	), EthereumAddress),
-})
-
-export type SignTypedDataParams = funtypes.Static<typeof SignTypedDataParams>
-export const SignTypedDataParams = funtypes.ReadonlyObject({
-	method: funtypes.Union(
-		funtypes.Literal('eth_signTypedData_v1'),
-		funtypes.Literal('eth_signTypedData_v2'),
-		funtypes.Literal('eth_signTypedData_v3'),
-		funtypes.Literal('eth_signTypedData_v4'),
-	),
-	params: funtypes.ReadonlyTuple(EthereumAddress, EIP712Message), // address that will sign the message, typed data
-})
 export type SwitchEthereumChainParams = funtypes.Static<typeof SwitchEthereumChainParams>
 export const SwitchEthereumChainParams = funtypes.ReadonlyObject({
 	method: funtypes.Literal('wallet_switchEthereumChain'),
@@ -462,8 +379,8 @@ export const EthereumJsonRpcRequest = funtypes.Union(
 	funtypes.ReadonlyObject({ method: funtypes.Literal('net_version') }),
 	GetCode,
 	PersonalSignParams,
-	OldSignTypedDataParams,
 	SignTypedDataParams,
+	OldSignTypedDataParams,
 	SwitchEthereumChainParams,
 	RequestPermissions,
 	funtypes.ReadonlyObject({ method: funtypes.Literal('wallet_getPermissions') }),

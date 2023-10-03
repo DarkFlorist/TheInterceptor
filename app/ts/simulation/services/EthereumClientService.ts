@@ -1,13 +1,14 @@
-import { EthereumUnsignedTransaction, EthereumSignedTransactionWithBlockData, EthereumQuantity, EthereumBlockTag, EthereumData, EthereumBlockHeader, EthereumBlockHeaderWithTransactionHashes, EthereumAddress } from '../../types/wire-types.js'
+import { EthereumUnsignedTransaction, EthereumSignedTransactionWithBlockData, EthereumQuantity, EthereumBlockTag, EthereumData, EthereumBlockHeader, EthereumBlockHeaderWithTransactionHashes, EthereumAddress, EthereumBytes32 } from '../../types/wire-types.js'
 import { IUnsignedTransaction1559 } from '../../utils/ethereum.js'
 import { TIME_BETWEEN_BLOCKS, MOCK_ADDRESS, MULTICALL3, Multicall3ABI } from '../../utils/constants.js'
 import { IEthereumJSONRpcRequestHandler } from './EthereumJSONRpcRequestHandler.js'
-import { Interface, LogDescription, ethers } from 'ethers'
-import { stringToUint8Array, addressString, bytes32String, dataStringWith0xStart } from '../../utils/bigint.js'
-import { BlockCalls, ExecutionSpec383MultiCallResult, CallResultLog } from '../../types/multicall-types.js'
+import { AbiCoder, Interface, LogDescription, Signature, ethers } from 'ethers'
+import { stringToUint8Array, addressString, bytes32String, dataStringWith0xStart, stringifyJSONWithBigInts } from '../../utils/bigint.js'
+import { BlockCalls, ExecutionSpec383MultiCallResult, CallResultLog, ExecutionSpec383MultiCallParams } from '../../types/multicall-types.js'
 import { MulticallResponse, EthGetStorageAtResponse, EthTransactionReceiptResponse, EthGetLogsRequest, EthGetLogsResponse, DappRequestTransaction } from '../../types/JsonRpc-types.js'
 import { assertNever } from '../../utils/typescript.js'
-import { parseLogIfPossible } from './SimulationModeEthereumClientService.js'
+import { MessageHashAndSignature, SignatureWithFakeSignerAddress, parseLogIfPossible, simulatePersonalSign } from './SimulationModeEthereumClientService.js'
+import { getEcRecoverOverride } from '../../utils/ethereumByteCodes.js'
 
 export type IEthereumClientService = Pick<EthereumClientService, keyof EthereumClientService>
 export class EthereumClientService {
@@ -177,11 +178,11 @@ export class EthereumClientService {
 		return response as string
 	}
 
-	public readonly multicall = async (transactions: readonly EthereumUnsignedTransaction[], blockNumber: bigint) => {
+	public readonly multicall = async (transactions: readonly EthereumUnsignedTransaction[], spoofedSignatures: readonly SignatureWithFakeSignerAddress[], blockNumber: bigint) => {
 		const httpsRpc = this.requestHandler.getRpcNetwork().httpsRpc
 		if (httpsRpc === 'https://rpc.dark.florist/winedancemuffinborrow' || httpsRpc === 'https://rpc.dark.florist/birdchalkrenewtip') {
 			//TODO: Remove this when we get rid of our old multicall
-			return this.executionSpec383MultiCallOnlyTransactions(transactions, blockNumber)
+			return this.executionSpec383MultiCallOnlyTransactionsAndSignatures(transactions, spoofedSignatures, blockNumber)
 		}
 
 		const blockAuthor: bigint = MOCK_ADDRESS
@@ -201,6 +202,12 @@ export class EthereumClientService {
 			blockTag === parentBlock.number + 1n ? blockTag - 1n : blockTag
 		] } as const
 		const unvalidatedResult = await this.requestHandler.jsonRpcRequest(call)
+		console.log('executionSpec383MultiCall')
+		console.log(call)
+		console.log(unvalidatedResult)
+		console.log(stringifyJSONWithBigInts(ExecutionSpec383MultiCallParams.serialize(call)))
+		console.log(stringifyJSONWithBigInts(unvalidatedResult))
+		console.log('end')
 		return ExecutionSpec383MultiCallResult.parse(unvalidatedResult)
 	}
 
@@ -241,7 +248,7 @@ export class EthereumClientService {
 		if (callResults.calls.length !== 1) throw new Error('invalid multicall results length')
 		const aggregate3CallResult = callResults.calls[0]
 		if (aggregate3CallResult.status === 'failure' || aggregate3CallResult.status === 'invalid') throw Error('Failed aggregate3')
-		const multicallReturnData: { success: boolean, returnData: string }[] = IMulticall3.decodeFunctionResult('aggregate3', dataStringWith0xStart(aggregate3CallResult.return))[0]
+		const multicallReturnData: { success: boolean, returnData: string }[] = IMulticall3.decodeFunctionResult('aggregate3', dataStringWith0xStart(aggregate3CallResult.returnData))[0]
 		
 		if (multicallReturnData.length !== accounts.length) throw Error('Got wrong number of balances back')
 		return multicallReturnData.map((singleCallResult, callIndex) => {
@@ -294,8 +301,26 @@ export class EthereumClientService {
 	}
 
 	// intended drop in replacement of the old multicall
-	public readonly executionSpec383MultiCallOnlyTransactions = async (transactions: readonly EthereumUnsignedTransaction[], blockNumber: bigint): Promise<MulticallResponse> => {
+	public readonly executionSpec383MultiCallOnlyTransactionsAndSignatures = async (transactions: readonly EthereumUnsignedTransaction[], signatures: readonly SignatureWithFakeSignerAddress[], blockNumber: bigint): Promise<MulticallResponse> => {
+		const ecRecoverMovedToAddress = 0x123456n
+		const ecRecoverAddress = 1n
 		const parentBlock = await this.getBlock()
+		const coder = AbiCoder.defaultAbiCoder()
+
+		const encodePackedHash = (messageHashAndSignature: MessageHashAndSignature) => {
+			const sig = Signature.from(messageHashAndSignature.signature)
+			const packed = BigInt(ethers.keccak256(coder.encode(['bytes32', 'uint8', 'bytes32', 'bytes32'], [messageHashAndSignature.messageHash, sig.v, sig.r, sig.s])))
+			return packed
+		}
+		
+		// set mapping storage mapping() (instructed here: https://docs.soliditylang.org/en/latest/internals/layout_in_storage.html)
+		const getMappingsMemorySlot = (hash: EthereumBytes32) => ethers.keccak256(coder.encode(['bytes32', 'uint256'], [bytes32String(hash), 0n]))
+		const signatureStructs = await Promise.all(signatures.map(async (sign) => ({ key: getMappingsMemorySlot(encodePackedHash(await simulatePersonalSign(sign.originalRequestParameters, sign.fakeSignedFor))), value: sign.fakeSignedFor })))
+		const stateSets = signatureStructs.reduce((acc, current) => {
+			acc[current.key] = current.value
+			return acc
+		}, {} as { [key: string]: bigint } )
+
 		const multicallResults = await this.executionSpec383MultiCall([{
 			calls: transactions,
 			blockOverride: {
@@ -306,6 +331,13 @@ export class EthereumClientService {
 				feeRecipient: parentBlock.miner,
 				baseFee: parentBlock.baseFeePerGas === undefined ? 15000000n : parentBlock.baseFeePerGas
 			},
+			...signatures.length > 0 ? {
+				stateOverrides: { [addressString(ecRecoverAddress)]: {
+					movePrecompileToAddress: ecRecoverMovedToAddress,
+					code: getEcRecoverOverride(),
+					state: stateSets,
+				} },
+			} : {},
 		}], blockNumber)
 		if (multicallResults.length !== 1) throw new Error('Multicalled for one block but did not get one block')
 		const calls = multicallResults[0].calls
@@ -316,7 +348,7 @@ export class EthereumClientService {
 				case 'success': return {
 					statusCode: 'success' as const,
 					gasSpent: singleResult.gasUsed,
-					returnValue: singleResult.return,
+					returnValue: singleResult.returnData,
 					events: (singleResult.logs === undefined ? [] : singleResult.logs).map((log) => ({
 						loggersAddress: log.address,
 						data: 'data' in log && log.data !== undefined ? log.data : new Uint8Array(),
@@ -328,7 +360,7 @@ export class EthereumClientService {
 					statusCode: 'failure' as const,
 					gasSpent: singleResult.gasUsed,
 					error: singleResult.error.message,
-					returnValue: singleResult.return,
+					returnValue: singleResult.returnData,
 				}
 				case 'invalid': throw new Error(`Invalid multicall: ${ singleResult.error }`)
 				default: assertNever(singleResult)

@@ -1,4 +1,3 @@
-import { EIP712Message } from '../../app/ts/types/JsonRpc-types.js'
 import { Permit2, SafeTx } from '../../app/ts/types/personal-message-definitions.js'
 import { describe, runIfRoot, should, run } from '../micro-should.js'
 import { extractEIP712Message, validateEIP712Types } from '../../app/ts/utils/eip712Parsing.js'
@@ -6,6 +5,7 @@ import * as assert from 'assert'
 import { stringifyJSONWithBigInts } from '../../app/ts/utils/bigint.js'
 import { MockRequestHandler } from '../MockRequestHandler.js'
 import { EthereumClientService } from '../../app/ts/simulation/services/EthereumClientService.js'
+import { EIP712Message } from '../../app/ts/types/eip721.js'
 
 export async function main() {
 	const permit2Message = `{

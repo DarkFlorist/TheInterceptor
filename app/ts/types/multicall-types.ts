@@ -2,28 +2,28 @@ import { EthereumAddress, EthereumBlockTag, EthereumBytes32, EthereumData, Ether
 import * as funtypes from 'funtypes'
 
 export type AccountOverrideState = funtypes.Static<typeof AccountOverrideState>
-export const AccountOverrideState = funtypes.Union(
+export const AccountOverrideState = funtypes.Intersect(
 	funtypes.ReadonlyObject({
-		state: EthereumBytes32
+		state: funtypes.ReadonlyRecord(funtypes.String, EthereumBytes32),
 	}),
 	funtypes.ReadonlyPartial({
-		address: EthereumAddress,
 		nonce: EthereumQuantitySmall,
-		Balance: EthereumQuantity,
+		balance: EthereumQuantity,
 		code: EthereumData,
+		movePrecompileToAddress: EthereumAddress,
 	})
 )
 
 export type AccountOverrideStateDiff = funtypes.Static<typeof AccountOverrideStateDiff>
-export const AccountOverrideStateDiff = funtypes.Union(
+export const AccountOverrideStateDiff = funtypes.Intersect(
 	funtypes.ReadonlyObject({
-		stateDiff: EthereumBytes32
+		stateDiff: funtypes.ReadonlyRecord(funtypes.String, EthereumBytes32),
 	}),
 	funtypes.ReadonlyPartial({
-		address: EthereumAddress,
 		nonce: EthereumQuantitySmall,
-		Balance: EthereumQuantity,
+		balance: EthereumQuantity,
 		code: EthereumData,
+		movePrecompileToAddress: EthereumAddress,
 	})
 )
 
@@ -41,18 +41,18 @@ export const BlockOverride = funtypes.ReadonlyObject({
 })
 
 export type BlockCalls = funtypes.Static<typeof BlockCalls>
-export const BlockCalls = funtypes.Union(
+export const BlockCalls = funtypes.Intersect(
 	funtypes.ReadonlyObject({
 		calls: funtypes.ReadonlyArray(EthereumUnsignedTransaction),
 	}),
 	funtypes.ReadonlyPartial({
-		stateOverrides: funtypes.ReadonlyArray(AccountOverride),
+		stateOverrides: funtypes.ReadonlyRecord(funtypes.String, AccountOverride),
 		blockOverride: BlockOverride,
 	})
 )
 
-export type ParamObject = funtypes.Static<typeof ParamObject>
-export const ParamObject = funtypes.ReadonlyObject({
+export type  ExecutionSpec383MultiCallParamObject = funtypes.Static<typeof ExecutionSpec383MultiCallParamObject>
+export const  ExecutionSpec383MultiCallParamObject = funtypes.ReadonlyObject({
 	blockStateCalls: funtypes.ReadonlyArray(BlockCalls),
 	traceTransfers: funtypes.Boolean,
 	validation: funtypes.Boolean,
@@ -61,7 +61,7 @@ export const ParamObject = funtypes.ReadonlyObject({
 export type ExecutionSpec383MultiCallParams = funtypes.Static<typeof ExecutionSpec383MultiCallParams>
 export const ExecutionSpec383MultiCallParams = funtypes.ReadonlyObject({
 	method: funtypes.Literal('eth_multicallV1'),
-	params: funtypes.ReadonlyTuple(ParamObject, EthereumBlockTag),
+	params: funtypes.ReadonlyTuple(ExecutionSpec383MultiCallParamObject, EthereumBlockTag),
 })
 
 export type CallResultLog = funtypes.Static<typeof CallResultLog>
@@ -81,7 +81,7 @@ export const CallResultLog = funtypes.Intersect(
 export type ExecutionSpec383CallResultFailure = funtypes.Static<typeof ExecutionSpec383CallResultFailure>
 export const ExecutionSpec383CallResultFailure = funtypes.ReadonlyObject({
 	  status: funtypes.Literal('0x2').withParser(LiteralConverterParserFactory('0x2', 'failure' as const)),
-	  return: EthereumData,
+	  returnData: EthereumData,
 	  gasUsed: EthereumQuantitySmall,
 	  error: funtypes.ReadonlyObject({
 		  code: funtypes.Number,
@@ -93,7 +93,7 @@ export const ExecutionSpec383CallResultFailure = funtypes.ReadonlyObject({
 export type ExecutionSpec383CallResultSuccess = funtypes.Static<typeof ExecutionSpec383CallResultSuccess>
 export const ExecutionSpec383CallResultSuccess = funtypes.Intersect(
 	funtypes.ReadonlyObject({
-	  	return: EthereumData,
+	  	returnData: EthereumData,
 	  	gasUsed: EthereumQuantitySmall,
 		status: funtypes.Literal('0x1').withParser(LiteralConverterParserFactory('0x1', 'success' as const)),
 	}),

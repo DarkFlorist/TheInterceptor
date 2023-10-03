@@ -1,10 +1,11 @@
 import { TransactionImportanceBlockParams } from '../Transactions.js'
 import { Erc1155OperatorChange, Erc20ApprovalChanges, Erc721OperatorChange, Erc721TokenIdApprovalChanges, Erc721or1155OperatorChanges } from '../SimulationSummary.js'
-import { Erc721TokenApprovalChange, ERC20TokenApprovalChange, TokenVisualizerErc20Event, TokenVisualizerErc721Event, TokenVisualizerResultWithMetadata, RpcNetwork, TokenVisualizerNFTAllApprovalEvent } from '../../../types/visualizer-types.js'
+import { Erc721TokenApprovalChange, ERC20TokenApprovalChange, TokenVisualizerErc20Event, TokenVisualizerErc721Event, TokenVisualizerResultWithMetadata, TokenVisualizerNFTAllApprovalEvent } from '../../../types/visualizer-types.js'
 import { EtherSymbol, TokenSymbol, TokenAmount, EtherAmount } from '../../subcomponents/coins.js'
 import { RenameAddressCallBack } from '../../../types/user-interface-types.js'
 import { SmallAddress } from '../../subcomponents/address.js'
 import { assertNever } from '../../../utils/typescript.js'
+import { RpcNetwork } from '../../../types/rpc.js'
 
 type EtherTransferEventParams = {
 	valueSent: bigint,

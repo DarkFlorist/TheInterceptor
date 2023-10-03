@@ -5,7 +5,7 @@ import { SmallAddress } from '../../subcomponents/address.js'
 import { bytes32String } from '../../../utils/bigint.js'
 import { ArrowIcon } from '../../subcomponents/icons.js'
 import { CellElement, humanReadableDateFromSeconds } from '../../ui-utils.js'
-import { RpcNetwork } from '../../../types/visualizer-types.js'
+import { RpcNetwork } from '../../../types/rpc.js'
 import { BIG_FONT_SIZE } from '../../../utils/constants.js'
 
 const tokenStyle = { 'font-size': BIG_FONT_SIZE, 'font-weight': '500', 'color:': 'var(--text-color)' }

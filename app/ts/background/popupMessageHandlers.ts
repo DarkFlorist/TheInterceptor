@@ -2,9 +2,9 @@ import { changeActiveAddressAndChainAndResetSimulation, changeActiveRpc, getPrep
 import { getSettings, setUseTabsInsteadOfPopup, setMakeMeRich, setPage, setUseSignersAddressAsActiveAddress, updateActiveAddresses, updateContacts, updateWebsiteAccess, exportSettingsAndAddressBook, importSettingsAndAddressBook, getMakeMeRich, getUseTabsInsteadOfPopup, getMetamaskCompatibilityMode, setMetamaskCompatibilityMode } from './settings.js'
 import { getPendingTransactions, getCurrentTabId, getOpenedAddressBookTabId, getSimulationResults, getTabState, saveCurrentTabId, setOpenedAddressBookTabId, setRpcList, getRpcList, getPrimaryRpcForChain, setRpcConnectionStatus, getSignerName, getRpcConnectionStatus, updateUserAddressBookEntries } from './storageVariables.js'
 import { Simulator } from '../simulation/simulator.js'
-import { ChangeActiveAddress, ChangeMakeMeRich, ChangePage, PersonalSign, RemoveTransaction, RequestAccountsFromSigner, TransactionConfirmation, InterceptorAccess, ChangeInterceptorAccess, ChainChangeConfirmation, EnableSimulationMode, ChangeActiveChain, AddOrEditAddressBookEntry, GetAddressBookData, RemoveAddressBookEntry, RefreshConfirmTransactionDialogSimulation, UserAddressBook, InterceptorAccessRefresh, InterceptorAccessChangeAddress, Settings, RefreshConfirmTransactionMetadata, RefreshInterceptorAccessMetadata, ChangeSettings, ImportSettings, SetRpcList, IdentifyAddress, FindAddressBookEntryWithSymbolOrName } from '../types/interceptor-messages.js'
+import { ChangeActiveAddress, ChangeMakeMeRich, ChangePage, RemoveTransaction, RequestAccountsFromSigner, TransactionConfirmation, InterceptorAccess, ChangeInterceptorAccess, ChainChangeConfirmation, EnableSimulationMode, ChangeActiveChain, AddOrEditAddressBookEntry, GetAddressBookData, RemoveAddressBookEntry, RefreshConfirmTransactionDialogSimulation, InterceptorAccessRefresh, InterceptorAccessChangeAddress, Settings, RefreshConfirmTransactionMetadata, RefreshInterceptorAccessMetadata, ChangeSettings, ImportSettings, SetRpcList, IdentifyAddress, FindAddressBookEntryWithSymbolOrName, PersonalSignApproval, UpdateHomePage, PartiallyParsedPersonalSignRequest } from '../types/interceptor-messages.js'
 import { formEthSendTransaction, formSendRawTransaction, resolvePendingTransaction } from './windows/confirmTransaction.js'
-import { resolvePersonalSign } from './windows/personalSign.js'
+import { craftPersonalSignPopupMessage, resolvePersonalSign } from './windows/personalSign.js'
 import { getAddressMetadataForAccess, requestAddressChange, resolveInterceptorAccess } from './windows/interceptorAccess.js'
 import { resolveChainChange } from './windows/changeChain.js'
 import { sendMessageToApprovedWebsitePorts, updateWebsiteApprovalAccesses } from './accessManagement.js'
@@ -18,16 +18,17 @@ import { EthereumClientService } from '../simulation/services/EthereumClientServ
 import { refreshSimulationState, removeTransactionAndUpdateTransactionNonces, resetSimulationState } from '../simulation/services/SimulationModeEthereumClientService.js'
 import { formSimulatedAndVisualizedTransaction } from '../components/formVisualizerResults.js'
 import { doesUniqueRequestIdentifiersMatch } from '../utils/requests.js'
-import { isJSON } from '../types/JsonRpc-types.js'
 import { SimulationState } from '../types/visualizer-types.js'
 import { ExportedSettings } from '../types/exportedSettingsTypes.js'
+import { isJSON } from '../utils/json.js'
+import { UserAddressBook } from '../types/addressBookTypes.js'
 
-export async function confirmDialog(simulator: Simulator, ethereumClientService: EthereumClientService, websiteTabConnections: WebsiteTabConnections, confirmation: TransactionConfirmation) {
-	await resolvePendingTransaction(simulator, ethereumClientService, websiteTabConnections, confirmation)
+export async function confirmDialog(simulator: Simulator, websiteTabConnections: WebsiteTabConnections, confirmation: TransactionConfirmation) {
+	await resolvePendingTransaction(simulator, websiteTabConnections, confirmation)
 }
 
-export async function confirmPersonalSign(websiteTabConnections: WebsiteTabConnections, confirmation: PersonalSign) {
-	await resolvePersonalSign(websiteTabConnections, confirmation)
+export async function confirmPersonalSign(simulator: Simulator, websiteTabConnections: WebsiteTabConnections, confirmation: PersonalSignApproval) {
+	await resolvePersonalSign(simulator, websiteTabConnections, confirmation)
 }
 
 export async function confirmRequestAccess(simulator: Simulator, websiteTabConnections: WebsiteTabConnections, confirmation: InterceptorAccess) {
@@ -206,7 +207,7 @@ export async function refreshPopupConfirmTransactionMetadata(ethereumClientServi
 }
 
 export async function refreshPopupConfirmTransactionSimulation(simulator: Simulator, ethereumClientService: EthereumClientService, { data }: RefreshConfirmTransactionDialogSimulation) {
-	const transactionToSimulate = data.originalTransactionRequestParameters.method === 'eth_sendTransaction' ? await formEthSendTransaction(ethereumClientService, data.activeAddress, data.simulationMode, data.website, data.originalTransactionRequestParameters, data.transactionCreated) : await formSendRawTransaction(ethereumClientService, data.originalTransactionRequestParameters, data.website, data.transactionCreated)
+	const transactionToSimulate = data.originalRequestParameters.method === 'eth_sendTransaction' ? await formEthSendTransaction(ethereumClientService, data.activeAddress, data.simulationMode, data.website, data.originalRequestParameters, data.created) : await formSendRawTransaction(ethereumClientService, data.originalRequestParameters, data.website, data.created)
 	const promises = await getPendingTransactions()
 	if (promises.length === 0) return
 	const first = promises[0]
@@ -311,17 +312,21 @@ export async function homeOpened(simulator: Simulator) {
 	}
 	const simResults = await getSimulationResults()
 	const simulatedAndVisualizedTransactions = simResults.simulationState === undefined || simResults.visualizerResults === undefined ? [] : formSimulatedAndVisualizedTransaction(simResults.simulationState, simResults.visualizerResults, simResults.addressBookEntries, simResults.namedTokenIds)
-	await sendPopupMessageToOpenWindows({
+	const signerName = await getSignerName()
+	const VisualizedPersonalSignRequest = simResults.simulationState === undefined ? [] : simResults.simulationState.signedMessages.map((signedMessage) => craftPersonalSignPopupMessage(simulator.ethereum, signedMessage, signerName))
+	
+	await sendPopupMessageToOpenWindows(UpdateHomePage.serialize({
 		method: 'popup_UpdateHomePage',
 		data: {
 			simulation: {
 				...simResults,
 				simulatedAndVisualizedTransactions: simulatedAndVisualizedTransactions,
+				visualizedPersonalSignRequests: await Promise.all(VisualizedPersonalSignRequest),
 			},
 			websiteAccessAddressMetadata: getAddressMetadataForAccess(settings.websiteAccess, settings.userAddressBook.activeAddresses),
 			signerAccounts: tabState?.signerAccounts,
 			signerChain: tabState?.signerChain,
-			signerName: await getSignerName(),
+			signerName: signerName,
 			currentBlockNumber: blockNumber,
 			settings: settings,
 			tabIconDetails: tabState?.tabIconDetails,
@@ -333,7 +338,7 @@ export async function homeOpened(simulator: Simulator) {
 			tabId,
 			rpcEntries: await getRpcList(),
 		}
-	})
+	}) as PartiallyParsedPersonalSignRequest)
 }
 
 export async function interceptorAccessChangeAddressOrRefresh(websiteTabConnections: WebsiteTabConnections, params: InterceptorAccessChangeAddress | InterceptorAccessRefresh) {
