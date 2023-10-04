@@ -502,6 +502,7 @@ export const UpdateHomePage = funtypes.ReadonlyObject({
 			simulationUpdatingState: SimulationUpdatingState,
 			simulationResultState: SimulationResultState,
 			namedTokenIds: funtypes.ReadonlyArray(NamedTokenId),
+			simulationId: funtypes.Number,
 		}),
 		websiteAccessAddressMetadata: funtypes.ReadonlyArray(ActiveAddressEntry),
 		signerAccounts: funtypes.Union(funtypes.ReadonlyArray(EthereumAddress), funtypes.Undefined),

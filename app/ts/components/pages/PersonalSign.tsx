@@ -20,6 +20,7 @@ import { Ether } from '../subcomponents/coins.js'
 import { tryFocusingTabOrWindow, humanReadableDateFromSeconds, CellElement } from '../ui-utils.js'
 import { AddressBookEntry, IncompleteAddressBookEntry } from '../../types/addressBookTypes.js'
 import { EnrichedEIP712, EnrichedEIP712Message, GroupedSolidityType } from '../../types/eip721.js'
+import { serialize } from '../../types/wire-types.js'
 
 type SignatureCardParams = {
 	VisualizedPersonalSignRequest: VisualizedPersonalSignRequest
@@ -393,7 +394,7 @@ export function PersonalSign() {
 
 	function refreshMetadata() {
 		if (VisualizedPersonalSignRequest === undefined) return
-		sendPopupMessageToBackgroundPage(RefreshPersonalSignMetadata.serialize({ method: 'popup_refreshPersonalSignMetadata', data: VisualizedPersonalSignRequest }) as PartiallyParsedRefreshPersonalSignMetadata)
+		sendPopupMessageToBackgroundPage(serialize(RefreshPersonalSignMetadata, { method: 'popup_refreshPersonalSignMetadata' as const, data: VisualizedPersonalSignRequest }) as PartiallyParsedRefreshPersonalSignMetadata)
 	}
 
 	async function approve() {

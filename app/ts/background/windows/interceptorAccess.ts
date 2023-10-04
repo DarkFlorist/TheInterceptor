@@ -50,7 +50,7 @@ export async function resolveInterceptorAccess(simulator: Simulator, websiteTabC
 	return await resolve(simulator, websiteTabConnections, reply, pendingRequest.request, pendingRequest.website, pendingRequest.activeAddress)
 }
 
-export function getAddressMetadataForAccess(websiteAccess: WebsiteAccessArray, activeAddresses: readonly ActiveAddress[]): ActiveAddressEntry[] {
+export function getAddressMetadataForAccess(websiteAccess: WebsiteAccessArray, activeAddresses: readonly ActiveAddress[]): readonly ActiveAddressEntry[] {
 	const addresses = websiteAccess.map((x) => x.addressAccess === undefined ? [] : x.addressAccess?.map((addr) => addr.address)).flat()
 	const addressSet = new Set(addresses)
 	return Array.from(addressSet).map((x) => getActiveAddressEntry(x, activeAddresses))

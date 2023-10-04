@@ -1,6 +1,6 @@
 import { MessageToPopup, PopupMessage, Settings, WindowMessage } from '../types/interceptor-messages.js'
 import { WebsiteSocket } from '../utils/requests.js'
-import { EthereumQuantity } from '../types/wire-types.js'
+import { EthereumQuantity, serialize } from '../types/wire-types.js'
 import { getTabState } from './storageVariables.js'
 
 export async function getActiveAddress(settings: Settings, tabId: number) {
@@ -12,7 +12,7 @@ export async function getActiveAddress(settings: Settings, tabId: number) {
 
 export async function sendPopupMessageToOpenWindows(message: MessageToPopup) {
 	try {
-		await browser.runtime.sendMessage(MessageToPopup.serialize(message))
+		await browser.runtime.sendMessage(serialize(MessageToPopup, message))
 	} catch (error) {
 		if (error instanceof Error) {
 			if (error?.message?.includes('Could not establish connection.')) {
@@ -29,13 +29,13 @@ export async function sendPopupMessageToOpenWindows(message: MessageToPopup) {
 }
 
 export async function sendPopupMessageToBackgroundPage(message: PopupMessage) {
-	await browser.runtime.sendMessage(PopupMessage.serialize(message))
+	await browser.runtime.sendMessage(serialize(PopupMessage, message))
 }
 
 export const INTERNAL_CHANNEL_NAME = 'internalChannel'
 
 export function sendInternalWindowMessage(message: WindowMessage) {
-	new BroadcastChannel(INTERNAL_CHANNEL_NAME).postMessage(WindowMessage.serialize(message))
+	new BroadcastChannel(INTERNAL_CHANNEL_NAME).postMessage(serialize(WindowMessage, message))
 }
 
 export function createInternalMessageListener(handler: (message: WindowMessage) => void) {
@@ -78,7 +78,7 @@ export async function setExtensionBadgeBackgroundColor(details: browser.action._
 	return browser.action.setBadgeBackgroundColor(details)
 }
 
-export const websiteSocketToString = (socket: WebsiteSocket) => `${ socket.tabId }-${ EthereumQuantity.serialize(socket.connectionName) }`
+export const websiteSocketToString = (socket: WebsiteSocket) => `${ socket.tabId }-${ serialize(EthereumQuantity, socket.connectionName) }`
 
 export const getSocketFromPort = (port: browser.runtime.Port) => {
 	if (port.sender?.tab?.id === undefined) throw new Error('tab id not found in socket')

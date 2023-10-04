@@ -1,5 +1,5 @@
 import * as funtypes from 'funtypes'
-import { EthereumAddressOrMissing } from '../types/wire-types.js'
+import { EthereumAddressOrMissing, serialize } from '../types/wire-types.js'
 import { PendingChainChangeConfirmationPromise, PendingPersonalSignPromise, RpcConnectionStatus, TabState } from '../types/user-interface-types.js'
 import { EthereumSubscriptions, SimulationResults } from '../types/visualizer-types.js'
 import { AddressBookEntries, ActiveAddressArray, ContactEntries } from '../types/addressBookTypes.js'
@@ -76,7 +76,7 @@ export async function browserStorageLocalRemove(keys: LocalStorageKey | LocalSto
 }
 
 export async function browserStorageLocalSet(items: LocalStorageItems) {
-	return await browser.storage.local.set(LocalStorageItems.serialize(items) as { [key: string]: unknown } )
+	return await browser.storage.local.set(serialize(LocalStorageItems, items))
 }
 
 const getTabStateKey = (tabId: number): `tabState_${ number }` => `tabState_${ tabId }`
@@ -88,6 +88,6 @@ export async function getTabStateFromStorage(tabId: number) {
 	return TabStateItems.parse(await browser.storage.local.get(getTabStateKey(tabId)))?.[getTabStateKey(tabId)] ?? undefined
 }
 export async function setTabStateFromStorage(tabId: number, tabState: TabState) {
-	await browser.storage.local.set({ [getTabStateKey(tabId)]: TabState.serialize(tabState) })
+	await browser.storage.local.set({ [getTabStateKey(tabId)]: serialize(TabState, tabState) })
 }
 export const removeTabStateFromStorage = async (tabId: number) => await browser.storage.local.remove(getTabStateKey(tabId))
