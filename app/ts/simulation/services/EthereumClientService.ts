@@ -245,15 +245,16 @@ export class EthereumClientService {
 		}], blockNumber)
 		if (multicallResults.length !== 1) throw new Error('multicall returned too many or too few blocks')
 		const callResults = multicallResults[0]
-		if (callResults.calls.length !== 1) throw new Error('invalid multicall results length')
+		if (callResults === undefined || callResults.calls.length !== 1) throw new Error('invalid multicall results length')
 		const aggregate3CallResult = callResults.calls[0]
-		if (aggregate3CallResult.status === 'failure' || aggregate3CallResult.status === 'invalid') throw Error('Failed aggregate3')
+		if (aggregate3CallResult === undefined || aggregate3CallResult.status === 'failure' || aggregate3CallResult.status === 'invalid') throw Error('Failed aggregate3')
 		const multicallReturnData: { success: boolean, returnData: string }[] = IMulticall3.decodeFunctionResult('aggregate3', dataStringWith0xStart(aggregate3CallResult.returnData))[0]
 		
 		if (multicallReturnData.length !== accounts.length) throw Error('Got wrong number of balances back')
 		return multicallReturnData.map((singleCallResult, callIndex) => {
-			if (singleCallResult.success === false) throw new Error('aggregate3 failed to get eth balance')
-			return { address: accounts[callIndex], balance: EthereumQuantity.parse(singleCallResult.returnData) }
+			const account = accounts[callIndex]
+			if (singleCallResult.success === false ||account === undefined) throw new Error('aggregate3 failed to get eth balance')
+			return { address: account, balance: EthereumQuantity.parse(singleCallResult.returnData) }
 		})
 	}
 
@@ -269,14 +270,19 @@ export class EthereumClientService {
 		const extractEthReceiver = (log: LogDescription) => EthereumAddress.parse(log.args[1])
 		const addressesWithEthTransfers = new Set<bigint>(parsedEthLogs.map(extractEthSender).concat(parsedEthLogs.map(extractEthReceiver).concat(senders)))
 		const initialBalances = await this.getEthBalancesOfAccounts(blockNumber, Array.from(addressesWithEthTransfers))
-		const currentBalance = new Map<string, bigint>(initialBalances.map((balance) => [addressString(balance.address), balance.balance]))
+		const currentBalance = new Map<string, bigint>(initialBalances.map((balance) => {
+			if (balance === undefined) throw new Error('balance was undefined')
+			return [addressString(balance.address), balance.balance]
+		}))
 		
 		const balanceChanges = []
 		for (const [index, logs] of events.entries()) {
-			const senderBalance = currentBalance.get(addressString(senders[index]))
+			const sender = senders[index]
+			if (sender === undefined) throw new Error('missing sender')
+			const senderBalance = currentBalance.get(addressString(sender))
 			if (senderBalance === undefined) throw new Error('sender ETH balance is missing')
 			const changesForCall = [{
-				address: senders[index],
+				address: sender,
 				before: senderBalance,
 				after: senderBalance,
 			}]
@@ -340,21 +346,27 @@ export class EthereumClientService {
 			} : {},
 		}], blockNumber)
 		if (multicallResults.length !== 1) throw new Error('Multicalled for one block but did not get one block')
-		const calls = multicallResults[0].calls
+		const multicalResult = multicallResults[0]
+		if (multicalResult === undefined) throw new Error('multicallResult was undefined')
+		const calls = multicalResult.calls
 		const allLogs = calls.map((singleResult) => singleResult.status !== 'success' || singleResult.logs === undefined ? [] : singleResult.logs)
 		const balanceChanges = await this.getBalanceChanges(blockNumber, allLogs, transactions.map((tx) => tx.from))
 		const endResult = calls.map((singleResult, callIndex) => {
 			switch (singleResult.status) {
-				case 'success': return {
-					statusCode: 'success' as const,
-					gasSpent: singleResult.gasUsed,
-					returnValue: singleResult.returnData,
-					events: (singleResult.logs === undefined ? [] : singleResult.logs).map((log) => ({
-						loggersAddress: log.address,
-						data: 'data' in log && log.data !== undefined ? log.data : new Uint8Array(),
-						topics: 'topics' in log && log.topics !== undefined ? log.topics : [],
-					})).filter((x) => x.loggersAddress !== 0x0n), //TODO, keep eth logs
-					balanceChanges: balanceChanges[callIndex],
+				case 'success': {
+					const balanceChange = balanceChanges[callIndex]
+					if (balanceChange === undefined) throw new Error('balance change was undefined')
+					return {
+						statusCode: 'success' as const,
+						gasSpent: singleResult.gasUsed,
+						returnValue: singleResult.returnData,
+						events: (singleResult.logs === undefined ? [] : singleResult.logs).map((log) => ({
+							loggersAddress: log.address,
+							data: 'data' in log && log.data !== undefined ? log.data : new Uint8Array(),
+							topics: 'topics' in log && log.topics !== undefined ? log.topics : [],
+						})).filter((x) => x.loggersAddress !== 0x0n), //TODO, keep eth logs
+						balanceChanges: balanceChange,
+					}
 				}
 				case 'failure': return {
 					statusCode: 'failure' as const,

@@ -107,12 +107,12 @@ export const simulateEstimateGas = async (ethereumClientService: EthereumClientS
 	}
 	const multiCall = await simulatedMulticall(ethereumClientService, simulationState, [tmp], block.number + 1n)
 	const lastResult = multiCall[multiCall.length - 1]
-	if (lastResult.statusCode === 'failure') {
+	if (lastResult === undefined || lastResult.statusCode === 'failure') {
 		return {
 			error: {
 				code: ERROR_INTERCEPTOR_GAS_ESTIMATION_FAILED,
 				message: `execution reverted: failed to estimate gas.`,
-				data: dataStringWith0xStart(lastResult.returnValue),
+				data: lastResult === undefined ? '' : dataStringWith0xStart(lastResult.returnValue),
 			},
 			gas: maxGas,
 		} as const 
@@ -168,15 +168,21 @@ export const appendTransaction = async (ethereumClientService: EthereumClientSer
 
 	return {
 		prependTransactionsQueue: simulationState === undefined ? [] : simulationState.prependTransactionsQueue,
-		simulatedTransactions: multicallResult.map((singleResult, index) => ({
-			type: 'transaction',
-			multicallResponse: singleResult,
-			signedTransaction: signedTxs[index],
-			realizedGasPrice: calculateGasPrice(signedTxs[index], parentBlock.gasUsed, parentBlock.gasLimit, parentBaseFeePerGas),
-			tokenBalancesAfter: tokenBalancesAfter[index],
-			...websiteData[index],
-			originalRequestParameters: transaction.originalRequestParameters,
-		})),
+		simulatedTransactions: multicallResult.map((singleResult, index) => {
+			const signedTx = signedTxs[index]
+			const tokenBalancesAfterForIndex = tokenBalancesAfter[index]
+			const websiteDataForIndex = websiteData[index]
+			if (signedTx === undefined || tokenBalancesAfterForIndex === undefined || websiteDataForIndex === undefined) throw 'invalid transaction index'
+			return {
+				type: 'transaction',
+				multicallResponse: singleResult,
+				signedTransaction: signedTx,
+				realizedGasPrice: calculateGasPrice(signedTx, parentBlock.gasUsed, parentBlock.gasLimit, parentBaseFeePerGas),
+				tokenBalancesAfter: tokenBalancesAfterForIndex,
+				...websiteDataForIndex,
+				originalRequestParameters: transaction.originalRequestParameters,
+			}
+		} ),
 		blockNumber: parentBlock.number,
 		blockTimestamp: parentBlock.timestamp,
 		rpcNetwork: ethereumClientService.getRpcNetwork(),
@@ -214,6 +220,7 @@ export const setSimulationTransactions = async (ethereumClientService: EthereumC
 	const tokenBalancesAfter: TokenBalancesAfter[] = []
 	for (let resultIndex = 0; resultIndex < multicallResult.length; resultIndex++) {
 		const singleResult = multicallResult[resultIndex]
+		if (singleResult === undefined)  throw 'multicall length does not match in setSimulationTransactions'
 		const balances = await getSimulatedTokenBalances(
 			ethereumClientService,
 			signedTxs.slice(0, resultIndex + 1),
@@ -225,16 +232,24 @@ export const setSimulationTransactions = async (ethereumClientService: EthereumC
 	}
 	return {
 		prependTransactionsQueue: simulationState.prependTransactionsQueue,
-		simulatedTransactions: multicallResult.map((singleResult, index) => ({
-			multicallResponse: singleResult,
-			unsignedTransaction: newTransactionsToSimulate[index],
-			signedTransaction: signedTxs[index],
-			realizedGasPrice: calculateGasPrice(newTransactionsToSimulate[index].transaction, parentBlock.gasUsed, parentBlock.gasLimit, parentBaseFeePerGas),
-			tokenBalancesAfter: tokenBalancesAfter[index],
-			website: newTransactionsToSimulate[index].website,
-			created: newTransactionsToSimulate[index].created,
-			originalRequestParameters: newTransactionsToSimulate[index].originalRequestParameters,
-		})),
+		simulatedTransactions: multicallResult.map((singleResult, index) => {
+			const newTransaction = newTransactionsToSimulate[index]
+			if (newTransaction === undefined) throw new Error('undefined transaction to simulate')
+			const after = tokenBalancesAfter[index]
+			if (after === undefined) throw new Error('undefined transaction to simulate')
+			const signed = signedTxs[index]
+			if (signed === undefined) throw new Error('signed transaction was undefined')
+			return {
+				multicallResponse: singleResult,
+				unsignedTransaction: newTransaction,
+				signedTransaction: signed,
+				realizedGasPrice: calculateGasPrice(newTransaction.transaction, parentBlock.gasUsed, parentBlock.gasLimit, parentBaseFeePerGas),
+				tokenBalancesAfter: after,
+				website: newTransaction.website,
+				created: newTransaction.created,
+				originalRequestParameters: newTransaction.originalRequestParameters,
+			}
+		}),
 		blockNumber: parentBlock.number,
 		blockTimestamp: parentBlock.timestamp,
 		rpcNetwork: ethereumClientService.getRpcNetwork(),
@@ -322,7 +337,9 @@ export const getNonceFixedSimulatedTransactions = async(ethereumClientService: E
 		} else {
 			nonceFixedTransactions.push(transaction)
 		}
-		knownPreviousNonce.set(fromString, nonceFixedTransactions[nonceFixedTransactions.length - 1].signedTransaction.nonce)
+		const lastTransaction = nonceFixedTransactions[nonceFixedTransactions.length - 1]
+		if (lastTransaction === undefined) throw new Error('last transction did not exist')
+		knownPreviousNonce.set(fromString, lastTransaction.signedTransaction.nonce)
 	}
 	return nonceFixedTransactions
 }
@@ -460,6 +477,7 @@ export const getSimulatedCode = async (ethereumClientService: EthereumClientServ
 	} as const
 	const multiCall = await simulatedMulticall(ethereumClientService, simulationState, [getCodeTransaction], block.number + 1n)
 	const lastResult = multiCall[multiCall.length - 1]
+	if (lastResult === undefined) throw new Error('last result did not exist in multicall')
 	if (lastResult.statusCode === 'failure') return { statusCode: 'failure' } as const
 	const parsed = atInterface.decodeFunctionResult('at', lastResult.returnValue)
 	return {
@@ -633,6 +651,7 @@ export const simulatedCall = async (ethereumClientService: EthereumClientService
 	} as const
 	const multicallResult = await simulatedMulticall(ethereumClientService, simulationStateToUse, [transaction], blockNumToUse)
 	const callResult = multicallResult[multicallResult.length - 1]
+	if (callResult === undefined) throw new Error('call result was undefined')
 	if (callResult.statusCode === 'failure') {
 		return {
 			error: {
@@ -730,12 +749,16 @@ const getSimulatedTokenBalances = async (ethereumClientService: EthereumClientSe
 	const transactionQueueSize = transactionQueue.length
 	const response = await ethereumClientService.multicall(transactionQueue.concat(transactions), signedMessages, blockNumber)
 	if (response.length !== transactions.length + transactionQueueSize) throw new Error('Multicall length mismatch')
-	return balances.map((balance, index) => ({
-		token: balance.token,
-		tokenId: 'tokenId' in balance ? balance.tokenId : undefined,
-		owner: balance.owner,
-		balance: response[transactionQueueSize + index].statusCode === 'success' ? bytesToUnsigned(response[transactionQueueSize + index].returnValue) : undefined
-	}))
+	return balances.map((balance, index) => {
+		const balanceResponse = response[transactionQueueSize + index]
+		if (balanceResponse === undefined) throw new Error('balance response was undefined')
+		return {
+			token: balance.token,
+			tokenId: 'tokenId' in balance ? balance.tokenId : undefined,
+			owner: balance.owner,
+			balance: balanceResponse.statusCode === 'success' ? bytesToUnsigned(balanceResponse.returnValue) : undefined
+		}
+	})
 }
 
 export const parseLogIfPossible = (ethersInterface: ethers.Interface, log: { topics: string[], data: string }) => {
@@ -784,6 +807,7 @@ const getAddressesAndTokensIdsInteractedWithErc1155s = (events: MulticallRespons
 		switch (parsed.name) {
 			case 'TransferSingle': {
 				const parsedLog = handleERC1155TransferSingle(log)[0]
+				if (parsedLog === undefined) break
 				if (parsedLog.type !== 'ERC1155') continue
 				tokenOwners.push({ ...base, owner: parsedLog.from, tokenId: parsedLog.tokenId })
 				tokenOwners.push({ ...base, owner: parsedLog.to, tokenId: parsedLog.tokenId })
@@ -813,6 +837,7 @@ const getTokenBalancesAfter = async (
 	const tokenBalancesAfter: TokenBalancesAfter[] = []
 	for (let resultIndex = 0; resultIndex < multicallResult.length; resultIndex++) {
 		const singleResult = multicallResult[resultIndex]
+		if (singleResult === undefined) throw new Error('singleResult was undefined')
 		const events = singleResult.statusCode === 'success' ? singleResult.events : []
 		const erc20sAddresses: BalanceQuery[] = getAddressesInteractedWithErc20s(events)
 		const erc1155AddressIds: BalanceQuery[] = getAddressesAndTokensIdsInteractedWithErc1155s(events)

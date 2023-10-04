@@ -116,12 +116,13 @@ export async function getSettings() : Promise<Settings> {
 		'simulationMode',
 		'contacts',
 	])
+	if (defaultRpcs[0] === undefined || defaultAddresses[0] === undefined) throw new Error('default rpc or default address was missing')
 	return {
 		activeSimulationAddress: 'activeSimulationAddress' in results ? results.activeSimulationAddress : defaultAddresses[0].address,
 		page: results.page ?? 'Home',
 		useSignersAddressAsActiveAddress: results.useSignersAddressAsActiveAddress ?? false,
 		websiteAccess: results.websiteAccess ?? [],
-		rpcNetwork: results.rpcNetwork ?? defaultRpcs[0],
+		rpcNetwork: results.rpcNetwork !== undefined ? results.rpcNetwork : defaultRpcs[0],
 		simulationMode: results.simulationMode ?? true,
 		userAddressBook: {
 			activeAddresses: results.addressInfos ?? defaultAddresses,

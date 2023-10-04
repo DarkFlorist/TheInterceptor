@@ -72,12 +72,13 @@ const Bytes16Parser: funtypes.ParsedValue<funtypes.String, bigint>['config'] = {
 const BytesParser: funtypes.ParsedValue<funtypes.String, Uint8Array>['config'] = {
 	parse: value => {
 		const match = /^(?:0x)?([a-fA-F0-9]*)$/.exec(value)
-		if (match === null) return { success: false, message: `Expected a hex string encoded byte array with an optional '0x' prefix but received ${value}` }
+		if (match === null) return { success: false, message: `Expected a hex string encoded byte array with an optional '0x' prefix but received ${ value }` }
 		const normalized = match[1]
-		if (normalized.length % 2) return { success: false, message: `Hex string encoded byte array must be an even number of charcaters long.`}
+		if (normalized === undefined) return { success: false, message: `Expected a hex string encoded byte array with an optional '0x' prefix but received ${ value }` }
+		if (normalized.length % 2) return { success: false, message: `Hex string encoded byte array must be an even number of charcaters long.` }
 		const bytes = new Uint8Array(normalized.length / 2)
 		for (let i = 0; i < normalized.length; i += 2) {
-			bytes[i/2] = Number.parseInt(`${normalized[i]}${normalized[i + 1]}`, 16)
+			bytes[i/2] = Number.parseInt(`${ normalized[i] }${ normalized[i + 1] }`, 16)
 		}
 		return { success: true, value: new Uint8Array(bytes) }
 	},
@@ -85,7 +86,9 @@ const BytesParser: funtypes.ParsedValue<funtypes.String, Uint8Array>['config'] =
 		if (!(value instanceof Uint8Array)) return { success: false, message: `${typeof value} is not a Uint8Array.`}
 		let result = ''
 		for (let i = 0; i < value.length; ++i) {
-			result += ('0' + value[i].toString(16)).slice(-2)
+			const val = value[i]
+			if (val === undefined) return { success: false, message: `${typeof value} is not a Uint8Array.`}
+			result += ('0' + val.toString(16)).slice(-2)
 		}
 		return { success: true, value: `0x${result}` }
 	}

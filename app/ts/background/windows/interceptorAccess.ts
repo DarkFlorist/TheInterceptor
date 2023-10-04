@@ -109,7 +109,9 @@ export async function requestAccessFromUser(
 		const verifyPendingRequests = async () => {
 			const previousRequests = await getPendingAccessRequests()
 			if (previousRequests.length !== 0) {
-				if (await getPopupOrTabOnlyById(previousRequests[0].dialogId) !== undefined) {
+				const previousRequest = previousRequests[0]
+				if (previousRequest === undefined) throw new Error('missing previous request')
+				if (await getPopupOrTabOnlyById(previousRequest.dialogId) !== undefined) {
 					return true
 				} else {
 					await clearPendingAccessRequests()

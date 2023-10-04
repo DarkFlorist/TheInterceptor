@@ -72,7 +72,9 @@ function generateIdenticon(address: bigint, scale: number, canvasRef: HTMLCanvas
 			row = row.concat(r)
 
 			for (let i = 0; i < row.length; i++) {
-				data.push(row[i])
+				const rowAtIndex = row[i]
+				if (rowAtIndex === undefined) throw new Error('row[i] was undefined')
+				data.push(rowAtIndex)
 			}
 		}
 

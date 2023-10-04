@@ -132,7 +132,9 @@ export function InterceptorAccessList(param: InterceptorAccessListParams) {
 	function hasChanged(state: EditableAccess) {
 		if (state.removed || state.access !== state.websiteAccess.access) return true
 		for (const [index, access] of state.addressAccessModified.entries()) {
-			if (access.removed || state.addressAccess[index].access !== access.access) {
+			const addressAccessAtIndex = state.addressAccess[index]
+			if (addressAccessAtIndex === undefined) throw new Error('addressAccessAtIndex was undefined')
+			if (access.removed || addressAccessAtIndex.access !== access.access) {
 				return true
 			}
 		}

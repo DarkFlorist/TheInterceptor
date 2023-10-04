@@ -163,9 +163,11 @@ export async function openConfirmTransactionDialog(
 
 		const addedPendingTransaction = await pendingConfirmationSemaphore.execute(async () => {
 			if (!justAddToPending) {
-				const oldPromise = await getPendingTransactions()
-				if (oldPromise.length !== 0) {
-					if (await getPopupOrTabOnlyById(oldPromise[0].dialogId) !== undefined) {
+				const pendingTransactions = await getPendingTransactions()
+				if (pendingTransactions.length !== 0) {
+					const pendingTransaction = pendingTransactions[0]
+					if (pendingTransaction === undefined) throw new Error('pending transaction was undefined')
+					if (await getPopupOrTabOnlyById(pendingTransaction.dialogId) !== undefined) {
 						justAddToPending = true
 					} else {
 						await clearPendingTransactions()
@@ -215,5 +217,7 @@ async function resolve(simulator: Simulator, simulationMode: boolean, activeAddr
 	if (newState === undefined || newState.simulatedTransactions === undefined || newState.simulatedTransactions.length === 0) {
 		return METAMASK_ERROR_NOT_CONNECTED_TO_CHAIN
 	}
-	return { result: newState.simulatedTransactions[newState.simulatedTransactions.length - 1].signedTransaction.hash }
+	const lastTransaction = newState.simulatedTransactions[newState.simulatedTransactions.length - 1]
+	if (lastTransaction === undefined) throw new Error('missing last transacion')
+	return { result: lastTransaction.signedTransaction.hash }
 }

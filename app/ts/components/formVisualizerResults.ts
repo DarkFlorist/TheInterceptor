@@ -10,7 +10,9 @@ export function formSimulatedAndVisualizedTransaction(simState: SimulationState,
 
 		const to = simulatedTx.signedTransaction.to !== null ? addressMetaData.get(addressString(simulatedTx.signedTransaction.to)) : undefined
 		if (simulatedTx.signedTransaction.to !== null && to === undefined) throw new Error('missing metadata')
-		const visualiser = visualizerResults[index].visualizerResults
+		const visualizerResult = visualizerResults[index]
+		if (visualizerResult === undefined) throw new Error('visualizer result was undefined')
+		const visualiser = visualizerResult.visualizerResults
 
 		const ethBalanceChanges: EthBalanceChangesWithMetadata[] = visualiser === undefined ? [] : visualiser.ethBalanceChanges.map((change) => {
 			const entry = addressMetaData.get(addressString(change.address))
@@ -88,8 +90,8 @@ export function formSimulatedAndVisualizedTransaction(simState: SimulationState,
 			tokenResults: tokenResults,
 			tokenBalancesAfter: simulatedTx.tokenBalancesAfter,
 			gasSpent: simulatedTx.multicallResponse.gasSpent,
-			quarantine: visualizerResults[index].quarantine,
-			quarantineCodes: visualizerResults[index].quarantineCodes,
+			quarantine: visualizerResult.quarantine,
+			quarantineCodes: visualizerResult.quarantineCodes,
 			...(simulatedTx.multicallResponse.statusCode === 'failure'
 				? {
 					error: simulatedTx.multicallResponse.error,
@@ -99,7 +101,7 @@ export function formSimulatedAndVisualizedTransaction(simState: SimulationState,
 					statusCode: simulatedTx.multicallResponse.statusCode,
 				}
 			),
-			website: visualizerResults[index].website,
+			website: visualizerResult.website,
 			created: simulatedTx.created,
 		}
 	})

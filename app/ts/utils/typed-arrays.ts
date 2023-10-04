@@ -13,7 +13,9 @@ export function stripLeadingZeros(byteArray: Uint8Array): Uint8Array {
 	}
 	const result = new Uint8Array(byteArray.length - i)
 	for (let j = 0; j < result.length; ++j) {
-		result[j] = byteArray[i + j]
+		const byte = byteArray[i + j]
+		if (byte === undefined) throw new Error('byte array is too short')
+		result[j] = byte
 	}
 	return result
 }

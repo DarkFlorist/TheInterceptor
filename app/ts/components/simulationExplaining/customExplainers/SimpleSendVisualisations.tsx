@@ -88,9 +88,12 @@ function SimpleSend({ transaction, asset, sender, receiver, renameAddressCallBac
 function getBeforeAndAfterBalanceForAddress(ethBalances: readonly EthBalanceChangesWithMetadata[], address: bigint) {
 	const filtered = ethBalances.filter((x) => x.address.address === address)
 	if (filtered.length === 0) return { before: 0n, after: 0n }
+	const firstBalance = filtered[0]
+	const lastBalance = filtered[filtered.length - 1]
+	if (firstBalance === undefined || lastBalance === undefined) throw new Error('first or last balance were undefined')
 	return {
-		before: filtered[0].before,
-		after: filtered[filtered.length - 1].after,
+		before: firstBalance.before,
+		after: lastBalance.after,
 	}
 }
 
@@ -113,6 +116,7 @@ export function EtherTransferVisualisation({ simTx, renameAddressCallBack }: { s
 
 export function SimpleTokenTransferVisualisation({ simTx, renameAddressCallBack }: { simTx: SimulatedAndVisualizedSimpleTokenTransferTransaction, renameAddressCallBack: RenameAddressCallBack }) {
 	const transfer = simTx.tokenResults[0]
+	if (transfer === undefined) throw new Error('transfer was undefined')
 	const getAsset = (transfer: TokenResult) => {
 		switch (transfer.type) {
 			case 'ERC1155': return { ...tokenEventToTokenSymbolParams(transfer), amount: transfer.amount, renameAddressCallBack }

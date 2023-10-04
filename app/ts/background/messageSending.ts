@@ -24,6 +24,7 @@ export function postMessageIfStillConnected(websiteTabConnections: WebsiteTabCon
 	if (tabConnection === undefined) return false
 	for (const socketAsString in tabConnection.connections) {
 		const connection = tabConnection.connections[socketAsString]
+		if (connection === undefined) throw new Error('connection was undefined')
 		if (socketAsString !== identifier) continue
 		postMessageToPortIfConnected(connection.port, message)
 	}
@@ -36,6 +37,7 @@ export function replyToInterceptedRequest(websiteTabConnections: WebsiteTabConne
 	if (tabConnection === undefined) return false
 	for (const socketAsString in tabConnection.connections) {
 		const connection = tabConnection.connections[socketAsString]
+		if (connection === undefined) throw new Error('connection was undefined')
 		if (socketAsString !== identifier) continue
 		postMessageToPortIfConnected(connection.port, { ...message, interceptorApproved: true, requestId: message.uniqueRequestIdentifier.requestId })
 	}
@@ -52,6 +54,7 @@ export function sendSubscriptionReplyOrCallBack(websiteTabConnections: WebsiteTa
 	if (tabConnection === undefined) return false
 	for (const socketAsString in tabConnection.connections) {
 		const connection = tabConnection.connections[socketAsString]
+		if (connection === undefined) throw new Error('connection was undefined')
 		if (socketAsString !== identifier) continue
 		postMessageToPortIfConnected(connection.port, { ...message, interceptorApproved: true })
 	}

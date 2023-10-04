@@ -206,6 +206,7 @@ export function InterceptorAccess() {
 	async function approve() {
 		if (pendingAccessRequestArray.length === 0) throw Error('access request not loaded')
 		const accessRequest = pendingAccessRequestArray[0]
+		if (accessRequest === undefined) throw Error('accessRequest is undefined')
 		const data = {
 			userReply: 'Approved' as const,
 			websiteOrigin: accessRequest.website.websiteOrigin,
@@ -222,6 +223,7 @@ export function InterceptorAccess() {
 	async function reject() {
 		if (pendingAccessRequestArray.length === 0) throw Error('access request not loaded')
 		const accessRequest = pendingAccessRequestArray[0]
+		if (accessRequest === undefined) throw Error('accessRequest is undefined')
 		const data = {
 			userReply: 'Rejected' as const,
 			websiteOrigin: accessRequest.website.websiteOrigin,
@@ -259,6 +261,7 @@ export function InterceptorAccess() {
 	async function refreshActiveAddress() {
 		if (pendingAccessRequestArray.length === 0) throw Error('access request not loaded')
 		const accessRequest = pendingAccessRequestArray[0]
+		if (accessRequest === undefined) throw Error('accessRequest is undefined')
 		await sendPopupMessageToBackgroundPage({ method: 'popup_interceptorAccessRefresh', data: {
 			socket: accessRequest.socket,
 			website: accessRequest.website,
@@ -270,6 +273,7 @@ export function InterceptorAccess() {
 	async function setActiveAddressAndInformAboutIt(address: bigint | 'signer') {
 		if (pendingAccessRequestArray.length === 0) throw Error('access request not loaded')
 		const accessRequest = pendingAccessRequestArray[0]
+		if (accessRequest === undefined) throw Error('accessRequest is undefined')
 		await sendPopupMessageToBackgroundPage({ method: 'popup_interceptorAccessChangeAddress', data: {
 			socket: accessRequest.socket,
 			website: accessRequest.website,
@@ -312,7 +316,8 @@ export function InterceptorAccess() {
 	}
 
 	if (pendingAccessRequestArray.length === 0) return <main></main>
-
+	const pendingAccessRequest = pendingAccessRequestArray[0]
+	if (pendingAccessRequest === undefined) throw new Error('pending access request was undefined')
 	return <main>
 		<Hint>
 			<div class = { `modal ${ appPage !== 'Home' ? 'is-active' : ''}` }>
@@ -321,7 +326,7 @@ export function InterceptorAccess() {
 						setActiveAddressAndInformAboutIt = { setActiveAddressAndInformAboutIt }
 						incompleteAddressBookEntry = { addingNewAddress }
 						close = { () => setAppPage('Home') }
-						activeAddress = { pendingAccessRequestArray[0].requestAccessToAddress?.address }
+						activeAddress = { pendingAccessRequest.requestAccessToAddress?.address }
 					/>
 					: <></>
 				}
@@ -329,10 +334,10 @@ export function InterceptorAccess() {
 				{ appPage === 'ChangeActiveAddress'
 					? <ChangeActiveAddress
 						setActiveAddressAndInformAboutIt = { setActiveAddressAndInformAboutIt }
-						signerAccounts = { pendingAccessRequestArray[0].signerAccounts }
+						signerAccounts = { pendingAccessRequest.signerAccounts }
 						setAndSaveAppPage = { setAppPage }
-						activeAddresses = { pendingAccessRequestArray[0].activeAddresses }
-						signerName = { pendingAccessRequestArray[0].signerName }
+						activeAddresses = { pendingAccessRequest.activeAddresses }
+						signerName = { pendingAccessRequest.signerName }
 						renameAddressCallBack = { renameAddressCallBack }
 						addNewAddress = { addNewAddress }
 					/>
