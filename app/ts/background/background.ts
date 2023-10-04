@@ -1,7 +1,7 @@
 import { PopupMessage, RPCReply, Settings } from '../types/interceptor-messages.js'
 import 'webextension-polyfill'
 import { Simulator } from '../simulation/simulator.js'
-import { getEthDonator, getSignerName, getSimulationResults, updateSimulationResults } from './storageVariables.js'
+import { getEthDonator, getSignerName, getSimulationResults, updateSimulationResults, updateVisualizedSimulatorState } from './storageVariables.js'
 import { changeSimulationMode, getSettings, getMakeMeRich } from './settings.js'
 import { blockNumber, call, chainId, estimateGas, gasPrice, getAccounts, getBalance, getBlockByNumber, getCode, getLogs, getPermissions, getSimulationStack, getTransactionByHash, getTransactionCount, getTransactionReceipt, netVersion, personalSign, sendTransaction, subscribe, switchEthereumChain, unsubscribe } from './simulationModeHanders.js'
 import { changeActiveAddress, changeMakeMeRich, changePage, resetSimulation, confirmDialog, refreshSimulation, removeTransaction, requestAccountsFromSigner, refreshPopupConfirmTransactionSimulation, confirmPersonalSign, confirmRequestAccess, changeInterceptorAccess, changeChainDialog, popupChangeActiveRpc, enableSimulationMode, addOrModifyAddressBookEntry, getAddressBookData, removeAddressBookEntry, openAddressBook, homeOpened, interceptorAccessChangeAddressOrRefresh, refreshPopupConfirmTransactionMetadata, changeSettings, importSettings, exportSettings, setNewRpcList, popupIdentifyAddress, popupFindAddressBookEntryWithSymbolOrName } from './popupMessageHandlers.js'
@@ -30,6 +30,7 @@ import { Website } from '../types/websiteAccessTypes.js'
 import { ConfirmTransactionTransactionSingleVisualization } from '../types/accessRequest.js'
 import { RpcNetwork } from '../types/rpc.js'
 import { serialize } from '../types/wire-types.js'
+import { VisualizedPersonalSignRequest } from '../types/personal-message-definitions.js'
 
 async function visualizeSimulatorState(simulationState: SimulationState, simulator: Simulator) {
 	const priceEstimator = new PriceEstimator(simulator.ethereum)
@@ -40,6 +41,7 @@ async function visualizeSimulatorState(simulationState: SimulationState, simulat
 		if (simulatedTransaction === undefined) throw new Error('simulated transaction was undefined')
 		return { ...x, website: simulatedTransaction.website }
 	})
+	const settings = await getSettings()
 	const addressBookEntryPromises = getAddressBookEntriesForVisualiser(simulator.ethereum, visualizerResult.map((x) => x.visualizerResults), simulationState, (await getSettings()).userAddressBook)
 	const namedTokenIdPromises = nameTokenIds(simulator.ethereum, visualizerResult.map((x) => x.visualizerResults))
 	const addressBookEntries = await addressBookEntryPromises
@@ -57,7 +59,7 @@ async function visualizeSimulatorState(simulationState: SimulationState, simulat
 	const tokenPricePromises = priceEstimator.estimateEthereumPricesForTokens(addressBookEntries.filter(onlyTokensAndTokensWithKnownDecimals).map(metadataRestructure))
 
 	const signerName = await getSignerName()
-	const VisualizedPersonalSignRequest = simulationState.signedMessages.map((signedMessage) => craftPersonalSignPopupMessage(simulator.ethereum, signedMessage, signerName))
+	const VisualizedPersonalSignRequest = simulationState.signedMessages.map((signedMessage) => craftPersonalSignPopupMessage(simulator.ethereum, signedMessage, signerName, settings.rpcNetwork, settings.userAddressBook))
 	
 	return {
 		tokenPrices: await tokenPricePromises,
@@ -83,27 +85,28 @@ export async function updateSimulationState(simulator: Simulator, getUpdatedSimu
 		await sendPopupMessageToOpenWindows({ method: 'popup_simulation_state_changed', data: { simulationId } })
 		try {
 			const updatedSimulationState = await getUpdatedSimulationState(simulationResults.simulationState)
-			if (updatedSimulationState !== undefined) {
+			const doneState = { simulationUpdatingState: 'done' as const, simulationResultState: 'done' as const, simulationId, activeAddress }
+			const updatedSimulationResults = updatedSimulationState !== undefined ? 
 				await updateSimulationResults({
 					...await visualizeSimulatorState(updatedSimulationState, simulator),
-					simulationUpdatingState: 'done',		
-					simulationResultState: 'done',
-					simulationId,
-					activeAddress: activeAddress,
+					...doneState,
 				})
-			} else {
-				await updateSimulationResults({
-					simulationUpdatingState: 'done',
-					simulationResultState: 'done',
-					simulationId,
-					addressBookEntries: [],
-					tokenPrices: [],
-					visualizerResults: [],
-					namedTokenIds: [],
-					simulationState: updatedSimulationState,
-					activeAddress: activeAddress,
-				})
-			}
+			: await updateSimulationResults({...doneState,
+				addressBookEntries: [],
+				tokenPrices: [],
+				visualizerResults: [],
+				namedTokenIds: [],
+				simulationState: updatedSimulationState,
+			})
+
+			await updateVisualizedSimulatorState( async () => {
+				const simulatedAndVisualizedTransactions = updatedSimulationResults.simulationState === undefined || updatedSimulationResults.visualizerResults === undefined ? [] : formSimulatedAndVisualizedTransaction(updatedSimulationResults.simulationState, updatedSimulationResults.visualizerResults, updatedSimulationResults.addressBookEntries, updatedSimulationResults.namedTokenIds)
+				const settings = await getSettings()
+				const signerName = await getSignerName()
+				const VisualizedPersonalSignRequest = updatedSimulationResults.simulationState === undefined ? [] : updatedSimulationResults.simulationState.signedMessages.map((signedMessage) => craftPersonalSignPopupMessage(simulator.ethereum, signedMessage, signerName, settings.rpcNetwork, settings.userAddressBook))
+				const visualizedPersonalSignRequests: readonly VisualizedPersonalSignRequest[] = await Promise.all(VisualizedPersonalSignRequest)
+				return { ...updatedSimulationResults, simulatedAndVisualizedTransactions, visualizedPersonalSignRequests }
+			})
 			await sendPopupMessageToOpenWindows({ method: 'popup_simulation_state_changed', data: { simulationId } })
 			return updatedSimulationState
 		} catch (error) {

@@ -8,6 +8,7 @@ import { WebsiteAccessArray } from '../types/websiteAccessTypes.js'
 import { SignerName } from '../types/signerTypes.js'
 import { PendingAccessRequestArray, PendingTransaction } from '../types/accessRequest.js'
 import { RpcEntries, RpcNetwork } from '../types/rpc.js'
+import { VisualizedSimulatorState } from '../types/interceptor-messages.js'
 
 export type LocalStorageItems = funtypes.Static<typeof LocalStorageItems>
 export const LocalStorageItems = funtypes.Partial({
@@ -35,6 +36,7 @@ export const LocalStorageItems = funtypes.Partial({
 	RpcEntries: RpcEntries,
 	metamaskCompatibilityMode: funtypes.Boolean,
 	userAddressBookEntries: AddressBookEntries,
+	visualizedSimulatorState: VisualizedSimulatorState,
 })
 
 export type LocalStorageKey = funtypes.Static<typeof LocalStorageKey>
@@ -63,6 +65,7 @@ export const LocalStorageKey = funtypes.Union(
 	funtypes.Literal('RpcEntries'),
 	funtypes.Literal('metamaskCompatibilityMode'),
 	funtypes.Literal('userAddressBookEntries'),
+	funtypes.Literal('visualizedSimulatorState'),
 )
 
 export async function browserStorageLocalGet(keys: LocalStorageKey | LocalStorageKey[]): Promise<LocalStorageItems> {

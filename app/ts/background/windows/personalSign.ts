@@ -9,7 +9,7 @@ import { assertNever } from '../../utils/typescript.js'
 import { WebsiteTabConnections } from '../../types/user-interface-types.js'
 import { getHtmlFile, sendPopupMessageToOpenWindows } from '../backgroundUtils.js'
 import { extractEIP712Message, validateEIP712Types } from '../../utils/eip712Parsing.js'
-import { getPendingPersonalSignPromise, getRpcNetwork, getRpcNetworkForChain, getSignerName, setPendingPersonalSignPromise } from '../storageVariables.js'
+import { getPendingPersonalSignPromise, getRpcNetworkForChain, getSignerName, setPendingPersonalSignPromise } from '../storageVariables.js'
 import { getSettings } from '../settings.js'
 import { PopupOrTab, addWindowTabListener, browserTabsQueryById, closePopupOrTab, openPopupOrTab, removeWindowTabListener } from '../../components/ui-utils.js'
 import { appendSignedMessage, simulatePersonalSign } from '../../simulation/services/SimulationModeEthereumClientService.js'
@@ -24,6 +24,7 @@ import { Simulator } from '../../simulation/simulator.js'
 import { SignedMessageTransaction } from '../../types/visualizer-types.js'
 import { SignMessageParams } from '../../types/jsonRpc-signing-types.js'
 import { serialize } from '../../types/wire-types.js'
+import { RpcNetwork } from '../../types/rpc.js'
 
 let pendingPersonalSign: Future<PersonalSignApproval> | undefined = undefined
 
@@ -45,9 +46,10 @@ export async function resolvePersonalSign(simulator: Simulator, websiteTabConnec
 export async function updatePendingPersonalSignViewWithPendingRequests(ethereumClientService: EthereumClientService) {
 	const personalSignPromise = await getPendingPersonalSignPromise()
 	if (personalSignPromise === undefined) throw new Error('Missing personal sign promise from local storage')
+	const settings = await getSettings()
 	return await sendPopupMessageToOpenWindows(serialize(PersonalSignRequest, {
 		method: 'popup_personal_sign_request' as const,
-		data: await craftPersonalSignPopupMessage(ethereumClientService, personalSignPromise.signedMessageTransaction, await getSignerName() )
+		data: await craftPersonalSignPopupMessage(ethereumClientService, personalSignPromise.signedMessageTransaction, await getSignerName(), settings.rpcNetwork, settings.userAddressBook )
 	}) as PartiallyParsedPersonalSignRequest)
 }
 
@@ -81,17 +83,14 @@ export async function addMetadataToOpenSeaOrder(ethereumClientService: EthereumC
 	 }
 }
 
-export async function craftPersonalSignPopupMessage(ethereumClientService: EthereumClientService, signedMessageTransaction: SignedMessageTransaction, signerName: SignerName): Promise<VisualizedPersonalSignRequest> {
-	const settings = await getSettings()
-	const userAddressBook = settings.userAddressBook
+export async function craftPersonalSignPopupMessage(ethereumClientService: EthereumClientService, signedMessageTransaction: SignedMessageTransaction, signerName: SignerName, rpcNetwork: RpcNetwork, userAddressBook: UserAddressBook): Promise<VisualizedPersonalSignRequest> {
 	const activeAddressWithMetadata = await identifyAddress(ethereumClientService, userAddressBook, signedMessageTransaction.fakeSignedFor)
 	const basicParams = { ...signedMessageTransaction, activeAddress: activeAddressWithMetadata, signerName }
 	const originalParams = signedMessageTransaction
-	const rpcNetwork = await getRpcNetwork()
 
 	const getQuarrantineCodes = async (messageChainId: bigint, account: AddressBookEntry, activeAddress: AddressBookEntry, owner: AddressBookEntry | undefined): Promise<{ quarantine: boolean, quarantineCodes: readonly QUARANTINE_CODE[] }> => {
 		let quarantineCodes: QUARANTINE_CODE[] = []
-		if (BigInt(messageChainId) !== settings.rpcNetwork.chainId) {
+		if (BigInt(messageChainId) !== rpcNetwork.chainId) {
 			quarantineCodes.push('SIGNATURE_CHAIN_ID_DOES_NOT_MATCH')
 		}
 		if (account.address !== activeAddress.address || (owner != undefined && account.address !== owner.address)) {

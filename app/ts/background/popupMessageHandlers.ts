@@ -1,10 +1,10 @@
 import { changeActiveAddressAndChainAndResetSimulation, changeActiveRpc, getPrependTrasactions, refreshConfirmTransactionSimulation, updateSimulationState } from './background.js'
 import { getSettings, setUseTabsInsteadOfPopup, setMakeMeRich, setPage, setUseSignersAddressAsActiveAddress, updateActiveAddresses, updateContacts, updateWebsiteAccess, exportSettingsAndAddressBook, importSettingsAndAddressBook, getMakeMeRich, getUseTabsInsteadOfPopup, getMetamaskCompatibilityMode, setMetamaskCompatibilityMode } from './settings.js'
-import { getPendingTransactions, getCurrentTabId, getOpenedAddressBookTabId, getSimulationResults, getTabState, saveCurrentTabId, setOpenedAddressBookTabId, setRpcList, getRpcList, getPrimaryRpcForChain, setRpcConnectionStatus, getSignerName, getRpcConnectionStatus, updateUserAddressBookEntries } from './storageVariables.js'
+import { getPendingTransactions, getCurrentTabId, getOpenedAddressBookTabId, getTabState, saveCurrentTabId, setOpenedAddressBookTabId, setRpcList, getRpcList, getPrimaryRpcForChain, getSignerName, getRpcConnectionStatus, updateUserAddressBookEntries, getVisualizedSimulatorState } from './storageVariables.js'
 import { Simulator } from '../simulation/simulator.js'
 import { ChangeActiveAddress, ChangeMakeMeRich, ChangePage, RemoveTransaction, RequestAccountsFromSigner, TransactionConfirmation, InterceptorAccess, ChangeInterceptorAccess, ChainChangeConfirmation, EnableSimulationMode, ChangeActiveChain, AddOrEditAddressBookEntry, GetAddressBookData, RemoveAddressBookEntry, RefreshConfirmTransactionDialogSimulation, InterceptorAccessRefresh, InterceptorAccessChangeAddress, Settings, RefreshConfirmTransactionMetadata, RefreshInterceptorAccessMetadata, ChangeSettings, ImportSettings, SetRpcList, IdentifyAddress, FindAddressBookEntryWithSymbolOrName, PersonalSignApproval, UpdateHomePage } from '../types/interceptor-messages.js'
 import { formEthSendTransaction, formSendRawTransaction, resolvePendingTransaction } from './windows/confirmTransaction.js'
-import { craftPersonalSignPopupMessage, resolvePersonalSign } from './windows/personalSign.js'
+import { resolvePersonalSign } from './windows/personalSign.js'
 import { getAddressMetadataForAccess, requestAddressChange, resolveInterceptorAccess } from './windows/interceptorAccess.js'
 import { resolveChainChange } from './windows/changeChain.js'
 import { sendMessageToApprovedWebsitePorts, updateWebsiteApprovalAccesses } from './accessManagement.js'
@@ -23,7 +23,6 @@ import { ExportedSettings } from '../types/exportedSettingsTypes.js'
 import { isJSON } from '../utils/json.js'
 import { UserAddressBook } from '../types/addressBookTypes.js'
 import { serialize } from '../types/wire-types.js'
-import { VisualizedPersonalSignRequest } from '../types/personal-message-definitions.js'
 
 export async function confirmDialog(simulator: Simulator, websiteTabConnections: WebsiteTabConnections, confirmation: TransactionConfirmation) {
 	await resolvePendingTransaction(simulator, websiteTabConnections, confirmation)
@@ -295,51 +294,43 @@ export async function openAddressBook() {
 }
 
 export async function homeOpened(simulator: Simulator) {
+	const settingsPromise = getSettings()
+	const signerNamePromise = getSignerName()
+	const makeMeRichPromise = getMakeMeRich()
+	const rpcConnectionStatusPromise = getRpcConnectionStatus()
+	const useTabsInsteadOfPopupPromise = getUseTabsInsteadOfPopup()
+	const metamaskCompatibilityModePromise = getMetamaskCompatibilityMode()
+	const rpcEntriesPromise = getRpcList()
+	const visualizedSimulatorStatePromise = getVisualizedSimulatorState()
 	const tabId = await getLastKnownCurrentTabId()
 	const tabState = tabId === undefined ? undefined : await getTabState(tabId)
 
-	const settings = await getSettings()
-	let blockNumber = undefined
-	try {
-		blockNumber = await simulator.ethereum.getBlockNumber()
-	} catch (error) {
-		console.warn(error)
-		const rpcConnectionStatus = {
-			isConnected: false,
-			lastConnnectionAttempt: new Date(),
-			latestBlock: simulator.ethereum.getLastKnownCachedBlockOrUndefined(),
-			rpcNetwork: simulator.ethereum.getRpcNetwork(),
-		}
-		await setRpcConnectionStatus(rpcConnectionStatus)
-		await sendPopupMessageToOpenWindows({ method: 'popup_failed_to_get_block', data: { rpcConnectionStatus } })
-	}
-	const simResults = await getSimulationResults()
-	const simulatedAndVisualizedTransactions = simResults.simulationState === undefined || simResults.visualizerResults === undefined ? [] : formSimulatedAndVisualizedTransaction(simResults.simulationState, simResults.visualizerResults, simResults.addressBookEntries, simResults.namedTokenIds)
-	const signerName = await getSignerName()
-	const VisualizedPersonalSignRequest = simResults.simulationState === undefined ? [] : simResults.simulationState.signedMessages.map((signedMessage) => craftPersonalSignPopupMessage(simulator.ethereum, signedMessage, signerName))
-	const visualizedPersonalSignRequests: readonly VisualizedPersonalSignRequest[] = await Promise.all(VisualizedPersonalSignRequest)
+	const signerName = await signerNamePromise
+	const settings = await settingsPromise
+	const makeMeRich = await makeMeRichPromise
+	const rpcConnectionStatus = await rpcConnectionStatusPromise
+	const useTabsInsteadOfPopup = await useTabsInsteadOfPopupPromise
+	const metamaskCompatibilityMode = await metamaskCompatibilityModePromise
+	const rpcEntries = await rpcEntriesPromise
+
 	await sendPopupMessageToOpenWindows(serialize(UpdateHomePage, {
 		method: 'popup_UpdateHomePage' as const,
 		data: {
-			simulation: {
-				...simResults,
-				simulatedAndVisualizedTransactions: simulatedAndVisualizedTransactions,
-				visualizedPersonalSignRequests,
-			},
+			visualizedSimulatorState: await visualizedSimulatorStatePromise,
 			websiteAccessAddressMetadata: getAddressMetadataForAccess(settings.websiteAccess, settings.userAddressBook.activeAddresses),
 			signerAccounts: tabState?.signerAccounts,
 			signerChain: tabState?.signerChain,
 			signerName: signerName,
-			currentBlockNumber: blockNumber,
+			currentBlockNumber: simulator.ethereum.getLastKnownCachedBlockOrUndefined()?.number,
 			settings: settings,
 			tabIconDetails: tabState?.tabIconDetails,
-			makeMeRich: await getMakeMeRich(),
-			rpcConnectionStatus: await getRpcConnectionStatus(),
-			useTabsInsteadOfPopup: await getUseTabsInsteadOfPopup(),
-			metamaskCompatibilityMode: await getMetamaskCompatibilityMode(),
+			makeMeRich,
+			rpcConnectionStatus,
+			useTabsInsteadOfPopup,
+			metamaskCompatibilityMode,
+			rpcEntries,
 			activeSigningAddressInThisTab: tabState?.activeSigningAddress,
 			tabId,
-			rpcEntries: await getRpcList(),
 		}
 	}))
 }

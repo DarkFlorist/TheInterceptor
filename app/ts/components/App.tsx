@@ -121,17 +121,19 @@ export function App() {
 						setTabConnection(data.tabIconDetails)
 					}
 				}
-				setSimulationState(
-					data.simulation.simulationState,
-					data.simulation.addressBookEntries,
-					data.simulation.tokenPrices,
-					data.simulation.simulatedAndVisualizedTransactions,
-					data.simulation.visualizedPersonalSignRequests,
-					data.simulation.activeAddress,
-					data.simulation.namedTokenIds,
-				)
-				setSimulationUpdatingState(data.simulation.simulationUpdatingState)
-				setSimulationResultState(data.simulation.simulationResultState)
+				if (data.visualizedSimulatorState !== undefined) {
+					setSimulationState(
+						data.visualizedSimulatorState.simulationState,
+						data.visualizedSimulatorState.addressBookEntries,
+						data.visualizedSimulatorState.tokenPrices,
+						data.visualizedSimulatorState.simulatedAndVisualizedTransactions,
+						data.visualizedSimulatorState.visualizedPersonalSignRequests,
+						data.visualizedSimulatorState.activeAddress,
+						data.visualizedSimulatorState.namedTokenIds,
+					)
+					setSimulationUpdatingState(data.visualizedSimulatorState.simulationUpdatingState)
+					setSimulationResultState(data.visualizedSimulatorState.simulationResultState)
+				}
 				setMakeMeRich(data.makeMeRich)
 				setSignerName(data.signerName)
 				setCurrentBlockNumber(data.currentBlockNumber)

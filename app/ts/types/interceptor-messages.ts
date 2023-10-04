@@ -1,7 +1,7 @@
 import * as funtypes from 'funtypes'
 import { PendingChainChangeConfirmationPromise, RpcConnectionStatus, TabIconDetails } from './user-interface-types.js'
 import { EthereumAddress, EthereumBlockHeaderWithTransactionHashes, EthereumBytes32, EthereumData, EthereumQuantity, EthereumSignedTransactionWithBlockData, EthereumTimestamp, NonHexBigInt, OptionalEthereumAddress } from './wire-types.js'
-import { SimulationState, SimulatedAndVisualizedTransaction, SimResults, TokenPriceEstimate, SimulationUpdatingState, SimulationResultState, NamedTokenId } from './visualizer-types.js'
+import { SimulatedAndVisualizedTransaction, SimulationResults } from './visualizer-types.js'
 import { VisualizedPersonalSignRequest } from './personal-message-definitions.js'
 import { UniqueRequestIdentifier, WebsiteSocket } from '../utils/requests.js'
 import { EthGetLogsResponse, EthGetStorageAtParams, EthTransactionReceiptResponse, GetBlockReturn, GetSimulationStackReply, SendRawTransactionParams, SendTransactionParams, WalletAddEthereumChain } from './JsonRpc-types.js'
@@ -487,23 +487,20 @@ export const PartialUpdateHomePage = funtypes.ReadonlyObject({
 	data: funtypes.Unknown,
 })
 
+export type VisualizedSimulatorState = funtypes.Static<typeof VisualizedSimulatorState>
+export const VisualizedSimulatorState = funtypes.Intersect(
+	SimulationResults, 
+	funtypes.ReadonlyObject({
+		simulatedAndVisualizedTransactions: funtypes.ReadonlyArray(SimulatedAndVisualizedTransaction),
+		visualizedPersonalSignRequests: funtypes.ReadonlyArray(VisualizedPersonalSignRequest),
+	})
+)
+
 export type UpdateHomePage = funtypes.Static<typeof UpdateHomePage>
 export const UpdateHomePage = funtypes.ReadonlyObject({
 	method: funtypes.Literal('popup_UpdateHomePage'),
 	data: funtypes.ReadonlyObject({
-		simulation: funtypes.ReadonlyObject({
-			simulationState: funtypes.Union(SimulationState, funtypes.Undefined),
-			visualizerResults: funtypes.Union(funtypes.ReadonlyArray(SimResults), funtypes.Undefined),
-			addressBookEntries: AddressBookEntries,
-			tokenPrices: funtypes.ReadonlyArray(TokenPriceEstimate),
-			activeAddress: OptionalEthereumAddress,
-			simulatedAndVisualizedTransactions: funtypes.ReadonlyArray(SimulatedAndVisualizedTransaction),
-			visualizedPersonalSignRequests: funtypes.ReadonlyArray(VisualizedPersonalSignRequest),
-			simulationUpdatingState: SimulationUpdatingState,
-			simulationResultState: SimulationResultState,
-			namedTokenIds: funtypes.ReadonlyArray(NamedTokenId),
-			simulationId: funtypes.Number,
-		}),
+		visualizedSimulatorState: funtypes.Union(VisualizedSimulatorState, funtypes.Undefined),
 		websiteAccessAddressMetadata: funtypes.ReadonlyArray(ActiveAddressEntry),
 		signerAccounts: funtypes.Union(funtypes.ReadonlyArray(EthereumAddress), funtypes.Undefined),
 		signerChain: funtypes.Union(EthereumQuantity, funtypes.Undefined),

@@ -9,6 +9,7 @@ import { AddressBookEntries } from '../types/addressBookTypes.js'
 import { SignerName } from '../types/signerTypes.js'
 import { PendingAccessRequest, PendingAccessRequestArray, PendingTransaction } from '../types/accessRequest.js'
 import { RpcEntries, RpcNetwork } from '../types/rpc.js'
+import { VisualizedSimulatorState } from '../types/interceptor-messages.js'
 
 export const getOpenedAddressBookTabId = async() => (await browserStorageLocalGet('addressbookTabId'))?.['addressbookTabId'] ?? undefined
 
@@ -82,10 +83,11 @@ export async function getSimulationResults() {
 
 const simulationResultsSemaphore = new Semaphore(1)
 export async function updateSimulationResults(newResults: SimulationResults) {
-	await simulationResultsSemaphore.execute(async () => {
+	return await simulationResultsSemaphore.execute(async () => {
 		const oldResults = await getSimulationResults()
-		if (newResults.simulationId < oldResults.simulationId) return // do not update state with older state
-		return await browserStorageLocalSet({ simulationResults: newResults })
+		if (newResults.simulationId < oldResults.simulationId) return oldResults// do not update state with older state
+		await browserStorageLocalSet({ simulationResults: newResults })
+		return newResults
 	})
 }
 
@@ -239,5 +241,13 @@ export async function updateUserAddressBookEntries(updateFunc: (prevState: Addre
 	await userAddressBookEntriesSemaphore.execute(async () => {
 		const entries = await getUserAddressBookEntries()
 		return await browserStorageLocalSet({ userAddressBookEntries: updateFunc(entries) })
+	})
+}
+
+export const getVisualizedSimulatorState = async() => (await browserStorageLocalGet('visualizedSimulatorState'))?.['visualizedSimulatorState'] ?? undefined
+const visualizedSimulatorStateSemaphore = new Semaphore(1)
+export async function updateVisualizedSimulatorState(updateFunc: (prevState: VisualizedSimulatorState | undefined) => Promise<VisualizedSimulatorState | undefined>) {
+	await visualizedSimulatorStateSemaphore.execute(async () => {
+		return await browserStorageLocalSet({ visualizedSimulatorState: await updateFunc(await getVisualizedSimulatorState()) })
 	})
 }
