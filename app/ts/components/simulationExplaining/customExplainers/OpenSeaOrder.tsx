@@ -6,9 +6,8 @@ import { bytes32String } from '../../../utils/bigint.js'
 import { ArrowIcon } from '../../subcomponents/icons.js'
 import { CellElement, humanReadableDateFromSeconds } from '../../ui-utils.js'
 import { RpcNetwork } from '../../../types/rpc.js'
-import { BIG_FONT_SIZE } from '../../../utils/constants.js'
 
-const tokenStyle = { 'font-size': BIG_FONT_SIZE, 'font-weight': '500', 'color:': 'var(--text-color)' }
+const tokenStyle = { 'font-weight': '500', 'color:': 'var(--text-color)' }
 
 type VisualizeOpenSeaAssetParams = {
 	orderOrConsideration: SeaPortSingleOfferWithAddressBookEntries | SeaPortSingleConsiderationWithAddressBookEntries
@@ -24,12 +23,12 @@ function ValueField({ orderOrConsideration }: { orderOrConsideration: SeaPortSin
 		return <p class = 'paragraph' style = { tokenStyle }> 'Criteria: { bytes32String(orderOrConsideration.identifierOrCriteria) } </p>
 	}
 	if (orderOrConsideration.startAmount === orderOrConsideration.endAmount) {
-		return <TokenOrEthValue { ...orderOrConsideration.token } amount = { orderOrConsideration.startAmount } style = { tokenStyle }/>
+		return <TokenOrEthValue { ...orderOrConsideration.token } amount = { orderOrConsideration.startAmount } style = { tokenStyle } fontSize = { 'big' }/>
 	}
 	return <> 
-		<TokenOrEthValue { ...orderOrConsideration.token } amount = { orderOrConsideration.startAmount } style = { tokenStyle }/>
+		<TokenOrEthValue { ...orderOrConsideration.token } amount = { orderOrConsideration.startAmount } style = { tokenStyle } fontSize = { 'big' }/>
 		<p class = 'paragraph' style = { tokenStyle }> -&nbsp;</p>
-		<TokenOrEthValue  { ...orderOrConsideration } amount = { orderOrConsideration.endAmount } style = { tokenStyle }/>
+		<TokenOrEthValue  { ...orderOrConsideration } amount = { orderOrConsideration.endAmount } style = { tokenStyle } fontSize = { 'big' }/>
 	</>
 }
 
@@ -41,8 +40,8 @@ function SwapGrid(param: VisualizeOpenSeaAssetParams) {
 			</div>
 			<div class = 'log-cell' style = 'justify-content: right;'>
 				{ param.orderOrConsideration.itemType === 'ERC721' || param.orderOrConsideration.itemType === 'ERC1155' ?
-					<TokenOrEthSymbol { ...param.orderOrConsideration.token } rpcNetwork = { param.rpcNetwork } style = { tokenStyle }/>
-				: <TokenOrEthSymbol { ...param.orderOrConsideration.token } rpcNetwork = { param.rpcNetwork } style = { tokenStyle }/> }
+					<TokenOrEthSymbol { ...param.orderOrConsideration.token } rpcNetwork = { param.rpcNetwork } style = { tokenStyle } fontSize = { 'big' }/>
+				: <TokenOrEthSymbol { ...param.orderOrConsideration.token } rpcNetwork = { param.rpcNetwork } style = { tokenStyle } fontSize = { 'big' }/> }
 			</div>
 		</span>
 	</>
@@ -62,8 +61,8 @@ export function VisualizeOpenSeaAsset(param: VisualizeOpenSeaConsiderationAssetP
 		</div>
 		<div class = 'log-cell' style = 'padding-right: 0.2em'>
 			{ param.consideration.itemType === 'ERC721' || param.consideration.itemType === 'ERC1155' ?
-				<TokenOrEthSymbol { ...param.consideration.token } rpcNetwork = { param.rpcNetwork } style = { tokenStyle }/>
-			: <TokenOrEthSymbol { ...param.consideration.token } rpcNetwork = { param.rpcNetwork } style = { tokenStyle }/> }
+				<TokenOrEthSymbol { ...param.consideration.token } rpcNetwork = { param.rpcNetwork } style = { tokenStyle } fontSize = { 'big' }/>
+			: <TokenOrEthSymbol { ...param.consideration.token } rpcNetwork = { param.rpcNetwork } style = { tokenStyle } fontSize = { 'big' }/> }
 		</div>
 		<div class = 'log-cell' style = 'padding-right: 0.2em; padding-left: 0.2em'>
 			{ <ArrowIcon color = { textColor } /> }
