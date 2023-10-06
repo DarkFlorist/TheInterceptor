@@ -1,8 +1,8 @@
 import { addressString } from '../utils/bigint.js'
-import { EthBalanceChangesWithMetadata, NamedTokenId, SimResults, SimulatedAndVisualizedTransaction, SimulationState, TokenVisualizerResultWithMetadata } from '../types/visualizer-types.js'
+import { EthBalanceChangesWithMetadata, NamedTokenId, ProtectorResults, SimulatedAndVisualizedTransaction, SimulationState, TokenVisualizerResultWithMetadata, VisualizerResult } from '../types/visualizer-types.js'
 import { AddressBookEntry } from '../types/addressBookTypes.js'
 
-export function formSimulatedAndVisualizedTransaction(simState: SimulationState, visualizerResults: readonly SimResults[], addressBookEntries: readonly AddressBookEntry[], namedTokenIds: readonly NamedTokenId[]): readonly SimulatedAndVisualizedTransaction[] {
+export function formSimulatedAndVisualizedTransaction(simState: SimulationState, visualizerResults: readonly (VisualizerResult | undefined)[], protectorResults: readonly ProtectorResults[], addressBookEntries: readonly AddressBookEntry[], namedTokenIds: readonly NamedTokenId[]): readonly SimulatedAndVisualizedTransaction[] {
 	const addressMetaData = new Map(addressBookEntries.map((x) => [addressString(x.address), x]))
 	return simState.simulatedTransactions.map((simulatedTx, index) => {
 		const from = addressMetaData.get(addressString(simulatedTx.signedTransaction.from))
@@ -12,9 +12,10 @@ export function formSimulatedAndVisualizedTransaction(simState: SimulationState,
 		if (simulatedTx.signedTransaction.to !== null && to === undefined) throw new Error('missing metadata')
 		const visualizerResult = visualizerResults[index]
 		if (visualizerResult === undefined) throw new Error('visualizer result was undefined')
-		const visualiser = visualizerResult.visualizerResults
+		const protectorResult = protectorResults[index]
+		if (protectorResult === undefined) throw new Error('protecor result was undefined')
 
-		const ethBalanceChanges: EthBalanceChangesWithMetadata[] = visualiser === undefined ? [] : visualiser.ethBalanceChanges.map((change) => {
+		const ethBalanceChanges: EthBalanceChangesWithMetadata[] = visualizerResult === undefined ? [] : visualizerResult.ethBalanceChanges.map((change) => {
 			const entry = addressMetaData.get(addressString(change.address))
 			if (entry === undefined) throw new Error('missing metadata')
 			return {
@@ -22,7 +23,7 @@ export function formSimulatedAndVisualizedTransaction(simState: SimulationState,
 				address: entry,
 			}
 		})
-		const tokenResults: TokenVisualizerResultWithMetadata[] = visualiser === undefined ? [] : visualiser.tokenResults.map((change): TokenVisualizerResultWithMetadata | undefined => {
+		const tokenResults: TokenVisualizerResultWithMetadata[] = visualizerResult === undefined ? [] : visualizerResult.tokenResults.map((change): TokenVisualizerResultWithMetadata | undefined => {
 			const fromEntry = addressMetaData.get(addressString(change.from))
 			const toEntry = addressMetaData.get(addressString(change.to))
 			const tokenEntry = addressMetaData.get(addressString(change.tokenAddress))
@@ -90,8 +91,8 @@ export function formSimulatedAndVisualizedTransaction(simState: SimulationState,
 			tokenResults: tokenResults,
 			tokenBalancesAfter: simulatedTx.tokenBalancesAfter,
 			gasSpent: simulatedTx.multicallResponse.gasSpent,
-			quarantine: visualizerResult.quarantine,
-			quarantineCodes: visualizerResult.quarantineCodes,
+			quarantine: protectorResult.quarantine,
+			quarantineCodes: protectorResult.quarantineCodes,
 			...(simulatedTx.multicallResponse.statusCode === 'failure'
 				? {
 					error: simulatedTx.multicallResponse.error,
@@ -101,7 +102,7 @@ export function formSimulatedAndVisualizedTransaction(simState: SimulationState,
 					statusCode: simulatedTx.multicallResponse.statusCode,
 				}
 			),
-			website: visualizerResult.website,
+			website: simulatedTx.website,
 			created: simulatedTx.created,
 		}
 	})

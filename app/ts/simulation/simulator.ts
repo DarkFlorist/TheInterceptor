@@ -1,18 +1,16 @@
 import { EthereumClientService } from './services/EthereumClientService.js'
-import { unverifiedApproval } from './protectors/unverifiedApproval.js'
 import { selfTokenOops } from './protectors/selfTokenOops.js'
-import { EthereumBlockHeader, EthereumUnsignedTransaction } from '../types/wire-types.js'
+import { EthereumBlockHeader } from '../types/wire-types.js'
 import { bytes32String } from '../utils/bigint.js'
 import { feeOops } from './protectors/feeOops.js'
 import { commonTokenOops } from './protectors/commonTokenOops.js'
 import { eoaApproval } from './protectors/eoaApproval.js'
 import { eoaCalldata } from './protectors/eoaCalldata.js'
 import { tokenToContract } from './protectors/tokenToContract.js'
-import { simulatedMulticall } from './services/SimulationModeEthereumClientService.js'
-import { WebsiteCreatedEthereumUnsignedTransaction, SimResults, SimulationState, VisualizerResult, TokenVisualizerResult } from '../types/visualizer-types.js'
+import { WebsiteCreatedEthereumUnsignedTransaction, SimulationState, TokenVisualizerResult } from '../types/visualizer-types.js'
 import { QUARANTINE_CODE } from './protectors/quarantine-codes.js'
 import { EthereumJSONRpcRequestHandler } from './services/EthereumJSONRpcRequestHandler.js'
-import { MulticallResponse, MulticallResponseEventLog, SingleMulticallResponse } from '../types/JsonRpc-types.js'
+import { MulticallResponseEventLog, SingleMulticallResponse } from '../types/JsonRpc-types.js'
 import { APPROVAL_LOG, DEPOSIT_LOG, ERC1155_TRANSFERBATCH_LOG, ERC1155_TRANSFERSINGLE_LOG, ERC721_APPROVAL_FOR_ALL_LOG, TRANSFER_LOG, WITHDRAWAL_LOG } from '../utils/constants.js'
 import { handleApprovalLog, handleDepositLog, handleERC1155TransferBatch, handleERC1155TransferSingle, handleERC20TransferLog, handleErc721ApprovalForAllLog, handleWithdrawalLog } from './logHandlers.js'
 import { RpcNetwork } from '../types/rpc.js'
@@ -20,7 +18,6 @@ import { RpcNetwork } from '../types/rpc.js'
 const PROTECTORS = [
 	selfTokenOops,
 	commonTokenOops,
-	unverifiedApproval,
 	feeOops,
 	eoaApproval,
 	eoaCalldata,
@@ -39,6 +36,41 @@ const logHandler = new Map<string, Loghandler>([
 	[ERC1155_TRANSFERSINGLE_LOG, handleERC1155TransferSingle],
 ])
 
+export const visualizeTransaction = (blockNumber: bigint, singleMulticallResponse: SingleMulticallResponse) => {
+	if (singleMulticallResponse.statusCode !== 'success') return undefined
+	let tokenResults: TokenVisualizerResult[] = []
+	for (const eventLog of singleMulticallResponse.events) {
+		const logSignature = eventLog.topics[0]
+		if (logSignature === undefined) continue
+		const handler = logHandler.get(bytes32String(logSignature))
+		if (handler === undefined) continue
+		tokenResults = tokenResults.concat(handler(eventLog))
+	}
+	return {
+		ethBalanceChanges: singleMulticallResponse.balanceChanges,
+		tokenResults: tokenResults,
+		blockNumber
+	}
+}
+
+export const runProtectorsForTransaction = async (simulationState: SimulationState, transaction: WebsiteCreatedEthereumUnsignedTransaction, ethereum: EthereumClientService) => {
+	const reasonPromises = PROTECTORS.map(async (protectorMethod) => await protectorMethod(transaction.transaction, ethereum, simulationState))
+	const reasons: (QUARANTINE_CODE | undefined)[] = await Promise.all(reasonPromises)
+	const filteredReasons = reasons.filter((reason): reason is QUARANTINE_CODE => reason !== undefined)
+	return {
+		quarantine: filteredReasons.length > 0,
+		quarantineCodes: Array.from(new Set<QUARANTINE_CODE>(filteredReasons)),
+	}
+}
+
+/*
+const evaluateTransaction = async (ethereumClientService: EthereumClientService, simulationState: SimulationState, transaction: WebsiteCreatedEthereumUnsignedTransaction, transactionQueue: EthereumUnsignedTransaction[]) => {
+	const blockNumber = await ethereumClientService.getBlockNumber()
+	const multicallResults = await simulatedMulticall(ethereumClientService, simulationState, transactionQueue.concat([transaction.transaction]), blockNumber)
+	const multicallResult = multicallResults[multicallResults.length - 1]
+	if (multicallResult === undefined) throw new Error('multicall result is too short')
+	return visualizeTransaction(transaction, blockNumber, multicallResult)
+}*/
 
 export class Simulator {
 	public ethereum: EthereumClientService
@@ -56,59 +88,5 @@ export class Simulator {
 	public reset = (rpcNetwork: RpcNetwork) => {
 		this.cleanup()
 		this.ethereum = new EthereumClientService(new EthereumJSONRpcRequestHandler(rpcNetwork), this.ethereum.getNewBlockAttemptCallback(), this.ethereum.getOnErrorBlockCallback())
-	}
-
-	public async visualizeTransactionChain(simulationState: SimulationState, transactions: WebsiteCreatedEthereumUnsignedTransaction[], blockNumber: bigint, multicallResults: MulticallResponse) {
-		let resultPromises: Promise<SimResults>[]= []
-		for (const [i, transaction] of transactions.entries()) {
-			const multicallResult = multicallResults[i]
-			if (multicallResult === undefined) throw new Error('multicall result is too short')
-			resultPromises.push(this.visualizeTransaction(simulationState, transaction, blockNumber, multicallResult))
-		}
-		return await Promise.all(resultPromises)
-	}
-
-	public async evaluateTransaction(ethereumClientService: EthereumClientService, simulationState: SimulationState, transaction: WebsiteCreatedEthereumUnsignedTransaction, transactionQueue: EthereumUnsignedTransaction[]) {
-		const blockNumber = await this.ethereum.getBlockNumber()
-		const multicallResults = await simulatedMulticall(ethereumClientService, simulationState, transactionQueue.concat([transaction.transaction]), blockNumber)
-		const multicallResult = multicallResults[multicallResults.length - 1]
-		if (multicallResult === undefined) throw new Error('multicall result is too short')
-		return await this.visualizeTransaction(simulationState, transaction, blockNumber, multicallResult)
-	}
-
-	public async visualizeTransaction(simulationState: SimulationState, transaction: WebsiteCreatedEthereumUnsignedTransaction, blockNumber: bigint, singleMulticallResponse: SingleMulticallResponse) {
-		let quarantine = false
-		const quarantineCodesSet = new Set<QUARANTINE_CODE>()
-		for (const protectorMethod of PROTECTORS) {
-			const reason = await protectorMethod(transaction.transaction, this, simulationState)
-			if (reason !== undefined) {
-				quarantine = true
-				quarantineCodesSet.add(reason)
-			}
-		}
-
-		// identify addresses
-		let visualizerResults: VisualizerResult | undefined = undefined
-		if (singleMulticallResponse.statusCode === 'success') {
-			let tokenResults: TokenVisualizerResult[] = []
-			for (const eventLog of singleMulticallResponse.events) {
-				const logSignature = eventLog.topics[0]
-				if (logSignature === undefined) continue
-				const handler = logHandler.get(bytes32String(logSignature))
-				if (handler === undefined) continue
-				tokenResults = tokenResults.concat(handler(eventLog))
-			}
-			visualizerResults = {
-				ethBalanceChanges: singleMulticallResponse.balanceChanges,
-				tokenResults: tokenResults,
-				blockNumber
-			}
-		} 
-		return {
-			quarantine,
-			quarantineCodes: Array.from(quarantineCodesSet),
-			visualizerResults,
-			website: transaction.website,
-		}
 	}
 }

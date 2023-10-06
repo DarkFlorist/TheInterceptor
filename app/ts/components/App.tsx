@@ -168,14 +168,22 @@ export function App() {
 			if (message.method === 'popup_websiteIconChanged') return updateTabIcon(message)
 			if (message.method === 'popup_failed_to_get_block') return setRpcConnectionStatus(message.data.rpcConnectionStatus)
 			if (message.method === 'popup_update_rpc_list') return
-			if (message.method !== 'popup_UpdateHomePage') return await sendPopupMessageToBackgroundPage({ method: 'popup_requestNewHomeData' })
+			if (message.method === 'popup_new_block_arrived') return
+			if (message.method === 'popup_simulation_state_changed') {
+				console.log(message.method, '  -> req homedata_no update')
+				return await sendPopupMessageToBackgroundPage({ method: 'popup_homeOpened' })
+			}
+			if (message.method !== 'popup_UpdateHomePage') {
+				console.log(message.method, '  -> req homedata')
+				return await sendPopupMessageToBackgroundPage({ method: 'popup_requestNewHomeData' })
+			}
 			return updateHomePage(UpdateHomePage.parse(message))
 		}
 		browser.runtime.onMessage.addListener(popupMessageListener)
 		return () => browser.runtime.onMessage.removeListener(popupMessageListener)
 	})
 
-	useEffect(() => { sendPopupMessageToBackgroundPage({ method: 'popup_requestNewHomeData' }) }, [])
+	useEffect(() => { sendPopupMessageToBackgroundPage({ method: 'popup_homeOpened' }) }, [])
 
 	function setAndSaveAppPage(page: Page) {
 		setAppPage(page)

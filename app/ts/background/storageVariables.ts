@@ -2,14 +2,13 @@ import { ICON_NOT_ACTIVE, getChainName } from '../utils/constants.js'
 import { Semaphore } from '../utils/semaphore.js'
 import { PendingChainChangeConfirmationPromise, PendingPersonalSignPromise, RpcConnectionStatus, TabState } from '../types/user-interface-types.js'
 import { browserStorageLocalGet, browserStorageLocalRemove, browserStorageLocalSet, getTabStateFromStorage, removeTabStateFromStorage, setTabStateFromStorage } from '../utils/storageUtils.js'
-import { EthereumSubscriptions, SimulationResults } from '../types/visualizer-types.js'
+import { CompleteVisualizedSimulation, EthereumSubscriptions } from '../types/visualizer-types.js'
 import { defaultRpcs, getSettings } from './settings.js'
 import { UniqueRequestIdentifier, doesUniqueRequestIdentifiersMatch } from '../utils/requests.js'
 import { AddressBookEntries } from '../types/addressBookTypes.js'
 import { SignerName } from '../types/signerTypes.js'
 import { PendingAccessRequest, PendingAccessRequestArray, PendingTransaction } from '../types/accessRequest.js'
 import { RpcEntries, RpcNetwork } from '../types/rpc.js'
-import { VisualizedSimulatorState } from '../types/interceptor-messages.js'
 
 export const getOpenedAddressBookTabId = async() => (await browserStorageLocalGet('addressbookTabId'))?.['addressbookTabId'] ?? undefined
 
@@ -66,11 +65,14 @@ export async function getSimulationResults() {
 		simulationResultState: 'invalid' as const,
 		simulationId: 0,
 		simulationState: undefined,
-		visualizerResults: undefined,
+		visualizerResults: [],
 		addressBookEntries: [],
 		tokenPrices: [],
 		activeAddress: undefined,
 		namedTokenIds: [],
+		protectors: [],
+		simulatedAndVisualizedTransactions: [],
+		visualizedPersonalSignRequests: [],
 	}
 	try {
 		return (await browserStorageLocalGet('simulationResults'))?.['simulationResults'] ?? emptyResults
@@ -82,12 +84,22 @@ export async function getSimulationResults() {
 }
 
 const simulationResultsSemaphore = new Semaphore(1)
-export async function updateSimulationResults(newResults: SimulationResults) {
+export async function updateSimulationResults(newResults: CompleteVisualizedSimulation) {
 	return await simulationResultsSemaphore.execute(async () => {
 		const oldResults = await getSimulationResults()
-		if (newResults.simulationId < oldResults.simulationId) return oldResults// do not update state with older state
+		if (newResults.simulationId < oldResults.simulationId) return oldResults // do not update state with older state
 		await browserStorageLocalSet({ simulationResults: newResults })
 		return newResults
+	})
+}
+
+export async function updateSimulationResultsWithCallBack(update: (oldResults: CompleteVisualizedSimulation | undefined) => Promise<CompleteVisualizedSimulation | undefined>) {
+	return await simulationResultsSemaphore.execute(async () => {
+		const oldResults = await getSimulationResults()
+		const newRequests = await update(oldResults)
+		if (newRequests === undefined || newRequests.simulationId < oldResults.simulationId) return oldResults // do not update state with older state
+		await browserStorageLocalSet({ simulationResults: newRequests })
+		return newRequests
 	})
 }
 
@@ -241,13 +253,5 @@ export async function updateUserAddressBookEntries(updateFunc: (prevState: Addre
 	await userAddressBookEntriesSemaphore.execute(async () => {
 		const entries = await getUserAddressBookEntries()
 		return await browserStorageLocalSet({ userAddressBookEntries: updateFunc(entries) })
-	})
-}
-
-export const getVisualizedSimulatorState = async() => (await browserStorageLocalGet('visualizedSimulatorState'))?.['visualizedSimulatorState'] ?? undefined
-const visualizedSimulatorStateSemaphore = new Semaphore(1)
-export async function updateVisualizedSimulatorState(updateFunc: (prevState: VisualizedSimulatorState | undefined) => Promise<VisualizedSimulatorState | undefined>) {
-	await visualizedSimulatorStateSemaphore.execute(async () => {
-		return await browserStorageLocalSet({ visualizedSimulatorState: await updateFunc(await getVisualizedSimulatorState()) })
 	})
 }

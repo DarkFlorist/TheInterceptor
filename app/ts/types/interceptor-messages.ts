@@ -1,7 +1,7 @@
 import * as funtypes from 'funtypes'
 import { PendingChainChangeConfirmationPromise, RpcConnectionStatus, TabIconDetails } from './user-interface-types.js'
 import { EthereumAddress, EthereumBlockHeaderWithTransactionHashes, EthereumBytes32, EthereumData, EthereumQuantity, EthereumSignedTransactionWithBlockData, EthereumTimestamp, NonHexBigInt, OptionalEthereumAddress } from './wire-types.js'
-import { SimulatedAndVisualizedTransaction, SimulationResults } from './visualizer-types.js'
+import { CompleteVisualizedSimulation } from './visualizer-types.js'
 import { VisualizedPersonalSignRequest } from './personal-message-definitions.js'
 import { UniqueRequestIdentifier, WebsiteSocket } from '../utils/requests.js'
 import { EthGetLogsResponse, EthGetStorageAtParams, EthTransactionReceiptResponse, GetBlockReturn, GetSimulationStackReply, SendRawTransactionParams, SendTransactionParams, WalletAddEthereumChain } from './JsonRpc-types.js'
@@ -487,20 +487,11 @@ export const PartialUpdateHomePage = funtypes.ReadonlyObject({
 	data: funtypes.Unknown,
 })
 
-export type VisualizedSimulatorState = funtypes.Static<typeof VisualizedSimulatorState>
-export const VisualizedSimulatorState = funtypes.Intersect(
-	SimulationResults, 
-	funtypes.ReadonlyObject({
-		simulatedAndVisualizedTransactions: funtypes.ReadonlyArray(SimulatedAndVisualizedTransaction),
-		visualizedPersonalSignRequests: funtypes.ReadonlyArray(VisualizedPersonalSignRequest),
-	})
-)
-
 export type UpdateHomePage = funtypes.Static<typeof UpdateHomePage>
 export const UpdateHomePage = funtypes.ReadonlyObject({
 	method: funtypes.Literal('popup_UpdateHomePage'),
 	data: funtypes.ReadonlyObject({
-		visualizedSimulatorState: funtypes.Union(VisualizedSimulatorState, funtypes.Undefined),
+		visualizedSimulatorState: funtypes.Union(CompleteVisualizedSimulation, funtypes.Undefined),
 		websiteAccessAddressMetadata: funtypes.ReadonlyArray(ActiveAddressEntry),
 		signerAccounts: funtypes.Union(funtypes.ReadonlyArray(EthereumAddress), funtypes.Undefined),
 		signerChain: funtypes.Union(EthereumQuantity, funtypes.Undefined),
@@ -654,6 +645,7 @@ export const PopupMessage = funtypes.Union(
 	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_interceptorAccessReadyAndListening') }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_confirmTransactionReadyAndListening') }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_requestNewHomeData') }),
+	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_homeOpened') }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_import_settings'), data: funtypes.ReadonlyObject({ fileContents: funtypes.String }) }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_get_export_settings') }),
 	ChangeSettings,

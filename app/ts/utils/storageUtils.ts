@@ -1,14 +1,13 @@
 import * as funtypes from 'funtypes'
 import { EthereumAddressOrMissing, serialize } from '../types/wire-types.js'
 import { PendingChainChangeConfirmationPromise, PendingPersonalSignPromise, RpcConnectionStatus, TabState } from '../types/user-interface-types.js'
-import { EthereumSubscriptions, SimulationResults } from '../types/visualizer-types.js'
+import { CompleteVisualizedSimulation, EthereumSubscriptions } from '../types/visualizer-types.js'
 import { AddressBookEntries, ActiveAddressArray, ContactEntries } from '../types/addressBookTypes.js'
 import { Page } from '../types/exportedSettingsTypes.js'
 import { WebsiteAccessArray } from '../types/websiteAccessTypes.js'
 import { SignerName } from '../types/signerTypes.js'
 import { PendingAccessRequestArray, PendingTransaction } from '../types/accessRequest.js'
 import { RpcEntries, RpcNetwork } from '../types/rpc.js'
-import { VisualizedSimulatorState } from '../types/interceptor-messages.js'
 
 export type LocalStorageItems = funtypes.Static<typeof LocalStorageItems>
 export const LocalStorageItems = funtypes.Partial({
@@ -27,7 +26,7 @@ export const LocalStorageItems = funtypes.Partial({
 	transactionsPendingForUserConfirmation: funtypes.ReadonlyArray(PendingTransaction),
 	ChainChangeConfirmationPromise: funtypes.Union(funtypes.Undefined, PendingChainChangeConfirmationPromise),
 	PersonalSignPromise: funtypes.Union(funtypes.Undefined, PendingPersonalSignPromise),
-	simulationResults: funtypes.Union(funtypes.Undefined, SimulationResults),
+	simulationResults: funtypes.Union(funtypes.Undefined, CompleteVisualizedSimulation),
 	signerName: SignerName,
 	currentTabId: funtypes.Union(funtypes.Undefined, funtypes.Number),
 	rpcConnectionStatus: RpcConnectionStatus,
@@ -36,7 +35,6 @@ export const LocalStorageItems = funtypes.Partial({
 	RpcEntries: RpcEntries,
 	metamaskCompatibilityMode: funtypes.Boolean,
 	userAddressBookEntries: AddressBookEntries,
-	visualizedSimulatorState: VisualizedSimulatorState,
 })
 
 export type LocalStorageKey = funtypes.Static<typeof LocalStorageKey>
@@ -65,7 +63,6 @@ export const LocalStorageKey = funtypes.Union(
 	funtypes.Literal('RpcEntries'),
 	funtypes.Literal('metamaskCompatibilityMode'),
 	funtypes.Literal('userAddressBookEntries'),
-	funtypes.Literal('visualizedSimulatorState'),
 )
 
 export async function browserStorageLocalGet(keys: LocalStorageKey | LocalStorageKey[]): Promise<LocalStorageItems> {

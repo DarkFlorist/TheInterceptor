@@ -83,6 +83,31 @@ export async function addMetadataToOpenSeaOrder(ethereumClientService: EthereumC
 	 }
 }
 
+/*
+function updatePersonalSignMessagesMetadata(request: VisualizedPersonalSignRequest, Map<address,AddressBookEntry>): VisualizedPersonalSignRequest {
+	switch(request.type) {
+		case 'EIP712': {
+			return request
+		}
+		case 'NotParsed': {
+			return request
+		}
+		case 'OrderComponents': {
+			return request
+		}
+		case 'Permit': {
+			return request
+		}
+		case 'Permit2': {
+			return request
+		}
+		case 'SafeTx': {
+			return request
+		}
+		default: assertNever(request)
+	}
+}*/
+
 export async function craftPersonalSignPopupMessage(ethereumClientService: EthereumClientService, signedMessageTransaction: SignedMessageTransaction, signerName: SignerName, rpcNetwork: RpcNetwork, userAddressBook: UserAddressBook): Promise<VisualizedPersonalSignRequest> {
 	const activeAddressWithMetadata = await identifyAddress(ethereumClientService, userAddressBook, signedMessageTransaction.fakeSignedFor)
 	const basicParams = { ...signedMessageTransaction, activeAddress: activeAddressWithMetadata, signerName }
@@ -280,7 +305,7 @@ async function resolve(simulator: Simulator, reply: PersonalSignApproval, signed
 	// forward message to content script
 	if (reply.data.accept) {
 		if (signedMessageTransaction.simulationMode) {
-			await updateSimulationState(simulator, async (simulationState) => {
+			await updateSimulationState(simulator.ethereum, async (simulationState) => {
 				return await appendSignedMessage(simulator.ethereum, simulationState, signedMessageTransaction)
 			}, signedMessageTransaction.fakeSignedFor, true)
 			const signedMessage = (await simulatePersonalSign(signedMessageTransaction.originalRequestParameters, signedMessageTransaction.fakeSignedFor)).signature
