@@ -6,7 +6,6 @@ import { TokenOrEth, TokenOrEtherParams } from '../../subcomponents/coins.js'
 import { GasFee, TransactionGasses } from '../SimulationSummary.js'
 import { SimulatedAndVisualizedEtherTransferTransaction, SimulatedAndVisualizedSimpleTokenTransferTransaction, TokenResult } from '../identifyTransaction.js'
 import { AddressBookEntry } from '../../../types/addressBookTypes.js'
-import { BIG_FONT_SIZE } from '../../../utils/constants.js'
 import { tokenEventToTokenSymbolParams } from './CatchAllVisualizer.js'
 import { RpcNetwork } from '../../../types/rpc.js'
 
@@ -60,7 +59,8 @@ function SimpleSend({ transaction, asset, sender, receiver, renameAddressCallBac
 			<TokenOrEth
 				{ ...asset }
 				useFullTokenName = { false }
-				style = { { 'font-size': BIG_FONT_SIZE, 'font-weight': '500' } }
+				style = { { 'font-weight': '500' } }
+				fontSize = 'big'
 			/>
 		</span>
 		<p class = 'paragraph'> From </p>
@@ -107,6 +107,7 @@ export function EtherTransferVisualisation({ simTx, renameAddressCallBack }: { s
 			amount: simTx.transaction.value,
 			rpcNetwork: simTx.transaction.rpcNetwork,
 			useFullTokenName: false,
+			fontSize: 'normal'
 		} }
 		sender = { { beforeAndAfter: senderBalanceChanges, address: simTx.transaction.from } }
 		receiver = { { beforeAndAfter: receiverBalanceChanges, address: simTx.transaction.to } }
@@ -130,7 +131,8 @@ export function SimpleTokenTransferVisualisation({ simTx, renameAddressCallBack 
 		transaction = { { ...simTx, rpcNetwork: simTx.transaction.rpcNetwork } }
 		asset = { {
 			...getAsset(transfer),
-			useFullTokenName: false
+			useFullTokenName: false,
+			fontSize: 'normal'
 		} }
 		sender = { {
 			address: transfer.from,
