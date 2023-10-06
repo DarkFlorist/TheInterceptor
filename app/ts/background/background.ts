@@ -32,7 +32,6 @@ import { RpcNetwork } from '../types/rpc.js'
 import { serialize } from '../types/wire-types.js'
 
 async function updateMetadataForSimulation(simulationState: SimulationState, ethereum: EthereumClientService, visualizerResults: readonly (VisualizerResult | undefined)[], protectorResults: readonly ProtectorResults[]) {
-	console.log('updateMetadataForSimulation')
 	const settingsPromise = getSettings()
 	const signerPromise = getSignerName()
 	const settings = await settingsPromise
@@ -81,7 +80,6 @@ async function visualizeSimulatorState(simulationState: SimulationState, ethereu
 }
 
 export const updateSimulationMetadata = async (ethereum: EthereumClientService) => {
-	console.log('updateSimulationMetadata')
 	return await updateSimulationResultsWithCallBack(async (prevState) => {
 		if (prevState?.simulationState === undefined) return prevState
 		const metadata = await updateMetadataForSimulation(prevState.simulationState, ethereum, prevState.visualizerResults, prevState.protectors)
@@ -91,7 +89,6 @@ export const updateSimulationMetadata = async (ethereum: EthereumClientService) 
 
 const updateSimulationStateSemaphore = new Semaphore(1)
 export async function updateSimulationState(ethereum: EthereumClientService, getUpdatedSimulationState: (simulationState: SimulationState | undefined) => Promise<SimulationState | undefined>, activeAddress: bigint | undefined, invalidateOldState: boolean) {
-	console.log('updateSimulationState called')
 	return await updateSimulationStateSemaphore.execute(async () => {
 		const simulationResults = await getSimulationResults()
 		const simulationId = simulationResults.simulationId + 1

@@ -302,7 +302,6 @@ export async function homeOpened(simulator: Simulator, refreshMetadata: boolean)
 	const metamaskCompatibilityModePromise = getMetamaskCompatibilityMode()
 	const rpcEntriesPromise = getRpcList()
 
-	console.log('homeOpened', refreshMetadata)
 	const visualizedSimulatorStatePromise: Promise<CompleteVisualizedSimulation> = refreshMetadata ? updateSimulationMetadata(simulator.ethereum) : getSimulationResults()
 	const tabId = await getLastKnownCurrentTabId()
 	const tabState = tabId === undefined ? undefined : await getTabState(tabId)
