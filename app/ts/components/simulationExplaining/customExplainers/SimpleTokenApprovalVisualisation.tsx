@@ -3,7 +3,6 @@ import { BigAddress } from '../../subcomponents/address.js'
 import { AllApproval, TokenAmount, TokenSymbol } from '../../subcomponents/coins.js'
 import { GasFee, TransactionGasses } from '../SimulationSummary.js'
 import { TokenVisualizerResultWithMetadata } from '../../../types/visualizer-types.js'
-import { BIG_FONT_SIZE } from '../../../utils/constants.js'
 import { tokenEventToTokenSymbolParams } from './CatchAllVisualizer.js'
 import { RpcNetwork } from '../../../types/rpc.js'
 
@@ -36,7 +35,8 @@ export function SimpleTokenApprovalVisualisation(params: SimpleTokenApprovalVisu
 					{ params.approval.type === 'NFT All approval' ?
 						<AllApproval
 							{ ...params.approval }
-							style = { { 'font-size': BIG_FONT_SIZE, 'font-weight': '500', color: textColor } }
+							style = { { 'font-weight': '500', color: textColor } }
+							fontSize = { 'big' }
 						/>
 					: <> { 'amount' in params.approval && params.approval.amount >= (2n ** 96n - 1n ) ?
 							<p class = 'ellipsis' style = { `color: ${ textColor }; font-size: 28px; font-weight: 500` }><b>ALL</b></p>
@@ -45,7 +45,8 @@ export function SimpleTokenApprovalVisualisation(params: SimpleTokenApprovalVisu
 								<TokenAmount
 									amount = { params.approval.amount }
 									tokenEntry = { params.approval.token }
-									style = { { 'font-size': BIG_FONT_SIZE, 'font-weight': '500', color: textColor } }
+									style = { { 'font-weight': '500', color: textColor } }
+									fontSize = { 'big' }
 								/>
 							: <></>
 						} </>
@@ -55,8 +56,9 @@ export function SimpleTokenApprovalVisualisation(params: SimpleTokenApprovalVisu
 					<TokenSymbol
 						{ ...tokenEventToTokenSymbolParams(params.approval) }
 						useFullTokenName = { false }
-						style = { { 'font-size': BIG_FONT_SIZE, 'font-weight': '500', color: textColor } }
+						style = { { 'font-weight': '500', color: textColor } }
 						renameAddressCallBack = { params.renameAddressCallBack }
+						fontSize = { 'big' }
 					/>
 				</div>
 			</span>

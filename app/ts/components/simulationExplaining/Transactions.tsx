@@ -226,6 +226,7 @@ export function TokenLogEvent(params: TokenLogEventParams ) {
 				<AllApproval
 					{ ...params.tokenVisualizerResult }
 					style = { style }
+					fontSize = { 'normal' }
 				/>
 			: <> { 'amount' in params.tokenVisualizerResult && params.tokenVisualizerResult.amount >= (2n ** 96n - 1n ) && params.tokenVisualizerResult.isApproval ?
 					<p class = 'ellipsis' style = { `color: ${ style.color }` }><b>ALL</b></p>
@@ -235,6 +236,7 @@ export function TokenLogEvent(params: TokenLogEventParams ) {
 							amount = { params.tokenVisualizerResult.amount }
 							tokenEntry = { params.tokenVisualizerResult.token }
 							style = { style }
+							fontSize = { 'normal' }
 						/>
 					: <></>
 				} </>
@@ -246,6 +248,7 @@ export function TokenLogEvent(params: TokenLogEventParams ) {
 				style = { style }
 				useFullTokenName = { false }
 				renameAddressCallBack = { params.renameAddressCallBack }
+				fontSize = { 'normal' }
 			/>
 		</div>
 		<div class = 'log-cell-flexless' style = 'margin: 2px;'>
