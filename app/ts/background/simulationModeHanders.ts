@@ -172,3 +172,7 @@ export async function getSimulationStack(simulationState: SimulationState | unde
 export async function getLogs(ethereumClientService: EthereumClientService, simulationState: SimulationState | undefined, request: EthGetLogsParams) {
 	return { method: request.method, result: await getSimulatedLogs(ethereumClientService, simulationState, request.params[0]) }
 }
+
+export async function web3ClientVersion(ethereumClientService: EthereumClientService) {
+	return { method: 'web3_clientVersion' as const, result: await ethereumClientService.web3ClientVersion() }
+}
