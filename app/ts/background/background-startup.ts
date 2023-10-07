@@ -177,7 +177,7 @@ async function startup() {
 	if (settings.simulationMode) {
 		// update prepend mode as our active address has changed, so we need to be sure the rich modes money is sent to right address
 		const ethereumClientService = simulator.ethereum
-		await updateSimulationState(simulator, async () => {
+		await updateSimulationState(simulator.ethereum, async () => {
 			const simulationState = (await getSimulationResults()).simulationState
 			const prependQueue = await getPrependTrasactions(ethereumClientService, settings, await getMakeMeRich())
 			return await setPrependTransactionsQueue(ethereumClientService, simulationState, prependQueue)

@@ -1,11 +1,11 @@
 import { PopupMessage, RPCReply, Settings } from '../types/interceptor-messages.js'
 import 'webextension-polyfill'
-import { Simulator } from '../simulation/simulator.js'
-import { getEthDonator, getSignerName, getSimulationResults, updateSimulationResults } from './storageVariables.js'
+import { Simulator, runProtectorsForTransaction, visualizeTransaction } from '../simulation/simulator.js'
+import { getEthDonator, getSignerName, getSimulationResults, updateSimulationResults, updateSimulationResultsWithCallBack } from './storageVariables.js'
 import { changeSimulationMode, getSettings, getMakeMeRich } from './settings.js'
 import { blockNumber, call, chainId, estimateGas, gasPrice, getAccounts, getBalance, getBlockByNumber, getCode, getLogs, getPermissions, getSimulationStack, getTransactionByHash, getTransactionCount, getTransactionReceipt, netVersion, personalSign, sendTransaction, subscribe, switchEthereumChain, unsubscribe } from './simulationModeHanders.js'
 import { changeActiveAddress, changeMakeMeRich, changePage, resetSimulation, confirmDialog, refreshSimulation, removeTransaction, requestAccountsFromSigner, refreshPopupConfirmTransactionSimulation, confirmPersonalSign, confirmRequestAccess, changeInterceptorAccess, changeChainDialog, popupChangeActiveRpc, enableSimulationMode, addOrModifyAddressBookEntry, getAddressBookData, removeAddressBookEntry, openAddressBook, homeOpened, interceptorAccessChangeAddressOrRefresh, refreshPopupConfirmTransactionMetadata, changeSettings, importSettings, exportSettings, setNewRpcList, popupIdentifyAddress, popupFindAddressBookEntryWithSymbolOrName } from './popupMessageHandlers.js'
-import { SimulationState, WebsiteCreatedEthereumUnsignedTransaction } from '../types/visualizer-types.js'
+import { ProtectorResults, SimulationState, VisualizerResult, WebsiteCreatedEthereumUnsignedTransaction } from '../types/visualizer-types.js'
 import { WebsiteTabConnections } from '../types/user-interface-types.js'
 import { interceptorAccessMetadataRefresh, requestAccessFromUser, updateInterceptorAccessViewWithPendingRequests } from './windows/interceptorAccess.js'
 import { MAKE_YOU_RICH_TRANSACTION, METAMASK_ERROR_FAILED_TO_PARSE_REQUEST, METAMASK_ERROR_NOT_AUTHORIZED, METAMASK_ERROR_NOT_CONNECTED_TO_CHAIN } from '../utils/constants.js'
@@ -31,20 +31,33 @@ import { ConfirmTransactionTransactionSingleVisualization } from '../types/acces
 import { RpcNetwork } from '../types/rpc.js'
 import { serialize } from '../types/wire-types.js'
 
-async function visualizeSimulatorState(simulationState: SimulationState, simulator: Simulator) {
-	const priceEstimator = new PriceEstimator(simulator.ethereum)
-	const transactions = getWebsiteCreatedEthereumUnsignedTransactions(simulationState.simulatedTransactions)
-	const visualizerResult = await simulator.visualizeTransactionChain(simulationState, transactions, simulationState.blockNumber, simulationState.simulatedTransactions.map((x) => x.multicallResponse))
-	const visualizerResults = visualizerResult.map((x, i) => {
-		const simulatedTransaction = simulationState.simulatedTransactions[i]
-		if (simulatedTransaction === undefined) throw new Error('simulated transaction was undefined')
-		return { ...x, website: simulatedTransaction.website }
-	})
-	const addressBookEntryPromises = getAddressBookEntriesForVisualiser(simulator.ethereum, visualizerResult.map((x) => x.visualizerResults), simulationState, (await getSettings()).userAddressBook)
-	const namedTokenIdPromises = nameTokenIds(simulator.ethereum, visualizerResult.map((x) => x.visualizerResults))
+async function updateMetadataForSimulation(simulationState: SimulationState, ethereum: EthereumClientService, visualizerResults: readonly (VisualizerResult | undefined)[], protectorResults: readonly ProtectorResults[]) {
+	const settingsPromise = getSettings()
+	const signerPromise = getSignerName()
+	const settings = await settingsPromise
+	const signerName = await signerPromise
+	const addressBookEntryPromises = getAddressBookEntriesForVisualiser(ethereum, visualizerResults, simulationState, settings.userAddressBook)
+	const namedTokenIdPromises = nameTokenIds(ethereum, visualizerResults)
 	const addressBookEntries = await addressBookEntryPromises
 	const namedTokenIds = await namedTokenIdPromises
-	const simulatedAndVisualizedTransactions = formSimulatedAndVisualizedTransaction(simulationState, visualizerResults, addressBookEntries, namedTokenIds)
+	const simulatedAndVisualizedTransactions = formSimulatedAndVisualizedTransaction(simulationState, visualizerResults, protectorResults, addressBookEntries, namedTokenIds)
+	const VisualizedPersonalSignRequest = simulationState.signedMessages.map((signedMessage) => craftPersonalSignPopupMessage(ethereum, signedMessage, signerName, settings.rpcNetwork, settings.userAddressBook))
+	return {
+		namedTokenIds,
+		addressBookEntries: addressBookEntries,
+		simulatedAndVisualizedTransactions,
+		visualizedPersonalSignRequests: await Promise.all(VisualizedPersonalSignRequest),
+	}
+}
+
+async function visualizeSimulatorState(simulationState: SimulationState, ethereum: EthereumClientService) {
+	const priceEstimator = new PriceEstimator(ethereum)
+	const transactions = getWebsiteCreatedEthereumUnsignedTransactions(simulationState.simulatedTransactions)
+
+	const blockNum = await ethereum.getBlockNumber()
+	const visualizerResults = simulationState.simulatedTransactions.map((simulatedTransaction) => visualizeTransaction(blockNum, simulatedTransaction.multicallResponse))
+	const protectors = await Promise.all(transactions.map(async (transaction) => await runProtectorsForTransaction(simulationState, transaction, ethereum)))
+	const updatedMetadataPromise = updateMetadataForSimulation(simulationState, ethereum, visualizerResults, protectors)
 
 	function onlyTokensAndTokensWithKnownDecimals(metadata: AddressBookEntry): metadata is AddressBookEntry & { type: 'ERC20', decimals: `0x${ string }` } {
 		if (metadata.type !== 'ERC20') return false
@@ -54,24 +67,28 @@ async function visualizeSimulatorState(simulationState: SimulationState, simulat
 	function metadataRestructure(metadata: AddressBookEntry & { type: 'ERC20', decimals: bigint }) {
 		return { address: metadata.address, decimals: metadata.decimals }
 	}
-	const tokenPricePromises = priceEstimator.estimateEthereumPricesForTokens(addressBookEntries.filter(onlyTokensAndTokensWithKnownDecimals).map(metadataRestructure))
+	const updatedMetadata = await updatedMetadataPromise
+	const tokenPricePromises = priceEstimator.estimateEthereumPricesForTokens(updatedMetadata.addressBookEntries.filter(onlyTokensAndTokensWithKnownDecimals).map(metadataRestructure))
 
-	const signerName = await getSignerName()
-	const VisualizedPersonalSignRequest = simulationState.signedMessages.map((signedMessage) => craftPersonalSignPopupMessage(simulator.ethereum, signedMessage, signerName))
-	
 	return {
+		...updatedMetadata,
 		tokenPrices: await tokenPricePromises,
-		addressBookEntries: addressBookEntries,
 		visualizerResults,
+		protectors,
 		simulationState,
-		simulatedAndVisualizedTransactions,
-		visualizedPersonalSignRequests: await Promise.all(VisualizedPersonalSignRequest),
-		namedTokenIds,
 	}
 }
 
+export const updateSimulationMetadata = async (ethereum: EthereumClientService) => {
+	return await updateSimulationResultsWithCallBack(async (prevState) => {
+		if (prevState?.simulationState === undefined) return prevState
+		const metadata = await updateMetadataForSimulation(prevState.simulationState, ethereum, prevState.visualizerResults, prevState.protectors)
+		return { ...prevState, ...metadata }
+	})
+}
+
 const updateSimulationStateSemaphore = new Semaphore(1)
-export async function updateSimulationState(simulator: Simulator, getUpdatedSimulationState: (simulationState: SimulationState | undefined) => Promise<SimulationState | undefined>, activeAddress: bigint | undefined, invalidateOldState: boolean) {
+export async function updateSimulationState(ethereum: EthereumClientService, getUpdatedSimulationState: (simulationState: SimulationState | undefined) => Promise<SimulationState | undefined>, activeAddress: bigint | undefined, invalidateOldState: boolean) {
 	return await updateSimulationStateSemaphore.execute(async () => {
 		const simulationResults = await getSimulationResults()
 		const simulationId = simulationResults.simulationId + 1
@@ -83,27 +100,22 @@ export async function updateSimulationState(simulator: Simulator, getUpdatedSimu
 		await sendPopupMessageToOpenWindows({ method: 'popup_simulation_state_changed', data: { simulationId } })
 		try {
 			const updatedSimulationState = await getUpdatedSimulationState(simulationResults.simulationState)
-			if (updatedSimulationState !== undefined) {
+			const doneState = { simulationUpdatingState: 'done' as const, simulationResultState: 'done' as const, simulationId, activeAddress }
+			updatedSimulationState !== undefined ? 
 				await updateSimulationResults({
-					...await visualizeSimulatorState(updatedSimulationState, simulator),
-					simulationUpdatingState: 'done',		
-					simulationResultState: 'done',
-					simulationId,
-					activeAddress: activeAddress,
+					...await visualizeSimulatorState(updatedSimulationState, ethereum),
+					...doneState,
 				})
-			} else {
-				await updateSimulationResults({
-					simulationUpdatingState: 'done',
-					simulationResultState: 'done',
-					simulationId,
-					addressBookEntries: [],
-					tokenPrices: [],
-					visualizerResults: [],
-					namedTokenIds: [],
-					simulationState: updatedSimulationState,
-					activeAddress: activeAddress,
-				})
-			}
+			: await updateSimulationResults({...doneState,
+				addressBookEntries: [],
+				tokenPrices: [],
+				visualizerResults: [],
+				protectors: [],
+				namedTokenIds: [],
+				simulationState: updatedSimulationState,
+				simulatedAndVisualizedTransactions: [],
+				visualizedPersonalSignRequests: [],
+			})
 			await sendPopupMessageToOpenWindows({ method: 'popup_simulation_state_changed', data: { simulationId } })
 			return updatedSimulationState
 		} catch (error) {
@@ -150,7 +162,7 @@ export async function refreshConfirmTransactionSimulation(
 		if (noncefixed === 'NoNonceErrors') {
 			return {
 				statusCode: 'success' as const,
-				data: { ...info, ...await visualizeSimulatorState(simulationStateWithNewTransaction, simulator) }
+				data: { ...info, ...await visualizeSimulatorState(simulationStateWithNewTransaction, simulator.ethereum) }
 			}
 		}
 		const noncefixedNotPrepended = getWebsiteCreatedEthereumUnsignedTransactions(getNonPrependedSimulatedTransactions(simulationStateWithNewTransaction.prependTransactionsQueue, noncefixed))
@@ -161,7 +173,7 @@ export async function refreshConfirmTransactionSimulation(
 			statusCode: 'success' as const,
 			data: {
 				...info,
-				...await visualizeSimulatorState(nonceFixedState, simulator),
+				...await visualizeSimulatorState(nonceFixedState, simulator.ethereum),
 				transactionToSimulate: {
 					...transactionToSimulate,
 					transaction: {
@@ -345,7 +357,7 @@ export async function changeActiveAddressAndChainAndResetSimulation(
 		if (updatedSettings.simulationMode) {
 			// update prepend mode as our active address has changed, so we need to be sure the rich modes money is sent to right address
 			const ethereumClientService = simulator.ethereum
-			await updateSimulationState(simulator, async () => {
+			await updateSimulationState(ethereumClientService, async () => {
 				const simulationState = (await getSimulationResults()).simulationState
 				const prependQueue = await getPrependTrasactions(ethereumClientService, await getSettings(), await getMakeMeRich())
 				return await setPrependTransactionsQueue(ethereumClientService, simulationState, prependQueue)
@@ -357,7 +369,6 @@ export async function changeActiveAddressAndChainAndResetSimulation(
 }
 
 export async function changeActiveRpc(simulator: Simulator, websiteTabConnections: WebsiteTabConnections, rpcNetwork: RpcNetwork, simulationMode: boolean) {
-	
 	if (simulationMode) return await changeActiveAddressAndChainAndResetSimulation(simulator, websiteTabConnections, {
 		simulationMode: simulationMode,
 		rpcNetwork: rpcNetwork
@@ -467,7 +478,8 @@ export async function popupMessageHandler(
 		case 'popup_changeChainReadyAndListening': return await updateChainChangeViewWithPendingRequest()
 		case 'popup_interceptorAccessReadyAndListening': return await updateInterceptorAccessViewWithPendingRequests()
 		case 'popup_confirmTransactionReadyAndListening': return await updateConfirmTransactionViewWithPendingTransaction()
-		case 'popup_requestNewHomeData': return await homeOpened(simulator)
+		case 'popup_requestNewHomeData': return await homeOpened(simulator, true)
+		case 'popup_homeOpened': return await homeOpened(simulator, false)
 		case 'popup_refreshInterceptorAccessMetadata': return await interceptorAccessMetadataRefresh()
 		case 'popup_interceptorAccessChangeAddress': return await interceptorAccessChangeAddressOrRefresh(websiteTabConnections, parsedRequest)
 		case 'popup_interceptorAccessRefresh': return await interceptorAccessChangeAddressOrRefresh(websiteTabConnections, parsedRequest)

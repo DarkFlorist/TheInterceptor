@@ -104,19 +104,20 @@ export const TokenVisualizerResultWithMetadata = funtypes.Union(
 	TokenVisualizerNFTAllApprovalEvent,
 )
 
-export type VisualizerResult  = funtypes.Static<typeof VisualizerResult>
-export const VisualizerResult = funtypes.ReadonlyObject( {
-	ethBalanceChanges: EthBalanceChanges,
-	tokenResults: funtypes.ReadonlyArray(TokenVisualizerResult),
-	blockNumber: EthereumQuantity,
-})
+export type VisualizerResult = funtypes.Static<typeof VisualizerResult>
+export const VisualizerResult = funtypes.Union(
+	funtypes.Undefined,
+	funtypes.ReadonlyObject( {
+		ethBalanceChanges: EthBalanceChanges,
+		tokenResults: funtypes.ReadonlyArray(TokenVisualizerResult),
+		blockNumber: EthereumQuantity,
+	})
+)
 
-export type SimResults  = funtypes.Static<typeof SimResults>
-export const SimResults = funtypes.ReadonlyObject( {
+export type ProtectorResults  = funtypes.Static<typeof ProtectorResults>
+export const ProtectorResults = funtypes.ReadonlyObject( {
 	quarantine: funtypes.Boolean,
 	quarantineCodes: funtypes.ReadonlyArray(QUARANTINE_CODE),
-	visualizerResults: funtypes.Union(VisualizerResult, funtypes.Undefined),
-	website: Website,
 })
 
 export type TokenBalancesAfter = funtypes.Static<typeof TokenBalancesAfter>
@@ -306,17 +307,20 @@ export const NamedTokenId = funtypes.ReadonlyObject({
 	tokenIdName: funtypes.String
 })
 
-export type SimulationResults = funtypes.Static<typeof SimulationResults>
-export const SimulationResults = funtypes.ReadonlyObject({
-	simulationUpdatingState: SimulationUpdatingState, 
-	simulationResultState: SimulationResultState,
-	simulationId: funtypes.Number,
-	simulationState: funtypes.Union(SimulationState, funtypes.Undefined),
-	visualizerResults: funtypes.Union(funtypes.ReadonlyArray(SimResults), funtypes.Undefined),
+export type CompleteVisualizedSimulation = funtypes.Static<typeof CompleteVisualizedSimulation>
+export const CompleteVisualizedSimulation = funtypes.ReadonlyObject({
+	visualizerResults: funtypes.ReadonlyArray(VisualizerResult),
+	protectors: funtypes.ReadonlyArray(ProtectorResults),
 	addressBookEntries: funtypes.ReadonlyArray(AddressBookEntry),
 	tokenPrices: funtypes.ReadonlyArray(TokenPriceEstimate),
 	namedTokenIds: funtypes.ReadonlyArray(NamedTokenId),
+	simulationState: funtypes.Union(SimulationState, funtypes.Undefined),
 	activeAddress: OptionalEthereumAddress,
+	simulationUpdatingState: SimulationUpdatingState, 
+	simulationResultState: SimulationResultState,
+	simulationId: funtypes.Number,
+	simulatedAndVisualizedTransactions: funtypes.ReadonlyArray(SimulatedAndVisualizedTransaction),
+	visualizedPersonalSignRequests: funtypes.ReadonlyArray(VisualizedPersonalSignRequest),
 })
 
 export type NewHeadsSubscription = funtypes.Static<typeof NewHeadsSubscription>

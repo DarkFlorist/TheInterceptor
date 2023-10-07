@@ -121,17 +121,19 @@ export function App() {
 						setTabConnection(data.tabIconDetails)
 					}
 				}
-				setSimulationState(
-					data.simulation.simulationState,
-					data.simulation.addressBookEntries,
-					data.simulation.tokenPrices,
-					data.simulation.simulatedAndVisualizedTransactions,
-					data.simulation.visualizedPersonalSignRequests,
-					data.simulation.activeAddress,
-					data.simulation.namedTokenIds,
-				)
-				setSimulationUpdatingState(data.simulation.simulationUpdatingState)
-				setSimulationResultState(data.simulation.simulationResultState)
+				if (data.visualizedSimulatorState !== undefined) {
+					setSimulationState(
+						data.visualizedSimulatorState.simulationState,
+						data.visualizedSimulatorState.addressBookEntries,
+						data.visualizedSimulatorState.tokenPrices,
+						data.visualizedSimulatorState.simulatedAndVisualizedTransactions,
+						data.visualizedSimulatorState.visualizedPersonalSignRequests,
+						data.visualizedSimulatorState.activeAddress,
+						data.visualizedSimulatorState.namedTokenIds,
+					)
+					setSimulationUpdatingState(data.visualizedSimulatorState.simulationUpdatingState)
+					setSimulationResultState(data.visualizedSimulatorState.simulationResultState)
+				}
 				setMakeMeRich(data.makeMeRich)
 				setSignerName(data.signerName)
 				setCurrentBlockNumber(data.currentBlockNumber)
@@ -166,6 +168,8 @@ export function App() {
 			if (message.method === 'popup_websiteIconChanged') return updateTabIcon(message)
 			if (message.method === 'popup_failed_to_get_block') return setRpcConnectionStatus(message.data.rpcConnectionStatus)
 			if (message.method === 'popup_update_rpc_list') return
+			if (message.method === 'popup_new_block_arrived') return
+			if (message.method === 'popup_simulation_state_changed') return await sendPopupMessageToBackgroundPage({ method: 'popup_homeOpened' })
 			if (message.method !== 'popup_UpdateHomePage') return await sendPopupMessageToBackgroundPage({ method: 'popup_requestNewHomeData' })
 			return updateHomePage(UpdateHomePage.parse(message))
 		}
@@ -173,7 +177,7 @@ export function App() {
 		return () => browser.runtime.onMessage.removeListener(popupMessageListener)
 	})
 
-	useEffect(() => { sendPopupMessageToBackgroundPage({ method: 'popup_requestNewHomeData' }) }, [])
+	useEffect(() => { sendPopupMessageToBackgroundPage({ method: 'popup_homeOpened' }) }, [])
 
 	function setAndSaveAppPage(page: Page) {
 		setAppPage(page)

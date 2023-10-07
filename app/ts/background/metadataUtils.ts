@@ -127,7 +127,7 @@ export async function identifyAddress(ethereumClientService: EthereumClientServi
 	}
 }
 
-export async function getAddressBookEntriesForVisualiser(ethereumClientService: EthereumClientService, visualizerResult: (VisualizerResult | undefined)[], simulationState: SimulationState, userAddressBook: UserAddressBook) : Promise<AddressBookEntry[]> {
+export async function getAddressBookEntriesForVisualiser(ethereumClientService: EthereumClientService, visualizerResult: readonly (VisualizerResult | undefined)[], simulationState: SimulationState, userAddressBook: UserAddressBook) : Promise<AddressBookEntry[]> {
 	let addressesToFetchMetadata: bigint[] = []
 	let tokenAddresses: bigint[] = []
 
@@ -141,7 +141,7 @@ export async function getAddressBookEntriesForVisualiser(ethereumClientService: 
 	}
 	simulationState.simulatedTransactions.forEach((tx) => {
 		if (tx.multicallResponse.statusCode === 'success') {
-			addressesToFetchMetadata.concat(tx.multicallResponse.events.map( (tx) => tx.loggersAddress ))
+			addressesToFetchMetadata.concat(tx.multicallResponse.events.map((tx) => tx.loggersAddress ))
 		}
 		addressesToFetchMetadata.push(tx.signedTransaction.from)
 		if (tx.signedTransaction.to !== null) addressesToFetchMetadata.push(tx.signedTransaction.to)
@@ -153,7 +153,7 @@ export async function getAddressBookEntriesForVisualiser(ethereumClientService: 
 	return await Promise.all(addressIdentificationPromises)
 }
 
-export async function nameTokenIds(ethereumClientService: EthereumClientService, visualizerResult: (VisualizerResult | undefined)[]) {
+export async function nameTokenIds(ethereumClientService: EthereumClientService, visualizerResult: readonly (VisualizerResult | undefined)[]) {
 	type TokenAddressTokenIdPair = {
 		tokenAddress: bigint
 		tokenId: bigint

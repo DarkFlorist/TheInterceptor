@@ -1,10 +1,10 @@
 import * as funtypes from 'funtypes'
 import { Website } from './websiteAccessTypes.js'
-import { ActiveAddress, ActiveAddressEntry, AddressBookEntries } from './addressBookTypes.js'
+import { ActiveAddress, ActiveAddressEntry, AddressBookEntry } from './addressBookTypes.js'
 import { EthereumAddress, EthereumTimestamp, OptionalEthereumAddress } from './wire-types.js'
 import { SignerName } from './signerTypes.js'
 import { InterceptedRequest, UniqueRequestIdentifier, WebsiteSocket } from '../utils/requests.js'
-import { NamedTokenId, SimResults, SimulatedAndVisualizedTransaction, SimulationState, TokenPriceEstimate, WebsiteCreatedEthereumUnsignedTransaction } from './visualizer-types.js'
+import { NamedTokenId, ProtectorResults, SimulatedAndVisualizedTransaction, SimulationState, TokenPriceEstimate, VisualizerResult, WebsiteCreatedEthereumUnsignedTransaction } from './visualizer-types.js'
 import { VisualizedPersonalSignRequest } from './personal-message-definitions.js'
 
 export type PendingAccessRequest = funtypes.Static<typeof PendingAccessRequest>
@@ -41,15 +41,20 @@ export const ConfirmTransactionSimulationBaseData = funtypes.ReadonlyObject({
 })
 
 export type ConfirmTransactionDialogState = funtypes.Static<typeof ConfirmTransactionDialogState>
-export const ConfirmTransactionDialogState = funtypes.Intersect(ConfirmTransactionSimulationBaseData, funtypes.ReadonlyObject({
-	simulationState: SimulationState,
-	visualizerResults: funtypes.ReadonlyArray(SimResults),
-	addressBookEntries: AddressBookEntries,
-	tokenPrices: funtypes.ReadonlyArray(TokenPriceEstimate),
-	simulatedAndVisualizedTransactions: funtypes.ReadonlyArray(SimulatedAndVisualizedTransaction),
-	visualizedPersonalSignRequests: funtypes.ReadonlyArray(VisualizedPersonalSignRequest),
-	namedTokenIds: funtypes.ReadonlyArray(NamedTokenId),
-}))
+export const ConfirmTransactionDialogState = funtypes.Intersect(
+	ConfirmTransactionSimulationBaseData, 
+	funtypes.ReadonlyObject({
+		visualizerResults: funtypes.ReadonlyArray(VisualizerResult),
+		protectors: funtypes.ReadonlyArray(ProtectorResults),
+		addressBookEntries: funtypes.ReadonlyArray(AddressBookEntry),
+		tokenPrices: funtypes.ReadonlyArray(TokenPriceEstimate),
+		namedTokenIds: funtypes.ReadonlyArray(NamedTokenId),
+		simulationState: funtypes.Union(SimulationState),
+		activeAddress: OptionalEthereumAddress,
+		simulatedAndVisualizedTransactions: funtypes.ReadonlyArray(SimulatedAndVisualizedTransaction),
+		visualizedPersonalSignRequests: funtypes.ReadonlyArray(VisualizedPersonalSignRequest),
+	}),
+)
 
 export type ConfirmTransactionSimulationStateChanged = funtypes.Static<typeof ConfirmTransactionSimulationStateChanged>
 export const ConfirmTransactionSimulationStateChanged = funtypes.ReadonlyObject({

@@ -211,7 +211,7 @@ async function resolve(simulator: Simulator, simulationMode: boolean, activeAddr
 	if (confirmation === 'NoResponse') return formRejectMessage(undefined)
 	if (confirmation.data.accept === false) return formRejectMessage(confirmation.data.transactionErrorString)
 	if (!simulationMode) return { forward: true }
-	const newState = await updateSimulationState(simulator, async (simulationState) => {
+	const newState = await updateSimulationState(simulator.ethereum, async (simulationState) => {
 		return await appendTransaction(simulator.ethereum, simulationState, transactionToSimulate)
 	}, activeAddress, true)
 	if (newState === undefined || newState.simulatedTransactions === undefined || newState.simulatedTransactions.length === 0) {
