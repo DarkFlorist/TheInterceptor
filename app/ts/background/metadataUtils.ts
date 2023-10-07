@@ -1,7 +1,7 @@
 import { addressString, checksummedAddress } from '../utils/bigint.js'
 import { ActiveAddress, ActiveAddressEntry, AddressBookEntry, UserAddressBook } from '../types/addressBookTypes.js'
 import { NamedTokenId, SimulationState, VisualizerResult } from '../types/visualizer-types.js'
-import { nftMetadata, tokenMetadata, contractMetadata } from '@darkflorist/address-metadata'
+import { tokenMetadata, contractMetadata, erc721Metadata, erc1155Metadata } from '@darkflorist/address-metadata'
 import { ethers } from 'ethers'
 import { MOCK_ADDRESS } from '../utils/constants.js'
 import { EthereumClientService } from '../simulation/services/EthereumClientService.js'
@@ -62,13 +62,23 @@ export async function identifyAddress(ethereumClientService: EthereumClientServi
 		entrySource: 'DarkFloristMetadata',
 	}
 
-	const nftTokenData = nftMetadata.get(addrString)
-	if (nftTokenData) return {
-		...nftTokenData,
+	const erc721TokenData = erc721Metadata.get(addrString)
+	if (erc721TokenData) return {
+		...erc721TokenData,
 		address: address,
-		logoUri: nftTokenData.logoUri ? `${ getFullLogoUri(nftTokenData.logoUri) }` : undefined,
+		logoUri: erc721TokenData.logoUri ? `${ getFullLogoUri(erc721TokenData.logoUri) }` : undefined,
 		type: 'ERC721',
 		entrySource: 'DarkFloristMetadata',
+	}
+
+	const erc1155TokenData = erc1155Metadata.get(addrString)
+	if (erc1155TokenData) return {
+		...erc1155TokenData,
+		address: address,
+		logoUri: erc1155TokenData.logoUri ? `${ getFullLogoUri(erc1155TokenData.logoUri) }` : undefined,
+		type: 'ERC1155',
+		entrySource: 'DarkFloristMetadata',
+		decimals: undefined,
 	}
 
 	if (address === MOCK_ADDRESS) return {
