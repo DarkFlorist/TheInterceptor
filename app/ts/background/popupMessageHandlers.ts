@@ -1,10 +1,10 @@
-import { changeActiveAddressAndChainAndResetSimulation, changeActiveRpc, getPrependTrasactions, refreshConfirmTransactionSimulation, updateSimulationState } from './background.js'
+import { changeActiveAddressAndChainAndResetSimulation, changeActiveRpc, getPrependTrasactions, refreshConfirmTransactionSimulation, updateSimulationState, updateSimulationMetadata } from './background.js'
 import { getSettings, setUseTabsInsteadOfPopup, setMakeMeRich, setPage, setUseSignersAddressAsActiveAddress, updateActiveAddresses, updateContacts, updateWebsiteAccess, exportSettingsAndAddressBook, importSettingsAndAddressBook, getMakeMeRich, getUseTabsInsteadOfPopup, getMetamaskCompatibilityMode, setMetamaskCompatibilityMode } from './settings.js'
-import { getPendingTransactions, getCurrentTabId, getOpenedAddressBookTabId, getSimulationResults, getTabState, saveCurrentTabId, setOpenedAddressBookTabId, setRpcList, getRpcList, getPrimaryRpcForChain, setRpcConnectionStatus, getSignerName, getRpcConnectionStatus, updateUserAddressBookEntries } from './storageVariables.js'
+import { getPendingTransactions, getCurrentTabId, getOpenedAddressBookTabId, getTabState, saveCurrentTabId, setOpenedAddressBookTabId, setRpcList, getRpcList, getPrimaryRpcForChain, getSignerName, getRpcConnectionStatus, updateUserAddressBookEntries, getSimulationResults } from './storageVariables.js'
 import { Simulator } from '../simulation/simulator.js'
 import { ChangeActiveAddress, ChangeMakeMeRich, ChangePage, RemoveTransaction, RequestAccountsFromSigner, TransactionConfirmation, InterceptorAccess, ChangeInterceptorAccess, ChainChangeConfirmation, EnableSimulationMode, ChangeActiveChain, AddOrEditAddressBookEntry, GetAddressBookData, RemoveAddressBookEntry, RefreshConfirmTransactionDialogSimulation, InterceptorAccessRefresh, InterceptorAccessChangeAddress, Settings, RefreshConfirmTransactionMetadata, RefreshInterceptorAccessMetadata, ChangeSettings, ImportSettings, SetRpcList, IdentifyAddress, FindAddressBookEntryWithSymbolOrName, PersonalSignApproval, UpdateHomePage } from '../types/interceptor-messages.js'
 import { formEthSendTransaction, formSendRawTransaction, resolvePendingTransaction } from './windows/confirmTransaction.js'
-import { craftPersonalSignPopupMessage, resolvePersonalSign } from './windows/personalSign.js'
+import { resolvePersonalSign } from './windows/personalSign.js'
 import { getAddressMetadataForAccess, requestAddressChange, resolveInterceptorAccess } from './windows/interceptorAccess.js'
 import { resolveChainChange } from './windows/changeChain.js'
 import { sendMessageToApprovedWebsitePorts, updateWebsiteApprovalAccesses } from './accessManagement.js'
@@ -18,12 +18,11 @@ import { EthereumClientService } from '../simulation/services/EthereumClientServ
 import { refreshSimulationState, removeTransactionAndUpdateTransactionNonces, resetSimulationState } from '../simulation/services/SimulationModeEthereumClientService.js'
 import { formSimulatedAndVisualizedTransaction } from '../components/formVisualizerResults.js'
 import { doesUniqueRequestIdentifiersMatch } from '../utils/requests.js'
-import { SimulationState } from '../types/visualizer-types.js'
+import { CompleteVisualizedSimulation, SimulationState } from '../types/visualizer-types.js'
 import { ExportedSettings } from '../types/exportedSettingsTypes.js'
 import { isJSON } from '../utils/json.js'
 import { UserAddressBook } from '../types/addressBookTypes.js'
 import { serialize } from '../types/wire-types.js'
-import { VisualizedPersonalSignRequest } from '../types/personal-message-definitions.js'
 
 export async function confirmDialog(simulator: Simulator, websiteTabConnections: WebsiteTabConnections, confirmation: TransactionConfirmation) {
 	await resolvePendingTransaction(simulator, websiteTabConnections, confirmation)
@@ -80,7 +79,7 @@ export async function changeActiveAddress(simulator: Simulator, websiteTabConnec
 
 export async function changeMakeMeRich(simulator: Simulator, ethereumClientService: EthereumClientService, makeMeRichChange: ChangeMakeMeRich, settings: Settings) {
 	await setMakeMeRich(makeMeRichChange.data)
-	await updateSimulationState(simulator, async (simulationState) => {
+	await updateSimulationState(simulator.ethereum, async (simulationState) => {
 		if (simulationState === undefined) return undefined
 		const prependQueue = await getPrependTrasactions(ethereumClientService, settings, makeMeRichChange.data)
 		return await resetSimulationState(ethereumClientService, { ...simulationState, prependTransactionsQueue: prependQueue })
@@ -165,29 +164,29 @@ export async function requestAccountsFromSigner(websiteTabConnections: WebsiteTa
 }
 
 export async function resetSimulation(simulator: Simulator, ethereumClientService: EthereumClientService, settings: Settings) {
-	await updateSimulationState(simulator, async (simulationState) => {
+	await updateSimulationState(simulator.ethereum, async (simulationState) => {
 		if (simulationState === undefined) return undefined
 		return await resetSimulationState(ethereumClientService, simulationState)
 	}, settings.activeSimulationAddress, true)
 }
 
 export async function removeTransaction(simulator: Simulator, ethereumClientService: EthereumClientService, params: RemoveTransaction, settings: Settings) {
-	await updateSimulationState(simulator, async (simulationState) => {
+	await updateSimulationState(simulator.ethereum, async (simulationState) => {
 		if (simulationState === undefined) return
 		return await removeTransactionAndUpdateTransactionNonces(ethereumClientService, simulationState, params.data)
 	}, settings.activeSimulationAddress, true)
 }
 
 export async function refreshSimulation(simulator: Simulator, ethereumClientService: EthereumClientService, settings: Settings): Promise<SimulationState | undefined> {
-	return await updateSimulationState(simulator, async (simulationState) => {
+	return await updateSimulationState(simulator.ethereum, async (simulationState) => {
 		if (simulationState === undefined) return
 		return await refreshSimulationState(ethereumClientService, simulationState)
 	}, settings.activeSimulationAddress, false)
 }
 
 export async function refreshPopupConfirmTransactionMetadata(ethereumClientService: EthereumClientService, userAddressBook: UserAddressBook, { data }: RefreshConfirmTransactionMetadata) {
-	const addressBookEntries = await getAddressBookEntriesForVisualiser(ethereumClientService, data.visualizerResults.map((x) => x.visualizerResults), data.simulationState, userAddressBook)
-	const namedTokenIds = await nameTokenIds(ethereumClientService, data.visualizerResults.map((x) => x.visualizerResults))
+	const addressBookEntries = await getAddressBookEntriesForVisualiser(ethereumClientService, data.visualizerResults, data.simulationState, userAddressBook)
+	const namedTokenIds = await nameTokenIds(ethereumClientService, data.visualizerResults)
 	const promises = await getPendingTransactions()
 	if (promises.length === 0) return
 	const first = promises[0]
@@ -200,7 +199,7 @@ export async function refreshPopupConfirmTransactionMetadata(ethereumClientServi
 				statusCode: 'success',
 				data: {
 					...first.simulationResults.data,
-					simulatedAndVisualizedTransactions: formSimulatedAndVisualizedTransaction(first.simulationResults.data.simulationState, first.simulationResults.data.visualizerResults, addressBookEntries, namedTokenIds),
+					simulatedAndVisualizedTransactions: formSimulatedAndVisualizedTransaction(first.simulationResults.data.simulationState, first.simulationResults.data.visualizerResults, first.simulationResults.data.protectors, addressBookEntries, namedTokenIds),
 					addressBookEntries,
 				}
 			}
@@ -294,54 +293,48 @@ export async function openAddressBook() {
 	}
 }
 
-export async function homeOpened(simulator: Simulator) {
+export async function homeOpened(simulator: Simulator, refreshMetadata: boolean) {
+	const settingsPromise = getSettings()
+	const signerNamePromise = getSignerName()
+	const makeMeRichPromise = getMakeMeRich()
+	const rpcConnectionStatusPromise = getRpcConnectionStatus()
+	const useTabsInsteadOfPopupPromise = getUseTabsInsteadOfPopup()
+	const metamaskCompatibilityModePromise = getMetamaskCompatibilityMode()
+	const rpcEntriesPromise = getRpcList()
+
+	const visualizedSimulatorStatePromise: Promise<CompleteVisualizedSimulation> = refreshMetadata ? updateSimulationMetadata(simulator.ethereum) : getSimulationResults()
 	const tabId = await getLastKnownCurrentTabId()
 	const tabState = tabId === undefined ? undefined : await getTabState(tabId)
+	const signerName = await signerNamePromise
+	const settings = await settingsPromise
+	const makeMeRich = await makeMeRichPromise
+	const rpcConnectionStatus = await rpcConnectionStatusPromise
+	const useTabsInsteadOfPopup = await useTabsInsteadOfPopupPromise
+	const metamaskCompatibilityMode = await metamaskCompatibilityModePromise
+	const rpcEntries = await rpcEntriesPromise
 
-	const settings = await getSettings()
-	let blockNumber = undefined
-	try {
-		blockNumber = await simulator.ethereum.getBlockNumber()
-	} catch (error) {
-		console.warn(error)
-		const rpcConnectionStatus = {
-			isConnected: false,
-			lastConnnectionAttempt: new Date(),
-			latestBlock: simulator.ethereum.getLastKnownCachedBlockOrUndefined(),
-			rpcNetwork: simulator.ethereum.getRpcNetwork(),
-		}
-		await setRpcConnectionStatus(rpcConnectionStatus)
-		await sendPopupMessageToOpenWindows({ method: 'popup_failed_to_get_block', data: { rpcConnectionStatus } })
-	}
-	const simResults = await getSimulationResults()
-	const simulatedAndVisualizedTransactions = simResults.simulationState === undefined || simResults.visualizerResults === undefined ? [] : formSimulatedAndVisualizedTransaction(simResults.simulationState, simResults.visualizerResults, simResults.addressBookEntries, simResults.namedTokenIds)
-	const signerName = await getSignerName()
-	const VisualizedPersonalSignRequest = simResults.simulationState === undefined ? [] : simResults.simulationState.signedMessages.map((signedMessage) => craftPersonalSignPopupMessage(simulator.ethereum, signedMessage, signerName))
-	const visualizedPersonalSignRequests: readonly VisualizedPersonalSignRequest[] = await Promise.all(VisualizedPersonalSignRequest)
-	await sendPopupMessageToOpenWindows(serialize(UpdateHomePage, {
+	const updatedPage:UpdateHomePage = {
 		method: 'popup_UpdateHomePage' as const,
 		data: {
-			simulation: {
-				...simResults,
-				simulatedAndVisualizedTransactions: simulatedAndVisualizedTransactions,
-				visualizedPersonalSignRequests,
-			},
+			visualizedSimulatorState: await visualizedSimulatorStatePromise,
 			websiteAccessAddressMetadata: getAddressMetadataForAccess(settings.websiteAccess, settings.userAddressBook.activeAddresses),
 			signerAccounts: tabState?.signerAccounts,
 			signerChain: tabState?.signerChain,
 			signerName: signerName,
-			currentBlockNumber: blockNumber,
+			currentBlockNumber: simulator.ethereum.getLastKnownCachedBlockOrUndefined()?.number,
 			settings: settings,
 			tabIconDetails: tabState?.tabIconDetails,
-			makeMeRich: await getMakeMeRich(),
-			rpcConnectionStatus: await getRpcConnectionStatus(),
-			useTabsInsteadOfPopup: await getUseTabsInsteadOfPopup(),
-			metamaskCompatibilityMode: await getMetamaskCompatibilityMode(),
+			makeMeRich,
+			rpcConnectionStatus,
+			useTabsInsteadOfPopup,
+			metamaskCompatibilityMode,
+			rpcEntries,
 			activeSigningAddressInThisTab: tabState?.activeSigningAddress,
 			tabId,
-			rpcEntries: await getRpcList(),
 		}
-	}))
+	}
+
+	await sendPopupMessageToOpenWindows(serialize(UpdateHomePage, updatedPage))
 }
 
 export async function interceptorAccessChangeAddressOrRefresh(websiteTabConnections: WebsiteTabConnections, params: InterceptorAccessChangeAddress | InterceptorAccessRefresh) {
@@ -355,7 +348,7 @@ export async function refreshInterceptorAccessMetadata(params: RefreshIntercepto
 export async function changeSettings(simulator: Simulator, parsedRequest: ChangeSettings) {
 	if (parsedRequest.data.useTabsInsteadOfPopup !== undefined) await setUseTabsInsteadOfPopup(parsedRequest.data.useTabsInsteadOfPopup)
 	if (parsedRequest.data.metamaskCompatibilityMode !== undefined) await setMetamaskCompatibilityMode(parsedRequest.data.metamaskCompatibilityMode)
-	return await homeOpened(simulator)
+	return await homeOpened(simulator, true)
 }
 
 export async function importSettings(settingsData: ImportSettings) {
