@@ -46,7 +46,7 @@ async function updateMetadataForSimulation(simulationState: SimulationState, eth
 		namedTokenIds,
 		addressBookEntries: addressBookEntries,
 		simulatedAndVisualizedTransactions,
-		visualizedPersonalSignRequests: await Promise.all(VisualizedPersonalSignRequest), //todo fix
+		visualizedPersonalSignRequests: await Promise.all(VisualizedPersonalSignRequest),
 	}
 }
 

@@ -63,15 +63,6 @@ export const runProtectorsForTransaction = async (simulationState: SimulationSta
 	}
 }
 
-/*
-const evaluateTransaction = async (ethereumClientService: EthereumClientService, simulationState: SimulationState, transaction: WebsiteCreatedEthereumUnsignedTransaction, transactionQueue: EthereumUnsignedTransaction[]) => {
-	const blockNumber = await ethereumClientService.getBlockNumber()
-	const multicallResults = await simulatedMulticall(ethereumClientService, simulationState, transactionQueue.concat([transaction.transaction]), blockNumber)
-	const multicallResult = multicallResults[multicallResults.length - 1]
-	if (multicallResult === undefined) throw new Error('multicall result is too short')
-	return visualizeTransaction(transaction, blockNumber, multicallResult)
-}*/
-
 export class Simulator {
 	public ethereum: EthereumClientService
 

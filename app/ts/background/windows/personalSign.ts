@@ -83,31 +83,6 @@ export async function addMetadataToOpenSeaOrder(ethereumClientService: EthereumC
 	 }
 }
 
-/*
-function updatePersonalSignMessagesMetadata(request: VisualizedPersonalSignRequest, Map<address,AddressBookEntry>): VisualizedPersonalSignRequest {
-	switch(request.type) {
-		case 'EIP712': {
-			return request
-		}
-		case 'NotParsed': {
-			return request
-		}
-		case 'OrderComponents': {
-			return request
-		}
-		case 'Permit': {
-			return request
-		}
-		case 'Permit2': {
-			return request
-		}
-		case 'SafeTx': {
-			return request
-		}
-		default: assertNever(request)
-	}
-}*/
-
 export async function craftPersonalSignPopupMessage(ethereumClientService: EthereumClientService, signedMessageTransaction: SignedMessageTransaction, signerName: SignerName, rpcNetwork: RpcNetwork, userAddressBook: UserAddressBook): Promise<VisualizedPersonalSignRequest> {
 	const activeAddressWithMetadata = await identifyAddress(ethereumClientService, userAddressBook, signedMessageTransaction.fakeSignedFor)
 	const basicParams = { ...signedMessageTransaction, activeAddress: activeAddressWithMetadata, signerName }
