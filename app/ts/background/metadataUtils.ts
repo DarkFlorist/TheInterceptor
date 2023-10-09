@@ -12,9 +12,9 @@ import { getUniqueItemsByProperties } from '../utils/typed-arrays.js'
 import { EthereumNameServiceTokenWrapper, getEthereumNameServiceNameFromTokenId } from '../utils/ethereumNameService.js'
 export const LOGO_URI_PREFIX = `../vendor/@darkflorist/address-metadata`
 
-export function getFullLogoUri(logoURI: string) {
-	return `${ LOGO_URI_PREFIX }/${ logoURI }`
-}
+const pathJoin = (parts: string[], sep = '/') => parts.join(sep).replace(new RegExp(sep + '{1,}', 'g'), sep)
+
+export const getFullLogoUri = (logoURI: string) => pathJoin([LOGO_URI_PREFIX, logoURI])
 
 export function getActiveAddressEntry(address: bigint, activeAddresses: readonly ActiveAddress[] | undefined) : ActiveAddressEntry {
 	if (activeAddresses !== undefined) {
