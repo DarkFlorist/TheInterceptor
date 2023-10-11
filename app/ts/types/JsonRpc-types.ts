@@ -362,6 +362,12 @@ export const WalletAddEthereumChain = funtypes.ReadonlyObject({
 	)
 })
 
+export type Web3ClientVersion = funtypes.Static<typeof Web3ClientVersion>
+export const Web3ClientVersion = funtypes.ReadonlyObject({
+	method: funtypes.Literal('web3_clientVersion'),
+	params: funtypes.ReadonlyTuple()
+})
+
 export type EthereumJsonRpcRequest = funtypes.Static<typeof EthereumJsonRpcRequest>
 export const EthereumJsonRpcRequest = funtypes.Union(
 	EthBlockByNumberParams,
@@ -395,6 +401,7 @@ export const EthereumJsonRpcRequest = funtypes.Union(
 	EthSign,
 	ExecutionSpec383MultiCallParams,
 	WalletAddEthereumChain,
+	Web3ClientVersion,
 )
 
 // should be same as the above list, except with `params: funtypes.Unknown`
