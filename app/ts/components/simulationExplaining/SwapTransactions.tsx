@@ -353,9 +353,9 @@ export function VisualizeSwapAsset({ swapAsset, rpcNetwork, renameAddressCallBac
 					<div class = 'log-cell'/>
 					{ swapAsset.beforeAfterBalance !== undefined ? <div class = 'log-cell' style = 'justify-content: right;'>
 						<p class = 'paragraph' style = { balanceTextStyle }>Balance:&nbsp;</p>
-						<TokenOrEthValue amount = { swapAsset.beforeAfterBalance?.beforeBalance } style = { balanceTextStyle } fontSize = { 'big' }/>
+						<TokenOrEthValue amount = { swapAsset.beforeAfterBalance?.beforeBalance } style = { balanceTextStyle } fontSize = { 'normal'}/>
 						<p class = 'paragraph' style = { balanceTextStyle }>&nbsp;{'->'}&nbsp;</p>
-						<TokenOrEthValue amount = { swapAsset.beforeAfterBalance?.afterBalance } style = { balanceTextStyle } fontSize = { 'big' }/>
+						<TokenOrEthValue amount = { swapAsset.beforeAfterBalance?.afterBalance } style = { balanceTextStyle } fontSize = { 'normal' }/>
 						</div> : <></>
 					}
 				</span>
@@ -394,9 +394,9 @@ export function VisualizeSwapAsset({ swapAsset, rpcNetwork, renameAddressCallBac
 					<div class = 'log-cell'/>
 					{ swapAsset.beforeAfterBalance !== undefined ? <div class = 'log-cell' style = 'justify-content: right;'>
 						<p class = 'paragraph' style = { balanceTextStyle }>Balance:&nbsp;</p>
-						<TokenOrEthValue { ...swapAsset.token } amount = { swapAsset.beforeAfterBalance?.beforeBalance } style = { balanceTextStyle } fontSize = { 'big' }/>
+						<TokenOrEthValue { ...swapAsset.token } amount = { swapAsset.beforeAfterBalance?.beforeBalance } style = { balanceTextStyle } fontSize = { 'normal' }/>
 						<p class = 'paragraph' style = { balanceTextStyle }>&nbsp;{'->'}&nbsp;</p>
-						<TokenOrEthValue { ...swapAsset.token } amount = { swapAsset.beforeAfterBalance?.afterBalance } style = { balanceTextStyle } fontSize = { 'big' }/>
+						<TokenOrEthValue { ...swapAsset.token } amount = { swapAsset.beforeAfterBalance?.afterBalance } style = { balanceTextStyle } fontSize = { 'normal' }/>
 						</div> : <></>
 					}
 				</span>
@@ -427,9 +427,9 @@ export function VisualizeSwapAsset({ swapAsset, rpcNetwork, renameAddressCallBac
 					<div class = 'log-cell'/>
 					{ swapAsset.beforeAfterBalance !== undefined ? <div class = 'log-cell' style = 'justify-content: right;'>
 						<p class = 'paragraph' style = { balanceTextStyle }>Balance:&nbsp;</p>
-						<TokenOrEthValue { ...swapAsset.token } amount = { swapAsset.beforeAfterBalance?.beforeBalance } style = { balanceTextStyle } fontSize = { 'big' }/>
+						<TokenOrEthValue { ...swapAsset.token } amount = { swapAsset.beforeAfterBalance?.beforeBalance } style = { balanceTextStyle } fontSize = { 'normal' }/>
 						<p class = 'paragraph' style = { balanceTextStyle }>&nbsp;{'->'}&nbsp;</p>
-						<TokenOrEthValue { ...swapAsset.token } amount = { swapAsset.beforeAfterBalance?.afterBalance } style = { balanceTextStyle } fontSize = { 'big' }/>
+						<TokenOrEthValue { ...swapAsset.token } amount = { swapAsset.beforeAfterBalance?.afterBalance } style = { balanceTextStyle } fontSize = { 'normal' }/>
 						</div> : <></>
 					}
 				</span>

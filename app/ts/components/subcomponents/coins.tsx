@@ -45,6 +45,7 @@ export function EtherAmount(param: EtherAmountParams) {
 		'text-overflow': 'ellipsis',
 		color: 'var(--text-color)',
 		...(param.style === undefined ? {} : param.style),
+		'font-size': param.fontSize === 'big' ? BIG_FONT_SIZE : NORMAL_FONT_SIZE
 	}
 	return <>
 		<CopyToClipboard content = { bigintToDecimalString(abs(param.amount), 18n) } copyMessage = 'Ether amount copied!' >
@@ -190,6 +191,7 @@ export function TokenAmount(param: TokenAmountParams) {
 		color: 'var(--text-color)',
 		display: 'inline-block',
 		...(param.style === undefined ? {} : param.style),
+		'font-size': param.fontSize === 'big' ? BIG_FONT_SIZE : NORMAL_FONT_SIZE
 	}
 
 	if (!('decimals' in param.tokenEntry) || param.tokenEntry.decimals === undefined) {
