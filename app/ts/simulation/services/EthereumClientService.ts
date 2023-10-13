@@ -9,6 +9,7 @@ import { MulticallResponse, EthGetStorageAtResponse, EthTransactionReceiptRespon
 import { assertNever } from '../../utils/typescript.js'
 import { MessageHashAndSignature, SignatureWithFakeSignerAddress, parseLogIfPossible, simulatePersonalSign } from './SimulationModeEthereumClientService.js'
 import { getEcRecoverOverride } from '../../utils/ethereumByteCodes.js'
+import * as funtypes from 'funtypes'
 
 export type IEthereumClientService = Pick<EthereumClientService, keyof EthereumClientService>
 export class EthereumClientService {
@@ -393,5 +394,10 @@ export class EthereumClientService {
 			}
 		})
 		return endResult
+	}
+
+	public readonly web3ClientVersion = async () => {
+		const response = await this.requestHandler.jsonRpcRequest({ method: 'web3_clientVersion', params: [] } )
+		return funtypes.String.parse(response)
 	}
 }
