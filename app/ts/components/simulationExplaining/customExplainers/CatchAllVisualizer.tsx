@@ -73,7 +73,7 @@ function EtherTransferEvent(param: EtherTransferEventParams) {
 
 type SendOrReceiveTokensImportanceBoxParams = {
 	sending: boolean,
-	tokenVisualizerResults: TokenVisualizerResultWithMetadata[] | undefined,
+	tokenVisualizerResults: TokenVisualizerResultWithMetadata[],
 	textColor: string,
 	renameAddressCallBack: RenameAddressCallBack,
 }
@@ -92,7 +92,6 @@ export function tokenEventToTokenSymbolParams(tokenEvent: TokenVisualizerResultW
 }
 
 function SendOrReceiveTokensImportanceBox(param: SendOrReceiveTokensImportanceBoxParams) {
-	if (param.tokenVisualizerResults === undefined) return <></>
 	return <>
 		{ param.tokenVisualizerResults.map((tokenEvent) => (
 			tokenEvent.isApproval ? <></> : <div class = 'vertical-center'>

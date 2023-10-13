@@ -17,7 +17,7 @@ export const EthGetLogsRequest = funtypes.Intersect(
 		funtypes.Partial({ fromBlock: EthereumBlockTag, toBlock: EthereumBlockTag }).asReadonly(),
 	),
 	funtypes.Partial({
-		address: funtypes.Union(EthereumAddress, funtypes.ReadonlyArray(EthereumAddress)),
+		address: funtypes.Union(EthereumAddress, funtypes.ReadonlyArray(EthereumAddress), funtypes.Null),
 		topics: funtypes.ReadonlyArray(funtypes.Union(EthereumBytes32, funtypes.ReadonlyArray(EthereumBytes32), funtypes.Null)),
 	}).asReadonly()
 )
@@ -274,6 +274,12 @@ export const EthBlockByNumberParams = funtypes.ReadonlyObject({
 	params: funtypes.ReadonlyTuple(EthereumBlockTag, funtypes.Boolean)
 })
 
+export type EthBlockByHashParams = funtypes.Static<typeof EthBlockByHashParams>
+export const EthBlockByHashParams = funtypes.ReadonlyObject({
+	method: funtypes.Literal('eth_getBlockByHash'),
+	params: funtypes.ReadonlyTuple(EthereumBytes32, funtypes.Boolean)
+})
+
 export type EthSubscribeParams = funtypes.Static<typeof EthSubscribeParams>
 export const EthSubscribeParams = funtypes.ReadonlyObject({
 	method: funtypes.Literal('eth_subscribe'),
@@ -362,9 +368,16 @@ export const WalletAddEthereumChain = funtypes.ReadonlyObject({
 	)
 })
 
+export type Web3ClientVersion = funtypes.Static<typeof Web3ClientVersion>
+export const Web3ClientVersion = funtypes.ReadonlyObject({
+	method: funtypes.Literal('web3_clientVersion'),
+	params: funtypes.ReadonlyTuple()
+})
+
 export type EthereumJsonRpcRequest = funtypes.Static<typeof EthereumJsonRpcRequest>
 export const EthereumJsonRpcRequest = funtypes.Union(
 	EthBlockByNumberParams,
+	EthBlockByHashParams,
 	EthBalanceParams,
 	EstimateGasParams,
 	TransactionByHashParams,
@@ -395,6 +408,7 @@ export const EthereumJsonRpcRequest = funtypes.Union(
 	EthSign,
 	ExecutionSpec383MultiCallParams,
 	WalletAddEthereumChain,
+	Web3ClientVersion,
 )
 
 // should be same as the above list, except with `params: funtypes.Unknown`

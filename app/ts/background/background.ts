@@ -3,7 +3,7 @@ import 'webextension-polyfill'
 import { Simulator, runProtectorsForTransaction, visualizeTransaction } from '../simulation/simulator.js'
 import { getEthDonator, getSignerName, getSimulationResults, updateSimulationResults, updateSimulationResultsWithCallBack } from './storageVariables.js'
 import { changeSimulationMode, getSettings, getMakeMeRich } from './settings.js'
-import { blockNumber, call, chainId, estimateGas, gasPrice, getAccounts, getBalance, getBlockByNumber, getCode, getLogs, getPermissions, getSimulationStack, getTransactionByHash, getTransactionCount, getTransactionReceipt, netVersion, personalSign, sendTransaction, subscribe, switchEthereumChain, unsubscribe } from './simulationModeHanders.js'
+import { blockNumber, call, chainId, estimateGas, gasPrice, getAccounts, getBalance, getBlockByNumber, getCode, getLogs, getPermissions, getSimulationStack, getTransactionByHash, getTransactionCount, getTransactionReceipt, netVersion, personalSign, sendTransaction, subscribe, switchEthereumChain, unsubscribe, web3ClientVersion, getBlockByHash } from './simulationModeHanders.js'
 import { changeActiveAddress, changeMakeMeRich, changePage, resetSimulation, confirmDialog, refreshSimulation, removeTransaction, requestAccountsFromSigner, refreshPopupConfirmTransactionSimulation, confirmPersonalSign, confirmRequestAccess, changeInterceptorAccess, changeChainDialog, popupChangeActiveRpc, enableSimulationMode, addOrModifyAddressBookEntry, getAddressBookData, removeAddressBookEntry, openAddressBook, homeOpened, interceptorAccessChangeAddressOrRefresh, refreshPopupConfirmTransactionMetadata, changeSettings, importSettings, exportSettings, setNewRpcList, popupIdentifyAddress, popupFindAddressBookEntryWithSymbolOrName } from './popupMessageHandlers.js'
 import { ProtectorResults, SimulationState, VisualizerResult, WebsiteCreatedEthereumUnsignedTransaction } from '../types/visualizer-types.js'
 import { WebsiteTabConnections } from '../types/user-interface-types.js'
@@ -31,7 +31,7 @@ import { ConfirmTransactionTransactionSingleVisualization } from '../types/acces
 import { RpcNetwork } from '../types/rpc.js'
 import { serialize } from '../types/wire-types.js'
 
-async function updateMetadataForSimulation(simulationState: SimulationState, ethereum: EthereumClientService, visualizerResults: readonly (VisualizerResult | undefined)[], protectorResults: readonly ProtectorResults[]) {
+async function updateMetadataForSimulation(simulationState: SimulationState, ethereum: EthereumClientService, visualizerResults: readonly VisualizerResult[], protectorResults: readonly ProtectorResults[]) {
 	const settingsPromise = getSettings()
 	const signerPromise = getSignerName()
 	const settings = await settingsPromise
@@ -248,6 +248,7 @@ async function handleRPCRequest(
 	}
 	const parsedRequest = maybeParsedRequest.value
 	switch (parsedRequest.method) {
+		case 'eth_getBlockByHash': return await getBlockByHash(ethereumClientService, simulationState, parsedRequest)
 		case 'eth_getBlockByNumber': return await getBlockByNumber(ethereumClientService, simulationState, parsedRequest)
 		case 'eth_getBalance': return await getBalance(ethereumClientService, simulationState, parsedRequest)
 		case 'eth_estimateGas': return await estimateGas(ethereumClientService, simulationState, parsedRequest)
@@ -293,6 +294,7 @@ async function handleRPCRequest(
 			if ('forward' in message) return getForwardingMessage(parsedRequest)
 			return message
 		}
+		case 'web3_clientVersion': return await web3ClientVersion(ethereumClientService)
 		/*
 		Missing methods:
 		case 'eth_getProof': return
