@@ -9,6 +9,7 @@ import { MulticallResponse, EthGetStorageAtResponse, EthTransactionReceiptRespon
 import { assertNever } from '../../utils/typescript.js'
 import { MessageHashAndSignature, SignatureWithFakeSignerAddress, parseLogIfPossible, simulatePersonalSign } from './SimulationModeEthereumClientService.js'
 import { getEcRecoverOverride } from '../../utils/ethereumByteCodes.js'
+import * as funtypes from 'funtypes'
 
 export type IEthereumClientService = Pick<EthereumClientService, keyof EthereumClientService>
 export class EthereumClientService {
@@ -135,6 +136,20 @@ export class EthereumClientService {
 			return EthereumBlockHeaderWithTransactionHashes.parse(await this.requestHandler.jsonRpcRequest({ method: 'eth_getBlockByNumber', params: [blockTag, false] }))
 		}
 		return EthereumBlockHeader.parse(await this.requestHandler.jsonRpcRequest({ method: 'eth_getBlockByNumber', params: [blockTag, fullObjects] }))
+	}
+
+	public async getBlockByHash(blockHash: EthereumBytes32, fullObjects: boolean = true): Promise<EthereumBlockHeaderWithTransactionHashes | EthereumBlockHeader> {
+		const cached = this.getCachedBlock()
+		if (cached && (cached.hash === blockHash)) {
+			if (fullObjects === false) {
+				return { ...cached, transactions: cached.transactions.map((transaction) => transaction.hash) }
+			}
+			return cached
+		}
+		if (fullObjects === false) {
+			return EthereumBlockHeaderWithTransactionHashes.parse(await this.requestHandler.jsonRpcRequest({ method: 'eth_getBlockByHash', params: [blockHash, false] }))
+		}
+		return EthereumBlockHeader.parse(await this.requestHandler.jsonRpcRequest({ method: 'eth_getBlockByHash', params: [blockHash, fullObjects] }))
 	}
 
 	public readonly getChainId = () => this.requestHandler.getRpcNetwork().chainId
@@ -379,5 +394,10 @@ export class EthereumClientService {
 			}
 		})
 		return endResult
+	}
+
+	public readonly web3ClientVersion = async () => {
+		const response = await this.requestHandler.jsonRpcRequest({ method: 'web3_clientVersion', params: [] } )
+		return funtypes.String.parse(response)
 	}
 }
