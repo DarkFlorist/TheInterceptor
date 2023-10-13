@@ -21,6 +21,7 @@ import { tryFocusingTabOrWindow, humanReadableDateFromSeconds, CellElement } fro
 import { AddressBookEntry, IncompleteAddressBookEntry } from '../../types/addressBookTypes.js'
 import { EnrichedEIP712, EnrichedEIP712Message, GroupedSolidityType } from '../../types/eip721.js'
 import { serialize } from '../../types/wire-types.js'
+import { TransactionCreated } from '../simulationExplaining/SimulationSummary.js'
 
 type SignatureCardParams = {
 	VisualizedPersonalSignRequest: VisualizedPersonalSignRequest
@@ -30,6 +31,7 @@ type SignatureCardParams = {
 type SignatureHeaderParams = {
 	VisualizedPersonalSignRequest: VisualizedPersonalSignRequest
 	renameAddressCallBack: RenameAddressCallBack
+	removeSignature?: () => void,
 }
 
 function identifySignature(data: VisualizedPersonalSignRequest) {
@@ -86,25 +88,24 @@ function identifySignature(data: VisualizedPersonalSignRequest) {
 }
 
 function SignatureHeader(params: SignatureHeaderParams) {
-	return <header class = 'card-header' style = 'height: 40px;'>
+	return <header class = 'card-header'>
 		<div class = 'card-header-icon unset-cursor'>
 			<span class = 'icon'>
 				<img src = { params.VisualizedPersonalSignRequest.simulationMode ? '../img/head-simulating.png' : '../img/head-signing.png' } />
 			</span>
 		</div>
-
-		<div class = 'card-header-title' style = 'white-space: nowrap;'>
+		<p class = 'card-header-title' style = 'white-space: nowrap;'>
 			{ identifySignature(params.VisualizedPersonalSignRequest).title }
-		</div>
-		<div class = 'card-header-icon' style = 'margin-left: auto; margin-right: 0; padding-right: 10px; padding-left: 0px; overflow: hidden'>
-			{'addressBookEntries' in params.VisualizedPersonalSignRequest && 'spender' in params.VisualizedPersonalSignRequest ?
-				<SmallAddress
-					addressBookEntry = { params.VisualizedPersonalSignRequest.spender }
-					renameAddressCallBack = { params.renameAddressCallBack }
-					style = { { 'background-color': 'unset' } }
-				/>
-			: <></>}
-		</div>
+		</p>
+		<p class = 'card-header-icon unsetcursor' style = { `margin-left: auto; margin-right: 0; overflow: hidden; ${ params.removeSignature !== undefined ? 'padding: 0' : ''}` }>
+			<WebsiteOriginText { ...params.VisualizedPersonalSignRequest.website } />
+		</p>
+		{ params.removeSignature !== undefined
+			? <button class = 'card-header-icon' aria-label = 'remove' onClick = { params.removeSignature }>
+				<span class = 'icon' style = 'color: var(--text-color);'> X </span>
+			</button>
+			: <></>
+		}
 	</header>
 }
 
@@ -325,8 +326,7 @@ type ExtraDetailsCardParams = {
 }
 
 export function ExtraDetails({ VisualizedPersonalSignRequest, renameAddressCallBack }: ExtraDetailsCardParams) {
-	const [showSummary, setShowSummary] = useState<boolean>(true)
-
+	const [showSummary, setShowSummary] = useState<boolean>(false)
 	if (VisualizedPersonalSignRequest.type !== 'Permit2'
 		&& VisualizedPersonalSignRequest.type !== 'Permit'
 		&& VisualizedPersonalSignRequest.type !== 'OrderComponents') {
@@ -359,6 +359,47 @@ export function ExtraDetails({ VisualizedPersonalSignRequest, renameAddressCallB
 	</div>
 }
 
+export function RawMessage({ VisualizedPersonalSignRequest }: ExtraDetailsCardParams) {
+	const [showSummary, setShowSummary] = useState<boolean>(false)
+	return <div class = 'card' style = 'margin-top: 10px; margin-bottom: 10px'>
+		<header class = 'card-header noselect' style = 'cursor: pointer; height: 30px;' onClick = { () => setShowSummary((prevValue) => !prevValue) }>
+			<p class = 'card-header-title' style = 'font-weight: unset; font-size: 0.8em;'>
+				Raw message
+			</p>
+			<div class = 'card-header-icon'>
+				<span class = 'icon' style = 'color: var(--text-color); font-weight: unset; font-size: 0.8em;'> V </span>
+			</div>
+		</header>
+		{ !showSummary
+			? <></>
+			: <>
+				<div class = 'card-content'>
+					<div class = 'container' style = 'margin-bottom: 10px;'>
+						<div class = 'textbox'>
+							<p class = 'paragraph' style = 'color: var(--subtitle-text-color)'>{ VisualizedPersonalSignRequest.rawMessage }</p>
+						</div>
+					</div>
+				</div>
+			</>
+		}
+	</div>
+}
+
+export function Signer({ signer, renameAddressCallBack }: { signer: AddressBookEntry, renameAddressCallBack: (entry: AddressBookEntry) => void, }) {
+	return <span class = 'log-table' style = 'margin-top: 10px; column-gap: 5px; justify-content: space-between; grid-template-columns: auto auto'>
+		<div class = 'log-cell' style = ''>
+			<p style = { `color: var(--subtitle-text-color);` }> Signed by: </p>
+		</div>
+		<div class = 'log-cell' style = ''>
+			<SmallAddress
+				addressBookEntry = { signer }
+				textColor = { 'var(--subtitle-text-color)' }
+				renameAddressCallBack = { renameAddressCallBack }
+			/>
+		</div>
+	</span>
+}
+
 export function SignatureCard(params: SignatureCardParams) {
 	return <>
 		<div class = 'card'>
@@ -369,6 +410,17 @@ export function SignatureCard(params: SignatureCardParams) {
 					<QuarantineCodes quarantineCodes = { params.VisualizedPersonalSignRequest.quarantineCodes }/>
 				</div>
 				<ExtraDetails { ...params }/>
+				<RawMessage { ...params }/>
+				
+				<Signer
+					signer = { params.VisualizedPersonalSignRequest.activeAddress }
+					renameAddressCallBack = { params.renameAddressCallBack }
+				/>
+
+				<span class = 'log-table' style = 'margin-top: 10px; grid-template-columns: auto auto;'>
+					<div class = 'log-cell'> <TransactionCreated created = { params.VisualizedPersonalSignRequest.created } /> </div>
+					<div class = 'log-cell' style = 'justify-content: right;'></div>
+				</span>
 			</div>
 		</div>
 	</>
