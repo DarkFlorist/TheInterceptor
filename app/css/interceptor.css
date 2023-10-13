@@ -738,6 +738,7 @@ svg.spinner > circle {
 	visibility: hidden;
 	height: 0px;
 	padding-left: 27px;
+	font-size: 14px;
 }
 
 .rename-token-button {
@@ -756,6 +757,7 @@ svg.spinner > circle {
 	flex-direction: row;
 	width: 48px;
 	min-width: 100%;
+	align-items: center;
 }
 
 .token-name-text {
@@ -775,7 +777,7 @@ svg.spinner > circle {
 	display: block;
 	visibility: hidden;
 	height: 0px;
-	margin-left: 28px;
+	margin-left: 27px;
 	font-size: 28px;
 	font-weight: 500
 }
