@@ -126,21 +126,23 @@ export function SimpleTokenTransferVisualisation({ simTx, renameAddressCallBack 
 			default: assertNever(transfer)
 		}
 	}
-
+	const asset = getAsset(transfer)
+	const senderAfter = simTx.tokenBalancesAfter.find((change) => change.owner === transfer.from.address && change.tokenId === asset.tokenId)?.balance
+	const receiverAfter = simTx.tokenBalancesAfter.find((change) => change.owner === transfer.to.address && change.tokenId === asset.tokenId)?.balance
 	return <SimpleSend
 		transaction = { { ...simTx, rpcNetwork: simTx.transaction.rpcNetwork } }
 		asset = { {
-			...getAsset(transfer),
+			...asset,
 			useFullTokenName: false,
 			fontSize: 'normal'
 		} }
 		sender = { {
 			address: transfer.from,
-			beforeAndAfter : undefined, // TODO, modify our simulation to include before and after values for tokens
+			beforeAndAfter : senderAfter === undefined || !('amount' in asset && asset.amount !== undefined) ? undefined : { before: senderAfter + asset.amount, after: senderAfter },
 		} }
 		receiver = { {
 			address: transfer.to,
-			beforeAndAfter : undefined, // TODO, modify our simulation to include before and after values for tokens
+			beforeAndAfter : receiverAfter === undefined || !('amount' in asset && asset.amount !== undefined) ? undefined : { before: receiverAfter - asset.amount, after: receiverAfter },
 		} }
 		renameAddressCallBack = { renameAddressCallBack }
 	/>

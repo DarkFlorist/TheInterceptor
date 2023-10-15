@@ -148,7 +148,7 @@ export const SimulatedAndVisualizedSimpleTokenTransferTransaction = funtypes.Int
 export function isSimpleTokenTransfer(transaction: SimulatedAndVisualizedTransaction): transaction is SimulatedAndVisualizedSimpleTokenTransferTransaction {
 	const tokenResult = transaction.tokenResults[0]
 	if (tokenResult === undefined) return false
-	if (transaction.transaction.value === 0n
+	if (transaction.ethBalanceChanges.length === 0
 		&& transaction.tokenResults.length === 1
 		&& tokenResult.isApproval == false
 		&& tokenResult.from.address !== tokenResult.to.address
