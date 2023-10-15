@@ -157,7 +157,6 @@ export function isSimpleTokenTransfer(transaction: SimulatedAndVisualizedTransac
 }
 const getSimpleTokenTransferOrUndefined = createGuard<SimulatedAndVisualizedTransaction, SimulatedAndVisualizedSimpleTokenTransferTransaction>((simTx) => isSimpleTokenTransfer(simTx) ? simTx : undefined)
 
-
 export function identifyTransaction(simTx: SimulatedAndVisualizedTransaction): IdentifiedTransaction {
 	const richTxParams = MAKE_YOU_RICH_TRANSACTION.transaction
 	if (simTx.transaction.rpcNetwork.httpsRpc !== undefined

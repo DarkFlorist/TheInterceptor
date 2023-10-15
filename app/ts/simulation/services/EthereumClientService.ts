@@ -278,11 +278,11 @@ export class EthereumClientService {
 					error: singleResult.error.message,
 					returnValue: singleResult.returnData,
 				}
-				case 'invalid': {
-					console.log(query)
-					console.log(multicalResult)
-					console.log(singleResult)
-					throw new Error(`Invalid multicall: ${ singleResult.error }`)
+				case 'invalid': return {
+					statusCode: 'failure' as const,
+					gasSpent: 0n,
+					error: singleResult.error.message,
+					returnValue: new Uint8Array(),
 				}
 				default: assertNever(singleResult)
 			}
