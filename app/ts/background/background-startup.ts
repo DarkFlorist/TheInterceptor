@@ -83,7 +83,7 @@ export async function onContentScriptConnected(simulator: Simulator, port: brows
 				uniqueRequestIdentifier: { requestId: rawMessage.requestId, requestSocket: socket },
 			}
 			const activeAddress = await getActiveAddress(await getSettings(), socket.tabId)
-			const access = verifyAccess(websiteTabConnections, socket, request.method === 'eth_requestAccounts', websiteOrigin, activeAddress, await getSettings())
+			const access = verifyAccess(websiteTabConnections, socket, request.method === 'eth_requestAccounts' || request.method === 'eth_call', websiteOrigin, activeAddress, await getSettings())
 			const providerHandler = getProviderHandler(request.method)
 			const identifiedMethod = providerHandler.method
 			if (identifiedMethod !== 'notProviderMethod') {

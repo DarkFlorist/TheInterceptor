@@ -26,13 +26,13 @@ function setWebsitePortApproval(websiteTabConnections: WebsiteTabConnections, so
 
 export type ApprovalState = 'hasAccess' | 'noAccess' | 'askAccess'
 
-export function verifyAccess(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, isEthRequestAccounts: boolean, websiteOrigin: string, requestAccessForAddress: bigint | undefined, settings: Settings): ApprovalState {
+export function verifyAccess(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, askAccessIfUnknown: boolean, websiteOrigin: string, requestAccessForAddress: bigint | undefined, settings: Settings): ApprovalState {
 	const connection = getConnectionDetails(websiteTabConnections, socket)
 	if (connection && connection.approved) return 'hasAccess'
 	const access = requestAccessForAddress !== undefined ? hasAddressAccess(settings.websiteAccess, websiteOrigin, requestAccessForAddress, settings) : hasAccess(settings.websiteAccess, websiteOrigin)
 	if (access === 'hasAccess') return connectToPort(websiteTabConnections, socket, websiteOrigin, settings, requestAccessForAddress) ? 'hasAccess' : 'noAccess'
 	if (access === 'noAccess') return 'noAccess'
-	return isEthRequestAccounts ? 'askAccess' : 'noAccess'
+	return askAccessIfUnknown ? 'askAccess' : 'noAccess'
 }
 
 export function sendMessageToApprovedWebsitePorts(websiteTabConnections: WebsiteTabConnections, message:  InpageScriptCallBack) {
