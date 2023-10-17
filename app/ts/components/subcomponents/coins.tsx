@@ -40,8 +40,9 @@ type EtherAmountParams = {
 export function EtherAmount(param: EtherAmountParams) {
 	const sign = param.showSign ? (param.amount >= 0 ? ' + ' : ' - '): ''
 	const style = {
-		display: 'inline-block',
+		display: 'inline-flex',
 		overflow: 'hidden',
+		'align-items': 'center',
 		'text-overflow': 'ellipsis',
 		color: 'var(--text-color)',
 		...(param.style === undefined ? {} : param.style),
@@ -151,7 +152,7 @@ export function TokenSymbol(param: TokenSymbolParams) {
 	const name = param.useFullTokenName ? param.tokenEntry.name : param.tokenEntry.symbol
 	return <span style = 'display: flex'>
 		<TokenIdOrNameOrNothing { ...param } style = { style }/>
-		<span className = { param.fontSize === 'big' ? 'big-token-name-container' : 'token-name-container' } data-value = { unTrusted ? `⚠${ name }` : name }>
+		<span class = { param.fontSize === 'big' ? 'big-token-name-container' : 'token-name-container' } data-value = { unTrusted ? `⚠${ name }` : name }>
 			<span class = 'token-name-holder'>
 				<span style = 'margin-right: 2px'>
 					<CopyToClipboard content = { tokenString } copyMessage = 'Token address copied!' >
@@ -162,7 +163,7 @@ export function TokenSymbol(param: TokenSymbolParams) {
 								style = { { 'vertical-align': 'baseline', borderRadius: '50%' } }
 							/>
 						:
-							<img class = 'noselect nopointer' style = { { 'max-height': '25px', 'max-width': '25px', 'vertical-align': 'middle;' } } src = { param.tokenEntry.logoUri }/>
+							<img class = 'noselect nopointer' style = { { 'max-height': '25px', 'width': '25px', 'min-width': '25px','vertical-align': 'middle' } } src = { param.tokenEntry.logoUri }/>
 						}
 					</CopyToClipboard>
 				</span>
@@ -170,7 +171,7 @@ export function TokenSymbol(param: TokenSymbolParams) {
 				<CopyToClipboard content = { name } copyMessage = 'Name copied!' style = { { 'text-overflow': 'ellipsis', overflow: 'hidden' } }>
 					<p class = 'paragraph token-name-text noselect nopointer' style = { style }>{ name }</p>
 				</CopyToClipboard>
-				<button className = 'button is-primary is-small rename-token-button' onClick = { () => param.renameAddressCallBack(param.tokenEntry) }>
+				<button class = 'button is-primary is-small rename-token-button' onClick = { () => param.renameAddressCallBack(param.tokenEntry) }>
 					<span class = 'icon'>
 						<img src = '../img/rename.svg'/>
 					</span>
@@ -189,7 +190,8 @@ export function TokenAmount(param: TokenAmountParams) {
 	const sign = param.showSign ? (param.amount >= 0 ? ' + ' : ' - '): ''
 	const style = {
 		color: 'var(--text-color)',
-		display: 'inline-block',
+		display: 'inline-flex',
+		'align-items': 'center',
 		...(param.style === undefined ? {} : param.style),
 		'font-size': param.fontSize === 'big' ? BIG_FONT_SIZE : NORMAL_FONT_SIZE
 	}
