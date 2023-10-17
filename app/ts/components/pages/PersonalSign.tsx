@@ -220,7 +220,7 @@ function SafeTx({ VisualizedPersonalSignRequestSafeTx, renameAddressCallBack }: 
 			<CellElement text = 'to: '/>
 			<CellElement text = { <SmallAddress addressBookEntry = { VisualizedPersonalSignRequestSafeTx.to } renameAddressCallBack = { renameAddressCallBack } /> }/>
 			<CellElement text = 'value: '/>
-			<CellElement text = { <Ether amount = { VisualizedPersonalSignRequestSafeTx.message.message.value } rpcNetwork = { VisualizedPersonalSignRequestSafeTx.rpcNetwork } fontSize = { 'normal' }/>  }/>
+			<CellElement text = { <Ether amount = { VisualizedPersonalSignRequestSafeTx.message.message.value } rpcNetwork = { VisualizedPersonalSignRequestSafeTx.rpcNetwork } fontSize = 'normal'/>  }/>
 		</span>
 		<p class = 'paragraph' style = 'color: var(--subtitle-text-color)'>Raw transaction input: </p>
 		<div class = 'textbox'>
