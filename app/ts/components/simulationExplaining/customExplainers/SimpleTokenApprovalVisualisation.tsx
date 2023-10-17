@@ -36,7 +36,7 @@ export function SimpleTokenApprovalVisualisation(params: SimpleTokenApprovalVisu
 						<AllApproval
 							{ ...params.approval }
 							style = { { 'font-weight': '500', color: textColor } }
-							fontSize = { 'big' }
+							fontSize = 'big'
 						/>
 					: <> { 'amount' in params.approval && params.approval.amount >= (2n ** 96n - 1n ) ?
 							<p class = 'ellipsis' style = { `color: ${ textColor }; font-size: 28px; font-weight: 500` }><b>ALL</b></p>
@@ -46,7 +46,7 @@ export function SimpleTokenApprovalVisualisation(params: SimpleTokenApprovalVisu
 									amount = { params.approval.amount }
 									tokenEntry = { params.approval.token }
 									style = { { 'font-weight': '500', color: textColor } }
-									fontSize = { 'big' }
+									fontSize = 'big'
 								/>
 							: <></>
 						} </>
@@ -58,7 +58,7 @@ export function SimpleTokenApprovalVisualisation(params: SimpleTokenApprovalVisu
 						useFullTokenName = { false }
 						style = { { 'font-weight': '500', color: textColor } }
 						renameAddressCallBack = { params.renameAddressCallBack }
-						fontSize = { 'big' }
+						fontSize = 'big'
 					/>
 				</div>
 			</span>
