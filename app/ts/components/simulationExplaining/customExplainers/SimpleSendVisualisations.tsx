@@ -138,11 +138,11 @@ export function SimpleTokenTransferVisualisation({ simTx, renameAddressCallBack 
 		} }
 		sender = { {
 			address: transfer.from,
-			beforeAndAfter : senderAfter === undefined || !('amount' in asset && asset.amount !== undefined) ? undefined : { before: senderAfter + asset.amount, after: senderAfter },
+			beforeAndAfter : senderAfter === undefined || !('amount' in asset) ? undefined : { before: senderAfter + asset.amount, after: senderAfter },
 		} }
 		receiver = { {
 			address: transfer.to,
-			beforeAndAfter : receiverAfter === undefined || !('amount' in asset && asset.amount !== undefined) ? undefined : { before: receiverAfter - asset.amount, after: receiverAfter },
+			beforeAndAfter : receiverAfter === undefined || !('amount' in asset) ? undefined : { before: receiverAfter - asset.amount, after: receiverAfter },
 		} }
 		renameAddressCallBack = { renameAddressCallBack }
 	/>
