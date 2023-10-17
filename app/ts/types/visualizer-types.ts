@@ -105,14 +105,11 @@ export const TokenVisualizerResultWithMetadata = funtypes.Union(
 )
 
 export type VisualizerResult = funtypes.Static<typeof VisualizerResult>
-export const VisualizerResult = funtypes.Union(
-	funtypes.Undefined,
-	funtypes.ReadonlyObject( {
-		ethBalanceChanges: EthBalanceChanges,
-		tokenResults: funtypes.ReadonlyArray(TokenVisualizerResult),
-		blockNumber: EthereumQuantity,
-	})
-)
+export const VisualizerResult = funtypes.ReadonlyObject({
+	ethBalanceChanges: EthBalanceChanges,
+	tokenResults: funtypes.ReadonlyArray(TokenVisualizerResult),
+	blockNumber: EthereumQuantity,
+})
 
 export type ProtectorResults  = funtypes.Static<typeof ProtectorResults>
 export const ProtectorResults = funtypes.ReadonlyObject( {

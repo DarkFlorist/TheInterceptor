@@ -111,6 +111,7 @@ export async function craftPersonalSignPopupMessage(ethereumClientService: Ether
 			account: await identifyAddress(ethereumClientService, userAddressBook, originalParams.originalRequestParameters.params[1]),
 			quarantine: false,
 			quarantineCodes: [],
+			rawMessage: stringifyJSONWithBigInts(originalParams.originalRequestParameters.params[0], 4),
 		}
 	}
 
@@ -124,6 +125,7 @@ export async function craftPersonalSignPopupMessage(ethereumClientService: Ether
 			account: await identifyAddress(ethereumClientService, userAddressBook, originalParams.originalRequestParameters.params[1]),
 			quarantine: false,
 			quarantineCodes: [],
+			rawMessage: originalParams.originalRequestParameters.params[0],
 		}
 	}
 	const namedParams = { param: originalParams.originalRequestParameters.params[1], account: originalParams.originalRequestParameters.params[0] }
@@ -143,6 +145,7 @@ export async function craftPersonalSignPopupMessage(ethereumClientService: Ether
 			message,
 			account,
 			...chainid === undefined ? { quarantine: false, quarantineCodes: [] } : await getQuarrantineCodes(chainid, account, activeAddressWithMetadata, undefined),
+			rawMessage: stringifyJSONWithBigInts(namedParams.param, 4),
 		}
 	}
 	const parsed = maybeParsed.value
@@ -163,6 +166,7 @@ export async function craftPersonalSignPopupMessage(ethereumClientService: Ether
 				spender: await identifyAddress(ethereumClientService, userAddressBook, parsed.message.spender),
 				verifyingContract: token,
 				...await getQuarrantineCodes(BigInt(parsed.domain.chainId), account, activeAddressWithMetadata, owner),
+				rawMessage: stringifyJSONWithBigInts(parsed, 4),
 			}
 		}
 		case 'PermitSingle': {
@@ -180,6 +184,7 @@ export async function craftPersonalSignPopupMessage(ethereumClientService: Ether
 				spender: await identifyAddress(ethereumClientService, userAddressBook, parsed.message.spender),
 				verifyingContract: await identifyAddress(ethereumClientService, userAddressBook, parsed.domain.verifyingContract),
 				...await getQuarrantineCodes(parsed.domain.chainId, account, activeAddressWithMetadata, undefined),
+				rawMessage: stringifyJSONWithBigInts(parsed, 4),
 			}
 		}
 		case 'SafeTx': return {
@@ -195,6 +200,7 @@ export async function craftPersonalSignPopupMessage(ethereumClientService: Ether
 			verifyingContract: await identifyAddress(ethereumClientService, userAddressBook, parsed.domain.verifyingContract),
 			quarantine: false,
 			quarantineCodes: [],
+			rawMessage: stringifyJSONWithBigInts(parsed, 4),
 		}
 		case 'OrderComponents': return {
 			method: originalParams.originalRequestParameters.method,
@@ -204,6 +210,7 @@ export async function craftPersonalSignPopupMessage(ethereumClientService: Ether
 			message: await addMetadataToOpenSeaOrder(ethereumClientService, parsed.message, userAddressBook),
 			account,
 			...await getQuarrantineCodes(parsed.domain.chainId, account, activeAddressWithMetadata, undefined),
+			rawMessage: stringifyJSONWithBigInts(parsed, 4),
 		}
 		default: assertNever(parsed)
 	}
