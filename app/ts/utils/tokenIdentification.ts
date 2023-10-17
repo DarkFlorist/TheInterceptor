@@ -78,7 +78,7 @@ export async function itentifyAddressViaOnChainInformation(ethereumClientService
 		}
 	} catch (error) {
 		// For any reason decoding txing fails catch and return as unknown contract
-		console.error(error)
+		console.warn(error)
 		return { type: 'contract', address }
 	}
 

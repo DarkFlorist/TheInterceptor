@@ -98,7 +98,7 @@ export function TokenPrice(param: TokenPriceParams) {
 			amount = { value }
 			rpcNetwork = { param.rpcNetwork }
 			style = { style }
-			fontSize = { 'normal' }
+			fontSize = 'normal'
 		/>
 		<p style = { style }>)</p>
 	</>
