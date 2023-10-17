@@ -363,6 +363,7 @@ export const PersonalSignRequestBase = funtypes.ReadonlyObject({
 	account: AddressBookEntry,
 	website: Website,
 	created: EthereumTimestamp,
+	rawMessage: funtypes.String,
 })
 
 export type VisualizedPersonalSignRequestNotParsed = funtypes.Static<typeof VisualizedPersonalSignRequest>

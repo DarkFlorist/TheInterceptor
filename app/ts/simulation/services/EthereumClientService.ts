@@ -138,6 +138,20 @@ export class EthereumClientService {
 		return EthereumBlockHeader.parse(await this.requestHandler.jsonRpcRequest({ method: 'eth_getBlockByNumber', params: [blockTag, fullObjects] }))
 	}
 
+	public async getBlockByHash(blockHash: EthereumBytes32, fullObjects: boolean = true): Promise<EthereumBlockHeaderWithTransactionHashes | EthereumBlockHeader> {
+		const cached = this.getCachedBlock()
+		if (cached && (cached.hash === blockHash)) {
+			if (fullObjects === false) {
+				return { ...cached, transactions: cached.transactions.map((transaction) => transaction.hash) }
+			}
+			return cached
+		}
+		if (fullObjects === false) {
+			return EthereumBlockHeaderWithTransactionHashes.parse(await this.requestHandler.jsonRpcRequest({ method: 'eth_getBlockByHash', params: [blockHash, false] }))
+		}
+		return EthereumBlockHeader.parse(await this.requestHandler.jsonRpcRequest({ method: 'eth_getBlockByHash', params: [blockHash, fullObjects] }))
+	}
+
 	public readonly getChainId = () => this.requestHandler.getRpcNetwork().chainId
 
 	public readonly getLogs = async (logFilter: EthGetLogsRequest) => {

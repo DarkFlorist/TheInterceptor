@@ -1,5 +1,5 @@
 import { EthereumClientService } from './EthereumClientService.js'
-import { EthereumUnsignedTransaction, EthereumSignedTransactionWithBlockData, EthereumBlockTag, EthereumAddress, EthereumBlockHeader, EthereumBlockHeaderWithTransactionHashes, EthereumSignedTransaction, EthereumData, EthereumQuantity } from '../../types/wire-types.js'
+import { EthereumUnsignedTransaction, EthereumSignedTransactionWithBlockData, EthereumBlockTag, EthereumAddress, EthereumBlockHeader, EthereumBlockHeaderWithTransactionHashes, EthereumSignedTransaction, EthereumData, EthereumQuantity, EthereumBytes32 } from '../../types/wire-types.js'
 import { addressString, bytes32String, bytesToUnsigned, dataStringWith0xStart, max, min, stringToUint8Array } from '../../utils/bigint.js'
 import { CANNOT_SIMULATE_OFF_LEGACY_BLOCK, ERROR_INTERCEPTOR_GAS_ESTIMATION_FAILED, MOCK_ADDRESS } from '../../utils/constants.js'
 import { TypedDataEncoder, ethers, hashMessage, keccak256, } from 'ethers'
@@ -402,7 +402,7 @@ export const getSimulatedTransactionReceipt = async (ethereumClientService: Ethe
 			const blockNum = await ethereumClientService.getBlockNumber()
 			return {
 				type: simulatedTransaction.signedTransaction.type,
-				blockHash: getHashOfSimulatedBlock(),
+				blockHash: getHashOfSimulatedBlock(simulationState),
 				blockNumber: blockNum,
 				transactionHash: simulatedTransaction.signedTransaction.hash,
 				transactionIndex: BigInt(index),
@@ -415,7 +415,7 @@ export const getSimulatedTransactionReceipt = async (ethereumClientService: Ethe
 				logs: simulatedTransaction.multicallResponse.statusCode === 'success'
 					? simulatedTransaction.multicallResponse.events.map((x, logIndex) => ({
 						removed: false,
-						blockHash: getHashOfSimulatedBlock(),
+						blockHash: getHashOfSimulatedBlock(simulationState),
 						address: x.loggersAddress,
 						logIndex: BigInt(currentLogIndex + logIndex),
 						data: x.data,
@@ -505,25 +505,17 @@ const getBaseFeePerGasForNewBlock = (parent_gas_used: bigint, parent_gas_limit: 
 	return parent_base_fee_per_gas - base_fee_per_gas_delta
 }
 
-export async function getSimulatedBlock(ethereumClientService: EthereumClientService, simulationState: SimulationState | undefined, blockTag?: EthereumBlockTag, fullObjects?: true): Promise<EthereumBlockHeader>
-export async function getSimulatedBlock(ethereumClientService: EthereumClientService, simulationState: SimulationState | undefined, blockTag: EthereumBlockTag, fullObjects: boolean): Promise<EthereumBlockHeader | EthereumBlockHeaderWithTransactionHashes>
-export async function getSimulatedBlock(ethereumClientService: EthereumClientService, simulationState: SimulationState | undefined, blockTag: EthereumBlockTag, fullObjects: false): Promise<EthereumBlockHeaderWithTransactionHashes>
-export async function getSimulatedBlock(ethereumClientService: EthereumClientService, simulationState: SimulationState | undefined, blockTag: EthereumBlockTag = 'latest', fullObjects: boolean = true): Promise<EthereumBlockHeader | EthereumBlockHeaderWithTransactionHashes>  {
-	if (simulationState === undefined || await canQueryNodeDirectly(ethereumClientService, simulationState, blockTag)) {
-		return await ethereumClientService.getBlock(blockTag, fullObjects)
-	}
-
+async function getSimulatedMockBlock(ethereumClientService: EthereumClientService, simulationState: SimulationState) {
 	// make a mock block based on the previous block
 	const parentBlock = await ethereumClientService.getBlock()
 	if (parentBlock.baseFeePerGas === undefined) throw new Error(CANNOT_SIMULATE_OFF_LEGACY_BLOCK)
-
-	const block = {
+	return {
 		author: parentBlock.miner,
 		difficulty: parentBlock.difficulty,
 		extraData: parentBlock.extraData,
 		gasLimit: parentBlock.gasLimit,
 		gasUsed: transactionQueueTotalGasLimit(simulationState),
-		hash: getHashOfSimulatedBlock(),
+		hash: getHashOfSimulatedBlock(simulationState),
 		logsBloom: parentBlock.logsBloom, // TODO: this is wrong
 		miner: parentBlock.miner,
 		mixHash: parentBlock.mixHash, // TODO: this is wrong
@@ -543,7 +535,25 @@ export async function getSimulatedBlock(ethereumClientService: EthereumClientSer
 		withdrawals: [], // TODO: this is wrong
 		withdrawalsRoot: 0n, // TODO: this is wrong
 	} as const
+}
 
+export async function getSimulatedBlockByHash(ethereumClientService: EthereumClientService, simulationState: SimulationState | undefined, blockHash: EthereumBytes32, fullObjects: boolean): Promise<EthereumBlockHeader | EthereumBlockHeaderWithTransactionHashes> {
+	if (simulationState !== undefined && getHashOfSimulatedBlock(simulationState) === blockHash) {
+		const block = await getSimulatedMockBlock(ethereumClientService, simulationState)
+		if (fullObjects) return block
+		return { ...block, transactions: block.transactions.map((transaction) => transaction.hash) }
+	}
+	return await ethereumClientService.getBlockByHash(blockHash, fullObjects)
+}
+
+export async function getSimulatedBlock(ethereumClientService: EthereumClientService, simulationState: SimulationState | undefined, blockTag?: EthereumBlockTag, fullObjects?: true): Promise<EthereumBlockHeader>
+export async function getSimulatedBlock(ethereumClientService: EthereumClientService, simulationState: SimulationState | undefined, blockTag: EthereumBlockTag, fullObjects: boolean): Promise<EthereumBlockHeader | EthereumBlockHeaderWithTransactionHashes>
+export async function getSimulatedBlock(ethereumClientService: EthereumClientService, simulationState: SimulationState | undefined, blockTag: EthereumBlockTag, fullObjects: false): Promise<EthereumBlockHeaderWithTransactionHashes>
+export async function getSimulatedBlock(ethereumClientService: EthereumClientService, simulationState: SimulationState | undefined, blockTag: EthereumBlockTag = 'latest', fullObjects: boolean = true): Promise<EthereumBlockHeader | EthereumBlockHeaderWithTransactionHashes>  {
+	if (simulationState === undefined || await canQueryNodeDirectly(ethereumClientService, simulationState, blockTag)) {
+		return await ethereumClientService.getBlock(blockTag, fullObjects)
+	}
+	const block = await getSimulatedMockBlock(ethereumClientService, simulationState)
 	if (fullObjects) return block
 	return { ...block, transactions: block.transactions.map((transaction) => transaction.hash) }
 }
@@ -558,7 +568,7 @@ const getLogsOfSimulatedBlock = (simulationState: SimulationState, logFilter: Et
 				logIndex: BigInt(acc.length + logIndex),
 				transactionIndex: BigInt(transactionIndex),
 				transactionHash: sim.signedTransaction.hash,
-				blockHash: getHashOfSimulatedBlock(),
+				blockHash: getHashOfSimulatedBlock(simulationState),
 				blockNumber: simulationState.blockNumber,
 				address: event.loggersAddress,
 				data: event.data,
@@ -593,12 +603,12 @@ export const getSimulatedLogs = async (ethereumClientService: EthereumClientServ
 	const fromBlock = 'fromBlock' in logFilter && logFilter.fromBlock !== undefined ? logFilter.fromBlock : 'latest'
 	if (toBlock === 'pending' || fromBlock === 'pending') return await ethereumClientService.getLogs(logFilter)
 	if ((fromBlock === 'latest' && toBlock !== 'latest') || (fromBlock !== 'latest' && toBlock !== 'latest' && fromBlock > toBlock )) throw new Error(`From block '${ fromBlock }' is later than to block '${ toBlock }' `)
-	if ('blockHash' in logFilter && logFilter.blockHash === getHashOfSimulatedBlock()) return getLogsOfSimulatedBlock(simulationState, logFilter)
-	const logs = await ethereumClientService.getLogs(logFilter)
+	if ('blockHash' in logFilter && logFilter.blockHash === getHashOfSimulatedBlock(simulationState)) return getLogsOfSimulatedBlock(simulationState, logFilter)
 	if (simulationState && (toBlock === 'latest' || toBlock >= simulationState.blockNumber)) {
-		return [...logs, ...getLogsOfSimulatedBlock(simulationState, logFilter)]
+		const logParamsToNode = fromBlock !== 'latest' && fromBlock >= simulationState.blockNumber ? { ...logFilter, fromBlock: simulationState.blockNumber - 1n, toBlock: simulationState.blockNumber - 1n } : { ...logFilter, toBlock: simulationState.blockNumber - 1n }
+		return [...await ethereumClientService.getLogs(logParamsToNode), ...getLogsOfSimulatedBlock(simulationState, logFilter)]
 	}
-	return logs
+	return await ethereumClientService.getLogs(logFilter)
 }
 
 export const getSimulatedBlockNumber = async (ethereumClientService: EthereumClientService, simulationState: SimulationState | undefined) => {
@@ -613,7 +623,7 @@ export const getSimulatedTransactionByHash = async (ethereumClientService: Ether
 		if (hash === simulatedTransaction.signedTransaction.hash) {
 			const v = 'v' in simulatedTransaction.signedTransaction ? simulatedTransaction.signedTransaction.v : (simulatedTransaction.signedTransaction.yParity === 'even' ? 0n : 1n)
 			const additionalParams = {
-				blockHash: getHashOfSimulatedBlock(),
+				blockHash: getHashOfSimulatedBlock(simulationState),
 				blockNumber: await ethereumClientService.getBlockNumber(),
 				transactionIndex: BigInt(index),
 				data: simulatedTransaction.signedTransaction.input,
@@ -673,9 +683,8 @@ export const simulatedMulticall = async (ethereumClientService: EthereumClientSe
 	return await ethereumClientService.multicall(mergedTxs.concat(transactions), getSignedMessagesWithFakeSigner(simulationState), blockNumber)
 }
 
-export const getHashOfSimulatedBlock = () => {
-	return 0x1n
-}
+// use time as block hash as that makes it so that updated simulations with different states are different, but requires no additional calculation
+export const getHashOfSimulatedBlock = (simulationState: SimulationState) => BigInt(simulationState.simulationConductedTimestamp.getTime())
 
 export type SignatureWithFakeSignerAddress = { originalRequestParameters: SignMessageParams, fakeSignedFor: EthereumAddress }
 export type MessageHashAndSignature = { signature: string, messageHash: string }

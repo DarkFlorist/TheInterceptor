@@ -37,7 +37,7 @@ const logHandler = new Map<string, Loghandler>([
 ])
 
 export const visualizeTransaction = (blockNumber: bigint, singleMulticallResponse: SingleMulticallResponse) => {
-	if (singleMulticallResponse.statusCode !== 'success') return undefined
+	if (singleMulticallResponse.statusCode !== 'success') return { ethBalanceChanges: [], tokenResults: [], blockNumber }
 	let tokenResults: TokenVisualizerResult[] = []
 	for (const eventLog of singleMulticallResponse.events) {
 		const logSignature = eventLog.topics[0]

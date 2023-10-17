@@ -204,8 +204,8 @@ class InterceptorMessageListener {
 		}
 	}
 
-	private readonly WindowEthereumSend = (payload: { readonly id: string | number | null, readonly method: string, readonly params: readonly unknown[], _params: readonly unknown[] }) => {
-		console.warn('A deprecated method window.ethereum.send called')
+	private readonly WindowEthereumSend = async (payload: { readonly id: string | number | null, readonly method: string, readonly params: readonly unknown[], _params: readonly unknown[] }, maybeCallBack: undefined | ((error: IJsonRpcError | null, response: IJsonRpcSuccess<unknown> | null) => void)) => {
+		if (maybeCallBack !== undefined && typeof maybeCallBack === 'function') return this.WindowEthereumSendAsync(payload, maybeCallBack)
 		if (this.metamaskCompatibilityMode) {
 			if (window.ethereum === undefined) throw new Error('window.ethereum is missing')
 			switch (payload.method) {
