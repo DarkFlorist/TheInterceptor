@@ -1,6 +1,6 @@
 import { addressString } from '../utils/bigint.js'
 import { AddressBookEntries, AddressBookEntry, ActiveAddress, ActiveAddressEntry, ContactEntry, ContractEntry, Erc1155Entry, Erc20TokenEntry, Erc721Entry, UserAddressBook } from '../types/addressBookTypes.js'
-import { nftMetadata, tokenMetadata, contractMetadata, NftDefinition, ContractDefinition, TokenDefinition } from '@darkflorist/address-metadata'
+import { tokenMetadata, contractMetadata, ContractDefinition, TokenDefinition, Erc721Definition, erc721Metadata, erc1155Metadata, Erc1155Definition } from '@darkflorist/address-metadata'
 import { AddressBookCategory, GetAddressBookDataFilter } from '../types/interceptor-messages.js'
 import { getFullLogoUri } from './metadataUtils.js'
 import { assertNever } from '../utils/typescript.js'
@@ -48,12 +48,21 @@ const convertTokenDefinitionToAddressBookEntry = ([address, def]: [string, Token
 	entrySource: 'DarkFloristMetadata' as const,
 })
 
-const convertErc721DefinitionToAddressBookEntry = ([address, def]: [string, NftDefinition]) => ({
+const convertErc721DefinitionToAddressBookEntry = ([address, def]: [string, Erc721Definition]) => ({
 	address: BigInt(address),
 	...def,
 	logoUri: def.logoUri ? `${ getFullLogoUri(def.logoUri) }` : undefined,
 	type: 'ERC721' as const,
 	entrySource: 'DarkFloristMetadata' as const,
+})
+
+const convertErc1155DefinitionToAddressBookEntry = ([address, def]: [string, Erc1155Definition]) => ({
+	address: BigInt(address),
+	...def,
+	logoUri: def.logoUri ? `${ getFullLogoUri(def.logoUri) }` : undefined,
+	type: 'ERC1155' as const,
+	entrySource: 'DarkFloristMetadata' as const,
+	decimals: undefined,
 })
 
 const convertContractDefinitionToAddressBookEntry = ([address, def]: [string, ContractDefinition]) => ({
@@ -89,7 +98,7 @@ async function filterAddressBookDataByCategoryAndSearchString(addressBookCategor
 			return search(entries, searchFunction)
 		}
 		case 'ERC1155 Tokens': {
-			const entries = userEntries.filter((entry): entry is Erc1155Entry => entry.type === 'ERC1155')
+			const entries = userEntries.filter((entry): entry is Erc1155Entry => entry.type === 'ERC1155').concat(Array.from(erc1155Metadata).map(convertErc1155DefinitionToAddressBookEntry))
 			if (searchingDisabled) return entries
 			const searchFunction = (entry: Erc1155Entry) => ({
 				comparison: fuzzyCompare(searchPattern, trimmedSearch, entry.name.toLowerCase(), addressString(entry.address)),
@@ -107,7 +116,7 @@ async function filterAddressBookDataByCategoryAndSearchString(addressBookCategor
 			return search(entries, searchFunction)
 		}
 		case 'Non Fungible Tokens': {
-			const entries = userEntries.filter((entry): entry is Erc721Entry => entry.type === 'ERC721').concat(Array.from(nftMetadata).map(convertErc721DefinitionToAddressBookEntry))
+			const entries = userEntries.filter((entry): entry is Erc721Entry => entry.type === 'ERC721').concat(Array.from(erc721Metadata).map(convertErc721DefinitionToAddressBookEntry))
 			if (searchingDisabled) return entries
 			const searchFunction = (entry: Erc721Entry) => ({
 				comparison: fuzzyCompare(searchPattern, trimmedSearch, `${ entry.symbol.toLowerCase()} ${ entry.name.toLowerCase()}`, addressString(entry.address)),
@@ -145,8 +154,11 @@ export async function findEntryWithSymbolOrName(symbol: string | undefined, name
 	const tokenMetadataEntry = Array.from(tokenMetadata).find((entry) => lowerCasedEqual(entry[1].symbol, lowerCasedSymbol) || lowerCasedEqual(entry[1].name, lowerCasedName))
 	if (tokenMetadataEntry !== undefined) return convertTokenDefinitionToAddressBookEntry(tokenMetadataEntry)
 
-	const nftMetadataEntry = Array.from(nftMetadata).find((entry) => lowerCasedEqual(entry[1].symbol, lowerCasedSymbol) || lowerCasedEqual(entry[1].name.toLowerCase(), lowerCasedName))
-	if (nftMetadataEntry !== undefined) return convertErc721DefinitionToAddressBookEntry(nftMetadataEntry)
+	const erc721MetadataEntry = Array.from(erc721Metadata).find((entry) => lowerCasedEqual(entry[1].symbol, lowerCasedSymbol) || lowerCasedEqual(entry[1].name.toLowerCase(), lowerCasedName))
+	if (erc721MetadataEntry !== undefined) return convertErc721DefinitionToAddressBookEntry(erc721MetadataEntry)
+
+	const erc1155MetadataEntry = Array.from(erc1155Metadata).find((entry) => lowerCasedEqual(entry[1].symbol, lowerCasedSymbol) || lowerCasedEqual(entry[1].name.toLowerCase(), lowerCasedName))
+	if (erc1155MetadataEntry !== undefined) return convertErc1155DefinitionToAddressBookEntry(erc1155MetadataEntry)
 
 	const contractMetadataEntry = Array.from(contractMetadata).find((entry) => lowerCasedEqual(entry[1].name, lowerCasedName))
 	if (contractMetadataEntry !== undefined) return convertContractDefinitionToAddressBookEntry(contractMetadataEntry)

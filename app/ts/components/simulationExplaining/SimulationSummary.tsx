@@ -41,7 +41,7 @@ function EtherChange(param: EtherChangeParams) {
 				showSign = { true }
 				useFullTokenName = { true }
 				rpcNetwork = { param.rpcNetwork }
-				fontSize = { 'normal' }
+				fontSize = 'normal'
 			/>
 		</div>
 	</div>
@@ -69,7 +69,7 @@ function Erc20BalanceChange(param: Erc20BalanceChangeParams) {
 						style = { { color: erc20TokenBalanceChange.changeAmount > 0n ? param.textColor : param.negativeColor } }
 						useFullTokenName = { true }
 						renameAddressCallBack = { param.renameAddressCallBack }
-						fontSize = { 'normal' }
+						fontSize = 'normal'
 					/>
 					<TokenPrice
 						amount = { erc20TokenBalanceChange.changeAmount }
@@ -118,7 +118,7 @@ export function Erc20ApprovalChange(param: Erc20ApprovalChangeParams) {
 						tokenEntry = { param }
 						amount = { param.change }
 						style = { { color: textColor } }
-						fontSize = { 'normal' }
+						fontSize = 'normal'
 					/>
 				}
 			</div>
@@ -128,7 +128,7 @@ export function Erc20ApprovalChange(param: Erc20ApprovalChangeParams) {
 					style = { { color: textColor } }
 					useFullTokenName = { true }
 					renameAddressCallBack = { param.renameAddressCallBack }
-					fontSize = { 'normal' }
+					fontSize = 'normal'
 				/>
 			</div>
 		</table>
@@ -190,7 +190,7 @@ function Erc721TokenChanges(param: Erc721TokenChangesParams ) {
 						useFullTokenName = { true }
 						showSign = { true }
 						renameAddressCallBack = { param.renameAddressCallBack }
-						fontSize = { 'normal' }
+						fontSize = 'normal'
 					/>
 				</div>
 			</div>
@@ -237,7 +237,7 @@ export function Erc721or1155OperatorChanges(param: Erc721Or1155OperatorChangesPa
 									style = { { color: param.negativeColor } }
 									useFullTokenName = { true }
 									renameAddressCallBack = { param.renameAddressCallBack }
-									fontSize = { 'normal' }
+									fontSize = 'normal'
 								/>
 							</div>
 						</table>
@@ -255,7 +255,7 @@ export function Erc721or1155OperatorChanges(param: Erc721Or1155OperatorChangesPa
 									style = { { color: param.textColor } }
 									useFullTokenName = { true }
 									renameAddressCallBack = { param.renameAddressCallBack }
-									fontSize = { 'normal' }
+									fontSize = 'normal'
 								/>
 							</div>
 						</table>
@@ -301,7 +301,7 @@ export function Erc721TokenIdApprovalChanges(param: Erc721TokenIdApprovalChanges
 									style = { { color: param.negativeColor } }
 									useFullTokenName = { true }
 									renameAddressCallBack = { param.renameAddressCallBack }
-									fontSize = { 'normal' }
+									fontSize = 'normal'
 								/>
 							</div>
 						</table>
@@ -338,7 +338,7 @@ function Erc1155TokenChanges(param: Erc1155TokenChangesParams ) {
 						useFullTokenName = { true }
 						showSign = { true }
 						renameAddressCallBack = { param.renameAddressCallBack }
-						fontSize = { 'normal' }
+						fontSize = 'normal'
 					/>
 				</div>
 			</div>
@@ -583,14 +583,14 @@ export function GasFee({ tx, rpcNetwork }: { tx: TransactionGasses, rpcNetwork: 
 			<EtherAmount
 				amount = { tx.gasSpent * tx.realizedGasPrice  }
 				style = { { color: 'var(--subtitle-text-color)' } }
-				fontSize = { 'normal' }
+				fontSize = 'normal'
 			/>
 		</div>
 		<div class = 'log-cell'>
 			<EtherSymbol
 				style = { { color: 'var(--subtitle-text-color)' } }
 				rpcNetwork = { rpcNetwork }
-				fontSize = { 'normal' }
+				fontSize = 'normal'
 			/>
 		</div>
 	</>
@@ -780,7 +780,7 @@ export function RawTransactionDetailsCard({ transaction, renameAddressCallBack, 
 						<CellElement text = 'To: '/>
 						<CellElement text = { transaction.to === undefined ? 'No receiving Address' : <SmallAddress addressBookEntry = { transaction.to } renameAddressCallBack = { renameAddressCallBack } textColor = { 'var(--subtitle-text-color)' }/> } />
 						<CellElement text = 'Value: '/>
-						<CellElement text = { <Ether amount = { transaction.value } useFullTokenName = { true } rpcNetwork = { transaction.rpcNetwork } style = { { color: 'var(--subtitle-text-color)' } } fontSize = { 'normal' }/> } />
+						<CellElement text = { <Ether amount = { transaction.value } useFullTokenName = { true } rpcNetwork = { transaction.rpcNetwork } style = { { color: 'var(--subtitle-text-color)' } } fontSize = 'normal'/> } />
 						<CellElement text = 'Gas used: '/>
 						<CellElement text = { `${ gasSpent.toString(10) } gas (${ Number(gasSpent * 10000n / transaction.gas) / 100 }%)` }/>
 						<CellElement text = 'Gas limit: '/>
