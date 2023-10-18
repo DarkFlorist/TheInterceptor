@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'preact/hooks'
-import { checksummedAddress, dataStringWith0xStart, stringToUint8Array } from '../../utils/bigint.js'
+import { checksummedAddress, dataStringWith0xStart, isHexEncodedNumber, stringToUint8Array } from '../../utils/bigint.js'
 import { RenameAddressCallBack } from '../../types/user-interface-types.js'
 import Hint from '../subcomponents/Hint.js'
 import { ErrorCheckBox, Error as ErrorComponent} from '../subcomponents/Error.js'
@@ -114,6 +114,11 @@ type SignRequestParams = {
 	renameAddressCallBack: RenameAddressCallBack
 }
 
+const decodeMessage = (message: string) => {
+	if (isHexEncodedNumber(message)) return new TextDecoder().decode(stringToUint8Array(message))
+	return message
+}
+
 function SignRequest({ VisualizedPersonalSignRequest, renameAddressCallBack }: SignRequestParams) {
 	switch (VisualizedPersonalSignRequest.type) {
 		case 'NotParsed': {
@@ -125,7 +130,7 @@ function SignRequest({ VisualizedPersonalSignRequest, renameAddressCallBack }: S
 					</div>
 					<p class = 'paragraph'>Text decoded message: </p>
 					<div class = 'textbox'>
-						<p class = 'paragraph' style = 'color: var(--subtitle-text-color)'>{ new TextDecoder().decode(stringToUint8Array(VisualizedPersonalSignRequest.message)) }</p>
+						<p class = 'paragraph' style = 'color: var(--subtitle-text-color)'>{ decodeMessage(VisualizedPersonalSignRequest.message) }</p>
 					</div>
 				</>
 			}
