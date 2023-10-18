@@ -169,13 +169,18 @@ export function ConfirmTransaction() {
 			}
 			if (message.method === 'popup_confirm_transaction_dialog_pending_changed') {
 				updatePendingTransactions(message)
-				const currentWindowId = (await browser.windows.getCurrent()).id
-				const currentTabId = (await browser.tabs.getCurrent()).id
-				if (currentWindowId === undefined) throw new Error('could not get current window Id!')
-				if (currentTabId === undefined) throw new Error('could not get current tab Id!')
 				setPendingTransactionAddedNotification(true)
-				browser.windows.update(currentWindowId, { focused: true })
-				browser.tabs.update(currentTabId, { active: true })
+				try {
+					const currentWindowId = (await browser.windows.getCurrent()).id
+					const currentTabId = (await browser.tabs.getCurrent()).id
+					if (currentWindowId === undefined) throw new Error('could not get current window Id!')
+					if (currentTabId === undefined) throw new Error('could not get current tab Id!')
+					browser.windows.update(currentWindowId, { focused: true })
+					browser.tabs.update(currentTabId, { active: true })
+				} catch(e) {
+					console.warn('failed to focus window')
+					console.warn(e)
+				}
 				return
 			}
 			if (message.method !== 'popup_update_confirm_transaction_dialog') return
