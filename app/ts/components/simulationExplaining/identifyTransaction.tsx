@@ -148,7 +148,7 @@ export const SimulatedAndVisualizedSimpleTokenTransferTransaction = funtypes.Int
 export function isSimpleTokenTransfer(transaction: SimulatedAndVisualizedTransaction): transaction is SimulatedAndVisualizedSimpleTokenTransferTransaction {
 	const tokenResult = transaction.tokenResults[0]
 	if (tokenResult === undefined) return false
-	if (transaction.transaction.value === 0n
+	if (transaction.ethBalanceChanges.length === 0
 		&& transaction.tokenResults.length === 1
 		&& tokenResult.isApproval == false
 		&& tokenResult.from.address !== tokenResult.to.address
@@ -156,7 +156,6 @@ export function isSimpleTokenTransfer(transaction: SimulatedAndVisualizedTransac
 	return false
 }
 const getSimpleTokenTransferOrUndefined = createGuard<SimulatedAndVisualizedTransaction, SimulatedAndVisualizedSimpleTokenTransferTransaction>((simTx) => isSimpleTokenTransfer(simTx) ? simTx : undefined)
-
 
 export function identifyTransaction(simTx: SimulatedAndVisualizedTransaction): IdentifiedTransaction {
 	const richTxParams = MAKE_YOU_RICH_TRANSACTION.transaction

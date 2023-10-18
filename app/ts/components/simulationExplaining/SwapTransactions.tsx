@@ -102,8 +102,7 @@ export function identifySwap(simTransaction: SimulatedAndVisualizedTransaction):
 	const etherChange = simTransaction.ethBalanceChanges.filter((x) => x.address.address === sender)
 	const previousEtherChange = etherChange[etherChange.length - 1]
 	const firstEtherChange = etherChange[0]
-	if (previousEtherChange === undefined || firstEtherChange === undefined) throw new Error('ether change was undefined')
-	const ethDiff = etherChange !== undefined && etherChange.length >= 1 ? previousEtherChange.after - firstEtherChange.before : 0n
+	const ethDiff = previousEtherChange === undefined || firstEtherChange === undefined ? 0n : (etherChange !== undefined && etherChange.length >= 1 ? previousEtherChange.after - firstEtherChange.before : 0n)
 
 	const transactionGasCost = simTransaction.realizedGasPrice * simTransaction.transaction.gas
 	if (sentAssets.length === 1 && receivedAssets.length === 1 && -ethDiff <= transactionGasCost) {
@@ -117,7 +116,7 @@ export function identifySwap(simTransaction: SimulatedAndVisualizedTransaction):
 			return {
 				sender: simTransaction.transaction.from,
 				sendAsset: { ...sentToken.value, beforeAfterBalance: sendBalanceAfter !== undefined
-					? { beforeBalance: sendBalanceAfter - sentToken.value.amount, afterBalance: sendBalanceAfter }
+					? { beforeBalance: sendBalanceAfter + sentToken.value.amount, afterBalance: sendBalanceAfter }
 					: undefined
 				},
 				receiveAsset: { ...receiveToken.value, beforeAfterBalance: receiveBalanceAfter !== undefined
@@ -127,54 +126,56 @@ export function identifySwap(simTransaction: SimulatedAndVisualizedTransaction):
 			}
 		}
 	}
-
-	if (sentAssets.length === 1 && receivedAssets.length === 0 && ethDiff > 0n ) {
-		// user sold token for eth
-		const sentToken = sentAssets[0]
-		const firstEtherChange = etherChange[0]
-		if (sentToken === undefined || firstEtherChange === undefined) throw new Error('sent token or ether change was undefined')
-		const sendBalanceAfter = simTransaction.tokenBalancesAfter.find((balance) => balance.owner === simTransaction.transaction.from.address && balance.token === sentToken.value.token?.address && balance.tokenId === sentToken.value.tokenId)?.balance
-		return {
-			sender: simTransaction.transaction.from,
-			sendAsset: { ...sentToken.value, beforeAfterBalance: sendBalanceAfter !== undefined
-				? { beforeBalance: sendBalanceAfter - sentToken.value.amount, afterBalance: sendBalanceAfter }
-				: undefined
-			},
-			receiveAsset: {
-				type: 'Ether',
-				amount: ethDiff,
-				beforeAfterBalance: {
-					beforeBalance: firstEtherChange.before,
-					afterBalance: firstEtherChange.before + ethDiff
+	if (firstEtherChange !== undefined) {
+		//TODO, remove all this code once we don't use our plugin multicall anymore
+		if (sentAssets.length === 1 && receivedAssets.length === 0 && ethDiff > 0n) {
+			// user sold token for eth
+			const sentToken = sentAssets[0]
+			const firstEtherChange = etherChange[0]
+			if (sentToken === undefined || firstEtherChange === undefined) throw new Error('sent token or ether change was undefined')
+			const sendBalanceAfter = simTransaction.tokenBalancesAfter.find((balance) => balance.owner === simTransaction.transaction.from.address && balance.token === sentToken.value.token?.address && balance.tokenId === sentToken.value.tokenId)?.balance
+			return {
+				sender: simTransaction.transaction.from,
+				sendAsset: { ...sentToken.value, beforeAfterBalance: sendBalanceAfter !== undefined
+					? { beforeBalance: sendBalanceAfter - sentToken.value.amount, afterBalance: sendBalanceAfter }
+					: undefined
 				},
-				token: undefined,
-				tokenId: undefined,
-			},
+				receiveAsset: {
+					type: 'Ether',
+					amount: ethDiff,
+					beforeAfterBalance: {
+						beforeBalance: firstEtherChange.before,
+						afterBalance: firstEtherChange.before + ethDiff
+					},
+					token: undefined,
+					tokenId: undefined,
+				},
+			}
 		}
-	}
 
-	if (sentAssets.length === 0 && receivedAssets.length === 1 && ethDiff < transactionGasCost ) {
-		// user bought token with eth
-		const receiveToken = receivedAssets[0]
-		const firstEtherChange = etherChange[0]
-		if (receiveToken === undefined || firstEtherChange === undefined) throw new Error('receive token or ether change was undefined')
-		const receiveBalanceAfter = simTransaction.tokenBalancesAfter.find((balance) => balance.owner === simTransaction.transaction.from.address && balance.token === receiveToken.value.token?.address && balance.tokenId === receiveToken.value.tokenId)?.balance
-		return {
-			sender: simTransaction.transaction.from,
-			sendAsset: {
-				type: 'Ether',
-				amount: -ethDiff,
-				beforeAfterBalance: {
-					beforeBalance: firstEtherChange.before,
-					afterBalance: firstEtherChange.before + ethDiff
+		if (sentAssets.length === 0 && receivedAssets.length === 1 && ethDiff < transactionGasCost) {
+			// user bought token with eth
+			const receiveToken = receivedAssets[0]
+			const firstEtherChange = etherChange[0]
+			if (receiveToken === undefined || firstEtherChange === undefined) throw new Error('receive token or ether change was undefined')
+			const receiveBalanceAfter = simTransaction.tokenBalancesAfter.find((balance) => balance.owner === simTransaction.transaction.from.address && balance.token === receiveToken.value.token?.address && balance.tokenId === receiveToken.value.tokenId)?.balance
+			return {
+				sender: simTransaction.transaction.from,
+				sendAsset: {
+					type: 'Ether',
+					amount: -ethDiff,
+					beforeAfterBalance: {
+						beforeBalance: firstEtherChange.before,
+						afterBalance: firstEtherChange.before + ethDiff
+					},
+					token: undefined,
+					tokenId: undefined,
 				},
-				token: undefined,
-				tokenId: undefined,
-			},
-			receiveAsset: { ...receiveToken.value, beforeAfterBalance: receiveBalanceAfter !== undefined
-				? { beforeBalance: receiveBalanceAfter - receiveToken.value.amount, afterBalance: receiveBalanceAfter }
-				: undefined
-			},
+				receiveAsset: { ...receiveToken.value, beforeAfterBalance: receiveBalanceAfter !== undefined
+					? { beforeBalance: receiveBalanceAfter - receiveToken.value.amount, afterBalance: receiveBalanceAfter }
+					: undefined
+				},
+			}
 		}
 	}
 	return false
@@ -253,7 +254,7 @@ export function identifyRoutes(simulatedAndVisualizedTransaction: SimulatedAndVi
 		for (const compareTo of ethBalanceChanges) {
 			const compareToAddress = addressString(compareTo.address.address)
 			const compareToDelta = compareTo.after - compareTo.before
-			if(compareToAddress !== address) {
+			if (compareToAddress !== address) {
 				if( abs(delta+compareToDelta) <= transactionGasCost && abs(delta) >= transactionGasCost && abs(compareToDelta) >= transactionGasCost ) {
 					if (matchedEthPairs.find( (matchedPair) => matchedPair.fromAddress === compareToAddress || matchedPair.toAddress === compareToAddress ) === undefined) {
 						matchedEthPairs.push( {
@@ -276,7 +277,6 @@ export function identifyRoutes(simulatedAndVisualizedTransaction: SimulatedAndVi
 			return false
 		}
 	}
-	Map<string, Map<string | undefined, {to: string, tokenResultIndex: number | undefined } > >
 	// traverse chain
 	const startToken = identifiedSwap.sendAsset.type !== 'Ether' ? addressString(identifiedSwap.sendAsset.token.address) : undefined
 	const endToken = identifiedSwap.receiveAsset.type !== 'Ether' ? addressString(identifiedSwap.receiveAsset.token.address) : undefined
@@ -394,9 +394,9 @@ export function VisualizeSwapAsset({ swapAsset, rpcNetwork, renameAddressCallBac
 					<div class = 'log-cell'/>
 					{ swapAsset.beforeAfterBalance !== undefined ? <div class = 'log-cell' style = 'justify-content: right;'>
 						<p class = 'paragraph' style = { balanceTextStyle }>Balance:&nbsp;</p>
-						<TokenOrEthValue { ...swapAsset.token } amount = { swapAsset.beforeAfterBalance.beforeBalance } style = { balanceTextStyle } fontSize = 'normal'/>
+						<TokenOrEthValue tokenEntry = { swapAsset.token } amount = { swapAsset.beforeAfterBalance?.beforeBalance } style = { balanceTextStyle } fontSize = 'normal'/>
 						<p class = 'paragraph' style = { balanceTextStyle }>&nbsp;{'->'}&nbsp;</p>
-						<TokenOrEthValue { ...swapAsset.token } amount = { swapAsset.beforeAfterBalance.afterBalance } style = { balanceTextStyle } fontSize = 'normal'/>
+						<TokenOrEthValue tokenEntry = { swapAsset.token } amount = { swapAsset.beforeAfterBalance?.afterBalance } style = { balanceTextStyle } fontSize = 'normal'/>
 						</div> : <></>
 					}
 				</span>
@@ -427,9 +427,9 @@ export function VisualizeSwapAsset({ swapAsset, rpcNetwork, renameAddressCallBac
 					<div class = 'log-cell'/>
 					{ swapAsset.beforeAfterBalance !== undefined ? <div class = 'log-cell' style = 'justify-content: right;'>
 						<p class = 'paragraph' style = { balanceTextStyle }>Balance:&nbsp;</p>
-						<TokenOrEthValue { ...swapAsset.token } amount = { swapAsset.beforeAfterBalance.beforeBalance } style = { balanceTextStyle } fontSize = 'normal'/>
+						<TokenOrEthValue tokenEntry = { swapAsset.token } amount = { swapAsset.beforeAfterBalance?.beforeBalance } style = { balanceTextStyle } fontSize = 'normal'/>
 						<p class = 'paragraph' style = { balanceTextStyle }>&nbsp;{'->'}&nbsp;</p>
-						<TokenOrEthValue { ...swapAsset.token } amount = { swapAsset.beforeAfterBalance.afterBalance } style = { balanceTextStyle } fontSize = 'normal'/>
+						<TokenOrEthValue tokenEntry = { swapAsset.token } amount = { swapAsset.beforeAfterBalance?.afterBalance } style = { balanceTextStyle } fontSize = 'normal'/>
 						</div> : <></>
 					}
 				</span>

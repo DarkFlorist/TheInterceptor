@@ -167,11 +167,10 @@ export function CatchAllVisualizer(param: TransactionImportanceBlockParams) {
 		}
 	})
 
-	const ownBalanceChanges = param.simTx.ethBalanceChanges.filter( (change) => change.address.address === msgSender)
+	const ownBalanceChanges = param.simTx.ethBalanceChanges.filter((change) => change.address.address === msgSender)
 	const firstBalanceChanges = ownBalanceChanges[0]
 	const lastBalanceChanges = ownBalanceChanges[ownBalanceChanges.length - 1]
-	if (firstBalanceChanges === undefined || lastBalanceChanges === undefined) throw new Error('first or last balance changes were undefined')
-	const totalEthReceived = ownBalanceChanges !== undefined && ownBalanceChanges.length > 0 ? lastBalanceChanges.after - firstBalanceChanges.before - param.simTx.transaction.value : 0n
+	const totalEthReceived = firstBalanceChanges !== undefined && lastBalanceChanges !== undefined ? (ownBalanceChanges !== undefined && ownBalanceChanges.length > 0 ? lastBalanceChanges.after - firstBalanceChanges.before - param.simTx.transaction.value : 0n) : 0n
 
 	if (param.simTx.transaction.to !== undefined
 		&& param.simTx.transaction.value === 0n
@@ -195,14 +194,17 @@ export function CatchAllVisualizer(param: TransactionImportanceBlockParams) {
 				</div>
 			</> }
 			{ /* sending ether / tokens */ }
-			<div class = 'log-cell' style = 'justify-content: left; display: grid;'>
-				<EtherTransferEvent
-					valueSent = { param.simTx.transaction.value }
-					totalReceived = { totalEthReceived }
-					textColor = { textColor }
-					rpcNetwork = { param.simulationAndVisualisationResults.rpcNetwork }
-				/>
-			</div>
+			{ param.simTx.ethBalanceChanges.length > 0 ? 
+				<div class = 'log-cell' style = 'justify-content: left; display: grid;'>
+					<EtherTransferEvent
+						valueSent = { param.simTx.transaction.value }
+						totalReceived = { totalEthReceived }
+						textColor = { textColor }
+						rpcNetwork = { param.simulationAndVisualisationResults.rpcNetwork }
+					/>
+				</div>
+				: <></>
+			}
 
 			<div class = 'log-cell' style = 'justify-content: left; display: grid;'>
 				<SendOrReceiveTokensImportanceBox

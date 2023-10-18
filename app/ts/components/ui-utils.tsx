@@ -4,6 +4,7 @@ import { getUseTabsInsteadOfPopup } from '../background/settings.js'
 import { assertNever } from '../utils/typescript.js'
 import { ComponentChildren } from 'preact'
 import { WindowOrTabId } from '../types/user-interface-types.js'
+import { RpcNetwork } from '../types/rpc.js'
 
 function assertIsNode(e: EventTarget | null): asserts e is Node {
 	if (!e || !('nodeType' in e)) {
@@ -191,4 +192,16 @@ export const CellElement = (param: { text: ComponentChildren }) => {
 	return <div class = 'log-cell' style = 'justify-content: right;'>
 		<p class = 'paragraph' style = 'color: var(--subtitle-text-color); text-overflow: ellipsis; overflow: hidden;'>{ param.text }</p>
 	</div>
+}
+
+export const getArtificialERC20ForEth = (rpcNetwork: RpcNetwork) => {
+	return {
+		address: 0n,
+		logoUri: '../../img/coins/ethereum.png',
+		symbol: rpcNetwork.currencyTicker,
+		decimals: 18n,
+		name: rpcNetwork.currencyName,
+		type: 'ERC20' as const,
+		entrySource: 'DarkFloristMetadata' as const,
+	}
 }

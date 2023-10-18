@@ -68,7 +68,6 @@ export function EtherSymbol(param: EtherSymbolParams) {
 		display: 'inline-block',
 		overflow: 'hidden',
 		'text-overflow': 'ellipsis',
-		'margin-left': '2px',
 		...(param.style === undefined ? {} : param.style),
 		'font-size': param.fontSize === 'big' ? BIG_FONT_SIZE : NORMAL_FONT_SIZE
 	}
@@ -154,7 +153,10 @@ export function TokenSymbol(param: TokenSymbolParams) {
 		<TokenIdOrNameOrNothing { ...param } style = { style }/>
 		<span class = { param.fontSize === 'big' ? 'big-token-name-container' : 'token-name-container' } data-value = { unTrusted ? `⚠${ name }` : name }>
 			<span class = 'token-name-holder'>
-				<span style = 'margin-right: 2px'>
+				{ param.tokenEntry.address === 0n ? <>
+					<img class = 'noselect nopointer' style = { { 'max-height': '25px', 'width': '25px', 'min-width': '25px', 'vertical-align': 'middle' } } src = { param.tokenEntry.logoUri }/>
+					<p class = 'paragraph token-name-text noselect nopointer' style = { style }>{ name }</p>
+				</> : <>
 					<CopyToClipboard content = { tokenString } copyMessage = 'Token address copied!' >
 						{ param.tokenEntry.logoUri === undefined ?
 							<Blockie
@@ -163,19 +165,19 @@ export function TokenSymbol(param: TokenSymbolParams) {
 								style = { { 'vertical-align': 'baseline', borderRadius: '50%' } }
 							/>
 						:
-							<img class = 'noselect nopointer' style = { { 'max-height': '25px', 'width': '25px', 'min-width': '25px','vertical-align': 'middle' } } src = { param.tokenEntry.logoUri }/>
+							<img class = 'noselect nopointer' style = { { 'max-height': '25px', 'width': '25px', 'min-width': '25px', 'vertical-align': 'middle' } } src = { param.tokenEntry.logoUri }/>
 						}
 					</CopyToClipboard>
-				</span>
-				{ unTrusted ? <p class = 'noselect nopointer blink' style = { style } >⚠</p> : <></> }
-				<CopyToClipboard content = { name } copyMessage = 'Name copied!' style = { { 'text-overflow': 'ellipsis', overflow: 'hidden' } }>
-					<p class = 'paragraph token-name-text noselect nopointer' style = { style }>{ name }</p>
-				</CopyToClipboard>
-				<button class = 'button is-primary is-small rename-token-button' onClick = { () => param.renameAddressCallBack(param.tokenEntry) }>
-					<span class = 'icon'>
-						<img src = '../img/rename.svg'/>
-					</span>
-				</button>
+					{ unTrusted ? <p class = 'noselect nopointer blink' style = { style } >⚠</p> : <></> }
+					<CopyToClipboard content = { name } copyMessage = 'Name copied!' style = { { 'text-overflow': 'ellipsis', overflow: 'hidden' } }>
+						<p class = 'paragraph token-name-text noselect nopointer' style = { style }>{ name }</p>
+					</CopyToClipboard>
+					<button class = 'button is-primary is-small rename-token-button' onClick = { () => param.renameAddressCallBack(param.tokenEntry) }>
+						<span class = 'icon'>
+							<img src = '../img/rename.svg'/>
+						</span>
+					</button>
+				</> }
 			</span>
 		</span>
 	</span>

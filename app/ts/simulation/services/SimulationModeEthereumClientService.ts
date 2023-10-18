@@ -1,8 +1,8 @@
 import { EthereumClientService } from './EthereumClientService.js'
 import { EthereumUnsignedTransaction, EthereumSignedTransactionWithBlockData, EthereumBlockTag, EthereumAddress, EthereumBlockHeader, EthereumBlockHeaderWithTransactionHashes, EthereumSignedTransaction, EthereumData, EthereumQuantity, EthereumBytes32 } from '../../types/wire-types.js'
-import { addressString, bytes32String, bytesToUnsigned, dataStringWith0xStart, max, min, stringToUint8Array } from '../../utils/bigint.js'
-import { CANNOT_SIMULATE_OFF_LEGACY_BLOCK, ERROR_INTERCEPTOR_GAS_ESTIMATION_FAILED, MOCK_ADDRESS } from '../../utils/constants.js'
-import { TypedDataEncoder, ethers, hashMessage, keccak256, } from 'ethers'
+import { addressString, bytes32String, dataStringWith0xStart, max, min, stringToUint8Array } from '../../utils/bigint.js'
+import { CANNOT_SIMULATE_OFF_LEGACY_BLOCK, ERROR_INTERCEPTOR_GAS_ESTIMATION_FAILED, MOCK_ADDRESS, MULTICALL3, Multicall3ABI } from '../../utils/constants.js'
+import { Interface, TypedDataEncoder, ethers, hashMessage, keccak256, } from 'ethers'
 import { WebsiteCreatedEthereumUnsignedTransaction, SimulatedTransaction, SimulationState, TokenBalancesAfter, EstimateGasError, SignedMessageTransaction } from '../../types/visualizer-types.js'
 import { EthereumUnsignedTransactionToUnsignedTransaction, IUnsignedTransaction1559, serializeSignedTransactionToBytes } from '../../utils/ethereum.js'
 import { EthGetLogsResponse, EthGetLogsRequest, EthTransactionReceiptResponse, MulticallResponseEventLogs, MulticallResponse, DappRequestTransaction } from '../../types/JsonRpc-types.js'
@@ -727,45 +727,59 @@ type BalanceQuery = {
 	tokenId: bigint,
 }
 
-const getSimulatedTokenBalances = async (ethereumClientService: EthereumClientService, transactionQueue: EthereumUnsignedTransaction[], signedMessages: readonly SignatureWithFakeSignerAddress[], balances: BalanceQuery[], blockNumber: bigint): Promise<TokenBalancesAfter> => {
-	if (balances.length === 0) return []
+
+const getSimulatedTokenBalances = async (ethereumClientService: EthereumClientService, transactionQueue: EthereumUnsignedTransaction[], signedMessages: readonly SignatureWithFakeSignerAddress[], balanceQueries: BalanceQuery[], blockNumber: bigint): Promise<TokenBalancesAfter> => {
+	if (balanceQueries.length === 0) return []
+	const IMulticall3 = new Interface(Multicall3ABI)
 	const erc20TokenInterface = new ethers.Interface(['function balanceOf(address account) view returns (uint256)'])
 	const erc1155TokenInterface = new ethers.Interface(['function balanceOf(address _owner, uint256 _id) external view returns(uint256)'])
-	const transactions = balances.map((balanceRequest, index) => {
-		const base = {
-			type: '1559' as const,
-			from: MOCK_ADDRESS + BigInt(index) + 1n,
-			to: balanceRequest.token,
-			value: 0n,
-			maxFeePerGas: 0n,
-			maxPriorityFeePerGas: 0n,
-			accessList: [],
-			gas: 42000n,
-			chainId: ethereumClientService.getChainId(),
-			nonce: 0n,
-		}
-		if (balanceRequest.type === 'ERC20') {
+	const tokenAndEthBalancesInputData = stringToUint8Array(IMulticall3.encodeFunctionData('aggregate3', [balanceQueries.map((balanceQuery) => {
+		if (balanceQuery.token === 0n && balanceQuery.type == 'ERC20') {
 			return {
-				...base,
-				input: stringToUint8Array(erc20TokenInterface.encodeFunctionData('balanceOf', [addressString(balanceRequest.owner)])),
+				target: addressString(MULTICALL3),
+				allowFailure: true,
+				callData: IMulticall3.encodeFunctionData('getEthBalance', [addressString(balanceQuery.owner)])
+			}
+		}
+		if (balanceQuery.type === 'ERC20') {
+			return {
+				target: addressString(balanceQuery.token),
+				allowFailure: true,
+				callData: stringToUint8Array(erc20TokenInterface.encodeFunctionData('balanceOf', [addressString(balanceQuery.owner)])),
 			}
 		}
 		return {
-			...base,
-			input: stringToUint8Array(erc1155TokenInterface.encodeFunctionData('balanceOf', [addressString(balanceRequest.owner), balanceRequest.tokenId])),
+			target: addressString(balanceQuery.token),
+			allowFailure: true,
+			input: stringToUint8Array(erc1155TokenInterface.encodeFunctionData('balanceOf', [addressString(balanceQuery.owner), balanceQuery.tokenId])),
 		}
-	})
-	const transactionQueueSize = transactionQueue.length
-	const response = await ethereumClientService.multicall(transactionQueue.concat(transactions), signedMessages, blockNumber)
-	if (response.length !== transactions.length + transactionQueueSize) throw new Error('Multicall length mismatch')
-	return balances.map((balance, index) => {
-		const balanceResponse = response[transactionQueueSize + index]
-		if (balanceResponse === undefined) throw new Error('balance response was undefined')
+	})]))
+	const callTransaction: EthereumUnsignedTransaction = {
+		type: '1559' as const,
+		from: MOCK_ADDRESS,
+		to: MULTICALL3,
+		value: 0n,
+		input: tokenAndEthBalancesInputData,
+		maxFeePerGas: 0n,
+		maxPriorityFeePerGas: 0n,
+		gas: 15_000_000n,
+		nonce: 0n,
+		chainId: ethereumClientService.getChainId(),
+	} as const
+	const multicallResults = await ethereumClientService.multicall(transactionQueue.concat(callTransaction), signedMessages, blockNumber)
+	const aggregate3CallResult = multicallResults[multicallResults.length - 1]
+	if (aggregate3CallResult === undefined || aggregate3CallResult.statusCode === 'failure') throw Error('Failed aggregate3')
+	const multicallReturnData: { success: boolean, returnData: string }[] = IMulticall3.decodeFunctionResult('aggregate3', dataStringWith0xStart(aggregate3CallResult.returnValue))[0]
+	
+	if (multicallReturnData.length !== balanceQueries.length) throw Error('Got wrong number of balances back')
+	return multicallReturnData.map((singleCallResult, callIndex) => {
+		const balanceQuery = balanceQueries[callIndex]
+		if (balanceQuery === undefined) throw new Error('aggregate3 failed to get eth balance')
 		return {
-			token: balance.token,
-			tokenId: 'tokenId' in balance ? balance.tokenId : undefined,
-			owner: balance.owner,
-			balance: balanceResponse.statusCode === 'success' ? bytesToUnsigned(balanceResponse.returnValue) : undefined
+			token: balanceQuery.token,
+			tokenId: 'tokenId' in balanceQuery ? balanceQuery.tokenId : undefined,
+			owner: balanceQuery.owner,
+			balance: singleCallResult.success ? EthereumQuantity.parse(singleCallResult.returnData) : undefined
 		}
 	})
 }
@@ -843,23 +857,23 @@ const getTokenBalancesAfter = async (
 	multicallResult: MulticallResponse,
 	blockNumber: bigint,
 ) => {
-	const tokenBalancesAfter: TokenBalancesAfter[] = []
+	const tokenBalancesAfter: Promise<TokenBalancesAfter>[] = []
 	for (let resultIndex = 0; resultIndex < multicallResult.length; resultIndex++) {
 		const singleResult = multicallResult[resultIndex]
 		if (singleResult === undefined) throw new Error('singleResult was undefined')
 		const events = singleResult.statusCode === 'success' ? singleResult.events : []
 		const erc20sAddresses: BalanceQuery[] = getAddressesInteractedWithErc20s(events)
 		const erc1155AddressIds: BalanceQuery[] = getAddressesAndTokensIdsInteractedWithErc1155s(events)
-		const balances = await getSimulatedTokenBalances(
+		const balancesPromises = getSimulatedTokenBalances(
 			ethereumClientService,
 			signedTxs.slice(0, resultIndex + 1),
 			signedMessages,
 			erc20sAddresses.concat(erc1155AddressIds),
 			blockNumber
 		)
-		tokenBalancesAfter.push(balances)
+		tokenBalancesAfter.push(balancesPromises)
 	}
-	return tokenBalancesAfter
+	return await Promise.all(tokenBalancesAfter)
 }
 
 export const appendSignedMessage = async (ethereumClientService: EthereumClientService, simulationState: SimulationState | undefined, signedMessage: SignedMessageTransaction): Promise<SimulationState> => {
