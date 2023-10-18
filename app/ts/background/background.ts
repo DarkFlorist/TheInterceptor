@@ -97,25 +97,26 @@ export async function updateSimulationState(ethereum: EthereumClientService, get
 		} else {
 			await updateSimulationResults({ ...simulationResults, simulationId, simulationUpdatingState: 'updating' })
 		}
-		await sendPopupMessageToOpenWindows({ method: 'popup_simulation_state_changed', data: { simulationId } })
+		const changedMessagePromise = sendPopupMessageToOpenWindows({ method: 'popup_simulation_state_changed', data: { simulationId } })
 		try {
 			const updatedSimulationState = await getUpdatedSimulationState(simulationResults.simulationState)
 			const doneState = { simulationUpdatingState: 'done' as const, simulationResultState: 'done' as const, simulationId, activeAddress }
-			updatedSimulationState !== undefined ? 
+			if (updatedSimulationState !== undefined) { 
+				await updateSimulationResults({ ...await visualizeSimulatorState(updatedSimulationState, ethereum), ...doneState })
+			} else {
 				await updateSimulationResults({
-					...await visualizeSimulatorState(updatedSimulationState, ethereum),
 					...doneState,
+					addressBookEntries: [],
+					tokenPrices: [],
+					visualizerResults: [],
+					protectors: [],
+					namedTokenIds: [],
+					simulationState: updatedSimulationState,
+					simulatedAndVisualizedTransactions: [],
+					visualizedPersonalSignRequests: [],
 				})
-			: await updateSimulationResults({...doneState,
-				addressBookEntries: [],
-				tokenPrices: [],
-				visualizerResults: [],
-				protectors: [],
-				namedTokenIds: [],
-				simulationState: updatedSimulationState,
-				simulatedAndVisualizedTransactions: [],
-				visualizedPersonalSignRequests: [],
-			})
+			}
+			await changedMessagePromise
 			await sendPopupMessageToOpenWindows({ method: 'popup_simulation_state_changed', data: { simulationId } })
 			return updatedSimulationState
 		} catch (error) {

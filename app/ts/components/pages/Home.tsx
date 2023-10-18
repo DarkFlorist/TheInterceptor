@@ -311,7 +311,7 @@ export function Home(param: HomeParams) {
 	}
 
 	async function removeSignedMessage(message: VisualizedPersonalSignRequest) {
-		setRemovedSignedMessages((messaeg) => messaeg.concat(message.request.uniqueRequestIdentifier))
+		setRemovedSignedMessages((messages) => messages.concat(message.request.uniqueRequestIdentifier))
 		return await sendPopupMessageToBackgroundPage({ method: 'popup_removeSignedMessage', data: message.request.uniqueRequestIdentifier })
 	}
 
