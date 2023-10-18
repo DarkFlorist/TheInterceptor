@@ -192,7 +192,7 @@ type TransactionsAndSignedMessagesParams = {
 
 export function TransactionsAndSignedMessages(param: TransactionsAndSignedMessagesParams) {
 	const transactions = param.simulationAndVisualisationResults.simulatedAndVisualizedTransactions.filter((tx) => !param.removedTransactionHashes.includes(tx.transaction.hash))
-	const messages = param.simulationAndVisualisationResults.visualizedPersonalSignRequests.filter((message) => !includesWithComparator(param.removedSignedMessages, message.request.uniqueRequestIdentifier, (a,b) => doesUniqueRequestIdentifiersMatch(a,b)))
+	const messages = param.simulationAndVisualisationResults.visualizedPersonalSignRequests.filter((message) => !includesWithComparator(param.removedSignedMessages, message.request.uniqueRequestIdentifier, (a, b) => doesUniqueRequestIdentifiersMatch(a, b)))
 	const transactionsAndMessages: readonly (VisualizedPersonalSignRequest | SimulatedAndVisualizedTransaction)[] = [...messages, ...transactions].sort((n1, n2) => n1.created.getTime() - n2.created.getTime())
 	return <ul>
 		{ transactionsAndMessages.map((simTx, _index) => (
