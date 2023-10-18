@@ -19,6 +19,8 @@ import { noNewBlockForOverTwoMins } from '../../background/iconHandler.js'
 import { ActiveAddress } from '../../types/addressBookTypes.js'
 import { SignerName } from '../../types/signerTypes.js'
 import { RpcEntries, RpcEntry, RpcNetwork } from '../../types/rpc.js'
+import { VisualizedPersonalSignRequest } from '../../types/personal-message-definitions.js'
+import { UniqueRequestIdentifier } from '../../utils/requests.js'
 
 async function enableMakeMeRich(enabled: boolean) {
 	sendPopupMessageToBackgroundPage( { method: 'popup_changeMakeMeRich', data: enabled } )
@@ -183,11 +185,13 @@ function SimulationResults(param: SimulationStateParam) {
 			<TransactionsAndSignedMessages
 				simulationAndVisualisationResults = { param.simulationAndVisualisationResults }
 				removeTransaction = { param.removeTransaction }
+				removeSignedMessage = { param.removeSignedMessage }
 				activeAddress = { param.simulationAndVisualisationResults.activeAddress }
 				renameAddressCallBack = { param.renameAddressCallBack }
-				removeTransactionHashes = { param.removeTransactionHashes }
+				removedTransactionHashes = { param.removedTransactionHashes }
+				removedSignedMessages = { param.removedSignedMessages }
 			/>
-			{ param.removeTransactionHashes.length > 0
+			{ param.removedTransactionHashes.length > 0
 				? <></>
 				: <SimulationSummary
 					simulationAndVisualisationResults = { param.simulationAndVisualisationResults }
@@ -238,7 +242,8 @@ export function Home(param: HomeParams) {
 	const [activeAddresses, setActiveAddresss] = useState<readonly ActiveAddress[] | undefined>(undefined)
 	const [makeMeRich, setMakeMeRich] = useState<boolean>(false)
 	const [disableReset, setDisableReset] = useState<boolean>(false)
-	const [removeTransactionHashes, setRemoveTransactionHashes] = useState<bigint[]>([])
+	const [removedTransactionHashes, setRemovedTransactionHashes] = useState<readonly bigint[]>([])
+	const [removedSignedMessages, setRemovedSignedMessages] = useState<readonly UniqueRequestIdentifier[]>([])
 	const [rpcConnectionStatus, setRpcConnectionStatus] = useState<RpcConnectionStatus>(undefined)
 	const [rpcEntries, setRPCEntries] = useState<RpcEntries>([])
 	const [simulationUpdatingState, setSimulationUpdatingState] = useState<SimulationUpdatingState | undefined>(undefined)
@@ -259,7 +264,8 @@ export function Home(param: HomeParams) {
 		setLoaded(true)
 		setMakeMeRich(param.makeMeRich)
 		setDisableReset(false)
-		setRemoveTransactionHashes([])
+		setRemovedTransactionHashes([])
+		setRemovedSignedMessages([])
 		setRpcConnectionStatus(param.rpcConnectionStatus)
 		setRPCEntries(param.rpcEntries)
 		setSimulationUpdatingState(param.simulationUpdatingState)
@@ -296,12 +302,17 @@ export function Home(param: HomeParams) {
 	}
 
 	async function removeTransaction(tx: SimulatedAndVisualizedTransaction) {
-		setRemoveTransactionHashes((hashes) => hashes.concat(tx.transaction.hash))
+		setRemovedTransactionHashes((hashes) => hashes.concat(tx.transaction.hash))
 		if (identifyTransaction(tx).type === 'MakeYouRichTransaction') {
 			return await enableMakeMeRich(false)
 		} else {
 			return await sendPopupMessageToBackgroundPage({ method: 'popup_removeTransaction', data: tx.transaction.hash })
 		}
+	}
+
+	async function removeSignedMessage(message: VisualizedPersonalSignRequest) {
+		setRemovedSignedMessages((messaeg) => messaeg.concat(message.request.uniqueRequestIdentifier))
+		return await sendPopupMessageToBackgroundPage({ method: 'popup_removeSignedMessage', data: message.request.uniqueRequestIdentifier })
 	}
 
 	if (!isLoaded) return <></>
@@ -348,11 +359,13 @@ export function Home(param: HomeParams) {
 			: <SimulationResults
 				simulationAndVisualisationResults = { simulationAndVisualisationResults }
 				removeTransaction = { removeTransaction }
+				removeSignedMessage = { removeSignedMessage }
 				disableReset = { disableReset }
 				resetSimulation = { resetSimulation }
 				currentBlockNumber = { currentBlockNumber }
 				renameAddressCallBack = { param.renameAddressCallBack }
-				removeTransactionHashes = { removeTransactionHashes }
+				removedTransactionHashes = { removedTransactionHashes }
+				removedSignedMessages = { removedSignedMessages }
 				rpcConnectionStatus = { rpcConnectionStatus }
 				simulationUpdatingState = { simulationUpdatingState }
 				simulationResultState = { simulationResultState }

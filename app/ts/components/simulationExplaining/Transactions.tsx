@@ -16,6 +16,8 @@ import { CatchAllVisualizer, tokenEventToTokenSymbolParams } from './customExpla
 import { AddressBookEntry } from '../../types/addressBookTypes.js'
 import { SignatureCard } from '../pages/PersonalSign.js'
 import { VisualizedPersonalSignRequest } from '../../types/personal-message-definitions.js'
+import { UniqueRequestIdentifier, doesUniqueRequestIdentifiersMatch } from '../../utils/requests.js'
+import { includesWithComparator } from '../../utils/typed-arrays.js'
 
 function isPositiveEvent(visResult: TokenVisualizerResultWithMetadata, ourAddressInReferenceFrame: bigint) {
 	if (visResult.type === 'ERC20') {
@@ -179,16 +181,19 @@ export function Transaction(param: TransactionVisualizationParameters) {
 }
 
 type TransactionsAndSignedMessagesParams = {
-	simulationAndVisualisationResults: SimulationAndVisualisationResults,
-	removeTransaction: (tx: SimulatedAndVisualizedTransaction) => void,
-	activeAddress: bigint,
-	renameAddressCallBack: RenameAddressCallBack,
-	removeTransactionHashes: bigint[],
+	simulationAndVisualisationResults: SimulationAndVisualisationResults
+	removeTransaction: (tx: SimulatedAndVisualizedTransaction) => void
+	removeSignedMessage: (message: VisualizedPersonalSignRequest) => void
+	activeAddress: bigint
+	renameAddressCallBack: RenameAddressCallBack
+	removedTransactionHashes: readonly bigint[]
+	removedSignedMessages: readonly UniqueRequestIdentifier[]
 }
 
 export function TransactionsAndSignedMessages(param: TransactionsAndSignedMessagesParams) {
-	const transactions = param.simulationAndVisualisationResults.simulatedAndVisualizedTransactions.filter((tx) => !param.removeTransactionHashes.includes(tx.transaction.hash))
-	const transactionsAndMessages: readonly (VisualizedPersonalSignRequest | SimulatedAndVisualizedTransaction)[] = [...param.simulationAndVisualisationResults.visualizedPersonalSignRequests, ...transactions].sort((n1, n2) => n1.created.getTime() - n2.created.getTime())
+	const transactions = param.simulationAndVisualisationResults.simulatedAndVisualizedTransactions.filter((tx) => !param.removedTransactionHashes.includes(tx.transaction.hash))
+	const messages = param.simulationAndVisualisationResults.visualizedPersonalSignRequests.filter((message) => !includesWithComparator(param.removedSignedMessages, message.request.uniqueRequestIdentifier, (a,b) => doesUniqueRequestIdentifiersMatch(a,b)))
+	const transactionsAndMessages: readonly (VisualizedPersonalSignRequest | SimulatedAndVisualizedTransaction)[] = [...messages, ...transactions].sort((n1, n2) => n1.created.getTime() - n2.created.getTime())
 	return <ul>
 		{ transactionsAndMessages.map((simTx, _index) => (
 			<li>
@@ -196,6 +201,7 @@ export function TransactionsAndSignedMessages(param: TransactionsAndSignedMessag
 					<SignatureCard
 						VisualizedPersonalSignRequest = { simTx }
 						renameAddressCallBack = { param.renameAddressCallBack }
+						removeSignedMessage = { param.removeSignedMessage }
 					/>
 				</> : <>
 					<Transaction
