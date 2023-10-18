@@ -19,6 +19,7 @@ import { replyToInterceptedRequest } from './messageSending.js'
 import { assertNever } from '../utils/typescript.js'
 import { ICON_NOT_ACTIVE } from '../utils/constants.js'
 import { connectedToSigner, ethAccountsReply, signerChainChanged, walletSwitchEthereumChainReply } from './providerMessageHandlers.js'
+import { printError } from '../utils/errors.js'
 
 const websiteTabConnections = new Map<number, TabConnection>()
 
@@ -147,7 +148,11 @@ async function newBlockAttemptCallback(blockheader: EthereumBlockHeader, ethereu
 	await sendPopupMessageToOpenWindows({ method: 'popup_new_block_arrived', data: { rpcConnectionStatus } })
 	if (isNewBlock) {
 		const settings = await getSettings()
-		await sendSubscriptionMessagesForNewBlock(blockheader.number, ethereumClientService, settings.simulationMode ? await refreshSimulation(simulator, ethereumClientService, settings) : undefined, websiteTabConnections)
+		try {
+			await sendSubscriptionMessagesForNewBlock(blockheader.number, ethereumClientService, settings.simulationMode ? await refreshSimulation(simulator, ethereumClientService, settings) : undefined, websiteTabConnections)
+		} catch(error) {
+			printError(error)
+		}
 	}
 }
 
