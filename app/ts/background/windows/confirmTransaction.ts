@@ -33,7 +33,7 @@ export async function updateConfirmTransactionViewWithPendingTransaction() {
 	return false
 }
 
-async function updateConfirmTransactionViewWithPendingTransactionOrClose() {
+export async function updateConfirmTransactionViewWithPendingTransactionOrClose() {
 	if (await updateConfirmTransactionViewWithPendingTransaction() === true) return
 	if (openedDialog) await closePopupOrTab(openedDialog)
 	openedDialog = undefined
@@ -42,8 +42,8 @@ async function updateConfirmTransactionViewWithPendingTransactionOrClose() {
 export async function resolvePendingTransaction(simulator: Simulator, websiteTabConnections: WebsiteTabConnections, confirmation: TransactionConfirmation) {
 	const pending = pendingTransactions.get(getUniqueRequestIdentifierString(confirmation.data.uniqueRequestIdentifier))
 	const pendingTransaction = await removePendingTransaction(confirmation.data.uniqueRequestIdentifier)
-	if (pendingTransaction === undefined) throw new Error('Failed to find pending transaction')
 	await updateConfirmTransactionViewWithPendingTransactionOrClose()
+	if (pendingTransaction === undefined) return
 	if (pending) {
 		return pending.resolve(confirmation)
 	} else {
@@ -180,11 +180,12 @@ export async function openConfirmTransactionDialog(
 				return await openPopupOrTab({ url: getHtmlFile('confirmTransaction'), type: 'popup', height: 800, width: 600 })
 			}
 			const refreshSimulationPromise = refreshConfirmTransactionSimulation(simulator, ethereumClientService, activeAddress, simulationMode, request.uniqueRequestIdentifier, transactionToSimulate)
-			if (!justAddToPending) openedDialog = await openDialog()
+			if (!justAddToPending || openedDialog === undefined) openedDialog = await openDialog()
 			if (openedDialog?.windowOrTab.id === undefined) return false
 			await appendPendingTransaction({
 				dialogId: openedDialog.windowOrTab.id,
-				request,
+				request: transactionParams,
+				uniqueRequestIdentifier: request.uniqueRequestIdentifier,
 				simulationMode,
 				activeAddress,
 				transactionToSimulate,

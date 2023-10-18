@@ -38,9 +38,9 @@ export async function appendPendingTransaction(promise: PendingTransaction) {
 export async function removePendingTransaction(uniqueRequestIdentifier: UniqueRequestIdentifier) {
 	return await pendingTransactionsSemaphore.execute(async () => {
 		const promises = await getPendingTransactions()
-		const foundPromise = promises.find((promise) => doesUniqueRequestIdentifiersMatch(promise.request.uniqueRequestIdentifier, uniqueRequestIdentifier))
+		const foundPromise = promises.find((promise) => doesUniqueRequestIdentifiersMatch(promise.uniqueRequestIdentifier, uniqueRequestIdentifier))
 		if (foundPromise !== undefined) {
-			const filteredPromises = promises.filter((promise) => !doesUniqueRequestIdentifiersMatch(promise.request.uniqueRequestIdentifier, uniqueRequestIdentifier))
+			const filteredPromises = promises.filter((promise) => !doesUniqueRequestIdentifiersMatch(promise.uniqueRequestIdentifier, uniqueRequestIdentifier))
 			await browserStorageLocalSet({ transactionsPendingForUserConfirmation: filteredPromises })
 		}
 		return foundPromise

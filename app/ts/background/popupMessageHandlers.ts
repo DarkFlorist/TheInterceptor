@@ -2,8 +2,8 @@ import { changeActiveAddressAndChainAndResetSimulation, changeActiveRpc, getPrep
 import { getSettings, setUseTabsInsteadOfPopup, setMakeMeRich, setPage, setUseSignersAddressAsActiveAddress, updateActiveAddresses, updateContacts, updateWebsiteAccess, exportSettingsAndAddressBook, importSettingsAndAddressBook, getMakeMeRich, getUseTabsInsteadOfPopup, getMetamaskCompatibilityMode, setMetamaskCompatibilityMode } from './settings.js'
 import { getPendingTransactions, getCurrentTabId, getOpenedAddressBookTabId, getTabState, saveCurrentTabId, setOpenedAddressBookTabId, setRpcList, getRpcList, getPrimaryRpcForChain, getSignerName, getRpcConnectionStatus, updateUserAddressBookEntries, getSimulationResults } from './storageVariables.js'
 import { Simulator } from '../simulation/simulator.js'
-import { ChangeActiveAddress, ChangeMakeMeRich, ChangePage, RemoveTransaction, RequestAccountsFromSigner, TransactionConfirmation, InterceptorAccess, ChangeInterceptorAccess, ChainChangeConfirmation, EnableSimulationMode, ChangeActiveChain, AddOrEditAddressBookEntry, GetAddressBookData, RemoveAddressBookEntry, RefreshConfirmTransactionDialogSimulation, InterceptorAccessRefresh, InterceptorAccessChangeAddress, Settings, RefreshConfirmTransactionMetadata, RefreshInterceptorAccessMetadata, ChangeSettings, ImportSettings, SetRpcList, IdentifyAddress, FindAddressBookEntryWithSymbolOrName, PersonalSignApproval, UpdateHomePage } from '../types/interceptor-messages.js'
-import { formEthSendTransaction, formSendRawTransaction, resolvePendingTransaction } from './windows/confirmTransaction.js'
+import { ChangeActiveAddress, ChangeMakeMeRich, ChangePage, RemoveTransaction, RequestAccountsFromSigner, TransactionConfirmation, InterceptorAccess, ChangeInterceptorAccess, ChainChangeConfirmation, EnableSimulationMode, ChangeActiveChain, AddOrEditAddressBookEntry, GetAddressBookData, RemoveAddressBookEntry, InterceptorAccessRefresh, InterceptorAccessChangeAddress, Settings, RefreshConfirmTransactionMetadata, RefreshInterceptorAccessMetadata, ChangeSettings, ImportSettings, SetRpcList, IdentifyAddress, FindAddressBookEntryWithSymbolOrName, PersonalSignApproval, UpdateHomePage } from '../types/interceptor-messages.js'
+import { formEthSendTransaction, formSendRawTransaction, resolvePendingTransaction, updateConfirmTransactionViewWithPendingTransactionOrClose } from './windows/confirmTransaction.js'
 import { resolvePersonalSign } from './windows/personalSign.js'
 import { getAddressMetadataForAccess, requestAddressChange, resolveInterceptorAccess } from './windows/interceptorAccess.js'
 import { resolveChainChange } from './windows/changeChain.js'
@@ -17,7 +17,6 @@ import { WebsiteTabConnections } from '../types/user-interface-types.js'
 import { EthereumClientService } from '../simulation/services/EthereumClientService.js'
 import { refreshSimulationState, removeTransactionAndUpdateTransactionNonces, resetSimulationState } from '../simulation/services/SimulationModeEthereumClientService.js'
 import { formSimulatedAndVisualizedTransaction } from '../components/formVisualizerResults.js'
-import { doesUniqueRequestIdentifiersMatch } from '../utils/requests.js'
 import { CompleteVisualizedSimulation, SimulationState } from '../types/visualizer-types.js'
 import { ExportedSettings } from '../types/exportedSettingsTypes.js'
 import { isJSON } from '../utils/json.js'
@@ -188,7 +187,6 @@ export async function refreshPopupConfirmTransactionMetadata(ethereumClientServi
 	const addressBookEntries = await getAddressBookEntriesForVisualiser(ethereumClientService, data.visualizerResults, data.simulationState, userAddressBook)
 	const namedTokenIds = await nameTokenIds(ethereumClientService, data.visualizerResults)
 	const promises = await getPendingTransactions()
-	if (promises.length === 0) return
 	const first = promises[0]
 	if (first === undefined || first.simulationResults === undefined || first.simulationResults.statusCode !== 'success') return
 	return await sendPopupMessageToOpenWindows({
@@ -207,14 +205,12 @@ export async function refreshPopupConfirmTransactionMetadata(ethereumClientServi
 	})
 }
 
-export async function refreshPopupConfirmTransactionSimulation(simulator: Simulator, ethereumClientService: EthereumClientService, { data }: RefreshConfirmTransactionDialogSimulation) {
-	const transactionToSimulate = data.originalRequestParameters.method === 'eth_sendTransaction' ? await formEthSendTransaction(ethereumClientService, data.activeAddress, data.simulationMode, data.website, data.originalRequestParameters, data.created) : await formSendRawTransaction(ethereumClientService, data.originalRequestParameters, data.website, data.created)
+export async function refreshPopupConfirmTransactionSimulation(simulator: Simulator, ethereumClientService: EthereumClientService) {
 	const promises = await getPendingTransactions()
-	if (promises.length === 0) return
 	const first = promises[0]
-	if (first === undefined) throw new Error('first was undefined')
-	if (!doesUniqueRequestIdentifiersMatch(first.request.uniqueRequestIdentifier, data.uniqueRequestIdentifier)) throw new Error('request id\'s do not match in refreshPopupConfirmTransactionSimulation')
-	const refreshMessage = await refreshConfirmTransactionSimulation(simulator, ethereumClientService, data.activeAddress, data.simulationMode, data.uniqueRequestIdentifier, transactionToSimulate)
+	if (first === undefined) return await updateConfirmTransactionViewWithPendingTransactionOrClose()
+	const transactionToSimulate = first.request.method === 'eth_sendTransaction' ? await formEthSendTransaction(ethereumClientService, first.activeAddress, first.simulationMode, first.transactionToSimulate.website, first.request, first.created) : await formSendRawTransaction(ethereumClientService, first.request, first.transactionToSimulate.website, first.created)
+	const refreshMessage = await refreshConfirmTransactionSimulation(simulator, ethereumClientService, first.activeAddress, first.simulationMode, first.uniqueRequestIdentifier, transactionToSimulate)
 	if ('error' in transactionToSimulate) {
 		return await sendPopupMessageToOpenWindows({
 			method: 'popup_update_confirm_transaction_dialog',

@@ -6,6 +6,7 @@ import { SignerName } from './signerTypes.js'
 import { InterceptedRequest, UniqueRequestIdentifier, WebsiteSocket } from '../utils/requests.js'
 import { NamedTokenId, ProtectorResults, SimulatedAndVisualizedTransaction, SimulationState, TokenPriceEstimate, VisualizerResult, WebsiteCreatedEthereumUnsignedTransaction } from './visualizer-types.js'
 import { VisualizedPersonalSignRequest } from './personal-message-definitions.js'
+import { SendRawTransactionParams, SendTransactionParams } from './JsonRpc-types.js'
 
 export type PendingAccessRequest = funtypes.Static<typeof PendingAccessRequest>
 export const PendingAccessRequest = funtypes.ReadonlyObject({
@@ -74,7 +75,8 @@ export const ConfirmTransactionTransactionSingleVisualization = funtypes.Union(C
 export type PendingTransaction = funtypes.Static<typeof PendingTransaction>
 export const PendingTransaction = funtypes.ReadonlyObject({
 	dialogId: funtypes.Number,
-	request: InterceptedRequest,
+	request: funtypes.Union(SendTransactionParams, SendRawTransactionParams),
+	uniqueRequestIdentifier: UniqueRequestIdentifier,
 	simulationMode: funtypes.Boolean,
 	activeAddress: EthereumAddress,
 	created: EthereumTimestamp,

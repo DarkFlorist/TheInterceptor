@@ -1,6 +1,6 @@
 import * as funtypes from 'funtypes'
 import { PendingChainChangeConfirmationPromise, RpcConnectionStatus, TabIconDetails } from './user-interface-types.js'
-import { EthereumAddress, EthereumBlockHeaderWithTransactionHashes, EthereumBytes32, EthereumData, EthereumQuantity, EthereumSignedTransactionWithBlockData, EthereumTimestamp, NonHexBigInt, OptionalEthereumAddress } from './wire-types.js'
+import { EthereumAddress, EthereumBlockHeaderWithTransactionHashes, EthereumBytes32, EthereumData, EthereumQuantity, EthereumSignedTransactionWithBlockData, NonHexBigInt, OptionalEthereumAddress } from './wire-types.js'
 import { CompleteVisualizedSimulation } from './visualizer-types.js'
 import { VisualizedPersonalSignRequest } from './personal-message-definitions.js'
 import { UniqueRequestIdentifier, WebsiteSocket } from '../utils/requests.js'
@@ -429,14 +429,7 @@ export const RefreshPersonalSignMetadata = funtypes.ReadonlyObject({
 export type RefreshConfirmTransactionDialogSimulation = funtypes.Static<typeof RefreshConfirmTransactionDialogSimulation>
 export const RefreshConfirmTransactionDialogSimulation = funtypes.ReadonlyObject({
 	method: funtypes.Literal('popup_refreshConfirmTransactionDialogSimulation'),
-	data: funtypes.ReadonlyObject({
-		uniqueRequestIdentifier: UniqueRequestIdentifier,
-		activeAddress: EthereumAddress,
-		simulationMode: funtypes.Boolean,
-		originalRequestParameters: funtypes.Union(SendTransactionParams, SendRawTransactionParams),
-		website: Website,
-		created: EthereumTimestamp,
-	})
+	data: funtypes.ReadonlyObject({})
 }).asReadonly()
 
 export type UpdateConfirmTransactionDialog = funtypes.Static<typeof UpdateConfirmTransactionDialog>
