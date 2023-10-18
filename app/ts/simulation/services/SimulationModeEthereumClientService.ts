@@ -675,7 +675,7 @@ export const simulatedCall = async (ethereumClientService: EthereumClientService
 	return { result: callResult.returnValue }
 }
 
-export const getSignedMessagesWithFakeSigner = (simulationState: SimulationState | undefined) => {
+const getSignedMessagesWithFakeSigner = (simulationState: SimulationState | undefined) => {
 	return simulationState === undefined ? [] : simulationState.signedMessages.map((x) => ({ fakeSignedFor: x.fakeSignedFor, originalRequestParameters: x.originalRequestParameters }))
 }
 
