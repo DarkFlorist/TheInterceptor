@@ -137,35 +137,39 @@ export async function onContentScriptConnected(simulator: Simulator, port: brows
 }
 
 async function newBlockAttemptCallback(blockheader: EthereumBlockHeader, ethereumClientService: EthereumClientService, isNewBlock: boolean, simulator: Simulator) {
-	const rpcConnectionStatus = {
-		isConnected: true,
-		lastConnnectionAttempt: new Date(),
-		latestBlock: blockheader,
-		rpcNetwork: ethereumClientService.getRpcNetwork(),
-	}
-	await setRpcConnectionStatus(rpcConnectionStatus)
-	await updateExtensionBadge()
-	await sendPopupMessageToOpenWindows({ method: 'popup_new_block_arrived', data: { rpcConnectionStatus } })
-	if (isNewBlock) {
-		const settings = await getSettings()
-		try {
-			await sendSubscriptionMessagesForNewBlock(blockheader.number, ethereumClientService, settings.simulationMode ? await refreshSimulation(simulator, ethereumClientService, settings) : undefined, websiteTabConnections)
-		} catch(error) {
-			printError(error)
+	try {
+		const rpcConnectionStatus = {
+			isConnected: true,
+			lastConnnectionAttempt: new Date(),
+			latestBlock: blockheader,
+			rpcNetwork: ethereumClientService.getRpcNetwork(),
 		}
+		await setRpcConnectionStatus(rpcConnectionStatus)
+		await updateExtensionBadge()
+		await sendPopupMessageToOpenWindows({ method: 'popup_new_block_arrived', data: { rpcConnectionStatus } })
+		if (isNewBlock) {
+			const settings = await getSettings()
+			await sendSubscriptionMessagesForNewBlock(blockheader.number, ethereumClientService, settings.simulationMode ? await refreshSimulation(simulator, ethereumClientService, settings) : undefined, websiteTabConnections)
+		}
+	} catch(error) {
+		printError(error)
 	}
 }
 
 async function onErrorBlockCallback(ethereumClientService: EthereumClientService) {
-	const rpcConnectionStatus = {
-		isConnected: false,
-		lastConnnectionAttempt: new Date(),
-		latestBlock: ethereumClientService.getLastKnownCachedBlockOrUndefined(),
-		rpcNetwork: ethereumClientService.getRpcNetwork(),
+	try {
+		const rpcConnectionStatus = {
+			isConnected: false,
+			lastConnnectionAttempt: new Date(),
+			latestBlock: ethereumClientService.getLastKnownCachedBlockOrUndefined(),
+			rpcNetwork: ethereumClientService.getRpcNetwork(),
+		}
+		await setRpcConnectionStatus(rpcConnectionStatus)
+		await updateExtensionBadge()
+		return await sendPopupMessageToOpenWindows({ method: 'popup_failed_to_get_block', data: { rpcConnectionStatus } })
+	} catch(error) {
+		printError(error)
 	}
-	await setRpcConnectionStatus(rpcConnectionStatus)
-	await updateExtensionBadge()
-	return await sendPopupMessageToOpenWindows({ method: 'popup_failed_to_get_block', data: { rpcConnectionStatus } })
 }
 
 async function startup() {
