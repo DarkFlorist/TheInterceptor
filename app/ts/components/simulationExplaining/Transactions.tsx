@@ -299,19 +299,21 @@ type NonTokenLogEventParams = {
 	nonTokenLog: MulticallResponseEventLog
 }
 
-export function NonTokenLogEvent(params: NonTokenLogEventParams ) {
+export function NonTokenLogEvent(params: NonTokenLogEventParams) {
+	const cellStyle = 'align-items: normal;'
+	const textStyle = 'text-overflow: ellipsis; overflow: hidden;'
 	return <>
-		<div class = 'log-cell' style = 'align-items: normal;'>
-		<p class = 'paragraph' style = 'text-overflow: ellipsis; overflow: hidden;'> { checksummedAddress(params.nonTokenLog.loggersAddress) } </p>
+		<div class = 'log-cell' style = { cellStyle }>
+			<p class = 'paragraph' style = { textStyle }> { checksummedAddress(params.nonTokenLog.loggersAddress) } </p>
 		</div>
-		<div class = 'log-cell' style = 'align-items: normal;'>
-			<p class = 'paragraph' style = 'text-overflow: ellipsis; overflow: hidden;'> { dataStringWith0xStart(params.nonTokenLog.data) } </p>
+		<div class = 'log-cell' style = { cellStyle }>
+			<p class = 'paragraph' style = { textStyle }> { dataStringWith0xStart(params.nonTokenLog.data) } </p>
 		</div>
-		<div class = 'log-cell' style = 'align-items: normal;'>
+		<div class = 'log-cell' style = { cellStyle }>
 			<span class = 'log-table-1' style = 'justify-content: center; column-gap: 5px;'>
 				{ params.nonTokenLog.topics.map((topic) =>
-					<div class = 'log-cell' style = 'align-items: normal;'>
-						<p class = 'paragraph' style = 'text-overflow: ellipsis; overflow: hidden;'> { bytes32String(topic) }</p>
+					<div class = 'log-cell' style = { cellStyle }>
+						<p class = 'paragraph' style = { textStyle }> { bytes32String(topic) }</p>
 					</div>
 				) }
 			</span>
@@ -321,7 +323,7 @@ export function NonTokenLogEvent(params: NonTokenLogEventParams ) {
 
 export function NonTokenLogAnalysis(param: NonLogAnalysisParams) {
 	if (param.nonTokenLogs.length === 0) return <p class = 'paragraph'> No non-token events </p>
-	return <span class = 'log-table-3' style = 'justify-content: center; column-gap: 5px;'> 
+	return <span class = 'log-table-3' style = 'justify-content: center; column-gap: 5px; row-gap: 5px;'> 
 		{ param.nonTokenLogs.map((nonTokenLog) => <NonTokenLogEvent nonTokenLog = { nonTokenLog } />) }
 	</span>
 }
