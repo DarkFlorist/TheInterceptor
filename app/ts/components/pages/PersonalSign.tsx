@@ -26,12 +26,13 @@ import { TransactionCreated } from '../simulationExplaining/SimulationSummary.js
 type SignatureCardParams = {
 	VisualizedPersonalSignRequest: VisualizedPersonalSignRequest
 	renameAddressCallBack: RenameAddressCallBack
+	removeSignedMessage: ((message: VisualizedPersonalSignRequest) => void) | undefined
 }
 
 type SignatureHeaderParams = {
 	VisualizedPersonalSignRequest: VisualizedPersonalSignRequest
 	renameAddressCallBack: RenameAddressCallBack
-	removeSignature?: () => void,
+	removeSignedMessage: ((message: VisualizedPersonalSignRequest) => void) | undefined
 }
 
 function identifySignature(data: VisualizedPersonalSignRequest) {
@@ -88,6 +89,7 @@ function identifySignature(data: VisualizedPersonalSignRequest) {
 }
 
 function SignatureHeader(params: SignatureHeaderParams) {
+	const removeSignedMessage = params.removeSignedMessage
 	return <header class = 'card-header'>
 		<div class = 'card-header-icon unset-cursor'>
 			<span class = 'icon'>
@@ -97,11 +99,11 @@ function SignatureHeader(params: SignatureHeaderParams) {
 		<p class = 'card-header-title' style = 'white-space: nowrap;'>
 			{ identifySignature(params.VisualizedPersonalSignRequest).title }
 		</p>
-		<p class = 'card-header-icon unsetcursor' style = { `margin-left: auto; margin-right: 0; overflow: hidden; ${ params.removeSignature !== undefined ? 'padding: 0' : ''}` }>
+		<p class = 'card-header-icon unsetcursor' style = { `margin-left: auto; margin-right: 0; overflow: hidden; ${ params.removeSignedMessage !== undefined ? 'padding: 0' : ''}` }>
 			<WebsiteOriginText { ...params.VisualizedPersonalSignRequest.website } />
 		</p>
-		{ params.removeSignature !== undefined
-			? <button class = 'card-header-icon' aria-label = 'remove' onClick = { params.removeSignature }>
+		{ removeSignedMessage !== undefined
+			? <button class = 'card-header-icon' aria-label = 'remove' onClick = { () => removeSignedMessage(params.VisualizedPersonalSignRequest) }>
 				<span class = 'icon' style = 'color: var(--text-color);'> X </span>
 			</button>
 			: <></>
@@ -536,6 +538,7 @@ export function PersonalSign() {
 							<SignatureCard
 								VisualizedPersonalSignRequest = { VisualizedPersonalSignRequest }
 								renameAddressCallBack = { renameAddressCallBack }
+								removeSignedMessage = { undefined }
 							/>
 						</div>
 					</div>
