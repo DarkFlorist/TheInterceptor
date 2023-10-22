@@ -70,3 +70,13 @@ export const Erc1155ABI: InterfaceAbi = [
 	'function setApprovalForAll(address _operator, bool _approved) external',
 	'function isApprovedForAll(address _owner, address _operator) external view returns(bool)'
 ]
+
+export const CompoundGovernanceAbi: InterfaceAbi = [
+	'function timelock view returns (address)',
+	'function proposals(uint256 id) external view returns (uint256 id, address proposer, uint256 eta, uint256 startBlock, uint256 endBlock, uint256 forVotes, uint256 againstVotes, uint256 abstainVotes, bool canceled, bool executed)',
+	'function getActions(uint256 id) external view returns (address[] targets, uint256[] values, string[] signatures, bytes[] calldatas)',
+]
+
+export const CompoundTimeLock: InterfaceAbi = [
+	'function executeTransactions(address[] memory targets, uint[] memory values, string[] memory signatures, bytes[] memory datas, uint[] memory etas) public payable'
+]
