@@ -22,7 +22,7 @@ export async function main() {
 		} as const
 
 		should('mockSignTransaction should have r=0, s=0 and yParity = "even"', async () => {
-			const signed = await mockSignTransaction(exampleTransaction)
+			const signed = mockSignTransaction(exampleTransaction)
 			assert.equal(signed.type, '1559')
 			assert.equal(signed.r, 0n)
 			assert.equal(signed.s, 0n)
@@ -31,7 +31,7 @@ export async function main() {
 		})
 
 		should('ethers.recoverAddress should fail for mocked transaction', async () => {
-			const signed = EthereumSignedTransactionToSignedTransaction(await mockSignTransaction(exampleTransaction))
+			const signed = EthereumSignedTransactionToSignedTransaction(mockSignTransaction(exampleTransaction))
 			assert.equal(signed.type, '1559')
 			if (signed.type !== '1559') throw new Error('wrong transaction type')
 			const unsigned = EthereumUnsignedTransactionToUnsignedTransaction(exampleTransaction)

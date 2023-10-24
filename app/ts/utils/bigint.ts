@@ -171,3 +171,8 @@ export function max(left: bigint, right: bigint): bigint {
 export function abs(x: bigint): bigint {
 	return (x < 0n) ? -1n * x : x
 }
+
+export function isHexEncodedNumber(input: string): boolean {
+	const hexNumberRegex = /^(0x)?[0-9a-fA-F]+$/
+	return hexNumberRegex.test(input)
+}

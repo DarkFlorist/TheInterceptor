@@ -51,7 +51,7 @@ export async function main() {
 		minimized: true,
 		weth: 0xb4fbf271143f4fbf7b91a5ded31805e42b2208d6n,
 	}
-	const ethereum = new EthereumClientService(new MockEthereumJSONRpcRequestHandler(rpcNetwork), () => {}, () => {})
+	const ethereum = new EthereumClientService(new MockEthereumJSONRpcRequestHandler(rpcNetwork), async () => {}, async () => {})
 	const simulationState = {
 		prependTransactionsQueue: [],
 		simulatedTransactions: [],

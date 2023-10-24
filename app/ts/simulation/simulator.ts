@@ -66,10 +66,10 @@ export const runProtectorsForTransaction = async (simulationState: SimulationSta
 export class Simulator {
 	public ethereum: EthereumClientService
 
-	public constructor(rpcNetwork: RpcNetwork, newBlockAttemptCallback: (blockHeader: EthereumBlockHeader, ethereumClientService: EthereumClientService, isNewBlock: boolean, simulator: Simulator) => void, onErrorBlockCallback: (ethereumClientService: EthereumClientService) => void) {
+	public constructor(rpcNetwork: RpcNetwork, newBlockAttemptCallback: (blockHeader: EthereumBlockHeader, ethereumClientService: EthereumClientService, isNewBlock: boolean, simulator: Simulator) => Promise<void>, onErrorBlockCallback: (ethereumClientService: EthereumClientService) => Promise<void>) {
 		this.ethereum = new EthereumClientService(
 			new EthereumJSONRpcRequestHandler(rpcNetwork),
-			(blockHeader: EthereumBlockHeader, ethereumClientService: EthereumClientService, isNewBlock: boolean) => newBlockAttemptCallback(blockHeader, ethereumClientService, isNewBlock, this),
+			async (blockHeader: EthereumBlockHeader, ethereumClientService: EthereumClientService, isNewBlock: boolean) => await newBlockAttemptCallback(blockHeader, ethereumClientService, isNewBlock, this),
 			onErrorBlockCallback
 		)
 	}
