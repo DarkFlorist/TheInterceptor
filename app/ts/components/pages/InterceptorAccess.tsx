@@ -189,10 +189,6 @@ export function InterceptorAccess() {
 					setPendingRequestAddedNotification(true)
 				}
 				setAccessRequest(message.data)
-				const currentWindowId = (await browser.windows.getCurrent()).id
-				const currentTabId = (await browser.tabs.getCurrent()).id
-				if (currentWindowId === undefined) throw new Error('could not get current window Id!')
-				if (currentTabId === undefined) throw new Error('could not get current tab Id!')
 				return
 			}
 		}
