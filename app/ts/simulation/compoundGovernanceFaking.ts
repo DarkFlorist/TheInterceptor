@@ -63,7 +63,6 @@ export const simulateCompoundGovernanceExecution = async (ethereumClientService:
 		gas: 42000n,
 		chainId: ethereumClientService.getChainId(),
 		nonce: 0n,
-
 	}
 	const governanceContractCalls = await ethereumClientService.multicall([
 		{ // get timelock
@@ -88,7 +87,6 @@ export const simulateCompoundGovernanceExecution = async (ethereumClientService:
 	const [_id, _proposer, eta, _startBlock, _endBlock, _forVotes, _againstVotes, _abstainVotes, canceled, executed] = compoundGovernanceAbi.decodeFunctionResult('proposals', governanceContractCalls[1].returnValue)
 	if (governanceContractCalls[2] === undefined) throw new Error('getActions return value was undefined')
 	const [targets, values, signatures, calldatas] = compoundGovernanceAbi.decodeFunctionResult('getActions', governanceContractCalls[1].returnValue)
-
 
 	if (canceled || executed) throw new Error('Canceled or Executed already')
 
