@@ -213,20 +213,19 @@ export async function refreshPopupConfirmTransactionMetadata(ethereumClientServi
 }
 
 export async function refreshPopupConfirmTransactionSimulation(simulator: Simulator, ethereumClientService: EthereumClientService) {
-	const promises = await getPendingTransactions()
-	const first = promises[0]
-	if (first === undefined) return await updateConfirmTransactionViewWithPendingTransactionOrClose()
-	const transactionToSimulate = first.request.method === 'eth_sendTransaction' ? await formEthSendTransaction(ethereumClientService, first.activeAddress, first.simulationMode, first.transactionToSimulate.website, first.request, first.created) : await formSendRawTransaction(ethereumClientService, first.request, first.transactionToSimulate.website, first.created)
-	const refreshMessage = await refreshConfirmTransactionSimulation(simulator, ethereumClientService, first.activeAddress, first.simulationMode, first.uniqueRequestIdentifier, transactionToSimulate)
+	const [firstTxn, ...remainingTxns] = await getPendingTransactions()
+	if (firstTxn === undefined) return await updateConfirmTransactionViewWithPendingTransactionOrClose()
+	const transactionToSimulate = firstTxn.request.method === 'eth_sendTransaction' ? await formEthSendTransaction(ethereumClientService, firstTxn.activeAddress, firstTxn.simulationMode, firstTxn.transactionToSimulate.website, firstTxn.request, firstTxn.created) : await formSendRawTransaction(ethereumClientService, firstTxn.request, firstTxn.transactionToSimulate.website, firstTxn.created)
+	const refreshMessage = await refreshConfirmTransactionSimulation(simulator, ethereumClientService, firstTxn.activeAddress, firstTxn.simulationMode, firstTxn.uniqueRequestIdentifier, transactionToSimulate)
 	if ('error' in transactionToSimulate) {
 		return await sendPopupMessageToOpenWindows({
 			method: 'popup_update_confirm_transaction_dialog',
-			data: [{...first, transactionToSimulate, simulationResults: refreshMessage }, ...promises.slice(1)]
+			data: [{...firstTxn, transactionToSimulate, simulationResults: refreshMessage }, ...remainingTxns]
 		})
 	}
 	return await sendPopupMessageToOpenWindows({
 		method: 'popup_update_confirm_transaction_dialog',
-		data: [ {...first, transactionToSimulate, simulationResults: refreshMessage }, ...promises.slice(1)]
+		data: [ {...firstTxn, transactionToSimulate, simulationResults: refreshMessage }, ...remainingTxns]
 	})
 }
 
