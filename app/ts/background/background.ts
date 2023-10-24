@@ -4,7 +4,7 @@ import { Simulator, runProtectorsForTransaction, visualizeTransaction } from '..
 import { getEthDonator, getSignerName, getSimulationResults, updateSimulationResults, updateSimulationResultsWithCallBack } from './storageVariables.js'
 import { changeSimulationMode, getSettings, getMakeMeRich } from './settings.js'
 import { blockNumber, call, chainId, estimateGas, gasPrice, getAccounts, getBalance, getBlockByNumber, getCode, getLogs, getPermissions, getSimulationStack, getTransactionByHash, getTransactionCount, getTransactionReceipt, netVersion, personalSign, sendTransaction, subscribe, switchEthereumChain, unsubscribe, web3ClientVersion, getBlockByHash } from './simulationModeHanders.js'
-import { changeActiveAddress, changeMakeMeRich, changePage, resetSimulation, confirmDialog, refreshSimulation, removeTransaction, requestAccountsFromSigner, refreshPopupConfirmTransactionSimulation, confirmPersonalSign, confirmRequestAccess, changeInterceptorAccess, changeChainDialog, popupChangeActiveRpc, enableSimulationMode, addOrModifyAddressBookEntry, getAddressBookData, removeAddressBookEntry, openAddressBook, homeOpened, interceptorAccessChangeAddressOrRefresh, refreshPopupConfirmTransactionMetadata, changeSettings, importSettings, exportSettings, setNewRpcList, popupIdentifyAddress, popupFindAddressBookEntryWithSymbolOrName } from './popupMessageHandlers.js'
+import { changeActiveAddress, changeMakeMeRich, changePage, resetSimulation, confirmDialog, refreshSimulation, removeTransaction, requestAccountsFromSigner, refreshPopupConfirmTransactionSimulation, confirmPersonalSign, confirmRequestAccess, changeInterceptorAccess, changeChainDialog, popupChangeActiveRpc, enableSimulationMode, addOrModifyAddressBookEntry, getAddressBookData, removeAddressBookEntry, openAddressBook, homeOpened, interceptorAccessChangeAddressOrRefresh, refreshPopupConfirmTransactionMetadata, changeSettings, importSettings, exportSettings, setNewRpcList, popupIdentifyAddress, popupFindAddressBookEntryWithSymbolOrName, removeSignedMessage } from './popupMessageHandlers.js'
 import { ProtectorResults, SimulationState, VisualizerResult, WebsiteCreatedEthereumUnsignedTransaction } from '../types/visualizer-types.js'
 import { WebsiteTabConnections } from '../types/user-interface-types.js'
 import { interceptorAccessMetadataRefresh, requestAccessFromUser, updateInterceptorAccessViewWithPendingRequests } from './windows/interceptorAccess.js'
@@ -15,7 +15,7 @@ import { getActiveAddressEntry, getAddressBookEntriesForVisualiser, nameTokenIds
 import { sendPopupMessageToOpenWindows } from './backgroundUtils.js'
 import { assertUnreachable } from '../utils/typescript.js'
 import { EthereumClientService } from '../simulation/services/EthereumClientService.js'
-import { appendTransaction, copySimulationState, getNonPrependedSimulatedTransactions, getNonceFixedSimulatedTransactions, getWebsiteCreatedEthereumUnsignedTransactions, setPrependTransactionsQueue, setSimulationTransactions } from '../simulation/services/SimulationModeEthereumClientService.js'
+import { appendTransaction, copySimulationState, getNonPrependedSimulatedTransactions, getNonceFixedSimulatedTransactions, getWebsiteCreatedEthereumUnsignedTransactions, setPrependTransactionsQueue, setSimulationTransactionsAndSignedMessages } from '../simulation/services/SimulationModeEthereumClientService.js'
 import { Semaphore } from '../utils/semaphore.js'
 import { FetchResponseError, JsonRpcResponseError, isFailedToFetchError } from '../utils/errors.js'
 import { formSimulatedAndVisualizedTransaction } from '../components/formVisualizerResults.js'
@@ -97,25 +97,26 @@ export async function updateSimulationState(ethereum: EthereumClientService, get
 		} else {
 			await updateSimulationResults({ ...simulationResults, simulationId, simulationUpdatingState: 'updating' })
 		}
-		await sendPopupMessageToOpenWindows({ method: 'popup_simulation_state_changed', data: { simulationId } })
+		const changedMessagePromise = sendPopupMessageToOpenWindows({ method: 'popup_simulation_state_changed', data: { simulationId } })
 		try {
 			const updatedSimulationState = await getUpdatedSimulationState(simulationResults.simulationState)
 			const doneState = { simulationUpdatingState: 'done' as const, simulationResultState: 'done' as const, simulationId, activeAddress }
-			updatedSimulationState !== undefined ? 
+			if (updatedSimulationState !== undefined) { 
+				await updateSimulationResults({ ...await visualizeSimulatorState(updatedSimulationState, ethereum), ...doneState })
+			} else {
 				await updateSimulationResults({
-					...await visualizeSimulatorState(updatedSimulationState, ethereum),
 					...doneState,
+					addressBookEntries: [],
+					tokenPrices: [],
+					visualizerResults: [],
+					protectors: [],
+					namedTokenIds: [],
+					simulationState: updatedSimulationState,
+					simulatedAndVisualizedTransactions: [],
+					visualizedPersonalSignRequests: [],
 				})
-			: await updateSimulationResults({...doneState,
-				addressBookEntries: [],
-				tokenPrices: [],
-				visualizerResults: [],
-				protectors: [],
-				namedTokenIds: [],
-				simulationState: updatedSimulationState,
-				simulatedAndVisualizedTransactions: [],
-				visualizedPersonalSignRequests: [],
-			})
+			}
+			await changedMessagePromise
 			await sendPopupMessageToOpenWindows({ method: 'popup_simulation_state_changed', data: { simulationId } })
 			return updatedSimulationState
 		} catch (error) {
@@ -166,7 +167,7 @@ export async function refreshConfirmTransactionSimulation(
 			}
 		}
 		const noncefixedNotPrepended = getWebsiteCreatedEthereumUnsignedTransactions(getNonPrependedSimulatedTransactions(simulationStateWithNewTransaction.prependTransactionsQueue, noncefixed))
-		const nonceFixedState = await setSimulationTransactions(ethereumClientService, simulationStateWithNewTransaction, noncefixedNotPrepended)
+		const nonceFixedState = await setSimulationTransactionsAndSignedMessages(ethereumClientService, simulationStateWithNewTransaction, noncefixedNotPrepended, simulationStateWithNewTransaction.signedMessages)
 		const lastNonceFixed = noncefixed[noncefixed.length - 1]
 		if (lastNonceFixed === undefined) throw new Error('last nonce fixed was undefined')
 		return {
@@ -463,6 +464,7 @@ export async function popupMessageHandler(
 		case 'popup_requestAccountsFromSigner': return await requestAccountsFromSigner(websiteTabConnections, parsedRequest)
 		case 'popup_resetSimulation': return await resetSimulation(simulator, simulator.ethereum, settings)
 		case 'popup_removeTransaction': return await removeTransaction(simulator, simulator.ethereum, parsedRequest, settings)
+		case 'popup_removeSignedMessage': return await removeSignedMessage(simulator, simulator.ethereum, parsedRequest, settings)
 		case 'popup_refreshSimulation': return await refreshSimulation(simulator, simulator.ethereum, settings)
 		case 'popup_refreshConfirmTransactionDialogSimulation': return await refreshPopupConfirmTransactionSimulation(simulator, simulator.ethereum, parsedRequest)
 		case 'popup_refreshConfirmTransactionMetadata': return refreshPopupConfirmTransactionMetadata(simulator.ethereum, settings.userAddressBook, parsedRequest)

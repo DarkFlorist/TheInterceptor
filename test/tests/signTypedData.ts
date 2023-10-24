@@ -321,7 +321,7 @@ export async function main() {
 	}
 
 	
-	const ethereum = new EthereumClientService(new MockRequestHandler(), () => {}, () => {})
+	const ethereum = new EthereumClientService(new MockRequestHandler(), async () => {}, async () => {})
 
 	describe('EIP712', () => {
 		should('can parse EIP712 message', () => {
