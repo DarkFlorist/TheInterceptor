@@ -172,8 +172,8 @@ export function ConfirmTransaction() {
 				setPendingTransactionAddedNotification(true)
 				try {
 					const currentWindowId = (await browser.windows.getCurrent()).id
-					const currentTabId = (await browser.tabs.getCurrent()).id
 					if (currentWindowId === undefined) throw new Error('could not get current window Id!')
+					const currentTabId = (await browser.tabs.getCurrent()).id
 					if (currentTabId === undefined) throw new Error('could not get current tab Id!')
 					browser.windows.update(currentWindowId, { focused: true })
 					browser.tabs.update(currentTabId, { active: true })
