@@ -169,13 +169,18 @@ export function ConfirmTransaction() {
 			}
 			if (message.method === 'popup_confirm_transaction_dialog_pending_changed') {
 				updatePendingTransactions(message)
-				const currentWindowId = (await browser.windows.getCurrent()).id
-				const currentTabId = (await browser.tabs.getCurrent()).id
-				if (currentWindowId === undefined) throw new Error('could not get current window Id!')
-				if (currentTabId === undefined) throw new Error('could not get current tab Id!')
 				setPendingTransactionAddedNotification(true)
-				browser.windows.update(currentWindowId, { focused: true })
-				browser.tabs.update(currentTabId, { active: true })
+				try {
+					const currentWindowId = (await browser.windows.getCurrent()).id
+					if (currentWindowId === undefined) throw new Error('could not get current window Id!')
+					const currentTabId = (await browser.tabs.getCurrent()).id
+					if (currentTabId === undefined) throw new Error('could not get current tab Id!')
+					browser.windows.update(currentWindowId, { focused: true })
+					browser.tabs.update(currentTabId, { active: true })
+				} catch(e) {
+					console.warn('failed to focus window')
+					console.warn(e)
+				}
 				return
 			}
 			if (message.method !== 'popup_update_confirm_transaction_dialog') return
@@ -193,15 +198,15 @@ export function ConfirmTransaction() {
 		setPendingTransactionAddedNotification(false)
 		const currentWindow = await browser.windows.getCurrent()
 		if (currentWindow.id === undefined) throw new Error('could not get our own Id!')
-		if (pendingTransactions.length === 0) await tryFocusingTabOrWindow({ type: 'tab', id: currentPendingTransaction.request.uniqueRequestIdentifier.requestSocket.tabId })
-		await sendPopupMessageToBackgroundPage({ method: 'popup_confirmDialog', data: { uniqueRequestIdentifier: currentPendingTransaction.request.uniqueRequestIdentifier, accept: true, windowId: currentWindow.id } })
+		if (pendingTransactions.length === 0) await tryFocusingTabOrWindow({ type: 'tab', id: currentPendingTransaction.uniqueRequestIdentifier.requestSocket.tabId })
+		await sendPopupMessageToBackgroundPage({ method: 'popup_confirmDialog', data: { uniqueRequestIdentifier: currentPendingTransaction.uniqueRequestIdentifier, accept: true, windowId: currentWindow.id } })
 	}
 	async function reject() {
 		if (currentPendingTransaction === undefined) throw new Error('dialogState is not set')
 		setPendingTransactionAddedNotification(false)
 		const currentWindow = await browser.windows.getCurrent()
 		if (currentWindow.id === undefined) throw new Error('could not get our own Id!')
-		if (pendingTransactions.length === 0) await tryFocusingTabOrWindow({ type: 'tab', id: currentPendingTransaction.request.uniqueRequestIdentifier.requestSocket.tabId })
+		if (pendingTransactions.length === 0) await tryFocusingTabOrWindow({ type: 'tab', id: currentPendingTransaction.uniqueRequestIdentifier.requestSocket.tabId })
 		
 		const getPossibleErrorString = () => {
 			if (currentPendingTransaction.transactionToSimulate.error !== undefined) return currentPendingTransaction.transactionToSimulate.error.message
@@ -212,27 +217,20 @@ export function ConfirmTransaction() {
 		}
 		
 		await sendPopupMessageToBackgroundPage({ method: 'popup_confirmDialog', data: {
-			uniqueRequestIdentifier: currentPendingTransaction.request.uniqueRequestIdentifier,
+			uniqueRequestIdentifier: currentPendingTransaction.uniqueRequestIdentifier,
 			accept: false,
 			windowId: currentWindow.id,
 			transactionErrorString: getPossibleErrorString(),
 		} })
 	}
-	const refreshMetadata = () => {
+	const refreshMetadata = async () => {
 		// todo we should refresh metadata even if the resuls are failures
 		if (currentPendingTransaction === undefined || currentPendingTransaction.simulationResults === undefined || currentPendingTransaction.simulationResults.statusCode === 'failed') return
-		sendPopupMessageToBackgroundPage({ method: 'popup_refreshConfirmTransactionMetadata', data: currentPendingTransaction.simulationResults.data })
+		await sendPopupMessageToBackgroundPage({ method: 'popup_refreshConfirmTransactionMetadata', data: currentPendingTransaction.simulationResults.data })
 	}
-	const refreshSimulation = () => {
+	const refreshSimulation = async () => {
 		if (currentPendingTransaction === undefined) return
-		sendPopupMessageToBackgroundPage({ method: 'popup_refreshConfirmTransactionDialogSimulation', data: {
-			uniqueRequestIdentifier: currentPendingTransaction.request.uniqueRequestIdentifier,
-			activeAddress: currentPendingTransaction.activeAddress,
-			simulationMode: currentPendingTransaction.simulationMode,
-			originalRequestParameters: currentPendingTransaction.transactionToSimulate.originalRequestParameters,
-			website: currentPendingTransaction.transactionToSimulate.website,
-			created: currentPendingTransaction.created,
-		} })
+		await sendPopupMessageToBackgroundPage({ method: 'popup_refreshConfirmTransactionDialogSimulation', data: { } })
 	}
 
 	function isConfirmDisabled() {
