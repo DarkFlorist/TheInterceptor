@@ -32,3 +32,10 @@ export function isFailedToFetchError(error: Error) {
 	if (error.message.includes('Failed to fetch') || error.message.includes('NetworkError when attempting to fetch resource')) return true
 	return false
 }
+
+export function printError(error: unknown) {
+	if (error instanceof Error && 'data' in error) {
+		return console.error(`Error: ${ error.message }\n${ JSON.stringify(error.data) }`)
+	}
+	return console.error(error)
+}

@@ -17,12 +17,12 @@ export class EthereumClientService {
 	private cacheRefreshTimer: NodeJS.Timer | undefined = undefined
 	private lastCacheAccess: number = 0
 	private retrievingBlock: boolean = false
-	private newBlockAttemptCallback: (blockHeader: EthereumBlockHeader, ethereumClientService: EthereumClientService, isNewBlock: boolean) => void
-	private onErrorBlockCallback: (ethereumClientService: EthereumClientService) => void
+	private newBlockAttemptCallback: (blockHeader: EthereumBlockHeader, ethereumClientService: EthereumClientService, isNewBlock: boolean) => Promise<void>
+	private onErrorBlockCallback: (ethereumClientService: EthereumClientService) => Promise<void>
 	private requestHandler
 	private cleanedUp = false
 
-    constructor(requestHandler: IEthereumJSONRpcRequestHandler, newBlockAttemptCallback: (blockHeader: EthereumBlockHeader, ethereumClientService: EthereumClientService, isNewBlock: boolean) => void, onErrorBlockCallback: (ethereumClientService: EthereumClientService) => void) {
+    constructor(requestHandler: IEthereumJSONRpcRequestHandler, newBlockAttemptCallback: (blockHeader: EthereumBlockHeader, ethereumClientService: EthereumClientService, isNewBlock: boolean) => Promise<void>, onErrorBlockCallback: (ethereumClientService: EthereumClientService) => Promise<void>) {
 		this.requestHandler = requestHandler
 		this.newBlockAttemptCallback = newBlockAttemptCallback
 		this.onErrorBlockCallback = onErrorBlockCallback

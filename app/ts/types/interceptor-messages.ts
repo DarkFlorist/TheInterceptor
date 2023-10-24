@@ -292,6 +292,12 @@ export const RemoveTransaction = funtypes.ReadonlyObject({
 	data: EthereumQuantity,
 }).asReadonly()
 
+export type RemoveSignedMessage = funtypes.Static<typeof RemoveSignedMessage>
+export const RemoveSignedMessage = funtypes.ReadonlyObject({
+	method: funtypes.Literal('popup_removeSignedMessage'),
+	data: UniqueRequestIdentifier,
+}).asReadonly()
+
 export type ResetSimulation = funtypes.Static<typeof ResetSimulation>
 export const ResetSimulation = funtypes.ReadonlyObject({
 	method: funtypes.Literal('popup_resetSimulation')
@@ -613,6 +619,7 @@ export type PopupMessage = funtypes.Static<typeof PopupMessage>
 export const PopupMessage = funtypes.Union(
 	TransactionConfirmation,
 	RemoveTransaction,
+	RemoveSignedMessage,
 	ResetSimulation,
 	RefreshSimulation,
 	ChangeMakeMeRich,
