@@ -1,4 +1,4 @@
-import { EthereumAddress, EthereumBlockTag, EthereumBytes32, EthereumData, EthereumQuantity, EthereumQuantitySmall, EthereumTimestamp, EthereumUnsignedTransaction, LiteralConverterParserFactory, RevertErrorParser } from './wire-types.js'
+import { EthereumAccessList, EthereumAddress, EthereumBlockTag, EthereumBytes32, EthereumData, EthereumInput, EthereumQuantity, EthereumQuantitySmall, EthereumTimestamp, LiteralConverterParserFactory, RevertErrorParser } from './wire-types.js'
 import * as funtypes from 'funtypes'
 
 export type AccountOverrideState = funtypes.Static<typeof AccountOverrideState>
@@ -40,10 +40,30 @@ export const BlockOverride = funtypes.ReadonlyObject({
     baseFee: EthereumQuantity,
 })
 
+export type BlockCall = funtypes.Static<typeof BlockCall>
+export const BlockCall = funtypes.Partial({
+	type: funtypes.Union(
+		funtypes.Literal('0x0').withParser(LiteralConverterParserFactory('0x0', 'legacy' as const)),
+		funtypes.Literal(undefined).withParser(LiteralConverterParserFactory(undefined, 'legacy' as const)),
+		funtypes.Literal('0x1').withParser(LiteralConverterParserFactory('0x1', '2930' as const)), 
+		funtypes.Literal('0x2').withParser(LiteralConverterParserFactory('0x2', '1559' as const))
+	),
+	from: EthereumAddress,
+	nonce: EthereumQuantity,
+	maxFeePerGas: EthereumQuantity,
+	maxPriorityFeePerGas: EthereumQuantity,
+	gas: EthereumQuantity,
+	to: funtypes.Union(EthereumAddress, funtypes.Null),
+	value: EthereumQuantity,
+	input: EthereumInput,
+	chainId: EthereumQuantity,
+	accessList: EthereumAccessList,
+})
+
 export type BlockCalls = funtypes.Static<typeof BlockCalls>
 export const BlockCalls = funtypes.Intersect(
 	funtypes.ReadonlyObject({
-		calls: funtypes.ReadonlyArray(EthereumUnsignedTransaction),
+		calls: funtypes.ReadonlyArray(BlockCall),
 	}),
 	funtypes.ReadonlyPartial({
 		stateOverrides: funtypes.ReadonlyRecord(funtypes.String, AccountOverride),

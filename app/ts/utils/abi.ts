@@ -72,11 +72,13 @@ export const Erc1155ABI: InterfaceAbi = [
 ]
 
 export const CompoundGovernanceAbi: InterfaceAbi = [
-	'function timelock view returns (address)',
+	'function timelock() view returns (address)',
 	'function proposals(uint256 id) external view returns (uint256 id, address proposer, uint256 eta, uint256 startBlock, uint256 endBlock, uint256 forVotes, uint256 againstVotes, uint256 abstainVotes, bool canceled, bool executed)',
 	'function getActions(uint256 id) external view returns (address[] targets, uint256[] values, string[] signatures, bytes[] calldatas)',
+	'function submitVote(uint256 proposalId, bool support) external',
+	'function castVote(uint256 proposalId, uint8 support) external',
 ]
 
 export const CompoundTimeLock: InterfaceAbi = [
-	'function executeTransactions(address[] memory targets, uint[] memory values, string[] memory signatures, bytes[] memory datas, uint[] memory etas) public payable'
+	'function executeTransactions(address[] memory targets, uint[] memory values, string[] memory signatures, bytes[] memory datas, uint eta) public payable'
 ]

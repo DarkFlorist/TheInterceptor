@@ -234,7 +234,7 @@ export function identifyTransaction(simTx: SimulatedAndVisualizedTransaction): I
 		rejectAction: 'Reject Contract Execution',
 	}
 
-	const explanation = FourByteExplanations.get(fourByte)
+	const explanation = FourByteExplanations[fourByte]
 
 	if (explanation === undefined) {
 		return {

@@ -5,10 +5,10 @@ import { getEthDonator, getSignerName, getSimulationResults, updateSimulationRes
 import { changeSimulationMode, getSettings, getMakeMeRich } from './settings.js'
 import { blockNumber, call, chainId, estimateGas, gasPrice, getAccounts, getBalance, getBlockByNumber, getCode, getLogs, getPermissions, getSimulationStack, getTransactionByHash, getTransactionCount, getTransactionReceipt, netVersion, personalSign, sendTransaction, subscribe, switchEthereumChain, unsubscribe, web3ClientVersion, getBlockByHash } from './simulationModeHanders.js'
 import { changeActiveAddress, changeMakeMeRich, changePage, resetSimulation, confirmDialog, refreshSimulation, removeTransaction, requestAccountsFromSigner, refreshPopupConfirmTransactionSimulation, confirmPersonalSign, confirmRequestAccess, changeInterceptorAccess, changeChainDialog, popupChangeActiveRpc, enableSimulationMode, addOrModifyAddressBookEntry, getAddressBookData, removeAddressBookEntry, openAddressBook, homeOpened, interceptorAccessChangeAddressOrRefresh, refreshPopupConfirmTransactionMetadata, changeSettings, importSettings, exportSettings, setNewRpcList, popupIdentifyAddress, popupFindAddressBookEntryWithSymbolOrName, removeSignedMessage } from './popupMessageHandlers.js'
-import { ProtectorResults, SimulationState, VisualizerResult, WebsiteCreatedEthereumUnsignedTransaction } from '../types/visualizer-types.js'
+import { ProtectorResults, SimulatedTransaction, SimulationState, VisualizerResult, WebsiteCreatedEthereumUnsignedTransaction } from '../types/visualizer-types.js'
 import { WebsiteTabConnections } from '../types/user-interface-types.js'
 import { interceptorAccessMetadataRefresh, requestAccessFromUser, updateInterceptorAccessViewWithPendingRequests } from './windows/interceptorAccess.js'
-import { MAKE_YOU_RICH_TRANSACTION, METAMASK_ERROR_FAILED_TO_PARSE_REQUEST, METAMASK_ERROR_NOT_AUTHORIZED, METAMASK_ERROR_NOT_CONNECTED_TO_CHAIN } from '../utils/constants.js'
+import { FourByteExplanations, MAKE_YOU_RICH_TRANSACTION, METAMASK_ERROR_FAILED_TO_PARSE_REQUEST, METAMASK_ERROR_NOT_AUTHORIZED, METAMASK_ERROR_NOT_CONNECTED_TO_CHAIN } from '../utils/constants.js'
 import { PriceEstimator } from '../simulation/priceEstimator.js'
 import { sendActiveAccountChangeToApprovedWebsitePorts, sendMessageToApprovedWebsitePorts, updateWebsiteApprovalAccesses } from './accessManagement.js'
 import { getActiveAddressEntry, getAddressBookEntriesForVisualiser, nameTokenIds } from './metadataUtils.js'
@@ -30,6 +30,11 @@ import { Website } from '../types/websiteAccessTypes.js'
 import { ConfirmTransactionTransactionSingleVisualization } from '../types/accessRequest.js'
 import { RpcNetwork } from '../types/rpc.js'
 import { serialize } from '../types/wire-types.js'
+import { get4Byte } from '../utils/calldata.js'
+import { simulateCompoundGovernanceExecution } from '../simulation/compoundGovernanceFaking.js'
+import { Interface } from 'ethers'
+import { CompoundGovernanceAbi } from '../utils/abi.js'
+import { dataStringWith0xStart } from '../utils/bigint.js'
 
 async function updateMetadataForSimulation(simulationState: SimulationState, ethereum: EthereumClientService, visualizerResults: readonly VisualizerResult[], protectorResults: readonly ProtectorResults[]) {
 	const settingsPromise = getSettings()
@@ -50,13 +55,32 @@ async function updateMetadataForSimulation(simulationState: SimulationState, eth
 	}
 }
 
+const transactionSpecificVisualisations = async (simulatedTransaction: SimulatedTransaction, ethereum: EthereumClientService) => {
+	try {
+		// identifies compound governane call and performs simulation if the vote passes 
+		if (simulatedTransaction.multicallResponse.statusCode !== 'success') return
+		const fourByte = get4Byte(simulatedTransaction.signedTransaction.input)
+		if (fourByte === undefined) return
+		const explanation = FourByteExplanations[fourByte]
+		if ((explanation !== 'Submit vote' && explanation !== 'Cast vote') || simulatedTransaction.multicallResponse.events.length !== 1) return
+		if (simulatedTransaction.signedTransaction.to === null) return
+		const governanceContractInterface = new Interface(CompoundGovernanceAbi)
+		const params = governanceContractInterface.decodeFunctionData(explanation === 'Submit vote' ? 'submitVote' : 'castVote', dataStringWith0xStart(simulatedTransaction.signedTransaction.input))
+		const contractExecutionResult = await simulateCompoundGovernanceExecution(ethereum, simulatedTransaction.signedTransaction.to, params[0])
+		console.log(contractExecutionResult)
+	} catch(e) {
+		console.log(e)
+	}
+}
+
 async function visualizeSimulatorState(simulationState: SimulationState, ethereum: EthereumClientService) {
 	const priceEstimator = new PriceEstimator(ethereum)
 	const transactions = getWebsiteCreatedEthereumUnsignedTransactions(simulationState.simulatedTransactions)
 
 	const blockNum = await ethereum.getBlockNumber()
 	const visualizerResults = simulationState.simulatedTransactions.map((simulatedTransaction) => visualizeTransaction(blockNum, simulatedTransaction.multicallResponse))
-	const protectors = await Promise.all(transactions.map(async (transaction) => await runProtectorsForTransaction(simulationState, transaction, ethereum)))
+	const protectorPromises = Promise.all(transactions.map(async (transaction) => await runProtectorsForTransaction(simulationState, transaction, ethereum)))
+	const protectors = await protectorPromises
 	const updatedMetadataPromise = updateMetadataForSimulation(simulationState, ethereum, visualizerResults, protectors)
 
 	function onlyTokensAndTokensWithKnownDecimals(metadata: AddressBookEntry): metadata is AddressBookEntry & { type: 'ERC20', decimals: `0x${ string }` } {
@@ -75,6 +99,7 @@ async function visualizeSimulatorState(simulationState: SimulationState, ethereu
 		tokenPrices: await tokenPricePromises,
 		visualizerResults,
 		protectors,
+		transactionSpecificSimulations: await Promise.all(simulationState.simulatedTransactions.map(async (transaction) => await transactionSpecificVisualisations(transaction, ethereum))),
 		simulationState,
 	}
 }
