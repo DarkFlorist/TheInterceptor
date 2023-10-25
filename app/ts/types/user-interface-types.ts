@@ -3,7 +3,7 @@ import * as funtypes from 'funtypes'
 import { EthereumAddress, EthereumBlockHeader, EthereumQuantity, EthereumTimestamp, OptionalEthereumAddress } from './wire-types.js'
 import { SimulatedAndVisualizedTransaction, SimulationAndVisualisationResults, SimulationUpdatingState, SimulationResultState, SignedMessageTransaction } from './visualizer-types.js'
 import { IdentifiedSwapWithMetadata } from '../components/simulationExplaining/SwapTransactions.js'
-import { InterceptedRequest, WebsiteSocket } from '../utils/requests.js'
+import { InterceptedRequest, UniqueRequestIdentifier, WebsiteSocket } from '../utils/requests.js'
 import { ActiveAddress, ActiveAddressEntry, AddressBookEntry, IncompleteAddressBookEntry } from './addressBookTypes.js'
 import { Page } from './exportedSettingsTypes.js'
 import { Website, WebsiteAccessArray } from './websiteAccessTypes.js'
@@ -11,6 +11,7 @@ import { SignerName } from './signerTypes.js'
 import { ICON_ACCESS_DENIED, ICON_ACTIVE, ICON_NOT_ACTIVE, ICON_SIGNING, ICON_SIGNING_NOT_SUPPORTED, ICON_SIMULATING } from '../utils/constants.js'
 import { RpcEntries, RpcEntry, RpcNetwork } from './rpc.js'
 import { MulticallResponseEventLogs } from './JsonRpc-types.js'
+import { VisualizedPersonalSignRequest } from './personal-message-definitions.js'
 
 export type AddressListParams = {
 	setAndSaveAppPage: (page: Page) => void,
@@ -89,16 +90,18 @@ export type FirstCardParams = {
 }
 
 export type SimulationStateParam = {
-	simulationAndVisualisationResults: SimulationAndVisualisationResults | undefined,
-	removeTransaction: (tx: SimulatedAndVisualizedTransaction) => void,
-	currentBlockNumber: bigint | undefined,
-	renameAddressCallBack: RenameAddressCallBack,
-	disableReset: boolean,
-	resetSimulation: () => void,
-	removeTransactionHashes: bigint[],
-	rpcConnectionStatus: RpcConnectionStatus,
-	simulationUpdatingState: SimulationUpdatingState | undefined,
-	simulationResultState: SimulationResultState | undefined,
+	simulationAndVisualisationResults: SimulationAndVisualisationResults | undefined
+	removeTransaction: (tx: SimulatedAndVisualizedTransaction) => void
+	removeSignedMessage: (message: VisualizedPersonalSignRequest) => void
+	currentBlockNumber: bigint | undefined
+	renameAddressCallBack: RenameAddressCallBack
+	disableReset: boolean
+	resetSimulation: () => void
+	removedTransactionHashes: readonly bigint[]
+	removedSignedMessages: readonly UniqueRequestIdentifier[]
+	rpcConnectionStatus: RpcConnectionStatus
+	simulationUpdatingState: SimulationUpdatingState | undefined
+	simulationResultState: SimulationResultState | undefined
 }
 
 export type LogAnalysisParams = {
