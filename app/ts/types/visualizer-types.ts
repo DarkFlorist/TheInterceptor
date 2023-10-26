@@ -4,7 +4,7 @@ import { EthereumAddress, EthereumData, EthereumQuantity, EthereumSignedTransact
 import { QUARANTINE_CODE } from '../simulation/protectors/quarantine-codes.js'
 import { RenameAddressCallBack } from './user-interface-types.js'
 import { ERROR_INTERCEPTOR_GAS_ESTIMATION_FAILED } from '../utils/constants.js'
-import { EthBalanceChanges, EthSubscribeParams, SendRawTransactionParams, SendTransactionParams, SingleMulticallResponse } from './JsonRpc-types.js'
+import { EthBalanceChanges, EthSubscribeParams, MulticallResponseEventLog, MulticallResponseEventLogs, SendRawTransactionParams, SendTransactionParams, SingleMulticallResponse } from './JsonRpc-types.js'
 import { InterceptedRequest, WebsiteSocket } from '../utils/requests.js'
 import { AddressBookEntry, Erc721Entry, Erc20TokenEntry, Erc1155Entry } from './addressBookTypes.js'
 import { Website } from './websiteAccessTypes.js'
@@ -24,6 +24,7 @@ export const NetworkPrice = funtypes.ReadonlyObject({
 export type TokenVisualizerResult = funtypes.Static<typeof TokenVisualizerResult>
 export const TokenVisualizerResult = funtypes.Intersect(
 	funtypes.ReadonlyObject( {
+		originalLogObject: MulticallResponseEventLog,
 		from: EthereumAddress,
 		to: EthereumAddress,
 		tokenAddress: EthereumAddress,
@@ -56,6 +57,7 @@ export const TokenVisualizerResult = funtypes.Intersect(
 
 export type TokenVisualizerErc20Event  = funtypes.Static<typeof TokenVisualizerErc20Event>
 export const TokenVisualizerErc20Event = funtypes.ReadonlyObject({
+	originalLogObject: funtypes.Union(funtypes.Undefined, MulticallResponseEventLog),
 	type: funtypes.Literal('ERC20'),
 	from: AddressBookEntry,
 	to: AddressBookEntry,
@@ -66,6 +68,7 @@ export const TokenVisualizerErc20Event = funtypes.ReadonlyObject({
 
 export type TokenVisualizerErc721Event  = funtypes.Static<typeof TokenVisualizerErc721Event>
 export const TokenVisualizerErc721Event = funtypes.ReadonlyObject({
+	originalLogObject: funtypes.Union(funtypes.Undefined, MulticallResponseEventLog),
 	type: funtypes.Literal('ERC721'),
 	from: AddressBookEntry,
 	to: AddressBookEntry,
@@ -76,6 +79,7 @@ export const TokenVisualizerErc721Event = funtypes.ReadonlyObject({
 
 export type TokenVisualizerErc1155Event = funtypes.Static<typeof TokenVisualizerErc1155Event>
 export const TokenVisualizerErc1155Event = funtypes.ReadonlyObject({
+	originalLogObject: funtypes.Union(funtypes.Undefined, MulticallResponseEventLog),
 	type: funtypes.Literal('ERC1155'),
 	from: AddressBookEntry,
 	to: AddressBookEntry,
@@ -88,6 +92,7 @@ export const TokenVisualizerErc1155Event = funtypes.ReadonlyObject({
 
 export type TokenVisualizerNFTAllApprovalEvent = funtypes.Static<typeof TokenVisualizerNFTAllApprovalEvent>
 export const TokenVisualizerNFTAllApprovalEvent = funtypes.ReadonlyObject({
+	originalLogObject: funtypes.Union(funtypes.Undefined, MulticallResponseEventLog),
 	type: funtypes.Literal('NFT All approval'),
 	from: AddressBookEntry,
 	to: AddressBookEntry,
@@ -216,6 +221,7 @@ export const SimulatedAndVisualizedTransactionBase = funtypes.Intersect(
 		realizedGasPrice: EthereumQuantity,
 		quarantine: funtypes.Boolean,
 		quarantineCodes: funtypes.ReadonlyArray(QUARANTINE_CODE),
+		events: MulticallResponseEventLogs,
 	}),
 	funtypes.Union(
 		funtypes.ReadonlyObject({

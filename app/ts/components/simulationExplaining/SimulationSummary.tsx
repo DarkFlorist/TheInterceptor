@@ -3,7 +3,7 @@ import { RenameAddressCallBack, RpcConnectionStatus } from '../../types/user-int
 import { Erc721TokenApprovalChange, SimulatedAndVisualizedTransaction, SimulationAndVisualisationResults, ERC20TokenApprovalChange, Erc20TokenBalanceChange, TransactionWithAddressBookEntries, NamedTokenId } from '../../types/visualizer-types.js'
 import { BigAddress, SmallAddress, WebsiteOriginText } from '../subcomponents/address.js'
 import { Ether, EtherAmount, EtherSymbol, TokenWithAmount, TokenAmount, TokenPrice, TokenSymbol, TokenOrEth } from '../subcomponents/coins.js'
-import { LogAnalysis } from './Transactions.js'
+import { NonTokenLogAnalysis, TokenLogAnalysis } from './Transactions.js'
 import { CopyToClipboard } from '../subcomponents/CopyToClipboard.js'
 import { SomeTimeAgo, humanReadableDateDeltaLessDetailed } from '../subcomponents/SomeTimeAgo.js'
 import { MAKE_YOU_RICH_TRANSACTION } from '../../utils/constants.js'
@@ -17,6 +17,7 @@ import { getEthDonator } from '../../background/storageVariables.js'
 import { RpcNetwork } from '../../types/rpc.js'
 import { AddressBookEntry, Erc1155Entry, Erc20TokenEntry, Erc721Entry } from '../../types/addressBookTypes.js'
 import { Website } from '../../types/websiteAccessTypes.js'
+import { areEqual, areEqualUint8Arrays } from '../../utils/typed-arrays.js'
 
 type EtherChangeParams = {
 	textColor: string,
@@ -455,12 +456,12 @@ export function removeEthDonator(rpcNetwork: RpcNetwork, summary: SummaryOutcome
 	return
 }
 
-type LogAnalysisCardParams = {
+type TokenLogAnalysisCardParams = {
 	simTx: SimulatedAndVisualizedTransaction
 	renameAddressCallBack: RenameAddressCallBack,
 }
 
-export function LogAnalysisCard({ simTx, renameAddressCallBack }: LogAnalysisCardParams) {
+export function TokenLogAnalysisCard({ simTx, renameAddressCallBack }: TokenLogAnalysisCardParams) {
 	const [showLogs, setShowLogs] = useState<boolean>(false)
 	const identifiedSwap = identifySwap(simTx)
 	if (simTx === undefined) return <></>
@@ -478,11 +479,41 @@ export function LogAnalysisCard({ simTx, renameAddressCallBack }: LogAnalysisCar
 			{ !showLogs
 				? <></>
 				: <div class = 'card-content' style = 'border-bottom-left-radius: 0.25rem; border-bottom-right-radius: 0.25rem; border-left: 2px solid var(--card-bg-color); border-right: 2px solid var(--card-bg-color); border-bottom: 2px solid var(--card-bg-color);'>
-					<LogAnalysis
+					<TokenLogAnalysis
 						simulatedAndVisualizedTransaction = { simTx }
 						identifiedSwap = { identifiedSwap }
 						renameAddressCallBack = { renameAddressCallBack }
 					/>
+				</div>
+			}
+		</div>
+	</>
+}
+export function NonTokenLogAnalysisCard({ simTx }: TokenLogAnalysisCardParams) {
+	const [showLogs, setShowLogs] = useState<boolean>(false)
+	if (simTx === undefined) return <></>
+	const nonTokenLogs = simTx.events.filter((event) => {
+		return !simTx.tokenResults.find((tokenLog) => {
+			return tokenLog.originalLogObject !== undefined
+				&& areEqualUint8Arrays(tokenLog.originalLogObject.data, event.data)
+				&& tokenLog.originalLogObject.loggersAddress === event.loggersAddress
+				&& areEqual(tokenLog.originalLogObject.topics, event.topics)
+		})
+ 	})
+	return <>
+		<div class = 'card' style = 'margin-top: 10px; margin-bottom: 10px'>
+			<header class = 'card-header noselect' style = 'cursor: pointer; height: 30px;' onClick = { () => setShowLogs((prevValue) => !prevValue) }>
+				<p class = 'card-header-title' style = 'font-weight: unset; font-size: 0.8em;'>
+					{ nonTokenLogs.length === 0 ? 'No non-token events' : `${ upperCaseFirstCharacter(convertNumberToCharacterRepresentationIfSmallEnough(nonTokenLogs.length)) } non-token event${ nonTokenLogs.length > 1 ? 's' : '' }` }
+				</p>
+				<div class = 'card-header-icon'>
+					<span class = 'icon' style = 'color: var(--text-color); font-weight: unset; font-size: 0.8em;'> V </span>
+				</div>
+			</header>
+			{ !showLogs
+				? <></>
+				: <div class = 'card-content' style = 'border-bottom-left-radius: 0.25rem; border-bottom-right-radius: 0.25rem; border-left: 2px solid var(--card-bg-color); border-right: 2px solid var(--card-bg-color); border-bottom: 2px solid var(--card-bg-color);'>
+					<NonTokenLogAnalysis nonTokenLogs = { nonTokenLogs } />
 				</div>
 			}
 		</div>

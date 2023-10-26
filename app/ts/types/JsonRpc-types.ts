@@ -1,6 +1,6 @@
 import * as funtypes from 'funtypes'
 import { EthereumAddress, EthereumBlockHeader, EthereumBlockHeaderWithTransactionHashes, EthereumBlockTag, EthereumBytes256, EthereumBytes32, EthereumData, EthereumInput, EthereumQuantity, EthereumUnsignedTransaction, LiteralConverterParserFactory, RevertErrorParser } from './wire-types.js'
-import { areEqual } from '../utils/typed-arrays.js'
+import { areEqualUint8Arrays } from '../utils/typed-arrays.js'
 import { ExecutionSpec383MultiCallParams } from './multicall-types.js'
 import { OldSignTypedDataParams, PersonalSignParams, SignTypedDataParams } from './jsonRpc-signing-types.js'
 
@@ -100,7 +100,7 @@ export const DappRequestTransaction = funtypes.ReadonlyPartial({
 			// workaround for https://github.com/ForbesLindesay/funtypes/issues/62
 			return dappRequestTransaction.input === dappRequestTransaction.data
 		}
-		return areEqual(dappRequestTransaction.input, dappRequestTransaction.data)
+		return areEqualUint8Arrays(dappRequestTransaction.input, dappRequestTransaction.data)
 	}
 	return true
 })
