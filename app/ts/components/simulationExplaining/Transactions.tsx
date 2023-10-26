@@ -1,11 +1,11 @@
 import { SimulatedAndVisualizedTransaction, SimulationAndVisualisationResults, TokenVisualizerResultWithMetadata, TransactionVisualizationParameters } from '../../types/visualizer-types.js'
 import { SmallAddress } from '../subcomponents/address.js'
 import { TokenSymbol, TokenAmount, AllApproval } from '../subcomponents/coins.js'
-import { LogAnalysisParams, RenameAddressCallBack } from '../../types/user-interface-types.js'
+import { LogAnalysisParams, NonLogAnalysisParams, RenameAddressCallBack } from '../../types/user-interface-types.js'
 import { QUARANTINE_CODE, QUARANTINE_CODES_DICT } from '../../simulation/protectors/quarantine-codes.js'
 import { Error as ErrorComponent } from '../subcomponents/Error.js'
 import { identifyRoutes, identifySwap, SwapVisualization } from './SwapTransactions.js'
-import { RawTransactionDetailsCard, GasFee, LogAnalysisCard, TransactionCreated, TransactionHeader } from './SimulationSummary.js'
+import { RawTransactionDetailsCard, GasFee, TokenLogAnalysisCard, TransactionCreated, TransactionHeader } from './SimulationSummary.js'
 import { identifyTransaction } from './identifyTransaction.js'
 import { makeYouRichTransaction } from './customExplainers/MakeMeRich.js'
 import { ApproveIcon, ArrowIcon } from '../subcomponents/icons.js'
@@ -16,6 +16,8 @@ import { CatchAllVisualizer, tokenEventToTokenSymbolParams } from './customExpla
 import { AddressBookEntry } from '../../types/addressBookTypes.js'
 import { SignatureCard } from '../pages/PersonalSign.js'
 import { VisualizedPersonalSignRequest } from '../../types/personal-message-definitions.js'
+import { MulticallResponseEventLog } from '../../types/JsonRpc-types.js'
+import { bytes32String, checksummedAddress, dataStringWith0xStart } from '../../utils/bigint.js'
 import { UniqueRequestIdentifier, doesUniqueRequestIdentifiersMatch } from '../../utils/requests.js'
 import { includesWithComparator } from '../../utils/typed-arrays.js'
 
@@ -154,7 +156,7 @@ export function Transaction(param: TransactionVisualizationParameters) {
 					<QuarantineCodes quarantineCodes = { param.simTx.quarantineCodes }/>
 				</div>
 				{ identifiedTransaction === 'MakeYouRichTransaction' ? <></> : <>
-					<LogAnalysisCard
+					<TokenLogAnalysisCard
 						simTx = { param.simTx }
 						renameAddressCallBack = { param.renameAddressCallBack }
 					/>
@@ -277,11 +279,11 @@ export function TokenLogEvent(params: TokenLogEventParams ) {
 	</>
 }
 
-export function LogAnalysis(param: LogAnalysisParams) {
-	if ( param.simulatedAndVisualizedTransaction.tokenResults.length === 0 ) return <p class = 'paragraph'> No token events </p>
+export function TokenLogAnalysis(param: LogAnalysisParams) {
+	if (param.simulatedAndVisualizedTransaction.tokenResults.length === 0) return <p class = 'paragraph'> No token events </p>
 	const routes = identifyRoutes(param.simulatedAndVisualizedTransaction, param.identifiedSwap)
 	return <span class = 'log-table' style = 'justify-content: center; column-gap: 5px;'> { routes ?
-		routes.map( (tokenVisualizerResult) => (
+		routes.map((tokenVisualizerResult) => (
 			<TokenLogEvent
 				tokenVisualizerResult = { tokenVisualizerResult }
 				ourAddressInReferenceFrame = { param.simulatedAndVisualizedTransaction.transaction.from.address }
@@ -297,4 +299,37 @@ export function LogAnalysis(param: LogAnalysisParams) {
 			/>
 		))
 	} </span>
+}
+
+type NonTokenLogEventParams = {
+	nonTokenLog: MulticallResponseEventLog
+}
+
+export function NonTokenLogEvent(params: NonTokenLogEventParams) {
+	const cellStyle = 'align-items: normal;'
+	const textStyle = 'text-overflow: ellipsis; overflow: hidden;'
+	return <>
+		<div class = 'log-cell' style = { cellStyle }>
+			<p class = 'paragraph' style = { textStyle }> { checksummedAddress(params.nonTokenLog.loggersAddress) } </p>
+		</div>
+		<div class = 'log-cell' style = { cellStyle }>
+			<p class = 'paragraph' style = { textStyle }> { dataStringWith0xStart(params.nonTokenLog.data) } </p>
+		</div>
+		<div class = 'log-cell' style = { cellStyle }>
+			<span class = 'log-table-1' style = 'justify-content: center; column-gap: 5px;'>
+				{ params.nonTokenLog.topics.map((topic) =>
+					<div class = 'log-cell' style = { cellStyle }>
+						<p class = 'paragraph' style = { textStyle }> { bytes32String(topic) }</p>
+					</div>
+				) }
+			</span>
+		</div>
+	</>
+}
+
+export function NonTokenLogAnalysis(param: NonLogAnalysisParams) {
+	if (param.nonTokenLogs.length === 0) return <p class = 'paragraph'> No non-token events </p>
+	return <span class = 'log-table-3' style = 'justify-content: center; column-gap: 5px; row-gap: 5px;'> 
+		{ param.nonTokenLogs.map((nonTokenLog) => <NonTokenLogEvent nonTokenLog = { nonTokenLog } />) }
+	</span>
 }

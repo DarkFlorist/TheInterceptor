@@ -1,4 +1,12 @@
-export function areEqual(first?: Uint8Array, second?: Uint8Array) {
+export function areEqualUint8Arrays(first?: Uint8Array, second?: Uint8Array) {
+	if (first === second) return true
+	if (first === undefined) return second === undefined
+	if (second === undefined) return first === undefined
+	if (first.length !== second.length) return false
+	return first.every((value, index) => value === second[index])
+}
+
+export function areEqual<T>(first?: readonly T[], second?: readonly  T[]) {
 	if (first === second) return true
 	if (first === undefined) return second === undefined
 	if (second === undefined) return first === undefined

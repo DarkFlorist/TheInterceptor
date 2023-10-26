@@ -10,6 +10,7 @@ import { Website, WebsiteAccessArray } from './websiteAccessTypes.js'
 import { SignerName } from './signerTypes.js'
 import { ICON_ACCESS_DENIED, ICON_ACTIVE, ICON_NOT_ACTIVE, ICON_SIGNING, ICON_SIGNING_NOT_SUPPORTED, ICON_SIMULATING } from '../utils/constants.js'
 import { RpcEntries, RpcEntry, RpcNetwork } from './rpc.js'
+import { MulticallResponseEventLogs } from './JsonRpc-types.js'
 import { VisualizedPersonalSignRequest } from './personal-message-definitions.js'
 
 export type AddressListParams = {
@@ -107,6 +108,10 @@ export type LogAnalysisParams = {
 	simulatedAndVisualizedTransaction: SimulatedAndVisualizedTransaction,
 	identifiedSwap: IdentifiedSwapWithMetadata,
 	renameAddressCallBack: RenameAddressCallBack,
+}
+
+export type NonLogAnalysisParams = {
+	nonTokenLogs: MulticallResponseEventLogs
 }
 
 export type RenameAddressCallBack = (addressBookEntry: AddressBookEntry) => void
