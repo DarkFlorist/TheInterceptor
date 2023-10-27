@@ -12,6 +12,7 @@ export function handleERC20TransferLog(eventLog: MulticallResponseEventLog): Tok
 		to: eventLog.topics[2],
 		tokenAddress: eventLog.loggersAddress,
 		isApproval: false,
+		originalLogObject: eventLog,
 	}
 
 	const is721 = eventLog.topics.length === 4
@@ -29,6 +30,7 @@ export function handleApprovalLog(eventLog: MulticallResponseEventLog): TokenVis
 		to: eventLog.topics[2],
 		tokenAddress: eventLog.loggersAddress,
 		isApproval: true,
+		originalLogObject: eventLog,
 	}
 	const is721 = eventLog.topics.length === 4
 	if (is721) {
@@ -47,6 +49,7 @@ export function handleErc721ApprovalForAllLog(eventLog: MulticallResponseEventLo
 		type: 'NFT All approval',
 		isApproval: true,
 		allApprovalAdded: eventLog.topics[3] != 0n,
+		originalLogObject: eventLog,
 	}]
 }
 
@@ -58,7 +61,8 @@ export function handleDepositLog(eventLog: MulticallResponseEventLog): TokenVisu
 		tokenAddress: eventLog.loggersAddress,
 		isApproval: false,
 		amount: bytesToUnsigned(eventLog.data),
-		type: 'ERC20'
+		type: 'ERC20',
+		originalLogObject: eventLog,
 	}]
 }
 
@@ -70,7 +74,8 @@ export function handleWithdrawalLog(eventLog: MulticallResponseEventLog): TokenV
 		tokenAddress: eventLog.loggersAddress,
 		isApproval: false,
 		amount: bytesToUnsigned(eventLog.data),
-		type: 'ERC20'
+		type: 'ERC20',
+		originalLogObject: eventLog,
 	}]
 }
 
@@ -89,6 +94,7 @@ export function handleERC1155TransferBatch(eventLog: MulticallResponseEventLog):
 			isApproval: false as const,
 			tokenId: BigInt(parsed.args._ids[index]),
 			amount: BigInt(parsed.args._values[index]),
+			originalLogObject: eventLog,
 		}
 	})
 }
@@ -104,5 +110,6 @@ export function handleERC1155TransferSingle(eventLog: MulticallResponseEventLog)
 		isApproval: false,
 		tokenId: bytesToUnsigned(eventLog.data.slice(0, 32)),
 		amount: bytesToUnsigned(eventLog.data.slice(32, 64)),
+		originalLogObject: eventLog,
 	}]
 }

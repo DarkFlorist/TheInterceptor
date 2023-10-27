@@ -58,21 +58,23 @@ function get4Byte(functionAbi: string) {
 	return Number(ethers.keccak256(ethers.toUtf8Bytes(functionAbi)).slice(0, 10))
 }
 
-export const FourByteExplanations = new Map<number, string >([
-	[get4Byte('transferFrom(address,address,uint256)'), 'ERC20/ERC721 Transfer From'],
-	[get4Byte('transfer(address,uint256)'), 'ERC20 Transfer'],
-	[get4Byte('approve(address,uint256)'), 'ERC20 Approval'],
-	[get4Byte('setApprovalForAll(address,bool)'), 'ERC721 Approval For All'],
-	[get4Byte('swapExactTokensForTokens(uint256,uint256,address[],address,uint256)'), 'Swap Exact Tokens For Tokens'],
-	[get4Byte('swapExactETHForTokens(uint256,address[],address,uint256)'), 'Swap Exact ETH For Tokens'],
-	[get4Byte('multicall((address,uint256,bytes)[])'), 'Multicall'],
-	[get4Byte('exactInput((bytes,address,uint256,uint256,uint256))'), 'Exact Input Swap'],
-	[get4Byte('multicall(uint256,bytes[])'), 'Multicall'],
-	[get4Byte('multicall(bytes[])'), 'Multicall'],
-	[get4Byte('mint(address)'), 'Mint'],
-	[get4Byte('mint((address,address,uint24,int24,int24,uint256,uint256,uint256,uint256,address,uint256))'), 'Mint'],
-	[get4Byte('burn(address)'), 'Burn'],
-])
+export const FourByteExplanations = {
+	[get4Byte('transferFrom(address,address,uint256)')]: 'ERC20/ERC721 Transfer From' as const,
+	[get4Byte('transfer(address,uint256)')]: 'ERC20 Transfer' as const,
+	[get4Byte('approve(address,uint256)')]:'ERC20 Approval' as const,
+	[get4Byte('setApprovalForAll(address,bool)')]: 'ERC721 Approval For All' as const,
+	[get4Byte('swapExactTokensForTokens(uint256,uint256,address[],address,uint256)')]: 'Swap Exact Tokens For Tokens' as const,
+	[get4Byte('swapExactETHForTokens(uint256,address[],address,uint256)')]: 'Swap Exact ETH For Tokens' as const,
+	[get4Byte('multicall((address,uint256,bytes)[])')]: 'Multicall' as const,
+	[get4Byte('exactInput((bytes,address,uint256,uint256,uint256))')]: 'Exact Input Swap' as const,
+	[get4Byte('multicall(uint256,bytes[])')]: 'Multicall' as const,
+	[get4Byte('multicall(bytes[])')]: 'Multicall' as const,
+	[get4Byte('mint(address)')]: 'Mint' as const,
+	[get4Byte('mint((address,address,uint24,int24,int24,uint256,uint256,uint256,uint256,address,uint256))')]: 'Mint' as const,
+	[get4Byte('burn(address)')]: 'Burn' as const,
+	[get4Byte('submitVote(uint256,bool)')]: 'Submit vote' as const,
+	[get4Byte('castVote(uint256,uint8)')]: 'Cast vote' as const,
+}
 
 export const ICON_ACTIVE = '../img/head.png' as const
 export const ICON_ACCESS_DENIED = '../img/head-access-denied.png' as const

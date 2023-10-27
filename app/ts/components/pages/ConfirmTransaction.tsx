@@ -2,7 +2,7 @@ import { useState, useEffect } from 'preact/hooks'
 import { ConfirmTransactionDialogPendingChanged, ExternalPopupMessage, UpdateConfirmTransactionDialog } from '../../types/interceptor-messages.js'
 import { SimulationAndVisualisationResults } from '../../types/visualizer-types.js'
 import Hint from '../subcomponents/Hint.js'
-import { RawTransactionDetailsCard, GasFee, LogAnalysisCard, SimulatedInBlockNumber, TransactionCreated, TransactionHeader, TransactionHeaderForFailedToSimulate, TransactionsAccountChangesCard } from '../simulationExplaining/SimulationSummary.js'
+import { RawTransactionDetailsCard, GasFee, TokenLogAnalysisCard, SimulatedInBlockNumber, TransactionCreated, TransactionHeader, TransactionHeaderForFailedToSimulate, TransactionsAccountChangesCard, NonTokenLogAnalysisCard } from '../simulationExplaining/SimulationSummary.js'
 import { CenterToPageTextSpinner } from '../subcomponents/Spinner.js'
 import { AddNewAddress } from './AddNewAddress.js'
 import { RpcConnectionStatus } from '../../types/user-interface-types.js'
@@ -100,7 +100,12 @@ function TransactionCard(param: TransactionCardParams) {
 					namedTokenIds = { param.simulationAndVisualisationResults.namedTokenIds }
 				/>
 
-				<LogAnalysisCard
+				<TokenLogAnalysisCard
+					simTx = { simTx }
+					renameAddressCallBack = { param.renameAddressCallBack }
+				/>
+
+				<NonTokenLogAnalysisCard
 					simTx = { simTx }
 					renameAddressCallBack = { param.renameAddressCallBack }
 				/>
