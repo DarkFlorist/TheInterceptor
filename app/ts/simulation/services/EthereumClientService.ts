@@ -4,7 +4,7 @@ import { TIME_BETWEEN_BLOCKS, MOCK_ADDRESS } from '../../utils/constants.js'
 import { IEthereumJSONRpcRequestHandler } from './EthereumJSONRpcRequestHandler.js'
 import { AbiCoder, Signature, ethers } from 'ethers'
 import { addressString, bytes32String } from '../../utils/bigint.js'
-import { BlockCalls, ExecutionSpec383MultiCallResult } from '../../types/multicall-types.js'
+import { BlockCalls, ExecutionSpec383MultiCallBlockResult, ExecutionSpec383MultiCallResult } from '../../types/multicall-types.js'
 import { MulticallResponse, EthGetStorageAtResponse, EthTransactionReceiptResponse, EthGetLogsRequest, EthGetLogsResponse, DappRequestTransaction } from '../../types/JsonRpc-types.js'
 import { assertNever } from '../../utils/typescript.js'
 import { MessageHashAndSignature, SignatureWithFakeSignerAddress, simulatePersonalSign } from './SimulationModeEthereumClientService.js'
@@ -228,6 +228,39 @@ export class EthereumClientService {
 		return ExecutionSpec383MultiCallResult.parse(unvalidatedResult)
 	}
 
+	public convertExecutionSpec383MulticallToOldMulticall(singleResult: ExecutionSpec383MultiCallBlockResult) {
+		return singleResult.calls.map((singleResult) => {
+			switch (singleResult.status) {
+				case 'success': {
+					return {
+						statusCode: 'success' as const,
+						gasSpent: singleResult.gasUsed,
+						returnValue: singleResult.returnData,
+						events: (singleResult.logs === undefined ? [] : singleResult.logs).map((log) => ({
+							loggersAddress: log.address,
+							data: 'data' in log && log.data !== undefined ? log.data : new Uint8Array(),
+							topics: 'topics' in log && log.topics !== undefined ? log.topics : [],
+						})),
+						balanceChanges: [],
+					}
+				}
+				case 'failure': return {
+					statusCode: 'failure' as const,
+					gasSpent: singleResult.gasUsed,
+					error: singleResult.error.message,
+					returnValue: singleResult.returnData,
+				}
+				case 'invalid': return {
+					statusCode: 'failure' as const,
+					gasSpent: 0n,
+					error: singleResult.error.message,
+					returnValue: new Uint8Array(),
+				}
+				default: assertNever(singleResult)
+			}
+		})
+	}
+
 	// intended drop in replacement of the old multicall
 	public readonly executionSpec383MultiCallOnlyTransactionsAndSignatures = async (transactions: readonly EthereumUnsignedTransaction[], signatures: readonly SignatureWithFakeSignerAddress[], blockNumber: bigint): Promise<MulticallResponse> => {
 		const ecRecoverMovedToAddress = 0x123456n
@@ -269,39 +302,9 @@ export class EthereumClientService {
 		}]
 		const multicallResults = await this.executionSpec383MultiCall(query, blockNumber)
 		if (multicallResults.length !== 1) throw new Error('Multicalled for one block but did not get one block')
-		const multicalResult = multicallResults[0]
-		if (multicalResult === undefined) throw new Error('multicallResult was undefined')
-		const endResult = multicalResult.calls.map((singleResult) => {
-			switch (singleResult.status) {
-				case 'success': {
-					return {
-						statusCode: 'success' as const,
-						gasSpent: singleResult.gasUsed,
-						returnValue: singleResult.returnData,
-						events: (singleResult.logs === undefined ? [] : singleResult.logs).map((log) => ({
-							loggersAddress: log.address,
-							data: 'data' in log && log.data !== undefined ? log.data : new Uint8Array(),
-							topics: 'topics' in log && log.topics !== undefined ? log.topics : [],
-						})),
-						balanceChanges: [],
-					}
-				}
-				case 'failure': return {
-					statusCode: 'failure' as const,
-					gasSpent: singleResult.gasUsed,
-					error: singleResult.error.message,
-					returnValue: singleResult.returnData,
-				}
-				case 'invalid': return {
-					statusCode: 'failure' as const,
-					gasSpent: 0n,
-					error: singleResult.error.message,
-					returnValue: new Uint8Array(),
-				}
-				default: assertNever(singleResult)
-			}
-		})
-		return endResult
+		const singleMulticalResult = multicallResults[0]
+		if (singleMulticalResult === undefined) throw new Error('multicallResult was undefined')
+		return this.convertExecutionSpec383MulticallToOldMulticall(singleMulticalResult)
 	}
 
 	public readonly web3ClientVersion = async () => {
