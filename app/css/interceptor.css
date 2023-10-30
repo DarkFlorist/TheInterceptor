@@ -795,7 +795,15 @@ svg.spinner > circle {
 .big-token-name-container:hover > .token-name-holder > .rename-token-button {
 	display: flex;
 }
+
 .big-token-name-container > .token-name-holder {
 	justify-content: flex-end;
 	align-items: center;
+}
+
+.dashed-notification {
+	border-style: dashed;
+    background: unset;
+    border-width: medium;
+    border-color: white;
 }

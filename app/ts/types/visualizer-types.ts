@@ -271,7 +271,7 @@ export const TokenPriceEstimate = funtypes.ReadonlyObject({
 export type TransactionVisualizationParameters = {
 	simTx: SimulatedAndVisualizedTransaction,
 	simulationAndVisualisationResults: SimulationAndVisualisationResults,
-	removeTransaction: (tx: SimulatedAndVisualizedTransaction) => void,
+	removeTransaction: ((tx: SimulatedAndVisualizedTransaction) => void) | undefined,
 	activeAddress: bigint,
 	renameAddressCallBack: RenameAddressCallBack,
 }
@@ -339,3 +339,15 @@ export const EthereumSubscription = funtypes.Union(NewHeadsSubscription)
 
 export type EthereumSubscriptions = funtypes.Static<typeof EthereumSubscriptions>
 export const EthereumSubscriptions = funtypes.ReadonlyArray(EthereumSubscription)
+
+export type VisualizedSimulatorState = funtypes.Static<typeof VisualizedSimulatorState>
+export const VisualizedSimulatorState = funtypes.ReadonlyObject({
+	visualizerResults: funtypes.ReadonlyArray(VisualizerResult),
+	protectors: funtypes.ReadonlyArray(ProtectorResults),
+	addressBookEntries: funtypes.ReadonlyArray(AddressBookEntry),
+	tokenPrices: funtypes.ReadonlyArray(TokenPriceEstimate),
+	namedTokenIds: funtypes.ReadonlyArray(NamedTokenId),
+	simulationState: funtypes.Union(SimulationState),
+	simulatedAndVisualizedTransactions: funtypes.ReadonlyArray(SimulatedAndVisualizedTransaction),
+	visualizedPersonalSignRequests: funtypes.ReadonlyArray(VisualizedPersonalSignRequest),
+})

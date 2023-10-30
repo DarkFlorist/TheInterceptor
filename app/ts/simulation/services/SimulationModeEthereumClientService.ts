@@ -851,7 +851,7 @@ const getAddressesAndTokensIdsInteractedWithErc1155s = (events: MulticallRespons
 	return tokenOwners
 }
 
-const getTokenBalancesAfter = async (
+export const getTokenBalancesAfter = async (
 	ethereumClientService: EthereumClientService,
 	signedTxs: EthereumSignedTransaction[] = [],
 	signedMessages: readonly SignatureWithFakeSignerAddress[] = [],

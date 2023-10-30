@@ -5,7 +5,7 @@ import { LogAnalysisParams, NonLogAnalysisParams, RenameAddressCallBack } from '
 import { QUARANTINE_CODE, QUARANTINE_CODES_DICT } from '../../simulation/protectors/quarantine-codes.js'
 import { Error as ErrorComponent } from '../subcomponents/Error.js'
 import { identifyRoutes, identifySwap, SwapVisualization } from './SwapTransactions.js'
-import { RawTransactionDetailsCard, GasFee, TokenLogAnalysisCard, TransactionCreated, TransactionHeader } from './SimulationSummary.js'
+import { RawTransactionDetailsCard, GasFee, TokenLogAnalysisCard, TransactionCreated, TransactionHeader, NonTokenLogAnalysisCard, TransactionsAccountChangesCard } from './SimulationSummary.js'
 import { identifyTransaction } from './identifyTransaction.js'
 import { makeYouRichTransaction } from './customExplainers/MakeMeRich.js'
 import { ApproveIcon, ArrowIcon } from '../subcomponents/icons.js'
@@ -20,6 +20,7 @@ import { MulticallResponseEventLog } from '../../types/JsonRpc-types.js'
 import { bytes32String, checksummedAddress, dataStringWith0xStart } from '../../utils/bigint.js'
 import { UniqueRequestIdentifier, doesUniqueRequestIdentifiersMatch } from '../../utils/requests.js'
 import { includesWithComparator } from '../../utils/typed-arrays.js'
+import { GovernanceVoteVisualizer } from './customExplainers/GovernanceVoteVisualizer.js'
 
 function isPositiveEvent(visResult: TokenVisualizerResultWithMetadata, ourAddressInReferenceFrame: bigint) {
 	if (visResult.type === 'ERC20') {
@@ -101,6 +102,7 @@ export function TransactionImportanceBlock(param: TransactionImportanceBlockPara
 		case 'ContractDeployment':
 		case 'ContractFallbackMethod':
 		case 'ArbitaryContractExecution': return <CatchAllVisualizer { ...param } />
+		case 'GovernanceVote': return <GovernanceVoteVisualizer { ...param } />
 		default: assertNever(transactionIdentification)
 	}
 }
@@ -144,11 +146,12 @@ export function SenderReceiver({ from, to, renameAddressCallBack }: { from: Addr
 
 export function Transaction(param: TransactionVisualizationParameters) {
 	const identifiedTransaction = identifyTransaction(param.simTx).type
+	const removeTransaction = param.removeTransaction
 	return (
 		<div class = 'card'>
 			<TransactionHeader
 				simTx = { param.simTx }
-				removeTransaction = { () => param.removeTransaction(param.simTx) }
+				removeTransaction = { removeTransaction === undefined ? undefined : () => removeTransaction(param.simTx) }
 			/>
 			<div class = 'card-content' style = 'padding-bottom: 5px;'>
 				<div class = 'container'>
@@ -156,17 +159,17 @@ export function Transaction(param: TransactionVisualizationParameters) {
 					<QuarantineCodes quarantineCodes = { param.simTx.quarantineCodes }/>
 				</div>
 				{ identifiedTransaction === 'MakeYouRichTransaction' ? <></> : <>
-					<TokenLogAnalysisCard
+					<TransactionsAccountChangesCard
 						simTx = { param.simTx }
+						simulationAndVisualisationResults = { param.simulationAndVisualisationResults }
 						renameAddressCallBack = { param.renameAddressCallBack }
+						addressMetaData = { param.simulationAndVisualisationResults.addressBookEntries }
+						namedTokenIds = { param.simulationAndVisualisationResults.namedTokenIds }
 					/>
+					<TokenLogAnalysisCard simTx = { param.simTx } renameAddressCallBack = { param.renameAddressCallBack } />
+					<NonTokenLogAnalysisCard simTx = { param.simTx } renameAddressCallBack = { param.renameAddressCallBack } />
 					<RawTransactionDetailsCard transaction = { param.simTx.transaction } renameAddressCallBack = { param.renameAddressCallBack } gasSpent = { param.simTx.gasSpent } />
-
-					<SenderReceiver
-						from = { param.simTx.transaction.from }
-						to = { param.simTx.transaction.to }
-						renameAddressCallBack = { param.renameAddressCallBack }
-					/>
+					<SenderReceiver from = { param.simTx.transaction.from } to = { param.simTx.transaction.to } renameAddressCallBack = { param.renameAddressCallBack }/>
 
 					<span class = 'log-table' style = 'margin-top: 10px; grid-template-columns: auto auto;'>
 						<div class = 'log-cell'>

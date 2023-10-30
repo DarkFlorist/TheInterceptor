@@ -46,7 +46,7 @@ function UnderTransactions(param: UnderTransactionsParams) {
 	</div>
 }
 
-type TransactionCardParams = {
+export type TransactionCardParams = {
 	simulationAndVisualisationResults: SimulationAndVisualisationResults,
 	pendingTransactions: PendingTransaction[],
 	renameAddressCallBack: (entry: AddressBookEntry) => void,
@@ -56,7 +56,7 @@ type TransactionCardParams = {
 	rpcConnectionStatus: RpcConnectionStatus,
 }
 
-function TransactionCard(param: TransactionCardParams) {
+export function TransactionCard(param: TransactionCardParams) {
 	const simTx = param.simulationAndVisualisationResults.simulatedAndVisualizedTransactions.at(-1)
 	if (simTx === undefined) return <></>
 
