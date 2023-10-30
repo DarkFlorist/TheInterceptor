@@ -65,46 +65,43 @@ export function GovernanceVoteVisualizer(param: TransactionImportanceBlockParams
 			</span>
 		</div>
 			<div class = 'notification dashed-notification'>
-				<div style = 'display: grid; grid-template-rows: max-content' >
-					<div style = 'display: grid; grid-template-rows: max-content max-content' >
-						{ simulateGovernanceContractExecutionReply !== undefined ? <>
-							{ 'error' in simulateGovernanceContractExecutionReply.data ? <ErrorComponent warning = { false } text = { simulateGovernanceContractExecutionReply.data.error.message }/> : <>
-								<GovernanceTransactionExecution
-									simulationAndVisualisationResults = { {
-										blockNumber: simulateGovernanceContractExecutionReply.data.simulationState.blockNumber,
-										blockTimestamp: simulateGovernanceContractExecutionReply.data.simulationState.blockTimestamp,
-										simulationConductedTimestamp: simulateGovernanceContractExecutionReply.data.simulationState.simulationConductedTimestamp,
-										addressBookEntries: simulateGovernanceContractExecutionReply.data.addressBookEntries,
-										rpcNetwork: simulateGovernanceContractExecutionReply.data.simulationState.rpcNetwork,
-										tokenPrices: simulateGovernanceContractExecutionReply.data.tokenPrices,
-										activeAddress: param.simulationAndVisualisationResults.activeAddress,
-										simulatedAndVisualizedTransactions: simulateGovernanceContractExecutionReply.data.simulatedAndVisualizedTransactions,
-										visualizedPersonalSignRequests: simulateGovernanceContractExecutionReply.data.visualizedPersonalSignRequests,
-										namedTokenIds: simulateGovernanceContractExecutionReply.data.namedTokenIds,
-									} }
-									pendingTransactions = { [] }
-									renameAddressCallBack = { param.renameAddressCallBack }
-									activeAddress = { param.simulationAndVisualisationResults.activeAddress }
-									resetButton = { false }
-									currentBlockNumber = { currentBlockNumber }
-									rpcConnectionStatus = { rpcConnectionStatus }
-								/>
-							</> }
-						</> : <>
-							{ !(param.simulationAndVisualisationResults.rpcNetwork.httpsRpc === 'https://rpc.dark.florist/birdchalkrenewtip' // todo remove this check
-								|| param.simulationAndVisualisationResults.rpcNetwork.httpsRpc=== 'https://rpc.dark.florist/winedancemuffinborrow') ? <p class = 'paragraph'> experimental rpc client required </p> : <></> }
-								<button
-									class = { `button is-primary` }
-									onClick = { simulateGovernanceVote }
-									disabled = { !(param.simulationAndVisualisationResults.rpcNetwork.httpsRpc === 'https://rpc.dark.florist/birdchalkrenewtip' // todo remove this check
-											|| param.simulationAndVisualisationResults.rpcNetwork.httpsRpc=== 'https://rpc.dark.florist/winedancemuffinborrow')
-									}>
-									Simulate execution on a passing vote
-								</button>
-							</>
-						}
+				{ simulateGovernanceContractExecutionReply !== undefined ? <>
+					<div style = 'display: grid; grid-template-rows: max-content' >
+						{ 'error' in simulateGovernanceContractExecutionReply.data ? <ErrorComponent warning = { false } text = { simulateGovernanceContractExecutionReply.data.error.message }/> : <>
+							<GovernanceTransactionExecution
+								simulationAndVisualisationResults = { {
+									blockNumber: simulateGovernanceContractExecutionReply.data.simulationState.blockNumber,
+									blockTimestamp: simulateGovernanceContractExecutionReply.data.simulationState.blockTimestamp,
+									simulationConductedTimestamp: simulateGovernanceContractExecutionReply.data.simulationState.simulationConductedTimestamp,
+									addressBookEntries: simulateGovernanceContractExecutionReply.data.addressBookEntries,
+									rpcNetwork: simulateGovernanceContractExecutionReply.data.simulationState.rpcNetwork,
+									tokenPrices: simulateGovernanceContractExecutionReply.data.tokenPrices,
+									activeAddress: param.simulationAndVisualisationResults.activeAddress,
+									simulatedAndVisualizedTransactions: simulateGovernanceContractExecutionReply.data.simulatedAndVisualizedTransactions,
+									visualizedPersonalSignRequests: simulateGovernanceContractExecutionReply.data.visualizedPersonalSignRequests,
+									namedTokenIds: simulateGovernanceContractExecutionReply.data.namedTokenIds,
+								} }
+								pendingTransactions = { [] }
+								renameAddressCallBack = { param.renameAddressCallBack }
+								activeAddress = { param.simulationAndVisualisationResults.activeAddress }
+								resetButton = { false }
+								currentBlockNumber = { currentBlockNumber }
+								rpcConnectionStatus = { rpcConnectionStatus }
+							/>
+						</> }
 					</div>
-				</div>
+				</> : <div style = 'display: flex; justify-content: center;'>
+					{ !(param.simulationAndVisualisationResults.rpcNetwork.httpsRpc === 'https://rpc.dark.florist/birdchalkrenewtip' // todo remove this check
+						|| param.simulationAndVisualisationResults.rpcNetwork.httpsRpc=== 'https://rpc.dark.florist/winedancemuffinborrow') ? <p class = 'paragraph'> experimental rpc client required </p> : <></> }
+						<button
+							class = { `button is-primary` }
+							onClick = { simulateGovernanceVote }
+							disabled = { !(param.simulationAndVisualisationResults.rpcNetwork.httpsRpc === 'https://rpc.dark.florist/birdchalkrenewtip' // todo remove this check
+									|| param.simulationAndVisualisationResults.rpcNetwork.httpsRpc=== 'https://rpc.dark.florist/winedancemuffinborrow')
+							}>
+							Simulate execution on a passing vote
+						</button>
+				</div> }
 			</div>
 	</>
 }
