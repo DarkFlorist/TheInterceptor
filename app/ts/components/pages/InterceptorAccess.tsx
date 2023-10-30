@@ -172,7 +172,7 @@ const DISABLED_DELAY_MS = 3000
 
 export function InterceptorAccess() {
 	const [pendingAccessRequestArray, setAccessRequest] = useState<PendingAccessRequestArray>([])
-	const [addingNewAddress, setAddingNewAddress] = useState<IncompleteAddressBookEntry> ({ addingAddress: false, type: 'activeAddress', address: undefined, askForAddressAccess: false, name: undefined, symbol: undefined, decimals: undefined, logoUri: undefined, entrySource: 'FilledIn' })
+	const [addingNewAddress, setAddingNewAddress] = useState<IncompleteAddressBookEntry> ({ addingAddress: false, type: 'activeAddress', address: undefined, askForAddressAccess: false, name: undefined, symbol: undefined, decimals: undefined, logoUri: undefined, entrySource: 'FilledIn', abi: undefined })
 	const [appPage, setAppPage] = useState('Home')
 	const [informationUpdatedTimestamp, setInformationUpdatedTimestamp] = useState(0)
 	const [, setTimeSinceInformationUpdate] = useState(0)
@@ -242,7 +242,8 @@ export function InterceptorAccess() {
 			decimals: undefined,
 			logoUri: undefined,
 			...entry,
-			address: checksummedAddress(entry.address)
+			address: checksummedAddress(entry.address),
+			abi: 'abi' in entry ? entry.abi : undefined,
 		})
 	}
 
@@ -308,6 +309,7 @@ export function InterceptorAccess() {
 			address: undefined,
 			askForAddressAccess: true,
 			entrySource: 'FilledIn',
+			abi: undefined,
 		} )
 	}
 

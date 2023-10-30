@@ -56,6 +56,27 @@ export function NameInput({ nameInput, setNameInput, disabled }: NameInputParams
 	/>
 }
 
+type AbiInputParams = {
+	abiInput: string | undefined
+	setAbiInput: (input: string) => void
+	disabled: boolean,
+}
+
+export function AbiInput({ abiInput, setAbiInput, disabled }: AbiInputParams) {
+	const ref = createRef<HTMLInputElement>()
+    useEffect(() => { ref.current && ref.current.focus() }, [])
+	return <input
+		className = 'input is-spaced'
+		type = 'text'
+		value = { abiInput }
+		placeholder = { 'not available / not retrieved' }
+		onInput = { e => setAbiInput((e.target as HTMLInputElement).value) }
+		ref = { ref }
+		style = { 'width: 100%' }
+		disabled = { disabled }
+	/>
+}
+
 type AddressInputParams = {
 	disabled: boolean
 	addressInput: string | undefined
@@ -75,11 +96,13 @@ export function AddressInput({ disabled, addressInput, setAddress }: AddressInpu
 }
 
 type RenderinCompleteAddressBookParams = {
-	incompleteAddressBookEntry: IncompleteAddressBookEntry,
-	setName: (name: string) => void,
-	setAddress: (address: string) => void,
+	incompleteAddressBookEntry: IncompleteAddressBookEntry
+	setName: (name: string) => void
+	setAddress: (address: string) => void
 	setSymbol: (symbol: string) => void
-	setAskForAddressAccess: (name: boolean) => void,
+	setAskForAddressAccess: (name: boolean) => void
+	fetchAbiAndNameFromEtherScan: (address: string | undefined) => void
+	setAbi: (abi: string) => void
 }
 
 export const CellElement = (param: { element: ComponentChildren }) => {
@@ -90,12 +113,13 @@ export const CellElement = (param: { element: ComponentChildren }) => {
 
 <p class = 'paragraph' style = 'color: var(--subtitle-text-color); text-overflow: ellipsis; overflow: hidden; width:100%'></p>
 
-function RenderIncompleteAddressBookEntry({ incompleteAddressBookEntry, setName, setAddress, setSymbol, setAskForAddressAccess }: RenderinCompleteAddressBookParams) {
+function RenderIncompleteAddressBookEntry({ incompleteAddressBookEntry, setName, setAddress, setSymbol, setAskForAddressAccess, fetchAbiAndNameFromEtherScan, setAbi }: RenderinCompleteAddressBookParams) {
 	const Text = (param: { text: ComponentChildren }) => {
 		return <p class = 'paragraph' style = 'color: var(--subtitle-text-color); text-overflow: ellipsis; overflow: hidden; width:100%'>
 			{ param.text }
 		</p>
 	}
+	const [retrievedAbi, setAbiRetrieved] = useState<boolean>(false)
 	const disableDueToSource = incompleteAddressBookEntry.entrySource === 'DarkFloristMetadata' || incompleteAddressBookEntry.entrySource === 'Interceptor'
 	const logoUri = incompleteAddressBookEntry.addingAddress === false && 'logoUri' in incompleteAddressBookEntry ? incompleteAddressBookEntry.logoUri : undefined
 	return <div class = 'media'>
@@ -119,15 +143,20 @@ function RenderIncompleteAddressBookEntry({ incompleteAddressBookEntry, setName,
 						<CellElement element = { <Text text = { 'Decimals: ' }/> }/>
 						<CellElement element = { <input disabled = { true } className = 'input subtitle is-7 is-spaced' style = 'width: 100%' type = 'text' value = { incompleteAddressBookEntry.decimals !== undefined ? incompleteAddressBookEntry.decimals.toString() : incompleteAddressBookEntry.decimals } placeholder = { '...' } /> } />
 					</> : <></> }
+					<CellElement element = { <Text text = { 'ABI: ' }/> }/>
+					<div class = 'log-cell'>
+						<AbiInput abiInput = { incompleteAddressBookEntry.abi } setAbiInput = { setAbi } disabled = { true }/>
+						<button class = 'button is-primary is-small' disabled = { stringToAddress(incompleteAddressBookEntry.address) === undefined || retrievedAbi } onClick = { () => { setAbiRetrieved(true); fetchAbiAndNameFromEtherScan(incompleteAddressBookEntry.address) } }> Fetch from Etherscan</button>
+					</div>
 				</span>
 			</div>
 			{ incompleteAddressBookEntry.type === 'activeAddress' ? <>
 				<label class = 'form-control'>
-					<input type = 'checkbox'  disabled = { disableDueToSource } checked = { !incompleteAddressBookEntry.askForAddressAccess } onInput = { e => { if (e.target instanceof HTMLInputElement && e.target !== null) { setAskForAddressAccess(!e.target.checked) } } } />
+					<input type = 'checkbox' disabled = { disableDueToSource } checked = { !incompleteAddressBookEntry.askForAddressAccess } onInput = { e => { if (e.target instanceof HTMLInputElement && e.target !== null) { setAskForAddressAccess(!e.target.checked) } } } />
 					<p class = 'paragraph checkbox-text'>Don't request for an access (insecure)</p>
 				</label>
 			</> : <></> }
-		</div>
+			</div>
 	</div>
 }
 
@@ -143,16 +172,15 @@ type DuplicateCheck = {
 export function AddNewAddress(param: AddAddressParam) {
 	const [errorString, setErrorString] = useState<string | undefined>(undefined)
 	const [activeAddress, setActiveAddress] = useState<bigint | undefined>(undefined)
-	const [incompleteAddressBookEntry, setIncompleteAddressBookEntry] = useState<IncompleteAddressBookEntry & DuplicateCheck>({ addingAddress: false, type: 'activeAddress', address: undefined, askForAddressAccess: false, name: undefined, symbol: undefined, decimals: undefined, logoUri: undefined, entrySource: 'FilledIn', duplicateStatus: 'NoDuplicates' })
+	const [incompleteAddressBookEntry, setIncompleteAddressBookEntry] = useState<IncompleteAddressBookEntry & DuplicateCheck>({ addingAddress: false, type: 'activeAddress', address: undefined, askForAddressAccess: false, name: undefined, symbol: undefined, decimals: undefined, logoUri: undefined, entrySource: 'FilledIn', duplicateStatus: 'NoDuplicates', abi: undefined })
 	const [onChainInformationVerifiedByUser, setOnChainInformationVerifiedByUser] = useState<boolean>(false)
-
 	useEffect(() => {
 		const popupMessageListener = async (msg: unknown) => {
 			const parsed = ExternalPopupMessage.parse(msg)
 			if (parsed.method === 'popup_findAddressBookEntryWithSymbolOrNameReply') {
 				setIncompleteAddressBookEntry((previous) => {
 					if (parsed.data.query.name === previous.name && parsed.data.query.symbol === previous.symbol) { 
-						if (parsed.data.addressBookEntryOrUndefined === undefined) {
+						if (parsed.data.addressBookEntryOrUndefined === undefined || parsed.data.addressBookEntryOrUndefined.address == stringToAddress(previous.address)) {
 							return { ...previous, duplicateStatus: 'NoDuplicates' }
 						}
 						return { ...previous, duplicateStatus: 'Duplicates', duplicateEntry: parsed.data.addressBookEntryOrUndefined }
@@ -160,8 +188,15 @@ export function AddNewAddress(param: AddAddressParam) {
 					return previous
 				})
 			}
+			if (parsed.method === 'popup_fetchAbiAndNameFromEtherScanReply') {
+				return setIncompleteAddressBookEntry((prevEntry) => {
+					if (parsed.data === undefined || parsed.data.address !== stringToAddress(prevEntry.address)) return prevEntry
+					checkForDuplicatedNameOrSymbol(parsed.data.contractName, prevEntry.symbol)
+					return { ...prevEntry, name: parsed.data.contractName, abi: parsed.data.abi, duplicateStatus: 'Pending' }
+				})
+			}
 			if (parsed.method !== 'popup_identifyAddressReply') return
-			return setIncompleteAddressBookEntry((prevEntry) => {	
+			return setIncompleteAddressBookEntry((prevEntry) => {
 				if (parsed.data.addressBookEntry.address !== stringToAddress(prevEntry.address)) return prevEntry
 				if (parsed.data.addressBookEntry.entrySource !== 'OnChain' && parsed.data.addressBookEntry.entrySource !== 'FilledIn') {
 					setErrorString(`The address ${ checksummedAddress(parsed.data.addressBookEntry.address) } you are trying to add already exists. Edit the existing record instead trying to add it again.`)
@@ -200,6 +235,7 @@ export function AddNewAddress(param: AddAddressParam) {
 					symbol: incompleteAddressBookEntry.symbol,
 					logoUri: incompleteAddressBookEntry.logoUri,
 					entrySource: 'User',
+					abi: incompleteAddressBookEntry.abi,
 				}
 			}
 			case 'ERC1155': {
@@ -212,6 +248,7 @@ export function AddNewAddress(param: AddAddressParam) {
 					logoUri: incompleteAddressBookEntry.logoUri,
 					decimals: undefined,
 					entrySource: 'User',
+					abi: incompleteAddressBookEntry.abi,
 				}
 			}
 			case 'ERC20': {
@@ -224,6 +261,7 @@ export function AddNewAddress(param: AddAddressParam) {
 					decimals: incompleteAddressBookEntry.decimals,
 					logoUri: incompleteAddressBookEntry.logoUri,
 					entrySource: 'User',
+					abi: incompleteAddressBookEntry.abi,
 				}
 			}
 			case 'contact':
@@ -233,6 +271,7 @@ export function AddNewAddress(param: AddAddressParam) {
 				address: inputedAddressBigInt,
 				logoUri: incompleteAddressBookEntry.logoUri,
 				entrySource: 'User',
+				abi: incompleteAddressBookEntry.abi,
 			}
 			case 'activeAddress': {
 				return {
@@ -286,6 +325,12 @@ export function AddNewAddress(param: AddAddressParam) {
 		await sendPopupMessageToBackgroundPage({ method: 'popup_findAddressBookEntryWithSymbolOrName', data: { name, symbol } })
 	}
 
+	async function fetchAbiAndNameFromEtherScan(address: string | undefined) {
+		const addr = stringToAddress(address)
+		if (addr === undefined) return
+		await sendPopupMessageToBackgroundPage({ method: 'popup_fetchAbiAndNameFromEtherScan', data: addr })
+	}
+
 	function setAddress(input: string) {
 		setIncompleteAddressBookEntry((prevEntry) => {
 			if (input === undefined) {
@@ -314,6 +359,12 @@ export function AddNewAddress(param: AddAddressParam) {
 		setIncompleteAddressBookEntry((entry) => {
 			checkForDuplicatedNameOrSymbol(name, entry.symbol)
 			return { ...entry, name, duplicateStatus: 'Pending' }
+		})
+	}
+
+	function setAbi(abi: string | undefined) {
+		setIncompleteAddressBookEntry((entry) => {
+			return { ...entry, abi }
 		})
 	}
 
@@ -377,7 +428,9 @@ export function AddNewAddress(param: AddAddressParam) {
 							setAddress = { setAddress }
 							setName = { setName }
 							setSymbol = { setSymbol }
+							setAbi = { setAbi }
 							setAskForAddressAccess = { setAskForAddressAccess }
+							fetchAbiAndNameFromEtherScan = { fetchAbiAndNameFromEtherScan }
 						/>
 					</div>
 				</div>

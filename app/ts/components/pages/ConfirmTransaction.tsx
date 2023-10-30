@@ -258,7 +258,8 @@ export function ConfirmTransaction() {
 			decimals: undefined,
 			logoUri: undefined,
 			...entry,
-			address: checksummedAddress(entry.address)
+			address: checksummedAddress(entry.address),
+			abi: 'abi' in entry ? entry.abi : undefined,
 		})
 	}
 
