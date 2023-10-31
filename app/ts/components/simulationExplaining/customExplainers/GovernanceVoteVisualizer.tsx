@@ -30,7 +30,7 @@ export type MissingAbiParams = {
 function MissingAbi(params: MissingAbiParams) {
 	return <div style = 'display: block'>
 		<ErrorComponent warning = { false } text = { params.errorMessage }/>
-		<div style = 'display: flex; justify-content: center; padding: 10px'>
+		<div style = 'display: flex; justify-content: center; padding-top: 10px'>
 			<button class = { `button is-primary` } onClick = { () => params.renameAddressCallBack(params.addressBookEntry) }>
 				Add Abi
 			</button>

@@ -105,7 +105,7 @@ export const simulateGovernanceContractExecution = async (pendingTransaction: Pe
 		}
 		return await visualizeSimulatorState(governanceContractSimulationState, ethereum)
 	} catch(error) {
-		console.warning(error)
+		console.warn(error)
 		if (error instanceof Error) return returnError(error.message)
 		throw error
 	}
