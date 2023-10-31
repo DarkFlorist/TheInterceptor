@@ -23,6 +23,7 @@ type IdentifiedTransaction =
 	| IdentifiedTransactionBase & { type: 'ArbitaryContractExecution' }
 	| IdentifiedTransactionBase & { type: 'MakeYouRichTransaction' }
 	| IdentifiedTransactionBase & { type: 'ContractDeployment' }
+	| IdentifiedTransactionBase & { type: 'GovernanceVote' }
 
 export function identifySimpleApproval(simTx: SimulatedAndVisualizedTransaction) {
 	if (getSimpleTokenApprovalOrUndefined(simTx)) {
@@ -78,6 +79,20 @@ export function identifySimpleApproval(simTx: SimulatedAndVisualizedTransaction)
 		}
 	}
 	return undefined
+}
+
+export function identifyGovernanceVote(simTx: SimulatedAndVisualizedTransaction) {
+	const fourByte = get4Byte(simTx.transaction.input)
+	if (fourByte === undefined) return undefined
+	const explanation = FourByteExplanations[fourByte]
+	if (explanation !== 'Cast vote' && explanation !== 'Submit vote') return undefined
+	return {
+		type: 'GovernanceVote' as const,
+		title: `Governance Vote`,
+		signingAction: `Submit Vote`,
+		simulationAction: `Simulate Vote`,
+		rejectAction: `Reject Vote`,
+	}
 }
 
 export type SimulatedAndVisualizedSimpleApprovalTransaction = funtypes.Static<typeof SimulatedAndVisualizedSimpleApprovalTransaction>
@@ -224,6 +239,9 @@ export function identifyTransaction(simTx: SimulatedAndVisualizedTransaction): I
 
 	const simpleApproval = identifySimpleApproval(simTx)
 	if (simpleApproval !== undefined) return simpleApproval
+	
+	const governanceVote = identifyGovernanceVote(simTx)
+	if (governanceVote !== undefined) return governanceVote
 
 	const fourByte = get4Byte(simTx.transaction.input)
 	if (fourByte === undefined) return {

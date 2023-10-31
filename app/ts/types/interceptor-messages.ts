@@ -1,7 +1,7 @@
 import * as funtypes from 'funtypes'
 import { PendingChainChangeConfirmationPromise, RpcConnectionStatus, TabIconDetails } from './user-interface-types.js'
 import { EthereumAddress, EthereumBlockHeaderWithTransactionHashes, EthereumBytes32, EthereumData, EthereumQuantity, EthereumSignedTransactionWithBlockData, NonHexBigInt, OptionalEthereumAddress } from './wire-types.js'
-import { CompleteVisualizedSimulation } from './visualizer-types.js'
+import { CompleteVisualizedSimulation, NamedTokenId, ProtectorResults, SimulatedAndVisualizedTransaction, SimulationState, TokenPriceEstimate, VisualizerResult } from './visualizer-types.js'
 import { VisualizedPersonalSignRequest } from './personal-message-definitions.js'
 import { UniqueRequestIdentifier, WebsiteSocket } from '../utils/requests.js'
 import { EthGetLogsResponse, EthGetStorageAtParams, EthTransactionReceiptResponse, GetBlockReturn, GetSimulationStackReply, SendRawTransactionParams, SendTransactionParams, WalletAddEthereumChain } from './JsonRpc-types.js'
@@ -615,6 +615,32 @@ export const FindAddressBookEntryWithSymbolOrNameReply = funtypes.ReadonlyObject
 	})
 }).asReadonly()
 
+export type PartiallyParsedSimulateGovernanceContractExecutionReply = funtypes.Static<typeof PartiallyParsedSimulateGovernanceContractExecutionReply>
+export const PartiallyParsedSimulateGovernanceContractExecutionReply = funtypes.ReadonlyObject({
+	method: funtypes.Literal('popup_simulateGovernanceContractExecutionReply'),
+	data: funtypes.Unknown,
+}).asReadonly()
+
+export type SimulateGovernanceContractExecutionReply = funtypes.Static<typeof SimulateGovernanceContractExecutionReply>
+export const SimulateGovernanceContractExecutionReply = funtypes.ReadonlyObject({
+	method: funtypes.Literal('popup_simulateGovernanceContractExecutionReply'),
+	data: funtypes.Union(
+		funtypes.ReadonlyObject({
+			error: funtypes.ReadonlyObject({ message: funtypes.String })
+		}),
+		funtypes.ReadonlyObject({
+			namedTokenIds: funtypes.ReadonlyArray(NamedTokenId),
+			addressBookEntries: funtypes.ReadonlyArray(AddressBookEntry),
+			simulatedAndVisualizedTransactions: funtypes.ReadonlyArray(SimulatedAndVisualizedTransaction),
+			visualizedPersonalSignRequests: funtypes.ReadonlyArray(VisualizedPersonalSignRequest),
+			tokenPrices: funtypes.ReadonlyArray(TokenPriceEstimate),
+			visualizerResults: funtypes.ReadonlyArray(VisualizerResult),
+			protectors: funtypes.ReadonlyArray(ProtectorResults),
+			simulationState: funtypes.Union(SimulationState),
+		})
+	)
+}).asReadonly()
+
 export type PopupMessage = funtypes.Static<typeof PopupMessage>
 export const PopupMessage = funtypes.Union(
 	TransactionConfirmation,
@@ -650,6 +676,7 @@ export const PopupMessage = funtypes.Union(
 	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_homeOpened') }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_import_settings'), data: funtypes.ReadonlyObject({ fileContents: funtypes.String }) }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_get_export_settings') }),
+	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_simulateGovernanceContractExecution') }),
 	ChangeSettings,
 	SetRpcList,
 	IdentifyAddress,
@@ -676,6 +703,7 @@ export const MessageToPopup = funtypes.Union(
 	FindAddressBookEntryWithSymbolOrNameReply,
 	PartialUpdateHomePage,
 	PartiallyParsedPersonalSignRequest,
+	PartiallyParsedSimulateGovernanceContractExecutionReply,
 )
 
 export type ExternalPopupMessage = funtypes.Static<typeof MessageToPopup>

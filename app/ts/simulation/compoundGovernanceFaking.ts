@@ -1,15 +1,19 @@
 import { Interface } from 'ethers'
 import { EthereumAddress, EthereumQuantity } from '../types/wire-types.js'
-import { CompoundGovernanceAbi, CompoundTimeLock } from '../utils/abi.js'
+import { CompoundTimeLock } from '../utils/abi.js'
 import { addressString, stringToUint8Array } from '../utils/bigint.js'
 import { MOCK_ADDRESS } from '../utils/constants.js'
 import { EthereumClientService } from './services/EthereumClientService.js'
 import { getCompoundGovernanceTimeLockMulticall } from '../utils/ethereumByteCodes.js'
+import { Abis } from '../utils/contractAbis.js'
+import * as funtypes from 'funtypes'
 
 export const simulateCompoundGovernanceExecution = async (ethereumClientService: EthereumClientService, governanceContract: EthereumAddress, proposalId: EthereumQuantity) => {
-	const compoundGovernanceAbi = new Interface(CompoundGovernanceAbi)
 	const compoundTimeLockAbi = new Interface(CompoundTimeLock)
 	const parentBlock = await ethereumClientService.getBlock()
+	const contractAbi = Abis[addressString(governanceContract)]
+	if (contractAbi === undefined) throw new Error(`We need to have ABI for governance contract ${ addressString(governanceContract) } to be able to proceed.`)
+	const compoundGovernanceAbi = new Interface(contractAbi)
 	const txBase = {
 		type: '1559' as const,
 		from: MOCK_ADDRESS,
@@ -41,20 +45,20 @@ export const simulateCompoundGovernanceExecution = async (ethereumClientService:
 		}
 	]
 	const governanceContractCalls = await ethereumClientService.multicall(calls, [], parentBlock.number)
+	governanceContractCalls.forEach((call) => { if (call.statusCode !== 'success') throw new Error('Failed to retrieve governance contracts information') })
 	if (governanceContractCalls[0]?.returnValue === undefined) return undefined
 	const timeLockContractResult = compoundGovernanceAbi.decodeFunctionResult('timelock', governanceContractCalls[0].returnValue)
 	const timeLockContract = EthereumAddress.parse(timeLockContractResult[0])
 	if (governanceContractCalls[1] === undefined) throw new Error('proposals return value was undefined')
-	const [_id, _proposer, eta, _startBlock, _endBlock, _forVotes, _againstVotes, _abstainVotes, canceled, executed] = compoundGovernanceAbi.decodeFunctionResult('proposals', governanceContractCalls[1].returnValue)
+	const proposal = compoundGovernanceAbi.decodeFunctionResult('proposals', governanceContractCalls[1].returnValue)
+	const eta: bigint = funtypes.BigInt.parse(proposal[0].eta)
+	if (eta === undefined) throw new Error('eta is undefined')
 	
 	if (governanceContractCalls[2] === undefined) throw new Error('getActions return value was undefined')
 	const [targets, values, signatures, calldatas] = compoundGovernanceAbi.decodeFunctionResult('getActions', governanceContractCalls[2].returnValue)
-
-	if (canceled || executed) throw new Error('Canceled or Executed already')
-
-	const executeTx = {
+	const executingTransaction = {
 		...txBase,
-		from: timeLockContract,
+		from: governanceContract,
 		to: timeLockContract,
 		input: stringToUint8Array(compoundTimeLockAbi.encodeFunctionData('executeTransactions', [targets, values, signatures, calldatas, eta])),
 	}
@@ -62,11 +66,11 @@ export const simulateCompoundGovernanceExecution = async (ethereumClientService:
 	if (eta >= parentBlock.timestamp.getTime()) throw new Error('ETA has passed already')
 	
 	const query = [{
-		calls: [executeTx],
+		calls: [executingTransaction],
 		blockOverride: {
 			number: parentBlock.number + 1n,
 			prevRandao: 0x1n,
-			time: new Date(Number.parseInt(eta) * 1000), // timestamp is set to ETA
+			time: new Date(Number(eta) * 1000), // timestamp is set to ETA
 			gasLimit: parentBlock.gasLimit,
 			feeRecipient: parentBlock.miner,
 			baseFee: parentBlock.baseFeePerGas === undefined ? 15000000n : parentBlock.baseFeePerGas
@@ -77,5 +81,7 @@ export const simulateCompoundGovernanceExecution = async (ethereumClientService:
 	}]
 	const singleMulticalResult = (await ethereumClientService.executionSpec383MultiCall(query, parentBlock.number))[0]
 	if (singleMulticalResult === undefined) throw new Error('multicallResult was undefined')
-	return ethereumClientService.convertExecutionSpec383MulticallToOldMulticall(singleMulticalResult)
+	const multicallResult = (ethereumClientService.convertExecutionSpec383MulticallToOldMulticall(singleMulticalResult))[0]
+	if (multicallResult === undefined) throw new Error('multicallResult did not exist')
+	return { multicallResult, executingTransaction }
 }
