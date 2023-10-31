@@ -1,4 +1,5 @@
 import { sendPopupMessageToBackgroundPage } from '../../../background/backgroundUtils.js'
+import { AddressBookEntry } from '../../../types/addressBookTypes.js'
 import { ExternalPopupMessage, SimulateGovernanceContractExecutionReply } from '../../../types/interceptor-messages.js'
 import { RpcConnectionStatus } from '../../../types/user-interface-types.js'
 import { TransactionCardParams } from '../../pages/ConfirmTransaction.js'
@@ -18,6 +19,23 @@ export function GovernanceTransactionExecution(param: TransactionCardParams) {
 			renameAddressCallBack = { param.renameAddressCallBack }
 		/>
 	</>
+}
+
+export type MissingAbiParams = {
+	errorMessage: String
+	addressBookEntry: AddressBookEntry
+	renameAddressCallBack: (entry: AddressBookEntry) => void
+}
+
+function MissingAbi(params: MissingAbiParams) {
+	return <div style = 'display: block'>
+		<ErrorComponent warning = { false } text = { params.errorMessage }/>
+		<div style = 'display: flex; justify-content: center; padding: 10px'>
+			<button class = { `button is-primary` } onClick = { () => params.renameAddressCallBack(params.addressBookEntry) }>
+				Add Abi
+			</button>
+		</div>
+	</div>
 }
 
 export function GovernanceVoteVisualizer(param: TransactionImportanceBlockParams) {
@@ -57,7 +75,8 @@ export function GovernanceVoteVisualizer(param: TransactionImportanceBlockParams
 					{ simulateGovernanceContractExecutionReply !== undefined ? <>
 						<button
 							class = { `button is-primary is-small` }
-							onClick = { simulateGovernanceVote }>
+							onClick = { simulateGovernanceVote }
+						>
 							Refresh
 						</button>
 					</> : <></>}
@@ -67,7 +86,13 @@ export function GovernanceVoteVisualizer(param: TransactionImportanceBlockParams
 			<div class = 'notification dashed-notification'>
 				{ simulateGovernanceContractExecutionReply !== undefined ? <>
 					<div style = 'display: grid; grid-template-rows: max-content' >
-						{ 'error' in simulateGovernanceContractExecutionReply.data ? <ErrorComponent warning = { false } text = { simulateGovernanceContractExecutionReply.data.error.message }/> : <>
+						{ 'error' in simulateGovernanceContractExecutionReply.data ? <>
+							{ simulateGovernanceContractExecutionReply.data.error.type === 'MissingAbi' ? <MissingAbi
+								errorMessage = { simulateGovernanceContractExecutionReply.data.error.message }
+								addressBookEntry = { simulateGovernanceContractExecutionReply.data.error.addressBookEntry }
+								renameAddressCallBack = { param.renameAddressCallBack }
+							/> : <ErrorComponent warning = { false } text = { simulateGovernanceContractExecutionReply.data.error.message }/> }
+						</> : <>
 							<GovernanceTransactionExecution
 								simulationAndVisualisationResults = { {
 									blockNumber: simulateGovernanceContractExecutionReply.data.simulationState.blockNumber,
@@ -93,6 +118,8 @@ export function GovernanceVoteVisualizer(param: TransactionImportanceBlockParams
 				</> : <div style = 'display: flex; justify-content: center;'>
 					{ !(param.simulationAndVisualisationResults.rpcNetwork.httpsRpc === 'https://rpc.dark.florist/birdchalkrenewtip' // todo remove this check
 						|| param.simulationAndVisualisationResults.rpcNetwork.httpsRpc=== 'https://rpc.dark.florist/winedancemuffinborrow') ? <p class = 'paragraph'> experimental rpc client required </p> : <></> }
+						
+					{ param.simTx.transaction.to !== undefined && 'abi' in param.simTx.transaction.to && param.simTx.transaction.to.abi !== undefined ?
 						<button
 							class = { `button is-primary` }
 							onClick = { simulateGovernanceVote }
@@ -101,6 +128,14 @@ export function GovernanceVoteVisualizer(param: TransactionImportanceBlockParams
 							}>
 							Simulate execution on a passing vote
 						</button>
+					: <> { param.simTx.transaction.to !== undefined ? 
+							<MissingAbi
+								errorMessage = { 'The governance contract is missing an ABI. Add ABI to simulate with the contract.' }
+								addressBookEntry = { param.simTx.transaction.to }
+								renameAddressCallBack = { param.renameAddressCallBack }
+							/>
+						: <></> }
+					</> }
 				</div> }
 			</div>
 	</>

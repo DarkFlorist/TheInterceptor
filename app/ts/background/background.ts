@@ -11,7 +11,7 @@ import { interceptorAccessMetadataRefresh, requestAccessFromUser, updateIntercep
 import { FourByteExplanations, MAKE_YOU_RICH_TRANSACTION, METAMASK_ERROR_FAILED_TO_PARSE_REQUEST, METAMASK_ERROR_NOT_AUTHORIZED, METAMASK_ERROR_NOT_CONNECTED_TO_CHAIN } from '../utils/constants.js'
 import { PriceEstimator } from '../simulation/priceEstimator.js'
 import { sendActiveAccountChangeToApprovedWebsitePorts, sendMessageToApprovedWebsitePorts, updateWebsiteApprovalAccesses } from './accessManagement.js'
-import { getActiveAddressEntry, getAddressBookEntriesForVisualiser, nameTokenIds } from './metadataUtils.js'
+import { getActiveAddressEntry, getAddressBookEntriesForVisualiser, identifyAddress, nameTokenIds } from './metadataUtils.js'
 import { sendPopupMessageToOpenWindows } from './backgroundUtils.js'
 import { assertUnreachable } from '../utils/typescript.js'
 import { EthereumClientService } from '../simulation/services/EthereumClientService.js'
@@ -25,7 +25,7 @@ import { craftPersonalSignPopupMessage, updatePendingPersonalSignViewWithPending
 import { InterceptedRequest, UniqueRequestIdentifier, WebsiteSocket } from '../utils/requests.js'
 import { replyToInterceptedRequest } from './messageSending.js'
 import { EthGetStorageAtParams, EthereumJsonRpcRequest, SendRawTransactionParams, SendTransactionParams, SupportedEthereumJsonRpcRequestMethods, WalletAddEthereumChain } from '../types/JsonRpc-types.js'
-import { AddressBookEntry } from '../types/addressBookTypes.js'
+import { AddressBookEntry, UserAddressBook } from '../types/addressBookTypes.js'
 import { Website } from '../types/websiteAccessTypes.js'
 import { ConfirmTransactionTransactionSingleVisualization, PendingTransaction } from '../types/accessRequest.js'
 import { RpcNetwork } from '../types/rpc.js'
@@ -55,8 +55,8 @@ async function updateMetadataForSimulation(simulationState: SimulationState, eth
 	}
 }
 
-export const simulateGovernanceContractExecution = async (pendingTransaction: PendingTransaction, ethereum: EthereumClientService) => {
-	const returnError = (text: string) => ({ error: { message: text} })
+export const simulateGovernanceContractExecution = async (pendingTransaction: PendingTransaction, ethereum: EthereumClientService, userAddressBook: UserAddressBook) => {
+	const returnError = (text: string) => ({ error: { type: 'Other' as const, message: text } })
 	try {
 		// identifies compound governane call and performs simulation if the vote passes
 		const pendingResults = pendingTransaction.simulationResults
@@ -65,13 +65,16 @@ export const simulateGovernanceContractExecution = async (pendingTransaction: Pe
 		if (fourByte === undefined) return returnError('Could not identify the 4byte signature')
 		const explanation = FourByteExplanations[fourByte]
 		if ((explanation !== 'Submit vote' && explanation !== 'Cast vote') || pendingResults.data.simulatedAndVisualizedTransactions[0]?.events.length !== 1) return returnError('Could not identify the transaction as a vote')
-		if (pendingTransaction.transactionToSimulate.transaction.to === null) return  returnError('The transaction creates a contract instead of casting a vote')
+		
+		if (pendingTransaction.transactionToSimulate.transaction.to === null) return returnError('The transaction creates a contract instead of casting a vote')
 		const governanceContractInterface = new Interface(CompoundGovernanceAbi)
 		const params = governanceContractInterface.decodeFunctionData(explanation === 'Submit vote' ? 'submitVote' : 'castVote', dataStringWith0xStart(pendingTransaction.transactionToSimulate.transaction.input))
-		const contractExecutionResult = await simulateCompoundGovernanceExecution(ethereum, pendingTransaction.transactionToSimulate.transaction.to, params[0])
+		const addr = await identifyAddress(ethereum, userAddressBook, pendingTransaction.transactionToSimulate.transaction.to)
+		if (!('abi' in addr) || addr.abi === undefined) return { error: { type: 'MissingAbi' as const, message: 'ABi for the governance contract is missing', addressBookEntry: addr } }
+		const contractExecutionResult = await simulateCompoundGovernanceExecution(ethereum, addr, params[0])
 		if (contractExecutionResult === undefined) return returnError('Failed to simulate governacne execution')
 		const parentBlock = await ethereum.getBlock()
-		if (parentBlock.baseFeePerGas === undefined) throw new Error('cannot build simulation from legacy block')
+		if (parentBlock.baseFeePerGas === undefined) return returnError('cannot build simulation from legacy block')
 		const signedExecutionTransaction = mockSignTransaction({ ...contractExecutionResult.executingTransaction, gas: contractExecutionResult.multicallResult.gasSpent })
 		const tokenBalancesAfter = await getTokenBalancesAfter(
 			ethereum,
@@ -102,6 +105,7 @@ export const simulateGovernanceContractExecution = async (pendingTransaction: Pe
 		}
 		return await visualizeSimulatorState(governanceContractSimulationState, ethereum)
 	} catch(error) {
+		console.warning(error)
 		if (error instanceof Error) return returnError(error.message)
 		throw error
 	}
@@ -553,7 +557,7 @@ export async function popupMessageHandler(
 		case 'popup_set_rpc_list': return await setNewRpcList(simulator, parsedRequest, settings)
 		case 'popup_identifyAddress': return await popupIdentifyAddress(simulator, parsedRequest, settings)
 		case 'popup_findAddressBookEntryWithSymbolOrName': return await popupFindAddressBookEntryWithSymbolOrName(parsedRequest, settings)
-		case 'popup_simulateGovernanceContractExecution': return await simulateGovernanceContractExecutionOnPass(simulator.ethereum)
+		case 'popup_simulateGovernanceContractExecution': return await simulateGovernanceContractExecutionOnPass(simulator.ethereum, settings.userAddressBook)
 		case 'popup_fetchAbiAndNameFromEtherScan': return await fetchAbiAndNameFromEtherScan(parsedRequest)
 		default: assertUnreachable(parsedRequest)
 	}

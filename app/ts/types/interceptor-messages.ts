@@ -626,7 +626,22 @@ export const SimulateGovernanceContractExecutionReply = funtypes.ReadonlyObject(
 	method: funtypes.Literal('popup_simulateGovernanceContractExecutionReply'),
 	data: funtypes.Union(
 		funtypes.ReadonlyObject({
-			error: funtypes.ReadonlyObject({ message: funtypes.String })
+			error: funtypes.Union(
+				funtypes.ReadonlyObject({
+					type: funtypes.Literal('MissingAbi'),
+					message: funtypes.String,
+					addressBookEntry: AddressBookEntry,
+				}),
+				
+			)
+		}),
+		funtypes.ReadonlyObject({
+			error: funtypes.Union(
+				funtypes.ReadonlyObject({
+					type: funtypes.Literal('Other'),
+					message: funtypes.String,
+				}),	
+			)
 		}),
 		funtypes.ReadonlyObject({
 			namedTokenIds: funtypes.ReadonlyArray(NamedTokenId),

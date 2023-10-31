@@ -1,19 +1,22 @@
 import { Interface } from 'ethers'
 import { EthereumAddress, EthereumQuantity } from '../types/wire-types.js'
 import { CompoundTimeLock } from '../utils/abi.js'
-import { addressString, stringToUint8Array } from '../utils/bigint.js'
+import { addressString, checksummedAddress, stringToUint8Array } from '../utils/bigint.js'
 import { MOCK_ADDRESS } from '../utils/constants.js'
 import { EthereumClientService } from './services/EthereumClientService.js'
 import { getCompoundGovernanceTimeLockMulticall } from '../utils/ethereumByteCodes.js'
-import { Abis } from '../utils/contractAbis.js'
 import * as funtypes from 'funtypes'
+import { AddressBookEntry } from '../types/addressBookTypes.js'
 
-export const simulateCompoundGovernanceExecution = async (ethereumClientService: EthereumClientService, governanceContract: EthereumAddress, proposalId: EthereumQuantity) => {
+export const simulateCompoundGovernanceExecution = async (ethereumClientService: EthereumClientService, governanceContract: AddressBookEntry, proposalId: EthereumQuantity) => {
 	const compoundTimeLockAbi = new Interface(CompoundTimeLock)
-	const parentBlock = await ethereumClientService.getBlock()
-	const contractAbi = Abis[addressString(governanceContract)]
-	if (contractAbi === undefined) throw new Error(`We need to have ABI for governance contract ${ addressString(governanceContract) } to be able to proceed :()`)
-	const compoundGovernanceAbi = new Interface(contractAbi)
+	if (!('abi' in governanceContract) || governanceContract.abi === undefined) throw new Error(`We need to have ABI for governance contract ${ checksummedAddress(governanceContract.address) } to be able to proceed :()`)
+	const requiredFunctions = ['timelock', 'proposals', 'getActions']
+	requiredFunctions.forEach((func) => {
+		if (!compoundGovernanceAbi.hasFunction(func)) throw new Error(`Unable to perform simulation: The contract is missing "${ func }" function.`)
+	})
+
+	const compoundGovernanceAbi = new Interface(governanceContract.abi)
 	const txBase = {
 		type: '1559' as const,
 		from: MOCK_ADDRESS,
@@ -24,26 +27,28 @@ export const simulateCompoundGovernanceExecution = async (ethereumClientService:
 		chainId: ethereumClientService.getChainId(),
 		nonce: 0n,
 	}
+
 	const calls = [
 		{ // get timelock
 			...txBase,
 			gas: 30000n,
-			to: governanceContract,
+			to: governanceContract.address,
 			input: stringToUint8Array(compoundGovernanceAbi.encodeFunctionData('timelock', [])),
 		},
 		{ // get proposals
 			...txBase,
 			gas: 90000n,
-			to: governanceContract,
+			to: governanceContract.address,
 			input: stringToUint8Array(compoundGovernanceAbi.encodeFunctionData('proposals', [EthereumQuantity.serialize(proposalId)])),
 		},
 		{ // get actions
 			...txBase,
 			gas: 90000n,
-			to: governanceContract,
+			to: governanceContract.address,
 			input: stringToUint8Array(compoundGovernanceAbi.encodeFunctionData('getActions', [EthereumQuantity.serialize(proposalId)])),
 		}
 	]
+	const parentBlock = await ethereumClientService.getBlock()
 	const governanceContractCalls = await ethereumClientService.multicall(calls, [], parentBlock.number)
 	governanceContractCalls.forEach((call) => { if (call.statusCode !== 'success') throw new Error('Failed to retrieve governance contracts information') })
 	if (governanceContractCalls[0]?.returnValue === undefined) return undefined
@@ -58,7 +63,7 @@ export const simulateCompoundGovernanceExecution = async (ethereumClientService:
 	const [targets, values, signatures, calldatas] = compoundGovernanceAbi.decodeFunctionResult('getActions', governanceContractCalls[2].returnValue)
 	const executingTransaction = {
 		...txBase,
-		from: governanceContract,
+		from: governanceContract.address,
 		to: timeLockContract,
 		input: stringToUint8Array(compoundTimeLockAbi.encodeFunctionData('executeTransactions', [targets, values, signatures, calldatas, eta])),
 	}
