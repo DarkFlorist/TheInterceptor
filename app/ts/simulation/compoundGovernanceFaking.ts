@@ -12,7 +12,7 @@ export const simulateCompoundGovernanceExecution = async (ethereumClientService:
 	const compoundTimeLockAbi = new Interface(CompoundTimeLock)
 	const parentBlock = await ethereumClientService.getBlock()
 	const contractAbi = Abis[addressString(governanceContract)]
-	if (contractAbi === undefined) throw new Error(`We need to have ABI for governance contract ${ addressString(governanceContract) } to be able to proceed :()`)
+	if (contractAbi === undefined) throw new Error(`We need to have ABI for governance contract ${ addressString(governanceContract) } to be able to proceed.`)
 	const compoundGovernanceAbi = new Interface(contractAbi)
 	const txBase = {
 		type: '1559' as const,
