@@ -1,4 +1,4 @@
-import { SimulatedAndVisualizedTransaction, SimulationAndVisualisationResults, TokenVisualizerResultWithMetadata, TransactionVisualizationParameters } from '../../types/visualizer-types.js'
+import { MaybeParsedEvent, SimulatedAndVisualizedTransaction, SimulationAndVisualisationResults, TokenVisualizerResultWithMetadata, TransactionVisualizationParameters } from '../../types/visualizer-types.js'
 import { SmallAddress } from '../subcomponents/address.js'
 import { TokenSymbol, TokenAmount, AllApproval } from '../subcomponents/coins.js'
 import { LogAnalysisParams, NonLogAnalysisParams, RenameAddressCallBack } from '../../types/user-interface-types.js'
@@ -16,11 +16,11 @@ import { CatchAllVisualizer, tokenEventToTokenSymbolParams } from './customExpla
 import { AddressBookEntry } from '../../types/addressBookTypes.js'
 import { SignatureCard } from '../pages/PersonalSign.js'
 import { VisualizedPersonalSignRequest } from '../../types/personal-message-definitions.js'
-import { MulticallResponseEventLog } from '../../types/JsonRpc-types.js'
 import { bytes32String, checksummedAddress, dataStringWith0xStart } from '../../utils/bigint.js'
 import { UniqueRequestIdentifier, doesUniqueRequestIdentifiersMatch } from '../../utils/requests.js'
 import { includesWithComparator } from '../../utils/typed-arrays.js'
 import { GovernanceVoteVisualizer } from './customExplainers/GovernanceVoteVisualizer.js'
+import { PureSolidityTypeComponent } from '../subcomponents/solidityType.js'
 
 function isPositiveEvent(visResult: TokenVisualizerResultWithMetadata, ourAddressInReferenceFrame: bigint) {
 	if (visResult.type === 'ERC20') {
@@ -305,29 +305,50 @@ export function TokenLogAnalysis(param: LogAnalysisParams) {
 }
 
 type NonTokenLogEventParams = {
-	nonTokenLog: MulticallResponseEventLog
+	nonTokenLog: MaybeParsedEvent
+}
+
+function insertBetweenElements<T>(array: readonly T[], elementToInsert: T): readonly T[] {
+	return array.reduce((acc, currentElement, index, arr) => {
+		acc.push(currentElement)
+		if (index < arr.length - 1) acc.push(elementToInsert)
+		return acc
+	}, [] as T[])
 }
 
 export function NonTokenLogEvent(params: NonTokenLogEventParams) {
 	const cellStyle = 'align-items: normal;'
 	const textStyle = 'text-overflow: ellipsis; overflow: hidden;'
-	return <>
-		<div class = 'log-cell' style = { cellStyle }>
-			<p class = 'paragraph' style = { textStyle }> { checksummedAddress(params.nonTokenLog.loggersAddress) } </p>
-		</div>
-		<div class = 'log-cell' style = { cellStyle }>
-			<p class = 'paragraph' style = { textStyle }> { dataStringWith0xStart(params.nonTokenLog.data) } </p>
-		</div>
-		<div class = 'log-cell' style = { cellStyle }>
-			<span class = 'log-table-1' style = 'justify-content: center; column-gap: 5px;'>
-				{ params.nonTokenLog.topics.map((topic) =>
-					<div class = 'log-cell' style = { cellStyle }>
-						<p class = 'paragraph' style = { textStyle }> { bytes32String(topic) }</p>
-					</div>
-				) }
-			</span>
-		</div>
-	</>
+	if (params.nonTokenLog.type === 'NonParsed') {
+		return <>
+			<div class = 'log-cell' style = { cellStyle }>
+				<p class = 'paragraph' style = { textStyle }> { checksummedAddress(params.nonTokenLog.loggersAddress) } </p>
+			</div>
+			<div class = 'log-cell' style = { cellStyle }>
+				<p class = 'paragraph' style = { textStyle }> { dataStringWith0xStart(params.nonTokenLog.data) } </p>
+			</div>
+			<div class = 'log-cell' style = { cellStyle }>
+				<span class = 'log-table-1' style = 'justify-content: center; column-gap: 5px;'>
+					{ params.nonTokenLog.topics.map((topic) =>
+						<div class = 'log-cell' style = { cellStyle }>
+							<p class = 'paragraph' style = { textStyle }> { bytes32String(topic) }</p>
+						</div>
+					) }
+				</span>
+			</div>
+		</>
+	} else {
+		return <>
+			<div class = 'log-cell' style = { cellStyle }>
+				<p class = 'paragraph' style = { textStyle }> { checksummedAddress(params.nonTokenLog.loggersAddress) } </p>
+			</div>
+			<div class = 'log-cell' style = { { 'align-items': 'normal', 'grid-column-start': 2, 'grid-column-end': 3, display: 'flex', 'flex-wrap': 'wrap' } }>
+				<p class = 'paragraph' style = { textStyle }> { `${ params.nonTokenLog.name }(` } </p>
+				{ insertBetweenElements(params.nonTokenLog.args.map((arg) => <> <p style = { textStyle } class = 'paragraph'> { `${arg.paramName } =` }&nbsp;</p> <PureSolidityTypeComponent valueType = { arg.typeValue }/> </>), <p style = { textStyle } class = 'paragraph'>,&nbsp;</p>) }
+				<p class = 'paragraph' style = { textStyle }> { `)` } </p>
+			</div>
+		</>
+	}
 }
 
 export function NonTokenLogAnalysis(param: NonLogAnalysisParams) {

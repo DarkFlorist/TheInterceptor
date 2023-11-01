@@ -19,9 +19,10 @@ import { OrderComponents, OrderComponentsExtraDetails } from '../simulationExpla
 import { Ether } from '../subcomponents/coins.js'
 import { tryFocusingTabOrWindow, humanReadableDateFromSeconds, CellElement } from '../ui-utils.js'
 import { AddressBookEntry, IncompleteAddressBookEntry } from '../../types/addressBookTypes.js'
-import { EnrichedEIP712, EnrichedEIP712Message, GroupedSolidityType } from '../../types/eip721.js'
+import { EnrichedEIP712, EnrichedEIP712Message } from '../../types/eip721.js'
 import { serialize } from '../../types/wire-types.js'
 import { TransactionCreated } from '../simulationExplaining/SimulationSummary.js'
+import { EnrichedSolidityTypeComponent } from '../subcomponents/solidityType.js'
 
 type SignatureCardParams = {
 	VisualizedPersonalSignRequest: VisualizedPersonalSignRequest
@@ -239,23 +240,6 @@ function SafeTx({ VisualizedPersonalSignRequestSafeTx, renameAddressCallBack }: 
 	</>
 }
 
-function visualizeEIP712Component(valueType: GroupedSolidityType, renameAddressCallBack: RenameAddressCallBack) {
-	switch(valueType.type) {
-		case 'address': return <SmallAddress addressBookEntry = { valueType.value } renameAddressCallBack = { renameAddressCallBack } />
-		case 'bool': return valueType.value
-		case 'bytes': return <div class = 'textbox' style = 'white-space: normal;'> <p class = 'paragraph' style = 'color: var(--subtitle-text-color)'>{ dataStringWith0xStart(valueType.value) }</p> </div>
-		case 'fixedBytes': return dataStringWith0xStart(valueType.value)
-		case 'integer': return valueType.value
-		case 'string': return valueType.value
-		case 'address[]': return valueType.value.map((value) => <SmallAddress addressBookEntry = { value } renameAddressCallBack = { renameAddressCallBack } />)
-		case 'bool[]': return `[ ${valueType.value.toString() }]`
-		case 'bytes[]':  return valueType.value.map((value) => <div class = 'textbox' style = 'white-space: normal;'> <p class = 'paragraph' style = 'color: var(--subtitle-text-color)'>{ dataStringWith0xStart(value) }</p> </div>)
-		case 'fixedBytes[]': return `[ ${valueType.value.toString() }]`
-		case 'integer[]': return `[ ${valueType.value.toString() }]`
-		case 'string[]': return `[ ${valueType.value.toString() }]`
-		default: assertNever(valueType)
-	}
-}
 type EIP712Table = {
 	enrichedEIP712Message: EnrichedEIP712Message
 	renameAddressCallBack: RenameAddressCallBack
@@ -274,7 +258,7 @@ function EIP712Table({ enrichedEIP712Message, renameAddressCallBack, isSubTable 
 							<CellElement text = { entry.value.map((value) => <EIP712Table enrichedEIP712Message = { value } renameAddressCallBack = { renameAddressCallBack } isSubTable = { true }/>) } />
 							: <CellElement text = { <EIP712Table enrichedEIP712Message = { entry.value } renameAddressCallBack = { renameAddressCallBack } isSubTable = { true }/>
 						} />
-						: <CellElement text = { visualizeEIP712Component(entry, renameAddressCallBack) }/>
+						: <CellElement text = { <EnrichedSolidityTypeComponent valueType = { entry } renameAddressCallBack = { renameAddressCallBack }/> }/>
 					}
 				</>
 			}

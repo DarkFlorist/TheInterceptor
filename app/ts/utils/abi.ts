@@ -81,3 +81,18 @@ export const CompoundGovernanceAbi: InterfaceAbi = [
 export const CompoundTimeLock: InterfaceAbi = [
 	'function executeTransactions(address[] memory targets, uint[] memory values, string[] memory signatures, bytes[] memory datas, uint eta) public payable'
 ]
+
+function getStringBetweenParentheses(inputString: string): string | undefined {
+	const regex = /\(([^)]+)\)/
+	const match = inputString.match(regex)
+	if (match) return match[1]
+	return undefined
+}
+
+// Transfer(address,address,uint256) -> ['address', 'address', 'uint256']
+export const extractFunctionArgumentTypes = (signature: string) => {
+	const args = getStringBetweenParentheses(signature)
+	return args === undefined ? undefined : args.split(',')
+}
+
+export const removeTextBetweenBrackets = (inputString: string) => inputString.replace(/\[.*?\]/g, '')

@@ -1,16 +1,17 @@
 
 import * as funtypes from 'funtypes'
-import { EthereumAddress, EthereumData, EthereumQuantity, EthereumSignedTransaction, EthereumTimestamp, EthereumUnsignedTransaction, OptionalEthereumAddress } from './wire-types.js'
+import { EthereumAddress, EthereumBytes32, EthereumData, EthereumInput, EthereumQuantity, EthereumSignedTransaction, EthereumTimestamp, EthereumUnsignedTransaction, OptionalEthereumAddress } from './wire-types.js'
 import { QUARANTINE_CODE } from '../simulation/protectors/quarantine-codes.js'
 import { RenameAddressCallBack } from './user-interface-types.js'
 import { ERROR_INTERCEPTOR_GAS_ESTIMATION_FAILED } from '../utils/constants.js'
-import { EthBalanceChanges, EthSubscribeParams, MulticallResponseEventLog, MulticallResponseEventLogs, SendRawTransactionParams, SendTransactionParams, SingleMulticallResponse } from './JsonRpc-types.js'
+import { EthBalanceChanges, EthSubscribeParams, MulticallResponseEventLog, SendRawTransactionParams, SendTransactionParams, SingleMulticallResponse } from './JsonRpc-types.js'
 import { InterceptedRequest, WebsiteSocket } from '../utils/requests.js'
 import { AddressBookEntry, Erc721Entry, Erc20TokenEntry, Erc1155Entry } from './addressBookTypes.js'
 import { Website } from './websiteAccessTypes.js'
 import { VisualizedPersonalSignRequest } from './personal-message-definitions.js'
 import { RpcNetwork } from './rpc.js'
 import { SignMessageParams } from './jsonRpc-signing-types.js'
+import { PureGroupedSolidityType } from './solidityType.js'
 
 export type NetworkPrice = funtypes.Static<typeof NetworkPrice>
 export const NetworkPrice = funtypes.ReadonlyObject({
@@ -209,6 +210,36 @@ export const TransactionWithAddressBookEntries = funtypes.Intersect(
 		funtypes.ReadonlyObject({ type: funtypes.Union(funtypes.Literal('legacy'), funtypes.Literal('2930')) })
 	)
 )
+
+export type SolidityVariable = funtypes.Static<typeof SolidityVariable>
+export const SolidityVariable = funtypes.ReadonlyObject({
+	typeValue: PureGroupedSolidityType,
+	paramName: funtypes.String
+})
+
+export type MaybeParsedEvent = funtypes.Static<typeof MaybeParsedEvent>
+export const MaybeParsedEvent = funtypes.Union(
+	funtypes.Intersect(
+		funtypes.Union(
+			funtypes.ReadonlyObject({ type: funtypes.Literal('NonParsed') }),
+			funtypes.ReadonlyObject({
+				type: funtypes.Literal('Parsed'),
+				name: funtypes.String, // eg. 'Transfer'
+				signature: funtypes.String, // eg. 'Transfer(address,address,uint256)'
+				args: funtypes.ReadonlyArray(SolidityVariable), // TODO: add support for structs (abiV2)
+			})
+		),
+		funtypes.ReadonlyObject({
+			loggersAddress: EthereumAddress,
+			data: EthereumInput,
+			topics: funtypes.ReadonlyArray(EthereumBytes32),
+		}),
+	)
+)
+
+export type MaybeParsedEvents = funtypes.Static<typeof MaybeParsedEvents>
+export const MaybeParsedEvents = funtypes.ReadonlyArray(MaybeParsedEvent)
+
 export type SimulatedAndVisualizedTransactionBase = funtypes.Static<typeof SimulatedAndVisualizedTransactionBase>
 export const SimulatedAndVisualizedTransactionBase = funtypes.Intersect(
 	funtypes.ReadonlyObject({
@@ -221,7 +252,7 @@ export const SimulatedAndVisualizedTransactionBase = funtypes.Intersect(
 		realizedGasPrice: EthereumQuantity,
 		quarantine: funtypes.Boolean,
 		quarantineCodes: funtypes.ReadonlyArray(QUARANTINE_CODE),
-		events: MulticallResponseEventLogs,
+		events: MaybeParsedEvents,
 	}),
 	funtypes.Union(
 		funtypes.ReadonlyObject({

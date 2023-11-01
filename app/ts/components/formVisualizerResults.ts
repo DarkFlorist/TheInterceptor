@@ -1,7 +1,47 @@
 import { addressString } from '../utils/bigint.js'
-import { EthBalanceChangesWithMetadata, NamedTokenId, ProtectorResults, SimulatedAndVisualizedTransaction, SimulationState, TokenVisualizerResultWithMetadata, VisualizerResult } from '../types/visualizer-types.js'
+import { EthBalanceChangesWithMetadata, MaybeParsedEvent, NamedTokenId, ProtectorResults, SimulatedAndVisualizedTransaction, SimulatedTransaction, SimulationState, TokenVisualizerResultWithMetadata, VisualizerResult } from '../types/visualizer-types.js'
 import { AddressBookEntry } from '../types/addressBookTypes.js'
 import { getArtificialERC20ForEth } from './ui-utils.js'
+import { Interface } from 'ethers'
+import { parseEventIfPossible } from '../simulation/services/SimulationModeEthereumClientService.js'
+import { extractFunctionArgumentTypes, removeTextBetweenBrackets } from '../utils/abi.js'
+import { parseSolidityValueByTypePure } from '../utils/solidityTypes.js'
+import { SolidityType } from '../types/solidityType.js'
+
+const parseEvents = (simulatedTx: SimulatedTransaction, addressBookEntries: readonly AddressBookEntry[]): readonly MaybeParsedEvent[] => {
+	if (simulatedTx.multicallResponse.statusCode !== 'success' ) return []
+	const addressMetaData = new Map(addressBookEntries.map((x) => [addressString(x.address), x]))
+	return simulatedTx.multicallResponse.events.map((event) => {
+		// todo, we should do this parsing earlier, to be able to add possible addresses to addressMetaData set 
+		const logger = addressMetaData.get(addressString(event.loggersAddress))
+		const nonParsed = { ...event, type: 'NonParsed' as const }
+		if (logger === undefined || !('abi' in logger) || logger.abi === undefined) return nonParsed
+		const parsed = parseEventIfPossible(new Interface(logger.abi), event)
+		console.log(parsed)
+		if (parsed === null) return nonParsed
+		const argTypes = extractFunctionArgumentTypes(parsed.signature)
+		if (argTypes === undefined) return nonParsed
+		if (parsed.args.length !== argTypes.length) return nonParsed
+		
+		const valuesWithTypes = parsed.args.map((value, index) => {
+			const solidityType = argTypes[index]
+			const paramName = parsed.fragment.inputs[index]?.name
+			if (paramName === undefined) throw new Error(`missing parameter name`)
+			if (solidityType === undefined) throw new Error(`unknown solidity type: ${ solidityType }`)
+			const isArray = solidityType.includes('[')
+			const verifiedSolidityType = SolidityType.safeParse(removeTextBetweenBrackets(solidityType))
+			if (verifiedSolidityType.success === false) throw new Error(`unknown solidity type: ${ solidityType }`)
+			return { paramName: paramName, typeValue: parseSolidityValueByTypePure(verifiedSolidityType.value, value, isArray) }
+		})
+		return {
+			...event,
+			type: 'Parsed' as const,
+			name: parsed.name,
+			signature: parsed.signature,
+			args: valuesWithTypes,
+		}
+	})
+}
 
 export function formSimulatedAndVisualizedTransaction(simState: SimulationState, visualizerResults: readonly VisualizerResult[], protectorResults: readonly ProtectorResults[], addressBookEntries: readonly AddressBookEntry[], namedTokenIds: readonly NamedTokenId[]): readonly SimulatedAndVisualizedTransaction[] {
 	const addressMetaData = new Map(addressBookEntries.map((x) => [addressString(x.address), x]))
@@ -99,7 +139,7 @@ export function formSimulatedAndVisualizedTransaction(simState: SimulationState,
 			realizedGasPrice: simulatedTx.realizedGasPrice,
 			ethBalanceChanges: ethBalanceChanges,
 			tokenResults: tokenResults,
-			events: simulatedTx.multicallResponse.statusCode === 'success' ? simulatedTx.multicallResponse.events : [],
+			events: parseEvents(simulatedTx, addressBookEntries),
 			tokenBalancesAfter: simulatedTx.tokenBalancesAfter,
 			gasSpent: simulatedTx.multicallResponse.gasSpent,
 			quarantine: protectorResult.quarantine,

@@ -1,7 +1,7 @@
 import { StateUpdater } from 'preact/hooks'
 import * as funtypes from 'funtypes'
 import { EthereumAddress, EthereumBlockHeader, EthereumQuantity, EthereumTimestamp, OptionalEthereumAddress } from './wire-types.js'
-import { SimulatedAndVisualizedTransaction, SimulationAndVisualisationResults, SimulationUpdatingState, SimulationResultState, SignedMessageTransaction } from './visualizer-types.js'
+import { SimulatedAndVisualizedTransaction, SimulationAndVisualisationResults, SimulationUpdatingState, SimulationResultState, SignedMessageTransaction, MaybeParsedEvents } from './visualizer-types.js'
 import { IdentifiedSwapWithMetadata } from '../components/simulationExplaining/SwapTransactions.js'
 import { InterceptedRequest, UniqueRequestIdentifier, WebsiteSocket } from '../utils/requests.js'
 import { ActiveAddress, ActiveAddressEntry, AddressBookEntry, IncompleteAddressBookEntry } from './addressBookTypes.js'
@@ -10,7 +10,6 @@ import { Website, WebsiteAccessArray } from './websiteAccessTypes.js'
 import { SignerName } from './signerTypes.js'
 import { ICON_ACCESS_DENIED, ICON_ACTIVE, ICON_NOT_ACTIVE, ICON_SIGNING, ICON_SIGNING_NOT_SUPPORTED, ICON_SIMULATING } from '../utils/constants.js'
 import { RpcEntries, RpcEntry, RpcNetwork } from './rpc.js'
-import { MulticallResponseEventLogs } from './JsonRpc-types.js'
 import { VisualizedPersonalSignRequest } from './personal-message-definitions.js'
 
 export type AddressListParams = {
@@ -111,7 +110,7 @@ export type LogAnalysisParams = {
 }
 
 export type NonLogAnalysisParams = {
-	nonTokenLogs: MulticallResponseEventLogs
+	nonTokenLogs: MaybeParsedEvents
 }
 
 export type RenameAddressCallBack = (addressBookEntry: AddressBookEntry) => void
