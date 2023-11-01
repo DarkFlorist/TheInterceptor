@@ -7,13 +7,20 @@ import { commonTokenOops } from './protectors/commonTokenOops.js'
 import { eoaApproval } from './protectors/eoaApproval.js'
 import { eoaCalldata } from './protectors/eoaCalldata.js'
 import { tokenToContract } from './protectors/tokenToContract.js'
-import { WebsiteCreatedEthereumUnsignedTransaction, SimulationState, TokenVisualizerResult } from '../types/visualizer-types.js'
+import { WebsiteCreatedEthereumUnsignedTransaction, SimulationState, TokenVisualizerResult, MaybeParsedEvents, VisualizerResult, ParsedEvent, MaybeParsedEventWithExtraData } from '../types/visualizer-types.js'
 import { QUARANTINE_CODE } from './protectors/quarantine-codes.js'
 import { EthereumJSONRpcRequestHandler } from './services/EthereumJSONRpcRequestHandler.js'
-import { MulticallResponseEventLog, SingleMulticallResponse } from '../types/JsonRpc-types.js'
+import { SingleMulticallResponse } from '../types/JsonRpc-types.js'
 import { APPROVAL_LOG, DEPOSIT_LOG, ERC1155_TRANSFERBATCH_LOG, ERC1155_TRANSFERSINGLE_LOG, ERC721_APPROVAL_FOR_ALL_LOG, TRANSFER_LOG, WITHDRAWAL_LOG } from '../utils/constants.js'
 import { handleApprovalLog, handleDepositLog, handleERC1155TransferBatch, handleERC1155TransferSingle, handleERC20TransferLog, handleErc721ApprovalForAllLog, handleWithdrawalLog } from './logHandlers.js'
 import { RpcNetwork } from '../types/rpc.js'
+import { UserAddressBook } from '../types/addressBookTypes.js'
+import { parseEventIfPossible } from './services/SimulationModeEthereumClientService.js'
+import { Interface } from 'ethers'
+import { extractAbi, extractFunctionArgumentTypes, removeTextBetweenBrackets } from '../utils/abi.js'
+import { SolidityType } from '../types/solidityType.js'
+import { parseSolidityValueByTypePure } from '../utils/solidityTypes.js'
+import { identifyAddress } from '../background/metadataUtils.js'
 
 const PROTECTORS = [
 	selfTokenOops,
@@ -24,7 +31,7 @@ const PROTECTORS = [
 	tokenToContract
 ]
 
-type Loghandler = (event: MulticallResponseEventLog) => TokenVisualizerResult[]
+type Loghandler = (event: ParsedEvent) => TokenVisualizerResult[]
 
 const logHandler = new Map<string, Loghandler>([
 	[TRANSFER_LOG, handleERC20TransferLog],
@@ -36,19 +43,53 @@ const logHandler = new Map<string, Loghandler>([
 	[ERC1155_TRANSFERSINGLE_LOG, handleERC1155TransferSingle],
 ])
 
-export const visualizeTransaction = (blockNumber: bigint, singleMulticallResponse: SingleMulticallResponse) => {
-	if (singleMulticallResponse.statusCode !== 'success') return { ethBalanceChanges: [], tokenResults: [], blockNumber }
-	let tokenResults: TokenVisualizerResult[] = []
-	for (const eventLog of singleMulticallResponse.events) {
-		const logSignature = eventLog.topics[0]
-		if (logSignature === undefined) continue
+const parseEvents = async (singleMulticallResponse: SingleMulticallResponse, ethereumClientService: EthereumClientService, userAddressBook: UserAddressBook): Promise<MaybeParsedEvents> => {
+	if (singleMulticallResponse.statusCode !== 'success' ) return []
+	return await Promise.all(singleMulticallResponse.events.map(async (event) => {
+		// todo, we should do this parsing earlier, to be able to add possible addresses to addressMetaData set
+		const nonParsed = { ...event, isParsed: 'NonParsed' as const }
+		const abi = extractAbi(await identifyAddress(ethereumClientService, userAddressBook, event.loggersAddress), event.loggersAddress)
+		if (abi === undefined) return nonParsed
+		const parsed = parseEventIfPossible(new Interface(abi), event)
+		if (parsed === null) return nonParsed
+		const argTypes = extractFunctionArgumentTypes(parsed.signature)
+		if (argTypes === undefined) return nonParsed
+		if (parsed.args.length !== argTypes.length) return nonParsed
+		
+		const valuesWithTypes = parsed.args.map((value, index) => {
+			const solidityType = argTypes[index]
+			const paramName = parsed.fragment.inputs[index]?.name
+			if (paramName === undefined) throw new Error(`missing parameter name`)
+			if (solidityType === undefined) throw new Error(`unknown solidity type: ${ solidityType }`)
+			const isArray = solidityType.includes('[')
+			const verifiedSolidityType = SolidityType.safeParse(removeTextBetweenBrackets(solidityType))
+			if (verifiedSolidityType.success === false) throw new Error(`unknown solidity type: ${ solidityType }`)
+			return { paramName: paramName, typeValue: parseSolidityValueByTypePure(verifiedSolidityType.value, value, isArray) }
+		})
+		return {
+			...event,
+			isParsed: 'Parsed' as const,
+			name: parsed.name,
+			signature: parsed.signature,
+			args: valuesWithTypes,
+		}
+	}))
+}
+
+export const visualizeTransaction = async (blockNumber: bigint, singleMulticallResponse: SingleMulticallResponse, userAddressBook: UserAddressBook, ethereumClientService: EthereumClientService): Promise<VisualizerResult> => {
+	if (singleMulticallResponse.statusCode !== 'success') return { ethBalanceChanges: [], events: [], blockNumber }
+	const parsedEvents = await parseEvents(singleMulticallResponse, ethereumClientService, userAddressBook)
+	const events: MaybeParsedEventWithExtraData[][] = parsedEvents.map((parsedEvent) => {
+		if (parsedEvent.isParsed === 'NonParsed') return [{ ...parsedEvent, type: 'NonParsed' }]
+		const logSignature = parsedEvent.topics[0]
+		if (logSignature === undefined) return [{ ...parsedEvent, type: 'Parsed' }]
 		const handler = logHandler.get(bytes32String(logSignature))
-		if (handler === undefined) continue
-		tokenResults = tokenResults.concat(handler(eventLog))
-	}
+		if (handler === undefined) return [{ ...parsedEvent, type: 'Parsed' }]
+		return handler(parsedEvent).map((tokenInformation) => ({ ...parsedEvent, type: 'TokenEvent', tokenInformation }))
+	})
 	return {
 		ethBalanceChanges: singleMulticallResponse.balanceChanges,
-		tokenResults: tokenResults,
+		events: events.flat(),
 		blockNumber
 	}
 }

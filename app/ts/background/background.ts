@@ -116,10 +116,12 @@ async function visualizeSimulatorState(simulationState: SimulationState, ethereu
 	const transactions = getWebsiteCreatedEthereumUnsignedTransactions(simulationState.simulatedTransactions)
 
 	const blockNum = await ethereum.getBlockNumber()
-	const visualizerResults = simulationState.simulatedTransactions.map((simulatedTransaction) => visualizeTransaction(blockNum, simulatedTransaction.multicallResponse))
+	const userAddressBook = (await getSettings()).userAddressBook
+	const visualizerResultsPromise = Promise.all(simulationState.simulatedTransactions.map(async (simulatedTransaction) => await visualizeTransaction(blockNum, simulatedTransaction.multicallResponse, userAddressBook, ethereum)))
 	const protectorPromises = Promise.all(transactions.map(async (transaction) => await runProtectorsForTransaction(simulationState, transaction, ethereum)))
 	
 	const protectors = await protectorPromises
+	const visualizerResults = await visualizerResultsPromise
 	const updatedMetadataPromise = updateMetadataForSimulation(simulationState, ethereum, visualizerResults, protectors)
 
 	function onlyTokensAndTokensWithKnownDecimals(metadata: AddressBookEntry): metadata is AddressBookEntry & { type: 'ERC20', decimals: `0x${ string }` } {

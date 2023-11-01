@@ -319,7 +319,7 @@ function insertBetweenElements<T>(array: readonly T[], elementToInsert: T): read
 export function NonTokenLogEvent(params: NonTokenLogEventParams) {
 	const cellStyle = 'align-items: normal;'
 	const textStyle = 'text-overflow: ellipsis; overflow: hidden;'
-	if (params.nonTokenLog.type === 'NonParsed') {
+	if (params.nonTokenLog.isParsed === 'NonParsed') {
 		return <>
 			<div class = 'log-cell' style = { cellStyle }>
 				<p class = 'paragraph' style = { textStyle }> { checksummedAddress(params.nonTokenLog.loggersAddress) } </p>

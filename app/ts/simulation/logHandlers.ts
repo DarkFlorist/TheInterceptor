@@ -49,7 +49,6 @@ export function handleErc721ApprovalForAllLog(eventLog: MulticallResponseEventLo
 		type: 'NFT All approval',
 		isApproval: true,
 		allApprovalAdded: eventLog.topics[3] != 0n,
-		originalLogObject: eventLog,
 	}]
 }
 
@@ -62,7 +61,6 @@ export function handleDepositLog(eventLog: MulticallResponseEventLog): TokenVisu
 		isApproval: false,
 		amount: bytesToUnsigned(eventLog.data),
 		type: 'ERC20',
-		originalLogObject: eventLog,
 	}]
 }
 
@@ -75,7 +73,6 @@ export function handleWithdrawalLog(eventLog: MulticallResponseEventLog): TokenV
 		isApproval: false,
 		amount: bytesToUnsigned(eventLog.data),
 		type: 'ERC20',
-		originalLogObject: eventLog,
 	}]
 }
 
@@ -110,6 +107,5 @@ export function handleERC1155TransferSingle(eventLog: MulticallResponseEventLog)
 		isApproval: false,
 		tokenId: bytesToUnsigned(eventLog.data.slice(0, 32)),
 		amount: bytesToUnsigned(eventLog.data.slice(32, 64)),
-		originalLogObject: eventLog,
 	}]
 }
