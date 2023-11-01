@@ -12,11 +12,11 @@ export const simulateCompoundGovernanceExecution = async (ethereumClientService:
 	const compoundTimeLockAbi = new Interface(CompoundTimeLock)
 	if (!('abi' in governanceContract) || governanceContract.abi === undefined) throw new Error(`We need to have ABI for governance contract ${ checksummedAddress(governanceContract.address) } to be able to proceed :()`)
 	const requiredFunctions = ['timelock', 'proposals', 'getActions']
+	const compoundGovernanceAbi = new Interface(governanceContract.abi)
 	requiredFunctions.forEach((func) => {
 		if (!compoundGovernanceAbi.hasFunction(func)) throw new Error(`Unable to perform simulation: The contract is missing "${ func }" function.`)
 	})
 
-	const compoundGovernanceAbi = new Interface(governanceContract.abi)
 	const txBase = {
 		type: '1559' as const,
 		from: MOCK_ADDRESS,
