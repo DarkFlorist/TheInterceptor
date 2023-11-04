@@ -102,7 +102,7 @@ export function TransactionImportanceBlock(param: TransactionImportanceBlockPara
 		case 'ContractDeployment':
 		case 'ContractFallbackMethod':
 		case 'ArbitaryContractExecution': return <CatchAllVisualizer { ...param } />
-		case 'GovernanceVote': return <GovernanceVoteVisualizer { ...param } />
+		case 'GovernanceVote': return <GovernanceVoteVisualizer { ...param } governanceVoteInputParameters = { transactionIdentification.governanceVoteInputParameters } />
 		default: assertNever(transactionIdentification)
 	}
 }
@@ -342,7 +342,7 @@ export function NonTokenLogEvent(params: NonTokenLogEventParams) {
 			<div class = 'log-cell' style = { cellStyle }>
 				<p class = 'paragraph' style = { textStyle }> { checksummedAddress(params.nonTokenLog.loggersAddress) } </p>
 			</div>
-			<div class = 'log-cell' style = { { 'align-items': 'normal', 'grid-column-start': 2, 'grid-column-end': 3, display: 'flex', 'flex-wrap': 'wrap' } }>
+			<div class = 'log-cell' style = { { 'align-items': 'normal', 'grid-column-start': 2, 'grid-column-end': 4, display: 'flex', 'flex-wrap': 'wrap' } }>
 				<p class = 'paragraph' style = { textStyle }> { `${ params.nonTokenLog.name }(` } </p>
 				{ insertBetweenElements(params.nonTokenLog.args.map((arg) => <> <p style = { textStyle } class = 'paragraph'> { `${arg.paramName } =` }&nbsp;</p> <PureSolidityTypeComponent valueType = { arg.typeValue }/> </>), <p style = { textStyle } class = 'paragraph'>,&nbsp;</p>) }
 				<p class = 'paragraph' style = { textStyle }> { `)` } </p>

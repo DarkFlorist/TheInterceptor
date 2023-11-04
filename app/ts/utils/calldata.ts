@@ -61,3 +61,11 @@ export function get4Byte(data: Uint8Array) {
 	if (data.buffer.byteLength < 4) return undefined // always calls fallback method
 	return new DataView(data.buffer, 0, 4).getUint32(0)
 }
+
+export function get4ByteString(data: Uint8Array): string | undefined {
+	const num = get4Byte(data)
+	if (num === undefined) return undefined
+	const hexString = num.toString(16)
+	const zerosToPad = Math.max(0, 8 - hexString.length)
+	return '0x' + '0'.repeat(zerosToPad) + hexString
+}

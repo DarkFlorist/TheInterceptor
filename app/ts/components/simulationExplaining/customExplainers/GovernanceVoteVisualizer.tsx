@@ -1,10 +1,14 @@
 import { sendPopupMessageToBackgroundPage } from '../../../background/backgroundUtils.js'
 import { AddressBookEntry } from '../../../types/addressBookTypes.js'
-import { ExternalPopupMessage, SimulateGovernanceContractExecutionReply } from '../../../types/interceptor-messages.js'
-import { RpcConnectionStatus } from '../../../types/user-interface-types.js'
+import { ExternalPopupMessage, GovernanceVoteInputParameters, SimulateGovernanceContractExecutionReply } from '../../../types/interceptor-messages.js'
+import { RenameAddressCallBack, RpcConnectionStatus } from '../../../types/user-interface-types.js'
+import { SimulatedAndVisualizedTransaction, SimulationAndVisualisationResults } from '../../../types/visualizer-types.js'
+import { checksummedAddress, dataStringWith0xStart } from '../../../utils/bigint.js'
+import { BIG_FONT_SIZE } from '../../../utils/constants.js'
 import { TransactionCardParams } from '../../pages/ConfirmTransaction.js'
 import { Error as ErrorComponent } from '../../subcomponents/Error.js'
-import { TransactionImportanceBlockParams, Transaction } from '../Transactions.js'
+import { CellElement } from '../../ui-utils.js'
+import { Transaction } from '../Transactions.js'
 import { useEffect, useState } from 'preact/hooks'
 
 export function GovernanceTransactionExecution(param: TransactionCardParams) {
@@ -38,7 +42,57 @@ function MissingAbi(params: MissingAbiParams) {
 	</div>
 }
 
-export function GovernanceVoteVisualizer(param: TransactionImportanceBlockParams) {
+
+export function VotePanel({ inputParams }: { inputParams: GovernanceVoteInputParameters }) {
+	const interpretSupport = (support: bigint | boolean) => {
+		if (support === true || support === 1n) return 'For'
+		if (support === false || support === 0n) return 'Against'
+		if (support === 2n) return 'Abstain'
+		return `Support: ${ support }`
+	}
+
+	return <>
+		<div class = 'notification transaction-importance-box'>
+			<div style = 'display: flex; justify-content: center;' >
+				<p style = { { 'font-size': BIG_FONT_SIZE } } >
+					Vote&nbsp;<b>{ interpretSupport(inputParams.support) }</b>&nbsp;{`for proposal: ${ inputParams.proposalId } `}
+				</p>
+			</div>
+		</div>
+		
+		{ inputParams.reason !== undefined || inputParams.signature !== undefined || inputParams.voter !== undefined || inputParams.params !== undefined ? <>
+			<div class = 'container'>
+				<span class = 'log-table' style = 'justify-content: center; column-gap: 5px; row-gap: 5px; grid-template-columns: auto auto'>
+					{ inputParams.reason !== undefined ? <> 
+						<CellElement text = 'Reason:'/>
+						<CellElement text =  { inputParams.reason }/>
+					</> : <></> }
+					{ inputParams.signature !== undefined ? <> 
+						<CellElement text = 'Signature:'/>
+						<CellElement text = { dataStringWith0xStart(inputParams.signature) } />
+					</> : <></> }
+					{ inputParams.voter !== undefined ? <> 
+						<CellElement text = 'Voter:'/>
+						<CellElement text = { checksummedAddress(inputParams.voter) } /> 
+					</> : <></> }
+					{ inputParams.params !== undefined ? <>
+						<CellElement text = 'Params: '/>
+						<CellElement text = { dataStringWith0xStart(inputParams.params) } />
+					</> : <></> }
+				</span>
+			</div>
+		</> : <></> }
+	</>
+}
+
+export type GovernanceVoteVisualizerParams = {
+	simTx: SimulatedAndVisualizedTransaction
+    simulationAndVisualisationResults: SimulationAndVisualisationResults
+    renameAddressCallBack: RenameAddressCallBack
+	governanceVoteInputParameters: GovernanceVoteInputParameters
+}
+
+export function GovernanceVoteVisualizer(param: GovernanceVoteVisualizerParams) {
 	const [currentBlockNumber, setCurrentBlockNumber] = useState<undefined | bigint>(undefined)
 	const [rpcConnectionStatus, setRpcConnectionStatus] = useState<RpcConnectionStatus>(undefined)
 	const [simulateGovernanceContractExecutionReply, setSimulateGovernanceContractExecutionReply] = useState<SimulateGovernanceContractExecutionReply | undefined>(undefined)
@@ -59,17 +113,14 @@ export function GovernanceVoteVisualizer(param: TransactionImportanceBlockParams
 	function simulateGovernanceVote() {
 		sendPopupMessageToBackgroundPage({ method: 'popup_simulateGovernanceContractExecution' })
 	}
+
 	return <>
-		<div class = 'notification transaction-importance-box'>
-			<div style = 'display: grid; grid-template-rows: max-content max-content' >
-				<p> This transaction performs a vote on governance contract</p>
-			</div>
-		</div>
+		<VotePanel inputParams = { param.governanceVoteInputParameters } />
 		
 		<div style = 'display: grid; grid-template-rows: max-content max-content'>
 			<span class = 'log-table' style = 'padding-bottom: 10px; grid-template-columns: auto auto;'>
 				<div class = 'log-cell'>
-					<p class = 'paragraph'>Simulation of governance votes outcome on a passing vote:</p>
+					<p class = 'paragraph'>Simulation of vote's outcome on a passing vote:</p>
 				</div>
 				<div class = 'log-cell' style = 'justify-content: right;'>
 					{ simulateGovernanceContractExecutionReply !== undefined ? <>

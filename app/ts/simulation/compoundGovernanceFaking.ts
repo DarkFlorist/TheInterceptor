@@ -1,5 +1,5 @@
-import { Interface } from 'ethers'
-import { EthereumAddress, EthereumQuantity } from '../types/wire-types.js'
+import { Interface, Result } from 'ethers'
+import { EthereumAddress, EthereumData, EthereumQuantity } from '../types/wire-types.js'
 import { CompoundTimeLock } from '../utils/abi.js'
 import { addressString, checksummedAddress, stringToUint8Array } from '../utils/bigint.js'
 import { MOCK_ADDRESS } from '../utils/constants.js'
@@ -56,7 +56,7 @@ export const simulateCompoundGovernanceExecution = async (ethereumClientService:
 	const timeLockContract = EthereumAddress.parse(timeLockContractResult[0])
 	if (governanceContractCalls[1] === undefined) throw new Error('proposals return value was undefined')
 	const proposal = compoundGovernanceAbi.decodeFunctionResult('proposals', governanceContractCalls[1].returnValue)
-	const eta: bigint = funtypes.BigInt.parse(proposal[0].eta)
+	const eta: bigint = funtypes.BigInt.parse(proposal.eta)
 	if (eta === undefined) throw new Error('eta is undefined')
 	
 	if (governanceContractCalls[2] === undefined) throw new Error('getActions return value was undefined')
@@ -89,4 +89,17 @@ export const simulateCompoundGovernanceExecution = async (ethereumClientService:
 	const multicallResult = (ethereumClientService.convertExecutionSpec383MulticallToOldMulticall(singleMulticalResult))[0]
 	if (multicallResult === undefined) throw new Error('multicallResult did not exist')
 	return { multicallResult, executingTransaction }
+}
+
+export const parseVoteInputParameters = (ethersResult: Result) => {
+	if (ethersResult.proposalId === undefined) throw new Error('proposal Id missing from vote call')
+	if (ethersResult.support === undefined) throw new Error('support missing from vote call')
+	return {
+		proposalId: funtypes.BigInt.parse(ethersResult.proposalId),
+		support: funtypes.Union(funtypes.Boolean, funtypes.BigInt).parse(ethersResult.support),
+		reason: ethersResult.reason !== undefined ? funtypes.String.parse(ethersResult.reason) : undefined,
+		params: ethersResult.params !== undefined ? EthereumData.parse(ethersResult.params) : undefined,
+		signature: ethersResult.signature !== undefined ? EthereumData.parse(ethersResult.signature) : undefined,
+		voter: ethersResult.address !== undefined ? EthereumAddress.parse(ethersResult.address) : undefined,
+	}
 }
