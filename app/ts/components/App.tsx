@@ -41,7 +41,7 @@ export function App() {
 	const [isSettingsLoaded, setIsSettingsLoaded] = useState<boolean>(false)
 	const [currentBlockNumber, setCurrentBlockNumber] = useState<bigint | undefined>(undefined)
 	const [signerName, setSignerName] = useState<SignerName>('NoSignerDetected')
-	const [addingNewAddress, setAddingNewAddress] = useState<IncompleteAddressBookEntry> ({ addingAddress: false, type: 'activeAddress', address: undefined, askForAddressAccess: false, name: undefined, symbol: undefined, decimals: undefined, logoUri: undefined, entrySource: 'FilledIn' })
+	const [addingNewAddress, setAddingNewAddress] = useState<IncompleteAddressBookEntry> ({ addingAddress: false, type: 'activeAddress', address: undefined, askForAddressAccess: false, name: undefined, symbol: undefined, decimals: undefined, logoUri: undefined, entrySource: 'FilledIn', abi: undefined })
 	const [rpcConnectionStatus, setRpcConnectionStatus] = useState<RpcConnectionStatus>(undefined)
 	const [useTabsInsteadOfPopup, setUseTabsInsteadOfPopup] = useState<boolean | undefined>(undefined)
 	const [metamaskCompatibilityMode, setMetamaskCompatibilityMode] = useState<boolean | undefined>(undefined)
@@ -211,6 +211,7 @@ export function App() {
 			address: checksummedAddress(bigIntReprentation),
 			askForAddressAccess: true,
 			entrySource: 'FilledIn',
+			abi: undefined,
 		} )
 	}
 
@@ -222,6 +223,7 @@ export function App() {
 			symbol: undefined,
 			decimals: undefined,
 			logoUri: undefined,
+			abi: undefined,
 			...entry,
 			address: checksummedAddress(entry.address)
 		})
@@ -239,6 +241,7 @@ export function App() {
 			address: undefined,
 			askForAddressAccess: true,
 			entrySource: 'FilledIn',
+			abi: undefined,
 		} )
 	}
 
