@@ -39,6 +39,7 @@ export const Erc20TokenEntry = funtypes.ReadonlyObject({
 	entrySource: EntrySource,
 }).And(funtypes.Partial({
 	logoUri: funtypes.String,
+	abi: funtypes.String,
 }))
 
 export type Erc721Entry = funtypes.Static<typeof Erc721Entry>
@@ -51,6 +52,7 @@ export const Erc721Entry = funtypes.ReadonlyObject({
 }).And(funtypes.Partial({
 	protocol: funtypes.String,
 	logoUri: funtypes.String,
+	abi: funtypes.String,
 }))
 
 export type Erc1155Entry = funtypes.Static<typeof Erc1155Entry>
@@ -64,6 +66,7 @@ export const Erc1155Entry = funtypes.ReadonlyObject({
 }).And(funtypes.Partial({
 	protocol: funtypes.String,
 	logoUri: funtypes.String,
+	abi: funtypes.String,
 }))
 
 export type ContactEntry = funtypes.Static<typeof ContactEntry>
@@ -74,6 +77,7 @@ export const ContactEntry = funtypes.ReadonlyObject({
 	entrySource: funtypes.Union(EntrySource, funtypes.Literal(undefined).withParser(LiteralConverterParserFactory(undefined, 'User' as const))),
 }).And(funtypes.Partial({
 	logoUri: funtypes.String,
+	abi: funtypes.String,
 }))
 
 export type ContactEntries = funtypes.Static<typeof ContactEntries>
@@ -88,6 +92,7 @@ export const ContractEntry = funtypes.ReadonlyObject({
 }).And(funtypes.Partial({
 	protocol: funtypes.String,
 	logoUri: funtypes.String,
+	abi: funtypes.String,
 }))
 
 export type AddressBookEntryCategory = 'contact' | 'activeAddress' | 'ERC20' | 'ERC721' | 'contract' | 'ERC1155'
@@ -115,6 +120,7 @@ export type IncompleteAddressBookEntry = {
 	decimals: bigint | undefined
 	logoUri: string | undefined
 	entrySource: EntrySource
+	abi: string | undefined
 }
 
 export type UserAddressBook = funtypes.Static<typeof UserAddressBook>
