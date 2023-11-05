@@ -20,7 +20,8 @@
 	"permissions": [
 		"activeTab",
 		"storage",
-		"scripting"
+		"scripting",
+		"clipboardRead"
 	],
 	"web_accessible_resources": [
 		{

@@ -680,7 +680,9 @@ export const FetchAbiAndNameFromEtherScanReply = funtypes.ReadonlyObject({
 			abi: funtypes.Union(funtypes.String, funtypes.Undefined),
 			contractName: funtypes.String,
 		}),
-		funtypes.Undefined,
+		funtypes.ReadonlyObject({
+			error: funtypes.String,
+		}),
 	)
 }).asReadonly()
 
