@@ -208,7 +208,7 @@ export function AddressBook() {
 	const searchStringRef = useRef<string | undefined>(searchString)
 	const currentPageRef = useRef<number>(currentPage)
 
-	const [addingNewAddress, setAddingNewAddress] = useState<IncompleteAddressBookEntry>({ addingAddress: false, type: 'activeAddress', address: undefined, askForAddressAccess: false, name: undefined, symbol: undefined, decimals: undefined, logoUri: undefined, entrySource: 'FilledIn' })
+	const [addingNewAddress, setAddingNewAddress] = useState<IncompleteAddressBookEntry>({ addingAddress: false, type: 'activeAddress', address: undefined, askForAddressAccess: false, name: undefined, symbol: undefined, decimals: undefined, logoUri: undefined, entrySource: 'FilledIn', abi: undefined })
 
 	const scrollTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
 
@@ -374,6 +374,7 @@ export function AddressBook() {
 			address: undefined,
 			askForAddressAccess: true,
 			entrySource: 'FilledIn',
+			abi: undefined,
 		})
 	}
 
@@ -391,6 +392,7 @@ export function AddressBook() {
 			decimals: undefined,
 			logoUri: undefined,
 			...entry,
+			abi: 'abi' in entry ? entry.abi : undefined,
 			address: checksummedAddress(entry.address)
 		})
 	}
