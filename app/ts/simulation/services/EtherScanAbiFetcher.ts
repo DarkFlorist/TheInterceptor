@@ -5,7 +5,9 @@ import { addressString } from '../../utils/bigint.js'
 const EtherScanABIKey = 'PSW8C433Q667DVEX5BCRMGNAH9FSGFZ7Q8'
 
 export async function fetchAbi(contractAddress: EthereumAddress) {
-	const parsedSourceCode = EtherscanSourceCodeResult.safeParse(await (await fetch(`https://api.etherscan.io/api?module=contract&action=getsourcecode&address=${ addressString(contractAddress) }&apiKey=${ EtherScanABIKey }`)).json())
+	const sourceCodeResponse= await fetch(`https://api.etherscan.io/api?module=contract&action=getsourcecode&address=${ addressString(contractAddress) }&apiKey=${ EtherScanABIKey }`)
+	const json = await sourceCodeResponse.json()
+	const parsedSourceCode = EtherscanSourceCodeResult.safeParse(json)
 
 	// Extract ABI from getSourceCode request if not proxy, otherwise attempt to fetch ABI of implementation
 	if (parsedSourceCode.success == false || parsedSourceCode.value.status !== 'success') return undefined
