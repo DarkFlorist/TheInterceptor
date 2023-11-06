@@ -74,10 +74,10 @@ export const FourByteExplanations = {
 	[get4Byte('burn(address)')]: 'Burn' as const,
 	[get4Byte('submitVote(uint256,bool)')]: 'Submit Vote' as const,
 	[get4Byte('castVote(uint256,uint8)')]: 'Cast Vote' as const,
-	[get4Byte('castVoteWithReason(uint256,uint8,string)')]: 'Cast Vote With Reason' as const,
-	[get4Byte('castVoteWithReasonAndParams(uint256,uint8,string,bytes)')]: 'Cast Vote With Reason And Params' as const,
-	[get4Byte('castVoteBySig(uint256,uint8,voter,bytes)')]: 'Cast Vote By Sig' as const,
-	[get4Byte('castVoteWithReasonAndParamsBySig(uint256,uint8,address,string,bytes,bytes)')]: 'Cast Vote With Reason And Params By Sig' as const,
+	[get4Byte('castVoteWithReason(uint256,uint8,string)')]: 'Cast Vote with Reason' as const,
+	[get4Byte('castVoteWithReasonAndParams(uint256,uint8,string,bytes)')]: 'Cast Vote with Reason and Additional Info' as const,
+	[get4Byte('castVoteBySig(uint256,uint8,voter,bytes)')]: 'Cast Vote by Signature' as const,
+	[get4Byte('castVoteWithReasonAndParamsBySig(uint256,uint8,address,string,bytes,bytes)')]: 'Cast Vote with Reason And Additional Info by Signature' as const,
 }
 
 export const ICON_ACTIVE = '../img/head.png' as const

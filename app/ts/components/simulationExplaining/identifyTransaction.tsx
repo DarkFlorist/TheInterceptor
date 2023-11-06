@@ -92,10 +92,10 @@ export function identifyGovernanceVote(simTx: SimulatedAndVisualizedTransaction)
 	const explanation = FourByteExplanations[fourByte]
 	if (explanation !== 'Cast Vote'
 		&& explanation !== 'Submit Vote'
-		&& explanation !== 'Cast Vote By Sig'
-		&& explanation !== 'Cast Vote With Reason'
-		&& explanation !== 'Cast Vote With Reason And Params'
-		&& explanation !== 'Cast Vote With Reason And Params By Sig'
+		&& explanation !== 'Cast Vote by Signature'
+		&& explanation !== 'Cast Vote with Reason'
+		&& explanation !== 'Cast Vote with Reason and Additional Info'
+		&& explanation !== 'Cast Vote with Reason And Additional Info by Signature'
 	) return undefined
 	const fourByteString = get4ByteString(simTx.transaction.input)
 	if (fourByteString === undefined) return undefined

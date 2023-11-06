@@ -14,7 +14,7 @@ export const simulateCompoundGovernanceExecution = async (ethereumClientService:
 	const requiredFunctions = ['timelock', 'proposals', 'getActions']
 	const compoundGovernanceAbi = new Interface(governanceContract.abi)
 	requiredFunctions.forEach((func) => {
-		if (!compoundGovernanceAbi.hasFunction(func)) throw new Error(`The governance contract is a non-standard governane function and we are unable to perform the simulation (The contract is missing "${ func }" function).`)
+		if (!compoundGovernanceAbi.hasFunction(func)) throw new Error(`The governance contract is not currently supported so we are unable to perform the simulation (Additional details to include in a feature request: The contract is missing \`${ func }\`).`)
 	})
 
 	const txBase = {

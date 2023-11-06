@@ -56,7 +56,7 @@ async function updateMetadataForSimulation(simulationState: SimulationState, eth
 }
 
 export const simulateGovernanceContractExecution = async (pendingTransaction: PendingTransaction, ethereum: EthereumClientService, userAddressBook: UserAddressBook) => {
-	const returnError = (text: string) => ({ error: { type: 'Other' as const, message: text } })
+	const returnError = (text: string) => ({ success: false as const, error: { type: 'Other' as const, message: text } })
 	try {
 		// identifies compound governane call and performs simulation if the vote passes
 		const pendingResults = pendingTransaction.simulationResults
@@ -67,10 +67,10 @@ export const simulateGovernanceContractExecution = async (pendingTransaction: Pe
 		const explanation = FourByteExplanations[fourByte]
 		if ((explanation !== 'Cast Vote'
 			&& explanation !== 'Submit Vote'
-			&& explanation !== 'Cast Vote By Sig'
-			&& explanation !== 'Cast Vote With Reason'
-			&& explanation !== 'Cast Vote With Reason And Params'
-			&& explanation !== 'Cast Vote With Reason And Params By Sig')
+			&& explanation !== 'Cast Vote by Signature'
+			&& explanation !== 'Cast Vote with Reason'
+			&& explanation !== 'Cast Vote with Reason and Additional Info'
+			&& explanation !== 'Cast Vote with Reason And Additional Info by Signature')
 			|| pendingResults.data.simulatedAndVisualizedTransactions[0]?.events.length !== 1) return returnError('Could not identify the transaction as a vote')
 		
 		const governanceContractInterface = new Interface(CompoundGovernanceAbi)
@@ -79,7 +79,7 @@ export const simulateGovernanceContractExecution = async (pendingTransaction: Pe
 		if (pendingTransaction.transactionToSimulate.transaction.to === null) return returnError('The transaction creates a contract instead of casting a vote')
 		const params = governanceContractInterface.decodeFunctionData(voteFunction, dataStringWith0xStart(pendingTransaction.transactionToSimulate.transaction.input))
 		const addr = await identifyAddress(ethereum, userAddressBook, pendingTransaction.transactionToSimulate.transaction.to)
-		if (!('abi' in addr) || addr.abi === undefined) return { error: { type: 'MissingAbi' as const, message: 'ABi for the governance contract is missing', addressBookEntry: addr } }
+		if (!('abi' in addr) || addr.abi === undefined) return { success: false as const, error: { type: 'MissingAbi' as const, message: 'ABi for the governance contract is missing', addressBookEntry: addr } }
 		const contractExecutionResult = await simulateCompoundGovernanceExecution(ethereum, addr, params[0])
 		if (contractExecutionResult === undefined) return returnError('Failed to simulate governacne execution')
 		const parentBlock = await ethereum.getBlock()
@@ -112,11 +112,11 @@ export const simulateGovernanceContractExecution = async (pendingTransaction: Pe
 			simulationConductedTimestamp: new Date(),
 			signedMessages: [],
 		}
-		return await visualizeSimulatorState(governanceContractSimulationState, ethereum)
+		return { success: true as const, result: await visualizeSimulatorState(governanceContractSimulationState, ethereum) }
 	} catch(error) {
 		console.warn(error)
 		if (error instanceof Error) return returnError(error.message)
-		throw error
+		return returnError('Unknown error occured')
 	}
 }
 

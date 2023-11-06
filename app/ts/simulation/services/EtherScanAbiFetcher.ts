@@ -5,7 +5,7 @@ import { addressString, checksummedAddress } from '../../utils/bigint.js'
 
 const EtherScanABIKey = 'PSW8C433Q667DVEX5BCRMGNAH9FSGFZ7Q8'
 
-async function fetchJsonOrUndefined(url: string): Promise<{ result: string } | { error: string }> {
+async function fetchJsonOrError(url: string): Promise<{ result: string } | { error: string }> {
 	const response = await fetch(url)
 	if (!response.ok) return { error: `Ethercan returned error: ${ response.status }.` }
 	return { result: await response.json() }
@@ -21,7 +21,7 @@ export function isValidAbi(abi: string) {
 }
 
 export async function fetchAbi(contractAddress: EthereumAddress) {
-	const json = await fetchJsonOrUndefined(`https://api.etherscan.io/api?module=contract&action=getsourcecode&address=${ addressString(contractAddress) }&apiKey=${ EtherScanABIKey }`)
+	const json = await fetchJsonOrError(`https://api.etherscan.io/api?module=contract&action=getsourcecode&address=${ addressString(contractAddress) }&apiKey=${ EtherScanABIKey }`)
 	if ('error' in json) return json
 	const parsedSourceCode = EtherscanSourceCodeResult.safeParse(json.result)
 
@@ -29,11 +29,11 @@ export async function fetchAbi(contractAddress: EthereumAddress) {
 	if (parsedSourceCode.success == false || parsedSourceCode.value.status !== 'success') return { error: 'Failed to parse Etherscan results.'}
 	
 	if (parsedSourceCode.value.result[0].Proxy === 'yes' && parsedSourceCode.value.result[0].Implementation !== '') {
-		const implReq = await fetchJsonOrUndefined(`https://api.etherscan.io/api?module=contract&action=getabi&address=${ addressString(parsedSourceCode.value.result[0].Implementation) }&apiKey=${ EtherScanABIKey }`)
+		const implReq = await fetchJsonOrError(`https://api.etherscan.io/api?module=contract&action=getabi&address=${ addressString(parsedSourceCode.value.result[0].Implementation) }&apiKey=${ EtherScanABIKey }`)
 		if ('error' in implReq) return implReq
 		const implResult = EtherscanGetABIResult.safeParse(implReq.result)
 		
-		const sourceCodeResult = await fetchJsonOrUndefined(`https://api.etherscan.io/api?module=contract&action=getsourcecode&address=${ addressString(parsedSourceCode.value.result[0].Implementation) }&apiKey=${ EtherScanABIKey }`)
+		const sourceCodeResult = await fetchJsonOrError(`https://api.etherscan.io/api?module=contract&action=getsourcecode&address=${ addressString(parsedSourceCode.value.result[0].Implementation) }&apiKey=${ EtherScanABIKey }`)
 		if ('error' in sourceCodeResult) return sourceCodeResult
 		const implementationName = EtherscanSourceCodeResult.safeParse(sourceCodeResult.result)
 		
