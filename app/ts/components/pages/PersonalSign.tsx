@@ -166,7 +166,7 @@ function SignRequest({ VisualizedPersonalSignRequest, renameAddressCallBack }: S
 					token: VisualizedPersonalSignRequest.verifyingContract,
 					amount: VisualizedPersonalSignRequest.message.message.value,
 					isApproval: true,
-					originalLogObject: undefined,
+					logObject: undefined,
 				} }
 				transactionGasses = { { gasSpent: 0n, realizedGasPrice: 0n } }
 				rpcNetwork = { VisualizedPersonalSignRequest.rpcNetwork }
@@ -183,7 +183,7 @@ function SignRequest({ VisualizedPersonalSignRequest, renameAddressCallBack }: S
 					from: VisualizedPersonalSignRequest.account,
 					to: VisualizedPersonalSignRequest.spender,
 					isApproval: true,
-					originalLogObject: undefined,
+					logObject: undefined,
 				} }
 				transactionGasses = { { gasSpent: 0n, realizedGasPrice: 0n } }
 				rpcNetwork = { VisualizedPersonalSignRequest.rpcNetwork }

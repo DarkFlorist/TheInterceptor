@@ -10,6 +10,7 @@ import { assertNever } from '../utils/typescript.js'
 import { getUserAddressBookEntries } from './storageVariables.js'
 import { getUniqueItemsByProperties } from '../utils/typed-arrays.js'
 import { EthereumNameServiceTokenWrapper, getEthereumNameServiceNameFromTokenId } from '../utils/ethereumNameService.js'
+import { EthereumAddress } from '../types/wire-types.js'
 export const LOGO_URI_PREFIX = `../vendor/@darkflorist/address-metadata`
 
 const pathJoin = (parts: string[], sep = '/') => parts.join(sep).replace(new RegExp(sep + '{1,}', 'g'), sep)
@@ -137,27 +138,23 @@ export async function identifyAddress(ethereumClientService: EthereumClientServi
 	}
 }
 
-export async function getAddressBookEntriesForVisualiser(ethereumClientService: EthereumClientService, visualizerResult: readonly (VisualizerResult | undefined)[], simulationState: SimulationState, userAddressBook: UserAddressBook) : Promise<AddressBookEntry[]> {
+export async function getAddressBookEntriesForVisualiser(ethereumClientService: EthereumClientService, visualizerResults: readonly (VisualizerResult | undefined)[], simulationState: SimulationState, userAddressBook: UserAddressBook) : Promise<AddressBookEntry[]> {
 	let addressesToFetchMetadata: bigint[] = []
-	let tokenAddresses: bigint[] = []
 
-	for (const vis of visualizerResult) {
-		if (vis === undefined) continue
-		const ethBalanceAddresses = vis.ethBalanceChanges.map((x) => x.address)
-		const from = vis.tokenResults.map((x) => x.from)
-		const to = vis.tokenResults.map((x) => x.to)
-		tokenAddresses = tokenAddresses.concat(vis.tokenResults.map((x) => x.tokenAddress))
-		addressesToFetchMetadata = addressesToFetchMetadata.concat(ethBalanceAddresses, from, to)
+	for (const visualizerResult of visualizerResults) {
+		if (visualizerResult === undefined) continue
+		const ethBalanceAddresses = visualizerResult.ethBalanceChanges.map((change) => change.address)
+		const eventArguments = visualizerResult.events.map((event) => event.type !== 'NonParsed' ? event.args : []).flat()
+		const addressesInEvents = eventArguments.filter((event): event is { typeValue: { type: 'address', value: EthereumAddress }, paramName: string } => event.typeValue.type === 'address').map((event) => event.typeValue.value)
+		addressesToFetchMetadata = addressesToFetchMetadata.concat(ethBalanceAddresses, addressesInEvents, visualizerResult.events.map((event) => event.loggersAddress))
 	}
+
 	simulationState.simulatedTransactions.forEach((tx) => {
-		if (tx.multicallResponse.statusCode === 'success') {
-			addressesToFetchMetadata.concat(tx.multicallResponse.events.map((tx) => tx.loggersAddress ))
-		}
 		addressesToFetchMetadata.push(tx.signedTransaction.from)
 		if (tx.signedTransaction.to !== null) addressesToFetchMetadata.push(tx.signedTransaction.to)
 	})
 
-	const deDuplicated = new Set<bigint>(addressesToFetchMetadata.concat(tokenAddresses))
+	const deDuplicated = new Set<bigint>(addressesToFetchMetadata)
 	const addressIdentificationPromises: Promise<AddressBookEntry>[] = Array.from(deDuplicated.values()).map((address) => identifyAddress(ethereumClientService, userAddressBook, address))
 
 	return await Promise.all(addressIdentificationPromises)
@@ -168,11 +165,11 @@ export async function nameTokenIds(ethereumClientService: EthereumClientService,
 		tokenAddress: bigint
 		tokenId: bigint
 	}
-	let tokenAddresses: TokenAddressTokenIdPair[] = visualizerResult.map((vis) => {
-		if (vis === undefined) return undefined
-		return vis.tokenResults.map((x) => { 
-			if (x.type !== 'ERC1155') return undefined
-			return { tokenAddress: x.tokenAddress, tokenId: x.tokenId }
+	let tokenAddresses: TokenAddressTokenIdPair[] = visualizerResult.map((visualizerResult) => {
+		if (visualizerResult === undefined) return undefined
+		return visualizerResult.events.map((event) => { 
+			if (event.type !== 'TokenEvent' || event.tokenInformation.type !== 'ERC1155') return undefined
+			return { tokenAddress: event.tokenInformation.tokenAddress, tokenId: event.tokenInformation.tokenId }
 		})
 	}).flat().filter((pair): pair is TokenAddressTokenIdPair => pair !== undefined)
 

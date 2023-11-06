@@ -4,7 +4,7 @@ import { EthereumAddress, EthereumBytes32, EthereumData, EthereumInput, Ethereum
 import { QUARANTINE_CODE } from '../simulation/protectors/quarantine-codes.js'
 import { RenameAddressCallBack } from './user-interface-types.js'
 import { ERROR_INTERCEPTOR_GAS_ESTIMATION_FAILED } from '../utils/constants.js'
-import { EthBalanceChanges, EthSubscribeParams, MulticallResponseEventLog, SendRawTransactionParams, SendTransactionParams, SingleMulticallResponse } from './JsonRpc-types.js'
+import { EthBalanceChanges, EthSubscribeParams, SendRawTransactionParams, SendTransactionParams, SingleMulticallResponse } from './JsonRpc-types.js'
 import { InterceptedRequest, WebsiteSocket } from '../utils/requests.js'
 import { AddressBookEntry, Erc721Entry, Erc20TokenEntry, Erc1155Entry } from './addressBookTypes.js'
 import { Website } from './websiteAccessTypes.js'
@@ -22,10 +22,185 @@ export const NetworkPrice = funtypes.ReadonlyObject({
 	})
 })
 
+export type SolidityVariable = funtypes.Static<typeof SolidityVariable>
+export const SolidityVariable = funtypes.ReadonlyObject({
+	typeValue: PureGroupedSolidityType,
+	paramName: funtypes.String
+})
+
+export type ParsedEvent = funtypes.Static<typeof ParsedEvent>
+export const ParsedEvent = funtypes.ReadonlyObject({
+	isParsed: funtypes.Literal('Parsed'),
+	name: funtypes.String, // eg. 'Transfer'
+	signature: funtypes.String, // eg. 'Transfer(address,address,uint256)'
+	args: funtypes.ReadonlyArray(SolidityVariable), // TODO: add support for structs (abiV2)
+	loggersAddress: EthereumAddress,
+	data: EthereumInput,
+	topics: funtypes.ReadonlyArray(EthereumBytes32),
+})
+
+export type NonParsedEvent = funtypes.Static<typeof NonParsedEvent>
+export const NonParsedEvent = funtypes.ReadonlyObject({
+	isParsed: funtypes.Literal('NonParsed'),
+	loggersAddress: EthereumAddress,
+	data: EthereumInput,
+	topics: funtypes.ReadonlyArray(EthereumBytes32),
+})
+
+export type MaybeParsedEventWithExtraData = funtypes.Static<typeof MaybeParsedEventWithExtraData>
+export const MaybeParsedEventWithExtraData = funtypes.Union(
+	funtypes.Union(
+		funtypes.Intersect(
+			NonParsedEvent,
+			funtypes.ReadonlyObject({ type: funtypes.Literal('NonParsed') })
+		),
+		funtypes.Intersect(
+			ParsedEvent,
+			funtypes.ReadonlyObject({ type: funtypes.Literal('Parsed') })
+		),
+		funtypes.Intersect(
+			ParsedEvent,
+			funtypes.ReadonlyObject({
+				type: funtypes.Literal('TokenEvent'),
+				tokenInformation: funtypes.Intersect(
+					funtypes.ReadonlyObject( {
+						from: EthereumAddress,
+						to: EthereumAddress,
+						tokenAddress: EthereumAddress,
+					}),
+					funtypes.Union(
+						funtypes.ReadonlyObject({ // ERC20 transfer / approval
+							amount: EthereumQuantity,
+							type: funtypes.Literal('ERC20'),
+							isApproval: funtypes.Boolean,
+						}),
+						funtypes.ReadonlyObject({ // ERC721 transfer / approval
+							tokenId: EthereumQuantity,
+							type: funtypes.Literal('ERC721'),
+							isApproval: funtypes.Boolean,
+						}),
+						funtypes.ReadonlyObject({ // ERC721 all approval // all approval removal
+							type: funtypes.Literal('NFT All approval'),
+							allApprovalAdded: funtypes.Boolean, // true if approval is added, and false if removed
+							isApproval: funtypes.Literal(true),
+						}),
+						funtypes.ReadonlyObject({
+							type: funtypes.Literal('ERC1155'),
+							operator: EthereumAddress,
+							tokenId: EthereumQuantity,
+							amount: EthereumQuantity,
+							isApproval: funtypes.Literal(false),
+						})
+					)
+				)
+			})
+		)
+	)
+)
+
+export type TokenVisualizerErc20Event  = funtypes.Static<typeof TokenVisualizerErc20Event>
+export const TokenVisualizerErc20Event = funtypes.ReadonlyObject({
+	logObject: funtypes.Union(funtypes.Undefined, MaybeParsedEventWithExtraData),
+	type: funtypes.Literal('ERC20'),
+	from: AddressBookEntry,
+	to: AddressBookEntry,
+	token: Erc20TokenEntry,
+	amount: EthereumQuantity,
+	isApproval: funtypes.Boolean,
+})
+
+export type TokenVisualizerErc721Event  = funtypes.Static<typeof TokenVisualizerErc721Event>
+export const TokenVisualizerErc721Event = funtypes.ReadonlyObject({
+	logObject: funtypes.Union(funtypes.Undefined, MaybeParsedEventWithExtraData),
+	type: funtypes.Literal('ERC721'),
+	from: AddressBookEntry,
+	to: AddressBookEntry,
+	token: Erc721Entry,
+	tokenId: EthereumQuantity,
+	isApproval: funtypes.Boolean,
+})
+
+export type TokenVisualizerErc1155Event = funtypes.Static<typeof TokenVisualizerErc1155Event>
+export const TokenVisualizerErc1155Event = funtypes.ReadonlyObject({
+	logObject: funtypes.Union(funtypes.Undefined, MaybeParsedEventWithExtraData),
+	type: funtypes.Literal('ERC1155'),
+	from: AddressBookEntry,
+	to: AddressBookEntry,
+	token: Erc1155Entry,
+	tokenId: EthereumQuantity,
+	tokenIdName: funtypes.Union(funtypes.String, funtypes.Undefined),
+	amount: EthereumQuantity,
+	isApproval: funtypes.Literal(false),
+})
+
+export type TokenVisualizerNFTAllApprovalEvent = funtypes.Static<typeof TokenVisualizerNFTAllApprovalEvent>
+export const TokenVisualizerNFTAllApprovalEvent = funtypes.ReadonlyObject({
+	logObject: funtypes.Union(funtypes.Undefined, ParsedEvent),
+	type: funtypes.Literal('NFT All approval'),
+	from: AddressBookEntry,
+	to: AddressBookEntry,
+	token: funtypes.Union(Erc721Entry, Erc1155Entry),
+	allApprovalAdded: funtypes.Boolean, // true if approval is added, and false if removed
+	isApproval: funtypes.Literal(true),
+})
+
+export type TokenVisualizerResultWithMetadata = funtypes.Static<typeof TokenVisualizerResultWithMetadata>
+export const TokenVisualizerResultWithMetadata = funtypes.Union(
+	TokenVisualizerErc20Event,
+	TokenVisualizerErc721Event,
+	TokenVisualizerErc1155Event,
+	TokenVisualizerNFTAllApprovalEvent,
+)
+
+export type MaybeParsedEvent = funtypes.Static<typeof MaybeParsedEvent>
+export const MaybeParsedEvent = funtypes.Union(ParsedEvent, NonParsedEvent)
+
+export type MaybeParsedEvents = funtypes.Static<typeof MaybeParsedEvents>
+export const MaybeParsedEvents = funtypes.ReadonlyArray(MaybeParsedEvent)
+
+export type TokenBalancesAfter = funtypes.Static<typeof TokenBalancesAfter>
+export const TokenBalancesAfter = funtypes.ReadonlyArray(funtypes.ReadonlyObject({
+	token: EthereumAddress,
+	tokenId: funtypes.Union(EthereumQuantity, funtypes.Undefined),
+	owner: EthereumAddress,
+	balance: funtypes.Union(EthereumQuantity, funtypes.Undefined),
+}))
+
+export type EthBalanceChangesWithMetadata = funtypes.Static<typeof EthBalanceChangesWithMetadata>
+export const EthBalanceChangesWithMetadata = funtypes.ReadonlyObject({
+	address: AddressBookEntry,
+	before: EthereumQuantity,
+	after: EthereumQuantity,
+})
+
+export type SimulatedAndVisualizedTransactionBase = funtypes.Static<typeof SimulatedAndVisualizedTransactionBase>
+export const SimulatedAndVisualizedTransactionBase = funtypes.Intersect(
+	funtypes.ReadonlyObject({
+		ethBalanceChanges: funtypes.ReadonlyArray(EthBalanceChangesWithMetadata),
+		tokenBalancesAfter: TokenBalancesAfter,
+		tokenResults: funtypes.ReadonlyArray(TokenVisualizerResultWithMetadata),
+		website: Website,
+		created: EthereumTimestamp,
+		gasSpent: EthereumQuantity,
+		realizedGasPrice: EthereumQuantity,
+		quarantine: funtypes.Boolean,
+		quarantineCodes: funtypes.ReadonlyArray(QUARANTINE_CODE),
+		events: funtypes.ReadonlyArray(MaybeParsedEventWithExtraData),
+	}),
+	funtypes.Union(
+		funtypes.ReadonlyObject({
+			statusCode: funtypes.Literal('success'),
+		}),
+		funtypes.ReadonlyObject({
+			statusCode: funtypes.Literal('failure'),
+			error: funtypes.String
+		})
+	)
+)
+
 export type TokenVisualizerResult = funtypes.Static<typeof TokenVisualizerResult>
 export const TokenVisualizerResult = funtypes.Intersect(
 	funtypes.ReadonlyObject( {
-		originalLogObject: MulticallResponseEventLog,
 		from: EthereumAddress,
 		to: EthereumAddress,
 		tokenAddress: EthereumAddress,
@@ -56,64 +231,10 @@ export const TokenVisualizerResult = funtypes.Intersect(
 	)
 )
 
-export type TokenVisualizerErc20Event  = funtypes.Static<typeof TokenVisualizerErc20Event>
-export const TokenVisualizerErc20Event = funtypes.ReadonlyObject({
-	originalLogObject: funtypes.Union(funtypes.Undefined, MulticallResponseEventLog),
-	type: funtypes.Literal('ERC20'),
-	from: AddressBookEntry,
-	to: AddressBookEntry,
-	token: Erc20TokenEntry,
-	amount: EthereumQuantity,
-	isApproval: funtypes.Boolean,
-})
-
-export type TokenVisualizerErc721Event  = funtypes.Static<typeof TokenVisualizerErc721Event>
-export const TokenVisualizerErc721Event = funtypes.ReadonlyObject({
-	originalLogObject: funtypes.Union(funtypes.Undefined, MulticallResponseEventLog),
-	type: funtypes.Literal('ERC721'),
-	from: AddressBookEntry,
-	to: AddressBookEntry,
-	token: Erc721Entry,
-	tokenId: EthereumQuantity,
-	isApproval: funtypes.Boolean,
-})
-
-export type TokenVisualizerErc1155Event = funtypes.Static<typeof TokenVisualizerErc1155Event>
-export const TokenVisualizerErc1155Event = funtypes.ReadonlyObject({
-	originalLogObject: funtypes.Union(funtypes.Undefined, MulticallResponseEventLog),
-	type: funtypes.Literal('ERC1155'),
-	from: AddressBookEntry,
-	to: AddressBookEntry,
-	token: Erc1155Entry,
-	tokenId: EthereumQuantity,
-	tokenIdName: funtypes.Union(funtypes.String, funtypes.Undefined),
-	amount: EthereumQuantity,
-	isApproval: funtypes.Literal(false),
-})
-
-export type TokenVisualizerNFTAllApprovalEvent = funtypes.Static<typeof TokenVisualizerNFTAllApprovalEvent>
-export const TokenVisualizerNFTAllApprovalEvent = funtypes.ReadonlyObject({
-	originalLogObject: funtypes.Union(funtypes.Undefined, MulticallResponseEventLog),
-	type: funtypes.Literal('NFT All approval'),
-	from: AddressBookEntry,
-	to: AddressBookEntry,
-	token: funtypes.Union(Erc721Entry, Erc1155Entry),
-	allApprovalAdded: funtypes.Boolean, // true if approval is added, and false if removed
-	isApproval: funtypes.Literal(true),
-})
-
-export type TokenVisualizerResultWithMetadata = funtypes.Static<typeof TokenVisualizerResultWithMetadata>
-export const TokenVisualizerResultWithMetadata = funtypes.Union(
-	TokenVisualizerErc20Event,
-	TokenVisualizerErc721Event,
-	TokenVisualizerErc1155Event,
-	TokenVisualizerNFTAllApprovalEvent,
-)
-
 export type VisualizerResult = funtypes.Static<typeof VisualizerResult>
 export const VisualizerResult = funtypes.ReadonlyObject({
 	ethBalanceChanges: EthBalanceChanges,
-	tokenResults: funtypes.ReadonlyArray(TokenVisualizerResult),
+	events: funtypes.ReadonlyArray(MaybeParsedEventWithExtraData),
 	blockNumber: EthereumQuantity,
 })
 
@@ -122,14 +243,6 @@ export const ProtectorResults = funtypes.ReadonlyObject( {
 	quarantine: funtypes.Boolean,
 	quarantineCodes: funtypes.ReadonlyArray(QUARANTINE_CODE),
 })
-
-export type TokenBalancesAfter = funtypes.Static<typeof TokenBalancesAfter>
-export const TokenBalancesAfter = funtypes.ReadonlyArray(funtypes.ReadonlyObject({
-	token: EthereumAddress,
-	tokenId: funtypes.Union(EthereumQuantity, funtypes.Undefined),
-	owner: EthereumAddress,
-	balance: funtypes.Union(EthereumQuantity, funtypes.Undefined),
-}))
 
 export type SimulatedTransaction = funtypes.Static<typeof SimulatedTransaction>
 export const SimulatedTransaction = funtypes.ReadonlyObject({
@@ -182,13 +295,6 @@ export const SimulationState = funtypes.ReadonlyObject({
 	simulationConductedTimestamp: EthereumTimestamp,
 })
 
-export type EthBalanceChangesWithMetadata = funtypes.Static<typeof EthBalanceChangesWithMetadata>
-export const EthBalanceChangesWithMetadata = funtypes.ReadonlyObject({
-	address: AddressBookEntry,
-	before: EthereumQuantity,
-	after: EthereumQuantity,
-})
-
 export type TransactionWithAddressBookEntries = funtypes.Static<typeof TransactionWithAddressBookEntries>
 export const TransactionWithAddressBookEntries = funtypes.Intersect(
 	funtypes.ReadonlyObject({
@@ -208,60 +314,6 @@ export const TransactionWithAddressBookEntries = funtypes.Intersect(
 			maxPriorityFeePerGas: EthereumQuantity,
 		}),
 		funtypes.ReadonlyObject({ type: funtypes.Union(funtypes.Literal('legacy'), funtypes.Literal('2930')) })
-	)
-)
-
-export type SolidityVariable = funtypes.Static<typeof SolidityVariable>
-export const SolidityVariable = funtypes.ReadonlyObject({
-	typeValue: PureGroupedSolidityType,
-	paramName: funtypes.String
-})
-
-export type MaybeParsedEvent = funtypes.Static<typeof MaybeParsedEvent>
-export const MaybeParsedEvent = funtypes.Union(
-	funtypes.Intersect(
-		funtypes.Union(
-			funtypes.ReadonlyObject({ type: funtypes.Literal('NonParsed') }),
-			funtypes.ReadonlyObject({
-				type: funtypes.Literal('Parsed'),
-				name: funtypes.String, // eg. 'Transfer'
-				signature: funtypes.String, // eg. 'Transfer(address,address,uint256)'
-				args: funtypes.ReadonlyArray(SolidityVariable), // TODO: add support for structs (abiV2)
-			})
-		),
-		funtypes.ReadonlyObject({
-			loggersAddress: EthereumAddress,
-			data: EthereumInput,
-			topics: funtypes.ReadonlyArray(EthereumBytes32),
-		}),
-	)
-)
-
-export type MaybeParsedEvents = funtypes.Static<typeof MaybeParsedEvents>
-export const MaybeParsedEvents = funtypes.ReadonlyArray(MaybeParsedEvent)
-
-export type SimulatedAndVisualizedTransactionBase = funtypes.Static<typeof SimulatedAndVisualizedTransactionBase>
-export const SimulatedAndVisualizedTransactionBase = funtypes.Intersect(
-	funtypes.ReadonlyObject({
-		ethBalanceChanges: funtypes.ReadonlyArray(EthBalanceChangesWithMetadata),
-		tokenBalancesAfter: TokenBalancesAfter,
-		tokenResults: funtypes.ReadonlyArray(TokenVisualizerResultWithMetadata),
-		website: Website,
-		created: EthereumTimestamp,
-		gasSpent: EthereumQuantity,
-		realizedGasPrice: EthereumQuantity,
-		quarantine: funtypes.Boolean,
-		quarantineCodes: funtypes.ReadonlyArray(QUARANTINE_CODE),
-		events: MaybeParsedEvents,
-	}),
-	funtypes.Union(
-		funtypes.ReadonlyObject({
-			statusCode: funtypes.Literal('success'),
-		}),
-		funtypes.ReadonlyObject({
-			statusCode: funtypes.Literal('failure'),
-			error: funtypes.String
-		})
 	)
 )
 

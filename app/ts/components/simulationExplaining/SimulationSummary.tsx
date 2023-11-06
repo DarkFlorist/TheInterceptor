@@ -17,7 +17,6 @@ import { getEthDonator } from '../../background/storageVariables.js'
 import { RpcNetwork } from '../../types/rpc.js'
 import { AddressBookEntry, Erc1155Entry, Erc20TokenEntry, Erc721Entry } from '../../types/addressBookTypes.js'
 import { Website } from '../../types/websiteAccessTypes.js'
-import { areEqual, areEqualUint8Arrays } from '../../utils/typed-arrays.js'
 
 type EtherChangeParams = {
 	textColor: string,
@@ -492,14 +491,7 @@ export function TokenLogAnalysisCard({ simTx, renameAddressCallBack }: TokenLogA
 export function NonTokenLogAnalysisCard({ simTx }: TokenLogAnalysisCardParams) {
 	const [showLogs, setShowLogs] = useState<boolean>(false)
 	if (simTx === undefined) return <></>
-	const nonTokenLogs = simTx.events.filter((event) => {
-		return !simTx.tokenResults.find((tokenLog) => {
-			return tokenLog.originalLogObject !== undefined
-				&& areEqualUint8Arrays(tokenLog.originalLogObject.data, event.data)
-				&& tokenLog.originalLogObject.loggersAddress === event.loggersAddress
-				&& areEqual(tokenLog.originalLogObject.topics, event.topics)
-		})
- 	})
+	const nonTokenLogs = simTx.events.filter((event) => event.type !== 'TokenEvent')
 	return <>
 		<div class = 'card' style = 'margin-top: 10px; margin-bottom: 10px'>
 			<header class = 'card-header noselect' style = 'cursor: pointer; height: 30px;' onClick = { () => setShowLogs((prevValue) => !prevValue) }>
