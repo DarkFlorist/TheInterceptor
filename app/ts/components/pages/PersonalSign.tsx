@@ -19,10 +19,11 @@ import { OrderComponents, OrderComponentsExtraDetails } from '../simulationExpla
 import { Ether } from '../subcomponents/coins.js'
 import { tryFocusingTabOrWindow, humanReadableDateFromSeconds, CellElement } from '../ui-utils.js'
 import { AddressBookEntry, IncompleteAddressBookEntry } from '../../types/addressBookTypes.js'
-import { EnrichedEIP712, EnrichedEIP712Message } from '../../types/eip721.js'
+import { EnrichedEIP712, EnrichedEIP712Message, TypeEnrichedEIP712MessageRecord } from '../../types/eip721.js'
 import { serialize } from '../../types/wire-types.js'
 import { TransactionCreated } from '../simulationExplaining/SimulationSummary.js'
 import { EnrichedSolidityTypeComponent } from '../subcomponents/solidityType.js'
+import { N } from 'ethers'
 
 type SignatureCardParams = {
 	VisualizedPersonalSignRequest: VisualizedPersonalSignRequest
@@ -247,22 +248,27 @@ type EIP712Table = {
 }
 
 function EIP712Table({ enrichedEIP712Message, renameAddressCallBack, isSubTable }: EIP712Table) {
+	function EIP712Entry({ key, entry }: { key: string, entry: TypeEnrichedEIP712MessageRecord  | undefined}) {
+		if (entry === undefined) return <></>
+		if (entry.type === 'record[]') {
+			return <>
+				<CellElement text = { `${ key }: ` }/>
+				<CellElement text = { entry.value.map((value) => <EIP712Table enrichedEIP712Message = { value } renameAddressCallBack = { renameAddressCallBack } isSubTable = { true }/>) } />
+			</>
+		}
+		if (entry.type === 'record') {
+			return <>
+				<CellElement text = { `${ key }: ` }/>
+				<CellElement text = { <EIP712Table enrichedEIP712Message = { entry.value } renameAddressCallBack = { renameAddressCallBack } isSubTable = { true }/> }/>
+			</>
+		}
+		return <>
+			<CellElement text = { `${ key }: ` }/>
+			<CellElement text = { <EnrichedSolidityTypeComponent valueType = { entry } renameAddressCallBack = { renameAddressCallBack }/> }/>
+		</>
+	}
 	return <span class = 'eip-712-table' style = { isSubTable ? 'justify-content: space-between;' : '' }>
-		<>{ Object.entries(enrichedEIP712Message).map(([key, entry]) => <>
-			{ entry === undefined
-				? <></>
-				: <>
-					<CellElement text = { `${ key }: ` }/>
-					{ entry.type === 'record' || entry.type === 'record[]' ?
-						entry.type === 'record[]' ?
-							<CellElement text = { entry.value.map((value) => <EIP712Table enrichedEIP712Message = { value } renameAddressCallBack = { renameAddressCallBack } isSubTable = { true }/>) } />
-							: <CellElement text = { <EIP712Table enrichedEIP712Message = { entry.value } renameAddressCallBack = { renameAddressCallBack } isSubTable = { true }/>
-						} />
-						: <CellElement text = { <EnrichedSolidityTypeComponent valueType = { entry } renameAddressCallBack = { renameAddressCallBack }/> }/>
-					}
-				</>
-			}
-		</>) } </>
+		{ Object.entries(enrichedEIP712Message).map(([key, entry]) => <EIP712Entry entry = { entry } key = { key }/>) }
 	</span>
 }
 

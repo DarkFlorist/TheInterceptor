@@ -17,7 +17,6 @@ const parseEvents = (simulatedTx: SimulatedTransaction, addressBookEntries: read
 		const nonParsed = { ...event, type: 'NonParsed' as const }
 		if (logger === undefined || !('abi' in logger) || logger.abi === undefined) return nonParsed
 		const parsed = parseEventIfPossible(new Interface(logger.abi), event)
-		console.log(parsed)
 		if (parsed === null) return nonParsed
 		const argTypes = extractFunctionArgumentTypes(parsed.signature)
 		if (argTypes === undefined) return nonParsed
@@ -28,7 +27,7 @@ const parseEvents = (simulatedTx: SimulatedTransaction, addressBookEntries: read
 			const paramName = parsed.fragment.inputs[index]?.name
 			if (paramName === undefined) throw new Error(`missing parameter name`)
 			if (solidityType === undefined) throw new Error(`unknown solidity type: ${ solidityType }`)
-			const isArray = solidityType.includes('[')
+			const isArray = solidityType.includes('[]')
 			const verifiedSolidityType = SolidityType.safeParse(removeTextBetweenBrackets(solidityType))
 			if (verifiedSolidityType.success === false) throw new Error(`unknown solidity type: ${ solidityType }`)
 			return { paramName: paramName, typeValue: parseSolidityValueByTypePure(verifiedSolidityType.value, value, isArray) }
