@@ -56,7 +56,7 @@ async function updateMetadataForSimulation(simulationState: SimulationState, eth
 }
 
 export const simulateGovernanceContractExecution = async (pendingTransaction: PendingTransaction, ethereum: EthereumClientService, userAddressBook: UserAddressBook) => {
-	const returnError = (text: string) => ({ error: { type: 'Other' as const, message: text } })
+	const returnError = (text: string) => ({ success: false as const, error: { type: 'Other' as const, message: text } })
 	try {
 		// identifies compound governane call and performs simulation if the vote passes
 		const pendingResults = pendingTransaction.simulationResults
@@ -70,7 +70,7 @@ export const simulateGovernanceContractExecution = async (pendingTransaction: Pe
 		const governanceContractInterface = new Interface(CompoundGovernanceAbi)
 		const params = governanceContractInterface.decodeFunctionData(explanation === 'Submit vote' ? 'submitVote' : 'castVote', dataStringWith0xStart(pendingTransaction.transactionToSimulate.transaction.input))
 		const addr = await identifyAddress(ethereum, userAddressBook, pendingTransaction.transactionToSimulate.transaction.to)
-		if (!('abi' in addr) || addr.abi === undefined) return { error: { type: 'MissingAbi' as const, message: 'ABi for the governance contract is missing', addressBookEntry: addr } }
+		if (!('abi' in addr) || addr.abi === undefined) return { success: false as const, error: { type: 'MissingAbi' as const, message: 'ABi for the governance contract is missing', addressBookEntry: addr } }
 		const contractExecutionResult = await simulateCompoundGovernanceExecution(ethereum, addr, params[0])
 		if (contractExecutionResult === undefined) return returnError('Failed to simulate governacne execution')
 		const parentBlock = await ethereum.getBlock()
@@ -103,11 +103,11 @@ export const simulateGovernanceContractExecution = async (pendingTransaction: Pe
 			simulationConductedTimestamp: new Date(),
 			signedMessages: [],
 		}
-		return await visualizeSimulatorState(governanceContractSimulationState, ethereum)
+		return { success: true as const, result: await visualizeSimulatorState(governanceContractSimulationState, ethereum) }
 	} catch(error) {
 		console.warn(error)
 		if (error instanceof Error) return returnError(error.message)
-		throw error
+		return returnError('Unknown error occured')
 	}
 }
 

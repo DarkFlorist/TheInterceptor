@@ -5,7 +5,7 @@ import { assertNever } from '../../utils/typescript.js'
 import { SmallAddress } from './address.js'
 
 const textStyle = 'text-overflow: ellipsis; overflow: hidden;'
-const StringElement = ({ text }: { text: string }) => <p class = 'paragraph' style = { textStyle }>{ `${ text }` }</p>
+const StringElement = ({ text }: { text: string }) => <p class = 'paragraph' style = { textStyle }>{ text }</p>
 
 export function PureSolidityTypeComponent( { valueType }: { valueType: PureGroupedSolidityType }) {
 	switch(valueType.type) {
