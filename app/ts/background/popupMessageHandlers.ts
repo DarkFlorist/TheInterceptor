@@ -198,7 +198,7 @@ export async function refreshPopupConfirmTransactionMetadata(ethereumClientServi
 	const first = promises[0]
 	const addressBookEntries = await addressBookEntriesPromise
 	const namedTokenIds = await namedTokenIdsPromise
-	if (first === undefined || first.simulationResults === undefined || first.simulationResults.statusCode !== 'success') return
+	if (first === undefined || first.status !== 'Simulated' || first.simulationResults === undefined || first.simulationResults.statusCode !== 'success') return
 	return await sendPopupMessageToOpenWindows({
 		method: 'popup_update_confirm_transaction_dialog',
 		data: [{
@@ -218,7 +218,8 @@ export async function refreshPopupConfirmTransactionMetadata(ethereumClientServi
 export async function refreshPopupConfirmTransactionSimulation(simulator: Simulator, ethereumClientService: EthereumClientService) {
 	const [firstTxn, ...remainingTxns] = await getPendingTransactions()
 	if (firstTxn === undefined) return await updateConfirmTransactionViewWithPendingTransactionOrClose()
-	const transactionToSimulate = firstTxn.request.method === 'eth_sendTransaction' ? await formEthSendTransaction(ethereumClientService, firstTxn.activeAddress, firstTxn.simulationMode, firstTxn.transactionToSimulate.website, firstTxn.request, firstTxn.created) : await formSendRawTransaction(ethereumClientService, firstTxn.request, firstTxn.transactionToSimulate.website, firstTxn.created)
+	if (firstTxn.status !== 'Simulated') return
+	const transactionToSimulate = firstTxn.originalRequestParameters.method === 'eth_sendTransaction' ? await formEthSendTransaction(ethereumClientService, firstTxn.activeAddress, firstTxn.simulationMode, firstTxn.transactionToSimulate.website, firstTxn.originalRequestParameters, firstTxn.created) : await formSendRawTransaction(ethereumClientService, firstTxn.originalRequestParameters, firstTxn.transactionToSimulate.website, firstTxn.created)
 	const refreshMessage = await refreshConfirmTransactionSimulation(simulator, ethereumClientService, firstTxn.activeAddress, firstTxn.simulationMode, firstTxn.uniqueRequestIdentifier, transactionToSimulate)
 	if ('error' in transactionToSimulate) {
 		return await sendPopupMessageToOpenWindows({

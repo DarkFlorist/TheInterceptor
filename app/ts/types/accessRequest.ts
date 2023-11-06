@@ -6,7 +6,7 @@ import { SignerName } from './signerTypes.js'
 import { InterceptedRequest, UniqueRequestIdentifier, WebsiteSocket } from '../utils/requests.js'
 import { NamedTokenId, ProtectorResults, SimulatedAndVisualizedTransaction, SimulationState, TokenPriceEstimate, VisualizerResult, WebsiteCreatedEthereumUnsignedTransaction } from './visualizer-types.js'
 import { VisualizedPersonalSignRequest } from './personal-message-definitions.js'
-import { SendRawTransactionParams, SendTransactionParams } from './JsonRpc-types.js'
+import { OriginalSendRequestParameters } from './JsonRpc-types.js'
 
 export type PendingAccessRequest = funtypes.Static<typeof PendingAccessRequest>
 export const PendingAccessRequest = funtypes.ReadonlyObject({
@@ -72,14 +72,42 @@ export const ConfirmTransactionSimulationFailed = funtypes.ReadonlyObject({
 export type ConfirmTransactionTransactionSingleVisualization = funtypes.Static<typeof ConfirmTransactionTransactionSingleVisualization>
 export const ConfirmTransactionTransactionSingleVisualization = funtypes.Union(ConfirmTransactionSimulationFailed, ConfirmTransactionSimulationStateChanged)
 
-export type PendingTransaction = funtypes.Static<typeof PendingTransaction>
-export const PendingTransaction = funtypes.ReadonlyObject({
+export type SimulatedPendingTransactionBase = funtypes.Static<typeof SimulatedPendingTransactionBase>
+export const SimulatedPendingTransactionBase = funtypes.ReadonlyObject({
 	dialogId: funtypes.Number,
-	request: funtypes.Union(SendTransactionParams, SendRawTransactionParams),
+	originalRequestParameters: OriginalSendRequestParameters,
 	uniqueRequestIdentifier: UniqueRequestIdentifier,
 	simulationMode: funtypes.Boolean,
 	activeAddress: EthereumAddress,
 	created: EthereumTimestamp,
-	simulationResults: ConfirmTransactionTransactionSingleVisualization,
-	transactionToSimulate: WebsiteCreatedEthereumUnsignedTransaction,
 })
+
+export type SimulatedPendingTransaction = funtypes.Static<typeof SimulatedPendingTransaction>
+export const SimulatedPendingTransaction = funtypes.Intersect(
+	SimulatedPendingTransactionBase,
+	funtypes.ReadonlyObject({
+		status: funtypes.Literal('Simulated'),
+		simulationResults: ConfirmTransactionTransactionSingleVisualization,
+		transactionToSimulate: WebsiteCreatedEthereumUnsignedTransaction,
+	})
+)
+
+export type CraftingTransactionPendingTransaction = funtypes.Static<typeof CraftingTransactionPendingTransaction>
+export const CraftingTransactionPendingTransaction = funtypes.Intersect(
+	SimulatedPendingTransactionBase,
+	funtypes.ReadonlyObject({ status: funtypes.Literal('Crafting Transaction') })
+)
+
+
+export type WaitingForSimulationPendingTransaction = funtypes.Static<typeof WaitingForSimulationPendingTransaction>
+export const WaitingForSimulationPendingTransaction = funtypes.Intersect(
+	SimulatedPendingTransactionBase,
+	funtypes.ReadonlyObject({
+		transactionToSimulate: WebsiteCreatedEthereumUnsignedTransaction,
+		status: funtypes.Literal('Simulating')
+	})
+)
+
+
+export type PendingTransaction = funtypes.Static<typeof PendingTransaction>
+export const PendingTransaction = funtypes.Union(CraftingTransactionPendingTransaction, WaitingForSimulationPendingTransaction, SimulatedPendingTransaction)

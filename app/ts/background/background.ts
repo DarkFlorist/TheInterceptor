@@ -59,6 +59,7 @@ export const simulateGovernanceContractExecution = async (pendingTransaction: Pe
 	const returnError = (text: string) => ({ success: false as const, error: { type: 'Other' as const, message: text } })
 	try {
 		// identifies compound governane call and performs simulation if the vote passes
+		if (pendingTransaction.status !== 'Simulated') return returnError('Still simulating the voting transaction')
 		const pendingResults = pendingTransaction.simulationResults
 		if (pendingResults.statusCode !== 'success') return returnError('Voting transaction failed')
 		const fourByte = get4Byte(pendingTransaction.transactionToSimulate.transaction.input)
@@ -104,7 +105,7 @@ export const simulateGovernanceContractExecution = async (pendingTransaction: Pe
 				tokenBalancesAfter: tokenBalancesAfter[0],
 				website: pendingTransaction.transactionToSimulate.website,
 				created: new Date(),
-				originalRequestParameters: pendingTransaction.transactionToSimulate.originalRequestParameters,
+				originalRequestParameters: pendingTransaction.originalRequestParameters,
 			}],
 			blockNumber: parentBlock.number,
 			blockTimestamp: parentBlock.timestamp,
