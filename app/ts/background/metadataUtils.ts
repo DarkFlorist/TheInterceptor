@@ -138,15 +138,15 @@ export async function identifyAddress(ethereumClientService: EthereumClientServi
 	}
 }
 
-export async function getAddressBookEntriesForVisualiser(ethereumClientService: EthereumClientService, visualizerResult: readonly (VisualizerResult | undefined)[], simulationState: SimulationState, userAddressBook: UserAddressBook) : Promise<AddressBookEntry[]> {
+export async function getAddressBookEntriesForVisualiser(ethereumClientService: EthereumClientService, visualizerResults: readonly (VisualizerResult | undefined)[], simulationState: SimulationState, userAddressBook: UserAddressBook) : Promise<AddressBookEntry[]> {
 	let addressesToFetchMetadata: bigint[] = []
 
-	for (const vis of visualizerResult) {
-		if (vis === undefined) continue
-		const ethBalanceAddresses = vis.ethBalanceChanges.map((change) => change.address)
-		const eventArguments = vis.events.map((event) => event.type !== 'NonParsed' ? event.args : []).flat()
+	for (const visualizerResult of visualizerResults) {
+		if (visualizerResult === undefined) continue
+		const ethBalanceAddresses = visualizerResult.ethBalanceChanges.map((change) => change.address)
+		const eventArguments = visualizerResult.events.map((event) => event.type !== 'NonParsed' ? event.args : []).flat()
 		const addressesInEvents = eventArguments.filter((event): event is { typeValue: { type: 'address', value: EthereumAddress }, paramName: string } => event.typeValue.type === 'address').map((event) => event.typeValue.value)
-		addressesToFetchMetadata = addressesToFetchMetadata.concat(ethBalanceAddresses, addressesInEvents, vis.events.map((event) => event.loggersAddress))
+		addressesToFetchMetadata = addressesToFetchMetadata.concat(ethBalanceAddresses, addressesInEvents, visualizerResult.events.map((event) => event.loggersAddress))
 	}
 
 	simulationState.simulatedTransactions.forEach((tx) => {
@@ -165,11 +165,11 @@ export async function nameTokenIds(ethereumClientService: EthereumClientService,
 		tokenAddress: bigint
 		tokenId: bigint
 	}
-	let tokenAddresses: TokenAddressTokenIdPair[] = visualizerResult.map((vis) => {
-		if (vis === undefined) return undefined
-		return vis.events.map((x) => { 
-			if (x.type !== 'TokenEvent' || x.tokenInformation.type !== 'ERC1155') return undefined
-			return { tokenAddress: x.tokenInformation.tokenAddress, tokenId: x.tokenInformation.tokenId }
+	let tokenAddresses: TokenAddressTokenIdPair[] = visualizerResult.map((visualizerResult) => {
+		if (visualizerResult === undefined) return undefined
+		return visualizerResult.events.map((event) => { 
+			if (event.type !== 'TokenEvent' || event.tokenInformation.type !== 'ERC1155') return undefined
+			return { tokenAddress: event.tokenInformation.tokenAddress, tokenId: event.tokenInformation.tokenId }
 		})
 	}).flat().filter((pair): pair is TokenAddressTokenIdPair => pair !== undefined)
 
