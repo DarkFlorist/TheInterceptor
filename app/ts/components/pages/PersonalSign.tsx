@@ -23,7 +23,6 @@ import { EnrichedEIP712, EnrichedEIP712Message, TypeEnrichedEIP712MessageRecord 
 import { serialize } from '../../types/wire-types.js'
 import { TransactionCreated } from '../simulationExplaining/SimulationSummary.js'
 import { EnrichedSolidityTypeComponent } from '../subcomponents/solidityType.js'
-import { N } from 'ethers'
 
 type SignatureCardParams = {
 	VisualizedPersonalSignRequest: VisualizedPersonalSignRequest
