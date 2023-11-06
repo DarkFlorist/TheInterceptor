@@ -10,7 +10,6 @@ import { assertUnreachable } from '../../utils/typescript.js'
 import { ComponentChildren, createRef } from 'preact'
 import { AddressBookEntry, IncompleteAddressBookEntry } from '../../types/addressBookTypes.js'
 import { ExternalPopupMessage } from '../../types/interceptor-messages.js'
-import { readClipboard } from '../subcomponents/PasteCatcher.js'
 import { isJSON } from '../../utils/json.js'
 import { isValidAbi } from '../../simulation/services/EtherScanAbiFetcher.js'
 
@@ -95,9 +94,25 @@ export const CellElement = (param: { element: ComponentChildren }) => {
 	</div>
 }
 
-const setAbiFromClipboard = async (setAbi: (abi: string) => void) => {
-	const clipboardContent = await readClipboard()
-	setAbi(clipboardContent)
+type AbiInputParams = {
+	abiInput: string | undefined
+	setAbiInput: (input: string) => void
+	disabled: boolean,
+}
+
+function AbiInput({ abiInput, setAbiInput, disabled }: AbiInputParams) {
+	const ref = createRef<HTMLInputElement>()
+    useEffect(() => { ref.current && ref.current.focus() }, [])
+	return <input
+		className = 'input is-spaced'
+		type = 'text'
+		value = { abiInput }
+		placeholder = { 'not available / not retrieved' }
+		onInput = { e => setAbiInput((e.target as HTMLInputElement).value) }
+		ref = { ref }
+		disabled = { disabled }
+		style = { `width: 100%;${ abiInput === undefined || isValidAbi(abiInput.trim()) ? '' : 'color: var(--negative-color);' }` }
+	/>
 }
 
 function RenderIncompleteAddressBookEntry({ incompleteAddressBookEntry, setName, setAddress, setSymbol, setAskForAddressAccess, fetchAbiAndNameFromEtherScan, setAbi, retrievedAbi, setRetrievingAbi }: RenderinCompleteAddressBookParams) {
@@ -129,26 +144,16 @@ function RenderIncompleteAddressBookEntry({ incompleteAddressBookEntry, setName,
 						<CellElement element = { <Text text = { 'Decimals: ' }/> }/>
 						<CellElement element = { <input disabled = { true } className = 'input subtitle is-7 is-spaced' style = 'width: 100%' type = 'text' value = { incompleteAddressBookEntry.decimals !== undefined ? incompleteAddressBookEntry.decimals.toString() : incompleteAddressBookEntry.decimals } placeholder = { '...' } /> } />
 					</> : <></> }
+					{ incompleteAddressBookEntry.type !== 'activeAddress' ? <>
+						<CellElement element = { <Text text = { 'Abi: ' }/> }/>
+						<CellElement element = { <>
+							<AbiInput abiInput = { incompleteAddressBookEntry.abi } setAbiInput = { setAbi } disabled = { false }/>
+							<div style = 'padding-left: 5px'/>
+							<button class = 'button is-primary is-small' disabled = { stringToAddress(incompleteAddressBookEntry.address) === undefined || retrievedAbi } onClick = { async  () => { setRetrievingAbi(true); fetchAbiAndNameFromEtherScan(incompleteAddressBookEntry.address) } }> Fetch from Etherscan</button>
+						</> }/>
+					</> : <></> }
 				</span>
 			</div>
-			{ incompleteAddressBookEntry.type !== 'activeAddress' ?
-				<div>
-					<label style = 'display: flex; justify-content: space-between'>
-						<div style = 'display: flex'>
-							<label class = 'form-control'>
-								<input type = 'checkbox' disabled = { true } checked = { incompleteAddressBookEntry.abi !== undefined } />
-								<p class = 'paragraph checkbox-text'>ABI available</p>
-							</label>
-						</div>
-						<div class = 'form-control' style = 'display: flex'>
-							<p class = 'paragraph'> Update from: </p>
-							<button class = 'button is-primary is-tiny' disabled = { stringToAddress(incompleteAddressBookEntry.address) === undefined || retrievedAbi } onClick = { async () => { setRetrievingAbi(true); await setAbiFromClipboard(setAbi); setRetrievingAbi(false) } }> clipboard</button>
-							<p class = 'paragraph'> / </p>
-							<button class = 'button is-primary is-tiny' disabled = { stringToAddress(incompleteAddressBookEntry.address) === undefined || retrievedAbi } onClick = { async  () => { setRetrievingAbi(true); fetchAbiAndNameFromEtherScan(incompleteAddressBookEntry.address) } }> Etherscan</button>
-						</div>
-					</label>
-				</div>
-			: <></> }
 			{ incompleteAddressBookEntry.type === 'activeAddress' ? <>
 				<label class = 'form-control'>
 					<input type = 'checkbox' disabled = { disableDueToSource } checked = { !incompleteAddressBookEntry.askForAddressAccess } onInput = { e => { if (e.target instanceof HTMLInputElement && e.target !== null) { setAskForAddressAccess(!e.target.checked) } } } />
@@ -195,6 +200,7 @@ export function AddNewAddress(param: AddAddressParam) {
 						setErrorString(parsed.data.error)
 						return prevEntry
 					}
+					setErrorString(undefined)
 					if (parsed.data === undefined || parsed.data.address !== stringToAddress(prevEntry.address)) return prevEntry
 					checkForDuplicatedNameOrSymbol(parsed.data.contractName, prevEntry.symbol)
 					return { ...prevEntry, name: prevEntry.name === undefined ? parsed.data.contractName : prevEntry.name, abi: parsed.data.abi, duplicateStatus: 'Pending' }
@@ -370,22 +376,23 @@ export function AddNewAddress(param: AddAddressParam) {
 	}
 
 	function setAbi(abi: string | undefined) {
+		const trimmedAbi = abi === undefined ? undefined : abi.trim()
 		setIncompleteAddressBookEntry((entry) => {
-			if (abi === undefined) {
+			if (trimmedAbi === undefined || trimmedAbi.length === 0) {
 				setErrorString(undefined)
-				return { ...entry, abi }
+				return { ...entry, abi: undefined }
 			}
-			if (!isJSON(abi)) {
-				setErrorString('Clipboard did not contain a JSON ABI. Please copy JSON ABI and try again.')
+			if (!isJSON(trimmedAbi)) {
+				setErrorString('The Abi provided is not a JSON ABI. Please provide a valid JSON ABI.')
 				return entry
 			}
 
-			if (!isValidAbi(abi)) {
-				setErrorString('Clipboard did not contain a valid JSON ABI. Please copy JSON ABI and try again.')
+			if (!isValidAbi(trimmedAbi)) {
+				setErrorString('The Abi provided  is not an ABI. Please provide a valid an ABI.')
 				return entry
 			}
 
-			return { ...entry, abi }
+			return { ...entry, abi: trimmedAbi }
 		})
 	}
 

@@ -19,17 +19,3 @@ export function PasteCatcher(props: PasteProps) {
 	}, [props.enabled, props.onPaste])
 	return <div></div>
 }
-
-export const readClipboard = (): Promise<string> => {
-	return new Promise((resolve, reject) => {
-		const element = document.createElement('textarea')
-		element.value = 'before paste'
-		document.body.append(element)
-		element.select()
-		const success = document.execCommand('paste')
-		const text = element.value
-		element.remove()
-		if (!success) reject(new Error('Unable to read from clipboard'))
-		resolve(text)
-	})
-}
