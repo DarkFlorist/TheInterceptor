@@ -78,7 +78,7 @@ export function VotePanel({ inputParams }: { inputParams: GovernanceVoteInputPar
 						<CellElement text = { checksummedAddress(inputParams.voter) } /> 
 					</> : <></> }
 					{ inputParams.params !== undefined ? <>
-						<CellElement text = 'Params: '/>
+						<CellElement text = 'Additional Data Included With Your Vote: '/>
 						<CellElement text = { dataStringWith0xStart(inputParams.params) } />
 					</> : <></> }
 				</span>
