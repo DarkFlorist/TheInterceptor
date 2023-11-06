@@ -143,10 +143,10 @@ export async function getAddressBookEntriesForVisualiser(ethereumClientService: 
 
 	for (const vis of visualizerResult) {
 		if (vis === undefined) continue
-		const ethBalanceAddresses = vis.ethBalanceChanges.map((x) => x.address)
-		const eventArguments = vis.events.map((x) => x.type !== 'NonParsed' ? x.args : []).flat()
-		const addressesInEvents = eventArguments.filter((a): a is { typeValue: { type: 'address', value: EthereumAddress }, paramName: string } => a.typeValue.type === 'address').map((a) => a.typeValue.value)
-		addressesToFetchMetadata = addressesToFetchMetadata.concat(ethBalanceAddresses, addressesInEvents, vis.events.map((a) => a.loggersAddress))
+		const ethBalanceAddresses = vis.ethBalanceChanges.map((change) => change.address)
+		const eventArguments = vis.events.map((event) => event.type !== 'NonParsed' ? event.args : []).flat()
+		const addressesInEvents = eventArguments.filter((event): event is { typeValue: { type: 'address', value: EthereumAddress }, paramName: string } => event.typeValue.type === 'address').map((event) => event.typeValue.value)
+		addressesToFetchMetadata = addressesToFetchMetadata.concat(ethBalanceAddresses, addressesInEvents, vis.events.map((event) => event.loggersAddress))
 	}
 
 	simulationState.simulatedTransactions.forEach((tx) => {
