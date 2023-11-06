@@ -22,7 +22,7 @@ import { ExportedSettings } from '../types/exportedSettingsTypes.js'
 import { isJSON } from '../utils/json.js'
 import { UserAddressBook } from '../types/addressBookTypes.js'
 import { serialize } from '../types/wire-types.js'
-import { fetchAbiFromEtherscan } from '../simulation/services/EtherscanAbiFetcher.js'
+import { fetchAbiFromEtherscan } from '../simulation/services/EtherScanAbiFetcher.js'
 
 export async function confirmDialog(simulator: Simulator, websiteTabConnections: WebsiteTabConnections, confirmation: TransactionConfirmation) {
 	await resolvePendingTransaction(simulator, websiteTabConnections, confirmation)

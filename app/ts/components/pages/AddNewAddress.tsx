@@ -11,7 +11,7 @@ import { ComponentChildren, createRef } from 'preact'
 import { AddressBookEntry, IncompleteAddressBookEntry } from '../../types/addressBookTypes.js'
 import { ExternalPopupMessage } from '../../types/interceptor-messages.js'
 import { isJSON } from '../../utils/json.js'
-import { isValidAbi } from '../../simulation/services/EtherscanAbiFetcher.js'
+import { isValidAbi } from '../../simulation/services/EtherScanAbiFetcher.js'
 
 const readableAddressType = {
 	'contact': 'Contact',
