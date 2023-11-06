@@ -636,6 +636,7 @@ export const SimulateGovernanceContractExecutionReply = funtypes.ReadonlyObject(
 	method: funtypes.Literal('popup_simulateGovernanceContractExecutionReply'),
 	data: funtypes.Union(
 		funtypes.ReadonlyObject({
+			success: funtypes.Literal(false),
 			error: funtypes.Union(
 				funtypes.ReadonlyObject({
 					type: funtypes.Literal('MissingAbi'),
@@ -645,6 +646,7 @@ export const SimulateGovernanceContractExecutionReply = funtypes.ReadonlyObject(
 			)
 		}),
 		funtypes.ReadonlyObject({
+			success: funtypes.Literal(false),
 			error: funtypes.Union(
 				funtypes.ReadonlyObject({
 					type: funtypes.Literal('Other'),
@@ -653,14 +655,17 @@ export const SimulateGovernanceContractExecutionReply = funtypes.ReadonlyObject(
 			)
 		}),
 		funtypes.ReadonlyObject({
-			namedTokenIds: funtypes.ReadonlyArray(NamedTokenId),
-			addressBookEntries: funtypes.ReadonlyArray(AddressBookEntry),
-			simulatedAndVisualizedTransactions: funtypes.ReadonlyArray(SimulatedAndVisualizedTransaction),
-			visualizedPersonalSignRequests: funtypes.ReadonlyArray(VisualizedPersonalSignRequest),
-			tokenPrices: funtypes.ReadonlyArray(TokenPriceEstimate),
-			visualizerResults: funtypes.ReadonlyArray(VisualizerResult),
-			protectors: funtypes.ReadonlyArray(ProtectorResults),
-			simulationState: funtypes.Union(SimulationState),
+			success: funtypes.Literal(true),
+			result: funtypes.ReadonlyObject({
+				namedTokenIds: funtypes.ReadonlyArray(NamedTokenId),
+				addressBookEntries: funtypes.ReadonlyArray(AddressBookEntry),
+				simulatedAndVisualizedTransactions: funtypes.ReadonlyArray(SimulatedAndVisualizedTransaction),
+				visualizedPersonalSignRequests: funtypes.ReadonlyArray(VisualizedPersonalSignRequest),
+				tokenPrices: funtypes.ReadonlyArray(TokenPriceEstimate),
+				visualizerResults: funtypes.ReadonlyArray(VisualizerResult),
+				protectors: funtypes.ReadonlyArray(ProtectorResults),
+				simulationState: funtypes.Union(SimulationState),
+			})
 		})
 	)
 }).asReadonly()

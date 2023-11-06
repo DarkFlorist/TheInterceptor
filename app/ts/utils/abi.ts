@@ -100,7 +100,7 @@ export const extractAbi = (entry: AddressBookEntry | undefined, loggerAddress: E
 }
 
 function getStringBetweenParentheses(inputString: string): string | undefined {
-	const regex = /\(([^)]+)\)/
+	const regex = /\((.*?)\)/
 	const match = inputString.match(regex)
 	if (match) return match[1]
 	return undefined
