@@ -309,11 +309,11 @@ type NonTokenLogEventParams = {
 }
 
 function insertBetweenElements<T>(array: readonly T[], elementToInsert: T): readonly T[] {
-	return array.reduce((acc, currentElement, index, arr) => {
-		acc.push(currentElement)
-		if (index < arr.length - 1) acc.push(elementToInsert)
-		return acc
-	}, [] as T[])
+	const newArray = [array[0]]
+	for (const i = 1; i < array.length; ++i) {
+		array.push(elementToInsert, array[i])
+	}
+	return newArray
 }
 
 export function NonTokenLogEvent(params: NonTokenLogEventParams) {
