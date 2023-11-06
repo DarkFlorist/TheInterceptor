@@ -98,7 +98,6 @@ export const CraftingTransactionPendingTransaction = funtypes.Intersect(
 	funtypes.ReadonlyObject({ status: funtypes.Literal('Crafting Transaction') })
 )
 
-
 export type WaitingForSimulationPendingTransaction = funtypes.Static<typeof WaitingForSimulationPendingTransaction>
 export const WaitingForSimulationPendingTransaction = funtypes.Intersect(
 	SimulatedPendingTransactionBase,
@@ -107,7 +106,6 @@ export const WaitingForSimulationPendingTransaction = funtypes.Intersect(
 		status: funtypes.Literal('Simulating')
 	})
 )
-
 
 export type PendingTransaction = funtypes.Static<typeof PendingTransaction>
 export const PendingTransaction = funtypes.Union(CraftingTransactionPendingTransaction, WaitingForSimulationPendingTransaction, SimulatedPendingTransaction)
