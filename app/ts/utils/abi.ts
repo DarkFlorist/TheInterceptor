@@ -83,7 +83,7 @@ export const CompoundTimeLock: InterfaceAbi = [
 ]
 
 function getStringBetweenParentheses(inputString: string): string | undefined {
-	const regex = /\(([^)]+)\)/
+	const regex = /\((.*?)\)/
 	const match = inputString.match(regex)
 	if (match) return match[1]
 	return undefined
