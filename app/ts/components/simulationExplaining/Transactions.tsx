@@ -2,7 +2,6 @@ import { MaybeParsedEvent, SimulatedAndVisualizedTransaction, SimulationAndVisua
 import { SmallAddress } from '../subcomponents/address.js'
 import { TokenSymbol, TokenAmount, AllApproval } from '../subcomponents/coins.js'
 import { LogAnalysisParams, NonLogAnalysisParams, RenameAddressCallBack } from '../../types/user-interface-types.js'
-import { QUARANTINE_CODE, QUARANTINE_CODES_DICT } from '../../simulation/protectors/quarantine-codes.js'
 import { Error as ErrorComponent } from '../subcomponents/Error.js'
 import { identifyRoutes, identifySwap, SwapVisualization } from './SwapTransactions.js'
 import { RawTransactionDetailsCard, GasFee, TokenLogAnalysisCard, TransactionCreated, TransactionHeader, NonTokenLogAnalysisCard, TransactionsAccountChangesCard } from './SimulationSummary.js'
@@ -42,11 +41,11 @@ function isPositiveEvent(visResult: TokenVisualizerResultWithMetadata, ourAddres
 	return visResult.to.address === ourAddressInReferenceFrame // send is positive if we are receiving
 }
 
-export function QuarantineCodes({ quarantineCodes }: { quarantineCodes: readonly QUARANTINE_CODE[] }) {
+export function QuarantineReasons({ quarantineReasons }: { quarantineReasons: readonly string[] }) {
 	return <> {
-		quarantineCodes.map((code) => (
+		quarantineReasons.map((quarantineReason) => (
 			<div style = 'margin-top: 10px;margin-bottom: 10px'>
-				<ErrorComponent text = { QUARANTINE_CODES_DICT[code].label } />
+				<ErrorComponent text = { quarantineReason } />
 			</div>
 		))
 	} </>
@@ -156,7 +155,7 @@ export function Transaction(param: TransactionVisualizationParameters) {
 			<div class = 'card-content' style = 'padding-bottom: 5px;'>
 				<div class = 'container'>
 					<TransactionImportanceBlock { ...param }/>
-					<QuarantineCodes quarantineCodes = { param.simTx.quarantineCodes }/>
+					<QuarantineReasons quarantineReasons = { param.simTx.quarantineReasons }/>
 				</div>
 				{ identifiedTransaction === 'MakeYouRichTransaction' ? <></> : <>
 					<TransactionsAccountChangesCard

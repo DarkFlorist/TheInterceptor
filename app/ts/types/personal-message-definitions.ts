@@ -1,6 +1,5 @@
 import * as funtypes from 'funtypes'
 import { EthereumAddress, EthereumBytes32, EthereumTimestamp, LiteralConverterParserFactory, NonHexBigInt, EthereumInput } from './wire-types.js'
-import { QUARANTINE_CODE } from '../simulation/protectors/quarantine-codes.js'
 import { RpcNetwork } from './rpc.js'
 import { InterceptedRequest } from '../utils/requests.js'
 import { AddressBookEntry } from './addressBookTypes.js'
@@ -358,7 +357,7 @@ export const PersonalSignRequestBase = funtypes.ReadonlyObject({
 	request: InterceptedRequest,
 	simulationMode: funtypes.Boolean,
 	signerName: SignerName,
-	quarantineCodes: funtypes.ReadonlyArray(QUARANTINE_CODE),
+	quarantineReasons: funtypes.ReadonlyArray(funtypes.String),
 	quarantine: funtypes.Boolean,
 	account: AddressBookEntry,
 	website: Website,

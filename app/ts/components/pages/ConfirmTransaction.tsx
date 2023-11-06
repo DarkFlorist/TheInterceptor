@@ -9,7 +9,7 @@ import { RpcConnectionStatus } from '../../types/user-interface-types.js'
 import { sendPopupMessageToBackgroundPage } from '../../background/backgroundUtils.js'
 import { SignerLogoText } from '../subcomponents/signers.js'
 import { ErrorCheckBox } from '../subcomponents/Error.js'
-import { QuarantineCodes, SenderReceiver, TransactionImportanceBlock } from '../simulationExplaining/Transactions.js'
+import { QuarantineReasons, SenderReceiver, TransactionImportanceBlock } from '../simulationExplaining/Transactions.js'
 import { identifyTransaction } from '../simulationExplaining/identifyTransaction.js'
 import { DinoSaysNotification } from '../subcomponents/DinoSays.js'
 import { NetworkErrors } from './Home.js'
@@ -89,7 +89,7 @@ export function TransactionCard(param: TransactionCardParams) {
 						simulationAndVisualisationResults = { param.simulationAndVisualisationResults }
 						renameAddressCallBack = { param.renameAddressCallBack }
 					/>
-					<QuarantineCodes quarantineCodes = { simTx.quarantineCodes }/>
+					<QuarantineReasons quarantineReasons = { simTx.quarantineReasons }/>
 				</div>
 
 				<TransactionsAccountChangesCard

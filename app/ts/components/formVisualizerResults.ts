@@ -110,7 +110,7 @@ export function formSimulatedAndVisualizedTransaction(simState: SimulationState,
 			tokenBalancesAfter: simulatedTx.tokenBalancesAfter,
 			gasSpent: simulatedTx.multicallResponse.gasSpent,
 			quarantine: protectorResult.quarantine,
-			quarantineCodes: protectorResult.quarantineCodes,
+			quarantineReasons: protectorResult.quarantineReasons,
 			...(simulatedTx.multicallResponse.statusCode === 'failure'
 				? {
 					error: simulatedTx.multicallResponse.error,
