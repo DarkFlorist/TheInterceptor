@@ -681,11 +681,13 @@ export const FetchAbiAndNameFromEtherScanReply = funtypes.ReadonlyObject({
 	method: funtypes.Literal('popup_fetchAbiAndNameFromEtherScanReply'),
 	data: funtypes.Union(
 		funtypes.ReadonlyObject({
+			success: funtypes.Literal(true),
 			address: EthereumAddress,
 			abi: funtypes.Union(funtypes.String, funtypes.Undefined),
 			contractName: funtypes.String,
 		}),
 		funtypes.ReadonlyObject({
+			success: funtypes.Literal(false),
 			error: funtypes.String,
 		}),
 	)

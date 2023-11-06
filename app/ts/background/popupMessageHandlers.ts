@@ -22,7 +22,7 @@ import { ExportedSettings } from '../types/exportedSettingsTypes.js'
 import { isJSON } from '../utils/json.js'
 import { UserAddressBook } from '../types/addressBookTypes.js'
 import { serialize } from '../types/wire-types.js'
-import { fetchAbi } from '../simulation/services/EtherScanAbiFetcher.js'
+import { fetchAbiFromEtherScan } from '../simulation/services/EtherScanAbiFetcher.js'
 
 export async function confirmDialog(simulator: Simulator, websiteTabConnections: WebsiteTabConnections, confirmation: TransactionConfirmation) {
 	await resolvePendingTransaction(simulator, websiteTabConnections, confirmation)
@@ -423,7 +423,7 @@ export async function simulateGovernanceContractExecutionOnPass(ethereum: Ethere
 }
 
 export async function fetchAbiAndNameFromEtherScan(parsedRequest: FetchAbiAndNameFromEtherScan) {
-	const abi = await fetchAbi(parsedRequest.data)
+	const abi = await fetchAbiFromEtherScan(parsedRequest.data)
 	return await sendPopupMessageToOpenWindows({
 		method: 'popup_fetchAbiAndNameFromEtherScanReply' as const,
 		data: abi,

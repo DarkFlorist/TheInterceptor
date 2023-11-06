@@ -194,9 +194,8 @@ export function AddNewAddress(param: AddAddressParam) {
 				})
 			}
 			if (parsed.method === 'popup_fetchAbiAndNameFromEtherScanReply') {
-				console.log(parsed)
 				setIncompleteAddressBookEntry((prevEntry) => {
-					if ('error' in parsed.data) {
+					if (!parsed.data.success) {
 						setErrorString(parsed.data.error)
 						return prevEntry
 					}
