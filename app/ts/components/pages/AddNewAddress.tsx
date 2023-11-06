@@ -11,7 +11,7 @@ import { ComponentChildren, createRef } from 'preact'
 import { AddressBookEntry, IncompleteAddressBookEntry } from '../../types/addressBookTypes.js'
 import { ExternalPopupMessage } from '../../types/interceptor-messages.js'
 import { isJSON } from '../../utils/json.js'
-import { isValidAbi } from '../../simulation/services/EtherScanAbiFetcher.js'
+import { isValidAbi } from '../../simulation/services/EtherscanAbiFetcher.js'
 
 const readableAddressType = {
 	'contact': 'Contact',
@@ -82,7 +82,7 @@ type RenderinCompleteAddressBookParams = {
 	setAddress: (address: string) => void
 	setSymbol: (symbol: string) => void
 	setAskForAddressAccess: (name: boolean) => void
-	fetchAbiAndNameFromEtherScan: (address: string | undefined) => void
+	fetchAbiAndNameFromEtherscan: (address: string | undefined) => void
 	setAbi: (abi: string) => void
 	retrievedAbi: boolean
 	setRetrievingAbi: StateUpdater<boolean>
@@ -115,7 +115,7 @@ function AbiInput({ abiInput, setAbiInput, disabled }: AbiInputParams) {
 	/>
 }
 
-function RenderIncompleteAddressBookEntry({ incompleteAddressBookEntry, setName, setAddress, setSymbol, setAskForAddressAccess, fetchAbiAndNameFromEtherScan, setAbi, retrievedAbi, setRetrievingAbi }: RenderinCompleteAddressBookParams) {
+function RenderIncompleteAddressBookEntry({ incompleteAddressBookEntry, setName, setAddress, setSymbol, setAskForAddressAccess, fetchAbiAndNameFromEtherscan, setAbi, retrievedAbi, setRetrievingAbi }: RenderinCompleteAddressBookParams) {
 	const Text = (param: { text: ComponentChildren }) => {
 		return <p class = 'paragraph' style = 'color: var(--subtitle-text-color); text-overflow: ellipsis; overflow: hidden; width:100%'>
 			{ param.text }
@@ -149,7 +149,7 @@ function RenderIncompleteAddressBookEntry({ incompleteAddressBookEntry, setName,
 						<CellElement element = { <>
 							<AbiInput abiInput = { incompleteAddressBookEntry.abi } setAbiInput = { setAbi } disabled = { false }/>
 							<div style = 'padding-left: 5px'/>
-							<button class = 'button is-primary is-small' disabled = { stringToAddress(incompleteAddressBookEntry.address) === undefined || retrievedAbi } onClick = { async  () => { setRetrievingAbi(true); fetchAbiAndNameFromEtherScan(incompleteAddressBookEntry.address) } }> Fetch from Etherscan</button>
+							<button class = 'button is-primary is-small' disabled = { stringToAddress(incompleteAddressBookEntry.address) === undefined || retrievedAbi } onClick = { async  () => { setRetrievingAbi(true); fetchAbiAndNameFromEtherscan(incompleteAddressBookEntry.address) } }> Fetch from Etherscan</button>
 						</> }/>
 					</> : <></> }
 				</span>
@@ -193,7 +193,7 @@ export function AddNewAddress(param: AddAddressParam) {
 					return previous
 				})
 			}
-			if (parsed.method === 'popup_fetchAbiAndNameFromEtherScanReply') {
+			if (parsed.method === 'popup_fetchAbiAndNameFromEtherscanReply') {
 				setIncompleteAddressBookEntry((prevEntry) => {
 					if (!parsed.data.success) {
 						setErrorString(parsed.data.error)
@@ -336,10 +336,10 @@ export function AddNewAddress(param: AddAddressParam) {
 		await sendPopupMessageToBackgroundPage({ method: 'popup_findAddressBookEntryWithSymbolOrName', data: { name, symbol } })
 	}
 
-	async function fetchAbiAndNameFromEtherScan(address: string | undefined) {
+	async function fetchAbiAndNameFromEtherscan(address: string | undefined) {
 		const addr = stringToAddress(address)
 		if (addr === undefined) return
-		await sendPopupMessageToBackgroundPage({ method: 'popup_fetchAbiAndNameFromEtherScan', data: addr })
+		await sendPopupMessageToBackgroundPage({ method: 'popup_fetchAbiAndNameFromEtherscan', data: addr })
 	}
 
 	function setAddress(input: string) {
@@ -457,7 +457,7 @@ export function AddNewAddress(param: AddAddressParam) {
 							setSymbol = { setSymbol }
 							setAbi = { setAbi }
 							setAskForAddressAccess = { setAskForAddressAccess }
-							fetchAbiAndNameFromEtherScan = { fetchAbiAndNameFromEtherScan }
+							fetchAbiAndNameFromEtherscan = { fetchAbiAndNameFromEtherscan }
 							retrievedAbi = { retrievedAbi }
 							setRetrievingAbi = { setRetrievingAbi }
 						/>

@@ -670,15 +670,15 @@ export const SimulateGovernanceContractExecutionReply = funtypes.ReadonlyObject(
 	)
 }).asReadonly()
 
-export type FetchAbiAndNameFromEtherScan = funtypes.Static<typeof FetchAbiAndNameFromEtherScan>
-export const FetchAbiAndNameFromEtherScan = funtypes.ReadonlyObject({
-	method: funtypes.Literal('popup_fetchAbiAndNameFromEtherScan'),
+export type FetchAbiAndNameFromEtherscan = funtypes.Static<typeof FetchAbiAndNameFromEtherscan>
+export const FetchAbiAndNameFromEtherscan = funtypes.ReadonlyObject({
+	method: funtypes.Literal('popup_fetchAbiAndNameFromEtherscan'),
 	data: EthereumAddress,
 }).asReadonly()
 
-export type FetchAbiAndNameFromEtherScanReply = funtypes.Static<typeof FetchAbiAndNameFromEtherScanReply>
-export const FetchAbiAndNameFromEtherScanReply = funtypes.ReadonlyObject({
-	method: funtypes.Literal('popup_fetchAbiAndNameFromEtherScanReply'),
+export type FetchAbiAndNameFromEtherscanReply = funtypes.Static<typeof FetchAbiAndNameFromEtherscanReply>
+export const FetchAbiAndNameFromEtherscanReply = funtypes.ReadonlyObject({
+	method: funtypes.Literal('popup_fetchAbiAndNameFromEtherscanReply'),
 	data: funtypes.Union(
 		funtypes.ReadonlyObject({
 			success: funtypes.Literal(true),
@@ -733,7 +733,7 @@ export const PopupMessage = funtypes.Union(
 	SetRpcList,
 	IdentifyAddress,
 	FindAddressBookEntryWithSymbolOrName,
-	FetchAbiAndNameFromEtherScan,
+	FetchAbiAndNameFromEtherscan,
 )
 
 export type MessageToPopup = funtypes.Static<typeof MessageToPopup>
@@ -757,7 +757,7 @@ export const MessageToPopup = funtypes.Union(
 	PartialUpdateHomePage,
 	PartiallyParsedPersonalSignRequest,
 	PartiallyParsedSimulateGovernanceContractExecutionReply,
-	FetchAbiAndNameFromEtherScanReply,
+	FetchAbiAndNameFromEtherscanReply,
 )
 
 export type ExternalPopupMessage = funtypes.Static<typeof MessageToPopup>
