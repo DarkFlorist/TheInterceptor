@@ -1,9 +1,9 @@
-import { bytes32String, bytesToUnsigned, dataStringWith0xStart } from '../utils/bigint.js'
+import { bytesToUnsigned } from '../utils/bigint.js'
 import { TokenVisualizerResult } from '../types/visualizer-types.js'
 import { MulticallResponseEventLog } from '../types/JsonRpc-types.js'
 import { Interface } from 'ethers'
 import { Erc1155ABI } from '../utils/abi.js'
-import { parseLogIfPossible } from './services/SimulationModeEthereumClientService.js'
+import { parseEventIfPossible } from './services/SimulationModeEthereumClientService.js'
 
 export function handleERC20TransferLog(eventLog: MulticallResponseEventLog): TokenVisualizerResult[] {
 	if (eventLog.topics[1] === undefined || eventLog.topics[2] === undefined) throw new Error('unknown log')
@@ -81,7 +81,7 @@ export function handleWithdrawalLog(eventLog: MulticallResponseEventLog): TokenV
 
 export function handleERC1155TransferBatch(eventLog: MulticallResponseEventLog): TokenVisualizerResult[] {
 	if (eventLog.topics.length !== 4) throw new Error('Malformed ERC1155 TransferBatch Event')
-	const parsed = parseLogIfPossible(new Interface(Erc1155ABI), { topics: eventLog.topics.map((x) => bytes32String(x)), data: dataStringWith0xStart(eventLog.data) })
+	const parsed = parseEventIfPossible(new Interface(Erc1155ABI), eventLog)
 	if (parsed === null || parsed.name !== 'TransferBatch') throw new Error('Malformed ERC1155 TransferBatch Event')
 	return [...Array(parsed.args._ids.length)].map((_, index) => {
 		if (parsed.args._ids[index] === undefined || parsed.args._values[index] === undefined || eventLog.topics[1] === undefined || eventLog.topics[2] === undefined || eventLog.topics[3] === undefined) throw new Error('Malformed ERC1155 TransferBatch Event')

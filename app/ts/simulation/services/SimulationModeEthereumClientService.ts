@@ -5,7 +5,7 @@ import { CANNOT_SIMULATE_OFF_LEGACY_BLOCK, ERROR_INTERCEPTOR_GAS_ESTIMATION_FAIL
 import { Interface, TypedDataEncoder, ethers, hashMessage, keccak256, } from 'ethers'
 import { WebsiteCreatedEthereumUnsignedTransaction, SimulatedTransaction, SimulationState, TokenBalancesAfter, EstimateGasError, SignedMessageTransaction } from '../../types/visualizer-types.js'
 import { EthereumUnsignedTransactionToUnsignedTransaction, IUnsignedTransaction1559, serializeSignedTransactionToBytes } from '../../utils/ethereum.js'
-import { EthGetLogsResponse, EthGetLogsRequest, EthTransactionReceiptResponse, MulticallResponseEventLogs, MulticallResponse, DappRequestTransaction } from '../../types/JsonRpc-types.js'
+import { EthGetLogsResponse, EthGetLogsRequest, EthTransactionReceiptResponse, MulticallResponseEventLogs, MulticallResponse, DappRequestTransaction, MulticallResponseEventLog } from '../../types/JsonRpc-types.js'
 import { handleERC1155TransferBatch, handleERC1155TransferSingle } from '../logHandlers.js'
 import { assertNever } from '../../utils/typescript.js'
 import { SignMessageParams } from '../../types/jsonRpc-signing-types.js'
@@ -785,9 +785,9 @@ const getSimulatedTokenBalances = async (ethereumClientService: EthereumClientSe
 	})
 }
 
-export const parseLogIfPossible = (ethersInterface: ethers.Interface, log: { topics: string[], data: string }) => {
+export const parseEventIfPossible = (ethersInterface: ethers.Interface, log: MulticallResponseEventLog) => {
 	try {
-		return ethersInterface.parseLog(log)
+		return ethersInterface.parseLog({ topics: log.topics.map((x) => bytes32String(x)), data: dataStringWith0xStart(log.data) })
 	} catch (error) {
 		return null
 	}
@@ -801,7 +801,7 @@ const getAddressesInteractedWithErc20s = (events: MulticallResponseEventLogs): {
 	const erc20 = new ethers.Interface(erc20ABI)
 	const tokenOwners: { token: bigint, owner: bigint, tokenId: undefined, type: 'ERC20' }[] = []
 	for (const log of events) {
-		const parsed = parseLogIfPossible(erc20, { topics: log.topics.map((x) => bytes32String(x)), data: dataStringWith0xStart(log.data) })
+		const parsed = parseEventIfPossible(erc20, log)
 		if (parsed === null) continue
 		const base = { token: log.loggersAddress, tokenId: undefined, type: 'ERC20' as const }
 		switch (parsed.name) {
@@ -825,7 +825,7 @@ const getAddressesAndTokensIdsInteractedWithErc1155s = (events: MulticallRespons
 	const erc20 = new ethers.Interface(erc1155ABI)
 	const tokenOwners: { token: bigint, owner: bigint, tokenId: bigint, type: 'ERC1155' }[] = []
 	for (const log of events) {
-		const parsed = parseLogIfPossible(erc20, { topics: log.topics.map((x) => bytes32String(x)), data: dataStringWith0xStart(log.data) })
+		const parsed = parseEventIfPossible(erc20, log)
 		if (parsed === null) continue
 		const base = { token: log.loggersAddress, type: 'ERC1155' as const }
 		switch (parsed.name) {
