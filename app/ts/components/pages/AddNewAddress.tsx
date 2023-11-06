@@ -201,8 +201,9 @@ export function AddNewAddress(param: AddAddressParam) {
 					}
 					setErrorString(undefined)
 					if (parsed.data === undefined || parsed.data.address !== stringToAddress(prevEntry.address)) return prevEntry
-					checkForDuplicatedNameOrSymbol(parsed.data.contractName, prevEntry.symbol)
-					return { ...prevEntry, name: prevEntry.name === undefined ? parsed.data.contractName : prevEntry.name, abi: parsed.data.abi, duplicateStatus: 'Pending' }
+					const newName = prevEntry.name === undefined ? parsed.data.contractName : prevEntry.name
+					checkForDuplicatedNameOrSymbol(newName, prevEntry.symbol)
+					return { ...prevEntry, name: newName, abi: parsed.data.abi, duplicateStatus: 'Pending' }
 				})
 				return setRetrievingAbi(false)
 			}
@@ -297,7 +298,7 @@ export function AddNewAddress(param: AddAddressParam) {
 		}
 	}
 
-	async function add() {
+	async function modifyOrAddEntry() {
 		param.close()
 		const entryToAdd = getCompleteAddressBookEntry()
 		if (entryToAdd === undefined) return
@@ -307,18 +308,14 @@ export function AddNewAddress(param: AddAddressParam) {
 	async function createAndSwitch() {
 		const inputedAddressBigInt = stringToAddress(incompleteAddressBookEntry?.address)
 		if (inputedAddressBigInt === undefined) return
-		await add()
+		await modifyOrAddEntry()
 		if (param.setActiveAddressAndInformAboutIt !== undefined) await param.setActiveAddressAndInformAboutIt(inputedAddressBigInt)
 	}
 
 	useEffect(() => {
 		setActiveAddress(param.activeAddress)
 		setIncompleteAddressBookEntry((previous) => {
-			if (param.incompleteAddressBookEntry.entrySource === 'DarkFloristMetadata' || param.incompleteAddressBookEntry.entrySource === 'Interceptor') {
-				setErrorString(`The address information for ${ param.incompleteAddressBookEntry.name } originates from The Interceptor and cannot be modified.`)
-			} else {
-				setErrorString(undefined)
-			}
+			setErrorString(undefined)
 			return { ...previous, ...param.incompleteAddressBookEntry }
 		})
 	}, [param.incompleteAddressBookEntry, param.activeAddress])
@@ -415,8 +412,6 @@ export function AddNewAddress(param: AddAddressParam) {
 
 	function isSubmitButtonDisabled() {
 		return !areInputValid()
-			|| param.incompleteAddressBookEntry.entrySource === 'DarkFloristMetadata' 
-			|| param.incompleteAddressBookEntry.entrySource === 'Interceptor' 
 			|| errorString !== undefined 
 			|| incompleteAddressBookEntry.duplicateStatus === 'Duplicates'
 			|| (showOnChainVerificationErrorBox() && !onChainInformationVerifiedByUser)
@@ -480,7 +475,7 @@ export function AddNewAddress(param: AddAddressParam) {
 			</section>
 			<footer class = 'modal-card-foot window-footer' style = 'border-bottom-left-radius: unset; border-bottom-right-radius: unset; border-top: unset; padding: 10px;'>
 				{ param.setActiveAddressAndInformAboutIt === undefined || incompleteAddressBookEntry === undefined || activeAddress === stringToAddress(incompleteAddressBookEntry.address) ? <></> : <button class = 'button is-success is-primary' onClick = { createAndSwitch } disabled = { ! (areInputValid()) }> { param.incompleteAddressBookEntry.addingAddress ? 'Create and switch' : 'Modify and switch' } </button> }
-				<button class = 'button is-success is-primary' onClick = { incompleteAddressBookEntry.duplicateStatus === 'Pending' ? () => {} : add } disabled = { isSubmitButtonDisabled() }> { param.incompleteAddressBookEntry.addingAddress ? 'Create' : 'Modify' } </button>
+				<button class = 'button is-success is-primary' onClick = { incompleteAddressBookEntry.duplicateStatus === 'Pending' ? () => {} : modifyOrAddEntry } disabled = { isSubmitButtonDisabled() }> { param.incompleteAddressBookEntry.addingAddress ? 'Create' : 'Modify' } </button>
 				<button class = 'button is-primary' style = 'background-color: var(--negative-color)' onClick = { param.close }>Cancel</button>
 			</footer>
 		</div>
