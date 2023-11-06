@@ -67,10 +67,10 @@ export const simulateGovernanceContractExecution = async (pendingTransaction: Pe
 		const explanation = FourByteExplanations[fourByte]
 		if ((explanation !== 'Cast Vote'
 			&& explanation !== 'Submit Vote'
-			&& explanation !== 'Cast Vote By Sig'
-			&& explanation !== 'Cast Vote With Reason'
-			&& explanation !== 'Cast Vote With Reason And Params'
-			&& explanation !== 'Cast Vote With Reason And Params By Sig')
+			&& explanation !== 'Cast Vote by Signature'
+			&& explanation !== 'Cast Vote with Reason'
+			&& explanation !== 'Cast Vote with Reason and Additional Info'
+			&& explanation !== 'Cast Vote with Reason And Additional Info by Signature')
 			|| pendingResults.data.simulatedAndVisualizedTransactions[0]?.events.length !== 1) return returnError('Could not identify the transaction as a vote')
 		
 		const governanceContractInterface = new Interface(CompoundGovernanceAbi)
