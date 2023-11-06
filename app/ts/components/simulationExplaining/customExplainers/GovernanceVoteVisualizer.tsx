@@ -181,7 +181,7 @@ export function GovernanceVoteVisualizer(param: GovernanceVoteVisualizerParams) 
 		<div style = 'display: grid; grid-template-rows: max-content max-content'>
 			<span class = 'log-table' style = 'padding-bottom: 10px; grid-template-columns: auto auto;'>
 				<div class = 'log-cell'>
-					<p class = 'paragraph'>Simulation of vote's outcome on a passing vote:</p>
+					<p class = 'paragraph'>Simulation of this proposal's outcome should the vote pass:</p>
 				</div>
 				<div class = 'log-cell' style = 'justify-content: right;'>
 					<MaybeRefreshButton_/>
