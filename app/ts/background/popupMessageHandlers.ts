@@ -412,10 +412,10 @@ export async function popupFindAddressBookEntryWithSymbolOrName(parsedRequest: F
 	} })
 }
 
-export async function simulateGovernanceContractExecutionOnPass(ethereum: EthereumClientService) {
+export async function simulateGovernanceContractExecutionOnPass(ethereum: EthereumClientService, userAddressBook: UserAddressBook) {
 	const [firstTxn, ..._remainingTxns] = await getPendingTransactions()
 	if (firstTxn === undefined) return                    
-	const governanceContractExecutionVisualisation = await simulateGovernanceContractExecution(firstTxn, ethereum)
+	const governanceContractExecutionVisualisation = await simulateGovernanceContractExecution(firstTxn, ethereum, userAddressBook)
 	return await sendPopupMessageToOpenWindows(serialize(SimulateGovernanceContractExecutionReply, {
 		method: 'popup_simulateGovernanceContractExecutionReply' as const,
 		data: governanceContractExecutionVisualisation,
