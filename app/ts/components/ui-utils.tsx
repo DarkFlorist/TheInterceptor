@@ -178,9 +178,9 @@ export function removeWindowTabListener(onCloseWindow: (id: number) => void) {
 export async function tryFocusingTabOrWindow(windowOrTab: WindowOrTabId) {
 	try {
 		if (windowOrTab.type === 'tab') {
-			browser.tabs.update(windowOrTab.id, { active: true })
+			await browser.tabs.update(windowOrTab.id, { active: true })
 		} else {
-			browser.windows.update(windowOrTab.id, { focused: true })
+			await browser.windows.update(windowOrTab.id, { focused: true })
 		}
 	} catch(e) {
 		console.warn('failed to focus', windowOrTab.type, ': ', windowOrTab.id)
