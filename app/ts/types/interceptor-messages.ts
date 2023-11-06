@@ -621,6 +621,16 @@ export const PartiallyParsedSimulateGovernanceContractExecutionReply = funtypes.
 	data: funtypes.Unknown,
 }).asReadonly()
 
+export type GovernanceVoteInputParameters = funtypes.Static<typeof GovernanceVoteInputParameters>
+export const GovernanceVoteInputParameters = funtypes.ReadonlyObject({
+	proposalId: EthereumQuantity,
+	support:  funtypes.Union(funtypes.Boolean, EthereumQuantity),
+	reason: funtypes.Union(funtypes.Undefined, funtypes.String),
+	params: funtypes.Union(funtypes.Undefined, EthereumData),
+	signature: funtypes.Union(funtypes.Undefined, EthereumData),
+	voter: funtypes.Union(funtypes.Undefined, EthereumAddress),
+})
+
 export type SimulateGovernanceContractExecutionReply = funtypes.Static<typeof SimulateGovernanceContractExecutionReply>
 export const SimulateGovernanceContractExecutionReply = funtypes.ReadonlyObject({
 	method: funtypes.Literal('popup_simulateGovernanceContractExecutionReply'),

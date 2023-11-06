@@ -30,7 +30,7 @@ import { Website } from '../types/websiteAccessTypes.js'
 import { ConfirmTransactionTransactionSingleVisualization, PendingTransaction } from '../types/accessRequest.js'
 import { RpcNetwork } from '../types/rpc.js'
 import { serialize } from '../types/wire-types.js'
-import { get4Byte } from '../utils/calldata.js'
+import { get4Byte, get4ByteString } from '../utils/calldata.js'
 import { simulateCompoundGovernanceExecution } from '../simulation/compoundGovernanceFaking.js'
 import { Interface } from 'ethers'
 import { CompoundGovernanceAbi } from '../utils/abi.js'
@@ -62,13 +62,22 @@ export const simulateGovernanceContractExecution = async (pendingTransaction: Pe
 		const pendingResults = pendingTransaction.simulationResults
 		if (pendingResults.statusCode !== 'success') return returnError('Voting transaction failed')
 		const fourByte = get4Byte(pendingTransaction.transactionToSimulate.transaction.input)
-		if (fourByte === undefined) return returnError('Could not identify the 4byte signature')
+		const fourByteString = get4ByteString(pendingTransaction.transactionToSimulate.transaction.input)
+		if (fourByte === undefined || fourByteString === undefined) return returnError('Could not identify the 4byte signature')
 		const explanation = FourByteExplanations[fourByte]
-		if ((explanation !== 'Submit vote' && explanation !== 'Cast vote') || pendingResults.data.simulatedAndVisualizedTransactions[0]?.events.length !== 1) return returnError('Could not identify the transaction as a vote')
+		if ((explanation !== 'Cast Vote'
+			&& explanation !== 'Submit Vote'
+			&& explanation !== 'Cast Vote by Signature'
+			&& explanation !== 'Cast Vote with Reason'
+			&& explanation !== 'Cast Vote with Reason and Additional Info'
+			&& explanation !== 'Cast Vote with Reason And Additional Info by Signature')
+			|| pendingResults.data.simulatedAndVisualizedTransactions[0]?.events.length !== 1) return returnError('Could not identify the transaction as a vote')
 		
-		if (pendingTransaction.transactionToSimulate.transaction.to === null) return returnError('The transaction creates a contract instead of casting a vote')
 		const governanceContractInterface = new Interface(CompoundGovernanceAbi)
-		const params = governanceContractInterface.decodeFunctionData(explanation === 'Submit vote' ? 'submitVote' : 'castVote', dataStringWith0xStart(pendingTransaction.transactionToSimulate.transaction.input))
+		const voteFunction = governanceContractInterface.getFunction(fourByteString)
+		if (voteFunction === null) return returnError('Could not find the voting function')
+		if (pendingTransaction.transactionToSimulate.transaction.to === null) return returnError('The transaction creates a contract instead of casting a vote')
+		const params = governanceContractInterface.decodeFunctionData(voteFunction, dataStringWith0xStart(pendingTransaction.transactionToSimulate.transaction.input))
 		const addr = await identifyAddress(ethereum, userAddressBook, pendingTransaction.transactionToSimulate.transaction.to)
 		if (!('abi' in addr) || addr.abi === undefined) return { success: false as const, error: { type: 'MissingAbi' as const, message: 'ABi for the governance contract is missing', addressBookEntry: addr } }
 		const contractExecutionResult = await simulateCompoundGovernanceExecution(ethereum, addr, params[0])

@@ -78,6 +78,10 @@ export const CompoundGovernanceAbi: InterfaceAbi = [
 	'function getActions(uint256 id) external view returns (address[] targets, uint256[] values, string[] signatures, bytes[] calldatas)',
 	'function submitVote(uint256 proposalId, bool support) external',
 	'function castVote(uint256 proposalId, uint8 support) external',
+	'function castVoteWithReason(uint256 proposalId, uint8 support, string reason) external returns (uint256 balance)',
+	'function castVoteWithReasonAndParams(uint256 proposalId, uint8 support, string reason, bytes params) external returns (uint256 balance)',
+	'function castVoteBySig(uint256 proposalId, uint8 support, address voter, bytes signature) external returns (uint256 balance)',
+	'function castVoteWithReasonAndParamsBySig(uint256 proposalId, uint8 support, address voter, string reason, bytes params, bytes signature) external returns (int256 balance)',
 ]
 
 export const CompoundTimeLock: InterfaceAbi = [
