@@ -11,7 +11,7 @@ export async function sendToNonContact(transaction: EthereumUnsignedTransaction,
 		const userAddressBook = (await getSettings()).userAddressBook
 		const sendingTo = await identifyAddress(ethereum, userAddressBook, to)
 		if (!(sendingTo.entrySource === 'OnChain' || sendingTo.entrySource === 'FilledIn')) return
-		return `You are about to send funds to ${ checksummedAddress(to) }, which is not in your addressbook. Please add the address to addressbook to dismiss this error for the future.`
+		return `You are about to send funds to ${ checksummedAddress(to) }, which is not in your addressbook. Please add the address to addressbook to dismiss this error in the future.`
 	}
 
 	const transferInfo = parseTransaction(transaction)
