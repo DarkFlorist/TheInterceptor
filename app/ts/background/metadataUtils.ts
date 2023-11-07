@@ -138,7 +138,7 @@ export async function identifyAddress(ethereumClientService: EthereumClientServi
 		}
 	}
 	const entry = getEntry(tokenIdentification)
-	await addUserAddressBookEntryIfItDoesNotExist(entry)
+	if (useLocalStorage) await addUserAddressBookEntryIfItDoesNotExist(entry)
 	return entry
 }
 
