@@ -21,5 +21,5 @@ export async function commonTokenOops(transaction: EthereumUnsignedTransaction, 
 	if (tokenMetadata.get(addressString(transferInfo.arguments.to)) === undefined) return
 	if (erc721Metadata.get(addressString(transferInfo.arguments.to)) === undefined) return
 	if (erc1155Metadata.get(addressString(transferInfo.arguments.to)) === undefined) return
-	return 'ERC20_UNINTENDED_CONTRACT'
+	return `Attempt to send tokens to a contract ${ transferInfo.arguments.to } that cannot receive such tokens`
 }

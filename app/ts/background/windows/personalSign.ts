@@ -1,4 +1,3 @@
-import { QUARANTINE_CODE } from '../../simulation/protectors/quarantine-codes.js'
 import { EthereumClientService } from '../../simulation/services/EthereumClientService.js'
 import { stringifyJSONWithBigInts } from '../../utils/bigint.js'
 import { METAMASK_ERROR_USER_REJECTED_REQUEST } from '../../utils/constants.js'
@@ -88,17 +87,17 @@ export async function craftPersonalSignPopupMessage(ethereumClientService: Ether
 	const basicParams = { ...signedMessageTransaction, activeAddress: activeAddressWithMetadata, signerName }
 	const originalParams = signedMessageTransaction
 
-	const getQuarrantineCodes = async (messageChainId: bigint, account: AddressBookEntry, activeAddress: AddressBookEntry, owner: AddressBookEntry | undefined): Promise<{ quarantine: boolean, quarantineCodes: readonly QUARANTINE_CODE[] }> => {
-		let quarantineCodes: QUARANTINE_CODE[] = []
+	const getQuarrantineCodes = async (messageChainId: bigint, account: AddressBookEntry, activeAddress: AddressBookEntry, owner: AddressBookEntry | undefined): Promise<{ quarantine: boolean, quarantineReasons: readonly string[] }> => {
+		let quarantineReasons: string[] = []
 		if (BigInt(messageChainId) !== rpcNetwork.chainId) {
-			quarantineCodes.push('SIGNATURE_CHAIN_ID_DOES_NOT_MATCH')
+			quarantineReasons.push('The signature request is for different chain than what is the current chain.')
 		}
 		if (account.address !== activeAddress.address || (owner != undefined && account.address !== owner.address)) {
-			quarantineCodes.push('SIGNATURE_ACCOUNT_DOES_NOT_MATCH')
+			quarantineReasons.push('The signature request is for different account than what is your active address.')
 		}
 		return {
-			quarantine: quarantineCodes.length > 0,
-			quarantineCodes,
+			quarantine: quarantineReasons.length > 0,
+			quarantineReasons,
 		}
 	}
 	if (originalParams.originalRequestParameters.method === 'eth_signTypedData') {
@@ -110,7 +109,7 @@ export async function craftPersonalSignPopupMessage(ethereumClientService: Ether
 			message: stringifyJSONWithBigInts(originalParams.originalRequestParameters.params[0], 4),
 			account: await identifyAddress(ethereumClientService, userAddressBook, originalParams.originalRequestParameters.params[1]),
 			quarantine: false,
-			quarantineCodes: [],
+			quarantineReasons: [],
 			rawMessage: stringifyJSONWithBigInts(originalParams.originalRequestParameters.params[0], 4),
 		}
 	}
@@ -124,7 +123,7 @@ export async function craftPersonalSignPopupMessage(ethereumClientService: Ether
 			message: originalParams.originalRequestParameters.params[0],
 			account: await identifyAddress(ethereumClientService, userAddressBook, originalParams.originalRequestParameters.params[1]),
 			quarantine: false,
-			quarantineCodes: [],
+			quarantineReasons: [],
 			rawMessage: originalParams.originalRequestParameters.params[0],
 		}
 	}
@@ -144,7 +143,7 @@ export async function craftPersonalSignPopupMessage(ethereumClientService: Ether
 			type: 'EIP712' as const,
 			message,
 			account,
-			...chainid === undefined ? { quarantine: false, quarantineCodes: [] } : await getQuarrantineCodes(chainid, account, activeAddressWithMetadata, undefined),
+			...chainid === undefined ? { quarantine: false, quarantineReasons: [] } : await getQuarrantineCodes(chainid, account, activeAddressWithMetadata, undefined),
 			rawMessage: stringifyJSONWithBigInts(namedParams.param, 4),
 		}
 	}
@@ -199,7 +198,7 @@ export async function craftPersonalSignPopupMessage(ethereumClientService: Ether
 			refundReceiver: await identifyAddress(ethereumClientService, userAddressBook, parsed.message.refundReceiver),
 			verifyingContract: await identifyAddress(ethereumClientService, userAddressBook, parsed.domain.verifyingContract),
 			quarantine: false,
-			quarantineCodes: [],
+			quarantineReasons: [],
 			rawMessage: stringifyJSONWithBigInts(parsed, 4),
 		}
 		case 'OrderComponents': return {
