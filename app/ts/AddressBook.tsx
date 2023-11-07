@@ -25,11 +25,11 @@ const ActiveFilterSingle = {
 const PAGE_SIZE = 20
 const ELEMENT_SIZE_PX = {
 	'My Active Addresses': 105,
-	'My Contacts': 96,
-	'ERC20 Tokens': 105,
-	'ERC1155 Tokens': 105,
-	'Non Fungible Tokens': 105,
-	'Other Contracts': 107,
+	'My Contacts': 120,
+	'ERC20 Tokens': 129,
+	'ERC1155 Tokens': 129,
+	'Non Fungible Tokens': 129,
+	'Other Contracts': 131,
 }
 const ELEMENT_PADDING_PX = 10
 const UNLOAD_DISTANCE = 8
@@ -102,7 +102,7 @@ export function ListElement(entry: ListElementParam) {
 		<div class = 'card' style = { `height: ${ ELEMENT_SIZE_PX[entry.category] }px` }>
 			<div class = 'card-content' style = 'height: 100%; width: 500px;'>
 				<div class = 'media' style = 'height: 100%;'>
-					<div class = 'media-content' style = 'overflow-y: visible; overflow-x: unset; height: 100%; display: flex; flex-direction: column; justify-content: space-between;'>
+					<div class = 'media-content' style = 'overflow-y: visible; overflow-x: unset; height: 100%; display: flex; flex-direction: column;'>
 						<div style = 'padding-bottom: 10px; height: 40px'>
 							{ entry.type === 'empty'
 								? <></>
@@ -135,11 +135,16 @@ export function ListElement(entry: ListElementParam) {
 								<input type = 'checkbox' checked = { 'askForAddressAccess' in entry && !entry.askForAddressAccess } disabled = { true }/>
 								<p class = 'paragraph checkbox-text'>Don't request for an access (insecure) </p>
 							</label>
-							: <></>
+							: 
+							<div>
+								<p class = 'paragraph' style = 'display: inline-block; font-size: 13px; vertical-align: top; width: 420px; text-overflow: ellipsis; overflow: hidden; white-space: nowrap;'>
+									{ `ABI: ${ 'abi' in entry && entry.abi !== undefined ? entry.abi : 'No ABI available' } ` }
+								</p>
+							</div>
 						}
 						<div>
 							<p class = 'paragraph' style = 'display: inline-block; font-size: 13px; color: var(--subtitle-text-color);'>
-								{ `Source: ${ 'entrySource' in entry ? `${ entry.entrySource }${ entry.entrySource === 'Interceptor' || entry.entrySource === 'DarkFloristMetadata' ? ' (editing is not allowed)' : '' }` : '...' } `}
+								{ `Source: ${ 'entrySource' in entry ? entry.entrySource : '' }` }
 							</p>
 						</div>
 					</div>
@@ -153,7 +158,7 @@ export function ListElement(entry: ListElementParam) {
 								X
 							</span>
 						</button>
-						<button class = 'button is-primary is-small' disabled = { entry.type !== 'empty' && (entry.entrySource === 'DarkFloristMetadata' || entry.entrySource === 'Interceptor')  } onClick = { entry.type != 'empty' ? () => entry.renameAddressCallBack(entry) : () => {} }>Edit</button>
+						<button class = 'button is-primary is-small' onClick = { entry.type != 'empty' ? () => entry.renameAddressCallBack(entry) : () => {} }>Edit</button>
 					</div>
 				</div>
 			</div>
