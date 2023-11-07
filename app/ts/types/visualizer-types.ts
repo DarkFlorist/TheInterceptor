@@ -1,7 +1,6 @@
 
 import * as funtypes from 'funtypes'
 import { EthereumAddress, EthereumBytes32, EthereumData, EthereumInput, EthereumQuantity, EthereumSignedTransaction, EthereumTimestamp, EthereumUnsignedTransaction, OptionalEthereumAddress } from './wire-types.js'
-import { QUARANTINE_CODE } from '../simulation/protectors/quarantine-codes.js'
 import { RenameAddressCallBack } from './user-interface-types.js'
 import { ERROR_INTERCEPTOR_GAS_ESTIMATION_FAILED } from '../utils/constants.js'
 import { EthBalanceChanges, EthSubscribeParams, SendRawTransactionParams, SendTransactionParams, SingleMulticallResponse } from './JsonRpc-types.js'
@@ -184,7 +183,7 @@ export const SimulatedAndVisualizedTransactionBase = funtypes.Intersect(
 		gasSpent: EthereumQuantity,
 		realizedGasPrice: EthereumQuantity,
 		quarantine: funtypes.Boolean,
-		quarantineCodes: funtypes.ReadonlyArray(QUARANTINE_CODE),
+		quarantineReasons: funtypes.ReadonlyArray(funtypes.String),
 		events: funtypes.ReadonlyArray(MaybeParsedEventWithExtraData),
 	}),
 	funtypes.Union(
@@ -238,10 +237,10 @@ export const VisualizerResult = funtypes.ReadonlyObject({
 	blockNumber: EthereumQuantity,
 })
 
-export type ProtectorResults  = funtypes.Static<typeof ProtectorResults>
+export type ProtectorResults = funtypes.Static<typeof ProtectorResults>
 export const ProtectorResults = funtypes.ReadonlyObject( {
 	quarantine: funtypes.Boolean,
-	quarantineCodes: funtypes.ReadonlyArray(QUARANTINE_CODE),
+	quarantineReasons: funtypes.ReadonlyArray(funtypes.String),
 })
 
 export type SimulatedTransaction = funtypes.Static<typeof SimulatedTransaction>
