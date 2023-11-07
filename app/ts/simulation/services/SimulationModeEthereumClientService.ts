@@ -708,7 +708,7 @@ export const simulatePersonalSign = async (params: SignMessageParams, signingAdd
 				}
 			}
 			case 'personal_sign': return {
-				signature: await wallet.signMessage(params.params[0]),
+				signature: await wallet.signMessage(stringToUint8Array(params.params[0])),
 				messageHash: hashMessage(params.params[0])
 			}
 			default: assertNever(params)
