@@ -1,13 +1,14 @@
 import { EthereumJsonRpcRequest } from '../app/ts/types/JsonRpc-types.js'
 
 export class MockRequestHandler {
-	public readonly jsonRpcRequest = async (rpcRequest: EthereumJsonRpcRequest) => {
-		if (rpcRequest.method === 'eth_getCode') return '0x'
-		console.log(rpcRequest)
+	public readonly jsonRpcRequest = async (rpcEntry: EthereumJsonRpcRequest) => {
+		if (rpcEntry.method === 'eth_getCode') return '0x'
 		throw new Error(`should not be called`)
 	}
+
+	public clearCache = () => {}
 	
-	public readonly getRpcNetwork = () => ({
+	public readonly getRpcEntry = () => ({
 		name: 'Goerli',
 		chainId: 5n,
 		httpsRpc: 'https://rpc-goerli.dark.florist/flipcardtrustone',

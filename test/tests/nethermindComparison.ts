@@ -6,7 +6,7 @@ import { eth_getBlockByNumber_goerli_8443561_false, eth_getBlockByNumber_goerli_
 import { describe, should } from '../micro-should.js'
 import * as assert from 'assert'
 import { assertIsObject } from '../../app/ts/utils/typescript.js'
-import { RpcNetwork } from '../../app/ts/types/rpc.js'
+import { RpcEntry } from '../../app/ts/types/rpc.js'
 
 function parseRequest(data: string) {
 	const jsonRpcResponse = JsonRpcResponse.parse(JSON.parse(data))
@@ -15,10 +15,12 @@ function parseRequest(data: string) {
 }
 
 class MockEthereumJSONRpcRequestHandler {
-	private rpcNetwork: RpcNetwork
-	constructor(rpcNetwork: RpcNetwork) {
-		this.rpcNetwork = rpcNetwork
+	private rpcEntry: RpcEntry
+	constructor(rpcEntry: RpcEntry, _caching: boolean = false) {
+		this.rpcEntry = rpcEntry
 	}
+
+	public clearCache = () => {}
 
 	public readonly jsonRpcRequest = async (rpcRequest: EthereumJsonRpcRequest) => {
 		switch (rpcRequest.method) {
@@ -36,7 +38,7 @@ class MockEthereumJSONRpcRequestHandler {
 			}
 		}
 	}
-	public readonly getRpcNetwork = () => this.rpcNetwork
+	public readonly getRpcEntry = () => this.rpcEntry
 }
 
 export async function main() {

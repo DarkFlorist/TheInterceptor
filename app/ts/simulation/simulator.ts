@@ -13,7 +13,7 @@ import { EthereumJSONRpcRequestHandler } from './services/EthereumJSONRpcRequest
 import { SingleMulticallResponse } from '../types/JsonRpc-types.js'
 import { APPROVAL_LOG, DEPOSIT_LOG, ERC1155_TRANSFERBATCH_LOG, ERC1155_TRANSFERSINGLE_LOG, ERC721_APPROVAL_FOR_ALL_LOG, TRANSFER_LOG, WITHDRAWAL_LOG } from '../utils/constants.js'
 import { handleApprovalLog, handleDepositLog, handleERC1155TransferBatch, handleERC1155TransferSingle, handleERC20TransferLog, handleErc721ApprovalForAllLog, handleWithdrawalLog } from './logHandlers.js'
-import { RpcNetwork } from '../types/rpc.js'
+import { RpcEntry } from '../types/rpc.js'
 import { UserAddressBook } from '../types/addressBookTypes.js'
 import { parseEventIfPossible } from './services/SimulationModeEthereumClientService.js'
 import { Interface } from 'ethers'
@@ -107,9 +107,9 @@ export const runProtectorsForTransaction = async (simulationState: SimulationSta
 export class Simulator {
 	public ethereum: EthereumClientService
 
-	public constructor(rpcNetwork: RpcNetwork, newBlockAttemptCallback: (blockHeader: EthereumBlockHeader, ethereumClientService: EthereumClientService, isNewBlock: boolean, simulator: Simulator) => Promise<void>, onErrorBlockCallback: (ethereumClientService: EthereumClientService) => Promise<void>) {
+	public constructor(rpcNetwork: RpcEntry, newBlockAttemptCallback: (blockHeader: EthereumBlockHeader, ethereumClientService: EthereumClientService, isNewBlock: boolean, simulator: Simulator) => Promise<void>, onErrorBlockCallback: (ethereumClientService: EthereumClientService) => Promise<void>) {
 		this.ethereum = new EthereumClientService(
-			new EthereumJSONRpcRequestHandler(rpcNetwork),
+			new EthereumJSONRpcRequestHandler(rpcNetwork, true),
 			async (blockHeader: EthereumBlockHeader, ethereumClientService: EthereumClientService, isNewBlock: boolean) => await newBlockAttemptCallback(blockHeader, ethereumClientService, isNewBlock, this),
 			onErrorBlockCallback
 		)
@@ -117,7 +117,7 @@ export class Simulator {
 
 	public cleanup = () => this.ethereum.cleanup()
 
-	public reset = (rpcNetwork: RpcNetwork) => {
+	public reset = (rpcNetwork: RpcEntry) => {
 		this.cleanup()
 		this.ethereum = new EthereumClientService(new EthereumJSONRpcRequestHandler(rpcNetwork), this.ethereum.getNewBlockAttemptCallback(), this.ethereum.getOnErrorBlockCallback())
 	}
