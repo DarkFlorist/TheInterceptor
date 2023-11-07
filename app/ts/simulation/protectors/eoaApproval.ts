@@ -19,7 +19,7 @@ export async function eoaApproval(transaction: EthereumUnsignedTransaction, ethe
 		const code = await getSimulatedCode(ethereum, simulationState, approvalInfo.arguments.operator)
 		if (code.statusCode === 'failure') return `Failed to verify whether address ${ approvalInfo.arguments.operator } contains code or not.`
 		if (code.getCodeReturn.length > 0) return
-		return 'This transaction attemps to approve Externally Owned Account.'
+		return 'This transaction attempts to approve an Externally Owned Account.'
 	}
 	return
 }
