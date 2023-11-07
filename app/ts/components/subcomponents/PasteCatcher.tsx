@@ -17,5 +17,5 @@ export function PasteCatcher(props: PasteProps) {
 		window.addEventListener('paste', catcher)
 		return () => { window.removeEventListener('paste', catcher) }
 	}, [props.enabled, props.onPaste])
-	return <div></div>
+	return <></>
 }
