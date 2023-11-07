@@ -144,7 +144,7 @@ export function ListElement(entry: ListElementParam) {
 						}
 						<div>
 							<p class = 'paragraph' style = 'display: inline-block; font-size: 13px; color: var(--subtitle-text-color);'>
-								{ `Source: ${ 'entrySource' in entry ? `${ entry.entrySource }${ entry.entrySource === 'Interceptor' || entry.entrySource === 'DarkFloristMetadata' ? ' (editing is not allowed)' : '' }` : '...' } `}
+								{ `Source: ${ 'entrySource' in entry ? entry.entrySource : '' }` }
 							</p>
 						</div>
 					</div>
@@ -158,7 +158,7 @@ export function ListElement(entry: ListElementParam) {
 								X
 							</span>
 						</button>
-						<button class = 'button is-primary is-small' disabled = { entry.type !== 'empty' && (entry.entrySource === 'DarkFloristMetadata' || entry.entrySource === 'Interceptor')  } onClick = { entry.type != 'empty' ? () => entry.renameAddressCallBack(entry) : () => {} }>Edit</button>
+						<button class = 'button is-primary is-small' onClick = { entry.type != 'empty' ? () => entry.renameAddressCallBack(entry) : () => {} }>Edit</button>
 					</div>
 				</div>
 			</div>
