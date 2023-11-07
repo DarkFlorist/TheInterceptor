@@ -144,7 +144,7 @@ export function ListElement(entry: ListElementParam) {
 						}
 						<div>
 							<p class = 'paragraph' style = 'display: inline-block; font-size: 13px; color: var(--subtitle-text-color);'>
-								{ `Source: ${ 'entrySource' in entry ? `${ entry.entrySource }` : '' }` }
+								{ `Source: ${ 'entrySource' in entry ? entry.entrySource : '' }` }
 							</p>
 						</div>
 					</div>

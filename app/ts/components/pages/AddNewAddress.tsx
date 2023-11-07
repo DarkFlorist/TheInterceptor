@@ -108,7 +108,7 @@ function AbiInput({ abiInput, setAbiInput, disabled }: AbiInputParams) {
 		type = 'text'
 		value = { abiInput }
 		placeholder = { 'not available / not retrieved' }
-		onInput = { e => setAbiInput((e.target as HTMLInputElement).value) }
+		onInput = { e => setAbiInput(e.currentTarget.value) }
 		ref = { ref }
 		disabled = { disabled }
 		style = { `width: 100%;${ abiInput === undefined || isValidAbi(abiInput.trim()) ? '' : 'color: var(--negative-color);' }` }
