@@ -5,9 +5,9 @@ import { tokenMetadata, contractMetadata, erc721Metadata, erc1155Metadata } from
 import { ethers } from 'ethers'
 import { MOCK_ADDRESS } from '../utils/constants.js'
 import { EthereumClientService } from '../simulation/services/EthereumClientService.js'
-import { itentifyAddressViaOnChainInformation } from '../utils/tokenIdentification.js'
+import { IdentifiedAddress, itentifyAddressViaOnChainInformation } from '../utils/tokenIdentification.js'
 import { assertNever } from '../utils/typescript.js'
-import { getUserAddressBookEntries } from './storageVariables.js'
+import { addUserAddressBookEntryIfItDoesNotExist, getUserAddressBookEntries } from './storageVariables.js'
 import { getUniqueItemsByProperties } from '../utils/typed-arrays.js'
 import { EthereumNameServiceTokenWrapper, getEthereumNameServiceNameFromTokenId } from '../utils/ethereumNameService.js'
 import { EthereumAddress } from '../types/wire-types.js'
@@ -97,45 +97,49 @@ export async function identifyAddress(ethereumClientService: EthereumClientServi
 	}
 
 	const tokenIdentification = await itentifyAddressViaOnChainInformation(ethereumClientService, address)
-
-	switch(tokenIdentification.type) {
-		case 'ERC20': return {
-			name: tokenIdentification.name,
-			address: BigInt(addrString),
-			symbol: tokenIdentification.symbol,
-			decimals: tokenIdentification.decimals,
-			type: 'ERC20',
-			entrySource: 'OnChain',
+	const getEntry = (tokenIdentification: IdentifiedAddress) => {
+		switch (tokenIdentification.type) {
+			case 'ERC20': return {
+				name: tokenIdentification.name,
+				address,
+				symbol: tokenIdentification.symbol,
+				decimals: tokenIdentification.decimals,
+				type: 'ERC20' as const,
+				entrySource: 'OnChain' as const,
+			}
+			case 'ERC1155': return {
+				name: ethers.getAddress(addrString),
+				address,
+				symbol: '???',
+				type: 'ERC1155' as const,
+				decimals: undefined,
+				entrySource: 'OnChain' as const,
+			}
+			case 'ERC721': return {
+				name: tokenIdentification.name,
+				address,
+				symbol: tokenIdentification.symbol,
+				type: 'ERC721' as const,
+				entrySource: 'OnChain' as const,
+			}
+			case 'contract': return {
+				address,
+				name: ethers.getAddress(addrString),
+				type: 'contract' as const,
+				entrySource: 'OnChain' as const,
+			}
+			case 'EOA': return {
+				address,
+				name: ethers.getAddress(addrString),
+				type: 'contact' as const,
+				entrySource: 'OnChain' as const,
+			}
+			default: assertNever(tokenIdentification)
 		}
-		case 'ERC1155': return {
-			name: ethers.getAddress(addrString),
-			address: BigInt(addrString),
-			symbol: '???',
-			type: 'ERC1155',
-			decimals: undefined,
-			entrySource: 'OnChain',
-		}
-		case 'ERC721': return {
-			name: tokenIdentification.name,
-			address: BigInt(addrString),
-			symbol: tokenIdentification.symbol,
-			type: 'ERC721',
-			entrySource: 'OnChain',
-		}
-		case 'contract': return {
-			address: address,
-			name: ethers.getAddress(addrString),
-			type: 'contract',
-			entrySource: 'OnChain',
-		}
-		case 'EOA': return {
-			address: address,
-			name: ethers.getAddress(addrString),
-			type: 'contact',
-			entrySource: 'OnChain',
-		}
-		default: assertNever(tokenIdentification)
 	}
+	const entry = getEntry(tokenIdentification)
+	await addUserAddressBookEntryIfItDoesNotExist(entry)
+	return entry
 }
 
 export async function getAddressBookEntriesForVisualiser(ethereumClientService: EthereumClientService, visualizerResults: readonly (VisualizerResult | undefined)[], simulationState: SimulationState, userAddressBook: UserAddressBook) : Promise<AddressBookEntry[]> {
