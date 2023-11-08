@@ -10,7 +10,7 @@ import { WebsiteCreatedEthereumUnsignedTransaction } from '../../types/visualize
 import { SendRawTransactionParams, SendTransactionParams } from '../../types/JsonRpc-types.js'
 import { refreshConfirmTransactionSimulation, updateSimulationState } from '../background.js'
 import { getHtmlFile, sendPopupMessageToOpenWindows } from '../backgroundUtils.js'
-import { appendPendingTransaction, clearPendingTransactions, getPendingTransactions, getSimulationResults, removePendingTransaction } from '../storageVariables.js'
+import { appendPendingTransaction, clearPendingTransactions, getPendingTransactions, getSimulationResults, removePendingTransaction, replacePendingTransaction } from '../storageVariables.js'
 import { InterceptedRequest, getUniqueRequestIdentifierString } from '../../utils/requests.js'
 import { replyToInterceptedRequest } from '../messageSending.js'
 import { Simulator } from '../../simulation/simulator.js'
@@ -18,6 +18,7 @@ import { ethers } from 'ethers'
 import { dataStringWith0xStart, stringToUint8Array } from '../../utils/bigint.js'
 import { EthereumAddress } from '../../types/wire-types.js'
 import { Website } from '../../types/websiteAccessTypes.js'
+import { PendingTransaction } from '../../types/accessRequest.js'
 
 type Confirmation = TransactionConfirmation | 'NoResponse'
 let openedDialog: PopupOrTab | undefined = undefined
@@ -48,8 +49,8 @@ export async function resolvePendingTransaction(simulator: Simulator, websiteTab
 		return pending.resolve(confirmation)
 	} else {
 		// we have not been tracking this window, forward its message directly to content script (or signer)
-		const resolvedPromise = await resolve(simulator, pendingTransaction.simulationMode, pendingTransaction.activeAddress, pendingTransaction.transactionToSimulate, confirmation)
-		replyToInterceptedRequest(websiteTabConnections, { ...pendingTransaction.transactionToSimulate.originalRequestParameters, ...resolvedPromise, uniqueRequestIdentifier: confirmation.data.uniqueRequestIdentifier })
+		const resolvedPromise = await resolve(simulator, pendingTransaction.simulationMode, pendingTransaction.activeAddress, pendingTransaction, confirmation)
+		replyToInterceptedRequest(websiteTabConnections, { ...pendingTransaction.originalRequestParameters, ...resolvedPromise, uniqueRequestIdentifier: confirmation.data.uniqueRequestIdentifier })
 		openedDialog = await getPopupOrTabOnlyById(confirmation.data.windowId)
 	}
 }
@@ -158,7 +159,7 @@ export async function openConfirmTransactionDialog(
 	pendingTransactions.set(uniqueRequestIdentifier, pendingTransaction)
 	try {
 		const created = new Date()
-		const transactionToSimulate = transactionParams.method === 'eth_sendTransaction' ? await formEthSendTransaction(ethereumClientService, activeAddress, simulationMode, website, transactionParams, created) : await formSendRawTransaction(ethereumClientService, transactionParams, website, created)
+		const transactionToSimulatePromise = transactionParams.method === 'eth_sendTransaction' ? formEthSendTransaction(ethereumClientService, activeAddress, simulationMode, website, transactionParams, created) : formSendRawTransaction(ethereumClientService, transactionParams, website, created)
 		if (activeAddress === undefined) return ERROR_INTERCEPTOR_NO_ACTIVE_ADDRESS
 
 		const addedPendingTransaction = await pendingConfirmationSemaphore.execute(async () => {
@@ -179,26 +180,39 @@ export async function openConfirmTransactionDialog(
 				addWindowTabListener(onCloseWindow)
 				return await openPopupOrTab({ url: getHtmlFile('confirmTransaction'), type: 'popup', height: 800, width: 600 })
 			}
-			const refreshSimulationPromise = refreshConfirmTransactionSimulation(simulator, ethereumClientService, activeAddress, simulationMode, request.uniqueRequestIdentifier, transactionToSimulate)
 			if (!justAddToPending || openedDialog === undefined) openedDialog = await openDialog()
 			if (openedDialog?.windowOrTab.id === undefined) return false
-			await appendPendingTransaction({
+			const pendingTransaction = {
 				dialogId: openedDialog.windowOrTab.id,
-				request: transactionParams,
+				originalRequestParameters: transactionParams,
 				uniqueRequestIdentifier: request.uniqueRequestIdentifier,
 				simulationMode,
 				activeAddress,
-				transactionToSimulate,
-				simulationResults: await refreshSimulationPromise,
 				created,
+				status: 'Crafting Transaction' as const,
+			}
+			await appendPendingTransaction(pendingTransaction)
+			await updateConfirmTransactionViewWithPendingTransaction()
+
+			const transactionToSimulate = await transactionToSimulatePromise
+
+			await replacePendingTransaction({ ...pendingTransaction, transactionToSimulate: transactionToSimulate, status: 'Simulating' as const })
+			await updateConfirmTransactionViewWithPendingTransaction()
+
+			const refreshSimulationPromise = refreshConfirmTransactionSimulation(simulator, ethereumClientService, activeAddress, simulationMode, request.uniqueRequestIdentifier, transactionToSimulate)
+			const simulatedTx = await replacePendingTransaction({
+				...pendingTransaction,
+				transactionToSimulate: transactionToSimulate,
+				simulationResults: await refreshSimulationPromise,
+				status: 'Simulated' as const,
 			})
 			await updateConfirmTransactionViewWithPendingTransaction()
 			if (justAddToPending) await sendPopupMessageToOpenWindows({ method: 'popup_confirm_transaction_dialog_pending_changed', data: await getPendingTransactions() })
-			return true
+			return simulatedTx
 		})
-		if (addedPendingTransaction === false) return formRejectMessage(undefined)
+		if (addedPendingTransaction === false || addedPendingTransaction === undefined) return formRejectMessage(undefined)
 		const reply = await pendingTransaction
-		const resolvedPromise = await resolve(simulator, simulationMode, activeAddress, transactionToSimulate, reply)
+		const resolvedPromise = await resolve(simulator, simulationMode, activeAddress, addedPendingTransaction, reply)
 		return resolvedPromise
 	} finally {
 		removeWindowTabListener(onCloseWindow)
@@ -207,7 +221,9 @@ export async function openConfirmTransactionDialog(
 	}
 }
 
-async function resolve(simulator: Simulator, simulationMode: boolean, activeAddress: bigint, transactionToSimulate: WebsiteCreatedEthereumUnsignedTransaction, confirmation: Confirmation): Promise<{ forward: true } | { error: { code: number, message: string } } | { result: bigint }> {
+async function resolve(simulator: Simulator, simulationMode: boolean, activeAddress: bigint, pendingTransaction: PendingTransaction, confirmation: Confirmation): Promise<{ forward: true } | { error: { code: number, message: string } } | { result: bigint }> {
+	if (pendingTransaction.status !== 'Simulated') return formRejectMessage(undefined)
+	const transactionToSimulate = pendingTransaction.transactionToSimulate
 	if (transactionToSimulate.error !== undefined) return { error: transactionToSimulate.error }
 	if (confirmation === 'NoResponse') return formRejectMessage(undefined)
 	if (confirmation.data.accept === false) return formRejectMessage(confirmation.data.transactionErrorString)
