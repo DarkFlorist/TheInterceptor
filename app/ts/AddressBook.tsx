@@ -150,13 +150,8 @@ export function ListElement(entry: ListElementParam) {
 					</div>
 
 					<div class = 'content' style = 'color: var(--text-color); display: flex; height: 100%; flex-direction: column; justify-content: space-between;'>
-						<button class = 'card-header-icon' style = 'padding: 0px; margin-left: auto;' aria-label = 'delete'>
-							<span
-								class = 'icon'
-								style = 'color: var(--text-color);'
-								onClick = { entry.type != 'empty' && (entry.category === 'My Active Addresses' || entry.category === 'My Contacts')  ? () => entry.removeEntry(entry) : () => {} }>
-								X
-							</span>
+						<button class = 'card-header-icon' style = 'padding: 0px; margin-left: auto;' aria-label = 'delete' disabled = { entry.type === 'empty' || entry.entrySource !== 'User' } onClick = { () => entry.type !== 'empty' ? entry.removeEntry(entry) : undefined }>
+							<p class = 'icon'> X </p>
 						</button>
 						<button class = 'button is-primary is-small' onClick = { entry.type != 'empty' ? () => entry.renameAddressCallBack(entry) : () => {} }>Edit</button>
 					</div>

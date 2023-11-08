@@ -342,6 +342,13 @@ a.dropdown-item.is-active, button.dropdown-item.is-active {
 	padding: 0;
 	padding-left: 0.75rem;
 	padding-right: 0.75rem;
+	background-color: transparent;
+}
+
+.card-header-icon:disabled {
+	cursor: not-allowed;
+	background-color: transparent;
+	color: var(--disabled-text-color);
 }
 
 .unset-cursor {
