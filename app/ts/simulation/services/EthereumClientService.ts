@@ -28,7 +28,7 @@ export class EthereumClientService {
 		this.onErrorBlockCallback = onErrorBlockCallback
     }
 
-	public readonly getRpcNetwork = () => this.requestHandler.getRpcNetwork()
+	public readonly getRpcEntry = () => this.requestHandler.getRpcEntry()
 	
 	public readonly getNewBlockAttemptCallback = () => this.newBlockAttemptCallback
 	public readonly getOnErrorBlockCallback = () => this.onErrorBlockCallback
@@ -77,11 +77,13 @@ export class EthereumClientService {
 		if (this.retrievingBlock) return
 		try {
 			this.retrievingBlock = true
-			const response = await this.requestHandler.jsonRpcRequest({ method: 'eth_getBlockByNumber', params: ['latest', true] })
+			const response = await this.requestHandler.jsonRpcRequest({ method: 'eth_getBlockByNumber', params: ['latest', true] }, true)
 			if (this.cacheRefreshTimer === undefined) return
 			const newBlock = EthereumBlockHeader.parse(response)
 			console.log(`Current block number: ${ newBlock.number }`)
-			this.newBlockAttemptCallback(newBlock, this, this.cachedBlock?.number != newBlock.number)
+			const gotNewBlock = this.cachedBlock?.number !== newBlock.number
+			if (gotNewBlock) this.requestHandler.clearCache()
+			this.newBlockAttemptCallback(newBlock, this, gotNewBlock)
 			this.cachedBlock = newBlock
 		} catch(error) {
 			console.warn(error)
@@ -152,7 +154,7 @@ export class EthereumClientService {
 		return EthereumBlockHeader.parse(await this.requestHandler.jsonRpcRequest({ method: 'eth_getBlockByHash', params: [blockHash, fullObjects] }))
 	}
 
-	public readonly getChainId = () => this.requestHandler.getRpcNetwork().chainId
+	public readonly getChainId = () => this.requestHandler.getRpcEntry().chainId
 
 	public readonly getLogs = async (logFilter: EthGetLogsRequest) => {
 		const response = await this.requestHandler.jsonRpcRequest({ method: 'eth_getLogs', params: [logFilter] })
@@ -161,9 +163,7 @@ export class EthereumClientService {
 
 	public readonly getBlockNumber = async () => {
 		const cached = this.getCachedBlock()
-		if (cached) {
-			return cached.number
-		}
+		if (cached) return cached.number
 		const response = await this.requestHandler.jsonRpcRequest({ method: 'eth_blockNumber' })
 		return EthereumQuantity.parse(response)
 	}
@@ -194,7 +194,7 @@ export class EthereumClientService {
 	}
 
 	public readonly multicall = async (transactions: readonly EthereumUnsignedTransaction[], spoofedSignatures: readonly SignatureWithFakeSignerAddress[], blockNumber: bigint) => {
-		const httpsRpc = this.requestHandler.getRpcNetwork().httpsRpc
+		const httpsRpc = this.requestHandler.getRpcEntry().httpsRpc
 		if (httpsRpc === 'https://rpc.dark.florist/winedancemuffinborrow' || httpsRpc === 'https://rpc.dark.florist/birdchalkrenewtip') {
 			//TODO: Remove this when we get rid of our old multicall
 			return this.executionSpec383MultiCallOnlyTransactionsAndSignatures(transactions, spoofedSignatures, blockNumber)

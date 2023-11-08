@@ -186,7 +186,7 @@ export const appendTransaction = async (ethereumClientService: EthereumClientSer
 		} ),
 		blockNumber: parentBlock.number,
 		blockTimestamp: parentBlock.timestamp,
-		rpcNetwork: ethereumClientService.getRpcNetwork(),
+		rpcNetwork: ethereumClientService.getRpcEntry(),
 		simulationConductedTimestamp: new Date(),
 		signedMessages: simulationState === undefined ? [] : simulationState.signedMessages,
 	}
@@ -200,7 +200,7 @@ export const setSimulationTransactionsAndSignedMessages = async (ethereumClientS
 			simulatedTransactions: [],
 			blockNumber: parentBlock.number,
 			blockTimestamp: parentBlock.timestamp,
-			rpcNetwork: ethereumClientService.getRpcNetwork(),
+			rpcNetwork: ethereumClientService.getRpcEntry(),
 			simulationConductedTimestamp: new Date(),
 			signedMessages: [],
 		}
@@ -247,7 +247,7 @@ export const setSimulationTransactionsAndSignedMessages = async (ethereumClientS
 		})),
 		blockNumber: parentBlock.number,
 		blockTimestamp: parentBlock.timestamp,
-		rpcNetwork: ethereumClientService.getRpcNetwork(),
+		rpcNetwork: ethereumClientService.getRpcEntry(),
 		simulationConductedTimestamp: new Date(),
 		signedMessages,
 	}
@@ -269,7 +269,7 @@ export const setPrependTransactionsQueue = async (ethereumClientService: Ethereu
 		simulatedTransactions: [],
 		blockNumber: block.number,
 		blockTimestamp: block.timestamp,
-		rpcNetwork: ethereumClientService.getRpcNetwork(),
+		rpcNetwork: ethereumClientService.getRpcEntry(),
 		simulationConductedTimestamp: new Date(),
 		signedMessages: [],
 	}
@@ -885,7 +885,7 @@ export const appendSignedMessage = async (ethereumClientService: EthereumClientS
 			simulatedTransactions: [],
 			blockNumber: block.number,
 			blockTimestamp: block.timestamp,
-			rpcNetwork: ethereumClientService.getRpcNetwork(),
+			rpcNetwork: ethereumClientService.getRpcEntry(),
 			simulationConductedTimestamp: new Date(),
 			signedMessages: [signedMessage],
 		}
