@@ -345,7 +345,7 @@ a.dropdown-item.is-active, button.dropdown-item.is-active {
 	background-color: transparent;
 }
 
-.card-header-icon[disabled] {
+.card-header-icon:disabled {
 	cursor: not-allowed;
 	background-color: transparent;
 	color: var(--disabled-text-color);
