@@ -7,8 +7,8 @@ export async function eoaCalldata(transaction: EthereumUnsignedTransaction, ethe
 	if (transaction.to === null) return
 	if (transaction.input.length === 0) return
 	const code = await getSimulatedCode(ethereum, simulationState, transaction.to)
-	if (code.statusCode === 'failure') return 'FAILED_CHECK'
+	if (code.statusCode === 'failure') return `Failed to verify whether address ${ transaction.to } contains code or not.`
 	if (code.getCodeReturn.length > 0) return
-	return 'EOA_CALLDATA'
+	return 'Transaction to an Externally Owned Account contains calldata.'
 }
 

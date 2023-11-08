@@ -8,5 +8,5 @@ export async function selfTokenOops(transaction: EthereumUnsignedTransaction, _e
 	if (transferInfo === undefined) return
 	if (transferInfo.name !== 'transfer' && transferInfo.name !== 'transferFrom') return
 	if (transaction.to !== transferInfo.arguments.to) return
-	return 'ERC20_ITSELF'
+	return 'Attempt to send token to itself.'
 }
