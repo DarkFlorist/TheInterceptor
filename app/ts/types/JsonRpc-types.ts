@@ -416,3 +416,6 @@ export type SupportedEthereumJsonRpcRequestMethods = funtypes.Static<typeof Supp
 export const SupportedEthereumJsonRpcRequestMethods = funtypes.ReadonlyObject({
 	method: funtypes.Union(EthereumJsonRpcRequest.alternatives[0].fields.method, ...EthereumJsonRpcRequest.alternatives.map(x => x.fields.method)),
 })
+
+export type OriginalSendRequestParameters = funtypes.Static<typeof OriginalSendRequestParameters>
+export const OriginalSendRequestParameters = funtypes.Union(SendTransactionParams, SendRawTransactionParams)
