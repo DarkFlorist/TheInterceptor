@@ -3,7 +3,7 @@ import * as funtypes from 'funtypes'
 import { EthereumAddress, EthereumBytes32, EthereumData, EthereumInput, EthereumQuantity, EthereumSignedTransaction, EthereumTimestamp, EthereumUnsignedTransaction, OptionalEthereumAddress } from './wire-types.js'
 import { RenameAddressCallBack } from './user-interface-types.js'
 import { ERROR_INTERCEPTOR_GAS_ESTIMATION_FAILED } from '../utils/constants.js'
-import { EthBalanceChanges, EthSubscribeParams, SendRawTransactionParams, SendTransactionParams, SingleMulticallResponse } from './JsonRpc-types.js'
+import { EthBalanceChanges, EthSubscribeParams, OriginalSendRequestParameters, SendRawTransactionParams, SendTransactionParams, SingleMulticallResponse } from './JsonRpc-types.js'
 import { InterceptedRequest, WebsiteSocket } from '../utils/requests.js'
 import { AddressBookEntry, Erc721Entry, Erc20TokenEntry, Erc1155Entry } from './addressBookTypes.js'
 import { Website } from './websiteAccessTypes.js'
@@ -268,7 +268,7 @@ export type WebsiteCreatedEthereumUnsignedTransaction = funtypes.Static<typeof W
 export const WebsiteCreatedEthereumUnsignedTransaction = funtypes.ReadonlyObject({
 	website: Website,
 	created: EthereumTimestamp,
-	originalRequestParameters: funtypes.Union(SendTransactionParams, SendRawTransactionParams),
+	originalRequestParameters: OriginalSendRequestParameters,
 	transaction: EthereumUnsignedTransaction,
 	error: funtypes.Union(funtypes.Undefined, EstimateGasError.fields.error)
 })
