@@ -5,7 +5,7 @@ import { browserStorageLocalGet, browserStorageLocalRemove, browserStorageLocalS
 import { CompleteVisualizedSimulation, EthereumSubscriptions } from '../types/visualizer-types.js'
 import { defaultRpcs, getSettings } from './settings.js'
 import { UniqueRequestIdentifier, doesUniqueRequestIdentifiersMatch } from '../utils/requests.js'
-import { AddressBookEntries } from '../types/addressBookTypes.js'
+import { AddressBookEntries, AddressBookEntry } from '../types/addressBookTypes.js'
 import { SignerName } from '../types/signerTypes.js'
 import { PendingAccessRequest, PendingAccessRequestArray, PendingTransaction } from '../types/accessRequest.js'
 import { RpcEntries, RpcNetwork } from '../types/rpc.js'
@@ -266,5 +266,14 @@ export async function updateUserAddressBookEntries(updateFunc: (prevState: Addre
 	await userAddressBookEntriesSemaphore.execute(async () => {
 		const entries = await getUserAddressBookEntries()
 		return await browserStorageLocalSet({ userAddressBookEntries: updateFunc(entries) })
+	})
+}
+
+export async function addUserAddressBookEntryIfItDoesNotExist(newEntry: AddressBookEntry) {
+	await userAddressBookEntriesSemaphore.execute(async () => {
+		const entries = await getUserAddressBookEntries()
+		const existingEntry = entries.find((entry) => entry.address === newEntry.address)
+		if (existingEntry !== undefined) return
+		return await browserStorageLocalSet({ userAddressBookEntries: entries.concat(newEntry) })
 	})
 }

@@ -16,7 +16,7 @@ type UnknownContract = {
 	address: EthereumAddress
 }
 
-type IdentifiedAddress = (EOA | Erc20TokenEntry | Erc721Entry | Erc1155Entry | UnknownContract)
+export type IdentifiedAddress = (EOA | Erc20TokenEntry | Erc721Entry | Erc1155Entry | UnknownContract)
 
 async function tryAggregateMulticall(ethereumClientService: IEthereumClientService, calls: { target: string, callData: string }[]): Promise<{ success: boolean, returnData: string }[]> {
 	const multicallInterface = new Interface(MulticallABI)
