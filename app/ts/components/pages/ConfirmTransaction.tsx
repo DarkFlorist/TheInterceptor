@@ -9,7 +9,7 @@ import { RpcConnectionStatus } from '../../types/user-interface-types.js'
 import { sendPopupMessageToBackgroundPage } from '../../background/backgroundUtils.js'
 import { SignerLogoText } from '../subcomponents/signers.js'
 import { ErrorCheckBox } from '../subcomponents/Error.js'
-import { QuarantineCodes, SenderReceiver, TransactionImportanceBlock } from '../simulationExplaining/Transactions.js'
+import { QuarantineReasons, SenderReceiver, TransactionImportanceBlock } from '../simulationExplaining/Transactions.js'
 import { identifyTransaction } from '../simulationExplaining/identifyTransaction.js'
 import { DinoSaysNotification } from '../subcomponents/DinoSays.js'
 import { NetworkErrors } from './Home.js'
@@ -29,6 +29,7 @@ function UnderTransactions(param: UnderTransactionsParams) {
 	return <div style = {`position: relative; top: ${ nTx * -HALF_HEADER_HEIGHT }px;`}>
 		{ param.pendingTransactions.map((pendingTransaction, index) => {
 			const style = `margin-bottom: 0px; scale: ${ Math.pow(0.95, nTx - index) }; position: relative; top: ${ (nTx - index) * HALF_HEADER_HEIGHT }px;`
+			if (pendingTransaction.status !== 'Simulated') return <p> Simulating... </p>
 			if (pendingTransaction.transactionToSimulate.error !== undefined) return <p>{ pendingTransaction.transactionToSimulate.error.message }</p>
 			if (pendingTransaction.simulationResults.statusCode === 'success') {
 				const simTx = pendingTransaction.simulationResults.data.simulatedAndVisualizedTransactions.at(-1)
@@ -89,7 +90,7 @@ export function TransactionCard(param: TransactionCardParams) {
 						simulationAndVisualisationResults = { param.simulationAndVisualisationResults }
 						renameAddressCallBack = { param.renameAddressCallBack }
 					/>
-					<QuarantineCodes quarantineCodes = { simTx.quarantineCodes }/>
+					<QuarantineReasons quarantineReasons = { simTx.quarantineReasons }/>
 				</div>
 
 				<TransactionsAccountChangesCard
@@ -155,7 +156,7 @@ export function ConfirmTransaction() {
 		const firstMessage = message.data[0]
 		if (firstMessage === undefined) throw new Error('message data was undefined')
 		setCurrentPendingTransaction(firstMessage)
-		if (firstMessage.simulationResults !== undefined && firstMessage.simulationResults.statusCode === 'success' && (currentBlockNumber === undefined || firstMessage.simulationResults.data.simulationState.blockNumber > currentBlockNumber)) {
+		if (firstMessage.status === 'Simulated' && firstMessage.simulationResults !== undefined && firstMessage.simulationResults.statusCode === 'success' && (currentBlockNumber === undefined || firstMessage.simulationResults.data.simulationState.blockNumber > currentBlockNumber)) {
 			setCurrentBlockNumber(firstMessage.simulationResults.data.simulationState.blockNumber)
 		}
 	}
@@ -214,6 +215,7 @@ export function ConfirmTransaction() {
 		if (pendingTransactions.length === 0) await tryFocusingTabOrWindow({ type: 'tab', id: currentPendingTransaction.uniqueRequestIdentifier.requestSocket.tabId })
 		
 		const getPossibleErrorString = () => {
+			if (currentPendingTransaction.status !== 'Simulated') return undefined
 			if (currentPendingTransaction.transactionToSimulate.error !== undefined) return currentPendingTransaction.transactionToSimulate.error.message
 			if (currentPendingTransaction.simulationResults.statusCode !== 'success' ) return undefined
 			const lastTx = currentPendingTransaction.simulationResults.data.simulatedAndVisualizedTransactions.at(-1)
@@ -230,7 +232,8 @@ export function ConfirmTransaction() {
 	}
 	const refreshMetadata = async () => {
 		// todo we should refresh metadata even if the resuls are failures
-		if (currentPendingTransaction === undefined || currentPendingTransaction.simulationResults === undefined || currentPendingTransaction.simulationResults.statusCode === 'failed') return
+		if (currentPendingTransaction === undefined ||  currentPendingTransaction.status !== 'Simulated') return
+		if (currentPendingTransaction.simulationResults === undefined || currentPendingTransaction.simulationResults.statusCode === 'failed') return
 		await sendPopupMessageToBackgroundPage({ method: 'popup_refreshConfirmTransactionMetadata', data: currentPendingTransaction.simulationResults.data })
 	}
 	const refreshSimulation = async () => {
@@ -240,7 +243,8 @@ export function ConfirmTransaction() {
 
 	function isConfirmDisabled() {
 		if (forceSend) return false
-		if (currentPendingTransaction === undefined) return false
+		if (currentPendingTransaction === undefined) return true
+		if (currentPendingTransaction.status !== 'Simulated') return true
 		if (currentPendingTransaction.simulationResults === undefined) return false
 		if (currentPendingTransaction.simulationResults.statusCode !== 'success' ) return false
 		const lastTx = currentPendingTransaction.simulationResults.data.simulatedAndVisualizedTransactions.at(-1)
@@ -264,12 +268,12 @@ export function ConfirmTransaction() {
 	}
 
 	function Buttons() {
-		const lastTx = currentPendingTransaction === undefined || currentPendingTransaction.simulationResults.statusCode !== 'success'
+		const lastTx = currentPendingTransaction === undefined || currentPendingTransaction.status !== 'Simulated' || currentPendingTransaction.simulationResults.statusCode !== 'success'
 			? undefined : currentPendingTransaction.simulationResults.data.simulatedAndVisualizedTransactions.at(-1)
-		if (lastTx === undefined || currentPendingTransaction === undefined || currentPendingTransaction.transactionToSimulate.error !== undefined) {
+		if (lastTx === undefined || currentPendingTransaction === undefined || currentPendingTransaction.status !== 'Simulated' || currentPendingTransaction.transactionToSimulate.error !== undefined) {
 			return <div style = 'display: flex; flex-direction: row;'>
 				<button className = 'button is-primary is-danger button-overflow dialog-button-left' onClick = { reject } >
-					{ 'Reject failing transaction' }
+					{ 'Reject' }
 				</button>
 			</div>
 		}
@@ -291,7 +295,9 @@ export function ConfirmTransaction() {
 		</div>
 	}
 
-	if (currentPendingTransaction === undefined) return <CenterToPageTextSpinner text = 'Simulating...'/>
+	if (currentPendingTransaction === undefined) return <CenterToPageTextSpinner text = 'Initializing...'/>
+	if (currentPendingTransaction.status === 'Crafting Transaction') return <CenterToPageTextSpinner text = 'Crafting Transaction...'/>
+	if (currentPendingTransaction === undefined || currentPendingTransaction.status === 'Simulating') return <CenterToPageTextSpinner text = 'Simulating Transaction...'/>
 	const simulationResults = currentPendingTransaction.simulationResults
 	if (simulationResults.statusCode === 'failed') return <CenterToPageTextSpinner text = 'Failed to simulate. Retrying...'/>
 
@@ -314,7 +320,7 @@ export function ConfirmTransaction() {
 					<div class = 'popup-block-scroll'>
 						<NetworkErrors rpcConnectionStatus = { rpcConnectionStatus }/>
 
-						{ currentPendingTransaction.transactionToSimulate.originalRequestParameters.method === 'eth_sendRawTransaction'
+						{ currentPendingTransaction.originalRequestParameters.method === 'eth_sendRawTransaction'
 							? <DinoSaysNotification
 								text = { `This transaction is signed already. No extra signing required to forward it to ${ simulationResults === undefined ? 'network' : simulationResults.data.simulationState.rpcNetwork.name }.` }
 								close = { () => setPendingTransactionAddedNotification(false)}

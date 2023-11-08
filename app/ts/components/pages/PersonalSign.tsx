@@ -13,7 +13,6 @@ import { SmallAddress, WebsiteOriginText } from '../subcomponents/address.js'
 import { SignerLogoText } from '../subcomponents/signers.js'
 import { CenterToPageTextSpinner } from '../subcomponents/Spinner.js'
 import { SomeTimeAgo } from '../subcomponents/SomeTimeAgo.js'
-import { QuarantineCodes } from '../simulationExplaining/Transactions.js'
 import { VisualizedPersonalSignRequest, VisualizedPersonalSignRequestPermit, VisualizedPersonalSignRequestPermit2, VisualizedPersonalSignRequestSafeTx } from '../../types/personal-message-definitions.js'
 import { OrderComponents, OrderComponentsExtraDetails } from '../simulationExplaining/customExplainers/OpenSeaOrder.js'
 import { Ether } from '../subcomponents/coins.js'
@@ -23,6 +22,7 @@ import { EnrichedEIP712, EnrichedEIP712Message, TypeEnrichedEIP712MessageRecord 
 import { serialize } from '../../types/wire-types.js'
 import { TransactionCreated } from '../simulationExplaining/SimulationSummary.js'
 import { EnrichedSolidityTypeComponent } from '../subcomponents/solidityType.js'
+import { QuarantineReasons } from '../simulationExplaining/Transactions.js'
 
 type SignatureCardParams = {
 	VisualizedPersonalSignRequest: VisualizedPersonalSignRequest
@@ -405,7 +405,7 @@ export function SignatureCard(params: SignatureCardParams) {
 			<div class = 'card-content' style = 'padding-bottom: 5px;'>
 				<div class = 'container'>
 					<SignRequest { ...params }/>
-					<QuarantineCodes quarantineCodes = { params.VisualizedPersonalSignRequest.quarantineCodes }/>
+					<QuarantineReasons quarantineReasons = { params.VisualizedPersonalSignRequest.quarantineReasons }/>
 				</div>
 				<ExtraDetails { ...params }/>
 				<RawMessage { ...params }/>

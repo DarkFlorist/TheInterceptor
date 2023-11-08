@@ -40,7 +40,7 @@ export type TransactionEntry = {
     seenTimestamp: number
     raw: string
     quarantined: boolean
-    quarantineCodes: number[]
+    quarantineReasons: number[]
     forcedTimestamp: number | undefined
     visualizerData: VisualizerData | undefined
 }

@@ -8,12 +8,11 @@ import { eoaApproval } from './protectors/eoaApproval.js'
 import { eoaCalldata } from './protectors/eoaCalldata.js'
 import { tokenToContract } from './protectors/tokenToContract.js'
 import { WebsiteCreatedEthereumUnsignedTransaction, SimulationState, TokenVisualizerResult, MaybeParsedEvents, VisualizerResult, ParsedEvent, MaybeParsedEventWithExtraData } from '../types/visualizer-types.js'
-import { QUARANTINE_CODE } from './protectors/quarantine-codes.js'
 import { EthereumJSONRpcRequestHandler } from './services/EthereumJSONRpcRequestHandler.js'
 import { SingleMulticallResponse } from '../types/JsonRpc-types.js'
 import { APPROVAL_LOG, DEPOSIT_LOG, ERC1155_TRANSFERBATCH_LOG, ERC1155_TRANSFERSINGLE_LOG, ERC721_APPROVAL_FOR_ALL_LOG, TRANSFER_LOG, WITHDRAWAL_LOG } from '../utils/constants.js'
 import { handleApprovalLog, handleDepositLog, handleERC1155TransferBatch, handleERC1155TransferSingle, handleERC20TransferLog, handleErc721ApprovalForAllLog, handleWithdrawalLog } from './logHandlers.js'
-import { RpcNetwork } from '../types/rpc.js'
+import { RpcEntry } from '../types/rpc.js'
 import { UserAddressBook } from '../types/addressBookTypes.js'
 import { parseEventIfPossible } from './services/SimulationModeEthereumClientService.js'
 import { Interface } from 'ethers'
@@ -21,6 +20,7 @@ import { extractAbi, extractFunctionArgumentTypes, removeTextBetweenBrackets } f
 import { SolidityType } from '../types/solidityType.js'
 import { parseSolidityValueByTypePure } from '../utils/solidityTypes.js'
 import { identifyAddress } from '../background/metadataUtils.js'
+import { sendToNonContact } from './protectors/sendToNonContactAddress.js'
 
 const PROTECTORS = [
 	selfTokenOops,
@@ -28,7 +28,8 @@ const PROTECTORS = [
 	feeOops,
 	eoaApproval,
 	eoaCalldata,
-	tokenToContract
+	tokenToContract,
+	sendToNonContact,
 ]
 
 type Loghandler = (event: ParsedEvent) => TokenVisualizerResult[]
@@ -96,20 +97,20 @@ export const visualizeTransaction = async (blockNumber: bigint, singleMulticallR
 
 export const runProtectorsForTransaction = async (simulationState: SimulationState, transaction: WebsiteCreatedEthereumUnsignedTransaction, ethereum: EthereumClientService) => {
 	const reasonPromises = PROTECTORS.map(async (protectorMethod) => await protectorMethod(transaction.transaction, ethereum, simulationState))
-	const reasons: (QUARANTINE_CODE | undefined)[] = await Promise.all(reasonPromises)
-	const filteredReasons = reasons.filter((reason): reason is QUARANTINE_CODE => reason !== undefined)
+	const reasons: (string | undefined)[] = await Promise.all(reasonPromises)
+	const filteredReasons = reasons.filter((reason): reason is string => reason !== undefined)
 	return {
 		quarantine: filteredReasons.length > 0,
-		quarantineCodes: Array.from(new Set<QUARANTINE_CODE>(filteredReasons)),
+		quarantineReasons: Array.from(new Set<string>(filteredReasons)),
 	}
 }
 
 export class Simulator {
 	public ethereum: EthereumClientService
 
-	public constructor(rpcNetwork: RpcNetwork, newBlockAttemptCallback: (blockHeader: EthereumBlockHeader, ethereumClientService: EthereumClientService, isNewBlock: boolean, simulator: Simulator) => Promise<void>, onErrorBlockCallback: (ethereumClientService: EthereumClientService) => Promise<void>) {
+	public constructor(rpcNetwork: RpcEntry, newBlockAttemptCallback: (blockHeader: EthereumBlockHeader, ethereumClientService: EthereumClientService, isNewBlock: boolean, simulator: Simulator) => Promise<void>, onErrorBlockCallback: (ethereumClientService: EthereumClientService) => Promise<void>) {
 		this.ethereum = new EthereumClientService(
-			new EthereumJSONRpcRequestHandler(rpcNetwork),
+			new EthereumJSONRpcRequestHandler(rpcNetwork, true),
 			async (blockHeader: EthereumBlockHeader, ethereumClientService: EthereumClientService, isNewBlock: boolean) => await newBlockAttemptCallback(blockHeader, ethereumClientService, isNewBlock, this),
 			onErrorBlockCallback
 		)
@@ -117,7 +118,7 @@ export class Simulator {
 
 	public cleanup = () => this.ethereum.cleanup()
 
-	public reset = (rpcNetwork: RpcNetwork) => {
+	public reset = (rpcNetwork: RpcEntry) => {
 		this.cleanup()
 		this.ethereum = new EthereumClientService(new EthereumJSONRpcRequestHandler(rpcNetwork), this.ethereum.getNewBlockAttemptCallback(), this.ethereum.getOnErrorBlockCallback())
 	}

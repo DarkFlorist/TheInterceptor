@@ -9,6 +9,7 @@ import { AddressBookEntries, AddressBookEntry } from '../types/addressBookTypes.
 import { SignerName } from '../types/signerTypes.js'
 import { PendingAccessRequest, PendingAccessRequestArray, PendingTransaction } from '../types/accessRequest.js'
 import { RpcEntries, RpcNetwork } from '../types/rpc.js'
+import { replaceElementInReadonlyArray } from '../utils/typed-arrays.js'
 
 export const getOpenedAddressBookTabId = async() => (await browserStorageLocalGet('addressbookTabId'))?.['addressbookTabId'] ?? undefined
 
@@ -28,13 +29,25 @@ export async function clearPendingTransactions() {
 		return await browserStorageLocalSet({ transactionsPendingForUserConfirmation: [] })
 	})
 }
-export async function appendPendingTransaction(promise: PendingTransaction) {
+export async function appendPendingTransaction(pendingTransaction: PendingTransaction) {
 	return await pendingTransactionsSemaphore.execute(async () => {
-		const promises = [...await getPendingTransactions(), promise]
-		await browserStorageLocalSet({ transactionsPendingForUserConfirmation: promises })
-		return promises
+		const pendingTransactions = [...await getPendingTransactions(), pendingTransaction]
+		await browserStorageLocalSet({ transactionsPendingForUserConfirmation: pendingTransactions })
+		return pendingTransactions
 	})
 }
+
+export async function replacePendingTransaction(pendingTransaction: PendingTransaction) {
+	return await pendingTransactionsSemaphore.execute(async () => {
+		const pendingTransactions = await getPendingTransactions()
+		const match = pendingTransactions.findIndex((pending) => doesUniqueRequestIdentifiersMatch(pending.uniqueRequestIdentifier, pendingTransaction.uniqueRequestIdentifier))
+		if (match < 0) return undefined
+		const replaced = replaceElementInReadonlyArray(pendingTransactions, match, pendingTransaction)
+		await browserStorageLocalSet({ transactionsPendingForUserConfirmation: replaced })
+		return pendingTransaction
+	})
+}
+
 export async function removePendingTransaction(uniqueRequestIdentifier: UniqueRequestIdentifier) {
 	return await pendingTransactionsSemaphore.execute(async () => {
 		const promises = await getPendingTransactions()
