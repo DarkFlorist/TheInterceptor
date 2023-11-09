@@ -227,7 +227,7 @@ export async function importSettingsAndAddressBook(exportedSetings: ExportedSett
 	await updateActiveAddresses(() => exportedSetings.settings.addressInfos)
 	await updateWebsiteAccess(() => exportedSetings.settings.websiteAccess)
 	await updateContacts(() => exportedSetings.settings.contacts === undefined ? [] : exportedSetings.settings.contacts)
-	await setUseTabsInsteadOfPopup(exportedSetings.settings.useTabsInsteadOfPopup === undefined ? false : exportedSetings.settings.useTabsInsteadOfPopup)
+	await setUseTabsInsteadOfPopup(exportedSetings.settings.useTabsInsteadOfPopup)
 	if (exportedSetings.version === '1.2') {
 		await setUseTabsInsteadOfPopup(exportedSetings.settings.metamaskCompatibilityMode)
 	}
