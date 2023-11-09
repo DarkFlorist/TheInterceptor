@@ -7,7 +7,7 @@ import { ActiveAddressArray, ContactEntries } from '../types/addressBookTypes.js
 import { WebsiteAccessArray } from '../types/websiteAccessTypes.js'
 import { RpcEntries, RpcNetwork } from '../types/rpc.js'
 import { NetworkPrice } from '../types/visualizer-types.js'
-import { browserStorageLocalGet, browserStorageLocalGetUnParsed, browserStorageLocalSet } from '../utils/storageUtils.js'
+import { browserStorageLocalGet, browserStorageLocalSet } from '../utils/storageUtils.js'
 
 export const defaultAddresses = [
 	{
@@ -182,26 +182,27 @@ export const setUseTabsInsteadOfPopup = async(useTabsInsteadOfPopup: boolean) =>
 export const getMetamaskCompatibilityMode = async() => (await browserStorageLocalGet('metamaskCompatibilityMode'))?.['metamaskCompatibilityMode'] ?? false
 export const setMetamaskCompatibilityMode = async(metamaskCompatibilityMode: boolean) => await browserStorageLocalSet({ metamaskCompatibilityMode })
 
-
-export async function exportSettingsAndAddressBook() {
-	const results = {
+export async function exportSettingsAndAddressBook(): Promise<ExportedSettings> {
+	const exportDate = (new Date).toISOString().split('T')[0]
+	if (exportDate === undefined) throw new Error('Datestring did not contain Date')
+	const settings = await getSettings()
+	return {
 		name: 'InterceptorSettingsAndAddressBook' as const,
 		version: '1.2' as const,
-		exportedDate: (new Date).toISOString().split('T')[0],
-		settings: await browserStorageLocalGetUnParsed([
-			'activeSimulationAddress',
-			'addressInfos',
-			'page',
-			'useSignersAddressAsActiveAddress',
-			'websiteAccess',
-			'rpcNetwork',
-			'simulationMode',
-			'contacts',
-			'useTabsInsteadOfPopup',
-			'metamaskCompatibilityMode',
-		])
+		exportedDate: exportDate,
+		settings: {
+			activeSimulationAddress: settings.activeSimulationAddress,
+			addressInfos: settings.userAddressBook.activeAddresses,
+			page: settings.page,
+			useSignersAddressAsActiveAddress: settings.useSignersAddressAsActiveAddress,
+			websiteAccess: settings.websiteAccess,
+			rpcNetwork: settings.rpcNetwork,
+			simulationMode: settings.simulationMode,
+			contacts: settings.userAddressBook.contacts,
+			useTabsInsteadOfPopup: await getUseTabsInsteadOfPopup(),
+			metamaskCompatibilityMode: await getMetamaskCompatibilityMode(),
+		}
 	}
-	return ExportedSettings.parse(results)
 }
 
 export async function importSettingsAndAddressBook(exportedSetings: ExportedSettings) {
@@ -226,7 +227,7 @@ export async function importSettingsAndAddressBook(exportedSetings: ExportedSett
 	await updateActiveAddresses(() => exportedSetings.settings.addressInfos)
 	await updateWebsiteAccess(() => exportedSetings.settings.websiteAccess)
 	await updateContacts(() => exportedSetings.settings.contacts === undefined ? [] : exportedSetings.settings.contacts)
-	await setUseTabsInsteadOfPopup(exportedSetings.settings.useTabsInsteadOfPopup)
+	await setUseTabsInsteadOfPopup(exportedSetings.settings.useTabsInsteadOfPopup === undefined ? false : exportedSetings.settings.useTabsInsteadOfPopup)
 	if (exportedSetings.version === '1.2') {
 		await setUseTabsInsteadOfPopup(exportedSetings.settings.metamaskCompatibilityMode)
 	}
