@@ -21,6 +21,7 @@ export function GovernanceTransactionExecution(param: TransactionCardParams) {
 			removeTransaction = { undefined }
 			activeAddress = { param.activeAddress }
 			renameAddressCallBack = { param.renameAddressCallBack }
+			addressMetaData = { param.addressMetaData }
 		/>
 	</>
 }
@@ -87,11 +88,87 @@ export function VotePanel({ inputParams }: { inputParams: GovernanceVoteInputPar
 	</>
 }
 
+export type ShowSuccessOrFailureParams = {
+	simTx: SimulatedAndVisualizedTransaction
+	currentBlockNumber: undefined | bigint
+	rpcConnectionStatus: RpcConnectionStatus
+	simulationAndVisualisationResults: SimulationAndVisualisationResults
+	simulateGovernanceContractExecutionReply: SimulateGovernanceContractExecutionReply | undefined
+	renameAddressCallBack: RenameAddressCallBack
+	addressMetaData: readonly AddressBookEntry[]
+}
+
+const simulateGovernanceVote = () => sendPopupMessageToBackgroundPage({ method: 'popup_simulateGovernanceContractExecution' })
+
+const ShowSuccessOrFailure = ({ currentBlockNumber, rpcConnectionStatus, simulateGovernanceContractExecutionReply, simTx, simulationAndVisualisationResults, renameAddressCallBack, addressMetaData }: ShowSuccessOrFailureParams) => { 
+	const missingAbiText = 'The governance contract is missing an ABI. Add an ABI to simulate execution of this proposal.'
+	if (simulateGovernanceContractExecutionReply === undefined) {
+		return <div style = 'display: flex; justify-content: center;'>
+			{ !(simulationAndVisualisationResults.rpcNetwork.httpsRpc === 'https://rpc.dark.florist/birdchalkrenewtip' // todo remove this check
+				|| simulationAndVisualisationResults.rpcNetwork.httpsRpc=== 'https://rpc.dark.florist/winedancemuffinborrow') ? <p class = 'paragraph'> experimental rpc client required </p> : <></> }
+				
+			{ simTx.transaction.to !== undefined && 'abi' in simTx.transaction.to && simTx.transaction.to.abi !== undefined ?
+				<button
+					class = { `button is-primary` }
+					onClick = { simulateGovernanceVote }
+					disabled = { !(simulationAndVisualisationResults.rpcNetwork.httpsRpc === 'https://rpc.dark.florist/birdchalkrenewtip' // todo remove this check
+							|| simulationAndVisualisationResults.rpcNetwork.httpsRpc=== 'https://rpc.dark.florist/winedancemuffinborrow')
+				}>
+					Simulate execution on a passing vote
+				</button>
+			: <> <MissingAbi
+					errorMessage = { missingAbiText }
+					addressBookEntry = { simTx.transaction.to }
+					renameAddressCallBack = { renameAddressCallBack }
+				/>
+			</> }
+		</div>
+	}
+	if (simulateGovernanceContractExecutionReply.data.success == false) {
+		return <div style = 'display: grid; grid-template-rows: max-content' >
+			{ simulateGovernanceContractExecutionReply.data.error.type === 'MissingAbi' ? <MissingAbi
+				errorMessage = { missingAbiText }
+				addressBookEntry = { simulateGovernanceContractExecutionReply.data.error.addressBookEntry }
+				renameAddressCallBack = { renameAddressCallBack }
+			/> : <ErrorComponent warning = { false } text = { simulateGovernanceContractExecutionReply.data.error.message }/> }
+		</div>
+	}
+	return <div style = 'display: grid; grid-template-rows: max-content' >
+		<GovernanceTransactionExecution
+			simulationAndVisualisationResults = { {
+				blockNumber: simulateGovernanceContractExecutionReply.data.result.simulationState.blockNumber,
+				blockTimestamp: simulateGovernanceContractExecutionReply.data.result.simulationState.blockTimestamp,
+				simulationConductedTimestamp: simulateGovernanceContractExecutionReply.data.result.simulationState.simulationConductedTimestamp,
+				addressBookEntries: simulateGovernanceContractExecutionReply.data.result.addressBookEntries,
+				rpcNetwork: simulateGovernanceContractExecutionReply.data.result.simulationState.rpcNetwork,
+				tokenPrices: simulateGovernanceContractExecutionReply.data.result.tokenPrices,
+				activeAddress: simulationAndVisualisationResults.activeAddress,
+				simulatedAndVisualizedTransactions: simulateGovernanceContractExecutionReply.data.result.simulatedAndVisualizedTransactions,
+				visualizedPersonalSignRequests: simulateGovernanceContractExecutionReply.data.result.visualizedPersonalSignRequests,
+				namedTokenIds: simulateGovernanceContractExecutionReply.data.result.namedTokenIds,
+			} }
+			pendingTransactions = { [] }
+			renameAddressCallBack = { renameAddressCallBack }
+			activeAddress = { simulationAndVisualisationResults.activeAddress }
+			resetButton = { false }
+			currentBlockNumber = { currentBlockNumber }
+			rpcConnectionStatus = { rpcConnectionStatus }
+			addressMetaData = { addressMetaData }
+		/>
+	</div>
+}
+
+const MaybeRefreshButton = ({ simulateGovernanceContractExecutionReply } : { simulateGovernanceContractExecutionReply: SimulateGovernanceContractExecutionReply | undefined }) => {
+	if (simulateGovernanceContractExecutionReply === undefined) return <></>
+	return <button class = { `button is-primary is-small` } onClick = { simulateGovernanceVote }>Refresh</button>
+}
+
 export type GovernanceVoteVisualizerParams = {
 	simTx: SimulatedAndVisualizedTransaction
-    simulationAndVisualisationResults: SimulationAndVisualisationResults
-    renameAddressCallBack: RenameAddressCallBack
+	simulationAndVisualisationResults: SimulationAndVisualisationResults
+	renameAddressCallBack: RenameAddressCallBack
 	governanceVoteInputParameters: GovernanceVoteInputParameters
+	addressMetaData: readonly AddressBookEntry[]
 }
 
 export function GovernanceVoteVisualizer(param: GovernanceVoteVisualizerParams) {
@@ -112,69 +189,6 @@ export function GovernanceVoteVisualizer(param: GovernanceVoteVisualizerParams) 
 		return () => browser.runtime.onMessage.removeListener(popupMessageListener)
 	})
 
-	function simulateGovernanceVote() {
-		sendPopupMessageToBackgroundPage({ method: 'popup_simulateGovernanceContractExecution' })
-	}
-
-	const [MaybeRefreshButton_] = useState(() => () => simulateGovernanceContractExecutionReply !== undefined ? <button class = { `button is-primary is-small` } onClick = { simulateGovernanceVote }>Refresh</button> : <></>)
-
-	const [ShowSuccessOrFailure_] = useState(() => () => {
-		const missingAbiText = 'The governance contract is missing an ABI. Add an ABI to simulate execution of this proposal.'
-		if (simulateGovernanceContractExecutionReply === undefined) {
-			return <div style = 'display: flex; justify-content: center;'>
-				{ !(param.simulationAndVisualisationResults.rpcNetwork.httpsRpc === 'https://rpc.dark.florist/birdchalkrenewtip' // todo remove this check
-					|| param.simulationAndVisualisationResults.rpcNetwork.httpsRpc=== 'https://rpc.dark.florist/winedancemuffinborrow') ? <p class = 'paragraph'> experimental rpc client required </p> : <></> }
-					
-				{ param.simTx.transaction.to !== undefined && 'abi' in param.simTx.transaction.to && param.simTx.transaction.to.abi !== undefined ?
-					<button
-						class = { `button is-primary` }
-						onClick = { simulateGovernanceVote }
-						disabled = { !(param.simulationAndVisualisationResults.rpcNetwork.httpsRpc === 'https://rpc.dark.florist/birdchalkrenewtip' // todo remove this check
-								|| param.simulationAndVisualisationResults.rpcNetwork.httpsRpc=== 'https://rpc.dark.florist/winedancemuffinborrow')
-					}>
-						Simulate execution on a passing vote
-					</button>
-				: <> <MissingAbi
-						errorMessage = { missingAbiText }
-						addressBookEntry = { param.simTx.transaction.to }
-						renameAddressCallBack = { param.renameAddressCallBack }
-					/>
-				</> }
-			</div>
-		}
-		if (simulateGovernanceContractExecutionReply.data.success == false) {
-			return <div style = 'display: grid; grid-template-rows: max-content' >
-				{ simulateGovernanceContractExecutionReply.data.error.type === 'MissingAbi' ? <MissingAbi
-					errorMessage = { missingAbiText }
-					addressBookEntry = { simulateGovernanceContractExecutionReply.data.error.addressBookEntry }
-					renameAddressCallBack = { param.renameAddressCallBack }
-				/> : <ErrorComponent warning = { false } text = { simulateGovernanceContractExecutionReply.data.error.message }/> }
-			</div>
-		}
-		return <div style = 'display: grid; grid-template-rows: max-content' >
-			<GovernanceTransactionExecution
-				simulationAndVisualisationResults = { {
-					blockNumber: simulateGovernanceContractExecutionReply.data.result.simulationState.blockNumber,
-					blockTimestamp: simulateGovernanceContractExecutionReply.data.result.simulationState.blockTimestamp,
-					simulationConductedTimestamp: simulateGovernanceContractExecutionReply.data.result.simulationState.simulationConductedTimestamp,
-					addressBookEntries: simulateGovernanceContractExecutionReply.data.result.addressBookEntries,
-					rpcNetwork: simulateGovernanceContractExecutionReply.data.result.simulationState.rpcNetwork,
-					tokenPrices: simulateGovernanceContractExecutionReply.data.result.tokenPrices,
-					activeAddress: param.simulationAndVisualisationResults.activeAddress,
-					simulatedAndVisualizedTransactions: simulateGovernanceContractExecutionReply.data.result.simulatedAndVisualizedTransactions,
-					visualizedPersonalSignRequests: simulateGovernanceContractExecutionReply.data.result.visualizedPersonalSignRequests,
-					namedTokenIds: simulateGovernanceContractExecutionReply.data.result.namedTokenIds,
-				} }
-				pendingTransactions = { [] }
-				renameAddressCallBack = { param.renameAddressCallBack }
-				activeAddress = { param.simulationAndVisualisationResults.activeAddress }
-				resetButton = { false }
-				currentBlockNumber = { currentBlockNumber }
-				rpcConnectionStatus = { rpcConnectionStatus }
-			/>
-		</div>
-	})
-
 	return <>
 		<VotePanel inputParams = { param.governanceVoteInputParameters } />
 		
@@ -184,13 +198,21 @@ export function GovernanceVoteVisualizer(param: GovernanceVoteVisualizerParams) 
 					<p class = 'paragraph'>Simulation of this proposal's outcome should the vote pass:</p>
 				</div>
 				<div class = 'log-cell' style = 'justify-content: right;'>
-					<MaybeRefreshButton_/>
+					<MaybeRefreshButton simulateGovernanceContractExecutionReply = { simulateGovernanceContractExecutionReply }/>
 				</div>
 			</span>
 		</div>
 
 		<div class = 'notification dashed-notification'>
-			<ShowSuccessOrFailure_/>
+			<ShowSuccessOrFailure
+				currentBlockNumber = { currentBlockNumber }
+				rpcConnectionStatus = { rpcConnectionStatus }
+				simulateGovernanceContractExecutionReply = { simulateGovernanceContractExecutionReply }
+				renameAddressCallBack = { param.renameAddressCallBack }
+				addressMetaData = { param.addressMetaData }
+				simTx = { param.simTx }
+				simulationAndVisualisationResults = { param.simulationAndVisualisationResults }
+			/>
 		</div>
 	</>
 }

@@ -55,6 +55,7 @@ export type TransactionCardParams = {
 	resetButton: boolean,
 	currentBlockNumber: bigint | undefined,
 	rpcConnectionStatus: RpcConnectionStatus,
+	addressMetaData: readonly AddressBookEntry[]
 }
 
 export function TransactionCard(param: TransactionCardParams) {
@@ -89,6 +90,7 @@ export function TransactionCard(param: TransactionCardParams) {
 						simTx = { simTx }
 						simulationAndVisualisationResults = { param.simulationAndVisualisationResults }
 						renameAddressCallBack = { param.renameAddressCallBack }
+						addressMetadata = { param.addressMetaData }
 					/>
 					<QuarantineReasons quarantineReasons = { simTx.quarantineReasons }/>
 				</div>
@@ -109,6 +111,7 @@ export function TransactionCard(param: TransactionCardParams) {
 				<NonTokenLogAnalysisCard
 					simTx = { simTx }
 					renameAddressCallBack = { param.renameAddressCallBack }
+					addressMetaData = { param.simulationAndVisualisationResults.addressBookEntries }
 				/>
 
 				<RawTransactionDetailsCard transaction = { simTx.transaction } renameAddressCallBack = { param.renameAddressCallBack } gasSpent = { simTx.gasSpent }/>
@@ -360,6 +363,7 @@ export function ConfirmTransaction() {
 							resetButton = { false }
 							currentBlockNumber = { currentBlockNumber }
 							rpcConnectionStatus = { rpcConnectionStatus }
+							addressMetaData = { simulationResults.data.addressBookEntries }
 						/>
 					</div>
 
