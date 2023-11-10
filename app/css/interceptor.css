@@ -651,6 +651,15 @@ svg.spinner > circle {
 	color: var(--text-color)
 }
 
+.notification-importance-box {
+	background-color: var(--importance-box-color);
+	padding: 10px;
+	margin: auto;
+	margin-bottom: 10px;
+	max-width: fit-content;
+	color: var(--text-color)
+}
+
 .swap-box {
 	background-color: var(--alpha-005);
 	box-shadow: unset;

@@ -1,6 +1,6 @@
 import { changeActiveAddressAndChainAndResetSimulation, changeActiveRpc, getPrependTrasactions, refreshConfirmTransactionSimulation, updateSimulationState, updateSimulationMetadata, simulateGovernanceContractExecution } from './background.js'
 import { getSettings, setUseTabsInsteadOfPopup, setMakeMeRich, setPage, setUseSignersAddressAsActiveAddress, updateActiveAddresses, updateContacts, updateWebsiteAccess, exportSettingsAndAddressBook, importSettingsAndAddressBook, getMakeMeRich, getUseTabsInsteadOfPopup, getMetamaskCompatibilityMode, setMetamaskCompatibilityMode } from './settings.js'
-import { getPendingTransactions, getCurrentTabId, getOpenedAddressBookTabId, getTabState, saveCurrentTabId, setOpenedAddressBookTabId, setRpcList, getRpcList, getPrimaryRpcForChain, getSignerName, getRpcConnectionStatus, updateUserAddressBookEntries, getSimulationResults } from './storageVariables.js'
+import { getPendingTransactions, getCurrentTabId, getTabState, saveCurrentTabId, setRpcList, getRpcList, getPrimaryRpcForChain, getSignerName, getRpcConnectionStatus, updateUserAddressBookEntries, getSimulationResults, setIdsOfOpenedTabs, getIdsOfOpenedTabs } from './storageVariables.js'
 import { Simulator } from '../simulation/simulator.js'
 import { ChangeActiveAddress, ChangeMakeMeRich, ChangePage, RemoveTransaction, RequestAccountsFromSigner, TransactionConfirmation, InterceptorAccess, ChangeInterceptorAccess, ChainChangeConfirmation, EnableSimulationMode, ChangeActiveChain, AddOrEditAddressBookEntry, GetAddressBookData, RemoveAddressBookEntry, InterceptorAccessRefresh, InterceptorAccessChangeAddress, Settings, RefreshConfirmTransactionMetadata, RefreshInterceptorAccessMetadata, ChangeSettings, ImportSettings, SetRpcList, IdentifyAddress, FindAddressBookEntryWithSymbolOrName, PersonalSignApproval, UpdateHomePage, RemoveSignedMessage, SimulateGovernanceContractExecutionReply, FetchAbiAndNameFromEtherscan } from '../types/interceptor-messages.js'
 import { formEthSendTransaction, formSendRawTransaction, resolvePendingTransaction, updateConfirmTransactionViewWithPendingTransactionOrClose } from './windows/confirmTransaction.js'
@@ -277,13 +277,13 @@ export async function getAddressBookData(parsed: GetAddressBookData, userAddress
 	})
 }
 
-export async function openAddressBook() {
+export const openNewTab = async (tabName: 'settingsView' | 'addressBook') => {
 	const openInNewTab = async () => {
-		const tab = await browser.tabs.create({ url: getHtmlFile('addressBook') })
-		if (tab.id !== undefined) await setOpenedAddressBookTabId(tab.id)
+		const tab = await browser.tabs.create({ url: getHtmlFile(tabName) })
+		if (tab.id !== undefined) await setIdsOfOpenedTabs({ [tabName]: tab.id })
 	}
 
-	const tabId = await getOpenedAddressBookTabId()
+	const tabId = (await getIdsOfOpenedTabs())[tabName]
 	if (tabId === undefined) return await openInNewTab()
 	const allTabs = await browser.tabs.query({})
 	const addressBookTab = allTabs.find((tab) => tab.id === tabId)
@@ -304,8 +304,6 @@ export async function homeOpened(simulator: Simulator, refreshMetadata: boolean)
 	const signerNamePromise = getSignerName()
 	const makeMeRichPromise = getMakeMeRich()
 	const rpcConnectionStatusPromise = getRpcConnectionStatus()
-	const useTabsInsteadOfPopupPromise = getUseTabsInsteadOfPopup()
-	const metamaskCompatibilityModePromise = getMetamaskCompatibilityMode()
 	const rpcEntriesPromise = getRpcList()
 
 	const visualizedSimulatorStatePromise: Promise<CompleteVisualizedSimulation> = refreshMetadata ? updateSimulationMetadata(simulator.ethereum) : getSimulationResults()
@@ -315,11 +313,8 @@ export async function homeOpened(simulator: Simulator, refreshMetadata: boolean)
 	const settings = await settingsPromise
 	const makeMeRich = await makeMeRichPromise
 	const rpcConnectionStatus = await rpcConnectionStatusPromise
-	const useTabsInsteadOfPopup = await useTabsInsteadOfPopupPromise
-	const metamaskCompatibilityMode = await metamaskCompatibilityModePromise
-	const rpcEntries = await rpcEntriesPromise
 
-	const updatedPage:UpdateHomePage = {
+	const updatedPage : UpdateHomePage = {
 		method: 'popup_UpdateHomePage' as const,
 		data: {
 			visualizedSimulatorState: await visualizedSimulatorStatePromise,
@@ -332,15 +327,28 @@ export async function homeOpened(simulator: Simulator, refreshMetadata: boolean)
 			tabIconDetails: tabState?.tabIconDetails,
 			makeMeRich,
 			rpcConnectionStatus,
-			useTabsInsteadOfPopup,
-			metamaskCompatibilityMode,
-			rpcEntries,
 			activeSigningAddressInThisTab: tabState?.activeSigningAddress,
 			tabId,
+			rpcEntries: await rpcEntriesPromise,
 		}
 	}
 
 	await sendPopupMessageToOpenWindows(serialize(UpdateHomePage, updatedPage))
+}
+
+export async function settingsOpened() {
+	const useTabsInsteadOfPopupPromise = getUseTabsInsteadOfPopup()
+	const metamaskCompatibilityModePromise = getMetamaskCompatibilityMode()
+	const rpcEntriesPromise = getRpcList()
+	
+	await sendPopupMessageToOpenWindows({
+		method: 'popup_settingsOpenedReply' as const,
+		data: {
+			useTabsInsteadOfPopup: await useTabsInsteadOfPopupPromise,
+			metamaskCompatibilityMode: await metamaskCompatibilityModePromise,
+			rpcEntries: await rpcEntriesPromise,
+		}
+	})
 }
 
 export async function interceptorAccessChangeAddressOrRefresh(websiteTabConnections: WebsiteTabConnections, params: InterceptorAccessChangeAddress | InterceptorAccessRefresh) {

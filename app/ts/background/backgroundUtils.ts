@@ -45,7 +45,7 @@ export function createInternalMessageListener(handler: (message: WindowMessage) 
 	}
 }
 
-type HTMLFile = 'popup' | 'addressBook' | 'changeChain' | 'confirmTransaction' | 'interceptorAccess' | 'personalSign'
+type HTMLFile = 'popup' | 'addressBook' | 'changeChain' | 'confirmTransaction' | 'interceptorAccess' | 'personalSign' | 'settingsView'
 export function getHtmlFile(file: HTMLFile) {
 	const manifest = browser.runtime.getManifest()
 	if (manifest.manifest_version === 2) {

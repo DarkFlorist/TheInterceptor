@@ -502,8 +502,6 @@ export const UpdateHomePage = funtypes.ReadonlyObject({
 		tabIconDetails: funtypes.Union(TabIconDetails, funtypes.Undefined),
 		makeMeRich: funtypes.Boolean,
 		rpcConnectionStatus: RpcConnectionStatus,
-		useTabsInsteadOfPopup: funtypes.Boolean,
-		metamaskCompatibilityMode: funtypes.Boolean,
 		activeSigningAddressInThisTab: OptionalEthereumAddress,
 		tabId: funtypes.Union(funtypes.Number, funtypes.Undefined),
 		rpcEntries: RpcEntries,
@@ -693,6 +691,16 @@ export const FetchAbiAndNameFromEtherscanReply = funtypes.ReadonlyObject({
 	)
 }).asReadonly()
 
+export type SettingsOpenedReply = funtypes.Static<typeof SettingsOpenedReply>
+export const SettingsOpenedReply = funtypes.ReadonlyObject({
+	method: funtypes.Literal('popup_settingsOpenedReply'),
+	data: funtypes.ReadonlyObject({
+		useTabsInsteadOfPopup: funtypes.Boolean,
+		metamaskCompatibilityMode: funtypes.Boolean,
+		rpcEntries: RpcEntries,
+	})
+}).asReadonly()
+
 export type PopupMessage = funtypes.Static<typeof PopupMessage>
 export const PopupMessage = funtypes.Union(
 	TransactionConfirmation,
@@ -726,9 +734,11 @@ export const PopupMessage = funtypes.Union(
 	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_confirmTransactionReadyAndListening') }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_requestNewHomeData') }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_homeOpened') }),
+	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_openSettings') }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_import_settings'), data: funtypes.ReadonlyObject({ fileContents: funtypes.String }) }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_get_export_settings') }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_simulateGovernanceContractExecution') }),
+	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_settingsOpened') }),
 	ChangeSettings,
 	SetRpcList,
 	IdentifyAddress,
@@ -758,6 +768,7 @@ export const MessageToPopup = funtypes.Union(
 	PartiallyParsedPersonalSignRequest,
 	PartiallyParsedSimulateGovernanceContractExecutionReply,
 	FetchAbiAndNameFromEtherscanReply,
+	SettingsOpenedReply,
 )
 
 export type ExternalPopupMessage = funtypes.Static<typeof MessageToPopup>
