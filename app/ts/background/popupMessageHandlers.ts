@@ -314,7 +314,7 @@ export async function homeOpened(simulator: Simulator, refreshMetadata: boolean)
 	const makeMeRich = await makeMeRichPromise
 	const rpcConnectionStatus = await rpcConnectionStatusPromise
 
-	const updatedPage : UpdateHomePage = {
+	const updatedPage: UpdateHomePage = {
 		method: 'popup_UpdateHomePage' as const,
 		data: {
 			visualizedSimulatorState: await visualizedSimulatorStatePromise,

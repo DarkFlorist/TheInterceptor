@@ -181,14 +181,14 @@ function Rpcs({ rpcEntries }: { rpcEntries: RpcEntries }) {
 }
 
 export function SettingsView() {
-	const [useTabsInsteadOfPopup, setUseTabsInsteadOfPopup] = useState<boolean | undefined>(undefined)
-	const [metamaskCompatibilityMode, setMetamaskCompatibilityMode] = useState<boolean | undefined>(undefined)
+	const [useTabsInsteadOfPopup, setUseTabsInsteadOfPopup] = useState<boolean>(false)
+	const [metamaskCompatibilityMode, setMetamaskCompatibilityMode] = useState<boolean>(false)
 	const [rpcEntries, setRpcEntries] = useState<RpcEntries>([])
 
 	useEffect(() => {
 		const popupMessageListener = async (msg: unknown) => {
 			const message = ExternalPopupMessage.parse(msg)
-			//if (message.method === 'popup_settingsUpdated') return updateHomePageSettings(message.data, true)
+			if (message.method === 'popup_settingsUpdated') return sendPopupMessageToBackgroundPage({ method: 'popup_settingsOpened' })
 			if (message.method === 'popup_update_rpc_list') return setRpcEntries(message.data)
 			if (message.method !== 'popup_settingsOpenedReply') return
 			setMetamaskCompatibilityMode(message.data.metamaskCompatibilityMode)
@@ -205,17 +205,13 @@ export function SettingsView() {
 	async function requestToUseTabsInsteadOfPopup(checked: boolean) {
 		await sendPopupMessageToBackgroundPage({
 			method: 'popup_ChangeSettings',
-			data: {
-				useTabsInsteadOfPopup: checked
-			}
+			data: { useTabsInsteadOfPopup: checked }
 		})
 	}
 	async function requestToMetamaskCompatibilityMode(checked: boolean) {
 		await sendPopupMessageToBackgroundPage({
 			method: 'popup_ChangeSettings',
-			data: {
-				metamaskCompatibilityMode: checked
-			}
+			data: { metamaskCompatibilityMode: checked }
 		})
 	}
 	
@@ -239,12 +235,12 @@ export function SettingsView() {
 						<p className = 'paragraph'>Misc</p>
 						<CheckBoxSetting
 							text = { 'Open popups as tabs (experimental)' }
-							checked = { useTabsInsteadOfPopup === true }
+							checked = { useTabsInsteadOfPopup }
 							onInput = { requestToUseTabsInsteadOfPopup }
 						/>
 						<CheckBoxSetting
 							text = { 'Metamask compatibility mode (mimics Metamask\'s behaviour on websites). After enabling or disabling this, please refresh the active tab to switch the behaviour on the site' }
-							checked = { metamaskCompatibilityMode === true }
+							checked = { metamaskCompatibilityMode }
 							onInput = { requestToMetamaskCompatibilityMode }
 						/>
 					</li>
