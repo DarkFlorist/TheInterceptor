@@ -15,7 +15,6 @@ import { ExternalPopupMessage, UpdateHomePage, WebsiteIconChanged, Settings } fr
 import { version, gitCommitSha } from '../version.js'
 import { sendPopupMessageToBackgroundPage } from '../background/backgroundUtils.js'
 import { EthereumAddress } from '../types/wire-types.js'
-import { SettingsView } from './pages/SettingsView.js'
 import { checksummedAddress } from '../utils/bigint.js'
 import { ActiveAddress, ActiveAddressEntry, AddressBookEntry, AddressBookEntries, IncompleteAddressBookEntry } from '../types/addressBookTypes.js'
 import { WebsiteAccessArray } from '../types/websiteAccessTypes.js'
@@ -43,8 +42,6 @@ export function App() {
 	const [signerName, setSignerName] = useState<SignerName>('NoSignerDetected')
 	const [addingNewAddress, setAddingNewAddress] = useState<IncompleteAddressBookEntry> ({ addingAddress: false, type: 'activeAddress', address: undefined, askForAddressAccess: false, name: undefined, symbol: undefined, decimals: undefined, logoUri: undefined, entrySource: 'FilledIn', abi: undefined })
 	const [rpcConnectionStatus, setRpcConnectionStatus] = useState<RpcConnectionStatus>(undefined)
-	const [useTabsInsteadOfPopup, setUseTabsInsteadOfPopup] = useState<boolean | undefined>(undefined)
-	const [metamaskCompatibilityMode, setMetamaskCompatibilityMode] = useState<boolean | undefined>(undefined)
 	const [currentTabId, setCurrentTabId] = useState<number | undefined>(undefined)
 	const [rpcEntries, setRpcEntries] = useState<RpcEntries>([])
 	const [simulationUpdatingState, setSimulationUpdatingState] = useState<SimulationUpdatingState | undefined>(undefined)
@@ -140,8 +137,6 @@ export function App() {
 				setWebsiteAccessAddressMetadata(data.websiteAccessAddressMetadata)
 				setSignerAccounts(data.signerAccounts)
 				setRpcConnectionStatus(data.rpcConnectionStatus)
-				setUseTabsInsteadOfPopup(data.useTabsInsteadOfPopup)
-				setMetamaskCompatibilityMode(data.metamaskCompatibilityMode)
 				return true
 			})
 		}
@@ -249,6 +244,10 @@ export function App() {
 		await sendPopupMessageToBackgroundPage( { method: 'popup_openAddressBook' } )
 		return globalThis.close() // close extension popup, chrome closes it by default, but firefox does not
 	}
+	async function openSettings() {
+		await sendPopupMessageToBackgroundPage( { method: 'popup_openSettings' } )
+		return globalThis.close() // close extension popup, chrome closes it by default, but firefox does not
+	}
 	
 	return (
 		<main>
@@ -267,7 +266,7 @@ export function App() {
 								<a class = 'navbar-item' style = 'margin-left: auto; margin-right: 0;'>
 									<img src = '../img/internet.svg' width = '32' onClick = { () => setAndSaveAppPage('AccessList') }/>
 									<img src = '../img/address-book.svg' width = '32' onClick = { openAddressBook }/>
-									<img src = '../img/settings.svg' width = '32' onClick = { () => setAndSaveAppPage('Settings') }/>
+									<img src = '../img/settings.svg' width = '32' onClick = { openSettings }/>
 								</a>
 							</div>
 						</nav>
@@ -294,13 +293,6 @@ export function App() {
 						/>
 
 						<div class = { `modal ${ appPage !== 'Home' ? 'is-active' : ''}` }>
-							{ appPage === 'Settings' ?
-								<SettingsView
-									setAndSaveAppPage = { setAndSaveAppPage }
-									useTabsInsteadOfPopup = { useTabsInsteadOfPopup } 
-									metamaskCompatibilityMode = { metamaskCompatibilityMode } 
-								/>
-							: <></> }
 							{ appPage === 'AccessList' ?
 								<InterceptorAccessList
 									setAndSaveAppPage = { setAndSaveAppPage }

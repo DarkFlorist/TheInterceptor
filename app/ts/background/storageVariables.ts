@@ -1,7 +1,7 @@
 import { ICON_NOT_ACTIVE, getChainName } from '../utils/constants.js'
 import { Semaphore } from '../utils/semaphore.js'
 import { PendingChainChangeConfirmationPromise, PendingPersonalSignPromise, RpcConnectionStatus, TabState } from '../types/user-interface-types.js'
-import { browserStorageLocalGet, browserStorageLocalRemove, browserStorageLocalSet, getTabStateFromStorage, removeTabStateFromStorage, setTabStateFromStorage } from '../utils/storageUtils.js'
+import { PartialIdsOfOpenedTabs, browserStorageLocalGet, browserStorageLocalRemove, browserStorageLocalSet, getTabStateFromStorage, removeTabStateFromStorage, setTabStateFromStorage } from '../utils/storageUtils.js'
 import { CompleteVisualizedSimulation, EthereumSubscriptions } from '../types/visualizer-types.js'
 import { defaultRpcs, getSettings } from './settings.js'
 import { UniqueRequestIdentifier, doesUniqueRequestIdentifiersMatch } from '../utils/requests.js'
@@ -11,7 +11,8 @@ import { PendingAccessRequest, PendingAccessRequestArray, PendingTransaction } f
 import { RpcEntries, RpcNetwork } from '../types/rpc.js'
 import { replaceElementInReadonlyArray } from '../utils/typed-arrays.js'
 
-export const getOpenedAddressBookTabId = async() => (await browserStorageLocalGet('addressbookTabId'))?.['addressbookTabId'] ?? undefined
+export const getIdsOfOpenedTabs = async () => (await browserStorageLocalGet('idsOfOpenedTabs'))?.['idsOfOpenedTabs'] ?? { settingsView: undefined, addressBook: undefined}
+export const setIdsOfOpenedTabs = async (ids: PartialIdsOfOpenedTabs) => await browserStorageLocalSet({ idsOfOpenedTabs: { ...await getIdsOfOpenedTabs(), ...ids } })
 
 export async function getPendingTransactions(): Promise<readonly PendingTransaction[]> {
 	try {
@@ -203,8 +204,6 @@ export async function updateEthereumSubscriptions(updateFunc: (prevState: Ethere
 		return { oldSubscriptions, newSubscriptions }
 	})
 }
-
-export const setOpenedAddressBookTabId = async(addressbookTabId: number) => await browserStorageLocalSet({ addressbookTabId })
 
 export const setRpcList = async(entries: RpcEntries) => await browserStorageLocalSet({ RpcEntries: entries })
 
