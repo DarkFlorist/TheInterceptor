@@ -9,8 +9,20 @@ import { SignerName } from '../types/signerTypes.js'
 import { PendingAccessRequestArray, PendingTransaction } from '../types/accessRequest.js'
 import { RpcEntries, RpcNetwork } from '../types/rpc.js'
 
+export type IdsOfOpenedTabs = funtypes.Static<typeof IdsOfOpenedTabs>
+export const IdsOfOpenedTabs = funtypes.ReadonlyObject({
+	addressBook: funtypes.Union(funtypes.Undefined, funtypes.Number),
+	settingsView: funtypes.Union(funtypes.Undefined, funtypes.Number),
+})
+
+export type PartialIdsOfOpenedTabs = funtypes.Static<typeof PartialIdsOfOpenedTabs>
+export const PartialIdsOfOpenedTabs = funtypes.ReadonlyPartial({
+	addressBook: funtypes.Union(funtypes.Undefined, funtypes.Number),
+	settingsView: funtypes.Union(funtypes.Undefined, funtypes.Number),
+})
+
 export type LocalStorageItems = funtypes.Static<typeof LocalStorageItems>
-export const LocalStorageItems = funtypes.Partial({
+export const LocalStorageItems = funtypes.ReadonlyPartial({
 	activeSigningAddress: EthereumAddressOrMissing,
 	activeSimulationAddress: EthereumAddressOrMissing,
 	addressInfos: ActiveAddressArray,
@@ -22,7 +34,6 @@ export const LocalStorageItems = funtypes.Partial({
 	pendingInterceptorAccessRequests: PendingAccessRequestArray,
 	contacts: ContactEntries,
 	makeMeRich: funtypes.Boolean,
-	addressbookTabId: funtypes.Union(funtypes.Undefined, funtypes.Number),
 	transactionsPendingForUserConfirmation: funtypes.ReadonlyArray(PendingTransaction),
 	ChainChangeConfirmationPromise: funtypes.Union(funtypes.Undefined, PendingChainChangeConfirmationPromise),
 	PersonalSignPromise: funtypes.Union(funtypes.Undefined, PendingPersonalSignPromise),
@@ -35,6 +46,7 @@ export const LocalStorageItems = funtypes.Partial({
 	RpcEntries: RpcEntries,
 	metamaskCompatibilityMode: funtypes.Boolean,
 	userAddressBookEntries: AddressBookEntries,
+	idsOfOpenedTabs: IdsOfOpenedTabs
 })
 
 export type LocalStorageKey = funtypes.Static<typeof LocalStorageKey>
@@ -50,7 +62,6 @@ export const LocalStorageKey = funtypes.Union(
 	funtypes.Literal('pendingInterceptorAccessRequests'),
 	funtypes.Literal('contacts'),
 	funtypes.Literal('makeMeRich'),
-	funtypes.Literal('addressbookTabId'),
 	funtypes.Literal('transactionsPendingForUserConfirmation'),
 	funtypes.Literal('ChainChangeConfirmationPromise'),
 	funtypes.Literal('PersonalSignPromise'),
@@ -63,6 +74,7 @@ export const LocalStorageKey = funtypes.Union(
 	funtypes.Literal('RpcEntries'),
 	funtypes.Literal('metamaskCompatibilityMode'),
 	funtypes.Literal('userAddressBookEntries'),
+	funtypes.Literal('idsOfOpenedTabs'),
 )
 
 export async function browserStorageLocalGet(keys: LocalStorageKey | LocalStorageKey[]): Promise<LocalStorageItems> {

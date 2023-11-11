@@ -15,11 +15,12 @@ import { CatchAllVisualizer, tokenEventToTokenSymbolParams } from './customExpla
 import { AddressBookEntry } from '../../types/addressBookTypes.js'
 import { SignatureCard } from '../pages/PersonalSign.js'
 import { VisualizedPersonalSignRequest } from '../../types/personal-message-definitions.js'
-import { bytes32String, checksummedAddress, dataStringWith0xStart } from '../../utils/bigint.js'
+import { bytes32String, dataStringWith0xStart } from '../../utils/bigint.js'
 import { UniqueRequestIdentifier, doesUniqueRequestIdentifiersMatch } from '../../utils/requests.js'
 import { includesWithComparator } from '../../utils/typed-arrays.js'
 import { GovernanceVoteVisualizer } from './customExplainers/GovernanceVoteVisualizer.js'
-import { PureSolidityTypeComponent } from '../subcomponents/solidityType.js'
+import { EnrichedSolidityTypeComponentWithAddressBook } from '../subcomponents/solidityType.js'
+import { getAddressBookEntryOrAFiller } from '../ui-utils.js'
 
 function isPositiveEvent(visResult: TokenVisualizerResultWithMetadata, ourAddressInReferenceFrame: bigint) {
 	if (visResult.type === 'ERC20') {
@@ -52,9 +53,10 @@ export function QuarantineReasons({ quarantineReasons }: { quarantineReasons: re
 }
 
 export type TransactionImportanceBlockParams = {
-	simTx: SimulatedAndVisualizedTransaction,
-	simulationAndVisualisationResults: SimulationAndVisualisationResults,
-	renameAddressCallBack: RenameAddressCallBack,
+	simTx: SimulatedAndVisualizedTransaction
+	simulationAndVisualisationResults: SimulationAndVisualisationResults
+	renameAddressCallBack: RenameAddressCallBack
+	addressMetadata: readonly AddressBookEntry[]
 }
 
 // showcases the most important things the transaction does
@@ -101,7 +103,7 @@ export function TransactionImportanceBlock(param: TransactionImportanceBlockPara
 		case 'ContractDeployment':
 		case 'ContractFallbackMethod':
 		case 'ArbitaryContractExecution': return <CatchAllVisualizer { ...param } />
-		case 'GovernanceVote': return <GovernanceVoteVisualizer { ...param } governanceVoteInputParameters = { transactionIdentification.governanceVoteInputParameters } />
+		case 'GovernanceVote': return <GovernanceVoteVisualizer { ...param } governanceVoteInputParameters = { transactionIdentification.governanceVoteInputParameters } addressMetaData = { param.addressMetadata }/>
 		default: assertNever(transactionIdentification)
 	}
 }
@@ -154,7 +156,7 @@ export function Transaction(param: TransactionVisualizationParameters) {
 			/>
 			<div class = 'card-content' style = 'padding-bottom: 5px;'>
 				<div class = 'container'>
-					<TransactionImportanceBlock { ...param }/>
+					<TransactionImportanceBlock { ...param } addressMetadata = { param.addressMetaData }/>
 					<QuarantineReasons quarantineReasons = { param.simTx.quarantineReasons }/>
 				</div>
 				{ identifiedTransaction === 'MakeYouRichTransaction' ? <></> : <>
@@ -166,7 +168,7 @@ export function Transaction(param: TransactionVisualizationParameters) {
 						namedTokenIds = { param.simulationAndVisualisationResults.namedTokenIds }
 					/>
 					<TokenLogAnalysisCard simTx = { param.simTx } renameAddressCallBack = { param.renameAddressCallBack } />
-					<NonTokenLogAnalysisCard simTx = { param.simTx } renameAddressCallBack = { param.renameAddressCallBack } />
+					<NonTokenLogAnalysisCard simTx = { param.simTx } renameAddressCallBack = { param.renameAddressCallBack } addressMetaData = { param.addressMetaData } />
 					<RawTransactionDetailsCard transaction = { param.simTx.transaction } renameAddressCallBack = { param.renameAddressCallBack } gasSpent = { param.simTx.gasSpent } />
 					<SenderReceiver from = { param.simTx.transaction.from } to = { param.simTx.transaction.to } renameAddressCallBack = { param.renameAddressCallBack }/>
 
@@ -192,6 +194,7 @@ type TransactionsAndSignedMessagesParams = {
 	renameAddressCallBack: RenameAddressCallBack
 	removedTransactionHashes: readonly bigint[]
 	removedSignedMessages: readonly UniqueRequestIdentifier[]
+	addressMetaData: readonly AddressBookEntry[]
 }
 
 export function TransactionsAndSignedMessages(param: TransactionsAndSignedMessagesParams) {
@@ -214,6 +217,7 @@ export function TransactionsAndSignedMessages(param: TransactionsAndSignedMessag
 						removeTransaction = { param.removeTransaction }
 						activeAddress = { param.activeAddress }
 						renameAddressCallBack = { param.renameAddressCallBack }
+						addressMetaData = { param.addressMetaData }
 					/>
 				</> }
 			</li>
@@ -305,6 +309,8 @@ export function TokenLogAnalysis(param: LogAnalysisParams) {
 
 type NonTokenLogEventParams = {
 	nonTokenLog: MaybeParsedEvent
+	addressMetaData: readonly AddressBookEntry[]
+	renameAddressCallBack: RenameAddressCallBack
 }
 
 function insertBetweenElements<T>(array: readonly T[], elementToInsert: T): readonly T[] {
@@ -324,7 +330,10 @@ export function NonTokenLogEvent(params: NonTokenLogEventParams) {
 	if (params.nonTokenLog.isParsed === 'NonParsed') {
 		return <>
 			<div class = 'log-cell' style = { cellStyle }>
-				<p class = 'paragraph' style = { textStyle }> { checksummedAddress(params.nonTokenLog.loggersAddress) } </p>
+				<SmallAddress
+					addressBookEntry = { getAddressBookEntryOrAFiller(params.addressMetaData, params.nonTokenLog.loggersAddress) }
+					renameAddressCallBack = { params.renameAddressCallBack }
+				/>
 			</div>
 			<div class = 'log-cell' style = { cellStyle }>
 				<p class = 'paragraph' style = { textStyle }> { dataStringWith0xStart(params.nonTokenLog.data) } </p>
@@ -342,11 +351,19 @@ export function NonTokenLogEvent(params: NonTokenLogEventParams) {
 	} else {
 		return <>
 			<div class = 'log-cell' style = { cellStyle }>
-				<p class = 'paragraph' style = { textStyle }> { checksummedAddress(params.nonTokenLog.loggersAddress) } </p>
+				<SmallAddress
+					addressBookEntry = { getAddressBookEntryOrAFiller(params.addressMetaData, params.nonTokenLog.loggersAddress) }
+					renameAddressCallBack = { params.renameAddressCallBack }
+				/>
 			</div>
 			<div class = 'log-cell' style = { { 'align-items': 'normal', 'grid-column-start': 2, 'grid-column-end': 4, display: 'flex', 'flex-wrap': 'wrap' } }>
 				<p class = 'paragraph' style = { textStyle }> { `${ params.nonTokenLog.name }(` } </p>
-				{ insertBetweenElements(params.nonTokenLog.args.map((arg) => <> <p style = { textStyle } class = 'paragraph'> { `${arg.paramName } =` }&nbsp;</p> <PureSolidityTypeComponent valueType = { arg.typeValue }/> </>), <p style = { textStyle } class = 'paragraph'>,&nbsp;</p>) }
+				{ insertBetweenElements(params.nonTokenLog.args.map((arg) =>
+					<>
+						<p style = { textStyle } class = 'paragraph'> { `${arg.paramName } =` }&nbsp;</p>
+						<EnrichedSolidityTypeComponentWithAddressBook valueType = { arg.typeValue } addressMetaData = { params.addressMetaData } renameAddressCallBack = { params.renameAddressCallBack } />
+					</>
+				), <p style = { textStyle } class = 'paragraph'>,&nbsp;</p>) }
 				<p class = 'paragraph' style = { textStyle }> { `)` } </p>
 			</div>
 		</>
@@ -356,6 +373,6 @@ export function NonTokenLogEvent(params: NonTokenLogEventParams) {
 export function NonTokenLogAnalysis(param: NonLogAnalysisParams) {
 	if (param.nonTokenLogs.length === 0) return <p class = 'paragraph'> No non-token events </p>
 	return <span class = 'log-table-3' style = 'justify-content: center; column-gap: 5px; row-gap: 5px;'> 
-		{ param.nonTokenLogs.map((nonTokenLog) => <NonTokenLogEvent nonTokenLog = { nonTokenLog } />) }
+		{ param.nonTokenLogs.map((nonTokenLog) => <NonTokenLogEvent nonTokenLog = { nonTokenLog } addressMetaData = { param.addressMetaData } renameAddressCallBack = { param.renameAddressCallBack} />) }
 	</span>
 }
