@@ -351,11 +351,12 @@ export const TokenPriceEstimate = funtypes.ReadonlyObject({
 })
 
 export type TransactionVisualizationParameters = {
-	simTx: SimulatedAndVisualizedTransaction,
-	simulationAndVisualisationResults: SimulationAndVisualisationResults,
-	removeTransaction: ((tx: SimulatedAndVisualizedTransaction) => void) | undefined,
-	activeAddress: bigint,
-	renameAddressCallBack: RenameAddressCallBack,
+	simTx: SimulatedAndVisualizedTransaction
+	simulationAndVisualisationResults: SimulationAndVisualisationResults
+	removeTransaction: ((tx: SimulatedAndVisualizedTransaction) => void) | undefined
+	activeAddress: bigint
+	renameAddressCallBack: RenameAddressCallBack
+	addressMetaData: readonly AddressBookEntry[]
 }
 
 export type Erc20WithAmount = Erc20TokenEntry & {

@@ -190,6 +190,7 @@ function SimulationResults(param: SimulationStateParam) {
 				renameAddressCallBack = { param.renameAddressCallBack }
 				removedTransactionHashes = { param.removedTransactionHashes }
 				removedSignedMessages = { param.removedSignedMessages }
+				addressMetaData = { param.simulationAndVisualisationResults.addressBookEntries }
 			/>
 			{ param.removedTransactionHashes.length > 0
 				? <></>

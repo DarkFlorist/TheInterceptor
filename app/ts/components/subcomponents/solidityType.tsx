@@ -1,7 +1,9 @@
+import { AddressBookEntry } from '../../types/addressBookTypes.js'
 import { EnrichedGroupedSolidityType, PureGroupedSolidityType } from '../../types/solidityType.js'
 import { RenameAddressCallBack } from '../../types/user-interface-types.js'
 import { checksummedAddress, dataStringWith0xStart } from '../../utils/bigint.js'
 import { assertNever } from '../../utils/typescript.js'
+import { getAddressBookEntryOrAFiller } from '../ui-utils.js'
 import { SmallAddress } from './address.js'
 
 const textStyle = 'text-overflow: ellipsis; overflow: hidden;'
@@ -22,6 +24,14 @@ export function PureSolidityTypeComponent( { valueType }: { valueType: PureGroup
 		case 'integer[]': return <StringElement text = { `[ ${ valueType.value.toString() }]` } />
 		case 'string[]': return <StringElement text = { `[${ valueType.value.map((a) => `"${ a }"`) }]` } />
 		default: assertNever(valueType)
+	}
+}
+
+export function EnrichedSolidityTypeComponentWithAddressBook({ valueType, addressMetaData, renameAddressCallBack }: { valueType: PureGroupedSolidityType, addressMetaData: readonly AddressBookEntry[], renameAddressCallBack: RenameAddressCallBack }) {
+	switch(valueType.type) {
+		case 'address': return <SmallAddress addressBookEntry = { getAddressBookEntryOrAFiller(addressMetaData, valueType.value) } renameAddressCallBack = { renameAddressCallBack } />
+		case 'address[]': return <>{ valueType.value.map((value) => <SmallAddress addressBookEntry = { getAddressBookEntryOrAFiller(addressMetaData, value) } renameAddressCallBack = { renameAddressCallBack } />) }</>
+		default: return <PureSolidityTypeComponent valueType = { valueType } />
 	}
 }
 
