@@ -5,6 +5,9 @@ import { assertNever } from '../utils/typescript.js'
 import { ComponentChildren } from 'preact'
 import { WindowOrTabId } from '../types/user-interface-types.js'
 import { RpcNetwork } from '../types/rpc.js'
+import { EthereumAddress } from '../types/wire-types.js'
+import { AddressBookEntry } from '../types/addressBookTypes.js'
+import { checksummedAddress } from '../utils/bigint.js'
 
 function assertIsNode(e: EventTarget | null): asserts e is Node {
 	if (!e || !('nodeType' in e)) {
@@ -203,5 +206,16 @@ export const getArtificialERC20ForEth = (rpcNetwork: RpcNetwork) => {
 		name: rpcNetwork.currencyName,
 		type: 'ERC20' as const,
 		entrySource: 'DarkFloristMetadata' as const,
+	}
+}
+
+export const getAddressBookEntryOrAFiller = (addressMetaData: readonly AddressBookEntry[], addressToFind: EthereumAddress) => {
+	const foundEntry = addressMetaData.find((entry) => entry.address === addressToFind)
+	if (foundEntry !== undefined) return foundEntry
+	return {
+		type: 'contact' as const,
+		name: checksummedAddress(addressToFind),
+		address: addressToFind,
+		entrySource: 'FilledIn' as const
 	}
 }

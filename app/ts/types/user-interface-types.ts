@@ -111,6 +111,8 @@ export type LogAnalysisParams = {
 
 export type NonLogAnalysisParams = {
 	nonTokenLogs: MaybeParsedEvents
+	addressMetaData: readonly AddressBookEntry[]
+	renameAddressCallBack: RenameAddressCallBack
 }
 
 export type RenameAddressCallBack = (addressBookEntry: AddressBookEntry) => void

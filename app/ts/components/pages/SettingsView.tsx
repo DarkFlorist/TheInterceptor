@@ -1,11 +1,10 @@
 
 import { sendPopupMessageToBackgroundPage } from '../../background/backgroundUtils.js'
-import { SettingsParam } from '../../types/user-interface-types.js'
 import { ExternalPopupMessage, ImportSettingsReply } from '../../types/interceptor-messages.js'
 import { RpcEntries } from '../../types/rpc.js'
-import { useEffect, useState } from 'preact/hooks' 
+import { useEffect, useState } from 'preact/hooks'
 import { Error as ErrorComponent} from '../subcomponents/Error.js'
-import { DinoSays } from '../subcomponents/DinoSays.js'
+import { DinoSaysNotification } from '../subcomponents/DinoSays.js'
 
 type CheckBoxSettingParam = {
 	text: string
@@ -29,11 +28,15 @@ function CheckBoxSetting(param: CheckBoxSettingParam) {
 
 function ImportExport() {
 	const [settingsReply, setSettingsReply] = useState<ImportSettingsReply | undefined>(undefined)
-
+	const [dismissedNotification, setdDismissedNotification] = useState<boolean>(false)
+	
 	useEffect(() => {
 		async function popupMessageListener(msg: unknown) {
 			const message = ExternalPopupMessage.parse(msg)
-			if (message.method === 'popup_initiate_export_settings_reply') return setSettingsReply(message)
+			if (message.method === 'popup_initiate_export_settings_reply') {
+				setdDismissedNotification(false)
+				return setSettingsReply(message)
+			}
 			if (message.method !== 'popup_initiate_export_settings') return
 			downloadFile('interceptorSettingsAndAddressbook.json', message.data.fileContents)
 		}
@@ -72,16 +75,18 @@ function ImportExport() {
 		}
 	}
 	const exportSettings = async () => await sendPopupMessageToBackgroundPage({ method: 'popup_get_export_settings' })
+
 	return <>
 		{ settingsReply !== undefined && settingsReply.data.success === false ?
 			<div style = 'margin: 10px; background-color: var(--bg-color);'>
 				<ErrorComponent warning = { true } text = { settingsReply.data.errorMessage }/>
 			</div>
 		: <></> }
-		{ settingsReply !== undefined && settingsReply.data.success === true ?
-			<div style = 'margin: 10px; background-color: var(--bg-color);'>
-				<DinoSays text = { 'Settings and address book loaded!' }/>
-			</div>
+		{ settingsReply !== undefined && settingsReply.data.success === true && dismissedNotification === false ?
+			<DinoSaysNotification
+				text = { `Settings and address book loaded!` }
+				close = { () => setdDismissedNotification(true)}
+			/>
 		: <></> }
 		<div class = 'popup-button-row'>
 			<div style = 'display: flex; flex-direction: row;'>
@@ -97,7 +102,6 @@ function ImportExport() {
 	</>
 }
 
-
 type InputParams = {
 	input: string
 }
@@ -111,34 +115,24 @@ function TextField({ input }: InputParams) {
 	/>
 }
 
-function Rpcs() {
-	const [rpcList, setRpcList] = useState<RpcEntries | undefined>(undefined)
-
-	useEffect(() => {
-		const popupMessageListener = async (msg: unknown) => {
-			const message = ExternalPopupMessage.parse(msg)
-			if (message.method === 'popup_update_rpc_list') return setRpcList(message.data)
-		}
-		browser.runtime.onMessage.addListener(popupMessageListener)
-		return () => browser.runtime.onMessage.removeListener(popupMessageListener)
-	})
+function Rpcs({ rpcEntries }: { rpcEntries: RpcEntries }) {
 
 	const expandMinimize = (rpcUrl: string, minimize: boolean) => {
-		if (rpcList === undefined) return
+		if (rpcEntries === undefined) return
 		sendPopupMessageToBackgroundPage({
 			method: 'popup_set_rpc_list',
-			data: rpcList.map((rpc) => ({ ...rpc, minimized: rpcUrl === rpc.httpsRpc ? minimize : rpc.minimized, }))
+			data: rpcEntries.map((rpc) => ({ ...rpc, minimized: rpcUrl === rpc.httpsRpc ? minimize : rpc.minimized, }))
 		})
 	}
 
 	const setAsPrimary = (rpcUrl: string) => {
-		if (rpcList === undefined) return
-		const rpcInQuestion = rpcList.find((rpc) => rpcUrl === rpc.httpsRpc)
+		if (rpcEntries === undefined) return
+		const rpcInQuestion = rpcEntries.find((rpc) => rpcUrl === rpc.httpsRpc)
 		if (rpcInQuestion === undefined) return
 		if (rpcInQuestion.primary) return // already primary
 		sendPopupMessageToBackgroundPage({
 			method: 'popup_set_rpc_list',
-			data: rpcList.map((rpc) => {
+			data: rpcEntries.map((rpc) => {
 				if (rpcUrl === rpc.httpsRpc) return { ...rpc, primary: true }
 				if (rpcInQuestion.chainId === rpc.chainId) return { ...rpc, primary: false } 
 				return rpc
@@ -146,10 +140,8 @@ function Rpcs() {
 		})
 	}
 
-	if (rpcList === undefined) return <></>
-
 	return <>
-		<ul> { rpcList.map((rpc) => <li>
+		<ul> { rpcEntries.map((rpc) => <li>
 			<div class = 'card'>
 				<header class = 'card-header'>		
 					<div class = 'card-header-icon unset-cursor'>
@@ -188,30 +180,44 @@ function Rpcs() {
 	</>
 }
 
-export function SettingsView(param: SettingsParam) {
-	const goHome = () => param.setAndSaveAppPage('Home')
+export function SettingsView() {
+	const [useTabsInsteadOfPopup, setUseTabsInsteadOfPopup] = useState<boolean>(false)
+	const [metamaskCompatibilityMode, setMetamaskCompatibilityMode] = useState<boolean>(false)
+	const [rpcEntries, setRpcEntries] = useState<RpcEntries>([])
 
-	async function setUseTabsInsteadOfPopups(checked: boolean) {
+	useEffect(() => {
+		const popupMessageListener = async (msg: unknown) => {
+			const message = ExternalPopupMessage.parse(msg)
+			if (message.method === 'popup_settingsUpdated') return sendPopupMessageToBackgroundPage({ method: 'popup_settingsOpened' })
+			if (message.method === 'popup_update_rpc_list') return setRpcEntries(message.data)
+			if (message.method !== 'popup_settingsOpenedReply') return
+			setMetamaskCompatibilityMode(message.data.metamaskCompatibilityMode)
+			setUseTabsInsteadOfPopup(message.data.useTabsInsteadOfPopup)
+			setRpcEntries(message.data.rpcEntries)
+			return
+		}
+		browser.runtime.onMessage.addListener(popupMessageListener)
+		return () => browser.runtime.onMessage.removeListener(popupMessageListener)
+	})
+
+	useEffect(() => { sendPopupMessageToBackgroundPage({ method: 'popup_settingsOpened' }) }, [])
+
+	async function requestToUseTabsInsteadOfPopup(checked: boolean) {
 		await sendPopupMessageToBackgroundPage({
 			method: 'popup_ChangeSettings',
-			data: {
-				useTabsInsteadOfPopup: checked
-			}
+			data: { useTabsInsteadOfPopup: checked }
 		})
 	}
-	async function setMetamaskCompatibilityMode(checked: boolean) {
+	async function requestToMetamaskCompatibilityMode(checked: boolean) {
 		await sendPopupMessageToBackgroundPage({
 			method: 'popup_ChangeSettings',
-			data: {
-				metamaskCompatibilityMode: checked
-			}
+			data: { metamaskCompatibilityMode: checked }
 		})
 	}
 	
-	return ( <>
-		<div class = 'modal-background'> </div>
-		<div class = 'modal-card' style = 'height: 100%;'>
-			<header class = 'modal-card-head card-header interceptor-modal-head window-header'>
+	return <main style = 'padding: 10px'>
+		<div class = 'card' style = 'height: 100%;'>
+			<header class = 'card-head card-header window-header'>
 				<div class = 'card-header-icon unset-cursor'>
 					<span class = 'icon'>
 						<img src = '../img/settings.svg'/>
@@ -222,23 +228,20 @@ export function SettingsView(param: SettingsParam) {
 						Settings
 					</p>
 				</div>
-				<button class = 'card-header-icon' aria-label = 'close' onClick = { goHome }>
-					<span class = 'icon' style = 'color: var(--text-color);'> X </span>
-				</button>
 			</header>
-			<section class = 'modal-card-body'>
+			<section class = 'card-body' style = 'padding-bottom: 10px'>
 				<ul>
 					<li>
 						<p className = 'paragraph'>Misc</p>
 						<CheckBoxSetting
 							text = { 'Open popups as tabs (experimental)' }
-							checked = { param.useTabsInsteadOfPopup === true }
-							onInput = { setUseTabsInsteadOfPopups }
+							checked = { useTabsInsteadOfPopup }
+							onInput = { requestToUseTabsInsteadOfPopup }
 						/>
 						<CheckBoxSetting
 							text = { 'Metamask compatibility mode (mimics Metamask\'s behaviour on websites). After enabling or disabling this, please refresh the active tab to switch the behaviour on the site' }
-							checked = { param.metamaskCompatibilityMode === true }
-							onInput = { setMetamaskCompatibilityMode }
+							checked = { metamaskCompatibilityMode }
+							onInput = { requestToMetamaskCompatibilityMode }
 						/>
 					</li>
 					<li>
@@ -246,14 +249,11 @@ export function SettingsView(param: SettingsParam) {
 						<ImportExport/>
 					</li>
 					<li>
-						<p className = 'paragraph'>RPC Connections (experimental, does not work yet)</p>
-						<Rpcs/>
+						<p className = 'paragraph'>RPC Connections</p>
+						<Rpcs rpcEntries = { rpcEntries } />
 					</li>
 				</ul>
 			</section>
-			<footer class = 'modal-card-foot window-footer' style = 'border-bottom-left-radius: unset; border-bottom-right-radius: unset; border-top: unset; padding: 10px;'>
-				<button class = 'button is-primary is-success' onClick = { goHome }> Close </button>
-			</footer>
 		</div>
-	</> )
+	</main>
 }
