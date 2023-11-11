@@ -465,7 +465,7 @@ export function AddNewAddress(param: AddAddressParam) {
 						</> :
 						( showOnChainVerificationErrorBox() ?
 							<ErrorCheckBox
-								text = { `The name and symbol for this token was provided by the token itself and we have not validated its legitimacy.  A token may claim to have a name/symbol that is the same as another popular token (e.g., USDC or DAI) in an attempt to trick you.  If you recognize this token's name, please verify elsewhere that this is the correct address for it.` }
+								text = { `The name and symbol for this token was provided by the token itself and we have not validated its legitimacy. A token may claim to have a name/symbol that is the same as another popular token (e.g., USDC or DAI) in an attempt to trick you. If you recognize this token's name, please verify elsewhere that this is the correct address for it.` }
 								checked = { onChainInformationVerifiedByUser }
 								onInput = { setOnChainInformationVerifiedByUser }
 							/>
