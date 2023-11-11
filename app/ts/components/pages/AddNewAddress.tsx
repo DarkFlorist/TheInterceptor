@@ -320,9 +320,7 @@ export function AddNewAddress(param: AddAddressParam) {
 		})
 	}, [param.incompleteAddressBookEntry, param.activeAddress])
 
-	function areInputValid() {
-		return getCompleteAddressBookEntry() !== undefined
-	}
+	const areInputsValid = () => getCompleteAddressBookEntry() !== undefined
 
 	async function queryActiveAddressrmation(address: bigint | undefined) {
 		if (address === undefined) return
@@ -411,7 +409,7 @@ export function AddNewAddress(param: AddAddressParam) {
 	}
 
 	function isSubmitButtonDisabled() {
-		return !areInputValid()
+		return !areInputsValid()
 			|| errorString !== undefined 
 			|| incompleteAddressBookEntry.duplicateStatus === 'Duplicates'
 			|| (showOnChainVerificationErrorBox() && !onChainInformationVerifiedByUser)
@@ -474,7 +472,7 @@ export function AddNewAddress(param: AddAddressParam) {
 				</div>
 			</section>
 			<footer class = 'modal-card-foot window-footer' style = 'border-bottom-left-radius: unset; border-bottom-right-radius: unset; border-top: unset; padding: 10px;'>
-				{ param.setActiveAddressAndInformAboutIt === undefined || incompleteAddressBookEntry === undefined || activeAddress === stringToAddress(incompleteAddressBookEntry.address) ? <></> : <button class = 'button is-success is-primary' onClick = { createAndSwitch } disabled = { ! (areInputValid()) }> { param.incompleteAddressBookEntry.addingAddress ? 'Create and switch' : 'Modify and switch' } </button> }
+				{ param.setActiveAddressAndInformAboutIt === undefined || incompleteAddressBookEntry === undefined || activeAddress === stringToAddress(incompleteAddressBookEntry.address) ? <></> : <button class = 'button is-success is-primary' onClick = { createAndSwitch } disabled = { ! (areInputsValid()) }> { param.incompleteAddressBookEntry.addingAddress ? 'Create and switch' : 'Modify and switch' } </button> }
 				<button class = 'button is-success is-primary' onClick = { incompleteAddressBookEntry.duplicateStatus === 'Pending' ? () => {} : modifyOrAddEntry } disabled = { isSubmitButtonDisabled() }> { param.incompleteAddressBookEntry.addingAddress ? 'Create' : 'Modify' } </button>
 				<button class = 'button is-primary' style = 'background-color: var(--negative-color)' onClick = { param.close }>Cancel</button>
 			</footer>
