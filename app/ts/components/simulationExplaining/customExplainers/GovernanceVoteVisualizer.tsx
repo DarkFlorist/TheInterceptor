@@ -130,7 +130,7 @@ const ShowSuccessOrFailure = ({ currentBlockNumber, rpcConnectionStatus, simulat
 				errorMessage = { missingAbiText }
 				addressBookEntry = { simulateGovernanceContractExecutionReply.data.error.addressBookEntry }
 				renameAddressCallBack = { renameAddressCallBack }
-			/> : <ErrorComponent warning = { false } text = { simulateGovernanceContractExecutionReply.data.error.message }/> }
+			/> : <ErrorComponent text = { simulateGovernanceContractExecutionReply.data.error.message }/> }
 		</div>
 	}
 	return <div style = 'display: grid; grid-template-rows: max-content' >
