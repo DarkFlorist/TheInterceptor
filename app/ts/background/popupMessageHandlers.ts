@@ -94,13 +94,18 @@ export async function removeAddressBookEntry(simulator: Simulator, websiteTabCon
 			return await sendPopupMessageToOpenWindows({ method: 'popup_addressBookEntriesChanged' })
 		}
 		case 'My Contacts': {
-			await updateContacts((previousContacts) => previousContacts.filter((contact) => contact.address !== removeAddressBookEntry.data.address))
+			const contactsPromise = updateContacts((previousContacts) => previousContacts.filter((contact) => contact.address !== removeAddressBookEntry.data.address))
+			await updateUserAddressBookEntries((previousContacts) => previousContacts.filter((contact) => contact.address !== removeAddressBookEntry.data.address))
+			await contactsPromise
 			return await sendPopupMessageToOpenWindows({ method: 'popup_addressBookEntriesChanged' })
 		}
 		case 'Non Fungible Tokens':
 		case 'Other Contracts':
 		case 'ERC1155 Tokens':
-		case 'ERC20 Tokens': throw new Error('Tried to remove addressbook category that is not supported yet!')
+		case 'ERC20 Tokens': {
+			await updateUserAddressBookEntries((previousContacts) => previousContacts.filter((contact) => contact.address !== removeAddressBookEntry.data.address))
+			return await sendPopupMessageToOpenWindows({ method: 'popup_addressBookEntriesChanged' })
+		}
 		default: assertUnreachable(removeAddressBookEntry.data.addressBookCategory)
 	}
 }

@@ -246,7 +246,7 @@ export function AddNewAddress(param: AddAddressParam) {
 					address: inputedAddressBigInt,
 					symbol: incompleteAddressBookEntry.symbol,
 					logoUri: incompleteAddressBookEntry.logoUri,
-					entrySource: 'User',
+					entrySource: incompleteAddressBookEntry.entrySource,
 					abi: incompleteAddressBookEntry.abi,
 				}
 			}
@@ -259,7 +259,7 @@ export function AddNewAddress(param: AddAddressParam) {
 					symbol: incompleteAddressBookEntry.symbol,
 					logoUri: incompleteAddressBookEntry.logoUri,
 					decimals: undefined,
-					entrySource: 'User',
+					entrySource: incompleteAddressBookEntry.entrySource,
 					abi: incompleteAddressBookEntry.abi,
 				}
 			}
@@ -272,7 +272,7 @@ export function AddNewAddress(param: AddAddressParam) {
 					symbol: incompleteAddressBookEntry.symbol,
 					decimals: incompleteAddressBookEntry.decimals,
 					logoUri: incompleteAddressBookEntry.logoUri,
-					entrySource: 'User',
+					entrySource: incompleteAddressBookEntry.entrySource,
 					abi: incompleteAddressBookEntry.abi,
 				}
 			}
@@ -282,7 +282,7 @@ export function AddNewAddress(param: AddAddressParam) {
 				name,
 				address: inputedAddressBigInt,
 				logoUri: incompleteAddressBookEntry.logoUri,
-				entrySource: 'User',
+				entrySource: incompleteAddressBookEntry.entrySource,
 				abi: incompleteAddressBookEntry.abi,
 			}
 			case 'activeAddress': {
@@ -291,7 +291,7 @@ export function AddNewAddress(param: AddAddressParam) {
 					name,
 					address: inputedAddressBigInt,
 					askForAddressAccess: incompleteAddressBookEntry.askForAddressAccess,
-					entrySource: 'User',
+					entrySource: incompleteAddressBookEntry.entrySource,
 				}
 			}
 			default: assertUnreachable(incompleteAddressBookEntry.type)

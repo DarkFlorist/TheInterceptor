@@ -457,7 +457,7 @@ export function removeEthDonator(rpcNetwork: RpcNetwork, summary: SummaryOutcome
 
 type TokenLogAnalysisCardParams = {
 	simTx: SimulatedAndVisualizedTransaction
-	renameAddressCallBack: RenameAddressCallBack,
+	renameAddressCallBack: RenameAddressCallBack
 }
 
 export function TokenLogAnalysisCard({ simTx, renameAddressCallBack }: TokenLogAnalysisCardParams) {
@@ -488,7 +488,14 @@ export function TokenLogAnalysisCard({ simTx, renameAddressCallBack }: TokenLogA
 		</div>
 	</>
 }
-export function NonTokenLogAnalysisCard({ simTx }: TokenLogAnalysisCardParams) {
+
+type NonTokenLogAnalysisCardParams = {
+	simTx: SimulatedAndVisualizedTransaction
+	renameAddressCallBack: RenameAddressCallBack
+	addressMetaData: readonly AddressBookEntry[]
+}
+
+export function NonTokenLogAnalysisCard({ simTx, addressMetaData, renameAddressCallBack }: NonTokenLogAnalysisCardParams) {
 	const [showLogs, setShowLogs] = useState<boolean>(false)
 	if (simTx === undefined) return <></>
 	const nonTokenLogs = simTx.events.filter((event) => event.type !== 'TokenEvent')
@@ -505,7 +512,7 @@ export function NonTokenLogAnalysisCard({ simTx }: TokenLogAnalysisCardParams) {
 			{ !showLogs
 				? <></>
 				: <div class = 'card-content' style = 'border-bottom-left-radius: 0.25rem; border-bottom-right-radius: 0.25rem; border-left: 2px solid var(--card-bg-color); border-right: 2px solid var(--card-bg-color); border-bottom: 2px solid var(--card-bg-color);'>
-					<NonTokenLogAnalysis nonTokenLogs = { nonTokenLogs } />
+					<NonTokenLogAnalysis nonTokenLogs = { nonTokenLogs } addressMetaData = { addressMetaData } renameAddressCallBack = { renameAddressCallBack }/>
 				</div>
 			}
 		</div>
