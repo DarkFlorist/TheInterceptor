@@ -465,13 +465,13 @@ export function TokenLogAnalysisCard({ simTx, renameAddressCallBack }: TokenLogA
 	const identifiedSwap = identifySwap(simTx)
 	if (simTx === undefined) return <></>
 	const hasEthLogs = simTx.transaction.rpcNetwork.httpsRpc === 'https://rpc.dark.florist/birdchalkrenewtip' || simTx.transaction.rpcNetwork.httpsRpc === 'https://rpc.dark.florist/winedancemuffinborrow' //todo, remove this check, all txs should have ETH logs
-	const tokenEventsPlurar = hasEthLogs ? 'token events or ETH transactions' : 'token events'
+	const tokenEventsPlural = hasEthLogs ? 'token events or ETH transactions' : 'token events'
 	const tokenEventsSingular = hasEthLogs ? 'one token event or an ETH transaction' : 'one token event'
 	return <>
 		<div class = 'card' style = 'margin-top: 10px; margin-bottom: 10px'>
 			<header class = 'card-header noselect' style = 'cursor: pointer; height: 30px;' onClick = { () => setShowLogs((prevValue) => !prevValue) }>
 				<p class = 'card-header-title' style = 'font-weight: unset; font-size: 0.8em;'>
-					{ simTx.tokenResults.length === 0 ? `No ${ tokenEventsPlurar }` : `${ simTx.tokenResults.length > 1 ? `${ upperCaseFirstCharacter(convertNumberToCharacterRepresentationIfSmallEnough(simTx.tokenResults.length)) } ${ tokenEventsPlurar }` : tokenEventsSingular }` }
+					{ simTx.tokenResults.length === 0 ? `No ${ tokenEventsPlural }` : `${ simTx.tokenResults.length > 1 ? `${ upperCaseFirstCharacter(convertNumberToCharacterRepresentationIfSmallEnough(simTx.tokenResults.length)) } ${ tokenEventsPlural }` : tokenEventsSingular }` }
 				</p>
 				<div class = 'card-header-icon'>
 					<span class = 'icon' style = 'color: var(--text-color); font-weight: unset; font-size: 0.8em;'> V </span>
