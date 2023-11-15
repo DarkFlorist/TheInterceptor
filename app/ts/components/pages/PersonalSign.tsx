@@ -246,28 +246,33 @@ type EIP712Table = {
 	isSubTable: boolean
 }
 
+type EIP712Entry = {
+	name: string
+	entry: TypeEnrichedEIP712MessageRecord | undefined
+}
+
 function EIP712Table({ enrichedEIP712Message, renameAddressCallBack, isSubTable }: EIP712Table) {
-	function EIP712Entry({ key, entry }: { key: string, entry: TypeEnrichedEIP712MessageRecord  | undefined}) {
+	function EIP712Entry({ name, entry }: EIP712Entry) {
 		if (entry === undefined) return <></>
 		if (entry.type === 'record[]') {
 			return <>
-				<CellElement text = { `${ key }: ` }/>
+				<CellElement text = { `${ name }: ` }/>
 				<CellElement text = { entry.value.map((value) => <EIP712Table enrichedEIP712Message = { value } renameAddressCallBack = { renameAddressCallBack } isSubTable = { true }/>) } />
 			</>
 		}
 		if (entry.type === 'record') {
 			return <>
-				<CellElement text = { `${ key }: ` }/>
+				<CellElement text = { `${ name }: ` }/>
 				<CellElement text = { <EIP712Table enrichedEIP712Message = { entry.value } renameAddressCallBack = { renameAddressCallBack } isSubTable = { true }/> }/>
 			</>
 		}
 		return <>
-			<CellElement text = { `${ key }: ` }/>
+			<CellElement text = { `${ name }: ` }/>
 			<CellElement text = { <EnrichedSolidityTypeComponent valueType = { entry } renameAddressCallBack = { renameAddressCallBack }/> }/>
 		</>
 	}
 	return <span class = 'eip-712-table' style = { isSubTable ? 'justify-content: space-between;' : '' }>
-		{ Object.entries(enrichedEIP712Message).map(([key, entry]) => <EIP712Entry entry = { entry } key = { key }/>) }
+		{ Object.entries(enrichedEIP712Message).map(([name, entry]) => <EIP712Entry entry = { entry } name = { name }/>) }
 	</span>
 }
 
@@ -550,7 +555,9 @@ export function PersonalSign() {
 							</div>
 							: <></>
 						}
-						{ VisualizedPersonalSignRequest.simulationMode && (VisualizedPersonalSignRequest.activeAddress.address === undefined || VisualizedPersonalSignRequest.activeAddress.address !== MOCK_PRIVATE_KEYS_ADDRESS || VisualizedPersonalSignRequest.method != 'personal_sign')
+						{ !(VisualizedPersonalSignRequest.rpcNetwork.httpsRpc === 'https://rpc.dark.florist/birdchalkrenewtip' // todo remove this check
+							|| VisualizedPersonalSignRequest.rpcNetwork.httpsRpc === 'https://rpc.dark.florist/winedancemuffinborrow')
+						&& VisualizedPersonalSignRequest.simulationMode && (VisualizedPersonalSignRequest.activeAddress.address === undefined || VisualizedPersonalSignRequest.activeAddress.address !== MOCK_PRIVATE_KEYS_ADDRESS || VisualizedPersonalSignRequest.method !== 'personal_sign')
 							? <div style = 'display: grid'>
 								<div style = 'margin: 0px; margin-bottom: 10px; margin-left: 20px; margin-right: 20px; '>
 									<ErrorComponent text = 'Unfortunately we cannot simulate message signing as it requires private key access 😢.'/>
