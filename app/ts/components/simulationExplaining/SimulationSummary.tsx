@@ -175,13 +175,12 @@ type Erc721TokenChangesParams = {
 
 function Erc721TokenChanges(param: Erc721TokenChangesParams ) {
 	if ( param.Erc721TokenBalanceChanges.length == 0 ) return <></>
-
 	return <>
 		{ param.Erc721TokenBalanceChanges.map((tokenChange) => (
 			<div class = 'vertical-center' style = 'display: flex'>
 				<div class = { param.isImportant ? `box token-box ${ !tokenChange.received ? 'negative-box' : 'positive-box' }`: '' } style = 'display: flex'>
-					<p class = 'noselect nopointer' style = { `color: ${ param.textColor };` }>
-						{ `${ tokenChange.received ? ' + ' : ' - ' }` }
+					<p class = 'noselect nopointer' style = { `color: ${ param.textColor }; align-items: center` }>
+						&nbsp;{ `${ tokenChange.received ? '+' : '-' }` }&nbsp;
 					</p>
 					<TokenOrEth
 						tokenEntry = { tokenChange }

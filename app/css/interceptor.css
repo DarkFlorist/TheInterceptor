@@ -140,6 +140,7 @@ input[type = 'checkbox']:checked::before {
 
 .paragraph {
 	color: var(--text-color);
+	font-size: 14px;
 }
 
 .card-header-title {
