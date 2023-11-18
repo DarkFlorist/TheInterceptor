@@ -15,8 +15,10 @@ export default function Container(props: Props) {
 	const [content, setContent] = useState<string>('')
 	const [containerElement, setContainerElement] = useState<HTMLDivElement | null>(null)
 	const [clickPosition, setClickPosition] = useState<{ x: number, y: number } | null>(null)
+
 	let copyMessageTimeoutId: ReturnType<typeof setTimeout> | undefined = undefined
 	let toolTipTimeoutId: ReturnType<typeof setTimeout> | undefined = undefined
+
 	const onRefChange = useCallback( (containerElement: HTMLDivElement | null) => {
 		setContainerElement(containerElement)
 		if (containerElement) {
@@ -38,7 +40,7 @@ export default function Container(props: Props) {
 
 				// show on click
 				setContent(e.target.getAttribute(copyAttribute) || '')
-				setClickPosition({ x: e.pageX, y: e.pageY })
+				setClickPosition({ x: e.clientX, y: e.clientY })
 
 				copyMessageTimeoutId = setTimeout( () => {
 					// hide after timeout
@@ -47,15 +49,17 @@ export default function Container(props: Props) {
 					copyMessageTimeoutId = undefined
 				}, parseInt(delay))
 			}
+
 			const mouseover = (e: MouseEvent) => {
 				if (!(e.target instanceof Element) || (!e.target.hasAttribute(toolTipAttribute) && !e.target.hasAttribute(timerAttribute))) return
 				clearTimeout(toolTipTimeoutId)
 
 				// show on tooltip on mouseover
-				const content = e.target.getAttribute(toolTipAttribute)
+				const content = e.target.getAttribute(toolTipAttribute) || ''
+
 				toolTipTimeoutId = setTimeout( () => {
-					setContent(content || '')
-					setClickPosition({ x: e.pageX, y: e.pageY })
+					setContent(content)
+					setClickPosition({ x: e.clientX, y: e.clientY })
 				}, 250)
 			}
 
