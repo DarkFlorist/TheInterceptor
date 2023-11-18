@@ -550,7 +550,7 @@ export function PersonalSign() {
 							</div>
 							: <></>
 						}
-						{ VisualizedPersonalSignRequest.simulationMode && (VisualizedPersonalSignRequest.activeAddress.address === undefined || VisualizedPersonalSignRequest.activeAddress.address !== MOCK_PRIVATE_KEYS_ADDRESS || VisualizedPersonalSignRequest.method != 'personal_sign')
+						{ !(VisualizedPersonalSignRequest.rpcNetwork.httpsRpc === 'https://rpc.dark.florist/birdchalkrenewtip' || VisualizedPersonalSignRequest.rpcNetwork.httpsRpc === 'https://rpc.dark.florist/winedancemuffinborrow') && VisualizedPersonalSignRequest.simulationMode && (VisualizedPersonalSignRequest.activeAddress.address === undefined || VisualizedPersonalSignRequest.activeAddress.address !== MOCK_PRIVATE_KEYS_ADDRESS || VisualizedPersonalSignRequest.method != 'personal_sign')
 							? <div style = 'display: grid'>
 								<div style = 'margin: 0px; margin-bottom: 10px; margin-left: 20px; margin-right: 20px; '>
 									<ErrorComponent text = 'Unfortunately we cannot simulate message signing as it requires private key access 😢.'/>

@@ -117,23 +117,20 @@ export async function parseSolidityValueByTypeEnriched(ethereumClientService: Et
 	if (isArray) {
 		switch (categorized) {
 			case 'address': return { type: `${ categorized }[]`, value: await Promise.all(funtypes.ReadonlyArray(EthereumAddress).parse(value).map((value) => identifyAddress(ethereumClientService, userAddressBook, value, useLocalStorage))) }
-			case 'bool': return { type: `${ categorized }[]`, value: funtypes.ReadonlyArray(NonHexBigInt).parse(value).map((a) => a === 1n) }
-			case 'bytes': return { type: `${ categorized }[]`, value: funtypes.ReadonlyArray(EthereumData).parse(value) }
-			case 'fixedBytes': return { type: `${ categorized }[]`, value: funtypes.ReadonlyArray(EthereumData).parse(value) }
-			case 'integer': return { type: `${ categorized }[]`, value: funtypes.ReadonlyArray(funtypes.Union(NonHexBigInt, funtypes.Number, funtypes.BigInt)).parse(value).map((x) => BigInt(x)) }
-			case 'string': return { type: `${ categorized }[]`, value: funtypes.ReadonlyArray(funtypes.String).parse(value) }
-			default: assertNever(categorized)
+			default: {
+				const parsed = parseSolidityValueByTypePure(type, value, isArray)
+				if (parsed.type === 'address' || parsed.type === 'address[]') throw new Error('parsed to address or address array')
+				return parsed
+			}
 		}
-
 	}
 	switch (categorized) {
 		case 'address': return { type: categorized, value: await identifyAddress(ethereumClientService, userAddressBook, EthereumAddress.parse(value), useLocalStorage) }
-		case 'bool': return { type: categorized, value: NonHexBigInt.parse(value) === 1n }
-		case 'bytes': return { type: categorized, value: EthereumData.parse(value) }
-		case 'fixedBytes': return { type: categorized, value: EthereumData.parse(value) }
-		case 'integer': return { type: categorized, value: BigInt(funtypes.Union(NonHexBigInt, funtypes.Number, funtypes.BigInt).parse(value)) }
-		case 'string': return { type: categorized, value: funtypes.String.parse(value) }
-		default: assertNever(categorized)
+		default: {
+			const parsed = parseSolidityValueByTypePure(type, value, isArray)
+			if (parsed.type === 'address' || parsed.type === 'address[]') throw new Error('parsed to address or address array')
+			return parsed
+		}
 	}
 }
 
@@ -142,18 +139,20 @@ export function parseSolidityValueByTypePure(type: SolidityType, value: unknown,
 	if (isArray) {
 		switch (categorized) {
 			case 'address': return { type: `${ categorized }[]`, value: funtypes.ReadonlyArray(EthereumAddress).parse(value) }
-			case 'bool': return { type: `${ categorized }[]`, value: funtypes.ReadonlyArray(NonHexBigInt).parse(value).map((a) => a === 1n) }
+			case 'bool': return { type: `${ categorized }[]`, value: funtypes.ReadonlyArray(funtypes.Union(NonHexBigInt, funtypes.Boolean)).parse(value).map((a) => a === 1n || a === true) }
 			case 'bytes': return { type: `${ categorized }[]`, value: funtypes.ReadonlyArray(EthereumData).parse(value) }
 			case 'fixedBytes': return { type: `${ categorized }[]`, value: funtypes.ReadonlyArray(EthereumData).parse(value) }
 			case 'integer': return { type: `${ categorized }[]`, value: funtypes.ReadonlyArray(funtypes.Union(NonHexBigInt, funtypes.Number, funtypes.BigInt)).parse(value).map((x) => BigInt(x)) }
 			case 'string': return { type: `${ categorized }[]`, value: funtypes.ReadonlyArray(funtypes.String).parse(value) }
 			default: assertNever(categorized)
 		}
-
 	}
 	switch (categorized) {
 		case 'address': return { type: categorized, value: EthereumAddress.parse(value) }
-		case 'bool': return { type: categorized, value: NonHexBigInt.parse(value) === 1n }
+		case 'bool': {
+			const parsed = funtypes.Union(NonHexBigInt, funtypes.Boolean).parse(value)
+			return { type: categorized, value: parsed === 1n || parsed === true }
+		}
 		case 'bytes': return { type: categorized, value: EthereumData.parse(value) }
 		case 'fixedBytes': return { type: categorized, value: EthereumData.parse(value) }
 		case 'integer': return { type: categorized, value: BigInt(funtypes.Union(NonHexBigInt, funtypes.Number, funtypes.BigInt).parse(value)) }

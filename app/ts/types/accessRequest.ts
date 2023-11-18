@@ -1,7 +1,7 @@
 import * as funtypes from 'funtypes'
 import { Website } from './websiteAccessTypes.js'
 import { ActiveAddress, ActiveAddressEntry, AddressBookEntry } from './addressBookTypes.js'
-import { EthereumAddress, EthereumTimestamp, OptionalEthereumAddress } from './wire-types.js'
+import { EthereumAddress, EthereumQuantity, EthereumTimestamp, OptionalEthereumAddress } from './wire-types.js'
 import { SignerName } from './signerTypes.js'
 import { InterceptedRequest, UniqueRequestIdentifier, WebsiteSocket } from '../utils/requests.js'
 import { NamedTokenId, ProtectorResults, SimulatedAndVisualizedTransaction, SimulationState, TokenPriceEstimate, VisualizerResult, WebsiteCreatedEthereumUnsignedTransaction } from './visualizer-types.js'
@@ -80,6 +80,7 @@ export const SimulatedPendingTransactionBase = funtypes.ReadonlyObject({
 	simulationMode: funtypes.Boolean,
 	activeAddress: EthereumAddress,
 	created: EthereumTimestamp,
+	transactionIdentifier: EthereumQuantity,
 })
 
 export type SimulatedPendingTransaction = funtypes.Static<typeof SimulatedPendingTransaction>

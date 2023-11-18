@@ -2,7 +2,7 @@ import { changeActiveAddressAndChainAndResetSimulation, changeActiveRpc, getPrep
 import { getSettings, setUseTabsInsteadOfPopup, setMakeMeRich, setPage, setUseSignersAddressAsActiveAddress, updateActiveAddresses, updateContacts, updateWebsiteAccess, exportSettingsAndAddressBook, importSettingsAndAddressBook, getMakeMeRich, getUseTabsInsteadOfPopup, getMetamaskCompatibilityMode, setMetamaskCompatibilityMode } from './settings.js'
 import { getPendingTransactions, getCurrentTabId, getTabState, saveCurrentTabId, setRpcList, getRpcList, getPrimaryRpcForChain, getSignerName, getRpcConnectionStatus, updateUserAddressBookEntries, getSimulationResults, setIdsOfOpenedTabs, getIdsOfOpenedTabs } from './storageVariables.js'
 import { Simulator } from '../simulation/simulator.js'
-import { ChangeActiveAddress, ChangeMakeMeRich, ChangePage, RemoveTransaction, RequestAccountsFromSigner, TransactionConfirmation, InterceptorAccess, ChangeInterceptorAccess, ChainChangeConfirmation, EnableSimulationMode, ChangeActiveChain, AddOrEditAddressBookEntry, GetAddressBookData, RemoveAddressBookEntry, InterceptorAccessRefresh, InterceptorAccessChangeAddress, Settings, RefreshConfirmTransactionMetadata, RefreshInterceptorAccessMetadata, ChangeSettings, ImportSettings, SetRpcList, IdentifyAddress, FindAddressBookEntryWithSymbolOrName, PersonalSignApproval, UpdateHomePage, RemoveSignedMessage, SimulateGovernanceContractExecutionReply, FetchAbiAndNameFromEtherscan } from '../types/interceptor-messages.js'
+import { ChangeActiveAddress, ChangeMakeMeRich, ChangePage, RemoveTransaction, RequestAccountsFromSigner, TransactionConfirmation, InterceptorAccess, ChangeInterceptorAccess, ChainChangeConfirmation, EnableSimulationMode, ChangeActiveChain, AddOrEditAddressBookEntry, GetAddressBookData, RemoveAddressBookEntry, InterceptorAccessRefresh, InterceptorAccessChangeAddress, Settings, RefreshConfirmTransactionMetadata, RefreshInterceptorAccessMetadata, ChangeSettings, ImportSettings, SetRpcList, IdentifyAddress, FindAddressBookEntryWithSymbolOrName, PersonalSignApproval, UpdateHomePage, RemoveSignedMessage, SimulateGovernanceContractExecutionReply, FetchAbiAndNameFromEtherscan, SimulateGovernanceContractExecution } from '../types/interceptor-messages.js'
 import { formEthSendTransaction, formSendRawTransaction, resolvePendingTransaction, updateConfirmTransactionViewWithPendingTransactionOrClose } from './windows/confirmTransaction.js'
 import { resolvePersonalSign } from './windows/personalSign.js'
 import { getAddressMetadataForAccess, requestAddressChange, resolveInterceptorAccess } from './windows/interceptorAccess.js'
@@ -224,7 +224,7 @@ export async function refreshPopupConfirmTransactionSimulation(simulator: Simula
 	const [firstTxn, ...remainingTxns] = await getPendingTransactions()
 	if (firstTxn === undefined) return await updateConfirmTransactionViewWithPendingTransactionOrClose()
 	if (firstTxn.status !== 'Simulated') return
-	const transactionToSimulate = firstTxn.originalRequestParameters.method === 'eth_sendTransaction' ? await formEthSendTransaction(ethereumClientService, firstTxn.activeAddress, firstTxn.simulationMode, firstTxn.transactionToSimulate.website, firstTxn.originalRequestParameters, firstTxn.created) : await formSendRawTransaction(ethereumClientService, firstTxn.originalRequestParameters, firstTxn.transactionToSimulate.website, firstTxn.created)
+	const transactionToSimulate = firstTxn.originalRequestParameters.method === 'eth_sendTransaction' ? await formEthSendTransaction(ethereumClientService, firstTxn.activeAddress, firstTxn.simulationMode, firstTxn.transactionToSimulate.website, firstTxn.originalRequestParameters, firstTxn.created, firstTxn.transactionIdentifier) : await formSendRawTransaction(ethereumClientService, firstTxn.originalRequestParameters, firstTxn.transactionToSimulate.website, firstTxn.created, firstTxn.transactionIdentifier)
 	const refreshMessage = await refreshConfirmTransactionSimulation(simulator, ethereumClientService, firstTxn.activeAddress, firstTxn.simulationMode, firstTxn.uniqueRequestIdentifier, transactionToSimulate)
 	if ('error' in transactionToSimulate) {
 		return await sendPopupMessageToOpenWindows({
@@ -426,13 +426,14 @@ export async function popupFindAddressBookEntryWithSymbolOrName(parsedRequest: F
 	} })
 }
 
-export async function simulateGovernanceContractExecutionOnPass(ethereum: EthereumClientService, userAddressBook: UserAddressBook) {
-	const [firstTxn, ..._remainingTxns] = await getPendingTransactions()
-	if (firstTxn === undefined) return                    
-	const governanceContractExecutionVisualisation = await simulateGovernanceContractExecution(firstTxn, ethereum, userAddressBook)
+export async function simulateGovernanceContractExecutionOnPass(ethereum: EthereumClientService, userAddressBook: UserAddressBook, request: SimulateGovernanceContractExecution) {
+	const pendingTransactions = await getPendingTransactions()
+	const transaction = pendingTransactions.find((tx) => tx.transactionIdentifier === request.data.transactionIdentifier)
+	if (transaction === undefined) throw new Error(`Could not find transactionIdentifier: ${ request.data.transactionIdentifier }`)
+	const governanceContractExecutionVisualisation = await simulateGovernanceContractExecution(transaction, ethereum, userAddressBook)
 	return await sendPopupMessageToOpenWindows(serialize(SimulateGovernanceContractExecutionReply, {
 		method: 'popup_simulateGovernanceContractExecutionReply' as const,
-		data: governanceContractExecutionVisualisation,
+		data: { ...governanceContractExecutionVisualisation, transactionIdentifier: request.data.transactionIdentifier }
 	}))
 }
 

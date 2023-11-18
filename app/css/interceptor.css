@@ -680,7 +680,7 @@ svg.spinner > circle {
 
 .textbox {
 	background-color: var(--alpha-005);
-	padding: 10px;
+	padding: 5px;
 	word-break: break-all;
 	white-space: pre-wrap;
 	border-radius: 4px;
