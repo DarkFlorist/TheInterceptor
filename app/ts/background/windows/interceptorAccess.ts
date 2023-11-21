@@ -121,13 +121,13 @@ export async function requestAccessFromUser(
 		}
 
 		const justAddToPending = await verifyPendingRequests()
-		const hasAcces = verifyAccess(websiteTabConnections, socket, true, website.websiteOrigin, activeAddress, await getSettings())
+		const hasAccess = verifyAccess(websiteTabConnections, socket, true, website.websiteOrigin, activeAddress, await getSettings())
 
-		if (verify === 'hasAccess') { // we already have access, just reply with the gate keeped request right away
+		if (hasAccess === 'hasAccess') { // we already have access, just reply with the gate keeped request right away
 			if (request !== undefined) await handleInterceptedRequest(undefined, website.websiteOrigin, website, simulator, socket, request, websiteTabConnections)
 			return
 		}
-		if (verify !== 'askAccess') return
+		if (hasAccess !== 'askAccess') return
 		if (!justAddToPending) {
 			addWindowTabListener(closeWindowCallback)
 			const popupOrTab = await openPopupOrTab({

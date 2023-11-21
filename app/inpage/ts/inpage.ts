@@ -206,16 +206,17 @@ class InterceptorMessageListener {
 		}
 	}
 
-	private readonly WindowEthereumSend = async (payload: { readonly id: string | number | null, readonly method: string, readonly params: readonly unknown[], _params: readonly unknown[] }, maybeCallBack: undefined | ((error: IJsonRpcError | null, response: IJsonRpcSuccess<unknown> | null) => void)) => {
-		if (maybeCallBack !== undefined && typeof maybeCallBack === 'function') return this.WindowEthereumSendAsync(payload, maybeCallBack)
+	private readonly WindowEthereumSend = async (payload: { readonly id: string | number | null, readonly method: string, readonly params: readonly unknown[], _params: readonly unknown[] } | string, maybeCallBack: undefined | ((error: IJsonRpcError | null, response: IJsonRpcSuccess<unknown> | null) => void)) => {
+		const fullPayload = typeof payload === 'string' ? { method: payload, id: 0, params: [] } : payload
+		if (maybeCallBack !== undefined && typeof maybeCallBack === 'function') return this.WindowEthereumSendAsync(fullPayload, maybeCallBack)
 		if (this.metamaskCompatibilityMode) {
 			if (window.ethereum === undefined) throw new Error('window.ethereum is missing')
-			switch (payload.method) {
+			switch (fullPayload.method) {
 				case 'eth_coinbase': 
-				case 'eth_accounts': return { jsonrpc: '2.0', id: payload.id, result: window.ethereum.selectedAddress === undefined || window.ethereum.selectedAddress === null ? [] : [window.ethereum.selectedAddress] }
-				case 'net_version': return { jsonrpc: '2.0', id: payload.id, result: window.ethereum.networkVersion }
-				case 'eth_chainId': return { jsonrpc: '2.0', id: payload.id, result: window.ethereum.chainId }
-				default: throw new EthereumJsonRpcError(METAMASK_INVALID_METHOD_PARAMS, `Invalid method parameter for window.ethereum.send: ${ payload.method }`)
+				case 'eth_accounts': return { jsonrpc: '2.0', id: fullPayload.id, result: window.ethereum.selectedAddress === undefined || window.ethereum.selectedAddress === null ? [] : [window.ethereum.selectedAddress] }
+				case 'net_version': return { jsonrpc: '2.0', id: fullPayload.id, result: window.ethereum.networkVersion }
+				case 'eth_chainId': return { jsonrpc: '2.0', id: fullPayload.id, result: window.ethereum.chainId }
+				default: throw new EthereumJsonRpcError(METAMASK_INVALID_METHOD_PARAMS, `Invalid method parameter for window.ethereum.send: ${ fullPayload.method }`)
 			}
 		}
 		throw new EthereumJsonRpcError(METAMASK_METHOD_NOT_SUPPORTED, 'Method not supported (window.ethereum.send).')
