@@ -166,6 +166,8 @@ class InterceptorMessageListener {
 	private readonly onChainChangedCallBacks: Set<((chainId: string) => void)> = new Set()
 
 	private waitForAccountsFromWallet: InterceptorFuture<boolean> | undefined = undefined
+	private signerAccounts: string[] = []
+	private pendingSignerAddressRequest: InterceptorFuture<boolean> | undefined = undefined
 
 	public constructor() {
 		this.injectEthereumIntoWindow()
@@ -284,12 +286,33 @@ class InterceptorMessageListener {
 
 	private readonly requestAccountsFromSigner = async (ask_eth_requestAccounts: boolean) => {
 		if (this.signerWindowEthereumRequest === undefined) return
-		const reply = await this.signerWindowEthereumRequest({ method: ask_eth_requestAccounts ? 'eth_requestAccounts' : 'eth_accounts', params: [] })
-		if (!Array.isArray(reply)) return
-		await this.sendMessageToBackgroundPage({ method: 'eth_accounts_reply', params: [reply, ask_eth_requestAccounts] })
-		if (this.waitForAccountsFromWallet !== undefined) {
-			this.waitForAccountsFromWallet.resolve(true)
-			this.waitForAccountsFromWallet = undefined
+		if (!ask_eth_requestAccounts) {
+			const reply = await this.signerWindowEthereumRequest({ method: 'eth_accounts', params: [] })
+			if (!Array.isArray(reply)) throw new Error('Signer returned something else than an array')
+			await this.sendMessageToBackgroundPage({ method: 'eth_accounts_reply', params: [{ type: 'success', accounts: this.signerAccounts, requestAccounts: ask_eth_requestAccounts }] })
+			if (this.waitForAccountsFromWallet !== undefined) {
+				this.waitForAccountsFromWallet.resolve(true)
+				this.waitForAccountsFromWallet = undefined
+			}
+			return
+		}
+		if (this.pendingSignerAddressRequest !== undefined) {
+			await this.pendingSignerAddressRequest
+			await this.sendMessageToBackgroundPage({ method: 'eth_accounts_reply', params: [{ type: 'success', accounts: this.signerAccounts, requestAccounts: ask_eth_requestAccounts }] })
+			return
+		}
+		this.pendingSignerAddressRequest = new InterceptorFuture()
+		try {
+			const reply = await this.signerWindowEthereumRequest({ method: 'eth_requestAccounts', params: [] })
+			if (!Array.isArray(reply)) throw new Error('Signer returned something else than an array')
+			this.signerAccounts = reply
+			await this.sendMessageToBackgroundPage({ method: 'eth_accounts_reply', params: [{ type: 'success', accounts: this.signerAccounts, requestAccounts: ask_eth_requestAccounts }] })
+			return
+		} catch(error) {
+			await this.sendMessageToBackgroundPage({ method: 'eth_accounts_reply', params: [{ type: 'error', requestAccounts: ask_eth_requestAccounts }]})
+		} finally {
+			this.pendingSignerAddressRequest.resolve(true)
+			this.pendingSignerAddressRequest = undefined
 		}
 	}
 
@@ -359,7 +382,7 @@ class InterceptorMessageListener {
 					return this.onChainChangedCallBacks.forEach((callback) => callback(reply))
 				}
 				case 'request_signer_to_eth_requestAccounts': return await this.requestAccountsFromSigner(true)
-				case 'request_signer_to_eth_accounts':  return await this.requestAccountsFromSigner(false)
+				case 'request_signer_to_eth_accounts': return await this.requestAccountsFromSigner(false)
 				case 'request_signer_to_wallet_switchEthereumChain': return await this.requestChangeChainFromSigner(replyRequest.result as string)
 				case 'request_signer_chainId': return await this.requestChainIdFromSigner()
 				default: break
@@ -533,13 +556,13 @@ class InterceptorMessageListener {
 
 		// subscribe for signers events
 		window.ethereum.on('accountsChanged', (accounts: readonly string[]) => {
-			this.WindowEthereumRequest({ method: 'eth_accounts_reply', params: [accounts, false] })
+			this.WindowEthereumRequest({ method: 'eth_accounts_reply', params: [{ type: 'success', accounts, requestAccounts: false }] })
 		})
 		window.ethereum.on('connect', (_connectInfo: ProviderConnectInfo) => {
 
 		})
 		window.ethereum.on('disconnect', (_error: ProviderRpcError) => {
-			this.WindowEthereumRequest({ method: 'eth_accounts_reply', params: [[], false] })
+			this.WindowEthereumRequest({ method: 'eth_accounts_reply', params: [{ type: 'success', accounts: [], requestAccounts: false }] })
 		})
 		window.ethereum.on('chainChanged', (chainId: string) => {
 			// TODO: this is a hack to get coinbase working that calls this numbers in base 10 instead of in base 16
