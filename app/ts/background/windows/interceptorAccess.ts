@@ -222,7 +222,6 @@ async function resolve(simulator: Simulator, websiteTabConnections: WebsiteTabCo
 	const isAffectedEntry = (pending: PendingAccessRequest) => pending.website.websiteOrigin === website.websiteOrigin && (pending.requestAccessToAddress?.address === accessReply.requestAccessToAddress || pending.requestAccessToAddress?.address === accessReply.originalRequestAccessToAddress) 
 
 	const pendingRequests = await updatePendingAccessRequests(async (previousPendingAccessRequests) => previousPendingAccessRequests.filter((pending) => !isAffectedEntry(pending)))
-	const affected = pendingRequests.previous.filter((pending) => isAffectedEntry(pending))
 
 	if (pendingRequests.current.length > 0) return sendPopupMessageToOpenWindows({ method: 'popup_interceptorAccessDialog', data: pendingRequests.current })
 
@@ -231,10 +230,9 @@ async function resolve(simulator: Simulator, websiteTabConnections: WebsiteTabCo
 		await closePopupOrTab(openedDialog.popupOrTab)
 		openedDialog = undefined
 	}
+	const affectedEntryWithPendingRequest = pendingRequests.previous.filter((pending): pending is PendingAccessRequest & { request: InterceptedRequest } => isAffectedEntry(pending) && pending.request !== undefined)
 
-	await Promise.all(affected.map(async (r) => {
-		if (r.request) await handleInterceptedRequest(undefined, r.website.websiteOrigin, r.website, simulator, r.socket, r.request, websiteTabConnections)
-	}))
+	await Promise.all(affectedEntryWithPendingRequest.map((r) => handleInterceptedRequest(undefined, r.website.websiteOrigin, r.website, simulator, r.socket, r.request, websiteTabConnections)))
 }
 
 export async function requestAddressChange(websiteTabConnections: WebsiteTabConnections, message: InterceptorAccessChangeAddress | InterceptorAccessRefresh) {

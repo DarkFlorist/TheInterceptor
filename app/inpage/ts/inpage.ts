@@ -285,21 +285,27 @@ class InterceptorMessageListener {
 
 	private readonly WindowEthereumEnable = async () => this.WindowEthereumRequest({ method: 'eth_requestAccounts' })
 
-	private readonly requestAccountsFromSigner = async (ask_eth_requestAccounts: boolean) => {
+	// attempts to call signer for eth_accounts
+	private readonly getAccountsFromSigner = async () => {
 		if (this.signerWindowEthereumRequest === undefined) return
-		if (!ask_eth_requestAccounts) {
+		try {
 			const reply = await this.signerWindowEthereumRequest({ method: 'eth_accounts', params: [] })
 			if (!Array.isArray(reply)) throw new Error('Signer returned something else than an array')
-			await this.sendMessageToBackgroundPage({ method: 'eth_accounts_reply', params: [{ type: 'success', accounts: this.signerAccounts, requestAccounts: ask_eth_requestAccounts }] })
-			if (this.waitForAccountsFromWallet !== undefined) {
-				this.waitForAccountsFromWallet.resolve(true)
-				this.waitForAccountsFromWallet = undefined
-			}
-			return
+			await this.sendMessageToBackgroundPage({ method: 'eth_accounts_reply', params: [{ type: 'success', accounts: this.signerAccounts, requestAccounts: false }] })
+		} catch (error) {
+			await this.sendMessageToBackgroundPage({ method: 'eth_accounts_reply', params: [{ type: 'error', requestAccounts: false }]})
 		}
+		if (this.waitForAccountsFromWallet !== undefined) {
+			this.waitForAccountsFromWallet.resolve(true)
+			this.waitForAccountsFromWallet = undefined
+		}
+	}
+	// attempts to call signer for eth_requestAccounts
+	private readonly requestAccountsFromSigner = async () => {
+		if (this.signerWindowEthereumRequest === undefined) return
 		if (this.pendingSignerAddressRequest !== undefined) {
 			await this.pendingSignerAddressRequest
-			await this.sendMessageToBackgroundPage({ method: 'eth_accounts_reply', params: [{ type: 'success', accounts: this.signerAccounts, requestAccounts: ask_eth_requestAccounts }] })
+			await this.sendMessageToBackgroundPage({ method: 'eth_accounts_reply', params: [{ type: 'success', accounts: this.signerAccounts, requestAccounts: true }] })
 			return
 		}
 		this.pendingSignerAddressRequest = new InterceptorFuture()
@@ -307,10 +313,9 @@ class InterceptorMessageListener {
 			const reply = await this.signerWindowEthereumRequest({ method: 'eth_requestAccounts', params: [] })
 			if (!Array.isArray(reply)) throw new Error('Signer returned something else than an array')
 			this.signerAccounts = reply
-			await this.sendMessageToBackgroundPage({ method: 'eth_accounts_reply', params: [{ type: 'success', accounts: this.signerAccounts, requestAccounts: ask_eth_requestAccounts }] })
-			return
-		} catch(error) {
-			await this.sendMessageToBackgroundPage({ method: 'eth_accounts_reply', params: [{ type: 'error', requestAccounts: ask_eth_requestAccounts }]})
+			await this.sendMessageToBackgroundPage({ method: 'eth_accounts_reply', params: [{ type: 'success', accounts: this.signerAccounts, requestAccounts: true }] })
+		} catch (error) {
+			await this.sendMessageToBackgroundPage({ method: 'eth_accounts_reply', params: [{ type: 'error', requestAccounts: true }]})
 		} finally {
 			this.pendingSignerAddressRequest.resolve(true)
 			this.pendingSignerAddressRequest = undefined
@@ -382,8 +387,8 @@ class InterceptorMessageListener {
 					}
 					return this.onChainChangedCallBacks.forEach((callback) => callback(reply))
 				}
-				case 'request_signer_to_eth_requestAccounts': return await this.requestAccountsFromSigner(true)
-				case 'request_signer_to_eth_accounts': return await this.requestAccountsFromSigner(false)
+				case 'request_signer_to_eth_requestAccounts': return await this.requestAccountsFromSigner()
+				case 'request_signer_to_eth_accounts': return await this.getAccountsFromSigner()
 				case 'request_signer_to_wallet_switchEthereumChain': return await this.requestChangeChainFromSigner(replyRequest.result as string)
 				case 'request_signer_chainId': return await this.requestChainIdFromSigner()
 				default: break
@@ -512,7 +517,7 @@ class InterceptorMessageListener {
 			this.waitForAccountsFromWallet = new InterceptorFuture()
 			this.enableMetamaskCompatibilityMode((await connectToSigner()).metamaskCompatibilityMode)
 			await this.requestChainIdFromSigner()
-			await this.requestAccountsFromSigner(false)
+			await this.getAccountsFromSigner()
 		} else {
 			this.enableMetamaskCompatibilityMode((await connectToSigner()).metamaskCompatibilityMode)
 		}
