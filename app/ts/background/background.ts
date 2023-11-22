@@ -1,4 +1,4 @@
-import { PopupMessage, RPCReply, Settings } from '../types/interceptor-messages.js'
+import { InpageScriptRequest, PopupMessage, RPCReply, Settings } from '../types/interceptor-messages.js'
 import 'webextension-polyfill'
 import { Simulator, runProtectorsForTransaction, visualizeTransaction } from '../simulation/simulator.js'
 import { getEthDonator, getSignerName, getSimulationResults, updateSimulationResults, updateSimulationResultsWithCallBack } from './storageVariables.js'
@@ -7,13 +7,13 @@ import { blockNumber, call, chainId, estimateGas, gasPrice, getAccounts, getBala
 import { changeActiveAddress, changeMakeMeRich, changePage, resetSimulation, confirmDialog, refreshSimulation, removeTransaction, requestAccountsFromSigner, refreshPopupConfirmTransactionSimulation, confirmPersonalSign, confirmRequestAccess, changeInterceptorAccess, changeChainDialog, popupChangeActiveRpc, enableSimulationMode, addOrModifyAddressBookEntry, getAddressBookData, removeAddressBookEntry, homeOpened, interceptorAccessChangeAddressOrRefresh, refreshPopupConfirmTransactionMetadata, changeSettings, importSettings, exportSettings, setNewRpcList, popupIdentifyAddress, popupFindAddressBookEntryWithSymbolOrName, removeSignedMessage, simulateGovernanceContractExecutionOnPass, fetchAbiAndNameFromEtherscan, openNewTab, settingsOpened } from './popupMessageHandlers.js'
 import { ProtectorResults, SimulationState, VisualizedSimulatorState, VisualizerResult, WebsiteCreatedEthereumUnsignedTransaction } from '../types/visualizer-types.js'
 import { WebsiteTabConnections } from '../types/user-interface-types.js'
-import { interceptorAccessMetadataRefresh, requestAccessFromUser, updateInterceptorAccessViewWithPendingRequests } from './windows/interceptorAccess.js'
+import { askForSignerAccountsFromSignerIfNotAvailable, interceptorAccessMetadataRefresh, requestAccessFromUser, updateInterceptorAccessViewWithPendingRequests } from './windows/interceptorAccess.js'
 import { FourByteExplanations, MAKE_YOU_RICH_TRANSACTION, METAMASK_ERROR_FAILED_TO_PARSE_REQUEST, METAMASK_ERROR_NOT_AUTHORIZED, METAMASK_ERROR_NOT_CONNECTED_TO_CHAIN } from '../utils/constants.js'
 import { PriceEstimator } from '../simulation/priceEstimator.js'
-import { sendActiveAccountChangeToApprovedWebsitePorts, sendMessageToApprovedWebsitePorts, updateWebsiteApprovalAccesses } from './accessManagement.js'
+import { sendActiveAccountChangeToApprovedWebsitePorts, sendMessageToApprovedWebsitePorts, updateWebsiteApprovalAccesses, verifyAccess } from './accessManagement.js'
 import { getActiveAddressEntry, getAddressBookEntriesForVisualiser, identifyAddress, nameTokenIds } from './metadataUtils.js'
-import { sendPopupMessageToOpenWindows } from './backgroundUtils.js'
-import { assertUnreachable } from '../utils/typescript.js'
+import { getActiveAddress, sendPopupMessageToOpenWindows } from './backgroundUtils.js'
+import { assertNever, assertUnreachable } from '../utils/typescript.js'
 import { EthereumClientService } from '../simulation/services/EthereumClientService.js'
 import { appendTransaction, calculateGasPrice, copySimulationState, getNonPrependedSimulatedTransactions, getNonceFixedSimulatedTransactions, getTokenBalancesAfter, getWebsiteCreatedEthereumUnsignedTransactions, mockSignTransaction, setPrependTransactionsQueue, setSimulationTransactionsAndSignedMessages } from '../simulation/services/SimulationModeEthereumClientService.js'
 import { Semaphore } from '../utils/semaphore.js'
@@ -35,6 +35,7 @@ import { simulateCompoundGovernanceExecution } from '../simulation/compoundGover
 import { Interface } from 'ethers'
 import { CompoundGovernanceAbi } from '../utils/abi.js'
 import { dataStringWith0xStart } from '../utils/bigint.js'
+import { connectedToSigner, ethAccountsReply, signerChainChanged, walletSwitchEthereumChainReply } from './providerMessageHandlers.js'
 
 async function updateMetadataForSimulation(simulationState: SimulationState, ethereum: EthereumClientService, visualizerResults: readonly VisualizerResult[], protectorResults: readonly ProtectorResults[]) {
 	const settingsPromise = getSettings()
@@ -456,6 +457,59 @@ export async function changeActiveRpc(simulator: Simulator, websiteTabConnection
 	})
 	sendMessageToApprovedWebsitePorts(websiteTabConnections, { method: 'request_signer_to_wallet_switchEthereumChain', result: rpcNetwork.chainId })
 	await sendPopupMessageToOpenWindows({ method: 'popup_settingsUpdated', data: await getSettings() })
+}
+
+function getProviderHandler(method: string) {
+	switch (method) {
+		case 'eth_accounts_reply': return { method: 'eth_accounts_reply' as const, func: ethAccountsReply }
+		case 'signer_chainChanged': return { method: 'signer_chainChanged' as const, func: signerChainChanged }
+		case 'wallet_switchEthereumChain_reply': return { method: 'wallet_switchEthereumChain_reply' as const, func: walletSwitchEthereumChainReply }
+		case 'connected_to_signer': return { method: 'connected_to_signer' as const, func: connectedToSigner }
+		default: return { method: 'notProviderMethod' as const }
+	}
+}
+
+export const handleInterceptedRequest = async (port: browser.runtime.Port | undefined, websiteOrigin: string, websitePromise: Promise<Website> | Website, simulator: Simulator, socket: WebsiteSocket, request: InterceptedRequest, websiteTabConnections: WebsiteTabConnections): Promise<unknown> => {
+	const activeAddress = await getActiveAddress(await getSettings(), socket.tabId)
+	const access = verifyAccess(websiteTabConnections, socket, request.method === 'eth_requestAccounts' || request.method === 'eth_call', websiteOrigin, activeAddress, await getSettings())
+	const providerHandler = getProviderHandler(request.method)
+	const identifiedMethod = providerHandler.method
+	if (identifiedMethod !== 'notProviderMethod') {
+		if (port === undefined) return
+		const providerHandlerReturn = await providerHandler.func(simulator, websiteTabConnections, port, request, access)
+		const message: InpageScriptRequest = {
+			uniqueRequestIdentifier: request.uniqueRequestIdentifier,
+			...providerHandlerReturn,
+		}
+		return replyToInterceptedRequest(websiteTabConnections, message)
+	}
+	if (access === 'hasAccess' && activeAddress === undefined && request.method === 'eth_requestAccounts') {
+		// user has granted access to the site, but not to this account and the application is requesting accounts
+		const account = await askForSignerAccountsFromSignerIfNotAvailable(websiteTabConnections, socket)
+		if (account.length === 0) return refuseAccess(websiteTabConnections, request)
+		const result: unknown = await handleInterceptedRequest(port, websiteOrigin, websitePromise, simulator, socket, request, websiteTabConnections)
+		return result
+	}
+
+	if (access === 'noAccess' || activeAddress === undefined) {
+		switch (request.method) {
+			case 'eth_accounts': return replyToInterceptedRequest(websiteTabConnections, { method: 'eth_accounts' as const, result: [], uniqueRequestIdentifier: request.uniqueRequestIdentifier })
+			// if user has not given access, assume we are on chain 1
+			case 'eth_chainId': return replyToInterceptedRequest(websiteTabConnections, { method: request.method, result: 1n, uniqueRequestIdentifier: request.uniqueRequestIdentifier })
+			case 'net_version': return replyToInterceptedRequest(websiteTabConnections, { method: request.method, result: 1n, uniqueRequestIdentifier: request.uniqueRequestIdentifier })
+			default: break
+		}
+	}
+
+	switch (access) {
+		case 'askAccess': return await gateKeepRequestBehindAccessDialog(simulator, websiteTabConnections, socket, request, await websitePromise, activeAddress, await getSettings())
+		case 'noAccess': return refuseAccess(websiteTabConnections, request)
+		case 'hasAccess': {
+			if (activeAddress === undefined) return refuseAccess(websiteTabConnections, request)
+			return await handleContentScriptMessage(simulator, websiteTabConnections, request, await websitePromise, activeAddress)
+		}
+		default: assertNever(access)
+	}
 }
 
 export async function handleContentScriptMessage(simulator: Simulator, websiteTabConnections: WebsiteTabConnections, request: InterceptedRequest, website: Website, activeAddress: bigint | undefined) {
