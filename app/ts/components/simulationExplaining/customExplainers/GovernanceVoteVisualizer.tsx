@@ -3,6 +3,7 @@ import { AddressBookEntry } from '../../../types/addressBookTypes.js'
 import { ExternalPopupMessage, GovernanceVoteInputParameters, SimulateGovernanceContractExecutionReply } from '../../../types/interceptor-messages.js'
 import { RenameAddressCallBack, RpcConnectionStatus } from '../../../types/user-interface-types.js'
 import { SimulatedAndVisualizedTransaction, SimulationAndVisualisationResults } from '../../../types/visualizer-types.js'
+import { EthereumQuantity } from '../../../types/wire-types.js'
 import { checksummedAddress, dataStringWith0xStart } from '../../../utils/bigint.js'
 import { BIG_FONT_SIZE } from '../../../utils/constants.js'
 import { TransactionCardParams } from '../../pages/ConfirmTransaction.js'
@@ -21,7 +22,7 @@ export function GovernanceTransactionExecution(param: TransactionCardParams) {
 			removeTransaction = { undefined }
 			activeAddress = { param.activeAddress }
 			renameAddressCallBack = { param.renameAddressCallBack }
-			addressMetaData = { param.addressMetaData }
+			addressMetaData = { param.simulationAndVisualisationResults.addressBookEntries }
 		/>
 	</>
 }
@@ -95,12 +96,11 @@ export type ShowSuccessOrFailureParams = {
 	simulationAndVisualisationResults: SimulationAndVisualisationResults
 	simulateGovernanceContractExecutionReply: SimulateGovernanceContractExecutionReply | undefined
 	renameAddressCallBack: RenameAddressCallBack
-	addressMetaData: readonly AddressBookEntry[]
 }
 
-const simulateGovernanceVote = () => sendPopupMessageToBackgroundPage({ method: 'popup_simulateGovernanceContractExecution' })
+const simulateGovernanceVote = (transactionIdentifier: EthereumQuantity) => sendPopupMessageToBackgroundPage({ method: 'popup_simulateGovernanceContractExecution', data: { transactionIdentifier } })
 
-const ShowSuccessOrFailure = ({ currentBlockNumber, rpcConnectionStatus, simulateGovernanceContractExecutionReply, simTx, simulationAndVisualisationResults, renameAddressCallBack, addressMetaData }: ShowSuccessOrFailureParams) => { 
+const ShowSuccessOrFailure = ({ currentBlockNumber, rpcConnectionStatus, simulateGovernanceContractExecutionReply, simTx, simulationAndVisualisationResults, renameAddressCallBack }: ShowSuccessOrFailureParams) => { 
 	const missingAbiText = 'The governance contract is missing an ABI. Add an ABI to simulate execution of this proposal.'
 	if (simulateGovernanceContractExecutionReply === undefined) {
 		return <div style = 'display: flex; justify-content: center;'>
@@ -110,7 +110,7 @@ const ShowSuccessOrFailure = ({ currentBlockNumber, rpcConnectionStatus, simulat
 			{ simTx.transaction.to !== undefined && 'abi' in simTx.transaction.to && simTx.transaction.to.abi !== undefined ?
 				<button
 					class = { `button is-primary` }
-					onClick = { simulateGovernanceVote }
+					onClick = { () => simulateGovernanceVote(simTx.transactionIdentifier) }
 					disabled = { !(simulationAndVisualisationResults.rpcNetwork.httpsRpc === 'https://rpc.dark.florist/birdchalkrenewtip' // todo remove this check
 							|| simulationAndVisualisationResults.rpcNetwork.httpsRpc=== 'https://rpc.dark.florist/winedancemuffinborrow')
 				}>
@@ -153,14 +153,8 @@ const ShowSuccessOrFailure = ({ currentBlockNumber, rpcConnectionStatus, simulat
 			resetButton = { false }
 			currentBlockNumber = { currentBlockNumber }
 			rpcConnectionStatus = { rpcConnectionStatus }
-			addressMetaData = { addressMetaData }
 		/>
 	</div>
-}
-
-const MaybeRefreshButton = ({ simulateGovernanceContractExecutionReply } : { simulateGovernanceContractExecutionReply: SimulateGovernanceContractExecutionReply | undefined }) => {
-	if (simulateGovernanceContractExecutionReply === undefined) return <></>
-	return <button class = { `button is-primary is-small` } onClick = { simulateGovernanceVote }>Refresh</button>
 }
 
 export type GovernanceVoteVisualizerParams = {
@@ -168,13 +162,17 @@ export type GovernanceVoteVisualizerParams = {
 	simulationAndVisualisationResults: SimulationAndVisualisationResults
 	renameAddressCallBack: RenameAddressCallBack
 	governanceVoteInputParameters: GovernanceVoteInputParameters
-	addressMetaData: readonly AddressBookEntry[]
 }
 
 export function GovernanceVoteVisualizer(param: GovernanceVoteVisualizerParams) {
 	const [currentBlockNumber, setCurrentBlockNumber] = useState<undefined | bigint>(undefined)
 	const [rpcConnectionStatus, setRpcConnectionStatus] = useState<RpcConnectionStatus>(undefined)
 	const [simulateGovernanceContractExecutionReply, setSimulateGovernanceContractExecutionReply] = useState<SimulateGovernanceContractExecutionReply | undefined>(undefined)
+	
+	const [governanceVoteInputParameters, setGovernanceVoteInputParameters] = useState<GovernanceVoteInputParameters | undefined>(undefined)
+	const [simTx, setSimTx] = useState<SimulatedAndVisualizedTransaction | undefined>(undefined)
+	const [simulationAndVisualisationResults, setSimulationAndVisualisationResults] = useState<SimulationAndVisualisationResults | undefined>(undefined)
+
 	useEffect(() => {
 		const popupMessageListener = async (msg: unknown) => {
 			const message = ExternalPopupMessage.parse(msg)
@@ -183,14 +181,24 @@ export function GovernanceVoteVisualizer(param: GovernanceVoteVisualizerParams) 
 				return setCurrentBlockNumber(message.data.rpcConnectionStatus?.latestBlock?.number)
 			}
 			if (message.method !== 'popup_simulateGovernanceContractExecutionReply') return
+			const reply = SimulateGovernanceContractExecutionReply.parse(message)
+			if (reply.data.transactionIdentifier !== param.simTx.transactionIdentifier) return
 			return setSimulateGovernanceContractExecutionReply(SimulateGovernanceContractExecutionReply.parse(message))
 		}
 		browser.runtime.onMessage.addListener(popupMessageListener)
 		return () => browser.runtime.onMessage.removeListener(popupMessageListener)
 	})
 
+	useEffect(() => {
+		setGovernanceVoteInputParameters(param.governanceVoteInputParameters)
+		setSimTx(param.simTx)
+		setSimulationAndVisualisationResults(param.simulationAndVisualisationResults)
+		setSimulateGovernanceContractExecutionReply(undefined)
+	}, [param.simTx.transactionIdentifier])
+
+	if (governanceVoteInputParameters === undefined || simTx === undefined || simulationAndVisualisationResults === undefined) return <></>
 	return <>
-		<VotePanel inputParams = { param.governanceVoteInputParameters } />
+		<VotePanel inputParams = { governanceVoteInputParameters } />
 		
 		<div style = 'display: grid; grid-template-rows: max-content max-content'>
 			<span class = 'log-table' style = 'padding-bottom: 10px; grid-template-columns: auto auto;'>
@@ -198,7 +206,9 @@ export function GovernanceVoteVisualizer(param: GovernanceVoteVisualizerParams) 
 					<p class = 'paragraph'>Simulation of this proposal's outcome should the vote pass:</p>
 				</div>
 				<div class = 'log-cell' style = 'justify-content: right;'>
-					<MaybeRefreshButton simulateGovernanceContractExecutionReply = { simulateGovernanceContractExecutionReply }/>
+					{ simulateGovernanceContractExecutionReply === undefined ? <></> : 
+						<button class = { `button is-primary is-small` } onClick = { () => simulateGovernanceVote(simTx.transactionIdentifier) }>Refresh</button>
+					}
 				</div>
 			</span>
 		</div>
@@ -209,9 +219,8 @@ export function GovernanceVoteVisualizer(param: GovernanceVoteVisualizerParams) 
 				rpcConnectionStatus = { rpcConnectionStatus }
 				simulateGovernanceContractExecutionReply = { simulateGovernanceContractExecutionReply }
 				renameAddressCallBack = { param.renameAddressCallBack }
-				addressMetaData = { param.addressMetaData }
-				simTx = { param.simTx }
-				simulationAndVisualisationResults = { param.simulationAndVisualisationResults }
+				simTx = { simTx }
+				simulationAndVisualisationResults = { simulationAndVisualisationResults }
 			/>
 		</div>
 	</>

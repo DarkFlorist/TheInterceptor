@@ -10,7 +10,6 @@ import { assertNever } from '../utils/typescript.js'
 import { addUserAddressBookEntryIfItDoesNotExist, getUserAddressBookEntries } from './storageVariables.js'
 import { getUniqueItemsByProperties } from '../utils/typed-arrays.js'
 import { EthereumNameServiceTokenWrapper, getEthereumNameServiceNameFromTokenId } from '../utils/ethereumNameService.js'
-import { EthereumAddress } from '../types/wire-types.js'
 export const LOGO_URI_PREFIX = `../vendor/@darkflorist/address-metadata`
 
 const pathJoin = (parts: string[], sep = '/') => parts.join(sep).replace(new RegExp(sep + '{1,}', 'g'), sep)
@@ -142,14 +141,18 @@ export async function identifyAddress(ethereumClientService: EthereumClientServi
 	return entry
 }
 
-export async function getAddressBookEntriesForVisualiser(ethereumClientService: EthereumClientService, visualizerResults: readonly (VisualizerResult | undefined)[], simulationState: SimulationState, userAddressBook: UserAddressBook) : Promise<AddressBookEntry[]> {
+export async function getAddressBookEntriesForVisualiser(ethereumClientService: EthereumClientService, visualizerResults: readonly (VisualizerResult | undefined)[], simulationState: SimulationState, userAddressBook: UserAddressBook): Promise<AddressBookEntry[]> {
 	let addressesToFetchMetadata: bigint[] = []
 
 	for (const visualizerResult of visualizerResults) {
 		if (visualizerResult === undefined) continue
 		const ethBalanceAddresses = visualizerResult.ethBalanceChanges.map((change) => change.address)
 		const eventArguments = visualizerResult.events.map((event) => event.type !== 'NonParsed' ? event.args : []).flat()
-		const addressesInEvents = eventArguments.filter((event): event is { typeValue: { type: 'address', value: EthereumAddress }, paramName: string } => event.typeValue.type === 'address').map((event) => event.typeValue.value)
+		const addressesInEvents = eventArguments.map((event) => { 
+			if (event.typeValue.type === 'address') return event.typeValue.value
+			if (event.typeValue.type === 'address[]') return event.typeValue.value
+			return undefined
+		}).flat().filter((address): address is bigint => address !== undefined)
 		addressesToFetchMetadata = addressesToFetchMetadata.concat(ethBalanceAddresses, addressesInEvents, visualizerResult.events.map((event) => event.loggersAddress))
 	}
 

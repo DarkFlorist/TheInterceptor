@@ -22,12 +22,20 @@ export const getWebsiteCreatedEthereumUnsignedTransactions = (simulatedTransacti
 		website: simulatedTransaction.website,
 		created: simulatedTransaction.created,
 		originalRequestParameters: simulatedTransaction.originalRequestParameters,
+		transactionIdentifier: simulatedTransaction.transactionIdentifier,
 		error: undefined,
 	}))
 }
 
 function convertSimulatedTransactionToWebsiteCreatedEthereumUnsignedTransaction(tx: SimulatedTransaction) {
-	return { transaction: tx.signedTransaction, website: tx.website, created: tx.created, originalRequestParameters: tx.originalRequestParameters, error: undefined, }
+	return {
+		transaction: tx.signedTransaction,
+		website: tx.website,
+		created: tx.created,
+		originalRequestParameters: tx.originalRequestParameters,
+		transactionIdentifier: tx.transactionIdentifier,
+		error: undefined,
+	}
 }
 
 export const copySimulationState = (simulationState: SimulationState): SimulationState => {
@@ -182,6 +190,7 @@ export const appendTransaction = async (ethereumClientService: EthereumClientSer
 				tokenBalancesAfter: tokenBalancesAfterForIndex,
 				...websiteDataForIndex,
 				originalRequestParameters: transaction.originalRequestParameters,
+				transactionIdentifier: transaction.transactionIdentifier,
 			}
 		} ),
 		blockNumber: parentBlock.number,
@@ -243,6 +252,7 @@ export const setSimulationTransactionsAndSignedMessages = async (ethereumClientS
 				website: newTransaction.website,
 				created: newTransaction.created,
 				originalRequestParameters: newTransaction.originalRequestParameters,
+				transactionIdentifier: newTransaction.transactionIdentifier,
 			}
 		})),
 		blockNumber: parentBlock.number,
@@ -311,6 +321,7 @@ export const removeTransactionAndUpdateTransactionNonces = async (ethereumClient
 			created: transaction.created,
 			originalRequestParameters: transaction.originalRequestParameters,
 			error: undefined,
+			transactionIdentifier: transaction.transactionIdentifier,
 		})
 	}
 	return await setSimulationTransactionsAndSignedMessages(ethereumClientService, simulationState, newTransactions, simulationState.signedMessages)
