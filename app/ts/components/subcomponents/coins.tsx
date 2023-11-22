@@ -50,7 +50,7 @@ export function EtherAmount(param: EtherAmountParams) {
 	}
 	return <>
 		<CopyToClipboard content = { bigintToDecimalString(abs(param.amount), 18n) } copyMessage = 'Ether amount copied!' >
-			<p class = 'noselect nopointer' style = { style }>{ `${ sign }${ bigintToRoundedPrettyDecimalString(abs(param.amount), 18n ) }` }&nbsp; </p>
+			<p class = 'noselect nopointer' style = { style }>{ `${ sign }${ bigintToRoundedPrettyDecimalString(abs(param.amount), 18n ) }` } </p>
 		</CopyToClipboard>
 	</>
 }
@@ -124,13 +124,13 @@ function TokenIdOrNameOrNothing(param: TokenSymbolParams) {
 	if ('tokenIdName' in param && param.tokenIdName !== undefined) return <>
 		<CopyToClipboard content = { param.tokenId.toString() } copyMessage = 'Token name copied!' >
 			<p class = 'noselect nopointer' style = { param.style }>
-				{ param.tokenIdName }
+				{ param.tokenIdName }&nbsp;
 			</p>
 		</CopyToClipboard>
 	</>
 	return <CopyToClipboard content = { param.tokenId.toString() } copyMessage = 'Token identifier copied!' >
 		<p class = 'noselect nopointer' style = { param.style }>
-			{ `#${ truncate(param.tokenId.toString(), 9) } ` }
+			{ `#${ truncate(param.tokenId.toString(), 9) }` }&nbsp;
 		</p>
 	</CopyToClipboard>
 }
@@ -149,7 +149,7 @@ export function TokenSymbol(param: TokenSymbolParams) {
 	}
 
 	const name = param.useFullTokenName ? param.tokenEntry.name : param.tokenEntry.symbol
-	return <span style = 'display: flex'>
+	return <span style = 'display: flex; align-items: center;'>
 		<TokenIdOrNameOrNothing { ...param } style = { style }/>
 		<span class = { param.fontSize === 'big' ? 'big-token-name-container' : 'token-name-container' } data-value = { unTrusted ? `⚠${ name }` : name }>
 			<span class = 'token-name-holder'>
