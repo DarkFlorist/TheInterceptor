@@ -1,6 +1,6 @@
 import 'webextension-polyfill'
 import { getMakeMeRich, getSettings } from './settings.js'
-import { gateKeepRequestBehindAccessDialog, getPrependTrasactions, handleContentScriptMessage, popupMessageHandler, refuseAccess, updateSimulationState } from './background.js'
+import { getPrependTrasactions, handleInterceptedRequest, popupMessageHandler, updateSimulationState } from './background.js'
 import { retrieveWebsiteDetails, updateExtensionBadge, updateExtensionIcon } from './iconHandler.js'
 import { clearTabStates, getSimulationResults, removeTabState, setRpcConnectionStatus, updateTabState } from './storageVariables.js'
 import { setPrependTransactionsQueue } from '../simulation/services/SimulationModeEthereumClientService.js'
@@ -8,17 +8,12 @@ import { Simulator } from '../simulation/simulator.js'
 import { TabConnection, TabState, WebsiteTabConnections } from '../types/user-interface-types.js'
 import { EthereumBlockHeader } from '../types/wire-types.js'
 import { EthereumClientService } from '../simulation/services/EthereumClientService.js'
-import { getActiveAddress, getSocketFromPort, sendPopupMessageToOpenWindows, websiteSocketToString } from './backgroundUtils.js'
+import { getSocketFromPort, sendPopupMessageToOpenWindows, websiteSocketToString } from './backgroundUtils.js'
 import { sendSubscriptionMessagesForNewBlock } from '../simulation/services/EthereumSubscriptionService.js'
 import { refreshSimulation } from './popupMessageHandlers.js'
 import { Semaphore } from '../utils/semaphore.js'
 import { RawInterceptedRequest } from '../utils/requests.js'
-import { verifyAccess } from './accessManagement.js'
-import { InpageScriptRequest } from '../types/interceptor-messages.js'
-import { replyToInterceptedRequest } from './messageSending.js'
-import { assertNever } from '../utils/typescript.js'
 import { ICON_NOT_ACTIVE } from '../utils/constants.js'
-import { connectedToSigner, ethAccountsReply, signerChainChanged, walletSwitchEthereumChainReply } from './providerMessageHandlers.js'
 import { printError } from '../utils/errors.js'
 
 const websiteTabConnections = new Map<number, TabConnection>()
@@ -29,24 +24,12 @@ if (browser.runtime.getManifest().manifest_version === 2) {
 	clearTabStates()
 }
 
-function getProviderHandler(method: string) {
-	switch (method) {
-		case 'eth_accounts_reply': return { method: 'eth_accounts_reply' as const, func: ethAccountsReply }
-		case 'signer_chainChanged': return { method: 'signer_chainChanged' as const, func: signerChainChanged }
-		case 'wallet_switchEthereumChain_reply': return { method: 'wallet_switchEthereumChain_reply' as const, func: walletSwitchEthereumChainReply }
-		case 'connected_to_signer': return { method: 'connected_to_signer' as const, func: connectedToSigner }
-		default: return { method: 'notProviderMethod' as const }
-	}
-}
-
 export async function onContentScriptConnected(simulator: Simulator, port: browser.runtime.Port, websiteTabConnections: WebsiteTabConnections) {
 	const socket = getSocketFromPort(port)
 	if (port?.sender?.url === undefined) return
 	const websiteOrigin = (new URL(port.sender.url)).hostname
 	const websitePromise = retrieveWebsiteDetails(port, websiteOrigin)
 	const identifier = websiteSocketToString(socket)
-
-	console.log(`content script connected ${ websiteOrigin }`)
 
 	const tabConnection = websiteTabConnections.get(socket.tabId)
 	const newConnection = {
@@ -83,37 +66,7 @@ export async function onContentScriptConnected(simulator: Simulator, port: brows
 				usingInterceptorWithoutSigner: rawMessage.usingInterceptorWithoutSigner,
 				uniqueRequestIdentifier: { requestId: rawMessage.requestId, requestSocket: socket },
 			}
-			const activeAddress = await getActiveAddress(await getSettings(), socket.tabId)
-			const access = verifyAccess(websiteTabConnections, socket, request.method === 'eth_requestAccounts' || request.method === 'eth_call', websiteOrigin, activeAddress, await getSettings())
-			const providerHandler = getProviderHandler(request.method)
-			const identifiedMethod = providerHandler.method
-			if (identifiedMethod !== 'notProviderMethod') {
-				const providerHandlerReturn = await providerHandler.func(simulator, websiteTabConnections, port, request, access)
-				const message: InpageScriptRequest = {
-					uniqueRequestIdentifier: request.uniqueRequestIdentifier,
-					...providerHandlerReturn,
-				}
-				return replyToInterceptedRequest(websiteTabConnections, message)
-			}
-			if (access === 'noAccess' || activeAddress === undefined) {
-				if (request.method === 'eth_accounts') {
-					return replyToInterceptedRequest(websiteTabConnections, { method: 'eth_accounts' as const, result: [], uniqueRequestIdentifier: request.uniqueRequestIdentifier })
-				}
-				// if user has not given access, assume we are on chain 1
-				if (request.method === 'eth_chainId' || request.method === 'net_version') {
-					return replyToInterceptedRequest(websiteTabConnections, { method: 'eth_chainId' as const, result: 1n, uniqueRequestIdentifier: request.uniqueRequestIdentifier })
-				}
-			}
-
-			switch (access) {
-				case 'askAccess': return await gateKeepRequestBehindAccessDialog(simulator, websiteTabConnections, socket, request, await websitePromise, activeAddress, await getSettings())
-				case 'noAccess': return refuseAccess(websiteTabConnections, request)
-				case 'hasAccess': {
-					if (activeAddress === undefined) return refuseAccess(websiteTabConnections, request)
-					return await handleContentScriptMessage(simulator, websiteTabConnections, request, await websitePromise, activeAddress)
-				}
-				default: assertNever(access)
-			}
+			return await handleInterceptedRequest(port, websiteOrigin, websitePromise, simulator, socket, request, websiteTabConnections)
 		})
 	})
 

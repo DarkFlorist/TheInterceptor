@@ -230,7 +230,19 @@ export const SendRawTransactionParams = funtypes.ReadonlyObject({
 })
 
 export type EthereumAccountsReply = funtypes.Static<typeof EthereumAccountsReply>
-export const EthereumAccountsReply = funtypes.ReadonlyTuple(funtypes.ReadonlyArray(EthereumAddress), funtypes.Boolean)
+export const EthereumAccountsReply = funtypes.ReadonlyTuple(
+	funtypes.Union(
+		funtypes.ReadonlyObject({
+			type: funtypes.Literal('success'),
+			accounts: funtypes.ReadonlyArray(EthereumAddress),
+			requestAccounts: funtypes.Boolean,
+		}),
+		funtypes.ReadonlyObject({
+			type: funtypes.Literal('error'),
+			requestAccounts: funtypes.Boolean,
+		})
+	)
+)
 
 export type EthereumChainReply = funtypes.Static<typeof EthereumChainReply>
 export const EthereumChainReply = funtypes.ReadonlyArray(EthereumQuantity)

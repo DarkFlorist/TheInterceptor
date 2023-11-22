@@ -10,8 +10,8 @@ export async function tokenToContract(transaction: EthereumUnsignedTransaction, 
 	if (transferInfo === undefined) return
 	if (transferInfo.name !== 'transfer' && transferInfo.name !== 'transferFrom') return
 	const code = await getSimulatedCode(ethereum, simulationState, transferInfo.arguments.to)
-	if (code.statusCode === 'failure') return `Failed to verify whether address ${ transaction.to } contains code or not.`
+	if (code.statusCode === 'failure') return `Failed to verify whether address ${ transferInfo.arguments.to } contains code or not.`
 	if (code.getCodeReturn.length === 0) return
 	if (transaction.to === null) return
-	return `Attempt to send tokens directly to a contract (${ checksummedAddress(transaction.to) })`
+	return `Attempt to send tokens directly to a contract (${ checksummedAddress(transferInfo.arguments.to) })`
 }

@@ -166,6 +166,8 @@ class InterceptorMessageListener {
 	private readonly onChainChangedCallBacks: Set<((chainId: string) => void)> = new Set()
 
 	private waitForAccountsFromWallet: InterceptorFuture<boolean> | undefined = undefined
+	private signerAccounts: string[] = []
+	private pendingSignerAddressRequest: InterceptorFuture<boolean> | undefined = undefined
 
 	public constructor() {
 		this.injectEthereumIntoWindow()
@@ -204,16 +206,17 @@ class InterceptorMessageListener {
 		}
 	}
 
-	private readonly WindowEthereumSend = async (payload: { readonly id: string | number | null, readonly method: string, readonly params: readonly unknown[], _params: readonly unknown[] }, maybeCallBack: undefined | ((error: IJsonRpcError | null, response: IJsonRpcSuccess<unknown> | null) => void)) => {
-		if (maybeCallBack !== undefined && typeof maybeCallBack === 'function') return this.WindowEthereumSendAsync(payload, maybeCallBack)
+	private readonly WindowEthereumSend = async (payload: { readonly id: string | number | null, readonly method: string, readonly params: readonly unknown[], _params: readonly unknown[] } | string, maybeCallBack: undefined | ((error: IJsonRpcError | null, response: IJsonRpcSuccess<unknown> | null) => void)) => {
+		const fullPayload = typeof payload === 'string' ? { method: payload, id: 1, params: [] } : payload
+		if (maybeCallBack !== undefined && typeof maybeCallBack === 'function') return this.WindowEthereumSendAsync(fullPayload, maybeCallBack)
 		if (this.metamaskCompatibilityMode) {
 			if (window.ethereum === undefined) throw new Error('window.ethereum is missing')
-			switch (payload.method) {
+			switch (fullPayload.method) {
 				case 'eth_coinbase': 
-				case 'eth_accounts': return { jsonrpc: '2.0', id: payload.id, result: window.ethereum.selectedAddress === undefined || window.ethereum.selectedAddress === null ? [] : [window.ethereum.selectedAddress] }
-				case 'net_version': return { jsonrpc: '2.0', id: payload.id, result: window.ethereum.networkVersion }
-				case 'eth_chainId': return { jsonrpc: '2.0', id: payload.id, result: window.ethereum.chainId }
-				default: throw new EthereumJsonRpcError(METAMASK_INVALID_METHOD_PARAMS, `Invalid method parameter for window.ethereum.send: ${ payload.method }`)
+				case 'eth_accounts': return { jsonrpc: '2.0', id: fullPayload.id, result: window.ethereum.selectedAddress === undefined || window.ethereum.selectedAddress === null ? [] : [window.ethereum.selectedAddress] }
+				case 'net_version': return { jsonrpc: '2.0', id: fullPayload.id, result: window.ethereum.networkVersion }
+				case 'eth_chainId': return { jsonrpc: '2.0', id: fullPayload.id, result: window.ethereum.chainId }
+				default: throw new EthereumJsonRpcError(METAMASK_INVALID_METHOD_PARAMS, `Invalid method parameter for window.ethereum.send: ${ fullPayload.method }`)
 			}
 		}
 		throw new EthereumJsonRpcError(METAMASK_METHOD_NOT_SUPPORTED, 'Method not supported (window.ethereum.send).')
@@ -282,14 +285,40 @@ class InterceptorMessageListener {
 
 	private readonly WindowEthereumEnable = async () => this.WindowEthereumRequest({ method: 'eth_requestAccounts' })
 
-	private readonly requestAccountsFromSigner = async (ask_eth_requestAccounts: boolean) => {
+	// attempts to call signer for eth_accounts
+	private readonly getAccountsFromSigner = async () => {
 		if (this.signerWindowEthereumRequest === undefined) return
-		const reply = await this.signerWindowEthereumRequest({ method: ask_eth_requestAccounts ? 'eth_requestAccounts' : 'eth_accounts', params: [] })
-		if (!Array.isArray(reply)) return
-		await this.sendMessageToBackgroundPage({ method: 'eth_accounts_reply', params: [reply, ask_eth_requestAccounts] })
+		try {
+			const reply = await this.signerWindowEthereumRequest({ method: 'eth_accounts', params: [] })
+			if (!Array.isArray(reply)) throw new Error('Signer returned something else than an array')
+			await this.sendMessageToBackgroundPage({ method: 'eth_accounts_reply', params: [{ type: 'success', accounts: this.signerAccounts, requestAccounts: false }] })
+		} catch (error) {
+			await this.sendMessageToBackgroundPage({ method: 'eth_accounts_reply', params: [{ type: 'error', requestAccounts: false }]})
+		}
 		if (this.waitForAccountsFromWallet !== undefined) {
 			this.waitForAccountsFromWallet.resolve(true)
 			this.waitForAccountsFromWallet = undefined
+		}
+	}
+	// attempts to call signer for eth_requestAccounts
+	private readonly requestAccountsFromSigner = async () => {
+		if (this.signerWindowEthereumRequest === undefined) return
+		if (this.pendingSignerAddressRequest !== undefined) {
+			await this.pendingSignerAddressRequest
+			await this.sendMessageToBackgroundPage({ method: 'eth_accounts_reply', params: [{ type: 'success', accounts: this.signerAccounts, requestAccounts: true }] })
+			return
+		}
+		this.pendingSignerAddressRequest = new InterceptorFuture()
+		try {
+			const reply = await this.signerWindowEthereumRequest({ method: 'eth_requestAccounts', params: [] })
+			if (!Array.isArray(reply)) throw new Error('Signer returned something else than an array')
+			this.signerAccounts = reply
+			await this.sendMessageToBackgroundPage({ method: 'eth_accounts_reply', params: [{ type: 'success', accounts: this.signerAccounts, requestAccounts: true }] })
+		} catch (error) {
+			await this.sendMessageToBackgroundPage({ method: 'eth_accounts_reply', params: [{ type: 'error', requestAccounts: true }]})
+		} finally {
+			this.pendingSignerAddressRequest.resolve(true)
+			this.pendingSignerAddressRequest = undefined
 		}
 	}
 
@@ -358,8 +387,8 @@ class InterceptorMessageListener {
 					}
 					return this.onChainChangedCallBacks.forEach((callback) => callback(reply))
 				}
-				case 'request_signer_to_eth_requestAccounts': return await this.requestAccountsFromSigner(true)
-				case 'request_signer_to_eth_accounts':  return await this.requestAccountsFromSigner(false)
+				case 'request_signer_to_eth_requestAccounts': return await this.requestAccountsFromSigner()
+				case 'request_signer_to_eth_accounts': return await this.getAccountsFromSigner()
 				case 'request_signer_to_wallet_switchEthereumChain': return await this.requestChangeChainFromSigner(replyRequest.result as string)
 				case 'request_signer_chainId': return await this.requestChainIdFromSigner()
 				default: break
@@ -488,7 +517,7 @@ class InterceptorMessageListener {
 			this.waitForAccountsFromWallet = new InterceptorFuture()
 			this.enableMetamaskCompatibilityMode((await connectToSigner()).metamaskCompatibilityMode)
 			await this.requestChainIdFromSigner()
-			await this.requestAccountsFromSigner(false)
+			await this.getAccountsFromSigner()
 		} else {
 			this.enableMetamaskCompatibilityMode((await connectToSigner()).metamaskCompatibilityMode)
 		}
@@ -533,13 +562,13 @@ class InterceptorMessageListener {
 
 		// subscribe for signers events
 		window.ethereum.on('accountsChanged', (accounts: readonly string[]) => {
-			this.WindowEthereumRequest({ method: 'eth_accounts_reply', params: [accounts, false] })
+			this.WindowEthereumRequest({ method: 'eth_accounts_reply', params: [{ type: 'success', accounts, requestAccounts: false }] })
 		})
 		window.ethereum.on('connect', (_connectInfo: ProviderConnectInfo) => {
 
 		})
 		window.ethereum.on('disconnect', (_error: ProviderRpcError) => {
-			this.WindowEthereumRequest({ method: 'eth_accounts_reply', params: [[], false] })
+			this.WindowEthereumRequest({ method: 'eth_accounts_reply', params: [{ type: 'success', accounts: [], requestAccounts: false }] })
 		})
 		window.ethereum.on('chainChanged', (chainId: string) => {
 			// TODO: this is a hack to get coinbase working that calls this numbers in base 10 instead of in base 16
