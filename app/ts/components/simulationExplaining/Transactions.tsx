@@ -61,7 +61,7 @@ export type TransactionImportanceBlockParams = {
 
 // showcases the most important things the transaction does
 export function TransactionImportanceBlock(param: TransactionImportanceBlockParams) {
-	if ( param.simTx.statusCode === 'failure') {
+	if (param.simTx.statusCode === 'failure') {
 		return <div>
 			<ErrorComponent text = { `The transaction fails with an error '${ param.simTx.error }'` } />
 		</div>
@@ -103,7 +103,7 @@ export function TransactionImportanceBlock(param: TransactionImportanceBlockPara
 		case 'ContractDeployment':
 		case 'ContractFallbackMethod':
 		case 'ArbitaryContractExecution': return <CatchAllVisualizer { ...param } />
-		case 'GovernanceVote': return <GovernanceVoteVisualizer { ...param } governanceVoteInputParameters = { transactionIdentification.governanceVoteInputParameters } addressMetaData = { param.addressMetadata }/>
+		case 'GovernanceVote': return <GovernanceVoteVisualizer { ...param } governanceVoteInputParameters = { transactionIdentification.governanceVoteInputParameters }/>
 		default: assertNever(transactionIdentification)
 	}
 }

@@ -103,6 +103,7 @@ export async function main() {
 				created: new Date(),
 				originalRequestParameters: { method: 'eth_sendTransaction', params: [{}]},
 				error: undefined,
+				transactionIdentifier: 1n,
 			})
 			const nextBlock = await getSimulatedBlock(ethereum, newState, blockNumber + 1n, true)
 			assert.equal(JSON.stringify(Object.keys(nextBlock).sort()), JSON.stringify(Object.keys(block).sort()))

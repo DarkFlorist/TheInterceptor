@@ -634,6 +634,7 @@ export const SimulateGovernanceContractExecutionReply = funtypes.ReadonlyObject(
 	method: funtypes.Literal('popup_simulateGovernanceContractExecutionReply'),
 	data: funtypes.Union(
 		funtypes.ReadonlyObject({
+			transactionIdentifier: EthereumQuantity,
 			success: funtypes.Literal(false),
 			error: funtypes.Union(
 				funtypes.ReadonlyObject({
@@ -644,6 +645,7 @@ export const SimulateGovernanceContractExecutionReply = funtypes.ReadonlyObject(
 			)
 		}),
 		funtypes.ReadonlyObject({
+			transactionIdentifier: EthereumQuantity,
 			success: funtypes.Literal(false),
 			error: funtypes.Union(
 				funtypes.ReadonlyObject({
@@ -653,6 +655,7 @@ export const SimulateGovernanceContractExecutionReply = funtypes.ReadonlyObject(
 			)
 		}),
 		funtypes.ReadonlyObject({
+			transactionIdentifier: EthereumQuantity,
 			success: funtypes.Literal(true),
 			result: funtypes.ReadonlyObject({
 				namedTokenIds: funtypes.ReadonlyArray(NamedTokenId),
@@ -667,6 +670,12 @@ export const SimulateGovernanceContractExecutionReply = funtypes.ReadonlyObject(
 		})
 	)
 }).asReadonly()
+
+export type SimulateGovernanceContractExecution = funtypes.Static<typeof SimulateGovernanceContractExecution>
+export const SimulateGovernanceContractExecution = funtypes.ReadonlyObject({
+	method: funtypes.Literal('popup_simulateGovernanceContractExecution'),
+	data: funtypes.ReadonlyObject({ transactionIdentifier: EthereumQuantity })
+})
 
 export type FetchAbiAndNameFromEtherscan = funtypes.Static<typeof FetchAbiAndNameFromEtherscan>
 export const FetchAbiAndNameFromEtherscan = funtypes.ReadonlyObject({
@@ -737,7 +746,7 @@ export const PopupMessage = funtypes.Union(
 	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_openSettings') }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_import_settings'), data: funtypes.ReadonlyObject({ fileContents: funtypes.String }) }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_get_export_settings') }),
-	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_simulateGovernanceContractExecution') }),
+	SimulateGovernanceContractExecution,
 	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_settingsOpened') }),
 	ChangeSettings,
 	SetRpcList,

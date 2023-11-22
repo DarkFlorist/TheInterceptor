@@ -82,7 +82,7 @@ export const simulateGovernanceContractExecution = async (pendingTransaction: Pe
 		const addr = await identifyAddress(ethereum, userAddressBook, pendingTransaction.transactionToSimulate.transaction.to)
 		if (!('abi' in addr) || addr.abi === undefined) return { success: false as const, error: { type: 'MissingAbi' as const, message: 'ABi for the governance contract is missing', addressBookEntry: addr } }
 		const contractExecutionResult = await simulateCompoundGovernanceExecution(ethereum, addr, params[0])
-		if (contractExecutionResult === undefined) return returnError('Failed to simulate governacne execution')
+		if (contractExecutionResult === undefined) return returnError('Failed to simulate governance execution')
 		const parentBlock = await ethereum.getBlock()
 		if (parentBlock.baseFeePerGas === undefined) return returnError('cannot build simulation from legacy block')
 		const signedExecutionTransaction = mockSignTransaction({ ...contractExecutionResult.executingTransaction, gas: contractExecutionResult.multicallResult.gasSpent })
@@ -106,6 +106,7 @@ export const simulateGovernanceContractExecution = async (pendingTransaction: Pe
 				website: pendingTransaction.transactionToSimulate.website,
 				created: new Date(),
 				originalRequestParameters: pendingTransaction.originalRequestParameters,
+				transactionIdentifier: pendingTransaction.transactionIdentifier,
 			}],
 			blockNumber: parentBlock.number,
 			blockTimestamp: parentBlock.timestamp,
@@ -132,6 +133,7 @@ async function visualizeSimulatorState(simulationState: SimulationState, ethereu
 	
 	const protectors = await protectorPromises
 	const visualizerResults = await visualizerResultsPromise
+
 	const updatedMetadataPromise = updateMetadataForSimulation(simulationState, ethereum, visualizerResults, protectors)
 
 	function onlyTokensAndTokensWithKnownDecimals(metadata: AddressBookEntry): metadata is AddressBookEntry & { type: 'ERC20', decimals: `0x${ string }` } {
@@ -286,6 +288,7 @@ export async function getPrependTrasactions(ethereumClientService: EthereumClien
 		created: new Date(),
 		originalRequestParameters: { method: MAKE_YOU_RICH_TRANSACTION.transactionSendingFormat, params: [{}] },
 		error: undefined,
+		transactionIdentifier: 0n,
 	}]
 }
 
@@ -571,7 +574,7 @@ export async function popupMessageHandler(
 		case 'popup_set_rpc_list': return await setNewRpcList(simulator, parsedRequest, settings)
 		case 'popup_identifyAddress': return await popupIdentifyAddress(simulator, parsedRequest, settings)
 		case 'popup_findAddressBookEntryWithSymbolOrName': return await popupFindAddressBookEntryWithSymbolOrName(parsedRequest, settings)
-		case 'popup_simulateGovernanceContractExecution': return await simulateGovernanceContractExecutionOnPass(simulator.ethereum, settings.userAddressBook)
+		case 'popup_simulateGovernanceContractExecution': return await simulateGovernanceContractExecutionOnPass(simulator.ethereum, settings.userAddressBook, parsedRequest)
 		case 'popup_fetchAbiAndNameFromEtherscan': return await fetchAbiAndNameFromEtherscan(parsedRequest)
 		default: assertUnreachable(parsedRequest)
 	}

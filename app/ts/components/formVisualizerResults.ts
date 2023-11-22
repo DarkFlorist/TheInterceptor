@@ -122,6 +122,7 @@ export function formSimulatedAndVisualizedTransaction(simState: SimulationState,
 			),
 			website: simulatedTx.website,
 			created: simulatedTx.created,
+			transactionIdentifier: simulatedTx.transactionIdentifier,
 		}
 	})
 }

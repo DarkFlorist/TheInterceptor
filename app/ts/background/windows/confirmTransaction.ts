@@ -14,9 +14,9 @@ import { appendPendingTransaction, clearPendingTransactions, getPendingTransacti
 import { InterceptedRequest, getUniqueRequestIdentifierString } from '../../utils/requests.js'
 import { replyToInterceptedRequest } from '../messageSending.js'
 import { Simulator } from '../../simulation/simulator.js'
-import { ethers } from 'ethers'
+import { ethers, keccak256, toUtf8Bytes } from 'ethers'
 import { dataStringWith0xStart, stringToUint8Array } from '../../utils/bigint.js'
-import { EthereumAddress } from '../../types/wire-types.js'
+import { EthereumAddress, EthereumQuantity } from '../../types/wire-types.js'
 import { Website } from '../../types/websiteAccessTypes.js'
 import { PendingTransaction } from '../../types/accessRequest.js'
 
@@ -71,7 +71,7 @@ const formRejectMessage = (errorString: undefined | string) => {
 	}
 }
 
-export const formSendRawTransaction = async(ethereumClientService: EthereumClientService, sendRawTransactionParams: SendRawTransactionParams, website: Website, created: Date): Promise<WebsiteCreatedEthereumUnsignedTransaction> => {	
+export const formSendRawTransaction = async(ethereumClientService: EthereumClientService, sendRawTransactionParams: SendRawTransactionParams, website: Website, created: Date, transactionIdentifier: EthereumQuantity): Promise<WebsiteCreatedEthereumUnsignedTransaction> => {	
 	const ethersTransaction = ethers.Transaction.from(dataStringWith0xStart(sendRawTransactionParams.params[0]))
 	const transactionDetails = {
 		from: EthereumAddress.parse(ethersTransaction.from),
@@ -104,11 +104,12 @@ export const formSendRawTransaction = async(ethereumClientService: EthereumClien
 		website,
 		created,
 		originalRequestParameters: sendRawTransactionParams,
+		transactionIdentifier: transactionIdentifier,
 		error: undefined,
 	}
 }
 
-export const formEthSendTransaction = async(ethereumClientService: EthereumClientService, activeAddress: bigint | undefined, simulationMode: boolean = true, website: Website, sendTransactionParams: SendTransactionParams, created: Date): Promise<WebsiteCreatedEthereumUnsignedTransaction> => {
+export const formEthSendTransaction = async(ethereumClientService: EthereumClientService, activeAddress: bigint | undefined, simulationMode: boolean = true, website: Website, sendTransactionParams: SendTransactionParams, created: Date, transactionIdentifier: EthereumQuantity): Promise<WebsiteCreatedEthereumUnsignedTransaction> => {
 	const simulationState = simulationMode ? (await getSimulationResults()).simulationState : undefined
 	const blockPromise = getSimulatedBlock(ethereumClientService, simulationState)
 	const transactionDetails = sendTransactionParams.params[0]
@@ -133,6 +134,7 @@ export const formEthSendTransaction = async(ethereumClientService: EthereumClien
 		website,
 		created,
 		originalRequestParameters: sendTransactionParams,
+		transactionIdentifier,
 		error: undefined,
 	}
 	if (transactionDetails.gas === undefined) {
@@ -157,9 +159,10 @@ export async function openConfirmTransactionDialog(
 	const pendingTransaction = new Future<Confirmation>()
 	const uniqueRequestIdentifier = getUniqueRequestIdentifierString(request.uniqueRequestIdentifier)
 	pendingTransactions.set(uniqueRequestIdentifier, pendingTransaction)
+	const transactionIdentifier = EthereumQuantity.parse(keccak256(toUtf8Bytes(uniqueRequestIdentifier)))
 	try {
 		const created = new Date()
-		const transactionToSimulatePromise = transactionParams.method === 'eth_sendTransaction' ? formEthSendTransaction(ethereumClientService, activeAddress, simulationMode, website, transactionParams, created) : formSendRawTransaction(ethereumClientService, transactionParams, website, created)
+		const transactionToSimulatePromise = transactionParams.method === 'eth_sendTransaction' ? formEthSendTransaction(ethereumClientService, activeAddress, simulationMode, website, transactionParams, created, transactionIdentifier) : formSendRawTransaction(ethereumClientService, transactionParams, website, created, transactionIdentifier)
 		if (activeAddress === undefined) return ERROR_INTERCEPTOR_NO_ACTIVE_ADDRESS
 
 		const addedPendingTransaction = await pendingConfirmationSemaphore.execute(async () => {
@@ -190,6 +193,7 @@ export async function openConfirmTransactionDialog(
 				activeAddress,
 				created,
 				status: 'Crafting Transaction' as const,
+				transactionIdentifier, 
 			}
 			await appendPendingTransaction(pendingTransaction)
 			await updateConfirmTransactionViewWithPendingTransaction()

@@ -98,7 +98,7 @@ function SendOrReceiveTokensImportanceBox(param: SendOrReceiveTokensImportanceBo
 				<div class = { `box token-box ${ param.sending ? 'negative-box' : 'positive-box' } vertical-center` } style = 'display: inline-block'>
 					<table class = 'log-table'>
 						<div class = 'log-cell'>
-							<p class = 'ellipsis' style = { `color: ${ param.textColor }; margin-bottom: 0px; display: inline-block` }>
+							<p class = 'ellipsis paragraph' style = { `color: ${ param.textColor }; margin-bottom: 0px; display: inline-block` }>
 								{ param.sending ? 'Send' : 'Receive' }&nbsp;
 							</p>
 						</div>
@@ -113,7 +113,7 @@ function SendOrReceiveTokensImportanceBox(param: SendOrReceiveTokensImportanceBo
 								/>
 							: <></>}
 						</div>
-						<div class = 'log-cell' style = 'padding-right: 0.2em'>
+						<div class = 'log-cell'>
 							<TokenSymbol
 								{ ...tokenEventToTokenSymbolParams(tokenEvent) }
 								style = { { color: param.textColor } }
@@ -123,8 +123,8 @@ function SendOrReceiveTokensImportanceBox(param: SendOrReceiveTokensImportanceBo
 							/>
 						</div>
 						<div class = 'log-cell'>
-							<p class = 'ellipsis' style = { `color: ${ param.textColor }; margin-bottom: 0px; display: inline-block` }>
-								{ param.sending ? 'to' : 'from' }&nbsp;
+							<p class = 'ellipsis paragraph' style = { `color: ${ param.textColor }; margin-bottom: 0px; display: inline-block` }>
+								{ param.sending ? 'to' : 'from' }
 							</p>
 						</div>
 						<div class = 'log-cell'>
