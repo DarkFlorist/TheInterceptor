@@ -207,7 +207,7 @@ class InterceptorMessageListener {
 	}
 
 	private readonly WindowEthereumSend = async (payload: { readonly id: string | number | null, readonly method: string, readonly params: readonly unknown[], _params: readonly unknown[] } | string, maybeCallBack: undefined | ((error: IJsonRpcError | null, response: IJsonRpcSuccess<unknown> | null) => void)) => {
-		const fullPayload = typeof payload === 'string' ? { method: payload, id: 0, params: [] } : payload
+		const fullPayload = typeof payload === 'string' ? { method: payload, id: 1, params: [] } : payload
 		if (maybeCallBack !== undefined && typeof maybeCallBack === 'function') return this.WindowEthereumSendAsync(fullPayload, maybeCallBack)
 		if (this.metamaskCompatibilityMode) {
 			if (window.ethereum === undefined) throw new Error('window.ethereum is missing')
