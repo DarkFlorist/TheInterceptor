@@ -51,8 +51,8 @@ export async function itentifyAddressViaOnChainInformation(ethereumClientService
 			return {
 				type: 'ERC721',
 				address,
-				name: hasMetadata.success ? nftInterface.decodeFunctionResult('name', name.returnData)[0] : undefined,
-				symbol: hasMetadata.success ? nftInterface.decodeFunctionResult('symbol', symbol.returnData)[0] : undefined,
+				name: hasMetadata.success && nftInterface.decodeFunctionResult('supportsInterface', hasMetadata.returnData)[0] ? nftInterface.decodeFunctionResult('name', name.returnData)[0] : checksummedAddress(address),
+				symbol: hasMetadata.success && nftInterface.decodeFunctionResult('supportsInterface', hasMetadata.returnData)[0] ? nftInterface.decodeFunctionResult('symbol', symbol.returnData)[0] : '???',
 				entrySource: 'OnChain'
 			}
 		}
@@ -71,7 +71,7 @@ export async function itentifyAddressViaOnChainInformation(ethereumClientService
 				type: 'ERC20',
 				address,
 				name: erc20Interface.decodeFunctionResult('name', name.returnData)[0],
-				symbol: erc20Interface.decodeFunctionResult('name', symbol.returnData)[0],
+				symbol: erc20Interface.decodeFunctionResult('symbol', symbol.returnData)[0],
 				decimals: BigInt(erc20Interface.decodeFunctionResult('decimals', decimals.returnData)[0]),
 				entrySource: 'OnChain'
 			}
