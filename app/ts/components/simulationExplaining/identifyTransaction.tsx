@@ -11,6 +11,7 @@ import { CompoundGovernanceAbi } from '../../utils/abi.js'
 import { dataStringWith0xStart } from '../../utils/bigint.js'
 import { parseVoteInputParameters } from '../../simulation/compoundGovernanceFaking.js'
 import { GovernanceVoteInputParameters } from '../../types/interceptor-messages.js'
+import { UniqueRequestIdentifier } from '../../utils/requests.js'
 
 type IdentifiedTransactionBase = {
 	title: string
@@ -123,6 +124,7 @@ export type SimulatedAndVisualizedSimpleApprovalTransaction = funtypes.Static<ty
 export const SimulatedAndVisualizedSimpleApprovalTransaction = funtypes.Intersect(
 	SimulatedAndVisualizedTransactionBase,
 	funtypes.ReadonlyObject({
+		uniqueRequestIdentifier: UniqueRequestIdentifier,
 		transaction: funtypes.Intersect(
 			TransactionWithAddressBookEntries,
 			funtypes.ReadonlyObject({
@@ -150,6 +152,7 @@ export type SimulatedAndVisualizedEtherTransferTransaction = funtypes.Static<typ
 export const SimulatedAndVisualizedEtherTransferTransaction = funtypes.Intersect(
 	SimulatedAndVisualizedTransactionBase,
 	funtypes.ReadonlyObject({
+		uniqueRequestIdentifier: UniqueRequestIdentifier,
 		transaction: funtypes.Intersect(
 			TransactionWithAddressBookEntries,
 			funtypes.ReadonlyObject({
@@ -180,6 +183,7 @@ export const SimulatedAndVisualizedSimpleTokenTransferTransaction = funtypes.Int
 		})
 	),
 	funtypes.ReadonlyObject({
+		uniqueRequestIdentifier: UniqueRequestIdentifier,
 		transaction: funtypes.Intersect(TransactionWithAddressBookEntries, funtypes.ReadonlyObject({ to: AddressBookEntry })),
 	})
 )

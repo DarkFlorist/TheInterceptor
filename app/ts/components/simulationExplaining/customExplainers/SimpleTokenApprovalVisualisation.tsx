@@ -52,7 +52,7 @@ export function SimpleTokenApprovalVisualisation(params: SimpleTokenApprovalVisu
 						} </>
 					}
 				</div>
-				<div class = 'log-cell' style = 'padding-right: 0.2em'>
+				<div class = 'log-cell'>
 					<TokenSymbol
 						{ ...tokenEventToTokenSymbolParams(params.approval) }
 						useFullTokenName = { false }

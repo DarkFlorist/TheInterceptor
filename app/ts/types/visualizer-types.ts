@@ -185,6 +185,7 @@ export const SimulatedAndVisualizedTransactionBase = funtypes.Intersect(
 		quarantine: funtypes.Boolean,
 		quarantineReasons: funtypes.ReadonlyArray(funtypes.String),
 		events: funtypes.ReadonlyArray(MaybeParsedEventWithExtraData),
+		transactionIdentifier: EthereumQuantity,
 	}),
 	funtypes.Union(
 		funtypes.ReadonlyObject({
@@ -252,6 +253,7 @@ export const SimulatedTransaction = funtypes.ReadonlyObject({
 	created: EthereumTimestamp,
 	tokenBalancesAfter: TokenBalancesAfter,
 	originalRequestParameters: funtypes.Union(SendTransactionParams, SendRawTransactionParams),
+	transactionIdentifier: EthereumQuantity,
 })
 
 export type EstimateGasError = funtypes.Static<typeof EstimateGasError>
@@ -270,6 +272,7 @@ export const WebsiteCreatedEthereumUnsignedTransaction = funtypes.ReadonlyObject
 	created: EthereumTimestamp,
 	originalRequestParameters: OriginalSendRequestParameters,
 	transaction: EthereumUnsignedTransaction,
+	transactionIdentifier: EthereumQuantity,
 	error: funtypes.Union(funtypes.Undefined, EstimateGasError.fields.error)
 })
 
