@@ -218,7 +218,7 @@ class InterceptorMessageListener {
 				case 'eth_chainId': return { jsonrpc: '2.0', id: fullPayload.id, result: window.ethereum.chainId }
 				case 'eth_requestAccounts': {
 					if (window.ethereum.selectedAddress === undefined || window.ethereum.selectedAddress === null) return await this.WindowEthereumRequest(fullPayload)
-					return { jsonrpc: '2.0', id: fullPayload.id, result: window.ethereum.selectedAddress }
+					return { jsonrpc: '2.0', id: fullPayload.id, result: [window.ethereum.selectedAddress] }
 				}
 				default: throw new EthereumJsonRpcError(METAMASK_INVALID_METHOD_PARAMS, `Invalid method parameter for window.ethereum.send: ${ fullPayload.method }`)
 			}
