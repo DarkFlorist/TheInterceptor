@@ -51,7 +51,7 @@ function identifySignature(data: VisualizedPersonalSignRequest) {
 			signingAction: 'Sign Gnosis Safe message',
 		}
 		case 'EIP712': {
-			const name = data.message.domain.name?.type === 'string' ? data.message.domain.name.value : 'Arbitary EIP712 message'
+			const name = data.message.domain.name?.type === 'string' ? `${ data.message.domain.name.value } - ${ data.message.primaryType }` : 'Arbitary EIP712 message'
 			return {
 				title: `${ name } signing request`,
 				rejectAction: `Reject ${ name }`,

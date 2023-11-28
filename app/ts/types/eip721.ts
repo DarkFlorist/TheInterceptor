@@ -46,6 +46,7 @@ export const EnrichedEIP712Message = funtypes.ReadonlyRecord(
 
 export type EnrichedEIP712 = funtypes.Static<typeof EnrichedEIP712>
 export const EnrichedEIP712 = funtypes.ReadonlyObject({
+	primaryType: funtypes.String,
 	message: EnrichedEIP712Message,
 	domain: EnrichedEIP712Message,
 })
