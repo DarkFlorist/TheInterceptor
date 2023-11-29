@@ -150,7 +150,6 @@ const ShowSuccessOrFailure = ({ currentBlockNumber, rpcConnectionStatus, simulat
 			pendingTransactions = { [] }
 			renameAddressCallBack = { renameAddressCallBack }
 			activeAddress = { simulationAndVisualisationResults.activeAddress }
-			resetButton = { false }
 			currentBlockNumber = { currentBlockNumber }
 			rpcConnectionStatus = { rpcConnectionStatus }
 		/>

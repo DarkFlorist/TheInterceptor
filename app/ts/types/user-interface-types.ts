@@ -6,7 +6,7 @@ import { IdentifiedSwapWithMetadata } from '../components/simulationExplaining/S
 import { InterceptedRequest, UniqueRequestIdentifier, WebsiteSocket } from '../utils/requests.js'
 import { ActiveAddress, ActiveAddressEntry, AddressBookEntry, IncompleteAddressBookEntry } from './addressBookTypes.js'
 import { Page } from './exportedSettingsTypes.js'
-import { Website, WebsiteAccessArray } from './websiteAccessTypes.js'
+import { PopupOrTabId, Website, WebsiteAccessArray } from './websiteAccessTypes.js'
 import { SignerName } from './signerTypes.js'
 import { ICON_ACCESS_DENIED, ICON_ACTIVE, ICON_NOT_ACTIVE, ICON_SIGNING, ICON_SIGNING_NOT_SUPPORTED, ICON_SIMULATING } from '../utils/constants.js'
 import { RpcEntries, RpcEntry, RpcNetwork } from './rpc.js'
@@ -173,7 +173,7 @@ export const RpcConnectionStatus = funtypes.Union(funtypes.Undefined, funtypes.R
 export type PendingChainChangeConfirmationPromise = funtypes.Static<typeof PendingChainChangeConfirmationPromise>
 export const PendingChainChangeConfirmationPromise = funtypes.ReadonlyObject({
 	website: Website,
-	dialogId: funtypes.Number,
+	popupOrTabId: PopupOrTabId,
 	request: InterceptedRequest,
 	rpcNetwork: RpcNetwork,
 	simulationMode: funtypes.Boolean,
@@ -181,6 +181,6 @@ export const PendingChainChangeConfirmationPromise = funtypes.ReadonlyObject({
 
 export type PendingPersonalSignPromise = funtypes.Static<typeof PendingPersonalSignPromise>
 export const PendingPersonalSignPromise = funtypes.ReadonlyObject({
-	dialogId: funtypes.Number,
+	popupOrTabId: PopupOrTabId,
 	signedMessageTransaction: SignedMessageTransaction,
 })

@@ -262,8 +262,7 @@ export const EstimateGasError = funtypes.ReadonlyObject({
 		code: funtypes.Literal(ERROR_INTERCEPTOR_GAS_ESTIMATION_FAILED),
 		message: funtypes.String,
 		data: funtypes.String
-	}),
-	gas: EthereumQuantity,
+	})
 })
 
 export type WebsiteCreatedEthereumUnsignedTransaction = funtypes.Static<typeof WebsiteCreatedEthereumUnsignedTransaction>
@@ -271,10 +270,26 @@ export const WebsiteCreatedEthereumUnsignedTransaction = funtypes.ReadonlyObject
 	website: Website,
 	created: EthereumTimestamp,
 	originalRequestParameters: OriginalSendRequestParameters,
-	transaction: EthereumUnsignedTransaction,
 	transactionIdentifier: EthereumQuantity,
-	error: funtypes.Union(funtypes.Undefined, EstimateGasError.fields.error)
+	success: funtypes.Literal(true),
+	transaction: EthereumUnsignedTransaction,
 })
+
+export type FailedToCreateWebsiteCreatedEthereumUnsignedTransaction = funtypes.Static<typeof FailedToCreateWebsiteCreatedEthereumUnsignedTransaction>
+export const FailedToCreateWebsiteCreatedEthereumUnsignedTransaction = funtypes.ReadonlyObject({
+	website: Website,
+	created: EthereumTimestamp,
+	originalRequestParameters: OriginalSendRequestParameters,
+	transactionIdentifier: EthereumQuantity,
+	success: funtypes.Literal(false),
+	error: EstimateGasError.fields.error
+})
+
+export type WebsiteCreatedEthereumUnsignedTransactionOrFailed = funtypes.Static<typeof WebsiteCreatedEthereumUnsignedTransactionOrFailed>
+export const WebsiteCreatedEthereumUnsignedTransactionOrFailed = funtypes.Union(
+	WebsiteCreatedEthereumUnsignedTransaction,
+	FailedToCreateWebsiteCreatedEthereumUnsignedTransaction
+)
 
 export type SignedMessageTransaction = funtypes.Static<typeof SignedMessageTransaction>
 export const SignedMessageTransaction = funtypes.ReadonlyObject({

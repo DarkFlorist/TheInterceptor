@@ -30,7 +30,6 @@ export function getActiveAddressEntry(address: bigint, activeAddresses: readonly
 	}
 }
 
-// todo, add caching here, if we find new address, store it
 export async function identifyAddress(ethereumClientService: EthereumClientService, userAddressBook: UserAddressBook, address: bigint, useLocalStorage: boolean = true) : Promise<AddressBookEntry> {
 	const activeAddress = userAddressBook.activeAddresses.find((entry) => entry.address === address)
 	if (activeAddress !== undefined) return { ...activeAddress, type: 'activeAddress', entrySource: 'User' }

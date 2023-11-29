@@ -1,10 +1,10 @@
 import * as funtypes from 'funtypes'
-import { Website } from './websiteAccessTypes.js'
+import { PopupOrTabId, Website } from './websiteAccessTypes.js'
 import { ActiveAddress, ActiveAddressEntry, AddressBookEntry } from './addressBookTypes.js'
 import { EthereumAddress, EthereumQuantity, EthereumTimestamp, OptionalEthereumAddress } from './wire-types.js'
 import { SignerName } from './signerTypes.js'
 import { InterceptedRequest, UniqueRequestIdentifier, WebsiteSocket } from '../utils/requests.js'
-import { NamedTokenId, ProtectorResults, SimulatedAndVisualizedTransaction, SimulationState, TokenPriceEstimate, VisualizerResult, WebsiteCreatedEthereumUnsignedTransaction } from './visualizer-types.js'
+import { FailedToCreateWebsiteCreatedEthereumUnsignedTransaction, NamedTokenId, ProtectorResults, SimulatedAndVisualizedTransaction, SimulationState, TokenPriceEstimate, VisualizerResult, WebsiteCreatedEthereumUnsignedTransaction, WebsiteCreatedEthereumUnsignedTransactionOrFailed } from './visualizer-types.js'
 import { VisualizedPersonalSignRequest } from './personal-message-definitions.js'
 import { OriginalSendRequestParameters } from './JsonRpc-types.js'
 
@@ -18,7 +18,7 @@ export const PendingAccessRequest = funtypes.ReadonlyObject({
 	signerAccounts: funtypes.ReadonlyArray(EthereumAddress),
 	signerName: SignerName,
 	simulationMode: funtypes.Boolean,
-	dialogId: funtypes.Number,
+	popupOrTabId: PopupOrTabId,
 	socket: WebsiteSocket,
 	request: funtypes.Union(InterceptedRequest, funtypes.Undefined),
 	activeAddress: OptionalEthereumAddress,
@@ -37,7 +37,7 @@ export const ConfirmTransactionSimulationBaseData = funtypes.ReadonlyObject({
 	activeAddress: EthereumAddress,
 	simulationMode: funtypes.Boolean,
 	uniqueRequestIdentifier: UniqueRequestIdentifier,
-	transactionToSimulate: WebsiteCreatedEthereumUnsignedTransaction,
+	transactionToSimulate: WebsiteCreatedEthereumUnsignedTransactionOrFailed,
 	signerName: SignerName,
 })
 
@@ -74,23 +74,30 @@ export const ConfirmTransactionTransactionSingleVisualization = funtypes.Union(C
 
 export type SimulatedPendingTransactionBase = funtypes.Static<typeof SimulatedPendingTransactionBase>
 export const SimulatedPendingTransactionBase = funtypes.ReadonlyObject({
-	dialogId: funtypes.Number,
+	popupOrTabId: PopupOrTabId,
 	originalRequestParameters: OriginalSendRequestParameters,
 	uniqueRequestIdentifier: UniqueRequestIdentifier,
 	simulationMode: funtypes.Boolean,
 	activeAddress: EthereumAddress,
 	created: EthereumTimestamp,
 	transactionIdentifier: EthereumQuantity,
+	website: Website,
 })
 
 export type SimulatedPendingTransaction = funtypes.Static<typeof SimulatedPendingTransaction>
 export const SimulatedPendingTransaction = funtypes.Intersect(
 	SimulatedPendingTransactionBase,
-	funtypes.ReadonlyObject({
-		status: funtypes.Literal('Simulated'),
-		simulationResults: ConfirmTransactionTransactionSingleVisualization,
-		transactionToSimulate: WebsiteCreatedEthereumUnsignedTransaction,
-	})
+	funtypes.ReadonlyObject({ simulationResults: ConfirmTransactionTransactionSingleVisualization }),
+	funtypes.Union(
+		funtypes.ReadonlyObject({
+			status: funtypes.Literal('Simulated'),
+			transactionToSimulate: WebsiteCreatedEthereumUnsignedTransaction,
+		}),
+		funtypes.ReadonlyObject({
+			status: funtypes.Literal('FailedToSimulate'),
+			transactionToSimulate: FailedToCreateWebsiteCreatedEthereumUnsignedTransaction,
+		}),
+	)
 )
 
 export type CraftingTransactionPendingTransaction = funtypes.Static<typeof CraftingTransactionPendingTransaction>

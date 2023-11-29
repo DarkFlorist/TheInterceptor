@@ -94,7 +94,7 @@ export function App() {
 				blockNumber: simState.blockNumber,
 				blockTimestamp: simState.blockTimestamp,
 				simulationConductedTimestamp: simState.simulationConductedTimestamp,
-				simulatedAndVisualizedTransactions: simulatedAndVisualizedTransactions,
+				simulatedAndVisualizedTransactions,
 				visualizedPersonalSignRequests: personalSignRequests,
 				rpcNetwork: simState.rpcNetwork,
 				tokenPrices: tokenPrices,

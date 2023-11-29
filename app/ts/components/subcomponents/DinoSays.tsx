@@ -9,13 +9,15 @@ export function DinoSays( { text } : { text: string }) {
 	</div>
 }
 
-export function DinoSaysNotification( { text, close } : { text: string, close: () => void }) {
+export function DinoSaysNotification( { text, close } : { text: string, close?: () => void }) {
 	return <div style = 'display: flex; align-items: center; justify-content: center;'>
 		<div class = 'notification notification-importance-box' style = 'padding: 10px; display: flex;'>
 			<DinoSays text = { text }/>
-			<button class = 'card-header-icon' aria-label = 'remove' onClick = { close }>
-				<span class = 'icon' style = 'color: var(--text-color);'> X </span>
-			</button>
+			{ close !== undefined ? 
+				<button class = 'card-header-icon' aria-label = 'remove' onClick = { close }>
+					<span class = 'icon' style = 'color: var(--text-color);'> X </span>
+				</button>
+			: <></> }
 		</div>
 	</div>
 }
