@@ -91,7 +91,6 @@ export type PopupOrTab = {
 }
 
 export async function openPopupOrTab(createData: browser.windows._CreateCreateData & { url: string }) : Promise<PopupOrTab | undefined> {
-	console.log('openPopupOrTab')
 	if (await getUseTabsInsteadOfPopup()) {
 		const tab = await browser.tabs.create({ url: createData.url })
 		if (tab === undefined || tab === null || tab.id === undefined) return undefined
