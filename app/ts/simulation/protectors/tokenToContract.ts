@@ -1,17 +1,19 @@
 import { EthereumUnsignedTransaction } from '../../types/wire-types.js'
 import { parseTransaction } from '../../utils/calldata.js'
 import { SimulationState } from '../../types/visualizer-types.js'
-import { getSimulatedCode } from '../services/SimulationModeEthereumClientService.js'
 import { EthereumClientService } from '../services/EthereumClientService.js'
-import { checksummedAddress } from '../../utils/bigint.js'
+import { getCodeOrError } from './commonTokenOops.js'
+import { getSettings } from '../../background/settings.js'
+import { identifyAddress } from '../../background/metadataUtils.js'
 
 export async function tokenToContract(transaction: EthereumUnsignedTransaction, ethereum: EthereumClientService, simulationState: SimulationState) {
 	const transferInfo = parseTransaction(transaction)
 	if (transferInfo === undefined) return
 	if (transferInfo.name !== 'transfer' && transferInfo.name !== 'transferFrom') return
-	const code = await getSimulatedCode(ethereum, simulationState, transferInfo.arguments.to)
-	if (code.statusCode === 'failure') return `Failed to verify whether address ${ transferInfo.arguments.to } contains code or not.`
+	const code = await getCodeOrError(ethereum, simulationState, transferInfo.arguments.to)
+	if (code.statusCode === 'failure') return code.message
 	if (code.getCodeReturn.length === 0) return
 	if (transaction.to === null) return
-	return `Attempt to send tokens directly to a contract (${ checksummedAddress(transferInfo.arguments.to) })`
+	const to = await identifyAddress(ethereum, (await getSettings()).userAddressBook, transferInfo.arguments.to)
+	return `Attempt to send tokens directly to a contract (${ to.name })`
 }
