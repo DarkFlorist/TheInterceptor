@@ -142,7 +142,7 @@ export async function requestAccessFromUser(
 			})
 			if (popupOrTab === undefined) {
 				if (request !== undefined) refuseAccess(websiteTabConnections, request)
-				throw new Error('Opened dialog does not exist')
+				throw new Error('Opened dialog does not exist when expected in requestAccessFromUser function')
 			}
 			if (openedDialog) {
 				removeWindowTabListeners(onCloseWindowCallback, onCloseTabCallback)
@@ -153,7 +153,7 @@ export async function requestAccessFromUser(
 
 		if (openedDialog === undefined) {
 			if (request !== undefined) refuseAccess(websiteTabConnections, request)
-			throw new Error('Opened dialog does not exist')
+			throw new Error('Opened dialog does not exist when expected in requestAccessFromUser function')
 		}
 		const accessRequestId =  `${ accessAddress?.address } || ${ website.websiteOrigin }`
 		const pendingRequest = {
