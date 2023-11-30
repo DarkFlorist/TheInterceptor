@@ -225,14 +225,14 @@ export const openPersonalSignDialog = async (
 	activeAddress: bigint | undefined
 ) => {
 
-	const onCloseWindowOrTab = (popupOrTabs: PopupOrTabId) => {
+	const onCloseWindowOrTab = async (popupOrTabs: PopupOrTabId) => {
 		if (openedDialog === undefined || openedDialog.popupOrTab.id !== popupOrTabs.id || openedDialog.popupOrTab.type !== popupOrTabs.type) return
 		if (pendingPersonalSign === undefined) return
 		openedDialog = undefined
-		return resolvePersonalSign(simulator, websiteTabConnections, rejectMessage(request.uniqueRequestIdentifier))
+		return await resolvePersonalSign(simulator, websiteTabConnections, rejectMessage(request.uniqueRequestIdentifier))
 	}
-	const onCloseWindow = async (id: number) => onCloseWindowOrTab({ type: 'popup' as const, id })
-	const onCloseTab = async (id: number) => onCloseWindowOrTab({ type: 'tab' as const, id })
+	const onCloseWindow = async (id: number) => await onCloseWindowOrTab({ type: 'popup' as const, id })
+	const onCloseTab = async (id: number) => await onCloseWindowOrTab({ type: 'tab' as const, id })
 
 	if (activeAddress === undefined) return reject(signingParams)
 	const signedMessageTransaction = {
