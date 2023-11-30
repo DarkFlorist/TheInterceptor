@@ -5,7 +5,7 @@ import { Semaphore } from '../utils/semaphore.js'
 import { EthereumAddress } from '../types/wire-types.js'
 import { ActiveAddressArray, ContactEntries } from '../types/addressBookTypes.js'
 import { WebsiteAccessArray } from '../types/websiteAccessTypes.js'
-import { RpcEntries, RpcNetwork } from '../types/rpc.js'
+import { RpcNetwork } from '../types/rpc.js'
 import { NetworkPrice } from '../types/visualizer-types.js'
 import { browserStorageLocalGet, browserStorageLocalSet } from '../utils/storageUtils.js'
 
@@ -52,7 +52,7 @@ export const networkPriceSources: { [chainId: string]: NetworkPrice } = {
 	}
 } as const
 
-export const defaultRpcs: RpcEntries = [
+export const defaultRpcs = [
 	{
 		name: 'Ethereum Mainnet',
 		chainId: 1n,
@@ -103,7 +103,7 @@ export const defaultRpcs: RpcEntries = [
 		minimized: true,
 		weth: 0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2n,
 	},
-]
+] as const
 
 export async function getSettings() : Promise<Settings> {
 	const results = await browserStorageLocalGet([
