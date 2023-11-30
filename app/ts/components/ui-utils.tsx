@@ -48,7 +48,7 @@ export function getIssueWithAddressString(address: string): string | undefined {
         return 'Address contains invalid characters.'
     }
 
-    return undefined;
+    return undefined
 }
 
 export function upperCaseFirstCharacter(text: string) {

@@ -359,7 +359,7 @@ export function AddNewAddress(param: AddAddressParam) {
 
 			const issue = getIssueWithAddressString(trimmed)
 			if (issue === undefined) {
-				setErrorString({ blockEditing: true, message: 'Unknown issue.' })
+				setErrorString(undefined)
 				return { ... prevEntry, address: input }
 			}
 			setErrorString({ blockEditing: true, message: issue })
@@ -387,7 +387,7 @@ export function AddNewAddress(param: AddAddressParam) {
 			}
 
 			if (!isValidAbi(trimmedAbi)) {
-				setErrorString({ blockEditing: true, message: 'The Abi provided  is not an ABI. Please provide a valid an ABI.' })
+				setErrorString({ blockEditing: true, message: 'The ABI provided is not valid. Please provide a valid ABI.' })
 				return entry
 			}
 
