@@ -1,8 +1,8 @@
 import 'webextension-polyfill'
-import { getMakeMeRich, getSettings } from './settings.js'
+import { defaultRpcs, getMakeMeRich, getSettings } from './settings.js'
 import { getPrependTrasactions, handleInterceptedRequest, popupMessageHandler, updateSimulationState } from './background.js'
 import { retrieveWebsiteDetails, updateExtensionBadge, updateExtensionIcon } from './iconHandler.js'
-import { clearTabStates, getSimulationResults, removeTabState, setRpcConnectionStatus, updateTabState } from './storageVariables.js'
+import { clearTabStates, getPrimaryRpcForChain, getSimulationResults, removeTabState, setRpcConnectionStatus, updateTabState } from './storageVariables.js'
 import { setPrependTransactionsQueue } from '../simulation/services/SimulationModeEthereumClientService.js'
 import { Simulator } from '../simulation/simulator.js'
 import { TabConnection, TabState, WebsiteTabConnections } from '../types/user-interface-types.js'
@@ -127,8 +127,9 @@ async function onErrorBlockCallback(ethereumClientService: EthereumClientService
 
 async function startup() {
 	const settings = await getSettings()
-	if (settings.rpcNetwork.httpsRpc === undefined) throw new Error('RPC not set')
-	const simulator = new Simulator(settings.rpcNetwork, newBlockAttemptCallback, onErrorBlockCallback)
+	const userSpecifiedSimulatorNetwork = settings.rpcNetwork.httpsRpc === undefined ? await getPrimaryRpcForChain(1n) : settings.rpcNetwork
+	const simulatorNetwork = userSpecifiedSimulatorNetwork === undefined ? defaultRpcs[0] : userSpecifiedSimulatorNetwork
+	const simulator = new Simulator(simulatorNetwork, newBlockAttemptCallback, onErrorBlockCallback)
 	browser.runtime.onConnect.addListener(port => onContentScriptConnected(simulator, port, websiteTabConnections).catch(console.error))
 	browser.runtime.onMessage.addListener(async function (message: unknown) {
 		await popupMessageHandler(websiteTabConnections, simulator, message, await getSettings())
