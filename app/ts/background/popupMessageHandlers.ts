@@ -221,7 +221,7 @@ export async function refreshPopupConfirmTransactionMetadata(ethereumClientServi
 }
 
 export async function refreshPopupConfirmTransactionSimulation(simulator: Simulator, ethereumClientService: EthereumClientService) {
-	const [firstTxn,] = await getPendingTransactions()
+	const [firstTxn] = await getPendingTransactions()
 	if (firstTxn === undefined) return await updateConfirmTransactionViewWithPendingTransactionOrClose()
 	if (firstTxn.status !== 'Simulated') return
 	const transactionToSimulate = firstTxn.originalRequestParameters.method === 'eth_sendTransaction' ? await formEthSendTransaction(ethereumClientService, firstTxn.activeAddress, firstTxn.simulationMode, firstTxn.transactionToSimulate.website, firstTxn.originalRequestParameters, firstTxn.created, firstTxn.transactionIdentifier) : await formSendRawTransaction(ethereumClientService, firstTxn.originalRequestParameters, firstTxn.transactionToSimulate.website, firstTxn.created, firstTxn.transactionIdentifier)
