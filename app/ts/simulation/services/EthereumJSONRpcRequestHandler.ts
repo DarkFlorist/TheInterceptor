@@ -22,7 +22,7 @@ export class EthereumJSONRpcRequestHandler {
 
 	public readonly clearCache = () => { this.cache = new Map() }
 
-	private queryCached = async (request: EthereumJsonRpcRequest, requestId: number, bypassCache: boolean, timeoutS: number = 60000) => {
+	private queryCached = async (request: EthereumJsonRpcRequest, requestId: number, bypassCache: boolean, timeoutMs: number = 60000) => {
 		const serialized = serialize(EthereumJsonRpcRequest, request)
 		assertIsObject(serialized)
 		const payload = {
@@ -38,15 +38,15 @@ export class EthereumJSONRpcRequestHandler {
 				if (cacheValue !== undefined) return cacheValue
 			}
 		}
-		const response = await fetchWithTimeout(this.rpcEntry.httpsRpc, payload, timeoutS)
+		const response = await fetchWithTimeout(this.rpcEntry.httpsRpc, payload, timeoutMs)
 		const responseObject = response.ok ? { responseOk: true as const, responseString: await response.json() } : { responseOk: false as const, response }
 		if (this.caching) this.cache.set(hash, responseObject)
 		return responseObject
 	}
 
-	public readonly jsonRpcRequest = async (rpcRequest: EthereumJsonRpcRequest, bypassCache: boolean = false, timeoutS: number = 60000) => {
+	public readonly jsonRpcRequest = async (rpcRequest: EthereumJsonRpcRequest, bypassCache: boolean = false, timeoutMs: number = 60000) => {
 		const requestId = ++this.nextRequestId
-		const responseObject = await this.queryCached(rpcRequest, requestId, bypassCache, timeoutS)
+		const responseObject = await this.queryCached(rpcRequest, requestId, bypassCache, timeoutMs)
 		if (!responseObject.responseOk) {
 			console.log('req failed')
 			console.log(responseObject.response)

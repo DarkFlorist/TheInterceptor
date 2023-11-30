@@ -17,11 +17,9 @@ export const ADDITIONAL_BAD_TRANSFER_TARGETS = new Set<bigint>([
 
 export async function getCodeOrError(ethereum: EthereumClientService, simulationState: SimulationState, address: EthereumAddress) {
 	const code = await getSimulatedCode(ethereum, simulationState, address)
-	if (code.statusCode === 'failure') {
-		const identifiedAddress = await identifyAddress(ethereum, (await getSettings()).userAddressBook, address)
-		return { statusCode: 'failure' as const, message: `Failed to verify whether address ${ identifiedAddress } contains code or not.` }
-	}
-	return code
+	if (code.statusCode !== 'failure') return code
+	const identifiedAddress = await identifyAddress(ethereum, (await getSettings()).userAddressBook, address)
+	return { statusCode: 'failure' as const, message: `Failed to verify whether address ${ identifiedAddress } contains code or not.` }
 }
 export async function commonTokenOops(transaction: EthereumUnsignedTransaction, ethereum: EthereumClientService, _simulationState: SimulationState) {
 	const transferInfo = parseTransaction(transaction)
