@@ -195,7 +195,8 @@ export async function requestAccessFromUser(
 				await sendPopupMessageToOpenWindows({ method: 'popup_interceptorAccessDialog', data: requests.current })
 			}
 			await sendPopupMessageToOpenWindows({ method: 'popup_interceptor_access_dialog_pending_changed', data: requests.current })
-			return await tryFocusingTabOrWindow({ type: openedDialog.popupOrTab.type === 'tab' ? 'tab' : 'window', id: openedDialog.popupOrTab.windowOrTab.id })
+			if (openedDialog !== undefined) await tryFocusingTabOrWindow({ type: openedDialog.popupOrTab.type === 'tab' ? 'tab' : 'window', id: openedDialog.popupOrTab.windowOrTab.id })
+			return 
 		}
 		pendingAccessRequests.resolve(requests.current)
 	})

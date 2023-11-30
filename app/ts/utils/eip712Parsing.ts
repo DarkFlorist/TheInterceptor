@@ -73,6 +73,7 @@ async function extractEIP712MessageSubset(ethereumClientService: EthereumClientS
 
 export async function extractEIP712Message(ethereumClientService: EthereumClientService, message: EIP712Message, userAddressBook: UserAddressBook, useLocalStorage: boolean = true): Promise<EnrichedEIP712> {
 	return {
+		primaryType: message.primaryType,
 		message: await extractEIP712MessageSubset(ethereumClientService, 0, message.message, message.primaryType, message.types, userAddressBook, useLocalStorage),
 		domain: await extractEIP712MessageSubset(ethereumClientService, 0, message.domain, 'EIP712Domain', message.types, userAddressBook, useLocalStorage),
 	}
