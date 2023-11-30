@@ -10,7 +10,7 @@ import { getHtmlFile, sendPopupMessageToOpenWindows } from '../backgroundUtils.j
 import { extractEIP712Message, validateEIP712Types } from '../../utils/eip712Parsing.js'
 import { getPendingPersonalSignPromise, getRpcNetworkForChain, getSignerName, setPendingPersonalSignPromise } from '../storageVariables.js'
 import { getSettings } from '../settings.js'
-import { PopupOrTab, addWindowTabListeners, closePopupOrTab, getPopupOrTabOnlyById, openPopupOrTab, removeWindowTabListeners } from '../../components/ui-utils.js'
+import { PopupOrTab, addWindowTabListeners, closePopupOrTabById, getPopupOrTabOnlyById, openPopupOrTab, removeWindowTabListeners } from '../../components/ui-utils.js'
 import { appendSignedMessage, simulatePersonalSign } from '../../simulation/services/SimulationModeEthereumClientService.js'
 import { InterceptedRequest, UniqueRequestIdentifier, doesUniqueRequestIdentifiersMatch } from '../../utils/requests.js'
 import { replyToInterceptedRequest } from '../messageSending.js'
@@ -38,7 +38,7 @@ export async function resolvePersonalSign(simulator: Simulator, websiteTabConnec
 		const resolved = await resolve(simulator, confirmation, data.signedMessageTransaction)
 		replyToInterceptedRequest(websiteTabConnections, { ...data.signedMessageTransaction.originalRequestParameters, ...resolved, uniqueRequestIdentifier: confirmation.data.uniqueRequestIdentifier })
 	}
-	if (openedDialog) await closePopupOrTab(openedDialog.popupOrTab)
+	if (openedDialog) await closePopupOrTabById(openedDialog.popupOrTab)
 	openedDialog = undefined
 }
 

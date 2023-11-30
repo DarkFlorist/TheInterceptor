@@ -1,4 +1,4 @@
-import { changeActiveAddressAndChainAndResetSimulation, changeActiveRpc, getPrependTrasactions, refreshConfirmTransactionSimulation, updateSimulationState, updateSimulationMetadata, simulateGovernanceContractExecution } from './background.js'
+import { changeActiveAddressAndChainAndResetSimulation, changeActiveRpc, getPrependTransactions, refreshConfirmTransactionSimulation, updateSimulationState, updateSimulationMetadata, simulateGovernanceContractExecution } from './background.js'
 import { getSettings, setUseTabsInsteadOfPopup, setMakeMeRich, setPage, setUseSignersAddressAsActiveAddress, updateActiveAddresses, updateContacts, updateWebsiteAccess, exportSettingsAndAddressBook, importSettingsAndAddressBook, getMakeMeRich, getUseTabsInsteadOfPopup, getMetamaskCompatibilityMode, setMetamaskCompatibilityMode } from './settings.js'
 import { getPendingTransactions, getCurrentTabId, getTabState, saveCurrentTabId, setRpcList, getRpcList, getPrimaryRpcForChain, getSignerName, getRpcConnectionStatus, updateUserAddressBookEntries, getSimulationResults, setIdsOfOpenedTabs, getIdsOfOpenedTabs, replacePendingTransaction } from './storageVariables.js'
 import { Simulator } from '../simulation/simulator.js'
@@ -81,7 +81,7 @@ export async function changeMakeMeRich(simulator: Simulator, ethereumClientServi
 	await setMakeMeRich(makeMeRichChange.data)
 	await updateSimulationState(simulator.ethereum, async (simulationState) => {
 		if (simulationState === undefined) return undefined
-		const prependQueue = await getPrependTrasactions(ethereumClientService, settings, makeMeRichChange.data)
+		const prependQueue = await getPrependTransactions(ethereumClientService, settings, makeMeRichChange.data)
 		return await resetSimulationState(ethereumClientService, { ...simulationState, prependTransactionsQueue: prependQueue })
 	}, settings.activeSimulationAddress, true)
 }

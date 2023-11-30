@@ -1,4 +1,4 @@
-import { PopupOrTab, addWindowTabListeners, closePopupOrTab, getPopupOrTabOnlyById, openPopupOrTab, removeWindowTabListeners, tryFocusingTabOrWindow } from '../../components/ui-utils.js'
+import { PopupOrTab, addWindowTabListeners, closePopupOrTabById, getPopupOrTabOnlyById, openPopupOrTab, removeWindowTabListeners, tryFocusingTabOrWindow } from '../../components/ui-utils.js'
 import { EthereumClientService } from '../../simulation/services/EthereumClientService.js'
 import { appendTransaction, getInputFieldFromDataOrInput, getSimulatedBlock, getSimulatedTransactionCount, simulateEstimateGas } from '../../simulation/services/SimulationModeEthereumClientService.js'
 import { CANNOT_SIMULATE_OFF_LEGACY_BLOCK, ERROR_INTERCEPTOR_NO_ACTIVE_ADDRESS, METAMASK_ERROR_NOT_CONNECTED_TO_CHAIN, METAMASK_ERROR_USER_REJECTED_REQUEST } from '../../utils/constants.js'
@@ -36,7 +36,7 @@ export async function updateConfirmTransactionViewWithPendingTransaction() {
 
 export async function updateConfirmTransactionViewWithPendingTransactionOrClose() {
 	if (await updateConfirmTransactionViewWithPendingTransaction() === true) return
-	if (openedDialog) await closePopupOrTab(openedDialog.popupOrTab)
+	if (openedDialog) await closePopupOrTabById(openedDialog.popupOrTab)
 	openedDialog = undefined
 }
 

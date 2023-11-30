@@ -1,4 +1,4 @@
-import { PopupOrTab, addWindowTabListeners, closePopupOrTab, getPopupOrTabOnlyById, openPopupOrTab, removeWindowTabListeners, tryFocusingTabOrWindow } from '../../components/ui-utils.js'
+import { PopupOrTab, addWindowTabListeners, closePopupOrTabById, getPopupOrTabOnlyById, openPopupOrTab, removeWindowTabListeners, tryFocusingTabOrWindow } from '../../components/ui-utils.js'
 import { METAMASK_ERROR_ALREADY_PENDING } from '../../utils/constants.js'
 import { Future } from '../../utils/future.js'
 import { InterceptorAccessChangeAddress, InterceptorAccessRefresh, InterceptorAccessReply, Settings, WindowMessage } from '../../types/interceptor-messages.js'
@@ -146,7 +146,7 @@ export async function requestAccessFromUser(
 			}
 			if (openedDialog) {
 				removeWindowTabListeners(onCloseWindowCallback, onCloseTabCallback)
-				await closePopupOrTab(openedDialog.popupOrTab.popupOrTab)
+				await closePopupOrTabById(openedDialog.popupOrTab.popupOrTab)
 			}
 			openedDialog = { popupOrTab, onClosePopup: onCloseWindowCallback, onCloseTab: onCloseTabCallback,  }
 		}
@@ -232,7 +232,7 @@ async function resolve(simulator: Simulator, websiteTabConnections: WebsiteTabCo
 
 	if (openedDialog) {
 		removeWindowTabListeners(openedDialog.onClosePopup, openedDialog.onCloseTab)
-		await closePopupOrTab(openedDialog.popupOrTab.popupOrTab)
+		await closePopupOrTabById(openedDialog.popupOrTab.popupOrTab)
 		openedDialog = undefined
 	}
 	const affectedEntryWithPendingRequest = pendingRequests.previous.filter((pending): pending is PendingAccessRequest & { request: InterceptedRequest } => isAffectedEntry(pending) && pending.request !== undefined)

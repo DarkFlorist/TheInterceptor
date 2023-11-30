@@ -1,4 +1,4 @@
-import { PopupOrTab, addWindowTabListeners, closePopupOrTab, getPopupOrTabOnlyById, openPopupOrTab, removeWindowTabListeners } from '../../components/ui-utils.js'
+import { PopupOrTab, addWindowTabListeners, closePopupOrTabById, getPopupOrTabOnlyById, openPopupOrTab, removeWindowTabListeners } from '../../components/ui-utils.js'
 import { METAMASK_ERROR_USER_REJECTED_REQUEST } from '../../utils/constants.js'
 import { Future } from '../../utils/future.js'
 import { ChainChangeConfirmation, SignerChainChangeConfirmation } from '../../types/interceptor-messages.js'
@@ -32,7 +32,7 @@ export async function resolveChainChange(simulator: Simulator, websiteTabConnect
 	if (data === undefined || !doesUniqueRequestIdentifiersMatch(confirmation.data.uniqueRequestIdentifier, data.request.uniqueRequestIdentifier)) throw new Error('Unique request identifier mismatch in change chain')
 	const resolved = await resolve(simulator, websiteTabConnections, confirmation, data.simulationMode)
 	replyToInterceptedRequest(websiteTabConnections, { method: 'wallet_switchEthereumChain' as const, ...resolved, uniqueRequestIdentifier: data.request.uniqueRequestIdentifier })
-	if (openedDialog) await closePopupOrTab(openedDialog.popupOrTab)
+	if (openedDialog) await closePopupOrTabById(openedDialog.popupOrTab)
 	openedDialog = undefined
 }
 
@@ -120,7 +120,7 @@ export const openChangeChainDialog = async (
 	} finally {
 		removeWindowTabListeners(onCloseWindow, onCloseTab)
 		pendForUserReply = undefined
-		if (openedDialog) await closePopupOrTab(openedDialog.popupOrTab)
+		if (openedDialog) await closePopupOrTabById(openedDialog.popupOrTab)
 		openedDialog = undefined
 	}
 }

@@ -272,7 +272,7 @@ export async function refreshConfirmTransactionSimulation(
 }
 
 // returns true if simulation state was changed
-export async function getPrependTrasactions(ethereumClientService: EthereumClientService, settings: Settings, richMode: boolean): Promise<WebsiteCreatedEthereumUnsignedTransaction[]> {
+export async function getPrependTransactions(ethereumClientService: EthereumClientService, settings: Settings, richMode: boolean): Promise<WebsiteCreatedEthereumUnsignedTransaction[]> {
 	if (!settings.simulationMode || !richMode) return []
 	const activeAddress = settings.activeSimulationAddress
 	const chainId = settings.rpcNetwork.chainId
@@ -443,7 +443,7 @@ export async function changeActiveAddressAndChainAndResetSimulation(
 			const ethereumClientService = simulator.ethereum
 			await updateSimulationState(ethereumClientService, async () => {
 				const simulationState = (await getSimulationResults()).simulationState
-				const prependQueue = await getPrependTrasactions(ethereumClientService, await getSettings(), await getMakeMeRich())
+				const prependQueue = await getPrependTransactions(ethereumClientService, await getSettings(), await getMakeMeRich())
 				return await setPrependTransactionsQueue(ethereumClientService, simulationState, prependQueue)
 			}, updatedSettings.activeSimulationAddress, true)
 		}
