@@ -1,9 +1,8 @@
 import 'webextension-polyfill'
-import { defaultRpcs, getMakeMeRich, getSettings } from './settings.js'
-import { getPrependTrasactions, handleInterceptedRequest, popupMessageHandler, updateSimulationState } from './background.js'
+import { defaultRpcs, getSettings } from './settings.js'
+import { handleInterceptedRequest, popupMessageHandler } from './background.js'
 import { retrieveWebsiteDetails, updateExtensionBadge, updateExtensionIcon } from './iconHandler.js'
-import { clearTabStates, getPrimaryRpcForChain, getSimulationResults, removeTabState, setRpcConnectionStatus, updateTabState } from './storageVariables.js'
-import { setPrependTransactionsQueue } from '../simulation/services/SimulationModeEthereumClientService.js'
+import { clearTabStates, getPrimaryRpcForChain, removeTabState, setRpcConnectionStatus, updateTabState } from './storageVariables.js'
 import { Simulator } from '../simulation/simulator.js'
 import { TabConnection, TabState, WebsiteTabConnections } from '../types/user-interface-types.js'
 import { EthereumBlockHeader } from '../types/wire-types.js'
@@ -136,16 +135,6 @@ async function startup() {
 	})
 
 	await updateExtensionBadge()
-
-	if (settings.simulationMode) {
-		// update prepend mode as our active address has changed, so we need to be sure the rich modes money is sent to right address
-		const ethereumClientService = simulator.ethereum
-		await updateSimulationState(simulator.ethereum, async () => {
-			const simulationState = (await getSimulationResults()).simulationState
-			const prependQueue = await getPrependTrasactions(ethereumClientService, settings, await getMakeMeRich())
-			return await setPrependTransactionsQueue(ethereumClientService, simulationState, prependQueue)
-		}, settings.activeSimulationAddress, true)
-	}
 }
 
 startup()

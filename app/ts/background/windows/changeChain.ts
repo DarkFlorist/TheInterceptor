@@ -1,4 +1,4 @@
-import { PopupOrTab, addWindowTabListener, browserTabsQueryById, closePopupOrTab, openPopupOrTab, removeWindowTabListener } from '../../components/ui-utils.js'
+import { PopupOrTab, addWindowTabListeners, closePopupOrTabById, getPopupOrTabOnlyById, openPopupOrTab, removeWindowTabListeners } from '../../components/ui-utils.js'
 import { METAMASK_ERROR_USER_REJECTED_REQUEST } from '../../utils/constants.js'
 import { Future } from '../../utils/future.js'
 import { ChainChangeConfirmation, SignerChainChangeConfirmation } from '../../types/interceptor-messages.js'
@@ -11,7 +11,7 @@ import { InterceptedRequest, UniqueRequestIdentifier, doesUniqueRequestIdentifie
 import { replyToInterceptedRequest } from '../messageSending.js'
 import { SwitchEthereumChainParams } from '../../types/JsonRpc-types.js'
 import { Simulator } from '../../simulation/simulator.js'
-import { Website } from '../../types/websiteAccessTypes.js'
+import { PopupOrTabId, Website } from '../../types/websiteAccessTypes.js'
 
 let pendForUserReply: Future<ChainChangeConfirmation> | undefined = undefined
 let pendForSignerReply: Future<SignerChainChangeConfirmation> | undefined = undefined
@@ -32,7 +32,7 @@ export async function resolveChainChange(simulator: Simulator, websiteTabConnect
 	if (data === undefined || !doesUniqueRequestIdentifiersMatch(confirmation.data.uniqueRequestIdentifier, data.request.uniqueRequestIdentifier)) throw new Error('Unique request identifier mismatch in change chain')
 	const resolved = await resolve(simulator, websiteTabConnections, confirmation, data.simulationMode)
 	replyToInterceptedRequest(websiteTabConnections, { method: 'wallet_switchEthereumChain' as const, ...resolved, uniqueRequestIdentifier: data.request.uniqueRequestIdentifier })
-	if (openedDialog) await closePopupOrTab(openedDialog)
+	if (openedDialog) await closePopupOrTabById(openedDialog.popupOrTab)
 	openedDialog = undefined
 }
 
@@ -71,17 +71,19 @@ export const openChangeChainDialog = async (
 
 	pendForUserReply = new Future<ChainChangeConfirmation>()
 
-	const onCloseWindow = async (windowId: number) => { // check if user has closed the window on their own, if so, reject signature
-		if (openedDialog === undefined || openedDialog.windowOrTab.id !== windowId) return
+	const onCloseWindowOrTab = async (popupOrTab: PopupOrTabId) => { // check if user has closed the window on their own, if so, reject signature
+		if (openedDialog === undefined || openedDialog.popupOrTab.id !== popupOrTab.id || openedDialog.popupOrTab.type !== popupOrTab.type) return
 		openedDialog = undefined
 		if (pendForUserReply === undefined) return
 		resolveChainChange(simulator, websiteTabConnections, rejectMessage(await getRpcNetworkForChain(params.params[0].chainId), request.uniqueRequestIdentifier))
 	}
+	const onCloseWindow = async (id: number) => onCloseWindowOrTab({ type: 'popup' as const, id })
+	const onCloseTab = async (id: number) => onCloseWindowOrTab({ type: 'tab' as const, id })
 
 	try {
 		const oldPromise = await getChainChangeConfirmationPromise()
 		if (oldPromise !== undefined) {
-			if (await browserTabsQueryById(oldPromise.dialogId) !== undefined) {
+			if (await getPopupOrTabOnlyById(oldPromise.popupOrTabId) !== undefined) {
 				return userDeniedChange
 			} else {
 				await setChainChangeConfirmationPromise(undefined)
@@ -95,12 +97,12 @@ export const openChangeChainDialog = async (
 			width: 600,
 		})
 
-		if (openedDialog?.windowOrTab.id !== undefined) {
-			addWindowTabListener(onCloseWindow)
+		if (openedDialog !== undefined) {
+			addWindowTabListeners(onCloseWindow, onCloseTab)
 
 			await setChainChangeConfirmationPromise({
 				website: website,
-				dialogId: openedDialog?.windowOrTab.id,
+				popupOrTabId: openedDialog.popupOrTab,
 				request: request,
 				simulationMode: simulationMode,
 				rpcNetwork: await getRpcNetworkForChain(params.params[0].chainId),
@@ -116,9 +118,9 @@ export const openChangeChainDialog = async (
 		// forward message to content script
 		return resolve(simulator, websiteTabConnections, reply, simulationMode)
 	} finally {
-		removeWindowTabListener(onCloseWindow)
+		removeWindowTabListeners(onCloseWindow, onCloseTab)
 		pendForUserReply = undefined
-		if (openedDialog) await closePopupOrTab(openedDialog)
+		if (openedDialog) await closePopupOrTabById(openedDialog.popupOrTab)
 		openedDialog = undefined
 	}
 }

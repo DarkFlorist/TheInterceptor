@@ -102,7 +102,7 @@ export async function main() {
 				website: { websiteOrigin: 'test', icon: undefined, title: undefined },
 				created: new Date(),
 				originalRequestParameters: { method: 'eth_sendTransaction', params: [{}]},
-				error: undefined,
+				success: true,
 				transactionIdentifier: 1n,
 			})
 			const nextBlock = await getSimulatedBlock(ethereum, newState, blockNumber + 1n, true)

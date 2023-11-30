@@ -36,3 +36,9 @@ export const WebsiteAccessArray = funtypes.ReadonlyArray(WebsiteAccess)
 
 export type WebsiteAccessArrayWithLegacy = funtypes.Static<typeof WebsiteAccessArrayWithLegacy>
 export const WebsiteAccessArrayWithLegacy = funtypes.Union(LegacyWebsiteAccessArray, WebsiteAccessArray)
+
+export type PopupOrTabId = funtypes.Static<typeof PopupOrTabId>
+export const PopupOrTabId = funtypes.ReadonlyObject({
+	id: funtypes.Number,
+	type: funtypes.Union(funtypes.Literal('tab'), funtypes.Literal('popup'))
+})

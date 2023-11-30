@@ -7,7 +7,7 @@ import { UniqueRequestIdentifier, WebsiteSocket } from '../utils/requests.js'
 import { EthGetLogsResponse, EthGetStorageAtParams, EthTransactionReceiptResponse, GetBlockReturn, GetSimulationStackReply, SendRawTransactionParams, SendTransactionParams, WalletAddEthereumChain } from './JsonRpc-types.js'
 import { AddressBookEntries, AddressBookEntry, ActiveAddressEntry, UserAddressBook } from './addressBookTypes.js'
 import { Page } from './exportedSettingsTypes.js'
-import { Website, WebsiteAccessArray } from './websiteAccessTypes.js'
+import { PopupOrTabId, Website, WebsiteAccessArray } from './websiteAccessTypes.js'
 import { SignerName } from './signerTypes.js'
 import { ConfirmTransactionDialogState, PendingAccessRequestArray, PendingTransaction } from './accessRequest.js'
 import { RpcEntries, RpcEntry, RpcNetwork } from './rpc.js'
@@ -182,12 +182,12 @@ export const TransactionConfirmation = funtypes.ReadonlyObject({
 		funtypes.ReadonlyObject({
 			uniqueRequestIdentifier: UniqueRequestIdentifier,
 			accept: funtypes.Literal(true),
-			windowId: funtypes.Number,
+			popupOrTabId: PopupOrTabId,
 		}),
 		funtypes.ReadonlyObject({
 			uniqueRequestIdentifier: UniqueRequestIdentifier,
 			accept: funtypes.Literal(false),
-			windowId: funtypes.Number,
+			popupOrTabId: PopupOrTabId,
 			transactionErrorString: funtypes.Union(funtypes.String, funtypes.Undefined),
 		})
 	)

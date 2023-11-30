@@ -5,7 +5,7 @@ import { getEthDonator, getSignerName, getSimulationResults, updateSimulationRes
 import { changeSimulationMode, getSettings, getMakeMeRich } from './settings.js'
 import { blockNumber, call, chainId, estimateGas, gasPrice, getAccounts, getBalance, getBlockByNumber, getCode, getLogs, getPermissions, getSimulationStack, getTransactionByHash, getTransactionCount, getTransactionReceipt, netVersion, personalSign, sendTransaction, subscribe, switchEthereumChain, unsubscribe, web3ClientVersion, getBlockByHash } from './simulationModeHanders.js'
 import { changeActiveAddress, changeMakeMeRich, changePage, resetSimulation, confirmDialog, refreshSimulation, removeTransaction, requestAccountsFromSigner, refreshPopupConfirmTransactionSimulation, confirmPersonalSign, confirmRequestAccess, changeInterceptorAccess, changeChainDialog, popupChangeActiveRpc, enableSimulationMode, addOrModifyAddressBookEntry, getAddressBookData, removeAddressBookEntry, homeOpened, interceptorAccessChangeAddressOrRefresh, refreshPopupConfirmTransactionMetadata, changeSettings, importSettings, exportSettings, setNewRpcList, popupIdentifyAddress, popupFindAddressBookEntryWithSymbolOrName, removeSignedMessage, simulateGovernanceContractExecutionOnPass, fetchAbiAndNameFromEtherscan, openNewTab, settingsOpened } from './popupMessageHandlers.js'
-import { ProtectorResults, SimulationState, VisualizedSimulatorState, VisualizerResult, WebsiteCreatedEthereumUnsignedTransaction } from '../types/visualizer-types.js'
+import { ProtectorResults, SimulationState, VisualizedSimulatorState, VisualizerResult, WebsiteCreatedEthereumUnsignedTransaction, WebsiteCreatedEthereumUnsignedTransactionOrFailed } from '../types/visualizer-types.js'
 import { WebsiteTabConnections } from '../types/user-interface-types.js'
 import { askForSignerAccountsFromSignerIfNotAvailable, interceptorAccessMetadataRefresh, requestAccessFromUser, updateInterceptorAccessViewWithPendingRequests } from './windows/interceptorAccess.js'
 import { FourByteExplanations, MAKE_YOU_RICH_TRANSACTION, METAMASK_ERROR_FAILED_TO_PARSE_REQUEST, METAMASK_ERROR_NOT_AUTHORIZED, METAMASK_ERROR_NOT_CONNECTED_TO_CHAIN } from '../utils/constants.js'
@@ -216,13 +216,13 @@ export async function refreshConfirmTransactionSimulation(
 	activeAddress: bigint,
 	simulationMode: boolean,
 	uniqueRequestIdentifier: UniqueRequestIdentifier,
-	transactionToSimulate: WebsiteCreatedEthereumUnsignedTransaction,
+	transactionToSimulate: WebsiteCreatedEthereumUnsignedTransactionOrFailed,
 ): Promise<ConfirmTransactionTransactionSingleVisualization> {
 	const info = {
 		uniqueRequestIdentifier,
-		transactionToSimulate: transactionToSimulate,
-		simulationMode: simulationMode,
-		activeAddress: activeAddress,
+		transactionToSimulate,
+		simulationMode,
+		activeAddress,
 		signerName: await getSignerName(),
 		tabIdOpenedFrom: uniqueRequestIdentifier.requestSocket.tabId,
 	}
@@ -255,10 +255,12 @@ export async function refreshConfirmTransactionSimulation(
 				...await visualizeSimulatorState(nonceFixedState, simulator.ethereum),
 				transactionToSimulate: {
 					...transactionToSimulate,
-					transaction: {
-						...transactionToSimulate.transaction,
-						nonce: lastNonceFixed.signedTransaction.nonce,
-					}
+					...transactionToSimulate.success ? {
+						transaction: {
+							...transactionToSimulate.transaction,
+							nonce: lastNonceFixed.signedTransaction.nonce,
+						} }
+					: {}
 				}
 			}
 		}
@@ -270,7 +272,7 @@ export async function refreshConfirmTransactionSimulation(
 }
 
 // returns true if simulation state was changed
-export async function getPrependTrasactions(ethereumClientService: EthereumClientService, settings: Settings, richMode: boolean): Promise<WebsiteCreatedEthereumUnsignedTransaction[]> {
+export async function getPrependTransactions(ethereumClientService: EthereumClientService, settings: Settings, richMode: boolean): Promise<WebsiteCreatedEthereumUnsignedTransaction[]> {
 	if (!settings.simulationMode || !richMode) return []
 	const activeAddress = settings.activeSimulationAddress
 	const chainId = settings.rpcNetwork.chainId
@@ -288,7 +290,7 @@ export async function getPrependTrasactions(ethereumClientService: EthereumClien
 		website: MAKE_YOU_RICH_TRANSACTION.website,
 		created: new Date(),
 		originalRequestParameters: { method: MAKE_YOU_RICH_TRANSACTION.transactionSendingFormat, params: [{}] },
-		error: undefined,
+		success: true,
 		transactionIdentifier: 0n,
 	}]
 }
@@ -441,7 +443,7 @@ export async function changeActiveAddressAndChainAndResetSimulation(
 			const ethereumClientService = simulator.ethereum
 			await updateSimulationState(ethereumClientService, async () => {
 				const simulationState = (await getSimulationResults()).simulationState
-				const prependQueue = await getPrependTrasactions(ethereumClientService, await getSettings(), await getMakeMeRich())
+				const prependQueue = await getPrependTransactions(ethereumClientService, await getSettings(), await getMakeMeRich())
 				return await setPrependTransactionsQueue(ethereumClientService, simulationState, prependQueue)
 			}, updatedSettings.activeSimulationAddress, true)
 		}

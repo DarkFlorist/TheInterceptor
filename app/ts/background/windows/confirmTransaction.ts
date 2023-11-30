@@ -1,4 +1,4 @@
-import { PopupOrTab, addWindowTabListener, closePopupOrTab, getPopupOrTabOnlyById, openPopupOrTab, removeWindowTabListener } from '../../components/ui-utils.js'
+import { PopupOrTab, addWindowTabListeners, closePopupOrTabById, getPopupOrTabOnlyById, openPopupOrTab, removeWindowTabListeners, tryFocusingTabOrWindow } from '../../components/ui-utils.js'
 import { EthereumClientService } from '../../simulation/services/EthereumClientService.js'
 import { appendTransaction, getInputFieldFromDataOrInput, getSimulatedBlock, getSimulatedTransactionCount, simulateEstimateGas } from '../../simulation/services/SimulationModeEthereumClientService.js'
 import { CANNOT_SIMULATE_OFF_LEGACY_BLOCK, ERROR_INTERCEPTOR_NO_ACTIVE_ADDRESS, METAMASK_ERROR_NOT_CONNECTED_TO_CHAIN, METAMASK_ERROR_USER_REJECTED_REQUEST } from '../../utils/constants.js'
@@ -6,7 +6,7 @@ import { Future } from '../../utils/future.js'
 import { TransactionConfirmation } from '../../types/interceptor-messages.js'
 import { Semaphore } from '../../utils/semaphore.js'
 import { WebsiteTabConnections } from '../../types/user-interface-types.js'
-import { WebsiteCreatedEthereumUnsignedTransaction } from '../../types/visualizer-types.js'
+import { WebsiteCreatedEthereumUnsignedTransaction, WebsiteCreatedEthereumUnsignedTransactionOrFailed } from '../../types/visualizer-types.js'
 import { SendRawTransactionParams, SendTransactionParams } from '../../types/JsonRpc-types.js'
 import { refreshConfirmTransactionSimulation, updateSimulationState } from '../background.js'
 import { getHtmlFile, sendPopupMessageToOpenWindows } from '../backgroundUtils.js'
@@ -17,7 +17,7 @@ import { Simulator } from '../../simulation/simulator.js'
 import { ethers, keccak256, toUtf8Bytes } from 'ethers'
 import { dataStringWith0xStart, stringToUint8Array } from '../../utils/bigint.js'
 import { EthereumAddress, EthereumQuantity } from '../../types/wire-types.js'
-import { Website } from '../../types/websiteAccessTypes.js'
+import { PopupOrTabId, Website } from '../../types/websiteAccessTypes.js'
 import { PendingTransaction } from '../../types/accessRequest.js'
 
 type Confirmation = TransactionConfirmation | 'NoResponse'
@@ -27,7 +27,7 @@ const pendingConfirmationSemaphore = new Semaphore(1)
 
 export async function updateConfirmTransactionViewWithPendingTransaction() {
 	const promises = await getPendingTransactions()
-	if (promises.length >= 1) {
+	if (promises.length > 0) {
 		await sendPopupMessageToOpenWindows({ method: 'popup_update_confirm_transaction_dialog', data: promises })
 		return true
 	}
@@ -36,7 +36,7 @@ export async function updateConfirmTransactionViewWithPendingTransaction() {
 
 export async function updateConfirmTransactionViewWithPendingTransactionOrClose() {
 	if (await updateConfirmTransactionViewWithPendingTransaction() === true) return
-	if (openedDialog) await closePopupOrTab(openedDialog)
+	if (openedDialog) await closePopupOrTabById(openedDialog.popupOrTab)
 	openedDialog = undefined
 }
 
@@ -49,18 +49,21 @@ export async function resolvePendingTransaction(simulator: Simulator, websiteTab
 		return pending.resolve(confirmation)
 	} else {
 		// we have not been tracking this window, forward its message directly to content script (or signer)
-		const resolvedPromise = await resolve(simulator, pendingTransaction.simulationMode, pendingTransaction.activeAddress, pendingTransaction, confirmation)
+		const resolvedPromise = await resolve(simulator, pendingTransaction.simulationMode, pendingTransaction.activeAddress, confirmation, pendingTransaction)
 		replyToInterceptedRequest(websiteTabConnections, { ...pendingTransaction.originalRequestParameters, ...resolvedPromise, uniqueRequestIdentifier: confirmation.data.uniqueRequestIdentifier })
-		openedDialog = await getPopupOrTabOnlyById(confirmation.data.windowId)
+		openedDialog = await getPopupOrTabOnlyById(confirmation.data.popupOrTabId)
 	}
 }
-const onCloseWindow = async (windowId: number) => { // check if user has closed the window on their own, if so, reject all signatures
-	if (openedDialog === undefined || openedDialog.windowOrTab.id !== windowId) return
+
+const onCloseWindowOrTab = async (popupOrTabs: PopupOrTabId) => { // check if user has closed the window on their own, if so, reject all signatures
+	if (openedDialog === undefined || openedDialog.popupOrTab.id !== popupOrTabs.id || openedDialog.popupOrTab.type !== popupOrTabs.type) return
 	openedDialog = undefined
 	await clearPendingTransactions()
 	pendingTransactions.forEach((pending) => pending.resolve('NoResponse'))
 	pendingTransactions.clear()
 }
+const onCloseWindow = async (id: number) => onCloseWindowOrTab({ type: 'popup' as const, id })
+const onCloseTab = async (id: number) => onCloseWindowOrTab({ type: 'tab' as const, id })
 
 const formRejectMessage = (errorString: undefined | string) => {
 	return {
@@ -104,12 +107,12 @@ export const formSendRawTransaction = async(ethereumClientService: EthereumClien
 		website,
 		created,
 		originalRequestParameters: sendRawTransactionParams,
-		transactionIdentifier: transactionIdentifier,
-		error: undefined,
+		transactionIdentifier,
+		success: true,
 	}
 }
 
-export const formEthSendTransaction = async(ethereumClientService: EthereumClientService, activeAddress: bigint | undefined, simulationMode: boolean = true, website: Website, sendTransactionParams: SendTransactionParams, created: Date, transactionIdentifier: EthereumQuantity): Promise<WebsiteCreatedEthereumUnsignedTransaction> => {
+export const formEthSendTransaction = async(ethereumClientService: EthereumClientService, activeAddress: bigint | undefined, simulationMode: boolean = true, website: Website, sendTransactionParams: SendTransactionParams, created: Date, transactionIdentifier: EthereumQuantity): Promise<WebsiteCreatedEthereumUnsignedTransactionOrFailed> => {
 	const simulationState = simulationMode ? (await getSimulationResults()).simulationState : undefined
 	const blockPromise = getSimulatedBlock(ethereumClientService, simulationState)
 	const transactionDetails = sendTransactionParams.params[0]
@@ -139,10 +142,10 @@ export const formEthSendTransaction = async(ethereumClientService: EthereumClien
 	}
 	if (transactionDetails.gas === undefined) {
 		const estimateGas = await simulateEstimateGas(ethereumClientService, simulationState, transactionWithoutGas)
-		if ('error' in estimateGas) return { ...extraParams, ...estimateGas, transaction: { ...transactionWithoutGas, gas: estimateGas.gas } }
-		return { transaction: { ...transactionWithoutGas, gas: estimateGas.gas }, ...extraParams }
+		if ('error' in estimateGas) return { ...extraParams, ...estimateGas, success: false }
+		return { transaction: { ...transactionWithoutGas, gas: estimateGas.gas }, ...extraParams, success: true }
 	}
-	return { transaction: { ...transactionWithoutGas, gas: transactionDetails.gas }, ...extraParams }
+	return { transaction: { ...transactionWithoutGas, gas: transactionDetails.gas }, ...extraParams, success: true }
 }
 
 export async function openConfirmTransactionDialog(
@@ -171,7 +174,7 @@ export async function openConfirmTransactionDialog(
 				if (pendingTransactions.length !== 0) {
 					const pendingTransaction = pendingTransactions[0]
 					if (pendingTransaction === undefined) throw new Error('pending transaction was undefined')
-					if (await getPopupOrTabOnlyById(pendingTransaction.dialogId) !== undefined) {
+					if (await getPopupOrTabOnlyById(pendingTransaction.popupOrTabId) !== undefined) {
 						justAddToPending = true
 					} else {
 						await clearPendingTransactions()
@@ -180,65 +183,78 @@ export async function openConfirmTransactionDialog(
 			}
 
 			const openDialog = async () => {
-				addWindowTabListener(onCloseWindow)
+				addWindowTabListeners(onCloseWindow, onCloseTab)
 				return await openPopupOrTab({ url: getHtmlFile('confirmTransaction'), type: 'popup', height: 800, width: 600 })
 			}
 			if (!justAddToPending || openedDialog === undefined) openedDialog = await openDialog()
-			if (openedDialog?.windowOrTab.id === undefined) return false
+			else { await tryFocusingTabOrWindow(openedDialog.popupOrTab) }
+
+			if (openedDialog === undefined) return false
 			const pendingTransaction = {
-				dialogId: openedDialog.windowOrTab.id,
+				popupOrTabId: openedDialog.popupOrTab,
 				originalRequestParameters: transactionParams,
 				uniqueRequestIdentifier: request.uniqueRequestIdentifier,
 				simulationMode,
 				activeAddress,
 				created,
 				status: 'Crafting Transaction' as const,
-				transactionIdentifier, 
+				transactionIdentifier,
+				website,
 			}
 			await appendPendingTransaction(pendingTransaction)
+			if (justAddToPending) await sendPopupMessageToOpenWindows({ method: 'popup_confirm_transaction_dialog_pending_changed', data: await getPendingTransactions() })
+				
 			await updateConfirmTransactionViewWithPendingTransaction()
 
 			const transactionToSimulate = await transactionToSimulatePromise
+			if (transactionToSimulate.success === false) {
+				await replacePendingTransaction({
+					...pendingTransaction,
+					transactionToSimulate,
+					simulationResults: await refreshConfirmTransactionSimulation(simulator, ethereumClientService, activeAddress, simulationMode, request.uniqueRequestIdentifier, transactionToSimulate),
+					status: 'FailedToSimulate' as const,
+				})
+				await updateConfirmTransactionViewWithPendingTransaction()
+				return false
+			} else {
+				await replacePendingTransaction({ ...pendingTransaction, transactionToSimulate: transactionToSimulate, status: 'Simulating' as const })
+				await updateConfirmTransactionViewWithPendingTransaction()
 
-			await replacePendingTransaction({ ...pendingTransaction, transactionToSimulate: transactionToSimulate, status: 'Simulating' as const })
-			await updateConfirmTransactionViewWithPendingTransaction()
-
-			const refreshSimulationPromise = refreshConfirmTransactionSimulation(simulator, ethereumClientService, activeAddress, simulationMode, request.uniqueRequestIdentifier, transactionToSimulate)
-			const simulatedTx = await replacePendingTransaction({
-				...pendingTransaction,
-				transactionToSimulate: transactionToSimulate,
-				simulationResults: await refreshSimulationPromise,
-				status: 'Simulated' as const,
-			})
-			await updateConfirmTransactionViewWithPendingTransaction()
-			if (justAddToPending) await sendPopupMessageToOpenWindows({ method: 'popup_confirm_transaction_dialog_pending_changed', data: await getPendingTransactions() })
-			return simulatedTx
+				const simulatedTx = await replacePendingTransaction({
+					...pendingTransaction,
+					transactionToSimulate,
+					simulationResults: await refreshConfirmTransactionSimulation(simulator, ethereumClientService, activeAddress, simulationMode, request.uniqueRequestIdentifier, transactionToSimulate),
+					status: 'Simulated' as const,
+				})
+				await updateConfirmTransactionViewWithPendingTransaction()
+				return simulatedTx !== undefined
+			}
 		})
-		if (addedPendingTransaction === false || addedPendingTransaction === undefined) return formRejectMessage(undefined)
+		if (addedPendingTransaction === false) return formRejectMessage(undefined)
+		const pendingTransactionData = (await getPendingTransactions()).find((tx) => tx.transactionIdentifier === transactionIdentifier)
+		if (pendingTransactionData === undefined) return formRejectMessage(undefined)
 		const reply = await pendingTransaction
-		const resolvedPromise = await resolve(simulator, simulationMode, activeAddress, addedPendingTransaction, reply)
+		const resolvedPromise = await resolve(simulator, simulationMode, activeAddress, reply, pendingTransactionData)
 		return resolvedPromise
 	} finally {
-		removeWindowTabListener(onCloseWindow)
+		removeWindowTabListeners(onCloseWindow, onCloseTab)
 		pendingTransactions.delete(uniqueRequestIdentifier)
 		await updateConfirmTransactionViewWithPendingTransactionOrClose()
 	}
 }
 
-async function resolve(simulator: Simulator, simulationMode: boolean, activeAddress: bigint, pendingTransaction: PendingTransaction, confirmation: Confirmation): Promise<{ forward: true } | { error: { code: number, message: string } } | { result: bigint }> {
-	if (pendingTransaction.status !== 'Simulated') return formRejectMessage(undefined)
-	const transactionToSimulate = pendingTransaction.transactionToSimulate
-	if (transactionToSimulate.error !== undefined) return { error: transactionToSimulate.error }
+async function resolve(simulator: Simulator, simulationMode: boolean, activeAddress: bigint, confirmation: Confirmation, pendingTransaction: PendingTransaction): Promise<{ forward: true } | { error: { code: number, message: string } } | { result: bigint }> {
 	if (confirmation === 'NoResponse') return formRejectMessage(undefined)
+	if (pendingTransaction === undefined || pendingTransaction.status !== 'Simulated') return formRejectMessage(undefined)
 	if (confirmation.data.accept === false) return formRejectMessage(confirmation.data.transactionErrorString)
 	if (!simulationMode) return { forward: true }
 	const newState = await updateSimulationState(simulator.ethereum, async (simulationState) => {
-		return await appendTransaction(simulator.ethereum, simulationState, transactionToSimulate)
+		return await appendTransaction(simulator.ethereum, simulationState, pendingTransaction.transactionToSimulate)
 	}, activeAddress, true)
 	if (newState === undefined || newState.simulatedTransactions === undefined || newState.simulatedTransactions.length === 0) {
 		return METAMASK_ERROR_NOT_CONNECTED_TO_CHAIN
 	}
 	const lastTransaction = newState.simulatedTransactions[newState.simulatedTransactions.length - 1]
-	if (lastTransaction === undefined) throw new Error('missing last transacion')
+	if (lastTransaction === undefined) throw new Error('missing last transaction')
 	return { result: lastTransaction.signedTransaction.hash }
 }

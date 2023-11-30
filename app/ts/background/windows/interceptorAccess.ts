@@ -1,4 +1,4 @@
-import { PopupOrTab, addWindowTabListener, closePopupOrTab, getPopupOrTabOnlyById, openPopupOrTab, removeWindowTabListener, tryFocusingTabOrWindow } from '../../components/ui-utils.js'
+import { PopupOrTab, addWindowTabListeners, closePopupOrTabById, getPopupOrTabOnlyById, openPopupOrTab, removeWindowTabListeners, tryFocusingTabOrWindow } from '../../components/ui-utils.js'
 import { METAMASK_ERROR_ALREADY_PENDING } from '../../utils/constants.js'
 import { Future } from '../../utils/future.js'
 import { InterceptorAccessChangeAddress, InterceptorAccessRefresh, InterceptorAccessReply, Settings, WindowMessage } from '../../types/interceptor-messages.js'
@@ -14,21 +14,22 @@ import { InterceptedRequest, WebsiteSocket } from '../../utils/requests.js'
 import { replyToInterceptedRequest, sendSubscriptionReplyOrCallBack } from '../messageSending.js'
 import { Simulator } from '../../simulation/simulator.js'
 import { ActiveAddress, ActiveAddressEntry } from '../../types/addressBookTypes.js'
-import { Website, WebsiteAccessArray } from '../../types/websiteAccessTypes.js'
+import { PopupOrTabId, Website, WebsiteAccessArray } from '../../types/websiteAccessTypes.js'
 import { PendingAccessRequest, PendingAccessRequestArray } from '../../types/accessRequest.js'
 
 type OpenedDialogWithListeners = {
 	popupOrTab: PopupOrTab
-	onCloseWindow: (windowId: number) => void
+	onClosePopup: (id: number) => void
+	onCloseTab: (id: number) => void
 } | undefined
 
 let openedDialog: OpenedDialogWithListeners = undefined
 
 const pendingInterceptorAccessSemaphore = new Semaphore(1)
 
-const onCloseWindow = async (simulator: Simulator, windowId: number, websiteTabConnections: WebsiteTabConnections) => { // check if user has closed the window on their own, if so, reject signature
-	if (openedDialog?.popupOrTab.windowOrTab.id !== windowId) return
-	removeWindowTabListener(openedDialog.onCloseWindow)
+const onCloseWindowOrTab = async (simulator: Simulator, popupOrTabs: PopupOrTabId, websiteTabConnections: WebsiteTabConnections) => { // check if user has closed the window on their own, if so, reject signature
+	if (openedDialog === undefined || openedDialog.popupOrTab.popupOrTab.id !== popupOrTabs.id || openedDialog.popupOrTab.popupOrTab.type !== popupOrTabs.type) return
+	removeWindowTabListeners(openedDialog.onClosePopup, openedDialog.onCloseTab)
 
 	openedDialog = undefined
 	const pendingRequests = await clearPendingAccessRequests()
@@ -101,7 +102,10 @@ export async function requestAccessFromUser(
 	// check if we need to ask address access or not. If address is put to never need to have address specific permision, we don't need to ask for it
 	const askForAddressAccess = requestAccessToAddress !== undefined && settings.userAddressBook.activeAddresses.find((x) => x.address === requestAccessToAddress.address)?.askForAddressAccess !== false
 	const accessAddress = askForAddressAccess ? requestAccessToAddress : undefined
-	const closeWindowCallback = (windowId: number) => onCloseWindow(simulator, windowId, websiteTabConnections) 
+	const closeWindowOrTabCallback = (popupOrTabId: PopupOrTabId) => onCloseWindowOrTab(simulator, popupOrTabId, websiteTabConnections) 
+	const onCloseWindowCallback = async (id: number) => closeWindowOrTabCallback({ type: 'popup' as const, id })
+	const onCloseTabCallback = async (id: number) => closeWindowOrTabCallback({ type: 'tab' as const, id })
+	
 
 	const pendingAccessRequests = new Future<PendingAccessRequestArray>()
 
@@ -111,7 +115,7 @@ export async function requestAccessFromUser(
 			if (previousRequests.length !== 0) {
 				const previousRequest = previousRequests[0]
 				if (previousRequest === undefined) throw new Error('missing previous request')
-				if (await getPopupOrTabOnlyById(previousRequest.dialogId) !== undefined) {
+				if (await getPopupOrTabOnlyById(previousRequest.popupOrTabId) !== undefined) {
 					return true
 				} else {
 					await clearPendingAccessRequests()
@@ -129,31 +133,31 @@ export async function requestAccessFromUser(
 		}
 		if (hasAccess !== 'askAccess') return
 		if (!justAddToPending) {
-			addWindowTabListener(closeWindowCallback)
+			addWindowTabListeners(onCloseWindowCallback, onCloseTabCallback)
 			const popupOrTab = await openPopupOrTab({
 				url: getHtmlFile('interceptorAccess'),
 				type: 'popup',
 				height: 800,
 				width: 600,
 			})
-			if (popupOrTab?.windowOrTab.id === undefined) {
+			if (popupOrTab === undefined) {
 				if (request !== undefined) refuseAccess(websiteTabConnections, request)
-				throw new Error('Opened dialog does not exist')
+				throw new Error('Opened dialog does not exist when expected in requestAccessFromUser function')
 			}
 			if (openedDialog) {
-				removeWindowTabListener(openedDialog.onCloseWindow)
-				await closePopupOrTab(openedDialog.popupOrTab)
+				removeWindowTabListeners(onCloseWindowCallback, onCloseTabCallback)
+				await closePopupOrTabById(openedDialog.popupOrTab.popupOrTab)
 			}
-			openedDialog = { popupOrTab, onCloseWindow: closeWindowCallback, }
+			openedDialog = { popupOrTab, onClosePopup: onCloseWindowCallback, onCloseTab: onCloseTabCallback,  }
 		}
 
-		if (openedDialog?.popupOrTab.windowOrTab.id === undefined) {
+		if (openedDialog === undefined) {
 			if (request !== undefined) refuseAccess(websiteTabConnections, request)
-			throw new Error('Opened dialog does not exist')
+			throw new Error('Opened dialog does not exist when expected in requestAccessFromUser function')
 		}
 		const accessRequestId =  `${ accessAddress?.address } || ${ website.websiteOrigin }`
 		const pendingRequest = {
-			dialogId: openedDialog.popupOrTab.windowOrTab.id,
+			popupOrTabId: openedDialog.popupOrTab.popupOrTab,
 			socket,
 			request,
 			accessRequestId,
@@ -195,7 +199,7 @@ export async function requestAccessFromUser(
 				await sendPopupMessageToOpenWindows({ method: 'popup_interceptorAccessDialog', data: requests.current })
 			}
 			await sendPopupMessageToOpenWindows({ method: 'popup_interceptor_access_dialog_pending_changed', data: requests.current })
-			if (openedDialog !== undefined) await tryFocusingTabOrWindow({ type: openedDialog.popupOrTab.type === 'tab' ? 'tab' : 'window', id: openedDialog.popupOrTab.windowOrTab.id })
+			if (openedDialog !== undefined) await tryFocusingTabOrWindow(openedDialog.popupOrTab.popupOrTab)
 			return 
 		}
 		pendingAccessRequests.resolve(requests.current)
@@ -227,8 +231,8 @@ async function resolve(simulator: Simulator, websiteTabConnections: WebsiteTabCo
 	if (pendingRequests.current.length > 0) return sendPopupMessageToOpenWindows({ method: 'popup_interceptorAccessDialog', data: pendingRequests.current })
 
 	if (openedDialog) {
-		removeWindowTabListener(openedDialog.onCloseWindow)
-		await closePopupOrTab(openedDialog.popupOrTab)
+		removeWindowTabListeners(openedDialog.onClosePopup, openedDialog.onCloseTab)
+		await closePopupOrTabById(openedDialog.popupOrTab.popupOrTab)
 		openedDialog = undefined
 	}
 	const affectedEntryWithPendingRequest = pendingRequests.previous.filter((pending): pending is PendingAccessRequest & { request: InterceptedRequest } => isAffectedEntry(pending) && pending.request !== undefined)
