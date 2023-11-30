@@ -77,7 +77,7 @@ export class EthereumClientService {
 		if (this.retrievingBlock) return
 		try {
 			this.retrievingBlock = true
-			const response = await this.requestHandler.jsonRpcRequest({ method: 'eth_getBlockByNumber', params: ['latest', true] }, true)
+			const response = await this.requestHandler.jsonRpcRequest({ method: 'eth_getBlockByNumber', params: ['latest', true] }, true, 6000)
 			if (this.cacheRefreshTimer === undefined) return
 			const newBlock = EthereumBlockHeader.parse(response)
 			console.log(`Current block number: ${ newBlock.number }`)
@@ -86,6 +86,7 @@ export class EthereumClientService {
 			this.newBlockAttemptCallback(newBlock, this, gotNewBlock)
 			this.cachedBlock = newBlock
 		} catch(error) {
+			console.log(`Failed to get a block`)
 			console.warn(error)
 			return this.onErrorBlockCallback(this)
 		} finally {

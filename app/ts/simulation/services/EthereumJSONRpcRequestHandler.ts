@@ -4,6 +4,7 @@ import { EthereumJsonRpcRequest, JsonRpcResponse } from '../../types/JsonRpc-typ
 import { FetchResponseError, JsonRpcResponseError } from '../../utils/errors.js'
 import { serialize } from '../../types/wire-types.js'
 import { keccak256, toUtf8Bytes } from 'ethers'
+import { fetchWithTimeout } from '../../utils/requests.js'
 
 export type IEthereumJSONRpcRequestHandler = Pick<EthereumJSONRpcRequestHandler, keyof EthereumJSONRpcRequestHandler>
 export class EthereumJSONRpcRequestHandler {
@@ -21,7 +22,7 @@ export class EthereumJSONRpcRequestHandler {
 
 	public readonly clearCache = () => { this.cache = new Map() }
 
-	private queryCached = async (request: EthereumJsonRpcRequest, requestId: number, bypassCache: boolean) => {
+	private queryCached = async (request: EthereumJsonRpcRequest, requestId: number, bypassCache: boolean, timeoutMs: number = 60000) => {
 		const serialized = serialize(EthereumJsonRpcRequest, request)
 		assertIsObject(serialized)
 		const payload = {
@@ -37,15 +38,15 @@ export class EthereumJSONRpcRequestHandler {
 				if (cacheValue !== undefined) return cacheValue
 			}
 		}
-		const response = await fetch(this.rpcEntry.httpsRpc, payload)
+		const response = await fetchWithTimeout(this.rpcEntry.httpsRpc, payload, timeoutMs)
 		const responseObject = response.ok ? { responseOk: true as const, responseString: await response.json() } : { responseOk: false as const, response }
 		if (this.caching) this.cache.set(hash, responseObject)
 		return responseObject
 	}
 
-	public readonly jsonRpcRequest = async (rpcRequest: EthereumJsonRpcRequest, bypassCache: boolean = false) => {
+	public readonly jsonRpcRequest = async (rpcRequest: EthereumJsonRpcRequest, bypassCache: boolean = false, timeoutMs: number = 60000) => {
 		const requestId = ++this.nextRequestId
-		const responseObject = await this.queryCached(rpcRequest, requestId, bypassCache)
+		const responseObject = await this.queryCached(rpcRequest, requestId, bypassCache, timeoutMs)
 		if (!responseObject.responseOk) {
 			console.log('req failed')
 			console.log(responseObject.response)
@@ -53,7 +54,12 @@ export class EthereumJSONRpcRequestHandler {
 			throw new FetchResponseError(responseObject.response, requestId)
 		}
 		const jsonRpcResponse = JsonRpcResponse.parse(responseObject.responseString)
-		if ('error' in jsonRpcResponse) throw new JsonRpcResponseError(jsonRpcResponse)
+		if ('error' in jsonRpcResponse) {
+			console.log('req failed')
+			console.log(responseObject)
+			console.log(rpcRequest)
+			throw new JsonRpcResponseError(jsonRpcResponse)
+		}
 		return jsonRpcResponse.result
 	}
 }

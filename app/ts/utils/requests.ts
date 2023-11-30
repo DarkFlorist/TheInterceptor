@@ -53,3 +53,11 @@ export const getUniqueRequestIdentifierString = (uniqueRequestIdentifier: Unique
 export const doesUniqueRequestIdentifiersMatch = (a: UniqueRequestIdentifier, b: UniqueRequestIdentifier) => {
 	return a.requestId == b.requestId && a.requestSocket.connectionName === b.requestSocket.connectionName && a.requestSocket.tabId === b.requestSocket.tabId
 }
+
+export async function fetchWithTimeout(resource: RequestInfo | URL, init?: RequestInit | undefined, timeoutMs: number = 60000) {
+	const controller = new AbortController()
+	const id = setTimeout(() => controller.abort(), timeoutMs)
+	const response = await fetch(resource, { ...init, signal: controller.signal })
+	clearTimeout(id)
+	return response
+}
