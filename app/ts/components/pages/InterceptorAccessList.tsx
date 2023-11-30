@@ -234,13 +234,13 @@ export function InterceptorAccessList(param: InterceptorAccessListParams) {
 										{ access.addressAccess.length === 0 ? <p className = 'paragraph'> No individual address accesses given </p> : <>
 											{ access.addressAccessModified.map( (websiteAccessAddress, addressIndex) => (
 												<li style = { `margin: 0px; margin-bottom: ${ addressIndex < access.addressAccessModified.length - 1  ? '10px;' : '0px' }` }>
-													{ websiteAccessAddress.removed ? <p style = 'color: var(--negative-color)' > { `Forgot ${ checksummedAddress(websiteAccessAddress.address) }`} </p> :
+													{ websiteAccessAddress.removed ? <p style = 'color: var(--negative-color)' > { `Forgot ${ metadata.get(addressString(websiteAccessAddress.address))?.name || checksummedAddress(websiteAccessAddress.address) }`} </p> :
 														<div style = 'display: flex; width: 100%; overflow: hidden;'>
 															<SmallAddress
 																addressBookEntry = { metadata.get(addressString(websiteAccessAddress.address)) || {
 																	type: 'activeAddress',
 																	name: checksummedAddress(websiteAccessAddress.address),
-																	address: BigInt(websiteAccessAddress.address),
+																	address: websiteAccessAddress.address,
 																	askForAddressAccess: false,
 																	entrySource: 'FilledIn',
 																}}
