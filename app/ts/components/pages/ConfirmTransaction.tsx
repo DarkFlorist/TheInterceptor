@@ -103,7 +103,6 @@ export function TransactionCard(param: TransactionCardParams) {
 	const previousResults = param.simulationAndVisualisationResults.simulatedAndVisualizedTransactions.filter((result) => result.transactionIdentifier !== pendingTransaction.transactionIdentifier)
 	const transactionNames = previousResults.map((result) => identifyTransaction(result).title).concat(simTx === undefined ? 'Error' : identifyTransaction(simTx).title)
 	const underTransactions = param.pendingTransactions.slice(1).reverse()
-	console.log('undies:', underTransactions.length)
 	if (simTx === undefined) {
 		if (pendingTransaction.status === 'Crafting Transaction') return <></>
 		return <>
@@ -272,7 +271,6 @@ export function ConfirmTransaction() {
 				setRpcConnectionStatus(message.data.rpcConnectionStatus)
 			}
 			if (message.method === 'popup_confirm_transaction_dialog_pending_changed') {
-				console.log(message.method)
 				updatePendingTransactions(message)
 				setPendingTransactionAddedNotification(true)
 				try {
@@ -289,7 +287,6 @@ export function ConfirmTransaction() {
 				return
 			}
 			if (message.method !== 'popup_update_confirm_transaction_dialog') return
-			console.log(message.method)
 			updatePendingTransactions(message)
 		}
 		browser.runtime.onMessage.addListener(popupMessageListener)
