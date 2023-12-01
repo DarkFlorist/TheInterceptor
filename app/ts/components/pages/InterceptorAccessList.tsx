@@ -89,9 +89,7 @@ export function InterceptorAccessList(param: InterceptorAccessListParams) {
 		setMetadata(new Map(param.websiteAccessAddressMetadata.map((x) => [addressString(x.address), x])))
 	}, [param.websiteAccessAddressMetadata])
 
-	function goHome() {
-		param.setAndSaveAppPage('Home')
-	}
+	const goHome = () => param.setAndSaveAppPage({ page: 'Home' })
 
 	function setWebsiteAccess(index: number, access: boolean | undefined, removed: boolean | undefined) {
 		if (editableAccessList === undefined) return

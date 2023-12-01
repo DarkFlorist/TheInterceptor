@@ -17,12 +17,13 @@ import { VisualizedPersonalSignRequest, VisualizedPersonalSignRequestPermit, Vis
 import { OrderComponents, OrderComponentsExtraDetails } from '../simulationExplaining/customExplainers/OpenSeaOrder.js'
 import { Ether } from '../subcomponents/coins.js'
 import { tryFocusingTabOrWindow, humanReadableDateFromSeconds, CellElement } from '../ui-utils.js'
-import { AddressBookEntry, IncompleteAddressBookEntry } from '../../types/addressBookTypes.js'
+import { AddressBookEntry } from '../../types/addressBookTypes.js'
 import { EnrichedEIP712, EnrichedEIP712Message, TypeEnrichedEIP712MessageRecord } from '../../types/eip721.js'
 import { serialize } from '../../types/wire-types.js'
 import { TransactionCreated } from '../simulationExplaining/SimulationSummary.js'
 import { EnrichedSolidityTypeComponent } from '../subcomponents/solidityType.js'
 import { QuarantineReasons } from '../simulationExplaining/Transactions.js'
+import { ModifyAddressWindowState } from '../../types/visualizer-types.js'
 
 type SignatureCardParams = {
 	VisualizedPersonalSignRequest: VisualizedPersonalSignRequest
@@ -430,7 +431,7 @@ export function SignatureCard(params: SignatureCardParams) {
 }
 
 export function PersonalSign() {
-	const [addingNewAddress, setAddingNewAddress] = useState<IncompleteAddressBookEntry | 'renameAddressModalClosed'> ('renameAddressModalClosed')
+	const [addingNewAddress, setAddingNewAddress] = useState<ModifyAddressWindowState | 'renameAddressModalClosed'> ('renameAddressModalClosed')
 	const [VisualizedPersonalSignRequest, setVisualizedPersonalSignRequest] = useState<VisualizedPersonalSignRequest | undefined>(undefined)
 	const [forceSend, setForceSend] = useState<boolean>(false)
 
@@ -495,14 +496,18 @@ export function PersonalSign() {
 
 	function renameAddressCallBack(entry: AddressBookEntry) {
 		setAddingNewAddress({
-			addingAddress: false,
-			askForAddressAccess: false,
-			symbol: undefined,
-			decimals: undefined,
-			logoUri: undefined,
-			...entry,
-			address: checksummedAddress(entry.address),
-			abi: 'abi' in entry ? entry.abi : undefined,
+			windowStateId: 'AddNewAddressAccess',
+			errorState: undefined,
+			incompleteAddressBookEntry: {
+				addingAddress: false,
+				askForAddressAccess: false,
+				symbol: undefined,
+				decimals: undefined,
+				logoUri: undefined,
+				...entry,
+				address: checksummedAddress(entry.address),
+				abi: 'abi' in entry ? entry.abi : undefined,
+			}
 		})
 	}
 
@@ -516,7 +521,7 @@ export function PersonalSign() {
 						? <></>
 						: <AddNewAddress
 							setActiveAddressAndInformAboutIt = { undefined }
-							incompleteAddressBookEntry = { addingNewAddress }
+							modifyAddressWindowState = { addingNewAddress }
 							close = { () => { setAddingNewAddress('renameAddressModalClosed') } }
 							activeAddress = { undefined }
 						/>

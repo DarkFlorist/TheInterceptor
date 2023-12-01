@@ -109,7 +109,7 @@ export async function getSettings() : Promise<Settings> {
 	const results = await browserStorageLocalGet([
 		'activeSimulationAddress',
 		'addressInfos',
-		'page',
+		'openedPage',
 		'useSignersAddressAsActiveAddress',
 		'websiteAccess',
 		'rpcNetwork',
@@ -119,7 +119,7 @@ export async function getSettings() : Promise<Settings> {
 	if (defaultRpcs[0] === undefined || defaultAddresses[0] === undefined) throw new Error('default rpc or default address was missing')
 	return {
 		activeSimulationAddress: 'activeSimulationAddress' in results ? results.activeSimulationAddress : defaultAddresses[0].address,
-		page: results.page ?? 'Home',
+		openedPage: results.openedPage ?? { page: 'Home' },
 		useSignersAddressAsActiveAddress: results.useSignersAddressAsActiveAddress ?? false,
 		websiteAccess: results.websiteAccess ?? [],
 		rpcNetwork: results.rpcNetwork !== undefined ? results.rpcNetwork : defaultRpcs[0],
@@ -131,7 +131,8 @@ export async function getSettings() : Promise<Settings> {
 	}
 }
 
-export const setPage = async (page: Page) => await browserStorageLocalSet({page})
+export const setPage = async (openedPage: Page) => await browserStorageLocalSet({ openedPage })
+export const getPage = async() => (await browserStorageLocalGet('openedPage'))?.['openedPage'] ?? { page: 'Home' }
 
 export const setMakeMeRich = async (makeMeRich: boolean) => await browserStorageLocalSet({ makeMeRich })
 export const getMakeMeRich = async() => (await browserStorageLocalGet('makeMeRich'))?.['makeMeRich'] ?? false
@@ -188,12 +189,12 @@ export async function exportSettingsAndAddressBook(): Promise<ExportedSettings> 
 	const settings = await getSettings()
 	return {
 		name: 'InterceptorSettingsAndAddressBook' as const,
-		version: '1.2' as const,
+		version: '1.3' as const,
 		exportedDate: exportDate,
 		settings: {
 			activeSimulationAddress: settings.activeSimulationAddress,
 			addressInfos: settings.userAddressBook.activeAddresses,
-			page: settings.page,
+			openedPage: settings.openedPage,
 			useSignersAddressAsActiveAddress: settings.useSignersAddressAsActiveAddress,
 			websiteAccess: settings.websiteAccess,
 			rpcNetwork: settings.rpcNetwork,
@@ -206,7 +207,9 @@ export async function exportSettingsAndAddressBook(): Promise<ExportedSettings> 
 }
 
 export async function importSettingsAndAddressBook(exportedSetings: ExportedSettings) {
-	if (exportedSetings.version === '1.0') {
+	if (exportedSetings.version === '1.3') {
+		await setPage(exportedSetings.settings.openedPage)
+	} else if (exportedSetings.version === '1.0') {
 		await changeSimulationMode({
 			simulationMode: exportedSetings.settings.simulationMode,
 			rpcNetwork: defaultRpcs[0],
@@ -221,9 +224,7 @@ export async function importSettingsAndAddressBook(exportedSetings: ExportedSett
 			activeSigningAddress: undefined,
 		})
 	}
-
 	await setUseSignersAddressAsActiveAddress(exportedSetings.settings.useSignersAddressAsActiveAddress)
-	await setPage(exportedSetings.settings.page)
 	await updateActiveAddresses(() => exportedSetings.settings.addressInfos)
 	await updateWebsiteAccess(() => exportedSetings.settings.websiteAccess)
 	await updateContacts(() => exportedSetings.settings.contacts === undefined ? [] : exportedSetings.settings.contacts)

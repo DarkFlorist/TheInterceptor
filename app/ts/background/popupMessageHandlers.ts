@@ -1,8 +1,8 @@
 import { changeActiveAddressAndChainAndResetSimulation, changeActiveRpc, getPrependTransactions, refreshConfirmTransactionSimulation, updateSimulationState, updateSimulationMetadata, simulateGovernanceContractExecution } from './background.js'
-import { getSettings, setUseTabsInsteadOfPopup, setMakeMeRich, setPage, setUseSignersAddressAsActiveAddress, updateActiveAddresses, updateContacts, updateWebsiteAccess, exportSettingsAndAddressBook, importSettingsAndAddressBook, getMakeMeRich, getUseTabsInsteadOfPopup, getMetamaskCompatibilityMode, setMetamaskCompatibilityMode } from './settings.js'
+import { getSettings, setUseTabsInsteadOfPopup, setMakeMeRich, setPage, setUseSignersAddressAsActiveAddress, updateActiveAddresses, updateContacts, updateWebsiteAccess, exportSettingsAndAddressBook, importSettingsAndAddressBook, getMakeMeRich, getUseTabsInsteadOfPopup, getMetamaskCompatibilityMode, setMetamaskCompatibilityMode, getPage } from './settings.js'
 import { getPendingTransactions, getCurrentTabId, getTabState, saveCurrentTabId, setRpcList, getRpcList, getPrimaryRpcForChain, getSignerName, getRpcConnectionStatus, updateUserAddressBookEntries, getSimulationResults, setIdsOfOpenedTabs, getIdsOfOpenedTabs, replacePendingTransaction } from './storageVariables.js'
 import { Simulator } from '../simulation/simulator.js'
-import { ChangeActiveAddress, ChangeMakeMeRich, ChangePage, RemoveTransaction, RequestAccountsFromSigner, TransactionConfirmation, InterceptorAccess, ChangeInterceptorAccess, ChainChangeConfirmation, EnableSimulationMode, ChangeActiveChain, AddOrEditAddressBookEntry, GetAddressBookData, RemoveAddressBookEntry, InterceptorAccessRefresh, InterceptorAccessChangeAddress, Settings, RefreshConfirmTransactionMetadata, RefreshInterceptorAccessMetadata, ChangeSettings, ImportSettings, SetRpcList, IdentifyAddress, FindAddressBookEntryWithSymbolOrName, PersonalSignApproval, UpdateHomePage, RemoveSignedMessage, SimulateGovernanceContractExecutionReply, FetchAbiAndNameFromEtherscan, SimulateGovernanceContractExecution } from '../types/interceptor-messages.js'
+import { ChangeActiveAddress, ChangeMakeMeRich, ChangePage, RemoveTransaction, RequestAccountsFromSigner, TransactionConfirmation, InterceptorAccess, ChangeInterceptorAccess, ChainChangeConfirmation, EnableSimulationMode, ChangeActiveChain, AddOrEditAddressBookEntry, GetAddressBookData, RemoveAddressBookEntry, InterceptorAccessRefresh, InterceptorAccessChangeAddress, Settings, RefreshConfirmTransactionMetadata, RefreshInterceptorAccessMetadata, ChangeSettings, ImportSettings, SetRpcList, PersonalSignApproval, UpdateHomePage, RemoveSignedMessage, SimulateGovernanceContractExecutionReply, SimulateGovernanceContractExecution, ChangeAddOrModifyAddressWindowState, FetchAbiAndNameFromEtherscan } from '../types/interceptor-messages.js'
 import { formEthSendTransaction, formSendRawTransaction, resolvePendingTransaction, updateConfirmTransactionViewWithPendingTransactionOrClose } from './windows/confirmTransaction.js'
 import { resolvePersonalSign } from './windows/personalSign.js'
 import { getAddressMetadataForAccess, requestAddressChange, resolveInterceptorAccess } from './windows/interceptorAccess.js'
@@ -17,12 +17,15 @@ import { WebsiteTabConnections } from '../types/user-interface-types.js'
 import { EthereumClientService } from '../simulation/services/EthereumClientService.js'
 import { refreshSimulationState, removeSignedMessageFromSimulation, removeTransactionAndUpdateTransactionNonces, resetSimulationState } from '../simulation/services/SimulationModeEthereumClientService.js'
 import { formSimulatedAndVisualizedTransaction } from '../components/formVisualizerResults.js'
-import { CompleteVisualizedSimulation, SimulationState } from '../types/visualizer-types.js'
+import { CompleteVisualizedSimulation, ModifyAddressWindowState, SimulationState } from '../types/visualizer-types.js'
 import { ExportedSettings } from '../types/exportedSettingsTypes.js'
 import { isJSON } from '../utils/json.js'
-import { UserAddressBook } from '../types/addressBookTypes.js'
-import { serialize } from '../types/wire-types.js'
-import { fetchAbiFromEtherscan } from '../simulation/services/EtherScanAbiFetcher.js'
+import { IncompleteAddressBookEntry, UserAddressBook } from '../types/addressBookTypes.js'
+import { EthereumAddress, serialize } from '../types/wire-types.js'
+import { fetchAbiFromEtherscan, isValidAbi } from '../simulation/services/EtherScanAbiFetcher.js'
+import { stringToAddress } from '../utils/bigint.js'
+import { ethers } from 'ethers'
+import { getIssueWithAddressString } from '../components/ui-utils.js'
 
 export async function confirmDialog(simulator: Simulator, websiteTabConnections: WebsiteTabConnections, confirmation: TransactionConfirmation) {
 	await resolvePendingTransaction(simulator, websiteTabConnections, confirmation)
@@ -157,9 +160,7 @@ export async function changeInterceptorAccess(simulator: Simulator, websiteTabCo
 	return await sendPopupMessageToOpenWindows({ method: 'popup_interceptor_access_changed' })
 }
 
-export async function changePage(page: ChangePage) {
-	await setPage(page.data)
-}
+export const changePage = async (page: ChangePage) => await setPage(page.data)
 
 export async function requestAccountsFromSigner(websiteTabConnections: WebsiteTabConnections, params: RequestAccountsFromSigner) {
 	if (params.data) {
@@ -404,22 +405,6 @@ export async function setNewRpcList(simulator: Simulator, request: SetRpcList, s
 	}
 }
 
-export async function popupIdentifyAddress(simulator: Simulator, parsedRequest: IdentifyAddress, settings: Settings) {
-	const addressBookEntry = await identifyAddress(simulator.ethereum, settings.userAddressBook, parsedRequest.data.address)
-	return await sendPopupMessageToOpenWindows({ method: 'popup_identifyAddressReply', data: { addressBookEntry } })
-}
-
-export async function popupFindAddressBookEntryWithSymbolOrName(parsedRequest: FindAddressBookEntryWithSymbolOrName, settings: Settings) {
-	const addressBookEntryOrUndefined = await findEntryWithSymbolOrName(parsedRequest.data.symbol, parsedRequest.data.name, settings.userAddressBook)
-	return await sendPopupMessageToOpenWindows({ method: 'popup_findAddressBookEntryWithSymbolOrNameReply', data: { 
-		query: {
-			symbol: parsedRequest.data.symbol,
-			name: parsedRequest.data.name,
-		},
-		addressBookEntryOrUndefined,
-	} })
-}
-
 export async function simulateGovernanceContractExecutionOnPass(ethereum: EthereumClientService, userAddressBook: UserAddressBook, request: SimulateGovernanceContractExecution) {
 	const pendingTransactions = await getPendingTransactions()
 	const transaction = pendingTransactions.find((tx) => tx.transactionIdentifier === request.data.transactionIdentifier)
@@ -431,11 +416,77 @@ export async function simulateGovernanceContractExecutionOnPass(ethereum: Ethere
 	}))
 }
 
-export async function fetchAbiAndNameFromEtherscan(parsedRequest: FetchAbiAndNameFromEtherscan) {
-	const abi = await fetchAbiFromEtherscan(parsedRequest.data)
-	return await sendPopupMessageToOpenWindows({
-		method: 'popup_fetchAbiAndNameFromEtherscanReply' as const,
-		data: abi,
+const getErrorIfAnyWithIncompleteAddressBookEntry = async (ethereum: EthereumClientService, settings: Settings, incompleteAddressBookEntry: IncompleteAddressBookEntry) => {
+	// check for duplicates
+	const duplicateEntry = await findEntryWithSymbolOrName(incompleteAddressBookEntry.symbol, incompleteAddressBookEntry.name, settings.userAddressBook)
+	if (duplicateEntry !== undefined && duplicateEntry.address !== stringToAddress(incompleteAddressBookEntry.address)) {
+		return `There already exists ${ duplicateEntry.type === 'activeAddress' ? 'an address' : duplicateEntry.type } with ${ 'symbol' in duplicateEntry ? `the symbol "${ duplicateEntry.symbol }" and` : '' } the name "${ duplicateEntry.name }".`
+	}
+
+	// check that address is valid
+	if (incompleteAddressBookEntry.address !== undefined) {
+		const trimmed = incompleteAddressBookEntry.address.trim()
+		if (ethers.isAddress(trimmed)) {
+			const address = EthereumAddress.parse(trimmed)
+			if (incompleteAddressBookEntry.addingAddress) {
+				const identifiedAddress = await identifyAddress(ethereum, settings.userAddressBook, address)
+				if (identifiedAddress.entrySource !== 'OnChain' && identifiedAddress.entrySource !== 'FilledIn') {
+					return `The address already exists. Edit the existing record instead trying to add it again.`
+				}
+				if (identifiedAddress.type !== incompleteAddressBookEntry.type && !(incompleteAddressBookEntry.type === 'activeAddress' && identifiedAddress.type === 'contact') ) {
+					return `The address is a ${ identifiedAddress.type } while you are trying to add ${ incompleteAddressBookEntry.type }.`
+				}
+			}
+		}
+		const issue = getIssueWithAddressString(trimmed)
+		if (issue !== undefined) return issue
+	}
+
+	// check that ABI is valid
+	const trimmedAbi = incompleteAddressBookEntry.abi === undefined ? undefined : incompleteAddressBookEntry.abi.trim()
+	if (trimmedAbi !== undefined && trimmedAbi.length !== 0 && (!isJSON(trimmedAbi) || !isValidAbi(trimmedAbi))) {
+		return 'The Abi provided is not a JSON ABI. Please provide a valid JSON ABI.'
+	}
+	return undefined
+}
+
+export async function changeAddOrModifyAddressWindowState(ethereum: EthereumClientService, parsedRequest: ChangeAddOrModifyAddressWindowState, settings: Settings) {
+	const updatePage = async (newState: ModifyAddressWindowState) => {
+		const currentPage = await getPage()
+		if ((currentPage.page === 'AddNewAddress' || currentPage.page === 'ModifyAddress') && currentPage.state.windowStateId === parsedRequest.data.windowStateId) {
+			await setPage({ page: currentPage.page, state: newState })
+		}
+	}
+	await updatePage(parsedRequest.data.newState)
+	const message = await getErrorIfAnyWithIncompleteAddressBookEntry(ethereum, settings, parsedRequest.data.newState.incompleteAddressBookEntry)
+	const errorState = message === undefined ? undefined : { blockEditing: true, message }
+	if (errorState?.message !== parsedRequest.data.newState.errorState?.message) await updatePage({ ...parsedRequest.data.newState, errorState })
+	return await sendPopupMessageToOpenWindows({ method: 'popup_addOrModifyAddressWindowStateInformation', 
+		data: { windowStateId: parsedRequest.data.windowStateId, errorState: errorState }
 	})
 }
 
+export async function popupFetchAbiAndNameFromEtherscan(parsedRequest: FetchAbiAndNameFromEtherscan) {
+	const etherscanReply = await fetchAbiFromEtherscan(parsedRequest.data.address)
+	if (etherscanReply.success) {
+		return await sendPopupMessageToOpenWindows({
+			method: 'popup_fetchAbiAndNameFromEtherscanReply' as const,
+			data: {
+				windowStateId: parsedRequest.data.windowStateId,
+				success: true,
+				address: parsedRequest.data.address,
+				abi: etherscanReply.abi,
+				contractName: etherscanReply.contractName,
+			}
+		})
+	}
+	return await sendPopupMessageToOpenWindows({
+		method: 'popup_fetchAbiAndNameFromEtherscanReply' as const,
+		data: {
+			windowStateId: parsedRequest.data.windowStateId,
+			success: false,
+			address: parsedRequest.data.address,
+			error: etherscanReply.error
+		}
+	})
+}
