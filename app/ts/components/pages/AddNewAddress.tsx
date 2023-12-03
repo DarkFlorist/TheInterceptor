@@ -407,7 +407,7 @@ export function AddNewAddress(param: AddAddressParam) {
 						/>
 					</div>
 				</div>
-				<div style = 'padding-left: 10px; padding-right: 10px; margin-bottom: 10px; height: 80px'>
+				<div style = 'padding-left: 10px; padding-right: 10px; margin-bottom: 10px; min-height: 80px'>
 					{ modifyAddressWindowState?.errorState === undefined ? <></> : <Notice text = { modifyAddressWindowState.errorState.message } /> }
 					{ !showOnChainVerificationErrorBox() ? <></> : 
 						<ErrorCheckBox
