@@ -356,7 +356,7 @@ export function NonTokenLogEvent(params: NonTokenLogEventParams) {
 					renameAddressCallBack = { params.renameAddressCallBack }
 				/>
 			</div>
-			<div class = 'log-cell' style = { { 'align-items': 'normal', 'grid-column-start': 2, 'grid-column-end': 4, display: 'flex', 'flex-wrap': 'wrap' } }>
+			<div class = 'log-cell' style = { { 'grid-column-start': 2, 'grid-column-end': 4, display: 'flex', 'flex-wrap': 'wrap' } }>
 				<p class = 'paragraph' style = { textStyle }> { `${ params.nonTokenLog.name }(` } </p>
 				{ insertBetweenElements(params.nonTokenLog.args.map((arg) =>
 					<>
