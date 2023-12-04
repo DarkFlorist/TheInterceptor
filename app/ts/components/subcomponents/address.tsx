@@ -167,7 +167,7 @@ export function SmallAddress(params: SmallAddressParams) {
 						</CopyToClipboard>
 					</span>
 					<CopyToClipboard content = { checksummedAddress(params.addressBookEntry.address) } copyMessage = 'Address copied!' style = { { 'text-overflow': 'ellipsis', overflow: 'hidden' } }>
-						<p class = 'paragraph address-text noselect nopointer' style = { `color: ${ textColor }` }>{ params.addressBookEntry.name }</p>
+						<p class = 'address-text noselect nopointer' style = { `color: ${ textColor }` }>{ params.addressBookEntry.name }</p>
 					</CopyToClipboard>
 					<button className = 'button is-primary is-small rename-address-button' onClick = { () => params.renameAddressCallBack(params.addressBookEntry) }>
 						<span class = 'icon'>
