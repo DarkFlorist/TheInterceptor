@@ -7,9 +7,9 @@ import { commonTokenOops } from './protectors/commonTokenOops.js'
 import { eoaApproval } from './protectors/eoaApproval.js'
 import { eoaCalldata } from './protectors/eoaCalldata.js'
 import { tokenToContract } from './protectors/tokenToContract.js'
-import { WebsiteCreatedEthereumUnsignedTransaction, SimulationState, TokenVisualizerResult, MaybeParsedEvents, VisualizerResult, ParsedEvent, MaybeParsedEventWithExtraData } from '../types/visualizer-types.js'
+import { WebsiteCreatedEthereumUnsignedTransaction, SimulationState, TokenVisualizerResult, MaybeParsedEvents, VisualizerResult, MaybeParsedEventWithExtraData } from '../types/visualizer-types.js'
 import { EthereumJSONRpcRequestHandler } from './services/EthereumJSONRpcRequestHandler.js'
-import { SingleMulticallResponse } from '../types/JsonRpc-types.js'
+import { MulticallResponseEventLog, SingleMulticallResponse } from '../types/JsonRpc-types.js'
 import { APPROVAL_LOG, DEPOSIT_LOG, ERC1155_TRANSFERBATCH_LOG, ERC1155_TRANSFERSINGLE_LOG, ERC721_APPROVAL_FOR_ALL_LOG, TRANSFER_LOG, WITHDRAWAL_LOG } from '../utils/constants.js'
 import { handleApprovalLog, handleDepositLog, handleERC1155TransferBatch, handleERC1155TransferSingle, handleERC20TransferLog, handleErc721ApprovalForAllLog, handleWithdrawalLog } from './logHandlers.js'
 import { RpcEntry } from '../types/rpc.js'
@@ -32,7 +32,7 @@ const PROTECTORS = [
 	sendToNonContact,
 ]
 
-type TokenLogHandler = (event: ParsedEvent) => TokenVisualizerResult[]
+type TokenLogHandler = (event: MulticallResponseEventLog) => TokenVisualizerResult[]
 
 const tokenLogHandler = new Map<string, TokenLogHandler>([
 	[TRANSFER_LOG, handleERC20TransferLog],
@@ -88,8 +88,10 @@ export const visualizeTransaction = async (blockNumber: bigint, singleMulticallR
 		if (logSignature === undefined) return [{ ...parsedEvent, type: 'Parsed' }]
 		const handler = tokenLogHandler.get(bytes32String(logSignature))
 		if (handler === undefined) return [{ ...parsedEvent, type: 'Parsed' }]
-		const identifiedAddress = parsedEvent.loggersAddressBookEntry
-		if (identifiedAddress.type === 'ERC1155' || identifiedAddress.type === 'ERC721' || identifiedAddress.type === 'ERC20') return handler(parsedEvent).map((tokenInformation) => ({ ...parsedEvent, type: 'TokenEvent', tokenInformation }))
+		if (parsedEvent.loggersAddressBookEntry.type === 'ERC1155'
+			|| parsedEvent.loggersAddressBookEntry.address === 0n
+			|| parsedEvent.loggersAddressBookEntry.type === 'ERC721'
+			|| parsedEvent.loggersAddressBookEntry.type === 'ERC20') return handler(parsedEvent).map((tokenInformation) => ({ ...parsedEvent, type: 'TokenEvent', tokenInformation }))
 		return [{ ...parsedEvent, type: 'Parsed' }]
 	})
 	return {

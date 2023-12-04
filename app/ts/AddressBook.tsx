@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'preact/hooks'
 import { RenameAddressCallBack } from './types/user-interface-types.js'
-import { GetAddressBookDataReply } from './types/interceptor-messages.js'
+import { GetAddressBookDataReply, MessageToPopup } from './types/interceptor-messages.js'
 import { arrayToChunks } from './utils/typed-arrays.js'
 import { AddNewAddress } from './components/pages/AddNewAddress.js'
 import { BigAddress } from './components/subcomponents/address.js'

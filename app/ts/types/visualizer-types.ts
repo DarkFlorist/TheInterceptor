@@ -33,6 +33,7 @@ export const ParsedEvent = funtypes.ReadonlyObject({
 	name: funtypes.String, // eg. 'Transfer'
 	signature: funtypes.String, // eg. 'Transfer(address,address,uint256)'
 	args: funtypes.ReadonlyArray(SolidityVariable), // TODO: add support for structs (abiV2)
+	loggersAddress: EthereumAddress,
 	loggersAddressBookEntry: AddressBookEntry,
 	data: EthereumInput,
 	topics: funtypes.ReadonlyArray(EthereumBytes32),
@@ -41,6 +42,7 @@ export const ParsedEvent = funtypes.ReadonlyObject({
 export type NonParsedEvent = funtypes.Static<typeof NonParsedEvent>
 export const NonParsedEvent = funtypes.ReadonlyObject({
 	isParsed: funtypes.Literal('NonParsed'),
+	loggersAddress: EthereumAddress,
 	loggersAddressBookEntry: AddressBookEntry,
 	data: EthereumInput,
 	topics: funtypes.ReadonlyArray(EthereumBytes32),
