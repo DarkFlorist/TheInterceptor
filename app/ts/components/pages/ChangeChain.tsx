@@ -12,9 +12,11 @@ export function ChangeChain() {
 
 	useEffect(() => {
 		async function popupMessageListener(msg: unknown) {
-			const message = MessageToPopup.parse(msg)
-			if (message.method !== 'popup_ChangeChainRequest') return
-			setChainChangeData(message.data)
+			const maybeParsed = MessageToPopup.safeParse(msg)
+			if (!maybeParsed.success) return // not a message we are interested in
+			const parsed = maybeParsed.value
+			if (parsed.method !== 'popup_ChangeChainRequest') return
+			setChainChangeData(parsed.data)
 		}
 		browser.runtime.onMessage.addListener(popupMessageListener)
 		return () => browser.runtime.onMessage.removeListener(popupMessageListener)

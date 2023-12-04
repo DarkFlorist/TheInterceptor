@@ -181,7 +181,9 @@ export function AddNewAddress(param: AddAddressParam) {
 	const [retrievedAbi, setRetrievingAbi] = useState<boolean>(false)
 	useEffect(() => {
 		const popupMessageListener = async (msg: unknown) => {
-			const parsed = MessageToPopup.parse(msg)
+			const maybeParsed = MessageToPopup.safeParse(msg)
+			if (!maybeParsed.success) return // not a message we are interested in
+			const parsed = maybeParsed.value
 			if (parsed.method === 'popup_findAddressBookEntryWithSymbolOrNameReply') {
 				setIncompleteAddressBookEntry((previous) => {
 					if (parsed.data.query.name === previous.name && parsed.data.query.symbol === previous.symbol) { 

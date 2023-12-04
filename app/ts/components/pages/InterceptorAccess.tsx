@@ -180,15 +180,17 @@ export function InterceptorAccess() {
 
 	useEffect(() => {
 		async function popupMessageListener(msg: unknown) {
-			const message = MessageToPopup.parse(msg)
-			if (message.method === 'popup_addressBookEntriesChanged') return refreshMetadata()
-			if (message.method === 'popup_websiteAccess_changed') return refreshMetadata()
-			if (message.method === 'popup_interceptorAccessDialog' || message.method === 'popup_interceptor_access_dialog_pending_changed') {
-				if (message.method === 'popup_interceptor_access_dialog_pending_changed') {
+			const maybeParsed = MessageToPopup.safeParse(msg)
+			if (!maybeParsed.success) return // not a message we are interested in
+			const parsed = maybeParsed.value
+			if (parsed.method === 'popup_addressBookEntriesChanged') return refreshMetadata()
+			if (parsed.method === 'popup_websiteAccess_changed') return refreshMetadata()
+			if (parsed.method === 'popup_interceptorAccessDialog' || parsed.method === 'popup_interceptor_access_dialog_pending_changed') {
+				if (parsed.method === 'popup_interceptor_access_dialog_pending_changed') {
 					if (pendingAccessRequestArray.length > 0) setInformationUpdatedTimestamp(Date.now())
 					setPendingRequestAddedNotification(true)
 				}
-				setAccessRequest(message.data)
+				setAccessRequest(parsed.data)
 				return
 			}
 		}

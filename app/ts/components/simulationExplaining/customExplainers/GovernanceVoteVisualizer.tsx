@@ -174,15 +174,17 @@ export function GovernanceVoteVisualizer(param: GovernanceVoteVisualizerParams) 
 
 	useEffect(() => {
 		const popupMessageListener = async (msg: unknown) => {
-			const message = MessageToPopup.parse(msg)
-			if (message.method === 'popup_new_block_arrived') {
-				setRpcConnectionStatus(message.data.rpcConnectionStatus)
-				return setCurrentBlockNumber(message.data.rpcConnectionStatus?.latestBlock?.number)
+			const maybeParsed = MessageToPopup.safeParse(msg)
+			if (!maybeParsed.success) return // not a message we are interested in
+			const parsed = maybeParsed.value
+			if (parsed.method === 'popup_new_block_arrived') {
+				setRpcConnectionStatus(parsed.data.rpcConnectionStatus)
+				return setCurrentBlockNumber(parsed.data.rpcConnectionStatus?.latestBlock?.number)
 			}
-			if (message.method !== 'popup_simulateGovernanceContractExecutionReply') return
-			const reply = SimulateGovernanceContractExecutionReply.parse(message)
+			if (parsed.method !== 'popup_simulateGovernanceContractExecutionReply') return
+			const reply = SimulateGovernanceContractExecutionReply.parse(parsed)
 			if (reply.data.transactionIdentifier !== param.simTx.transactionIdentifier) return
-			return setSimulateGovernanceContractExecutionReply(SimulateGovernanceContractExecutionReply.parse(message))
+			return setSimulateGovernanceContractExecutionReply(SimulateGovernanceContractExecutionReply.parse(parsed))
 		}
 		browser.runtime.onMessage.addListener(popupMessageListener)
 		return () => browser.runtime.onMessage.removeListener(popupMessageListener)

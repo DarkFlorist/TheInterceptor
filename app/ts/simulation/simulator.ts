@@ -13,7 +13,7 @@ import { MulticallResponseEventLog, SingleMulticallResponse } from '../types/Jso
 import { APPROVAL_LOG, DEPOSIT_LOG, ERC1155_TRANSFERBATCH_LOG, ERC1155_TRANSFERSINGLE_LOG, ERC721_APPROVAL_FOR_ALL_LOG, TRANSFER_LOG, WITHDRAWAL_LOG } from '../utils/constants.js'
 import { handleApprovalLog, handleDepositLog, handleERC1155TransferBatch, handleERC1155TransferSingle, handleERC20TransferLog, handleErc721ApprovalForAllLog, handleWithdrawalLog } from './logHandlers.js'
 import { RpcEntry } from '../types/rpc.js'
-import { UserAddressBook } from '../types/addressBookTypes.js'
+import { AddressBookEntryCategory, UserAddressBook } from '../types/addressBookTypes.js'
 import { parseEventIfPossible } from './services/SimulationModeEthereumClientService.js'
 import { Interface } from 'ethers'
 import { extractAbi, extractFunctionArgumentTypes, removeTextBetweenBrackets } from '../utils/abi.js'
@@ -21,6 +21,7 @@ import { SolidityType } from '../types/solidityType.js'
 import { parseSolidityValueByTypePure } from '../utils/solidityTypes.js'
 import { identifyAddress } from '../background/metadataUtils.js'
 import { sendToNonContact } from './protectors/sendToNonContactAddress.js'
+import { assertNever } from '../utils/typescript.js'
 
 const PROTECTORS = [
 	selfTokenOops,
@@ -34,15 +35,34 @@ const PROTECTORS = [
 
 type TokenLogHandler = (event: MulticallResponseEventLog) => TokenVisualizerResult[]
 
-const tokenLogHandler = new Map<string, TokenLogHandler>([
-	[TRANSFER_LOG, handleERC20TransferLog],
-	[APPROVAL_LOG, handleApprovalLog],
-	[ERC721_APPROVAL_FOR_ALL_LOG, handleErc721ApprovalForAllLog],
-	[DEPOSIT_LOG, handleDepositLog],
-	[WITHDRAWAL_LOG, handleWithdrawalLog],
-	[ERC1155_TRANSFERBATCH_LOG, handleERC1155TransferBatch],
-	[ERC1155_TRANSFERSINGLE_LOG, handleERC1155TransferSingle],
-])
+const getTokenEventHandler = (type: AddressBookEntryCategory, logSignature: string) => {
+	const erc20LogHanders = new Map<string, TokenLogHandler>([
+		[TRANSFER_LOG, handleERC20TransferLog],
+		[APPROVAL_LOG, handleApprovalLog],
+		[DEPOSIT_LOG, handleDepositLog],
+		[WITHDRAWAL_LOG, handleWithdrawalLog],
+	])
+	const erc721LogHanders = new Map<string, TokenLogHandler>([
+		[TRANSFER_LOG, handleERC20TransferLog],
+		[APPROVAL_LOG, handleApprovalLog],
+		[ERC721_APPROVAL_FOR_ALL_LOG, handleErc721ApprovalForAllLog],
+	])
+	const erc1155LogHanders = new Map<string, TokenLogHandler>([
+		[ERC721_APPROVAL_FOR_ALL_LOG, handleErc721ApprovalForAllLog],
+		[ERC1155_TRANSFERBATCH_LOG, handleERC1155TransferBatch],
+		[ERC1155_TRANSFERSINGLE_LOG, handleERC1155TransferSingle],
+	])
+
+	switch (type) {
+		case 'ERC1155': return erc1155LogHanders.get(logSignature)
+		case 'ERC20': return erc20LogHanders.get(logSignature)
+		case 'ERC721': return erc721LogHanders.get(logSignature)
+		case 'activeAddress':
+		case 'contact':
+		case 'contract': return undefined
+		default: assertNever(type)
+	} 
+}
 
 const parseEvents = async (singleMulticallResponse: SingleMulticallResponse, ethereumClientService: EthereumClientService, userAddressBook: UserAddressBook): Promise<MaybeParsedEvents> => {
 	if (singleMulticallResponse.statusCode !== 'success' ) return []
@@ -82,17 +102,14 @@ const parseEvents = async (singleMulticallResponse: SingleMulticallResponse, eth
 export const visualizeTransaction = async (blockNumber: bigint, singleMulticallResponse: SingleMulticallResponse, userAddressBook: UserAddressBook, ethereumClientService: EthereumClientService): Promise<VisualizerResult> => {
 	if (singleMulticallResponse.statusCode !== 'success') return { ethBalanceChanges: [], events: [], blockNumber }
 	const parsedEvents = await parseEvents(singleMulticallResponse, ethereumClientService, userAddressBook)
+
 	const events: MaybeParsedEventWithExtraData[][] = parsedEvents.map((parsedEvent) => {
 		if (parsedEvent.isParsed === 'NonParsed') return [{ ...parsedEvent, type: 'NonParsed' }]
 		const logSignature = parsedEvent.topics[0]
 		if (logSignature === undefined) return [{ ...parsedEvent, type: 'Parsed' }]
-		const handler = tokenLogHandler.get(bytes32String(logSignature))
-		if (handler === undefined) return [{ ...parsedEvent, type: 'Parsed' }]
-		if (parsedEvent.loggersAddressBookEntry.type === 'ERC1155'
-			|| parsedEvent.loggersAddressBookEntry.address === 0n
-			|| parsedEvent.loggersAddressBookEntry.type === 'ERC721'
-			|| parsedEvent.loggersAddressBookEntry.type === 'ERC20') return handler(parsedEvent).map((tokenInformation) => ({ ...parsedEvent, type: 'TokenEvent', tokenInformation }))
-		return [{ ...parsedEvent, type: 'Parsed' }]
+		const tokenEventhandler = getTokenEventHandler(parsedEvent.loggersAddressBookEntry.type, bytes32String(logSignature))
+		if (tokenEventhandler === undefined) return [{ ...parsedEvent, type: 'Parsed' }]
+		return tokenEventhandler(parsedEvent).map((tokenInformation) => ({ ...parsedEvent, type: 'TokenEvent', tokenInformation }))
 	})
 	return {
 		ethBalanceChanges: singleMulticallResponse.balanceChanges,

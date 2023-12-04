@@ -157,16 +157,18 @@ export function App() {
 		}
 
 		const popupMessageListener = async (msg: unknown) => {
-			const message = MessageToPopup.parse(msg)
-			if (message.method === 'popup_settingsUpdated') return updateHomePageSettings(message.data, true)
-			if (message.method === 'popup_activeSigningAddressChanged' && message.data.tabId === currentTabId) return setActiveSigningAddress(message.data.activeSigningAddress)
-			if (message.method === 'popup_websiteIconChanged') return updateTabIcon(message)
-			if (message.method === 'popup_failed_to_get_block') return setRpcConnectionStatus(message.data.rpcConnectionStatus)
-			if (message.method === 'popup_update_rpc_list') return
-			if (message.method === 'popup_new_block_arrived') return
-			if (message.method === 'popup_simulation_state_changed') return await sendPopupMessageToBackgroundPage({ method: 'popup_homeOpened' })
-			if (message.method !== 'popup_UpdateHomePage') return await sendPopupMessageToBackgroundPage({ method: 'popup_requestNewHomeData' })
-			return updateHomePage(UpdateHomePage.parse(message))
+			const maybeParsed = MessageToPopup.safeParse(msg)
+			if (!maybeParsed.success) return // not a message we are interested in
+			const parsed = maybeParsed.value
+			if (parsed.method === 'popup_settingsUpdated') return updateHomePageSettings(parsed.data, true)
+			if (parsed.method === 'popup_activeSigningAddressChanged' && parsed.data.tabId === currentTabId) return setActiveSigningAddress(parsed.data.activeSigningAddress)
+			if (parsed.method === 'popup_websiteIconChanged') return updateTabIcon(parsed)
+			if (parsed.method === 'popup_failed_to_get_block') return setRpcConnectionStatus(parsed.data.rpcConnectionStatus)
+			if (parsed.method === 'popup_update_rpc_list') return
+			if (parsed.method === 'popup_new_block_arrived') return
+			if (parsed.method === 'popup_simulation_state_changed') return await sendPopupMessageToBackgroundPage({ method: 'popup_homeOpened' })
+			if (parsed.method !== 'popup_UpdateHomePage') return await sendPopupMessageToBackgroundPage({ method: 'popup_requestNewHomeData' })
+			return updateHomePage(UpdateHomePage.parse(parsed))
 		}
 		browser.runtime.onMessage.addListener(popupMessageListener)
 		return () => browser.runtime.onMessage.removeListener(popupMessageListener)

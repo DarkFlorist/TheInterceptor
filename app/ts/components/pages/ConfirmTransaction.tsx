@@ -261,19 +261,21 @@ export function ConfirmTransaction() {
 	}
 	useEffect(() => {
 		async function popupMessageListener(msg: unknown) {
-			const message = MessageToPopup.parse(msg)
-			if (message.method === 'popup_addressBookEntriesChanged') return refreshMetadata()
-			if (message.method === 'popup_new_block_arrived') {
-				setRpcConnectionStatus(message.data.rpcConnectionStatus)
+			const maybeParsed = MessageToPopup.safeParse(msg)
+			if (!maybeParsed.success) return // not a message we are interested in
+			const parsed = maybeParsed.value
+			if (parsed.method === 'popup_addressBookEntriesChanged') return refreshMetadata()
+			if (parsed.method === 'popup_new_block_arrived') {
+				setRpcConnectionStatus(parsed.data.rpcConnectionStatus)
 				refreshSimulation()
-				return setCurrentBlockNumber(message.data.rpcConnectionStatus?.latestBlock?.number)
+				return setCurrentBlockNumber(parsed.data.rpcConnectionStatus?.latestBlock?.number)
 			}
-			if (message.method === 'popup_failed_to_get_block') {
-				setRpcConnectionStatus(message.data.rpcConnectionStatus)
+			if (parsed.method === 'popup_failed_to_get_block') {
+				return setRpcConnectionStatus(parsed.data.rpcConnectionStatus)
 			}
-			if (message.method === 'popup_confirm_transaction_dialog_pending_changed') {
-				console.log(message.method)
-				updatePendingTransactions(message)
+			if (parsed.method === 'popup_confirm_transaction_dialog_pending_changed') {
+				console.log(parsed.method)
+				updatePendingTransactions(parsed)
 				setPendingTransactionAddedNotification(true)
 				try {
 					const currentWindowId = (await browser.windows.getCurrent()).id
@@ -288,9 +290,9 @@ export function ConfirmTransaction() {
 				}
 				return
 			}
-			if (message.method !== 'popup_update_confirm_transaction_dialog') return
-			console.log(message.method)
-			updatePendingTransactions(message)
+			if (parsed.method !== 'popup_update_confirm_transaction_dialog') return
+			console.log(parsed.method)
+			return updatePendingTransactions(parsed)
 		}
 		browser.runtime.onMessage.addListener(popupMessageListener)
 

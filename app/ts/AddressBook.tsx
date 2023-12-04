@@ -230,7 +230,9 @@ export function AddressBook() {
 
 	useEffect(() => {
 		const popupMessageListener = async (msg: unknown) => {
-			const parsed = MessageToPopup.parse(msg)
+			const maybeParsed = MessageToPopup.safeParse(msg)
+			if (!maybeParsed.success) return // not a message we are interested in
+			const parsed = maybeParsed.value
 			if (parsed.method === 'popup_addressBookEntriesChanged') {
 				// fields updated, refresh
 				changeFilter(activeFilterRef.current)

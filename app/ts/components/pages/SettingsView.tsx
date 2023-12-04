@@ -32,13 +32,15 @@ function ImportExport() {
 	
 	useEffect(() => {
 		async function popupMessageListener(msg: unknown) {
-			const message = MessageToPopup.parse(msg)
-			if (message.method === 'popup_initiate_export_settings_reply') {
+			const maybeParsed = MessageToPopup.safeParse(msg)
+			if (!maybeParsed.success) return // not a message we are interested in
+			const parsed = maybeParsed.value
+			if (parsed.method === 'popup_initiate_export_settings_reply') {
 				setdDismissedNotification(false)
-				return setSettingsReply(message)
+				return setSettingsReply(parsed)
 			}
-			if (message.method !== 'popup_initiate_export_settings') return
-			downloadFile('interceptorSettingsAndAddressbook.json', message.data.fileContents)
+			if (parsed.method !== 'popup_initiate_export_settings') return
+			downloadFile('interceptorSettingsAndAddressbook.json', parsed.data.fileContents)
 		}
 		browser.runtime.onMessage.addListener(popupMessageListener)
 
@@ -187,13 +189,15 @@ export function SettingsView() {
 
 	useEffect(() => {
 		const popupMessageListener = async (msg: unknown) => {
-			const message = MessageToPopup.parse(msg)
-			if (message.method === 'popup_settingsUpdated') return sendPopupMessageToBackgroundPage({ method: 'popup_settingsOpened' })
-			if (message.method === 'popup_update_rpc_list') return setRpcEntries(message.data)
-			if (message.method !== 'popup_settingsOpenedReply') return
-			setMetamaskCompatibilityMode(message.data.metamaskCompatibilityMode)
-			setUseTabsInsteadOfPopup(message.data.useTabsInsteadOfPopup)
-			setRpcEntries(message.data.rpcEntries)
+			const maybeParsed = MessageToPopup.safeParse(msg)
+			if (!maybeParsed.success) return // not a message we are interested in
+			const parsed = maybeParsed.value
+			if (parsed.method === 'popup_settingsUpdated') return sendPopupMessageToBackgroundPage({ method: 'popup_settingsOpened' })
+			if (parsed.method === 'popup_update_rpc_list') return setRpcEntries(parsed.data)
+			if (parsed.method !== 'popup_settingsOpenedReply') return
+			setMetamaskCompatibilityMode(parsed.data.metamaskCompatibilityMode)
+			setUseTabsInsteadOfPopup(parsed.data.useTabsInsteadOfPopup)
+			setRpcEntries(parsed.data.rpcEntries)
 			return
 		}
 		browser.runtime.onMessage.addListener(popupMessageListener)
