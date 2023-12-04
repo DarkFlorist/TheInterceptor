@@ -1,6 +1,6 @@
 import { sendPopupMessageToBackgroundPage } from '../../../background/backgroundUtils.js'
 import { AddressBookEntry } from '../../../types/addressBookTypes.js'
-import { ExternalPopupMessage, GovernanceVoteInputParameters, SimulateGovernanceContractExecutionReply } from '../../../types/interceptor-messages.js'
+import { MessageToPopup, GovernanceVoteInputParameters, SimulateGovernanceContractExecutionReply } from '../../../types/interceptor-messages.js'
 import { RenameAddressCallBack, RpcConnectionStatus } from '../../../types/user-interface-types.js'
 import { SimulatedAndVisualizedTransaction, SimulationAndVisualisationResults } from '../../../types/visualizer-types.js'
 import { EthereumQuantity } from '../../../types/wire-types.js'
@@ -174,7 +174,7 @@ export function GovernanceVoteVisualizer(param: GovernanceVoteVisualizerParams) 
 
 	useEffect(() => {
 		const popupMessageListener = async (msg: unknown) => {
-			const message = ExternalPopupMessage.parse(msg)
+			const message = MessageToPopup.parse(msg)
 			if (message.method === 'popup_new_block_arrived') {
 				setRpcConnectionStatus(message.data.rpcConnectionStatus)
 				return setCurrentBlockNumber(message.data.rpcConnectionStatus?.latestBlock?.number)

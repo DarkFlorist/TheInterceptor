@@ -2,7 +2,7 @@ import { useState, useEffect } from 'preact/hooks'
 import { ActiveAddressComponent, BigAddress, WebsiteOriginText } from '../subcomponents/address.js'
 import { AddNewAddress } from './AddNewAddress.js'
 import { RenameAddressCallBack } from '../../types/user-interface-types.js'
-import { ExternalPopupMessage } from '../../types/interceptor-messages.js'
+import { MessageToPopup } from '../../types/interceptor-messages.js'
 import { sendPopupMessageToBackgroundPage } from '../../background/backgroundUtils.js'
 import Hint from '../subcomponents/Hint.js'
 import { convertNumberToCharacterRepresentationIfSmallEnough, tryFocusingTabOrWindow } from '../ui-utils.js'
@@ -180,7 +180,7 @@ export function InterceptorAccess() {
 
 	useEffect(() => {
 		async function popupMessageListener(msg: unknown) {
-			const message = ExternalPopupMessage.parse(msg)
+			const message = MessageToPopup.parse(msg)
 			if (message.method === 'popup_addressBookEntriesChanged') return refreshMetadata()
 			if (message.method === 'popup_websiteAccess_changed') return refreshMetadata()
 			if (message.method === 'popup_interceptorAccessDialog' || message.method === 'popup_interceptor_access_dialog_pending_changed') {

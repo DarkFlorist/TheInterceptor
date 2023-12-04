@@ -11,7 +11,7 @@ import { ethers } from 'ethers'
 import { PasteCatcher } from './subcomponents/PasteCatcher.js'
 import { truncateAddr } from '../utils/ethereum.js'
 import { DEFAULT_TAB_CONNECTION } from '../utils/constants.js'
-import { ExternalPopupMessage, UpdateHomePage, WebsiteIconChanged, Settings } from '../types/interceptor-messages.js'
+import { UpdateHomePage, WebsiteIconChanged, Settings, MessageToPopup } from '../types/interceptor-messages.js'
 import { version, gitCommitSha } from '../version.js'
 import { sendPopupMessageToBackgroundPage } from '../background/backgroundUtils.js'
 import { EthereumAddress } from '../types/wire-types.js'
@@ -157,7 +157,7 @@ export function App() {
 		}
 
 		const popupMessageListener = async (msg: unknown) => {
-			const message = ExternalPopupMessage.parse(msg)
+			const message = MessageToPopup.parse(msg)
 			if (message.method === 'popup_settingsUpdated') return updateHomePageSettings(message.data, true)
 			if (message.method === 'popup_activeSigningAddressChanged' && message.data.tabId === currentTabId) return setActiveSigningAddress(message.data.activeSigningAddress)
 			if (message.method === 'popup_websiteIconChanged') return updateTabIcon(message)

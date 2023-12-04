@@ -1,6 +1,6 @@
 
 import { sendPopupMessageToBackgroundPage } from '../../background/backgroundUtils.js'
-import { ExternalPopupMessage, ImportSettingsReply } from '../../types/interceptor-messages.js'
+import { MessageToPopup, ImportSettingsReply } from '../../types/interceptor-messages.js'
 import { RpcEntries } from '../../types/rpc.js'
 import { useEffect, useState } from 'preact/hooks'
 import { Error as ErrorComponent} from '../subcomponents/Error.js'
@@ -32,7 +32,7 @@ function ImportExport() {
 	
 	useEffect(() => {
 		async function popupMessageListener(msg: unknown) {
-			const message = ExternalPopupMessage.parse(msg)
+			const message = MessageToPopup.parse(msg)
 			if (message.method === 'popup_initiate_export_settings_reply') {
 				setdDismissedNotification(false)
 				return setSettingsReply(message)
@@ -187,7 +187,7 @@ export function SettingsView() {
 
 	useEffect(() => {
 		const popupMessageListener = async (msg: unknown) => {
-			const message = ExternalPopupMessage.parse(msg)
+			const message = MessageToPopup.parse(msg)
 			if (message.method === 'popup_settingsUpdated') return sendPopupMessageToBackgroundPage({ method: 'popup_settingsOpened' })
 			if (message.method === 'popup_update_rpc_list') return setRpcEntries(message.data)
 			if (message.method !== 'popup_settingsOpenedReply') return

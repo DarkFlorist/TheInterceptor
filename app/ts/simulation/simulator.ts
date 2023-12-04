@@ -32,9 +32,9 @@ const PROTECTORS = [
 	sendToNonContact,
 ]
 
-type Loghandler = (event: ParsedEvent) => TokenVisualizerResult[]
+type TokenLogHandler = (event: ParsedEvent) => TokenVisualizerResult[]
 
-const logHandler = new Map<string, Loghandler>([
+const tokenLogHandler = new Map<string, TokenLogHandler>([
 	[TRANSFER_LOG, handleERC20TransferLog],
 	[APPROVAL_LOG, handleApprovalLog],
 	[ERC721_APPROVAL_FOR_ALL_LOG, handleErc721ApprovalForAllLog],
@@ -48,8 +48,9 @@ const parseEvents = async (singleMulticallResponse: SingleMulticallResponse, eth
 	if (singleMulticallResponse.statusCode !== 'success' ) return []
 	return await Promise.all(singleMulticallResponse.events.map(async (event) => {
 		// todo, we should do this parsing earlier, to be able to add possible addresses to addressMetaData set
-		const nonParsed = { ...event, isParsed: 'NonParsed' as const }
-		const abi = extractAbi(await identifyAddress(ethereumClientService, userAddressBook, event.loggersAddress), event.loggersAddress)
+		const loggersAddressBookEntry = await identifyAddress(ethereumClientService, userAddressBook, event.loggersAddress)
+		const abi = extractAbi(loggersAddressBookEntry, event.loggersAddress)
+		const nonParsed = { ...event, isParsed: 'NonParsed' as const, loggersAddressBookEntry }
 		if (abi === undefined) return nonParsed
 		const parsed = parseEventIfPossible(new Interface(abi), event)
 		if (parsed === null) return nonParsed
@@ -73,6 +74,7 @@ const parseEvents = async (singleMulticallResponse: SingleMulticallResponse, eth
 			name: parsed.name,
 			signature: parsed.signature,
 			args: valuesWithTypes,
+			loggersAddressBookEntry,
 		}
 	}))
 }
@@ -84,9 +86,11 @@ export const visualizeTransaction = async (blockNumber: bigint, singleMulticallR
 		if (parsedEvent.isParsed === 'NonParsed') return [{ ...parsedEvent, type: 'NonParsed' }]
 		const logSignature = parsedEvent.topics[0]
 		if (logSignature === undefined) return [{ ...parsedEvent, type: 'Parsed' }]
-		const handler = logHandler.get(bytes32String(logSignature))
+		const handler = tokenLogHandler.get(bytes32String(logSignature))
 		if (handler === undefined) return [{ ...parsedEvent, type: 'Parsed' }]
-		return handler(parsedEvent).map((tokenInformation) => ({ ...parsedEvent, type: 'TokenEvent', tokenInformation }))
+		const identifiedAddress = parsedEvent.loggersAddressBookEntry
+		if (identifiedAddress.type === 'ERC1155' || identifiedAddress.type === 'ERC721' || identifiedAddress.type === 'ERC20') return handler(parsedEvent).map((tokenInformation) => ({ ...parsedEvent, type: 'TokenEvent', tokenInformation }))
+		return [{ ...parsedEvent, type: 'Parsed' }]
 	})
 	return {
 		ethBalanceChanges: singleMulticallResponse.balanceChanges,

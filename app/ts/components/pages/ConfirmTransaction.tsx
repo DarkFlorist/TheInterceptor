@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'preact/hooks'
-import { ConfirmTransactionDialogPendingChanged, ExternalPopupMessage, UpdateConfirmTransactionDialog } from '../../types/interceptor-messages.js'
+import { ConfirmTransactionDialogPendingChanged, MessageToPopup, UpdateConfirmTransactionDialog } from '../../types/interceptor-messages.js'
 import { SimulatedAndVisualizedTransaction, SimulationAndVisualisationResults } from '../../types/visualizer-types.js'
 import Hint from '../subcomponents/Hint.js'
 import { RawTransactionDetailsCard, GasFee, TokenLogAnalysisCard, SimulatedInBlockNumber, TransactionCreated, TransactionHeader, TransactionHeaderForFailedToSimulate, TransactionsAccountChangesCard, NonTokenLogAnalysisCard } from '../simulationExplaining/SimulationSummary.js'
@@ -261,7 +261,7 @@ export function ConfirmTransaction() {
 	}
 	useEffect(() => {
 		async function popupMessageListener(msg: unknown) {
-			const message = ExternalPopupMessage.parse(msg)
+			const message = MessageToPopup.parse(msg)
 			if (message.method === 'popup_addressBookEntriesChanged') return refreshMetadata()
 			if (message.method === 'popup_new_block_arrived') {
 				setRpcConnectionStatus(message.data.rpcConnectionStatus)

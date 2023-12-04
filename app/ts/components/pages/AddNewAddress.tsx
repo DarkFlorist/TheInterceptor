@@ -9,7 +9,7 @@ import { AddressIcon } from '../subcomponents/address.js'
 import { assertUnreachable } from '../../utils/typescript.js'
 import { ComponentChildren, createRef } from 'preact'
 import { AddressBookEntry, IncompleteAddressBookEntry } from '../../types/addressBookTypes.js'
-import { ExternalPopupMessage } from '../../types/interceptor-messages.js'
+import { MessageToPopup } from '../../types/interceptor-messages.js'
 import { isJSON } from '../../utils/json.js'
 import { isValidAbi } from '../../simulation/services/EtherScanAbiFetcher.js'
 
@@ -181,7 +181,7 @@ export function AddNewAddress(param: AddAddressParam) {
 	const [retrievedAbi, setRetrievingAbi] = useState<boolean>(false)
 	useEffect(() => {
 		const popupMessageListener = async (msg: unknown) => {
-			const parsed = ExternalPopupMessage.parse(msg)
+			const parsed = MessageToPopup.parse(msg)
 			if (parsed.method === 'popup_findAddressBookEntryWithSymbolOrNameReply') {
 				setIncompleteAddressBookEntry((previous) => {
 					if (parsed.data.query.name === previous.name && parsed.data.query.symbol === previous.symbol) { 
