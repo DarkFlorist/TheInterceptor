@@ -580,7 +580,7 @@ svg.spinner > circle {
 	display: block;
 	visibility: hidden;
 	height: 0px;
-	padding-left: 43px;
+	padding-left: 27px;
 }
 
 .rename-address-button {
@@ -612,8 +612,7 @@ svg.spinner > circle {
 	flex-direction: row;
 	position: relative;
 	background-color: var(--alpha-005);
-	padding: 4px;
-	padding-right: 10px;
+	padding-right: 8px;
 	border-radius: 10px 40px 40px 10px;
 	overflow: hidden;
 }
