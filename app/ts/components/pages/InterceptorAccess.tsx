@@ -9,10 +9,11 @@ import { convertNumberToCharacterRepresentationIfSmallEnough, tryFocusingTabOrWi
 import { ChangeActiveAddress } from './ChangeActiveAddress.js'
 import { DinoSays, DinoSaysNotification } from '../subcomponents/DinoSays.js'
 import { getPrettySignerName } from '../subcomponents/signers.js'
-import { checksummedAddress } from '../../utils/bigint.js'
-import { ActiveAddressEntry, AddressBookEntry, IncompleteAddressBookEntry } from '../../types/addressBookTypes.js'
+import { addressString, checksummedAddress } from '../../utils/bigint.js'
+import { ActiveAddressEntry, AddressBookEntry } from '../../types/addressBookTypes.js'
 import { Website } from '../../types/websiteAccessTypes.js'
 import { PendingAccessRequest, PendingAccessRequestArray } from '../../types/accessRequest.js'
+import { Page } from '../../types/exportedSettingsTypes.js'
 
 const HALF_HEADER_HEIGHT = 48 / 2
 
@@ -172,8 +173,7 @@ const DISABLED_DELAY_MS = 3000
 
 export function InterceptorAccess() {
 	const [pendingAccessRequestArray, setAccessRequest] = useState<PendingAccessRequestArray>([])
-	const [addingNewAddress, setAddingNewAddress] = useState<IncompleteAddressBookEntry> ({ addingAddress: false, type: 'activeAddress', address: undefined, askForAddressAccess: false, name: undefined, symbol: undefined, decimals: undefined, logoUri: undefined, entrySource: 'FilledIn', abi: undefined })
-	const [appPage, setAppPage] = useState('Home')
+	const [appPage, setAppPage] = useState<Page>({ page: 'Home' })
 	const [informationUpdatedTimestamp, setInformationUpdatedTimestamp] = useState(0)
 	const [, setTimeSinceInformationUpdate] = useState(0)
 	const [pendingRequestAddedNotification, setPendingRequestAddedNotification] = useState<boolean>(false)
@@ -236,21 +236,24 @@ export function InterceptorAccess() {
 	}
 
 	function renameAddressCallBack(entry: AddressBookEntry) {
-		setAppPage('ModifyAddress')
-		setAddingNewAddress({
-			addingAddress: false,
-			askForAddressAccess: false,
-			symbol: undefined,
-			decimals: undefined,
-			logoUri: undefined,
-			...entry,
-			address: checksummedAddress(entry.address),
-			abi: 'abi' in entry ? entry.abi : undefined,
-		})
+		setAppPage({ page: 'ModifyAddress', state: {
+			windowStateId: addressString(entry.address),
+			errorState: undefined,
+			incompleteAddressBookEntry: {
+				addingAddress: false,
+				askForAddressAccess: false,
+				symbol: undefined,
+				decimals: undefined,
+				logoUri: undefined,
+				...entry,
+				address: checksummedAddress(entry.address),
+				abi: 'abi' in entry ? entry.abi : undefined
+			}
+		} })
 	}
 
 	function changeActiveAddress() {
-		setAppPage('ChangeActiveAddress')
+		setAppPage({ page: 'ChangeActiveAddress' })
 	}
 
 	async function refreshMetadata() {
@@ -300,19 +303,22 @@ export function InterceptorAccess() {
 		</div>
 	}	
 	function addNewAddress() {
-		setAppPage('AddNewAddress')
-		setAddingNewAddress({
-			addingAddress: true,
-			symbol: undefined,
-			decimals: undefined,
-			logoUri: undefined,
-			type: 'activeAddress',
-			name: undefined,
-			address: undefined,
-			askForAddressAccess: true,
-			entrySource: 'FilledIn',
-			abi: undefined,
-		} )
+		setAppPage({ page: 'AddNewAddress', state: {
+			windowStateId: 'AddNewAddressAccess',
+			errorState: undefined,
+			incompleteAddressBookEntry: {
+				name: undefined,
+				addingAddress: false,
+				askForAddressAccess: true,
+				symbol: undefined,
+				decimals: undefined,
+				logoUri: undefined,
+				type: 'activeAddress',
+				entrySource: 'FilledIn',
+				address: undefined,
+				abi: undefined
+			}
+		} })
 	}
 
 	if (pendingAccessRequestArray.length === 0) return <main></main>
@@ -320,18 +326,18 @@ export function InterceptorAccess() {
 	if (pendingAccessRequest === undefined) throw new Error('pending access request was undefined')
 	return <main>
 		<Hint>
-			<div class = { `modal ${ appPage !== 'Home' ? 'is-active' : ''}` }>
-				{ appPage === 'AddNewAddress' || appPage === 'ModifyAddress'
+			<div class = { `modal ${ appPage.page !== 'Home' ? 'is-active' : ''}` }>
+				{ appPage.page === 'AddNewAddress' || appPage.page === 'ModifyAddress'
 					? <AddNewAddress
 						setActiveAddressAndInformAboutIt = { setActiveAddressAndInformAboutIt }
-						incompleteAddressBookEntry = { addingNewAddress }
-						close = { () => setAppPage('Home') }
+						modifyAddressWindowState = { appPage.state }
+						close = { () => setAppPage({ page: 'Home' }) }
 						activeAddress = { pendingAccessRequest.requestAccessToAddress?.address }
 					/>
 					: <></>
 				}
 
-				{ appPage === 'ChangeActiveAddress'
+				{ appPage.page === 'ChangeActiveAddress'
 					? <ChangeActiveAddress
 						setActiveAddressAndInformAboutIt = { setActiveAddressAndInformAboutIt }
 						signerAccounts = { pendingAccessRequest.signerAccounts }

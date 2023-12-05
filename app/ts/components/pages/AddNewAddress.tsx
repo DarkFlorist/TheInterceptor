@@ -1,17 +1,16 @@
 import { ethers } from 'ethers'
-import { StateUpdater, useEffect, useState } from 'preact/hooks'
+import { useEffect, useState } from 'preact/hooks'
 import { AddAddressParam } from '../../types/user-interface-types.js'
 import { ErrorCheckBox, Notice } from '../subcomponents/Error.js'
-import { getIssueWithAddressString } from '../ui-utils.js'
 import { checksummedAddress, stringToAddress } from '../../utils/bigint.js'
 import { sendPopupMessageToBackgroundPage } from '../../background/backgroundUtils.js'
 import { AddressIcon } from '../subcomponents/address.js'
 import { assertUnreachable } from '../../utils/typescript.js'
 import { ComponentChildren, createRef } from 'preact'
 import { AddressBookEntry, IncompleteAddressBookEntry } from '../../types/addressBookTypes.js'
-import { MessageToPopup } from '../../types/interceptor-messages.js'
-import { isJSON } from '../../utils/json.js'
 import { isValidAbi } from '../../simulation/services/EtherScanAbiFetcher.js'
+import { ModifyAddressWindowState } from '../../types/visualizer-types.js'
+import { MessageToPopup } from '../../types/interceptor-messages.js'
 
 const readableAddressType = {
 	'contact': 'Contact',
@@ -82,10 +81,9 @@ type RenderinCompleteAddressBookParams = {
 	setAddress: (address: string) => void
 	setSymbol: (symbol: string) => void
 	setAskForAddressAccess: (name: boolean) => void
-	fetchAbiAndNameFromEtherscan: (address: string | undefined) => void
 	setAbi: (abi: string) => void
-	retrievedAbi: boolean
-	setRetrievingAbi: StateUpdater<boolean>
+	canFetchFromEtherScan: boolean
+	fetchAbiAndNameFromEtherscan: () => Promise<void>
 }
 
 export const CellElement = (param: { element: ComponentChildren }) => {
@@ -115,7 +113,7 @@ function AbiInput({ abiInput, setAbiInput, disabled }: AbiInputParams) {
 	/>
 }
 
-function RenderIncompleteAddressBookEntry({ incompleteAddressBookEntry, setName, setAddress, setSymbol, setAskForAddressAccess, fetchAbiAndNameFromEtherscan, setAbi, retrievedAbi, setRetrievingAbi }: RenderinCompleteAddressBookParams) {
+function RenderIncompleteAddressBookEntry({ incompleteAddressBookEntry, setName, setAddress, setSymbol, setAskForAddressAccess, setAbi, canFetchFromEtherScan, fetchAbiAndNameFromEtherscan }: RenderinCompleteAddressBookParams) {
 	const Text = (param: { text: ComponentChildren }) => {
 		return <p class = 'paragraph' style = 'color: var(--subtitle-text-color); text-overflow: ellipsis; overflow: hidden; width:100%'>
 			{ param.text }
@@ -149,7 +147,7 @@ function RenderIncompleteAddressBookEntry({ incompleteAddressBookEntry, setName,
 						<CellElement element = { <>
 							<AbiInput abiInput = { incompleteAddressBookEntry.abi } setAbiInput = { setAbi } disabled = { false }/>
 							<div style = 'padding-left: 5px'/>
-							<button class = 'button is-primary is-small' disabled = { stringToAddress(incompleteAddressBookEntry.address) === undefined || retrievedAbi } onClick = { async  () => { setRetrievingAbi(true); fetchAbiAndNameFromEtherscan(incompleteAddressBookEntry.address) } }> Fetch from Etherscan</button>
+							<button class = 'button is-primary is-small' disabled = { stringToAddress(incompleteAddressBookEntry.address) === undefined || !canFetchFromEtherScan } onClick = { async  () => { fetchAbiAndNameFromEtherscan() } }> Fetch from Etherscan</button>
 						</> }/>
 					</> : <></> }
 				</span>
@@ -164,82 +162,51 @@ function RenderIncompleteAddressBookEntry({ incompleteAddressBookEntry, setName,
 	</div>
 }
 
-type DuplicateCheck = {
-	duplicateStatus: 'Pending'
-} | {
-	duplicateStatus: 'NoDuplicates'
-} | {
-	duplicateStatus: 'Duplicates'
-	duplicateEntry: AddressBookEntry
-}
-
-type ErrorMessage = {
-	message: string
-	blockEditing: boolean
-}
-
 export function AddNewAddress(param: AddAddressParam) {
-	const [errorString, setErrorString] = useState<ErrorMessage | undefined>(undefined)
 	const [activeAddress, setActiveAddress] = useState<bigint | undefined>(undefined)
-	const [incompleteAddressBookEntry, setIncompleteAddressBookEntry] = useState<IncompleteAddressBookEntry & DuplicateCheck>({ addingAddress: false, type: 'activeAddress', address: undefined, askForAddressAccess: false, name: undefined, symbol: undefined, decimals: undefined, logoUri: undefined, entrySource: 'FilledIn', duplicateStatus: 'NoDuplicates', abi: undefined })
+	const [modifyAddressWindowState, setAddOrModifyAddressWindowState] = useState<ModifyAddressWindowState | undefined>(undefined)
 	const [onChainInformationVerifiedByUser, setOnChainInformationVerifiedByUser] = useState<boolean>(false)
-	const [retrievedAbi, setRetrievingAbi] = useState<boolean>(false)
+	const [canFetchFromEtherScan, setCanFetchFromEtherScan] = useState<boolean>(false)
 	useEffect(() => {
 		const popupMessageListener = async (msg: unknown) => {
 			const maybeParsed = MessageToPopup.safeParse(msg)
 			if (!maybeParsed.success) return // not a message we are interested in
 			const parsed = maybeParsed.value
-			if (parsed.method === 'popup_findAddressBookEntryWithSymbolOrNameReply') {
-				setIncompleteAddressBookEntry((previous) => {
-					if (parsed.data.query.name === previous.name && parsed.data.query.symbol === previous.symbol) { 
-						if (parsed.data.addressBookEntryOrUndefined === undefined || parsed.data.addressBookEntryOrUndefined.address == stringToAddress(previous.address)) {
-							return { ...previous, duplicateStatus: 'NoDuplicates' }
-						}
-						return { ...previous, duplicateStatus: 'Duplicates', duplicateEntry: parsed.data.addressBookEntryOrUndefined }
-					}
-					return previous
-				})
-			}
 			if (parsed.method === 'popup_fetchAbiAndNameFromEtherscanReply') {
-				setIncompleteAddressBookEntry((prevEntry) => {
+				setCanFetchFromEtherScan(true)
+				return setAddOrModifyAddressWindowState((previous) => {
+					if (previous === undefined) return undefined
+					if (parsed.data.windowStateId !== previous.windowStateId) return previous
 					if (!parsed.data.success) {
-						setErrorString({ blockEditing: false, message: parsed.data.error})
-						return prevEntry
+						const newState = { ...previous, errorState: { blockEditing: false, message: parsed.data.error } }
+						sendChangeRequest(newState)
+						return newState
 					}
-					setErrorString(undefined)
-					if (parsed.data === undefined || parsed.data.address !== stringToAddress(prevEntry.address)) return prevEntry
-					const newName = prevEntry.name === undefined ? parsed.data.contractName : prevEntry.name
-					checkForDuplicatedNameOrSymbol(newName, prevEntry.symbol)
-					return { ...prevEntry, name: newName, abi: parsed.data.abi, duplicateStatus: 'Pending' }
+					if (previous.errorState !== undefined) return previous
+					const newState = { ...previous, incompleteAddressBookEntry: { ... previous.incompleteAddressBookEntry, abi: parsed.data.abi, name: previous.incompleteAddressBookEntry.name === undefined ? parsed.data.contractName : previous.incompleteAddressBookEntry.name } }
+					sendChangeRequest(newState)
+					return newState
 				})
-				return setRetrievingAbi(false)
 			}
-			if (parsed.method !== 'popup_identifyAddressReply') return
-			return setIncompleteAddressBookEntry((prevEntry) => {
-				if (parsed.data.addressBookEntry.address !== stringToAddress(prevEntry.address)) return prevEntry
-				if (parsed.data.addressBookEntry.entrySource !== 'OnChain' && parsed.data.addressBookEntry.entrySource !== 'FilledIn') {
-					setErrorString({ blockEditing: true, message: `The address ${ checksummedAddress(parsed.data.addressBookEntry.address) } you are trying to add already exists. Edit the existing record instead trying to add it again.` })
-					return prevEntry
-				}
-				if (parsed.data.addressBookEntry.type !== prevEntry.type && !(prevEntry.type === 'activeAddress' && parsed.data.addressBookEntry.type === 'contact') ) {
-					setErrorString({ blockEditing: true, message: `The address ${ checksummedAddress(parsed.data.addressBookEntry.address) } is a ${ parsed.data.addressBookEntry.type } while you are trying to add ${ prevEntry.type }.` })
-					return prevEntry
-				}
-				return {
-					...prevEntry,
-					decimals: 'decimals' in parsed.data.addressBookEntry ? parsed.data.addressBookEntry.decimals : prevEntry.decimals,
-					logoUri: 'logoUri' in parsed.data.addressBookEntry ? parsed.data.addressBookEntry.logoUri : prevEntry.logoUri,
-					symbol: 'symbol' in parsed.data.addressBookEntry ? parsed.data.addressBookEntry.symbol : prevEntry.symbol,
-				}
+			if (parsed.method === 'popup_addOrModifyAddressWindowStateInformation') return setAddOrModifyAddressWindowState((previous) => {
+				if (previous === undefined) return undefined
+				if (parsed.data.windowStateId !== previous.windowStateId) return previous
+				return { ...previous, errorState: parsed.data.errorState }
 			})
 		}
 		browser.runtime.onMessage.addListener(popupMessageListener)
-		return () => {
-			browser.runtime.onMessage.removeListener(popupMessageListener)
-		}
+		return () => { browser.runtime.onMessage.removeListener(popupMessageListener) }
 	}, [])
 
+	useEffect(() => {
+		setActiveAddress(param.activeAddress)
+		setAddOrModifyAddressWindowState(param.modifyAddressWindowState)
+		setCanFetchFromEtherScan(stringToAddress(param.modifyAddressWindowState.incompleteAddressBookEntry.address) !== undefined)
+	}, [param.modifyAddressWindowState.windowStateId, param.activeAddress])
+
 	function getCompleteAddressBookEntry(): AddressBookEntry | undefined {
+		if (modifyAddressWindowState === undefined) return undefined
+		const incompleteAddressBookEntry = modifyAddressWindowState.incompleteAddressBookEntry
 		if (incompleteAddressBookEntry.name !== undefined && incompleteAddressBookEntry.name.length > 42) return undefined
 		const inputedAddressBigInt = stringToAddress(incompleteAddressBookEntry.address)
 		if (inputedAddressBigInt === undefined) return undefined
@@ -313,124 +280,104 @@ export function AddNewAddress(param: AddAddressParam) {
 	}
 
 	async function createAndSwitch() {
-		const inputedAddressBigInt = stringToAddress(incompleteAddressBookEntry?.address)
+		if (modifyAddressWindowState === undefined) return
+		const incompleteAddressBookEntry = modifyAddressWindowState.incompleteAddressBookEntry
+		const inputedAddressBigInt = stringToAddress(incompleteAddressBookEntry.address)
 		if (inputedAddressBigInt === undefined) return
 		await modifyOrAddEntry()
 		if (param.setActiveAddressAndInformAboutIt !== undefined) await param.setActiveAddressAndInformAboutIt(inputedAddressBigInt)
 	}
 
-	useEffect(() => {
-		setActiveAddress(param.activeAddress)
-		setIncompleteAddressBookEntry((previous) => {
-			setErrorString(undefined)
-			return { ...previous, ...param.incompleteAddressBookEntry }
-		})
-	}, [param.incompleteAddressBookEntry, param.activeAddress])
-
 	const areInputsValid = () => getCompleteAddressBookEntry() !== undefined
 
-	async function queryActiveAddressrmation(address: bigint | undefined) {
-		if (address === undefined) return
-		await sendPopupMessageToBackgroundPage({ method: 'popup_identifyAddress', data: { address } })
-	}
-	async function checkForDuplicatedNameOrSymbol(name: string | undefined, symbol: string | undefined) {
-		if (name === undefined && symbol === undefined) return
-		await sendPopupMessageToBackgroundPage({ method: 'popup_findAddressBookEntryWithSymbolOrName', data: { name, symbol } })
-	}
-
-	async function fetchAbiAndNameFromEtherscan(address: string | undefined) {
-		const addr = stringToAddress(address)
-		if (addr === undefined) return
-		await sendPopupMessageToBackgroundPage({ method: 'popup_fetchAbiAndNameFromEtherscan', data: addr })
+	async function sendChangeRequest(newState: ModifyAddressWindowState) {
+		if (modifyAddressWindowState === undefined) return
+		try {
+			await sendPopupMessageToBackgroundPage({ method: 'popup_changeAddOrModifyAddressWindowState', data: {
+				windowStateId: modifyAddressWindowState.windowStateId,
+				newState,
+			} })
+		} catch(e) {
+			console.error(e)
+		}
 	}
 
-	function setAddress(input: string) {
-		setIncompleteAddressBookEntry((prevEntry) => {
-			if (input === undefined) {
-				setErrorString(undefined)
-				return { ... prevEntry, address: input }
-			}
-
-			const trimmed = input.trim()
-
-			if (ethers.isAddress(trimmed)) {
-				queryActiveAddressrmation(stringToAddress(trimmed))
-				setErrorString(undefined)
-				return { ... prevEntry, address: input }
-			}
-
-			const issue = getIssueWithAddressString(trimmed)
-			if (issue === undefined) {
-				setErrorString(undefined)
-				return { ... prevEntry, address: input }
-			}
-			setErrorString({ blockEditing: true, message: issue })
-			return { ... prevEntry, address: input }
+	const setAddress = async (address: string) => {
+		setAddOrModifyAddressWindowState((previous) => {
+			if (previous === undefined) return previous
+			const newState = { ...previous, incompleteAddressBookEntry: { ... previous.incompleteAddressBookEntry, address } }
+			sendChangeRequest(newState)
+			return newState
+		})
+		setCanFetchFromEtherScan(true)
+	}
+	const setName = async (name: string) => {
+		setAddOrModifyAddressWindowState((previous) => {
+			if (previous === undefined) return previous
+			const newState = { ...previous, incompleteAddressBookEntry: { ... previous.incompleteAddressBookEntry, name } }
+			sendChangeRequest(newState)
+			return newState
 		})
 	}
-
-	function setName(name: string) {
-		setIncompleteAddressBookEntry((entry) => {
-			checkForDuplicatedNameOrSymbol(name, entry.symbol)
-			return { ...entry, name, duplicateStatus: 'Pending' }
+	const setAbi = async (abi: string | undefined) => {
+		setAddOrModifyAddressWindowState((previous) => {
+			if (previous === undefined) return previous
+			const newState = { ...previous, incompleteAddressBookEntry: { ... previous.incompleteAddressBookEntry, abi } }
+			sendChangeRequest(newState)
+			return newState
+		})
+		setCanFetchFromEtherScan(true)
+	}
+	const setSymbol = async (symbol: string) => {
+		setAddOrModifyAddressWindowState((previous) => {
+			if (previous === undefined) return previous
+			const newState = { ...previous, incompleteAddressBookEntry: { ... previous.incompleteAddressBookEntry, symbol } }
+			sendChangeRequest(newState)
+			return newState
 		})
 	}
-
-	function setAbi(abi: string | undefined) {
-		const trimmedAbi = abi === undefined ? undefined : abi.trim()
-		setIncompleteAddressBookEntry((entry) => {
-			if (trimmedAbi === undefined || trimmedAbi.length === 0) {
-				setErrorString(undefined)
-				return { ...entry, abi: undefined }
-			}
-			if (!isJSON(trimmedAbi)) {
-				setErrorString({ blockEditing: true, message: 'The Abi provided is not a JSON ABI. Please provide a valid JSON ABI.' })
-				return entry
-			}
-
-			if (!isValidAbi(trimmedAbi)) {
-				setErrorString({ blockEditing: true, message: 'The ABI provided is not valid. Please provide a valid ABI.' })
-				return entry
-			}
-
-			return { ...entry, abi: trimmedAbi }
+	const setAskForAddressAccess = async (askForAddressAccess: boolean) => {
+		setAddOrModifyAddressWindowState((previous) => {
+			if (previous === undefined) return previous
+			const newState = { ...previous, incompleteAddressBookEntry: { ... previous.incompleteAddressBookEntry, askForAddressAccess } }
+			sendChangeRequest(newState)
+			return newState
 		})
 	}
-
-	function setSymbol(symbol: string) {
-		setIncompleteAddressBookEntry((entry) => {
-			checkForDuplicatedNameOrSymbol(entry.name, symbol)
-			return { ...entry, symbol, duplicateStatus: 'Pending'  }
-		})
-	}
-
-	function setAskForAddressAccess(askForAddressAccess: boolean) {
-		setIncompleteAddressBookEntry((entry) => {
-			if (entry === undefined) return entry
-			return { ...entry, askForAddressAccess }
-		})
+	async function fetchAbiAndNameFromEtherscan() {
+		const address = stringToAddress(modifyAddressWindowState?.incompleteAddressBookEntry.address)
+		if (address === undefined || modifyAddressWindowState === undefined) return
+		setCanFetchFromEtherScan(false)
+		await sendPopupMessageToBackgroundPage({ method: 'popup_fetchAbiAndNameFromEtherscan', data: {
+			address,
+			windowStateId: modifyAddressWindowState.windowStateId,
+		} })
 	}
 
 	function showOnChainVerificationErrorBox() {
+		if (modifyAddressWindowState === undefined) return false
+		const incompleteAddressBookEntry = modifyAddressWindowState.incompleteAddressBookEntry
 		return incompleteAddressBookEntry.entrySource === 'OnChain' && (incompleteAddressBookEntry.type === 'ERC20' || incompleteAddressBookEntry.type === 'ERC721')
 	}
 
 	function isSubmitButtonDisabled() {
+		if (modifyAddressWindowState === undefined) return true
 		return !areInputsValid()
-			|| (errorString !== undefined && errorString.blockEditing)
-			|| incompleteAddressBookEntry.duplicateStatus === 'Duplicates'
+			|| (modifyAddressWindowState.errorState !== undefined && modifyAddressWindowState.errorState.blockEditing)
 			|| (showOnChainVerificationErrorBox() && !onChainInformationVerifiedByUser)
 	}
 
 	function getCardTitle() {
-		if (param.incompleteAddressBookEntry.addingAddress) {
-			return `Add New ${ readableAddressType[param.incompleteAddressBookEntry.type] }`
+		if (modifyAddressWindowState === undefined) return '...'
+		const incompleteAddressBookEntry = modifyAddressWindowState.incompleteAddressBookEntry
+		if (incompleteAddressBookEntry.addingAddress) {
+			return `Add New ${ readableAddressType[incompleteAddressBookEntry.type] }`
 		}
 		const alleged = showOnChainVerificationErrorBox() ? 'alleged ' : ''
-		const name = param.incompleteAddressBookEntry.name !== undefined ? `${ alleged }${ param.incompleteAddressBookEntry.name }` : readableAddressType[param.incompleteAddressBookEntry.type]
+		const name = incompleteAddressBookEntry.name !== undefined ? `${ alleged }${ incompleteAddressBookEntry.name }` : readableAddressType[incompleteAddressBookEntry.type]
 		return `Modify ${ name }`
 	}
-
+	if (modifyAddressWindowState === undefined) return <></>
 	return ( <>
 		<div class = 'modal-background'> </div>
 		<div class = 'modal-card'>
@@ -451,36 +398,31 @@ export function AddNewAddress(param: AddAddressParam) {
 				<div class = 'card' style = 'margin: 10px;'>
 					<div class = 'card-content'>
 						<RenderIncompleteAddressBookEntry
-							incompleteAddressBookEntry = { incompleteAddressBookEntry }
+							incompleteAddressBookEntry = { modifyAddressWindowState.incompleteAddressBookEntry }
 							setAddress = { setAddress }
 							setName = { setName }
 							setSymbol = { setSymbol }
 							setAbi = { setAbi }
 							setAskForAddressAccess = { setAskForAddressAccess }
+							canFetchFromEtherScan = { canFetchFromEtherScan }
 							fetchAbiAndNameFromEtherscan = { fetchAbiAndNameFromEtherscan }
-							retrievedAbi = { retrievedAbi }
-							setRetrievingAbi = { setRetrievingAbi }
 						/>
 					</div>
 				</div>
-				<div style = 'padding-left: 10px; padding-right: 10px; margin-bottom: 10px; height: 80px'>
-					{ errorString === undefined ? <></> : <Notice text = { errorString.message } /> }
-					{ errorString === undefined && incompleteAddressBookEntry.duplicateStatus === 'Duplicates' ? <>
-						<Notice text = { `There already exists ${ incompleteAddressBookEntry.duplicateEntry.type === 'activeAddress' ? 'an address' : incompleteAddressBookEntry.duplicateEntry.type } with ${ 'symbol' in incompleteAddressBookEntry.duplicateEntry ? `symbol "${ incompleteAddressBookEntry.duplicateEntry.symbol }" and` : '' } name "${ incompleteAddressBookEntry.duplicateEntry.name }".` } />
-						</> :
-						( showOnChainVerificationErrorBox() ?
-							<ErrorCheckBox
-								text = { `The name and symbol for this token was provided by the token itself and we have not validated its legitimacy. A token may claim to have a name/symbol that is the same as another popular token (e.g., USDC or DAI) in an attempt to trick you. If you recognize this token's name, please verify elsewhere that this is the correct address for it.` }
-								checked = { onChainInformationVerifiedByUser }
-								onInput = { setOnChainInformationVerifiedByUser }
-							/>
-						: <></>)
+				<div style = 'padding-left: 10px; padding-right: 10px; margin-bottom: 10px; min-height: 80px'>
+					{ modifyAddressWindowState?.errorState === undefined ? <></> : <Notice text = { modifyAddressWindowState.errorState.message } /> }
+					{ !showOnChainVerificationErrorBox() ? <></> : 
+						<ErrorCheckBox
+							text = { `The name and symbol for this token was provided by the token itself and we have not validated its legitimacy. A token may claim to have a name/symbol that is the same as another popular token (e.g., USDC or DAI) in an attempt to trick you. If you recognize this token's name, please verify elsewhere that this is the correct address for it.` }
+							checked = { onChainInformationVerifiedByUser }
+							onInput = { setOnChainInformationVerifiedByUser }
+						/>
 					}
 				</div>
 			</section>
 			<footer class = 'modal-card-foot window-footer' style = 'border-bottom-left-radius: unset; border-bottom-right-radius: unset; border-top: unset; padding: 10px;'>
-				{ param.setActiveAddressAndInformAboutIt === undefined || incompleteAddressBookEntry === undefined || activeAddress === stringToAddress(incompleteAddressBookEntry.address) ? <></> : <button class = 'button is-success is-primary' onClick = { createAndSwitch } disabled = { ! (areInputsValid()) }> { param.incompleteAddressBookEntry.addingAddress ? 'Create and switch' : 'Modify and switch' } </button> }
-				<button class = 'button is-success is-primary' onClick = { incompleteAddressBookEntry.duplicateStatus === 'Pending' ? () => {} : modifyOrAddEntry } disabled = { isSubmitButtonDisabled() }> { param.incompleteAddressBookEntry.addingAddress ? 'Create' : 'Modify' } </button>
+				{ param.setActiveAddressAndInformAboutIt === undefined || modifyAddressWindowState?.incompleteAddressBookEntry === undefined || activeAddress === stringToAddress(modifyAddressWindowState.incompleteAddressBookEntry.address) ? <></> : <button class = 'button is-success is-primary' onClick = { createAndSwitch } disabled = { ! (areInputsValid()) }> { modifyAddressWindowState.incompleteAddressBookEntry.addingAddress ? 'Create and switch' : 'Modify and switch' } </button> }
+				<button class = 'button is-success is-primary' onClick = { modifyOrAddEntry } disabled = { isSubmitButtonDisabled() }> { modifyAddressWindowState?.incompleteAddressBookEntry.addingAddress ? 'Create' : 'Modify' } </button>
 				<button class = 'button is-primary' style = 'background-color: var(--negative-color)' onClick = { param.close }>Cancel</button>
 			</footer>
 		</div>

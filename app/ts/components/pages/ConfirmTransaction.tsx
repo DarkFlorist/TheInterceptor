@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'preact/hooks'
 import { ConfirmTransactionDialogPendingChanged, MessageToPopup, UpdateConfirmTransactionDialog } from '../../types/interceptor-messages.js'
-import { SimulatedAndVisualizedTransaction, SimulationAndVisualisationResults } from '../../types/visualizer-types.js'
+import { ModifyAddressWindowState, SimulatedAndVisualizedTransaction, SimulationAndVisualisationResults } from '../../types/visualizer-types.js'
 import Hint from '../subcomponents/Hint.js'
 import { RawTransactionDetailsCard, GasFee, TokenLogAnalysisCard, SimulatedInBlockNumber, TransactionCreated, TransactionHeader, TransactionHeaderForFailedToSimulate, TransactionsAccountChangesCard, NonTokenLogAnalysisCard } from '../simulationExplaining/SimulationSummary.js'
 import { CenterToPageTextSpinner, Spinner } from '../subcomponents/Spinner.js'
@@ -14,8 +14,8 @@ import { identifyTransaction } from '../simulationExplaining/identifyTransaction
 import { DinoSaysNotification } from '../subcomponents/DinoSays.js'
 import { NetworkErrors } from './Home.js'
 import { tryFocusingTabOrWindow } from '../ui-utils.js'
-import { checksummedAddress, stringifyJSONWithBigInts } from '../../utils/bigint.js'
-import { AddressBookEntry, IncompleteAddressBookEntry } from '../../types/addressBookTypes.js'
+import { addressString, checksummedAddress, stringifyJSONWithBigInts } from '../../utils/bigint.js'
+import { AddressBookEntry } from '../../types/addressBookTypes.js'
 import { PendingTransaction } from '../../types/accessRequest.js'
 import { WebsiteOriginText } from '../subcomponents/address.js'
 import { serialize } from '../../types/wire-types.js'
@@ -245,7 +245,7 @@ export function ConfirmTransaction() {
 	const [pendingTransactions, setPendingTransactions] = useState<readonly PendingTransaction[]>([])
 	const [forceSend, setForceSend] = useState<boolean>(false)
 	const [currentBlockNumber, setCurrentBlockNumber] = useState<undefined | bigint>(undefined)
-	const [addingNewAddress, setAddingNewAddress] = useState<IncompleteAddressBookEntry | 'renameAddressModalClosed'> ('renameAddressModalClosed')
+	const [addingNewAddress, setAddingNewAddress] = useState<ModifyAddressWindowState | 'renameAddressModalClosed'> ('renameAddressModalClosed')
 	const [rpcConnectionStatus, setRpcConnectionStatus] = useState<RpcConnectionStatus>(undefined)
 	const [pendingTransactionAddedNotification, setPendingTransactionAddedNotification] = useState<boolean>(false)
 
@@ -360,14 +360,18 @@ export function ConfirmTransaction() {
 
 	function renameAddressCallBack(entry: AddressBookEntry) {
 		setAddingNewAddress({
-			addingAddress: false,
-			askForAddressAccess: false,
-			symbol: undefined,
-			decimals: undefined,
-			logoUri: undefined,
-			...entry,
-			address: checksummedAddress(entry.address),
-			abi: 'abi' in entry ? entry.abi : undefined,
+			windowStateId: addressString(entry.address),
+			errorState: undefined,
+			incompleteAddressBookEntry: {
+				addingAddress: false,
+				askForAddressAccess: false,
+				symbol: undefined,
+				decimals: undefined,
+				logoUri: undefined,
+				...entry,
+				address: checksummedAddress(entry.address),
+				abi: 'abi' in entry ? entry.abi : undefined
+			}
 		})
 	}
 
@@ -414,7 +418,7 @@ export function ConfirmTransaction() {
 						? <></>
 						: <AddNewAddress
 							setActiveAddressAndInformAboutIt = { undefined }
-							incompleteAddressBookEntry = { addingNewAddress }
+							modifyAddressWindowState = { addingNewAddress }
 							close = { () => { setAddingNewAddress('renameAddressModalClosed') } }
 							activeAddress = { undefined }
 						/>

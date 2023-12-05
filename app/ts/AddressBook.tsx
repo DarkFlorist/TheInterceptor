@@ -8,9 +8,12 @@ import Hint from './components/subcomponents/Hint.js'
 import { sendPopupMessageToBackgroundPage } from './background/backgroundUtils.js'
 import { assertNever } from './utils/typescript.js'
 import { checksummedAddress } from './utils/bigint.js'
-import { AddressBookEntries, AddressBookEntry, IncompleteAddressBookEntry } from './types/addressBookTypes.js'
+import { AddressBookEntries, AddressBookEntry } from './types/addressBookTypes.js'
+import { ModifyAddressWindowState } from './types/visualizer-types.js'
 
-type Modals = 'noModal' | 'addNewAddress' | 'ConfirmaddressBookEntryToBeRemoved'
+type Modals =  { page: 'noModal' }
+	| { page: 'addNewAddress', state: ModifyAddressWindowState }
+	| { page: 'confirmaddressBookEntryToBeRemoved' }
 
 type ActiveFilter = 'My Active Addresses' | 'My Contacts' | 'ERC20 Tokens' | 'ERC1155 Tokens' | 'Non Fungible Tokens' | 'Other Contracts'
 const ActiveFilterSingle = {
@@ -200,15 +203,13 @@ export function AddressBook() {
 	const [activeFilter, setActiveFilter] = useState<ActiveFilter>('My Active Addresses')
 	const [searchString, setSearchString] = useState<string | undefined>(undefined)
 	const [currentPage, setCurrentPage] = useState<number>(0)
-	const [modalState, setModalState] = useState<Modals>('noModal')
+	const [modalState, setModalState] = useState<Modals>({ page: 'noModal' })
 	const [addressBookState, setAddressBookState] = useState<AddressBookState | undefined>(undefined)
 	const [addressBookEntryToBeRemoved, setAddressBookEntryToBeRemoved] = useState<AddressBookEntry | undefined>(undefined)
 
 	const activeFilterRef = useRef<ActiveFilter>(activeFilter)
 	const searchStringRef = useRef<string | undefined>(searchString)
 	const currentPageRef = useRef<number>(currentPage)
-
-	const [addingNewAddress, setAddingNewAddress] = useState<IncompleteAddressBookEntry>({ addingAddress: false, type: 'activeAddress', address: undefined, askForAddressAccess: false, name: undefined, symbol: undefined, decimals: undefined, logoUri: undefined, entrySource: 'FilledIn', abi: undefined })
 
 	const scrollTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
 
@@ -354,7 +355,6 @@ export function AddressBook() {
 	}
 
 	function openNewAddress(filter: ActiveFilter) {
-		setModalState('addNewAddress')
 		const getTypeFromFilter = (filter: ActiveFilter) => {
 			switch(filter) {
 				case 'My Active Addresses': return 'activeAddress'
@@ -366,37 +366,45 @@ export function AddressBook() {
 				default: assertNever(filter)
 			}
 		}
-		return setAddingNewAddress({
-			addingAddress: true,
-			symbol: undefined,
-			decimals: undefined,
-			logoUri: undefined,
-			type: getTypeFromFilter(filter),
-			name: undefined,
-			address: undefined,
-			askForAddressAccess: true,
-			entrySource: 'FilledIn',
-			abi: undefined,
-		})
+		
+		return setModalState({ page: 'addNewAddress', state: {
+			windowStateId: 'AddressBookAdd',
+			errorState: undefined,
+			incompleteAddressBookEntry: {
+				addingAddress: true,
+				symbol: undefined,
+				decimals: undefined,
+				logoUri: undefined,
+				type: getTypeFromFilter(filter),
+				name: undefined,
+				address: undefined,
+				askForAddressAccess: true,
+				entrySource: 'FilledIn',
+				abi: undefined,
+			}
+		} })
 	}
 
 	function openConfirmaddressBookEntryToBeRemoved(entry: AddressBookEntry) {
 		setAddressBookEntryToBeRemoved(entry)
-		setModalState('ConfirmaddressBookEntryToBeRemoved')
+		setModalState({ page: 'confirmaddressBookEntryToBeRemoved' })
 	}
 
 	function renameAddressCallBack(entry: AddressBookEntry) {
-		setModalState('addNewAddress')
-		setAddingNewAddress({
-			addingAddress: false,
-			askForAddressAccess: false,
-			symbol: undefined,
-			decimals: undefined,
-			logoUri: undefined,
-			...entry,
-			abi: 'abi' in entry ? entry.abi : undefined,
-			address: checksummedAddress(entry.address)
-		})
+		return setModalState({ page: 'addNewAddress', state: {
+			windowStateId: 'AddressBookRename',
+			errorState: undefined,
+			incompleteAddressBookEntry: {
+				addingAddress: false,
+				askForAddressAccess: false,
+				symbol: undefined,
+				decimals: undefined,
+				logoUri: undefined,
+				...entry,
+				abi: 'abi' in entry ? entry.abi : undefined,
+				address: checksummedAddress(entry.address)
+			}
+		} })
 	}
 
 	function removeAddressBookEntry(entry: AddressBookEntry) {
@@ -463,21 +471,21 @@ export function AddressBook() {
 					</div>
 				</div>
 
-				<div class = { `modal ${ modalState !== 'noModal' ? 'is-active' : ''}` }>
-					{ modalState === 'addNewAddress' ?
+				<div class = { `modal ${ modalState.page !== 'noModal' ? 'is-active' : ''}` }>
+					{ modalState.page === 'addNewAddress' ?
 						<AddNewAddress
 							setActiveAddressAndInformAboutIt = { undefined }
-							incompleteAddressBookEntry = { addingNewAddress }
-							close = { () => setModalState('noModal') }
+							modifyAddressWindowState = { modalState.state }
+							close = { () => setModalState({ page: 'noModal' }) }
 							activeAddress = { undefined }
 						/>
 					: <></> }
-					{ modalState === 'ConfirmaddressBookEntryToBeRemoved' && addressBookEntryToBeRemoved !== undefined ?
+					{ modalState.page === 'confirmaddressBookEntryToBeRemoved' && addressBookEntryToBeRemoved !== undefined ?
 						<ConfirmaddressBookEntryToBeRemoved
 							category = { activeFilter }
 							addressBookEntry = { addressBookEntryToBeRemoved }
 							removeEntry = { removeAddressBookEntry }
-							close = { () => setModalState('noModal') }
+							close = { () => setModalState({ page: 'noModal' }) }
 							renameAddressCallBack = { renameAddressCallBack }
 						/>
 					: <></> }

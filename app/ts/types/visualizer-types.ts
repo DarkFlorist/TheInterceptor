@@ -5,7 +5,7 @@ import { RenameAddressCallBack } from './user-interface-types.js'
 import { ERROR_INTERCEPTOR_GAS_ESTIMATION_FAILED } from '../utils/constants.js'
 import { EthBalanceChanges, EthSubscribeParams, OriginalSendRequestParameters, SendRawTransactionParams, SendTransactionParams, SingleMulticallResponse } from './JsonRpc-types.js'
 import { InterceptedRequest, WebsiteSocket } from '../utils/requests.js'
-import { AddressBookEntry, Erc721Entry, Erc20TokenEntry, Erc1155Entry } from './addressBookTypes.js'
+import { AddressBookEntry, Erc721Entry, Erc20TokenEntry, Erc1155Entry, IncompleteAddressBookEntry } from './addressBookTypes.js'
 import { Website } from './websiteAccessTypes.js'
 import { VisualizedPersonalSignRequest } from './personal-message-definitions.js'
 import { RpcNetwork } from './rpc.js'
@@ -453,4 +453,14 @@ export const VisualizedSimulatorState = funtypes.ReadonlyObject({
 	simulationState: funtypes.Union(SimulationState),
 	simulatedAndVisualizedTransactions: funtypes.ReadonlyArray(SimulatedAndVisualizedTransaction),
 	visualizedPersonalSignRequests: funtypes.ReadonlyArray(VisualizedPersonalSignRequest),
+})
+
+export type ModifyAddressWindowStateError = funtypes.Static<typeof ModifyAddressWindowStateError>
+export const ModifyAddressWindowStateError = funtypes.Union(funtypes.ReadonlyObject({ message: funtypes.String, blockEditing: funtypes.Boolean }), funtypes.Undefined)
+
+export type ModifyAddressWindowState = funtypes.Static<typeof ModifyAddressWindowState>
+export const ModifyAddressWindowState = funtypes.ReadonlyObject({
+	windowStateId: funtypes.String,
+	incompleteAddressBookEntry: IncompleteAddressBookEntry,
+	errorState: ModifyAddressWindowStateError,
 })

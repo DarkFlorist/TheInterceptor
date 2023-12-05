@@ -110,18 +110,19 @@ export const AddressBookEntry = funtypes.Union(
 export type AddressBookEntries = funtypes.Static<typeof AddressBookEntries>
 export const AddressBookEntries = funtypes.ReadonlyArray(AddressBookEntry)
 
-export type IncompleteAddressBookEntry = {
-	addingAddress: boolean, // if false, we are editing addess
-	type: 'activeAddress' | 'contact' | 'contract' | 'ERC20' | 'ERC1155' | 'ERC721'
-	address: string | undefined
-	askForAddressAccess: boolean
-	name: string | undefined
-	symbol: string | undefined
-	decimals: bigint | undefined
-	logoUri: string | undefined
-	entrySource: EntrySource
-	abi: string | undefined
-}
+export type IncompleteAddressBookEntry = funtypes.Static<typeof IncompleteAddressBookEntry>
+export const IncompleteAddressBookEntry = funtypes.ReadonlyObject({
+	addingAddress: funtypes.Boolean, // if false, we are editing addess
+	type: funtypes.Union(funtypes.Literal('activeAddress'), funtypes.Literal('contact'), funtypes.Literal('contract'), funtypes.Literal('ERC20'), funtypes.Literal('ERC1155'), funtypes.Literal('ERC721')),
+	address: funtypes.Union(funtypes.String, funtypes.Undefined),
+	askForAddressAccess: funtypes.Boolean,
+	name: funtypes.Union(funtypes.String, funtypes.Undefined),
+	symbol: funtypes.Union(funtypes.String, funtypes.Undefined),
+	decimals: funtypes.Union(EthereumQuantity, funtypes.Undefined),
+	logoUri: funtypes.Union(funtypes.String, funtypes.Undefined),
+	entrySource: EntrySource,
+	abi: funtypes.Union(funtypes.String, funtypes.Undefined),
+})
 
 export type UserAddressBook = funtypes.Static<typeof UserAddressBook>
 export const UserAddressBook = funtypes.ReadonlyObject({

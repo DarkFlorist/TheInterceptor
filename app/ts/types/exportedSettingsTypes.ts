@@ -3,15 +3,16 @@ import { RpcNetwork } from './rpc.js'
 import { EthereumQuantity, OptionalEthereumAddress } from './wire-types.js'
 import { ActiveAddressArray, ContactEntries } from './addressBookTypes.js'
 import { WebsiteAccessArray } from './websiteAccessTypes.js'
+import { ModifyAddressWindowState } from './visualizer-types.js'
 
 export type Page = funtypes.Static<typeof Page>
 export const Page = funtypes.Union(
-	funtypes.Literal('Home'),
-	funtypes.Literal('AddNewAddress'),
-	funtypes.Literal('ChangeActiveAddress'),
-	funtypes.Literal('AccessList'),
-	funtypes.Literal('ModifyAddress'),
-	funtypes.Literal('Settings'),
+	funtypes.ReadonlyObject({ page: funtypes.Literal('Home') }),
+	funtypes.ReadonlyObject({ page: funtypes.Literal('AddNewAddress'), state: ModifyAddressWindowState }),
+	funtypes.ReadonlyObject({ page: funtypes.Literal('ModifyAddress'), state: ModifyAddressWindowState }),
+	funtypes.ReadonlyObject({ page: funtypes.Literal('ChangeActiveAddress') }),
+	funtypes.ReadonlyObject({ page: funtypes.Literal('AccessList') }),
+	funtypes.ReadonlyObject({ page: funtypes.Literal('Settings') }),
 )
 export const pages = funtypes.Union(Page.alternatives[0], ...Page.alternatives.map(x => x))
 export type ExportedSettings = funtypes.Static<typeof ExportedSettings>
@@ -23,7 +24,6 @@ export const ExportedSettings = funtypes.Union(
 		settings: funtypes.ReadonlyObject({
 			activeSimulationAddress: OptionalEthereumAddress,
 			activeChain: EthereumQuantity,
-			page: Page,
 			useSignersAddressAsActiveAddress: funtypes.Boolean,
 			websiteAccess: WebsiteAccessArray,
 			simulationMode: funtypes.Boolean,
@@ -39,7 +39,6 @@ export const ExportedSettings = funtypes.Union(
 		settings: funtypes.ReadonlyObject({
 			activeSimulationAddress: OptionalEthereumAddress,
 			rpcNetwork: RpcNetwork,
-			page: Page,
 			useSignersAddressAsActiveAddress: funtypes.Boolean,
 			websiteAccess: WebsiteAccessArray,
 			simulationMode: funtypes.Boolean,
@@ -55,7 +54,23 @@ export const ExportedSettings = funtypes.Union(
 		settings: funtypes.ReadonlyObject({
 			activeSimulationAddress: OptionalEthereumAddress,
 			rpcNetwork: RpcNetwork,
-			page: Page,
+			useSignersAddressAsActiveAddress: funtypes.Boolean,
+			websiteAccess: WebsiteAccessArray,
+			simulationMode: funtypes.Boolean,
+			addressInfos: ActiveAddressArray,
+			contacts: funtypes.Union(funtypes.Undefined, ContactEntries),
+			useTabsInsteadOfPopup: funtypes.Boolean,
+			metamaskCompatibilityMode: funtypes.Boolean,
+		})
+	}),
+	funtypes.ReadonlyObject({
+		name: funtypes.Literal('InterceptorSettingsAndAddressBook'),
+		version: funtypes.Literal('1.3'),
+		exportedDate: funtypes.String,
+		settings: funtypes.ReadonlyObject({
+			activeSimulationAddress: OptionalEthereumAddress,
+			rpcNetwork: RpcNetwork,
+			openedPage: Page,
 			useSignersAddressAsActiveAddress: funtypes.Boolean,
 			websiteAccess: WebsiteAccessArray,
 			simulationMode: funtypes.Boolean,
