@@ -1,9 +1,9 @@
 import { bytesToUnsigned } from '../utils/bigint.js'
 import { TokenVisualizerResult } from '../types/visualizer-types.js'
 import { MulticallResponseEventLog } from '../types/JsonRpc-types.js'
-import { Interface } from 'ethers'
-import { Erc1155ABI } from '../utils/abi.js'
 import { parseEventIfPossible } from './services/SimulationModeEthereumClientService.js'
+import { Erc1155ABI } from '../utils/abi.js'
+import { Interface } from 'ethers'
 
 export function handleERC20TransferLog(eventLog: MulticallResponseEventLog): TokenVisualizerResult[] {
 	if (eventLog.topics[1] === undefined || eventLog.topics[2] === undefined) throw new Error('unknown log')

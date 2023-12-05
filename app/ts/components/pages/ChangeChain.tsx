@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'preact/hooks'
 import { Error as ErrorContainer, ErrorCheckBox } from '../subcomponents/Error.js'
-import { ExternalPopupMessage } from '../../types/interceptor-messages.js'
+import { MessageToPopup } from '../../types/interceptor-messages.js'
 import { sendPopupMessageToBackgroundPage } from '../../background/backgroundUtils.js'
 import { tryFocusingTabOrWindow } from '../ui-utils.js'
 import { PendingChainChangeConfirmationPromise } from '../../types/user-interface-types.js'
@@ -12,9 +12,11 @@ export function ChangeChain() {
 
 	useEffect(() => {
 		async function popupMessageListener(msg: unknown) {
-			const message = ExternalPopupMessage.parse(msg)
-			if (message.method !== 'popup_ChangeChainRequest') return
-			setChainChangeData(message.data)
+			const maybeParsed = MessageToPopup.safeParse(msg)
+			if (!maybeParsed.success) return // not a message we are interested in
+			const parsed = maybeParsed.value
+			if (parsed.method !== 'popup_ChangeChainRequest') return
+			setChainChangeData(parsed.data)
 		}
 		browser.runtime.onMessage.addListener(popupMessageListener)
 		return () => browser.runtime.onMessage.removeListener(popupMessageListener)

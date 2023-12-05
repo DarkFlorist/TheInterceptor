@@ -774,6 +774,3 @@ export const MessageToPopup = funtypes.Union(
 	PopupAddOrModifyAddressWindowStateInfomation,
 	FetchAbiAndNameFromEtherscanReply,
 )
-
-export type ExternalPopupMessage = funtypes.Static<typeof MessageToPopup>
-export const ExternalPopupMessage = funtypes.Union(MessageToPopup, PopupMessage)

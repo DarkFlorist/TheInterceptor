@@ -8,9 +8,9 @@ import { AddressIcon } from '../subcomponents/address.js'
 import { assertUnreachable } from '../../utils/typescript.js'
 import { ComponentChildren, createRef } from 'preact'
 import { AddressBookEntry, IncompleteAddressBookEntry } from '../../types/addressBookTypes.js'
-import { ExternalPopupMessage } from '../../types/interceptor-messages.js'
 import { isValidAbi } from '../../simulation/services/EtherScanAbiFetcher.js'
 import { ModifyAddressWindowState } from '../../types/visualizer-types.js'
+import { MessageToPopup } from '../../types/interceptor-messages.js'
 
 const readableAddressType = {
 	'contact': 'Contact',
@@ -169,7 +169,9 @@ export function AddNewAddress(param: AddAddressParam) {
 	const [canFetchFromEtherScan, setCanFetchFromEtherScan] = useState<boolean>(false)
 	useEffect(() => {
 		const popupMessageListener = async (msg: unknown) => {
-			const parsed = ExternalPopupMessage.parse(msg)
+			const maybeParsed = MessageToPopup.safeParse(msg)
+			if (!maybeParsed.success) return // not a message we are interested in
+			const parsed = maybeParsed.value
 			if (parsed.method === 'popup_fetchAbiAndNameFromEtherscanReply') {
 				setCanFetchFromEtherScan(true)
 				return setAddOrModifyAddressWindowState((previous) => {

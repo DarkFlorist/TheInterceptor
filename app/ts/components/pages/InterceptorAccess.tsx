@@ -2,7 +2,7 @@ import { useState, useEffect } from 'preact/hooks'
 import { ActiveAddressComponent, BigAddress, WebsiteOriginText } from '../subcomponents/address.js'
 import { AddNewAddress } from './AddNewAddress.js'
 import { RenameAddressCallBack } from '../../types/user-interface-types.js'
-import { ExternalPopupMessage } from '../../types/interceptor-messages.js'
+import { MessageToPopup } from '../../types/interceptor-messages.js'
 import { sendPopupMessageToBackgroundPage } from '../../background/backgroundUtils.js'
 import Hint from '../subcomponents/Hint.js'
 import { convertNumberToCharacterRepresentationIfSmallEnough, tryFocusingTabOrWindow } from '../ui-utils.js'
@@ -180,15 +180,17 @@ export function InterceptorAccess() {
 
 	useEffect(() => {
 		async function popupMessageListener(msg: unknown) {
-			const message = ExternalPopupMessage.parse(msg)
-			if (message.method === 'popup_addressBookEntriesChanged') return refreshMetadata()
-			if (message.method === 'popup_websiteAccess_changed') return refreshMetadata()
-			if (message.method === 'popup_interceptorAccessDialog' || message.method === 'popup_interceptor_access_dialog_pending_changed') {
-				if (message.method === 'popup_interceptor_access_dialog_pending_changed') {
+			const maybeParsed = MessageToPopup.safeParse(msg)
+			if (!maybeParsed.success) return // not a message we are interested in
+			const parsed = maybeParsed.value
+			if (parsed.method === 'popup_addressBookEntriesChanged') return refreshMetadata()
+			if (parsed.method === 'popup_websiteAccess_changed') return refreshMetadata()
+			if (parsed.method === 'popup_interceptorAccessDialog' || parsed.method === 'popup_interceptor_access_dialog_pending_changed') {
+				if (parsed.method === 'popup_interceptor_access_dialog_pending_changed') {
 					if (pendingAccessRequestArray.length > 0) setInformationUpdatedTimestamp(Date.now())
 					setPendingRequestAddedNotification(true)
 				}
-				setAccessRequest(message.data)
+				setAccessRequest(parsed.data)
 				return
 			}
 		}

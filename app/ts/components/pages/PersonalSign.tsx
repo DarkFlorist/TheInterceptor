@@ -5,7 +5,7 @@ import Hint from '../subcomponents/Hint.js'
 import { ErrorCheckBox, Error as ErrorComponent} from '../subcomponents/Error.js'
 import { MOCK_PRIVATE_KEYS_ADDRESS, getChainName } from '../../utils/constants.js'
 import { AddNewAddress } from './AddNewAddress.js'
-import { ExternalPopupMessage, PartiallyParsedRefreshPersonalSignMetadata, PersonalSignRequest, RefreshPersonalSignMetadata } from '../../types/interceptor-messages.js'
+import { MessageToPopup, PartiallyParsedRefreshPersonalSignMetadata, PersonalSignRequest, RefreshPersonalSignMetadata } from '../../types/interceptor-messages.js'
 import { sendPopupMessageToBackgroundPage } from '../../background/backgroundUtils.js'
 import { assertNever } from '../../utils/typescript.js'
 import { SimpleTokenApprovalVisualisation } from '../simulationExplaining/customExplainers/SimpleTokenApprovalVisualisation.js'
@@ -437,10 +437,12 @@ export function PersonalSign() {
 
 	useEffect(() => {
 		function popupMessageListener(msg: unknown) {
-			const message = ExternalPopupMessage.parse(msg)
-			if (message.method === 'popup_addressBookEntriesChanged') return refreshMetadata()
-			if (message.method !== 'popup_personal_sign_request') return
-			setVisualizedPersonalSignRequest(PersonalSignRequest.parse(message).data)
+			const maybeParsed = MessageToPopup.safeParse(msg)
+			if (!maybeParsed.success) return // not a message we are interested in
+			const parsed = maybeParsed.value
+			if (parsed.method === 'popup_addressBookEntriesChanged') return refreshMetadata()
+			if (parsed.method !== 'popup_personal_sign_request') return
+			setVisualizedPersonalSignRequest(PersonalSignRequest.parse(parsed).data)
 		}
 		browser.runtime.onMessage.addListener(popupMessageListener)
 		return () => browser.runtime.onMessage.removeListener(popupMessageListener)

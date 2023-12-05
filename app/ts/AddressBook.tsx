@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'preact/hooks'
 import { RenameAddressCallBack } from './types/user-interface-types.js'
-import { GetAddressBookDataReply, ExternalPopupMessage } from './types/interceptor-messages.js'
+import { GetAddressBookDataReply, MessageToPopup } from './types/interceptor-messages.js'
 import { arrayToChunks } from './utils/typed-arrays.js'
 import { AddNewAddress } from './components/pages/AddNewAddress.js'
 import { BigAddress } from './components/subcomponents/address.js'
@@ -231,7 +231,9 @@ export function AddressBook() {
 
 	useEffect(() => {
 		const popupMessageListener = async (msg: unknown) => {
-			const parsed = ExternalPopupMessage.parse(msg)
+			const maybeParsed = MessageToPopup.safeParse(msg)
+			if (!maybeParsed.success) return // not a message we are interested in
+			const parsed = maybeParsed.value
 			if (parsed.method === 'popup_addressBookEntriesChanged') {
 				// fields updated, refresh
 				changeFilter(activeFilterRef.current)
