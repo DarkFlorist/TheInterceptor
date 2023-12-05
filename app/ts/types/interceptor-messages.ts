@@ -1,7 +1,7 @@
 import * as funtypes from 'funtypes'
 import { PendingChainChangeConfirmationPromise, RpcConnectionStatus, TabIconDetails } from './user-interface-types.js'
 import { EthereumAddress, EthereumBlockHeaderWithTransactionHashes, EthereumBytes32, EthereumData, EthereumQuantity, EthereumSignedTransactionWithBlockData, NonHexBigInt, OptionalEthereumAddress } from './wire-types.js'
-import { CompleteVisualizedSimulation, NamedTokenId, ProtectorResults, SimulatedAndVisualizedTransaction, SimulationState, TokenPriceEstimate, VisualizerResult } from './visualizer-types.js'
+import { ModifyAddressWindowState, CompleteVisualizedSimulation, NamedTokenId, ProtectorResults, SimulatedAndVisualizedTransaction, SimulationState, TokenPriceEstimate, VisualizerResult } from './visualizer-types.js'
 import { VisualizedPersonalSignRequest } from './personal-message-definitions.js'
 import { UniqueRequestIdentifier, WebsiteSocket } from '../utils/requests.js'
 import { EthGetLogsResponse, EthGetStorageAtParams, EthTransactionReceiptResponse, GetBlockReturn, GetSimulationStackReply, SendRawTransactionParams, SendTransactionParams, WalletAddEthereumChain } from './JsonRpc-types.js'
@@ -167,12 +167,6 @@ export type IdentifyAddress = funtypes.Static<typeof IdentifyAddress>
 export const IdentifyAddress = funtypes.ReadonlyObject({
 	method: funtypes.Literal('popup_identifyAddress'),
 	data: funtypes.ReadonlyObject({ address: EthereumAddress })
-}).asReadonly()
-
-export type IdentifyAddressReply = funtypes.Static<typeof IdentifyAddressReply>
-export const IdentifyAddressReply = funtypes.ReadonlyObject({
-	method: funtypes.Literal('popup_identifyAddressReply'),
-	data: funtypes.ReadonlyObject({ addressBookEntry: AddressBookEntry })
 }).asReadonly()
 
 export type TransactionConfirmation = funtypes.Static<typeof TransactionConfirmation>
@@ -475,7 +469,7 @@ export type Settings = funtypes.Static<typeof Settings>
 export const Settings = funtypes.ReadonlyObject({
 	activeSimulationAddress: OptionalEthereumAddress,
 	rpcNetwork: RpcNetwork,
-	page: Page,
+	openedPage: Page,
 	useSignersAddressAsActiveAddress: funtypes.Boolean,
 	websiteAccess: WebsiteAccessArray,
 	simulationMode: funtypes.Boolean,
@@ -592,27 +586,6 @@ export const SettingsUpdated = funtypes.ReadonlyObject({
 	data: Settings
 })
 
-export type FindAddressBookEntryWithSymbolOrName = funtypes.Static<typeof FindAddressBookEntryWithSymbolOrName>
-export const FindAddressBookEntryWithSymbolOrName = funtypes.ReadonlyObject({
-	method: funtypes.Literal('popup_findAddressBookEntryWithSymbolOrName'),
-	data: funtypes.ReadonlyObject({
-		symbol: funtypes.Union(funtypes.String, funtypes.Undefined),
-		name: funtypes.Union(funtypes.String, funtypes.Undefined),
-	})
-})
-
-export type FindAddressBookEntryWithSymbolOrNameReply = funtypes.Static<typeof FindAddressBookEntryWithSymbolOrNameReply>
-export const FindAddressBookEntryWithSymbolOrNameReply = funtypes.ReadonlyObject({
-	method: funtypes.Literal('popup_findAddressBookEntryWithSymbolOrNameReply'),
-	data: funtypes.ReadonlyObject({
-		query: funtypes.ReadonlyObject({ 
-			symbol: funtypes.Union(funtypes.String, funtypes.Undefined),
-			name: funtypes.Union(funtypes.String, funtypes.Undefined),
-		}),
-		addressBookEntryOrUndefined: funtypes.Union(funtypes.Undefined, AddressBookEntry),
-	})
-}).asReadonly()
-
 export type PartiallyParsedSimulateGovernanceContractExecutionReply = funtypes.Static<typeof PartiallyParsedSimulateGovernanceContractExecutionReply>
 export const PartiallyParsedSimulateGovernanceContractExecutionReply = funtypes.ReadonlyObject({
 	method: funtypes.Literal('popup_simulateGovernanceContractExecutionReply'),
@@ -677,29 +650,6 @@ export const SimulateGovernanceContractExecution = funtypes.ReadonlyObject({
 	data: funtypes.ReadonlyObject({ transactionIdentifier: EthereumQuantity })
 })
 
-export type FetchAbiAndNameFromEtherscan = funtypes.Static<typeof FetchAbiAndNameFromEtherscan>
-export const FetchAbiAndNameFromEtherscan = funtypes.ReadonlyObject({
-	method: funtypes.Literal('popup_fetchAbiAndNameFromEtherscan'),
-	data: EthereumAddress,
-}).asReadonly()
-
-export type FetchAbiAndNameFromEtherscanReply = funtypes.Static<typeof FetchAbiAndNameFromEtherscanReply>
-export const FetchAbiAndNameFromEtherscanReply = funtypes.ReadonlyObject({
-	method: funtypes.Literal('popup_fetchAbiAndNameFromEtherscanReply'),
-	data: funtypes.Union(
-		funtypes.ReadonlyObject({
-			success: funtypes.Literal(true),
-			address: EthereumAddress,
-			abi: funtypes.Union(funtypes.String, funtypes.Undefined),
-			contractName: funtypes.String,
-		}),
-		funtypes.ReadonlyObject({
-			success: funtypes.Literal(false),
-			error: funtypes.String,
-		}),
-	)
-}).asReadonly()
-
 export type SettingsOpenedReply = funtypes.Static<typeof SettingsOpenedReply>
 export const SettingsOpenedReply = funtypes.ReadonlyObject({
 	method: funtypes.Literal('popup_settingsOpenedReply'),
@@ -708,6 +658,53 @@ export const SettingsOpenedReply = funtypes.ReadonlyObject({
 		metamaskCompatibilityMode: funtypes.Boolean,
 		rpcEntries: RpcEntries,
 	})
+}).asReadonly()
+
+export type ChangeAddOrModifyAddressWindowState = funtypes.Static<typeof ChangeAddOrModifyAddressWindowState>
+export const ChangeAddOrModifyAddressWindowState = funtypes.ReadonlyObject({
+	method: funtypes.Literal('popup_changeAddOrModifyAddressWindowState'), 
+	data: funtypes.ReadonlyObject({
+		windowStateId: funtypes.String,
+		newState: ModifyAddressWindowState,
+	})
+})
+
+export type PopupAddOrModifyAddressWindowStateInfomation = funtypes.Static<typeof PopupAddOrModifyAddressWindowStateInfomation>
+export const PopupAddOrModifyAddressWindowStateInfomation = funtypes.ReadonlyObject({
+	method: funtypes.Literal('popup_addOrModifyAddressWindowStateInformation'), 
+	data: funtypes.ReadonlyObject({
+		windowStateId: funtypes.String,
+		errorState: funtypes.Union(funtypes.ReadonlyObject({ message: funtypes.String, blockEditing: funtypes.Boolean }), funtypes.Undefined),
+	})
+})
+
+export type FetchAbiAndNameFromEtherscan = funtypes.Static<typeof FetchAbiAndNameFromEtherscan>
+export const FetchAbiAndNameFromEtherscan = funtypes.ReadonlyObject({
+	method: funtypes.Literal('popup_fetchAbiAndNameFromEtherscan'),
+	data: funtypes.ReadonlyObject({ 
+		windowStateId: funtypes.String,
+		address: EthereumAddress
+	})
+}).asReadonly()
+
+export type FetchAbiAndNameFromEtherscanReply = funtypes.Static<typeof FetchAbiAndNameFromEtherscanReply>
+export const FetchAbiAndNameFromEtherscanReply = funtypes.ReadonlyObject({
+	method: funtypes.Literal('popup_fetchAbiAndNameFromEtherscanReply'),
+	data: funtypes.Union(
+		funtypes.ReadonlyObject({
+			windowStateId: funtypes.String,
+			success: funtypes.Literal(true),
+			address: EthereumAddress,
+			abi: funtypes.Union(funtypes.String, funtypes.Undefined),
+			contractName: funtypes.String,
+		}),
+		funtypes.ReadonlyObject({
+			windowStateId: funtypes.String,
+			address: EthereumAddress,
+			success: funtypes.Literal(false),
+			error: funtypes.String,
+		}),
+	)
 }).asReadonly()
 
 export type PopupMessage = funtypes.Static<typeof PopupMessage>
@@ -750,8 +747,7 @@ export const PopupMessage = funtypes.Union(
 	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_settingsOpened') }),
 	ChangeSettings,
 	SetRpcList,
-	IdentifyAddress,
-	FindAddressBookEntryWithSymbolOrName,
+	ChangeAddOrModifyAddressWindowState,
 	FetchAbiAndNameFromEtherscan,
 )
 
@@ -771,13 +767,12 @@ export const MessageToPopup = funtypes.Union(
 	ActiveSigningAddressChanged,
 	UpdateRPCList,
 	SimulationUpdateStartedOrEnded,
-	IdentifyAddressReply,
-	FindAddressBookEntryWithSymbolOrNameReply,
 	PartialUpdateHomePage,
 	PartiallyParsedPersonalSignRequest,
 	PartiallyParsedSimulateGovernanceContractExecutionReply,
-	FetchAbiAndNameFromEtherscanReply,
 	SettingsOpenedReply,
+	PopupAddOrModifyAddressWindowStateInfomation,
+	FetchAbiAndNameFromEtherscanReply,
 )
 
 export type ExternalPopupMessage = funtypes.Static<typeof MessageToPopup>

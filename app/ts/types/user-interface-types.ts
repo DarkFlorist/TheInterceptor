@@ -1,10 +1,10 @@
 import { StateUpdater } from 'preact/hooks'
 import * as funtypes from 'funtypes'
 import { EthereumAddress, EthereumBlockHeader, EthereumQuantity, EthereumTimestamp, OptionalEthereumAddress } from './wire-types.js'
-import { SimulatedAndVisualizedTransaction, SimulationAndVisualisationResults, SimulationUpdatingState, SimulationResultState, SignedMessageTransaction, MaybeParsedEvents } from './visualizer-types.js'
+import { SimulatedAndVisualizedTransaction, SimulationAndVisualisationResults, SimulationUpdatingState, SimulationResultState, SignedMessageTransaction, MaybeParsedEvents, ModifyAddressWindowState } from './visualizer-types.js'
 import { IdentifiedSwapWithMetadata } from '../components/simulationExplaining/SwapTransactions.js'
 import { InterceptedRequest, UniqueRequestIdentifier, WebsiteSocket } from '../utils/requests.js'
-import { ActiveAddress, ActiveAddressEntry, AddressBookEntry, IncompleteAddressBookEntry } from './addressBookTypes.js'
+import { ActiveAddress, ActiveAddressEntry, AddressBookEntry } from './addressBookTypes.js'
 import { Page } from './exportedSettingsTypes.js'
 import { PopupOrTabId, Website, WebsiteAccessArray } from './websiteAccessTypes.js'
 import { SignerName } from './signerTypes.js'
@@ -29,7 +29,7 @@ export type InterceptorAccessListParams = {
 export type AddAddressParam = {
 	close: () => void,
 	setActiveAddressAndInformAboutIt: ((address: bigint | 'signer') => Promise<void>) | undefined,
-	incompleteAddressBookEntry: IncompleteAddressBookEntry,
+	modifyAddressWindowState: ModifyAddressWindowState,
 	activeAddress: bigint | undefined,
 }
 

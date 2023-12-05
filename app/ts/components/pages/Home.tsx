@@ -288,9 +288,7 @@ export function Home(param: HomeParams) {
 		param.simulationResultState,
 	])
 
-	function changeActiveAddress() {
-		param.setAndSaveAppPage('ChangeActiveAddress')
-	}
+	const changeActiveAddress = () => param.setAndSaveAppPage({ page: 'ChangeActiveAddress' })
 
 	function enableSimulationMode(enabled: boolean ) {
 		sendPopupMessageToBackgroundPage( { method: 'popup_enableSimulationMode', data: enabled } )

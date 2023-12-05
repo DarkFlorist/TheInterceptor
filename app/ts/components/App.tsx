@@ -16,7 +16,7 @@ import { version, gitCommitSha } from '../version.js'
 import { sendPopupMessageToBackgroundPage } from '../background/backgroundUtils.js'
 import { EthereumAddress } from '../types/wire-types.js'
 import { checksummedAddress } from '../utils/bigint.js'
-import { ActiveAddress, ActiveAddressEntry, AddressBookEntry, AddressBookEntries, IncompleteAddressBookEntry } from '../types/addressBookTypes.js'
+import { ActiveAddress, ActiveAddressEntry, AddressBookEntry, AddressBookEntries } from '../types/addressBookTypes.js'
 import { WebsiteAccessArray } from '../types/websiteAccessTypes.js'
 import { Page } from '../types/exportedSettingsTypes.js'
 import { SignerName } from '../types/signerTypes.js'
@@ -24,7 +24,7 @@ import { VisualizedPersonalSignRequest } from '../types/personal-message-definit
 import { RpcEntries, RpcEntry, RpcNetwork } from '../types/rpc.js'
 
 export function App() {
-	const [appPage, setAppPage] = useState<Page>('Home')
+	const [appPage, setAppPage] = useState<Page>({ page: 'Home' })
 	const [makeMeRich, setMakeMeRich] = useState(false)
 	const [activeAddresses, setActiveAddresss] = useState<readonly ActiveAddress[]>(defaultAddresses)
 	const [signerAccounts, setSignerAccounts] = useState<readonly bigint[] | undefined>(undefined)
@@ -40,7 +40,6 @@ export function App() {
 	const [isSettingsLoaded, setIsSettingsLoaded] = useState<boolean>(false)
 	const [currentBlockNumber, setCurrentBlockNumber] = useState<bigint | undefined>(undefined)
 	const [signerName, setSignerName] = useState<SignerName>('NoSignerDetected')
-	const [addingNewAddress, setAddingNewAddress] = useState<IncompleteAddressBookEntry> ({ addingAddress: false, type: 'activeAddress', address: undefined, askForAddressAccess: false, name: undefined, symbol: undefined, decimals: undefined, logoUri: undefined, entrySource: 'FilledIn', abi: undefined })
 	const [rpcConnectionStatus, setRpcConnectionStatus] = useState<RpcConnectionStatus>(undefined)
 	const [currentTabId, setCurrentTabId] = useState<number | undefined>(undefined)
 	const [rpcEntries, setRpcEntries] = useState<RpcEntries>([])
@@ -143,7 +142,7 @@ export function App() {
 		const updateHomePageSettings = (settings: Settings, updateQuery: boolean) => {
 			if (updateQuery) {
 				setSimulationMode(settings.simulationMode)
-				setAppPage(settings.page)
+				setAppPage(settings.openedPage)
 			}
 			setSelectedNetwork(settings.rpcNetwork)
 			setActiveSimulationAddress(settings.activeSimulationAddress)
@@ -180,7 +179,7 @@ export function App() {
 	}
 
 	async function addressPaste(address: string) {
-		if (appPage === 'AddNewAddress') return
+		if (appPage.page === 'AddNewAddress') return
 
 		const trimmed = address.trim()
 		if (!ethers.isAddress(trimmed)) return
@@ -195,49 +194,58 @@ export function App() {
 
 		// address not found, let's promt user to create it
 		const addressString = ethers.getAddress(trimmed)
-		setAndSaveAppPage('AddNewAddress')
-		setAddingNewAddress({
-			addingAddress: true,
-			symbol: undefined,
-			decimals: undefined,
-			logoUri: undefined,
-			type: 'activeAddress',
-			name: `Pasted ${ truncateAddr(addressString) }`,
-			address: checksummedAddress(bigIntReprentation),
-			askForAddressAccess: true,
-			entrySource: 'FilledIn',
-			abi: undefined,
-		} )
+		setAndSaveAppPage({ page: 'AddNewAddress', state: {
+			windowStateId: 'appAddressPaste',
+			errorState: undefined,
+			incompleteAddressBookEntry: {
+				addingAddress: true,
+				symbol: undefined,
+				decimals: undefined,
+				logoUri: undefined,
+				type: 'activeAddress',
+				name: `Pasted ${ truncateAddr(addressString) }`,
+				address: checksummedAddress(bigIntReprentation),
+				askForAddressAccess: true,
+				entrySource: 'FilledIn',
+				abi: undefined,
+			}
+		} })
 	}
 
 	function renameAddressCallBack(entry: AddressBookEntry) {
-		setAndSaveAppPage('ModifyAddress')
-		setAddingNewAddress({
-			addingAddress: false,
-			askForAddressAccess: false,
-			symbol: undefined,
-			decimals: undefined,
-			logoUri: undefined,
-			abi: undefined,
-			...entry,
-			address: checksummedAddress(entry.address)
-		})
+		setAndSaveAppPage({ page: 'ModifyAddress', state: {
+			windowStateId: 'appRename',
+			errorState: undefined,
+			incompleteAddressBookEntry: {
+				addingAddress: false,
+				askForAddressAccess: false,
+				symbol: undefined,
+				decimals: undefined,
+				logoUri: undefined,
+				abi: undefined,
+				...entry,
+				address: checksummedAddress(entry.address)
+			}
+		} })
 	}
 
 	function addNewAddress() {
-		setAndSaveAppPage('AddNewAddress')
-		setAddingNewAddress({
-			addingAddress: true,
-			symbol: undefined,
-			decimals: undefined,
-			logoUri: undefined,
-			type: 'activeAddress',
-			name: undefined,
-			address: undefined,
-			askForAddressAccess: true,
-			entrySource: 'FilledIn',
-			abi: undefined,
-		} )
+		setAndSaveAppPage({ page: 'AddNewAddress', state: {
+			windowStateId: 'appNewAddress',
+			errorState: undefined,
+			incompleteAddressBookEntry: {
+				addingAddress: true,
+				symbol: undefined,
+				decimals: undefined,
+				logoUri: undefined,
+				type: 'activeAddress',
+				name: undefined,
+				address: undefined,
+				askForAddressAccess: true,
+				entrySource: 'FilledIn',
+				abi: undefined,
+			}
+		} })
 	}
 
 	async function openAddressBook() {
@@ -252,8 +260,8 @@ export function App() {
 	return (
 		<main>
 			<Hint>
-				<PasteCatcher enabled = { appPage === 'Home' } onPaste = { addressPaste } />
-				<div style = { `background-color: var(--bg-color); width: 520px; height: 600px; ${ appPage !== 'Home' ? 'overflow: hidden;' : 'overflow-y: auto; overflow-x: hidden' }` }>
+				<PasteCatcher enabled = { appPage.page === 'Home' } onPaste = { addressPaste } />
+				<div style = { `background-color: var(--bg-color); width: 520px; height: 600px; ${ appPage.page !== 'Home' ? 'overflow: hidden;' : 'overflow-y: auto; overflow-x: hidden' }` }>
 					{ !isSettingsLoaded ? <></> : <>
 						<nav class = 'navbar window-header' role = 'navigation' aria-label = 'main navigation'>
 							<div class = 'navbar-brand'>
@@ -264,7 +272,7 @@ export function App() {
 									</p>
 								</a>
 								<a class = 'navbar-item' style = 'margin-left: auto; margin-right: 0;'>
-									<img src = '../img/internet.svg' width = '32' onClick = { () => setAndSaveAppPage('AccessList') }/>
+									<img src = '../img/internet.svg' width = '32' onClick = { () => setAndSaveAppPage({ page: 'AccessList' }) }/>
 									<img src = '../img/address-book.svg' width = '32' onClick = { openAddressBook }/>
 									<img src = '../img/settings.svg' width = '32' onClick = { openSettings }/>
 								</a>
@@ -292,8 +300,8 @@ export function App() {
 							simulationResultState = { simulationResultState }
 						/>
 
-						<div class = { `modal ${ appPage !== 'Home' ? 'is-active' : ''}` }>
-							{ appPage === 'AccessList' ?
+						<div class = { `modal ${ appPage.page !== 'Home' ? 'is-active' : ''}` }>
+							{ appPage.page === 'AccessList' ?
 								<InterceptorAccessList
 									setAndSaveAppPage = { setAndSaveAppPage }
 									setWebsiteAccess = { setWebsiteAccess }
@@ -302,7 +310,7 @@ export function App() {
 									renameAddressCallBack = { renameAddressCallBack }
 								/>
 							: <></> }
-							{ appPage === 'ChangeActiveAddress' ?
+							{ appPage.page === 'ChangeActiveAddress' ?
 								<ChangeActiveAddress
 									setActiveAddressAndInformAboutIt = { setActiveAddressAndInformAboutIt }
 									signerAccounts = { signerAccounts }
@@ -313,11 +321,11 @@ export function App() {
 									addNewAddress = { addNewAddress }
 								/>
 							: <></> }
-							{ appPage === 'AddNewAddress' || appPage === 'ModifyAddress' ?
+							{ appPage.page === 'AddNewAddress' || appPage.page === 'ModifyAddress' ?
 								<AddNewAddress
 									setActiveAddressAndInformAboutIt = { setActiveAddressAndInformAboutIt }
-									incompleteAddressBookEntry = { addingNewAddress }
-									close = { () => setAndSaveAppPage('Home') }
+									modifyAddressWindowState = { appPage.state }
+									close = { () => setAndSaveAppPage({ page: 'Home' }) }
 									activeAddress = { simulationMode ? activeSimulationAddress : activeSigningAddress }
 								/>
 							: <></> }

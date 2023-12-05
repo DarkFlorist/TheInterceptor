@@ -5,7 +5,7 @@ import { getSignerLogo, getPrettySignerName, SignerLogoText } from '../subcompon
 
 export function ChangeActiveAddress(param: ChangeActiveAddressParam) {
 	function ChangeAndStoreActiveAddress(activeAddress: bigint | 'signer') {
-		param.setAndSaveAppPage('Home')
+		param.setAndSaveAppPage({ page: 'Home' })
 		param.setActiveAddressAndInformAboutIt(activeAddress)
 	}
 
@@ -21,7 +21,7 @@ export function ChangeActiveAddress(param: ChangeActiveAddressParam) {
 	}
 
 	function goHome() {
-		param.setAndSaveAppPage('Home')
+		param.setAndSaveAppPage({ page: 'Home' })
 	}
 
 	function changePageToAddAddress() {
