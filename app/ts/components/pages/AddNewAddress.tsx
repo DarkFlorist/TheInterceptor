@@ -173,8 +173,13 @@ type DuplicateCheck = {
 	duplicateEntry: AddressBookEntry
 }
 
+type ErrorMessage = {
+	message: string
+	blockEditing: boolean
+}
+
 export function AddNewAddress(param: AddAddressParam) {
-	const [errorString, setErrorString] = useState<string | undefined>(undefined)
+	const [errorString, setErrorString] = useState<ErrorMessage | undefined>(undefined)
 	const [activeAddress, setActiveAddress] = useState<bigint | undefined>(undefined)
 	const [incompleteAddressBookEntry, setIncompleteAddressBookEntry] = useState<IncompleteAddressBookEntry & DuplicateCheck>({ addingAddress: false, type: 'activeAddress', address: undefined, askForAddressAccess: false, name: undefined, symbol: undefined, decimals: undefined, logoUri: undefined, entrySource: 'FilledIn', duplicateStatus: 'NoDuplicates', abi: undefined })
 	const [onChainInformationVerifiedByUser, setOnChainInformationVerifiedByUser] = useState<boolean>(false)
@@ -198,7 +203,7 @@ export function AddNewAddress(param: AddAddressParam) {
 			if (parsed.method === 'popup_fetchAbiAndNameFromEtherscanReply') {
 				setIncompleteAddressBookEntry((prevEntry) => {
 					if (!parsed.data.success) {
-						setErrorString(parsed.data.error)
+						setErrorString({ blockEditing: false, message: parsed.data.error})
 						return prevEntry
 					}
 					setErrorString(undefined)
@@ -213,11 +218,11 @@ export function AddNewAddress(param: AddAddressParam) {
 			return setIncompleteAddressBookEntry((prevEntry) => {
 				if (parsed.data.addressBookEntry.address !== stringToAddress(prevEntry.address)) return prevEntry
 				if (parsed.data.addressBookEntry.entrySource !== 'OnChain' && parsed.data.addressBookEntry.entrySource !== 'FilledIn') {
-					setErrorString(`The address ${ checksummedAddress(parsed.data.addressBookEntry.address) } you are trying to add already exists. Edit the existing record instead trying to add it again.`)
+					setErrorString({ blockEditing: true, message: `The address ${ checksummedAddress(parsed.data.addressBookEntry.address) } you are trying to add already exists. Edit the existing record instead trying to add it again.` })
 					return prevEntry
 				}
 				if (parsed.data.addressBookEntry.type !== prevEntry.type && !(prevEntry.type === 'activeAddress' && parsed.data.addressBookEntry.type === 'contact') ) {
-					setErrorString(`The address ${ checksummedAddress(parsed.data.addressBookEntry.address) } is a ${ parsed.data.addressBookEntry.type } while you are trying to add ${ prevEntry.type }.`)
+					setErrorString({ blockEditing: true, message: `The address ${ checksummedAddress(parsed.data.addressBookEntry.address) } is a ${ parsed.data.addressBookEntry.type } while you are trying to add ${ prevEntry.type }.` })
 					return prevEntry
 				}
 				return {
@@ -356,10 +361,10 @@ export function AddNewAddress(param: AddAddressParam) {
 
 			const issue = getIssueWithAddressString(trimmed)
 			if (issue === undefined) {
-				setErrorString('Unknown issue.')
+				setErrorString(undefined)
 				return { ... prevEntry, address: input }
 			}
-			setErrorString(`${ issue }`)
+			setErrorString({ blockEditing: true, message: issue })
 			return { ... prevEntry, address: input }
 		})
 	}
@@ -379,12 +384,12 @@ export function AddNewAddress(param: AddAddressParam) {
 				return { ...entry, abi: undefined }
 			}
 			if (!isJSON(trimmedAbi)) {
-				setErrorString('The Abi provided is not a JSON ABI. Please provide a valid JSON ABI.')
+				setErrorString({ blockEditing: true, message: 'The Abi provided is not a JSON ABI. Please provide a valid JSON ABI.' })
 				return entry
 			}
 
 			if (!isValidAbi(trimmedAbi)) {
-				setErrorString('The Abi provided  is not an ABI. Please provide a valid an ABI.')
+				setErrorString({ blockEditing: true, message: 'The ABI provided is not valid. Please provide a valid ABI.' })
 				return entry
 			}
 
@@ -412,7 +417,7 @@ export function AddNewAddress(param: AddAddressParam) {
 
 	function isSubmitButtonDisabled() {
 		return !areInputsValid()
-			|| errorString !== undefined 
+			|| (errorString !== undefined && errorString.blockEditing)
 			|| incompleteAddressBookEntry.duplicateStatus === 'Duplicates'
 			|| (showOnChainVerificationErrorBox() && !onChainInformationVerifiedByUser)
 	}
@@ -459,7 +464,7 @@ export function AddNewAddress(param: AddAddressParam) {
 					</div>
 				</div>
 				<div style = 'padding-left: 10px; padding-right: 10px; margin-bottom: 10px; height: 80px'>
-					{ errorString === undefined ? <></> : <Notice text = { errorString } /> }
+					{ errorString === undefined ? <></> : <Notice text = { errorString.message } /> }
 					{ errorString === undefined && incompleteAddressBookEntry.duplicateStatus === 'Duplicates' ? <>
 						<Notice text = { `There already exists ${ incompleteAddressBookEntry.duplicateEntry.type === 'activeAddress' ? 'an address' : incompleteAddressBookEntry.duplicateEntry.type } with ${ 'symbol' in incompleteAddressBookEntry.duplicateEntry ? `symbol "${ incompleteAddressBookEntry.duplicateEntry.symbol }" and` : '' } name "${ incompleteAddressBookEntry.duplicateEntry.name }".` } />
 						</> :
