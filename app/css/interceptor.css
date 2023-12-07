@@ -138,7 +138,7 @@ input[type = 'checkbox']:checked::before {
 	line-height: 1.3em;
 }
 
-.paragraph {
+.paragraph, .small-address-container {
 	color: var(--text-color);
 	font-size: 14px;
 }
@@ -581,7 +581,6 @@ svg.spinner > circle {
 	visibility: hidden;
 	height: 0px;
 	padding-left: 39px;
-	font-size: 14px;
 }
 
 .rename-address-button {
