@@ -21,7 +21,7 @@ export const getWebsiteWarningMessage = (websiteOrigin: string, simulationMode: 
 	if (data === undefined) return undefined
 	if (data.message !== undefined) return { message: data.message, suggestedAlternative: data.suggestedAlternative }
 	if (simulationMode === false) return undefined
-	if (data.externalRpc) return { message: `${ data.name } relies on an external centralized RPC connection, resulting in the improper functioning of simulation mode within this application.`, suggestedAlternative: data.suggestedAlternative }
+	if (data.externalRpc) return { message: `${ data.name } relies on a centralized RPC connection which causes The Interceptor's Simulation Mode to not work properly with this site.`, suggestedAlternative: data.suggestedAlternative }
 	if (data.usesSubGraph) return { message: `${ data.name } relies on an external centralized Sub Graph connection, resulting in the improper functioning of simulation mode within this application`, suggestedAlternative: data.suggestedAlternative }
 	return undefined
 }
