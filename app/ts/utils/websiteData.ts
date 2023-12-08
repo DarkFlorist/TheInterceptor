@@ -20,15 +20,15 @@ export const getWebsiteWarningMessage = (websiteOrigin: string): { message: stri
 	const data = websiteMetaData[websiteOrigin]
 	if (data === undefined) return undefined
 	if (data.message !== undefined) return { message: data.message, suggestedAlternative: data.suggestedAlternative }
-	if (data.externalRpc) return { message: `${ data.name } connects to external centralized RPC and thus simulation mode does not work properly on this application.`, suggestedAlternative: data.suggestedAlternative }
-	if (data.usesSubGraph) return { message: `${ data.name } connects to centralized sub graph node and thus simulation mode does not work properly on this application.`, suggestedAlternative: data.suggestedAlternative }
+	if (data.externalRpc) return { message: `${ data.name }  relies on an external centralized RPC connection, resulting in the improper functioning of simulation mode within this application.`, suggestedAlternative: data.suggestedAlternative }
+	if (data.usesSubGraph) return { message: `${ data.name }  relies on an external centralized Sub Graph connection, resulting in the improper functioning of simulation mode within this application`, suggestedAlternative: data.suggestedAlternative }
 	return undefined
 }
 
 const websiteMetaData: WebsiteMetaData = {
 	'app.uniswap.org': {
 		name: 'Uniswap',
-		message: `Uniswap v4 does not work properly on The Interceptor as Uniswap V4 uses centralized components. Uniswap V4 interface also charges an extra charge for it's users. It's recommended to use another interface without these limitations.`,
+		message: `Uniswap V4 encounters functionality issues on The Interceptor due to its reliance on centralized components. Additionally, the Uniswap V4 interface imposes an extra fee on its users. It is advisable to opt for an alternative interface that does not have these limitations.`,
 		suggestedAlternative: 'https://bafybeib2jsrxvqwm4hscnwtp5pcd2gpxdaltk745hffsnktb2sa3humm4i.ipfs.dweb.link',
 		externalRpc: true,
 	},
