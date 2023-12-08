@@ -247,11 +247,12 @@ const CheckBoxes = (params: CheckBoxesParams) => {
 type NetworkErrorParams = {
 	websiteSocket: WebsiteSocket
 	website: Website
+	simulationMode: boolean
 }
 
-export const WebsiteErrors = ({ website, websiteSocket }: NetworkErrorParams) => {
+export const WebsiteErrors = ({ website, websiteSocket, simulationMode }: NetworkErrorParams) => {
 	console.log(website)
-	const message = getWebsiteWarningMessage(website.websiteOrigin)
+	const message = getWebsiteWarningMessage(website.websiteOrigin, simulationMode)
 	if (message === undefined) return <></>
 	if (message.suggestedAlternative === undefined) {
 		return <div style = 'margin: 10px; background-color: var(--bg-color);'>
@@ -451,7 +452,7 @@ export function ConfirmTransaction() {
 				<div class = 'block popup-block'>
 					<div class = 'popup-block-scroll'>
 						<NetworkErrors rpcConnectionStatus = { rpcConnectionStatus }/>
-						<WebsiteErrors website = { currentPendingTransaction.website } websiteSocket = { currentPendingTransaction.uniqueRequestIdentifier.requestSocket }/>
+						<WebsiteErrors website = { currentPendingTransaction.website } websiteSocket = { currentPendingTransaction.uniqueRequestIdentifier.requestSocket } simulationMode = { currentPendingTransaction.simulationMode }/>
 
 						{ currentPendingTransaction.originalRequestParameters.method === 'eth_sendRawTransaction'
 							? <DinoSaysNotification

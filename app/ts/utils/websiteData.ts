@@ -16,12 +16,13 @@ export const WebsiteMetadataInfo = funtypes.Intersect(
 export type WebsiteMetaData  = funtypes.Static<typeof WebsiteMetaData>
 export const WebsiteMetaData = funtypes.ReadonlyRecord(funtypes.String, WebsiteMetadataInfo)
 
-export const getWebsiteWarningMessage = (websiteOrigin: string): { message: string, suggestedAlternative: string | undefined } | undefined => {
+export const getWebsiteWarningMessage = (websiteOrigin: string, simulationMode: boolean): { message: string, suggestedAlternative: string | undefined } | undefined => {
 	const data = websiteMetaData[websiteOrigin]
 	if (data === undefined) return undefined
 	if (data.message !== undefined) return { message: data.message, suggestedAlternative: data.suggestedAlternative }
-	if (data.externalRpc) return { message: `${ data.name }  relies on an external centralized RPC connection, resulting in the improper functioning of simulation mode within this application.`, suggestedAlternative: data.suggestedAlternative }
-	if (data.usesSubGraph) return { message: `${ data.name }  relies on an external centralized Sub Graph connection, resulting in the improper functioning of simulation mode within this application`, suggestedAlternative: data.suggestedAlternative }
+	if (simulationMode === false) return undefined
+	if (data.externalRpc) return { message: `${ data.name } relies on an external centralized RPC connection, resulting in the improper functioning of simulation mode within this application.`, suggestedAlternative: data.suggestedAlternative }
+	if (data.usesSubGraph) return { message: `${ data.name } relies on an external centralized Sub Graph connection, resulting in the improper functioning of simulation mode within this application`, suggestedAlternative: data.suggestedAlternative }
 	return undefined
 }
 
