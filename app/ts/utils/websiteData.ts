@@ -60,5 +60,13 @@ const websiteMetaData: WebsiteMetaData = {
 	'kwenta.eth.limo': {
 		name: 'Kwenta',
 		externalRpc: true,
+	},
+	'opensea.io': {
+		name: 'OpenSea',
+		externalRpc: true,
+	},
+	'blur.io': {
+		name: 'Blur',
+		externalRpc: true,
 	}
 }
