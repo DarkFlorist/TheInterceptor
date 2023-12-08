@@ -707,6 +707,15 @@ export const FetchAbiAndNameFromEtherscanReply = funtypes.ReadonlyObject({
 	)
 }).asReadonly()
 
+export type OpenWebPage = funtypes.Static<typeof OpenWebPage>
+export const OpenWebPage = funtypes.ReadonlyObject({
+	method: funtypes.Literal('popup_openWebPage'),
+	data: funtypes.ReadonlyObject({ 
+		url: funtypes.String,
+		websiteSocket: WebsiteSocket
+	})
+}).asReadonly()
+
 export type PopupMessage = funtypes.Static<typeof PopupMessage>
 export const PopupMessage = funtypes.Union(
 	TransactionConfirmation,
@@ -749,6 +758,7 @@ export const PopupMessage = funtypes.Union(
 	SetRpcList,
 	ChangeAddOrModifyAddressWindowState,
 	FetchAbiAndNameFromEtherscan,
+	OpenWebPage,
 )
 
 export type MessageToPopup = funtypes.Static<typeof MessageToPopup>
