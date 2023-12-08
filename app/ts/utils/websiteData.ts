@@ -68,5 +68,9 @@ const websiteMetaData: WebsiteMetaData = {
 	'blur.io': {
 		name: 'Blur',
 		externalRpc: true,
-	}
+	},
+	'app.ens.domains': {
+		name: 'ENS',
+		externalRpc: true,
+	},
 }
