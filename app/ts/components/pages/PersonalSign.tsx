@@ -2,7 +2,7 @@ import { useState, useEffect } from 'preact/hooks'
 import { checksummedAddress, dataStringWith0xStart, isHexEncodedNumber, stringToUint8Array } from '../../utils/bigint.js'
 import { RenameAddressCallBack } from '../../types/user-interface-types.js'
 import Hint from '../subcomponents/Hint.js'
-import { ErrorCheckBox, Error as ErrorComponent} from '../subcomponents/Error.js'
+import { ErrorCheckBox, ErrorComponent } from '../subcomponents/Error.js'
 import { MOCK_PRIVATE_KEYS_ADDRESS, getChainName } from '../../utils/constants.js'
 import { AddNewAddress } from './AddNewAddress.js'
 import { MessageToPopup, PartiallyParsedRefreshPersonalSignMetadata, PersonalSignRequest, RefreshPersonalSignMetadata } from '../../types/interceptor-messages.js'
@@ -566,9 +566,7 @@ export function PersonalSign() {
 							|| VisualizedPersonalSignRequest.rpcNetwork.httpsRpc === 'https://rpc.dark.florist/winedancemuffinborrow')
 							&& VisualizedPersonalSignRequest.simulationMode && (VisualizedPersonalSignRequest.activeAddress.address === undefined || VisualizedPersonalSignRequest.activeAddress.address !== MOCK_PRIVATE_KEYS_ADDRESS || VisualizedPersonalSignRequest.method !== 'personal_sign')
 							? <div style = 'display: grid'>
-								<div style = 'margin: 0px; margin-bottom: 10px; margin-left: 20px; margin-right: 20px; '>
-									<ErrorComponent text = 'Unfortunately we cannot simulate message signing as it requires private key access 😢.'/>
-								</div>
+								<ErrorComponent text = 'Unfortunately we cannot simulate message signing as it requires private key access 😢.'/>
 							</div>
 							: <></>
 						}

@@ -99,7 +99,7 @@ const TabStateItems = funtypes.Record(funtypes.String, TabState)
 export async function getTabStateFromStorage(tabId: number) {
 	return TabStateItems.parse(await browser.storage.local.get(getTabStateKey(tabId)))?.[getTabStateKey(tabId)] ?? undefined
 }
-export async function setTabStateFromStorage(tabId: number, tabState: TabState) {
+export async function setTabStateToStorage(tabId: number, tabState: TabState) {
 	await browser.storage.local.set({ [getTabStateKey(tabId)]: serialize(TabState, tabState) })
 }
 export const removeTabStateFromStorage = async (tabId: number) => await browser.storage.local.remove(getTabStateKey(tabId))

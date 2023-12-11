@@ -8,7 +8,7 @@ import { assertNever } from '../../utils/typescript.js'
 import { WebsiteTabConnections } from '../../types/user-interface-types.js'
 import { getHtmlFile, sendPopupMessageToOpenWindows } from '../backgroundUtils.js'
 import { extractEIP712Message, validateEIP712Types } from '../../utils/eip712Parsing.js'
-import { getPendingPersonalSignPromise, getRpcNetworkForChain, getSignerName, setPendingPersonalSignPromise } from '../storageVariables.js'
+import { getPendingPersonalSignPromise, getRpcNetworkForChain, getTabState, setPendingPersonalSignPromise } from '../storageVariables.js'
 import { getSettings } from '../settings.js'
 import { PopupOrTab, addWindowTabListeners, closePopupOrTabById, getPopupOrTabOnlyById, openPopupOrTab, removeWindowTabListeners } from '../../components/ui-utils.js'
 import { appendSignedMessage, simulatePersonalSign } from '../../simulation/services/SimulationModeEthereumClientService.js'
@@ -17,7 +17,6 @@ import { replyToInterceptedRequest } from '../messageSending.js'
 import { identifyAddress } from '../metadataUtils.js'
 import { AddressBookEntry, UserAddressBook } from '../../types/addressBookTypes.js'
 import { PopupOrTabId, Website } from '../../types/websiteAccessTypes.js'
-import { SignerName } from '../../types/signerTypes.js'
 import { updateSimulationState } from '../background.js'
 import { Simulator } from '../../simulation/simulator.js'
 import { SignedMessageTransaction } from '../../types/visualizer-types.js'
@@ -48,7 +47,7 @@ export async function updatePendingPersonalSignViewWithPendingRequests(ethereumC
 	const settings = await getSettings()
 	return await sendPopupMessageToOpenWindows(serialize(PersonalSignRequest, {
 		method: 'popup_personal_sign_request' as const,
-		data: await craftPersonalSignPopupMessage(ethereumClientService, personalSignPromise.signedMessageTransaction, await getSignerName(), settings.rpcNetwork, settings.userAddressBook )
+		data: await craftPersonalSignPopupMessage(ethereumClientService, personalSignPromise.signedMessageTransaction, settings.rpcNetwork, settings.userAddressBook )
 	}) as PartiallyParsedPersonalSignRequest)
 }
 
@@ -82,8 +81,9 @@ export async function addMetadataToOpenSeaOrder(ethereumClientService: EthereumC
 	 }
 }
 
-export async function craftPersonalSignPopupMessage(ethereumClientService: EthereumClientService, signedMessageTransaction: SignedMessageTransaction, signerName: SignerName, rpcNetwork: RpcNetwork, userAddressBook: UserAddressBook): Promise<VisualizedPersonalSignRequest> {
+export async function craftPersonalSignPopupMessage(ethereumClientService: EthereumClientService, signedMessageTransaction: SignedMessageTransaction, rpcNetwork: RpcNetwork, userAddressBook: UserAddressBook): Promise<VisualizedPersonalSignRequest> {
 	const activeAddressWithMetadata = await identifyAddress(ethereumClientService, userAddressBook, signedMessageTransaction.fakeSignedFor)
+	const signerName = (await getTabState(signedMessageTransaction.request.uniqueRequestIdentifier.requestSocket.tabId)).signerName
 	const basicParams = { ...signedMessageTransaction, activeAddress: activeAddressWithMetadata, signerName }
 	const originalParams = signedMessageTransaction
 

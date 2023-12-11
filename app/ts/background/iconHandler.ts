@@ -6,7 +6,7 @@ import { imageToUri } from '../utils/imageToUri.js'
 import { Future } from '../utils/future.js'
 import { RpcConnectionStatus, TabIcon, TabState, WebsiteTabConnections } from '../types/user-interface-types.js'
 import { getSettings } from './settings.js'
-import { getRpcConnectionStatus, getSignerName, updateTabState } from './storageVariables.js'
+import { getRpcConnectionStatus, getTabState, updateTabState } from './storageVariables.js'
 import { getLastKnownCurrentTabId } from './popupMessageHandlers.js'
 import { getActiveAddressEntry } from './metadataUtils.js'
 import { WebsiteSocket } from '../utils/requests.js'
@@ -20,12 +20,7 @@ async function setInterceptorIcon(websiteTabConnections: WebsiteTabConnections, 
 		iconReason: iconReason
 	}
 
-	await updateTabState(tabId, (previousState: TabState) => {
-		return {
-			...previousState,
-			tabIconDetails
-		}
-	})
+	await updateTabState(tabId, (previousState: TabState) => ({ ...previousState, tabIconDetails }))
 
 	if (await getLastKnownCurrentTabId() === tabId) {
 		await sendPopupMessageToOpenWindows({
@@ -58,8 +53,8 @@ export async function updateExtensionIcon(websiteTabConnections: WebsiteTabConne
 	}
 	if (settings.simulationMode) return setInterceptorIcon(websiteTabConnections, socket.tabId, ICON_SIMULATING, `The Interceptor simulates your sent transactions.`)
 	if (settings.rpcNetwork.httpsRpc === undefined) return setInterceptorIcon(websiteTabConnections, socket.tabId, ICON_SIGNING_NOT_SUPPORTED, `Interceptor is on an unsupported network and simulation mode is disabled.`)
-
-	return setInterceptorIcon(websiteTabConnections, socket.tabId, ICON_SIGNING, `The Interceptor forwards your transactions to ${ getPrettySignerName(await getSignerName()) } once sent.`)
+	const tabState = await getTabState(socket.tabId)
+	return setInterceptorIcon(websiteTabConnections, socket.tabId, ICON_SIGNING, `The Interceptor forwards your transactions to ${ getPrettySignerName(tabState.signerName) } once sent.`)
 }
 
 export function noNewBlockForOverTwoMins(connectionStatus: RpcConnectionStatus) {

@@ -1,6 +1,6 @@
 import { changeActiveAddressAndChainAndResetSimulation, changeActiveRpc, getPrependTransactions, refreshConfirmTransactionSimulation, updateSimulationState, updateSimulationMetadata, simulateGovernanceContractExecution } from './background.js'
 import { getSettings, setUseTabsInsteadOfPopup, setMakeMeRich, setPage, setUseSignersAddressAsActiveAddress, updateActiveAddresses, updateContacts, updateWebsiteAccess, exportSettingsAndAddressBook, importSettingsAndAddressBook, getMakeMeRich, getUseTabsInsteadOfPopup, getMetamaskCompatibilityMode, setMetamaskCompatibilityMode, getPage } from './settings.js'
-import { getPendingTransactions, getCurrentTabId, getTabState, saveCurrentTabId, setRpcList, getRpcList, getPrimaryRpcForChain, getSignerName, getRpcConnectionStatus, updateUserAddressBookEntries, getSimulationResults, setIdsOfOpenedTabs, getIdsOfOpenedTabs, replacePendingTransaction } from './storageVariables.js'
+import { getPendingTransactions, getCurrentTabId, getTabState, saveCurrentTabId, setRpcList, getRpcList, getPrimaryRpcForChain, getRpcConnectionStatus, updateUserAddressBookEntries, getSimulationResults, setIdsOfOpenedTabs, getIdsOfOpenedTabs, replacePendingTransaction } from './storageVariables.js'
 import { Simulator } from '../simulation/simulator.js'
 import { ChangeActiveAddress, ChangeMakeMeRich, ChangePage, RemoveTransaction, RequestAccountsFromSigner, TransactionConfirmation, InterceptorAccess, ChangeInterceptorAccess, ChainChangeConfirmation, EnableSimulationMode, ChangeActiveChain, AddOrEditAddressBookEntry, GetAddressBookData, RemoveAddressBookEntry, InterceptorAccessRefresh, InterceptorAccessChangeAddress, Settings, RefreshConfirmTransactionMetadata, RefreshInterceptorAccessMetadata, ChangeSettings, ImportSettings, SetRpcList, PersonalSignApproval, UpdateHomePage, RemoveSignedMessage, SimulateGovernanceContractExecutionReply, SimulateGovernanceContractExecution, ChangeAddOrModifyAddressWindowState, FetchAbiAndNameFromEtherscan, OpenWebPage } from '../types/interceptor-messages.js'
 import { formEthSendTransaction, formSendRawTransaction, resolvePendingTransaction, updateConfirmTransactionViewWithPendingTransactionOrClose } from './windows/confirmTransaction.js'
@@ -301,7 +301,6 @@ export const openNewTab = async (tabName: 'settingsView' | 'addressBook') => {
 
 export async function homeOpened(simulator: Simulator, refreshMetadata: boolean) {
 	const settingsPromise = getSettings()
-	const signerNamePromise = getSignerName()
 	const makeMeRichPromise = getMakeMeRich()
 	const rpcConnectionStatusPromise = getRpcConnectionStatus()
 	const rpcEntriesPromise = getRpcList()
@@ -309,7 +308,6 @@ export async function homeOpened(simulator: Simulator, refreshMetadata: boolean)
 	const visualizedSimulatorStatePromise: Promise<CompleteVisualizedSimulation> = refreshMetadata ? updateSimulationMetadata(simulator.ethereum) : getSimulationResults()
 	const tabId = await getLastKnownCurrentTabId()
 	const tabState = tabId === undefined ? undefined : await getTabState(tabId)
-	const signerName = await signerNamePromise
 	const settings = await settingsPromise
 	const makeMeRich = await makeMeRichPromise
 	const rpcConnectionStatus = await rpcConnectionStatusPromise
@@ -319,15 +317,12 @@ export async function homeOpened(simulator: Simulator, refreshMetadata: boolean)
 		data: {
 			visualizedSimulatorState: await visualizedSimulatorStatePromise,
 			websiteAccessAddressMetadata: getAddressMetadataForAccess(settings.websiteAccess, settings.userAddressBook.activeAddresses),
-			signerAccounts: tabState?.signerAccounts,
-			signerChain: tabState?.signerChain,
-			signerName: signerName,
+			tabState,
+			activeSigningAddressInThisTab: tabState?.activeSigningAddress,
 			currentBlockNumber: simulator.ethereum.getLastKnownCachedBlockOrUndefined()?.number,
 			settings: settings,
-			tabIconDetails: tabState?.tabIconDetails,
 			makeMeRich,
 			rpcConnectionStatus,
-			activeSigningAddressInThisTab: tabState?.activeSigningAddress,
 			tabId,
 			rpcEntries: await rpcEntriesPromise,
 		}

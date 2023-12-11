@@ -9,7 +9,7 @@ import { Page } from './exportedSettingsTypes.js'
 import { PopupOrTabId, Website, WebsiteAccessArray } from './websiteAccessTypes.js'
 import { SignerName } from './signerTypes.js'
 import { ICON_ACCESS_DENIED, ICON_ACTIVE, ICON_NOT_ACTIVE, ICON_SIGNING, ICON_SIGNING_NOT_SUPPORTED, ICON_SIMULATING } from '../utils/constants.js'
-import { RpcEntries, RpcEntry, RpcNetwork } from './rpc.js'
+import { CodeMessageError, RpcEntries, RpcEntry, RpcNetwork } from './rpc.js'
 import { VisualizedPersonalSignRequest } from './personal-message-definitions.js'
 
 export type AddressListParams = {
@@ -37,7 +37,7 @@ export type HomeParams = {
 	setAndSaveAppPage: (page: Page) => void,
 	makeMeRich: boolean,
 	activeAddresses: readonly ActiveAddress[],
-	signerAccounts: readonly bigint[] | undefined,
+	tabState: TabState | undefined,
 	activeSimulationAddress: bigint | undefined,
 	activeSigningAddress: bigint | undefined,
 	useSignersAddressAsActiveAddress: boolean,
@@ -47,7 +47,6 @@ export type HomeParams = {
 	simulationMode: boolean,
 	tabIconDetails: TabIconDetails,
 	currentBlockNumber: bigint | undefined,
-	signerName: SignerName,
 	renameAddressCallBack: RenameAddressCallBack,
 	rpcConnectionStatus: RpcConnectionStatus,
 	rpcEntries: RpcEntries,
@@ -157,6 +156,7 @@ export type TabState = funtypes.Static<typeof TabState>
 export const TabState = funtypes.ReadonlyObject({
 	signerName: SignerName,
 	signerAccounts: funtypes.ReadonlyArray(EthereumAddress),
+	signerAccountError: funtypes.Union(CodeMessageError, funtypes.Undefined),
 	signerChain: funtypes.Union(EthereumQuantity, funtypes.Undefined),
 	tabIconDetails: TabIconDetails,
 	activeSigningAddress: OptionalEthereumAddress,

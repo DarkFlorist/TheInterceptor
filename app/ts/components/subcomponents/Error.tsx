@@ -5,11 +5,11 @@ interface ErrorProps {
 	warning?: boolean,
 }
 
-export function Error(props: ErrorProps) {
+export function ErrorComponent(props: ErrorProps) {
 	const boxColor = props.warning === true ? 'var(--warning-box-color)' : 'var(--error-box-color)'
 	const textColor = props.warning === true ? 'var(--warning-box-text)' : 'var(--error-box-text)'
 	return (
-		<div class = 'container'>
+		<div class = 'container' style = 'margin: 10px; background-color: var(--bg-color);'>
 			<div className = 'notification' style = { `background-color: ${ boxColor }; display: flex; align-items: center; padding: 2px; padding: 10px`}>
 				<span class = 'icon' style = 'margin-left: 0px; margin-right: 5px; width: 2em; height: 2em; min-width: 2em; min-height: 2em;'>
 					<img src = '../img/warning-sign-black.svg' style = 'width: 2em; height: 2em;'/>

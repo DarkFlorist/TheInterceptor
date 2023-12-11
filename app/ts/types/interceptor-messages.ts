@@ -1,5 +1,5 @@
 import * as funtypes from 'funtypes'
-import { PendingChainChangeConfirmationPromise, RpcConnectionStatus, TabIconDetails } from './user-interface-types.js'
+import { PendingChainChangeConfirmationPromise, RpcConnectionStatus, TabIconDetails, TabState } from './user-interface-types.js'
 import { EthereumAddress, EthereumBlockHeaderWithTransactionHashes, EthereumBytes32, EthereumData, EthereumQuantity, EthereumSignedTransactionWithBlockData, NonHexBigInt, OptionalEthereumAddress } from './wire-types.js'
 import { ModifyAddressWindowState, CompleteVisualizedSimulation, NamedTokenId, ProtectorResults, SimulatedAndVisualizedTransaction, SimulationState, TokenPriceEstimate, VisualizerResult } from './visualizer-types.js'
 import { VisualizedPersonalSignRequest } from './personal-message-definitions.js'
@@ -10,7 +10,7 @@ import { Page } from './exportedSettingsTypes.js'
 import { PopupOrTabId, Website, WebsiteAccessArray } from './websiteAccessTypes.js'
 import { SignerName } from './signerTypes.js'
 import { ConfirmTransactionDialogState, PendingAccessRequestArray, PendingTransaction } from './accessRequest.js'
-import { RpcEntries, RpcEntry, RpcNetwork } from './rpc.js'
+import { CodeMessageError, RpcEntries, RpcEntry, RpcNetwork } from './rpc.js'
 import { OldSignTypedDataParams, PersonalSignParams, SignTypedDataParams } from './jsonRpc-signing-types.js'
 
 export type WalletSwitchEthereumChainReply = funtypes.Static<typeof WalletSwitchEthereumChainReply>
@@ -80,10 +80,7 @@ export type ErrorReturn = funtypes.Static<typeof ErrorReturn>
 export const ErrorReturn = funtypes.ReadonlyObject({
 	method: funtypes.String,
 	error: funtypes.Intersect(
-		funtypes.ReadonlyObject({
-			code: funtypes.Number,
-			message: funtypes.String,
-		}),
+		CodeMessageError,
 		funtypes.ReadonlyPartial({
 			data: funtypes.String,
 		})
@@ -488,12 +485,9 @@ export const UpdateHomePage = funtypes.ReadonlyObject({
 	data: funtypes.ReadonlyObject({
 		visualizedSimulatorState: funtypes.Union(CompleteVisualizedSimulation, funtypes.Undefined),
 		websiteAccessAddressMetadata: funtypes.ReadonlyArray(ActiveAddressEntry),
-		signerAccounts: funtypes.Union(funtypes.ReadonlyArray(EthereumAddress), funtypes.Undefined),
-		signerChain: funtypes.Union(EthereumQuantity, funtypes.Undefined),
-		signerName: SignerName,
+		tabState: funtypes.Union(funtypes.Undefined, TabState),
 		currentBlockNumber: funtypes.Union(EthereumQuantity, funtypes.Undefined),
 		settings: Settings,
-		tabIconDetails: funtypes.Union(TabIconDetails, funtypes.Undefined),
 		makeMeRich: funtypes.Boolean,
 		rpcConnectionStatus: RpcConnectionStatus,
 		activeSigningAddressInThisTab: OptionalEthereumAddress,

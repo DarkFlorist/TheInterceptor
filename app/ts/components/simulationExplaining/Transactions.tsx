@@ -2,7 +2,7 @@ import { MaybeParsedEvent, SimulatedAndVisualizedTransaction, SimulationAndVisua
 import { SmallAddress } from '../subcomponents/address.js'
 import { TokenSymbol, TokenAmount, AllApproval } from '../subcomponents/coins.js'
 import { LogAnalysisParams, NonLogAnalysisParams, RenameAddressCallBack } from '../../types/user-interface-types.js'
-import { Error as ErrorComponent } from '../subcomponents/Error.js'
+import { ErrorComponent } from '../subcomponents/Error.js'
 import { identifyRoutes, identifySwap, SwapVisualization } from './SwapTransactions.js'
 import { RawTransactionDetailsCard, GasFee, TokenLogAnalysisCard, TransactionCreated, TransactionHeader, NonTokenLogAnalysisCard, TransactionsAccountChangesCard } from './SimulationSummary.js'
 import { identifyTransaction } from './identifyTransaction.js'
@@ -44,11 +44,7 @@ function isPositiveEvent(visResult: TokenVisualizerResultWithMetadata, ourAddres
 
 export function QuarantineReasons({ quarantineReasons }: { quarantineReasons: readonly string[] }) {
 	return <> {
-		quarantineReasons.map((quarantineReason) => (
-			<div style = 'margin-top: 10px;margin-bottom: 10px'>
-				<ErrorComponent text = { quarantineReason } />
-			</div>
-		))
+		quarantineReasons.map((quarantineReason) => <ErrorComponent text = { quarantineReason } />)
 	} </>
 }
 

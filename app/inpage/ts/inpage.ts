@@ -296,10 +296,13 @@ class InterceptorMessageListener {
 			const reply = await this.signerWindowEthereumRequest({ method: 'eth_accounts', params: [] })
 			if (!Array.isArray(reply)) throw new Error('Signer returned something else than an array')
 			await this.sendMessageToBackgroundPage({ method: 'eth_accounts_reply', params: [{ type: 'success', accounts: this.signerAccounts, requestAccounts: false }] })
-		} catch (error) {
-			await this.sendMessageToBackgroundPage({ method: 'eth_accounts_reply', params: [{ type: 'error', requestAccounts: false }]})
-		}
-		if (this.waitForAccountsFromWallet !== undefined) {
+			return
+		} catch (error: unknown) {
+			if (InterceptorMessageListener.getErrorCodeAndMessage(error)) return await this.sendMessageToBackgroundPage({ method: 'eth_accounts_reply', params: [{ type: 'error', requestAccounts: false, error }] })
+			if (error instanceof Error) return await this.sendMessageToBackgroundPage({ method: 'eth_accounts_reply', params: [{ type: 'error', requestAccounts: false, error: { message: error.message, code: METAMASK_ERROR_BLANKET_ERROR } }] })
+			return await this.sendMessageToBackgroundPage({ method: 'eth_accounts_reply', params: [{ type: 'error', requestAccounts: false, error: { message: 'unknown error', code: METAMASK_ERROR_BLANKET_ERROR } }] })
+		} finally {
+			if (this.waitForAccountsFromWallet === undefined) return
 			this.waitForAccountsFromWallet.resolve(true)
 			this.waitForAccountsFromWallet = undefined
 		}
@@ -318,8 +321,11 @@ class InterceptorMessageListener {
 			if (!Array.isArray(reply)) throw new Error('Signer returned something else than an array')
 			this.signerAccounts = reply
 			await this.sendMessageToBackgroundPage({ method: 'eth_accounts_reply', params: [{ type: 'success', accounts: this.signerAccounts, requestAccounts: true }] })
-		} catch (error) {
-			await this.sendMessageToBackgroundPage({ method: 'eth_accounts_reply', params: [{ type: 'error', requestAccounts: true }]})
+			return
+		} catch (error: unknown) {
+			if (InterceptorMessageListener.getErrorCodeAndMessage(error)) return await this.sendMessageToBackgroundPage({ method: 'eth_accounts_reply', params: [{ type: 'error', requestAccounts: true, error }] })
+			if (error instanceof Error) return await this.sendMessageToBackgroundPage({ method: 'eth_accounts_reply', params: [{ type: 'error', requestAccounts: true, error: { message: error.message, code: METAMASK_ERROR_BLANKET_ERROR } }] })
+			return await this.sendMessageToBackgroundPage({ method: 'eth_accounts_reply', params: [{ type: 'error', requestAccounts: true, error: { message: 'unknown error', code: METAMASK_ERROR_BLANKET_ERROR } }] })
 		} finally {
 			this.pendingSignerAddressRequest.resolve(true)
 			this.pendingSignerAddressRequest = undefined
@@ -333,11 +339,12 @@ class InterceptorMessageListener {
 		return await this.sendMessageToBackgroundPage({ method: 'signer_chainChanged', params: [ reply ] })
 	}
 
-	private static readonly checkErrorForCode = (error: unknown): error is { code: number } => {
+	private static readonly getErrorCodeAndMessage = (error: unknown): error is { code: number, message: string } => {
 		if (typeof error !== 'object') return false
 		if (error === null) return false
-		if (!('code' in error)) return false
+		if (!('code' in error) || !('message' in error)) return false
 		if (typeof (error as { code: unknown }).code !== 'number') return false
+		if (typeof (error as { message: unknown }).message !== 'string') return false
 		return true
 	}
 
@@ -349,7 +356,7 @@ class InterceptorMessageListener {
 			if (reply !== null) return
 			await this.sendMessageToBackgroundPage({ method: 'wallet_switchEthereumChain_reply', params: [ { accept: true, chainId: chainId } ] })
 		} catch (error: unknown) {
-			if (InterceptorMessageListener.checkErrorForCode(error) && ( error.code === METAMASK_ERROR_USER_REJECTED_REQUEST || error.code === METAMASK_ERROR_CHAIN_NOT_ADDED_TO_METAMASK)) {
+			if (InterceptorMessageListener.getErrorCodeAndMessage(error) && (error.code === METAMASK_ERROR_USER_REJECTED_REQUEST || error.code === METAMASK_ERROR_CHAIN_NOT_ADDED_TO_METAMASK)) {
 				await this.sendMessageToBackgroundPage({ method: 'wallet_switchEthereumChain_reply', params: [ { accept: false, chainId: chainId } ] })
 			}
 			throw error
