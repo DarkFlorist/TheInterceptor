@@ -2,34 +2,15 @@ import { CodeMessageError } from './rpc.js'
 import { EthereumAccessList, EthereumAddress, EthereumBlockTag, EthereumBytes32, EthereumData, EthereumInput, EthereumQuantity, EthereumQuantitySmall, EthereumTimestamp, LiteralConverterParserFactory, RevertErrorParser } from './wire-types.js'
 import * as funtypes from 'funtypes'
 
-export type AccountOverrideState = funtypes.Static<typeof AccountOverrideState>
-export const AccountOverrideState = funtypes.Intersect(
-	funtypes.ReadonlyObject({
-		state: funtypes.ReadonlyRecord(funtypes.String, EthereumBytes32),
-	}),
-	funtypes.ReadonlyPartial({
-		nonce: EthereumQuantitySmall,
-		balance: EthereumQuantity,
-		code: EthereumData,
-		movePrecompileToAddress: EthereumAddress,
-	})
-)
-
-export type AccountOverrideStateDiff = funtypes.Static<typeof AccountOverrideStateDiff>
-export const AccountOverrideStateDiff = funtypes.Intersect(
-	funtypes.ReadonlyObject({
-		stateDiff: funtypes.ReadonlyRecord(funtypes.String, EthereumBytes32),
-	}),
-	funtypes.ReadonlyPartial({
-		nonce: EthereumQuantitySmall,
-		balance: EthereumQuantity,
-		code: EthereumData,
-		movePrecompileToAddress: EthereumAddress,
-	})
-)
-
 export type AccountOverride = funtypes.Static<typeof AccountOverride>
-export const AccountOverride = funtypes.Union(AccountOverrideState, AccountOverrideStateDiff)
+export const AccountOverride = funtypes.ReadonlyPartial({
+	state: funtypes.ReadonlyRecord(funtypes.String, EthereumBytes32),
+	stateDiff: funtypes.ReadonlyRecord(funtypes.String, EthereumBytes32),
+	nonce: EthereumQuantitySmall,
+	balance: EthereumQuantity,
+	code: EthereumData,
+	movePrecompileToAddress: EthereumAddress,
+})
 
 export type BlockOverride = funtypes.Static<typeof BlockOverride>
 export const BlockOverride = funtypes.ReadonlyObject({
@@ -61,13 +42,16 @@ export const BlockCall = funtypes.Partial({
 	accessList: EthereumAccessList,
 })
 
+export type StateOverrides = funtypes.Static<typeof StateOverrides>
+export const StateOverrides = funtypes.ReadonlyRecord(funtypes.String, AccountOverride)
+
 export type BlockCalls = funtypes.Static<typeof BlockCalls>
 export const BlockCalls = funtypes.Intersect(
 	funtypes.ReadonlyObject({
 		calls: funtypes.ReadonlyArray(BlockCall),
 	}),
 	funtypes.ReadonlyPartial({
-		stateOverrides: funtypes.ReadonlyRecord(funtypes.String, AccountOverride),
+		stateOverrides: StateOverrides,
 		blockOverride: BlockOverride,
 	})
 )
