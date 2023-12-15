@@ -16,7 +16,7 @@ import { identifyTransaction } from '../simulationExplaining/identifyTransaction
 import { SomeTimeAgo } from '../subcomponents/SomeTimeAgo.js'
 import { humanReadableDate } from '../ui-utils.js'
 import { noNewBlockForOverTwoMins } from '../../background/iconHandler.js'
-import { ActiveAddress } from '../../types/addressBookTypes.js'
+import { ActiveAddress, ActiveAddressEntry } from '../../types/addressBookTypes.js'
 import { SignerName } from '../../types/signerTypes.js'
 import { RpcEntries, RpcEntry, RpcNetwork } from '../../types/rpc.js'
 import { VisualizedPersonalSignRequest } from '../../types/personal-message-definitions.js'
@@ -246,7 +246,7 @@ export function Home(param: HomeParams) {
 	const [tabState, setTabState] = useState<TabState | undefined>(undefined)
 	const [isLoaded, setLoaded] = useState<boolean>(false)
 	const [currentBlockNumber, setCurrentBlockNumber] = useState<bigint | undefined>(undefined)
-	const [activeAddresses, setActiveAddresss] = useState<readonly ActiveAddress[] | undefined>(undefined)
+	const [activeAddresses, setActiveAddresss] = useState<readonly ActiveAddressEntry[] | undefined>(undefined)
 	const [makeMeRich, setMakeMeRich] = useState<boolean>(false)
 	const [disableReset, setDisableReset] = useState<boolean>(false)
 	const [removedTransactionHashes, setRemovedTransactionHashes] = useState<readonly bigint[]>([])

@@ -1,7 +1,7 @@
 import * as funtypes from 'funtypes'
 import { RpcNetwork } from './rpc.js'
 import { EthereumQuantity, OptionalEthereumAddress } from './wire-types.js'
-import { ActiveAddressArray, ContactEntries } from './addressBookTypes.js'
+import { ActiveAddressArray, AddressBookEntries, ContactEntries } from './addressBookTypes.js'
 import { WebsiteAccessArray } from './websiteAccessTypes.js'
 import { ModifyAddressWindowState } from './visualizer-types.js'
 
@@ -76,6 +76,22 @@ export const ExportedSettings = funtypes.Union(
 			simulationMode: funtypes.Boolean,
 			addressInfos: ActiveAddressArray,
 			contacts: funtypes.Union(funtypes.Undefined, ContactEntries),
+			useTabsInsteadOfPopup: funtypes.Boolean,
+			metamaskCompatibilityMode: funtypes.Boolean,
+		})
+	}),
+	funtypes.ReadonlyObject({
+		name: funtypes.Literal('InterceptorSettingsAndAddressBook'),
+		version: funtypes.Literal('1.4'),
+		exportedDate: funtypes.String,
+		settings: funtypes.ReadonlyObject({
+			activeSimulationAddress: OptionalEthereumAddress,
+			rpcNetwork: RpcNetwork,
+			openedPage: Page,
+			useSignersAddressAsActiveAddress: funtypes.Boolean,
+			websiteAccess: WebsiteAccessArray,
+			simulationMode: funtypes.Boolean,
+			addressBookEntries: AddressBookEntries,
 			useTabsInsteadOfPopup: funtypes.Boolean,
 			metamaskCompatibilityMode: funtypes.Boolean,
 		})

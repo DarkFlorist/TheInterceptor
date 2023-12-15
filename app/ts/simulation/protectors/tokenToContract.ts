@@ -3,7 +3,6 @@ import { parseTransaction } from '../../utils/calldata.js'
 import { SimulationState } from '../../types/visualizer-types.js'
 import { EthereumClientService } from '../services/EthereumClientService.js'
 import { getCodeOrError } from './commonTokenOops.js'
-import { getSettings } from '../../background/settings.js'
 import { identifyAddress } from '../../background/metadataUtils.js'
 
 export async function tokenToContract(transaction: EthereumUnsignedTransaction, ethereum: EthereumClientService, simulationState: SimulationState) {
@@ -14,6 +13,6 @@ export async function tokenToContract(transaction: EthereumUnsignedTransaction, 
 	if (code.statusCode === 'failure') return code.message
 	if (code.getCodeReturn.length === 0) return
 	if (transaction.to === null) return
-	const to = await identifyAddress(ethereum, (await getSettings()).userAddressBook, transferInfo.arguments.to)
+	const to = await identifyAddress(ethereum, transferInfo.arguments.to)
 	return `Attempt to send tokens directly to a contract (${ to.name })`
 }

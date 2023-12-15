@@ -1,11 +1,10 @@
 import { addressString } from '../utils/bigint.js'
-import { AddressBookEntries, AddressBookEntry, ActiveAddress, ActiveAddressEntry, ContactEntry, ContractEntry, Erc1155Entry, Erc20TokenEntry, Erc721Entry, UserAddressBook } from '../types/addressBookTypes.js'
+import { AddressBookEntries, AddressBookEntry, ActiveAddressEntry, ContactEntry, ContractEntry, Erc1155Entry, Erc20TokenEntry, Erc721Entry } from '../types/addressBookTypes.js'
 import { tokenMetadata, contractMetadata, ContractDefinition, TokenDefinition, Erc721Definition, erc721Metadata, erc1155Metadata, Erc1155Definition } from '@darkflorist/address-metadata'
 import { AddressBookCategory, GetAddressBookDataFilter } from '../types/interceptor-messages.js'
 import { getFullLogoUri } from './metadataUtils.js'
 import { assertNever } from '../utils/typescript.js'
 import { getUserAddressBookEntries } from './storageVariables.js'
-
 
 type PartialResult = {
 	bestMatchLength: number,
@@ -33,12 +32,6 @@ function search<ElementType>(searchArray: readonly ElementType[], searchFunction
 	const undefinedRemoved = results.filter((searchResult): searchResult is { comparison: PartialResult, entry: ElementType } => searchResult.comparison !== undefined)
 	return undefinedRemoved.sort((a, b) => (a.comparison.bestMatchLength - b.comparison.bestMatchLength) || (a.comparison.locationOfBestMatch - b.comparison.locationOfBestMatch)).map((x) => x.entry)
 }
-
-const convertActiveAddressToAddressBookEntry = (info: ActiveAddress) => ({
-	...info,
-	type: 'activeAddress' as const,
-	entrySource: 'User' as const,
-})
 
 const convertTokenDefinitionToAddressBookEntry = ([address, def]: [string, TokenDefinition]) => ({
 	address: BigInt(address),
@@ -79,14 +72,14 @@ function concatArraysUniqueByAddress<T>(addTo: readonly (T & { address: bigint }
 	return [...addTo, ...uniqueItems]
 }
 
-async function filterAddressBookDataByCategoryAndSearchString(addressBookCategory: AddressBookCategory, searchString: string | undefined, userAddressBook: UserAddressBook): Promise<AddressBookEntries> {
+async function filterAddressBookDataByCategoryAndSearchString(addressBookCategory: AddressBookCategory, searchString: string | undefined): Promise<AddressBookEntries> {
 	const trimmedSearch = searchString !== undefined && searchString.trim().length > 0 ? searchString.trim().toLowerCase() : undefined
 	const searchPattern = trimmedSearch ? new RegExp(`(?=(${ trimmedSearch.split('').join('.*?') }))`) : undefined
 	const searchingDisabled = trimmedSearch === undefined || searchPattern === undefined
-	const userEntries = await getUserAddressBookEntries()
+	const userEntries = (await getUserAddressBookEntries()).filter((entry) => entry.entrySource !== 'OnChain')
 	switch(addressBookCategory) {
 		case 'My Contacts': {
-			const entries = concatArraysUniqueByAddress(userEntries.filter((entry): entry is ContactEntry => entry.type === 'contact'), userAddressBook.contacts)
+			const entries = userEntries.filter((entry): entry is ContactEntry => entry.type === 'contact')
 			if (searchingDisabled) return entries
 			const searchFunction = (entry: ContactEntry) => ({
 				comparison: fuzzyCompare(searchPattern, trimmedSearch, entry.name.toLowerCase(), addressString(entry.address)),
@@ -95,7 +88,7 @@ async function filterAddressBookDataByCategoryAndSearchString(addressBookCategor
 			return search(entries, searchFunction)
 		}
 		case 'My Active Addresses': {
-			const entries = concatArraysUniqueByAddress(userEntries.filter((entry): entry is ActiveAddressEntry => entry.type === 'activeAddress'), userAddressBook.activeAddresses.map(convertActiveAddressToAddressBookEntry))
+			const entries = userEntries.filter((entry): entry is ActiveAddressEntry => entry.type === 'activeAddress')
 			if (searchingDisabled) return entries
 			const searchFunction = (entry: ActiveAddressEntry) => ({
 				comparison: fuzzyCompare(searchPattern, trimmedSearch, entry.name.toLowerCase(), addressString(entry.address)),
@@ -143,15 +136,15 @@ async function filterAddressBookDataByCategoryAndSearchString(addressBookCategor
 	}
 }
 
-export async function getMetadataForAddressBookData(filter: GetAddressBookDataFilter, userAddressBook: UserAddressBook) {
-	const filtered = await filterAddressBookDataByCategoryAndSearchString(filter.filter, filter.searchString, userAddressBook)
+export async function getMetadataForAddressBookData(filter: GetAddressBookDataFilter) {
+	const filtered = await filterAddressBookDataByCategoryAndSearchString(filter.filter, filter.searchString)
 	return {
 		entries: filtered.slice(filter.startIndex, filter.maxIndex),
 		maxDataLength: filtered.length,
 	}
 }
 
-export async function findEntryWithSymbolOrName(symbol: string | undefined, name: string | undefined, userAddressBook: UserAddressBook): Promise<AddressBookEntry | undefined> {
+export async function findEntryWithSymbolOrName(symbol: string | undefined, name: string | undefined): Promise<AddressBookEntry | undefined> {
 	const lowerCasedName = name?.toLowerCase()
 	const lowerCasedSymbol = symbol?.toLowerCase()
 
@@ -168,12 +161,6 @@ export async function findEntryWithSymbolOrName(symbol: string | undefined, name
 
 	const contractMetadataEntry = Array.from(contractMetadata).find((entry) => lowerCasedEqual(entry[1].name, lowerCasedName))
 	if (contractMetadataEntry !== undefined) return convertContractDefinitionToAddressBookEntry(contractMetadataEntry)
-
-	const activeAddress = userAddressBook.activeAddresses.find((entry) => lowerCasedEqual(entry.name, lowerCasedName))
-	if (activeAddress !== undefined) return convertActiveAddressToAddressBookEntry(activeAddress)
-
-	const contact = userAddressBook.contacts.find((entry) => lowerCasedEqual(entry.name, lowerCasedName))
-	if (contact !== undefined) return contact
 
 	const userEntries = await getUserAddressBookEntries()
 	const userEntry = userEntries.find((entry) => ('symbol' in entry && lowerCasedEqual(entry.symbol, lowerCasedSymbol)) || lowerCasedEqual(entry.name, lowerCasedName))

@@ -1,6 +1,6 @@
 import * as funtypes from 'funtypes'
 import { PopupOrTabId, Website } from './websiteAccessTypes.js'
-import { ActiveAddress, ActiveAddressEntry, AddressBookEntry } from './addressBookTypes.js'
+import { ActiveAddressEntry, AddressBookEntry } from './addressBookTypes.js'
 import { EthereumAddress, EthereumQuantity, EthereumTimestamp, OptionalEthereumAddress } from './wire-types.js'
 import { SignerName } from './signerTypes.js'
 import { InterceptedRequest, UniqueRequestIdentifier, WebsiteSocket } from '../utils/requests.js'
@@ -14,7 +14,6 @@ export const PendingAccessRequest = funtypes.ReadonlyObject({
 	requestAccessToAddress: funtypes.Union(ActiveAddressEntry, funtypes.Undefined),
 	originalRequestAccessToAddress: funtypes.Union(ActiveAddressEntry, funtypes.Undefined),
 	associatedAddresses: funtypes.ReadonlyArray(ActiveAddressEntry),
-	activeAddresses: funtypes.ReadonlyArray(ActiveAddress),
 	signerAccounts: funtypes.ReadonlyArray(EthereumAddress),
 	signerName: SignerName,
 	simulationMode: funtypes.Boolean,
@@ -25,8 +24,8 @@ export const PendingAccessRequest = funtypes.ReadonlyObject({
 	accessRequestId: funtypes.String,
 }).asReadonly()
 
-export type PendingAccessRequestArray = funtypes.Static<typeof PendingAccessRequestArray>
-export const PendingAccessRequestArray = funtypes.ReadonlyArray(PendingAccessRequest)
+export type PendingAccessRequests = funtypes.Static<typeof PendingAccessRequests>
+export const PendingAccessRequests = funtypes.ReadonlyArray(PendingAccessRequest)
 
 export interface PendingAccessRequestWithMetadata extends PendingAccessRequest {
 	addressMetadata: [string, ActiveAddressEntry][],

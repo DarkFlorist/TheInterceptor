@@ -14,8 +14,8 @@ import { VisualizedPersonalSignRequest } from './personal-message-definitions.js
 
 export type AddressListParams = {
 	setAndSaveAppPage: (page: Page) => void,
-	setActiveAddresss: StateUpdater<readonly ActiveAddress[]>,
-	activeAddresses: readonly ActiveAddress[],
+	setActiveAddresss: StateUpdater<readonly ActiveAddressEntry[]>,
+	activeAddresses: readonly ActiveAddressEntry[],
 }
 
 export type InterceptorAccessListParams = {
@@ -36,7 +36,7 @@ export type AddAddressParam = {
 export type HomeParams = {
 	setAndSaveAppPage: (page: Page) => void,
 	makeMeRich: boolean,
-	activeAddresses: readonly ActiveAddress[],
+	activeAddresses: readonly ActiveAddressEntry[],
 	tabState: TabState | undefined,
 	activeSimulationAddress: bigint | undefined,
 	activeSigningAddress: bigint | undefined,
@@ -55,7 +55,7 @@ export type HomeParams = {
 }
 
 export type ChangeActiveAddressParam = {
-	activeAddresses: readonly ActiveAddress[]
+	activeAddresses: readonly ActiveAddressEntry[]
 	setAndSaveAppPage: (page: Page) => void,
 	setActiveAddressAndInformAboutIt: (address: bigint | 'signer') => void,
 	signerAccounts: readonly bigint[] | undefined,
@@ -74,7 +74,7 @@ export type FirstCardParams = {
 	activeAddress: ActiveAddress | undefined,
 	enableSimulationMode: (x: boolean) => void,
 	useSignersAddressAsActiveAddress: boolean,
-	activeAddresses: readonly ActiveAddress[] | undefined,
+	activeAddresses: readonly ActiveAddressEntry[] | undefined,
 	changeActiveRpc: (rpcEntry: RpcEntry) => void,
 	rpcNetwork: RpcNetwork,
 	simulationMode: boolean,
