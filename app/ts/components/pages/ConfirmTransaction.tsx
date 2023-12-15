@@ -20,6 +20,11 @@ import { PendingTransaction } from '../../types/accessRequest.js'
 import { WebsiteOriginText } from '../subcomponents/address.js'
 import { serialize } from '../../types/wire-types.js'
 import { OriginalSendRequestParameters } from '../../types/JsonRpc-types.js'
+import { Website } from '../../types/websiteAccessTypes.js'
+import { getWebsiteWarningMessage } from '../../utils/websiteData.js'
+import { Error as ErrorComponent } from '../subcomponents/Error.js'
+import { WebsiteSocket } from '../../utils/requests.js'
+import { Link } from '../subcomponents/link.js'
 
 type UnderTransactionsParams = {
 	pendingTransactions: PendingTransaction[]
@@ -239,6 +244,25 @@ const CheckBoxes = (params: CheckBoxesParams) => {
 	return <></>
 }
 
+type NetworkErrorParams = {
+	websiteSocket: WebsiteSocket
+	website: Website
+	simulationMode: boolean
+}
+
+export const WebsiteErrors = ({ website, websiteSocket, simulationMode }: NetworkErrorParams) => {
+	console.log(website)
+	const message = getWebsiteWarningMessage(website.websiteOrigin, simulationMode)
+	if (message === undefined) return <></>
+	if (message.suggestedAlternative === undefined) {
+		return <div style = 'margin: 10px; background-color: var(--bg-color);'>
+			<ErrorComponent warning = { true } text = { message.message }/>
+		</div>
+	}
+	return <div style = 'margin: 10px; background-color: var(--bg-color);'>
+		<ErrorComponent warning = { true } text = { <> { message.message } <Link url = { message.suggestedAlternative } text = { 'Suggested alternative' } websiteSocket = { websiteSocket } /> </> }/>
+	</div>
+}
 
 export function ConfirmTransaction() {
 	const [currentPendingTransaction, setCurrentPendingTransaction] = useState<PendingTransaction | undefined>(undefined)
@@ -428,6 +452,7 @@ export function ConfirmTransaction() {
 				<div class = 'block popup-block'>
 					<div class = 'popup-block-scroll'>
 						<NetworkErrors rpcConnectionStatus = { rpcConnectionStatus }/>
+						<WebsiteErrors website = { currentPendingTransaction.website } websiteSocket = { currentPendingTransaction.uniqueRequestIdentifier.requestSocket } simulationMode = { currentPendingTransaction.simulationMode }/>
 
 						{ currentPendingTransaction.originalRequestParameters.method === 'eth_sendRawTransaction'
 							? <DinoSaysNotification
