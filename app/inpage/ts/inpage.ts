@@ -584,7 +584,7 @@ class InterceptorMessageListener {
 			
 			if (window.ethereum === undefined || !window.ethereum.isInterceptor) interceptorMessageListener.injectEthereumIntoWindow()
 			const provider = window.ethereum
-			if (provider === undefined) throw new Error('The Interceptors provider was undefined')
+			if (provider === undefined) throw new Error('The Interceptor provider was not initialized')
 			window.dispatchEvent(new CustomEvent('eip6963:announceProvider', { detail: Object.freeze({ info, provider }) }))
 		}
 		window.addEventListener('eip6963:requestProvider', () => { announceProvider() } )
