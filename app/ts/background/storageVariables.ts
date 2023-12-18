@@ -1,7 +1,7 @@
 import { ICON_NOT_ACTIVE, getChainName } from '../utils/constants.js'
 import { Semaphore } from '../utils/semaphore.js'
 import { PendingChainChangeConfirmationPromise, PendingPersonalSignPromise, RpcConnectionStatus, TabState } from '../types/user-interface-types.js'
-import { PartialIdsOfOpenedTabs, browserStorageLocalGet, browserStorageLocalRemove, browserStorageLocalSet, getTabStateFromStorage, removeTabStateFromStorage, setTabStateFromStorage } from '../utils/storageUtils.js'
+import { PartialIdsOfOpenedTabs, browserStorageLocalGet, browserStorageLocalRemove, browserStorageLocalSet, getTabStateFromStorage, removeTabStateFromStorage, setTabStateToStorage } from '../utils/storageUtils.js'
 import { CompleteVisualizedSimulation, EthereumSubscriptions } from '../types/visualizer-types.js'
 import { defaultRpcs, getSettings } from './settings.js'
 import { UniqueRequestIdentifier, doesUniqueRequestIdentifiersMatch } from '../utils/requests.js'
@@ -117,14 +117,15 @@ export async function updateSimulationResultsWithCallBack(update: (oldResults: C
 	})
 }
 
-export const setSignerName = async (signerName: SignerName) => await browserStorageLocalSet({ signerName })
-export const getSignerName = async () => (await browserStorageLocalGet('signerName'))?.['signerName'] ?? 'NoSignerDetected'
+export const setDefaultSignerName = async (signerName: SignerName) => await browserStorageLocalSet({ signerName })
+export const getDefaultSignerName = async () => (await browserStorageLocalGet('signerName'))?.['signerName'] ?? 'NoSignerDetected'
 
 export async function getTabState(tabId: number) : Promise<TabState> {
 	return await getTabStateFromStorage(tabId) ?? {
-		signerName: 'NoSigner',
+		signerName: await getDefaultSignerName(),
 		signerAccounts: [],
 		signerChain: undefined,
+		signerAccountError: undefined,
 		tabIconDetails: {
 			icon: ICON_NOT_ACTIVE,
 			iconReason: 'No active address selected.',
@@ -132,7 +133,6 @@ export async function getTabState(tabId: number) : Promise<TabState> {
 		activeSigningAddress: undefined
 	}
 }
-export const setTabState = async(tabId: number, tabState: TabState) => await setTabStateFromStorage(tabId, tabState)
 export const removeTabState = async(tabId: number) => removeTabStateFromStorage(tabId)
 
 export async function clearTabStates() {
@@ -146,7 +146,7 @@ export async function updateTabState(tabId: number, updateFunc: (prevState: TabS
 	return await tabStateSemaphore.execute(async () => {
 		const previousState = await getTabState(tabId)
 		const newState = updateFunc(previousState)
-		await setTabState(tabId, newState)
+		await setTabStateToStorage(tabId, newState)
 		return { previousState, newState }
 	})
 }

@@ -1,13 +1,13 @@
-import { HomeParams, FirstCardParams, SimulationStateParam, RpcConnectionStatus, TabIconDetails, TabIcon } from '../../types/user-interface-types.js'
+import { HomeParams, FirstCardParams, SimulationStateParam, RpcConnectionStatus, TabIconDetails, TabIcon, TabState } from '../../types/user-interface-types.js'
 import { useEffect, useState } from 'preact/hooks'
 import { SimulatedAndVisualizedTransaction, SimulationAndVisualisationResults, SimulationUpdatingState, SimulationResultState } from '../../types/visualizer-types.js'
 import { ActiveAddressComponent, getActiveAddressEntry } from '../subcomponents/address.js'
 import { SimulationSummary } from '../simulationExplaining/SimulationSummary.js'
 import { ChainSelector } from '../subcomponents/ChainSelector.js'
 import { Spinner } from '../subcomponents/Spinner.js'
-import { DEFAULT_TAB_CONNECTION, ICON_NOT_ACTIVE, ICON_SIGNING, ICON_SIGNING_NOT_SUPPORTED, TIME_BETWEEN_BLOCKS } from '../../utils/constants.js'
+import { DEFAULT_TAB_CONNECTION, ICON_NOT_ACTIVE, ICON_SIGNING, ICON_SIGNING_NOT_SUPPORTED, METAMASK_ERROR_ALREADY_PENDING, METAMASK_ERROR_USER_REJECTED_REQUEST, TIME_BETWEEN_BLOCKS } from '../../utils/constants.js'
 import { getPrettySignerName, SignerLogoText, SignersLogoName } from '../subcomponents/signers.js'
-import { Error } from '../subcomponents/Error.js'
+import { ErrorComponent } from '../subcomponents/Error.js'
 import { ToolTip } from '../subcomponents/CopyToClipboard.js'
 import { sendPopupMessageToBackgroundPage } from '../../background/backgroundUtils.js'
 import { TransactionsAndSignedMessages } from '../simulationExplaining/Transactions.js'
@@ -215,17 +215,24 @@ export function NetworkErrors({ rpcConnectionStatus } : NetworkErrorParams) {
 	const priorDate = new Date(rpcConnectionStatus.lastConnnectionAttempt.getTime() + TIME_BETWEEN_BLOCKS * 1000)
 	return <>
 		{ rpcConnectionStatus.isConnected === false ?
-			<div style = 'margin: 10px; background-color: var(--bg-color);'>
-				<Error warning = { true } text = { <>Unable to connect to { rpcConnectionStatus.rpcNetwork.name }. Retrying in <SomeTimeAgo priorTimestamp = { priorDate } countBackwards = { true }/>.</> }/>
-			</div>
+			<ErrorComponent warning = { true } text = { <>Unable to connect to { rpcConnectionStatus.rpcNetwork.name }. Retrying in <SomeTimeAgo priorTimestamp = { priorDate } countBackwards = { true }/>.</> }/>
 		: <></> }
 
 		{ rpcConnectionStatus.latestBlock !== undefined && noNewBlockForOverTwoMins(rpcConnectionStatus) ?
-			<div style = 'margin: 10px; background-color: var(--bg-color);'>
-				<Error warning = { true } text = { <>The connected RPC ({ rpcConnectionStatus.rpcNetwork.name }) seem to be stuck at block { rpcConnectionStatus.latestBlock.number } (occured on: { humanReadableDate(rpcConnectionStatus.latestBlock.timestamp) }). Retrying in <SomeTimeAgo priorTimestamp = { priorDate } countBackwards = { true }/>.</> }/>
-			</div>
+			<ErrorComponent warning = { true } text = { <>The connected RPC ({ rpcConnectionStatus.rpcNetwork.name }) seem to be stuck at block { rpcConnectionStatus.latestBlock.number } (occured on: { humanReadableDate(rpcConnectionStatus.latestBlock.timestamp) }). Retrying in <SomeTimeAgo priorTimestamp = { priorDate } countBackwards = { true }/>.</> }/>
 		: <></> }
 	</>
+}
+
+type ProviderErrorsParam = {
+	tabState: TabState | undefined
+}
+
+export function ProviderErrors({ tabState } : ProviderErrorsParam) {
+	if (tabState === undefined || tabState.signerAccountError == undefined) return <></>
+	if (tabState.signerAccountError.code === METAMASK_ERROR_USER_REJECTED_REQUEST) return <ErrorComponent warning = { true } text = { <>Could not get an account from <SignersLogoName signerName = { tabState.signerName } /> as user denied the request.</> }/>
+	if (tabState.signerAccountError.code === METAMASK_ERROR_ALREADY_PENDING.error.code) return <ErrorComponent warning = { true } text = { <>There's a connection request pending on <SignersLogoName signerName = { tabState.signerName } />. Please review the request.</> }/>
+	return <ErrorComponent warning = { true } text = { <><SignersLogoName signerName = { tabState.signerName } /> returned error: "{ tabState.signerAccountError.message }".</> }/>
 }
 
 export function Home(param: HomeParams) {
@@ -236,10 +243,9 @@ export function Home(param: HomeParams) {
 	const [rpcNetwork, setSelectedNetwork] = useState<RpcNetwork | undefined>()
 	const [simulationMode, setSimulationMode] = useState<boolean>(true)
 	const [tabIconDetails, setTabConnection] = useState<TabIconDetails>(DEFAULT_TAB_CONNECTION)
-	const [signerAccounts, setSignerAccounts] = useState<readonly bigint[] | undefined>(undefined)
+	const [tabState, setTabState] = useState<TabState | undefined>(undefined)
 	const [isLoaded, setLoaded] = useState<boolean>(false)
 	const [currentBlockNumber, setCurrentBlockNumber] = useState<bigint | undefined>(undefined)
-	const [signerName, setSignerName] = useState<SignerName>('NoSignerDetected')
 	const [activeAddresses, setActiveAddresss] = useState<readonly ActiveAddress[] | undefined>(undefined)
 	const [makeMeRich, setMakeMeRich] = useState<boolean>(false)
 	const [disableReset, setDisableReset] = useState<boolean>(false)
@@ -258,10 +264,9 @@ export function Home(param: HomeParams) {
 		setSelectedNetwork(param.rpcNetwork)
 		setSimulationMode(param.simulationMode)
 		setTabConnection(param.tabIconDetails)
-		setSignerAccounts(param.signerAccounts)
+		setTabState(param.tabState)
 		setCurrentBlockNumber(param.currentBlockNumber)
 		setActiveAddresss(param.activeAddresses)
-		setSignerName(param.signerName)
 		setLoaded(true)
 		setMakeMeRich(param.makeMeRich)
 		setDisableReset(false)
@@ -273,14 +278,13 @@ export function Home(param: HomeParams) {
 		setSimulationResultState(param.simulationResultState)
 	}, [param.activeSigningAddress,
 		param.activeSimulationAddress,
-		param.signerAccounts,
+		param.tabState,
 		param.activeAddresses,
 		param.useSignersAddressAsActiveAddress,
 		param.rpcNetwork,
 		param.simulationMode,
 		param.tabIconDetails,
 		param.currentBlockNumber,
-		param.signerName,
 		param.simVisResults,
 		param.rpcConnectionStatus,
 		param.rpcEntries,
@@ -319,12 +323,11 @@ export function Home(param: HomeParams) {
 
 	return <>
 		{ rpcNetwork.httpsRpc === undefined ?
-			<div style = 'margin: 10px; background-color: var(--bg-color);'>
-				<Error text = { `${ rpcNetwork.name } is not a supported network. The Interceptors is disabled while you are using the network.` }/>
-			</div>
+			<ErrorComponent text = { `${ rpcNetwork.name } is not a supported network. The Interceptors is disabled while you are using the network.` }/>
 		: <></> }
 
 		<NetworkErrors rpcConnectionStatus = { rpcConnectionStatus }/>
+		<ProviderErrors tabState = { tabState }/>
 
 		<FirstCard
 			activeAddresses = { activeAddresses }
@@ -336,9 +339,9 @@ export function Home(param: HomeParams) {
 			simulationMode = { simulationMode }
 			changeActiveAddress = { changeActiveAddress }
 			makeMeRich = { makeMeRich }
-			signerAccounts = { signerAccounts }
+			signerAccounts = { tabState?.signerAccounts ?? []}
 			tabIconDetails = { tabIconDetails }
-			signerName = { signerName }
+			signerName = { tabState?.signerName ?? 'NoSignerDetected' }
 			renameAddressCallBack = { param.renameAddressCallBack }
 			rpcEntries = { rpcEntries }
 		/>

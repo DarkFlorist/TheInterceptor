@@ -1,3 +1,4 @@
+import { CodeMessageError } from './rpc.js'
 import { EthereumAccessList, EthereumAddress, EthereumBlockTag, EthereumBytes32, EthereumData, EthereumInput, EthereumQuantity, EthereumQuantitySmall, EthereumTimestamp, LiteralConverterParserFactory, RevertErrorParser } from './wire-types.js'
 import * as funtypes from 'funtypes'
 
@@ -125,10 +126,7 @@ export const ExecutionSpec383CallResultSuccess = funtypes.Intersect(
 export type ExecutionSpec383CallResultInvalid = funtypes.Static<typeof ExecutionSpec383CallResultInvalid>
 export const ExecutionSpec383CallResultInvalid = funtypes.ReadonlyObject({
 	status: funtypes.Literal('0x0').withParser(LiteralConverterParserFactory('0x0', 'invalid' as const)),
-	error: funtypes.ReadonlyObject({
-		message: funtypes.String,
-		code: funtypes.Number
-	})
+	error: CodeMessageError,
 })
 
 export type ExecutionSpec383MultiCallCallResults = funtypes.Static<typeof ExecutionSpec383MultiCallCallResults>

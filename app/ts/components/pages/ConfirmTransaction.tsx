@@ -22,7 +22,7 @@ import { serialize } from '../../types/wire-types.js'
 import { OriginalSendRequestParameters } from '../../types/JsonRpc-types.js'
 import { Website } from '../../types/websiteAccessTypes.js'
 import { getWebsiteWarningMessage } from '../../utils/websiteData.js'
-import { Error as ErrorComponent } from '../subcomponents/Error.js'
+import { ErrorComponent } from '../subcomponents/Error.js'
 import { WebsiteSocket } from '../../utils/requests.js'
 import { Link } from '../subcomponents/link.js'
 
@@ -254,14 +254,8 @@ export const WebsiteErrors = ({ website, websiteSocket, simulationMode }: Networ
 	console.log(website)
 	const message = getWebsiteWarningMessage(website.websiteOrigin, simulationMode)
 	if (message === undefined) return <></>
-	if (message.suggestedAlternative === undefined) {
-		return <div style = 'margin: 10px; background-color: var(--bg-color);'>
-			<ErrorComponent warning = { true } text = { message.message }/>
-		</div>
-	}
-	return <div style = 'margin: 10px; background-color: var(--bg-color);'>
-		<ErrorComponent warning = { true } text = { <> { message.message } <Link url = { message.suggestedAlternative } text = { 'Suggested alternative' } websiteSocket = { websiteSocket } /> </> }/>
-	</div>
+	if (message.suggestedAlternative === undefined) return <ErrorComponent warning = { true } text = { message.message }/>
+	return <ErrorComponent warning = { true } text = { <> { message.message } <Link url = { message.suggestedAlternative } text = { 'Suggested alternative' } websiteSocket = { websiteSocket } /> </> }/>
 }
 
 export function ConfirmTransaction() {

@@ -3,7 +3,7 @@ import { TabState, WebsiteTabConnections } from '../types/user-interface-types.j
 import { EthereumAccountsReply, EthereumChainReply } from '../types/JsonRpc-types.js'
 import { changeActiveAddressAndChainAndResetSimulation } from './background.js'
 import { getSocketFromPort, sendInternalWindowMessage, sendPopupMessageToOpenWindows } from './backgroundUtils.js'
-import { getRpcNetworkForChain, getTabState, setSignerName, updateTabState } from './storageVariables.js'
+import { getRpcNetworkForChain, getTabState, setDefaultSignerName, updateTabState } from './storageVariables.js'
 import { getMetamaskCompatibilityMode, getSettings } from './settings.js'
 import { resolveSignerChainChange } from './windows/changeChain.js'
 import { ApprovalState } from './accessManagement.js'
@@ -16,16 +16,19 @@ export async function ethAccountsReply(simulator: Simulator, websiteTabConnectio
 	if (!('params' in request)) return returnValue
 	if (port.sender?.tab?.id === undefined) return returnValue
 
-	const signerAccountsReply = EthereumAccountsReply.parse(request.params)
-	if (signerAccountsReply[0].type === 'error') {
-		console.warn('Wallet returned an error!') // TODO, propagate this to the UI for user to see
+	const [signerAccountsReply] = EthereumAccountsReply.parse(request.params)
+	if (signerAccountsReply.type === 'error') {
+		const error = signerAccountsReply.error
+		await updateTabState(port.sender.tab.id, (previousState: TabState) => ({ ...previousState, signerAccountError: error } ))
+		await sendPopupMessageToOpenWindows({ method: 'popup_accounts_update' })
 		return returnValue
 	}
-	const signerAccounts = signerAccountsReply[0].accounts
+	const signerAccounts = signerAccountsReply.accounts
 	const activeSigningAddress = signerAccounts.length > 0 ? signerAccounts[0] : undefined
 	const tabStateChange = await updateTabState(port.sender.tab.id, (previousState: TabState) => {
 		return {
 			...previousState,
+			...signerAccounts.length > 0 ? { signerAccountError: undefined } : {},
 			signerAccounts: signerAccounts,
 			activeSigningAddress: activeSigningAddress,
 		}
@@ -93,7 +96,9 @@ export async function walletSwitchEthereumChainReply(simulator: Simulator, websi
 }
 
 export async function connectedToSigner(_simulator: Simulator, _websiteTabConnections: WebsiteTabConnections, port: browser.runtime.Port, request: ProviderMessage, approval: ApprovalState) {
-	await setSignerName(ConnectedToSigner.parse(request).params[0])
+	const signerName = ConnectedToSigner.parse(request).params[0]
+	await setDefaultSignerName(signerName)
+	await updateTabState(request.uniqueRequestIdentifier.requestSocket.tabId, (previousState: TabState) => ({ ...previousState, signerName }))
 	await sendPopupMessageToOpenWindows({ method: 'popup_signer_name_changed' })
 	const settings = await getSettings()
 	if (!settings.simulationMode || settings.useSignersAddressAsActiveAddress) {

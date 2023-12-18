@@ -27,3 +27,9 @@ export const RpcNetwork = funtypes.Union(
 		currencyTicker: funtypes.Literal('ETH?'),
 	})
 )
+
+export type CodeMessageError = funtypes.Static<typeof CodeMessageError>
+export const CodeMessageError = funtypes.ReadonlyObject({
+	code: funtypes.Number,
+	message: funtypes.String,
+})

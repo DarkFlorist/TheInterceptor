@@ -3,6 +3,7 @@ import { EthereumAddress, EthereumBlockHeader, EthereumBlockHeaderWithTransactio
 import { areEqualUint8Arrays } from '../utils/typed-arrays.js'
 import { ExecutionSpec383MultiCallParams } from './multicall-types.js'
 import { OldSignTypedDataParams, PersonalSignParams, SignTypedDataParams } from './jsonRpc-signing-types.js'
+import { CodeMessageError } from './rpc.js'
 
 export type EthGetStorageAtResponse = funtypes.Static<typeof EthGetStorageAtResponse>
 export const EthGetStorageAtResponse = funtypes.Union(
@@ -240,6 +241,7 @@ export const EthereumAccountsReply = funtypes.ReadonlyTuple(
 		funtypes.ReadonlyObject({
 			type: funtypes.Literal('error'),
 			requestAccounts: funtypes.Boolean,
+			error: CodeMessageError,
 		})
 	)
 )

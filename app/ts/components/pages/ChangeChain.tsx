@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'preact/hooks'
-import { Error as ErrorContainer, ErrorCheckBox } from '../subcomponents/Error.js'
+import { ErrorComponent, ErrorCheckBox } from '../subcomponents/Error.js'
 import { MessageToPopup } from '../../types/interceptor-messages.js'
 import { sendPopupMessageToBackgroundPage } from '../../background/backgroundUtils.js'
 import { tryFocusingTabOrWindow } from '../ui-utils.js'
@@ -72,9 +72,7 @@ export function ChangeChain() {
 								<b> { chainChangeData.rpcNetwork.name } </b>
 							</p>
 							{ chainChangeData.rpcNetwork.httpsRpc === undefined && chainChangeData.simulationMode ?
-								<ErrorContainer
-									text = { 'This chain is not supported by The Interceptor. If you want to use this chain anyway. Select Signing mode instead of Simulation mode and attempt to change the chain again. You will then be able to disable The Interceptor and send transactions without its protection.' }
-								/>
+								<ErrorComponent text = { 'This chain is not supported by The Interceptor. If you want to use this chain anyway. Select Signing mode instead of Simulation mode and attempt to change the chain again. You will then be able to disable The Interceptor and send transactions without its protection.' }/>
 							: <></> }
 							{ chainChangeData.rpcNetwork.httpsRpc === undefined && !chainChangeData.simulationMode ?
 								<ErrorCheckBox

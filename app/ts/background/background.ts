@@ -1,7 +1,7 @@
 import { InpageScriptRequest, PopupMessage, RPCReply, Settings } from '../types/interceptor-messages.js'
 import 'webextension-polyfill'
 import { Simulator, runProtectorsForTransaction, visualizeTransaction } from '../simulation/simulator.js'
-import { getEthDonator, getSignerName, getSimulationResults, updateSimulationResults, updateSimulationResultsWithCallBack } from './storageVariables.js'
+import { getEthDonator, getSimulationResults, getTabState, updateSimulationResults, updateSimulationResultsWithCallBack } from './storageVariables.js'
 import { changeSimulationMode, getSettings, getMakeMeRich } from './settings.js'
 import { blockNumber, call, chainId, estimateGas, gasPrice, getAccounts, getBalance, getBlockByNumber, getCode, getLogs, getPermissions, getSimulationStack, getTransactionByHash, getTransactionCount, getTransactionReceipt, netVersion, personalSign, sendTransaction, subscribe, switchEthereumChain, unsubscribe, web3ClientVersion, getBlockByHash } from './simulationModeHanders.js'
 import { changeActiveAddress, changeMakeMeRich, changePage, resetSimulation, confirmDialog, refreshSimulation, removeTransaction, requestAccountsFromSigner, refreshPopupConfirmTransactionSimulation, confirmPersonalSign, confirmRequestAccess, changeInterceptorAccess, changeChainDialog, popupChangeActiveRpc, enableSimulationMode, addOrModifyAddressBookEntry, getAddressBookData, removeAddressBookEntry, homeOpened, interceptorAccessChangeAddressOrRefresh, refreshPopupConfirmTransactionMetadata, changeSettings, importSettings, exportSettings, setNewRpcList, removeSignedMessage, simulateGovernanceContractExecutionOnPass, openNewTab, settingsOpened, changeAddOrModifyAddressWindowState, popupFetchAbiAndNameFromEtherscan, openWebPage } from './popupMessageHandlers.js'
@@ -39,15 +39,13 @@ import { connectedToSigner, ethAccountsReply, signerChainChanged, walletSwitchEt
 
 async function updateMetadataForSimulation(simulationState: SimulationState, ethereum: EthereumClientService, visualizerResults: readonly VisualizerResult[], protectorResults: readonly ProtectorResults[]) {
 	const settingsPromise = getSettings()
-	const signerPromise = getSignerName()
 	const settings = await settingsPromise
-	const signerName = await signerPromise
 	const addressBookEntryPromises = getAddressBookEntriesForVisualiser(ethereum, visualizerResults, simulationState, settings.userAddressBook)
 	const namedTokenIdPromises = nameTokenIds(ethereum, visualizerResults)
 	const addressBookEntries = await addressBookEntryPromises
 	const namedTokenIds = await namedTokenIdPromises
 	const simulatedAndVisualizedTransactions = formSimulatedAndVisualizedTransaction(simulationState, visualizerResults, protectorResults, addressBookEntries, namedTokenIds)
-	const VisualizedPersonalSignRequest = simulationState.signedMessages.map((signedMessage) => craftPersonalSignPopupMessage(ethereum, signedMessage, signerName, settings.rpcNetwork, settings.userAddressBook))
+	const VisualizedPersonalSignRequest = simulationState.signedMessages.map((signedMessage) => craftPersonalSignPopupMessage(ethereum, signedMessage, settings.rpcNetwork, settings.userAddressBook))
 	return {
 		namedTokenIds,
 		addressBookEntries: addressBookEntries,
@@ -223,7 +221,7 @@ export async function refreshConfirmTransactionSimulation(
 		transactionToSimulate,
 		simulationMode,
 		activeAddress,
-		signerName: await getSignerName(),
+		signerName: (await getTabState(uniqueRequestIdentifier.requestSocket.tabId)).signerName,
 		tabIdOpenedFrom: uniqueRequestIdentifier.requestSocket.tabId,
 	}
 	sendPopupMessageToOpenWindows({ method: 'popup_confirm_transaction_simulation_started' } as const)

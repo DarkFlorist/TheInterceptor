@@ -3,7 +3,7 @@ import { defaultAddresses } from '../background/settings.js'
 import { SimulatedAndVisualizedTransaction, SimulationAndVisualisationResults, SimulationState, TokenPriceEstimate, SimulationUpdatingState, SimulationResultState, NamedTokenId } from '../types/visualizer-types.js'
 import { ChangeActiveAddress } from './pages/ChangeActiveAddress.js'
 import { Home } from './pages/Home.js'
-import { RpcConnectionStatus, TabIconDetails } from '../types/user-interface-types.js'
+import { RpcConnectionStatus, TabIconDetails, TabState } from '../types/user-interface-types.js'
 import Hint from './subcomponents/Hint.js'
 import { AddNewAddress } from './pages/AddNewAddress.js'
 import { InterceptorAccessList } from './pages/InterceptorAccessList.js'
@@ -19,7 +19,6 @@ import { checksummedAddress } from '../utils/bigint.js'
 import { ActiveAddress, ActiveAddressEntry, AddressBookEntry, AddressBookEntries } from '../types/addressBookTypes.js'
 import { WebsiteAccessArray } from '../types/websiteAccessTypes.js'
 import { Page } from '../types/exportedSettingsTypes.js'
-import { SignerName } from '../types/signerTypes.js'
 import { VisualizedPersonalSignRequest } from '../types/personal-message-definitions.js'
 import { RpcEntries, RpcEntry, RpcNetwork } from '../types/rpc.js'
 
@@ -27,7 +26,6 @@ export function App() {
 	const [appPage, setAppPage] = useState<Page>({ page: 'Home' })
 	const [makeMeRich, setMakeMeRich] = useState(false)
 	const [activeAddresses, setActiveAddresss] = useState<readonly ActiveAddress[]>(defaultAddresses)
-	const [signerAccounts, setSignerAccounts] = useState<readonly bigint[] | undefined>(undefined)
 	const [activeSimulationAddress, setActiveSimulationAddress] = useState<bigint | undefined>(undefined)
 	const [activeSigningAddress, setActiveSigningAddress] = useState<bigint | undefined>(undefined)
 	const [useSignersAddressAsActiveAddress, setUseSignersAddressAsActiveAddress] = useState(false)
@@ -39,7 +37,7 @@ export function App() {
 	const [tabIconDetails, setTabConnection] = useState<TabIconDetails>(DEFAULT_TAB_CONNECTION)
 	const [isSettingsLoaded, setIsSettingsLoaded] = useState<boolean>(false)
 	const [currentBlockNumber, setCurrentBlockNumber] = useState<bigint | undefined>(undefined)
-	const [signerName, setSignerName] = useState<SignerName>('NoSignerDetected')
+	const [tabState, setTabState] = useState<TabState | undefined>(undefined)
 	const [rpcConnectionStatus, setRpcConnectionStatus] = useState<RpcConnectionStatus>(undefined)
 	const [currentTabId, setCurrentTabId] = useState<number | undefined>(undefined)
 	const [rpcEntries, setRpcEntries] = useState<RpcEntries>([])
@@ -51,9 +49,9 @@ export function App() {
 		if (address === 'signer') {
 			sendPopupMessageToBackgroundPage({ method: 'popup_changeActiveAddress', data: { activeAddress: 'signer', simulationMode: simulationMode } })
 			if (simulationMode) {
-				return setActiveSimulationAddress(signerAccounts && signerAccounts.length > 0 ? signerAccounts[0] : undefined)
+				return setActiveSimulationAddress(tabState && tabState.signerAccounts.length > 0 ? tabState.signerAccounts[0] : undefined)
 			}
-			return setActiveSigningAddress(signerAccounts && signerAccounts.length > 0 ? signerAccounts[0] : undefined)
+			return setActiveSigningAddress(tabState && tabState.signerAccounts.length > 0 ? tabState.signerAccounts[0] : undefined)
 		}
 		sendPopupMessageToBackgroundPage({ method: 'popup_changeActiveAddress', data: { activeAddress: address, simulationMode: simulationMode } })
 		if (simulationMode) {
@@ -63,10 +61,10 @@ export function App() {
 	}
 
 	function isSignerConnected() {
-		return signerAccounts !== undefined && signerAccounts.length > 0
+		return tabState !== undefined && tabState.signerAccounts.length > 0
 			&& (
-				simulationMode && activeSimulationAddress !== undefined && signerAccounts[0] === activeSimulationAddress
-				|| !simulationMode && activeSigningAddress !== undefined && signerAccounts[0] === activeSigningAddress
+				simulationMode && activeSimulationAddress !== undefined && tabState.signerAccounts[0] === activeSimulationAddress
+				|| !simulationMode && activeSigningAddress !== undefined && tabState.signerAccounts[0] === activeSigningAddress
 			)
 	}
 
@@ -111,10 +109,10 @@ export function App() {
 				setCurrentTabId(data.tabId)
 				setActiveSigningAddress(data.activeSigningAddressInThisTab)
 				if (isSettingsLoaded === false) {
-					if (data.tabIconDetails === undefined) {
+					if (data.tabState?.tabIconDetails === undefined) {
 						setTabConnection(DEFAULT_TAB_CONNECTION)
 					} else {
-						setTabConnection(data.tabIconDetails)
+						setTabConnection(data.tabState.tabIconDetails)
 					}
 				}
 				if (data.visualizedSimulatorState !== undefined) {
@@ -131,10 +129,9 @@ export function App() {
 					setSimulationResultState(data.visualizedSimulatorState.simulationResultState)
 				}
 				setMakeMeRich(data.makeMeRich)
-				setSignerName(data.signerName)
+				setTabState(data.tabState)
 				setCurrentBlockNumber(data.currentBlockNumber)
 				setWebsiteAccessAddressMetadata(data.websiteAccessAddressMetadata)
-				setSignerAccounts(data.signerAccounts)
 				setRpcConnectionStatus(data.rpcConnectionStatus)
 				return true
 			})
@@ -287,14 +284,13 @@ export function App() {
 							useSignersAddressAsActiveAddress = { useSignersAddressAsActiveAddress }
 							activeSigningAddress = { activeSigningAddress }
 							activeSimulationAddress = { activeSimulationAddress }
-							signerAccounts = { signerAccounts }
 							setAndSaveAppPage = { setAndSaveAppPage }
 							makeMeRich = { makeMeRich }
 							activeAddresses = { activeAddresses }
 							simulationMode = { simulationMode }
 							tabIconDetails = { tabIconDetails }
 							currentBlockNumber = { currentBlockNumber }
-							signerName = { signerName }
+							tabState = { tabState }
 							renameAddressCallBack = { renameAddressCallBack }
 							rpcConnectionStatus = { rpcConnectionStatus }
 							rpcEntries = { rpcEntries }
@@ -315,10 +311,10 @@ export function App() {
 							{ appPage.page === 'ChangeActiveAddress' ?
 								<ChangeActiveAddress
 									setActiveAddressAndInformAboutIt = { setActiveAddressAndInformAboutIt }
-									signerAccounts = { signerAccounts }
+									signerAccounts = { tabState?.signerAccounts ?? [] }
 									setAndSaveAppPage = { setAndSaveAppPage }
 									activeAddresses = { activeAddresses }
-									signerName = { signerName }
+									signerName = { tabState?.signerName ?? 'NoSignerDetected' }
 									renameAddressCallBack = { renameAddressCallBack }
 									addNewAddress = { addNewAddress }
 								/>

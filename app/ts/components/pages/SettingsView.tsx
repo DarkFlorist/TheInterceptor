@@ -3,7 +3,7 @@ import { sendPopupMessageToBackgroundPage } from '../../background/backgroundUti
 import { MessageToPopup, ImportSettingsReply } from '../../types/interceptor-messages.js'
 import { RpcEntries } from '../../types/rpc.js'
 import { useEffect, useState } from 'preact/hooks'
-import { Error as ErrorComponent} from '../subcomponents/Error.js'
+import { ErrorComponent } from '../subcomponents/Error.js'
 import { DinoSaysNotification } from '../subcomponents/DinoSays.js'
 
 type CheckBoxSettingParam = {
@@ -80,9 +80,7 @@ function ImportExport() {
 
 	return <>
 		{ settingsReply !== undefined && settingsReply.data.success === false ?
-			<div style = 'margin: 10px; background-color: var(--bg-color);'>
-				<ErrorComponent warning = { true } text = { settingsReply.data.errorMessage }/>
-			</div>
+			<ErrorComponent warning = { true } text = { settingsReply.data.errorMessage }/>
 		: <></> }
 		{ settingsReply !== undefined && settingsReply.data.success === true && dismissedNotification === false ?
 			<DinoSaysNotification
