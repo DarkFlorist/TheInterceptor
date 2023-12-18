@@ -132,7 +132,7 @@ type WindowEthereum = InjectFunctions & {
 	isBraveWallet?: boolean,
 	isMetaMask?: boolean,
 	isInterceptor?: boolean,
-	providerMap?: unknown, // coinbase does not inject `isCoinbaseWallet` to the window.ethereum if there's already other wallets present (eg, Interceptor or Metamask), but instead injects a provider map that contains all these providers
+	providerMap?: Map<string, WindowEthereum>, // coinbase does not inject `isCoinbaseWallet` to the window.ethereum if there's already other wallets present (eg, Interceptor or Metamask), but instead injects a provider map that contains all these providers
 	isCoinbaseWallet?: boolean,
 	
 	// for metamask compatibility mode
@@ -147,6 +147,13 @@ interface Window {
 		currentProvider: WindowEthereum
 		accounts: readonly string[]
 	}
+}
+
+interface EIP6963ProviderInfo {
+	uuid: string
+	name: string
+	icon: string
+	rdns: string
 }
 
 type OnMessage = 'accountsChanged' | 'message' | 'connect' | 'close' | 'disconnect' | 'chainChanged'
@@ -171,6 +178,7 @@ class InterceptorMessageListener {
 
 	public constructor() {
 		this.injectEthereumIntoWindow()
+		this.onPageLoad()
 	}
 
 	private readonly WindowEthereumIsConnected = () => this.connected
@@ -334,9 +342,15 @@ class InterceptorMessageListener {
 
 	private readonly requestChainIdFromSigner = async () => {
 		if (this.signerWindowEthereumRequest === undefined) return
-		const reply = await this.signerWindowEthereumRequest({ method: 'eth_chainId', params: [] })
-		if (typeof reply !== 'string') return
-		return await this.sendMessageToBackgroundPage({ method: 'signer_chainChanged', params: [ reply ] })
+		try {
+			const reply = await this.signerWindowEthereumRequest({ method: 'eth_chainId', params: [] })
+			if (typeof reply !== 'string') return
+			return await this.sendMessageToBackgroundPage({ method: 'signer_chainChanged', params: [ reply ] })
+		} catch(e) {
+			console.error('failed to get chain Id from signer')
+			console.error(e)
+			return await this.sendMessageToBackgroundPage({ method: 'signer_chainChanged', params: [ '0x1' ] })
+		}
 	}
 
 	private static readonly getErrorCodeAndMessage = (error: unknown): error is { code: number, message: string } => {
@@ -551,6 +565,31 @@ class InterceptorMessageListener {
 			}
 		}
 	}
+	
+	private readonly onPageLoad = () => {
+		const interceptorMessageListener = this
+		function announceProvider() {
+			const info: EIP6963ProviderInfo = {
+				uuid: '200ecd95-afe4-4684-bce7-0f2f8bdd3498',
+				name: 'The Interceptor',
+				icon: `data:image/svg+xml,<svg version='1.1' viewBox='0 0 32 32' xml:space='preserve' xmlns='http://www.w3.org/2000/svg'>
+					<g>
+						<path fill='white' d='m7.95 21.32h0.05c0.03 0 0.06 0 0.08-0.01h0.05c0.03 0 0.06-0.01 0.09-0.01 0.02 0 0.03 0 0.05-0.01 0.03 0 0.06-0.01 0.09-0.01 0.02 0 0.03 0 0.05-0.01 0.03 0 0.07-0.01 0.1-0.02 0.01 0 0.03 0 0.04-0.01 0.04-0.01 0.08-0.01 0.12-0.02h0.02c0.1-0.02 0.19-0.04 0.29-0.07 0.01 0 0.02-0.01 0.03-0.01l0.12-0.03c0.02 0 0.03-0.01 0.05-0.01 0.03-0.01 0.07-0.02 0.1-0.03 0.01 0 0.01 0 0.02-0.01 1.38-0.44 3.08-1.52 5.14-3.68l2.07 1.52 0.79-5.87 3.29-2.67s-12.16-4.99-13.83-5.29c-1.67-0.29-4.29 1.5-5.37 2.67-0.89 0.96 0.07 4.21 0.45 5.37 0.07 0.23 0.32 0.35 0.55 0.27l0.04-0.01c0.17-0.06 0.28-0.22 0.29-0.4 0.01-0.24 0.1-0.48 0.26-0.68l0.18-0.23c0.14-0.17 0.32-0.3 0.52-0.37l2.79-0.98c0.36-0.13 0.76-0.07 1.07 0.16l4.49 3.29c0.32 0.23 0.5 0.61 0.47 1l-0.01 0.1c-0.02 0.31-0.16 0.6-0.39 0.8l-0.01 0.01c-0.09 0.08-0.19 0.17-0.28 0.25l-0.09 0.08c-0.07 0.06-0.13 0.11-0.2 0.17l-0.1 0.08c-0.06 0.06-0.13 0.11-0.19 0.17l-0.08 0.07c-0.09 0.08-0.18 0.15-0.27 0.23l-0.02 0.01c-0.08 0.07-0.16 0.14-0.24 0.2l-0.08 0.07-0.18 0.15-0.08 0.07c-0.06 0.05-0.12 0.1-0.18 0.14l-0.07 0.06c-0.08 0.07-0.16 0.13-0.24 0.19l-0.02 0.02c-0.07 0.06-0.14 0.11-0.21 0.17l-0.07 0.05c-0.05 0.04-0.11 0.08-0.16 0.13l-0.07 0.05c-0.06 0.04-0.11 0.08-0.16 0.13l-0.05 0.04c-0.07 0.06-0.14 0.11-0.21 0.16l-0.03 0.04h-0.01c-0.06 0.05-0.12 0.09-0.18 0.14l-0.06 0.04c-0.05 0.04-0.1 0.07-0.14 0.1l-0.06 0.04c-0.05 0.04-0.1 0.07-0.15 0.11l-0.04 0.03c-0.01 0.01-0.02 0.01-0.03 0.02l-0.01-0.01h0.04l-1.21-1.3c-0.87-1.53 0.65-3.52 1.55-4.5 0.12-0.13 0.1-0.34-0.04-0.45l-1.5-1.1c-0.08-0.06-0.19-0.07-0.28-0.04l-2.56 0.89c-0.05 0.02-0.1 0.05-0.14 0.1-0.08 0.1-0.09 0.23-0.03 0.34l1.3 2.26c0.05 0.09 0.05 0.19 0.01 0.29-0.3 0.61-1.42 2.98-0.8 3.64h-0.02s0.36 0.68 1.14 1.23c0.01 0.01 0.02 0.02 0.04 0.02 0.01 0.01 0.02 0.02 0.04 0.02 0.01 0.01 0.02 0.02 0.04 0.02 0.01 0.01 0.02 0.02 0.04 0.02 0.01 0.01 0.02 0.02 0.04 0.02 0.01 0.01 0.03 0.02 0.04 0.02 0.01 0.01 0.02 0.01 0.04 0.02 0.01 0.01 0.03 0.02 0.04 0.02 0.01 0.01 0.03 0.01 0.04 0.02s0.03 0.02 0.04 0.02c-0.01 0.05 0.01 0.06 0.02 0.07 0.02 0.01 0.03 0.02 0.05 0.02 0.01 0.01 0.02 0.01 0.04 0.02s0.03 0.02 0.05 0.02c0.01 0.01 0.02 0.01 0.04 0.02 0.01 0.01 0.03 0.02 0.05 0.03 0.01 0 0.02 0.01 0.03 0.01 0.03 0.01 0.06 0.03 0.09 0.04 0.01 0 0.01 0 0.02 0.01 0.03 0.01 0.05 0.02 0.08 0.03 0.01 0 0.02 0.01 0.03 0.01 0.02 0.01 0.04 0.02 0.06 0.02 0.01 0 0.03 0.01 0.04 0.01 0.02 0.01 0.04 0.01 0.06 0.02 0.01 0 0.03 0.01 0.04 0.01 0.02 0.01 0.04 0.01 0.06 0.02 0.01 0 0.03 0.01 0.04 0.01 0.02 0.01 0.04 0.01 0.06 0.02 0.01 0 0.03 0.01 0.04 0.01 0.02 0 0.04 0.01 0.07 0.01 0.01 0 0.03 0.01 0.04 0.01 0.02 0 0.05 0.01 0.07 0.01 0.01 0 0.03 0 0.04 0.01 0.03 0 0.05 0.01 0.08 0.01 0.01 0 0.02 0 0.03 0.01 0.03 0 0.06 0.01 0.09 0.01h0.02c0.08 0.01 0.16 0.01 0.24 0.02h0.03 0.09 0.04 0.08 0.04 0.1zm3.9-10.75c0-0.57 0.46-1.03 1.03-1.03s1.03 0.46 1.03 1.03-0.46 1.03-1.03 1.03-1.03-0.46-1.03-1.03z'/>
+						<path fill='white' d='m15.29 22.72c-2.88-0.17-4.88-0.79-5.41-0.98l-0.01 0.01-0.33 0.11-0.02 0.01c-0.04 0.01-0.08 0.02-0.12 0.04h-0.01l-0.04 0.01c-0.04 0.01-0.09 0.02-0.13 0.04h-0.01l-0.03 0.01c-0.11 0.03-0.23 0.06-0.34 0.08h-0.02c-0.05 0.01-0.09 0.02-0.14 0.03l-0.04 0.01h-0.01c-0.04 0.01-0.08 0.01-0.12 0.02l-0.04-0.01h-0.01c-0.04 0-0.07 0.01-0.11 0.01h-0.05-0.01c-0.03 0-0.07 0.01-0.1 0.01h-0.06c-0.03 0-0.07 0-0.1 0.01h-0.06-0.06l-0.09 4.4h3.88l0.3-2.38c0.46 0.2 0.91 0.41 1.43 0.48v0.88h-0.01v1.45h3.88l0.06-1.06c0.04-0.35 0.1-0.76 0.15-1.19 1.11-0.11 2.2-0.36 3.26-0.78 0.4 0.96 0.9 2.44 0.9 2.44h4.2l0.13-5.44c-3.46 1.44-6.72 1.83-9.25 1.83-0.52 0-1.01-0.02-1.46-0.04z'/>
+						<path fill='white' d='m30.76 14.1c-0.51-1.23-1.69-2.01-2.88-2.67 0.11-0.24 0.18-0.5 0.18-0.78 0-1.04-0.84-1.88-1.88-1.88s-1.88 0.84-1.88 1.88 0.84 1.88 1.88 1.88c0.47 0 0.89-0.19 1.22-0.48 1.02 1.06 2.06 2.52-1.17 4l-0.23-0.63c-0.5 0-1.51 0.5-1.51 0.5l0.34-1c-0.84-0.5-2.01-0.34-2.01-0.34l0.67-0.84c-0.7-0.7-2.32-0.58-2.85-0.52 0.13-0.06 0.33-0.23 0.67-0.65-0.74-0.3-1.32-0.36-1.77-0.3l-1.48 1.2-0.75 5.55-0.19 1.38-0.03 0.2-2.71-1.99c-1.17 1.14-2.3 2.01-3.37 2.6 2.32 0.6 8.4 1.69 15.01-1.19v-0.01c2.66-1.14 5.9-3.12 4.74-5.91zm-11.46 5.51c-0.36-1.49-0.09-3.36 0.67-4.69 0.36 1.49 0.1 3.35-0.67 4.69zm3.02 0c-0.35-0.96-0.08-2.07 0.67-2.76 0.35 0.95 0.08 2.07-0.67 2.76z'/>
+					</g>
+				</svg>`,
+				rdns: 'dark.florist'
+			}
+			
+			if (window.ethereum === undefined || !window.ethereum.isInterceptor) interceptorMessageListener.injectEthereumIntoWindow()
+			const provider = window.ethereum
+			if (provider === undefined) throw new Error('The Interceptor provider was not initialized')
+			window.dispatchEvent(new CustomEvent('eip6963:announceProvider', { detail: Object.freeze({ info, provider }) }))
+		}
+		window.addEventListener('eip6963:requestProvider', () => { announceProvider() } )
+		announceProvider()
+	}
 
 	public readonly injectEthereumIntoWindow = () => {
 		if (!('ethereum' in window) || !window.ethereum) {
@@ -570,6 +609,7 @@ class InterceptorMessageListener {
 			this.connectToSigner('NoSigner')
 			return
 		}
+		if (window.ethereum.isInterceptor) return
 
 		// subscribe for signers events
 		window.ethereum.on('accountsChanged', (accounts: readonly string[]) => {
@@ -592,16 +632,17 @@ class InterceptorMessageListener {
 
 		if (window.ethereum.isBraveWallet || window.ethereum.providerMap || window.ethereum.isCoinbaseWallet) {
 			const signerName = window.ethereum.providerMap || window.ethereum.isCoinbaseWallet ? 'CoinbaseWallet' : 'Brave'
+			const oldWinEthereum = (window.ethereum.providerMap ? window.ethereum.providerMap.get('CoinbaseWallet') : undefined) ?? window.ethereum
 			window.ethereum = {
 				isInterceptor: true,
-				isConnected: this.WindowEthereumIsConnected.bind(window.ethereum),
-				request: this.WindowEthereumRequest.bind(window.ethereum),
-				send: this.WindowEthereumSend.bind(window.ethereum),
-				sendAsync: this.WindowEthereumSendAsync.bind(window.ethereum),
-				on: this.WindowEthereumOn.bind(window.ethereum),
-				removeListener: this.WindowEthereumRemoveListener.bind(window.ethereum),
-				enable: this.WindowEthereumEnable.bind(window.ethereum),
-				...this.unsupportedMethods(window.ethereum),
+				isConnected: this.WindowEthereumIsConnected.bind(oldWinEthereum),
+				request: this.WindowEthereumRequest.bind(oldWinEthereum),
+				send: this.WindowEthereumSend.bind(oldWinEthereum),
+				sendAsync: this.WindowEthereumSendAsync.bind(oldWinEthereum),
+				on: this.WindowEthereumOn.bind(oldWinEthereum),
+				removeListener: this.WindowEthereumRemoveListener.bind(oldWinEthereum),
+				enable: this.WindowEthereumEnable.bind(oldWinEthereum),
+				...this.unsupportedMethods(oldWinEthereum),
 			}
 			this.connectToSigner(signerName)
 			return
