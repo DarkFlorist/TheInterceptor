@@ -465,7 +465,7 @@ export function TokenLogAnalysisCard({ simTx, renameAddressCallBack }: TokenLogA
 	if (simTx === undefined) return <></>
 	const hasEthLogs = simTx.transaction.rpcNetwork.httpsRpc === 'https://rpc.dark.florist/birdchalkrenewtip' || simTx.transaction.rpcNetwork.httpsRpc === 'https://rpc.dark.florist/winedancemuffinborrow' //todo, remove this check, all txs should have ETH logs
 	const tokenEventsPlural = hasEthLogs ? 'token events or ETH transactions' : 'token events'
-	const tokenEventsSingular = hasEthLogs ? 'one token event or an ETH transaction' : 'one token event'
+	const tokenEventsSingular = hasEthLogs ? 'One token event or an ETH transaction' : 'One token event'
 	return <>
 		<div class = 'card' style = 'margin-top: 10px; margin-bottom: 10px'>
 			<header class = 'card-header noselect' style = 'cursor: pointer; height: 30px;' onClick = { () => setShowLogs((prevValue) => !prevValue) }>
