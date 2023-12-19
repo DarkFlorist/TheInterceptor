@@ -11,7 +11,7 @@ import { ethers } from 'ethers'
 import { PasteCatcher } from './subcomponents/PasteCatcher.js'
 import { truncateAddr } from '../utils/ethereum.js'
 import { DEFAULT_TAB_CONNECTION } from '../utils/constants.js'
-import { UpdateHomePage, WebsiteIconChanged, Settings, MessageToPopup } from '../types/interceptor-messages.js'
+import { UpdateHomePage, Settings, MessageToPopup } from '../types/interceptor-messages.js'
 import { version, gitCommitSha } from '../version.js'
 import { sendPopupMessageToBackgroundPage } from '../background/backgroundUtils.js'
 import { EthereumAddress } from '../types/wire-types.js'
@@ -43,6 +43,7 @@ export function App() {
 	const [rpcEntries, setRpcEntries] = useState<RpcEntries>([])
 	const [simulationUpdatingState, setSimulationUpdatingState] = useState<SimulationUpdatingState | undefined>(undefined)
 	const [simulationResultState, setSimulationResultState] = useState<SimulationResultState | undefined>(undefined)
+	const [interceptorDisabled, setInterceptorDisabled] = useState<boolean>(false)
 
 	async function setActiveAddressAndInformAboutIt(address: bigint | 'signer') {
 		setUseSignersAddressAsActiveAddress(address === 'signer')
@@ -103,19 +104,15 @@ export function App() {
 
 		const updateHomePage = ({ data }: UpdateHomePage) => {
 			if (data.tabId !== currentTabId && currentTabId !== undefined) return
+			
 			setIsSettingsLoaded((isSettingsLoaded) => {
 				setRpcEntries(data.rpcEntries)
 				setActiveAddresses(data.activeAddresses)
-				updateHomePageSettings(data.settings, !isSettingsLoaded)
 				setCurrentTabId(data.tabId)
 				setActiveSigningAddress(data.activeSigningAddressInThisTab)
-				if (isSettingsLoaded === false) {
-					if (data.tabState?.tabIconDetails === undefined) {
-						setTabConnection(DEFAULT_TAB_CONNECTION)
-					} else {
-						setTabConnection(data.tabState.tabIconDetails)
-					}
-				}
+				setInterceptorDisabled(data.interceptorDisabled)
+				updateHomePageSettings(data.settings, !isSettingsLoaded)
+				if (isSettingsLoaded === false) setTabConnection(data.tabState.tabIconDetails)
 				if (data.visualizedSimulatorState !== undefined) {
 					setSimulationState(
 						data.visualizedSimulatorState.simulationState,
@@ -148,17 +145,13 @@ export function App() {
 			setWebsiteAccess(settings.websiteAccess)
 		}
 
-		const updateTabIcon = ({ data }: WebsiteIconChanged) => {
-			setTabConnection(data)
-		}
-
 		const popupMessageListener = async (msg: unknown) => {
 			const maybeParsed = MessageToPopup.safeParse(msg)
 			if (!maybeParsed.success) return // not a message we are interested in
 			const parsed = maybeParsed.value
 			if (parsed.method === 'popup_settingsUpdated') return updateHomePageSettings(parsed.data, true)
 			if (parsed.method === 'popup_activeSigningAddressChanged' && parsed.data.tabId === currentTabId) return setActiveSigningAddress(parsed.data.activeSigningAddress)
-			if (parsed.method === 'popup_websiteIconChanged') return updateTabIcon(parsed)
+			if (parsed.method === 'popup_websiteIconChanged') return setTabConnection(parsed.data)
 			if (parsed.method === 'popup_failed_to_get_block') return setRpcConnectionStatus(parsed.data.rpcConnectionStatus)
 			if (parsed.method === 'popup_update_rpc_list') return
 			if (parsed.method === 'popup_new_block_arrived') return
@@ -294,6 +287,7 @@ export function App() {
 							rpcEntries = { rpcEntries }
 							simulationUpdatingState = { simulationUpdatingState }
 							simulationResultState = { simulationResultState }
+							interceptorDisabled = { interceptorDisabled }
 						/>
 
 						<div class = { `modal ${ appPage.page !== 'Home' ? 'is-active' : ''}` }>
@@ -326,7 +320,6 @@ export function App() {
 								/>
 							: <></> }
 						</div>
-
 					</> }
 				</div>
 			</Hint>

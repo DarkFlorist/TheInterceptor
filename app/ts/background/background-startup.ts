@@ -17,12 +17,14 @@ import { printError } from '../utils/errors.js'
 import { browserStorageLocalGet, browserStorageLocalRemove } from '../utils/storageUtils.js'
 import { ActiveAddress, AddressBookEntries } from '../types/addressBookTypes.js'
 import { getUniqueItemsByProperties } from '../utils/typed-arrays.js'
+import { updateContentScriptInjectionStrategyManifestV2 } from '../utils/contentScriptsUpdating.js'
 
 const websiteTabConnections = new Map<number, TabConnection>()
 
 browser.tabs.onRemoved.addListener((tabId: number) => removeTabState(tabId))
 
 if (browser.runtime.getManifest().manifest_version === 2) {
+	updateContentScriptInjectionStrategyManifestV2()
 	clearTabStates()
 }
 
@@ -44,8 +46,8 @@ export async function onContentScriptConnected(simulator: Simulator, port: brows
 	const socket = getSocketFromPort(port)
 	if (port?.sender?.url === undefined) return
 	const websiteOrigin = (new URL(port.sender.url)).hostname
-	const websitePromise = retrieveWebsiteDetails(port, websiteOrigin)
 	const identifier = websiteSocketToString(socket)
+	const websitePromise = retrieveWebsiteDetails(socket.tabId, websiteOrigin)
 
 	const tabConnection = websiteTabConnections.get(socket.tabId)
 	const newConnection = {
@@ -93,16 +95,16 @@ export async function onContentScriptConnected(simulator: Simulator, port: brows
 		await updateTabState(socket.tabId, (previousState: TabState) => {
 			return {
 				...previousState,
-				tabIconDetails: {
-					icon: ICON_NOT_ACTIVE,
-					iconReason: 'No active address selected.',
-				}
+				website: { websiteOrigin, icon: undefined, title: undefined },
+				tabIconDetails: { icon: ICON_NOT_ACTIVE, iconReason: 'No active address selected.' },
 			}
 		})
-		updateExtensionIcon(websiteTabConnections, socket, websiteOrigin)
+		updateExtensionIcon(socket.tabId, websiteOrigin)
 	} else {
 		tabConnection.connections[identifier] = newConnection
 	}
+	const website = await websitePromise
+	await updateTabState(socket.tabId, (previousState: TabState) => ({ ...previousState, website }))
 }
 
 async function newBlockAttemptCallback(blockheader: EthereumBlockHeader, ethereumClientService: EthereumClientService, isNewBlock: boolean, simulator: Simulator) {
@@ -146,6 +148,14 @@ async function startup() {
 	const userSpecifiedSimulatorNetwork = settings.rpcNetwork.httpsRpc === undefined ? await getPrimaryRpcForChain(1n) : settings.rpcNetwork
 	const simulatorNetwork = userSpecifiedSimulatorNetwork === undefined ? defaultRpcs[0] : userSpecifiedSimulatorNetwork
 	const simulator = new Simulator(simulatorNetwork, newBlockAttemptCallback, onErrorBlockCallback)
+	browser.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
+		if (changeInfo.status !== 'complete') return
+		if (tab.url === undefined) return
+		const websiteOrigin = (new URL(tab.url)).hostname
+		const website = await retrieveWebsiteDetails(tabId, websiteOrigin)
+		await updateTabState(tabId, (previousState: TabState) => ({ ...previousState, website }))
+		await updateExtensionIcon(tabId, websiteOrigin) 
+	})
 	browser.runtime.onConnect.addListener(port => onContentScriptConnected(simulator, port, websiteTabConnections).catch(console.error))
 	browser.runtime.onMessage.addListener(async function (message: unknown) {
 		await popupMessageHandler(websiteTabConnections, simulator, message, await getSettings())

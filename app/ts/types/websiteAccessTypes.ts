@@ -25,11 +25,16 @@ export type LegacyWebsiteAccessArray = funtypes.Static<typeof LegacyWebsiteAcces
 export const LegacyWebsiteAccessArray = funtypes.ReadonlyArray(LegacyWebsiteAccess)
 
 export type WebsiteAccess = funtypes.Static<typeof WebsiteAccess>
-export const WebsiteAccess = funtypes.ReadonlyObject({
-	website: Website,
-	access: funtypes.Boolean,
-	addressAccess: funtypes.Union(funtypes.ReadonlyArray(WebsiteAddressAccess), funtypes.Undefined),
-}).asReadonly()
+export const WebsiteAccess = funtypes.Intersect(
+	funtypes.ReadonlyObject({
+		website: Website,
+		addressAccess: funtypes.Union(funtypes.ReadonlyArray(WebsiteAddressAccess), funtypes.Undefined),
+	}),
+	funtypes.ReadonlyPartial({
+		access: funtypes.Boolean,
+		interceptorDisabled: funtypes.Boolean,
+	})
+)
 
 export type WebsiteAccessArray = funtypes.Static<typeof WebsiteAccessArray>
 export const WebsiteAccessArray = funtypes.ReadonlyArray(WebsiteAccess)

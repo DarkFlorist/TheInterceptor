@@ -46,10 +46,11 @@ export const METAMASK_ERROR_TRANSACTION_REJECTD = -32003
 export const METAMASK_ERROR_METHOD_NOT_SUPPORTED = -32004
 export const METAMASK_ERROR_RATE_LIMITED = -32005
 
+export const ERROR_INTERCEPTOR_DISABLED = { error: { code: METAMASK_ERROR_USER_REJECTED_REQUEST, message: `The Interceptor is disabled` } }
 export const METAMASK_ERROR_ALREADY_PENDING = { error: { code: -32002, message: `Access request pending already.` } }
 export const ERROR_INTERCEPTOR_NOT_READY = { error: { code: 1, message: 'Interceptor: Not ready' } }
 export const ERROR_INTERCEPTOR_NO_ACTIVE_ADDRESS = { error: { code: 2, message: 'Interceptor: No active address' } }
-export const ERROR_INTERCEPTOR_UNKNOWN_ORIGIN = { error: { code: 400, message: 'Interceptor: Unkown website origin' } }
+export const ERROR_INTERCEPTOR_UNKNOWN_ORIGIN = { error: { code: 400, message: 'Interceptor: Unknown website origin' } }
 export const METAMASK_ERROR_NOT_CONNECTED_TO_CHAIN = { error: { code: 4900, message: 'Interceptor: Not connected to chain' } }
 export const ERROR_INTERCEPTOR_GET_CODE_FAILED = { error: { code: -40001, message: 'Interceptor: Get code failed' } } // I wonder how we should come up with these numbers?
 export const ERROR_INTERCEPTOR_GAS_ESTIMATION_FAILED = -40002
@@ -86,7 +87,9 @@ export const ICON_NOT_ACTIVE = '../img/head-not-active.png' as const
 export const ICON_SIMULATING = '../img/head-simulating.png' as const
 export const ICON_SIGNING = '../img/head-signing.png' as const
 export const ICON_SIGNING_NOT_SUPPORTED = '../img/head-signing-unsupported-network.png' as const
+export const ICON_INTERCEPTOR_DISABLED = '../img/head-interceptor-disabled.png' as const
 export const DEFAULT_TAB_CONNECTION = { icon: ICON_NOT_ACTIVE, iconReason: 'The website has not requested to connect to The Interceptor.' }
+export const DEFAULT_TAB_CONNECTION_INTERCEPTOR_DISABLED = { icon: ICON_INTERCEPTOR_DISABLED, iconReason: 'The Interceptor is completely disabled by user request.' }
 
 export const MAKE_YOU_RICH_TRANSACTION = {
 	transaction: {

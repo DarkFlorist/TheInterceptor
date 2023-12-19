@@ -5,7 +5,7 @@ import { ActiveAddressComponent, getActiveAddressEntry } from '../subcomponents/
 import { SimulationSummary } from '../simulationExplaining/SimulationSummary.js'
 import { ChainSelector } from '../subcomponents/ChainSelector.js'
 import { Spinner } from '../subcomponents/Spinner.js'
-import { DEFAULT_TAB_CONNECTION, ICON_NOT_ACTIVE, ICON_SIGNING, ICON_SIGNING_NOT_SUPPORTED, METAMASK_ERROR_ALREADY_PENDING, METAMASK_ERROR_USER_REJECTED_REQUEST, TIME_BETWEEN_BLOCKS } from '../../utils/constants.js'
+import { DEFAULT_TAB_CONNECTION, ICON_ACTIVE, ICON_INTERCEPTOR_DISABLED, ICON_NOT_ACTIVE, ICON_SIGNING, ICON_SIGNING_NOT_SUPPORTED, METAMASK_ERROR_ALREADY_PENDING, METAMASK_ERROR_USER_REJECTED_REQUEST, TIME_BETWEEN_BLOCKS } from '../../utils/constants.js'
 import { getPrettySignerName, SignerLogoText, SignersLogoName } from '../subcomponents/signers.js'
 import { ErrorComponent } from '../subcomponents/Error.js'
 import { ToolTip } from '../subcomponents/CopyToClipboard.js'
@@ -88,6 +88,24 @@ function FirstCardHeader(param: FirstCardParams) {
 	</>
 }
 
+type InterceptorDisabledButtonParams = {
+	disableInterceptorToggle: (disabled: boolean) => void,
+	interceptorDisabled: boolean,
+}
+
+function InterceptorDisabledButton({ disableInterceptorToggle, interceptorDisabled }: InterceptorDisabledButtonParams) {
+	return <button style = 'margin-top: 10px' className = 'button is-primary is-small' onClick = { () => disableInterceptorToggle(!interceptorDisabled) } >
+			{ interceptorDisabled ? <>
+				<span class = 'icon'> <img src = { ICON_ACTIVE }/> </span>
+				<span> Enable Interceptor
+				</span>
+			</> : <>
+				<span class = 'icon'> <img src = { ICON_INTERCEPTOR_DISABLED }/> </span>
+				<span> Disable Interceptor </span>
+			</> }
+	</button>
+}
+
 function FirstCard(param: FirstCardParams) {
 	function connectToSigner() {
 		sendPopupMessageToBackgroundPage({ method: 'popup_requestAccountsFromSigner', data: true })
@@ -128,8 +146,8 @@ function FirstCard(param: FirstCardParams) {
 					changeActiveAddress = { param.changeActiveAddress }
 					renameAddressCallBack = { param.renameAddressCallBack }
 				/>
-				{ !param.simulationMode ?
-					( (param.signerAccounts === undefined || param.signerAccounts.length == 0) && param.tabIconDetails.icon !== ICON_NOT_ACTIVE ) ?
+				{ !param.simulationMode ? <>
+					{ ( (param.signerAccounts === undefined || param.signerAccounts.length == 0) && param.tabIconDetails.icon !== ICON_NOT_ACTIVE ) ?
 						<div style = 'margin-top: 5px'>
 							<button className = 'button is-primary' onClick = { connectToSigner } >
 								<SignerLogoText
@@ -138,13 +156,18 @@ function FirstCard(param: FirstCardParams) {
 								/>
 							</button>
 						</div>
-					: <p style = 'color: var(--subtitle-text-color);' class = 'subtitle is-7'> { ` You can change active address by changing it directly from ${ getPrettySignerName(param.signerName) }` } </p>
-				:
+						: <p style = 'color: var(--subtitle-text-color);' class = 'subtitle is-7'> { ` You can change active address by changing it directly from ${ getPrettySignerName(param.signerName) }` } </p>
+					}
+					<div style = 'display: flex; justify-content: right;'>
+						<InterceptorDisabledButton disableInterceptorToggle = { param.disableInterceptorToggle } interceptorDisabled = { param.interceptorDisabled }></InterceptorDisabledButton>
+					</div>
+				</> : <div style = 'display: flex; justify-content: space-between'>
 					<label class = 'form-control' style = 'padding-top: 10px'>
 						<input type = 'checkbox' checked = { param.makeMeRich } onInput = { e => { if (e.target instanceof HTMLInputElement && e.target !== null) { enableMakeMeRich(e.target.checked) } } } />
 						<p class = 'paragraph checkbox-text'>Make me rich</p>
 					</label>
-				}
+					<InterceptorDisabledButton disableInterceptorToggle = { param.disableInterceptorToggle } interceptorDisabled = { param.interceptorDisabled }></InterceptorDisabledButton>
+				</div> }
 			</div>
 		</div>
 	
@@ -255,6 +278,7 @@ export function Home(param: HomeParams) {
 	const [rpcEntries, setRPCEntries] = useState<RpcEntries>([])
 	const [simulationUpdatingState, setSimulationUpdatingState] = useState<SimulationUpdatingState | undefined>(undefined)
 	const [simulationResultState, setSimulationResultState] = useState<SimulationResultState | undefined>(undefined)
+	const [interceptorDisabled, setInterceptorDisabled] = useState<boolean>(false)
 	
 	useEffect(() => {
 		setSimulationAndVisualisationResults(param.simVisResults)
@@ -276,6 +300,7 @@ export function Home(param: HomeParams) {
 		setRPCEntries(param.rpcEntries)
 		setSimulationUpdatingState(param.simulationUpdatingState)
 		setSimulationResultState(param.simulationResultState)
+		setInterceptorDisabled(param.interceptorDisabled)
 	}, [param.activeSigningAddress,
 		param.activeSimulationAddress,
 		param.tabState,
@@ -290,6 +315,7 @@ export function Home(param: HomeParams) {
 		param.rpcEntries,
 		param.simulationUpdatingState,
 		param.simulationResultState,
+		param.interceptorDisabled,
 	])
 
 	const changeActiveAddress = () => param.setAndSaveAppPage({ page: 'ChangeActiveAddress' })
@@ -318,6 +344,15 @@ export function Home(param: HomeParams) {
 		return await sendPopupMessageToBackgroundPage({ method: 'popup_removeSignedMessage', data: message.request.uniqueRequestIdentifier })
 	}
 
+	async function disableInterceptorToggle() {
+		setInterceptorDisabled((previousValue) => {
+			if (tabState?.website === undefined) return previousValue
+			const newValue = !previousValue
+			sendPopupMessageToBackgroundPage({ method: 'popup_setDisableInterceptor', data: { interceptorDisabled: newValue, website: tabState.website } })
+			return previousValue
+		})
+	}
+
 	if (!isLoaded) return <></>
 	if (rpcNetwork === undefined) return <></>
 
@@ -344,6 +379,8 @@ export function Home(param: HomeParams) {
 			signerName = { tabState?.signerName ?? 'NoSignerDetected' }
 			renameAddressCallBack = { param.renameAddressCallBack }
 			rpcEntries = { rpcEntries }
+			disableInterceptorToggle = { disableInterceptorToggle }
+			interceptorDisabled = { interceptorDisabled }
 		/>
 
 		{ simulationMode && simulationAndVisualisationResults === undefined && activeSimulationAddress !== undefined ?
@@ -355,7 +392,7 @@ export function Home(param: HomeParams) {
 			</div>
 		: <></> }
 
-		{ simulationMode && currentBlockNumber === undefined ? <div style = 'padding: 10px'> <DinoSays text = { 'Not connected to a network..' } /> </div> : <></> }
+		{ simulationMode && currentBlockNumber === undefined ? <div style = 'padding: 10px'> <DinoSays text = { 'Not connected to a network' } /> </div> : <></> }
 		{ !simulationMode || activeSimulationAddress === undefined || currentBlockNumber === undefined
 			? <></>
 			: <SimulationResults

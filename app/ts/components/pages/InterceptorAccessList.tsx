@@ -17,7 +17,8 @@ interface EditableAccess {
 	websiteAccess: WebsiteAccess,
 	addressAccess: readonly WebsiteAddressAccess[],
 	addressAccessModified: readonly ModifiedAddressAccess[],
-	access: boolean,
+	access: boolean | undefined,
+	interceptorDisabled: boolean | undefined,
 	removed: boolean,
 }
 
@@ -29,7 +30,7 @@ export function InterceptorAccessList(param: InterceptorAccessListParams) {
 		if (newList === undefined) return setEditableAccessList(undefined)
 		setEditableAccessList((editableAccessList) => {
 			if (editableAccessList === undefined) {
-				return newList.map( (x) => ({
+				return newList.map((x) => ({
 					websiteAccess: x,
 					addressAccess: x.addressAccess === undefined ? [] : x.addressAccess,
 					addressAccessModified: x.addressAccess === undefined ? [] : x.addressAccess.map((addr) => ({
@@ -38,11 +39,12 @@ export function InterceptorAccessList(param: InterceptorAccessListParams) {
 						removed: false,
 					})),
 					access: x.access,
+					interceptorDisabled: x.interceptorDisabled,
 					removed: false,
 				}))
 			}
 			// update only the changed entities
-			const merge = (newAccess: WebsiteAccess) => {
+			const merge = (newAccess: WebsiteAccess): EditableAccess => {
 				const previousEntity = editableAccessList.find((x) => x.websiteAccess.website.websiteOrigin === newAccess.website.websiteOrigin)
 				if (previousEntity === undefined) {
 					return {
@@ -54,7 +56,9 @@ export function InterceptorAccessList(param: InterceptorAccessListParams) {
 							removed: false,
 						})),
 						access: newAccess.access,
+						interceptorDisabled: newAccess.interceptorDisabled,
 						removed: false,
+
 					}
 				}
 				// we need to merge edited and new updated access rights together
@@ -74,7 +78,7 @@ export function InterceptorAccessList(param: InterceptorAccessListParams) {
 					websiteAccess: newAccess,
 					addressAccess: newAccess.addressAccess === undefined ? [] : newAccess.addressAccess,
 					addressAccessModified: addressAccessModified,
-					access: previousEntity.access === previousEntity.websiteAccess.access ? newAccess.access : previousEntity.access
+					access: previousEntity.access === previousEntity.websiteAccess.access ? newAccess.access : previousEntity.access,
 				}
 			}
 			return newList.map((x) => merge(x))
@@ -91,23 +95,24 @@ export function InterceptorAccessList(param: InterceptorAccessListParams) {
 
 	const goHome = () => param.setAndSaveAppPage({ page: 'Home' })
 
-	function setWebsiteAccess(index: number, access: boolean | undefined, removed: boolean | undefined) {
+	function setWebsiteAccess(index: number, changes: { access?: boolean, removed?: boolean, interceptorDisabled?: boolean }) {
 		if (editableAccessList === undefined) return
 		setEditableAccessList(editableAccessList.map((x , i) => {
-			if(index === i ) {
+			if (index === i) {
 				return {
 					websiteAccess: x.websiteAccess,
 					addressAccess: x.addressAccess,
 					addressAccessModified: x.addressAccessModified,
-					access: access === undefined ? x.access : access,
-					removed: removed === undefined ? x.removed : removed,
+					access: changes.access === undefined ? x.access : changes.access,
+					interceptorDisabled: changes.interceptorDisabled === undefined ? x.interceptorDisabled : changes.interceptorDisabled,
+					removed: changes.removed === undefined ? x.removed : changes.removed,
 				}
 			}
 			return x
 		}))
 	}
 
-	function setAddressAccess(index: number, addressIndex: number, access: boolean | undefined, removed: boolean | undefined) {
+	function setAddressAccess(index: number, addressIndex: number, changes: { access?: boolean, removed?: boolean, interceptorDisabled?: boolean } ) {
 		if (editableAccessList === undefined) return
 		setEditableAccessList(editableAccessList.map((x , i) => {
 			if(index === i ) {
@@ -116,10 +121,11 @@ export function InterceptorAccessList(param: InterceptorAccessListParams) {
 					addressAccess: x.addressAccess,
 					addressAccessModified: x.addressAccessModified.map((addr, addrIndex) => ({
 						address: addr.address,
-						access: addrIndex === addressIndex && access !== undefined ? access : addr.access,
-						removed: addrIndex === addressIndex && removed !== undefined ? removed : addr.removed
+						access: addrIndex === addressIndex && changes.access !== undefined ? changes.access : addr.access,
+						removed: addrIndex === addressIndex && changes.removed !== undefined ? changes.removed : addr.removed
 					})),
 					access: x.access,
+					interceptorDisabled: changes.interceptorDisabled === undefined ? x.interceptorDisabled : changes.interceptorDisabled,
 					removed: x.removed
 				}
 			}
@@ -128,7 +134,7 @@ export function InterceptorAccessList(param: InterceptorAccessListParams) {
 	}
 
 	function hasChanged(state: EditableAccess) {
-		if (state.removed || state.access !== state.websiteAccess.access) return true
+		if (state.removed || state.access !== state.websiteAccess.access || state.interceptorDisabled !== state.websiteAccess.interceptorDisabled) return true
 		for (const [index, access] of state.addressAccessModified.entries()) {
 			const addressAccessAtIndex = state.addressAccess[index]
 			if (addressAccessAtIndex === undefined) throw new Error('addressAccessAtIndex was undefined')
@@ -149,17 +155,24 @@ export function InterceptorAccessList(param: InterceptorAccessListParams) {
 	function saveChanges() {
 		if (!areThereChanges()) return goHome()
 		if (editableAccessList === undefined) return goHome()
-
-		const withoutRemovedEntries = editableAccessList.filter( (state) => !state.removed )
-		const newEntries = withoutRemovedEntries.map((x) => ({
-			website: x.websiteAccess.website,
-			access: x.access,
-			addressAccess: x.addressAccessModified.filter((x) => !x.removed ).map( (addr) => ({
-				address: BigInt(addr.address),
-				access: addr.access,
-			})),
-		}))
-		sendPopupMessageToBackgroundPage({ method: 'popup_changeInterceptorAccess', data: newEntries })
+		const changedEntry = (editable: EditableAccess) => {
+			return {
+				oldEntry: editable.websiteAccess,
+				newEntry: {
+					website: editable.websiteAccess.website,
+					access: editable.access,
+					addressAccess: editable.addressAccessModified.filter((x) => !x.removed).map((addr) => ({
+						address: BigInt(addr.address),
+						access: addr.access,
+					})),
+					interceptorDisabled: editable.interceptorDisabled,
+				},
+				removed: editable.removed,
+			}
+		}
+		const changedEntries = editableAccessList.filter((access) => hasChanged(access)).map((x) => changedEntry(x))
+		sendPopupMessageToBackgroundPage({ method: 'popup_changeInterceptorAccess', data: changedEntries })
+		const newEntries = editableAccessList.filter((state) => !state.removed).map((x) => changedEntry(x).newEntry)
 		updateEditableAccessList(newEntries)
 		param.setWebsiteAccess(newEntries)
 		return goHome()
@@ -198,7 +211,7 @@ export function InterceptorAccessList(param: InterceptorAccessListParams) {
 							</div>
 						</li>
 					: <></> }
-					{ editableAccessList === undefined ? <></> : editableAccessList.map( (access, accessListIndex) => (
+					{ editableAccessList === undefined ? <></> : editableAccessList.map((access, accessListIndex) => (
 						<li>
 							{ access.removed ? <p style = 'color: var(--negative-color)' > { `Forgot ${ access.websiteAccess.website.websiteOrigin }. `}</p> :
 								<div class = 'card'>
@@ -220,44 +233,50 @@ export function InterceptorAccessList(param: InterceptorAccessListParams) {
 										</div>
 										<div class = 'card-header-icon unset-cursor'>
 											<label class = 'form-control' style = 'width: 8em;'>
-												<input type = 'checkbox' checked = { access.access } onInput = { e => { if (e.target instanceof HTMLInputElement && e.target !== null) { setWebsiteAccess(accessListIndex, e.target.checked, undefined) } } } />
+												<input type = 'checkbox' checked = { access.access } onInput = { e => { if (e.target instanceof HTMLInputElement && e.target !== null) { setWebsiteAccess(accessListIndex, { access: e.target.checked }) } } } />
 												<p class = 'paragraph checkbox-text'>Allow access</p>
 											</label>
-											<button class = 'card-header-icon' style = 'padding: 0px;' aria-label = 'forget' onClick = { () => setWebsiteAccess(accessListIndex, undefined, true) }>
+											<button class = 'card-header-icon' style = 'padding: 0px;' aria-label = 'forget' onClick = { () => setWebsiteAccess(accessListIndex, { removed: true }) }>
 												<span class = 'icon' style = 'color: var(--text-color);'> X </span>
 											</button>
 										</div>
 									</div>
 									<div class = 'card-content' style = 'margin-bottom: 0px;'>
-										{ access.addressAccess.length === 0 ? <p className = 'paragraph'> No individual address accesses given </p> : <>
-											{ access.addressAccessModified.map( (websiteAccessAddress, addressIndex) => (
-												<li style = { `margin: 0px; margin-bottom: ${ addressIndex < access.addressAccessModified.length - 1  ? '10px;' : '0px' }` }>
-													{ websiteAccessAddress.removed ? <p style = 'color: var(--negative-color)' > { `Forgot ${ metadata.get(addressString(websiteAccessAddress.address))?.name || checksummedAddress(websiteAccessAddress.address) }`} </p> :
-														<div style = 'display: flex; width: 100%; overflow: hidden;'>
-															<SmallAddress
-																addressBookEntry = { metadata.get(addressString(websiteAccessAddress.address)) || {
-																	type: 'activeAddress',
-																	name: checksummedAddress(websiteAccessAddress.address),
-																	address: websiteAccessAddress.address,
-																	askForAddressAccess: false,
-																	entrySource: 'FilledIn',
-																}}
-																renameAddressCallBack = { param.renameAddressCallBack }
-															/>
-															<div style = 'margin-left: auto; flex-shrink: 0; display: flex'>
-																<label class = 'form-control' style = 'margin: auto'>
-																	<input type = 'checkbox' checked = { websiteAccessAddress.access } onInput = { e => { if (e.target instanceof HTMLInputElement && e.target !== null) { setAddressAccess(accessListIndex, addressIndex, e.target.checked, undefined) } } } />
-																	<p class = 'paragraph checkbox-text' style = 'white-space: nowrap;'>Allow access</p>
-																</label>
-																<button class = 'card-header-icon' style = 'padding: 0px;' aria-label = 'forget' onClick = { () => setAddressAccess(accessListIndex, addressIndex, undefined, true) }>
-																	<span class = 'icon' style = 'color: var(--text-color);'> X </span>
-																</button>
+										<>
+											<label class = 'form-control' style = 'margin: auto'>
+												<input type = 'checkbox' checked = { access.interceptorDisabled } onInput = { e => { if (e.target instanceof HTMLInputElement && e.target !== null) { setWebsiteAccess(accessListIndex, { interceptorDisabled: e.target.checked }) } } } />
+												<p class = 'paragraph checkbox-text' style = 'white-space: nowrap;'>Disable Interceptor for the site (not recommended). </p>
+											</label>
+											{ access.addressAccess.length === 0 ? <p className = 'paragraph'> No individual address accesses given </p> : <>
+												{ access.addressAccessModified.map((websiteAccessAddress, addressIndex) => (
+													<li style = { `margin: 0px; margin-bottom: ${ addressIndex < access.addressAccessModified.length - 1  ? '10px;' : '0px' }` }>
+														{ websiteAccessAddress.removed ? <p style = 'color: var(--negative-color)' > { `Forgot ${ metadata.get(addressString(websiteAccessAddress.address))?.name || checksummedAddress(websiteAccessAddress.address) }`} </p> :
+															<div style = 'display: flex; width: 100%; overflow: hidden;'>
+																<SmallAddress
+																	addressBookEntry = { metadata.get(addressString(websiteAccessAddress.address)) || {
+																		type: 'activeAddress',
+																		name: checksummedAddress(websiteAccessAddress.address),
+																		address: websiteAccessAddress.address,
+																		askForAddressAccess: false,
+																		entrySource: 'FilledIn',
+																	}}
+																	renameAddressCallBack = { param.renameAddressCallBack }
+																/>
+																<div style = 'margin-left: auto; flex-shrink: 0; display: flex'>
+																	<label class = 'form-control' style = 'margin: auto'>
+																		<input type = 'checkbox' checked = { websiteAccessAddress.access } onInput = { e => { if (e.target instanceof HTMLInputElement && e.target !== null) { setAddressAccess(accessListIndex, addressIndex, { access: e.target.checked }) } } } />
+																		<p class = 'paragraph checkbox-text' style = 'white-space: nowrap;'>Allow access</p>
+																	</label>
+																	<button class = 'card-header-icon' style = 'padding: 0px;' aria-label = 'forget' onClick = { () => setAddressAccess(accessListIndex, addressIndex, { removed: true }) }>
+																		<span class = 'icon' style = 'color: var(--text-color);'> X </span>
+																	</button>
+																</div>
 															</div>
-														</div>
-													}
-												</li>
-											)) }
-										</> }
+														}
+													</li>
+												)) }
+											</> }
+										</>
 									</div>
 								</div>
 							}

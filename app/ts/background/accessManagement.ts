@@ -10,7 +10,7 @@ import { Simulator } from '../simulation/simulator.js'
 import { WebsiteSocket } from '../utils/requests.js'
 import { ActiveAddressEntry } from '../types/addressBookTypes.js'
 import { Website, WebsiteAccessArray, WebsiteAddressAccess } from '../types/websiteAccessTypes.js'
-import { getUniqueItemsByProperties } from '../utils/typed-arrays.js'
+import { getUniqueItemsByProperties, replaceElementInReadonlyArray } from '../utils/typed-arrays.js'
 
 export function getConnectionDetails(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket) {
 	const identifier = websiteSocketToString(socket)
@@ -25,14 +25,14 @@ function setWebsitePortApproval(websiteTabConnections: WebsiteTabConnections, so
 	connection.approved = approved
 }
 
-export type ApprovalState = 'hasAccess' | 'noAccess' | 'askAccess'
+export type ApprovalState = 'hasAccess' | 'noAccess' | 'askAccess' | 'interceptorDisabled' | 'notFound'
 
-export function verifyAccess(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, askAccessIfUnknown: boolean, websiteOrigin: string, requestAccessForAddress: ActiveAddressEntry | undefined, settings: Settings): ApprovalState {
+export function verifyAccess(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, askAccessIfUnknown: boolean, websiteOrigin: string, requestAccessForAddress: ActiveAddressEntry | undefined, settings: Settings) {
 	const connection = getConnectionDetails(websiteTabConnections, socket)
 	if (connection && connection.approved) return 'hasAccess'
 	const access = requestAccessForAddress !== undefined ? hasAddressAccess(settings.websiteAccess, websiteOrigin, requestAccessForAddress) : hasAccess(settings.websiteAccess, websiteOrigin)
 	if (access === 'hasAccess') return connectToPort(websiteTabConnections, socket, websiteOrigin, settings, requestAccessForAddress?.address) ? 'hasAccess' : 'noAccess'
-	if (access === 'noAccess') return 'noAccess'
+	if (access === 'noAccess' || access === 'interceptorDisabled') return access
 	return askAccessIfUnknown ? 'askAccess' : 'noAccess'
 }
 
@@ -63,18 +63,20 @@ export async function sendActiveAccountChangeToApprovedWebsitePorts(websiteTabCo
 	}
 }
 
-export function hasAccess(websiteAccess: WebsiteAccessArray, websiteOrigin: string) : 'hasAccess' | 'noAccess' | 'notFound' {
+export function hasAccess(websiteAccess: WebsiteAccessArray, websiteOrigin: string) : ApprovalState {
 	for (const web of websiteAccess) {
 		if (web.website.websiteOrigin === websiteOrigin) {
+			if (web.interceptorDisabled) return 'interceptorDisabled'
 			return web.access ? 'hasAccess' : 'noAccess'
 		}
 	}
 	return 'notFound'
 }
 
-export function hasAddressAccess(websiteAccess: WebsiteAccessArray, websiteOrigin: string, address: ActiveAddressEntry) : 'hasAccess' | 'noAccess' | 'notFound' {
+export function hasAddressAccess(websiteAccess: WebsiteAccessArray, websiteOrigin: string, address: ActiveAddressEntry) : ApprovalState {
 	for (const web of websiteAccess) {
 		if (web.website.websiteOrigin === websiteOrigin) {
+			if (web.interceptorDisabled) return 'interceptorDisabled'
 			if (!web.access) return 'noAccess'
 			if (web.addressAccess !== undefined) {
 				for (const addressAccess of web.addressAccess) {
@@ -102,62 +104,34 @@ export function getAddressesThatDoNotNeedIndividualAccesses(activeAddressEntries
 	return activeAddressEntries.filter((x) => x.askForAddressAccess === false)
 }
 
+export async function setInterceptorDisabledForWebsite(website: Website, interceptorDisabled: boolean) {
+	return await updateWebsiteAccess((previousWebsiteAccess) => {
+		const index = previousWebsiteAccess.findIndex((entry) => entry.website.websiteOrigin === website.websiteOrigin)
+		const previousAccess = index !== -1 ? previousWebsiteAccess[index] : undefined;
+		if (previousAccess === undefined) return [...previousWebsiteAccess, { website, addressAccess: [], interceptorDisabled } ]
+		return replaceElementInReadonlyArray(previousWebsiteAccess, index, { ...previousAccess, interceptorDisabled })
+	})
+}
+
 export async function setAccess(website: Website, access: boolean, address: bigint | undefined) {
 	return await updateWebsiteAccess((previousWebsiteAccess) => {
-		const oldAccess = hasAccess(previousWebsiteAccess, website.websiteOrigin)
-		if (oldAccess === 'notFound') {
-			return [...previousWebsiteAccess,
-				{
-					website,
-					access: access,
-					addressAccess: address === undefined || !access ? undefined : [ { address: address, access: access } ]
-				}
-			]
-		}
+		const foundEntry = previousWebsiteAccess.find((entry) => entry.website.websiteOrigin === website.websiteOrigin)
+		if (foundEntry === undefined) return [...previousWebsiteAccess, { website, access, addressAccess: address === undefined || !access ? undefined : [ { address, access } ] }]
 		return previousWebsiteAccess.map((prevAccess) => {
 			if (prevAccess.website.websiteOrigin === website.websiteOrigin) {
-				if (address === undefined) {
-					return {
-						website: {
-							...website,
-							icon: prevAccess.website.icon ? prevAccess.website.icon : website.icon,
-							title: prevAccess.website.title ? prevAccess.website.title : website.title,
-						},
-						access: access,
-						addressAccess: prevAccess.addressAccess,
-					}
+				const websiteData = {
+					...website,
+					icon: prevAccess.website.icon ?? website.icon,
+					title: prevAccess.website.title ?? website.title,
 				}
-				if (prevAccess.addressAccess === undefined) {
-					return {
-						website: {
-							...website,
-							icon: prevAccess.website.icon ? prevAccess.website.icon : website.icon,
-							title: prevAccess.website.title ? prevAccess.website.title : website.title,
-						},
-						access: prevAccess.access ? prevAccess.access : access,
-						addressAccess:  [ { address: address, access: access } ]
-					}
-				}
+				if (address === undefined) return { ...prevAccess, website: websiteData, access }
+				const addressAccess = { address, access }
+				const updatedEntry = { ...prevAccess, website: websiteData, access: prevAccess.access ? prevAccess.access : access }
+				if (prevAccess.addressAccess === undefined) return { ...updatedEntry, addressAccess: [addressAccess] }
 				if (prevAccess.addressAccess.find((x) => x.address === address) === undefined) {
-					return {
-						website: {
-							...website,
-							icon: prevAccess.website.icon ? prevAccess.website.icon : website.icon,
-							title: prevAccess.website.title ? prevAccess.website.title : website.title,
-						},
-						access: prevAccess.access ? prevAccess.access : access,
-						addressAccess:  [ ...prevAccess.addressAccess, { address: address, access: access } ]
-					}
+					return { ...updatedEntry, addressAccess: [ ...prevAccess.addressAccess, addressAccess ] }
 				}
-				return {
-					website: {
-						...website,
-						icon: prevAccess.website.icon ? prevAccess.website.icon : website.icon,
-						title: prevAccess.website.title ? prevAccess.website.title : website.title,
-					},
-					access: prevAccess.access ? prevAccess.access : access,
-					addressAccess: prevAccess.addressAccess.map((x) => ( x.address === address ? { address: address, access: access } : x ) )
-				}
+				return { ...updatedEntry, addressAccess: prevAccess.addressAccess.map((x) => (x.address === address ? addressAccess : x)) }
 			}
 			return prevAccess
 		})
@@ -176,7 +150,7 @@ export async function getActiveAddressForDomain(websiteOrigin: string, settings:
 
 function connectToPort(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, websiteOrigin: string, settings: Settings, connectWithActiveAddress: bigint | undefined): true {
 	setWebsitePortApproval(websiteTabConnections, socket, true)
-	updateExtensionIcon(websiteTabConnections, socket, websiteOrigin)
+	updateExtensionIcon(socket.tabId, websiteOrigin)
 
 	sendSubscriptionReplyOrCallBack(websiteTabConnections, socket, { method: 'connect', result: [settings.rpcNetwork.chainId] })
 
@@ -194,7 +168,7 @@ function connectToPort(websiteTabConnections: WebsiteTabConnections, socket: Web
 
 function disconnectFromPort(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, websiteOrigin: string): false {
 	setWebsitePortApproval(websiteTabConnections, socket, false)
-	updateExtensionIcon(websiteTabConnections, socket, websiteOrigin)
+	updateExtensionIcon(socket.tabId, websiteOrigin)
 	sendSubscriptionReplyOrCallBack(websiteTabConnections, socket, { method: 'disconnect', result: [] })
 	return false
 }
@@ -210,7 +184,7 @@ async function askUserForAccessOnConnectionUpdate(simulator: Simulator, websiteT
 	const details = getConnectionDetails(websiteTabConnections, socket)
 	if (details === undefined) return
 
-	const website = await retrieveWebsiteDetails(details.port, websiteOrigin)
+	const website = await retrieveWebsiteDetails(socket.tabId, websiteOrigin)
 	await requestAccessFromUser(simulator, websiteTabConnections, socket, website, undefined, activeAddress, settings, activeAddress?.address)
 }
 
@@ -219,7 +193,7 @@ async function updateTabConnections(simulator: Simulator, websiteTabConnections:
 		const connection = tabConnection.connections[key]
 		if (connection === undefined) throw new Error('missing connection')
 		const currentActiveAddress = await getActiveAddress(settings, connection.socket.tabId)
-		updateExtensionIcon(websiteTabConnections, connection.socket, connection.websiteOrigin)
+		updateExtensionIcon(connection.socket.tabId, connection.websiteOrigin)
 		const access = currentActiveAddress ? hasAddressAccess(settings.websiteAccess, connection.websiteOrigin, currentActiveAddress) : hasAccess(settings.websiteAccess, connection.websiteOrigin)
 
 		if (access !== 'hasAccess' && connection.approved) {
