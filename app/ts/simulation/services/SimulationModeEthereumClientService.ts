@@ -102,7 +102,7 @@ export const simulateEstimateGas = async (ethereumClientService: EthereumClientS
 		return { maxFeePerGas: 0n, maxPriorityFeePerGas: 0n }
 	}
 
-	const tmp = {
+	const transactionToSimulate = {
 		type: '1559' as const,
 		from: sendAddress,
 		chainId: ethereumClientService.getChainId(),
@@ -114,7 +114,7 @@ export const simulateEstimateGas = async (ethereumClientService: EthereumClientS
 		input: getInputFieldFromDataOrInput(data),
 		accessList: []
 	}
-	const multiCall = await simulatedMulticall(ethereumClientService, simulationState, [tmp], block.number + 1n)
+	const multiCall = await simulatedMulticall(ethereumClientService, simulationState, [transactionToSimulate], block.number + 1n)
 	const lastResult = multiCall[multiCall.length - 1]
 	if (lastResult === undefined) {
 		return {
@@ -134,8 +134,31 @@ export const simulateEstimateGas = async (ethereumClientService: EthereumClientS
 			},
 		} as const 
 	}
-	const gasSpent = lastResult.gasSpent * 125n / 100n // add 25% extra to account for gas savings <https://eips.ethereum.org/EIPS/eip-3529>
-	return { gas: gasSpent < maxGas ? gasSpent : maxGas }
+	const getGasEstimateWithIncrease = (gasSpent: bigint, increasePercentageUnits: bigint) => {
+		const increasedEstimate = gasSpent * increasePercentageUnits / 100n
+		return increasedEstimate < maxGas ? increasedEstimate : maxGas
+	}
+	const tryGasAmount = async (gas: bigint) => {
+		const multicallWithGasSpentAttempt = await simulatedMulticall(ethereumClientService, simulationState, [{ ...transactionToSimulate, gas }], block.number + 1n)
+		const simulationResultForTheTransaction = multicallWithGasSpentAttempt[multicallWithGasSpentAttempt.length - 1]
+		if (simulationResultForTheTransaction === undefined) return false
+		if (simulationResultForTheTransaction.statusCode === 'failure') return false
+		return true
+	}
+	const MAX_ATTEMPTS = 3
+	for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
+		// add 25% extra to account for possible gas refunds <https://eips.ethereum.org/EIPS/eip-3529>
+		// increase estimate by 10 percentage units every search attempt
+		const gasSpentEstimate = getGasEstimateWithIncrease(lastResult.gasSpent, 125n + BigInt(attempt) * 10n)
+		if (await tryGasAmount(gasSpentEstimate)) return { gas: gasSpentEstimate }
+	}
+	return {
+		error: {
+			code: ERROR_INTERCEPTOR_GAS_ESTIMATION_FAILED,
+			message: `failed to estimate gas. The transaction itself depends on the gas limit."`,
+			data: ''
+		},
+	} as const 
 }
 
 // calculates gas price for receipts
