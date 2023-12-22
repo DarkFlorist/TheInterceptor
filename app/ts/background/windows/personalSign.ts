@@ -135,7 +135,7 @@ export async function craftPersonalSignPopupMessage(ethereumClientService: Ether
 		// if we fail to parse the message, that means it's a message type we do not identify, let's just show it as a nonidentified EIP712 message
 		if (validateEIP712Types(namedParams.param) === false) throw new Error('Not a valid EIP712 Message')
 		const message = await extractEIP712Message(ethereumClientService, namedParams.param, userAddressBook)
-		const chainid = message.domain.chainId?.type === 'integer' ? BigInt(message.domain.chainId?.value) : undefined
+		const chainid = message.domain.chainId?.type === 'unsignedInteger' ? message.domain.chainId.value : undefined
 		return {
 			method: originalParams.originalRequestParameters.method,
 			...basicParams,
