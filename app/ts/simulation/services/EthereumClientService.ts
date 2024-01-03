@@ -4,7 +4,7 @@ import { TIME_BETWEEN_BLOCKS, MOCK_ADDRESS } from '../../utils/constants.js'
 import { IEthereumJSONRpcRequestHandler } from './EthereumJSONRpcRequestHandler.js'
 import { AbiCoder, Signature, ethers } from 'ethers'
 import { addressString, bytes32String } from '../../utils/bigint.js'
-import { BlockCalls, ExecutionSpec383MultiCallBlockResult, ExecutionSpec383MultiCallResult } from '../../types/multicall-types.js'
+import { BlockCalls, ExecutionSpec383MultiCallBlockResult, ExecutionSpec383MultiCallResult, StateOverrides } from '../../types/multicall-types.js'
 import { MulticallResponse, EthGetStorageAtResponse, EthTransactionReceiptResponse, EthGetLogsRequest, EthGetLogsResponse, DappRequestTransaction } from '../../types/JsonRpc-types.js'
 import { assertNever } from '../../utils/typescript.js'
 import { MessageHashAndSignature, SignatureWithFakeSignerAddress, simulatePersonalSign } from './SimulationModeEthereumClientService.js'
@@ -194,11 +194,11 @@ export class EthereumClientService {
 		return response as string
 	}
 
-	public readonly multicall = async (transactions: readonly EthereumUnsignedTransaction[], spoofedSignatures: readonly SignatureWithFakeSignerAddress[], blockNumber: bigint) => {
+	public readonly multicall = async (transactions: readonly EthereumUnsignedTransaction[], spoofedSignatures: readonly SignatureWithFakeSignerAddress[], blockNumber: bigint, extraAccountOverrides: StateOverrides = {}) => {
 		const httpsRpc = this.requestHandler.getRpcEntry().httpsRpc
 		if (httpsRpc === 'https://rpc.dark.florist/winedancemuffinborrow' || httpsRpc === 'https://rpc.dark.florist/birdchalkrenewtip') {
 			//TODO: Remove this when we get rid of our old multicall
-			return this.executionSpec383MultiCallOnlyTransactionsAndSignatures(transactions, spoofedSignatures, blockNumber)
+			return this.executionSpec383MultiCallOnlyTransactionsAndSignatures(transactions, spoofedSignatures, blockNumber, extraAccountOverrides)
 		}
 
 		const blockAuthor: bigint = MOCK_ADDRESS
@@ -263,7 +263,7 @@ export class EthereumClientService {
 	}
 
 	// intended drop in replacement of the old multicall
-	public readonly executionSpec383MultiCallOnlyTransactionsAndSignatures = async (transactions: readonly EthereumUnsignedTransaction[], signatures: readonly SignatureWithFakeSignerAddress[], blockNumber: bigint): Promise<MulticallResponse> => {
+	public readonly executionSpec383MultiCallOnlyTransactionsAndSignatures = async (transactions: readonly EthereumUnsignedTransaction[], signatures: readonly SignatureWithFakeSignerAddress[], blockNumber: bigint, extraAccountOverrides: StateOverrides): Promise<MulticallResponse> => {
 		const ecRecoverMovedToAddress = 0x123456n
 		const ecRecoverAddress = 1n
 		const parentBlock = await this.getBlock()
@@ -293,13 +293,16 @@ export class EthereumClientService {
 				feeRecipient: parentBlock.miner,
 				baseFee: parentBlock.baseFeePerGas === undefined ? 15000000n : parentBlock.baseFeePerGas
 			},
-			...signatures.length > 0 ? {
-				stateOverrides: { [addressString(ecRecoverAddress)]: {
-					movePrecompileToAddress: ecRecoverMovedToAddress,
-					code: getEcRecoverOverride(),
-					state: stateSets,
-				} },
-			} : {},
+			stateOverrides: {
+				...signatures.length > 0 ? {
+					[addressString(ecRecoverAddress)]: {
+						movePrecompileToAddress: ecRecoverMovedToAddress,
+						code: getEcRecoverOverride(),
+						state: stateSets,
+					}
+				} : {},
+				...extraAccountOverrides,
+			}
 		}]
 		const multicallResults = await this.executionSpec383MultiCall(query, blockNumber)
 		if (multicallResults.length !== 1) throw new Error('Multicalled for one block but did not get one block')

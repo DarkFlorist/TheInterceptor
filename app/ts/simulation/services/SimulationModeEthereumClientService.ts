@@ -10,6 +10,8 @@ import { handleERC1155TransferBatch, handleERC1155TransferSingle } from '../logH
 import { assertNever } from '../../utils/typescript.js'
 import { SignMessageParams } from '../../types/jsonRpc-signing-types.js'
 import { UniqueRequestIdentifier, doesUniqueRequestIdentifiersMatch } from '../../utils/requests.js'
+import { StateOverrides } from '../../types/multicall-types.js'
+import { getCodeByteCode } from '../../utils/ethereumByteCodes.js'
 
 const MOCK_PUBLIC_PRIVATE_KEY = 0x1n // key used to sign mock transactions
 const MOCK_SIMULATION_PRIVATE_KEY = 0x2n // key used to sign simulated transatons
@@ -498,7 +500,7 @@ export const getSimulatedCode = async (ethereumClientService: EthereumClientServ
 		input: input,
 		accessList: []
 	} as const
-	const multiCall = await simulatedMulticall(ethereumClientService, simulationState, [getCodeTransaction], block.number + 1n)
+	const multiCall = await simulatedMulticall(ethereumClientService, simulationState, [getCodeTransaction], block.number + 1n, { [addressString(GET_CODE_CONTRACT)]: { code: getCodeByteCode() } })
 	const lastResult = multiCall[multiCall.length - 1]
 	if (lastResult === undefined) throw new Error('last result did not exist in multicall')
 	if (lastResult.statusCode === 'failure') return { statusCode: 'failure' } as const
@@ -701,9 +703,9 @@ const getSignedMessagesWithFakeSigner = (simulationState: SimulationState | unde
 	return simulationState === undefined ? [] : simulationState.signedMessages.map((x) => ({ fakeSignedFor: x.fakeSignedFor, originalRequestParameters: x.originalRequestParameters }))
 }
 
-export const simulatedMulticall = async (ethereumClientService: EthereumClientService, simulationState: SimulationState | undefined, transactions: EthereumUnsignedTransaction[], blockNumber: bigint) => {
+export const simulatedMulticall = async (ethereumClientService: EthereumClientService, simulationState: SimulationState | undefined, transactions: EthereumUnsignedTransaction[], blockNumber: bigint, extraAccountOverrides: StateOverrides = {}) => {
 	const mergedTxs: EthereumUnsignedTransaction[] = getTransactionQueue(simulationState)
-	return await ethereumClientService.multicall(mergedTxs.concat(transactions), getSignedMessagesWithFakeSigner(simulationState), blockNumber)
+	return await ethereumClientService.multicall(mergedTxs.concat(transactions), getSignedMessagesWithFakeSigner(simulationState), blockNumber, extraAccountOverrides)
 }
 
 // use time as block hash as that makes it so that updated simulations with different states are different, but requires no additional calculation
@@ -749,7 +751,6 @@ type BalanceQuery = {
 	owner: bigint,
 	tokenId: bigint,
 }
-
 
 const getSimulatedTokenBalances = async (ethereumClientService: EthereumClientService, transactionQueue: EthereumUnsignedTransaction[], signedMessages: readonly SignatureWithFakeSignerAddress[], balanceQueries: BalanceQuery[], blockNumber: bigint): Promise<TokenBalancesAfter> => {
 	if (balanceQueries.length === 0) return []
