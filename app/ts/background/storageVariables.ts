@@ -7,7 +7,7 @@ import { defaultRpcs, getSettings } from './settings.js'
 import { UniqueRequestIdentifier, doesUniqueRequestIdentifiersMatch } from '../utils/requests.js'
 import { AddressBookEntries, AddressBookEntry } from '../types/addressBookTypes.js'
 import { SignerName } from '../types/signerTypes.js'
-import { PendingAccessRequest, PendingAccessRequestArray, PendingTransaction } from '../types/accessRequest.js'
+import { PendingAccessRequest, PendingAccessRequests, PendingTransaction } from '../types/accessRequest.js'
 import { RpcEntries, RpcNetwork } from '../types/rpc.js'
 import { replaceElementInReadonlyArray } from '../utils/typed-arrays.js'
 
@@ -153,7 +153,7 @@ export async function updateTabState(tabId: number, updateFunc: (prevState: TabS
 
 export const getPendingAccessRequests = async () => (await browserStorageLocalGet('pendingInterceptorAccessRequests'))?.['pendingInterceptorAccessRequests'] ?? []
 const pendingAccessRequestsSemaphore = new Semaphore(1)
-export async function updatePendingAccessRequests(updateFunc: (prevState: PendingAccessRequestArray) => Promise<PendingAccessRequestArray>) {
+export async function updatePendingAccessRequests(updateFunc: (prevState: PendingAccessRequests) => Promise<PendingAccessRequests>) {
 	return await pendingAccessRequestsSemaphore.execute(async () => {
 		const previous = await getPendingAccessRequests()
 		const pendingAccessRequests = await updateFunc(previous)

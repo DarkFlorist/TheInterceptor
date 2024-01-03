@@ -1,5 +1,5 @@
 import { addressString, checksummedAddress } from '../utils/bigint.js'
-import { ActiveAddress, ActiveAddressEntry, AddressBookEntry, UserAddressBook } from '../types/addressBookTypes.js'
+import { ActiveAddressEntry, AddressBookEntry } from '../types/addressBookTypes.js'
 import { NamedTokenId, SimulationState, VisualizerResult } from '../types/visualizer-types.js'
 import { tokenMetadata, contractMetadata, erc721Metadata, erc1155Metadata } from '@darkflorist/address-metadata'
 import { ethers } from 'ethers'
@@ -10,17 +10,16 @@ import { assertNever } from '../utils/typescript.js'
 import { addUserAddressBookEntryIfItDoesNotExist, getUserAddressBookEntries } from './storageVariables.js'
 import { getUniqueItemsByProperties } from '../utils/typed-arrays.js'
 import { EthereumNameServiceTokenWrapper, getEthereumNameServiceNameFromTokenId } from '../utils/ethereumNameService.js'
+import { defaultActiveAddresses } from './settings.js'
 export const LOGO_URI_PREFIX = `../vendor/@darkflorist/address-metadata`
 
 const pathJoin = (parts: string[], sep = '/') => parts.join(sep).replace(new RegExp(sep + '{1,}', 'g'), sep)
 
 export const getFullLogoUri = (logoURI: string) => pathJoin([LOGO_URI_PREFIX, logoURI])
 
-export function getActiveAddressEntry(address: bigint, activeAddresses: readonly ActiveAddress[] | undefined) : ActiveAddressEntry {
-	if (activeAddresses !== undefined) {
-		const entry = activeAddresses.find((entry) => entry.address === address)
-		if (entry !== undefined) return { ...entry, type: 'activeAddress', entrySource: 'User' }
-	}
+export async function getActiveAddressEntry(address: bigint) : Promise<ActiveAddressEntry> {
+	const identifiedAddress = await identifyAddressWithoutNode(address)
+	if (identifiedAddress !== undefined && identifiedAddress.type === 'activeAddress') return identifiedAddress
 	return {
 		type: 'activeAddress' as const,
 		name: checksummedAddress(address),
@@ -30,19 +29,16 @@ export function getActiveAddressEntry(address: bigint, activeAddresses: readonly
 	}
 }
 
-export async function identifyAddress(ethereumClientService: EthereumClientService, userAddressBook: UserAddressBook, address: bigint, useLocalStorage: boolean = true) : Promise<AddressBookEntry> {
-	const activeAddress = userAddressBook.activeAddresses.find((entry) => entry.address === address)
-	if (activeAddress !== undefined) return { ...activeAddress, type: 'activeAddress', entrySource: 'User' }
-
-	const contact = userAddressBook.contacts.find((entry) => entry.address === address)
-	if (contact !== undefined) return { ...contact, type: 'contact', entrySource: 'User' }
-
+export async function getActiveAddresses() : Promise<readonly ActiveAddressEntry[]> {
+	const activeAddresses = (await getUserAddressBookEntries()).filter((entry): entry is ActiveAddressEntry => entry.type === 'activeAddress')
+	return activeAddresses === undefined || activeAddresses.length === 0? defaultActiveAddresses : activeAddresses
+}
+async function identifyAddressWithoutNode(address: bigint, useLocalStorage: boolean = true) : Promise<AddressBookEntry | undefined> {
 	if (useLocalStorage) {
 		const userEntry = (await getUserAddressBookEntries()).find((entry) => entry.address === address)
 		if (userEntry !== undefined) return userEntry
 	}
 	const addrString = addressString(address)
-
 	const addressData = contractMetadata.get(addrString)
 	if (addressData) return {
 		...addressData,
@@ -93,7 +89,13 @@ export async function identifyAddress(ethereumClientService: EthereumClientServi
 		type: 'contact',
 		entrySource: 'Interceptor',
 	}
+	return undefined
+}
 
+export async function identifyAddress(ethereumClientService: EthereumClientService, address: bigint, useLocalStorage: boolean = true) : Promise<AddressBookEntry> {
+	const identifiedAddress = await identifyAddressWithoutNode(address, useLocalStorage)
+	if (identifiedAddress !== undefined) return identifiedAddress
+	const addrString = addressString(address)
 	const tokenIdentification = await itentifyAddressViaOnChainInformation(ethereumClientService, address)
 	const getEntry = (tokenIdentification: IdentifiedAddress) => {
 		switch (tokenIdentification.type) {
@@ -140,7 +142,7 @@ export async function identifyAddress(ethereumClientService: EthereumClientServi
 	return entry
 }
 
-export async function getAddressBookEntriesForVisualiser(ethereumClientService: EthereumClientService, visualizerResults: readonly (VisualizerResult | undefined)[], simulationState: SimulationState, userAddressBook: UserAddressBook): Promise<AddressBookEntry[]> {
+export async function getAddressBookEntriesForVisualiser(ethereumClientService: EthereumClientService, visualizerResults: readonly (VisualizerResult | undefined)[], simulationState: SimulationState): Promise<AddressBookEntry[]> {
 	let addressesToFetchMetadata: bigint[] = []
 
 	for (const visualizerResult of visualizerResults) {
@@ -161,7 +163,7 @@ export async function getAddressBookEntriesForVisualiser(ethereumClientService: 
 	})
 
 	const deDuplicated = new Set<bigint>(addressesToFetchMetadata)
-	const addressIdentificationPromises: Promise<AddressBookEntry>[] = Array.from(deDuplicated.values()).map((address) => identifyAddress(ethereumClientService, userAddressBook, address))
+	const addressIdentificationPromises: Promise<AddressBookEntry>[] = Array.from(deDuplicated.values()).map((address) => identifyAddress(ethereumClientService, address))
 
 	return await Promise.all(addressIdentificationPromises)
 }

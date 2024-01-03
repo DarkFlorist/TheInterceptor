@@ -2,7 +2,7 @@ import 'webextension-polyfill'
 import { defaultRpcs, getSettings } from './settings.js'
 import { handleInterceptedRequest, popupMessageHandler } from './background.js'
 import { retrieveWebsiteDetails, updateExtensionBadge, updateExtensionIcon } from './iconHandler.js'
-import { clearTabStates, getPrimaryRpcForChain, removeTabState, setRpcConnectionStatus, updateTabState } from './storageVariables.js'
+import { clearTabStates, getPrimaryRpcForChain, removeTabState, setRpcConnectionStatus, updateTabState, updateUserAddressBookEntries } from './storageVariables.js'
 import { Simulator } from '../simulation/simulator.js'
 import { TabConnection, TabState, WebsiteTabConnections } from '../types/user-interface-types.js'
 import { EthereumBlockHeader } from '../types/wire-types.js'
@@ -14,6 +14,9 @@ import { Semaphore } from '../utils/semaphore.js'
 import { RawInterceptedRequest } from '../utils/requests.js'
 import { ICON_NOT_ACTIVE } from '../utils/constants.js'
 import { printError } from '../utils/errors.js'
+import { browserStorageLocalGet, browserStorageLocalRemove } from '../utils/storageUtils.js'
+import { ActiveAddress, AddressBookEntries } from '../types/addressBookTypes.js'
+import { getUniqueItemsByProperties } from '../utils/typed-arrays.js'
 
 const websiteTabConnections = new Map<number, TabConnection>()
 
@@ -22,6 +25,20 @@ browser.tabs.onRemoved.addListener((tabId: number) => removeTabState(tabId))
 if (browser.runtime.getManifest().manifest_version === 2) {
 	clearTabStates()
 }
+
+async function migrateAddressInfoAndContacts() {
+	const results = await browserStorageLocalGet(['addressInfos', 'contacts'])
+	const convertActiveAddressToAddressBookEntry = (info: ActiveAddress) => ({ ...info, type: 'activeAddress' as const, entrySource: 'User' as const })
+	const addressInfos: AddressBookEntries = (results.addressInfos ?? []).map((x) => convertActiveAddressToAddressBookEntry(x))
+	const contacts: AddressBookEntries = results.contacts ?? []
+	if (addressInfos.length > 0 || contacts.length > 0) {
+		await updateUserAddressBookEntries((previousEntries) => {
+			return getUniqueItemsByProperties(addressInfos.concat(contacts).concat(previousEntries), ['address'])
+		})
+		await browserStorageLocalRemove(['addressInfos', 'contacts'])
+	}
+}
+migrateAddressInfoAndContacts()
 
 export async function onContentScriptConnected(simulator: Simulator, port: browser.runtime.Port, websiteTabConnections: WebsiteTabConnections) {
 	const socket = getSocketFromPort(port)

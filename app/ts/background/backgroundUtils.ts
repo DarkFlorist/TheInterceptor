@@ -2,12 +2,15 @@ import { MessageToPopup, PopupMessage, Settings, WindowMessage } from '../types/
 import { WebsiteSocket } from '../utils/requests.js'
 import { EthereumQuantity, serialize } from '../types/wire-types.js'
 import { getTabState } from './storageVariables.js'
+import { getActiveAddressEntry } from './metadataUtils.js'
 
 export async function getActiveAddress(settings: Settings, tabId: number) {
 	if (settings.simulationMode && !settings.useSignersAddressAsActiveAddress) {
-		return settings.activeSimulationAddress
+		return settings.activeSimulationAddress !== undefined ? await getActiveAddressEntry(settings.activeSimulationAddress) : undefined
 	}
-	return (await getTabState(tabId)).activeSigningAddress
+	const signingAddr = (await getTabState(tabId)).activeSigningAddress
+	if (signingAddr === undefined) return undefined
+	return await getActiveAddressEntry(signingAddr)
 }
 
 export async function sendPopupMessageToOpenWindows(message: MessageToPopup) {

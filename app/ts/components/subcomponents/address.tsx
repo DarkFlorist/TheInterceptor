@@ -6,14 +6,12 @@ import { ApproveIcon, ArrowIcon } from '../subcomponents/icons.js'
 import { JSX } from 'preact/jsx-runtime'
 import { useSignal } from '@preact/signals'
 import { useEffect } from 'preact/hooks'
-import { AddressBookEntry, ActiveAddress } from '../../types/addressBookTypes.js'
+import { AddressBookEntry, ActiveAddressEntry } from '../../types/addressBookTypes.js'
 import { Website } from '../../types/websiteAccessTypes.js'
 
-export function getActiveAddressEntry(addressToFind: bigint, activeAddresses: readonly ActiveAddress[]) {
+export function getActiveAddressEntry(addressToFind: bigint, activeAddresses: readonly ActiveAddressEntry[]) {
 	for (const info of activeAddresses) {
-		if (info.address === addressToFind) {
-			return info
-		}
+		if (info.address === addressToFind) return info
 	}
 	return {
 		name: checksummedAddress(addressToFind),

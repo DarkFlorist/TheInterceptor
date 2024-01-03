@@ -13,7 +13,7 @@ import { MulticallResponseEventLog, SingleMulticallResponse } from '../types/Jso
 import { APPROVAL_LOG, DEPOSIT_LOG, ERC1155_TRANSFERBATCH_LOG, ERC1155_TRANSFERSINGLE_LOG, ERC721_APPROVAL_FOR_ALL_LOG, TRANSFER_LOG, WITHDRAWAL_LOG } from '../utils/constants.js'
 import { handleApprovalLog, handleDepositLog, handleERC1155TransferBatch, handleERC1155TransferSingle, handleERC20TransferLog, handleErc721ApprovalForAllLog, handleWithdrawalLog } from './logHandlers.js'
 import { RpcEntry } from '../types/rpc.js'
-import { AddressBookEntryCategory, UserAddressBook } from '../types/addressBookTypes.js'
+import { AddressBookEntryCategory } from '../types/addressBookTypes.js'
 import { parseEventIfPossible } from './services/SimulationModeEthereumClientService.js'
 import { Interface } from 'ethers'
 import { extractAbi, extractFunctionArgumentTypes, removeTextBetweenBrackets } from '../utils/abi.js'
@@ -67,11 +67,11 @@ const getTokenEventHandler = (logSender: bigint, type: AddressBookEntryCategory,
 	} 
 }
 
-const parseEvents = async (singleMulticallResponse: SingleMulticallResponse, ethereumClientService: EthereumClientService, userAddressBook: UserAddressBook): Promise<MaybeParsedEvents> => {
+const parseEvents = async (singleMulticallResponse: SingleMulticallResponse, ethereumClientService: EthereumClientService): Promise<MaybeParsedEvents> => {
 	if (singleMulticallResponse.statusCode !== 'success' ) return []
 	return await Promise.all(singleMulticallResponse.events.map(async (event) => {
 		// todo, we should do this parsing earlier, to be able to add possible addresses to addressMetaData set
-		const loggersAddressBookEntry = await identifyAddress(ethereumClientService, userAddressBook, event.loggersAddress)
+		const loggersAddressBookEntry = await identifyAddress(ethereumClientService, event.loggersAddress)
 		const abi = extractAbi(loggersAddressBookEntry, event.loggersAddress)
 		const nonParsed = { ...event, isParsed: 'NonParsed' as const, loggersAddressBookEntry }
 		if (abi === undefined) return nonParsed
@@ -102,9 +102,9 @@ const parseEvents = async (singleMulticallResponse: SingleMulticallResponse, eth
 	}))
 }
 
-export const visualizeTransaction = async (blockNumber: bigint, singleMulticallResponse: SingleMulticallResponse, userAddressBook: UserAddressBook, ethereumClientService: EthereumClientService): Promise<VisualizerResult> => {
+export const visualizeTransaction = async (blockNumber: bigint, singleMulticallResponse: SingleMulticallResponse, ethereumClientService: EthereumClientService): Promise<VisualizerResult> => {
 	if (singleMulticallResponse.statusCode !== 'success') return { ethBalanceChanges: [], events: [], blockNumber }
-	const parsedEvents = await parseEvents(singleMulticallResponse, ethereumClientService, userAddressBook)
+	const parsedEvents = await parseEvents(singleMulticallResponse, ethereumClientService)
 
 	const events: MaybeParsedEventWithExtraData[][] = parsedEvents.map((parsedEvent) => {
 		if (parsedEvent.isParsed === 'NonParsed') return [{ ...parsedEvent, type: 'NonParsed' }]

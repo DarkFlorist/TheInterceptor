@@ -6,7 +6,6 @@ import { parseTransaction } from '../../utils/calldata.js'
 import { SimulationState } from '../../types/visualizer-types.js'
 import { EthereumClientService } from '../services/EthereumClientService.js'
 import { getSimulatedCode } from '../services/SimulationModeEthereumClientService.js'
-import { getSettings } from '../../background/settings.js'
 import { identifyAddress } from '../../background/metadataUtils.js'
 
 export const ADDITIONAL_BAD_TRANSFER_TARGETS = new Set<bigint>([
@@ -18,7 +17,7 @@ export const ADDITIONAL_BAD_TRANSFER_TARGETS = new Set<bigint>([
 export async function getCodeOrError(ethereum: EthereumClientService, simulationState: SimulationState, address: EthereumAddress) {
 	const code = await getSimulatedCode(ethereum, simulationState, address)
 	if (code.statusCode !== 'failure') return code
-	const identifiedAddress = await identifyAddress(ethereum, (await getSettings()).userAddressBook, address)
+	const identifiedAddress = await identifyAddress(ethereum, address)
 	return { statusCode: 'failure' as const, message: `Failed to verify whether address ${ identifiedAddress } contains code or not.` }
 }
 export async function commonTokenOops(transaction: EthereumUnsignedTransaction, ethereum: EthereumClientService, _simulationState: SimulationState) {
@@ -30,6 +29,6 @@ export async function commonTokenOops(transaction: EthereumUnsignedTransaction, 
 	if (tokenMetadata.get(addressString(transferInfo.arguments.to)) === undefined) return
 	if (erc721Metadata.get(addressString(transferInfo.arguments.to)) === undefined) return
 	if (erc1155Metadata.get(addressString(transferInfo.arguments.to)) === undefined) return
-	const to = await identifyAddress(ethereum, (await getSettings()).userAddressBook, transferInfo.arguments.to)
+	const to = await identifyAddress(ethereum, transferInfo.arguments.to)
 	return `Attempt to send tokens to a contract ${ to } that cannot receive such tokens`
 }

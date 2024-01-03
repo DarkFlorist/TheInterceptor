@@ -123,10 +123,3 @@ export const IncompleteAddressBookEntry = funtypes.ReadonlyObject({
 	entrySource: EntrySource,
 	abi: funtypes.Union(funtypes.String, funtypes.Undefined),
 })
-
-export type UserAddressBook = funtypes.Static<typeof UserAddressBook>
-export const UserAddressBook = funtypes.ReadonlyObject({
-	activeAddresses: funtypes.ReadonlyArray(ActiveAddress),
-	contacts: ContactEntries,
-})
-

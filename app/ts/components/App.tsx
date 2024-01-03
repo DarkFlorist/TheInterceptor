@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'preact/hooks'
-import { defaultAddresses } from '../background/settings.js'
+import { defaultActiveAddresses } from '../background/settings.js'
 import { SimulatedAndVisualizedTransaction, SimulationAndVisualisationResults, SimulationState, TokenPriceEstimate, SimulationUpdatingState, SimulationResultState, NamedTokenId } from '../types/visualizer-types.js'
 import { ChangeActiveAddress } from './pages/ChangeActiveAddress.js'
 import { Home } from './pages/Home.js'
@@ -16,7 +16,7 @@ import { version, gitCommitSha } from '../version.js'
 import { sendPopupMessageToBackgroundPage } from '../background/backgroundUtils.js'
 import { EthereumAddress } from '../types/wire-types.js'
 import { checksummedAddress } from '../utils/bigint.js'
-import { ActiveAddress, ActiveAddressEntry, AddressBookEntry, AddressBookEntries } from '../types/addressBookTypes.js'
+import { ActiveAddressEntry, AddressBookEntry, AddressBookEntries } from '../types/addressBookTypes.js'
 import { WebsiteAccessArray } from '../types/websiteAccessTypes.js'
 import { Page } from '../types/exportedSettingsTypes.js'
 import { VisualizedPersonalSignRequest } from '../types/personal-message-definitions.js'
@@ -25,7 +25,7 @@ import { RpcEntries, RpcEntry, RpcNetwork } from '../types/rpc.js'
 export function App() {
 	const [appPage, setAppPage] = useState<Page>({ page: 'Home' })
 	const [makeMeRich, setMakeMeRich] = useState(false)
-	const [activeAddresses, setActiveAddresss] = useState<readonly ActiveAddress[]>(defaultAddresses)
+	const [activeAddresses, setActiveAddresses] = useState<readonly ActiveAddressEntry[]>(defaultActiveAddresses)
 	const [activeSimulationAddress, setActiveSimulationAddress] = useState<bigint | undefined>(undefined)
 	const [activeSigningAddress, setActiveSigningAddress] = useState<bigint | undefined>(undefined)
 	const [useSignersAddressAsActiveAddress, setUseSignersAddressAsActiveAddress] = useState(false)
@@ -105,6 +105,7 @@ export function App() {
 			if (data.tabId !== currentTabId && currentTabId !== undefined) return
 			setIsSettingsLoaded((isSettingsLoaded) => {
 				setRpcEntries(data.rpcEntries)
+				setActiveAddresses(data.activeAddresses)
 				updateHomePageSettings(data.settings, !isSettingsLoaded)
 				setCurrentTabId(data.tabId)
 				setActiveSigningAddress(data.activeSigningAddressInThisTab)
@@ -144,7 +145,6 @@ export function App() {
 			setSelectedNetwork(settings.rpcNetwork)
 			setActiveSimulationAddress(settings.activeSimulationAddress)
 			setUseSignersAddressAsActiveAddress(settings.useSignersAddressAsActiveAddress)
-			setActiveAddresss(settings.userAddressBook.activeAddresses)
 			setWebsiteAccess(settings.websiteAccess)
 		}
 
@@ -186,9 +186,7 @@ export function App() {
 		const bigIntReprentation = BigInt(trimmed)
 		// see if we have that address, if so, let's switch to it
 		for (const activeAddress of activeAddresses) {
-			if ( activeAddress.address === bigIntReprentation) {
-				return await setActiveAddressAndInformAboutIt(activeAddress.address)
-			}
+			if (activeAddress.address === bigIntReprentation) return await setActiveAddressAndInformAboutIt(activeAddress.address)
 		}
 
 		// address not found, let's promt user to create it
