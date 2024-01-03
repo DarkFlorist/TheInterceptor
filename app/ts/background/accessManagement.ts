@@ -1,5 +1,5 @@
 import { getActiveAddress, websiteSocketToString } from './backgroundUtils.js'
-import { getActiveAddressEntry } from './metadataUtils.js'
+import { getActiveAddressEntry, getActiveAddresses } from './metadataUtils.js'
 import { requestAccessFromUser } from './windows/interceptorAccess.js'
 import { retrieveWebsiteDetails, updateExtensionIcon } from './iconHandler.js'
 import { TabConnection, WebsiteTabConnections } from '../types/user-interface-types.js'
@@ -10,6 +10,7 @@ import { Simulator } from '../simulation/simulator.js'
 import { WebsiteSocket } from '../utils/requests.js'
 import { ActiveAddressEntry } from '../types/addressBookTypes.js'
 import { Website, WebsiteAccessArray, WebsiteAddressAccess } from '../types/websiteAccessTypes.js'
+import { getUniqueItemsByProperties } from '../utils/typed-arrays.js'
 
 export function getConnectionDetails(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket) {
 	const identifier = websiteSocketToString(socket)
@@ -26,11 +27,11 @@ function setWebsitePortApproval(websiteTabConnections: WebsiteTabConnections, so
 
 export type ApprovalState = 'hasAccess' | 'noAccess' | 'askAccess'
 
-export function verifyAccess(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, askAccessIfUnknown: boolean, websiteOrigin: string, requestAccessForAddress: bigint | undefined, settings: Settings): ApprovalState {
+export function verifyAccess(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, askAccessIfUnknown: boolean, websiteOrigin: string, requestAccessForAddress: ActiveAddressEntry | undefined, settings: Settings): ApprovalState {
 	const connection = getConnectionDetails(websiteTabConnections, socket)
 	if (connection && connection.approved) return 'hasAccess'
-	const access = requestAccessForAddress !== undefined ? hasAddressAccess(settings.websiteAccess, websiteOrigin, requestAccessForAddress, settings) : hasAccess(settings.websiteAccess, websiteOrigin)
-	if (access === 'hasAccess') return connectToPort(websiteTabConnections, socket, websiteOrigin, settings, requestAccessForAddress) ? 'hasAccess' : 'noAccess'
+	const access = requestAccessForAddress !== undefined ? hasAddressAccess(settings.websiteAccess, websiteOrigin, requestAccessForAddress) : hasAccess(settings.websiteAccess, websiteOrigin)
+	if (access === 'hasAccess') return connectToPort(websiteTabConnections, socket, websiteOrigin, settings, requestAccessForAddress?.address) ? 'hasAccess' : 'noAccess'
 	if (access === 'noAccess') return 'noAccess'
 	return askAccessIfUnknown ? 'askAccess' : 'noAccess'
 }
@@ -56,7 +57,7 @@ export async function sendActiveAccountChangeToApprovedWebsitePorts(websiteTabCo
 			const activeAddress = await getActiveAddressForDomain(connection.websiteOrigin, settings, connection.socket)
 			sendSubscriptionReplyOrCallBack(websiteTabConnections, connection.socket, {
 				method: 'accountsChanged',
-				result: activeAddress !== undefined ? [activeAddress] : []
+				result: activeAddress !== undefined ? [activeAddress.address] : []
 			})
 		}
 	}
@@ -71,19 +72,18 @@ export function hasAccess(websiteAccess: WebsiteAccessArray, websiteOrigin: stri
 	return 'notFound'
 }
 
-export function hasAddressAccess(websiteAccess: WebsiteAccessArray, websiteOrigin: string, address: bigint, settings: Settings) : 'hasAccess' | 'noAccess' | 'notFound' {
+export function hasAddressAccess(websiteAccess: WebsiteAccessArray, websiteOrigin: string, address: ActiveAddressEntry) : 'hasAccess' | 'noAccess' | 'notFound' {
 	for (const web of websiteAccess) {
 		if (web.website.websiteOrigin === websiteOrigin) {
 			if (!web.access) return 'noAccess'
 			if (web.addressAccess !== undefined) {
-				for (const addressAccess of web.addressAccess ) {
-					if ( addressAccess.address === address ) {
+				for (const addressAccess of web.addressAccess) {
+					if (addressAccess.address === address.address) {
 						return addressAccess.access ? 'hasAccess' : 'noAccess'
 					}
 				}
 			}
-			const askForAddressAccess = settings.userAddressBook.activeAddresses.find((x) => x.address === address )?.askForAddressAccess
-			if (askForAddressAccess === false) return 'hasAccess'
+			if (address.askForAddressAccess === false) return 'hasAccess'
 			return 'notFound'
 		}
 	}
@@ -98,8 +98,8 @@ export function getAddressAccesses(websiteAccess: WebsiteAccessArray, websiteOri
 	}
 	return []
 }
-export function getAddressesThatDoNotNeedIndividualAccesses(settings: Settings) : readonly bigint[] {
-	return settings.userAddressBook.activeAddresses.filter( (x) => x.askForAddressAccess === false).map( (x) => x.address)
+export function getAddressesThatDoNotNeedIndividualAccesses(activeAddressEntries: readonly ActiveAddressEntry[]) : readonly ActiveAddressEntry[] {
+	return activeAddressEntries.filter((x) => x.askForAddressAccess === false)
 }
 
 export async function setAccess(website: Website, access: boolean, address: bigint | undefined) {
@@ -169,7 +169,7 @@ export async function setAccess(website: Website, access: boolean, address: bigi
 export async function getActiveAddressForDomain(websiteOrigin: string, settings: Settings, socket: WebsiteSocket) {
 	const activeAddress = await getActiveAddress(settings, socket.tabId)
 	if (activeAddress === undefined) return undefined
-	const hasAccess = hasAddressAccess(settings.websiteAccess, websiteOrigin, activeAddress, settings)
+	const hasAccess = hasAddressAccess(settings.websiteAccess, websiteOrigin, activeAddress)
 	if (hasAccess === 'hasAccess') return activeAddress
 	return undefined
 }
@@ -199,12 +199,11 @@ function disconnectFromPort(websiteTabConnections: WebsiteTabConnections, socket
 	return false
 }
 
-export function getAssociatedAddresses(settings: Settings, websiteOrigin: string, activeAddress: ActiveAddressEntry | undefined) : ActiveAddressEntry[] {
-	const addressAccess = getAddressAccesses(settings.websiteAccess, websiteOrigin).filter( (x) => x.access).map( (x) => x.address)
-	const allAccessAddresses = getAddressesThatDoNotNeedIndividualAccesses(settings)
-
-	const all = allAccessAddresses.concat(addressAccess).concat(activeAddress === undefined ? [] : [activeAddress.address])
-	return Array.from(new Set(all)).map(x => getActiveAddressEntry(x, settings.userAddressBook.activeAddresses))
+export async function getAssociatedAddresses(settings: Settings, websiteOrigin: string, activeAddress: ActiveAddressEntry | undefined) : Promise<readonly ActiveAddressEntry[]> {
+	const addressAccess = await Promise.all(getAddressAccesses(settings.websiteAccess, websiteOrigin).filter((x) => x.access).map((x) => x.address).map((x) => getActiveAddressEntry(x)))
+	const allAccessAddresses = getAddressesThatDoNotNeedIndividualAccesses(await getActiveAddresses())
+	const all = allAccessAddresses.concat(addressAccess).concat(activeAddress === undefined ? [] : [activeAddress])
+	return getUniqueItemsByProperties(all, ['address'])
 }
 
 async function askUserForAccessOnConnectionUpdate(simulator: Simulator, websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, websiteOrigin: string, activeAddress: ActiveAddressEntry | undefined, settings: Settings) {
@@ -221,16 +220,16 @@ async function updateTabConnections(simulator: Simulator, websiteTabConnections:
 		if (connection === undefined) throw new Error('missing connection')
 		const currentActiveAddress = await getActiveAddress(settings, connection.socket.tabId)
 		updateExtensionIcon(websiteTabConnections, connection.socket, connection.websiteOrigin)
-		const access = currentActiveAddress ? hasAddressAccess(settings.websiteAccess, connection.websiteOrigin, currentActiveAddress, settings) : hasAccess(settings.websiteAccess, connection.websiteOrigin)
+		const access = currentActiveAddress ? hasAddressAccess(settings.websiteAccess, connection.websiteOrigin, currentActiveAddress) : hasAccess(settings.websiteAccess, connection.websiteOrigin)
 
 		if (access !== 'hasAccess' && connection.approved) {
 			disconnectFromPort(websiteTabConnections, connection.socket, connection.websiteOrigin)
 		} else if (access === 'hasAccess' && !connection.approved) {
-			connectToPort(websiteTabConnections, connection.socket, connection.websiteOrigin, settings, currentActiveAddress)
+			connectToPort(websiteTabConnections, connection.socket, connection.websiteOrigin, settings, currentActiveAddress?.address)
 		}
 
 		if (access === 'notFound' && connection.wantsToConnect && promptForAccessesIfNeeded) {
-			const activeAddress = currentActiveAddress ? getActiveAddressEntry(currentActiveAddress, settings.userAddressBook.activeAddresses) : undefined
+			const activeAddress = currentActiveAddress !== undefined ? currentActiveAddress : undefined
 			askUserForAccessOnConnectionUpdate(simulator, websiteTabConnections, connection.socket, connection.websiteOrigin, activeAddress, settings)
 		}
 	}

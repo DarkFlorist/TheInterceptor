@@ -5,11 +5,11 @@ import { ModifyAddressWindowState, CompleteVisualizedSimulation, NamedTokenId, P
 import { VisualizedPersonalSignRequest } from './personal-message-definitions.js'
 import { UniqueRequestIdentifier, WebsiteSocket } from '../utils/requests.js'
 import { EthGetLogsResponse, EthGetStorageAtParams, EthTransactionReceiptResponse, GetBlockReturn, GetSimulationStackReply, SendRawTransactionParams, SendTransactionParams, WalletAddEthereumChain } from './JsonRpc-types.js'
-import { AddressBookEntries, AddressBookEntry, ActiveAddressEntry, UserAddressBook } from './addressBookTypes.js'
+import { AddressBookEntries, AddressBookEntry, ActiveAddressEntry } from './addressBookTypes.js'
 import { Page } from './exportedSettingsTypes.js'
 import { PopupOrTabId, Website, WebsiteAccessArray } from './websiteAccessTypes.js'
 import { SignerName } from './signerTypes.js'
-import { ConfirmTransactionDialogState, PendingAccessRequestArray, PendingTransaction } from './accessRequest.js'
+import { ConfirmTransactionDialogState, PendingAccessRequests, PendingTransaction } from './accessRequest.js'
 import { CodeMessageError, RpcEntries, RpcEntry, RpcNetwork } from './rpc.js'
 import { OldSignTypedDataParams, PersonalSignParams, SignTypedDataParams } from './jsonRpc-signing-types.js'
 
@@ -459,7 +459,10 @@ export const InterceptorAccess = funtypes.ReadonlyObject({
 export type InterceptorAccessDialog = funtypes.Static<typeof InterceptorAccessDialog>
 export const InterceptorAccessDialog = funtypes.ReadonlyObject({
 	method: funtypes.Union(funtypes.Literal('popup_interceptorAccessDialog'), funtypes.Literal('popup_interceptor_access_dialog_pending_changed')),
-	data: PendingAccessRequestArray
+	data: funtypes.ReadonlyObject({
+		activeAddresses: funtypes.ReadonlyArray(ActiveAddressEntry),
+		pendingAccessRequests: PendingAccessRequests,
+	})
 })
 
 export type Settings = funtypes.Static<typeof Settings>
@@ -470,7 +473,6 @@ export const Settings = funtypes.ReadonlyObject({
 	useSignersAddressAsActiveAddress: funtypes.Boolean,
 	websiteAccess: WebsiteAccessArray,
 	simulationMode: funtypes.Boolean,
-	userAddressBook: UserAddressBook,
 })
 
 export type PartialUpdateHomePage = funtypes.Static<typeof PartialUpdateHomePage>
@@ -485,6 +487,7 @@ export const UpdateHomePage = funtypes.ReadonlyObject({
 	data: funtypes.ReadonlyObject({
 		visualizedSimulatorState: funtypes.Union(CompleteVisualizedSimulation, funtypes.Undefined),
 		websiteAccessAddressMetadata: funtypes.ReadonlyArray(ActiveAddressEntry),
+		activeAddresses: funtypes.ReadonlyArray(ActiveAddressEntry),
 		tabState: funtypes.Union(funtypes.Undefined, TabState),
 		currentBlockNumber: funtypes.Union(EthereumQuantity, funtypes.Undefined),
 		settings: Settings,

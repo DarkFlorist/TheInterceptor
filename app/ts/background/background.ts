@@ -25,7 +25,7 @@ import { craftPersonalSignPopupMessage, updatePendingPersonalSignViewWithPending
 import { InterceptedRequest, UniqueRequestIdentifier, WebsiteSocket } from '../utils/requests.js'
 import { replyToInterceptedRequest } from './messageSending.js'
 import { EthGetStorageAtParams, EthereumJsonRpcRequest, SendRawTransactionParams, SendTransactionParams, SupportedEthereumJsonRpcRequestMethods, WalletAddEthereumChain } from '../types/JsonRpc-types.js'
-import { AddressBookEntry, UserAddressBook } from '../types/addressBookTypes.js'
+import { AddressBookEntry } from '../types/addressBookTypes.js'
 import { Website } from '../types/websiteAccessTypes.js'
 import { ConfirmTransactionTransactionSingleVisualization, PendingTransaction } from '../types/accessRequest.js'
 import { RpcNetwork } from '../types/rpc.js'
@@ -40,12 +40,12 @@ import { connectedToSigner, ethAccountsReply, signerChainChanged, walletSwitchEt
 async function updateMetadataForSimulation(simulationState: SimulationState, ethereum: EthereumClientService, visualizerResults: readonly VisualizerResult[], protectorResults: readonly ProtectorResults[]) {
 	const settingsPromise = getSettings()
 	const settings = await settingsPromise
-	const addressBookEntryPromises = getAddressBookEntriesForVisualiser(ethereum, visualizerResults, simulationState, settings.userAddressBook)
+	const addressBookEntryPromises = getAddressBookEntriesForVisualiser(ethereum, visualizerResults, simulationState)
 	const namedTokenIdPromises = nameTokenIds(ethereum, visualizerResults)
 	const addressBookEntries = await addressBookEntryPromises
 	const namedTokenIds = await namedTokenIdPromises
 	const simulatedAndVisualizedTransactions = formSimulatedAndVisualizedTransaction(simulationState, visualizerResults, protectorResults, addressBookEntries, namedTokenIds)
-	const VisualizedPersonalSignRequest = simulationState.signedMessages.map((signedMessage) => craftPersonalSignPopupMessage(ethereum, signedMessage, settings.rpcNetwork, settings.userAddressBook))
+	const VisualizedPersonalSignRequest = simulationState.signedMessages.map((signedMessage) => craftPersonalSignPopupMessage(ethereum, signedMessage, settings.rpcNetwork))
 	return {
 		namedTokenIds,
 		addressBookEntries: addressBookEntries,
@@ -54,7 +54,7 @@ async function updateMetadataForSimulation(simulationState: SimulationState, eth
 	}
 }
 
-export const simulateGovernanceContractExecution = async (pendingTransaction: PendingTransaction, ethereum: EthereumClientService, userAddressBook: UserAddressBook) => {
+export const simulateGovernanceContractExecution = async (pendingTransaction: PendingTransaction, ethereum: EthereumClientService) => {
 	const returnError = (text: string) => ({ success: false as const, error: { type: 'Other' as const, message: text } })
 	try {
 		// identifies compound governane call and performs simulation if the vote passes
@@ -78,7 +78,7 @@ export const simulateGovernanceContractExecution = async (pendingTransaction: Pe
 		if (voteFunction === null) return returnError('Could not find the voting function')
 		if (pendingTransaction.transactionToSimulate.transaction.to === null) return returnError('The transaction creates a contract instead of casting a vote')
 		const params = governanceContractInterface.decodeFunctionData(voteFunction, dataStringWith0xStart(pendingTransaction.transactionToSimulate.transaction.input))
-		const addr = await identifyAddress(ethereum, userAddressBook, pendingTransaction.transactionToSimulate.transaction.to)
+		const addr = await identifyAddress(ethereum, pendingTransaction.transactionToSimulate.transaction.to)
 		if (!('abi' in addr) || addr.abi === undefined) return { success: false as const, error: { type: 'MissingAbi' as const, message: 'ABi for the governance contract is missing', addressBookEntry: addr } }
 		const contractExecutionResult = await simulateCompoundGovernanceExecution(ethereum, addr, params[0])
 		if (contractExecutionResult === undefined) return returnError('Failed to simulate governance execution')
@@ -126,8 +126,7 @@ async function visualizeSimulatorState(simulationState: SimulationState, ethereu
 	const transactions = getWebsiteCreatedEthereumUnsignedTransactions(simulationState.simulatedTransactions)
 
 	const blockNum = await ethereum.getBlockNumber()
-	const userAddressBook = (await getSettings()).userAddressBook
-	const visualizerResultsPromise = Promise.all(simulationState.simulatedTransactions.map(async (simulatedTransaction) => await visualizeTransaction(blockNum, simulatedTransaction.multicallResponse, userAddressBook, ethereum)))
+	const visualizerResultsPromise = Promise.all(simulationState.simulatedTransactions.map(async (simulatedTransaction) => await visualizeTransaction(blockNum, simulatedTransaction.multicallResponse, ethereum)))
 	const protectorPromises = Promise.all(transactions.map(async (transaction) => await runProtectorsForTransaction(simulationState, transaction, ethereum)))
 	
 	const protectors = await protectorPromises
@@ -502,11 +501,11 @@ export const handleInterceptedRequest = async (port: browser.runtime.Port | unde
 	}
 
 	switch (access) {
-		case 'askAccess': return await gateKeepRequestBehindAccessDialog(simulator, websiteTabConnections, socket, request, await websitePromise, activeAddress, await getSettings())
+		case 'askAccess': return await gateKeepRequestBehindAccessDialog(simulator, websiteTabConnections, socket, request, await websitePromise, activeAddress?.address, await getSettings())
 		case 'noAccess': return refuseAccess(websiteTabConnections, request)
 		case 'hasAccess': {
 			if (activeAddress === undefined) return refuseAccess(websiteTabConnections, request)
-			return await handleContentScriptMessage(simulator, websiteTabConnections, request, await websitePromise, activeAddress)
+			return await handleContentScriptMessage(simulator, websiteTabConnections, request, await websitePromise, activeAddress?.address)
 		}
 		default: assertNever(access)
 	}
@@ -565,7 +564,7 @@ export function refuseAccess(websiteTabConnections: WebsiteTabConnections, reque
 }
 
 export async function gateKeepRequestBehindAccessDialog(simulator: Simulator, websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, request: InterceptedRequest, website: Website, currentActiveAddress: bigint | undefined, settings: Settings) {
-	const activeAddress = currentActiveAddress !== undefined ? getActiveAddressEntry(currentActiveAddress, settings.userAddressBook.activeAddresses) : undefined
+	const activeAddress = currentActiveAddress !== undefined ? await getActiveAddressEntry(currentActiveAddress) : undefined
 	return await requestAccessFromUser(simulator, websiteTabConnections, socket, website, request, activeAddress, settings, currentActiveAddress)
 }
 
@@ -599,7 +598,7 @@ export async function popupMessageHandler(
 		case 'popup_removeSignedMessage': return await removeSignedMessage(simulator, simulator.ethereum, parsedRequest, settings)
 		case 'popup_refreshSimulation': return await refreshSimulation(simulator, simulator.ethereum, settings)
 		case 'popup_refreshConfirmTransactionDialogSimulation': return await refreshPopupConfirmTransactionSimulation(simulator, simulator.ethereum)
-		case 'popup_refreshConfirmTransactionMetadata': return refreshPopupConfirmTransactionMetadata(simulator.ethereum, settings.userAddressBook, parsedRequest)
+		case 'popup_refreshConfirmTransactionMetadata': return refreshPopupConfirmTransactionMetadata(simulator.ethereum, parsedRequest)
 		case 'popup_personalSignApproval': return await confirmPersonalSign(simulator, websiteTabConnections, parsedRequest)
 		case 'popup_interceptorAccess': return await confirmRequestAccess(simulator, websiteTabConnections, parsedRequest)
 		case 'popup_changeInterceptorAccess': return await changeInterceptorAccess(simulator, websiteTabConnections, parsedRequest)
@@ -607,7 +606,7 @@ export async function popupMessageHandler(
 		case 'popup_changeChainDialog': return await changeChainDialog(simulator, websiteTabConnections, parsedRequest)
 		case 'popup_enableSimulationMode': return await enableSimulationMode(simulator, websiteTabConnections, parsedRequest)
 		case 'popup_addOrModifyAddressBookEntry': return await addOrModifyAddressBookEntry(simulator, websiteTabConnections, parsedRequest)
-		case 'popup_getAddressBookData': return await getAddressBookData(parsedRequest, settings.userAddressBook)
+		case 'popup_getAddressBookData': return await getAddressBookData(parsedRequest)
 		case 'popup_removeAddressBookEntry': return await removeAddressBookEntry(simulator, websiteTabConnections, parsedRequest)
 		case 'popup_openAddressBook': return await openNewTab('addressBook')
 		case 'popup_personalSignReadyAndListening': return await updatePendingPersonalSignViewWithPendingRequests(simulator.ethereum)
@@ -626,8 +625,8 @@ export async function popupMessageHandler(
 		case 'popup_import_settings': return await importSettings(parsedRequest)
 		case 'popup_get_export_settings': return await exportSettings()
 		case 'popup_set_rpc_list': return await setNewRpcList(simulator, parsedRequest, settings)
-		case 'popup_simulateGovernanceContractExecution': return await simulateGovernanceContractExecutionOnPass(simulator.ethereum, settings.userAddressBook, parsedRequest)
-		case 'popup_changeAddOrModifyAddressWindowState': return await changeAddOrModifyAddressWindowState(simulator.ethereum, parsedRequest, settings)
+		case 'popup_simulateGovernanceContractExecution': return await simulateGovernanceContractExecutionOnPass(simulator.ethereum, parsedRequest)
+		case 'popup_changeAddOrModifyAddressWindowState': return await changeAddOrModifyAddressWindowState(simulator.ethereum, parsedRequest)
 		case 'popup_fetchAbiAndNameFromEtherscan': return await popupFetchAbiAndNameFromEtherscan(parsedRequest)
 		case 'popup_openWebPage': return await openWebPage(parsedRequest)
 		default: assertUnreachable(parsedRequest)

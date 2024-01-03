@@ -6,7 +6,7 @@ import { AddressBookEntries, ActiveAddressArray, ContactEntries } from '../types
 import { Page } from '../types/exportedSettingsTypes.js'
 import { WebsiteAccessArray } from '../types/websiteAccessTypes.js'
 import { SignerName } from '../types/signerTypes.js'
-import { PendingAccessRequestArray, PendingTransaction } from '../types/accessRequest.js'
+import { PendingAccessRequests, PendingTransaction } from '../types/accessRequest.js'
 import { RpcEntries, RpcNetwork } from '../types/rpc.js'
 
 export type IdsOfOpenedTabs = funtypes.Static<typeof IdsOfOpenedTabs>
@@ -31,7 +31,7 @@ export const LocalStorageItems = funtypes.ReadonlyPartial({
 	websiteAccess: WebsiteAccessArray,
 	rpcNetwork: RpcNetwork,
 	simulationMode: funtypes.Boolean,
-	pendingInterceptorAccessRequests: PendingAccessRequestArray,
+	pendingInterceptorAccessRequests: PendingAccessRequests,
 	contacts: ContactEntries,
 	makeMeRich: funtypes.Boolean,
 	transactionsPendingForUserConfirmation: funtypes.ReadonlyArray(PendingTransaction),

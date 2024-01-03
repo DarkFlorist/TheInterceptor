@@ -12,7 +12,7 @@ import { getPrettySignerName } from '../subcomponents/signers.js'
 import { addressString, checksummedAddress } from '../../utils/bigint.js'
 import { ActiveAddressEntry, AddressBookEntry } from '../../types/addressBookTypes.js'
 import { Website } from '../../types/websiteAccessTypes.js'
-import { PendingAccessRequest, PendingAccessRequestArray } from '../../types/accessRequest.js'
+import { PendingAccessRequest, PendingAccessRequests } from '../../types/accessRequest.js'
 import { Page } from '../../types/exportedSettingsTypes.js'
 
 const HALF_HEADER_HEIGHT = 48 / 2
@@ -36,7 +36,7 @@ function AccessRequestHeader(website: Website) {
 }
 
 type UnderTransactionsParams = {
-	reversedPendingAccessRequestArray: PendingAccessRequestArray
+	reversedPendingAccessRequestArray: PendingAccessRequests
 }
 
 function UnderAccesses(param: UnderTransactionsParams) {
@@ -143,7 +143,7 @@ function AccessRequest({ renameAddressCallBack, accessRequest, changeActiveAddre
 
 type AccessRequestParam = {
 	renameAddressCallBack: (entry: AddressBookEntry) => void
-	pendingAccessRequestArray: PendingAccessRequestArray
+	pendingAccessRequestArray: PendingAccessRequests
 	changeActiveAddress: () => void
 	refreshActiveAddress: () => void
 }
@@ -172,7 +172,8 @@ function AccessRequests(param: AccessRequestParam) {
 const DISABLED_DELAY_MS = 3000
 
 export function InterceptorAccess() {
-	const [pendingAccessRequestArray, setAccessRequest] = useState<PendingAccessRequestArray>([])
+	const [pendingAccessRequestArray, setAccessRequest] = useState<PendingAccessRequests>([])
+	const [activeAddresses, setActiveAddresses] = useState<readonly ActiveAddressEntry[]>([])
 	const [appPage, setAppPage] = useState<Page>({ page: 'Home' })
 	const [informationUpdatedTimestamp, setInformationUpdatedTimestamp] = useState(0)
 	const [, setTimeSinceInformationUpdate] = useState(0)
@@ -190,7 +191,8 @@ export function InterceptorAccess() {
 					if (pendingAccessRequestArray.length > 0) setInformationUpdatedTimestamp(Date.now())
 					setPendingRequestAddedNotification(true)
 				}
-				setAccessRequest(parsed.data)
+				setAccessRequest(parsed.data.pendingAccessRequests)
+				setActiveAddresses(parsed.data.activeAddresses)
 				return
 			}
 		}
@@ -342,7 +344,7 @@ export function InterceptorAccess() {
 						setActiveAddressAndInformAboutIt = { setActiveAddressAndInformAboutIt }
 						signerAccounts = { pendingAccessRequest.signerAccounts }
 						setAndSaveAppPage = { setAppPage }
-						activeAddresses = { pendingAccessRequest.activeAddresses }
+						activeAddresses = { activeAddresses }
 						signerName = { pendingAccessRequest.signerName }
 						renameAddressCallBack = { renameAddressCallBack }
 						addNewAddress = { addNewAddress }

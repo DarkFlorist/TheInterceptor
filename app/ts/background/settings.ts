@@ -3,25 +3,30 @@ import { ExportedSettings, Page } from '../types/exportedSettingsTypes.js'
 import { Settings } from '../types/interceptor-messages.js'
 import { Semaphore } from '../utils/semaphore.js'
 import { EthereumAddress } from '../types/wire-types.js'
-import { ActiveAddressArray, ContactEntries } from '../types/addressBookTypes.js'
 import { WebsiteAccessArray } from '../types/websiteAccessTypes.js'
 import { RpcNetwork } from '../types/rpc.js'
 import { NetworkPrice } from '../types/visualizer-types.js'
 import { browserStorageLocalGet, browserStorageLocalSet } from '../utils/storageUtils.js'
+import { getUserAddressBookEntries, updateUserAddressBookEntries } from './storageVariables.js'
+import { ActiveAddress } from '../types/addressBookTypes.js'
+import { getUniqueItemsByProperties } from '../utils/typed-arrays.js'
 
-export const defaultAddresses = [
+export const defaultActiveAddresses = [
 	{
+		type: 'activeAddress' as const,
+		entrySource: 'User' as const,
 		name: 'vitalik.eth',
 		address: 0xd8da6bf26964af9d7eed9e03e53415d37aa96045n,
 		askForAddressAccess: false,
 	},
 	{
+		type: 'activeAddress' as const,
+		entrySource: 'User' as const,
 		name: 'Public private key',
 		address: MOCK_PRIVATE_KEYS_ADDRESS,
 		askForAddressAccess: false,
 	}
 ]
-
 export const networkPriceSources: { [chainId: string]: NetworkPrice } = {
 	'1': {
 		quoteToken: { address: 0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2n, decimals: 18n, symbol: 'ETH' },
@@ -108,26 +113,20 @@ export const defaultRpcs = [
 export async function getSettings() : Promise<Settings> {
 	const results = await browserStorageLocalGet([
 		'activeSimulationAddress',
-		'addressInfos',
 		'openedPage',
 		'useSignersAddressAsActiveAddress',
 		'websiteAccess',
 		'rpcNetwork',
 		'simulationMode',
-		'contacts',
 	])
-	if (defaultRpcs[0] === undefined || defaultAddresses[0] === undefined) throw new Error('default rpc or default address was missing')
+	if (defaultRpcs[0] === undefined || defaultActiveAddresses[0] === undefined) throw new Error('default rpc or default address was missing')
 	return {
-		activeSimulationAddress: 'activeSimulationAddress' in results ? results.activeSimulationAddress : defaultAddresses[0].address,
+		activeSimulationAddress: 'activeSimulationAddress' in results ? results.activeSimulationAddress : defaultActiveAddresses[0].address,
 		openedPage: results.openedPage ?? { page: 'Home' },
 		useSignersAddressAsActiveAddress: results.useSignersAddressAsActiveAddress ?? false,
 		websiteAccess: results.websiteAccess ?? [],
 		rpcNetwork: results.rpcNetwork !== undefined ? results.rpcNetwork : defaultRpcs[0],
 		simulationMode: results.simulationMode ?? true,
-		userAddressBook: {
-			activeAddresses: results.addressInfos ?? defaultAddresses,
-			contacts: results.contacts ?? [],
-		}
 	}
 }
 
@@ -161,22 +160,6 @@ export async function updateWebsiteAccess(updateFunc: (prevState: WebsiteAccessA
 	})
 }
 
-const getActiveAddresses = async() => (await browserStorageLocalGet('addressInfos'))?.['addressInfos'] ?? defaultAddresses
-const activeAddressesSemaphore = new Semaphore(1)
-export async function updateActiveAddresses(updateFunc: (prevState: ActiveAddressArray) => ActiveAddressArray) {
-	await activeAddressesSemaphore.execute(async () => {
-		return await browserStorageLocalSet({ addressInfos: updateFunc(await getActiveAddresses()) })
-	})
-}
-
-const getContacts = async() => (await browserStorageLocalGet('contacts'))?.['contacts'] ?? []
-const contactsSemaphore = new Semaphore(1)
-export async function updateContacts(updateFunc: (prevState: ContactEntries) => ContactEntries) {
-	await contactsSemaphore.execute(async () => {
-		return await browserStorageLocalSet({ contacts: updateFunc(await getContacts()) })
-	})
-}
-
 export const getUseTabsInsteadOfPopup = async() => (await browserStorageLocalGet('useTabsInsteadOfPopup'))?.['useTabsInsteadOfPopup'] ?? false
 export const setUseTabsInsteadOfPopup = async(useTabsInsteadOfPopup: boolean) => await browserStorageLocalSet({ useTabsInsteadOfPopup })
 
@@ -189,17 +172,16 @@ export async function exportSettingsAndAddressBook(): Promise<ExportedSettings> 
 	const settings = await getSettings()
 	return {
 		name: 'InterceptorSettingsAndAddressBook' as const,
-		version: '1.3' as const,
+		version: '1.4' as const,
 		exportedDate: exportDate,
 		settings: {
 			activeSimulationAddress: settings.activeSimulationAddress,
-			addressInfos: settings.userAddressBook.activeAddresses,
 			openedPage: settings.openedPage,
 			useSignersAddressAsActiveAddress: settings.useSignersAddressAsActiveAddress,
 			websiteAccess: settings.websiteAccess,
 			rpcNetwork: settings.rpcNetwork,
 			simulationMode: settings.simulationMode,
-			contacts: settings.userAddressBook.contacts,
+			addressBookEntries: await getUserAddressBookEntries(),
 			useTabsInsteadOfPopup: await getUseTabsInsteadOfPopup(),
 			metamaskCompatibilityMode: await getMetamaskCompatibilityMode(),
 		}
@@ -225,11 +207,17 @@ export async function importSettingsAndAddressBook(exportedSetings: ExportedSett
 		})
 	}
 	await setUseSignersAddressAsActiveAddress(exportedSetings.settings.useSignersAddressAsActiveAddress)
-	await updateActiveAddresses(() => exportedSetings.settings.addressInfos)
 	await updateWebsiteAccess(() => exportedSetings.settings.websiteAccess)
-	await updateContacts(() => exportedSetings.settings.contacts === undefined ? [] : exportedSetings.settings.contacts)
 	await setUseTabsInsteadOfPopup(exportedSetings.settings.useTabsInsteadOfPopup)
 	if (exportedSetings.version === '1.2') {
 		await setUseTabsInsteadOfPopup(exportedSetings.settings.metamaskCompatibilityMode)
+	}
+	if (exportedSetings.version === '1.4') {
+		await updateUserAddressBookEntries(() => exportedSetings.settings.addressBookEntries)
+	} else {
+		await updateUserAddressBookEntries((previousEntries) => {
+			const convertActiveAddressToAddressBookEntry = (info: ActiveAddress) => ({ ...info, type: 'activeAddress' as const, entrySource: 'User' as const })
+			return getUniqueItemsByProperties(previousEntries.concat(exportedSetings.settings.addressInfos.map((x) => convertActiveAddressToAddressBookEntry(x))).concat(exportedSetings.settings.contacts ?? []), ['address'])
+		})
 	}
 }
