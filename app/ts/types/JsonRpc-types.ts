@@ -97,10 +97,6 @@ export const DappRequestTransaction = funtypes.ReadonlyPartial({
 	input: EthereumData,
 }).withConstraint((dappRequestTransaction) => {
 	if (dappRequestTransaction.input !== undefined && dappRequestTransaction.data !== undefined) {
-		if (typeof dappRequestTransaction.input === 'string') {
-			// workaround for https://github.com/ForbesLindesay/funtypes/issues/62
-			return dappRequestTransaction.input === dappRequestTransaction.data
-		}
 		return areEqualUint8Arrays(dappRequestTransaction.input, dappRequestTransaction.data)
 	}
 	return true
