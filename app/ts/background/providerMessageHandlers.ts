@@ -16,14 +16,14 @@ export async function ethAccountsReply(simulator: Simulator, websiteTabConnectio
 	if (!('params' in request)) return returnValue
 	if (port.sender?.tab?.id === undefined) return returnValue
 
-	const signerAccountsReply = EthereumAccountsReply.parse(request.params)
-	if (signerAccountsReply[0].type === 'error') {
-		const error = signerAccountsReply[0].error
+	const [signerAccountsReply] = EthereumAccountsReply.parse(request.params)
+	if (signerAccountsReply.type === 'error') {
+		const error = signerAccountsReply.error
 		await updateTabState(port.sender.tab.id, (previousState: TabState) => ({ ...previousState, signerAccountError: error } ))
 		await sendPopupMessageToOpenWindows({ method: 'popup_accounts_update' })
 		return returnValue
 	}
-	const signerAccounts = signerAccountsReply[0].accounts
+	const signerAccounts = signerAccountsReply.accounts
 	const activeSigningAddress = signerAccounts.length > 0 ? signerAccounts[0] : undefined
 	const tabStateChange = await updateTabState(port.sender.tab.id, (previousState: TabState) => {
 		return {
