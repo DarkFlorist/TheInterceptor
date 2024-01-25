@@ -49,6 +49,23 @@ export interface IUnsignedTransaction1559 {
 	}[]
 }
 
+export interface OptionalIUnsignedTransaction1559 {
+	readonly type: '1559'
+	readonly from: bigint
+	readonly chainId: bigint
+	readonly nonce: bigint
+	readonly maxFeePerGas?: bigint
+	readonly maxPriorityFeePerGas: bigint
+	readonly gasLimit: bigint
+	readonly to: bigint | null
+	readonly value: bigint
+	readonly input: Uint8Array
+	readonly accessList: readonly {
+		readonly address: bigint
+		readonly storageKeys: readonly bigint[]
+	}[]
+}
+
 export type ITransactionSignatureLegacy = {
 	readonly r: bigint
 	readonly s: bigint

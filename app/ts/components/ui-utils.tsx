@@ -3,7 +3,6 @@ import { Ref, useEffect } from 'preact/hooks'
 import { getUseTabsInsteadOfPopup } from '../background/settings.js'
 import { assertNever } from '../utils/typescript.js'
 import { ComponentChildren } from 'preact'
-import { RpcNetwork } from '../types/rpc.js'
 import { EthereumAddress } from '../types/wire-types.js'
 import { AddressBookEntry } from '../types/addressBookTypes.js'
 import { checksummedAddress } from '../utils/bigint.js'
@@ -196,18 +195,6 @@ export const CellElement = (param: { text: ComponentChildren }) => {
 	return <div class = 'log-cell' style = 'justify-content: right;'>
 		<p class = 'paragraph' style = 'color: var(--subtitle-text-color); text-overflow: ellipsis; overflow: hidden;'>{ param.text }</p>
 	</div>
-}
-
-export const getArtificialERC20ForEth = (rpcNetwork: RpcNetwork) => {
-	return {
-		address: 0n,
-		logoUri: '../../img/coins/ethereum.png',
-		symbol: rpcNetwork.currencyTicker,
-		decimals: 18n,
-		name: rpcNetwork.currencyName,
-		type: 'ERC20' as const,
-		entrySource: 'DarkFloristMetadata' as const,
-	}
 }
 
 export const getAddressBookEntryOrAFiller = (addressMetaData: readonly AddressBookEntry[], addressToFind: EthereumAddress) => {

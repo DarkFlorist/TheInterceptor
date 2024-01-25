@@ -7,6 +7,7 @@ export const SUSHISWAP_V2_ROUTER_ADDRESS = 0xd9e1cE17f2641f24aE83637ab66a2cca9C3
 export const UNISWAP_V3_ROUTER = 0xE592427A0AEce92De3Edee1F18E0157C05861564n
 export const UNISWAP_V3_NFT_ROUTER = 0xC36442b4a4522E871399CD717aBDD847Ab11FE88n
 export const MULTICALL3 = 0xcA11bde05977b3631167028862bE2a173976CA11n // Contract for bundling bulk call transactions, deployed on every chain. https://github.com/mds1/multicall
+export const ETHEREUM_LOGS_LOGGER_ADDRESS = 0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeEn
 
 export const Multicall3ABI = [
 	'function aggregate3(tuple(address target, bool allowFailure, bytes callData)[] calls) payable returns (tuple(bool success, bytes returnData)[] returnData)',
@@ -87,6 +88,8 @@ export const ICON_SIMULATING = '../img/head-simulating.png' as const
 export const ICON_SIGNING = '../img/head-signing.png' as const
 export const ICON_SIGNING_NOT_SUPPORTED = '../img/head-signing-unsupported-network.png' as const
 export const DEFAULT_TAB_CONNECTION = { icon: ICON_NOT_ACTIVE, iconReason: 'The website has not requested to connect to The Interceptor.' }
+
+export const ETHEREUM_COIN_ICON = '../../img/coins/ethereum.png'
 
 export const MAKE_YOU_RICH_TRANSACTION = {
 	transaction: {

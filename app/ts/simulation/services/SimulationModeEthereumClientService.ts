@@ -1,7 +1,7 @@
 import { EthereumClientService } from './EthereumClientService.js'
 import { EthereumUnsignedTransaction, EthereumSignedTransactionWithBlockData, EthereumBlockTag, EthereumAddress, EthereumBlockHeader, EthereumBlockHeaderWithTransactionHashes, EthereumSignedTransaction, EthereumData, EthereumQuantity, EthereumBytes32 } from '../../types/wire-types.js'
 import { addressString, bytes32String, dataStringWith0xStart, max, min, stringToUint8Array } from '../../utils/bigint.js'
-import { CANNOT_SIMULATE_OFF_LEGACY_BLOCK, ERROR_INTERCEPTOR_GAS_ESTIMATION_FAILED, MOCK_ADDRESS, MULTICALL3, Multicall3ABI } from '../../utils/constants.js'
+import { CANNOT_SIMULATE_OFF_LEGACY_BLOCK, ERROR_INTERCEPTOR_GAS_ESTIMATION_FAILED, ETHEREUM_LOGS_LOGGER_ADDRESS, MOCK_ADDRESS, MULTICALL3, Multicall3ABI } from '../../utils/constants.js'
 import { Interface, TypedDataEncoder, ethers, hashMessage, keccak256, } from 'ethers'
 import { WebsiteCreatedEthereumUnsignedTransaction, SimulatedTransaction, SimulationState, TokenBalancesAfter, EstimateGasError, SignedMessageTransaction, WebsiteCreatedEthereumUnsignedTransactionOrFailed } from '../../types/visualizer-types.js'
 import { EthereumUnsignedTransactionToUnsignedTransaction, IUnsignedTransaction1559, serializeSignedTransactionToBytes } from '../../utils/ethereum.js'
@@ -758,7 +758,7 @@ const getSimulatedTokenBalances = async (ethereumClientService: EthereumClientSe
 	const erc20TokenInterface = new ethers.Interface(['function balanceOf(address account) view returns (uint256)'])
 	const erc1155TokenInterface = new ethers.Interface(['function balanceOf(address _owner, uint256 _id) external view returns(uint256)'])
 	const tokenAndEthBalancesInputData = stringToUint8Array(IMulticall3.encodeFunctionData('aggregate3', [balanceQueries.map((balanceQuery) => {
-		if (balanceQuery.token === 0n && balanceQuery.type == 'ERC20') {
+		if (balanceQuery.token === ETHEREUM_LOGS_LOGGER_ADDRESS && balanceQuery.type == 'ERC20') {
 			return {
 				target: addressString(MULTICALL3),
 				allowFailure: true,

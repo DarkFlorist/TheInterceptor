@@ -65,7 +65,7 @@ export const  ExecutionSpec383MultiCallParamObject = funtypes.ReadonlyObject({
 
 export type ExecutionSpec383MultiCallParams = funtypes.Static<typeof ExecutionSpec383MultiCallParams>
 export const ExecutionSpec383MultiCallParams = funtypes.ReadonlyObject({
-	method: funtypes.Literal('eth_multicallV1'),
+	method: funtypes.Literal('eth_simulateV1'),
 	params: funtypes.ReadonlyTuple(ExecutionSpec383MultiCallParamObject, EthereumBlockTag),
 })
 
