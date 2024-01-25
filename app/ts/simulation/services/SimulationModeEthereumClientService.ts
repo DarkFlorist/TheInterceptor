@@ -1,11 +1,11 @@
 import { EthereumClientService } from './EthereumClientService.js'
 import { EthereumUnsignedTransaction, EthereumSignedTransactionWithBlockData, EthereumBlockTag, EthereumAddress, EthereumBlockHeader, EthereumBlockHeaderWithTransactionHashes, EthereumSignedTransaction, EthereumData, EthereumQuantity, EthereumBytes32 } from '../../types/wire-types.js'
-import { addressString, bytes32String, dataStringWith0xStart, max, min, stringToUint8Array } from '../../utils/bigint.js'
+import { addressString, bytes32String, calculateWeightedPercentile, dataStringWith0xStart, max, min, stringToUint8Array } from '../../utils/bigint.js'
 import { CANNOT_SIMULATE_OFF_LEGACY_BLOCK, ERROR_INTERCEPTOR_GAS_ESTIMATION_FAILED, MOCK_ADDRESS, MULTICALL3, Multicall3ABI } from '../../utils/constants.js'
 import { Interface, TypedDataEncoder, ethers, hashMessage, keccak256, } from 'ethers'
 import { WebsiteCreatedEthereumUnsignedTransaction, SimulatedTransaction, SimulationState, TokenBalancesAfter, EstimateGasError, SignedMessageTransaction, WebsiteCreatedEthereumUnsignedTransactionOrFailed } from '../../types/visualizer-types.js'
 import { EthereumUnsignedTransactionToUnsignedTransaction, IUnsignedTransaction1559, serializeSignedTransactionToBytes } from '../../utils/ethereum.js'
-import { EthGetLogsResponse, EthGetLogsRequest, EthTransactionReceiptResponse, MulticallResponseEventLogs, MulticallResponse, DappRequestTransaction, MulticallResponseEventLog } from '../../types/JsonRpc-types.js'
+import { EthGetLogsResponse, EthGetLogsRequest, EthTransactionReceiptResponse, MulticallResponseEventLogs, MulticallResponse, DappRequestTransaction, MulticallResponseEventLog, EthGetFeeHistoryResponse, FeeHistory } from '../../types/JsonRpc-types.js'
 import { handleERC1155TransferBatch, handleERC1155TransferSingle } from '../logHandlers.js'
 import { assertNever } from '../../utils/typescript.js'
 import { SignMessageParams } from '../../types/jsonRpc-signing-types.js'
@@ -916,5 +916,29 @@ export const appendSignedMessage = async (ethereumClientService: EthereumClientS
 	return {
 		...simulationState,
 		signedMessages: simulationState.signedMessages.concat(signedMessage)
+	}
+}
+
+// takes the most recent block that the application is querying and does the calculation based on that
+export const getSimulatedFeeHistory = async (ethereumClientService: EthereumClientService, simulationState: SimulationState | undefined, request: FeeHistory): Promise<EthGetFeeHistoryResponse> => {
+	//const numberOfBlocks = request.params[0]
+	const blockTag = request.params[1]
+	const rewardPercentiles = request.params[2]
+	const newestBlock = await getSimulatedBlock(ethereumClientService, simulationState, blockTag, true)
+	const blocksToConsider = [newestBlock]
+	const oldestBlock = blocksToConsider[0]?.number
+	if (oldestBlock === undefined) throw new Error('oldest block was undefined')
+	return {
+		baseFeePerGas: blocksToConsider.map((block) => block.baseFeePerGas).filter((baseFeePerGas): baseFeePerGas is bigint => !!baseFeePerGas),
+		gasUsedRatio: blocksToConsider.map((block) => Number(block.gasUsed) / Number(block.gasLimit)).filter((gasUsedRatio): gasUsedRatio is number => !!gasUsedRatio),
+		oldestBlock,
+		...rewardPercentiles === undefined ? {} : {
+			reward: blocksToConsider.map((block) => rewardPercentiles.map((percentile) => {
+				const effectivePriority = block.transactions.map((tx) => tx.type === '1559' ? min(tx.maxPriorityFeePerGas, tx.maxFeePerGas - (block.baseFeePerGas ?? 0n)) : tx.gasPrice - (block.baseFeePerGas ?? 0n))
+				// we are using transaction.gas as a weighting factor while this should be gas used. Getting gas used requires getting receipts which is difficult
+				const gasWeights = block.transactions.map((tx) => tx.gas)
+				return calculateWeightedPercentile(effectivePriority, gasWeights, BigInt(percentile))
+			}))
+		}
 	}
 }
