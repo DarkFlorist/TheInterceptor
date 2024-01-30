@@ -108,6 +108,7 @@ export const MAKE_YOU_RICH_TRANSACTION = {
 	},
 	transactionSendingFormat: 'eth_sendTransaction' as const,
 }
+export const DEFAULT_CALL_ADDRESS = 0x1n
 
 export const TIME_BETWEEN_BLOCKS = 12
 export const METAMASK_LOGO = '../img/signers/metamask.svg'

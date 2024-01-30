@@ -10,6 +10,7 @@ import { assertNever } from '../../utils/typescript.js'
 import { MessageHashAndSignature, SignatureWithFakeSignerAddress, simulatePersonalSign } from './SimulationModeEthereumClientService.js'
 import { getEcRecoverOverride } from '../../utils/ethereumByteCodes.js'
 import * as funtypes from 'funtypes'
+import { isEthSimulateV1Node } from '../../background/settings.js'
 
 export type IEthereumClientService = Pick<EthereumClientService, keyof EthereumClientService>
 export class EthereumClientService {
@@ -196,7 +197,7 @@ export class EthereumClientService {
 
 	public readonly multicall = async (transactions: readonly EthereumUnsignedTransaction[], spoofedSignatures: readonly SignatureWithFakeSignerAddress[], blockNumber: bigint, extraAccountOverrides: StateOverrides = {}) => {
 		const httpsRpc = this.requestHandler.getRpcEntry().httpsRpc
-		if (httpsRpc === 'https://rpc.dark.florist/winedancemuffinborrow' || httpsRpc === 'https://rpc.dark.florist/birdchalkrenewtip') {
+		if (isEthSimulateV1Node(httpsRpc)) {
 			//TODO: Remove this when we get rid of our old multicall
 			
 			const transactionsWithRemoveZeroPricedOnes = transactions.map((transaction) => {
