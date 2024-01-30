@@ -355,7 +355,7 @@ async function handleRPCRequest(
 		case 'eth_getTransactionCount': return await getTransactionCount(ethereumClientService, simulationState, parsedRequest)
 		case 'interceptor_getSimulationStack': return await getSimulationStack(simulationState, parsedRequest)
 		case 'eth_multicall': return { method: parsedRequest.method, error: { code: 10000, message: 'Cannot call eth_multicall directly' } }
-		case 'eth_multicallV1': return { method: parsedRequest.method, error: { code: 10000, message: 'Cannot call eth_multicallV1 directly' } }
+		case 'eth_simulateV1': return { method: parsedRequest.method, error: { code: 10000, message: 'Cannot call eth_simulateV1 directly' } }
 		case 'wallet_addEthereumChain': {
 			if (forwardToSigner) return getForwardingMessage(parsedRequest)
 			return { method: parsedRequest.method, error: { code: 10000, message: 'wallet_addEthereumChain not implemented' } }

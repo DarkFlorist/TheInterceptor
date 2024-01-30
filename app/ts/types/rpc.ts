@@ -2,16 +2,21 @@ import * as funtypes from 'funtypes'
 import { EthereumQuantity } from './wire-types.js'
 
 export type RpcEntry = funtypes.Static<typeof RpcEntry>
-export const RpcEntry = funtypes.ReadonlyObject({
-	name: funtypes.String,
-	chainId: EthereumQuantity,
-	httpsRpc: funtypes.String,
-	currencyName: funtypes.String,
-	currencyTicker: funtypes.String,
-	primary: funtypes.Boolean,
-	minimized: funtypes.Boolean,
-	weth: EthereumQuantity,
-})
+export const RpcEntry = funtypes.Intersect(
+	funtypes.ReadonlyObject({
+		name: funtypes.String,
+		chainId: EthereumQuantity,
+		httpsRpc: funtypes.String,
+		currencyName: funtypes.String,
+		currencyTicker: funtypes.String,
+		primary: funtypes.Boolean,
+		minimized: funtypes.Boolean,
+		weth: EthereumQuantity,
+	}),
+	funtypes.ReadonlyPartial({	
+		currencyLogoUri: funtypes.String,
+	})
+)
 
 export type RpcEntries = funtypes.Static<typeof RpcEntries>
 export const RpcEntries = funtypes.ReadonlyArray(RpcEntry)

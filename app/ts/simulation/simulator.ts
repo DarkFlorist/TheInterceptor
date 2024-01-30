@@ -35,7 +35,7 @@ const PROTECTORS = [
 
 type TokenLogHandler = (event: MulticallResponseEventLog) => TokenVisualizerResult[]
 
-const getTokenEventHandler = (logSender: bigint, type: AddressBookEntryCategory, logSignature: string) => {
+const getTokenEventHandler = (type: AddressBookEntryCategory, logSignature: string) => {
 	const erc20LogHanders = new Map<string, TokenLogHandler>([
 		[TRANSFER_LOG, handleERC20TransferLog],
 		[APPROVAL_LOG, handleApprovalLog],
@@ -59,10 +59,7 @@ const getTokenEventHandler = (logSender: bigint, type: AddressBookEntryCategory,
 		case 'ERC721': return erc721LogHanders.get(logSignature)
 		case 'activeAddress':
 		case 'contact':
-		case 'contract': {
-			if (logSender === 0n) return erc20LogHanders.get(logSignature) // ETH logs
-			return undefined
-		}
+		case 'contract': return undefined
 		default: assertNever(type)
 	} 
 }
@@ -110,7 +107,7 @@ export const visualizeTransaction = async (blockNumber: bigint, singleMulticallR
 		if (parsedEvent.isParsed === 'NonParsed') return [{ ...parsedEvent, type: 'NonParsed' }]
 		const logSignature = parsedEvent.topics[0]
 		if (logSignature === undefined) return [{ ...parsedEvent, type: 'Parsed' }]
-		const tokenEventhandler = getTokenEventHandler(parsedEvent.loggersAddressBookEntry.address, parsedEvent.loggersAddressBookEntry.type, bytes32String(logSignature))
+		const tokenEventhandler = getTokenEventHandler(parsedEvent.loggersAddressBookEntry.type, bytes32String(logSignature))
 		if (tokenEventhandler === undefined) return [{ ...parsedEvent, type: 'Parsed' }]
 		return tokenEventhandler(parsedEvent).map((tokenInformation) => ({ ...parsedEvent, type: 'TokenEvent', tokenInformation }))
 	})
