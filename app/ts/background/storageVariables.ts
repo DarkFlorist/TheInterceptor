@@ -228,7 +228,7 @@ export async function getRpcNetwork(): Promise<RpcNetwork> {
 
 export const getRpcNetworkForChain = async (chainId: bigint): Promise<RpcNetwork> => {
 	const rpcs = await getRpcList()
-	const rpc =  rpcs.find((rpc) => rpc.chainId === chainId && rpc.primary)
+	const rpc = rpcs.find((rpc) => rpc.chainId === chainId && rpc.primary)
 	if (rpc !== undefined) return rpc
 	return {
 		chainId: chainId,

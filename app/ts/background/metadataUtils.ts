@@ -3,7 +3,7 @@ import { ActiveAddressEntry, AddressBookEntry } from '../types/addressBookTypes.
 import { NamedTokenId, SimulationState, VisualizerResult } from '../types/visualizer-types.js'
 import { tokenMetadata, contractMetadata, erc721Metadata, erc1155Metadata } from '@darkflorist/address-metadata'
 import { ethers } from 'ethers'
-import { MOCK_ADDRESS } from '../utils/constants.js'
+import { ETHEREUM_COIN_ICON, ETHEREUM_LOGS_LOGGER_ADDRESS, MOCK_ADDRESS } from '../utils/constants.js'
 import { EthereumClientService } from '../simulation/services/EthereumClientService.js'
 import { IdentifiedAddress, itentifyAddressViaOnChainInformation } from '../utils/tokenIdentification.js'
 import { assertNever } from '../utils/typescript.js'
@@ -11,6 +11,7 @@ import { addUserAddressBookEntryIfItDoesNotExist, getUserAddressBookEntries } fr
 import { getUniqueItemsByProperties } from '../utils/typed-arrays.js'
 import { EthereumNameServiceTokenWrapper, getEthereumNameServiceNameFromTokenId } from '../utils/ethereumNameService.js'
 import { defaultActiveAddresses } from './settings.js'
+import { RpcNetwork } from '../types/rpc.js'
 export const LOGO_URI_PREFIX = `../vendor/@darkflorist/address-metadata`
 
 const pathJoin = (parts: string[], sep = '/') => parts.join(sep).replace(new RegExp(sep + '{1,}', 'g'), sep)
@@ -18,7 +19,7 @@ const pathJoin = (parts: string[], sep = '/') => parts.join(sep).replace(new Reg
 export const getFullLogoUri = (logoURI: string) => pathJoin([LOGO_URI_PREFIX, logoURI])
 
 export async function getActiveAddressEntry(address: bigint) : Promise<ActiveAddressEntry> {
-	const identifiedAddress = await identifyAddressWithoutNode(address)
+	const identifiedAddress = await identifyAddressWithoutNode(address, undefined)
 	if (identifiedAddress !== undefined && identifiedAddress.type === 'activeAddress') return identifiedAddress
 	return {
 		type: 'activeAddress' as const,
@@ -33,7 +34,17 @@ export async function getActiveAddresses() : Promise<readonly ActiveAddressEntry
 	const activeAddresses = (await getUserAddressBookEntries()).filter((entry): entry is ActiveAddressEntry => entry.type === 'activeAddress')
 	return activeAddresses === undefined || activeAddresses.length === 0? defaultActiveAddresses : activeAddresses
 }
-async function identifyAddressWithoutNode(address: bigint, useLocalStorage: boolean = true) : Promise<AddressBookEntry | undefined> {
+async function identifyAddressWithoutNode(address: bigint, rpcEntry: RpcNetwork | undefined, useLocalStorage: boolean = true) : Promise<AddressBookEntry | undefined> {
+	if (address === ETHEREUM_LOGS_LOGGER_ADDRESS) return {
+		address: ETHEREUM_LOGS_LOGGER_ADDRESS,
+		name: rpcEntry?.currencyName ?? 'Ethereum',
+		type: 'ERC20',
+		entrySource: 'Interceptor',
+		symbol: rpcEntry?.currencyTicker ?? 'ETH',
+		decimals: 18n,
+		logoUri: rpcEntry !== undefined && 'currencyLogoUri' in rpcEntry ? rpcEntry.currencyLogoUri : ETHEREUM_COIN_ICON,
+	}
+
 	if (useLocalStorage) {
 		const userEntry = (await getUserAddressBookEntries()).find((entry) => entry.address === address)
 		if (userEntry !== undefined) return userEntry
@@ -93,7 +104,7 @@ async function identifyAddressWithoutNode(address: bigint, useLocalStorage: bool
 }
 
 export async function identifyAddress(ethereumClientService: EthereumClientService, address: bigint, useLocalStorage: boolean = true) : Promise<AddressBookEntry> {
-	const identifiedAddress = await identifyAddressWithoutNode(address, useLocalStorage)
+	const identifiedAddress = await identifyAddressWithoutNode(address, ethereumClientService.getRpcEntry(), useLocalStorage)
 	if (identifiedAddress !== undefined) return identifiedAddress
 	const addrString = addressString(address)
 	const tokenIdentification = await itentifyAddressViaOnChainInformation(ethereumClientService, address)
