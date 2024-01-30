@@ -1,7 +1,7 @@
 import { EthereumClientService } from './EthereumClientService.js'
 import { EthereumUnsignedTransaction, EthereumSignedTransactionWithBlockData, EthereumBlockTag, EthereumAddress, EthereumBlockHeader, EthereumBlockHeaderWithTransactionHashes, EthereumSignedTransaction, EthereumData, EthereumQuantity, EthereumBytes32 } from '../../types/wire-types.js'
 import { addressString, bytes32String, calculateWeightedPercentile, dataStringWith0xStart, max, min, stringToUint8Array } from '../../utils/bigint.js'
-import { CANNOT_SIMULATE_OFF_LEGACY_BLOCK, ERROR_INTERCEPTOR_GAS_ESTIMATION_FAILED, MOCK_ADDRESS, MULTICALL3, Multicall3ABI } from '../../utils/constants.js'
+import { CANNOT_SIMULATE_OFF_LEGACY_BLOCK, ERROR_INTERCEPTOR_GAS_ESTIMATION_FAILED, ETHEREUM_EIP1559_BASEFEECHANGEDENOMINATOR, ETHEREUM_EIP1559_ELASTICITY_MULTIPLIER, MOCK_ADDRESS, MULTICALL3, Multicall3ABI } from '../../utils/constants.js'
 import { Interface, TypedDataEncoder, ethers, hashMessage, keccak256, } from 'ethers'
 import { WebsiteCreatedEthereumUnsignedTransaction, SimulatedTransaction, SimulationState, TokenBalancesAfter, EstimateGasError, SignedMessageTransaction, WebsiteCreatedEthereumUnsignedTransactionOrFailed } from '../../types/visualizer-types.js'
 import { EthereumUnsignedTransactionToUnsignedTransaction, IUnsignedTransaction1559, serializeSignedTransactionToBytes } from '../../utils/ethereum.js'
@@ -145,7 +145,7 @@ export const calculateGasPrice = (transaction: EthereumUnsignedTransaction, gasU
 	if ('gasPrice' in transaction) {
 		return transaction.gasPrice
 	}
-	const baseFee = getBaseFeePerGasForNewBlock(gasUsed, gasLimit, baseFeePerGas)
+	const baseFee = getNextBaseFee(gasUsed, gasLimit, baseFeePerGas)
 	return min(baseFee + transaction.maxPriorityFeePerGas, transaction.maxFeePerGas)
 }
 
@@ -511,23 +511,12 @@ export const getSimulatedCode = async (ethereumClientService: EthereumClientServ
 	} as const
 }
 
-const getBaseFeePerGasForNewBlock = (parent_gas_used: bigint, parent_gas_limit: bigint, parent_base_fee_per_gas: bigint) => {
-	// see https://eips.ethereum.org/EIPS/eip-1559
-	const ELASTICITY_MULTIPLIER = 8n
-	const BASE_FEE_MAX_CHANGE_DENOMINATOR = 8n
-	const parent_gas_target = parent_gas_limit / ELASTICITY_MULTIPLIER
-
-	if (parent_gas_used === parent_gas_target) {
-		return parent_base_fee_per_gas
-	}
-	if (parent_gas_used > parent_gas_target) {
-		const gas_used_delta = parent_gas_used - parent_gas_target
-		const base_fee_per_gas_delta = max(parent_base_fee_per_gas * gas_used_delta / parent_gas_target / BASE_FEE_MAX_CHANGE_DENOMINATOR, 1n)
-		return parent_base_fee_per_gas + base_fee_per_gas_delta
-	}
-	const gas_used_delta = parent_gas_target - parent_gas_used
-	const base_fee_per_gas_delta = parent_base_fee_per_gas * gas_used_delta / parent_gas_target / BASE_FEE_MAX_CHANGE_DENOMINATOR
-	return parent_base_fee_per_gas - base_fee_per_gas_delta
+// ported from: https://github.com/ethereum/go-ethereum/blob/509a64ffb9405942396276ae111d06f9bded9221/consensus/misc/eip1559/eip1559.go#L55
+const getNextBaseFee = (parentGasUsed: bigint, parentGasLimit: bigint, parentBaseFeePerGas: bigint) => {
+	const parentGasTarget = parentGasLimit / ETHEREUM_EIP1559_ELASTICITY_MULTIPLIER
+	if (parentGasUsed === parentGasTarget) return parentBaseFeePerGas
+	if (parentGasUsed > parentGasTarget) return max(1n, parentBaseFeePerGas * (parentGasUsed - parentGasTarget) / parentGasTarget / ETHEREUM_EIP1559_BASEFEECHANGEDENOMINATOR)
+	return max(0n, parentBaseFeePerGas * (parentGasTarget - parentGasUsed) / parentGasTarget / ETHEREUM_EIP1559_BASEFEECHANGEDENOMINATOR)
 }
 
 async function getSimulatedMockBlock(ethereumClientService: EthereumClientService, simulationState: SimulationState) {
@@ -554,7 +543,7 @@ async function getSimulatedMockBlock(ethereumClientService: EthereumClientServic
 		size: parentBlock.size, // TODO: this is wrong
 		totalDifficulty: parentBlock.totalDifficulty + parentBlock.difficulty, // The difficulty increases about the same amount as previously
 		uncles: [],
-		baseFeePerGas: getBaseFeePerGasForNewBlock(parentBlock.gasUsed, parentBlock.gasLimit, parentBlock.baseFeePerGas),
+		baseFeePerGas: getNextBaseFee(parentBlock.gasUsed, parentBlock.gasLimit, parentBlock.baseFeePerGas),
 		transactionsRoot: parentBlock.transactionsRoot, // TODO: this is wrong
 		transactions: simulationState.simulatedTransactions.map((simulatedTransaction) => simulatedTransaction.signedTransaction),
 		withdrawals: [], // TODO: this is wrong
@@ -920,25 +909,30 @@ export const appendSignedMessage = async (ethereumClientService: EthereumClientS
 }
 
 // takes the most recent block that the application is querying and does the calculation based on that
-export const getSimulatedFeeHistory = async (ethereumClientService: EthereumClientService, simulationState: SimulationState | undefined, request: FeeHistory): Promise<EthGetFeeHistoryResponse> => {
-	//const numberOfBlocks = request.params[0]
+export const getSimulatedFeeHistory = async (ethereumClientService: EthereumClientService, request: FeeHistory): Promise<EthGetFeeHistoryResponse> => {
+	//const numberOfBlocks = Number(request.params[0]) // number of blocks, not used atm as we just return one block
 	const blockTag = request.params[1]
 	const rewardPercentiles = request.params[2]
-	const newestBlock = await getSimulatedBlock(ethereumClientService, simulationState, blockTag, true)
-	const blocksToConsider = [newestBlock]
-	const oldestBlock = blocksToConsider[0]?.number
-	if (oldestBlock === undefined) throw new Error('oldest block was undefined')
+	const currentRealBlockNumber = (await ethereumClientService.getBlock()).number
+	const clampedBlockTag = typeof blockTag === 'bigint' && blockTag > currentRealBlockNumber ? currentRealBlockNumber : blockTag
+	const newestBlock = await ethereumClientService.getBlock(clampedBlockTag, true)
+	const newestBlockBaseFeePerGas = newestBlock.baseFeePerGas
+	if (newestBlockBaseFeePerGas === undefined) throw new Error(`base fee per gas is missing for the block (it's too old)`)
 	return {
-		baseFeePerGas: blocksToConsider.map((block) => block.baseFeePerGas).filter((baseFeePerGas): baseFeePerGas is bigint => !!baseFeePerGas),
-		gasUsedRatio: blocksToConsider.map((block) => Number(block.gasUsed) / Number(block.gasLimit)).filter((gasUsedRatio): gasUsedRatio is number => !!gasUsedRatio),
-		oldestBlock,
+		baseFeePerGas: [newestBlockBaseFeePerGas, getNextBaseFee(newestBlock.gasUsed, newestBlock.gasLimit, newestBlockBaseFeePerGas)],
+		gasUsedRatio: [Number(newestBlock.gasUsed) / Number(newestBlock.gasLimit)],
+		oldestBlock: newestBlock.number,
 		...rewardPercentiles === undefined ? {} : {
-			reward: blocksToConsider.map((block) => rewardPercentiles.map((percentile) => {
-				const effectivePriority = block.transactions.map((tx) => tx.type === '1559' ? min(tx.maxPriorityFeePerGas, tx.maxFeePerGas - (block.baseFeePerGas ?? 0n)) : tx.gasPrice - (block.baseFeePerGas ?? 0n))
-				// we are using transaction.gas as a weighting factor while this should be gas used. Getting gas used requires getting receipts which is difficult
-				const gasWeights = block.transactions.map((tx) => tx.gas)
-				return calculateWeightedPercentile(effectivePriority, gasWeights, BigInt(percentile))
-			}))
+			reward: [rewardPercentiles.map((percentile) => {
+				// we are using transaction.gas as a weighting factor while this should be `gasUsed`. Getting `gasUsed` requires getting transaction receipts, which we don't want to be doing
+				const effectivePriorityAndGasWeights = newestBlock.transactions.map((tx) => tx.type === '1559' ?
+					{ dataPoint: min(tx.maxPriorityFeePerGas, tx.maxFeePerGas - (newestBlockBaseFeePerGas ?? 0n)), weight: tx.gas }
+					: { dataPoint: tx.gasPrice - (newestBlockBaseFeePerGas ?? 0n), weight: tx.gas })
+
+				// we can have negative values here, as The Interceptor creates maxFeePerGas = 0 transactions that are intended to have zero base fee, which is not possible in reality
+				const zeroOutNegativeValues = effectivePriorityAndGasWeights.map((point) => ({ ...point, dataPoint: max(0n, point.dataPoint) }))
+				return calculateWeightedPercentile(zeroOutNegativeValues, BigInt(percentile))
+			})]
 		}
 	}
 }

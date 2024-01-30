@@ -180,6 +180,6 @@ export async function web3ClientVersion(ethereumClientService: EthereumClientSer
 	return { method: 'web3_clientVersion' as const, result: await ethereumClientService.web3ClientVersion() }
 }
 
-export async function feeHistory(ethereumClientService: EthereumClientService, simulationState: SimulationState | undefined, request: FeeHistory) {
-	return { method: 'eth_feeHistory' as const, result: await getSimulatedFeeHistory(ethereumClientService, simulationState, request) }
+export async function feeHistory(ethereumClientService: EthereumClientService, request: FeeHistory) {
+	return { method: 'eth_feeHistory' as const, result: await getSimulatedFeeHistory(ethereumClientService, request) }
 }

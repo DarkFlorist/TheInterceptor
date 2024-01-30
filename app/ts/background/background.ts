@@ -374,7 +374,7 @@ async function handleRPCRequest(
 			return message
 		}
 		case 'web3_clientVersion': return await web3ClientVersion(ethereumClientService)
-		case 'eth_feeHistory': return await feeHistory(ethereumClientService, simulationState, parsedRequest)
+		case 'eth_feeHistory': return await feeHistory(ethereumClientService, parsedRequest)
 		/*
 		Missing methods:
 		case 'eth_getProof': return
