@@ -712,8 +712,6 @@ export const simulated484Multicall = async (ethereumClientService: EthereumClien
 			...maxFeePerGas === 0n ? {} : { maxFeePerGas }
 		}
 	})
-	console.log('simulated484Multicall')
-	console.log(transactionsWithRemoveZeroPricedOnes)
 	return await ethereumClientService.executionSpec383MultiCallOnlyTransactionsAndSignatures(transactionsWithRemoveZeroPricedOnes, getSignedMessagesWithFakeSigner(simulationState), blockNumber, extraAccountOverrides)
 }
 
