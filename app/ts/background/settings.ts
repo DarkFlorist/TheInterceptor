@@ -115,6 +115,8 @@ export const defaultRpcs = [
 	},
 ] as const
 
+export const isEthSimulateV1Node = (httpsRpc: string) => httpsRpc === 'https://rpc.dark.florist/winedancemuffinborrow' || httpsRpc === 'https://rpc.dark.florist/birdchalkrenewtip' || httpsRpc === 'https://rpc-goerli.dark.florist/flipcardtrustone'
+
 export async function getSettings() : Promise<Settings> {
 	const results = await browserStorageLocalGet([
 		'activeSimulationAddress',

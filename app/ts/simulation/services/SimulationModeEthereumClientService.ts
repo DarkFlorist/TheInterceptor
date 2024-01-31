@@ -1,7 +1,7 @@
 import { EthereumClientService } from './EthereumClientService.js'
-import { EthereumUnsignedTransaction, EthereumSignedTransactionWithBlockData, EthereumBlockTag, EthereumAddress, EthereumBlockHeader, EthereumBlockHeaderWithTransactionHashes, EthereumSignedTransaction, EthereumData, EthereumQuantity, EthereumBytes32 } from '../../types/wire-types.js'
+import { EthereumUnsignedTransaction, EthereumSignedTransactionWithBlockData, EthereumBlockTag, EthereumAddress, EthereumBlockHeader, EthereumBlockHeaderWithTransactionHashes, EthereumSignedTransaction, EthereumData, EthereumQuantity, EthereumBytes32, OptionalEthereumUnsignedTransaction } from '../../types/wire-types.js'
 import { addressString, bytes32String, calculateWeightedPercentile, dataStringWith0xStart, max, min, stringToUint8Array } from '../../utils/bigint.js'
-import { CANNOT_SIMULATE_OFF_LEGACY_BLOCK, ERROR_INTERCEPTOR_GAS_ESTIMATION_FAILED, ETHEREUM_LOGS_LOGGER_ADDRESS, ETHEREUM_EIP1559_BASEFEECHANGEDENOMINATOR, ETHEREUM_EIP1559_ELASTICITY_MULTIPLIER, MOCK_ADDRESS, MULTICALL3, Multicall3ABI } from '../../utils/constants.js'
+import { CANNOT_SIMULATE_OFF_LEGACY_BLOCK, ERROR_INTERCEPTOR_GAS_ESTIMATION_FAILED, ETHEREUM_LOGS_LOGGER_ADDRESS, ETHEREUM_EIP1559_BASEFEECHANGEDENOMINATOR, ETHEREUM_EIP1559_ELASTICITY_MULTIPLIER, MOCK_ADDRESS, MULTICALL3, Multicall3ABI, DEFAULT_CALL_ADDRESS } from '../../utils/constants.js'
 import { Interface, TypedDataEncoder, ethers, hashMessage, keccak256, } from 'ethers'
 import { WebsiteCreatedEthereumUnsignedTransaction, SimulatedTransaction, SimulationState, TokenBalancesAfter, EstimateGasError, SignedMessageTransaction, WebsiteCreatedEthereumUnsignedTransactionOrFailed } from '../../types/visualizer-types.js'
 import { EthereumUnsignedTransactionToUnsignedTransaction, IUnsignedTransaction1559, serializeSignedTransactionToBytes } from '../../utils/ethereum.js'
@@ -12,6 +12,7 @@ import { SignMessageParams } from '../../types/jsonRpc-signing-types.js'
 import { UniqueRequestIdentifier, doesUniqueRequestIdentifiersMatch } from '../../utils/requests.js'
 import { StateOverrides } from '../../types/multicall-types.js'
 import { getCodeByteCode } from '../../utils/ethereumByteCodes.js'
+import { isEthSimulateV1Node } from '../../background/settings.js'
 
 const MOCK_PUBLIC_PRIVATE_KEY = 0x1n // key used to sign mock transactions
 const MOCK_SIMULATION_PRIVATE_KEY = 0x2n // key used to sign simulated transatons
@@ -661,19 +662,23 @@ export const getSimulatedTransactionByHash = async (ethereumClientService: Ether
 	return await ethereumClientService.getTransactionByHash(hash)
 }
 
-export const simulatedCall = async (ethereumClientService: EthereumClientService, simulationState: SimulationState | undefined, params: Pick<IUnsignedTransaction1559, 'to' | 'from' | 'input' | 'value' | 'maxFeePerGas' | 'maxPriorityFeePerGas' | 'gasLimit'>, blockTag: EthereumBlockTag = 'latest') => {
+export const simulatedCall = async (ethereumClientService: EthereumClientService, simulationState: SimulationState | undefined, params: Pick<IUnsignedTransaction1559, 'to' | 'maxFeePerGas' | 'maxPriorityFeePerGas' | 'input' | 'value'> & Partial<Pick<IUnsignedTransaction1559, 'from' | 'gasLimit'>>, blockTag: EthereumBlockTag = 'latest') => {
 	const currentBlock = await ethereumClientService.getBlockNumber()
 	const blockNumToUse = blockTag === 'latest' || blockTag === 'pending' ? currentBlock : min(blockTag, currentBlock)
 	const simulationStateToUse = blockNumToUse >= currentBlock ? simulationState : undefined
-
+	const from = params.from ?? DEFAULT_CALL_ADDRESS
 	const transaction = {
 		...params,
 		type: '1559',
 		gas: params.gasLimit,
-		nonce: await getSimulatedTransactionCount(ethereumClientService, simulationStateToUse, params.from, blockTag),
+		from,
+		nonce: await getSimulatedTransactionCount(ethereumClientService, simulationStateToUse, from, blockTag),
 		chainId: ethereumClientService.getChainId(),
 	} as const
-	const multicallResult = await simulatedMulticall(ethereumClientService, simulationStateToUse, [transaction], blockNumToUse)
+
+	const multicallResult = isEthSimulateV1Node(ethereumClientService.getRpcEntry().httpsRpc) ?
+		await simulated484Multicall(ethereumClientService, simulationStateToUse, [transaction], blockNumToUse)
+		: await simulatedMulticall(ethereumClientService, simulationStateToUse, [{ ...transaction, gas: params.gasLimit === undefined ? simulationGasLeft(simulationState, await ethereumClientService.getBlock()) : params.gasLimit }], blockNumToUse)
 	const callResult = multicallResult[multicallResult.length - 1]
 	if (callResult === undefined) throw new Error('call result was undefined')
 	if (callResult.statusCode === 'failure') {
@@ -695,6 +700,19 @@ const getSignedMessagesWithFakeSigner = (simulationState: SimulationState | unde
 export const simulatedMulticall = async (ethereumClientService: EthereumClientService, simulationState: SimulationState | undefined, transactions: EthereumUnsignedTransaction[], blockNumber: bigint, extraAccountOverrides: StateOverrides = {}) => {
 	const mergedTxs: EthereumUnsignedTransaction[] = getTransactionQueue(simulationState)
 	return await ethereumClientService.multicall(mergedTxs.concat(transactions), getSignedMessagesWithFakeSigner(simulationState), blockNumber, extraAccountOverrides)
+}
+
+export const simulated484Multicall = async (ethereumClientService: EthereumClientService, simulationState: SimulationState | undefined, transactions: OptionalEthereumUnsignedTransaction[], blockNumber: bigint, extraAccountOverrides: StateOverrides = {}) => {
+	const mergedTxs: OptionalEthereumUnsignedTransaction[] = getTransactionQueue(simulationState)
+	const transactionsWithRemoveZeroPricedOnes = mergedTxs.concat(transactions).map((transaction) => {
+		if (transaction.type !== '1559') return transaction
+		const { maxFeePerGas, ...transactionWithoutMaxFee } = transaction
+		return {
+			...transactionWithoutMaxFee,
+			...maxFeePerGas === 0n ? {} : { maxFeePerGas }
+		}
+	})
+	return await ethereumClientService.executionSpec383MultiCallOnlyTransactionsAndSignatures(transactionsWithRemoveZeroPricedOnes, getSignedMessagesWithFakeSigner(simulationState), blockNumber, extraAccountOverrides)
 }
 
 // use time as block hash as that makes it so that updated simulations with different states are different, but requires no additional calculation
