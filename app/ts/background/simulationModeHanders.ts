@@ -86,9 +86,8 @@ export async function call(ethereumClientService: EthereumClientService, simulat
 
 	// if we fail our call because we are calling from a contract, retry and change address to our default calling address
 	// TODO: Remove this logic and KNOWN_CONTRACT_CALLER_ADDRESSES when multicall supports calling from contracts
-	if (callResult.error !== undefined && 'data' in callResult.error && callResult.error?.data === 'sender has deployed code' && from !== DEFAULT_CALL_ADDRESS) {
+	if (callResult.error !== undefined && 'data' in callResult.error && callResult.error.data === 'sender has deployed code' && from !== DEFAULT_CALL_ADDRESS) {
 		const callerChangeResult = await singleCallWithFromOverride(ethereumClientService, simulationState, request, DEFAULT_CALL_ADDRESS)
-		if (callerChangeResult.error !== undefined) return { method: request.method, ...callerChangeResult }
 		return { method: request.method, ...callerChangeResult }
 	}
 	return { method: request.method, ...callResult }
