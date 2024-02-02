@@ -61,3 +61,14 @@ export async function fetchWithTimeout(resource: RequestInfo | URL, init?: Reque
 	clearTimeout(id)
 	return response
 }
+
+export const safeGetTab = async (tabId: number) => {
+    const tab = await browser.tabs.get(tabId)
+    try {
+		const error = browser.runtime.lastError
+		if (error !== undefined && error.message !== undefined) throw new Error(error.message)
+        return tab
+    } catch (e: unknown){
+		return undefined
+    }
+}

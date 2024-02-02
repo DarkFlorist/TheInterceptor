@@ -1,7 +1,7 @@
 import { HomeParams, FirstCardParams, SimulationStateParam, RpcConnectionStatus, TabIconDetails, TabIcon, TabState } from '../../types/user-interface-types.js'
 import { useEffect, useState } from 'preact/hooks'
 import { SimulatedAndVisualizedTransaction, SimulationAndVisualisationResults, SimulationUpdatingState, SimulationResultState } from '../../types/visualizer-types.js'
-import { ActiveAddressComponent, getActiveAddressEntry } from '../subcomponents/address.js'
+import { ActiveAddressComponent, WebsiteOriginText, getActiveAddressEntry } from '../subcomponents/address.js'
 import { SimulationSummary } from '../simulationExplaining/SimulationSummary.js'
 import { ChainSelector } from '../subcomponents/ChainSelector.js'
 import { Spinner } from '../subcomponents/Spinner.js'
@@ -21,6 +21,7 @@ import { SignerName } from '../../types/signerTypes.js'
 import { RpcEntries, RpcEntry, RpcNetwork } from '../../types/rpc.js'
 import { VisualizedPersonalSignRequest } from '../../types/personal-message-definitions.js'
 import { UniqueRequestIdentifier } from '../../utils/requests.js'
+import { Website } from '../../types/websiteAccessTypes.js'
 
 async function enableMakeMeRich(enabled: boolean) {
 	sendPopupMessageToBackgroundPage( { method: 'popup_changeMakeMeRich', data: enabled } )
@@ -91,17 +92,18 @@ function FirstCardHeader(param: FirstCardParams) {
 type InterceptorDisabledButtonParams = {
 	disableInterceptorToggle: (disabled: boolean) => void,
 	interceptorDisabled: boolean,
+	website: Website | undefined
 }
 
-function InterceptorDisabledButton({ disableInterceptorToggle, interceptorDisabled }: InterceptorDisabledButtonParams) {
-	return <button style = 'margin-top: 10px' className = 'button is-primary is-small' onClick = { () => disableInterceptorToggle(!interceptorDisabled) } >
-			{ interceptorDisabled ? <>
-				<span class = 'icon'> <img src = { ICON_ACTIVE }/> </span>
-				<span> Enable Interceptor </span>
-			</> : <>
-				<span class = 'icon'> <img src = { ICON_INTERCEPTOR_DISABLED }/> </span>
-				<span> Disable Interceptor </span>
-			</> }
+function InterceptorDisabledButton({ disableInterceptorToggle, interceptorDisabled, website }: InterceptorDisabledButtonParams) {
+	return <button disabled = { website === undefined } className = { `button is-small ${ interceptorDisabled ? 'is-success' : 'is-primary' }` } onClick = { () => disableInterceptorToggle(!interceptorDisabled) } >
+		{ interceptorDisabled ? <>
+			<span class = 'icon'> <img src = { ICON_ACTIVE }/> </span>
+			<span> Enable</span>
+		</> : <>
+			<span class = 'icon'> <img src = { ICON_INTERCEPTOR_DISABLED }/> </span>
+			<span> Disable</span>
+		</> }
 	</button>
 }
 
@@ -157,15 +159,11 @@ function FirstCard(param: FirstCardParams) {
 						</div>
 						: <p style = 'color: var(--subtitle-text-color);' class = 'subtitle is-7'> { ` You can change active address by changing it directly from ${ getPrettySignerName(param.signerName) }` } </p>
 					}
-					<div style = 'display: flex; justify-content: right;'>
-						<InterceptorDisabledButton disableInterceptorToggle = { param.disableInterceptorToggle } interceptorDisabled = { param.interceptorDisabled }></InterceptorDisabledButton>
-					</div>
-				</> : <div style = 'display: flex; justify-content: space-between'>
-					<label class = 'form-control' style = 'padding-top: 10px'>
+				</> : <div style = 'display: flex; justify-content: space-between; padding-top: 10px'>
+					<label class = 'form-control'>
 						<input type = 'checkbox' checked = { param.makeMeRich } onInput = { e => { if (e.target instanceof HTMLInputElement && e.target !== null) { enableMakeMeRich(e.target.checked) } } } />
 						<p class = 'paragraph checkbox-text'>Make me rich</p>
 					</label>
-					<InterceptorDisabledButton disableInterceptorToggle = { param.disableInterceptorToggle } interceptorDisabled = { param.interceptorDisabled }></InterceptorDisabledButton>
 				</div> }
 			</div>
 		</div>
@@ -362,7 +360,6 @@ export function Home(param: HomeParams) {
 
 		<NetworkErrors rpcConnectionStatus = { rpcConnectionStatus }/>
 		<ProviderErrors tabState = { tabState }/>
-
 		<FirstCard
 			activeAddresses = { activeAddresses }
 			useSignersAddressAsActiveAddress = { useSignersAddressAsActiveAddress }
@@ -378,8 +375,6 @@ export function Home(param: HomeParams) {
 			signerName = { tabState?.signerName ?? 'NoSignerDetected' }
 			renameAddressCallBack = { param.renameAddressCallBack }
 			rpcEntries = { rpcEntries }
-			disableInterceptorToggle = { disableInterceptorToggle }
-			interceptorDisabled = { interceptorDisabled }
 		/>
 
 		{ simulationMode && simulationAndVisualisationResults === undefined && activeSimulationAddress !== undefined ?
@@ -409,5 +404,18 @@ export function Home(param: HomeParams) {
 				simulationResultState = { simulationResultState }
 			/>
 		}
+		{ tabState?.website === undefined ? <></> : <>
+			<div style = 'padding-top: 50px' />
+			<div class = 'popup-footer' style = 'display: flex; justify-content: center; flex-direction: column;'>
+				<div style = 'display: grid; grid-template-columns: auto auto; padding-left: 10px; padding-right: 10px' >
+					<div class = 'log-cell' style = 'justify-content: left;'>
+						<WebsiteOriginText { ...tabState?.website } />
+					</div>
+					<div class = 'log-cell' style = 'justify-content: right; padding-left: 20px'>
+						<InterceptorDisabledButton website = { tabState.website } disableInterceptorToggle = { disableInterceptorToggle } interceptorDisabled = { interceptorDisabled }/>
+					</div>
+				</div>
+			</div>
+		</> }
 	</>
 }

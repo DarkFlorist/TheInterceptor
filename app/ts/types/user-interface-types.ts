@@ -86,8 +86,6 @@ export type FirstCardParams = {
 	signerName: SignerName,
 	renameAddressCallBack: RenameAddressCallBack,
 	rpcEntries: RpcEntries,
-	disableInterceptorToggle: (disabled: boolean) => void,
-	interceptorDisabled: boolean,
 }
 
 export type SimulationStateParam = {

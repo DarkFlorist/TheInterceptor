@@ -8,6 +8,7 @@ import { RpcConnectionStatus, TabIcon, TabState } from '../types/user-interface-
 import { getSettings } from './settings.js'
 import { getRpcConnectionStatus, getTabState, updateTabState } from './storageVariables.js'
 import { getLastKnownCurrentTabId } from './popupMessageHandlers.js'
+import { safeGetTab } from '../utils/requests.js'
 
 async function setInterceptorIcon(tabId: number, icon: TabIcon, iconReason: string) {
 	const tabIconDetails = { icon, iconReason }
@@ -52,7 +53,7 @@ export async function updateExtensionBadge() {
 export async function retrieveWebsiteDetails(tabId: number, websiteOrigin: string) {
 	const tryGettingTab = async (tabId: number) => {
 		try {
-			return await browser.tabs.get(tabId)
+			return await safeGetTab(tabId)
 		} catch (error) {
 			if (!(error instanceof Error)) throw error
 			if (!error.message?.includes(CHROME_NO_TAB_WITH_ID_ERROR)) throw error
