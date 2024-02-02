@@ -17,6 +17,7 @@ import { getEthDonator } from '../../background/storageVariables.js'
 import { RpcNetwork } from '../../types/rpc.js'
 import { AddressBookEntry, Erc1155Entry, Erc20TokenEntry, Erc721Entry } from '../../types/addressBookTypes.js'
 import { Website } from '../../types/websiteAccessTypes.js'
+import { isEthSimulateV1Node } from '../../background/settings.js'
 
 type EtherChangeParams = {
 	textColor: string,
@@ -463,7 +464,7 @@ export function TokenLogAnalysisCard({ simTx, renameAddressCallBack }: TokenLogA
 	const [showLogs, setShowLogs] = useState<boolean>(false)
 	const identifiedSwap = identifySwap(simTx)
 	if (simTx === undefined) return <></>
-	const hasEthLogs = simTx.transaction.rpcNetwork.httpsRpc === 'https://rpc.dark.florist/birdchalkrenewtip' || simTx.transaction.rpcNetwork.httpsRpc === 'https://rpc.dark.florist/winedancemuffinborrow' //todo, remove this check, all txs should have ETH logs
+	const hasEthLogs = simTx.transaction.rpcNetwork.httpsRpc !== undefined && isEthSimulateV1Node(simTx.transaction.rpcNetwork.httpsRpc)
 	const tokenEventsPlural = hasEthLogs ? 'token events or ETH transactions' : 'token events'
 	const tokenEventsSingular = hasEthLogs ? 'One token event or an ETH transaction' : 'One token event'
 	return <>
@@ -546,7 +547,7 @@ type AccountChangesCardParams = {
 export function TransactionsAccountChangesCard({ simTx, renameAddressCallBack, addressMetaData, simulationAndVisualisationResults, namedTokenIds }: AccountChangesCardParams) {
 	const logSummarizer = new LogSummarizer([simTx])
 	const addressMetaDataMap = new Map(addressMetaData.map((x) => [addressString(x.address), x]))
-	const originalSummary = logSummarizer.getSummary(addressMetaDataMap, simulationAndVisualisationResults.tokenPrices, namedTokenIds, simulationAndVisualisationResults.rpcNetwork)
+	const originalSummary = logSummarizer.getSummary(addressMetaDataMap, simulationAndVisualisationResults.tokenPrices, namedTokenIds)
 	const [showSummary, setShowSummary] = useState<boolean>(false)
 	const [ownAddresses, notOwnAddresses] = splitToOwnAndNotOwnAndCleanSummary(simTx, originalSummary, simulationAndVisualisationResults.activeAddress, simulationAndVisualisationResults.rpcNetwork)
 	
@@ -709,7 +710,7 @@ export function SimulationSummary(param: SimulationSummaryParams) {
 
 	const logSummarizer = new LogSummarizer(param.simulationAndVisualisationResults.simulatedAndVisualizedTransactions)
 	const addressMetaData = new Map(param.simulationAndVisualisationResults.addressBookEntries.map((x) => [addressString(x.address), x]))
-	const originalSummary = logSummarizer.getSummary(addressMetaData, param.simulationAndVisualisationResults.tokenPrices, param.simulationAndVisualisationResults.namedTokenIds, param.simulationAndVisualisationResults.rpcNetwork)
+	const originalSummary = logSummarizer.getSummary(addressMetaData, param.simulationAndVisualisationResults.tokenPrices, param.simulationAndVisualisationResults.namedTokenIds)
 	const [ownAddresses, notOwnAddresses] = splitToOwnAndNotOwnAndCleanSummary(param.simulationAndVisualisationResults.simulatedAndVisualizedTransactions.at(0), originalSummary, param.simulationAndVisualisationResults.activeAddress, param.simulationAndVisualisationResults.rpcNetwork)
 
 	const [showOtherAccountChanges, setShowOtherAccountChange] = useState<boolean>(false)

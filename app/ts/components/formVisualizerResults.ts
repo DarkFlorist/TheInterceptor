@@ -1,7 +1,6 @@
 import { addressString } from '../utils/bigint.js'
 import { EthBalanceChangesWithMetadata, NamedTokenId, ProtectorResults, SimulatedAndVisualizedTransaction, SimulationState, TokenVisualizerResultWithMetadata, VisualizerResult } from '../types/visualizer-types.js'
 import { AddressBookEntry } from '../types/addressBookTypes.js'
-import { getArtificialERC20ForEth } from './ui-utils.js'
 
 export function formSimulatedAndVisualizedTransaction(simState: SimulationState, visualizerResults: readonly VisualizerResult[], protectorResults: readonly ProtectorResults[], addressBookEntries: readonly AddressBookEntry[], namedTokenIds: readonly NamedTokenId[]): readonly SimulatedAndVisualizedTransaction[] {
 	const addressMetaData = new Map(addressBookEntries.map((x) => [addressString(x.address), x]))
@@ -39,16 +38,6 @@ export function formSimulatedAndVisualizedTransaction(simState: SimulationState,
 					to: toEntry,
 					token: tokenEntry
 				}
-			}
-			if (tokenEntry.address === 0n && tokenInfo.type === 'ERC20') {
-				simState.rpcNetwork.chainId
-				return {
-					...tokenInfo,
-					logObject: change,
-					from: fromEntry,
-					to: toEntry,
-					token: getArtificialERC20ForEth(simState.rpcNetwork),
-				}	
 			}
 			if ((tokenInfo.type === 'ERC20' && tokenEntry.type === 'ERC20')) {
 				return {

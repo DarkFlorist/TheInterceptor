@@ -8,7 +8,7 @@ import { JSX } from 'preact/jsx-runtime'
 import { useEffect } from 'preact/hooks'
 import { Erc1155Entry, Erc20TokenEntry, Erc721Entry } from '../../types/addressBookTypes.js'
 import { RenameAddressCallBack } from '../../types/user-interface-types.js'
-import { BIG_FONT_SIZE, NORMAL_FONT_SIZE } from '../../utils/constants.js'
+import { BIG_FONT_SIZE, ETHEREUM_COIN_ICON, ETHEREUM_LOGS_LOGGER_ADDRESS, NORMAL_FONT_SIZE } from '../../utils/constants.js'
 import { RpcNetwork } from '../../types/rpc.js'
 
 type EtherParams = {
@@ -75,7 +75,7 @@ export function EtherSymbol(param: EtherSymbolParams) {
 
 	return <>
 		<div style = 'overflow: initial; height: 28px;'>
-			<img class = 'noselect nopointer' style = 'max-height: 25px; max-width: 25px;' src = '../../img/coins/ethereum.png'/>
+			<img class = 'noselect nopointer' style = 'max-height: 25px; max-width: 25px;' src = { ETHEREUM_COIN_ICON }/>
 		</div>
 		<p class = 'noselect nopointer' style = { style }> { etheName } </p>
 	</>
@@ -153,7 +153,7 @@ export function TokenSymbol(param: TokenSymbolParams) {
 		<TokenIdOrNameOrNothing { ...param } style = { style }/>
 		<span class = { param.fontSize === 'big' ? 'big-token-name-container' : 'token-name-container' } data-value = { unTrusted ? `⚠${ name }` : name }>
 			<span class = 'token-name-holder'>
-				{ param.tokenEntry.address === 0n ? <>
+				{ param.tokenEntry.address === ETHEREUM_LOGS_LOGGER_ADDRESS ? <>
 					<img class = 'noselect nopointer' style = { { 'max-height': '25px', 'width': '25px', 'min-width': '25px', 'vertical-align': 'middle' } } src = { param.tokenEntry.logoUri }/>
 					<p class = 'paragraph token-name-text noselect nopointer' style = { style }>{ name }</p>
 				</> : <>

@@ -1,4 +1,5 @@
 import { sendPopupMessageToBackgroundPage } from '../../../background/backgroundUtils.js'
+import { isEthSimulateV1Node } from '../../../background/settings.js'
 import { AddressBookEntry } from '../../../types/addressBookTypes.js'
 import { MessageToPopup, GovernanceVoteInputParameters, SimulateGovernanceContractExecutionReply } from '../../../types/interceptor-messages.js'
 import { RenameAddressCallBack, RpcConnectionStatus } from '../../../types/user-interface-types.js'
@@ -104,15 +105,13 @@ const ShowSuccessOrFailure = ({ currentBlockNumber, rpcConnectionStatus, simulat
 	const missingAbiText = 'The governance contract is missing an ABI. Add an ABI to simulate execution of this proposal.'
 	if (simulateGovernanceContractExecutionReply === undefined) {
 		return <div style = 'display: flex; justify-content: center;'>
-			{ !(simulationAndVisualisationResults.rpcNetwork.httpsRpc === 'https://rpc.dark.florist/birdchalkrenewtip' // todo remove this check
-				|| simulationAndVisualisationResults.rpcNetwork.httpsRpc=== 'https://rpc.dark.florist/winedancemuffinborrow') ? <p class = 'paragraph'> experimental rpc client required </p> : <></> }
+			{ !(simulationAndVisualisationResults.rpcNetwork.httpsRpc !== undefined && isEthSimulateV1Node(simulationAndVisualisationResults.rpcNetwork.httpsRpc)) ? <p class = 'paragraph'> experimental rpc client required </p> : <></> }
 				
 			{ simTx.transaction.to !== undefined && 'abi' in simTx.transaction.to && simTx.transaction.to.abi !== undefined ?
 				<button
 					class = { `button is-primary` }
 					onClick = { () => simulateGovernanceVote(simTx.transactionIdentifier) }
-					disabled = { !(simulationAndVisualisationResults.rpcNetwork.httpsRpc === 'https://rpc.dark.florist/birdchalkrenewtip' // todo remove this check
-							|| simulationAndVisualisationResults.rpcNetwork.httpsRpc=== 'https://rpc.dark.florist/winedancemuffinborrow')
+					disabled = { !(simulationAndVisualisationResults.rpcNetwork.httpsRpc !== undefined && isEthSimulateV1Node(simulationAndVisualisationResults.rpcNetwork.httpsRpc))
 				}>
 					Simulate execution on a passing vote
 				</button>

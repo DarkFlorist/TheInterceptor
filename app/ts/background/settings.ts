@@ -1,4 +1,4 @@
-import { MOCK_PRIVATE_KEYS_ADDRESS } from '../utils/constants.js'
+import { ETHEREUM_COIN_ICON, MOCK_PRIVATE_KEYS_ADDRESS } from '../utils/constants.js'
 import { ExportedSettings, Page } from '../types/exportedSettingsTypes.js'
 import { Settings } from '../types/interceptor-messages.js'
 import { Semaphore } from '../utils/semaphore.js'
@@ -64,6 +64,7 @@ export const defaultRpcs = [
 		httpsRpc: 'https://rpc.dark.florist/flipcardtrustone',
 		currencyName: 'Ether',
 		currencyTicker: 'ETH',
+		currencyLogoUri: ETHEREUM_COIN_ICON,
 		primary: true,
 		minimized: true,
 		weth: 0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2n
@@ -74,6 +75,7 @@ export const defaultRpcs = [
 		httpsRpc: 'https://rpc-goerli.dark.florist/flipcardtrustone',
 		currencyName: 'Goerli Testnet ETH',
 		currencyTicker: 'GÖETH',
+		currencyLogoUri: ETHEREUM_COIN_ICON,
 		primary: true,
 		minimized: true,
 		weth: 0xb4fbf271143f4fbf7b91a5ded31805e42b2208d6n
@@ -84,6 +86,7 @@ export const defaultRpcs = [
 		httpsRpc: 'https://rpc-sepolia.dark.florist/flipcardtrustone',
 		currencyName: 'Sepolia Testnet ETH',
 		currencyTicker: 'SEETH',
+		currencyLogoUri: ETHEREUM_COIN_ICON,
 		primary: true,
 		minimized: true,
 		weth: 0x105083929bf9bb22c26cb1777ec92661170d4285n,
@@ -94,6 +97,7 @@ export const defaultRpcs = [
 		httpsRpc: 'https://rpc.dark.florist/winedancemuffinborrow',
 		currencyName: 'Ether',
 		currencyTicker: 'ETH',
+		currencyLogoUri: ETHEREUM_COIN_ICON,
 		primary: false,
 		minimized: true,
 		weth: 0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2n,
@@ -104,11 +108,14 @@ export const defaultRpcs = [
 		httpsRpc: 'https://rpc.dark.florist/birdchalkrenewtip',
 		currencyName: 'Ether',
 		currencyTicker: 'ETH',
+		currencyLogoUri: ETHEREUM_COIN_ICON,
 		primary: false,
 		minimized: true,
 		weth: 0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2n,
 	},
 ] as const
+
+export const isEthSimulateV1Node = (httpsRpc: string) => httpsRpc === 'https://rpc.dark.florist/winedancemuffinborrow' || httpsRpc === 'https://rpc.dark.florist/birdchalkrenewtip' || httpsRpc === 'https://rpc-goerli.dark.florist/flipcardtrustone'
 
 export async function getSettings() : Promise<Settings> {
 	const results = await browserStorageLocalGet([

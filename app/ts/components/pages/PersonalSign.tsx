@@ -24,6 +24,7 @@ import { TransactionCreated } from '../simulationExplaining/SimulationSummary.js
 import { EnrichedSolidityTypeComponent } from '../subcomponents/solidityType.js'
 import { QuarantineReasons } from '../simulationExplaining/Transactions.js'
 import { ModifyAddressWindowState } from '../../types/visualizer-types.js'
+import { isEthSimulateV1Node } from '../../background/settings.js'
 
 type SignatureCardParams = {
 	VisualizedPersonalSignRequest: VisualizedPersonalSignRequest
@@ -473,8 +474,7 @@ export function PersonalSign() {
 
 	function isConfirmDisabled(VisualizedPersonalSignRequest: VisualizedPersonalSignRequest, activeAddress: bigint) {
 		return !isPossibleToSend(VisualizedPersonalSignRequest, activeAddress) && !forceSend
-			&& !(VisualizedPersonalSignRequest.rpcNetwork.httpsRpc === 'https://rpc.dark.florist/birdchalkrenewtip' // todo remove this check
-			|| VisualizedPersonalSignRequest.rpcNetwork.httpsRpc === 'https://rpc.dark.florist/winedancemuffinborrow')
+			&& !(VisualizedPersonalSignRequest.rpcNetwork.httpsRpc !== undefined && isEthSimulateV1Node(VisualizedPersonalSignRequest.rpcNetwork.httpsRpc))
 	}
 	
 	function Buttons() {
@@ -562,8 +562,7 @@ export function PersonalSign() {
 							</div>
 							: <></>
 						}
-						{ !(VisualizedPersonalSignRequest.rpcNetwork.httpsRpc === 'https://rpc.dark.florist/birdchalkrenewtip' // todo remove this check
-							|| VisualizedPersonalSignRequest.rpcNetwork.httpsRpc === 'https://rpc.dark.florist/winedancemuffinborrow')
+						{ !(VisualizedPersonalSignRequest.rpcNetwork.httpsRpc !== undefined && isEthSimulateV1Node(VisualizedPersonalSignRequest.rpcNetwork.httpsRpc))
 							&& VisualizedPersonalSignRequest.simulationMode && (VisualizedPersonalSignRequest.activeAddress.address === undefined || VisualizedPersonalSignRequest.activeAddress.address !== MOCK_PRIVATE_KEYS_ADDRESS || VisualizedPersonalSignRequest.method !== 'personal_sign')
 							? <div style = 'display: grid'>
 								<ErrorComponent text = 'Unfortunately we cannot simulate message signing as it requires private key access 😢.'/>

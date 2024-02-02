@@ -38,6 +38,18 @@ export const EthGetLogsResponse = funtypes.ReadonlyArray(
 	}).asReadonly()
 )
 
+export type EthGetFeeHistoryResponse = funtypes.Static<typeof EthGetFeeHistoryResponse>
+export const EthGetFeeHistoryResponse = funtypes.Intersect(
+	funtypes.ReadonlyObject({
+		baseFeePerGas: funtypes.ReadonlyArray(EthereumQuantity),
+		gasUsedRatio: funtypes.ReadonlyArray(funtypes.Number),
+		oldestBlock: EthereumQuantity,
+	}),
+	funtypes.ReadonlyPartial({
+		reward: funtypes.ReadonlyArray(funtypes.ReadonlyArray(EthereumQuantity))
+	})
+)
+
 export type MulticallRequestParameters = funtypes.Static<typeof MulticallRequestParameters>
 export const MulticallRequestParameters = funtypes.ReadonlyTuple(
 	EthereumQuantity, // block number
@@ -384,6 +396,18 @@ export const Web3ClientVersion = funtypes.ReadonlyObject({
 	params: funtypes.ReadonlyTuple()
 })
 
+//https://docs.infura.io/networks/ethereum/json-rpc-methods/eth_feehistory
+const EthereumQuantityBetween1And1024 = EthereumQuantity.withConstraint((x) => x >= 1n && x <= 1024n ? true : false)
+
+export type FeeHistory = funtypes.Static<typeof FeeHistory>
+export const FeeHistory = funtypes.ReadonlyObject({
+	method: funtypes.Literal('eth_feeHistory'),
+	params: funtypes.Union(
+		funtypes.ReadonlyTuple(EthereumQuantityBetween1And1024, EthereumBlockTag),
+		funtypes.ReadonlyTuple(EthereumQuantityBetween1And1024, EthereumBlockTag, funtypes.ReadonlyArray(funtypes.Number))
+	)
+})
+
 export type EthereumJsonRpcRequest = funtypes.Static<typeof EthereumJsonRpcRequest>
 export const EthereumJsonRpcRequest = funtypes.Union(
 	EthBlockByNumberParams,
@@ -419,6 +443,7 @@ export const EthereumJsonRpcRequest = funtypes.Union(
 	ExecutionSpec383MultiCallParams,
 	WalletAddEthereumChain,
 	Web3ClientVersion,
+	FeeHistory,
 )
 
 // should be same as the above list, except with `params: funtypes.Unknown`

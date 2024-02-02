@@ -1,9 +1,6 @@
 import { addressString } from '../../utils/bigint.js'
 import { Erc721TokenApprovalChange, SimulatedAndVisualizedTransaction, ERC20TokenApprovalChange, Erc20TokenBalanceChange, TokenPriceEstimate, TokenVisualizerResultWithMetadata, NamedTokenId } from '../../types/visualizer-types.js'
 import { AddressBookEntry, Erc1155Entry, Erc721Entry } from '../../types/addressBookTypes.js'
-import { RpcNetwork } from '../../types/rpc.js'
-import { getArtificialERC20ForEth } from '../../components/ui-utils.js'
-
 export type BalanceChangeSummary = {
 	erc20TokenBalanceChanges: Map<string, bigint>, // token address, amount
 	erc20TokenApprovalChanges: Map<string, Map<string, bigint > > // token address, approved address, amount
@@ -240,10 +237,10 @@ export class LogSummarizer {
 		})
 	}
 
-	public getSummary = (addressMetaData: Map<string, AddressBookEntry>, tokenPrices: readonly TokenPriceEstimate[], namedTokenIds: readonly NamedTokenId[], rpcNetwork: RpcNetwork) => {
+	public getSummary = (addressMetaData: Map<string, AddressBookEntry>, tokenPrices: readonly TokenPriceEstimate[], namedTokenIds: readonly NamedTokenId[]) => {
 		const summaries: SummaryOutcome[] = []
 		for (const [address, _summary] of this.summary.entries()) {
-			const summary = this.getSummaryForAddr(address, addressMetaData, tokenPrices, namedTokenIds, rpcNetwork)
+			const summary = this.getSummaryForAddr(address, addressMetaData, tokenPrices, namedTokenIds)
 			if (summary === undefined) continue
 			const summaryFor = addressMetaData.get(address)
 			if (summaryFor === undefined) throw new Error('Missing metadata')
@@ -252,12 +249,12 @@ export class LogSummarizer {
 		return summaries
 	}
 
-	public readonly getSummaryForAddr = (address: string, addressMetaData: Map<string, AddressBookEntry>, tokenPrices: readonly TokenPriceEstimate[], namedTokenIds: readonly NamedTokenId[], rpcNetwork: RpcNetwork): Omit<SummaryOutcome, 'summaryFor'> | undefined => {
+	public readonly getSummaryForAddr = (address: string, addressMetaData: Map<string, AddressBookEntry>, tokenPrices: readonly TokenPriceEstimate[], namedTokenIds: readonly NamedTokenId[]): Omit<SummaryOutcome, 'summaryFor'> | undefined => {
 		const addressSummary = this.summary.get(address)
 		if (addressSummary === undefined) return undefined
 
 		const erc20TokenBalanceChanges: Erc20TokenBalanceChange[] = Array.from(addressSummary.erc20TokenBalanceChanges).map(([tokenAddress, changeAmount]) => {
-			const metadata = BigInt(tokenAddress) === 0n ? getArtificialERC20ForEth(rpcNetwork) : addressMetaData.get(tokenAddress)
+			const metadata = addressMetaData.get(tokenAddress)
 			if (metadata === undefined || metadata.type !== 'ERC20') throw new Error('Missing metadata for token')
 			return {
 				...metadata,
@@ -267,7 +264,7 @@ export class LogSummarizer {
 		})
 
 		const erc20TokenApprovalChanges: ERC20TokenApprovalChange[] = Array.from(addressSummary.erc20TokenApprovalChanges).map( ([tokenAddress, approvals]) => {
-			const metadata = BigInt(tokenAddress) === 0n ? getArtificialERC20ForEth(rpcNetwork) : addressMetaData.get(tokenAddress)
+			const metadata = addressMetaData.get(tokenAddress)
 			if (metadata === undefined || metadata.type !== 'ERC20') throw new Error('Missing metadata for token')
 			return {
 				...metadata,

@@ -1,4 +1,4 @@
-import { EthereumUnsignedTransaction, EthereumSignedTransactionWithBlockData, EthereumQuantity, EthereumBlockTag, EthereumData, EthereumBlockHeader, EthereumBlockHeaderWithTransactionHashes, EthereumBytes32 } from '../../types/wire-types.js'
+import { EthereumSignedTransactionWithBlockData, EthereumQuantity, EthereumBlockTag, EthereumData, EthereumBlockHeader, EthereumBlockHeaderWithTransactionHashes, EthereumBytes32, OptionalEthereumUnsignedTransaction, EthereumUnsignedTransaction } from '../../types/wire-types.js'
 import { IUnsignedTransaction1559 } from '../../utils/ethereum.js'
 import { TIME_BETWEEN_BLOCKS, MOCK_ADDRESS } from '../../utils/constants.js'
 import { IEthereumJSONRpcRequestHandler } from './EthereumJSONRpcRequestHandler.js'
@@ -10,6 +10,7 @@ import { assertNever } from '../../utils/typescript.js'
 import { MessageHashAndSignature, SignatureWithFakeSignerAddress, simulatePersonalSign } from './SimulationModeEthereumClientService.js'
 import { getEcRecoverOverride } from '../../utils/ethereumByteCodes.js'
 import * as funtypes from 'funtypes'
+import { isEthSimulateV1Node } from '../../background/settings.js'
 
 export type IEthereumClientService = Pick<EthereumClientService, keyof EthereumClientService>
 export class EthereumClientService {
@@ -196,9 +197,18 @@ export class EthereumClientService {
 
 	public readonly multicall = async (transactions: readonly EthereumUnsignedTransaction[], spoofedSignatures: readonly SignatureWithFakeSignerAddress[], blockNumber: bigint, extraAccountOverrides: StateOverrides = {}) => {
 		const httpsRpc = this.requestHandler.getRpcEntry().httpsRpc
-		if (httpsRpc === 'https://rpc.dark.florist/winedancemuffinborrow' || httpsRpc === 'https://rpc.dark.florist/birdchalkrenewtip') {
+		if (isEthSimulateV1Node(httpsRpc)) {
 			//TODO: Remove this when we get rid of our old multicall
-			return this.executionSpec383MultiCallOnlyTransactionsAndSignatures(transactions, spoofedSignatures, blockNumber, extraAccountOverrides)
+			
+			const transactionsWithRemoveZeroPricedOnes = transactions.map((transaction) => {
+				if (transaction.type !== '1559') return transaction
+				const { maxFeePerGas, ...transactionWithoutMaxFee } = transaction
+				return {
+					...transactionWithoutMaxFee,
+					...maxFeePerGas === 0n ? {} : { maxFeePerGas }
+				}
+			})
+			return this.executionSpec383MultiCallOnlyTransactionsAndSignatures(transactionsWithRemoveZeroPricedOnes, spoofedSignatures, blockNumber, extraAccountOverrides)
 		}
 
 		const blockAuthor: bigint = MOCK_ADDRESS
@@ -209,7 +219,7 @@ export class EthereumClientService {
 	public readonly executionSpec383MultiCall = async (blockStateCalls: readonly BlockCalls[], blockTag: EthereumBlockTag) => {
 		const parentBlock = await this.getBlock()
 		const call = {
-			method: 'eth_multicallV1',
+			method: 'eth_simulateV1',
 			params: [{
 				blockStateCalls: blockStateCalls,
 				traceTransfers: true,
@@ -263,7 +273,7 @@ export class EthereumClientService {
 	}
 
 	// intended drop in replacement of the old multicall
-	public readonly executionSpec383MultiCallOnlyTransactionsAndSignatures = async (transactions: readonly EthereumUnsignedTransaction[], signatures: readonly SignatureWithFakeSignerAddress[], blockNumber: bigint, extraAccountOverrides: StateOverrides): Promise<MulticallResponse> => {
+	public readonly executionSpec383MultiCallOnlyTransactionsAndSignatures = async (transactions: readonly OptionalEthereumUnsignedTransaction[], signatures: readonly SignatureWithFakeSignerAddress[], blockNumber: bigint, extraAccountOverrides: StateOverrides): Promise<MulticallResponse> => {
 		const ecRecoverMovedToAddress = 0x123456n
 		const ecRecoverAddress = 1n
 		const parentBlock = await this.getBlock()

@@ -7,6 +7,7 @@ export const SUSHISWAP_V2_ROUTER_ADDRESS = 0xd9e1cE17f2641f24aE83637ab66a2cca9C3
 export const UNISWAP_V3_ROUTER = 0xE592427A0AEce92De3Edee1F18E0157C05861564n
 export const UNISWAP_V3_NFT_ROUTER = 0xC36442b4a4522E871399CD717aBDD847Ab11FE88n
 export const MULTICALL3 = 0xcA11bde05977b3631167028862bE2a173976CA11n // Contract for bundling bulk call transactions, deployed on every chain. https://github.com/mds1/multicall
+export const ETHEREUM_LOGS_LOGGER_ADDRESS = 0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeEn
 
 export const Multicall3ABI = [
 	'function aggregate3(tuple(address target, bool allowFailure, bytes callData)[] calls) payable returns (tuple(bool success, bytes returnData)[] returnData)',
@@ -91,6 +92,8 @@ export const ICON_INTERCEPTOR_DISABLED = '../img/head-interceptor-disabled.png' 
 export const DEFAULT_TAB_CONNECTION = { icon: ICON_NOT_ACTIVE, iconReason: 'The website has not requested to connect to The Interceptor.' }
 export const DEFAULT_TAB_CONNECTION_INTERCEPTOR_DISABLED = { icon: ICON_INTERCEPTOR_DISABLED, iconReason: 'The Interceptor is completely disabled by user request.' }
 
+export const ETHEREUM_COIN_ICON = '../../img/coins/ethereum.png'
+
 export const MAKE_YOU_RICH_TRANSACTION = {
 	transaction: {
 		type: '1559' as const,
@@ -108,6 +111,7 @@ export const MAKE_YOU_RICH_TRANSACTION = {
 	},
 	transactionSendingFormat: 'eth_sendTransaction' as const,
 }
+export const DEFAULT_CALL_ADDRESS = 0x1n
 
 export const TIME_BETWEEN_BLOCKS = 12
 export const METAMASK_LOGO = '../img/signers/metamask.svg'
@@ -194,6 +198,9 @@ export const CHAIN_NAMES = new Map<string, string>( [
 ] )
 
 export function getChainName(chainId: bigint) { return CHAIN_NAMES.get(chainId.toString()) || `Chain: ${chainId.toString()}` }
+
+export const ETHEREUM_EIP1559_ELASTICITY_MULTIPLIER = 4n // Bounds the maximum gas limit an EIP-1559 block may have, Ethereum = 4, Polygon = 8, lets just default to 4
+export const ETHEREUM_EIP1559_BASEFEECHANGEDENOMINATOR = 8n // Bounds the amount the base fee can change between blocks.
 
 export const MOCK_PRIVATE_KEYS_ADDRESS = 0x7E5F4552091A69125d5DfCb7b8C2659029395Bdfn // an address represeting 0x1 privatekey
 
