@@ -58,7 +58,6 @@ export function InterceptorAccessList(param: InterceptorAccessListParams) {
 						access: newAccess.access,
 						interceptorDisabled: newAccess.interceptorDisabled,
 						removed: false,
-
 					}
 				}
 				// we need to merge edited and new updated access rights together
