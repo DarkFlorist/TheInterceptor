@@ -97,8 +97,7 @@ function InterceptorDisabledButton({ disableInterceptorToggle, interceptorDisabl
 	return <button style = 'margin-top: 10px' className = 'button is-primary is-small' onClick = { () => disableInterceptorToggle(!interceptorDisabled) } >
 			{ interceptorDisabled ? <>
 				<span class = 'icon'> <img src = { ICON_ACTIVE }/> </span>
-				<span> Enable Interceptor
-				</span>
+				<span> Enable Interceptor </span>
 			</> : <>
 				<span class = 'icon'> <img src = { ICON_INTERCEPTOR_DISABLED }/> </span>
 				<span> Disable Interceptor </span>
