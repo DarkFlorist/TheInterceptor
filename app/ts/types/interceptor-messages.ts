@@ -7,7 +7,7 @@ import { UniqueRequestIdentifier, WebsiteSocket } from '../utils/requests.js'
 import { EthGetFeeHistoryResponse, EthGetLogsResponse, EthGetStorageAtParams, EthTransactionReceiptResponse, GetBlockReturn, GetSimulationStackReply, SendRawTransactionParams, SendTransactionParams, WalletAddEthereumChain } from './JsonRpc-types.js'
 import { AddressBookEntries, AddressBookEntry, ActiveAddressEntry } from './addressBookTypes.js'
 import { Page } from './exportedSettingsTypes.js'
-import { PopupOrTabId, Website, WebsiteAccessArray } from './websiteAccessTypes.js'
+import { PopupOrTabId, Website, WebsiteAccess, WebsiteAccessArray } from './websiteAccessTypes.js'
 import { SignerName } from './signerTypes.js'
 import { ConfirmTransactionDialogState, PendingAccessRequests, PendingTransaction } from './accessRequest.js'
 import { CodeMessageError, RpcEntries, RpcEntry, RpcNetwork } from './rpc.js'
@@ -305,14 +305,9 @@ export const ChangeInterceptorAccess = funtypes.ReadonlyObject({
 	method: funtypes.Literal('popup_changeInterceptorAccess'),
 	data: funtypes.ReadonlyArray(
 		funtypes.ReadonlyObject({
-			website: Website,
-			access: funtypes.Boolean,
-			addressAccess: funtypes.Union(
-				funtypes.ReadonlyArray(funtypes.ReadonlyObject( {
-					address: EthereumAddress,
-					access: funtypes.Boolean,
-				} ))
-			, funtypes.Undefined),
+			removed: funtypes.Boolean,
+			oldEntry: WebsiteAccess, 
+			newEntry: WebsiteAccess
 		})
 	)
 }).asReadonly()
@@ -489,7 +484,7 @@ export const UpdateHomePage = funtypes.ReadonlyObject({
 		visualizedSimulatorState: funtypes.Union(CompleteVisualizedSimulation, funtypes.Undefined),
 		websiteAccessAddressMetadata: funtypes.ReadonlyArray(ActiveAddressEntry),
 		activeAddresses: funtypes.ReadonlyArray(ActiveAddressEntry),
-		tabState: funtypes.Union(funtypes.Undefined, TabState),
+		tabState: TabState,
 		currentBlockNumber: funtypes.Union(EthereumQuantity, funtypes.Undefined),
 		settings: Settings,
 		makeMeRich: funtypes.Boolean,
@@ -497,6 +492,7 @@ export const UpdateHomePage = funtypes.ReadonlyObject({
 		activeSigningAddressInThisTab: OptionalEthereumAddress,
 		tabId: funtypes.Union(funtypes.Number, funtypes.Undefined),
 		rpcEntries: RpcEntries,
+		interceptorDisabled: funtypes.Boolean,
 	})
 })
 
@@ -714,6 +710,24 @@ export const OpenWebPage = funtypes.ReadonlyObject({
 	})
 }).asReadonly()
 
+export type DisableInterceptor = funtypes.Static<typeof DisableInterceptor>
+export const DisableInterceptor = funtypes.ReadonlyObject({
+	method: funtypes.Literal('popup_setDisableInterceptor'),
+	data: funtypes.ReadonlyObject({
+		interceptorDisabled: funtypes.Boolean,
+		website: Website,
+	})
+}).asReadonly()
+
+export type DisableInterceptorReply = funtypes.Static<typeof DisableInterceptorReply>
+export const DisableInterceptorReply = funtypes.ReadonlyObject({
+	method: funtypes.Literal('popup_setDisableInterceptorReply'),
+	data: funtypes.ReadonlyObject({
+		interceptorDisabled: funtypes.Boolean,
+		website: Website,
+	})
+}).asReadonly()
+
 export type PopupMessage = funtypes.Static<typeof PopupMessage>
 export const PopupMessage = funtypes.Union(
 	TransactionConfirmation,
@@ -757,6 +771,7 @@ export const PopupMessage = funtypes.Union(
 	ChangeAddOrModifyAddressWindowState,
 	FetchAbiAndNameFromEtherscan,
 	OpenWebPage,
+	DisableInterceptor,
 )
 
 export type MessageToPopup = funtypes.Static<typeof MessageToPopup>
@@ -781,4 +796,5 @@ export const MessageToPopup = funtypes.Union(
 	SettingsOpenedReply,
 	PopupAddOrModifyAddressWindowStateInfomation,
 	FetchAbiAndNameFromEtherscanReply,
+	DisableInterceptorReply,
 )

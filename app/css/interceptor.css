@@ -822,3 +822,14 @@ svg.spinner > circle {
     border-width: medium;
     border-color: white;
 }
+
+.popup-footer {
+	position: fixed;
+	left: 20px;
+	bottom: 0;
+	width: 480px;
+	height: 40px;
+	border-top-left-radius: 0.25rem;
+	border-top-right-radius: 0.25rem;
+	background-color: var(--window-header-bg-color);
+}

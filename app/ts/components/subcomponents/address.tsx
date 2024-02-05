@@ -231,7 +231,7 @@ export function FromSmallAddressToSmallAddress({ from, to, renameAddressCallBack
 export function WebsiteOriginText( { icon, websiteOrigin, title }: Website) {
 	return <div class = 'card-header-icon unsetcursor' style = 'width: 100%; padding: 0'>
 		<span style = 'width: 24px; height: 24px; min-width: 24px'>
-			<img src = { icon } style = 'width: 24px; height: 24px;'/>
+			{ icon === undefined ? <></> : <img src = { icon } style = 'width: 24px; height: 24px;'/> }
 		</span>
 
 		<div class = 'media-content' style = 'overflow-y: hidden; overflow-x: clip; display: block; padding-left: 10px;'>

@@ -1,4 +1,4 @@
-import { ICON_NOT_ACTIVE, getChainName } from '../utils/constants.js'
+import { DEFAULT_TAB_CONNECTION, getChainName } from '../utils/constants.js'
 import { Semaphore } from '../utils/semaphore.js'
 import { PendingChainChangeConfirmationPromise, PendingPersonalSignPromise, RpcConnectionStatus, TabState } from '../types/user-interface-types.js'
 import { PartialIdsOfOpenedTabs, browserStorageLocalGet, browserStorageLocalRemove, browserStorageLocalSet, getTabStateFromStorage, removeTabStateFromStorage, setTabStateToStorage } from '../utils/storageUtils.js'
@@ -122,14 +122,12 @@ export const getDefaultSignerName = async () => (await browserStorageLocalGet('s
 
 export async function getTabState(tabId: number) : Promise<TabState> {
 	return await getTabStateFromStorage(tabId) ?? {
+		website: undefined,
 		signerName: await getDefaultSignerName(),
 		signerAccounts: [],
 		signerChain: undefined,
 		signerAccountError: undefined,
-		tabIconDetails: {
-			icon: ICON_NOT_ACTIVE,
-			iconReason: 'No active address selected.',
-		},
+		tabIconDetails: DEFAULT_TAB_CONNECTION,
 		activeSigningAddress: undefined
 	}
 }

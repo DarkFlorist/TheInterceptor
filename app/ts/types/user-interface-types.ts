@@ -8,7 +8,7 @@ import { ActiveAddress, ActiveAddressEntry, AddressBookEntry } from './addressBo
 import { Page } from './exportedSettingsTypes.js'
 import { PopupOrTabId, Website, WebsiteAccessArray } from './websiteAccessTypes.js'
 import { SignerName } from './signerTypes.js'
-import { ICON_ACCESS_DENIED, ICON_ACTIVE, ICON_NOT_ACTIVE, ICON_SIGNING, ICON_SIGNING_NOT_SUPPORTED, ICON_SIMULATING } from '../utils/constants.js'
+import { ICON_ACCESS_DENIED, ICON_ACTIVE, ICON_INTERCEPTOR_DISABLED, ICON_NOT_ACTIVE, ICON_SIGNING, ICON_SIGNING_NOT_SUPPORTED, ICON_SIMULATING } from '../utils/constants.js'
 import { CodeMessageError, RpcEntries, RpcEntry, RpcNetwork } from './rpc.js'
 import { VisualizedPersonalSignRequest } from './personal-message-definitions.js'
 
@@ -52,6 +52,7 @@ export type HomeParams = {
 	rpcEntries: RpcEntries,
 	simulationUpdatingState: SimulationUpdatingState | undefined,
 	simulationResultState: SimulationResultState | undefined,
+	interceptorDisabled: boolean,
 }
 
 export type ChangeActiveAddressParam = {
@@ -132,6 +133,7 @@ export const TabIcon = funtypes.Union(
 	funtypes.Literal(ICON_SIMULATING),
 	funtypes.Literal(ICON_SIGNING),
 	funtypes.Literal(ICON_SIGNING_NOT_SUPPORTED),
+	funtypes.Literal(ICON_INTERCEPTOR_DISABLED),
 )
 
 export type TabIconDetails = funtypes.Static<typeof TabIconDetails>
@@ -154,6 +156,7 @@ export const WindowOrTabId = funtypes.ReadonlyObject({
 
 export type TabState = funtypes.Static<typeof TabState>
 export const TabState = funtypes.ReadonlyObject({
+	website: funtypes.Union(Website, funtypes.Undefined),
 	signerName: SignerName,
 	signerAccounts: funtypes.ReadonlyArray(EthereumAddress),
 	signerAccountError: funtypes.Union(CodeMessageError, funtypes.Undefined),

@@ -1,6 +1,7 @@
 import './background/background-startup.js'
 import { getHtmlFile } from './background/backgroundUtils.js'
 import { clearTabStates } from './background/storageVariables.js'
+import { updateContentScriptInjectionStrategyManifestV3 } from './utils/contentScriptsUpdating.js'
 import { sleep } from './utils/sleep.js'
 
 browser.action.setPopup({ popup: getHtmlFile('popup') })
@@ -11,31 +12,7 @@ self.addEventListener('install', () => {
 
 self.addEventListener('activate', () => clearTabStates())
 
-// 'MAIN'` is not supported in `browser.` but its in `chrome.`. This code is only going to be run in manifest v3 environment (chrome) so this should be fine, just ugly
-type RegisteredContentScript = Parameters<typeof browser.scripting.registerContentScripts>[0][0]
-type FixedRegisterContentScripts = (scripts: (RegisteredContentScript & { world?: 'MAIN' | 'ISOLATED' })[]) => Promise<void>
-const fixedRegisterContentScripts = ((browser.scripting.registerContentScripts as unknown) as FixedRegisterContentScripts)
-
-const injectContentScript = async () => {
-	try {
-		await fixedRegisterContentScripts([{
-			id: 'inpage2',
-			matches: ['file://*/*', 'http://*/*', 'https://*/*'],
-			js: ['/vendor/webextension-polyfill/browser-polyfill.js', '/inpage/js/listenContentScript.js'],
-			runAt: 'document_start',
-		}, {
-			id: 'inpage',
-			matches: ['file://*/*', 'http://*/*', 'https://*/*'],
-			js: ['/inpage/js/inpage.js'],
-			runAt: 'document_start',
-			world: 'MAIN',
-		}])
-	} catch (err) {
-		console.warn(err)
-	}
-}
-
-injectContentScript()
+updateContentScriptInjectionStrategyManifestV3()
 
 /// Workaround for ChromiumIssue1316588 https://bugs.chromium.org/p/chromium/issues/detail?id=1316588
 // TODO, remove when chrome fixes the bug

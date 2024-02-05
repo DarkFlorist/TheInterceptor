@@ -2,12 +2,12 @@ import { changeActiveAddressAndChainAndResetSimulation, changeActiveRpc, getPrep
 import { getSettings, setUseTabsInsteadOfPopup, setMakeMeRich, setPage, setUseSignersAddressAsActiveAddress, updateWebsiteAccess, exportSettingsAndAddressBook, importSettingsAndAddressBook, getMakeMeRich, getUseTabsInsteadOfPopup, getMetamaskCompatibilityMode, setMetamaskCompatibilityMode, getPage } from './settings.js'
 import { getPendingTransactions, getCurrentTabId, getTabState, saveCurrentTabId, setRpcList, getRpcList, getPrimaryRpcForChain, getRpcConnectionStatus, updateUserAddressBookEntries, getSimulationResults, setIdsOfOpenedTabs, getIdsOfOpenedTabs, replacePendingTransaction } from './storageVariables.js'
 import { Simulator } from '../simulation/simulator.js'
-import { ChangeActiveAddress, ChangeMakeMeRich, ChangePage, RemoveTransaction, RequestAccountsFromSigner, TransactionConfirmation, InterceptorAccess, ChangeInterceptorAccess, ChainChangeConfirmation, EnableSimulationMode, ChangeActiveChain, AddOrEditAddressBookEntry, GetAddressBookData, RemoveAddressBookEntry, InterceptorAccessRefresh, InterceptorAccessChangeAddress, Settings, RefreshConfirmTransactionMetadata, RefreshInterceptorAccessMetadata, ChangeSettings, ImportSettings, SetRpcList, PersonalSignApproval, UpdateHomePage, RemoveSignedMessage, SimulateGovernanceContractExecutionReply, SimulateGovernanceContractExecution, ChangeAddOrModifyAddressWindowState, FetchAbiAndNameFromEtherscan, OpenWebPage } from '../types/interceptor-messages.js'
+import { ChangeActiveAddress, ChangeMakeMeRich, ChangePage, RemoveTransaction, RequestAccountsFromSigner, TransactionConfirmation, InterceptorAccess, ChangeInterceptorAccess, ChainChangeConfirmation, EnableSimulationMode, ChangeActiveChain, AddOrEditAddressBookEntry, GetAddressBookData, RemoveAddressBookEntry, InterceptorAccessRefresh, InterceptorAccessChangeAddress, Settings, RefreshConfirmTransactionMetadata, RefreshInterceptorAccessMetadata, ChangeSettings, ImportSettings, SetRpcList, PersonalSignApproval, UpdateHomePage, RemoveSignedMessage, SimulateGovernanceContractExecutionReply, SimulateGovernanceContractExecution, ChangeAddOrModifyAddressWindowState, FetchAbiAndNameFromEtherscan, OpenWebPage, DisableInterceptor } from '../types/interceptor-messages.js'
 import { formEthSendTransaction, formSendRawTransaction, resolvePendingTransaction, updateConfirmTransactionViewWithPendingTransactionOrClose } from './windows/confirmTransaction.js'
 import { resolvePersonalSign } from './windows/personalSign.js'
 import { getAddressMetadataForAccess, requestAddressChange, resolveInterceptorAccess } from './windows/interceptorAccess.js'
 import { resolveChainChange } from './windows/changeChain.js'
-import { sendMessageToApprovedWebsitePorts, updateWebsiteApprovalAccesses } from './accessManagement.js'
+import { sendMessageToApprovedWebsitePorts, setInterceptorDisabledForWebsite, updateWebsiteApprovalAccesses } from './accessManagement.js'
 import { getHtmlFile, sendPopupMessageToOpenWindows } from './backgroundUtils.js'
 import { CHROME_NO_TAB_WITH_ID_ERROR } from '../utils/constants.js'
 import { findEntryWithSymbolOrName, getMetadataForAddressBookData } from './medataSearch.js'
@@ -25,6 +25,8 @@ import { fetchAbiFromEtherscan, isValidAbi } from '../simulation/services/EtherS
 import { stringToAddress } from '../utils/bigint.js'
 import { ethers } from 'ethers'
 import { getIssueWithAddressString } from '../components/ui-utils.js'
+import { updateContentScriptInjectionStrategyManifestV2, updateContentScriptInjectionStrategyManifestV3 } from '../utils/contentScriptsUpdating.js'
+import { Website } from '../types/websiteAccessTypes.js'
 
 export async function confirmDialog(simulator: Simulator, websiteTabConnections: WebsiteTabConnections, confirmation: TransactionConfirmation) {
 	await resolvePendingTransaction(simulator, websiteTabConnections, confirmation)
@@ -57,7 +59,6 @@ export async function getSignerAccount() {
 }
 
 export async function changeActiveAddress(simulator: Simulator, websiteTabConnections: WebsiteTabConnections, addressChange: ChangeActiveAddress) {
-
 	// if using signers address, set the active address to signers address if available, otherwise we don't know active address and set it to be undefined
 	if (addressChange.data.activeAddress === 'signer') {
 		const signerAccount = await getSignerAccount()
@@ -107,7 +108,21 @@ export async function addOrModifyAddressBookEntry(simulator: Simulator, websiteT
 }
 
 export async function changeInterceptorAccess(simulator: Simulator, websiteTabConnections: WebsiteTabConnections, accessChange: ChangeInterceptorAccess) {
-	await updateWebsiteAccess(() => accessChange.data) // TODO: update 'popup_changeInterceptorAccess' to return list of changes instead of a new list
+	await updateWebsiteAccess((previousAccess) => {
+		const withEntriesRemoved = previousAccess.filter((acc) => accessChange.data.find((change) => change.newEntry.website.websiteOrigin ===  acc.website.websiteOrigin)?.removed !== true)
+		return withEntriesRemoved.map((entry) => {
+			const changeForEntry = accessChange.data.find((change) => change.newEntry.website.websiteOrigin === entry.website.websiteOrigin)
+			if (changeForEntry === undefined) return entry
+			return changeForEntry.newEntry
+		})
+	})
+
+	const interceptorDisablesChanged = accessChange.data.filter((x) => x.newEntry.interceptorDisabled !== x.oldEntry.interceptorDisabled).map((x) => x)
+	await Promise.all(interceptorDisablesChanged.map(async (disable) => {
+		if (disable.newEntry.interceptorDisabled === undefined) return
+		return await disableInterceptorForPage(websiteTabConnections, disable.newEntry.website, disable.newEntry.interceptorDisabled)
+	}))
+
 	updateWebsiteApprovalAccesses(simulator, websiteTabConnections, undefined, await getSettings())
 	return await sendPopupMessageToOpenWindows({ method: 'popup_interceptor_access_changed' })
 }
@@ -259,11 +274,12 @@ export async function homeOpened(simulator: Simulator, refreshMetadata: boolean)
 
 	const visualizedSimulatorStatePromise: Promise<CompleteVisualizedSimulation> = refreshMetadata ? updateSimulationMetadata(simulator.ethereum) : getSimulationResults()
 	const tabId = await getLastKnownCurrentTabId()
-	const tabState = tabId === undefined ? undefined : await getTabState(tabId)
+	const tabState = tabId === undefined ? await getTabState(-1) : await getTabState(tabId)
 	const settings = await settingsPromise
 	const makeMeRich = await makeMeRichPromise
 	const rpcConnectionStatus = await rpcConnectionStatusPromise
-
+	const websiteOrigin = tabState.website?.websiteOrigin
+	const interceptorDisabled = websiteOrigin === undefined ? false : settings.websiteAccess.find((entry) => entry.website.websiteOrigin === websiteOrigin && entry.interceptorDisabled) !== undefined
 	const updatedPage: UpdateHomePage = {
 		method: 'popup_UpdateHomePage' as const,
 		data: {
@@ -278,9 +294,9 @@ export async function homeOpened(simulator: Simulator, refreshMetadata: boolean)
 			rpcConnectionStatus,
 			tabId,
 			rpcEntries: await rpcEntriesPromise,
+			interceptorDisabled,
 		}
 	}
-
 	await sendPopupMessageToOpenWindows(serialize(UpdateHomePage, updatedPage))
 }
 
@@ -452,4 +468,29 @@ export async function openWebPage(parsedRequest: OpenWebPage) {
 	finally {
 		return await browser.tabs.create({ url: parsedRequest.data.url, active: true })
 	}
+}
+
+async function disableInterceptorForPage(websiteTabConnections: WebsiteTabConnections, website: Website, interceptorDisabled: boolean) {
+	await setInterceptorDisabledForWebsite(website, interceptorDisabled)
+	if (browser.runtime.getManifest().manifest_version === 3) await updateContentScriptInjectionStrategyManifestV3()
+	else await updateContentScriptInjectionStrategyManifestV2()
+
+	// reload all connected tabs of the same origin and the current webpage
+	const tabIdsToRefesh = Array.from(websiteTabConnections.entries()).map(([tabId, _connection]) => tabId)
+	const currentTabId = await getLastKnownCurrentTabId()
+	const withCurrentTabid = currentTabId === undefined ? tabIdsToRefesh : [...tabIdsToRefesh, currentTabId]
+	Array.from(new Set(withCurrentTabid)).forEach(async (tabId) => {
+		try {
+			await browser.tabs.reload(tabId)
+		} catch (e) {
+			console.warn('failed to reload tab')
+			console.warn(e)
+		}
+	})
+}
+
+export async function disableInterceptor(simulator: Simulator, websiteTabConnections: WebsiteTabConnections, parsedRequest: DisableInterceptor) {
+	await disableInterceptorForPage(websiteTabConnections, parsedRequest.data.website, parsedRequest.data.interceptorDisabled)
+	updateWebsiteApprovalAccesses(simulator, websiteTabConnections, undefined, await getSettings())
+	return await sendPopupMessageToOpenWindows({ method: 'popup_setDisableInterceptorReply' as const, data: parsedRequest.data })
 }
