@@ -1,3 +1,4 @@
+import { sendPopupMessageToOpenWindows } from '../background/backgroundUtils.js'
 import { JsonRpcErrorResponse } from '../types/JsonRpc-types.js'
 
 export class ErrorWithData extends Error {
@@ -38,4 +39,14 @@ export function printError(error: unknown) {
 		return console.error(`Error: ${ error.message }\n${ JSON.stringify(error.data) }`)
 	}
 	return console.error(error)
+}
+
+export async function handleUnexpectedError(error: unknown) {
+	printError(error)
+	await sendPopupMessageToOpenWindows({
+		method: 'popup_UnexpectedErrorOccured' as const,
+		data: {
+			message: typeof error === 'object' && error !== null && 'message' in error && error.message !== undefined && typeof error.message === 'string' ? error.message : 'Please see The Interceptors console for more details on the error.'
+		}
+	})
 }

@@ -10,7 +10,7 @@ import { InterceptorAccessList } from './pages/InterceptorAccessList.js'
 import { ethers } from 'ethers'
 import { PasteCatcher } from './subcomponents/PasteCatcher.js'
 import { truncateAddr } from '../utils/ethereum.js'
-import { DEFAULT_TAB_CONNECTION } from '../utils/constants.js'
+import { DEFAULT_TAB_CONNECTION, METAMASK_ERROR_ALREADY_PENDING, METAMASK_ERROR_USER_REJECTED_REQUEST, TIME_BETWEEN_BLOCKS } from '../utils/constants.js'
 import { UpdateHomePage, Settings, MessageToPopup } from '../types/interceptor-messages.js'
 import { version, gitCommitSha } from '../version.js'
 import { sendPopupMessageToBackgroundPage } from '../background/backgroundUtils.js'
@@ -21,6 +21,45 @@ import { WebsiteAccessArray } from '../types/websiteAccessTypes.js'
 import { Page } from '../types/exportedSettingsTypes.js'
 import { VisualizedPersonalSignRequest } from '../types/personal-message-definitions.js'
 import { RpcEntries, RpcEntry, RpcNetwork } from '../types/rpc.js'
+import { ErrorComponent, UnexpectedError } from './subcomponents/Error.js'
+import { SignersLogoName } from './subcomponents/signers.js'
+import { useSignal } from '@preact/signals'
+import { SomeTimeAgo } from './subcomponents/SomeTimeAgo.js'
+import { noNewBlockForOverTwoMins } from '../background/iconHandler.js'
+import { humanReadableDate } from './ui-utils.js'
+
+type ProviderErrorsParam = {
+	tabState: TabState | undefined
+}
+
+export function ProviderErrors({ tabState } : ProviderErrorsParam) {
+	if (tabState === undefined || tabState.signerAccountError == undefined) return <></>
+	if (tabState.signerAccountError.code === METAMASK_ERROR_USER_REJECTED_REQUEST) return <ErrorComponent warning = { true } text = { <>Could not get an account from <SignersLogoName signerName = { tabState.signerName } /> as user denied the request.</> }/>
+	if (tabState.signerAccountError.code === METAMASK_ERROR_ALREADY_PENDING.error.code) return <ErrorComponent warning = { true } text = { <>There's a connection request pending on <SignersLogoName signerName = { tabState.signerName } />. Please review the request.</> }/>
+	return <ErrorComponent warning = { true } text = { <><SignersLogoName signerName = { tabState.signerName } /> returned error: "{ tabState.signerAccountError.message }".</> }/>
+}
+
+type NetworkErrorParams = {
+	rpcConnectionStatus: RpcConnectionStatus
+}
+
+export function NetworkErrors({ rpcConnectionStatus } : NetworkErrorParams) {
+	if (rpcConnectionStatus === undefined) return <></>
+	const nextConnectionAttempt = new Date(rpcConnectionStatus.lastConnnectionAttempt.getTime() + TIME_BETWEEN_BLOCKS * 1000)
+	const retrying = useSignal((nextConnectionAttempt.getTime() - new Date().getTime()) > 0)
+	return <>
+		{ rpcConnectionStatus.isConnected === false && retrying.value ?
+			<ErrorComponent warning = { true } text = {
+				<>Unable to connect to { rpcConnectionStatus.rpcNetwork.name }. Retrying in <SomeTimeAgo priorTimestamp = { nextConnectionAttempt } countBackwards = { true }/> .</>
+			}/>
+		: <></> }
+		{ rpcConnectionStatus.latestBlock !== undefined && noNewBlockForOverTwoMins(rpcConnectionStatus) && retrying.value  ?
+			<ErrorComponent warning = { true } text = {
+				<>The connected RPC ({ rpcConnectionStatus.rpcNetwork.name }) seem to be stuck at block { rpcConnectionStatus.latestBlock.number } (occured on: { humanReadableDate(rpcConnectionStatus.latestBlock.timestamp) }). Retrying in <SomeTimeAgo priorTimestamp = { nextConnectionAttempt } countBackwards = { true }/>.</>
+			}/>
+		: <></> }
+	</>
+}
 
 export function App() {
 	const [appPage, setAppPage] = useState<Page>({ page: 'Home' })
@@ -44,6 +83,7 @@ export function App() {
 	const [simulationUpdatingState, setSimulationUpdatingState] = useState<SimulationUpdatingState | undefined>(undefined)
 	const [simulationResultState, setSimulationResultState] = useState<SimulationResultState | undefined>(undefined)
 	const [interceptorDisabled, setInterceptorDisabled] = useState<boolean>(false)
+	const [unexpectedError, setUnexpectedError] = useState<string | undefined>(undefined)
 
 	async function setActiveAddressAndInformAboutIt(address: bigint | 'signer') {
 		setUseSignersAddressAsActiveAddress(address === 'signer')
@@ -149,12 +189,13 @@ export function App() {
 			const maybeParsed = MessageToPopup.safeParse(msg)
 			if (!maybeParsed.success) return // not a message we are interested in
 			const parsed = maybeParsed.value
+			if (parsed.method === 'popup_UnexpectedErrorOccured') return setUnexpectedError(parsed.data.message)
 			if (parsed.method === 'popup_settingsUpdated') return updateHomePageSettings(parsed.data, true)
 			if (parsed.method === 'popup_activeSigningAddressChanged' && parsed.data.tabId === currentTabId) return setActiveSigningAddress(parsed.data.activeSigningAddress)
 			if (parsed.method === 'popup_websiteIconChanged') return setTabConnection(parsed.data)
+			if (parsed.method === 'popup_new_block_arrived') return setRpcConnectionStatus(parsed.data.rpcConnectionStatus)
 			if (parsed.method === 'popup_failed_to_get_block') return setRpcConnectionStatus(parsed.data.rpcConnectionStatus)
 			if (parsed.method === 'popup_update_rpc_list') return
-			if (parsed.method === 'popup_new_block_arrived') return
 			if (parsed.method === 'popup_simulation_state_changed') return await sendPopupMessageToBackgroundPage({ method: 'popup_homeOpened' })
 			if (parsed.method !== 'popup_UpdateHomePage') return await sendPopupMessageToBackgroundPage({ method: 'popup_requestNewHomeData' })
 			return updateHomePage(UpdateHomePage.parse(parsed))
@@ -268,6 +309,10 @@ export function App() {
 								</a>
 							</div>
 						</nav>
+						
+						<UnexpectedError close = { () => { setUnexpectedError(undefined) } } message = { unexpectedError }/>
+						<NetworkErrors rpcConnectionStatus = { rpcConnectionStatus }/>
+						<ProviderErrors tabState = { tabState }/>
 						<Home
 							setActiveRpcAndInformAboutIt = { setActiveRpcAndInformAboutIt }
 							rpcNetwork = { rpcNetwork }

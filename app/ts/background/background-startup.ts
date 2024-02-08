@@ -13,7 +13,7 @@ import { refreshSimulation } from './popupMessageHandlers.js'
 import { Semaphore } from '../utils/semaphore.js'
 import { RawInterceptedRequest } from '../utils/requests.js'
 import { ICON_NOT_ACTIVE } from '../utils/constants.js'
-import { printError } from '../utils/errors.js'
+import { handleUnexpectedError } from '../utils/errors.js'
 import { browserStorageLocalGet, browserStorageLocalRemove } from '../utils/storageUtils.js'
 import { ActiveAddress, AddressBookEntries } from '../types/addressBookTypes.js'
 import { getUniqueItemsByProperties } from '../utils/typed-arrays.js'
@@ -58,11 +58,15 @@ export async function onContentScriptConnected(simulator: Simulator, port: brows
 		wantsToConnect: false,
 	}
 	port.onDisconnect.addListener(() => {
-		const tabConnection = websiteTabConnections.get(socket.tabId)
-		if (tabConnection === undefined) return
-		delete tabConnection.connections[websiteSocketToString(socket)]
-		if (Object.keys(tabConnection).length === 0) {
-			websiteTabConnections.delete(socket.tabId)
+		try {
+			const tabConnection = websiteTabConnections.get(socket.tabId)
+			if (tabConnection === undefined) return
+			delete tabConnection.connections[websiteSocketToString(socket)]
+			if (Object.keys(tabConnection).length === 0) {
+				websiteTabConnections.delete(socket.tabId)
+			}
+		} catch(error: unknown) {
+			handleUnexpectedError(error)
 		}
 	})
 
@@ -75,17 +79,21 @@ export async function onContentScriptConnected(simulator: Simulator, port: brows
 			&& payload.data !== null
 			&& 'interceptorRequest' in payload.data
 		)) return
-		await pendingRequestLimiter.execute(async () => {
-			const rawMessage = RawInterceptedRequest.parse(payload.data)
-			const request = {
-				method: rawMessage.method,
-				...'params' in rawMessage ? { params: rawMessage.params } : {},
-				interceptorRequest: rawMessage.interceptorRequest,
-				usingInterceptorWithoutSigner: rawMessage.usingInterceptorWithoutSigner,
-				uniqueRequestIdentifier: { requestId: rawMessage.requestId, requestSocket: socket },
-			}
-			return await handleInterceptedRequest(port, websiteOrigin, websitePromise, simulator, socket, request, websiteTabConnections)
-		})
+		try {
+			await pendingRequestLimiter.execute(async () => {
+				const rawMessage = RawInterceptedRequest.parse(payload.data)
+				const request = {
+					method: rawMessage.method,
+					...'params' in rawMessage ? { params: rawMessage.params } : {},
+					interceptorRequest: rawMessage.interceptorRequest,
+					usingInterceptorWithoutSigner: rawMessage.usingInterceptorWithoutSigner,
+					uniqueRequestIdentifier: { requestId: rawMessage.requestId, requestSocket: socket },
+				}
+				return await handleInterceptedRequest(port, websiteOrigin, websitePromise, simulator, socket, request, websiteTabConnections)
+			})
+		} catch(error: unknown) {
+			await handleUnexpectedError(error)
+		}
 	})
 
 	if (tabConnection === undefined) {
@@ -123,7 +131,7 @@ async function newBlockAttemptCallback(blockheader: EthereumBlockHeader, ethereu
 			await sendSubscriptionMessagesForNewBlock(blockheader.number, ethereumClientService, settings.simulationMode ? await refreshSimulation(simulator, ethereumClientService, settings) : undefined, websiteTabConnections)
 		}
 	} catch(error) {
-		printError(error)
+		await handleUnexpectedError(error)
 	}
 }
 
@@ -139,7 +147,7 @@ async function onErrorBlockCallback(ethereumClientService: EthereumClientService
 		await updateExtensionBadge()
 		return await sendPopupMessageToOpenWindows({ method: 'popup_failed_to_get_block', data: { rpcConnectionStatus } })
 	} catch(error) {
-		printError(error)
+		await handleUnexpectedError(error)
 	}
 }
 
@@ -149,16 +157,30 @@ async function startup() {
 	const simulatorNetwork = userSpecifiedSimulatorNetwork === undefined ? defaultRpcs[0] : userSpecifiedSimulatorNetwork
 	const simulator = new Simulator(simulatorNetwork, newBlockAttemptCallback, onErrorBlockCallback)
 	browser.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
-		if (changeInfo.status !== 'complete') return
-		if (tab.url === undefined) return
-		const websiteOrigin = (new URL(tab.url)).hostname
-		const website = await retrieveWebsiteDetails(tabId, websiteOrigin)
-		await updateTabState(tabId, (previousState: TabState) => ({ ...previousState, website }))
-		await updateExtensionIcon(tabId, websiteOrigin) 
+		try {
+			if (changeInfo.status !== 'complete') return
+			if (tab.url === undefined) return
+			const websiteOrigin = (new URL(tab.url)).hostname
+			const website = await retrieveWebsiteDetails(tabId, websiteOrigin)
+			await updateTabState(tabId, (previousState: TabState) => ({ ...previousState, website }))
+			await updateExtensionIcon(tabId, websiteOrigin)
+		} catch(error: unknown) {
+			handleUnexpectedError(error)
+		}
 	})
-	browser.runtime.onConnect.addListener(port => onContentScriptConnected(simulator, port, websiteTabConnections).catch(console.error))
+	browser.runtime.onConnect.addListener((port) => {
+		try {
+			onContentScriptConnected(simulator, port, websiteTabConnections)
+		} catch(error: unknown) {
+			handleUnexpectedError(error)
+		}
+	})
 	browser.runtime.onMessage.addListener(async function (message: unknown) {
-		await popupMessageHandler(websiteTabConnections, simulator, message, await getSettings())
+		try {
+			await popupMessageHandler(websiteTabConnections, simulator, message, await getSettings())
+		} catch(error: unknown) {
+			await handleUnexpectedError(error)
+		}
 	})
 
 	await updateExtensionBadge()
