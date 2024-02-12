@@ -42,6 +42,8 @@ async function migrateAddressInfoAndContacts() {
 }
 migrateAddressInfoAndContacts()
 
+const pendingRequestLimiter = new Semaphore(40) // only allow 40 requests pending globally
+
 export async function onContentScriptConnected(simulator: Simulator, port: browser.runtime.Port, websiteTabConnections: WebsiteTabConnections) {
 	const socket = getSocketFromPort(port)
 	if (port?.sender?.url === undefined) return
@@ -69,8 +71,6 @@ export async function onContentScriptConnected(simulator: Simulator, port: brows
 			handleUnexpectedError(error)
 		}
 	})
-
-	const pendingRequestLimiter = new Semaphore(20) // only allow 20 requests pending at the time for a port
 
 	port.onMessage.addListener(async (payload) => {
 		if (!(
