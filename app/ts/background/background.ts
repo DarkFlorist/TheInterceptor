@@ -526,7 +526,7 @@ export async function handleContentScriptMessage(simulator: Simulator, websiteTa
 		console.log(request)
 		handleUnexpectedError(error)
 		if (error instanceof JsonRpcResponseError || error instanceof FetchResponseError) {
-			replyToInterceptedRequest(websiteTabConnections, {
+			return replyToInterceptedRequest(websiteTabConnections, {
 				...request,
 				error: {
 					code: error.code,
@@ -542,15 +542,23 @@ export async function handleContentScriptMessage(simulator: Simulator, websiteTa
 					...METAMASK_ERROR_NOT_CONNECTED_TO_CHAIN,
 				})
 			}
+			if (error.message.includes('Fetch request timed out')) {
+				return replyToInterceptedRequest(websiteTabConnections, {
+					...request,
+					error: {
+						code: 408,
+						message: 'Request timed out',
+					},
+				})
+			}
 		}
-		replyToInterceptedRequest(websiteTabConnections, {
+		return replyToInterceptedRequest(websiteTabConnections, {
 			...request,
 			error: {
 				code: 123456,
 				message: 'Unknown error'
 			},
 		})
-		return undefined
 	}
 }
 
