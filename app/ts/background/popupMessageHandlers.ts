@@ -1,7 +1,7 @@
 import { changeActiveAddressAndChainAndResetSimulation, changeActiveRpc, getPrependTransactions, refreshConfirmTransactionSimulation, updateSimulationState, updateSimulationMetadata, simulateGovernanceContractExecution } from './background.js'
 import { getSettings, setUseTabsInsteadOfPopup, setMakeMeRich, setPage, setUseSignersAddressAsActiveAddress, updateWebsiteAccess, exportSettingsAndAddressBook, importSettingsAndAddressBook, getMakeMeRich, getUseTabsInsteadOfPopup, getMetamaskCompatibilityMode, setMetamaskCompatibilityMode, getPage } from './settings.js'
 import { getPendingTransactions, getCurrentTabId, getTabState, saveCurrentTabId, setRpcList, getRpcList, getPrimaryRpcForChain, getRpcConnectionStatus, updateUserAddressBookEntries, getSimulationResults, setIdsOfOpenedTabs, getIdsOfOpenedTabs, replacePendingTransaction } from './storageVariables.js'
-import { Simulator } from '../simulation/simulator.js'
+import { Simulator, parseEvents } from '../simulation/simulator.js'
 import { ChangeActiveAddress, ChangeMakeMeRich, ChangePage, RemoveTransaction, RequestAccountsFromSigner, TransactionConfirmation, InterceptorAccess, ChangeInterceptorAccess, ChainChangeConfirmation, EnableSimulationMode, ChangeActiveChain, AddOrEditAddressBookEntry, GetAddressBookData, RemoveAddressBookEntry, InterceptorAccessRefresh, InterceptorAccessChangeAddress, Settings, RefreshConfirmTransactionMetadata, RefreshInterceptorAccessMetadata, ChangeSettings, ImportSettings, SetRpcList, PersonalSignApproval, UpdateHomePage, RemoveSignedMessage, SimulateGovernanceContractExecutionReply, SimulateGovernanceContractExecution, ChangeAddOrModifyAddressWindowState, FetchAbiAndNameFromEtherscan, OpenWebPage, DisableInterceptor } from '../types/interceptor-messages.js'
 import { formEthSendTransaction, formSendRawTransaction, resolvePendingTransaction, updateConfirmTransactionViewWithPendingTransactionOrClose } from './windows/confirmTransaction.js'
 import { resolvePersonalSign } from './windows/personalSign.js'
@@ -165,8 +165,9 @@ export async function refreshSimulation(simulator: Simulator, ethereumClientServ
 }
 
 export async function refreshPopupConfirmTransactionMetadata(ethereumClientService: EthereumClientService, { data }: RefreshConfirmTransactionMetadata) {
-	const addressBookEntriesPromise = getAddressBookEntriesForVisualiser(ethereumClientService, data.visualizerResults, data.simulationState)
-	const namedTokenIdsPromise = nameTokenIds(ethereumClientService, data.visualizerResults)
+	const visualizerResults = await Promise.all(data.visualizerResults.map(async (x) => ({ ...x, events: await parseEvents(x.events.map((e) => ({ loggersAddress: e.loggersAddress, topics: e.topics, data: e.data })), ethereumClientService) })))
+	const addressBookEntriesPromise = getAddressBookEntriesForVisualiser(ethereumClientService, visualizerResults, data.simulationState)
+	const namedTokenIdsPromise = nameTokenIds(ethereumClientService, visualizerResults)
 	const promises = await getPendingTransactions()
 	const first = promises[0]
 	const addressBookEntries = await addressBookEntriesPromise
@@ -180,8 +181,9 @@ export async function refreshPopupConfirmTransactionMetadata(ethereumClientServi
 				statusCode: 'success',
 				data: {
 					...first.simulationResults.data,
-					simulatedAndVisualizedTransactions: formSimulatedAndVisualizedTransaction(first.simulationResults.data.simulationState, first.simulationResults.data.visualizerResults, first.simulationResults.data.protectors, addressBookEntries, namedTokenIds),
-					addressBookEntries: addressBookEntries,
+					simulatedAndVisualizedTransactions: formSimulatedAndVisualizedTransaction(first.simulationResults.data.simulationState, visualizerResults, first.simulationResults.data.protectors, addressBookEntries, namedTokenIds),
+					addressBookEntries,
+					visualizerResults,
 				}
 			}
 		}, ...promises.slice(1)]

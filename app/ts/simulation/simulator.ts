@@ -7,9 +7,9 @@ import { commonTokenOops } from './protectors/commonTokenOops.js'
 import { eoaApproval } from './protectors/eoaApproval.js'
 import { eoaCalldata } from './protectors/eoaCalldata.js'
 import { tokenToContract } from './protectors/tokenToContract.js'
-import { WebsiteCreatedEthereumUnsignedTransaction, SimulationState, TokenVisualizerResult, MaybeParsedEvents, VisualizerResult, MaybeParsedEventWithExtraData } from '../types/visualizer-types.js'
+import { WebsiteCreatedEthereumUnsignedTransaction, SimulationState, TokenVisualizerResult, VisualizerResult, MaybeParsedEventWithExtraData } from '../types/visualizer-types.js'
 import { EthereumJSONRpcRequestHandler } from './services/EthereumJSONRpcRequestHandler.js'
-import { MulticallResponseEventLog, SingleMulticallResponse } from '../types/JsonRpc-types.js'
+import { MulticallResponseEventLog, MulticallResponseEventLogs, SingleMulticallResponse } from '../types/JsonRpc-types.js'
 import { APPROVAL_LOG, DEPOSIT_LOG, ERC1155_TRANSFERBATCH_LOG, ERC1155_TRANSFERSINGLE_LOG, ERC721_APPROVAL_FOR_ALL_LOG, TRANSFER_LOG, WITHDRAWAL_LOG } from '../utils/constants.js'
 import { handleApprovalLog, handleDepositLog, handleERC1155TransferBatch, handleERC1155TransferSingle, handleERC20TransferLog, handleErc721ApprovalForAllLog, handleWithdrawalLog } from './logHandlers.js'
 import { RpcEntry } from '../types/rpc.js'
@@ -64,14 +64,13 @@ const getTokenEventHandler = (type: AddressBookEntryCategory, logSignature: stri
 	} 
 }
 
-const parseEvents = async (singleMulticallResponse: SingleMulticallResponse, ethereumClientService: EthereumClientService): Promise<MaybeParsedEvents> => {
-	if (singleMulticallResponse.statusCode !== 'success' ) return []
-	return await Promise.all(singleMulticallResponse.events.map(async (event) => {
+export const parseEvents = async (events: MulticallResponseEventLogs, ethereumClientService: EthereumClientService): Promise<readonly MaybeParsedEventWithExtraData[]> => {
+	const parsedEvents = await Promise.all(events.map(async (event) => {
 		// todo, we should do this parsing earlier, to be able to add possible addresses to addressMetaData set
 		const loggersAddressBookEntry = await identifyAddress(ethereumClientService, event.loggersAddress)
 		const abi = extractAbi(loggersAddressBookEntry, event.loggersAddress)
 		const nonParsed = { ...event, isParsed: 'NonParsed' as const, loggersAddressBookEntry }
-		if (abi === undefined) return nonParsed
+		if (abi === undefined || abi === '') return nonParsed
 		const parsed = parseEventIfPossible(new Interface(abi), event)
 		if (parsed === null) return nonParsed
 		const argTypes = extractFunctionArgumentTypes(parsed.signature)
@@ -97,13 +96,8 @@ const parseEvents = async (singleMulticallResponse: SingleMulticallResponse, eth
 			loggersAddressBookEntry,
 		}
 	}))
-}
-
-export const visualizeTransaction = async (blockNumber: bigint, singleMulticallResponse: SingleMulticallResponse, ethereumClientService: EthereumClientService): Promise<VisualizerResult> => {
-	if (singleMulticallResponse.statusCode !== 'success') return { ethBalanceChanges: [], events: [], blockNumber }
-	const parsedEvents = await parseEvents(singleMulticallResponse, ethereumClientService)
-
-	const events: MaybeParsedEventWithExtraData[][] = parsedEvents.map((parsedEvent) => {
+	
+	const maybeParsedEvents: MaybeParsedEventWithExtraData[][] = parsedEvents.map((parsedEvent) => {
 		if (parsedEvent.isParsed === 'NonParsed') return [{ ...parsedEvent, type: 'NonParsed' }]
 		const logSignature = parsedEvent.topics[0]
 		if (logSignature === undefined) return [{ ...parsedEvent, type: 'Parsed' }]
@@ -111,9 +105,14 @@ export const visualizeTransaction = async (blockNumber: bigint, singleMulticallR
 		if (tokenEventhandler === undefined) return [{ ...parsedEvent, type: 'Parsed' }]
 		return tokenEventhandler(parsedEvent).map((tokenInformation) => ({ ...parsedEvent, type: 'TokenEvent', tokenInformation }))
 	})
+	return maybeParsedEvents.flat()
+}
+
+export const visualizeTransaction = async (blockNumber: bigint, singleMulticallResponse: SingleMulticallResponse, ethereumClientService: EthereumClientService): Promise<VisualizerResult> => {
+	if (singleMulticallResponse.statusCode !== 'success') return { ethBalanceChanges: [], events: [], blockNumber }
 	return {
 		ethBalanceChanges: singleMulticallResponse.balanceChanges,
-		events: events.flat(),
+		events: await parseEvents(singleMulticallResponse.events, ethereumClientService),
 		blockNumber
 	}
 }

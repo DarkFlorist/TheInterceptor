@@ -211,6 +211,7 @@ export function AddNewAddress(param: AddAddressParam) {
 		const inputedAddressBigInt = stringToAddress(incompleteAddressBookEntry.address)
 		if (inputedAddressBigInt === undefined) return undefined
 		const name = incompleteAddressBookEntry.name ? incompleteAddressBookEntry.name : checksummedAddress(inputedAddressBigInt)
+		const abi = incompleteAddressBookEntry.abi === '' ? undefined : incompleteAddressBookEntry.abi
 		switch(incompleteAddressBookEntry.type) {
 			case 'ERC721': {
 				if (incompleteAddressBookEntry.symbol === undefined) return undefined
@@ -221,7 +222,7 @@ export function AddNewAddress(param: AddAddressParam) {
 					symbol: incompleteAddressBookEntry.symbol,
 					logoUri: incompleteAddressBookEntry.logoUri,
 					entrySource: 'User',
-					abi: incompleteAddressBookEntry.abi,
+					abi,
 				}
 			}
 			case 'ERC1155': {
@@ -234,7 +235,7 @@ export function AddNewAddress(param: AddAddressParam) {
 					logoUri: incompleteAddressBookEntry.logoUri,
 					decimals: undefined,
 					entrySource: 'User',
-					abi: incompleteAddressBookEntry.abi,
+					abi,
 				}
 			}
 			case 'ERC20': {
@@ -247,7 +248,7 @@ export function AddNewAddress(param: AddAddressParam) {
 					decimals: incompleteAddressBookEntry.decimals,
 					logoUri: incompleteAddressBookEntry.logoUri,
 					entrySource: 'User',
-					abi: incompleteAddressBookEntry.abi,
+					abi,
 				}
 			}
 			case 'contact':
@@ -257,7 +258,7 @@ export function AddNewAddress(param: AddAddressParam) {
 				address: inputedAddressBigInt,
 				logoUri: incompleteAddressBookEntry.logoUri,
 				entrySource: 'User',
-				abi: incompleteAddressBookEntry.abi,
+				abi,
 			}
 			case 'activeAddress': {
 				return {
