@@ -83,6 +83,7 @@ export function ChangeActiveAddress(param: ChangeActiveAddressParam) {
 										<BigAddress
 											addressBookEntry = { { ...activeAddress, type: 'activeAddress', entrySource: 'User' } }
 											noCopying = { true }
+											noEditAddress = { true }
 											renameAddressCallBack = { param.renameAddressCallBack }
 										/>
 										{ isSignerConnected(activeAddress.address) ?

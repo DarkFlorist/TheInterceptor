@@ -49,6 +49,7 @@ export function AddressIcon(param: AddressIconParams) {
 export type BigAddressParams = {
 	readonly addressBookEntry: AddressBookEntry | undefined
 	readonly noCopying?: boolean
+	readonly noEditAddress?: boolean
 	readonly renameAddressCallBack: RenameAddressCallBack
 }
 
@@ -82,7 +83,7 @@ export function BigAddress(params: BigAddressParams) {
 			}
 		</div>
 
-		<div class = 'media-content' style = 'overflow-y: hidden; overflow-x: clip; display: block;'>
+		<div class = { `media-content ${ params.noEditAddress ? 'noselect nopointer' : '' }` } style = 'overflow-y: hidden; overflow-x: clip; display: block;'>
 			<span className = 'big-address-container' data-value = { title }>
 				<span class = 'address-text-holder'>
 					{ !params.noCopying && addrString !== undefined ?
