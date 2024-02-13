@@ -6,7 +6,7 @@ import { keccak256, toUtf8Bytes } from 'ethers'
 import { fetchWithTimeout } from '../../utils/requests.js'
 import { Future } from '../../utils/future.js'
 
-type ResolvedResponse = { responseState: 'failed', response: Response } | { responseState: 'success', responseString: string }
+type ResolvedResponse = { responseState: 'failed', response: Response } | { responseState: 'success', response: unknown }
 
 export type IEthereumJSONRpcRequestHandler = Pick<EthereumJSONRpcRequestHandler, keyof EthereumJSONRpcRequestHandler>
 export class EthereumJSONRpcRequestHandler {
@@ -35,7 +35,7 @@ export class EthereumJSONRpcRequestHandler {
 		}
 		if (!this.caching) {
 			const response = await fetchWithTimeout(this.rpcEntry.httpsRpc, payload, timeoutMs)
-			const responseObject = response.ok ? { responseState: 'success' as const, responseString: await response.json() } : { responseState: 'failed' as const, response }
+			const responseObject = response.ok ? { responseState: 'success' as const, response: await response.json() } : { responseState: 'failed' as const, response }
 			return responseObject
 		}
 		const hash = keccak256(toUtf8Bytes(JSON.stringify(serialized)))
@@ -49,7 +49,7 @@ export class EthereumJSONRpcRequestHandler {
 		const future = new Future<ResolvedResponse>()
 		this.pendingCache.set(hash, future)
 		const response = await fetchWithTimeout(this.rpcEntry.httpsRpc, payload, timeoutMs)
-		const responseObject = response.ok ? { responseState: 'success' as const, responseString: await response.json() } : { responseState: 'failed' as const, response }
+		const responseObject = response.ok ? { responseState: 'success' as const, response: await response.json() } : { responseState: 'failed' as const, response }
 		this.cache.set(hash, responseObject)
 		this.pendingCache.delete(hash)
 		future.resolve(responseObject)
@@ -65,7 +65,7 @@ export class EthereumJSONRpcRequestHandler {
 			console.log(rpcRequest)
 			throw new FetchResponseError(responseObject.response, requestId)
 		}
-		const jsonRpcResponse = JsonRpcResponse.parse(responseObject.responseString)
+		const jsonRpcResponse = JsonRpcResponse.parse(responseObject.response)
 		if ('error' in jsonRpcResponse) {
 			console.log('req failed')
 			console.log(responseObject)
