@@ -70,7 +70,7 @@ export const parseEvents = async (events: MulticallResponseEventLogs, ethereumCl
 		const loggersAddressBookEntry = await identifyAddress(ethereumClientService, event.loggersAddress)
 		const abi = extractAbi(loggersAddressBookEntry, event.loggersAddress)
 		const nonParsed = { ...event, isParsed: 'NonParsed' as const, loggersAddressBookEntry }
-		if (abi === undefined || abi === '') return nonParsed
+		if (!abi) return nonParsed
 		const parsed = parseEventIfPossible(new Interface(abi), event)
 		if (parsed === null) return nonParsed
 		const argTypes = extractFunctionArgumentTypes(parsed.signature)
