@@ -369,8 +369,7 @@ export function ConfirmTransaction() {
 		} })
 	}
 	const refreshMetadata = async () => {
-		// todo we should refresh metadata even if the resuls are failures
-		if (currentPendingTransaction === undefined ||  currentPendingTransaction.status !== 'Simulated') return
+		if (currentPendingTransaction === undefined || currentPendingTransaction.status !== 'Simulated') return
 		if (currentPendingTransaction.simulationResults === undefined || currentPendingTransaction.simulationResults.statusCode === 'failed') return
 		await sendPopupMessageToBackgroundPage({ method: 'popup_refreshConfirmTransactionMetadata', data: currentPendingTransaction.simulationResults.data })
 	}
