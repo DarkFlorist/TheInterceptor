@@ -81,7 +81,7 @@ export class EthereumClientService {
 			const response = await this.requestHandler.jsonRpcRequest({ method: 'eth_getBlockByNumber', params: ['latest', true] }, true, 6000)
 			if (this.cacheRefreshTimer === undefined) return
 			const newBlock = EthereumBlockHeader.parse(response)
-			console.log(`Current block number: ${ newBlock.number }`)
+			console.log(`Current block number: ${ newBlock.number } on ${ this.requestHandler.getRpcEntry().name }`)
 			const gotNewBlock = this.cachedBlock?.number !== newBlock.number
 			if (gotNewBlock) this.requestHandler.clearCache()
 			this.newBlockAttemptCallback(newBlock, this, gotNewBlock)
@@ -131,14 +131,10 @@ export class EthereumClientService {
 	public async getBlock(blockTag: EthereumBlockTag = 'latest', fullObjects: boolean = true): Promise<EthereumBlockHeaderWithTransactionHashes | EthereumBlockHeader> {
 		const cached = this.getCachedBlock()
 		if (cached && (blockTag === 'latest' || blockTag === cached.number)) {
-			if (fullObjects === false) {
-				return { ...cached, transactions: cached.transactions.map((transaction) => transaction.hash) }
-			}
+			if (fullObjects === false) return { ...cached, transactions: cached.transactions.map((transaction) => transaction.hash) }
 			return cached
 		}
-		if (fullObjects === false) {
-			return EthereumBlockHeaderWithTransactionHashes.parse(await this.requestHandler.jsonRpcRequest({ method: 'eth_getBlockByNumber', params: [blockTag, false] }))
-		}
+		if (fullObjects === false) return EthereumBlockHeaderWithTransactionHashes.parse(await this.requestHandler.jsonRpcRequest({ method: 'eth_getBlockByNumber', params: [blockTag, false] }))
 		return EthereumBlockHeader.parse(await this.requestHandler.jsonRpcRequest({ method: 'eth_getBlockByNumber', params: [blockTag, fullObjects] }))
 	}
 

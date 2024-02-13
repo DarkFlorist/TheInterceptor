@@ -143,6 +143,6 @@ export class Simulator {
 
 	public reset = (rpcNetwork: RpcEntry) => {
 		this.cleanup()
-		this.ethereum = new EthereumClientService(new EthereumJSONRpcRequestHandler(rpcNetwork), this.ethereum.getNewBlockAttemptCallback(), this.ethereum.getOnErrorBlockCallback())
+		this.ethereum = new EthereumClientService(new EthereumJSONRpcRequestHandler(rpcNetwork, true), this.ethereum.getNewBlockAttemptCallback(), this.ethereum.getOnErrorBlockCallback())
 	}
 }
