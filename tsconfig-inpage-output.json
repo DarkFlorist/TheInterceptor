@@ -1,7 +1,7 @@
 {
 	"compilerOptions": {
 		"target": "ES2022",
-        "module": "none",
+		"module": "none",
 		"moduleResolution": "classic",
 		"outDir": "app/inpage/output/",
 		"rootDir": "app/inpage/build/",

@@ -221,9 +221,8 @@ export class LogSummarizer {
 
 	public constructor(transactions: readonly (SimulatedAndVisualizedTransaction | undefined)[]) {
 		this.summarizeToAddressChanges(transactions)
-
 		// remove addresses that ended up with no changes
-		Array.from(this.summary.entries()).forEach( ([address, addressSummary]) => {
+		Array.from(this.summary.entries()).forEach(([address, addressSummary]) => {
 			if (addressSummary.etherResults === undefined
 				&& addressSummary.erc721TokenBalanceChanges.size === 0
 				&& addressSummary.erc721TokenIdApprovalChanges.size === 0
@@ -276,7 +275,7 @@ export class LogSummarizer {
 			}
 		})
 
-		const erc721TokenBalanceChanges: (Erc721Entry & { received: boolean, tokenId: bigint })[] = Array.from(addressSummary.erc721TokenBalanceChanges).map( ([tokenAddress, tokenIds]) => {
+		const erc721TokenBalanceChanges: (Erc721Entry & { received: boolean, tokenId: bigint })[] = Array.from(addressSummary.erc721TokenBalanceChanges).map(([tokenAddress, tokenIds]) => {
 			const metadata = addressMetaData.get(tokenAddress)
 			if (metadata === undefined || metadata.type !== 'ERC721') throw new Error('Missing metadata for token')
 			return Array.from(tokenIds).map(([tokenId, received]) => ({
@@ -284,7 +283,7 @@ export class LogSummarizer {
 				tokenId: BigInt(tokenId),
 				received,
 			}))
-		}).reduce((accumulator, value) => accumulator.concat(value), [])
+		}).reduce((accumulator, value) => accumulator.concat(value), [] as (Erc721Entry & { received: boolean, tokenId: bigint })[])
 
 		const erc721TokenIdApprovalChanges: Erc721TokenApprovalChange[] = Array.from(addressSummary.erc721TokenIdApprovalChanges).map( ([tokenAddress, approvals]) => {
 			const metadata = addressMetaData.get(tokenAddress)
@@ -298,7 +297,7 @@ export class LogSummarizer {
 					approvedEntry: approvedMetadata
 				}
 			})
-		}).reduce((accumulator, value) => accumulator.concat(value), [])
+		}).reduce((accumulator, value) => accumulator.concat(value), [] as Erc721TokenApprovalChange[])
 
 		const erc1155TokenBalanceChanges: Erc1155TokenBalanceChange[] = Array.from(addressSummary.erc1155TokenBalanceChanges).map(([tokenAddress, tokenIds]) => {
 			const metadata = addressMetaData.get(tokenAddress)
@@ -309,7 +308,7 @@ export class LogSummarizer {
 				tokenIdnName: namedTokenIds.find((namedTokenId) => namedTokenId.tokenAddress === BigInt(tokenAddress) && namedTokenId.tokenId === BigInt(tokenId))?.tokenIdName,
 				changeAmount,
 			}))
-		}).reduce((accumulator, value) => accumulator.concat(value), [])
+		}).reduce((accumulator, value) => accumulator.concat(value), [] as Erc1155TokenBalanceChange[])
 
 		const erc721and1155OperatorChanges: Erc721and1155OperatorChange[] = Array.from(addressSummary.erc721and1155OperatorChanges).map(([tokenAddress, operator]) => {
 			const metadata = addressMetaData.get(tokenAddress)

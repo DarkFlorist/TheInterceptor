@@ -36,20 +36,19 @@ class InterceptorFuture<T> implements PromiseLike<T> {
 		this.rejectFunction = rejectFunction!
 	}
 
-	public readonly then = <TResult1 = T, TResult2 = never>(
-		onfulfilled?: ((value: T) => TResult1 | PromiseLike<TResult1>) | undefined | null,
-		onrejected?: ((reason: Error) => TResult2 | PromiseLike<TResult2>) | undefined | null
-	): PromiseLike<TResult1 | TResult2> => {
-		return this.promise.then(onfulfilled, onrejected)
+	public readonly then = <U>(
+		onfulfilled?: ((value: T) => U | PromiseLike<U>) | undefined | null,
+		onrejected?: ((reason: unknown) => U | PromiseLike<U>) | ((reason: unknown) => T | PromiseLike<T>) | undefined | null,
+	): PromiseLike<T | U> => {
+		if (onfulfilled === null || onfulfilled === undefined) {
+			return this.promise.then(onfulfilled, onrejected as ((reason: unknown) => T | PromiseLike<T>) | null | undefined)
+		} else {
+			return this.promise.then(onfulfilled, onrejected as ((reason: unknown) => U | PromiseLike<U>) | null | undefined)
+		}
 	}
 
-	public readonly resolve = (value: T | PromiseLike<T>) => {
-		this.resolveFunction!(value)
-	}
-
-	public readonly reject = (reason: Error) => {
-		this.rejectFunction!(reason)
-	}
+	public readonly resolve = (value: T | PromiseLike<T>) => this.resolveFunction!(value)
+	public readonly reject = (reason: Error) => this.rejectFunction!(reason)
 }
 
 class EthereumJsonRpcError extends Error {
@@ -238,7 +237,26 @@ class InterceptorMessageListener {
 		this.WindowEthereumRequest(payload)
 			.then(result => callback(null, { jsonrpc: '2.0', id: payload.id, result }))
 			// since `request(...)` only throws things shaped like `JsonRpcError`, we can rely on it having those properties.
-			.catch(error => callback({ jsonrpc: '2.0', id: payload.id, error: { code: error.code, message: error.message, data: { ...error.data, stack: error.stack } } }, null))
+			.catch((error) => {
+				if (InterceptorMessageListener.getErrorCodeAndMessage(error)) {
+					const data = 'data' in error && typeof error.data === 'object' && error.data !== null ? error.data : {}
+					const stack = 'stack' in error && typeof error.stack === 'string' ? { stack: error.stack } : {}
+					return callback({
+						jsonrpc: '2.0',
+						id: payload.id,
+						error: { 
+							code: error.code, 
+							message: error.message, 
+							data: { ...data, ...stack }
+						}
+					}, null)
+				}
+				return callback({
+					jsonrpc: '2.0',
+					id: payload.id,
+					error: { message: 'unknown error', code: METAMASK_ERROR_BLANKET_ERROR }
+				}, null)
+			})
 	}
 
 	static exhaustivenessCheck = (_thing: never) => {}
@@ -315,6 +333,11 @@ class InterceptorMessageListener {
 			this.waitForAccountsFromWallet = undefined
 		}
 	}
+
+	private static isStringArray(arr: unknown[]): arr is string[] {
+		return arr.every(item => typeof item === "string");
+	}
+
 	// attempts to call signer for eth_requestAccounts
 	private readonly requestAccountsFromSigner = async () => {
 		if (this.signerWindowEthereumRequest === undefined) return
@@ -327,6 +350,7 @@ class InterceptorMessageListener {
 		try {
 			const reply = await this.signerWindowEthereumRequest({ method: 'eth_requestAccounts', params: [] })
 			if (!Array.isArray(reply)) throw new Error('Signer returned something else than an array')
+			if (!InterceptorMessageListener.isStringArray(reply)) throw new Error('Signer did not return a string array')
 			this.signerAccounts = reply
 			await this.sendMessageToBackgroundPage({ method: 'eth_accounts_reply', params: [{ type: 'success', accounts: this.signerAccounts, requestAccounts: true }] })
 			return
@@ -482,10 +506,10 @@ class InterceptorMessageListener {
 						window.ethereum.chainId = chainId
 						window.ethereum.networkVersion = Number(chainId).toString(10)
 					}
-					default:
 				}
 			}
-			return await this.handleReplyRequest(forwardRequest)
+			await this.handleReplyRequest(forwardRequest)
+			return
 		}
 
 		try {

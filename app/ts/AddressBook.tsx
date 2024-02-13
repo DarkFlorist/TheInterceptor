@@ -247,7 +247,7 @@ export function AddressBook() {
 				const startPageIndex = Math.ceil(reply.data.data.startIndex / PAGE_SIZE)
 				const chunkedresults = arrayToChunks(reply.data.entries, PAGE_SIZE)
 
-				const newPages = (previousState !== undefined
+				const newPages: Map<number, AddressBookEntries | 'fetching'> = (previousState !== undefined
 					&& reply.data.data.filter === previousState.activeFilter
 					&& reply.data.data.searchString === previousState.searchString ? new Map(previousState.pages) : new Map())
 

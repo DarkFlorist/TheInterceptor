@@ -284,7 +284,7 @@ export async function homeOpened(simulator: Simulator) {
 	const tabState = tabId === undefined ? await getTabState(-1) : await getTabState(tabId)
 	const settings = await settingsPromise
 	const websiteOrigin = tabState.website?.websiteOrigin
-	const interceptorDisabled = websiteOrigin === undefined ? false : settings.websiteAccess.find((entry) => entry.website.websiteOrigin === websiteOrigin && entry.interceptorDisabled) !== undefined
+	const interceptorDisabled = websiteOrigin === undefined ? false : settings.websiteAccess.find((entry) => entry.website.websiteOrigin === websiteOrigin && entry.interceptorDisabled == true) !== undefined
 	const updatedPage: UpdateHomePage = {
 		method: 'popup_UpdateHomePage' as const,
 		data: {
