@@ -265,19 +265,22 @@ export const openNewTab = async (tabName: 'settingsView' | 'addressBook') => {
 	}
 }
 
-export async function homeOpened(simulator: Simulator, refreshMetadata: boolean) {
+export async function requestNewHomeData(simulator: Simulator) {
+	await updateSimulationMetadata(simulator.ethereum)
+	await homeOpened(simulator)
+}
+
+export async function homeOpened(simulator: Simulator) {
 	const settingsPromise = getSettings()
 	const makeMeRichPromise = getMakeMeRich()
 	const rpcConnectionStatusPromise = getRpcConnectionStatus()
 	const rpcEntriesPromise = getRpcList()
 	const activeAddressesPromise = getActiveAddresses()
 
-	const visualizedSimulatorStatePromise: Promise<CompleteVisualizedSimulation> = refreshMetadata ? updateSimulationMetadata(simulator.ethereum) : getSimulationResults()
+	const visualizedSimulatorStatePromise: Promise<CompleteVisualizedSimulation> = getSimulationResults()
 	const tabId = await getLastKnownCurrentTabId()
 	const tabState = tabId === undefined ? await getTabState(-1) : await getTabState(tabId)
 	const settings = await settingsPromise
-	const makeMeRich = await makeMeRichPromise
-	const rpcConnectionStatus = await rpcConnectionStatusPromise
 	const websiteOrigin = tabState.website?.websiteOrigin
 	const interceptorDisabled = websiteOrigin === undefined ? false : settings.websiteAccess.find((entry) => entry.website.websiteOrigin === websiteOrigin && entry.interceptorDisabled) !== undefined
 	const updatedPage: UpdateHomePage = {
@@ -290,8 +293,8 @@ export async function homeOpened(simulator: Simulator, refreshMetadata: boolean)
 			activeSigningAddressInThisTab: tabState?.activeSigningAddress,
 			currentBlockNumber: simulator.ethereum.getLastKnownCachedBlockOrUndefined()?.number,
 			settings: settings,
-			makeMeRich,
-			rpcConnectionStatus,
+			makeMeRich: await makeMeRichPromise,
+			rpcConnectionStatus: await rpcConnectionStatusPromise,
 			tabId,
 			rpcEntries: await rpcEntriesPromise,
 			interceptorDisabled,
@@ -326,7 +329,7 @@ export async function refreshInterceptorAccessMetadata(params: RefreshIntercepto
 export async function changeSettings(simulator: Simulator, parsedRequest: ChangeSettings) {
 	if (parsedRequest.data.useTabsInsteadOfPopup !== undefined) await setUseTabsInsteadOfPopup(parsedRequest.data.useTabsInsteadOfPopup)
 	if (parsedRequest.data.metamaskCompatibilityMode !== undefined) await setMetamaskCompatibilityMode(parsedRequest.data.metamaskCompatibilityMode)
-	return await homeOpened(simulator, true)
+	return await requestNewHomeData(simulator)
 }
 
 export async function importSettings(settingsData: ImportSettings) {

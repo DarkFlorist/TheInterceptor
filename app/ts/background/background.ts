@@ -4,7 +4,7 @@ import { Simulator, runProtectorsForTransaction, visualizeTransaction } from '..
 import { getEthDonator, getSimulationResults, getTabState, updateSimulationResults, updateSimulationResultsWithCallBack } from './storageVariables.js'
 import { changeSimulationMode, getSettings, getMakeMeRich } from './settings.js'
 import { blockNumber, call, chainId, estimateGas, gasPrice, getAccounts, getBalance, getBlockByNumber, getCode, getLogs, getPermissions, getSimulationStack, getTransactionByHash, getTransactionCount, getTransactionReceipt, netVersion, personalSign, sendTransaction, subscribe, switchEthereumChain, unsubscribe, web3ClientVersion, getBlockByHash, feeHistory } from './simulationModeHanders.js'
-import { changeActiveAddress, changeMakeMeRich, changePage, resetSimulation, confirmDialog, refreshSimulation, removeTransaction, requestAccountsFromSigner, refreshPopupConfirmTransactionSimulation, confirmPersonalSign, confirmRequestAccess, changeInterceptorAccess, changeChainDialog, popupChangeActiveRpc, enableSimulationMode, addOrModifyAddressBookEntry, getAddressBookData, removeAddressBookEntry, homeOpened, interceptorAccessChangeAddressOrRefresh, refreshPopupConfirmTransactionMetadata, changeSettings, importSettings, exportSettings, setNewRpcList, removeSignedMessage, simulateGovernanceContractExecutionOnPass, openNewTab, settingsOpened, changeAddOrModifyAddressWindowState, popupFetchAbiAndNameFromEtherscan, openWebPage, disableInterceptor } from './popupMessageHandlers.js'
+import { changeActiveAddress, changeMakeMeRich, changePage, resetSimulation, confirmDialog, refreshSimulation, removeTransaction, requestAccountsFromSigner, refreshPopupConfirmTransactionSimulation, confirmPersonalSign, confirmRequestAccess, changeInterceptorAccess, changeChainDialog, popupChangeActiveRpc, enableSimulationMode, addOrModifyAddressBookEntry, getAddressBookData, removeAddressBookEntry, homeOpened, interceptorAccessChangeAddressOrRefresh, refreshPopupConfirmTransactionMetadata, changeSettings, importSettings, exportSettings, setNewRpcList, removeSignedMessage, simulateGovernanceContractExecutionOnPass, openNewTab, settingsOpened, changeAddOrModifyAddressWindowState, popupFetchAbiAndNameFromEtherscan, openWebPage, disableInterceptor, requestNewHomeData } from './popupMessageHandlers.js'
 import { ProtectorResults, SimulationState, VisualizedSimulatorState, VisualizerResult, WebsiteCreatedEthereumUnsignedTransaction, WebsiteCreatedEthereumUnsignedTransactionOrFailed } from '../types/visualizer-types.js'
 import { WebsiteTabConnections } from '../types/user-interface-types.js'
 import { askForSignerAccountsFromSignerIfNotAvailable, interceptorAccessMetadataRefresh, requestAccessFromUser, updateInterceptorAccessViewWithPendingRequests } from './windows/interceptorAccess.js'
@@ -17,7 +17,7 @@ import { assertNever, assertUnreachable } from '../utils/typescript.js'
 import { EthereumClientService } from '../simulation/services/EthereumClientService.js'
 import { appendTransaction, calculateGasPrice, copySimulationState, getNonPrependedSimulatedTransactions, getNonceFixedSimulatedTransactions, getTokenBalancesAfter, getWebsiteCreatedEthereumUnsignedTransactions, mockSignTransaction, setPrependTransactionsQueue, setSimulationTransactionsAndSignedMessages } from '../simulation/services/SimulationModeEthereumClientService.js'
 import { Semaphore } from '../utils/semaphore.js'
-import { FetchResponseError, JsonRpcResponseError, isFailedToFetchError } from '../utils/errors.js'
+import { FetchResponseError, JsonRpcResponseError, handleUnexpectedError, isFailedToFetchError } from '../utils/errors.js'
 import { formSimulatedAndVisualizedTransaction } from '../components/formVisualizerResults.js'
 import { updateConfirmTransactionViewWithPendingTransaction } from './windows/confirmTransaction.js'
 import { updateChainChangeViewWithPendingRequest } from './windows/changeChain.js'
@@ -524,7 +524,7 @@ export async function handleContentScriptMessage(simulator: Simulator, websiteTa
 		return replyToInterceptedRequest(websiteTabConnections, { ...request, ...resolved })
 	} catch (error) {
 		console.log(request)
-		console.warn(error)
+		handleUnexpectedError(error)
 		if (error instanceof JsonRpcResponseError || error instanceof FetchResponseError) {
 			replyToInterceptedRequest(websiteTabConnections, {
 				...request,
@@ -614,8 +614,8 @@ export async function popupMessageHandler(
 		case 'popup_changeChainReadyAndListening': return await updateChainChangeViewWithPendingRequest()
 		case 'popup_interceptorAccessReadyAndListening': return await updateInterceptorAccessViewWithPendingRequests()
 		case 'popup_confirmTransactionReadyAndListening': return await updateConfirmTransactionViewWithPendingTransaction()
-		case 'popup_requestNewHomeData': return await homeOpened(simulator, true)
-		case 'popup_homeOpened': return await homeOpened(simulator, false)
+		case 'popup_requestNewHomeData': return await requestNewHomeData(simulator)
+		case 'popup_homeOpened': return await homeOpened(simulator)
 		case 'popup_settingsOpened': return await settingsOpened()
 		case 'popup_refreshInterceptorAccessMetadata': return await interceptorAccessMetadataRefresh()
 		case 'popup_interceptorAccessChangeAddress': return await interceptorAccessChangeAddressOrRefresh(websiteTabConnections, parsedRequest)

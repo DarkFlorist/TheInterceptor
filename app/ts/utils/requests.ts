@@ -57,9 +57,14 @@ export const doesUniqueRequestIdentifiersMatch = (a: UniqueRequestIdentifier, b:
 export async function fetchWithTimeout(resource: RequestInfo | URL, init?: RequestInit | undefined, timeoutMs: number = 60000) {
 	const controller = new AbortController()
 	const id = setTimeout(() => controller.abort(), timeoutMs)
-	const response = await fetch(resource, { ...init, signal: controller.signal })
-	clearTimeout(id)
-	return response
+	try {
+		const response = await fetch(resource, { ...init, signal: controller.signal })
+		clearTimeout(id)
+		return response
+	} catch(error: unknown) {
+		if (error instanceof DOMException && error.message === 'The user aborted a request.') throw new Error('Fetch request timed out.')
+		throw error
+	}
 }
 
 export const safeGetTab = async (tabId: number) => {

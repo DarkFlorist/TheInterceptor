@@ -496,6 +496,14 @@ export const UpdateHomePage = funtypes.ReadonlyObject({
 	})
 })
 
+export type UnexpectedErrorOccured = funtypes.Static<typeof UnexpectedErrorOccured>
+export const UnexpectedErrorOccured = funtypes.ReadonlyObject({
+	method: funtypes.Literal('popup_UnexpectedErrorOccured'),
+	data: funtypes.ReadonlyObject({
+		message: funtypes.String
+	})
+})
+
 export type ActiveSigningAddressChanged = funtypes.Static<typeof ActiveSigningAddressChanged>
 export const ActiveSigningAddressChanged = funtypes.ReadonlyObject({
 	method: funtypes.Literal('popup_activeSigningAddressChanged'),
@@ -797,4 +805,5 @@ export const MessageToPopup = funtypes.Union(
 	PopupAddOrModifyAddressWindowStateInfomation,
 	FetchAbiAndNameFromEtherscanReply,
 	DisableInterceptorReply,
+	UnexpectedErrorOccured,
 )

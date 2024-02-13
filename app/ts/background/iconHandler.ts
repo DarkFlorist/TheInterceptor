@@ -1,5 +1,5 @@
 import { getPrettySignerName } from '../components/subcomponents/signers.js'
-import { CHROME_NO_TAB_WITH_ID_ERROR, ICON_ACCESS_DENIED, ICON_INTERCEPTOR_DISABLED, ICON_NOT_ACTIVE, ICON_SIGNING, ICON_SIGNING_NOT_SUPPORTED, ICON_SIMULATING, PRIMARY_COLOR, WARNING_COLOR } from '../utils/constants.js'
+import { CHROME_NO_TAB_WITH_ID_ERROR, ICON_ACCESS_DENIED, ICON_INTERCEPTOR_DISABLED, ICON_NOT_ACTIVE, ICON_SIGNING, ICON_SIGNING_NOT_SUPPORTED, ICON_SIMULATING, PRIMARY_COLOR, TIME_BETWEEN_BLOCKS, WARNING_COLOR } from '../utils/constants.js'
 import { hasAccess, hasAddressAccess } from './accessManagement.js'
 import { getActiveAddress, sendPopupMessageToOpenWindows, setExtensionBadgeBackgroundColor, setExtensionBadgeText, setExtensionIcon } from './backgroundUtils.js'
 import { imageToUri } from '../utils/imageToUri.js'
@@ -42,9 +42,12 @@ export function noNewBlockForOverTwoMins(connectionStatus: RpcConnectionStatus) 
 
 export async function updateExtensionBadge() {
 	const connectionStatus = await getRpcConnectionStatus()
-	if (connectionStatus?.isConnected === false || noNewBlockForOverTwoMins(connectionStatus)) {
-		await setExtensionBadgeBackgroundColor({ color: WARNING_COLOR })
-		return await setExtensionBadgeText({ text: '!' })
+	if ((connectionStatus?.isConnected === false || noNewBlockForOverTwoMins(connectionStatus)) && connectionStatus) {
+		const nextConnectionAttempt = new Date(connectionStatus.lastConnnectionAttempt.getTime() + TIME_BETWEEN_BLOCKS * 1000)
+		if (nextConnectionAttempt.getTime() - new Date().getTime() > 0) {
+			await setExtensionBadgeBackgroundColor({ color: WARNING_COLOR })
+			return await setExtensionBadgeText({ text: '!' })
+		}
 	}
 	await setExtensionBadgeBackgroundColor({ color: PRIMARY_COLOR })
 	return await setExtensionBadgeText( { text: '' } )

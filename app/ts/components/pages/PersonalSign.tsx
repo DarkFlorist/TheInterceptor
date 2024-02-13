@@ -1,8 +1,8 @@
 import { useState, useEffect } from 'preact/hooks'
 import { checksummedAddress, dataStringWith0xStart, isHexEncodedNumber, stringToUint8Array } from '../../utils/bigint.js'
-import { RenameAddressCallBack } from '../../types/user-interface-types.js'
+import { RenameAddressCallBack, RpcConnectionStatus } from '../../types/user-interface-types.js'
 import Hint from '../subcomponents/Hint.js'
-import { ErrorCheckBox, ErrorComponent } from '../subcomponents/Error.js'
+import { ErrorCheckBox, ErrorComponent, UnexpectedError } from '../subcomponents/Error.js'
 import { MOCK_PRIVATE_KEYS_ADDRESS, getChainName } from '../../utils/constants.js'
 import { AddNewAddress } from './AddNewAddress.js'
 import { MessageToPopup, PartiallyParsedRefreshPersonalSignMetadata, PersonalSignRequest, RefreshPersonalSignMetadata } from '../../types/interceptor-messages.js'
@@ -25,6 +25,7 @@ import { EnrichedSolidityTypeComponent } from '../subcomponents/solidityType.js'
 import { QuarantineReasons } from '../simulationExplaining/Transactions.js'
 import { ModifyAddressWindowState } from '../../types/visualizer-types.js'
 import { isEthSimulateV1Node } from '../../background/settings.js'
+import { NetworkErrors } from '../App.js'
 
 type SignatureCardParams = {
 	VisualizedPersonalSignRequest: VisualizedPersonalSignRequest
@@ -435,12 +436,16 @@ export function PersonalSign() {
 	const [addingNewAddress, setAddingNewAddress] = useState<ModifyAddressWindowState | 'renameAddressModalClosed'> ('renameAddressModalClosed')
 	const [VisualizedPersonalSignRequest, setVisualizedPersonalSignRequest] = useState<VisualizedPersonalSignRequest | undefined>(undefined)
 	const [forceSend, setForceSend] = useState<boolean>(false)
+	const [unexpectedError, setUnexpectedError] = useState<string | undefined>(undefined)
+	const [rpcConnectionStatus, setRpcConnectionStatus] = useState<RpcConnectionStatus>(undefined)
 
 	useEffect(() => {
 		function popupMessageListener(msg: unknown) {
 			const maybeParsed = MessageToPopup.safeParse(msg)
 			if (!maybeParsed.success) return // not a message we are interested in
 			const parsed = maybeParsed.value
+			if (parsed.method === 'popup_new_block_arrived') return setRpcConnectionStatus(parsed.data.rpcConnectionStatus)
+			if (parsed.method === 'popup_failed_to_get_block') return setRpcConnectionStatus(parsed.data.rpcConnectionStatus)
 			if (parsed.method === 'popup_addressBookEntriesChanged') return refreshMetadata()
 			if (parsed.method !== 'popup_personal_sign_request') return
 			setVisualizedPersonalSignRequest(PersonalSignRequest.parse(parsed).data)
@@ -529,6 +534,8 @@ export function PersonalSign() {
 						/>
 					}
 				</div>
+				<UnexpectedError close = { () => { setUnexpectedError(undefined) } } message = { unexpectedError }/>
+				<NetworkErrors rpcConnectionStatus = { rpcConnectionStatus }/>
 
 				<div className = 'block' style = 'margin-bottom: 0px; display: flex; justify-content: space-between; flex-direction: column; height: 100%; position: fixed; width: 100%'>
 					<div style = 'overflow-y: auto'>
