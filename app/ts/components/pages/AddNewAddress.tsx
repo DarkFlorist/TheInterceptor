@@ -211,7 +211,7 @@ export function AddNewAddress(param: AddAddressParam) {
 		const inputedAddressBigInt = stringToAddress(incompleteAddressBookEntry.address)
 		if (inputedAddressBigInt === undefined) return undefined
 		const name = incompleteAddressBookEntry.name ? incompleteAddressBookEntry.name : checksummedAddress(inputedAddressBigInt)
-		const abi = incompleteAddressBookEntry.abi === '' ? undefined : incompleteAddressBookEntry.abi
+		const abi = incompleteAddressBookEntry.abi || undefined
 		switch(incompleteAddressBookEntry.type) {
 			case 'ERC721': {
 				if (incompleteAddressBookEntry.symbol === undefined) return undefined
