@@ -78,7 +78,7 @@ export const defaultRpcs = [
 		currencyLogoUri: ETHEREUM_COIN_ICON,
 		primary: true,
 		minimized: true,
-		weth: 0xb4fbf271143f4fbf7b91a5ded31805e42b2208d6n
+		weth: 0xb4fbf271143f4fbf7b91a5ded31805e42b2208d6n,
 	},
 	{
 		name: 'Sepolia',
@@ -100,7 +100,7 @@ export const defaultRpcs = [
 		currencyLogoUri: ETHEREUM_COIN_ICON,
 		primary: false,
 		minimized: true,
-		weth: 0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2n
+		weth: 0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2n,
 	},
 	{
 		name: 'Ethereum (experimental nethermind)',
