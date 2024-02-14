@@ -5,7 +5,7 @@ import { addressString, checksummedAddress } from '../../utils/bigint.js'
 
 const EtherscanABIKey = 'PSW8C433Q667DVEX5BCRMGNAH9FSGFZ7Q8'
 
-async function fetchJson(url: string): Promise<{ success: true, result: JSONValue } | { success: false, error: string }> {
+async function fetchJson(url: string): Promise<{ success: true, result: unknown } | { success: false, error: string }> {
 	const response = await fetch(url)
 	if (!response.ok) return { success: false, error: `Ethercan returned error: ${ response.status }.` }
 	return { success: true, result: await response.json() }

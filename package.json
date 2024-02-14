@@ -27,7 +27,6 @@
 	},
 	"devDependencies": {
 		"@types/firefox-webext-browser": "109.0.0",
-		"typescript": "5.3.3",
-		"better-typescript-lib": "2.6.0"
+		"typescript": "5.3.3"
 	}
 }

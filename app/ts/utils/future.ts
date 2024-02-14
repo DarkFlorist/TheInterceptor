@@ -17,16 +17,13 @@ export class Future<T> implements PromiseLike<T> {
 
 	public get asPromise() { return this.promise }
 
-	public readonly then = <U>(
-		onfulfilled?: ((value: T) => U | PromiseLike<U>) | undefined | null,
-		onrejected?: ((reason: unknown) => U | PromiseLike<U>) | ((reason: unknown) => T | PromiseLike<T>) | undefined | null,
-	): PromiseLike<T | U> => {
-		if (onfulfilled === null || onfulfilled === undefined) {
-			return this.promise.then(onfulfilled, onrejected as ((reason: unknown) => T | PromiseLike<T>) | null | undefined)
-		} else {
-			return this.promise.then(onfulfilled, onrejected as ((reason: unknown) => U | PromiseLike<U>) | null | undefined)
-		}
+	public readonly then = <TResult1 = T, TResult2 = never>(
+		onfulfilled?: ((value: T) => TResult1 | PromiseLike<TResult1>) | undefined | null,
+		onrejected?: ((reason: Error) => TResult2 | PromiseLike<TResult2>) | undefined | null
+	): PromiseLike<TResult1 | TResult2> => {
+		return this.promise.then(onfulfilled, onrejected)
 	}
+	
 	public readonly resolve = (value: T | PromiseLike<T>) => this.resolveFunction!(value)
 	public readonly reject = (reason: Error) => this.rejectFunction!(reason)
 }

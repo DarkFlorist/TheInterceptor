@@ -3,8 +3,7 @@
 	"devDependencies": {
 		"@types/node": "20.11.17",
 		"@zoltu/file-copier": "3.0.0",
-		"typescript": "5.3.3",
-		"better-typescript-lib": "2.6.0"
+		"typescript": "5.3.3"
 	},
 	"scripts": {
 		"vendor": "tsc && node --enable-source-maps ./vendor.mjs && node --input-type=module -e \"import { promises as fs } from 'fs'; await fs.rm('./bundler.mjs'); await fs.rm('./vendor.mjs');\"",
