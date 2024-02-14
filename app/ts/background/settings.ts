@@ -61,13 +61,13 @@ export const defaultRpcs = [
 	{
 		name: 'Ethereum Mainnet',
 		chainId: 1n,
-		httpsRpc: 'https://rpc.dark.florist/flipcardtrustone',
+		httpsRpc: 'https://rpc.dark.florist/winedancemuffinborrow',
 		currencyName: 'Ether',
 		currencyTicker: 'ETH',
 		currencyLogoUri: ETHEREUM_COIN_ICON,
 		primary: true,
 		minimized: true,
-		weth: 0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2n
+		weth: 0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2n,
 	},
 	{
 		name: 'Goerli',
@@ -92,15 +92,15 @@ export const defaultRpcs = [
 		weth: 0x105083929bf9bb22c26cb1777ec92661170d4285n,
 	},
 	{
-		name: 'Ethereum (experimental geth)',
+		name: 'Ethereum Mainnet (old)',
 		chainId: 1n,
-		httpsRpc: 'https://rpc.dark.florist/winedancemuffinborrow',
+		httpsRpc: 'https://rpc.dark.florist/flipcardtrustone',
 		currencyName: 'Ether',
 		currencyTicker: 'ETH',
 		currencyLogoUri: ETHEREUM_COIN_ICON,
 		primary: false,
 		minimized: true,
-		weth: 0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2n,
+		weth: 0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2n
 	},
 	{
 		name: 'Ethereum (experimental nethermind)',
@@ -123,7 +123,7 @@ export async function getSettings() : Promise<Settings> {
 		'openedPage',
 		'useSignersAddressAsActiveAddress',
 		'websiteAccess',
-		'rpcNetwork',
+		'currentRpcNetwork',
 		'simulationMode',
 	])
 	if (defaultRpcs[0] === undefined || defaultActiveAddresses[0] === undefined) throw new Error('default rpc or default address was missing')
@@ -132,7 +132,7 @@ export async function getSettings() : Promise<Settings> {
 		openedPage: results.openedPage ?? { page: 'Home' },
 		useSignersAddressAsActiveAddress: results.useSignersAddressAsActiveAddress ?? false,
 		websiteAccess: results.websiteAccess ?? [],
-		rpcNetwork: results.rpcNetwork !== undefined ? results.rpcNetwork : defaultRpcs[0],
+		currentRpcNetwork: results.currentRpcNetwork !== undefined ? results.currentRpcNetwork : defaultRpcs[0],
 		simulationMode: results.simulationMode ?? true,
 	}
 }
@@ -190,7 +190,7 @@ export async function exportSettingsAndAddressBook(): Promise<ExportedSettings> 
 			openedPage: settings.openedPage,
 			useSignersAddressAsActiveAddress: settings.useSignersAddressAsActiveAddress,
 			websiteAccess: settings.websiteAccess,
-			rpcNetwork: settings.rpcNetwork,
+			rpcNetwork: settings.currentRpcNetwork,
 			simulationMode: settings.simulationMode,
 			addressBookEntries: await getUserAddressBookEntries(),
 			useTabsInsteadOfPopup: await getUseTabsInsteadOfPopup(),

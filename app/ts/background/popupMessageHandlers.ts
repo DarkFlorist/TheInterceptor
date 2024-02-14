@@ -225,10 +225,10 @@ export async function enableSimulationMode(simulator: Simulator, websiteTabConne
 			...chainToSwitch === undefined ? {} :  { rpcNetwork: networkToSwitch },
 		})
 	} else {
-		const selectedNetworkToSwitch = settings.rpcNetwork.httpsRpc !== undefined ? settings.rpcNetwork : (await getRpcList())[0]
+		const selectedNetworkToSwitch = settings.currentRpcNetwork.httpsRpc !== undefined ? settings.currentRpcNetwork : (await getRpcList())[0]
 		await changeActiveAddressAndChainAndResetSimulation(simulator, websiteTabConnections, {
 			simulationMode: params.data,
-			...settings.rpcNetwork === selectedNetworkToSwitch ? {} : { rpcNetwork: selectedNetworkToSwitch }
+			...settings.currentRpcNetwork === selectedNetworkToSwitch ? {} : { rpcNetwork: selectedNetworkToSwitch }
 		})
 	}
 }
@@ -367,7 +367,7 @@ export async function exportSettings() {
 export async function setNewRpcList(simulator: Simulator, request: SetRpcList, settings: Settings) {
 	await setRpcList(request.data)
 	await sendPopupMessageToOpenWindows({ method: 'popup_update_rpc_list', data: request.data })
-	const primary = await getPrimaryRpcForChain(settings.rpcNetwork.chainId)
+	const primary = await getPrimaryRpcForChain(settings.currentRpcNetwork.chainId)
 	if (primary !== undefined) {
 		// reset to primary on update
 		simulator?.reset(primary)

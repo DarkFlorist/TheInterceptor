@@ -152,12 +152,12 @@ function connectToPort(websiteTabConnections: WebsiteTabConnections, socket: Web
 	setWebsitePortApproval(websiteTabConnections, socket, true)
 	updateExtensionIcon(socket.tabId, websiteOrigin)
 
-	sendSubscriptionReplyOrCallBack(websiteTabConnections, socket, { method: 'connect', result: [settings.rpcNetwork.chainId] })
+	sendSubscriptionReplyOrCallBack(websiteTabConnections, socket, { method: 'connect', result: [settings.currentRpcNetwork.chainId] })
 
 	// seems like dapps also want to get account changed and chain changed events after we connect again, so let's send them too
 	sendSubscriptionReplyOrCallBack(websiteTabConnections, socket, { method: 'accountsChanged', result: connectWithActiveAddress !== undefined ? [connectWithActiveAddress] : [] })
 
-	sendSubscriptionReplyOrCallBack(websiteTabConnections, socket, { method: 'chainChanged', result: settings.rpcNetwork.chainId })
+	sendSubscriptionReplyOrCallBack(websiteTabConnections, socket, { method: 'chainChanged', result: settings.currentRpcNetwork.chainId })
 
 	if (!settings.simulationMode || settings.useSignersAddressAsActiveAddress) {
 		sendSubscriptionReplyOrCallBack(websiteTabConnections, socket, { method: 'request_signer_to_eth_requestAccounts', result: [] })

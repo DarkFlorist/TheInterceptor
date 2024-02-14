@@ -203,11 +203,11 @@ export async function updateEthereumSubscriptions(updateFunc: (prevState: Ethere
 	})
 }
 
-export const setRpcList = async(entries: RpcEntries) => await browserStorageLocalSet({ RpcEntries: entries })
+export const setRpcList = async(rpcEntries: RpcEntries) => await browserStorageLocalSet({ rpcEntries })
 
 export async function getRpcList() {
 	try {
-		return (await browserStorageLocalGet('RpcEntries'))?.['RpcEntries'] ?? defaultRpcs
+		return (await browserStorageLocalGet('rpcEntries'))?.['rpcEntries'] ?? defaultRpcs
 	} catch(e) {
 		console.warn('Rpc entries were corrupt:')
 		console.warn(e)
@@ -221,7 +221,7 @@ export const getPrimaryRpcForChain = async (chainId: bigint) => {
 }
 
 export async function getRpcNetwork(): Promise<RpcNetwork> {
-	return (await getSettings()).rpcNetwork
+	return (await getSettings()).currentRpcNetwork
 }
 
 export const getRpcNetworkForChain = async (chainId: bigint): Promise<RpcNetwork> => {
