@@ -156,6 +156,8 @@ interface EIP6963ProviderInfo {
 	rdns: string
 }
 
+type SingleSendAsyncParam = { readonly id: string | number | null, readonly method: string, readonly params: readonly unknown[] }
+
 type OnMessage = 'accountsChanged' | 'message' | 'connect' | 'close' | 'disconnect' | 'chainChanged'
 
 class InterceptorMessageListener {
@@ -214,7 +216,7 @@ class InterceptorMessageListener {
 		}
 	}
 
-	private readonly WindowEthereumSend = async (payload: { readonly id: string | number | null, readonly method: string, readonly params: readonly unknown[], _params: readonly unknown[] } | string, maybeCallBack: undefined | ((error: IJsonRpcError | null, response: IJsonRpcSuccess<unknown> | null) => void)) => {
+	private readonly WindowEthereumSend = (payload: { readonly id: string | number | null, readonly method: string, readonly params: readonly unknown[] } | string, maybeCallBack: undefined | ((error: IJsonRpcError | null, response: IJsonRpcSuccess<unknown> | null) => void)) => {
 		const fullPayload = typeof payload === 'string' ? { method: payload, id: 1, params: [] } : payload
 		if (maybeCallBack !== undefined && typeof maybeCallBack === 'function') return this.WindowEthereumSendAsync(fullPayload, maybeCallBack)
 		if (this.metamaskCompatibilityMode) {
@@ -224,21 +226,17 @@ class InterceptorMessageListener {
 				case 'eth_accounts': return { jsonrpc: '2.0', id: fullPayload.id, result: window.ethereum.selectedAddress === undefined || window.ethereum.selectedAddress === null ? [] : [window.ethereum.selectedAddress] }
 				case 'net_version': return { jsonrpc: '2.0', id: fullPayload.id, result: window.ethereum.networkVersion }
 				case 'eth_chainId': return { jsonrpc: '2.0', id: fullPayload.id, result: window.ethereum.chainId }
-				case 'eth_requestAccounts': {
-					if (window.ethereum.selectedAddress === undefined || window.ethereum.selectedAddress === null) return await this.WindowEthereumRequest(fullPayload)
-					return { jsonrpc: '2.0', id: fullPayload.id, result: [window.ethereum.selectedAddress] }
-				}
 				default: throw new EthereumJsonRpcError(METAMASK_INVALID_METHOD_PARAMS, `Invalid method parameter for window.ethereum.send: ${ fullPayload.method }`)
 			}
 		}
 		throw new EthereumJsonRpcError(METAMASK_METHOD_NOT_SUPPORTED, 'Method not supported (window.ethereum.send).')
 	}
-
-	private readonly WindowEthereumSendAsync = async (payload: { readonly id: string | number | null, readonly method: string, readonly params: readonly unknown[] }, callback: (error: IJsonRpcError | null, response: IJsonRpcSuccess<unknown> | null) => void) => {
-		this.WindowEthereumRequest(payload)
-			.then(result => callback(null, { jsonrpc: '2.0', id: payload.id, result }))
+	private readonly WindowEthereumSendAsync = async (payload: SingleSendAsyncParam | SingleSendAsyncParam[], callback: (error: IJsonRpcError | null, response: IJsonRpcSuccess<unknown> | null) => void) => {
+		const payloadArray = Array.isArray(payload) ? payload : [payload]
+		payloadArray.map((param) => this.WindowEthereumRequest(param)
+			.then(result => callback(null, { jsonrpc: '2.0', id: param.id, result }))
 			// since `request(...)` only throws things shaped like `JsonRpcError`, we can rely on it having those properties.
-			.catch(error => callback({ jsonrpc: '2.0', id: payload.id, error: { code: error.code, message: error.message, data: { ...error.data, stack: error.stack } } }, null))
+			.catch(error => callback({ jsonrpc: '2.0', id: param.id, error: { code: error.code, message: error.message, data: { ...error.data, stack: error.stack } } }, null)))
 	}
 
 	static exhaustivenessCheck = (_thing: never) => {}
@@ -386,7 +384,7 @@ class InterceptorMessageListener {
 			switch (replyRequest.method) {
 				case 'accountsChanged': {
 					const reply = replyRequest.result as readonly string[]
-					if (this.metamaskCompatibilityMode && this.signerWindowEthereumRequest === undefined && window.ethereum !== undefined) {
+					if (this.metamaskCompatibilityMode && window.ethereum !== undefined) {
 						window.ethereum.selectedAddress = reply.length > 0 ? reply[0] : ''
 						if ('web3' in window && window.web3 !== undefined) window.web3.accounts = reply
 					}

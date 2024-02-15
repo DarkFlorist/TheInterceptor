@@ -2,7 +2,7 @@ import { DEFAULT_TAB_CONNECTION, getChainName } from '../utils/constants.js'
 import { Semaphore } from '../utils/semaphore.js'
 import { PendingChainChangeConfirmationPromise, PendingPersonalSignPromise, RpcConnectionStatus, TabState } from '../types/user-interface-types.js'
 import { PartialIdsOfOpenedTabs, browserStorageLocalGet, browserStorageLocalRemove, browserStorageLocalSet, getTabStateFromStorage, removeTabStateFromStorage, setTabStateToStorage } from '../utils/storageUtils.js'
-import { CompleteVisualizedSimulation, EthereumSubscriptions } from '../types/visualizer-types.js'
+import { CompleteVisualizedSimulation, EthereumSubscriptionsAndFilters } from '../types/visualizer-types.js'
 import { defaultRpcs, getSettings } from './settings.js'
 import { UniqueRequestIdentifier, doesUniqueRequestIdentifiersMatch } from '../utils/requests.js'
 import { AddressBookEntries, AddressBookEntry } from '../types/addressBookTypes.js'
@@ -191,14 +191,14 @@ export async function getRpcConnectionStatus() {
 	}
 }
 
-export const getEthereumSubscriptions = async () => (await browserStorageLocalGet('ethereumSubscriptions'))?.['ethereumSubscriptions'] ?? []
+export const getEthereumSubscriptionsAndFilters = async () => (await browserStorageLocalGet('ethereumSubscriptionsAndFilters'))?.['ethereumSubscriptionsAndFilters'] ?? []
 
 const ethereumSubscriptionsSemaphore = new Semaphore(1)
-export async function updateEthereumSubscriptions(updateFunc: (prevState: EthereumSubscriptions) => EthereumSubscriptions) {
+export async function updateEthereumSubscriptionsAndFilters(updateFunc: (prevState: EthereumSubscriptionsAndFilters) => EthereumSubscriptionsAndFilters) {
 	return await ethereumSubscriptionsSemaphore.execute(async () => {
-		const oldSubscriptions = await getEthereumSubscriptions()
+		const oldSubscriptions = await getEthereumSubscriptionsAndFilters()
 		const newSubscriptions = updateFunc(oldSubscriptions)
-		await browserStorageLocalSet({ ethereumSubscriptions: newSubscriptions })
+		await browserStorageLocalSet({ ethereumSubscriptionsAndFilters: newSubscriptions })
 		return { oldSubscriptions, newSubscriptions }
 	})
 }

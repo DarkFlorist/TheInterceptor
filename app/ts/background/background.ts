@@ -3,7 +3,7 @@ import 'webextension-polyfill'
 import { Simulator, runProtectorsForTransaction, visualizeTransaction } from '../simulation/simulator.js'
 import { getEthDonator, getSimulationResults, getTabState, updateSimulationResults, updateSimulationResultsWithCallBack } from './storageVariables.js'
 import { changeSimulationMode, getSettings, getMakeMeRich } from './settings.js'
-import { blockNumber, call, chainId, estimateGas, gasPrice, getAccounts, getBalance, getBlockByNumber, getCode, getLogs, getPermissions, getSimulationStack, getTransactionByHash, getTransactionCount, getTransactionReceipt, netVersion, personalSign, sendTransaction, subscribe, switchEthereumChain, unsubscribe, web3ClientVersion, getBlockByHash, feeHistory } from './simulationModeHanders.js'
+import { blockNumber, call, chainId, estimateGas, gasPrice, getAccounts, getBalance, getBlockByNumber, getCode, getLogs, getPermissions, getSimulationStack, getTransactionByHash, getTransactionCount, getTransactionReceipt, netVersion, personalSign, sendTransaction, subscribe, switchEthereumChain, unsubscribe, web3ClientVersion, getBlockByHash, feeHistory, installNewFilter, uninstallNewFilter, getFilterChanges, getFilterLogs } from './simulationModeHanders.js'
 import { changeActiveAddress, changeMakeMeRich, changePage, resetSimulation, confirmDialog, refreshSimulation, removeTransaction, requestAccountsFromSigner, refreshPopupConfirmTransactionSimulation, confirmPersonalSign, confirmRequestAccess, changeInterceptorAccess, changeChainDialog, popupChangeActiveRpc, enableSimulationMode, addOrModifyAddressBookEntry, getAddressBookData, removeAddressBookEntry, homeOpened, interceptorAccessChangeAddressOrRefresh, refreshPopupConfirmTransactionMetadata, changeSettings, importSettings, exportSettings, setNewRpcList, removeSignedMessage, simulateGovernanceContractExecutionOnPass, openNewTab, settingsOpened, changeAddOrModifyAddressWindowState, popupFetchAbiAndNameFromEtherscan, openWebPage, disableInterceptor, requestNewHomeData } from './popupMessageHandlers.js'
 import { ProtectorResults, SimulationState, VisualizedSimulatorState, VisualizerResult, WebsiteCreatedEthereumUnsignedTransaction, WebsiteCreatedEthereumUnsignedTransactionOrFailed } from '../types/visualizer-types.js'
 import { WebsiteTabConnections } from '../types/user-interface-types.js'
@@ -375,6 +375,10 @@ async function handleRPCRequest(
 		}
 		case 'web3_clientVersion': return await web3ClientVersion(ethereumClientService)
 		case 'eth_feeHistory': return await feeHistory(ethereumClientService, parsedRequest)
+		case 'eth_newFilter': return await installNewFilter(socket, parsedRequest, ethereumClientService, simulationState)
+		case 'eth_uninstallFilter': return await uninstallNewFilter(socket, parsedRequest)
+		case 'eth_getFilterChanges': return await getFilterChanges(parsedRequest, ethereumClientService, simulationState)
+		case 'eth_getFilterLogs': return await getFilterLogs(parsedRequest, ethereumClientService, simulationState)
 		/*
 		Missing methods:
 		case 'eth_getProof': return
@@ -383,12 +387,8 @@ async function handleRPCRequest(
 		case 'eth_getTransactionByBlockNumberAndIndex': return
 		case 'eth_getBlockReceipts': return
 
-		case 'eth_getFilterChanges': return
-		case 'eth_getFilterLogs': return
 		case 'eth_newBlockFilter': return
-		case 'eth_newFilter': return
 		case 'eth_newPendingTransactionFilter': return
-		case 'eth_uninstallFilter': return
 
 		case 'eth_protocolVersion': return
 		case 'eth_maxPriorityFeePerGas': return
