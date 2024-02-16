@@ -4,7 +4,7 @@ import { BigAddress } from '../subcomponents/address.js'
 import { getSignerLogo, getPrettySignerName, SignerLogoText } from '../subcomponents/signers.js'
 
 export function ChangeActiveAddress(param: ChangeActiveAddressParam) {
-	function ChangeAndStoreActiveAddress(activeAddress: bigint | 'signer') {
+	function changeAndStoreActiveAddress(activeAddress: bigint | 'signer') {
 		param.setAndSaveAppPage({ page: 'Home' })
 		param.setActiveAddressAndInformAboutIt(activeAddress)
 	}
@@ -28,7 +28,7 @@ export function ChangeActiveAddress(param: ChangeActiveAddressParam) {
 		param.addNewAddress()
 	}
 
-	const signerAddressName = param.activeAddresses.find( (x) => x.address === getSignerAccount() )?.name
+	const signerAddressName = param.activeAddresses.find((x) => x.address === getSignerAccount() )?.name
 
 	return ( <>
 		<div class = 'modal-background'> </div>
@@ -51,7 +51,7 @@ export function ChangeActiveAddress(param: ChangeActiveAddressParam) {
 			<section class = 'modal-card-body'>
 				<ul>
 					<li>
-						<div class = 'card hoverable' onClick = { () => { ChangeAndStoreActiveAddress('signer') } }>
+						<div class = 'card hoverable' onClick = { () => { changeAndStoreActiveAddress('signer') } }>
 							<div class = 'card-content hoverable' style = 'cursor: pointer;'>
 								<div class = 'media'>
 									<div class = 'media-left'>
@@ -78,7 +78,7 @@ export function ChangeActiveAddress(param: ChangeActiveAddressParam) {
 						? <></>
 						: param.activeAddresses.map((activeAddress) => (
 							<li>
-								<div class = 'card hoverable' onClick = { () => { ChangeAndStoreActiveAddress(activeAddress.address) } }>
+								<div class = 'card hoverable' onClick = { () => { changeAndStoreActiveAddress(activeAddress.address) } }>
 									<div class = 'card-content hoverable ' style = 'cursor: pointer;'>
 										<BigAddress
 											addressBookEntry = { { ...activeAddress, type: 'activeAddress', entrySource: 'User' } }
