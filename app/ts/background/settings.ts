@@ -138,7 +138,7 @@ export async function getSettings() : Promise<Settings> {
 }
 
 export function getInterceptorDisabledSites(settings: Settings): string[] {
-	return settings.websiteAccess.filter((site) => site.interceptorDisabled).map((site) => site.website.websiteOrigin)
+	return settings.websiteAccess.filter((site) => site.interceptorDisabled === true).map((site) => site.website.websiteOrigin)
 }
 
 export const setPage = async (openedPage: Page) => await browserStorageLocalSet({ openedPage })

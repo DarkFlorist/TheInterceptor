@@ -412,28 +412,29 @@ export async function changeActiveAddressAndChainAndResetSimulation(
 		rpcNetwork?: RpcNetwork,
 	},
 ) {
+	if (change.simulationMode) {
+		await changeSimulationMode({
+			...change,
+			...'activeAddress' in change ? { activeSimulationAddress: change.activeAddress } : {}
+		})
+	} else {
+		await changeSimulationMode({
+			...change,
+			...'activeAddress' in change ? { activeSigningAddress: change.activeAddress } : {}
+		})
+	}
+
+	const updatedSettings = await getSettings()
+	updateWebsiteApprovalAccesses(simulator, websiteTabConnections, undefined, updatedSettings)
+	sendPopupMessageToOpenWindows({ method: 'popup_settingsUpdated', data: updatedSettings })
+	sendPopupMessageToOpenWindows({ method: 'popup_accounts_update' })
+
 	await changeActiveAddressAndChainAndResetSimulationSemaphore.execute(async () => {
-		if (change.simulationMode) {
-			await changeSimulationMode({
-				...change,
-				...'activeAddress' in change ? { activeSimulationAddress: change.activeAddress } : {}
-			})
-		} else {
-			await changeSimulationMode({
-				...change,
-				...'activeAddress' in change ? { activeSigningAddress: change.activeAddress } : {}
-			})
-		}
-		const updatedSettings = await getSettings()
-		updateWebsiteApprovalAccesses(simulator, websiteTabConnections, undefined, updatedSettings)
-		sendPopupMessageToOpenWindows({ method: 'popup_settingsUpdated', data: updatedSettings })
 		if (change.rpcNetwork !== undefined) {
 			if (change.rpcNetwork.httpsRpc !== undefined) simulator.reset(change.rpcNetwork)
 			sendMessageToApprovedWebsitePorts(websiteTabConnections, { method: 'chainChanged' as const, result: change.rpcNetwork.chainId })
 			sendPopupMessageToOpenWindows({ method: 'popup_chain_update' })
 		}
-
-		sendPopupMessageToOpenWindows({ method: 'popup_accounts_update' })
 
 		if (updatedSettings.simulationMode) {
 			// update prepend mode as our active address has changed, so we need to be sure the rich modes money is sent to right address
@@ -450,7 +451,8 @@ export async function changeActiveAddressAndChainAndResetSimulation(
 }
 
 export async function changeActiveRpc(simulator: Simulator, websiteTabConnections: WebsiteTabConnections, rpcNetwork: RpcNetwork, simulationMode: boolean) {
-	if (simulationMode) return await changeActiveAddressAndChainAndResetSimulation(simulator, websiteTabConnections, {
+	// allow switching RPC only if we are in simulation mode, or that chain id would not change
+	if (simulationMode || rpcNetwork.chainId === (await getSettings()).rpcNetwork.chainId) return await changeActiveAddressAndChainAndResetSimulation(simulator, websiteTabConnections, {
 		simulationMode: simulationMode,
 		rpcNetwork: rpcNetwork
 	})
