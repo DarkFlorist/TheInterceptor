@@ -44,7 +44,7 @@ class MicroShould {
 	private queue: TestCase[] = []
 	private onlyQueue: TestCase | undefined = undefined
 
-	private addPrefix = (message: string) => [this.prefix, message].filter((a) => a).join(' ')
+	private addPrefix = (message: string) => [this.prefix, message].filter((a) => !!a).join(' ')
 	private enqueue = (param: TestCase ) => this.queue.push({ message: this.addPrefix(param.message), test: param.test, skip: param.skip })
 
 	public should = ( message: string, test: TestFunction) => { this.enqueue({ message, test }) }
@@ -62,7 +62,7 @@ class MicroShould {
 
 	public describe = (prefix: string, nextLevelFunction: () => void) => {
 		const old = this.prefix
-		this.prefix = [old, prefix].filter((a) => a).join(' ')
+		this.prefix = [old, prefix].filter((a) => !!a).join(' ')
 		nextLevelFunction()
 		this.prefix = old
 	}

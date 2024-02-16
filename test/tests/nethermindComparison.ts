@@ -37,6 +37,7 @@ class MockEthereumJSONRpcRequestHandler {
 				throw new Error(`unsupprted Hash`)
 			}
 		}
+		return
 	}
 	public readonly getRpcEntry = () => this.rpcEntry
 }

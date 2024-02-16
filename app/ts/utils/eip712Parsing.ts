@@ -1,5 +1,5 @@
 import { EthereumClientService } from '../simulation/services/EthereumClientService.js'
-import { JSONEncodeableObject } from '../utils/json.js'
+import { JSONEncodeableObject, JSONEncodeableObjectArray } from '../utils/json.js'
 import { EIP712Message, EnrichedEIP712, EnrichedEIP712Message, EnrichedEIP712MessageRecord } from '../types/eip721.js'
 import { parseSolidityValueByTypeEnriched } from './solidityTypes.js'
 import { SolidityType } from '../types/solidityType.js'
@@ -29,8 +29,9 @@ function validateEIP712TypesSubset(depth: number, message: JSONEncodeableObject,
 		const currentType = arraylessType.arraylessType
 		if (SolidityType.test(currentType)) continue
 		if (currentType === undefined) return false
-		if (Array.isArray(subMessage)) {
-			if (subMessage.map((arrayElement) => validateEIP712TypesSubset(depth, arrayElement, currentType, types)).every((v) => v === true) === false) {
+		const jsonEncodeableArray = JSONEncodeableObjectArray.safeParse(subMessage)
+		if (jsonEncodeableArray.success) {
+			if (jsonEncodeableArray.value.map((arrayElement) => JSONEncodeableObject.test(arrayElement) ? validateEIP712TypesSubset(depth, arrayElement, currentType, types) : false).every((v) => v === true) === false) {
 				return false
 			}
 		} else {
@@ -59,10 +60,14 @@ async function extractEIP712MessageSubset(ethereumClientService: EthereumClientS
 			return [key, await parseSolidityValueByTypeEnriched(ethereumClientService, SolidityType.parse(arraylessType.arraylessType), messageEntry, arraylessType.isArray, useLocalStorage)]
 		}
 		if (arraylessType.isArray) {
-			if (!Array.isArray(messageEntry)) throw new Error(`Type was defined to be an array but it was not: ${ messageEntry }`)
+			const jsonEncodeableArray = JSONEncodeableObjectArray.safeParse(messageEntry)
+			if (!jsonEncodeableArray.success) throw new Error(`Type was defined to be an array but it was not: ${ messageEntry }`)
 			const currentType = arraylessType.arraylessType
 			if (currentType === undefined) throw new Error(`array's type is missing`)
-			return [key, { type: 'record[]', value: await Promise.all(messageEntry.map((subSubMessage) => extractEIP712MessageSubset(ethereumClientService, depth + 1, subSubMessage, currentType, types, useLocalStorage))) }]
+			return [key, { type: 'record[]', value: await Promise.all(jsonEncodeableArray.value.map((subSubMessage) => {
+				if (JSONEncodeableObject.test(subSubMessage)) return extractEIP712MessageSubset(ethereumClientService, depth + 1, subSubMessage, currentType, types, useLocalStorage)
+				throw new Error('Too deep EIP712 message (object)')
+			})) }]
 		}
 		if (!JSONEncodeableObject.test(messageEntry)) throw new Error(`Not a JSON type: ${ messageEntry }`)
 		return [key, { type: 'record', value: await extractEIP712MessageSubset(ethereumClientService, depth + 1, messageEntry, fullType, types, useLocalStorage) }]
