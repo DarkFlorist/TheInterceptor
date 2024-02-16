@@ -174,8 +174,8 @@ export function TransactionCard(param: TransactionCardParams) {
 						renameAddressCallBack = { param.renameAddressCallBack }
 						addressMetadata = { param.simulationAndVisualisationResults.addressBookEntries }
 					/>
-					<QuarantineReasons quarantineReasons = { simTx.quarantineReasons }/>
 				</div>
+				<QuarantineReasons quarantineReasons = { simTx.quarantineReasons }/>
 
 				<TransactionsAccountChangesCard
 					simTx = { simTx }
@@ -464,11 +464,11 @@ export function ConfirmTransaction() {
 					}
 				</div>
 
-				<UnexpectedError close = { () => { setUnexpectedError(undefined) } } message = { unexpectedError }/>
-				<NetworkErrors rpcConnectionStatus = { rpcConnectionStatus }/>
-				<WebsiteErrors website = { currentPendingTransaction.website } websiteSocket = { currentPendingTransaction.uniqueRequestIdentifier.requestSocket } simulationMode = { currentPendingTransaction.simulationMode }/>
-
 				<div class = 'block popup-block'>
+					<UnexpectedError close = { () => { setUnexpectedError(undefined) } } message = { unexpectedError }/>
+					<NetworkErrors rpcConnectionStatus = { rpcConnectionStatus }/>
+					<WebsiteErrors website = { currentPendingTransaction.website } websiteSocket = { currentPendingTransaction.uniqueRequestIdentifier.requestSocket } simulationMode = { currentPendingTransaction.simulationMode }/>
+
 					<div class = 'popup-block-scroll'>
 						{ currentPendingTransaction.originalRequestParameters.method === 'eth_sendRawTransaction'
 							? <DinoSaysNotification
@@ -503,8 +503,8 @@ export function ConfirmTransaction() {
 							currentBlockNumber = { currentBlockNumber }
 							rpcConnectionStatus = { rpcConnectionStatus }
 						/>
-				</div>
-					<nav class = 'window-header popup-button-row'>
+					</div>
+					<nav class = 'window-footer popup-button-row'>
 						<CheckBoxes currentResults = { currentResults } forceSend = { forceSend } setForceSend = { (enabled: boolean) => setForceSend(enabled) }/>
 						<Buttons/>
 					</nav>

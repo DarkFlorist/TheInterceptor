@@ -413,8 +413,8 @@ export function SignatureCard(params: SignatureCardParams) {
 			<div class = 'card-content' style = 'padding-bottom: 5px;'>
 				<div class = 'container'>
 					<SignRequest { ...params }/>
-					<QuarantineReasons quarantineReasons = { params.VisualizedPersonalSignRequest.quarantineReasons }/>
 				</div>
+				<QuarantineReasons quarantineReasons = { params.VisualizedPersonalSignRequest.quarantineReasons }/>
 				<ExtraDetails { ...params }/>
 				<RawMessage { ...params }/>
 				

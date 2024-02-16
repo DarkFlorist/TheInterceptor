@@ -44,7 +44,7 @@ function isPositiveEvent(visResult: TokenVisualizerResultWithMetadata, ourAddres
 
 export function QuarantineReasons({ quarantineReasons }: { quarantineReasons: readonly string[] }) {
 	return <> {
-		quarantineReasons.map((quarantineReason) => <ErrorComponent text = { quarantineReason } />)
+		quarantineReasons.map((quarantineReason) => <ErrorComponent text = { quarantineReason } containerStyle = { { 'margin': '0px','margin-top': '10px', 'margin-bottom': '10px' } }/>)
 	} </>
 }
 
@@ -58,9 +58,7 @@ export type TransactionImportanceBlockParams = {
 // showcases the most important things the transaction does
 export function TransactionImportanceBlock(param: TransactionImportanceBlockParams) {
 	if (param.simTx.statusCode === 'failure') {
-		return <div>
-			<ErrorComponent text = { `The transaction fails with an error '${ param.simTx.error }'` } />
-		</div>
+		return <ErrorComponent text = { `The transaction fails with an error '${ param.simTx.error }'` } />
 	}
 	const transactionIdentification = identifyTransaction(param.simTx)
 	switch (transactionIdentification.type) {
@@ -153,8 +151,8 @@ export function Transaction(param: TransactionVisualizationParameters) {
 			<div class = 'card-content' style = 'padding-bottom: 5px;'>
 				<div class = 'container'>
 					<TransactionImportanceBlock { ...param } addressMetadata = { param.addressMetaData }/>
-					<QuarantineReasons quarantineReasons = { param.simTx.quarantineReasons }/>
 				</div>
+				<QuarantineReasons quarantineReasons = { param.simTx.quarantineReasons }/>
 				{ identifiedTransaction === 'MakeYouRichTransaction' ? <></> : <>
 					<TransactionsAccountChangesCard
 						simTx = { param.simTx }
