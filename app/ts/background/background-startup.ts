@@ -153,7 +153,7 @@ async function onErrorBlockCallback(ethereumClientService: EthereumClientService
 
 async function startup() {
 	const settings = await getSettings()
-	const userSpecifiedSimulatorNetwork = settings.rpcNetwork.httpsRpc === undefined ? await getPrimaryRpcForChain(1n) : settings.rpcNetwork
+	const userSpecifiedSimulatorNetwork = settings.currentRpcNetwork.httpsRpc === undefined ? await getPrimaryRpcForChain(1n) : settings.currentRpcNetwork
 	const simulatorNetwork = userSpecifiedSimulatorNetwork === undefined ? defaultRpcs[0] : userSpecifiedSimulatorNetwork
 	const simulator = new Simulator(simulatorNetwork, newBlockAttemptCallback, onErrorBlockCallback)
 	browser.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
