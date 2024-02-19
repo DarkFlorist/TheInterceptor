@@ -463,51 +463,53 @@ export function ConfirmTransaction() {
 						/>
 					}
 				</div>
-
-				<div class = 'block popup-block'>
-					<UnexpectedError close = { () => { setUnexpectedError(undefined) } } message = { unexpectedError }/>
-					<NetworkErrors rpcConnectionStatus = { rpcConnectionStatus }/>
-					<WebsiteErrors website = { currentPendingTransaction.website } websiteSocket = { currentPendingTransaction.uniqueRequestIdentifier.requestSocket } simulationMode = { currentPendingTransaction.simulationMode }/>
-
-					<div class = 'popup-block-scroll'>
-						{ currentPendingTransaction.originalRequestParameters.method === 'eth_sendRawTransaction'
-							? <DinoSaysNotification
-								text = { `This transaction is signed already. No extra signing required to forward it to ${ simulationResults === undefined ? 'network' : simulationResults.data.simulationState.rpcNetwork.name }.` }
-								close = { () => setPendingTransactionAddedNotification(false)}
-							/>
-							: <></>
-						}
-						{ pendingTransactionAddedNotification === true
-							? <DinoSaysNotification
-								text = { `Hey! A new transaction request was queued. Accept or Reject the previous transaction${ pendingTransactions.length > 1 ? 's' : '' } to see the new one.` }
-								close = { () => setPendingTransactionAddedNotification(false)}
-							/>
-							: <></>
-						}
-						<TransactionCard
-							simulationAndVisualisationResults = { {
-								blockNumber: simulationResults.data.simulationState.blockNumber,
-								blockTimestamp: simulationResults.data.simulationState.blockTimestamp,
-								simulationConductedTimestamp: simulationResults.data.simulationState.simulationConductedTimestamp,
-								addressBookEntries: simulationResults.data.addressBookEntries,
-								rpcNetwork: simulationResults.data.simulationState.rpcNetwork,
-								tokenPrices: simulationResults.data.tokenPrices,
-								activeAddress: simulationResults.data.activeAddress,
-								simulatedAndVisualizedTransactions: simulationResults.data.simulatedAndVisualizedTransactions,
-								visualizedPersonalSignRequests: simulationResults.data.visualizedPersonalSignRequests,
-								namedTokenIds: simulationResults.data.namedTokenIds,
-							} }
-							pendingTransactions = { pendingTransactions }
-							renameAddressCallBack = { renameAddressCallBack }
-							activeAddress = { currentPendingTransaction.activeAddress }
-							currentBlockNumber = { currentBlockNumber }
-							rpcConnectionStatus = { rpcConnectionStatus }
-						/>
+				<div class = 'block popup-block popup-block-scroll' style = 'padding: 0px'>
+					<div style = 'position: sticky; top: 0; z-index:1'>
+						<UnexpectedError close = { () => { setUnexpectedError(undefined) } } message = { unexpectedError }/>
+						<NetworkErrors rpcConnectionStatus = { rpcConnectionStatus }/>
+						<WebsiteErrors website = { currentPendingTransaction.website } websiteSocket = { currentPendingTransaction.uniqueRequestIdentifier.requestSocket } simulationMode = { currentPendingTransaction.simulationMode }/>
 					</div>
-					<nav class = 'window-footer popup-button-row'>
-						<CheckBoxes currentResults = { currentResults } forceSend = { forceSend } setForceSend = { (enabled: boolean) => setForceSend(enabled) }/>
-						<Buttons/>
-					</nav>
+					<div class = 'popup-contents'>
+						<div style = 'padding: 10px'>
+							{ currentPendingTransaction.originalRequestParameters.method === 'eth_sendRawTransaction'
+								? <DinoSaysNotification
+									text = { `This transaction is signed already. No extra signing required to forward it to ${ simulationResults === undefined ? 'network' : simulationResults.data.simulationState.rpcNetwork.name }.` }
+									close = { () => setPendingTransactionAddedNotification(false)}
+								/>
+								: <></>
+							}
+							{ pendingTransactionAddedNotification === true
+								? <DinoSaysNotification
+									text = { `Hey! A new transaction request was queued. Accept or Reject the previous transaction${ pendingTransactions.length > 1 ? 's' : '' } to see the new one.` }
+									close = { () => setPendingTransactionAddedNotification(false)}
+								/>
+								: <></>
+							}
+							<TransactionCard
+								simulationAndVisualisationResults = { {
+									blockNumber: simulationResults.data.simulationState.blockNumber,
+									blockTimestamp: simulationResults.data.simulationState.blockTimestamp,
+									simulationConductedTimestamp: simulationResults.data.simulationState.simulationConductedTimestamp,
+									addressBookEntries: simulationResults.data.addressBookEntries,
+									rpcNetwork: simulationResults.data.simulationState.rpcNetwork,
+									tokenPrices: simulationResults.data.tokenPrices,
+									activeAddress: simulationResults.data.activeAddress,
+									simulatedAndVisualizedTransactions: simulationResults.data.simulatedAndVisualizedTransactions,
+									visualizedPersonalSignRequests: simulationResults.data.visualizedPersonalSignRequests,
+									namedTokenIds: simulationResults.data.namedTokenIds,
+								} }
+								pendingTransactions = { pendingTransactions }
+								renameAddressCallBack = { renameAddressCallBack }
+								activeAddress = { currentPendingTransaction.activeAddress }
+								currentBlockNumber = { currentBlockNumber }
+								rpcConnectionStatus = { rpcConnectionStatus }
+							/>
+						</div>
+						<nav class = 'window-footer popup-button-row' style = 'position: sticky; bottom: 0; width: 100%;'>
+							<CheckBoxes currentResults = { currentResults } forceSend = { forceSend } setForceSend = { (enabled: boolean) => setForceSend(enabled) }/>
+							<Buttons/>
+						</nav>
+					</div>
 				</div>
 			</Hint>
 		</main>
