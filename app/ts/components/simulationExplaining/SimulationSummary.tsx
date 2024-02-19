@@ -175,7 +175,7 @@ type Erc721TokenChangesParams = {
 }
 
 function Erc721TokenChanges(param: Erc721TokenChangesParams ) {
-	if ( param.Erc721TokenBalanceChanges.length == 0 ) return <></>
+	if ( param.Erc721TokenBalanceChanges.length === 0 ) return <></>
 	return <>
 		{ param.Erc721TokenBalanceChanges.map((tokenChange) => (
 			<div class = 'vertical-center' style = 'display: flex'>
@@ -323,7 +323,7 @@ type Erc1155TokenChangesParams = {
 }
 
 function Erc1155TokenChanges(param: Erc1155TokenChangesParams ) {
-	if (param.Erc1155TokenBalanceChanges.length == 0) return <></>
+	if (param.Erc1155TokenBalanceChanges.length === 0) return <></>
 
 	return <>
 		{ param.Erc1155TokenBalanceChanges.map((tokenChange) => (
@@ -567,7 +567,7 @@ export function TransactionsAccountChangesCard({ simTx, renameAddressCallBack, a
 			? <></>
 			: <div class = 'card-content'>
 				<div class = 'container' style = 'margin-bottom: 10px;'>
-					{ ownAddresses.length == 0 ? <p class = 'paragraph'> No changes to your accounts </p>
+					{ ownAddresses.length === 0 ? <p class = 'paragraph'> No changes to your accounts </p>
 						: <div class = 'notification transaction-importance-box'>
 							{ ownAddresses.map( ([_index, balanceSummary], index) => <>
 								<SummarizeAddress
@@ -581,7 +581,7 @@ export function TransactionsAccountChangesCard({ simTx, renameAddressCallBack, a
 					}
 				</div>
 
-				{ notOwnAddresses.length == 0
+				{ notOwnAddresses.length === 0
 					? <></>
 					: <div class = 'container'>
 						{ notOwnAddresses.map( ([_index, balanceSummary]) => {
@@ -731,7 +731,7 @@ export function SimulationSummary(param: SimulationSummaryParams) {
 			</header>
 			<div class = 'card-content'>
 				<div class = 'container' style = 'margin-bottom: 10px'>
-					{ ownAddresses.length == 0 ? <p class = 'paragraph'> No changes to your accounts </p>
+					{ ownAddresses.length === 0 ? <p class = 'paragraph'> No changes to your accounts </p>
 						: <div class = 'notification transaction-importance-box'>
 							{ ownAddresses.map( ([_index, balanceSummary], index) => <>
 								<SummarizeAddress
@@ -757,7 +757,7 @@ export function SimulationSummary(param: SimulationSummaryParams) {
 						? <></>
 						: <div class = 'card-content'>
 							<div class = 'container'>
-								{ notOwnAddresses.length == 0 ? <p class = 'paragraph'>No changes to other accounts</p> : notOwnAddresses.map( ([_index, balanceSummary]) => (<>
+								{ notOwnAddresses.length === 0 ? <p class = 'paragraph'>No changes to other accounts</p> : notOwnAddresses.map( ([_index, balanceSummary]) => (<>
 									<SummarizeAddress
 										balanceSummary = { balanceSummary }
 										simulationAndVisualisationResults = { param.simulationAndVisualisationResults }

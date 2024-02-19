@@ -26,7 +26,7 @@ export async function fetchAbiFromEtherscan(contractAddress: EthereumAddress) {
 	const parsedSourceCode = EtherscanSourceCodeResult.safeParse(json.result)
 
 	// Extract ABI from getSourceCode request if not proxy, otherwise attempt to fetch ABI of implementation
-	if (parsedSourceCode.success == false || parsedSourceCode.value.status !== 'success') return { success: false as const, error: 'Failed to parse Etherscan results.'}
+	if (parsedSourceCode.success === false || parsedSourceCode.value.status !== 'success') return { success: false as const, error: 'Failed to parse Etherscan results.'}
 	
 	if (parsedSourceCode.value.result[0].Proxy === 'yes' && parsedSourceCode.value.result[0].Implementation !== '') {
 		const implReq = await fetchJson(`https://api.etherscan.io/api?module=contract&action=getabi&address=${ addressString(parsedSourceCode.value.result[0].Implementation) }&apiKey=${ EtherscanABIKey }`)

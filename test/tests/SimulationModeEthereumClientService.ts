@@ -39,7 +39,7 @@ export async function main() {
 			assert.throws(() => ethers.recoverAddress(digest, {
 					r: bytes32String(signed.r),
 					s: bytes32String(signed.s),
-					yParity: signed.yParity == 'even' ? 0 : 1,
+					yParity: signed.yParity === 'even' ? 0 : 1,
 				}),
 				'Error: invalid point'
 			)
@@ -79,7 +79,7 @@ export async function main() {
 			const addr = ethers.recoverAddress(digest, {
 				r: bytes32String(signed.r),
 				s: bytes32String(signed.s),
-				yParity: signed.yParity == 'even' ? 0 : 1,
+				yParity: signed.yParity === 'even' ? 0 : 1,
 			})
 			assert.equal(BigInt(addr), 0x98db3a41bf8bf4ded2c92a84ec0705689ddeef8bn)
 		})

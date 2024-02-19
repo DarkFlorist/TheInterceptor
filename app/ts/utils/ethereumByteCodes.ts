@@ -9,7 +9,7 @@ contract ecRecoverOverride {
 	fallback (bytes calldata input) external returns (bytes memory) {
 		(bytes32 hash, uint8 v, bytes32 r, bytes32 s) = abi.decode(input, (bytes32, uint8, bytes32, bytes32));
 		address overridedAddress = overrideToAddress[keccak256(abi.encode(hash, v, r, s))];
-		if (overridedAddress == address(0x0)) {
+		if (overridedAddress === address(0x0)) {
 			(bool success, bytes memory data) = address(0x0000000000000000000000000000000000123456).call{gas: 10000}(input);
 			require(success, 'failed to call moved ecrecover at address 0x0000000000000000000000000000000000123456');
 			return data;
@@ -39,7 +39,7 @@ contract timeLockMulticall {
     function executeTransaction(address target, uint value, string memory signature, bytes memory data, uint eta) public payable returns (bytes memory) {
         bytes32 txHash = keccak256(abi.encode(target, value, signature, data, eta));
         bytes memory callData;
-        if (bytes(signature).length == 0) {
+        if (bytes(signature).length === 0) {
             callData = data;
         } else {
             callData = abi.encodePacked(bytes4(keccak256(bytes(signature))), data);
