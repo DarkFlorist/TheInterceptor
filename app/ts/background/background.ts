@@ -452,7 +452,7 @@ export async function changeActiveAddressAndChainAndResetSimulation(
 
 export async function changeActiveRpc(simulator: Simulator, websiteTabConnections: WebsiteTabConnections, rpcNetwork: RpcNetwork, simulationMode: boolean) {
 	// allow switching RPC only if we are in simulation mode, or that chain id would not change
-	if (simulationMode || rpcNetwork.chainId === (await getSettings()).rpcNetwork.chainId) return await changeActiveAddressAndChainAndResetSimulation(simulator, websiteTabConnections, {
+	if (simulationMode || rpcNetwork.chainId === (await getSettings()).currentRpcNetwork.chainId) return await changeActiveAddressAndChainAndResetSimulation(simulator, websiteTabConnections, {
 		simulationMode: simulationMode,
 		rpcNetwork: rpcNetwork
 	})
