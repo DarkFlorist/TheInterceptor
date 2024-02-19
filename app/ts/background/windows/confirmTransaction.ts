@@ -1,6 +1,6 @@
 import { PopupOrTab, addWindowTabListeners, closePopupOrTabById, getPopupOrTabOnlyById, openPopupOrTab, removeWindowTabListeners, tryFocusingTabOrWindow } from '../../components/ui-utils.js'
 import { EthereumClientService } from '../../simulation/services/EthereumClientService.js'
-import { appendTransaction, getInputFieldFromDataOrInput, getSimulatedBlock, getSimulatedTransactionCount, simulateEstimateGas } from '../../simulation/services/SimulationModeEthereumClientService.js'
+import { appendTransaction, getInputFieldFromDataOrInput, getSimulatedTransactionCount, simulateEstimateGas } from '../../simulation/services/SimulationModeEthereumClientService.js'
 import { CANNOT_SIMULATE_OFF_LEGACY_BLOCK, ERROR_INTERCEPTOR_NO_ACTIVE_ADDRESS, METAMASK_ERROR_NOT_CONNECTED_TO_CHAIN, METAMASK_ERROR_USER_REJECTED_REQUEST } from '../../utils/constants.js'
 import { Future } from '../../utils/future.js'
 import { TransactionConfirmation } from '../../types/interceptor-messages.js'
@@ -114,12 +114,12 @@ export const formSendRawTransaction = async(ethereumClientService: EthereumClien
 
 export const formEthSendTransaction = async(ethereumClientService: EthereumClientService, activeAddress: bigint | undefined, simulationMode: boolean = true, website: Website, sendTransactionParams: SendTransactionParams, created: Date, transactionIdentifier: EthereumQuantity): Promise<WebsiteCreatedEthereumUnsignedTransactionOrFailed> => {
 	const simulationState = simulationMode ? (await getSimulationResults()).simulationState : undefined
-	const blockPromise = getSimulatedBlock(ethereumClientService, simulationState)
+	const parentBlockPromise = ethereumClientService.getBlock() // we are getting the real block here, as we are not interested in the current block where this is going to be included, but the parent
 	const transactionDetails = sendTransactionParams.params[0]
 	if (activeAddress === undefined) throw new Error('Access to active address is denied')
 	const from = simulationMode && transactionDetails.from !== undefined ? transactionDetails.from : activeAddress
 	const transactionCount = getSimulatedTransactionCount(ethereumClientService, simulationState, from)
-	const parentBlock = await blockPromise
+	const parentBlock = await parentBlockPromise
 	if (parentBlock.baseFeePerGas === undefined) throw new Error(CANNOT_SIMULATE_OFF_LEGACY_BLOCK)
 	const transactionWithoutGas = {
 		type: '1559' as const,

@@ -351,9 +351,22 @@ export function Home(param: HomeParams) {
 			</div>
 		: <></> }
 
-		{ simulationMode && currentBlockNumber === undefined ? <div style = 'padding: 10px'> <DinoSays text = { 'Not connected to a network' } /> </div> : <></> }
-		{ !simulationMode || activeSimulationAddress === undefined || currentBlockNumber === undefined || simulationAndVisualisationResults?.activeAddress !== activeSimulationAddress.address || simulationAndVisualisationResults.rpcNetwork.httpsRpc !== rpcNetwork.httpsRpc 
-			? <></>
+		{ !simulationMode || activeSimulationAddress === undefined || currentBlockNumber === undefined
+			? <div style = 'display: grid; grid-template-columns: auto auto; padding-left: 10px; padding-right: 10px' >
+				<div class = 'log-cell' style = 'justify-content: left;'>
+					{ simulationMode && currentBlockNumber === undefined ? <div style = 'padding: 10px'> <DinoSays text = { 'Not connected to a network' } /> </div> : <></> }
+				</div>
+				<div class = 'log-cell' style = 'justify-content: right;'>
+					<button className = 'button is-small is-danger' disabled = { false } onClick = { resetSimulation } >
+						<span class = 'icon'>
+							<img src = '../../img/broom.svg'/>
+						</span>
+						<span>
+							Clear
+						</span>
+					</button>
+				</div>
+			</div>
 			: <SimulationResults
 				simulationAndVisualisationResults = { simulationAndVisualisationResults }
 				removeTransaction = { removeTransaction }
