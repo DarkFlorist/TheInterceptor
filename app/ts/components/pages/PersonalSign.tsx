@@ -310,7 +310,7 @@ export function Permit2ExtraDetails({ permit2 }: { permit2: VisualizedPersonalSi
 		<CellElement text = 'Spender can spend for:'/>
 		<CellElement text = { <>
 			<SomeTimeAgo priorTimestamp = { new Date(Number(permit2.message.message.details.expiration) * 1000) } countBackwards = { true }/>
-			{` (until ${ humanReadableDateFromSeconds(permit2.message.message.details.expiration) })`}
+			{ ` (until ${ humanReadableDateFromSeconds(permit2.message.message.details.expiration) })` }
 		</> }/>
 	</>
 }

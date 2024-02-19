@@ -69,7 +69,7 @@ type UnexpectedErrorParams = {
 export const UnexpectedError = ({ message, close }: UnexpectedErrorParams) => {
 	if (message === undefined) return <></>
 	return (
-		<div style = {'padding: 10px;'}>
+		<div style = { 'padding: 10px;' }>
 			<div className = 'notification' style = { `background-color: var(--error-box-color); padding: 10px;` }>
 				<div style = 'display: flex; padding-bottom: 10px;'>
 					<span class = 'icon' style = 'margin-left: 0px; margin-right: 5px; width: 2em; height: 2em; min-width: 2em; min-height: 2em;'>

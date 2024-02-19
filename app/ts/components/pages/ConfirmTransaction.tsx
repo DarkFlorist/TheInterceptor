@@ -38,7 +38,7 @@ const HALF_HEADER_HEIGHT = 48 / 2
 
 function UnderTransactions(param: UnderTransactionsParams) {
 	const nTx = param.pendingTransactions.length
-	return <div style = {`position: relative; top: ${ nTx * -HALF_HEADER_HEIGHT }px;`}>
+	return <div style = { `position: relative; top: ${ nTx * -HALF_HEADER_HEIGHT }px;` }>
 		{ param.pendingTransactions.map((pendingTransaction, index) => {
 			const style = `margin-bottom: 0px; scale: ${ Math.pow(0.95, nTx - index) }; position: relative; top: ${ (nTx - index) * HALF_HEADER_HEIGHT }px;`
 			if (pendingTransaction.status !== 'Simulated') return <div class = 'card' style = { style }>
@@ -81,7 +81,7 @@ const TransactionNames = (param: TransactionNamesParams) => {
 				{ param.names.map((name, index) => (
 					<li style = 'margin: 0px;'>
 						<div class = 'card' style = { `padding: 5px; margin: 5px; ${ index !== param.names.length - 1 ? 'background-color: var(--disabled-card-color)' : ''}` }>
-							<p class = 'paragraph' style = {`margin: 0px; ${ index !== param.names.length - 1 ? 'color: var(--disabled-text-color)' : ''}` }>
+							<p class = 'paragraph' style = { `margin: 0px; ${ index !== param.names.length - 1 ? 'color: var(--disabled-text-color)' : ''}` }>
 								{ name }
 							</p>
 						</div>

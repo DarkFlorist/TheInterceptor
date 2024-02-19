@@ -41,7 +41,7 @@ type UnderTransactionsParams = {
 
 function UnderAccesses(param: UnderTransactionsParams) {
 	const nTx = param.reversedPendingAccessRequestArray.length
-	return <div style = {`position: relative; top: ${ nTx * -HALF_HEADER_HEIGHT }px;`}>
+	return <div style = { `position: relative; top: ${ nTx * -HALF_HEADER_HEIGHT }px;` }>
 		{ param.reversedPendingAccessRequestArray.map((pendingAccessRequest, index) => {
 			const style = `margin-bottom: 0px; scale: ${ Math.pow(0.95, nTx - index) }; position: relative; top: ${ (nTx - index) * HALF_HEADER_HEIGHT }px;`
 			return <div class = 'card' style = { style }>
