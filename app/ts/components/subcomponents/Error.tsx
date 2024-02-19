@@ -71,7 +71,7 @@ export const UnexpectedError = ({ message, close }: UnexpectedErrorParams) => {
 					</span>
 					<p className = 'paragraph' style = { `marging-left: 10px; color: var(--error-box-text); align-self: center; font-weight: bold;` }> { 'An unexpected error occured!' } </p>
 				</div>
-				<div style = { `overflow-y: auto; overflow-x: hidden; max-height: 200px; border-style: solid;` }>
+				<div style = { `overflow-y: auto; overflow-x: hidden; max-height: 100px; border-style: solid;` }>
 					<p class = 'paragraph' style = { `color: var(--error-box-text);` }> { message } </p>
 				</div>
 				<div style = 'overflow: hidden; display: flex; justify-content: space-around; width: 100%; height: 50px; padding-top: 10px;'>

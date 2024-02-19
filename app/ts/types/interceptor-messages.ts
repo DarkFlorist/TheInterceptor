@@ -468,7 +468,7 @@ export const InterceptorAccessDialog = funtypes.ReadonlyObject({
 export type Settings = funtypes.Static<typeof Settings>
 export const Settings = funtypes.ReadonlyObject({
 	activeSimulationAddress: OptionalEthereumAddress,
-	rpcNetwork: RpcNetwork,
+	currentRpcNetwork: RpcNetwork,
 	openedPage: Page,
 	useSignersAddressAsActiveAddress: funtypes.Boolean,
 	websiteAccess: WebsiteAccessArray,
