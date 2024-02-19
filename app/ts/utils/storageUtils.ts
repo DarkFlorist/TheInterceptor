@@ -1,7 +1,7 @@
 import * as funtypes from 'funtypes'
 import { EthereumAddressOrMissing, serialize } from '../types/wire-types.js'
 import { PendingChainChangeConfirmationPromise, PendingPersonalSignPromise, RpcConnectionStatus, TabState } from '../types/user-interface-types.js'
-import { CompleteVisualizedSimulation, EthereumSubscriptions } from '../types/visualizer-types.js'
+import { CompleteVisualizedSimulation, EthereumSubscriptionsAndFilters } from '../types/visualizer-types.js'
 import { AddressBookEntries, ActiveAddressArray, ContactEntries } from '../types/addressBookTypes.js'
 import { Page } from '../types/exportedSettingsTypes.js'
 import { WebsiteAccessArray } from '../types/websiteAccessTypes.js'
@@ -41,7 +41,7 @@ export const LocalStorageItems = funtypes.ReadonlyPartial({
 	signerName: SignerName,
 	currentTabId: funtypes.Union(funtypes.Undefined, funtypes.Number),
 	rpcConnectionStatus: RpcConnectionStatus,
-	ethereumSubscriptions: EthereumSubscriptions,
+	ethereumSubscriptionsAndFilters: EthereumSubscriptionsAndFilters,
 	useTabsInsteadOfPopup: funtypes.Boolean,
 	rpcEntries: RpcEntries,
 	metamaskCompatibilityMode: funtypes.Boolean,
@@ -70,7 +70,7 @@ export const LocalStorageKey = funtypes.Union(
 	funtypes.Literal('signerName'),
 	funtypes.Literal('currentTabId'),
 	funtypes.Literal('rpcConnectionStatus'),
-	funtypes.Literal('ethereumSubscriptions'),
+	funtypes.Literal('ethereumSubscriptionsAndFilters'),
 	funtypes.Literal('useTabsInsteadOfPopup'),
 	funtypes.Literal('rpcEntries'),
 	funtypes.Literal('metamaskCompatibilityMode'),
