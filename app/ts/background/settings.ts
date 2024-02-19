@@ -115,7 +115,7 @@ export const defaultRpcs = [
 	},
 ] as const
 
-export const isEthSimulateV1Node = (httpsRpc: string) => httpsRpc !== 'https://rpc.dark.florist/winedancemuffinborrow'
+export const isEthSimulateV1Node = (httpsRpc: string) => httpsRpc !== 'https://rpc.dark.florist/flipcardtrustone'
 
 export async function getSettings() : Promise<Settings> {
 	const results = await browserStorageLocalGet([
