@@ -157,7 +157,7 @@ export async function setUseSignersAddressAsActiveAddress(useSignersAddressAsAct
 export async function changeSimulationMode(changes: { simulationMode: boolean, rpcNetwork?: RpcNetwork, activeSimulationAddress?: EthereumAddress | undefined, activeSigningAddress?: EthereumAddress | undefined }) {
 	return await browserStorageLocalSet({
 		simulationMode: changes.simulationMode,
-		...changes.rpcNetwork ? { rpcNetwork: changes.rpcNetwork }: {},
+		...changes.rpcNetwork ? { currentRpcNetwork: changes.rpcNetwork }: {},
 		...'activeSimulationAddress' in changes ? { activeSimulationAddress: changes.activeSimulationAddress }: {},
 		...'activeSigningAddress' in changes ? { activeSigningAddress: changes.activeSigningAddress }: {},
 	})

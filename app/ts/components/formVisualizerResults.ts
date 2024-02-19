@@ -72,25 +72,13 @@ export function formSimulatedAndVisualizedTransaction(simState: SimulationState,
 			console.log(tokenEntry)
 			return undefined
 		}).filter(<T>(x: T | undefined): x is T => x !== undefined)
+		const removeFromAndToFromSignedTransaction = () => {
+			const { from, to, ...otherFields} = simulatedTx.signedTransaction
+			return otherFields
+		}
+		const otherFields = removeFromAndToFromSignedTransaction()
 		return {
-			transaction: {
-				from: from,
-				to: to,
-				value: simulatedTx.signedTransaction.value,
-				rpcNetwork: simState.rpcNetwork,
-				gas: simulatedTx.signedTransaction.gas,
-				input: simulatedTx.signedTransaction.input,
-				...(simulatedTx.signedTransaction.type === '1559'
-					? {
-						type: simulatedTx.signedTransaction.type,
-						maxFeePerGas: simulatedTx.signedTransaction.maxFeePerGas,
-						maxPriorityFeePerGas: simulatedTx.signedTransaction.maxPriorityFeePerGas,
-					}
-					: { type: simulatedTx.signedTransaction.type }
-				),
-				hash: simulatedTx.signedTransaction.hash,
-				nonce: simulatedTx.signedTransaction.nonce,
-			},
+			transaction: { from, to, rpcNetwork: simState.rpcNetwork, ...otherFields },
 			...(to !== undefined ? { to } : {}),
 			realizedGasPrice: simulatedTx.realizedGasPrice,
 			ethBalanceChanges: ethBalanceChanges,

@@ -132,30 +132,41 @@ export const EthTransactionReceiptResponse = funtypes.Union(
 		funtypes.MutablePartial({
 			author: EthereumAddress,
 		}),
-		funtypes.ReadonlyObject({
-			type: funtypes.Union(
-				funtypes.Union(funtypes.Literal('0x0').withParser(LiteralConverterParserFactory('0x0', 'legacy' as const)), funtypes.Literal(undefined).withParser(LiteralConverterParserFactory(undefined, 'legacy' as const))),
-				funtypes.Literal('0x0').withParser(LiteralConverterParserFactory('0x0', 'legacy' as const)),
-				funtypes.Literal('0x1').withParser(LiteralConverterParserFactory('0x1', '2930' as const)),
-				funtypes.Literal('0x2').withParser(LiteralConverterParserFactory('0x2', '1559' as const)),
+		funtypes.Intersect(
+			funtypes.Union(
+				funtypes.ReadonlyObject({
+					type: funtypes.Union(
+						funtypes.Union(funtypes.Literal('0x0').withParser(LiteralConverterParserFactory('0x0', 'legacy' as const)), funtypes.Literal(undefined).withParser(LiteralConverterParserFactory(undefined, 'legacy' as const))),
+						funtypes.Literal('0x0').withParser(LiteralConverterParserFactory('0x0', 'legacy' as const)),
+						funtypes.Literal('0x1').withParser(LiteralConverterParserFactory('0x1', '2930' as const)),
+						funtypes.Literal('0x2').withParser(LiteralConverterParserFactory('0x2', '1559' as const)),
+					),
+				}),
+				funtypes.ReadonlyObject({
+					type: funtypes.Literal('0x3').withParser(LiteralConverterParserFactory('0x3', '4844' as const)),
+					blobGasUsed: EthereumQuantity,
+					blobGasPrice: EthereumQuantity,
+				}),
 			),
-			blockHash: EthereumBytes32,
-			blockNumber: EthereumQuantity,
-			transactionHash: EthereumBytes32,
-			transactionIndex: EthereumQuantity,
-			contractAddress: funtypes.Union(funtypes.Null, EthereumAddress),
-			cumulativeGasUsed: EthereumQuantity,
-			gasUsed: EthereumQuantity,
-			effectiveGasPrice: EthereumQuantity,
-			from: EthereumAddress,
-			to: funtypes.Union(funtypes.Null, EthereumAddress),
-			logs: EthGetLogsResponse,
-			logsBloom: EthereumBytes256,
-			status: funtypes.Union(
-				funtypes.Literal('0x0').withParser(LiteralConverterParserFactory('0x0', 'failure' as const)),
-				funtypes.Literal('0x1').withParser(LiteralConverterParserFactory('0x1', 'success' as const)),
-			),
-		}).asReadonly()
+			funtypes.ReadonlyObject({
+				blockHash: EthereumBytes32,
+				blockNumber: EthereumQuantity,
+				transactionHash: EthereumBytes32,
+				transactionIndex: EthereumQuantity,
+				contractAddress: funtypes.Union(funtypes.Null, EthereumAddress),
+				cumulativeGasUsed: EthereumQuantity,
+				gasUsed: EthereumQuantity,
+				effectiveGasPrice: EthereumQuantity,
+				from: EthereumAddress,
+				to: funtypes.Union(funtypes.Null, EthereumAddress),
+				logs: EthGetLogsResponse,
+				logsBloom: EthereumBytes256,
+				status: funtypes.Union(
+					funtypes.Literal('0x0').withParser(LiteralConverterParserFactory('0x0', 'failure' as const)),
+					funtypes.Literal('0x1').withParser(LiteralConverterParserFactory('0x1', 'success' as const)),
+				),
+			})
+		)
 	)
 )
 
