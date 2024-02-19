@@ -179,7 +179,7 @@ export function App() {
 				setSimulationMode(settings.simulationMode)
 				setAppPage(settings.openedPage)
 			}
-			setSelectedNetwork(settings.rpcNetwork)
+			setSelectedNetwork(settings.currentRpcNetwork)
 			setActiveSimulationAddress(settings.activeSimulationAddress)
 			setUseSignersAddressAsActiveAddress(settings.useSignersAddressAsActiveAddress)
 			setWebsiteAccess(settings.websiteAccess)
