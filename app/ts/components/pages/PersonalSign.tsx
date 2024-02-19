@@ -310,7 +310,7 @@ export function Permit2ExtraDetails({ permit2 }: { permit2: VisualizedPersonalSi
 		<CellElement text = 'Spender can spend for:'/>
 		<CellElement text = { <>
 			<SomeTimeAgo priorTimestamp = { new Date(Number(permit2.message.message.details.expiration) * 1000) } countBackwards = { true }/>
-			{` (until ${ humanReadableDateFromSeconds(permit2.message.message.details.expiration) })`}
+			{ ` (until ${ humanReadableDateFromSeconds(permit2.message.message.details.expiration) })` }
 		</> }/>
 	</>
 }
@@ -413,8 +413,8 @@ export function SignatureCard(params: SignatureCardParams) {
 			<div class = 'card-content' style = 'padding-bottom: 5px;'>
 				<div class = 'container'>
 					<SignRequest { ...params }/>
-					<QuarantineReasons quarantineReasons = { params.VisualizedPersonalSignRequest.quarantineReasons }/>
 				</div>
+				<QuarantineReasons quarantineReasons = { params.VisualizedPersonalSignRequest.quarantineReasons }/>
 				<ExtraDetails { ...params }/>
 				<RawMessage { ...params }/>
 				
@@ -534,50 +534,54 @@ export function PersonalSign() {
 						/>
 					}
 				</div>
-				<UnexpectedError close = { () => { setUnexpectedError(undefined) } } message = { unexpectedError }/>
-				<NetworkErrors rpcConnectionStatus = { rpcConnectionStatus }/>
-
-				<div className = 'block' style = 'margin-bottom: 0px; display: flex; justify-content: space-between; flex-direction: column; height: 100%; position: fixed; width: 100%'>
-					<div style = 'overflow-y: auto'>
-						<header class = 'card-header window-header' style = 'height: 40px; border-top-left-radius: 0px; border-top-right-radius: 0px'>
-							<div class = 'card-header-icon noselect nopointer' style = 'overflow: hidden;'>
-								<WebsiteOriginText { ...VisualizedPersonalSignRequest.website } />
-							</div>
-							<p class = 'card-header-title' style = 'overflow: hidden; font-weight: unset; flex-direction: row-reverse;'>
-								{ VisualizedPersonalSignRequest.activeAddress === undefined ? <></> : <SmallAddress
-									addressBookEntry = { VisualizedPersonalSignRequest.activeAddress }
-									renameAddressCallBack = { renameAddressCallBack }
-								/> }
-							</p>
-						</header>
-						<div style = 'margin: 10px;'>
-							<SignatureCard
-								VisualizedPersonalSignRequest = { VisualizedPersonalSignRequest }
-								renameAddressCallBack = { renameAddressCallBack }
-								removeSignedMessage = { undefined }
-							/>
-						</div>
+				
+				<div class = 'block popup-block popup-block-scroll' style = 'padding:0px'>
+					<div style = 'position: sticky; top: 0; z-index:1'>
+						<UnexpectedError close = { () => { setUnexpectedError(undefined) } } message = { unexpectedError }/>
+						<NetworkErrors rpcConnectionStatus = { rpcConnectionStatus }/>
 					</div>
-
-					<nav class = 'window-header' style = 'display: flex; justify-content: space-around; width: 100%; flex-direction: column; padding-bottom: 10px; padding-top: 10px;'>
-						
-						{ isPossibleToSend(VisualizedPersonalSignRequest, VisualizedPersonalSignRequest.activeAddress.address) && VisualizedPersonalSignRequest.quarantine
-							? <div style = 'display: grid'>
-								<div style = 'margin: 0px; margin-bottom: 10px; margin-left: 20px; margin-right: 20px; '>
-									<ErrorCheckBox text = { 'I understand that there are issues with this signature request but I want to send it anyway against Interceptors recommendations.' } checked = { forceSend } onInput = { setForceSend } />
+					
+					<div class = 'popup-contents'>
+						<div>
+							<header class = 'card-header window-header' style = 'height: 40px; border-top-left-radius: 0px; border-top-right-radius: 0px'>
+								<div class = 'card-header-icon noselect nopointer' style = 'overflow: hidden;'>
+									<WebsiteOriginText { ...VisualizedPersonalSignRequest.website } />
 								</div>
+								<p class = 'card-header-title' style = 'overflow: hidden; font-weight: unset; flex-direction: row-reverse;'>
+									{ VisualizedPersonalSignRequest.activeAddress === undefined ? <></> : <SmallAddress
+										addressBookEntry = { VisualizedPersonalSignRequest.activeAddress }
+										renameAddressCallBack = { renameAddressCallBack }
+									/> }
+								</p>
+							</header>
+							<div style = 'margin: 10px;'>
+								<SignatureCard
+									VisualizedPersonalSignRequest = { VisualizedPersonalSignRequest }
+									renameAddressCallBack = { renameAddressCallBack }
+									removeSignedMessage = { undefined }
+								/>
 							</div>
-							: <></>
-						}
-						{ !(VisualizedPersonalSignRequest.rpcNetwork.httpsRpc !== undefined && isEthSimulateV1Node(VisualizedPersonalSignRequest.rpcNetwork.httpsRpc))
-							&& VisualizedPersonalSignRequest.simulationMode && (VisualizedPersonalSignRequest.activeAddress.address === undefined || VisualizedPersonalSignRequest.activeAddress.address !== MOCK_PRIVATE_KEYS_ADDRESS || VisualizedPersonalSignRequest.method !== 'personal_sign')
-							? <div style = 'display: grid'>
-								<ErrorComponent text = 'Unfortunately we cannot simulate message signing as it requires private key access 😢.'/>
-							</div>
-							: <></>
-						}
-						<Buttons/>
-					</nav>
+						</div>
+
+						<nav class = 'window-footer popup-button-row' style = 'position: sticky; bottom: 0; width: 100%;'>
+							{ isPossibleToSend(VisualizedPersonalSignRequest, VisualizedPersonalSignRequest.activeAddress.address) && VisualizedPersonalSignRequest.quarantine
+								? <div style = 'display: grid'>
+									<div style = 'margin: 0px; margin-bottom: 10px; margin-left: 20px; margin-right: 20px; '>
+										<ErrorCheckBox text = { 'I understand that there are issues with this signature request but I want to send it anyway against Interceptors recommendations.' } checked = { forceSend } onInput = { setForceSend } />
+									</div>
+								</div>
+								: <></>
+							}
+							{ !(VisualizedPersonalSignRequest.rpcNetwork.httpsRpc !== undefined && isEthSimulateV1Node(VisualizedPersonalSignRequest.rpcNetwork.httpsRpc))
+								&& VisualizedPersonalSignRequest.simulationMode && (VisualizedPersonalSignRequest.activeAddress.address === undefined || VisualizedPersonalSignRequest.activeAddress.address !== MOCK_PRIVATE_KEYS_ADDRESS || VisualizedPersonalSignRequest.method !== 'personal_sign')
+								? <div style = 'display: grid'>
+									<ErrorComponent text = 'Unfortunately we cannot simulate message signing as it requires private key access 😢.'/>
+								</div>
+								: <></>
+							}
+							<Buttons/>
+						</nav>
+					</div>
 				</div>
 			</Hint>
 		</main>

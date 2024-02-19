@@ -716,7 +716,6 @@ svg.spinner > circle {
 
 .popup-block {
 	display: flex;
-	justify-content: space-between;
 	flex-direction: column;
 	height: 100%;
 	position: fixed;
@@ -735,6 +734,15 @@ svg.spinner > circle {
 	flex-direction: column;
 	padding-bottom: 10px;
 	padding-top: 10px;
+	border-radius: 10px 10px 0 0;
+}
+
+.popup-contents {
+	display: flex;
+	justify-content:
+	space-between;
+	height: 100%;
+	flex-direction: column;
 }
 
 .blur {

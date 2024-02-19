@@ -38,7 +38,7 @@ const HALF_HEADER_HEIGHT = 48 / 2
 
 function UnderTransactions(param: UnderTransactionsParams) {
 	const nTx = param.pendingTransactions.length
-	return <div style = {`position: relative; top: ${ nTx * -HALF_HEADER_HEIGHT }px;`}>
+	return <div style = { `position: relative; top: ${ nTx * -HALF_HEADER_HEIGHT }px;` }>
 		{ param.pendingTransactions.map((pendingTransaction, index) => {
 			const style = `margin-bottom: 0px; scale: ${ Math.pow(0.95, nTx - index) }; position: relative; top: ${ (nTx - index) * HALF_HEADER_HEIGHT }px;`
 			if (pendingTransaction.status !== 'Simulated') return <div class = 'card' style = { style }>
@@ -81,7 +81,7 @@ const TransactionNames = (param: TransactionNamesParams) => {
 				{ param.names.map((name, index) => (
 					<li style = 'margin: 0px;'>
 						<div class = 'card' style = { `padding: 5px; margin: 5px; ${ index !== param.names.length - 1 ? 'background-color: var(--disabled-card-color)' : ''}` }>
-							<p class = 'paragraph' style = {`margin: 0px; ${ index !== param.names.length - 1 ? 'color: var(--disabled-text-color)' : ''}` }>
+							<p class = 'paragraph' style = { `margin: 0px; ${ index !== param.names.length - 1 ? 'color: var(--disabled-text-color)' : ''}` }>
 								{ name }
 							</p>
 						</div>
@@ -174,8 +174,8 @@ export function TransactionCard(param: TransactionCardParams) {
 						renameAddressCallBack = { param.renameAddressCallBack }
 						addressMetadata = { param.simulationAndVisualisationResults.addressBookEntries }
 					/>
-					<QuarantineReasons quarantineReasons = { simTx.quarantineReasons }/>
 				</div>
+				<QuarantineReasons quarantineReasons = { simTx.quarantineReasons }/>
 
 				<TransactionsAccountChangesCard
 					simTx = { simTx }
@@ -463,51 +463,53 @@ export function ConfirmTransaction() {
 						/>
 					}
 				</div>
-
-				<UnexpectedError close = { () => { setUnexpectedError(undefined) } } message = { unexpectedError }/>
-				<NetworkErrors rpcConnectionStatus = { rpcConnectionStatus }/>
-				<WebsiteErrors website = { currentPendingTransaction.website } websiteSocket = { currentPendingTransaction.uniqueRequestIdentifier.requestSocket } simulationMode = { currentPendingTransaction.simulationMode }/>
-
-				<div class = 'block popup-block'>
-					<div class = 'popup-block-scroll'>
-						{ currentPendingTransaction.originalRequestParameters.method === 'eth_sendRawTransaction'
-							? <DinoSaysNotification
-								text = { `This transaction is signed already. No extra signing required to forward it to ${ simulationResults === undefined ? 'network' : simulationResults.data.simulationState.rpcNetwork.name }.` }
-								close = { () => setPendingTransactionAddedNotification(false)}
+				<div class = 'block popup-block popup-block-scroll' style = 'padding: 0px'>
+					<div style = 'position: sticky; top: 0; z-index:1'>
+						<UnexpectedError close = { () => { setUnexpectedError(undefined) } } message = { unexpectedError }/>
+						<NetworkErrors rpcConnectionStatus = { rpcConnectionStatus }/>
+						<WebsiteErrors website = { currentPendingTransaction.website } websiteSocket = { currentPendingTransaction.uniqueRequestIdentifier.requestSocket } simulationMode = { currentPendingTransaction.simulationMode }/>
+					</div>
+					<div class = 'popup-contents'>
+						<div style = 'padding: 10px'>
+							{ currentPendingTransaction.originalRequestParameters.method === 'eth_sendRawTransaction'
+								? <DinoSaysNotification
+									text = { `This transaction is signed already. No extra signing required to forward it to ${ simulationResults === undefined ? 'network' : simulationResults.data.simulationState.rpcNetwork.name }.` }
+									close = { () => setPendingTransactionAddedNotification(false)}
+								/>
+								: <></>
+							}
+							{ pendingTransactionAddedNotification === true
+								? <DinoSaysNotification
+									text = { `Hey! A new transaction request was queued. Accept or Reject the previous transaction${ pendingTransactions.length > 1 ? 's' : '' } to see the new one.` }
+									close = { () => setPendingTransactionAddedNotification(false)}
+								/>
+								: <></>
+							}
+							<TransactionCard
+								simulationAndVisualisationResults = { {
+									blockNumber: simulationResults.data.simulationState.blockNumber,
+									blockTimestamp: simulationResults.data.simulationState.blockTimestamp,
+									simulationConductedTimestamp: simulationResults.data.simulationState.simulationConductedTimestamp,
+									addressBookEntries: simulationResults.data.addressBookEntries,
+									rpcNetwork: simulationResults.data.simulationState.rpcNetwork,
+									tokenPrices: simulationResults.data.tokenPrices,
+									activeAddress: simulationResults.data.activeAddress,
+									simulatedAndVisualizedTransactions: simulationResults.data.simulatedAndVisualizedTransactions,
+									visualizedPersonalSignRequests: simulationResults.data.visualizedPersonalSignRequests,
+									namedTokenIds: simulationResults.data.namedTokenIds,
+								} }
+								pendingTransactions = { pendingTransactions }
+								renameAddressCallBack = { renameAddressCallBack }
+								activeAddress = { currentPendingTransaction.activeAddress }
+								currentBlockNumber = { currentBlockNumber }
+								rpcConnectionStatus = { rpcConnectionStatus }
 							/>
-							: <></>
-						}
-						{ pendingTransactionAddedNotification === true
-							? <DinoSaysNotification
-								text = { `Hey! A new transaction request was queued. Accept or Reject the previous transaction${ pendingTransactions.length > 1 ? 's' : '' } to see the new one.` }
-								close = { () => setPendingTransactionAddedNotification(false)}
-							/>
-							: <></>
-						}
-						<TransactionCard
-							simulationAndVisualisationResults = { {
-								blockNumber: simulationResults.data.simulationState.blockNumber,
-								blockTimestamp: simulationResults.data.simulationState.blockTimestamp,
-								simulationConductedTimestamp: simulationResults.data.simulationState.simulationConductedTimestamp,
-								addressBookEntries: simulationResults.data.addressBookEntries,
-								rpcNetwork: simulationResults.data.simulationState.rpcNetwork,
-								tokenPrices: simulationResults.data.tokenPrices,
-								activeAddress: simulationResults.data.activeAddress,
-								simulatedAndVisualizedTransactions: simulationResults.data.simulatedAndVisualizedTransactions,
-								visualizedPersonalSignRequests: simulationResults.data.visualizedPersonalSignRequests,
-								namedTokenIds: simulationResults.data.namedTokenIds,
-							} }
-							pendingTransactions = { pendingTransactions }
-							renameAddressCallBack = { renameAddressCallBack }
-							activeAddress = { currentPendingTransaction.activeAddress }
-							currentBlockNumber = { currentBlockNumber }
-							rpcConnectionStatus = { rpcConnectionStatus }
-						/>
-				</div>
-					<nav class = 'window-header popup-button-row'>
-						<CheckBoxes currentResults = { currentResults } forceSend = { forceSend } setForceSend = { (enabled: boolean) => setForceSend(enabled) }/>
-						<Buttons/>
-					</nav>
+						</div>
+						<nav class = 'window-footer popup-button-row' style = 'position: sticky; bottom: 0; width: 100%;'>
+							<CheckBoxes currentResults = { currentResults } forceSend = { forceSend } setForceSend = { (enabled: boolean) => setForceSend(enabled) }/>
+							<Buttons/>
+						</nav>
+					</div>
 				</div>
 			</Hint>
 		</main>

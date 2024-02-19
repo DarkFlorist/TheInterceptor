@@ -1,15 +1,21 @@
-import type { ComponentChild } from 'preact'
+import type { ComponentChild, JSX } from 'preact'
 
 interface ErrorProps {
 	text: ComponentChild
 	warning?: boolean,
+	containerStyle?: JSX.CSSProperties
 }
 
 export function ErrorComponent(props: ErrorProps) {
 	const boxColor = props.warning === true ? 'var(--warning-box-color)' : 'var(--error-box-color)'
 	const textColor = props.warning === true ? 'var(--warning-box-text)' : 'var(--error-box-text)'
+	const containerStyle = {
+		margin: '10px',
+		backgroundColor: 'var(--bg-color)',
+		...props.containerStyle
+	}
 	return (
-		<div class = 'container' style = 'margin: 10px; background-color: var(--bg-color);'>
+		<div style = { containerStyle }>
 			<div className = 'notification' style = { `background-color: ${ boxColor }; display: flex; align-items: center; padding: 2px; padding: 10px`}>
 				<span class = 'icon' style = 'margin-left: 0px; margin-right: 5px; width: 2em; height: 2em; min-width: 2em; min-height: 2em;'>
 					<img src = '../img/warning-sign-black.svg' style = 'width: 2em; height: 2em;'/>
@@ -22,7 +28,7 @@ export function ErrorComponent(props: ErrorProps) {
 
 export function Notice(props: ErrorProps) {
 	return (
-		<div class = 'container'>
+		<div>
 			<div className = 'notification' style = { `background-color: unset; display: flex; align-items: center; padding: 0px;` }>
 				<p className = 'paragraph' style = 'marging-left: 10px'> { props.text } </p>
 			</div>
@@ -41,7 +47,7 @@ export function ErrorCheckBox(props: ErrorCheckboxProps) {
 	const boxColor = props.warning === true ? 'var(--warning-box-color)' : 'var(--error-box-color)'
 	const textColor = props.warning === true ? 'var(--warning-box-text)' : 'var(--error-box-text)'
 	return (
-		<div class = 'container'>
+		<div>
 			<div className = 'notification' style = { `background-color: ${ boxColor }; padding: 10px;` }>
 				<label class = 'form-control' style = { `color: ${ textColor }; font-size: 1em;` }>
 					<input type = 'checkbox'
@@ -63,7 +69,7 @@ type UnexpectedErrorParams = {
 export const UnexpectedError = ({ message, close }: UnexpectedErrorParams) => {
 	if (message === undefined) return <></>
 	return (
-		<div class = 'container' style = {'padding: 10px;'}>
+		<div style = { 'padding: 10px;' }>
 			<div className = 'notification' style = { `background-color: var(--error-box-color); padding: 10px;` }>
 				<div style = 'display: flex; padding-bottom: 10px;'>
 					<span class = 'icon' style = 'margin-left: 0px; margin-right: 5px; width: 2em; height: 2em; min-width: 2em; min-height: 2em;'>
