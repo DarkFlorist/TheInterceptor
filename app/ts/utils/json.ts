@@ -13,8 +13,11 @@ export const JSONEncodeable: funtypes.Runtype<typeJSONEncodeable> = funtypes.Laz
 export type JSONEncodeableObject = funtypes.Static<typeof JSONEncodeableObject>
 export const JSONEncodeableObject = funtypes.ReadonlyRecord(funtypes.String, JSONEncodeable)
 
+export type JSONEncodeableObjectArray = funtypes.Static<typeof JSONEncodeableObjectOrArray>
+export const JSONEncodeableObjectArray = funtypes.Union(funtypes.ReadonlyArray(JSONEncodeable))
+
 export type JSONEncodeableObjectOrArray = funtypes.Static<typeof JSONEncodeableObjectOrArray>
-export const JSONEncodeableObjectOrArray = funtypes.Union(funtypes.ReadonlyArray(JSONEncodeable), funtypes.ReadonlyRecord(funtypes.String, JSONEncodeable))
+export const JSONEncodeableObjectOrArray = funtypes.Union(JSONEncodeableObject, JSONEncodeableObjectArray)
 
 export function isJSON(text: string){
 	if (typeof text !== 'string') return false

@@ -45,7 +45,7 @@ async function updateMetadataForSimulation(simulationState: SimulationState, eth
 	const addressBookEntries = await addressBookEntryPromises
 	const namedTokenIds = await namedTokenIdPromises
 	const simulatedAndVisualizedTransactions = formSimulatedAndVisualizedTransaction(simulationState, visualizerResults, protectorResults, addressBookEntries, namedTokenIds)
-	const VisualizedPersonalSignRequest = simulationState.signedMessages.map((signedMessage) => craftPersonalSignPopupMessage(ethereum, signedMessage, settings.rpcNetwork))
+	const VisualizedPersonalSignRequest = simulationState.signedMessages.map((signedMessage) => craftPersonalSignPopupMessage(ethereum, signedMessage, settings.currentRpcNetwork))
 	return {
 		namedTokenIds,
 		addressBookEntries: addressBookEntries,
@@ -272,7 +272,7 @@ export async function refreshConfirmTransactionSimulation(
 export async function getPrependTransactions(ethereumClientService: EthereumClientService, settings: Settings, richMode: boolean): Promise<WebsiteCreatedEthereumUnsignedTransaction[]> {
 	if (!settings.simulationMode || !richMode) return []
 	const activeAddress = settings.activeSimulationAddress
-	const chainId = settings.rpcNetwork.chainId
+	const chainId = settings.currentRpcNetwork.chainId
 	const donatorAddress = getEthDonator(chainId)
 	if (donatorAddress === undefined) return []
 	if (activeAddress === undefined) return []
@@ -368,7 +368,7 @@ async function handleRPCRequest(
 		case 'eth_sign': return { method: parsedRequest.method, error: { code: 10000, message: 'eth_sign is deprecated' } }
 		case 'eth_sendRawTransaction':
 		case 'eth_sendTransaction': {
-			if (forwardToSigner && settings.rpcNetwork.httpsRpc === undefined) return getForwardingMessage(parsedRequest)
+			if (forwardToSigner && settings.currentRpcNetwork.httpsRpc === undefined) return getForwardingMessage(parsedRequest)
 			const message = await sendTransaction(simulator, activeAddress, ethereumClientService, parsedRequest, request, !forwardToSigner, website)
 			if ('forward' in message) return getForwardingMessage(parsedRequest)
 			return message
@@ -412,28 +412,29 @@ export async function changeActiveAddressAndChainAndResetSimulation(
 		rpcNetwork?: RpcNetwork,
 	},
 ) {
+	if (change.simulationMode) {
+		await changeSimulationMode({
+			...change,
+			...'activeAddress' in change ? { activeSimulationAddress: change.activeAddress } : {}
+		})
+	} else {
+		await changeSimulationMode({
+			...change,
+			...'activeAddress' in change ? { activeSigningAddress: change.activeAddress } : {}
+		})
+	}
+
+	const updatedSettings = await getSettings()
+	updateWebsiteApprovalAccesses(simulator, websiteTabConnections, undefined, updatedSettings)
+	sendPopupMessageToOpenWindows({ method: 'popup_settingsUpdated', data: updatedSettings })
+	sendPopupMessageToOpenWindows({ method: 'popup_accounts_update' })
+
 	await changeActiveAddressAndChainAndResetSimulationSemaphore.execute(async () => {
-		if (change.simulationMode) {
-			await changeSimulationMode({
-				...change,
-				...'activeAddress' in change ? { activeSimulationAddress: change.activeAddress } : {}
-			})
-		} else {
-			await changeSimulationMode({
-				...change,
-				...'activeAddress' in change ? { activeSigningAddress: change.activeAddress } : {}
-			})
-		}
-		const updatedSettings = await getSettings()
-		updateWebsiteApprovalAccesses(simulator, websiteTabConnections, undefined, updatedSettings)
-		sendPopupMessageToOpenWindows({ method: 'popup_settingsUpdated', data: updatedSettings })
 		if (change.rpcNetwork !== undefined) {
 			if (change.rpcNetwork.httpsRpc !== undefined) simulator.reset(change.rpcNetwork)
 			sendMessageToApprovedWebsitePorts(websiteTabConnections, { method: 'chainChanged' as const, result: change.rpcNetwork.chainId })
 			sendPopupMessageToOpenWindows({ method: 'popup_chain_update' })
 		}
-
-		sendPopupMessageToOpenWindows({ method: 'popup_accounts_update' })
 
 		if (updatedSettings.simulationMode) {
 			// update prepend mode as our active address has changed, so we need to be sure the rich modes money is sent to right address
@@ -450,7 +451,8 @@ export async function changeActiveAddressAndChainAndResetSimulation(
 }
 
 export async function changeActiveRpc(simulator: Simulator, websiteTabConnections: WebsiteTabConnections, rpcNetwork: RpcNetwork, simulationMode: boolean) {
-	if (simulationMode) return await changeActiveAddressAndChainAndResetSimulation(simulator, websiteTabConnections, {
+	// allow switching RPC only if we are in simulation mode, or that chain id would not change
+	if (simulationMode || rpcNetwork.chainId === (await getSettings()).currentRpcNetwork.chainId) return await changeActiveAddressAndChainAndResetSimulation(simulator, websiteTabConnections, {
 		simulationMode: simulationMode,
 		rpcNetwork: rpcNetwork
 	})

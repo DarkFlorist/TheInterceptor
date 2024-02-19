@@ -196,26 +196,25 @@ interface EthTradePair {
 }
 
 function *findSwapRoutes(graph: Graph, currentState: State, goalState: State, path: State[] = []): IterableIterator<State[]> {
-	if ( path.length > 10) {
-		return []
-	}
+	if (path.length > 10) return
 	if (currentState.toAddress === goalState.toAddress && currentState.currentTokenAddress === goalState.currentTokenAddress) {
-		yield path.concat(goalState);
+		yield path.concat(goalState)
 	} else {
 		const neighbours = graph.get(currentState.toAddress)
 		if (neighbours) {
-			path.push(currentState);
+			path.push(currentState)
 			for (const [tokenaddress, toAndAmount] of neighbours.entries()) {
 				yield *findSwapRoutes(graph, {
 					toAddress: toAndAmount.to,
 					currentTokenAddress: tokenaddress,
 					tokenResultIndex: toAndAmount.tokenResultIndex,
 					fromAddress: currentState.toAddress,
-				}, goalState, path);
+				}, goalState, path)
 			}
 			path.pop()
 		}
 	}
+	return
 }
 
 export function identifyRoutes(simulatedAndVisualizedTransaction: SimulatedAndVisualizedTransaction, identifiedSwap: IdentifiedSwapWithMetadata) : false | TokenVisualizerResultWithMetadata[] {
@@ -296,13 +295,15 @@ export function identifyRoutes(simulatedAndVisualizedTransaction: SimulatedAndVi
 		}
 	)]
 
-	function uniqByKeepFirst(a: State[]) {
-		let seen = new Set();
-		return a.filter(item => {
-			return seen.has(item) ? false : seen.add(item);
+	function uniqueByKeepFirst(a: State[]) {
+		let seen = new Set()
+		return a.filter((item) => {
+			if (seen.has(item)) return false
+			seen.add(item)
+			return true
 		})
 	}
-	const route = uniqByKeepFirst(routes.flat())
+	const route = uniqueByKeepFirst(routes.flat())
 
 	if ( route.length === 0) return false
 

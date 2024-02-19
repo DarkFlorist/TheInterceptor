@@ -17,19 +17,22 @@ function generateIdenticon(address: bigint, scale: number, canvasRef: HTMLCanvas
 	// Mostly to ensure congruence to Ethereum Mist's Identicons
 
 	// The random number is a js implementation of the Xorshift PRNG
-	const randseed = new Array(4) // Xorshift: [x, y, z, w] 32 bit values
+	const randseed: number[] = new Array(4) // Xorshift: [x, y, z, w] 32 bit values
 
 	function seedrand(seed: string) {
 		for (let i = 0; i < randseed.length; i++) {
 			randseed[i] = 0
 		}
 		for (let i = 0; i < seed.length; i++) {
-			randseed[i % 4] = ((randseed[i % 4] << 5) - randseed[i % 4]) + seed.charCodeAt(i)
+			const r = randseed[i % 4]
+			if (r === undefined) throw new Error('Buffer overflow')
+			randseed[i % 4] = ((r << 5) - r) + seed.charCodeAt(i)
 		}
 	}
 
 	function rand() {
 		// based on Java's String.hashCode(), expanded to 4 32bit values
+		if (randseed[0] === undefined || randseed[1] === undefined || randseed[2] === undefined || randseed[3] === undefined) throw new Error('Buffer overflow')
 		const t = randseed[0] ^ (randseed[0] << 11)
 
 		randseed[0] = randseed[1]

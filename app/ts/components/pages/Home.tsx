@@ -352,7 +352,7 @@ export function Home(param: HomeParams) {
 		: <></> }
 
 		{ simulationMode && currentBlockNumber === undefined ? <div style = 'padding: 10px'> <DinoSays text = { 'Not connected to a network' } /> </div> : <></> }
-		{ !simulationMode || activeSimulationAddress === undefined || currentBlockNumber === undefined
+		{ !simulationMode || activeSimulationAddress === undefined || currentBlockNumber === undefined || simulationAndVisualisationResults?.activeAddress !== activeSimulationAddress.address || simulationAndVisualisationResults.rpcNetwork.httpsRpc !== rpcNetwork.httpsRpc 
 			? <></>
 			: <SimulationResults
 				simulationAndVisualisationResults = { simulationAndVisualisationResults }

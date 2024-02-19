@@ -47,7 +47,7 @@ export async function updatePendingPersonalSignViewWithPendingRequests(ethereumC
 	const settings = await getSettings()
 	return await sendPopupMessageToOpenWindows(serialize(PersonalSignRequest, {
 		method: 'popup_personal_sign_request' as const,
-		data: await craftPersonalSignPopupMessage(ethereumClientService, personalSignPromise.signedMessageTransaction, settings.rpcNetwork)
+		data: await craftPersonalSignPopupMessage(ethereumClientService, personalSignPromise.signedMessageTransaction, settings.currentRpcNetwork)
 	}) as PartiallyParsedPersonalSignRequest)
 }
 

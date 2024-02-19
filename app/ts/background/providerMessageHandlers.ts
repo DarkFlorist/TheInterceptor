@@ -62,7 +62,7 @@ async function changeSignerChain(simulator: Simulator, websiteTabConnections: We
 
 	// update active address if we are using signers address
 	const settings = await getSettings()
-	if ((settings.useSignersAddressAsActiveAddress || !settings.simulationMode) && settings.rpcNetwork.chainId !== signerChain) {
+	if ((settings.useSignersAddressAsActiveAddress || !settings.simulationMode) && settings.currentRpcNetwork.chainId !== signerChain) {
 		return changeActiveAddressAndChainAndResetSimulation(simulator, websiteTabConnections, {
 			simulationMode: settings.simulationMode,
 			rpcNetwork: await getRpcNetworkForChain(signerChain),

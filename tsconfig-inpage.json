@@ -1,7 +1,7 @@
 {
 	"compilerOptions": {
-		"target": "ES2022",
-        "module": "none",
+		"target": "ES2021",
+		"module": "none",
 		"moduleResolution": "classic",
 		"outDir": "app/inpage/js/",
 		"rootDir": "app/inpage/ts/",
@@ -15,7 +15,7 @@
 		"noImplicitThis": true,
 		"declaration": false,
 		"declarationMap": false,
-		"lib": ["ES2022", "DOM"],
+		"lib": ["ES2021", "DOM"],
 		"typeRoots": [ "./node_modules/@types" ],
 		"types": [ "firefox-webext-browser" ],
 	},
