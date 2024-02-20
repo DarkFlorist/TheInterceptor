@@ -80,12 +80,8 @@ export const simulationGasLeft = (simulationState: SimulationState | undefined, 
 }
 
 export function getInputFieldFromDataOrInput(request: { input?: Uint8Array} | { data?: Uint8Array } | {}) {
-	if ('data' in request && request.data !== undefined) {
-		return request.data
-	}
-	if ('input' in request && request.input !== undefined) {
-		return request.input
-	}
+	if ('data' in request && request.data !== undefined) return request.data
+	if ('input' in request && request.input !== undefined) return request.input
 	return new Uint8Array()
 }
 
@@ -143,9 +139,7 @@ export const simulateEstimateGas = async (ethereumClientService: EthereumClientS
 
 // calculates gas price for receipts
 export const calculateGasPrice = (transaction: EthereumUnsignedTransaction, gasUsed: bigint, gasLimit: bigint, baseFeePerGas: bigint) => {
-	if ('gasPrice' in transaction) {
-		return transaction.gasPrice
-	}
+	if ('gasPrice' in transaction) return transaction.gasPrice
 	const baseFee = getNextBaseFee(gasUsed, gasLimit, baseFeePerGas)
 	return min(baseFee + transaction.maxPriorityFeePerGas, transaction.maxFeePerGas)
 }
@@ -370,20 +364,39 @@ export const getNonceFixedSimulatedTransactions = async(ethereumClientService: E
 	return nonceFixedTransactions
 }
 
+const getBaseFeeAdjustedTransactions = (parentBlock: EthereumBlockHeader, unsignedTxts: readonly WebsiteCreatedEthereumUnsignedTransaction[]): readonly WebsiteCreatedEthereumUnsignedTransaction[] => {
+	const parentBaseFeePerGas = parentBlock.baseFeePerGas
+	if (parentBaseFeePerGas === undefined) return unsignedTxts
+	return unsignedTxts.map((transaction) => {
+		if (transaction.originalRequestParameters.method !== 'eth_sendTransaction') return transaction
+		if (transaction.transaction.type !== '1559') return transaction
+		return {
+			...transaction,
+			transaction: {
+				...transaction.transaction,
+				maxFeePerGas: parentBaseFeePerGas * 2n
+			}
+		}
+	})
+}
+
 export const refreshSimulationState = async (ethereumClientService: EthereumClientService, simulationState: SimulationState): Promise<SimulationState>  => {
 	if (ethereumClientService.getChainId() !== simulationState.rpcNetwork.chainId) return simulationState // don't refresh if we don't have the same chain to refresh from
 	if (simulationState.blockNumber == await ethereumClientService.getBlockNumber()) {
 		// if block number is the same, we don't need to compute anything as nothing has changed, but let's update timestamp to show the simulation was refreshed for this time
 		return { ...simulationState, simulationConductedTimestamp: new Date() }
 	}
-	const nonPrepended = getNonPrependedSimulatedTransactionsFromState(simulationState)
-	const nonceFixedTransactions = await getNonceFixedSimulatedTransactions(ethereumClientService, simulationState.simulatedTransactions)
-	if (nonceFixedTransactions === 'NoNonceErrors') {
-		return await setSimulationTransactionsAndSignedMessages(ethereumClientService, simulationState, nonPrepended.map((x) => convertSimulatedTransactionToWebsiteCreatedEthereumUnsignedTransaction(x)), simulationState.signedMessages)
-	} else {
+	const parentBlockPromise = ethereumClientService.getBlock()
+	const getNonceFixedTransactions = async () => {
+		const nonPrepended = getNonPrependedSimulatedTransactionsFromState(simulationState)
+		const nonceFixedTransactions = await getNonceFixedSimulatedTransactions(ethereumClientService, simulationState.simulatedTransactions)
+		if (nonceFixedTransactions === 'NoNonceErrors') return nonPrepended
 		const nonPrependedNonceFixedTransactions = getNonPrependedSimulatedTransactions(simulationState.prependTransactionsQueue, nonceFixedTransactions)
-		return await setSimulationTransactionsAndSignedMessages(ethereumClientService, simulationState, nonPrependedNonceFixedTransactions.map((x) => convertSimulatedTransactionToWebsiteCreatedEthereumUnsignedTransaction(x)), simulationState.signedMessages)
+		return nonPrependedNonceFixedTransactions
 	}
+	const transactions = (await getNonceFixedTransactions()).map((x) => convertSimulatedTransactionToWebsiteCreatedEthereumUnsignedTransaction(x))
+	const baseFeeAdjustedTransactions = getBaseFeeAdjustedTransactions(await parentBlockPromise, transactions)
+	return await setSimulationTransactionsAndSignedMessages(ethereumClientService, simulationState, baseFeeAdjustedTransactions, simulationState.signedMessages)	
 }
 
 export const resetSimulationState = async (ethereumClientService: EthereumClientService, simulationState: SimulationState): Promise<SimulationState> => {
