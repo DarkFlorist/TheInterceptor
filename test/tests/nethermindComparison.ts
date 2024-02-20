@@ -47,7 +47,7 @@ export async function main() {
 	const rpcNetwork = {
 		name: 'Goerli',
 		chainId: 5n,
-		httpsRpc: 'https://some-goerli-rpc',
+		httpsRpc: 'https://rpc.dark.florist/flipcardtrustone',
 		currencyName: 'Goerli Testnet ETH',
 		currencyTicker: 'GÖETH',
 		primary: true,
