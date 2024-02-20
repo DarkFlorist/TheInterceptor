@@ -408,6 +408,36 @@ export const FeeHistory = funtypes.ReadonlyObject({
 	)
 })
 
+export type EthNewFilter = funtypes.Static<typeof EthNewFilter>
+export const EthNewFilter = funtypes.ReadonlyObject({
+	method: funtypes.Literal('eth_newFilter'),
+	params: funtypes.ReadonlyTuple(funtypes.ReadonlyPartial({
+		fromBlock: EthereumBlockTag,
+		toBlock: EthereumBlockTag,
+		address: EthereumAddress,
+		topics: funtypes.ReadonlyArray(funtypes.Union(EthereumBytes32, funtypes.ReadonlyArray(EthereumBytes32), funtypes.Null)),
+		blockhash: EthereumBytes32,
+	}))
+})
+
+export type UninstallFilter = funtypes.Static<typeof UninstallFilter>
+export const UninstallFilter = funtypes.ReadonlyObject({
+	method: funtypes.Literal('eth_uninstallFilter'),
+	params: funtypes.ReadonlyTuple(funtypes.String)
+})
+
+export type GetFilterChanges = funtypes.Static<typeof GetFilterChanges>
+export const GetFilterChanges = funtypes.ReadonlyObject({
+	method: funtypes.Literal('eth_getFilterChanges'),
+	params: funtypes.ReadonlyTuple(funtypes.String)
+})
+
+export type GetFilterLogs = funtypes.Static<typeof GetFilterLogs>
+export const GetFilterLogs = funtypes.ReadonlyObject({
+	method: funtypes.Literal('eth_getFilterLogs'),
+	params: funtypes.ReadonlyTuple(funtypes.String)
+})
+
 export type EthereumJsonRpcRequest = funtypes.Static<typeof EthereumJsonRpcRequest>
 export const EthereumJsonRpcRequest = funtypes.Union(
 	EthBlockByNumberParams,
@@ -444,6 +474,10 @@ export const EthereumJsonRpcRequest = funtypes.Union(
 	WalletAddEthereumChain,
 	Web3ClientVersion,
 	FeeHistory,
+	EthNewFilter,
+	UninstallFilter,
+	GetFilterChanges,
+	GetFilterLogs,
 )
 
 // should be same as the above list, except with `params: funtypes.Unknown`
