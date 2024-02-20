@@ -1,10 +1,10 @@
-import { EthSubscribeParams } from '../../types/JsonRpc-types.js'
+import { EthNewFilter, EthSubscribeParams } from '../../types/JsonRpc-types.js'
 import { assertNever } from '../../utils/typescript.js'
 import { EthereumClientService } from './EthereumClientService.js'
-import { getEthereumSubscriptions, updateEthereumSubscriptions } from '../../background/storageVariables.js'
-import { EthereumSubscriptions, SimulationState } from '../../types/visualizer-types.js'
+import { getEthereumSubscriptionsAndFilters, updateEthereumSubscriptionsAndFilters } from '../../background/storageVariables.js'
+import { EthereumSubscriptionsAndFilters, SimulationState } from '../../types/visualizer-types.js'
 import { WebsiteTabConnections } from '../../types/user-interface-types.js'
-import { getSimulatedBlock } from './SimulationModeEthereumClientService.js'
+import { getSimulatedBlock, getSimulatedLogs } from './SimulationModeEthereumClientService.js'
 import { sendSubscriptionReplyOrCallBack } from '../../background/messageSending.js'
 import { WebsiteSocket } from '../../utils/requests.js'
 
@@ -16,15 +16,15 @@ function generateId(len: number) {
 	return `0x${ Array.from(arr, dec2hex).join('') }`
 }
 
-export async function removeEthereumSubscription(socket: WebsiteSocket, subscriptionId: string) {
-	const changes = await updateEthereumSubscriptions((subscriptions: EthereumSubscriptions) => {
-		return subscriptions.filter((subscription) => subscription.subscriptionId !== subscriptionId
+export async function removeEthereumSubscription(socket: WebsiteSocket, subscriptionOrFilterId: string) {
+	const changes = await updateEthereumSubscriptionsAndFilters((subscriptions: EthereumSubscriptionsAndFilters) => {
+		return subscriptions.filter((subscription) => subscription.subscriptionOrFilterId !== subscriptionOrFilterId
 			&& subscription.subscriptionCreatorSocket.tabId === socket.tabId // only allow the same tab and connection to remove the subscription
 			&& subscription.subscriptionCreatorSocket.connectionName === socket.connectionName
 		)
 	})
-	if (changes.oldSubscriptions.find((sub) => sub.subscriptionId === subscriptionId) !== undefined
-		&& changes.newSubscriptions.find((sub) => sub.subscriptionId === subscriptionId) === undefined
+	if (changes.oldSubscriptions.find((sub) => sub.subscriptionOrFilterId === subscriptionOrFilterId) !== undefined
+		&& changes.newSubscriptions.find((sub) => sub.subscriptionOrFilterId === subscriptionOrFilterId) === undefined
 	) {
 		return true // subscription was found and removed
 	}
@@ -32,33 +32,35 @@ export async function removeEthereumSubscription(socket: WebsiteSocket, subscrip
 }
 
 export async function sendSubscriptionMessagesForNewBlock(blockNumber: bigint, ethereumClientService: EthereumClientService, simulationState: SimulationState | undefined, websiteTabConnections: WebsiteTabConnections) {
-	const ethereumSubscriptions = await getEthereumSubscriptions()
-	for (const subscription of ethereumSubscriptions) {
-		switch (subscription.type) {
+	const ethereumSubscriptionsAndFilters = await getEthereumSubscriptionsAndFilters()
+	for (const subscriptionOrFilter of ethereumSubscriptionsAndFilters) {
+		if (websiteTabConnections.get(subscriptionOrFilter.subscriptionCreatorSocket.tabId) === undefined) { // connection removed
+			await removeEthereumSubscription(subscriptionOrFilter.subscriptionCreatorSocket, subscriptionOrFilter.subscriptionOrFilterId)
+			break
+		}
+		switch (subscriptionOrFilter.type) {
 			case 'newHeads': {
-				if (websiteTabConnections.get(subscription.subscriptionCreatorSocket.tabId) === undefined) { // connection removed
-					return await removeEthereumSubscription(subscription.subscriptionCreatorSocket, subscription.subscriptionId)
-				}
 				const newBlock = await ethereumClientService.getBlock(blockNumber, false)
 
-				sendSubscriptionReplyOrCallBack(websiteTabConnections, subscription.subscriptionCreatorSocket, {
+				sendSubscriptionReplyOrCallBack(websiteTabConnections, subscriptionOrFilter.subscriptionCreatorSocket, {
 					method: 'newHeads' as const, 
-					result: { subscription: subscription.type, result: newBlock } as const,
-					subscription: subscription.subscriptionId,
+					result: { subscription: subscriptionOrFilter.type, result: newBlock } as const,
+					subscription: subscriptionOrFilter.subscriptionOrFilterId,
 				})
 
 				if (simulationState !== undefined) {
 					const simulatedBlock = await getSimulatedBlock(ethereumClientService, simulationState, blockNumber + 1n, false)
 					// post our simulated block on top (reorg it)
-					sendSubscriptionReplyOrCallBack(websiteTabConnections, subscription.subscriptionCreatorSocket, {
+					sendSubscriptionReplyOrCallBack(websiteTabConnections, subscriptionOrFilter.subscriptionCreatorSocket, {
 						method: 'newHeads' as const, 
-						result: { subscription: subscription.type, result: simulatedBlock },
-						subscription: subscription.subscriptionId,
+						result: { subscription: subscriptionOrFilter.type, result: simulatedBlock },
+						subscription: subscriptionOrFilter.subscriptionOrFilterId,
 					})
 				}
-				return
+				break
 			}
-			default: assertNever(subscription.type)
+			case 'eth_newFilter': break
+			default: assertNever(subscriptionOrFilter)
 		}
 	}
 	return
@@ -66,14 +68,44 @@ export async function sendSubscriptionMessagesForNewBlock(blockNumber: bigint, e
 export async function createEthereumSubscription(params: EthSubscribeParams, subscriptionCreatorSocket: WebsiteSocket) {
 	switch(params.params[0]) {
 		case 'newHeads': {
-			const subscriptionId = generateId(40)
-			await updateEthereumSubscriptions((subscriptions: EthereumSubscriptions) => {
-				return subscriptions.concat({ type: 'newHeads', subscriptionId, params, subscriptionCreatorSocket })
+			const subscriptionOrFilterId = generateId(40)
+			await updateEthereumSubscriptionsAndFilters((subscriptionsAndfilters: EthereumSubscriptionsAndFilters) => {
+				return subscriptionsAndfilters.concat({ type: 'newHeads', subscriptionOrFilterId, params, subscriptionCreatorSocket })
 			})
-			return subscriptionId
+			return subscriptionOrFilterId
 		}
 		case 'logs': throw `Dapp requested for 'logs' subscription but it's not implemented` //TODO: implement
 		case 'newPendingTransactions': throw `Dapp requested for 'newPendingTransactions' subscription but it's not implemented` //TODO: implement
 		case 'syncing': throw `Dapp requested for 'syncing' subscription but it's not implemented` //TODO: implement
 	}
+}
+
+export async function createNewFilter(params: EthNewFilter, subscriptionCreatorSocket: WebsiteSocket, ethereumClientService: EthereumClientService, simulationState: SimulationState | undefined) {
+	const calledInlastBlock = simulationState?.blockNumber || (await ethereumClientService.getBlock()).number
+	const subscriptionOrFilterId = generateId(40)
+	await updateEthereumSubscriptionsAndFilters((subscriptionsAndfilters: EthereumSubscriptionsAndFilters) => {
+		return subscriptionsAndfilters.concat({ type: 'eth_newFilter', subscriptionOrFilterId, params, subscriptionCreatorSocket, calledInlastBlock })
+	})
+	return subscriptionOrFilterId
+}
+
+export async function getEthFilterChanges(filterId: string, ethereumClientService: EthereumClientService, simulationState: SimulationState | undefined) {
+	const filtersAndSubscriptions = await getEthereumSubscriptionsAndFilters()
+	const filter = filtersAndSubscriptions.find((subscriptionOrfilter) => subscriptionOrfilter.subscriptionOrFilterId === filterId)
+	if (filter === undefined || filter.type !== 'eth_newFilter') return undefined
+	if (filter.params.params[0].blockhash !== undefined) throw new Error('blockhash not supported for this method')
+	const calledInlastBlock = simulationState?.blockNumber || (await ethereumClientService.getBlock()).number
+	const logs = await getSimulatedLogs(ethereumClientService, simulationState, { ...filter, fromBlock: filter.calledInlastBlock })
+	await updateEthereumSubscriptionsAndFilters((subscriptionsAndfilters) => {
+		return subscriptionsAndfilters.map((subscriptionOrfilter) => subscriptionOrfilter.subscriptionOrFilterId === filterId ? { ...subscriptionOrfilter, calledInlastBlock } : filter)
+	})
+	return logs
+}
+
+export async function getEthFilterLogs(filterId: string, ethereumClientService: EthereumClientService, simulationState: SimulationState | undefined) {
+	const filtersAndSubscriptions = await getEthereumSubscriptionsAndFilters()
+	const filter = filtersAndSubscriptions.find((filter) => filter.subscriptionOrFilterId === filterId)
+	if (filter === undefined || filter.type !== 'eth_newFilter') return undefined
+	if (filter.params.params[0].blockhash !== undefined) throw new Error('blockhash not supported for this method')
+	return await getSimulatedLogs(ethereumClientService, simulationState, filter.params.params[0])
 }
