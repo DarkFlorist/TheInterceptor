@@ -3,7 +3,7 @@ import * as funtypes from 'funtypes'
 import { EthereumAddress, EthereumBytes32, EthereumData, EthereumInput, EthereumQuantity, EthereumSignedTransaction, EthereumTimestamp, EthereumUnsignedTransaction, OptionalEthereumAddress } from './wire-types.js'
 import { RenameAddressCallBack } from './user-interface-types.js'
 import { ERROR_INTERCEPTOR_GAS_ESTIMATION_FAILED } from '../utils/constants.js'
-import { EthBalanceChanges, EthSubscribeParams, OriginalSendRequestParameters, SendRawTransactionParams, SendTransactionParams, SingleMulticallResponse } from './JsonRpc-types.js'
+import { EthBalanceChanges, EthNewFilter, EthSubscribeParams, OriginalSendRequestParameters, SendRawTransactionParams, SendTransactionParams, SingleMulticallResponse } from './JsonRpc-types.js'
 import { InterceptedRequest, WebsiteSocket } from '../utils/requests.js'
 import { AddressBookEntry, Erc721Entry, Erc20TokenEntry, Erc1155Entry, IncompleteAddressBookEntry } from './addressBookTypes.js'
 import { Website } from './websiteAccessTypes.js'
@@ -439,16 +439,22 @@ export const CompleteVisualizedSimulation = funtypes.ReadonlyObject({
 export type NewHeadsSubscription = funtypes.Static<typeof NewHeadsSubscription>
 export const NewHeadsSubscription = funtypes.ReadonlyObject({
 	type: funtypes.Literal('newHeads'),
-	subscriptionId: funtypes.String,
+	subscriptionOrFilterId: funtypes.String,
 	params: EthSubscribeParams,
 	subscriptionCreatorSocket: WebsiteSocket,
 })
 
-export type EthereumSubscription = funtypes.Static<typeof EthereumSubscription>
-export const EthereumSubscription = funtypes.Union(NewHeadsSubscription)
+export type NewEthfilter = funtypes.Static<typeof NewEthfilter>
+export const NewEthfilter = funtypes.ReadonlyObject({
+	type: funtypes.Literal('eth_newFilter'),
+	subscriptionOrFilterId: funtypes.String,
+	params: EthNewFilter,
+	subscriptionCreatorSocket: WebsiteSocket,
+	calledInlastBlock: EthereumQuantity,
+})
 
-export type EthereumSubscriptions = funtypes.Static<typeof EthereumSubscriptions>
-export const EthereumSubscriptions = funtypes.ReadonlyArray(EthereumSubscription)
+export type EthereumSubscriptionsAndFilters = funtypes.Static<typeof EthereumSubscriptionsAndFilters>
+export const EthereumSubscriptionsAndFilters = funtypes.ReadonlyArray(funtypes.Union(NewEthfilter, NewHeadsSubscription))
 
 export type VisualizedSimulatorState = funtypes.Static<typeof VisualizedSimulatorState>
 export const VisualizedSimulatorState = funtypes.ReadonlyObject({
