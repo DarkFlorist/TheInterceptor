@@ -260,7 +260,7 @@ export async function requestAddressChange(websiteTabConnections: WebsiteTabConn
 		async function getProposedAddress() {
 			if (message.method === 'popup_interceptorAccessRefresh' || message.data.newActiveAddress === 'signer') {
 				const signerAccounts = await askForSignerAccountsFromSignerIfNotAvailable(websiteTabConnections, message.data.socket)
-				return signerAccounts === undefined || signerAccounts.length == 0 ? undefined : signerAccounts[0]
+				return signerAccounts === undefined || signerAccounts.length === 0 ? undefined : signerAccounts[0]
 			}
 			return message.data.newActiveAddress
 		}

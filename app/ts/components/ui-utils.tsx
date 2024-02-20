@@ -68,7 +68,7 @@ export function convertNumberToCharacterRepresentationIfSmallEnough(num: number)
 		}
 	}
 
-	if (num == 0) return 'zero'
+	if (num === 0) return 'zero'
 	if (num > 99) return num.toString()
 	const convertedNumber = convertTens(num)
 	if (convertedNumber === undefined) throw new Error('index error when trying to convert number into a string')

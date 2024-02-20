@@ -311,7 +311,7 @@ export const removeSignedMessageFromSimulation = async (ethereumClientService: E
 
 export const removeTransactionAndUpdateTransactionNonces = async (ethereumClientService: EthereumClientService, simulationState: SimulationState, transactionHash: bigint): Promise<SimulationState>  => {
 	const transactionToBeRemoved = simulationState.simulatedTransactions.find((transaction) => transaction.signedTransaction.hash === transactionHash)
-	if (transactionToBeRemoved == undefined) return simulationState
+	if (transactionToBeRemoved === undefined) return simulationState
 
 	let newTransactions: WebsiteCreatedEthereumUnsignedTransaction[] = []
 	let transactionWasFound = false
@@ -382,7 +382,7 @@ const getBaseFeeAdjustedTransactions = (parentBlock: EthereumBlockHeader, unsign
 
 export const refreshSimulationState = async (ethereumClientService: EthereumClientService, simulationState: SimulationState): Promise<SimulationState>  => {
 	if (ethereumClientService.getChainId() !== simulationState.rpcNetwork.chainId) return simulationState // don't refresh if we don't have the same chain to refresh from
-	if (simulationState.blockNumber == await ethereumClientService.getBlockNumber()) {
+	if (simulationState.blockNumber === await ethereumClientService.getBlockNumber()) {
 		// if block number is the same, we don't need to compute anything as nothing has changed, but let's update timestamp to show the simulation was refreshed for this time
 		return { ...simulationState, simulationConductedTimestamp: new Date() }
 	}
@@ -410,7 +410,7 @@ export const getStorageAt = async (ethereumClientService: EthereumClientService,
 
 const canQueryNodeDirectly = async (ethereumClientService: EthereumClientService, simulationState: SimulationState, blockTag: EthereumBlockTag = 'latest') => {
 	if (simulationState === undefined
-		|| simulationState.simulatedTransactions.length == 0
+		|| simulationState.simulatedTransactions.length === 0
 		|| (typeof blockTag === 'bigint' && blockTag <= await ethereumClientService.getBlockNumber())
 	){
 		return true
@@ -778,7 +778,7 @@ const getSimulatedTokenBalances = async (ethereumClientService: EthereumClientSe
 	const erc20TokenInterface = new ethers.Interface(['function balanceOf(address account) view returns (uint256)'])
 	const erc1155TokenInterface = new ethers.Interface(['function balanceOf(address _owner, uint256 _id) external view returns(uint256)'])
 	const tokenAndEthBalancesInputData = stringToUint8Array(IMulticall3.encodeFunctionData('aggregate3', [balanceQueries.map((balanceQuery) => {
-		if (balanceQuery.token === ETHEREUM_LOGS_LOGGER_ADDRESS && balanceQuery.type == 'ERC20') {
+		if (balanceQuery.token === ETHEREUM_LOGS_LOGGER_ADDRESS && balanceQuery.type === 'ERC20') {
 			return {
 				target: addressString(MULTICALL3),
 				allowFailure: true,

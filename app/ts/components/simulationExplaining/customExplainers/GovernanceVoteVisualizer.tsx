@@ -123,7 +123,7 @@ const ShowSuccessOrFailure = ({ currentBlockNumber, rpcConnectionStatus, simulat
 			</> }
 		</div>
 	}
-	if (simulateGovernanceContractExecutionReply.data.success == false) {
+	if (simulateGovernanceContractExecutionReply.data.success === false) {
 		return <div style = 'display: grid; grid-template-rows: max-content' >
 			{ simulateGovernanceContractExecutionReply.data.error.type === 'MissingAbi' ? <MissingAbi
 				errorMessage = { missingAbiText }

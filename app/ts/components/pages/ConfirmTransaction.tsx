@@ -45,11 +45,11 @@ function UnderTransactions(param: UnderTransactionsParams) {
 				<header class = 'card-header'>
 					<div class = 'card-header-icon unset-cursor'>
 						<span class = 'icon'>
-							{ pendingTransaction.status == 'FailedToSimulate' ? '../img/error-icon.svg' : <Spinner height = '2em'/> }
+							{ pendingTransaction.status === 'FailedToSimulate' ? '../img/error-icon.svg' : <Spinner height = '2em'/> }
 						</span>
 					</div>
 					<p class = 'card-header-title' style = 'white-space: nowrap;'>
-						{ pendingTransaction.status == 'FailedToSimulate' ? pendingTransaction.transactionToSimulate.error.message : 'Simulating...' }
+						{ pendingTransaction.status === 'FailedToSimulate' ? pendingTransaction.transactionToSimulate.error.message : 'Simulating...' }
 					</p>
 					<p class = 'card-header-icon unsetcursor' style = { `margin-left: auto; margin-right: 0; overflow: hidden;` }>
 						<WebsiteOriginText { ...pendingTransaction.website } />
@@ -387,7 +387,7 @@ export function ConfirmTransaction() {
 		const lastTx = getResultsForTransaction(currentPendingTransaction.simulationResults.data.simulatedAndVisualizedTransactions, currentPendingTransaction.transactionIdentifier)
 		if (lastTx === undefined ) return false
 		const success = lastTx.statusCode === 'success'
-		const noQuarantines = lastTx.quarantine == false
+		const noQuarantines = lastTx.quarantine === false
 		return !success || !noQuarantines
 	}
 

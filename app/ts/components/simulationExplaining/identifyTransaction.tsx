@@ -140,7 +140,7 @@ function isSimpleTokenApproval(simTx: SimulatedAndVisualizedTransaction): simTx 
 	if (tokenResult === undefined) return false
 	if (!(simTx.transaction.value === 0n
 		&& simTx.tokenResults.length === 1
-		&& tokenResult.isApproval == true
+		&& tokenResult.isApproval === true
 		&& tokenResult.from.address !== tokenResult.to.address
 		&& tokenResult.from === simTx.transaction.from
 	)) return false
@@ -163,10 +163,10 @@ export const SimulatedAndVisualizedEtherTransferTransaction = funtypes.Intersect
 )
 
 function isEtherTransfer(simTx: SimulatedAndVisualizedTransaction): simTx is SimulatedAndVisualizedEtherTransferTransaction {
-	if (simTx.transaction.input.length == 0
-		&& simTx.tokenResults.length == 0
+	if (simTx.transaction.input.length === 0
+		&& simTx.tokenResults.length === 0
 		&& simTx.transaction.to
-		&& simTx.gasSpent == 21000n) return true
+		&& simTx.gasSpent === 21000n) return true
 	return false
 }
 const getEtherTransferOrUndefined = createGuard<SimulatedAndVisualizedTransaction, SimulatedAndVisualizedEtherTransferTransaction>((simTx) => isEtherTransfer(simTx) ? simTx : undefined)
@@ -193,7 +193,7 @@ export function isSimpleTokenTransfer(transaction: SimulatedAndVisualizedTransac
 	if (tokenResult === undefined) return false
 	if (transaction.ethBalanceChanges.length === 0
 		&& transaction.tokenResults.length === 1
-		&& tokenResult.isApproval == false
+		&& tokenResult.isApproval === false
 		&& tokenResult.from.address !== tokenResult.to.address
 		&& tokenResult.from.address === transaction.transaction.from.address) return true
 	return false

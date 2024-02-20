@@ -145,7 +145,7 @@ function FirstCard(param: FirstCardParams) {
 					renameAddressCallBack = { param.renameAddressCallBack }
 				/>
 				{ !param.simulationMode ? <>
-					{ ( (param.signerAccounts === undefined || param.signerAccounts.length == 0) && param.tabIconDetails.icon !== ICON_NOT_ACTIVE ) ?
+					{ ( (param.signerAccounts === undefined || param.signerAccounts.length === 0) && param.tabIconDetails.icon !== ICON_NOT_ACTIVE ) ?
 						<div style = 'margin-top: 5px'>
 							<button className = 'button is-primary' onClick = { connectToSigner } >
 								<SignerLogoText

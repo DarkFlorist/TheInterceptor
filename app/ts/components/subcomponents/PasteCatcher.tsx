@@ -5,7 +5,7 @@ interface PasteProps {
 	enabled: boolean,
 }
 
-// catches paste events if enabled == true and callbacks OnPaste
+// catches paste events if enabled === true and callbacks OnPaste
 export function PasteCatcher(props: PasteProps) {
 	function catcher(event: Event) {
 		if (props.enabled === false) return

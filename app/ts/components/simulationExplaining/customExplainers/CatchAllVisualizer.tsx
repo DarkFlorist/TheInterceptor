@@ -179,7 +179,7 @@ export function CatchAllVisualizer(param: TransactionImportanceBlockParams) {
 		&& receivingTokenResults.length === 0
 	) {
 		return <div class = 'notification transaction-importance-box'>
-			<p class = 'paragraph'> { param.simTx.events.length == 0 ? 'The transaction does no visible important changes to your accounts.' : `The transaction does no visible important changes to your accounts, HOWEVER, it produces ${ param.simTx.events.length } event${ param.simTx.events.length === 1 ? '' : 's' }.`}</p>
+			<p class = 'paragraph'> { param.simTx.events.length === 0 ? 'The transaction does no visible important changes to your accounts.' : `The transaction does no visible important changes to your accounts, HOWEVER, it produces ${ param.simTx.events.length } event${ param.simTx.events.length === 1 ? '' : 's' }.`}</p>
 		</div>
 	}
 

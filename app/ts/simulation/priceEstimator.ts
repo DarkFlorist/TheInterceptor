@@ -18,7 +18,7 @@ export class PriceEstimator {
 	}
 
 	public async estimateEthereumPricesForTokens(tokens: TokenDecimals[], quote?: TokenDecimals) : Promise<TokenPriceEstimate[]> {
-		if (tokens.length == 0) return []
+		if (tokens.length === 0) return []
 
 		const chainId = this.ethereum.getChainId()
 		const chainIdString = chainId.toString()
