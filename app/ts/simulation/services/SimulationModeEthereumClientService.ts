@@ -277,13 +277,10 @@ export const getTransactionQueue = (simulationState: SimulationState | undefined
 }
 export const getPrependTransactionsQueue = (simulationState: SimulationState) => simulationState.prependTransactionsQueue
 
-export const setPrependTransactionsQueue = async (ethereumClientService: EthereumClientService, simulationState: SimulationState | undefined, prepend: readonly WebsiteCreatedEthereumUnsignedTransaction[]): Promise<SimulationState>  => {
-	if (prepend.length > 0 && simulationState !== undefined) {
-		return await setSimulationTransactionsAndSignedMessages(ethereumClientService, { ...simulationState, prependTransactionsQueue: prepend, signedMessages: [] }, [], [])
-	}
+export const setPrependTransactionsQueue = async (ethereumClientService: EthereumClientService, prepend: readonly WebsiteCreatedEthereumUnsignedTransaction[]): Promise<SimulationState>  => {
 	const block = await ethereumClientService.getBlock()
 	const newState = {
-		prependTransactionsQueue: [],
+		prependTransactionsQueue: prepend,
 		simulatedTransactions: [],
 		blockNumber: block.number,
 		blockTimestamp: block.timestamp,
@@ -291,9 +288,7 @@ export const setPrependTransactionsQueue = async (ethereumClientService: Ethereu
 		simulationConductedTimestamp: new Date(),
 		signedMessages: [],
 	}
-
-	if (prepend.length > 0) return await setSimulationTransactionsAndSignedMessages(ethereumClientService, { ...newState, prependTransactionsQueue: prepend, signedMessages: [] }, [], [])
-	return newState
+	return await setSimulationTransactionsAndSignedMessages(ethereumClientService, newState, [], [])
 }
 
 export const removeTransaction = async (ethereumClientService: EthereumClientService, simulationState: SimulationState, transactionHash: bigint): Promise<SimulationState>  => {
@@ -400,7 +395,7 @@ export const refreshSimulationState = async (ethereumClientService: EthereumClie
 }
 
 export const resetSimulationState = async (ethereumClientService: EthereumClientService, simulationState: SimulationState): Promise<SimulationState> => {
-	return await setPrependTransactionsQueue(ethereumClientService, simulationState, simulationState.prependTransactionsQueue)
+	return await setPrependTransactionsQueue(ethereumClientService, simulationState.prependTransactionsQueue)
 }
 
 export const getStorageAt = async (ethereumClientService: EthereumClientService, contract: bigint, slot: bigint) => {

@@ -4,7 +4,6 @@ import { SimulatedAndVisualizedTransaction, SimulationAndVisualisationResults, S
 import { ActiveAddressComponent, WebsiteOriginText, getActiveAddressEntry } from '../subcomponents/address.js'
 import { SimulationSummary } from '../simulationExplaining/SimulationSummary.js'
 import { ChainSelector } from '../subcomponents/ChainSelector.js'
-import { Spinner } from '../subcomponents/Spinner.js'
 import { DEFAULT_TAB_CONNECTION, ICON_ACTIVE, ICON_INTERCEPTOR_DISABLED, ICON_NOT_ACTIVE, ICON_SIGNING, ICON_SIGNING_NOT_SUPPORTED } from '../../utils/constants.js'
 import { getPrettySignerName, SignerLogoText, SignersLogoName } from '../subcomponents/signers.js'
 import { ErrorComponent } from '../subcomponents/Error.js'
@@ -341,15 +340,6 @@ export function Home(param: HomeParams) {
 			renameAddressCallBack = { param.renameAddressCallBack }
 			rpcEntries = { rpcEntries }
 		/>
-
-		{ simulationMode && simulationAndVisualisationResults === undefined && activeSimulationAddress !== undefined ?
-			<div style = 'margin-top: 0px; margin-left: 10px; margin-right: 10px;'>
-				<div class = 'vertical-center'>
-					<Spinner height = '1em'/>
-					<span style = 'margin-left: 0.2em' > Simulating... </span>
-				</div>
-			</div>
-		: <></> }
 
 		{ !simulationMode || activeSimulationAddress === undefined || currentBlockNumber === undefined
 			? <div style = 'display: grid; grid-template-columns: auto auto; padding-left: 10px; padding-right: 10px' >
