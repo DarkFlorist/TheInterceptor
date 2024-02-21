@@ -16,7 +16,7 @@ export type IEthereumClientService = Pick<EthereumClientService, keyof EthereumC
 export class EthereumClientService {
 	private cachedBlock: EthereumBlockHeader | undefined = undefined
 	private cacheRefreshTimer: NodeJS.Timer | undefined = undefined
-	private lastCacheAccess: number = 0
+	private lastCacheAccessOrPollingStarted: number = 0
 	private retrievingBlock: boolean = false
 	private newBlockAttemptCallback: (blockHeader: EthereumBlockHeader, ethereumClientService: EthereumClientService, isNewBlock: boolean) => Promise<void>
 	private onErrorBlockCallback: (ethereumClientService: EthereumClientService) => Promise<void>
@@ -37,10 +37,8 @@ export class EthereumClientService {
 	public getLastKnownCachedBlockOrUndefined = () => this.cachedBlock
 
 	public getCachedBlock() {
-		if (this.cleanedUp === false) {
-			this.setBlockPolling(true)
-		}
-		this.lastCacheAccess = Date.now()
+		if (this.cleanedUp === false) this.setBlockPolling(true)
+		this.lastCacheAccessOrPollingStarted = Date.now()
 		return this.cachedBlock
 	}
 
@@ -51,17 +49,16 @@ export class EthereumClientService {
 
 	public readonly setBlockPolling = (enabled: boolean) => {
 		if (enabled && this.cacheRefreshTimer === undefined) {
+			console.log('The Interceptor woke up!')
+			this.lastCacheAccessOrPollingStarted = Date.now()
 			const now = Date.now()
 
 			// query block everytime clock hits time % 12 + 7
 			this.updateCache()
 			const timeToTarget = Math.floor(now / 1000 / TIME_BETWEEN_BLOCKS) * 1000 * TIME_BETWEEN_BLOCKS + 7 * 1000 - now
-			this.cacheRefreshTimer = setTimeout( () => { // wait until the clock is just right ( % 12 + 7 ), an then start querying every TIME_BETWEEN_BLOCKS secs
+			this.cacheRefreshTimer = setTimeout(() => { // wait until the clock is just right ( % 12 + 7 ), an then start querying every TIME_BETWEEN_BLOCKS secs
 				this.updateCache()
 				this.cacheRefreshTimer = setInterval(this.updateCache, TIME_BETWEEN_BLOCKS * 1000)
-				if (this.lastCacheAccess - Date.now() > 180000) {
-					this.setBlockPolling(false)
-				}
 			}, timeToTarget > 0 ? timeToTarget : timeToTarget + TIME_BETWEEN_BLOCKS * 1000 )
 			return
 		}
@@ -76,6 +73,11 @@ export class EthereumClientService {
 
 	private readonly updateCache = async () => {
 		if (this.retrievingBlock) return
+		if (Date.now() - this.lastCacheAccessOrPollingStarted >= TIME_BETWEEN_BLOCKS * 2 * 1000) {
+			console.log('The Interceptor started to sleep')
+			this.setBlockPolling(false)
+			return
+		}
 		try {
 			this.retrievingBlock = true
 			const response = await this.requestHandler.jsonRpcRequest({ method: 'eth_getBlockByNumber', params: ['latest', true] }, true, 6000)

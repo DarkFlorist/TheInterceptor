@@ -688,8 +688,8 @@ export function SimulatedInBlockNumber({ simulationBlockNumber, currentBlockNumb
 		<p style = 'color: var(--subtitle-text-color); text-align: right; display: inline'>
 			{ 'Simulated ' }
 			<span style = { `font-weight: bold; font-family: monospace; color: ${
-				(simulationBlockNumber === currentBlockNumber || currentBlockNumber === undefined) && (rpcConnectionStatus === undefined || rpcConnectionStatus.isConnected) ? 'var(--positive-color)' :
-				simulationBlockNumber + 1n === currentBlockNumber ? 'var(--warning-color)' : 'var(--negative-color)'
+				simulationBlockNumber === currentBlockNumber && rpcConnectionStatus?.isConnected ? 'var(--positive-color)' :
+				currentBlockNumber !== undefined && simulationBlockNumber + 1n === currentBlockNumber ? 'var(--warning-color)' : 'var(--negative-color)'
 			} ` }>
 				<SomeTimeAgo priorTimestamp = { simulationConductedTimestamp }/>
 			</span>
