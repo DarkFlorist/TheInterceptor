@@ -173,36 +173,39 @@ export async function updateSimulationState(ethereum: EthereumClientService, get
 			await updateSimulationResults({ ...simulationResults, simulationId, simulationUpdatingState: 'updating' })
 		}
 		const changedMessagePromise = sendPopupMessageToOpenWindows({ method: 'popup_simulation_state_changed', data: { simulationId } })
+		const doneState = { simulationUpdatingState: 'done' as const, simulationResultState: 'done' as const, simulationId, activeAddress }
+		const emptyDoneResults = {
+			...doneState,
+			addressBookEntries: [],
+			tokenPrices: [],
+			visualizerResults: [],
+			protectors: [],
+			namedTokenIds: [],
+			simulationState: undefined,
+			simulatedAndVisualizedTransactions: [],
+			visualizedPersonalSignRequests: [],
+		}
 		try {
 			const updatedSimulationState = await getUpdatedSimulationState(simulationResults.simulationState)
-			const doneState = { simulationUpdatingState: 'done' as const, simulationResultState: 'done' as const, simulationId, activeAddress }
-			if (updatedSimulationState !== undefined) { 
+			if (updatedSimulationState !== undefined && ethereum.getChainId() === updatedSimulationState?.rpcNetwork.chainId) { 
 				await updateSimulationResults({ ...await visualizeSimulatorState(updatedSimulationState, ethereum), ...doneState })
 			} else {
-				await updateSimulationResults({
-					...doneState,
-					addressBookEntries: [],
-					tokenPrices: [],
-					visualizerResults: [],
-					protectors: [],
-					namedTokenIds: [],
-					simulationState: updatedSimulationState,
-					simulatedAndVisualizedTransactions: [],
-					visualizedPersonalSignRequests: [],
-				})
+				await updateSimulationResults(emptyDoneResults)
 			}
 			await changedMessagePromise
 			await sendPopupMessageToOpenWindows({ method: 'popup_simulation_state_changed', data: { simulationId } })
 			return updatedSimulationState
 		} catch (error) {
-			if (error instanceof Error) {
-				if (isFailedToFetchError(error)) {
-					await updateSimulationResults({ ...simulationResults, simulationId, simulationUpdatingState: 'updating' })
-					await sendPopupMessageToOpenWindows({ method: 'popup_simulation_state_changed', data: { simulationId }  })
-					return undefined
-				}
+			if (error instanceof Error && isFailedToFetchError(error)) {
+				// if we fail because of connectivity issue, keep the old block results, but try again later
+				await updateSimulationResults({ ...simulationResults, simulationId, simulationUpdatingState: 'updating' })
+				await sendPopupMessageToOpenWindows({ method: 'popup_simulation_state_changed', data: { simulationId }  })
+				return undefined
 			}
-			throw error
+			// clear simulation, unexpected error occured
+			await updateSimulationResults(emptyDoneResults)
+			handleUnexpectedError(error)
+			return undefined
 		}
 	})
 }
@@ -438,11 +441,9 @@ export async function changeActiveAddressAndChainAndResetSimulation(
 
 		if (updatedSettings.simulationMode) {
 			// update prepend mode as our active address has changed, so we need to be sure the rich modes money is sent to right address
-			const ethereumClientService = simulator.ethereum
-			await updateSimulationState(ethereumClientService, async () => {
-				const simulationState = (await getSimulationResults()).simulationState
-				const prependQueue = await getPrependTransactions(ethereumClientService, await getSettings(), await getMakeMeRich())
-				return await setPrependTransactionsQueue(ethereumClientService, simulationState, prependQueue)
+			await updateSimulationState(simulator.ethereum, async () => {
+				const prependQueue = await getPrependTransactions(simulator.ethereum, await getSettings(), await getMakeMeRich())
+				return await setPrependTransactionsQueue(simulator.ethereum, prependQueue)
 			}, updatedSettings.activeSimulationAddress, true)
 		}
 		// inform website about this only after we have updated simulation, as they often query the balance right after
@@ -604,10 +605,10 @@ export async function popupMessageHandler(
 		case 'popup_changeMakeMeRich': return await changeMakeMeRich(simulator, simulator.ethereum, parsedRequest, settings)
 		case 'popup_changePage': return await changePage(parsedRequest)
 		case 'popup_requestAccountsFromSigner': return await requestAccountsFromSigner(websiteTabConnections, parsedRequest)
-		case 'popup_resetSimulation': return await resetSimulation(simulator, simulator.ethereum, settings)
+		case 'popup_resetSimulation': return await resetSimulation(simulator, settings)
 		case 'popup_removeTransaction': return await removeTransaction(simulator, simulator.ethereum, parsedRequest, settings)
 		case 'popup_removeSignedMessage': return await removeSignedMessage(simulator, simulator.ethereum, parsedRequest, settings)
-		case 'popup_refreshSimulation': return await refreshSimulation(simulator, simulator.ethereum, settings)
+		case 'popup_refreshSimulation': return await refreshSimulation(simulator, settings)
 		case 'popup_refreshConfirmTransactionDialogSimulation': return await refreshPopupConfirmTransactionSimulation(simulator, simulator.ethereum)
 		case 'popup_refreshConfirmTransactionMetadata': return refreshPopupConfirmTransactionMetadata(simulator.ethereum, parsedRequest)
 		case 'popup_personalSignApproval': return await confirmPersonalSign(simulator, websiteTabConnections, parsedRequest)

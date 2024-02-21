@@ -127,10 +127,12 @@ export const runProtectorsForTransaction = async (simulationState: SimulationSta
 	}
 }
 
+type NewBlockCallBack = (blockHeader: EthereumBlockHeader, ethereumClientService: EthereumClientService, isNewBlock: boolean, simulator: Simulator) => Promise<void>
 export class Simulator {
 	public ethereum: EthereumClientService
-
-	public constructor(rpcNetwork: RpcEntry, newBlockAttemptCallback: (blockHeader: EthereumBlockHeader, ethereumClientService: EthereumClientService, isNewBlock: boolean, simulator: Simulator) => Promise<void>, onErrorBlockCallback: (ethereumClientService: EthereumClientService) => Promise<void>) {
+	private newBlockAttemptCallback: NewBlockCallBack
+	public constructor(rpcNetwork: RpcEntry, newBlockAttemptCallback: NewBlockCallBack, onErrorBlockCallback: (ethereumClientService: EthereumClientService) => Promise<void>) {
+		this.newBlockAttemptCallback = newBlockAttemptCallback
 		this.ethereum = new EthereumClientService(
 			new EthereumJSONRpcRequestHandler(rpcNetwork, true),
 			async (blockHeader: EthereumBlockHeader, ethereumClientService: EthereumClientService, isNewBlock: boolean) => await newBlockAttemptCallback(blockHeader, ethereumClientService, isNewBlock, this),
@@ -142,6 +144,10 @@ export class Simulator {
 
 	public reset = (rpcNetwork: RpcEntry) => {
 		this.cleanup()
-		this.ethereum = new EthereumClientService(new EthereumJSONRpcRequestHandler(rpcNetwork, true), this.ethereum.getNewBlockAttemptCallback(), this.ethereum.getOnErrorBlockCallback())
+		this.ethereum = new EthereumClientService(
+			new EthereumJSONRpcRequestHandler(rpcNetwork, true),
+			async (blockHeader: EthereumBlockHeader, ethereumClientService: EthereumClientService, isNewBlock: boolean) => await this.newBlockAttemptCallback(blockHeader, ethereumClientService, isNewBlock, this),
+			this.ethereum.getOnErrorBlockCallback()
+		)
 	}
 }
