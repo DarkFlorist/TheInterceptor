@@ -1,7 +1,7 @@
 import { EthereumClientService } from './EthereumClientService.js'
 import { EthereumUnsignedTransaction, EthereumSignedTransactionWithBlockData, EthereumBlockTag, EthereumAddress, EthereumBlockHeader, EthereumBlockHeaderWithTransactionHashes, EthereumSignedTransaction, EthereumData, EthereumQuantity, EthereumBytes32, OptionalEthereumUnsignedTransaction } from '../../types/wire-types.js'
 import { addressString, bytes32String, calculateWeightedPercentile, dataStringWith0xStart, max, min, stringToUint8Array } from '../../utils/bigint.js'
-import { CANNOT_SIMULATE_OFF_LEGACY_BLOCK, ERROR_INTERCEPTOR_GAS_ESTIMATION_FAILED, ETHEREUM_LOGS_LOGGER_ADDRESS, ETHEREUM_EIP1559_BASEFEECHANGEDENOMINATOR, ETHEREUM_EIP1559_ELASTICITY_MULTIPLIER, MOCK_ADDRESS, MULTICALL3, Multicall3ABI, DEFAULT_CALL_ADDRESS } from '../../utils/constants.js'
+import { CANNOT_SIMULATE_OFF_LEGACY_BLOCK, ERROR_INTERCEPTOR_GAS_ESTIMATION_FAILED, ETHEREUM_LOGS_LOGGER_ADDRESS, ETHEREUM_EIP1559_BASEFEECHANGEDENOMINATOR, ETHEREUM_EIP1559_ELASTICITY_MULTIPLIER, MOCK_ADDRESS, MULTICALL3, Multicall3ABI, DEFAULT_CALL_ADDRESS, GAS_PER_BLOB } from '../../utils/constants.js'
 import { Interface, TypedDataEncoder, ethers, hashMessage, keccak256, } from 'ethers'
 import { WebsiteCreatedEthereumUnsignedTransaction, SimulatedTransaction, SimulationState, TokenBalancesAfter, EstimateGasError, SignedMessageTransaction, WebsiteCreatedEthereumUnsignedTransactionOrFailed } from '../../types/visualizer-types.js'
 import { EthereumUnsignedTransactionToUnsignedTransaction, IUnsignedTransaction1559, serializeSignedTransactionToBytes } from '../../utils/ethereum.js'
@@ -277,13 +277,10 @@ export const getTransactionQueue = (simulationState: SimulationState | undefined
 }
 export const getPrependTransactionsQueue = (simulationState: SimulationState) => simulationState.prependTransactionsQueue
 
-export const setPrependTransactionsQueue = async (ethereumClientService: EthereumClientService, simulationState: SimulationState | undefined, prepend: readonly WebsiteCreatedEthereumUnsignedTransaction[]): Promise<SimulationState>  => {
-	if (prepend.length > 0 && simulationState !== undefined) {
-		return await setSimulationTransactionsAndSignedMessages(ethereumClientService, { ...simulationState, prependTransactionsQueue: prepend, signedMessages: [] }, [], [])
-	}
+export const setPrependTransactionsQueue = async (ethereumClientService: EthereumClientService, prepend: readonly WebsiteCreatedEthereumUnsignedTransaction[]): Promise<SimulationState>  => {
 	const block = await ethereumClientService.getBlock()
 	const newState = {
-		prependTransactionsQueue: [],
+		prependTransactionsQueue: prepend,
 		simulatedTransactions: [],
 		blockNumber: block.number,
 		blockTimestamp: block.timestamp,
@@ -291,9 +288,7 @@ export const setPrependTransactionsQueue = async (ethereumClientService: Ethereu
 		simulationConductedTimestamp: new Date(),
 		signedMessages: [],
 	}
-
-	if (prepend.length > 0) return await setSimulationTransactionsAndSignedMessages(ethereumClientService, { ...newState, prependTransactionsQueue: prepend, signedMessages: [] }, [], [])
-	return newState
+	return await setSimulationTransactionsAndSignedMessages(ethereumClientService, newState, [], [])
 }
 
 export const removeTransaction = async (ethereumClientService: EthereumClientService, simulationState: SimulationState, transactionHash: bigint): Promise<SimulationState>  => {
@@ -400,7 +395,7 @@ export const refreshSimulationState = async (ethereumClientService: EthereumClie
 }
 
 export const resetSimulationState = async (ethereumClientService: EthereumClientService, simulationState: SimulationState): Promise<SimulationState> => {
-	return await setPrependTransactionsQueue(ethereumClientService, simulationState, simulationState.prependTransactionsQueue)
+	return await setPrependTransactionsQueue(ethereumClientService, simulationState.prependTransactionsQueue)
 }
 
 export const getStorageAt = async (ethereumClientService: EthereumClientService, contract: bigint, slot: bigint) => {
@@ -440,7 +435,13 @@ export const getSimulatedTransactionReceipt = async (ethereumClientService: Ethe
 		if(hash === simulatedTransaction.signedTransaction.hash) {
 			const blockNum = await ethereumClientService.getBlockNumber()
 			return {
-				type: simulatedTransaction.signedTransaction.type,
+				...simulatedTransaction.signedTransaction.type === '4844' ? {
+					type: simulatedTransaction.signedTransaction.type,
+					blobGasUsed: GAS_PER_BLOB * BigInt(simulatedTransaction.signedTransaction.blobVersionedHashes.length),
+					blobGasPrice: simulatedTransaction.signedTransaction.maxFeePerBlobGas,
+				} : {
+					type: simulatedTransaction.signedTransaction.type,
+				},
 				blockHash: getHashOfSimulatedBlock(simulationState),
 				blockNumber: blockNum,
 				transactionHash: simulatedTransaction.signedTransaction.hash,
@@ -956,7 +957,7 @@ export const getSimulatedFeeHistory = async (ethereumClientService: EthereumClie
 		...rewardPercentiles === undefined ? {} : {
 			reward: [rewardPercentiles.map((percentile) => {
 				// we are using transaction.gas as a weighting factor while this should be `gasUsed`. Getting `gasUsed` requires getting transaction receipts, which we don't want to be doing
-				const effectivePriorityAndGasWeights = newestBlock.transactions.map((tx) => tx.type === '1559' ?
+				const effectivePriorityAndGasWeights = newestBlock.transactions.map((tx) => tx.type === '1559' || tx.type === '4844' ?
 					{ dataPoint: min(tx.maxPriorityFeePerGas, tx.maxFeePerGas - (newestBlockBaseFeePerGas ?? 0n)), weight: tx.gas }
 					: { dataPoint: tx.gasPrice - (newestBlockBaseFeePerGas ?? 0n), weight: tx.gas })
 

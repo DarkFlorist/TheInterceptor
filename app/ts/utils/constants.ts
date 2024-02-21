@@ -114,6 +114,7 @@ export const MAKE_YOU_RICH_TRANSACTION = {
 export const DEFAULT_CALL_ADDRESS = 0x1n
 
 export const TIME_BETWEEN_BLOCKS = 12
+export const GAS_PER_BLOB = 2n**17n
 export const METAMASK_LOGO = '../img/signers/metamask.svg'
 export const BRAVE_LOGO = '../img/signers/brave.svg'
 export const COINBASEWALLET_LOGO = '../img/signers/coinbasewallet.svg'

@@ -116,6 +116,7 @@ export async function onContentScriptConnected(simulator: Simulator, port: brows
 }
 
 async function newBlockAttemptCallback(blockheader: EthereumBlockHeader, ethereumClientService: EthereumClientService, isNewBlock: boolean, simulator: Simulator) {
+	if (ethereumClientService.getChainId() !== simulator.ethereum.getChainId()) throw new Error(`Chain Id Mismatch, node is on ${ ethereumClientService.getChainId() } while simulator is on ${ simulator.ethereum.getChainId() }`)
 	try {
 		const rpcConnectionStatus = {
 			isConnected: true,
@@ -130,7 +131,7 @@ async function newBlockAttemptCallback(blockheader: EthereumBlockHeader, ethereu
 			const subsAndFilters = await getEthereumSubscriptionsAndFilters()
 			if (subsAndFilters.length === 0 && !didAnyoneListen) return // no one is listening new blocks and we don't have subscriptions, so let's not update simulation or do anythign else
 			const settings = await getSettings()
-			await sendSubscriptionMessagesForNewBlock(blockheader.number, ethereumClientService, settings.simulationMode ? await refreshSimulation(simulator, ethereumClientService, settings) : undefined, websiteTabConnections)
+			await sendSubscriptionMessagesForNewBlock(blockheader.number, ethereumClientService, settings.simulationMode ? await refreshSimulation(simulator, settings) : undefined, websiteTabConnections)
 		}
 	} catch(error) {
 		await handleUnexpectedError(error)

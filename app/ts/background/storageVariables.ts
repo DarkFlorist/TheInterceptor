@@ -244,7 +244,7 @@ export const ethDonator = [{
 	},
 	{
 		chainId: 5n,
-		eth_donator: 0xf36F155486299eCAff2D4F5160ed5114C1f66000n, // Some Goerli validator
+		eth_donator: 0xc48e23c5f6e1ea0baef6530734edc3968f79af2en
 	},
 	{
 		chainId: 11155111n,
