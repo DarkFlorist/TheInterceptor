@@ -66,7 +66,7 @@ export async function changeAccess(simulator: Simulator, websiteTabConnections: 
 
 export async function updateInterceptorAccessViewWithPendingRequests() {
 	const pendingAccessRequests = await getPendingAccessRequests()
-	if (pendingAccessRequests.length > 0) return await sendPopupMessageToOpenWindows({ method: 'popup_interceptorAccessDialog', data: {
+	if (pendingAccessRequests.length > 0) await sendPopupMessageToOpenWindows({ method: 'popup_interceptorAccessDialog', data: {
 		activeAddresses: await getActiveAddresses(),
 		pendingAccessRequests,
 	} })
@@ -237,12 +237,10 @@ async function resolve(simulator: Simulator, websiteTabConnections: WebsiteTabCo
 
 	const pendingRequests = await updatePendingAccessRequests(async (previousPendingAccessRequests) => previousPendingAccessRequests.filter((pending) => !isAffectedEntry(pending)))
 
-	if (pendingRequests.current.length > 0) return sendPopupMessageToOpenWindows({
-		method: 'popup_interceptorAccessDialog', data: {
-			activeAddresses: await getActiveAddresses(),
-			pendingAccessRequests: pendingRequests.current,
-		}
-	})
+	if (pendingRequests.current.length > 0) {
+		sendPopupMessageToOpenWindows({ method: 'popup_interceptorAccessDialog', data: { activeAddresses: await getActiveAddresses(), pendingAccessRequests: pendingRequests.current } })
+		return
+	}
 
 	if (openedDialog) {
 		removeWindowTabListeners(openedDialog.onClosePopup, openedDialog.onCloseTab)

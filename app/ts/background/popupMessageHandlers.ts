@@ -273,6 +273,7 @@ export async function requestNewHomeData(simulator: Simulator) {
 }
 
 export async function homeOpened(simulator: Simulator) {
+	simulator.ethereum.setBlockPolling(true) // wakes up the RPC block querying if it was sleeping
 	const settingsPromise = getSettings()
 	const makeMeRichPromise = getMakeMeRich()
 	const rpcConnectionStatusPromise = getRpcConnectionStatus()

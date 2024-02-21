@@ -2,7 +2,7 @@ import 'webextension-polyfill'
 import { defaultRpcs, getSettings } from './settings.js'
 import { handleInterceptedRequest, popupMessageHandler } from './background.js'
 import { retrieveWebsiteDetails, updateExtensionBadge, updateExtensionIcon } from './iconHandler.js'
-import { clearTabStates, getPrimaryRpcForChain, removeTabState, setRpcConnectionStatus, updateTabState, updateUserAddressBookEntries } from './storageVariables.js'
+import { clearTabStates, getEthereumSubscriptionsAndFilters, getPrimaryRpcForChain, removeTabState, setRpcConnectionStatus, updateTabState, updateUserAddressBookEntries } from './storageVariables.js'
 import { Simulator } from '../simulation/simulator.js'
 import { TabConnection, TabState, WebsiteTabConnections } from '../types/user-interface-types.js'
 import { EthereumBlockHeader } from '../types/wire-types.js'
@@ -126,8 +126,10 @@ async function newBlockAttemptCallback(blockheader: EthereumBlockHeader, ethereu
 		}
 		await setRpcConnectionStatus(rpcConnectionStatus)
 		await updateExtensionBadge()
-		await sendPopupMessageToOpenWindows({ method: 'popup_new_block_arrived', data: { rpcConnectionStatus } })
+		const didAnyoneListen = await sendPopupMessageToOpenWindows({ method: 'popup_new_block_arrived', data: { rpcConnectionStatus } })
 		if (isNewBlock) {
+			const subsAndFilters = await getEthereumSubscriptionsAndFilters()
+			if (subsAndFilters.length === 0 && !didAnyoneListen) return // no one is listening new blocks and we don't have subscriptions, so let's not update simulation or do anythign else
 			const settings = await getSettings()
 			await sendSubscriptionMessagesForNewBlock(blockheader.number, ethereumClientService, settings.simulationMode ? await refreshSimulation(simulator, settings) : undefined, websiteTabConnections)
 		}
@@ -146,7 +148,7 @@ async function onErrorBlockCallback(ethereumClientService: EthereumClientService
 		}
 		await setRpcConnectionStatus(rpcConnectionStatus)
 		await updateExtensionBadge()
-		return await sendPopupMessageToOpenWindows({ method: 'popup_failed_to_get_block', data: { rpcConnectionStatus } })
+		await sendPopupMessageToOpenWindows({ method: 'popup_failed_to_get_block', data: { rpcConnectionStatus } })
 	} catch(error) {
 		await handleUnexpectedError(error)
 	}

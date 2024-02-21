@@ -341,10 +341,10 @@ export function Home(param: HomeParams) {
 			rpcEntries = { rpcEntries }
 		/>
 
-		{ !simulationMode || activeSimulationAddress === undefined || currentBlockNumber === undefined
+		{ !simulationMode || activeSimulationAddress === undefined
 			? <div style = 'display: grid; grid-template-columns: auto auto; padding-left: 10px; padding-right: 10px' >
 				<div class = 'log-cell' style = 'justify-content: left;'>
-					{ simulationMode && currentBlockNumber === undefined ? <div style = 'padding: 10px'> <DinoSays text = { 'Not connected to a network' } /> </div> : <></> }
+					{ simulationMode ? <div style = 'padding: 10px'> <DinoSays text = { 'No simulation results' } /> </div> : <></> }
 				</div>
 				<div class = 'log-cell' style = 'justify-content: right;'>
 					<button className = 'button is-small is-danger' disabled = { false } onClick = { resetSimulation } >
