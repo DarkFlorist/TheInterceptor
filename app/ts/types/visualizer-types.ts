@@ -332,6 +332,13 @@ export const TransactionWithAddressBookEntries = funtypes.Intersect(
 			maxFeePerGas: EthereumQuantity,
 			maxPriorityFeePerGas: EthereumQuantity,
 		}),
+		funtypes.ReadonlyObject({
+			type: funtypes.Literal('4844'),
+			maxFeePerGas: EthereumQuantity,
+			maxPriorityFeePerGas: EthereumQuantity,
+			maxFeePerBlobGas: EthereumQuantity,
+			blobVersionedHashes: funtypes.ReadonlyArray(EthereumBytes32),
+		}),
 		funtypes.ReadonlyObject({ type: funtypes.Union(funtypes.Literal('legacy'), funtypes.Literal('2930')) })
 	)
 )

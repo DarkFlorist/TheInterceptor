@@ -136,10 +136,10 @@ export async function requestAccountsFromSigner(websiteTabConnections: WebsiteTa
 	}
 }
 
-export async function resetSimulation(simulator: Simulator, ethereumClientService: EthereumClientService, settings: Settings) {
+export async function resetSimulation(simulator: Simulator, settings: Settings) {
 	await updateSimulationState(simulator.ethereum, async (simulationState) => {
 		if (simulationState === undefined) return undefined
-		return await resetSimulationState(ethereumClientService, simulationState)
+		return await resetSimulationState(simulator.ethereum, simulationState)
 	}, settings.activeSimulationAddress, true)
 }
 
@@ -157,10 +157,10 @@ export async function removeSignedMessage(simulator: Simulator, ethereumClientSe
 	}, settings.activeSimulationAddress, true)
 }
 
-export async function refreshSimulation(simulator: Simulator, ethereumClientService: EthereumClientService, settings: Settings): Promise<SimulationState | undefined> {
+export async function refreshSimulation(simulator: Simulator, settings: Settings): Promise<SimulationState | undefined> {
 	return await updateSimulationState(simulator.ethereum, async (simulationState) => {
 		if (simulationState === undefined) return
-		return await refreshSimulationState(ethereumClientService, simulationState)
+		return await refreshSimulationState(simulator.ethereum, simulationState)
 	}, settings.activeSimulationAddress, false)
 }
 
