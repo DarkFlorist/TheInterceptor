@@ -3,7 +3,7 @@ import { SimulationState } from '../../types/visualizer-types.js'
 import { EthereumClientService } from '../services/EthereumClientService.js'
 
 export async function feeOops(transaction: EthereumUnsignedTransaction, ethereum: EthereumClientService, _simulationState: SimulationState) {
-	if (transaction.type === '1559') {
+	if (transaction.type === '1559' || transaction.type === '4844') {
 		if (transaction.maxPriorityFeePerGas < 10n ** 9n * 10n) return // 10.0 nanoEth/gas
 		return `Attempt to send a transaction with an outrageous fee (${ transaction.maxPriorityFeePerGas / (10n ** 9n) } nanoEth/gas)`
 	}

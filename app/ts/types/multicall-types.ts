@@ -27,8 +27,9 @@ export const BlockCall = funtypes.Partial({
 	type: funtypes.Union(
 		funtypes.Literal('0x0').withParser(LiteralConverterParserFactory('0x0', 'legacy' as const)),
 		funtypes.Literal(undefined).withParser(LiteralConverterParserFactory(undefined, 'legacy' as const)),
-		funtypes.Literal('0x1').withParser(LiteralConverterParserFactory('0x1', '2930' as const)), 
-		funtypes.Literal('0x2').withParser(LiteralConverterParserFactory('0x2', '1559' as const))
+		funtypes.Literal('0x1').withParser(LiteralConverterParserFactory('0x1', '2930' as const)),
+		funtypes.Literal('0x2').withParser(LiteralConverterParserFactory('0x2', '1559' as const)),
+		funtypes.Literal('0x3').withParser(LiteralConverterParserFactory('0x3', '4844' as const)),
 	),
 	from: EthereumAddress,
 	nonce: EthereumQuantity,
