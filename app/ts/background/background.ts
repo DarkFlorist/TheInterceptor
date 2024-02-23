@@ -221,7 +221,6 @@ export async function refreshConfirmTransactionSimulation(
 	uniqueRequestIdentifier: UniqueRequestIdentifier,
 	transactionToSimulate: WebsiteCreatedEthereumUnsignedTransactionOrFailed,
 ): Promise<ConfirmTransactionTransactionSingleVisualization> {
-	makeSureInterceptorIsNotSleeping(ethereumClientService)
 	const info = {
 		uniqueRequestIdentifier,
 		transactionToSimulate,

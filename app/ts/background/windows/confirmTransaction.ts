@@ -41,6 +41,16 @@ export async function updateConfirmTransactionViewWithPendingTransactionOrClose(
 	openedDialog = undefined
 }
 
+export const isConfirmTransactionFocused = async () => {
+	if (openedDialog === undefined) return false
+	const pendingTransactions = await getPendingTransactions()
+	if (pendingTransactions[0] === undefined) return false
+	const popup = await getPopupOrTabOnlyById(pendingTransactions[0].popupOrTabId)
+	if (popup === undefined) return false
+	if (popup.type === 'popup') return popup.window.focused
+	return popup.tab.active
+}
+
 export async function resolvePendingTransaction(simulator: Simulator, websiteTabConnections: WebsiteTabConnections, confirmation: TransactionConfirmation) {
 	const pending = pendingTransactions.get(getUniqueRequestIdentifierString(confirmation.data.uniqueRequestIdentifier))
 	const pendingTransaction = await removePendingTransaction(confirmation.data.uniqueRequestIdentifier)
