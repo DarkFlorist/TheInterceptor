@@ -24,6 +24,7 @@ class MockEthereumJSONRpcRequestHandler {
 
 	public readonly jsonRpcRequest = async (rpcRequest: EthereumJsonRpcRequest) => {
 		switch (rpcRequest.method) {
+			case 'eth_blockNumber': return `0x${ 8443561n.toString(16) }`
 			case 'eth_getBlockByNumber': {
 				if (rpcRequest.params[0] !== 8443561n && rpcRequest.params[0] !== 'latest') throw new Error('Unsupported block number')
 				if (rpcRequest.params[1] === true) return parseRequest(eth_getBlockByNumber_goerli_8443561_true)
@@ -34,8 +35,9 @@ class MockEthereumJSONRpcRequestHandler {
 				if (rpcRequest.params[0] === 0xe10c2a85168046080235fff99e2e14ef1e90c8cf5e9d675f2ca214e49e555e0fn) {
 					return parseRequest(eth_transactionByhash0xe10c2a85168046080235fff99e2e14ef1e90c8cf5e9d675f2ca214e49e555e0f)
 				}
-				throw new Error(`unsupprted Hash`)
+				throw new Error(`unsupported Hash`)
 			}
+			default: new Error(`unsupported method ${ rpcRequest.method }`)
 		}
 		return
 	}
