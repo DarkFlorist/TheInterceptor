@@ -1,5 +1,7 @@
 import { getInterceptorDisabledSites, getSettings } from "../background/settings.js"
 
+const matches = ['file://*/*', 'http://*/*', 'https://*/*']
+
 export const updateContentScriptInjectionStrategyManifestV3 = async () => {
 	const excludeMatches = getInterceptorDisabledSites(await getSettings()).map((origin) => `*://*.${ origin }/*`)
 	try {
@@ -10,13 +12,13 @@ export const updateContentScriptInjectionStrategyManifestV3 = async () => {
 		await browser.scripting.unregisterContentScripts()
 		await fixedRegisterContentScripts([{
 			id: 'inpage2',
-			matches: ['file://*/*', 'http://*/*', 'https://*/*'],
+			matches,
 			excludeMatches,
 			js: ['/vendor/webextension-polyfill/browser-polyfill.js', '/inpage/js/listenContentScript.js'],
 			runAt: 'document_start',
 		}, {
 			id: 'inpage',
-			matches: ['file://*/*', 'http://*/*', 'https://*/*'],
+			matches,
 			excludeMatches,
 			js: ['/inpage/js/inpage.js'],
 			runAt: 'document_start',
@@ -27,22 +29,16 @@ export const updateContentScriptInjectionStrategyManifestV3 = async () => {
 	}
 }
 
-let registeredScript: browser.contentScripts.RegisteredContentScript | undefined = undefined 
+const injectLogic = async (content: browser.webNavigation._OnCommittedDetails) => {
+	const disabledSites = getInterceptorDisabledSites(await getSettings())
+	const hostName = new URL(content.url).hostname
+	const noMatches = disabledSites.every(excludeMatch => hostName !== excludeMatch)
+	if (!noMatches) return
+	browser.tabs.executeScript(content.tabId, { file: '/vendor/webextension-polyfill/browser-polyfill.js', allFrames: true, runAt: 'document_start' })
+	browser.tabs.executeScript(content.tabId, { file: '/inpage/output/injected_document_start.js', allFrames: true, runAt: 'document_start' })
+}
+
 export const updateContentScriptInjectionStrategyManifestV2 = async () => {
-	const excludeMatches = getInterceptorDisabledSites(await getSettings()).map((origin) => `*://*.${ origin }/*`)
-	try {
-		if (registeredScript) await registeredScript.unregister()
-		registeredScript = await browser.contentScripts.register({
-			matches: ['file://*/*', 'http://*/*', 'https://*/*'],
-			excludeMatches,
-			js: [
-				{ file: '/vendor/webextension-polyfill/browser-polyfill.js' },
-				{ file: '/inpage/output/injected_document_start.js' }
-			],
-			allFrames: true,
-			runAt: 'document_start'
-		})
-	} catch (err) {
-		throw new Error('Unable to register content script. Unfortunately, we are not supporting Chrome with Manifest V2. Please run the Chrome version that has manifest v3')
-	}
+	browser.webNavigation.onCommitted.removeListener(injectLogic)
+	browser.webNavigation.onCommitted.addListener(injectLogic, { url: matches.map((urlMatches) => ({ urlMatches })) })
 }
