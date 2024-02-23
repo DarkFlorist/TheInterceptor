@@ -28,7 +28,7 @@ let openedDialog: OpenedDialogWithListeners = undefined
 const pendingInterceptorAccessSemaphore = new Semaphore(1)
 
 const onCloseWindowOrTab = async (simulator: Simulator, popupOrTabs: PopupOrTabId, websiteTabConnections: WebsiteTabConnections) => { // check if user has closed the window on their own, if so, reject signature
-	if (openedDialog === undefined || openedDialog.popupOrTab.popupOrTab.id !== popupOrTabs.id || openedDialog.popupOrTab.popupOrTab.type !== popupOrTabs.type) return
+	if (openedDialog === undefined || openedDialog.popupOrTab.id !== popupOrTabs.id || openedDialog.popupOrTab.type !== popupOrTabs.type) return
 	removeWindowTabListeners(openedDialog.onClosePopup, openedDialog.onCloseTab)
 
 	openedDialog = undefined
@@ -147,7 +147,7 @@ export async function requestAccessFromUser(
 			}
 			if (openedDialog) {
 				removeWindowTabListeners(onCloseWindowCallback, onCloseTabCallback)
-				await closePopupOrTabById(openedDialog.popupOrTab.popupOrTab)
+				await closePopupOrTabById(openedDialog.popupOrTab)
 			}
 			openedDialog = { popupOrTab, onClosePopup: onCloseWindowCallback, onCloseTab: onCloseTabCallback,  }
 		}
@@ -158,7 +158,7 @@ export async function requestAccessFromUser(
 		}
 		const accessRequestId =  `${ accessAddress?.address } || ${ website.websiteOrigin }`
 		const pendingRequest = {
-			popupOrTabId: openedDialog.popupOrTab.popupOrTab,
+			popupOrTabId: openedDialog.popupOrTab,
 			socket,
 			request,
 			accessRequestId,
@@ -208,7 +208,7 @@ export async function requestAccessFromUser(
 					pendingAccessRequests: pendingRequests.current,
 				}
 			})
-			if (openedDialog !== undefined) await tryFocusingTabOrWindow(openedDialog.popupOrTab.popupOrTab)
+			if (openedDialog !== undefined) await tryFocusingTabOrWindow(openedDialog.popupOrTab)
 			return 
 		}
 		pendingAccessRequests.resolve(pendingRequests.current)
@@ -244,7 +244,7 @@ async function resolve(simulator: Simulator, websiteTabConnections: WebsiteTabCo
 
 	if (openedDialog) {
 		removeWindowTabListeners(openedDialog.onClosePopup, openedDialog.onCloseTab)
-		await closePopupOrTabById(openedDialog.popupOrTab.popupOrTab)
+		await closePopupOrTabById(openedDialog.popupOrTab)
 		openedDialog = undefined
 	}
 	const affectedEntryWithPendingRequest = pendingRequests.previous.filter((pending): pending is PendingAccessRequest & { request: InterceptedRequest } => isAffectedEntry(pending) && pending.request !== undefined)

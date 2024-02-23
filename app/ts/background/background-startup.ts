@@ -2,7 +2,7 @@ import 'webextension-polyfill'
 import { defaultRpcs, getSettings } from './settings.js'
 import { handleInterceptedRequest, popupMessageHandler } from './background.js'
 import { retrieveWebsiteDetails, updateExtensionBadge, updateExtensionIcon } from './iconHandler.js'
-import { clearTabStates, getEthereumSubscriptionsAndFilters, getPrimaryRpcForChain, removeTabState, setRpcConnectionStatus, updateTabState, updateUserAddressBookEntries } from './storageVariables.js'
+import { clearTabStates, getPrimaryRpcForChain, removeTabState, setRpcConnectionStatus, updateTabState, updateUserAddressBookEntries } from './storageVariables.js'
 import { Simulator } from '../simulation/simulator.js'
 import { TabConnection, TabState, WebsiteTabConnections } from '../types/user-interface-types.js'
 import { EthereumBlockHeader } from '../types/wire-types.js'
@@ -18,6 +18,7 @@ import { browserStorageLocalGet, browserStorageLocalRemove } from '../utils/stor
 import { ActiveAddress, AddressBookEntries } from '../types/addressBookTypes.js'
 import { getUniqueItemsByProperties } from '../utils/typed-arrays.js'
 import { updateContentScriptInjectionStrategyManifestV2 } from '../utils/contentScriptsUpdating.js'
+import { checkIfInterceptorShouldSleep } from './sleeping.js'
 
 const websiteTabConnections = new Map<number, TabConnection>()
 
@@ -126,12 +127,11 @@ async function newBlockAttemptCallback(blockheader: EthereumBlockHeader, ethereu
 		}
 		await setRpcConnectionStatus(rpcConnectionStatus)
 		await updateExtensionBadge()
-		const didAnyoneListen = await sendPopupMessageToOpenWindows({ method: 'popup_new_block_arrived', data: { rpcConnectionStatus } })
+		await sendPopupMessageToOpenWindows({ method: 'popup_new_block_arrived', data: { rpcConnectionStatus } })
 		if (isNewBlock) {
-			const subsAndFilters = await getEthereumSubscriptionsAndFilters()
-			if (subsAndFilters.length === 0 && !didAnyoneListen) return // no one is listening new blocks and we don't have subscriptions, so let's not update simulation or do anythign else
 			const settings = await getSettings()
-			await sendSubscriptionMessagesForNewBlock(blockheader.number, ethereumClientService, settings.simulationMode ? await refreshSimulation(simulator, settings) : undefined, websiteTabConnections)
+			const simulationState = settings.simulationMode ? await refreshSimulation(simulator, settings, false) : undefined
+			await sendSubscriptionMessagesForNewBlock(blockheader.number, ethereumClientService, simulationState, websiteTabConnections)
 		}
 	} catch(error) {
 		await handleUnexpectedError(error)
@@ -143,7 +143,7 @@ async function onErrorBlockCallback(ethereumClientService: EthereumClientService
 		const rpcConnectionStatus = {
 			isConnected: false,
 			lastConnnectionAttempt: new Date(),
-			latestBlock: ethereumClientService.getLastKnownCachedBlockOrUndefined(),
+			latestBlock: ethereumClientService.getCachedBlock(),
 			rpcNetwork: ethereumClientService.getRpcEntry(),
 		}
 		await setRpcConnectionStatus(rpcConnectionStatus)
@@ -185,6 +185,8 @@ async function startup() {
 			await handleUnexpectedError(error)
 		}
 	})
+
+	setInterval(async () => checkIfInterceptorShouldSleep(simulator.ethereum), 1000 )
 
 	await updateExtensionBadge()
 }

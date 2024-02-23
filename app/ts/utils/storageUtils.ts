@@ -48,6 +48,7 @@ export const LocalStorageItems = funtypes.ReadonlyPartial({
 	userAddressBookEntries: AddressBookEntries,
 	idsOfOpenedTabs: IdsOfOpenedTabs,
 	interceptorDisabled: funtypes.Boolean,
+	interceptorStartSleepingTimestamp: funtypes.Number,
 })
 
 export type LocalStorageKey = funtypes.Static<typeof LocalStorageKey>
@@ -76,7 +77,7 @@ export const LocalStorageKey = funtypes.Union(
 	funtypes.Literal('metamaskCompatibilityMode'),
 	funtypes.Literal('userAddressBookEntries'),
 	funtypes.Literal('idsOfOpenedTabs'),
-	funtypes.Literal('interceptorDisabled'),
+	funtypes.Literal('interceptorStartSleepingTimestamp'),
 )
 
 export async function browserStorageLocalGet(keys: LocalStorageKey | LocalStorageKey[]): Promise<LocalStorageItems> {

@@ -283,8 +283,8 @@ export function ConfirmTransaction() {
 	const [unexpectedError, setUnexpectedError] = useState<string | undefined>(undefined)
 
 	const updatePendingTransactions = (message: ConfirmTransactionDialogPendingChanged | UpdateConfirmTransactionDialog) => {
-		setPendingTransactions(message.data)
-		const firstMessage = message.data[0]
+		setPendingTransactions(message.data.pendingTransactions)
+		const firstMessage = message.data.pendingTransactions[0]
 		if (firstMessage === undefined) throw new Error('message data was undefined')
 		setCurrentPendingTransaction(firstMessage)
 		if (firstMessage.status === 'Simulated' && firstMessage.simulationResults !== undefined && firstMessage.simulationResults.statusCode === 'success' && (currentBlockNumber === undefined || firstMessage.simulationResults.data.simulationState.blockNumber > currentBlockNumber)) {
@@ -323,6 +323,7 @@ export function ConfirmTransaction() {
 				return
 			}
 			if (parsed.method !== 'popup_update_confirm_transaction_dialog') return
+			setCurrentBlockNumber(parsed.data.currentBlockNumber)
 			return updatePendingTransactions(parsed)
 		}
 		browser.runtime.onMessage.addListener(popupMessageListener)

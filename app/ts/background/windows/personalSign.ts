@@ -37,7 +37,7 @@ export async function resolvePersonalSign(simulator: Simulator, websiteTabConnec
 		const resolved = await resolve(simulator, confirmation, data.signedMessageTransaction)
 		replyToInterceptedRequest(websiteTabConnections, { ...data.signedMessageTransaction.originalRequestParameters, ...resolved, uniqueRequestIdentifier: confirmation.data.uniqueRequestIdentifier })
 	}
-	if (openedDialog) await closePopupOrTabById(openedDialog.popupOrTab)
+	if (openedDialog) await closePopupOrTabById(openedDialog)
 	openedDialog = undefined
 }
 
@@ -226,7 +226,7 @@ export const openPersonalSignDialog = async (
 ) => {
 
 	const onCloseWindowOrTab = async (popupOrTabs: PopupOrTabId) => {
-		if (openedDialog === undefined || openedDialog.popupOrTab.id !== popupOrTabs.id || openedDialog.popupOrTab.type !== popupOrTabs.type) return
+		if (openedDialog === undefined || openedDialog.id !== popupOrTabs.id || openedDialog.type !== popupOrTabs.type) return
 		if (pendingPersonalSign === undefined) return
 		openedDialog = undefined
 		return await resolvePersonalSign(simulator, websiteTabConnections, rejectMessage(request.uniqueRequestIdentifier))
@@ -265,7 +265,7 @@ export const openPersonalSignDialog = async (
 			addWindowTabListeners(onCloseWindow, onCloseTab)
 
 			await setPendingPersonalSignPromise({
-				popupOrTabId: openedDialog.popupOrTab,
+				popupOrTabId: openedDialog,
 				signedMessageTransaction,
 			})
 			await updatePendingPersonalSignViewWithPendingRequests(simulator.ethereum)
