@@ -75,11 +75,13 @@ export const CallResultLog = funtypes.Intersect(
 	funtypes.ReadonlyObject({
 		logIndex: EthereumQuantity,
 		address: EthereumAddress,
-		blockHash: EthereumQuantity,
+		blockHash: EthereumBytes32,
 		blockNumber: EthereumQuantity,
 		data: EthereumData,
 		topics: funtypes.ReadonlyArray(EthereumBytes32),
-		transactionHash: EthereumQuantity,
+	}),
+	funtypes.ReadonlyPartial({ // these are not optional in the spec, but they are not standard for logs
+		transactionHash: EthereumBytes32,
 		transactionIndex: EthereumQuantity,
 	})
 )
@@ -120,7 +122,7 @@ export const ExecutionSpec383MultiCallCallResults = funtypes.ReadonlyArray(funty
 export type ExecutionSpec383MultiCallBlockResult = funtypes.Static<typeof ExecutionSpec383MultiCallBlockResult>
 export const ExecutionSpec383MultiCallBlockResult = funtypes.ReadonlyObject({
     number: EthereumQuantity,
-    hash: EthereumQuantity,
+    hash: EthereumBytes32,
     timestamp: EthereumQuantity,
     prevRandao: EthereumQuantity,
     gasLimit: EthereumQuantitySmall,
