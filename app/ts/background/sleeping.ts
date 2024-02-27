@@ -16,7 +16,7 @@ const checkConfirmTransaction = async (ethereumClientService: EthereumClientServ
 }
 
 export const checkIfInterceptorShouldSleep = async (ethereumClientService: EthereumClientService) => {
-	checkConfirmTransaction(ethereumClientService)
+	await checkConfirmTransaction(ethereumClientService)
 	const startSleping = await getInterceptorStartSleepingTimestamp()
 	if (startSleping < Date.now() && ethereumClientService.isBlockPolling()) {
 		console.log('The Interceptor started to sleep 😴')
