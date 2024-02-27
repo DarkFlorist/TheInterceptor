@@ -340,7 +340,7 @@ export function ConfirmTransaction() {
 		if (currentWindow.id === undefined) throw new Error('could not get our own Id!')
 		if (pendingTransactions.length === 1) await tryFocusingTabOrWindow({ type: 'tab', id: currentPendingTransaction.uniqueRequestIdentifier.requestSocket.tabId })
 		try {
-			await sendPopupMessageToBackgroundPage({ method: 'popup_confirmDialog', data: { uniqueRequestIdentifier: currentPendingTransaction.uniqueRequestIdentifier, accept: true, popupOrTabId: currentPendingTransaction.popupOrTabId } })
+			await sendPopupMessageToBackgroundPage({ method: 'popup_confirmDialog', data: { uniqueRequestIdentifier: currentPendingTransaction.uniqueRequestIdentifier, action: 'accept', popupOrTabId: currentPendingTransaction.popupOrTabId } })
 		} catch(e) {
 			console.log('eerrr')
 			console.log(e)
@@ -364,7 +364,7 @@ export function ConfirmTransaction() {
 		
 		await sendPopupMessageToBackgroundPage({ method: 'popup_confirmDialog', data: {
 			uniqueRequestIdentifier: currentPendingTransaction.uniqueRequestIdentifier,
-			accept: false,
+			action: 'reject',
 			popupOrTabId: currentPendingTransaction.popupOrTabId,
 			transactionErrorString: getPossibleErrorString(),
 		} })

@@ -32,7 +32,7 @@ export async function resolveChainChange(simulator: Simulator, websiteTabConnect
 	const data = await getChainChangeConfirmationPromise()
 	if (data === undefined || !doesUniqueRequestIdentifiersMatch(confirmation.data.uniqueRequestIdentifier, data.request.uniqueRequestIdentifier)) throw new Error('Unique request identifier mismatch in change chain')
 	const resolved = await resolve(simulator, websiteTabConnections, confirmation, data.simulationMode)
-	replyToInterceptedRequest(websiteTabConnections, { method: 'wallet_switchEthereumChain' as const, ...resolved, uniqueRequestIdentifier: data.request.uniqueRequestIdentifier })
+	replyToInterceptedRequest(websiteTabConnections, { type: 'result', method: 'wallet_switchEthereumChain' as const, ...resolved, uniqueRequestIdentifier: data.request.uniqueRequestIdentifier })
 	if (openedDialog) await closePopupOrTabById(openedDialog)
 	openedDialog = undefined
 }

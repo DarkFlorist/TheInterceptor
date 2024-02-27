@@ -53,6 +53,7 @@ export async function updatePendingPersonalSignViewWithPendingRequests(ethereumC
 
 function rejectMessage(uniqueRequestIdentifier: UniqueRequestIdentifier) {
 	return {
+		type: 'result' as const,
 		method: 'popup_personalSignApproval',
 		data: {
 			uniqueRequestIdentifier,
@@ -63,6 +64,7 @@ function rejectMessage(uniqueRequestIdentifier: UniqueRequestIdentifier) {
 
 function reject(signingParams: SignMessageParams) {
 	return {
+		type: 'result' as const,
 		method: signingParams.method,
 		error: {
 			code: METAMASK_ERROR_USER_REJECTED_REQUEST,
@@ -291,9 +293,9 @@ async function resolve(simulator: Simulator, reply: PersonalSignApproval, signed
 				return await appendSignedMessage(simulator.ethereum, simulationState, signedMessageTransaction)
 			}, signedMessageTransaction.fakeSignedFor, true)
 			const signedMessage = (await simulatePersonalSign(signedMessageTransaction.originalRequestParameters, signedMessageTransaction.fakeSignedFor)).signature
-			return { result: signedMessage, method: signedMessageTransaction.originalRequestParameters.method }
+			return { type: 'result' as const, result: signedMessage, method: signedMessageTransaction.originalRequestParameters.method }
 		}
-		return { forward: true, ...signedMessageTransaction.originalRequestParameters } as const
+		return { type: 'forwardToSigner' as const, ...signedMessageTransaction.originalRequestParameters } as const
 	}
 	return reject(signedMessageTransaction.originalRequestParameters)
 }

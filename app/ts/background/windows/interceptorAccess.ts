@@ -38,7 +38,7 @@ const onCloseWindowOrTab = async (simulator: Simulator, popupOrTabs: PopupOrTabI
 			originalRequestAccessToAddress: pendingRequest.originalRequestAccessToAddress?.address,
 			requestAccessToAddress: pendingRequest.requestAccessToAddress?.address,
 			accessRequestId: pendingRequest.accessRequestId,
-			userReply: 'NoResponse' as const
+			userReply: 'noResponse' as const
 		}
 		await resolve(simulator, websiteTabConnections, reply, pendingRequest.request, pendingRequest.website)
 	}
@@ -58,7 +58,7 @@ export async function getAddressMetadataForAccess(websiteAccess: WebsiteAccessAr
 }
 
 export async function changeAccess(simulator: Simulator, websiteTabConnections: WebsiteTabConnections, confirmation: InterceptorAccessReply, website: Website, promptForAccessesIfNeeded: boolean = true) {
-	if (confirmation.userReply === 'NoResponse') return
+	if (confirmation.userReply === 'noResponse') return
 	await setAccess(website, confirmation.userReply === 'Approved', confirmation.requestAccessToAddress)
 	updateWebsiteApprovalAccesses(simulator, websiteTabConnections, promptForAccessesIfNeeded, await getSettings())
 	await sendPopupMessageToOpenWindows({ method: 'popup_websiteAccess_changed' })
@@ -187,6 +187,7 @@ export async function requestAccessFromUser(
 		if (pendingRequests.previous.find((x) => x.accessRequestId === accessRequestId) !== undefined) {
 			if (request !== undefined) {
 				replyToInterceptedRequest(websiteTabConnections, {
+					type: 'result',
 					uniqueRequestIdentifier: request.uniqueRequestIdentifier,
 					method: request.method,
 					error: METAMASK_ERROR_ALREADY_PENDING.error,
@@ -216,7 +217,7 @@ export async function requestAccessFromUser(
 }
 
 async function resolve(simulator: Simulator, websiteTabConnections: WebsiteTabConnections, accessReply: InterceptorAccessReply, request: InterceptedRequest | undefined, website: Website) {
-	if (accessReply.userReply === 'NoResponse') {
+	if (accessReply.userReply === 'noResponse') {
 		if (request !== undefined) refuseAccess(websiteTabConnections, request)
 	} else {
 		const userRequestedAddressChange = accessReply.requestAccessToAddress !== accessReply.originalRequestAccessToAddress

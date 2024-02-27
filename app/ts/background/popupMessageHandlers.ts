@@ -3,7 +3,7 @@ import { getSettings, setUseTabsInsteadOfPopup, setMakeMeRich, setPage, setUseSi
 import { getPendingTransactions, getCurrentTabId, getTabState, saveCurrentTabId, setRpcList, getRpcList, getPrimaryRpcForChain, getRpcConnectionStatus, updateUserAddressBookEntries, getSimulationResults, setIdsOfOpenedTabs, getIdsOfOpenedTabs, replacePendingTransaction } from './storageVariables.js'
 import { Simulator, parseEvents } from '../simulation/simulator.js'
 import { ChangeActiveAddress, ChangeMakeMeRich, ChangePage, RemoveTransaction, RequestAccountsFromSigner, TransactionConfirmation, InterceptorAccess, ChangeInterceptorAccess, ChainChangeConfirmation, EnableSimulationMode, ChangeActiveChain, AddOrEditAddressBookEntry, GetAddressBookData, RemoveAddressBookEntry, InterceptorAccessRefresh, InterceptorAccessChangeAddress, Settings, RefreshConfirmTransactionMetadata, RefreshInterceptorAccessMetadata, ChangeSettings, ImportSettings, SetRpcList, PersonalSignApproval, UpdateHomePage, RemoveSignedMessage, SimulateGovernanceContractExecutionReply, SimulateGovernanceContractExecution, ChangeAddOrModifyAddressWindowState, FetchAbiAndNameFromEtherscan, OpenWebPage, DisableInterceptor } from '../types/interceptor-messages.js'
-import { formEthSendTransaction, formSendRawTransaction, resolvePendingTransaction, updateConfirmTransactionViewWithPendingTransactionOrClose } from './windows/confirmTransaction.js'
+import { formEthSendTransaction, formSendRawTransaction, resolvePendingTransaction } from './windows/confirmTransaction.js'
 import { resolvePersonalSign } from './windows/personalSign.js'
 import { getAddressMetadataForAccess, requestAddressChange, resolveInterceptorAccess } from './windows/interceptorAccess.js'
 import { resolveChainChange } from './windows/changeChain.js'
@@ -44,12 +44,8 @@ export async function confirmRequestAccess(simulator: Simulator, websiteTabConne
 export async function getLastKnownCurrentTabId() {
 	const tabId = getCurrentTabId()
 	const tabs = await browser.tabs.query({ active: true, lastFocusedWindow: true })
-	if (tabs[0]?.id === undefined) {
-		return await tabId
-	}
-	if (await tabId !== tabs[0].id) {
-		saveCurrentTabId(tabs[0].id)
-	}
+	if (tabs[0]?.id === undefined) return await tabId
+	if (await tabId !== tabs[0].id) saveCurrentTabId(tabs[0].id)
 	return tabs[0].id
 }
 
@@ -198,8 +194,7 @@ export async function refreshPopupConfirmTransactionMetadata(ethereumClientServi
 export async function refreshPopupConfirmTransactionSimulation(simulator: Simulator, ethereumClientService: EthereumClientService) {
 	const currentBlockNumberPromise = ethereumClientService.getBlockNumber()
 	const [firstTxn] = await getPendingTransactions()
-	if (firstTxn === undefined) return await updateConfirmTransactionViewWithPendingTransactionOrClose(ethereumClientService)
-	if (firstTxn.status !== 'Simulated') return
+	if (firstTxn === undefined || firstTxn.status !== 'Simulated') return
 	const transactionToSimulate = firstTxn.originalRequestParameters.method === 'eth_sendTransaction' ? await formEthSendTransaction(ethereumClientService, firstTxn.activeAddress, firstTxn.simulationMode, firstTxn.transactionToSimulate.website, firstTxn.originalRequestParameters, firstTxn.created, firstTxn.transactionIdentifier) : await formSendRawTransaction(ethereumClientService, firstTxn.originalRequestParameters, firstTxn.transactionToSimulate.website, firstTxn.created, firstTxn.transactionIdentifier)
 	if (transactionToSimulate.success === false) return
 	const refreshMessage = await refreshConfirmTransactionSimulation(simulator, ethereumClientService, firstTxn.activeAddress, firstTxn.simulationMode, firstTxn.uniqueRequestIdentifier, transactionToSimulate)

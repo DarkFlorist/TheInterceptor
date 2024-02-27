@@ -19,6 +19,8 @@ import { ActiveAddress, AddressBookEntries } from '../types/addressBookTypes.js'
 import { getUniqueItemsByProperties } from '../utils/typed-arrays.js'
 import { updateContentScriptInjectionStrategyManifestV2 } from '../utils/contentScriptsUpdating.js'
 import { checkIfInterceptorShouldSleep } from './sleeping.js'
+import { addWindowTabListeners } from '../components/ui-utils.js'
+import { onCloseWindowOrTab } from './windows/confirmTransaction.js'
 
 const websiteTabConnections = new Map<number, TabConnection>()
 
@@ -189,6 +191,10 @@ async function startup() {
 	setInterval(async () => checkIfInterceptorShouldSleep(simulator.ethereum), 1000 )
 
 	await updateExtensionBadge()
+
+	const onCloseWindow = (id: number) => onCloseWindowOrTab({ type: 'popup' as const, id }, simulator, websiteTabConnections)
+	const onCloseTab = (id: number) => onCloseWindowOrTab({ type: 'tab' as const, id }, simulator, websiteTabConnections)
+	addWindowTabListeners(onCloseWindow, onCloseTab)
 }
 
 startup()
