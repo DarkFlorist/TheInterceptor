@@ -186,7 +186,17 @@ async function startup() {
 		}
 	})
 
-	setInterval(async () => checkIfInterceptorShouldSleep(simulator.ethereum), 1000 )
+
+	const recursiveCheckIfInterceptorShouldSleep = async () => {
+		try {
+			await checkIfInterceptorShouldSleep(simulator.ethereum)
+		} catch(error: unknown) {
+			await handleUnexpectedError(error)
+		}
+		setTimeout(recursiveCheckIfInterceptorShouldSleep, 1000)
+	}
+
+	recursiveCheckIfInterceptorShouldSleep()
 
 	await updateExtensionBadge()
 }
