@@ -131,16 +131,18 @@ export const RPCReply = funtypes.Union(
 )
 
 export type SubscriptionReplyOrCallBack = funtypes.Static<typeof SubscriptionReplyOrCallBack>
-export const SubscriptionReplyOrCallBack = funtypes.Union(
-	InpageScriptCallBack,
-	funtypes.Intersect(
-		funtypes.ReadonlyObject({
-			type: funtypes.Literal('result'),
-			method: funtypes.String,
-			subscription: funtypes.String,
-		}),
-		SubscriptionReturnValue,
-	),
+export const SubscriptionReplyOrCallBack = funtypes.Intersect(
+	funtypes.ReadonlyObject({ type: funtypes.Literal('result') }),
+	funtypes.Union(
+		InpageScriptCallBack,
+		funtypes.Intersect(
+			funtypes.ReadonlyObject({
+				method: funtypes.String,
+				subscription: funtypes.String,
+			}),
+			SubscriptionReturnValue,
+		)
+	)
 )
 
 export type InterceptedRequestForwardWithRequestId = funtypes.Static<typeof InterceptedRequestForwardWithRequestId>

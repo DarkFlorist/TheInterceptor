@@ -33,6 +33,7 @@ export function postMessageIfStillConnected(websiteTabConnections: WebsiteTabCon
 }
 
 export function replyToInterceptedRequest(websiteTabConnections: WebsiteTabConnections, message: InterceptedRequestForward) {
+	if (message.type === 'doNotReply') return
 	const tabConnection = websiteTabConnections.get(message.uniqueRequestIdentifier.requestSocket.tabId)
 	const identifier = websiteSocketToString(message.uniqueRequestIdentifier.requestSocket)
 	if (tabConnection === undefined) return false

@@ -91,11 +91,11 @@ export async function connectedToSigner(_simulator: Simulator, _websiteTabConnec
 	const settings = await getSettings()
 	if (!settings.simulationMode || settings.useSignersAddressAsActiveAddress) {
 		if (approval === 'hasAccess') {
-			sendSubscriptionReplyOrCallBackToPort(port, { method: 'request_signer_to_eth_requestAccounts' as const, result: [] })
+			sendSubscriptionReplyOrCallBackToPort(port, { type: 'result' as const, method: 'request_signer_to_eth_requestAccounts' as const, result: [] })
 		} else {
-			sendSubscriptionReplyOrCallBackToPort(port, { method: 'request_signer_to_eth_accounts' as const, result: [] })
+			sendSubscriptionReplyOrCallBackToPort(port, { type: 'result' as const, method: 'request_signer_to_eth_accounts' as const, result: [] })
 		}
-		sendSubscriptionReplyOrCallBackToPort(port, { method: 'request_signer_chainId' as const, result: [] })
+		sendSubscriptionReplyOrCallBackToPort(port, { type: 'result' as const, method: 'request_signer_chainId' as const, result: [] })
 	}
 	return { method: 'connected_to_signer' as const, result: { metamaskCompatibilityMode: await getMetamaskCompatibilityMode() } }
 }

@@ -83,7 +83,7 @@ export async function askForSignerAccountsFromSignerIfNotAvailable(websiteTabCon
 	const channel = new BroadcastChannel(INTERNAL_CHANNEL_NAME)
 	try {
 		channel.addEventListener('message', listener)
-		const messageSent = sendSubscriptionReplyOrCallBack(websiteTabConnections, socket, { method: 'request_signer_to_eth_requestAccounts' as const, result: [] })
+		const messageSent = sendSubscriptionReplyOrCallBack(websiteTabConnections, socket, { type: 'result' as const, method: 'request_signer_to_eth_requestAccounts' as const, result: [] })
 		if (messageSent) await future
 	} finally {
 		channel.removeEventListener('message', listener)
