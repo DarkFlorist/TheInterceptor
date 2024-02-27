@@ -27,6 +27,7 @@ import { ethers } from 'ethers'
 import { getIssueWithAddressString } from '../components/ui-utils.js'
 import { updateContentScriptInjectionStrategyManifestV2, updateContentScriptInjectionStrategyManifestV3 } from '../utils/contentScriptsUpdating.js'
 import { Website } from '../types/websiteAccessTypes.js'
+import { makeSureInterceptorIsNotSleeping } from './sleeping.js'
 
 export async function confirmDialog(simulator: Simulator, websiteTabConnections: WebsiteTabConnections, confirmation: TransactionConfirmation) {
 	await resolvePendingTransaction(simulator, websiteTabConnections, confirmation)
@@ -157,14 +158,15 @@ export async function removeSignedMessage(simulator: Simulator, ethereumClientSe
 	}, settings.activeSimulationAddress, true)
 }
 
-export async function refreshSimulation(simulator: Simulator, settings: Settings): Promise<SimulationState | undefined> {
+export async function refreshSimulation(simulator: Simulator, settings: Settings, refreshOnlyIfNotAlreadyUpdatingSimulation: boolean): Promise<SimulationState | undefined> {
 	return await updateSimulationState(simulator.ethereum, async (simulationState) => {
 		if (simulationState === undefined) return
 		return await refreshSimulationState(simulator.ethereum, simulationState)
-	}, settings.activeSimulationAddress, false)
+	}, settings.activeSimulationAddress, false, refreshOnlyIfNotAlreadyUpdatingSimulation)
 }
 
 export async function refreshPopupConfirmTransactionMetadata(ethereumClientService: EthereumClientService, { data }: RefreshConfirmTransactionMetadata) {
+	const currentBlockNumberPromise = ethereumClientService.getBlockNumber()
 	const visualizerResults = await Promise.all(data.visualizerResults.map(async (x) => ({ ...x, events: await parseEvents(x.events.map((e) => ({ loggersAddress: e.loggersAddress, topics: e.topics, data: e.data })), ethereumClientService) })))
 	const addressBookEntriesPromise = getAddressBookEntriesForVisualiser(ethereumClientService, visualizerResults, data.simulationState)
 	const namedTokenIdsPromise = nameTokenIds(ethereumClientService, visualizerResults)
@@ -175,31 +177,38 @@ export async function refreshPopupConfirmTransactionMetadata(ethereumClientServi
 	if (first === undefined || first.status !== 'Simulated' || first.simulationResults === undefined || first.simulationResults.statusCode !== 'success') return
 	return await sendPopupMessageToOpenWindows({
 		method: 'popup_update_confirm_transaction_dialog',
-		data: [{
-			...first,
-			simulationResults: {
-				statusCode: 'success',
-				data: {
-					...first.simulationResults.data,
-					simulatedAndVisualizedTransactions: formSimulatedAndVisualizedTransaction(first.simulationResults.data.simulationState, visualizerResults, first.simulationResults.data.protectors, addressBookEntries, namedTokenIds),
-					addressBookEntries,
-					visualizerResults,
+		data: {
+			currentBlockNumber: await currentBlockNumberPromise,
+			pendingTransactions: [{
+				...first,
+				simulationResults: {
+					statusCode: 'success',
+					data: {
+						...first.simulationResults.data,
+						simulatedAndVisualizedTransactions: formSimulatedAndVisualizedTransaction(first.simulationResults.data.simulationState, visualizerResults, first.simulationResults.data.protectors, addressBookEntries, namedTokenIds),
+						addressBookEntries,
+						visualizerResults,
+					}
 				}
-			}
-		}, ...promises.slice(1)]
+			}, ...promises.slice(1)]
+		}
 	})
 }
 
 export async function refreshPopupConfirmTransactionSimulation(simulator: Simulator, ethereumClientService: EthereumClientService) {
+	const currentBlockNumberPromise = ethereumClientService.getBlockNumber()
 	const [firstTxn] = await getPendingTransactions()
-	if (firstTxn === undefined) return await updateConfirmTransactionViewWithPendingTransactionOrClose()
+	if (firstTxn === undefined) return await updateConfirmTransactionViewWithPendingTransactionOrClose(ethereumClientService)
 	if (firstTxn.status !== 'Simulated') return
 	const transactionToSimulate = firstTxn.originalRequestParameters.method === 'eth_sendTransaction' ? await formEthSendTransaction(ethereumClientService, firstTxn.activeAddress, firstTxn.simulationMode, firstTxn.transactionToSimulate.website, firstTxn.originalRequestParameters, firstTxn.created, firstTxn.transactionIdentifier) : await formSendRawTransaction(ethereumClientService, firstTxn.originalRequestParameters, firstTxn.transactionToSimulate.website, firstTxn.created, firstTxn.transactionIdentifier)
 	if (transactionToSimulate.success === false) return
 	const refreshMessage = await refreshConfirmTransactionSimulation(simulator, ethereumClientService, firstTxn.activeAddress, firstTxn.simulationMode, firstTxn.uniqueRequestIdentifier, transactionToSimulate)
 	
 	await replacePendingTransaction({...firstTxn, transactionToSimulate, simulationResults: refreshMessage })
-	return await sendPopupMessageToOpenWindows({ method: 'popup_update_confirm_transaction_dialog', data: await getPendingTransactions() })
+	return await sendPopupMessageToOpenWindows({ method: 'popup_update_confirm_transaction_dialog', data: {
+		pendingTransactions: await getPendingTransactions(),
+		currentBlockNumber: await currentBlockNumberPromise,
+	}})
 }
 
 export async function popupChangeActiveRpc(simulator: Simulator, websiteTabConnections: WebsiteTabConnections, params: ChangeActiveChain, settings: Settings) {
@@ -268,12 +277,14 @@ export const openNewTab = async (tabName: 'settingsView' | 'addressBook') => {
 }
 
 export async function requestNewHomeData(simulator: Simulator) {
-	await updateSimulationMetadata(simulator.ethereum)
-	await homeOpened(simulator)
+	const settings = await getSettings()
+	simulator.ethereum.setBlockPolling(true) // wakes up the RPC block querying if it was sleeping
+	if (settings.simulationMode) await updateSimulationMetadata(simulator.ethereum)
+	await refreshHomeData(simulator)
 }
 
-export async function homeOpened(simulator: Simulator) {
-	simulator.ethereum.setBlockPolling(true) // wakes up the RPC block querying if it was sleeping
+export async function refreshHomeData(simulator: Simulator) {
+	makeSureInterceptorIsNotSleeping(simulator.ethereum)
 	const settingsPromise = getSettings()
 	const makeMeRichPromise = getMakeMeRich()
 	const rpcConnectionStatusPromise = getRpcConnectionStatus()
@@ -284,6 +295,7 @@ export async function homeOpened(simulator: Simulator) {
 	const tabId = await getLastKnownCurrentTabId()
 	const tabState = tabId === undefined ? await getTabState(-1) : await getTabState(tabId)
 	const settings = await settingsPromise
+	if (settings.simulationMode) refreshSimulation(simulator, settings, true)
 	const websiteOrigin = tabState.website?.websiteOrigin
 	const interceptorDisabled = websiteOrigin === undefined ? false : settings.websiteAccess.find((entry) => entry.website.websiteOrigin === websiteOrigin && entry.interceptorDisabled === true) !== undefined
 	const updatedPage: UpdateHomePage = {
@@ -294,7 +306,7 @@ export async function homeOpened(simulator: Simulator) {
 			websiteAccessAddressMetadata: await getAddressMetadataForAccess(settings.websiteAccess),
 			tabState,
 			activeSigningAddressInThisTab: tabState?.activeSigningAddress,
-			currentBlockNumber: simulator.ethereum.getLastKnownCachedBlockOrUndefined()?.number,
+			currentBlockNumber: simulator.ethereum.getCachedBlock()?.number,
 			settings: settings,
 			makeMeRich: await makeMeRichPromise,
 			rpcConnectionStatus: await rpcConnectionStatusPromise,

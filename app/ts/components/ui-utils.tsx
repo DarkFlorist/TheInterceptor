@@ -82,22 +82,24 @@ export function humanReadableDateFromSeconds(timeInSeconds: bigint) {
 }
 
 export type PopupOrTab = {
-	browserObject: browser.windows.Window,
-	popupOrTab: { type: 'popup',  id: number }
+	window: browser.windows.Window,
+	type: 'popup'
+	id: number 
 } | {
-	browserObject: browser.tabs.Tab,
-	popupOrTab: { type: 'tab',  id: number }
+	tab: browser.tabs.Tab,
+	type: 'tab'
+	id: number
 }
 
 export async function openPopupOrTab(createData: browser.windows._CreateCreateData & { url: string }) : Promise<PopupOrTab | undefined> {
 	if (await getUseTabsInsteadOfPopup()) {
 		const tab = await browser.tabs.create({ url: createData.url })
 		if (tab === undefined || tab === null || tab.id === undefined) return undefined
-		return { popupOrTab: { type: 'tab', id: tab.id }, browserObject: tab }
+		return { type: 'tab', id: tab.id, tab }
 	}
 	const window = await browser.windows.create(createData)
 	if (window === undefined || window === null || window.id === undefined) return undefined
-	return { popupOrTab: { type: 'popup', id: window.id }, browserObject: window }
+	return { type: 'popup', id: window.id, window }
 }
 
 export async function browserTabsQueryById(id: number) {
@@ -110,7 +112,7 @@ export async function getPopupOrTabById(popupOrTabId: PopupOrTabId) : Promise<Po
 			try {
 				const tab = await browserTabsQueryById(popupOrTabId.id)
 				if (tab === undefined || tab.id === undefined) return undefined
-				return { popupOrTab: { type: 'tab', id: tab.id }, browserObject: tab }
+				return { type: 'tab', id: tab.id, tab }
 			} catch(e) {
 				return undefined
 			}
@@ -119,7 +121,7 @@ export async function getPopupOrTabById(popupOrTabId: PopupOrTabId) : Promise<Po
 			try {
 				const window = await browser.windows.get(popupOrTabId.id)
 				if (window === undefined || window === null || window.id === undefined) return undefined
-				return { popupOrTab: { type: 'popup', id: window.id }, browserObject: window }
+				return { type: 'popup', id: window.id, window }
 			} catch(e) {
 				return undefined
 			}
@@ -133,7 +135,7 @@ export async function getPopupOrTabOnlyById(popupOrTab: PopupOrTabId) : Promise<
 		case 'tab': {
 			try {
 				const tab = await browserTabsQueryById(popupOrTab.id)
-				if (tab !== undefined) return { popupOrTab: { type: 'tab', id: popupOrTab.id }, browserObject: tab }
+				if (tab !== undefined) return { type: 'tab', id: popupOrTab.id, tab }
 			} catch(e) {
 				console.log('Failed to focus tab:', popupOrTab.id)
 				console.warn(e)
@@ -144,7 +146,7 @@ export async function getPopupOrTabOnlyById(popupOrTab: PopupOrTabId) : Promise<
 			try {
 				const window = await browser.windows.get(popupOrTab.id)
 				if (window === undefined || window === null) return undefined
-				return { popupOrTab: { type: 'popup', id: popupOrTab.id }, browserObject: window }
+				return { type: 'popup', id: popupOrTab.id, window }
 			} catch(e) {
 				console.log('Failed to focus poup:', popupOrTab.id)
 				console.warn(e)

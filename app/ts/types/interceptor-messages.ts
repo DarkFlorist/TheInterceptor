@@ -432,13 +432,18 @@ export const RefreshConfirmTransactionDialogSimulation = funtypes.ReadonlyObject
 export type UpdateConfirmTransactionDialog = funtypes.Static<typeof UpdateConfirmTransactionDialog>
 export const UpdateConfirmTransactionDialog = funtypes.ReadonlyObject({
 	method: funtypes.Literal('popup_update_confirm_transaction_dialog'),
-	data: funtypes.ReadonlyArray(PendingTransaction),
+	data: funtypes.ReadonlyObject({
+		pendingTransactions: funtypes.ReadonlyArray(PendingTransaction),
+		currentBlockNumber: EthereumQuantity,
+	})
 }).asReadonly()
 
 export type ConfirmTransactionDialogPendingChanged = funtypes.Static<typeof ConfirmTransactionDialogPendingChanged>
 export const ConfirmTransactionDialogPendingChanged = funtypes.ReadonlyObject({
 	method: funtypes.Literal('popup_confirm_transaction_dialog_pending_changed'),
-	data: funtypes.ReadonlyArray(PendingTransaction),
+	data: funtypes.ReadonlyObject({
+		pendingTransactions: funtypes.ReadonlyArray(PendingTransaction),
+	})
 }).asReadonly()
 
 export type InterceptorAccessReply = funtypes.Static<typeof InterceptorAccessReply>
@@ -772,7 +777,7 @@ export const PopupMessage = funtypes.Union(
 	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_interceptorAccessReadyAndListening') }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_confirmTransactionReadyAndListening') }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_requestNewHomeData') }),
-	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_homeOpened') }),
+	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_refreshHomeData') }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_openSettings') }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_import_settings'), data: funtypes.ReadonlyObject({ fileContents: funtypes.String }) }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_get_export_settings') }),

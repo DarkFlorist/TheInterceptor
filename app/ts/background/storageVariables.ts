@@ -215,6 +215,10 @@ export async function getRpcList() {
 	}
 }
 
+export const setInterceptorStartSleepingTimestamp = async(interceptorStartSleepingTimestamp: number) => await browserStorageLocalSet({ interceptorStartSleepingTimestamp })
+
+export const getInterceptorStartSleepingTimestamp = async () => (await browserStorageLocalGet('interceptorStartSleepingTimestamp'))?.['interceptorStartSleepingTimestamp'] ?? 0
+
 export const getPrimaryRpcForChain = async (chainId: bigint) => {
 	const rpcs = await getRpcList()
 	return rpcs.find((rpc) => rpc.chainId === chainId && rpc.primary)

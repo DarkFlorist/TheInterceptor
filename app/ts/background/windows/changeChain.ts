@@ -33,7 +33,7 @@ export async function resolveChainChange(simulator: Simulator, websiteTabConnect
 	if (data === undefined || !doesUniqueRequestIdentifiersMatch(confirmation.data.uniqueRequestIdentifier, data.request.uniqueRequestIdentifier)) throw new Error('Unique request identifier mismatch in change chain')
 	const resolved = await resolve(simulator, websiteTabConnections, confirmation, data.simulationMode)
 	replyToInterceptedRequest(websiteTabConnections, { method: 'wallet_switchEthereumChain' as const, ...resolved, uniqueRequestIdentifier: data.request.uniqueRequestIdentifier })
-	if (openedDialog) await closePopupOrTabById(openedDialog.popupOrTab)
+	if (openedDialog) await closePopupOrTabById(openedDialog)
 	openedDialog = undefined
 }
 
@@ -73,7 +73,7 @@ export const openChangeChainDialog = async (
 	pendForUserReply = new Future<ChainChangeConfirmation>()
 
 	const onCloseWindowOrTab = async (popupOrTab: PopupOrTabId) => { // check if user has closed the window on their own, if so, reject signature
-		if (openedDialog === undefined || openedDialog.popupOrTab.id !== popupOrTab.id || openedDialog.popupOrTab.type !== popupOrTab.type) return
+		if (openedDialog === undefined || openedDialog.id !== popupOrTab.id || openedDialog.type !== popupOrTab.type) return
 		openedDialog = undefined
 		if (pendForUserReply === undefined) return
 		resolveChainChange(simulator, websiteTabConnections, rejectMessage(await getRpcNetworkForChain(params.params[0].chainId), request.uniqueRequestIdentifier))
@@ -103,7 +103,7 @@ export const openChangeChainDialog = async (
 
 			await setChainChangeConfirmationPromise({
 				website: website,
-				popupOrTabId: openedDialog.popupOrTab,
+				popupOrTabId: openedDialog,
 				request: request,
 				simulationMode: simulationMode,
 				rpcNetwork: await getRpcNetworkForChain(params.params[0].chainId),
@@ -121,7 +121,7 @@ export const openChangeChainDialog = async (
 	} finally {
 		removeWindowTabListeners(onCloseWindow, onCloseTab)
 		pendForUserReply = undefined
-		if (openedDialog) await closePopupOrTabById(openedDialog.popupOrTab)
+		if (openedDialog) await closePopupOrTabById(openedDialog)
 		openedDialog = undefined
 	}
 }

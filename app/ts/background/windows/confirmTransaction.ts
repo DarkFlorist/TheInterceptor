@@ -25,25 +25,36 @@ let openedDialog: PopupOrTab | undefined = undefined
 let pendingTransactions = new Map<string, Future<Confirmation>>()
 const pendingConfirmationSemaphore = new Semaphore(1)
 
-export async function updateConfirmTransactionViewWithPendingTransaction() {
+export async function updateConfirmTransactionViewWithPendingTransaction(ethereumClientService: EthereumClientService) {
 	const promises = await getPendingTransactions()
 	if (promises.length > 0) {
-		await sendPopupMessageToOpenWindows({ method: 'popup_update_confirm_transaction_dialog', data: promises })
+		const currentBlockNumberPromise = ethereumClientService.getBlockNumber()
+		await sendPopupMessageToOpenWindows({ method: 'popup_update_confirm_transaction_dialog', data: { pendingTransactions: promises, currentBlockNumber: await currentBlockNumberPromise }})
 		return true
 	}
 	return false
 }
 
-export async function updateConfirmTransactionViewWithPendingTransactionOrClose() {
-	if (await updateConfirmTransactionViewWithPendingTransaction() === true) return
-	if (openedDialog) await closePopupOrTabById(openedDialog.popupOrTab)
+export async function updateConfirmTransactionViewWithPendingTransactionOrClose(ethereumClientService: EthereumClientService) {
+	if (await updateConfirmTransactionViewWithPendingTransaction(ethereumClientService) === true) return
+	if (openedDialog) await closePopupOrTabById(openedDialog)
 	openedDialog = undefined
+}
+
+export const isConfirmTransactionFocused = async () => {
+	if (openedDialog === undefined) return false
+	const pendingTransactions = await getPendingTransactions()
+	if (pendingTransactions[0] === undefined) return false
+	const popup = await getPopupOrTabOnlyById(pendingTransactions[0].popupOrTabId)
+	if (popup === undefined) return false
+	if (popup.type === 'popup') return popup.window.focused
+	return popup.tab.active
 }
 
 export async function resolvePendingTransaction(simulator: Simulator, websiteTabConnections: WebsiteTabConnections, confirmation: TransactionConfirmation) {
 	const pending = pendingTransactions.get(getUniqueRequestIdentifierString(confirmation.data.uniqueRequestIdentifier))
 	const pendingTransaction = await removePendingTransaction(confirmation.data.uniqueRequestIdentifier)
-	await updateConfirmTransactionViewWithPendingTransactionOrClose()
+	await updateConfirmTransactionViewWithPendingTransactionOrClose(simulator.ethereum)
 	if (pendingTransaction === undefined) return
 	if (pending) {
 		return pending.resolve(confirmation)
@@ -56,7 +67,7 @@ export async function resolvePendingTransaction(simulator: Simulator, websiteTab
 }
 
 const onCloseWindowOrTab = async (popupOrTabs: PopupOrTabId) => { // check if user has closed the window on their own, if so, reject all signatures
-	if (openedDialog === undefined || openedDialog.popupOrTab.id !== popupOrTabs.id || openedDialog.popupOrTab.type !== popupOrTabs.type) return
+	if (openedDialog === undefined || openedDialog.id !== popupOrTabs.id || openedDialog.type !== popupOrTabs.type) return
 	openedDialog = undefined
 	await clearPendingTransactions()
 	pendingTransactions.forEach((pending) => pending.resolve('NoResponse'))
@@ -187,11 +198,11 @@ export async function openConfirmTransactionDialog(
 				return await openPopupOrTab({ url: getHtmlFile('confirmTransaction'), type: 'popup', height: 800, width: 600 })
 			}
 			if (!justAddToPending || openedDialog === undefined) openedDialog = await openDialog()
-			else { await tryFocusingTabOrWindow(openedDialog.popupOrTab) }
+			else { await tryFocusingTabOrWindow(openedDialog) }
 
 			if (openedDialog === undefined) return false
 			const pendingTransaction = {
-				popupOrTabId: openedDialog.popupOrTab,
+				popupOrTabId: openedDialog,
 				originalRequestParameters: transactionParams,
 				uniqueRequestIdentifier: request.uniqueRequestIdentifier,
 				simulationMode,
@@ -202,9 +213,9 @@ export async function openConfirmTransactionDialog(
 				website,
 			}
 			await appendPendingTransaction(pendingTransaction)
-			if (justAddToPending) await sendPopupMessageToOpenWindows({ method: 'popup_confirm_transaction_dialog_pending_changed', data: await getPendingTransactions() })
+			if (justAddToPending) await sendPopupMessageToOpenWindows({ method: 'popup_confirm_transaction_dialog_pending_changed', data: { pendingTransactions: await getPendingTransactions() } })
 				
-			await updateConfirmTransactionViewWithPendingTransaction()
+			await updateConfirmTransactionViewWithPendingTransaction(ethereumClientService)
 
 			const transactionToSimulate = await transactionToSimulatePromise
 			if (transactionToSimulate.success === false) {
@@ -214,11 +225,11 @@ export async function openConfirmTransactionDialog(
 					simulationResults: await refreshConfirmTransactionSimulation(simulator, ethereumClientService, activeAddress, simulationMode, request.uniqueRequestIdentifier, transactionToSimulate),
 					status: 'FailedToSimulate' as const,
 				})
-				await updateConfirmTransactionViewWithPendingTransaction()
+				await updateConfirmTransactionViewWithPendingTransaction(ethereumClientService)
 				return false
 			} else {
 				await replacePendingTransaction({ ...pendingTransaction, transactionToSimulate: transactionToSimulate, status: 'Simulating' as const })
-				await updateConfirmTransactionViewWithPendingTransaction()
+				await updateConfirmTransactionViewWithPendingTransaction(ethereumClientService)
 
 				const simulatedTx = await replacePendingTransaction({
 					...pendingTransaction,
@@ -226,7 +237,7 @@ export async function openConfirmTransactionDialog(
 					simulationResults: await refreshConfirmTransactionSimulation(simulator, ethereumClientService, activeAddress, simulationMode, request.uniqueRequestIdentifier, transactionToSimulate),
 					status: 'Simulated' as const,
 				})
-				await updateConfirmTransactionViewWithPendingTransaction()
+				await updateConfirmTransactionViewWithPendingTransaction(ethereumClientService)
 				return simulatedTx !== undefined
 			}
 		})
@@ -239,7 +250,7 @@ export async function openConfirmTransactionDialog(
 	} finally {
 		removeWindowTabListeners(onCloseWindow, onCloseTab)
 		pendingTransactions.delete(uniqueRequestIdentifier)
-		await updateConfirmTransactionViewWithPendingTransactionOrClose()
+		await updateConfirmTransactionViewWithPendingTransactionOrClose(ethereumClientService)
 	}
 }
 
