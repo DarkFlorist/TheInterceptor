@@ -17,6 +17,8 @@ import { ethers, keccak256, toUtf8Bytes } from 'ethers'
 import { dataStringWith0xStart, stringToUint8Array } from '../../utils/bigint.js'
 import { EthereumAddress, EthereumQuantity } from '../../types/wire-types.js'
 import { PopupOrTabId, Website } from '../../types/websiteAccessTypes.js'
+import { printError } from '../../utils/errors.js'
+import { PendingTransaction } from '../../types/accessRequest.js'
 
 const pendingConfirmationSemaphore = new Semaphore(1)
 
@@ -61,8 +63,18 @@ export const onCloseWindowOrTab = async (popupOrTabs: PopupOrTabId, simulator: S
 	const transactions = await getPendingTransactions()
 	const [firstTransaction] = transactions
 	if (firstTransaction?.popupOrTabId.id !== popupOrTabs.id) return
+	await resolvePendingTransactionsAsNoResponse(transactions, simulator, websiteTabConnections)
+}
+
+const resolvePendingTransactionsAsNoResponse = async (transactions: readonly PendingTransaction[], simulator: Simulator, websiteTabConnections: WebsiteTabConnections) => {
+	for (const transaction of transactions) {
+		try {
+			await resolvePendingTransaction(simulator, websiteTabConnections, { method: 'popup_confirmDialog', data: { uniqueRequestIdentifier: transaction.uniqueRequestIdentifier, action: 'noResponse', popupOrTabId: transaction.popupOrTabId } })
+		} catch(e) {
+			printError(e)
+		}
+	}
 	await clearPendingTransactions()
-	await Promise.all(transactions.map( async (transaction) => resolvePendingTransaction(simulator, websiteTabConnections, { method: 'popup_confirmDialog', data: { uniqueRequestIdentifier: transaction.uniqueRequestIdentifier, action: 'noResponse', popupOrTabId: transaction.popupOrTabId } })))
 }
 
 const formRejectMessage = (errorString: undefined | string) => {
@@ -157,6 +169,7 @@ export async function openConfirmTransactionDialog(
 	simulationMode: boolean,
 	activeAddress: bigint | undefined,
 	website: Website,
+	websiteTabConnections: WebsiteTabConnections,
 ) {
 	const uniqueRequestIdentifier = getUniqueRequestIdentifierString(request.uniqueRequestIdentifier)
 	const transactionIdentifier = EthereumQuantity.parse(keccak256(toUtf8Bytes(uniqueRequestIdentifier)))
@@ -166,11 +179,12 @@ export async function openConfirmTransactionDialog(
 
 	const addedPendingTransaction = await pendingConfirmationSemaphore.execute(async () => {
 		const getPendingTransactionWindow = async () => {
-			const [firstPendingTransaction] = await getPendingTransactions()
+			const pendingTransactions = await getPendingTransactions()
+			const [firstPendingTransaction] = pendingTransactions
 			if (firstPendingTransaction !== undefined) {
 				const alreadyOpenWindow = await getPopupOrTabOnlyById(firstPendingTransaction.popupOrTabId)
 				if (alreadyOpenWindow) return alreadyOpenWindow
-				await clearPendingTransactions()
+				await resolvePendingTransactionsAsNoResponse(pendingTransactions, simulator, websiteTabConnections)
 			}
 			return await openPopupOrTab({ url: getHtmlFile('confirmTransaction'), type: 'popup', height: 800, width: 600 })
 		}

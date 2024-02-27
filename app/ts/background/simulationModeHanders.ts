@@ -42,8 +42,9 @@ export async function sendTransaction(
 	request: InterceptedRequest,
 	simulationMode: boolean = true,
 	website: Website,
+	websiteTabConnections: WebsiteTabConnections,
 ) {
-	const action = await openConfirmTransactionDialog(simulator, ethereumClientService, request, transactionParams, simulationMode, activeAddress, website)
+	const action = await openConfirmTransactionDialog(simulator, ethereumClientService, request, transactionParams, simulationMode, activeAddress, website, websiteTabConnections)
 	if (action.type === 'doNotReply') return action
 	return { method: transactionParams.method, ...action }
 }
