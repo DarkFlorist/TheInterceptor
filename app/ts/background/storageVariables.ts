@@ -30,34 +30,41 @@ export async function clearPendingTransactions() {
 		return await browserStorageLocalSet({ transactionsPendingForUserConfirmation: [] })
 	})
 }
-export async function appendPendingTransaction(pendingTransaction: PendingTransaction) {
+
+export async function updatePendingTransactions(update: (pendingTransactions: readonly PendingTransaction[]) => Promise<readonly PendingTransaction[]>) {
 	return await pendingTransactionsSemaphore.execute(async () => {
-		const pendingTransactions = [...await getPendingTransactions(), pendingTransaction]
-		await browserStorageLocalSet({ transactionsPendingForUserConfirmation: pendingTransactions })
-		return pendingTransactions
+		const pendingTransactions = await getPendingTransactions()
+		const updated = await update(pendingTransactions)
+		await browserStorageLocalSet({ transactionsPendingForUserConfirmation: updated })
+		return updated
 	})
 }
 
-export async function replacePendingTransaction(pendingTransaction: PendingTransaction) {
-	return await pendingTransactionsSemaphore.execute(async () => {
-		const pendingTransactions = await getPendingTransactions()
-		const match = pendingTransactions.findIndex((pending) => doesUniqueRequestIdentifiersMatch(pending.uniqueRequestIdentifier, pendingTransaction.uniqueRequestIdentifier))
-		if (match < 0) return undefined
-		const replaced = replaceElementInReadonlyArray(pendingTransactions, match, pendingTransaction)
-		await browserStorageLocalSet({ transactionsPendingForUserConfirmation: replaced })
-		return pendingTransaction
+export async function updatePendingTransaction(uniqueRequestIdentifier: UniqueRequestIdentifier, update: (pendingTransaction: PendingTransaction) => Promise<PendingTransaction>) {
+	return await updatePendingTransactions(async (pendingTransactions) => {
+		console.log('updatePendingTransaction')
+		const match = pendingTransactions.findIndex((pending) => doesUniqueRequestIdentifiersMatch(pending.uniqueRequestIdentifier, uniqueRequestIdentifier))
+		if (match < 0) return pendingTransactions
+		const foundTransaction = pendingTransactions[match]
+		if (foundTransaction === undefined) return pendingTransactions
+		console.log('old')
+		console.log(foundTransaction)
+		const pendingTransaction = await update(foundTransaction)
+		console.log('replacing')
+		console.log(pendingTransaction)
+		return replaceElementInReadonlyArray(pendingTransactions, match, pendingTransaction)
 	})
+}
+
+export async function appendPendingTransaction(pendingTransaction: PendingTransaction) {
+	return await updatePendingTransactions(async (pendingTransactions) => [...pendingTransactions, pendingTransaction])
 }
 
 export async function removePendingTransaction(uniqueRequestIdentifier: UniqueRequestIdentifier) {
-	return await pendingTransactionsSemaphore.execute(async () => {
-		const promises = await getPendingTransactions()
-		const foundPromise = promises.find((promise) => doesUniqueRequestIdentifiersMatch(promise.uniqueRequestIdentifier, uniqueRequestIdentifier))
-		if (foundPromise !== undefined) {
-			const filteredPromises = promises.filter((promise) => !doesUniqueRequestIdentifiersMatch(promise.uniqueRequestIdentifier, uniqueRequestIdentifier))
-			await browserStorageLocalSet({ transactionsPendingForUserConfirmation: filteredPromises })
-		}
-		return foundPromise
+	return await updatePendingTransactions(async (pendingTransactions) => {
+		const foundPromise = pendingTransactions.find((pendingTransactions) => doesUniqueRequestIdentifiersMatch(pendingTransactions.uniqueRequestIdentifier, uniqueRequestIdentifier))
+		if (foundPromise === undefined) return pendingTransactions
+		return pendingTransactions.filter((pendingTransaction) => !doesUniqueRequestIdentifiersMatch(pendingTransaction.uniqueRequestIdentifier, uniqueRequestIdentifier))
 	})
 }
 

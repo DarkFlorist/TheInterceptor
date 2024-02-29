@@ -71,6 +71,16 @@ export const ConfirmTransactionSimulationFailed = funtypes.ReadonlyObject({
 export type ConfirmTransactionTransactionSingleVisualization = funtypes.Static<typeof ConfirmTransactionTransactionSingleVisualization>
 export const ConfirmTransactionTransactionSingleVisualization = funtypes.Union(ConfirmTransactionSimulationFailed, ConfirmTransactionSimulationStateChanged)
 
+export type PendingTransactionApprovalStatus = funtypes.Static<typeof PendingTransactionApprovalStatus>
+export const PendingTransactionApprovalStatus = funtypes.Union(
+	funtypes.ReadonlyObject({ status: funtypes.Union(funtypes.Literal('WaitingForUser'), funtypes.Literal('WaitingForSigner')) }),
+	funtypes.ReadonlyObject({
+		status: funtypes.Union(funtypes.Literal('SignerError')),
+		code: funtypes.Number,
+		message: funtypes.String,
+	}),
+)
+
 export type SimulatedPendingTransactionBase = funtypes.Static<typeof SimulatedPendingTransactionBase>
 export const SimulatedPendingTransactionBase = funtypes.ReadonlyObject({
 	popupOrTabId: PopupOrTabId,
@@ -81,6 +91,7 @@ export const SimulatedPendingTransactionBase = funtypes.ReadonlyObject({
 	created: EthereumTimestamp,
 	transactionIdentifier: EthereumQuantity,
 	website: Website,
+	approvalStatus: PendingTransactionApprovalStatus,
 })
 
 export type SimulatedPendingTransaction = funtypes.Static<typeof SimulatedPendingTransaction>
@@ -89,11 +100,11 @@ export const SimulatedPendingTransaction = funtypes.Intersect(
 	funtypes.ReadonlyObject({ simulationResults: ConfirmTransactionTransactionSingleVisualization }),
 	funtypes.Union(
 		funtypes.ReadonlyObject({
-			status: funtypes.Literal('Simulated'),
+			transactionCreationStatus: funtypes.Literal('Simulated'),
 			transactionToSimulate: WebsiteCreatedEthereumUnsignedTransaction,
 		}),
 		funtypes.ReadonlyObject({
-			status: funtypes.Literal('FailedToSimulate'),
+			transactionCreationStatus: funtypes.Literal('FailedToSimulate'),
 			transactionToSimulate: FailedToCreateWebsiteCreatedEthereumUnsignedTransaction,
 		}),
 	)
@@ -102,7 +113,7 @@ export const SimulatedPendingTransaction = funtypes.Intersect(
 export type CraftingTransactionPendingTransaction = funtypes.Static<typeof CraftingTransactionPendingTransaction>
 export const CraftingTransactionPendingTransaction = funtypes.Intersect(
 	SimulatedPendingTransactionBase,
-	funtypes.ReadonlyObject({ status: funtypes.Literal('Crafting Transaction') })
+	funtypes.ReadonlyObject({ transactionCreationStatus: funtypes.Literal('Crafting Transaction') })
 )
 
 export type WaitingForSimulationPendingTransaction = funtypes.Static<typeof WaitingForSimulationPendingTransaction>
@@ -110,7 +121,7 @@ export const WaitingForSimulationPendingTransaction = funtypes.Intersect(
 	SimulatedPendingTransactionBase,
 	funtypes.ReadonlyObject({
 		transactionToSimulate: WebsiteCreatedEthereumUnsignedTransaction,
-		status: funtypes.Literal('Simulating')
+		transactionCreationStatus: funtypes.Literal('Simulating')
 	})
 )
 

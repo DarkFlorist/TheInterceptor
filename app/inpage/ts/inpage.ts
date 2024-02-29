@@ -531,8 +531,7 @@ class InterceptorMessageListener {
 		}
 		const signerReply = await sendToSignerWithCatchError()
 		try {
-			const interceptorReply = await this.sendMessageToBackgroundPage({ method: 'signer_reply', params: [ signerReply ] })
-			pendingRequest.resolve(interceptorReply)
+			await this.sendMessageToBackgroundPage({ method: 'signer_reply', params: [ signerReply ] })
 		} catch(error: unknown) {
 			if (error instanceof Error) return pendingRequest.reject(error)
 			if (typeof error === 'object' && error !== null

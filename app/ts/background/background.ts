@@ -59,7 +59,7 @@ export const simulateGovernanceContractExecution = async (pendingTransaction: Pe
 	const returnError = (text: string) => ({ success: false as const, error: { type: 'Other' as const, message: text } })
 	try {
 		// identifies compound governane call and performs simulation if the vote passes
-		if (pendingTransaction.status !== 'Simulated') return returnError('Still simulating the voting transaction')
+		if (pendingTransaction.transactionCreationStatus !== 'Simulated') return returnError('Still simulating the voting transaction')
 		const pendingResults = pendingTransaction.simulationResults
 		if (pendingResults.statusCode !== 'success') return returnError('Voting transaction failed')
 		const fourByte = get4Byte(pendingTransaction.transactionToSimulate.transaction.input)
@@ -369,7 +369,7 @@ async function handleRPCRequest(
 		}
 		case 'eth_getStorageAt': {
 			if (forwardToSigner) return getForwardingMessage(parsedRequest)
-			return { type: 'result' as const,method: parsedRequest.method, error: { code: 10000, message: 'eth_getStorageAt not implemented' } }
+			return { type: 'result' as const, method: parsedRequest.method, error: { code: 10000, message: 'eth_getStorageAt not implemented' } }
 		}
 		case 'eth_getLogs': return await getLogs(ethereumClientService, simulationState, parsedRequest)
 		case 'eth_sign': return { type: 'result' as const,method: parsedRequest.method, error: { code: 10000, message: 'eth_sign is deprecated' } }
@@ -483,11 +483,8 @@ export const handleInterceptedRequest = async (port: browser.runtime.Port | unde
 	if (identifiedMethod !== 'notProviderMethod') {
 		if (port === undefined) return
 		const providerHandlerReturn = await providerHandler.func(simulator, websiteTabConnections, port, request, access)
-		const message: InpageScriptRequest = {
-			type: 'result' as const,
-			uniqueRequestIdentifier: request.uniqueRequestIdentifier,
-			...providerHandlerReturn,
-		}
+		if (providerHandlerReturn.type === 'doNotReply') return
+		const message: InpageScriptRequest = { uniqueRequestIdentifier: request.uniqueRequestIdentifier, ...providerHandlerReturn }
 		return replyToInterceptedRequest(websiteTabConnections, message)
 	}
 	if (access === 'hasAccess' && activeAddress === undefined && request.method === 'eth_requestAccounts') {
