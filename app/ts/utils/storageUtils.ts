@@ -1,12 +1,12 @@
 import * as funtypes from 'funtypes'
 import { EthereumAddressOrMissing, serialize } from '../types/wire-types.js'
-import { PendingChainChangeConfirmationPromise, PendingPersonalSignPromise, RpcConnectionStatus, TabState } from '../types/user-interface-types.js'
+import { PendingChainChangeConfirmationPromise, RpcConnectionStatus, TabState } from '../types/user-interface-types.js'
 import { CompleteVisualizedSimulation, EthereumSubscriptionsAndFilters } from '../types/visualizer-types.js'
 import { AddressBookEntries, ActiveAddressArray, ContactEntries } from '../types/addressBookTypes.js'
 import { Page } from '../types/exportedSettingsTypes.js'
 import { WebsiteAccessArray } from '../types/websiteAccessTypes.js'
 import { SignerName } from '../types/signerTypes.js'
-import { PendingAccessRequests, PendingTransaction } from '../types/accessRequest.js'
+import { PendingAccessRequests, PendingTransactionOrSignableMessage } from '../types/accessRequest.js'
 import { RpcEntries, RpcNetwork } from '../types/rpc.js'
 
 export type IdsOfOpenedTabs = funtypes.Static<typeof IdsOfOpenedTabs>
@@ -34,9 +34,8 @@ export const LocalStorageItems = funtypes.ReadonlyPartial({
 	pendingInterceptorAccessRequests: PendingAccessRequests,
 	contacts: ContactEntries,
 	makeMeRich: funtypes.Boolean,
-	transactionsPendingForUserConfirmation: funtypes.ReadonlyArray(PendingTransaction),
+	pendingTransactionOrMessageRequests: funtypes.ReadonlyArray(PendingTransactionOrSignableMessage),
 	ChainChangeConfirmationPromise: funtypes.Union(funtypes.Undefined, PendingChainChangeConfirmationPromise),
-	PersonalSignPromise: funtypes.Union(funtypes.Undefined, PendingPersonalSignPromise),
 	simulationResults: funtypes.Union(funtypes.Undefined, CompleteVisualizedSimulation),
 	signerName: SignerName,
 	currentTabId: funtypes.Union(funtypes.Undefined, funtypes.Number),
@@ -64,9 +63,8 @@ export const LocalStorageKey = funtypes.Union(
 	funtypes.Literal('pendingInterceptorAccessRequests'),
 	funtypes.Literal('contacts'),
 	funtypes.Literal('makeMeRich'),
-	funtypes.Literal('transactionsPendingForUserConfirmation'),
+	funtypes.Literal('pendingTransactionOrMessageRequests'),
 	funtypes.Literal('ChainChangeConfirmationPromise'),
-	funtypes.Literal('PersonalSignPromise'),
 	funtypes.Literal('simulationResults'),
 	funtypes.Literal('signerName'),
 	funtypes.Literal('currentTabId'),

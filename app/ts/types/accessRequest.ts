@@ -4,9 +4,10 @@ import { ActiveAddressEntry, AddressBookEntry } from './addressBookTypes.js'
 import { EthereumAddress, EthereumQuantity, EthereumTimestamp, OptionalEthereumAddress } from './wire-types.js'
 import { SignerName } from './signerTypes.js'
 import { InterceptedRequest, UniqueRequestIdentifier, WebsiteSocket } from '../utils/requests.js'
-import { FailedToCreateWebsiteCreatedEthereumUnsignedTransaction, NamedTokenId, ProtectorResults, SimulatedAndVisualizedTransaction, SimulationState, TokenPriceEstimate, VisualizerResult, WebsiteCreatedEthereumUnsignedTransaction, WebsiteCreatedEthereumUnsignedTransactionOrFailed } from './visualizer-types.js'
+import { FailedToCreateWebsiteCreatedEthereumUnsignedTransaction, NamedTokenId, ProtectorResults, SignedMessageTransaction, SimulatedAndVisualizedTransaction, SimulationState, TokenPriceEstimate, VisualizerResult, WebsiteCreatedEthereumUnsignedTransaction, WebsiteCreatedEthereumUnsignedTransactionOrFailed } from './visualizer-types.js'
 import { VisualizedPersonalSignRequest } from './personal-message-definitions.js'
 import { OriginalSendRequestParameters } from './JsonRpc-types.js'
+import { SignMessageParams } from './jsonRpc-signing-types.js'
 
 export type PendingAccessRequest = funtypes.Static<typeof PendingAccessRequest>
 export const PendingAccessRequest = funtypes.ReadonlyObject({
@@ -83,6 +84,7 @@ export const PendingTransactionApprovalStatus = funtypes.Union(
 
 export type SimulatedPendingTransactionBase = funtypes.Static<typeof SimulatedPendingTransactionBase>
 export const SimulatedPendingTransactionBase = funtypes.ReadonlyObject({
+	type: funtypes.Literal('Transaction'),
 	popupOrTabId: PopupOrTabId,
 	originalRequestParameters: OriginalSendRequestParameters,
 	uniqueRequestIdentifier: UniqueRequestIdentifier,
@@ -127,3 +129,20 @@ export const WaitingForSimulationPendingTransaction = funtypes.Intersect(
 
 export type PendingTransaction = funtypes.Static<typeof PendingTransaction>
 export const PendingTransaction = funtypes.Union(CraftingTransactionPendingTransaction, WaitingForSimulationPendingTransaction, SimulatedPendingTransaction)
+
+export type PendingSignableMessage = funtypes.Static<typeof PendingSignableMessage>
+export const PendingSignableMessage = funtypes.ReadonlyObject({
+	type: funtypes.Literal('SignableMessage'),
+	popupOrTabId: PopupOrTabId,
+	originalRequestParameters: SignMessageParams,
+	simulationMode: funtypes.Boolean,
+	uniqueRequestIdentifier: UniqueRequestIdentifier,
+	signedMessageTransaction: SignedMessageTransaction,
+	website: Website,
+	transactionCreationStatus: funtypes.Literal('Simulated'),
+	activeAddress: EthereumAddress,
+	visualizedPersonalSignRequest: VisualizedPersonalSignRequest,
+})
+
+export type PendingTransactionOrSignableMessage = funtypes.Static<typeof PendingTransactionOrSignableMessage>
+export const PendingTransactionOrSignableMessage = funtypes.Union(PendingSignableMessage, PendingTransaction)

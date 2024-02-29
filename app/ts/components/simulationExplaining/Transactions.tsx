@@ -16,11 +16,12 @@ import { AddressBookEntry } from '../../types/addressBookTypes.js'
 import { SignatureCard } from '../pages/PersonalSign.js'
 import { VisualizedPersonalSignRequest } from '../../types/personal-message-definitions.js'
 import { bytes32String, dataStringWith0xStart } from '../../utils/bigint.js'
-import { UniqueRequestIdentifier, doesUniqueRequestIdentifiersMatch } from '../../utils/requests.js'
+import { doesUniqueRequestIdentifiersMatch } from '../../utils/requests.js'
 import { includesWithComparator } from '../../utils/typed-arrays.js'
 import { GovernanceVoteVisualizer } from './customExplainers/GovernanceVoteVisualizer.js'
 import { EnrichedSolidityTypeComponentWithAddressBook } from '../subcomponents/solidityType.js'
 import { getAddressBookEntryOrAFiller } from '../ui-utils.js'
+import { TransactionOrMessageIdentifier } from '../../types/interceptor-messages.js'
 
 function isPositiveEvent(visResult: TokenVisualizerResultWithMetadata, ourAddressInReferenceFrame: bigint) {
 	if (visResult.type === 'ERC20') {
@@ -141,12 +142,12 @@ export function SenderReceiver({ from, to, renameAddressCallBack }: { from: Addr
 
 export function Transaction(param: TransactionVisualizationParameters) {
 	const identifiedTransaction = identifyTransaction(param.simTx).type
-	const removeTransaction = param.removeTransaction
+	const removeTransactionOrSignedMessage = param.removeTransactionOrSignedMessage
 	return (
 		<div class = 'card'>
 			<TransactionHeader
 				simTx = { param.simTx }
-				removeTransaction = { removeTransaction === undefined ? undefined : () => removeTransaction(param.simTx) }
+				removeTransactionOrSignedMessage = { removeTransactionOrSignedMessage === undefined ? undefined : () => removeTransactionOrSignedMessage({ type: 'Transaction', transactionIdentifier: param.simTx.transactionIdentifier }) }
 			/>
 			<div class = 'card-content' style = 'padding-bottom: 5px;'>
 				<div class = 'container'>
@@ -182,33 +183,31 @@ export function Transaction(param: TransactionVisualizationParameters) {
 
 type TransactionsAndSignedMessagesParams = {
 	simulationAndVisualisationResults: SimulationAndVisualisationResults
-	removeTransaction: (tx: SimulatedAndVisualizedTransaction) => void
-	removeSignedMessage: (message: VisualizedPersonalSignRequest) => void
+	removeTransactionOrSignedMessage: (transactionOrMessageIdentifier: TransactionOrMessageIdentifier) => void
 	activeAddress: bigint
 	renameAddressCallBack: RenameAddressCallBack
-	removedTransactionHashes: readonly bigint[]
-	removedSignedMessages: readonly UniqueRequestIdentifier[]
+	removedTransactionOrSignedMessages: readonly TransactionOrMessageIdentifier[]
 	addressMetaData: readonly AddressBookEntry[]
 }
 
 export function TransactionsAndSignedMessages(param: TransactionsAndSignedMessagesParams) {
-	const transactions = param.simulationAndVisualisationResults.simulatedAndVisualizedTransactions.filter((tx) => !param.removedTransactionHashes.includes(tx.transaction.hash))
-	const messages = param.simulationAndVisualisationResults.visualizedPersonalSignRequests.filter((message) => !includesWithComparator(param.removedSignedMessages, message.request.uniqueRequestIdentifier, (a, b) => doesUniqueRequestIdentifiersMatch(a, b)))
+	const transactions = param.simulationAndVisualisationResults.simulatedAndVisualizedTransactions.filter((tx) => param.removedTransactionOrSignedMessages.find((x) => x.type === 'Transaction' && x.transactionIdentifier === tx.transactionIdentifier) !== undefined)
+	const messages = param.simulationAndVisualisationResults.visualizedPersonalSignRequests.filter((message) => !includesWithComparator(param.removedTransactionOrSignedMessages.map((x) => x.type === 'SignedMessage' ? x.uniqueRequestIdentifier : undefined), message.request.uniqueRequestIdentifier, (a, b) => a !== undefined && b != undefined && doesUniqueRequestIdentifiersMatch(a, b)))
 	const transactionsAndMessages: readonly (VisualizedPersonalSignRequest | SimulatedAndVisualizedTransaction)[] = [...messages, ...transactions].sort((n1, n2) => n1.created.getTime() - n2.created.getTime())
 	return <ul>
 		{ transactionsAndMessages.map((simTx, _index) => (
 			<li>
 				{ 'activeAddress' in simTx ? <>
 					<SignatureCard
-						VisualizedPersonalSignRequest = { simTx }
+						visualizedPersonalSignRequest = { simTx }
 						renameAddressCallBack = { param.renameAddressCallBack }
-						removeSignedMessage = { param.removeSignedMessage }
+						removeTransactionOrSignedMessage = { param.removeTransactionOrSignedMessage }
 					/>
 				</> : <>
 					<Transaction
 						simTx = { simTx }
 						simulationAndVisualisationResults = { param.simulationAndVisualisationResults }
-						removeTransaction = { param.removeTransaction }
+						removeTransactionOrSignedMessage = { param.removeTransactionOrSignedMessage }
 						activeAddress = { param.activeAddress }
 						renameAddressCallBack = { param.renameAddressCallBack }
 						addressMetaData = { param.addressMetaData }

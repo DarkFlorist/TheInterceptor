@@ -8,7 +8,7 @@ import { assertNever } from '../../utils/typescript.js'
 import { WebsiteTabConnections } from '../../types/user-interface-types.js'
 import { getHtmlFile, sendPopupMessageToOpenWindows } from '../backgroundUtils.js'
 import { extractEIP712Message, validateEIP712Types } from '../../utils/eip712Parsing.js'
-import { getPendingPersonalSignPromise, getRpcNetworkForChain, getTabState, setPendingPersonalSignPromise } from '../storageVariables.js'
+import { getRpcNetworkForChain, getTabState } from '../storageVariables.js'
 import { getSettings } from '../settings.js'
 import { PopupOrTab, addWindowTabListeners, closePopupOrTabById, getPopupOrTabOnlyById, openPopupOrTab, removeWindowTabListeners } from '../../components/ui-utils.js'
 import { appendSignedMessage, simulatePersonalSign } from '../../simulation/services/SimulationModeEthereumClientService.js'
@@ -214,73 +214,6 @@ export async function craftPersonalSignPopupMessage(ethereumClientService: Ether
 			rawMessage: stringifyJSONWithBigInts(parsed, 4),
 		}
 		default: assertNever(parsed)
-	}
-}
-
-export const openPersonalSignDialog = async (
-	simulator: Simulator,
-	websiteTabConnections: WebsiteTabConnections,
-	signingParams: SignMessageParams,
-	request: InterceptedRequest,
-	simulationMode: boolean,
-	website: Website,
-	activeAddress: bigint | undefined
-) => {
-
-	const onCloseWindowOrTab = async (popupOrTabs: PopupOrTabId) => {
-		if (openedDialog === undefined || openedDialog.id !== popupOrTabs.id || openedDialog.type !== popupOrTabs.type) return
-		if (pendingPersonalSign === undefined) return
-		openedDialog = undefined
-		return await resolvePersonalSign(simulator, websiteTabConnections, rejectMessage(request.uniqueRequestIdentifier))
-	}
-	const onCloseWindow = async (id: number) => await onCloseWindowOrTab({ type: 'popup' as const, id })
-	const onCloseTab = async (id: number) => await onCloseWindowOrTab({ type: 'tab' as const, id })
-
-	if (activeAddress === undefined) return reject(signingParams)
-	const signedMessageTransaction = {
-		website,
-		created: new Date(),
-		originalRequestParameters: signingParams,
-		fakeSignedFor: activeAddress,
-		simulationMode,
-		request,
-	}
-
-	pendingPersonalSign = new Future<PersonalSignApproval>()
-	try {
-		const oldPromise = await getPendingPersonalSignPromise()
-		if (oldPromise !== undefined) {
-			if (await getPopupOrTabOnlyById(oldPromise.popupOrTabId) !== undefined) {
-				return reject(signingParams)
-			} else {
-				await setPendingPersonalSignPromise(undefined)
-			}
-		}
-
-		openedDialog = await openPopupOrTab({
-			url: getHtmlFile('personalSign'),
-			type: 'popup',
-			height: 800,
-			width: 600,
-		})
-		if (openedDialog !== undefined) {
-			addWindowTabListeners(onCloseWindow, onCloseTab)
-
-			await setPendingPersonalSignPromise({
-				popupOrTabId: openedDialog,
-				signedMessageTransaction,
-			})
-			await updatePendingPersonalSignViewWithPendingRequests(simulator.ethereum)
-		} else {
-			await resolvePersonalSign(simulator, websiteTabConnections, rejectMessage(request.uniqueRequestIdentifier))
-		}
-
-		const reply = await pendingPersonalSign
-
-		return resolve(simulator, reply, signedMessageTransaction)
-	} finally {
-		removeWindowTabListeners(onCloseWindow, onCloseTab)
-		pendingPersonalSign = undefined
 	}
 }
 

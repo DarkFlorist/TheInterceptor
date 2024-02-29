@@ -4,7 +4,7 @@ import { Simulator, runProtectorsForTransaction, visualizeTransaction } from '..
 import { getEthDonator, getSimulationResults, getTabState, updateSimulationResults, updateSimulationResultsWithCallBack } from './storageVariables.js'
 import { changeSimulationMode, getSettings, getMakeMeRich } from './settings.js'
 import { blockNumber, call, chainId, estimateGas, gasPrice, getAccounts, getBalance, getBlockByNumber, getCode, getLogs, getPermissions, getSimulationStack, getTransactionByHash, getTransactionCount, getTransactionReceipt, netVersion, personalSign, sendTransaction, subscribe, switchEthereumChain, unsubscribe, web3ClientVersion, getBlockByHash, feeHistory, installNewFilter, uninstallNewFilter, getFilterChanges, getFilterLogs } from './simulationModeHanders.js'
-import { changeActiveAddress, changeMakeMeRich, changePage, resetSimulation, confirmDialog, refreshSimulation, removeTransaction, requestAccountsFromSigner, refreshPopupConfirmTransactionSimulation, confirmPersonalSign, confirmRequestAccess, changeInterceptorAccess, changeChainDialog, popupChangeActiveRpc, enableSimulationMode, addOrModifyAddressBookEntry, getAddressBookData, removeAddressBookEntry, refreshHomeData, interceptorAccessChangeAddressOrRefresh, refreshPopupConfirmTransactionMetadata, changeSettings, importSettings, exportSettings, setNewRpcList, removeSignedMessage, simulateGovernanceContractExecutionOnPass, openNewTab, settingsOpened, changeAddOrModifyAddressWindowState, popupFetchAbiAndNameFromEtherscan, openWebPage, disableInterceptor, requestNewHomeData } from './popupMessageHandlers.js'
+import { changeActiveAddress, changeMakeMeRich, changePage, resetSimulation, confirmDialog, refreshSimulation, removeTransactionOrSignedMessage, requestAccountsFromSigner, refreshPopupConfirmTransactionSimulation, confirmRequestAccess, changeInterceptorAccess, changeChainDialog, popupChangeActiveRpc, enableSimulationMode, addOrModifyAddressBookEntry, getAddressBookData, removeAddressBookEntry, refreshHomeData, interceptorAccessChangeAddressOrRefresh, refreshPopupConfirmTransactionMetadata, changeSettings, importSettings, exportSettings, setNewRpcList, simulateGovernanceContractExecutionOnPass, openNewTab, settingsOpened, changeAddOrModifyAddressWindowState, popupFetchAbiAndNameFromEtherscan, openWebPage, disableInterceptor, requestNewHomeData } from './popupMessageHandlers.js'
 import { ProtectorResults, SimulationState, VisualizedSimulatorState, VisualizerResult, WebsiteCreatedEthereumUnsignedTransaction, WebsiteCreatedEthereumUnsignedTransactionOrFailed } from '../types/visualizer-types.js'
 import { WebsiteTabConnections } from '../types/user-interface-types.js'
 import { askForSignerAccountsFromSignerIfNotAvailable, interceptorAccessMetadataRefresh, requestAccessFromUser, updateInterceptorAccessViewWithPendingRequests } from './windows/interceptorAccess.js'
@@ -608,12 +608,10 @@ export async function popupMessageHandler(
 		case 'popup_changePage': return await changePage(parsedRequest)
 		case 'popup_requestAccountsFromSigner': return await requestAccountsFromSigner(websiteTabConnections, parsedRequest)
 		case 'popup_resetSimulation': return await resetSimulation(simulator, settings)
-		case 'popup_removeTransaction': return await removeTransaction(simulator, simulator.ethereum, parsedRequest, settings)
-		case 'popup_removeSignedMessage': return await removeSignedMessage(simulator, simulator.ethereum, parsedRequest, settings)
+		case 'popup_removeTransactionOrSignedMessage': return await removeTransactionOrSignedMessage(simulator, simulator.ethereum, parsedRequest, settings)
 		case 'popup_refreshSimulation': return await refreshSimulation(simulator, settings, false)
 		case 'popup_refreshConfirmTransactionDialogSimulation': return await refreshPopupConfirmTransactionSimulation(simulator, simulator.ethereum)
 		case 'popup_refreshConfirmTransactionMetadata': return refreshPopupConfirmTransactionMetadata(simulator.ethereum, parsedRequest)
-		case 'popup_personalSignApproval': return await confirmPersonalSign(simulator, websiteTabConnections, parsedRequest)
 		case 'popup_interceptorAccess': return await confirmRequestAccess(simulator, websiteTabConnections, parsedRequest)
 		case 'popup_changeInterceptorAccess': return await changeInterceptorAccess(simulator, websiteTabConnections, parsedRequest)
 		case 'popup_changeActiveRpc': return await popupChangeActiveRpc(simulator, websiteTabConnections, parsedRequest, settings)
@@ -633,7 +631,6 @@ export async function popupMessageHandler(
 		case 'popup_refreshInterceptorAccessMetadata': return await interceptorAccessMetadataRefresh()
 		case 'popup_interceptorAccessChangeAddress': return await interceptorAccessChangeAddressOrRefresh(websiteTabConnections, parsedRequest)
 		case 'popup_interceptorAccessRefresh': return await interceptorAccessChangeAddressOrRefresh(websiteTabConnections, parsedRequest)
-		case 'popup_refreshPersonalSignMetadata': return await updatePendingPersonalSignViewWithPendingRequests(simulator.ethereum)
 		case 'popup_ChangeSettings': return await changeSettings(simulator, parsedRequest)
 		case 'popup_openSettings': return await openNewTab('settingsView')
 		case 'popup_import_settings': return await importSettings(parsedRequest)

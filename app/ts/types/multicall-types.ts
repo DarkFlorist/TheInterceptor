@@ -80,7 +80,7 @@ export const CallResultLog = funtypes.Intersect(
 		data: EthereumData,
 		topics: funtypes.ReadonlyArray(EthereumBytes32),
 	}),
-	funtypes.ReadonlyPartial({ // these are not optional in the spec, but they are not standard for logs
+	funtypes.ReadonlyPartial({ // these are not optional in the eth_simulateV1 spec, but they are not standard for logs
 		transactionHash: EthereumBytes32,
 		transactionIndex: EthereumQuantity,
 	})

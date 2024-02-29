@@ -291,7 +291,7 @@ export const setPrependTransactionsQueue = async (ethereumClientService: Ethereu
 	return await setSimulationTransactionsAndSignedMessages(ethereumClientService, newState, [], [])
 }
 
-export const removeTransaction = async (ethereumClientService: EthereumClientService, simulationState: SimulationState, transactionHash: bigint): Promise<SimulationState>  => {
+export const removeTransactionOrSignedMessage = async (ethereumClientService: EthereumClientService, simulationState: SimulationState, transactionHash: bigint): Promise<SimulationState>  => {
 	const filtered = getNonPrependedSimulatedTransactionsFromState(simulationState).filter((transaction) => transaction.signedTransaction.hash !== transactionHash)
 	return await setSimulationTransactionsAndSignedMessages(ethereumClientService, simulationState, filtered.map((x) => convertSimulatedTransactionToWebsiteCreatedEthereumUnsignedTransaction(x)), simulationState.signedMessages)
 }
@@ -304,15 +304,15 @@ export const removeSignedMessageFromSimulation = async (ethereumClientService: E
 	return await setSimulationTransactionsAndSignedMessages(ethereumClientService, simulationState, nonPrepended, newSignedMessages)
 }
 
-export const removeTransactionAndUpdateTransactionNonces = async (ethereumClientService: EthereumClientService, simulationState: SimulationState, transactionHash: bigint): Promise<SimulationState>  => {
-	const transactionToBeRemoved = simulationState.simulatedTransactions.find((transaction) => transaction.signedTransaction.hash === transactionHash)
+export const removeTransactionAndUpdateTransactionNonces = async (ethereumClientService: EthereumClientService, simulationState: SimulationState, transactionIdentifier: bigint): Promise<SimulationState>  => {
+	const transactionToBeRemoved = simulationState.simulatedTransactions.find((transaction) => transaction.transactionIdentifier === transactionIdentifier)
 	if (transactionToBeRemoved === undefined) return simulationState
 
 	let newTransactions: WebsiteCreatedEthereumUnsignedTransaction[] = []
 	let transactionWasFound = false
 
 	for (const transaction of getNonPrependedSimulatedTransactionsFromState(simulationState)) {
-		if (transactionHash === transaction.signedTransaction.hash) {
+		if (transactionIdentifier === transaction.transactionIdentifier) {
 			transactionWasFound = true
 			continue
 		}
