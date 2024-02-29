@@ -42,16 +42,11 @@ export async function updatePendingTransactions(update: (pendingTransactions: re
 
 export async function updatePendingTransaction(uniqueRequestIdentifier: UniqueRequestIdentifier, update: (pendingTransaction: PendingTransaction) => Promise<PendingTransaction>) {
 	return await updatePendingTransactions(async (pendingTransactions) => {
-		console.log('updatePendingTransaction')
 		const match = pendingTransactions.findIndex((pending) => doesUniqueRequestIdentifiersMatch(pending.uniqueRequestIdentifier, uniqueRequestIdentifier))
 		if (match < 0) return pendingTransactions
 		const foundTransaction = pendingTransactions[match]
 		if (foundTransaction === undefined) return pendingTransactions
-		console.log('old')
-		console.log(foundTransaction)
 		const pendingTransaction = await update(foundTransaction)
-		console.log('replacing')
-		console.log(pendingTransaction)
 		return replaceElementInReadonlyArray(pendingTransactions, match, pendingTransaction)
 	})
 }
