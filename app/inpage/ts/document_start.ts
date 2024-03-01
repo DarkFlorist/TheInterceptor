@@ -1,3 +1,4 @@
+# required so this file is seen as a module by TypeScript, which lets us extend the `globalThis` definition
 export {}
 
 function listenInContentScript(conectionName: string | undefined) {
