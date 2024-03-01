@@ -184,7 +184,7 @@ async function askUserForAccessOnConnectionUpdate(simulator: Simulator, websiteT
 	const details = getConnectionDetails(websiteTabConnections, socket)
 	if (details === undefined) return
 
-	const website = await retrieveWebsiteDetails(socket.tabId, websiteOrigin)
+	const website = { websiteOrigin, ...await retrieveWebsiteDetails(socket.tabId) }
 	await requestAccessFromUser(simulator, websiteTabConnections, socket, website, undefined, activeAddress, settings, activeAddress?.address)
 }
 

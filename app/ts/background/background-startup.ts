@@ -50,7 +50,7 @@ export async function onContentScriptConnected(simulator: Simulator, port: brows
 	if (port?.sender?.url === undefined) return
 	const websiteOrigin = (new URL(port.sender.url)).hostname
 	const identifier = websiteSocketToString(socket)
-	const websitePromise = retrieveWebsiteDetails(socket.tabId, websiteOrigin)
+	const websitePromise = (async () => ({ websiteOrigin, ...await retrieveWebsiteDetails(socket.tabId) }))()
 
 	const tabConnection = websiteTabConnections.get(socket.tabId)
 	const newConnection = {
@@ -164,7 +164,7 @@ async function startup() {
 			if (changeInfo.status !== 'complete') return
 			if (tab.url === undefined) return
 			const websiteOrigin = (new URL(tab.url)).hostname
-			const website = await retrieveWebsiteDetails(tabId, websiteOrigin)
+			const website = { websiteOrigin, ...await retrieveWebsiteDetails(tabId) }
 			await updateTabState(tabId, (previousState: TabState) => ({ ...previousState, website }))
 			await updateExtensionIcon(tabId, websiteOrigin)
 		} catch(error: unknown) {
