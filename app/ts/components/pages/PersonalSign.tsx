@@ -1,31 +1,21 @@
-import { useState, useEffect } from 'preact/hooks'
-import { checksummedAddress, dataStringWith0xStart, isHexEncodedNumber, stringToUint8Array } from '../../utils/bigint.js'
-import { RenameAddressCallBack, RpcConnectionStatus } from '../../types/user-interface-types.js'
-import Hint from '../subcomponents/Hint.js'
-import { ErrorCheckBox, ErrorComponent, UnexpectedError } from '../subcomponents/Error.js'
+import { useState } from 'preact/hooks'
+import { dataStringWith0xStart, isHexEncodedNumber, stringToUint8Array } from '../../utils/bigint.js'
+import { RenameAddressCallBack } from '../../types/user-interface-types.js'
 import { MOCK_PRIVATE_KEYS_ADDRESS, getChainName } from '../../utils/constants.js'
-import { AddNewAddress } from './AddNewAddress.js'
-import { MessageToPopup, TransactionOrMessageIdentifier } from '../../types/interceptor-messages.js'
-import { sendPopupMessageToBackgroundPage } from '../../background/backgroundUtils.js'
+import { TransactionOrMessageIdentifier } from '../../types/interceptor-messages.js'
 import { assertNever } from '../../utils/typescript.js'
 import { SimpleTokenApprovalVisualisation } from '../simulationExplaining/customExplainers/SimpleTokenApprovalVisualisation.js'
 import { SmallAddress, WebsiteOriginText } from '../subcomponents/address.js'
-import { SignerLogoText } from '../subcomponents/signers.js'
-import { CenterToPageTextSpinner } from '../subcomponents/Spinner.js'
 import { SomeTimeAgo } from '../subcomponents/SomeTimeAgo.js'
 import { VisualizedPersonalSignRequest, VisualizedPersonalSignRequestPermit, VisualizedPersonalSignRequestPermit2, VisualizedPersonalSignRequestSafeTx } from '../../types/personal-message-definitions.js'
 import { OrderComponents, OrderComponentsExtraDetails } from '../simulationExplaining/customExplainers/OpenSeaOrder.js'
 import { Ether } from '../subcomponents/coins.js'
-import { tryFocusingTabOrWindow, humanReadableDateFromSeconds, CellElement } from '../ui-utils.js'
+import { humanReadableDateFromSeconds, CellElement } from '../ui-utils.js'
 import { AddressBookEntry } from '../../types/addressBookTypes.js'
 import { EnrichedEIP712, EnrichedEIP712Message, TypeEnrichedEIP712MessageRecord } from '../../types/eip721.js'
-import { serialize } from '../../types/wire-types.js'
 import { TransactionCreated } from '../simulationExplaining/SimulationSummary.js'
 import { EnrichedSolidityTypeComponent } from '../subcomponents/solidityType.js'
 import { QuarantineReasons } from '../simulationExplaining/Transactions.js'
-import { ModifyAddressWindowState } from '../../types/visualizer-types.js'
-import { isEthSimulateV1Node } from '../../background/settings.js'
-import { NetworkErrors } from '../App.js'
 
 type SignatureCardParams = {
 	visualizedPersonalSignRequest: VisualizedPersonalSignRequest
@@ -454,156 +444,4 @@ export function SignatureCard(params: SignatureCardParams) {
 
 export function isPossibleToSignMessage(visualizedPersonalSignRequest: VisualizedPersonalSignRequest, activeAddress: bigint) {
 	return !(visualizedPersonalSignRequest.simulationMode && (activeAddress !== MOCK_PRIVATE_KEYS_ADDRESS || visualizedPersonalSignRequest.method !== 'personal_sign'))
-}
-
-export function PersonalSign() {
-	const [addingNewAddress, setAddingNewAddress] = useState<ModifyAddressWindowState | 'renameAddressModalClosed'> ('renameAddressModalClosed')
-	const [visualizedPersonalSignRequest, setVisualizedPersonalSignRequest] = useState<VisualizedPersonalSignRequest | undefined>(undefined)
-	const [forceSend, setForceSend] = useState<boolean>(false)
-	const [unexpectedError, setUnexpectedError] = useState<string | undefined>(undefined)
-	const [rpcConnectionStatus, setRpcConnectionStatus] = useState<RpcConnectionStatus>(undefined)
-
-	useEffect(() => {
-		function popupMessageListener(msg: unknown) {
-			const maybeParsed = MessageToPopup.safeParse(msg)
-			if (!maybeParsed.success) return // not a message we are interested in
-			const parsed = maybeParsed.value
-			if (parsed.method === 'popup_new_block_arrived') return setRpcConnectionStatus(parsed.data.rpcConnectionStatus)
-			if (parsed.method === 'popup_failed_to_get_block') return setRpcConnectionStatus(parsed.data.rpcConnectionStatus)
-			if (parsed.method === 'popup_addressBookEntriesChanged') return refreshMetadata()
-			if (parsed.method !== 'popup_personal_sign_request') return
-			setVisualizedPersonalSignRequest(PersonalSignRequest.parse(parsed).data)
-		}
-		browser.runtime.onMessage.addListener(popupMessageListener)
-		return () => browser.runtime.onMessage.removeListener(popupMessageListener)
-	})
-
-	useEffect(() => { sendPopupMessageToBackgroundPage({ method: 'popup_personalSignReadyAndListening' }) }, [])
-
-	function refreshMetadata() {
-		if (visualizedPersonalSignRequest === undefined) return
-		sendPopupMessageToBackgroundPage(serialize(RefreshPersonalSignMetadata, { method: 'popup_refreshPersonalSignMetadata' as const, data: visualizedPersonalSignRequest }) as PartiallyParsedRefreshPersonalSignMetadata)
-	}
-
-	async function approve() {
-		if (visualizedPersonalSignRequest === undefined) throw new Error('VisualizedPersonalSignRequest is missing')
-		await tryFocusingTabOrWindow({ type: 'tab', id: visualizedPersonalSignRequest.request.uniqueRequestIdentifier.requestSocket.tabId })
-		await sendPopupMessageToBackgroundPage({ method: 'popup_personalSignApproval', data: { uniqueRequestIdentifier: visualizedPersonalSignRequest.request.uniqueRequestIdentifier, accept: true } })
-	}
-
-	async function reject() {
-		if (visualizedPersonalSignRequest === undefined) throw new Error('VisualizedPersonalSignRequest is missing')
-		await tryFocusingTabOrWindow({ type: 'tab', id: visualizedPersonalSignRequest.request.uniqueRequestIdentifier.requestSocket.tabId })
-		await sendPopupMessageToBackgroundPage({ method: 'popup_personalSignApproval', data: { uniqueRequestIdentifier: visualizedPersonalSignRequest.request.uniqueRequestIdentifier, accept: false } })
-	}
-
-	function isConfirmDisabled(visualizedPersonalSignRequest: VisualizedPersonalSignRequest, activeAddress: bigint) {
-		return !isPossibleToSignMessage(visualizedPersonalSignRequest, activeAddress) && !forceSend
-			&& !(visualizedPersonalSignRequest.rpcNetwork.httpsRpc !== undefined && isEthSimulateV1Node(visualizedPersonalSignRequest.rpcNetwork.httpsRpc))
-	}
-	
-	function Buttons() {
-		if (visualizedPersonalSignRequest === undefined) return <></>
-		const identified = identifySignature(visualizedPersonalSignRequest)
-	
-		return <div style = 'display: flex; flex-direction: row;'>
-			<button className = 'button is-primary is-danger button-overflow dialog-button-left' onClick = { reject } >
-				{ identified.rejectAction }
-			</button>
-			<button className = 'button is-primary button-overflow dialog-button-right'
-				onClick = { approve }
-				disabled = { isConfirmDisabled(visualizedPersonalSignRequest, visualizedPersonalSignRequest.activeAddress.address) }>
-				{ visualizedPersonalSignRequest.simulationMode
-					? `${ identified.simulationAction }!`
-					: <SignerLogoText { ...{ signerName: visualizedPersonalSignRequest.signerName, text: identified.signingAction, } }/>
-				}
-			</button>
-		</div>
-	}
-
-	function renameAddressCallBack(entry: AddressBookEntry) {
-		setAddingNewAddress({
-			windowStateId: 'AddNewAddressAccess',
-			errorState: undefined,
-			incompleteAddressBookEntry: {
-				addingAddress: false,
-				askForAddressAccess: false,
-				symbol: undefined,
-				decimals: undefined,
-				logoUri: undefined,
-				...entry,
-				address: checksummedAddress(entry.address),
-				abi: 'abi' in entry ? entry.abi : undefined,
-			}
-		})
-	}
-
-	if (visualizedPersonalSignRequest === undefined) return <CenterToPageTextSpinner text = 'Visualizing...'/>
-	
-	return (
-		<main>
-			<Hint>
-				<div class = { `modal ${ addingNewAddress !== 'renameAddressModalClosed' ? 'is-active' : ''}` }>
-					{ addingNewAddress === 'renameAddressModalClosed'
-						? <></>
-						: <AddNewAddress
-							setActiveAddressAndInformAboutIt = { undefined }
-							modifyAddressWindowState = { addingNewAddress }
-							close = { () => { setAddingNewAddress('renameAddressModalClosed') } }
-							activeAddress = { undefined }
-						/>
-					}
-				</div>
-				
-				<div class = 'block popup-block popup-block-scroll' style = 'padding:0px'>
-					<div style = 'position: sticky; top: 0; z-index:1'>
-						<UnexpectedError close = { () => { setUnexpectedError(undefined) } } message = { unexpectedError }/>
-						<NetworkErrors rpcConnectionStatus = { rpcConnectionStatus }/>
-					</div>
-					
-					<div class = 'popup-contents'>
-						<div>
-							<header class = 'card-header window-header' style = 'height: 40px; border-top-left-radius: 0px; border-top-right-radius: 0px'>
-								<div class = 'card-header-icon noselect nopointer' style = 'overflow: hidden;'>
-									<WebsiteOriginText { ...visualizedPersonalSignRequest.website } />
-								</div>
-								<p class = 'card-header-title' style = 'overflow: hidden; font-weight: unset; flex-direction: row-reverse;'>
-									{ visualizedPersonalSignRequest.activeAddress === undefined ? <></> : <SmallAddress
-										addressBookEntry = { visualizedPersonalSignRequest.activeAddress }
-										renameAddressCallBack = { renameAddressCallBack }
-									/> }
-								</p>
-							</header>
-							<div style = 'margin: 10px;'>
-								<SignatureCard
-									visualizedPersonalSignRequest = { visualizedPersonalSignRequest }
-									renameAddressCallBack = { renameAddressCallBack }
-									removeTransactionOrSignedMessage = { undefined }
-								/>
-							</div>
-						</div>
-
-						<nav class = 'window-footer popup-button-row' style = 'position: sticky; bottom: 0; width: 100%;'>
-							{ isPossibleToSignMessage(visualizedPersonalSignRequest, visualizedPersonalSignRequest.activeAddress.address) && visualizedPersonalSignRequest.quarantine
-								? <div style = 'display: grid'>
-									<div style = 'margin: 0px; margin-bottom: 10px; margin-left: 20px; margin-right: 20px; '>
-										<ErrorCheckBox text = { 'I understand that there are issues with this signature request but I want to send it anyway against Interceptors recommendations.' } checked = { forceSend } onInput = { setForceSend } />
-									</div>
-								</div>
-								: <></>
-							}
-							{ !(visualizedPersonalSignRequest.rpcNetwork.httpsRpc !== undefined && isEthSimulateV1Node(visualizedPersonalSignRequest.rpcNetwork.httpsRpc))
-								&& visualizedPersonalSignRequest.simulationMode && (visualizedPersonalSignRequest.activeAddress.address === undefined || visualizedPersonalSignRequest.activeAddress.address !== MOCK_PRIVATE_KEYS_ADDRESS || visualizedPersonalSignRequest.method !== 'personal_sign')
-								? <div style = 'display: grid'>
-									<ErrorComponent text = 'Unfortunately we cannot simulate message signing as it requires private key access 😢.'/>
-								</div>
-								: <></>
-							}
-							<Buttons/>
-						</nav>
-					</div>
-				</div>
-			</Hint>
-		</main>
-	)
 }

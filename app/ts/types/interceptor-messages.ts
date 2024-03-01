@@ -444,6 +444,7 @@ export type UpdateConfirmTransactionDialog = funtypes.Static<typeof UpdateConfir
 export const UpdateConfirmTransactionDialog = funtypes.ReadonlyObject({
 	method: funtypes.Union(funtypes.Literal('popup_confirm_transaction_dialog_pending_changed'), funtypes.Literal('popup_update_confirm_transaction_dialog')),
 	data: funtypes.ReadonlyObject({
+		simulationState:
 		pendingTransactionAndSignableMessages: funtypes.ReadonlyArray(PendingTransactionOrSignableMessage),
 		currentBlockNumber: EthereumQuantity,
 	})
@@ -772,7 +773,6 @@ export const PopupMessage = funtypes.Union(
 	GetAddressBookData,
 	RemoveAddressBookEntry,
 	OpenAddressBook,
-	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_personalSignReadyAndListening') }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_changeChainReadyAndListening') }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_interceptorAccessReadyAndListening') }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_confirmTransactionReadyAndListening') }),

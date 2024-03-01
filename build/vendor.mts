@@ -85,7 +85,6 @@ const files = [
 	'html/background.html',
 	'html/popup.html',
 	'html/confirmTransaction.html',
-	'html/personalSign.html',
 	'html/interceptorAccess.html',
 	'html/changeChain.html',
 	'html/addressBook.html',

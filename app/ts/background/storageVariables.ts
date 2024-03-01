@@ -7,7 +7,7 @@ import { defaultRpcs, getSettings } from './settings.js'
 import { UniqueRequestIdentifier, doesUniqueRequestIdentifiersMatch } from '../utils/requests.js'
 import { AddressBookEntries, AddressBookEntry } from '../types/addressBookTypes.js'
 import { SignerName } from '../types/signerTypes.js'
-import { PendingAccessRequest, PendingAccessRequests, PendingTransaction, PendingTransactionOrSignableMessage } from '../types/accessRequest.js'
+import { PendingAccessRequest, PendingAccessRequests, PendingSignableMessage, PendingTransaction, PendingTransactionOrSignableMessage } from '../types/accessRequest.js'
 import { RpcEntries, RpcNetwork } from '../types/rpc.js'
 import { replaceElementInReadonlyArray } from '../utils/typed-arrays.js'
 
@@ -47,6 +47,18 @@ export async function updatePendingTransaction(uniqueRequestIdentifier: UniqueRe
 		const foundTransaction = pendingTransactions[match]
 		if (foundTransaction === undefined) return pendingTransactions
 		if (foundTransaction.type !== 'Transaction') return pendingTransactions
+		const pendingTransaction = await update(foundTransaction)
+		return replaceElementInReadonlyArray(pendingTransactions, match, pendingTransaction)
+	})
+}
+
+export async function updatePendingSignableMessage(uniqueRequestIdentifier: UniqueRequestIdentifier, update: (pendingTransaction: PendingSignableMessage) => Promise<PendingSignableMessage>) {
+	return await updatePendingTransactions(async (pendingTransactions) => {
+		const match = pendingTransactions.findIndex((pending) => doesUniqueRequestIdentifiersMatch(pending.uniqueRequestIdentifier, uniqueRequestIdentifier))
+		if (match < 0) return pendingTransactions
+		const foundTransaction = pendingTransactions[match]
+		if (foundTransaction === undefined) return pendingTransactions
+		if (foundTransaction.type !== 'SignableMessage') return pendingTransactions
 		const pendingTransaction = await update(foundTransaction)
 		return replaceElementInReadonlyArray(pendingTransactions, match, pendingTransaction)
 	})

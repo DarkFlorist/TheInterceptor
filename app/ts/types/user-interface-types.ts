@@ -1,7 +1,7 @@
 import { StateUpdater } from 'preact/hooks'
 import * as funtypes from 'funtypes'
 import { EthereumAddress, EthereumBlockHeader, EthereumQuantity, EthereumTimestamp, OptionalEthereumAddress } from './wire-types.js'
-import { SimulatedAndVisualizedTransaction, SimulationAndVisualisationResults, SimulationUpdatingState, SimulationResultState, SignedMessageTransaction, MaybeParsedEvents, ModifyAddressWindowState } from './visualizer-types.js'
+import { SimulatedAndVisualizedTransaction, SimulationAndVisualisationResults, SimulationUpdatingState, SimulationResultState, MaybeParsedEvents, ModifyAddressWindowState } from './visualizer-types.js'
 import { IdentifiedSwapWithMetadata } from '../components/simulationExplaining/SwapTransactions.js'
 import { InterceptedRequest, WebsiteSocket } from '../utils/requests.js'
 import { ActiveAddress, ActiveAddressEntry, AddressBookEntry } from './addressBookTypes.js'
@@ -178,10 +178,4 @@ export const PendingChainChangeConfirmationPromise = funtypes.ReadonlyObject({
 	request: InterceptedRequest,
 	rpcNetwork: RpcNetwork,
 	simulationMode: funtypes.Boolean,
-})
-
-export type PendingPersonalSignPromise = funtypes.Static<typeof PendingPersonalSignPromise>
-export const PendingPersonalSignPromise = funtypes.ReadonlyObject({
-	popupOrTabId: PopupOrTabId,
-	signedMessageTransaction: SignedMessageTransaction,
 })

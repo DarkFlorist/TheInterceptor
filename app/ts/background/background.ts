@@ -21,7 +21,7 @@ import { FetchResponseError, JsonRpcResponseError, handleUnexpectedError, isFail
 import { formSimulatedAndVisualizedTransaction } from '../components/formVisualizerResults.js'
 import { updateConfirmTransactionViewWithPendingTransaction } from './windows/confirmTransaction.js'
 import { updateChainChangeViewWithPendingRequest } from './windows/changeChain.js'
-import { craftPersonalSignPopupMessage, updatePendingPersonalSignViewWithPendingRequests } from './windows/personalSign.js'
+import { craftPersonalSignPopupMessage } from './windows/personalSign.js'
 import { InterceptedRequest, UniqueRequestIdentifier, WebsiteSocket } from '../utils/requests.js'
 import { replyToInterceptedRequest } from './messageSending.js'
 import { EthGetStorageAtParams, EthereumJsonRpcRequest, SendRawTransactionParams, SendTransactionParams, SupportedEthereumJsonRpcRequestMethods, WalletAddEthereumChain } from '../types/JsonRpc-types.js'
@@ -59,7 +59,7 @@ export const simulateGovernanceContractExecution = async (pendingTransaction: Pe
 	const returnError = (text: string) => ({ success: false as const, error: { type: 'Other' as const, message: text } })
 	try {
 		// identifies compound governane call and performs simulation if the vote passes
-		if (pendingTransaction.transactionCreationStatus !== 'Simulated') return returnError('Still simulating the voting transaction')
+		if (pendingTransaction.transactionOrMessageCreationStatus !== 'Simulated') return returnError('Still simulating the voting transaction')
 		const pendingResults = pendingTransaction.simulationResults
 		if (pendingResults.statusCode !== 'success') return returnError('Voting transaction failed')
 		const fourByte = get4Byte(pendingTransaction.transactionToSimulate.transaction.input)
@@ -352,7 +352,7 @@ async function handleRPCRequest(
 		case 'eth_signTypedData_v1':
 		case 'eth_signTypedData_v2':
 		case 'eth_signTypedData_v3':
-		case 'eth_signTypedData_v4': return await personalSign(simulator, websiteTabConnections, parsedRequest, request, settings.simulationMode, website, activeAddress)
+		case 'eth_signTypedData_v4': return await personalSign(simulator, activeAddress, ethereumClientService, parsedRequest, request, !forwardToSigner, website, websiteTabConnections)
 		case 'wallet_switchEthereumChain': return await switchEthereumChain(simulator, websiteTabConnections, ethereumClientService, parsedRequest, request, settings.simulationMode, website)
 		case 'wallet_requestPermissions': return await getAccounts(activeAddress)
 		case 'wallet_getPermissions': return await getPermissions()
@@ -621,7 +621,6 @@ export async function popupMessageHandler(
 		case 'popup_getAddressBookData': return await getAddressBookData(parsedRequest)
 		case 'popup_removeAddressBookEntry': return await removeAddressBookEntry(simulator, websiteTabConnections, parsedRequest)
 		case 'popup_openAddressBook': return await openNewTab('addressBook')
-		case 'popup_personalSignReadyAndListening': return await updatePendingPersonalSignViewWithPendingRequests(simulator.ethereum)
 		case 'popup_changeChainReadyAndListening': return await updateChainChangeViewWithPendingRequest()
 		case 'popup_interceptorAccessReadyAndListening': return await updateInterceptorAccessViewWithPendingRequests()
 		case 'popup_confirmTransactionReadyAndListening': return await updateConfirmTransactionViewWithPendingTransaction(simulator.ethereum)

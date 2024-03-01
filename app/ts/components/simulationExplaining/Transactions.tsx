@@ -191,7 +191,7 @@ type TransactionsAndSignedMessagesParams = {
 }
 
 export function TransactionsAndSignedMessages(param: TransactionsAndSignedMessagesParams) {
-	const transactions = param.simulationAndVisualisationResults.simulatedAndVisualizedTransactions.filter((tx) => param.removedTransactionOrSignedMessages.find((x) => x.type === 'Transaction' && x.transactionIdentifier === tx.transactionIdentifier) !== undefined)
+	const transactions = param.simulationAndVisualisationResults.simulatedAndVisualizedTransactions.filter((tx) => param.removedTransactionOrSignedMessages.find((x) => x.type === 'Transaction' && x.transactionIdentifier === tx.transactionIdentifier) === undefined)
 	const messages = param.simulationAndVisualisationResults.visualizedPersonalSignRequests.filter((message) => !includesWithComparator(param.removedTransactionOrSignedMessages.map((x) => x.type === 'SignedMessage' ? x.uniqueRequestIdentifier : undefined), message.request.uniqueRequestIdentifier, (a, b) => a !== undefined && b != undefined && doesUniqueRequestIdentifiersMatch(a, b)))
 	const transactionsAndMessages: readonly (VisualizedPersonalSignRequest | SimulatedAndVisualizedTransaction)[] = [...messages, ...transactions].sort((n1, n2) => n1.created.getTime() - n2.created.getTime())
 	return <ul>
