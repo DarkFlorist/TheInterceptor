@@ -50,7 +50,10 @@ function listenInContentScript(conectionName: string | undefined) {
 	})
 }
 
-function injectScript(content: any) {
+function injectScript(content: string) {
+	if (globalThis.interceptorInjected) return
+	globalThis.interceptorInjected = true
+
 	try {
 		const container = document.head || document.documentElement
 		const scriptTag = document.createElement('script')
