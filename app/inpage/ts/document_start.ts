@@ -1,3 +1,5 @@
+export {}
+
 function listenInContentScript(conectionName: string | undefined) {
 	/**
 	 * this script executed within the context of the active tab when the user clicks the extension bar button
@@ -48,6 +50,10 @@ function listenInContentScript(conectionName: string | undefined) {
 		globalThis.removeEventListener('message', listener)
 		listenInContentScript(connectionNameNotUndefined)
 	})
+}
+
+declare global {
+	var interceptorInjected: true | undefined
 }
 
 function injectScript(content: string) {
