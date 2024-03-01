@@ -1,6 +1,3 @@
-// required so this file is seen as a module by TypeScript, which lets us extend the `globalThis` definition
-export {}
-
 function listenInContentScript(conectionName: string | undefined) {
 	/**
 	 * this script executed within the context of the active tab when the user clicks the extension bar button
@@ -53,13 +50,9 @@ function listenInContentScript(conectionName: string | undefined) {
 	})
 }
 
-declare global {
-	var interceptorInjected: true | undefined
-}
-
 function injectScript(content: string) {
-	if (globalThis.interceptorInjected) return
-	globalThis.interceptorInjected = true
+	if ((globalThis as unknown as { interceptorInjected: true | undefined }).interceptorInjected) return
+	;(globalThis as unknown as { interceptorInjected?: boolean }).interceptorInjected = true
 
 	try {
 		const container = document.head || document.documentElement
