@@ -187,14 +187,14 @@ export const TransactionConfirmation = funtypes.ReadonlyObject({
 			funtypes.Union(
 				funtypes.ReadonlyObject({
 					action: funtypes.Literal('signerIncluded'),
-					transactionHash: EthereumBytes32,
+					signerReply: funtypes.Unknown,
 				}),
 				funtypes.ReadonlyObject({
 					action: funtypes.Union(funtypes.Literal('accept'), funtypes.Literal('noResponse')),
 				}),
 				funtypes.ReadonlyObject({
 					action: funtypes.Literal('reject'),
-					transactionErrorString: funtypes.Union(funtypes.String, funtypes.Undefined),
+					errorString: funtypes.Union(funtypes.String, funtypes.Undefined),
 				}),
 			)
 		)
@@ -296,9 +296,9 @@ export const EnableSimulationMode = funtypes.ReadonlyObject({
 
 export type TransactionOrMessageIdentifier = funtypes.Static<typeof TransactionOrMessageIdentifier>
 export const TransactionOrMessageIdentifier = funtypes.Union(
-	funtypes.ReadonlyObject({ type: funtypes.Literal('Transaction'), transactionIdentifier: funtypes.BigInt }),
+	funtypes.ReadonlyObject({ type: funtypes.Literal('Transaction'), transactionIdentifier: EthereumQuantity }),
 	funtypes.ReadonlyObject({ type: funtypes.Literal('MakeYouRichTransaction') }),
-	funtypes.ReadonlyObject({ type: funtypes.Literal('SignedMessage'), uniqueRequestIdentifier: UniqueRequestIdentifier })
+	funtypes.ReadonlyObject({ type: funtypes.Literal('SignedMessage'), messageIdentifier: EthereumQuantity })
 )
 
 export type RemoveTransaction = funtypes.Static<typeof RemoveTransaction>

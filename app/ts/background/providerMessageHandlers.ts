@@ -3,7 +3,7 @@ import { TabState, WebsiteTabConnections } from '../types/user-interface-types.j
 import { EthereumAccountsReply, EthereumChainReply } from '../types/JsonRpc-types.js'
 import { changeActiveAddressAndChainAndResetSimulation } from './background.js'
 import { getSocketFromPort, sendInternalWindowMessage, sendPopupMessageToOpenWindows } from './backgroundUtils.js'
-import { getRpcNetworkForChain, getTabState, setDefaultSignerName, updatePendingTransaction, updateTabState } from './storageVariables.js'
+import { getRpcNetworkForChain, getTabState, setDefaultSignerName, updatePendingTransactionOrMessage, updateTabState } from './storageVariables.js'
 import { getMetamaskCompatibilityMode, getSettings } from './settings.js'
 import { resolveSignerChainChange } from './windows/changeChain.js'
 import { ApprovalState } from './accessManagement.js'
@@ -12,8 +12,7 @@ import { sendSubscriptionReplyOrCallBackToPort } from './messageSending.js'
 import { Simulator } from '../simulation/simulator.js'
 import { METAMASK_ERROR_USER_REJECTED_REQUEST } from '../utils/constants.js'
 import { handleUnexpectedError } from '../utils/errors.js'
-import { resolvePendingTransaction, updateConfirmTransactionView } from './windows/confirmTransaction.js'
-import { EthereumBytes32 } from '../types/wire-types.js'
+import { resolvePendingTransactionOrMessage, updateConfirmTransactionView } from './windows/confirmTransaction.js'
 
 export async function ethAccountsReply(simulator: Simulator, websiteTabConnections: WebsiteTabConnections, port: browser.runtime.Port, request: ProviderMessage, _connectInfoapproval: ApprovalState) {
 	const returnValue = { type: 'result' as const, method: 'eth_accounts_reply' as const, result: '0x' as const }
@@ -108,17 +107,23 @@ export async function signerReply(simulator: Simulator, websiteTabConnections: W
 	const params = signerReply.params[0]
 	const doNotReply = { type: 'doNotReply' as const }
 	switch(params.forwardRequest.method) {
+		case 'personal_sign':
+		case 'eth_signTypedData':
+		case 'eth_signTypedData_v1':
+		case 'eth_signTypedData_v2':
+		case 'eth_signTypedData_v3':
+		case 'eth_signTypedData_v4':
 		case 'eth_sendRawTransaction':
 		case 'eth_sendTransaction': {
 			const uniqueRequestIdentifier = { requestId: params.forwardRequest.requestId, requestSocket: request.uniqueRequestIdentifier.requestSocket }
 			if (params.success) {
 				try {
-					await resolvePendingTransaction(simulator, websiteTabConnections, {
+					await resolvePendingTransactionOrMessage(simulator, websiteTabConnections, {
 						method: 'popup_confirmDialog',
 						data: {
 							uniqueRequestIdentifier,
 							action: 'signerIncluded',
-							transactionHash: EthereumBytes32.parse(params.reply),
+							signerReply: params.reply,
 						}
 					})
 				} catch(e) {
@@ -127,11 +132,11 @@ export async function signerReply(simulator: Simulator, websiteTabConnections: W
 				return doNotReply
 			}
 			if (params.error.code === METAMASK_ERROR_USER_REJECTED_REQUEST) {
-				await updatePendingTransaction(uniqueRequestIdentifier, async (transaction) => ({ ...transaction, approvalStatus: { status: 'WaitingForUser' } }))
+				await updatePendingTransactionOrMessage(uniqueRequestIdentifier, async (transaction) => ({ ...transaction, approvalStatus: { status: 'WaitingForUser' } }))
 				await updateConfirmTransactionView(simulator.ethereum)
 				return doNotReply
 			}
-			await updatePendingTransaction(uniqueRequestIdentifier, async (transaction) => ({ ...transaction, approvalStatus: { status: 'SignerError', ...params.error } }))
+			await updatePendingTransactionOrMessage(uniqueRequestIdentifier, async (transaction) => ({ ...transaction, approvalStatus: { status: 'SignerError', ...params.error } }))
 			await updateConfirmTransactionView(simulator.ethereum)
 			return doNotReply
 		}

@@ -9,7 +9,6 @@ import { EthGetLogsResponse, EthGetLogsRequest, EthTransactionReceiptResponse, M
 import { handleERC1155TransferBatch, handleERC1155TransferSingle } from '../logHandlers.js'
 import { assertNever } from '../../utils/typescript.js'
 import { SignMessageParams } from '../../types/jsonRpc-signing-types.js'
-import { UniqueRequestIdentifier, doesUniqueRequestIdentifiersMatch } from '../../utils/requests.js'
 import { StateOverrides } from '../../types/multicall-types.js'
 import { getCodeByteCode } from '../../utils/ethereumByteCodes.js'
 import { isEthSimulateV1Node } from '../../background/settings.js'
@@ -211,7 +210,7 @@ export const appendTransaction = async (ethereumClientService: EthereumClientSer
 
 export const setSimulationTransactionsAndSignedMessages = async (ethereumClientService: EthereumClientService, simulationState: SimulationState, unsignedTxts: readonly WebsiteCreatedEthereumUnsignedTransaction[], signedMessages: readonly SignedMessageTransaction[]): Promise<SimulationState>  => {
 	const parentBlock = await ethereumClientService.getBlock()
-	if (unsignedTxts.length === 0 && simulationState.prependTransactionsQueue.length === 0 && unsignedTxts.length === 0) {
+	if (unsignedTxts.length === 0 && simulationState.prependTransactionsQueue.length === 0 && unsignedTxts.length === 0 && signedMessages.length === 0) {
 		return {
 			prependTransactionsQueue: simulationState.prependTransactionsQueue,
 			simulatedTransactions: [],
@@ -296,9 +295,9 @@ export const removeTransactionOrSignedMessage = async (ethereumClientService: Et
 	return await setSimulationTransactionsAndSignedMessages(ethereumClientService, simulationState, filtered.map((x) => convertSimulatedTransactionToWebsiteCreatedEthereumUnsignedTransaction(x)), simulationState.signedMessages)
 }
 
-export const removeSignedMessageFromSimulation = async (ethereumClientService: EthereumClientService, simulationState: SimulationState, rawMessageToRemove: UniqueRequestIdentifier): Promise<SimulationState>  => {
+export const removeSignedMessageFromSimulation = async (ethereumClientService: EthereumClientService, simulationState: SimulationState, messageIdentifier: EthereumQuantity): Promise<SimulationState>  => {
 	const numberOfMessages = simulationState.signedMessages.length
-	const newSignedMessages = simulationState.signedMessages.filter((message) => !doesUniqueRequestIdentifiersMatch(message.request.uniqueRequestIdentifier, rawMessageToRemove))
+	const newSignedMessages = simulationState.signedMessages.filter((message) => message.messageIdentifier !== messageIdentifier)
 	if (numberOfMessages === newSignedMessages.length) return simulationState
 	const nonPrepended = getNonPrependedSimulatedTransactionsFromState(simulationState).map((x) => convertSimulatedTransactionToWebsiteCreatedEthereumUnsignedTransaction(x))
 	return await setSimulationTransactionsAndSignedMessages(ethereumClientService, simulationState, nonPrepended, newSignedMessages)
@@ -934,10 +933,7 @@ export const appendSignedMessage = async (ethereumClientService: EthereumClientS
 			signedMessages: [signedMessage],
 		}
 	}
-	return {
-		...simulationState,
-		signedMessages: simulationState.signedMessages.concat(signedMessage)
-	}
+	return { ...simulationState, signedMessages: simulationState.signedMessages.concat(signedMessage) }
 }
 
 // takes the most recent block that the application is querying and does the calculation based on that

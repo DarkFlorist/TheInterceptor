@@ -302,6 +302,7 @@ export const SignedMessageTransaction = funtypes.ReadonlyObject({
 	originalRequestParameters: SignMessageParams,
 	request: InterceptedRequest,
 	simulationMode: funtypes.Boolean,
+	messageIdentifier: EthereumQuantity,
 })
 
 export type SimulationState = funtypes.Static<typeof SimulationState>

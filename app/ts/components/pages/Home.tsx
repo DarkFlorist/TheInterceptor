@@ -174,7 +174,7 @@ function FirstCard(param: FirstCardParams) {
 
 function SimulationResults(param: SimulationStateParam) {
 	if (param.simulationAndVisualisationResults === undefined) return <></>
-	if (param.simulationAndVisualisationResults.simulatedAndVisualizedTransactions.length === 0) {
+	if (param.simulationAndVisualisationResults.simulatedAndVisualizedTransactions.length === 0 && param.simulationAndVisualisationResults.visualizedPersonalSignRequests.length === 0) {
 		return <div style = 'padding: 10px'> <DinoSays text = { 'Give me some transactions to munch on!' } /> </div>
 	}
 

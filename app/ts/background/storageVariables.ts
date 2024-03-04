@@ -7,7 +7,7 @@ import { defaultRpcs, getSettings } from './settings.js'
 import { UniqueRequestIdentifier, doesUniqueRequestIdentifiersMatch } from '../utils/requests.js'
 import { AddressBookEntries, AddressBookEntry } from '../types/addressBookTypes.js'
 import { SignerName } from '../types/signerTypes.js'
-import { PendingAccessRequest, PendingAccessRequests, PendingSignableMessage, PendingTransaction, PendingTransactionOrSignableMessage } from '../types/accessRequest.js'
+import { PendingAccessRequest, PendingAccessRequests, PendingTransactionOrSignableMessage } from '../types/accessRequest.js'
 import { RpcEntries, RpcNetwork } from '../types/rpc.js'
 import { replaceElementInReadonlyArray } from '../utils/typed-arrays.js'
 
@@ -16,7 +16,7 @@ export const setIdsOfOpenedTabs = async (ids: PartialIdsOfOpenedTabs) => await b
 
 export async function getPendingTransactionsAndMessages(): Promise<readonly PendingTransactionOrSignableMessage[]> {
 	try {
-		return (await browserStorageLocalGet('pendingTransactionOrMessageRequests'))?.['pendingTransactionOrMessageRequests'] ?? []
+		return (await browserStorageLocalGet('pendingTransactionsAndMessages'))?.['pendingTransactionsAndMessages'] ?? []
 	} catch(e) {
 		console.warn('Pending transactions were corrupt:')
 		console.warn(e)
@@ -24,55 +24,35 @@ export async function getPendingTransactionsAndMessages(): Promise<readonly Pend
 	}
 }
 
+export const clearPendingTransactions = async () => await updatePendingTransactionOrMessages(async () => [])
+
 const pendingTransactionsSemaphore = new Semaphore(1)
-export async function clearPendingTransactions() {
+export async function updatePendingTransactionOrMessages(update: (pendingTransactionsOrMessages: readonly PendingTransactionOrSignableMessage[]) => Promise<readonly PendingTransactionOrSignableMessage[]>) {
 	return await pendingTransactionsSemaphore.execute(async () => {
-		return await browserStorageLocalSet({ pendingTransactionOrMessageRequests: [] })
+		const pendingTransactionsAndMessages = await update(await getPendingTransactionsAndMessages())
+		await browserStorageLocalSet({ pendingTransactionsAndMessages: pendingTransactionsAndMessages })
 	})
 }
 
-export async function updatePendingTransactions(update: (pendingTransactions: readonly PendingTransactionOrSignableMessage[]) => Promise<readonly PendingTransactionOrSignableMessage[]>) {
-	return await pendingTransactionsSemaphore.execute(async () => {
-		const pendingTransactions = await getPendingTransactionsAndMessages()
-		const updated = await update(pendingTransactions)
-		await browserStorageLocalSet({ pendingTransactionOrMessageRequests: updated })
-		return updated
+export async function updatePendingTransactionOrMessage(uniqueRequestIdentifier: UniqueRequestIdentifier, update: (pendingTransactionOrMessage: PendingTransactionOrSignableMessage) => Promise<PendingTransactionOrSignableMessage>) {
+	await updatePendingTransactionOrMessages(async (pendingTransactionsOrMessages) => {
+		const match = pendingTransactionsOrMessages.findIndex((pending) => doesUniqueRequestIdentifiersMatch(pending.uniqueRequestIdentifier, uniqueRequestIdentifier))
+		if (match < 0) return pendingTransactionsOrMessages
+		const found = pendingTransactionsOrMessages[match]
+		if (found === undefined) return pendingTransactionsOrMessages
+		return replaceElementInReadonlyArray(pendingTransactionsOrMessages, match, await update(found))
 	})
 }
 
-export async function updatePendingTransaction(uniqueRequestIdentifier: UniqueRequestIdentifier, update: (pendingTransaction: PendingTransaction) => Promise<PendingTransaction>) {
-	return await updatePendingTransactions(async (pendingTransactions) => {
-		const match = pendingTransactions.findIndex((pending) => doesUniqueRequestIdentifiersMatch(pending.uniqueRequestIdentifier, uniqueRequestIdentifier))
-		if (match < 0) return pendingTransactions
-		const foundTransaction = pendingTransactions[match]
-		if (foundTransaction === undefined) return pendingTransactions
-		if (foundTransaction.type !== 'Transaction') return pendingTransactions
-		const pendingTransaction = await update(foundTransaction)
-		return replaceElementInReadonlyArray(pendingTransactions, match, pendingTransaction)
-	})
+export async function appendPendingTransactionOrMessage(pendingTransactionOrMessage: PendingTransactionOrSignableMessage) {
+	await updatePendingTransactionOrMessages(async (pendingTransactionsOrMessages) => [...pendingTransactionsOrMessages, pendingTransactionOrMessage])
 }
 
-export async function updatePendingSignableMessage(uniqueRequestIdentifier: UniqueRequestIdentifier, update: (pendingTransaction: PendingSignableMessage) => Promise<PendingSignableMessage>) {
-	return await updatePendingTransactions(async (pendingTransactions) => {
-		const match = pendingTransactions.findIndex((pending) => doesUniqueRequestIdentifiersMatch(pending.uniqueRequestIdentifier, uniqueRequestIdentifier))
-		if (match < 0) return pendingTransactions
-		const foundTransaction = pendingTransactions[match]
-		if (foundTransaction === undefined) return pendingTransactions
-		if (foundTransaction.type !== 'SignableMessage') return pendingTransactions
-		const pendingTransaction = await update(foundTransaction)
-		return replaceElementInReadonlyArray(pendingTransactions, match, pendingTransaction)
-	})
-}
-
-export async function appendPendingTransactionOrMessage(pendingTransaction: PendingTransactionOrSignableMessage) {
-	return await updatePendingTransactions(async (pendingTransactions) => [...pendingTransactions, pendingTransaction])
-}
-
-export async function removePendingTransaction(uniqueRequestIdentifier: UniqueRequestIdentifier) {
-	return await updatePendingTransactions(async (pendingTransactions) => {
-		const foundPromise = pendingTransactions.find((pendingTransactions) => doesUniqueRequestIdentifiersMatch(pendingTransactions.uniqueRequestIdentifier, uniqueRequestIdentifier))
-		if (foundPromise === undefined) return pendingTransactions
-		return pendingTransactions.filter((pendingTransaction) => !doesUniqueRequestIdentifiersMatch(pendingTransaction.uniqueRequestIdentifier, uniqueRequestIdentifier))
+export async function removePendingTransactionOrMessage(uniqueRequestIdentifier: UniqueRequestIdentifier) {
+	await updatePendingTransactionOrMessages(async (pendingTransactionsOrMessages) => {
+		const foundPromise = pendingTransactionsOrMessages.find((pendingTransactionsOrMessages) => doesUniqueRequestIdentifiersMatch(pendingTransactionsOrMessages.uniqueRequestIdentifier, uniqueRequestIdentifier))
+		if (foundPromise === undefined) return pendingTransactionsOrMessages
+		return pendingTransactionsOrMessages.filter((pendingTransactionOrMessage) => !doesUniqueRequestIdentifiersMatch(pendingTransactionOrMessage.uniqueRequestIdentifier, uniqueRequestIdentifier))
 	})
 }
 

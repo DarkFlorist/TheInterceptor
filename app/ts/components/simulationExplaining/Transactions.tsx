@@ -16,8 +16,6 @@ import { AddressBookEntry } from '../../types/addressBookTypes.js'
 import { SignatureCard } from '../pages/PersonalSign.js'
 import { VisualizedPersonalSignRequest } from '../../types/personal-message-definitions.js'
 import { bytes32String, dataStringWith0xStart } from '../../utils/bigint.js'
-import { doesUniqueRequestIdentifiersMatch } from '../../utils/requests.js'
-import { includesWithComparator } from '../../utils/typed-arrays.js'
 import { GovernanceVoteVisualizer } from './customExplainers/GovernanceVoteVisualizer.js'
 import { EnrichedSolidityTypeComponentWithAddressBook } from '../subcomponents/solidityType.js'
 import { getAddressBookEntryOrAFiller } from '../ui-utils.js'
@@ -143,11 +141,15 @@ export function SenderReceiver({ from, to, renameAddressCallBack }: { from: Addr
 export function Transaction(param: TransactionVisualizationParameters) {
 	const identifiedTransaction = identifyTransaction(param.simTx).type
 	const removeTransactionOrSignedMessage = param.removeTransactionOrSignedMessage
+	const remove = removeTransactionOrSignedMessage === undefined ? undefined : () => {
+		if (identifiedTransaction === 'MakeYouRichTransaction') return removeTransactionOrSignedMessage({ type: 'MakeYouRichTransaction' })
+		return removeTransactionOrSignedMessage({ type: 'Transaction', transactionIdentifier: param.simTx.transactionIdentifier })
+	}
 	return (
 		<div class = 'card'>
 			<TransactionHeader
 				simTx = { param.simTx }
-				removeTransactionOrSignedMessage = { removeTransactionOrSignedMessage === undefined ? undefined : () => removeTransactionOrSignedMessage({ type: 'Transaction', transactionIdentifier: param.simTx.transactionIdentifier }) }
+				removeTransactionOrSignedMessage = { remove }
 			/>
 			<div class = 'card-content' style = 'padding-bottom: 5px;'>
 				<div class = 'container'>
@@ -192,7 +194,7 @@ type TransactionsAndSignedMessagesParams = {
 
 export function TransactionsAndSignedMessages(param: TransactionsAndSignedMessagesParams) {
 	const transactions = param.simulationAndVisualisationResults.simulatedAndVisualizedTransactions.filter((tx) => param.removedTransactionOrSignedMessages.find((x) => x.type === 'Transaction' && x.transactionIdentifier === tx.transactionIdentifier) === undefined)
-	const messages = param.simulationAndVisualisationResults.visualizedPersonalSignRequests.filter((message) => !includesWithComparator(param.removedTransactionOrSignedMessages.map((x) => x.type === 'SignedMessage' ? x.uniqueRequestIdentifier : undefined), message.request.uniqueRequestIdentifier, (a, b) => a !== undefined && b != undefined && doesUniqueRequestIdentifiersMatch(a, b)))
+	const messages = param.simulationAndVisualisationResults.visualizedPersonalSignRequests.filter((message) => !param.removedTransactionOrSignedMessages.map((x) => x.type === 'SignedMessage' ? x.messageIdentifier : undefined).includes(message.messageIdentifier))
 	const transactionsAndMessages: readonly (VisualizedPersonalSignRequest | SimulatedAndVisualizedTransaction)[] = [...messages, ...transactions].sort((n1, n2) => n1.created.getTime() - n2.created.getTime())
 	return <ul>
 		{ transactionsAndMessages.map((simTx, _index) => (
@@ -202,6 +204,7 @@ export function TransactionsAndSignedMessages(param: TransactionsAndSignedMessag
 						visualizedPersonalSignRequest = { simTx }
 						renameAddressCallBack = { param.renameAddressCallBack }
 						removeTransactionOrSignedMessage = { param.removeTransactionOrSignedMessage }
+						numberOfUnderTransactions = { 0 }
 					/>
 				</> : <>
 					<Transaction

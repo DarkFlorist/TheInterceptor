@@ -21,12 +21,12 @@ type SignatureCardParams = {
 	visualizedPersonalSignRequest: VisualizedPersonalSignRequest
 	renameAddressCallBack: RenameAddressCallBack
 	removeTransactionOrSignedMessage: ((transactionOrMessageIdentifier: TransactionOrMessageIdentifier) => void) | undefined
+	numberOfUnderTransactions: number,
 }
 
 type SignatureHeaderParams = {
 	visualizedPersonalSignRequest: VisualizedPersonalSignRequest
-	renameAddressCallBack: RenameAddressCallBack
-	removeTransactionOrSignedMessage: ((transactionOrMessageIdentifier: TransactionOrMessageIdentifier) => void) | undefined
+	removeTransactionOrSignedMessage?: ((transactionOrMessageIdentifier: TransactionOrMessageIdentifier) => void) | undefined
 }
 
 export function identifySignature(data: VisualizedPersonalSignRequest) {
@@ -38,7 +38,7 @@ export function identifySignature(data: VisualizedPersonalSignRequest) {
 			signingAction: 'Sign Opensea order',
 		}
 		case 'SafeTx': return {
-			title: 'Arbitary Gnosis Safe message signing request',
+			title: 'Arbitary Gnosis Safe message',
 			rejectAction: 'Reject Gnosis Safe message',
 			simulationAction: 'Simulate Gnosis Safe message',
 			signingAction: 'Sign Gnosis Safe message',
@@ -53,7 +53,7 @@ export function identifySignature(data: VisualizedPersonalSignRequest) {
 			}
 		}
 		case 'NotParsed': return {
-			title: 'Arbitary Ethereum message signing request',
+			title: 'Arbitary Ethereum message',
 			rejectAction: 'Reject arbitary message',
 			simulationAction: 'Simulate arbitary message',
 			signingAction: 'Sign arbitary message',
@@ -82,26 +82,6 @@ export function identifySignature(data: VisualizedPersonalSignRequest) {
 	}
 }
 
-type SignatureHeaderReducedParams = {
-	visualizedPersonalSignRequest: VisualizedPersonalSignRequest
-}
-
-export function SignatureHeaderReduced(params: SignatureHeaderReducedParams) {
-	return <header class = 'card-header'>
-		<div class = 'card-header-icon unset-cursor'>
-			<span class = 'icon'>
-				<img src = { params.visualizedPersonalSignRequest.simulationMode ? '../img/head-simulating.png' : '../img/head-signing.png' } />
-			</span>
-		</div>
-		<p class = 'card-header-title' style = 'white-space: nowrap;'>
-			{ identifySignature(params.visualizedPersonalSignRequest).title }
-		</p>
-		<p class = 'card-header-icon unsetcursor' style = { `margin-left: auto; margin-right: 0; overflow: hidden;` }>
-			<WebsiteOriginText { ...params.visualizedPersonalSignRequest.website } />
-		</p>
-	</header>
-}
-
 export function SignatureHeader(params: SignatureHeaderParams) {
 	const removeSignedMessage = params.removeTransactionOrSignedMessage
 	return <header class = 'card-header'>
@@ -117,7 +97,7 @@ export function SignatureHeader(params: SignatureHeaderParams) {
 			<WebsiteOriginText { ...params.visualizedPersonalSignRequest.website } />
 		</p>
 		{ removeSignedMessage !== undefined
-			? <button class = 'card-header-icon' aria-label = 'remove' onClick = { () => removeSignedMessage({ type: 'SignedMessage', uniqueRequestIdentifier: params.visualizedPersonalSignRequest.request.uniqueRequestIdentifier }) }>
+			? <button class = 'card-header-icon' aria-label = 'remove' onClick = { () => removeSignedMessage({ type: 'SignedMessage', messageIdentifier: params.visualizedPersonalSignRequest.messageIdentifier }) }>
 				<span class = 'icon' style = 'color: var(--text-color);'> X </span>
 			</button>
 			: <></>
@@ -416,8 +396,10 @@ export function Signer({ signer, renameAddressCallBack }: { signer: AddressBookE
 	</span>
 }
 
+const HALF_HEADER_HEIGHT = 48 / 2
+
 export function SignatureCard(params: SignatureCardParams) {
-	return <div class = 'card'>
+	return <div class = 'card' style = { `top: ${ params.numberOfUnderTransactions * -HALF_HEADER_HEIGHT }px` }>
 		<SignatureHeader { ...params }/>
 		<div class = 'card-content' style = 'padding-bottom: 5px;'>
 			<div class = 'container'>

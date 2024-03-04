@@ -1,9 +1,9 @@
 import { changeActiveAddressAndChainAndResetSimulation, changeActiveRpc, getPrependTransactions, refreshConfirmTransactionSimulation, updateSimulationState, updateSimulationMetadata, simulateGovernanceContractExecution } from './background.js'
 import { getSettings, setUseTabsInsteadOfPopup, setMakeMeRich, setPage, setUseSignersAddressAsActiveAddress, updateWebsiteAccess, exportSettingsAndAddressBook, importSettingsAndAddressBook, getMakeMeRich, getUseTabsInsteadOfPopup, getMetamaskCompatibilityMode, setMetamaskCompatibilityMode, getPage } from './settings.js'
-import { getPendingTransactionsAndMessages, getCurrentTabId, getTabState, saveCurrentTabId, setRpcList, getRpcList, getPrimaryRpcForChain, getRpcConnectionStatus, updateUserAddressBookEntries, getSimulationResults, setIdsOfOpenedTabs, getIdsOfOpenedTabs, updatePendingTransaction } from './storageVariables.js'
+import { getPendingTransactionsAndMessages, getCurrentTabId, getTabState, saveCurrentTabId, setRpcList, getRpcList, getPrimaryRpcForChain, getRpcConnectionStatus, updateUserAddressBookEntries, getSimulationResults, setIdsOfOpenedTabs, getIdsOfOpenedTabs, updatePendingTransactionOrMessage } from './storageVariables.js'
 import { Simulator, parseEvents } from '../simulation/simulator.js'
 import { ChangeActiveAddress, ChangeMakeMeRich, ChangePage, RemoveTransaction, RequestAccountsFromSigner, TransactionConfirmation, InterceptorAccess, ChangeInterceptorAccess, ChainChangeConfirmation, EnableSimulationMode, ChangeActiveChain, AddOrEditAddressBookEntry, GetAddressBookData, RemoveAddressBookEntry, InterceptorAccessRefresh, InterceptorAccessChangeAddress, Settings, RefreshConfirmTransactionMetadata, RefreshInterceptorAccessMetadata, ChangeSettings, ImportSettings, SetRpcList, UpdateHomePage, SimulateGovernanceContractExecutionReply, SimulateGovernanceContractExecution, ChangeAddOrModifyAddressWindowState, FetchAbiAndNameFromEtherscan, OpenWebPage, DisableInterceptor } from '../types/interceptor-messages.js'
-import { formEthSendTransaction, formSendRawTransaction, resolvePendingTransaction, updateConfirmTransactionView } from './windows/confirmTransaction.js'
+import { formEthSendTransaction, formSendRawTransaction, resolvePendingTransactionOrMessage, updateConfirmTransactionView } from './windows/confirmTransaction.js'
 import { getAddressMetadataForAccess, requestAddressChange, resolveInterceptorAccess } from './windows/interceptorAccess.js'
 import { resolveChainChange } from './windows/changeChain.js'
 import { sendMessageToApprovedWebsitePorts, setInterceptorDisabledForWebsite, updateWebsiteApprovalAccesses } from './accessManagement.js'
@@ -29,7 +29,7 @@ import { Website } from '../types/websiteAccessTypes.js'
 import { makeSureInterceptorIsNotSleeping } from './sleeping.js'
 
 export async function confirmDialog(simulator: Simulator, websiteTabConnections: WebsiteTabConnections, confirmation: TransactionConfirmation) {
-	await resolvePendingTransaction(simulator, websiteTabConnections, confirmation)
+	await resolvePendingTransactionOrMessage(simulator, websiteTabConnections, confirmation)
 }
 
 export async function confirmRequestAccess(simulator: Simulator, websiteTabConnections: WebsiteTabConnections, confirmation: InterceptorAccess) {
@@ -140,7 +140,7 @@ export async function removeTransactionOrSignedMessage(simulator: Simulator, eth
 		if (simulationState === undefined) return
 		if (params.data.type === 'MakeYouRichTransaction') return
 		if (params.data.type === 'Transaction') return await removeTransactionAndUpdateTransactionNonces(ethereumClientService, simulationState, params.data.transactionIdentifier)
-		return await removeSignedMessageFromSimulation(ethereumClientService, simulationState, params.data.uniqueRequestIdentifier)
+		return await removeSignedMessageFromSimulation(ethereumClientService, simulationState, params.data.messageIdentifier)
 	}, settings.activeSimulationAddress, true)
 }
 
@@ -191,7 +191,7 @@ export async function refreshPopupConfirmTransactionSimulation(simulator: Simula
 	if (transactionToSimulate.success === false) return
 	const refreshMessage = await refreshConfirmTransactionSimulation(simulator, ethereumClientService, firstTxn.activeAddress, firstTxn.simulationMode, firstTxn.uniqueRequestIdentifier, transactionToSimulate)
 	
-	await updatePendingTransaction(firstTxn.uniqueRequestIdentifier, async (transaction) => ({...transaction, simulationResults: refreshMessage }))
+	await updatePendingTransactionOrMessage(firstTxn.uniqueRequestIdentifier, async (transaction) => ({...transaction, simulationResults: refreshMessage }))
 	await updateConfirmTransactionView(ethereumClientService)
 }
 

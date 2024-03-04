@@ -25,7 +25,7 @@ import { ErrorComponent } from '../subcomponents/Error.js'
 import { WebsiteSocket } from '../../utils/requests.js'
 import { Link } from '../subcomponents/link.js'
 import { NetworkErrors } from '../App.js'
-import { SignatureCard, SignatureHeaderReduced, identifySignature, isPossibleToSignMessage } from './PersonalSign.js'
+import { SignatureCard, SignatureHeader, identifySignature, isPossibleToSignMessage } from './PersonalSign.js'
 import { isEthSimulateV1Node } from '../../background/settings.js'
 import { MOCK_PRIVATE_KEYS_ADDRESS } from '../../utils/constants.js'
 import { VisualizedPersonalSignRequest } from '../../types/personal-message-definitions.js'
@@ -41,6 +41,7 @@ const getResultsForTransaction = (results: readonly SimulatedAndVisualizedTransa
 const HALF_HEADER_HEIGHT = 48 / 2
 
 function UnderTransactions(param: UnderTransactionsParams) {
+	const absoluteStyle = 'background-color: var(--disabled-card-color); position: absolute; width: 100%; height: 100%; top: 0px'
 	const nTx = param.pendingTransactionsAndSignableMessages.length
 	return <div style = { `position: relative; top: ${ nTx * -HALF_HEADER_HEIGHT }px;` }>
 		{ param.pendingTransactionsAndSignableMessages.map((pendingTransaction, index) => {
@@ -59,7 +60,7 @@ function UnderTransactions(param: UnderTransactionsParams) {
 						<WebsiteOriginText { ...pendingTransaction.website } />
 					</p>
 				</header>
-				<div style = 'background-color: var(--disabled-card-color); position: absolute; width: 100%; height: 100%; top: 0px'></div>
+				<div style = { absoluteStyle }></div>
 			</div>
 			if (pendingTransaction.type === 'Transaction') {
 				if (pendingTransaction.simulationResults.statusCode === 'success') {
@@ -67,19 +68,18 @@ function UnderTransactions(param: UnderTransactionsParams) {
 					if (simTx === undefined) throw new Error('No simulated and visualized transactions')
 					return <div class = 'card' style = { style }>
 						<TransactionHeader simTx = { simTx } />
-						<div style = 'background-color: var(--disabled-card-color); position: absolute; width: 100%; height: 100%; top: 0px'></div>
+						<div style = { absoluteStyle }></div>
 					</div>
 				}
 				return <div class = 'card' style = { style }>
 					<TransactionHeaderForFailedToSimulate website = { pendingTransaction.transactionToSimulate.website } />
-					<div style = 'background-color: var(--disabled-card-color); position: absolute; width: 100%; height: 100%; top: 0px'></div>
-				</div>
-			} else {
-				return <div class = 'card' style = { style }>
-					<SignatureHeaderReduced visualizedPersonalSignRequest = { pendingTransaction.visualizedPersonalSignRequest }/>
-					<div style = 'background-color: var(--disabled-card-color); position: absolute; width: 100%; height: 100%; top: 0px'></div>
+					<div style = { absoluteStyle }></div>
 				</div>
 			}
+			return <div class = 'card' style = { style }>
+				<SignatureHeader visualizedPersonalSignRequest = { pendingTransaction.visualizedPersonalSignRequest }/>
+				<div style = { absoluteStyle }></div>
+			</div>
 		}) }
 	</div>
 }
@@ -88,7 +88,7 @@ type TransactionNamesParams = { completeVisualizedSimulation: CompleteVisualized
 const TransactionNames = (param: TransactionNamesParams) => {
 	if (param.completeVisualizedSimulation === undefined || param.completeVisualizedSimulation.simulationResultState !== 'done') return <></>
 	const transactionsAndMessages: readonly (VisualizedPersonalSignRequest | SimulatedAndVisualizedTransaction)[] = [...param.completeVisualizedSimulation.visualizedPersonalSignRequests, ...param.completeVisualizedSimulation.simulatedAndVisualizedTransactions].sort((n1, n2) => n1.created.getTime() - n2.created.getTime())
-	const names = transactionsAndMessages.map((transactionOrMessage) => 'transaction' in transactionOrMessage ? identifyTransaction(transactionOrMessage).title : identifySignature(transactionOrMessage))
+	const names = transactionsAndMessages.map((transactionOrMessage) => 'transaction' in transactionOrMessage ? identifyTransaction(transactionOrMessage).title : identifySignature(transactionOrMessage).title)
 	return <div class = 'block' style = 'margin-bottom: 10px;'>
 		<nav class = 'breadcrumb has-succeeds-separator is-small'>
 			<ul>
@@ -112,6 +112,7 @@ export type TransactionCardParams = {
 	renameAddressCallBack: (entry: AddressBookEntry) => void,
 	currentBlockNumber: bigint | undefined,
 	rpcConnectionStatus: RpcConnectionStatus,
+	numberOfUnderTransactions: number,
 }
 
 export function TransactionCard(param: TransactionCardParams) {
@@ -133,7 +134,7 @@ export function TransactionCard(param: TransactionCardParams) {
 	const simTx = getResultsForTransaction(simulationAndVisualisationResults.simulatedAndVisualizedTransactions, param.currentPendingTransaction.transactionIdentifier)
 	if (simTx === undefined) {
 		return <>
-			<div class = 'card'>
+			<div class = 'card' style = { `top: ${ param.numberOfUnderTransactions * -HALF_HEADER_HEIGHT }px` }>
 				<header class = 'card-header'>
 					<div class = 'card-header-icon unset-cursor'>
 						<span class = 'icon'>
@@ -182,7 +183,7 @@ export function TransactionCard(param: TransactionCardParams) {
 		</>
 	}
 	return <>
-		<div class = 'card'>
+		<div class = 'card' style = { `top: ${ param.numberOfUnderTransactions * -HALF_HEADER_HEIGHT }px` }>
 			<TransactionHeader simTx = { simTx } />
 			<div class = 'card-content' style = 'padding-bottom: 5px;'>
 				<div class = 'container'>
@@ -404,9 +405,9 @@ export function ConfirmTransaction() {
 		if (pendingTransactionsAndSignableMessages.length === 1) await tryFocusingTabOrWindow({ type: 'tab', id: currentPendingTransactionOrSignableMessage.uniqueRequestIdentifier.requestSocket.tabId })
 		
 		const getPossibleErrorString = () => {
-			if (currentPendingTransactionOrSignableMessage.type !== 'Transaction') return undefined
 			if (currentPendingTransactionOrSignableMessage.transactionOrMessageCreationStatus === 'FailedToSimulate') return currentPendingTransactionOrSignableMessage.transactionToSimulate.error.message
 			if (currentPendingTransactionOrSignableMessage.transactionOrMessageCreationStatus !== 'Simulated') return undefined
+			if (currentPendingTransactionOrSignableMessage.type !== 'Transaction') return undefined
 			if (currentPendingTransactionOrSignableMessage.simulationResults.statusCode !== 'success' ) return undefined
 			const results = currentPendingTransactionOrSignableMessage.simulationResults.data.simulatedAndVisualizedTransactions.find((tx) => tx.transactionIdentifier === currentPendingTransactionOrSignableMessage.transactionIdentifier)
 			if (results === undefined) return undefined
@@ -416,7 +417,7 @@ export function ConfirmTransaction() {
 		await sendPopupMessageToBackgroundPage({ method: 'popup_confirmDialog', data: {
 			uniqueRequestIdentifier: currentPendingTransactionOrSignableMessage.uniqueRequestIdentifier,
 			action: 'reject',
-			transactionErrorString: getPossibleErrorString(),
+			errorString: getPossibleErrorString(),
 		} })
 	}
 	const refreshMetadata = async () => {
@@ -472,26 +473,17 @@ export function ConfirmTransaction() {
 		</div>
 
 		if (currentPendingTransactionOrSignableMessage === undefined) return onlyReject
-		if (currentPendingTransactionOrSignableMessage?.type === 'SignableMessage') {
-			if (currentPendingTransactionOrSignableMessage.transactionOrMessageCreationStatus !== 'Simulated') return onlyReject
-			const visualized = currentPendingTransactionOrSignableMessage.visualizedPersonalSignRequest
-			const identified = identifySignature(visualized)
-			return <div style = 'display: flex; flex-direction: row;'>
-				<button className = 'button is-primary is-danger button-overflow dialog-button-left' onClick = { reject } > { identified.rejectAction } </button>
-				<button className = 'button is-primary button-overflow dialog-button-right'
-					onClick = { approve }
-					disabled = { isConfirmDisabled() }>
-					{ currentPendingTransactionOrSignableMessage.simulationMode ? `${ identified.simulationAction }!` : <SignerLogoText { ...{ signerName: visualized.signerName, text: identified.signingAction, } }/> }
-				</button>
-			</div>
-		}
+		if (currentPendingTransactionOrSignableMessage.transactionOrMessageCreationStatus !== 'Simulated') return onlyReject
 
-		const lastTx = currentPendingTransactionOrSignableMessage === undefined || currentPendingTransactionOrSignableMessage.transactionOrMessageCreationStatus !== 'Simulated' || currentPendingTransactionOrSignableMessage.simulationResults.statusCode !== 'success'
-			? undefined : getResultsForTransaction(currentPendingTransactionOrSignableMessage.simulationResults.data.simulatedAndVisualizedTransactions, currentPendingTransactionOrSignableMessage.transactionIdentifier)
-		if (lastTx === undefined || currentPendingTransactionOrSignableMessage === undefined || currentPendingTransactionOrSignableMessage.transactionOrMessageCreationStatus !== 'Simulated') {
-			return onlyReject
+		const signerName = currentPendingTransactionOrSignableMessage.type === 'Transaction' ? currentPendingTransactionOrSignableMessage.simulationResults.data.signerName : currentPendingTransactionOrSignableMessage.visualizedPersonalSignRequest.signerName
+		const identify = () => {
+			if (currentPendingTransactionOrSignableMessage.type === 'SignableMessage') return identifySignature(currentPendingTransactionOrSignableMessage.visualizedPersonalSignRequest)
+			const lastTx = currentPendingTransactionOrSignableMessage.simulationResults.statusCode !== 'success' ? undefined : getResultsForTransaction(currentPendingTransactionOrSignableMessage.simulationResults.data.simulatedAndVisualizedTransactions, currentPendingTransactionOrSignableMessage.transactionIdentifier)
+			if (lastTx === undefined) return undefined
+			return identifyTransaction(lastTx)
 		}
-		const identified = identifyTransaction(lastTx)
+		const identified = identify()
+		if (identified === undefined) return onlyReject
 
 		return <div style = 'display: flex; flex-direction: row;'>
 			<button className = 'button is-primary is-danger button-overflow dialog-button-left' onClick = { reject } >
@@ -499,11 +491,11 @@ export function ConfirmTransaction() {
 			</button>
 			<button className = 'button is-primary button-overflow dialog-button-right' onClick = { approve } disabled = { isConfirmDisabled() }>
 				{ currentPendingTransactionOrSignableMessage.approvalStatus.status === 'WaitingForSigner' ? <>
-					<span> <Spinner height = '1em' color = 'var(--text-color)' /> Waiting for <SignersLogoName signerName = { currentPendingTransactionOrSignableMessage.simulationResults.data.signerName } /> </span>
+					<span> <Spinner height = '1em' color = 'var(--text-color)' /> Waiting for <SignersLogoName signerName = { signerName } /> </span>
 					</> : <>
 						{ currentPendingTransactionOrSignableMessage.simulationMode
 							? `${ identified.simulationAction }!`
-							: <SignerLogoText signerName = { currentPendingTransactionOrSignableMessage.simulationResults.data.signerName } text = { identified.signingAction } />
+							: <SignerLogoText signerName = { signerName } text = { identified.signingAction } />
 						}
 					</>
 				}
@@ -597,12 +589,14 @@ export function ConfirmTransaction() {
 									renameAddressCallBack = { renameAddressCallBack }
 									currentBlockNumber = { currentBlockNumber }
 									rpcConnectionStatus = { rpcConnectionStatus }
+									numberOfUnderTransactions = { underTransactions.length }
 								/>
 							: <>
 								<SignatureCard
 									visualizedPersonalSignRequest = { currentPendingTransactionOrSignableMessage.visualizedPersonalSignRequest }
 									renameAddressCallBack = { renameAddressCallBack }
 									removeTransactionOrSignedMessage = { undefined }
+									numberOfUnderTransactions = { underTransactions.length }
 								/>
 							</> }
 						</div>
