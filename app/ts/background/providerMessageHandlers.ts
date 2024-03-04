@@ -12,7 +12,7 @@ import { sendSubscriptionReplyOrCallBackToPort } from './messageSending.js'
 import { Simulator } from '../simulation/simulator.js'
 import { METAMASK_ERROR_USER_REJECTED_REQUEST } from '../utils/constants.js'
 import { handleUnexpectedError } from '../utils/errors.js'
-import { resolvePendingTransaction, updateConfirmTransactionViewWithPendingTransaction } from './windows/confirmTransaction.js'
+import { resolvePendingTransaction, updateConfirmTransactionView } from './windows/confirmTransaction.js'
 import { EthereumBytes32 } from '../types/wire-types.js'
 
 export async function ethAccountsReply(simulator: Simulator, websiteTabConnections: WebsiteTabConnections, port: browser.runtime.Port, request: ProviderMessage, _connectInfoapproval: ApprovalState) {
@@ -128,11 +128,11 @@ export async function signerReply(simulator: Simulator, websiteTabConnections: W
 			}
 			if (params.error.code === METAMASK_ERROR_USER_REJECTED_REQUEST) {
 				await updatePendingTransaction(uniqueRequestIdentifier, async (transaction) => ({ ...transaction, approvalStatus: { status: 'WaitingForUser' } }))
-				await updateConfirmTransactionViewWithPendingTransaction(simulator.ethereum)
+				await updateConfirmTransactionView(simulator.ethereum)
 				return doNotReply
 			}
 			await updatePendingTransaction(uniqueRequestIdentifier, async (transaction) => ({ ...transaction, approvalStatus: { status: 'SignerError', ...params.error } }))
-			await updateConfirmTransactionViewWithPendingTransaction(simulator.ethereum)
+			await updateConfirmTransactionView(simulator.ethereum)
 			return doNotReply
 		}
 	}

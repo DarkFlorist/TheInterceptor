@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'preact/hooks'
 import { MessageToPopup, UpdateConfirmTransactionDialog } from '../../types/interceptor-messages.js'
-import { ModifyAddressWindowState, SimulatedAndVisualizedTransaction, SimulationAndVisualisationResults, SimulationResultState } from '../../types/visualizer-types.js'
+import { CompleteVisualizedSimulation, ModifyAddressWindowState, SimulatedAndVisualizedTransaction } from '../../types/visualizer-types.js'
 import Hint from '../subcomponents/Hint.js'
 import { RawTransactionDetailsCard, GasFee, TokenLogAnalysisCard, SimulatedInBlockNumber, TransactionCreated, TransactionHeader, TransactionHeaderForFailedToSimulate, TransactionsAccountChangesCard, NonTokenLogAnalysisCard } from '../simulationExplaining/SimulationSummary.js'
 import { CenterToPageTextSpinner, Spinner } from '../subcomponents/Spinner.js'
@@ -16,7 +16,7 @@ import { tryFocusingTabOrWindow } from '../ui-utils.js'
 import { addressString, checksummedAddress, stringifyJSONWithBigInts } from '../../utils/bigint.js'
 import { AddressBookEntry } from '../../types/addressBookTypes.js'
 import { PendingTransactionOrSignableMessage, SimulatedPendingTransaction } from '../../types/accessRequest.js'
-import { SmallAddress, WebsiteOriginText } from '../subcomponents/address.js'
+import { WebsiteOriginText } from '../subcomponents/address.js'
 import { serialize } from '../../types/wire-types.js'
 import { OriginalSendRequestParameters } from '../../types/JsonRpc-types.js'
 import { Website } from '../../types/websiteAccessTypes.js'
@@ -28,6 +28,7 @@ import { NetworkErrors } from '../App.js'
 import { SignatureCard, SignatureHeaderReduced, identifySignature, isPossibleToSignMessage } from './PersonalSign.js'
 import { isEthSimulateV1Node } from '../../background/settings.js'
 import { MOCK_PRIVATE_KEYS_ADDRESS } from '../../utils/constants.js'
+import { VisualizedPersonalSignRequest } from '../../types/personal-message-definitions.js'
 
 type UnderTransactionsParams = {
 	pendingTransactionsAndSignableMessages: PendingTransactionOrSignableMessage[]
@@ -83,20 +84,18 @@ function UnderTransactions(param: UnderTransactionsParams) {
 	</div>
 }
 
-type TransactionNamesParams = { simulationAndVisualisationResults: SimulationAndVisualisationResults | undefined }
+type TransactionNamesParams = { completeVisualizedSimulation: CompleteVisualizedSimulation | undefined }
 const TransactionNames = (param: TransactionNamesParams) => {
-	if (param.simulationAndVisualisationResults === undefined) return <></>
-	const si = mergee transaktiot ja messaget...
-	const previousResults = PendingTransactionOrSignableMessages
-	const transactionNames = previousResults.map((result) => identifyTransaction(result).title).concat(simTx === undefined ? 'Error' : identifyTransaction(simTx).title)
-	
+	if (param.completeVisualizedSimulation === undefined || param.completeVisualizedSimulation.simulationResultState !== 'done') return <></>
+	const transactionsAndMessages: readonly (VisualizedPersonalSignRequest | SimulatedAndVisualizedTransaction)[] = [...param.completeVisualizedSimulation.visualizedPersonalSignRequests, ...param.completeVisualizedSimulation.simulatedAndVisualizedTransactions].sort((n1, n2) => n1.created.getTime() - n2.created.getTime())
+	const names = transactionsAndMessages.map((transactionOrMessage) => 'transaction' in transactionOrMessage ? identifyTransaction(transactionOrMessage).title : identifySignature(transactionOrMessage))
 	return <div class = 'block' style = 'margin-bottom: 10px;'>
 		<nav class = 'breadcrumb has-succeeds-separator is-small'>
 			<ul>
-				{ param.names.map((name, index) => (
+				{ names.map((name, index) => (
 					<li style = 'margin: 0px;'>
-						<div class = 'card' style = { `padding: 5px; margin: 5px; ${ index !== param.names.length - 1 ? 'background-color: var(--disabled-card-color)' : ''}` }>
-							<p class = 'paragraph' style = { `margin: 0px; ${ index !== param.names.length - 1 ? 'color: var(--disabled-text-color)' : ''}` }>
+						<div class = 'card' style = { `padding: 5px; margin: 5px; ${ index !== names.length - 1 ? 'background-color: var(--disabled-card-color)' : ''}` }>
+							<p class = 'paragraph' style = { `margin: 0px; ${ index !== names.length - 1 ? 'color: var(--disabled-text-color)' : ''}` }>
 								{ name }
 							</p>
 						</div>
@@ -132,11 +131,9 @@ export function TransactionCard(param: TransactionCardParams) {
 	}
 
 	const simTx = getResultsForTransaction(simulationAndVisualisationResults.simulatedAndVisualizedTransactions, param.currentPendingTransaction.transactionIdentifier)
-	const underTransactions = param.pendingTransactionsAndSignableMessages.slice(1).reverse()
 	if (simTx === undefined) {
 		return <>
-			<UnderTransactions pendingTransactionsAndSignableMessages = { underTransactions }/>
-			<div class = 'card' style = { `top: ${ underTransactions.length * -HALF_HEADER_HEIGHT }px` }>
+			<div class = 'card'>
 				<header class = 'card-header'>
 					<div class = 'card-header-icon unset-cursor'>
 						<span class = 'icon'>
@@ -185,8 +182,7 @@ export function TransactionCard(param: TransactionCardParams) {
 		</>
 	}
 	return <>
-		<UnderTransactions pendingTransactionsAndSignableMessages = { underTransactions }/>
-		<div class = 'card' style = { `top: ${ underTransactions.length * -HALF_HEADER_HEIGHT }px` }>
+		<div class = 'card'>
 			<TransactionHeader simTx = { simTx } />
 			<div class = 'card-content' style = 'padding-bottom: 5px;'>
 				<div class = 'container'>
@@ -328,7 +324,7 @@ function Loading({ loadingText, unexpectedErrorMessage, closeUnexpectedError, rp
 export function ConfirmTransaction() {
 	const [currentPendingTransactionOrSignableMessage, setCurrentPendingTransactionOrSignableMessage] = useState<PendingTransactionOrSignableMessage | undefined>(undefined)
 	const [pendingTransactionsAndSignableMessages, setPendingTransactionsAndSignableMessages] = useState<readonly PendingTransactionOrSignableMessage[]>([])
-	const [simulationAndVisualisationResults, setSimulationAndVisualisationResults] = useState<SimulationAndVisualisationResults | undefined>(undefined)
+	const [completeVisualizedSimulation, setCompleteVisualizedSimulation] = useState<CompleteVisualizedSimulation |undefined>(undefined)
 	const [forceSend, setForceSend] = useState<boolean>(false)
 	const [currentBlockNumber, setCurrentBlockNumber] = useState<undefined | bigint>(undefined)
 	const [addingNewAddress, setAddingNewAddress] = useState<ModifyAddressWindowState | 'renameAddressModalClosed'> ('renameAddressModalClosed')
@@ -338,6 +334,8 @@ export function ConfirmTransaction() {
 
 	const updatePendingTransactionsAndSignableMessages = (message: UpdateConfirmTransactionDialog) => {
 		setPendingTransactionsAndSignableMessages(message.data.pendingTransactionAndSignableMessages)
+		setCompleteVisualizedSimulation(message.data.visualizedSimulatorState)
+		setCurrentBlockNumber(message.data.currentBlockNumber)
 		const firstMessage = message.data.pendingTransactionAndSignableMessages[0]
 		if (firstMessage === undefined) throw new Error('message data was undefined')
 		setCurrentPendingTransactionOrSignableMessage(firstMessage)
@@ -377,7 +375,6 @@ export function ConfirmTransaction() {
 				return
 			}
 			if (parsed.method !== 'popup_update_confirm_transaction_dialog') return
-			setCurrentBlockNumber(parsed.data.currentBlockNumber)
 			return updatePendingTransactionsAndSignableMessages(parsed)
 		}
 		browser.runtime.onMessage.addListener(popupMessageListener)
@@ -523,9 +520,35 @@ export function ConfirmTransaction() {
 	}
 
 	if (currentPendingTransactionOrSignableMessage === undefined || currentPendingTransactionOrSignableMessage.transactionOrMessageCreationStatus !== 'Simulated' || ( currentPendingTransactionOrSignableMessage.type === 'Transaction' && currentPendingTransactionOrSignableMessage.simulationResults?.statusCode === 'failed')) {
-		return <Loading loadingText = { getLoadingText(currentPendingTransactionOrSignableMessage) } unexpectedErrorMessage = { unexpectedError } closeUnexpectedError = { () => { setUnexpectedError(undefined) } } rpcConnectionStatus = { rpcConnectionStatus } />
+		return <> 
+			<main>
+				<Hint>
+					<div class = { `modal ${ addingNewAddress !== 'renameAddressModalClosed' ? 'is-active' : ''}` }>
+						{ addingNewAddress === 'renameAddressModalClosed'
+							? <></>
+							: <AddNewAddress
+								setActiveAddressAndInformAboutIt = { undefined }
+								modifyAddressWindowState = { addingNewAddress }
+								close = { () => { setAddingNewAddress('renameAddressModalClosed') } }
+								activeAddress = { undefined }
+							/>
+						}
+					</div>
+					<div class = 'block popup-block popup-block-scroll' style = 'padding: 0px'>
+						<div style = 'position: sticky; top: 0; z-index:1'>
+							<UnexpectedError close = { () => { setUnexpectedError(undefined) } } message = { unexpectedError }/>
+							<NetworkErrors rpcConnectionStatus = { rpcConnectionStatus }/>
+							{ currentPendingTransactionOrSignableMessage === undefined ? <></> : <>
+								<WebsiteErrors website = { currentPendingTransactionOrSignableMessage.website } websiteSocket = { currentPendingTransactionOrSignableMessage.uniqueRequestIdentifier.requestSocket } simulationMode = { currentPendingTransactionOrSignableMessage.simulationMode }/>
+							</> }
+						</div>
+						<Loading loadingText = { getLoadingText(currentPendingTransactionOrSignableMessage) } unexpectedErrorMessage = { unexpectedError } closeUnexpectedError = { () => { setUnexpectedError(undefined) } } rpcConnectionStatus = { rpcConnectionStatus } />
+					</div>
+				</Hint>
+			</main>
+		</>
 	}
-
+	const underTransactions = pendingTransactionsAndSignableMessages.slice(1).reverse()
 	return (
 		<main>
 			<Hint>
@@ -564,7 +587,9 @@ export function ConfirmTransaction() {
 								/>
 								: <></>
 							}
-							<TransactionNames simulationAndVisualisationResults = { simulationAndVisualisationResults }/>
+							<TransactionNames completeVisualizedSimulation = { completeVisualizedSimulation }/>
+							<UnderTransactions pendingTransactionsAndSignableMessages = { underTransactions }/>
+							<div style = { `top: ${ underTransactions.length * -HALF_HEADER_HEIGHT }px` }></div>
 							{ currentPendingTransactionOrSignableMessage.type === 'Transaction' ? 
 								<TransactionCard
 									currentPendingTransaction = { currentPendingTransactionOrSignableMessage }
@@ -574,23 +599,11 @@ export function ConfirmTransaction() {
 									rpcConnectionStatus = { rpcConnectionStatus }
 								/>
 							: <>
-								<div>
-									<header class = 'card-header window-header' style = 'height: 40px; border-top-left-radius: 0px; border-top-right-radius: 0px'>
-										<div class = 'card-header-icon noselect nopointer' style = 'overflow: hidden;'>
-											<WebsiteOriginText { ...currentPendingTransactionOrSignableMessage.website } />
-										</div>
-										<p class = 'card-header-title' style = 'overflow: hidden; font-weight: unset; flex-direction: row-reverse;'>
-											<SmallAddress addressBookEntry = { currentPendingTransactionOrSignableMessage.visualizedPersonalSignRequest.activeAddress } renameAddressCallBack = { renameAddressCallBack }/>
-										</p>
-									</header>
-									<div style = 'margin: 10px;'>
-										<SignatureCard
-											visualizedPersonalSignRequest = { currentPendingTransactionOrSignableMessage.visualizedPersonalSignRequest }
-											renameAddressCallBack = { renameAddressCallBack }
-											removeTransactionOrSignedMessage = { undefined }
-										/>
-									</div>
-								</div>
+								<SignatureCard
+									visualizedPersonalSignRequest = { currentPendingTransactionOrSignableMessage.visualizedPersonalSignRequest }
+									renameAddressCallBack = { renameAddressCallBack }
+									removeTransactionOrSignedMessage = { undefined }
+								/>
 							</> }
 						</div>
 						<nav class = 'window-footer popup-button-row' style = 'position: sticky; bottom: 0; width: 100%;'>

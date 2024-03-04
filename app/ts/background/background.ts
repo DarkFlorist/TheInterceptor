@@ -19,7 +19,7 @@ import { appendTransaction, calculateGasPrice, copySimulationState, getNonPrepen
 import { Semaphore } from '../utils/semaphore.js'
 import { FetchResponseError, JsonRpcResponseError, handleUnexpectedError, isFailedToFetchError } from '../utils/errors.js'
 import { formSimulatedAndVisualizedTransaction } from '../components/formVisualizerResults.js'
-import { updateConfirmTransactionViewWithPendingTransaction } from './windows/confirmTransaction.js'
+import { updateConfirmTransactionView } from './windows/confirmTransaction.js'
 import { updateChainChangeViewWithPendingRequest } from './windows/changeChain.js'
 import { craftPersonalSignPopupMessage } from './windows/personalSign.js'
 import { InterceptedRequest, UniqueRequestIdentifier, WebsiteSocket } from '../utils/requests.js'
@@ -623,7 +623,7 @@ export async function popupMessageHandler(
 		case 'popup_openAddressBook': return await openNewTab('addressBook')
 		case 'popup_changeChainReadyAndListening': return await updateChainChangeViewWithPendingRequest()
 		case 'popup_interceptorAccessReadyAndListening': return await updateInterceptorAccessViewWithPendingRequests()
-		case 'popup_confirmTransactionReadyAndListening': return await updateConfirmTransactionViewWithPendingTransaction(simulator.ethereum)
+		case 'popup_confirmTransactionReadyAndListening': return await updateConfirmTransactionView(simulator.ethereum)
 		case 'popup_requestNewHomeData': return await requestNewHomeData(simulator)
 		case 'popup_refreshHomeData': return await refreshHomeData(simulator)
 		case 'popup_settingsOpened': return await settingsOpened()

@@ -444,7 +444,7 @@ export type UpdateConfirmTransactionDialog = funtypes.Static<typeof UpdateConfir
 export const UpdateConfirmTransactionDialog = funtypes.ReadonlyObject({
 	method: funtypes.Union(funtypes.Literal('popup_confirm_transaction_dialog_pending_changed'), funtypes.Literal('popup_update_confirm_transaction_dialog')),
 	data: funtypes.ReadonlyObject({
-		simulationState:
+		visualizedSimulatorState: funtypes.Union(CompleteVisualizedSimulation, funtypes.Undefined),
 		pendingTransactionAndSignableMessages: funtypes.ReadonlyArray(PendingTransactionOrSignableMessage),
 		currentBlockNumber: EthereumQuantity,
 	})

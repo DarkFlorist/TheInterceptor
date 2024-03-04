@@ -404,7 +404,7 @@ export function RawMessage({ visualizedPersonalSignRequest }: ExtraDetailsCardPa
 export function Signer({ signer, renameAddressCallBack }: { signer: AddressBookEntry, renameAddressCallBack: (entry: AddressBookEntry) => void, }) {
 	return <span class = 'log-table' style = 'margin-top: 10px; column-gap: 5px; justify-content: space-between; grid-template-columns: auto auto'>
 		<div class = 'log-cell' style = ''>
-			<p style = { `color: var(--subtitle-text-color);` }> Signed by: </p>
+			<p style = { `color: var(--subtitle-text-color);` }> Signing address: </p>
 		</div>
 		<div class = 'log-cell' style = ''>
 			<SmallAddress
@@ -417,29 +417,27 @@ export function Signer({ signer, renameAddressCallBack }: { signer: AddressBookE
 }
 
 export function SignatureCard(params: SignatureCardParams) {
-	return <>
-		<div class = 'card'>
-			<SignatureHeader { ...params }/>
-			<div class = 'card-content' style = 'padding-bottom: 5px;'>
-				<div class = 'container'>
-					<SignRequest { ...params }/>
-				</div>
-				<QuarantineReasons quarantineReasons = { params.visualizedPersonalSignRequest.quarantineReasons }/>
-				<ExtraDetails { ...params }/>
-				<RawMessage { ...params }/>
-				
-				<Signer
-					signer = { params.visualizedPersonalSignRequest.activeAddress }
-					renameAddressCallBack = { params.renameAddressCallBack }
-				/>
-
-				<span class = 'log-table' style = 'margin-top: 10px; grid-template-columns: auto auto;'>
-					<div class = 'log-cell'> <TransactionCreated created = { params.visualizedPersonalSignRequest.created } /> </div>
-					<div class = 'log-cell' style = 'justify-content: right;'></div>
-				</span>
+	return <div class = 'card'>
+		<SignatureHeader { ...params }/>
+		<div class = 'card-content' style = 'padding-bottom: 5px;'>
+			<div class = 'container'>
+				<SignRequest { ...params }/>
 			</div>
+			<QuarantineReasons quarantineReasons = { params.visualizedPersonalSignRequest.quarantineReasons }/>
+			<ExtraDetails { ...params }/>
+			<RawMessage { ...params }/>
+			
+			<Signer
+				signer = { params.visualizedPersonalSignRequest.activeAddress }
+				renameAddressCallBack = { params.renameAddressCallBack }
+			/>
+
+			<span class = 'log-table' style = 'margin-top: 10px; grid-template-columns: auto auto;'>
+				<div class = 'log-cell'> <TransactionCreated created = { params.visualizedPersonalSignRequest.created } /> </div>
+				<div class = 'log-cell' style = 'justify-content: right;'></div>
+			</span>
 		</div>
-	</>
+	</div>
 }
 
 export function isPossibleToSignMessage(visualizedPersonalSignRequest: VisualizedPersonalSignRequest, activeAddress: bigint) {
