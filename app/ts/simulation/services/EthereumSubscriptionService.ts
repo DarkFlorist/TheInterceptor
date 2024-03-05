@@ -43,6 +43,7 @@ export async function sendSubscriptionMessagesForNewBlock(blockNumber: bigint, e
 				const newBlock = await ethereumClientService.getBlock(blockNumber, false)
 
 				sendSubscriptionReplyOrCallBack(websiteTabConnections, subscriptionOrFilter.subscriptionCreatorSocket, {
+					type: 'result',
 					method: 'newHeads' as const, 
 					result: { subscription: subscriptionOrFilter.type, result: newBlock } as const,
 					subscription: subscriptionOrFilter.subscriptionOrFilterId,
@@ -52,6 +53,7 @@ export async function sendSubscriptionMessagesForNewBlock(blockNumber: bigint, e
 					const simulatedBlock = await getSimulatedBlock(ethereumClientService, simulationState, blockNumber + 1n, false)
 					// post our simulated block on top (reorg it)
 					sendSubscriptionReplyOrCallBack(websiteTabConnections, subscriptionOrFilter.subscriptionCreatorSocket, {
+						type: 'result',
 						method: 'newHeads' as const, 
 						result: { subscription: subscriptionOrFilter.type, result: simulatedBlock },
 						subscription: subscriptionOrFilter.subscriptionOrFilterId,

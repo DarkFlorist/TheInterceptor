@@ -36,14 +36,14 @@ export function verifyAccess(websiteTabConnections: WebsiteTabConnections, socke
 	return askAccessIfUnknown ? 'askAccess' : 'noAccess'
 }
 
-export function sendMessageToApprovedWebsitePorts(websiteTabConnections: WebsiteTabConnections, message:  InpageScriptCallBack) {
+export function sendMessageToApprovedWebsitePorts(websiteTabConnections: WebsiteTabConnections, message: InpageScriptCallBack) {
 	// inform all the tabs about the address change
 	for (const [_tab, tabConnection] of websiteTabConnections.entries() ) {
 		for (const key in tabConnection.connections) {
 			const connection = tabConnection.connections[key]
 			if (connection === undefined) throw new Error('missing connection')
 			if (!connection.approved) continue
-			sendSubscriptionReplyOrCallBack(websiteTabConnections, connection.socket, message)
+			sendSubscriptionReplyOrCallBack(websiteTabConnections, connection.socket, { type: 'result' as const, ...message })
 		}
 	}
 }
@@ -56,6 +56,7 @@ export async function sendActiveAccountChangeToApprovedWebsitePorts(websiteTabCo
 			if (!connection.approved) continue
 			const activeAddress = await getActiveAddressForDomain(connection.websiteOrigin, settings, connection.socket)
 			sendSubscriptionReplyOrCallBack(websiteTabConnections, connection.socket, {
+				type: 'result' as const,
 				method: 'accountsChanged',
 				result: activeAddress !== undefined ? [activeAddress.address] : []
 			})
@@ -152,16 +153,16 @@ function connectToPort(websiteTabConnections: WebsiteTabConnections, socket: Web
 	setWebsitePortApproval(websiteTabConnections, socket, true)
 	updateExtensionIcon(socket.tabId, websiteOrigin)
 
-	sendSubscriptionReplyOrCallBack(websiteTabConnections, socket, { method: 'connect', result: [settings.currentRpcNetwork.chainId] })
+	sendSubscriptionReplyOrCallBack(websiteTabConnections, socket, { type: 'result' as const, method: 'connect', result: [settings.currentRpcNetwork.chainId] })
 
 	// seems like dapps also want to get account changed and chain changed events after we connect again, so let's send them too
-	sendSubscriptionReplyOrCallBack(websiteTabConnections, socket, { method: 'accountsChanged', result: connectWithActiveAddress !== undefined ? [connectWithActiveAddress] : [] })
+	sendSubscriptionReplyOrCallBack(websiteTabConnections, socket, { type: 'result' as const, method: 'accountsChanged', result: connectWithActiveAddress !== undefined ? [connectWithActiveAddress] : [] })
 
-	sendSubscriptionReplyOrCallBack(websiteTabConnections, socket, { method: 'chainChanged', result: settings.currentRpcNetwork.chainId })
+	sendSubscriptionReplyOrCallBack(websiteTabConnections, socket, { type: 'result' as const, method: 'chainChanged', result: settings.currentRpcNetwork.chainId })
 
 	if (!settings.simulationMode || settings.useSignersAddressAsActiveAddress) {
-		sendSubscriptionReplyOrCallBack(websiteTabConnections, socket, { method: 'request_signer_to_eth_requestAccounts', result: [] })
-		sendSubscriptionReplyOrCallBack(websiteTabConnections, socket, { method: 'request_signer_chainId', result: [] })
+		sendSubscriptionReplyOrCallBack(websiteTabConnections, socket, { type: 'result' as const, method: 'request_signer_to_eth_requestAccounts', result: [] })
+		sendSubscriptionReplyOrCallBack(websiteTabConnections, socket, { type: 'result' as const, method: 'request_signer_chainId', result: [] })
 	}
 	return true
 }
@@ -169,7 +170,7 @@ function connectToPort(websiteTabConnections: WebsiteTabConnections, socket: Web
 function disconnectFromPort(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, websiteOrigin: string): false {
 	setWebsitePortApproval(websiteTabConnections, socket, false)
 	updateExtensionIcon(socket.tabId, websiteOrigin)
-	sendSubscriptionReplyOrCallBack(websiteTabConnections, socket, { method: 'disconnect', result: [] })
+	sendSubscriptionReplyOrCallBack(websiteTabConnections, socket, { type: 'result' as const, method: 'disconnect', result: [] })
 	return false
 }
 

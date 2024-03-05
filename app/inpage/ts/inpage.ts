@@ -67,17 +67,23 @@ type InterceptedRequestBase = {
 	readonly subscription?: string
 }
 
-type InterceptedRequestForwardWithResult = InterceptedRequestBase & {
+type InterceptedRequestForwardWithResult = InterceptedRequestBase & { 
+	readonly type: 'result',
 	readonly result: unknown,
 }
 
-type InterceptedRequestForward = InterceptedRequestBase & ({ error?: {
-	readonly code: number,
-	readonly message: string,
-	readonly data?: object
-} } | {
-	readonly result: unknown,
-} | {} )
+type InterceptedRequestForwardWithError = InterceptedRequestBase & { 
+	readonly type: 'result',
+	readonly error: {
+		readonly code: number,
+		readonly message: string,
+		readonly data?: object
+	}
+}
+
+type InterceptedRequestForwardToSigner = InterceptedRequestBase & { readonly type: 'forwardToSigner' }
+
+type InterceptedRequestForward = InterceptedRequestForwardWithResult | InterceptedRequestForwardWithError | InterceptedRequestForwardToSigner
 
 interface ProviderConnectInfo {
 	readonly chainId: string
@@ -477,14 +483,15 @@ class InterceptorMessageListener {
 		) return
 		if (!('ethereum' in window) || !window.ethereum) throw new Error('window.ethereum missing')
 		if (!('method' in messageEvent.data)) throw new Error('missing method field')
+		if (!('type' in messageEvent)) throw new Error('missing type field')
 		const forwardRequest = messageEvent.data as InterceptedRequestForward //use 'as' here as we don't want to inject funtypes here
-		if ('error' in forwardRequest && forwardRequest.error !== undefined) {
+		if (forwardRequest.type === 'result' && 'error' in forwardRequest) {
 			if (forwardRequest.requestId === undefined) throw new EthereumJsonRpcError(forwardRequest.error.code, forwardRequest.error.message, forwardRequest.error.data)
 			const pending = this.outstandingRequests.get(forwardRequest.requestId)
 			if (pending === undefined) throw new EthereumJsonRpcError(forwardRequest.error.code, forwardRequest.error.message, forwardRequest.error.data)
 			return pending.reject(new EthereumJsonRpcError(forwardRequest.error.code, forwardRequest.error.message, forwardRequest.error.data))
 		}
-		if ('result' in forwardRequest && forwardRequest.result !== undefined) {
+		if (forwardRequest.type === 'result' && 'result' in forwardRequest) {
 			if (this.metamaskCompatibilityMode && this.signerWindowEthereumRequest === undefined && window.ethereum !== undefined) {
 				switch (messageEvent.data.method) {
 					case 'eth_requestAccounts':
@@ -500,28 +507,33 @@ class InterceptorMessageListener {
 						const chainId = forwardRequest.result as string
 						window.ethereum.chainId = chainId
 						window.ethereum.networkVersion = Number(chainId).toString(10)
+						break
 					}
 				}
 			}
 			await this.handleReplyRequest(forwardRequest)
 			return
 		}
-
-		try {
-			if (this.signerWindowEthereumRequest === undefined) throw new Error('Interceptor is in wallet mode and should not forward to an external wallet')
-			const reply = await this.signerWindowEthereumRequest({
-				method: forwardRequest.method,
-				params: 'params' in forwardRequest ? forwardRequest.params : []
-			})
-			if (forwardRequest.requestId !== undefined) {
-				const pendingRequest = this.outstandingRequests.get(forwardRequest.requestId)
-				if (pendingRequest === undefined) throw new Error('Request did not exist anymore')
-				pendingRequest.resolve(reply)
+		if (forwardRequest.type !== 'forwardToSigner') throw new Error('type: forwardToSigner missing')
+		if (forwardRequest.requestId === undefined) throw new Error('requestId missing')
+		const pendingRequest = this.outstandingRequests.get(forwardRequest.requestId)
+		if (pendingRequest === undefined) throw new Error('Request did not exist anymore')
+		const signerRequest = this.signerWindowEthereumRequest
+		if (signerRequest === undefined) throw new Error('Interceptor is in wallet mode and should not forward to an external wallet')
+		
+		const sendToSignerWithCatchError = async () => {
+			try {
+				const reply = await signerRequest({ method: forwardRequest.method, params: 'params' in forwardRequest ? forwardRequest.params : [] })
+				return { success: true, forwardRequest, reply }
+			} catch(error: unknown) {
+				return { success: false, forwardRequest, error }
 			}
-		} catch (error: unknown) {
-			if (forwardRequest.requestId === undefined) return
-			const pendingRequest = this.outstandingRequests.get(forwardRequest.requestId)
-			if (pendingRequest === undefined) throw new EthereumJsonRpcError(METAMASK_ERROR_BLANKET_ERROR, `Unexpected thrown value and request was not found anymore`, { error: error }) 
+		}
+		const signerReply = await sendToSignerWithCatchError()
+		try {
+			const interceptorReply = await this.sendMessageToBackgroundPage({ method: 'signer_reply', params: [ signerReply ] })
+			pendingRequest.resolve(interceptorReply)
+		} catch(error: unknown) {
 			if (error instanceof Error) return pendingRequest.reject(error)
 			if (typeof error === 'object' && error !== null
 				&& 'code' in error && error.code !== undefined && typeof error.code === 'number'

@@ -35,7 +35,7 @@ import { simulateCompoundGovernanceExecution } from '../simulation/compoundGover
 import { Interface } from 'ethers'
 import { CompoundGovernanceAbi } from '../utils/abi.js'
 import { dataStringWith0xStart } from '../utils/bigint.js'
-import { connectedToSigner, ethAccountsReply, signerChainChanged, walletSwitchEthereumChainReply } from './providerMessageHandlers.js'
+import { connectedToSigner, ethAccountsReply, signerChainChanged, signerReply, walletSwitchEthereumChainReply } from './providerMessageHandlers.js'
 import { makeSureInterceptorIsNotSleeping } from './sleeping.js'
 
 async function updateMetadataForSimulation(simulationState: SimulationState, ethereum: EthereumClientService, visualizerResults: readonly VisualizerResult[], protectorResults: readonly ProtectorResults[]) {
@@ -312,7 +312,7 @@ async function handleRPCRequest(
 	const forwardToSigner = !settings.simulationMode && !request.usingInterceptorWithoutSigner
 	const getForwardingMessage = (request: SendRawTransactionParams | SendTransactionParams | WalletAddEthereumChain | EthGetStorageAtParams) => {
 		if (!forwardToSigner) throw new Error('Should not forward to signer')
-		return { forward: true as const, ...request }
+		return { type: 'forwardToSigner' as const, ...request }
 	}
 
 	if (maybeParsedRequest.success === false) {
@@ -320,8 +320,9 @@ async function handleRPCRequest(
 		console.warn(maybeParsedRequest.fullError)
 		const maybePartiallyParsedRequest = SupportedEthereumJsonRpcRequestMethods.safeParse(request)
 		// the method is some method that we are not supporting, forward it to the wallet if signer is available
-		if (maybePartiallyParsedRequest.success === false && forwardToSigner) return { forward: true as const, unknownMethod: true, ...request }
+		if (maybePartiallyParsedRequest.success === false && forwardToSigner) return { type: 'forwardToSigner' as const, unknownMethod: true, ...request }
 		return {
+			type: 'result' as const,
 			method: request.method,
 			error: {
 				message: `Failed to parse RPC request: ${ serialize(InterceptedRequest, request) }`,
@@ -360,24 +361,22 @@ async function handleRPCRequest(
 		case 'eth_gasPrice': return await gasPrice(ethereumClientService)
 		case 'eth_getTransactionCount': return await getTransactionCount(ethereumClientService, simulationState, parsedRequest)
 		case 'interceptor_getSimulationStack': return await getSimulationStack(simulationState, parsedRequest)
-		case 'eth_multicall': return { method: parsedRequest.method, error: { code: 10000, message: 'Cannot call eth_multicall directly' } }
-		case 'eth_simulateV1': return { method: parsedRequest.method, error: { code: 10000, message: 'Cannot call eth_simulateV1 directly' } }
+		case 'eth_multicall': return { type: 'result', method: parsedRequest.method, error: { code: 10000, message: 'Cannot call eth_multicall directly' } }
+		case 'eth_simulateV1': return { type: 'result', method: parsedRequest.method, error: { code: 10000, message: 'Cannot call eth_simulateV1 directly' } }
 		case 'wallet_addEthereumChain': {
 			if (forwardToSigner) return getForwardingMessage(parsedRequest)
-			return { method: parsedRequest.method, error: { code: 10000, message: 'wallet_addEthereumChain not implemented' } }
+			return { type: 'result' as const, method: parsedRequest.method, error: { code: 10000, message: 'wallet_addEthereumChain not implemented' } }
 		}
 		case 'eth_getStorageAt': {
 			if (forwardToSigner) return getForwardingMessage(parsedRequest)
-			return { method: parsedRequest.method, error: { code: 10000, message: 'eth_getStorageAt not implemented' } }
+			return { type: 'result' as const,method: parsedRequest.method, error: { code: 10000, message: 'eth_getStorageAt not implemented' } }
 		}
 		case 'eth_getLogs': return await getLogs(ethereumClientService, simulationState, parsedRequest)
-		case 'eth_sign': return { method: parsedRequest.method, error: { code: 10000, message: 'eth_sign is deprecated' } }
+		case 'eth_sign': return { type: 'result' as const,method: parsedRequest.method, error: { code: 10000, message: 'eth_sign is deprecated' } }
 		case 'eth_sendRawTransaction':
 		case 'eth_sendTransaction': {
 			if (forwardToSigner && settings.currentRpcNetwork.httpsRpc === undefined) return getForwardingMessage(parsedRequest)
-			const message = await sendTransaction(simulator, activeAddress, ethereumClientService, parsedRequest, request, !forwardToSigner, website)
-			if ('forward' in message) return getForwardingMessage(parsedRequest)
-			return message
+			return await sendTransaction(simulator, activeAddress, ethereumClientService, parsedRequest, request, !forwardToSigner, website, websiteTabConnections)
 		}
 		case 'web3_clientVersion': return await web3ClientVersion(ethereumClientService)
 		case 'eth_feeHistory': return await feeHistory(ethereumClientService, parsedRequest)
@@ -466,6 +465,7 @@ export async function changeActiveRpc(simulator: Simulator, websiteTabConnection
 
 function getProviderHandler(method: string) {
 	switch (method) {
+		case 'signer_reply': return { method: 'signer_reply' as const, func: signerReply }
 		case 'eth_accounts_reply': return { method: 'eth_accounts_reply' as const, func: ethAccountsReply }
 		case 'signer_chainChanged': return { method: 'signer_chainChanged' as const, func: signerChainChanged }
 		case 'wallet_switchEthereumChain_reply': return { method: 'wallet_switchEthereumChain_reply' as const, func: walletSwitchEthereumChainReply }
@@ -477,13 +477,14 @@ function getProviderHandler(method: string) {
 export const handleInterceptedRequest = async (port: browser.runtime.Port | undefined, websiteOrigin: string, websitePromise: Promise<Website> | Website, simulator: Simulator, socket: WebsiteSocket, request: InterceptedRequest, websiteTabConnections: WebsiteTabConnections): Promise<unknown> => {
 	const activeAddress = await getActiveAddress(await getSettings(), socket.tabId)
 	const access = verifyAccess(websiteTabConnections, socket, request.method === 'eth_requestAccounts' || request.method === 'eth_call', websiteOrigin, activeAddress, await getSettings())
-	if (access === 'interceptorDisabled') return replyToInterceptedRequest(websiteTabConnections, { ...request, ...ERROR_INTERCEPTOR_DISABLED })
+	if (access === 'interceptorDisabled') return replyToInterceptedRequest(websiteTabConnections, { type: 'result', ...request, ...ERROR_INTERCEPTOR_DISABLED })
 	const providerHandler = getProviderHandler(request.method)
 	const identifiedMethod = providerHandler.method
 	if (identifiedMethod !== 'notProviderMethod') {
 		if (port === undefined) return
 		const providerHandlerReturn = await providerHandler.func(simulator, websiteTabConnections, port, request, access)
 		const message: InpageScriptRequest = {
+			type: 'result' as const,
 			uniqueRequestIdentifier: request.uniqueRequestIdentifier,
 			...providerHandlerReturn,
 		}
@@ -499,10 +500,10 @@ export const handleInterceptedRequest = async (port: browser.runtime.Port | unde
 
 	if (access === 'noAccess' || activeAddress === undefined) {
 		switch (request.method) {
-			case 'eth_accounts': return replyToInterceptedRequest(websiteTabConnections, { method: 'eth_accounts' as const, result: [], uniqueRequestIdentifier: request.uniqueRequestIdentifier })
+			case 'eth_accounts': return replyToInterceptedRequest(websiteTabConnections, { type: 'result', method: 'eth_accounts' as const, result: [], uniqueRequestIdentifier: request.uniqueRequestIdentifier })
 			// if user has not given access, assume we are on chain 1
-			case 'eth_chainId': return replyToInterceptedRequest(websiteTabConnections, { method: request.method, result: 1n, uniqueRequestIdentifier: request.uniqueRequestIdentifier })
-			case 'net_version': return replyToInterceptedRequest(websiteTabConnections, { method: request.method, result: 1n, uniqueRequestIdentifier: request.uniqueRequestIdentifier })
+			case 'eth_chainId': return replyToInterceptedRequest(websiteTabConnections, { type: 'result', method: request.method, result: 1n, uniqueRequestIdentifier: request.uniqueRequestIdentifier })
+			case 'net_version': return replyToInterceptedRequest(websiteTabConnections, { type: 'result', method: request.method, result: 1n, uniqueRequestIdentifier: request.uniqueRequestIdentifier })
 			default: break
 		}
 	}
@@ -521,18 +522,15 @@ export const handleInterceptedRequest = async (port: browser.runtime.Port | unde
 export async function handleContentScriptMessage(simulator: Simulator, websiteTabConnections: WebsiteTabConnections, request: InterceptedRequest, website: Website, activeAddress: bigint | undefined) {
 	try {
 		const settings = await getSettings()
-		if (settings.simulationMode) {
-			const simulationState = (await getSimulationResults()).simulationState
-			const resolved = await handleRPCRequest(simulator, simulationState, websiteTabConnections, simulator.ethereum, request.uniqueRequestIdentifier.requestSocket, website, request, settings, activeAddress)
-			return replyToInterceptedRequest(websiteTabConnections, { ...request, ...resolved })
-		}
-		const resolved = await handleRPCRequest(simulator, undefined, websiteTabConnections, simulator.ethereum, request.uniqueRequestIdentifier.requestSocket, website, request, settings, activeAddress)
+		const simulationState = settings.simulationMode ? (await getSimulationResults()).simulationState : undefined
+		const resolved = await handleRPCRequest(simulator, simulationState, websiteTabConnections, simulator.ethereum, request.uniqueRequestIdentifier.requestSocket, website, request, settings, activeAddress)
 		return replyToInterceptedRequest(websiteTabConnections, { ...request, ...resolved })
 	} catch (error) {
 		console.log(request)
 		handleUnexpectedError(error)
 		if (error instanceof JsonRpcResponseError || error instanceof FetchResponseError) {
 			return replyToInterceptedRequest(websiteTabConnections, {
+				type: 'result', 
 				...request,
 				error: {
 					code: error.code,
@@ -544,12 +542,14 @@ export async function handleContentScriptMessage(simulator: Simulator, websiteTa
 		if (error instanceof Error) {
 			if (isFailedToFetchError(error)) {
 				return replyToInterceptedRequest(websiteTabConnections, {
+					type: 'result', 
 					...request,
 					...METAMASK_ERROR_NOT_CONNECTED_TO_CHAIN,
 				})
 			}
 			if (error.message.includes('Fetch request timed out')) {
 				return replyToInterceptedRequest(websiteTabConnections, {
+					type: 'result', 
 					...request,
 					error: {
 						code: 408,
@@ -559,6 +559,7 @@ export async function handleContentScriptMessage(simulator: Simulator, websiteTa
 			}
 		}
 		return replyToInterceptedRequest(websiteTabConnections, {
+			type: 'result', 
 			...request,
 			error: {
 				code: 123456,
@@ -570,6 +571,7 @@ export async function handleContentScriptMessage(simulator: Simulator, websiteTa
 
 export function refuseAccess(websiteTabConnections: WebsiteTabConnections, request: InterceptedRequest) {
 	return replyToInterceptedRequest(websiteTabConnections, {
+		type: 'result', 
 		...request,
 		error: {
 			code: METAMASK_ERROR_NOT_AUTHORIZED,

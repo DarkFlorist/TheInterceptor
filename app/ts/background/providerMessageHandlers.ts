@@ -1,4 +1,4 @@
-import { ConnectedToSigner, WalletSwitchEthereumChainReply } from '../types/interceptor-messages.js'
+import { ConnectedToSigner, SignerReply, WalletSwitchEthereumChainReply } from '../types/interceptor-messages.js'
 import { TabState, WebsiteTabConnections } from '../types/user-interface-types.js'
 import { EthereumAccountsReply, EthereumChainReply } from '../types/JsonRpc-types.js'
 import { changeActiveAddressAndChainAndResetSimulation } from './background.js'
@@ -10,6 +10,7 @@ import { ApprovalState } from './accessManagement.js'
 import { ProviderMessage } from '../utils/requests.js'
 import { sendSubscriptionReplyOrCallBackToPort } from './messageSending.js'
 import { Simulator } from '../simulation/simulator.js'
+import { METAMASK_ERROR_NOT_AUTHORIZED } from '../utils/constants.js'
 
 export async function ethAccountsReply(simulator: Simulator, websiteTabConnections: WebsiteTabConnections, port: browser.runtime.Port, request: ProviderMessage, _connectInfoapproval: ApprovalState) {
 	const returnValue = { method: 'eth_accounts_reply' as const, result: '0x' as const }
@@ -25,14 +26,7 @@ export async function ethAccountsReply(simulator: Simulator, websiteTabConnectio
 	}
 	const signerAccounts = signerAccountsReply.accounts
 	const activeSigningAddress = signerAccounts.length > 0 ? signerAccounts[0] : undefined
-	const tabStateChange = await updateTabState(port.sender.tab.id, (previousState: TabState) => {
-		return {
-			...previousState,
-			...signerAccounts.length > 0 ? { signerAccountError: undefined } : {},
-			signerAccounts: signerAccounts,
-			activeSigningAddress: activeSigningAddress,
-		}
-	})
+	const tabStateChange = await updateTabState(port.sender.tab.id, (previousState: TabState) => ({ ...previousState, ...signerAccounts.length > 0 ? { signerAccountError: undefined } : {}, signerAccounts, activeSigningAddress }))
 	sendPopupMessageToOpenWindows({ method: 'popup_activeSigningAddressChanged', data: { tabId: port.sender.tab.id, activeSigningAddress } })
 	sendInternalWindowMessage({ method: 'window_signer_accounts_changed', data: { socket: getSocketFromPort(port) } })
 	// update active address if we are using signers address
@@ -52,13 +46,7 @@ async function changeSignerChain(simulator: Simulator, websiteTabConnections: We
 	if (approval !== 'hasAccess') return
 	if (port.sender?.tab?.id === undefined) return
 	if ((await getTabState(port.sender.tab.id)).signerChain === signerChain) return
-
-	await updateTabState(port.sender.tab.id, (previousState: TabState) => {
-		return {
-			...previousState,
-			signerChain: signerChain,
-		}
-	})
+	await updateTabState(port.sender.tab.id, (previousState: TabState) => ({ ...previousState, signerChain }))
 
 	// update active address if we are using signers address
 	const settings = await getSettings()
@@ -103,11 +91,26 @@ export async function connectedToSigner(_simulator: Simulator, _websiteTabConnec
 	const settings = await getSettings()
 	if (!settings.simulationMode || settings.useSignersAddressAsActiveAddress) {
 		if (approval === 'hasAccess') {
-			sendSubscriptionReplyOrCallBackToPort(port, { method: 'request_signer_to_eth_requestAccounts' as const, result: [] })
+			sendSubscriptionReplyOrCallBackToPort(port, { type: 'result' as const, method: 'request_signer_to_eth_requestAccounts' as const, result: [] })
 		} else {
-			sendSubscriptionReplyOrCallBackToPort(port, { method: 'request_signer_to_eth_accounts' as const, result: [] })
+			sendSubscriptionReplyOrCallBackToPort(port, { type: 'result' as const, method: 'request_signer_to_eth_accounts' as const, result: [] })
 		}
-		sendSubscriptionReplyOrCallBackToPort(port, { method: 'request_signer_chainId' as const, result: [] })
+		sendSubscriptionReplyOrCallBackToPort(port, { type: 'result' as const, method: 'request_signer_chainId' as const, result: [] })
 	}
 	return { method: 'connected_to_signer' as const, result: { metamaskCompatibilityMode: await getMetamaskCompatibilityMode() } }
+}
+
+export async function signerReply(_simulator: Simulator, _websiteTabConnections: WebsiteTabConnections, _port: browser.runtime.Port, request: ProviderMessage, _approval: ApprovalState) {
+	console.log('signerReply')
+	console.log(request)
+	const signerReply = SignerReply.parse(request)
+	const params = signerReply.params[0]
+	if (params.success) return { method: 'signer_reply' as const, result: params.reply }
+	switch(params.forwardRequest.method) {
+		case 'eth_sendTransaction': {
+			if (params.error.code === METAMASK_ERROR_NOT_AUTHORIZED) console.log('we are not authorized!')
+			return { method: 'signer_reply' as const, error: params.error }
+		}
+	}
+	return { method: 'signer_reply' as const, error: params.error }
 }

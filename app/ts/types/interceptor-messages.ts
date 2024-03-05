@@ -24,20 +24,28 @@ export const WalletSwitchEthereumChainReply = funtypes.ReadonlyObject({
 
 export type InpageScriptRequestWithoutIdentifier = funtypes.Static<typeof InpageScriptRequestWithoutIdentifier>
 export const InpageScriptRequestWithoutIdentifier = funtypes.Union(
+	funtypes.ReadonlyObject({ method: funtypes.Literal('signer_reply'), result: funtypes.Unknown }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('eth_accounts_reply'), result: funtypes.Literal('0x') }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('signer_chainChanged'), result: funtypes.Literal('0x') }),
-	funtypes.ReadonlyObject({ method: funtypes.Literal('connected_to_signer'), result: funtypes.ReadonlyObject({ metamaskCompatibilityMode: funtypes.Boolean}) }),
+	funtypes.ReadonlyObject({ method: funtypes.Literal('connected_to_signer'), result: funtypes.ReadonlyObject({ metamaskCompatibilityMode: funtypes.Boolean }) }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('wallet_switchEthereumChain_reply'), result: funtypes.Literal('0x') }),
 )
 
 export type InpageScriptRequest = funtypes.Static<typeof InpageScriptRequest>
 export const InpageScriptRequest = funtypes.Intersect(
-	funtypes.ReadonlyObject({ uniqueRequestIdentifier: UniqueRequestIdentifier }),
+	funtypes.ReadonlyObject({ uniqueRequestIdentifier: UniqueRequestIdentifier, type: funtypes.Literal('result') }),
 	InpageScriptRequestWithoutIdentifier,
 )
 
+export type ErrorReturn = funtypes.Static<typeof ErrorReturn>
+export const ErrorReturn = funtypes.ReadonlyObject({
+	method: funtypes.String,
+	error: funtypes.Intersect(CodeMessageError, funtypes.ReadonlyPartial({ data: funtypes.String }))
+})
+
 export type InpageScriptCallBack = funtypes.Static<typeof InpageScriptCallBack>
 export const InpageScriptCallBack = funtypes.Union(
+	ErrorReturn,
 	funtypes.ReadonlyObject({ method: funtypes.Literal('request_signer_chainId'), result: funtypes.ReadonlyTuple() }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('request_signer_to_wallet_switchEthereumChain'), result: EthereumQuantity }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('request_signer_to_eth_requestAccounts'), result: funtypes.ReadonlyTuple() }),
@@ -81,17 +89,6 @@ export const NonForwardingRPCRequestSuccessfullReturnValue = funtypes.Union(
 	funtypes.ReadonlyObject({ method: funtypes.Literal('eth_getFilterLogs'), result: EthGetLogsResponse }),
 )
 
-export type ErrorReturn = funtypes.Static<typeof ErrorReturn>
-export const ErrorReturn = funtypes.ReadonlyObject({
-	method: funtypes.String,
-	error: funtypes.Intersect(
-		CodeMessageError,
-		funtypes.ReadonlyPartial({
-			data: funtypes.String,
-		})
-	)
-})
-
 export type SubscriptionReturnValue = funtypes.Static<typeof SubscriptionReturnValue>
 export const SubscriptionReturnValue = funtypes.ReadonlyObject({
 	method: funtypes.Literal('newHeads'),
@@ -102,18 +99,21 @@ export const SubscriptionReturnValue = funtypes.ReadonlyObject({
 })
 
 export type NonForwardingRPCRequestReturnValue = funtypes.Static<typeof NonForwardingRPCRequestReturnValue>
-export const NonForwardingRPCRequestReturnValue = funtypes.Union(NonForwardingRPCRequestSuccessfullReturnValue, ErrorReturn)
+export const NonForwardingRPCRequestReturnValue = funtypes.Intersect(
+	funtypes.ReadonlyObject({ type: funtypes.Literal('result') }),
+	funtypes.Union(NonForwardingRPCRequestSuccessfullReturnValue, ErrorReturn)
+)
 
 export type ForwardToWallet = funtypes.Static<typeof ForwardToWallet>
 export const ForwardToWallet = 	funtypes.Intersect( // forward directly to wallet
-	funtypes.ReadonlyObject({ forward: funtypes.Literal(true) }),
+	funtypes.ReadonlyObject({ type: funtypes.Literal('forwardToSigner') }),
 	funtypes.Union(SendRawTransactionParams, SendTransactionParams, PersonalSignParams, SignTypedDataParams, OldSignTypedDataParams, WalletAddEthereumChain, EthGetStorageAtParams),
 )
 
 export type UnknownMethodForward = funtypes.Static<typeof UnknownMethodForward>
 export const UnknownMethodForward = funtypes.Intersect(
 	funtypes.ReadonlyObject({
-		forward: funtypes.Literal(true),
+		type: funtypes.Literal('forwardToSigner'),
 		unknownMethod: funtypes.Literal(true),
 		method: funtypes.String,
 	}),
@@ -127,30 +127,34 @@ export const RPCReply = funtypes.Union(
 	NonForwardingRPCRequestReturnValue,
 	ForwardToWallet,
 	UnknownMethodForward,
+	funtypes.ReadonlyObject({ type: funtypes.Literal('doNotReply') }),
 )
 
 export type SubscriptionReplyOrCallBack = funtypes.Static<typeof SubscriptionReplyOrCallBack>
-export const SubscriptionReplyOrCallBack = funtypes.Union(
-	InpageScriptCallBack,
-	funtypes.Intersect(
-		funtypes.ReadonlyObject({
-			method: funtypes.String,
-			subscription: funtypes.String,
-		}),
-		SubscriptionReturnValue,
-	),
+export const SubscriptionReplyOrCallBack = funtypes.Intersect(
+	funtypes.ReadonlyObject({ type: funtypes.Literal('result') }),
+	funtypes.Union(
+		InpageScriptCallBack,
+		funtypes.Intersect(
+			funtypes.ReadonlyObject({
+				method: funtypes.String,
+				subscription: funtypes.String,
+			}),
+			SubscriptionReturnValue,
+		)
+	)
 )
 
 export type InterceptedRequestForwardWithRequestId = funtypes.Static<typeof InterceptedRequestForwardWithRequestId>
 export const InterceptedRequestForwardWithRequestId = funtypes.Intersect(
 	funtypes.ReadonlyObject({ requestId: funtypes.Number }),
-	funtypes.Union(RPCReply, InpageScriptRequestWithoutIdentifier),
+	funtypes.Union(RPCReply, funtypes.Intersect(funtypes.ReadonlyObject({ type: funtypes.Literal('result') }), InpageScriptRequestWithoutIdentifier)),
 )
 
 export type InterceptedRequestForward = funtypes.Static<typeof InterceptedRequestForward>
 export const InterceptedRequestForward = funtypes.Intersect(
 	funtypes.ReadonlyObject({ uniqueRequestIdentifier: UniqueRequestIdentifier }),
-	funtypes.Union(RPCReply, InpageScriptRequestWithoutIdentifier),
+	funtypes.Union(RPCReply, funtypes.Intersect(funtypes.ReadonlyObject({ type: funtypes.Literal('result') }), InpageScriptRequestWithoutIdentifier)),
 )
 
 export type InterceptorMessageToInpage = funtypes.Static<typeof InterceptorMessageToInpage>
@@ -175,19 +179,23 @@ export type TransactionConfirmation = funtypes.Static<typeof TransactionConfirma
 export const TransactionConfirmation = funtypes.ReadonlyObject({
 	method: funtypes.Literal('popup_confirmDialog'),
 	data: funtypes.Union(
-		funtypes.ReadonlyObject({
-			uniqueRequestIdentifier: UniqueRequestIdentifier,
-			accept: funtypes.Literal(true),
-			popupOrTabId: PopupOrTabId,
-		}),
-		funtypes.ReadonlyObject({
-			uniqueRequestIdentifier: UniqueRequestIdentifier,
-			accept: funtypes.Literal(false),
-			popupOrTabId: PopupOrTabId,
-			transactionErrorString: funtypes.Union(funtypes.String, funtypes.Undefined),
-		})
+		funtypes.Intersect(
+			funtypes.ReadonlyObject({ 
+				uniqueRequestIdentifier: UniqueRequestIdentifier,
+				popupOrTabId: PopupOrTabId
+			}),
+			funtypes.Union(
+				funtypes.ReadonlyObject({
+					action: funtypes.Union(funtypes.Literal('accept'), funtypes.Literal('noResponse')),
+				}),
+				funtypes.ReadonlyObject({
+					action: funtypes.Literal('reject'),
+					transactionErrorString: funtypes.Union(funtypes.String, funtypes.Undefined),
+				}),
+			)
+		)
 	)
-}).asReadonly()
+})
 
 export type PersonalSignApproval = funtypes.Static<typeof PersonalSignApproval>
 export const PersonalSignApproval = funtypes.ReadonlyObject({
@@ -331,6 +339,35 @@ export const ConnectedToSigner = funtypes.ReadonlyObject({
 	params: funtypes.Tuple(SignerName),
 }).asReadonly()
 
+
+export type SignerReplyForwardRequest = funtypes.Static<typeof SignerReplyForwardRequest>
+export const SignerReplyForwardRequest = funtypes.Intersect(
+	funtypes.ReadonlyObject({ requestId: funtypes.Number }),
+	ForwardToWallet,
+	UnknownMethodForward,
+)
+
+export type SignerReply = funtypes.Static<typeof SignerReply>
+export const SignerReply = funtypes.ReadonlyObject({
+	method: funtypes.Literal('signer_reply'),
+	params: funtypes.Tuple(funtypes.Union(
+		funtypes.ReadonlyObject({
+			success: funtypes.Literal(true),
+			forwardRequest: SignerReplyForwardRequest,
+			reply: funtypes.Unknown,
+		}),
+		funtypes.ReadonlyObject({
+			success: funtypes.Literal(false),
+			forwardRequest: SignerReplyForwardRequest,
+			error: funtypes.Intersect(
+				CodeMessageError,
+				funtypes.ReadonlyPartial({ data: funtypes.String })
+			)
+		})
+
+	)),
+}).asReadonly()
+
 export type GetAddressBookDataFilter = funtypes.Static<typeof GetAddressBookDataFilter>
 export const GetAddressBookDataFilter = funtypes.Intersect(
 	funtypes.ReadonlyObject({
@@ -451,7 +488,7 @@ export const InterceptorAccessReply = funtypes.ReadonlyObject({
 	accessRequestId: funtypes.String,
 	originalRequestAccessToAddress: OptionalEthereumAddress,
 	requestAccessToAddress: OptionalEthereumAddress,
-	userReply: funtypes.Union(funtypes.Literal('Approved'), funtypes.Literal('Rejected'), funtypes.Literal('NoResponse') ),
+	userReply: funtypes.Union(funtypes.Literal('Approved'), funtypes.Literal('Rejected'), funtypes.Literal('noResponse') ),
 })
 
 export type InterceptorAccess = funtypes.Static<typeof InterceptorAccess>
