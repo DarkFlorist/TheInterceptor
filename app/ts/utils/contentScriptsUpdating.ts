@@ -34,8 +34,8 @@ const injectLogic = async (content: browser.webNavigation._OnCommittedDetails) =
 	const hostName = new URL(content.url).hostname
 	const noMatches = disabledSites.every(excludeMatch => hostName !== excludeMatch)
 	if (!noMatches) return
-	browser.tabs.executeScript(content.tabId, { file: '/vendor/webextension-polyfill/browser-polyfill.js', allFrames: true, runAt: 'document_start' })
-	browser.tabs.executeScript(content.tabId, { file: '/inpage/output/injected_document_start.js', allFrames: true, runAt: 'document_start' })
+	browser.tabs.executeScript(content.tabId, { file: '/vendor/webextension-polyfill/browser-polyfill.js', allFrames: false, runAt: 'document_start' })
+	browser.tabs.executeScript(content.tabId, { file: '/inpage/output/injected_document_start.js', allFrames: false, runAt: 'document_start' })
 }
 
 export const updateContentScriptInjectionStrategyManifestV2 = async () => {
