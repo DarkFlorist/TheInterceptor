@@ -175,6 +175,9 @@ class InterceptorMessageListener {
 	private readonly onDisconnectCallBacks: Set<((error: ProviderRpcError) => void)> = new Set()
 	private readonly onChainChangedCallBacks: Set<((chainId: string) => void)> = new Set()
 
+	private currentAddress: string = ''
+	private currentChainId: string = ''
+
 	private waitForAccountsFromWallet: InterceptorFuture<boolean> | undefined = undefined
 	private signerAccounts: string[] = []
 	private pendingSignerAddressRequest: InterceptorFuture<boolean> | undefined = undefined
@@ -411,17 +414,22 @@ class InterceptorMessageListener {
 			switch (replyRequest.method) {
 				case 'accountsChanged': {
 					const reply = replyRequest.result as readonly string[]
+					const replyAddress = reply.length > 0 ? reply[0] : ''
+					if (this.currentAddress === replyAddress) return
+					this.currentAddress = replyAddress
 					if (this.metamaskCompatibilityMode && window.ethereum !== undefined) {
-						window.ethereum.selectedAddress = reply.length > 0 ? reply[0] : ''
-						if ('web3' in window && window.web3 !== undefined) window.web3.accounts = reply
+						try { window.ethereum.selectedAddress = replyAddress } catch(error) {}
+						if ('web3' in window && window.web3 !== undefined) try { window.web3.accounts = reply } catch(error) {}
 					}
 					return this.onAccountsChangedCallBacks.forEach((callback) => callback(reply))
 				}
 				case 'connect': {
+					if (this.connected) return
 					this.connected = true
 					return this.onConnectCallBacks.forEach((callback) => callback({ chainId: replyRequest.result as string }))
 				}
 				case 'disconnect': {
+					if (!this.connected) return
 					this.connected = false
 					return this.onDisconnectCallBacks.forEach((callback) => callback({
 						name: 'disconnect',
@@ -431,9 +439,11 @@ class InterceptorMessageListener {
 				}
 				case 'chainChanged': {
 					const reply = replyRequest.result as string
+					if (this.currentChainId === reply) return
+					this.currentChainId = reply
 					if (this.metamaskCompatibilityMode && this.signerWindowEthereumRequest === undefined && window.ethereum !== undefined) {
-						window.ethereum.chainId = reply
-						window.ethereum.networkVersion = Number(reply).toString(10)
+						try { window.ethereum.chainId = reply } catch(error) {}
+						try { window.ethereum.networkVersion = Number(reply).toString(10) } catch(error) {}
 					}
 					return this.onChainChangedCallBacks.forEach((callback) => callback(reply))
 				}
@@ -498,15 +508,18 @@ class InterceptorMessageListener {
 					case 'eth_accounts': {
 						if (!Array.isArray(forwardRequest.result) || forwardRequest.result === null) throw new Error('wrong type')
 						const addrArray = forwardRequest.result as string[]
-						window.ethereum.selectedAddress = addrArray.length > 0 ? addrArray[0] : ''
-						if ('web3' in window && window.web3 !== undefined) window.web3.accounts = addrArray
+						const addr = addrArray.length > 0 ? addrArray[0] : '' 
+						try { window.ethereum.selectedAddress = addr } catch(e) {}
+						if ('web3' in window && window.web3 !== undefined) try { window.web3.accounts = addrArray } catch(e) {}
+						this.currentAddress = addr
 						break
 					}
 					case 'eth_chainId': {
 						if (typeof forwardRequest.result !== 'string') throw new Error('wrong type')
 						const chainId = forwardRequest.result as string
-						window.ethereum.chainId = chainId
-						window.ethereum.networkVersion = Number(chainId).toString(10)
+						try { window.ethereum.chainId = chainId } catch(e) {}
+						try { window.ethereum.networkVersion = Number(chainId).toString(10) } catch(e) {}
+						this.currentChainId = chainId
 						break
 					}
 				}
@@ -549,11 +562,11 @@ class InterceptorMessageListener {
 		this.metamaskCompatibilityMode = enable
 		if (enable) {
 			if (window.ethereum === undefined) return
-			if (!('isMetamask' in window.ethereum)) window.ethereum.isMetaMask = true
+			if (!('isMetamask' in window.ethereum)) try { window.ethereum.isMetaMask = true } catch(e) {}
 			if ('web3' in window && window.web3 !== undefined) {
-				window.web3.currentProvider = window.ethereum
+				try { window.web3.currentProvider = window.ethereum } catch(e) {}
 			} else {
-				window.web3 = { accounts: [], currentProvider: window.ethereum }
+				try { window.web3 = { accounts: [], currentProvider: window.ethereum } } catch(e) {}
 			}
 		}
 	}
