@@ -144,7 +144,6 @@ export function App() {
 
 		const updateHomePage = ({ data }: UpdateHomePage) => {
 			if (data.tabId !== currentTabId && currentTabId !== undefined) return
-			
 			setIsSettingsLoaded((isSettingsLoaded) => {
 				setRpcEntries(data.rpcEntries)
 				setActiveAddresses(data.activeAddresses)
@@ -175,10 +174,8 @@ export function App() {
 			})
 		}
 		const updateHomePageSettings = (settings: Settings, updateQuery: boolean) => {
-			if (updateQuery) {
-				setSimulationMode(settings.simulationMode)
-				setAppPage(settings.openedPage)
-			}
+			if (updateQuery) setAppPage(settings.openedPage)
+			setSimulationMode(settings.simulationMode)
 			setSelectedNetwork(settings.currentRpcNetwork)
 			setActiveSimulationAddress(settings.activeSimulationAddress)
 			setUseSignersAddressAsActiveAddress(settings.useSignersAddressAsActiveAddress)
@@ -295,7 +292,6 @@ export function App() {
 		await sendPopupMessageToBackgroundPage( { method: 'popup_openSettings' } )
 		return globalThis.close() // close extension popup, chrome closes it by default, but firefox does not
 	}
-	
 	return (
 		<main>
 			<Hint>

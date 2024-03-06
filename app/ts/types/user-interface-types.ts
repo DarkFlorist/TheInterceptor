@@ -81,9 +81,8 @@ export type FirstCardParams = {
 	simulationMode: boolean,
 	changeActiveAddress: () => void,
 	makeMeRich: boolean,
-	signerAccounts: readonly bigint[] | undefined,
 	tabIconDetails: TabIconDetails,
-	signerName: SignerName,
+	tabState: TabState | undefined,
 	renameAddressCallBack: RenameAddressCallBack,
 	rpcEntries: RpcEntries,
 }
@@ -155,6 +154,7 @@ export const WindowOrTabId = funtypes.ReadonlyObject({
 export type TabState = funtypes.Static<typeof TabState>
 export const TabState = funtypes.ReadonlyObject({
 	website: funtypes.Union(Website, funtypes.Undefined),
+	signerConnected: funtypes.Boolean,
 	signerName: SignerName,
 	signerAccounts: funtypes.ReadonlyArray(EthereumAddress),
 	signerAccountError: funtypes.Union(CodeMessageError, funtypes.Undefined),

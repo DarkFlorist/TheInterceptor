@@ -160,6 +160,7 @@ interface EIP6963ProviderInfo {
 type SingleSendAsyncParam = { readonly id: string | number | null, readonly method: string, readonly params: readonly unknown[] }
 
 type OnMessage = 'accountsChanged' | 'message' | 'connect' | 'close' | 'disconnect' | 'chainChanged'
+type Signer = 'NoSigner' | 'NotRecognizedSigner' | 'MetaMask' | 'Brave' | 'CoinbaseWallet'
 
 class InterceptorMessageListener {
 	private connected: boolean = false
@@ -177,6 +178,7 @@ class InterceptorMessageListener {
 
 	private currentAddress: string = ''
 	private currentChainId: string = ''
+	private currentSigner: Signer = 'NoSigner'
 
 	private waitForAccountsFromWallet: InterceptorFuture<boolean> | undefined = undefined
 	private signerAccounts: string[] = []
@@ -571,9 +573,10 @@ class InterceptorMessageListener {
 		}
 	}
 
-	private readonly connectToSigner = async (signerName: 'NoSigner' | 'NotRecognizedSigner' | 'MetaMask' | 'Brave' | 'CoinbaseWallet') => {
+	private readonly connectToSigner = async (signerName: Signer) => {
+		this.currentSigner = signerName
 		const connectToSigner = async (): Promise<{ metamaskCompatibilityMode: boolean }> => {
-			const comppatibilityMode = await this.sendMessageToBackgroundPage({ method: 'connected_to_signer', params: [signerName] })
+			const comppatibilityMode = await this.sendMessageToBackgroundPage({ method: 'connected_to_signer', params: [true, signerName] })
 			if (typeof comppatibilityMode === 'object' && comppatibilityMode !== null
 				&& 'metamaskCompatibilityMode' in comppatibilityMode && comppatibilityMode.metamaskCompatibilityMode !== null && comppatibilityMode.metamaskCompatibilityMode !== undefined && typeof comppatibilityMode.metamaskCompatibilityMode === 'boolean') {
 				return comppatibilityMode as { metamaskCompatibilityMode: boolean }
@@ -659,10 +662,10 @@ class InterceptorMessageListener {
 			this.WindowEthereumRequest({ method: 'eth_accounts_reply', params: [{ type: 'success', accounts, requestAccounts: false }] })
 		})
 		window.ethereum.on('connect', (_connectInfo: ProviderConnectInfo) => {
-
+			this.connectToSigner(this.currentSigner)
 		})
 		window.ethereum.on('disconnect', (_error: ProviderRpcError) => {
-			this.WindowEthereumRequest({ method: 'eth_accounts_reply', params: [{ type: 'success', accounts: [], requestAccounts: false }] })
+			this.sendMessageToBackgroundPage({ method: 'connected_to_signer', params: [false, this.currentSigner] })
 		})
 		window.ethereum.on('chainChanged', (chainId: string) => {
 			// TODO: this is a hack to get coinbase working that calls this numbers in base 10 instead of in base 16

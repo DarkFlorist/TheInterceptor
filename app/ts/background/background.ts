@@ -278,14 +278,13 @@ export async function refreshConfirmTransactionSimulation(
 export async function getPrependTransactions(ethereumClientService: EthereumClientService, settings: Settings, richMode: boolean): Promise<WebsiteCreatedEthereumUnsignedTransaction[]> {
 	if (!settings.simulationMode || !richMode) return []
 	const activeAddress = settings.activeSimulationAddress
-	const chainId = settings.currentRpcNetwork.chainId
-	const donatorAddress = getEthDonator(chainId)
+	const donatorAddress = getEthDonator(ethereumClientService.getChainId())
 	if (donatorAddress === undefined) return []
 	if (activeAddress === undefined) return []
 	return [{
 		transaction: {
 			from: donatorAddress,
-			chainId: chainId,
+			chainId: ethereumClientService.getChainId(),
 			nonce: await ethereumClientService.getTransactionCount(donatorAddress),
 			to: activeAddress,
 			...MAKE_YOU_RICH_TRANSACTION.transaction,
@@ -418,20 +417,14 @@ export async function changeActiveAddressAndChainAndResetSimulation(
 	},
 ) {
 	if (change.simulationMode) {
-		await changeSimulationMode({
-			...change,
-			...'activeAddress' in change ? { activeSimulationAddress: change.activeAddress } : {}
-		})
+		await changeSimulationMode({ ...change, ...'activeAddress' in change ? { activeSimulationAddress: change.activeAddress } : {} })
 	} else {
-		await changeSimulationMode({
-			...change,
-			...'activeAddress' in change ? { activeSigningAddress: change.activeAddress } : {}
-		})
+		await changeSimulationMode({ ...change, ...'activeAddress' in change ? { activeSigningAddress: change.activeAddress } : {} })
 	}
 
 	const updatedSettings = await getSettings()
-	updateWebsiteApprovalAccesses(simulator, websiteTabConnections, undefined, updatedSettings)
 	sendPopupMessageToOpenWindows({ method: 'popup_settingsUpdated', data: updatedSettings })
+	updateWebsiteApprovalAccesses(simulator, websiteTabConnections, undefined, updatedSettings)
 	sendPopupMessageToOpenWindows({ method: 'popup_accounts_update' })
 	await sendActiveAccountChangeToApprovedWebsitePorts(websiteTabConnections, updatedSettings)
 

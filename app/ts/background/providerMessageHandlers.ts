@@ -86,9 +86,11 @@ export async function walletSwitchEthereumChainReply(simulator: Simulator, websi
 }
 
 export async function connectedToSigner(_simulator: Simulator, _websiteTabConnections: WebsiteTabConnections, port: browser.runtime.Port, request: ProviderMessage, approval: ApprovalState) {
-	const signerName = ConnectedToSigner.parse(request).params[0]
+	const parsed = ConnectedToSigner.parse(request)
+	const signerName = parsed.params[1]
+	const signerConnected = parsed.params[0]
 	await setDefaultSignerName(signerName)
-	await updateTabState(request.uniqueRequestIdentifier.requestSocket.tabId, (previousState: TabState) => ({ ...previousState, signerName }))
+	await updateTabState(request.uniqueRequestIdentifier.requestSocket.tabId, (previousState: TabState) => ({ ...previousState, signerName, signerConnected }))
 	await sendPopupMessageToOpenWindows({ method: 'popup_signer_name_changed' })
 	const settings = await getSettings()
 	if (!settings.simulationMode || settings.useSignersAddressAsActiveAddress) {
@@ -100,6 +102,12 @@ export async function connectedToSigner(_simulator: Simulator, _websiteTabConnec
 		sendSubscriptionReplyOrCallBackToPort(port, { type: 'result' as const, method: 'request_signer_chainId' as const, result: [] })
 	}
 	return { type: 'result' as const, method: 'connected_to_signer' as const, result: { metamaskCompatibilityMode: await getMetamaskCompatibilityMode() } }
+}
+
+export async function signerConnectionStatusChanged(_simulator: Simulator, _websiteTabConnections: WebsiteTabConnections, port: browser.runtime.Port, _request: ProviderMessage, _approval: ApprovalState) {
+	// { method: 'signer_connection_status_changed', params: [{ connected: true }] }
+	sendSubscriptionReplyOrCallBackToPort(port, { type: 'result' as const, method: 'request_signer_to_eth_accounts' as const, result: [] })
+	return { type: 'result' as const, result: '0x' }
 }
 
 export async function signerReply(simulator: Simulator, websiteTabConnections: WebsiteTabConnections, _port: browser.runtime.Port, request: ProviderMessage, _approval: ApprovalState) {
