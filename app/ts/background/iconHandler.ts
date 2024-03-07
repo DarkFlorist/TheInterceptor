@@ -53,7 +53,7 @@ export async function updateExtensionBadge() {
 	return await setExtensionBadgeText( { text: '' } )
 }
 
-export async function retrieveWebsiteDetails(tabId: number, websiteOrigin: string) {
+export async function retrieveWebsiteDetails(tabId: number) {
 	const tryGettingTab = async (tabId: number) => {
 		try {
 			return await safeGetTab(tabId)
@@ -65,21 +65,22 @@ export async function retrieveWebsiteDetails(tabId: number, websiteOrigin: strin
 		}
 	}
 
+	const waitForLoadedFuture = new Future<void>
+
 	// wait for the tab to be fully loaded
 	const listener = function listener(tabIdUpdated: number, info: browser.tabs._OnUpdatedChangeInfo) {
-		if (info.status === 'complete' && tabId === tabIdUpdated) {
-			return waitForLoadedFuture.resolve()
-		}
+		if (info.status === 'complete' && tabId === tabIdUpdated) return waitForLoadedFuture.resolve()
 	}
 
-	const waitForLoadedFuture = new Future<void>
 	try {
 		browser.tabs.onUpdated.addListener(listener)
 		const tab = await tryGettingTab(tabId)
 		if (tab !== undefined && tab.status === 'complete') {
 			waitForLoadedFuture.resolve()
 		}
+		const timeout = setTimeout(() => waitForLoadedFuture.reject(new Error('timed out')), 60000)
 		await waitForLoadedFuture
+		clearTimeout(timeout)
 	} catch(error) {
 		if (error instanceof Error) {
 			waitForLoadedFuture.reject(error)
@@ -103,7 +104,6 @@ export async function retrieveWebsiteDetails(tabId: number, websiteOrigin: strin
 	}
 	const tab = await tryGettingTab(tabId)
 	return {
-		websiteOrigin: websiteOrigin,
 		title: tab?.title,
 		icon: tab?.favIconUrl === undefined ? undefined : await imageToUri(tab.favIconUrl)
 	}
