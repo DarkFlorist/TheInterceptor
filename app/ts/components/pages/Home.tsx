@@ -109,7 +109,7 @@ function FirstCard(param: FirstCardParams) {
 				{ param.useSignersAddressAsActiveAddress || !param.simulationMode ?
 					<p style = 'color: var(--text-color); text-align: left; padding-bottom: 10px'>
 						{ param.tabState === undefined || param.tabState?.signerName === 'NoSigner' ? <></> : <>Retrieving from&nbsp;<SignersLogoName signerName = { param.tabState.signerName } /></> }
-						{ param.tabState?.signerConnected ? <span style = 'float: right; color: var(--primary-color);'> CONNECTED </span> : <span style = 'float: right; color: var(--negative-color);'> NOT CONNECTED </span> }
+						{ param.tabState?.signerConnected ? <span style = 'float: right; color: var(--primary-color);'>CONNECTED</span> : <span style = 'float: right; color: var(--negative-color);'>NOT CONNECTED</span> }
 					</p>
 					: <></>
 				}
@@ -172,7 +172,7 @@ function SimulationResults(param: SimulationStateParam) {
 			</div>
 		</div>
 		{ param.simulationAndVisualisationResults.simulatedAndVisualizedTransactions.length === 0 && param.simulationAndVisualisationResults.visualizedPersonalSignRequests.length === 0 ? 
-			<div style = 'padding: 10px'> <DinoSays text = { 'Give me some transactions to munch on!' } /> </div>
+			<div style = 'padding: 10px'><DinoSays text = { 'Give me some transactions to munch on!' } /></div>
 		: <>
 			<div class = { param.simulationResultState === 'invalid' || param.simulationUpdatingState === 'failed' ? 'blur' : '' }>
 				<TransactionsAndSignedMessages
