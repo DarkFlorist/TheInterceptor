@@ -173,7 +173,7 @@ export async function refreshPopupConfirmTransactionMetadata(ethereumClientServi
 			}
 		})
 	}
-	const visualizerResults = await Promise.all(data.visualizerResults.map(async (x) => ({ ...x, events: await parseEvents(x.events.map((e) => ({ loggersAddress: e.loggersAddress, topics: e.topics, data: e.data })), ethereumClientService) })))
+	const visualizerResults = await Promise.all(data.visualizerResults.map(async (result) => ({ ...result, events: await parseEvents(result.events.map((e) => ({ loggersAddress: e.loggersAddress, topics: e.topics, data: e.data })), ethereumClientService) })))
 	const addressBookEntriesPromise = getAddressBookEntriesForVisualiser(ethereumClientService, visualizerResults, data.simulationState)
 	const namedTokenIdsPromise = nameTokenIds(ethereumClientService, visualizerResults)
 	const addressBookEntries = await addressBookEntriesPromise
