@@ -7,26 +7,10 @@ import { SimulatedAndVisualizedTransaction, SimulationAndVisualisationResults } 
 import { EthereumQuantity } from '../../../types/wire-types.js'
 import { checksummedAddress, dataStringWith0xStart } from '../../../utils/bigint.js'
 import { BIG_FONT_SIZE } from '../../../utils/constants.js'
-import { TransactionCardParams } from '../../pages/ConfirmTransaction.js'
 import { ErrorComponent } from '../../subcomponents/Error.js'
 import { CellElement } from '../../ui-utils.js'
 import { Transaction } from '../Transactions.js'
 import { useEffect, useState } from 'preact/hooks'
-
-export function GovernanceTransactionExecution(param: TransactionCardParams) {
-	const simTx = param.simulationAndVisualisationResults.simulatedAndVisualizedTransactions.at(-1)
-	if (simTx === undefined) throw new Error('missing transation')
-	return <>
-		<Transaction
-			simTx = { simTx }
-			simulationAndVisualisationResults = { param.simulationAndVisualisationResults }
-			removeTransaction = { undefined }
-			activeAddress = { param.activeAddress }
-			renameAddressCallBack = { param.renameAddressCallBack }
-			addressMetaData = { param.simulationAndVisualisationResults.addressBookEntries }
-		/>
-	</>
-}
 
 export type MissingAbiParams = {
 	errorMessage: string
@@ -101,7 +85,7 @@ export type ShowSuccessOrFailureParams = {
 
 const simulateGovernanceVote = (transactionIdentifier: EthereumQuantity) => sendPopupMessageToBackgroundPage({ method: 'popup_simulateGovernanceContractExecution', data: { transactionIdentifier } })
 
-const ShowSuccessOrFailure = ({ currentBlockNumber, rpcConnectionStatus, simulateGovernanceContractExecutionReply, simTx, simulationAndVisualisationResults, renameAddressCallBack }: ShowSuccessOrFailureParams) => { 
+const ShowSuccessOrFailure = ({ simulateGovernanceContractExecutionReply, simTx, simulationAndVisualisationResults, renameAddressCallBack }: ShowSuccessOrFailureParams) => { 
 	const missingAbiText = 'The governance contract is missing an ABI. Add an ABI to simulate execution of this proposal.'
 	if (simulateGovernanceContractExecutionReply === undefined) {
 		return <div style = 'display: flex; justify-content: center;'>
@@ -132,8 +116,11 @@ const ShowSuccessOrFailure = ({ currentBlockNumber, rpcConnectionStatus, simulat
 			/> : <ErrorComponent text = { simulateGovernanceContractExecutionReply.data.error.message }/> }
 		</div>
 	}
+	const govSimTx = simulateGovernanceContractExecutionReply.data.result.simulatedAndVisualizedTransactions.at(-1)
+	if (govSimTx === undefined) return <></>
 	return <div style = 'display: grid; grid-template-rows: max-content' >
-		<GovernanceTransactionExecution
+		<Transaction
+			simTx = { govSimTx }
 			simulationAndVisualisationResults = { {
 				blockNumber: simulateGovernanceContractExecutionReply.data.result.simulationState.blockNumber,
 				blockTimestamp: simulateGovernanceContractExecutionReply.data.result.simulationState.blockTimestamp,
@@ -146,11 +133,10 @@ const ShowSuccessOrFailure = ({ currentBlockNumber, rpcConnectionStatus, simulat
 				visualizedPersonalSignRequests: simulateGovernanceContractExecutionReply.data.result.visualizedPersonalSignRequests,
 				namedTokenIds: simulateGovernanceContractExecutionReply.data.result.namedTokenIds,
 			} }
-			pendingTransactions = { [] }
-			renameAddressCallBack = { renameAddressCallBack }
+			removeTransactionOrSignedMessage = { undefined }
 			activeAddress = { simulationAndVisualisationResults.activeAddress }
-			currentBlockNumber = { currentBlockNumber }
-			rpcConnectionStatus = { rpcConnectionStatus }
+			renameAddressCallBack = { renameAddressCallBack }
+			addressMetaData = { simulateGovernanceContractExecutionReply.data.result.addressBookEntries }
 		/>
 	</div>
 }

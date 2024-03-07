@@ -1,6 +1,6 @@
 import { HomeParams, FirstCardParams, SimulationStateParam, RpcConnectionStatus, TabIconDetails, TabIcon, TabState } from '../../types/user-interface-types.js'
 import { useEffect, useState } from 'preact/hooks'
-import { SimulatedAndVisualizedTransaction, SimulationAndVisualisationResults, SimulationUpdatingState, SimulationResultState } from '../../types/visualizer-types.js'
+import { SimulationAndVisualisationResults, SimulationUpdatingState, SimulationResultState } from '../../types/visualizer-types.js'
 import { ActiveAddressComponent, WebsiteOriginText, getActiveAddressEntry } from '../subcomponents/address.js'
 import { SimulationSummary } from '../simulationExplaining/SimulationSummary.js'
 import { ChainSelector } from '../subcomponents/ChainSelector.js'
@@ -11,13 +11,11 @@ import { ToolTip } from '../subcomponents/CopyToClipboard.js'
 import { sendPopupMessageToBackgroundPage } from '../../background/backgroundUtils.js'
 import { TransactionsAndSignedMessages } from '../simulationExplaining/Transactions.js'
 import { DinoSays } from '../subcomponents/DinoSays.js'
-import { identifyTransaction } from '../simulationExplaining/identifyTransaction.js'
 import { ActiveAddress, ActiveAddressEntry } from '../../types/addressBookTypes.js'
 import { SignerName } from '../../types/signerTypes.js'
 import { RpcEntries, RpcEntry, RpcNetwork } from '../../types/rpc.js'
-import { VisualizedPersonalSignRequest } from '../../types/personal-message-definitions.js'
-import { UniqueRequestIdentifier } from '../../utils/requests.js'
 import { Website } from '../../types/websiteAccessTypes.js'
+import { TransactionOrMessageIdentifier } from '../../types/interceptor-messages.js'
 
 async function enableMakeMeRich(enabled: boolean) {
 	sendPopupMessageToBackgroundPage( { method: 'popup_changeMakeMeRich', data: enabled } )
@@ -176,7 +174,7 @@ function FirstCard(param: FirstCardParams) {
 
 function SimulationResults(param: SimulationStateParam) {
 	if (param.simulationAndVisualisationResults === undefined) return <></>
-	if (param.simulationAndVisualisationResults.simulatedAndVisualizedTransactions.length === 0) {
+	if (param.simulationAndVisualisationResults.simulatedAndVisualizedTransactions.length === 0 && param.simulationAndVisualisationResults.visualizedPersonalSignRequests.length === 0) {
 		return <div style = 'padding: 10px'> <DinoSays text = { 'Give me some transactions to munch on!' } /> </div>
 	}
 
@@ -200,15 +198,13 @@ function SimulationResults(param: SimulationStateParam) {
 		<div class = { param.simulationResultState === 'invalid' || param.simulationUpdatingState === 'failed' ? 'blur' : '' }>
 			<TransactionsAndSignedMessages
 				simulationAndVisualisationResults = { param.simulationAndVisualisationResults }
-				removeTransaction = { param.removeTransaction }
-				removeSignedMessage = { param.removeSignedMessage }
+				removeTransactionOrSignedMessage = { param.removeTransactionOrSignedMessage }
 				activeAddress = { param.simulationAndVisualisationResults.activeAddress }
 				renameAddressCallBack = { param.renameAddressCallBack }
-				removedTransactionHashes = { param.removedTransactionHashes }
-				removedSignedMessages = { param.removedSignedMessages }
+				removedTransactionOrSignedMessages = { param.removedTransactionOrSignedMessages }
 				addressMetaData = { param.simulationAndVisualisationResults.addressBookEntries }
 			/>
-			{ param.removedTransactionHashes.length > 0
+			{ param.removedTransactionOrSignedMessages.length > 0
 				? <></>
 				: <SimulationSummary
 					simulationAndVisualisationResults = { param.simulationAndVisualisationResults }
@@ -236,8 +232,7 @@ export function Home(param: HomeParams) {
 	const [activeAddresses, setActiveAddresss] = useState<readonly ActiveAddressEntry[] | undefined>(undefined)
 	const [makeMeRich, setMakeMeRich] = useState<boolean>(false)
 	const [disableReset, setDisableReset] = useState<boolean>(false)
-	const [removedTransactionHashes, setRemovedTransactionHashes] = useState<readonly bigint[]>([])
-	const [removedSignedMessages, setRemovedSignedMessages] = useState<readonly UniqueRequestIdentifier[]>([])
+	const [removedTransactionOrSignedMessages, setRemovedTransactionOrSignedMessages] = useState<readonly TransactionOrMessageIdentifier[]>([])
 	const [rpcConnectionStatus, setRpcConnectionStatus] = useState<RpcConnectionStatus>(undefined)
 	const [rpcEntries, setRPCEntries] = useState<RpcEntries>([])
 	const [simulationUpdatingState, setSimulationUpdatingState] = useState<SimulationUpdatingState | undefined>(undefined)
@@ -258,8 +253,7 @@ export function Home(param: HomeParams) {
 		setLoaded(true)
 		setMakeMeRich(param.makeMeRich)
 		setDisableReset(false)
-		setRemovedTransactionHashes([])
-		setRemovedSignedMessages([])
+		setRemovedTransactionOrSignedMessages([])
 		setRpcConnectionStatus(param.rpcConnectionStatus)
 		setRPCEntries(param.rpcEntries)
 		setSimulationUpdatingState(param.simulationUpdatingState)
@@ -294,18 +288,13 @@ export function Home(param: HomeParams) {
 		sendPopupMessageToBackgroundPage({ method: 'popup_resetSimulation' })
 	}
 
-	async function removeTransaction(tx: SimulatedAndVisualizedTransaction) {
-		setRemovedTransactionHashes((hashes) => hashes.concat(tx.transaction.hash))
-		if (identifyTransaction(tx).type === 'MakeYouRichTransaction') {
+	async function removeTransactionOrSignedMessage(transactionOrMessageIdentifier: TransactionOrMessageIdentifier) {
+		if (transactionOrMessageIdentifier.type === 'MakeYouRichTransaction') {
 			return await enableMakeMeRich(false)
 		} else {
-			return await sendPopupMessageToBackgroundPage({ method: 'popup_removeTransaction', data: tx.transaction.hash })
+			setRemovedTransactionOrSignedMessages((transactionOrMessageIdentifiers) => transactionOrMessageIdentifiers.concat(transactionOrMessageIdentifier))
+			return await sendPopupMessageToBackgroundPage({ method: 'popup_removeTransactionOrSignedMessage', data: transactionOrMessageIdentifier })
 		}
-	}
-
-	async function removeSignedMessage(message: VisualizedPersonalSignRequest) {
-		setRemovedSignedMessages((messages) => messages.concat(message.request.uniqueRequestIdentifier))
-		return await sendPopupMessageToBackgroundPage({ method: 'popup_removeSignedMessage', data: message.request.uniqueRequestIdentifier })
 	}
 
 	async function disableInterceptorToggle() {
@@ -359,14 +348,12 @@ export function Home(param: HomeParams) {
 			</div>
 			: <SimulationResults
 				simulationAndVisualisationResults = { simulationAndVisualisationResults }
-				removeTransaction = { removeTransaction }
-				removeSignedMessage = { removeSignedMessage }
+				removeTransactionOrSignedMessage = { removeTransactionOrSignedMessage }
 				disableReset = { disableReset }
 				resetSimulation = { resetSimulation }
 				currentBlockNumber = { currentBlockNumber }
 				renameAddressCallBack = { param.renameAddressCallBack }
-				removedTransactionHashes = { removedTransactionHashes }
-				removedSignedMessages = { removedSignedMessages }
+				removedTransactionOrSignedMessages = { removedTransactionOrSignedMessages }
 				rpcConnectionStatus = { rpcConnectionStatus }
 				simulationUpdatingState = { simulationUpdatingState }
 				simulationResultState = { simulationResultState }

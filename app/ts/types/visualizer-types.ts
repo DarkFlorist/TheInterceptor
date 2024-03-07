@@ -11,6 +11,7 @@ import { VisualizedPersonalSignRequest } from './personal-message-definitions.js
 import { RpcNetwork } from './rpc.js'
 import { SignMessageParams } from './jsonRpc-signing-types.js'
 import { PureGroupedSolidityType } from './solidityType.js'
+import { TransactionOrMessageIdentifier } from './interceptor-messages.js'
 
 export type NetworkPrice = funtypes.Static<typeof NetworkPrice>
 export const NetworkPrice = funtypes.ReadonlyObject({
@@ -301,6 +302,7 @@ export const SignedMessageTransaction = funtypes.ReadonlyObject({
 	originalRequestParameters: SignMessageParams,
 	request: InterceptedRequest,
 	simulationMode: funtypes.Boolean,
+	messageIdentifier: EthereumQuantity,
 })
 
 export type SimulationState = funtypes.Static<typeof SimulationState>
@@ -380,7 +382,7 @@ export const TokenPriceEstimate = funtypes.ReadonlyObject({
 export type TransactionVisualizationParameters = {
 	simTx: SimulatedAndVisualizedTransaction
 	simulationAndVisualisationResults: SimulationAndVisualisationResults
-	removeTransaction: ((tx: SimulatedAndVisualizedTransaction) => void) | undefined
+	removeTransactionOrSignedMessage: ((transactionOrMessageIdentifier: TransactionOrMessageIdentifier) => void) | undefined
 	activeAddress: bigint
 	renameAddressCallBack: RenameAddressCallBack
 	addressMetaData: readonly AddressBookEntry[]

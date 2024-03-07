@@ -2,12 +2,9 @@ import { EthereumClientService } from '../simulation/services/EthereumClientServ
 import { createEthereumSubscription, createNewFilter, getEthFilterChanges, getEthFilterLogs, removeEthereumSubscription } from '../simulation/services/EthereumSubscriptionService.js'
 import { getSimulatedBalance, getSimulatedBlock, getSimulatedBlockNumber, getSimulatedCode, getSimulatedLogs, getSimulatedStack, getSimulatedTransactionByHash, getSimulatedTransactionCount, getSimulatedTransactionReceipt, simulatedCall, simulateEstimateGas, getInputFieldFromDataOrInput, getSimulatedBlockByHash, getSimulatedFeeHistory } from '../simulation/services/SimulationModeEthereumClientService.js'
 import { DEFAULT_CALL_ADDRESS, ERROR_INTERCEPTOR_GAS_ESTIMATION_FAILED, ERROR_INTERCEPTOR_GET_CODE_FAILED, KNOWN_CONTRACT_CALLER_ADDRESSES } from '../utils/constants.js'
-import { RPCReply } from '../types/interceptor-messages.js'
 import { WebsiteTabConnections } from '../types/user-interface-types.js'
 import { SimulationState } from '../types/visualizer-types.js'
 import { openChangeChainDialog } from './windows/changeChain.js'
-import { openConfirmTransactionDialog } from './windows/confirmTransaction.js'
-import { openPersonalSignDialog } from './windows/personalSign.js'
 import { assertNever } from '../utils/typescript.js'
 import { InterceptedRequest, WebsiteSocket } from '../utils/requests.js'
 import { EstimateGasParams, EthBalanceParams, EthBlockByHashParams, EthBlockByNumberParams, EthCallParams, EthNewFilter, EthGetLogsParams, EthSubscribeParams, EthUnSubscribeParams, FeeHistory, GetCode, GetFilterChanges, GetSimulationStack, GetTransactionCount, SendRawTransactionParams, SendTransactionParams, SwitchEthereumChainParams, TransactionByHashParams, TransactionReceiptParams, UninstallFilter, GetFilterLogs } from '../types/JsonRpc-types.js'
@@ -15,6 +12,7 @@ import { Simulator } from '../simulation/simulator.js'
 import { Website } from '../types/websiteAccessTypes.js'
 import { SignMessageParams } from '../types/jsonRpc-signing-types.js'
 import { METAMASK_ERROR_BLANKET_ERROR } from '../utils/constants.js'
+import { openConfirmTransactionDialogForMessage, openConfirmTransactionDialogForTransaction } from './windows/confirmTransaction.js'
 
 export async function getBlockByHash(ethereumClientService: EthereumClientService, simulationState: SimulationState | undefined, request: EthBlockByHashParams) {
 	return { type: 'result' as const, method: request.method, result: await getSimulatedBlockByHash(ethereumClientService, simulationState, request.params[0], request.params[1]) }
@@ -44,10 +42,11 @@ export async function sendTransaction(
 	website: Website,
 	websiteTabConnections: WebsiteTabConnections,
 ) {
-	const action = await openConfirmTransactionDialog(simulator, ethereumClientService, request, transactionParams, simulationMode, activeAddress, website, websiteTabConnections)
+	const action = await openConfirmTransactionDialogForTransaction(simulator, ethereumClientService, request, transactionParams, simulationMode, activeAddress, website, websiteTabConnections)
 	if (action.type === 'doNotReply') return action
 	return { method: transactionParams.method, ...action }
 }
+
 async function singleCallWithFromOverride(ethereumClientService: EthereumClientService, simulationState: SimulationState | undefined, request: EthCallParams, from: bigint) {
 	const callParams = request.params[0]
 	const blockTag = request.params.length > 1 ? request.params[1] : 'latest' as const
@@ -121,8 +120,19 @@ export async function gasPrice(ethereumClientService: EthereumClientService) {
 	return { type: 'result' as const, method: 'eth_gasPrice' as const, result: await ethereumClientService.getGasPrice() }
 }
 
-export async function personalSign(simulator: Simulator, websiteTabConnections: WebsiteTabConnections, params: SignMessageParams, request: InterceptedRequest, simulationMode: boolean, website: Website, activeAddress: bigint | undefined): Promise<RPCReply> {
-	return await openPersonalSignDialog(simulator, websiteTabConnections, params, request, simulationMode, website, activeAddress)
+export async function personalSign(
+	simulator: Simulator,
+	activeAddress: bigint | undefined,
+	ethereumClientService: EthereumClientService,
+	transactionParams: SignMessageParams,
+	request: InterceptedRequest,
+	simulationMode: boolean = true,
+	website: Website,
+	websiteTabConnections: WebsiteTabConnections,
+) {
+	const action = await openConfirmTransactionDialogForMessage(simulator, ethereumClientService, request, transactionParams, simulationMode, activeAddress, website, websiteTabConnections)
+	if (action.type === 'doNotReply') return action
+	return { method: transactionParams.method, ...action }
 }
 
 export async function switchEthereumChain(simulator: Simulator, websiteTabConnections: WebsiteTabConnections, ethereumClientService: EthereumClientService, params: SwitchEthereumChainParams, request: InterceptedRequest, simulationMode: boolean, website: Website) {

@@ -1,5 +1,5 @@
 import * as funtypes from 'funtypes'
-import { EthereumAddress, EthereumBytes32, EthereumTimestamp, LiteralConverterParserFactory, NonHexBigInt, EthereumInput } from './wire-types.js'
+import { EthereumAddress, EthereumBytes32, EthereumTimestamp, LiteralConverterParserFactory, NonHexBigInt, EthereumInput, EthereumQuantity } from './wire-types.js'
 import { RpcNetwork } from './rpc.js'
 import { InterceptedRequest } from '../utils/requests.js'
 import { AddressBookEntry } from './addressBookTypes.js'
@@ -363,6 +363,7 @@ export const PersonalSignRequestBase = funtypes.ReadonlyObject({
 	website: Website,
 	created: EthereumTimestamp,
 	rawMessage: funtypes.String,
+	messageIdentifier: EthereumQuantity,
 })
 
 export type VisualizedPersonalSignRequestNotParsed = funtypes.Static<typeof VisualizedPersonalSignRequest>
