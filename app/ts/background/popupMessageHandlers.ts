@@ -27,6 +27,7 @@ import { getIssueWithAddressString } from '../components/ui-utils.js'
 import { updateContentScriptInjectionStrategyManifestV2, updateContentScriptInjectionStrategyManifestV3 } from '../utils/contentScriptsUpdating.js'
 import { Website } from '../types/websiteAccessTypes.js'
 import { makeSureInterceptorIsNotSleeping } from './sleeping.js'
+import { craftPersonalSignPopupMessage } from './windows/personalSign.js'
 
 export async function confirmDialog(simulator: Simulator, websiteTabConnections: WebsiteTabConnections, confirmation: TransactionConfirmation) {
 	await resolvePendingTransactionOrMessage(simulator, websiteTabConnections, confirmation)
@@ -154,13 +155,27 @@ export async function refreshSimulation(simulator: Simulator, settings: Settings
 
 export async function refreshPopupConfirmTransactionMetadata(ethereumClientService: EthereumClientService, { data }: RefreshConfirmTransactionMetadata) {
 	const currentBlockNumberPromise = ethereumClientService.getBlockNumber()
-	const visualizerResults = await Promise.all(data.visualizerResults.map(async (x) => ({ ...x, events: await parseEvents(x.events.map((e) => ({ loggersAddress: e.loggersAddress, topics: e.topics, data: e.data })), ethereumClientService) })))
-	const addressBookEntriesPromise = getAddressBookEntriesForVisualiser(ethereumClientService, visualizerResults, data.simulationState)
-	const namedTokenIdsPromise = nameTokenIds(ethereumClientService, visualizerResults)
 	const promises = await getPendingTransactionsAndMessages()
 	const visualizedSimulatorStatePromise = getSimulationResults()
 	const first = promises[0]
-	if (first?.type !== 'Transaction') return
+	if (first === undefined) return
+	if (first.type === 'SignableMessage') {
+		const visualizedPersonalSignRequestPromise = craftPersonalSignPopupMessage(ethereumClientService, first.signedMessageTransaction, ethereumClientService.getRpcEntry())
+		return await sendPopupMessageToOpenWindows({
+			method: 'popup_update_confirm_transaction_dialog',
+			data: {
+				visualizedSimulatorState: await visualizedSimulatorStatePromise,
+				currentBlockNumber: await currentBlockNumberPromise,
+				pendingTransactionAndSignableMessages: [{
+					...first,
+					visualizedPersonalSignRequest: await visualizedPersonalSignRequestPromise, transactionOrMessageCreationStatus: 'Simulated' as const 
+				}, ...promises.slice(1)]
+			}
+		})
+	}
+	const visualizerResults = await Promise.all(data.visualizerResults.map(async (result) => ({ ...result, events: await parseEvents(result.events.map((e) => ({ loggersAddress: e.loggersAddress, topics: e.topics, data: e.data })), ethereumClientService) })))
+	const addressBookEntriesPromise = getAddressBookEntriesForVisualiser(ethereumClientService, visualizerResults, data.simulationState)
+	const namedTokenIdsPromise = nameTokenIds(ethereumClientService, visualizerResults)
 	const addressBookEntries = await addressBookEntriesPromise
 	const namedTokenIds = await namedTokenIdsPromise
 	if (first === undefined || first.transactionOrMessageCreationStatus !== 'Simulated' || first.simulationResults === undefined || first.simulationResults.statusCode !== 'success') return
