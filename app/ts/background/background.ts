@@ -433,6 +433,7 @@ export async function changeActiveAddressAndChainAndResetSimulation(
 	updateWebsiteApprovalAccesses(simulator, websiteTabConnections, undefined, updatedSettings)
 	sendPopupMessageToOpenWindows({ method: 'popup_settingsUpdated', data: updatedSettings })
 	sendPopupMessageToOpenWindows({ method: 'popup_accounts_update' })
+	await sendActiveAccountChangeToApprovedWebsitePorts(websiteTabConnections, updatedSettings)
 
 	await changeActiveAddressAndChainAndResetSimulationSemaphore.execute(async () => {
 		if (change.rpcNetwork !== undefined) {
