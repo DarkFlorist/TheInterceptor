@@ -37,10 +37,11 @@ export async function confirmRequestAccess(simulator: Simulator, websiteTabConne
 }
 
 export async function getLastKnownCurrentTabId() {
-	const tabId = getCurrentTabId()
+	const tabIdPromise = getCurrentTabId()
 	const tabs = await browser.tabs.query({ active: true, lastFocusedWindow: true })
-	if (tabs[0]?.id === undefined) return await tabId
-	if (await tabId !== tabs[0].id) saveCurrentTabId(tabs[0].id)
+	const tabId = await tabIdPromise
+	if (tabs[0]?.id === undefined) return tabId
+	if (tabId !== tabs[0].id) saveCurrentTabId(tabs[0].id)
 	return tabs[0].id
 }
 
