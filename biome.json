@@ -1,0 +1,41 @@
+{
+	"$schema": "https://biomejs.dev/schemas/1.5.3/schema.json",
+  "files": {
+    "include": ["app/ts/**/*.ts", "app/ts/**/*.tsx"]
+  },
+	"organizeImports": {
+    "enabled": false
+  },
+	"linter": {
+		"enabled": true,
+		"rules": {
+			"recommended": false,
+			"complexity": {
+				"noForEach": "off",
+				"useArrowFunction": "off",
+				"useFlatMap": "off",
+				"useLiteralKeys": "off",
+				"useOptionalChain": "off"
+			},
+			"style": {
+				"noUselessElse": "off",
+				"noUnusedTemplateLiteral": "off",
+				"noInferrableTypes": "off",
+				"useDefaultParameterLast": "off",
+				"useConst": "off"
+			},
+			"suspicious": {
+				"noDoubleEquals": "off",
+				"noConsoleLog": "off",
+				"noExplicitAny": "off",
+				"noAssignInExpressions": "off"
+			},
+			"nursery": {
+				"noUselessTernary": "off",
+				"useAwait": "off",
+				"useConsistentArrayType": "off",
+				"noUnusedImports": "off"
+			}
+		}
+	}
+}
