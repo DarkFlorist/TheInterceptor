@@ -112,6 +112,7 @@ export const getDefaultSignerName = async () => (await browserStorageLocalGet('s
 export async function getTabState(tabId: number) : Promise<TabState> {
 	return await getTabStateFromStorage(tabId) ?? {
 		website: undefined,
+		signerConnected: false,
 		signerName: await getDefaultSignerName(),
 		signerAccounts: [],
 		signerChain: undefined,

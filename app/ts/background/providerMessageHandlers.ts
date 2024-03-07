@@ -86,9 +86,9 @@ export async function walletSwitchEthereumChainReply(simulator: Simulator, websi
 }
 
 export async function connectedToSigner(_simulator: Simulator, _websiteTabConnections: WebsiteTabConnections, port: browser.runtime.Port, request: ProviderMessage, approval: ApprovalState) {
-	const signerName = ConnectedToSigner.parse(request).params[0]
+	const [signerConnected, signerName] = ConnectedToSigner.parse(request).params
 	await setDefaultSignerName(signerName)
-	await updateTabState(request.uniqueRequestIdentifier.requestSocket.tabId, (previousState: TabState) => ({ ...previousState, signerName }))
+	await updateTabState(request.uniqueRequestIdentifier.requestSocket.tabId, (previousState: TabState) => ({ ...previousState, signerName, signerConnected }))
 	await sendPopupMessageToOpenWindows({ method: 'popup_signer_name_changed' })
 	const settings = await getSettings()
 	if (!settings.simulationMode || settings.useSignersAddressAsActiveAddress) {
