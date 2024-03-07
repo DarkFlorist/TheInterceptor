@@ -102,12 +102,6 @@ export async function connectedToSigner(_simulator: Simulator, _websiteTabConnec
 	return { type: 'result' as const, method: 'connected_to_signer' as const, result: { metamaskCompatibilityMode: await getMetamaskCompatibilityMode() } }
 }
 
-export async function signerConnectionStatusChanged(_simulator: Simulator, _websiteTabConnections: WebsiteTabConnections, port: browser.runtime.Port, _request: ProviderMessage, _approval: ApprovalState) {
-	// { method: 'signer_connection_status_changed', params: [{ connected: true }] }
-	sendSubscriptionReplyOrCallBackToPort(port, { type: 'result' as const, method: 'request_signer_to_eth_accounts' as const, result: [] })
-	return { type: 'result' as const, result: '0x' }
-}
-
 export async function signerReply(simulator: Simulator, websiteTabConnections: WebsiteTabConnections, _port: browser.runtime.Port, request: ProviderMessage, _approval: ApprovalState) {
 	const signerReply = SignerReply.parse(request)
 	const params = signerReply.params[0]
