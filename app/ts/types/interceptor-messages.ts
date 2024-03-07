@@ -7,7 +7,7 @@ import { UniqueRequestIdentifier, WebsiteSocket } from '../utils/requests.js'
 import { EthGetFeeHistoryResponse, EthGetLogsResponse, EthGetStorageAtParams, EthTransactionReceiptResponse, GetBlockReturn, GetSimulationStackReply, SendRawTransactionParams, SendTransactionParams, WalletAddEthereumChain } from './JsonRpc-types.js'
 import { AddressBookEntries, AddressBookEntry, ActiveAddressEntry } from './addressBookTypes.js'
 import { Page } from './exportedSettingsTypes.js'
-import { PopupOrTabId, Website, WebsiteAccess, WebsiteAccessArray } from './websiteAccessTypes.js'
+import { Website, WebsiteAccess, WebsiteAccessArray } from './websiteAccessTypes.js'
 import { SignerName } from './signerTypes.js'
 import { ConfirmTransactionDialogState, PendingAccessRequests, PendingTransaction } from './accessRequest.js'
 import { CodeMessageError, RpcEntries, RpcEntry, RpcNetwork } from './rpc.js'
@@ -24,6 +24,7 @@ export const WalletSwitchEthereumChainReply = funtypes.ReadonlyObject({
 
 export type InpageScriptRequestWithoutIdentifier = funtypes.Static<typeof InpageScriptRequestWithoutIdentifier>
 export const InpageScriptRequestWithoutIdentifier = funtypes.Union(
+	funtypes.ReadonlyObject({ type: funtypes.Literal('doNotReply') }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('signer_reply'), result: funtypes.Unknown }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('eth_accounts_reply'), result: funtypes.Literal('0x') }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('signer_chainChanged'), result: funtypes.Literal('0x') }),
@@ -182,9 +183,12 @@ export const TransactionConfirmation = funtypes.ReadonlyObject({
 		funtypes.Intersect(
 			funtypes.ReadonlyObject({ 
 				uniqueRequestIdentifier: UniqueRequestIdentifier,
-				popupOrTabId: PopupOrTabId
 			}),
 			funtypes.Union(
+				funtypes.ReadonlyObject({
+					action: funtypes.Literal('signerIncluded'),
+					transactionHash: EthereumBytes32,
+				}),
 				funtypes.ReadonlyObject({
 					action: funtypes.Union(funtypes.Literal('accept'), funtypes.Literal('noResponse')),
 				}),
@@ -343,8 +347,7 @@ export const ConnectedToSigner = funtypes.ReadonlyObject({
 export type SignerReplyForwardRequest = funtypes.Static<typeof SignerReplyForwardRequest>
 export const SignerReplyForwardRequest = funtypes.Intersect(
 	funtypes.ReadonlyObject({ requestId: funtypes.Number }),
-	ForwardToWallet,
-	UnknownMethodForward,
+	funtypes.Union(ForwardToWallet, UnknownMethodForward)
 )
 
 export type SignerReply = funtypes.Static<typeof SignerReply>
