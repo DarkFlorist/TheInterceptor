@@ -1,0 +1,4 @@
+{
+  "entry": ["app/ts/popup.ts"],
+  "project": ["app/ts/**/*.{ts,tsx}"]
+}
