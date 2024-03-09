@@ -1,4 +1,15 @@
 {
-  "entry": ["app/ts/popup.ts"],
-  "project": ["app/ts/**/*.{ts,tsx}"]
+	"entry": [
+		"app/ts/addressBookRender.ts",
+		"app/ts/background-startup.ts",
+		"app/ts/backgroundServiceWorker.ts",
+		"app/ts/changeChain.ts",
+		"app/ts/confirmTransaction.ts",
+		"app/ts/interceptorAccess.ts",
+		"app/ts/popup.ts",
+		"app/ts/settingsView.ts",
+		"build/vendor.ts",
+		"build/bundler.ts"
+	],
+	"project": ["app/ts/**/*.{ts,tsx}"]
 }
