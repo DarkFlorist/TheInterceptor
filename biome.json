@@ -11,30 +11,30 @@
 		"rules": {
 			"recommended": false,
 			"complexity": {
-				"noForEach": "off",
-				"useArrowFunction": "off",
-				"useFlatMap": "off",
-				"useLiteralKeys": "off",
-				"useOptionalChain": "off"
+				"noForEach": "error",
+				"useArrowFunction": "error",
+				"useFlatMap": "error",
+				"useLiteralKeys": "error",
+				"useOptionalChain": "error"
 			},
 			"style": {
-				"noUselessElse": "off",
-				"noUnusedTemplateLiteral": "off",
-				"noInferrableTypes": "off",
-				"useDefaultParameterLast": "off",
-				"useConst": "off"
+				"noUselessElse": "error",
+				"noUnusedTemplateLiteral": "error",
+				"noInferrableTypes": "error",
+				"useDefaultParameterLast": "error",
+				"useConst": "error"
 			},
 			"suspicious": {
-				"noDoubleEquals": "off",
-				"noConsoleLog": "off",
-				"noExplicitAny": "off",
-				"noAssignInExpressions": "off"
+				"noDoubleEquals": "error",
+				"noConsoleLog": "error",
+				"noExplicitAny": "error",
+				"noAssignInExpressions": "error"
 			},
 			"nursery": {
-				"noUselessTernary": "off",
-				"useAwait": "off",
-				"useConsistentArrayType": "off",
-				"noUnusedImports": "off"
+				"noUselessTernary": "error",
+				"useAwait": "error",
+				"useConsistentArrayType": "error",
+				"noUnusedImports": "error"
 			}
 		}
 	}
