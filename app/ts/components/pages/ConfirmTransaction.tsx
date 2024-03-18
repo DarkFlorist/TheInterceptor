@@ -84,18 +84,33 @@ function UnderTransactions(param: UnderTransactionsParams) {
 	</div>
 }
 
-type TransactionNamesParams = { completeVisualizedSimulation: CompleteVisualizedSimulation | undefined }
+type TransactionNamesParams = {
+	completeVisualizedSimulation: CompleteVisualizedSimulation | undefined
+	currentPendingTransaction: PendingTransactionOrSignableMessage
+}
 const TransactionNames = (param: TransactionNamesParams) => {
 	if (param.completeVisualizedSimulation === undefined || param.completeVisualizedSimulation.simulationResultState !== 'done') return <></>
 	const transactionsAndMessages: readonly (VisualizedPersonalSignRequest | SimulatedAndVisualizedTransaction)[] = [...param.completeVisualizedSimulation.visualizedPersonalSignRequests, ...param.completeVisualizedSimulation.simulatedAndVisualizedTransactions].sort((n1, n2) => n1.created.getTime() - n2.created.getTime())
 	const names = transactionsAndMessages.map((transactionOrMessage) => 'transaction' in transactionOrMessage ? identifyTransaction(transactionOrMessage).title : identifySignature(transactionOrMessage).title)
+
+	const titleOfCurrentPendingTransaction = () => {
+		const currentPendingTransactionOrSignableMessage = param.currentPendingTransaction
+		if (currentPendingTransactionOrSignableMessage === undefined) return 'Loading...'
+		if (currentPendingTransactionOrSignableMessage.transactionOrMessageCreationStatus !== 'Simulated') return currentPendingTransactionOrSignableMessage.transactionOrMessageCreationStatus
+		if (currentPendingTransactionOrSignableMessage.type === 'SignableMessage') return identifySignature(currentPendingTransactionOrSignableMessage.visualizedPersonalSignRequest).title
+		const lastTx = currentPendingTransactionOrSignableMessage.simulationResults.statusCode !== 'success' ? undefined : getResultsForTransaction(currentPendingTransactionOrSignableMessage.simulationResults.data.simulatedAndVisualizedTransactions, currentPendingTransactionOrSignableMessage.transactionIdentifier)
+		if (lastTx === undefined) return 'Could not find transaction...'
+		return identifyTransaction(lastTx).title
+	}
+	
+	const namesWithCurrentTransaction = [ ...names, titleOfCurrentPendingTransaction() ]
 	return <div class = 'block' style = 'margin-bottom: 10px;'>
 		<nav class = 'breadcrumb has-succeeds-separator is-small'>
 			<ul>
-				{ names.map((name, index) => (
+				{ namesWithCurrentTransaction.map((name, index) => (
 					<li style = 'margin: 0px;'>
-						<div class = 'card' style = { `padding: 5px; margin: 5px; ${ index !== names.length - 1 ? 'background-color: var(--disabled-card-color)' : ''}` }>
-							<p class = 'paragraph' style = { `margin: 0px; ${ index !== names.length - 1 ? 'color: var(--disabled-text-color)' : ''}` }>
+						<div class = 'card' style = { `padding: 5px; margin: 5px; ${ index !== namesWithCurrentTransaction.length - 1 ? 'background-color: var(--disabled-card-color)' : ''}` }>
+							<p class = 'paragraph' style = { `margin: 0px; ${ index !== namesWithCurrentTransaction.length - 1 ? 'color: var(--disabled-text-color)' : ''}` }>
 								{ name }
 							</p>
 						</div>
@@ -579,7 +594,7 @@ export function ConfirmTransaction() {
 								/>
 								: <></>
 							}
-							<TransactionNames completeVisualizedSimulation = { completeVisualizedSimulation }/>
+							<TransactionNames completeVisualizedSimulation = { completeVisualizedSimulation } currentPendingTransaction = { currentPendingTransactionOrSignableMessage }/>
 							<UnderTransactions pendingTransactionsAndSignableMessages = { underTransactions }/>
 							<div style = { `top: ${ underTransactions.length * -HALF_HEADER_HEIGHT }px` }></div>
 							{ currentPendingTransactionOrSignableMessage.type === 'Transaction' ? 
