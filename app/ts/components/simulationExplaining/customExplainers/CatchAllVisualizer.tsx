@@ -1,75 +1,10 @@
 import { TransactionImportanceBlockParams } from '../Transactions.js'
 import { Erc1155OperatorChange, Erc20ApprovalChanges, Erc721OperatorChange, Erc721TokenIdApprovalChanges, Erc721or1155OperatorChanges } from '../SimulationSummary.js'
 import { Erc721TokenApprovalChange, ERC20TokenApprovalChange, TokenVisualizerErc20Event, TokenVisualizerErc721Event, TokenVisualizerResultWithMetadata, TokenVisualizerNFTAllApprovalEvent } from '../../../types/visualizer-types.js'
-import { EtherSymbol, TokenSymbol, TokenAmount, EtherAmount } from '../../subcomponents/coins.js'
+import { TokenSymbol, TokenAmount } from '../../subcomponents/coins.js'
 import { RenameAddressCallBack } from '../../../types/user-interface-types.js'
 import { SmallAddress } from '../../subcomponents/address.js'
 import { assertNever } from '../../../utils/typescript.js'
-import { RpcNetwork } from '../../../types/rpc.js'
-
-type EtherTransferEventParams = {
-	valueSent: bigint,
-	totalReceived: bigint,
-	textColor: string,
-	rpcNetwork: RpcNetwork,
-}
-
-function EtherTransferEvent(param: EtherTransferEventParams) {
-	return <>
-		{ param.valueSent === 0n
-			? <></>
-			: <div class = 'vertical-center'>
-				<div class = { `box token-box negative-box vertical-center` } style = 'display: inline-block'>
-					<table class = 'log-table'>
-						<div class = 'log-cell'>
-							<p class = 'ellipsis' style = {`color: ${ param.textColor }; margin-bottom: 0px`}> Send&nbsp; </p>
-						</div>
-						<div class = 'log-cell' style = 'justify-content: right;'>
-							<EtherAmount
-								amount = { param.valueSent }
-								style = { { color: param.textColor } }
-								fontSize = 'normal'
-							/>
-						</div>
-						<div class = 'log-cell'>
-							<EtherSymbol
-								style = { { color: param.textColor } }
-								rpcNetwork = { param.rpcNetwork }
-								fontSize = 'normal'
-							/>
-						</div>
-					</table>
-				</div>
-			</div>
-		}
-		{ param.totalReceived <= 0n
-			? <></>
-			: <div class = 'vertical-center'>
-				<div class = 'box token-box positive-box vertical-center' style = 'display: inline-block'>
-					<table class = 'log-table'>
-						<div class = 'log-cell'>
-							<p class = 'ellipsis' style = {`color: ${ param.textColor }; margin-bottom: 0px`}> Receive&nbsp; </p>
-						</div>
-						<div class = 'log-cell' style = 'justify-content: right;'>
-							<EtherAmount
-								amount = { param.totalReceived }
-								style = { { color: param.textColor } }
-								fontSize = 'normal'
-							/>
-						</div>
-						<div class = 'log-cell'>
-							<EtherSymbol
-								style = { { color: param.textColor } }
-								rpcNetwork = { param.rpcNetwork }
-								fontSize = 'normal'
-							/>
-						</div>
-					</table>
-				</div>
-			</div>
-		}
-	</>
-}
 
 type SendOrReceiveTokensImportanceBoxParams = {
 	sending: boolean,
@@ -167,14 +102,8 @@ export function CatchAllVisualizer(param: TransactionImportanceBlockParams) {
 		}
 	})
 
-	const ownBalanceChanges = param.simTx.ethBalanceChanges.filter((change) => change.address.address === msgSender)
-	const firstBalanceChanges = ownBalanceChanges[0]
-	const lastBalanceChanges = ownBalanceChanges[ownBalanceChanges.length - 1]
-	const totalEthReceived = firstBalanceChanges !== undefined && lastBalanceChanges !== undefined ? (ownBalanceChanges !== undefined && ownBalanceChanges.length > 0 ? lastBalanceChanges.after - firstBalanceChanges.before - param.simTx.transaction.value : 0n) : 0n
-
 	if (param.simTx.transaction.to !== undefined
 		&& param.simTx.transaction.value === 0n
-		&& totalEthReceived <= 0n
 		&& sendingTokenResults.length === 0
 		&& receivingTokenResults.length === 0
 	) {
@@ -193,18 +122,6 @@ export function CatchAllVisualizer(param: TransactionImportanceBlockParams) {
 					<p class = 'paragraph'> The transaction deploys a contract </p>
 				</div>
 			</> }
-			{ /* sending ether / tokens */ }
-			{ param.simTx.ethBalanceChanges.length > 0 ? 
-				<div class = 'log-cell' style = 'justify-content: left; display: grid;'>
-					<EtherTransferEvent
-						valueSent = { param.simTx.transaction.value }
-						totalReceived = { totalEthReceived }
-						textColor = { textColor }
-						rpcNetwork = { param.simulationAndVisualisationResults.rpcNetwork }
-					/>
-				</div>
-				: <></>
-			}
 
 			<div class = 'log-cell' style = 'justify-content: left; display: grid;'>
 				<SendOrReceiveTokensImportanceBox

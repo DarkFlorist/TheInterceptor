@@ -22,7 +22,6 @@ type IdentifiedTransactionBase = {
 
 type IdentifiedTransaction =
 	IdentifiedTransactionBase & { type: 'SimpleTokenApproval', identifiedTransaction: SimulatedAndVisualizedSimpleApprovalTransaction }
-	| IdentifiedTransactionBase & { type: 'EtherTransfer', identifiedTransaction: SimulatedAndVisualizedEtherTransferTransaction }
 	| IdentifiedTransactionBase & { type: 'SimpleTokenTransfer', identifiedTransaction: SimulatedAndVisualizedSimpleTokenTransferTransaction }
 	| IdentifiedTransactionBase & { type: 'Swap' }
 	| IdentifiedTransactionBase & { type: 'ContractFallbackMethod' }
@@ -148,29 +147,6 @@ function isSimpleTokenApproval(simTx: SimulatedAndVisualizedTransaction): simTx 
 }
 const getSimpleTokenApprovalOrUndefined = createGuard<SimulatedAndVisualizedTransaction, SimulatedAndVisualizedSimpleApprovalTransaction>((simTx) => isSimpleTokenApproval(simTx) ? simTx : undefined)
 
-export type SimulatedAndVisualizedEtherTransferTransaction = funtypes.Static<typeof SimulatedAndVisualizedEtherTransferTransaction>
-export const SimulatedAndVisualizedEtherTransferTransaction = funtypes.Intersect(
-	SimulatedAndVisualizedTransactionBase,
-	funtypes.ReadonlyObject({
-		uniqueRequestIdentifier: UniqueRequestIdentifier,
-		transaction: funtypes.Intersect(
-			TransactionWithAddressBookEntries,
-			funtypes.ReadonlyObject({
-				to: AddressBookEntry,
-			}),
-		),
-	})
-)
-
-function isEtherTransfer(simTx: SimulatedAndVisualizedTransaction): simTx is SimulatedAndVisualizedEtherTransferTransaction {
-	if (simTx.transaction.input.length === 0
-		&& simTx.tokenResults.length === 0
-		&& simTx.transaction.to
-		&& simTx.gasSpent === 21000n) return true
-	return false
-}
-const getEtherTransferOrUndefined = createGuard<SimulatedAndVisualizedTransaction, SimulatedAndVisualizedEtherTransferTransaction>((simTx) => isEtherTransfer(simTx) ? simTx : undefined)
-
 export type TokenResult = funtypes.Static<typeof TokenResult>
 export const TokenResult = funtypes.Intersect(funtypes.Union(TokenVisualizerErc20Event, TokenVisualizerErc721Event, TokenVisualizerErc1155Event), funtypes.ReadonlyObject({ isApproval: funtypes.Literal(false) }))
 
@@ -191,8 +167,7 @@ export const SimulatedAndVisualizedSimpleTokenTransferTransaction = funtypes.Int
 export function isSimpleTokenTransfer(transaction: SimulatedAndVisualizedTransaction): transaction is SimulatedAndVisualizedSimpleTokenTransferTransaction {
 	const tokenResult = transaction.tokenResults[0]
 	if (tokenResult === undefined) return false
-	if (transaction.ethBalanceChanges.length === 0
-		&& transaction.tokenResults.length === 1
+	if (transaction.tokenResults.length === 1
 		&& tokenResult.isApproval === false
 		&& tokenResult.from.address !== tokenResult.to.address
 		&& tokenResult.from.address === transaction.transaction.from.address) return true
@@ -218,15 +193,6 @@ export function identifyTransaction(simTx: SimulatedAndVisualizedTransaction): I
 			simulationAction: 'Simulate richies',
 			rejectAction: 'Reject richies',
 		}
-	}
-
-	if (getEtherTransferOrUndefined(simTx)) return {
-		type: 'EtherTransfer',
-		title: 'Ether Transfer',
-		signingAction: 'Transfer Ether',
-		simulationAction: 'Simulate Ether Transfer',
-		rejectAction: 'Reject Ether Transfer',
-		identifiedTransaction: simTx
 	}
 
 	const identifiedSwap = identifySwap(simTx)

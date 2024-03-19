@@ -68,7 +68,7 @@ export async function getSimulationResults() {
 		simulationResultState: 'invalid' as const,
 		simulationId: 0,
 		simulationState: undefined,
-		visualizerResults: [],
+		eventsForEachTransaction: [],
 		addressBookEntries: [],
 		tokenPrices: [],
 		activeAddress: undefined,

@@ -1,8 +1,8 @@
 import { addressString } from '../utils/bigint.js'
-import { EthBalanceChangesWithMetadata, NamedTokenId, ProtectorResults, SimulatedAndVisualizedTransaction, SimulationState, TokenVisualizerResultWithMetadata, VisualizerResult } from '../types/visualizer-types.js'
+import { GeneralEnrichedEthereumEvents, NamedTokenId, ProtectorResults, SimulatedAndVisualizedTransaction, SimulationState, TokenVisualizerResultWithMetadata } from '../types/visualizer-types.js'
 import { AddressBookEntry } from '../types/addressBookTypes.js'
 
-export function formSimulatedAndVisualizedTransaction(simState: SimulationState, visualizerResults: readonly VisualizerResult[], protectorResults: readonly ProtectorResults[], addressBookEntries: readonly AddressBookEntry[], namedTokenIds: readonly NamedTokenId[]): readonly SimulatedAndVisualizedTransaction[] {
+export function formSimulatedAndVisualizedTransaction(simState: SimulationState, eventsForEachTransaction: readonly GeneralEnrichedEthereumEvents[], protectorResults: readonly ProtectorResults[], addressBookEntries: readonly AddressBookEntry[], namedTokenIds: readonly NamedTokenId[]): readonly SimulatedAndVisualizedTransaction[] {
 	const addressMetaData = new Map(addressBookEntries.map((x) => [addressString(x.address), x]))
 	return simState.simulatedTransactions.map((simulatedTx, index) => {
 		const from = addressMetaData.get(addressString(simulatedTx.signedTransaction.from))
@@ -10,20 +10,12 @@ export function formSimulatedAndVisualizedTransaction(simState: SimulationState,
 
 		const to = simulatedTx.signedTransaction.to !== null ? addressMetaData.get(addressString(simulatedTx.signedTransaction.to)) : undefined
 		if (simulatedTx.signedTransaction.to !== null && to === undefined) throw new Error('missing metadata')
-		const visualizerResult = visualizerResults[index]
-		if (visualizerResult === undefined) throw new Error('visualizer result was undefined')
+		const transactionEvents = eventsForEachTransaction[index]
+		if (transactionEvents === undefined) throw new Error('visualizer result was undefined')
 		const protectorResult = protectorResults[index]
-		if (protectorResult === undefined) throw new Error('protecor result was undefined')
+		if (protectorResult === undefined) throw new Error('protector result was undefined')
 
-		const ethBalanceChanges: EthBalanceChangesWithMetadata[] = visualizerResult === undefined ? [] : visualizerResult.ethBalanceChanges.map((change) => {
-			const entry = addressMetaData.get(addressString(change.address))
-			if (entry === undefined) throw new Error('missing metadata')
-			return {
-				...change,
-				address: entry,
-			}
-		})
-		const tokenResults: TokenVisualizerResultWithMetadata[] = visualizerResult === undefined ? [] : visualizerResult.events.map((change) => {
+		const tokenResults: TokenVisualizerResultWithMetadata[] = transactionEvents === undefined ? [] : transactionEvents.map((change) => {
 			if (change.type !== 'TokenEvent') return undefined
 			const tokenInfo = change.tokenInformation
 			const fromEntry = addressMetaData.get(addressString(tokenInfo.from))
@@ -81,20 +73,19 @@ export function formSimulatedAndVisualizedTransaction(simState: SimulationState,
 			transaction: { from, to, rpcNetwork: simState.rpcNetwork, ...otherFields },
 			...(to !== undefined ? { to } : {}),
 			realizedGasPrice: simulatedTx.realizedGasPrice,
-			ethBalanceChanges: ethBalanceChanges,
 			tokenResults: tokenResults,
-			events: visualizerResult.events,
+			events: transactionEvents,
 			tokenBalancesAfter: simulatedTx.tokenBalancesAfter,
-			gasSpent: simulatedTx.multicallResponse.gasSpent,
+			gasSpent: simulatedTx.ethSimulateV1CallResult.gasUsed,
 			quarantine: protectorResult.quarantine,
 			quarantineReasons: protectorResult.quarantineReasons,
-			...(simulatedTx.multicallResponse.statusCode === 'failure'
+			...(simulatedTx.ethSimulateV1CallResult.status === 'failure'
 				? {
-					error: simulatedTx.multicallResponse.error,
-					statusCode: simulatedTx.multicallResponse.statusCode,
+					error: simulatedTx.ethSimulateV1CallResult.error,
+					statusCode: simulatedTx.ethSimulateV1CallResult.status,
 				}
 				: {
-					statusCode: simulatedTx.multicallResponse.statusCode,
+					statusCode: simulatedTx.ethSimulateV1CallResult.status,
 				}
 			),
 			website: simulatedTx.website,

@@ -1,7 +1,7 @@
 import { EthereumClientService } from '../simulation/services/EthereumClientService.js'
 import { createEthereumSubscription, createNewFilter, getEthFilterChanges, getEthFilterLogs, removeEthereumSubscription } from '../simulation/services/EthereumSubscriptionService.js'
 import { getSimulatedBalance, getSimulatedBlock, getSimulatedBlockNumber, getSimulatedCode, getSimulatedLogs, getSimulatedStack, getSimulatedTransactionByHash, getSimulatedTransactionCount, getSimulatedTransactionReceipt, simulatedCall, simulateEstimateGas, getInputFieldFromDataOrInput, getSimulatedBlockByHash, getSimulatedFeeHistory } from '../simulation/services/SimulationModeEthereumClientService.js'
-import { DEFAULT_CALL_ADDRESS, ERROR_INTERCEPTOR_GAS_ESTIMATION_FAILED, ERROR_INTERCEPTOR_GET_CODE_FAILED, KNOWN_CONTRACT_CALLER_ADDRESSES } from '../utils/constants.js'
+import { DEFAULT_CALL_ADDRESS, ERROR_INTERCEPTOR_GET_CODE_FAILED, KNOWN_CONTRACT_CALLER_ADDRESSES } from '../utils/constants.js'
 import { WebsiteTabConnections } from '../types/user-interface-types.js'
 import { SimulationState } from '../types/visualizer-types.js'
 import { openChangeChainDialog } from './windows/changeChain.js'
@@ -73,15 +73,6 @@ export async function call(ethereumClientService: EthereumClientService, simulat
 	const callParams = request.params[0]
 	const from = callParams.from !== undefined && !KNOWN_CONTRACT_CALLER_ADDRESSES.includes(callParams.from) ? callParams.from : DEFAULT_CALL_ADDRESS
 	const callResult = await singleCallWithFromOverride(ethereumClientService, simulationState, request, from)
-
-	if (callResult.error !== undefined && callResult.error.code === ERROR_INTERCEPTOR_GAS_ESTIMATION_FAILED ) return { type: 'result' as const, method: request.method, ...callResult }
-
-	// if we fail our call because we are calling from a contract, retry and change address to our default calling address
-	// TODO: Remove this logic and KNOWN_CONTRACT_CALLER_ADDRESSES when multicall supports calling from contracts
-	if (callResult.error !== undefined && 'data' in callResult.error && callResult.error.data === 'sender has deployed code' && from !== DEFAULT_CALL_ADDRESS) {
-		const callerChangeResult = await singleCallWithFromOverride(ethereumClientService, simulationState, request, DEFAULT_CALL_ADDRESS)
-		return { type: 'result' as const, method: request.method, ...callerChangeResult }
-	}
 	return { type: 'result' as const, method: request.method, ...callResult }
 }
 

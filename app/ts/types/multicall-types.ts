@@ -1,4 +1,3 @@
-import { CodeMessageError } from './rpc.js'
 import { EthereumAccessList, EthereumAddress, EthereumBlockTag, EthereumBytes32, EthereumData, EthereumInput, EthereumQuantity, EthereumQuantitySmall, EthereumTimestamp, LiteralConverterParserFactory, RevertErrorParser } from './wire-types.js'
 import * as funtypes from 'funtypes'
 
@@ -57,28 +56,33 @@ export const BlockCalls = funtypes.Intersect(
 	})
 )
 
-export type  ExecutionSpec383MultiCallParamObject = funtypes.Static<typeof ExecutionSpec383MultiCallParamObject>
-export const  ExecutionSpec383MultiCallParamObject = funtypes.ReadonlyObject({
+export type  ethSimulateV1ParamObject = funtypes.Static<typeof ethSimulateV1ParamObject>
+export const  ethSimulateV1ParamObject = funtypes.ReadonlyObject({
 	blockStateCalls: funtypes.ReadonlyArray(BlockCalls),
 	traceTransfers: funtypes.Boolean,
 	validation: funtypes.Boolean,
 })
 
-export type ExecutionSpec383MultiCallParams = funtypes.Static<typeof ExecutionSpec383MultiCallParams>
-export const ExecutionSpec383MultiCallParams = funtypes.ReadonlyObject({
+export type EthSimulateV1Params = funtypes.Static<typeof EthSimulateV1Params>
+export const EthSimulateV1Params = funtypes.ReadonlyObject({
 	method: funtypes.Literal('eth_simulateV1'),
-	params: funtypes.ReadonlyTuple(ExecutionSpec383MultiCallParamObject, EthereumBlockTag),
+	params: funtypes.ReadonlyTuple(ethSimulateV1ParamObject, EthereumBlockTag),
 })
+
+export type EthereumEvent = funtypes.Static<typeof EthereumEvent>
+export const EthereumEvent = funtypes.ReadonlyObject({
+	address: EthereumAddress,
+	data: EthereumInput,
+	topics: funtypes.ReadonlyArray(EthereumBytes32),
+}).asReadonly()
 
 export type CallResultLog = funtypes.Static<typeof CallResultLog>
 export const CallResultLog = funtypes.Intersect(
+	EthereumEvent,
 	funtypes.ReadonlyObject({
 		logIndex: EthereumQuantity,
-		address: EthereumAddress,
 		blockHash: EthereumBytes32,
 		blockNumber: EthereumQuantity,
-		data: EthereumData,
-		topics: funtypes.ReadonlyArray(EthereumBytes32),
 	}),
 	funtypes.ReadonlyPartial({ // these are not optional in the eth_simulateV1 spec, but they are not standard for logs
 		transactionHash: EthereumBytes32,
@@ -86,9 +90,12 @@ export const CallResultLog = funtypes.Intersect(
 	})
 )
 
+export type CallResultLogs = funtypes.Static<typeof CallResultLogs>
+export const CallResultLogs = funtypes.ReadonlyArray(CallResultLog)
+
 export type ExecutionSpec383CallResultFailure = funtypes.Static<typeof ExecutionSpec383CallResultFailure>
 export const ExecutionSpec383CallResultFailure = funtypes.ReadonlyObject({
-	  status: funtypes.Literal('0x2').withParser(LiteralConverterParserFactory('0x2', 'failure' as const)),
+	  status: funtypes.Literal('0x0').withParser(LiteralConverterParserFactory('0x0', 'failure' as const)),
 	  returnData: EthereumData,
 	  gasUsed: EthereumQuantitySmall,
 	  error: funtypes.ReadonlyObject({
@@ -99,28 +106,22 @@ export const ExecutionSpec383CallResultFailure = funtypes.ReadonlyObject({
 })
 
 export type ExecutionSpec383CallResultSuccess = funtypes.Static<typeof ExecutionSpec383CallResultSuccess>
-export const ExecutionSpec383CallResultSuccess = funtypes.Intersect(
-	funtypes.ReadonlyObject({
-	  	returnData: EthereumData,
-	  	gasUsed: EthereumQuantitySmall,
-		status: funtypes.Literal('0x1').withParser(LiteralConverterParserFactory('0x1', 'success' as const)),
-	}),
-	funtypes.ReadonlyPartial({
-		logs: funtypes.ReadonlyArray(CallResultLog)
-	})
-)
-
-export type ExecutionSpec383CallResultInvalid = funtypes.Static<typeof ExecutionSpec383CallResultInvalid>
-export const ExecutionSpec383CallResultInvalid = funtypes.ReadonlyObject({
-	status: funtypes.Literal('0x0').withParser(LiteralConverterParserFactory('0x0', 'invalid' as const)),
-	error: CodeMessageError,
+export const ExecutionSpec383CallResultSuccess = funtypes.ReadonlyObject({
+	returnData: EthereumData,
+	gasUsed: EthereumQuantitySmall,
+	status: funtypes.Literal('0x1').withParser(LiteralConverterParserFactory('0x1', 'success' as const)),
+	logs: CallResultLogs
 })
 
-export type ExecutionSpec383MultiCallCallResults = funtypes.Static<typeof ExecutionSpec383MultiCallCallResults>
-export const ExecutionSpec383MultiCallCallResults = funtypes.ReadonlyArray(funtypes.Union(ExecutionSpec383CallResultFailure, ExecutionSpec383CallResultSuccess, ExecutionSpec383CallResultInvalid))
 
-export type ExecutionSpec383MultiCallBlockResult = funtypes.Static<typeof ExecutionSpec383MultiCallBlockResult>
-export const ExecutionSpec383MultiCallBlockResult = funtypes.ReadonlyObject({
+export type EthSimulateV1CallResult = funtypes.Static<typeof EthSimulateV1CallResult>
+export const EthSimulateV1CallResult = funtypes.Union(ExecutionSpec383CallResultFailure, ExecutionSpec383CallResultSuccess)
+
+export type EthSimulateV1CallResults = funtypes.Static<typeof EthSimulateV1CallResults>
+export const EthSimulateV1CallResults = funtypes.ReadonlyArray(EthSimulateV1CallResult)
+
+export type ethSimulateV1BlockResult = funtypes.Static<typeof ethSimulateV1BlockResult>
+export const ethSimulateV1BlockResult = funtypes.ReadonlyObject({
     number: EthereumQuantity,
     hash: EthereumBytes32,
     timestamp: EthereumQuantity,
@@ -129,8 +130,8 @@ export const ExecutionSpec383MultiCallBlockResult = funtypes.ReadonlyObject({
     gasUsed: EthereumQuantitySmall,
     feeRecipient: EthereumAddress,
     baseFeePerGas: EthereumQuantity,
-    calls: ExecutionSpec383MultiCallCallResults,
+    calls: EthSimulateV1CallResults,
 })
 
-export type ExecutionSpec383MultiCallResult = funtypes.Static<typeof ExecutionSpec383MultiCallResult>
-export const ExecutionSpec383MultiCallResult = funtypes.ReadonlyArray(ExecutionSpec383MultiCallBlockResult)
+export type ethSimulateV1Result = funtypes.Static<typeof ethSimulateV1Result>
+export const ethSimulateV1Result = funtypes.ReadonlyArray(ethSimulateV1BlockResult)

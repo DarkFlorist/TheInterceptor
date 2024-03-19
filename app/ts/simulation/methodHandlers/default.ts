@@ -5,7 +5,7 @@ export async function defaultHandler(_request: JsonRpcRequest, _simulator: Simul
 	return {
 		quarantine: false,
 		quarantineReasons: [],
-		visualizerResults: {
+		events: {
 			ethBalanceChanges: [],
 			tokenResults: [],
 			blockNumber: 0n,

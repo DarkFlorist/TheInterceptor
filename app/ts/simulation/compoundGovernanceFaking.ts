@@ -49,18 +49,18 @@ export const simulateCompoundGovernanceExecution = async (ethereumClientService:
 		}
 	]
 	const parentBlock = await ethereumClientService.getBlock()
-	const governanceContractCalls = await ethereumClientService.multicall(calls, [], parentBlock.number)
-	governanceContractCalls.forEach((call) => { if (call.statusCode !== 'success') throw new Error('Failed to retrieve governance contracts information') })
-	if (governanceContractCalls[0]?.returnValue === undefined) return undefined
-	const timeLockContractResult = compoundGovernanceAbi.decodeFunctionResult('timelock', governanceContractCalls[0].returnValue)
+	const governanceContractCalls = (await ethereumClientService.simulateTransactionsAndSignatures(calls, [], parentBlock.number)).calls
+	governanceContractCalls.forEach((call) => { if (call.status !== 'success') throw new Error('Failed to retrieve governance contracts information') })
+	if (governanceContractCalls[0]?.status !== 'success') throw new Error('multicall failed')
+	const timeLockContractResult = compoundGovernanceAbi.decodeFunctionResult('timelock', governanceContractCalls[0].returnData)
 	const timeLockContract = EthereumAddress.parse(timeLockContractResult[0])
-	if (governanceContractCalls[1] === undefined) throw new Error('proposals return value was undefined')
-	const proposal = compoundGovernanceAbi.decodeFunctionResult('proposals', governanceContractCalls[1].returnValue)
+	if (governanceContractCalls[1]?.status !== 'success') throw new Error('proposals return value was undefined')
+	const proposal = compoundGovernanceAbi.decodeFunctionResult('proposals', governanceContractCalls[1].returnData)
 	const eta: bigint = funtypes.BigInt.parse(proposal.eta)
 	if (eta === undefined) throw new Error('eta is undefined')
 	
-	if (governanceContractCalls[2] === undefined) throw new Error('getActions return value was undefined')
-	const [targets, values, signatures, calldatas] = compoundGovernanceAbi.decodeFunctionResult('getActions', governanceContractCalls[2].returnValue)
+	if (governanceContractCalls[2]?.status !== 'success') throw new Error('getActions return value was undefined')
+	const [targets, values, signatures, calldatas] = compoundGovernanceAbi.decodeFunctionResult('getActions', governanceContractCalls[2].returnData)
 	const executingTransaction = {
 		...txBase,
 		from: governanceContract.address,
@@ -84,11 +84,9 @@ export const simulateCompoundGovernanceExecution = async (ethereumClientService:
 			[addressString(timeLockContract)]: { code: getCompoundGovernanceTimeLockMulticall(), stateDiff: {} }
 		},
 	}]
-	const singleMulticalResult = (await ethereumClientService.executionSpec383MultiCall(query, parentBlock.number))[0]
+	const singleMulticalResult = (await ethereumClientService.ethSimulateV1(query, parentBlock.number))[0]?.calls[0]
 	if (singleMulticalResult === undefined) throw new Error('multicallResult was undefined')
-	const multicallResult = (ethereumClientService.convertExecutionSpec383MulticallToOldMulticall(singleMulticalResult))[0]
-	if (multicallResult === undefined) throw new Error('multicallResult did not exist')
-	return { multicallResult, executingTransaction }
+	return { singleMulticalResult, executingTransaction }
 }
 
 export const parseVoteInputParameters = (ethersResult: Result) => {

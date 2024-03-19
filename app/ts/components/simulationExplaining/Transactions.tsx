@@ -8,7 +8,7 @@ import { RawTransactionDetailsCard, GasFee, TokenLogAnalysisCard, TransactionCre
 import { identifyTransaction } from './identifyTransaction.js'
 import { makeYouRichTransaction } from './customExplainers/MakeMeRich.js'
 import { ApproveIcon, ArrowIcon } from '../subcomponents/icons.js'
-import { EtherTransferVisualisation, SimpleTokenTransferVisualisation } from './customExplainers/SimpleSendVisualisations.js'
+import { SimpleTokenTransferVisualisation } from './customExplainers/SimpleSendVisualisations.js'
 import { SimpleTokenApprovalVisualisation } from './customExplainers/SimpleTokenApprovalVisualisation.js'
 import { assertNever } from '../../utils/typescript.js'
 import { CatchAllVisualizer, tokenEventToTokenSymbolParams } from './customExplainers/CatchAllVisualizer.js'
@@ -61,12 +61,6 @@ export function TransactionImportanceBlock(param: TransactionImportanceBlockPara
 	}
 	const transactionIdentification = identifyTransaction(param.simTx)
 	switch (transactionIdentification.type) {
-		case 'EtherTransfer': {
-			return <EtherTransferVisualisation
-				simTx = { transactionIdentification.identifiedTransaction }
-				renameAddressCallBack = { param.renameAddressCallBack }
-			/>
-		}
 		case 'SimpleTokenTransfer': {
 			return <SimpleTokenTransferVisualisation
 				simTx = { transactionIdentification.identifiedTransaction }
@@ -327,7 +321,7 @@ export function NonTokenLogEvent(params: NonTokenLogEventParams) {
 		return <>
 			<div class = 'log-cell' style = { cellStyle }>
 				<SmallAddress
-					addressBookEntry = { getAddressBookEntryOrAFiller(params.addressMetaData, params.nonTokenLog.loggersAddress) }
+					addressBookEntry = { getAddressBookEntryOrAFiller(params.addressMetaData, params.nonTokenLog.address) }
 					renameAddressCallBack = { params.renameAddressCallBack }
 				/>
 			</div>
@@ -348,7 +342,7 @@ export function NonTokenLogEvent(params: NonTokenLogEventParams) {
 		return <>
 			<div class = 'log-cell' style = { cellStyle }>
 				<SmallAddress
-					addressBookEntry = { getAddressBookEntryOrAFiller(params.addressMetaData, params.nonTokenLog.loggersAddress) }
+					addressBookEntry = { getAddressBookEntryOrAFiller(params.addressMetaData, params.nonTokenLog.address) }
 					renameAddressCallBack = { params.renameAddressCallBack }
 				/>
 			</div>

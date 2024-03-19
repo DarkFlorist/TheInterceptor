@@ -173,9 +173,9 @@ export async function refreshPopupConfirmTransactionMetadata(ethereumClientServi
 			}
 		})
 	}
-	const visualizerResults = await Promise.all(data.visualizerResults.map(async (result) => ({ ...result, events: await parseEvents(result.events.map((e) => ({ loggersAddress: e.loggersAddress, topics: e.topics, data: e.data })), ethereumClientService) })))
-	const addressBookEntriesPromise = getAddressBookEntriesForVisualiser(ethereumClientService, visualizerResults, data.simulationState)
-	const namedTokenIdsPromise = nameTokenIds(ethereumClientService, visualizerResults)
+	const eventsForEachTransaction = await Promise.all(data.eventsForEachTransaction.map(async(transactionsEvents) => await parseEvents(transactionsEvents.map((event) => event), ethereumClientService)))
+	const addressBookEntriesPromise = getAddressBookEntriesForVisualiser(ethereumClientService, eventsForEachTransaction.flat(), data.simulationState)
+	const namedTokenIdsPromise = nameTokenIds(ethereumClientService, eventsForEachTransaction.flat())
 	const addressBookEntries = await addressBookEntriesPromise
 	const namedTokenIds = await namedTokenIdsPromise
 	if (first === undefined || first.transactionOrMessageCreationStatus !== 'Simulated' || first.simulationResults === undefined || first.simulationResults.statusCode !== 'success') return
@@ -190,9 +190,9 @@ export async function refreshPopupConfirmTransactionMetadata(ethereumClientServi
 					statusCode: 'success',
 					data: {
 						...first.simulationResults.data,
-						simulatedAndVisualizedTransactions: formSimulatedAndVisualizedTransaction(first.simulationResults.data.simulationState, visualizerResults, first.simulationResults.data.protectors, addressBookEntries, namedTokenIds),
+						simulatedAndVisualizedTransactions: formSimulatedAndVisualizedTransaction(first.simulationResults.data.simulationState, eventsForEachTransaction, first.simulationResults.data.protectors, addressBookEntries, namedTokenIds),
 						addressBookEntries,
-						visualizerResults,
+						eventsForEachTransaction,
 					}
 				}
 			}, ...promises.slice(1)]

@@ -1,11 +1,11 @@
 import { InpageScriptRequest, PopupMessage, RPCReply, Settings } from '../types/interceptor-messages.js'
 import 'webextension-polyfill'
-import { Simulator, runProtectorsForTransaction, visualizeTransaction } from '../simulation/simulator.js'
+import { Simulator, parseEvents, runProtectorsForTransaction } from '../simulation/simulator.js'
 import { getEthDonator, getSimulationResults, getTabState, updateSimulationResults, updateSimulationResultsWithCallBack } from './storageVariables.js'
 import { changeSimulationMode, getSettings, getMakeMeRich } from './settings.js'
 import { blockNumber, call, chainId, estimateGas, gasPrice, getAccounts, getBalance, getBlockByNumber, getCode, getLogs, getPermissions, getSimulationStack, getTransactionByHash, getTransactionCount, getTransactionReceipt, netVersion, personalSign, sendTransaction, subscribe, switchEthereumChain, unsubscribe, web3ClientVersion, getBlockByHash, feeHistory, installNewFilter, uninstallNewFilter, getFilterChanges, getFilterLogs } from './simulationModeHanders.js'
 import { changeActiveAddress, changeMakeMeRich, changePage, resetSimulation, confirmDialog, refreshSimulation, removeTransactionOrSignedMessage, requestAccountsFromSigner, refreshPopupConfirmTransactionSimulation, confirmRequestAccess, changeInterceptorAccess, changeChainDialog, popupChangeActiveRpc, enableSimulationMode, addOrModifyAddressBookEntry, getAddressBookData, removeAddressBookEntry, refreshHomeData, interceptorAccessChangeAddressOrRefresh, refreshPopupConfirmTransactionMetadata, changeSettings, importSettings, exportSettings, setNewRpcList, simulateGovernanceContractExecutionOnPass, openNewTab, settingsOpened, changeAddOrModifyAddressWindowState, popupFetchAbiAndNameFromEtherscan, openWebPage, disableInterceptor, requestNewHomeData } from './popupMessageHandlers.js'
-import { ProtectorResults, SimulationState, VisualizedSimulatorState, VisualizerResult, WebsiteCreatedEthereumUnsignedTransaction, WebsiteCreatedEthereumUnsignedTransactionOrFailed } from '../types/visualizer-types.js'
+import { GeneralEnrichedEthereumEvents, ProtectorResults, SimulationState, VisualizedSimulatorState, WebsiteCreatedEthereumUnsignedTransaction, WebsiteCreatedEthereumUnsignedTransactionOrFailed } from '../types/visualizer-types.js'
 import { WebsiteTabConnections } from '../types/user-interface-types.js'
 import { askForSignerAccountsFromSignerIfNotAvailable, interceptorAccessMetadataRefresh, requestAccessFromUser, updateInterceptorAccessViewWithPendingRequests } from './windows/interceptorAccess.js'
 import { FourByteExplanations, MAKE_YOU_RICH_TRANSACTION, METAMASK_ERROR_FAILED_TO_PARSE_REQUEST, METAMASK_ERROR_NOT_AUTHORIZED, METAMASK_ERROR_NOT_CONNECTED_TO_CHAIN, ERROR_INTERCEPTOR_DISABLED } from '../utils/constants.js'
@@ -38,14 +38,15 @@ import { dataStringWith0xStart } from '../utils/bigint.js'
 import { connectedToSigner, ethAccountsReply, signerChainChanged, signerReply, walletSwitchEthereumChainReply } from './providerMessageHandlers.js'
 import { makeSureInterceptorIsNotSleeping } from './sleeping.js'
 
-async function updateMetadataForSimulation(simulationState: SimulationState, ethereum: EthereumClientService, visualizerResults: readonly VisualizerResult[], protectorResults: readonly ProtectorResults[]) {
+async function updateMetadataForSimulation(simulationState: SimulationState, ethereum: EthereumClientService, eventsForEachTransaction: readonly GeneralEnrichedEthereumEvents[], protectorResults: readonly ProtectorResults[]) {
 	const settingsPromise = getSettings()
 	const settings = await settingsPromise
-	const addressBookEntryPromises = getAddressBookEntriesForVisualiser(ethereum, visualizerResults, simulationState)
-	const namedTokenIdPromises = nameTokenIds(ethereum, visualizerResults)
+	const allEvents = eventsForEachTransaction.flat()
+	const addressBookEntryPromises = getAddressBookEntriesForVisualiser(ethereum, allEvents, simulationState)
+	const namedTokenIdPromises = nameTokenIds(ethereum, allEvents)
 	const addressBookEntries = await addressBookEntryPromises
 	const namedTokenIds = await namedTokenIdPromises
-	const simulatedAndVisualizedTransactions = formSimulatedAndVisualizedTransaction(simulationState, visualizerResults, protectorResults, addressBookEntries, namedTokenIds)
+	const simulatedAndVisualizedTransactions = formSimulatedAndVisualizedTransaction(simulationState, eventsForEachTransaction, protectorResults, addressBookEntries, namedTokenIds)
 	const VisualizedPersonalSignRequest = simulationState.signedMessages.map((signedMessage) => craftPersonalSignPopupMessage(ethereum, signedMessage, settings.currentRpcNetwork))
 	return {
 		namedTokenIds,
@@ -85,12 +86,12 @@ export const simulateGovernanceContractExecution = async (pendingTransaction: Pe
 		if (contractExecutionResult === undefined) return returnError('Failed to simulate governance execution')
 		const parentBlock = await ethereum.getBlock()
 		if (parentBlock.baseFeePerGas === undefined) return returnError('cannot build simulation from legacy block')
-		const signedExecutionTransaction = mockSignTransaction({ ...contractExecutionResult.executingTransaction, gas: contractExecutionResult.multicallResult.gasSpent })
+		const signedExecutionTransaction = mockSignTransaction({ ...contractExecutionResult.executingTransaction, gas: contractExecutionResult.singleMulticalResult.gasUsed })
 		const tokenBalancesAfter = await getTokenBalancesAfter(
 			ethereum,
 			[signedExecutionTransaction],
 			[],
-			[contractExecutionResult.multicallResult],
+			[contractExecutionResult.singleMulticalResult],
 			parentBlock.number
 		)
 
@@ -99,7 +100,7 @@ export const simulateGovernanceContractExecution = async (pendingTransaction: Pe
 		const governanceContractSimulationState: SimulationState =  {
 			prependTransactionsQueue: [],
 			simulatedTransactions: [{
-				multicallResponse: contractExecutionResult.multicallResult,
+				ethSimulateV1CallResult: contractExecutionResult.singleMulticalResult,
 				signedTransaction: signedExecutionTransaction,
 				realizedGasPrice: calculateGasPrice(signedExecutionTransaction, parentBlock.gasUsed, parentBlock.gasLimit, parentBlock.baseFeePerGas),
 				tokenBalancesAfter: tokenBalancesAfter[0],
@@ -126,14 +127,13 @@ async function visualizeSimulatorState(simulationState: SimulationState, ethereu
 	const priceEstimator = new PriceEstimator(ethereum)
 	const transactions = getWebsiteCreatedEthereumUnsignedTransactions(simulationState.simulatedTransactions)
 
-	const blockNum = await ethereum.getBlockNumber()
-	const visualizerResultsPromise = Promise.all(simulationState.simulatedTransactions.map(async (simulatedTransaction) => await visualizeTransaction(blockNum, simulatedTransaction.multicallResponse, ethereum)))
+	const eventsForEachTransactionPromise = Promise.all(simulationState.simulatedTransactions.map(async (simulatedTransaction) => simulatedTransaction.ethSimulateV1CallResult.status === 'failure' ? [] : await parseEvents(simulatedTransaction.ethSimulateV1CallResult.logs, ethereum)))
 	const protectorPromises = Promise.all(transactions.map(async (transaction) => await runProtectorsForTransaction(simulationState, transaction, ethereum)))
 	
 	const protectors = await protectorPromises
-	const visualizerResults = await visualizerResultsPromise
+	const eventsForEachTransaction = await eventsForEachTransactionPromise
 
-	const updatedMetadataPromise = updateMetadataForSimulation(simulationState, ethereum, visualizerResults, protectors)
+	const updatedMetadataPromise = updateMetadataForSimulation(simulationState, ethereum, eventsForEachTransaction, protectors)
 
 	function onlyTokensAndTokensWithKnownDecimals(metadata: AddressBookEntry): metadata is AddressBookEntry & { type: 'ERC20', decimals: `0x${ string }` } {
 		if (metadata.type !== 'ERC20') return false
@@ -149,7 +149,7 @@ async function visualizeSimulatorState(simulationState: SimulationState, ethereu
 	return {
 		...updatedMetadata,
 		tokenPrices: await tokenPricePromises,
-		visualizerResults,
+		eventsForEachTransaction,
 		protectors,
 		simulationState,
 	}
@@ -158,7 +158,7 @@ async function visualizeSimulatorState(simulationState: SimulationState, ethereu
 export const updateSimulationMetadata = async (ethereum: EthereumClientService) => {
 	return await updateSimulationResultsWithCallBack(async (prevState) => {
 		if (prevState?.simulationState === undefined) return prevState
-		const metadata = await updateMetadataForSimulation(prevState.simulationState, ethereum, prevState.visualizerResults, prevState.protectors)
+		const metadata = await updateMetadataForSimulation(prevState.simulationState, ethereum, prevState.eventsForEachTransaction, prevState.protectors)
 		return { ...prevState, ...metadata }
 	})
 }
@@ -181,7 +181,7 @@ export async function updateSimulationState(ethereum: EthereumClientService, get
 			...doneState,
 			addressBookEntries: [],
 			tokenPrices: [],
-			visualizerResults: [],
+			eventsForEachTransaction: [],
 			protectors: [],
 			namedTokenIds: [],
 			simulationState: undefined,
@@ -360,7 +360,6 @@ async function handleRPCRequest(
 		case 'eth_gasPrice': return await gasPrice(ethereumClientService)
 		case 'eth_getTransactionCount': return await getTransactionCount(ethereumClientService, simulationState, parsedRequest)
 		case 'interceptor_getSimulationStack': return await getSimulationStack(simulationState, parsedRequest)
-		case 'eth_multicall': return { type: 'result', method: parsedRequest.method, error: { code: 10000, message: 'Cannot call eth_multicall directly' } }
 		case 'eth_simulateV1': return { type: 'result', method: parsedRequest.method, error: { code: 10000, message: 'Cannot call eth_simulateV1 directly' } }
 		case 'wallet_addEthereumChain': {
 			if (forwardToSigner) return getForwardingMessage(parsedRequest)

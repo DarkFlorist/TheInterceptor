@@ -10,11 +10,6 @@ export type BalanceChangeSummary = {
 	erc721TokenIdApprovalChanges: Map<string, Map<string, string > > // token address, tokenId, approved address
 
 	erc1155TokenBalanceChanges: Map<string, Map<string, bigint > >, // token address, token id, { amount }
-
-	etherResults: {
-		balanceBefore: bigint,
-		balanceAfter: bigint,
-	} | undefined
 }
 
 export type Erc1155TokenBalanceChange = (Erc1155Entry & { changeAmount: bigint, tokenId: bigint })
@@ -30,11 +25,6 @@ export type SummaryOutcome = {
 	erc721TokenIdApprovalChanges: Erc721TokenApprovalChange[]
 	
 	erc1155TokenBalanceChanges: Erc1155TokenBalanceChange[]
-
-	etherResults: {
-		balanceBefore: bigint,
-		balanceAfter: bigint,
-	} | undefined
 }
 
 export class LogSummarizer {
@@ -51,34 +41,7 @@ export class LogSummarizer {
 
 				erc20TokenApprovalChanges: new Map(),
 				erc20TokenBalanceChanges: new Map(),
-				etherResults: undefined
 			})
-		}
-	}
-
-	private updateEthBalances = (result: SimulatedAndVisualizedTransaction) => {
-		for (const change of result.ethBalanceChanges) {
-			const address = addressString(change.address.address)
-			this.ensureAddressInSummary(address)
-			const addressData = this.summary.get(address)!
-			const etherResults = this.summary.get(address)?.etherResults
-			if (etherResults !== undefined) {
-				addressData.etherResults!.balanceAfter = change.after
-			} else {
-				const { etherResults, ...values } = addressData
-				this.summary.set(address, {
-					...values,
-					etherResults: {
-						balanceBefore: change.before,
-						balanceAfter: change.after
-					}
-				})
-			}
-
-			// on no change, keep change undefined
-			if (addressData.etherResults?.balanceAfter === addressData.etherResults?.balanceBefore) {
-				addressData.etherResults = undefined
-			}
 		}
 	}
 
@@ -212,8 +175,6 @@ export class LogSummarizer {
 	private summarizeToAddressChanges = (transactions: readonly (SimulatedAndVisualizedTransaction | undefined)[]) => {
 		for (const transaction of transactions) {
 			if ( transaction === undefined ) continue
-			// calculate ether balances for each account
-			this.updateEthBalances(transaction)
 			// calculate token changes for each account
 			this.updateTokenChanges(transaction)
 		}
@@ -223,8 +184,7 @@ export class LogSummarizer {
 		this.summarizeToAddressChanges(transactions)
 		// remove addresses that ended up with no changes
 		Array.from(this.summary.entries()).forEach(([address, addressSummary]) => {
-			if (addressSummary.etherResults === undefined
-				&& addressSummary.erc721TokenBalanceChanges.size === 0
+			if (addressSummary.erc721TokenBalanceChanges.size === 0
 				&& addressSummary.erc721TokenIdApprovalChanges.size === 0
 				&& addressSummary.erc20TokenApprovalChanges.size === 0
 				&& addressSummary.erc20TokenBalanceChanges.size === 0
@@ -334,7 +294,6 @@ export class LogSummarizer {
 			erc721and1155OperatorChanges,
 			erc721TokenIdApprovalChanges,
 			erc1155TokenBalanceChanges,
-			etherResults: addressSummary.etherResults
 		}
 	}
 }
