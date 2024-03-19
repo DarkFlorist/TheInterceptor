@@ -1,6 +1,6 @@
 
 import * as funtypes from 'funtypes'
-import { EthereumAddress, EthereumBytes32, EthereumData, EthereumInput, EthereumQuantity, EthereumSignedTransaction, EthereumTimestamp, EthereumUnsignedTransaction, OptionalEthereumAddress, RevertErrorParser } from './wire-types.js'
+import { EthereumAddress, EthereumBytes32, EthereumData, EthereumInput, EthereumQuantity, EthereumSignedTransaction, EthereumTimestamp, EthereumUnsignedTransaction, OptionalEthereumAddress } from './wire-types.js'
 import { RenameAddressCallBack } from './user-interface-types.js'
 import { ERROR_INTERCEPTOR_GAS_ESTIMATION_FAILED } from '../utils/constants.js'
 import { EthNewFilter, EthSubscribeParams, OriginalSendRequestParameters, SendRawTransactionParams, SendTransactionParams } from './JsonRpc-types.js'
@@ -202,7 +202,6 @@ export const SimulatedAndVisualizedTransactionBase = funtypes.Intersect(
 			error: funtypes.ReadonlyObject({
 				code: funtypes.Number,
 				message: funtypes.String,
-				data: funtypes.String.withParser(RevertErrorParser)
 			})
 		})
 	)
@@ -411,7 +410,7 @@ export type SimulationUpdatingState = funtypes.Static<typeof SimulationUpdatingS
 export const SimulationUpdatingState = funtypes.Union(funtypes.Literal('updating'), funtypes.Literal('done'), funtypes.Literal('failed'))
 
 export type SimulationResultState = funtypes.Static<typeof SimulationResultState>
-export const SimulationResultState = funtypes.Union(funtypes.Literal('done'), funtypes.Literal('invalid'))
+export const SimulationResultState = funtypes.Union(funtypes.Literal('done'), funtypes.Literal('invalid'), funtypes.Literal('corrupted'))
 
 export type NamedTokenId = funtypes.Static<typeof NamedTokenId>
 export const NamedTokenId = funtypes.ReadonlyObject({

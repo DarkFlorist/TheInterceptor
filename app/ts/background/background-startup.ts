@@ -1,8 +1,8 @@
 import 'webextension-polyfill'
 import { defaultRpcs, getSettings } from './settings.js'
-import { handleInterceptedRequest, popupMessageHandler } from './background.js'
+import { handleInterceptedRequest, popupMessageHandler, resetSimulatorStateFromConfig } from './background.js'
 import { retrieveWebsiteDetails, updateExtensionBadge, updateExtensionIcon } from './iconHandler.js'
-import { clearTabStates, getPrimaryRpcForChain, removeTabState, setRpcConnectionStatus, updateTabState, updateUserAddressBookEntries } from './storageVariables.js'
+import { clearTabStates, getPrimaryRpcForChain, getSimulationResults, removeTabState, setRpcConnectionStatus, updateTabState, updateUserAddressBookEntries } from './storageVariables.js'
 import { Simulator } from '../simulation/simulator.js'
 import { TabConnection, TabState, WebsiteTabConnections } from '../types/user-interface-types.js'
 import { EthereumBlockHeader } from '../types/wire-types.js'
@@ -132,8 +132,14 @@ async function newBlockAttemptCallback(blockheader: EthereumBlockHeader, ethereu
 		await sendPopupMessageToOpenWindows({ method: 'popup_new_block_arrived', data: { rpcConnectionStatus } })
 		if (isNewBlock) {
 			const settings = await getSettings()
-			const simulationState = settings.simulationMode ? await refreshSimulation(simulator, settings, false) : undefined
-			await sendSubscriptionMessagesForNewBlock(blockheader.number, ethereumClientService, simulationState, websiteTabConnections)
+			if (settings.simulationMode) {
+				const simulationResults = await getSimulationResults()
+				if (simulationResults.simulationResultState === 'corrupted') await resetSimulatorStateFromConfig(ethereumClientService)
+				const simulationState = await refreshSimulation(simulator, settings, false)
+				if (simulationState === undefined)
+				return await sendSubscriptionMessagesForNewBlock(blockheader.number, ethereumClientService, simulationState, websiteTabConnections)
+			}
+			return await sendSubscriptionMessagesForNewBlock(blockheader.number, ethereumClientService, undefined, websiteTabConnections)
 		}
 	} catch(error) {
 		await handleUnexpectedError(error)

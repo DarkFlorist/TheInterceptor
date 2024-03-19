@@ -193,7 +193,7 @@ export async function updateSimulationState(ethereum: EthereumClientService, get
 			if (updatedSimulationState !== undefined && ethereum.getChainId() === updatedSimulationState?.rpcNetwork.chainId) { 
 				await updateSimulationResults({ ...await visualizeSimulatorState(updatedSimulationState, ethereum), ...doneState })
 			} else {
-				await updateSimulationResults(emptyDoneResults)
+				await updateSimulationResults({ ...emptyDoneResults, simulationResultState: 'corrupted' as const })
 			}
 			await changedMessagePromise
 			await sendPopupMessageToOpenWindows({ method: 'popup_simulation_state_changed', data: { simulationId } })
@@ -206,7 +206,7 @@ export async function updateSimulationState(ethereum: EthereumClientService, get
 				return undefined
 			}
 			// clear simulation, unexpected error occured
-			await updateSimulationResults(emptyDoneResults)
+			await updateSimulationResults({ ...emptyDoneResults, simulationResultState: 'corrupted' as const })
 			handleUnexpectedError(error)
 			return undefined
 		}
@@ -405,6 +405,14 @@ async function handleRPCRequest(
 	}
 }
 
+export async function resetSimulatorStateFromConfig(ethereumClientService: EthereumClientService) {
+	const setings = await getSettings()
+	await updateSimulationState(ethereumClientService, async () => {
+		const prependQueue = await getPrependTransactions(ethereumClientService, setings, await getMakeMeRich())
+		return await setPrependTransactionsQueue(ethereumClientService, prependQueue)
+	}, setings.activeSimulationAddress, true)
+}
+
 const changeActiveAddressAndChainAndResetSimulationSemaphore = new Semaphore(1)
 export async function changeActiveAddressAndChainAndResetSimulation(
 	simulator: Simulator,
@@ -436,10 +444,7 @@ export async function changeActiveAddressAndChainAndResetSimulation(
 
 		if (updatedSettings.simulationMode) {
 			// update prepend mode as our active address has changed, so we need to be sure the rich modes money is sent to right address
-			await updateSimulationState(simulator.ethereum, async () => {
-				const prependQueue = await getPrependTransactions(simulator.ethereum, await getSettings(), await getMakeMeRich())
-				return await setPrependTransactionsQueue(simulator.ethereum, prependQueue)
-			}, updatedSettings.activeSimulationAddress, true)
+			await resetSimulatorStateFromConfig(simulator.ethereum)
 		}
 		// inform website about this only after we have updated simulation, as they often query the balance right after
 		sendActiveAccountChangeToApprovedWebsitePorts(websiteTabConnections, await getSettings())

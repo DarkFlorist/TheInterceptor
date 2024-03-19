@@ -1,4 +1,4 @@
-import { EthereumAccessList, EthereumAddress, EthereumBlockTag, EthereumBytes32, EthereumData, EthereumInput, EthereumQuantity, EthereumQuantitySmall, EthereumTimestamp, LiteralConverterParserFactory, RevertErrorParser } from './wire-types.js'
+import { EthereumAccessList, EthereumAddress, EthereumBlockTag, EthereumBytes32, EthereumData, EthereumInput, EthereumQuantity, EthereumQuantitySmall, EthereumTimestamp, LiteralConverterParserFactory } from './wire-types.js'
 import * as funtypes from 'funtypes'
 
 export type AccountOverride = funtypes.Static<typeof AccountOverride>
@@ -100,8 +100,7 @@ export const ExecutionSpec383CallResultFailure = funtypes.ReadonlyObject({
 	  gasUsed: EthereumQuantitySmall,
 	  error: funtypes.ReadonlyObject({
 		  code: funtypes.Number,
-		  message: funtypes.String,
-		  data: funtypes.String.withParser(RevertErrorParser)
+		  message: funtypes.String
 	  })
 })
 
