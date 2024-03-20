@@ -70,8 +70,7 @@ export async function fetchWithTimeout(resource: RequestInfo | URL, init?: Reque
 export const safeGetTab = async (tabId: number) => {
 	const tab = await browser.tabs.get(tabId)
 	try {
-		const error = browser.runtime.lastError
-		if (error !== undefined && error.message !== undefined) throw new Error(error.message)
+		checkAndThrowRuntimeLastError()
 		return tab
 	} catch (e: unknown){
 		return undefined
@@ -81,8 +80,7 @@ export const safeGetTab = async (tabId: number) => {
 export const safeGetWindow = async (windowId: number) => {
 	const tab = await browser.windows.get(windowId)
 	try {
-		const error = browser.runtime.lastError
-		if (error !== undefined && error.message !== undefined) throw new Error(error.message)
+		checkAndThrowRuntimeLastError()
 		return tab
 	} catch (e: unknown){
 		return undefined
@@ -92,8 +90,7 @@ export const safeGetWindow = async (windowId: number) => {
 export const updateTabIfExists = async (tabId: number, updateProperties: browser.tabs._UpdateUpdateProperties) => {
 	try {
 		const tab = await browser.tabs.update(tabId, updateProperties)
-		const error = browser.runtime.lastError
-		if (error !== undefined && error.message !== undefined) throw new Error(error.message)
+		checkAndThrowRuntimeLastError()
 		return tab
 	} catch (e: unknown){
 		return undefined
@@ -103,10 +100,14 @@ export const updateTabIfExists = async (tabId: number, updateProperties: browser
 export const updateWindowIfExists = async (tabId: number, updateProperties: browser.windows._UpdateUpdateInfo) => {
 	try {
 		const window = await browser.windows.update(tabId, updateProperties)
-		const error = browser.runtime.lastError
-		if (error !== undefined && error.message !== undefined) throw new Error(error.message)
+		checkAndThrowRuntimeLastError()
 		return window
 	} catch (e: unknown){
 		return undefined
 	}
+}
+
+export const checkAndThrowRuntimeLastError = () => {
+	const error = browser.runtime.lastError
+	if (error !== undefined && error.message !== undefined) throw new Error(error.message)
 }

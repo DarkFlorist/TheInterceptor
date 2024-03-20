@@ -7,7 +7,7 @@ import { EthereumAddress } from '../types/wire-types.js'
 import { AddressBookEntry } from '../types/addressBookTypes.js'
 import { checksummedAddress } from '../utils/bigint.js'
 import { PopupOrTabId } from '../types/websiteAccessTypes.js'
-import { safeGetTab, safeGetWindow, updateTabIfExists, updateWindowIfExists } from '../utils/requests.js'
+import { checkAndThrowRuntimeLastError, safeGetTab, safeGetWindow, updateTabIfExists, updateWindowIfExists } from '../utils/requests.js'
 
 function assertIsNode(e: EventTarget | null): asserts e is Node {
 	if (!e || !('nodeType' in e)) {
@@ -132,8 +132,7 @@ export async function closePopupOrTabById(popupOrTabId: PopupOrTabId) {
 			}
 			default: assertNever(popupOrTabId.type)
 		}
-		const error = browser.runtime.lastError
-		if (error !== undefined && error.message !== undefined) throw new Error(error.message)
+		checkAndThrowRuntimeLastError()
 	} catch(e) {
 		console.log(`Failed to close ${ popupOrTabId.type }: ${ popupOrTabId.id }`)
 		console.warn(e)

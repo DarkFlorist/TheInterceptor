@@ -27,7 +27,7 @@ import { updateContentScriptInjectionStrategyManifestV2, updateContentScriptInje
 import { Website } from '../types/websiteAccessTypes.js'
 import { makeSureInterceptorIsNotSleeping } from './sleeping.js'
 import { craftPersonalSignPopupMessage } from './windows/personalSign.js'
-import { updateTabIfExists } from '../utils/requests.js'
+import { checkAndThrowRuntimeLastError, updateTabIfExists } from '../utils/requests.js'
 
 export async function confirmDialog(simulator: Simulator, websiteTabConnections: WebsiteTabConnections, confirmation: TransactionConfirmation) {
 	await resolvePendingTransactionOrMessage(simulator, websiteTabConnections, confirmation)
@@ -473,8 +473,7 @@ export async function openWebPage(parsedRequest: OpenWebPage) {
 	if (addressBookTab === undefined) return await browser.tabs.create({ url: parsedRequest.data.url, active: true })
 	try {
 		browser.tabs.update(parsedRequest.data.websiteSocket.tabId, { url: parsedRequest.data.url, active: true })
-		const error = browser.runtime.lastError
-		if (error !== undefined && error.message !== undefined) throw new Error(error.message)
+		checkAndThrowRuntimeLastError()
 	} catch(e) {
 		console.warn('Failed to update tab with new webpage')
 		console.log(e)
@@ -496,8 +495,7 @@ async function disableInterceptorForPage(websiteTabConnections: WebsiteTabConnec
 	Array.from(new Set(withCurrentTabid)).forEach(async (tabId) => {
 		try {
 			await browser.tabs.reload(tabId)
-			const error = browser.runtime.lastError
-			if (error !== undefined && error.message !== undefined) throw new Error(error.message)
+			checkAndThrowRuntimeLastError()
 		} catch (e) {
 			console.warn('failed to reload tab')
 			console.warn(e)
