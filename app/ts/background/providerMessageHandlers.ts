@@ -3,17 +3,19 @@ import { TabState, WebsiteTabConnections } from '../types/user-interface-types.j
 import { EthereumAccountsReply, EthereumChainReply } from '../types/JsonRpc-types.js'
 import { changeActiveAddressAndChainAndResetSimulation } from './background.js'
 import { getSocketFromPort, sendInternalWindowMessage, sendPopupMessageToOpenWindows } from './backgroundUtils.js'
-import { getRpcNetworkForChain, getTabState, setDefaultSignerName, updateTabState } from './storageVariables.js'
+import { getRpcNetworkForChain, getTabState, setDefaultSignerName, updatePendingTransactionOrMessage, updateTabState } from './storageVariables.js'
 import { getMetamaskCompatibilityMode, getSettings } from './settings.js'
 import { resolveSignerChainChange } from './windows/changeChain.js'
 import { ApprovalState } from './accessManagement.js'
 import { ProviderMessage } from '../utils/requests.js'
 import { sendSubscriptionReplyOrCallBackToPort } from './messageSending.js'
 import { Simulator } from '../simulation/simulator.js'
-import { METAMASK_ERROR_NOT_AUTHORIZED } from '../utils/constants.js'
+import { METAMASK_ERROR_USER_REJECTED_REQUEST } from '../utils/constants.js'
+import { handleUnexpectedError } from '../utils/errors.js'
+import { resolvePendingTransactionOrMessage, updateConfirmTransactionView } from './windows/confirmTransaction.js'
 
 export async function ethAccountsReply(simulator: Simulator, websiteTabConnections: WebsiteTabConnections, port: browser.runtime.Port, request: ProviderMessage, _connectInfoapproval: ApprovalState) {
-	const returnValue = { method: 'eth_accounts_reply' as const, result: '0x' as const }
+	const returnValue = { type: 'result' as const, method: 'eth_accounts_reply' as const, result: '0x' as const }
 	if (!('params' in request)) return returnValue
 	if (port.sender?.tab?.id === undefined) return returnValue
 
@@ -60,7 +62,7 @@ async function changeSignerChain(simulator: Simulator, websiteTabConnections: We
 }
 
 export async function signerChainChanged(simulator: Simulator, websiteTabConnections: WebsiteTabConnections, port: browser.runtime.Port, request: ProviderMessage, approval: ApprovalState) {
-	const returnValue = { method: 'signer_chainChanged' as const, result: '0x' as const }
+	const returnValue = { type: 'result' as const, method: 'signer_chainChanged' as const, result: '0x' as const }
 	if (!('params' in request)) return returnValue
 	const signerChain = EthereumChainReply.parse(request.params)[0]
 	if (signerChain === undefined) throw new Error('signer chain were undefined')
@@ -69,7 +71,7 @@ export async function signerChainChanged(simulator: Simulator, websiteTabConnect
 }
 
 export async function walletSwitchEthereumChainReply(simulator: Simulator, websiteTabConnections: WebsiteTabConnections, port: browser.runtime.Port, request: ProviderMessage, approval: ApprovalState) {
-	const returnValue = { method: 'wallet_switchEthereumChain_reply' as const, result: '0x' as const }
+	const returnValue = { type: 'result' as const, method: 'wallet_switchEthereumChain_reply' as const, result: '0x' as const }
 	if (approval !== 'hasAccess') return returnValue
 	const params = WalletSwitchEthereumChainReply.parse(request).params[0]
 	if (params.accept) await changeSignerChain(simulator, websiteTabConnections, port, params.chainId, approval)
@@ -84,9 +86,9 @@ export async function walletSwitchEthereumChainReply(simulator: Simulator, websi
 }
 
 export async function connectedToSigner(_simulator: Simulator, _websiteTabConnections: WebsiteTabConnections, port: browser.runtime.Port, request: ProviderMessage, approval: ApprovalState) {
-	const signerName = ConnectedToSigner.parse(request).params[0]
+	const [signerConnected, signerName] = ConnectedToSigner.parse(request).params
 	await setDefaultSignerName(signerName)
-	await updateTabState(request.uniqueRequestIdentifier.requestSocket.tabId, (previousState: TabState) => ({ ...previousState, signerName }))
+	await updateTabState(request.uniqueRequestIdentifier.requestSocket.tabId, (previousState: TabState) => ({ ...previousState, signerName, signerConnected }))
 	await sendPopupMessageToOpenWindows({ method: 'popup_signer_name_changed' })
 	const settings = await getSettings()
 	if (!settings.simulationMode || settings.useSignersAddressAsActiveAddress) {
@@ -97,20 +99,48 @@ export async function connectedToSigner(_simulator: Simulator, _websiteTabConnec
 		}
 		sendSubscriptionReplyOrCallBackToPort(port, { type: 'result' as const, method: 'request_signer_chainId' as const, result: [] })
 	}
-	return { method: 'connected_to_signer' as const, result: { metamaskCompatibilityMode: await getMetamaskCompatibilityMode() } }
+	return { type: 'result' as const, method: 'connected_to_signer' as const, result: { metamaskCompatibilityMode: await getMetamaskCompatibilityMode() } }
 }
 
-export async function signerReply(_simulator: Simulator, _websiteTabConnections: WebsiteTabConnections, _port: browser.runtime.Port, request: ProviderMessage, _approval: ApprovalState) {
-	console.log('signerReply')
-	console.log(request)
+export async function signerReply(simulator: Simulator, websiteTabConnections: WebsiteTabConnections, _port: browser.runtime.Port, request: ProviderMessage, _approval: ApprovalState) {
 	const signerReply = SignerReply.parse(request)
 	const params = signerReply.params[0]
-	if (params.success) return { method: 'signer_reply' as const, result: params.reply }
+	const doNotReply = { type: 'doNotReply' as const }
 	switch(params.forwardRequest.method) {
+		case 'personal_sign':
+		case 'eth_signTypedData':
+		case 'eth_signTypedData_v1':
+		case 'eth_signTypedData_v2':
+		case 'eth_signTypedData_v3':
+		case 'eth_signTypedData_v4':
+		case 'eth_sendRawTransaction':
 		case 'eth_sendTransaction': {
-			if (params.error.code === METAMASK_ERROR_NOT_AUTHORIZED) console.log('we are not authorized!')
-			return { method: 'signer_reply' as const, error: params.error }
+			const uniqueRequestIdentifier = { requestId: params.forwardRequest.requestId, requestSocket: request.uniqueRequestIdentifier.requestSocket }
+			if (params.success) {
+				try {
+					await resolvePendingTransactionOrMessage(simulator, websiteTabConnections, {
+						method: 'popup_confirmDialog',
+						data: {
+							uniqueRequestIdentifier,
+							action: 'signerIncluded',
+							signerReply: params.reply,
+						}
+					})
+				} catch(e) {
+					await handleUnexpectedError(e)
+				}
+				return doNotReply
+			}
+			if (params.error.code === METAMASK_ERROR_USER_REJECTED_REQUEST) {
+				await updatePendingTransactionOrMessage(uniqueRequestIdentifier, async (transaction) => ({ ...transaction, approvalStatus: { status: 'WaitingForUser' } }))
+				await updateConfirmTransactionView(simulator.ethereum)
+				return doNotReply
+			}
+			await updatePendingTransactionOrMessage(uniqueRequestIdentifier, async (transaction) => ({ ...transaction, approvalStatus: { status: 'SignerError', ...params.error } }))
+			await updateConfirmTransactionView(simulator.ethereum)
+			return doNotReply
 		}
 	}
-	return { method: 'signer_reply' as const, error: params.error }
+	if (params.success) return { type: 'result' as const, method: 'signer_reply' as const, result: params.reply }
+	return { type: 'result' as const, method: 'signer_reply' as const, error: params.error }
 }

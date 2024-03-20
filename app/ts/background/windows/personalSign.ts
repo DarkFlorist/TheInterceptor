@@ -1,77 +1,13 @@
 import { EthereumClientService } from '../../simulation/services/EthereumClientService.js'
 import { stringifyJSONWithBigInts } from '../../utils/bigint.js'
-import { METAMASK_ERROR_USER_REJECTED_REQUEST } from '../../utils/constants.js'
-import { Future } from '../../utils/future.js'
-import { PartiallyParsedPersonalSignRequest, PersonalSignApproval, PersonalSignRequest } from '../../types/interceptor-messages.js'
 import { OpenSeaOrderMessage, PersonalSignRequestIdentifiedEIP712Message, VisualizedPersonalSignRequest } from '../../types/personal-message-definitions.js'
 import { assertNever } from '../../utils/typescript.js'
-import { WebsiteTabConnections } from '../../types/user-interface-types.js'
-import { getHtmlFile, sendPopupMessageToOpenWindows } from '../backgroundUtils.js'
 import { extractEIP712Message, validateEIP712Types } from '../../utils/eip712Parsing.js'
-import { getPendingPersonalSignPromise, getRpcNetworkForChain, getTabState, setPendingPersonalSignPromise } from '../storageVariables.js'
-import { getSettings } from '../settings.js'
-import { PopupOrTab, addWindowTabListeners, closePopupOrTabById, getPopupOrTabOnlyById, openPopupOrTab, removeWindowTabListeners } from '../../components/ui-utils.js'
-import { appendSignedMessage, simulatePersonalSign } from '../../simulation/services/SimulationModeEthereumClientService.js'
-import { InterceptedRequest, UniqueRequestIdentifier, doesUniqueRequestIdentifiersMatch } from '../../utils/requests.js'
-import { replyToInterceptedRequest } from '../messageSending.js'
+import { getRpcNetworkForChain, getTabState } from '../storageVariables.js'
 import { identifyAddress } from '../metadataUtils.js'
 import { AddressBookEntry } from '../../types/addressBookTypes.js'
-import { PopupOrTabId, Website } from '../../types/websiteAccessTypes.js'
-import { updateSimulationState } from '../background.js'
-import { Simulator } from '../../simulation/simulator.js'
 import { SignedMessageTransaction } from '../../types/visualizer-types.js'
-import { SignMessageParams } from '../../types/jsonRpc-signing-types.js'
-import { serialize } from '../../types/wire-types.js'
 import { RpcNetwork } from '../../types/rpc.js'
-
-let pendingPersonalSign: Future<PersonalSignApproval> | undefined = undefined
-
-let openedDialog: PopupOrTab | undefined = undefined
-
-export async function resolvePersonalSign(simulator: Simulator, websiteTabConnections: WebsiteTabConnections, confirmation: PersonalSignApproval) {
-	if (pendingPersonalSign !== undefined) {
-		pendingPersonalSign.resolve(confirmation)
-	} else {
-		const data = await getPendingPersonalSignPromise()
-		if (data === undefined || !doesUniqueRequestIdentifiersMatch(confirmation.data.uniqueRequestIdentifier, data.signedMessageTransaction.request.uniqueRequestIdentifier)) return
-		const resolved = await resolve(simulator, confirmation, data.signedMessageTransaction)
-		replyToInterceptedRequest(websiteTabConnections, { ...data.signedMessageTransaction.originalRequestParameters, ...resolved, uniqueRequestIdentifier: confirmation.data.uniqueRequestIdentifier })
-	}
-	if (openedDialog) await closePopupOrTabById(openedDialog)
-	openedDialog = undefined
-}
-
-export async function updatePendingPersonalSignViewWithPendingRequests(ethereumClientService: EthereumClientService) {
-	const personalSignPromise = await getPendingPersonalSignPromise()
-	if (personalSignPromise === undefined) throw new Error('Missing personal sign promise from local storage')
-	const settings = await getSettings()
-	return await sendPopupMessageToOpenWindows(serialize(PersonalSignRequest, {
-		method: 'popup_personal_sign_request' as const,
-		data: await craftPersonalSignPopupMessage(ethereumClientService, personalSignPromise.signedMessageTransaction, settings.currentRpcNetwork)
-	}) as PartiallyParsedPersonalSignRequest)
-}
-
-function rejectMessage(uniqueRequestIdentifier: UniqueRequestIdentifier) {
-	return {
-		type: 'result' as const,
-		method: 'popup_personalSignApproval',
-		data: {
-			uniqueRequestIdentifier,
-			accept: false,
-		},
-	} as const
-}
-
-function reject(signingParams: SignMessageParams) {
-	return {
-		type: 'result' as const,
-		method: signingParams.method,
-		error: {
-			code: METAMASK_ERROR_USER_REJECTED_REQUEST,
-			message: 'Interceptor Personal Signature: User denied personal signature.'
-		}
-	}
-}
 
 export async function addMetadataToOpenSeaOrder(ethereumClientService: EthereumClientService, openSeaOrder: OpenSeaOrderMessage) {
 	return {
@@ -215,87 +151,4 @@ export async function craftPersonalSignPopupMessage(ethereumClientService: Ether
 		}
 		default: assertNever(parsed)
 	}
-}
-
-export const openPersonalSignDialog = async (
-	simulator: Simulator,
-	websiteTabConnections: WebsiteTabConnections,
-	signingParams: SignMessageParams,
-	request: InterceptedRequest,
-	simulationMode: boolean,
-	website: Website,
-	activeAddress: bigint | undefined
-) => {
-
-	const onCloseWindowOrTab = async (popupOrTabs: PopupOrTabId) => {
-		if (openedDialog === undefined || openedDialog.id !== popupOrTabs.id || openedDialog.type !== popupOrTabs.type) return
-		if (pendingPersonalSign === undefined) return
-		openedDialog = undefined
-		return await resolvePersonalSign(simulator, websiteTabConnections, rejectMessage(request.uniqueRequestIdentifier))
-	}
-	const onCloseWindow = async (id: number) => await onCloseWindowOrTab({ type: 'popup' as const, id })
-	const onCloseTab = async (id: number) => await onCloseWindowOrTab({ type: 'tab' as const, id })
-
-	if (activeAddress === undefined) return reject(signingParams)
-	const signedMessageTransaction = {
-		website,
-		created: new Date(),
-		originalRequestParameters: signingParams,
-		fakeSignedFor: activeAddress,
-		simulationMode,
-		request,
-	}
-
-	pendingPersonalSign = new Future<PersonalSignApproval>()
-	try {
-		const oldPromise = await getPendingPersonalSignPromise()
-		if (oldPromise !== undefined) {
-			if (await getPopupOrTabOnlyById(oldPromise.popupOrTabId) !== undefined) {
-				return reject(signingParams)
-			} else {
-				await setPendingPersonalSignPromise(undefined)
-			}
-		}
-
-		openedDialog = await openPopupOrTab({
-			url: getHtmlFile('personalSign'),
-			type: 'popup',
-			height: 800,
-			width: 600,
-		})
-		if (openedDialog !== undefined) {
-			addWindowTabListeners(onCloseWindow, onCloseTab)
-
-			await setPendingPersonalSignPromise({
-				popupOrTabId: openedDialog,
-				signedMessageTransaction,
-			})
-			await updatePendingPersonalSignViewWithPendingRequests(simulator.ethereum)
-		} else {
-			await resolvePersonalSign(simulator, websiteTabConnections, rejectMessage(request.uniqueRequestIdentifier))
-		}
-
-		const reply = await pendingPersonalSign
-
-		return resolve(simulator, reply, signedMessageTransaction)
-	} finally {
-		removeWindowTabListeners(onCloseWindow, onCloseTab)
-		pendingPersonalSign = undefined
-	}
-}
-
-async function resolve(simulator: Simulator, reply: PersonalSignApproval, signedMessageTransaction: SignedMessageTransaction) {
-	await setPendingPersonalSignPromise(undefined)
-	// forward message to content script
-	if (reply.data.accept) {
-		if (signedMessageTransaction.simulationMode) {
-			await updateSimulationState(simulator.ethereum, async (simulationState) => {
-				return await appendSignedMessage(simulator.ethereum, simulationState, signedMessageTransaction)
-			}, signedMessageTransaction.fakeSignedFor, true)
-			const signedMessage = (await simulatePersonalSign(signedMessageTransaction.originalRequestParameters, signedMessageTransaction.fakeSignedFor)).signature
-			return { type: 'result' as const, result: signedMessage, method: signedMessageTransaction.originalRequestParameters.method }
-		}
-		return { type: 'forwardToSigner' as const, ...signedMessageTransaction.originalRequestParameters } as const
-	}
-	return reject(signedMessageTransaction.originalRequestParameters)
 }

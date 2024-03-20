@@ -7,9 +7,9 @@ import { UniqueRequestIdentifier, WebsiteSocket } from '../utils/requests.js'
 import { EthGetFeeHistoryResponse, EthGetLogsResponse, EthGetStorageAtParams, EthTransactionReceiptResponse, GetBlockReturn, GetSimulationStackReply, SendRawTransactionParams, SendTransactionParams, WalletAddEthereumChain } from './JsonRpc-types.js'
 import { AddressBookEntries, AddressBookEntry, ActiveAddressEntry } from './addressBookTypes.js'
 import { Page } from './exportedSettingsTypes.js'
-import { PopupOrTabId, Website, WebsiteAccess, WebsiteAccessArray } from './websiteAccessTypes.js'
+import { Website, WebsiteAccess, WebsiteAccessArray } from './websiteAccessTypes.js'
 import { SignerName } from './signerTypes.js'
-import { ConfirmTransactionDialogState, PendingAccessRequests, PendingTransaction } from './accessRequest.js'
+import { ConfirmTransactionDialogState, PendingAccessRequests, PendingTransactionOrSignableMessage } from './accessRequest.js'
 import { CodeMessageError, RpcEntries, RpcEntry, RpcNetwork } from './rpc.js'
 import { OldSignTypedDataParams, PersonalSignParams, SignTypedDataParams } from './jsonRpc-signing-types.js'
 
@@ -24,6 +24,8 @@ export const WalletSwitchEthereumChainReply = funtypes.ReadonlyObject({
 
 export type InpageScriptRequestWithoutIdentifier = funtypes.Static<typeof InpageScriptRequestWithoutIdentifier>
 export const InpageScriptRequestWithoutIdentifier = funtypes.Union(
+	funtypes.ReadonlyObject({ type: funtypes.Literal('doNotReply') }),
+	funtypes.ReadonlyObject({ method: funtypes.Literal('signer_connection_status_changed'), result: funtypes.Literal('0x') }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('signer_reply'), result: funtypes.Unknown }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('eth_accounts_reply'), result: funtypes.Literal('0x') }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('signer_chainChanged'), result: funtypes.Literal('0x') }),
@@ -182,15 +184,18 @@ export const TransactionConfirmation = funtypes.ReadonlyObject({
 		funtypes.Intersect(
 			funtypes.ReadonlyObject({ 
 				uniqueRequestIdentifier: UniqueRequestIdentifier,
-				popupOrTabId: PopupOrTabId
 			}),
 			funtypes.Union(
+				funtypes.ReadonlyObject({
+					action: funtypes.Literal('signerIncluded'),
+					signerReply: funtypes.Unknown,
+				}),
 				funtypes.ReadonlyObject({
 					action: funtypes.Union(funtypes.Literal('accept'), funtypes.Literal('noResponse')),
 				}),
 				funtypes.ReadonlyObject({
 					action: funtypes.Literal('reject'),
-					transactionErrorString: funtypes.Union(funtypes.String, funtypes.Undefined),
+					errorString: funtypes.Union(funtypes.String, funtypes.Undefined),
 				}),
 			)
 		)
@@ -290,16 +295,17 @@ export const EnableSimulationMode = funtypes.ReadonlyObject({
 	data: funtypes.Boolean
 }).asReadonly()
 
+export type TransactionOrMessageIdentifier = funtypes.Static<typeof TransactionOrMessageIdentifier>
+export const TransactionOrMessageIdentifier = funtypes.Union(
+	funtypes.ReadonlyObject({ type: funtypes.Literal('Transaction'), transactionIdentifier: EthereumQuantity }),
+	funtypes.ReadonlyObject({ type: funtypes.Literal('MakeYouRichTransaction') }),
+	funtypes.ReadonlyObject({ type: funtypes.Literal('SignedMessage'), messageIdentifier: EthereumQuantity })
+)
+
 export type RemoveTransaction = funtypes.Static<typeof RemoveTransaction>
 export const RemoveTransaction = funtypes.ReadonlyObject({
-	method: funtypes.Literal('popup_removeTransaction'),
-	data: EthereumQuantity,
-}).asReadonly()
-
-export type RemoveSignedMessage = funtypes.Static<typeof RemoveSignedMessage>
-export const RemoveSignedMessage = funtypes.ReadonlyObject({
-	method: funtypes.Literal('popup_removeSignedMessage'),
-	data: UniqueRequestIdentifier,
+	method: funtypes.Literal('popup_removeTransactionOrSignedMessage'),
+	data: TransactionOrMessageIdentifier
 }).asReadonly()
 
 export type ResetSimulation = funtypes.Static<typeof ResetSimulation>
@@ -336,15 +342,14 @@ export const SignerChainChangeConfirmation = funtypes.ReadonlyObject({
 export type ConnectedToSigner = funtypes.Static<typeof ConnectedToSigner>
 export const ConnectedToSigner = funtypes.ReadonlyObject({
 	method: funtypes.Literal('connected_to_signer'),
-	params: funtypes.Tuple(SignerName),
+	params: funtypes.Tuple(funtypes.Boolean, SignerName),
 }).asReadonly()
 
 
 export type SignerReplyForwardRequest = funtypes.Static<typeof SignerReplyForwardRequest>
 export const SignerReplyForwardRequest = funtypes.Intersect(
 	funtypes.ReadonlyObject({ requestId: funtypes.Number }),
-	ForwardToWallet,
-	UnknownMethodForward,
+	funtypes.Union(ForwardToWallet, UnknownMethodForward)
 )
 
 export type SignerReply = funtypes.Static<typeof SignerReply>
@@ -436,50 +441,13 @@ export const MessageToPopupSimple = funtypes.ReadonlyObject({
 	)
 }).asReadonly()
 
-export type PartiallyParsedPersonalSignRequest = funtypes.Static<typeof PartiallyParsedPersonalSignRequest>
-export const PartiallyParsedPersonalSignRequest = funtypes.ReadonlyObject({
-	method: funtypes.Literal('popup_personal_sign_request'),
-	data: funtypes.Unknown,
-})
-
-export type PartiallyParsedRefreshPersonalSignMetadata = funtypes.Static<typeof PartiallyParsedRefreshPersonalSignMetadata>
-export const PartiallyParsedRefreshPersonalSignMetadata = funtypes.ReadonlyObject({
-	method: funtypes.Literal('popup_refreshPersonalSignMetadata'),
-	data: funtypes.Unknown,
-})
-
-export type PersonalSignRequest = funtypes.Static<typeof PersonalSignRequest>
-export const PersonalSignRequest = funtypes.ReadonlyObject({
-	method: funtypes.Literal('popup_personal_sign_request'),
-	data: VisualizedPersonalSignRequest,
-})
-
-export type RefreshPersonalSignMetadata = funtypes.Static<typeof RefreshPersonalSignMetadata>
-export const RefreshPersonalSignMetadata = funtypes.ReadonlyObject({
-	method: funtypes.Literal('popup_refreshPersonalSignMetadata'),
-	data: VisualizedPersonalSignRequest,
-})
-
-export type RefreshConfirmTransactionDialogSimulation = funtypes.Static<typeof RefreshConfirmTransactionDialogSimulation>
-export const RefreshConfirmTransactionDialogSimulation = funtypes.ReadonlyObject({
-	method: funtypes.Literal('popup_refreshConfirmTransactionDialogSimulation'),
-	data: funtypes.ReadonlyObject({})
-}).asReadonly()
-
 export type UpdateConfirmTransactionDialog = funtypes.Static<typeof UpdateConfirmTransactionDialog>
 export const UpdateConfirmTransactionDialog = funtypes.ReadonlyObject({
-	method: funtypes.Literal('popup_update_confirm_transaction_dialog'),
+	method: funtypes.Union(funtypes.Literal('popup_confirm_transaction_dialog_pending_changed'), funtypes.Literal('popup_update_confirm_transaction_dialog')),
 	data: funtypes.ReadonlyObject({
-		pendingTransactions: funtypes.ReadonlyArray(PendingTransaction),
+		visualizedSimulatorState: funtypes.Union(CompleteVisualizedSimulation, funtypes.Undefined),
+		pendingTransactionAndSignableMessages: funtypes.ReadonlyArray(PendingTransactionOrSignableMessage),
 		currentBlockNumber: EthereumQuantity,
-	})
-}).asReadonly()
-
-export type ConfirmTransactionDialogPendingChanged = funtypes.Static<typeof ConfirmTransactionDialogPendingChanged>
-export const ConfirmTransactionDialogPendingChanged = funtypes.ReadonlyObject({
-	method: funtypes.Literal('popup_confirm_transaction_dialog_pending_changed'),
-	data: funtypes.ReadonlyObject({
-		pendingTransactions: funtypes.ReadonlyArray(PendingTransaction),
 	})
 }).asReadonly()
 
@@ -786,17 +754,14 @@ export type PopupMessage = funtypes.Static<typeof PopupMessage>
 export const PopupMessage = funtypes.Union(
 	TransactionConfirmation,
 	RemoveTransaction,
-	RemoveSignedMessage,
 	ResetSimulation,
 	RefreshSimulation,
 	ChangeMakeMeRich,
 	ChangeActiveAddress,
 	ChangePage,
 	RequestAccountsFromSigner,
-	RefreshConfirmTransactionDialogSimulation,
+	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_refreshConfirmTransactionDialogSimulation') }),
 	RefreshConfirmTransactionMetadata,
-	PersonalSignApproval,
-	PartiallyParsedRefreshPersonalSignMetadata,
 	InterceptorAccess,
 	InterceptorAccessRefresh,
 	InterceptorAccessChangeAddress,
@@ -809,7 +774,6 @@ export const PopupMessage = funtypes.Union(
 	GetAddressBookData,
 	RemoveAddressBookEntry,
 	OpenAddressBook,
-	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_personalSignReadyAndListening') }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_changeChainReadyAndListening') }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_interceptorAccessReadyAndListening') }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_confirmTransactionReadyAndListening') }),
@@ -838,14 +802,12 @@ export const MessageToPopup = funtypes.Union(
 	NewBlockArrivedOrFailedToArrive,
 	SettingsUpdated,
 	UpdateConfirmTransactionDialog,
-	ConfirmTransactionDialogPendingChanged,
 	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_initiate_export_settings'), data: funtypes.ReadonlyObject({ fileContents: funtypes.String }) }),
 	ImportSettingsReply,
 	ActiveSigningAddressChanged,
 	UpdateRPCList,
 	SimulationUpdateStartedOrEnded,
 	PartialUpdateHomePage,
-	PartiallyParsedPersonalSignRequest,
 	PartiallyParsedSimulateGovernanceContractExecutionReply,
 	SettingsOpenedReply,
 	PopupAddOrModifyAddressWindowStateInfomation,

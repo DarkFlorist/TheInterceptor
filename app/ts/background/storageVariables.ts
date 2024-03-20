@@ -1,22 +1,22 @@
 import { DEFAULT_TAB_CONNECTION, getChainName } from '../utils/constants.js'
 import { Semaphore } from '../utils/semaphore.js'
-import { PendingChainChangeConfirmationPromise, PendingPersonalSignPromise, RpcConnectionStatus, TabState } from '../types/user-interface-types.js'
+import { PendingChainChangeConfirmationPromise, RpcConnectionStatus, TabState } from '../types/user-interface-types.js'
 import { PartialIdsOfOpenedTabs, browserStorageLocalGet, browserStorageLocalRemove, browserStorageLocalSet, getTabStateFromStorage, removeTabStateFromStorage, setTabStateToStorage } from '../utils/storageUtils.js'
 import { CompleteVisualizedSimulation, EthereumSubscriptionsAndFilters } from '../types/visualizer-types.js'
 import { defaultRpcs, getSettings } from './settings.js'
 import { UniqueRequestIdentifier, doesUniqueRequestIdentifiersMatch } from '../utils/requests.js'
 import { AddressBookEntries, AddressBookEntry } from '../types/addressBookTypes.js'
 import { SignerName } from '../types/signerTypes.js'
-import { PendingAccessRequest, PendingAccessRequests, PendingTransaction } from '../types/accessRequest.js'
+import { PendingAccessRequest, PendingAccessRequests, PendingTransactionOrSignableMessage } from '../types/accessRequest.js'
 import { RpcEntries, RpcNetwork } from '../types/rpc.js'
 import { replaceElementInReadonlyArray } from '../utils/typed-arrays.js'
 
 export const getIdsOfOpenedTabs = async () => (await browserStorageLocalGet('idsOfOpenedTabs'))?.['idsOfOpenedTabs'] ?? { settingsView: undefined, addressBook: undefined}
 export const setIdsOfOpenedTabs = async (ids: PartialIdsOfOpenedTabs) => await browserStorageLocalSet({ idsOfOpenedTabs: { ...await getIdsOfOpenedTabs(), ...ids } })
 
-export async function getPendingTransactions(): Promise<readonly PendingTransaction[]> {
+export async function getPendingTransactionsAndMessages(): Promise<readonly PendingTransactionOrSignableMessage[]> {
 	try {
-		return (await browserStorageLocalGet('transactionsPendingForUserConfirmation'))?.['transactionsPendingForUserConfirmation'] ?? []
+		return (await browserStorageLocalGet('pendingTransactionsAndMessages'))?.['pendingTransactionsAndMessages'] ?? []
 	} catch(e) {
 		console.warn('Pending transactions were corrupt:')
 		console.warn(e)
@@ -24,40 +24,35 @@ export async function getPendingTransactions(): Promise<readonly PendingTransact
 	}
 }
 
+export const clearPendingTransactions = async () => await updatePendingTransactionOrMessages(async () => [])
+
 const pendingTransactionsSemaphore = new Semaphore(1)
-export async function clearPendingTransactions() {
+export async function updatePendingTransactionOrMessages(update: (pendingTransactionsOrMessages: readonly PendingTransactionOrSignableMessage[]) => Promise<readonly PendingTransactionOrSignableMessage[]>) {
 	return await pendingTransactionsSemaphore.execute(async () => {
-		return await browserStorageLocalSet({ transactionsPendingForUserConfirmation: [] })
-	})
-}
-export async function appendPendingTransaction(pendingTransaction: PendingTransaction) {
-	return await pendingTransactionsSemaphore.execute(async () => {
-		const pendingTransactions = [...await getPendingTransactions(), pendingTransaction]
-		await browserStorageLocalSet({ transactionsPendingForUserConfirmation: pendingTransactions })
-		return pendingTransactions
+		const pendingTransactionsAndMessages = await update(await getPendingTransactionsAndMessages())
+		await browserStorageLocalSet({ pendingTransactionsAndMessages: pendingTransactionsAndMessages })
 	})
 }
 
-export async function replacePendingTransaction(pendingTransaction: PendingTransaction) {
-	return await pendingTransactionsSemaphore.execute(async () => {
-		const pendingTransactions = await getPendingTransactions()
-		const match = pendingTransactions.findIndex((pending) => doesUniqueRequestIdentifiersMatch(pending.uniqueRequestIdentifier, pendingTransaction.uniqueRequestIdentifier))
-		if (match < 0) return undefined
-		const replaced = replaceElementInReadonlyArray(pendingTransactions, match, pendingTransaction)
-		await browserStorageLocalSet({ transactionsPendingForUserConfirmation: replaced })
-		return pendingTransaction
+export async function updatePendingTransactionOrMessage(uniqueRequestIdentifier: UniqueRequestIdentifier, update: (pendingTransactionOrMessage: PendingTransactionOrSignableMessage) => Promise<PendingTransactionOrSignableMessage>) {
+	await updatePendingTransactionOrMessages(async (pendingTransactionsOrMessages) => {
+		const match = pendingTransactionsOrMessages.findIndex((pending) => doesUniqueRequestIdentifiersMatch(pending.uniqueRequestIdentifier, uniqueRequestIdentifier))
+		if (match < 0) return pendingTransactionsOrMessages
+		const found = pendingTransactionsOrMessages[match]
+		if (found === undefined) return pendingTransactionsOrMessages
+		return replaceElementInReadonlyArray(pendingTransactionsOrMessages, match, await update(found))
 	})
 }
 
-export async function removePendingTransaction(uniqueRequestIdentifier: UniqueRequestIdentifier) {
-	return await pendingTransactionsSemaphore.execute(async () => {
-		const promises = await getPendingTransactions()
-		const foundPromise = promises.find((promise) => doesUniqueRequestIdentifiersMatch(promise.uniqueRequestIdentifier, uniqueRequestIdentifier))
-		if (foundPromise !== undefined) {
-			const filteredPromises = promises.filter((promise) => !doesUniqueRequestIdentifiersMatch(promise.uniqueRequestIdentifier, uniqueRequestIdentifier))
-			await browserStorageLocalSet({ transactionsPendingForUserConfirmation: filteredPromises })
-		}
-		return foundPromise
+export async function appendPendingTransactionOrMessage(pendingTransactionOrMessage: PendingTransactionOrSignableMessage) {
+	await updatePendingTransactionOrMessages(async (pendingTransactionsOrMessages) => [...pendingTransactionsOrMessages, pendingTransactionOrMessage])
+}
+
+export async function removePendingTransactionOrMessage(uniqueRequestIdentifier: UniqueRequestIdentifier) {
+	await updatePendingTransactionOrMessages(async (pendingTransactionsOrMessages) => {
+		const foundPromise = pendingTransactionsOrMessages.find((pendingTransactionsOrMessages) => doesUniqueRequestIdentifiersMatch(pendingTransactionsOrMessages.uniqueRequestIdentifier, uniqueRequestIdentifier))
+		if (foundPromise === undefined) return pendingTransactionsOrMessages
+		return pendingTransactionsOrMessages.filter((pendingTransactionOrMessage) => !doesUniqueRequestIdentifiersMatch(pendingTransactionOrMessage.uniqueRequestIdentifier, uniqueRequestIdentifier))
 	})
 }
 
@@ -65,12 +60,6 @@ export const getChainChangeConfirmationPromise = async() => (await browserStorag
 export async function setChainChangeConfirmationPromise(promise: PendingChainChangeConfirmationPromise | undefined) {
 	if (promise === undefined) return await browserStorageLocalRemove('ChainChangeConfirmationPromise')
 	return await browserStorageLocalSet({ ChainChangeConfirmationPromise: promise })
-}
-
-export const getPendingPersonalSignPromise = async() => (await browserStorageLocalGet('PersonalSignPromise'))?.['PersonalSignPromise'] ?? undefined
-export async function setPendingPersonalSignPromise(promise: PendingPersonalSignPromise | undefined) {
-	if (promise === undefined) return await browserStorageLocalRemove('PersonalSignPromise')
-	return await browserStorageLocalSet({ PersonalSignPromise: promise })
 }
 
 export async function getSimulationResults() {
@@ -123,6 +112,7 @@ export const getDefaultSignerName = async () => (await browserStorageLocalGet('s
 export async function getTabState(tabId: number) : Promise<TabState> {
 	return await getTabStateFromStorage(tabId) ?? {
 		website: undefined,
+		signerConnected: false,
 		signerName: await getDefaultSignerName(),
 		signerAccounts: [],
 		signerChain: undefined,

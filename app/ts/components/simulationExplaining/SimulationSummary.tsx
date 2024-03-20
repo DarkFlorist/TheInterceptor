@@ -630,10 +630,10 @@ export function GasFee({ tx, rpcNetwork }: { tx: TransactionGasses, rpcNetwork: 
 
 type TransactionHeaderParams = {
 	simTx: SimulatedAndVisualizedTransaction
-	removeTransaction?: () => void
+	removeTransactionOrSignedMessage?: () => void
 }
 
-export function TransactionHeader({ simTx, removeTransaction } : TransactionHeaderParams) {
+export function TransactionHeader({ simTx, removeTransactionOrSignedMessage } : TransactionHeaderParams) {
 	return <header class = 'card-header'>
 		<div class = 'card-header-icon unset-cursor'>
 			<span class = 'icon'>
@@ -645,12 +645,12 @@ export function TransactionHeader({ simTx, removeTransaction } : TransactionHead
 		</p>
 		{ simTx.transaction.to  === undefined || identifyTransaction(simTx).type === 'MakeYouRichTransaction'
 			? <></>
-			: <p class = 'card-header-icon unsetcursor' style = { `margin-left: auto; margin-right: 0; overflow: hidden; ${ removeTransaction !== undefined ? 'padding: 0' : ''}` }>
+			: <p class = 'card-header-icon unsetcursor' style = { `margin-left: auto; margin-right: 0; overflow: hidden; ${ removeTransactionOrSignedMessage !== undefined ? 'padding: 0' : ''}` }>
 				<WebsiteOriginText { ...simTx.website } />
 			</p>
 		}
-		{ removeTransaction !== undefined
-			? <button class = 'card-header-icon' aria-label = 'remove' onClick = { removeTransaction }>
+		{ removeTransactionOrSignedMessage !== undefined
+			? <button class = 'card-header-icon' aria-label = 'remove' onClick = { removeTransactionOrSignedMessage }>
 				<span class = 'icon' style = 'color: var(--text-color);'> X </span>
 			</button>
 			: <></>
