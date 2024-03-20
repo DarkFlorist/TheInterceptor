@@ -7,7 +7,7 @@ import { commonTokenOops } from './protectors/commonTokenOops.js'
 import { eoaApproval } from './protectors/eoaApproval.js'
 import { eoaCalldata } from './protectors/eoaCalldata.js'
 import { tokenToContract } from './protectors/tokenToContract.js'
-import { WebsiteCreatedEthereumUnsignedTransaction, SimulationState, TokenVisualizerResult, GeneralEnrichedEthereumEvent } from '../types/visualizer-types.js'
+import { WebsiteCreatedEthereumUnsignedTransaction, SimulationState, TokenVisualizerResult, EnrichedEthereumEvent } from '../types/visualizer-types.js'
 import { EthereumJSONRpcRequestHandler } from './services/EthereumJSONRpcRequestHandler.js'
 import { APPROVAL_LOG, DEPOSIT_LOG, ERC1155_TRANSFERBATCH_LOG, ERC1155_TRANSFERSINGLE_LOG, ERC721_APPROVAL_FOR_ALL_LOG, TRANSFER_LOG, WITHDRAWAL_LOG } from '../utils/constants.js'
 import { handleApprovalLog, handleDepositLog, handleERC1155TransferBatch, handleERC1155TransferSingle, handleERC20TransferLog, handleErc721ApprovalForAllLog, handleWithdrawalLog } from './logHandlers.js'
@@ -64,7 +64,7 @@ const getTokenEventHandler = (type: AddressBookEntryCategory, logSignature: stri
 	} 
 }
 
-export const parseEvents = async (events: readonly EthereumEvent[], ethereumClientService: EthereumClientService): Promise<readonly GeneralEnrichedEthereumEvent[]> => {
+export const parseEvents = async (events: readonly EthereumEvent[], ethereumClientService: EthereumClientService): Promise<readonly EnrichedEthereumEvent[]> => {
 	const parsedEvents = await Promise.all(events.map(async (event) => {
 		// todo, we should do this parsing earlier, to be able to add possible addresses to addressMetaData set
 		const loggersAddressBookEntry = await identifyAddress(ethereumClientService, event.address)
@@ -97,7 +97,7 @@ export const parseEvents = async (events: readonly EthereumEvent[], ethereumClie
 		}
 	}))
 	
-	const maybeParsedEvents: GeneralEnrichedEthereumEvent[][] = parsedEvents.map((parsedEvent) => {
+	const maybeParsedEvents: EnrichedEthereumEvent[][] = parsedEvents.map((parsedEvent) => {
 		if (parsedEvent.isParsed === 'NonParsed') return [{ ...parsedEvent, type: 'NonParsed' }]
 		const logSignature = parsedEvent.topics[0]
 		if (logSignature === undefined) return [{ ...parsedEvent, type: 'Parsed' }]

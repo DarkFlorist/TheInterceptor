@@ -2,7 +2,7 @@ import { SimulatedAndVisualizedTransaction, TokenVisualizerResultWithMetadata } 
 import * as funtypes from 'funtypes'
 import { EthereumQuantity } from '../../types/wire-types.js'
 import { addressString } from '../../utils/bigint.js'
-import { EtherAmount, EtherSymbol, TokenAmount, TokenOrEthValue, TokenSymbol } from '../subcomponents/coins.js'
+import { TokenAmount, TokenOrEthValue, TokenSymbol } from '../subcomponents/coins.js'
 import { AddressBookEntry, Erc1155Entry, Erc20TokenEntry, Erc721Entry } from '../../types/addressBookTypes.js'
 import { assertNever, getWithDefault } from '../../utils/typescript.js'
 import { RpcNetwork } from '../../types/rpc.js'
@@ -32,7 +32,6 @@ export const SwapAsset = funtypes.Union(
 		funtypes.Union(
 			funtypes.ReadonlyObject({ type: funtypes.Literal('ERC20'), token: Erc20TokenEntry }),
 			funtypes.ReadonlyObject({ type: funtypes.Literal('ERC721'), token: Erc721Entry }),
-			funtypes.ReadonlyObject({ type: funtypes.Literal('Ether'), token: funtypes.Undefined }),
 		),
 		funtypes.ReadonlyObject({
 			amount: EthereumQuantity,
@@ -178,8 +177,8 @@ export function identifyRoutes(simulatedAndVisualizedTransaction: SimulatedAndVi
 	}
 
 	// traverse chain
-	const startToken = identifiedSwap.sendAsset.type !== 'Ether' ? addressString(identifiedSwap.sendAsset.token.address) : undefined
-	const endToken = identifiedSwap.receiveAsset.type !== 'Ether' ? addressString(identifiedSwap.receiveAsset.token.address) : undefined
+	const startToken = addressString(identifiedSwap.sendAsset.token.address)
+	const endToken = addressString(identifiedSwap.receiveAsset.token.address)
 	const lastIndex = endToken !== undefined ? tokenResults.findIndex((x) => (x.to.address === identifiedSwap.sender.address && addressString(x.token.address) === endToken ) ) : -1
 	const routes = [...findSwapRoutes(graph,
 		{
@@ -220,49 +219,18 @@ export function identifyRoutes(simulatedAndVisualizedTransaction: SimulatedAndVi
 	return sorted
 }
 
-export function getSwapName(identifiedSwap: IdentifiedSwapWithMetadata, rpcNetwork: RpcNetwork) {
+export function getSwapName(identifiedSwap: IdentifiedSwapWithMetadata) {
 	if (identifiedSwap === false) return undefined
-	const sent = identifiedSwap.sendAsset.type !== 'Ether' ? identifiedSwap.sendAsset.token.symbol : rpcNetwork.currencyTicker
-	const to = identifiedSwap.receiveAsset.type !== 'Ether' ? identifiedSwap.receiveAsset.token.symbol : rpcNetwork.currencyTicker
+	const sent = identifiedSwap.sendAsset.token.symbol
+	const to = identifiedSwap.receiveAsset.token.symbol
 	return `Swap ${ sent } for ${ to }`
 }
 
-export function VisualizeSwapAsset({ swapAsset, rpcNetwork, renameAddressCallBack }: { swapAsset: SwapAsset, rpcNetwork: RpcNetwork, renameAddressCallBack: RenameAddressCallBack }) {
+export function VisualizeSwapAsset({ swapAsset, renameAddressCallBack }: { swapAsset: SwapAsset, renameAddressCallBack: RenameAddressCallBack }) {
 	const tokenStyle = { 'font-weight': '500' }
 	const balanceTextStyle = { 'font-size': '14px', 'color': 'var(--subtitle-text-color)' }
 
 	switch (swapAsset.type) {
-		case 'Ether': {
-			return <>
-				<span class = 'grid swap-grid'>
-					<div class = 'log-cell' style = 'justify-content: left;'>
-						<EtherAmount
-							amount = { swapAsset.amount }
-							style = { tokenStyle }
-							fontSize = 'big'
-						/>
-					</div>
-					<div class = 'log-cell' style = 'justify-content: right;'>
-						<EtherSymbol
-							rpcNetwork = { rpcNetwork }
-							useFullTokenName = { false }
-							style = { tokenStyle}
-							fontSize = 'big'
-						/>
-					</div>
-				</span>
-				<span class = 'grid swap-grid'>
-					<div class = 'log-cell'/>
-					{ swapAsset.beforeAfterBalance !== undefined ? <div class = 'log-cell' style = 'justify-content: right;'>
-						<p class = 'paragraph' style = { balanceTextStyle }>Balance:&nbsp;</p>
-						<TokenOrEthValue amount = { swapAsset.beforeAfterBalance.beforeBalance } style = { balanceTextStyle } fontSize = { 'normal'}/>
-						<p class = 'paragraph' style = { balanceTextStyle }>&nbsp;{'->'}&nbsp;</p>
-						<TokenOrEthValue amount = { swapAsset.beforeAfterBalance.afterBalance } style = { balanceTextStyle } fontSize = 'normal'/>
-						</div> : <></>
-					}
-				</span>
-			</>
-		}
 		case 'ERC721': {
 			return <span class = 'grid swap-grid-1'>
 				<div class = 'log-cell-flexless' style = 'justify-content: center; display: flex;'>
@@ -348,11 +316,11 @@ export function SwapVisualization(param: SwapVisualizationParams) {
 		<div style = 'display: grid; grid-template-rows: max-content max-content max-content max-content;'>
 			<p class = 'paragraph'> Swap </p>
 			<div class = 'box swap-box'>
-				<VisualizeSwapAsset swapAsset = { param.identifiedSwap.sendAsset } rpcNetwork = { param.rpcNetwork } renameAddressCallBack = { param.renameAddressCallBack } />
+				<VisualizeSwapAsset swapAsset = { param.identifiedSwap.sendAsset } renameAddressCallBack = { param.renameAddressCallBack } />
 			</div>
 			<p class = 'paragraph'> For </p>
 			<div class = 'box swap-box'>
-				<VisualizeSwapAsset swapAsset = { param.identifiedSwap.receiveAsset } rpcNetwork = { param.rpcNetwork } renameAddressCallBack = { param.renameAddressCallBack } />
+				<VisualizeSwapAsset swapAsset = { param.identifiedSwap.receiveAsset } renameAddressCallBack = { param.renameAddressCallBack } />
 			</div>
 		</div>
 	</div>

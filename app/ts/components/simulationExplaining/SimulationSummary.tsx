@@ -6,7 +6,7 @@ import { Ether, EtherAmount, EtherSymbol, TokenWithAmount, TokenAmount, TokenPri
 import { NonTokenLogAnalysis, TokenLogAnalysis } from './Transactions.js'
 import { CopyToClipboard } from '../subcomponents/CopyToClipboard.js'
 import { SomeTimeAgo, humanReadableDateDeltaLessDetailed } from '../subcomponents/SomeTimeAgo.js'
-import { MAKE_YOU_RICH_TRANSACTION } from '../../utils/constants.js'
+import { ETHEREUM_LOGS_LOGGER_ADDRESS, MAKE_YOU_RICH_TRANSACTION } from '../../utils/constants.js'
 import { addressString, bytes32String, dataStringWith0xStart, nanoString } from '../../utils/bigint.js'
 import { identifyTransaction } from './identifyTransaction.js'
 import { identifySwap } from './SwapTransactions.js'
@@ -400,17 +400,22 @@ export function SummarizeAddress(param: SummarizeAddressParams) {
 export function removeEthDonator(rpcNetwork: RpcNetwork, summary: SummaryOutcome[]) {
 	const donatorSummary = summary.find((x) => x.summaryFor.address === getEthDonator(rpcNetwork.chainId))
 	if (donatorSummary === undefined) return
+	donatorSummary.erc20TokenBalanceChanges = donatorSummary.erc20TokenBalanceChanges.map((change) => {
+		if (change.address === ETHEREUM_LOGS_LOGGER_ADDRESS && change.changeAmount === -MAKE_YOU_RICH_TRANSACTION.transaction.value) {
+			return { ...change, changeAmount: change.changeAmount + MAKE_YOU_RICH_TRANSACTION.transaction.value }
+		}
+		return change
+	}).filter((change) => change.changeAmount !== 0n)
+
 	if (donatorSummary.erc721and1155OperatorChanges.length === 0 &&
 		donatorSummary.erc721TokenBalanceChanges.length === 0 &&
 		donatorSummary.erc721TokenIdApprovalChanges.length === 0 &&
 		donatorSummary.erc20TokenApprovalChanges.length === 0 && 
-		donatorSummary.erc20TokenBalanceChanges.length === 1 && donatorSummary.erc20TokenBalanceChanges[0]?.changeAmount === MAKE_YOU_RICH_TRANSACTION.transaction.value &&
+		donatorSummary.erc20TokenBalanceChanges.length === 0 &&
 		donatorSummary.erc1155TokenBalanceChanges.length === 0
 	) {
 		summary.splice(summary.indexOf(donatorSummary), 1)
-		return
 	}
-	return
 }
 
 type TokenLogAnalysisCardParams = {

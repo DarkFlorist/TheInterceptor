@@ -86,21 +86,15 @@ export const simulateGovernanceContractExecution = async (pendingTransaction: Pe
 		if (contractExecutionResult === undefined) return returnError('Failed to simulate governance execution')
 		const parentBlock = await ethereum.getBlock()
 		if (parentBlock.baseFeePerGas === undefined) return returnError('cannot build simulation from legacy block')
-		const signedExecutionTransaction = mockSignTransaction({ ...contractExecutionResult.executingTransaction, gas: contractExecutionResult.singleMulticalResult.gasUsed })
-		const tokenBalancesAfter = await getTokenBalancesAfter(
-			ethereum,
-			[signedExecutionTransaction],
-			[],
-			[contractExecutionResult.singleMulticalResult],
-			parentBlock.number
-		)
+		const signedExecutionTransaction = mockSignTransaction({ ...contractExecutionResult.executingTransaction, gas: contractExecutionResult.ethSimulateV1CallResult.gasUsed })
+		const tokenBalancesAfter = await getTokenBalancesAfter(ethereum, [signedExecutionTransaction], [], [contractExecutionResult.ethSimulateV1CallResult], parentBlock.number)
 
 		if (tokenBalancesAfter[0] === undefined) return returnError('Could not compute token balances')
 
 		const governanceContractSimulationState: SimulationState =  {
 			prependTransactionsQueue: [],
 			simulatedTransactions: [{
-				ethSimulateV1CallResult: contractExecutionResult.singleMulticalResult,
+				ethSimulateV1CallResult: contractExecutionResult.ethSimulateV1CallResult,
 				signedTransaction: signedExecutionTransaction,
 				realizedGasPrice: calculateGasPrice(signedExecutionTransaction, parentBlock.gasUsed, parentBlock.gasLimit, parentBlock.baseFeePerGas),
 				tokenBalancesAfter: tokenBalancesAfter[0],

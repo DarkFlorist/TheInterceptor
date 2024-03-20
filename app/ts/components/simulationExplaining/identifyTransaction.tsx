@@ -197,7 +197,7 @@ export function identifyTransaction(simTx: SimulatedAndVisualizedTransaction): I
 
 	const identifiedSwap = identifySwap(simTx)
 	if (identifiedSwap) {
-		const swapname = getSwapName(identifiedSwap, simTx.transaction.rpcNetwork)
+		const swapname = getSwapName(identifiedSwap)
 		return {
 			type: 'Swap',
 			title: swapname === undefined ? 'Swap' : swapname,

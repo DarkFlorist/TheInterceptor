@@ -691,7 +691,7 @@ export const simulatedCall = async (ethereumClientService: EthereumClientService
 	const multicallResult = await simulatedMulticall(ethereumClientService, simulationStateToUse, [{ ...transaction, gas: params.gasLimit === undefined ? simulationGasLeft(simulationState, await ethereumClientService.getBlock()) : params.gasLimit }], blockNumToUse)
 	const callResult = multicallResult.calls[multicallResult.calls.length - 1]
 	if (callResult === undefined) throw new Error('failed to eth simulate')
-	if (callResult?.status === 'failure') return { error: { ...callResult.error } }
+	if (callResult?.status === 'failure') return { error: callResult.error }
 	return { result: callResult.returnData }
 }
 

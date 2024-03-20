@@ -50,8 +50,8 @@ export const NonParsedEvent = funtypes.ReadonlyObject({
 	topics: funtypes.ReadonlyArray(EthereumBytes32),
 })
 
-export type GeneralEnrichedEthereumEvent = funtypes.Static<typeof GeneralEnrichedEthereumEvent>
-export const GeneralEnrichedEthereumEvent = funtypes.Union(
+export type EnrichedEthereumEvent = funtypes.Static<typeof EnrichedEthereumEvent>
+export const EnrichedEthereumEvent = funtypes.Union(
 	funtypes.Union(
 		funtypes.Intersect(
 			NonParsedEvent,
@@ -102,11 +102,11 @@ export const GeneralEnrichedEthereumEvent = funtypes.Union(
 )
 
 export type GeneralEnrichedEthereumEvents = funtypes.Static<typeof GeneralEnrichedEthereumEvents>
-export const GeneralEnrichedEthereumEvents = funtypes.ReadonlyArray(GeneralEnrichedEthereumEvent)
+export const GeneralEnrichedEthereumEvents = funtypes.ReadonlyArray(EnrichedEthereumEvent)
 
 export type TokenVisualizerErc20Event  = funtypes.Static<typeof TokenVisualizerErc20Event>
 export const TokenVisualizerErc20Event = funtypes.ReadonlyObject({
-	logObject: funtypes.Union(funtypes.Undefined, GeneralEnrichedEthereumEvent),
+	logObject: funtypes.Union(funtypes.Undefined, EnrichedEthereumEvent),
 	type: funtypes.Literal('ERC20'),
 	from: AddressBookEntry,
 	to: AddressBookEntry,
@@ -117,7 +117,7 @@ export const TokenVisualizerErc20Event = funtypes.ReadonlyObject({
 
 export type TokenVisualizerErc721Event  = funtypes.Static<typeof TokenVisualizerErc721Event>
 export const TokenVisualizerErc721Event = funtypes.ReadonlyObject({
-	logObject: funtypes.Union(funtypes.Undefined, GeneralEnrichedEthereumEvent),
+	logObject: funtypes.Union(funtypes.Undefined, EnrichedEthereumEvent),
 	type: funtypes.Literal('ERC721'),
 	from: AddressBookEntry,
 	to: AddressBookEntry,
@@ -128,7 +128,7 @@ export const TokenVisualizerErc721Event = funtypes.ReadonlyObject({
 
 export type TokenVisualizerErc1155Event = funtypes.Static<typeof TokenVisualizerErc1155Event>
 export const TokenVisualizerErc1155Event = funtypes.ReadonlyObject({
-	logObject: funtypes.Union(funtypes.Undefined, GeneralEnrichedEthereumEvent),
+	logObject: funtypes.Union(funtypes.Undefined, EnrichedEthereumEvent),
 	type: funtypes.Literal('ERC1155'),
 	from: AddressBookEntry,
 	to: AddressBookEntry,
@@ -190,7 +190,7 @@ export const SimulatedAndVisualizedTransactionBase = funtypes.Intersect(
 		realizedGasPrice: EthereumQuantity,
 		quarantine: funtypes.Boolean,
 		quarantineReasons: funtypes.ReadonlyArray(funtypes.String),
-		events: funtypes.ReadonlyArray(GeneralEnrichedEthereumEvent),
+		events: funtypes.ReadonlyArray(EnrichedEthereumEvent),
 		transactionIdentifier: EthereumQuantity,
 	}),
 	funtypes.Union(
@@ -421,7 +421,7 @@ export const NamedTokenId = funtypes.ReadonlyObject({
 
 export type CompleteVisualizedSimulation = funtypes.Static<typeof CompleteVisualizedSimulation>
 export const CompleteVisualizedSimulation = funtypes.ReadonlyObject({
-	eventsForEachTransaction: funtypes.ReadonlyArray(funtypes.ReadonlyArray(GeneralEnrichedEthereumEvent)),
+	eventsForEachTransaction: funtypes.ReadonlyArray(funtypes.ReadonlyArray(EnrichedEthereumEvent)),
 	protectors: funtypes.ReadonlyArray(ProtectorResults),
 	addressBookEntries: funtypes.ReadonlyArray(AddressBookEntry),
 	tokenPrices: funtypes.ReadonlyArray(TokenPriceEstimate),
@@ -456,12 +456,12 @@ export type EthereumSubscriptionsAndFilters = funtypes.Static<typeof EthereumSub
 export const EthereumSubscriptionsAndFilters = funtypes.ReadonlyArray(funtypes.Union(NewEthfilter, NewHeadsSubscription))
 
 export type MaybeParsedEventWithExtraDataForTransactions = funtypes.Static<typeof MaybeParsedEventWithExtraDataForTransactions>
-export const MaybeParsedEventWithExtraDataForTransactions = funtypes.ReadonlyArray(funtypes.ReadonlyArray(GeneralEnrichedEthereumEvent))
+export const MaybeParsedEventWithExtraDataForTransactions = funtypes.ReadonlyArray(funtypes.ReadonlyArray(EnrichedEthereumEvent))
 
 
 export type VisualizedSimulatorState = funtypes.Static<typeof VisualizedSimulatorState>
 export const VisualizedSimulatorState = funtypes.ReadonlyObject({
-	eventsForEachTransaction: funtypes.ReadonlyArray(funtypes.ReadonlyArray(GeneralEnrichedEthereumEvent)),
+	eventsForEachTransaction: funtypes.ReadonlyArray(funtypes.ReadonlyArray(EnrichedEthereumEvent)),
 	protectors: funtypes.ReadonlyArray(ProtectorResults),
 	addressBookEntries: funtypes.ReadonlyArray(AddressBookEntry),
 	tokenPrices: funtypes.ReadonlyArray(TokenPriceEstimate),
