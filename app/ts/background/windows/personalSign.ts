@@ -8,6 +8,7 @@ import { identifyAddress } from '../metadataUtils.js'
 import { AddressBookEntry } from '../../types/addressBookTypes.js'
 import { SignedMessageTransaction } from '../../types/visualizer-types.js'
 import { RpcNetwork } from '../../types/rpc.js'
+import { getChainName } from '../../utils/constants.js'
 
 export async function addMetadataToOpenSeaOrder(ethereumClientService: EthereumClientService, openSeaOrder: OpenSeaOrderMessage) {
 	return {
@@ -27,16 +28,9 @@ export async function craftPersonalSignPopupMessage(ethereumClientService: Ether
 
 	const getQuarrantineCodes = async (messageChainId: bigint, account: AddressBookEntry, activeAddress: AddressBookEntry, owner: AddressBookEntry | undefined): Promise<{ quarantine: boolean, quarantineReasons: readonly string[] }> => {
 		let quarantineReasons: string[] = []
-		if (BigInt(messageChainId) !== rpcNetwork.chainId) {
-			quarantineReasons.push('The signature request is for different chain than what is the current chain.')
-		}
-		if (account.address !== activeAddress.address || (owner != undefined && account.address !== owner.address)) {
-			quarantineReasons.push('The signature request is for different account than what is your active address.')
-		}
-		return {
-			quarantine: quarantineReasons.length > 0,
-			quarantineReasons,
-		}
+		if (messageChainId !== rpcNetwork.chainId) quarantineReasons.push(`The signature request is for different chain (${ getChainName(messageChainId) }) than what is the current chain (${ getChainName(rpcNetwork.chainId) }).`)
+		if (account.address !== activeAddress.address || (owner != undefined && account.address !== owner.address)) quarantineReasons.push('The signature request is for different account than what is your active address.')
+		return { quarantine: quarantineReasons.length > 0, quarantineReasons }
 	}
 	if (originalParams.originalRequestParameters.method === 'eth_signTypedData') {
 		return {
