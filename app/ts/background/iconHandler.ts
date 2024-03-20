@@ -1,5 +1,5 @@
 import { getPrettySignerName } from '../components/subcomponents/signers.js'
-import { CHROME_NO_TAB_WITH_ID_ERROR, ICON_ACCESS_DENIED, ICON_INTERCEPTOR_DISABLED, ICON_NOT_ACTIVE, ICON_SIGNING, ICON_SIGNING_NOT_SUPPORTED, ICON_SIMULATING, PRIMARY_COLOR, TIME_BETWEEN_BLOCKS, WARNING_COLOR } from '../utils/constants.js'
+import { ICON_ACCESS_DENIED, ICON_INTERCEPTOR_DISABLED, ICON_NOT_ACTIVE, ICON_SIGNING, ICON_SIGNING_NOT_SUPPORTED, ICON_SIMULATING, PRIMARY_COLOR, TIME_BETWEEN_BLOCKS, WARNING_COLOR } from '../utils/constants.js'
 import { hasAccess, hasAddressAccess } from './accessManagement.js'
 import { getActiveAddress, sendPopupMessageToOpenWindows, setExtensionBadgeBackgroundColor, setExtensionBadgeText, setExtensionIcon } from './backgroundUtils.js'
 import { imageToUri } from '../utils/imageToUri.js'
@@ -54,17 +54,6 @@ export async function updateExtensionBadge() {
 }
 
 export async function retrieveWebsiteDetails(tabId: number) {
-	const tryGettingTab = async (tabId: number) => {
-		try {
-			return await safeGetTab(tabId)
-		} catch (error) {
-			if (!(error instanceof Error)) throw error
-			if (!error.message?.includes(CHROME_NO_TAB_WITH_ID_ERROR)) throw error
-			// if tab is not found (user might have closed it)
-			return undefined
-		}
-	}
-
 	const waitForLoadedFuture = new Future<void>
 
 	// wait for the tab to be fully loaded
@@ -74,7 +63,7 @@ export async function retrieveWebsiteDetails(tabId: number) {
 
 	try {
 		browser.tabs.onUpdated.addListener(listener)
-		const tab = await tryGettingTab(tabId)
+		const tab = await safeGetTab(tabId)
 		if (tab !== undefined && tab.status === 'complete') {
 			waitForLoadedFuture.resolve()
 		}
@@ -97,12 +86,12 @@ export async function retrieveWebsiteDetails(tabId: number) {
 	// https://bugzilla.mozilla.org/show_bug.cgi?id=1450384
 	// https://bugzilla.mozilla.org/show_bug.cgi?id=1417721
 	// below is my attempt to try to get favicon...
-	while ((await tryGettingTab(tabId))?.favIconUrl === undefined) {
+	while ((await safeGetTab(tabId))?.favIconUrl === undefined) {
 		await new Promise(resolve => setTimeout(resolve, 100))
 		maxRetries--
 		if (maxRetries <= 0) break // timeout
 	}
-	const tab = await tryGettingTab(tabId)
+	const tab = await safeGetTab(tabId)
 	return {
 		title: tab?.title,
 		icon: tab?.favIconUrl === undefined ? undefined : await imageToUri(tab.favIconUrl)

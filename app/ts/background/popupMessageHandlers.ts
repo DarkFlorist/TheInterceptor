@@ -8,7 +8,6 @@ import { getAddressMetadataForAccess, requestAddressChange, resolveInterceptorAc
 import { resolveChainChange } from './windows/changeChain.js'
 import { sendMessageToApprovedWebsitePorts, setInterceptorDisabledForWebsite, updateWebsiteApprovalAccesses } from './accessManagement.js'
 import { getHtmlFile, sendPopupMessageToOpenWindows } from './backgroundUtils.js'
-import { CHROME_NO_TAB_WITH_ID_ERROR } from '../utils/constants.js'
 import { findEntryWithSymbolOrName, getMetadataForAddressBookData } from './medataSearch.js'
 import { getActiveAddresses, getAddressBookEntriesForVisualiser, identifyAddress, nameTokenIds } from './metadataUtils.js'
 import { WebsiteTabConnections } from '../types/user-interface-types.js'
@@ -28,6 +27,7 @@ import { updateContentScriptInjectionStrategyManifestV2, updateContentScriptInje
 import { Website } from '../types/websiteAccessTypes.js'
 import { makeSureInterceptorIsNotSleeping } from './sleeping.js'
 import { craftPersonalSignPopupMessage } from './windows/personalSign.js'
+import { updateTabIfExists } from '../utils/requests.js'
 
 export async function confirmDialog(simulator: Simulator, websiteTabConnections: WebsiteTabConnections, confirmation: TransactionConfirmation) {
 	await resolvePendingTransactionOrMessage(simulator, websiteTabConnections, confirmation)
@@ -266,14 +266,8 @@ export const openNewTab = async (tabName: 'settingsView' | 'addressBook') => {
 	const addressBookTab = allTabs.find((tab) => tab.id === tabId)
 
 	if (addressBookTab?.id === undefined) return await openInNewTab()
-	try {
-		return await browser.tabs.update(addressBookTab.id, { active: true })
-	} catch (error) {
-		if (!(error instanceof Error)) throw error
-		if (!error.message?.includes(CHROME_NO_TAB_WITH_ID_ERROR)) throw error
-		// if tab is not found (user might have closed it)
-		return await openInNewTab()
-	}
+	const tab = await updateTabIfExists(addressBookTab.id, { active: true })
+	if (tab === undefined) await openInNewTab()
 }
 
 export async function requestNewHomeData(simulator: Simulator) {
@@ -478,7 +472,9 @@ export async function openWebPage(parsedRequest: OpenWebPage) {
 	const addressBookTab = allTabs.find((tab) => tab.id === parsedRequest.data.websiteSocket.tabId)
 	if (addressBookTab === undefined) return await browser.tabs.create({ url: parsedRequest.data.url, active: true })
 	try {
-		return browser.tabs.update(parsedRequest.data.websiteSocket.tabId, { url: parsedRequest.data.url, active: true })
+		browser.tabs.update(parsedRequest.data.websiteSocket.tabId, { url: parsedRequest.data.url, active: true })
+		const error = browser.runtime.lastError
+		if (error !== undefined && error.message !== undefined) throw new Error(error.message)
 	} catch(e) {
 		console.warn('Failed to update tab with new webpage')
 		console.log(e)
@@ -500,6 +496,8 @@ async function disableInterceptorForPage(websiteTabConnections: WebsiteTabConnec
 	Array.from(new Set(withCurrentTabid)).forEach(async (tabId) => {
 		try {
 			await browser.tabs.reload(tabId)
+			const error = browser.runtime.lastError
+			if (error !== undefined && error.message !== undefined) throw new Error(error.message)
 		} catch (e) {
 			console.warn('failed to reload tab')
 			console.warn(e)

@@ -1,4 +1,4 @@
-import { closePopupOrTabById, getPopupOrTabOnlyById, openPopupOrTab, tryFocusingTabOrWindow } from '../../components/ui-utils.js'
+import { closePopupOrTabById, getPopupOrTabById, openPopupOrTab, tryFocusingTabOrWindow } from '../../components/ui-utils.js'
 import { EthereumClientService } from '../../simulation/services/EthereumClientService.js'
 import { appendSignedMessage, appendTransaction, getInputFieldFromDataOrInput, getSimulatedTransactionCount, simulateEstimateGas, simulatePersonalSign } from '../../simulation/services/SimulationModeEthereumClientService.js'
 import { CANNOT_SIMULATE_OFF_LEGACY_BLOCK, ERROR_INTERCEPTOR_NO_ACTIVE_ADDRESS, METAMASK_ERROR_NOT_CONNECTED_TO_CHAIN, METAMASK_ERROR_USER_REJECTED_REQUEST } from '../../utils/constants.js'
@@ -43,7 +43,7 @@ export async function updateConfirmTransactionView(ethereumClientService: Ethere
 export const isConfirmTransactionFocused = async () => {
 	const pendingTransactions = await getPendingTransactionsAndMessages()
 	if (pendingTransactions[0] === undefined) return false
-	const popup = await getPopupOrTabOnlyById(pendingTransactions[0].popupOrTabId)
+	const popup = await getPopupOrTabById(pendingTransactions[0].popupOrTabId)
 	if (popup === undefined) return false
 	if (popup.type === 'popup') return popup.window.focused
 	return popup.tab.active
@@ -205,7 +205,7 @@ const getPendingTransactionWindow = async (simulator: Simulator, websiteTabConne
 	const pendingTransactions = await getPendingTransactionsAndMessages()
 	const [firstPendingTransaction] = pendingTransactions
 	if (firstPendingTransaction !== undefined) {
-		const alreadyOpenWindow = await getPopupOrTabOnlyById(firstPendingTransaction.popupOrTabId)
+		const alreadyOpenWindow = await getPopupOrTabById(firstPendingTransaction.popupOrTabId)
 		if (alreadyOpenWindow) return alreadyOpenWindow
 		await resolveAllPendingTransactionsAndMessageAsNoResponse(pendingTransactions, simulator, websiteTabConnections)
 	}
