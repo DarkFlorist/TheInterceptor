@@ -478,11 +478,12 @@ export const getSimulatedBalance = async (ethereumClientService: EthereumClientS
 	for (const transaction of simulationState.simulatedTransactions) {
 		if (transaction.ethSimulateV1CallResult.status !== 'success') continue
 		for (const b of transaction.tokenBalancesAfter) { // todo, account for gasses!
-			if(b.balance === undefined || b.token !== ETHEREUM_LOGS_LOGGER_ADDRESS) continue
+			if (b.balance === undefined || b.token !== ETHEREUM_LOGS_LOGGER_ADDRESS) continue
 			ethBalances.set(b.owner, b.balance)
 		}
 	}
-	if (ethBalances.has(address)) return ethBalances.get(address)!
+	const balance = ethBalances.get(address)
+	if (balance !== undefined) return balance
 	return await ethereumClientService.getBalance(address, blockTag)
 }
 
@@ -813,6 +814,8 @@ export const parseEventIfPossible = (ethersInterface: ethers.Interface, log: Eth
 
 const getAddressesInteractedWithErc20s = (events: readonly EthereumEvent[]): { token: bigint, owner: bigint, tokenId: undefined, type: 'ERC20' }[] => {
 	const erc20ABI = [
+		'event Withdrawal(address indexed src, uint wad)', // weth withdraw function
+		'event Deposit(address indexed dst, uint wad)', // weth deposit function
 		'event Transfer(address indexed from, address indexed to, uint256 value)',
 		'event Approval(address indexed owner, address indexed spender, uint256 value)',
 	]
@@ -823,6 +826,11 @@ const getAddressesInteractedWithErc20s = (events: readonly EthereumEvent[]): { t
 		if (parsed === null) continue
 		const base = { token: log.address, tokenId: undefined, type: 'ERC20' as const }
 		switch (parsed.name) {
+			case 'Withdrawal':
+			case 'Deposit': {
+				tokenOwners.push({ ...base, owner: EthereumAddress.parse(parsed.args[0]) })
+				break
+			}
 			case 'Approval':
 			case 'Transfer': {
 				tokenOwners.push({ ...base, owner: EthereumAddress.parse(parsed.args[0]) })
@@ -881,15 +889,9 @@ export const getTokenBalancesAfter = async (
 		const singleResult = ethSimulateV1CallResults[resultIndex]
 		if (singleResult === undefined) throw new Error('singleResult was undefined')
 		const events = singleResult.status === 'success' ? singleResult.logs : []
-		const erc20sAddresses: BalanceQuery[] = getAddressesInteractedWithErc20s(events)
-		const erc1155AddressIds: BalanceQuery[] = getAddressesAndTokensIdsInteractedWithErc1155s(events)
-		const balancesPromises = getSimulatedTokenBalances(
-			ethereumClientService,
-			signedTxs.slice(0, resultIndex + 1),
-			signedMessages,
-			erc20sAddresses.concat(erc1155AddressIds),
-			blockNumber
-		)
+		const erc20sAddresses = getAddressesInteractedWithErc20s(events)
+		const erc1155AddressIds = getAddressesAndTokensIdsInteractedWithErc1155s(events)
+		const balancesPromises = getSimulatedTokenBalances(ethereumClientService, signedTxs.slice(0, resultIndex + 1), signedMessages, [...erc20sAddresses, ...erc1155AddressIds], blockNumber)
 		tokenBalancesAfter.push(balancesPromises)
 	}
 	return await Promise.all(tokenBalancesAfter)
