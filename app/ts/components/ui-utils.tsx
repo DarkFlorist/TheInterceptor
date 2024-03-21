@@ -7,6 +7,7 @@ import { EthereumAddress } from '../types/wire-types.js'
 import { AddressBookEntry } from '../types/addressBookTypes.js'
 import { checksummedAddress } from '../utils/bigint.js'
 import { PopupOrTabId } from '../types/websiteAccessTypes.js'
+import { checkAndThrowRuntimeLastError, safeGetTab, safeGetWindow, updateTabIfExists, updateWindowIfExists } from '../utils/requests.js'
 
 function assertIsNode(e: EventTarget | null): asserts e is Node {
 	if (!e || !('nodeType' in e)) {
@@ -102,68 +103,36 @@ export async function openPopupOrTab(createData: browser.windows._CreateCreateDa
 	return { type: 'popup', id: window.id, window }
 }
 
-export async function browserTabsQueryById(id: number) {
-	return (await browser.tabs.query({})).find((x) => x.id === id)
-}
-
 export async function getPopupOrTabById(popupOrTabId: PopupOrTabId) : Promise<PopupOrTab | undefined> {
 	switch (popupOrTabId.type) {
 		case 'tab': {
-			try {
-				const tab = await browserTabsQueryById(popupOrTabId.id)
-				if (tab === undefined || tab.id === undefined) return undefined
-				return { type: 'tab', id: tab.id, tab }
-			} catch(e) {
-				return undefined
-			}
+			const tab = await safeGetTab(popupOrTabId.id)
+			if (tab === undefined || tab.id === undefined) return undefined
+			return { type: 'tab', id: tab.id, tab }
 		}
 		case 'popup': {
-			try {
-				const window = await browser.windows.get(popupOrTabId.id)
-				if (window === undefined || window === null || window.id === undefined) return undefined
-				return { type: 'popup', id: window.id, window }
-			} catch(e) {
-				return undefined
-			}
+			const window = await safeGetWindow(popupOrTabId.id)
+			if (window === undefined || window === null || window.id === undefined) return undefined
+			return { type: 'popup', id: window.id, window }
 		}
 		default: assertNever(popupOrTabId.type)
-	}
-}
-
-export async function getPopupOrTabOnlyById(popupOrTab: PopupOrTabId) : Promise<PopupOrTab | undefined> {
-	switch (popupOrTab.type) {
-		case 'tab': {
-			try {
-				const tab = await browserTabsQueryById(popupOrTab.id)
-				if (tab !== undefined) return { type: 'tab', id: popupOrTab.id, tab }
-			} catch(e) {
-				console.log('Failed to focus tab:', popupOrTab.id)
-				console.warn(e)
-			}
-			return undefined
-		}
-		case 'popup': {
-			try {
-				const window = await browser.windows.get(popupOrTab.id)
-				if (window === undefined || window === null) return undefined
-				return { type: 'popup', id: popupOrTab.id, window }
-			} catch(e) {
-				console.log('Failed to focus poup:', popupOrTab.id)
-				console.warn(e)
-			}
-			return undefined
-		}
-		default: assertNever(popupOrTab.type)
 	}
 }
 
 export async function closePopupOrTabById(popupOrTabId: PopupOrTabId) {
 	try {
 		switch (popupOrTabId.type) {
-			case 'tab': return await browser.tabs.remove(popupOrTabId.id)
-			case 'popup': return await browser.windows.remove(popupOrTabId.id)
+			case 'tab': {
+				await browser.tabs.remove(popupOrTabId.id)
+				break
+			}
+			case 'popup': {
+				await browser.windows.remove(popupOrTabId.id)
+				break
+			}
 			default: assertNever(popupOrTabId.type)
 		}
+		checkAndThrowRuntimeLastError()
 	} catch(e) {
 		console.log(`Failed to close ${ popupOrTabId.type }: ${ popupOrTabId.id }`)
 		console.warn(e)
@@ -181,16 +150,8 @@ export function removeWindowTabListeners(onCloseWindow: (id: number) => void, on
 }
 
 export async function tryFocusingTabOrWindow(popupOrTab: PopupOrTabId) {
-	try {
-		if (popupOrTab.type === 'tab') {
-			await browser.tabs.update(popupOrTab.id, { active: true })
-		} else {
-			await browser.windows.update(popupOrTab.id, { focused: true })
-		}
-	} catch(e) {
-		console.warn('failed to focus', popupOrTab.type, ': ', popupOrTab.id)
-		console.warn(e)
-	}
+	if (popupOrTab.type === 'tab') return await updateTabIfExists(popupOrTab.id, { active: true })
+	return await updateWindowIfExists(popupOrTab.id, { focused: true })
 }
 
 export const CellElement = (param: { text: ComponentChildren }) => {

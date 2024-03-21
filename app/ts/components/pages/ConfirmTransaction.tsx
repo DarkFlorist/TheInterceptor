@@ -22,7 +22,7 @@ import { OriginalSendRequestParameters } from '../../types/JsonRpc-types.js'
 import { Website } from '../../types/websiteAccessTypes.js'
 import { getWebsiteWarningMessage } from '../../utils/websiteData.js'
 import { ErrorComponent } from '../subcomponents/Error.js'
-import { WebsiteSocket } from '../../utils/requests.js'
+import { WebsiteSocket, checkAndThrowRuntimeLastError, updateTabIfExists, updateWindowIfExists } from '../../utils/requests.js'
 import { Link } from '../subcomponents/link.js'
 import { NetworkErrors } from '../App.js'
 import { SignatureCard, SignatureHeader, identifySignature, isPossibleToSignMessage } from './PersonalSign.js'
@@ -373,8 +373,9 @@ export function ConfirmTransaction() {
 					if (currentWindowId === undefined) throw new Error('could not get current window Id!')
 					const currentTabId = (await browser.tabs.getCurrent()).id
 					if (currentTabId === undefined) throw new Error('could not get current tab Id!')
-					await browser.windows.update(currentWindowId, { focused: true })
-					await browser.tabs.update(currentTabId, { active: true })
+					await updateWindowIfExists(currentWindowId, { focused: true })
+					await updateTabIfExists(currentTabId, { active: true })
+					checkAndThrowRuntimeLastError()
 				} catch(e) {
 					console.warn('failed to focus window')
 					console.warn(e)
@@ -395,6 +396,7 @@ export function ConfirmTransaction() {
 		if (currentPendingTransactionOrSignableMessage === undefined) throw new Error('dialogState is not set')
 		setPendingTransactionAddedNotification(false)
 		const currentWindow = await browser.windows.getCurrent()
+		checkAndThrowRuntimeLastError()
 		if (currentWindow.id === undefined) throw new Error('could not get our own Id!')
 		try {
 			await sendPopupMessageToBackgroundPage({ method: 'popup_confirmDialog', data: { uniqueRequestIdentifier: currentPendingTransactionOrSignableMessage.uniqueRequestIdentifier, action: 'accept' } })
@@ -407,6 +409,7 @@ export function ConfirmTransaction() {
 		if (currentPendingTransactionOrSignableMessage === undefined) throw new Error('dialogState is not set')
 		setPendingTransactionAddedNotification(false)
 		const currentWindow = await browser.windows.getCurrent()
+		checkAndThrowRuntimeLastError()
 		if (currentWindow.id === undefined) throw new Error('could not get our own Id!')
 		if (pendingTransactionsAndSignableMessages.length === 1) await tryFocusingTabOrWindow({ type: 'tab', id: currentPendingTransactionOrSignableMessage.uniqueRequestIdentifier.requestSocket.tabId })
 		
