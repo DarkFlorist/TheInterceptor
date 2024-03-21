@@ -22,12 +22,10 @@ import { OriginalSendRequestParameters } from '../../types/JsonRpc-types.js'
 import { Website } from '../../types/websiteAccessTypes.js'
 import { getWebsiteWarningMessage } from '../../utils/websiteData.js'
 import { ErrorComponent } from '../subcomponents/Error.js'
-import { WebsiteSocket } from '../../utils/requests.js'
+import { WebsiteSocket, checkAndThrowRuntimeLastError, updateTabIfExists, updateWindowIfExists } from '../../utils/requests.js'
 import { Link } from '../subcomponents/link.js'
 import { NetworkErrors } from '../App.js'
 import { SignatureCard, SignatureHeader, identifySignature, isPossibleToSignMessage } from './PersonalSign.js'
-import { isEthSimulateV1Node } from '../../background/settings.js'
-import { MOCK_PRIVATE_KEYS_ADDRESS } from '../../utils/constants.js'
 import { VisualizedPersonalSignRequest } from '../../types/personal-message-definitions.js'
 
 type UnderTransactionsParams = {
@@ -84,18 +82,33 @@ function UnderTransactions(param: UnderTransactionsParams) {
 	</div>
 }
 
-type TransactionNamesParams = { completeVisualizedSimulation: CompleteVisualizedSimulation | undefined }
+type TransactionNamesParams = {
+	completeVisualizedSimulation: CompleteVisualizedSimulation | undefined
+	currentPendingTransaction: PendingTransactionOrSignableMessage
+}
 const TransactionNames = (param: TransactionNamesParams) => {
 	if (param.completeVisualizedSimulation === undefined || param.completeVisualizedSimulation.simulationResultState !== 'done') return <></>
 	const transactionsAndMessages: readonly (VisualizedPersonalSignRequest | SimulatedAndVisualizedTransaction)[] = [...param.completeVisualizedSimulation.visualizedPersonalSignRequests, ...param.completeVisualizedSimulation.simulatedAndVisualizedTransactions].sort((n1, n2) => n1.created.getTime() - n2.created.getTime())
 	const names = transactionsAndMessages.map((transactionOrMessage) => 'transaction' in transactionOrMessage ? identifyTransaction(transactionOrMessage).title : identifySignature(transactionOrMessage).title)
+
+	const titleOfCurrentPendingTransaction = () => {
+		const currentPendingTransactionOrSignableMessage = param.currentPendingTransaction
+		if (currentPendingTransactionOrSignableMessage === undefined) return 'Loading...'
+		if (currentPendingTransactionOrSignableMessage.transactionOrMessageCreationStatus !== 'Simulated') return currentPendingTransactionOrSignableMessage.transactionOrMessageCreationStatus
+		if (currentPendingTransactionOrSignableMessage.type === 'SignableMessage') return identifySignature(currentPendingTransactionOrSignableMessage.visualizedPersonalSignRequest).title
+		const lastTx = currentPendingTransactionOrSignableMessage.simulationResults.statusCode !== 'success' ? undefined : getResultsForTransaction(currentPendingTransactionOrSignableMessage.simulationResults.data.simulatedAndVisualizedTransactions, currentPendingTransactionOrSignableMessage.transactionIdentifier)
+		if (lastTx === undefined) return 'Could not find transaction...'
+		return identifyTransaction(lastTx).title
+	}
+	
+	const namesWithCurrentTransaction = [ ...names, titleOfCurrentPendingTransaction() ]
 	return <div class = 'block' style = 'margin-bottom: 10px;'>
 		<nav class = 'breadcrumb has-succeeds-separator is-small'>
 			<ul>
-				{ names.map((name, index) => (
+				{ namesWithCurrentTransaction.map((name, index) => (
 					<li style = 'margin: 0px;'>
-						<div class = 'card' style = { `padding: 5px; margin: 5px; ${ index !== names.length - 1 ? 'background-color: var(--disabled-card-color)' : ''}` }>
-							<p class = 'paragraph' style = { `margin: 0px; ${ index !== names.length - 1 ? 'color: var(--disabled-text-color)' : ''}` }>
+						<div class = 'card' style = { `padding: 5px; margin: 5px; ${ index !== namesWithCurrentTransaction.length - 1 ? 'background-color: var(--disabled-card-color)' : ''}` }>
+							<p class = 'paragraph' style = { `margin: 0px; ${ index !== namesWithCurrentTransaction.length - 1 ? 'color: var(--disabled-text-color)' : ''}` }>
 								{ name }
 							</p>
 						</div>
@@ -261,13 +274,6 @@ const CheckBoxes = (params: CheckBoxesParams) => {
 				</div>
 				: <></>
 			}
-			{ !(visualizedPersonalSignRequest.rpcNetwork.httpsRpc !== undefined && isEthSimulateV1Node(visualizedPersonalSignRequest.rpcNetwork.httpsRpc))
-				&& visualizedPersonalSignRequest.simulationMode && (visualizedPersonalSignRequest.activeAddress.address === undefined || visualizedPersonalSignRequest.activeAddress.address !== MOCK_PRIVATE_KEYS_ADDRESS || visualizedPersonalSignRequest.method !== 'personal_sign')
-				? <div style = 'display: grid'>
-					<ErrorComponent text = 'Unfortunately we cannot simulate message signing as it requires private key access 😢.'/>
-				</div>
-				: <></>
-			}
 		</>
 	}
 	if (params.currentPendingTransactionOrSignableMessage.simulationResults.statusCode !== 'success') return <></>
@@ -367,8 +373,9 @@ export function ConfirmTransaction() {
 					if (currentWindowId === undefined) throw new Error('could not get current window Id!')
 					const currentTabId = (await browser.tabs.getCurrent()).id
 					if (currentTabId === undefined) throw new Error('could not get current tab Id!')
-					await browser.windows.update(currentWindowId, { focused: true })
-					await browser.tabs.update(currentTabId, { active: true })
+					await updateWindowIfExists(currentWindowId, { focused: true })
+					await updateTabIfExists(currentTabId, { active: true })
+					checkAndThrowRuntimeLastError()
 				} catch(e) {
 					console.warn('failed to focus window')
 					console.warn(e)
@@ -389,6 +396,7 @@ export function ConfirmTransaction() {
 		if (currentPendingTransactionOrSignableMessage === undefined) throw new Error('dialogState is not set')
 		setPendingTransactionAddedNotification(false)
 		const currentWindow = await browser.windows.getCurrent()
+		checkAndThrowRuntimeLastError()
 		if (currentWindow.id === undefined) throw new Error('could not get our own Id!')
 		try {
 			await sendPopupMessageToBackgroundPage({ method: 'popup_confirmDialog', data: { uniqueRequestIdentifier: currentPendingTransactionOrSignableMessage.uniqueRequestIdentifier, action: 'accept' } })
@@ -401,6 +409,7 @@ export function ConfirmTransaction() {
 		if (currentPendingTransactionOrSignableMessage === undefined) throw new Error('dialogState is not set')
 		setPendingTransactionAddedNotification(false)
 		const currentWindow = await browser.windows.getCurrent()
+		checkAndThrowRuntimeLastError()
 		if (currentWindow.id === undefined) throw new Error('could not get our own Id!')
 		if (pendingTransactionsAndSignableMessages.length === 1) await tryFocusingTabOrWindow({ type: 'tab', id: currentPendingTransactionOrSignableMessage.uniqueRequestIdentifier.requestSocket.tabId })
 		
@@ -411,7 +420,7 @@ export function ConfirmTransaction() {
 			if (currentPendingTransactionOrSignableMessage.simulationResults.statusCode !== 'success' ) return undefined
 			const results = currentPendingTransactionOrSignableMessage.simulationResults.data.simulatedAndVisualizedTransactions.find((tx) => tx.transactionIdentifier === currentPendingTransactionOrSignableMessage.transactionIdentifier)
 			if (results === undefined) return undefined
-			return results.statusCode === 'failure' ? results.error : undefined
+			return results.statusCode === 'failure' ? results.error.message : undefined
 		}
 		
 		await sendPopupMessageToBackgroundPage({ method: 'popup_confirmDialog', data: {
@@ -436,7 +445,7 @@ export function ConfirmTransaction() {
 		if (currentPendingTransactionOrSignableMessage.transactionOrMessageCreationStatus !== 'Simulated') return true
 		if (currentPendingTransactionOrSignableMessage.type !== 'Transaction') {
 			return !isPossibleToSignMessage(currentPendingTransactionOrSignableMessage.visualizedPersonalSignRequest, currentPendingTransactionOrSignableMessage.activeAddress) && !forceSend
-			&& !(currentPendingTransactionOrSignableMessage.visualizedPersonalSignRequest.rpcNetwork.httpsRpc !== undefined && isEthSimulateV1Node(currentPendingTransactionOrSignableMessage.visualizedPersonalSignRequest.rpcNetwork.httpsRpc))
+			&& currentPendingTransactionOrSignableMessage.visualizedPersonalSignRequest.rpcNetwork.httpsRpc === undefined
 		}
 		if (currentPendingTransactionOrSignableMessage.simulationResults === undefined) return false
 		if (currentPendingTransactionOrSignableMessage.simulationResults.statusCode !== 'success' ) return false
@@ -579,7 +588,7 @@ export function ConfirmTransaction() {
 								/>
 								: <></>
 							}
-							<TransactionNames completeVisualizedSimulation = { completeVisualizedSimulation }/>
+							<TransactionNames completeVisualizedSimulation = { completeVisualizedSimulation } currentPendingTransaction = { currentPendingTransactionOrSignableMessage }/>
 							<UnderTransactions pendingTransactionsAndSignableMessages = { underTransactions }/>
 							<div style = { `top: ${ underTransactions.length * -HALF_HEADER_HEIGHT }px` }></div>
 							{ currentPendingTransactionOrSignableMessage.type === 'Transaction' ? 

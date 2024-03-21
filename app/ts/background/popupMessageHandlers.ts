@@ -8,7 +8,6 @@ import { getAddressMetadataForAccess, requestAddressChange, resolveInterceptorAc
 import { resolveChainChange } from './windows/changeChain.js'
 import { sendMessageToApprovedWebsitePorts, setInterceptorDisabledForWebsite, updateWebsiteApprovalAccesses } from './accessManagement.js'
 import { getHtmlFile, sendPopupMessageToOpenWindows } from './backgroundUtils.js'
-import { CHROME_NO_TAB_WITH_ID_ERROR } from '../utils/constants.js'
 import { findEntryWithSymbolOrName, getMetadataForAddressBookData } from './medataSearch.js'
 import { getActiveAddresses, getAddressBookEntriesForVisualiser, identifyAddress, nameTokenIds } from './metadataUtils.js'
 import { WebsiteTabConnections } from '../types/user-interface-types.js'
@@ -28,6 +27,7 @@ import { updateContentScriptInjectionStrategyManifestV2, updateContentScriptInje
 import { Website } from '../types/websiteAccessTypes.js'
 import { makeSureInterceptorIsNotSleeping } from './sleeping.js'
 import { craftPersonalSignPopupMessage } from './windows/personalSign.js'
+import { checkAndThrowRuntimeLastError, updateTabIfExists } from '../utils/requests.js'
 
 export async function confirmDialog(simulator: Simulator, websiteTabConnections: WebsiteTabConnections, confirmation: TransactionConfirmation) {
 	await resolvePendingTransactionOrMessage(simulator, websiteTabConnections, confirmation)
@@ -173,9 +173,9 @@ export async function refreshPopupConfirmTransactionMetadata(ethereumClientServi
 			}
 		})
 	}
-	const visualizerResults = await Promise.all(data.visualizerResults.map(async (result) => ({ ...result, events: await parseEvents(result.events.map((e) => ({ loggersAddress: e.loggersAddress, topics: e.topics, data: e.data })), ethereumClientService) })))
-	const addressBookEntriesPromise = getAddressBookEntriesForVisualiser(ethereumClientService, visualizerResults, data.simulationState)
-	const namedTokenIdsPromise = nameTokenIds(ethereumClientService, visualizerResults)
+	const eventsForEachTransaction = await Promise.all(data.eventsForEachTransaction.map(async(transactionsEvents) => await parseEvents(transactionsEvents.map((event) => event), ethereumClientService)))
+	const addressBookEntriesPromise = getAddressBookEntriesForVisualiser(ethereumClientService, eventsForEachTransaction.flat(), data.simulationState)
+	const namedTokenIdsPromise = nameTokenIds(ethereumClientService, eventsForEachTransaction.flat())
 	const addressBookEntries = await addressBookEntriesPromise
 	const namedTokenIds = await namedTokenIdsPromise
 	if (first === undefined || first.transactionOrMessageCreationStatus !== 'Simulated' || first.simulationResults === undefined || first.simulationResults.statusCode !== 'success') return
@@ -190,9 +190,9 @@ export async function refreshPopupConfirmTransactionMetadata(ethereumClientServi
 					statusCode: 'success',
 					data: {
 						...first.simulationResults.data,
-						simulatedAndVisualizedTransactions: formSimulatedAndVisualizedTransaction(first.simulationResults.data.simulationState, visualizerResults, first.simulationResults.data.protectors, addressBookEntries, namedTokenIds),
+						simulatedAndVisualizedTransactions: formSimulatedAndVisualizedTransaction(first.simulationResults.data.simulationState, eventsForEachTransaction, first.simulationResults.data.protectors, addressBookEntries, namedTokenIds),
 						addressBookEntries,
-						visualizerResults,
+						eventsForEachTransaction,
 					}
 				}
 			}, ...promises.slice(1)]
@@ -266,14 +266,8 @@ export const openNewTab = async (tabName: 'settingsView' | 'addressBook') => {
 	const addressBookTab = allTabs.find((tab) => tab.id === tabId)
 
 	if (addressBookTab?.id === undefined) return await openInNewTab()
-	try {
-		return await browser.tabs.update(addressBookTab.id, { active: true })
-	} catch (error) {
-		if (!(error instanceof Error)) throw error
-		if (!error.message?.includes(CHROME_NO_TAB_WITH_ID_ERROR)) throw error
-		// if tab is not found (user might have closed it)
-		return await openInNewTab()
-	}
+	const tab = await updateTabIfExists(addressBookTab.id, { active: true })
+	if (tab === undefined) await openInNewTab()
 }
 
 export async function requestNewHomeData(simulator: Simulator) {
@@ -478,7 +472,8 @@ export async function openWebPage(parsedRequest: OpenWebPage) {
 	const addressBookTab = allTabs.find((tab) => tab.id === parsedRequest.data.websiteSocket.tabId)
 	if (addressBookTab === undefined) return await browser.tabs.create({ url: parsedRequest.data.url, active: true })
 	try {
-		return browser.tabs.update(parsedRequest.data.websiteSocket.tabId, { url: parsedRequest.data.url, active: true })
+		browser.tabs.update(parsedRequest.data.websiteSocket.tabId, { url: parsedRequest.data.url, active: true })
+		checkAndThrowRuntimeLastError()
 	} catch(e) {
 		console.warn('Failed to update tab with new webpage')
 		console.log(e)
@@ -500,6 +495,7 @@ async function disableInterceptorForPage(websiteTabConnections: WebsiteTabConnec
 	Array.from(new Set(withCurrentTabid)).forEach(async (tabId) => {
 		try {
 			await browser.tabs.reload(tabId)
+			checkAndThrowRuntimeLastError()
 		} catch (e) {
 			console.warn('failed to reload tab')
 			console.warn(e)
