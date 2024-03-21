@@ -13,7 +13,8 @@
 		"firefox": "node -e \"const fs = require('fs'); fs.copyFileSync('app/manifestV2.json', 'app/manifest.json');\"",
 		"chrome": "node -e \"const fs = require('fs'); fs.copyFileSync('app/manifestV3.json', 'app/manifest.json');\"",
 		"prepare-inpage": "tsc --project tsconfig-inpage-create-injection-script.json && node --enable-source-maps app/inpage/js/create_injection_script.mjs && node --input-type=module -e \"import { promises as fs } from 'fs'; await fs.rm('app/inpage/js/create_injection_script.mjs')\"",
-		"inpage": "tsc --project tsconfig-inpage.json && npm run prepare-inpage && tsc --project tsconfig-inpage-output.json"
+		"inpage": "tsc --project tsconfig-inpage.json && npm run prepare-inpage && tsc --project tsconfig-inpage-output.json",
+		"lint": "npx @biomejs/biome@1.6.1 lint ."
 	},
 	"dependencies": {
 		"@darkflorist/address-metadata": "0.5.0",

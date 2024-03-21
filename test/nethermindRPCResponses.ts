@@ -157,20 +157,30 @@ export const eth_getBlockByNumber_goerli_8443561_true = `
 }
 `
 
-export const eth_multicall_failure = `
+export const eth_simulateV1_dummy_call_result = `
 {
     "jsonrpc": "2.0",
+    "id": 1,
     "result": [
         {
-            "statusCode": 0,
-            "gasSpent": "0x5208",
-            "returnValue": "0x",
-            "error": "wrong transaction nonce",
-            "events": [],
-            "balanceChanges": []
+            "number": "0x1294390",
+            "hash": "0xef17a9574063a4f9cc15478aa2e5103e719cef6c6e3ba376c75f89bd716d9d3b",
+            "timestamp": "0x65fbde68",
+            "gasLimit": "0x1c9c380",
+            "gasUsed": "0x5208",
+            "feeRecipient": "0xdafea492d9c6733ae3d56b7ed1adb60692c98bc5",
+            "baseFeePerGas": "0x19",
+            "prevRandao": "0x0000000000000000000000000000000000000000000000000000000000000000",
+            "calls": [
+                {
+                    "returnData": "0x",
+                    "logs": [],
+                    "gasUsed": "0x5208",
+                    "status": "0x1"
+                }
+            ]
         }
-    ],
-    "id": 2
+    ]
 }
 `
 
