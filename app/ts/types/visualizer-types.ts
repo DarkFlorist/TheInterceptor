@@ -3,7 +3,7 @@ import * as funtypes from 'funtypes'
 import { EthereumAddress, EthereumBytes32, EthereumData, EthereumInput, EthereumQuantity, EthereumSignedTransaction, EthereumTimestamp, EthereumUnsignedTransaction, OptionalEthereumAddress } from './wire-types.js'
 import { RenameAddressCallBack } from './user-interface-types.js'
 import { ERROR_INTERCEPTOR_GAS_ESTIMATION_FAILED } from '../utils/constants.js'
-import { EthBalanceChanges, EthNewFilter, EthSubscribeParams, OriginalSendRequestParameters, SendRawTransactionParams, SendTransactionParams, SingleMulticallResponse } from './JsonRpc-types.js'
+import { EthNewFilter, EthSubscribeParams, OriginalSendRequestParameters, SendRawTransactionParams, SendTransactionParams } from './JsonRpc-types.js'
 import { InterceptedRequest, WebsiteSocket } from '../utils/requests.js'
 import { AddressBookEntry, Erc721Entry, Erc20TokenEntry, Erc1155Entry, IncompleteAddressBookEntry } from './addressBookTypes.js'
 import { Website } from './websiteAccessTypes.js'
@@ -12,6 +12,7 @@ import { RpcNetwork } from './rpc.js'
 import { SignMessageParams } from './jsonRpc-signing-types.js'
 import { PureGroupedSolidityType } from './solidityType.js'
 import { TransactionOrMessageIdentifier } from './interceptor-messages.js'
+import { EthSimulateV1CallResult } from './multicall-types.js'
 
 export type NetworkPrice = funtypes.Static<typeof NetworkPrice>
 export const NetworkPrice = funtypes.ReadonlyObject({
@@ -34,7 +35,7 @@ export const ParsedEvent = funtypes.ReadonlyObject({
 	name: funtypes.String, // eg. 'Transfer'
 	signature: funtypes.String, // eg. 'Transfer(address,address,uint256)'
 	args: funtypes.ReadonlyArray(SolidityVariable), // TODO: add support for structs (abiV2)
-	loggersAddress: EthereumAddress,
+	address: EthereumAddress,
 	loggersAddressBookEntry: AddressBookEntry,
 	data: EthereumInput,
 	topics: funtypes.ReadonlyArray(EthereumBytes32),
@@ -43,14 +44,14 @@ export const ParsedEvent = funtypes.ReadonlyObject({
 export type NonParsedEvent = funtypes.Static<typeof NonParsedEvent>
 export const NonParsedEvent = funtypes.ReadonlyObject({
 	isParsed: funtypes.Literal('NonParsed'),
-	loggersAddress: EthereumAddress,
+	address: EthereumAddress,
 	loggersAddressBookEntry: AddressBookEntry,
 	data: EthereumInput,
 	topics: funtypes.ReadonlyArray(EthereumBytes32),
 })
 
-export type MaybeParsedEventWithExtraData = funtypes.Static<typeof MaybeParsedEventWithExtraData>
-export const MaybeParsedEventWithExtraData = funtypes.Union(
+export type EnrichedEthereumEvent = funtypes.Static<typeof EnrichedEthereumEvent>
+export const EnrichedEthereumEvent = funtypes.Union(
 	funtypes.Union(
 		funtypes.Intersect(
 			NonParsedEvent,
@@ -100,9 +101,12 @@ export const MaybeParsedEventWithExtraData = funtypes.Union(
 	)
 )
 
+export type GeneralEnrichedEthereumEvents = funtypes.Static<typeof GeneralEnrichedEthereumEvents>
+export const GeneralEnrichedEthereumEvents = funtypes.ReadonlyArray(EnrichedEthereumEvent)
+
 export type TokenVisualizerErc20Event  = funtypes.Static<typeof TokenVisualizerErc20Event>
 export const TokenVisualizerErc20Event = funtypes.ReadonlyObject({
-	logObject: funtypes.Union(funtypes.Undefined, MaybeParsedEventWithExtraData),
+	logObject: funtypes.Union(funtypes.Undefined, EnrichedEthereumEvent),
 	type: funtypes.Literal('ERC20'),
 	from: AddressBookEntry,
 	to: AddressBookEntry,
@@ -113,7 +117,7 @@ export const TokenVisualizerErc20Event = funtypes.ReadonlyObject({
 
 export type TokenVisualizerErc721Event  = funtypes.Static<typeof TokenVisualizerErc721Event>
 export const TokenVisualizerErc721Event = funtypes.ReadonlyObject({
-	logObject: funtypes.Union(funtypes.Undefined, MaybeParsedEventWithExtraData),
+	logObject: funtypes.Union(funtypes.Undefined, EnrichedEthereumEvent),
 	type: funtypes.Literal('ERC721'),
 	from: AddressBookEntry,
 	to: AddressBookEntry,
@@ -124,7 +128,7 @@ export const TokenVisualizerErc721Event = funtypes.ReadonlyObject({
 
 export type TokenVisualizerErc1155Event = funtypes.Static<typeof TokenVisualizerErc1155Event>
 export const TokenVisualizerErc1155Event = funtypes.ReadonlyObject({
-	logObject: funtypes.Union(funtypes.Undefined, MaybeParsedEventWithExtraData),
+	logObject: funtypes.Union(funtypes.Undefined, EnrichedEthereumEvent),
 	type: funtypes.Literal('ERC1155'),
 	from: AddressBookEntry,
 	to: AddressBookEntry,
@@ -178,7 +182,6 @@ export const EthBalanceChangesWithMetadata = funtypes.ReadonlyObject({
 export type SimulatedAndVisualizedTransactionBase = funtypes.Static<typeof SimulatedAndVisualizedTransactionBase>
 export const SimulatedAndVisualizedTransactionBase = funtypes.Intersect(
 	funtypes.ReadonlyObject({
-		ethBalanceChanges: funtypes.ReadonlyArray(EthBalanceChangesWithMetadata),
 		tokenBalancesAfter: TokenBalancesAfter,
 		tokenResults: funtypes.ReadonlyArray(TokenVisualizerResultWithMetadata),
 		website: Website,
@@ -187,7 +190,7 @@ export const SimulatedAndVisualizedTransactionBase = funtypes.Intersect(
 		realizedGasPrice: EthereumQuantity,
 		quarantine: funtypes.Boolean,
 		quarantineReasons: funtypes.ReadonlyArray(funtypes.String),
-		events: funtypes.ReadonlyArray(MaybeParsedEventWithExtraData),
+		events: funtypes.ReadonlyArray(EnrichedEthereumEvent),
 		transactionIdentifier: EthereumQuantity,
 	}),
 	funtypes.Union(
@@ -196,7 +199,10 @@ export const SimulatedAndVisualizedTransactionBase = funtypes.Intersect(
 		}),
 		funtypes.ReadonlyObject({
 			statusCode: funtypes.Literal('failure'),
-			error: funtypes.String
+			error: funtypes.ReadonlyObject({
+				code: funtypes.Number,
+				message: funtypes.String,
+			})
 		})
 	)
 )
@@ -234,13 +240,6 @@ export const TokenVisualizerResult = funtypes.Intersect(
 	)
 )
 
-export type VisualizerResult = funtypes.Static<typeof VisualizerResult>
-export const VisualizerResult = funtypes.ReadonlyObject({
-	ethBalanceChanges: EthBalanceChanges,
-	events: funtypes.ReadonlyArray(MaybeParsedEventWithExtraData),
-	blockNumber: EthereumQuantity,
-})
-
 export type ProtectorResults = funtypes.Static<typeof ProtectorResults>
 export const ProtectorResults = funtypes.ReadonlyObject( {
 	quarantine: funtypes.Boolean,
@@ -249,7 +248,7 @@ export const ProtectorResults = funtypes.ReadonlyObject( {
 
 export type SimulatedTransaction = funtypes.Static<typeof SimulatedTransaction>
 export const SimulatedTransaction = funtypes.ReadonlyObject({
-	multicallResponse: SingleMulticallResponse,
+	ethSimulateV1CallResult: EthSimulateV1CallResult,
 	signedTransaction: EthereumSignedTransaction,
 	realizedGasPrice: EthereumQuantity,
 	website: Website,
@@ -348,9 +347,7 @@ export const TransactionWithAddressBookEntries = funtypes.Intersect(
 export type SimulatedAndVisualizedTransaction = funtypes.Static<typeof SimulatedAndVisualizedTransaction>
 export const SimulatedAndVisualizedTransaction = funtypes.Intersect(
 	SimulatedAndVisualizedTransactionBase,
-	funtypes.ReadonlyObject({
-		transaction: TransactionWithAddressBookEntries,
-	})
+	funtypes.ReadonlyObject({ transaction: TransactionWithAddressBookEntries })
 )
 
 export type SimulationAndVisualisationResults = {
@@ -413,7 +410,7 @@ export type SimulationUpdatingState = funtypes.Static<typeof SimulationUpdatingS
 export const SimulationUpdatingState = funtypes.Union(funtypes.Literal('updating'), funtypes.Literal('done'), funtypes.Literal('failed'))
 
 export type SimulationResultState = funtypes.Static<typeof SimulationResultState>
-export const SimulationResultState = funtypes.Union(funtypes.Literal('done'), funtypes.Literal('invalid'))
+export const SimulationResultState = funtypes.Union(funtypes.Literal('done'), funtypes.Literal('invalid'), funtypes.Literal('corrupted'))
 
 export type NamedTokenId = funtypes.Static<typeof NamedTokenId>
 export const NamedTokenId = funtypes.ReadonlyObject({
@@ -424,7 +421,7 @@ export const NamedTokenId = funtypes.ReadonlyObject({
 
 export type CompleteVisualizedSimulation = funtypes.Static<typeof CompleteVisualizedSimulation>
 export const CompleteVisualizedSimulation = funtypes.ReadonlyObject({
-	visualizerResults: funtypes.ReadonlyArray(VisualizerResult),
+	eventsForEachTransaction: funtypes.ReadonlyArray(funtypes.ReadonlyArray(EnrichedEthereumEvent)),
 	protectors: funtypes.ReadonlyArray(ProtectorResults),
 	addressBookEntries: funtypes.ReadonlyArray(AddressBookEntry),
 	tokenPrices: funtypes.ReadonlyArray(TokenPriceEstimate),
@@ -458,9 +455,13 @@ export const NewEthfilter = funtypes.ReadonlyObject({
 export type EthereumSubscriptionsAndFilters = funtypes.Static<typeof EthereumSubscriptionsAndFilters>
 export const EthereumSubscriptionsAndFilters = funtypes.ReadonlyArray(funtypes.Union(NewEthfilter, NewHeadsSubscription))
 
+export type MaybeParsedEventWithExtraDataForTransactions = funtypes.Static<typeof MaybeParsedEventWithExtraDataForTransactions>
+export const MaybeParsedEventWithExtraDataForTransactions = funtypes.ReadonlyArray(funtypes.ReadonlyArray(EnrichedEthereumEvent))
+
+
 export type VisualizedSimulatorState = funtypes.Static<typeof VisualizedSimulatorState>
 export const VisualizedSimulatorState = funtypes.ReadonlyObject({
-	visualizerResults: funtypes.ReadonlyArray(VisualizerResult),
+	eventsForEachTransaction: funtypes.ReadonlyArray(funtypes.ReadonlyArray(EnrichedEthereumEvent)),
 	protectors: funtypes.ReadonlyArray(ProtectorResults),
 	addressBookEntries: funtypes.ReadonlyArray(AddressBookEntry),
 	tokenPrices: funtypes.ReadonlyArray(TokenPriceEstimate),

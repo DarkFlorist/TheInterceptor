@@ -1,6 +1,6 @@
 import { addressString, checksummedAddress } from '../utils/bigint.js'
 import { ActiveAddressEntry, AddressBookEntry } from '../types/addressBookTypes.js'
-import { NamedTokenId, SimulationState, VisualizerResult } from '../types/visualizer-types.js'
+import { GeneralEnrichedEthereumEvents, NamedTokenId, SimulationState } from '../types/visualizer-types.js'
 import { tokenMetadata, contractMetadata, erc721Metadata, erc1155Metadata } from '@darkflorist/address-metadata'
 import { ethers } from 'ethers'
 import { ETHEREUM_COIN_ICON, ETHEREUM_LOGS_LOGGER_ADDRESS, MOCK_ADDRESS } from '../utils/constants.js'
@@ -153,20 +153,14 @@ export async function identifyAddress(ethereumClientService: EthereumClientServi
 	return entry
 }
 
-export async function getAddressBookEntriesForVisualiser(ethereumClientService: EthereumClientService, visualizerResults: readonly (VisualizerResult | undefined)[], simulationState: SimulationState): Promise<AddressBookEntry[]> {
-	let addressesToFetchMetadata: bigint[] = []
-
-	for (const visualizerResult of visualizerResults) {
-		if (visualizerResult === undefined) continue
-		const ethBalanceAddresses = visualizerResult.ethBalanceChanges.map((change) => change.address)
-		const eventArguments = visualizerResult.events.map((event) => event.type !== 'NonParsed' ? event.args : []).flat()
-		const addressesInEvents = eventArguments.map((event) => { 
-			if (event.typeValue.type === 'address') return event.typeValue.value
-			if (event.typeValue.type === 'address[]') return event.typeValue.value
-			return undefined
-		}).flat().filter((address): address is bigint => address !== undefined)
-		addressesToFetchMetadata = addressesToFetchMetadata.concat(ethBalanceAddresses, addressesInEvents, visualizerResult.events.map((event) => event.loggersAddress))
-	}
+export async function getAddressBookEntriesForVisualiser(ethereumClientService: EthereumClientService, events: GeneralEnrichedEthereumEvents, simulationState: SimulationState): Promise<AddressBookEntry[]> {
+	const eventArguments = events.map((event) => event.type !== 'NonParsed' ? event.args : []).flat()
+	const addressesInEvents = eventArguments.map((event) => { 
+		if (event.typeValue.type === 'address') return event.typeValue.value
+		if (event.typeValue.type === 'address[]') return event.typeValue.value
+		return undefined
+	}).flat().filter((address): address is bigint => address !== undefined)
+	const addressesToFetchMetadata = [...addressesInEvents, ...events.map((event) => event.address)]
 
 	simulationState.simulatedTransactions.forEach((tx) => {
 		addressesToFetchMetadata.push(tx.signedTransaction.from)
@@ -179,18 +173,12 @@ export async function getAddressBookEntriesForVisualiser(ethereumClientService: 
 	return await Promise.all(addressIdentificationPromises)
 }
 
-export async function nameTokenIds(ethereumClientService: EthereumClientService, visualizerResult: readonly (VisualizerResult | undefined)[]) {
-	type TokenAddressTokenIdPair = {
-		tokenAddress: bigint
-		tokenId: bigint
-	}
-	let tokenAddresses: TokenAddressTokenIdPair[] = visualizerResult.map((visualizerResult) => {
-		if (visualizerResult === undefined) return undefined
-		return visualizerResult.events.map((event) => { 
-			if (event.type !== 'TokenEvent' || event.tokenInformation.type !== 'ERC1155') return undefined
-			return { tokenAddress: event.tokenInformation.tokenAddress, tokenId: event.tokenInformation.tokenId }
-		})
-	}).flat().filter((pair): pair is TokenAddressTokenIdPair => pair !== undefined)
+export async function nameTokenIds(ethereumClientService: EthereumClientService, events: GeneralEnrichedEthereumEvents) {
+	type TokenAddressTokenIdPair = { tokenAddress: bigint, tokenId: bigint}
+	let tokenAddresses = events.map((event) => { 
+		if (event.type !== 'TokenEvent' || event.tokenInformation.type !== 'ERC1155') return undefined
+		return { tokenAddress: event.tokenInformation.tokenAddress, tokenId: event.tokenInformation.tokenId }
+	}).filter((pair): pair is TokenAddressTokenIdPair => pair !== undefined)
 
 	const pairs = getUniqueItemsByProperties(tokenAddresses, ['tokenAddress', 'tokenId'])
 	const namedPairs = (await Promise.all(pairs.map(async (pair) => {

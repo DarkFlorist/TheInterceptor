@@ -1,17 +1,16 @@
 import { EthereumClientService } from './EthereumClientService.js'
-import { EthereumUnsignedTransaction, EthereumSignedTransactionWithBlockData, EthereumBlockTag, EthereumAddress, EthereumBlockHeader, EthereumBlockHeaderWithTransactionHashes, EthereumSignedTransaction, EthereumData, EthereumQuantity, EthereumBytes32, OptionalEthereumUnsignedTransaction } from '../../types/wire-types.js'
+import { EthereumUnsignedTransaction, EthereumSignedTransactionWithBlockData, EthereumBlockTag, EthereumAddress, EthereumBlockHeader, EthereumBlockHeaderWithTransactionHashes, EthereumSignedTransaction, EthereumData, EthereumQuantity, EthereumBytes32 } from '../../types/wire-types.js'
 import { addressString, bytes32String, calculateWeightedPercentile, dataStringWith0xStart, max, min, stringToUint8Array } from '../../utils/bigint.js'
 import { CANNOT_SIMULATE_OFF_LEGACY_BLOCK, ERROR_INTERCEPTOR_GAS_ESTIMATION_FAILED, ETHEREUM_LOGS_LOGGER_ADDRESS, ETHEREUM_EIP1559_BASEFEECHANGEDENOMINATOR, ETHEREUM_EIP1559_ELASTICITY_MULTIPLIER, MOCK_ADDRESS, MULTICALL3, Multicall3ABI, DEFAULT_CALL_ADDRESS, GAS_PER_BLOB } from '../../utils/constants.js'
 import { Interface, TypedDataEncoder, ethers, hashMessage, keccak256, } from 'ethers'
 import { WebsiteCreatedEthereumUnsignedTransaction, SimulatedTransaction, SimulationState, TokenBalancesAfter, EstimateGasError, SignedMessageTransaction, WebsiteCreatedEthereumUnsignedTransactionOrFailed } from '../../types/visualizer-types.js'
 import { EthereumUnsignedTransactionToUnsignedTransaction, IUnsignedTransaction1559, serializeSignedTransactionToBytes } from '../../utils/ethereum.js'
-import { EthGetLogsResponse, EthGetLogsRequest, EthTransactionReceiptResponse, MulticallResponseEventLogs, MulticallResponse, DappRequestTransaction, MulticallResponseEventLog, EthGetFeeHistoryResponse, FeeHistory } from '../../types/JsonRpc-types.js'
+import { EthGetLogsResponse, EthGetLogsRequest, EthTransactionReceiptResponse, DappRequestTransaction, EthGetFeeHistoryResponse, FeeHistory } from '../../types/JsonRpc-types.js'
 import { handleERC1155TransferBatch, handleERC1155TransferSingle } from '../logHandlers.js'
 import { assertNever } from '../../utils/typescript.js'
 import { SignMessageParams } from '../../types/jsonRpc-signing-types.js'
-import { StateOverrides } from '../../types/multicall-types.js'
+import { EthSimulateV1CallResults, EthereumEvent, StateOverrides } from '../../types/multicall-types.js'
 import { getCodeByteCode } from '../../utils/ethereumByteCodes.js'
-import { isEthSimulateV1Node } from '../../background/settings.js'
 
 const MOCK_PUBLIC_PRIVATE_KEY = 0x1n // key used to sign mock transactions
 const MOCK_SIMULATION_PRIVATE_KEY = 0x2n // key used to sign simulated transatons
@@ -63,7 +62,7 @@ export const getNonPrependedSimulatedTransactions = (prependTransactionsQueue: r
 export const getSimulatedStack = (simulationState: SimulationState) => {
 	return simulationState.simulatedTransactions.map((transaction) => ({
 		...transaction.signedTransaction,
-		...transaction.multicallResponse,
+		...transaction.ethSimulateV1CallResult,
 		realizedGasPrice: transaction.realizedGasPrice,
 		gasLimit: transaction.signedTransaction.gas,
 	}))
@@ -113,7 +112,7 @@ export const simulateEstimateGas = async (ethereumClientService: EthereumClientS
 		accessList: []
 	}
 	const multiCall = await simulatedMulticall(ethereumClientService, simulationState, [tmp], block.number + 1n)
-	const lastResult = multiCall[multiCall.length - 1]
+	const lastResult = multiCall.calls[multiCall.calls.length - 1]
 	if (lastResult === undefined) {
 		return {
 			error: {
@@ -123,16 +122,16 @@ export const simulateEstimateGas = async (ethereumClientService: EthereumClientS
 			},
 		} as const 
 	}
-	if (lastResult.statusCode === 'failure') {
+	if (lastResult.status === 'failure') {
 		return {
 			error: {
 				code: ERROR_INTERCEPTOR_GAS_ESTIMATION_FAILED,
 				message: `failed to estimate gas: "${ lastResult.error }"`,
-				data: dataStringWith0xStart(lastResult.returnValue),
+				data: dataStringWith0xStart(lastResult.returnData),
 			},
 		} as const 
 	}
-	const gasSpent = lastResult.gasSpent * 125n * 64n / (100n * 63n) // add 25% * 64 / 63 extra  to account for gas savings <https://eips.ethereum.org/EIPS/eip-3529>
+	const gasSpent = lastResult.gasUsed * 125n * 64n / (100n * 63n) // add 25% * 64 / 63 extra  to account for gas savings <https://eips.ethereum.org/EIPS/eip-3529>
 	return { gas: gasSpent < maxGas ? gasSpent : maxGas }
 }
 
@@ -170,30 +169,30 @@ export const appendTransaction = async (ethereumClientService: EthereumClientSer
 	if (parentBaseFeePerGas === undefined) throw new Error(CANNOT_SIMULATE_OFF_LEGACY_BLOCK)
 	const signedMessages = getSignedMessagesWithFakeSigner(simulationState)
 	const signedTxs = getSignedTransactions()
-	const multicallResult = await ethereumClientService.multicall(signedTxs, signedMessages, parentBlock.number)
+	const ethSimulateV1CallResult = await ethereumClientService.simulateTransactionsAndSignatures(signedTxs, signedMessages, parentBlock.number)
 	const transactionWebsiteData = { website: transaction.website, created: transaction.created, originalRequestParameters: transaction.originalRequestParameters, transactionIdentifier: transaction.transactionIdentifier }
 	const transactionData = simulationState === undefined ? [transactionWebsiteData] : simulationState.simulatedTransactions.map((x) => ({ website: x.website, created: x.created, originalRequestParameters: x.originalRequestParameters, transactionIdentifier: x.transactionIdentifier })).concat(transactionWebsiteData)
-	if (multicallResult.length !== signedTxs.length) throw 'multicall length does not match in appendTransaction'
+	if (ethSimulateV1CallResult.calls.length !== signedTxs.length) throw 'multicall length does not match in appendTransaction'
 
 	const tokenBalancesAfter = await getTokenBalancesAfter(
 		ethereumClientService,
 		signedTxs,
 		signedMessages,
-		multicallResult,
+		ethSimulateV1CallResult.calls,
 		parentBlock.number
 	)
-	if (multicallResult.length !== tokenBalancesAfter.length) throw 'tokenBalancesAfter length does not match'
+	if (ethSimulateV1CallResult.calls.length !== tokenBalancesAfter.length) throw 'tokenBalancesAfter length does not match'
 
 	return {
 		prependTransactionsQueue: simulationState === undefined ? [] : simulationState.prependTransactionsQueue,
-		simulatedTransactions: multicallResult.map((singleResult, index) => {
+		simulatedTransactions: ethSimulateV1CallResult.calls.map((singleResult, index) => {
 			const signedTx = signedTxs[index]
 			const tokenBalancesAfterForIndex = tokenBalancesAfter[index]
 			const transactionDataForIndex = transactionData[index]
 			if (signedTx === undefined || tokenBalancesAfterForIndex === undefined || transactionDataForIndex === undefined) throw 'invalid transaction index'
 			return {
 				type: 'transaction',
-				multicallResponse: singleResult,
+				ethSimulateV1CallResult: singleResult,
 				signedTransaction: signedTx,
 				realizedGasPrice: calculateGasPrice(signedTx, parentBlock.gasUsed, parentBlock.gasLimit, parentBaseFeePerGas),
 				tokenBalancesAfter: tokenBalancesAfterForIndex,
@@ -226,24 +225,24 @@ export const setSimulationTransactionsAndSignedMessages = async (ethereumClientS
 	const signedTxs = newTransactionsToSimulate.map((tx) => mockSignTransaction(tx.transaction))
 	const parentBaseFeePerGas = parentBlock.baseFeePerGas
 	if (parentBaseFeePerGas === undefined) throw new Error(CANNOT_SIMULATE_OFF_LEGACY_BLOCK)
-	const multicallResult = await ethereumClientService.multicall(newTransactionsToSimulate.map((x) => x.transaction), signedMessages, parentBlock.number)
-	if (multicallResult.length !== signedTxs.length) throw new Error('Multicall length does not match in setSimulationTransactions')
+	const multicallResult = await ethereumClientService.simulateTransactionsAndSignatures(newTransactionsToSimulate.map((x) => x.transaction), signedMessages, parentBlock.number)
+	if (multicallResult.calls.length !== signedTxs.length) throw new Error('Multicall length does not match in setSimulationTransactions')
 
 	const tokenBalancesAfter: Promise<TokenBalancesAfter>[] = []
-	for (let resultIndex = 0; resultIndex < multicallResult.length; resultIndex++) {
-		const singleResult = multicallResult[resultIndex]
+	for (let resultIndex = 0; resultIndex < multicallResult.calls.length; resultIndex++) {
+		const singleResult = multicallResult.calls[resultIndex]
 		if (singleResult === undefined) throw new Error('Multicall length does not match in setSimulationTransactions')
 		tokenBalancesAfter.push(getSimulatedTokenBalances(
 			ethereumClientService,
 			signedTxs.slice(0, resultIndex + 1),
 			signedMessages,
-			getAddressesInteractedWithErc20s(singleResult.statusCode === 'success' ? singleResult.events : []),
+			getAddressesInteractedWithErc20s(singleResult.status === 'success' ? singleResult.logs : []),
 			parentBlock.number
 		))
 	}
 	return {
 		prependTransactionsQueue: simulationState.prependTransactionsQueue,
-		simulatedTransactions: await Promise.all(multicallResult.map(async(singleResult, index) => {
+		simulatedTransactions: await Promise.all(multicallResult.calls.map(async(singleResult, index) => {
 			const newTransaction = newTransactionsToSimulate[index]
 			if (newTransaction === undefined) throw new Error('undefined transaction to simulate')
 			const after = await tokenBalancesAfter[index]
@@ -251,7 +250,7 @@ export const setSimulationTransactionsAndSignedMessages = async (ethereumClientS
 			const signed = signedTxs[index]
 			if (signed === undefined) throw new Error('signed transaction was undefined')
 			return {
-				multicallResponse: singleResult,
+				ethSimulateV1CallResult: singleResult,
 				unsignedTransaction: newTransaction,
 				signedTransaction: signed,
 				realizedGasPrice: calculateGasPrice(newTransaction.transaction, parentBlock.gasUsed, parentBlock.gasLimit, parentBaseFeePerGas),
@@ -331,8 +330,8 @@ export const removeTransactionAndUpdateTransactionNonces = async (ethereumClient
 
 export const getNonceFixedSimulatedTransactions = async(ethereumClientService: EthereumClientService, simulatedTransactions: readonly SimulatedTransaction[]) => {
 	const isFixableNonceError = (transaction: SimulatedTransaction) => {
-		return transaction.multicallResponse.statusCode === 'failure'
-		&& transaction.multicallResponse.error === 'wrong transaction nonce'
+		return transaction.ethSimulateV1CallResult.status === 'failure'
+		&& transaction.ethSimulateV1CallResult.error.message === 'wrong transaction nonce' //TODO, change to error code
 		&& transaction.originalRequestParameters.method === 'eth_sendTransaction'
 	}
 	if (simulatedTransactions.find((transaction) => isFixableNonceError(transaction)) === undefined) return 'NoNonceErrors' as const
@@ -430,7 +429,7 @@ export const getSimulatedTransactionReceipt = async (ethereumClientService: Ethe
 	let currentLogIndex = 0
 	if (simulationState === undefined) { return await ethereumClientService.getTransactionReceipt(hash) }
 	for (const [index, simulatedTransaction] of simulationState.simulatedTransactions.entries()) {
-		cumGas += simulatedTransaction.multicallResponse.gasSpent
+		cumGas += simulatedTransaction.ethSimulateV1CallResult.gasUsed
 		if(hash === simulatedTransaction.signedTransaction.hash) {
 			const blockNum = await ethereumClientService.getBlockNumber()
 			return {
@@ -447,15 +446,15 @@ export const getSimulatedTransactionReceipt = async (ethereumClientService: Ethe
 				transactionIndex: BigInt(index),
 				contractAddress: null, // this is not correct if we actually deploy contract, where to get right value?
 				cumulativeGasUsed: cumGas,
-				gasUsed: simulatedTransaction.multicallResponse.gasSpent,
+				gasUsed: simulatedTransaction.ethSimulateV1CallResult.gasUsed,
 				effectiveGasPrice: 0x2n,
 				from: simulatedTransaction.signedTransaction.from,
 				to: simulatedTransaction.signedTransaction.to,
-				logs: simulatedTransaction.multicallResponse.statusCode === 'success'
-					? simulatedTransaction.multicallResponse.events.map((x, logIndex) => ({
+				logs: simulatedTransaction.ethSimulateV1CallResult.status === 'success'
+					? simulatedTransaction.ethSimulateV1CallResult.logs.map((x, logIndex) => ({
 						removed: false,
 						blockHash: getHashOfSimulatedBlock(simulationState),
-						address: x.loggersAddress,
+						address: x.address,
 						logIndex: BigInt(currentLogIndex + logIndex),
 						data: x.data,
 						topics: x.topics,
@@ -465,27 +464,26 @@ export const getSimulatedTransactionReceipt = async (ethereumClientService: Ethe
 					}))
 					: [],
 				logsBloom: 0x0n, //TODO: what should this be?
-				status: simulatedTransaction.multicallResponse.statusCode
+				status: simulatedTransaction.ethSimulateV1CallResult.status
 			}
 		}
-		currentLogIndex += simulatedTransaction.multicallResponse.statusCode === 'success' ? simulatedTransaction.multicallResponse.events.length : 0
+		currentLogIndex += simulatedTransaction.ethSimulateV1CallResult.status === 'success' ? simulatedTransaction.ethSimulateV1CallResult.logs.length : 0
 	}
 	return await ethereumClientService.getTransactionReceipt(hash)
 }
 
 export const getSimulatedBalance = async (ethereumClientService: EthereumClientService, simulationState: SimulationState | undefined, address: bigint, blockTag: EthereumBlockTag = 'latest'): Promise<bigint> => {
 	if (simulationState === undefined || await canQueryNodeDirectly(ethereumClientService, simulationState, blockTag)) return await ethereumClientService.getBalance(address, blockTag)
-	const balances = new Map<bigint, bigint>()
+	const ethBalances = new Map<bigint, bigint>()
 	for (const transaction of simulationState.simulatedTransactions) {
-		if (transaction.multicallResponse.statusCode !== 'success') continue
-
-		for (const b of transaction.multicallResponse.balanceChanges) {
-			balances.set(b.address, b.after)
+		if (transaction.ethSimulateV1CallResult.status !== 'success') continue
+		for (const b of transaction.tokenBalancesAfter) { // todo, account for gasses!
+			if (b.balance === undefined || b.token !== ETHEREUM_LOGS_LOGGER_ADDRESS) continue
+			ethBalances.set(b.owner, b.balance)
 		}
 	}
-	if (balances.has(address)) {
-		return balances.get(address)!
-	}
+	const balance = ethBalances.get(address)
+	if (balance !== undefined) return balance
 	return await ethereumClientService.getBalance(address, blockTag)
 }
 
@@ -515,12 +513,12 @@ export const getSimulatedCode = async (ethereumClientService: EthereumClientServ
 		accessList: []
 	} as const
 	const multiCall = await simulatedMulticall(ethereumClientService, simulationState, [getCodeTransaction], block.number + 1n, { [addressString(GET_CODE_CONTRACT)]: { code: getCodeByteCode() } })
-	const lastResult = multiCall[multiCall.length - 1]
+	const lastResult = multiCall.calls[multiCall.calls.length - 1]
 	if (lastResult === undefined) throw new Error('last result did not exist in multicall')
-	if (lastResult.statusCode === 'failure') return { statusCode: 'failure' } as const
-	const parsed = atInterface.decodeFunctionResult('at', lastResult.returnValue)
+	if (lastResult.status === 'failure') return { statusCode: 'failure' } as const
+	const parsed = atInterface.decodeFunctionResult('at', lastResult.returnData)
 	return {
-		statusCode: lastResult.statusCode,
+		statusCode: lastResult.status,
 		getCodeReturn: EthereumData.parse(parsed.toString())
 	} as const
 }
@@ -588,17 +586,17 @@ export async function getSimulatedBlock(ethereumClientService: EthereumClientSer
 
 const getLogsOfSimulatedBlock = (simulationState: SimulationState, logFilter: EthGetLogsRequest): EthGetLogsResponse => {
 	const events: EthGetLogsResponse = simulationState?.simulatedTransactions.reduce((acc, sim, transactionIndex) => {
-		if (!('events' in sim.multicallResponse)) return acc
+		if (sim.ethSimulateV1CallResult.status === 'failure') return acc
 		return [
 			...acc,
-			...sim.multicallResponse.events.map((event, logIndex) => ({
+			...sim.ethSimulateV1CallResult.logs.map((event, logIndex) => ({
 				removed: false,
 				logIndex: BigInt(acc.length + logIndex),
 				transactionIndex: BigInt(transactionIndex),
 				transactionHash: sim.signedTransaction.hash,
 				blockHash: getHashOfSimulatedBlock(simulationState),
 				blockNumber: simulationState.blockNumber,
-				address: event.loggersAddress,
+				address: event.address,
 				data: event.data,
 				topics: event.topics
 			}))
@@ -689,21 +687,12 @@ export const simulatedCall = async (ethereumClientService: EthereumClientService
 		chainId: ethereumClientService.getChainId(),
 	} as const
 
-	const multicallResult = isEthSimulateV1Node(ethereumClientService.getRpcEntry().httpsRpc) ?
-		await simulated484Multicall(ethereumClientService, simulationStateToUse, [transaction], blockNumToUse)
-		: await simulatedMulticall(ethereumClientService, simulationStateToUse, [{ ...transaction, gas: params.gasLimit === undefined ? simulationGasLeft(simulationState, await ethereumClientService.getBlock()) : params.gasLimit }], blockNumToUse)
-	const callResult = multicallResult[multicallResult.length - 1]
-	if (callResult === undefined) throw new Error('call result was undefined')
-	if (callResult.statusCode === 'failure') {
-		return {
-			error: {
-				code: -32015,
-				message: 'VM execution error.',
-				data: callResult.error,
-			}
-		}
-	}
-	return { result: callResult.returnValue }
+	//todo, we can optimize this by leaving nonce out
+	const multicallResult = await simulatedMulticall(ethereumClientService, simulationStateToUse, [{ ...transaction, gas: params.gasLimit === undefined ? simulationGasLeft(simulationState, await ethereumClientService.getBlock()) : params.gasLimit }], blockNumToUse)
+	const callResult = multicallResult.calls[multicallResult.calls.length - 1]
+	if (callResult === undefined) throw new Error('failed to eth simulate')
+	if (callResult?.status === 'failure') return { error: callResult.error }
+	return { result: callResult.returnData }
 }
 
 const getSignedMessagesWithFakeSigner = (simulationState: SimulationState | undefined) => {
@@ -712,20 +701,7 @@ const getSignedMessagesWithFakeSigner = (simulationState: SimulationState | unde
 
 export const simulatedMulticall = async (ethereumClientService: EthereumClientService, simulationState: SimulationState | undefined, transactions: EthereumUnsignedTransaction[], blockNumber: bigint, extraAccountOverrides: StateOverrides = {}) => {
 	const mergedTxs: EthereumUnsignedTransaction[] = getTransactionQueue(simulationState)
-	return await ethereumClientService.multicall(mergedTxs.concat(transactions), getSignedMessagesWithFakeSigner(simulationState), blockNumber, extraAccountOverrides)
-}
-
-export const simulated484Multicall = async (ethereumClientService: EthereumClientService, simulationState: SimulationState | undefined, transactions: OptionalEthereumUnsignedTransaction[], blockNumber: bigint, extraAccountOverrides: StateOverrides = {}) => {
-	const mergedTxs: OptionalEthereumUnsignedTransaction[] = getTransactionQueue(simulationState)
-	const transactionsWithRemoveZeroPricedOnes = mergedTxs.concat(transactions).map((transaction) => {
-		if (transaction.type !== '1559') return transaction
-		const { maxFeePerGas, ...transactionWithoutMaxFee } = transaction
-		return {
-			...transactionWithoutMaxFee,
-			...maxFeePerGas === 0n ? {} : { maxFeePerGas }
-		}
-	})
-	return await ethereumClientService.executionSpec383MultiCallOnlyTransactionsAndSignatures(transactionsWithRemoveZeroPricedOnes, getSignedMessagesWithFakeSigner(simulationState), blockNumber, extraAccountOverrides)
+	return await ethereumClientService.simulateTransactionsAndSignatures(mergedTxs.concat(transactions), getSignedMessagesWithFakeSigner(simulationState), blockNumber, extraAccountOverrides)
 }
 
 // use time as block hash as that makes it so that updated simulations with different states are different, but requires no additional calculation
@@ -810,10 +786,10 @@ const getSimulatedTokenBalances = async (ethereumClientService: EthereumClientSe
 		nonce: 0n,
 		chainId: ethereumClientService.getChainId(),
 	} as const
-	const multicallResults = await ethereumClientService.multicall(transactionQueue.concat(callTransaction), signedMessages, blockNumber)
-	const aggregate3CallResult = multicallResults[multicallResults.length - 1]
-	if (aggregate3CallResult === undefined || aggregate3CallResult.statusCode === 'failure') throw Error('Failed aggregate3')
-	const multicallReturnData: { success: boolean, returnData: string }[] = IMulticall3.decodeFunctionResult('aggregate3', dataStringWith0xStart(aggregate3CallResult.returnValue))[0]
+	const multicallResults = await ethereumClientService.simulateTransactionsAndSignatures(transactionQueue.concat(callTransaction), signedMessages, blockNumber)
+	const aggregate3CallResult = multicallResults.calls[multicallResults.calls.length - 1]
+	if (aggregate3CallResult === undefined || aggregate3CallResult.status === 'failure') throw Error('Failed aggregate3')
+	const multicallReturnData: { success: boolean, returnData: string }[] = IMulticall3.decodeFunctionResult('aggregate3', dataStringWith0xStart(aggregate3CallResult.returnData))[0]
 	
 	if (multicallReturnData.length !== balanceQueries.length) throw Error('Got wrong number of balances back')
 	return multicallReturnData.map((singleCallResult, callIndex) => {
@@ -828,7 +804,7 @@ const getSimulatedTokenBalances = async (ethereumClientService: EthereumClientSe
 	})
 }
 
-export const parseEventIfPossible = (ethersInterface: ethers.Interface, log: MulticallResponseEventLog) => {
+export const parseEventIfPossible = (ethersInterface: ethers.Interface, log: EthereumEvent) => {
 	try {
 		return ethersInterface.parseLog({ topics: log.topics.map((x) => bytes32String(x)), data: dataStringWith0xStart(log.data) })
 	} catch (error) {
@@ -836,8 +812,10 @@ export const parseEventIfPossible = (ethersInterface: ethers.Interface, log: Mul
 	}
 }
 
-const getAddressesInteractedWithErc20s = (events: MulticallResponseEventLogs): { token: bigint, owner: bigint, tokenId: undefined, type: 'ERC20' }[] => {
+const getAddressesInteractedWithErc20s = (events: readonly EthereumEvent[]): { token: bigint, owner: bigint, tokenId: undefined, type: 'ERC20' }[] => {
 	const erc20ABI = [
+		'event Withdrawal(address indexed src, uint wad)', // weth withdraw function
+		'event Deposit(address indexed dst, uint wad)', // weth deposit function
 		'event Transfer(address indexed from, address indexed to, uint256 value)',
 		'event Approval(address indexed owner, address indexed spender, uint256 value)',
 	]
@@ -846,8 +824,13 @@ const getAddressesInteractedWithErc20s = (events: MulticallResponseEventLogs): {
 	for (const log of events) {
 		const parsed = parseEventIfPossible(erc20, log)
 		if (parsed === null) continue
-		const base = { token: log.loggersAddress, tokenId: undefined, type: 'ERC20' as const }
+		const base = { token: log.address, tokenId: undefined, type: 'ERC20' as const }
 		switch (parsed.name) {
+			case 'Withdrawal':
+			case 'Deposit': {
+				tokenOwners.push({ ...base, owner: EthereumAddress.parse(parsed.args[0]) })
+				break
+			}
 			case 'Approval':
 			case 'Transfer': {
 				tokenOwners.push({ ...base, owner: EthereumAddress.parse(parsed.args[0]) })
@@ -860,7 +843,7 @@ const getAddressesInteractedWithErc20s = (events: MulticallResponseEventLogs): {
 	return tokenOwners
 }
 
-const getAddressesAndTokensIdsInteractedWithErc1155s = (events: MulticallResponseEventLogs): { token: bigint, owner: bigint, tokenId: bigint, type: 'ERC1155' }[] => {
+const getAddressesAndTokensIdsInteractedWithErc1155s = (events: readonly EthereumEvent[]): { token: bigint, owner: bigint, tokenId: bigint, type: 'ERC1155' }[] => {
 	const erc1155ABI = [
 		'event TransferSingle(address operator, address from, address to, uint256 id, uint256 value)',
 		'event TransferBatch(address indexed _operator, address indexed _from, address indexed _to, uint256[] _ids, uint256[] _values)',
@@ -870,7 +853,7 @@ const getAddressesAndTokensIdsInteractedWithErc1155s = (events: MulticallRespons
 	for (const log of events) {
 		const parsed = parseEventIfPossible(erc20, log)
 		if (parsed === null) continue
-		const base = { token: log.loggersAddress, type: 'ERC1155' as const }
+		const base = { token: log.address, type: 'ERC1155' as const }
 		switch (parsed.name) {
 			case 'TransferSingle': {
 				const parsedLog = handleERC1155TransferSingle(log)[0]
@@ -898,23 +881,17 @@ export const getTokenBalancesAfter = async (
 	ethereumClientService: EthereumClientService,
 	signedTxs: EthereumSignedTransaction[] = [],
 	signedMessages: readonly SignatureWithFakeSignerAddress[] = [],
-	multicallResult: MulticallResponse,
+	ethSimulateV1CallResults: EthSimulateV1CallResults,
 	blockNumber: bigint,
 ) => {
 	const tokenBalancesAfter: Promise<TokenBalancesAfter>[] = []
-	for (let resultIndex = 0; resultIndex < multicallResult.length; resultIndex++) {
-		const singleResult = multicallResult[resultIndex]
+	for (let resultIndex = 0; resultIndex < ethSimulateV1CallResults.length; resultIndex++) {
+		const singleResult = ethSimulateV1CallResults[resultIndex]
 		if (singleResult === undefined) throw new Error('singleResult was undefined')
-		const events = singleResult.statusCode === 'success' ? singleResult.events : []
-		const erc20sAddresses: BalanceQuery[] = getAddressesInteractedWithErc20s(events)
-		const erc1155AddressIds: BalanceQuery[] = getAddressesAndTokensIdsInteractedWithErc1155s(events)
-		const balancesPromises = getSimulatedTokenBalances(
-			ethereumClientService,
-			signedTxs.slice(0, resultIndex + 1),
-			signedMessages,
-			erc20sAddresses.concat(erc1155AddressIds),
-			blockNumber
-		)
+		const events = singleResult.status === 'success' ? singleResult.logs : []
+		const erc20sAddresses = getAddressesInteractedWithErc20s(events)
+		const erc1155AddressIds = getAddressesAndTokensIdsInteractedWithErc1155s(events)
+		const balancesPromises = getSimulatedTokenBalances(ethereumClientService, signedTxs.slice(0, resultIndex + 1), signedMessages, [...erc20sAddresses, ...erc1155AddressIds], blockNumber)
 		tokenBalancesAfter.push(balancesPromises)
 	}
 	return await Promise.all(tokenBalancesAfter)

@@ -1,10 +1,9 @@
 import { DistributedOmit, assertNever } from '../../../utils/typescript.js'
 import { RenameAddressCallBack } from '../../../types/user-interface-types.js'
-import { EthBalanceChangesWithMetadata } from '../../../types/visualizer-types.js'
 import { BigAddress } from '../../subcomponents/address.js'
 import { TokenOrEth, TokenOrEtherParams } from '../../subcomponents/coins.js'
 import { GasFee, TransactionGasses } from '../SimulationSummary.js'
-import { SimulatedAndVisualizedEtherTransferTransaction, SimulatedAndVisualizedSimpleTokenTransferTransaction, TokenResult } from '../identifyTransaction.js'
+import { SimulatedAndVisualizedSimpleTokenTransferTransaction, TokenResult } from '../identifyTransaction.js'
 import { AddressBookEntry } from '../../../types/addressBookTypes.js'
 import { tokenEventToTokenSymbolParams } from './CatchAllVisualizer.js'
 import { RpcNetwork } from '../../../types/rpc.js'
@@ -83,36 +82,6 @@ function SimpleSend({ transaction, asset, sender, receiver, renameAddressCallBac
 			<GasFee tx = { transaction } rpcNetwork = { transaction.rpcNetwork } />
 		</span>
 	</div>
-}
-
-function getBeforeAndAfterBalanceForAddress(ethBalances: readonly EthBalanceChangesWithMetadata[], address: bigint) {
-	const filtered = ethBalances.filter((x) => x.address.address === address)
-	if (filtered.length === 0) return { before: 0n, after: 0n }
-	const firstBalance = filtered[0]
-	const lastBalance = filtered[filtered.length - 1]
-	if (firstBalance === undefined || lastBalance === undefined) throw new Error('first or last balance were undefined')
-	return {
-		before: firstBalance.before,
-		after: lastBalance.after,
-	}
-}
-
-export function EtherTransferVisualisation({ simTx, renameAddressCallBack }: { simTx: SimulatedAndVisualizedEtherTransferTransaction, renameAddressCallBack: RenameAddressCallBack }) {
-	const senderBalanceChanges = getBeforeAndAfterBalanceForAddress(simTx.ethBalanceChanges, simTx.transaction.from.address)
-	const receiverBalanceChanges = getBeforeAndAfterBalanceForAddress(simTx.ethBalanceChanges, simTx.transaction.to.address)
-	if (senderBalanceChanges === undefined || receiverBalanceChanges === undefined) return <></>
-	return <SimpleSend
-		transaction = { { ...simTx, rpcNetwork: simTx.transaction.rpcNetwork } }
-		asset = { {
-			amount: simTx.transaction.value,
-			rpcNetwork: simTx.transaction.rpcNetwork,
-			useFullTokenName: false,
-			fontSize: 'normal'
-		} }
-		sender = { { beforeAndAfter: senderBalanceChanges, address: simTx.transaction.from } }
-		receiver = { { beforeAndAfter: receiverBalanceChanges, address: simTx.transaction.to } }
-		renameAddressCallBack = { renameAddressCallBack }
-	/>
 }
 
 export function SimpleTokenTransferVisualisation({ simTx, renameAddressCallBack }: { simTx: SimulatedAndVisualizedSimpleTokenTransferTransaction, renameAddressCallBack: RenameAddressCallBack }) {

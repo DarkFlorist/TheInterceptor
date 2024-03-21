@@ -26,8 +26,6 @@ import { WebsiteSocket } from '../../utils/requests.js'
 import { Link } from '../subcomponents/link.js'
 import { NetworkErrors } from '../App.js'
 import { SignatureCard, SignatureHeader, identifySignature, isPossibleToSignMessage } from './PersonalSign.js'
-import { isEthSimulateV1Node } from '../../background/settings.js'
-import { MOCK_PRIVATE_KEYS_ADDRESS } from '../../utils/constants.js'
 import { VisualizedPersonalSignRequest } from '../../types/personal-message-definitions.js'
 
 type UnderTransactionsParams = {
@@ -276,13 +274,6 @@ const CheckBoxes = (params: CheckBoxesParams) => {
 				</div>
 				: <></>
 			}
-			{ !(visualizedPersonalSignRequest.rpcNetwork.httpsRpc !== undefined && isEthSimulateV1Node(visualizedPersonalSignRequest.rpcNetwork.httpsRpc))
-				&& visualizedPersonalSignRequest.simulationMode && (visualizedPersonalSignRequest.activeAddress.address === undefined || visualizedPersonalSignRequest.activeAddress.address !== MOCK_PRIVATE_KEYS_ADDRESS || visualizedPersonalSignRequest.method !== 'personal_sign')
-				? <div style = 'display: grid'>
-					<ErrorComponent text = 'Unfortunately we cannot simulate message signing as it requires private key access 😢.'/>
-				</div>
-				: <></>
-			}
 		</>
 	}
 	if (params.currentPendingTransactionOrSignableMessage.simulationResults.statusCode !== 'success') return <></>
@@ -426,7 +417,7 @@ export function ConfirmTransaction() {
 			if (currentPendingTransactionOrSignableMessage.simulationResults.statusCode !== 'success' ) return undefined
 			const results = currentPendingTransactionOrSignableMessage.simulationResults.data.simulatedAndVisualizedTransactions.find((tx) => tx.transactionIdentifier === currentPendingTransactionOrSignableMessage.transactionIdentifier)
 			if (results === undefined) return undefined
-			return results.statusCode === 'failure' ? results.error : undefined
+			return results.statusCode === 'failure' ? results.error.message : undefined
 		}
 		
 		await sendPopupMessageToBackgroundPage({ method: 'popup_confirmDialog', data: {
@@ -451,7 +442,7 @@ export function ConfirmTransaction() {
 		if (currentPendingTransactionOrSignableMessage.transactionOrMessageCreationStatus !== 'Simulated') return true
 		if (currentPendingTransactionOrSignableMessage.type !== 'Transaction') {
 			return !isPossibleToSignMessage(currentPendingTransactionOrSignableMessage.visualizedPersonalSignRequest, currentPendingTransactionOrSignableMessage.activeAddress) && !forceSend
-			&& !(currentPendingTransactionOrSignableMessage.visualizedPersonalSignRequest.rpcNetwork.httpsRpc !== undefined && isEthSimulateV1Node(currentPendingTransactionOrSignableMessage.visualizedPersonalSignRequest.rpcNetwork.httpsRpc))
+			&& currentPendingTransactionOrSignableMessage.visualizedPersonalSignRequest.rpcNetwork.httpsRpc === undefined
 		}
 		if (currentPendingTransactionOrSignableMessage.simulationResults === undefined) return false
 		if (currentPendingTransactionOrSignableMessage.simulationResults.statusCode !== 'success' ) return false

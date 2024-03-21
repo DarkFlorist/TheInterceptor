@@ -92,17 +92,6 @@ export const defaultRpcs = [
 		weth: 0x105083929bf9bb22c26cb1777ec92661170d4285n,
 	},
 	{
-		name: 'Ethereum Mainnet (old)',
-		chainId: 1n,
-		httpsRpc: 'https://rpc.dark.florist/flipcardtrustone',
-		currencyName: 'Ether',
-		currencyTicker: 'ETH',
-		currencyLogoUri: ETHEREUM_COIN_ICON,
-		primary: false,
-		minimized: true,
-		weth: 0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2n,
-	},
-	{
 		name: 'Ethereum (experimental nethermind)',
 		chainId: 1n,
 		httpsRpc: 'https://rpc.dark.florist/birdchalkrenewtip',
@@ -114,8 +103,6 @@ export const defaultRpcs = [
 		weth: 0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2n,
 	},
 ] as const
-
-export const isEthSimulateV1Node = (httpsRpc: string) => httpsRpc !== 'https://rpc.dark.florist/flipcardtrustone'
 
 export async function getSettings() : Promise<Settings> {
 	const results = await browserStorageLocalGet([

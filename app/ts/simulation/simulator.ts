@@ -7,9 +7,8 @@ import { commonTokenOops } from './protectors/commonTokenOops.js'
 import { eoaApproval } from './protectors/eoaApproval.js'
 import { eoaCalldata } from './protectors/eoaCalldata.js'
 import { tokenToContract } from './protectors/tokenToContract.js'
-import { WebsiteCreatedEthereumUnsignedTransaction, SimulationState, TokenVisualizerResult, VisualizerResult, MaybeParsedEventWithExtraData } from '../types/visualizer-types.js'
+import { WebsiteCreatedEthereumUnsignedTransaction, SimulationState, TokenVisualizerResult, EnrichedEthereumEvent } from '../types/visualizer-types.js'
 import { EthereumJSONRpcRequestHandler } from './services/EthereumJSONRpcRequestHandler.js'
-import { MulticallResponseEventLog, MulticallResponseEventLogs, SingleMulticallResponse } from '../types/JsonRpc-types.js'
 import { APPROVAL_LOG, DEPOSIT_LOG, ERC1155_TRANSFERBATCH_LOG, ERC1155_TRANSFERSINGLE_LOG, ERC721_APPROVAL_FOR_ALL_LOG, TRANSFER_LOG, WITHDRAWAL_LOG } from '../utils/constants.js'
 import { handleApprovalLog, handleDepositLog, handleERC1155TransferBatch, handleERC1155TransferSingle, handleERC20TransferLog, handleErc721ApprovalForAllLog, handleWithdrawalLog } from './logHandlers.js'
 import { RpcEntry } from '../types/rpc.js'
@@ -22,6 +21,7 @@ import { parseSolidityValueByTypePure } from '../utils/solidityTypes.js'
 import { identifyAddress } from '../background/metadataUtils.js'
 import { sendToNonContact } from './protectors/sendToNonContactAddress.js'
 import { assertNever } from '../utils/typescript.js'
+import { EthereumEvent } from '../types/multicall-types.js'
 
 const PROTECTORS = [
 	selfTokenOops,
@@ -33,7 +33,7 @@ const PROTECTORS = [
 	sendToNonContact,
 ]
 
-type TokenLogHandler = (event: MulticallResponseEventLog) => TokenVisualizerResult[]
+type TokenLogHandler = (event: EthereumEvent) => TokenVisualizerResult[]
 
 const getTokenEventHandler = (type: AddressBookEntryCategory, logSignature: string) => {
 	const erc20LogHanders = new Map<string, TokenLogHandler>([
@@ -64,11 +64,11 @@ const getTokenEventHandler = (type: AddressBookEntryCategory, logSignature: stri
 	} 
 }
 
-export const parseEvents = async (events: MulticallResponseEventLogs, ethereumClientService: EthereumClientService): Promise<readonly MaybeParsedEventWithExtraData[]> => {
+export const parseEvents = async (events: readonly EthereumEvent[], ethereumClientService: EthereumClientService): Promise<readonly EnrichedEthereumEvent[]> => {
 	const parsedEvents = await Promise.all(events.map(async (event) => {
 		// todo, we should do this parsing earlier, to be able to add possible addresses to addressMetaData set
-		const loggersAddressBookEntry = await identifyAddress(ethereumClientService, event.loggersAddress)
-		const abi = extractAbi(loggersAddressBookEntry, event.loggersAddress)
+		const loggersAddressBookEntry = await identifyAddress(ethereumClientService, event.address)
+		const abi = extractAbi(loggersAddressBookEntry, event.address)
 		const nonParsed = { ...event, isParsed: 'NonParsed' as const, loggersAddressBookEntry }
 		if (!abi) return nonParsed
 		const parsed = parseEventIfPossible(new Interface(abi), event)
@@ -97,7 +97,7 @@ export const parseEvents = async (events: MulticallResponseEventLogs, ethereumCl
 		}
 	}))
 	
-	const maybeParsedEvents: MaybeParsedEventWithExtraData[][] = parsedEvents.map((parsedEvent) => {
+	const maybeParsedEvents: EnrichedEthereumEvent[][] = parsedEvents.map((parsedEvent) => {
 		if (parsedEvent.isParsed === 'NonParsed') return [{ ...parsedEvent, type: 'NonParsed' }]
 		const logSignature = parsedEvent.topics[0]
 		if (logSignature === undefined) return [{ ...parsedEvent, type: 'Parsed' }]
@@ -106,15 +106,6 @@ export const parseEvents = async (events: MulticallResponseEventLogs, ethereumCl
 		return tokenEventhandler(parsedEvent).map((tokenInformation) => ({ ...parsedEvent, type: 'TokenEvent', tokenInformation }))
 	})
 	return maybeParsedEvents.flat()
-}
-
-export const visualizeTransaction = async (blockNumber: bigint, singleMulticallResponse: SingleMulticallResponse, ethereumClientService: EthereumClientService): Promise<VisualizerResult> => {
-	if (singleMulticallResponse.statusCode !== 'success') return { ethBalanceChanges: [], events: [], blockNumber }
-	return {
-		ethBalanceChanges: singleMulticallResponse.balanceChanges,
-		events: await parseEvents(singleMulticallResponse.events, ethereumClientService),
-		blockNumber
-	}
 }
 
 export const runProtectorsForTransaction = async (simulationState: SimulationState, transaction: WebsiteCreatedEthereumUnsignedTransaction, ethereum: EthereumClientService) => {

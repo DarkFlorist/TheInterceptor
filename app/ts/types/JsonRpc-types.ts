@@ -1,7 +1,7 @@
 import * as funtypes from 'funtypes'
-import { EthereumAddress, EthereumBlockHeader, EthereumBlockHeaderWithTransactionHashes, EthereumBlockTag, EthereumBytes256, EthereumBytes32, EthereumData, EthereumInput, EthereumQuantity, EthereumUnsignedTransaction, LiteralConverterParserFactory, RevertErrorParser } from './wire-types.js'
+import { EthereumAddress, EthereumBlockHeader, EthereumBlockHeaderWithTransactionHashes, EthereumBlockTag, EthereumBytes256, EthereumBytes32, EthereumData, EthereumInput, EthereumQuantity, EthereumUnsignedTransaction, LiteralConverterParserFactory } from './wire-types.js'
 import { areEqualUint8Arrays } from '../utils/typed-arrays.js'
-import { ExecutionSpec383MultiCallParams } from './multicall-types.js'
+import { EthSimulateV1CallResult, EthSimulateV1Params } from './multicall-types.js'
 import { OldSignTypedDataParams, PersonalSignParams, SignTypedDataParams } from './jsonRpc-signing-types.js'
 import { CodeMessageError } from './rpc.js'
 
@@ -50,23 +50,6 @@ export const EthGetFeeHistoryResponse = funtypes.Intersect(
 	})
 )
 
-export type MulticallRequestParameters = funtypes.Static<typeof MulticallRequestParameters>
-export const MulticallRequestParameters = funtypes.ReadonlyTuple(
-	EthereumQuantity, // block number
-	EthereumAddress, // miner
-	funtypes.ReadonlyArray(EthereumUnsignedTransaction),
-)
-
-export type MulticallResponseEventLog = funtypes.Static<typeof MulticallResponseEventLog>
-export const MulticallResponseEventLog =  funtypes.ReadonlyObject({
-	loggersAddress: EthereumAddress,
-	data: EthereumInput,
-	topics: funtypes.ReadonlyArray(EthereumBytes32),
-}).asReadonly()
-
-export type MulticallResponseEventLogs = funtypes.Static<typeof MulticallResponseEventLogs>
-export const MulticallResponseEventLogs = funtypes.ReadonlyArray(MulticallResponseEventLog)
-
 export type EthBalanceChanges = funtypes.Static<typeof EthBalanceChanges>
 export const EthBalanceChanges = funtypes.ReadonlyArray(
 	funtypes.ReadonlyObject({
@@ -75,26 +58,6 @@ export const EthBalanceChanges = funtypes.ReadonlyArray(
 		after: EthereumQuantity,
 	}).asReadonly()
 )
-
-export type SingleMulticallResponse = funtypes.Static<typeof SingleMulticallResponse>
-export const SingleMulticallResponse = funtypes.Union(
-	funtypes.ReadonlyObject({
-		statusCode: funtypes.Literal(1).withParser(LiteralConverterParserFactory(1, 'success' as const)),
-		gasSpent: EthereumQuantity,
-		returnValue: EthereumData,
-		events: MulticallResponseEventLogs,
-		balanceChanges: EthBalanceChanges,
-	}).asReadonly(),
-	funtypes.ReadonlyObject({
-		statusCode: funtypes.Literal(0).withParser(LiteralConverterParserFactory(0, 'failure' as const)),
-		gasSpent: EthereumQuantity,
-		error: funtypes.String.withParser(RevertErrorParser),
-		returnValue: EthereumData,
-	}).asReadonly(),
-)
-
-export type MulticallResponse = funtypes.Static<typeof MulticallResponse>
-export const MulticallResponse = funtypes.ReadonlyArray(SingleMulticallResponse)
 
 export type DappRequestTransaction = funtypes.Static<typeof DappRequestTransaction>
 export const DappRequestTransaction = funtypes.ReadonlyPartial({
@@ -367,7 +330,7 @@ export const EthSign = funtypes.ReadonlyObject({
 export type GetSimulationStackReply = funtypes.Static<typeof GetSimulationStackReply>
 export const GetSimulationStackReply = funtypes.ReadonlyArray(funtypes.Intersect(
 	EthereumUnsignedTransaction,
-	SingleMulticallResponse,
+	EthSimulateV1CallResult,
 	funtypes.ReadonlyObject({
 		realizedGasPrice: EthereumQuantity,
 		gasLimit: EthereumQuantity,
@@ -477,11 +440,10 @@ export const EthereumJsonRpcRequest = funtypes.Union(
 	funtypes.ReadonlyObject({ method: funtypes.Literal('eth_gasPrice') }),
 	GetTransactionCount,
 	GetSimulationStack,
-	funtypes.ReadonlyObject({ method: funtypes.Literal('eth_multicall'), params: MulticallRequestParameters }),
 	EthGetStorageAtParams,
 	EthGetLogsParams,
 	EthSign,
-	ExecutionSpec383MultiCallParams,
+	EthSimulateV1Params,
 	WalletAddEthereumChain,
 	Web3ClientVersion,
 	FeeHistory,

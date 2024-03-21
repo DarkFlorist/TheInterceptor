@@ -65,10 +65,10 @@ export async function setChainChangeConfirmationPromise(promise: PendingChainCha
 export async function getSimulationResults() {
 	const emptyResults = {
 		simulationUpdatingState: 'done' as const,
-		simulationResultState: 'invalid' as const,
+		simulationResultState: 'corrupted' as const,
 		simulationId: 0,
 		simulationState: undefined,
-		visualizerResults: [],
+		eventsForEachTransaction: [],
 		addressBookEntries: [],
 		tokenPrices: [],
 		activeAddress: undefined,

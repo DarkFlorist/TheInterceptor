@@ -6,7 +6,7 @@ import { Ether, EtherAmount, EtherSymbol, TokenWithAmount, TokenAmount, TokenPri
 import { NonTokenLogAnalysis, TokenLogAnalysis } from './Transactions.js'
 import { CopyToClipboard } from '../subcomponents/CopyToClipboard.js'
 import { SomeTimeAgo, humanReadableDateDeltaLessDetailed } from '../subcomponents/SomeTimeAgo.js'
-import { MAKE_YOU_RICH_TRANSACTION } from '../../utils/constants.js'
+import { ETHEREUM_LOGS_LOGGER_ADDRESS, MAKE_YOU_RICH_TRANSACTION } from '../../utils/constants.js'
 import { addressString, bytes32String, dataStringWith0xStart, nanoString } from '../../utils/bigint.js'
 import { identifyTransaction } from './identifyTransaction.js'
 import { identifySwap } from './SwapTransactions.js'
@@ -17,36 +17,6 @@ import { getEthDonator } from '../../background/storageVariables.js'
 import { RpcNetwork } from '../../types/rpc.js'
 import { AddressBookEntry, Erc1155Entry, Erc20TokenEntry, Erc721Entry } from '../../types/addressBookTypes.js'
 import { Website } from '../../types/websiteAccessTypes.js'
-import { isEthSimulateV1Node } from '../../background/settings.js'
-
-type EtherChangeParams = {
-	textColor: string,
-	negativeColor: string,
-	isImportant: boolean,
-	etherResults: {
-		balanceBefore: bigint;
-		balanceAfter: bigint;
-	} | undefined,
-	rpcNetwork: RpcNetwork,
-}
-
-function EtherChange(param: EtherChangeParams) {
-	if ( param.etherResults === undefined ) return <></>
-	const amount = param.etherResults.balanceAfter - param.etherResults.balanceBefore
-	const boxColor = amount < 0n ? 'negative-box' : 'positive-box'
-	return <div class = 'vertical-center' style = 'display: flex'>
-		<div class = { param.isImportant ? `box token-box ${ boxColor }`: '' } style = 'display: flex'>
-			<Ether
-				amount = { amount }
-				style = { { color: amount >= 0 ? param.textColor : param.negativeColor } }
-				showSign = { true }
-				useFullTokenName = { true }
-				rpcNetwork = { param.rpcNetwork }
-				fontSize = 'normal'
-			/>
-		</div>
-	</div>
-}
 
 type Erc20BalanceChangeParams = {
 	erc20TokenBalanceChanges: Erc20TokenBalanceChange[]
@@ -379,13 +349,6 @@ export function SummarizeAddress(param: SummarizeAddressParams) {
 		}
 
 		<div class = 'content' style = 'margin-bottom: 0px;'>
-			<EtherChange
-				textColor = { positiveNegativeColors.textColor }
-				negativeColor = { positiveNegativeColors.negativeColor }
-				isImportant = { isOwnAddress }
-				etherResults =  { param.balanceSummary.etherResults }
-				rpcNetwork = { param.simulationAndVisualisationResults.rpcNetwork }
-			/>
 			<Erc20BalanceChange
 				erc20TokenBalanceChanges = { param.balanceSummary.erc20TokenBalanceChanges }
 				textColor = { positiveNegativeColors.textColor }
@@ -436,23 +399,23 @@ export function SummarizeAddress(param: SummarizeAddressParams) {
 
 export function removeEthDonator(rpcNetwork: RpcNetwork, summary: SummaryOutcome[]) {
 	const donatorSummary = summary.find((x) => x.summaryFor.address === getEthDonator(rpcNetwork.chainId))
-	if (donatorSummary === undefined || donatorSummary.etherResults === undefined) return
-	if (donatorSummary.etherResults.balanceAfter + MAKE_YOU_RICH_TRANSACTION.transaction.value === donatorSummary.etherResults.balanceBefore) {
-		if (donatorSummary.erc721and1155OperatorChanges.length === 0 &&
-			donatorSummary.erc721TokenBalanceChanges.length === 0 &&
-			donatorSummary.erc721TokenIdApprovalChanges.length === 0 &&
-			donatorSummary.erc20TokenApprovalChanges.length === 0 &&
-			donatorSummary.erc20TokenBalanceChanges.length === 0 &&
-			donatorSummary.erc1155TokenBalanceChanges.length === 0
-		) {
-			summary.splice(summary.indexOf(donatorSummary), 1)
-			return
+	if (donatorSummary === undefined) return
+	donatorSummary.erc20TokenBalanceChanges = donatorSummary.erc20TokenBalanceChanges.map((change) => {
+		if (change.address === ETHEREUM_LOGS_LOGGER_ADDRESS && change.changeAmount === -MAKE_YOU_RICH_TRANSACTION.transaction.value) {
+			return { ...change, changeAmount: change.changeAmount + MAKE_YOU_RICH_TRANSACTION.transaction.value }
 		}
-		donatorSummary.etherResults = undefined
-		return
+		return change
+	}).filter((change) => change.changeAmount !== 0n)
+
+	if (donatorSummary.erc721and1155OperatorChanges.length === 0 &&
+		donatorSummary.erc721TokenBalanceChanges.length === 0 &&
+		donatorSummary.erc721TokenIdApprovalChanges.length === 0 &&
+		donatorSummary.erc20TokenApprovalChanges.length === 0 && 
+		donatorSummary.erc20TokenBalanceChanges.length === 0 &&
+		donatorSummary.erc1155TokenBalanceChanges.length === 0
+	) {
+		summary.splice(summary.indexOf(donatorSummary), 1)
 	}
-	donatorSummary.etherResults.balanceAfter = donatorSummary.etherResults.balanceAfter + MAKE_YOU_RICH_TRANSACTION.transaction.value
-	return
 }
 
 type TokenLogAnalysisCardParams = {
@@ -464,9 +427,8 @@ export function TokenLogAnalysisCard({ simTx, renameAddressCallBack }: TokenLogA
 	const [showLogs, setShowLogs] = useState<boolean>(false)
 	const identifiedSwap = identifySwap(simTx)
 	if (simTx === undefined) return <></>
-	const hasEthLogs = simTx.transaction.rpcNetwork.httpsRpc !== undefined && isEthSimulateV1Node(simTx.transaction.rpcNetwork.httpsRpc)
-	const tokenEventsPlural = hasEthLogs ? 'token events or ETH transactions' : 'token events'
-	const tokenEventsSingular = hasEthLogs ? 'One token event or an ETH transaction' : 'One token event'
+	const tokenEventsPlural = 'token events or ETH transactions'
+	const tokenEventsSingular = 'One token event or an ETH transaction'
 	return <>
 		<div class = 'card' style = 'margin-top: 10px; margin-bottom: 10px'>
 			<header class = 'card-header noselect' style = 'cursor: pointer; height: 30px;' onClick = { () => setShowLogs((prevValue) => !prevValue) }>
