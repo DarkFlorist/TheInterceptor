@@ -311,6 +311,7 @@ export const SimulationState = funtypes.ReadonlyObject({
 	signedMessages: funtypes.ReadonlyArray(SignedMessageTransaction),
 	blockNumber: EthereumQuantity,
 	blockTimestamp: EthereumTimestamp,
+	baseFeePerGas: EthereumQuantity,
 	rpcNetwork: RpcNetwork,
 	simulationConductedTimestamp: EthereumTimestamp,
 })

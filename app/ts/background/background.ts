@@ -105,6 +105,7 @@ export const simulateGovernanceContractExecution = async (pendingTransaction: Pe
 			}],
 			blockNumber: parentBlock.number,
 			blockTimestamp: parentBlock.timestamp,
+			baseFeePerGas: parentBlock.baseFeePerGas,
 			rpcNetwork: ethereum.getRpcEntry(),
 			simulationConductedTimestamp: new Date(),
 			signedMessages: [],

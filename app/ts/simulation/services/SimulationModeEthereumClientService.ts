@@ -48,6 +48,7 @@ export const copySimulationState = (simulationState: SimulationState): Simulatio
 		rpcNetwork: simulationState.rpcNetwork,
 		simulationConductedTimestamp: simulationState.simulationConductedTimestamp,
 		signedMessages: simulationState.signedMessages,
+		baseFeePerGas: simulationState.baseFeePerGas,
 	}
 }
 
@@ -59,24 +60,29 @@ export const getNonPrependedSimulatedTransactions = (prependTransactionsQueue: r
 	return simulatedTransactions.slice(prependTransactionsQueue.length, simulatedTransactions.length)
 }
 
-export const getSimulatedStack = (simulationState: SimulationState) => {
+export const getSimulatedStack = (simulationState: SimulationState, version: '1.0.0' | '1.0.1') => {
 	return simulationState.simulatedTransactions.map((transaction) => {
 		const ethLogs = transaction.ethSimulateV1CallResult.status === 'failure' ? [] : transaction.ethSimulateV1CallResult.logs.filter((log) => log.address === ETHEREUM_LOGS_LOGGER_ADDRESS) 
 		const ethBalanceAfter = transaction.tokenBalancesAfter.filter((x) => x.token === ETHEREUM_LOGS_LOGGER_ADDRESS)
 		return {
 			...transaction.signedTransaction,
 			...transaction.ethSimulateV1CallResult,
-			balanceChanges: ethBalanceAfter.map((balanceAfter) => ({
-				address: balanceAfter.owner,
-				before: ethLogs.reduce((total, event) => {
-					const parsed = handleERC20TransferLog(event)[0]
-					if (parsed === undefined || parsed.type !== 'ERC20') throw new Error('eth log was not erc20 transfer event')
-					if (parsed.from === balanceAfter.owner && parsed.to !== balanceAfter.owner) return total + parsed.amount
-					if (parsed.from !== balanceAfter.owner && parsed.to === balanceAfter.owner) return total - parsed.amount
-					return total
-				}, balanceAfter.balance ?? 0n) + (balanceAfter.owner === transaction.signedTransaction.from ? transaction.realizedGasPrice * transaction.ethSimulateV1CallResult.gasUsed : 0n),
-				after: balanceAfter.balance ?? 0n,
-			})),
+			balanceChanges: ethBalanceAfter.map((balanceAfter) => {
+				// in the version 1.0.0 , gas price was wrongly calculated with 'maxPriorityFeePerGas', this code keeps this for 1.0.0 but fixes it for other versions
+				const balanceAfterBalance = version === '1.0.0' || balanceAfter.owner !== transaction.signedTransaction.from ? balanceAfter.balance : (balanceAfter.balance ?? 0n) - simulationState.baseFeePerGas * transaction.ethSimulateV1CallResult.gasUsed
+				const gasFees = balanceAfter.owner === transaction.signedTransaction.from ? transaction.realizedGasPrice * transaction.ethSimulateV1CallResult.gasUsed : 0n
+				return {
+					address: balanceAfter.owner,
+					before: ethLogs.reduce((total, event) => {
+						const parsed = handleERC20TransferLog(event)[0]
+						if (parsed === undefined || parsed.type !== 'ERC20') throw new Error('eth log was not erc20 transfer event')
+						if (parsed.from === balanceAfter.owner && parsed.to !== balanceAfter.owner) return total + parsed.amount
+						if (parsed.from !== balanceAfter.owner && parsed.to === balanceAfter.owner) return total - parsed.amount
+						return total
+					}, balanceAfterBalance ?? 0n) + gasFees,
+					after: balanceAfterBalance ?? 0n,
+				}
+			}),
 			realizedGasPrice: transaction.realizedGasPrice,
 			gasLimit: transaction.signedTransaction.gas,
 			gasSpent: transaction.ethSimulateV1CallResult.gasUsed,
@@ -217,6 +223,7 @@ export const appendTransaction = async (ethereumClientService: EthereumClientSer
 		} ),
 		blockNumber: parentBlock.number,
 		blockTimestamp: parentBlock.timestamp,
+		baseFeePerGas: ethSimulateV1CallResult.baseFeePerGas,
 		rpcNetwork: ethereumClientService.getRpcEntry(),
 		simulationConductedTimestamp: new Date(),
 		signedMessages: simulationState === undefined ? [] : simulationState.signedMessages,
@@ -234,6 +241,7 @@ export const setSimulationTransactionsAndSignedMessages = async (ethereumClientS
 			rpcNetwork: ethereumClientService.getRpcEntry(),
 			simulationConductedTimestamp: new Date(),
 			signedMessages: [],
+			baseFeePerGas: 0n,
 		}
 	}
 
@@ -284,6 +292,7 @@ export const setSimulationTransactionsAndSignedMessages = async (ethereumClientS
 		})),
 		blockNumber: parentBlock.number,
 		blockTimestamp: parentBlock.timestamp,
+		baseFeePerGas: multicallResult.baseFeePerGas,
 		rpcNetwork: ethereumClientService.getRpcEntry(),
 		simulationConductedTimestamp: new Date(),
 		signedMessages,
@@ -306,6 +315,7 @@ export const setPrependTransactionsQueue = async (ethereumClientService: Ethereu
 		rpcNetwork: ethereumClientService.getRpcEntry(),
 		simulationConductedTimestamp: new Date(),
 		signedMessages: [],
+		baseFeePerGas: block.baseFeePerGas || 0n,
 	}
 	return await setSimulationTransactionsAndSignedMessages(ethereumClientService, newState, [], [])
 }
@@ -945,6 +955,7 @@ export const appendSignedMessage = async (ethereumClientService: EthereumClientS
 			rpcNetwork: ethereumClientService.getRpcEntry(),
 			simulationConductedTimestamp: new Date(),
 			signedMessages: [signedMessage],
+			baseFeePerGas: block.baseFeePerGas || 0n,
 		}
 	}
 	return { ...simulationState, signedMessages: simulationState.signedMessages.concat(signedMessage) }
