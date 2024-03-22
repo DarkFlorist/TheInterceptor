@@ -771,10 +771,20 @@ type BalanceQuery = {
 
 const getSimulatedTokenBalances = async (ethereumClientService: EthereumClientService, transactionQueue: EthereumUnsignedTransaction[], signedMessages: readonly SignatureWithFakeSignerAddress[], balanceQueries: BalanceQuery[], blockNumber: bigint): Promise<TokenBalancesAfter> => {
 	if (balanceQueries.length === 0) return []
+	function removeDuplicates(queries: BalanceQuery[]): BalanceQuery[] {
+		const unique: Map<string, BalanceQuery> = new Map()
+		queries.forEach(query => {
+			const key = query.type === 'ERC20' ? `ERC20-${ query.token }-${ query.owner }` : `ERC1155-${ query.token }-${ query.owner }-${ query.tokenId }`
+			if (!unique.has(key)) unique.set(key, query)
+		})
+		return Array.from(unique.values())
+	}
+
+	const deduplicatedBalanceQueries = removeDuplicates(balanceQueries)
 	const IMulticall3 = new Interface(Multicall3ABI)
 	const erc20TokenInterface = new ethers.Interface(['function balanceOf(address account) view returns (uint256)'])
 	const erc1155TokenInterface = new ethers.Interface(['function balanceOf(address _owner, uint256 _id) external view returns(uint256)'])
-	const tokenAndEthBalancesInputData = stringToUint8Array(IMulticall3.encodeFunctionData('aggregate3', [balanceQueries.map((balanceQuery) => {
+	const tokenAndEthBalancesInputData = stringToUint8Array(IMulticall3.encodeFunctionData('aggregate3', [deduplicatedBalanceQueries.map((balanceQuery) => {
 		if (balanceQuery.token === ETHEREUM_LOGS_LOGGER_ADDRESS && balanceQuery.type === 'ERC20') {
 			return {
 				target: addressString(MULTICALL3),
@@ -812,9 +822,9 @@ const getSimulatedTokenBalances = async (ethereumClientService: EthereumClientSe
 	if (aggregate3CallResult === undefined || aggregate3CallResult.status === 'failure') throw Error('Failed aggregate3')
 	const multicallReturnData: { success: boolean, returnData: string }[] = IMulticall3.decodeFunctionResult('aggregate3', dataStringWith0xStart(aggregate3CallResult.returnData))[0]
 	
-	if (multicallReturnData.length !== balanceQueries.length) throw Error('Got wrong number of balances back')
+	if (multicallReturnData.length !== deduplicatedBalanceQueries.length) throw Error('Got wrong number of balances back')
 	return multicallReturnData.map((singleCallResult, callIndex) => {
-		const balanceQuery = balanceQueries[callIndex]
+		const balanceQuery = deduplicatedBalanceQueries[callIndex]
 		if (balanceQuery === undefined) throw new Error('aggregate3 failed to get eth balance')
 		return {
 			token: balanceQuery.token,
