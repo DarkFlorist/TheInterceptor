@@ -332,8 +332,10 @@ export const GetSimulationStackReply = funtypes.ReadonlyArray(funtypes.Intersect
 	EthereumUnsignedTransaction,
 	EthSimulateV1CallResult,
 	funtypes.ReadonlyObject({
+		balanceChanges: EthBalanceChanges,
 		realizedGasPrice: EthereumQuantity,
 		gasLimit: EthereumQuantity,
+		gasSpent: EthereumQuantity,
 	}).asReadonly(),
 ))
 

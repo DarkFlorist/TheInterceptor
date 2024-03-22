@@ -6,7 +6,7 @@ import { Interface, TypedDataEncoder, ethers, hashMessage, keccak256, } from 'et
 import { WebsiteCreatedEthereumUnsignedTransaction, SimulatedTransaction, SimulationState, TokenBalancesAfter, EstimateGasError, SignedMessageTransaction, WebsiteCreatedEthereumUnsignedTransactionOrFailed } from '../../types/visualizer-types.js'
 import { EthereumUnsignedTransactionToUnsignedTransaction, IUnsignedTransaction1559, serializeSignedTransactionToBytes } from '../../utils/ethereum.js'
 import { EthGetLogsResponse, EthGetLogsRequest, EthTransactionReceiptResponse, DappRequestTransaction, EthGetFeeHistoryResponse, FeeHistory } from '../../types/JsonRpc-types.js'
-import { handleERC1155TransferBatch, handleERC1155TransferSingle } from '../logHandlers.js'
+import { handleERC1155TransferBatch, handleERC1155TransferSingle, handleERC20TransferLog } from '../logHandlers.js'
 import { assertNever } from '../../utils/typescript.js'
 import { SignMessageParams } from '../../types/jsonRpc-signing-types.js'
 import { EthSimulateV1CallResults, EthereumEvent, StateOverrides } from '../../types/multicall-types.js'
@@ -60,12 +60,28 @@ export const getNonPrependedSimulatedTransactions = (prependTransactionsQueue: r
 }
 
 export const getSimulatedStack = (simulationState: SimulationState) => {
-	return simulationState.simulatedTransactions.map((transaction) => ({
-		...transaction.signedTransaction,
-		...transaction.ethSimulateV1CallResult,
-		realizedGasPrice: transaction.realizedGasPrice,
-		gasLimit: transaction.signedTransaction.gas,
-	}))
+	return simulationState.simulatedTransactions.map((transaction) => {
+		const ethLogs = transaction.ethSimulateV1CallResult.status === 'failure' ? [] : transaction.ethSimulateV1CallResult.logs.filter((log) => log.address === ETHEREUM_LOGS_LOGGER_ADDRESS) 
+		const ethBalanceAfter = transaction.tokenBalancesAfter.filter((x) => x.token === ETHEREUM_LOGS_LOGGER_ADDRESS)
+		return {
+			...transaction.signedTransaction,
+			...transaction.ethSimulateV1CallResult,
+			balanceChanges: ethBalanceAfter.map((balanceAfter) => ({
+				address: balanceAfter.owner,
+				before: ethLogs.reduce((total, event) => {
+					const parsed = handleERC20TransferLog(event)[0]
+					if (parsed === undefined || parsed.type !== 'ERC20') throw new Error('eth log was not erc20 transfer event')
+					if (parsed.from === balanceAfter.owner && parsed.to !== balanceAfter.owner) return total + parsed.amount
+					if (parsed.from !== balanceAfter.owner && parsed.to === balanceAfter.owner) return total - parsed.amount
+					return total
+				}, balanceAfter.balance ?? 0n) + (balanceAfter.owner === transaction.signedTransaction.from ? transaction.realizedGasPrice * transaction.ethSimulateV1CallResult.gasUsed : 0n),
+				after: balanceAfter.balance ?? 0n,
+			})),
+			realizedGasPrice: transaction.realizedGasPrice,
+			gasLimit: transaction.signedTransaction.gas,
+			gasSpent: transaction.ethSimulateV1CallResult.gasUsed,
+		}
+	})
 }
 
 export const transactionQueueTotalGasLimit = (simulationState: SimulationState) => {
@@ -232,11 +248,16 @@ export const setSimulationTransactionsAndSignedMessages = async (ethereumClientS
 	for (let resultIndex = 0; resultIndex < multicallResult.calls.length; resultIndex++) {
 		const singleResult = multicallResult.calls[resultIndex]
 		if (singleResult === undefined) throw new Error('Multicall length does not match in setSimulationTransactions')
+		const sender = signedTxs[resultIndex]?.from
+		if (sender === undefined) throw new Error('sender was undefined')
 		tokenBalancesAfter.push(getSimulatedTokenBalances(
 			ethereumClientService,
 			signedTxs.slice(0, resultIndex + 1),
 			signedMessages,
-			getAddressesInteractedWithErc20s(singleResult.status === 'success' ? singleResult.logs : []),
+			[
+				{ token: ETHEREUM_LOGS_LOGGER_ADDRESS, owner: sender, tokenId: undefined, type: 'ERC20' as const }, // add original sender for eth always, as there's always gas payment 
+				...getAddressesInteractedWithErc20s(singleResult.status === 'success' ? singleResult.logs : [])
+			],
 			parentBlock.number
 		))
 	}
@@ -889,11 +910,17 @@ export const getTokenBalancesAfter = async (
 		const singleResult = ethSimulateV1CallResults[resultIndex]
 		if (singleResult === undefined) throw new Error('singleResult was undefined')
 		const events = singleResult.status === 'success' ? singleResult.logs : []
-		const erc20sAddresses = getAddressesInteractedWithErc20s(events)
+		const sender = signedTxs[resultIndex]?.from
+		if (sender === undefined) throw new Error('sender was undefined')
+		const erc20sAddresses = [
+			{ token: ETHEREUM_LOGS_LOGGER_ADDRESS, owner: sender, tokenId: undefined, type: 'ERC20' as const }, // add original sender for eth always, as there's always gas payment 
+			...getAddressesInteractedWithErc20s(events)
+		]
 		const erc1155AddressIds = getAddressesAndTokensIdsInteractedWithErc1155s(events)
 		const balancesPromises = getSimulatedTokenBalances(ethereumClientService, signedTxs.slice(0, resultIndex + 1), signedMessages, [...erc20sAddresses, ...erc1155AddressIds], blockNumber)
 		tokenBalancesAfter.push(balancesPromises)
 	}
+
 	return await Promise.all(tokenBalancesAfter)
 }
 
