@@ -413,13 +413,13 @@ const EthereumBlockHeaderWithoutTransactions = funtypes.Intersect(
 			uncles: funtypes.ReadonlyArray(EthereumBytes32),
 			baseFeePerGas: funtypes.Union(EthereumQuantity, funtypes.Undefined),
 			transactionsRoot: EthereumBytes32,
-			withdrawalsRoot: EthereumBytes32,
-			withdrawals: funtypes.ReadonlyArray(EthereumWithdrawal),
 		}),
 		funtypes.ReadonlyPartial({
 			excessBlobGas: EthereumQuantity,
 			blobGasUsed: EthereumQuantity,
 			parentBeaconBlockRoot: EthereumBytes32,
+			withdrawalsRoot: EthereumBytes32, // missing from old block
+			withdrawals: funtypes.ReadonlyArray(EthereumWithdrawal), // missing from old block
 		})
 	)
 )

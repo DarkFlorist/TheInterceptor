@@ -117,16 +117,17 @@ export const simulateEstimateGas = async (ethereumClientService: EthereumClientS
 		return {
 			error: {
 				code: ERROR_INTERCEPTOR_GAS_ESTIMATION_FAILED,
-				message: `Multicall failed to estimate gas`,
+				message: `ETH Simulate Failed to estimate gas`,
 				data: '',
 			},
 		} as const 
 	}
 	if (lastResult.status === 'failure') {
+		console.log(lastResult)
 		return {
 			error: {
 				code: ERROR_INTERCEPTOR_GAS_ESTIMATION_FAILED,
-				message: `failed to estimate gas: "${ lastResult.error }"`,
+				message: `Failed to estimate gas: "${ lastResult.error.message }"`,
 				data: dataStringWith0xStart(lastResult.returnData),
 			},
 		} as const 

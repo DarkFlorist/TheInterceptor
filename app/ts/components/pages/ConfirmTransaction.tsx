@@ -520,7 +520,7 @@ export function ConfirmTransaction() {
 		return 'Loading...'
 	}
 
-	if (currentPendingTransactionOrSignableMessage === undefined || currentPendingTransactionOrSignableMessage.transactionOrMessageCreationStatus !== 'Simulated' || ( currentPendingTransactionOrSignableMessage.type === 'Transaction' && currentPendingTransactionOrSignableMessage.simulationResults?.statusCode === 'failed')) {
+	if (currentPendingTransactionOrSignableMessage === undefined || (currentPendingTransactionOrSignableMessage.transactionOrMessageCreationStatus !== 'Simulated' && currentPendingTransactionOrSignableMessage.transactionOrMessageCreationStatus !== 'FailedToSimulate')) {
 		return <> 
 			<main>
 				<Hint>
