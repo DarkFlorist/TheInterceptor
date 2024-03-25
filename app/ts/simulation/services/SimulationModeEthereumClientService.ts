@@ -158,10 +158,10 @@ export const simulateEstimateGas = async (ethereumClientService: EthereumClientS
 }
 
 // calculates gas price for receipts
-export const calculateGasPrice = (transaction: EthereumUnsignedTransaction, gasUsed: bigint, gasLimit: bigint, baseFeePerGas: bigint) => {
+export const calculateGasPrice = (transaction: EthereumUnsignedTransaction, gasUsed: bigint, gasLimit: bigint, oldBaseFeePerGas: bigint) => {
 	if ('gasPrice' in transaction) return transaction.gasPrice
-	const baseFee = getNextBaseFee(gasUsed, gasLimit, baseFeePerGas)
-	return min(baseFee + transaction.maxPriorityFeePerGas, transaction.maxFeePerGas)
+	const baseFeePerGas = getNextBaseFeePerGas(gasUsed, gasLimit, oldBaseFeePerGas)
+	return min(baseFeePerGas + transaction.maxPriorityFeePerGas, transaction.maxFeePerGas)
 }
 
 export const mockSignTransaction = (transaction: EthereumUnsignedTransaction) : EthereumSignedTransaction => {
@@ -555,7 +555,7 @@ export const getSimulatedCode = async (ethereumClientService: EthereumClientServ
 }
 
 // ported from: https://github.com/ethereum/go-ethereum/blob/509a64ffb9405942396276ae111d06f9bded9221/consensus/misc/eip1559/eip1559.go#L55
-const getNextBaseFee = (parentGasUsed: bigint, parentGasLimit: bigint, parentBaseFeePerGas: bigint) => {
+const getNextBaseFeePerGas = (parentGasUsed: bigint, parentGasLimit: bigint, parentBaseFeePerGas: bigint) => {
 	const parentGasTarget = parentGasLimit / ETHEREUM_EIP1559_ELASTICITY_MULTIPLIER
 	if (parentGasUsed === parentGasTarget) return parentBaseFeePerGas
 	if (parentGasUsed > parentGasTarget) return parentBaseFeePerGas + max(1n, parentBaseFeePerGas * (parentGasUsed - parentGasTarget) / parentGasTarget / ETHEREUM_EIP1559_BASEFEECHANGEDENOMINATOR)
@@ -586,7 +586,7 @@ async function getSimulatedMockBlock(ethereumClientService: EthereumClientServic
 		size: parentBlock.size, // TODO: this is wrong
 		totalDifficulty: parentBlock.totalDifficulty + parentBlock.difficulty, // The difficulty increases about the same amount as previously
 		uncles: [],
-		baseFeePerGas: getNextBaseFee(parentBlock.gasUsed, parentBlock.gasLimit, parentBlock.baseFeePerGas),
+		baseFeePerGas: getNextBaseFeePerGas(parentBlock.gasUsed, parentBlock.gasLimit, parentBlock.baseFeePerGas),
 		transactionsRoot: parentBlock.transactionsRoot, // TODO: this is wrong
 		transactions: simulationState.simulatedTransactions.map((simulatedTransaction) => simulatedTransaction.signedTransaction),
 		withdrawals: [], // TODO: this is wrong
@@ -972,7 +972,7 @@ export const getSimulatedFeeHistory = async (ethereumClientService: EthereumClie
 	const newestBlockBaseFeePerGas = newestBlock.baseFeePerGas
 	if (newestBlockBaseFeePerGas === undefined) throw new Error(`base fee per gas is missing for the block (it's too old)`)
 	return {
-		baseFeePerGas: [newestBlockBaseFeePerGas, getNextBaseFee(newestBlock.gasUsed, newestBlock.gasLimit, newestBlockBaseFeePerGas)],
+		baseFeePerGas: [newestBlockBaseFeePerGas, getNextBaseFeePerGas(newestBlock.gasUsed, newestBlock.gasLimit, newestBlockBaseFeePerGas)],
 		gasUsedRatio: [Number(newestBlock.gasUsed) / Number(newestBlock.gasLimit)],
 		oldestBlock: newestBlock.number,
 		...rewardPercentiles === undefined ? {} : {

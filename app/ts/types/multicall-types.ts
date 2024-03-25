@@ -18,7 +18,7 @@ export const BlockOverride = funtypes.ReadonlyObject({
     time: EthereumTimestamp,
     gasLimit: EthereumQuantitySmall,
     feeRecipient: EthereumAddress,
-    baseFee: EthereumQuantity,
+    baseFeePerGas: EthereumQuantity,
 })
 
 export type BlockCall = funtypes.Static<typeof BlockCall>
