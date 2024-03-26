@@ -38,7 +38,7 @@ export async function sendTransaction(
 	ethereumClientService: EthereumClientService,
 	transactionParams: SendTransactionParams | SendRawTransactionParams,
 	request: InterceptedRequest,
-	simulationMode: boolean = true,
+	simulationMode = true,
 	website: Website,
 	websiteTabConnections: WebsiteTabConnections,
 ) {
@@ -117,7 +117,7 @@ export async function personalSign(
 	ethereumClientService: EthereumClientService,
 	transactionParams: SignMessageParams,
 	request: InterceptedRequest,
-	simulationMode: boolean = true,
+	simulationMode = true,
 	website: Website,
 	websiteTabConnections: WebsiteTabConnections,
 ) {

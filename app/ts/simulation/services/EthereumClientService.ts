@@ -14,7 +14,7 @@ export type IEthereumClientService = Pick<EthereumClientService, keyof EthereumC
 export class EthereumClientService {
 	private cachedBlock: EthereumBlockHeader | undefined = undefined
 	private cacheRefreshTimer: NodeJS.Timer | undefined = undefined
-	private retrievingBlock: boolean = false
+	private retrievingBlock = false
 	private newBlockAttemptCallback: (blockHeader: EthereumBlockHeader, ethereumClientService: EthereumClientService, isNewBlock: boolean) => Promise<void>
 	private onErrorBlockCallback: (ethereumClientService: EthereumClientService) => Promise<void>
 	private requestHandler
@@ -111,7 +111,7 @@ export class EthereumClientService {
 	public async getBlock(blockTag?: EthereumBlockTag, fullObjects?: true): Promise<EthereumBlockHeader>
 	public async getBlock(blockTag: EthereumBlockTag, fullObjects: boolean): Promise<EthereumBlockHeaderWithTransactionHashes | EthereumBlockHeader>
 	public async getBlock(blockTag: EthereumBlockTag, fullObjects: false): Promise<EthereumBlockHeaderWithTransactionHashes>
-	public async getBlock(blockTag: EthereumBlockTag = 'latest', fullObjects: boolean = true): Promise<EthereumBlockHeaderWithTransactionHashes | EthereumBlockHeader> {
+	public async getBlock(blockTag: EthereumBlockTag = 'latest', fullObjects = true): Promise<EthereumBlockHeaderWithTransactionHashes | EthereumBlockHeader> {
 		const cached = this.getCachedBlock()
 		if (cached && (blockTag === 'latest' || blockTag === cached.number)) {
 			if (fullObjects === false) return { ...cached, transactions: cached.transactions.map((transaction) => transaction.hash) }
@@ -121,7 +121,7 @@ export class EthereumClientService {
 		return EthereumBlockHeader.parse(await this.requestHandler.jsonRpcRequest({ method: 'eth_getBlockByNumber', params: [blockTag, fullObjects] }))
 	}
 
-	public async getBlockByHash(blockHash: EthereumBytes32, fullObjects: boolean = true): Promise<EthereumBlockHeaderWithTransactionHashes | EthereumBlockHeader> {
+	public async getBlockByHash(blockHash: EthereumBytes32, fullObjects = true): Promise<EthereumBlockHeaderWithTransactionHashes | EthereumBlockHeader> {
 		const cached = this.getCachedBlock()
 		if (cached && (cached.hash === blockHash)) {
 			if (fullObjects === false) {
