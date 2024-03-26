@@ -196,7 +196,7 @@ export function identifyRoutes(simulatedAndVisualizedTransaction: SimulatedAndVi
 	)]
 
 	function uniqueByKeepFirst(a: State[]) {
-		let seen = new Set()
+		const seen = new Set()
 		return a.filter((item) => {
 			if (seen.has(item)) return false
 			seen.add(item)

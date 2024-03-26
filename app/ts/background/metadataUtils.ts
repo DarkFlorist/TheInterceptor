@@ -155,7 +155,7 @@ export async function identifyAddress(ethereumClientService: EthereumClientServi
 
 export async function getAddressBookEntriesForVisualiser(ethereumClientService: EthereumClientService, events: GeneralEnrichedEthereumEvents, simulationState: SimulationState): Promise<AddressBookEntry[]> {
 	const eventArguments = events.map((event) => event.type !== 'NonParsed' ? event.args : []).flat()
-	const addressesInEvents = eventArguments.map((event) => { 
+	const addressesInEvents = eventArguments.map((event) => {
 		if (event.typeValue.type === 'address') return event.typeValue.value
 		if (event.typeValue.type === 'address[]') return event.typeValue.value
 		return undefined
@@ -175,7 +175,7 @@ export async function getAddressBookEntriesForVisualiser(ethereumClientService: 
 
 export async function nameTokenIds(ethereumClientService: EthereumClientService, events: GeneralEnrichedEthereumEvents) {
 	type TokenAddressTokenIdPair = { tokenAddress: bigint, tokenId: bigint}
-	let tokenAddresses = events.map((event) => { 
+	const tokenAddresses = events.map((event) => {
 		if (event.type !== 'TokenEvent' || event.tokenInformation.type !== 'ERC1155') return undefined
 		return { tokenAddress: event.tokenInformation.tokenAddress, tokenId: event.tokenInformation.tokenId }
 	}).filter((pair): pair is TokenAddressTokenIdPair => pair !== undefined)
