@@ -21,7 +21,8 @@ import { parseSolidityValueByTypePure } from '../utils/solidityTypes.js'
 import { identifyAddress } from '../background/metadataUtils.js'
 import { sendToNonContact } from './protectors/sendToNonContactAddress.js'
 import { assertNever } from '../utils/typescript.js'
-import { EthereumEvent } from '../types/multicall-types.js'
+import { EthereumEvent } from '../types/ethSimulate-types.js'
+import { chainIdMismatch } from './protectors/chainIdMismatch.js'
 
 const PROTECTORS = [
 	selfTokenOops,
@@ -31,6 +32,7 @@ const PROTECTORS = [
 	eoaCalldata,
 	tokenToContract,
 	sendToNonContact,
+	chainIdMismatch,
 ]
 
 type TokenLogHandler = (event: EthereumEvent) => TokenVisualizerResult[]

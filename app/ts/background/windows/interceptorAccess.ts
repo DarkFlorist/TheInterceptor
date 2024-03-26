@@ -1,4 +1,4 @@
-import { PopupOrTab, addWindowTabListeners, closePopupOrTabById, getPopupOrTabOnlyById, openPopupOrTab, removeWindowTabListeners, tryFocusingTabOrWindow } from '../../components/ui-utils.js'
+import { PopupOrTab, addWindowTabListeners, closePopupOrTabById, getPopupOrTabById, openPopupOrTab, removeWindowTabListeners, tryFocusingTabOrWindow } from '../../components/ui-utils.js'
 import { METAMASK_ERROR_ALREADY_PENDING } from '../../utils/constants.js'
 import { Future } from '../../utils/future.js'
 import { InterceptorAccessChangeAddress, InterceptorAccessRefresh, InterceptorAccessReply, Settings, WindowMessage } from '../../types/interceptor-messages.js'
@@ -116,7 +116,7 @@ export async function requestAccessFromUser(
 			if (previousRequests.length !== 0) {
 				const previousRequest = previousRequests[0]
 				if (previousRequest === undefined) throw new Error('missing previous request')
-				if (await getPopupOrTabOnlyById(previousRequest.popupOrTabId) !== undefined) {
+				if (await getPopupOrTabById(previousRequest.popupOrTabId) !== undefined) {
 					return true
 				}
 				await clearPendingAccessRequests()

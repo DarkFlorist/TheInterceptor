@@ -1,5 +1,5 @@
 import { MessageToPopup, PopupMessage, Settings, WindowMessage } from '../types/interceptor-messages.js'
-import { WebsiteSocket } from '../utils/requests.js'
+import { WebsiteSocket, checkAndThrowRuntimeLastError } from '../utils/requests.js'
 import { EthereumQuantity, serialize } from '../types/wire-types.js'
 import { getTabState } from './storageVariables.js'
 import { getActiveAddressEntry } from './metadataUtils.js'
@@ -16,6 +16,7 @@ export async function getActiveAddress(settings: Settings, tabId: number) {
 export async function sendPopupMessageToOpenWindows(message: MessageToPopup) {
 	try {
 		await browser.runtime.sendMessage(serialize(MessageToPopup, message))
+		checkAndThrowRuntimeLastError()
 		return true
 	} catch (error) {
 		if (error instanceof Error) {
@@ -34,6 +35,7 @@ export async function sendPopupMessageToOpenWindows(message: MessageToPopup) {
 
 export async function sendPopupMessageToBackgroundPage(message: PopupMessage) {
 	await browser.runtime.sendMessage(serialize(PopupMessage, message))
+	checkAndThrowRuntimeLastError()
 }
 
 export const INTERNAL_CHANNEL_NAME = 'internalChannel'
@@ -59,8 +61,12 @@ export function getHtmlFile(file: HTMLFile) {
 export async function setExtensionIcon(details: browser.action._SetIconDetails) {
 	try {
 		const manifest = browser.runtime.getManifest()
-		if (manifest.manifest_version === 2) return browser.browserAction.setIcon(details)
-		return browser.action.setIcon(details)
+		if (manifest.manifest_version === 2) {
+			await browser.browserAction.setIcon(details)
+		} else {
+			await browser.action.setIcon(details)
+		}
+		checkAndThrowRuntimeLastError()
 	} catch {
 		console.warn('failed to set extension icon')
 		console.warn(details)
@@ -70,8 +76,12 @@ export async function setExtensionIcon(details: browser.action._SetIconDetails) 
 export async function setExtensionBadgeText(details: browser.browserAction._SetBadgeTextDetails) {
 	try {
 		const manifest = browser.runtime.getManifest()
-		if (manifest.manifest_version === 2) return browser.browserAction.setBadgeText(details)
-		return browser.action.setBadgeText(details)
+		if (manifest.manifest_version === 2) {
+			await browser.browserAction.setBadgeText(details)
+		} else {
+			await browser.action.setBadgeText(details)
+		}
+		checkAndThrowRuntimeLastError()
 	} catch {
 		console.warn('failed to set extension badge text')
 		console.warn(details)
@@ -81,8 +91,12 @@ export async function setExtensionBadgeText(details: browser.browserAction._SetB
 export async function setExtensionBadgeBackgroundColor(details: browser.action._SetBadgeBackgroundColorDetails) {
 	try {
 		const manifest = browser.runtime.getManifest()
-		if (manifest.manifest_version === 2) return browser.browserAction.setBadgeBackgroundColor(details)
-		return browser.action.setBadgeBackgroundColor(details)
+		if (manifest.manifest_version === 2) {
+			await browser.browserAction.setBadgeBackgroundColor(details)
+		} else {
+			await browser.action.setBadgeBackgroundColor(details)
+		}
+		checkAndThrowRuntimeLastError()
 	} catch {
 		console.warn('failed to set extension badge background color')
 		console.warn(details)
