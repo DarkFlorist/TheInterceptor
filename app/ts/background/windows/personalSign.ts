@@ -27,7 +27,7 @@ export async function craftPersonalSignPopupMessage(ethereumClientService: Ether
 	const originalParams = signedMessageTransaction
 
 	const getQuarrantineCodes = async (messageChainId: bigint, account: AddressBookEntry, activeAddress: AddressBookEntry, owner: AddressBookEntry | undefined): Promise<{ quarantine: boolean, quarantineReasons: readonly string[] }> => {
-		let quarantineReasons: string[] = []
+		const quarantineReasons: string[] = []
 		if (messageChainId !== rpcNetwork.chainId) quarantineReasons.push(`The signature request is for a different chain (${ getChainName(messageChainId) }) than what is currently active (${ getChainName(rpcNetwork.chainId) }).`)
 		if (account.address !== activeAddress.address || (owner != undefined && account.address !== owner.address)) quarantineReasons.push('The signature request is for an account that is different from your active address.')
 		return { quarantine: quarantineReasons.length > 0, quarantineReasons }
@@ -61,7 +61,7 @@ export async function craftPersonalSignPopupMessage(ethereumClientService: Ether
 	}
 	const namedParams = { param: originalParams.originalRequestParameters.params[1], account: originalParams.originalRequestParameters.params[0] }
 	const account = await identifyAddress(ethereumClientService, namedParams.account)
-	
+
 	const maybeParsed = PersonalSignRequestIdentifiedEIP712Message.safeParse(namedParams.param)
 	if (maybeParsed.success === false) {
 		// if we fail to parse the message, that means it's a message type we do not identify, let's just show it as a nonidentified EIP712 message
