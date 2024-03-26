@@ -34,7 +34,7 @@ export async function getActiveAddresses() : Promise<readonly ActiveAddressEntry
 	const activeAddresses = (await getUserAddressBookEntries()).filter((entry): entry is ActiveAddressEntry => entry.type === 'activeAddress')
 	return activeAddresses === undefined || activeAddresses.length === 0? defaultActiveAddresses : activeAddresses
 }
-async function identifyAddressWithoutNode(address: bigint, rpcEntry: RpcNetwork | undefined, useLocalStorage: boolean = true) : Promise<AddressBookEntry | undefined> {
+async function identifyAddressWithoutNode(address: bigint, rpcEntry: RpcNetwork | undefined, useLocalStorage = true) : Promise<AddressBookEntry | undefined> {
 	if (address === ETHEREUM_LOGS_LOGGER_ADDRESS) return {
 		address: ETHEREUM_LOGS_LOGGER_ADDRESS,
 		name: rpcEntry?.currencyName ?? 'Ethereum',
@@ -103,7 +103,7 @@ async function identifyAddressWithoutNode(address: bigint, rpcEntry: RpcNetwork 
 	return undefined
 }
 
-export async function identifyAddress(ethereumClientService: EthereumClientService, address: bigint, useLocalStorage: boolean = true) : Promise<AddressBookEntry> {
+export async function identifyAddress(ethereumClientService: EthereumClientService, address: bigint, useLocalStorage = true) : Promise<AddressBookEntry> {
 	const identifiedAddress = await identifyAddressWithoutNode(address, ethereumClientService.getRpcEntry(), useLocalStorage)
 	if (identifiedAddress !== undefined) return identifiedAddress
 	const addrString = addressString(address)

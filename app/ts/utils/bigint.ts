@@ -17,7 +17,7 @@ export function bigintToDecimalString(value: bigint, power: bigint): string {
 	return `-${integerPart.toString(10)}.${fractionalPart.toString(10).padStart(Number(power), '0').replace(/0+$/, '')}`
 }
 
-export function bigintToRoundedPrettyDecimalString(value: bigint, power: bigint, significantNumbers: bigint = 4n): string {
+export function bigintToRoundedPrettyDecimalString(value: bigint, power: bigint, significantNumbers = 4n): string {
 	function roundToPrettyDecimalString(value: bigint) {
 		const stringifiedNumber = bigintToDecimalString(value, power)
 		let roundedString = ''

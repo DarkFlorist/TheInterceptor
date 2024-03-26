@@ -111,7 +111,7 @@ function getSolidityTypeCategory(type: SolidityType) {
 	}
 }
 
-export async function parseSolidityValueByTypeEnriched(ethereumClientService: EthereumClientService, type: SolidityType, value: unknown, isArray: boolean, useLocalStorage: boolean = true): Promise<EnrichedGroupedSolidityType> {	
+export async function parseSolidityValueByTypeEnriched(ethereumClientService: EthereumClientService, type: SolidityType, value: unknown, isArray: boolean, useLocalStorage = true): Promise<EnrichedGroupedSolidityType> {	
 	const categorized = getSolidityTypeCategory(type)
 	if (categorized === 'address') {
 		if (isArray) return { type: `address[]`, value: await Promise.all(funtypes.ReadonlyArray(EthereumAddress).parse(value).map((value) => identifyAddress(ethereumClientService, value, useLocalStorage))) }
