@@ -12,7 +12,7 @@ import { RpcNetwork } from './rpc.js'
 import { SignMessageParams } from './jsonRpc-signing-types.js'
 import { PureGroupedSolidityType } from './solidityType.js'
 import { TransactionOrMessageIdentifier } from './interceptor-messages.js'
-import { EthSimulateV1CallResult } from './multicall-types.js'
+import { EthSimulateV1CallResult } from './ethSimulate-types.js'
 
 export type NetworkPrice = funtypes.Static<typeof NetworkPrice>
 export const NetworkPrice = funtypes.ReadonlyObject({

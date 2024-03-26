@@ -68,8 +68,8 @@ export async function fetchWithTimeout(resource: RequestInfo | URL, init?: Reque
 }
 
 export const safeGetTab = async (tabId: number) => {
-	const tab = await browser.tabs.get(tabId)
 	try {
+		const tab = await browser.tabs.get(tabId)
 		checkAndThrowRuntimeLastError()
 		return tab
 	} catch (e: unknown){
@@ -78,8 +78,8 @@ export const safeGetTab = async (tabId: number) => {
 }
 
 export const safeGetWindow = async (windowId: number) => {
-	const tab = await browser.windows.get(windowId)
 	try {
+		const tab = await browser.windows.get(windowId)
 		checkAndThrowRuntimeLastError()
 		return tab
 	} catch (e: unknown){
