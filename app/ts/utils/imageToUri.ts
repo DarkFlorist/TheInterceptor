@@ -1,7 +1,7 @@
 import { isFailedToFetchError } from './errors.js'
 import { Future } from './future.js'
 
-export async function imageToUri(url: string, maxSizeInBytes: number = 1048576) {
+export async function imageToUri(url: string, maxSizeInBytes = 1048576) {
 	try {
 		const response = await fetch(url)
 		const blob = await response.blob()
