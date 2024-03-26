@@ -10,13 +10,13 @@ type ResolvedResponse = { responseState: 'failed', response: Response } | { resp
 
 export type IEthereumJSONRpcRequestHandler = Pick<EthereumJSONRpcRequestHandler, keyof EthereumJSONRpcRequestHandler>
 export class EthereumJSONRpcRequestHandler {
-	private nextRequestId: number = 1
+	private nextRequestId = 1
 	private rpcEntry: RpcEntry
 	private caching: boolean
 	private pendingCache: Map<string, Future<ResolvedResponse>>
 	private cache: Map<string, ResolvedResponse>
 
-	constructor(rpcEntry: RpcEntry, caching: boolean = false) {
+	constructor(rpcEntry: RpcEntry, caching = false) {
 		this.rpcEntry = rpcEntry
 		this.caching = caching
 		this.cache = new Map()
@@ -26,7 +26,7 @@ export class EthereumJSONRpcRequestHandler {
 
 	public readonly clearCache = () => { this.cache = new Map() }
 
-	private queryCached = async (request: EthereumJsonRpcRequest, requestId: number, bypassCache: boolean, timeoutMs: number = 60000) => {
+	private queryCached = async (request: EthereumJsonRpcRequest, requestId: number, bypassCache: boolean, timeoutMs = 60000) => {
 		const serialized = serialize(EthereumJsonRpcRequest, request)
 		const payload = {
 			method: 'POST',
@@ -56,7 +56,7 @@ export class EthereumJSONRpcRequestHandler {
 		return responseObject
 	}
 
-	public readonly jsonRpcRequest = async (rpcRequest: EthereumJsonRpcRequest, bypassCache: boolean = false, timeoutMs: number = 60000) => {
+	public readonly jsonRpcRequest = async (rpcRequest: EthereumJsonRpcRequest, bypassCache = false, timeoutMs = 60000) => {
 		const requestId = ++this.nextRequestId
 		const responseObject = await this.queryCached(rpcRequest, requestId, bypassCache, timeoutMs)
 		if (responseObject.responseState === 'failed') {

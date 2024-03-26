@@ -192,7 +192,7 @@ async function startup() {
 			handleUnexpectedError(error)
 		}
 	})
-	browser.runtime.onMessage.addListener(async function (message: unknown) {
+	browser.runtime.onMessage.addListener(async (message: unknown) => {
 		try {
 			await popupMessageHandler(websiteTabConnections, simulator, message, await getSettings())
 		} catch(error: unknown) {

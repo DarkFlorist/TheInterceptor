@@ -48,7 +48,7 @@ export function handleErc721ApprovalForAllLog(eventLog: EthereumEvent): TokenVis
 		tokenAddress: eventLog.address,
 		type: 'NFT All approval',
 		isApproval: true,
-		allApprovalAdded: eventLog.topics[3] != 0n,
+		allApprovalAdded: eventLog.topics[3] !== 0n,
 	}]
 }
 
