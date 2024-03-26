@@ -182,7 +182,7 @@ export const formEthSendTransaction = async(ethereumClientService: EthereumClien
 		maxFeePerGas: transactionDetails.maxFeePerGas !== undefined && transactionDetails.maxFeePerGas !== null ? transactionDetails.maxFeePerGas : parentBlock.baseFeePerGas * 2n,
 		maxPriorityFeePerGas: transactionDetails.maxPriorityFeePerGas !== undefined && transactionDetails.maxPriorityFeePerGas !== null ? transactionDetails.maxPriorityFeePerGas : 10n**8n, // 0.1 nanoEth/gas
 		to: transactionDetails.to === undefined ? null : transactionDetails.to,
-		value: transactionDetails.value != undefined  ? transactionDetails.value : 0n,
+		value: transactionDetails.value !== undefined  ? transactionDetails.value : 0n,
 		input: getInputFieldFromDataOrInput(transactionDetails),
 		accessList: [],
 	}

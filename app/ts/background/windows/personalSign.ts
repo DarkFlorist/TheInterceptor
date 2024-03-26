@@ -29,7 +29,7 @@ export async function craftPersonalSignPopupMessage(ethereumClientService: Ether
 	const getQuarrantineCodes = async (messageChainId: bigint, account: AddressBookEntry, activeAddress: AddressBookEntry, owner: AddressBookEntry | undefined): Promise<{ quarantine: boolean, quarantineReasons: readonly string[] }> => {
 		const quarantineReasons: string[] = []
 		if (messageChainId !== rpcNetwork.chainId) quarantineReasons.push(`The signature request is for a different chain (${ getChainName(messageChainId) }) than what is currently active (${ getChainName(rpcNetwork.chainId) }).`)
-		if (account.address !== activeAddress.address || (owner != undefined && account.address !== owner.address)) quarantineReasons.push('The signature request is for an account that is different from your active address.')
+		if (account.address !== activeAddress.address || (owner !== undefined && account.address !== owner.address)) quarantineReasons.push('The signature request is for an account that is different from your active address.')
 		return { quarantine: quarantineReasons.length > 0, quarantineReasons }
 	}
 	if (originalParams.originalRequestParameters.method === 'eth_signTypedData') {

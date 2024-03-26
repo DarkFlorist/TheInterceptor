@@ -156,7 +156,7 @@ export function ListElement(entry: ListElementParam) {
 						<button class = 'card-header-icon' style = 'padding: 0px; margin-left: auto;' aria-label = 'delete' disabled = { entry.type === 'empty' || (entry.entrySource !== 'User' && entry.entrySource !== 'OnChain') } onClick = { () => entry.type !== 'empty' ? entry.removeEntry(entry) : undefined }>
 							<p class = 'icon'> X </p>
 						</button>
-						<button class = 'button is-primary is-small' onClick = { entry.type != 'empty' ? () => entry.renameAddressCallBack(entry) : () => {} }>Edit</button>
+						<button class = 'button is-primary is-small' onClick = { entry.type !== 'empty' ? () => entry.renameAddressCallBack(entry) : () => {} }>Edit</button>
 					</div>
 				</div>
 			</div>
