@@ -1,7 +1,7 @@
 import * as funtypes from 'funtypes'
 import { EthereumAddress, EthereumBlockHeader, EthereumBlockHeaderWithTransactionHashes, EthereumBlockTag, EthereumBytes256, EthereumBytes32, EthereumData, EthereumInput, EthereumQuantity, EthereumUnsignedTransaction, LiteralConverterParserFactory } from './wire-types.js'
 import { areEqualUint8Arrays } from '../utils/typed-arrays.js'
-import { EthSimulateV1CallResult, EthSimulateV1Params } from './multicall-types.js'
+import { EthSimulateV1CallResult, EthSimulateV1Params } from './ethSimulate-types.js'
 import { OldSignTypedDataParams, PersonalSignParams, SignTypedDataParams } from './jsonRpc-signing-types.js'
 import { CodeMessageError } from './rpc.js'
 
