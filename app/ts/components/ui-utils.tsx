@@ -63,10 +63,8 @@ export function convertNumberToCharacterRepresentationIfSmallEnough(num: number)
 
 	function convertTens(num: number) {
 		if (num < 10) return ones[num]
-		else if (num >= 10 && num < 20) return teens[num - 10]
-		else {
-			return tens[Math.floor(num / 10)] + " " + ones[num % 10]
-		}
+		if (num >= 10 && num < 20) return teens[num - 10]
+		return tens[Math.floor(num / 10)] + " " + ones[num % 10]
 	}
 
 	if (num === 0) return 'zero'
@@ -85,7 +83,7 @@ export function humanReadableDateFromSeconds(timeInSeconds: bigint) {
 export type PopupOrTab = {
 	window: browser.windows.Window,
 	type: 'popup'
-	id: number 
+	id: number
 } | {
 	tab: browser.tabs.Tab,
 	type: 'tab'
