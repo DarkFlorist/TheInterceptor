@@ -375,7 +375,6 @@ export function ConfirmTransaction() {
 					if (currentTabId === undefined) throw new Error('could not get current tab Id!')
 					await updateWindowIfExists(currentWindowId, { focused: true })
 					await updateTabIfExists(currentTabId, { active: true })
-					checkAndThrowRuntimeLastError()
 				} catch(e) {
 					console.warn('failed to focus window')
 					console.warn(e)
