@@ -4,7 +4,7 @@ import { TIME_BETWEEN_BLOCKS } from '../../utils/constants.js'
 import { IEthereumJSONRpcRequestHandler } from './EthereumJSONRpcRequestHandler.js'
 import { AbiCoder, Signature, ethers } from 'ethers'
 import { addressString, bytes32String } from '../../utils/bigint.js'
-import { BlockCalls, ethSimulateV1Result, StateOverrides } from '../../types/multicall-types.js'
+import { BlockCalls, ethSimulateV1Result, StateOverrides } from '../../types/ethSimulate-types.js'
 import { EthGetStorageAtResponse, EthTransactionReceiptResponse, EthGetLogsRequest, EthGetLogsResponse, DappRequestTransaction } from '../../types/JsonRpc-types.js'
 import { MessageHashAndSignature, SignatureWithFakeSignerAddress, simulatePersonalSign } from './SimulationModeEthereumClientService.js'
 import { getEcRecoverOverride } from '../../utils/ethereumByteCodes.js'
@@ -243,10 +243,10 @@ export class EthereumClientService {
 				...extraAccountOverrides,
 			}
 		}]
-		const multicallResults = await this.ethSimulateV1(query, blockNumber)
-		if (multicallResults.length !== 1) throw new Error('Multicalled for one block but did not get one block')
-		const singleMulticalResult = multicallResults[0]
-		if (singleMulticalResult === undefined) throw new Error('multicallResult was undefined')
+		const ethSimulateResults = await this.ethSimulateV1(query, blockNumber)
+		if (ethSimulateResults.length !== 1) throw new Error('Ran Eth Simulate for one block but did not get one block')
+		const singleMulticalResult = ethSimulateResults[0]
+		if (singleMulticalResult === undefined) throw new Error('Eth Simualte result was undefined')
 		return singleMulticalResult
 	}
 

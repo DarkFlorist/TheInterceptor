@@ -9,7 +9,7 @@ import { EthGetLogsResponse, EthGetLogsRequest, EthTransactionReceiptResponse, D
 import { handleERC1155TransferBatch, handleERC1155TransferSingle } from '../logHandlers.js'
 import { assertNever } from '../../utils/typescript.js'
 import { SignMessageParams } from '../../types/jsonRpc-signing-types.js'
-import { EthSimulateV1CallResults, EthereumEvent, StateOverrides } from '../../types/multicall-types.js'
+import { EthSimulateV1CallResults, EthereumEvent, StateOverrides } from '../../types/ethSimulate-types.js'
 import { getCodeByteCode } from '../../utils/ethereumByteCodes.js'
 
 const MOCK_PUBLIC_PRIVATE_KEY = 0x1n // key used to sign mock transactions
@@ -149,12 +149,12 @@ export const mockSignTransaction = (transaction: EthereumUnsignedTransaction) : 
 		const hash = EthereumQuantity.parse(keccak256(serializeSignedTransactionToBytes({ ...unsignedTransaction, ...signatureParams })))
 		if (transaction.type !== 'legacy') throw new Error('types do not match')
 		return { ...transaction, ...signatureParams, hash }
-	} else {
-		const signatureParams = { r: 0n, s: 0n, yParity: 'even' as const }
-		const hash = EthereumQuantity.parse(keccak256(serializeSignedTransactionToBytes({ ...unsignedTransaction, ...signatureParams })))
-		if (transaction.type === 'legacy') throw new Error('types do not match')
-		return { ...transaction, ...signatureParams, hash }
 	}
+
+	const signatureParams = { r: 0n, s: 0n, yParity: 'even' as const }
+	const hash = EthereumQuantity.parse(keccak256(serializeSignedTransactionToBytes({ ...unsignedTransaction, ...signatureParams })))
+	if (transaction.type === 'legacy') throw new Error('types do not match')
+	return { ...transaction, ...signatureParams, hash }
 }
 
 export const appendTransaction = async (ethereumClientService: EthereumClientService, simulationState: SimulationState | undefined, transaction: WebsiteCreatedEthereumUnsignedTransactionOrFailed): Promise<SimulationState> => {
