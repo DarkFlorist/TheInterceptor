@@ -138,7 +138,7 @@ export function ListElement(entry: ListElementParam) {
 								<input type = 'checkbox' checked = { 'askForAddressAccess' in entry && !entry.askForAddressAccess } disabled = { true }/>
 								<p class = 'paragraph checkbox-text'>Don't request for an access (insecure) </p>
 							</label>
-							: 
+							:
 							<div>
 								<p class = 'paragraph' style = 'display: inline-block; font-size: 13px; vertical-align: top; width: 420px; text-overflow: ellipsis; overflow: hidden; white-space: nowrap;'>
 									{ `ABI: ${ 'abi' in entry && entry.abi !== undefined ? entry.abi : 'No ABI available' } ` }
@@ -275,7 +275,7 @@ export function AddressBook() {
 
 	function update() {
 		if (scrollTimer.current !== undefined) clearTimeout(scrollTimer.current);
-		scrollTimer.current = setTimeout(function() { // batch calls together if user is scrolling fast
+		scrollTimer.current = setTimeout(() => { // batch calls together if user is scrolling fast
 			setAddressBookState((previousState) => {
 				if (previousState === undefined) return previousState
 				const pageSizePx = PAGE_SIZE * (ELEMENT_SIZE_PX[previousState.activeFilter] + ELEMENT_PADDING_PX)
@@ -366,7 +366,7 @@ export function AddressBook() {
 				default: assertNever(filter)
 			}
 		}
-		
+
 		return setModalState({ page: 'addNewAddress', state: {
 			windowStateId: 'AddressBookAdd',
 			errorState: undefined,

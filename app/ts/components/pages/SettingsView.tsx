@@ -29,7 +29,7 @@ function CheckBoxSetting(param: CheckBoxSettingParam) {
 function ImportExport() {
 	const [settingsReply, setSettingsReply] = useState<ImportSettingsReply | undefined>(undefined)
 	const [dismissedNotification, setdDismissedNotification] = useState<boolean>(false)
-	
+
 	useEffect(() => {
 		async function popupMessageListener(msg: unknown) {
 			const maybeParsed = MessageToPopup.safeParse(msg)
@@ -47,7 +47,7 @@ function ImportExport() {
 		return () => browser.runtime.onMessage.removeListener(popupMessageListener)
 	})
 
-	const downloadFile = function (filename: string, fileContents: string) {
+	const downloadFile = (filename: string, fileContents: string) => {
 		window.URL = window.webkitURL || window.URL
 		const blobData = new Blob([fileContents], { type: 'text/json; charset = utf-8' })
 		const a = document.createElement('a')
@@ -67,11 +67,11 @@ function ImportExport() {
 		const firstFile = inputElement.target.files[0]
 		if (firstFile === undefined) throw new Error('File was undefined')
 		reader.readAsText(firstFile)
-		reader.onloadend = async function() {
+		reader.onloadend = async () => {
 			if (reader.result === null) throw new Error('failed to load file')
 			await sendPopupMessageToBackgroundPage({ method: 'popup_import_settings', data: { fileContents: reader.result as string } })
 		}
-		reader.onerror = function() {
+		reader.onerror = () => {
 			console.error(reader.error)
 			throw new Error('error on importing settings')
 		}
@@ -134,7 +134,7 @@ function Rpcs({ rpcEntries }: { rpcEntries: RpcEntries }) {
 			method: 'popup_set_rpc_list',
 			data: rpcEntries.map((rpc) => {
 				if (rpcUrl === rpc.httpsRpc) return { ...rpc, primary: true }
-				if (rpcInQuestion.chainId === rpc.chainId) return { ...rpc, primary: false } 
+				if (rpcInQuestion.chainId === rpc.chainId) return { ...rpc, primary: false }
 				return rpc
 			})
 		})
@@ -143,7 +143,7 @@ function Rpcs({ rpcEntries }: { rpcEntries: RpcEntries }) {
 	return <>
 		<ul> { rpcEntries.map((rpc) => <li>
 			<div class = 'card'>
-				<header class = 'card-header'>		
+				<header class = 'card-header'>
 					<div class = 'card-header-icon unset-cursor'>
 						<input type = 'checkbox' checked = { rpc.primary } onInput = { () => { setAsPrimary(rpc.httpsRpc) } } />
 					</div>
@@ -216,7 +216,7 @@ export function SettingsView() {
 			data: { metamaskCompatibilityMode: checked }
 		})
 	}
-	
+
 	return <main style = 'padding: 10px'>
 		<div class = 'card' style = 'height: 100%;'>
 			<header class = 'card-head card-header window-header'>
