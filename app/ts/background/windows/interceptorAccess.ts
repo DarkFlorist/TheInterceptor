@@ -106,7 +106,7 @@ export async function requestAccessFromUser(
 	const activeAddressEntry = activeAddress !== undefined ? await getActiveAddressEntry(activeAddress) : activeAddress
 	const askForAddressAccess = requestAccessToAddress !== undefined && requestAccessToAddress.askForAddressAccess !== false
 	const accessAddress = askForAddressAccess ? requestAccessToAddress : undefined
-	const closeWindowOrTabCallback = (popupOrTabId: PopupOrTabId) => onCloseWindowOrTab(simulator, popupOrTabId, websiteTabConnections) 
+	const closeWindowOrTabCallback = (popupOrTabId: PopupOrTabId) => onCloseWindowOrTab(simulator, popupOrTabId, websiteTabConnections)
 	const onCloseWindowCallback = async (id: number) => closeWindowOrTabCallback({ type: 'popup' as const, id })
 	const onCloseTabCallback = async (id: number) => closeWindowOrTabCallback({ type: 'tab' as const, id })
 	const pendingAccessRequests = new Future<PendingAccessRequests>()
@@ -118,9 +118,8 @@ export async function requestAccessFromUser(
 				if (previousRequest === undefined) throw new Error('missing previous request')
 				if (await getPopupOrTabOnlyById(previousRequest.popupOrTabId) !== undefined) {
 					return true
-				} else {
-					await clearPendingAccessRequests()
 				}
+				await clearPendingAccessRequests()
 			}
 			return false
 		}
@@ -175,7 +174,7 @@ export async function requestAccessFromUser(
 		const pendingRequests = await updatePendingAccessRequests(async (previousPendingAccessRequests) => {
 			// check that it doesn't have access already
 			if (verifyAccess(websiteTabConnections, socket, true, website.websiteOrigin, activeAddressEntry, await getSettings()) !== 'askAccess') return previousPendingAccessRequests
-			
+
 			// check that we are not tracking it already
 			if (previousPendingAccessRequests.find((x) => x.accessRequestId === accessRequestId) === undefined) {
 				return previousPendingAccessRequests.concat(pendingRequest)
@@ -210,7 +209,7 @@ export async function requestAccessFromUser(
 				}
 			})
 			if (openedDialog !== undefined) await tryFocusingTabOrWindow(openedDialog.popupOrTab)
-			return 
+			return
 		}
 		pendingAccessRequests.resolve(pendingRequests.current)
 	})
@@ -233,8 +232,8 @@ async function resolve(simulator: Simulator, websiteTabConnections: WebsiteTabCo
 			})
 		}
 	}
-	
-	const isAffectedEntry = (pending: PendingAccessRequest) => pending.website.websiteOrigin === website.websiteOrigin && (pending.requestAccessToAddress?.address === accessReply.requestAccessToAddress || pending.requestAccessToAddress?.address === accessReply.originalRequestAccessToAddress) 
+
+	const isAffectedEntry = (pending: PendingAccessRequest) => pending.website.websiteOrigin === website.websiteOrigin && (pending.requestAccessToAddress?.address === accessReply.requestAccessToAddress || pending.requestAccessToAddress?.address === accessReply.originalRequestAccessToAddress)
 
 	const pendingRequests = await updatePendingAccessRequests(async (previousPendingAccessRequests) => previousPendingAccessRequests.filter((pending) => !isAffectedEntry(pending)))
 
@@ -269,7 +268,7 @@ export async function requestAddressChange(websiteTabConnections: WebsiteTabConn
 		const newActiveAddress = proposedAddress === undefined ? message.data.requestAccessToAddress : proposedAddress
 		const newActiveAddressActiveAddress = await getActiveAddressEntry(newActiveAddress)
 		const associatedAddresses = await getAssociatedAddresses(settings, message.data.website.websiteOrigin, newActiveAddressActiveAddress)
-		
+
 		return previousPendingAccessRequests.map((request) => {
 			if (request.accessRequestId === message.data.accessRequestId) {
 				return {

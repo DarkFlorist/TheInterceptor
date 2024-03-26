@@ -60,7 +60,7 @@ export async function changeActiveAddress(simulator: Simulator, websiteTabConnec
 
 		sendMessageToApprovedWebsitePorts(websiteTabConnections, { method: 'request_signer_to_eth_accounts', result: [] })
 		sendMessageToApprovedWebsitePorts(websiteTabConnections, { method: 'request_signer_chainId', result: [] } )
-		
+
 		await changeActiveAddressAndChainAndResetSimulation(simulator, websiteTabConnections, {
 			simulationMode: addressChange.data.simulationMode,
 			activeAddress: signerAccount,
@@ -93,9 +93,8 @@ export async function addOrModifyAddressBookEntry(simulator: Simulator, websiteT
 	await updateUserAddressBookEntries((previousContacts) => {
 		if (previousContacts.find((x) => x.address === entry.data.address) ) {
 			return previousContacts.map((x) => x.address === entry.data.address ? entry.data : x )
-		} else {
-			return previousContacts.concat([entry.data])
 		}
+		return previousContacts.concat([entry.data])
 	})
 	if (entry.data.type === 'activeAddress') updateWebsiteApprovalAccesses(simulator, websiteTabConnections, undefined, await getSettings())
 	return await sendPopupMessageToOpenWindows({ method: 'popup_addressBookEntriesChanged' })
@@ -168,7 +167,7 @@ export async function refreshPopupConfirmTransactionMetadata(ethereumClientServi
 				currentBlockNumber: await currentBlockNumberPromise,
 				pendingTransactionAndSignableMessages: [{
 					...first,
-					visualizedPersonalSignRequest: await visualizedPersonalSignRequestPromise, transactionOrMessageCreationStatus: 'Simulated' as const 
+					visualizedPersonalSignRequest: await visualizedPersonalSignRequestPromise, transactionOrMessageCreationStatus: 'Simulated' as const
 				}, ...promises.slice(1)]
 			}
 		})
@@ -206,7 +205,7 @@ export async function refreshPopupConfirmTransactionSimulation(simulator: Simula
 	const transactionToSimulate = firstTxn.originalRequestParameters.method === 'eth_sendTransaction' ? await formEthSendTransaction(ethereumClientService, firstTxn.activeAddress, firstTxn.simulationMode, firstTxn.transactionToSimulate.website, firstTxn.originalRequestParameters, firstTxn.created, firstTxn.transactionIdentifier) : await formSendRawTransaction(ethereumClientService, firstTxn.originalRequestParameters, firstTxn.transactionToSimulate.website, firstTxn.created, firstTxn.transactionIdentifier)
 	if (transactionToSimulate.success === false) return
 	const refreshMessage = await refreshConfirmTransactionSimulation(simulator, ethereumClientService, firstTxn.activeAddress, firstTxn.simulationMode, firstTxn.uniqueRequestIdentifier, transactionToSimulate)
-	
+
 	await updatePendingTransactionOrMessage(firstTxn.uniqueRequestIdentifier, async (transaction) => ({...transaction, simulationResults: refreshMessage }))
 	await updateConfirmTransactionView(ethereumClientService)
 }
@@ -322,7 +321,7 @@ export async function settingsOpened() {
 	const useTabsInsteadOfPopupPromise = getUseTabsInsteadOfPopup()
 	const metamaskCompatibilityModePromise = getMetamaskCompatibilityMode()
 	const rpcEntriesPromise = getRpcList()
-	
+
 	await sendPopupMessageToOpenWindows({
 		method: 'popup_settingsOpenedReply' as const,
 		data: {
@@ -443,7 +442,7 @@ export async function changeAddOrModifyAddressWindowState(ethereum: EthereumClie
 	const message = await getErrorIfAnyWithIncompleteAddressBookEntry(ethereum, parsedRequest.data.newState.incompleteAddressBookEntry)
 	const errorState = message === undefined ? undefined : { blockEditing: true, message }
 	if (errorState?.message !== parsedRequest.data.newState.errorState?.message) await updatePage({ ...parsedRequest.data.newState, errorState })
-	return await sendPopupMessageToOpenWindows({ method: 'popup_addOrModifyAddressWindowStateInformation', 
+	return await sendPopupMessageToOpenWindows({ method: 'popup_addOrModifyAddressWindowStateInformation',
 		data: { windowStateId: parsedRequest.data.windowStateId, errorState: errorState }
 	})
 }
