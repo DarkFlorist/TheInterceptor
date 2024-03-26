@@ -82,7 +82,7 @@ export const DappRequestTransaction = funtypes.ReadonlyPartial({
 	} else if (x.maxPriorityFeePerGas !== undefined) {
 		return x.maxFeePerGas !== undefined && x.gasPrice === undefined
 	} else if (x.maxFeePerGas !== undefined) {
-		return x.maxPriorityFeePerGas !== undefined && x.gasPrice === undefined
+		return x.gasPrice === undefined /* && x.maxPriorityFeePerGas !== undefined*/ //Remix doesn't send "maxPriorityFeePerGas" with "maxFeePerGas"
 	} else {
 		return true
 	}
