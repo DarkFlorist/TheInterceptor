@@ -3,7 +3,7 @@ import { TokenVisualizerResult } from '../types/visualizer-types.js'
 import { parseEventIfPossible } from './services/SimulationModeEthereumClientService.js'
 import { Erc1155ABI } from '../utils/abi.js'
 import { Interface } from 'ethers'
-import { EthereumEvent } from '../types/multicall-types.js'
+import { EthereumEvent } from '../types/ethSimulate-types.js'
 
 export function handleERC20TransferLog(eventLog: EthereumEvent): TokenVisualizerResult[] {
 	if (eventLog.topics[1] === undefined || eventLog.topics[2] === undefined) throw new Error('unknown log')
