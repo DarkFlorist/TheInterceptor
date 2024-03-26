@@ -45,7 +45,7 @@ export function includesWithComparator<T>(array: readonly T[], searchElement: T,
 	return false
 }
 
-export function replaceElementInReadonlyArray<T>(originalArray: ReadonlyArray<T>, index: number, newValue: T): ReadonlyArray<T> {
+export function replaceElementInReadonlyArray<T>(originalArray: readonly T[], index: number, newValue: T): readonly T[] {
 	if (index < 0 || index >= originalArray.length) throw new Error('Index is out of bounds')
 	const newArray = [...originalArray]
 	newArray[index] = newValue
