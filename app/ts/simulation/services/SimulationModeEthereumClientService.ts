@@ -306,7 +306,7 @@ export const removeTransactionAndUpdateTransactionNonces = async (ethereumClient
 	const transactionToBeRemoved = simulationState.simulatedTransactions.find((transaction) => transaction.transactionIdentifier === transactionIdentifier)
 	if (transactionToBeRemoved === undefined) return simulationState
 
-	let newTransactions: WebsiteCreatedEthereumUnsignedTransaction[] = []
+	const newTransactions: WebsiteCreatedEthereumUnsignedTransaction[] = []
 	let transactionWasFound = false
 
 	for (const transaction of getNonPrependedSimulatedTransactionsFromState(simulationState)) {
