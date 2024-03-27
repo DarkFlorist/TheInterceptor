@@ -214,8 +214,8 @@ const EthereumUnsignedTransaction2930 = funtypes.Intersect(
 	}).asReadonly(),
 )
 
-type EthereumUnsignedTransaction1559 = funtypes.Static<typeof EthereumUnsignedTransaction1559>
-const EthereumUnsignedTransaction1559 = funtypes.Intersect(
+export type EthereumUnsignedTransaction1559 = funtypes.Static<typeof EthereumUnsignedTransaction1559>
+export const EthereumUnsignedTransaction1559 = funtypes.Intersect(
 	funtypes.ReadonlyObject({
 		type: funtypes.Literal('0x2').withParser(LiteralConverterParserFactory('0x2', '1559' as const)),
 		from: EthereumAddress,
@@ -346,8 +346,8 @@ const EthereumSignedTransaction2930 = funtypes.Intersect(
 	EthereumTransaction2930And1559And4844Signature,
 )
 
-type EthereumSignedTransaction1559 = funtypes.Static<typeof EthereumSignedTransaction1559>
-const EthereumSignedTransaction1559 = funtypes.Intersect(
+export type EthereumSignedTransaction1559 = funtypes.Static<typeof EthereumSignedTransaction1559>
+export const EthereumSignedTransaction1559 = funtypes.Intersect(
 	EthereumUnsignedTransaction1559,
 	EthereumTransaction2930And1559And4844Signature,
 )

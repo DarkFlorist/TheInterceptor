@@ -12,9 +12,11 @@
 				"app/ts/confirmTransaction.ts",
 				"app/ts/interceptorAccess.ts",
 				"app/ts/popup.ts",
-				"app/ts/settingsView.ts"
+				"app/ts/settingsView.ts",
+				"test/run-all.ts",
+				"test/tests/*.ts"
 			],
-			"project": ["app/ts/**/*.{ts,tsx}"],
+			"project": ["app/ts/**/*.{ts,tsx}", "test/**/*.{ts,tsx}"],
 			"ignoreDependencies": [
 				// cleanup and lint scripts should not be flagged unlisted dependencies
 				"knip",

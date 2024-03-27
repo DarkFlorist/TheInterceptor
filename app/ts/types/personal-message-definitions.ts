@@ -67,8 +67,8 @@ const EIP2612Message = funtypes.ReadonlyObject({
 	}),
 })
 
-type Permit2 = funtypes.Static<typeof Permit2>
-const Permit2 = funtypes.ReadonlyObject({
+export type Permit2 = funtypes.Static<typeof Permit2>
+export const Permit2 = funtypes.ReadonlyObject({
 	types: funtypes.ReadonlyObject({
 		PermitSingle: funtypes.Tuple(
 			funtypes.ReadonlyObject({
@@ -430,8 +430,8 @@ const VisualizedPersonalSignRequestOrderComponents = funtypes.Intersect(
 	})
 )
 
-type SafeTx = funtypes.Static<typeof SafeTx>
-const SafeTx = funtypes.ReadonlyObject({
+export type SafeTx = funtypes.Static<typeof SafeTx>
+export const SafeTx = funtypes.ReadonlyObject({
 	types: funtypes.ReadonlyObject({
 		SafeTx: funtypes.ReadonlyTuple(
             funtypes.ReadonlyObject({ name: funtypes.Literal('to'), type: funtypes.Literal('address') }),
