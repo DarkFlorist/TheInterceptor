@@ -11,7 +11,7 @@ import { CellElement } from '../../ui-utils.js'
 import { Transaction } from '../Transactions.js'
 import { useEffect, useState } from 'preact/hooks'
 
-export type MissingAbiParams = {
+type MissingAbiParams = {
 	errorMessage: string
 	addressBookEntry: AddressBookEntry | undefined
 	renameAddressCallBack: (entry: AddressBookEntry) => void
@@ -31,7 +31,7 @@ function MissingAbi(params: MissingAbiParams) {
 }
 
 
-export function VotePanel({ inputParams }: { inputParams: GovernanceVoteInputParameters }) {
+function VotePanel({ inputParams }: { inputParams: GovernanceVoteInputParameters }) {
 	const interpretSupport = (support: bigint | boolean) => {
 		if (support === true || support === 1n) return 'For'
 		if (support === false || support === 0n) return 'Against'
@@ -73,7 +73,7 @@ export function VotePanel({ inputParams }: { inputParams: GovernanceVoteInputPar
 	</>
 }
 
-export type ShowSuccessOrFailureParams = {
+type ShowSuccessOrFailureParams = {
 	simTx: SimulatedAndVisualizedTransaction
 	currentBlockNumber: undefined | bigint
 	rpcConnectionStatus: RpcConnectionStatus
@@ -138,7 +138,7 @@ const ShowSuccessOrFailure = ({ simulateGovernanceContractExecutionReply, simTx,
 	</div>
 }
 
-export type GovernanceVoteVisualizerParams = {
+type GovernanceVoteVisualizerParams = {
 	simTx: SimulatedAndVisualizedTransaction
 	simulationAndVisualisationResults: SimulationAndVisualisationResults
 	renameAddressCallBack: RenameAddressCallBack

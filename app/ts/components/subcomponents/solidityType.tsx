@@ -9,7 +9,7 @@ import { SmallAddress } from './address.js'
 const textStyle = 'text-overflow: ellipsis; overflow: hidden;'
 const StringElement = ({ text }: { text: string }) => <p class = 'paragraph' style = { textStyle }>{ text }</p>
 
-export function PureSolidityTypeComponent( { valueType }: { valueType: PureGroupedSolidityType }) {
+function PureSolidityTypeComponent( { valueType }: { valueType: PureGroupedSolidityType }) {
 	switch(valueType.type) {
 		case 'address': return <StringElement text = { checksummedAddress(valueType.value) } />
 		case 'bool': return <StringElement text = { valueType.value === true ? 'True' : 'False' } />

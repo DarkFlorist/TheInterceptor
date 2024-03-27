@@ -18,7 +18,7 @@ export const MulticallABI: InterfaceAbi = [
 	'function tryBlockAndAggregate(bool requireSuccess, tuple(address target, bytes callData)[] calls) returns (uint256 blockNumber, bytes32 blockHash, tuple(bool success, bytes returnData)[] returnData)'
 ]
 
-export const TokenMetadataABI: InterfaceAbi = [
+const TokenMetadataABI: InterfaceAbi = [
 	'function name() external view returns(string memory)',
 	'function symbol() external view returns(string memory)',
 	'function decimals() external view returns(uint8)',
@@ -37,7 +37,7 @@ export const Erc20ABI: InterfaceAbi = [
 	'function transferFrom(address from, address to, uint256 amount) external returns(bool)'
 ]
 
-export const Erc165ABI: InterfaceAbi = [
+const Erc165ABI: InterfaceAbi = [
 	'function supportsInterface(bytes4 interfaceId) external view returns (bool)'
 ]
 

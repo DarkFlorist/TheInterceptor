@@ -1,0 +1,54 @@
+{
+	// use jsonc to allow comments
+  "$schema": "https://unpkg.com/knip@5/schema-jsonc.json",
+
+	"workspaces": {
+		".": {
+			"entry": [
+				"app/ts/addressBookRender.ts",
+				"app/ts/background-startup.ts",
+				"app/ts/backgroundServiceWorker.ts",
+				"app/ts/changeChain.ts",
+				"app/ts/confirmTransaction.ts",
+				"app/ts/interceptorAccess.ts",
+				"app/ts/popup.ts",
+				"app/ts/settingsView.ts"
+			],
+			"project": ["app/ts/**/*.{ts,tsx}"],
+			"ignoreDependencies": [
+				// cleanup and lint scripts should not be flagged unlisted dependencies
+				"knip",
+				"@biomejs/biome",
+
+				// transformed vendor imports could not be determined by depcheck
+				"@types/firefox-webext-browser",
+				"@noble/curves",
+				"@noble/hashes"
+			]
+		},
+
+		// isolate ./build as workspace with it's own package.json
+		"build/*": {
+			"entry": [
+				"vendor.mts",
+				"bundler.mts"
+			],
+			"project": ["**/*.{ts,tsx}"]
+		}
+	},
+
+	// toggle for all applied rules
+	"rules": {
+		"classMembers": "off",
+		"dependencies": "off",
+		"duplicates": "off",
+		"enumMembers": "off",
+		"exports": "warn",
+		"files": "off",
+		"nsExports": "off",
+		"nsTypes": "off",
+		"types": "off",
+		"unlisted": "off",
+		"unresolved": "off"
+	}
+}

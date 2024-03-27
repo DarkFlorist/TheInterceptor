@@ -24,7 +24,7 @@ export type SummaryOutcome = {
 	erc721TokenBalanceChanges: (Erc721Entry & { received: boolean, tokenId: bigint })[]
 	erc721and1155OperatorChanges: Erc721and1155OperatorChange[]
 	erc721TokenIdApprovalChanges: Erc721TokenApprovalChange[]
-	
+
 	erc1155TokenBalanceChanges: Erc1155TokenBalanceChange[]
 }
 

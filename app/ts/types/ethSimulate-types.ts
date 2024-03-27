@@ -1,8 +1,8 @@
 import { EthereumAccessList, EthereumAddress, EthereumBlockTag, EthereumBytes32, EthereumData, EthereumInput, EthereumQuantity, EthereumQuantitySmall, EthereumTimestamp, LiteralConverterParserFactory } from './wire-types.js'
 import * as funtypes from 'funtypes'
 
-export type AccountOverride = funtypes.Static<typeof AccountOverride>
-export const AccountOverride = funtypes.ReadonlyPartial({
+type AccountOverride = funtypes.Static<typeof AccountOverride>
+const AccountOverride = funtypes.ReadonlyPartial({
 	state: funtypes.ReadonlyRecord(funtypes.String, EthereumBytes32),
 	stateDiff: funtypes.ReadonlyRecord(funtypes.String, EthereumBytes32),
 	nonce: EthereumQuantitySmall,
@@ -11,8 +11,8 @@ export const AccountOverride = funtypes.ReadonlyPartial({
 	movePrecompileToAddress: EthereumAddress,
 })
 
-export type BlockOverride = funtypes.Static<typeof BlockOverride>
-export const BlockOverride = funtypes.ReadonlyObject({
+type BlockOverride = funtypes.Static<typeof BlockOverride>
+const BlockOverride = funtypes.ReadonlyObject({
     number: EthereumQuantity,
     prevRandao: EthereumQuantity,
     time: EthereumTimestamp,
@@ -21,8 +21,8 @@ export const BlockOverride = funtypes.ReadonlyObject({
     baseFee: EthereumQuantity,
 })
 
-export type BlockCall = funtypes.Static<typeof BlockCall>
-export const BlockCall = funtypes.Partial({
+type BlockCall = funtypes.Static<typeof BlockCall>
+const BlockCall = funtypes.Partial({
 	type: funtypes.Union(
 		funtypes.Literal('0x0').withParser(LiteralConverterParserFactory('0x0', 'legacy' as const)),
 		funtypes.Literal(undefined).withParser(LiteralConverterParserFactory(undefined, 'legacy' as const)),
@@ -56,8 +56,8 @@ export const BlockCalls = funtypes.Intersect(
 	})
 )
 
-export type  ethSimulateV1ParamObject = funtypes.Static<typeof ethSimulateV1ParamObject>
-export const  ethSimulateV1ParamObject = funtypes.ReadonlyObject({
+type  ethSimulateV1ParamObject = funtypes.Static<typeof ethSimulateV1ParamObject>
+const  ethSimulateV1ParamObject = funtypes.ReadonlyObject({
 	blockStateCalls: funtypes.ReadonlyArray(BlockCalls),
 	traceTransfers: funtypes.Boolean,
 	validation: funtypes.Boolean,
@@ -76,8 +76,8 @@ export const EthereumEvent = funtypes.ReadonlyObject({
 	topics: funtypes.ReadonlyArray(EthereumBytes32),
 }).asReadonly()
 
-export type CallResultLog = funtypes.Static<typeof CallResultLog>
-export const CallResultLog = funtypes.Intersect(
+type CallResultLog = funtypes.Static<typeof CallResultLog>
+const CallResultLog = funtypes.Intersect(
 	EthereumEvent,
 	funtypes.ReadonlyObject({
 		logIndex: EthereumQuantity,
@@ -90,11 +90,11 @@ export const CallResultLog = funtypes.Intersect(
 	})
 )
 
-export type CallResultLogs = funtypes.Static<typeof CallResultLogs>
-export const CallResultLogs = funtypes.ReadonlyArray(CallResultLog)
+type CallResultLogs = funtypes.Static<typeof CallResultLogs>
+const CallResultLogs = funtypes.ReadonlyArray(CallResultLog)
 
-export type EthSimulateCallResultFailure = funtypes.Static<typeof EthSimulateCallResultFailure>
-export const EthSimulateCallResultFailure = funtypes.ReadonlyObject({
+type EthSimulateCallResultFailure = funtypes.Static<typeof EthSimulateCallResultFailure>
+const EthSimulateCallResultFailure = funtypes.ReadonlyObject({
 	  status: funtypes.Literal('0x0').withParser(LiteralConverterParserFactory('0x0', 'failure' as const)),
 	  returnData: EthereumData,
 	  gasUsed: EthereumQuantitySmall,
@@ -104,8 +104,8 @@ export const EthSimulateCallResultFailure = funtypes.ReadonlyObject({
 	  })
 })
 
-export type EthSimulateCallResultSuccess = funtypes.Static<typeof EthSimulateCallResultSuccess>
-export const EthSimulateCallResultSuccess = funtypes.ReadonlyObject({
+type EthSimulateCallResultSuccess = funtypes.Static<typeof EthSimulateCallResultSuccess>
+const EthSimulateCallResultSuccess = funtypes.ReadonlyObject({
 	returnData: EthereumData,
 	gasUsed: EthereumQuantitySmall,
 	status: funtypes.Literal('0x1').withParser(LiteralConverterParserFactory('0x1', 'success' as const)),
@@ -119,8 +119,8 @@ export const EthSimulateV1CallResult = funtypes.Union(EthSimulateCallResultFailu
 export type EthSimulateV1CallResults = funtypes.Static<typeof EthSimulateV1CallResults>
 export const EthSimulateV1CallResults = funtypes.ReadonlyArray(EthSimulateV1CallResult)
 
-export type ethSimulateV1BlockResult = funtypes.Static<typeof ethSimulateV1BlockResult>
-export const ethSimulateV1BlockResult = funtypes.ReadonlyObject({
+type ethSimulateV1BlockResult = funtypes.Static<typeof ethSimulateV1BlockResult>
+const ethSimulateV1BlockResult = funtypes.ReadonlyObject({
     number: EthereumQuantity,
     hash: EthereumBytes32,
     timestamp: EthereumQuantity,

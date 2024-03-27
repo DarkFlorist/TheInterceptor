@@ -7,8 +7,8 @@ import { Website } from './websiteAccessTypes.js'
 import { SignerName } from './signerTypes.js'
 import { EnrichedEIP712 } from './eip721.js'
 
-export type EIP2612Message = funtypes.Static<typeof EIP2612Message>
-export const EIP2612Message = funtypes.ReadonlyObject({
+type EIP2612Message = funtypes.Static<typeof EIP2612Message>
+const EIP2612Message = funtypes.ReadonlyObject({
 	types: funtypes.ReadonlyObject({
 		EIP712Domain: funtypes.Tuple(
 			funtypes.ReadonlyObject({
@@ -67,8 +67,8 @@ export const EIP2612Message = funtypes.ReadonlyObject({
 	}),
 })
 
-export type Permit2 = funtypes.Static<typeof Permit2>
-export const Permit2 = funtypes.ReadonlyObject({
+type Permit2 = funtypes.Static<typeof Permit2>
+const Permit2 = funtypes.ReadonlyObject({
 	types: funtypes.ReadonlyObject({
 		PermitSingle: funtypes.Tuple(
 			funtypes.ReadonlyObject({
@@ -135,8 +135,8 @@ export const Permit2 = funtypes.ReadonlyObject({
 	})
 })
 
-export type SeaPortItemType = funtypes.Static<typeof SeaPortItemType>
-export const SeaPortItemType = funtypes.Union(
+type SeaPortItemType = funtypes.Static<typeof SeaPortItemType>
+const SeaPortItemType = funtypes.Union(
 	funtypes.Literal('0').withParser(LiteralConverterParserFactory('0', 'NATIVE' as const)),
 	funtypes.Literal('1').withParser(LiteralConverterParserFactory('1', 'ERC20' as const)),
 	funtypes.Literal('2').withParser(LiteralConverterParserFactory('2', 'ERC721' as const)),
@@ -145,8 +145,8 @@ export const SeaPortItemType = funtypes.Union(
 	funtypes.Literal('5').withParser(LiteralConverterParserFactory('5', 'ERC1155_WITH_CRITERIA' as const)),
 )
 
-export type SeaPortOrderType = funtypes.Static<typeof SeaPortOrderType>
-export const SeaPortOrderType = funtypes.Union(
+type SeaPortOrderType = funtypes.Static<typeof SeaPortOrderType>
+const SeaPortOrderType = funtypes.Union(
 	funtypes.Literal('0').withParser(LiteralConverterParserFactory('0', 'FULL_OPEN' as const)),
 	funtypes.Literal('1').withParser(LiteralConverterParserFactory('1', 'PARTIAL_OPEN' as const)),
 	funtypes.Literal('2').withParser(LiteralConverterParserFactory('2', 'FULL_RESTRICTED' as const)),
@@ -154,8 +154,8 @@ export const SeaPortOrderType = funtypes.Union(
 	funtypes.Literal('4').withParser(LiteralConverterParserFactory('4', 'CONTRACT' as const)),
 )
 
-export type SeaPortSingleOffer = funtypes.Static<typeof SeaPortSingleOffer>
-export const SeaPortSingleOffer = funtypes.ReadonlyObject({
+type SeaPortSingleOffer = funtypes.Static<typeof SeaPortSingleOffer>
+const SeaPortSingleOffer = funtypes.ReadonlyObject({
 	itemType: SeaPortItemType,
 	token: EthereumAddress,
 	identifierOrCriteria: NonHexBigInt,
@@ -163,8 +163,8 @@ export const SeaPortSingleOffer = funtypes.ReadonlyObject({
 	endAmount: NonHexBigInt
 })
 
-export type SeaPortSingleConsideration = funtypes.Static<typeof SeaPortSingleConsideration>
-export const SeaPortSingleConsideration = funtypes.ReadonlyObject({
+type SeaPortSingleConsideration = funtypes.Static<typeof SeaPortSingleConsideration>
+const SeaPortSingleConsideration = funtypes.ReadonlyObject({
 	itemType: SeaPortItemType,
 	token: EthereumAddress,
 	identifierOrCriteria: NonHexBigInt,
@@ -189,8 +189,8 @@ export const OpenSeaOrderMessage = funtypes.ReadonlyObject({
     counter: NonHexBigInt,
 })
 
-export type OpenSeaOrder = funtypes.Static<typeof OpenSeaOrder>
-export const OpenSeaOrder = funtypes.ReadonlyObject({
+type OpenSeaOrder = funtypes.Static<typeof OpenSeaOrder>
+const OpenSeaOrder = funtypes.ReadonlyObject({
 	types: funtypes.ReadonlyObject({
 		EIP712Domain: funtypes.Tuple(
 			funtypes.ReadonlyObject({
@@ -350,8 +350,8 @@ export const OpenSeaOrderMessageWithAddressBookEntries = funtypes.ReadonlyObject
     counter: NonHexBigInt,
 })
 
-export type PersonalSignRequestBase = funtypes.Static<typeof PersonalSignRequestBase>
-export const PersonalSignRequestBase = funtypes.ReadonlyObject({
+type PersonalSignRequestBase = funtypes.Static<typeof PersonalSignRequestBase>
+const PersonalSignRequestBase = funtypes.ReadonlyObject({
 	activeAddress: AddressBookEntry,
 	rpcNetwork: RpcNetwork,
 	request: InterceptedRequest,
@@ -366,8 +366,8 @@ export const PersonalSignRequestBase = funtypes.ReadonlyObject({
 	messageIdentifier: EthereumQuantity,
 })
 
-export type VisualizedPersonalSignRequestNotParsed = funtypes.Static<typeof VisualizedPersonalSignRequest>
-export const VisualizedPersonalSignRequestNotParsed = funtypes.Intersect(
+type VisualizedPersonalSignRequestNotParsed = funtypes.Static<typeof VisualizedPersonalSignRequest>
+const VisualizedPersonalSignRequestNotParsed = funtypes.Intersect(
 	PersonalSignRequestBase,
 	funtypes.ReadonlyObject({
 		method: funtypes.Union(funtypes.Literal('personal_sign'), funtypes.Literal('eth_signTypedData')),
@@ -384,8 +384,8 @@ const EthSignTyped = funtypes.Union(
 	funtypes.Literal('eth_signTypedData_v4'),
 )
 
-export type VisualizedPersonalSignRequestEIP712 = funtypes.Static<typeof VisualizedPersonalSignRequestEIP712>
-export const VisualizedPersonalSignRequestEIP712 = funtypes.Intersect(
+type VisualizedPersonalSignRequestEIP712 = funtypes.Static<typeof VisualizedPersonalSignRequestEIP712>
+const VisualizedPersonalSignRequestEIP712 = funtypes.Intersect(
 	PersonalSignRequestBase,
 	funtypes.ReadonlyObject({
 		method: EthSignTyped,
@@ -420,8 +420,8 @@ export const VisualizedPersonalSignRequestPermit2 = funtypes.Intersect(
 	})
 )
 
-export type VisualizedPersonalSignRequestOrderComponents = funtypes.Static<typeof VisualizedPersonalSignRequestOrderComponents>
-export const VisualizedPersonalSignRequestOrderComponents = funtypes.Intersect(
+type VisualizedPersonalSignRequestOrderComponents = funtypes.Static<typeof VisualizedPersonalSignRequestOrderComponents>
+const VisualizedPersonalSignRequestOrderComponents = funtypes.Intersect(
 	PersonalSignRequestBase,
 	funtypes.ReadonlyObject({
 		method: EthSignTyped,
@@ -430,8 +430,8 @@ export const VisualizedPersonalSignRequestOrderComponents = funtypes.Intersect(
 	})
 )
 
-export type SafeTx = funtypes.Static<typeof SafeTx>
-export const SafeTx = funtypes.ReadonlyObject({
+type SafeTx = funtypes.Static<typeof SafeTx>
+const SafeTx = funtypes.ReadonlyObject({
 	types: funtypes.ReadonlyObject({
 		SafeTx: funtypes.ReadonlyTuple(
             funtypes.ReadonlyObject({ name: funtypes.Literal('to'), type: funtypes.Literal('address') }),

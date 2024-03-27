@@ -6,14 +6,6 @@ export function areEqualUint8Arrays(first?: Uint8Array, second?: Uint8Array) {
 	return first.every((value, index) => value === second[index])
 }
 
-export function areEqual<T>(first?: readonly T[], second?: readonly  T[]) {
-	if (first === second) return true
-	if (first === undefined) return second === undefined
-	if (second === undefined) return first === undefined
-	if (first.length !== second.length) return false
-	return first.every((value, index) => value === second[index])
-}
-
 export function stripLeadingZeros(byteArray: Uint8Array): Uint8Array {
 	let i = 0
 	for (; i < byteArray.length; ++i) {
@@ -37,13 +29,6 @@ export function arrayToChunks<Type>(array: readonly Type[], chunkSize: number) {
 const arePropValuesEqual = <T>(subject: T, target: T, propNames: (keyof T)[]): boolean => propNames.every(propName => subject[propName] === target[propName])
 
 export const getUniqueItemsByProperties = <T>(items: T[], propNames: (keyof T)[]): T[] => items.filter((item, index, array) => index === array.findIndex(foundItem => arePropValuesEqual(foundItem, item, propNames)))
-
-export function includesWithComparator<T>(array: readonly T[], searchElement: T, comparator: (a: T, b: T) => boolean): boolean {
-	for (const element of array) {
-		if (comparator(element, searchElement)) return true
-	}
-	return false
-}
 
 export function replaceElementInReadonlyArray<T>(originalArray: ReadonlyArray<T>, index: number, newValue: T): ReadonlyArray<T> {
 	if (index < 0 || index >= originalArray.length) throw new Error('Index is out of bounds')

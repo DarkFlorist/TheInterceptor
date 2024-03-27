@@ -68,11 +68,11 @@ export const getSimulatedStack = (simulationState: SimulationState) => {
 	}))
 }
 
-export const transactionQueueTotalGasLimit = (simulationState: SimulationState) => {
+const transactionQueueTotalGasLimit = (simulationState: SimulationState) => {
 	return simulationState.simulatedTransactions.reduce((a, b) => a + b.signedTransaction.gas, 0n)
 }
 
-export const simulationGasLeft = (simulationState: SimulationState | undefined, blockHeader: EthereumBlockHeader) => {
+const simulationGasLeft = (simulationState: SimulationState | undefined, blockHeader: EthereumBlockHeader) => {
 	if (simulationState === undefined) return blockHeader.gasLimit * 1023n / 1024n
 	return max(blockHeader.gasLimit * 1023n / 1024n - transactionQueueTotalGasLimit(simulationState), 0n)
 }
@@ -269,11 +269,10 @@ export const setSimulationTransactionsAndSignedMessages = async (ethereumClientS
 	}
 }
 
-export const getTransactionQueue = (simulationState: SimulationState | undefined) => {
+const getTransactionQueue = (simulationState: SimulationState | undefined) => {
 	if (simulationState === undefined) return []
 	return simulationState.simulatedTransactions.map((x) => x.signedTransaction)
 }
-export const getPrependTransactionsQueue = (simulationState: SimulationState) => simulationState.prependTransactionsQueue
 
 export const setPrependTransactionsQueue = async (ethereumClientService: EthereumClientService, prepend: readonly WebsiteCreatedEthereumUnsignedTransaction[]): Promise<SimulationState>  => {
 	const block = await ethereumClientService.getBlock()
@@ -287,11 +286,6 @@ export const setPrependTransactionsQueue = async (ethereumClientService: Ethereu
 		signedMessages: [],
 	}
 	return await setSimulationTransactionsAndSignedMessages(ethereumClientService, newState, [], [])
-}
-
-export const removeTransactionOrSignedMessage = async (ethereumClientService: EthereumClientService, simulationState: SimulationState, transactionHash: bigint): Promise<SimulationState>  => {
-	const filtered = getNonPrependedSimulatedTransactionsFromState(simulationState).filter((transaction) => transaction.signedTransaction.hash !== transactionHash)
-	return await setSimulationTransactionsAndSignedMessages(ethereumClientService, simulationState, filtered.map((x) => convertSimulatedTransactionToWebsiteCreatedEthereumUnsignedTransaction(x)), simulationState.signedMessages)
 }
 
 export const removeSignedMessageFromSimulation = async (ethereumClientService: EthereumClientService, simulationState: SimulationState, messageIdentifier: EthereumQuantity): Promise<SimulationState>  => {
@@ -394,11 +388,6 @@ export const refreshSimulationState = async (ethereumClientService: EthereumClie
 
 export const resetSimulationState = async (ethereumClientService: EthereumClientService, simulationState: SimulationState): Promise<SimulationState> => {
 	return await setPrependTransactionsQueue(ethereumClientService, simulationState.prependTransactionsQueue)
-}
-
-export const getStorageAt = async (ethereumClientService: EthereumClientService, contract: bigint, slot: bigint) => {
-	//todo, requires plugin work...
-	return await ethereumClientService.getStorageAt(contract, slot)
 }
 
 const canQueryNodeDirectly = async (ethereumClientService: EthereumClientService, simulationState: SimulationState, blockTag: EthereumBlockTag = 'latest') => {
@@ -699,13 +688,13 @@ const getSignedMessagesWithFakeSigner = (simulationState: SimulationState | unde
 	return simulationState === undefined ? [] : simulationState.signedMessages.map((x) => ({ fakeSignedFor: x.fakeSignedFor, originalRequestParameters: x.originalRequestParameters }))
 }
 
-export const simulatedMulticall = async (ethereumClientService: EthereumClientService, simulationState: SimulationState | undefined, transactions: EthereumUnsignedTransaction[], blockNumber: bigint, extraAccountOverrides: StateOverrides = {}) => {
+const simulatedMulticall = async (ethereumClientService: EthereumClientService, simulationState: SimulationState | undefined, transactions: EthereumUnsignedTransaction[], blockNumber: bigint, extraAccountOverrides: StateOverrides = {}) => {
 	const mergedTxs: EthereumUnsignedTransaction[] = getTransactionQueue(simulationState)
 	return await ethereumClientService.simulateTransactionsAndSignatures(mergedTxs.concat(transactions), getSignedMessagesWithFakeSigner(simulationState), blockNumber, extraAccountOverrides)
 }
 
 // use time as block hash as that makes it so that updated simulations with different states are different, but requires no additional calculation
-export const getHashOfSimulatedBlock = (simulationState: SimulationState) => BigInt(simulationState.simulationConductedTimestamp.getTime())
+const getHashOfSimulatedBlock = (simulationState: SimulationState) => BigInt(simulationState.simulationConductedTimestamp.getTime())
 
 export type SignatureWithFakeSignerAddress = { originalRequestParameters: SignMessageParams, fakeSignedFor: EthereumAddress }
 export type MessageHashAndSignature = { signature: string, messageHash: string }

@@ -1,7 +1,7 @@
 import { useEffect } from 'preact/hooks'
 import { useComputed, useSignal } from '@preact/signals'
 
-export interface SomeTimeAgoProps {
+interface SomeTimeAgoProps {
 	priorTimestamp: Date,
 	countBackwards?: boolean,
 	diffToText?: (secondsDiff: number) => string

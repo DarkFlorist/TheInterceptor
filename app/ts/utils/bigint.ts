@@ -54,26 +54,8 @@ export function bigintToRoundedPrettyDecimalString(value: bigint, power: bigint,
 	return roundToPrettyDecimalString(value)
 }
 
-export function attoString(value: bigint): string {
-	return bigintToDecimalString(value, 18n)
-}
-
 export function nanoString(value: bigint): string {
 	return bigintToDecimalString(value, 9n)
-}
-
-export function usdcString(value: bigint): string {
-	return bigintToDecimalString(value, 6n)
-}
-
-export function attoethToEthDouble(value: bigint) {
-	const decimalString = attoString(value)
-	return Number.parseFloat(decimalString)
-}
-
-export function attoethToNanoethDouble(value: bigint) {
-	const decimalString = nanoString(value)
-	return Number.parseFloat(decimalString)
 }
 
 export function addressString(address: bigint) {
@@ -121,31 +103,6 @@ export function bigintToUint8Array(value: bigint, numberOfBytes: number) {
 	return result
 }
 
-export function stringToAtto(value: string): bigint {
-	return decimalStringToBigint(value, 18)
-}
-
-export function stringToNano(value: string): bigint {
-	return decimalStringToBigint(value, 9)
-}
-
-export function decimalStringToBigint(value: string, power: number): bigint {
-	if (!/^\d+(?:\.\d+)?$/.test(value)) throw new Error(`Value is not a decimal string.`)
-	let [integerPart, fractionalPart] = value.split('.')
-	fractionalPart = (fractionalPart || '').padEnd(power, '0')
-	return BigInt(`${integerPart}${fractionalPart}`)
-}
-
-export function squareRoot(value: bigint) {
-	let z = (value + 1n) / 2n
-	let y = value
-	while (z - y < 0n) {
-		y = z
-		z = (value / z + z) / 2n
-	}
-	return y
-}
-
 export function stringifyJSONWithBigInts(value: any, space?: string | number | undefined): string {
 	return JSON.stringify(value, (_key, value) => {
 		return typeof value === "bigint" ? `0x${ value.toString(16) }` : value
@@ -185,9 +142,9 @@ export function calculateWeightedPercentile(data: readonly { dataPoint: bigint, 
 	if (totalWeight === undefined) throw new Error('Invalid input')
 
 	const targetIndex = percentile * totalWeight / 100n
-	
+
 	const index = cumulativeWeights.findIndex(w => w >= targetIndex)
-	
+
 	if (index === -1) throw new Error('Invalid input')
 
 	const lowerIndex = index === 0 ? 0 : index - 1

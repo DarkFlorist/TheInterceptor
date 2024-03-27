@@ -219,7 +219,7 @@ type TokenLogEventParams = {
 	renameAddressCallBack: RenameAddressCallBack,
 }
 
-export function TokenLogEvent(params: TokenLogEventParams ) {
+function TokenLogEvent(params: TokenLogEventParams ) {
 	const style = { color: isPositiveEvent(params.tokenVisualizerResult, params.ourAddressInReferenceFrame) ? 'var(--dim-text-color)' : 'var(--negative-dim-color)' }
 
 	return <>
@@ -312,7 +312,7 @@ function insertBetweenElements<T>(array: readonly T[], elementToInsert: T): read
 	return newArray
 }
 
-export function NonTokenLogEvent(params: NonTokenLogEventParams) {
+function NonTokenLogEvent(params: NonTokenLogEventParams) {
 	const cellStyle = 'align-items: normal;'
 	const textStyle = 'text-overflow: ellipsis; overflow: hidden;'
 	if (params.nonTokenLog.isParsed === 'NonParsed') {

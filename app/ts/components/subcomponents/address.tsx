@@ -2,7 +2,6 @@ import { checksummedAddress } from '../../utils/bigint.js'
 import { Blockie } from './PreactBlocky.js'
 import { RenameAddressCallBack } from '../../types/user-interface-types.js'
 import { CopyToClipboard } from './CopyToClipboard.js'
-import { ApproveIcon, ArrowIcon } from '../subcomponents/icons.js'
 import { JSX } from 'preact/jsx-runtime'
 import { useSignal } from '@preact/signals'
 import { useEffect } from 'preact/hooks'
@@ -20,7 +19,7 @@ export function getActiveAddressEntry(addressToFind: bigint, activeAddresses: re
 	}
 }
 
-export type AddressIconParams = {
+type AddressIconParams = {
 	address: bigint | undefined,
 	logoUri: string | undefined,
 	isBig: boolean
@@ -46,7 +45,7 @@ export function AddressIcon(param: AddressIconParams) {
 }
 
 
-export type BigAddressParams = {
+type BigAddressParams = {
 	readonly addressBookEntry: AddressBookEntry | undefined
 	readonly noCopying?: boolean
 	readonly noEditAddress?: boolean
@@ -117,7 +116,7 @@ export function BigAddress(params: BigAddressParams) {
 	</div>
 }
 
-export type ActiveAddressParams = {
+type ActiveAddressParams = {
 	readonly activeAddress: AddressBookEntry | undefined
 	readonly disableButton: boolean
 	readonly changeActiveAddress: () => void
@@ -142,7 +141,7 @@ export function ActiveAddressComponent(params: ActiveAddressParams) {
 		</div>
 	</div>
 }
-export type SmallAddressParams = {
+type SmallAddressParams = {
 	readonly addressBookEntry: AddressBookEntry
 	readonly textColor?: string
 	readonly renameAddressCallBack: RenameAddressCallBack
@@ -177,56 +176,6 @@ export function SmallAddress(params: SmallAddressParams) {
 			</span>
 		</span>
 	)
-}
-
-export type FromAddressToAddressParams = {
-	readonly fromEntry: AddressBookEntry
-	readonly toEntry: AddressBookEntry
-	readonly isApproval: boolean
-	readonly renameAddressCallBack: RenameAddressCallBack
-}
-
-export function FromAddressToAddress(params: FromAddressToAddressParams ) {
-	return  <div class = 'columns is-mobile' style = 'margin-bottom: 0px; color: var(--text-color);'>
-		<div class = 'column' style = 'width: 47.5%; flex: none; padding-bottom: 0px;'>
-			<BigAddress
-				addressBookEntry = { params.fromEntry }
-				renameAddressCallBack = { params.renameAddressCallBack }
-			/>
-		</div>
-		<div class = 'column' style = 'width: 5%; padding: 0px; align-self: center; flex: none;'>
-			{ params.isApproval ? <ApproveIcon color = { 'var(--text-color)' }/> : <ArrowIcon color = { 'var(--text-color)' }/> }
-		</div>
-		<div class = 'column' style = 'width: 47.5%; flex: none; padding-bottom: 0px;'>
-			<BigAddress
-				addressBookEntry = { params.toEntry }
-				renameAddressCallBack = { params.renameAddressCallBack }
-			/>
-		</div>
-	</div>
-}
-
-export function FromSmallAddressToSmallAddress({ from, to, renameAddressCallBack }: { from: AddressBookEntry, to: AddressBookEntry, renameAddressCallBack: RenameAddressCallBack }) {
-	const textColor = 'var(--text-color)'
-	return <span class = 'log-table' style = 'justify-content: center; column-gap: 5px;'>
-		<div class = 'log-cell-flexless' style = 'margin: 2px;'>
-			<SmallAddress
-				addressBookEntry = { from }
-				textColor = { textColor }
-				renameAddressCallBack = { renameAddressCallBack }
-			/>
-		</div>
-		<div class = 'log-cell' style = 'padding-right: 0.2em; padding-left: 0.2em'>
-			<ArrowIcon color = { textColor } />
-		</div>
-		<div class = 'log-cell-flexless' style = 'margin: 2px;'>
-			<SmallAddress
-				addressBookEntry = { to }
-				textColor = { textColor }
-				renameAddressCallBack = { renameAddressCallBack }
-			/>
-		</div>
-	</span>
 }
 
 export function WebsiteOriginText( { icon, websiteOrigin, title }: Website) {
