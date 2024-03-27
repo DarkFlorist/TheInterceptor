@@ -308,6 +308,6 @@ export function EthereumSignedTransactionToSignedTransaction(transaction: Ethere
 	}
 }
 
-export function truncateAddr(address: string, charactersFromEachEnd: number = 7) {
+export function truncateAddr(address: string, charactersFromEachEnd = 7) {
 	return `0x${address.substring(2, 2 + charactersFromEachEnd)}…${address.substring(address.length - charactersFromEachEnd, address.length)}`
 }

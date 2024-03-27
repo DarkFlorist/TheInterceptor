@@ -43,7 +43,7 @@ type NameInputParams = {
 
 export function NameInput({ nameInput, setNameInput, disabled }: NameInputParams) {
 	const ref = createRef<HTMLInputElement>()
-    useEffect(() => { ref.current && ref.current.focus() }, [])
+    useEffect(() => { ref.current?.focus() }, [])
 	return <input
 		className = 'input title is-5 is-spaced'
 		type = 'text'
@@ -100,7 +100,7 @@ type AbiInputParams = {
 
 function AbiInput({ abiInput, setAbiInput, disabled }: AbiInputParams) {
 	const ref = createRef<HTMLInputElement>()
-    useEffect(() => { ref.current && ref.current.focus() }, [])
+    useEffect(() => { ref.current?.focus() }, [])
 	return <input
 		className = 'input is-spaced'
 		type = 'text'
@@ -132,7 +132,7 @@ function RenderIncompleteAddressBookEntry({ incompleteAddressBookEntry, setName,
 				<span class = 'log-table' style = 'column-gap: 5px; row-gap: 5px; grid-template-columns: max-content auto;'>
 					<CellElement element = { <Text text = { 'Name: ' }/> }/>
 					<CellElement element = { <NameInput nameInput = { incompleteAddressBookEntry.name } setNameInput = { setName } disabled = { disableDueToSource }/> } />
-					<CellElement element = { <Text text = { 'Address: ' }/> }/> 
+					<CellElement element = { <Text text = { 'Address: ' }/> }/>
 					<CellElement element = { <AddressInput disabled = { incompleteAddressBookEntry.addingAddress === false || disableDueToSource } addressInput = { incompleteAddressBookEntry.address } setAddress = { setAddress } /> } />
 					{ incompleteAddressBookEntry.type === 'ERC20' || incompleteAddressBookEntry.type === 'ERC1155' ? <>
 						<CellElement element = { <Text text = { 'Symbol: ' }/> }/>
@@ -364,7 +364,7 @@ export function AddNewAddress(param: AddAddressParam) {
 	function isSubmitButtonDisabled() {
 		if (modifyAddressWindowState === undefined) return true
 		return !areInputsValid()
-			|| (modifyAddressWindowState.errorState !== undefined && modifyAddressWindowState.errorState.blockEditing)
+			|| (modifyAddressWindowState.errorState?.blockEditing)
 			|| (showOnChainVerificationErrorBox() && !onChainInformationVerifiedByUser)
 	}
 
@@ -412,7 +412,7 @@ export function AddNewAddress(param: AddAddressParam) {
 				</div>
 				<div style = 'padding-left: 10px; padding-right: 10px; margin-bottom: 10px; min-height: 80px'>
 					{ modifyAddressWindowState?.errorState === undefined ? <></> : <Notice text = { modifyAddressWindowState.errorState.message } /> }
-					{ !showOnChainVerificationErrorBox() ? <></> : 
+					{ !showOnChainVerificationErrorBox() ? <></> :
 						<ErrorCheckBox
 							text = { `The name and symbol for this token was provided by the token itself and we have not validated its legitimacy. A token may claim to have a name/symbol that is the same as another popular token (e.g., USDC or DAI) in an attempt to trick you. If you recognize this token's name, please verify elsewhere that this is the correct address for it.` }
 							checked = { onChainInformationVerifiedByUser }

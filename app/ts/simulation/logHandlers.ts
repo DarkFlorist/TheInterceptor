@@ -3,7 +3,7 @@ import { TokenVisualizerResult } from '../types/visualizer-types.js'
 import { parseEventIfPossible } from './services/SimulationModeEthereumClientService.js'
 import { Erc1155ABI } from '../utils/abi.js'
 import { Interface } from 'ethers'
-import { EthereumEvent } from '../types/multicall-types.js'
+import { EthereumEvent } from '../types/ethSimulate-types.js'
 
 export function handleERC20TransferLog(eventLog: EthereumEvent): TokenVisualizerResult[] {
 	if (eventLog.topics[1] === undefined || eventLog.topics[2] === undefined) throw new Error('unknown log')
@@ -48,7 +48,7 @@ export function handleErc721ApprovalForAllLog(eventLog: EthereumEvent): TokenVis
 		tokenAddress: eventLog.address,
 		type: 'NFT All approval',
 		isApproval: true,
-		allApprovalAdded: eventLog.topics[3] != 0n,
+		allApprovalAdded: eventLog.topics[3] !== 0n,
 	}]
 }
 
