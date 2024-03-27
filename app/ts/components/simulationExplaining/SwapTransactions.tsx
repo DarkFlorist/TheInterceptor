@@ -93,8 +93,8 @@ export function identifySwap(simTransaction: SimulatedAndVisualizedTransaction):
 		if (logEntry.isApproval || logEntry.to.address !== sender) return
 		aggregate(aggregatedReceivedAssets, logEntry)
 	})
-	const sentAssets = Array.from(aggregatedSentAssets, function (entry) { return { identifier: entry[0], value: entry[1] } })
-	const receivedAssets = Array.from(aggregatedReceivedAssets, function (entry) { return { identifier: entry[0], value: entry[1] } })
+	const sentAssets = Array.from(aggregatedSentAssets, (entry) => { return { identifier: entry[0], value: entry[1] } })
+	const receivedAssets = Array.from(aggregatedReceivedAssets, (entry) => { return { identifier: entry[0], value: entry[1] } })
 
 	if (aggregatedSentAssets.size > 1 || aggregatedReceivedAssets.size > 1) return false // its not a pure 1 to 1 swap if we receive or send multiple assets
 
@@ -196,7 +196,7 @@ export function identifyRoutes(simulatedAndVisualizedTransaction: SimulatedAndVi
 	)]
 
 	function uniqueByKeepFirst(a: State[]) {
-		let seen = new Set()
+		const seen = new Set()
 		return a.filter((item) => {
 			if (seen.has(item)) return false
 			seen.add(item)

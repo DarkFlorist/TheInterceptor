@@ -4,7 +4,7 @@ import { UnionToIntersection } from '../utils/typescript.js'
 const BigIntParser: funtypes.ParsedValue<funtypes.String, bigint>['config'] = {
 	parse: value => {
 		if (!/^0x([a-fA-F0-9]{1,64})$/.test(value)) return { success: false, message: `${value} is not a hex string encoded number.` }
-		else return { success: true, value: BigInt(value) }
+		return { success: true, value: BigInt(value) }
 	},
 	serialize: value => {
 		if (typeof value !== 'bigint') return { success: false, message: `${typeof value} is not a bigint.`}
@@ -16,7 +16,7 @@ const SmallIntParser: funtypes.ParsedValue<funtypes.String, bigint>['config'] = 
 	parse: value => {
 		if (!/^0x([a-fA-F0-9]{1,64})$/.test(value)) return { success: false, message: `${value} is not a hex string encoded number.` }
 		if (BigInt(value) >= 2n**64n) return { success: false, message: `${value} must be smaller than 2^64.` }
-		else return { success: true, value: BigInt(value) }
+		return { success: true, value: BigInt(value) }
 	},
 	serialize: value => {
 		if (value >= 2n**64n) return { success: false, message: `${value} must be smaller than 2^64.` }
@@ -29,7 +29,7 @@ const SmallIntParser: funtypes.ParsedValue<funtypes.String, bigint>['config'] = 
 const AddressParser: funtypes.ParsedValue<funtypes.String, bigint>['config'] = {
 	parse: value => {
 		if (!/^0x([a-fA-F0-9]{40})$/.test(value)) return { success: false, message: `${value} is not a hex string encoded address.` }
-		else return { success: true, value: BigInt(value) }
+		return { success: true, value: BigInt(value) }
 	},
 	serialize: value => {
 		if (typeof value !== 'bigint') return { success: false, message: `${typeof value} is not a bigint.`}
@@ -40,7 +40,7 @@ const AddressParser: funtypes.ParsedValue<funtypes.String, bigint>['config'] = {
 const Bytes32Parser: funtypes.ParsedValue<funtypes.String, bigint>['config'] = {
 	parse: value => {
 		if (!/^0x([a-fA-F0-9]{64})$/.test(value)) return { success: false, message: `${value} is not a hex string encoded 32 byte value.` }
-		else return { success: true, value: BigInt(value) }
+		return { success: true, value: BigInt(value) }
 	},
 	serialize: value => {
 		if (typeof value !== 'bigint') return { success: false, message: `${typeof value} is not a bigint.`}
@@ -51,7 +51,7 @@ const Bytes32Parser: funtypes.ParsedValue<funtypes.String, bigint>['config'] = {
 const Bytes256Parser: funtypes.ParsedValue<funtypes.String, bigint>['config'] = {
 	parse: value => {
 		if (!/^0x([a-fA-F0-9]{512})$/.test(value)) return { success: false, message: `${value} is not a hex string encoded 256 byte value.` }
-		else return { success: true, value: BigInt(value) }
+		return { success: true, value: BigInt(value) }
 	},
 	serialize: value => {
 		if (typeof value !== 'bigint') return { success: false, message: `${typeof value} is not a bigint.`}
@@ -61,7 +61,7 @@ const Bytes256Parser: funtypes.ParsedValue<funtypes.String, bigint>['config'] = 
 const Bytes16Parser: funtypes.ParsedValue<funtypes.String, bigint>['config'] = {
 	parse: value => {
 		if (!/^0x([a-fA-F0-9]{16})$/.test(value)) return { success: false, message: `${value} is not a hex string encoded 256 byte value.` }
-		else return { success: true, value: BigInt(value) }
+		return { success: true, value: BigInt(value) }
 	},
 	serialize: value => {
 		if (typeof value !== 'bigint') return { success: false, message: `${typeof value} is not a bigint.`}
@@ -97,7 +97,7 @@ const BytesParser: funtypes.ParsedValue<funtypes.String, Uint8Array>['config'] =
 const TimestampParser: funtypes.ParsedValue<funtypes.String, Date>['config'] = {
 	parse: value => {
 		if (!/^0x([a-fA-F0-9]{0,8})$/.test(value)) return { success: false, message: `${value} is not a hex string encoded timestamp.` }
-		else return { success: true, value: new Date(Number.parseInt(value, 16) * 1000) }
+		return { success: true, value: new Date(Number.parseInt(value, 16) * 1000) }
 	},
 	serialize: value => {
 		if (!(value instanceof Date)) return { success: false, message: `${typeof value} is not a Date.`}
@@ -120,7 +120,7 @@ export const LiteralConverterParserFactory: <TInput, TOutput> (input: TInput, ou
 const BigIntParserNonHex: funtypes.ParsedValue<funtypes.String, bigint>['config'] = {
 	parse: value => {
 		if (!/^[0-9]+$/.test(value)) return { success: false, message: `${ value } is not a string encoded number.` }
-		else return { success: true, value: BigInt(value) }
+		return { success: true, value: BigInt(value) }
 	},
 	serialize: value => {
 		if (typeof value !== 'bigint') return { success: false, message: `${ typeof value } is not a bigint.`}

@@ -19,7 +19,7 @@ export const EIP712MessageUnderlying = funtypes.ReadonlyObject({
 const EIP712MessageParser: funtypes.ParsedValue<funtypes.String, EIP712MessageUnderlying>['config'] = {
 	parse: value => {
 		if (!isJSON(value) || !EIP712MessageUnderlying.test(JSON.parse(value))) return { success: false, message: `${ value } is not EIP712 message` }
-		else return { success: true, value: EIP712MessageUnderlying.parse(JSON.parse(value)) }
+		return { success: true, value: EIP712MessageUnderlying.parse(JSON.parse(value)) }
 	},
 	serialize: value => {
 		if (!EIP712MessageUnderlying.test(value)) return { success: false, message: `${ value } is not a EIP712 message.`}

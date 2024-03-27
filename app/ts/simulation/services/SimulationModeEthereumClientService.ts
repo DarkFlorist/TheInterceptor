@@ -120,7 +120,7 @@ export const simulateEstimateGas = async (ethereumClientService: EthereumClientS
 				message: `ETH Simulate Failed to estimate gas`,
 				data: '',
 			},
-		} as const 
+		} as const
 	}
 	if (lastResult.status === 'failure') {
 		console.log(lastResult)
@@ -130,7 +130,7 @@ export const simulateEstimateGas = async (ethereumClientService: EthereumClientS
 				message: `Failed to estimate gas: "${ lastResult.error.message }"`,
 				data: dataStringWith0xStart(lastResult.returnData),
 			},
-		} as const 
+		} as const
 	}
 	const gasSpent = lastResult.gasUsed * 125n * 64n / (100n * 63n) // add 25% * 64 / 63 extra  to account for gas savings <https://eips.ethereum.org/EIPS/eip-3529>
 	return { gas: gasSpent < maxGas ? gasSpent : maxGas }
@@ -150,12 +150,12 @@ export const mockSignTransaction = (transaction: EthereumUnsignedTransaction) : 
 		const hash = EthereumQuantity.parse(keccak256(serializeSignedTransactionToBytes({ ...unsignedTransaction, ...signatureParams })))
 		if (transaction.type !== 'legacy') throw new Error('types do not match')
 		return { ...transaction, ...signatureParams, hash }
-	} else {
-		const signatureParams = { r: 0n, s: 0n, yParity: 'even' as const }
-		const hash = EthereumQuantity.parse(keccak256(serializeSignedTransactionToBytes({ ...unsignedTransaction, ...signatureParams })))
-		if (transaction.type === 'legacy') throw new Error('types do not match')
-		return { ...transaction, ...signatureParams, hash }
 	}
+
+	const signatureParams = { r: 0n, s: 0n, yParity: 'even' as const }
+	const hash = EthereumQuantity.parse(keccak256(serializeSignedTransactionToBytes({ ...unsignedTransaction, ...signatureParams })))
+	if (transaction.type === 'legacy') throw new Error('types do not match')
+	return { ...transaction, ...signatureParams, hash }
 }
 
 export const appendTransaction = async (ethereumClientService: EthereumClientService, simulationState: SimulationState | undefined, transaction: WebsiteCreatedEthereumUnsignedTransactionOrFailed): Promise<SimulationState> => {
@@ -164,7 +164,7 @@ export const appendTransaction = async (ethereumClientService: EthereumClientSer
 		const signed = mockSignTransaction(transaction.transaction)
 		return simulationState === undefined ? [signed] : simulationState.simulatedTransactions.map((x) => x.signedTransaction).concat([signed])
 	}
-	
+
 	const parentBlock = await ethereumClientService.getBlock()
 	const parentBaseFeePerGas = parentBlock.baseFeePerGas
 	if (parentBaseFeePerGas === undefined) throw new Error(CANNOT_SIMULATE_OFF_LEGACY_BLOCK)
@@ -307,7 +307,7 @@ export const removeTransactionAndUpdateTransactionNonces = async (ethereumClient
 	const transactionToBeRemoved = simulationState.simulatedTransactions.find((transaction) => transaction.transactionIdentifier === transactionIdentifier)
 	if (transactionToBeRemoved === undefined) return simulationState
 
-	let newTransactions: WebsiteCreatedEthereumUnsignedTransaction[] = []
+	const newTransactions: WebsiteCreatedEthereumUnsignedTransaction[] = []
 	let transactionWasFound = false
 
 	for (const transaction of getNonPrependedSimulatedTransactionsFromState(simulationState)) {
@@ -390,7 +390,7 @@ export const refreshSimulationState = async (ethereumClientService: EthereumClie
 	}
 	const transactions = (await getNonceFixedTransactions()).map((x) => convertSimulatedTransactionToWebsiteCreatedEthereumUnsignedTransaction(x))
 	const baseFeeAdjustedTransactions = getBaseFeeAdjustedTransactions(await parentBlockPromise, transactions)
-	return await setSimulationTransactionsAndSignedMessages(ethereumClientService, simulationState, baseFeeAdjustedTransactions, simulationState.signedMessages)	
+	return await setSimulationTransactionsAndSignedMessages(ethereumClientService, simulationState, baseFeeAdjustedTransactions, simulationState.signedMessages)
 }
 
 export const resetSimulationState = async (ethereumClientService: EthereumClientService, simulationState: SimulationState): Promise<SimulationState> => {
@@ -576,7 +576,7 @@ export async function getSimulatedBlockByHash(ethereumClientService: EthereumCli
 export async function getSimulatedBlock(ethereumClientService: EthereumClientService, simulationState: SimulationState | undefined, blockTag?: EthereumBlockTag, fullObjects?: true): Promise<EthereumBlockHeader>
 export async function getSimulatedBlock(ethereumClientService: EthereumClientService, simulationState: SimulationState | undefined, blockTag: EthereumBlockTag, fullObjects: boolean): Promise<EthereumBlockHeader | EthereumBlockHeaderWithTransactionHashes>
 export async function getSimulatedBlock(ethereumClientService: EthereumClientService, simulationState: SimulationState | undefined, blockTag: EthereumBlockTag, fullObjects: false): Promise<EthereumBlockHeaderWithTransactionHashes>
-export async function getSimulatedBlock(ethereumClientService: EthereumClientService, simulationState: SimulationState | undefined, blockTag: EthereumBlockTag = 'latest', fullObjects: boolean = true): Promise<EthereumBlockHeader | EthereumBlockHeaderWithTransactionHashes>  {
+export async function getSimulatedBlock(ethereumClientService: EthereumClientService, simulationState: SimulationState | undefined, blockTag: EthereumBlockTag = 'latest', fullObjects = true): Promise<EthereumBlockHeader | EthereumBlockHeaderWithTransactionHashes>  {
 	if (simulationState === undefined || await canQueryNodeDirectly(ethereumClientService, simulationState, blockTag)) {
 		return await ethereumClientService.getBlock(blockTag, fullObjects)
 	}
@@ -791,7 +791,7 @@ const getSimulatedTokenBalances = async (ethereumClientService: EthereumClientSe
 	const aggregate3CallResult = multicallResults.calls[multicallResults.calls.length - 1]
 	if (aggregate3CallResult === undefined || aggregate3CallResult.status === 'failure') throw Error('Failed aggregate3')
 	const multicallReturnData: { success: boolean, returnData: string }[] = IMulticall3.decodeFunctionResult('aggregate3', dataStringWith0xStart(aggregate3CallResult.returnData))[0]
-	
+
 	if (multicallReturnData.length !== balanceQueries.length) throw Error('Got wrong number of balances back')
 	return multicallReturnData.map((singleCallResult, callIndex) => {
 		const balanceQuery = balanceQueries[callIndex]
