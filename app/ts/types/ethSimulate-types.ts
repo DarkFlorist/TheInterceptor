@@ -93,8 +93,8 @@ export const CallResultLog = funtypes.Intersect(
 export type CallResultLogs = funtypes.Static<typeof CallResultLogs>
 export const CallResultLogs = funtypes.ReadonlyArray(CallResultLog)
 
-export type ExecutionSpec383CallResultFailure = funtypes.Static<typeof ExecutionSpec383CallResultFailure>
-export const ExecutionSpec383CallResultFailure = funtypes.ReadonlyObject({
+export type EthSimulateCallResultFailure = funtypes.Static<typeof EthSimulateCallResultFailure>
+export const EthSimulateCallResultFailure = funtypes.ReadonlyObject({
 	  status: funtypes.Literal('0x0').withParser(LiteralConverterParserFactory('0x0', 'failure' as const)),
 	  returnData: EthereumData,
 	  gasUsed: EthereumQuantitySmall,
@@ -104,8 +104,8 @@ export const ExecutionSpec383CallResultFailure = funtypes.ReadonlyObject({
 	  })
 })
 
-export type ExecutionSpec383CallResultSuccess = funtypes.Static<typeof ExecutionSpec383CallResultSuccess>
-export const ExecutionSpec383CallResultSuccess = funtypes.ReadonlyObject({
+export type EthSimulateCallResultSuccess = funtypes.Static<typeof EthSimulateCallResultSuccess>
+export const EthSimulateCallResultSuccess = funtypes.ReadonlyObject({
 	returnData: EthereumData,
 	gasUsed: EthereumQuantitySmall,
 	status: funtypes.Literal('0x1').withParser(LiteralConverterParserFactory('0x1', 'success' as const)),
@@ -114,7 +114,7 @@ export const ExecutionSpec383CallResultSuccess = funtypes.ReadonlyObject({
 
 
 export type EthSimulateV1CallResult = funtypes.Static<typeof EthSimulateV1CallResult>
-export const EthSimulateV1CallResult = funtypes.Union(ExecutionSpec383CallResultFailure, ExecutionSpec383CallResultSuccess)
+export const EthSimulateV1CallResult = funtypes.Union(EthSimulateCallResultFailure, EthSimulateCallResultSuccess)
 
 export type EthSimulateV1CallResults = funtypes.Static<typeof EthSimulateV1CallResults>
 export const EthSimulateV1CallResults = funtypes.ReadonlyArray(EthSimulateV1CallResult)

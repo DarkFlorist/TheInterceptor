@@ -336,31 +336,31 @@ export function NonTokenLogEvent(params: NonTokenLogEventParams) {
 				</span>
 			</div>
 		</>
-	} else {
-		return <>
-			<div class = 'log-cell' style = { cellStyle }>
-				<SmallAddress
-					addressBookEntry = { getAddressBookEntryOrAFiller(params.addressMetaData, params.nonTokenLog.address) }
-					renameAddressCallBack = { params.renameAddressCallBack }
-				/>
-			</div>
-			<div class = 'log-cell' style = { { 'grid-column-start': 2, 'grid-column-end': 4, display: 'flex', 'flex-wrap': 'wrap' } }>
-				<p class = 'paragraph' style = { textStyle }> { `${ params.nonTokenLog.name }(` } </p>
-				{ insertBetweenElements(params.nonTokenLog.args.map((arg) =>
-					<>
-						<p style = { textStyle } class = 'paragraph'> { `${arg.paramName } =` }&nbsp;</p>
-						<EnrichedSolidityTypeComponentWithAddressBook valueType = { arg.typeValue } addressMetaData = { params.addressMetaData } renameAddressCallBack = { params.renameAddressCallBack } />
-					</>
-				), <p style = { textStyle } class = 'paragraph'>,&nbsp;</p>) }
-				<p class = 'paragraph' style = { textStyle }> { `)` } </p>
-			</div>
-		</>
 	}
+
+	return <>
+		<div class = 'log-cell' style = { cellStyle }>
+			<SmallAddress
+				addressBookEntry = { getAddressBookEntryOrAFiller(params.addressMetaData, params.nonTokenLog.address) }
+				renameAddressCallBack = { params.renameAddressCallBack }
+			/>
+		</div>
+		<div class = 'log-cell' style = { { 'grid-column-start': 2, 'grid-column-end': 4, display: 'flex', 'flex-wrap': 'wrap' } }>
+			<p class = 'paragraph' style = { textStyle }> { `${ params.nonTokenLog.name }(` } </p>
+			{ insertBetweenElements(params.nonTokenLog.args.map((arg) =>
+				<>
+					<p style = { textStyle } class = 'paragraph'> { `${arg.paramName } =` }&nbsp;</p>
+					<EnrichedSolidityTypeComponentWithAddressBook valueType = { arg.typeValue } addressMetaData = { params.addressMetaData } renameAddressCallBack = { params.renameAddressCallBack } />
+				</>
+			), <p style = { textStyle } class = 'paragraph'>,&nbsp;</p>) }
+			<p class = 'paragraph' style = { textStyle }> { `)` } </p>
+		</div>
+	</>
 }
 
 export function NonTokenLogAnalysis(param: NonLogAnalysisParams) {
 	if (param.nonTokenLogs.length === 0) return <p class = 'paragraph'> No non-token events </p>
-	return <span class = 'log-table-3' style = 'justify-content: center; column-gap: 5px; row-gap: 5px;'> 
+	return <span class = 'log-table-3' style = 'justify-content: center; column-gap: 5px; row-gap: 5px;'>
 		{ param.nonTokenLogs.map((nonTokenLog) => <NonTokenLogEvent nonTokenLog = { nonTokenLog } addressMetaData = { param.addressMetaData } renameAddressCallBack = { param.renameAddressCallBack} />) }
 	</span>
 }

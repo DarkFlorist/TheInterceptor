@@ -54,7 +54,7 @@ export const doesUniqueRequestIdentifiersMatch = (a: UniqueRequestIdentifier, b:
 	return a.requestId === b.requestId && a.requestSocket.connectionName === b.requestSocket.connectionName && a.requestSocket.tabId === b.requestSocket.tabId
 }
 
-export async function fetchWithTimeout(resource: RequestInfo | URL, init?: RequestInit | undefined, timeoutMs: number = 60000) {
+export async function fetchWithTimeout(resource: RequestInfo | URL, init?: RequestInit | undefined, timeoutMs = 60000) {
 	const controller = new AbortController()
 	const id = setTimeout(() => controller.abort(), timeoutMs)
 	try {
@@ -68,8 +68,8 @@ export async function fetchWithTimeout(resource: RequestInfo | URL, init?: Reque
 }
 
 export const safeGetTab = async (tabId: number) => {
-	const tab = await browser.tabs.get(tabId)
 	try {
+		const tab = await browser.tabs.get(tabId)
 		checkAndThrowRuntimeLastError()
 		return tab
 	} catch (e: unknown){
@@ -78,8 +78,8 @@ export const safeGetTab = async (tabId: number) => {
 }
 
 export const safeGetWindow = async (windowId: number) => {
-	const tab = await browser.windows.get(windowId)
 	try {
+		const tab = await browser.windows.get(windowId)
 		checkAndThrowRuntimeLastError()
 		return tab
 	} catch (e: unknown){

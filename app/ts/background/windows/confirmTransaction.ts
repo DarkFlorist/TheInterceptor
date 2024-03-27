@@ -165,7 +165,7 @@ export const formSendRawTransaction = async(ethereumClientService: EthereumClien
 	}
 }
 
-export const formEthSendTransaction = async(ethereumClientService: EthereumClientService, activeAddress: bigint | undefined, simulationMode: boolean = true, website: Website, sendTransactionParams: SendTransactionParams, created: Date, transactionIdentifier: EthereumQuantity): Promise<WebsiteCreatedEthereumUnsignedTransactionOrFailed> => {
+export const formEthSendTransaction = async(ethereumClientService: EthereumClientService, activeAddress: bigint | undefined, simulationMode = true, website: Website, sendTransactionParams: SendTransactionParams, created: Date, transactionIdentifier: EthereumQuantity): Promise<WebsiteCreatedEthereumUnsignedTransactionOrFailed> => {
 	const simulationState = simulationMode ? (await getSimulationResults()).simulationState : undefined
 	const parentBlockPromise = ethereumClientService.getBlock() // we are getting the real block here, as we are not interested in the current block where this is going to be included, but the parent
 	const transactionDetails = sendTransactionParams.params[0]
@@ -182,7 +182,7 @@ export const formEthSendTransaction = async(ethereumClientService: EthereumClien
 		maxFeePerGas: transactionDetails.maxFeePerGas !== undefined && transactionDetails.maxFeePerGas !== null ? transactionDetails.maxFeePerGas : parentBlock.baseFeePerGas * 2n,
 		maxPriorityFeePerGas: transactionDetails.maxPriorityFeePerGas !== undefined && transactionDetails.maxPriorityFeePerGas !== null ? transactionDetails.maxPriorityFeePerGas : 10n**8n, // 0.1 nanoEth/gas
 		to: transactionDetails.to === undefined ? null : transactionDetails.to,
-		value: transactionDetails.value != undefined  ? transactionDetails.value : 0n,
+		value: transactionDetails.value !== undefined  ? transactionDetails.value : 0n,
 		input: getInputFieldFromDataOrInput(transactionDetails),
 		accessList: [],
 	}

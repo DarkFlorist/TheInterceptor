@@ -4,7 +4,7 @@ import { TIME_BETWEEN_BLOCKS } from '../../utils/constants.js'
 import { IEthereumJSONRpcRequestHandler } from './EthereumJSONRpcRequestHandler.js'
 import { AbiCoder, Signature, ethers } from 'ethers'
 import { addressString, bytes32String } from '../../utils/bigint.js'
-import { BlockCalls, ethSimulateV1Result, StateOverrides } from '../../types/multicall-types.js'
+import { BlockCalls, ethSimulateV1Result, StateOverrides } from '../../types/ethSimulate-types.js'
 import { EthGetStorageAtResponse, EthTransactionReceiptResponse, EthGetLogsRequest, EthGetLogsResponse, DappRequestTransaction } from '../../types/JsonRpc-types.js'
 import { MessageHashAndSignature, SignatureWithFakeSignerAddress, simulatePersonalSign } from './SimulationModeEthereumClientService.js'
 import { getEcRecoverOverride } from '../../utils/ethereumByteCodes.js'
@@ -14,7 +14,7 @@ export type IEthereumClientService = Pick<EthereumClientService, keyof EthereumC
 export class EthereumClientService {
 	private cachedBlock: EthereumBlockHeader | undefined = undefined
 	private cacheRefreshTimer: NodeJS.Timer | undefined = undefined
-	private retrievingBlock: boolean = false
+	private retrievingBlock = false
 	private newBlockAttemptCallback: (blockHeader: EthereumBlockHeader, ethereumClientService: EthereumClientService, isNewBlock: boolean) => Promise<void>
 	private onErrorBlockCallback: (ethereumClientService: EthereumClientService) => Promise<void>
 	private requestHandler
@@ -111,7 +111,7 @@ export class EthereumClientService {
 	public async getBlock(blockTag?: EthereumBlockTag, fullObjects?: true): Promise<EthereumBlockHeader>
 	public async getBlock(blockTag: EthereumBlockTag, fullObjects: boolean): Promise<EthereumBlockHeaderWithTransactionHashes | EthereumBlockHeader>
 	public async getBlock(blockTag: EthereumBlockTag, fullObjects: false): Promise<EthereumBlockHeaderWithTransactionHashes>
-	public async getBlock(blockTag: EthereumBlockTag = 'latest', fullObjects: boolean = true): Promise<EthereumBlockHeaderWithTransactionHashes | EthereumBlockHeader> {
+	public async getBlock(blockTag: EthereumBlockTag = 'latest', fullObjects = true): Promise<EthereumBlockHeaderWithTransactionHashes | EthereumBlockHeader> {
 		const cached = this.getCachedBlock()
 		if (cached && (blockTag === 'latest' || blockTag === cached.number)) {
 			if (fullObjects === false) return { ...cached, transactions: cached.transactions.map((transaction) => transaction.hash) }
@@ -121,7 +121,7 @@ export class EthereumClientService {
 		return EthereumBlockHeader.parse(await this.requestHandler.jsonRpcRequest({ method: 'eth_getBlockByNumber', params: [blockTag, fullObjects] }))
 	}
 
-	public async getBlockByHash(blockHash: EthereumBytes32, fullObjects: boolean = true): Promise<EthereumBlockHeaderWithTransactionHashes | EthereumBlockHeader> {
+	public async getBlockByHash(blockHash: EthereumBytes32, fullObjects = true): Promise<EthereumBlockHeaderWithTransactionHashes | EthereumBlockHeader> {
 		const cached = this.getCachedBlock()
 		if (cached && (cached.hash === blockHash)) {
 			if (fullObjects === false) {
@@ -243,10 +243,10 @@ export class EthereumClientService {
 				...extraAccountOverrides,
 			}
 		}]
-		const multicallResults = await this.ethSimulateV1(query, blockNumber)
-		if (multicallResults.length !== 1) throw new Error('Multicalled for one block but did not get one block')
-		const singleMulticalResult = multicallResults[0]
-		if (singleMulticalResult === undefined) throw new Error('multicallResult was undefined')
+		const ethSimulateResults = await this.ethSimulateV1(query, blockNumber)
+		if (ethSimulateResults.length !== 1) throw new Error('Ran Eth Simulate for one block but did not get one block')
+		const singleMulticalResult = ethSimulateResults[0]
+		if (singleMulticalResult === undefined) throw new Error('Eth Simualte result was undefined')
 		return singleMulticalResult
 	}
 

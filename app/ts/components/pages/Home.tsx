@@ -141,7 +141,7 @@ function FirstCard(param: FirstCardParams) {
 				</div> }
 			</div>
 		</div>
-	
+
 		<SignerExplanation
 			activeAddress = { param.activeAddress }
 			simulationMode = { param.simulationMode }
@@ -171,7 +171,7 @@ function SimulationResults(param: SimulationStateParam) {
 				</button>
 			</div>
 		</div>
-		{ param.simulationAndVisualisationResults.simulatedAndVisualizedTransactions.length === 0 && param.simulationAndVisualisationResults.visualizedPersonalSignRequests.length === 0 ? 
+		{ param.simulationAndVisualisationResults.simulatedAndVisualizedTransactions.length === 0 && param.simulationAndVisualisationResults.visualizedPersonalSignRequests.length === 0 ?
 			<div style = 'padding: 10px'><DinoSays text = { 'Give me some transactions to munch on!' } /></div>
 		: <>
 			<div class = { param.simulationResultState === 'invalid' || param.simulationUpdatingState === 'failed' ? 'blur' : '' }>
@@ -218,7 +218,7 @@ export function Home(param: HomeParams) {
 	const [simulationUpdatingState, setSimulationUpdatingState] = useState<SimulationUpdatingState | undefined>(undefined)
 	const [simulationResultState, setSimulationResultState] = useState<SimulationResultState | undefined>(undefined)
 	const [interceptorDisabled, setInterceptorDisabled] = useState<boolean>(false)
-	
+
 	useEffect(() => {
 		setSimulationAndVisualisationResults(param.simVisResults)
 		setUseSignersAddressAsActiveAddress(param.useSignersAddressAsActiveAddress)
@@ -270,10 +270,9 @@ export function Home(param: HomeParams) {
 	async function removeTransactionOrSignedMessage(transactionOrMessageIdentifier: TransactionOrMessageIdentifier) {
 		if (transactionOrMessageIdentifier.type === 'MakeYouRichTransaction') {
 			return await enableMakeMeRich(false)
-		} else {
-			setRemovedTransactionOrSignedMessages((transactionOrMessageIdentifiers) => transactionOrMessageIdentifiers.concat(transactionOrMessageIdentifier))
-			return await sendPopupMessageToBackgroundPage({ method: 'popup_removeTransactionOrSignedMessage', data: transactionOrMessageIdentifier })
 		}
+		setRemovedTransactionOrSignedMessages((transactionOrMessageIdentifiers) => transactionOrMessageIdentifiers.concat(transactionOrMessageIdentifier))
+		return await sendPopupMessageToBackgroundPage({ method: 'popup_removeTransactionOrSignedMessage', data: transactionOrMessageIdentifier })
 	}
 
 	async function disableInterceptorToggle() {

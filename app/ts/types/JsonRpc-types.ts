@@ -1,7 +1,7 @@
 import * as funtypes from 'funtypes'
 import { EthereumAddress, EthereumBlockHeader, EthereumBlockHeaderWithTransactionHashes, EthereumBlockTag, EthereumBytes256, EthereumBytes32, EthereumData, EthereumInput, EthereumQuantity, EthereumUnsignedTransaction, LiteralConverterParserFactory } from './wire-types.js'
 import { areEqualUint8Arrays } from '../utils/typed-arrays.js'
-import { EthSimulateV1CallResult, EthSimulateV1Params } from './multicall-types.js'
+import { EthSimulateV1CallResult, EthSimulateV1Params } from './ethSimulate-types.js'
 import { OldSignTypedDataParams, PersonalSignParams, SignTypedDataParams } from './jsonRpc-signing-types.js'
 import { CodeMessageError } from './rpc.js'
 
@@ -77,15 +77,10 @@ export const DappRequestTransaction = funtypes.ReadonlyPartial({
 	return true
 })
 .withConstraint((x) => {
-	if (x.gasPrice !== undefined) {
-		return x.maxPriorityFeePerGas === undefined && x.maxFeePerGas === undefined
-	} else if (x.maxPriorityFeePerGas !== undefined) {
-		return x.maxFeePerGas !== undefined && x.gasPrice === undefined
-	} else if (x.maxFeePerGas !== undefined) {
-		return x.maxPriorityFeePerGas !== undefined && x.gasPrice === undefined
-	} else {
-		return true
-	}
+	if (x.gasPrice !== undefined) return x.maxPriorityFeePerGas === undefined && x.maxFeePerGas === undefined
+	if (x.maxPriorityFeePerGas !== undefined) return x.maxFeePerGas !== undefined && x.gasPrice === undefined
+	if (x.maxFeePerGas !== undefined) return x.maxPriorityFeePerGas !== undefined && x.gasPrice === undefined
+	return true
 })
 
 export type EthTransactionReceiptResponse = funtypes.Static<typeof EthTransactionReceiptResponse>
