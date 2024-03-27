@@ -180,27 +180,34 @@ export function InterceptorAccess() {
 	const [pendingRequestAddedNotification, setPendingRequestAddedNotification] = useState<boolean>(false)
 
 	useEffect(() => {
-		async function popupMessageListener(msg: unknown) {
+		function popupMessageListener(msg: unknown) {
 			const maybeParsed = MessageToPopup.safeParse(msg)
 			if (!maybeParsed.success) return // not a message we are interested in
 			const parsed = maybeParsed.value
-			if (parsed.method === 'popup_addressBookEntriesChanged') return refreshMetadata()
-			if (parsed.method === 'popup_websiteAccess_changed') return refreshMetadata()
-			if (parsed.method === 'popup_interceptorAccessDialog' || parsed.method === 'popup_interceptor_access_dialog_pending_changed') {
-				if (parsed.method === 'popup_interceptor_access_dialog_pending_changed') {
+
+			switch(parsed.method) {
+				case 'popup_addressBookEntriesChanged':
+				case 'popup_websiteAccess_changed':
+					return refreshMetadata()
+				case 'popup_interceptorAccessDialog':
+					setAccessRequest(parsed.data.pendingAccessRequests)
+					setActiveAddresses(parsed.data.activeAddresses)
+					return
+				case 'popup_interceptor_access_dialog_pending_changed':
 					if (pendingAccessRequestArray.length > 0) setInformationUpdatedTimestamp(Date.now())
 					setPendingRequestAddedNotification(true)
-				}
-				setAccessRequest(parsed.data.pendingAccessRequests)
-				setActiveAddresses(parsed.data.activeAddresses)
-				return
+					setAccessRequest(parsed.data.pendingAccessRequests)
+					setActiveAddresses(parsed.data.activeAddresses)
+					return
+				default:
+					return
 			}
 		}
 		browser.runtime.onMessage.addListener(popupMessageListener)
 		return () => browser.runtime.onMessage.removeListener(popupMessageListener)
 	})
 
-	
+
 	useEffect(() => { sendPopupMessageToBackgroundPage({ method: 'popup_interceptorAccessReadyAndListening' }) }, [])
 
 	async function approve() {
@@ -303,7 +310,7 @@ export function InterceptorAccess() {
 				Grant Access
 			</button>
 		</div>
-	}	
+	}
 	function addNewAddress() {
 		setAppPage({ page: 'AddNewAddress', state: {
 			windowStateId: 'AddNewAddressAccess',

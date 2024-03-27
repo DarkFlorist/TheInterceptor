@@ -85,7 +85,7 @@ export function App() {
 	const [interceptorDisabled, setInterceptorDisabled] = useState<boolean>(false)
 	const [unexpectedError, setUnexpectedError] = useState<string | undefined>(undefined)
 
-	async function setActiveAddressAndInformAboutIt(address: bigint | 'signer') {
+	function setActiveAddressAndInformAboutIt(address: bigint | 'signer') {
 		setUseSignersAddressAsActiveAddress(address === 'signer')
 		if (address === 'signer') {
 			sendPopupMessageToBackgroundPage({ method: 'popup_changeActiveAddress', data: { activeAddress: 'signer', simulationMode: simulationMode } })
@@ -109,7 +109,7 @@ export function App() {
 			)
 	}
 
-	async function setActiveRpcAndInformAboutIt(entry: RpcEntry) {
+	function setActiveRpcAndInformAboutIt(entry: RpcEntry) {
 		sendPopupMessageToBackgroundPage({ method: 'popup_changeActiveRpc', data: entry })
 		if(!isSignerConnected()) {
 			setSelectedNetwork(entry)
@@ -199,7 +199,7 @@ export function App() {
 					return setRpcConnectionStatus(parsed.data.rpcConnectionStatus)
 				}
 				case 'popup_failed_to_get_block': return setRpcConnectionStatus(parsed.data.rpcConnectionStatus)
-				case 'popup_update_rpc_list': return 
+				case 'popup_update_rpc_list': return
 				case 'popup_simulation_state_changed': return await sendPopupMessageToBackgroundPage({ method: 'popup_refreshHomeData' })
 			}
 			if (parsed.method !== 'popup_UpdateHomePage') return await sendPopupMessageToBackgroundPage({ method: 'popup_requestNewHomeData' })
@@ -216,7 +216,7 @@ export function App() {
 		sendPopupMessageToBackgroundPage({ method: 'popup_changePage', data: page })
 	}
 
-	async function addressPaste(address: string) {
+	function addressPaste(address: string) {
 		if (appPage.page === 'AddNewAddress') return
 
 		const trimmed = address.trim()
@@ -225,7 +225,7 @@ export function App() {
 		const bigIntReprentation = BigInt(trimmed)
 		// see if we have that address, if so, let's switch to it
 		for (const activeAddress of activeAddresses) {
-			if (activeAddress.address === bigIntReprentation) return await setActiveAddressAndInformAboutIt(activeAddress.address)
+			if (activeAddress.address === bigIntReprentation) return setActiveAddressAndInformAboutIt(activeAddress.address)
 		}
 
 		// address not found, let's promt user to create it
@@ -313,7 +313,7 @@ export function App() {
 								</a>
 							</div>
 						</nav>
-						
+
 						<UnexpectedError close = { () => { setUnexpectedError(undefined) } } message = { unexpectedError }/>
 						<NetworkErrors rpcConnectionStatus = { rpcConnectionStatus }/>
 						<ProviderErrors tabState = { tabState }/>
