@@ -2,11 +2,13 @@ import { EthereumClientService } from '../../app/ts/simulation/services/Ethereum
 import { appendTransaction, getSimulatedBlock, getSimulatedTransactionByHash } from '../../app/ts/simulation/services/SimulationModeEthereumClientService.js'
 import { EthereumSignedTransactionWithBlockData, serialize } from '../../app/ts/types/wire-types.js'
 import { GetBlockReturn, JsonRpcResponse, EthereumJsonRpcRequest } from '../../app/ts/types/JsonRpc-types.js'
-import { eth_getBlockByNumber_goerli_8443561_false, eth_getBlockByNumber_goerli_8443561_true, eth_simulateV1_dummy_call_result, eth_transactionByhash0xe10c2a85168046080235fff99e2e14ef1e90c8cf5e9d675f2ca214e49e555e0f } from '../nethermindRPCResponses.js'
+import { eth_getBlockByNumber_goerli_8443561_false, eth_getBlockByNumber_goerli_8443561_true, eth_simulateV1_dummy_call_result, eth_simulateV1_get_eth_balance_multicall, eth_transactionByhash0xe10c2a85168046080235fff99e2e14ef1e90c8cf5e9d675f2ca214e49e555e0f } from '../RPCResponses.js'
 import { describe, should } from '../micro-should.js'
 import * as assert from 'assert'
 import { assertIsObject } from '../../app/ts/utils/typescript.js'
 import { RpcEntry } from '../../app/ts/types/rpc.js'
+import { stringToUint8Array } from '../../app/ts/utils/bigint.js'
+import { areEqualUint8Arrays } from '../../app/ts/utils/typed-arrays.js'
 
 function parseRequest(data: string) {
 	const jsonRpcResponse = JsonRpcResponse.parse(JSON.parse(data))
@@ -23,7 +25,6 @@ class MockEthereumJSONRpcRequestHandler {
 	public clearCache = () => {}
 
 	public readonly jsonRpcRequest = async (rpcRequest: EthereumJsonRpcRequest) => {
-		console.log(rpcRequest)
 		switch (rpcRequest.method) {
 			case 'eth_blockNumber': return `0x${ 8443561n.toString(16) }`
 			case 'eth_getBlockByNumber': {
@@ -31,7 +32,13 @@ class MockEthereumJSONRpcRequestHandler {
 				if (rpcRequest.params[1] === true) return parseRequest(eth_getBlockByNumber_goerli_8443561_true)
 				return parseRequest(eth_getBlockByNumber_goerli_8443561_false)
 			}
-			case 'eth_simulateV1': return parseRequest(eth_simulateV1_dummy_call_result)
+			case 'eth_simulateV1': {
+				if (areEqualUint8Arrays(rpcRequest.params[0]?.blockStateCalls[0]?.calls[1]?.input, stringToUint8Array('0x82ad56cb000000000000000000000000000000000000000000000000000000000000002000000000000000000000000000000000000000000000000000000000000000010000000000000000000000000000000000000000000000000000000000000020000000000000000000000000ca11bde05977b3631167028862be2a173976ca110000000000000000000000000000000000000000000000000000000000000001000000000000000000000000000000000000000000000000000000000000006000000000000000000000000000000000000000000000000000000000000000244d2301cc000000000000000000000000d8da6bf26964af9d7eed9e03e53415d37aa9604500000000000000000000000000000000000000000000000000000000'))) {
+					// get eth balance query
+					return parseRequest(eth_simulateV1_get_eth_balance_multicall)
+				}
+				return parseRequest(eth_simulateV1_dummy_call_result)
+			}
 			case 'eth_getTransactionByHash': {
 				if (rpcRequest.params[0] === 0xe10c2a85168046080235fff99e2e14ef1e90c8cf5e9d675f2ca214e49e555e0fn) {
 					return parseRequest(eth_transactionByhash0xe10c2a85168046080235fff99e2e14ef1e90c8cf5e9d675f2ca214e49e555e0f)
@@ -64,6 +71,7 @@ export async function main() {
 		blockNumber: blockNumber,
 		blockTimestamp: new Date(0),
 		rpcNetwork: rpcNetwork,
+		baseFeePerGas: 0n,
 		simulationConductedTimestamp: new Date(0),
 		signedMessages: [],
 	}
