@@ -60,8 +60,8 @@ export function formSimulatedAndVisualizedTransaction(simState: SimulationState,
 				}
 			}
 			console.warn('unknown token in token results:')
-			console.log(change)
-			console.log(tokenEntry)
+			// biome-ignore lint/suspicious/noConsoleLog: <Used for support debugging>
+			console.log({ change, tokenEntry })
 			return undefined
 		}).filter(<T>(x: T | undefined): x is T => x !== undefined)
 		const removeFromAndToFromSignedTransaction = () => {

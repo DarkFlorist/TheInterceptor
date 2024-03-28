@@ -30,7 +30,14 @@ const arePropValuesEqual = <T>(subject: T, target: T, propNames: (keyof T)[]): b
 
 export const getUniqueItemsByProperties = <T>(items: T[], propNames: (keyof T)[]): T[] => items.filter((item, index, array) => index === array.findIndex(foundItem => arePropValuesEqual(foundItem, item, propNames)))
 
-export function replaceElementInReadonlyArray<T>(originalArray: ReadonlyArray<T>, index: number, newValue: T): ReadonlyArray<T> {
+export function includesWithComparator<T>(array: readonly T[], searchElement: T, comparator: (a: T, b: T) => boolean): boolean {
+	for (const element of array) {
+		if (comparator(element, searchElement)) return true
+	}
+	return false
+}
+
+export function replaceElementInReadonlyArray<T>(originalArray: readonly T[], index: number, newValue: T): readonly T[] {
 	if (index < 0 || index >= originalArray.length) throw new Error('Index is out of bounds')
 	const newArray = [...originalArray]
 	newArray[index] = newValue

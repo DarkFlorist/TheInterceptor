@@ -131,9 +131,10 @@ export async function closePopupOrTabById(popupOrTabId: PopupOrTabId) {
 			default: assertNever(popupOrTabId.type)
 		}
 		checkAndThrowRuntimeLastError()
-	} catch(e) {
-		console.log(`Failed to close ${ popupOrTabId.type }: ${ popupOrTabId.id }`)
-		console.warn(e)
+	} catch(error) {
+		console.warn(`Failed to close ${ popupOrTabId.type }: ${ popupOrTabId.id }`)
+		// biome-ignore lint/suspicious/noConsoleLog: <Used for support debugging>
+		console.log({ error })
 	}
 }
 

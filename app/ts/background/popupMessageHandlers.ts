@@ -337,11 +337,10 @@ export async function changeSettings(simulator: Simulator, parsedRequest: Change
 }
 
 export async function importSettings(settingsData: ImportSettings) {
-	console.log(settingsData.data.fileContents)
 	if (!isJSON(settingsData.data.fileContents)) {
 		return await sendPopupMessageToOpenWindows({
 			method: 'popup_initiate_export_settings_reply',
-			data: { success: false, errorMessage: 'Failed to read the file. It is not a valid JSOn file.' }
+			data: { success: false, errorMessage: 'Failed to read the file. It is not a valid JSON file.' }
 		})
 	}
 	const parsed = ExportedSettings.safeParse(JSON.parse(settingsData.data.fileContents))
@@ -469,9 +468,10 @@ export async function openWebPage(parsedRequest: OpenWebPage) {
 	try {
 		browser.tabs.update(parsedRequest.data.websiteSocket.tabId, { url: parsedRequest.data.url, active: true })
 		checkAndThrowRuntimeLastError()
-	} catch(e) {
+	} catch(error) {
 		console.warn('Failed to update tab with new webpage')
-		console.log(e)
+		// biome-ignore lint/suspicious/noConsoleLog: <used for support debugging>
+		console.log({ error })
 	}
 	finally {
 		return await browser.tabs.create({ url: parsedRequest.data.url, active: true })

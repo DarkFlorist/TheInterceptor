@@ -12,7 +12,7 @@ const setPopupFile = async () => {
 setPopupFile()
 
 self.addEventListener('install', () => {
-	console.log('The Interceptor installed')
+	console.info('The Interceptor installed')
 })
 
 self.addEventListener('activate', () => clearTabStates())

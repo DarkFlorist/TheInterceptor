@@ -70,8 +70,8 @@ export const DappRequestTransaction = funtypes.ReadonlyPartial({
 .withConstraint((x) => {
 	if (x.gasPrice !== undefined) return x.maxPriorityFeePerGas === undefined && x.maxFeePerGas === undefined
 	if (x.maxPriorityFeePerGas !== undefined) return x.maxFeePerGas !== undefined && x.gasPrice === undefined
-	if (x.maxFeePerGas !== undefined) return x.maxPriorityFeePerGas !== undefined && x.gasPrice === undefined
-	return true
+	if (x.maxFeePerGas !== undefined) return x.gasPrice === undefined /* && x.maxPriorityFeePerGas !== undefined*/ //Remix doesn't send "maxPriorityFeePerGas" with "maxFeePerGas"
+  return true
 })
 
 export type EthTransactionReceiptResponse = funtypes.Static<typeof EthTransactionReceiptResponse>
@@ -278,15 +278,17 @@ export const GetSimulationStackReply = funtypes.ReadonlyArray(funtypes.Intersect
 	EthereumUnsignedTransaction,
 	EthSimulateV1CallResult,
 	funtypes.ReadonlyObject({
+		balanceChanges: EthBalanceChanges,
 		realizedGasPrice: EthereumQuantity,
 		gasLimit: EthereumQuantity,
+		gasSpent: EthereumQuantity,
 	}).asReadonly(),
 ))
 
 export type GetSimulationStack = funtypes.Static<typeof GetSimulationStack>
 export const GetSimulationStack = funtypes.ReadonlyObject({
 	method: funtypes.Literal('interceptor_getSimulationStack'),
-	params: funtypes.ReadonlyTuple(funtypes.Literal('1.0.0')),
+	params: funtypes.ReadonlyTuple(funtypes.Union(funtypes.Literal('1.0.0'), funtypes.Literal('1.0.1') ))
 }).asReadonly()
 
 export type WalletAddEthereumChain = funtypes.Static<typeof WalletAddEthereumChain>

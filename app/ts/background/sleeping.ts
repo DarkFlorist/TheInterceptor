@@ -6,7 +6,7 @@ import { isConfirmTransactionFocused } from "./windows/confirmTransaction.js"
 export const makeSureInterceptorIsNotSleeping = (ethereumClientService: EthereumClientService) => {
 	setInterceptorStartSleepingTimestamp(Date.now() + TIME_BETWEEN_BLOCKS * 2 * 1000)
 	if (!ethereumClientService.isBlockPolling()) {
-		console.log('The Interceptor woke up! ⏰')
+		console.info('The Interceptor woke up! ⏰')
 		ethereumClientService.setBlockPolling(true)
 	}
 }
@@ -19,7 +19,7 @@ export const checkIfInterceptorShouldSleep = async (ethereumClientService: Ether
 	await checkConfirmTransaction(ethereumClientService)
 	const startSleping = await getInterceptorStartSleepingTimestamp()
 	if (startSleping < Date.now() && ethereumClientService.isBlockPolling()) {
-		console.log('The Interceptor started to sleep 😴')
+		console.info('The Interceptor started to sleep 😴')
 		ethereumClientService.setBlockPolling(false)
 	}
 }
