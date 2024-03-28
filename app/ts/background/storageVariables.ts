@@ -27,8 +27,6 @@ export async function getPendingTransactionsAndMessages(): Promise<readonly Pend
 }
 
 export const clearPendingTransactions = async () => await updatePendingTransactionOrMessages(async () => [])
-
-const pendingTransactionsSemaphore = new Semaphore(1)
 async function updatePendingTransactionOrMessages(update: (pendingTransactionsOrMessages: readonly PendingTransactionOrSignableMessage[]) => Promise<readonly PendingTransactionOrSignableMessage[]>) {
 	return await pendingTransactionsSemaphore.execute(async () => {
 		const pendingTransactionsAndMessages = await update(await getPendingTransactionsAndMessages())
