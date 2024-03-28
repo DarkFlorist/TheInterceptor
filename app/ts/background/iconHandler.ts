@@ -37,7 +37,7 @@ export async function updateExtensionIcon(tabId: number, websiteOrigin: string) 
 }
 
 export function noNewBlockForOverTwoMins(connectionStatus: RpcConnectionStatus) {
-	return connectionStatus && connectionStatus.latestBlock && (connectionStatus.lastConnnectionAttempt.getTime() - connectionStatus.latestBlock.timestamp.getTime()) > 2 * 60 * 1000
+	return connectionStatus?.latestBlock && (connectionStatus.lastConnnectionAttempt.getTime() - connectionStatus.latestBlock.timestamp.getTime()) > 2 * 60 * 1000
 }
 
 export async function updateExtensionBadge() {

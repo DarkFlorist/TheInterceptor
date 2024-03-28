@@ -1,6 +1,8 @@
 import { getInterceptorDisabledSites, getSettings } from "../background/settings.js"
+import { checkAndThrowRuntimeLastError } from "./requests.js"
 
-const matches = ['file://*/*', 'http://*/*', 'https://*/*']
+const injectableSitesWildcard = ['file://*/*', 'http://*/*', 'https://*/*']
+const injectableSitesRegexp = [/^file:\/\/.*/, /^http:\/\/.*/, /^https:\/\/.*/]
 
 export const updateContentScriptInjectionStrategyManifestV3 = async () => {
 	const excludeMatches = getInterceptorDisabledSites(await getSettings()).map((origin) => `*://*.${ origin }/*`)
@@ -12,13 +14,13 @@ export const updateContentScriptInjectionStrategyManifestV3 = async () => {
 		await browser.scripting.unregisterContentScripts()
 		await fixedRegisterContentScripts([{
 			id: 'inpage2',
-			matches,
+			matches: injectableSitesWildcard,
 			excludeMatches,
 			js: ['/vendor/webextension-polyfill/browser-polyfill.js', '/inpage/js/listenContentScript.js'],
 			runAt: 'document_start',
 		}, {
 			id: 'inpage',
-			matches,
+			matches: injectableSitesWildcard,
 			excludeMatches,
 			js: ['/inpage/js/inpage.js'],
 			runAt: 'document_start',
@@ -30,15 +32,17 @@ export const updateContentScriptInjectionStrategyManifestV3 = async () => {
 }
 
 const injectLogic = async (content: browser.webNavigation._OnCommittedDetails) => {
+	if (!injectableSitesRegexp.some(regexpPattern => regexpPattern.test(content.url))) return
 	const disabledSites = getInterceptorDisabledSites(await getSettings())
 	const hostName = new URL(content.url).hostname
 	const noMatches = disabledSites.every(excludeMatch => hostName !== excludeMatch)
 	if (!noMatches) return
-	browser.tabs.executeScript(content.tabId, { file: '/vendor/webextension-polyfill/browser-polyfill.js', allFrames: false, runAt: 'document_start' })
-	browser.tabs.executeScript(content.tabId, { file: '/inpage/output/injected_document_start.js', allFrames: false, runAt: 'document_start' })
+	await browser.tabs.executeScript(content.tabId, { file: '/vendor/webextension-polyfill/browser-polyfill.js', allFrames: false, runAt: 'document_start' })
+	await browser.tabs.executeScript(content.tabId, { file: '/inpage/output/injected_document_start.js', allFrames: false, runAt: 'document_start' })
+	checkAndThrowRuntimeLastError()
 }
 
 export const updateContentScriptInjectionStrategyManifestV2 = async () => {
 	browser.webNavigation.onCommitted.removeListener(injectLogic)
-	browser.webNavigation.onCommitted.addListener(injectLogic, { url: matches.map((urlMatches) => ({ urlMatches })) })
+	browser.webNavigation.onCommitted.addListener(injectLogic, { url: injectableSitesWildcard.map((urlMatches) => ({ urlMatches })) })
 }

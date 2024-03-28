@@ -160,8 +160,8 @@ export const updateSimulationMetadata = async (ethereum: EthereumClientService) 
 
 const updateSimulationStateSemaphore = new Semaphore(1)
 
-export async function updateSimulationState(ethereum: EthereumClientService, getUpdatedSimulationState: (simulationState: SimulationState | undefined) => Promise<SimulationState | undefined>, activeAddress: bigint | undefined, invalidateOldState: boolean, onlyIfNotAlreadyUpdating: boolean = false) {
-	if (onlyIfNotAlreadyUpdating && updateSimulationStateSemaphore.getPermits() == 0) return
+export async function updateSimulationState(ethereum: EthereumClientService, getUpdatedSimulationState: (simulationState: SimulationState | undefined) => Promise<SimulationState | undefined>, activeAddress: bigint | undefined, invalidateOldState: boolean, onlyIfNotAlreadyUpdating = false) {
+	if (onlyIfNotAlreadyUpdating && updateSimulationStateSemaphore.getPermits() === 0) return
 	return await updateSimulationStateSemaphore.execute(async () => {
 		const simulationResults = await getSimulationResults()
 		const simulationId = simulationResults.simulationId + 1

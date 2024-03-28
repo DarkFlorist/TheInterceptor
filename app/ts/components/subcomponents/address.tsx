@@ -56,7 +56,7 @@ export type BigAddressParams = {
 export function BigAddress(params: BigAddressParams) {
 	const addrString = params.addressBookEntry && checksummedAddress(params.addressBookEntry.address)
 	const title = params.addressBookEntry === undefined ? 'No address found' : params.addressBookEntry.name
-	const subTitle = title != addrString ? addrString : ''
+	const subTitle = title !== addrString ? addrString : ''
 
 	return <div class = 'media'>
 		<div class = 'media-left'>

@@ -9,7 +9,7 @@ import { EthGetLogsResponse, EthGetLogsRequest, EthTransactionReceiptResponse, D
 import { handleERC1155TransferBatch, handleERC1155TransferSingle, handleERC20TransferLog } from '../logHandlers.js'
 import { assertNever } from '../../utils/typescript.js'
 import { SignMessageParams } from '../../types/jsonRpc-signing-types.js'
-import { EthSimulateV1CallResults, EthereumEvent, StateOverrides } from '../../types/multicall-types.js'
+import { EthSimulateV1CallResults, EthereumEvent, StateOverrides } from '../../types/ethSimulate-types.js'
 import { getCodeByteCode } from '../../utils/ethereumByteCodes.js'
 
 const MOCK_PUBLIC_PRIVATE_KEY = 0x1n // key used to sign mock transactions
@@ -142,7 +142,7 @@ export const simulateEstimateGas = async (ethereumClientService: EthereumClientS
 				message: `Multicall failed to estimate gas`,
 				data: '',
 			},
-		} as const 
+		} as const
 	}
 	if (lastResult.status === 'failure') {
 		return {
@@ -151,7 +151,7 @@ export const simulateEstimateGas = async (ethereumClientService: EthereumClientS
 				message: `failed to estimate gas: "${ lastResult.error }"`,
 				data: dataStringWith0xStart(lastResult.returnData),
 			},
-		} as const 
+		} as const
 	}
 	const gasSpent = lastResult.gasUsed * 125n * 64n / (100n * 63n) // add 25% * 64 / 63 extra  to account for gas savings <https://eips.ethereum.org/EIPS/eip-3529>
 	return { gas: gasSpent < maxGas ? gasSpent : maxGas }
@@ -171,12 +171,12 @@ export const mockSignTransaction = (transaction: EthereumUnsignedTransaction) : 
 		const hash = EthereumQuantity.parse(keccak256(serializeSignedTransactionToBytes({ ...unsignedTransaction, ...signatureParams })))
 		if (transaction.type !== 'legacy') throw new Error('types do not match')
 		return { ...transaction, ...signatureParams, hash }
-	} else {
-		const signatureParams = { r: 0n, s: 0n, yParity: 'even' as const }
-		const hash = EthereumQuantity.parse(keccak256(serializeSignedTransactionToBytes({ ...unsignedTransaction, ...signatureParams })))
-		if (transaction.type === 'legacy') throw new Error('types do not match')
-		return { ...transaction, ...signatureParams, hash }
 	}
+
+	const signatureParams = { r: 0n, s: 0n, yParity: 'even' as const }
+	const hash = EthereumQuantity.parse(keccak256(serializeSignedTransactionToBytes({ ...unsignedTransaction, ...signatureParams })))
+	if (transaction.type === 'legacy') throw new Error('types do not match')
+	return { ...transaction, ...signatureParams, hash }
 }
 
 export const appendTransaction = async (ethereumClientService: EthereumClientService, simulationState: SimulationState | undefined, transaction: WebsiteCreatedEthereumUnsignedTransactionOrFailed): Promise<SimulationState> => {
@@ -185,7 +185,7 @@ export const appendTransaction = async (ethereumClientService: EthereumClientSer
 		const signed = mockSignTransaction(transaction.transaction)
 		return simulationState === undefined ? [signed] : simulationState.simulatedTransactions.map((x) => x.signedTransaction).concat([signed])
 	}
-	
+
 	const parentBlock = await ethereumClientService.getBlock()
 	const parentBaseFeePerGas = parentBlock.baseFeePerGas
 	if (parentBaseFeePerGas === undefined) throw new Error(CANNOT_SIMULATE_OFF_LEGACY_BLOCK)
@@ -337,7 +337,7 @@ export const removeTransactionAndUpdateTransactionNonces = async (ethereumClient
 	const transactionToBeRemoved = simulationState.simulatedTransactions.find((transaction) => transaction.transactionIdentifier === transactionIdentifier)
 	if (transactionToBeRemoved === undefined) return simulationState
 
-	let newTransactions: WebsiteCreatedEthereumUnsignedTransaction[] = []
+	const newTransactions: WebsiteCreatedEthereumUnsignedTransaction[] = []
 	let transactionWasFound = false
 
 	for (const transaction of getNonPrependedSimulatedTransactionsFromState(simulationState)) {
@@ -420,7 +420,7 @@ export const refreshSimulationState = async (ethereumClientService: EthereumClie
 	}
 	const transactions = (await getNonceFixedTransactions()).map((x) => convertSimulatedTransactionToWebsiteCreatedEthereumUnsignedTransaction(x))
 	const baseFeeAdjustedTransactions = getBaseFeeAdjustedTransactions(await parentBlockPromise, transactions)
-	return await setSimulationTransactionsAndSignedMessages(ethereumClientService, simulationState, baseFeeAdjustedTransactions, simulationState.signedMessages)	
+	return await setSimulationTransactionsAndSignedMessages(ethereumClientService, simulationState, baseFeeAdjustedTransactions, simulationState.signedMessages)
 }
 
 export const resetSimulationState = async (ethereumClientService: EthereumClientService, simulationState: SimulationState): Promise<SimulationState> => {
@@ -606,7 +606,7 @@ export async function getSimulatedBlockByHash(ethereumClientService: EthereumCli
 export async function getSimulatedBlock(ethereumClientService: EthereumClientService, simulationState: SimulationState | undefined, blockTag?: EthereumBlockTag, fullObjects?: true): Promise<EthereumBlockHeader>
 export async function getSimulatedBlock(ethereumClientService: EthereumClientService, simulationState: SimulationState | undefined, blockTag: EthereumBlockTag, fullObjects: boolean): Promise<EthereumBlockHeader | EthereumBlockHeaderWithTransactionHashes>
 export async function getSimulatedBlock(ethereumClientService: EthereumClientService, simulationState: SimulationState | undefined, blockTag: EthereumBlockTag, fullObjects: false): Promise<EthereumBlockHeaderWithTransactionHashes>
-export async function getSimulatedBlock(ethereumClientService: EthereumClientService, simulationState: SimulationState | undefined, blockTag: EthereumBlockTag = 'latest', fullObjects: boolean = true): Promise<EthereumBlockHeader | EthereumBlockHeaderWithTransactionHashes>  {
+export async function getSimulatedBlock(ethereumClientService: EthereumClientService, simulationState: SimulationState | undefined, blockTag: EthereumBlockTag = 'latest', fullObjects = true): Promise<EthereumBlockHeader | EthereumBlockHeaderWithTransactionHashes>  {
 	if (simulationState === undefined || await canQueryNodeDirectly(ethereumClientService, simulationState, blockTag)) {
 		return await ethereumClientService.getBlock(blockTag, fullObjects)
 	}
@@ -783,10 +783,11 @@ const getSimulatedTokenBalances = async (ethereumClientService: EthereumClientSe
 	if (balanceQueries.length === 0) return []
 	function removeDuplicates(queries: BalanceQuery[]): BalanceQuery[] {
 		const unique: Map<string, BalanceQuery> = new Map()
-		queries.forEach(query => {
-			const key = query.type === 'ERC20' ? `ERC20-${ query.token }-${ query.owner }` : `ERC1155-${ query.token }-${ query.owner }-${ query.tokenId }`
-			if (!unique.has(key)) unique.set(key, query)
-		})
+		for (const query of queries) {
+			const key = `${query.type}-${query.token}-${query.owner}${ query.type === 'ERC1155' ? `${query.tokenId}` : ''}`
+			if (unique.has(key)) continue
+			unique.set(key, query)
+		}
 		return Array.from(unique.values())
 	}
 
@@ -831,8 +832,7 @@ const getSimulatedTokenBalances = async (ethereumClientService: EthereumClientSe
 	const aggregate3CallResult = multicallResults.calls[multicallResults.calls.length - 1]
 	if (aggregate3CallResult === undefined || aggregate3CallResult.status === 'failure') throw Error('Failed aggregate3')
 	const multicallReturnData: { success: boolean, returnData: string }[] = IMulticall3.decodeFunctionResult('aggregate3', dataStringWith0xStart(aggregate3CallResult.returnData))[0]
-	
-	if (multicallReturnData.length !== deduplicatedBalanceQueries.length) throw Error('Got wrong number of balances back')
+  if (multicallReturnData.length !== deduplicatedBalanceQueries.length) throw Error('Got wrong number of balances back')
 	return multicallReturnData.map((singleCallResult, callIndex) => {
 		const balanceQuery = deduplicatedBalanceQueries[callIndex]
 		if (balanceQuery === undefined) throw new Error('aggregate3 failed to get eth balance')
