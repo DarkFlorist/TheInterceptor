@@ -853,12 +853,12 @@ const getAddressesAndTokensIdsInteractedWithErc1155s = (events: readonly Ethereu
 				break
 			}
 			case 'TransferBatch': {
-				handleERC1155TransferBatch(log).forEach((parsedLog) => {
-					if (parsedLog.type !== 'ERC1155') return
-					tokenOwners.push({ ...base, owner: parsedLog.from, tokenId: parsedLog.tokenId })
-					tokenOwners.push({ ...base, owner: parsedLog.to, tokenId: parsedLog.tokenId })
-				})
-				break
+				for (const parsedLog of handleERC1155TransferBatch(log)) {
+					if (parsedLog.type !== "ERC1155") continue;
+					tokenOwners.push({ ...base, owner: parsedLog.from, tokenId: parsedLog.tokenId });
+					tokenOwners.push({ ...base, owner: parsedLog.to, tokenId: parsedLog.tokenId });
+				}
+				break;
 			}
 			default: throw new Error(`wrong name: ${ parsed.name }`)
 		}
