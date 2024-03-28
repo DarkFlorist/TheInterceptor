@@ -83,7 +83,6 @@ export async function getSimulationResults() {
 	} catch (error) {
 		console.warn('Simulation results were corrupt:')
 		console.warn(error)
-		await updateSimulationResults(emptyResults)
 		await simulationResultsSemaphore.execute(async () => await browserStorageLocalSet({ simulationResults: emptyResults }))
 		return emptyResults
 	}

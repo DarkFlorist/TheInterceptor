@@ -50,6 +50,15 @@ export const EthGetFeeHistoryResponse = funtypes.Intersect(
 	})
 )
 
+export type EthBalanceChanges = funtypes.Static<typeof EthBalanceChanges>
+export const EthBalanceChanges = funtypes.ReadonlyArray(
+	funtypes.ReadonlyObject({
+		address: EthereumAddress,
+		before: EthereumQuantity,
+		after: EthereumQuantity,
+	}).asReadonly()
+)
+
 export type DappRequestTransaction = funtypes.Static<typeof DappRequestTransaction>
 export const DappRequestTransaction = funtypes.ReadonlyPartial({
 	from: EthereumAddress,
