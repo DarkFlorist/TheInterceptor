@@ -1,13 +1,13 @@
 import { ethers } from 'ethers'
 
 // common contract addresses
-export const SUSHISWAP_FACTORY_ADDRESS = 0xC0AEe478e3658e2610c5F7A4A2E1777cE9e4f2Acn
 export const UNISWAP_V2_ROUTER_ADDRESS = 0x7a250d5630B4cF539739dF2C5dAcb4c659F2488Dn
 export const SUSHISWAP_V2_ROUTER_ADDRESS = 0xd9e1cE17f2641f24aE83637ab66a2cca9C378B9Fn
 export const UNISWAP_V3_ROUTER = 0xE592427A0AEce92De3Edee1F18E0157C05861564n
-export const UNISWAP_V3_NFT_ROUTER = 0xC36442b4a4522E871399CD717aBDD847Ab11FE88n
 export const MULTICALL3 = 0xcA11bde05977b3631167028862bE2a173976CA11n // Contract for bundling bulk call transactions, deployed on every chain. https://github.com/mds1/multicall
 export const ETHEREUM_LOGS_LOGGER_ADDRESS = 0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeEn
+// export const UNISWAP_V3_NFT_ROUTER = 0xC36442b4a4522E871399CD717aBDD847Ab11FE88n
+// export const SUSHISWAP_FACTORY_ADDRESS = 0xC0AEe478e3658e2610c5F7A4A2E1777cE9e4f2Acn
 
 export const Multicall3ABI = [
 	'function aggregate3(tuple(address target, bool allowFailure, bytes callData)[] calls) payable returns (tuple(bool success, bytes returnData)[] returnData)',
@@ -16,10 +16,10 @@ export const Multicall3ABI = [
 export const UniswapV3Multicall2 = 0x5ba1e12693dc8f9c48aad8770482f4739beed696n
 
 // common 4-byte function sigs
-export const ERC20_TRANSFER_FROM_4BYTES = 0x23b872dd
-export const ERC20_TRANSFER_4BYTES = 0xa9059cbb
-export const ERC20_APPROVAL_4BYTES = 0x095ea7b3
-export const ERC721_APPROVAL_FOR_ALL_4BYTES = 0xa22cb465
+// export const ERC20_TRANSFER_FROM_4BYTES = 0x23b872dd
+// export const ERC20_TRANSFER_4BYTES = 0xa9059cbb
+// export const ERC20_APPROVAL_4BYTES = 0x095ea7b3
+// export const ERC721_APPROVAL_FOR_ALL_4BYTES = 0xa22cb465
 
 // common event log signatures
 export const TRANSFER_LOG = ethers.keccak256(ethers.toUtf8Bytes('Transfer(address,address,uint256)'))
@@ -35,26 +35,26 @@ export const MOCK_ADDRESS = 0xdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefn
 // https://blog.logrocket.com/understanding-resolving-metamask-error-codes/#4001
 export const METAMASK_ERROR_USER_REJECTED_REQUEST = 4001
 export const METAMASK_ERROR_NOT_AUTHORIZED = 4100
-export const METAMASK_ERROR_METHOD_NOT_SUPPORTED_BY_PROVIDER = 4200
-export const METAMASK_ERROR_CHAIN_NOT_ADDED_TO_METAMASK = 4902
-export const METAMASK_ERROR_NOT_CONNECTED_TO_APPROPRIATE_CHAIN = 4901
 export const METAMASK_ERROR_FAILED_TO_PARSE_REQUEST = -32700
-export const METAMASK_ERROR_REQUEST_STRUCTURE_INCORRECT = -32600
-export const METAMASK_ERROR_METHOD_DOES_NOT_EXIST = -32601
-export const METAMASK_ERROR_INVALID_ARGUMENT = -32602
 export const METAMASK_ERROR_BLANKET_ERROR = -32603
-export const METAMASK_ERROR_TRANSACTION_REJECTD = -32003
-export const METAMASK_ERROR_METHOD_NOT_SUPPORTED = -32004
-export const METAMASK_ERROR_RATE_LIMITED = -32005
+// const METAMASK_ERROR_METHOD_NOT_SUPPORTED_BY_PROVIDER = 4200
+// const METAMASK_ERROR_CHAIN_NOT_ADDED_TO_METAMASK = 4902
+// const METAMASK_ERROR_NOT_CONNECTED_TO_APPROPRIATE_CHAIN = 4901
+// const METAMASK_ERROR_REQUEST_STRUCTURE_INCORRECT = -32600
+// const METAMASK_ERROR_METHOD_DOES_NOT_EXIST = -32601
+// const METAMASK_ERROR_INVALID_ARGUMENT = -32602
+// const METAMASK_ERROR_TRANSACTION_REJECTD = -32003
+// const METAMASK_ERROR_METHOD_NOT_SUPPORTED = -32004
+// const METAMASK_ERROR_RATE_LIMITED = -32005
 
 export const ERROR_INTERCEPTOR_DISABLED = { error: { code: METAMASK_ERROR_USER_REJECTED_REQUEST, message: `The Interceptor is disabled` } }
 export const METAMASK_ERROR_ALREADY_PENDING = { error: { code: -32002, message: `Access request pending already.` } }
-export const ERROR_INTERCEPTOR_NOT_READY = { error: { code: 1, message: 'Interceptor: Not ready' } }
 export const ERROR_INTERCEPTOR_NO_ACTIVE_ADDRESS = { error: { code: 2, message: 'Interceptor: No active address' } }
-export const ERROR_INTERCEPTOR_UNKNOWN_ORIGIN = { error: { code: 400, message: 'Interceptor: Unknown website origin' } }
 export const METAMASK_ERROR_NOT_CONNECTED_TO_CHAIN = { error: { code: 4900, message: 'Interceptor: Not connected to chain' } }
 export const ERROR_INTERCEPTOR_GET_CODE_FAILED = { error: { code: -40001, message: 'Interceptor: Get code failed' } } // I wonder how we should come up with these numbers?
 export const ERROR_INTERCEPTOR_GAS_ESTIMATION_FAILED = -40002
+// const ERROR_INTERCEPTOR_NOT_READY = { error: { code: 1, message: 'Interceptor: Not ready' } }
+// const ERROR_INTERCEPTOR_UNKNOWN_ORIGIN = { error: { code: 400, message: 'Interceptor: Unknown website origin' } }
 
 function get4Byte(functionAbi: string) {
 	return Number(ethers.keccak256(ethers.toUtf8Bytes(functionAbi)).slice(0, 10))
@@ -90,7 +90,7 @@ export const ICON_SIGNING = '../img/head-signing.png' as const
 export const ICON_SIGNING_NOT_SUPPORTED = '../img/head-signing-unsupported-network.png' as const
 export const ICON_INTERCEPTOR_DISABLED = '../img/head-interceptor-disabled.png' as const
 export const DEFAULT_TAB_CONNECTION = { icon: ICON_NOT_ACTIVE, iconReason: 'The website has not requested to connect to The Interceptor.' }
-export const DEFAULT_TAB_CONNECTION_INTERCEPTOR_DISABLED = { icon: ICON_INTERCEPTOR_DISABLED, iconReason: 'The Interceptor is completely disabled by user request.' }
+// export const DEFAULT_TAB_CONNECTION_INTERCEPTOR_DISABLED = { icon: ICON_INTERCEPTOR_DISABLED, iconReason: 'The Interceptor is completely disabled by user request.' }
 
 export const ETHEREUM_COIN_ICON = '../../img/coins/ethereum.png'
 
@@ -119,7 +119,7 @@ export const METAMASK_LOGO = '../img/signers/metamask.svg'
 export const BRAVE_LOGO = '../img/signers/brave.svg'
 export const COINBASEWALLET_LOGO = '../img/signers/coinbasewallet.svg'
 
-export const CHAIN_NAMES = new Map<string, string>( [
+const CHAIN_NAMES = new Map<string, string>( [
 	['0', 'Kardia'],
 	['1', 'Ethereum Mainnet'],
 	['4', 'Rinkeby'],

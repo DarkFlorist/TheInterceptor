@@ -104,7 +104,7 @@ export function TokenPrice(param: TokenPriceParams) {
 	</>
 }
 
-export type TokenSymbolParams = (
+type TokenSymbolParams = (
 	{
 		tokenEntry: Erc1155Entry | Erc721Entry
 		tokenId: bigint | undefined

@@ -23,9 +23,7 @@ export class Future<T> implements PromiseLike<T> {
 	): PromiseLike<TResult1 | TResult2> => {
 		return this.promise.then(onfulfilled, onrejected)
 	}
-	
+
 	public readonly resolve = (value: T | PromiseLike<T>) => this.resolveFunction!(value)
 	public readonly reject = (reason: Error) => this.rejectFunction!(reason)
 }
-
-export type FutureUnion<TUnion> = TUnion extends any ? Future<TUnion> : never

@@ -21,7 +21,7 @@ type TransferAddressParams = BeforeAfterAddress & {
 	tokenOrEtherDefinition: DistributedOmit<TokenOrEtherParams, 'amount'>
 }
 
-export function AddressBeforeAfter({ address, beforeAndAfter, renameAddressCallBack, tokenOrEtherDefinition }: TransferAddressParams) {
+function AddressBeforeAfter({ address, beforeAndAfter, renameAddressCallBack, tokenOrEtherDefinition }: TransferAddressParams) {
 	return <>
 		<BigAddress
 			addressBookEntry = { address }

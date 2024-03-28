@@ -30,7 +30,7 @@ type IdentifiedTransaction =
 	| IdentifiedTransactionBase & { type: 'ContractDeployment' }
 	| IdentifiedTransactionBase & { type: 'GovernanceVote', governanceVoteInputParameters: GovernanceVoteInputParameters }
 
-export function identifySimpleApproval(simTx: SimulatedAndVisualizedTransaction) {
+function identifySimpleApproval(simTx: SimulatedAndVisualizedTransaction) {
 	if (getSimpleTokenApprovalOrUndefined(simTx)) {
 		const tokenResult = simTx.tokenResults[0]
 		if (tokenResult === undefined) throw new Error('token result were undefined')
@@ -86,7 +86,7 @@ export function identifySimpleApproval(simTx: SimulatedAndVisualizedTransaction)
 	return undefined
 }
 
-export function identifyGovernanceVote(simTx: SimulatedAndVisualizedTransaction) {
+function identifyGovernanceVote(simTx: SimulatedAndVisualizedTransaction) {
 	const fourByte = get4Byte(simTx.transaction.input)
 	if (fourByte === undefined) return undefined
 	const explanation = FourByteExplanations[fourByte]
@@ -119,8 +119,8 @@ export function identifyGovernanceVote(simTx: SimulatedAndVisualizedTransaction)
 	}
 }
 
-export type SimulatedAndVisualizedSimpleApprovalTransaction = funtypes.Static<typeof SimulatedAndVisualizedSimpleApprovalTransaction>
-export const SimulatedAndVisualizedSimpleApprovalTransaction = funtypes.Intersect(
+type SimulatedAndVisualizedSimpleApprovalTransaction = funtypes.Static<typeof SimulatedAndVisualizedSimpleApprovalTransaction>
+const SimulatedAndVisualizedSimpleApprovalTransaction = funtypes.Intersect(
 	SimulatedAndVisualizedTransactionBase,
 	funtypes.ReadonlyObject({
 		uniqueRequestIdentifier: UniqueRequestIdentifier,
@@ -164,7 +164,7 @@ export const SimulatedAndVisualizedSimpleTokenTransferTransaction = funtypes.Int
 	})
 )
 
-export function isSimpleTokenTransfer(transaction: SimulatedAndVisualizedTransaction): transaction is SimulatedAndVisualizedSimpleTokenTransferTransaction {
+function isSimpleTokenTransfer(transaction: SimulatedAndVisualizedTransaction): transaction is SimulatedAndVisualizedSimpleTokenTransferTransaction {
 	const tokenResult = transaction.tokenResults[0]
 	if (tokenResult === undefined) return false
 	if (transaction.tokenResults.length === 1

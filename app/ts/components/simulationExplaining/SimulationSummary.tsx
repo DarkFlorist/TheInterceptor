@@ -63,7 +63,7 @@ type Erc20ApprovalChangeParams = Erc20TokenEntry & {
 	renameAddressCallBack: RenameAddressCallBack,
 }
 
-export function Erc20ApprovalChange(param: Erc20ApprovalChangeParams) {
+function Erc20ApprovalChange(param: Erc20ApprovalChangeParams) {
 	const textColor = param.change > 0 ? param.negativeColor : param.textColor
 
 	return <div class = { param.isImportant ? `box token-box ${ param.change > 0 ? 'negative-box' : 'positive-box' }`: '' } style = 'display: inline-flex'>
@@ -134,7 +134,7 @@ export function Erc20ApprovalChanges(param: Erc20ApprovalChangesParams ) {
 	</>
 }
 
-export type Erc721TokenBalanceChange = (Erc721Entry & { received: boolean, tokenId: bigint })
+type Erc721TokenBalanceChange = (Erc721Entry & { received: boolean, tokenId: bigint })
 
 type Erc721TokenChangesParams = {
 	Erc721TokenBalanceChanges: Erc721TokenBalanceChange[],
@@ -323,7 +323,7 @@ type SummarizeAddressParams = {
 	renameAddressCallBack: RenameAddressCallBack,
 }
 
-export function SummarizeAddress(param: SummarizeAddressParams) {
+function SummarizeAddress(param: SummarizeAddressParams) {
 	const isOwnAddress = param.balanceSummary.summaryFor.type === 'activeAddress' || param.balanceSummary.summaryFor.address === param.simulationAndVisualisationResults.activeAddress
 	const positiveNegativeColors = isOwnAddress
 		? {
@@ -397,7 +397,7 @@ export function SummarizeAddress(param: SummarizeAddressParams) {
 	</div>
 }
 
-export function removeEthDonator(rpcNetwork: RpcNetwork, summary: SummaryOutcome[]) {
+function removeEthDonator(rpcNetwork: RpcNetwork, summary: SummaryOutcome[]) {
 	const donatorSummary = summary.find((x) => x.summaryFor.address === getEthDonator(rpcNetwork.chainId))
 	if (donatorSummary === undefined) return
 	donatorSummary.erc20TokenBalanceChanges = donatorSummary.erc20TokenBalanceChanges.map((change) => {

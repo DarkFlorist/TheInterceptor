@@ -3,11 +3,11 @@ import { Semaphore } from '../utils/semaphore.js'
 import { PendingChainChangeConfirmationPromise, RpcConnectionStatus, TabState } from '../types/user-interface-types.js'
 import { PartialIdsOfOpenedTabs, browserStorageLocalGet, browserStorageLocalRemove, browserStorageLocalSet, getTabStateFromStorage, removeTabStateFromStorage, setTabStateToStorage } from '../utils/storageUtils.js'
 import { CompleteVisualizedSimulation, EthereumSubscriptionsAndFilters } from '../types/visualizer-types.js'
-import { defaultRpcs, getSettings } from './settings.js'
+import { defaultRpcs } from './settings.js'
 import { UniqueRequestIdentifier, doesUniqueRequestIdentifiersMatch } from '../utils/requests.js'
 import { AddressBookEntries, AddressBookEntry } from '../types/addressBookTypes.js'
 import { SignerName } from '../types/signerTypes.js'
-import { PendingAccessRequest, PendingAccessRequests, PendingTransactionOrSignableMessage } from '../types/accessRequest.js'
+import { PendingAccessRequests, PendingTransactionOrSignableMessage } from '../types/accessRequest.js'
 import { RpcEntries, RpcNetwork } from '../types/rpc.js'
 import { replaceElementInReadonlyArray } from '../utils/typed-arrays.js'
 
@@ -27,8 +27,7 @@ export async function getPendingTransactionsAndMessages(): Promise<readonly Pend
 }
 
 export const clearPendingTransactions = async () => await updatePendingTransactionOrMessages(async () => [])
-
-export async function updatePendingTransactionOrMessages(update: (pendingTransactionsOrMessages: readonly PendingTransactionOrSignableMessage[]) => Promise<readonly PendingTransactionOrSignableMessage[]>) {
+async function updatePendingTransactionOrMessages(update: (pendingTransactionsOrMessages: readonly PendingTransactionOrSignableMessage[]) => Promise<readonly PendingTransactionOrSignableMessage[]>) {
 	return await pendingTransactionsSemaphore.execute(async () => {
 		const pendingTransactionsAndMessages = await update(await getPendingTransactionsAndMessages())
 		await browserStorageLocalSet({ pendingTransactionsAndMessages })
@@ -84,7 +83,6 @@ export async function getSimulationResults() {
 	} catch (error) {
 		console.warn('Simulation results were corrupt:')
 		console.warn(error)
-		await updateSimulationResults(emptyResults)
 		await simulationResultsSemaphore.execute(async () => await browserStorageLocalSet({ simulationResults: emptyResults }))
 		return emptyResults
 	}
@@ -110,7 +108,7 @@ export async function updateSimulationResultsWithCallBack(update: (oldResults: C
 }
 
 export const setDefaultSignerName = async (signerName: SignerName) => await browserStorageLocalSet({ signerName })
-export const getDefaultSignerName = async () => (await browserStorageLocalGet('signerName'))?.['signerName'] ?? 'NoSignerDetected'
+const getDefaultSignerName = async () => (await browserStorageLocalGet('signerName'))?.['signerName'] ?? 'NoSignerDetected'
 
 export async function getTabState(tabId: number) : Promise<TabState> {
 	return await getTabStateFromStorage(tabId) ?? {
@@ -150,14 +148,6 @@ export async function updatePendingAccessRequests(updateFunc: (prevState: Pendin
 		const pendingAccessRequests = await updateFunc(previous)
 		await browserStorageLocalSet({ pendingInterceptorAccessRequests: pendingAccessRequests })
 		return { previous: previous, current: pendingAccessRequests }
-	})
-}
-
-export async function appendPendingAccessRequests(promise: PendingAccessRequest) {
-	return await pendingAccessRequestsSemaphore.execute(async () => {
-		const promises = [...await getPendingAccessRequests(), promise]
-		await browserStorageLocalSet({ pendingInterceptorAccessRequests: promises })
-		return promises
 	})
 }
 
@@ -217,10 +207,6 @@ export const getPrimaryRpcForChain = async (chainId: bigint) => {
 	return rpcs.find((rpc) => rpc.chainId === chainId && rpc.primary)
 }
 
-export async function getRpcNetwork(): Promise<RpcNetwork> {
-	return (await getSettings()).currentRpcNetwork
-}
-
 export const getRpcNetworkForChain = async (chainId: bigint): Promise<RpcNetwork> => {
 	const rpcs = await getRpcList()
 	const rpc = rpcs.find((rpc) => rpc.chainId === chainId && rpc.primary)
@@ -235,7 +221,7 @@ export const getRpcNetworkForChain = async (chainId: bigint): Promise<RpcNetwork
 }
 
 //TODO, remove when we start to use multicall completely. Decide on what to do with WETH then
-export const ethDonator = [{
+const ethDonator = [{
 		chainId: 1n,
 		eth_donator: 0xda9dfa130df4de4673b89022ee50ff26f6ea73cfn, // Kraken
 	},

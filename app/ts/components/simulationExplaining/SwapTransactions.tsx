@@ -8,8 +8,8 @@ import { assertNever, getWithDefault } from '../../utils/typescript.js'
 import { RpcNetwork } from '../../types/rpc.js'
 import { RenameAddressCallBack } from '../../types/user-interface-types.js'
 
-export type BeforeAfterBalance = funtypes.Static<typeof SwapAsset>
-export const BeforeAfterBalance = funtypes.ReadonlyObject({
+type BeforeAfterBalance = funtypes.Static<typeof SwapAsset>
+const BeforeAfterBalance = funtypes.ReadonlyObject({
 	beforeBalance: EthereumQuantity,
 	afterBalance: EthereumQuantity,
 })
@@ -18,8 +18,8 @@ const getUniqueSwapAssetIdentifier = (metadata: TokenVisualizerResultWithMetadat
 	return `${ metadata.token.type }|${ metadata.token.address }|${ 'tokenId' in metadata.token ? metadata.token.tokenId : 'noTokenid'}`
 }
 
-export type SwapAsset = funtypes.Static<typeof SwapAsset>
-export const SwapAsset = funtypes.Union(
+type SwapAsset = funtypes.Static<typeof SwapAsset>
+const SwapAsset = funtypes.Union(
 	funtypes.ReadonlyObject({
 		type: funtypes.Literal('ERC1155'),
 		token: Erc1155Entry,
@@ -226,7 +226,7 @@ export function getSwapName(identifiedSwap: IdentifiedSwapWithMetadata) {
 	return `Swap ${ sent } for ${ to }`
 }
 
-export function VisualizeSwapAsset({ swapAsset, renameAddressCallBack }: { swapAsset: SwapAsset, renameAddressCallBack: RenameAddressCallBack }) {
+function VisualizeSwapAsset({ swapAsset, renameAddressCallBack }: { swapAsset: SwapAsset, renameAddressCallBack: RenameAddressCallBack }) {
 	const tokenStyle = { 'font-weight': '500' }
 	const balanceTextStyle = { 'font-size': '14px', 'color': 'var(--subtitle-text-color)' }
 

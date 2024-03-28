@@ -14,7 +14,6 @@ export const Page = funtypes.Union(
 	funtypes.ReadonlyObject({ page: funtypes.Literal('AccessList') }),
 	funtypes.ReadonlyObject({ page: funtypes.Literal('Settings') }),
 )
-export const pages = funtypes.Union(Page.alternatives[0], ...Page.alternatives.map(x => x))
 export type ExportedSettings = funtypes.Static<typeof ExportedSettings>
 export const ExportedSettings = funtypes.Union(
 	funtypes.ReadonlyObject({

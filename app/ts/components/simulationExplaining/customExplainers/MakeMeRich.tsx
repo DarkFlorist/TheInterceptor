@@ -2,7 +2,7 @@ import { addressString } from '../../../utils/bigint.js'
 import { EtherAmount, EtherSymbol } from '../../subcomponents/coins.js'
 import { TransactionImportanceBlockParams } from '../Transactions.js'
 
-export const transactionExplainers = new Map<string, [string, string]>([
+const transactionExplainers = new Map<string, [string, string]>([
 	['0', ['Airdropping you', '🚁']],
 	['1', ['Giving you', 'for some party time 🥳']],
 	['2', ['Granting you', 'for your enjoyment 🤑']],

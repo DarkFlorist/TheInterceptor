@@ -19,18 +19,6 @@ function postMessageToPortIfConnected(port: browser.runtime.Port, message: Inter
 		throw error
 	}
 }
-export function postMessageIfStillConnected(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, message: InterceptorMessageToInpage) {
-	const tabConnection = websiteTabConnections.get(socket.tabId)
-	const identifier = websiteSocketToString(socket)
-	if (tabConnection === undefined) return false
-	for (const socketAsString in tabConnection.connections) {
-		const connection = tabConnection.connections[socketAsString]
-		if (connection === undefined) throw new Error('connection was undefined')
-		if (socketAsString !== identifier) continue
-		postMessageToPortIfConnected(connection.port, message)
-	}
-	return true
-}
 
 export function replyToInterceptedRequest(websiteTabConnections: WebsiteTabConnections, message: InterceptedRequestForward) {
 	if (message.type === 'doNotReply') return

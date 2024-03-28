@@ -12,7 +12,7 @@ import { ActiveAddressEntry } from '../types/addressBookTypes.js'
 import { Website, WebsiteAccessArray, WebsiteAddressAccess } from '../types/websiteAccessTypes.js'
 import { getUniqueItemsByProperties, replaceElementInReadonlyArray } from '../utils/typed-arrays.js'
 
-export function getConnectionDetails(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket) {
+function getConnectionDetails(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket) {
 	const identifier = websiteSocketToString(socket)
 	const tabConnection = websiteTabConnections.get(socket.tabId)
 	return tabConnection?.connections[identifier]
@@ -93,7 +93,7 @@ export function hasAddressAccess(websiteAccess: WebsiteAccessArray, websiteOrigi
 	return 'notFound'
 }
 
-export function getAddressAccesses(websiteAccess: WebsiteAccessArray, websiteOrigin: string) : readonly WebsiteAddressAccess[] {
+function getAddressAccesses(websiteAccess: WebsiteAccessArray, websiteOrigin: string) : readonly WebsiteAddressAccess[] {
 	for (const web of websiteAccess) {
 		if (web.website.websiteOrigin === websiteOrigin) {
 			return web.addressAccess === undefined ? [] : web.addressAccess
@@ -101,7 +101,7 @@ export function getAddressAccesses(websiteAccess: WebsiteAccessArray, websiteOri
 	}
 	return []
 }
-export function getAddressesThatDoNotNeedIndividualAccesses(activeAddressEntries: readonly ActiveAddressEntry[]) : readonly ActiveAddressEntry[] {
+function getAddressesThatDoNotNeedIndividualAccesses(activeAddressEntries: readonly ActiveAddressEntry[]) : readonly ActiveAddressEntry[] {
 	return activeAddressEntries.filter((x) => x.askForAddressAccess === false)
 }
 
@@ -141,7 +141,7 @@ export async function setAccess(website: Website, access: boolean, address: bigi
 
 // gets active address if the website has been give access for it, otherwise returns undefined
 // this is to guard websites from seeing addresses without access
-export async function getActiveAddressForDomain(websiteOrigin: string, settings: Settings, socket: WebsiteSocket) {
+async function getActiveAddressForDomain(websiteOrigin: string, settings: Settings, socket: WebsiteSocket) {
 	const activeAddress = await getActiveAddress(settings, socket.tabId)
 	if (activeAddress === undefined) return undefined
 	const hasAccess = hasAddressAccess(settings.websiteAccess, websiteOrigin, activeAddress)

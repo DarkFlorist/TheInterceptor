@@ -119,7 +119,7 @@ const TransactionNames = (param: TransactionNamesParams) => {
 	</div>
 }
 
-export type TransactionCardParams = {
+type TransactionCardParams = {
 	currentPendingTransaction: SimulatedPendingTransaction,
 	pendingTransactionsAndSignableMessages: readonly PendingTransactionOrSignableMessage[],
 	renameAddressCallBack: (entry: AddressBookEntry) => void,
@@ -128,7 +128,7 @@ export type TransactionCardParams = {
 	numberOfUnderTransactions: number,
 }
 
-export function TransactionCard(param: TransactionCardParams) {
+function TransactionCard(param: TransactionCardParams) {
 	const simulationResults = param.currentPendingTransaction.simulationResults
 	if (simulationResults.statusCode === 'failed') return <p class = 'paragraph'> failed to simulate</p>
 	const simulationAndVisualisationResults = {
@@ -256,7 +256,7 @@ export function TransactionCard(param: TransactionCardParams) {
 	</>
 }
 
-export type CheckBoxesParams = {
+type CheckBoxesParams = {
 	currentPendingTransactionOrSignableMessage: PendingTransactionOrSignableMessage,
 	forceSend: boolean,
 	setForceSend: (enabled: boolean) => void,
@@ -306,7 +306,7 @@ type NetworkErrorParams = {
 	simulationMode: boolean
 }
 
-export const WebsiteErrors = ({ website, websiteSocket, simulationMode }: NetworkErrorParams) => {
+const WebsiteErrors = ({ website, websiteSocket, simulationMode }: NetworkErrorParams) => {
 	const message = getWebsiteWarningMessage(website.websiteOrigin, simulationMode)
 	if (message === undefined) return <></>
 	if (message.suggestedAlternative === undefined) return <ErrorComponent warning = { true } text = { message.message }/>

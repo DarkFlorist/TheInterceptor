@@ -1,8 +1,8 @@
 import * as funtypes from 'funtypes'
 import { EthereumAddress, EthereumQuantity, LiteralConverterParserFactory } from './wire-types.js'
 
-export type EntrySource = funtypes.Static<typeof EntrySource>
-export const EntrySource = funtypes.Union(
+type EntrySource = funtypes.Static<typeof EntrySource>
+const EntrySource = funtypes.Union(
 	funtypes.Literal('DarkFloristMetadata'),
 	funtypes.Literal('User'),
 	funtypes.Literal('Interceptor'),

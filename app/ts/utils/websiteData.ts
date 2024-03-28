@@ -1,7 +1,7 @@
 import * as funtypes from 'funtypes'
 
-export type WebsiteMetadataInfo  = funtypes.Static<typeof WebsiteMetadataInfo>
-export const WebsiteMetadataInfo = funtypes.Intersect(
+type WebsiteMetadataInfo  = funtypes.Static<typeof WebsiteMetadataInfo>
+const WebsiteMetadataInfo = funtypes.Intersect(
 	funtypes.ReadonlyObject({
 		name: funtypes.String,
 	}),
@@ -13,8 +13,8 @@ export const WebsiteMetadataInfo = funtypes.Intersect(
 	})
 )
 
-export type WebsiteMetaData  = funtypes.Static<typeof WebsiteMetaData>
-export const WebsiteMetaData = funtypes.ReadonlyRecord(funtypes.String, WebsiteMetadataInfo)
+type WebsiteMetaData  = funtypes.Static<typeof WebsiteMetaData>
+const WebsiteMetaData = funtypes.ReadonlyRecord(funtypes.String, WebsiteMetadataInfo)
 
 export const getWebsiteWarningMessage = (websiteOrigin: string, simulationMode: boolean): { message: string, suggestedAlternative: string | undefined } | undefined => {
 	const data = websiteMetaData[websiteOrigin]

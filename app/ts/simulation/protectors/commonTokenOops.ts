@@ -8,7 +8,7 @@ import { EthereumClientService } from '../services/EthereumClientService.js'
 import { getSimulatedCode } from '../services/SimulationModeEthereumClientService.js'
 import { identifyAddress } from '../../background/metadataUtils.js'
 
-export const ADDITIONAL_BAD_TRANSFER_TARGETS = new Set<bigint>([
+const ADDITIONAL_BAD_TRANSFER_TARGETS = new Set<bigint>([
 	UNISWAP_V2_ROUTER_ADDRESS,
 	SUSHISWAP_V2_ROUTER_ADDRESS,
 	UNISWAP_V3_ROUTER
