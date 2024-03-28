@@ -183,7 +183,54 @@ export const eth_simulateV1_dummy_call_result = `
     ]
 }
 `
-
+export const eth_simulateV1_get_eth_balance_multicall = `
+{
+    "jsonrpc": "2.0",
+    "id": 1,
+    "result": [
+        {
+            "number": "0x129ecf5",
+            "hash": "0x42082a3579bb6aaf0747a889ca743ea23ffe5a1d35ab3e66c0a114c57912369e",
+            "timestamp": "0x6603ea48",
+            "gasLimit": "0x1c9c380",
+            "gasUsed": "0xbfdc",
+            "feeRecipient": "0x95222290dd7278aa3ddd389cc1e1d165cc4bafe5",
+            "baseFeePerGas": "0x594f1e1b8",
+            "prevRandao": "0x0000000000000000000000000000000000000000000000000000000000000000",
+            "calls": [
+                {
+                    "returnData": "0x",
+                    "logs": [
+                        {
+                            "address": "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+                            "topics": [
+                                "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef",
+                                "0x000000000000000000000000d8da6bf26964af9d7eed9e03e53415d37aa96045",
+                                "0x000000000000000000000000da9dfa130df4de4673b89022ee50ff26f6ea73cf"
+                            ],
+                            "data": "0x000000000000000000000000000000000000000000000000000000000000000a",
+                            "blockNumber": "0x129ecf5",
+                            "transactionHash": "0xb78d6ba9501e72014cc8675e6ba3ec3970eaa7723e3ecf3cc6077542265f6f39",
+                            "transactionIndex": "0x0",
+                            "blockHash": "0x42082a3579bb6aaf0747a889ca743ea23ffe5a1d35ab3e66c0a114c57912369e",
+                            "logIndex": "0x0",
+                            "removed": false
+                        }
+                    ],
+                    "gasUsed": "0x5208",
+                    "status": "0x1"
+                },
+                {
+                    "returnData": "0x0000000000000000000000000000000000000000000000000000000000000020000000000000000000000000000000000000000000000000000000000000000100000000000000000000000000000000000000000000000000000000000000200000000000000000000000000000000000000000000000000000000000000001000000000000000000000000000000000000000000000000000000000000004000000000000000000000000000000000000000000000000000000000000000200000000000000000000000000000000000000000000000263bd61e8d6e1711f3",
+                    "logs": [],
+                    "gasUsed": "0x6dd4",
+                    "status": "0x1"
+                }
+            ]
+        }
+    ]
+}
+`
 export const eth_transactionByhash0xe10c2a85168046080235fff99e2e14ef1e90c8cf5e9d675f2ca214e49e555e0f = `
 {
     "jsonrpc": "2.0",

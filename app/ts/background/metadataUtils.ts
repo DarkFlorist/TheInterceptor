@@ -154,12 +154,12 @@ export async function identifyAddress(ethereumClientService: EthereumClientServi
 }
 
 export async function getAddressBookEntriesForVisualiser(ethereumClientService: EthereumClientService, events: GeneralEnrichedEthereumEvents, simulationState: SimulationState): Promise<AddressBookEntry[]> {
-	const eventArguments = events.map((event) => event.type !== 'NonParsed' ? event.args : []).flat()
-	const addressesInEvents = eventArguments.map((event) => {
+	const eventArguments = events.flatMap((event) => event.type !== 'NonParsed' ? event.args : [])
+	const addressesInEvents = eventArguments.flatMap((event) => {
 		if (event.typeValue.type === 'address') return event.typeValue.value
 		if (event.typeValue.type === 'address[]') return event.typeValue.value
 		return undefined
-	}).flat().filter((address): address is bigint => address !== undefined)
+	}).filter((address): address is bigint => address !== undefined)
 	const addressesToFetchMetadata = [...addressesInEvents, ...events.map((event) => event.address)]
 
 	simulationState.simulatedTransactions.forEach((tx) => {
