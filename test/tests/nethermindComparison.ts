@@ -71,6 +71,7 @@ export async function main() {
 		blockNumber: blockNumber,
 		blockTimestamp: new Date(0),
 		rpcNetwork: rpcNetwork,
+		baseFeePerGas: 0n,
 		simulationConductedTimestamp: new Date(0),
 		signedMessages: [],
 	}
