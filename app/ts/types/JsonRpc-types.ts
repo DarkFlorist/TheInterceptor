@@ -337,7 +337,7 @@ export const GetSimulationStackReply = funtypes.ReadonlyArray(funtypes.Intersect
 export type GetSimulationStack = funtypes.Static<typeof GetSimulationStack>
 export const GetSimulationStack = funtypes.ReadonlyObject({
 	method: funtypes.Literal('interceptor_getSimulationStack'),
-	params: funtypes.ReadonlyTuple(funtypes.Literal('1.0.0')),
+	params: funtypes.ReadonlyTuple(funtypes.Union(funtypes.Literal('1.0.0'), funtypes.Literal('1.0.1') ))
 }).asReadonly()
 
 export type WalletAddEthereumChain = funtypes.Static<typeof WalletAddEthereumChain>

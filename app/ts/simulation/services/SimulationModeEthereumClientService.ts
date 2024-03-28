@@ -48,6 +48,7 @@ export const copySimulationState = (simulationState: SimulationState): Simulatio
 		rpcNetwork: simulationState.rpcNetwork,
 		simulationConductedTimestamp: simulationState.simulationConductedTimestamp,
 		signedMessages: simulationState.signedMessages,
+		baseFeePerGas: simulationState.baseFeePerGas,
 	}
 }
 
@@ -59,24 +60,29 @@ export const getNonPrependedSimulatedTransactions = (prependTransactionsQueue: r
 	return simulatedTransactions.slice(prependTransactionsQueue.length, simulatedTransactions.length)
 }
 
-export const getSimulatedStack = (simulationState: SimulationState) => {
+export const getSimulatedStack = (simulationState: SimulationState, version: '1.0.0' | '1.0.1') => {
 	return simulationState.simulatedTransactions.map((transaction) => {
 		const ethLogs = transaction.ethSimulateV1CallResult.status === 'failure' ? [] : transaction.ethSimulateV1CallResult.logs.filter((log) => log.address === ETHEREUM_LOGS_LOGGER_ADDRESS) 
 		const ethBalanceAfter = transaction.tokenBalancesAfter.filter((x) => x.token === ETHEREUM_LOGS_LOGGER_ADDRESS)
 		return {
 			...transaction.signedTransaction,
 			...transaction.ethSimulateV1CallResult,
-			balanceChanges: ethBalanceAfter.map((balanceAfter) => ({
-				address: balanceAfter.owner,
-				before: ethLogs.reduce((total, event) => {
-					const parsed = handleERC20TransferLog(event)[0]
-					if (parsed === undefined || parsed.type !== 'ERC20') throw new Error('eth log was not erc20 transfer event')
-					if (parsed.from === balanceAfter.owner && parsed.to !== balanceAfter.owner) return total + parsed.amount
-					if (parsed.from !== balanceAfter.owner && parsed.to === balanceAfter.owner) return total - parsed.amount
-					return total
-				}, balanceAfter.balance ?? 0n) + (balanceAfter.owner === transaction.signedTransaction.from ? transaction.realizedGasPrice * transaction.ethSimulateV1CallResult.gasUsed : 0n),
-				after: balanceAfter.balance ?? 0n,
-			})),
+			balanceChanges: ethBalanceAfter.map((balanceAfter) => {
+				// in the version 1.0.0 , gas price was wrongly calculated with 'maxPriorityFeePerGas', this code keeps this for 1.0.0 but fixes it for other versions
+				const balanceAfterBalance = version === '1.0.0' || balanceAfter.owner !== transaction.signedTransaction.from ? balanceAfter.balance : (balanceAfter.balance ?? 0n) - simulationState.baseFeePerGas * transaction.ethSimulateV1CallResult.gasUsed
+				const gasFees = balanceAfter.owner === transaction.signedTransaction.from ? transaction.realizedGasPrice * transaction.ethSimulateV1CallResult.gasUsed : 0n
+				return {
+					address: balanceAfter.owner,
+					before: ethLogs.reduce((total, event) => {
+						const parsed = handleERC20TransferLog(event)[0]
+						if (parsed === undefined || parsed.type !== 'ERC20') throw new Error('eth log was not erc20 transfer event')
+						if (parsed.from === balanceAfter.owner && parsed.to !== balanceAfter.owner) return total + parsed.amount
+						if (parsed.from !== balanceAfter.owner && parsed.to === balanceAfter.owner) return total - parsed.amount
+						return total
+					}, balanceAfterBalance ?? 0n) + gasFees,
+					after: balanceAfterBalance ?? 0n,
+				}
+			}),
 			realizedGasPrice: transaction.realizedGasPrice,
 			gasLimit: transaction.signedTransaction.gas,
 			gasSpent: transaction.ethSimulateV1CallResult.gasUsed,
@@ -152,10 +158,10 @@ export const simulateEstimateGas = async (ethereumClientService: EthereumClientS
 }
 
 // calculates gas price for receipts
-export const calculateGasPrice = (transaction: EthereumUnsignedTransaction, gasUsed: bigint, gasLimit: bigint, baseFeePerGas: bigint) => {
+export const calculateGasPrice = (transaction: EthereumUnsignedTransaction, gasUsed: bigint, gasLimit: bigint, oldBaseFeePerGas: bigint) => {
 	if ('gasPrice' in transaction) return transaction.gasPrice
-	const baseFee = getNextBaseFee(gasUsed, gasLimit, baseFeePerGas)
-	return min(baseFee + transaction.maxPriorityFeePerGas, transaction.maxFeePerGas)
+	const baseFeePerGas = getNextBaseFeePerGas(gasUsed, gasLimit, oldBaseFeePerGas)
+	return min(baseFeePerGas + transaction.maxPriorityFeePerGas, transaction.maxFeePerGas)
 }
 
 export const mockSignTransaction = (transaction: EthereumUnsignedTransaction) : EthereumSignedTransaction => {
@@ -217,6 +223,7 @@ export const appendTransaction = async (ethereumClientService: EthereumClientSer
 		} ),
 		blockNumber: parentBlock.number,
 		blockTimestamp: parentBlock.timestamp,
+		baseFeePerGas: ethSimulateV1CallResult.baseFeePerGas,
 		rpcNetwork: ethereumClientService.getRpcEntry(),
 		simulationConductedTimestamp: new Date(),
 		signedMessages: simulationState === undefined ? [] : simulationState.signedMessages,
@@ -234,6 +241,7 @@ export const setSimulationTransactionsAndSignedMessages = async (ethereumClientS
 			rpcNetwork: ethereumClientService.getRpcEntry(),
 			simulationConductedTimestamp: new Date(),
 			signedMessages: [],
+			baseFeePerGas: 0n,
 		}
 	}
 
@@ -284,6 +292,7 @@ export const setSimulationTransactionsAndSignedMessages = async (ethereumClientS
 		})),
 		blockNumber: parentBlock.number,
 		blockTimestamp: parentBlock.timestamp,
+		baseFeePerGas: multicallResult.baseFeePerGas,
 		rpcNetwork: ethereumClientService.getRpcEntry(),
 		simulationConductedTimestamp: new Date(),
 		signedMessages,
@@ -306,6 +315,7 @@ export const setPrependTransactionsQueue = async (ethereumClientService: Ethereu
 		rpcNetwork: ethereumClientService.getRpcEntry(),
 		simulationConductedTimestamp: new Date(),
 		signedMessages: [],
+		baseFeePerGas: block.baseFeePerGas || 0n,
 	}
 	return await setSimulationTransactionsAndSignedMessages(ethereumClientService, newState, [], [])
 }
@@ -545,7 +555,7 @@ export const getSimulatedCode = async (ethereumClientService: EthereumClientServ
 }
 
 // ported from: https://github.com/ethereum/go-ethereum/blob/509a64ffb9405942396276ae111d06f9bded9221/consensus/misc/eip1559/eip1559.go#L55
-const getNextBaseFee = (parentGasUsed: bigint, parentGasLimit: bigint, parentBaseFeePerGas: bigint) => {
+const getNextBaseFeePerGas = (parentGasUsed: bigint, parentGasLimit: bigint, parentBaseFeePerGas: bigint) => {
 	const parentGasTarget = parentGasLimit / ETHEREUM_EIP1559_ELASTICITY_MULTIPLIER
 	if (parentGasUsed === parentGasTarget) return parentBaseFeePerGas
 	if (parentGasUsed > parentGasTarget) return parentBaseFeePerGas + max(1n, parentBaseFeePerGas * (parentGasUsed - parentGasTarget) / parentGasTarget / ETHEREUM_EIP1559_BASEFEECHANGEDENOMINATOR)
@@ -576,7 +586,7 @@ async function getSimulatedMockBlock(ethereumClientService: EthereumClientServic
 		size: parentBlock.size, // TODO: this is wrong
 		totalDifficulty: parentBlock.totalDifficulty + parentBlock.difficulty, // The difficulty increases about the same amount as previously
 		uncles: [],
-		baseFeePerGas: getNextBaseFee(parentBlock.gasUsed, parentBlock.gasLimit, parentBlock.baseFeePerGas),
+		baseFeePerGas: getNextBaseFeePerGas(parentBlock.gasUsed, parentBlock.gasLimit, parentBlock.baseFeePerGas),
 		transactionsRoot: parentBlock.transactionsRoot, // TODO: this is wrong
 		transactions: simulationState.simulatedTransactions.map((simulatedTransaction) => simulatedTransaction.signedTransaction),
 		withdrawals: [], // TODO: this is wrong
@@ -945,6 +955,7 @@ export const appendSignedMessage = async (ethereumClientService: EthereumClientS
 			rpcNetwork: ethereumClientService.getRpcEntry(),
 			simulationConductedTimestamp: new Date(),
 			signedMessages: [signedMessage],
+			baseFeePerGas: block.baseFeePerGas || 0n,
 		}
 	}
 	return { ...simulationState, signedMessages: simulationState.signedMessages.concat(signedMessage) }
@@ -961,7 +972,7 @@ export const getSimulatedFeeHistory = async (ethereumClientService: EthereumClie
 	const newestBlockBaseFeePerGas = newestBlock.baseFeePerGas
 	if (newestBlockBaseFeePerGas === undefined) throw new Error(`base fee per gas is missing for the block (it's too old)`)
 	return {
-		baseFeePerGas: [newestBlockBaseFeePerGas, getNextBaseFee(newestBlock.gasUsed, newestBlock.gasLimit, newestBlockBaseFeePerGas)],
+		baseFeePerGas: [newestBlockBaseFeePerGas, getNextBaseFeePerGas(newestBlock.gasUsed, newestBlock.gasLimit, newestBlockBaseFeePerGas)],
 		gasUsedRatio: [Number(newestBlock.gasUsed) / Number(newestBlock.gasLimit)],
 		oldestBlock: newestBlock.number,
 		...rewardPercentiles === undefined ? {} : {
