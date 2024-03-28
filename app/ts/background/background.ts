@@ -310,7 +310,8 @@ async function handleRPCRequest(
 	}
 
 	if (maybeParsedRequest.success === false) {
-		console.log(request)
+		// biome-ignore lint/suspicious/noConsoleLog: <Used for support debugging>
+		console.log({ request })
 		console.warn(maybeParsedRequest.fullError)
 		const maybePartiallyParsedRequest = SupportedEthereumJsonRpcRequestMethods.safeParse(request)
 		// the method is some method that we are not supporting, forward it to the wallet if signer is available
@@ -516,7 +517,8 @@ export async function handleContentScriptMessage(simulator: Simulator, websiteTa
 		const resolved = await handleRPCRequest(simulator, simulationState, websiteTabConnections, simulator.ethereum, request.uniqueRequestIdentifier.requestSocket, website, request, settings, activeAddress)
 		return replyToInterceptedRequest(websiteTabConnections, { ...request, ...resolved })
 	} catch (error) {
-		console.log(request)
+		// biome-ignore lint/suspicious/noConsoleLog: <Used for support debugging>
+		console.log({ request })
 		handleUnexpectedError(error)
 		if (error instanceof JsonRpcResponseError || error instanceof FetchResponseError) {
 			return replyToInterceptedRequest(websiteTabConnections, {
@@ -583,7 +585,8 @@ export async function popupMessageHandler(
 ) {
 	const maybeParsedRequest = PopupMessage.safeParse(request)
 	if (maybeParsedRequest.success === false) {
-		console.log(request)
+		// biome-ignore lint/suspicious/noConsoleLog: <Used for support debugging>
+		console.log({ request })
 		console.warn(maybeParsedRequest.fullError)
 		return {
 			error: {
