@@ -576,10 +576,17 @@ class InterceptorMessageListener {
 	private readonly connectToSigner = async (signerName: Signer) => {
 		this.currentSigner = signerName
 		const connectToSigner = async (): Promise<{ metamaskCompatibilityMode: boolean }> => {
-			const comppatibilityMode = await this.sendMessageToBackgroundPage({ method: 'connected_to_signer', params: [true, signerName] })
-			if (typeof comppatibilityMode === 'object' && comppatibilityMode !== null
-				&& 'metamaskCompatibilityMode' in comppatibilityMode && comppatibilityMode.metamaskCompatibilityMode !== null && comppatibilityMode.metamaskCompatibilityMode !== undefined && typeof comppatibilityMode.metamaskCompatibilityMode === 'boolean') {
-				return comppatibilityMode as { metamaskCompatibilityMode: boolean }
+			const connectSignerReply = await this.sendMessageToBackgroundPage({ method: 'connected_to_signer', params: [true, signerName] })
+			if (typeof connectSignerReply === 'object' && connectSignerReply !== null
+				&& 'metamaskCompatibilityMode' in connectSignerReply && connectSignerReply.metamaskCompatibilityMode !== null
+				&& connectSignerReply.metamaskCompatibilityMode !== undefined && typeof connectSignerReply.metamaskCompatibilityMode === 'boolean'
+				&& 'activeAddress' in connectSignerReply && connectSignerReply.activeAddress !== null
+				&& (connectSignerReply.activeAddress === undefined || typeof connectSignerReply.activeAddress === 'string')) {
+					this.currentAddress = connectSignerReply.activeAddress === undefined ? '' : connectSignerReply.activeAddress
+					if (connectSignerReply.metamaskCompatibilityMode && window.ethereum !== undefined) {
+						try { window.ethereum.selectedAddress = this.currentAddress } catch(error) {console.log(error)}
+					}
+				return connectSignerReply as { metamaskCompatibilityMode: boolean, activeAddress: string | undefined }
 			}
 			throw new Error('Failed to parse connected_to_signer reply')
 		}

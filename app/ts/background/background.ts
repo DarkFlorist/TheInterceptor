@@ -105,6 +105,7 @@ export const simulateGovernanceContractExecution = async (pendingTransaction: Pe
 			}],
 			blockNumber: parentBlock.number,
 			blockTimestamp: parentBlock.timestamp,
+			baseFeePerGas: parentBlock.baseFeePerGas,
 			rpcNetwork: ethereum.getRpcEntry(),
 			simulationConductedTimestamp: new Date(),
 			signedMessages: [],
@@ -319,7 +320,7 @@ async function handleRPCRequest(
 			type: 'result' as const,
 			method: request.method,
 			error: {
-				message: `Failed to parse RPC request: ${ serialize(InterceptedRequest, request) }`,
+				message: `Failed to parse RPC request: ${ JSON.stringify(serialize(InterceptedRequest, request)) }`,
 				data: maybeParsedRequest.fullError === undefined ? 'Failed to parse RPC request' : maybeParsedRequest.fullError.toString(),
 				code: METAMASK_ERROR_FAILED_TO_PARSE_REQUEST,
 			}
@@ -475,7 +476,7 @@ export const handleInterceptedRequest = async (port: browser.runtime.Port | unde
 	const identifiedMethod = providerHandler.method
 	if (identifiedMethod !== 'notProviderMethod') {
 		if (port === undefined) return
-		const providerHandlerReturn = await providerHandler.func(simulator, websiteTabConnections, port, request, access)
+		const providerHandlerReturn = await providerHandler.func(simulator, websiteTabConnections, port, request, access, activeAddress?.address)
 		if (providerHandlerReturn.type === 'doNotReply') return
 		const message: InpageScriptRequest = { uniqueRequestIdentifier: request.uniqueRequestIdentifier, ...providerHandlerReturn }
 		return replyToInterceptedRequest(websiteTabConnections, message)

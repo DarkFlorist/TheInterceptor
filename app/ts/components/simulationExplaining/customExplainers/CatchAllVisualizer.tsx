@@ -5,6 +5,8 @@ import { TokenSymbol, TokenAmount } from '../../subcomponents/coins.js'
 import { RenameAddressCallBack } from '../../../types/user-interface-types.js'
 import { SmallAddress } from '../../subcomponents/address.js'
 import { assertNever } from '../../../utils/typescript.js'
+import { getDeployedContractAddress } from '../../../simulation/services/SimulationModeEthereumClientService.js'
+import { addressString } from '../../../utils/bigint.js'
 
 type SendOrReceiveTokensImportanceBoxParams = {
 	sending: boolean,
@@ -119,7 +121,7 @@ export function CatchAllVisualizer(param: TransactionImportanceBlockParams) {
 			{ /* contract creation */}
 			{ param.simTx.transaction.to !== undefined ? <></> : <>
 				<div class = 'log-cell' style = 'justify-content: left; display: grid;'>
-					<p class = 'paragraph'> The transaction deploys a contract </p>
+					<p class = 'paragraph'> { `A contract is deployed to address ${ addressString(getDeployedContractAddress(param.simTx.transaction.from.address, param.simTx.transaction.nonce)) }` }</p>
 				</div>
 			</> }
 

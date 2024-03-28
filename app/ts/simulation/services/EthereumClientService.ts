@@ -231,7 +231,7 @@ export class EthereumClientService {
 				time: new Date(parentBlock.timestamp.getTime() + 12 * 1000),
 				gasLimit: parentBlock.gasLimit,
 				feeRecipient: parentBlock.miner,
-				baseFee: parentBlock.baseFeePerGas === undefined ? 15000000n : parentBlock.baseFeePerGas
+				baseFeePerGas: parentBlock.baseFeePerGas === undefined ? 15000000n : parentBlock.baseFeePerGas
 			},
 			stateOverrides: {
 				...signatures.length > 0 ? {
