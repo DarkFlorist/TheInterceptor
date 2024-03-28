@@ -399,9 +399,10 @@ export function ConfirmTransaction() {
 		if (currentWindow.id === undefined) throw new Error('could not get our own Id!')
 		try {
 			await sendPopupMessageToBackgroundPage({ method: 'popup_confirmDialog', data: { uniqueRequestIdentifier: currentPendingTransactionOrSignableMessage.uniqueRequestIdentifier, action: 'accept' } })
-		} catch(e) {
-			console.log('eerrr')
-			console.log(e)
+		} catch(error) {
+			console.warn('Failed to confirm transaction')
+			// biome-ignore lint/suspicious/noConsoleLog: <Used for support debugging>
+			console.log({ error })
 		}
 	}
 	async function reject() {
@@ -519,7 +520,7 @@ export function ConfirmTransaction() {
 		return 'Loading...'
 	}
 
-	if (currentPendingTransactionOrSignableMessage === undefined || currentPendingTransactionOrSignableMessage.transactionOrMessageCreationStatus !== 'Simulated' || ( currentPendingTransactionOrSignableMessage.type === 'Transaction' && currentPendingTransactionOrSignableMessage.simulationResults?.statusCode === 'failed')) {
+	if (currentPendingTransactionOrSignableMessage === undefined || (currentPendingTransactionOrSignableMessage.transactionOrMessageCreationStatus !== 'Simulated' && currentPendingTransactionOrSignableMessage.transactionOrMessageCreationStatus !== 'FailedToSimulate')) {
 		return <> 
 			<main>
 				<Hint>

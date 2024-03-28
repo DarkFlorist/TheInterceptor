@@ -64,14 +64,15 @@ export class EthereumClientService {
 			const response = await this.requestHandler.jsonRpcRequest({ method: 'eth_getBlockByNumber', params: ['latest', true] }, true, 6000)
 			if (this.cacheRefreshTimer === undefined) return
 			const newBlock = EthereumBlockHeader.parse(response)
-			console.log(`Current block number: ${ newBlock.number } on ${ this.requestHandler.getRpcEntry().name }`)
+			console.info(`Current block number: ${ newBlock.number } on ${ this.requestHandler.getRpcEntry().name }`)
 			const gotNewBlock = this.cachedBlock?.number !== newBlock.number
 			if (gotNewBlock) this.requestHandler.clearCache()
 			this.newBlockAttemptCallback(newBlock, this, gotNewBlock)
 			this.cachedBlock = newBlock
 		} catch(error) {
-			console.log(`Failed to get a block`)
-			console.warn(error)
+			console.error(`Failed to get a block`)
+			// biome-ignore lint/suspicious/noConsoleLog: <Used for support debugging>
+			console.log({ error })
 			return this.onErrorBlockCallback(this)
 		} finally {
 			this.retrievingBlock = false
@@ -230,7 +231,7 @@ export class EthereumClientService {
 				time: new Date(parentBlock.timestamp.getTime() + 12 * 1000),
 				gasLimit: parentBlock.gasLimit,
 				feeRecipient: parentBlock.miner,
-				baseFee: parentBlock.baseFeePerGas === undefined ? 15000000n : parentBlock.baseFeePerGas
+				baseFeePerGas: parentBlock.baseFeePerGas === undefined ? 15000000n : parentBlock.baseFeePerGas
 			},
 			stateOverrides: {
 				...signatures.length > 0 ? {

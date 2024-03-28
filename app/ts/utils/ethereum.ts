@@ -98,8 +98,8 @@ export function calculateV(transaction: DistributiveOmit<ITransactionSignatureLe
 	return (transaction.yParity === 'even' ? 0n : 1n) + 35n + 2n * transaction.chainId
 }
 
-type RlpEncodeableData = Uint8Array | Array<RlpEncodeableData>
-function rlpEncode(data: RlpEncodeableData[]): Uint8Array {
+type RlpEncodeableData = Uint8Array | RlpEncodeableData[]
+export function rlpEncode(data: RlpEncodeableData[]): Uint8Array {
 	function rlpEncodeArray(data: RlpEncodeableData): ethers.RlpStructuredData {
 		if (!Array.isArray(data)) return `0x${ dataString(data) }`
 		return data.map((x) => Array.isArray(x) ? rlpEncodeArray(x) : `0x${ dataString(x) }`)
