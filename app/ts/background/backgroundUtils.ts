@@ -16,6 +16,7 @@ export async function getActiveAddress(settings: Settings, tabId: number) {
 export async function sendPopupMessageToOpenWindows(message: MessageToPopup) {
 	try {
 		await browser.runtime.sendMessage(serialize(MessageToPopup, message))
+		checkAndThrowRuntimeLastError()
 		return true
 	} catch (error) {
 		if (error instanceof Error) {
@@ -34,6 +35,7 @@ export async function sendPopupMessageToOpenWindows(message: MessageToPopup) {
 
 export async function sendPopupMessageToBackgroundPage(message: PopupMessage) {
 	await browser.runtime.sendMessage(serialize(PopupMessage, message))
+	checkAndThrowRuntimeLastError()
 }
 
 export const INTERNAL_CHANNEL_NAME = 'internalChannel'
@@ -60,9 +62,9 @@ export async function setExtensionIcon(details: browser.action._SetIconDetails) 
 	try {
 		const manifest = browser.runtime.getManifest()
 		if (manifest.manifest_version === 2) {
-			browser.browserAction.setIcon(details)
+			await browser.browserAction.setIcon(details)
 		} else {
-			browser.action.setIcon(details)
+			await browser.action.setIcon(details)
 		}
 		checkAndThrowRuntimeLastError()
 	} catch {
@@ -75,9 +77,9 @@ export async function setExtensionBadgeText(details: browser.browserAction._SetB
 	try {
 		const manifest = browser.runtime.getManifest()
 		if (manifest.manifest_version === 2) {
-			browser.browserAction.setBadgeText(details)
+			await browser.browserAction.setBadgeText(details)
 		} else {
-			browser.action.setBadgeText(details)
+			await browser.action.setBadgeText(details)
 		}
 		checkAndThrowRuntimeLastError()
 	} catch {
@@ -90,9 +92,9 @@ export async function setExtensionBadgeBackgroundColor(details: browser.action._
 	try {
 		const manifest = browser.runtime.getManifest()
 		if (manifest.manifest_version === 2) {
-			browser.browserAction.setBadgeBackgroundColor(details)
+			await browser.browserAction.setBadgeBackgroundColor(details)
 		} else {
-			browser.action.setBadgeBackgroundColor(details)
+			await browser.action.setBadgeBackgroundColor(details)
 		}
 		checkAndThrowRuntimeLastError()
 	} catch {

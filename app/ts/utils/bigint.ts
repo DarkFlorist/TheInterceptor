@@ -32,7 +32,7 @@ export function bigintToRoundedPrettyDecimalString(value: bigint, power: bigint,
 				roundedString += '0'
 			}
 			if ( stringifiedNumber.charAt(i) !== '-' && stringifiedNumber.charAt(i) !== '.') {
-				if ( stringifiedNumber.charAt(i) != '0') firstDigitFound = true
+				if ( stringifiedNumber.charAt(i) !== '0') firstDigitFound = true
 				if (firstDigitFound) p++
 			}
 			if ( stringifiedNumber.charAt(i) === '.') pointFound = true
