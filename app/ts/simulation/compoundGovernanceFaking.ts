@@ -78,7 +78,7 @@ export const simulateCompoundGovernanceExecution = async (ethereumClientService:
 			time: new Date(Number(eta) * 1000), // timestamp is set to ETA
 			gasLimit: parentBlock.gasLimit,
 			feeRecipient: parentBlock.miner,
-			baseFee: parentBlock.baseFeePerGas === undefined ? 15000000n : parentBlock.baseFeePerGas
+			baseFeePerGas: parentBlock.baseFeePerGas === undefined ? 15000000n : parentBlock.baseFeePerGas
 		},
 		stateOverrides: {
 			[addressString(timeLockContract)]: { code: getCompoundGovernanceTimeLockMulticall(), stateDiff: {} }
