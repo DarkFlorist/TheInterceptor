@@ -13,7 +13,7 @@ export function SomeTimeAgo(props: SomeTimeAgoProps) {
 	const diffTotext = props.diffToText !== undefined ? props.diffToText : humanReadableDateDelta
 	const humanReadableTimeDiff = useComputed(() => diffTotext(props.countBackwards ? timeDiff.value : -timeDiff.value))
 	useEffect(() => {
-		const id = setInterval(() => timeDiff.value = getTimeDiff(), 1000)
+		const id = setInterval(() => { timeDiff.value = getTimeDiff() }, 1000)
 		return () => clearInterval(id)
 	})
 	useEffect(() => { timeDiff.value = getTimeDiff() }, [props.priorTimestamp])
