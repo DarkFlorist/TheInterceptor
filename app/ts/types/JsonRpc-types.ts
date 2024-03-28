@@ -79,8 +79,8 @@ export const DappRequestTransaction = funtypes.ReadonlyPartial({
 .withConstraint((x) => {
 	if (x.gasPrice !== undefined) return x.maxPriorityFeePerGas === undefined && x.maxFeePerGas === undefined
 	if (x.maxPriorityFeePerGas !== undefined) return x.maxFeePerGas !== undefined && x.gasPrice === undefined
-	if (x.maxFeePerGas !== undefined) return x.maxPriorityFeePerGas !== undefined && x.gasPrice === undefined
-	return true
+	if (x.maxFeePerGas !== undefined) return x.gasPrice === undefined /* && x.maxPriorityFeePerGas !== undefined*/ //Remix doesn't send "maxPriorityFeePerGas" with "maxFeePerGas"
+  return true
 })
 
 export type EthTransactionReceiptResponse = funtypes.Static<typeof EthTransactionReceiptResponse>
