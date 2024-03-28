@@ -1,0 +1,47 @@
+{
+	"$schema": "https://biomejs.dev/schemas/1.6.1/schema.json",
+	"organizeImports": {
+		"enabled": false
+	},
+	"vcs": {
+		"enabled": true,
+		"clientKind": "git"
+	},
+	"files": {
+		"include": ["app/**/*.ts", "app/**/*.tsx", "test/**/*.ts", "build/**/*.mts"]
+	},
+	"linter": {
+		"enabled": true,
+		"rules": {
+			"recommended": false,
+			"complexity": {
+				"noForEach": "warn",
+				"useArrowFunction": "warn",
+				"useFlatMap": "warn",
+				"useLiteralKeys": "warn",
+				"useOptionalChain": "warn"
+			},
+			"correctness": {
+				"noUnusedImports": "warn"
+			},
+			"style": {
+				"noUselessElse": "warn",
+				"noUnusedTemplateLiteral": "warn",
+				"noInferrableTypes": "warn",
+				"useDefaultParameterLast": "warn",
+				"useConsistentArrayType": "warn",
+				"useConst": "warn"
+			},
+			"suspicious": {
+				"noDoubleEquals": "warn",
+				"noConsoleLog": "warn",
+				"noExplicitAny": "warn",
+				"noAssignInExpressions": "warn",
+				"useAwait": "warn"
+			},
+			"nursery": {
+				"noUselessTernary": "warn"
+			}
+		}
+	}
+}
