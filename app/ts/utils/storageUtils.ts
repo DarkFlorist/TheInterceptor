@@ -9,8 +9,8 @@ import { SignerName } from '../types/signerTypes.js'
 import { PendingAccessRequests, PendingTransactionOrSignableMessage } from '../types/accessRequest.js'
 import { RpcEntries, RpcNetwork } from '../types/rpc.js'
 
-export type IdsOfOpenedTabs = funtypes.Static<typeof IdsOfOpenedTabs>
-export const IdsOfOpenedTabs = funtypes.ReadonlyObject({
+type IdsOfOpenedTabs = funtypes.Static<typeof IdsOfOpenedTabs>
+const IdsOfOpenedTabs = funtypes.ReadonlyObject({
 	addressBook: funtypes.Union(funtypes.Undefined, funtypes.Number),
 	settingsView: funtypes.Union(funtypes.Undefined, funtypes.Number),
 })
@@ -21,8 +21,8 @@ export const PartialIdsOfOpenedTabs = funtypes.ReadonlyPartial({
 	settingsView: funtypes.Union(funtypes.Undefined, funtypes.Number),
 })
 
-export type LocalStorageItems = funtypes.Static<typeof LocalStorageItems>
-export const LocalStorageItems = funtypes.ReadonlyPartial({
+type LocalStorageItems = funtypes.Static<typeof LocalStorageItems>
+const LocalStorageItems = funtypes.ReadonlyPartial({
 	activeSigningAddress: EthereumAddressOrMissing,
 	activeSimulationAddress: EthereumAddressOrMissing,
 	addressInfos: ActiveAddressArray,
@@ -50,8 +50,8 @@ export const LocalStorageItems = funtypes.ReadonlyPartial({
 	interceptorStartSleepingTimestamp: funtypes.Number,
 })
 
-export type LocalStorageKey = funtypes.Static<typeof LocalStorageKey>
-export const LocalStorageKey = funtypes.Union(
+type LocalStorageKey = funtypes.Static<typeof LocalStorageKey>
+const LocalStorageKey = funtypes.Union(
 	funtypes.Literal('activeSigningAddress'),
 	funtypes.Literal('activeSimulationAddress'),
 	funtypes.Literal('addressInfos'),
@@ -80,9 +80,6 @@ export const LocalStorageKey = funtypes.Union(
 
 export async function browserStorageLocalGet(keys: LocalStorageKey | LocalStorageKey[]): Promise<LocalStorageItems> {
 	return LocalStorageItems.parse(await browser.storage.local.get(Array.isArray(keys) ? keys : [keys]))
-}
-export async function browserStorageLocalGetUnParsed(keys: LocalStorageKey | LocalStorageKey[]): Promise<unknown> {
-	return await browser.storage.local.get(Array.isArray(keys) ? keys : [keys])
 }
 export async function browserStorageLocalRemove(keys: LocalStorageKey | LocalStorageKey[]) {
 	return await browser.storage.local.remove(Array.isArray(keys) ? keys : [keys])

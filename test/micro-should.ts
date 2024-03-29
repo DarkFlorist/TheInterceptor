@@ -1,6 +1,3 @@
-export const RED = '\x1b[31m'
-export const GREEN = '\x1b[32m'
-export const RESET = '\x1b[0m'
 import * as url from 'url'
 import * as process from 'process'
 
@@ -81,8 +78,6 @@ export async function runIfRoot(func: () => Promise<void>, importMeta: any) {
 
 const microShould = new MicroShould()
 
-export const only = microShould.only
-export const skip = microShould.skip
 export const should = microShould.should
 export const describe = microShould.describe
 export const run = microShould.run

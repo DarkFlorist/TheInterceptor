@@ -2,7 +2,7 @@ import { changeActiveAddressAndChainAndResetSimulation, changeActiveRpc, getPrep
 import { getSettings, setUseTabsInsteadOfPopup, setMakeMeRich, setPage, setUseSignersAddressAsActiveAddress, updateWebsiteAccess, exportSettingsAndAddressBook, importSettingsAndAddressBook, getMakeMeRich, getUseTabsInsteadOfPopup, getMetamaskCompatibilityMode, setMetamaskCompatibilityMode, getPage } from './settings.js'
 import { getPendingTransactionsAndMessages, getCurrentTabId, getTabState, saveCurrentTabId, setRpcList, getRpcList, getPrimaryRpcForChain, getRpcConnectionStatus, updateUserAddressBookEntries, getSimulationResults, setIdsOfOpenedTabs, getIdsOfOpenedTabs, updatePendingTransactionOrMessage } from './storageVariables.js'
 import { Simulator, parseEvents } from '../simulation/simulator.js'
-import { ChangeActiveAddress, ChangeMakeMeRich, ChangePage, RemoveTransaction, RequestAccountsFromSigner, TransactionConfirmation, InterceptorAccess, ChangeInterceptorAccess, ChainChangeConfirmation, EnableSimulationMode, ChangeActiveChain, AddOrEditAddressBookEntry, GetAddressBookData, RemoveAddressBookEntry, InterceptorAccessRefresh, InterceptorAccessChangeAddress, Settings, RefreshConfirmTransactionMetadata, RefreshInterceptorAccessMetadata, ChangeSettings, ImportSettings, SetRpcList, UpdateHomePage, SimulateGovernanceContractExecutionReply, SimulateGovernanceContractExecution, ChangeAddOrModifyAddressWindowState, FetchAbiAndNameFromEtherscan, OpenWebPage, DisableInterceptor } from '../types/interceptor-messages.js'
+import { ChangeActiveAddress, ChangeMakeMeRich, ChangePage, RemoveTransaction, RequestAccountsFromSigner, TransactionConfirmation, InterceptorAccess, ChangeInterceptorAccess, ChainChangeConfirmation, EnableSimulationMode, ChangeActiveChain, AddOrEditAddressBookEntry, GetAddressBookData, RemoveAddressBookEntry, InterceptorAccessRefresh, InterceptorAccessChangeAddress, Settings, RefreshConfirmTransactionMetadata, ChangeSettings, ImportSettings, SetRpcList, UpdateHomePage, SimulateGovernanceContractExecutionReply, SimulateGovernanceContractExecution, ChangeAddOrModifyAddressWindowState, FetchAbiAndNameFromEtherscan, OpenWebPage, DisableInterceptor } from '../types/interceptor-messages.js'
 import { formEthSendTransaction, formSendRawTransaction, resolvePendingTransactionOrMessage, updateConfirmTransactionView } from './windows/confirmTransaction.js'
 import { getAddressMetadataForAccess, requestAddressChange, resolveInterceptorAccess } from './windows/interceptorAccess.js'
 import { resolveChainChange } from './windows/changeChain.js'
@@ -46,7 +46,7 @@ export async function getLastKnownCurrentTabId() {
 	return tabs[0].id
 }
 
-export async function getSignerAccount() {
+async function getSignerAccount() {
 	const tabId = await getLastKnownCurrentTabId()
 	const signerAccounts = tabId === undefined ? undefined : (await getTabState(tabId)).signerAccounts
 	return signerAccounts !== undefined && signerAccounts.length > 0 ? signerAccounts[0] : undefined
@@ -330,10 +330,6 @@ export async function interceptorAccessChangeAddressOrRefresh(websiteTabConnecti
 	await requestAddressChange(websiteTabConnections, params)
 }
 
-export async function refreshInterceptorAccessMetadata(params: RefreshInterceptorAccessMetadata) {
-	await refreshInterceptorAccessMetadata(params)
-}
-
 export async function changeSettings(simulator: Simulator, parsedRequest: ChangeSettings) {
 	if (parsedRequest.data.useTabsInsteadOfPopup !== undefined) await setUseTabsInsteadOfPopup(parsedRequest.data.useTabsInsteadOfPopup)
 	if (parsedRequest.data.metamaskCompatibilityMode !== undefined) await setMetamaskCompatibilityMode(parsedRequest.data.metamaskCompatibilityMode)
@@ -341,11 +337,10 @@ export async function changeSettings(simulator: Simulator, parsedRequest: Change
 }
 
 export async function importSettings(settingsData: ImportSettings) {
-	console.log(settingsData.data.fileContents)
 	if (!isJSON(settingsData.data.fileContents)) {
 		return await sendPopupMessageToOpenWindows({
 			method: 'popup_initiate_export_settings_reply',
-			data: { success: false, errorMessage: 'Failed to read the file. It is not a valid JSOn file.' }
+			data: { success: false, errorMessage: 'Failed to read the file. It is not a valid JSON file.' }
 		})
 	}
 	const parsed = ExportedSettings.safeParse(JSON.parse(settingsData.data.fileContents))
@@ -473,9 +468,10 @@ export async function openWebPage(parsedRequest: OpenWebPage) {
 	try {
 		browser.tabs.update(parsedRequest.data.websiteSocket.tabId, { url: parsedRequest.data.url, active: true })
 		checkAndThrowRuntimeLastError()
-	} catch(e) {
+	} catch(error) {
 		console.warn('Failed to update tab with new webpage')
-		console.log(e)
+		// biome-ignore lint/suspicious/noConsoleLog: <used for support debugging>
+		console.log({ error })
 	}
 	finally {
 		return await browser.tabs.create({ url: parsedRequest.data.url, active: true })

@@ -28,12 +28,12 @@ export function calculateUniswapLikePools(token: EthereumAddress, quoteToken: Et
 
 	const v2Pools = network.priceSources.uniswapV2Like.map(({ factory, initCodeHash }) => EthereumAddress.parse(getCreate2Address(addressString(factory), keccak256(solidityPacked(['address', 'address'], [token0, token1])), initCodeHash)))
 
-	const v3Pools = network.priceSources.uniswapV3Like.map(({ factory, initCodeHash }) => [
+	const v3Pools = network.priceSources.uniswapV3Like.flatMap(({ factory, initCodeHash }) => [
 		getCreate2Address(addressString(factory), keccak256(abi.encode(['address', 'address', 'uint24'], [token0, token1, 100])), initCodeHash),
 		getCreate2Address(addressString(factory), keccak256(abi.encode(['address', 'address', 'uint24'], [token0, token1, 500])), initCodeHash),
 		getCreate2Address(addressString(factory), keccak256(abi.encode(['address', 'address', 'uint24'], [token0, token1, 3000])), initCodeHash),
 		getCreate2Address(addressString(factory), keccak256(abi.encode(['address', 'address', 'uint24'], [token0, token1, 10000])), initCodeHash)
-	]).flat().map(addr => EthereumAddress.parse(addr))
+	]).map(addr => EthereumAddress.parse(addr))
 
 	if (v2Pools.length === 0 && v3Pools.length === 0) return undefined
 
@@ -44,8 +44,8 @@ export function calculateUniswapLikePools(token: EthereumAddress, quoteToken: Et
 	}
 }
 
-export const UniswapV2PairABI = ['function getReserves() external view returns (uint112 reserve0, uint112 reserve1, uint32 blockTimestampLast)']
-export const UniswapV3PairABI = ['function slot0() view returns (uint160 sqrtPriceX96, int24 tick, uint16 observationIndex, uint16 observationCardinality, uint16 observationCardinalityNext, uint8 feeProtocol, bool unlocked)']
+const UniswapV2PairABI = ['function getReserves() external view returns (uint112 reserve0, uint112 reserve1, uint32 blockTimestampLast)']
+const UniswapV3PairABI = ['function slot0() view returns (uint160 sqrtPriceX96, int24 tick, uint16 observationIndex, uint16 observationCardinality, uint16 observationCardinalityNext, uint8 feeProtocol, bool unlocked)']
 
 export function constructUniswapLikeSpotCalls(tokenA: EthereumAddress, tokenB: EthereumAddress, poolAddresses: UniswapPools): Multicall3Call[] {
 	const IUniswapV2Pool = new Interface(UniswapV2PairABI)
@@ -66,7 +66,7 @@ export function constructUniswapLikeSpotCalls(tokenA: EthereumAddress, tokenB: E
 		})),
 
 		// Balance calls for v3 pool TVL
-		...poolAddresses.v3Pools.map(poolAddress => [
+		...poolAddresses.v3Pools.flatMap(poolAddress => [
 			{
 				target: addressString(tokenA),
 				allowFailure: true,
@@ -77,7 +77,7 @@ export function constructUniswapLikeSpotCalls(tokenA: EthereumAddress, tokenB: E
 				allowFailure: true,
 				callData: IErc20Bal.encodeFunctionData('balanceOf', [addressString(poolAddress)])
 			}
-		]).flat(),
+		]),
 	]
 }
 

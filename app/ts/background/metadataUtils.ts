@@ -12,7 +12,7 @@ import { getUniqueItemsByProperties } from '../utils/typed-arrays.js'
 import { EthereumNameServiceTokenWrapper, getEthereumNameServiceNameFromTokenId } from '../utils/ethereumNameService.js'
 import { defaultActiveAddresses } from './settings.js'
 import { RpcNetwork } from '../types/rpc.js'
-export const LOGO_URI_PREFIX = `../vendor/@darkflorist/address-metadata`
+const LOGO_URI_PREFIX = `../vendor/@darkflorist/address-metadata`
 
 const pathJoin = (parts: string[], sep = '/') => parts.join(sep).replace(new RegExp(sep + '{1,}', 'g'), sep)
 
@@ -154,12 +154,12 @@ export async function identifyAddress(ethereumClientService: EthereumClientServi
 }
 
 export async function getAddressBookEntriesForVisualiser(ethereumClientService: EthereumClientService, events: GeneralEnrichedEthereumEvents, simulationState: SimulationState): Promise<AddressBookEntry[]> {
-	const eventArguments = events.map((event) => event.type !== 'NonParsed' ? event.args : []).flat()
-	const addressesInEvents = eventArguments.map((event) => {
+	const eventArguments = events.flatMap((event) => event.type !== 'NonParsed' ? event.args : [])
+	const addressesInEvents = eventArguments.flatMap((event) => {
 		if (event.typeValue.type === 'address') return event.typeValue.value
 		if (event.typeValue.type === 'address[]') return event.typeValue.value
 		return undefined
-	}).flat().filter((address): address is bigint => address !== undefined)
+	}).filter((address): address is bigint => address !== undefined)
 	const addressesToFetchMetadata = [...addressesInEvents, ...events.map((event) => event.address)]
 
 	simulationState.simulatedTransactions.forEach((tx) => {

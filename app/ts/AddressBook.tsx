@@ -38,7 +38,7 @@ const ELEMENT_PADDING_PX = 10
 const UNLOAD_DISTANCE = 8
 const LOAD_DISTANCE = 4
 
-export function FilterLink(param: { name: ActiveFilter, currentFilter: ActiveFilter, setActiveFilter: (activeFilter: ActiveFilter) => void }) {
+function FilterLink(param: { name: ActiveFilter, currentFilter: ActiveFilter, setActiveFilter: (activeFilter: ActiveFilter) => void }) {
 	return <a
 		class = { param.currentFilter === param.name ? `is-active` : '' }
 		onClick = { () => param.setActiveFilter(param.name) }>
@@ -54,7 +54,7 @@ type ConfirmaddressBookEntryToBeRemovedParams = {
 	renameAddressCallBack: RenameAddressCallBack,
 }
 
-export function ConfirmaddressBookEntryToBeRemoved(param: ConfirmaddressBookEntryToBeRemovedParams) {
+function ConfirmaddressBookEntryToBeRemoved(param: ConfirmaddressBookEntryToBeRemovedParams) {
 	const remove = () => {
 		param.removeEntry(param.addressBookEntry)
 		param.close()
@@ -100,7 +100,7 @@ type ListElementParam = (AddressBookEntry | { type: 'empty' }) & {
 	renameAddressCallBack: RenameAddressCallBack,
 }
 
-export function ListElement(entry: ListElementParam) {
+function ListElement(entry: ListElementParam) {
 	return <li style = { `margin: 0px; padding-bottom: ${ ELEMENT_PADDING_PX }px` } key = { entry.listKey }>
 		<div class = 'card' style = { `height: ${ ELEMENT_SIZE_PX[entry.category] }px` }>
 			<div class = 'card-content' style = 'height: 100%; width: 500px;'>
@@ -174,7 +174,7 @@ type AddressList = {
 	renameAddressCallBack: RenameAddressCallBack,
 }
 
-export function AddressList({ addressBookEntries, numberOfEntries, startIndex, listName, filter, removeEntry, renameAddressCallBack }: AddressList) {
+function AddressList({ addressBookEntries, numberOfEntries, startIndex, listName, filter, removeEntry, renameAddressCallBack }: AddressList) {
 	const entries = addressBookEntries === undefined || addressBookEntries === 'fetching'
 		? Array.from(new Array(numberOfEntries + 1)).map(() => ({
 			type: 'empty' as const

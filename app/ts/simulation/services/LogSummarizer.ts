@@ -1,6 +1,7 @@
 import { addressString } from '../../utils/bigint.js'
 import { Erc721TokenApprovalChange, SimulatedAndVisualizedTransaction, ERC20TokenApprovalChange, Erc20TokenBalanceChange, TokenPriceEstimate, TokenVisualizerResultWithMetadata, NamedTokenId } from '../../types/visualizer-types.js'
 import { AddressBookEntry, Erc1155Entry, Erc721Entry } from '../../types/addressBookTypes.js'
+import { ETHEREUM_LOGS_LOGGER_ADDRESS } from '../../utils/constants.js'
 export type BalanceChangeSummary = {
 	erc20TokenBalanceChanges: Map<string, bigint>, // token address, amount
 	erc20TokenApprovalChanges: Map<string, Map<string, bigint > > // token address, approved address, amount
@@ -23,7 +24,7 @@ export type SummaryOutcome = {
 	erc721TokenBalanceChanges: (Erc721Entry & { received: boolean, tokenId: bigint })[]
 	erc721and1155OperatorChanges: Erc721and1155OperatorChange[]
 	erc721TokenIdApprovalChanges: Erc721TokenApprovalChange[]
-	
+
 	erc1155TokenBalanceChanges: Erc1155TokenBalanceChange[]
 }
 
@@ -161,21 +162,31 @@ export class LogSummarizer {
 			const to = addressString(change.to.address)
 			const tokenAddress = addressString(change.token.address)
 
-			for (const address of [from, to]) {
-				this.ensureAddressInSummary(address)
-			}
+			for (const address of [from, to]) this.ensureAddressInSummary(address)
 
 			this.updateErc1155(from, to, tokenAddress, change)
 			this.updateErc721(from, to, tokenAddress, change)
 			this.updateErc20(from, to, tokenAddress, change)
 			this.updateAllApproval(from, to, tokenAddress, change)
 		}
+
+		// update gas fees
+		const transactionSender = addressString(result.transaction.from.address)
+		this.ensureAddressInSummary(transactionSender)
+		const ethAddress = addressString(ETHEREUM_LOGS_LOGGER_ADDRESS)
+		const gasFee = result.gasSpent * result.realizedGasPrice
+		const senderSummary = this.summary.get(transactionSender)
+		if (senderSummary === undefined) throw new Error('sender summary is missing?')
+		const oldFromData = senderSummary.erc20TokenBalanceChanges.get(ethAddress)
+		senderSummary.erc20TokenBalanceChanges.set(ethAddress, oldFromData === undefined ? -gasFee : oldFromData - gasFee)
+
+		// clean if change is now zero
+		if (senderSummary.erc20TokenBalanceChanges.get(ethAddress) === 0n) senderSummary.erc20TokenBalanceChanges.delete(ethAddress)
 	}
 
 	private summarizeToAddressChanges = (transactions: readonly (SimulatedAndVisualizedTransaction | undefined)[]) => {
 		for (const transaction of transactions) {
-			if ( transaction === undefined ) continue
-			// calculate token changes for each account
+			if (transaction === undefined) continue
 			this.updateTokenChanges(transaction)
 		}
 	}

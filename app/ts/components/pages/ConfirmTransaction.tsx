@@ -119,7 +119,7 @@ const TransactionNames = (param: TransactionNamesParams) => {
 	</div>
 }
 
-export type TransactionCardParams = {
+type TransactionCardParams = {
 	currentPendingTransaction: SimulatedPendingTransaction,
 	pendingTransactionsAndSignableMessages: readonly PendingTransactionOrSignableMessage[],
 	renameAddressCallBack: (entry: AddressBookEntry) => void,
@@ -128,7 +128,7 @@ export type TransactionCardParams = {
 	numberOfUnderTransactions: number,
 }
 
-export function TransactionCard(param: TransactionCardParams) {
+function TransactionCard(param: TransactionCardParams) {
 	const simulationResults = param.currentPendingTransaction.simulationResults
 	if (simulationResults.statusCode === 'failed') return <p class = 'paragraph'> failed to simulate</p>
 	const simulationAndVisualisationResults = {
@@ -256,7 +256,7 @@ export function TransactionCard(param: TransactionCardParams) {
 	</>
 }
 
-export type CheckBoxesParams = {
+type CheckBoxesParams = {
 	currentPendingTransactionOrSignableMessage: PendingTransactionOrSignableMessage,
 	forceSend: boolean,
 	setForceSend: (enabled: boolean) => void,
@@ -306,7 +306,7 @@ type NetworkErrorParams = {
 	simulationMode: boolean
 }
 
-export const WebsiteErrors = ({ website, websiteSocket, simulationMode }: NetworkErrorParams) => {
+const WebsiteErrors = ({ website, websiteSocket, simulationMode }: NetworkErrorParams) => {
 	const message = getWebsiteWarningMessage(website.websiteOrigin, simulationMode)
 	if (message === undefined) return <></>
 	if (message.suggestedAlternative === undefined) return <ErrorComponent warning = { true } text = { message.message }/>
@@ -399,9 +399,10 @@ export function ConfirmTransaction() {
 		if (currentWindow.id === undefined) throw new Error('could not get our own Id!')
 		try {
 			await sendPopupMessageToBackgroundPage({ method: 'popup_confirmDialog', data: { uniqueRequestIdentifier: currentPendingTransactionOrSignableMessage.uniqueRequestIdentifier, action: 'accept' } })
-		} catch(e) {
-			console.log('eerrr')
-			console.log(e)
+		} catch(error) {
+			console.warn('Failed to confirm transaction')
+			// biome-ignore lint/suspicious/noConsoleLog: <Used for support debugging>
+			console.log({ error })
 		}
 	}
 	async function reject() {
@@ -519,7 +520,7 @@ export function ConfirmTransaction() {
 		return 'Loading...'
 	}
 
-	if (currentPendingTransactionOrSignableMessage === undefined || currentPendingTransactionOrSignableMessage.transactionOrMessageCreationStatus !== 'Simulated' || ( currentPendingTransactionOrSignableMessage.type === 'Transaction' && currentPendingTransactionOrSignableMessage.simulationResults?.statusCode === 'failed')) {
+	if (currentPendingTransactionOrSignableMessage === undefined || (currentPendingTransactionOrSignableMessage.transactionOrMessageCreationStatus !== 'Simulated' && currentPendingTransactionOrSignableMessage.transactionOrMessageCreationStatus !== 'FailedToSimulate')) {
 		return <> 
 			<main>
 				<Hint>

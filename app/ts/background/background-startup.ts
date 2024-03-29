@@ -5,7 +5,7 @@ import { retrieveWebsiteDetails, updateExtensionBadge, updateExtensionIcon } fro
 import { clearTabStates, getPrimaryRpcForChain, getSimulationResults, removeTabState, setRpcConnectionStatus, updateTabState, updateUserAddressBookEntries } from './storageVariables.js'
 import { Simulator } from '../simulation/simulator.js'
 import { TabConnection, TabState, WebsiteTabConnections } from '../types/user-interface-types.js'
-import { EthereumBlockHeader } from '../types/wire-types.js'
+import { EthereumAddress, EthereumBlockHeader } from '../types/wire-types.js'
 import { EthereumClientService } from '../simulation/services/EthereumClientService.js'
 import { getSocketFromPort, sendPopupMessageToOpenWindows, websiteSocketToString } from './backgroundUtils.js'
 import { sendSubscriptionMessagesForNewBlock } from '../simulation/services/EthereumSubscriptionService.js'
@@ -37,17 +37,23 @@ async function migrateAddressInfoAndContacts() {
 	const addressInfos: AddressBookEntries = (results.addressInfos ?? []).map((x) => convertActiveAddressToAddressBookEntry(x))
 	const contacts: AddressBookEntries = results.contacts ?? []
 	if (addressInfos.length > 0 || contacts.length > 0) {
-		await updateUserAddressBookEntries((previousEntries) => {
-			return getUniqueItemsByProperties(addressInfos.concat(contacts).concat(previousEntries), ['address'])
-		})
+		await updateUserAddressBookEntries((previousEntries) => getUniqueItemsByProperties(addressInfos.concat(contacts).concat(previousEntries), ['address']))
 		await browserStorageLocalRemove(['addressInfos', 'contacts'])
 	}
+	await updateUserAddressBookEntries((oldEntries) => {
+		return oldEntries.map((entry) => {
+			const nameAddress = EthereumAddress.safeParse(entry.name)
+			// there used to be a bug that when you renamed address, it did not convert from 'OnChain' to 'User' This fixes it. 
+			if (entry.entrySource === 'OnChain' && !nameAddress.success) return { ...entry, entrySource: 'User' }
+			return entry
+		})
+	})
 }
 migrateAddressInfoAndContacts()
 
 const pendingRequestLimiter = new Semaphore(40) // only allow 40 requests pending globally
 
-export async function onContentScriptConnected(simulator: Simulator, port: browser.runtime.Port, websiteTabConnections: WebsiteTabConnections) {
+async function onContentScriptConnected(simulator: Simulator, port: browser.runtime.Port, websiteTabConnections: WebsiteTabConnections) {
 	const socket = getSocketFromPort(port)
 	if (port?.sender?.url === undefined) return
 	const websiteOrigin = (new URL(port.sender.url)).hostname

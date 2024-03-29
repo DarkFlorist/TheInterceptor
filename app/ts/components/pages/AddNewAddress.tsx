@@ -26,7 +26,7 @@ type IncompleteAddressIconParams = {
 	logoUri: string | undefined,
 }
 
-export function IncompleteAddressIcon({ addressInput, logoUri }: IncompleteAddressIconParams) {
+function IncompleteAddressIcon({ addressInput, logoUri }: IncompleteAddressIconParams) {
 	return <AddressIcon
 		address = { stringToAddress(addressInput) }
 		logoUri = { logoUri }
@@ -41,7 +41,7 @@ type NameInputParams = {
 	disabled: boolean,
 }
 
-export function NameInput({ nameInput, setNameInput, disabled }: NameInputParams) {
+function NameInput({ nameInput, setNameInput, disabled }: NameInputParams) {
 	const ref = createRef<HTMLInputElement>()
     useEffect(() => { ref.current?.focus() }, [])
 	return <input
@@ -63,7 +63,7 @@ type AddressInputParams = {
 	setAddress: (input: string) => void
 }
 
-export function AddressInput({ disabled, addressInput, setAddress }: AddressInputParams) {
+function AddressInput({ disabled, addressInput, setAddress }: AddressInputParams) {
 	return <input
 		disabled = { disabled }
 		className = 'input subtitle is-7 is-spaced'
@@ -86,7 +86,7 @@ type RenderinCompleteAddressBookParams = {
 	fetchAbiAndNameFromEtherscan: () => Promise<void>
 }
 
-export const CellElement = (param: { element: ComponentChildren }) => {
+const CellElement = (param: { element: ComponentChildren }) => {
 	return <div class = 'log-cell' style = 'justify-content: right;'>
 		{ param.element }
 	</div>

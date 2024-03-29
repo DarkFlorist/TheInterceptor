@@ -289,7 +289,7 @@ function ArbitaryEIP712({ enrichedEIP712, renameAddressCallBack }: ArbitaryEIP71
 	</>
 }
 
-export function Permit2ExtraDetails({ permit2 }: { permit2: VisualizedPersonalSignRequestPermit2 }) {
+function Permit2ExtraDetails({ permit2 }: { permit2: VisualizedPersonalSignRequestPermit2 }) {
 	return <>
 		<CellElement text = 'Chain: '/>
 		<CellElement text = { getChainName(BigInt(permit2.message.domain.chainId)) }/>
@@ -305,7 +305,7 @@ export function Permit2ExtraDetails({ permit2 }: { permit2: VisualizedPersonalSi
 	</>
 }
 
-export function PermitExtraDetails({ permit }: { permit: VisualizedPersonalSignRequestPermit }) {
+function PermitExtraDetails({ permit }: { permit: VisualizedPersonalSignRequestPermit }) {
 	return <>
 		<CellElement text = 'Chain: '/>
 		<CellElement text = { getChainName(BigInt(permit.message.domain.chainId)) }/>
@@ -321,7 +321,7 @@ type ExtraDetailsCardParams = {
 	renameAddressCallBack: RenameAddressCallBack
 }
 
-export function ExtraDetails({ visualizedPersonalSignRequest, renameAddressCallBack }: ExtraDetailsCardParams) {
+function ExtraDetails({ visualizedPersonalSignRequest, renameAddressCallBack }: ExtraDetailsCardParams) {
 	const [showSummary, setShowSummary] = useState<boolean>(false)
 	if (visualizedPersonalSignRequest.type !== 'Permit2'
 		&& visualizedPersonalSignRequest.type !== 'Permit'
@@ -355,7 +355,7 @@ export function ExtraDetails({ visualizedPersonalSignRequest, renameAddressCallB
 	</div>
 }
 
-export function RawMessage({ visualizedPersonalSignRequest }: ExtraDetailsCardParams) {
+function RawMessage({ visualizedPersonalSignRequest }: ExtraDetailsCardParams) {
 	const [showSummary, setShowSummary] = useState<boolean>(false)
 	return <div class = 'card' style = 'margin-top: 10px; margin-bottom: 10px'>
 		<header class = 'card-header noselect' style = 'cursor: pointer; height: 30px;' onClick = { () => setShowSummary((prevValue) => !prevValue) }>
@@ -381,7 +381,7 @@ export function RawMessage({ visualizedPersonalSignRequest }: ExtraDetailsCardPa
 	</div>
 }
 
-export function Signer({ signer, renameAddressCallBack }: { signer: AddressBookEntry, renameAddressCallBack: (entry: AddressBookEntry) => void, }) {
+function Signer({ signer, renameAddressCallBack }: { signer: AddressBookEntry, renameAddressCallBack: (entry: AddressBookEntry) => void, }) {
 	return <span class = 'log-table' style = 'margin-top: 10px; column-gap: 5px; justify-content: space-between; grid-template-columns: auto auto'>
 		<div class = 'log-cell' style = ''>
 			<p style = { `color: var(--subtitle-text-color);` }> Signing address: </p>

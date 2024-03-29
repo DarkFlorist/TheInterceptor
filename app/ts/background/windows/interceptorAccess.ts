@@ -52,12 +52,12 @@ export async function resolveInterceptorAccess(simulator: Simulator, websiteTabC
 }
 
 export async function getAddressMetadataForAccess(websiteAccess: WebsiteAccessArray): Promise<readonly ActiveAddressEntry[]> {
-	const addresses = websiteAccess.map((x) => x.addressAccess === undefined ? [] : x.addressAccess?.map((addr) => addr.address)).flat()
+	const addresses = websiteAccess.flatMap((x) => x.addressAccess === undefined ? [] : x.addressAccess?.map((addr) => addr.address))
 	const addressSet = new Set(addresses)
 	return await Promise.all(Array.from(addressSet).map((x) => getActiveAddressEntry(x)))
 }
 
-export async function changeAccess(simulator: Simulator, websiteTabConnections: WebsiteTabConnections, confirmation: InterceptorAccessReply, website: Website, promptForAccessesIfNeeded = true) {
+async function changeAccess(simulator: Simulator, websiteTabConnections: WebsiteTabConnections, confirmation: InterceptorAccessReply, website: Website, promptForAccessesIfNeeded = true) {
 	if (confirmation.userReply === 'noResponse') return
 	await setAccess(website, confirmation.userReply === 'Approved', confirmation.requestAccessToAddress)
 	updateWebsiteApprovalAccesses(simulator, websiteTabConnections, promptForAccessesIfNeeded, await getSettings())

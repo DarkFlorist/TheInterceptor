@@ -3,8 +3,8 @@ import { JSONEncodeableObject, isJSON } from '../utils/json.js'
 import { EnrichedGroupedSolidityType } from './solidityType.js'
 import { serialize } from './wire-types.js'
 
-export type EIP712MessageUnderlying = funtypes.Static<typeof EIP712MessageUnderlying>
-export const EIP712MessageUnderlying = funtypes.ReadonlyObject({
+type EIP712MessageUnderlying = funtypes.Static<typeof EIP712MessageUnderlying>
+const EIP712MessageUnderlying = funtypes.ReadonlyObject({
 	types: funtypes.Record(funtypes.String, funtypes.ReadonlyArray(
 		funtypes.ReadonlyObject({
 			name: funtypes.String,

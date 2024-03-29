@@ -23,14 +23,14 @@ export const NetworkPrice = funtypes.ReadonlyObject({
 	})
 })
 
-export type SolidityVariable = funtypes.Static<typeof SolidityVariable>
-export const SolidityVariable = funtypes.ReadonlyObject({
+type SolidityVariable = funtypes.Static<typeof SolidityVariable>
+const SolidityVariable = funtypes.ReadonlyObject({
 	typeValue: PureGroupedSolidityType,
 	paramName: funtypes.String
 })
 
-export type ParsedEvent = funtypes.Static<typeof ParsedEvent>
-export const ParsedEvent = funtypes.ReadonlyObject({
+type ParsedEvent = funtypes.Static<typeof ParsedEvent>
+const ParsedEvent = funtypes.ReadonlyObject({
 	isParsed: funtypes.Literal('Parsed'),
 	name: funtypes.String, // eg. 'Transfer'
 	signature: funtypes.String, // eg. 'Transfer(address,address,uint256)'
@@ -41,8 +41,8 @@ export const ParsedEvent = funtypes.ReadonlyObject({
 	topics: funtypes.ReadonlyArray(EthereumBytes32),
 })
 
-export type NonParsedEvent = funtypes.Static<typeof NonParsedEvent>
-export const NonParsedEvent = funtypes.ReadonlyObject({
+type NonParsedEvent = funtypes.Static<typeof NonParsedEvent>
+const NonParsedEvent = funtypes.ReadonlyObject({
 	isParsed: funtypes.Literal('NonParsed'),
 	address: EthereumAddress,
 	loggersAddressBookEntry: AddressBookEntry,
@@ -171,13 +171,6 @@ export const TokenBalancesAfter = funtypes.ReadonlyArray(funtypes.ReadonlyObject
 	owner: EthereumAddress,
 	balance: funtypes.Union(EthereumQuantity, funtypes.Undefined),
 }))
-
-export type EthBalanceChangesWithMetadata = funtypes.Static<typeof EthBalanceChangesWithMetadata>
-export const EthBalanceChangesWithMetadata = funtypes.ReadonlyObject({
-	address: AddressBookEntry,
-	before: EthereumQuantity,
-	after: EthereumQuantity,
-})
 
 export type SimulatedAndVisualizedTransactionBase = funtypes.Static<typeof SimulatedAndVisualizedTransactionBase>
 export const SimulatedAndVisualizedTransactionBase = funtypes.Intersect(
@@ -311,6 +304,7 @@ export const SimulationState = funtypes.ReadonlyObject({
 	signedMessages: funtypes.ReadonlyArray(SignedMessageTransaction),
 	blockNumber: EthereumQuantity,
 	blockTimestamp: EthereumTimestamp,
+	baseFeePerGas: EthereumQuantity,
 	rpcNetwork: RpcNetwork,
 	simulationConductedTimestamp: EthereumTimestamp,
 })
@@ -385,10 +379,6 @@ export type TransactionVisualizationParameters = {
 	addressMetaData: readonly AddressBookEntry[]
 }
 
-export type Erc20WithAmount = Erc20TokenEntry & {
-	amount: bigint,
-}
-
 export type Erc20TokenBalanceChange = Erc20TokenEntry & {
 	changeAmount: bigint
 	tokenPriceEstimate: TokenPriceEstimate | undefined
@@ -403,8 +393,6 @@ export type Erc721TokenApprovalChange = {
 	tokenEntry: Erc721Entry
 	approvedEntry: AddressBookEntry
 }
-
-export type Erc1155WithAmount = Erc1155Entry & { tokenId: bigint, amount: bigint }
 
 export type SimulationUpdatingState = funtypes.Static<typeof SimulationUpdatingState>
 export const SimulationUpdatingState = funtypes.Union(funtypes.Literal('updating'), funtypes.Literal('done'), funtypes.Literal('failed'))
@@ -428,23 +416,23 @@ export const CompleteVisualizedSimulation = funtypes.ReadonlyObject({
 	namedTokenIds: funtypes.ReadonlyArray(NamedTokenId),
 	simulationState: funtypes.Union(SimulationState, funtypes.Undefined),
 	activeAddress: OptionalEthereumAddress,
-	simulationUpdatingState: SimulationUpdatingState, 
+	simulationUpdatingState: SimulationUpdatingState,
 	simulationResultState: SimulationResultState,
 	simulationId: funtypes.Number,
 	simulatedAndVisualizedTransactions: funtypes.ReadonlyArray(SimulatedAndVisualizedTransaction),
 	visualizedPersonalSignRequests: funtypes.ReadonlyArray(VisualizedPersonalSignRequest),
 })
 
-export type NewHeadsSubscription = funtypes.Static<typeof NewHeadsSubscription>
-export const NewHeadsSubscription = funtypes.ReadonlyObject({
+type NewHeadsSubscription = funtypes.Static<typeof NewHeadsSubscription>
+const NewHeadsSubscription = funtypes.ReadonlyObject({
 	type: funtypes.Literal('newHeads'),
 	subscriptionOrFilterId: funtypes.String,
 	params: EthSubscribeParams,
 	subscriptionCreatorSocket: WebsiteSocket,
 })
 
-export type NewEthfilter = funtypes.Static<typeof NewEthfilter>
-export const NewEthfilter = funtypes.ReadonlyObject({
+type NewEthfilter = funtypes.Static<typeof NewEthfilter>
+const NewEthfilter = funtypes.ReadonlyObject({
 	type: funtypes.Literal('eth_newFilter'),
 	subscriptionOrFilterId: funtypes.String,
 	params: EthNewFilter,
@@ -454,10 +442,6 @@ export const NewEthfilter = funtypes.ReadonlyObject({
 
 export type EthereumSubscriptionsAndFilters = funtypes.Static<typeof EthereumSubscriptionsAndFilters>
 export const EthereumSubscriptionsAndFilters = funtypes.ReadonlyArray(funtypes.Union(NewEthfilter, NewHeadsSubscription))
-
-export type MaybeParsedEventWithExtraDataForTransactions = funtypes.Static<typeof MaybeParsedEventWithExtraDataForTransactions>
-export const MaybeParsedEventWithExtraDataForTransactions = funtypes.ReadonlyArray(funtypes.ReadonlyArray(EnrichedEthereumEvent))
-
 
 export type VisualizedSimulatorState = funtypes.Static<typeof VisualizedSimulatorState>
 export const VisualizedSimulatorState = funtypes.ReadonlyObject({
@@ -471,8 +455,8 @@ export const VisualizedSimulatorState = funtypes.ReadonlyObject({
 	visualizedPersonalSignRequests: funtypes.ReadonlyArray(VisualizedPersonalSignRequest),
 })
 
-export type ModifyAddressWindowStateError = funtypes.Static<typeof ModifyAddressWindowStateError>
-export const ModifyAddressWindowStateError = funtypes.Union(funtypes.ReadonlyObject({ message: funtypes.String, blockEditing: funtypes.Boolean }), funtypes.Undefined)
+type ModifyAddressWindowStateError = funtypes.Static<typeof ModifyAddressWindowStateError>
+const ModifyAddressWindowStateError = funtypes.Union(funtypes.ReadonlyObject({ message: funtypes.String, blockEditing: funtypes.Boolean }), funtypes.Undefined)
 
 export type ModifyAddressWindowState = funtypes.Static<typeof ModifyAddressWindowState>
 export const ModifyAddressWindowState = funtypes.ReadonlyObject({

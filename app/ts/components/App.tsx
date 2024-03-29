@@ -32,7 +32,7 @@ type ProviderErrorsParam = {
 	tabState: TabState | undefined
 }
 
-export function ProviderErrors({ tabState } : ProviderErrorsParam) {
+function ProviderErrors({ tabState } : ProviderErrorsParam) {
 	if (tabState === undefined || tabState.signerAccountError === undefined) return <></>
 	if (tabState.signerAccountError.code === METAMASK_ERROR_USER_REJECTED_REQUEST) return <ErrorComponent warning = { true } text = { <>Could not get an account from <SignersLogoName signerName = { tabState.signerName } /> as user denied the request.</> }/>
 	if (tabState.signerAccountError.code === METAMASK_ERROR_ALREADY_PENDING.error.code) return <ErrorComponent warning = { true } text = { <>There's a connection request pending on <SignersLogoName signerName = { tabState.signerName } />. Please review the request.</> }/>

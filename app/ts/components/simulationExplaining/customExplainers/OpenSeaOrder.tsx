@@ -53,7 +53,7 @@ type VisualizeOpenSeaConsiderationAssetParams = {
 	rpcNetwork: RpcNetwork
 }
 
-export function VisualizeOpenSeaAsset(param: VisualizeOpenSeaConsiderationAssetParams) {
+function VisualizeOpenSeaAsset(param: VisualizeOpenSeaConsiderationAssetParams) {
 	const textColor = 'var(--text-color)'
 	return <>
 		<div class = 'log-cell' style = 'justify-content: right;'>

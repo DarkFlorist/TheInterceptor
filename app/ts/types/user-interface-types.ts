@@ -12,12 +12,6 @@ import { ICON_ACCESS_DENIED, ICON_ACTIVE, ICON_INTERCEPTOR_DISABLED, ICON_NOT_AC
 import { CodeMessageError, RpcEntries, RpcEntry, RpcNetwork } from './rpc.js'
 import { TransactionOrMessageIdentifier } from './interceptor-messages.js'
 
-export type AddressListParams = {
-	setAndSaveAppPage: (page: Page) => void,
-	setActiveAddresss: StateUpdater<readonly ActiveAddressEntry[]>,
-	activeAddresses: readonly ActiveAddressEntry[],
-}
-
 export type InterceptorAccessListParams = {
 	setAndSaveAppPage: (page: Page) => void,
 	setWebsiteAccess: StateUpdater<WebsiteAccessArray | undefined>,
@@ -65,12 +59,6 @@ export type ChangeActiveAddressParam = {
 	addNewAddress: () => void,
 }
 
-export type SettingsParam = {
-	useTabsInsteadOfPopup: boolean | undefined,
-	metamaskCompatibilityMode: boolean | undefined,
-	setAndSaveAppPage: (page: Page) => void
-}
-
 export type FirstCardParams = {
 	activeAddress: ActiveAddress | undefined,
 	enableSimulationMode: (x: boolean) => void,
@@ -114,7 +102,7 @@ export type NonLogAnalysisParams = {
 
 export type RenameAddressCallBack = (addressBookEntry: AddressBookEntry) => void
 
-export type SocketConnection = {
+type SocketConnection = {
 	port: browser.runtime.Port,
 	socket: WebsiteSocket,
 	websiteOrigin: string,
@@ -144,12 +132,6 @@ export type TabConnection = {
 }
 
 export type WebsiteTabConnections = Map<number, TabConnection>
-
-export type WindowOrTabId = funtypes.Static<typeof WindowOrTabId>
-export const WindowOrTabId = funtypes.ReadonlyObject({
-	id: funtypes.Number,
-	type: funtypes.Union(funtypes.Literal('tab'), funtypes.Literal('window'))
-})
 
 export type TabState = funtypes.Static<typeof TabState>
 export const TabState = funtypes.ReadonlyObject({

@@ -150,16 +150,15 @@ export async function getTransactionCount(ethereumClientService: EthereumClientS
 }
 
 export async function getSimulationStack(simulationState: SimulationState | undefined, request: GetSimulationStack) {
-	switch (request.params[0]) {
-		case '1.0.0': return {
+	const version = request.params[0]
+	switch (version) {
+		case '1.0.0':
+		case '1.0.1': return {
 			type: 'result' as const,
 			method: request.method,
-			result: {
-				version: '1.0.0',
-				payload: simulationState === undefined ? [] : getSimulatedStack(simulationState),
-			} as const
+			result: { version, payload: simulationState === undefined ? [] : getSimulatedStack(simulationState, version), } as const
 		}
-		default: assertNever(request.params[0])
+		default: assertNever(version)
 	}
 }
 

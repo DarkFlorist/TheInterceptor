@@ -6,14 +6,6 @@ export function areEqualUint8Arrays(first?: Uint8Array, second?: Uint8Array) {
 	return first.every((value, index) => value === second[index])
 }
 
-export function areEqual<T>(first?: readonly T[], second?: readonly  T[]) {
-	if (first === second) return true
-	if (first === undefined) return second === undefined
-	if (second === undefined) return first === undefined
-	if (first.length !== second.length) return false
-	return first.every((value, index) => value === second[index])
-}
-
 export function stripLeadingZeros(byteArray: Uint8Array): Uint8Array {
 	let i = 0
 	for (; i < byteArray.length; ++i) {
@@ -45,7 +37,7 @@ export function includesWithComparator<T>(array: readonly T[], searchElement: T,
 	return false
 }
 
-export function replaceElementInReadonlyArray<T>(originalArray: ReadonlyArray<T>, index: number, newValue: T): ReadonlyArray<T> {
+export function replaceElementInReadonlyArray<T>(originalArray: readonly T[], index: number, newValue: T): readonly T[] {
 	if (index < 0 || index >= originalArray.length) throw new Error('Index is out of bounds')
 	const newArray = [...originalArray]
 	newArray[index] = newValue
