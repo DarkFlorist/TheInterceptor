@@ -60,16 +60,16 @@ export class EthereumJSONRpcRequestHandler {
 		const requestId = ++this.nextRequestId
 		const responseObject = await this.queryCached(rpcRequest, requestId, bypassCache, timeoutMs)
 		if (responseObject.responseState === 'failed') {
-			console.log('req failed')
-			console.log(responseObject.response)
-			console.log(rpcRequest)
+			console.error('RPC Request Failed')
+			// biome-ignore lint/suspicious/noConsoleLog: <Used for support debugging>
+			console.log({ rpcRequest, response: responseObject.response })
 			throw new FetchResponseError(responseObject.response, requestId)
 		}
 		const jsonRpcResponse = JsonRpcResponse.parse(responseObject.response)
 		if ('error' in jsonRpcResponse) {
-			console.log('req failed')
-			console.log(responseObject)
-			console.log(rpcRequest)
+			console.error('RPC response contained errors')
+			// biome-ignore lint/suspicious/noConsoleLog: <Used for support debugging>
+			console.log({ rpcRequest, responseObject })
 			throw new JsonRpcResponseError(jsonRpcResponse)
 		}
 		return jsonRpcResponse.result

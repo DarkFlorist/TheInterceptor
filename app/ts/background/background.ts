@@ -105,6 +105,7 @@ export const simulateGovernanceContractExecution = async (pendingTransaction: Pe
 			}],
 			blockNumber: parentBlock.number,
 			blockTimestamp: parentBlock.timestamp,
+			baseFeePerGas: parentBlock.baseFeePerGas,
 			rpcNetwork: ethereum.getRpcEntry(),
 			simulationConductedTimestamp: new Date(),
 			signedMessages: [],
@@ -309,7 +310,8 @@ async function handleRPCRequest(
 	}
 
 	if (maybeParsedRequest.success === false) {
-		console.log(request)
+		// biome-ignore lint/suspicious/noConsoleLog: <Used for support debugging>
+		console.log({ request })
 		console.warn(maybeParsedRequest.fullError)
 		const maybePartiallyParsedRequest = SupportedEthereumJsonRpcRequestMethods.safeParse(request)
 		// the method is some method that we are not supporting, forward it to the wallet if signer is available
@@ -318,7 +320,7 @@ async function handleRPCRequest(
 			type: 'result' as const,
 			method: request.method,
 			error: {
-				message: `Failed to parse RPC request: ${ serialize(InterceptedRequest, request) }`,
+				message: `Failed to parse RPC request: ${ JSON.stringify(serialize(InterceptedRequest, request)) }`,
 				data: maybeParsedRequest.fullError === undefined ? 'Failed to parse RPC request' : maybeParsedRequest.fullError.toString(),
 				code: METAMASK_ERROR_FAILED_TO_PARSE_REQUEST,
 			}
@@ -474,7 +476,7 @@ export const handleInterceptedRequest = async (port: browser.runtime.Port | unde
 	const identifiedMethod = providerHandler.method
 	if (identifiedMethod !== 'notProviderMethod') {
 		if (port === undefined) return
-		const providerHandlerReturn = await providerHandler.func(simulator, websiteTabConnections, port, request, access)
+		const providerHandlerReturn = await providerHandler.func(simulator, websiteTabConnections, port, request, access, activeAddress?.address)
 		if (providerHandlerReturn.type === 'doNotReply') return
 		const message: InpageScriptRequest = { uniqueRequestIdentifier: request.uniqueRequestIdentifier, ...providerHandlerReturn }
 		return replyToInterceptedRequest(websiteTabConnections, message)
@@ -515,7 +517,8 @@ async function handleContentScriptMessage(simulator: Simulator, websiteTabConnec
 		const resolved = await handleRPCRequest(simulator, simulationState, websiteTabConnections, simulator.ethereum, request.uniqueRequestIdentifier.requestSocket, website, request, settings, activeAddress)
 		return replyToInterceptedRequest(websiteTabConnections, { ...request, ...resolved })
 	} catch (error) {
-		console.log(request)
+		// biome-ignore lint/suspicious/noConsoleLog: <Used for support debugging>
+		console.log({ request })
 		handleUnexpectedError(error)
 		if (error instanceof JsonRpcResponseError || error instanceof FetchResponseError) {
 			return replyToInterceptedRequest(websiteTabConnections, {
@@ -582,7 +585,8 @@ export async function popupMessageHandler(
 ) {
 	const maybeParsedRequest = PopupMessage.safeParse(request)
 	if (maybeParsedRequest.success === false) {
-		console.log(request)
+		// biome-ignore lint/suspicious/noConsoleLog: <Used for support debugging>
+		console.log({ request })
 		console.warn(maybeParsedRequest.fullError)
 		return {
 			error: {

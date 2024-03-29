@@ -14,23 +14,23 @@ import { replaceElementInReadonlyArray } from '../utils/typed-arrays.js'
 export const getIdsOfOpenedTabs = async () => (await browserStorageLocalGet('idsOfOpenedTabs'))?.['idsOfOpenedTabs'] ?? { settingsView: undefined, addressBook: undefined}
 export const setIdsOfOpenedTabs = async (ids: PartialIdsOfOpenedTabs) => await browserStorageLocalSet({ idsOfOpenedTabs: { ...await getIdsOfOpenedTabs(), ...ids } })
 
+const pendingTransactionsSemaphore = new Semaphore(1)
 export async function getPendingTransactionsAndMessages(): Promise<readonly PendingTransactionOrSignableMessage[]> {
 	try {
 		return (await browserStorageLocalGet('pendingTransactionsAndMessages'))?.['pendingTransactionsAndMessages'] ?? []
 	} catch(e) {
 		console.warn('Pending transactions were corrupt:')
 		console.warn(e)
+		await pendingTransactionsSemaphore.execute(async () => await browserStorageLocalSet({ pendingTransactionsAndMessages: [] }))
 		return []
 	}
 }
 
 export const clearPendingTransactions = async () => await updatePendingTransactionOrMessages(async () => [])
-
-const pendingTransactionsSemaphore = new Semaphore(1)
 async function updatePendingTransactionOrMessages(update: (pendingTransactionsOrMessages: readonly PendingTransactionOrSignableMessage[]) => Promise<readonly PendingTransactionOrSignableMessage[]>) {
 	return await pendingTransactionsSemaphore.execute(async () => {
 		const pendingTransactionsAndMessages = await update(await getPendingTransactionsAndMessages())
-		await browserStorageLocalSet({ pendingTransactionsAndMessages: pendingTransactionsAndMessages })
+		await browserStorageLocalSet({ pendingTransactionsAndMessages })
 	})
 }
 
@@ -62,6 +62,7 @@ export async function setChainChangeConfirmationPromise(promise: PendingChainCha
 	return await browserStorageLocalSet({ ChainChangeConfirmationPromise: promise })
 }
 
+const simulationResultsSemaphore = new Semaphore(1)
 export async function getSimulationResults() {
 	const emptyResults = {
 		simulationUpdatingState: 'done' as const,
@@ -82,11 +83,11 @@ export async function getSimulationResults() {
 	} catch (error) {
 		console.warn('Simulation results were corrupt:')
 		console.warn(error)
+		await simulationResultsSemaphore.execute(async () => await browserStorageLocalSet({ simulationResults: emptyResults }))
 		return emptyResults
 	}
 }
 
-const simulationResultsSemaphore = new Semaphore(1)
 export async function updateSimulationResults(newResults: CompleteVisualizedSimulation) {
 	return await simulationResultsSemaphore.execute(async () => {
 		const oldResults = await getSimulationResults()
