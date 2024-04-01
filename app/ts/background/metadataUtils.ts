@@ -162,10 +162,10 @@ export async function getAddressBookEntriesForVisualiser(ethereumClientService: 
 	}).filter((address): address is bigint => address !== undefined)
 	const addressesToFetchMetadata = [...addressesInEvents, ...events.map((event) => event.address)]
 
-	simulationState.simulatedTransactions.forEach((tx) => {
+	for (const tx of simulationState.simulatedTransactions) {
 		addressesToFetchMetadata.push(tx.signedTransaction.from)
 		if (tx.signedTransaction.to !== null) addressesToFetchMetadata.push(tx.signedTransaction.to)
-	})
+	}
 
 	const deDuplicated = new Set<bigint>(addressesToFetchMetadata)
 	const addressIdentificationPromises: Promise<AddressBookEntry>[] = Array.from(deDuplicated.values()).map((address) => identifyAddress(ethereumClientService, address))

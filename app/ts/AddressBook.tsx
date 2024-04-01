@@ -223,7 +223,9 @@ export function AddressBook() {
 
 		if (pagesToUnload.length > 0) {
 			const unloadedPages = new Map(pages)
-			pagesToUnload.forEach(([page, _]) => unloadedPages.delete(page))
+			for (const [page] of pagesToUnload) {
+				unloadedPages.delete(page)
+			}
 			return unloadedPages
 		}
 		return new Map(pages)
@@ -292,10 +294,10 @@ export function AddressBook() {
 				if ( Math.max(...pagesToQuery) - Math.min(...pagesToQuery) === pagesToQuery.length - 1 ) {
 					sendQuery(activeFilterRef.current, searchStringRef.current, Math.min(...pagesToQuery), Math.max(...pagesToQuery))
 				} else {
-					pagesToQuery.forEach((page) => {
+					for (const page of pagesToQuery) {
 						newPages.set(page, 'fetching')
 						sendQuery(activeFilterRef.current, searchStringRef.current, page, page)
-					})
+					}
 				}
 				return {
 					...previousState,
