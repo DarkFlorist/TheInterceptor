@@ -355,7 +355,7 @@ async function handleRPCRequest(
 		case 'eth_requestAccounts': return await getAccounts(activeAddress)
 		case 'eth_gasPrice': return await gasPrice(ethereumClientService)
 		case 'eth_getTransactionCount': return await getTransactionCount(ethereumClientService, simulationState, parsedRequest)
-		case 'interceptor_getSimulationStack': return await getSimulationStack(simulationState, parsedRequest)
+		case 'interceptor_getSimulationStack': return getSimulationStack(simulationState, parsedRequest)
 		case 'eth_simulateV1': return { type: 'result', method: parsedRequest.method, error: { code: 10000, message: 'Cannot call eth_simulateV1 directly' } }
 		case 'wallet_addEthereumChain': {
 			if (forwardToSigner) return getForwardingMessage(parsedRequest)
