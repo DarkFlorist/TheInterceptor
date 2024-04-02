@@ -141,7 +141,7 @@ export async function getCode(ethereumClientService: EthereumClientService, simu
 	return { type: 'result' as const, method: request.method, result: code.getCodeReturn }
 }
 
-export async function getPermissions() {
+export function getPermissions() {
 	return { type: 'result' as const, method: 'wallet_getPermissions', params: [], result: [ { "eth_accounts": {} } ] } as const
 }
 
