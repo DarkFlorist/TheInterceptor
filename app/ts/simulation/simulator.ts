@@ -86,7 +86,7 @@ export const parseEvents = async (events: readonly EthereumEvent[], ethereumClie
 			const isArray = solidityType.includes('[')
 			const verifiedSolidityType = SolidityType.safeParse(removeTextBetweenBrackets(solidityType))
 			if (verifiedSolidityType.success === false) throw new Error(`unknown solidity type: ${ solidityType }`)
-			if (typeof value === 'object' && 'hash' in value) {
+			if (typeof value === 'object' && value !== null && 'hash' in value) {
 				// this field is stored as a hash instead as an original object
 				return { paramName, typeValue: { type: 'fixedBytes' as const, value: EthereumData.parse(value.hash) } }
 			}
