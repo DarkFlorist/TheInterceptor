@@ -1,6 +1,6 @@
 import { EthereumClientService } from './services/EthereumClientService.js'
 import { selfTokenOops } from './protectors/selfTokenOops.js'
-import { EthereumBlockHeader } from '../types/wire-types.js'
+import { EthereumBlockHeader, EthereumData } from '../types/wire-types.js'
 import { bytes32String } from '../utils/bigint.js'
 import { feeOops } from './protectors/feeOops.js'
 import { commonTokenOops } from './protectors/commonTokenOops.js'
@@ -78,7 +78,6 @@ export const parseEvents = async (events: readonly EthereumEvent[], ethereumClie
 		const argTypes = extractFunctionArgumentTypes(parsed.signature)
 		if (argTypes === undefined) return nonParsed
 		if (parsed.args.length !== argTypes.length) return nonParsed
-		
 		const valuesWithTypes = parsed.args.map((value, index) => {
 			const solidityType = argTypes[index]
 			const paramName = parsed.fragment.inputs[index]?.name
@@ -87,7 +86,11 @@ export const parseEvents = async (events: readonly EthereumEvent[], ethereumClie
 			const isArray = solidityType.includes('[')
 			const verifiedSolidityType = SolidityType.safeParse(removeTextBetweenBrackets(solidityType))
 			if (verifiedSolidityType.success === false) throw new Error(`unknown solidity type: ${ solidityType }`)
-			return { paramName: paramName, typeValue: parseSolidityValueByTypePure(verifiedSolidityType.value, value, isArray) }
+			if (typeof value === 'object' && 'hash' in value) {
+				// this field is stored as a hash instead as an original object
+				return { paramName, typeValue: { type: 'fixedBytes' as const, value: EthereumData.parse(value.hash) } }
+			}
+			return { paramName, typeValue: parseSolidityValueByTypePure(verifiedSolidityType.value, value, isArray) }
 		})
 		return {
 			...event,
