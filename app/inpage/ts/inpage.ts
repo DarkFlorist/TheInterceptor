@@ -599,7 +599,7 @@ class InterceptorMessageListener {
 				&& connectSignerReply.activeAddress !== undefined && typeof connectSignerReply.activeAddress === 'string') {
 					this.currentAddress = connectSignerReply.activeAddress
 					if (connectSignerReply.metamaskCompatibilityMode && window.ethereum !== undefined) {
-						try { window.ethereum.selectedAddress = this.currentAddress } catch(error) {console.log(error)}
+						try { window.ethereum.selectedAddress = this.currentAddress } catch(error) { }
 					}
 				return connectSignerReply as { metamaskCompatibilityMode: boolean, activeAddress: string }
 			}

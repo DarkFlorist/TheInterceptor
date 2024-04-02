@@ -215,7 +215,7 @@ export class LogSummarizer {
 			const summary = this.getSummaryForAddr(address, addressMetaData, tokenPrices, namedTokenIds)
 			if (summary === undefined) continue
 			const summaryFor = addressMetaData.get(address)
-			if (summaryFor === undefined) throw new Error('Missing metadata')
+			if (summaryFor === undefined) throw new Error(`Missing metadata for address: ${ address }`)
 			summaries.push({ summaryFor: summaryFor, ...summary })
 		}
 		return summaries
@@ -227,7 +227,7 @@ export class LogSummarizer {
 
 		const erc20TokenBalanceChanges: Erc20TokenBalanceChange[] = Array.from(addressSummary.erc20TokenBalanceChanges).map(([tokenAddress, changeAmount]) => {
 			const metadata = addressMetaData.get(tokenAddress)
-			if (metadata === undefined || metadata.type !== 'ERC20') throw new Error('Missing metadata for token')
+			if (metadata === undefined || metadata.type !== 'ERC20') throw new Error(`Missing metadata for token: ${ tokenAddress }`)
 			return {
 				...metadata,
 				changeAmount: changeAmount,
@@ -237,7 +237,7 @@ export class LogSummarizer {
 
 		const erc20TokenApprovalChanges: ERC20TokenApprovalChange[] = Array.from(addressSummary.erc20TokenApprovalChanges).map( ([tokenAddress, approvals]) => {
 			const metadata = addressMetaData.get(tokenAddress)
-			if (metadata === undefined || metadata.type !== 'ERC20') throw new Error('Missing metadata for token')
+			if (metadata === undefined || metadata.type !== 'ERC20') throw new Error(`Missing metadata for token: ${ tokenAddress }`)
 			return {
 				...metadata,
 				approvals: Array.from(approvals).map( ([addressToApprove, change]) => {
@@ -250,7 +250,7 @@ export class LogSummarizer {
 
 		const erc721TokenBalanceChanges: (Erc721Entry & { received: boolean, tokenId: bigint })[] = Array.from(addressSummary.erc721TokenBalanceChanges).map(([tokenAddress, tokenIds]) => {
 			const metadata = addressMetaData.get(tokenAddress)
-			if (metadata === undefined || metadata.type !== 'ERC721') throw new Error('Missing metadata for token')
+			if (metadata === undefined || metadata.type !== 'ERC721') throw new Error(`Missing metadata for token: ${ tokenAddress }`)
 			return Array.from(tokenIds).map(([tokenId, received]) => ({
 				...metadata,
 				tokenId: BigInt(tokenId),
@@ -260,10 +260,10 @@ export class LogSummarizer {
 
 		const erc721TokenIdApprovalChanges: Erc721TokenApprovalChange[] = Array.from(addressSummary.erc721TokenIdApprovalChanges).map( ([tokenAddress, approvals]) => {
 			const metadata = addressMetaData.get(tokenAddress)
-			if (metadata === undefined || metadata.type !== 'ERC721') throw new Error('Missing metadata for token')
+			if (metadata === undefined || metadata.type !== 'ERC721') throw new Error(`Missing metadata for token: ${ tokenAddress }`)
 			return Array.from(approvals).map( ([tokenId, approvedAddress]) => {
 				const approvedMetadata = addressMetaData.get(approvedAddress)
-				if (approvedMetadata === undefined) throw new Error('Missing metadata for token')
+				if (approvedMetadata === undefined) throw new Error(`Missing metadata for address: ${ approvedAddress }`)
 				return {
 					tokenEntry: metadata,
 					tokenId: BigInt(tokenId),
@@ -274,7 +274,7 @@ export class LogSummarizer {
 
 		const erc1155TokenBalanceChanges: Erc1155TokenBalanceChange[] = Array.from(addressSummary.erc1155TokenBalanceChanges).map(([tokenAddress, tokenIds]) => {
 			const metadata = addressMetaData.get(tokenAddress)
-			if (metadata === undefined || metadata.type !== 'ERC1155') throw new Error('Missing metadata for token')
+			if (metadata === undefined || metadata.type !== 'ERC1155') throw new Error(`Missing metadata for token: ${ tokenAddress }`)
 			return Array.from(tokenIds).map(([tokenId, changeAmount]) => ({
 				...metadata,
 				tokenId: BigInt(tokenId),
@@ -285,7 +285,7 @@ export class LogSummarizer {
 
 		const erc721and1155OperatorChanges: Erc721and1155OperatorChange[] = Array.from(addressSummary.erc721and1155OperatorChanges).map(([tokenAddress, operator]) => {
 			const metadata = addressMetaData.get(tokenAddress)
-			if (metadata === undefined || (metadata.type !== 'ERC1155' && metadata.type !== 'ERC721')) throw new Error('Missing metadata for token')
+			if (metadata === undefined || (metadata.type !== 'ERC1155' && metadata.type !== 'ERC721')) throw new Error(`Missing metadata for token: ${ tokenAddress }`)
 			if (operator === undefined) {
 				return {
 					...metadata,
@@ -293,7 +293,7 @@ export class LogSummarizer {
 				}
 			}
 			const operatorMetadata = addressMetaData.get(operator)
-			if (operatorMetadata === undefined) throw new Error('Missing metadata for token')
+			if (operatorMetadata === undefined) throw new Error(`Missing operator metadata: ${ operator }`)
 			return {
 				...metadata,
 				operator: operatorMetadata,
