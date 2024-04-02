@@ -1,7 +1,7 @@
 import * as funtypes from 'funtypes'
-import { EthereumAddress, EthereumBlockHeader, EthereumBlockHeaderWithTransactionHashes, EthereumBlockTag, EthereumBytes256, EthereumBytes32, EthereumData, EthereumInput, EthereumQuantity, EthereumUnsignedTransaction, LiteralConverterParserFactory } from './wire-types.js'
+import { EthereumAddress, EthereumBlockHeader, EthereumBlockHeaderWithTransactionHashes, EthereumBlockTag, EthereumBytes256, EthereumBytes32, EthereumData, EthereumInput, EthereumQuantity, LiteralConverterParserFactory } from './wire-types.js'
 import { areEqualUint8Arrays } from '../utils/typed-arrays.js'
-import { EthSimulateV1CallResult, EthSimulateV1Params } from './ethSimulate-types.js'
+import { EthSimulateV1Params } from './ethSimulate-types.js'
 import { OldSignTypedDataParams, PersonalSignParams, SignTypedDataParams } from './jsonRpc-signing-types.js'
 import { CodeMessageError } from './rpc.js'
 
@@ -282,22 +282,10 @@ const EthSign = funtypes.ReadonlyObject({
 	params: funtypes.ReadonlyTuple(EthereumAddress, funtypes.String),
 }).asReadonly()
 
-export type GetSimulationStackReply = funtypes.Static<typeof GetSimulationStackReply>
-export const GetSimulationStackReply = funtypes.ReadonlyArray(funtypes.Intersect(
-	EthereumUnsignedTransaction,
-	EthSimulateV1CallResult,
-	funtypes.ReadonlyObject({
-		balanceChanges: EthBalanceChanges,
-		realizedGasPrice: EthereumQuantity,
-		gasLimit: EthereumQuantity,
-		gasSpent: EthereumQuantity,
-	}).asReadonly(),
-))
-
 export type GetSimulationStack = funtypes.Static<typeof GetSimulationStack>
 export const GetSimulationStack = funtypes.ReadonlyObject({
 	method: funtypes.Literal('interceptor_getSimulationStack'),
-	params: funtypes.ReadonlyTuple(funtypes.Union(funtypes.Literal('1.0.0'), funtypes.Literal('1.0.1') ))
+	params: funtypes.ReadonlyTuple(funtypes.Union(funtypes.Literal('1.0.0'), funtypes.Literal('1.0.1'), funtypes.Literal('2.0.0')))
 }).asReadonly()
 
 export type WalletAddEthereumChain = funtypes.Static<typeof WalletAddEthereumChain>
