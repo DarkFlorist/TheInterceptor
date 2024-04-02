@@ -384,7 +384,7 @@ function RawMessage({ visualizedPersonalSignRequest }: ExtraDetailsCardParams) {
 function Signer({ signer, renameAddressCallBack }: { signer: AddressBookEntry, renameAddressCallBack: (entry: AddressBookEntry) => void, }) {
 	return <span class = 'log-table' style = 'margin-top: 10px; column-gap: 5px; justify-content: space-between; grid-template-columns: auto auto'>
 		<div class = 'log-cell' style = ''>
-			<p style = { `color: var(--subtitle-text-color);` }> Signing address: </p>
+			<p style = { 'color: var(--subtitle-text-color);' }> Signing address: </p>
 		</div>
 		<div class = 'log-cell' style = ''>
 			<SmallAddress

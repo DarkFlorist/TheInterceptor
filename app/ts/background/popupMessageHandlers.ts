@@ -401,7 +401,7 @@ const getErrorIfAnyWithIncompleteAddressBookEntry = async (ethereum: EthereumCli
 			if (incompleteAddressBookEntry.addingAddress) {
 				const identifiedAddress = await identifyAddress(ethereum, address)
 				if (identifiedAddress.entrySource !== 'OnChain' && identifiedAddress.entrySource !== 'FilledIn') {
-					return `The address already exists. Edit the existing record instead trying to add it again.`
+					return 'The address already exists. Edit the existing record instead trying to add it again.'
 				}
 				if (identifiedAddress.type !== incompleteAddressBookEntry.type && !(incompleteAddressBookEntry.type === 'activeAddress' && identifiedAddress.type === 'contact') ) {
 					return `The address is a ${ identifiedAddress.type } while you are trying to add ${ incompleteAddressBookEntry.type }.`

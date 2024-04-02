@@ -29,7 +29,7 @@ export const getWebsiteWarningMessage = (websiteOrigin: string, simulationMode: 
 const websiteMetaData: WebsiteMetaData = {
 	'app.uniswap.org': {
 		name: 'Uniswap',
-		message: `Uniswap V4 encounters functionality issues when using The Interceptor in Simulation Mode due to its reliance on centralized components. Additionally, the Uniswap V4 interface imposes an extra fee on its users. It is advisable to use alternative interface that does not have these limitations.`,
+		message: 'Uniswap V4 encounters functionality issues when using The Interceptor in Simulation Mode due to its reliance on centralized components. Additionally, the Uniswap V4 interface imposes an extra fee on its users. It is advisable to use alternative interface that does not have these limitations.',
 		suggestedAlternative: 'https://2.horswap.eth.limo/',
 		externalRpc: true,
 	},

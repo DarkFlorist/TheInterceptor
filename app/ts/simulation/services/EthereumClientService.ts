@@ -70,7 +70,7 @@ export class EthereumClientService {
 			this.newBlockAttemptCallback(newBlock, this, gotNewBlock)
 			this.cachedBlock = newBlock
 		} catch(error) {
-			console.error(`Failed to get a block`)
+			console.error('Failed to get a block')
 			// biome-ignore lint/suspicious/noConsoleLog: <Used for support debugging>
 			console.log({ error })
 			return this.onErrorBlockCallback(this)

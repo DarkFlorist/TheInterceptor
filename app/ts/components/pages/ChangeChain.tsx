@@ -85,13 +85,13 @@ export function ChangeChain() {
 					</div>
 					<div style = 'overflow: auto; display: flex; justify-content: space-around; width: 100%; height: 40px;'>
 						<button
-							className = { `button is-danger` }
-							style = { `flex-grow: 1; margin-left: 5px; margin-right: 5px;` }
+							className = { 'button is-danger' }
+							style = { 'flex-grow: 1; margin-left: 5px; margin-right: 5px;' }
 							onClick = { reject } >
 							Don't change
 						</button>
 						<button
-							className = { `button is-primary` }
+							className = { 'button is-primary' }
 							disabled = { chainChangeData.rpcNetwork.httpsRpc === undefined && ( (!connectAnyway && !chainChangeData.simulationMode ) || chainChangeData.simulationMode ) }
 							style = 'flex-grow: 1; margin-left: 5px; margin-right: 5px;'
 							onClick = { approve }>

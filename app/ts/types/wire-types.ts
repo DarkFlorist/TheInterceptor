@@ -75,7 +75,7 @@ const BytesParser: funtypes.ParsedValue<funtypes.String, Uint8Array>['config'] =
 		if (match === null) return { success: false, message: `Expected a hex string encoded byte array with an optional '0x' prefix but received ${ value }` }
 		const normalized = match[1]
 		if (normalized === undefined) return { success: false, message: `Expected a hex string encoded byte array with an optional '0x' prefix but received ${ value }` }
-		if (normalized.length % 2) return { success: false, message: `Hex string encoded byte array must be an even number of charcaters long.` }
+		if (normalized.length % 2) return { success: false, message: 'Hex string encoded byte array must be an even number of charcaters long.' }
 		const bytes = new Uint8Array(normalized.length / 2)
 		for (let i = 0; i < normalized.length; i += 2) {
 			bytes[i/2] = Number.parseInt(`${ normalized[i] }${ normalized[i + 1] }`, 16)

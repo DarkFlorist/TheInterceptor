@@ -67,4 +67,4 @@ function injectScript(content: string) {
 	}
 }
 
-injectScript(`[[injected.ts]]`)
+injectScript('[[injected.ts]]')

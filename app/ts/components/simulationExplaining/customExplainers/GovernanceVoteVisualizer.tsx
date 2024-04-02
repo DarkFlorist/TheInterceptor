@@ -21,8 +21,8 @@ function MissingAbi(params: MissingAbiParams) {
 	return <div style = 'display: block'>
 		<ErrorComponent warning = { false } text = { params.errorMessage }/>
 		<div style = 'display: flex; justify-content: center; padding-top: 10px'>
-			{ params.addressBookEntry === undefined ? <></> : 
-				<button class = { `button is-primary` } onClick = { () => params.addressBookEntry !== undefined && params.renameAddressCallBack(params.addressBookEntry) }>
+			{ params.addressBookEntry === undefined ? <></> :
+				<button class = { 'button is-primary' } onClick = { () => params.addressBookEntry !== undefined && params.renameAddressCallBack(params.addressBookEntry) }>
 					Add Abi
 				</button>
 			}
@@ -84,13 +84,13 @@ type ShowSuccessOrFailureParams = {
 
 const simulateGovernanceVote = (transactionIdentifier: EthereumQuantity) => sendPopupMessageToBackgroundPage({ method: 'popup_simulateGovernanceContractExecution', data: { transactionIdentifier } })
 
-const ShowSuccessOrFailure = ({ simulateGovernanceContractExecutionReply, simTx, simulationAndVisualisationResults, renameAddressCallBack }: ShowSuccessOrFailureParams) => { 
+const ShowSuccessOrFailure = ({ simulateGovernanceContractExecutionReply, simTx, simulationAndVisualisationResults, renameAddressCallBack }: ShowSuccessOrFailureParams) => {
 	const missingAbiText = 'The governance contract is missing an ABI. Add an ABI to simulate execution of this proposal.'
 	if (simulateGovernanceContractExecutionReply === undefined) {
 		return <div style = 'display: flex; justify-content: center;'>
 			{ simTx.transaction.to !== undefined && 'abi' in simTx.transaction.to && simTx.transaction.to.abi !== undefined ?
 				<button
-					class = { `button is-primary` }
+					class = { 'button is-primary' }
 					onClick = { () => simulateGovernanceVote(simTx.transactionIdentifier) }
 					disabled = { false }
 				>
@@ -189,8 +189,8 @@ export function GovernanceVoteVisualizer(param: GovernanceVoteVisualizerParams) 
 					<p class = 'paragraph'>Simulation of this proposal's outcome should the vote pass:</p>
 				</div>
 				<div class = 'log-cell' style = 'justify-content: right;'>
-					{ simulateGovernanceContractExecutionReply === undefined ? <></> : 
-						<button class = { `button is-primary is-small` } onClick = { () => simulateGovernanceVote(simTx.transactionIdentifier) }>Refresh</button>
+					{ simulateGovernanceContractExecutionReply === undefined ? <></> :
+						<button class = { 'button is-primary is-small' } onClick = { () => simulateGovernanceVote(simTx.transactionIdentifier) }>Refresh</button>
 					}
 				</div>
 			</span>

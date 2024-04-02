@@ -47,8 +47,8 @@ export const METAMASK_ERROR_BLANKET_ERROR = -32603
 // const METAMASK_ERROR_METHOD_NOT_SUPPORTED = -32004
 // const METAMASK_ERROR_RATE_LIMITED = -32005
 
-export const ERROR_INTERCEPTOR_DISABLED = { error: { code: METAMASK_ERROR_USER_REJECTED_REQUEST, message: `The Interceptor is disabled` } }
-export const METAMASK_ERROR_ALREADY_PENDING = { error: { code: -32002, message: `Access request pending already.` } }
+export const ERROR_INTERCEPTOR_DISABLED = { error: { code: METAMASK_ERROR_USER_REJECTED_REQUEST, message: 'The Interceptor is disabled' } }
+export const METAMASK_ERROR_ALREADY_PENDING = { error: { code: -32002, message: 'Access request pending already.' } }
 export const ERROR_INTERCEPTOR_NO_ACTIVE_ADDRESS = { error: { code: 2, message: 'Interceptor: No active address' } }
 export const METAMASK_ERROR_NOT_CONNECTED_TO_CHAIN = { error: { code: 4900, message: 'Interceptor: Not connected to chain' } }
 export const ERROR_INTERCEPTOR_GET_CODE_FAILED = { error: { code: -40001, message: 'Interceptor: Get code failed' } } // I wonder how we should come up with these numbers?
