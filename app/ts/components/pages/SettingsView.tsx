@@ -15,12 +15,12 @@ type CheckBoxSettingParam = {
 function CheckBoxSetting(param: CheckBoxSettingParam) {
 	return (
 		<div class = 'container'>
-			<label class = 'form-control' style = { `color: var(--text-color); font-size: 1em;` }>
+			<label class = 'form-control' style = { 'color: var(--text-color); font-size: 1em;' }>
 				<input type = 'checkbox'
 					checked = { param.checked }
 					onInput = { e => { if (e.target instanceof HTMLInputElement && e.target !== null) { param.onInput(e.target.checked) } } }
 				/>
-				<p class = 'paragraph checkbox-text' style = { `color: var(--text-color);` }> { param.text } </p>
+				<p class = 'paragraph checkbox-text' style = { 'color: var(--text-color);' }> { param.text } </p>
 			</label>
 		</div>
 	)
@@ -84,7 +84,7 @@ function ImportExport() {
 		: <></> }
 		{ settingsReply !== undefined && settingsReply.data.success === true && dismissedNotification === false ?
 			<DinoSaysNotification
-				text = { `Settings and address book loaded!` }
+				text = { 'Settings and address book loaded!' }
 				close = { () => setdDismissedNotification(true)}
 			/>
 		: <></> }

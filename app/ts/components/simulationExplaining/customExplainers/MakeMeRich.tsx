@@ -23,7 +23,7 @@ export function makeYouRichTransaction(param: TransactionImportanceBlockParams) 
 		<div class = 'content' style = 'display: inline-block;'>
 			<table class = 'log-table'>
 				<div class = 'log-cell'>
-					<p class = 'ellipsis' style = {`color: var(--text-color); margin-bottom: 0px`}> { explainer[0] }&nbsp; </p>
+					<p class = 'ellipsis' style = {'color: var(--text-color); margin-bottom: 0px'}> { explainer[0] }&nbsp; </p>
 				</div>
 				<div class = 'log-cell' style = 'justify-content: right;'>
 					<EtherAmount amount = { param.simTx.transaction.value } fontSize = 'normal'/>
@@ -32,7 +32,7 @@ export function makeYouRichTransaction(param: TransactionImportanceBlockParams) 
 					<EtherSymbol rpcNetwork = { param.simulationAndVisualisationResults.rpcNetwork } fontSize = 'normal' />
 				</div>
 				<div class = 'log-cell'>
-					<p class = 'ellipsis' style = {`color: var(--text-color); margin-bottom: 0px`}> &nbsp;{ explainer[1] } </p>
+					<p class = 'ellipsis' style = {'color: var(--text-color); margin-bottom: 0px'}> &nbsp;{ explainer[1] } </p>
 				</div>
 			</table>
 		</div>

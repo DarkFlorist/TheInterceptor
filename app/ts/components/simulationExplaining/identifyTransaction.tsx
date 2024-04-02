@@ -60,7 +60,7 @@ function identifySimpleApproval(simTx: SimulatedAndVisualizedTransaction) {
 					title: `Remove ${ symbol } All Approval`,
 					signingAction: `Remove ALL Approval Removal for ${ symbol }`,
 					simulationAction: `Simulate Removal of All Approval for ${ symbol }`,
-					rejectAction: `Reject All Approval Removal`,
+					rejectAction: 'Reject All Approval Removal',
 					identifiedTransaction: simTx,
 				}
 			}
@@ -106,9 +106,9 @@ function identifyGovernanceVote(simTx: SimulatedAndVisualizedTransaction) {
 		const functionData = governanceContractInterface.decodeFunctionData(functionFragment, dataStringWith0xStart(simTx.transaction.input))
 		return {
 			type: 'GovernanceVote' as const,
-			title: `Governance Vote`,
-			signingAction: `Cast Vote`,
-			simulationAction: `Simulate Vote Casting`,
+			title: 'Governance Vote',
+			signingAction: 'Cast Vote',
+			simulationAction: 'Simulate Vote Casting',
 			rejectAction: `Don't Vote`,
 			governanceVoteInputParameters: parseVoteInputParameters(functionData),
 		}
@@ -224,10 +224,10 @@ export function identifyTransaction(simTx: SimulatedAndVisualizedTransaction): I
 	if (simTx.transaction.to === undefined) {
 		return {
 			type: 'ContractDeployment',
-			title: `Contract Deployment`,
-			signingAction: `Deploy Contract`,
-			simulationAction: `Simulate Contract Deployment`,
-			rejectAction: `Reject Contract Deployment`,
+			title: 'Contract Deployment',
+			signingAction: 'Deploy Contract',
+			simulationAction: 'Simulate Contract Deployment',
+			rejectAction: 'Reject Contract Deployment',
 		}
 	}
 

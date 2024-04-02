@@ -43,7 +43,7 @@ class MockEthereumJSONRpcRequestHandler {
 				if (rpcRequest.params[0] === 0xe10c2a85168046080235fff99e2e14ef1e90c8cf5e9d675f2ca214e49e555e0fn) {
 					return parseRequest(eth_transactionByhash0xe10c2a85168046080235fff99e2e14ef1e90c8cf5e9d675f2ca214e49e555e0f)
 				}
-				throw new Error(`unsupported Hash`)
+				throw new Error('unsupported Hash')
 			}
 			default: new Error(`unsupported method ${ rpcRequest.method }`)
 		}

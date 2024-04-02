@@ -36,14 +36,14 @@ export async function fetchAbiFromEtherscan(contractAddress: EthereumAddress) {
 		const sourceCodeResult = await fetchJson(`https://api.etherscan.io/api?module=contract&action=getsourcecode&address=${ addressString(parsedSourceCode.value.result[0].Implementation) }&apiKey=${ EtherscanABIKey }`)
 		if (!sourceCodeResult.success) return sourceCodeResult
 		const implementationName = EtherscanSourceCodeResult.safeParse(sourceCodeResult.result)
-		
-		if (!implResult.success || !implementationName.success) return { success: false as const, error: `Failed to parse Etherscan results.` }
-		if (!isValidAbi(implResult.value.result)) return { success: false as const, error: `Etherscan returned an invalid ABI` }
+
+		if (!implResult.success || !implementationName.success) return { success: false as const, error: 'Failed to parse Etherscan results.' }
+		if (!isValidAbi(implResult.value.result)) return { success: false as const, error: 'Etherscan returned an invalid ABI' }
 		return { success: true as const, address: contractAddress, abi: implResult.value.result, contractName: `Proxy: ${ implementationName.value.result[0].ContractName }` }
 	}
 	const abi = parsedSourceCode.value.result[0].ABI
 	if (abi && abi !== 'Contract source code not verified') {
-		if (!isValidAbi(abi)) return { success: false as const, error: `Etherscan returned an invalid ABI` }
+		if (!isValidAbi(abi)) return { success: false as const, error: 'Etherscan returned an invalid ABI' }
 		return {
 			success: true as const,
 			abi: parsedSourceCode.value.result[0].ABI,
