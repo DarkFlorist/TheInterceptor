@@ -108,6 +108,6 @@ export const updateWindowIfExists = async (tabId: number, updateProperties: brow
 }
 
 export const checkAndThrowRuntimeLastError = () => {
-	const error = browser.runtime.lastError
-	if (error !== undefined && error.message !== undefined) throw new Error(error.message)
+	const error: browser.runtime._LastError | undefined | null = browser.runtime.lastError // firefox return `null` on no errors
+	if (error !== null && error !== undefined && error.message !== undefined) throw new Error(error.message)
 }

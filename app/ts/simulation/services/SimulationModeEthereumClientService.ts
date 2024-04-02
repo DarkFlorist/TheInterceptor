@@ -12,6 +12,7 @@ import { SignMessageParams } from '../../types/jsonRpc-signing-types.js'
 import { EthSimulateV1CallResults, EthereumEvent, StateOverrides } from '../../types/ethSimulate-types.js'
 import { getCodeByteCode } from '../../utils/ethereumByteCodes.js'
 import { stripLeadingZeros } from '../../utils/typed-arrays.js'
+import { GetSimulationStackOldReply, GetSimulationStackReply } from '../../types/simulationStackTypes.js'
 
 const MOCK_PUBLIC_PRIVATE_KEY = 0x1n // key used to sign mock transactions
 const MOCK_SIMULATION_PRIVATE_KEY = 0x2n // key used to sign simulated transatons
@@ -61,13 +62,50 @@ export const getNonPrependedSimulatedTransactions = (prependTransactionsQueue: r
 	return simulatedTransactions.slice(prependTransactionsQueue.length, simulatedTransactions.length)
 }
 
-export const getSimulatedStack = (simulationState: SimulationState, version: '1.0.0' | '1.0.1') => {
+const getETHBalanceChanges = (baseFeePerGas: bigint, transaction: SimulatedTransaction) => {
+	if (transaction.ethSimulateV1CallResult.status === 'failure') return []
+	const ethLogs = transaction.ethSimulateV1CallResult.logs.filter((log) => log.address === ETHEREUM_LOGS_LOGGER_ADDRESS) 
+	const ethBalanceAfter = transaction.tokenBalancesAfter.filter((x) => x.token === ETHEREUM_LOGS_LOGGER_ADDRESS)
+	return ethBalanceAfter.map((balanceAfter) => {
+		const balanceAfterBalance = baseFeePerGas * transaction.ethSimulateV1CallResult.gasUsed
+		const gasFees = balanceAfter.owner === transaction.signedTransaction.from ? transaction.realizedGasPrice * transaction.ethSimulateV1CallResult.gasUsed : 0n
+		return {
+			address: balanceAfter.owner,
+			before: ethLogs.reduce((total, event) => {
+				const parsed = handleERC20TransferLog(event)[0]
+				if (parsed === undefined || parsed.type !== 'ERC20') throw new Error('eth log was not erc20 transfer event')
+				if (parsed.from === balanceAfter.owner && parsed.to !== balanceAfter.owner) return total + parsed.amount
+				if (parsed.from !== balanceAfter.owner && parsed.to === balanceAfter.owner) return total - parsed.amount
+				return total
+			}, balanceAfterBalance ?? 0n) + gasFees,
+			after: balanceAfterBalance ?? 0n,
+		}
+	})
+}
+
+export const getSimulatedStack = (simulationState: SimulationState | undefined): GetSimulationStackReply => {
+	if (simulationState === undefined) return []
+	return simulationState.simulatedTransactions.map((simulatedTransaction) => ({ ethBalanceChanges: getETHBalanceChanges(simulationState.baseFeePerGas, simulatedTransaction), simulatedTransaction }))
+}
+
+export const getSimulatedStackOld = (simulationState: SimulationState | undefined, version: '1.0.0' | '1.0.1'): GetSimulationStackOldReply => {
+	if (simulationState === undefined) return []
 	return simulationState.simulatedTransactions.map((transaction) => {
 		const ethLogs = transaction.ethSimulateV1CallResult.status === 'failure' ? [] : transaction.ethSimulateV1CallResult.logs.filter((log) => log.address === ETHEREUM_LOGS_LOGGER_ADDRESS) 
 		const ethBalanceAfter = transaction.tokenBalancesAfter.filter((x) => x.token === ETHEREUM_LOGS_LOGGER_ADDRESS)
+		const maxPriorityFeePerGas = transaction.signedTransaction.type === '1559' ? transaction.signedTransaction.maxPriorityFeePerGas : 0n
 		return {
 			...transaction.signedTransaction,
 			...transaction.ethSimulateV1CallResult,
+			... ( transaction.ethSimulateV1CallResult.status === 'failure' ? {
+				statusCode: transaction.ethSimulateV1CallResult.status,
+				error: transaction.ethSimulateV1CallResult.error.message } : { 
+					statusCode: transaction.ethSimulateV1CallResult.status, 
+					events: transaction.ethSimulateV1CallResult.logs.map((x) => ({ loggersAddress: x.address, data: x.data, topics: x.topics }))
+				}
+			),
+			returnValue: transaction.ethSimulateV1CallResult.returnData,
+			maxPriorityFeePerGas,
 			balanceChanges: ethBalanceAfter.map((balanceAfter) => {
 				// in the version 1.0.0 , gas price was wrongly calculated with 'maxPriorityFeePerGas', this code keeps this for 1.0.0 but fixes it for other versions
 				const balanceAfterBalance = version === '1.0.0' || balanceAfter.owner !== transaction.signedTransaction.from ? balanceAfter.balance : (balanceAfter.balance ?? 0n) - simulationState.baseFeePerGas * transaction.ethSimulateV1CallResult.gasUsed
@@ -140,7 +178,7 @@ export const simulateEstimateGas = async (ethereumClientService: EthereumClientS
 		return {
 			error: {
 				code: ERROR_INTERCEPTOR_GAS_ESTIMATION_FAILED,
-				message: `ETH Simulate Failed to estimate gas`,
+				message: 'ETH Simulate Failed to estimate gas',
 				data: '',
 			},
 		} as const

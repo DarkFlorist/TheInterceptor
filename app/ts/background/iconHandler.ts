@@ -30,8 +30,8 @@ export async function updateExtensionIcon(tabId: number, websiteOrigin: string) 
 		}
 		return setInterceptorIcon(tabId, ICON_ACCESS_DENIED, `The access to ${ activeAddress.name } for ${ websiteOrigin } has been DENIED!`)
 	}
-	if (settings.simulationMode) return setInterceptorIcon(tabId, ICON_SIMULATING, `The Interceptor simulates your sent transactions.`)
-	if (settings.currentRpcNetwork.httpsRpc === undefined) return setInterceptorIcon(tabId, ICON_SIGNING_NOT_SUPPORTED, `Interceptor is on an unsupported network and simulation mode is disabled.`)
+	if (settings.simulationMode) return setInterceptorIcon(tabId, ICON_SIMULATING, 'The Interceptor simulates your sent transactions.')
+	if (settings.currentRpcNetwork.httpsRpc === undefined) return setInterceptorIcon(tabId, ICON_SIGNING_NOT_SUPPORTED, 'Interceptor is on an unsupported network and simulation mode is disabled.')
 	const tabState = await getTabState(tabId)
 	return setInterceptorIcon(tabId, ICON_SIGNING, `The Interceptor forwards your transactions to ${ getPrettySignerName(tabState.signerName) } once sent.`)
 }

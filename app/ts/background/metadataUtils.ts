@@ -12,7 +12,7 @@ import { getUniqueItemsByProperties } from '../utils/typed-arrays.js'
 import { EthereumNameServiceTokenWrapper, getEthereumNameServiceNameFromTokenId } from '../utils/ethereumNameService.js'
 import { defaultActiveAddresses } from './settings.js'
 import { RpcNetwork } from '../types/rpc.js'
-const LOGO_URI_PREFIX = `../vendor/@darkflorist/address-metadata`
+const LOGO_URI_PREFIX = '../vendor/@darkflorist/address-metadata'
 
 const pathJoin = (parts: string[], sep = '/') => parts.join(sep).replace(new RegExp(sep + '{1,}', 'g'), sep)
 
@@ -167,7 +167,7 @@ export async function getAddressBookEntriesForVisualiser(ethereumClientService: 
 		if (tx.signedTransaction.to !== null) addressesToFetchMetadata.push(tx.signedTransaction.to)
 	})
 
-	const deDuplicated = new Set<bigint>(addressesToFetchMetadata)
+	const deDuplicated = new Set<bigint>([...addressesToFetchMetadata, ETHEREUM_LOGS_LOGGER_ADDRESS])
 	const addressIdentificationPromises: Promise<AddressBookEntry>[] = Array.from(deDuplicated.values()).map((address) => identifyAddress(ethereumClientService, address))
 
 	return await Promise.all(addressIdentificationPromises)
