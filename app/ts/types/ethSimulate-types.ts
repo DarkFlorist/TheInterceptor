@@ -112,7 +112,6 @@ const EthSimulateCallResultSuccess = funtypes.ReadonlyObject({
 	logs: CallResultLogs
 })
 
-
 export type EthSimulateV1CallResult = funtypes.Static<typeof EthSimulateV1CallResult>
 export const EthSimulateV1CallResult = funtypes.Union(EthSimulateCallResultFailure, EthSimulateCallResultSuccess)
 
