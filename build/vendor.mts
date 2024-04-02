@@ -30,6 +30,7 @@ async function vendorDependencies(files: string[]) {
 	for (const { packageName, packageToVendor, subfolderToVendor } of dependencyPaths) {
 		const sourceDirectoryPath = path.join(directoryOfThisFile, '..', 'node_modules', packageToVendor || packageName, subfolderToVendor)
 		const destinationDirectoryPath = path.join(directoryOfThisFile, '..', 'app', 'vendor', packageName)
+		// biome-ignore lint/suspicious/useAwait: Copier library requires async fn as parameter
 		async function inclusionPredicate(path: string, fileType: FileType) {
 			if (path.endsWith('.js')) return true
 			if (path.endsWith('.ts')) return true
