@@ -69,7 +69,7 @@ const Bytes16Parser: funtypes.ParsedValue<funtypes.String, bigint>['config'] = {
 	},
 }
 
-const BytesParser: funtypes.ParsedValue<funtypes.String, Uint8Array>['config'] = {
+export const BytesParser: funtypes.ParsedValue<funtypes.String, Uint8Array>['config'] = {
 	parse: value => {
 		const match = /^(?:0x)?([a-fA-F0-9]*)$/.exec(value)
 		if (match === null) return { success: false, message: `Expected a hex string encoded byte array with an optional '0x' prefix but received ${ value }` }

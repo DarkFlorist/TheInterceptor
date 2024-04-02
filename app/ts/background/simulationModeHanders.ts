@@ -1,6 +1,6 @@
 import { EthereumClientService } from '../simulation/services/EthereumClientService.js'
 import { createEthereumSubscription, createNewFilter, getEthFilterChanges, getEthFilterLogs, removeEthereumSubscription } from '../simulation/services/EthereumSubscriptionService.js'
-import { getSimulatedBalance, getSimulatedBlock, getSimulatedBlockNumber, getSimulatedCode, getSimulatedLogs, getSimulatedStack, getSimulatedTransactionByHash, getSimulatedTransactionCount, getSimulatedTransactionReceipt, simulatedCall, simulateEstimateGas, getInputFieldFromDataOrInput, getSimulatedBlockByHash, getSimulatedFeeHistory } from '../simulation/services/SimulationModeEthereumClientService.js'
+import { getSimulatedBalance, getSimulatedBlock, getSimulatedBlockNumber, getSimulatedCode, getSimulatedLogs, getSimulatedStack, getSimulatedTransactionByHash, getSimulatedTransactionCount, getSimulatedTransactionReceipt, simulatedCall, simulateEstimateGas, getInputFieldFromDataOrInput, getSimulatedBlockByHash, getSimulatedFeeHistory, getSimulatedStackOld } from '../simulation/services/SimulationModeEthereumClientService.js'
 import { DEFAULT_CALL_ADDRESS, ERROR_INTERCEPTOR_GET_CODE_FAILED, KNOWN_CONTRACT_CALLER_ADDRESSES } from '../utils/constants.js'
 import { WebsiteTabConnections } from '../types/user-interface-types.js'
 import { SimulationState } from '../types/visualizer-types.js'
@@ -152,12 +152,9 @@ export async function getTransactionCount(ethereumClientService: EthereumClientS
 export async function getSimulationStack(simulationState: SimulationState | undefined, request: GetSimulationStack) {
 	const version = request.params[0]
 	switch (version) {
+		case '2.0.0': return { type: 'result' as const, method: request.method, result: { version, payload: getSimulatedStack(simulationState) } as const }
 		case '1.0.0':
-		case '1.0.1': return {
-			type: 'result' as const,
-			method: request.method,
-			result: { version, payload: simulationState === undefined ? [] : getSimulatedStack(simulationState, version), } as const
-		}
+		case '1.0.1': return { type: 'result' as const, method: request.method, result: { version, payload: getSimulatedStackOld(simulationState, version) } as const }
 		default: assertNever(version)
 	}
 }
