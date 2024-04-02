@@ -167,7 +167,7 @@ export async function getAddressBookEntriesForVisualiser(ethereumClientService: 
 		if (tx.signedTransaction.to !== null) addressesToFetchMetadata.push(tx.signedTransaction.to)
 	})
 
-	const deDuplicated = new Set<bigint>(addressesToFetchMetadata)
+	const deDuplicated = new Set<bigint>([...addressesToFetchMetadata, ETHEREUM_LOGS_LOGGER_ADDRESS])
 	const addressIdentificationPromises: Promise<AddressBookEntry>[] = Array.from(deDuplicated.values()).map((address) => identifyAddress(ethereumClientService, address))
 
 	return await Promise.all(addressIdentificationPromises)
