@@ -21,7 +21,7 @@ export async function main() {
 			chainId: 1n,
 		} as const
 
-		should('mockSignTransaction should have r=0, s=0 and yParity = "even"', async () => {
+		should('mockSignTransaction should have r=0, s=0 and yParity = "even"', () => {
 			const signed = mockSignTransaction(exampleTransaction)
 			assert.equal(signed.type, '1559')
 			assert.equal(signed.r, 0n)
@@ -45,7 +45,7 @@ export async function main() {
 			)
 		})
 
-		should('ethers.recoverAddress works for positive case', async() => {
+		should('ethers.recoverAddress works for positive case', () => {
 			const validTransaction = {
 				'hash': '0xdd0967ea3bf8bb02c40edac86ff849f200587483c6f139e9f73242bdb1ef6284',
 				'nonce': '0x15174',

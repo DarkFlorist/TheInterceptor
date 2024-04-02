@@ -1,9 +1,10 @@
 import { EthereumJsonRpcRequest } from '../app/ts/types/JsonRpc-types.js'
 
 export class MockRequestHandler {
+	// biome-ignore lint/suspicious/useAwait: only used for mocking
 	public readonly jsonRpcRequest = async (rpcEntry: EthereumJsonRpcRequest) => {
 		if (rpcEntry.method === 'eth_getCode') return '0x'
-		throw new Error(`should not be called`)
+		throw new Error('should not be called')
 	}
 
 	public clearCache = () => {}

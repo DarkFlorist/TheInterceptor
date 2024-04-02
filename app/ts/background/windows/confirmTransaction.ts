@@ -127,7 +127,7 @@ const formRejectMessage = (errorString: undefined | string) => {
 	}
 }
 
-export const formSendRawTransaction = async(ethereumClientService: EthereumClientService, sendRawTransactionParams: SendRawTransactionParams, website: Website, created: Date, transactionIdentifier: EthereumQuantity): Promise<WebsiteCreatedEthereumUnsignedTransaction> => {	
+export const formSendRawTransaction = (ethereumClientService: EthereumClientService, sendRawTransactionParams: SendRawTransactionParams, website: Website, created: Date, transactionIdentifier: EthereumQuantity): WebsiteCreatedEthereumUnsignedTransaction => {
 	const ethersTransaction = ethers.Transaction.from(dataStringWith0xStart(sendRawTransactionParams.params[0]))
 	const transactionDetails = {
 		from: EthereumAddress.parse(ethersTransaction.from),
@@ -258,7 +258,7 @@ export async function openConfirmTransactionDialogForMessage(
 			await appendPendingTransactionOrMessage(pendingMessage)
 			await updateConfirmTransactionView(ethereumClientService)
 
-			await updatePendingTransactionOrMessage(pendingMessage.uniqueRequestIdentifier, async (message) => {
+			await updatePendingTransactionOrMessage(pendingMessage.uniqueRequestIdentifier, (message) => {
 				if (message.type !== 'SignableMessage') return message
 				return { ...message, transactionOrMessageCreationStatus: 'Simulating' as const }
 			})

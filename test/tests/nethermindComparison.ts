@@ -24,6 +24,7 @@ class MockEthereumJSONRpcRequestHandler {
 
 	public clearCache = () => {}
 
+	// biome-ignore lint/suspicious/useAwait: only used for mocking
 	public readonly jsonRpcRequest = async (rpcRequest: EthereumJsonRpcRequest) => {
 		switch (rpcRequest.method) {
 			case 'eth_blockNumber': return `0x${ 8443561n.toString(16) }`
