@@ -610,11 +610,11 @@ class InterceptorMessageListener {
 			prependListener: (() => { return unsupportedError('window.ethereum.prependListener()') }).bind(windowEthereum),
 			prependOnceListener: (() => { return unsupportedError('window.ethereum.prependOnceListener()') }).bind(windowEthereum),
 			_metamask: {
-				isUnlocked: (async () => {
+				isUnlocked: (() => {
 					unsupportedError('window.ethereum._metamask.isUnlocked()')
 					return this.connected
 				}),
-				requestBatch: async () => { return unsupportedError('window.ethereum._metamask.requestBatch()') }
+				requestBatch: () => { return unsupportedError('window.ethereum._metamask.requestBatch()') }
 			}
 		}
 	}
