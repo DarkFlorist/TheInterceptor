@@ -40,6 +40,7 @@ export function replaceImport(filePath: string, text: string) {
 	return replaced
 }
 
+// biome-ignore lint/suspicious/noExplicitAny: Library requirement
 async function* getFiles(topDir: string): AsyncGenerator<string, any, undefined> {
 	const dirContents = await fs.readdir(topDir, { withFileTypes: true })
 	for (const dir of dirContents) {

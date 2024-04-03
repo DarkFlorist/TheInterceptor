@@ -16,6 +16,7 @@ function listenContentScript(conectionName: string | undefined) {
 	const extensionPort = browser.runtime.connect({ name: connectionNameNotUndefined })
 
 	// forward all message events to the background script, which will then filter and process them
+	// biome-ignore lint/suspicious/noExplicitAny: MessageEvent default signature
 	const listener = (messageEvent: MessageEvent<any>) => {
 		try {
 			// we only want the data element, if it exists, and postMessage will fail if it can't clone the object fully (and it cannot clone a MessageEvent)
