@@ -396,7 +396,7 @@ class InterceptorMessageListener {
 		if (this.signerWindowEthereumRequest === undefined) return
 
 		try {
-			const reply = await this.signerWindowEthereumRequest({ method: 'wallet_switchEthereumChain', params: [ { chainId: chainId } ] })
+			const reply = await this.signerWindowEthereumRequest({ method: 'wallet_switchEthereumChain', params: [ { chainId } ] })
 			if (reply !== null) return
 			await this.sendMessageToBackgroundPage({ method: 'wallet_switchEthereumChain_reply', params: [ { accept: true, chainId: chainId } ] })
 		} catch (error: unknown) {
@@ -443,11 +443,7 @@ class InterceptorMessageListener {
 					if (!this.connected) return
 					this.connected = false
 					for (const callback of this.onDisconnectCallBacks) {
-						callback({
-						name: 'disconnect',
-						code: METAMASK_ERROR_USER_REJECTED_REQUEST,
-						message: 'User refused access to the wallet'
-					})
+						callback({ name: 'disconnect', code: METAMASK_ERROR_USER_REJECTED_REQUEST, message: 'User refused access to the wallet' })
 					}
 					return
 				}

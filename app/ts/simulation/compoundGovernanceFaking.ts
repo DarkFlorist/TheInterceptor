@@ -52,7 +52,7 @@ export const simulateCompoundGovernanceExecution = async (ethereumClientService:
 	const parentBlock = await ethereumClientService.getBlock()
 	const governanceContractCalls = (await ethereumClientService.simulateTransactionsAndSignatures(calls, [], parentBlock.number)).calls
 	for (const call of governanceContractCalls) {
-		if (call.status !== 'success') throw new Error('Failed to retrieve governance contracts information');
+		if (call.status !== 'success') throw new Error('Failed to retrieve governance contracts information')
 	}
 	if (governanceContractCalls[0]?.status !== 'success') throw new Error('multicall failed')
 	const timeLockContractResult = compoundGovernanceAbi.decodeFunctionResult('timelock', governanceContractCalls[0].returnData)
