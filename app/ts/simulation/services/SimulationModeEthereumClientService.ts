@@ -238,10 +238,10 @@ export const appendTransaction = async (ethereumClientService: EthereumClientSer
 
 	const tokenBalancesAfter = await getTokenBalancesAfter(
 		ethereumClientService,
+		ethSimulateV1CallResult.calls,
+		parentBlock.number,
 		signedTxs,
 		signedMessages,
-		ethSimulateV1CallResult.calls,
-		parentBlock.number
 	)
 	if (ethSimulateV1CallResult.calls.length !== tokenBalancesAfter.length) throw 'tokenBalancesAfter length does not match'
 
@@ -953,10 +953,10 @@ const getAddressesAndTokensIdsInteractedWithErc1155s = (events: readonly Ethereu
 
 export const getTokenBalancesAfter = async (
 	ethereumClientService: EthereumClientService,
-	signedTxs: EthereumSignedTransaction[] = [],
-	signedMessages: readonly SignatureWithFakeSignerAddress[] = [],
 	ethSimulateV1CallResults: EthSimulateV1CallResults,
 	blockNumber: bigint,
+	signedTxs: EthereumSignedTransaction[] = [],
+	signedMessages: readonly SignatureWithFakeSignerAddress[] = [],
 ) => {
 	const tokenBalancesAfter: Promise<TokenBalancesAfter>[] = []
 	for (let resultIndex = 0; resultIndex < ethSimulateV1CallResults.length; resultIndex++) {
