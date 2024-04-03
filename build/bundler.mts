@@ -26,7 +26,7 @@ const dependencyPaths = [
 
 export function replaceImport(filePath: string, text: string) {
 	let replaced = text
-	dependencyPaths.forEach((dependency) => {
+	for (const dependency of dependencyPaths) {
 		const newLocation = path.join(directoryOfThisFile, '..', 'app', 'vendor', dependency.packageToVendor === undefined ? dependency.packageName : dependency.packageToVendor, dependency.entrypointFile)
 		const fileFolder = path.dirname(filePath)
 
@@ -36,7 +36,7 @@ export function replaceImport(filePath: string, text: string) {
 		replaced = replaced.replaceAll(`from'${ dependency.packageName }'`, ` from '${ path.relative(fileFolder, newLocation).replace(/\\/g, '/') }'`)
 		replaced = replaced.replaceAll(`from"${ dependency.packageName }"`, ` from '${ path.relative(fileFolder, newLocation).replace(/\\/g, '/') }'`)
 		replaced = replaced.replaceAll(`require("${ dependency.packageName }")`, `require('${ path.relative(fileFolder, newLocation).replace(/\\/g, '/') }')`)
-	})
+	}
 	return replaced
 }
 

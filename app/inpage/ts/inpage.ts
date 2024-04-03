@@ -410,7 +410,10 @@ class InterceptorMessageListener {
 	private readonly handleReplyRequest = async(replyRequest: InterceptedRequestForwardWithResult) => {
 		try {
 			if (replyRequest.subscription !== undefined) {
-				return this.onMessageCallBacks.forEach((callback) => callback({ type: 'eth_subscription', data: replyRequest.result }))
+				for (const callback of this.onMessageCallBacks) {
+					callback({ type: 'eth_subscription', data: replyRequest.result })
+				}
+				return
 			}
 			// inform callbacks
 			switch (replyRequest.method) {
@@ -423,21 +426,26 @@ class InterceptorMessageListener {
 						try { window.ethereum.selectedAddress = replyAddress } catch(error) {}
 						if ('web3' in window && window.web3 !== undefined) try { window.web3.accounts = reply } catch(error) {}
 					}
-					return this.onAccountsChangedCallBacks.forEach((callback) => callback(reply))
+					for (const callback of this.onAccountsChangedCallBacks) {
+						callback(reply)
+					}
+					return
 				}
 				case 'connect': {
 					if (this.connected) return
 					this.connected = true
-					return this.onConnectCallBacks.forEach((callback) => callback({ chainId: replyRequest.result as string }))
+					for (const callback of this.onConnectCallBacks) {
+						callback({ chainId: replyRequest.result as string })
+					}
+					return
 				}
 				case 'disconnect': {
 					if (!this.connected) return
 					this.connected = false
-					return this.onDisconnectCallBacks.forEach((callback) => callback({
-						name: 'disconnect',
-						code: METAMASK_ERROR_USER_REJECTED_REQUEST,
-						message: 'User refused access to the wallet'
-					}))
+					for (const callback of this.onDisconnectCallBacks) {
+						callback({ name: 'disconnect', code: METAMASK_ERROR_USER_REJECTED_REQUEST, message: 'User refused access to the wallet' })
+					}
+					return
 				}
 				case 'chainChanged': {
 					const reply = replyRequest.result as string
@@ -447,7 +455,10 @@ class InterceptorMessageListener {
 						try { window.ethereum.chainId = reply } catch(error) {}
 						try { window.ethereum.networkVersion = Number(reply).toString(10) } catch(error) {}
 					}
-					return this.onChainChangedCallBacks.forEach((callback) => callback(reply))
+					for (const callback of this.onChainChangedCallBacks) {
+						callback(reply)
+					}
+					return
 				}
 				case 'request_signer_to_eth_requestAccounts': return await this.requestAccountsFromSigner()
 				case 'request_signer_to_eth_accounts': return await this.getAccountsFromSigner()

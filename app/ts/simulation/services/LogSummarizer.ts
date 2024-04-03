@@ -194,17 +194,19 @@ export class LogSummarizer {
 	public constructor(transactions: readonly (SimulatedAndVisualizedTransaction | undefined)[]) {
 		this.summarizeToAddressChanges(transactions)
 		// remove addresses that ended up with no changes
-		Array.from(this.summary.entries()).forEach(([address, addressSummary]) => {
-			if (addressSummary.erc721TokenBalanceChanges.size === 0
-				&& addressSummary.erc721TokenIdApprovalChanges.size === 0
-				&& addressSummary.erc20TokenApprovalChanges.size === 0
-				&& addressSummary.erc20TokenBalanceChanges.size === 0
-				&& addressSummary.erc1155TokenBalanceChanges.size === 0
-				&& addressSummary.erc721and1155OperatorChanges.size === 0
+		const summaryEntriesArray = Array.from(this.summary.entries())
+		for (const [address, addressSummary] of summaryEntriesArray) {
+			if (
+				addressSummary.erc721TokenBalanceChanges.size === 0 &&
+				addressSummary.erc721TokenIdApprovalChanges.size === 0 &&
+				addressSummary.erc20TokenApprovalChanges.size === 0 &&
+				addressSummary.erc20TokenBalanceChanges.size === 0 &&
+				addressSummary.erc1155TokenBalanceChanges.size === 0 &&
+				addressSummary.erc721and1155OperatorChanges.size === 0
 			) {
 				this.summary.delete(address)
 			}
-		})
+		}
 	}
 
 	public getSummary = (addressMetaData: Map<string, AddressBookEntry>, tokenPrices: readonly TokenPriceEstimate[], namedTokenIds: readonly NamedTokenId[]) => {
