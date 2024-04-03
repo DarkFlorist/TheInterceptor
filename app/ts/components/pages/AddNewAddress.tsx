@@ -13,12 +13,12 @@ import { ModifyAddressWindowState } from '../../types/visualizer-types.js'
 import { MessageToPopup } from '../../types/interceptor-messages.js'
 
 const readableAddressType = {
-	'contact': 'Contact',
-	'activeAddress': 'Active Address',
-	'ERC20': 'ERC20',
-	'ERC721': 'ERC721',
-	'ERC1155': 'ERC1155',
-	'contract': 'contract',
+	contact: 'Contact',
+	activeAddress: 'Active Address',
+	ERC20: 'ERC20',
+	ERC721: 'ERC721',
+	ERC1155: 'ERC1155',
+	contract: 'contract',
 }
 
 type IncompleteAddressIconParams = {

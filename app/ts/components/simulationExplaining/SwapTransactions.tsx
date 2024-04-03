@@ -231,7 +231,7 @@ export function getSwapName(identifiedSwap: IdentifiedSwapWithMetadata) {
 
 function VisualizeSwapAsset({ swapAsset, renameAddressCallBack }: { swapAsset: SwapAsset, renameAddressCallBack: RenameAddressCallBack }) {
 	const tokenStyle = { 'font-weight': '500' }
-	const balanceTextStyle = { 'font-size': '14px', 'color': 'var(--subtitle-text-color)' }
+	const balanceTextStyle = { 'font-size': '14px', color: 'var(--subtitle-text-color)' }
 
 	switch (swapAsset.type) {
 		case 'ERC721': {
