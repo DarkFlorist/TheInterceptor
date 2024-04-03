@@ -784,7 +784,7 @@ export const simulatePersonalSign = async (params: SignMessageParams, signingAdd
 			case 'eth_signTypedData_v3':
 			case 'eth_signTypedData_v4': {
 				const typesWithoutDomain = Object.assign({}, params.params[1].types)
-				delete typesWithoutDomain['EIP712Domain']
+				delete typesWithoutDomain.EIP712Domain
 				const castedTypesWithoutDomain = typesWithoutDomain as { [x: string]: { name: string, type: string }[] }
 				return {
 					signature: await wallet.signTypedData(params.params[1].domain, castedTypesWithoutDomain, params.params[1].message),

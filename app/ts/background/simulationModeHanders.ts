@@ -142,7 +142,7 @@ export async function getCode(ethereumClientService: EthereumClientService, simu
 }
 
 export async function getPermissions() {
-	return { type: 'result' as const, method: 'wallet_getPermissions', params: [], result: [ { "eth_accounts": {} } ] } as const
+	return { type: 'result' as const, method: 'wallet_getPermissions', params: [], result: [ { eth_accounts: {} } ] } as const
 }
 
 export async function getTransactionCount(ethereumClientService: EthereumClientService, simulationState: SimulationState | undefined, request: GetTransactionCount) {

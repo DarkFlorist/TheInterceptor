@@ -396,7 +396,7 @@ class InterceptorMessageListener {
 		if (this.signerWindowEthereumRequest === undefined) return
 
 		try {
-			const reply = await this.signerWindowEthereumRequest({ method: 'wallet_switchEthereumChain', params: [ { 'chainId': chainId } ] })
+			const reply = await this.signerWindowEthereumRequest({ method: 'wallet_switchEthereumChain', params: [ { chainId } ] })
 			if (reply !== null) return
 			await this.sendMessageToBackgroundPage({ method: 'wallet_switchEthereumChain_reply', params: [ { accept: true, chainId: chainId } ] })
 		} catch (error: unknown) {
