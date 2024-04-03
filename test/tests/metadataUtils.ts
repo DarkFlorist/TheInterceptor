@@ -9,6 +9,7 @@ export async function main() {
 	describe('getAddressMetaData', () => {
 		should('contain USDC Coin', async () => {
 			const metadata = await identifyAddress(ethereum, 0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48n, false)
+			// biome-ignore lint/suspicious/noConsoleLog: test runner logs
 			console.log(metadata)
 			assert.equal(metadata.name, 'USD Coin')
 		})
