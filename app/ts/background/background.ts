@@ -185,7 +185,7 @@ export async function updateSimulationState(ethereum: EthereumClientService, get
 		}
 		try {
 			const updatedSimulationState = await getUpdatedSimulationState(simulationResults.simulationState)
-			if (updatedSimulationState !== undefined && ethereum.getChainId() === updatedSimulationState?.rpcNetwork.chainId) { 
+			if (updatedSimulationState !== undefined && ethereum.getChainId() === updatedSimulationState?.rpcNetwork.chainId) {
 				await updateSimulationResults({ ...await visualizeSimulatorState(updatedSimulationState, ethereum), ...doneState })
 			} else {
 				await updateSimulationResults({ ...emptyDoneResults, simulationResultState: 'corrupted' as const })
@@ -347,7 +347,7 @@ async function handleRPCRequest(
 		case 'eth_signTypedData_v1':
 		case 'eth_signTypedData_v2':
 		case 'eth_signTypedData_v3':
-		case 'eth_signTypedData_v4': return await personalSign(simulator, activeAddress, ethereumClientService, parsedRequest, request, !forwardToSigner, website, websiteTabConnections)
+		case 'eth_signTypedData_v4': return await personalSign(simulator, activeAddress, ethereumClientService, parsedRequest, request, website, websiteTabConnections, !forwardToSigner)
 		case 'wallet_switchEthereumChain': return await switchEthereumChain(simulator, websiteTabConnections, ethereumClientService, parsedRequest, request, settings.simulationMode, website)
 		case 'wallet_requestPermissions': return await getAccounts(activeAddress)
 		case 'wallet_getPermissions': return await getPermissions()

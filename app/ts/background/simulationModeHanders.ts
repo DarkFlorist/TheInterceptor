@@ -117,9 +117,9 @@ export async function personalSign(
 	ethereumClientService: EthereumClientService,
 	transactionParams: SignMessageParams,
 	request: InterceptedRequest,
-	simulationMode = true,
 	website: Website,
 	websiteTabConnections: WebsiteTabConnections,
+	simulationMode = true,
 ) {
 	const action = await openConfirmTransactionDialogForMessage(simulator, ethereumClientService, request, transactionParams, simulationMode, activeAddress, website, websiteTabConnections)
 	if (action.type === 'doNotReply') return action
