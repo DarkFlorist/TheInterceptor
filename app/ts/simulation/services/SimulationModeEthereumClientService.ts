@@ -184,7 +184,7 @@ export const simulateEstimateGas = async (ethereumClientService: EthereumClientS
 		} as const
 	}
 	if (lastResult.status === 'failure') {
-		console.log(lastResult)
+		console.warn(`Gas estimate failure result: ${lastResult}`)
 		return {
 			error: {
 				code: ERROR_INTERCEPTOR_GAS_ESTIMATION_FAILED,
