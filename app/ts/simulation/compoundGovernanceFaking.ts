@@ -61,7 +61,6 @@ export const simulateCompoundGovernanceExecution = async (ethereumClientService:
 	const proposal = compoundGovernanceAbi.decodeFunctionResult('proposals', governanceContractCalls[1].returnData)
 	const eta: bigint = funtypes.BigInt.parse(proposal.eta)
 	if (eta === undefined) throw new Error('eta is undefined')
-
 	if (governanceContractCalls[2]?.status !== 'success') throw new Error('getActions return value was undefined')
 	const [targets, values, signatures, calldatas] = compoundGovernanceAbi.decodeFunctionResult('getActions', governanceContractCalls[2].returnData)
 	const executingTransaction = {
@@ -72,7 +71,6 @@ export const simulateCompoundGovernanceExecution = async (ethereumClientService:
 	}
 
 	if (eta >= parentBlock.timestamp.getTime()) throw new Error('ETA has passed already')
-
 	const query = [{
 		calls: [executingTransaction],
 		blockOverride: {

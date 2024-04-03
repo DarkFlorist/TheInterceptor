@@ -54,7 +54,7 @@ function UnderTransactions(param: UnderTransactionsParams) {
 					<p class = 'card-header-title' style = 'white-space: nowrap;'>
 						{ pendingTransaction.transactionOrMessageCreationStatus === 'FailedToSimulate' ? pendingTransaction.transactionToSimulate.error.message : 'Simulating...' }
 					</p>
-					<p class = 'card-header-icon unsetcursor' style = { `margin-left: auto; margin-right: 0; overflow: hidden;` }>
+					<p class = 'card-header-icon unsetcursor' style = { 'margin-left: auto; margin-right: 0; overflow: hidden;' }>
 						<WebsiteOriginText { ...pendingTransaction.website } />
 					</p>
 				</header>
@@ -157,7 +157,7 @@ function TransactionCard(param: TransactionCardParams) {
 					<p class = 'card-header-title' style = 'white-space: nowrap;'>
 						{ 'Gas estimation error' }
 					</p>
-					<p class = 'card-header-icon unsetcursor' style = { `margin-left: auto; margin-right: 0; overflow: hidden;` }>
+					<p class = 'card-header-icon unsetcursor' style = { 'margin-left: auto; margin-right: 0; overflow: hidden;' }>
 						<WebsiteOriginText { ...param.currentPendingTransaction.transactionToSimulate.website } />
 					</p>
 				</header>
@@ -169,7 +169,7 @@ function TransactionCard(param: TransactionCardParams) {
 								text = { `Hey! We were unable to calculate gas limit for this transaction. ${ param.currentPendingTransaction.transactionToSimulate.error.message }. data: ${ param.currentPendingTransaction.transactionToSimulate.error.data }` }
 							/>
 						</>
-						: <DinoSaysNotification text = { `Unkown error occured with this transaction` } /> }
+						: <DinoSaysNotification text = { 'Unkown error occured with this transaction' } /> }
 					</div>
 					
 					<div class = 'textbox'>
@@ -591,7 +591,7 @@ export function ConfirmTransaction() {
 							<TransactionNames completeVisualizedSimulation = { completeVisualizedSimulation } currentPendingTransaction = { currentPendingTransactionOrSignableMessage }/>
 							<UnderTransactions pendingTransactionsAndSignableMessages = { underTransactions }/>
 							<div style = { `top: ${ underTransactions.length * -HALF_HEADER_HEIGHT }px` }></div>
-							{ currentPendingTransactionOrSignableMessage.type === 'Transaction' ? 
+							{ currentPendingTransactionOrSignableMessage.type === 'Transaction' ?
 								<TransactionCard
 									currentPendingTransaction = { currentPendingTransactionOrSignableMessage }
 									pendingTransactionsAndSignableMessages = { pendingTransactionsAndSignableMessages }

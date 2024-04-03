@@ -67,4 +67,5 @@ function injectScript(content: string) {
 	}
 }
 
+// biome-ignore lint/style/noUnusedTemplateLiteral: Required for script injection
 injectScript(`[[injected.ts]]`)

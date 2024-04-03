@@ -571,7 +571,7 @@ export type TransactionGasses = {
 export function GasFee({ tx, rpcNetwork }: { tx: TransactionGasses, rpcNetwork: RpcNetwork } ) {
 	return <>
 		<div class = 'log-cell'>
-			<p class = 'ellipsis' style = { `color: var(--subtitle-text-color); margin-bottom: 0px` }> Gas fee:&nbsp;</p>
+			<p class = 'ellipsis' style = { 'color: var(--subtitle-text-color); margin-bottom: 0px' }> Gas fee:&nbsp;</p>
 		</div>
 		<div class = 'log-cell'>
 			<EtherAmount

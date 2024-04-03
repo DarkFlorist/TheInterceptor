@@ -67,12 +67,12 @@ type InterceptedRequestBase = {
 	readonly subscription?: string
 }
 
-type InterceptedRequestForwardWithResult = InterceptedRequestBase & { 
+type InterceptedRequestForwardWithResult = InterceptedRequestBase & {
 	readonly type: 'result',
 	readonly result: unknown,
 }
 
-type InterceptedRequestForwardWithError = InterceptedRequestBase & { 
+type InterceptedRequestForwardWithError = InterceptedRequestBase & {
 	readonly type: 'result',
 	readonly error: {
 		readonly code: number,
@@ -135,7 +135,7 @@ type WindowEthereum = InjectFunctions & {
 	isInterceptor?: boolean,
 	providerMap?: Map<string, WindowEthereum>, // coinbase does not inject `isCoinbaseWallet` to the window.ethereum if there's already other wallets present (eg, Interceptor or Metamask), but instead injects a provider map that contains all these providers
 	isCoinbaseWallet?: boolean,
-	
+
 	// for metamask compatibility mode
 	selectedAddress?: string | null,
 	chainId?: string,
@@ -218,7 +218,7 @@ class InterceptorMessageListener {
 			return await this.sendMessageToBackgroundPage({ method: methodAndParams.method, params: methodAndParams.params })
 		} catch (error: unknown) {
 			if (error instanceof Error) throw error
-			throw new EthereumJsonRpcError(METAMASK_ERROR_BLANKET_ERROR, `Unexpected thrown value.`, { error: error, request: methodAndParams })
+			throw new EthereumJsonRpcError(METAMASK_ERROR_BLANKET_ERROR, 'Unexpected thrown value.', { error: error, request: methodAndParams })
 		}
 	}
 
@@ -228,7 +228,7 @@ class InterceptorMessageListener {
 		if (this.metamaskCompatibilityMode) {
 			if (window.ethereum === undefined) throw new Error('window.ethereum is missing')
 			switch (fullPayload.method) {
-				case 'eth_coinbase': 
+				case 'eth_coinbase':
 				case 'eth_accounts': return { jsonrpc: '2.0', id: fullPayload.id, result: window.ethereum.selectedAddress === undefined || window.ethereum.selectedAddress === null ? [] : [window.ethereum.selectedAddress] }
 				case 'net_version': return { jsonrpc: '2.0', id: fullPayload.id, result: window.ethereum.networkVersion }
 				case 'eth_chainId': return { jsonrpc: '2.0', id: fullPayload.id, result: window.ethereum.chainId }
@@ -249,9 +249,9 @@ class InterceptorMessageListener {
 					return callback({
 						jsonrpc: '2.0',
 						id: param.id,
-						error: { 
-							code: error.code, 
-							message: error.message, 
+						error: {
+							code: error.code,
+							message: error.message,
 							data: { ...data, ...stack }
 						}
 					}, null)
@@ -525,7 +525,7 @@ class InterceptorMessageListener {
 					case 'eth_accounts': {
 						if (!Array.isArray(forwardRequest.result) || forwardRequest.result === null) throw new Error('wrong type')
 						const addrArray = forwardRequest.result as string[]
-						const addr = addrArray.length > 0 ? addrArray[0] : '' 
+						const addr = addrArray.length > 0 ? addrArray[0] : ''
 						try { window.ethereum.selectedAddress = addr } catch(e) {}
 						if ('web3' in window && window.web3 !== undefined) try { window.web3.accounts = addrArray } catch(e) {}
 						this.currentAddress = addr
@@ -550,7 +550,7 @@ class InterceptorMessageListener {
 		if (pendingRequest === undefined) throw new Error('Request did not exist anymore')
 		const signerRequest = this.signerWindowEthereumRequest
 		if (signerRequest === undefined) throw new Error('Interceptor is in wallet mode and should not forward to an external wallet')
-		
+
 		const sendToSignerWithCatchError = async () => {
 			try {
 				const reply = await signerRequest({ method: forwardRequest.method, params: 'params' in forwardRequest ? forwardRequest.params : [] })
@@ -571,7 +571,7 @@ class InterceptorMessageListener {
 				return pendingRequest.reject(new EthereumJsonRpcError(error.code, error.message, 'data' in error && typeof error.data === 'object' && error.data !== null ? error.data : undefined))
 			}
 			// if the signer we are connected threw something besides an Error, wrap it up in an error
-			pendingRequest.reject(new EthereumJsonRpcError(METAMASK_ERROR_BLANKET_ERROR, `Unexpected thrown value.`, { error: error }))
+			pendingRequest.reject(new EthereumJsonRpcError(METAMASK_ERROR_BLANKET_ERROR, 'Unexpected thrown value.', { error: error }))
 		}
 	}
 
@@ -633,23 +633,17 @@ class InterceptorMessageListener {
 			}
 		}
 	}
-	
+
 	private readonly onPageLoad = () => {
 		const interceptorMessageListener = this
 		function announceProvider() {
 			const info: EIP6963ProviderInfo = {
 				uuid: '200ecd95-afe4-4684-bce7-0f2f8bdd3498',
 				name: 'The Interceptor',
-				icon: `data:image/svg+xml,<svg version='1.1' viewBox='0 0 32 32' xml:space='preserve' xmlns='http://www.w3.org/2000/svg'>
-					<g>
-						<path fill='white' d='m7.95 21.32h0.05c0.03 0 0.06 0 0.08-0.01h0.05c0.03 0 0.06-0.01 0.09-0.01 0.02 0 0.03 0 0.05-0.01 0.03 0 0.06-0.01 0.09-0.01 0.02 0 0.03 0 0.05-0.01 0.03 0 0.07-0.01 0.1-0.02 0.01 0 0.03 0 0.04-0.01 0.04-0.01 0.08-0.01 0.12-0.02h0.02c0.1-0.02 0.19-0.04 0.29-0.07 0.01 0 0.02-0.01 0.03-0.01l0.12-0.03c0.02 0 0.03-0.01 0.05-0.01 0.03-0.01 0.07-0.02 0.1-0.03 0.01 0 0.01 0 0.02-0.01 1.38-0.44 3.08-1.52 5.14-3.68l2.07 1.52 0.79-5.87 3.29-2.67s-12.16-4.99-13.83-5.29c-1.67-0.29-4.29 1.5-5.37 2.67-0.89 0.96 0.07 4.21 0.45 5.37 0.07 0.23 0.32 0.35 0.55 0.27l0.04-0.01c0.17-0.06 0.28-0.22 0.29-0.4 0.01-0.24 0.1-0.48 0.26-0.68l0.18-0.23c0.14-0.17 0.32-0.3 0.52-0.37l2.79-0.98c0.36-0.13 0.76-0.07 1.07 0.16l4.49 3.29c0.32 0.23 0.5 0.61 0.47 1l-0.01 0.1c-0.02 0.31-0.16 0.6-0.39 0.8l-0.01 0.01c-0.09 0.08-0.19 0.17-0.28 0.25l-0.09 0.08c-0.07 0.06-0.13 0.11-0.2 0.17l-0.1 0.08c-0.06 0.06-0.13 0.11-0.19 0.17l-0.08 0.07c-0.09 0.08-0.18 0.15-0.27 0.23l-0.02 0.01c-0.08 0.07-0.16 0.14-0.24 0.2l-0.08 0.07-0.18 0.15-0.08 0.07c-0.06 0.05-0.12 0.1-0.18 0.14l-0.07 0.06c-0.08 0.07-0.16 0.13-0.24 0.19l-0.02 0.02c-0.07 0.06-0.14 0.11-0.21 0.17l-0.07 0.05c-0.05 0.04-0.11 0.08-0.16 0.13l-0.07 0.05c-0.06 0.04-0.11 0.08-0.16 0.13l-0.05 0.04c-0.07 0.06-0.14 0.11-0.21 0.16l-0.03 0.04h-0.01c-0.06 0.05-0.12 0.09-0.18 0.14l-0.06 0.04c-0.05 0.04-0.1 0.07-0.14 0.1l-0.06 0.04c-0.05 0.04-0.1 0.07-0.15 0.11l-0.04 0.03c-0.01 0.01-0.02 0.01-0.03 0.02l-0.01-0.01h0.04l-1.21-1.3c-0.87-1.53 0.65-3.52 1.55-4.5 0.12-0.13 0.1-0.34-0.04-0.45l-1.5-1.1c-0.08-0.06-0.19-0.07-0.28-0.04l-2.56 0.89c-0.05 0.02-0.1 0.05-0.14 0.1-0.08 0.1-0.09 0.23-0.03 0.34l1.3 2.26c0.05 0.09 0.05 0.19 0.01 0.29-0.3 0.61-1.42 2.98-0.8 3.64h-0.02s0.36 0.68 1.14 1.23c0.01 0.01 0.02 0.02 0.04 0.02 0.01 0.01 0.02 0.02 0.04 0.02 0.01 0.01 0.02 0.02 0.04 0.02 0.01 0.01 0.02 0.02 0.04 0.02 0.01 0.01 0.02 0.02 0.04 0.02 0.01 0.01 0.03 0.02 0.04 0.02 0.01 0.01 0.02 0.01 0.04 0.02 0.01 0.01 0.03 0.02 0.04 0.02 0.01 0.01 0.03 0.01 0.04 0.02s0.03 0.02 0.04 0.02c-0.01 0.05 0.01 0.06 0.02 0.07 0.02 0.01 0.03 0.02 0.05 0.02 0.01 0.01 0.02 0.01 0.04 0.02s0.03 0.02 0.05 0.02c0.01 0.01 0.02 0.01 0.04 0.02 0.01 0.01 0.03 0.02 0.05 0.03 0.01 0 0.02 0.01 0.03 0.01 0.03 0.01 0.06 0.03 0.09 0.04 0.01 0 0.01 0 0.02 0.01 0.03 0.01 0.05 0.02 0.08 0.03 0.01 0 0.02 0.01 0.03 0.01 0.02 0.01 0.04 0.02 0.06 0.02 0.01 0 0.03 0.01 0.04 0.01 0.02 0.01 0.04 0.01 0.06 0.02 0.01 0 0.03 0.01 0.04 0.01 0.02 0.01 0.04 0.01 0.06 0.02 0.01 0 0.03 0.01 0.04 0.01 0.02 0.01 0.04 0.01 0.06 0.02 0.01 0 0.03 0.01 0.04 0.01 0.02 0 0.04 0.01 0.07 0.01 0.01 0 0.03 0.01 0.04 0.01 0.02 0 0.05 0.01 0.07 0.01 0.01 0 0.03 0 0.04 0.01 0.03 0 0.05 0.01 0.08 0.01 0.01 0 0.02 0 0.03 0.01 0.03 0 0.06 0.01 0.09 0.01h0.02c0.08 0.01 0.16 0.01 0.24 0.02h0.03 0.09 0.04 0.08 0.04 0.1zm3.9-10.75c0-0.57 0.46-1.03 1.03-1.03s1.03 0.46 1.03 1.03-0.46 1.03-1.03 1.03-1.03-0.46-1.03-1.03z'/>
-						<path fill='white' d='m15.29 22.72c-2.88-0.17-4.88-0.79-5.41-0.98l-0.01 0.01-0.33 0.11-0.02 0.01c-0.04 0.01-0.08 0.02-0.12 0.04h-0.01l-0.04 0.01c-0.04 0.01-0.09 0.02-0.13 0.04h-0.01l-0.03 0.01c-0.11 0.03-0.23 0.06-0.34 0.08h-0.02c-0.05 0.01-0.09 0.02-0.14 0.03l-0.04 0.01h-0.01c-0.04 0.01-0.08 0.01-0.12 0.02l-0.04-0.01h-0.01c-0.04 0-0.07 0.01-0.11 0.01h-0.05-0.01c-0.03 0-0.07 0.01-0.1 0.01h-0.06c-0.03 0-0.07 0-0.1 0.01h-0.06-0.06l-0.09 4.4h3.88l0.3-2.38c0.46 0.2 0.91 0.41 1.43 0.48v0.88h-0.01v1.45h3.88l0.06-1.06c0.04-0.35 0.1-0.76 0.15-1.19 1.11-0.11 2.2-0.36 3.26-0.78 0.4 0.96 0.9 2.44 0.9 2.44h4.2l0.13-5.44c-3.46 1.44-6.72 1.83-9.25 1.83-0.52 0-1.01-0.02-1.46-0.04z'/>
-						<path fill='white' d='m30.76 14.1c-0.51-1.23-1.69-2.01-2.88-2.67 0.11-0.24 0.18-0.5 0.18-0.78 0-1.04-0.84-1.88-1.88-1.88s-1.88 0.84-1.88 1.88 0.84 1.88 1.88 1.88c0.47 0 0.89-0.19 1.22-0.48 1.02 1.06 2.06 2.52-1.17 4l-0.23-0.63c-0.5 0-1.51 0.5-1.51 0.5l0.34-1c-0.84-0.5-2.01-0.34-2.01-0.34l0.67-0.84c-0.7-0.7-2.32-0.58-2.85-0.52 0.13-0.06 0.33-0.23 0.67-0.65-0.74-0.3-1.32-0.36-1.77-0.3l-1.48 1.2-0.75 5.55-0.19 1.38-0.03 0.2-2.71-1.99c-1.17 1.14-2.3 2.01-3.37 2.6 2.32 0.6 8.4 1.69 15.01-1.19v-0.01c2.66-1.14 5.9-3.12 4.74-5.91zm-11.46 5.51c-0.36-1.49-0.09-3.36 0.67-4.69 0.36 1.49 0.1 3.35-0.67 4.69zm3.02 0c-0.35-0.96-0.08-2.07 0.67-2.76 0.35 0.95 0.08 2.07-0.67 2.76z'/>
-					</g>
-				</svg>`,
+				icon: 'data:image/svg+xml,%3Csvg%20width%3D%2232%22%20height%3D%2232%22%20viewBox%3D%220%200%2032%2032%22%20fill%3D%22none%22%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%3E%3Cpath%20d%3D%22M8%2021.32c.03%200%20.06%200%20.08-.01h.05c.03%200%20.06-.01.09-.01.02%200%20.03%200%20.05-.01.03%200%20.06-.01.09-.01.02%200%20.03%200%20.05-.01.03%200%20.07-.01.1-.02.01%200%20.03%200%20.04-.01.04-.01.08-.01.12-.02h.02c.1-.02.19-.04.29-.07.01%200%20.02-.01.03-.01l.12-.03c.02%200%20.03-.01.05-.01l.1-.03c.01%200%20.01%200%20.02-.01%201.38-.44%203.08-1.52%205.14-3.68l2.07%201.52.79-5.87%203.29-2.67S8.43%205.37%206.76%205.07c-1.67-.29-4.29%201.5-5.37%202.67-.89.96.07%204.21.45%205.37.07.23.32.35.55.27l.04-.01c.17-.06.28-.22.29-.4.01-.24.1-.48.26-.68l.18-.23c.14-.17.32-.3.52-.37l2.79-.98c.36-.13.76-.07%201.07.16l4.49%203.29c.32.23.5.61.47%201l-.01.1c-.02.31-.16.6-.39.8l-.01.01-.28.25-.09.08-.2.17-.1.08c-.06.06-.13.11-.19.17l-.08.07c-.09.08-.18.15-.27.23l-.02.01c-.08.07-.16.14-.24.2l-.08.07-.18.15-.08.07c-.06.05-.12.1-.18.14l-.07.06c-.08.07-.16.13-.24.19l-.02.02c-.07.06-.14.11-.21.17l-.07.05c-.05.04-.11.08-.16.13l-.07.05c-.06.04-.11.08-.16.13l-.05.04c-.07.06-.14.11-.21.16l-.03.04H8.8c-.06.05-.12.09-.18.14l-.06.04c-.05.04-.1.07-.14.1l-.06.04c-.05.04-.1.07-.15.11l-.04.03c-.01.01-.02.01-.03.02l-.01-.01h.04l-1.21-1.3c-.87-1.53.65-3.52%201.55-4.5a.31.31%200%200%200-.04-.45l-1.5-1.1a.31.31%200%200%200-.28-.04l-2.56.89c-.05.02-.1.05-.14.1-.08.1-.09.23-.03.34l1.3%202.26c.05.09.05.19.01.29-.3.61-1.42%202.98-.8%203.64h-.02s.36.68%201.14%201.23c.01.01.02.02.04.02.01.01.02.02.04.02.01.01.02.02.04.02.01.01.02.02.04.02.01.01.02.02.04.02.01.01.03.02.04.02.01.01.02.01.04.02.01.01.03.02.04.02.01.01.03.01.04.02s.03.02.04.02c-.01.05.01.06.02.07.02.01.03.02.05.02.01.01.02.01.04.02s.03.02.05.02c.01.01.02.01.04.02.01.01.03.02.05.03.01%200%20.02.01.03.01.03.01.06.03.09.04.01%200%20.01%200%20.02.01.03.01.05.02.08.03.01%200%20.02.01.03.01.02.01.04.02.06.02.01%200%20.03.01.04.01.02.01.04.01.06.02.01%200%20.03.01.04.01.02.01.04.01.06.02.01%200%20.03.01.04.01.02.01.04.01.06.02.01%200%20.03.01.04.01.02%200%20.04.01.07.01.01%200%20.03.01.04.01.02%200%20.05.01.07.01.01%200%20.03%200%20.04.01.03%200%20.05.01.08.01.01%200%20.02%200%20.03.01.03%200%20.06.01.09.01h.02c.08.01.16.01.24.02zm3.85-10.75c0-.57.46-1.03%201.03-1.03s1.03.46%201.03%201.03-.46%201.03-1.03%201.03-1.03-.46-1.03-1.03m3.44%2012.15c-2.88-.17-4.88-.79-5.41-.98l-.01.01-.33.11-.02.01c-.04.01-.08.02-.12.04h-.01l-.04.01c-.04.01-.09.02-.13.04h-.01l-.03.01c-.11.03-.23.06-.34.08h-.02l-.14.03-.04.01h-.01c-.04.01-.08.01-.12.02l-.04-.01h-.01c-.04%200-.07.01-.11.01h-.06c-.03%200-.07.01-.1.01h-.06c-.03%200-.07%200-.1.01h-.12l-.09%204.4h3.88l.3-2.38c.46.2.91.41%201.43.48v.88h-.01v1.45h3.88l.06-1.06c.04-.35.1-.76.15-1.19%201.11-.11%202.2-.36%203.26-.78.4.96.9%202.44.9%202.44h4.2l.13-5.44a24.1%2024.1%200%200%201-9.25%201.83c-.52%200-1.01-.02-1.46-.04%22%20fill%3D%22currentColor%22%2F%3E%3Cpath%20d%3D%22M30.76%2014.1c-.51-1.23-1.69-2.01-2.88-2.67.11-.24.18-.5.18-.78%200-1.04-.84-1.88-1.88-1.88s-1.88.84-1.88%201.88.84%201.88%201.88%201.88c.47%200%20.89-.19%201.22-.48%201.02%201.06%202.06%202.52-1.17%204l-.23-.63c-.5%200-1.51.5-1.51.5l.34-1c-.84-.5-2.01-.34-2.01-.34l.67-.84c-.7-.7-2.32-.58-2.85-.52.13-.06.33-.23.67-.65-.74-.3-1.32-.36-1.77-.3l-1.48%201.2-.75%205.55-.19%201.38-.03.2-2.71-1.99c-1.17%201.14-2.3%202.01-3.37%202.6%202.32.6%208.4%201.69%2015.01-1.19v-.01c2.66-1.14%205.9-3.12%204.74-5.91M19.3%2019.61c-.36-1.49-.09-3.36.67-4.69.36%201.49.1%203.35-.67%204.69m3.02%200c-.35-.96-.08-2.07.67-2.76.35.95.08%202.07-.67%202.76%22%20fill%3D%22currentColor%22%2F%3E%3C%2Fsvg%3E',
 				rdns: 'dark.florist'
 			}
-			
+
 			if (window.ethereum === undefined || !window.ethereum.isInterceptor) interceptorMessageListener.injectEthereumIntoWindow()
 			const provider = window.ethereum
 			if (provider === undefined) throw new Error('The Interceptor provider was not initialized')
@@ -735,7 +729,7 @@ function injectInterceptor() {
 	const interceptorMessageListener = new InterceptorMessageListener()
 	window.addEventListener('message', interceptorMessageListener.onMessage)
 	window.dispatchEvent(new Event('ethereum#initialized'))
-	
+
 	// listen if Metamask injects (I think this method of injection is only supported by Metamask currently) their payload, and if so, reinject Interceptor
 	const interceptorCapturedDispatcher = window.dispatchEvent
 	window.dispatchEvent = (event: Event) => {

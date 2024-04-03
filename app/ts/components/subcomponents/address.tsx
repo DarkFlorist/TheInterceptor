@@ -27,7 +27,7 @@ type AddressIconParams = {
 }
 
 export function AddressIcon(param: AddressIconParams) {
-	const style = `background-color: var(--unimportant-text-color); ${ param.isBig ? `width: 40px; height: 40px;` : `width: 24px; height: 24px;` }`
+	const style = `background-color: var(--unimportant-text-color); ${ param.isBig ? 'width: 40px; height: 40px;' : 'width: 24px; height: 24px;' }`
 	const addr = param.address
 	if (addr !== undefined && param.logoUri === undefined) {
 		const address = useSignal<bigint>(addr)

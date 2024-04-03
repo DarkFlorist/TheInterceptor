@@ -98,7 +98,7 @@ export function SenderReceiver({ from, to, renameAddressCallBack }: { from: Addr
 	if (to === undefined) {
 		return <span class = 'log-table' style = 'margin-top: 10px; column-gap: 5px; justify-content: space-between; grid-template-columns: auto auto'>
 			<div class = 'log-cell' style = ''>
-				<p style = { `color: var(--subtitle-text-color);` }> Transaction sender: </p>
+				<p style = { 'color: var(--subtitle-text-color);' }> Transaction sender: </p>
 			</div>
 			<div class = 'log-cell' style = ''>
 				<SmallAddress
@@ -353,7 +353,7 @@ function NonTokenLogEvent(params: NonTokenLogEventParams) {
 					<EnrichedSolidityTypeComponentWithAddressBook valueType = { arg.typeValue } addressMetaData = { params.addressMetaData } renameAddressCallBack = { params.renameAddressCallBack } />
 				</>
 			), <p style = { textStyle } class = 'paragraph'>,&nbsp;</p>) }
-			<p class = 'paragraph' style = { textStyle }> { `)` } </p>
+			<p class = 'paragraph' style = { textStyle }> { ')' } </p>
 		</div>
 	</>
 }

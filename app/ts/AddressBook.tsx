@@ -40,7 +40,7 @@ const LOAD_DISTANCE = 4
 
 function FilterLink(param: { name: ActiveFilter, currentFilter: ActiveFilter, setActiveFilter: (activeFilter: ActiveFilter) => void }) {
 	return <a
-		class = { param.currentFilter === param.name ? `is-active` : '' }
+		class = { param.currentFilter === param.name ? 'is-active' : '' }
 		onClick = { () => param.setActiveFilter(param.name) }>
 			{ param.name }
 	</a>
