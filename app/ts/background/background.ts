@@ -370,7 +370,7 @@ async function handleRPCRequest(
 		case 'eth_sendRawTransaction':
 		case 'eth_sendTransaction': {
 			if (forwardToSigner && settings.currentRpcNetwork.httpsRpc === undefined) return getForwardingMessage(parsedRequest)
-			return await sendTransaction(simulator, activeAddress, ethereumClientService, parsedRequest, request, !forwardToSigner, website, websiteTabConnections)
+			return await sendTransaction(simulator, activeAddress, ethereumClientService, parsedRequest, request, website, websiteTabConnections, !forwardToSigner)
 		}
 		case 'web3_clientVersion': return await web3ClientVersion(ethereumClientService)
 		case 'eth_feeHistory': return await feeHistory(ethereumClientService, parsedRequest)
