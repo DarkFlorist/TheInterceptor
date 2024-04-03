@@ -43,7 +43,7 @@ function isPositiveEvent(visResult: TokenVisualizerResultWithMetadata, ourAddres
 
 export function QuarantineReasons({ quarantineReasons }: { quarantineReasons: readonly string[] }) {
 	return <> {
-		quarantineReasons.map((quarantineReason) => <ErrorComponent text = { quarantineReason } containerStyle = { { 'margin': '0px','margin-top': '10px', 'margin-bottom': '10px' } }/>)
+		quarantineReasons.map((quarantineReason) => <ErrorComponent text = { quarantineReason } containerStyle = { { margin: '0px','margin-top': '10px', 'margin-bottom': '10px' } }/>)
 	} </>
 }
 

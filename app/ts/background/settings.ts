@@ -118,10 +118,10 @@ export function getInterceptorDisabledSites(settings: Settings): string[] {
 }
 
 export const setPage = async (openedPage: Page) => await browserStorageLocalSet({ openedPage })
-export const getPage = async() => (await browserStorageLocalGet('openedPage'))?.['openedPage'] ?? { page: 'Home' }
+export const getPage = async() => (await browserStorageLocalGet('openedPage'))?.openedPage ?? { page: 'Home' }
 
 export const setMakeMeRich = async (makeMeRich: boolean) => await browserStorageLocalSet({ makeMeRich })
-export const getMakeMeRich = async() => (await browserStorageLocalGet('makeMeRich'))?.['makeMeRich'] ?? false
+export const getMakeMeRich = async() => (await browserStorageLocalGet('makeMeRich'))?.makeMeRich ?? false
 
 export async function setUseSignersAddressAsActiveAddress(useSignersAddressAsActiveAddress: boolean, currentSignerAddress: bigint | undefined = undefined) {
 	return await browserStorageLocalSet({
@@ -139,7 +139,7 @@ export async function changeSimulationMode(changes: { simulationMode: boolean, r
 	})
 }
 
-const getWebsiteAccess = async() => (await browserStorageLocalGet('websiteAccess'))?.['websiteAccess'] ?? []
+const getWebsiteAccess = async() => (await browserStorageLocalGet('websiteAccess'))?.websiteAccess ?? []
 const websiteAccessSemaphore = new Semaphore(1)
 export async function updateWebsiteAccess(updateFunc: (prevState: WebsiteAccessArray) => WebsiteAccessArray) {
 	await websiteAccessSemaphore.execute(async () => {
@@ -147,10 +147,10 @@ export async function updateWebsiteAccess(updateFunc: (prevState: WebsiteAccessA
 	})
 }
 
-export const getUseTabsInsteadOfPopup = async() => (await browserStorageLocalGet('useTabsInsteadOfPopup'))?.['useTabsInsteadOfPopup'] ?? false
+export const getUseTabsInsteadOfPopup = async() => (await browserStorageLocalGet('useTabsInsteadOfPopup'))?.useTabsInsteadOfPopup ?? false
 export const setUseTabsInsteadOfPopup = async(useTabsInsteadOfPopup: boolean) => await browserStorageLocalSet({ useTabsInsteadOfPopup })
 
-export const getMetamaskCompatibilityMode = async() => (await browserStorageLocalGet('metamaskCompatibilityMode'))?.['metamaskCompatibilityMode'] ?? false
+export const getMetamaskCompatibilityMode = async() => (await browserStorageLocalGet('metamaskCompatibilityMode'))?.metamaskCompatibilityMode ?? false
 export const setMetamaskCompatibilityMode = async(metamaskCompatibilityMode: boolean) => await browserStorageLocalSet({ metamaskCompatibilityMode })
 
 export async function exportSettingsAndAddressBook(): Promise<ExportedSettings> {

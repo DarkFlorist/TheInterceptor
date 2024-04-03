@@ -85,14 +85,17 @@ export function identifySwap(simTransaction: SimulatedAndVisualizedTransaction):
 			beforeAfterBalance: undefined,
 		})
 	}
-	simTransaction.tokenResults.forEach((logEntry) => {
-		if (logEntry.isApproval || logEntry.from.address !== sender) return
-		aggregate(aggregatedSentAssets, logEntry)
-	})
-	simTransaction.tokenResults.forEach((logEntry) => {
-		if (logEntry.isApproval || logEntry.to.address !== sender) return
-		aggregate(aggregatedReceivedAssets, logEntry)
-	})
+
+	for (const logEntry of simTransaction.tokenResults) {
+		if (logEntry.isApproval) continue // Skip approval entries
+
+		if (logEntry.from.address === sender) {
+			aggregate(aggregatedSentAssets, logEntry)
+		} else if (logEntry.to.address === sender) {
+			aggregate(aggregatedReceivedAssets, logEntry)
+		}
+	}
+
 	const sentAssets = Array.from(aggregatedSentAssets, (entry) => { return { identifier: entry[0], value: entry[1] } })
 	const receivedAssets = Array.from(aggregatedReceivedAssets, (entry) => { return { identifier: entry[0], value: entry[1] } })
 
@@ -228,7 +231,7 @@ export function getSwapName(identifiedSwap: IdentifiedSwapWithMetadata) {
 
 function VisualizeSwapAsset({ swapAsset, renameAddressCallBack }: { swapAsset: SwapAsset, renameAddressCallBack: RenameAddressCallBack }) {
 	const tokenStyle = { 'font-weight': '500' }
-	const balanceTextStyle = { 'font-size': '14px', 'color': 'var(--subtitle-text-color)' }
+	const balanceTextStyle = { 'font-size': '14px', color: 'var(--subtitle-text-color)' }
 
 	switch (swapAsset.type) {
 		case 'ERC721': {

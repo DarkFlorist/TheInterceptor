@@ -47,26 +47,26 @@ export async function main() {
 
 		should('ethers.recoverAddress works for positive case', async() => {
 			const validTransaction = {
-				'hash': '0xdd0967ea3bf8bb02c40edac86ff849f200587483c6f139e9f73242bdb1ef6284',
-				'nonce': '0x15174',
-				'blockHash': '0x2d98e688a833144b2990b4c7fcd0dfab924ba74c6933aa7142b12b57683b5623',
-				'blockNumber': '0xf17472',
-				'transactionIndex': '0x7',
-				'from': '0x98db3a41bf8bf4ded2c92a84ec0705689ddeef8b',
-				'to': '0x33f71fc6302e2295615c17cc32e30adecf2f26ec',
-				'value': '0x3bae8d3cf0a7cd5',
-				'gasPrice': '0x2ff19bb49',
-				'maxPriorityFeePerGas': '0x9502f900',
-				'maxFeePerGas': '0x642021034',
-				'gas': '0x15f90',
-				'data': '0x',
-				'input': '0x',
-				'chainId': '0x1',
-				'type': '0x2',
-				'v': '0x1',
-				's': '0x507d8fd16ce7d4e9d4849d93be747e5b1f5a79812870dcf55c342211a620ca2d',
-				'r': '0x80ea9fe9b5e38cfcd7ae9c6c338971cb270091014a2e2d16882f6773bba789fc',
-				'yParity': '0x1'
+				hash: '0xdd0967ea3bf8bb02c40edac86ff849f200587483c6f139e9f73242bdb1ef6284',
+				nonce: '0x15174',
+				blockHash: '0x2d98e688a833144b2990b4c7fcd0dfab924ba74c6933aa7142b12b57683b5623',
+				blockNumber: '0xf17472',
+				transactionIndex: '0x7',
+				from: '0x98db3a41bf8bf4ded2c92a84ec0705689ddeef8b',
+				to: '0x33f71fc6302e2295615c17cc32e30adecf2f26ec',
+				value: '0x3bae8d3cf0a7cd5',
+				gasPrice: '0x2ff19bb49',
+				maxPriorityFeePerGas: '0x9502f900',
+				maxFeePerGas: '0x642021034',
+				gas: '0x15f90',
+				data: '0x',
+				input: '0x',
+				chainId: '0x1',
+				type: '0x2',
+				v: '0x1',
+				s: '0x507d8fd16ce7d4e9d4849d93be747e5b1f5a79812870dcf55c342211a620ca2d',
+				r: '0x80ea9fe9b5e38cfcd7ae9c6c338971cb270091014a2e2d16882f6773bba789fc',
+				yParity: '0x1'
             }
 
 			const signed = EthereumSignedTransactionToSignedTransaction(EthereumSignedTransaction1559.parse(validTransaction))

@@ -154,7 +154,7 @@ export function TokenSymbol(param: TokenSymbolParams) {
 		<span class = { param.fontSize === 'big' ? 'big-token-name-container' : 'token-name-container' } data-value = { unTrusted ? `⚠${ name }` : name }>
 			<span class = 'token-name-holder'>
 				{ param.tokenEntry.address === ETHEREUM_LOGS_LOGGER_ADDRESS ? <>
-					<img class = 'noselect nopointer' style = { { 'max-height': '25px', 'width': '25px', 'min-width': '25px', 'vertical-align': 'middle' } } src = { param.tokenEntry.logoUri }/>
+					<img class = 'noselect nopointer' style = { { 'max-height': '25px', width: '25px', 'min-width': '25px', 'vertical-align': 'middle' } } src = { param.tokenEntry.logoUri }/>
 					<p class = 'paragraph token-name-text noselect nopointer' style = { style }>{ name }</p>
 				</> : <>
 					<CopyToClipboard content = { tokenString } copyMessage = 'Token address copied!' >
@@ -165,7 +165,7 @@ export function TokenSymbol(param: TokenSymbolParams) {
 								style = { { 'vertical-align': 'baseline', borderRadius: '50%' } }
 							/>
 						:
-							<img class = 'noselect nopointer' style = { { 'max-height': '25px', 'width': '25px', 'min-width': '25px', 'vertical-align': 'middle' } } src = { param.tokenEntry.logoUri }/>
+							<img class = 'noselect nopointer' style = { { 'max-height': '25px', width: '25px', 'min-width': '25px', 'vertical-align': 'middle' } } src = { param.tokenEntry.logoUri }/>
 						}
 					</CopyToClipboard>
 					{ unTrusted ? <p class = 'noselect nopointer blink' style = { style } >⚠</p> : <></> }

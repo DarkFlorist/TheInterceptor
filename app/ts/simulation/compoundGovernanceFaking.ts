@@ -13,9 +13,10 @@ export const simulateCompoundGovernanceExecution = async (ethereumClientService:
 	if (!('abi' in governanceContract) || governanceContract.abi === undefined) throw new Error(`We need to have ABI for governance contract ${ checksummedAddress(governanceContract.address) } to be able to proceed :()`)
 	const requiredFunctions = ['timelock', 'proposals', 'getActions']
 	const compoundGovernanceAbi = new Interface(governanceContract.abi)
-	requiredFunctions.forEach((func) => {
-		if (!compoundGovernanceAbi.hasFunction(func)) throw new Error(`The governance contract is not currently supported so we are unable to perform the simulation (Additional details to include in a feature request: The contract is missing \`${ func }\`).`)
-	})
+
+	for (const functionName of requiredFunctions) {
+		if (!compoundGovernanceAbi.hasFunction(functionName)) throw new Error(`The governance contract is not currently supported so we are unable to perform the simulation (Additional details to include in a feature request: The contract is missing \`${ functionName }\`).`)
+	}
 
 	const txBase = {
 		type: '1559' as const,
@@ -50,7 +51,9 @@ export const simulateCompoundGovernanceExecution = async (ethereumClientService:
 	]
 	const parentBlock = await ethereumClientService.getBlock()
 	const governanceContractCalls = (await ethereumClientService.simulateTransactionsAndSignatures(calls, [], parentBlock.number)).calls
-	governanceContractCalls.forEach((call) => { if (call.status !== 'success') throw new Error('Failed to retrieve governance contracts information') })
+	for (const call of governanceContractCalls) {
+		if (call.status !== 'success') throw new Error('Failed to retrieve governance contracts information')
+	}
 	if (governanceContractCalls[0]?.status !== 'success') throw new Error('multicall failed')
 	const timeLockContractResult = compoundGovernanceAbi.decodeFunctionResult('timelock', governanceContractCalls[0].returnData)
 	const timeLockContract = EthereumAddress.parse(timeLockContractResult[0])
@@ -58,7 +61,6 @@ export const simulateCompoundGovernanceExecution = async (ethereumClientService:
 	const proposal = compoundGovernanceAbi.decodeFunctionResult('proposals', governanceContractCalls[1].returnData)
 	const eta: bigint = funtypes.BigInt.parse(proposal.eta)
 	if (eta === undefined) throw new Error('eta is undefined')
-	
 	if (governanceContractCalls[2]?.status !== 'success') throw new Error('getActions return value was undefined')
 	const [targets, values, signatures, calldatas] = compoundGovernanceAbi.decodeFunctionResult('getActions', governanceContractCalls[2].returnData)
 	const executingTransaction = {
@@ -69,7 +71,6 @@ export const simulateCompoundGovernanceExecution = async (ethereumClientService:
 	}
 
 	if (eta >= parentBlock.timestamp.getTime()) throw new Error('ETA has passed already')
-	
 	const query = [{
 		calls: [executingTransaction],
 		blockOverride: {
