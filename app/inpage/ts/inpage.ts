@@ -163,9 +163,9 @@ type OnMessage = 'accountsChanged' | 'message' | 'connect' | 'close' | 'disconne
 type Signer = 'NoSigner' | 'NotRecognizedSigner' | 'MetaMask' | 'Brave' | 'CoinbaseWallet'
 
 class InterceptorMessageListener {
-	private connected: boolean = false
-	private requestId: number = 0
-	private metamaskCompatibilityMode: boolean = false
+	private connected = false
+	private requestId = 0
+	private metamaskCompatibilityMode = false
 	private signerWindowEthereumRequest: EthereumRequest | undefined = undefined
 
 	private readonly outstandingRequests: Map<number, InterceptorFuture<unknown> > = new Map()
@@ -176,8 +176,8 @@ class InterceptorMessageListener {
 	private readonly onDisconnectCallBacks: Set<((error: ProviderRpcError) => void)> = new Set()
 	private readonly onChainChangedCallBacks: Set<((chainId: string) => void)> = new Set()
 
-	private currentAddress: string = ''
-	private currentChainId: string = ''
+	private currentAddress = ''
+	private currentChainId = ''
 	private currentSigner: Signer = 'NoSigner'
 
 	private waitForAccountsFromWallet: InterceptorFuture<boolean> | undefined = undefined
