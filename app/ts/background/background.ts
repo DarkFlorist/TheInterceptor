@@ -427,7 +427,7 @@ export async function changeActiveAddressAndChainAndResetSimulation(
 
 	const updatedSettings = await getSettings()
 	sendPopupMessageToOpenWindows({ method: 'popup_settingsUpdated', data: updatedSettings })
-	updateWebsiteApprovalAccesses(simulator, websiteTabConnections, undefined, updatedSettings)
+	updateWebsiteApprovalAccesses(simulator, websiteTabConnections, updatedSettings)
 	sendPopupMessageToOpenWindows({ method: 'popup_accounts_update' })
 	await sendActiveAccountChangeToApprovedWebsitePorts(websiteTabConnections, updatedSettings)
 
