@@ -87,12 +87,12 @@ export function identifySwap(simTransaction: SimulatedAndVisualizedTransaction):
 	}
 
 	for (const logEntry of simTransaction.tokenResults) {
-		if (logEntry.isApproval) continue; // Skip approval entries
+		if (logEntry.isApproval) continue // Skip approval entries
 
 		if (logEntry.from.address === sender) {
-			aggregate(aggregatedSentAssets, logEntry);
+			aggregate(aggregatedSentAssets, logEntry)
 		} else if (logEntry.to.address === sender) {
-			aggregate(aggregatedReceivedAssets, logEntry);
+			aggregate(aggregatedReceivedAssets, logEntry)
 		}
 	}
 

@@ -489,10 +489,10 @@ async function disableInterceptorForPage(websiteTabConnections: WebsiteTabConnec
 	const withCurrentTabid = currentTabId === undefined ? tabIdsToRefesh : [...tabIdsToRefesh, currentTabId]
 	for (const tabId of new Set(withCurrentTabid)) {
 		try {
-			await browser.tabs.reload(tabId);
-			checkAndThrowRuntimeLastError();
+			await browser.tabs.reload(tabId)
+			checkAndThrowRuntimeLastError()
 		} catch (e) {
-			console.warn("Failed to reload tab");
+			console.warn('Failed to reload tab')
 			console.warn(e);
 		}
 	}

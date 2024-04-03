@@ -14,8 +14,8 @@ export const simulateCompoundGovernanceExecution = async (ethereumClientService:
 	const requiredFunctions = ['timelock', 'proposals', 'getActions']
 	const compoundGovernanceAbi = new Interface(governanceContract.abi)
 
-	for (const fn of requiredFunctions) {
-		if (!compoundGovernanceAbi.hasFunction(fn)) throw new Error(`The governance contract is not currently supported so we are unable to perform the simulation (Additional details to include in a feature request: The contract is missing \`${ fn }\`).`)
+	for (const functionName of requiredFunctions) {
+		if (!compoundGovernanceAbi.hasFunction(functionName)) throw new Error(`The governance contract is not currently supported so we are unable to perform the simulation (Additional details to include in a feature request: The contract is missing \`${ functionName }\`).`)
 	}
 
 	const txBase = {
@@ -52,7 +52,7 @@ export const simulateCompoundGovernanceExecution = async (ethereumClientService:
 	const parentBlock = await ethereumClientService.getBlock()
 	const governanceContractCalls = (await ethereumClientService.simulateTransactionsAndSignatures(calls, [], parentBlock.number)).calls
 	for (const call of governanceContractCalls) {
-		if (call.status !== "success") throw new Error("Failed to retrieve governance contracts information");
+		if (call.status !== 'success') throw new Error('Failed to retrieve governance contracts information');
 	}
 	if (governanceContractCalls[0]?.status !== 'success') throw new Error('multicall failed')
 	const timeLockContractResult = compoundGovernanceAbi.decodeFunctionResult('timelock', governanceContractCalls[0].returnData)

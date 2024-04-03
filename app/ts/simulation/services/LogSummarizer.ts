@@ -204,7 +204,7 @@ export class LogSummarizer {
 				addressSummary.erc1155TokenBalanceChanges.size === 0 &&
 				addressSummary.erc721and1155OperatorChanges.size === 0
 			) {
-				this.summary.delete(address);
+				this.summary.delete(address)
 			}
 		}
 	}
