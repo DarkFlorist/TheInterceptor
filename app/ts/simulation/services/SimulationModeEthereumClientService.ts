@@ -817,13 +817,12 @@ const getSimulatedTokenBalances = async (ethereumClientService: EthereumClientSe
 	function removeDuplicates(queries: BalanceQuery[]): BalanceQuery[] {
 		const unique: Map<string, BalanceQuery> = new Map()
 		for (const query of queries) {
-			const key = `${query.type}-${query.token}-${query.owner}${ query.type === 'ERC1155' ? `${query.tokenId}` : ''}`
+			const key = `${ query.type }-${ query.token }-${ query.owner }${ query.type === 'ERC1155' ? `${ query.tokenId }` : ''}`
 			if (unique.has(key)) continue
 			unique.set(key, query)
 		}
 		return Array.from(unique.values())
 	}
-
 	const deduplicatedBalanceQueries = removeDuplicates(balanceQueries)
 	const IMulticall3 = new Interface(Multicall3ABI)
 	const erc20TokenInterface = new ethers.Interface(['function balanceOf(address account) view returns (uint256)'])
