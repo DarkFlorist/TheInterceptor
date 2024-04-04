@@ -37,6 +37,7 @@ import { CompoundGovernanceAbi } from '../utils/abi.js'
 import { dataStringWith0xStart } from '../utils/bigint.js'
 import { connectedToSigner, ethAccountsReply, signerChainChanged, signerReply, walletSwitchEthereumChainReply } from './providerMessageHandlers.js'
 import { makeSureInterceptorIsNotSleeping } from './sleeping.js'
+import { ErrorDecoder } from '../utils/errorDecoding.js'
 
 async function updateMetadataForSimulation(simulationState: SimulationState, ethereum: EthereumClientService, eventsForEachTransaction: readonly GeneralEnrichedEthereumEvents[], protectorResults: readonly ProtectorResults[]) {
 	const settingsPromise = getSettings()
@@ -131,23 +132,14 @@ async function visualizeSimulatorState(simulationState: SimulationState, ethereu
 	const updatedMetadataPromise = updateMetadataForSimulation(simulationState, ethereum, eventsForEachTransaction, protectors)
 
 	function onlyTokensAndTokensWithKnownDecimals(metadata: AddressBookEntry): metadata is AddressBookEntry & { type: 'ERC20', decimals: `0x${ string }` } {
-		if (metadata.type !== 'ERC20') return false
-		if (metadata.decimals === undefined) return false
-		return true
+		return metadata.type === 'ERC20' && metadata.decimals !== undefined
 	}
-	function metadataRestructure(metadata: AddressBookEntry & { type: 'ERC20', decimals: bigint }) {
-		return { address: metadata.address, decimals: metadata.decimals }
-	}
+	const metadataRestructure = (metadata: AddressBookEntry & { type: 'ERC20', decimals: bigint }) => ({ address: metadata.address, decimals: metadata.decimals })
 	const updatedMetadata = await updatedMetadataPromise
+
 	const tokenPricePromises = priceEstimator.estimateEthereumPricesForTokens(updatedMetadata.addressBookEntries.filter(onlyTokensAndTokensWithKnownDecimals).map(metadataRestructure))
 
-	return {
-		...updatedMetadata,
-		tokenPrices: await tokenPricePromises,
-		eventsForEachTransaction,
-		protectors,
-		simulationState,
-	}
+	return { ...updatedMetadata, tokenPrices: await tokenPricePromises, eventsForEachTransaction, protectors, simulationState }
 }
 
 export const updateSimulationMetadata = async (ethereum: EthereumClientService) => {
@@ -232,25 +224,22 @@ export async function refreshConfirmTransactionSimulation(
 		if (simResults.simulationState === undefined) return undefined
 		return copySimulationState(simResults.simulationState)
 	}
-
+	const simState = await getCopiedSimulationState(simulationMode)
 	try {
-		const simulationStateWithNewTransaction = await appendTransaction(ethereumClientService, await getCopiedSimulationState(simulationMode), transactionToSimulate)
+		const simulationStateWithNewTransaction = await appendTransaction(ethereumClientService, simState, transactionToSimulate)
 		const noncefixed = await getNonceFixedSimulatedTransactions(ethereumClientService, simulationStateWithNewTransaction.simulatedTransactions)
-		if (noncefixed === 'NoNonceErrors') {
-			return {
-				statusCode: 'success' as const,
-				data: { ...info, ...await visualizeSimulatorState(simulationStateWithNewTransaction, simulator.ethereum) }
-			}
-		}
+		if (noncefixed === 'NoNonceErrors') return { statusCode: 'success' as const, data: { ...info, ...await visualizeSimulatorState(simulationStateWithNewTransaction, simulator.ethereum) } }
 		const noncefixedNotPrepended = getWebsiteCreatedEthereumUnsignedTransactions(getNonPrependedSimulatedTransactions(simulationStateWithNewTransaction.prependTransactionsQueue, noncefixed))
 		const nonceFixedState = await setSimulationTransactionsAndSignedMessages(ethereumClientService, simulationStateWithNewTransaction, noncefixedNotPrepended, simulationStateWithNewTransaction.signedMessages)
 		const lastNonceFixed = noncefixed[noncefixed.length - 1]
 		if (lastNonceFixed === undefined) throw new Error('last nonce fixed was undefined')
+		const visualizedSimulatorState = await visualizeSimulatorState(nonceFixedState, simulator.ethereum)
+		const availableAbis = visualizedSimulatorState.addressBookEntries.map((entry) => 'abi' in entry && entry.abi !== undefined ? new Interface(entry.abi) : undefined).filter((abiOrUndefined): abiOrUndefined is Interface => abiOrUndefined === undefined)
 		return {
 			statusCode: 'success' as const,
 			data: {
 				...info,
-				...await visualizeSimulatorState(nonceFixedState, simulator.ethereum),
+				...visualizedSimulatorState,
 				transactionToSimulate: {
 					...transactionToSimulate,
 					...transactionToSimulate.success ? {
@@ -258,14 +247,32 @@ export async function refreshConfirmTransactionSimulation(
 							...transactionToSimulate.transaction,
 							nonce: lastNonceFixed.signedTransaction.nonce,
 						} }
-					: {}
+					: { error: {
+						...transactionToSimulate.error,
+						decodedErrorMessage: ErrorDecoder.create(availableAbis).decode(transactionToSimulate.error).reason ?? transactionToSimulate.error.message
+					} }
 				}
 			}
 		}
 	} catch (error) {
-		if (!(error instanceof Error)) throw error
-		if (!isFailedToFetchError(error)) throw error
-		return { statusCode: 'failed' as const, data: info }
+		if (!(error instanceof JsonRpcResponseError)) throw error
+	
+		const extractToAbi = async () => {
+			const params = transactionToSimulate.originalRequestParameters.params[0]
+			if (!('to' in params)) return []
+			if (params.to === undefined || params.to === null) return []
+			const identified = await identifyAddress(ethereumClientService, params.to)
+			if ('abi' in identified && identified.abi !== undefined) return [new Interface(identified.abi)]
+			return []
+		}
+		return { statusCode: 'failed' as const, data: {
+			...info,
+			error: { ...error, decodedErrorMessage: ErrorDecoder.create(await extractToAbi()).decode(error).reason ?? error.message },
+			simulationState: {
+				blockNumber: simState?.blockNumber || 0n, 
+				simulationConductedTimestamp: new Date()
+			}
+		} }
 	}
 }
 
@@ -519,7 +526,7 @@ async function handleContentScriptMessage(simulator: Simulator, websiteTabConnec
 	} catch (error) {
 		// biome-ignore lint/suspicious/noConsoleLog: <Used for support debugging>
 		console.log({ request })
-		handleUnexpectedError(error)
+		console.log(error)
 		if (error instanceof JsonRpcResponseError || error instanceof FetchResponseError) {
 			return replyToInterceptedRequest(websiteTabConnections, {
 				type: 'result', 
@@ -531,6 +538,7 @@ async function handleContentScriptMessage(simulator: Simulator, websiteTabConnec
 				},
 			})
 		}
+		handleUnexpectedError(error)
 		if (error instanceof Error) {
 			if (isFailedToFetchError(error)) {
 				return replyToInterceptedRequest(websiteTabConnections, {

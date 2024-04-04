@@ -52,10 +52,12 @@ export function formSimulatedAndVisualizedTransaction(simState: SimulationState,
 		}
 		
 		const removeFromAndToFromSignedTransaction = () => {
-			const { from, to, ...otherFields} = simulatedTx.signedTransaction
+			const { from, to, ...otherFields } = simulatedTx.signedTransaction
 			return otherFields
 		}
 		const otherFields = removeFromAndToFromSignedTransaction()
+		const availableAbis = addressBookEntries.map((entry) => 'abi' in entry && entry.abi !== undefined ? new Interface(entry.abi) : undefined).filter((abiOrUndefined): abiOrUndefined is Interface => abiOrUndefined === undefined)
+		
 		return {
 			transaction: { from, to, rpcNetwork: simState.rpcNetwork, ...otherFields },
 			...(to !== undefined ? { to } : {}),
@@ -70,9 +72,7 @@ export function formSimulatedAndVisualizedTransaction(simState: SimulationState,
 				? {
 					error: {
 						...simulatedTx.ethSimulateV1CallResult.error,
-						decodedErrorMessage: to !== undefined && 'abi' in to && to.abi !== undefined ? (
-							ErrorDecoder.create([new Interface(to.abi)]).decode(simulatedTx.ethSimulateV1CallResult.error).reason ?? simulatedTx.ethSimulateV1CallResult.error.message)
-							: simulatedTx.ethSimulateV1CallResult.error.message 
+						decodedErrorMessage: ErrorDecoder.create(availableAbis).decode(simulatedTx.ethSimulateV1CallResult.error).reason ?? simulatedTx.ethSimulateV1CallResult.error.message
 					},
 					statusCode: simulatedTx.ethSimulateV1CallResult.status,
 				}

@@ -2,7 +2,7 @@ import { sendPopupMessageToBackgroundPage } from '../../../background/background
 import { AddressBookEntry } from '../../../types/addressBookTypes.js'
 import { MessageToPopup, GovernanceVoteInputParameters, SimulateGovernanceContractExecutionReply } from '../../../types/interceptor-messages.js'
 import { RenameAddressCallBack, RpcConnectionStatus } from '../../../types/user-interface-types.js'
-import { SimulatedAndVisualizedTransaction, SimulationAndVisualisationResults } from '../../../types/visualizer-types.js'
+import { SimulatedAndVisualizedTransaction } from '../../../types/visualizer-types.js'
 import { EthereumQuantity } from '../../../types/wire-types.js'
 import { checksummedAddress, dataStringWith0xStart } from '../../../utils/bigint.js'
 import { BIG_FONT_SIZE } from '../../../utils/constants.js'
@@ -77,14 +77,14 @@ type ShowSuccessOrFailureParams = {
 	simTx: SimulatedAndVisualizedTransaction
 	currentBlockNumber: undefined | bigint
 	rpcConnectionStatus: RpcConnectionStatus
-	simulationAndVisualisationResults: SimulationAndVisualisationResults
+	activeAddress: bigint
 	simulateGovernanceContractExecutionReply: SimulateGovernanceContractExecutionReply | undefined
 	renameAddressCallBack: RenameAddressCallBack
 }
 
 const simulateGovernanceVote = (transactionIdentifier: EthereumQuantity) => sendPopupMessageToBackgroundPage({ method: 'popup_simulateGovernanceContractExecution', data: { transactionIdentifier } })
 
-const ShowSuccessOrFailure = ({ simulateGovernanceContractExecutionReply, simTx, simulationAndVisualisationResults, renameAddressCallBack }: ShowSuccessOrFailureParams) => {
+const ShowSuccessOrFailure = ({ simulateGovernanceContractExecutionReply, simTx, activeAddress, renameAddressCallBack }: ShowSuccessOrFailureParams) => {
 	const missingAbiText = 'The governance contract is missing an ABI. Add an ABI to simulate execution of this proposal.'
 	if (simulateGovernanceContractExecutionReply === undefined) {
 		return <div style = 'display: flex; justify-content: center;'>
@@ -125,13 +125,13 @@ const ShowSuccessOrFailure = ({ simulateGovernanceContractExecutionReply, simTx,
 				addressBookEntries: simulateGovernanceContractExecutionReply.data.result.addressBookEntries,
 				rpcNetwork: simulateGovernanceContractExecutionReply.data.result.simulationState.rpcNetwork,
 				tokenPrices: simulateGovernanceContractExecutionReply.data.result.tokenPrices,
-				activeAddress: simulationAndVisualisationResults.activeAddress,
+				activeAddress: activeAddress,
 				simulatedAndVisualizedTransactions: simulateGovernanceContractExecutionReply.data.result.simulatedAndVisualizedTransactions,
 				visualizedPersonalSignRequests: simulateGovernanceContractExecutionReply.data.result.visualizedPersonalSignRequests,
 				namedTokenIds: simulateGovernanceContractExecutionReply.data.result.namedTokenIds,
 			} }
 			removeTransactionOrSignedMessage = { undefined }
-			activeAddress = { simulationAndVisualisationResults.activeAddress }
+			activeAddress = { activeAddress }
 			renameAddressCallBack = { renameAddressCallBack }
 			addressMetaData = { simulateGovernanceContractExecutionReply.data.result.addressBookEntries }
 		/>
@@ -140,7 +140,7 @@ const ShowSuccessOrFailure = ({ simulateGovernanceContractExecutionReply, simTx,
 
 type GovernanceVoteVisualizerParams = {
 	simTx: SimulatedAndVisualizedTransaction
-	simulationAndVisualisationResults: SimulationAndVisualisationResults
+	activeAddress: bigint
 	renameAddressCallBack: RenameAddressCallBack
 	governanceVoteInputParameters: GovernanceVoteInputParameters
 }
@@ -152,7 +152,7 @@ export function GovernanceVoteVisualizer(param: GovernanceVoteVisualizerParams) 
 	
 	const [governanceVoteInputParameters, setGovernanceVoteInputParameters] = useState<GovernanceVoteInputParameters | undefined>(undefined)
 	const [simTx, setSimTx] = useState<SimulatedAndVisualizedTransaction | undefined>(undefined)
-	const [simulationAndVisualisationResults, setSimulationAndVisualisationResults] = useState<SimulationAndVisualisationResults | undefined>(undefined)
+	const [activeAddress, setActiveAddress] = useState<bigint | undefined>(undefined)
 
 	useEffect(() => {
 		const popupMessageListener = async (msg: unknown) => {
@@ -175,11 +175,11 @@ export function GovernanceVoteVisualizer(param: GovernanceVoteVisualizerParams) 
 	useEffect(() => {
 		setGovernanceVoteInputParameters(param.governanceVoteInputParameters)
 		setSimTx(param.simTx)
-		setSimulationAndVisualisationResults(param.simulationAndVisualisationResults)
+		setActiveAddress(param.activeAddress)
 		setSimulateGovernanceContractExecutionReply(undefined)
 	}, [param.simTx.transactionIdentifier])
 
-	if (governanceVoteInputParameters === undefined || simTx === undefined || simulationAndVisualisationResults === undefined) return <></>
+	if (governanceVoteInputParameters === undefined || simTx === undefined || activeAddress === undefined) return <></>
 	return <>
 		<VotePanel inputParams = { governanceVoteInputParameters } />
 		
@@ -203,7 +203,7 @@ export function GovernanceVoteVisualizer(param: GovernanceVoteVisualizerParams) 
 				simulateGovernanceContractExecutionReply = { simulateGovernanceContractExecutionReply }
 				renameAddressCallBack = { param.renameAddressCallBack }
 				simTx = { simTx }
-				simulationAndVisualisationResults = { simulationAndVisualisationResults }
+				activeAddress = { activeAddress }
 			/>
 		</div>
 	</>

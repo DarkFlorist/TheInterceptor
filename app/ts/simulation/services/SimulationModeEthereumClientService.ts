@@ -174,23 +174,8 @@ export const simulateEstimateGas = async (ethereumClientService: EthereumClientS
 	}
 	const multiCall = await simulatedMulticall(ethereumClientService, simulationState, [tmp], block.number + 1n)
 	const lastResult = multiCall.calls[multiCall.calls.length - 1]
-	if (lastResult === undefined) {
-		return {
-			error: {
-				code: ERROR_INTERCEPTOR_GAS_ESTIMATION_FAILED,
-				message: 'ETH Simulate Failed to estimate gas',
-				data: '',
-			},
-		} as const
-	}
-	if (lastResult.status === 'failure') {
-		return {
-			error: {
-				...lastResult.error,
-				data: dataStringWith0xStart(lastResult.returnData),
-			},
-		} as const
-	}
+	if (lastResult === undefined) return { error: { code: ERROR_INTERCEPTOR_GAS_ESTIMATION_FAILED, message: 'ETH Simulate Failed to estimate gas', data: '' } }
+	if (lastResult.status === 'failure') return { error: { ...lastResult.error, data: dataStringWith0xStart(lastResult.returnData) } }
 	const gasSpent = lastResult.gasUsed * 125n * 64n / (100n * 63n) // add 25% * 64 / 63 extra  to account for gas savings <https://eips.ethereum.org/EIPS/eip-3529>
 	return { gas: gasSpent < maxGas ? gasSpent : maxGas }
 }

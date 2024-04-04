@@ -316,30 +316,17 @@ export async function openConfirmTransactionDialogForTransaction(
 		await updateConfirmTransactionView(ethereumClientService)
 
 		const transactionToSimulate = await transactionToSimulatePromise
-		
-		if (transactionToSimulate.success === false) {
-			await updatePendingTransactionOrMessage(pendingTransaction.uniqueRequestIdentifier, async (transaction) => {
-				if (transaction.type !== 'Transaction') return transaction
-				return {
-					...transaction,
-					transactionToSimulate,
-					simulationResults: await refreshConfirmTransactionSimulation(simulator, ethereumClientService, activeAddress, simulationMode, request.uniqueRequestIdentifier, transactionToSimulate),
-					transactionOrMessageCreationStatus: 'FailedToSimulate' as const,
-				}
-			})
-		} else {
+		const simulationResultsPromise = refreshConfirmTransactionSimulation(simulator, ethereumClientService, activeAddress, simulationMode, request.uniqueRequestIdentifier, transactionToSimulate)
+		if (transactionToSimulate.success) {
 			await updatePendingTransactionOrMessage(pendingTransaction.uniqueRequestIdentifier, async (transaction) => ({ ...transaction, transactionToSimulate: transactionToSimulate, transactionOrMessageCreationStatus: 'Simulating' as const }))
 			await updateConfirmTransactionView(ethereumClientService)
-			await updatePendingTransactionOrMessage(pendingTransaction.uniqueRequestIdentifier, async (transaction) => {
-				if (transaction.type !== 'Transaction') return transaction
-				return {
-					...transaction,
-					transactionToSimulate,
-					simulationResults: await refreshConfirmTransactionSimulation(simulator, ethereumClientService, activeAddress, simulationMode, request.uniqueRequestIdentifier, transactionToSimulate),
-					transactionOrMessageCreationStatus: 'Simulated' as const,
-				}
-			})
 		}
+		await updatePendingTransactionOrMessage(pendingTransaction.uniqueRequestIdentifier, async (transaction) => {
+			if (transaction.type !== 'Transaction') return transaction
+			const simulationResults = await simulationResultsPromise
+			if (transactionToSimulate.success) return { ...transaction, transactionToSimulate, simulationResults, transactionOrMessageCreationStatus: 'Simulated' }
+			return { ...transaction, transactionToSimulate, simulationResults, transactionOrMessageCreationStatus: 'FailedToSimulate' }
+		})
 		await updateConfirmTransactionView(ethereumClientService)
 		await tryFocusingTabOrWindow(openedDialog)
 	})
