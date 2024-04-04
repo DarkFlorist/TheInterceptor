@@ -195,6 +195,7 @@ export const SimulatedAndVisualizedTransactionBase = funtypes.Intersect(
 			error: funtypes.ReadonlyObject({
 				code: funtypes.Number,
 				message: funtypes.String,
+				decodedErrorMessage: funtypes.String,
 			})
 		})
 	)

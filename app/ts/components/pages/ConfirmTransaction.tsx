@@ -420,7 +420,7 @@ export function ConfirmTransaction() {
 			if (currentPendingTransactionOrSignableMessage.simulationResults.statusCode !== 'success' ) return undefined
 			const results = currentPendingTransactionOrSignableMessage.simulationResults.data.simulatedAndVisualizedTransactions.find((tx) => tx.transactionIdentifier === currentPendingTransactionOrSignableMessage.transactionIdentifier)
 			if (results === undefined) return undefined
-			return results.statusCode === 'failure' ? results.error.message : undefined
+			return results.statusCode === 'failure' ? results.error.decodedErrorMessage : undefined
 		}
 		
 		await sendPopupMessageToBackgroundPage({ method: 'popup_confirmDialog', data: {

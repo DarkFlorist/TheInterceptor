@@ -1,6 +1,8 @@
 import { addressString } from '../utils/bigint.js'
 import { EnrichedEthereumEvent, GeneralEnrichedEthereumEvents, NamedTokenId, ProtectorResults, SimulatedAndVisualizedTransaction, SimulationState } from '../types/visualizer-types.js'
 import { AddressBookEntry } from '../types/addressBookTypes.js'
+import { ErrorDecoder } from '../utils/errorDecoding.js'
+import { Interface } from 'ethers'
 
 export function formSimulatedAndVisualizedTransaction(simState: SimulationState, eventsForEachTransaction: readonly GeneralEnrichedEthereumEvents[], protectorResults: readonly ProtectorResults[], addressBookEntries: readonly AddressBookEntry[], namedTokenIds: readonly NamedTokenId[]): readonly SimulatedAndVisualizedTransaction[] {
 	const addressMetaData = new Map(addressBookEntries.map((x) => [addressString(x.address), x]))
@@ -66,7 +68,12 @@ export function formSimulatedAndVisualizedTransaction(simState: SimulationState,
 			quarantineReasons: protectorResult.quarantineReasons,
 			...(simulatedTx.ethSimulateV1CallResult.status === 'failure'
 				? {
-					error: simulatedTx.ethSimulateV1CallResult.error,
+					error: {
+						...simulatedTx.ethSimulateV1CallResult.error,
+						decodedErrorMessage: to !== undefined && 'abi' in to && to.abi !== undefined ? (
+							ErrorDecoder.create([new Interface(to.abi)]).decode(simulatedTx.ethSimulateV1CallResult.error).reason ?? simulatedTx.ethSimulateV1CallResult.error.message)
+							: simulatedTx.ethSimulateV1CallResult.error.message 
+					},
 					statusCode: simulatedTx.ethSimulateV1CallResult.status,
 				}
 				: {
