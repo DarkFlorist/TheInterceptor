@@ -70,17 +70,6 @@ export const defaultRpcs = [
 		weth: 0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2n,
 	},
 	{
-		name: 'Goerli',
-		chainId: 5n,
-		httpsRpc: 'https://rpc-goerli.dark.florist/flipcardtrustone',
-		currencyName: 'Goerli Testnet ETH',
-		currencyTicker: 'GÖETH',
-		currencyLogoUri: ETHEREUM_COIN_ICON,
-		primary: true,
-		minimized: true,
-		weth: 0xb4fbf271143f4fbf7b91a5ded31805e42b2208d6n,
-	},
-	{
 		name: 'Sepolia',
 		chainId: 11155111n,
 		httpsRpc: 'https://rpc-sepolia.dark.florist/flipcardtrustone',

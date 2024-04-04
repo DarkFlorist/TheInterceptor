@@ -87,7 +87,7 @@ export const simulateGovernanceContractExecution = async (pendingTransaction: Pe
 		const parentBlock = await ethereum.getBlock()
 		if (parentBlock.baseFeePerGas === undefined) return returnError('cannot build simulation from legacy block')
 		const signedExecutionTransaction = mockSignTransaction({ ...contractExecutionResult.executingTransaction, gas: contractExecutionResult.ethSimulateV1CallResult.gasUsed })
-		const tokenBalancesAfter = await getTokenBalancesAfter(ethereum, [signedExecutionTransaction], [], [contractExecutionResult.ethSimulateV1CallResult], parentBlock.number)
+		const tokenBalancesAfter = await getTokenBalancesAfter(ethereum, [contractExecutionResult.ethSimulateV1CallResult], parentBlock.number, [signedExecutionTransaction], [])
 
 		if (tokenBalancesAfter[0] === undefined) return returnError('Could not compute token balances')
 
@@ -185,7 +185,7 @@ export async function updateSimulationState(ethereum: EthereumClientService, get
 		}
 		try {
 			const updatedSimulationState = await getUpdatedSimulationState(simulationResults.simulationState)
-			if (updatedSimulationState !== undefined && ethereum.getChainId() === updatedSimulationState?.rpcNetwork.chainId) { 
+			if (updatedSimulationState !== undefined && ethereum.getChainId() === updatedSimulationState?.rpcNetwork.chainId) {
 				await updateSimulationResults({ ...await visualizeSimulatorState(updatedSimulationState, ethereum), ...doneState })
 			} else {
 				await updateSimulationResults({ ...emptyDoneResults, simulationResultState: 'corrupted' as const })
@@ -347,7 +347,7 @@ async function handleRPCRequest(
 		case 'eth_signTypedData_v1':
 		case 'eth_signTypedData_v2':
 		case 'eth_signTypedData_v3':
-		case 'eth_signTypedData_v4': return await personalSign(simulator, activeAddress, ethereumClientService, parsedRequest, request, !forwardToSigner, website, websiteTabConnections)
+		case 'eth_signTypedData_v4': return await personalSign(simulator, activeAddress, ethereumClientService, parsedRequest, request, website, websiteTabConnections, !forwardToSigner)
 		case 'wallet_switchEthereumChain': return await switchEthereumChain(simulator, websiteTabConnections, ethereumClientService, parsedRequest, request, settings.simulationMode, website)
 		case 'wallet_requestPermissions': return await getAccounts(activeAddress)
 		case 'wallet_getPermissions': return await getPermissions()
@@ -370,7 +370,7 @@ async function handleRPCRequest(
 		case 'eth_sendRawTransaction':
 		case 'eth_sendTransaction': {
 			if (forwardToSigner && settings.currentRpcNetwork.httpsRpc === undefined) return getForwardingMessage(parsedRequest)
-			return await sendTransaction(simulator, activeAddress, ethereumClientService, parsedRequest, request, !forwardToSigner, website, websiteTabConnections)
+			return await sendTransaction(simulator, activeAddress, ethereumClientService, parsedRequest, request, website, websiteTabConnections, !forwardToSigner)
 		}
 		case 'web3_clientVersion': return await web3ClientVersion(ethereumClientService)
 		case 'eth_feeHistory': return await feeHistory(ethereumClientService, parsedRequest)
@@ -427,7 +427,7 @@ export async function changeActiveAddressAndChainAndResetSimulation(
 
 	const updatedSettings = await getSettings()
 	sendPopupMessageToOpenWindows({ method: 'popup_settingsUpdated', data: updatedSettings })
-	updateWebsiteApprovalAccesses(simulator, websiteTabConnections, undefined, updatedSettings)
+	updateWebsiteApprovalAccesses(simulator, websiteTabConnections, updatedSettings)
 	sendPopupMessageToOpenWindows({ method: 'popup_accounts_update' })
 	await sendActiveAccountChangeToApprovedWebsitePorts(websiteTabConnections, updatedSettings)
 
