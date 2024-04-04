@@ -18,7 +18,7 @@ function parseRequest(data: string) {
 
 class MockEthereumJSONRpcRequestHandler {
 	private rpcEntry: RpcEntry
-	constructor(rpcEntry: RpcEntry, _caching: boolean = false) {
+	constructor(rpcEntry: RpcEntry, _caching = false) {
 		this.rpcEntry = rpcEntry
 	}
 

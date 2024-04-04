@@ -316,7 +316,7 @@ const Web3ClientVersion = funtypes.ReadonlyObject({
 })
 
 //https://docs.infura.io/networks/ethereum/json-rpc-methods/eth_feehistory
-const EthereumQuantityBetween1And1024 = EthereumQuantity.withConstraint((x) => x >= 1n && x <= 1024n ? true : false)
+const EthereumQuantityBetween1And1024 = EthereumQuantity.withConstraint((x) => x >= 1n && x <= 1024n)
 
 export type FeeHistory = funtypes.Static<typeof FeeHistory>
 export const FeeHistory = funtypes.ReadonlyObject({

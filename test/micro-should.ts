@@ -19,15 +19,19 @@ type ShouldParams = {
 }
 
 async function runOne({ message, test, skip }: TestCase) {
+	// biome-ignore lint/suspicious/noConsoleLog: test runner logs
 	console.log()
-	let output = `should ${ message.replace(/^should\s+/, '') }`
+	const output = `should ${ message.replace(/^should\s+/, '') }`
+	// biome-ignore lint/suspicious/noConsoleLog: test runner logs
 	console.log(`- ${ output }:`)
 	if (skip) {
+		// biome-ignore lint/suspicious/noConsoleLog: test runner logs
 		console.log(`(skip) ${ output }`)
 		return true
 	}
 	try {
 		await test()
+		// biome-ignore lint/suspicious/noConsoleLog: test runner logs
 		console.log(`${ green }√ ${ output }${ reset }`)
 		return true
 	} catch (error) {
@@ -65,6 +69,7 @@ class MicroShould {
 	}
 }
 
+// biome-ignore lint/suspicious/noExplicitAny: TODO: better type for importMeta
 export async function runIfRoot(func: () => Promise<void>, importMeta: any) {
 	if (process.argv[1] !== url.fileURLToPath(importMeta.url)) return
 	try {
