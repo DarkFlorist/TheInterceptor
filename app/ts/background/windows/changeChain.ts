@@ -86,9 +86,8 @@ export const openChangeChainDialog = async (
 		if (oldPromise !== undefined) {
 			if (await getPopupOrTabById(oldPromise.popupOrTabId) !== undefined) {
 				return userDeniedChange
-			} else {
-				await setChainChangeConfirmationPromise(undefined)
 			}
+			await setChainChangeConfirmationPromise(undefined)
 		}
 
 		openedDialog = await openPopupOrTab({

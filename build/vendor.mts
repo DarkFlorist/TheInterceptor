@@ -72,7 +72,7 @@ async function vendorDependencies(files: string[]) {
 async function rewriteSourceMapSourcePath(packageName: string, sourcePath: string, destinationPath: string) {
 	const fileExtension = path.extname(sourcePath)
 	if (fileExtension !== '.map') return
-	const fileContents = JSON.parse(await fs.readFile(sourcePath, 'utf-8')) as { sources: Array<string> }
+	const fileContents = JSON.parse(await fs.readFile(sourcePath, 'utf-8')) as { sources: string[] }
 	for (let i = 0; i < fileContents.sources.length; ++i) {
 		// we want to ensure all source files show up in the appropriate directory and don't leak out of our directory tree, so we strip leading '../' references
 		const sourcePath = fileContents.sources[i].replace(/^(?:.\/)*/, '').replace(/^(?:..\/)*/, '')

@@ -60,7 +60,7 @@ export async function getAddressMetadataForAccess(websiteAccess: WebsiteAccessAr
 async function changeAccess(simulator: Simulator, websiteTabConnections: WebsiteTabConnections, confirmation: InterceptorAccessReply, website: Website, promptForAccessesIfNeeded = true) {
 	if (confirmation.userReply === 'noResponse') return
 	await setAccess(website, confirmation.userReply === 'Approved', confirmation.requestAccessToAddress)
-	updateWebsiteApprovalAccesses(simulator, websiteTabConnections, promptForAccessesIfNeeded, await getSettings())
+	updateWebsiteApprovalAccesses(simulator, websiteTabConnections, await getSettings(), promptForAccessesIfNeeded)
 	await sendPopupMessageToOpenWindows({ method: 'popup_websiteAccess_changed' })
 }
 

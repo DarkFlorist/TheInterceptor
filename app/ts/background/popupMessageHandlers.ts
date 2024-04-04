@@ -85,7 +85,7 @@ export async function changeMakeMeRich(simulator: Simulator, ethereumClientServi
 
 export async function removeAddressBookEntry(simulator: Simulator, websiteTabConnections: WebsiteTabConnections, removeAddressBookEntry: RemoveAddressBookEntry) {
 	await updateUserAddressBookEntries((previousContacts) => previousContacts.filter((contact) => contact.address !== removeAddressBookEntry.data.address))
-	if (removeAddressBookEntry.data.addressBookCategory === 'My Active Addresses') updateWebsiteApprovalAccesses(simulator, websiteTabConnections, undefined, await getSettings())
+	if (removeAddressBookEntry.data.addressBookCategory === 'My Active Addresses') updateWebsiteApprovalAccesses(simulator, websiteTabConnections, await getSettings())
 	return await sendPopupMessageToOpenWindows({ method: 'popup_addressBookEntriesChanged' })
 }
 
@@ -96,7 +96,7 @@ export async function addOrModifyAddressBookEntry(simulator: Simulator, websiteT
 		}
 		return previousContacts.concat([entry.data])
 	})
-	if (entry.data.type === 'activeAddress') updateWebsiteApprovalAccesses(simulator, websiteTabConnections, undefined, await getSettings())
+	if (entry.data.type === 'activeAddress') updateWebsiteApprovalAccesses(simulator, websiteTabConnections, await getSettings())
 	return await sendPopupMessageToOpenWindows({ method: 'popup_addressBookEntriesChanged' })
 }
 
@@ -116,7 +116,7 @@ export async function changeInterceptorAccess(simulator: Simulator, websiteTabCo
 		return await disableInterceptorForPage(websiteTabConnections, disable.newEntry.website, disable.newEntry.interceptorDisabled)
 	}))
 
-	updateWebsiteApprovalAccesses(simulator, websiteTabConnections, undefined, await getSettings())
+	updateWebsiteApprovalAccesses(simulator, websiteTabConnections, await getSettings())
 	return await sendPopupMessageToOpenWindows({ method: 'popup_interceptor_access_changed' })
 }
 
@@ -202,7 +202,7 @@ export async function refreshPopupConfirmTransactionMetadata(ethereumClientServi
 export async function refreshPopupConfirmTransactionSimulation(simulator: Simulator, ethereumClientService: EthereumClientService) {
 	const [firstTxn] = await getPendingTransactionsAndMessages()
 	if (firstTxn === undefined || firstTxn.type !== 'Transaction' || firstTxn.transactionOrMessageCreationStatus !== 'Simulated') return
-	const transactionToSimulate = firstTxn.originalRequestParameters.method === 'eth_sendTransaction' ? await formEthSendTransaction(ethereumClientService, firstTxn.activeAddress, firstTxn.simulationMode, firstTxn.transactionToSimulate.website, firstTxn.originalRequestParameters, firstTxn.created, firstTxn.transactionIdentifier) : await formSendRawTransaction(ethereumClientService, firstTxn.originalRequestParameters, firstTxn.transactionToSimulate.website, firstTxn.created, firstTxn.transactionIdentifier)
+	const transactionToSimulate = firstTxn.originalRequestParameters.method === 'eth_sendTransaction' ? await formEthSendTransaction(ethereumClientService, firstTxn.activeAddress, firstTxn.transactionToSimulate.website, firstTxn.originalRequestParameters, firstTxn.created, firstTxn.transactionIdentifier, firstTxn.simulationMode) : await formSendRawTransaction(ethereumClientService, firstTxn.originalRequestParameters, firstTxn.transactionToSimulate.website, firstTxn.created, firstTxn.transactionIdentifier)
 	if (transactionToSimulate.success === false) return
 	const refreshMessage = await refreshConfirmTransactionSimulation(simulator, ethereumClientService, firstTxn.activeAddress, firstTxn.simulationMode, firstTxn.uniqueRequestIdentifier, transactionToSimulate)
 
@@ -500,6 +500,6 @@ async function disableInterceptorForPage(websiteTabConnections: WebsiteTabConnec
 
 export async function disableInterceptor(simulator: Simulator, websiteTabConnections: WebsiteTabConnections, parsedRequest: DisableInterceptor) {
 	await disableInterceptorForPage(websiteTabConnections, parsedRequest.data.website, parsedRequest.data.interceptorDisabled)
-	updateWebsiteApprovalAccesses(simulator, websiteTabConnections, undefined, await getSettings())
+	updateWebsiteApprovalAccesses(simulator, websiteTabConnections, await getSettings())
 	return await sendPopupMessageToOpenWindows({ method: 'popup_setDisableInterceptorReply' as const, data: parsedRequest.data })
 }
