@@ -64,7 +64,7 @@ export const getNonPrependedSimulatedTransactions = (prependTransactionsQueue: r
 
 const getETHBalanceChanges = (baseFeePerGas: bigint, transaction: SimulatedTransaction) => {
 	if (transaction.ethSimulateV1CallResult.status === 'failure') return []
-	const ethLogs = transaction.ethSimulateV1CallResult.logs.filter((log) => log.address === ETHEREUM_LOGS_LOGGER_ADDRESS) 
+	const ethLogs = transaction.ethSimulateV1CallResult.logs.filter((log) => log.address === ETHEREUM_LOGS_LOGGER_ADDRESS)
 	const ethBalanceAfter = transaction.tokenBalancesAfter.filter((x) => x.token === ETHEREUM_LOGS_LOGGER_ADDRESS)
 	return ethBalanceAfter.map((balanceAfter) => {
 		const balanceAfterBalance = baseFeePerGas * transaction.ethSimulateV1CallResult.gasUsed
@@ -91,7 +91,7 @@ export const getSimulatedStack = (simulationState: SimulationState | undefined):
 export const getSimulatedStackOld = (simulationState: SimulationState | undefined, version: '1.0.0' | '1.0.1'): GetSimulationStackOldReply => {
 	if (simulationState === undefined) return []
 	return simulationState.simulatedTransactions.map((transaction) => {
-		const ethLogs = transaction.ethSimulateV1CallResult.status === 'failure' ? [] : transaction.ethSimulateV1CallResult.logs.filter((log) => log.address === ETHEREUM_LOGS_LOGGER_ADDRESS) 
+		const ethLogs = transaction.ethSimulateV1CallResult.status === 'failure' ? [] : transaction.ethSimulateV1CallResult.logs.filter((log) => log.address === ETHEREUM_LOGS_LOGGER_ADDRESS)
 		const ethBalanceAfter = transaction.tokenBalancesAfter.filter((x) => x.token === ETHEREUM_LOGS_LOGGER_ADDRESS)
 		const maxPriorityFeePerGas = transaction.signedTransaction.type === '1559' ? transaction.signedTransaction.maxPriorityFeePerGas : 0n
 		return {
@@ -99,8 +99,8 @@ export const getSimulatedStackOld = (simulationState: SimulationState | undefine
 			...transaction.ethSimulateV1CallResult,
 			... ( transaction.ethSimulateV1CallResult.status === 'failure' ? {
 				statusCode: transaction.ethSimulateV1CallResult.status,
-				error: transaction.ethSimulateV1CallResult.error.message } : { 
-					statusCode: transaction.ethSimulateV1CallResult.status, 
+				error: transaction.ethSimulateV1CallResult.error.message } : {
+					statusCode: transaction.ethSimulateV1CallResult.status,
 					events: transaction.ethSimulateV1CallResult.logs.map((x) => ({ loggersAddress: x.address, data: x.data, topics: x.topics }))
 				}
 			),
@@ -303,7 +303,7 @@ export const setSimulationTransactionsAndSignedMessages = async (ethereumClientS
 			signedTxs.slice(0, resultIndex + 1),
 			signedMessages,
 			[
-				{ token: ETHEREUM_LOGS_LOGGER_ADDRESS, owner: sender, tokenId: undefined, type: 'ERC20' as const }, // add original sender for eth always, as there's always gas payment 
+				{ token: ETHEREUM_LOGS_LOGGER_ADDRESS, owner: sender, tokenId: undefined, type: 'ERC20' as const }, // add original sender for eth always, as there's always gas payment
 				...getAddressesInteractedWithErc20s(singleResult.status === 'success' ? singleResult.logs : [])
 			],
 			parentBlock.number
@@ -784,7 +784,7 @@ export const simulatePersonalSign = async (params: SignMessageParams, signingAdd
 			case 'eth_signTypedData_v3':
 			case 'eth_signTypedData_v4': {
 				const typesWithoutDomain = Object.assign({}, params.params[1].types)
-				delete typesWithoutDomain['EIP712Domain']
+				delete typesWithoutDomain.EIP712Domain
 				const castedTypesWithoutDomain = typesWithoutDomain as { [x: string]: { name: string, type: string }[] }
 				return {
 					signature: await wallet.signTypedData(params.params[1].domain, castedTypesWithoutDomain, params.params[1].message),
@@ -937,11 +937,11 @@ const getAddressesAndTokensIdsInteractedWithErc1155s = (events: readonly Ethereu
 				break
 			}
 			case 'TransferBatch': {
-				handleERC1155TransferBatch(log).forEach((parsedLog) => {
-					if (parsedLog.type !== 'ERC1155') return
+				for (const parsedLog of handleERC1155TransferBatch(log)) {
+					if (parsedLog.type !== "ERC1155") continue
 					tokenOwners.push({ ...base, owner: parsedLog.from, tokenId: parsedLog.tokenId })
 					tokenOwners.push({ ...base, owner: parsedLog.to, tokenId: parsedLog.tokenId })
-				})
+				}
 				break
 			}
 			default: throw new Error(`wrong name: ${ parsed.name }`)
@@ -965,7 +965,7 @@ export const getTokenBalancesAfter = async (
 		const sender = signedTxs[resultIndex]?.from
 		if (sender === undefined) throw new Error('sender was undefined')
 		const erc20sAddresses = [
-			{ token: ETHEREUM_LOGS_LOGGER_ADDRESS, owner: sender, tokenId: undefined, type: 'ERC20' as const }, // add original sender for eth always, as there's always gas payment 
+			{ token: ETHEREUM_LOGS_LOGGER_ADDRESS, owner: sender, tokenId: undefined, type: 'ERC20' as const }, // add original sender for eth always, as there's always gas payment
 			...getAddressesInteractedWithErc20s(events)
 		]
 		const erc1155AddressIds = getAddressesAndTokensIdsInteractedWithErc1155s(events)

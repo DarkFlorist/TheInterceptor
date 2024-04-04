@@ -2,9 +2,9 @@ import { BRAVE_LOGO, COINBASEWALLET_LOGO, METAMASK_LOGO } from '../../utils/cons
 import { SignerName } from '../../types/signerTypes.js'
 
 const signerLogos = {
-	'MetaMask': METAMASK_LOGO,
-	'Brave': BRAVE_LOGO,
-	'CoinbaseWallet': COINBASEWALLET_LOGO,
+	MetaMask: METAMASK_LOGO,
+	Brave: BRAVE_LOGO,
+	CoinbaseWallet: COINBASEWALLET_LOGO,
 }
 
 export function getPrettySignerName(signerName: SignerName) {

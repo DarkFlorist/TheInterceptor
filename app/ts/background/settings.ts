@@ -70,17 +70,6 @@ export const defaultRpcs = [
 		weth: 0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2n,
 	},
 	{
-		name: 'Goerli',
-		chainId: 5n,
-		httpsRpc: 'https://rpc-goerli.dark.florist/flipcardtrustone',
-		currencyName: 'Goerli Testnet ETH',
-		currencyTicker: 'GÖETH',
-		currencyLogoUri: ETHEREUM_COIN_ICON,
-		primary: true,
-		minimized: true,
-		weth: 0xb4fbf271143f4fbf7b91a5ded31805e42b2208d6n,
-	},
-	{
 		name: 'Sepolia',
 		chainId: 11155111n,
 		httpsRpc: 'https://rpc-sepolia.dark.florist/flipcardtrustone',
@@ -129,10 +118,10 @@ export function getInterceptorDisabledSites(settings: Settings): string[] {
 }
 
 export const setPage = async (openedPage: Page) => await browserStorageLocalSet({ openedPage })
-export const getPage = async() => (await browserStorageLocalGet('openedPage'))?.['openedPage'] ?? { page: 'Home' }
+export const getPage = async() => (await browserStorageLocalGet('openedPage'))?.openedPage ?? { page: 'Home' }
 
 export const setMakeMeRich = async (makeMeRich: boolean) => await browserStorageLocalSet({ makeMeRich })
-export const getMakeMeRich = async() => (await browserStorageLocalGet('makeMeRich'))?.['makeMeRich'] ?? false
+export const getMakeMeRich = async() => (await browserStorageLocalGet('makeMeRich'))?.makeMeRich ?? false
 
 export async function setUseSignersAddressAsActiveAddress(useSignersAddressAsActiveAddress: boolean, currentSignerAddress: bigint | undefined = undefined) {
 	return await browserStorageLocalSet({
@@ -150,7 +139,7 @@ export async function changeSimulationMode(changes: { simulationMode: boolean, r
 	})
 }
 
-const getWebsiteAccess = async() => (await browserStorageLocalGet('websiteAccess'))?.['websiteAccess'] ?? []
+const getWebsiteAccess = async() => (await browserStorageLocalGet('websiteAccess'))?.websiteAccess ?? []
 const websiteAccessSemaphore = new Semaphore(1)
 export async function updateWebsiteAccess(updateFunc: (prevState: WebsiteAccessArray) => WebsiteAccessArray) {
 	await websiteAccessSemaphore.execute(async () => {
@@ -158,10 +147,10 @@ export async function updateWebsiteAccess(updateFunc: (prevState: WebsiteAccessA
 	})
 }
 
-export const getUseTabsInsteadOfPopup = async() => (await browserStorageLocalGet('useTabsInsteadOfPopup'))?.['useTabsInsteadOfPopup'] ?? false
+export const getUseTabsInsteadOfPopup = async() => (await browserStorageLocalGet('useTabsInsteadOfPopup'))?.useTabsInsteadOfPopup ?? false
 export const setUseTabsInsteadOfPopup = async(useTabsInsteadOfPopup: boolean) => await browserStorageLocalSet({ useTabsInsteadOfPopup })
 
-export const getMetamaskCompatibilityMode = async() => (await browserStorageLocalGet('metamaskCompatibilityMode'))?.['metamaskCompatibilityMode'] ?? false
+export const getMetamaskCompatibilityMode = async() => (await browserStorageLocalGet('metamaskCompatibilityMode'))?.metamaskCompatibilityMode ?? false
 export const setMetamaskCompatibilityMode = async(metamaskCompatibilityMode: boolean) => await browserStorageLocalSet({ metamaskCompatibilityMode })
 
 export async function exportSettingsAndAddressBook(): Promise<ExportedSettings> {
