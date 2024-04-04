@@ -487,15 +487,15 @@ async function disableInterceptorForPage(websiteTabConnections: WebsiteTabConnec
 	const tabIdsToRefesh = Array.from(websiteTabConnections.entries()).map(([tabId, _connection]) => tabId)
 	const currentTabId = await getLastKnownCurrentTabId()
 	const withCurrentTabid = currentTabId === undefined ? tabIdsToRefesh : [...tabIdsToRefesh, currentTabId]
-	Array.from(new Set(withCurrentTabid)).forEach(async (tabId) => {
+	for (const tabId of new Set(withCurrentTabid)) {
 		try {
 			await browser.tabs.reload(tabId)
 			checkAndThrowRuntimeLastError()
 		} catch (e) {
-			console.warn('failed to reload tab')
+			console.warn('Failed to reload tab')
 			console.warn(e)
 		}
-	})
+	}
 }
 
 export async function disableInterceptor(simulator: Simulator, websiteTabConnections: WebsiteTabConnections, parsedRequest: DisableInterceptor) {
