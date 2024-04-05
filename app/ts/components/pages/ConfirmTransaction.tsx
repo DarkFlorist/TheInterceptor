@@ -134,11 +134,9 @@ function TransactionCard(param: TransactionCardParams) {
 	const simulationResults = param.currentPendingTransaction.simulationResults
 	const getErrorMesssage = () => {
 		if (simulationResults.statusCode === 'failed') return simulationResults.data.error.decodedErrorMessage
-		if (!simulationResults.data.transactionToSimulate.success) return simulationResults.data.transactionToSimulate.error
+		if (!simulationResults.data.transactionToSimulate.success) return simulationResults.data.transactionToSimulate.error.message
 		return 'Unknown error'
 	}
-	console.log('TransactionCard')
-	console.log(simulationResults)
 	if (simulationResults.statusCode === 'failed' || simulationResults.data.transactionToSimulate.success === false) {
 		return <>
 			<div class = 'card' style = { `top: ${ param.numberOfUnderTransactions * -HALF_HEADER_HEIGHT }px` }>
@@ -149,7 +147,7 @@ function TransactionCard(param: TransactionCardParams) {
 						</span>
 					</div>
 					<p class = 'card-header-title' style = 'white-space: nowrap;'>
-						{ simulationResults.data.transactionToSimulate.success ? 'Gas estimation error' : 'Simulation error' }
+						{ simulationResults.data.transactionToSimulate.success ? 'Gas estimation error' : 'Execution error' }
 					</p>
 					<p class = 'card-header-icon unsetcursor' style = { 'margin-left: auto; margin-right: 0; overflow: hidden;' }>
 						<WebsiteOriginText { ...param.currentPendingTransaction.transactionToSimulate.website } />
@@ -315,21 +313,6 @@ const WebsiteErrors = ({ website, websiteSocket, simulationMode }: NetworkErrorP
 	if (message === undefined) return <></>
 	if (message.suggestedAlternative === undefined) return <ErrorComponent warning = { true } text = { message.message }/>
 	return <ErrorComponent warning = { true } text = { <> { message.message } <Link url = { message.suggestedAlternative } text = { 'Suggested alternative' } websiteSocket = { websiteSocket } /> </> }/>
-}
-
-type LoadingParams = {
-	loadingText: string
-	unexpectedErrorMessage: string | undefined
-	closeUnexpectedError: () => void
-	rpcConnectionStatus: RpcConnectionStatus
-}
-
-function Loading({ loadingText, unexpectedErrorMessage, closeUnexpectedError, rpcConnectionStatus }: LoadingParams) {
-	return <>
-		<UnexpectedError close = { closeUnexpectedError } message = { unexpectedErrorMessage }/>
-		<CenterToPageTextSpinner text = { loadingText }/>
-		<NetworkErrors rpcConnectionStatus = { rpcConnectionStatus }/>
-	</>
 }
 
 export function ConfirmTransaction() {
@@ -540,14 +523,12 @@ export function ConfirmTransaction() {
 						}
 					</div>
 					<div class = 'block popup-block popup-block-scroll' style = 'padding: 0px'>
-						<div style = 'position: sticky; top: 0; z-index:1'>
-							<UnexpectedError close = { () => { setUnexpectedError(undefined) } } message = { unexpectedError }/>
-							<NetworkErrors rpcConnectionStatus = { rpcConnectionStatus }/>
-							{ currentPendingTransactionOrSignableMessage === undefined ? <></> : <>
-								<WebsiteErrors website = { currentPendingTransactionOrSignableMessage.website } websiteSocket = { currentPendingTransactionOrSignableMessage.uniqueRequestIdentifier.requestSocket } simulationMode = { currentPendingTransactionOrSignableMessage.simulationMode }/>
-							</> }
-						</div>
-						<Loading loadingText = { getLoadingText(currentPendingTransactionOrSignableMessage) } unexpectedErrorMessage = { unexpectedError } closeUnexpectedError = { () => { setUnexpectedError(undefined) } } rpcConnectionStatus = { rpcConnectionStatus } />
+						<UnexpectedError close = { () => { setUnexpectedError(undefined) } } message = { unexpectedError }/>
+						<NetworkErrors rpcConnectionStatus = { rpcConnectionStatus }/>
+						{ currentPendingTransactionOrSignableMessage === undefined ? <></> : <>
+							<WebsiteErrors website = { currentPendingTransactionOrSignableMessage.website } websiteSocket = { currentPendingTransactionOrSignableMessage.uniqueRequestIdentifier.requestSocket } simulationMode = { currentPendingTransactionOrSignableMessage.simulationMode }/>
+						</> }
+						<CenterToPageTextSpinner text = { getLoadingText(currentPendingTransactionOrSignableMessage)  }/>
 					</div>
 				</Hint>
 			</main>

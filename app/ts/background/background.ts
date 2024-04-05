@@ -37,7 +37,7 @@ import { CompoundGovernanceAbi } from '../utils/abi.js'
 import { dataStringWith0xStart } from '../utils/bigint.js'
 import { connectedToSigner, ethAccountsReply, signerChainChanged, signerReply, walletSwitchEthereumChainReply } from './providerMessageHandlers.js'
 import { makeSureInterceptorIsNotSleeping } from './sleeping.js'
-import { ErrorDecoder } from '../utils/errorDecoding.js'
+import { decodeEthereumError } from '../utils/errorDecoding.js'
 
 async function updateMetadataForSimulation(simulationState: SimulationState, ethereum: EthereumClientService, eventsForEachTransaction: readonly GeneralEnrichedEthereumEvents[], protectorResults: readonly ProtectorResults[]) {
 	const settingsPromise = getSettings()
@@ -249,7 +249,7 @@ export async function refreshConfirmTransactionSimulation(
 						} }
 					: { error: {
 						...transactionToSimulate.error,
-						decodedErrorMessage: ErrorDecoder.create(availableAbis).decode(transactionToSimulate.error).reason ?? transactionToSimulate.error.message
+						decodedErrorMessage: decodeEthereumError(availableAbis, transactionToSimulate.error).reason
 					} }
 				}
 			}
@@ -265,9 +265,14 @@ export async function refreshConfirmTransactionSimulation(
 			if ('abi' in identified && identified.abi !== undefined) return [new Interface(identified.abi)]
 			return []
 		}
+		const baseError = {
+			code: error.code,
+			message: error.message,
+			data: typeof error.data === 'string' ? error.data : '0x',
+		}
 		return { statusCode: 'failed' as const, data: {
 			...info,
-			error: { ...error, decodedErrorMessage: ErrorDecoder.create(await extractToAbi()).decode(error).reason ?? error.message },
+			error: { ...baseError, decodedErrorMessage: decodeEthereumError(await extractToAbi(), baseError).reason },
 			simulationState: {
 				blockNumber: simState?.blockNumber || 0n, 
 				simulationConductedTimestamp: new Date()

@@ -1,8 +1,8 @@
-import { addressString } from '../utils/bigint.js'
+import { addressString, dataStringWith0xStart } from '../utils/bigint.js'
 import { EnrichedEthereumEvent, GeneralEnrichedEthereumEvents, NamedTokenId, ProtectorResults, SimulatedAndVisualizedTransaction, SimulationState } from '../types/visualizer-types.js'
 import { AddressBookEntry } from '../types/addressBookTypes.js'
-import { ErrorDecoder } from '../utils/errorDecoding.js'
 import { Interface } from 'ethers'
+import { decodeEthereumError } from '../utils/errorDecoding.js'
 
 export function formSimulatedAndVisualizedTransaction(simState: SimulationState, eventsForEachTransaction: readonly GeneralEnrichedEthereumEvents[], protectorResults: readonly ProtectorResults[], addressBookEntries: readonly AddressBookEntry[], namedTokenIds: readonly NamedTokenId[]): readonly SimulatedAndVisualizedTransaction[] {
 	const addressMetaData = new Map(addressBookEntries.map((x) => [addressString(x.address), x]))
@@ -72,7 +72,7 @@ export function formSimulatedAndVisualizedTransaction(simState: SimulationState,
 				? {
 					error: {
 						...simulatedTx.ethSimulateV1CallResult.error,
-						decodedErrorMessage: ErrorDecoder.create(availableAbis).decode(simulatedTx.ethSimulateV1CallResult.error).reason ?? simulatedTx.ethSimulateV1CallResult.error.message
+						decodedErrorMessage: decodeEthereumError(availableAbis, { ...simulatedTx.ethSimulateV1CallResult.error, data: dataStringWith0xStart(simulatedTx.ethSimulateV1CallResult.returnData)}).reason,
 					},
 					statusCode: simulatedTx.ethSimulateV1CallResult.status,
 				}
