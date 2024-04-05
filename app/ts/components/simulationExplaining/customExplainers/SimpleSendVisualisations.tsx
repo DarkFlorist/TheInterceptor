@@ -96,8 +96,8 @@ export function SimpleTokenTransferVisualisation({ simTx, renameAddressCallBack 
 		}
 	}
 	const asset = getAsset(transfer)
-	const senderAfter = simTx.tokenBalancesAfter.find((change) => change.owner === transfer.from.address && change.tokenId === asset.tokenId)?.balance
-	const receiverAfter = simTx.tokenBalancesAfter.find((change) => change.owner === transfer.to.address && change.tokenId === asset.tokenId)?.balance
+	const senderAfter = simTx.tokenBalancesAfter.find((change) => change.owner === transfer.from.address && change.token === asset.tokenEntry.address && change.tokenId === asset.tokenId)?.balance
+	const receiverAfter = simTx.tokenBalancesAfter.find((change) => change.owner === transfer.to.address && change.token === asset.tokenEntry.address && change.tokenId === asset.tokenId)?.balance
 	return <SimpleSend
 		transaction = { { ...simTx, rpcNetwork: simTx.transaction.rpcNetwork } }
 		asset = { {
