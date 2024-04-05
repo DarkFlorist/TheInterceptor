@@ -529,9 +529,6 @@ async function handleContentScriptMessage(simulator: Simulator, websiteTabConnec
 		const resolved = await handleRPCRequest(simulator, simulationState, websiteTabConnections, simulator.ethereum, request.uniqueRequestIdentifier.requestSocket, website, request, settings, activeAddress)
 		return replyToInterceptedRequest(websiteTabConnections, { ...request, ...resolved })
 	} catch (error) {
-		// biome-ignore lint/suspicious/noConsoleLog: <Used for support debugging>
-		console.log({ request })
-		console.log(error)
 		if (error instanceof JsonRpcResponseError || error instanceof FetchResponseError) {
 			return replyToInterceptedRequest(websiteTabConnections, {
 				type: 'result', 

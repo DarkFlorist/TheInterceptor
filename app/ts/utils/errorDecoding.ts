@@ -63,7 +63,7 @@ const revertErrorResult: ErrorResultFormatter = ({ data, reason, fragment, args 
 const unknownErrorResult: ErrorResultFormatter = ({ data, reason, name }) => baseErrorResult({ type: ErrorType.UnknownError, reason: formatReason(reason, 'Unknown error'), data, name })
 const panicErrorResult: ErrorResultFormatter = ({ data, reason, args }) => baseErrorResult({ type: ErrorType.PanicError, reason, data, args })
 const customErrorResult: ErrorResultFormatter = ({ data, reason, fragment, args }) => {
-	const selector = data && data.slice(0, 10)
+	const selector = data?.slice(0, 10)
 	return baseErrorResult({ type: ErrorType.CustomError, reason: formatReason(reason, `No ABI for custom error ${ selector }`), data, fragment, args, selector, name: selector })
 }
 
@@ -78,7 +78,7 @@ class EmptyErrorHandler implements ErrorHandler {
 }
 
 class RevertErrorHandler implements ErrorHandler {
-	public predicate(error: EthereumError): boolean { return error.data !== undefined && error.data.startsWith(ERROR_STRING_PREFIX) }
+	public predicate(error: EthereumError): boolean { return error.data.startsWith(ERROR_STRING_PREFIX) }
 	public handle(_errorInterface: Interface | undefined, error: EthereumError): DecodedError {
 		const encodedReason = error.data.slice(ERROR_STRING_PREFIX.length)
 		const abi = new AbiCoder()
@@ -94,7 +94,7 @@ class RevertErrorHandler implements ErrorHandler {
 }
 
 class PanicErrorHandler implements ErrorHandler {
-	public predicate(error: EthereumError): boolean { return error.data !== undefined && error.data.startsWith(PANIC_CODE_PREFIX) }
+	public predicate(error: EthereumError): boolean { return error.data.startsWith(PANIC_CODE_PREFIX) }
 	public handle(_errorInterface: Interface | undefined, error: EthereumError): DecodedError {
 		const encodedReason = error.data.slice(PANIC_CODE_PREFIX.length)
 		const abi = new AbiCoder()
@@ -110,7 +110,7 @@ class PanicErrorHandler implements ErrorHandler {
 }
 
 class CustomErrorHandler implements ErrorHandler {
-	public predicate(error: EthereumError): boolean { return error.data !== undefined && error.data !== '0x' && !error.data.startsWith(ERROR_STRING_PREFIX) && error.data.startsWith(PANIC_CODE_PREFIX) }
+	public predicate(error: EthereumError): boolean { return error.data !== '0x' && !error.data.startsWith(ERROR_STRING_PREFIX) && error.data.startsWith(PANIC_CODE_PREFIX) }
 	public handle(errorInterface: Interface | undefined, error: EthereumError): DecodedError {
 		const result: Parameters<typeof customErrorResult>[0] = { data: error.data, reason: error.message }
 		if (errorInterface === undefined) return customErrorResult(result)
@@ -147,7 +147,7 @@ const handlers = [
 ]
 const errorHandlers: ErrorHandler[] = handlers.map((handler) => ({ predicate: handler.predicate, handle: handler.handle }))
 
-export const decodeEthereumError = (errorInterfaces: ReadonlyArray<Interface>, error: EthereumError): DecodedError => {
+export const decodeEthereumError = (errorInterfaces: readonly Interface[], error: EthereumError): DecodedError => {
 	const errorInterface = new Interface(errorInterfaces.flatMap((iface) => iface.fragments.filter((fragment) => ErrorFragment.isFragment(fragment))))
 	for (const { predicate, handle } of errorHandlers) {
 		if (predicate(error)) return handle(errorInterface, error)
