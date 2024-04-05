@@ -1,6 +1,6 @@
 import * as funtypes from 'funtypes'
 import { PendingChainChangeConfirmationPromise, RpcConnectionStatus, TabIconDetails, TabState } from './user-interface-types.js'
-import { EthereumAddress, EthereumBlockHeaderWithTransactionHashes, EthereumBytes32, EthereumData, EthereumQuantity, EthereumSignedTransactionWithBlockData, NonHexBigInt, OptionalEthereumAddress } from './wire-types.js'
+import { EthereumAddress, EthereumBlockHeaderWithTransactionHashes, EthereumBytes32, EthereumData, EthereumQuantity, EthereumSignedTransactionWithBlockData, EthereumTimestamp, NonHexBigInt, OptionalEthereumAddress } from './wire-types.js'
 import { ModifyAddressWindowState, CompleteVisualizedSimulation, NamedTokenId, ProtectorResults, SimulatedAndVisualizedTransaction, SimulationState, TokenPriceEstimate, EnrichedEthereumEvent } from './visualizer-types.js'
 import { VisualizedPersonalSignRequest } from './personal-message-definitions.js'
 import { UniqueRequestIdentifier, WebsiteSocket } from '../utils/requests.js'
@@ -480,6 +480,12 @@ const PartialUpdateHomePage = funtypes.ReadonlyObject({
 	data: funtypes.Unknown,
 })
 
+export type UnexpectedErrorOccured = funtypes.Static<typeof UnexpectedErrorOccured>
+export const UnexpectedErrorOccured = funtypes.ReadonlyObject({
+	method: funtypes.Literal('popup_UnexpectedErrorOccured'),
+	data: funtypes.ReadonlyObject({ timestamp: EthereumTimestamp, message: funtypes.String })
+})
+
 export type UpdateHomePage = funtypes.Static<typeof UpdateHomePage>
 export const UpdateHomePage = funtypes.ReadonlyObject({
 	method: funtypes.Literal('popup_UpdateHomePage'),
@@ -496,14 +502,7 @@ export const UpdateHomePage = funtypes.ReadonlyObject({
 		tabId: funtypes.Union(funtypes.Number, funtypes.Undefined),
 		rpcEntries: RpcEntries,
 		interceptorDisabled: funtypes.Boolean,
-	})
-})
-
-type UnexpectedErrorOccured = funtypes.Static<typeof UnexpectedErrorOccured>
-const UnexpectedErrorOccured = funtypes.ReadonlyObject({
-	method: funtypes.Literal('popup_UnexpectedErrorOccured'),
-	data: funtypes.ReadonlyObject({
-		message: funtypes.String
+		latestUnexpectedError: funtypes.Union(funtypes.Undefined, UnexpectedErrorOccured),
 	})
 })
 
@@ -769,6 +768,7 @@ export const PopupMessage = funtypes.Union(
 	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_requestNewHomeData') }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_refreshHomeData') }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_openSettings') }),
+	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_clearUnexpectedError') }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_import_settings'), data: funtypes.ReadonlyObject({ fileContents: funtypes.String }) }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_get_export_settings') }),
 	SimulateGovernanceContractExecution,

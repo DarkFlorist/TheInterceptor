@@ -8,6 +8,7 @@ import { WebsiteAccessArray } from '../types/websiteAccessTypes.js'
 import { SignerName } from '../types/signerTypes.js'
 import { PendingAccessRequests, PendingTransactionOrSignableMessage } from '../types/accessRequest.js'
 import { RpcEntries, RpcNetwork } from '../types/rpc.js'
+import { UnexpectedErrorOccured } from '../types/interceptor-messages.js'
 
 type IdsOfOpenedTabs = funtypes.Static<typeof IdsOfOpenedTabs>
 const IdsOfOpenedTabs = funtypes.ReadonlyObject({
@@ -48,6 +49,7 @@ const LocalStorageItems = funtypes.ReadonlyPartial({
 	idsOfOpenedTabs: IdsOfOpenedTabs,
 	interceptorDisabled: funtypes.Boolean,
 	interceptorStartSleepingTimestamp: funtypes.Number,
+	latestUnexpectedError: UnexpectedErrorOccured,
 })
 
 type LocalStorageKey = funtypes.Static<typeof LocalStorageKey>
@@ -76,6 +78,7 @@ const LocalStorageKey = funtypes.Union(
 	funtypes.Literal('userAddressBookEntries'),
 	funtypes.Literal('idsOfOpenedTabs'),
 	funtypes.Literal('interceptorStartSleepingTimestamp'),
+	funtypes.Literal('latestUnexpectedError'),
 )
 
 export async function browserStorageLocalGet(keys: LocalStorageKey | LocalStorageKey[]): Promise<LocalStorageItems> {

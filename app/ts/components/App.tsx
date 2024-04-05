@@ -11,7 +11,7 @@ import { ethers } from 'ethers'
 import { PasteCatcher } from './subcomponents/PasteCatcher.js'
 import { truncateAddr } from '../utils/ethereum.js'
 import { DEFAULT_TAB_CONNECTION, METAMASK_ERROR_ALREADY_PENDING, METAMASK_ERROR_USER_REJECTED_REQUEST, TIME_BETWEEN_BLOCKS } from '../utils/constants.js'
-import { UpdateHomePage, Settings, MessageToPopup } from '../types/interceptor-messages.js'
+import { UpdateHomePage, Settings, MessageToPopup, UnexpectedErrorOccured } from '../types/interceptor-messages.js'
 import { version, gitCommitSha } from '../version.js'
 import { sendPopupMessageToBackgroundPage } from '../background/backgroundUtils.js'
 import { EthereumAddress } from '../types/wire-types.js'
@@ -83,7 +83,7 @@ export function App() {
 	const [simulationUpdatingState, setSimulationUpdatingState] = useState<SimulationUpdatingState | undefined>(undefined)
 	const [simulationResultState, setSimulationResultState] = useState<SimulationResultState | undefined>(undefined)
 	const [interceptorDisabled, setInterceptorDisabled] = useState<boolean>(false)
-	const [unexpectedError, setUnexpectedError] = useState<string | undefined>(undefined)
+	const [unexpectedError, setUnexpectedError] = useState<UnexpectedErrorOccured | undefined>(undefined)
 
 	async function setActiveAddressAndInformAboutIt(address: bigint | 'signer') {
 		setUseSignersAddressAsActiveAddress(address === 'signer')
@@ -151,6 +151,7 @@ export function App() {
 				setActiveSigningAddress(data.activeSigningAddressInThisTab)
 				setInterceptorDisabled(data.interceptorDisabled)
 				updateHomePageSettings(data.settings, !isSettingsLoaded)
+				setUnexpectedError(data.latestUnexpectedError)
 				if (isSettingsLoaded === false) setTabConnection(data.tabState.tabIconDetails)
 				if (data.visualizedSimulatorState !== undefined) {
 					setSimulationState(
@@ -187,7 +188,7 @@ export function App() {
 			if (!maybeParsed.success) return // not a message we are interested in
 			const parsed = maybeParsed.value
 			switch(parsed.method) {
-				case 'popup_UnexpectedErrorOccured': return setUnexpectedError(parsed.data.message)
+				case 'popup_UnexpectedErrorOccured': return setUnexpectedError(parsed)
 				case 'popup_settingsUpdated': return updateHomePageSettings(parsed.data, true)
 				case 'popup_activeSigningAddressChanged': {
 					if (parsed.data.tabId !== currentTabId) return
@@ -292,6 +293,11 @@ export function App() {
 		await sendPopupMessageToBackgroundPage( { method: 'popup_openSettings' } )
 		return globalThis.close() // close extension popup, chrome closes it by default, but firefox does not
 	}
+	async function clearUnexpectedError() {
+		setUnexpectedError(undefined)
+		await sendPopupMessageToBackgroundPage( { method: 'popup_clearUnexpectedError' } )
+	}
+
 	return (
 		<main>
 			<Hint>
@@ -314,7 +320,7 @@ export function App() {
 							</div>
 						</nav>
 						
-						<UnexpectedError close = { () => { setUnexpectedError(undefined) } } message = { unexpectedError }/>
+						<UnexpectedError close = { clearUnexpectedError } unexpectedError = { unexpectedError }/>
 						<NetworkErrors rpcConnectionStatus = { rpcConnectionStatus }/>
 						<ProviderErrors tabState = { tabState }/>
 						<Home

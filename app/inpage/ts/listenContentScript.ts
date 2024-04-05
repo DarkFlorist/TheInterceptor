@@ -29,6 +29,7 @@ function listenContentScript(conectionName: string | undefined) {
 					// this error happens when the extension is refreshed and the page cannot reach The Interceptor anymore
 					return
 				}
+				if (error.message?.includes('User denied')) return // user denied signature
 			}
 			throw error
 		}
