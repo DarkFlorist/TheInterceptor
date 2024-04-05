@@ -4,7 +4,7 @@ import { CopyToClipboard } from './CopyToClipboard.js'
 import { JSX } from 'preact/jsx-runtime'
 import { AddressBookEntry, ActiveAddressEntry } from '../../types/addressBookTypes.js'
 import { Website } from '../../types/websiteAccessTypes.js'
-import SVGBlockie from './SVGBlockie.js'
+import { Blockie } from './SVGBlockie.js'
 import { ComponentChildren } from 'preact'
 
 export function getActiveAddressEntry(addressToFind: bigint, activeAddresses: readonly ActiveAddressEntry[]) {
@@ -34,7 +34,7 @@ export function AddressIcon(param: AddressIconParams) {
 	if (param.address !== undefined && param.logoUri === undefined) {
 		return (
 			<AddressIconFrame isBig={param.isBig}>
-				<SVGBlockie address = { param.address } style = {{ display: "block" }} />
+				< Blockie address = { param.address } style = {{ display: "block" }} />
 			</AddressIconFrame>
 		)
 	}

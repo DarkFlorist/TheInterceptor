@@ -87,7 +87,7 @@ export type SVGBlockieProps = {
 }
 
 // SVGBlockie component can be resized through CSS font size
-export default function SVGBlockie({ address, style }: SVGBlockieProps) {
+export function Blockie({ address, style }: SVGBlockieProps) {
 	const pixelDensity = 8
 	const seed = addressString(address)
 	const { imageData, color, spotcolor, bgcolor } = useMemo(() => generateIdenticon({ seed, size: pixelDensity }), [address])

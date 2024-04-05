@@ -3,13 +3,13 @@ import { getTokenAmountsWorth } from '../../simulation/priceEstimator.js'
 import { abs, bigintToDecimalString, bigintToRoundedPrettyDecimalString, checksummedAddress } from '../../utils/bigint.js'
 import { TokenPriceEstimate } from '../../types/visualizer-types.js'
 import { CopyToClipboard } from './CopyToClipboard.js'
-import { Blockie } from './PreactBlocky.js'
 import { JSX } from 'preact/jsx-runtime'
 import { useEffect } from 'preact/hooks'
 import { Erc1155Entry, Erc20TokenEntry, Erc721Entry } from '../../types/addressBookTypes.js'
 import { RenameAddressCallBack } from '../../types/user-interface-types.js'
 import { BIG_FONT_SIZE, ETHEREUM_COIN_ICON, ETHEREUM_LOGS_LOGGER_ADDRESS, NORMAL_FONT_SIZE } from '../../utils/constants.js'
 import { RpcNetwork } from '../../types/rpc.js'
+import { Blockie } from './SVGBlockie.js'
 
 type EtherParams = {
 	amount: bigint
@@ -159,11 +159,7 @@ export function TokenSymbol(param: TokenSymbolParams) {
 				</> : <>
 					<CopyToClipboard content = { tokenString } copyMessage = 'Token address copied!' >
 						{ param.tokenEntry.logoUri === undefined ?
-							<Blockie
-								address = { useSignal(param.tokenEntry.address) }
-								scale = { useSignal(3) }
-								style = { { 'vertical-align': 'baseline', borderRadius: '50%' } }
-							/>
+							<Blockie address = { param.tokenEntry.address } style = {{ display: 'block' }} />
 						:
 							<img class = 'noselect nopointer' style = { { 'max-height': '25px', width: '25px', 'min-width': '25px', 'vertical-align': 'middle' } } src = { param.tokenEntry.logoUri }/>
 						}
