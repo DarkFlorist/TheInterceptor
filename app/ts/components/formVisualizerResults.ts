@@ -56,8 +56,7 @@ export function formSimulatedAndVisualizedTransaction(simState: SimulationState,
 			return otherFields
 		}
 		const otherFields = removeFromAndToFromSignedTransaction()
-		const availableAbis = addressBookEntries.map((entry) => 'abi' in entry && entry.abi !== undefined ? new Interface(entry.abi) : undefined).filter((abiOrUndefined): abiOrUndefined is Interface => abiOrUndefined === undefined)
-		
+		const availableAbis = addressBookEntries.map((entry) => 'abi' in entry && entry.abi !== undefined ? new Interface(entry.abi) : undefined).filter((abiOrUndefined): abiOrUndefined is Interface => abiOrUndefined !== undefined)
 		return {
 			transaction: { from, to, rpcNetwork: simState.rpcNetwork, ...otherFields },
 			...(to !== undefined ? { to } : {}),
