@@ -36,8 +36,7 @@
 				"noDoubleEquals": "warn",
 				"noConsoleLog": "warn",
 				"noExplicitAny": "warn",
-				"noAssignInExpressions": "warn",
-				"useAwait": "warn"
+				"noAssignInExpressions": "warn"
 			},
 			"nursery": {
 				"noUselessTernary": "warn"

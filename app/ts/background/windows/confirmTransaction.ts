@@ -165,7 +165,7 @@ export const formSendRawTransaction = async(ethereumClientService: EthereumClien
 	}
 }
 
-export const formEthSendTransaction = async(ethereumClientService: EthereumClientService, activeAddress: bigint | undefined, simulationMode = true, website: Website, sendTransactionParams: SendTransactionParams, created: Date, transactionIdentifier: EthereumQuantity): Promise<WebsiteCreatedEthereumUnsignedTransactionOrFailed> => {
+export const formEthSendTransaction = async(ethereumClientService: EthereumClientService, activeAddress: bigint | undefined, website: Website, sendTransactionParams: SendTransactionParams, created: Date, transactionIdentifier: EthereumQuantity, simulationMode = true): Promise<WebsiteCreatedEthereumUnsignedTransactionOrFailed> => {
 	const simulationState = simulationMode ? (await getSimulationResults()).simulationState : undefined
 	const parentBlockPromise = ethereumClientService.getBlock() // we are getting the real block here, as we are not interested in the current block where this is going to be included, but the parent
 	const transactionDetails = sendTransactionParams.params[0]
@@ -293,7 +293,7 @@ export async function openConfirmTransactionDialogForTransaction(
 	const uniqueRequestIdentifierString = getUniqueRequestIdentifierString(request.uniqueRequestIdentifier)
 	const transactionIdentifier = EthereumQuantity.parse(keccak256(toUtf8Bytes(uniqueRequestIdentifierString)))
 	const created = new Date()
-	const transactionToSimulatePromise = transactionParams.method === 'eth_sendTransaction' ? formEthSendTransaction(ethereumClientService, activeAddress, simulationMode, website, transactionParams, created, transactionIdentifier) : formSendRawTransaction(ethereumClientService, transactionParams, website, created, transactionIdentifier)
+	const transactionToSimulatePromise = transactionParams.method === 'eth_sendTransaction' ? formEthSendTransaction(ethereumClientService, activeAddress, website, transactionParams, created, transactionIdentifier, simulationMode) : formSendRawTransaction(ethereumClientService, transactionParams, website, created, transactionIdentifier)
 	if (activeAddress === undefined) return { type: 'result' as const, ...ERROR_INTERCEPTOR_NO_ACTIVE_ADDRESS }
 	await pendingConfirmationSemaphore.execute(async () => {
 		const openedDialog = await getPendingTransactionWindow(simulator, websiteTabConnections)

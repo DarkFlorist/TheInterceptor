@@ -210,7 +210,7 @@ async function updateTabConnections(simulator: Simulator, websiteTabConnections:
 	}
 }
 
-export function updateWebsiteApprovalAccesses(simulator: Simulator, websiteTabConnections: WebsiteTabConnections, promptForAccessesIfNeeded = true, settings: Settings) {
+export function updateWebsiteApprovalAccesses(simulator: Simulator, websiteTabConnections: WebsiteTabConnections, settings: Settings, promptForAccessesIfNeeded = true) {
 	// update port connections and disconnect from ports that should not have access anymore
 	for (const [_tab, tabConnection] of websiteTabConnections.entries() ) {
 		updateTabConnections(simulator, websiteTabConnections, tabConnection, promptForAccessesIfNeeded, settings)
