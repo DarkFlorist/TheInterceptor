@@ -3,29 +3,30 @@ export const AbbreviatedValue = ({ floatValue }: { floatValue: number }) => {
 		{ value: 1e9, symbol: 'G' },
 		{ value: 1e6, symbol: 'M' },
 		{ value: 1e3, symbol: 'k' },
-	]
+	];
+
+	// Check if the value is negative
+	const isNegative = floatValue < 0;
+	// Convert the value to positive for abbreviation logic
+	const valueForAbbreviation = isNegative ? -floatValue : floatValue;
 
 	for (const prefix of prefixes) {
-		if (floatValue >= prefix.value) {
-			return <>{toFixedLengthDigits(floatValue / prefix.value) + prefix.symbol}</>
+		if (valueForAbbreviation >= prefix.value) {
+			// Apply the abbreviation and add a negative sign if the original value was negative
+			return <>{isNegative ? '-' : ''}{toFixedLengthDigits(valueForAbbreviation / prefix.value) + prefix.symbol}</>
 		}
 	}
 
 	// if value is a fraction of 1
-	if (floatValue && floatValue % 1 === floatValue) {
-		const [coefficient, exponent] = floatValue.toExponential().split('e')
+	if (valueForAbbreviation && valueForAbbreviation % 1 === valueForAbbreviation) {
+		const [coefficient, exponent] = valueForAbbreviation.toExponential().split('e')
 		const leadingZerosCount = Math.abs(Number.parseInt(exponent)) - 1
 		const significantDigits = coefficient.replace('.', '')
-		return (
-			<>
-				0.
-				<small>{'0'.repeat(leadingZerosCount)}</small>
-				{significantDigits}
-			</>
-		)
+		return <>{isNegative ? '-' : ''}0.<small>{'0'.repeat(leadingZerosCount)}</small>{significantDigits}</>
 	}
 
-	return <>{toFixedLengthDigits(floatValue)}</>
+	// Return the original value with a negative sign if it was negative
+	return <>{isNegative ? '-' : ''}{toFixedLengthDigits(valueForAbbreviation)}</>
 }
 
 function toFixedLengthDigits(num: number, max = 5) {
