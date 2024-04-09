@@ -34,7 +34,7 @@ export function AddressIcon(param: AddressIconParams) {
 	if (param.address !== undefined && param.logoUri === undefined) {
 		return (
 			<AddressIconFrame isBig={param.isBig}>
-				< Blockie address = { param.address } style = {{ display: "block" }} />
+				< Blockie address = { param.address } style = {{ display: 'block' }} />
 			</AddressIconFrame>
 		)
 	}
@@ -42,7 +42,7 @@ export function AddressIcon(param: AddressIconParams) {
 	if (param.logoUri !== undefined) {
 		return (
 			<AddressIconFrame isBig={param.isBig}>
-				<img src = { param.logoUri } style = 'width: 100%; max-height: 100%'/>
+				<img src = { param.logoUri } style = {{ display: 'block', width: '1em', height: '1em' }}/>
 			</AddressIconFrame>
 		)
 	}
