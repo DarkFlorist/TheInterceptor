@@ -20,6 +20,7 @@ import { GovernanceVoteVisualizer } from './customExplainers/GovernanceVoteVisua
 import { EnrichedSolidityTypeComponentWithAddressBook } from '../subcomponents/solidityType.js'
 import { getAddressBookEntryOrAFiller } from '../ui-utils.js'
 import { TransactionOrMessageIdentifier } from '../../types/interceptor-messages.js'
+import { RpcNetwork } from '../../types/rpc.js'
 
 function isPositiveEvent(visResult: TokenVisualizerResultWithMetadata, ourAddressInReferenceFrame: bigint) {
 	if (visResult.type === 'ERC20') {
@@ -49,22 +50,18 @@ export function QuarantineReasons({ quarantineReasons }: { quarantineReasons: re
 
 export type TransactionImportanceBlockParams = {
 	simTx: SimulatedAndVisualizedTransaction
-	simulationAndVisualisationResults: SimulationAndVisualisationResults
+	activeAddress: bigint
 	renameAddressCallBack: RenameAddressCallBack
 	addressMetadata: readonly AddressBookEntry[]
+	rpcNetwork: RpcNetwork
 }
 
 // showcases the most important things the transaction does
 export function TransactionImportanceBlock(param: TransactionImportanceBlockParams) {
-	if (param.simTx.statusCode === 'failure') return <ErrorComponent text = { `The transaction fails with an error '${ param.simTx.error.message }'` } />
+	if (param.simTx.statusCode === 'failure') return <ErrorComponent text = { `The transaction fails with an error '${ param.simTx.error.decodedErrorMessage }'` } />
 	const transactionIdentification = identifyTransaction(param.simTx)
 	switch (transactionIdentification.type) {
-		case 'SimpleTokenTransfer': {
-			return <SimpleTokenTransferVisualisation
-				simTx = { transactionIdentification.identifiedTransaction }
-				renameAddressCallBack = { param.renameAddressCallBack }
-			/>
-		}
+		case 'SimpleTokenTransfer': return <SimpleTokenTransferVisualisation simTx = { transactionIdentification.identifiedTransaction } renameAddressCallBack = { param.renameAddressCallBack }/>
 		case 'SimpleTokenApproval': {
 			const approval = transactionIdentification.identifiedTransaction.tokenResults[0]
 			if (approval === undefined) throw new Error('approval was undefined')
@@ -78,11 +75,7 @@ export function TransactionImportanceBlock(param: TransactionImportanceBlockPara
 		case 'Swap': {
 			const identifiedSwap = identifySwap(param.simTx)
 			if (identifiedSwap === undefined) throw new Error('Not a swap!')
-			return <SwapVisualization
-				identifiedSwap = { identifiedSwap }
-				rpcNetwork = { param.simulationAndVisualisationResults.rpcNetwork }
-				renameAddressCallBack = { param.renameAddressCallBack }
-			/>
+			return <SwapVisualization identifiedSwap = { identifiedSwap } renameAddressCallBack = { param.renameAddressCallBack } />
 		}
 		case 'MakeYouRichTransaction': return makeYouRichTransaction(param)
 		case 'ContractDeployment':
@@ -145,7 +138,7 @@ export function Transaction(param: TransactionVisualizationParameters) {
 			/>
 			<div class = 'card-content' style = 'padding-bottom: 5px;'>
 				<div class = 'container'>
-					<TransactionImportanceBlock { ...param } addressMetadata = { param.addressMetaData }/>
+					<TransactionImportanceBlock { ...param } rpcNetwork = { param.simulationAndVisualisationResults.rpcNetwork } addressMetadata = { param.addressMetaData }/>
 				</div>
 				<QuarantineReasons quarantineReasons = { param.simTx.quarantineReasons }/>
 				{ identifiedTransaction === 'MakeYouRichTransaction' ? <></> : <>

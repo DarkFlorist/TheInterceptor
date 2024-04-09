@@ -95,7 +95,9 @@ const TransactionNames = (param: TransactionNamesParams) => {
 		const currentPendingTransactionOrSignableMessage = param.currentPendingTransaction
 		if (currentPendingTransactionOrSignableMessage === undefined) return 'Loading...'
 		if (currentPendingTransactionOrSignableMessage.transactionOrMessageCreationStatus !== 'Simulated') return currentPendingTransactionOrSignableMessage.transactionOrMessageCreationStatus
+		currentPendingTransactionOrSignableMessage.transactionOrMessageCreationStatus
 		if (currentPendingTransactionOrSignableMessage.type === 'SignableMessage') return identifySignature(currentPendingTransactionOrSignableMessage.visualizedPersonalSignRequest).title
+		if (currentPendingTransactionOrSignableMessage.simulationResults.statusCode === 'failed') return 'Failing transaction'
 		const lastTx = currentPendingTransactionOrSignableMessage.simulationResults.statusCode !== 'success' ? undefined : getResultsForTransaction(currentPendingTransactionOrSignableMessage.simulationResults.data.simulatedAndVisualizedTransactions, currentPendingTransactionOrSignableMessage.transactionIdentifier)
 		if (lastTx === undefined) return 'Could not find transaction...'
 		return identifyTransaction(lastTx).title
@@ -130,7 +132,55 @@ type TransactionCardParams = {
 
 function TransactionCard(param: TransactionCardParams) {
 	const simulationResults = param.currentPendingTransaction.simulationResults
-	if (simulationResults.statusCode === 'failed') return <p class = 'paragraph'> failed to simulate</p>
+	const getErrorMesssage = () => {
+		if (simulationResults.statusCode === 'failed') return simulationResults.data.error.decodedErrorMessage
+		if (!simulationResults.data.transactionToSimulate.success) return simulationResults.data.transactionToSimulate.error.message
+		return 'Unknown error'
+	}
+	if (simulationResults.statusCode === 'failed' || simulationResults.data.transactionToSimulate.success === false) {
+		return <>
+			<div class = 'card' style = { `top: ${ param.numberOfUnderTransactions * -HALF_HEADER_HEIGHT }px` }>
+				<header class = 'card-header'>
+					<div class = 'card-header-icon unset-cursor'>
+						<span class = 'icon'>
+							<img src = { '../img/error-icon.svg' } />
+						</span>
+					</div>
+					<p class = 'card-header-title' style = 'white-space: nowrap;'>
+						{ simulationResults.data.transactionToSimulate.success ? 'Gas estimation error' : 'Execution error' }
+					</p>
+					<p class = 'card-header-icon unsetcursor' style = { 'margin-left: auto; margin-right: 0; overflow: hidden;' }>
+						<WebsiteOriginText { ...param.currentPendingTransaction.transactionToSimulate.website } />
+					</p>
+				</header>
+			
+				<div class = 'card-content' style = 'padding-bottom: 5px;'>
+					<div class = 'container'>
+						<ErrorComponent text = { `The transaction fails with an error '${ getErrorMesssage() }'` } />
+					</div>
+					
+					<div class = 'textbox'>
+						<p class = 'paragraph' style = 'color: var(--subtitle-text-color)'>{ stringifyJSONWithBigInts(serialize(OriginalSendRequestParameters, param.currentPendingTransaction.originalRequestParameters), 4) }</p>
+					</div>
+					<span class = 'log-table' style = 'margin-top: 10px; grid-template-columns: 33.33% 33.33% 33.33%;'>
+						<div class = 'log-cell'>
+						</div>
+						<div class = 'log-cell' style = 'justify-content: center;'>
+							<TransactionCreated created = { param.currentPendingTransaction.created } />
+						</div>
+						<div class = 'log-cell' style = 'justify-content: right;'>
+							<SimulatedInBlockNumber
+								simulationBlockNumber = { simulationResults.data.simulationState.blockNumber }
+								currentBlockNumber = { param.currentBlockNumber }
+								simulationConductedTimestamp = { simulationResults.data.simulationState.simulationConductedTimestamp }
+								rpcConnectionStatus = { param.rpcConnectionStatus }
+							/>
+						</div>
+					</span>
+				</div>
+			</div>
+		</>
+	}
 	const simulationAndVisualisationResults = {
 		blockNumber: simulationResults.data.simulationState.blockNumber,
 		blockTimestamp: simulationResults.data.simulationState.blockTimestamp,
@@ -144,57 +194,8 @@ function TransactionCard(param: TransactionCardParams) {
 		namedTokenIds: simulationResults.data.namedTokenIds,
 	}
 
-	const simTx = getResultsForTransaction(simulationAndVisualisationResults.simulatedAndVisualizedTransactions, param.currentPendingTransaction.transactionIdentifier)
-	if (simTx === undefined) {
-		return <>
-			<div class = 'card' style = { `top: ${ param.numberOfUnderTransactions * -HALF_HEADER_HEIGHT }px` }>
-				<header class = 'card-header'>
-					<div class = 'card-header-icon unset-cursor'>
-						<span class = 'icon'>
-							<img src = { '../img/error-icon.svg' } />
-						</span>
-					</div>
-					<p class = 'card-header-title' style = 'white-space: nowrap;'>
-						{ 'Gas estimation error' }
-					</p>
-					<p class = 'card-header-icon unsetcursor' style = { 'margin-left: auto; margin-right: 0; overflow: hidden;' }>
-						<WebsiteOriginText { ...param.currentPendingTransaction.transactionToSimulate.website } />
-					</p>
-				</header>
-			
-				<div class = 'card-content' style = 'padding-bottom: 5px;'>
-					<div class = 'container'>
-						{ param.currentPendingTransaction.transactionOrMessageCreationStatus === 'FailedToSimulate' ? <>
-							<DinoSaysNotification
-								text = { `Hey! We were unable to calculate gas limit for this transaction. ${ param.currentPendingTransaction.transactionToSimulate.error.message }. data: ${ param.currentPendingTransaction.transactionToSimulate.error.data }` }
-							/>
-						</>
-						: <DinoSaysNotification text = { 'Unkown error occured with this transaction' } /> }
-					</div>
-					
-					<div class = 'textbox'>
-						<p class = 'paragraph' style = 'color: var(--subtitle-text-color)'>{ stringifyJSONWithBigInts(serialize(OriginalSendRequestParameters, param.currentPendingTransaction.originalRequestParameters), 4) }</p>
-					</div>
-
-					<span class = 'log-table' style = 'margin-top: 10px; grid-template-columns: 33.33% 33.33% 33.33%;'>
-						<div class = 'log-cell'>
-						</div>
-						<div class = 'log-cell' style = 'justify-content: center;'>
-							<TransactionCreated created = { param.currentPendingTransaction.created } />
-						</div>
-						<div class = 'log-cell' style = 'justify-content: right;'>
-							<SimulatedInBlockNumber
-								simulationBlockNumber = { simulationAndVisualisationResults.blockNumber }
-								currentBlockNumber = { param.currentBlockNumber }
-								simulationConductedTimestamp = { simulationAndVisualisationResults.simulationConductedTimestamp }
-								rpcConnectionStatus = { param.rpcConnectionStatus }
-							/>
-						</div>
-					</span>
-				</div>
-			</div>
-		</>
-	}
+	const simTx = getResultsForTransaction(simulationResults.data.simulatedAndVisualizedTransactions, param.currentPendingTransaction.transactionIdentifier)
+	if (simTx === undefined) return <p> Unable to find simulation results for the transaction</p>
 	return <>
 		<div class = 'card' style = { `top: ${ param.numberOfUnderTransactions * -HALF_HEADER_HEIGHT }px` }>
 			<TransactionHeader simTx = { simTx } />
@@ -202,7 +203,8 @@ function TransactionCard(param: TransactionCardParams) {
 				<div class = 'container'>
 					<TransactionImportanceBlock
 						simTx = { simTx }
-						simulationAndVisualisationResults = { simulationAndVisualisationResults }
+						activeAddress = { simulationAndVisualisationResults.activeAddress }
+						rpcNetwork = { simulationAndVisualisationResults.rpcNetwork }
 						renameAddressCallBack = { param.renameAddressCallBack }
 						addressMetadata = { simulationAndVisualisationResults.addressBookEntries }
 					/>
@@ -313,21 +315,6 @@ const WebsiteErrors = ({ website, websiteSocket, simulationMode }: NetworkErrorP
 	return <ErrorComponent warning = { true } text = { <> { message.message } <Link url = { message.suggestedAlternative } text = { 'Suggested alternative' } websiteSocket = { websiteSocket } /> </> }/>
 }
 
-type LoadingParams = {
-	loadingText: string
-	unexpectedErrorMessage: string | undefined
-	closeUnexpectedError: () => void
-	rpcConnectionStatus: RpcConnectionStatus
-}
-
-function Loading({ loadingText, unexpectedErrorMessage, closeUnexpectedError, rpcConnectionStatus }: LoadingParams) {
-	return <>
-		<UnexpectedError close = { closeUnexpectedError } message = { unexpectedErrorMessage }/>
-		<CenterToPageTextSpinner text = { loadingText }/>
-		<NetworkErrors rpcConnectionStatus = { rpcConnectionStatus }/>
-	</>
-}
-
 export function ConfirmTransaction() {
 	const [currentPendingTransactionOrSignableMessage, setCurrentPendingTransactionOrSignableMessage] = useState<PendingTransactionOrSignableMessage | undefined>(undefined)
 	const [pendingTransactionsAndSignableMessages, setPendingTransactionsAndSignableMessages] = useState<readonly PendingTransactionOrSignableMessage[]>([])
@@ -346,7 +333,7 @@ export function ConfirmTransaction() {
 		const firstMessage = message.data.pendingTransactionAndSignableMessages[0]
 		if (firstMessage === undefined) throw new Error('message data was undefined')
 		setCurrentPendingTransactionOrSignableMessage(firstMessage)
-		if (firstMessage.type === 'Transaction' && firstMessage.transactionOrMessageCreationStatus === 'Simulated' && firstMessage.simulationResults !== undefined && firstMessage.simulationResults.statusCode === 'success' && (currentBlockNumber === undefined || firstMessage.simulationResults.data.simulationState.blockNumber > currentBlockNumber)) {
+		if (firstMessage.type === 'Transaction' && (firstMessage.transactionOrMessageCreationStatus === 'Simulated' || firstMessage.transactionOrMessageCreationStatus === 'FailedToSimulate') && firstMessage.simulationResults !== undefined && firstMessage.simulationResults.statusCode === 'success' && (currentBlockNumber === undefined || firstMessage.simulationResults.data.simulationState.blockNumber > currentBlockNumber)) {
 			setCurrentBlockNumber(firstMessage.simulationResults.data.simulationState.blockNumber)
 		}
 	}
@@ -536,14 +523,12 @@ export function ConfirmTransaction() {
 						}
 					</div>
 					<div class = 'block popup-block popup-block-scroll' style = 'padding: 0px'>
-						<div style = 'position: sticky; top: 0; z-index:1'>
-							<UnexpectedError close = { () => { setUnexpectedError(undefined) } } message = { unexpectedError }/>
-							<NetworkErrors rpcConnectionStatus = { rpcConnectionStatus }/>
-							{ currentPendingTransactionOrSignableMessage === undefined ? <></> : <>
-								<WebsiteErrors website = { currentPendingTransactionOrSignableMessage.website } websiteSocket = { currentPendingTransactionOrSignableMessage.uniqueRequestIdentifier.requestSocket } simulationMode = { currentPendingTransactionOrSignableMessage.simulationMode }/>
-							</> }
-						</div>
-						<Loading loadingText = { getLoadingText(currentPendingTransactionOrSignableMessage) } unexpectedErrorMessage = { unexpectedError } closeUnexpectedError = { () => { setUnexpectedError(undefined) } } rpcConnectionStatus = { rpcConnectionStatus } />
+						<UnexpectedError close = { () => { setUnexpectedError(undefined) } } message = { unexpectedError }/>
+						<NetworkErrors rpcConnectionStatus = { rpcConnectionStatus }/>
+						{ currentPendingTransactionOrSignableMessage === undefined ? <></> : <>
+							<WebsiteErrors website = { currentPendingTransactionOrSignableMessage.website } websiteSocket = { currentPendingTransactionOrSignableMessage.uniqueRequestIdentifier.requestSocket } simulationMode = { currentPendingTransactionOrSignableMessage.simulationMode }/>
+						</> }
+						<CenterToPageTextSpinner text = { getLoadingText(currentPendingTransactionOrSignableMessage)  }/>
 					</div>
 				</Hint>
 			</main>

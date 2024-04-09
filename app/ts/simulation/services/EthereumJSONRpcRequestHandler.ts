@@ -66,12 +66,7 @@ export class EthereumJSONRpcRequestHandler {
 			throw new FetchResponseError(responseObject.response, requestId)
 		}
 		const jsonRpcResponse = JsonRpcResponse.parse(responseObject.response)
-		if ('error' in jsonRpcResponse) {
-			console.error('RPC response contained errors')
-			// biome-ignore lint/suspicious/noConsoleLog: <Used for support debugging>
-			console.log({ rpcRequest, responseObject })
-			throw new JsonRpcResponseError(jsonRpcResponse)
-		}
+		if ('error' in jsonRpcResponse) throw new JsonRpcResponseError(jsonRpcResponse)
 		return jsonRpcResponse.result
 	}
 }

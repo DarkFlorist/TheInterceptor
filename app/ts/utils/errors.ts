@@ -4,7 +4,6 @@ import { JsonRpcErrorResponse } from '../types/JsonRpc-types.js'
 class ErrorWithData extends Error {
 	public constructor(message: string, public data: unknown) {
 		super(message)
-		Object.setPrototypeOf(this, ErrorWithData)
 	}
 }
 
