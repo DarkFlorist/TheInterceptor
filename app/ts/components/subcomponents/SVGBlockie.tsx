@@ -1,42 +1,45 @@
 import { useMemo } from 'preact/hooks'
-import { addressString } from '../../utils/bigint.js';
-import { JSX } from 'preact/jsx-runtime';
+import { JSX } from 'preact/jsx-runtime'
+import { addressString } from '../../utils/bigint.js'
 
-function generateIdenticon(options: { seed: string; size?: number }) {
+function generateIdenticon(options: { address: bigint; size?: number }) {
 	// NOTE -- Majority of this code is referenced from: https://github.com/alexvandesande/blockies
 	// Mostly to ensure congruence to Ethereum Mist's Identicons
 
 	// The random number is a js implementation of the Xorshift PRNG
-	const randseed = new Array(4) // Xorshift: [x, y, z, w] 32 bit values
+	const randseed: number[] = new Array(4) // Xorshift: [x, y, z, w] 32 bit values
 
 	function seedrand(seed: string) {
 		for (let i = 0; i < randseed.length; i++) {
 			randseed[i] = 0
 		}
 		for (let i = 0; i < seed.length; i++) {
-			randseed[i % 4] = (randseed[i % 4] << 5) - randseed[i % 4] + seed.charCodeAt(i)
+			const r = randseed[i % 4]
+			if (r === undefined) throw new Error('Buffer overflow')
+			randseed[i % 4] = ((r << 5) - r) + seed.charCodeAt(i)
 		}
 	}
 
 	function rand() {
 		// based on Java's String.hashCode(), expanded to 4 32bit values
+		if (randseed[0] === undefined || randseed[1] === undefined || randseed[2] === undefined || randseed[3] === undefined) throw new Error('Buffer overflow')
 		const t = randseed[0] ^ (randseed[0] << 11)
 
 		randseed[0] = randseed[1]
 		randseed[1] = randseed[2]
 		randseed[2] = randseed[3]
-		randseed[3] = randseed[3] ^ (randseed[3] >> 19) ^ t ^ (t >> 8)
+		randseed[3] = (randseed[3] ^ (randseed[3] >> 19) ^ t ^ (t >> 8))
 
-		return (randseed[3] >>> 0) / ((1 << 31) >>> 0)
+		return (randseed[3]>>>0) / ((1 << 31)>>>0)
 	}
 
 	function createColor() {
 		// saturation is the whole color spectrum
 		const h = Math.floor(rand() * 360)
 		// saturation goes from 40 to 100, it avoids greyish colors
-		const s = rand() * 60 + 40 + '%'
+		const s = ((rand() * 60) + 40) + '%'
 		// lightness can be anything from 0 to 100, but probabilities are a bell curve around 50%
-		const l = (rand() + rand() + rand() + rand()) * 25 + '%'
+		const l = ((rand()+rand()+rand()+rand()) * 25) + '%'
 
 		const color = 'hsl(' + h + ',' + s + ',' + l + ')'
 		return color
@@ -62,14 +65,16 @@ function generateIdenticon(options: { seed: string; size?: number }) {
 			row = row.concat(r)
 
 			for (let i = 0; i < row.length; i++) {
-				data.push(row[i])
+				const rowAtIndex = row[i]
+				if (rowAtIndex === undefined) throw new Error('row[i] was undefined')
+				data.push(rowAtIndex)
 			}
 		}
 
 		return data
 	}
 
-	const seed = options.seed.toLocaleLowerCase()
+	const seed = addressString(options.address)
 
 	seedrand(seed)
 
@@ -89,15 +94,14 @@ export type SVGBlockieProps = {
 // SVGBlockie component can be resized through CSS font size
 export function Blockie({ address, style }: SVGBlockieProps) {
 	const pixelDensity = 8
-	const seed = addressString(address)
-	const { imageData, color, spotcolor, bgcolor } = useMemo(() => generateIdenticon({ seed, size: pixelDensity }), [address])
+	const { imageData, color, spotcolor, bgcolor } = useMemo(() => generateIdenticon({ address, size: pixelDensity }), [address])
 	return (
-		<svg width='1em' height='1em' viewBox='0 0 64 64' xmlns='http://www.w3.org/2000/svg' {...( style ? { style } : {})}>
+		<svg width = '1em' height = '1em' viewBox = '0 0 64 64' xmlns = 'http://www.w3.org/2000/svg' {...( style ? { style } : {})}>
 			{imageData.map((data, index) => {
 				const fill = data === 0 ? bgcolor : data === 1 ? color : spotcolor
 				const pixelSize = 64 / pixelDensity
 
-				return <rect width={pixelSize} height={pixelSize} x={((index % pixelDensity) * 64) / pixelDensity} y={Math.floor(index / pixelDensity) * pixelSize} fill={fill} />
+				return <rect width = {pixelSize} height = {pixelSize} x = {((index % pixelDensity) * 64) / pixelDensity} y = {Math.floor(index / pixelDensity) * pixelSize} fill = {fill} />
 			})}
 		</svg>
 	)
