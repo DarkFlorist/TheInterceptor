@@ -2,7 +2,6 @@
 import * as funtypes from 'funtypes'
 import { EthereumAddress, EthereumBytes32, EthereumData, EthereumInput, EthereumQuantity, EthereumSignedTransaction, EthereumTimestamp, EthereumUnsignedTransaction, OptionalEthereumAddress } from './wire-types.js'
 import { RenameAddressCallBack } from './user-interface-types.js'
-import { ERROR_INTERCEPTOR_GAS_ESTIMATION_FAILED } from '../utils/constants.js'
 import { EthNewFilter, EthSubscribeParams, OriginalSendRequestParameters, SendRawTransactionParams, SendTransactionParams } from './JsonRpc-types.js'
 import { InterceptedRequest, WebsiteSocket } from '../utils/requests.js'
 import { AddressBookEntry, Erc721Entry, Erc20TokenEntry, Erc1155Entry, IncompleteAddressBookEntry } from './addressBookTypes.js'
@@ -195,6 +194,7 @@ export const SimulatedAndVisualizedTransactionBase = funtypes.Intersect(
 			error: funtypes.ReadonlyObject({
 				code: funtypes.Number,
 				message: funtypes.String,
+				decodedErrorMessage: funtypes.String,
 			})
 		})
 	)
@@ -254,7 +254,7 @@ export const SimulatedTransaction = funtypes.ReadonlyObject({
 export type EstimateGasError = funtypes.Static<typeof EstimateGasError>
 export const EstimateGasError = funtypes.ReadonlyObject({
 	error: funtypes.ReadonlyObject({
-		code: funtypes.Literal(ERROR_INTERCEPTOR_GAS_ESTIMATION_FAILED),
+		code: funtypes.Number,
 		message: funtypes.String,
 		data: funtypes.String
 	})
@@ -281,10 +281,7 @@ export const FailedToCreateWebsiteCreatedEthereumUnsignedTransaction = funtypes.
 })
 
 export type WebsiteCreatedEthereumUnsignedTransactionOrFailed = funtypes.Static<typeof WebsiteCreatedEthereumUnsignedTransactionOrFailed>
-export const WebsiteCreatedEthereumUnsignedTransactionOrFailed = funtypes.Union(
-	WebsiteCreatedEthereumUnsignedTransaction,
-	FailedToCreateWebsiteCreatedEthereumUnsignedTransaction
-)
+export const WebsiteCreatedEthereumUnsignedTransactionOrFailed = funtypes.Union(WebsiteCreatedEthereumUnsignedTransaction, FailedToCreateWebsiteCreatedEthereumUnsignedTransaction)
 
 export type SignedMessageTransaction = funtypes.Static<typeof SignedMessageTransaction>
 export const SignedMessageTransaction = funtypes.ReadonlyObject({

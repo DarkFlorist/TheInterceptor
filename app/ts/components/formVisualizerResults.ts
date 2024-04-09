@@ -1,6 +1,8 @@
-import { addressString } from '../utils/bigint.js'
+import { addressString, dataStringWith0xStart } from '../utils/bigint.js'
 import { EnrichedEthereumEvent, GeneralEnrichedEthereumEvents, NamedTokenId, ProtectorResults, SimulatedAndVisualizedTransaction, SimulationState } from '../types/visualizer-types.js'
 import { AddressBookEntry } from '../types/addressBookTypes.js'
+import { Interface } from 'ethers'
+import { decodeEthereumError } from '../utils/errorDecoding.js'
 
 export function formSimulatedAndVisualizedTransaction(simState: SimulationState, eventsForEachTransaction: readonly GeneralEnrichedEthereumEvents[], protectorResults: readonly ProtectorResults[], addressBookEntries: readonly AddressBookEntry[], namedTokenIds: readonly NamedTokenId[]): readonly SimulatedAndVisualizedTransaction[] {
 	const addressMetaData = new Map(addressBookEntries.map((x) => [addressString(x.address), x]))
@@ -50,10 +52,11 @@ export function formSimulatedAndVisualizedTransaction(simState: SimulationState,
 		}
 		
 		const removeFromAndToFromSignedTransaction = () => {
-			const { from, to, ...otherFields} = simulatedTx.signedTransaction
+			const { from, to, ...otherFields } = simulatedTx.signedTransaction
 			return otherFields
 		}
 		const otherFields = removeFromAndToFromSignedTransaction()
+		const availableAbis = addressBookEntries.map((entry) => 'abi' in entry && entry.abi !== undefined ? new Interface(entry.abi) : undefined).filter((abiOrUndefined): abiOrUndefined is Interface => abiOrUndefined !== undefined)
 		return {
 			transaction: { from, to, rpcNetwork: simState.rpcNetwork, ...otherFields },
 			...(to !== undefined ? { to } : {}),
@@ -66,7 +69,10 @@ export function formSimulatedAndVisualizedTransaction(simState: SimulationState,
 			quarantineReasons: protectorResult.quarantineReasons,
 			...(simulatedTx.ethSimulateV1CallResult.status === 'failure'
 				? {
-					error: simulatedTx.ethSimulateV1CallResult.error,
+					error: {
+						...simulatedTx.ethSimulateV1CallResult.error,
+						decodedErrorMessage: decodeEthereumError(availableAbis, { ...simulatedTx.ethSimulateV1CallResult.error, data: dataStringWith0xStart(simulatedTx.ethSimulateV1CallResult.returnData)}).reason,
+					},
 					statusCode: simulatedTx.ethSimulateV1CallResult.status,
 				}
 				: {

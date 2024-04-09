@@ -1,6 +1,7 @@
+import { RpcNetwork } from '../../../types/rpc.js'
+import { SimulatedAndVisualizedTransaction } from '../../../types/visualizer-types.js'
 import { addressString } from '../../../utils/bigint.js'
 import { EtherAmount, EtherSymbol } from '../../subcomponents/coins.js'
-import { TransactionImportanceBlockParams } from '../Transactions.js'
 
 const transactionExplainers = new Map<string, [string, string]>([
 	['0', ['Airdropping you', '🚁']],
@@ -16,8 +17,14 @@ const transactionExplainers = new Map<string, [string, string]>([
 	['a', ['Aping some for you! ', '🐒']],
 ])
 
-export function makeYouRichTransaction(param: TransactionImportanceBlockParams) {
-	const lastLetterOfActiveAddress = addressString(param.simulationAndVisualisationResults.activeAddress).slice(-1)
+export type MakeYouRichTransactionParams = {
+	simTx: SimulatedAndVisualizedTransaction
+	activeAddress: bigint
+	rpcNetwork: RpcNetwork
+}
+
+export function makeYouRichTransaction(param: MakeYouRichTransactionParams) {
+	const lastLetterOfActiveAddress = addressString(param.activeAddress).slice(-1)
 	const explainer = transactionExplainers.get(lastLetterOfActiveAddress) || ['Receive', 'for fun and profit 🎉']
 	return (
 		<div class = 'content' style = 'display: inline-block;'>
@@ -29,7 +36,7 @@ export function makeYouRichTransaction(param: TransactionImportanceBlockParams) 
 					<EtherAmount amount = { param.simTx.transaction.value } fontSize = 'normal'/>
 				</div>
 				<div class = 'log-cell'>
-					<EtherSymbol rpcNetwork = { param.simulationAndVisualisationResults.rpcNetwork } fontSize = 'normal' />
+					<EtherSymbol rpcNetwork = { param.rpcNetwork } fontSize = 'normal' />
 				</div>
 				<div class = 'log-cell'>
 					<p class = 'ellipsis' style = {'color: var(--text-color); margin-bottom: 0px'}> &nbsp;{ explainer[1] } </p>

@@ -205,6 +205,8 @@ class InterceptorMessageListener {
 				requestId: pendingRequestId,
 			}, '*')
 			return await future
+		} catch(error) {
+			throw error
 		} finally {
 			this.outstandingRequests.delete(pendingRequestId)
 		}
