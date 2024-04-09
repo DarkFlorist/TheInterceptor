@@ -159,8 +159,8 @@ export function TokenSymbol(param: TokenSymbolParams) {
 				</> : <>
 					<CopyToClipboard content = { tokenString } copyMessage = 'Token address copied!' >
 						{ param.tokenEntry.logoUri === undefined ?
-							<Blockie address = { param.tokenEntry.address } style = {{ display: 'block' }} />
-						:
+							<Blockie address = { param.tokenEntry.address } style = { { display: 'block' } } />
+							:
 							<img class = 'noselect nopointer' style = { { 'max-height': '25px', width: '25px', 'min-width': '25px', 'vertical-align': 'middle' } } src = { param.tokenEntry.logoUri }/>
 						}
 					</CopyToClipboard>
@@ -196,7 +196,7 @@ export function TokenAmount(param: TokenAmountParams) {
 
 	if (!('decimals' in param.tokenEntry) || param.tokenEntry.decimals === undefined) {
 		return <>
-			<CopyToClipboard content = { `${ abs(param.amount) } (decimals unknown)`} copyMessage = 'Token amount copied!' >
+			<CopyToClipboard content = { `${ abs(param.amount) } (decimals unknown)` } copyMessage = 'Token amount copied!' >
 				<p class = 'noselect nopointer' style = { style }>{ `${ sign }${ abs(param.amount).toString() }` }&nbsp; </p>
 			</CopyToClipboard>
 		</>
@@ -245,7 +245,7 @@ export function TokenOrEthValue(param: TokenAmountParams | EtherAmountParams) {
 }
 
 function truncate(str: string, n: number){
-	return (str.length > n) ? `${str.slice(0, n-1)}…` : str;
+	return (str.length > n) ? `${str.slice(0, n-1)}…` : str
 }
 
 type AllApprovalParams = {
