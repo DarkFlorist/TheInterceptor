@@ -13,13 +13,14 @@ interface TokenDecimals {
 
 export class PriceEstimator {
 	private readonly ethereum
-	public constructor(ethereum: EthereumClientService) {
+	private readonly requestAbortController
+	public constructor(ethereum: EthereumClientService, requestAbortController: AbortController | undefined) {
 		this.ethereum = ethereum
+		this.requestAbortController = requestAbortController
 	}
 
 	public async estimateEthereumPricesForTokens(tokens: TokenDecimals[], quote?: TokenDecimals) : Promise<TokenPriceEstimate[]> {
 		if (tokens.length === 0) return []
-
 		const chainId = this.ethereum.getChainId()
 		const chainIdString = chainId.toString()
 		if (!(chainIdString in networkPriceSources)) return []
@@ -33,11 +34,7 @@ export class PriceEstimator {
 
 		for (const token of tokens) {
 			if (token.address === quoteToken.address) {
-				tokenPrices.push({
-					token,
-					quoteToken,
-					price: 10n ** quoteToken.decimals
-				})
+				tokenPrices.push({ token, quoteToken, price: 10n ** quoteToken.decimals })
 				continue
 			}
 
@@ -53,10 +50,8 @@ export class PriceEstimator {
 				value: 0n,
 				input: callData,
 			}
-
-			const multicallReturnData: { success: boolean, returnData: string }[] = IMulticall3.decodeFunctionResult('aggregate3', await this.ethereum.call(callTransaction, 'latest'))[0]
+			const multicallReturnData: { success: boolean, returnData: string }[] = IMulticall3.decodeFunctionResult('aggregate3', await this.ethereum.call(callTransaction, 'latest', this.requestAbortController))[0]
 			const prices = calculatePricesFromUniswapLikeReturnData(multicallReturnData, poolAddresses)
-
 			if (prices.length > 0) tokenPrices.push({
 				token,
 				quoteToken,
