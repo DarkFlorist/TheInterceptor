@@ -1,10 +1,13 @@
-export const AbbreviatedValue = ({ floatValue }: { floatValue: number }) => {
+import { formatUnits } from 'ethers'
+
+export const AbbreviatedValue = ({ amount, decimals = 18n }: { amount: bigint, decimals?: bigint }) => {
 	const prefixes = [
 		{ value: 1e9, symbol: 'G' },
 		{ value: 1e6, symbol: 'M' },
 		{ value: 1e3, symbol: 'k' },
 	];
 
+	const floatValue = Number(formatUnits(amount, decimals))
 	const sign = floatValue < 0 ? '-' : '';
 	const absoluteValue = Math.abs(floatValue)
 
@@ -20,7 +23,7 @@ export const AbbreviatedValue = ({ floatValue }: { floatValue: number }) => {
 		const [coefficient, exponent] = absoluteValue.toExponential().split('e')
 
 		// coefficient and exponent should always return string for absolute values but String.split thinks otherwise
-		if (!coefficient || !exponent) return floatValue
+		if (!coefficient || !exponent) return <>{floatValue}</>
 
 		const leadingZerosCount = Math.abs(Number.parseInt(exponent)) - 1
 		const significantDigits = coefficient.replace('.', '')
