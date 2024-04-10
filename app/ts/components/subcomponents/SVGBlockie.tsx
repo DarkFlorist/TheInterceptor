@@ -97,7 +97,7 @@ export function Blockie({ address, style }: SVGBlockieProps) {
 	const { imageData, color, spotcolor, bgcolor } = useMemo(() => generateIdenticon({ address, size: pixelDensity }), [address])
 	return (
 		<svg width = '1em' height = '1em' viewBox = '0 0 64 64' xmlns = 'http://www.w3.org/2000/svg' { ...( style ? { style } : {}) }>
-			{imageData.map((data, index) => {
+			{ imageData.map((data, index) => {
 				const fill = data === 0 ? bgcolor : data === 1 ? color : spotcolor
 				const pixelSize = 64 / pixelDensity
 
