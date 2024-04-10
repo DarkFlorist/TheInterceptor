@@ -26,7 +26,7 @@ type AddressIconParams = {
 }
 
 const AddressIconFrame = ({ isBig, children }: { isBig: boolean, children?: ComponentChildren }) => {
-	const cssProperties:JSX.CSSProperties = { backgroundColor: 'var(--unimportant-text-color)', fontSize: isBig ? '2.5em' : '1.5em' }
+	const cssProperties: JSX.CSSProperties = { backgroundColor: 'var(--unimportant-text-color)', fontSize: isBig ? '2.5em' : '1.5em' }
 	return <div style = { cssProperties } class = 'noselect nopointer'>{ children }</div>
 }
 
