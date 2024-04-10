@@ -30,7 +30,7 @@ function generateIdenticon(options: { address: bigint; size?: number }) {
 		randseed[2] = randseed[3]
 		randseed[3] = (randseed[3] ^ (randseed[3] >> 19) ^ t ^ (t >> 8))
 
-		return (randseed[3]>>>0) / ((1 << 31)>>>0)
+		return (randseed[3] >>> 0) / ((1 << 31) >>> 0)
 	}
 
 	function createColor() {
