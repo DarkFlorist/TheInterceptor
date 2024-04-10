@@ -39,7 +39,7 @@ function generateIdenticon(options: { address: bigint; size?: number }) {
 		// saturation goes from 40 to 100, it avoids greyish colors
 		const s = ((rand() * 60) + 40) + '%'
 		// lightness can be anything from 0 to 100, but probabilities are a bell curve around 50%
-		const l = ((rand()+rand()+rand()+rand()) * 25) + '%'
+		const l = ((rand() + rand() + rand() + rand()) * 25) + '%'
 
 		const color = 'hsl(' + h + ',' + s + ',' + l + ')'
 		return color
