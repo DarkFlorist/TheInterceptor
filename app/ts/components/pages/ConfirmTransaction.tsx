@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'preact/hooks'
-import { MessageToPopup, UpdateConfirmTransactionDialog } from '../../types/interceptor-messages.js'
+import { MessageToPopup, UnexpectedErrorOccured, UpdateConfirmTransactionDialog } from '../../types/interceptor-messages.js'
 import { CompleteVisualizedSimulation, ModifyAddressWindowState, SimulatedAndVisualizedTransaction } from '../../types/visualizer-types.js'
 import Hint from '../subcomponents/Hint.js'
 import { RawTransactionDetailsCard, GasFee, TokenLogAnalysisCard, SimulatedInBlockNumber, TransactionCreated, TransactionHeader, TransactionHeaderForFailedToSimulate, TransactionsAccountChangesCard, NonTokenLogAnalysisCard } from '../simulationExplaining/SimulationSummary.js'
@@ -324,7 +324,7 @@ export function ConfirmTransaction() {
 	const [addingNewAddress, setAddingNewAddress] = useState<ModifyAddressWindowState | 'renameAddressModalClosed'> ('renameAddressModalClosed')
 	const [rpcConnectionStatus, setRpcConnectionStatus] = useState<RpcConnectionStatus>(undefined)
 	const [pendingTransactionAddedNotification, setPendingTransactionAddedNotification] = useState<boolean>(false)
-	const [unexpectedError, setUnexpectedError] = useState<string | undefined>(undefined)
+	const [unexpectedError, setUnexpectedError] = useState<undefined | UnexpectedErrorOccured>(undefined)
 
 	const updatePendingTransactionsAndSignableMessages = (message: UpdateConfirmTransactionDialog) => {
 		setPendingTransactionsAndSignableMessages(message.data.pendingTransactionAndSignableMessages)
@@ -342,7 +342,7 @@ export function ConfirmTransaction() {
 			const maybeParsed = MessageToPopup.safeParse(msg)
 			if (!maybeParsed.success) return // not a message we are interested in
 			const parsed = maybeParsed.value
-			if (parsed.method === 'popup_UnexpectedErrorOccured') return setUnexpectedError(parsed.data.message)
+			if (parsed.method === 'popup_UnexpectedErrorOccured') return setUnexpectedError(parsed)
 			if (parsed.method === 'popup_addressBookEntriesChanged') return refreshMetadata()
 			if (parsed.method === 'popup_new_block_arrived') {
 				setRpcConnectionStatus(parsed.data.rpcConnectionStatus)
@@ -506,6 +506,11 @@ export function ConfirmTransaction() {
 		if ('simulationResults' in current && current.simulationResults?.statusCode === 'failed') return 'Failed to simulate. Retrying...'
 		return 'Loading...'
 	}
+	
+	async function clearUnexpectedError() {
+		setUnexpectedError(undefined)
+		await sendPopupMessageToBackgroundPage( { method: 'popup_clearUnexpectedError' } )
+	}
 
 	if (currentPendingTransactionOrSignableMessage === undefined || (currentPendingTransactionOrSignableMessage.transactionOrMessageCreationStatus !== 'Simulated' && currentPendingTransactionOrSignableMessage.transactionOrMessageCreationStatus !== 'FailedToSimulate')) {
 		return <> 
@@ -523,7 +528,7 @@ export function ConfirmTransaction() {
 						}
 					</div>
 					<div class = 'block popup-block popup-block-scroll' style = 'padding: 0px'>
-						<UnexpectedError close = { () => { setUnexpectedError(undefined) } } message = { unexpectedError }/>
+						<UnexpectedError close = { clearUnexpectedError } unexpectedError = { unexpectedError }/>
 						<NetworkErrors rpcConnectionStatus = { rpcConnectionStatus }/>
 						{ currentPendingTransactionOrSignableMessage === undefined ? <></> : <>
 							<WebsiteErrors website = { currentPendingTransactionOrSignableMessage.website } websiteSocket = { currentPendingTransactionOrSignableMessage.uniqueRequestIdentifier.requestSocket } simulationMode = { currentPendingTransactionOrSignableMessage.simulationMode }/>
@@ -551,7 +556,7 @@ export function ConfirmTransaction() {
 				</div>
 				<div class = 'block popup-block popup-block-scroll' style = 'padding: 0px'>
 					<div style = 'position: sticky; top: 0; z-index:1'>
-						<UnexpectedError close = { () => { setUnexpectedError(undefined) } } message = { unexpectedError }/>
+						<UnexpectedError close = { clearUnexpectedError } unexpectedError = { unexpectedError }/>
 						<NetworkErrors rpcConnectionStatus = { rpcConnectionStatus }/>
 						<WebsiteErrors website = { currentPendingTransactionOrSignableMessage.website } websiteSocket = { currentPendingTransactionOrSignableMessage.uniqueRequestIdentifier.requestSocket } simulationMode = { currentPendingTransactionOrSignableMessage.simulationMode }/>
 					</div>

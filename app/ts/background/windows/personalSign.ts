@@ -66,17 +66,22 @@ export async function craftPersonalSignPopupMessage(ethereumClientService: Ether
 	if (maybeParsed.success === false) {
 		// if we fail to parse the message, that means it's a message type we do not identify, let's just show it as a nonidentified EIP712 message
 		if (validateEIP712Types(namedParams.param) === false) throw new Error('Not a valid EIP712 Message')
-		const message = await extractEIP712Message(ethereumClientService, namedParams.param)
-		const chainid = message.domain.chainId?.type === 'unsignedInteger' ? message.domain.chainId.value : undefined
-		return {
-			method: originalParams.originalRequestParameters.method,
-			...basicParams,
-			rpcNetwork: chainid !== undefined && rpcNetwork.chainId !== chainid ? await getRpcNetworkForChain(chainid) : rpcNetwork,
-			type: 'EIP712' as const,
-			message,
-			account,
-			...chainid === undefined ? { quarantine: false, quarantineReasons: [] } : await getQuarrantineCodes(chainid, account, activeAddressWithMetadata, undefined),
-			rawMessage: stringifyJSONWithBigInts(namedParams.param, 4),
+		try {
+			const message = await extractEIP712Message(ethereumClientService, namedParams.param)
+			const chainid = message.domain.chainId?.type === 'unsignedInteger' ? message.domain.chainId.value : undefined
+			return {
+				method: originalParams.originalRequestParameters.method,
+				...basicParams,
+				rpcNetwork: chainid !== undefined && rpcNetwork.chainId !== chainid ? await getRpcNetworkForChain(chainid) : rpcNetwork,
+				type: 'EIP712' as const,
+				message,
+				account,
+				...chainid === undefined ? { quarantine: false, quarantineReasons: [] } : await getQuarrantineCodes(chainid, account, activeAddressWithMetadata, undefined),
+				rawMessage: stringifyJSONWithBigInts(namedParams.param, 4),
+			}
+		} catch(e: unknown) {
+			console.error(e)
+			throw new Error('Not a valid EIP712 Message')
 		}
 	}
 	const parsed = maybeParsed.value

@@ -10,6 +10,7 @@ import { SignerName } from '../types/signerTypes.js'
 import { PendingAccessRequests, PendingTransactionOrSignableMessage } from '../types/accessRequest.js'
 import { RpcEntries, RpcNetwork } from '../types/rpc.js'
 import { replaceElementInReadonlyArray } from '../utils/typed-arrays.js'
+import { UnexpectedErrorOccured } from '../types/interceptor-messages.js'
 
 export const getIdsOfOpenedTabs = async () => (await browserStorageLocalGet('idsOfOpenedTabs'))?.idsOfOpenedTabs ?? { settingsView: undefined, addressBook: undefined}
 export const setIdsOfOpenedTabs = async (ids: PartialIdsOfOpenedTabs) => await browserStorageLocalSet({ idsOfOpenedTabs: { ...await getIdsOfOpenedTabs(), ...ids } })
@@ -257,3 +258,10 @@ export async function addUserAddressBookEntryIfItDoesNotExist(newEntry: AddressB
 		return await browserStorageLocalSet({ userAddressBookEntries: entries.concat(newEntry) })
 	})
 }
+
+export async function setLatestUnexpectedError(latestUnexpectedError: UnexpectedErrorOccured | undefined) {
+	if (latestUnexpectedError === undefined) return await browserStorageLocalRemove('latestUnexpectedError')
+	return await browserStorageLocalSet({ latestUnexpectedError })
+}
+
+export const getLatestUnexpectedError = async () => (await browserStorageLocalGet('latestUnexpectedError'))?.latestUnexpectedError
