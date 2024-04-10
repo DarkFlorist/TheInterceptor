@@ -102,7 +102,7 @@ export function Blockie({ address, style }: SVGBlockieProps) {
 				const pixelSize = 64 / pixelDensity
 
 				return <rect width = { pixelSize } height = { pixelSize } x = { ((index % pixelDensity) * 64) / pixelDensity } y = { Math.floor(index / pixelDensity) * pixelSize } fill = { fill } />
-			})}
+			}) }
 		</svg>
 	)
 }
