@@ -1,12 +1,11 @@
 import { checksummedAddress } from '../../utils/bigint.js'
-import { Blockie } from './PreactBlocky.js'
 import { RenameAddressCallBack } from '../../types/user-interface-types.js'
 import { CopyToClipboard } from './CopyToClipboard.js'
 import { JSX } from 'preact/jsx-runtime'
-import { useSignal } from '@preact/signals'
-import { useEffect } from 'preact/hooks'
 import { AddressBookEntry, ActiveAddressEntry } from '../../types/addressBookTypes.js'
 import { Website } from '../../types/websiteAccessTypes.js'
+import { Blockie } from './SVGBlockie.js'
+import { ComponentChildren } from 'preact'
 
 export function getActiveAddressEntry(addressToFind: bigint, activeAddresses: readonly ActiveAddressEntry[]) {
 	for (const info of activeAddresses) {
@@ -26,22 +25,29 @@ type AddressIconParams = {
 	backgroundColor: string,
 }
 
+const AddressIconFrame = ({ isBig, children }: { isBig: boolean, children?: ComponentChildren }) => {
+	const cssProperties: JSX.CSSProperties = { backgroundColor: 'var(--unimportant-text-color)', fontSize: isBig ? '2.5em' : '1.5em' }
+	return <div style = { cssProperties } class = 'noselect nopointer'>{ children }</div>
+}
+
 export function AddressIcon(param: AddressIconParams) {
-	const style = `background-color: var(--unimportant-text-color); ${ param.isBig ? 'width: 40px; height: 40px;' : 'width: 24px; height: 24px;' }`
-	const addr = param.address
-	if (addr !== undefined && param.logoUri === undefined) {
-		const address = useSignal<bigint>(addr)
-		useEffect(() => { address.value = addr }, [param.address])
-		return <div style = { style } class = 'noselect nopointer'>
-			<Blockie address = { address } scale = { useSignal(param.isBig ? 5 : 3) } />
-		</div>
+	if (param.address !== undefined && param.logoUri === undefined) {
+		return (
+			<AddressIconFrame isBig = { param.isBig }>
+				< Blockie address = { param.address } style = { { display: 'block' } } />
+			</AddressIconFrame>
+		)
 	}
+
 	if (param.logoUri !== undefined) {
-		return <div style = { style } class = 'noselect nopointer'>
-			<img src = { param.logoUri } style = 'width: 100%; max-height: 100%'/>
-		</div>
+		return (
+			<AddressIconFrame isBig = { param.isBig }>
+				<img src = { param.logoUri } style = { { display: 'block', width: '1em', height: '1em' } }/>
+			</AddressIconFrame>
+		)
 	}
-	return <div style = { style } class = 'noselect nopointer'></div>
+
+	return <AddressIconFrame isBig = { param.isBig } />
 }
 
 
@@ -61,24 +67,20 @@ export function BigAddress(params: BigAddressParams) {
 		<div class = 'media-left'>
 			{ !params.noCopying && addrString !== undefined ?
 				<CopyToClipboard content = { addrString } copyMessage = 'Address copied!'>
-					<span class = 'noselect nopointer'>
-						<AddressIcon
-							address = { params.addressBookEntry?.address }
-							logoUri = { params.addressBookEntry !== undefined && 'logoUri' in params.addressBookEntry ? params.addressBookEntry.logoUri : undefined}
-							isBig = { true }
-							backgroundColor = { 'var(--text-color)' }
-						/>
-					</span>
-				</CopyToClipboard>
-			:
-				<span class = 'noselect nopointer'>
 					<AddressIcon
 						address = { params.addressBookEntry?.address }
 						logoUri = { params.addressBookEntry !== undefined && 'logoUri' in params.addressBookEntry ? params.addressBookEntry.logoUri : undefined }
 						isBig = { true }
 						backgroundColor = { 'var(--text-color)' }
 					/>
-				</span>
+				</CopyToClipboard>
+				:
+				<AddressIcon
+					address = { params.addressBookEntry?.address }
+					logoUri = { params.addressBookEntry !== undefined && 'logoUri' in params.addressBookEntry ? params.addressBookEntry.logoUri : undefined }
+					isBig = { true }
+					backgroundColor = { 'var(--text-color)' }
+				/>
 			}
 		</div>
 
@@ -89,7 +91,7 @@ export function BigAddress(params: BigAddressParams) {
 						<CopyToClipboard content = { addrString } copyMessage = 'Address copied!' style = { { 'text-overflow': 'ellipsis', overflow: 'hidden' } }>
 							<p class = 'title is-5 is-spaced address-text noselect nopointer'>{ title }</p>
 						</CopyToClipboard>
-					: <p class = 'title is-5 is-spaced address-text noselect nopointer'>{ title }</p> }
+						: <p class = 'title is-5 is-spaced address-text noselect nopointer'>{ title }</p> }
 					<button
 						className = 'button is-primary is-small rename-address-button'
 						onClick = { () => params.addressBookEntry && params.renameAddressCallBack(params.addressBookEntry) }
@@ -107,7 +109,7 @@ export function BigAddress(params: BigAddressParams) {
 						{ subTitle }
 					</p>
 				</CopyToClipboard>
-			:
+				:
 				<p class = 'subtitle is-7 noselect nopointer' style = 'text-overflow: ellipsis; white-space: nowrap;'>
 					{ subTitle }
 				</p>
