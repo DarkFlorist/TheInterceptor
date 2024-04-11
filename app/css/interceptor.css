@@ -841,3 +841,69 @@ svg.spinner > circle {
 	border-top-right-radius: 0.25rem;
 	background-color: var(--window-header-bg-color);
 }
+
+.dialog {
+	background: var(--bg-color);
+    padding: 0;
+    border: 0;
+}
+
+.dialog::backdrop {
+	background-color: rgba(0, 0, 0, 0.75);
+}
+
+.dialog-header {
+    background: var(--window-header-bg-color);
+    padding-left: 16px;
+    padding-right: 16px;
+    border-radius: 8px 8px 0 0;
+	display: grid;
+	grid-template-columns: repeat(2, max-content);
+	height: 3rem;
+	align-items: center;
+	justify-content: space-between;
+}
+
+.button.button--ghost {
+	background: transparent;
+	border: 0 none;
+}
+
+.button-icon {
+	display: block;
+	line-height: 1;
+}
+
+.button.button-ghost:hover {
+	color: var(--text-color)
+}
+
+.dialog-main {
+	padding: 12px 8px;
+}
+
+.dialog-footer {
+    background: var(--window-header-bg-color);
+    padding: 12px 16px;
+    display: grid;
+    grid-template-columns: min-content min-content;
+    gap: 7px;
+    justify-content: end;
+    border-radius: 8px;
+}
+
+.fields-grid {
+	display: grid;
+    grid-template-columns: max-content 1fr;
+    gap: 8px;
+    padding: 16px 12px;
+    background: var(--card-bg-color);
+    box-shadow: 0 2px 4px #00000060;
+    border-radius: 6px;
+}
+
+.fields-grid label {
+	color: white;
+	font-size: 14px;
+	text-align: right;
+}
