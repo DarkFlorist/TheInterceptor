@@ -11,8 +11,8 @@ interface ChainSelectorParams {
 export function ChainSelector(params: ChainSelectorParams) {
 	const [isOpen, setIsOpen] = useState(false)
 
-	const wrapperRef = useRef<HTMLDivElement>(null);
-	clickOutsideAlerter(wrapperRef, () => setIsOpen(false));
+	const wrapperRef = useRef<HTMLDivElement>(null)
+	clickOutsideAlerter(wrapperRef, () => setIsOpen(false))
 
 	function changeRpc(entry: RpcEntry) {
 		params.changeRpc(entry)
@@ -35,7 +35,7 @@ export function ChainSelector(params: ChainSelectorParams) {
 						<a href = '#' class = { `dropdown-item ${ rpcEntry.httpsRpc === params.rpcNetwork.httpsRpc ? 'is-active' : '' }` } onClick = { () => changeRpc(rpcEntry) } >
 							{ rpcEntry.name }
 						</a>
-					)})
+					) })
 				}
 			</div>
 		</div>

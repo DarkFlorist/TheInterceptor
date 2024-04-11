@@ -43,7 +43,7 @@ type NameInputParams = {
 
 function NameInput({ nameInput, setNameInput, disabled }: NameInputParams) {
 	const ref = createRef<HTMLInputElement>()
-    useEffect(() => { ref.current?.focus() }, [])
+	useEffect(() => { ref.current?.focus() }, [])
 	return <input
 		className = 'input title is-5 is-spaced'
 		type = 'text'
@@ -100,7 +100,7 @@ type AbiInputParams = {
 
 function AbiInput({ abiInput, setAbiInput, disabled }: AbiInputParams) {
 	const ref = createRef<HTMLInputElement>()
-    useEffect(() => { ref.current?.focus() }, [])
+	useEffect(() => { ref.current?.focus() }, [])
 	return <input
 		className = 'input is-spaced'
 		type = 'text'
@@ -158,7 +158,7 @@ function RenderIncompleteAddressBookEntry({ incompleteAddressBookEntry, setName,
 					<p class = 'paragraph checkbox-text'>Don't request for an access (insecure)</p>
 				</label>
 			</> : <></> }
-			</div>
+		</div>
 	</div>
 }
 
@@ -414,7 +414,7 @@ export function AddNewAddress(param: AddAddressParam) {
 					{ modifyAddressWindowState?.errorState === undefined ? <></> : <Notice text = { modifyAddressWindowState.errorState.message } /> }
 					{ !showOnChainVerificationErrorBox() ? <></> :
 						<ErrorCheckBox
-							text = { `The name and symbol for this token was provided by the token itself and we have not validated its legitimacy. A token may claim to have a name/symbol that is the same as another popular token (e.g., USDC or DAI) in an attempt to trick you. If you recognize this token's name, please verify elsewhere that this is the correct address for it.` }
+							text = { 'The name and symbol for this token was provided by the token itself and we have not validated its legitimacy. A token may claim to have a name/symbol that is the same as another popular token (e.g., USDC or DAI) in an attempt to trick you. If you recognize this token\'s name, please verify elsewhere that this is the correct address for it.' }
 							checked = { onChainInformationVerifiedByUser }
 							onInput = { setOnChainInformationVerifiedByUser }
 						/>

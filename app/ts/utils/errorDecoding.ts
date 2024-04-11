@@ -14,9 +14,9 @@ enum ErrorType {
 }
 
 type EthereumError = {
-    readonly code: number;
-    readonly message: string;
-    readonly data: string;
+	readonly code: number;
+	readonly message: string;
+	readonly data: string;
 }
 
 type DecodedError = {

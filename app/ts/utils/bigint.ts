@@ -80,7 +80,7 @@ export function bytes32String(bytes32: bigint) {
 export function stringToUint8Array(data: string) {
 	const dataLength = (data.length - 2) / 2
 	if (dataLength === 0) return new Uint8Array()
-    return bigintToUint8Array(BigInt(data), dataLength)
+	return bigintToUint8Array(BigInt(data), dataLength)
 }
 
 export function dataString(data: Uint8Array | null) {
@@ -106,7 +106,7 @@ export function bigintToUint8Array(value: bigint, numberOfBytes: number) {
 // biome-ignore lint/suspicious/noExplicitAny: matches JSON.stringify signature
 export function stringifyJSONWithBigInts(value: any, space?: string | number | undefined): string {
 	return JSON.stringify(value, (_key, value) => {
-		return typeof value === "bigint" ? `0x${ value.toString(16) }` : value
+		return typeof value === 'bigint' ? `0x${ value.toString(16) }` : value
 	}, space)
 }
 

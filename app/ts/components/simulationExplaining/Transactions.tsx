@@ -223,9 +223,9 @@ function TokenLogEvent(params: TokenLogEventParams ) {
 					style = { style }
 					fontSize = 'normal'
 				/>
-			: <> { 'amount' in params.tokenVisualizerResult && params.tokenVisualizerResult.amount >= (2n ** 96n - 1n ) && params.tokenVisualizerResult.isApproval ?
+				: <> { 'amount' in params.tokenVisualizerResult && params.tokenVisualizerResult.amount >= (2n ** 96n - 1n ) && params.tokenVisualizerResult.isApproval ?
 					<p class = 'ellipsis' style = { `color: ${ style.color }` }><b>ALL</b></p>
-				:
+					:
 					'amount' in params.tokenVisualizerResult ?
 						<TokenAmount
 							amount = { params.tokenVisualizerResult.amount }
@@ -233,7 +233,7 @@ function TokenLogEvent(params: TokenLogEventParams ) {
 							style = { style }
 							fontSize = 'normal'
 						/>
-					: <></>
+						: <></>
 				} </>
 			}
 		</div>
@@ -277,7 +277,7 @@ export function TokenLogAnalysis(param: LogAnalysisParams) {
 				renameAddressCallBack = { param.renameAddressCallBack }
 			/>
 		))
-	:
+		:
 		param.simulatedAndVisualizedTransaction.tokenResults.map( (tokenVisualizerResult) => (
 			<TokenLogEvent
 				tokenVisualizerResult = { tokenVisualizerResult }
@@ -354,6 +354,6 @@ function NonTokenLogEvent(params: NonTokenLogEventParams) {
 export function NonTokenLogAnalysis(param: NonLogAnalysisParams) {
 	if (param.nonTokenLogs.length === 0) return <p class = 'paragraph'> No non-token events </p>
 	return <span class = 'log-table-3' style = 'justify-content: center; column-gap: 5px; row-gap: 5px;'>
-		{ param.nonTokenLogs.map((nonTokenLog) => <NonTokenLogEvent nonTokenLog = { nonTokenLog } addressMetaData = { param.addressMetaData } renameAddressCallBack = { param.renameAddressCallBack} />) }
+		{ param.nonTokenLogs.map((nonTokenLog) => <NonTokenLogEvent nonTokenLog = { nonTokenLog } addressMetaData = { param.addressMetaData } renameAddressCallBack = { param.renameAddressCallBack } />) }
 	</span>
 }

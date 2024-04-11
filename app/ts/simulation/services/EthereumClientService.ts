@@ -19,11 +19,11 @@ export class EthereumClientService {
 	private onErrorBlockCallback: (ethereumClientService: EthereumClientService) => Promise<void>
 	private requestHandler
 
-    constructor(requestHandler: IEthereumJSONRpcRequestHandler, newBlockAttemptCallback: (blockHeader: EthereumBlockHeader, ethereumClientService: EthereumClientService, isNewBlock: boolean) => Promise<void>, onErrorBlockCallback: (ethereumClientService: EthereumClientService) => Promise<void>) {
+	constructor(requestHandler: IEthereumJSONRpcRequestHandler, newBlockAttemptCallback: (blockHeader: EthereumBlockHeader, ethereumClientService: EthereumClientService, isNewBlock: boolean) => Promise<void>, onErrorBlockCallback: (ethereumClientService: EthereumClientService) => Promise<void>) {
 		this.requestHandler = requestHandler
 		this.newBlockAttemptCallback = newBlockAttemptCallback
 		this.onErrorBlockCallback = onErrorBlockCallback
-    }
+	}
 
 	public readonly getRpcEntry = () => this.requestHandler.getRpcEntry()
 	
@@ -185,7 +185,7 @@ export class EthereumClientService {
 				validation: false,
 			},
 			blockTag === parentBlock.number + 1n ? blockTag - 1n : blockTag
-		] } as const
+			] } as const
 		const unvalidatedResult = await this.requestHandler.jsonRpcRequest(call)
 		/*
 		console.log('ethSimulateV1')

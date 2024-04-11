@@ -81,13 +81,13 @@ function ImportExport() {
 	return <>
 		{ settingsReply !== undefined && settingsReply.data.success === false ?
 			<ErrorComponent warning = { true } text = { settingsReply.data.errorMessage }/>
-		: <></> }
+			: <></> }
 		{ settingsReply !== undefined && settingsReply.data.success === true && dismissedNotification === false ?
 			<DinoSaysNotification
 				text = { 'Settings and address book loaded!' }
-				close = { () => setdDismissedNotification(true)}
+				close = { () => setdDismissedNotification(true) }
 			/>
-		: <></> }
+			: <></> }
 		<div class = 'popup-button-row'>
 			<div style = 'display: flex; flex-direction: row;'>
 				<label className = 'button is-primary is-danger' style = 'flex-grow: 1; margin-left: 5px; margin-right: 5px;'>
@@ -156,23 +156,23 @@ function Rpcs({ rpcEntries }: { rpcEntries: RpcEntries }) {
 				</header>
 				{ rpc.minimized ? <></> :
 					<div class = 'card-content'>
-						<div class = 'paragraph'>Network</div>
-						<TextField input = { rpc.name }/>
-						<div class = 'paragraph'>RPC URL</div>
-						<TextField input = { rpc.httpsRpc }/>
-						<div class = 'paragraph'>Chain ID</div>
-						<TextField input = { String(rpc.chainId) }/>
-						<div class = 'paragraph'>Currency Name</div>
-						<TextField input = { rpc.currencyName }/>
-						<div class = 'paragraph'>Currency Ticker</div>
-						<TextField input = { rpc.currencyTicker }/>
-						<div class = 'paragraph'>{ `Primary RPC for Chain ID ${ String(rpc.chainId) }` }</div>
-						<CheckBoxSetting
+					<div class = 'paragraph'>Network</div>
+					<TextField input = { rpc.name }/>
+					<div class = 'paragraph'>RPC URL</div>
+					<TextField input = { rpc.httpsRpc }/>
+					<div class = 'paragraph'>Chain ID</div>
+					<TextField input = { String(rpc.chainId) }/>
+					<div class = 'paragraph'>Currency Name</div>
+					<TextField input = { rpc.currencyName }/>
+					<div class = 'paragraph'>Currency Ticker</div>
+					<TextField input = { rpc.currencyTicker }/>
+					<div class = 'paragraph'>{ `Primary RPC for Chain ID ${ String(rpc.chainId) }` }</div>
+					<CheckBoxSetting
 							text = ''
 							checked = { rpc.primary }
 							onInput = { () => { setAsPrimary(rpc.httpsRpc) } }
 						/>
-					</div>
+				</div>
 				}
 			</div>
 		</li>)

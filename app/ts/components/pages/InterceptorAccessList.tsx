@@ -209,75 +209,75 @@ export function InterceptorAccessList(param: InterceptorAccessListParams) {
 								</div>
 							</div>
 						</li>
-					: <></> }
+						: <></> }
 					{ editableAccessList === undefined ? <></> : editableAccessList.map((access, accessListIndex) => (
 						<li>
 							{ access.removed ? <p style = 'color: var(--negative-color)' > { `Forgot ${ access.websiteAccess.website.websiteOrigin }. `}</p> :
 								<div class = 'card'>
-									<div class = 'card-header'>
+								<div class = 'card-header'>
 										<div class = 'card-header-icon unset-cursor' >
-											<p class = 'image is-24x24'>
+										<p class = 'image is-24x24'>
 												<img src = { access.websiteAccess.website.icon === undefined ? '../../img/question-mark-sign.svg' : access.websiteAccess.website.icon }/>
 											</p>
-										</div>
+									</div>
 										<div class = 'card-header-title' style = 'width: 13em'>
-											<CopyToClipboard
+										<CopyToClipboard
 												content = { access.websiteAccess.website.websiteOrigin }
 												copyMessage = 'Website address copied!'
 											>
 												<p className = 'paragraph noselect nopointer' style = 'text-overflow: ellipsis; overflow: hidden; white-space: nowrap; display: block; width: 13em'>
-													{ access.websiteAccess.website.websiteOrigin }
-												</p>
+												{ access.websiteAccess.website.websiteOrigin }
+											</p>
 											</CopyToClipboard>
-										</div>
+									</div>
 										<div class = 'card-header-icon unset-cursor'>
-											<label class = 'form-control' style = 'width: 8em;'>
+										<label class = 'form-control' style = 'width: 8em;'>
 												<input type = 'checkbox' checked = { access.access } onInput = { e => { if (e.target instanceof HTMLInputElement) { setWebsiteAccess(accessListIndex, { access: e.target.checked }) } } } />
 												<p class = 'paragraph checkbox-text'>Allow access</p>
 											</label>
-											<button class = 'card-header-icon' style = 'padding: 0px;' aria-label = 'forget' onClick = { () => setWebsiteAccess(accessListIndex, { removed: true }) }>
+										<button class = 'card-header-icon' style = 'padding: 0px;' aria-label = 'forget' onClick = { () => setWebsiteAccess(accessListIndex, { removed: true }) }>
 												<span class = 'icon' style = 'color: var(--text-color);'> X </span>
 											</button>
-										</div>
 									</div>
-									<div class = 'card-content' style = 'margin-bottom: 0px;'>
+									</div>
+								<div class = 'card-content' style = 'margin-bottom: 0px;'>
 										<>
-											<label class = 'form-control' style = 'margin: auto'>
+										<label class = 'form-control' style = 'margin: auto'>
 												<input type = 'checkbox' checked = { access.interceptorDisabled } onInput = { e => { if (e.target instanceof HTMLInputElement) { setWebsiteAccess(accessListIndex, { interceptorDisabled: e.target.checked }) } } } />
 												<p class = 'paragraph checkbox-text' style = 'white-space: nowrap;'>Disable Interceptor for the site (not recommended). </p>
 											</label>
-											{ access.addressAccess.length === 0 ? <p className = 'paragraph'> No individual address accesses given </p> : <>
+										{ access.addressAccess.length === 0 ? <p className = 'paragraph'> No individual address accesses given </p> : <>
 												{ access.addressAccessModified.map((websiteAccessAddress, addressIndex) => (
-													<li style = { `margin: 0px; margin-bottom: ${ addressIndex < access.addressAccessModified.length - 1  ? '10px;' : '0px' }` }>
+												<li style = { `margin: 0px; margin-bottom: ${ addressIndex < access.addressAccessModified.length - 1  ? '10px;' : '0px' }` }>
 														{ websiteAccessAddress.removed ? <p style = 'color: var(--negative-color)' > { `Forgot ${ metadata.get(addressString(websiteAccessAddress.address))?.name || checksummedAddress(websiteAccessAddress.address) }`} </p> :
 															<div style = 'display: flex; width: 100%; overflow: hidden;'>
-																<SmallAddress
+															<SmallAddress
 																	addressBookEntry = { metadata.get(addressString(websiteAccessAddress.address)) || {
 																		type: 'activeAddress',
 																		name: checksummedAddress(websiteAccessAddress.address),
 																		address: websiteAccessAddress.address,
 																		askForAddressAccess: false,
 																		entrySource: 'FilledIn',
-																	}}
+																	} }
 																	renameAddressCallBack = { param.renameAddressCallBack }
 																/>
-																<div style = 'margin-left: auto; flex-shrink: 0; display: flex'>
+															<div style = 'margin-left: auto; flex-shrink: 0; display: flex'>
 																	<label class = 'form-control' style = 'margin: auto'>
-																		<input type = 'checkbox' checked = { websiteAccessAddress.access } onInput = { e => { if (e.target instanceof HTMLInputElement) { setAddressAccess(accessListIndex, addressIndex, { access: e.target.checked }) } } } />
-																		<p class = 'paragraph checkbox-text' style = 'white-space: nowrap;'>Allow access</p>
-																	</label>
+																	<input type = 'checkbox' checked = { websiteAccessAddress.access } onInput = { e => { if (e.target instanceof HTMLInputElement) { setAddressAccess(accessListIndex, addressIndex, { access: e.target.checked }) } } } />
+																	<p class = 'paragraph checkbox-text' style = 'white-space: nowrap;'>Allow access</p>
+																</label>
 																	<button class = 'card-header-icon' style = 'padding: 0px;' aria-label = 'forget' onClick = { () => setAddressAccess(accessListIndex, addressIndex, { removed: true }) }>
-																		<span class = 'icon' style = 'color: var(--text-color);'> X </span>
-																	</button>
+																	<span class = 'icon' style = 'color: var(--text-color);'> X </span>
+																</button>
 																</div>
-															</div>
+														</div>
 														}
 													</li>
 												)) }
 											</> }
-										</>
+									</>
 									</div>
-								</div>
+							</div>
 							}
 						</li>
 					) ) }

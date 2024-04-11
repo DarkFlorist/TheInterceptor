@@ -173,27 +173,27 @@ function SimulationResults(param: SimulationStateParam) {
 		</div>
 		{ param.simulationAndVisualisationResults.simulatedAndVisualizedTransactions.length === 0 && param.simulationAndVisualisationResults.visualizedPersonalSignRequests.length === 0 ?
 			<div style = 'padding: 10px'><DinoSays text = { 'Give me some transactions to munch on!' } /></div>
-		: <>
-			<div class = { param.simulationResultState === 'invalid' || param.simulationUpdatingState === 'failed' ? 'blur' : '' }>
-				<TransactionsAndSignedMessages
-					simulationAndVisualisationResults = { param.simulationAndVisualisationResults }
-					removeTransactionOrSignedMessage = { param.removeTransactionOrSignedMessage }
-					activeAddress = { param.simulationAndVisualisationResults.activeAddress }
-					renameAddressCallBack = { param.renameAddressCallBack }
-					removedTransactionOrSignedMessages = { param.removedTransactionOrSignedMessages }
-					addressMetaData = { param.simulationAndVisualisationResults.addressBookEntries }
-				/>
-				{ param.removedTransactionOrSignedMessages.length > 0
-					? <></>
-					: <SimulationSummary
+			: <>
+				<div class = { param.simulationResultState === 'invalid' || param.simulationUpdatingState === 'failed' ? 'blur' : '' }>
+					<TransactionsAndSignedMessages
 						simulationAndVisualisationResults = { param.simulationAndVisualisationResults }
-						currentBlockNumber = { param.currentBlockNumber }
+						removeTransactionOrSignedMessage = { param.removeTransactionOrSignedMessage }
+						activeAddress = { param.simulationAndVisualisationResults.activeAddress }
 						renameAddressCallBack = { param.renameAddressCallBack }
-						rpcConnectionStatus = { param.rpcConnectionStatus }
+						removedTransactionOrSignedMessages = { param.removedTransactionOrSignedMessages }
+						addressMetaData = { param.simulationAndVisualisationResults.addressBookEntries }
 					/>
-				}
-			</div>
-		</> }
+					{ param.removedTransactionOrSignedMessages.length > 0
+						? <></>
+						: <SimulationSummary
+							simulationAndVisualisationResults = { param.simulationAndVisualisationResults }
+							currentBlockNumber = { param.currentBlockNumber }
+							renameAddressCallBack = { param.renameAddressCallBack }
+							rpcConnectionStatus = { param.rpcConnectionStatus }
+						/>
+					}
+				</div>
+			</> }
 		<div class = 'content' style = 'height: 0.1px'/>
 	</div>
 }
@@ -289,7 +289,7 @@ export function Home(param: HomeParams) {
 	return <>
 		{ rpcNetwork.httpsRpc === undefined ?
 			<ErrorComponent text = { `${ rpcNetwork.name } is not a supported network. The Interceptors is disabled while you are using the network.` }/>
-		: <></> }
+			: <></> }
 
 		<FirstCard
 			activeAddresses = { activeAddresses }

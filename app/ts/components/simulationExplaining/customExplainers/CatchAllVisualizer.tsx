@@ -48,7 +48,7 @@ function SendOrReceiveTokensImportanceBox(param: SendOrReceiveTokensImportanceBo
 									style = { { color: param.textColor } }
 									fontSize = 'normal'
 								/>
-							: <></>}
+								: <></>}
 						</div>
 						<div class = 'log-cell'>
 							<TokenSymbol

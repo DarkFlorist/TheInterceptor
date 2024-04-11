@@ -268,7 +268,7 @@ function VisualizeSwapAsset({ swapAsset, renameAddressCallBack }: { swapAsset: S
 						<TokenOrEthValue tokenEntry = { swapAsset.token } amount = { swapAsset.beforeAfterBalance?.beforeBalance } style = { balanceTextStyle } fontSize = 'normal'/>
 						<p class = 'paragraph' style = { balanceTextStyle }>&nbsp;{'->'}&nbsp;</p>
 						<TokenOrEthValue tokenEntry = { swapAsset.token } amount = { swapAsset.beforeAfterBalance?.afterBalance } style = { balanceTextStyle } fontSize = 'normal'/>
-						</div> : <></>
+					</div> : <></>
 					}
 				</span>
 			</>
@@ -301,7 +301,7 @@ function VisualizeSwapAsset({ swapAsset, renameAddressCallBack }: { swapAsset: S
 						<TokenOrEthValue tokenEntry = { swapAsset.token } amount = { swapAsset.beforeAfterBalance?.beforeBalance } style = { balanceTextStyle } fontSize = 'normal'/>
 						<p class = 'paragraph' style = { balanceTextStyle }>&nbsp;{'->'}&nbsp;</p>
 						<TokenOrEthValue tokenEntry = { swapAsset.token } amount = { swapAsset.beforeAfterBalance?.afterBalance } style = { balanceTextStyle } fontSize = 'normal'/>
-						</div> : <></>
+					</div> : <></>
 					}
 				</span>
 			</>

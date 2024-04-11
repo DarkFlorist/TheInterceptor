@@ -69,7 +69,7 @@ function Erc20ApprovalChange(param: Erc20ApprovalChangeParams) {
 	return <div class = { param.isImportant ? `box token-box ${ param.change > 0 ? 'negative-box' : 'positive-box' }`: '' } style = 'display: inline-flex'>
 		<table class = 'log-table'>
 			<div class = 'log-cell'>
-				<p class = 'ellipsis' style = {`color: ${ textColor };` }> Allow&nbsp;</p>
+				<p class = 'ellipsis' style = { `color: ${ textColor };` }> Allow&nbsp;</p>
 			</div>
 			<div class = 'log-cell'>
 				<SmallAddress
@@ -79,11 +79,11 @@ function Erc20ApprovalChange(param: Erc20ApprovalChangeParams) {
 				/>
 			</div>
 			<div class = 'log-cell'>
-				<p class = 'ellipsis' style = {`color: ${ textColor };` }> &nbsp;to spend&nbsp; </p>
+				<p class = 'ellipsis' style = { `color: ${ textColor };` }> &nbsp;to spend&nbsp; </p>
 			</div>
 			<div class = 'log-cell' style = 'justify-content: right;'>
 				{ param.change > 2n ** 100n ?
-					<p class = 'ellipsis' style = {`color: ${ textColor };` }> <b>ALL</b>&nbsp;</p>
+					<p class = 'ellipsis' style = { `color: ${ textColor };` }> <b>ALL</b>&nbsp;</p>
 					:
 					<TokenAmount
 						tokenEntry = { param }
@@ -212,7 +212,7 @@ export function Erc721or1155OperatorChanges(param: Erc721Or1155OperatorChangesPa
 							</div>
 						</table>
 					</div>
-				:
+					:
 					<div class = { param.isImportant ? 'box token-box positive-box': '' } >
 						<table class = 'log-table'>
 							<div class = 'log-cell'>
@@ -252,7 +252,7 @@ export function Erc721TokenIdApprovalChanges(param: Erc721TokenIdApprovalChanges
 					<div class = { param.isImportant ? 'box token-box negative-box': '' } style = 'display: flex'>
 						<table class = 'log-table'>
 							<div class = 'log-cell'>
-								<p class = 'ellipsis' style = {`color: ${ param.negativeColor }` }> Approve&nbsp;</p>
+								<p class = 'ellipsis' style = { `color: ${ param.negativeColor }` }> Approve&nbsp;</p>
 							</div>
 							<div class = 'log-cell'>
 								<SmallAddress
@@ -262,7 +262,7 @@ export function Erc721TokenIdApprovalChanges(param: Erc721TokenIdApprovalChanges
 								/>
 							</div>
 							<div class = 'log-cell'>
-								<p class = 'ellipsis' style = {`color: ${ param.negativeColor }` }>&nbsp;for&nbsp;</p>
+								<p class = 'ellipsis' style = { `color: ${ param.negativeColor }` }>&nbsp;for&nbsp;</p>
 							</div>
 							<div class = 'log-cell'>
 								<TokenOrEth
@@ -651,7 +651,7 @@ export function SimulatedInBlockNumber({ simulationBlockNumber, currentBlockNumb
 			{ 'Simulated ' }
 			<span style = { `font-weight: bold; font-family: monospace; color: ${
 				simulationBlockNumber === currentBlockNumber && (rpcConnectionStatus?.isConnected || rpcConnectionStatus === undefined) ? 'var(--positive-color)' :
-				currentBlockNumber !== undefined && simulationBlockNumber + 1n === currentBlockNumber ? 'var(--warning-color)' : 'var(--negative-color)'
+					currentBlockNumber !== undefined && simulationBlockNumber + 1n === currentBlockNumber ? 'var(--warning-color)' : 'var(--negative-color)'
 			} ` }>
 				<SomeTimeAgo priorTimestamp = { simulationConductedTimestamp }/>
 			</span>

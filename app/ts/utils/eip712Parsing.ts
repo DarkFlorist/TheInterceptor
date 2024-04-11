@@ -4,7 +4,7 @@ import { EIP712Message, EnrichedEIP712, EnrichedEIP712Message, EnrichedEIP712Mes
 import { parseSolidityValueByTypeEnriched } from './solidityTypes.js'
 import { SolidityType } from '../types/solidityType.js'
 
-function findType(name: string, types: readonly { readonly name: string, readonly type: string}[]) {
+function findType(name: string, types: readonly { readonly name: string, readonly type: string }[]) {
 	return types.find((x) => x.name === name)?.type
 }
 
@@ -14,7 +14,7 @@ function separateArraySuffix(typeWithMaybeArraySuffix: string) {
 	return { arraylessType: splitted[0], isArray: true }
 }
 
-function validateEIP712TypesSubset(depth: number, message: JSONEncodeableObject, currentType: string, types: { [x: string]: readonly { readonly name: string, readonly type: string}[] | undefined }): boolean {
+function validateEIP712TypesSubset(depth: number, message: JSONEncodeableObject, currentType: string, types: { [x: string]: readonly { readonly name: string, readonly type: string }[] | undefined }): boolean {
 	if (depth > 2) return false // do not allow too deep messages
 	const currentTypes = types[currentType]
 	if (currentTypes === undefined) return false
@@ -46,7 +46,7 @@ export function validateEIP712Types(message: EIP712Message) {
 	return validateEIP712TypesSubset(0, message.message, message.primaryType, message.types) && validateEIP712TypesSubset(0, message.domain, 'EIP712Domain', message.types)
 }
 
-async function extractEIP712MessageSubset(ethereumClientService: EthereumClientService, depth: number, message: JSONEncodeableObject, currentType: string, types: { [x: string]: readonly { readonly name: string, readonly type: string}[] | undefined }, useLocalStorage = true): Promise<EnrichedEIP712Message> {
+async function extractEIP712MessageSubset(ethereumClientService: EthereumClientService, depth: number, message: JSONEncodeableObject, currentType: string, types: { [x: string]: readonly { readonly name: string, readonly type: string }[] | undefined }, useLocalStorage = true): Promise<EnrichedEIP712Message> {
 	if (depth > 2) throw new Error('Too deep EIP712 message')
 	const currentTypes = types[currentType]
 	if (currentTypes === undefined) throw new Error(`Types not found: ${ currentType }`)
@@ -63,7 +63,7 @@ async function extractEIP712MessageSubset(ethereumClientService: EthereumClientS
 			const jsonEncodeableArray = JSONEncodeableObjectArray.safeParse(messageEntry)
 			if (!jsonEncodeableArray.success) throw new Error(`Type was defined to be an array but it was not: ${ messageEntry }`)
 			const currentType = arraylessType.arraylessType
-			if (currentType === undefined) throw new Error(`array's type is missing`)
+			if (currentType === undefined) throw new Error('array\'s type is missing')
 			return [key, { type: 'record[]', value: await Promise.all(jsonEncodeableArray.value.map((subSubMessage) => {
 				if (JSONEncodeableObject.test(subSubMessage)) return extractEIP712MessageSubset(ethereumClientService, depth + 1, subSubMessage, currentType, types, useLocalStorage)
 				throw new Error('Too deep EIP712 message (object)')

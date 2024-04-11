@@ -21,7 +21,7 @@ export function assertIsObject(maybe: unknown): asserts maybe is Object {
 }
 
 export function createGuard<T, U extends T>(check: (maybe: T) => U | undefined): (maybe: T) => maybe is U {
-    return (maybe: T): maybe is U => check(maybe) !== undefined
+	return (maybe: T): maybe is U => check(maybe) !== undefined
 }
 
 export function getWithDefault<Key, Value>(map: Map<Key, Value>, key: Key, defaultValue: Value) {

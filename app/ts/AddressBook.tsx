@@ -42,7 +42,7 @@ function FilterLink(param: { name: ActiveFilter, currentFilter: ActiveFilter, se
 	return <a
 		class = { param.currentFilter === param.name ? 'is-active' : '' }
 		onClick = { () => param.setActiveFilter(param.name) }>
-			{ param.name }
+		{ param.name }
 	</a>
 }
 
@@ -185,7 +185,7 @@ function AddressList({ addressBookEntries, numberOfEntries, startIndex, listName
 			{ ...entry }
 			removeEntry = { removeEntry }
 			category = { filter }
-			listKey = { `${ (startIndex + index).toString() } ${ listName }`}
+			listKey = { `${ (startIndex + index).toString() } ${ listName }` }
 			renameAddressCallBack = { renameAddressCallBack }
 		/> ) }
 	</>
@@ -276,7 +276,7 @@ export function AddressBook() {
 	}, [])
 
 	function update() {
-		if (scrollTimer.current !== undefined) clearTimeout(scrollTimer.current);
+		if (scrollTimer.current !== undefined) clearTimeout(scrollTimer.current)
 		scrollTimer.current = setTimeout(() => { // batch calls together if user is scrolling fast
 			setAddressBookState((previousState) => {
 				if (previousState === undefined) return previousState
@@ -456,8 +456,8 @@ export function AddressBook() {
 										class = 'button is-primary'
 										onClick = { () => openNewAddress(addressBookState.activeFilter) }
 									>
-									{ `Add New ${ ActiveFilterSingle[addressBookState.activeFilter] }` }
-								</button> : <></> }
+										{ `Add New ${ ActiveFilterSingle[addressBookState.activeFilter] }` }
+									</button> : <></> }
 							</div>
 						</div>
 						{ addressBookState === undefined
@@ -481,7 +481,7 @@ export function AddressBook() {
 							close = { () => setModalState({ page: 'noModal' }) }
 							activeAddress = { undefined }
 						/>
-					: <></> }
+						: <></> }
 					{ modalState.page === 'confirmaddressBookEntryToBeRemoved' && addressBookEntryToBeRemoved !== undefined ?
 						<ConfirmaddressBookEntryToBeRemoved
 							category = { activeFilter }
@@ -490,7 +490,7 @@ export function AddressBook() {
 							close = { () => setModalState({ page: 'noModal' }) }
 							renameAddressCallBack = { renameAddressCallBack }
 						/>
-					: <></> }
+						: <></> }
 				</div>
 			</Hint>
 		</main>

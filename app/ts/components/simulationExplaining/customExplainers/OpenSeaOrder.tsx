@@ -41,7 +41,7 @@ function SwapGrid(param: VisualizeOpenSeaAssetParams) {
 			<div class = 'log-cell' style = 'justify-content: right;'>
 				{ param.orderOrConsideration.itemType === 'ERC721' || param.orderOrConsideration.itemType === 'ERC1155' ?
 					<TokenOrEthSymbol { ...param.orderOrConsideration.token } rpcNetwork = { param.rpcNetwork } style = { tokenStyle } fontSize = 'big'/>
-				: <TokenOrEthSymbol { ...param.orderOrConsideration.token } rpcNetwork = { param.rpcNetwork } style = { tokenStyle } fontSize = 'big'/> }
+					: <TokenOrEthSymbol { ...param.orderOrConsideration.token } rpcNetwork = { param.rpcNetwork } style = { tokenStyle } fontSize = 'big'/> }
 			</div>
 		</span>
 	</>
@@ -62,7 +62,7 @@ function VisualizeOpenSeaAsset(param: VisualizeOpenSeaConsiderationAssetParams) 
 		<div class = 'log-cell' style = 'padding-right: 0.2em'>
 			{ param.consideration.itemType === 'ERC721' || param.consideration.itemType === 'ERC1155' ?
 				<TokenOrEthSymbol { ...param.consideration.token } rpcNetwork = { param.rpcNetwork } style = { tokenStyle } fontSize = 'big'/>
-			: <TokenOrEthSymbol { ...param.consideration.token } rpcNetwork = { param.rpcNetwork } style = { tokenStyle } fontSize = 'big'/> }
+				: <TokenOrEthSymbol { ...param.consideration.token } rpcNetwork = { param.rpcNetwork } style = { tokenStyle } fontSize = 'big'/> }
 		</div>
 		<div class = 'log-cell' style = 'padding-right: 0.2em; padding-left: 0.2em'>
 			{ <ArrowIcon color = { textColor } /> }

@@ -52,12 +52,12 @@ export function NetworkErrors({ rpcConnectionStatus } : NetworkErrorParams) {
 			<ErrorComponent warning = { true } text = {
 				<>Unable to connect to { rpcConnectionStatus.rpcNetwork.name }. Retrying in <SomeTimeAgo priorTimestamp = { nextConnectionAttempt } countBackwards = { true }/> .</>
 			}/>
-		: <></> }
+			: <></> }
 		{ rpcConnectionStatus.latestBlock !== undefined && noNewBlockForOverTwoMins(rpcConnectionStatus) && retrying.value  ?
 			<ErrorComponent warning = { true } text = {
 				<>The connected RPC ({ rpcConnectionStatus.rpcNetwork.name }) seem to be stuck at block { rpcConnectionStatus.latestBlock.number } (occured on: { humanReadableDate(rpcConnectionStatus.latestBlock.timestamp) }). Retrying in <SomeTimeAgo priorTimestamp = { nextConnectionAttempt } countBackwards = { true }/>.</>
 			}/>
-		: <></> }
+			: <></> }
 	</>
 }
 
@@ -354,7 +354,7 @@ export function App() {
 									websiteAccessAddressMetadata = { websiteAccessAddressMetadata }
 									renameAddressCallBack = { renameAddressCallBack }
 								/>
-							: <></> }
+								: <></> }
 							{ appPage.page === 'ChangeActiveAddress' ?
 								<ChangeActiveAddress
 									setActiveAddressAndInformAboutIt = { setActiveAddressAndInformAboutIt }
@@ -365,7 +365,7 @@ export function App() {
 									renameAddressCallBack = { renameAddressCallBack }
 									addNewAddress = { addNewAddress }
 								/>
-							: <></> }
+								: <></> }
 							{ appPage.page === 'AddNewAddress' || appPage.page === 'ModifyAddress' ?
 								<AddNewAddress
 									setActiveAddressAndInformAboutIt = { setActiveAddressAndInformAboutIt }
@@ -373,7 +373,7 @@ export function App() {
 									close = { () => setAndSaveAppPage({ page: 'Home' }) }
 									activeAddress = { simulationMode ? activeSimulationAddress : activeSigningAddress }
 								/>
-							: <></> }
+								: <></> }
 						</div>
 					</> }
 				</div>
