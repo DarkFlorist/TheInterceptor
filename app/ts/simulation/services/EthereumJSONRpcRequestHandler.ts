@@ -21,7 +21,7 @@ export class EthereumJSONRpcRequestHandler {
 		this.caching = caching
 		this.cache = new Map()
 		this.pendingCache = new Map()
-    }
+	}
 	public readonly getRpcEntry = () => this.rpcEntry
 
 	public readonly clearCache = () => { this.cache = new Map() }

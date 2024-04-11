@@ -17,7 +17,7 @@ import { Page } from '../../types/exportedSettingsTypes.js'
 
 const HALF_HEADER_HEIGHT = 48 / 2
 
-function Title({ icon, title} : {icon: string | undefined, title: string}) {
+function Title({ icon, title} : { icon: string | undefined, title: string }) {
 	return <span style = 'font-weight: 700; line-height: 48px'>
 		{ icon === undefined
 			? <></>
@@ -96,12 +96,12 @@ function AssociatedTogether({ associatedAddresses, renameAddressCallBack }: { as
 function AccessRequest({ renameAddressCallBack, accessRequest, changeActiveAddress, refreshActiveAddress }: { renameAddressCallBack: RenameAddressCallBack, accessRequest: PendingAccessRequest, changeActiveAddress: () => void, refreshActiveAddress: () => void }) {
 	return <>
 		{ accessRequest.requestAccessToAddress === undefined ?
-		<div style = 'margin: 10px'>
-			<p className = 'title is-4' style = 'text-align: center; margin-top: 40px; margin-bottom: 40px;'>
-				<Title icon = { accessRequest.website.icon } title = { accessRequest.website.title === undefined ? accessRequest.website.websiteOrigin : accessRequest.website.title }/>
+			<div style = 'margin: 10px'>
+				<p className = 'title is-4' style = 'text-align: center; margin-top: 40px; margin-bottom: 40px;'>
+					<Title icon = { accessRequest.website.icon } title = { accessRequest.website.title === undefined ? accessRequest.website.websiteOrigin : accessRequest.website.title }/>
 				&nbsp;would like to connect to The Interceptor
-			</p>
-		</div> :
+				</p>
+			</div> :
 			<>
 				<div class = 'notification' style = 'background-color: var(--importance-box-color); color: var(--text-color)'>
 					<p className = 'title is-3' style = 'text-align: center; margin-bottom: 10px;'>
@@ -358,7 +358,7 @@ export function InterceptorAccess() {
 					{ pendingRequestAddedNotification === true
 						? <DinoSaysNotification
 							text = { `Hey! A new request was queued. Accept or Reject the previous request${ pendingAccessRequestArray.length > 1 ? 's' : '' } to see the new one.` }
-							close = { () => setPendingRequestAddedNotification(false)}
+							close = { () => setPendingRequestAddedNotification(false) }
 						/>
 						: <></>
 					}

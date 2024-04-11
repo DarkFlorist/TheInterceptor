@@ -8,7 +8,7 @@ import { CodeMessageError } from './rpc.js'
 export type EthGetStorageAtResponse = funtypes.Static<typeof EthGetStorageAtResponse>
 export const EthGetStorageAtResponse = funtypes.Union(
 	EthereumBytes32,
-	funtypes.String.withParser({ parse: x => x === '0x' ? { success: true, value: null } : { success: false, message: `eth_getStorageAt didn't return 32 bytes of data nor 0x.` } }),
+	funtypes.String.withParser({ parse: x => x === '0x' ? { success: true, value: null } : { success: false, message: 'eth_getStorageAt didn\'t return 32 bytes of data nor 0x.' } }),
 )
 
 export type EthGetLogsRequest = funtypes.Static<typeof EthGetLogsRequest>
@@ -76,12 +76,12 @@ export const DappRequestTransaction = funtypes.ReadonlyPartial({
 	}
 	return true
 })
-.withConstraint((x) => {
-	if (x.gasPrice !== undefined) return x.maxPriorityFeePerGas === undefined && x.maxFeePerGas === undefined
-	if (x.maxPriorityFeePerGas !== undefined) return x.maxFeePerGas !== undefined && x.gasPrice === undefined
-	if (x.maxFeePerGas !== undefined) return x.gasPrice === undefined /* && x.maxPriorityFeePerGas !== undefined*/ //Remix doesn't send "maxPriorityFeePerGas" with "maxFeePerGas"
-  return true
-})
+	.withConstraint((x) => {
+		if (x.gasPrice !== undefined) return x.maxPriorityFeePerGas === undefined && x.maxFeePerGas === undefined
+		if (x.maxPriorityFeePerGas !== undefined) return x.maxFeePerGas !== undefined && x.gasPrice === undefined
+		if (x.maxFeePerGas !== undefined) return x.gasPrice === undefined /* && x.maxPriorityFeePerGas !== undefined*/ //Remix doesn't send "maxPriorityFeePerGas" with "maxFeePerGas"
+		return true
+	})
 
 export type EthTransactionReceiptResponse = funtypes.Static<typeof EthTransactionReceiptResponse>
 export const EthTransactionReceiptResponse = funtypes.Union(

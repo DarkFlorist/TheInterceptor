@@ -446,14 +446,14 @@ export function serialize<T, U extends funtypes.Codec<T>>(funtype: U, value: T) 
 
 type ToWireType<T> =
 	T extends funtypes.Intersect<infer U> ? UnionToIntersection<{ [I in keyof U]: ToWireType<U[I]> }[number]>
-	: T extends funtypes.Union<infer U> ? { [I in keyof U]: ToWireType<U[I]> }[number]
-	: T extends funtypes.Record<infer U, infer V> ? Record<funtypes.Static<U>, ToWireType<V>>
-	: T extends funtypes.Partial<infer U, infer V> ? V extends true ? { readonly [K in keyof U]?: ToWireType<U[K]> } : { [K in keyof U]?: ToWireType<U[K]> }
-	: T extends funtypes.Object<infer U, infer V> ? V extends true ? { readonly [K in keyof U]: ToWireType<U[K]> } : { [K in keyof U]: ToWireType<U[K]> }
-	: T extends funtypes.Readonly<funtypes.Tuple<infer U>> ? { readonly [P in keyof U]: ToWireType<U[P]>}
-	: T extends funtypes.Tuple<infer U> ? { [P in keyof U]: ToWireType<U[P]>}
-	: T extends funtypes.ReadonlyArray<infer U> ? readonly ToWireType<U>[]
-	: T extends funtypes.Array<infer U> ? ToWireType<U>[]
-	: T extends funtypes.ParsedValue<infer U, infer _> ? ToWireType<U>
-	: T extends funtypes.Codec<infer U> ? U
-	: never
+		: T extends funtypes.Union<infer U> ? { [I in keyof U]: ToWireType<U[I]> }[number]
+			: T extends funtypes.Record<infer U, infer V> ? Record<funtypes.Static<U>, ToWireType<V>>
+				: T extends funtypes.Partial<infer U, infer V> ? V extends true ? { readonly [K in keyof U]?: ToWireType<U[K]> } : { [K in keyof U]?: ToWireType<U[K]> }
+					: T extends funtypes.Object<infer U, infer V> ? V extends true ? { readonly [K in keyof U]: ToWireType<U[K]> } : { [K in keyof U]: ToWireType<U[K]> }
+						: T extends funtypes.Readonly<funtypes.Tuple<infer U>> ? { readonly [P in keyof U]: ToWireType<U[P]>}
+							: T extends funtypes.Tuple<infer U> ? { [P in keyof U]: ToWireType<U[P]>}
+								: T extends funtypes.ReadonlyArray<infer U> ? readonly ToWireType<U>[]
+									: T extends funtypes.Array<infer U> ? ToWireType<U>[]
+										: T extends funtypes.ParsedValue<infer U, infer _> ? ToWireType<U>
+											: T extends funtypes.Codec<infer U> ? U
+												: never

@@ -109,7 +109,7 @@ function identifyGovernanceVote(simTx: SimulatedAndVisualizedTransaction) {
 			title: 'Governance Vote',
 			signingAction: 'Cast Vote',
 			simulationAction: 'Simulate Vote Casting',
-			rejectAction: `Don't Vote`,
+			rejectAction: 'Don\'t Vote',
 			governanceVoteInputParameters: parseVoteInputParameters(functionData),
 		}
 	} catch(e) {

@@ -23,7 +23,7 @@ function MissingAbi(params: MissingAbiParams) {
 		<div style = 'display: flex; justify-content: center; padding-top: 10px'>
 			{ params.addressBookEntry === undefined ? <></> :
 				<button class = { 'button is-primary' } onClick = { () => params.addressBookEntry !== undefined && params.renameAddressCallBack(params.addressBookEntry) }>
-					Add Abi
+				Add Abi
 				</button>
 			}
 		</div>
@@ -96,12 +96,12 @@ const ShowSuccessOrFailure = ({ simulateGovernanceContractExecutionReply, simTx,
 				>
 					Simulate execution on a passing vote
 				</button>
-			: <> <MissingAbi
+				: <> <MissingAbi
 					errorMessage = { missingAbiText }
 					addressBookEntry = { simTx.transaction.to }
 					renameAddressCallBack = { renameAddressCallBack }
 				/>
-			</> }
+				</> }
 		</div>
 	}
 	if (simulateGovernanceContractExecutionReply.data.success === false) {

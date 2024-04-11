@@ -247,10 +247,10 @@ export async function refreshConfirmTransactionSimulation(
 							...transactionToSimulate.transaction,
 							nonce: lastNonceFixed.signedTransaction.nonce,
 						} }
-					: { error: {
-						...transactionToSimulate.error,
-						decodedErrorMessage: decodeEthereumError(availableAbis, transactionToSimulate.error).reason
-					} }
+						: { error: {
+							...transactionToSimulate.error,
+							decodedErrorMessage: decodeEthereumError(availableAbis, transactionToSimulate.error).reason
+						} }
 				}
 			}
 		}

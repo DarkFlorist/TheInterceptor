@@ -17,7 +17,7 @@ export function DinoSaysNotification( { text, close } : { text: string, close?: 
 				<button class = 'card-header-icon' aria-label = 'remove' onClick = { close }>
 					<span class = 'icon' style = 'color: var(--text-color);'> X </span>
 				</button>
-			: <></> }
+				: <></> }
 		</div>
 	</div>
 }

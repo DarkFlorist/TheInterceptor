@@ -15,7 +15,7 @@ function encodeEthereumNameServiceString(data: string): string | undefined {
 			encodedData.push(encodedChunk)
 			currentIndex += byteCount * 2
 		} else {
-			console.error("Invalid ENS data format.")
+			console.error('Invalid ENS data format.')
 			return undefined
 		}
 	}

@@ -488,12 +488,12 @@ export function ConfirmTransaction() {
 			<button className = 'button is-primary button-overflow dialog-button-right' onClick = { approve } disabled = { isConfirmDisabled() }>
 				{ currentPendingTransactionOrSignableMessage.approvalStatus.status === 'WaitingForSigner' ? <>
 					<span> <Spinner height = '1em' color = 'var(--text-color)' /> Waiting for <SignersLogoName signerName = { signerName } /> </span>
-					</> : <>
-						{ currentPendingTransactionOrSignableMessage.simulationMode
-							? `${ identified.simulationAction }!`
-							: <SignerLogoText signerName = { signerName } text = { identified.signingAction } />
-						}
-					</>
+				</> : <>
+					{ currentPendingTransactionOrSignableMessage.simulationMode
+						? `${ identified.simulationAction }!`
+						: <SignerLogoText signerName = { signerName } text = { identified.signingAction } />
+					}
+				</>
 				}
 			</button>
 		</div>
@@ -565,16 +565,16 @@ export function ConfirmTransaction() {
 							{ currentPendingTransactionOrSignableMessage.originalRequestParameters.method === 'eth_sendRawTransaction' && currentPendingTransactionOrSignableMessage.type === 'Transaction'
 								? <DinoSaysNotification
 									text = { `This transaction is signed already. No extra signing required to forward it to ${ currentPendingTransactionOrSignableMessage.transactionOrMessageCreationStatus !== 'Simulated' || currentPendingTransactionOrSignableMessage.simulationResults.statusCode === 'failed' ?
-									'network' :
-									currentPendingTransactionOrSignableMessage.simulationResults.data.simulationState.rpcNetwork.name }.` }
-									close = { () => setPendingTransactionAddedNotification(false)}
+										'network' :
+										currentPendingTransactionOrSignableMessage.simulationResults.data.simulationState.rpcNetwork.name }.` }
+									close = { () => setPendingTransactionAddedNotification(false) }
 								/>
 								: <></>
 							}
 							{ pendingTransactionAddedNotification === true
 								? <DinoSaysNotification
 									text = { `Hey! A new transaction request was queued. Accept or Reject the previous transaction${ pendingTransactionsAndSignableMessages.length > 1 ? 's' : '' } to see the new one.` }
-									close = { () => setPendingTransactionAddedNotification(false)}
+									close = { () => setPendingTransactionAddedNotification(false) }
 								/>
 								: <></>
 							}
@@ -590,14 +590,14 @@ export function ConfirmTransaction() {
 									rpcConnectionStatus = { rpcConnectionStatus }
 									numberOfUnderTransactions = { underTransactions.length }
 								/>
-							: <>
-								<SignatureCard
-									visualizedPersonalSignRequest = { currentPendingTransactionOrSignableMessage.visualizedPersonalSignRequest }
-									renameAddressCallBack = { renameAddressCallBack }
-									removeTransactionOrSignedMessage = { undefined }
-									numberOfUnderTransactions = { underTransactions.length }
-								/>
-							</> }
+								: <>
+									<SignatureCard
+										visualizedPersonalSignRequest = { currentPendingTransactionOrSignableMessage.visualizedPersonalSignRequest }
+										renameAddressCallBack = { renameAddressCallBack }
+										removeTransactionOrSignedMessage = { undefined }
+										numberOfUnderTransactions = { underTransactions.length }
+									/>
+								</> }
 						</div>
 						<nav class = 'window-footer popup-button-row' style = 'position: sticky; bottom: 0; width: 100%;'>
 							<CheckBoxes currentPendingTransactionOrSignableMessage = { currentPendingTransactionOrSignableMessage } forceSend = { forceSend } setForceSend = { (enabled: boolean) => setForceSend(enabled) }/>

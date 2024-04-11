@@ -100,9 +100,9 @@ export const getSimulatedStackOld = (simulationState: SimulationState | undefine
 			... ( transaction.ethSimulateV1CallResult.status === 'failure' ? {
 				statusCode: transaction.ethSimulateV1CallResult.status,
 				error: transaction.ethSimulateV1CallResult.error.message } : {
-					statusCode: transaction.ethSimulateV1CallResult.status,
-					events: transaction.ethSimulateV1CallResult.logs.map((x) => ({ loggersAddress: x.address, data: x.data, topics: x.topics }))
-				}
+				statusCode: transaction.ethSimulateV1CallResult.status,
+				events: transaction.ethSimulateV1CallResult.logs.map((x) => ({ loggersAddress: x.address, data: x.data, topics: x.topics }))
+			}
 			),
 			returnValue: transaction.ethSimulateV1CallResult.returnData,
 			maxPriorityFeePerGas,
@@ -138,7 +138,7 @@ const simulationGasLeft = (simulationState: SimulationState | undefined, blockHe
 	return max(blockHeader.gasLimit * 1023n / 1024n - transactionQueueTotalGasLimit(simulationState), 0n)
 }
 
-export function getInputFieldFromDataOrInput(request: { input?: Uint8Array} | { data?: Uint8Array } | {}) {
+export function getInputFieldFromDataOrInput(request: { input?: Uint8Array } | { data?: Uint8Array } | {}) {
 	if ('data' in request && request.data !== undefined) return request.data
 	if ('input' in request && request.input !== undefined) return request.input
 	return new Uint8Array()
@@ -847,7 +847,7 @@ const getSimulatedTokenBalances = async (ethereumClientService: EthereumClientSe
 	const aggregate3CallResult = multicallResults.calls[multicallResults.calls.length - 1]
 	if (aggregate3CallResult === undefined || aggregate3CallResult.status === 'failure') throw Error('Failed aggregate3')
 	const multicallReturnData: { success: boolean, returnData: string }[] = IMulticall3.decodeFunctionResult('aggregate3', dataStringWith0xStart(aggregate3CallResult.returnData))[0]
-  if (multicallReturnData.length !== deduplicatedBalanceQueries.length) throw Error('Got wrong number of balances back')
+	if (multicallReturnData.length !== deduplicatedBalanceQueries.length) throw Error('Got wrong number of balances back')
 	return multicallReturnData.map((singleCallResult, callIndex) => {
 		const balanceQuery = deduplicatedBalanceQueries[callIndex]
 		if (balanceQuery === undefined) throw new Error('aggregate3 failed to get eth balance')
@@ -921,7 +921,7 @@ const getAddressesAndTokensIdsInteractedWithErc1155s = (events: readonly Ethereu
 			}
 			case 'TransferBatch': {
 				for (const parsedLog of handleERC1155TransferBatch(log)) {
-					if (parsedLog.type !== "ERC1155") continue
+					if (parsedLog.type !== 'ERC1155') continue
 					tokenOwners.push({ ...base, owner: parsedLog.from, tokenId: parsedLog.tokenId })
 					tokenOwners.push({ ...base, owner: parsedLog.to, tokenId: parsedLog.tokenId })
 				}
@@ -985,7 +985,7 @@ export const getSimulatedFeeHistory = async (ethereumClientService: EthereumClie
 	const clampedBlockTag = typeof blockTag === 'bigint' && blockTag > currentRealBlockNumber ? currentRealBlockNumber : blockTag
 	const newestBlock = await ethereumClientService.getBlock(clampedBlockTag, true)
 	const newestBlockBaseFeePerGas = newestBlock.baseFeePerGas
-	if (newestBlockBaseFeePerGas === undefined) throw new Error(`base fee per gas is missing for the block (it's too old)`)
+	if (newestBlockBaseFeePerGas === undefined) throw new Error('base fee per gas is missing for the block (it\'s too old)')
 	return {
 		baseFeePerGas: [newestBlockBaseFeePerGas, getNextBaseFeePerGas(newestBlock.gasUsed, newestBlock.gasLimit, newestBlockBaseFeePerGas)],
 		gasUsedRatio: [Number(newestBlock.gasUsed) / Number(newestBlock.gasLimit)],

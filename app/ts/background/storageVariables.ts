@@ -223,17 +223,17 @@ export const getRpcNetworkForChain = async (chainId: bigint): Promise<RpcNetwork
 
 //TODO, remove when we start to use multicall completely. Decide on what to do with WETH then
 const ethDonator = [{
-		chainId: 1n,
-		eth_donator: 0xda9dfa130df4de4673b89022ee50ff26f6ea73cfn, // Kraken
-	},
-	{
-		chainId: 5n,
-		eth_donator: 0xc48e23c5f6e1ea0baef6530734edc3968f79af2en
-	},
-	{
-		chainId: 11155111n,
-		eth_donator: 0xb21c33de1fab3fa15499c62b59fe0cc3250020d1n, // Richest address on Sepolia
-	}
+	chainId: 1n,
+	eth_donator: 0xda9dfa130df4de4673b89022ee50ff26f6ea73cfn, // Kraken
+},
+{
+	chainId: 5n,
+	eth_donator: 0xc48e23c5f6e1ea0baef6530734edc3968f79af2en
+},
+{
+	chainId: 11155111n,
+	eth_donator: 0xb21c33de1fab3fa15499c62b59fe0cc3250020d1n, // Richest address on Sepolia
+}
 ] as const
 
 export function getEthDonator(chainId: bigint) {

@@ -174,7 +174,7 @@ export async function getAddressBookEntriesForVisualiser(ethereumClientService: 
 }
 
 export async function nameTokenIds(ethereumClientService: EthereumClientService, events: GeneralEnrichedEthereumEvents) {
-	type TokenAddressTokenIdPair = { tokenAddress: bigint, tokenId: bigint}
+	type TokenAddressTokenIdPair = { tokenAddress: bigint, tokenId: bigint }
 	const tokenAddresses = events.map((event) => {
 		if (event.type !== 'TokenEvent' || event.tokenInformation.type !== 'ERC1155') return undefined
 		return { tokenAddress: event.tokenInformation.tokenAddress, tokenId: event.tokenInformation.tokenId }

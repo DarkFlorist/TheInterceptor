@@ -38,9 +38,9 @@ export function SimpleTokenApprovalVisualisation(params: SimpleTokenApprovalVisu
 							style = { { 'font-weight': '500', color: textColor } }
 							fontSize = 'big'
 						/>
-					: <> { 'amount' in params.approval && params.approval.amount >= (2n ** 96n - 1n ) ?
+						: <> { 'amount' in params.approval && params.approval.amount >= (2n ** 96n - 1n ) ?
 							<p class = 'ellipsis' style = { `color: ${ textColor }; font-size: 28px; font-weight: 500` }><b>ALL</b></p>
-						:
+							:
 							'amount' in params.approval ?
 								<TokenAmount
 									amount = { params.approval.amount }
@@ -48,7 +48,7 @@ export function SimpleTokenApprovalVisualisation(params: SimpleTokenApprovalVisu
 									style = { { 'font-weight': '500', color: textColor } }
 									fontSize = 'big'
 								/>
-							: <></>
+								: <></>
 						} </>
 					}
 				</div>
