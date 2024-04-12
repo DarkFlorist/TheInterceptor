@@ -38,15 +38,15 @@
 	--modal-background-color: rgba(10, 10, 10, .7)
 }
 
-button {
+button:where(:not(.btn)) {
 	background-color: var(--primary-color);
 }
 
-button:hover {
+button:where(:not(.btn)):hover {
 	background-color: var(--highlighted-primary-color);
 }
 
-button:disabled, button[disabled]{
+button:where(:not(.btn):disabled, button[disabled]) {
 	background-color: var(--disabled-primary-color);
 	border-color: transparent;
 }
@@ -912,19 +912,187 @@ svg.spinner > circle {
     border-radius: 6px;
 }
 
-.fields-grid {
-    display: grid;
-    grid-template-columns: max-content 1fr;
-    row-gap: 16px;
+.fieldslist {
     padding: 20px 24px;
     background: var(--card-bg-color);
     box-shadow: 0 2px 4px #00000060;
     border-radius: 6px;
-    column-gap: 12px;
+	display: grid;
+	row-gap: 10px;
 }
 
-.fields-grid label {
-	color: white;
-	font-size: 14px;
-	text-align: right;
+.input-field {
+	display: flex;
+	flex-direction: column-reverse;
 }
+
+.input-field label {
+	font-size: 0.75em;
+	line-height: 1;
+	color: #ffffff50;
+	transition-duration: 200ms;
+	transform-origin: top left;
+}
+
+.input-field input {
+	background: transparent;
+	color: white;
+	border-width: 0 0 1px 0;
+	outline: none;
+	padding: 4px 0;
+}
+
+.input-field input::placeholder {
+	color: #ffffff00;
+}
+
+.input-field input:placeholder-shown ~ label {
+    transform: scale(1.1) translate(0, 1.3em);
+}
+
+button:is(:not(.button), .btn) {
+	--s-justify: var(--btn-justify, center);
+	--s-bg: var(--btn-bg-color, gray);
+	--s-fg: var(--btn-text-color, var(--text-color));
+	--s-size: var(--btn-text-size , 1em);
+	--s-outline: var(--btn-outline, 1px solid transparent);
+	--s-brightness: var(--btn-brightness, 1);
+	--s-saturation: var(--btn-saturation, 1);
+	--s-contrast: var(--btn-contrast, 1);
+	/* reset some library button styles */
+	background-color: var(--s-bg);
+	color: var(--s-fg, var(--text-color));
+	font-size: var(--s-size);
+	border: var(--s-outline);
+	filter: saturate(var(--s-saturation)) brightness(var(--s-brightness));
+	justify-content: var(--s-justify);
+	height: 2.25em;
+	padding: 0 0.75em;
+	border-radius: 4px;
+	cursor: pointer;
+	outline: none;
+	display: flex;
+	align-items: center;
+}
+
+.btn:disabled { cursor: not-allowed; --btn-brightness: 0.6; --btn-saturation: 0.2 }
+.btn:not(:disabled):hover { --btn-brightness: 1.25 }
+.btn:not(:disabled):focus { --btn-outline: 1px solid var(--o-fg) }
+
+/* Primary Button */
+.btn.btn--primary { --btn-bg-color: var(--primary-color) }
+.btn.btn--primary:not(:disabled):hover { --btn-saturation: 1.5 }
+
+/* Danger Button */
+.btn.btn--destructive { --btn-bg-color: var(--negative-color) }
+.btn.btn--destructive:not(:disabled):hover { --btn-saturation: 1.5 }
+
+.btn.btn--outline {
+	--btn-bg-color: transparent;
+	--btn-outline: 1px solid #ffffff20;
+}
+
+.btn.btn--outline:hover:not(:disabled) { --btn-bg-color: #ffffff10 }
+
+.actions:has(.btn) {
+	column-gap: var(--button-gaps, 0.5rem);
+	display: flex;
+}
+
+:where(.actions > .btn) { font-size: var(--s-button-size); }
+
+.dialog {
+  padding: 1em;
+  border-radius: 6px;
+}
+
+.dialog-actions {
+  display: grid;
+  place-items: end;
+  grid-template-columns: max-content max-content;
+}
+
+details {
+	--s-text-size: var(--text-size, 0.85rem);
+	--s-base-color: color(from var(--text-color) srgb 0.4 0.4 0.4);
+	--s-icon-order: var(--icon-order);
+	--s-rule-color: transparent;
+	outline: none;
+}
+
+summary {
+	color: var(--s-base-color);
+	font-size: var(--s-text-size);
+	display: flex;
+	align-items: center;
+	gap: 0.5rem;
+	cursor: pointer;
+	outline: none;
+}
+
+summary:hover {
+	--s-base-color: color(from var(--text-color) srgb 0.6 0.6 0.6);
+	--s-rule-color: currentColor;
+}
+
+summary:focus {
+	--s-base-color: var(--text-color);
+}
+
+summary:after {
+	content: ' ';
+	margin: 0;
+	flex-grow: 1;
+	border-bottom: 1px solid var(--s-rule-color);
+}
+
+summary:where(details[open] > *) {
+	--s-rule-color: currentColor;
+}
+
+.svg-icon {
+	--s-rotate: var(--icon-rotate, 0deg);
+	--s-size: var(--icon-size, 1em);
+	/* avoid conflicts with other .icon classes */
+	all: revert;
+	fill: none;
+	display: block;
+	transition: transform 150ms;
+	width: var(--s-size);
+	height: var(--s-size);
+	transform: rotate(var(--s-rotate));
+}
+
+/* Fix svg sub-pixel rendering for icons */
+.svg-icon *:where(path, rect) { shape-rendering: geometicprecision }
+
+.svg-icon:where(details:not([open]) .details--arrow) { --icon-rotate: -90deg }
+
+.grid {
+	display: grid;
+	grid-template-columns: var(--grid-cols, auto);
+	align-items: var(--vertical-align, center);
+	row-gap: var(--gap-y, 0);
+	column-gap: var(--gap-x, 0);
+}
+
+:where(.grid > *:not(.cell)) { display: none; }
+
+.cell:where(.grid > *) {
+	color: var(--text-color);
+	font-size: var(--text-size, 0.9rem);
+	font-weight: var(--font-weight, normal);
+	grid-area: var(--grid-area, auto);
+}
+
+.brief {
+	--grid-cols: 1fr max-content;
+	--gap-x: 1rem;
+	background: #ffffff10;
+	padding: 0.5rem 1em;
+	border-radius: 4px;
+}
+
+.brief .grid:where(.brief > *) { --grid-cols: 1fr max-content; }
+.brief .cell { --text-color: gray }
+.brief .actions { --btn-text-size: 0.8rem; }

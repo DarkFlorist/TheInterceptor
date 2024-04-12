@@ -255,7 +255,7 @@ export function SettingsView() {
 					<li>
 							<p className = 'paragraph'>RPC Connections</p>
 						<Rpcs rpcEntries = { rpcEntries } />
-						<SetupNewRpc />
+						<SetupNewRpc rpcEntries = { rpcEntries } />
 					</li>
 				</ul>
 			</section>

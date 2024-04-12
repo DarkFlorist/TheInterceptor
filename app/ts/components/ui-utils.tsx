@@ -168,3 +168,12 @@ export const getAddressBookEntryOrAFiller = (addressMetaData: readonly AddressBo
 		entrySource: 'FilledIn' as const
 	}
 }
+
+
+export const normalizeCSSClass = (classNames: string) => {
+	return classNames.trim().split(' ').filter(Boolean)
+}
+
+export const mergeCSSClasses = (...classes: string[]) => {
+	return classes.map(normalizeCSSClass).join(' ')
+}
