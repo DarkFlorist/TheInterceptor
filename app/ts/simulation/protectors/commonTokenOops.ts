@@ -14,13 +14,13 @@ const ADDITIONAL_BAD_TRANSFER_TARGETS = new Set<bigint>([
 	UNISWAP_V3_ROUTER
 ])
 
-export async function getCodeOrError(ethereum: EthereumClientService, simulationState: SimulationState, address: EthereumAddress) {
-	const code = await getSimulatedCode(ethereum, simulationState, address)
+export async function getCodeOrError(ethereum: EthereumClientService, requestAbortController: AbortController | undefined, simulationState: SimulationState, address: EthereumAddress) {
+	const code = await getSimulatedCode(ethereum, requestAbortController, simulationState, address)
 	if (code.statusCode !== 'failure') return code
-	const identifiedAddress = await identifyAddress(ethereum, address)
+	const identifiedAddress = await identifyAddress(ethereum, requestAbortController, address)
 	return { statusCode: 'failure' as const, message: `Failed to verify whether address ${ identifiedAddress } contains code or not.` }
 }
-export async function commonTokenOops(transaction: EthereumUnsignedTransaction, ethereum: EthereumClientService, _simulationState: SimulationState) {
+export async function commonTokenOops(transaction: EthereumUnsignedTransaction, ethereum: EthereumClientService, requestAbortController: AbortController | undefined, _simulationState: SimulationState) {
 	const transferInfo = parseTransaction(transaction)
 	if (transferInfo === undefined) return
 	if (transaction.to === null) return
@@ -29,6 +29,6 @@ export async function commonTokenOops(transaction: EthereumUnsignedTransaction, 
 	if (tokenMetadata.get(addressString(transferInfo.arguments.to)) === undefined) return
 	if (erc721Metadata.get(addressString(transferInfo.arguments.to)) === undefined) return
 	if (erc1155Metadata.get(addressString(transferInfo.arguments.to)) === undefined) return
-	const to = await identifyAddress(ethereum, transferInfo.arguments.to)
+	const to = await identifyAddress(ethereum, requestAbortController, transferInfo.arguments.to)
 	return `Attempt to send tokens to a contract ${ to } that cannot receive such tokens`
 }

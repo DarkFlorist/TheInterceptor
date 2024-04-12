@@ -111,11 +111,11 @@ function getSolidityTypeCategory(type: SolidityType) {
 	}
 }
 
-export async function parseSolidityValueByTypeEnriched(ethereumClientService: EthereumClientService, type: SolidityType, value: unknown, isArray: boolean, useLocalStorage = true): Promise<EnrichedGroupedSolidityType> {	
+export async function parseSolidityValueByTypeEnriched(ethereumClientService: EthereumClientService, requestAbortController: AbortController | undefined, type: SolidityType, value: unknown, isArray: boolean, useLocalStorage = true): Promise<EnrichedGroupedSolidityType> {	
 	const categorized = getSolidityTypeCategory(type)
 	if (categorized === 'address') {
-		if (isArray) return { type: 'address[]', value: await Promise.all(funtypes.ReadonlyArray(EthereumAddress).parse(value).map((value) => identifyAddress(ethereumClientService, value, useLocalStorage))) }
-		return { type: 'address', value: await identifyAddress(ethereumClientService, EthereumAddress.parse(value), useLocalStorage) }
+		if (isArray) return { type: 'address[]', value: await Promise.all(funtypes.ReadonlyArray(EthereumAddress).parse(value).map((value) => identifyAddress(ethereumClientService, requestAbortController, value, useLocalStorage))) }
+		return { type: 'address', value: await identifyAddress(ethereumClientService, requestAbortController, EthereumAddress.parse(value), useLocalStorage) }
 	}
 	const parsed = parseSolidityValueByTypePure(type, value, isArray)
 	if (parsed.type === 'address' || parsed.type === 'address[]') throw new Error('parsed to address or address array')

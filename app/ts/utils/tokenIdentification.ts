@@ -18,16 +18,16 @@ type UnknownContract = {
 
 export type IdentifiedAddress = (EOA | Erc20TokenEntry | Erc721Entry | Erc1155Entry | UnknownContract)
 
-async function tryAggregateMulticall(ethereumClientService: IEthereumClientService, calls: { target: string, callData: string }[]): Promise<{ success: boolean, returnData: string }[]> {
+async function tryAggregateMulticall(ethereumClientService: IEthereumClientService, requestAbortController: AbortController | undefined, calls: { target: string, callData: string }[]): Promise<{ success: boolean, returnData: string }[]> {
 	const multicallInterface = new Interface(MulticallABI)
 	const tryAggregate = multicallInterface.getFunction('tryAggregate')
 	if (tryAggregate === null) throw new Error('tryAggregate misssing from ABI')
-	const returnData = await ethereumClientService.call({ to: UniswapV3Multicall2, input: stringToUint8Array(multicallInterface.encodeFunctionData(tryAggregate, [false, calls])) })
+	const returnData = await ethereumClientService.call({ to: UniswapV3Multicall2, input: stringToUint8Array(multicallInterface.encodeFunctionData(tryAggregate, [false, calls])) }, 'latest', requestAbortController)
 	return multicallInterface.decodeFunctionResult(tryAggregate, returnData)[0]
 }
 
-export async function itentifyAddressViaOnChainInformation(ethereumClientService: IEthereumClientService, address: EthereumAddress): Promise<IdentifiedAddress> {
-	const contractCode = await ethereumClientService.getCode(address)
+export async function itentifyAddressViaOnChainInformation(ethereumClientService: IEthereumClientService, requestAbortController: AbortController | undefined, address: EthereumAddress): Promise<IdentifiedAddress> {
+	const contractCode = await ethereumClientService.getCode(address, 'latest', requestAbortController)
 	if (contractCode.length === 0) return { type: 'EOA', address }
 
 	const nftInterface = new Interface(Erc721ABI)
@@ -45,7 +45,7 @@ export async function itentifyAddressViaOnChainInformation(ethereumClientService
 	]
 
 	try {
-		const [isErc721, hasMetadata, isErc1155, name, symbol, decimals, totalSupply] = await tryAggregateMulticall(ethereumClientService, calls)
+		const [isErc721, hasMetadata, isErc1155, name, symbol, decimals, totalSupply] = await tryAggregateMulticall(ethereumClientService, requestAbortController, calls)
 		if (isErc721 === undefined || hasMetadata === undefined || isErc1155 === undefined || name === undefined || symbol === undefined || decimals === undefined || totalSupply === undefined) throw new Error('Multicall result is too short')
 		if (isErc721.success && nftInterface.decodeFunctionResult('supportsInterface', isErc721.returnData)[0] === true) {
 			return {
