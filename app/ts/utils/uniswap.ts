@@ -17,18 +17,11 @@ interface Multicall3Call {
 
 const isSuccessfulCall = ({ returnData, success }: { returnData: string, success: boolean }) => success && returnData !== '0x'
 
-export function calculateUniswapLikePools(token: EthereumAddress, quoteToken: EthereumAddress, chainId: bigint): UniswapPools | undefined {
-	const chainIdString = chainId.toString()
-	if (!(chainIdString in networkPriceSources)) return undefined
-	const network = networkPriceSources[chainIdString]
-	if (network === undefined) throw new Error(`Unable to find network ${ chainIdString }`)
-
+export function calculateUniswapLikePools(token: EthereumAddress, quoteToken: EthereumAddress): UniswapPools | undefined {
 	const [token0, token1] = token < quoteToken ? [addressString(token), addressString(quoteToken)] : [addressString(quoteToken), addressString(token)]
 	const abi = new AbiCoder()
-
-	const v2Pools = network.priceSources.uniswapV2Like.map(({ factory, initCodeHash }) => EthereumAddress.parse(getCreate2Address(addressString(factory), keccak256(solidityPacked(['address', 'address'], [token0, token1])), initCodeHash)))
-
-	const v3Pools = network.priceSources.uniswapV3Like.flatMap(({ factory, initCodeHash }) => [
+	const v2Pools = networkPriceSources.uniswapV2Like.map(({ factory, initCodeHash }) => EthereumAddress.parse(getCreate2Address(addressString(factory), keccak256(solidityPacked(['address', 'address'], [token0, token1])), initCodeHash)))
+	const v3Pools = networkPriceSources.uniswapV3Like.flatMap(({ factory, initCodeHash }) => [
 		getCreate2Address(addressString(factory), keccak256(abi.encode(['address', 'address', 'uint24'], [token0, token1, 100])), initCodeHash),
 		getCreate2Address(addressString(factory), keccak256(abi.encode(['address', 'address', 'uint24'], [token0, token1, 500])), initCodeHash),
 		getCreate2Address(addressString(factory), keccak256(abi.encode(['address', 'address', 'uint24'], [token0, token1, 3000])), initCodeHash),
