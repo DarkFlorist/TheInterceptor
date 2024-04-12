@@ -152,9 +152,7 @@ function AccessRequests(param: AccessRequestParam) {
 	const firstPendingRequest = param.pendingAccessRequestArray.at(0)
 	if (firstPendingRequest === undefined) return <></>
 	return <>
-		<UnderAccesses
-			reversedPendingAccessRequestArray = { param.pendingAccessRequestArray.slice(1).reverse() }
-		/>
+		<UnderAccesses reversedPendingAccessRequestArray = { param.pendingAccessRequestArray.slice(1).reverse() } />
 		<div class = 'card' style = { `top: ${ (param.pendingAccessRequestArray.length - 1) * -HALF_HEADER_HEIGHT }px` }>
 			<AccessRequestHeader { ...firstPendingRequest.website } />
 			<div class = 'card-content' style = 'padding-bottom: 5px;'>
@@ -254,9 +252,7 @@ export function InterceptorAccess() {
 		} })
 	}
 
-	function changeActiveAddress() {
-		setAppPage({ page: 'ChangeActiveAddress' })
-	}
+	const changeActiveAddress = () => setAppPage({ page: 'ChangeActiveAddress' })
 
 	async function refreshMetadata() {
 		await sendPopupMessageToBackgroundPage({ method: 'popup_refreshInterceptorAccessMetadata' })
