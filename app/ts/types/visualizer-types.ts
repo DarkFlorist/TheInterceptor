@@ -296,7 +296,7 @@ export const SignedMessageTransaction = funtypes.ReadonlyObject({
 
 export type SimulationState = funtypes.Static<typeof SimulationState>
 export const SimulationState = funtypes.ReadonlyObject({
-	prependTransactionsQueue: funtypes.ReadonlyArray(WebsiteCreatedEthereumUnsignedTransaction),
+	addressToMakeRich: funtypes.Union(funtypes.Undefined, EthereumAddress),
 	simulatedTransactions: funtypes.ReadonlyArray(SimulatedTransaction),
 	signedMessages: funtypes.ReadonlyArray(SignedMessageTransaction),
 	blockNumber: EthereumQuantity,
