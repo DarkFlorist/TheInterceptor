@@ -1,6 +1,7 @@
 import { sendPopupMessageToOpenWindows } from '../background/backgroundUtils.js'
 import { setLatestUnexpectedError } from '../background/storageVariables.js'
 import { JsonRpcErrorResponse } from '../types/JsonRpc-types.js'
+import { NEW_BLOCK_ABORT } from './constants.js'
 
 class ErrorWithData extends Error {
 	public constructor(message: string, public data: unknown) {
@@ -29,10 +30,11 @@ export class FetchResponseError extends ErrorWithData {
 }
 
 export function isFailedToFetchError(error: Error) {
-	// failed to fetch is thrown by Chrome if there's no connection to node and FireFox throws NetworkError instead
-	if (error.message.includes('Failed to fetch') || error.message.includes('NetworkError when attempting to fetch resource')) return true
+	if (error.message.includes('Fetch request timed out.') || error.message.includes('Failed to fetch') || error.message.includes('NetworkError when attempting to fetch resource')) return true
 	return false
 }
+
+export const isNewBlockAbort = (error: Error) => error.message.includes(NEW_BLOCK_ABORT)
 
 export function printError(error: unknown) {
 	if (error instanceof Error && 'data' in error) {

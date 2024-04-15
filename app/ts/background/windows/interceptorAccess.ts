@@ -258,7 +258,7 @@ export async function requestAddressChange(websiteTabConnections: WebsiteTabConn
 		async function getProposedAddress() {
 			if (message.method === 'popup_interceptorAccessRefresh' || message.data.newActiveAddress === 'signer') {
 				const signerAccounts = await askForSignerAccountsFromSignerIfNotAvailable(websiteTabConnections, message.data.socket)
-				return signerAccounts === undefined || signerAccounts.length === 0 ? undefined : signerAccounts[0]
+				return signerAccounts[0]
 			}
 			return message.data.newActiveAddress
 		}
@@ -266,27 +266,14 @@ export async function requestAddressChange(websiteTabConnections: WebsiteTabConn
 		const proposedAddress = await getProposedAddress()
 		const settings = await getSettings()
 		const newActiveAddress = proposedAddress === undefined ? message.data.requestAccessToAddress : proposedAddress
-		const newActiveAddressActiveAddress = await getActiveAddressEntry(newActiveAddress)
-		const associatedAddresses = await getAssociatedAddresses(settings, message.data.website.websiteOrigin, newActiveAddressActiveAddress)
-
+		const requestAccessToAddress = await getActiveAddressEntry(newActiveAddress)
+		const associatedAddresses = await getAssociatedAddresses(settings, message.data.website.websiteOrigin, requestAccessToAddress)
 		return previousPendingAccessRequests.map((request) => {
-			if (request.accessRequestId === message.data.accessRequestId) {
-				return {
-					...request,
-					associatedAddresses,
-					requestAccessTo: newActiveAddress
-				}
-			}
+			if (request.accessRequestId === message.data.accessRequestId) return { ...request, associatedAddresses, requestAccessToAddress }
 			return request
 		})
 	})
-	return await sendPopupMessageToOpenWindows({
-		method: 'popup_interceptorAccessDialog',
-		data: {
-			activeAddresses: await getActiveAddresses(),
-			pendingAccessRequests: newRequests.current,
-		}
-	})
+	return await sendPopupMessageToOpenWindows({ method: 'popup_interceptorAccessDialog', data: { activeAddresses: await getActiveAddresses(), pendingAccessRequests: newRequests.current } })
 }
 
 export async function interceptorAccessMetadataRefresh() {
@@ -296,14 +283,14 @@ export async function interceptorAccessMetadataRefresh() {
 		data: {
 			activeAddresses: await getActiveAddresses(),
 			pendingAccessRequests: await Promise.all((await getPendingAccessRequests()).map(async (request) => {
-				const requestAccessTo = request.requestAccessToAddress === undefined ? undefined : request.requestAccessToAddress
+				const requestAccessToAddress = request.requestAccessToAddress === undefined ? undefined : request.requestAccessToAddress
 				const signerName = request.request !== undefined ? (await getTabState(request.request?.uniqueRequestIdentifier.requestSocket.tabId)).signerName : 'NoSignerDetected'
-				const associatedAddresses = await getAssociatedAddresses(settings, request.website.websiteOrigin, requestAccessTo)
+				const associatedAddresses = await getAssociatedAddresses(settings, request.website.websiteOrigin, requestAccessToAddress)
 				return {
 					...request,
 					signerName,
 					associatedAddresses,
-					requestAccessTo
+					requestAccessToAddress
 				}
 			}))
 		}

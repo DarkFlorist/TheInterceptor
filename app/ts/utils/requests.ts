@@ -1,5 +1,6 @@
 import * as funtypes from 'funtypes'
 import { EthereumQuantity } from '../types/wire-types.js'
+import { anySignal } from './anySignal.js'
 
 export type WebsiteSocket = funtypes.Static<typeof WebsiteSocket>
 export const WebsiteSocket = funtypes.ReadonlyObject({
@@ -54,16 +55,18 @@ export const doesUniqueRequestIdentifiersMatch = (a: UniqueRequestIdentifier, b:
 	return a.requestId === b.requestId && a.requestSocket.connectionName === b.requestSocket.connectionName && a.requestSocket.tabId === b.requestSocket.tabId
 }
 
-export async function fetchWithTimeout(resource: RequestInfo | URL, init?: RequestInit | undefined, timeoutMs = 60000) {
-	const controller = new AbortController()
-	const id = setTimeout(() => controller.abort(), timeoutMs)
+export async function fetchWithTimeout(resource: RequestInfo | URL, init: RequestInit | undefined, timeoutMs: number, requestAbortController: AbortController | undefined = undefined) {
+	const timeoutAbortController = new AbortController()
+	const timeoutId = setTimeout(() => timeoutAbortController.abort(new Error('Fetch request timed out.')), timeoutMs)
+	const requestAndTimeoutSignal = requestAbortController === undefined ? timeoutAbortController.signal : anySignal([timeoutAbortController.signal, requestAbortController.signal])
 	try {
-		const response = await fetch(resource, { ...init, signal: controller.signal })
-		clearTimeout(id)
-		return response
+		if (requestAndTimeoutSignal.aborted) throw requestAndTimeoutSignal.reason
+		return await fetch(resource, { ...init, signal: requestAndTimeoutSignal })
 	} catch(error: unknown) {
 		if (error instanceof DOMException && error.message === 'The user aborted a request.') throw new Error('Fetch request timed out.')
 		throw error
+	} finally {
+		clearTimeout(timeoutId)
 	}
 }
 
