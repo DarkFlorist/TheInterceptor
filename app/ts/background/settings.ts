@@ -5,7 +5,6 @@ import { Semaphore } from '../utils/semaphore.js'
 import { EthereumAddress } from '../types/wire-types.js'
 import { WebsiteAccessArray } from '../types/websiteAccessTypes.js'
 import { RpcNetwork } from '../types/rpc.js'
-import { NetworkPrice } from '../types/visualizer-types.js'
 import { browserStorageLocalGet, browserStorageLocalSet } from '../utils/storageUtils.js'
 import { getUserAddressBookEntries, updateUserAddressBookEntries } from './storageVariables.js'
 import { ActiveAddress } from '../types/addressBookTypes.js'
@@ -27,34 +26,14 @@ export const defaultActiveAddresses = [
 		askForAddressAccess: false,
 	}
 ]
-export const networkPriceSources: { [chainId: string]: NetworkPrice } = {
-	'1': {
-		quoteToken: { address: 0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2n, decimals: 18n, symbol: 'ETH' },
-		priceSources: {
-			uniswapV2Like: [
-				{ factory: 0x5C69bEe701ef814a2B6a3EDD4B1652CB9cc5aA6fn, initCodeHash: '0x96e8ac4277198ff8b6f785478aa9a39f403cb768dd02cbee326c3e7da348845f' }, // Uniswap V2
-			],
-			uniswapV3Like: [
-				{ factory: 0x1F98431c8aD98523631AE4a59f267346ea31F984n, initCodeHash: '0xe34f199b19b2b4f47f68442619d555527d244f78a3297ea89325f843f87b8b54' } // Uniswap V3
-			]
-		}
-	},
-	'5': {
-		quoteToken: { address: 0xb4fbf271143f4fbf7b91a5ded31805e42b2208d6n, decimals: 18n, symbol: 'ETH' },
-		priceSources: {
-			uniswapV2Like: [
-				{ factory: 0x5C69bEe701ef814a2B6a3EDD4B1652CB9cc5aA6fn, initCodeHash: '0x96e8ac4277198ff8b6f785478aa9a39f403cb768dd02cbee326c3e7da348845f' }, // Uniswap V2 Goerli deployment
-			],
-			uniswapV3Like: []
-		}
-	},
-	'11155111': {
-		quoteToken: { address: 0x105083929bf9bb22c26cb1777ec92661170d4285n, decimals: 18n, symbol: 'ETH' },
-		priceSources: {
-			uniswapV2Like: [],
-			uniswapV3Like: []
-		}
-	}
+
+export const networkPriceSources = {
+	uniswapV2Like: [
+		{ factory: 0x5C69bEe701ef814a2B6a3EDD4B1652CB9cc5aA6fn, initCodeHash: '0x96e8ac4277198ff8b6f785478aa9a39f403cb768dd02cbee326c3e7da348845f' }, // Uniswap V2
+	],
+	uniswapV3Like: [
+		{ factory: 0x1F98431c8aD98523631AE4a59f267346ea31F984n, initCodeHash: '0xe34f199b19b2b4f47f68442619d555527d244f78a3297ea89325f843f87b8b54' } // Uniswap V3
+	]
 } as const
 
 export const defaultRpcs = [

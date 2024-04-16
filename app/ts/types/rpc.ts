@@ -1,5 +1,5 @@
 import * as funtypes from 'funtypes'
-import { EthereumQuantity } from './wire-types.js'
+import { EthereumAddress, EthereumQuantity } from './wire-types.js'
 
 export type RpcEntry = funtypes.Static<typeof RpcEntry>
 export const RpcEntry = funtypes.Intersect(
@@ -11,7 +11,7 @@ export const RpcEntry = funtypes.Intersect(
 		currencyTicker: funtypes.String,
 		primary: funtypes.Boolean,
 		minimized: funtypes.Boolean,
-		weth: EthereumQuantity,
+		weth: funtypes.Union(funtypes.Undefined, EthereumAddress),
 	}),
 	funtypes.ReadonlyPartial({	
 		currencyLogoUri: funtypes.String,

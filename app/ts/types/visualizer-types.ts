@@ -13,15 +13,6 @@ import { PureGroupedSolidityType } from './solidityType.js'
 import { TransactionOrMessageIdentifier } from './interceptor-messages.js'
 import { EthSimulateV1CallResult } from './ethSimulate-types.js'
 
-export type NetworkPrice = funtypes.Static<typeof NetworkPrice>
-export const NetworkPrice = funtypes.ReadonlyObject({
-	quoteToken: funtypes.ReadonlyObject({ address: EthereumAddress, decimals: EthereumQuantity, symbol: funtypes.String }),
-	priceSources: funtypes.ReadonlyObject({
-		uniswapV2Like: funtypes.ReadonlyArray(funtypes.ReadonlyObject({ factory: EthereumQuantity, initCodeHash: funtypes.String })),
-		uniswapV3Like: funtypes.ReadonlyArray(funtypes.ReadonlyObject({ factory: EthereumQuantity, initCodeHash: funtypes.String }))
-	})
-})
-
 type SolidityVariable = funtypes.Static<typeof SolidityVariable>
 const SolidityVariable = funtypes.ReadonlyObject({
 	typeValue: PureGroupedSolidityType,
