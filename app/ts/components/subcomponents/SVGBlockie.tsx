@@ -96,12 +96,12 @@ export function Blockie({ address, style }: SVGBlockieProps) {
 	const pixelDensity = 8
 	const { imageData, color, spotcolor, bgcolor } = useMemo(() => generateIdenticon({ address, size: pixelDensity }), [address])
 	return (
-		<svg width = '1em' height = '1em' viewBox = '0 0 64 64' xmlns = 'http://www.w3.org/2000/svg' { ...( style ? { style } : {}) }>
+		<svg width = '1em' height = '1em' viewBox = '0 0 64 64' xmlns = 'http://www.w3.org/2000/svg' { ...( style ? { style } : {}) } shape-rendering = 'crispEdges'>
 			{ imageData.map((data, index) => {
 				const fill = data === 0 ? bgcolor : data === 1 ? color : spotcolor
 				const pixelSize = 64 / pixelDensity
 
-				return <rect shapeRendering= 'crispedges' width = { pixelSize } height = { pixelSize } x = { ((index % pixelDensity) * 64) / pixelDensity } y = { Math.floor(index / pixelDensity) * pixelSize } fill = { fill } />
+				return <rect width = { pixelSize } height = { pixelSize } x = { ((index % pixelDensity) * 64) / pixelDensity } y = { Math.floor(index / pixelDensity) * pixelSize } fill = { fill } />
 			}) }
 		</svg>
 	)
