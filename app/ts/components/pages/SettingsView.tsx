@@ -5,6 +5,7 @@ import { RpcEntries } from '../../types/rpc.js'
 import { useEffect, useState } from 'preact/hooks'
 import { ErrorComponent } from '../subcomponents/Error.js'
 import { DinoSaysNotification } from '../subcomponents/DinoSays.js'
+import { modifyObject } from '../../utils/typescript.js'
 
 type CheckBoxSettingParam = {
 	text: string
@@ -121,7 +122,7 @@ function Rpcs({ rpcEntries }: { rpcEntries: RpcEntries }) {
 		if (rpcEntries === undefined) return
 		sendPopupMessageToBackgroundPage({
 			method: 'popup_set_rpc_list',
-			data: rpcEntries.map((rpc) => ({ ...rpc, minimized: rpcUrl === rpc.httpsRpc ? minimize : rpc.minimized, }))
+			data: rpcEntries.map((rpc) => modifyObject(rpc, { minimized: rpcUrl === rpc.httpsRpc ? minimize : rpc.minimized, }))
 		})
 	}
 
@@ -133,8 +134,8 @@ function Rpcs({ rpcEntries }: { rpcEntries: RpcEntries }) {
 		sendPopupMessageToBackgroundPage({
 			method: 'popup_set_rpc_list',
 			data: rpcEntries.map((rpc) => {
-				if (rpcUrl === rpc.httpsRpc) return { ...rpc, primary: true }
-				if (rpcInQuestion.chainId === rpc.chainId) return { ...rpc, primary: false }
+				if (rpcUrl === rpc.httpsRpc) return modifyObject(rpc, { primary: true })
+				if (rpcInQuestion.chainId === rpc.chainId) return modifyObject(rpc, { primary: false })
 				return rpc
 			})
 		})

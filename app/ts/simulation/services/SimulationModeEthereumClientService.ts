@@ -7,7 +7,7 @@ import { WebsiteCreatedEthereumUnsignedTransaction, SimulatedTransaction, Simula
 import { EthereumUnsignedTransactionToUnsignedTransaction, IUnsignedTransaction1559, rlpEncode, serializeSignedTransactionToBytes } from '../../utils/ethereum.js'
 import { EthGetLogsResponse, EthGetLogsRequest, EthTransactionReceiptResponse, DappRequestTransaction, EthGetFeeHistoryResponse, FeeHistory } from '../../types/JsonRpc-types.js'
 import { handleERC1155TransferBatch, handleERC1155TransferSingle, handleERC20TransferLog } from '../logHandlers.js'
-import { assertNever } from '../../utils/typescript.js'
+import { assertNever, modifyObject } from '../../utils/typescript.js'
 import { SignMessageParams } from '../../types/jsonRpc-signing-types.js'
 import { EthSimulateV1CallResults, EthereumEvent, StateOverrides } from '../../types/ethSimulate-types.js'
 import { getCodeByteCode } from '../../utils/ethereumByteCodes.js'
@@ -365,7 +365,7 @@ export const removeTransactionAndUpdateTransactionNonces = async (ethereumClient
 			continue
 		}
 		const shouldUpdateNonce = transactionWasFound && transaction.signedTransaction.from === transactionToBeRemoved.signedTransaction.from
-		const newTransaction = { ...transaction.signedTransaction, ...(shouldUpdateNonce ? { nonce: transaction.signedTransaction.nonce - 1n } : {}) }
+		const newTransaction = modifyObject(transaction.signedTransaction, shouldUpdateNonce ? { nonce: transaction.signedTransaction.nonce - 1n } : {})
 		newTransactions.push({
 			transaction: newTransaction,
 			website: transaction.website,
@@ -393,9 +393,9 @@ export const getNonceFixedSimulatedTransactions = async(ethereumClientService: E
 		if (isFixableNonceError(transaction)) {
 			const previousNonce = knownPreviousNonce.get(fromString)
 			if (previousNonce !== undefined) {
-				nonceFixedTransactions.push({ ...transaction, signedTransaction: { ...signedTransaction, nonce: previousNonce + 1n } })
+				nonceFixedTransactions.push(modifyObject(transaction, { signedTransaction: modifyObject(signedTransaction, { nonce: previousNonce + 1n }) }))
 			} else {
-				nonceFixedTransactions.push({ ...transaction, signedTransaction: { ...signedTransaction, nonce: await ethereumClientService.getTransactionCount(signedTransaction.from, 'latest', requestAbortController) } })
+				nonceFixedTransactions.push(modifyObject(transaction, { signedTransaction: modifyObject(signedTransaction, { nonce: await ethereumClientService.getTransactionCount(signedTransaction.from, 'latest', requestAbortController) }) }))
 			}
 		} else {
 			nonceFixedTransactions.push(transaction)
@@ -413,13 +413,7 @@ const getBaseFeeAdjustedTransactions = (parentBlock: EthereumBlockHeader, unsign
 	return unsignedTxts.map((transaction) => {
 		if (transaction.originalRequestParameters.method !== 'eth_sendTransaction') return transaction
 		if (transaction.transaction.type !== '1559') return transaction
-		return {
-			...transaction,
-			transaction: {
-				...transaction.transaction,
-				maxFeePerGas: parentBaseFeePerGas * 2n
-			}
-		}
+		return modifyObject(transaction, { transaction: modifyObject(transaction.transaction, { maxFeePerGas: parentBaseFeePerGas * 2n }) })
 	})
 }
 
@@ -427,7 +421,7 @@ export const refreshSimulationState = async (ethereumClientService: EthereumClie
 	if (ethereumClientService.getChainId() !== simulationState.rpcNetwork.chainId) return simulationState // don't refresh if we don't have the same chain to refresh from
 	if (simulationState.blockNumber === await ethereumClientService.getBlockNumber(undefined)) {
 		// if block number is the same, we don't need to compute anything as nothing has changed, but let's update timestamp to show the simulation was refreshed for this time
-		return { ...simulationState, simulationConductedTimestamp: new Date() }
+		return modifyObject(simulationState, { simulationConductedTimestamp: new Date() })
 	}
 	const parentBlockPromise = ethereumClientService.getBlock(undefined)
 	const getNonceFixedTransactions = async () => {
@@ -976,7 +970,7 @@ export const appendSignedMessage = async (ethereumClientService: EthereumClientS
 			baseFeePerGas: block.baseFeePerGas || 0n,
 		}
 	}
-	return { ...simulationState, signedMessages: simulationState.signedMessages.concat(signedMessage) }
+	return modifyObject(simulationState, { signedMessages: simulationState.signedMessages.concat(signedMessage) })
 }
 
 // takes the most recent block that the application is querying and does the calculation based on that
@@ -1001,7 +995,7 @@ export const getSimulatedFeeHistory = async (ethereumClientService: EthereumClie
 					: { dataPoint: tx.gasPrice - (newestBlockBaseFeePerGas ?? 0n), weight: tx.gas })
 
 				// we can have negative values here, as The Interceptor creates maxFeePerGas = 0 transactions that are intended to have zero base fee, which is not possible in reality
-				const zeroOutNegativeValues = effectivePriorityAndGasWeights.map((point) => ({ ...point, dataPoint: max(0n, point.dataPoint) }))
+				const zeroOutNegativeValues = effectivePriorityAndGasWeights.map((point) => modifyObject(point, { dataPoint: max(0n, point.dataPoint) }))
 				return calculateWeightedPercentile(zeroOutNegativeValues, BigInt(percentile))
 			})]
 		}

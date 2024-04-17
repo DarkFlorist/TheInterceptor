@@ -6,6 +6,7 @@ import { addressString, checksummedAddress } from '../../utils/bigint.js'
 import { sendPopupMessageToBackgroundPage } from '../../background/backgroundUtils.js'
 import { ActiveAddressEntry } from '../../types/addressBookTypes.js'
 import { WebsiteAccess, WebsiteAccessArray, WebsiteAddressAccess } from '../../types/websiteAccessTypes.js'
+import { modifyObject } from '../../utils/typescript.js'
 
 interface ModifiedAddressAccess {
 	address: bigint,
@@ -72,13 +73,12 @@ export function InterceptorAccessList(param: InterceptorAccessListParams) {
 				}
 
 				const addressAccessModified = newAccess.addressAccess === undefined ? [] : newAccess.addressAccess.map((addr) => mergeAddressAccess(addr, previousEntity.addressAccessModified, previousEntity.addressAccess))
-				return {
-					...previousEntity,
+				return modifyObject(previousEntity, {
 					websiteAccess: newAccess,
 					addressAccess: newAccess.addressAccess === undefined ? [] : newAccess.addressAccess,
 					addressAccessModified: addressAccessModified,
 					access: previousEntity.access === previousEntity.websiteAccess.access ? newAccess.access : previousEntity.access,
-				}
+				})
 			}
 			return newList.map((x) => merge(x))
 		})

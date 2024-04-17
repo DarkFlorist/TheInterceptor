@@ -5,14 +5,14 @@ import { getEthDonator, getSimulationResults, getTabState, setLatestUnexpectedEr
 import { changeSimulationMode, getSettings, getMakeMeRich } from './settings.js'
 import { blockNumber, call, chainId, estimateGas, gasPrice, getAccounts, getBalance, getBlockByNumber, getCode, getLogs, getPermissions, getSimulationStack, getTransactionByHash, getTransactionCount, getTransactionReceipt, netVersion, personalSign, sendTransaction, subscribe, switchEthereumChain, unsubscribe, web3ClientVersion, getBlockByHash, feeHistory, installNewFilter, uninstallNewFilter, getFilterChanges, getFilterLogs } from './simulationModeHanders.js'
 import { changeActiveAddress, changeMakeMeRich, changePage, resetSimulation, confirmDialog, refreshSimulation, removeTransactionOrSignedMessage, requestAccountsFromSigner, refreshPopupConfirmTransactionSimulation, confirmRequestAccess, changeInterceptorAccess, changeChainDialog, popupChangeActiveRpc, enableSimulationMode, addOrModifyAddressBookEntry, getAddressBookData, removeAddressBookEntry, refreshHomeData, interceptorAccessChangeAddressOrRefresh, refreshPopupConfirmTransactionMetadata, changeSettings, importSettings, exportSettings, setNewRpcList, simulateGovernanceContractExecutionOnPass, openNewTab, settingsOpened, changeAddOrModifyAddressWindowState, popupFetchAbiAndNameFromEtherscan, openWebPage, disableInterceptor, requestNewHomeData } from './popupMessageHandlers.js'
-import { GeneralEnrichedEthereumEvents, ProtectorResults, SimulationState, VisualizedSimulatorState, WebsiteCreatedEthereumUnsignedTransaction, WebsiteCreatedEthereumUnsignedTransactionOrFailed } from '../types/visualizer-types.js'
+import { CompleteVisualizedSimulation, GeneralEnrichedEthereumEvents, ProtectorResults, SimulationState, VisualizedSimulatorState, WebsiteCreatedEthereumUnsignedTransaction, WebsiteCreatedEthereumUnsignedTransactionOrFailed } from '../types/visualizer-types.js'
 import { WebsiteTabConnections } from '../types/user-interface-types.js'
 import { askForSignerAccountsFromSignerIfNotAvailable, interceptorAccessMetadataRefresh, requestAccessFromUser, updateInterceptorAccessViewWithPendingRequests } from './windows/interceptorAccess.js'
 import { FourByteExplanations, MAKE_YOU_RICH_TRANSACTION, METAMASK_ERROR_FAILED_TO_PARSE_REQUEST, METAMASK_ERROR_NOT_AUTHORIZED, METAMASK_ERROR_NOT_CONNECTED_TO_CHAIN, ERROR_INTERCEPTOR_DISABLED, NEW_BLOCK_ABORT } from '../utils/constants.js'
 import { sendActiveAccountChangeToApprovedWebsitePorts, sendMessageToApprovedWebsitePorts, updateWebsiteApprovalAccesses, verifyAccess } from './accessManagement.js'
 import { getActiveAddressEntry, getAddressBookEntriesForVisualiser, identifyAddress, nameTokenIds } from './metadataUtils.js'
 import { getActiveAddress, sendPopupMessageToOpenWindows } from './backgroundUtils.js'
-import { assertNever, assertUnreachable } from '../utils/typescript.js'
+import { assertNever, assertUnreachable, modifyObject } from '../utils/typescript.js'
 import { EthereumClientService } from '../simulation/services/EthereumClientService.js'
 import { appendTransaction, calculateGasPrice, copySimulationState, getNonPrependedSimulatedTransactions, getNonceFixedSimulatedTransactions, getTokenBalancesAfter, getWebsiteCreatedEthereumUnsignedTransactions, mockSignTransaction, setPrependTransactionsQueue, setSimulationTransactionsAndSignedMessages } from '../simulation/services/SimulationModeEthereumClientService.js'
 import { Semaphore } from '../utils/semaphore.js'
@@ -157,13 +157,13 @@ export async function updateSimulationState(ethereum: EthereumClientService, get
 		const simulationResults = await getSimulationResults()
 		const simulationId = simulationResults.simulationId + 1
 		if (invalidateOldState) {
-			await updateSimulationResults({ ...simulationResults, simulationId, simulationResultState: 'invalid', simulationUpdatingState: 'updating' })
+			await updateSimulationResults(modifyObject(simulationResults, { simulationId, simulationResultState: 'invalid', simulationUpdatingState: 'updating' }))
 		} else {
-			await updateSimulationResults({ ...simulationResults, simulationId, simulationUpdatingState: 'updating' })
+			await updateSimulationResults(modifyObject(simulationResults, { simulationId, simulationUpdatingState: 'updating' }))
 		}
 		const changedMessagePromise = sendPopupMessageToOpenWindows({ method: 'popup_simulation_state_changed', data: { simulationId } })
 		const doneState = { simulationUpdatingState: 'done' as const, simulationResultState: 'done' as const, simulationId, activeAddress }
-		const emptyDoneResults = {
+		const emptyDoneResults: CompleteVisualizedSimulation = {
 			...doneState,
 			addressBookEntries: [],
 			tokenPrices: [],
@@ -179,7 +179,7 @@ export async function updateSimulationState(ethereum: EthereumClientService, get
 			if (updatedSimulationState !== undefined && ethereum.getChainId() === updatedSimulationState?.rpcNetwork.chainId) {
 				await updateSimulationResults({ ...await visualizeSimulatorState(updatedSimulationState, ethereum, thisSimulationsController), ...doneState })
 			} else {
-				await updateSimulationResults({ ...emptyDoneResults, simulationResultState: 'corrupted' as const })
+				await updateSimulationResults(modifyObject(emptyDoneResults, { simulationResultState: 'corrupted' as const }))
 			}
 			await changedMessagePromise
 			await sendPopupMessageToOpenWindows({ method: 'popup_simulation_state_changed', data: { simulationId } })
@@ -188,12 +188,12 @@ export async function updateSimulationState(ethereum: EthereumClientService, get
 			if (error instanceof Error && isNewBlockAbort(error)) return undefined
 			if (error instanceof Error && isFailedToFetchError(error)) {
 				// if we fail because of connectivity issue, keep the old block results, but try again later
-				await updateSimulationResults({ ...simulationResults, simulationId, simulationUpdatingState: 'updating' })
+				await updateSimulationResults(modifyObject(simulationResults, { simulationId, simulationUpdatingState: 'updating' }))
 				await sendPopupMessageToOpenWindows({ method: 'popup_simulation_state_changed', data: { simulationId }  })
 				return undefined
 			}
 			// clear simulation, unexpected error occured
-			await updateSimulationResults({ ...emptyDoneResults, simulationResultState: 'corrupted' as const })
+			await updateSimulationResults(modifyObject(emptyDoneResults, { simulationResultState: 'corrupted' as const }))
 			handleUnexpectedError(error)
 			return undefined
 		}
