@@ -1,4 +1,4 @@
-import { ethers } from 'ethers'
+import { ethers, formatUnits } from 'ethers'
 
 export function bigintToDecimalString(value: bigint, power: bigint): string {
 	if ( value >= 0n ) {
@@ -17,41 +17,25 @@ export function bigintToDecimalString(value: bigint, power: bigint): string {
 	return `-${integerPart.toString(10)}.${fractionalPart.toString(10).padStart(Number(power), '0').replace(/0+$/, '')}`
 }
 
-export function bigintToRoundedPrettyDecimalString(value: bigint, power: bigint, significantNumbers = 4n): string {
-	function roundToPrettyDecimalString(value: bigint) {
-		const stringifiedNumber = bigintToDecimalString(value, power)
-		let roundedString = ''
-		let p = 0
-		let pointFound = false
-		let firstDigitFound = false
-		for (let i = 0; i < stringifiedNumber.length; i++) {
-			if (p < significantNumbers) {
-				roundedString += stringifiedNumber.charAt(i)
-			} else {
-				if (pointFound) break
-				roundedString += '0'
-			}
-			if ( stringifiedNumber.charAt(i) !== '-' && stringifiedNumber.charAt(i) !== '.') {
-				if ( stringifiedNumber.charAt(i) !== '0') firstDigitFound = true
-				if (firstDigitFound) p++
-			}
-			if ( stringifiedNumber.charAt(i) === '.') pointFound = true
+export const bigintToRoundedPrettyDecimalString = (amount: bigint, decimals?: bigint, maximumSignificantDigits = 4) => {
+	const formatter = new Intl.NumberFormat('en-US', { maximumSignificantDigits, useGrouping: false })
+	const prefixes = [
+		{ value: 1e9, symbol: 'G' },
+		{ value: 1e6, symbol: 'M' },
+		{ value: 1e3, symbol: 'k' },
+	]
+
+	const floatValue = Number(formatUnits(amount, decimals))
+	const sign = floatValue < 0 ? '-' : ''
+	const absoluteValue = Math.abs(floatValue)
+
+	for (const prefix of prefixes) {
+		if (absoluteValue >= prefix.value) {
+			return `${sign}${formatter.format(absoluteValue / prefix.value) + prefix.symbol}`
 		}
-		return roundedString.length <= significantNumbers + 1n ? parseFloat(roundedString).toString() : roundedString
 	}
 
-	const withPower = value / (10n ** power)
-	if ( abs(withPower) >= 10n**9n) {
-		return `${roundToPrettyDecimalString(value / 10n**9n)}G`
-	}
-	if ( abs(withPower) >= 10n**6n ) {
-		return `${roundToPrettyDecimalString(value / 10n**6n)}M`
-	}
-	if ( abs(withPower) >= 10n**3n) {
-		return `${roundToPrettyDecimalString(value / 10n**3n)}k`
-	}
-
-	return roundToPrettyDecimalString(value)
+	return `${sign}${formatter.format(absoluteValue)}`
 }
 
 export function nanoString(value: bigint): string {
@@ -80,7 +64,7 @@ export function bytes32String(bytes32: bigint) {
 export function stringToUint8Array(data: string) {
 	const dataLength = (data.length - 2) / 2
 	if (dataLength === 0) return new Uint8Array()
-    return bigintToUint8Array(BigInt(data), dataLength)
+	return bigintToUint8Array(BigInt(data), dataLength)
 }
 
 export function dataString(data: Uint8Array | null) {
@@ -106,7 +90,7 @@ export function bigintToUint8Array(value: bigint, numberOfBytes: number) {
 // biome-ignore lint/suspicious/noExplicitAny: matches JSON.stringify signature
 export function stringifyJSONWithBigInts(value: any, space?: string | number | undefined): string {
 	return JSON.stringify(value, (_key, value) => {
-		return typeof value === "bigint" ? `0x${ value.toString(16) }` : value
+		return typeof value === 'bigint' ? `0x${ value.toString(16) }` : value
 	}, space)
 }
 
