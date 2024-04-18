@@ -18,24 +18,21 @@ export function bigintToDecimalString(value: bigint, power: bigint): string {
 }
 
 export const bigintToRoundedPrettyDecimalString = (amount: bigint, decimals?: bigint, maximumSignificantDigits = 4) => {
-	const formatter = new Intl.NumberFormat('en-US', { maximumSignificantDigits, useGrouping: false })
-	const prefixes = [
-		{ value: 1e9, symbol: 'G' },
-		{ value: 1e6, symbol: 'M' },
-		{ value: 1e3, symbol: 'k' },
-	]
+	// TODO: remove explicit `as const` type when TS ships with https://github.com/microsoft/TypeScript/pull/56902 (merged)
+	const formatOptions = { maximumSignificantDigits, notation: 'compact', roundingMode: 'trunc' } as const
+	const formatter = new Intl.NumberFormat('en-US', formatOptions )
 
-	const floatValue = Number(formatUnits(amount, decimals))
-	const sign = floatValue < 0 ? '-' : ''
-	const absoluteValue = Math.abs(floatValue)
-
-	for (const prefix of prefixes) {
-		if (absoluteValue >= prefix.value) {
-			return `${sign}${formatter.format(absoluteValue / prefix.value) + prefix.symbol}`
+	const remapPrefixToMetric = (part: Intl.NumberFormatPart) => {
+		// convert American prefix to Metric
+		switch(part.value) {
+			case 'K': return 'k'
+			case 'B': return 'G'
+			default: return part.value
 		}
 	}
 
-	return `${sign}${formatter.format(absoluteValue)}`
+	const floatValue = Number(formatUnits(amount, decimals))
+	return formatter.formatToParts(floatValue).map(remapPrefixToMetric).join('')
 }
 
 export function nanoString(value: bigint): string {
