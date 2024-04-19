@@ -426,11 +426,20 @@ export async function changeAddOrModifyAddressWindowState(ethereum: EthereumClie
 		}
 	}
 	await updatePage(parsedRequest.data.newState)
+	
+	const identifyAddressCandidate = async (addressCandidate: string | undefined) => {
+		if (addressCandidate === undefined) return undefined
+		const address = EthereumAddress.safeParse(addressCandidate.trim())
+		if (address.success === false) return undefined
+		return await identifyAddress(ethereum, undefined, address.value)
+	}
+	const identifyPromise = identifyAddressCandidate(parsedRequest.data.newState.incompleteAddressBookEntry.address)
 	const message = await getErrorIfAnyWithIncompleteAddressBookEntry(ethereum, parsedRequest.data.newState.incompleteAddressBookEntry)
+	
 	const errorState = message === undefined ? undefined : { blockEditing: true, message }
 	if (errorState?.message !== parsedRequest.data.newState.errorState?.message) await updatePage({ ...parsedRequest.data.newState, errorState })
 	return await sendPopupMessageToOpenWindows({ method: 'popup_addOrModifyAddressWindowStateInformation',
-		data: { windowStateId: parsedRequest.data.windowStateId, errorState: errorState }
+		data: { windowStateId: parsedRequest.data.windowStateId, errorState: errorState, identifiedAddress: await identifyPromise }
 	})
 }
 
