@@ -287,7 +287,6 @@ export const EnableSimulationMode = funtypes.ReadonlyObject({
 export type TransactionOrMessageIdentifier = funtypes.Static<typeof TransactionOrMessageIdentifier>
 export const TransactionOrMessageIdentifier = funtypes.Union(
 	funtypes.ReadonlyObject({ type: funtypes.Literal('Transaction'), transactionIdentifier: EthereumQuantity }),
-	funtypes.ReadonlyObject({ type: funtypes.Literal('MakeYouRichTransaction') }),
 	funtypes.ReadonlyObject({ type: funtypes.Literal('SignedMessage'), messageIdentifier: EthereumQuantity })
 )
 
