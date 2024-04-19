@@ -8,7 +8,7 @@ import { RpcConnectionStatus, TabIcon, TabState } from '../types/user-interface-
 import { getSettings } from './settings.js'
 import { getRpcConnectionStatus, getTabState, updateTabState } from './storageVariables.js'
 import { getLastKnownCurrentTabId } from './popupMessageHandlers.js'
-import { safeGetTab } from '../utils/requests.js'
+import { checkAndPrintRuntimeLastError, safeGetTab } from '../utils/requests.js'
 
 async function setInterceptorIcon(tabId: number, icon: TabIcon, iconReason: string) {
 	const tabIconDetails = { icon, iconReason }
@@ -53,12 +53,17 @@ export async function updateExtensionBadge() {
 	return await setExtensionBadgeText( { text: '' } )
 }
 
+
 export async function retrieveWebsiteDetails(tabId: number) {
 	const waitForLoadedFuture = new Future<void>
 
 	// wait for the tab to be fully loaded
 	const listener = function listener(tabIdUpdated: number, info: browser.tabs._OnUpdatedChangeInfo) {
-		if (info.status === 'complete' && tabId === tabIdUpdated) return waitForLoadedFuture.resolve()
+		try {
+			if (info.status === 'complete' && tabId === tabIdUpdated) return waitForLoadedFuture.resolve()
+		} finally {
+			checkAndPrintRuntimeLastError()
+		}
 	}
 
 	try {
@@ -78,6 +83,7 @@ export async function retrieveWebsiteDetails(tabId: number) {
 		}
 	} finally {
 		browser.tabs.onUpdated.removeListener(listener)
+		checkAndPrintRuntimeLastError()
 	}
 
 	// if the tab is not ready yet try to wait for a while for it to be ready, if not, we just have no icon to show on firefox

@@ -1,3 +1,8 @@
+const checkAndThrowRuntimeLastError = () => {
+	const error: browser.runtime._LastError | undefined | null = browser.runtime.lastError // firefox return `null` on no errors
+	if (error !== null && error !== undefined && error.message !== undefined) throw new Error(error.message)
+}
+
 function listenInContentScript(conectionName: string | undefined) {
 	/**
 	 * this script executed within the context of the active tab when the user clicks the extension bar button
@@ -23,14 +28,15 @@ function listenInContentScript(conectionName: string | undefined) {
 			// we only want the data element, if it exists, and postMessage will fail if it can't clone the object fully (and it cannot clone a MessageEvent)
 			if (!('data' in messageEvent)) return
 			extensionPort.postMessage({ data: messageEvent.data })
+			checkAndThrowRuntimeLastError()
 		} catch (error) {
-			// CONSIDER: should we catch data clone error and then do `extensionPort.postMessage({data:JSON.parse(JSON.stringify(messageEvent.data))})`?
 			if (error instanceof Error) {
 				if (error.message?.includes('Extension context invalidated.')) {
 					// this error happens when the extension is refreshed and the page cannot reach The Interceptor anymore
 					return
 				}
 			}
+			extensionPort.postMessage({ data: { interceptorRequest: true, usingInterceptorWithoutSigner: false, requestId: -1, method: 'InterceptorError', params: [error] } })
 			throw error
 		}
 	}
@@ -40,14 +46,20 @@ function listenInContentScript(conectionName: string | undefined) {
 	extensionPort.onMessage.addListener(response => {
 		try {
 			globalThis.postMessage(response, '*')
+			checkAndThrowRuntimeLastError()
 		} catch (error) {
 			console.error(error)
 		}
 	})
 
 	extensionPort.onDisconnect.addListener(() => {
-		globalThis.removeEventListener('message', listener)
-		listenInContentScript(connectionNameNotUndefined)
+		try {
+			globalThis.removeEventListener('message', listener)
+			listenInContentScript(connectionNameNotUndefined)
+			checkAndThrowRuntimeLastError()
+		} catch (error) {
+			console.error(error)
+		}
 	})
 }
 
@@ -63,6 +75,7 @@ function injectScript(content: string) {
 		container.insertBefore(scriptTag, container.children[0])
 		container.removeChild(scriptTag)
 		listenInContentScript(undefined)
+		checkAndThrowRuntimeLastError()
 	} catch (error) {
 	  	console.error('Interceptor: Provider injection failed.', error)
 	}

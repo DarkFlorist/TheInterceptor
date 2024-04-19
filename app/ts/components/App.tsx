@@ -27,6 +27,7 @@ import { useSignal } from '@preact/signals'
 import { SomeTimeAgo } from './subcomponents/SomeTimeAgo.js'
 import { noNewBlockForOverTwoMins } from '../background/iconHandler.js'
 import { humanReadableDate } from './ui-utils.js'
+import { checkAndPrintRuntimeLastError } from '../utils/requests.js'
 
 type ProviderErrorsParam = {
 	tabState: TabState | undefined
@@ -206,8 +207,11 @@ export function App() {
 			if (parsed.method !== 'popup_UpdateHomePage') return await sendPopupMessageToBackgroundPage({ method: 'popup_requestNewHomeData' })
 			return updateHomePage(UpdateHomePage.parse(parsed))
 		}
-		browser.runtime.onMessage.addListener(popupMessageListener)
-		return () => browser.runtime.onMessage.removeListener(popupMessageListener)
+		browser.runtime.onMessage.addListener(popupMessageListener)	
+		return () => { () => {
+			browser.runtime.onMessage.removeListener(popupMessageListener)
+			checkAndPrintRuntimeLastError()
+		} }
 	})
 
 	useEffect(() => { sendPopupMessageToBackgroundPage({ method: 'popup_refreshHomeData' }) }, [])

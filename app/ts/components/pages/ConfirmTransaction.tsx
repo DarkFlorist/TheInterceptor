@@ -22,7 +22,7 @@ import { OriginalSendRequestParameters } from '../../types/JsonRpc-types.js'
 import { Website } from '../../types/websiteAccessTypes.js'
 import { getWebsiteWarningMessage } from '../../utils/websiteData.js'
 import { ErrorComponent } from '../subcomponents/Error.js'
-import { WebsiteSocket, checkAndThrowRuntimeLastError, updateTabIfExists, updateWindowIfExists } from '../../utils/requests.js'
+import { WebsiteSocket, checkAndPrintRuntimeLastError, checkAndThrowRuntimeLastError, updateTabIfExists, updateWindowIfExists } from '../../utils/requests.js'
 import { Link } from '../subcomponents/link.js'
 import { NetworkErrors } from '../App.js'
 import { SignatureCard, SignatureHeader, identifySignature, isPossibleToSignMessage } from './PersonalSign.js'
@@ -372,8 +372,10 @@ export function ConfirmTransaction() {
 			return updatePendingTransactionsAndSignableMessages(parsed)
 		}
 		browser.runtime.onMessage.addListener(popupMessageListener)
-
-		return () => browser.runtime.onMessage.removeListener(popupMessageListener)
+		return () => { () => {
+			browser.runtime.onMessage.removeListener(popupMessageListener)
+			checkAndPrintRuntimeLastError()
+		} }
 	})
 
 	useEffect(() => { sendPopupMessageToBackgroundPage({ method: 'popup_confirmTransactionReadyAndListening' }) }, [])
