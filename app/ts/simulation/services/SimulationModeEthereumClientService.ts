@@ -275,7 +275,7 @@ export const setSimulationTransactionsAndSignedMessages = async (ethereumClientS
 		return {
 			addressToMakeRich: simulationState.addressToMakeRich,
 			simulatedTransactions: [],
-			blockNumber: 0n,
+			blockNumber: simulationState.blockNumber,
 			blockTimestamp: new Date(),
 			rpcNetwork: ethereumClientService.getRpcEntry(),
 			simulationConductedTimestamp: new Date(),
@@ -345,11 +345,11 @@ const getTransactionQueue = (simulationState: SimulationState | undefined) => {
 	return simulationState.simulatedTransactions.map((x) => x.signedTransaction)
 }
 
-export const getEmptySimulationStateWithRichAddress = async (ethereumClientService: EthereumClientService, addressToMakeRich: EthereumAddress | undefined): Promise<SimulationState>  => {
+export const getEmptySimulationStateWithRichAddress = async (ethereumClientService: EthereumClientService, addressToMakeRich: EthereumAddress | undefined, oldSimulationState: SimulationState | undefined): Promise<SimulationState>  => {
 	const newState = {
 		addressToMakeRich,
 		simulatedTransactions: [],
-		blockNumber: 0n,
+		blockNumber: oldSimulationState?.blockNumber || 0n,
 		blockTimestamp: new Date(),
 		rpcNetwork: ethereumClientService.getRpcEntry(),
 		simulationConductedTimestamp: new Date(),
@@ -456,7 +456,7 @@ export const refreshSimulationState = async (ethereumClientService: EthereumClie
 }
 
 export const resetSimulationState = async (ethereumClientService: EthereumClientService, simulationState: SimulationState): Promise<SimulationState> => {
-	return await getEmptySimulationStateWithRichAddress(ethereumClientService, simulationState.addressToMakeRich)
+	return await getEmptySimulationStateWithRichAddress(ethereumClientService, simulationState.addressToMakeRich, simulationState)
 }
 
 const canQueryNodeDirectly = async (ethereumClientService: EthereumClientService, requestAbortController: AbortController | undefined, simulationState: SimulationState, blockTag: EthereumBlockTag = 'latest') => {
