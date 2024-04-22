@@ -2,6 +2,7 @@ import * as funtypes from 'funtypes'
 import { BytesParser, EthereumAddress, EthereumBytes32, EthereumData, EthereumInput, EthereumQuantity, EthereumUnsignedTransaction, LiteralConverterParserFactory } from './wire-types.js'
 import { SimulatedTransaction } from './visualizer-types.js'
 import { EthBalanceChanges } from './JsonRpc-types.js'
+import { StateOverrides } from './ethSimulate-types.js'
 
 const RevertErrorParser: funtypes.ParsedValue<funtypes.String, string>['config'] = {
 	parse: (value) => {
@@ -55,4 +56,7 @@ export const GetSimulationStackOldReply = funtypes.ReadonlyArray(
 )
 
 export type GetSimulationStackReply = funtypes.Static<typeof GetSimulationStackReply>
-export const GetSimulationStackReply = funtypes.ReadonlyArray(funtypes.ReadonlyObject({ simulatedTransaction: SimulatedTransaction, ethBalanceChanges: EthBalanceChanges }).asReadonly())
+export const GetSimulationStackReply = funtypes.ReadonlyObject({ 
+	stateOverrides: StateOverrides,
+	transactions: funtypes.ReadonlyArray(funtypes.ReadonlyObject({ simulatedTransaction: SimulatedTransaction, ethBalanceChanges: EthBalanceChanges }).asReadonly())
+})
