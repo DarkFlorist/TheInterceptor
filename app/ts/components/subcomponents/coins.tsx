@@ -51,7 +51,7 @@ export function EtherAmount(param: EtherAmountParams) {
 	return <>
 		<CopyToClipboard content = { bigintToDecimalString(abs(param.amount), 18n) } copyMessage = 'Ether amount copied!' >
 			<p class = 'noselect nopointer' style = { style }>
-				<AbbreviatedValue amount={param.amount} />
+				<AbbreviatedValue amount = { param.amount } />
 			</p>
 		</CopyToClipboard>
 	</>
@@ -206,7 +206,7 @@ export function TokenAmount(param: TokenAmountParams) {
 	return <>
 		<CopyToClipboard content = { bigintToDecimalString(abs(param.amount), param.tokenEntry.decimals) } copyMessage = 'Token amount copied!' >
 			<p class = 'noselect nopointer' style = { style }>
-				<AbbreviatedValue amount={param.amount} decimals={param.tokenEntry.decimals} />
+				<AbbreviatedValue amount = { param.amount } decimals = { param.tokenEntry.decimals } />
 			</p>
 		</CopyToClipboard>
 	</>

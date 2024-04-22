@@ -1,19 +1,19 @@
-import { bigintToDecimalString } from '../../utils/bigint.js'
+import { bigintToRoundedPrettyDecimalString } from '../../utils/bigint.js'
 
 export const AbbreviatedValue = ({ amount, decimals = 18n }: { amount: bigint, decimals?: bigint }) => {
-	const decimalString = bigintToDecimalString(amount, decimals)
-	const [integer, fraction] = decimalString.split('.')
+	const decimalString = bigintToRoundedPrettyDecimalString(amount, decimals)
+	const [beforeDecimal, afterDecimal] = decimalString.split('.')
 
-	if (fraction) {
-		const normalizedFraction = `${Number(fraction)}` // zero padding removed
-		const zeroPad = fraction.replace(normalizedFraction, '')
-		return <>{integer}<small>{zeroPad}</small>normalizedFraction</>
+	// Apply special formatting for decimal values that have long leading zeros
+	if (afterDecimal && Number.parseFloat(decimalString) % 1 === 0) {
+		const firstNonZeroIndex = afterDecimal.search(/[^0]/)
+		if (firstNonZeroIndex !== -1) {
+			return (
+				<>{ `${ beforeDecimal }.` }<small>{ afterDecimal.slice(0, firstNonZeroIndex) }</small>{ afterDecimal.slice(firstNonZeroIndex) }</>
+			)
+		}
 	}
 
-	return <>{decimalString}</>
-}
-
-export function toFixedLengthDigits(num: number, max = 5) {
-	const formatter = new Intl.NumberFormat('en-US', { maximumSignificantDigits: max, useGrouping: false })
-	return formatter.format(num)
+	// If no special formatting is needed, return the original decimalString
+	return <>{ decimalString }</>
 }
