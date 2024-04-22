@@ -271,20 +271,19 @@ export const appendTransaction = async (ethereumClientService: EthereumClientSer
 }
 
 export const setSimulationTransactionsAndSignedMessages = async (ethereumClientService: EthereumClientService, requestAbortController: AbortController | undefined, simulationState: SimulationState, unsignedTxts: readonly WebsiteCreatedEthereumUnsignedTransaction[], signedMessages: readonly SignedMessageTransaction[]): Promise<SimulationState>  => {
-	const parentBlock = await ethereumClientService.getBlock(requestAbortController)
-	if (unsignedTxts.length === 0 && unsignedTxts.length === 0 && signedMessages.length === 0) {
+	if (unsignedTxts.length === 0 && signedMessages.length === 0) {
 		return {
 			addressToMakeRich: simulationState.addressToMakeRich,
 			simulatedTransactions: [],
-			blockNumber: parentBlock.number,
-			blockTimestamp: parentBlock.timestamp,
+			blockNumber: 0n,
+			blockTimestamp: new Date(),
 			rpcNetwork: ethereumClientService.getRpcEntry(),
 			simulationConductedTimestamp: new Date(),
 			signedMessages: [],
 			baseFeePerGas: 0n,
 		}
 	}
-
+	const parentBlock = await ethereumClientService.getBlock(requestAbortController)
 	const signedTxs = unsignedTxts.map((tx) => mockSignTransaction(tx.transaction))
 	const parentBaseFeePerGas = parentBlock.baseFeePerGas
 	if (parentBaseFeePerGas === undefined) throw new Error(CANNOT_SIMULATE_OFF_LEGACY_BLOCK)
@@ -347,16 +346,15 @@ const getTransactionQueue = (simulationState: SimulationState | undefined) => {
 }
 
 export const getEmptySimulationStateWithRichAddress = async (ethereumClientService: EthereumClientService, addressToMakeRich: EthereumAddress | undefined): Promise<SimulationState>  => {
-	const block = await ethereumClientService.getBlock(undefined)
 	const newState = {
 		addressToMakeRich,
 		simulatedTransactions: [],
-		blockNumber: block.number,
-		blockTimestamp: block.timestamp,
+		blockNumber: 0n,
+		blockTimestamp: new Date(),
 		rpcNetwork: ethereumClientService.getRpcEntry(),
 		simulationConductedTimestamp: new Date(),
 		signedMessages: [],
-		baseFeePerGas: block.baseFeePerGas || 0n,
+		baseFeePerGas: 0n,
 	}
 	return await setSimulationTransactionsAndSignedMessages(ethereumClientService, undefined, newState, [], [])
 }

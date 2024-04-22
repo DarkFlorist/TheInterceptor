@@ -1,14 +1,14 @@
 import { InpageScriptRequest, PopupMessage, RPCReply, Settings } from '../types/interceptor-messages.js'
 import 'webextension-polyfill'
 import { Simulator, parseEvents, runProtectorsForTransaction } from '../simulation/simulator.js'
-import { getEthDonator, getSimulationResults, getTabState, setLatestUnexpectedError, updateSimulationResults, updateSimulationResultsWithCallBack } from './storageVariables.js'
-import { changeSimulationMode, getSettings, getMakeMeRich } from './settings.js'
+import { getSimulationResults, getTabState, setLatestUnexpectedError, updateSimulationResults, updateSimulationResultsWithCallBack } from './storageVariables.js'
+import { changeSimulationMode, getSettings, getMakeMeRich, getWethForChainId } from './settings.js'
 import { blockNumber, call, chainId, estimateGas, gasPrice, getAccounts, getBalance, getBlockByNumber, getCode, getLogs, getPermissions, getSimulationStack, getTransactionByHash, getTransactionCount, getTransactionReceipt, netVersion, personalSign, sendTransaction, subscribe, switchEthereumChain, unsubscribe, web3ClientVersion, getBlockByHash, feeHistory, installNewFilter, uninstallNewFilter, getFilterChanges, getFilterLogs, handleIterceptorError } from './simulationModeHanders.js'
 import { changeActiveAddress, changeMakeMeRich, changePage, resetSimulation, confirmDialog, refreshSimulation, removeTransactionOrSignedMessage, requestAccountsFromSigner, refreshPopupConfirmTransactionSimulation, confirmRequestAccess, changeInterceptorAccess, changeChainDialog, popupChangeActiveRpc, enableSimulationMode, addOrModifyAddressBookEntry, getAddressBookData, removeAddressBookEntry, refreshHomeData, interceptorAccessChangeAddressOrRefresh, refreshPopupConfirmTransactionMetadata, changeSettings, importSettings, exportSettings, setNewRpcList, simulateGovernanceContractExecutionOnPass, openNewTab, settingsOpened, changeAddOrModifyAddressWindowState, popupFetchAbiAndNameFromEtherscan, openWebPage, disableInterceptor, requestNewHomeData } from './popupMessageHandlers.js'
 import { GeneralEnrichedEthereumEvents, ProtectorResults, SimulationState, VisualizedSimulatorState, WebsiteCreatedEthereumUnsignedTransactionOrFailed } from '../types/visualizer-types.js'
 import { WebsiteTabConnections } from '../types/user-interface-types.js'
 import { askForSignerAccountsFromSignerIfNotAvailable, interceptorAccessMetadataRefresh, requestAccessFromUser, updateInterceptorAccessViewWithPendingRequests } from './windows/interceptorAccess.js'
-import { FourByteExplanations, METAMASK_ERROR_FAILED_TO_PARSE_REQUEST, METAMASK_ERROR_NOT_AUTHORIZED, METAMASK_ERROR_NOT_CONNECTED_TO_CHAIN, ERROR_INTERCEPTOR_DISABLED, NEW_BLOCK_ABORT } from '../utils/constants.js'
+import { FourByteExplanations, METAMASK_ERROR_FAILED_TO_PARSE_REQUEST, METAMASK_ERROR_NOT_AUTHORIZED, METAMASK_ERROR_NOT_CONNECTED_TO_CHAIN, ERROR_INTERCEPTOR_DISABLED, NEW_BLOCK_ABORT, ETHEREUM_LOGS_LOGGER_ADDRESS } from '../utils/constants.js'
 import { sendActiveAccountChangeToApprovedWebsitePorts, sendMessageToApprovedWebsitePorts, updateWebsiteApprovalAccesses, verifyAccess } from './accessManagement.js'
 import { getActiveAddressEntry, getAddressBookEntriesForVisualiser, identifyAddress, nameTokenIds } from './metadataUtils.js'
 import { getActiveAddress, sendPopupMessageToOpenWindows } from './backgroundUtils.js'
@@ -16,7 +16,7 @@ import { assertNever, assertUnreachable } from '../utils/typescript.js'
 import { EthereumClientService } from '../simulation/services/EthereumClientService.js'
 import { appendTransaction, calculateGasPrice, copySimulationState, getEmptySimulationStateWithRichAddress, getNonceFixedSimulatedTransactions, getTokenBalancesAfter, getWebsiteCreatedEthereumUnsignedTransactions, mockSignTransaction, setSimulationTransactionsAndSignedMessages } from '../simulation/services/SimulationModeEthereumClientService.js'
 import { Semaphore } from '../utils/semaphore.js'
-import { FetchResponseError, JsonRpcResponseError, handleUnexpectedError, isFailedToFetchError, isNewBlockAbort } from '../utils/errors.js'
+import { JsonRpcResponseError, handleUnexpectedError, isFailedToFetchError, isNewBlockAbort } from '../utils/errors.js'
 import { formSimulatedAndVisualizedTransaction } from '../components/formVisualizerResults.js'
 import { updateConfirmTransactionView } from './windows/confirmTransaction.js'
 import { updateChainChangeViewWithPendingRequest } from './windows/changeChain.js'
@@ -128,7 +128,7 @@ async function visualizeSimulatorState(simulationState: SimulationState, ethereu
 	const updatedMetadataPromise = updateMetadataForSimulation(simulationState, ethereum, requestAbortController, eventsForEachTransaction, protectors)
 
 	function onlyTokensAndTokensWithKnownDecimals(metadata: AddressBookEntry): metadata is AddressBookEntry & { type: 'ERC20', decimals: `0x${ string }` } {
-		return metadata.type === 'ERC20' && metadata.decimals !== undefined
+		return metadata.type === 'ERC20' && metadata.decimals !== undefined && metadata.address !== ETHEREUM_LOGS_LOGGER_ADDRESS
 	}
 	const metadataRestructure = (metadata: AddressBookEntry & { type: 'ERC20', decimals: bigint }) => ({ address: metadata.address, decimals: metadata.decimals })
 	const updatedMetadata = await updatedMetadataPromise
@@ -518,37 +518,14 @@ async function handleContentScriptMessage(simulator: Simulator, websiteTabConnec
 		const resolved = await handleRPCRequest(simulator, simulationState, websiteTabConnections, simulator.ethereum, request.uniqueRequestIdentifier.requestSocket, website, request, settings, activeAddress)
 		return replyToInterceptedRequest(websiteTabConnections, { ...request, ...resolved })
 	} catch (error) {
-		if (error instanceof JsonRpcResponseError || error instanceof FetchResponseError) {
+		if (error instanceof Error && isFailedToFetchError(error)) {
 			return replyToInterceptedRequest(websiteTabConnections, {
 				type: 'result', 
 				...request,
-				error: {
-					code: error.code,
-					message: error.message,
-					data: JSON.stringify(error.data)
-				},
+				...METAMASK_ERROR_NOT_CONNECTED_TO_CHAIN,
 			})
 		}
 		handleUnexpectedError(error)
-		if (error instanceof Error) {
-			if (isFailedToFetchError(error)) {
-				return replyToInterceptedRequest(websiteTabConnections, {
-					type: 'result', 
-					...request,
-					...METAMASK_ERROR_NOT_CONNECTED_TO_CHAIN,
-				})
-			}
-			if (error.message.includes('Fetch request timed out')) {
-				return replyToInterceptedRequest(websiteTabConnections, {
-					type: 'result', 
-					...request,
-					error: {
-						code: 408,
-						message: 'Request timed out',
-					},
-				})
-			}
-		}
 		return replyToInterceptedRequest(websiteTabConnections, {
 			type: 'result', 
 			...request,
