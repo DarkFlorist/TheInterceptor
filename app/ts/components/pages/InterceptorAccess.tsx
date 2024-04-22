@@ -14,7 +14,6 @@ import { ActiveAddressEntry, AddressBookEntry } from '../../types/addressBookTyp
 import { Website } from '../../types/websiteAccessTypes.js'
 import { PendingAccessRequest, PendingAccessRequests } from '../../types/accessRequest.js'
 import { Page } from '../../types/exportedSettingsTypes.js'
-import { checkAndPrintRuntimeLastError } from '../../utils/requests.js'
 
 const HALF_HEADER_HEIGHT = 48 / 2
 
@@ -196,10 +195,7 @@ export function InterceptorAccess() {
 			}
 		}
 		browser.runtime.onMessage.addListener(popupMessageListener)
-		return () => { () => {
-			browser.runtime.onMessage.removeListener(popupMessageListener)
-			checkAndPrintRuntimeLastError()
-		} }
+		return () => browser.runtime.onMessage.removeListener(popupMessageListener)
 	})
 
 	

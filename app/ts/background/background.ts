@@ -268,6 +268,7 @@ export async function refreshConfirmTransactionSimulation(
 		}
 	} catch (error) {
 		if (error instanceof Error && isNewBlockAbort(error)) return undefined
+		if (error instanceof Error && isFailedToFetchError(error)) return undefined
 		if (!(error instanceof JsonRpcResponseError)) throw error
 	
 		const extractToAbi = async () => {
@@ -620,47 +621,51 @@ export async function popupMessageHandler(
 		}
 	}
 	const parsedRequest = maybeParsedRequest.value
-
-	switch (parsedRequest.method) {
-		case 'popup_confirmDialog': return await confirmDialog(simulator, websiteTabConnections, parsedRequest)
-		case 'popup_changeActiveAddress': return await changeActiveAddress(simulator, websiteTabConnections, parsedRequest)
-		case 'popup_changeMakeMeRich': return await changeMakeMeRich(simulator, simulator.ethereum, parsedRequest, settings)
-		case 'popup_changePage': return await changePage(parsedRequest)
-		case 'popup_requestAccountsFromSigner': return await requestAccountsFromSigner(websiteTabConnections, parsedRequest)
-		case 'popup_resetSimulation': return await resetSimulation(simulator, settings)
-		case 'popup_removeTransactionOrSignedMessage': return await removeTransactionOrSignedMessage(simulator, simulator.ethereum, parsedRequest, settings)
-		case 'popup_refreshSimulation': return await refreshSimulation(simulator, settings, false)
-		case 'popup_refreshConfirmTransactionDialogSimulation': return await refreshPopupConfirmTransactionSimulation(simulator, simulator.ethereum)
-		case 'popup_refreshConfirmTransactionMetadata': return refreshPopupConfirmTransactionMetadata(simulator.ethereum, confirmTransactionAbortController, parsedRequest)
-		case 'popup_interceptorAccess': return await confirmRequestAccess(simulator, websiteTabConnections, parsedRequest)
-		case 'popup_changeInterceptorAccess': return await changeInterceptorAccess(simulator, websiteTabConnections, parsedRequest)
-		case 'popup_changeActiveRpc': return await popupChangeActiveRpc(simulator, websiteTabConnections, parsedRequest, settings)
-		case 'popup_changeChainDialog': return await changeChainDialog(simulator, websiteTabConnections, parsedRequest)
-		case 'popup_enableSimulationMode': return await enableSimulationMode(simulator, websiteTabConnections, parsedRequest)
-		case 'popup_addOrModifyAddressBookEntry': return await addOrModifyAddressBookEntry(simulator, websiteTabConnections, parsedRequest)
-		case 'popup_getAddressBookData': return await getAddressBookData(parsedRequest)
-		case 'popup_removeAddressBookEntry': return await removeAddressBookEntry(simulator, websiteTabConnections, parsedRequest)
-		case 'popup_openAddressBook': return await openNewTab('addressBook')
-		case 'popup_changeChainReadyAndListening': return await updateChainChangeViewWithPendingRequest()
-		case 'popup_interceptorAccessReadyAndListening': return await updateInterceptorAccessViewWithPendingRequests()
-		case 'popup_confirmTransactionReadyAndListening': return await updateConfirmTransactionView(simulator.ethereum)
-		case 'popup_requestNewHomeData': return await requestNewHomeData(simulator, simulationAbortController)
-		case 'popup_refreshHomeData': return await refreshHomeData(simulator)
-		case 'popup_settingsOpened': return await settingsOpened()
-		case 'popup_refreshInterceptorAccessMetadata': return await interceptorAccessMetadataRefresh()
-		case 'popup_interceptorAccessChangeAddress': return await interceptorAccessChangeAddressOrRefresh(websiteTabConnections, parsedRequest)
-		case 'popup_interceptorAccessRefresh': return await interceptorAccessChangeAddressOrRefresh(websiteTabConnections, parsedRequest)
-		case 'popup_ChangeSettings': return await changeSettings(simulator, parsedRequest, simulationAbortController)
-		case 'popup_openSettings': return await openNewTab('settingsView')
-		case 'popup_import_settings': return await importSettings(parsedRequest)
-		case 'popup_get_export_settings': return await exportSettings()
-		case 'popup_set_rpc_list': return await setNewRpcList(simulator, parsedRequest, settings)
-		case 'popup_simulateGovernanceContractExecution': return await simulateGovernanceContractExecutionOnPass(simulator.ethereum, parsedRequest)
-		case 'popup_changeAddOrModifyAddressWindowState': return await changeAddOrModifyAddressWindowState(simulator.ethereum, parsedRequest)
-		case 'popup_fetchAbiAndNameFromEtherscan': return await popupFetchAbiAndNameFromEtherscan(parsedRequest)
-		case 'popup_openWebPage': return await openWebPage(parsedRequest)
-		case 'popup_setDisableInterceptor': return await disableInterceptor(simulator, websiteTabConnections, parsedRequest)
-		case 'popup_clearUnexpectedError': return await setLatestUnexpectedError(undefined)
-		default: assertUnreachable(parsedRequest)
+	try {
+		switch (parsedRequest.method) {
+			case 'popup_confirmDialog': return await confirmDialog(simulator, websiteTabConnections, parsedRequest)
+			case 'popup_changeActiveAddress': return await changeActiveAddress(simulator, websiteTabConnections, parsedRequest)
+			case 'popup_changeMakeMeRich': return await changeMakeMeRich(simulator, simulator.ethereum, parsedRequest, settings)
+			case 'popup_changePage': return await changePage(parsedRequest)
+			case 'popup_requestAccountsFromSigner': return await requestAccountsFromSigner(websiteTabConnections, parsedRequest)
+			case 'popup_resetSimulation': return await resetSimulation(simulator, settings)
+			case 'popup_removeTransactionOrSignedMessage': return await removeTransactionOrSignedMessage(simulator, simulator.ethereum, parsedRequest, settings)
+			case 'popup_refreshSimulation': return await refreshSimulation(simulator, settings, false)
+			case 'popup_refreshConfirmTransactionDialogSimulation': return await refreshPopupConfirmTransactionSimulation(simulator, simulator.ethereum)
+			case 'popup_refreshConfirmTransactionMetadata': return refreshPopupConfirmTransactionMetadata(simulator.ethereum, confirmTransactionAbortController, parsedRequest)
+			case 'popup_interceptorAccess': return await confirmRequestAccess(simulator, websiteTabConnections, parsedRequest)
+			case 'popup_changeInterceptorAccess': return await changeInterceptorAccess(simulator, websiteTabConnections, parsedRequest)
+			case 'popup_changeActiveRpc': return await popupChangeActiveRpc(simulator, websiteTabConnections, parsedRequest, settings)
+			case 'popup_changeChainDialog': return await changeChainDialog(simulator, websiteTabConnections, parsedRequest)
+			case 'popup_enableSimulationMode': return await enableSimulationMode(simulator, websiteTabConnections, parsedRequest)
+			case 'popup_addOrModifyAddressBookEntry': return await addOrModifyAddressBookEntry(simulator, websiteTabConnections, parsedRequest)
+			case 'popup_getAddressBookData': return await getAddressBookData(parsedRequest)
+			case 'popup_removeAddressBookEntry': return await removeAddressBookEntry(simulator, websiteTabConnections, parsedRequest)
+			case 'popup_openAddressBook': return await openNewTab('addressBook')
+			case 'popup_changeChainReadyAndListening': return await updateChainChangeViewWithPendingRequest()
+			case 'popup_interceptorAccessReadyAndListening': return await updateInterceptorAccessViewWithPendingRequests()
+			case 'popup_confirmTransactionReadyAndListening': return await updateConfirmTransactionView(simulator.ethereum)
+			case 'popup_requestNewHomeData': return await requestNewHomeData(simulator, simulationAbortController)
+			case 'popup_refreshHomeData': return await refreshHomeData(simulator)
+			case 'popup_settingsOpened': return await settingsOpened()
+			case 'popup_refreshInterceptorAccessMetadata': return await interceptorAccessMetadataRefresh()
+			case 'popup_interceptorAccessChangeAddress': return await interceptorAccessChangeAddressOrRefresh(websiteTabConnections, parsedRequest)
+			case 'popup_interceptorAccessRefresh': return await interceptorAccessChangeAddressOrRefresh(websiteTabConnections, parsedRequest)
+			case 'popup_ChangeSettings': return await changeSettings(simulator, parsedRequest, simulationAbortController)
+			case 'popup_openSettings': return await openNewTab('settingsView')
+			case 'popup_import_settings': return await importSettings(parsedRequest)
+			case 'popup_get_export_settings': return await exportSettings()
+			case 'popup_set_rpc_list': return await setNewRpcList(simulator, parsedRequest, settings)
+			case 'popup_simulateGovernanceContractExecution': return await simulateGovernanceContractExecutionOnPass(simulator.ethereum, parsedRequest)
+			case 'popup_changeAddOrModifyAddressWindowState': return await changeAddOrModifyAddressWindowState(simulator.ethereum, parsedRequest)
+			case 'popup_fetchAbiAndNameFromEtherscan': return await popupFetchAbiAndNameFromEtherscan(parsedRequest)
+			case 'popup_openWebPage': return await openWebPage(parsedRequest)
+			case 'popup_setDisableInterceptor': return await disableInterceptor(simulator, websiteTabConnections, parsedRequest)
+			case 'popup_clearUnexpectedError': return await setLatestUnexpectedError(undefined)
+			default: assertUnreachable(parsedRequest)
+		}
+	} catch(error: unknown) {
+		if (error instanceof Error && (isNewBlockAbort(error) || isFailedToFetchError(error))) return
+		throw error
 	}
 }

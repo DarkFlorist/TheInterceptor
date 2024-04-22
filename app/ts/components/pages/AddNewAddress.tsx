@@ -11,7 +11,6 @@ import { AddressBookEntry, IncompleteAddressBookEntry } from '../../types/addres
 import { isValidAbi } from '../../simulation/services/EtherScanAbiFetcher.js'
 import { ModifyAddressWindowState } from '../../types/visualizer-types.js'
 import { MessageToPopup } from '../../types/interceptor-messages.js'
-import { checkAndPrintRuntimeLastError } from '../../utils/requests.js'
 
 const readableAddressType = {
 	contact: 'Contact',
@@ -196,10 +195,7 @@ export function AddNewAddress(param: AddAddressParam) {
 			})
 		}
 		browser.runtime.onMessage.addListener(popupMessageListener)
-		return () => { () => {
-			browser.runtime.onMessage.removeListener(popupMessageListener)
-			checkAndPrintRuntimeLastError()
-		} }
+		return () => browser.runtime.onMessage.removeListener(popupMessageListener)
 	}, [])
 
 	useEffect(() => {

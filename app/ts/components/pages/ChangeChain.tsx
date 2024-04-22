@@ -4,7 +4,6 @@ import { MessageToPopup } from '../../types/interceptor-messages.js'
 import { sendPopupMessageToBackgroundPage } from '../../background/backgroundUtils.js'
 import { tryFocusingTabOrWindow } from '../ui-utils.js'
 import { PendingChainChangeConfirmationPromise } from '../../types/user-interface-types.js'
-import { checkAndPrintRuntimeLastError } from '../../utils/requests.js'
 
 
 export function ChangeChain() {
@@ -20,10 +19,7 @@ export function ChangeChain() {
 			setChainChangeData(parsed.data)
 		}
 		browser.runtime.onMessage.addListener(popupMessageListener)
-		return () => { () => {
-			browser.runtime.onMessage.removeListener(popupMessageListener)
-			checkAndPrintRuntimeLastError()
-		} }
+		return () => browser.runtime.onMessage.removeListener(popupMessageListener)
 	})
 
 	useEffect(() => { sendPopupMessageToBackgroundPage({ method: 'popup_changeChainReadyAndListening' }) }, [])
