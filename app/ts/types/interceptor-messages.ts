@@ -287,7 +287,6 @@ export const EnableSimulationMode = funtypes.ReadonlyObject({
 export type TransactionOrMessageIdentifier = funtypes.Static<typeof TransactionOrMessageIdentifier>
 export const TransactionOrMessageIdentifier = funtypes.Union(
 	funtypes.ReadonlyObject({ type: funtypes.Literal('Transaction'), transactionIdentifier: EthereumQuantity }),
-	funtypes.ReadonlyObject({ type: funtypes.Literal('MakeYouRichTransaction') }),
 	funtypes.ReadonlyObject({ type: funtypes.Literal('SignedMessage'), messageIdentifier: EthereumQuantity })
 )
 
@@ -679,6 +678,7 @@ const PopupAddOrModifyAddressWindowStateInfomation = funtypes.ReadonlyObject({
 	data: funtypes.ReadonlyObject({
 		windowStateId: funtypes.String,
 		errorState: funtypes.Union(funtypes.ReadonlyObject({ message: funtypes.String, blockEditing: funtypes.Boolean }), funtypes.Undefined),
+		identifiedAddress: funtypes.Union(funtypes.Undefined, AddressBookEntry)
 	})
 })
 

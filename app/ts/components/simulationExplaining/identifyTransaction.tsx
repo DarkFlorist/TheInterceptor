@@ -1,6 +1,5 @@
-import { getEthDonator } from '../../background/storageVariables.js'
 import { get4Byte, get4ByteString } from '../../utils/calldata.js'
-import { FourByteExplanations, MAKE_YOU_RICH_TRANSACTION } from '../../utils/constants.js'
+import { FourByteExplanations } from '../../utils/constants.js'
 import { assertNever, createGuard } from '../../utils/typescript.js'
 import { SimulatedAndVisualizedTransaction, SimulatedAndVisualizedTransactionBase, TokenVisualizerErc1155Event, TokenVisualizerErc20Event, TokenVisualizerErc721Event, TokenVisualizerResultWithMetadata, TransactionWithAddressBookEntries } from '../../types/visualizer-types.js'
 import { getSwapName, identifySwap } from './SwapTransactions.js'
@@ -26,7 +25,6 @@ type IdentifiedTransaction =
 	| IdentifiedTransactionBase & { type: 'Swap' }
 	| IdentifiedTransactionBase & { type: 'ContractFallbackMethod' }
 	| IdentifiedTransactionBase & { type: 'ArbitaryContractExecution' }
-	| IdentifiedTransactionBase & { type: 'MakeYouRichTransaction' }
 	| IdentifiedTransactionBase & { type: 'ContractDeployment' }
 	| IdentifiedTransactionBase & { type: 'GovernanceVote', governanceVoteInputParameters: GovernanceVoteInputParameters }
 
@@ -176,25 +174,6 @@ function isSimpleTokenTransfer(transaction: SimulatedAndVisualizedTransaction): 
 const getSimpleTokenTransferOrUndefined = createGuard<SimulatedAndVisualizedTransaction, SimulatedAndVisualizedSimpleTokenTransferTransaction>((simTx) => isSimpleTokenTransfer(simTx) ? simTx : undefined)
 
 export function identifyTransaction(simTx: SimulatedAndVisualizedTransaction): IdentifiedTransaction {
-	const richTxParams = MAKE_YOU_RICH_TRANSACTION.transaction
-	if (simTx.transaction.rpcNetwork.httpsRpc !== undefined
-		&& getEthDonator(simTx.transaction.rpcNetwork.chainId) === simTx.transaction.from.address
-		&& simTx.transaction.type === richTxParams.type
-		&& simTx.transaction.maxFeePerGas === richTxParams.maxFeePerGas
-		&& simTx.transaction.maxPriorityFeePerGas === richTxParams.maxPriorityFeePerGas
-		&& simTx.transaction.input.toString() === richTxParams.input.toString()
-		&& simTx.transaction.value === richTxParams.value
-		&& simTx.website.websiteOrigin === MAKE_YOU_RICH_TRANSACTION.website.websiteOrigin
-	) {
-		return {
-			type: 'MakeYouRichTransaction',
-			title: 'Simply making you rich',
-			signingAction: 'Make me rich',
-			simulationAction: 'Simulate richies',
-			rejectAction: 'Reject richies',
-		}
-	}
-
 	const identifiedSwap = identifySwap(simTx)
 	if (identifiedSwap) {
 		const swapname = getSwapName(identifiedSwap)

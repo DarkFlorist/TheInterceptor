@@ -46,7 +46,6 @@ export const defaultRpcs = [
 		currencyLogoUri: ETHEREUM_COIN_ICON,
 		primary: true,
 		minimized: true,
-		weth: 0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2n,
 	},
 	{
 		name: 'Sepolia',
@@ -57,7 +56,6 @@ export const defaultRpcs = [
 		currencyLogoUri: ETHEREUM_COIN_ICON,
 		primary: true,
 		minimized: true,
-		weth: 0x105083929bf9bb22c26cb1777ec92661170d4285n,
 	},
 	{
 		name: 'Ethereum (experimental nethermind)',
@@ -68,9 +66,18 @@ export const defaultRpcs = [
 		currencyLogoUri: ETHEREUM_COIN_ICON,
 		primary: false,
 		minimized: true,
-		weth: 0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2n,
 	},
 ] as const
+
+const wethForChainId = new Map<string, EthereumAddress>([
+	['1', 0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2n], // Mainnet
+	['11155111', 0x105083929bf9bb22c26cb1777ec92661170d4285n], // Sepolia
+	['10', 0x4200000000000000000000000000000000000006n], //OP Mainnet
+	['8453', 0x4200000000000000000000000000000000000006n], // Base
+	['42161', 0x82af49447d8a07e3bd95bd0d56f35241523fbab1n], // Arbitrum
+])
+
+export const getWethForChainId = (chainId: bigint) => wethForChainId.get(chainId.toString())
 
 export async function getSettings() : Promise<Settings> {
 	const results = await browserStorageLocalGet([
