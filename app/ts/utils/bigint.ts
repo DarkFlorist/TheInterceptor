@@ -18,9 +18,7 @@ export function bigintToDecimalString(value: bigint, power: bigint): string {
 }
 
 export const bigintToRoundedPrettyDecimalString = (amount: bigint, decimals?: bigint, maximumSignificantDigits = 4) => {
-	// roundingMode is not supported until https://github.com/microsoft/TypeScript/pull/56902 (merged)
-	const formatOptions = { maximumSignificantDigits, notation: 'compact' } as const
-	const formatter = new Intl.NumberFormat('en-US', formatOptions )
+	const formatter = new Intl.NumberFormat('en-US', { maximumSignificantDigits, notation: 'compact' })
 
 	const remapPrefixToMetric = (part: Intl.NumberFormatPart) => {
 		// convert American prefix to Metric
