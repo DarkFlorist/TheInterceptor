@@ -268,9 +268,6 @@ export function Home(param: HomeParams) {
 	}
 
 	async function removeTransactionOrSignedMessage(transactionOrMessageIdentifier: TransactionOrMessageIdentifier) {
-		if (transactionOrMessageIdentifier.type === 'MakeYouRichTransaction') {
-			return await enableMakeMeRich(false)
-		}
 		setRemovedTransactionOrSignedMessages((transactionOrMessageIdentifiers) => transactionOrMessageIdentifiers.concat(transactionOrMessageIdentifier))
 		return await sendPopupMessageToBackgroundPage({ method: 'popup_removeTransactionOrSignedMessage', data: transactionOrMessageIdentifier })
 	}

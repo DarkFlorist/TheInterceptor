@@ -7,6 +7,7 @@ import { SimulatedAndVisualizedSimpleTokenTransferTransaction, TokenResult } fro
 import { AddressBookEntry } from '../../../types/addressBookTypes.js'
 import { tokenEventToTokenSymbolParams } from './CatchAllVisualizer.js'
 import { RpcNetwork } from '../../../types/rpc.js'
+import { ETHEREUM_LOGS_LOGGER_ADDRESS } from '../../../utils/constants.js'
 
 type BeforeAfterAddress = {
 	address: AddressBookEntry
@@ -98,6 +99,9 @@ export function SimpleTokenTransferVisualisation({ simTx, renameAddressCallBack 
 	const asset = getAsset(transfer)
 	const senderAfter = simTx.tokenBalancesAfter.find((change) => change.owner === transfer.from.address && change.token === asset.tokenEntry.address && change.tokenId === asset.tokenId)?.balance
 	const receiverAfter = simTx.tokenBalancesAfter.find((change) => change.owner === transfer.to.address && change.token === asset.tokenEntry.address && change.tokenId === asset.tokenId)?.balance
+	const senderGasFees = (asset.tokenEntry.address === ETHEREUM_LOGS_LOGGER_ADDRESS && asset.tokenEntry.type === 'ERC20' && transfer.from.address === simTx.transaction.from.address ? simTx.gasSpent * simTx.realizedGasPrice : 0n)
+	const receiverGasFees = (asset.tokenEntry.address === ETHEREUM_LOGS_LOGGER_ADDRESS && asset.tokenEntry.type === 'ERC20' && transfer.to.address === simTx.transaction.from.address ? simTx.gasSpent * simTx.realizedGasPrice : 0n)
+	
 	return <SimpleSend
 		transaction = { { ...simTx, rpcNetwork: simTx.transaction.rpcNetwork } }
 		asset = { {
@@ -107,11 +111,11 @@ export function SimpleTokenTransferVisualisation({ simTx, renameAddressCallBack 
 		} }
 		sender = { {
 			address: transfer.from,
-			beforeAndAfter : senderAfter === undefined || !('amount' in asset) ? undefined : { before: senderAfter + asset.amount, after: senderAfter },
+			beforeAndAfter : senderAfter === undefined || !('amount' in asset) ? undefined : { before: senderAfter + asset.amount + senderGasFees, after: senderAfter },
 		} }
 		receiver = { {
 			address: transfer.to,
-			beforeAndAfter : receiverAfter === undefined || !('amount' in asset) ? undefined : { before: receiverAfter - asset.amount, after: receiverAfter },
+			beforeAndAfter : receiverAfter === undefined || !('amount' in asset) ? undefined : { before: receiverAfter + receiverGasFees - asset.amount, after: receiverAfter },
 		} }
 		renameAddressCallBack = { renameAddressCallBack }
 	/>
