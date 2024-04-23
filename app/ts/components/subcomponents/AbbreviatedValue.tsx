@@ -1,19 +1,21 @@
-import { bigintToRoundedPrettyDecimalString } from '../../utils/bigint.js'
+import { ComponentChild } from 'preact'
+import { bigintToNumberFormatParts } from '../../utils/bigint.js'
 
 export const AbbreviatedValue = ({ amount, decimals = 18n }: { amount: bigint, decimals?: bigint }) => {
-	const decimalString = bigintToRoundedPrettyDecimalString(amount, decimals)
-	const [beforeDecimal, afterDecimal] = decimalString.split('.')
+	const numberParts = bigintToNumberFormatParts(amount, decimals)
+	const domElement: ComponentChild[] = []
 
-	// Apply special formatting for decimal values that have long leading zeros
-	if (afterDecimal && Number.parseFloat(decimalString) % 1 === 0) {
-		const firstNonZeroIndex = afterDecimal.search(/[^0]/)
-		if (firstNonZeroIndex !== -1) {
-			return (
-				<>{ `${ beforeDecimal }.` }<small>{ afterDecimal.slice(0, firstNonZeroIndex) }</small>{ afterDecimal.slice(firstNonZeroIndex) }</>
-			)
+	for (const { type, value } of numberParts) {
+		if (type === 'fraction') {
+			const significantDigits = `${Number(value)}`
+			const zeroPad = value.replace(significantDigits, '')
+			if (zeroPad.length) {
+				domElement.push(<><small>{ zeroPad }</small>{ significantDigits }</>)
+				continue
+			}
 		}
+		domElement.push([value])
 	}
 
-	// If no special formatting is needed, return the original decimalString
-	return <>{ decimalString }</>
+	return <>{ domElement }</>
 }

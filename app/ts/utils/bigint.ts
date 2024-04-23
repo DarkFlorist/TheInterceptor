@@ -1,4 +1,4 @@
-import { ethers, formatUnits } from 'ethers'
+import { ethers } from 'ethers'
 
 export function bigintToDecimalString(value: bigint, power: bigint): string {
 	if ( value >= 0n ) {
@@ -17,20 +17,27 @@ export function bigintToDecimalString(value: bigint, power: bigint): string {
 	return `-${integerPart.toString(10)}.${fractionalPart.toString(10).padStart(Number(power), '0').replace(/0+$/, '')}`
 }
 
-export const bigintToRoundedPrettyDecimalString = (amount: bigint, decimals?: bigint, maximumSignificantDigits = 4) => {
+export const bigintToNumberFormatParts = (amount: bigint, decimals = 18n, maximumSignificantDigits = 4) => {
 	const formatter = new Intl.NumberFormat('en-US', { maximumSignificantDigits, notation: 'compact' })
+	const floatValue = Number(ethers.formatUnits(amount, decimals))
+	// Typescript only accepts numbers as parameters for `formatToParts`, generally a string is also accepted
+	return formatter.formatToParts(Number(floatValue))
+}
 
-	const remapPrefixToMetric = (part: Intl.NumberFormatPart) => {
-		// convert American prefix to Metric
-		switch(part.value) {
-			case 'K': return 'k'
-			case 'B': return 'G'
-			default: return part.value
+export const bigintToRoundedPrettyDecimalString = (amount: bigint, decimals?: bigint, maximumSignificantDigits = 4) => {
+	const numberParts = bigintToNumberFormatParts(amount, decimals, maximumSignificantDigits)
+	let decimalString = ''
+
+	for (const { type, value } of numberParts) {
+		// convert American to Metric suffix
+		if (type === 'compact') {
+			if (value === 'K') { decimalString += 'k'; continue }
+			if (value === 'B') { decimalString += 'G'; continue }
 		}
+		decimalString += value
 	}
 
-	const floatValue = Number(formatUnits(amount, decimals))
-	return formatter.formatToParts(floatValue).map(remapPrefixToMetric).join('')
+	return decimalString
 }
 
 export function nanoString(value: bigint): string {
