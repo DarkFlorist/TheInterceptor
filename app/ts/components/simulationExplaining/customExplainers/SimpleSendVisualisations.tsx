@@ -1,6 +1,6 @@
 import { DistributedOmit, assertNever } from '../../../utils/typescript.js'
 import { RenameAddressCallBack } from '../../../types/user-interface-types.js'
-import { BigAddress } from '../../subcomponents/address.js'
+import { BigAddress, SmallAddress } from '../../subcomponents/address.js'
 import { TokenOrEth, TokenOrEtherParams } from '../../subcomponents/coins.js'
 import { GasFee, TransactionGasses } from '../SimulationSummary.js'
 import { SimulatedAndVisualizedSimpleTokenTransferTransaction, TokenResult } from '../identifyTransaction.js'
@@ -8,6 +8,7 @@ import { AddressBookEntry } from '../../../types/addressBookTypes.js'
 import { tokenEventToTokenSymbolParams } from './CatchAllVisualizer.js'
 import { RpcNetwork } from '../../../types/rpc.js'
 import { ETHEREUM_LOGS_LOGGER_ADDRESS } from '../../../utils/constants.js'
+import { interleave } from '../../../utils/typed-arrays.js'
 
 type BeforeAfterAddress = {
 	address: AddressBookEntry
@@ -46,13 +47,14 @@ function AddressBeforeAfter({ address, beforeAndAfter, renameAddressCallBack, to
 
 type SimpleSendParams = {
 	transaction: TransactionGasses & { rpcNetwork: RpcNetwork }
+	viaProxypath?: readonly AddressBookEntry[]
 	asset: TokenOrEtherParams
 	sender: BeforeAfterAddress
 	receiver: BeforeAfterAddress
 	renameAddressCallBack: RenameAddressCallBack
 }
 
-function SimpleSend({ transaction, asset, sender, receiver, renameAddressCallBack } : SimpleSendParams) {
+export function SimpleSend({ transaction, asset, sender, receiver, renameAddressCallBack, viaProxypath } : SimpleSendParams) {
 	return <div class = 'notification transaction-importance-box'>
 		<span style = 'grid-template-columns: auto auto auto auto; justify-content: center; display: grid; align-items: baseline;'>
 			<p class = 'paragraph' style = 'font-size: 28px; font-weight: 500; justify-self: right;'> Send&nbsp;</p>
@@ -82,21 +84,26 @@ function SimpleSend({ transaction, asset, sender, receiver, renameAddressCallBac
 		<span class = 'log-table' style = 'grid-template-columns: min-content min-content min-content; margin-top: 5px;'>
 			<GasFee tx = { transaction } rpcNetwork = { transaction.rpcNetwork } />
 		</span>
+		{ viaProxypath === undefined ? <></> : <span style = 'display: flex;'>
+			<p class = 'paragraph' style = { 'color: var(--subtitle-text-color)' }> Via proxy:&nbsp;</p>
+			<> { interleave(viaProxypath.map((addressBookEntry) => <SmallAddress addressBookEntry = { addressBookEntry } renameAddressCallBack = { renameAddressCallBack }/>), <p class = 'paragraph' style = { 'color: var(--subtitle-text-color)' }>&nbsp;{ '-> '}&nbsp;</p>) } </>
+		</span> }
 	</div>
+}
+
+export const getAsset = (transfer: TokenResult, renameAddressCallBack: RenameAddressCallBack) => {
+	switch (transfer.type) {
+		case 'ERC1155': return { ...tokenEventToTokenSymbolParams(transfer), amount: transfer.amount, renameAddressCallBack }
+		case 'ERC20': return { ...tokenEventToTokenSymbolParams(transfer), amount: transfer.amount, renameAddressCallBack }
+		case 'ERC721': return { ...tokenEventToTokenSymbolParams(transfer), received: false, renameAddressCallBack }
+		default: assertNever(transfer)
+	}
 }
 
 export function SimpleTokenTransferVisualisation({ simTx, renameAddressCallBack }: { simTx: SimulatedAndVisualizedSimpleTokenTransferTransaction, renameAddressCallBack: RenameAddressCallBack }) {
 	const transfer = simTx.tokenResults[0]
 	if (transfer === undefined) throw new Error('transfer was undefined')
-	const getAsset = (transfer: TokenResult) => {
-		switch (transfer.type) {
-			case 'ERC1155': return { ...tokenEventToTokenSymbolParams(transfer), amount: transfer.amount, renameAddressCallBack }
-			case 'ERC20': return { ...tokenEventToTokenSymbolParams(transfer), amount: transfer.amount, renameAddressCallBack }
-			case 'ERC721': return { ...tokenEventToTokenSymbolParams(transfer), received: false, renameAddressCallBack }
-			default: assertNever(transfer)
-		}
-	}
-	const asset = getAsset(transfer)
+	const asset = getAsset(transfer, renameAddressCallBack)
 	const senderAfter = simTx.tokenBalancesAfter.find((change) => change.owner === transfer.from.address && change.token === asset.tokenEntry.address && change.tokenId === asset.tokenId)?.balance
 	const receiverAfter = simTx.tokenBalancesAfter.find((change) => change.owner === transfer.to.address && change.token === asset.tokenEntry.address && change.tokenId === asset.tokenId)?.balance
 	const senderGasFees = (asset.tokenEntry.address === ETHEREUM_LOGS_LOGGER_ADDRESS && asset.tokenEntry.type === 'ERC20' && transfer.from.address === simTx.transaction.from.address ? simTx.gasSpent * simTx.realizedGasPrice : 0n)
@@ -104,11 +111,7 @@ export function SimpleTokenTransferVisualisation({ simTx, renameAddressCallBack 
 	
 	return <SimpleSend
 		transaction = { { ...simTx, rpcNetwork: simTx.transaction.rpcNetwork } }
-		asset = { {
-			...asset,
-			useFullTokenName: false,
-			fontSize: 'normal'
-		} }
+		asset = { { ...asset, useFullTokenName: false, fontSize: 'normal' } }
 		sender = { {
 			address: transfer.from,
 			beforeAndAfter : senderAfter === undefined || !('amount' in asset) ? undefined : { before: senderAfter + asset.amount + senderGasFees, after: senderAfter },
