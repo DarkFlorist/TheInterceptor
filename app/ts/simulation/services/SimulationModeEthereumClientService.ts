@@ -707,7 +707,7 @@ export const getSimulatedBlockNumber = async (ethereumClientService: EthereumCli
 	return await ethereumClientService.getBlockNumber(requestAbortController)
 }
 
-export const getSimulatedTransactionByHash = async (ethereumClientService: EthereumClientService, requestAbortController: AbortController | undefined, simulationState: SimulationState | undefined, hash: bigint): Promise<EthereumSignedTransactionWithBlockData|undefined> => {
+export const getSimulatedTransactionByHash = async (ethereumClientService: EthereumClientService, requestAbortController: AbortController | undefined, simulationState: SimulationState | undefined, hash: bigint): Promise<EthereumSignedTransactionWithBlockData | null> => {
 	// try to see if the transaction is in our queue
 	if (simulationState === undefined) return await ethereumClientService.getTransactionByHash(hash, requestAbortController)
 	for (const [index, simulatedTransaction] of simulationState.simulatedTransactions.entries()) {
