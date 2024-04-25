@@ -5,9 +5,9 @@ export const AbbreviatedValue = ({ amount, decimals = 18n }: { amount: bigint, d
 	const numberParts = bigintToNumberFormatParts(amount, decimals)
 	const domElement: ComponentChild[] = []
 
-	for (const { type, value } of numberParts) {
+	for (const [type, value] of numberParts) {
 		if (type === 'fraction') {
-			const significantDigits = `${Number(value)}`
+			const significantDigits = `${ Number(value) }`
 			const zeroPad = value.replace(significantDigits, '')
 			if (zeroPad.length) {
 				domElement.push(<><small>{ zeroPad }</small>{ significantDigits }</>)
