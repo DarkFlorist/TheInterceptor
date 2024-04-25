@@ -154,7 +154,7 @@ export class EthereumClientService {
 
 	public readonly getTransactionByHash = async (hash: bigint, requestAbortController: AbortController | undefined) => {
 		const response = await this.requestHandler.jsonRpcRequest({ method: 'eth_getTransactionByHash', params: [hash] }, requestAbortController)
-		if (response === null) return undefined
+		if (response === null) return null
 		return EthereumSignedTransactionWithBlockData.parse(response)
 	}
 
