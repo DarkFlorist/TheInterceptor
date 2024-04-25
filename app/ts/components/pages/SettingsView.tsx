@@ -45,10 +45,7 @@ function ImportExport() {
 		}
 		browser.runtime.onMessage.addListener(popupMessageListener)
 
-		return () => { () => {
-			browser.runtime.onMessage.removeListener(popupMessageListener)
-			checkAndPrintRuntimeLastError()
-		} }
+		return () => browser.runtime.onMessage.removeListener(popupMessageListener)
 	})
 
 	const downloadFile = (filename: string, fileContents: string) => {
