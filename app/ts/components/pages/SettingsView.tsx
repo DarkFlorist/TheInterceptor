@@ -5,7 +5,6 @@ import { RpcEntries } from '../../types/rpc.js'
 import { useEffect, useState } from 'preact/hooks'
 import { ErrorComponent } from '../subcomponents/Error.js'
 import { DinoSaysNotification } from '../subcomponents/DinoSays.js'
-import { checkAndPrintRuntimeLastError } from '../../utils/requests.js'
 
 type CheckBoxSettingParam = {
 	text: string
