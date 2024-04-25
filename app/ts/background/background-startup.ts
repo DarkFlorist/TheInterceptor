@@ -11,7 +11,7 @@ import { getSocketFromPort, sendPopupMessageToOpenWindows, websiteSocketToString
 import { sendSubscriptionMessagesForNewBlock } from '../simulation/services/EthereumSubscriptionService.js'
 import { refreshSimulation } from './popupMessageHandlers.js'
 import { Semaphore } from '../utils/semaphore.js'
-import { RawInterceptedRequest } from '../utils/requests.js'
+import { RawInterceptedRequest, checkAndThrowRuntimeLastError } from '../utils/requests.js'
 import { ICON_NOT_ACTIVE } from '../utils/constants.js'
 import { handleUnexpectedError } from '../utils/errors.js'
 import { browserStorageLocalGet, browserStorageLocalRemove } from '../utils/storageUtils.js'
@@ -24,7 +24,18 @@ import { onCloseWindowOrTab } from './windows/confirmTransaction.js'
 
 const websiteTabConnections = new Map<number, TabConnection>()
 
-browser.tabs.onRemoved.addListener((tabId: number) => removeTabState(tabId))
+const catchAllErrorsAndCall = async (func: () => Promise<unknown>) => {
+	try {
+		await func()
+		checkAndThrowRuntimeLastError()
+	} catch(error: unknown) {
+		console.log(error)
+		if (error instanceof Error && error.message.startsWith('No tab with id')) return
+		handleUnexpectedError(error)
+	}
+}
+
+browser.tabs.onRemoved.addListener(async (tabId: number) => await catchAllErrorsAndCall(() => removeTabState(tabId)))
 
 if (browser.runtime.getManifest().manifest_version === 2) {
 	updateContentScriptInjectionStrategyManifestV2()
@@ -69,26 +80,24 @@ async function onContentScriptConnected(simulator: Simulator, port: browser.runt
 		wantsToConnect: false,
 	}
 	port.onDisconnect.addListener(() => {
-		try {
+		catchAllErrorsAndCall(async () => {
 			const tabConnection = websiteTabConnections.get(socket.tabId)
 			if (tabConnection === undefined) return
 			delete tabConnection.connections[websiteSocketToString(socket)]
 			if (Object.keys(tabConnection).length === 0) {
 				websiteTabConnections.delete(socket.tabId)
 			}
-		} catch(error: unknown) {
-			handleUnexpectedError(error)
-		}
+		})
 	})
 
-	port.onMessage.addListener(async (payload) => {
-		if (!(
-			'data' in payload
-			&& typeof payload.data === 'object'
-			&& payload.data !== null
-			&& 'interceptorRequest' in payload.data
-		)) return
-		try {
+	port.onMessage.addListener((payload) => {
+		catchAllErrorsAndCall(async () => {
+			if (!(
+				'data' in payload
+				&& typeof payload.data === 'object'
+				&& payload.data !== null
+				&& 'interceptorRequest' in payload.data
+			)) return
 			await pendingRequestLimiter.execute(async () => {
 				const rawMessage = RawInterceptedRequest.parse(payload.data)
 				const request = {
@@ -100,9 +109,7 @@ async function onContentScriptConnected(simulator: Simulator, port: browser.runt
 				}
 				return await handleInterceptedRequest(port, websiteOrigin, websitePromise, simulator, socket, request, websiteTabConnections)
 			})
-		} catch(error: unknown) {
-			await handleUnexpectedError(error)
-		}
+		})
 	})
 
 	if (tabConnection === undefined) {
@@ -120,8 +127,15 @@ async function onContentScriptConnected(simulator: Simulator, port: browser.runt
 	} else {
 		tabConnection.connections[identifier] = newConnection
 	}
-	const website = await websitePromise
-	await updateTabState(socket.tabId, (previousState: TabState) => ({ ...previousState, website }))
+	try {
+		const website = await websitePromise
+		await updateTabState(socket.tabId, (previousState: TabState) => ({ ...previousState, website }))
+		checkAndThrowRuntimeLastError()
+	} catch(error: unknown) {
+		console.log(error)
+		if (error instanceof Error && error.message.startsWith('No tab with id')) return
+		await handleUnexpectedError(error)
+	}
 }
 
 async function newBlockAttemptCallback(blockheader: EthereumBlockHeader, ethereumClientService: EthereumClientService, isNewBlock: boolean, simulator: Simulator) {
@@ -174,39 +188,21 @@ async function startup() {
 	const simulatorNetwork = userSpecifiedSimulatorNetwork === undefined ? defaultRpcs[0] : userSpecifiedSimulatorNetwork
 	const simulator = new Simulator(simulatorNetwork, newBlockAttemptCallback, onErrorBlockCallback)
 	browser.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
-		try {
+		await catchAllErrorsAndCall(async () => {
 			if (changeInfo.status !== 'complete') return
 			if (tab.url === undefined) return
 			const websiteOrigin = (new URL(tab.url)).hostname
 			const website = { websiteOrigin, ...await retrieveWebsiteDetails(tabId) }
 			await updateTabState(tabId, (previousState: TabState) => ({ ...previousState, website }))
 			await updateExtensionIcon(tabId, websiteOrigin)
-		} catch(error: unknown) {
-			handleUnexpectedError(error)
-		}
+		})
 	})
-	browser.runtime.onConnect.addListener((port) => {
-		try {
-			onContentScriptConnected(simulator, port, websiteTabConnections)
-		} catch(error: unknown) {
-			handleUnexpectedError(error)
-		}
-	})
-	browser.runtime.onMessage.addListener(async (message: unknown) => {
-		try {
-			await popupMessageHandler(websiteTabConnections, simulator, message, await getSettings())
-		} catch(error: unknown) {
-			await handleUnexpectedError(error)
-		}
-	})
+	browser.runtime.onConnect.addListener(async (port) => await catchAllErrorsAndCall(() => onContentScriptConnected(simulator, port, websiteTabConnections)))
+	browser.runtime.onMessage.addListener(async (message: unknown) => await catchAllErrorsAndCall(async () => popupMessageHandler(websiteTabConnections, simulator, message, await getSettings())))
 
 
 	const recursiveCheckIfInterceptorShouldSleep = async () => {
-		try {
-			await checkIfInterceptorShouldSleep(simulator.ethereum)
-		} catch(error: unknown) {
-			await handleUnexpectedError(error)
-		}
+		await catchAllErrorsAndCall(async () => checkIfInterceptorShouldSleep(simulator.ethereum))
 		setTimeout(recursiveCheckIfInterceptorShouldSleep, 1000)
 	}
 
@@ -214,8 +210,8 @@ async function startup() {
 
 	await updateExtensionBadge()
 
-	const onCloseWindow = (id: number) => onCloseWindowOrTab({ type: 'popup' as const, id }, simulator, websiteTabConnections)
-	const onCloseTab = (id: number) => onCloseWindowOrTab({ type: 'tab' as const, id }, simulator, websiteTabConnections)
+	const onCloseWindow = async (id: number) => await catchAllErrorsAndCall(async () => await onCloseWindowOrTab({ type: 'popup' as const, id }, simulator, websiteTabConnections))
+	const onCloseTab = async (id: number) => await catchAllErrorsAndCall(async () => await onCloseWindowOrTab({ type: 'tab' as const, id }, simulator, websiteTabConnections))
 	addWindowTabListeners(onCloseWindow, onCloseTab)
 }
 

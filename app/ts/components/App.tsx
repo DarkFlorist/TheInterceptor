@@ -206,7 +206,7 @@ export function App() {
 			if (parsed.method !== 'popup_UpdateHomePage') return await sendPopupMessageToBackgroundPage({ method: 'popup_requestNewHomeData' })
 			return updateHomePage(UpdateHomePage.parse(parsed))
 		}
-		browser.runtime.onMessage.addListener(popupMessageListener)
+		browser.runtime.onMessage.addListener(popupMessageListener)	
 		return () => browser.runtime.onMessage.removeListener(popupMessageListener)
 	})
 

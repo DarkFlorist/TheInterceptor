@@ -200,7 +200,7 @@ export function AddNewAddress(param: AddAddressParam) {
 			})
 		}
 		browser.runtime.onMessage.addListener(popupMessageListener)
-		return () => { browser.runtime.onMessage.removeListener(popupMessageListener) }
+		return () => browser.runtime.onMessage.removeListener(popupMessageListener)
 	}, [])
 
 	useEffect(() => {

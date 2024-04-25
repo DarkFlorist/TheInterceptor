@@ -125,7 +125,7 @@ export async function getTabState(tabId: number) : Promise<TabState> {
 		activeSigningAddress: undefined
 	}
 }
-export const removeTabState = async(tabId: number) => removeTabStateFromStorage(tabId)
+export const removeTabState = async(tabId: number) => await removeTabStateFromStorage(tabId)
 
 export async function clearTabStates() {
 	const allStorage = Object.keys(await browser.storage.local.get())
