@@ -101,6 +101,7 @@ export async function main() {
 
 		should('getBlock with false aligns with Nethermind', async () => {
 			const block = await getSimulatedBlock(ethereum, undefined, simulationState, blockNumber, false)
+			if (block === null) throw new Error('Block was null')
 			const serialized = GetBlockReturn.serialize(block)
 			const expected = parseRequest(eth_getBlockByNumber_goerli_8443561_false)
 			assertIsObject(expected)
@@ -128,7 +129,7 @@ export async function main() {
 
 		should('get transaction by hash aligns with Nethermind', async () => {
 			const transaction = await getSimulatedTransactionByHash(ethereum, undefined, simulationState, 0xe10c2a85168046080235fff99e2e14ef1e90c8cf5e9d675f2ca214e49e555e0fn)
-			if (transaction === undefined) throw new Error('Transaction is undefined')
+			if (transaction === null) throw new Error('Transaction is not found')
 
 			const serialized = serialize(EthereumSignedTransactionWithBlockData, transaction)
 			const expected = parseRequest(eth_transactionByhash0xe10c2a85168046080235fff99e2e14ef1e90c8cf5e9d675f2ca214e49e555e0f)

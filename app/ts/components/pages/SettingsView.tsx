@@ -5,7 +5,6 @@ import { RpcEntries } from '../../types/rpc.js'
 import { useEffect, useState } from 'preact/hooks'
 import { ErrorComponent } from '../subcomponents/Error.js'
 import { DinoSaysNotification } from '../subcomponents/DinoSays.js'
-import { checkAndPrintRuntimeLastError } from '../../utils/requests.js'
 
 type CheckBoxSettingParam = {
 	text: string
@@ -45,10 +44,7 @@ function ImportExport() {
 		}
 		browser.runtime.onMessage.addListener(popupMessageListener)
 
-		return () => { () => {
-			browser.runtime.onMessage.removeListener(popupMessageListener)
-			checkAndPrintRuntimeLastError()
-		} }
+		return () => browser.runtime.onMessage.removeListener(popupMessageListener)
 	})
 
 	const downloadFile = (filename: string, fileContents: string) => {
