@@ -26,7 +26,7 @@ export async function getBalance(ethereumClientService: EthereumClientService, s
 }
 export async function getTransactionByHash(ethereumClientService: EthereumClientService, simulationState: SimulationState | undefined, request: TransactionByHashParams) {
 	const result = await getSimulatedTransactionByHash(ethereumClientService, undefined, simulationState, request.params[0])
-	if (result === undefined) return { type: 'result' as const, method: request.method, result: undefined }
+	if (result === undefined) return { type: 'result' as const, method: request.method, result: null }
 	return { type: 'result' as const, method: request.method, result: result }
 }
 export async function getTransactionReceipt(ethereumClientService: EthereumClientService, simulationState: SimulationState | undefined, request: TransactionReceiptParams) {
