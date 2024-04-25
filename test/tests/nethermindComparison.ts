@@ -101,6 +101,7 @@ export async function main() {
 
 		should('getBlock with false aligns with Nethermind', async () => {
 			const block = await getSimulatedBlock(ethereum, undefined, simulationState, blockNumber, false)
+			if (block === null) throw new Error('Block was null')
 			const serialized = GetBlockReturn.serialize(block)
 			const expected = parseRequest(eth_getBlockByNumber_goerli_8443561_false)
 			assertIsObject(expected)
