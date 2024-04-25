@@ -19,16 +19,6 @@ export class JsonRpcResponseError extends ErrorWithData {
 	}
 }
 
-export class FetchResponseError extends ErrorWithData {
-	public readonly id: string | number
-	public readonly code: number
-	public constructor(response: Response, id: number) {
-		super(response.statusText, response)
-		this.code = response.status
-		this.id = id
-	}
-}
-
 export function isFailedToFetchError(error: Error) {
 	if (error.message.includes('Fetch request timed out.') || error.message.includes('Failed to fetch') || error.message.includes('NetworkError when attempting to fetch resource')) return true
 	return false
