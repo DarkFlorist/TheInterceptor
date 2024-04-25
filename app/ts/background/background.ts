@@ -139,8 +139,15 @@ async function visualizeSimulatorState(simulationState: SimulationState, ethereu
 export const updateSimulationMetadata = async (ethereum: EthereumClientService, requestAbortController: AbortController | undefined) => {
 	return await updateSimulationResultsWithCallBack(async (prevState) => {
 		if (prevState?.simulationState === undefined) return prevState
-		const metadata = await updateMetadataForSimulation(prevState.simulationState, ethereum, requestAbortController, prevState.eventsForEachTransaction, prevState.protectors)
-		return { ...prevState, ...metadata }
+		try {
+			const metadata = await updateMetadataForSimulation(prevState.simulationState, ethereum, requestAbortController, prevState.eventsForEachTransaction, prevState.protectors)
+			return { ...prevState, ...metadata }
+		} catch (error) {
+			if (error instanceof Error && isNewBlockAbort(error)) return prevState
+			if (error instanceof Error && isFailedToFetchError(error)) return prevState
+			handleUnexpectedError(error)
+			return prevState
+		}
 	})
 }
 
