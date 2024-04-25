@@ -408,8 +408,8 @@ async function handleRPCRequest(
 
 export async function resetSimulatorStateFromConfig(ethereumClientService: EthereumClientService) {
 	const settings = await getSettings()
-	await updateSimulationState(ethereumClientService, async () => {
-		return await getEmptySimulationStateWithRichAddress(ethereumClientService, await getMakeMeRich() ? settings.activeSimulationAddress : undefined)
+	await updateSimulationState(ethereumClientService, async (simulationState) => {
+		return await getEmptySimulationStateWithRichAddress(ethereumClientService, await getMakeMeRich() ? settings.activeSimulationAddress : undefined, simulationState)
 	}, settings.activeSimulationAddress, true)
 }
 
