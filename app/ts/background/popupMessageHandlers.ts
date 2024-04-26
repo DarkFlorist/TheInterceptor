@@ -1,4 +1,4 @@
-import { changeActiveAddressAndChainAndResetSimulation, changeActiveRpc, refreshConfirmTransactionSimulation, updateSimulationState, updateSimulationMetadata, simulateGovernanceContractExecution, getPrependTransactions } from './background.js'
+import { changeActiveAddressAndChainAndResetSimulation, changeActiveRpc, refreshConfirmTransactionSimulation, updateSimulationState, updateSimulationMetadata, simulateGovernanceContractExecution } from './background.js'
 import { getSettings, setUseTabsInsteadOfPopup, setMakeMeRich, setPage, setUseSignersAddressAsActiveAddress, updateWebsiteAccess, exportSettingsAndAddressBook, importSettingsAndAddressBook, getMakeMeRich, getUseTabsInsteadOfPopup, getMetamaskCompatibilityMode, setMetamaskCompatibilityMode, getPage } from './settings.js'
 import { getPendingTransactionsAndMessages, getCurrentTabId, getTabState, saveCurrentTabId, setRpcList, getRpcList, getPrimaryRpcForChain, getRpcConnectionStatus, updateUserAddressBookEntries, getSimulationResults, setIdsOfOpenedTabs, getIdsOfOpenedTabs, updatePendingTransactionOrMessage, getLatestUnexpectedError } from './storageVariables.js'
 import { Simulator, parseEvents } from '../simulation/simulator.js'
@@ -79,8 +79,7 @@ export async function changeMakeMeRich(simulator: Simulator, ethereumClientServi
 	await setMakeMeRich(makeMeRichChange.data)
 	await updateSimulationState(simulator.ethereum, async (simulationState) => {
 		if (simulationState === undefined) return undefined
-		const prependQueue = await getPrependTransactions(ethereumClientService, settings, makeMeRichChange.data)
-		return await resetSimulationState(ethereumClientService, { ...simulationState, prependTransactionsQueue: prependQueue })
+		return await resetSimulationState(ethereumClientService, { ...simulationState, addressToMakeRich: makeMeRichChange.data ? settings.activeSimulationAddress : undefined })
 	}, settings.activeSimulationAddress, true)
 }
 
@@ -140,16 +139,15 @@ export async function resetSimulation(simulator: Simulator, settings: Settings) 
 export async function removeTransactionOrSignedMessage(simulator: Simulator, ethereumClientService: EthereumClientService, params: RemoveTransaction, settings: Settings) {
 	await updateSimulationState(simulator.ethereum, async (simulationState) => {
 		if (simulationState === undefined) return
-		if (params.data.type === 'MakeYouRichTransaction') return
 		if (params.data.type === 'Transaction') return await removeTransactionAndUpdateTransactionNonces(ethereumClientService, simulationState, params.data.transactionIdentifier)
-		return await removeSignedMessageFromSimulation(ethereumClientService, simulationState, params.data.messageIdentifier)
+		return await removeSignedMessageFromSimulation(ethereumClientService, undefined, simulationState, params.data.messageIdentifier)
 	}, settings.activeSimulationAddress, true)
 }
 
 export async function refreshSimulation(simulator: Simulator, settings: Settings, refreshOnlyIfNotAlreadyUpdatingSimulation: boolean): Promise<SimulationState | undefined> {
 	return await updateSimulationState(simulator.ethereum, async (simulationState) => {
 		if (simulationState === undefined) return
-		return await refreshSimulationState(simulator.ethereum, simulationState)
+		return await refreshSimulationState(simulator.ethereum, undefined, simulationState)
 	}, settings.activeSimulationAddress, false, refreshOnlyIfNotAlreadyUpdatingSimulation)
 }
 
@@ -429,11 +427,20 @@ export async function changeAddOrModifyAddressWindowState(ethereum: EthereumClie
 		}
 	}
 	await updatePage(parsedRequest.data.newState)
+	
+	const identifyAddressCandidate = async (addressCandidate: string | undefined) => {
+		if (addressCandidate === undefined) return undefined
+		const address = EthereumAddress.safeParse(addressCandidate.trim())
+		if (address.success === false) return undefined
+		return await identifyAddress(ethereum, undefined, address.value)
+	}
+	const identifyPromise = identifyAddressCandidate(parsedRequest.data.newState.incompleteAddressBookEntry.address)
 	const message = await getErrorIfAnyWithIncompleteAddressBookEntry(ethereum, parsedRequest.data.newState.incompleteAddressBookEntry)
+	
 	const errorState = message === undefined ? undefined : { blockEditing: true, message }
 	if (errorState?.message !== parsedRequest.data.newState.errorState?.message) await updatePage({ ...parsedRequest.data.newState, errorState })
 	return await sendPopupMessageToOpenWindows({ method: 'popup_addOrModifyAddressWindowStateInformation',
-		data: { windowStateId: parsedRequest.data.windowStateId, errorState: errorState }
+		data: { windowStateId: parsedRequest.data.windowStateId, errorState: errorState, identifiedAddress: await identifyPromise }
 	})
 }
 

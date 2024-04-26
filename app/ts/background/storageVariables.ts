@@ -125,7 +125,7 @@ export async function getTabState(tabId: number) : Promise<TabState> {
 		activeSigningAddress: undefined
 	}
 }
-export const removeTabState = async(tabId: number) => removeTabStateFromStorage(tabId)
+export const removeTabState = async(tabId: number) => await removeTabStateFromStorage(tabId)
 
 export async function clearTabStates() {
 	const allStorage = Object.keys(await browser.storage.local.get())
@@ -222,26 +222,6 @@ export const getRpcNetworkForChain = async (chainId: bigint): Promise<RpcNetwork
 		httpsRpc: undefined,
 	}
 }
-
-//TODO, remove when we start to use multicall completely. Decide on what to do with WETH then
-const ethDonator = [{
-		chainId: 1n,
-		eth_donator: 0xda9dfa130df4de4673b89022ee50ff26f6ea73cfn, // Kraken
-	},
-	{
-		chainId: 5n,
-		eth_donator: 0xc48e23c5f6e1ea0baef6530734edc3968f79af2en
-	},
-	{
-		chainId: 11155111n,
-		eth_donator: 0xb21c33de1fab3fa15499c62b59fe0cc3250020d1n, // Richest address on Sepolia
-	}
-] as const
-
-export function getEthDonator(chainId: bigint) {
-	return ethDonator.find((rpc) => rpc.chainId === chainId)?.eth_donator
-}
-
 export const getUserAddressBookEntries = async () => (await browserStorageLocalGet('userAddressBookEntries'))?.userAddressBookEntries ?? []
 
 const userAddressBookEntriesSemaphore = new Semaphore(1)

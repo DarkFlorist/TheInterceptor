@@ -1,22 +1,22 @@
 import { InpageScriptRequest, PopupMessage, RPCReply, Settings } from '../types/interceptor-messages.js'
 import 'webextension-polyfill'
 import { Simulator, parseEvents, runProtectorsForTransaction } from '../simulation/simulator.js'
-import { getEthDonator, getSimulationResults, getTabState, setLatestUnexpectedError, updateSimulationResults, updateSimulationResultsWithCallBack } from './storageVariables.js'
-import { changeSimulationMode, getSettings, getMakeMeRich } from './settings.js'
-import { blockNumber, call, chainId, estimateGas, gasPrice, getAccounts, getBalance, getBlockByNumber, getCode, getLogs, getPermissions, getSimulationStack, getTransactionByHash, getTransactionCount, getTransactionReceipt, netVersion, personalSign, sendTransaction, subscribe, switchEthereumChain, unsubscribe, web3ClientVersion, getBlockByHash, feeHistory, installNewFilter, uninstallNewFilter, getFilterChanges, getFilterLogs } from './simulationModeHanders.js'
+import { getSimulationResults, getTabState, setLatestUnexpectedError, updateSimulationResults, updateSimulationResultsWithCallBack } from './storageVariables.js'
+import { changeSimulationMode, getSettings, getMakeMeRich, getWethForChainId } from './settings.js'
+import { blockNumber, call, chainId, estimateGas, gasPrice, getAccounts, getBalance, getBlockByNumber, getCode, getLogs, getPermissions, getSimulationStack, getTransactionByHash, getTransactionCount, getTransactionReceipt, netVersion, personalSign, sendTransaction, subscribe, switchEthereumChain, unsubscribe, web3ClientVersion, getBlockByHash, feeHistory, installNewFilter, uninstallNewFilter, getFilterChanges, getFilterLogs, handleIterceptorError } from './simulationModeHanders.js'
 import { changeActiveAddress, changeMakeMeRich, changePage, resetSimulation, confirmDialog, refreshSimulation, removeTransactionOrSignedMessage, requestAccountsFromSigner, refreshPopupConfirmTransactionSimulation, confirmRequestAccess, changeInterceptorAccess, changeChainDialog, popupChangeActiveRpc, enableSimulationMode, addOrModifyAddressBookEntry, getAddressBookData, removeAddressBookEntry, refreshHomeData, interceptorAccessChangeAddressOrRefresh, refreshPopupConfirmTransactionMetadata, changeSettings, importSettings, exportSettings, setNewRpcList, simulateGovernanceContractExecutionOnPass, openNewTab, settingsOpened, changeAddOrModifyAddressWindowState, popupFetchAbiAndNameFromEtherscan, openWebPage, disableInterceptor, requestNewHomeData } from './popupMessageHandlers.js'
-import { CompleteVisualizedSimulation, GeneralEnrichedEthereumEvents, ProtectorResults, SimulationState, VisualizedSimulatorState, WebsiteCreatedEthereumUnsignedTransaction, WebsiteCreatedEthereumUnsignedTransactionOrFailed } from '../types/visualizer-types.js'
+import { CompleteVisualizedSimulation, GeneralEnrichedEthereumEvents, ProtectorResults, SimulationState, VisualizedSimulatorState, WebsiteCreatedEthereumUnsignedTransactionOrFailed } from '../types/visualizer-types.js'
 import { WebsiteTabConnections } from '../types/user-interface-types.js'
 import { askForSignerAccountsFromSignerIfNotAvailable, interceptorAccessMetadataRefresh, requestAccessFromUser, updateInterceptorAccessViewWithPendingRequests } from './windows/interceptorAccess.js'
-import { FourByteExplanations, MAKE_YOU_RICH_TRANSACTION, METAMASK_ERROR_FAILED_TO_PARSE_REQUEST, METAMASK_ERROR_NOT_AUTHORIZED, METAMASK_ERROR_NOT_CONNECTED_TO_CHAIN, ERROR_INTERCEPTOR_DISABLED, NEW_BLOCK_ABORT } from '../utils/constants.js'
+import { FourByteExplanations, METAMASK_ERROR_FAILED_TO_PARSE_REQUEST, METAMASK_ERROR_NOT_AUTHORIZED, METAMASK_ERROR_NOT_CONNECTED_TO_CHAIN, ERROR_INTERCEPTOR_DISABLED, NEW_BLOCK_ABORT, ETHEREUM_LOGS_LOGGER_ADDRESS } from '../utils/constants.js'
 import { sendActiveAccountChangeToApprovedWebsitePorts, sendMessageToApprovedWebsitePorts, updateWebsiteApprovalAccesses, verifyAccess } from './accessManagement.js'
 import { getActiveAddressEntry, getAddressBookEntriesForVisualiser, identifyAddress, nameTokenIds } from './metadataUtils.js'
 import { getActiveAddress, sendPopupMessageToOpenWindows } from './backgroundUtils.js'
 import { assertNever, assertUnreachable, modifyObject } from '../utils/typescript.js'
 import { EthereumClientService } from '../simulation/services/EthereumClientService.js'
-import { appendTransaction, calculateGasPrice, copySimulationState, getNonPrependedSimulatedTransactions, getNonceFixedSimulatedTransactions, getTokenBalancesAfter, getWebsiteCreatedEthereumUnsignedTransactions, mockSignTransaction, setPrependTransactionsQueue, setSimulationTransactionsAndSignedMessages } from '../simulation/services/SimulationModeEthereumClientService.js'
+import { appendTransaction, calculateGasPrice, copySimulationState, getEmptySimulationStateWithRichAddress, getNonceFixedSimulatedTransactions, getTokenBalancesAfter, getWebsiteCreatedEthereumUnsignedTransactions, mockSignTransaction, setSimulationTransactionsAndSignedMessages } from '../simulation/services/SimulationModeEthereumClientService.js'
 import { Semaphore } from '../utils/semaphore.js'
-import { FetchResponseError, JsonRpcResponseError, handleUnexpectedError, isFailedToFetchError, isNewBlockAbort } from '../utils/errors.js'
+import { JsonRpcResponseError, handleUnexpectedError, isFailedToFetchError, isNewBlockAbort } from '../utils/errors.js'
 import { formSimulatedAndVisualizedTransaction } from '../components/formVisualizerResults.js'
 import { updateConfirmTransactionView } from './windows/confirmTransaction.js'
 import { updateChainChangeViewWithPendingRequest } from './windows/changeChain.js'
@@ -88,12 +88,12 @@ export const simulateGovernanceContractExecution = async (pendingTransaction: Pe
 		const parentBlock = await ethereum.getBlock(undefined)
 		if (parentBlock.baseFeePerGas === undefined) return returnError('cannot build simulation from legacy block')
 		const signedExecutionTransaction = mockSignTransaction({ ...contractExecutionResult.executingTransaction, gas: contractExecutionResult.ethSimulateV1CallResult.gasUsed })
-		const tokenBalancesAfter = await getTokenBalancesAfter(ethereum, undefined, [contractExecutionResult.ethSimulateV1CallResult], parentBlock.number, [signedExecutionTransaction], [])
+		const tokenBalancesAfter = await getTokenBalancesAfter(ethereum, undefined, [contractExecutionResult.ethSimulateV1CallResult], parentBlock.number, [signedExecutionTransaction], [], {})
 
 		if (tokenBalancesAfter[0] === undefined) return returnError('Could not compute token balances')
 
 		const governanceContractSimulationState: SimulationState =  {
-			prependTransactionsQueue: [],
+			addressToMakeRich: undefined,
 			simulatedTransactions: [{
 				ethSimulateV1CallResult: contractExecutionResult.ethSimulateV1CallResult,
 				signedTransaction: signedExecutionTransaction,
@@ -128,19 +128,26 @@ async function visualizeSimulatorState(simulationState: SimulationState, ethereu
 	const updatedMetadataPromise = updateMetadataForSimulation(simulationState, ethereum, requestAbortController, eventsForEachTransaction, protectors)
 
 	function onlyTokensAndTokensWithKnownDecimals(metadata: AddressBookEntry): metadata is AddressBookEntry & { type: 'ERC20', decimals: `0x${ string }` } {
-		return metadata.type === 'ERC20' && metadata.decimals !== undefined
+		return metadata.type === 'ERC20' && metadata.decimals !== undefined && metadata.address !== ETHEREUM_LOGS_LOGGER_ADDRESS
 	}
 	const metadataRestructure = (metadata: AddressBookEntry & { type: 'ERC20', decimals: bigint }) => ({ address: metadata.address, decimals: metadata.decimals })
 	const updatedMetadata = await updatedMetadataPromise
-	const tokenPrices = await estimateEthereumPricesForTokens(ethereum, requestAbortController, ethereum.getRpcEntry().weth, updatedMetadata.addressBookEntries.filter(onlyTokensAndTokensWithKnownDecimals).map(metadataRestructure))
+	const tokenPrices = await estimateEthereumPricesForTokens(ethereum, requestAbortController, getWethForChainId(ethereum.getRpcEntry().chainId), updatedMetadata.addressBookEntries.filter(onlyTokensAndTokensWithKnownDecimals).map(metadataRestructure))
 	return { ...updatedMetadata, tokenPrices, eventsForEachTransaction, protectors, simulationState }
 }
 
 export const updateSimulationMetadata = async (ethereum: EthereumClientService, requestAbortController: AbortController | undefined) => {
 	return await updateSimulationResultsWithCallBack(async (prevState) => {
 		if (prevState?.simulationState === undefined) return prevState
-		const metadata = await updateMetadataForSimulation(prevState.simulationState, ethereum, requestAbortController, prevState.eventsForEachTransaction, prevState.protectors)
-		return { ...prevState, ...metadata }
+		try {
+			const metadata = await updateMetadataForSimulation(prevState.simulationState, ethereum, requestAbortController, prevState.eventsForEachTransaction, prevState.protectors)
+			return { ...prevState, ...metadata }
+		} catch (error) {
+			if (error instanceof Error && isNewBlockAbort(error)) return prevState
+			if (error instanceof Error && isFailedToFetchError(error)) return prevState
+			handleUnexpectedError(error)
+			return prevState
+		}
 	})
 }
 
@@ -231,11 +238,11 @@ export async function refreshConfirmTransactionSimulation(
 	const thisConfirmTransactionAbortController = confirmTransactionAbortController
 	const simState = await getCopiedSimulationState(simulationMode)
 	try {
-		const simulationStateWithNewTransaction = await appendTransaction(ethereumClientService, thisConfirmTransactionAbortController, simState, transactionToSimulate)
-		const noncefixed = await getNonceFixedSimulatedTransactions(ethereumClientService, thisConfirmTransactionAbortController, simulationStateWithNewTransaction.simulatedTransactions)
-		if (noncefixed === 'NoNonceErrors') return { statusCode: 'success' as const, data: { ...info, ...await visualizeSimulatorState(simulationStateWithNewTransaction, simulator.ethereum, thisConfirmTransactionAbortController) } }
-		const noncefixedNotPrepended = getWebsiteCreatedEthereumUnsignedTransactions(getNonPrependedSimulatedTransactions(simulationStateWithNewTransaction.prependTransactionsQueue, noncefixed))
-		const nonceFixedState = await setSimulationTransactionsAndSignedMessages(ethereumClientService, thisConfirmTransactionAbortController, simulationStateWithNewTransaction, noncefixedNotPrepended, simulationStateWithNewTransaction.signedMessages)
+		const simulationStateWithNewTransaction = await appendTransaction(ethereumClientService, undefined, simState, transactionToSimulate)
+		const noncefixed = await getNonceFixedSimulatedTransactions(ethereumClientService, undefined, simulationStateWithNewTransaction.simulatedTransactions)
+		if (noncefixed === 'NoNonceErrors') return { statusCode: 'success' as const, data: { ...info, ...await visualizeSimulatorState(simulationStateWithNewTransaction, simulator.ethereum, undefined) } }
+		const noncefixedNotPrepended = getWebsiteCreatedEthereumUnsignedTransactions(noncefixed)
+		const nonceFixedState = await setSimulationTransactionsAndSignedMessages(ethereumClientService, undefined, simulationStateWithNewTransaction, noncefixedNotPrepended, simulationStateWithNewTransaction.signedMessages)
 		const lastNonceFixed = noncefixed[noncefixed.length - 1]
 		if (lastNonceFixed === undefined) throw new Error('last nonce fixed was undefined')
 		const visualizedSimulatorState = await visualizeSimulatorState(nonceFixedState, simulator.ethereum, thisConfirmTransactionAbortController)
@@ -261,6 +268,7 @@ export async function refreshConfirmTransactionSimulation(
 		}
 	} catch (error) {
 		if (error instanceof Error && isNewBlockAbort(error)) return undefined
+		if (error instanceof Error && isFailedToFetchError(error)) return undefined
 		if (!(error instanceof JsonRpcResponseError)) throw error
 	
 		const extractToAbi = async () => {
@@ -287,28 +295,6 @@ export async function refreshConfirmTransactionSimulation(
 	}
 }
 
-// returns true if simulation state was changed
-export async function getPrependTransactions(ethereumClientService: EthereumClientService, settings: Settings, richMode: boolean): Promise<WebsiteCreatedEthereumUnsignedTransaction[]> {
-	if (!settings.simulationMode || !richMode) return []
-	const activeAddress = settings.activeSimulationAddress
-	const donatorAddress = getEthDonator(ethereumClientService.getChainId())
-	if (donatorAddress === undefined) return []
-	if (activeAddress === undefined) return []
-	return [{
-		transaction: {
-			from: donatorAddress,
-			chainId: ethereumClientService.getChainId(),
-			nonce: await ethereumClientService.getTransactionCount(donatorAddress, 'latest', undefined),
-			to: activeAddress,
-			...MAKE_YOU_RICH_TRANSACTION.transaction,
-		},
-		website: MAKE_YOU_RICH_TRANSACTION.website,
-		created: new Date(),
-		originalRequestParameters: { method: MAKE_YOU_RICH_TRANSACTION.transactionSendingFormat, params: [{}] },
-		success: true,
-		transactionIdentifier: 0n,
-	}]
-}
 async function handleRPCRequest(
 	simulator: Simulator,
 	simulationState: SimulationState | undefined,
@@ -396,6 +382,7 @@ async function handleRPCRequest(
 		case 'eth_uninstallFilter': return await uninstallNewFilter(socket, parsedRequest)
 		case 'eth_getFilterChanges': return await getFilterChanges(parsedRequest, ethereumClientService, simulationState)
 		case 'eth_getFilterLogs': return await getFilterLogs(parsedRequest, ethereumClientService, simulationState)
+		case 'InterceptorError': return await handleIterceptorError(parsedRequest)
 		/*
 		Missing methods:
 		case 'eth_getProof': return
@@ -420,11 +407,10 @@ async function handleRPCRequest(
 }
 
 export async function resetSimulatorStateFromConfig(ethereumClientService: EthereumClientService) {
-	const setings = await getSettings()
-	await updateSimulationState(ethereumClientService, async () => {
-		const prependQueue = await getPrependTransactions(ethereumClientService, setings, await getMakeMeRich())
-		return await setPrependTransactionsQueue(ethereumClientService, prependQueue)
-	}, setings.activeSimulationAddress, true)
+	const settings = await getSettings()
+	await updateSimulationState(ethereumClientService, async (simulationState) => {
+		return await getEmptySimulationStateWithRichAddress(ethereumClientService, await getMakeMeRich() ? settings.activeSimulationAddress : undefined, simulationState)
+	}, settings.activeSimulationAddress, true)
 }
 
 const changeActiveAddressAndChainAndResetSimulationSemaphore = new Semaphore(1)
@@ -456,10 +442,7 @@ export async function changeActiveAddressAndChainAndResetSimulation(
 			sendPopupMessageToOpenWindows({ method: 'popup_chain_update' })
 		}
 
-		if (updatedSettings.simulationMode) {
-			// update prepend mode as our active address has changed, so we need to be sure the rich modes money is sent to right address
-			await resetSimulatorStateFromConfig(simulator.ethereum)
-		}
+		if (updatedSettings.simulationMode) await resetSimulatorStateFromConfig(simulator.ethereum)
 		// inform website about this only after we have updated simulation, as they often query the balance right after
 		sendActiveAccountChangeToApprovedWebsitePorts(websiteTabConnections, await getSettings())
 	})
@@ -535,37 +518,14 @@ async function handleContentScriptMessage(simulator: Simulator, websiteTabConnec
 		const resolved = await handleRPCRequest(simulator, simulationState, websiteTabConnections, simulator.ethereum, request.uniqueRequestIdentifier.requestSocket, website, request, settings, activeAddress)
 		return replyToInterceptedRequest(websiteTabConnections, { ...request, ...resolved })
 	} catch (error) {
-		if (error instanceof JsonRpcResponseError || error instanceof FetchResponseError) {
+		if (error instanceof Error && isFailedToFetchError(error)) {
 			return replyToInterceptedRequest(websiteTabConnections, {
 				type: 'result', 
 				...request,
-				error: {
-					code: error.code,
-					message: error.message,
-					data: JSON.stringify(error.data)
-				},
+				...METAMASK_ERROR_NOT_CONNECTED_TO_CHAIN,
 			})
 		}
 		handleUnexpectedError(error)
-		if (error instanceof Error) {
-			if (isFailedToFetchError(error)) {
-				return replyToInterceptedRequest(websiteTabConnections, {
-					type: 'result', 
-					...request,
-					...METAMASK_ERROR_NOT_CONNECTED_TO_CHAIN,
-				})
-			}
-			if (error.message.includes('Fetch request timed out')) {
-				return replyToInterceptedRequest(websiteTabConnections, {
-					type: 'result', 
-					...request,
-					error: {
-						code: 408,
-						message: 'Request timed out',
-					},
-				})
-			}
-		}
 		return replyToInterceptedRequest(websiteTabConnections, {
 			type: 'result', 
 			...request,
@@ -612,47 +572,51 @@ export async function popupMessageHandler(
 		}
 	}
 	const parsedRequest = maybeParsedRequest.value
-
-	switch (parsedRequest.method) {
-		case 'popup_confirmDialog': return await confirmDialog(simulator, websiteTabConnections, parsedRequest)
-		case 'popup_changeActiveAddress': return await changeActiveAddress(simulator, websiteTabConnections, parsedRequest)
-		case 'popup_changeMakeMeRich': return await changeMakeMeRich(simulator, simulator.ethereum, parsedRequest, settings)
-		case 'popup_changePage': return await changePage(parsedRequest)
-		case 'popup_requestAccountsFromSigner': return await requestAccountsFromSigner(websiteTabConnections, parsedRequest)
-		case 'popup_resetSimulation': return await resetSimulation(simulator, settings)
-		case 'popup_removeTransactionOrSignedMessage': return await removeTransactionOrSignedMessage(simulator, simulator.ethereum, parsedRequest, settings)
-		case 'popup_refreshSimulation': return await refreshSimulation(simulator, settings, false)
-		case 'popup_refreshConfirmTransactionDialogSimulation': return await refreshPopupConfirmTransactionSimulation(simulator, simulator.ethereum)
-		case 'popup_refreshConfirmTransactionMetadata': return refreshPopupConfirmTransactionMetadata(simulator.ethereum, confirmTransactionAbortController, parsedRequest)
-		case 'popup_interceptorAccess': return await confirmRequestAccess(simulator, websiteTabConnections, parsedRequest)
-		case 'popup_changeInterceptorAccess': return await changeInterceptorAccess(simulator, websiteTabConnections, parsedRequest)
-		case 'popup_changeActiveRpc': return await popupChangeActiveRpc(simulator, websiteTabConnections, parsedRequest, settings)
-		case 'popup_changeChainDialog': return await changeChainDialog(simulator, websiteTabConnections, parsedRequest)
-		case 'popup_enableSimulationMode': return await enableSimulationMode(simulator, websiteTabConnections, parsedRequest)
-		case 'popup_addOrModifyAddressBookEntry': return await addOrModifyAddressBookEntry(simulator, websiteTabConnections, parsedRequest)
-		case 'popup_getAddressBookData': return await getAddressBookData(parsedRequest)
-		case 'popup_removeAddressBookEntry': return await removeAddressBookEntry(simulator, websiteTabConnections, parsedRequest)
-		case 'popup_openAddressBook': return await openNewTab('addressBook')
-		case 'popup_changeChainReadyAndListening': return await updateChainChangeViewWithPendingRequest()
-		case 'popup_interceptorAccessReadyAndListening': return await updateInterceptorAccessViewWithPendingRequests()
-		case 'popup_confirmTransactionReadyAndListening': return await updateConfirmTransactionView(simulator.ethereum)
-		case 'popup_requestNewHomeData': return await requestNewHomeData(simulator, simulationAbortController)
-		case 'popup_refreshHomeData': return await refreshHomeData(simulator)
-		case 'popup_settingsOpened': return await settingsOpened()
-		case 'popup_refreshInterceptorAccessMetadata': return await interceptorAccessMetadataRefresh()
-		case 'popup_interceptorAccessChangeAddress': return await interceptorAccessChangeAddressOrRefresh(websiteTabConnections, parsedRequest)
-		case 'popup_interceptorAccessRefresh': return await interceptorAccessChangeAddressOrRefresh(websiteTabConnections, parsedRequest)
-		case 'popup_ChangeSettings': return await changeSettings(simulator, parsedRequest, simulationAbortController)
-		case 'popup_openSettings': return await openNewTab('settingsView')
-		case 'popup_import_settings': return await importSettings(parsedRequest)
-		case 'popup_get_export_settings': return await exportSettings()
-		case 'popup_set_rpc_list': return await setNewRpcList(simulator, parsedRequest, settings)
-		case 'popup_simulateGovernanceContractExecution': return await simulateGovernanceContractExecutionOnPass(simulator.ethereum, parsedRequest)
-		case 'popup_changeAddOrModifyAddressWindowState': return await changeAddOrModifyAddressWindowState(simulator.ethereum, parsedRequest)
-		case 'popup_fetchAbiAndNameFromEtherscan': return await popupFetchAbiAndNameFromEtherscan(parsedRequest)
-		case 'popup_openWebPage': return await openWebPage(parsedRequest)
-		case 'popup_setDisableInterceptor': return await disableInterceptor(simulator, websiteTabConnections, parsedRequest)
-		case 'popup_clearUnexpectedError': return await setLatestUnexpectedError(undefined)
-		default: assertUnreachable(parsedRequest)
+	try {
+		switch (parsedRequest.method) {
+			case 'popup_confirmDialog': return await confirmDialog(simulator, websiteTabConnections, parsedRequest)
+			case 'popup_changeActiveAddress': return await changeActiveAddress(simulator, websiteTabConnections, parsedRequest)
+			case 'popup_changeMakeMeRich': return await changeMakeMeRich(simulator, simulator.ethereum, parsedRequest, settings)
+			case 'popup_changePage': return await changePage(parsedRequest)
+			case 'popup_requestAccountsFromSigner': return await requestAccountsFromSigner(websiteTabConnections, parsedRequest)
+			case 'popup_resetSimulation': return await resetSimulation(simulator, settings)
+			case 'popup_removeTransactionOrSignedMessage': return await removeTransactionOrSignedMessage(simulator, simulator.ethereum, parsedRequest, settings)
+			case 'popup_refreshSimulation': return await refreshSimulation(simulator, settings, false)
+			case 'popup_refreshConfirmTransactionDialogSimulation': return await refreshPopupConfirmTransactionSimulation(simulator, simulator.ethereum)
+			case 'popup_refreshConfirmTransactionMetadata': return refreshPopupConfirmTransactionMetadata(simulator.ethereum, confirmTransactionAbortController, parsedRequest)
+			case 'popup_interceptorAccess': return await confirmRequestAccess(simulator, websiteTabConnections, parsedRequest)
+			case 'popup_changeInterceptorAccess': return await changeInterceptorAccess(simulator, websiteTabConnections, parsedRequest)
+			case 'popup_changeActiveRpc': return await popupChangeActiveRpc(simulator, websiteTabConnections, parsedRequest, settings)
+			case 'popup_changeChainDialog': return await changeChainDialog(simulator, websiteTabConnections, parsedRequest)
+			case 'popup_enableSimulationMode': return await enableSimulationMode(simulator, websiteTabConnections, parsedRequest)
+			case 'popup_addOrModifyAddressBookEntry': return await addOrModifyAddressBookEntry(simulator, websiteTabConnections, parsedRequest)
+			case 'popup_getAddressBookData': return await getAddressBookData(parsedRequest)
+			case 'popup_removeAddressBookEntry': return await removeAddressBookEntry(simulator, websiteTabConnections, parsedRequest)
+			case 'popup_openAddressBook': return await openNewTab('addressBook')
+			case 'popup_changeChainReadyAndListening': return await updateChainChangeViewWithPendingRequest()
+			case 'popup_interceptorAccessReadyAndListening': return await updateInterceptorAccessViewWithPendingRequests()
+			case 'popup_confirmTransactionReadyAndListening': return await updateConfirmTransactionView(simulator.ethereum)
+			case 'popup_requestNewHomeData': return await requestNewHomeData(simulator, simulationAbortController)
+			case 'popup_refreshHomeData': return await refreshHomeData(simulator)
+			case 'popup_settingsOpened': return await settingsOpened()
+			case 'popup_refreshInterceptorAccessMetadata': return await interceptorAccessMetadataRefresh()
+			case 'popup_interceptorAccessChangeAddress': return await interceptorAccessChangeAddressOrRefresh(websiteTabConnections, parsedRequest)
+			case 'popup_interceptorAccessRefresh': return await interceptorAccessChangeAddressOrRefresh(websiteTabConnections, parsedRequest)
+			case 'popup_ChangeSettings': return await changeSettings(simulator, parsedRequest, simulationAbortController)
+			case 'popup_openSettings': return await openNewTab('settingsView')
+			case 'popup_import_settings': return await importSettings(parsedRequest)
+			case 'popup_get_export_settings': return await exportSettings()
+			case 'popup_set_rpc_list': return await setNewRpcList(simulator, parsedRequest, settings)
+			case 'popup_simulateGovernanceContractExecution': return await simulateGovernanceContractExecutionOnPass(simulator.ethereum, parsedRequest)
+			case 'popup_changeAddOrModifyAddressWindowState': return await changeAddOrModifyAddressWindowState(simulator.ethereum, parsedRequest)
+			case 'popup_fetchAbiAndNameFromEtherscan': return await popupFetchAbiAndNameFromEtherscan(parsedRequest)
+			case 'popup_openWebPage': return await openWebPage(parsedRequest)
+			case 'popup_setDisableInterceptor': return await disableInterceptor(simulator, websiteTabConnections, parsedRequest)
+			case 'popup_clearUnexpectedError': return await setLatestUnexpectedError(undefined)
+			default: assertUnreachable(parsedRequest)
+		}
+	} catch(error: unknown) {
+		if (error instanceof Error && (isNewBlockAbort(error) || isFailedToFetchError(error))) return
+		throw error
 	}
 }

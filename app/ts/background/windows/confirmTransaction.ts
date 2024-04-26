@@ -85,7 +85,8 @@ export async function resolvePendingTransactionOrMessage(simulator: Simulator, w
 	}
 	if (confirmation.data.action === 'signerIncluded') throw new Error('Signer included transaction that was in simulation')
 	const newState = await updateSimulationState(simulator.ethereum, async (simulationState) => {
-		if (pendingTransactionOrMessage.type !== 'Transaction') return await appendSignedMessage(simulator.ethereum, undefined, simulationState, pendingTransactionOrMessage.signedMessageTransaction)
+		if (simulationState === undefined) return undefined
+		if (pendingTransactionOrMessage.type !== 'Transaction') return await appendSignedMessage(simulationState, pendingTransactionOrMessage.signedMessageTransaction)
 		return await appendTransaction(simulator.ethereum, undefined, simulationState, pendingTransactionOrMessage.transactionToSimulate)
 	}, pendingTransactionOrMessage.activeAddress, true)
 	if (newState === undefined) return reply({ type: 'result', ...METAMASK_ERROR_NOT_CONNECTED_TO_CHAIN })

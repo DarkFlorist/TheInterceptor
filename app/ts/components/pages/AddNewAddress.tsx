@@ -191,11 +191,16 @@ export function AddNewAddress(param: AddAddressParam) {
 			if (parsed.method === 'popup_addOrModifyAddressWindowStateInformation') return setAddOrModifyAddressWindowState((previous) => {
 				if (previous === undefined) return undefined
 				if (parsed.data.windowStateId !== previous.windowStateId) return previous
+				if (parsed.data.identifiedAddress !== undefined) {
+					if (parsed.data.identifiedAddress.type === 'ERC20' && previous.incompleteAddressBookEntry.type === 'ERC20') {
+						return modifyObject(previous, { incompleteAddressBookEntry: { ...previous.incompleteAddressBookEntry, decimals: parsed.data.identifiedAddress.decimals }, errorState: parsed.data.errorState })
+					}
+				}
 				return modifyObject(previous, { errorState: parsed.data.errorState })
 			})
 		}
 		browser.runtime.onMessage.addListener(popupMessageListener)
-		return () => { browser.runtime.onMessage.removeListener(popupMessageListener) }
+		return () => browser.runtime.onMessage.removeListener(popupMessageListener)
 	}, [])
 
 	useEffect(() => {
@@ -294,10 +299,7 @@ export function AddNewAddress(param: AddAddressParam) {
 	async function sendChangeRequest(newState: ModifyAddressWindowState) {
 		if (modifyAddressWindowState === undefined) return
 		try {
-			await sendPopupMessageToBackgroundPage({ method: 'popup_changeAddOrModifyAddressWindowState', data: {
-				windowStateId: modifyAddressWindowState.windowStateId,
-				newState,
-			} })
+			await sendPopupMessageToBackgroundPage({ method: 'popup_changeAddOrModifyAddressWindowState', data: { windowStateId: modifyAddressWindowState.windowStateId, newState } })
 		} catch(e) {
 			console.error(e)
 		}
