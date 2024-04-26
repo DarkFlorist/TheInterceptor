@@ -9,6 +9,7 @@ import { getSettings } from './settings.js'
 import { getRpcConnectionStatus, getTabState, updateTabState } from './storageVariables.js'
 import { getLastKnownCurrentTabId } from './popupMessageHandlers.js'
 import { checkAndPrintRuntimeLastError, safeGetTab } from '../utils/requests.js'
+import { modifyObject } from '../utils/typescript.js'
 
 async function setInterceptorIcon(tabId: number, icon: TabIcon, iconReason: string) {
 	const tabIconDetails = { icon, iconReason }
