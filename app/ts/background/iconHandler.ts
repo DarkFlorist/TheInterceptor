@@ -9,10 +9,11 @@ import { getSettings } from './settings.js'
 import { getRpcConnectionStatus, getTabState, updateTabState } from './storageVariables.js'
 import { getLastKnownCurrentTabId } from './popupMessageHandlers.js'
 import { checkAndPrintRuntimeLastError, safeGetTab } from '../utils/requests.js'
+import { modifyObject } from '../utils/typescript.js'
 
 async function setInterceptorIcon(tabId: number, icon: TabIcon, iconReason: string) {
 	const tabIconDetails = { icon, iconReason }
-	await updateTabState(tabId, (previousState: TabState) => ({ ...previousState, tabIconDetails }))
+	await updateTabState(tabId, (previousState: TabState) => modifyObject(previousState, { tabIconDetails }))
 	if (await getLastKnownCurrentTabId() === tabId) await sendPopupMessageToOpenWindows({ method: 'popup_websiteIconChanged', data: tabIconDetails })
 	return await setExtensionIcon({ path: { 128: icon }, tabId: tabId })
 }
