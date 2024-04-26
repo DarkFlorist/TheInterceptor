@@ -372,7 +372,6 @@ export function ConfirmTransaction() {
 			return updatePendingTransactionsAndSignableMessages(parsed)
 		}
 		browser.runtime.onMessage.addListener(popupMessageListener)
-
 		return () => browser.runtime.onMessage.removeListener(popupMessageListener)
 	})
 

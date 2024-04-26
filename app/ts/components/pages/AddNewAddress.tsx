@@ -5,7 +5,7 @@ import { ErrorCheckBox, Notice } from '../subcomponents/Error.js'
 import { checksummedAddress, stringToAddress } from '../../utils/bigint.js'
 import { sendPopupMessageToBackgroundPage } from '../../background/backgroundUtils.js'
 import { AddressIcon } from '../subcomponents/address.js'
-import { assertUnreachable } from '../../utils/typescript.js'
+import { assertUnreachable, modifyObject } from '../../utils/typescript.js'
 import { ComponentChildren, createRef } from 'preact'
 import { AddressBookEntry, IncompleteAddressBookEntry } from '../../types/addressBookTypes.js'
 import { isValidAbi } from '../../simulation/services/EtherScanAbiFetcher.js'
@@ -178,12 +178,12 @@ export function AddNewAddress(param: AddAddressParam) {
 					if (previous === undefined) return undefined
 					if (parsed.data.windowStateId !== previous.windowStateId) return previous
 					if (!parsed.data.success) {
-						const newState = { ...previous, errorState: { blockEditing: false, message: parsed.data.error } }
+						const newState = modifyObject(previous, { errorState: { blockEditing: false, message: parsed.data.error } })
 						sendChangeRequest(newState)
 						return newState
 					}
 					if (previous.errorState !== undefined) return previous
-					const newState = { ...previous, incompleteAddressBookEntry: { ... previous.incompleteAddressBookEntry, abi: parsed.data.abi, name: previous.incompleteAddressBookEntry.name === undefined ? parsed.data.contractName : previous.incompleteAddressBookEntry.name } }
+					const newState = modifyObject(previous, { incompleteAddressBookEntry: modifyObject(previous.incompleteAddressBookEntry, { abi: parsed.data.abi, name: previous.incompleteAddressBookEntry.name === undefined ? parsed.data.contractName : previous.incompleteAddressBookEntry.name }) } )
 					sendChangeRequest(newState)
 					return newState
 				})
@@ -193,14 +193,14 @@ export function AddNewAddress(param: AddAddressParam) {
 				if (parsed.data.windowStateId !== previous.windowStateId) return previous
 				if (parsed.data.identifiedAddress !== undefined) {
 					if (parsed.data.identifiedAddress.type === 'ERC20' && previous.incompleteAddressBookEntry.type === 'ERC20') {
-						return { ...previous, incompleteAddressBookEntry: { ...previous.incompleteAddressBookEntry, decimals: parsed.data.identifiedAddress.decimals }, errorState: parsed.data.errorState }
+						return modifyObject(previous, { incompleteAddressBookEntry: { ...previous.incompleteAddressBookEntry, decimals: parsed.data.identifiedAddress.decimals }, errorState: parsed.data.errorState })
 					}
 				}
-				return { ...previous, errorState: parsed.data.errorState }
+				return modifyObject(previous, { errorState: parsed.data.errorState })
 			})
 		}
 		browser.runtime.onMessage.addListener(popupMessageListener)
-		return () => { browser.runtime.onMessage.removeListener(popupMessageListener) }
+		return () => browser.runtime.onMessage.removeListener(popupMessageListener)
 	}, [])
 
 	useEffect(() => {
@@ -308,7 +308,7 @@ export function AddNewAddress(param: AddAddressParam) {
 	const setAddress = async (address: string) => {
 		setAddOrModifyAddressWindowState((previous) => {
 			if (previous === undefined) return previous
-			const newState = { ...previous, incompleteAddressBookEntry: { ... previous.incompleteAddressBookEntry, address } }
+			const newState = modifyObject(previous, { incompleteAddressBookEntry: modifyObject(previous.incompleteAddressBookEntry, { address }) })
 			sendChangeRequest(newState)
 			return newState
 		})
@@ -317,7 +317,7 @@ export function AddNewAddress(param: AddAddressParam) {
 	const setName = async (name: string) => {
 		setAddOrModifyAddressWindowState((previous) => {
 			if (previous === undefined) return previous
-			const newState = { ...previous, incompleteAddressBookEntry: { ... previous.incompleteAddressBookEntry, name } }
+			const newState = modifyObject(previous, { incompleteAddressBookEntry: modifyObject(previous.incompleteAddressBookEntry, { name }) })
 			sendChangeRequest(newState)
 			return newState
 		})
@@ -325,7 +325,7 @@ export function AddNewAddress(param: AddAddressParam) {
 	const setAbi = async (abi: string | undefined) => {
 		setAddOrModifyAddressWindowState((previous) => {
 			if (previous === undefined) return previous
-			const newState = { ...previous, incompleteAddressBookEntry: { ... previous.incompleteAddressBookEntry, abi } }
+			const newState = modifyObject(previous, { incompleteAddressBookEntry: modifyObject(previous.incompleteAddressBookEntry, { abi }) })
 			sendChangeRequest(newState)
 			return newState
 		})
@@ -334,7 +334,7 @@ export function AddNewAddress(param: AddAddressParam) {
 	const setSymbol = async (symbol: string) => {
 		setAddOrModifyAddressWindowState((previous) => {
 			if (previous === undefined) return previous
-			const newState = { ...previous, incompleteAddressBookEntry: { ... previous.incompleteAddressBookEntry, symbol } }
+			const newState = modifyObject(previous, { incompleteAddressBookEntry: modifyObject(previous.incompleteAddressBookEntry, { symbol }) })
 			sendChangeRequest(newState)
 			return newState
 		})
@@ -342,7 +342,7 @@ export function AddNewAddress(param: AddAddressParam) {
 	const setAskForAddressAccess = async (askForAddressAccess: boolean) => {
 		setAddOrModifyAddressWindowState((previous) => {
 			if (previous === undefined) return previous
-			const newState = { ...previous, incompleteAddressBookEntry: { ... previous.incompleteAddressBookEntry, askForAddressAccess } }
+			const newState = modifyObject(previous, { incompleteAddressBookEntry: modifyObject(previous.incompleteAddressBookEntry, { askForAddressAccess }) })
 			sendChangeRequest(newState)
 			return newState
 		})

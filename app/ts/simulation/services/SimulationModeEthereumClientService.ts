@@ -7,7 +7,7 @@ import { WebsiteCreatedEthereumUnsignedTransaction, SimulatedTransaction, Simula
 import { EthereumUnsignedTransactionToUnsignedTransaction, IUnsignedTransaction1559, rlpEncode, serializeSignedTransactionToBytes } from '../../utils/ethereum.js'
 import { EthGetLogsResponse, EthGetLogsRequest, EthTransactionReceiptResponse, DappRequestTransaction, EthGetFeeHistoryResponse, FeeHistory } from '../../types/JsonRpc-types.js'
 import { handleERC1155TransferBatch, handleERC1155TransferSingle, handleERC20TransferLog } from '../logHandlers.js'
-import { assertNever } from '../../utils/typescript.js'
+import { assertNever, modifyObject } from '../../utils/typescript.js'
 import { SignMessageParams } from '../../types/jsonRpc-signing-types.js'
 import { EthSimulateV1CallResults, EthereumEvent, StateOverrides } from '../../types/ethSimulate-types.js'
 import { getCodeByteCode } from '../../utils/ethereumByteCodes.js'
@@ -271,20 +271,19 @@ export const appendTransaction = async (ethereumClientService: EthereumClientSer
 }
 
 export const setSimulationTransactionsAndSignedMessages = async (ethereumClientService: EthereumClientService, requestAbortController: AbortController | undefined, simulationState: SimulationState, unsignedTxts: readonly WebsiteCreatedEthereumUnsignedTransaction[], signedMessages: readonly SignedMessageTransaction[]): Promise<SimulationState>  => {
-	const parentBlock = await ethereumClientService.getBlock(requestAbortController)
-	if (unsignedTxts.length === 0 && unsignedTxts.length === 0 && signedMessages.length === 0) {
+	if (unsignedTxts.length === 0 && signedMessages.length === 0) {
 		return {
 			addressToMakeRich: simulationState.addressToMakeRich,
 			simulatedTransactions: [],
-			blockNumber: parentBlock.number,
-			blockTimestamp: parentBlock.timestamp,
+			blockNumber: simulationState.blockNumber,
+			blockTimestamp: new Date(),
 			rpcNetwork: ethereumClientService.getRpcEntry(),
 			simulationConductedTimestamp: new Date(),
 			signedMessages: [],
 			baseFeePerGas: 0n,
 		}
 	}
-
+	const parentBlock = await ethereumClientService.getBlock(requestAbortController)
 	const signedTxs = unsignedTxts.map((tx) => mockSignTransaction(tx.transaction))
 	const parentBaseFeePerGas = parentBlock.baseFeePerGas
 	if (parentBaseFeePerGas === undefined) throw new Error(CANNOT_SIMULATE_OFF_LEGACY_BLOCK)
@@ -346,17 +345,16 @@ const getTransactionQueue = (simulationState: SimulationState | undefined) => {
 	return simulationState.simulatedTransactions.map((x) => x.signedTransaction)
 }
 
-export const getEmptySimulationStateWithRichAddress = async (ethereumClientService: EthereumClientService, addressToMakeRich: EthereumAddress | undefined): Promise<SimulationState>  => {
-	const block = await ethereumClientService.getBlock(undefined)
+export const getEmptySimulationStateWithRichAddress = async (ethereumClientService: EthereumClientService, addressToMakeRich: EthereumAddress | undefined, oldSimulationState: SimulationState | undefined): Promise<SimulationState>  => {
 	const newState = {
 		addressToMakeRich,
 		simulatedTransactions: [],
-		blockNumber: block.number,
-		blockTimestamp: block.timestamp,
+		blockNumber: oldSimulationState?.blockNumber || 0n,
+		blockTimestamp: new Date(),
 		rpcNetwork: ethereumClientService.getRpcEntry(),
 		simulationConductedTimestamp: new Date(),
 		signedMessages: [],
-		baseFeePerGas: block.baseFeePerGas || 0n,
+		baseFeePerGas: 0n,
 	}
 	return await setSimulationTransactionsAndSignedMessages(ethereumClientService, undefined, newState, [], [])
 }
@@ -382,7 +380,7 @@ export const removeTransactionAndUpdateTransactionNonces = async (ethereumClient
 			continue
 		}
 		const shouldUpdateNonce = transactionWasFound && transaction.signedTransaction.from === transactionToBeRemoved.signedTransaction.from
-		const newTransaction = { ...transaction.signedTransaction, ...(shouldUpdateNonce ? { nonce: transaction.signedTransaction.nonce - 1n } : {}) }
+		const newTransaction = modifyObject(transaction.signedTransaction, shouldUpdateNonce ? { nonce: transaction.signedTransaction.nonce - 1n } : {})
 		newTransactions.push({
 			transaction: newTransaction,
 			website: transaction.website,
@@ -410,9 +408,9 @@ export const getNonceFixedSimulatedTransactions = async(ethereumClientService: E
 		if (isFixableNonceError(transaction)) {
 			const previousNonce = knownPreviousNonce.get(fromString)
 			if (previousNonce !== undefined) {
-				nonceFixedTransactions.push({ ...transaction, signedTransaction: { ...signedTransaction, nonce: previousNonce + 1n } })
+				nonceFixedTransactions.push(modifyObject(transaction, { signedTransaction: modifyObject(signedTransaction, { nonce: previousNonce + 1n }) }))
 			} else {
-				nonceFixedTransactions.push({ ...transaction, signedTransaction: { ...signedTransaction, nonce: await ethereumClientService.getTransactionCount(signedTransaction.from, 'latest', requestAbortController) } })
+				nonceFixedTransactions.push(modifyObject(transaction, { signedTransaction: modifyObject(signedTransaction, { nonce: await ethereumClientService.getTransactionCount(signedTransaction.from, 'latest', requestAbortController) }) }))
 			}
 		} else {
 			nonceFixedTransactions.push(transaction)
@@ -430,13 +428,7 @@ const getBaseFeeAdjustedTransactions = (parentBlock: EthereumBlockHeader, unsign
 	return unsignedTxts.map((transaction) => {
 		if (transaction.originalRequestParameters.method !== 'eth_sendTransaction') return transaction
 		if (transaction.transaction.type !== '1559') return transaction
-		return {
-			...transaction,
-			transaction: {
-				...transaction.transaction,
-				maxFeePerGas: parentBaseFeePerGas * 2n
-			}
-		}
+		return modifyObject(transaction, { transaction: modifyObject(transaction.transaction, { maxFeePerGas: parentBaseFeePerGas * 2n }) })
 	})
 }
 
@@ -444,7 +436,7 @@ export const refreshSimulationState = async (ethereumClientService: EthereumClie
 	if (ethereumClientService.getChainId() !== simulationState.rpcNetwork.chainId) return simulationState // don't refresh if we don't have the same chain to refresh from
 	if (simulationState.blockNumber === await ethereumClientService.getBlockNumber(undefined)) {
 		// if block number is the same, we don't need to compute anything as nothing has changed, but let's update timestamp to show the simulation was refreshed for this time
-		return { ...simulationState, simulationConductedTimestamp: new Date() }
+		return modifyObject(simulationState, { simulationConductedTimestamp: new Date() })
 	}
 	const parentBlockPromise = ethereumClientService.getBlock(undefined)
 	const getNonceFixedTransactions = async () => {
@@ -458,7 +450,7 @@ export const refreshSimulationState = async (ethereumClientService: EthereumClie
 }
 
 export const resetSimulationState = async (ethereumClientService: EthereumClientService, simulationState: SimulationState): Promise<SimulationState> => {
-	return await getEmptySimulationStateWithRichAddress(ethereumClientService, simulationState.addressToMakeRich)
+	return await getEmptySimulationStateWithRichAddress(ethereumClientService, simulationState.addressToMakeRich, simulationState)
 }
 
 const canQueryNodeDirectly = async (ethereumClientService: EthereumClientService, requestAbortController: AbortController | undefined, simulationState: SimulationState, blockTag: EthereumBlockTag = 'latest') => {
@@ -707,7 +699,7 @@ export const getSimulatedBlockNumber = async (ethereumClientService: EthereumCli
 	return await ethereumClientService.getBlockNumber(requestAbortController)
 }
 
-export const getSimulatedTransactionByHash = async (ethereumClientService: EthereumClientService, requestAbortController: AbortController | undefined, simulationState: SimulationState | undefined, hash: bigint): Promise<EthereumSignedTransactionWithBlockData|undefined> => {
+export const getSimulatedTransactionByHash = async (ethereumClientService: EthereumClientService, requestAbortController: AbortController | undefined, simulationState: SimulationState | undefined, hash: bigint): Promise<EthereumSignedTransactionWithBlockData | null> => {
 	// try to see if the transaction is in our queue
 	if (simulationState === undefined) return await ethereumClientService.getTransactionByHash(hash, requestAbortController)
 	for (const [index, simulatedTransaction] of simulationState.simulatedTransactions.entries()) {
@@ -981,7 +973,7 @@ export const getTokenBalancesAfter = async (
 }
 
 export const appendSignedMessage = async (simulationState: SimulationState, signedMessage: SignedMessageTransaction): Promise<SimulationState> => {
-	return { ...simulationState, signedMessages: simulationState.signedMessages.concat(signedMessage) }
+	return modifyObject(simulationState, { signedMessages: simulationState.signedMessages.concat(signedMessage) })
 }
 
 // takes the most recent block that the application is querying and does the calculation based on that
@@ -1006,7 +998,7 @@ export const getSimulatedFeeHistory = async (ethereumClientService: EthereumClie
 					: { dataPoint: tx.gasPrice - (newestBlockBaseFeePerGas ?? 0n), weight: tx.gas })
 
 				// we can have negative values here, as The Interceptor creates maxFeePerGas = 0 transactions that are intended to have zero base fee, which is not possible in reality
-				const zeroOutNegativeValues = effectivePriorityAndGasWeights.map((point) => ({ ...point, dataPoint: max(0n, point.dataPoint) }))
+				const zeroOutNegativeValues = effectivePriorityAndGasWeights.map((point) => modifyObject(point, { dataPoint: max(0n, point.dataPoint) }))
 				return calculateWeightedPercentile(zeroOutNegativeValues, BigInt(percentile))
 			})]
 		}

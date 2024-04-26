@@ -70,9 +70,6 @@ export class EthereumClientService {
 			this.newBlockAttemptCallback(newBlock, this, gotNewBlock)
 			this.cachedBlock = newBlock
 		} catch(error) {
-			console.error('Failed to get a block')
-			// biome-ignore lint/suspicious/noConsoleLog: <Used for support debugging>
-			console.log({ error })
 			return this.onErrorBlockCallback(this)
 		} finally {
 			this.retrievingBlock = false
@@ -157,7 +154,7 @@ export class EthereumClientService {
 
 	public readonly getTransactionByHash = async (hash: bigint, requestAbortController: AbortController | undefined) => {
 		const response = await this.requestHandler.jsonRpcRequest({ method: 'eth_getTransactionByHash', params: [hash] }, requestAbortController)
-		if (response === null) return undefined
+		if (response === null) return null
 		return EthereumSignedTransactionWithBlockData.parse(response)
 	}
 

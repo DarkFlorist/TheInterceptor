@@ -28,6 +28,7 @@ import { Website } from '../types/websiteAccessTypes.js'
 import { makeSureInterceptorIsNotSleeping } from './sleeping.js'
 import { craftPersonalSignPopupMessage } from './windows/personalSign.js'
 import { checkAndThrowRuntimeLastError, updateTabIfExists } from '../utils/requests.js'
+import { modifyObject } from '../utils/typescript.js'
 
 export async function confirmDialog(simulator: Simulator, websiteTabConnections: WebsiteTabConnections, confirmation: TransactionConfirmation) {
 	await resolvePendingTransactionOrMessage(simulator, websiteTabConnections, confirmation)
@@ -165,7 +166,8 @@ export async function refreshPopupConfirmTransactionMetadata(ethereumClientServi
 				currentBlockNumber: await currentBlockNumberPromise,
 				pendingTransactionAndSignableMessages: [{
 					...first,
-					visualizedPersonalSignRequest: await visualizedPersonalSignRequestPromise, transactionOrMessageCreationStatus: 'Simulated' as const
+					visualizedPersonalSignRequest: await visualizedPersonalSignRequestPromise,
+					transactionOrMessageCreationStatus: 'Simulated' as const
 				}, ...promises.slice(1)]
 			}
 		})
@@ -181,18 +183,17 @@ export async function refreshPopupConfirmTransactionMetadata(ethereumClientServi
 		data: {
 			visualizedSimulatorState: await visualizedSimulatorStatePromise,
 			currentBlockNumber: await currentBlockNumberPromise,
-			pendingTransactionAndSignableMessages: [{
-				...first,
-				simulationResults: {
+			pendingTransactionAndSignableMessages: [
+				modifyObject(first,
+				{ simulationResults: {
 					statusCode: 'success',
-					data: {
-						...first.simulationResults.data,
+					data: modifyObject(first.simulationResults.data, {
 						simulatedAndVisualizedTransactions: formSimulatedAndVisualizedTransaction(first.simulationResults.data.simulationState, eventsForEachTransaction, first.simulationResults.data.protectors, addressBookEntries, namedTokenIds),
 						addressBookEntries,
 						eventsForEachTransaction,
-					}
-				}
-			}, ...promises.slice(1)]
+					})
+				} })
+			, ...promises.slice(1)]
 		}
 	})
 }
