@@ -29,3 +29,8 @@ export function getWithDefault<Key, Value>(map: Map<Key, Value>, key: Key, defau
 	if (previousValue === undefined) return defaultValue
 	return previousValue
 }
+
+type Split<T> = { [K in keyof T]: { [P in K]: T[P] } }[keyof T] | Record<PropertyKey, never>
+export function modifyObject<T extends object>(original: T, subObject: NoInfer<Split<T>>): T {
+	return {...original, subObject }
+}
