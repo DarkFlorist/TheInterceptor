@@ -27,7 +27,6 @@ import { useSignal } from '@preact/signals'
 import { SomeTimeAgo } from './subcomponents/SomeTimeAgo.js'
 import { noNewBlockForOverTwoMins } from '../background/iconHandler.js'
 import { humanReadableDate } from './ui-utils.js'
-import { checkAndPrintRuntimeLastError } from '../utils/requests.js'
 
 type ProviderErrorsParam = {
 	tabState: TabState | undefined
@@ -208,10 +207,7 @@ export function App() {
 			return updateHomePage(UpdateHomePage.parse(parsed))
 		}
 		browser.runtime.onMessage.addListener(popupMessageListener)	
-		return () => { () => {
-			browser.runtime.onMessage.removeListener(popupMessageListener)
-			checkAndPrintRuntimeLastError()
-		} }
+		return () => browser.runtime.onMessage.removeListener(popupMessageListener)
 	})
 
 	useEffect(() => { sendPopupMessageToBackgroundPage({ method: 'popup_refreshHomeData' }) }, [])
