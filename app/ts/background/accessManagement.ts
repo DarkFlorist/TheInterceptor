@@ -11,6 +11,7 @@ import { WebsiteSocket } from '../utils/requests.js'
 import { ActiveAddressEntry } from '../types/addressBookTypes.js'
 import { Website, WebsiteAccessArray, WebsiteAddressAccess } from '../types/websiteAccessTypes.js'
 import { getUniqueItemsByProperties, replaceElementInReadonlyArray } from '../utils/typed-arrays.js'
+import { modifyObject } from '../utils/typescript.js'
 
 function getConnectionDetails(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket) {
 	const identifier = websiteSocketToString(socket)
@@ -125,14 +126,14 @@ export async function setAccess(website: Website, access: boolean, address: bigi
 					icon: prevAccess.website.icon ?? website.icon,
 					title: prevAccess.website.title ?? website.title,
 				}
-				if (address === undefined) return { ...prevAccess, website: websiteData, access }
+				if (address === undefined) return modifyObject(prevAccess, { website: websiteData, access })
 				const addressAccess = { address, access }
-				const updatedEntry = { ...prevAccess, website: websiteData, access: prevAccess.access ? prevAccess.access : access }
-				if (prevAccess.addressAccess === undefined) return { ...updatedEntry, addressAccess: [addressAccess] }
+				const updatedEntry = modifyObject(prevAccess, { website: websiteData, access: prevAccess.access ? prevAccess.access : access })
+				if (prevAccess.addressAccess === undefined) return modifyObject(updatedEntry, { addressAccess: [addressAccess] })
 				if (prevAccess.addressAccess.find((x) => x.address === address) === undefined) {
-					return { ...updatedEntry, addressAccess: [ ...prevAccess.addressAccess, addressAccess ] }
+					return modifyObject(updatedEntry, { addressAccess: [ ...prevAccess.addressAccess, addressAccess ] })
 				}
-				return { ...updatedEntry, addressAccess: prevAccess.addressAccess.map((x) => (x.address === address ? addressAccess : x)) }
+				return modifyObject(updatedEntry, { addressAccess: prevAccess.addressAccess.map((x) => (x.address === address ? addressAccess : x)) })
 			}
 			return prevAccess
 		})

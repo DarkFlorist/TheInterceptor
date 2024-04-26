@@ -14,6 +14,7 @@ import { METAMASK_ERROR_USER_REJECTED_REQUEST } from '../utils/constants.js'
 import { handleUnexpectedError } from '../utils/errors.js'
 import { resolvePendingTransactionOrMessage, updateConfirmTransactionView } from './windows/confirmTransaction.js'
 import { addressString } from '../utils/bigint.js'
+import { modifyObject } from '../utils/typescript.js'
 
 export async function ethAccountsReply(simulator: Simulator, websiteTabConnections: WebsiteTabConnections, port: browser.runtime.Port, request: ProviderMessage, _connectInfoapproval: ApprovalState, _activeAddress: bigint | undefined) {
 	const returnValue = { type: 'result' as const, method: 'eth_accounts_reply' as const, result: '0x' as const }
@@ -23,13 +24,13 @@ export async function ethAccountsReply(simulator: Simulator, websiteTabConnectio
 	const [signerAccountsReply] = EthereumAccountsReply.parse(request.params)
 	if (signerAccountsReply.type === 'error') {
 		const error = signerAccountsReply.error
-		await updateTabState(port.sender.tab.id, (previousState: TabState) => ({ ...previousState, signerAccountError: error } ))
+		await updateTabState(port.sender.tab.id, (previousState: TabState) => modifyObject(previousState, { signerAccountError: error } ))
 		await sendPopupMessageToOpenWindows({ method: 'popup_accounts_update' })
 		return returnValue
 	}
 	const signerAccounts = signerAccountsReply.accounts
 	const activeSigningAddress = signerAccounts.length > 0 ? signerAccounts[0] : undefined
-	const tabStateChange = await updateTabState(port.sender.tab.id, (previousState: TabState) => ({ ...previousState, ...signerAccounts.length > 0 ? { signerAccountError: undefined } : {}, signerAccounts, activeSigningAddress }))
+	const tabStateChange = await updateTabState(port.sender.tab.id, (previousState: TabState) => modifyObject(previousState, { ...signerAccounts.length > 0 ? { signerAccountError: undefined } : {}, signerAccounts, activeSigningAddress }))
 	sendPopupMessageToOpenWindows({ method: 'popup_activeSigningAddressChanged', data: { tabId: port.sender.tab.id, activeSigningAddress } })
 	sendInternalWindowMessage({ method: 'window_signer_accounts_changed', data: { socket: getSocketFromPort(port) } })
 	// update active address if we are using signers address
@@ -49,7 +50,7 @@ async function changeSignerChain(simulator: Simulator, websiteTabConnections: We
 	if (approval !== 'hasAccess') return
 	if (port.sender?.tab?.id === undefined) return
 	if ((await getTabState(port.sender.tab.id)).signerChain === signerChain) return
-	await updateTabState(port.sender.tab.id, (previousState: TabState) => ({ ...previousState, signerChain }))
+	await updateTabState(port.sender.tab.id, (previousState: TabState) => modifyObject(previousState, { signerChain }))
 
 	// update active address if we are using signers address
 	const settings = await getSettings()
@@ -89,7 +90,7 @@ export async function walletSwitchEthereumChainReply(simulator: Simulator, websi
 export async function connectedToSigner(_simulator: Simulator, _websiteTabConnections: WebsiteTabConnections, port: browser.runtime.Port, request: ProviderMessage, approval: ApprovalState, activeAddress: bigint | undefined) {
 	const [signerConnected, signerName] = ConnectedToSigner.parse(request).params
 	await setDefaultSignerName(signerName)
-	await updateTabState(request.uniqueRequestIdentifier.requestSocket.tabId, (previousState: TabState) => ({ ...previousState, signerName, signerConnected }))
+	await updateTabState(request.uniqueRequestIdentifier.requestSocket.tabId, (previousState: TabState) => modifyObject(previousState, { signerName, signerConnected }))
 	await sendPopupMessageToOpenWindows({ method: 'popup_signer_name_changed' })
 	const settings = await getSettings()
 	if (!settings.simulationMode || settings.useSignersAddressAsActiveAddress) {
@@ -133,11 +134,11 @@ export async function signerReply(simulator: Simulator, websiteTabConnections: W
 				return doNotReply
 			}
 			if (params.error.code === METAMASK_ERROR_USER_REJECTED_REQUEST) {
-				await updatePendingTransactionOrMessage(uniqueRequestIdentifier, async (transaction) => ({ ...transaction, approvalStatus: { status: 'WaitingForUser' } }))
+				await updatePendingTransactionOrMessage(uniqueRequestIdentifier, async (transaction) => modifyObject(transaction, { approvalStatus: { status: 'WaitingForUser' } }))
 				await updateConfirmTransactionView(simulator.ethereum)
 				return doNotReply
 			}
-			await updatePendingTransactionOrMessage(uniqueRequestIdentifier, async (transaction) => ({ ...transaction, approvalStatus: { status: 'SignerError', ...params.error } }))
+			await updatePendingTransactionOrMessage(uniqueRequestIdentifier, async (transaction) => modifyObject(transaction, { approvalStatus: { status: 'SignerError', ...params.error } }))
 			await updateConfirmTransactionView(simulator.ethereum)
 			return doNotReply
 		}

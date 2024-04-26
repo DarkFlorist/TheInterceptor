@@ -72,7 +72,7 @@ async function extractEIP712MessageSubset(ethereumClientService: EthereumClientS
 		if (!JSONEncodeableObject.test(messageEntry)) throw new Error(`Not a JSON type: ${ messageEntry }`)
 		return [key, { type: 'record', value: await extractEIP712MessageSubset(ethereumClientService, requestAbortController, depth + 1, messageEntry, fullType, types, useLocalStorage) }]
 	}))
-	return pairArray.reduce((accumulator, [key, value]) => ({ ...accumulator, [key]: value}), {} as Promise<EnrichedEIP712Message>)
+	return pairArray.reduce((accumulator, [key, value]) => ({ ...accumulator, [key]: value }), {} as Promise<EnrichedEIP712Message>)
 }
 
 export async function extractEIP712Message(ethereumClientService: EthereumClientService, requestAbortController: AbortController | undefined, message: EIP712Message, useLocalStorage = true): Promise<EnrichedEIP712> {

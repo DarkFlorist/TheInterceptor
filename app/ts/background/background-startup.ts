@@ -21,6 +21,7 @@ import { updateContentScriptInjectionStrategyManifestV2 } from '../utils/content
 import { checkIfInterceptorShouldSleep } from './sleeping.js'
 import { addWindowTabListeners } from '../components/ui-utils.js'
 import { onCloseWindowOrTab } from './windows/confirmTransaction.js'
+import { modifyObject } from '../utils/typescript.js'
 
 const websiteTabConnections = new Map<number, TabConnection>()
 
@@ -55,7 +56,7 @@ async function migrateAddressInfoAndContacts() {
 		return oldEntries.map((entry) => {
 			const nameAddress = EthereumAddress.safeParse(entry.name)
 			// there used to be a bug that when you renamed address, it did not convert from 'OnChain' to 'User' This fixes it. 
-			if (entry.entrySource === 'OnChain' && !nameAddress.success) return { ...entry, entrySource: 'User' }
+			if (entry.entrySource === 'OnChain' && !nameAddress.success) return modifyObject(entry, { entrySource: 'User' })
 			return entry
 		})
 	})
@@ -117,11 +118,10 @@ async function onContentScriptConnected(simulator: Simulator, port: browser.runt
 			connections: { [identifier]: newConnection },
 		})
 		await updateTabState(socket.tabId, (previousState: TabState) => {
-			return {
-				...previousState,
+			return modifyObject(previousState, { 
 				website: { websiteOrigin, icon: undefined, title: undefined },
 				tabIconDetails: { icon: ICON_NOT_ACTIVE, iconReason: 'No active address selected.' },
-			}
+			})
 		})
 		updateExtensionIcon(socket.tabId, websiteOrigin)
 	} else {
@@ -129,7 +129,7 @@ async function onContentScriptConnected(simulator: Simulator, port: browser.runt
 	}
 	try {
 		const website = await websitePromise
-		await updateTabState(socket.tabId, (previousState: TabState) => ({ ...previousState, website }))
+		await updateTabState(socket.tabId, (previousState: TabState) => modifyObject(previousState, { website }))
 		checkAndThrowRuntimeLastError()
 	} catch(error: unknown) {
 		console.log(error)
@@ -193,7 +193,7 @@ async function startup() {
 			if (tab.url === undefined) return
 			const websiteOrigin = (new URL(tab.url)).hostname
 			const website = { websiteOrigin, ...await retrieveWebsiteDetails(tabId) }
-			await updateTabState(tabId, (previousState: TabState) => ({ ...previousState, website }))
+			await updateTabState(tabId, (previousState: TabState) => modifyObject(previousState, { website }))
 			await updateExtensionIcon(tabId, websiteOrigin)
 		})
 	})
