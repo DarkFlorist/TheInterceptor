@@ -24,7 +24,7 @@ function encodeEthereumNameServiceString(data: string): string | undefined {
 }
 
 export const EthereumNameServiceTokenWrapper = 0xD4416b13d2b3a9aBae7AcD5D6C2BbDBE25686401n //mainnet only
-export const getEthereumNameServiceNameFromTokenId = async (ethereumMainnet: EthereumClientService, tokenId: bigint) : Promise<string | undefined> => {
+export const getEthereumNameServiceNameFromTokenId = async (ethereumMainnet: EthereumClientService, requestAbortController: AbortController | undefined, tokenId: bigint) : Promise<string | undefined> => {
 	if (ethereumMainnet.getChainId() !== 1n) return undefined
 	const wrappedEthereumNameService1155TokenInterface = new ethers.Interface(['function names(bytes32) public view returns (bytes)'])
 	const tx = {
@@ -40,6 +40,6 @@ export const getEthereumNameServiceNameFromTokenId = async (ethereumMainnet: Eth
 		nonce: 0n,
 		input: stringToUint8Array(wrappedEthereumNameService1155TokenInterface.encodeFunctionData('names', [bytes32String(tokenId)])),
 	}
-	const nameString: string = wrappedEthereumNameService1155TokenInterface.decodeFunctionResult('names', stringToUint8Array(await ethereumMainnet.call(tx)))[0]
+	const nameString: string = wrappedEthereumNameService1155TokenInterface.decodeFunctionResult('names', stringToUint8Array(await ethereumMainnet.call(tx, 'latest', requestAbortController)))[0]
 	return encodeEthereumNameServiceString(nameString)
 }

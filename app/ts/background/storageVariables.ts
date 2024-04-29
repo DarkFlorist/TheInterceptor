@@ -10,6 +10,7 @@ import { SignerName } from '../types/signerTypes.js'
 import { PendingAccessRequests, PendingTransactionOrSignableMessage } from '../types/accessRequest.js'
 import { RpcEntries, RpcNetwork } from '../types/rpc.js'
 import { replaceElementInReadonlyArray } from '../utils/typed-arrays.js'
+import { UnexpectedErrorOccured } from '../types/interceptor-messages.js'
 
 export const getIdsOfOpenedTabs = async () => (await browserStorageLocalGet('idsOfOpenedTabs'))?.idsOfOpenedTabs ?? { settingsView: undefined, addressBook: undefined}
 export const setIdsOfOpenedTabs = async (ids: PartialIdsOfOpenedTabs) => await browserStorageLocalSet({ idsOfOpenedTabs: { ...await getIdsOfOpenedTabs(), ...ids } })
@@ -34,13 +35,15 @@ async function updatePendingTransactionOrMessages(update: (pendingTransactionsOr
 	})
 }
 
-export async function updatePendingTransactionOrMessage(uniqueRequestIdentifier: UniqueRequestIdentifier, update: (pendingTransactionOrMessage: PendingTransactionOrSignableMessage) => Promise<PendingTransactionOrSignableMessage>) {
+export async function updatePendingTransactionOrMessage(uniqueRequestIdentifier: UniqueRequestIdentifier, update: (pendingTransactionOrMessage: PendingTransactionOrSignableMessage) => Promise<PendingTransactionOrSignableMessage | undefined>) {
 	await updatePendingTransactionOrMessages(async (pendingTransactionsOrMessages) => {
 		const match = pendingTransactionsOrMessages.findIndex((pending) => doesUniqueRequestIdentifiersMatch(pending.uniqueRequestIdentifier, uniqueRequestIdentifier))
 		if (match < 0) return pendingTransactionsOrMessages
 		const found = pendingTransactionsOrMessages[match]
 		if (found === undefined) return pendingTransactionsOrMessages
-		return replaceElementInReadonlyArray(pendingTransactionsOrMessages, match, await update(found))
+		const updated = await update(found)
+		if (updated === undefined) return pendingTransactionsOrMessages
+		return replaceElementInReadonlyArray(pendingTransactionsOrMessages, match, updated)
 	})
 }
 
@@ -83,7 +86,7 @@ export async function getSimulationResults() {
 	} catch (error) {
 		console.warn('Simulation results were corrupt:')
 		console.warn(error)
-		await simulationResultsSemaphore.execute(async () => await browserStorageLocalSet({ simulationResults: emptyResults }))
+		await browserStorageLocalSet({ simulationResults: emptyResults })
 		return emptyResults
 	}
 }
@@ -122,7 +125,7 @@ export async function getTabState(tabId: number) : Promise<TabState> {
 		activeSigningAddress: undefined
 	}
 }
-export const removeTabState = async(tabId: number) => removeTabStateFromStorage(tabId)
+export const removeTabState = async(tabId: number) => await removeTabStateFromStorage(tabId)
 
 export async function clearTabStates() {
 	const allStorage = Object.keys(await browser.storage.local.get())
@@ -219,26 +222,6 @@ export const getRpcNetworkForChain = async (chainId: bigint): Promise<RpcNetwork
 		httpsRpc: undefined,
 	}
 }
-
-//TODO, remove when we start to use multicall completely. Decide on what to do with WETH then
-const ethDonator = [{
-		chainId: 1n,
-		eth_donator: 0xda9dfa130df4de4673b89022ee50ff26f6ea73cfn, // Kraken
-	},
-	{
-		chainId: 5n,
-		eth_donator: 0xc48e23c5f6e1ea0baef6530734edc3968f79af2en
-	},
-	{
-		chainId: 11155111n,
-		eth_donator: 0xb21c33de1fab3fa15499c62b59fe0cc3250020d1n, // Richest address on Sepolia
-	}
-] as const
-
-export function getEthDonator(chainId: bigint) {
-	return ethDonator.find((rpc) => rpc.chainId === chainId)?.eth_donator
-}
-
 export const getUserAddressBookEntries = async () => (await browserStorageLocalGet('userAddressBookEntries'))?.userAddressBookEntries ?? []
 
 const userAddressBookEntriesSemaphore = new Semaphore(1)
@@ -257,3 +240,10 @@ export async function addUserAddressBookEntryIfItDoesNotExist(newEntry: AddressB
 		return await browserStorageLocalSet({ userAddressBookEntries: entries.concat(newEntry) })
 	})
 }
+
+export async function setLatestUnexpectedError(latestUnexpectedError: UnexpectedErrorOccured | undefined) {
+	if (latestUnexpectedError === undefined) return await browserStorageLocalRemove('latestUnexpectedError')
+	return await browserStorageLocalSet({ latestUnexpectedError })
+}
+
+export const getLatestUnexpectedError = async () => (await browserStorageLocalGet('latestUnexpectedError'))?.latestUnexpectedError

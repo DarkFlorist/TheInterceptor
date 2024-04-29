@@ -95,23 +95,6 @@ export const DEFAULT_TAB_CONNECTION = { icon: ICON_NOT_ACTIVE, iconReason: 'The 
 
 export const ETHEREUM_COIN_ICON = '../../img/coins/ethereum.png'
 
-export const MAKE_YOU_RICH_TRANSACTION = {
-	transaction: {
-		type: '1559' as const,
-		maxFeePerGas: 0n,
-		maxPriorityFeePerGas: 0n,
-		gas: 21000n,
-		value: 200000000000000000000000n,
-		input: new Uint8Array(0),
-		accessList: [],
-	},
-	website: {
-		websiteOrigin: 'The Interceptor',
-		title: 'The Interceptor',
-		icon: undefined,
-	},
-	transactionSendingFormat: 'eth_sendTransaction' as const,
-}
 export const DEFAULT_CALL_ADDRESS = 0x1n
 
 export const TIME_BETWEEN_BLOCKS = 12
@@ -138,3 +121,23 @@ export const CANNOT_SIMULATE_OFF_LEGACY_BLOCK = 'Cannot simulate off a legacy bl
 
 export const BIG_FONT_SIZE = '28px'
 export const NORMAL_FONT_SIZE = '14px'
+
+export const NEW_BLOCK_ABORT = 'New Block Abort'
+
+export const MAKE_YOU_RICH_TRANSACTION = {
+	transaction: {
+		type: '1559' as const,
+		maxFeePerGas: 0n,
+		maxPriorityFeePerGas: 0n,
+		gas: 21000n,
+		value: 200000000000000000000000n,
+		input: new Uint8Array(0),
+		accessList: [],
+	},
+	website: {
+		websiteOrigin: 'The Interceptor',
+		title: 'The Interceptor',
+		icon: undefined,
+	},
+	transactionSendingFormat: 'eth_sendTransaction' as const,
+}

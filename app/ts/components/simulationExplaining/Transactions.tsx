@@ -6,7 +6,6 @@ import { ErrorComponent } from '../subcomponents/Error.js'
 import { identifyRoutes, identifySwap, SwapVisualization } from './SwapTransactions.js'
 import { RawTransactionDetailsCard, GasFee, TokenLogAnalysisCard, TransactionCreated, TransactionHeader, NonTokenLogAnalysisCard, TransactionsAccountChangesCard } from './SimulationSummary.js'
 import { identifyTransaction } from './identifyTransaction.js'
-import { makeYouRichTransaction } from './customExplainers/MakeMeRich.js'
 import { ApproveIcon, ArrowIcon } from '../subcomponents/icons.js'
 import { SimpleTokenTransferVisualisation } from './customExplainers/SimpleSendVisualisations.js'
 import { SimpleTokenApprovalVisualisation } from './customExplainers/SimpleTokenApprovalVisualisation.js'
@@ -20,6 +19,7 @@ import { GovernanceVoteVisualizer } from './customExplainers/GovernanceVoteVisua
 import { EnrichedSolidityTypeComponentWithAddressBook } from '../subcomponents/solidityType.js'
 import { getAddressBookEntryOrAFiller } from '../ui-utils.js'
 import { TransactionOrMessageIdentifier } from '../../types/interceptor-messages.js'
+import { RpcNetwork } from '../../types/rpc.js'
 
 function isPositiveEvent(visResult: TokenVisualizerResultWithMetadata, ourAddressInReferenceFrame: bigint) {
 	if (visResult.type === 'ERC20') {
@@ -49,22 +49,18 @@ export function QuarantineReasons({ quarantineReasons }: { quarantineReasons: re
 
 export type TransactionImportanceBlockParams = {
 	simTx: SimulatedAndVisualizedTransaction
-	simulationAndVisualisationResults: SimulationAndVisualisationResults
+	activeAddress: bigint
 	renameAddressCallBack: RenameAddressCallBack
 	addressMetadata: readonly AddressBookEntry[]
+	rpcNetwork: RpcNetwork
 }
 
 // showcases the most important things the transaction does
 export function TransactionImportanceBlock(param: TransactionImportanceBlockParams) {
-	if (param.simTx.statusCode === 'failure') return <ErrorComponent text = { `The transaction fails with an error '${ param.simTx.error.message }'` } />
+	if (param.simTx.statusCode === 'failure') return <ErrorComponent text = { `The transaction fails with an error '${ param.simTx.error.decodedErrorMessage }'` } />
 	const transactionIdentification = identifyTransaction(param.simTx)
 	switch (transactionIdentification.type) {
-		case 'SimpleTokenTransfer': {
-			return <SimpleTokenTransferVisualisation
-				simTx = { transactionIdentification.identifiedTransaction }
-				renameAddressCallBack = { param.renameAddressCallBack }
-			/>
-		}
+		case 'SimpleTokenTransfer': return <SimpleTokenTransferVisualisation simTx = { transactionIdentification.identifiedTransaction } renameAddressCallBack = { param.renameAddressCallBack }/>
 		case 'SimpleTokenApproval': {
 			const approval = transactionIdentification.identifiedTransaction.tokenResults[0]
 			if (approval === undefined) throw new Error('approval was undefined')
@@ -78,13 +74,8 @@ export function TransactionImportanceBlock(param: TransactionImportanceBlockPara
 		case 'Swap': {
 			const identifiedSwap = identifySwap(param.simTx)
 			if (identifiedSwap === undefined) throw new Error('Not a swap!')
-			return <SwapVisualization
-				identifiedSwap = { identifiedSwap }
-				rpcNetwork = { param.simulationAndVisualisationResults.rpcNetwork }
-				renameAddressCallBack = { param.renameAddressCallBack }
-			/>
+			return <SwapVisualization identifiedSwap = { identifiedSwap } renameAddressCallBack = { param.renameAddressCallBack } />
 		}
-		case 'MakeYouRichTransaction': return makeYouRichTransaction(param)
 		case 'ContractDeployment':
 		case 'ContractFallbackMethod':
 		case 'ArbitaryContractExecution': return <CatchAllVisualizer { ...param } />
@@ -131,10 +122,8 @@ export function SenderReceiver({ from, to, renameAddressCallBack }: { from: Addr
 }
 
 export function Transaction(param: TransactionVisualizationParameters) {
-	const identifiedTransaction = identifyTransaction(param.simTx).type
 	const removeTransactionOrSignedMessage = param.removeTransactionOrSignedMessage
 	const remove = removeTransactionOrSignedMessage === undefined ? undefined : () => {
-		if (identifiedTransaction === 'MakeYouRichTransaction') return removeTransactionOrSignedMessage({ type: 'MakeYouRichTransaction' })
 		return removeTransactionOrSignedMessage({ type: 'Transaction', transactionIdentifier: param.simTx.transactionIdentifier })
 	}
 	return (
@@ -145,31 +134,29 @@ export function Transaction(param: TransactionVisualizationParameters) {
 			/>
 			<div class = 'card-content' style = 'padding-bottom: 5px;'>
 				<div class = 'container'>
-					<TransactionImportanceBlock { ...param } addressMetadata = { param.addressMetaData }/>
+					<TransactionImportanceBlock { ...param } rpcNetwork = { param.simulationAndVisualisationResults.rpcNetwork } addressMetadata = { param.addressMetaData }/>
 				</div>
 				<QuarantineReasons quarantineReasons = { param.simTx.quarantineReasons }/>
-				{ identifiedTransaction === 'MakeYouRichTransaction' ? <></> : <>
-					<TransactionsAccountChangesCard
-						simTx = { param.simTx }
-						simulationAndVisualisationResults = { param.simulationAndVisualisationResults }
-						renameAddressCallBack = { param.renameAddressCallBack }
-						addressMetaData = { param.simulationAndVisualisationResults.addressBookEntries }
-						namedTokenIds = { param.simulationAndVisualisationResults.namedTokenIds }
-					/>
-					<TokenLogAnalysisCard simTx = { param.simTx } renameAddressCallBack = { param.renameAddressCallBack } />
-					<NonTokenLogAnalysisCard simTx = { param.simTx } renameAddressCallBack = { param.renameAddressCallBack } addressMetaData = { param.addressMetaData } />
-					<RawTransactionDetailsCard transaction = { param.simTx.transaction } renameAddressCallBack = { param.renameAddressCallBack } gasSpent = { param.simTx.gasSpent } />
-					<SenderReceiver from = { param.simTx.transaction.from } to = { param.simTx.transaction.to } renameAddressCallBack = { param.renameAddressCallBack }/>
+				<TransactionsAccountChangesCard
+					simTx = { param.simTx }
+					simulationAndVisualisationResults = { param.simulationAndVisualisationResults }
+					renameAddressCallBack = { param.renameAddressCallBack }
+					addressMetaData = { param.simulationAndVisualisationResults.addressBookEntries }
+					namedTokenIds = { param.simulationAndVisualisationResults.namedTokenIds }
+				/>
+				<TokenLogAnalysisCard simTx = { param.simTx } renameAddressCallBack = { param.renameAddressCallBack } />
+				<NonTokenLogAnalysisCard simTx = { param.simTx } renameAddressCallBack = { param.renameAddressCallBack } addressMetaData = { param.addressMetaData } />
+				<RawTransactionDetailsCard transaction = { param.simTx.transaction } renameAddressCallBack = { param.renameAddressCallBack } gasSpent = { param.simTx.gasSpent } />
+				<SenderReceiver from = { param.simTx.transaction.from } to = { param.simTx.transaction.to } renameAddressCallBack = { param.renameAddressCallBack }/>
 
-					<span class = 'log-table' style = 'margin-top: 10px; grid-template-columns: auto auto;'>
-						<div class = 'log-cell'>
-							<TransactionCreated created = { param.simTx.created } />
-						</div>
-						<div class = 'log-cell' style = 'justify-content: right;'>
-							<GasFee tx = { param.simTx } rpcNetwork = { param.simulationAndVisualisationResults.rpcNetwork } />
-						</div>
-					</span>
-				</> }
+				<span class = 'log-table' style = 'margin-top: 10px; grid-template-columns: auto auto;'>
+					<div class = 'log-cell'>
+						<TransactionCreated created = { param.simTx.created } />
+					</div>
+					<div class = 'log-cell' style = 'justify-content: right;'>
+						<GasFee tx = { param.simTx } rpcNetwork = { param.simulationAndVisualisationResults.rpcNetwork } />
+					</div>
+				</span>
 			</div>
 		</div>
 	)

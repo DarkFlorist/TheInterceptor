@@ -66,10 +66,10 @@ const getTokenEventHandler = (type: AddressBookEntryCategory, logSignature: stri
 	} 
 }
 
-export const parseEvents = async (events: readonly EthereumEvent[], ethereumClientService: EthereumClientService): Promise<readonly EnrichedEthereumEvent[]> => {
+export const parseEvents = async (events: readonly EthereumEvent[], ethereumClientService: EthereumClientService, requestAbortController: AbortController | undefined): Promise<readonly EnrichedEthereumEvent[]> => {
 	const parsedEvents = await Promise.all(events.map(async (event) => {
 		// todo, we should do this parsing earlier, to be able to add possible addresses to addressMetaData set
-		const loggersAddressBookEntry = await identifyAddress(ethereumClientService, event.address)
+		const loggersAddressBookEntry = await identifyAddress(ethereumClientService, requestAbortController, event.address)
 		const abi = extractAbi(loggersAddressBookEntry, event.address)
 		const nonParsed = { ...event, isParsed: 'NonParsed' as const, loggersAddressBookEntry }
 		if (!abi) return nonParsed
@@ -113,8 +113,8 @@ export const parseEvents = async (events: readonly EthereumEvent[], ethereumClie
 	return maybeParsedEvents.flat()
 }
 
-export const runProtectorsForTransaction = async (simulationState: SimulationState, transaction: WebsiteCreatedEthereumUnsignedTransaction, ethereum: EthereumClientService) => {
-	const reasonPromises = PROTECTORS.map(async (protectorMethod) => await protectorMethod(transaction.transaction, ethereum, simulationState))
+export const runProtectorsForTransaction = async (simulationState: SimulationState, transaction: WebsiteCreatedEthereumUnsignedTransaction, ethereum: EthereumClientService, requestAbortController: AbortController | undefined) => {
+	const reasonPromises = PROTECTORS.map(async (protectorMethod) => await protectorMethod(transaction.transaction, ethereum, requestAbortController, simulationState))
 	const reasons: (string | undefined)[] = await Promise.all(reasonPromises)
 	const filteredReasons = reasons.filter((reason): reason is string => reason !== undefined)
 	return {

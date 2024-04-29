@@ -46,7 +46,7 @@ export const ConfirmTransactionDialogState = funtypes.Intersect(
 		addressBookEntries: funtypes.ReadonlyArray(AddressBookEntry),
 		tokenPrices: funtypes.ReadonlyArray(TokenPriceEstimate),
 		namedTokenIds: funtypes.ReadonlyArray(NamedTokenId),
-		simulationState: funtypes.Union(SimulationState),
+		simulationState: SimulationState,
 		activeAddress: OptionalEthereumAddress,
 		simulatedAndVisualizedTransactions: funtypes.ReadonlyArray(SimulatedAndVisualizedTransaction),
 		visualizedPersonalSignRequests: funtypes.ReadonlyArray(VisualizedPersonalSignRequest),
@@ -62,7 +62,21 @@ const ConfirmTransactionSimulationStateChanged = funtypes.ReadonlyObject({
 type ConfirmTransactionSimulationFailed = funtypes.Static<typeof ConfirmTransactionSimulationFailed>
 const ConfirmTransactionSimulationFailed = funtypes.ReadonlyObject({
 	statusCode: funtypes.Literal('failed'),
-	data: ConfirmTransactionSimulationBaseData,
+	data: funtypes.Intersect(
+		ConfirmTransactionSimulationBaseData,
+		funtypes.ReadonlyObject({
+			error: funtypes.ReadonlyObject({
+				code: funtypes.Number,
+				message: funtypes.String,
+				data: funtypes.Unknown,
+				decodedErrorMessage: funtypes.String,
+			}),
+			simulationState: funtypes.ReadonlyObject({
+				blockNumber: EthereumQuantity,
+				simulationConductedTimestamp: EthereumTimestamp,
+			})
+		})
+	)
 }).asReadonly()
 
 export type ConfirmTransactionTransactionSingleVisualization = funtypes.Static<typeof ConfirmTransactionTransactionSingleVisualization>

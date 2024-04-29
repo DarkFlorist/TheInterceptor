@@ -1,15 +1,16 @@
 import { useSignal } from '@preact/signals'
 import { getTokenAmountsWorth } from '../../simulation/priceEstimator.js'
-import { abs, bigintToDecimalString, bigintToRoundedPrettyDecimalString, checksummedAddress } from '../../utils/bigint.js'
+import { abs, bigintToDecimalString, checksummedAddress } from '../../utils/bigint.js'
 import { TokenPriceEstimate } from '../../types/visualizer-types.js'
 import { CopyToClipboard } from './CopyToClipboard.js'
-import { Blockie } from './PreactBlocky.js'
 import { JSX } from 'preact/jsx-runtime'
 import { useEffect } from 'preact/hooks'
 import { Erc1155Entry, Erc20TokenEntry, Erc721Entry } from '../../types/addressBookTypes.js'
 import { RenameAddressCallBack } from '../../types/user-interface-types.js'
 import { BIG_FONT_SIZE, ETHEREUM_COIN_ICON, ETHEREUM_LOGS_LOGGER_ADDRESS, NORMAL_FONT_SIZE } from '../../utils/constants.js'
 import { RpcNetwork } from '../../types/rpc.js'
+import { Blockie } from './SVGBlockie.js'
+import { AbbreviatedValue } from './AbbreviatedValue.js'
 
 type EtherParams = {
 	amount: bigint
@@ -38,7 +39,6 @@ type EtherAmountParams = {
 }
 
 export function EtherAmount(param: EtherAmountParams) {
-	const sign = param.showSign ? (param.amount >= 0 ? ' + ' : ' - '): ''
 	const style = {
 		display: 'inline-flex',
 		overflow: 'hidden',
@@ -50,7 +50,9 @@ export function EtherAmount(param: EtherAmountParams) {
 	}
 	return <>
 		<CopyToClipboard content = { bigintToDecimalString(abs(param.amount), 18n) } copyMessage = 'Ether amount copied!' >
-			<p class = 'noselect nopointer' style = { style }>{ `${ sign }${ bigintToRoundedPrettyDecimalString(abs(param.amount), 18n ) }` } </p>
+			<p class = 'noselect nopointer' style = { style }>
+				<AbbreviatedValue amount = { param.amount } />
+			</p>
 		</CopyToClipboard>
 	</>
 }
@@ -109,7 +111,7 @@ type TokenSymbolParams = (
 		tokenEntry: Erc1155Entry | Erc721Entry
 		tokenId: bigint | undefined
 		tokenIdName?: string
-	} | { 
+	} | {
 		tokenEntry: Erc20TokenEntry
 	}
 ) & {
@@ -159,12 +161,8 @@ export function TokenSymbol(param: TokenSymbolParams) {
 				</> : <>
 					<CopyToClipboard content = { tokenString } copyMessage = 'Token address copied!' >
 						{ param.tokenEntry.logoUri === undefined ?
-							<Blockie
-								address = { useSignal(param.tokenEntry.address) }
-								scale = { useSignal(3) }
-								style = { { 'vertical-align': 'baseline', borderRadius: '50%' } }
-							/>
-						:
+							<Blockie address = { param.tokenEntry.address } style = { { display: 'block' } } />
+							:
 							<img class = 'noselect nopointer' style = { { 'max-height': '25px', width: '25px', 'min-width': '25px', 'vertical-align': 'middle' } } src = { param.tokenEntry.logoUri }/>
 						}
 					</CopyToClipboard>
@@ -200,14 +198,16 @@ export function TokenAmount(param: TokenAmountParams) {
 
 	if (!('decimals' in param.tokenEntry) || param.tokenEntry.decimals === undefined) {
 		return <>
-			<CopyToClipboard content = { `${ abs(param.amount) } (decimals unknown)`} copyMessage = 'Token amount copied!' >
+			<CopyToClipboard content = { `${ abs(param.amount) } (decimals unknown)` } copyMessage = 'Token amount copied!' >
 				<p class = 'noselect nopointer' style = { style }>{ `${ sign }${ abs(param.amount).toString() }` }&nbsp; </p>
 			</CopyToClipboard>
 		</>
 	}
 	return <>
 		<CopyToClipboard content = { bigintToDecimalString(abs(param.amount), param.tokenEntry.decimals) } copyMessage = 'Token amount copied!' >
-			<p class = 'noselect nopointer' style = { style }>{ `${ sign }${ bigintToRoundedPrettyDecimalString(abs(param.amount), param.tokenEntry.decimals ) }` }&nbsp; </p>
+			<p class = 'noselect nopointer' style = { style }>
+				<AbbreviatedValue amount = { param.amount } decimals = { param.tokenEntry.decimals } />
+			</p>
 		</CopyToClipboard>
 	</>
 }
@@ -249,7 +249,7 @@ export function TokenOrEthValue(param: TokenAmountParams | EtherAmountParams) {
 }
 
 function truncate(str: string, n: number){
-	return (str.length > n) ? `${str.slice(0, n-1)}…` : str;
+	return (str.length > n) ? `${ str.slice(0, n-1) }…` : str
 }
 
 type AllApprovalParams = {

@@ -103,11 +103,11 @@ async function identifyAddressWithoutNode(address: bigint, rpcEntry: RpcNetwork 
 	return undefined
 }
 
-export async function identifyAddress(ethereumClientService: EthereumClientService, address: bigint, useLocalStorage = true) : Promise<AddressBookEntry> {
+export async function identifyAddress(ethereumClientService: EthereumClientService, requestAbortController: AbortController | undefined, address: bigint, useLocalStorage = true) : Promise<AddressBookEntry> {
 	const identifiedAddress = await identifyAddressWithoutNode(address, ethereumClientService.getRpcEntry(), useLocalStorage)
 	if (identifiedAddress !== undefined) return identifiedAddress
 	const addrString = addressString(address)
-	const tokenIdentification = await itentifyAddressViaOnChainInformation(ethereumClientService, address)
+	const tokenIdentification = await itentifyAddressViaOnChainInformation(ethereumClientService, requestAbortController, address)
 	const getEntry = (tokenIdentification: IdentifiedAddress) => {
 		switch (tokenIdentification.type) {
 			case 'ERC20': return {
@@ -153,7 +153,7 @@ export async function identifyAddress(ethereumClientService: EthereumClientServi
 	return entry
 }
 
-export async function getAddressBookEntriesForVisualiser(ethereumClientService: EthereumClientService, events: GeneralEnrichedEthereumEvents, simulationState: SimulationState): Promise<AddressBookEntry[]> {
+export async function getAddressBookEntriesForVisualiser(ethereumClientService: EthereumClientService, requestAbortController: AbortController | undefined, events: GeneralEnrichedEthereumEvents, simulationState: SimulationState): Promise<AddressBookEntry[]> {
 	const eventArguments = events.flatMap((event) => event.type !== 'NonParsed' ? event.args : [])
 	const addressesInEvents = eventArguments.flatMap((event) => {
 		if (event.typeValue.type === 'address') return event.typeValue.value
@@ -168,12 +168,12 @@ export async function getAddressBookEntriesForVisualiser(ethereumClientService: 
 	}
 
 	const deDuplicated = new Set<bigint>([...addressesToFetchMetadata, ETHEREUM_LOGS_LOGGER_ADDRESS])
-	const addressIdentificationPromises: Promise<AddressBookEntry>[] = Array.from(deDuplicated.values()).map((address) => identifyAddress(ethereumClientService, address))
+	const addressIdentificationPromises: Promise<AddressBookEntry>[] = Array.from(deDuplicated.values()).map((address) => identifyAddress(ethereumClientService, requestAbortController, address))
 
 	return await Promise.all(addressIdentificationPromises)
 }
 
-export async function nameTokenIds(ethereumClientService: EthereumClientService, events: GeneralEnrichedEthereumEvents) {
+export async function nameTokenIds(ethereumClientService: EthereumClientService, requestAbortController: AbortController | undefined, events: GeneralEnrichedEthereumEvents) {
 	type TokenAddressTokenIdPair = { tokenAddress: bigint, tokenId: bigint}
 	const tokenAddresses = events.map((event) => {
 		if (event.type !== 'TokenEvent' || event.tokenInformation.type !== 'ERC1155') return undefined
@@ -183,7 +183,7 @@ export async function nameTokenIds(ethereumClientService: EthereumClientService,
 	const pairs = getUniqueItemsByProperties(tokenAddresses, ['tokenAddress', 'tokenId'])
 	const namedPairs = (await Promise.all(pairs.map(async (pair) => {
 		if (pair.tokenAddress === EthereumNameServiceTokenWrapper && ethereumClientService.getChainId() === 1n) {
-			const tokenIdName = await getEthereumNameServiceNameFromTokenId(ethereumClientService, pair.tokenId)
+			const tokenIdName = await getEthereumNameServiceNameFromTokenId(ethereumClientService, requestAbortController, pair.tokenId)
 			if (tokenIdName === undefined) return undefined
 			return { ...pair, tokenIdName }
 		}

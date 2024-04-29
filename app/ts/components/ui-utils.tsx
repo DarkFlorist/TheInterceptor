@@ -132,9 +132,8 @@ export async function closePopupOrTabById(popupOrTabId: PopupOrTabId) {
 		}
 		checkAndThrowRuntimeLastError()
 	} catch(error) {
-		console.warn(`Failed to close ${ popupOrTabId.type }: ${ popupOrTabId.id }`)
-		// biome-ignore lint/suspicious/noConsoleLog: <Used for support debugging>
-		console.log({ error })
+		if (error instanceof Error && error.message.startsWith('No tab with id')) return
+		throw error
 	}
 }
 

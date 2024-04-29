@@ -17,41 +17,43 @@ export function bigintToDecimalString(value: bigint, power: bigint): string {
 	return `-${integerPart.toString(10)}.${fractionalPart.toString(10).padStart(Number(power), '0').replace(/0+$/, '')}`
 }
 
-export function bigintToRoundedPrettyDecimalString(value: bigint, power: bigint, significantNumbers = 4n): string {
-	function roundToPrettyDecimalString(value: bigint) {
-		const stringifiedNumber = bigintToDecimalString(value, power)
-		let roundedString = ''
-		let p = 0
-		let pointFound = false
-		let firstDigitFound = false
-		for (let i = 0; i < stringifiedNumber.length; i++) {
-			if (p < significantNumbers) {
-				roundedString += stringifiedNumber.charAt(i)
-			} else {
-				if (pointFound) break
-				roundedString += '0'
-			}
-			if ( stringifiedNumber.charAt(i) !== '-' && stringifiedNumber.charAt(i) !== '.') {
-				if ( stringifiedNumber.charAt(i) !== '0') firstDigitFound = true
-				if (firstDigitFound) p++
-			}
-			if ( stringifiedNumber.charAt(i) === '.') pointFound = true
+export const bigintToNumberFormatParts = (amount: bigint, decimals = 18n, maximumSignificantDigits = 4) => {
+	const floatValue = Number(ethers.formatUnits(amount, decimals))
+
+	let formatterOptions: Intl.NumberFormatOptions = { useGrouping: false, maximumFractionDigits: 3 }
+
+	// maintain accuracy if value is a fraction of 1 ex 0.00001
+	if (floatValue % 1 === floatValue) formatterOptions.maximumSignificantDigits = maximumSignificantDigits
+
+	// apply only compacting with prefixes for values >= 10k or values <= -10k
+	if (Math.abs(floatValue) >= 1e4) {
+		formatterOptions = { minimumFractionDigits: 0, notation: 'compact' }
+	}
+
+	const formatter = new Intl.NumberFormat('en-US', formatterOptions)
+	const parts = formatter.formatToParts(floatValue)
+	const partsMap = new Map<Intl.NumberFormatPartTypes, string>()
+
+	for (const part of parts) {
+		if (part.type === 'compact') {
+			// replace American format with Metric prefixes https://www.ibiblio.org/units/prefixes.html
+			const prefix = part.value.replace('K', 'k').replace('B', 'G')
+			partsMap.set(part.type, prefix)
+			continue
 		}
-		return roundedString.length <= significantNumbers + 1n ? parseFloat(roundedString).toString() : roundedString
+		partsMap.set(part.type, part.value)
 	}
 
-	const withPower = value / (10n ** power)
-	if ( abs(withPower) >= 10n**9n) {
-		return `${roundToPrettyDecimalString(value / 10n**9n)}G`
-	}
-	if ( abs(withPower) >= 10n**6n ) {
-		return `${roundToPrettyDecimalString(value / 10n**6n)}M`
-	}
-	if ( abs(withPower) >= 10n**3n) {
-		return `${roundToPrettyDecimalString(value / 10n**3n)}k`
-	}
+	return partsMap
+}
 
-	return roundToPrettyDecimalString(value)
+export const bigintToRoundedPrettyDecimalString = (amount: bigint, decimals?: bigint, maximumSignificantDigits = 4) => {
+	const numberParts = bigintToNumberFormatParts(amount, decimals, maximumSignificantDigits)
+	let numberString = ''
+
+	for (const [_type, value] of numberParts) numberString += value
+
+	return numberString
 }
 
 export function nanoString(value: bigint): string {
@@ -80,7 +82,7 @@ export function bytes32String(bytes32: bigint) {
 export function stringToUint8Array(data: string) {
 	const dataLength = (data.length - 2) / 2
 	if (dataLength === 0) return new Uint8Array()
-    return bigintToUint8Array(BigInt(data), dataLength)
+	return bigintToUint8Array(BigInt(data), dataLength)
 }
 
 export function dataString(data: Uint8Array | null) {
@@ -106,7 +108,7 @@ export function bigintToUint8Array(value: bigint, numberOfBytes: number) {
 // biome-ignore lint/suspicious/noExplicitAny: matches JSON.stringify signature
 export function stringifyJSONWithBigInts(value: any, space?: string | number | undefined): string {
 	return JSON.stringify(value, (_key, value) => {
-		return typeof value === "bigint" ? `0x${ value.toString(16) }` : value
+		return typeof value === 'bigint' ? `0x${ value.toString(16) }` : value
 	}, space)
 }
 
@@ -136,7 +138,8 @@ export function isHexEncodedNumber(input: string): boolean {
 }
 
 export function calculateWeightedPercentile(data: readonly { dataPoint: bigint, weight: bigint }[], percentile: bigint): bigint {
-	if (data.length === 0 || percentile < 0 || percentile > 100 || data.map((point) => point.weight).some((weight) => weight < 0)) throw new Error('Invalid input')
+	if (data.length === 0) return 0n
+	if (percentile < 0 || percentile > 100 || data.map((point) => point.weight).some((weight) => weight < 0)) throw new Error('Invalid input')
 	const sortedData = [...data].sort((a, b) => a.dataPoint < b.dataPoint ? -1 : a.dataPoint > b.dataPoint ? 1 : 0)
 	const cumulativeWeights = sortedData.map((point) => point.weight).reduce((acc, w, i) => [...acc, (acc[i] ?? 0n) + w], [0n])
 	const totalWeight = cumulativeWeights[cumulativeWeights.length - 1]

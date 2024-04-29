@@ -49,8 +49,8 @@ export const simulateCompoundGovernanceExecution = async (ethereumClientService:
 			input: stringToUint8Array(compoundGovernanceAbi.encodeFunctionData('getActions', [EthereumQuantity.serialize(proposalId)])),
 		}
 	]
-	const parentBlock = await ethereumClientService.getBlock()
-	const governanceContractCalls = (await ethereumClientService.simulateTransactionsAndSignatures(calls, [], parentBlock.number)).calls
+	const parentBlock = await ethereumClientService.getBlock(undefined)
+	const governanceContractCalls = (await ethereumClientService.simulateTransactionsAndSignatures(calls, [], parentBlock.number, undefined)).calls
 	for (const call of governanceContractCalls) {
 		if (call.status !== 'success') throw new Error('Failed to retrieve governance contracts information')
 	}
@@ -85,7 +85,7 @@ export const simulateCompoundGovernanceExecution = async (ethereumClientService:
 			[addressString(timeLockContract)]: { code: getCompoundGovernanceTimeLockMulticall(), stateDiff: {} }
 		},
 	}]
-	const ethSimulateV1CallResult = (await ethereumClientService.ethSimulateV1(query, parentBlock.number))[0]?.calls[0]
+	const ethSimulateV1CallResult = (await ethereumClientService.ethSimulateV1(query, parentBlock.number, undefined))[0]?.calls[0]
 	if (ethSimulateV1CallResult === undefined) throw new Error('ethSimulateV1 result was undefined')
 	return { ethSimulateV1CallResult, executingTransaction }
 }

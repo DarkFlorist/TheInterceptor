@@ -26,7 +26,7 @@ export class EthereumJSONRpcRequestHandler {
 
 	public readonly clearCache = () => { this.cache = new Map() }
 
-	private queryCached = async (request: EthereumJsonRpcRequest, requestId: number, bypassCache: boolean, timeoutMs = 60000) => {
+	private queryCached = async (request: EthereumJsonRpcRequest, requestId: number, bypassCache: boolean, timeoutMs: number, requestAbortController: AbortController | undefined = undefined) => {
 		const serialized = serialize(EthereumJsonRpcRequest, request)
 		const payload = {
 			method: 'POST',
@@ -34,7 +34,7 @@ export class EthereumJSONRpcRequestHandler {
 			body: JSON.stringify({ jsonrpc: '2.0', id: requestId, ...serialized })
 		}
 		if (!this.caching) {
-			const response = await fetchWithTimeout(this.rpcEntry.httpsRpc, payload, timeoutMs)
+			const response = await fetchWithTimeout(this.rpcEntry.httpsRpc, payload, timeoutMs, requestAbortController)
 			const responseObject = response.ok ? { responseState: 'success' as const, response: await response.json() } : { responseState: 'failed' as const, response }
 			return responseObject
 		}
@@ -48,17 +48,20 @@ export class EthereumJSONRpcRequestHandler {
 		}
 		const future = new Future<ResolvedResponse>()
 		this.pendingCache.set(hash, future)
-		const response = await fetchWithTimeout(this.rpcEntry.httpsRpc, payload, timeoutMs)
-		const responseObject = response.ok ? { responseState: 'success' as const, response: await response.json() } : { responseState: 'failed' as const, response }
-		this.cache.set(hash, responseObject)
-		this.pendingCache.delete(hash)
-		future.resolve(responseObject)
-		return responseObject
+		try {
+			const response = await fetchWithTimeout(this.rpcEntry.httpsRpc, payload, timeoutMs, requestAbortController)
+			const responseObject = response.ok ? { responseState: 'success' as const, response: await response.json() } : { responseState: 'failed' as const, response }
+			this.cache.set(hash, responseObject)
+			future.resolve(responseObject)
+			return responseObject
+		} finally {
+			this.pendingCache.delete(hash)
+		}
 	}
 
-	public readonly jsonRpcRequest = async (rpcRequest: EthereumJsonRpcRequest, bypassCache = false, timeoutMs = 60000) => {
+	public readonly jsonRpcRequest = async (rpcRequest: EthereumJsonRpcRequest, requestAbortController: AbortController | undefined = undefined, bypassCache = false, timeoutMs = 60000) => {
 		const requestId = ++this.nextRequestId
-		const responseObject = await this.queryCached(rpcRequest, requestId, bypassCache, timeoutMs)
+		const responseObject = await this.queryCached(rpcRequest, requestId, bypassCache, timeoutMs, requestAbortController)
 		if (responseObject.responseState === 'failed') {
 			console.error('RPC Request Failed')
 			// biome-ignore lint/suspicious/noConsoleLog: <Used for support debugging>
@@ -66,12 +69,7 @@ export class EthereumJSONRpcRequestHandler {
 			throw new FetchResponseError(responseObject.response, requestId)
 		}
 		const jsonRpcResponse = JsonRpcResponse.parse(responseObject.response)
-		if ('error' in jsonRpcResponse) {
-			console.error('RPC response contained errors')
-			// biome-ignore lint/suspicious/noConsoleLog: <Used for support debugging>
-			console.log({ rpcRequest, responseObject })
-			throw new JsonRpcResponseError(jsonRpcResponse)
-		}
+		if ('error' in jsonRpcResponse) throw new JsonRpcResponseError(jsonRpcResponse)
 		return jsonRpcResponse.result
 	}
 }

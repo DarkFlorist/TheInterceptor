@@ -6,14 +6,12 @@ import { Ether, EtherAmount, EtherSymbol, TokenWithAmount, TokenAmount, TokenPri
 import { NonTokenLogAnalysis, TokenLogAnalysis } from './Transactions.js'
 import { CopyToClipboard } from '../subcomponents/CopyToClipboard.js'
 import { SomeTimeAgo, humanReadableDateDeltaLessDetailed } from '../subcomponents/SomeTimeAgo.js'
-import { ETHEREUM_LOGS_LOGGER_ADDRESS, MAKE_YOU_RICH_TRANSACTION } from '../../utils/constants.js'
 import { addressString, bytes32String, dataStringWith0xStart, nanoString } from '../../utils/bigint.js'
 import { identifyTransaction } from './identifyTransaction.js'
 import { identifySwap } from './SwapTransactions.js'
 import { useState } from 'preact/hooks'
 import { CellElement, convertNumberToCharacterRepresentationIfSmallEnough, upperCaseFirstCharacter } from '../ui-utils.js'
 import { EthereumTimestamp } from '../../types/wire-types.js'
-import { getEthDonator } from '../../background/storageVariables.js'
 import { RpcNetwork } from '../../types/rpc.js'
 import { AddressBookEntry, Erc1155Entry, Erc20TokenEntry, Erc721Entry } from '../../types/addressBookTypes.js'
 import { Website } from '../../types/websiteAccessTypes.js'
@@ -397,27 +395,6 @@ function SummarizeAddress(param: SummarizeAddressParams) {
 	</div>
 }
 
-function removeEthDonator(rpcNetwork: RpcNetwork, summary: SummaryOutcome[]) {
-	const donatorSummary = summary.find((x) => x.summaryFor.address === getEthDonator(rpcNetwork.chainId))
-	if (donatorSummary === undefined) return
-	donatorSummary.erc20TokenBalanceChanges = donatorSummary.erc20TokenBalanceChanges.map((change) => {
-		if (change.address === ETHEREUM_LOGS_LOGGER_ADDRESS && change.changeAmount === -MAKE_YOU_RICH_TRANSACTION.transaction.value) {
-			return { ...change, changeAmount: change.changeAmount + MAKE_YOU_RICH_TRANSACTION.transaction.value }
-		}
-		return change
-	}).filter((change) => change.changeAmount !== 0n)
-
-	if (donatorSummary.erc721and1155OperatorChanges.length === 0 &&
-		donatorSummary.erc721TokenBalanceChanges.length === 0 &&
-		donatorSummary.erc721TokenIdApprovalChanges.length === 0 &&
-		donatorSummary.erc20TokenApprovalChanges.length === 0 && 
-		donatorSummary.erc20TokenBalanceChanges.length === 0 &&
-		donatorSummary.erc1155TokenBalanceChanges.length === 0
-	) {
-		summary.splice(summary.indexOf(donatorSummary), 1)
-	}
-}
-
 type TokenLogAnalysisCardParams = {
 	simTx: SimulatedAndVisualizedTransaction
 	renameAddressCallBack: RenameAddressCallBack
@@ -483,12 +460,7 @@ export function NonTokenLogAnalysisCard({ simTx, addressMetaData, renameAddressC
 	</>
 }
 
-function splitToOwnAndNotOwnAndCleanSummary(firstTx: SimulatedAndVisualizedTransaction | undefined, summary: SummaryOutcome[], activeAddress: bigint, rpcNetwork: RpcNetwork) {
-	//remove eth donator if we are in rich mode
-	if (firstTx && identifyTransaction(firstTx).type === 'MakeYouRichTransaction') {
-		removeEthDonator(rpcNetwork, summary)
-	}
-
+function splitToOwnAndNotOwnAndCleanSummary(summary: SummaryOutcome[], activeAddress: bigint) {
 	const ownAddresses = Array.from(summary.entries()).filter( ([_index, balanceSummary]) =>
 		balanceSummary.summaryFor.type === 'activeAddress' || balanceSummary.summaryFor.address === activeAddress
 	)
@@ -511,7 +483,7 @@ export function TransactionsAccountChangesCard({ simTx, renameAddressCallBack, a
 	const addressMetaDataMap = new Map(addressMetaData.map((x) => [addressString(x.address), x]))
 	const originalSummary = logSummarizer.getSummary(addressMetaDataMap, simulationAndVisualisationResults.tokenPrices, namedTokenIds)
 	const [showSummary, setShowSummary] = useState<boolean>(false)
-	const [ownAddresses, notOwnAddresses] = splitToOwnAndNotOwnAndCleanSummary(simTx, originalSummary, simulationAndVisualisationResults.activeAddress, simulationAndVisualisationResults.rpcNetwork)
+	const [ownAddresses, notOwnAddresses] = splitToOwnAndNotOwnAndCleanSummary(originalSummary, simulationAndVisualisationResults.activeAddress)
 	
 	if (notOwnAddresses === undefined || ownAddresses === undefined) throw new Error('addresses were undefined')
 	const numberOfChanges = notOwnAddresses.length + ownAddresses.length
@@ -605,7 +577,7 @@ export function TransactionHeader({ simTx, removeTransactionOrSignedMessage } : 
 		<p class = 'card-header-title' style = 'white-space: nowrap;'>
 			{ identifyTransaction(simTx).title }
 		</p>
-		{ simTx.transaction.to  === undefined || identifyTransaction(simTx).type === 'MakeYouRichTransaction'
+		{ simTx.transaction.to === undefined
 			? <></>
 			: <p class = 'card-header-icon unsetcursor' style = { `margin-left: auto; margin-right: 0; overflow: hidden; ${ removeTransactionOrSignedMessage !== undefined ? 'padding: 0' : ''}` }>
 				<WebsiteOriginText { ...simTx.website } />
@@ -673,7 +645,7 @@ export function SimulationSummary(param: SimulationSummaryParams) {
 	const logSummarizer = new LogSummarizer(param.simulationAndVisualisationResults.simulatedAndVisualizedTransactions)
 	const addressMetaData = new Map(param.simulationAndVisualisationResults.addressBookEntries.map((x) => [addressString(x.address), x]))
 	const originalSummary = logSummarizer.getSummary(addressMetaData, param.simulationAndVisualisationResults.tokenPrices, param.simulationAndVisualisationResults.namedTokenIds)
-	const [ownAddresses, notOwnAddresses] = splitToOwnAndNotOwnAndCleanSummary(param.simulationAndVisualisationResults.simulatedAndVisualizedTransactions.at(0), originalSummary, param.simulationAndVisualisationResults.activeAddress, param.simulationAndVisualisationResults.rpcNetwork)
+	const [ownAddresses, notOwnAddresses] = splitToOwnAndNotOwnAndCleanSummary(originalSummary, param.simulationAndVisualisationResults.activeAddress)
 
 	const [showOtherAccountChanges, setShowOtherAccountChange] = useState<boolean>(false)
 

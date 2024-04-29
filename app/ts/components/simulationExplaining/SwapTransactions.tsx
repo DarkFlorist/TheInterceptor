@@ -5,7 +5,6 @@ import { addressString } from '../../utils/bigint.js'
 import { TokenAmount, TokenOrEthValue, TokenSymbol } from '../subcomponents/coins.js'
 import { AddressBookEntry, Erc1155Entry, Erc20TokenEntry, Erc721Entry } from '../../types/addressBookTypes.js'
 import { assertNever, getWithDefault } from '../../utils/typescript.js'
-import { RpcNetwork } from '../../types/rpc.js'
 import { RenameAddressCallBack } from '../../types/user-interface-types.js'
 
 type BeforeAfterBalance = funtypes.Static<typeof SwapAsset>
@@ -53,7 +52,6 @@ export const IdentifiedSwapWithMetadata = funtypes.Union(
 
 interface SwapVisualizationParams {
 	identifiedSwap: IdentifiedSwapWithMetadata
-	rpcNetwork: RpcNetwork
 	renameAddressCallBack: RenameAddressCallBack
 }
 

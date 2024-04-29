@@ -11,7 +11,6 @@ export const RpcEntry = funtypes.Intersect(
 		currencyTicker: funtypes.String,
 		primary: funtypes.Boolean,
 		minimized: funtypes.Boolean,
-		weth: EthereumQuantity,
 	}),
 	funtypes.ReadonlyPartial({	
 		currencyLogoUri: funtypes.String,

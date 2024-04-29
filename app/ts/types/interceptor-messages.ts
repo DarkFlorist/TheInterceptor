@@ -1,6 +1,6 @@
 import * as funtypes from 'funtypes'
 import { PendingChainChangeConfirmationPromise, RpcConnectionStatus, TabIconDetails, TabState } from './user-interface-types.js'
-import { EthereumAddress, EthereumBlockHeaderWithTransactionHashes, EthereumBytes32, EthereumData, EthereumQuantity, EthereumSignedTransactionWithBlockData, NonHexBigInt, OptionalEthereumAddress } from './wire-types.js'
+import { EthereumAddress, EthereumBlockHeaderWithTransactionHashes, EthereumBytes32, EthereumData, EthereumQuantity, EthereumSignedTransactionWithBlockData, EthereumTimestamp, NonHexBigInt, OptionalEthereumAddress } from './wire-types.js'
 import { ModifyAddressWindowState, CompleteVisualizedSimulation, NamedTokenId, ProtectorResults, SimulatedAndVisualizedTransaction, SimulationState, TokenPriceEstimate, EnrichedEthereumEvent } from './visualizer-types.js'
 import { VisualizedPersonalSignRequest } from './personal-message-definitions.js'
 import { UniqueRequestIdentifier, WebsiteSocket } from '../utils/requests.js'
@@ -65,7 +65,7 @@ const NonForwardingRPCRequestSuccessfullReturnValue = funtypes.Union(
 	funtypes.ReadonlyObject({ method: funtypes.Literal('eth_getBlockByHash'), result: GetBlockReturn }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('eth_getBalance'), result: EthereumQuantity }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('eth_estimateGas'), result: EthereumQuantity }),
-	funtypes.ReadonlyObject({ method: funtypes.Literal('eth_getTransactionByHash'), result: funtypes.Union(EthereumSignedTransactionWithBlockData, funtypes.Undefined) }),
+	funtypes.ReadonlyObject({ method: funtypes.Literal('eth_getTransactionByHash'), result: funtypes.Union(EthereumSignedTransactionWithBlockData, funtypes.Null) }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('eth_getTransactionReceipt'), result: EthTransactionReceiptResponse }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('eth_subscribe'), result: funtypes.String }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('eth_newFilter'), result: funtypes.String }),
@@ -287,7 +287,6 @@ export const EnableSimulationMode = funtypes.ReadonlyObject({
 export type TransactionOrMessageIdentifier = funtypes.Static<typeof TransactionOrMessageIdentifier>
 export const TransactionOrMessageIdentifier = funtypes.Union(
 	funtypes.ReadonlyObject({ type: funtypes.Literal('Transaction'), transactionIdentifier: EthereumQuantity }),
-	funtypes.ReadonlyObject({ type: funtypes.Literal('MakeYouRichTransaction') }),
 	funtypes.ReadonlyObject({ type: funtypes.Literal('SignedMessage'), messageIdentifier: EthereumQuantity })
 )
 
@@ -480,6 +479,12 @@ const PartialUpdateHomePage = funtypes.ReadonlyObject({
 	data: funtypes.Unknown,
 })
 
+export type UnexpectedErrorOccured = funtypes.Static<typeof UnexpectedErrorOccured>
+export const UnexpectedErrorOccured = funtypes.ReadonlyObject({
+	method: funtypes.Literal('popup_UnexpectedErrorOccured'),
+	data: funtypes.ReadonlyObject({ timestamp: EthereumTimestamp, message: funtypes.String })
+})
+
 export type UpdateHomePage = funtypes.Static<typeof UpdateHomePage>
 export const UpdateHomePage = funtypes.ReadonlyObject({
 	method: funtypes.Literal('popup_UpdateHomePage'),
@@ -496,14 +501,7 @@ export const UpdateHomePage = funtypes.ReadonlyObject({
 		tabId: funtypes.Union(funtypes.Number, funtypes.Undefined),
 		rpcEntries: RpcEntries,
 		interceptorDisabled: funtypes.Boolean,
-	})
-})
-
-type UnexpectedErrorOccured = funtypes.Static<typeof UnexpectedErrorOccured>
-const UnexpectedErrorOccured = funtypes.ReadonlyObject({
-	method: funtypes.Literal('popup_UnexpectedErrorOccured'),
-	data: funtypes.ReadonlyObject({
-		message: funtypes.String
+		latestUnexpectedError: funtypes.Union(funtypes.Undefined, UnexpectedErrorOccured),
 	})
 })
 
@@ -680,6 +678,7 @@ const PopupAddOrModifyAddressWindowStateInfomation = funtypes.ReadonlyObject({
 	data: funtypes.ReadonlyObject({
 		windowStateId: funtypes.String,
 		errorState: funtypes.Union(funtypes.ReadonlyObject({ message: funtypes.String, blockEditing: funtypes.Boolean }), funtypes.Undefined),
+		identifiedAddress: funtypes.Union(funtypes.Undefined, AddressBookEntry)
 	})
 })
 
@@ -769,6 +768,7 @@ export const PopupMessage = funtypes.Union(
 	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_requestNewHomeData') }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_refreshHomeData') }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_openSettings') }),
+	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_clearUnexpectedError') }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_import_settings'), data: funtypes.ReadonlyObject({ fileContents: funtypes.String }) }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_get_export_settings') }),
 	SimulateGovernanceContractExecution,

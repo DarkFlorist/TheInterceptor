@@ -1,10 +1,11 @@
 import { sendPopupMessageToOpenWindows } from '../background/backgroundUtils.js'
+import { setLatestUnexpectedError } from '../background/storageVariables.js'
 import { JsonRpcErrorResponse } from '../types/JsonRpc-types.js'
+import { NEW_BLOCK_ABORT } from './constants.js'
 
 class ErrorWithData extends Error {
 	public constructor(message: string, public data: unknown) {
 		super(message)
-		Object.setPrototypeOf(this, ErrorWithData)
 	}
 }
 
@@ -29,10 +30,11 @@ export class FetchResponseError extends ErrorWithData {
 }
 
 export function isFailedToFetchError(error: Error) {
-	// failed to fetch is thrown by Chrome if there's no connection to node and FireFox throws NetworkError instead
-	if (error.message.includes('Failed to fetch') || error.message.includes('NetworkError when attempting to fetch resource')) return true
+	if (error.message.includes('Fetch request timed out.') || error.message.includes('Failed to fetch') || error.message.includes('NetworkError when attempting to fetch resource')) return true
 	return false
 }
+
+export const isNewBlockAbort = (error: Error) => error.message.includes(NEW_BLOCK_ABORT)
 
 export function printError(error: unknown) {
 	if (error instanceof Error && 'data' in error) {
@@ -43,10 +45,13 @@ export function printError(error: unknown) {
 
 export async function handleUnexpectedError(error: unknown) {
 	printError(error)
-	await sendPopupMessageToOpenWindows({
+	const errorMessage = {
 		method: 'popup_UnexpectedErrorOccured' as const,
 		data: {
+			timestamp: new Date(), 
 			message: typeof error === 'object' && error !== null && 'message' in error && error.message !== undefined && typeof error.message === 'string' ? error.message : 'Please see The Interceptors console for more details on the error.'
 		}
-	})
+	}
+	await setLatestUnexpectedError(errorMessage)
+	await sendPopupMessageToOpenWindows(errorMessage)
 }
