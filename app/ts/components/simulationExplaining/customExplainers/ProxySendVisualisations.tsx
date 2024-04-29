@@ -41,7 +41,7 @@ export function ProxyMultiSend({ transaction, asset, sender, receivers, renameAd
 		{ receivers.map((receiver) => <>
 			<span style = 'grid-template-columns: auto auto auto auto; justify-content: center; display: grid; align-items: baseline;'>
 				<p class = 'paragraph' style = 'justify-self: right;'> Receive&nbsp;</p>
-				<TokenOrEth { ...asset } useFullTokenName = { false } />
+				<TokenOrEth { ...{ ...asset, ...('amount' in asset ? { amount: receiver.amount } : {}) } } useFullTokenName = { false } />
 			</span>
 			<div class = 'box' style = 'background-color: var(--alpha-005); box-shadow: unset; margin-bottom: 0px;'>
 				<AddressBeforeAfter { ...receiver } renameAddressCallBack = { renameAddressCallBack } tokenOrEtherDefinition = { { ...asset, ...('amount' in asset ? { amount: receiver.amount } : {}) } }/>
