@@ -11,7 +11,7 @@ import { dataStringWith0xStart } from '../../utils/bigint.js'
 import { parseVoteInputParameters } from '../../simulation/compoundGovernanceFaking.js'
 import { GovernanceVoteInputParameters } from '../../types/interceptor-messages.js'
 import { UniqueRequestIdentifier } from '../../utils/requests.js'
-import { findLongestPathFromStart } from '../../utils/depthFirstSearch.js'
+import { findDeadEnds } from '../../utils/findDeadEnds.js'
 
 type IdentifiedTransactionBase = {
 	title: string
@@ -175,6 +175,9 @@ function isSimpleTokenTransfer(transaction: SimulatedAndVisualizedTransaction): 
 }
 const getSimpleTokenTransferOrUndefined = createGuard<SimulatedAndVisualizedTransaction, SimulatedAndVisualizedSimpleTokenTransferTransaction>((simTx) => isSimpleTokenTransfer(simTx) ? simTx : undefined)
 
+type EntryAmount = funtypes.Static<typeof EntryAmount>
+const EntryAmount = funtypes.ReadonlyObject({ entry: AddressBookEntry, amountDelta: funtypes.BigInt })
+
 export type SimulatedAndVisualizedProxyTokenTransferTransaction = funtypes.Static<typeof SimulatedAndVisualizedProxyTokenTransferTransaction>
 export const SimulatedAndVisualizedProxyTokenTransferTransaction = funtypes.Intersect(
 	funtypes.Intersect(
@@ -186,7 +189,8 @@ export const SimulatedAndVisualizedProxyTokenTransferTransaction = funtypes.Inte
 	funtypes.ReadonlyObject({
 		uniqueRequestIdentifier: UniqueRequestIdentifier,
 		transaction: funtypes.Intersect(TransactionWithAddressBookEntries, funtypes.ReadonlyObject({ to: AddressBookEntry })),
-		transferRoute: funtypes.ReadonlyArray(AddressBookEntry)
+		transferRoute: funtypes.ReadonlyArray(AddressBookEntry),
+		transferedTo: funtypes.ReadonlyArray(EntryAmount),
 	})
 )
 
@@ -205,13 +209,20 @@ function isProxyTokenTransfer(transaction: SimulatedAndVisualizedTransaction): t
 	if (transaction.tokenResults.filter((result) => result.token.address !== senderLog.token.address).length !== 0) return false
 	// only one token id (or undefined) is mentioned inte the logs
 	if (new Set(transaction.tokenResults.map((result) => 'tokenId' in result ? result.tokenId : undefined)).size !== 1) return false
-	// all transfer amounts are equal
-	if (new Set(transaction.tokenResults.map((tokenResult) => !tokenResult.isApproval && tokenResult.type !== 'ERC721' ? tokenResult.amount : -1n)).size !== 1) return false
-	
 	// can find a path
-	const edges = transaction.tokenResults.map((tokenResult) => ({ from: tokenResult.from.address, to: tokenResult.to.address, id: tokenResult.to }))
-	const transferRoute = findLongestPathFromStart(edges, transaction.transaction.from.address).map((x) => x.id)
-	if (transferRoute.length === 0 || transferRoute.length !== transaction.tokenResults.length) return false
+	const edges = transaction.tokenResults.map((tokenResult) => ({ from: tokenResult.from.address, to: tokenResult.to.address, data: tokenResult.to, amount: !tokenResult.isApproval && tokenResult.type !== 'ERC721' ? tokenResult.amount : 1n }))
+	const deadEnds = findDeadEnds(edges, transaction.transaction.from.address)
+	if (deadEnds.size == 0) return false
+
+	// the sum of all currency in dead ends, must equal to the sum sent initially (multiplied by -1)
+	const netSums = new Map<bigint, bigint>()
+	edges.forEach(edge => {
+		netSums.set(edge.from, (netSums.get(edge.from) || 0n) - edge.amount)
+		netSums.set(edge.to, (netSums.get(edge.to) || 0n) + edge.amount)
+	})
+
+	const deadEndSum = Array.from(deadEnds).map((deadEnd) => netSums.get(deadEnd[0]) || 0n).reduce((prev, current) => prev + current, 0n)
+	if (netSums.get(transaction.transaction.from.address) !== -deadEndSum) return false
 	return true
 }
 const getProxyTokenTransferOrUndefined = createGuard<SimulatedAndVisualizedTransaction, SimulatedAndVisualizedSimpleTokenTransferTransaction>((simTx) => isProxyTokenTransfer(simTx) ? simTx : undefined)
@@ -247,15 +258,50 @@ export function identifyTransaction(simTx: SimulatedAndVisualizedTransaction): I
 		const tokenResult = simTx.tokenResults[0]
 		if (tokenResult === undefined) throw new Error('token result were undefined')
 		const symbol = tokenResult.token.symbol
-		const edges = simTx.tokenResults.map((tokenResult) => ({ from: tokenResult.from.address, to: tokenResult.to.address, id: tokenResult.to }))
-		const transferRoute = findLongestPathFromStart(edges, simTx.transaction.from.address).map((x) => x.id)
-		return {
-			type: 'ProxyTokenTransfer',
+		const edges = simTx.tokenResults.map((tokenResult) => ({ from: tokenResult.from.address, to: tokenResult.to.address, data: tokenResult.to, amount: !tokenResult.isApproval && tokenResult.type !== 'ERC721' ? tokenResult.amount : 1n }))
+		const deadEnds = findDeadEnds(edges, simTx.transaction.from.address)
+
+		function removeDuplicates(entries: AddressBookEntry[]): AddressBookEntry[] {
+			const unique: Map<bigint, AddressBookEntry> = new Map()
+			for (const entry of entries) {
+				if (unique.has(entry.address)) continue
+				unique.set(entry.address, entry)
+			}
+			return Array.from(unique.values())
+		}
+
+		const transferRoute = removeDuplicates(Array.from(deadEnds).map(([_key, edges]) => edges.slice(0, -1).map((edge) => edge.data)).flat())
+		const netSums = new Map<bigint, bigint>()
+		edges.forEach(edge => {
+			netSums.set(edge.from, (netSums.get(edge.from) || 0n) - edge.amount)
+			netSums.set(edge.to, (netSums.get(edge.to) || 0n) + edge.amount)
+		})
+		if (transferRoute === undefined) throw new Error('no path found')
+		const texts = deadEnds.size > 1 ? {
+			title: `${ symbol } Transfer to many via Proxy`,
+			signingAction: `Transfer ${ symbol } to many via Proxy`,
+			simulationAction: `Simulate ${ symbol } Transfer to many via Proxy`,
+			rejectAction: `Reject ${ symbol } Transfer via to many Proxy`,
+		} : {
 			title: `${ symbol } Transfer via Proxy`,
 			signingAction: `Transfer ${ symbol } via Proxy`,
 			simulationAction: `Simulate ${ symbol } Transfer via Proxy`,
 			rejectAction: `Reject ${ symbol } Transfer via Proxy`,
-			identifiedTransaction: {...simTx, transferRoute },
+		}
+		return {
+			type: 'ProxyTokenTransfer',
+			...texts,
+			identifiedTransaction: {
+				...simTx,
+				transferRoute,
+				transferedTo: Array.from(netSums).map(([address, amountDelta]) => {
+					const deadEnd = deadEnds.get(address)
+					if (deadEnd === undefined) return undefined
+					const destinationEntry = deadEnd[deadEnd.length - 1]
+					if (destinationEntry === undefined) throw new Error('path was missing')
+					return { entry: destinationEntry.data, amountDelta }
+				}).filter((x): x is EntryAmount => x !== undefined && x.amountDelta !== 0n)
+			}
 		}
 	}
 

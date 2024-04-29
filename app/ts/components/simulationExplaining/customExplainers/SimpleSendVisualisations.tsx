@@ -10,7 +10,7 @@ import { RpcNetwork } from '../../../types/rpc.js'
 import { ETHEREUM_LOGS_LOGGER_ADDRESS } from '../../../utils/constants.js'
 import { interleave } from '../../../utils/typed-arrays.js'
 
-type BeforeAfterAddress = {
+export type BeforeAfterAddress = {
 	address: AddressBookEntry
 	beforeAndAfter: {
 		before: bigint
@@ -23,12 +23,9 @@ type TransferAddressParams = BeforeAfterAddress & {
 	tokenOrEtherDefinition: DistributedOmit<TokenOrEtherParams, 'amount'>
 }
 
-function AddressBeforeAfter({ address, beforeAndAfter, renameAddressCallBack, tokenOrEtherDefinition }: TransferAddressParams) {
+export function AddressBeforeAfter({ address, beforeAndAfter, renameAddressCallBack, tokenOrEtherDefinition }: TransferAddressParams) {
 	return <>
-		<BigAddress
-			addressBookEntry = { address }
-			renameAddressCallBack = { renameAddressCallBack }
-		/>
+		<BigAddress addressBookEntry = { address } renameAddressCallBack = { renameAddressCallBack } />
 		{ beforeAndAfter === undefined
 			? <></>
 			: <span style = 'grid-template-columns: auto auto; display: grid; justify-content: space-between; margin-top: 10px'>
