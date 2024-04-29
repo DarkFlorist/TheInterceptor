@@ -66,7 +66,6 @@ export const defaultRpcs = [
 		currencyLogoUri: ETHEREUM_COIN_ICON,
 		primary: true,
 		minimized: true,
-		weth: 0n,
 	},
 	{
 		name: 'Ethereum (experimental nethermind)',
