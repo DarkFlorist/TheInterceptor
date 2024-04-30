@@ -12,6 +12,7 @@ import { parseVoteInputParameters } from '../../simulation/compoundGovernanceFak
 import { GovernanceVoteInputParameters } from '../../types/interceptor-messages.js'
 import { UniqueRequestIdentifier } from '../../utils/requests.js'
 import { findDeadEnds } from '../../utils/findDeadEnds.js'
+import { EthereumAddress, EthereumQuantity } from '../../types/wire-types.js'
 
 type IdentifiedTransactionBase = {
 	title: string
@@ -194,6 +195,15 @@ export const SimulatedAndVisualizedProxyTokenTransferTransaction = funtypes.Inte
 	})
 )
 
+const getNetSums = (edges: readonly { from: EthereumAddress, to: EthereumAddress,  amount: EthereumQuantity }[]) => {
+	const netSums = new Map<bigint, bigint>()
+	for (const edge of edges) {
+		netSums.set(edge.from, (netSums.get(edge.from) || 0n) - edge.amount)
+		netSums.set(edge.to, (netSums.get(edge.to) || 0n) + edge.amount)
+	}
+	return netSums
+}
+
 function isProxyTokenTransfer(transaction: SimulatedAndVisualizedTransaction): transaction is SimulatedAndVisualizedProxyTokenTransferTransaction {
 	// there need to be atleast two logs (otherwise its a simple send)
 	if (transaction.tokenResults.length < 2) return false
@@ -212,15 +222,10 @@ function isProxyTokenTransfer(transaction: SimulatedAndVisualizedTransaction): t
 	// can find a path
 	const edges = transaction.tokenResults.map((tokenResult) => ({ from: tokenResult.from.address, to: tokenResult.to.address, data: tokenResult.to, amount: !tokenResult.isApproval && tokenResult.type !== 'ERC721' ? tokenResult.amount : 1n }))
 	const deadEnds = findDeadEnds(edges, transaction.transaction.from.address)
-	if (deadEnds.size == 0) return false
+	if (deadEnds.size === 0) return false
 
 	// the sum of all currency in dead ends, must equal to the sum sent initially (multiplied by -1)
-	const netSums = new Map<bigint, bigint>()
-	edges.forEach(edge => {
-		netSums.set(edge.from, (netSums.get(edge.from) || 0n) - edge.amount)
-		netSums.set(edge.to, (netSums.get(edge.to) || 0n) + edge.amount)
-	})
-
+	const netSums = getNetSums(edges)
 	const deadEndSum = Array.from(deadEnds).map((deadEnd) => netSums.get(deadEnd[0]) || 0n).reduce((prev, current) => prev + current, 0n)
 	if (netSums.get(transaction.transaction.from.address) !== -deadEndSum) return false
 	return true
@@ -270,12 +275,8 @@ export function identifyTransaction(simTx: SimulatedAndVisualizedTransaction): I
 			return Array.from(unique.values())
 		}
 
-		const transferRoute = removeDuplicates(Array.from(deadEnds).map(([_key, edges]) => edges.slice(0, -1).map((edge) => edge.data)).flat())
-		const netSums = new Map<bigint, bigint>()
-		edges.forEach(edge => {
-			netSums.set(edge.from, (netSums.get(edge.from) || 0n) - edge.amount)
-			netSums.set(edge.to, (netSums.get(edge.to) || 0n) + edge.amount)
-		})
+		const transferRoute = removeDuplicates(Array.from(deadEnds).flatMap(([_key, edges]) => edges.slice(0, -1).map((edge) => edge.data)))
+		const netSums = getNetSums(edges)
 		if (transferRoute === undefined) throw new Error('no path found')
 		const texts = deadEnds.size > 1 ? {
 			title: `${ symbol } Transfer to many via Proxy`,
