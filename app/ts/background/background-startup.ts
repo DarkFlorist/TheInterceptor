@@ -30,7 +30,7 @@ const catchAllErrorsAndCall = async (func: () => Promise<unknown>) => {
 		await func()
 		checkAndThrowRuntimeLastError()
 	} catch(error: unknown) {
-		console.log(error)
+		console.error(error)
 		if (error instanceof Error && error.message.startsWith('No tab with id')) return
 		handleUnexpectedError(error)
 	}
@@ -132,7 +132,7 @@ async function onContentScriptConnected(simulator: Simulator, port: browser.runt
 		await updateTabState(socket.tabId, (previousState: TabState) => modifyObject(previousState, { website }))
 		checkAndThrowRuntimeLastError()
 	} catch(error: unknown) {
-		console.log(error)
+		console.error(error)
 		if (error instanceof Error && error.message.startsWith('No tab with id')) return
 		await handleUnexpectedError(error)
 	}

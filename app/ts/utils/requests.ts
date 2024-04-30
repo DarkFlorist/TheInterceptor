@@ -117,5 +117,6 @@ export const checkAndThrowRuntimeLastError = () => {
 
 export const checkAndPrintRuntimeLastError = () => {
 	const error: browser.runtime._LastError | undefined | null = browser.runtime.lastError // firefox return `null` on no errors
+	// biome-ignore lint/suspicious/noConsoleLog: <Used for support debugging>
 	if (error !== null && error !== undefined && error.message !== undefined) console.log(error)
 }

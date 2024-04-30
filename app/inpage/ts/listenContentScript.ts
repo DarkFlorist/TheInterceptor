@@ -29,7 +29,6 @@ function listenContentScript(conectionName: string | undefined) {
 			extensionPort.postMessage({ data: messageEvent.data })
 			checkAndThrowRuntimeLastError()
 		} catch (error) {
-			console.log(error)
 			if (error instanceof Error) {
 				if (error.message?.includes('Extension context invalidated.')) {
 					// this error happens when the extension is refreshed and the page cannot reach The Interceptor anymore
@@ -65,13 +64,13 @@ function listenContentScript(conectionName: string | undefined) {
 			listenContentScript(connectionNameNotUndefined)
 			checkAndThrowRuntimeLastError()
 		} catch (error: unknown) {
-			console.log(error)
+			console.error(error)
 		}
 	})
 	try {
 		checkAndThrowRuntimeLastError()
 	} catch (error: unknown) {
-		console.log(error)
+		console.error(error)
 	}
 }
 listenContentScript(undefined)
