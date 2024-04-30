@@ -9,14 +9,7 @@ import { AddressBookEntry } from '../../../types/addressBookTypes.js'
 import { interleave } from '../../../utils/typed-arrays.js'
 import { SmallAddress } from '../../subcomponents/address.js'
 
-export type BeforeAfterAddressWithAmount = {
-	amount: bigint,
-	address: AddressBookEntry
-	beforeAndAfter: {
-		before: bigint
-		after: bigint
-	} | undefined
-}
+type BeforeAfterAddressWithAmount = BeforeAfterAddress & { amount: bigint }
 
 type ProxyMultiSendParams = {
 	transaction: TransactionGasses & { rpcNetwork: RpcNetwork }
@@ -27,7 +20,7 @@ type ProxyMultiSendParams = {
 	renameAddressCallBack: RenameAddressCallBack
 }
 
-export function ProxyMultiSend({ transaction, asset, sender, receivers, renameAddressCallBack, viaProxypath } : ProxyMultiSendParams) {
+function ProxyMultiSend({ transaction, asset, sender, receivers, renameAddressCallBack, viaProxypath } : ProxyMultiSendParams) {
 	return <div class = 'notification transaction-importance-box'>
 		<span style = 'grid-template-columns: auto auto auto auto; justify-content: center; display: grid; align-items: baseline;'>
 			<p class = 'paragraph' style = 'font-size: 28px; font-weight: 500; justify-self: right;'> Send&nbsp;</p>
