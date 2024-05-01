@@ -24,7 +24,7 @@ export function ProxyTokenTransferVisualisation({ simTx, renameAddressCallBack }
 		} }
 		receiver = { {
 			address: receiver,
-			beforeAndAfter : receiverAfter === undefined || !('amount' in asset) ? undefined : { before: receiverAfter + receiverGasFees - asset.amount, after: receiverAfter },
+			beforeAndAfter: receiverAfter === undefined || !('amount' in asset) ? undefined : { before: receiverAfter + receiverGasFees - asset.amount, after: receiverAfter },
 		} }
 		renameAddressCallBack = { renameAddressCallBack }
 	/>
