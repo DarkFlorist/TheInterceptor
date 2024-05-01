@@ -43,3 +43,11 @@ export function replaceElementInReadonlyArray<T>(originalArray: readonly T[], in
 	newArray[index] = newValue
 	return newArray
 }
+
+export function interleave<T>(arr: readonly T[], addBetween: T): Array<T> {
+	return arr.reduce<Array<T>>((acc, curr, index) => {
+		if (index !== arr.length - 1) acc.push(curr, addBetween)
+		else acc.push(curr)
+		return acc
+	}, [])
+}
