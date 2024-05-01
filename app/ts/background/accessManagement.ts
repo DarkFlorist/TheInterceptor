@@ -8,10 +8,10 @@ import { updateWebsiteAccess } from './settings.js'
 import { sendSubscriptionReplyOrCallBack } from './messageSending.js'
 import { Simulator } from '../simulation/simulator.js'
 import { WebsiteSocket } from '../utils/requests.js'
-import { ActiveAddressEntry } from '../types/addressBookTypes.js'
 import { Website, WebsiteAccessArray, WebsiteAddressAccess } from '../types/websiteAccessTypes.js'
 import { getUniqueItemsByProperties, replaceElementInReadonlyArray } from '../utils/typed-arrays.js'
 import { modifyObject } from '../utils/typescript.js'
+import { AddressBookEntries, AddressBookEntry } from '../types/addressBookTypes.js'
 
 function getConnectionDetails(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket) {
 	const identifier = websiteSocketToString(socket)
@@ -28,7 +28,7 @@ function setWebsitePortApproval(websiteTabConnections: WebsiteTabConnections, so
 
 export type ApprovalState = 'hasAccess' | 'noAccess' | 'askAccess' | 'interceptorDisabled' | 'notFound'
 
-export function verifyAccess(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, askAccessIfUnknown: boolean, websiteOrigin: string, requestAccessForAddress: ActiveAddressEntry | undefined, settings: Settings) {
+export function verifyAccess(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, askAccessIfUnknown: boolean, websiteOrigin: string, requestAccessForAddress: AddressBookEntry | undefined, settings: Settings) {
 	const connection = getConnectionDetails(websiteTabConnections, socket)
 	if (connection?.approved) return 'hasAccess'
 	const access = requestAccessForAddress !== undefined ? hasAddressAccess(settings.websiteAccess, websiteOrigin, requestAccessForAddress) : hasAccess(settings.websiteAccess, websiteOrigin)
@@ -75,7 +75,7 @@ export function hasAccess(websiteAccess: WebsiteAccessArray, websiteOrigin: stri
 	return 'notFound'
 }
 
-export function hasAddressAccess(websiteAccess: WebsiteAccessArray, websiteOrigin: string, address: ActiveAddressEntry) : ApprovalState {
+export function hasAddressAccess(websiteAccess: WebsiteAccessArray, websiteOrigin: string, address: AddressBookEntry) : ApprovalState {
 	for (const web of websiteAccess) {
 		if (web.website.websiteOrigin === websiteOrigin) {
 			if (web.interceptorDisabled) return 'interceptorDisabled'
@@ -102,7 +102,7 @@ function getAddressAccesses(websiteAccess: WebsiteAccessArray, websiteOrigin: st
 	}
 	return []
 }
-function getAddressesThatDoNotNeedIndividualAccesses(activeAddressEntries: readonly ActiveAddressEntry[]) : readonly ActiveAddressEntry[] {
+function getAddressesThatDoNotNeedIndividualAccesses(activeAddressEntries: AddressBookEntries) : AddressBookEntries {
 	return activeAddressEntries.filter((x) => x.askForAddressAccess === false)
 }
 
@@ -175,14 +175,14 @@ function disconnectFromPort(websiteTabConnections: WebsiteTabConnections, socket
 	return false
 }
 
-export async function getAssociatedAddresses(settings: Settings, websiteOrigin: string, activeAddress: ActiveAddressEntry | undefined) : Promise<readonly ActiveAddressEntry[]> {
+export async function getAssociatedAddresses(settings: Settings, websiteOrigin: string, activeAddress: AddressBookEntry | undefined) : Promise<AddressBookEntries> {
 	const addressAccess = await Promise.all(getAddressAccesses(settings.websiteAccess, websiteOrigin).filter((x) => x.access).map((x) => x.address).map((x) => getActiveAddressEntry(x)))
 	const allAccessAddresses = getAddressesThatDoNotNeedIndividualAccesses(await getActiveAddresses())
 	const all = allAccessAddresses.concat(addressAccess).concat(activeAddress === undefined ? [] : [activeAddress])
 	return getUniqueItemsByProperties(all, ['address'])
 }
 
-async function askUserForAccessOnConnectionUpdate(simulator: Simulator, websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, websiteOrigin: string, activeAddress: ActiveAddressEntry | undefined, settings: Settings) {
+async function askUserForAccessOnConnectionUpdate(simulator: Simulator, websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, websiteOrigin: string, activeAddress: AddressBookEntry | undefined, settings: Settings) {
 	const details = getConnectionDetails(websiteTabConnections, socket)
 	if (details === undefined) return
 

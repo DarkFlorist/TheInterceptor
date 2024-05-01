@@ -1,5 +1,5 @@
 import { addressString, checksummedAddress } from '../utils/bigint.js'
-import { ActiveAddressEntry, AddressBookEntry } from '../types/addressBookTypes.js'
+import { AddressBookEntries, AddressBookEntry } from '../types/addressBookTypes.js'
 import { GeneralEnrichedEthereumEvents, NamedTokenId, SimulationState } from '../types/visualizer-types.js'
 import { tokenMetadata, contractMetadata, erc721Metadata, erc1155Metadata } from '@darkflorist/address-metadata'
 import { ethers } from 'ethers'
@@ -18,7 +18,7 @@ const pathJoin = (parts: string[], sep = '/') => parts.join(sep).replace(new Reg
 
 export const getFullLogoUri = (logoURI: string) => pathJoin([LOGO_URI_PREFIX, logoURI])
 
-export async function getActiveAddressEntry(address: bigint) : Promise<ActiveAddressEntry> {
+export async function getActiveAddressEntry(address: bigint): Promise<AddressBookEntry> {
 	const identifiedAddress = await identifyAddressWithoutNode(address, undefined)
 	if (identifiedAddress !== undefined && identifiedAddress.type === 'activeAddress') return identifiedAddress
 	return {
@@ -30,9 +30,9 @@ export async function getActiveAddressEntry(address: bigint) : Promise<ActiveAdd
 	}
 }
 
-export async function getActiveAddresses() : Promise<readonly ActiveAddressEntry[]> {
-	const activeAddresses = (await getUserAddressBookEntries()).filter((entry): entry is ActiveAddressEntry => entry.type === 'activeAddress')
-	return activeAddresses === undefined || activeAddresses.length === 0? defaultActiveAddresses : activeAddresses
+export async function getActiveAddresses() : Promise<AddressBookEntries> {
+	const activeAddresses = (await getUserAddressBookEntries()).filter((entry) => entry.useForActiveAddress)
+	return activeAddresses === undefined || activeAddresses.length === 0 ? defaultActiveAddresses : activeAddresses
 }
 async function identifyAddressWithoutNode(address: bigint, rpcEntry: RpcNetwork | undefined, useLocalStorage = true) : Promise<AddressBookEntry | undefined> {
 	if (address === ETHEREUM_LOGS_LOGGER_ADDRESS) return {
@@ -174,7 +174,7 @@ export async function getAddressBookEntriesForVisualiser(ethereumClientService: 
 }
 
 export async function nameTokenIds(ethereumClientService: EthereumClientService, requestAbortController: AbortController | undefined, events: GeneralEnrichedEthereumEvents) {
-	type TokenAddressTokenIdPair = { tokenAddress: bigint, tokenId: bigint}
+	type TokenAddressTokenIdPair = { tokenAddress: bigint, tokenId: bigint }
 	const tokenAddresses = events.map((event) => {
 		if (event.type !== 'TokenEvent' || event.tokenInformation.type !== 'ERC1155') return undefined
 		return { tokenAddress: event.tokenInformation.tokenAddress, tokenId: event.tokenInformation.tokenId }

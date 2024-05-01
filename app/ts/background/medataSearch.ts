@@ -1,5 +1,5 @@
 import { addressString } from '../utils/bigint.js'
-import { AddressBookEntries, AddressBookEntry, ActiveAddressEntry, ContactEntry, ContractEntry, Erc1155Entry, Erc20TokenEntry, Erc721Entry } from '../types/addressBookTypes.js'
+import { AddressBookEntries, AddressBookEntry, ContactEntry, ContractEntry, Erc1155Entry, Erc20TokenEntry, Erc721Entry } from '../types/addressBookTypes.js'
 import { tokenMetadata, contractMetadata, ContractDefinition, TokenDefinition, Erc721Definition, erc721Metadata, erc1155Metadata, Erc1155Definition } from '@darkflorist/address-metadata'
 import { AddressBookCategory, GetAddressBookDataFilter } from '../types/interceptor-messages.js'
 import { getFullLogoUri } from './metadataUtils.js'

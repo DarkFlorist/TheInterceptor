@@ -10,25 +10,6 @@ const EntrySource = funtypes.Union(
 	funtypes.Literal('FilledIn'),
 )
 
-export type ActiveAddress = funtypes.Static<typeof ActiveAddress>
-export const ActiveAddress = funtypes.ReadonlyObject({
-	name: funtypes.String,
-	address: EthereumAddress,
-	askForAddressAccess: funtypes.Union(funtypes.Boolean, funtypes.Literal(undefined).withParser(LiteralConverterParserFactory(undefined, true))),
-}).asReadonly()
-
-export type ActiveAddressArray = funtypes.Static<typeof ActiveAddressArray>
-export const ActiveAddressArray = funtypes.ReadonlyArray(ActiveAddress)
-
-export type ActiveAddressEntry = funtypes.Static<typeof ActiveAddressEntry>
-export const ActiveAddressEntry = funtypes.ReadonlyObject({
-	type: funtypes.Literal('activeAddress'),
-	name: funtypes.String,
-	address: EthereumAddress,
-	askForAddressAccess: funtypes.Union(funtypes.Boolean, funtypes.Literal(undefined).withParser(LiteralConverterParserFactory(undefined, true))),
-	entrySource: EntrySource,
-})
-
 export type Erc20TokenEntry = funtypes.Static<typeof Erc20TokenEntry>
 export const Erc20TokenEntry = funtypes.ReadonlyObject({
 	type: funtypes.Literal('ERC20'),
@@ -40,6 +21,8 @@ export const Erc20TokenEntry = funtypes.ReadonlyObject({
 }).And(funtypes.Partial({
 	logoUri: funtypes.String,
 	abi: funtypes.String,
+	useForActiveAddress: funtypes.Boolean,
+	askForAddressAccess: funtypes.Union(funtypes.Undefined, funtypes.Boolean),
 }))
 
 export type Erc721Entry = funtypes.Static<typeof Erc721Entry>
@@ -53,6 +36,8 @@ export const Erc721Entry = funtypes.ReadonlyObject({
 	protocol: funtypes.String,
 	logoUri: funtypes.String,
 	abi: funtypes.String,
+	useForActiveAddress: funtypes.Boolean,
+	askForAddressAccess: funtypes.Union(funtypes.Undefined, funtypes.Boolean),
 }))
 
 export type Erc1155Entry = funtypes.Static<typeof Erc1155Entry>
@@ -67,6 +52,8 @@ export const Erc1155Entry = funtypes.ReadonlyObject({
 	protocol: funtypes.String,
 	logoUri: funtypes.String,
 	abi: funtypes.String,
+	useForActiveAddress: funtypes.Boolean,
+	askForAddressAccess: funtypes.Union(funtypes.Undefined, funtypes.Boolean),
 }))
 
 export type ContactEntry = funtypes.Static<typeof ContactEntry>
@@ -78,6 +65,8 @@ export const ContactEntry = funtypes.ReadonlyObject({
 }).And(funtypes.Partial({
 	logoUri: funtypes.String,
 	abi: funtypes.String,
+	useForActiveAddress: funtypes.Boolean,
+	askForAddressAccess: funtypes.Union(funtypes.Undefined, funtypes.Boolean),
 }))
 
 export type ContactEntries = funtypes.Static<typeof ContactEntries>
@@ -93,13 +82,14 @@ export const ContractEntry = funtypes.ReadonlyObject({
 	protocol: funtypes.String,
 	logoUri: funtypes.String,
 	abi: funtypes.String,
+	useForActiveAddress: funtypes.Boolean,
+	askForAddressAccess: funtypes.Union(funtypes.Undefined, funtypes.Boolean),
 }))
 
 export type AddressBookEntryCategory = 'contact' | 'activeAddress' | 'ERC20' | 'ERC721' | 'contract' | 'ERC1155'
 
 export type AddressBookEntry = funtypes.Static<typeof AddressBookEntry>
 export const AddressBookEntry = funtypes.Union(
-	ActiveAddressEntry,
 	ContactEntry,
 	Erc20TokenEntry,
 	Erc721Entry,
@@ -113,7 +103,7 @@ export const AddressBookEntries = funtypes.ReadonlyArray(AddressBookEntry)
 export type IncompleteAddressBookEntry = funtypes.Static<typeof IncompleteAddressBookEntry>
 export const IncompleteAddressBookEntry = funtypes.ReadonlyObject({
 	addingAddress: funtypes.Boolean, // if false, we are editing addess
-	type: funtypes.Union(funtypes.Literal('activeAddress'), funtypes.Literal('contact'), funtypes.Literal('contract'), funtypes.Literal('ERC20'), funtypes.Literal('ERC1155'), funtypes.Literal('ERC721')),
+	type: funtypes.Union(funtypes.Literal('contact'), funtypes.Literal('contract'), funtypes.Literal('ERC20'), funtypes.Literal('ERC1155'), funtypes.Literal('ERC721')),
 	address: funtypes.Union(funtypes.String, funtypes.Undefined),
 	askForAddressAccess: funtypes.Boolean,
 	name: funtypes.Union(funtypes.String, funtypes.Undefined),
@@ -122,4 +112,5 @@ export const IncompleteAddressBookEntry = funtypes.ReadonlyObject({
 	logoUri: funtypes.Union(funtypes.String, funtypes.Undefined),
 	entrySource: EntrySource,
 	abi: funtypes.Union(funtypes.String, funtypes.Undefined),
+	useForActiveAddress: funtypes.Union(funtypes.Undefined, funtypes.Boolean),
 })

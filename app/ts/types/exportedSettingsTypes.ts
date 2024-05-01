@@ -1,7 +1,7 @@
 import * as funtypes from 'funtypes'
 import { RpcNetwork } from './rpc.js'
 import { EthereumQuantity, OptionalEthereumAddress } from './wire-types.js'
-import { ActiveAddressArray, AddressBookEntries, ContactEntries } from './addressBookTypes.js'
+import { AddressBookEntries, ContactEntries } from './addressBookTypes.js'
 import { WebsiteAccessArray } from './websiteAccessTypes.js'
 import { ModifyAddressWindowState } from './visualizer-types.js'
 
@@ -26,7 +26,7 @@ export const ExportedSettings = funtypes.Union(
 			useSignersAddressAsActiveAddress: funtypes.Boolean,
 			websiteAccess: WebsiteAccessArray,
 			simulationMode: funtypes.Boolean,
-			addressInfos: ActiveAddressArray,
+			addressInfos: AddressBookEntries,
 			contacts: funtypes.Union(funtypes.Undefined, ContactEntries),
 			useTabsInsteadOfPopup: funtypes.Boolean,
 		})
@@ -41,7 +41,7 @@ export const ExportedSettings = funtypes.Union(
 			useSignersAddressAsActiveAddress: funtypes.Boolean,
 			websiteAccess: WebsiteAccessArray,
 			simulationMode: funtypes.Boolean,
-			addressInfos: ActiveAddressArray,
+			addressInfos: AddressBookEntries,
 			contacts: funtypes.Union(funtypes.Undefined, ContactEntries),
 			useTabsInsteadOfPopup: funtypes.Boolean,
 		})
@@ -56,7 +56,7 @@ export const ExportedSettings = funtypes.Union(
 			useSignersAddressAsActiveAddress: funtypes.Boolean,
 			websiteAccess: WebsiteAccessArray,
 			simulationMode: funtypes.Boolean,
-			addressInfos: ActiveAddressArray,
+			addressInfos: AddressBookEntries,
 			contacts: funtypes.Union(funtypes.Undefined, ContactEntries),
 			useTabsInsteadOfPopup: funtypes.Boolean,
 			metamaskCompatibilityMode: funtypes.Boolean,
@@ -73,7 +73,7 @@ export const ExportedSettings = funtypes.Union(
 			useSignersAddressAsActiveAddress: funtypes.Boolean,
 			websiteAccess: WebsiteAccessArray,
 			simulationMode: funtypes.Boolean,
-			addressInfos: ActiveAddressArray,
+			addressInfos: AddressBookEntries,
 			contacts: funtypes.Union(funtypes.Undefined, ContactEntries),
 			useTabsInsteadOfPopup: funtypes.Boolean,
 			metamaskCompatibilityMode: funtypes.Boolean,

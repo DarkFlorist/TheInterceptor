@@ -2,10 +2,10 @@ import 'webextension-polyfill'
 import { defaultRpcs, getSettings } from './settings.js'
 import { handleInterceptedRequest, popupMessageHandler, resetSimulatorStateFromConfig } from './background.js'
 import { retrieveWebsiteDetails, updateExtensionBadge, updateExtensionIcon } from './iconHandler.js'
-import { clearTabStates, getPrimaryRpcForChain, getSimulationResults, removeTabState, setRpcConnectionStatus, updateTabState, updateUserAddressBookEntries } from './storageVariables.js'
+import { clearTabStates, getPrimaryRpcForChain, getSimulationResults, removeTabState, setRpcConnectionStatus, updateTabState } from './storageVariables.js'
 import { Simulator } from '../simulation/simulator.js'
 import { TabConnection, TabState, WebsiteTabConnections } from '../types/user-interface-types.js'
-import { EthereumAddress, EthereumBlockHeader } from '../types/wire-types.js'
+import { EthereumBlockHeader } from '../types/wire-types.js'
 import { EthereumClientService } from '../simulation/services/EthereumClientService.js'
 import { getSocketFromPort, sendPopupMessageToOpenWindows, websiteSocketToString } from './backgroundUtils.js'
 import { sendSubscriptionMessagesForNewBlock } from '../simulation/services/EthereumSubscriptionService.js'
@@ -14,9 +14,6 @@ import { Semaphore } from '../utils/semaphore.js'
 import { RawInterceptedRequest, checkAndThrowRuntimeLastError } from '../utils/requests.js'
 import { ICON_NOT_ACTIVE } from '../utils/constants.js'
 import { handleUnexpectedError } from '../utils/errors.js'
-import { browserStorageLocalGet, browserStorageLocalRemove } from '../utils/storageUtils.js'
-import { ActiveAddress, AddressBookEntries } from '../types/addressBookTypes.js'
-import { getUniqueItemsByProperties } from '../utils/typed-arrays.js'
 import { updateContentScriptInjectionStrategyManifestV2 } from '../utils/contentScriptsUpdating.js'
 import { checkIfInterceptorShouldSleep } from './sleeping.js'
 import { addWindowTabListeners } from '../components/ui-utils.js'
@@ -42,26 +39,6 @@ if (browser.runtime.getManifest().manifest_version === 2) {
 	updateContentScriptInjectionStrategyManifestV2()
 	clearTabStates()
 }
-
-async function migrateAddressInfoAndContacts() {
-	const results = await browserStorageLocalGet(['addressInfos', 'contacts'])
-	const convertActiveAddressToAddressBookEntry = (info: ActiveAddress) => ({ ...info, type: 'activeAddress' as const, entrySource: 'User' as const })
-	const addressInfos: AddressBookEntries = (results.addressInfos ?? []).map((x) => convertActiveAddressToAddressBookEntry(x))
-	const contacts: AddressBookEntries = results.contacts ?? []
-	if (addressInfos.length > 0 || contacts.length > 0) {
-		await updateUserAddressBookEntries((previousEntries) => getUniqueItemsByProperties(addressInfos.concat(contacts).concat(previousEntries), ['address']))
-		await browserStorageLocalRemove(['addressInfos', 'contacts'])
-	}
-	await updateUserAddressBookEntries((oldEntries) => {
-		return oldEntries.map((entry) => {
-			const nameAddress = EthereumAddress.safeParse(entry.name)
-			// there used to be a bug that when you renamed address, it did not convert from 'OnChain' to 'User' This fixes it. 
-			if (entry.entrySource === 'OnChain' && !nameAddress.success) return modifyObject(entry, { entrySource: 'User' })
-			return entry
-		})
-	})
-}
-migrateAddressInfoAndContacts()
 
 const pendingRequestLimiter = new Semaphore(40) // only allow 40 requests pending globally
 

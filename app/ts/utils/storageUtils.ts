@@ -2,7 +2,7 @@ import * as funtypes from 'funtypes'
 import { EthereumAddressOrMissing, serialize } from '../types/wire-types.js'
 import { PendingChainChangeConfirmationPromise, RpcConnectionStatus, TabState } from '../types/user-interface-types.js'
 import { CompleteVisualizedSimulation, EthereumSubscriptionsAndFilters } from '../types/visualizer-types.js'
-import { AddressBookEntries, ActiveAddressArray, ContactEntries } from '../types/addressBookTypes.js'
+import { AddressBookEntries, ContactEntries } from '../types/addressBookTypes.js'
 import { Page } from '../types/exportedSettingsTypes.js'
 import { WebsiteAccessArray } from '../types/websiteAccessTypes.js'
 import { SignerName } from '../types/signerTypes.js'
@@ -26,7 +26,7 @@ type LocalStorageItems = funtypes.Static<typeof LocalStorageItems>
 const LocalStorageItems = funtypes.ReadonlyPartial({
 	activeSigningAddress: EthereumAddressOrMissing,
 	activeSimulationAddress: EthereumAddressOrMissing,
-	addressInfos: ActiveAddressArray,
+	addressInfos: AddressBookEntries,
 	openedPage: Page,
 	useSignersAddressAsActiveAddress: funtypes.Boolean,
 	websiteAccess: WebsiteAccessArray,

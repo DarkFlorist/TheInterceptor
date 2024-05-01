@@ -5,7 +5,7 @@ import { ModifyAddressWindowState, CompleteVisualizedSimulation, NamedTokenId, P
 import { VisualizedPersonalSignRequest } from './personal-message-definitions.js'
 import { UniqueRequestIdentifier, WebsiteSocket } from '../utils/requests.js'
 import { EthGetFeeHistoryResponse, EthGetLogsResponse, EthGetStorageAtParams, EthTransactionReceiptResponse, GetBlockReturn, SendRawTransactionParams, SendTransactionParams, WalletAddEthereumChain } from './JsonRpc-types.js'
-import { AddressBookEntries, AddressBookEntry, ActiveAddressEntry } from './addressBookTypes.js'
+import { AddressBookEntries, AddressBookEntry } from './addressBookTypes.js'
 import { Page } from './exportedSettingsTypes.js'
 import { Website, WebsiteAccess, WebsiteAccessArray } from './websiteAccessTypes.js'
 import { SignerName } from './signerTypes.js'
@@ -458,7 +458,7 @@ type InterceptorAccessDialog = funtypes.Static<typeof InterceptorAccessDialog>
 const InterceptorAccessDialog = funtypes.ReadonlyObject({
 	method: funtypes.Union(funtypes.Literal('popup_interceptorAccessDialog'), funtypes.Literal('popup_interceptor_access_dialog_pending_changed')),
 	data: funtypes.ReadonlyObject({
-		activeAddresses: funtypes.ReadonlyArray(ActiveAddressEntry),
+		activeAddresses: AddressBookEntries,
 		pendingAccessRequests: PendingAccessRequests,
 	})
 })
@@ -490,8 +490,8 @@ export const UpdateHomePage = funtypes.ReadonlyObject({
 	method: funtypes.Literal('popup_UpdateHomePage'),
 	data: funtypes.ReadonlyObject({
 		visualizedSimulatorState: funtypes.Union(CompleteVisualizedSimulation, funtypes.Undefined),
-		websiteAccessAddressMetadata: funtypes.ReadonlyArray(ActiveAddressEntry),
-		activeAddresses: funtypes.ReadonlyArray(ActiveAddressEntry),
+		websiteAccessAddressMetadata: AddressBookEntries,
+		activeAddresses: AddressBookEntries,
 		tabState: TabState,
 		currentBlockNumber: funtypes.Union(EthereumQuantity, funtypes.Undefined),
 		settings: Settings,
