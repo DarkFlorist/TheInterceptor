@@ -40,7 +40,7 @@ export const defaultRpcs = [
 	{
 		name: 'Ethereum Mainnet',
 		chainId: 1n,
-		httpsRpc: 'https://rpc.dark.florist/winedancemuffinborrow',
+		httpsRpc: 'https://geth.dark.florist',
 		currencyName: 'Ether',
 		currencyTicker: 'ETH',
 		currencyLogoUri: ETHEREUM_COIN_ICON,
@@ -50,7 +50,7 @@ export const defaultRpcs = [
 	{
 		name: 'Sepolia',
 		chainId: 11155111n,
-		httpsRpc: 'https://rpc-sepolia.dark.florist/flipcardtrustone',
+		httpsRpc: 'https://sepolia.dark.florist',
 		currencyName: 'Sepolia Testnet ETH',
 		currencyTicker: 'SEETH',
 		currencyLogoUri: ETHEREUM_COIN_ICON,
@@ -58,9 +58,19 @@ export const defaultRpcs = [
 		minimized: true,
 	},
 	{
+		name: 'Holesky',
+		chainId: 17000n,
+		httpsRpc: 'https://holesky.dark.florist',
+		currencyName: 'Holesky Testnet ETH',
+		currencyTicker: 'HOETH',
+		currencyLogoUri: ETHEREUM_COIN_ICON,
+		primary: true,
+		minimized: true,
+	},
+	{
 		name: 'Ethereum (experimental nethermind)',
 		chainId: 1n,
-		httpsRpc: 'https://rpc.dark.florist/birdchalkrenewtip',
+		httpsRpc: 'https://nethermind.dark.florist',
 		currencyName: 'Ether',
 		currencyTicker: 'ETH',
 		currencyLogoUri: ETHEREUM_COIN_ICON,
