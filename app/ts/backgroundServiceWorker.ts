@@ -5,10 +5,10 @@ import { updateContentScriptInjectionStrategyManifestV3 } from './utils/contentS
 import { checkAndThrowRuntimeLastError } from './utils/requests.js'
 
 const setPopupFile = async () => {
-	await browser.action.setPopup({ popup: getHtmlFile('popup') })
+	// see https://issues.chromium.org/issues/337214677
+	await (browser.action.setPopup as unknown as ((details: browser.action._SetPopupDetails, callback: () => void) => Promise<void>))({ popup: getHtmlFile('popup') }, () => { checkAndThrowRuntimeLastError() })	
 	checkAndThrowRuntimeLastError()
 }
-
 setPopupFile()
 
 self.addEventListener('install', () => {

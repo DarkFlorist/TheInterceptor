@@ -20,6 +20,7 @@ import { EnrichedSolidityTypeComponentWithAddressBook } from '../subcomponents/s
 import { getAddressBookEntryOrAFiller } from '../ui-utils.js'
 import { TransactionOrMessageIdentifier } from '../../types/interceptor-messages.js'
 import { RpcNetwork } from '../../types/rpc.js'
+import { ProxyTokenTransferVisualisation } from './customExplainers/ProxySendVisualisations.js'
 
 function isPositiveEvent(visResult: TokenVisualizerResultWithMetadata, ourAddressInReferenceFrame: bigint) {
 	if (visResult.type === 'ERC20') {
@@ -76,6 +77,7 @@ export function TransactionImportanceBlock(param: TransactionImportanceBlockPara
 			if (identifiedSwap === undefined) throw new Error('Not a swap!')
 			return <SwapVisualization identifiedSwap = { identifiedSwap } renameAddressCallBack = { param.renameAddressCallBack } />
 		}
+		case 'ProxyTokenTransfer': return <ProxyTokenTransferVisualisation simTx = { transactionIdentification.identifiedTransaction } renameAddressCallBack = { param.renameAddressCallBack }/>
 		case 'ContractDeployment':
 		case 'ContractFallbackMethod':
 		case 'ArbitaryContractExecution': return <CatchAllVisualizer { ...param } />
