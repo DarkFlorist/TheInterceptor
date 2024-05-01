@@ -90,7 +90,7 @@ const TransactionNames = (param: TransactionNamesParams) => {
 	if (param.completeVisualizedSimulation === undefined || param.completeVisualizedSimulation.simulationResultState !== 'done') return <></>
 	const transactionsAndMessages: readonly (VisualizedPersonalSignRequest | SimulatedAndVisualizedTransaction)[] = [...param.completeVisualizedSimulation.visualizedPersonalSignRequests, ...param.completeVisualizedSimulation.simulatedAndVisualizedTransactions].sort((n1, n2) => n1.created.getTime() - n2.created.getTime())
 	const names = transactionsAndMessages.map((transactionOrMessage) => 'transaction' in transactionOrMessage ? identifyTransaction(transactionOrMessage).title : identifySignature(transactionOrMessage).title)
-
+	const makingRich = param.completeVisualizedSimulation?.simulationState?.addressToMakeRich !== undefined
 	const titleOfCurrentPendingTransaction = () => {
 		const currentPendingTransactionOrSignableMessage = param.currentPendingTransaction
 		if (currentPendingTransactionOrSignableMessage === undefined) return 'Loading...'
@@ -103,7 +103,7 @@ const TransactionNames = (param: TransactionNamesParams) => {
 		return identifyTransaction(lastTx).title
 	}
 	
-	const namesWithCurrentTransaction = [ ...names, titleOfCurrentPendingTransaction() ]
+	const namesWithCurrentTransaction = [...makingRich ? ['Simply making you rich'] : [], ...names, titleOfCurrentPendingTransaction() ]
 	return <div class = 'block' style = 'margin-bottom: 10px;'>
 		<nav class = 'breadcrumb has-succeeds-separator is-small'>
 			<ul>
@@ -318,7 +318,7 @@ const WebsiteErrors = ({ website, websiteSocket, simulationMode }: NetworkErrorP
 export function ConfirmTransaction() {
 	const [currentPendingTransactionOrSignableMessage, setCurrentPendingTransactionOrSignableMessage] = useState<PendingTransactionOrSignableMessage | undefined>(undefined)
 	const [pendingTransactionsAndSignableMessages, setPendingTransactionsAndSignableMessages] = useState<readonly PendingTransactionOrSignableMessage[]>([])
-	const [completeVisualizedSimulation, setCompleteVisualizedSimulation] = useState<CompleteVisualizedSimulation |undefined>(undefined)
+	const [completeVisualizedSimulation, setCompleteVisualizedSimulation] = useState<CompleteVisualizedSimulation | undefined>(undefined)
 	const [forceSend, setForceSend] = useState<boolean>(false)
 	const [currentBlockNumber, setCurrentBlockNumber] = useState<undefined | bigint>(undefined)
 	const [addingNewAddress, setAddingNewAddress] = useState<ModifyAddressWindowState | 'renameAddressModalClosed'> ('renameAddressModalClosed')
