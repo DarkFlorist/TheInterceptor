@@ -11,6 +11,7 @@ import { dataStringWith0xStart } from '../../utils/bigint.js'
 import { parseVoteInputParameters } from '../../simulation/compoundGovernanceFaking.js'
 import { GovernanceVoteInputParameters } from '../../types/interceptor-messages.js'
 import { UniqueRequestIdentifier } from '../../utils/requests.js'
+import { findLongestPathFromStart } from '../../utils/depthFirstSearch.js'
 
 type IdentifiedTransactionBase = {
 	title: string
@@ -22,6 +23,7 @@ type IdentifiedTransactionBase = {
 type IdentifiedTransaction =
 	IdentifiedTransactionBase & { type: 'SimpleTokenApproval', identifiedTransaction: SimulatedAndVisualizedSimpleApprovalTransaction }
 	| IdentifiedTransactionBase & { type: 'SimpleTokenTransfer', identifiedTransaction: SimulatedAndVisualizedSimpleTokenTransferTransaction }
+	| IdentifiedTransactionBase & { type: 'ProxyTokenTransfer', identifiedTransaction: SimulatedAndVisualizedProxyTokenTransferTransaction }
 	| IdentifiedTransactionBase & { type: 'Swap' }
 	| IdentifiedTransactionBase & { type: 'ContractFallbackMethod' }
 	| IdentifiedTransactionBase & { type: 'ArbitaryContractExecution' }
@@ -173,6 +175,47 @@ function isSimpleTokenTransfer(transaction: SimulatedAndVisualizedTransaction): 
 }
 const getSimpleTokenTransferOrUndefined = createGuard<SimulatedAndVisualizedTransaction, SimulatedAndVisualizedSimpleTokenTransferTransaction>((simTx) => isSimpleTokenTransfer(simTx) ? simTx : undefined)
 
+export type SimulatedAndVisualizedProxyTokenTransferTransaction = funtypes.Static<typeof SimulatedAndVisualizedProxyTokenTransferTransaction>
+export const SimulatedAndVisualizedProxyTokenTransferTransaction = funtypes.Intersect(
+	funtypes.Intersect(
+		SimulatedAndVisualizedTransactionBase,
+		funtypes.ReadonlyObject({
+			tokenResults: funtypes.ReadonlyArray(TokenResult)
+		})
+	),
+	funtypes.ReadonlyObject({
+		uniqueRequestIdentifier: UniqueRequestIdentifier,
+		transaction: funtypes.Intersect(TransactionWithAddressBookEntries, funtypes.ReadonlyObject({ to: AddressBookEntry })),
+		transferRoute: funtypes.ReadonlyArray(AddressBookEntry)
+	})
+)
+
+function isProxyTokenTransfer(transaction: SimulatedAndVisualizedTransaction): transaction is SimulatedAndVisualizedProxyTokenTransferTransaction {
+	// there need to be atleast two logs (otherwise its a simple send)
+	if (transaction.tokenResults.length < 2) return false
+	// no approvals allowed
+	if (transaction.tokenResults.filter((result) => result.isApproval).length !== 0) return false
+	// sender has only one token leaving by logs (gas fees are not in logs)
+	const senderLogs = transaction.tokenResults.filter((result) => result.from.address === transaction.transaction.from.address)
+	const senderLog = senderLogs[0]
+	if (senderLogs.length !== 1 || senderLog === undefined) return false
+	// sender does not receive any tokens
+	if (transaction.tokenResults.filter((result) => result.to.address === transaction.transaction.from.address).length !== 0) return false
+	// only one token of specific address is being transacted in the logs
+	if (transaction.tokenResults.filter((result) => result.token.address !== senderLog.token.address).length !== 0) return false
+	// only one token id (or undefined) is mentioned inte the logs
+	if (new Set(transaction.tokenResults.map((result) => 'tokenId' in result ? result.tokenId : undefined)).size !== 1) return false
+	// all transfer amounts are equal
+	if (new Set(transaction.tokenResults.map((tokenResult) => !tokenResult.isApproval && tokenResult.type !== 'ERC721' ? tokenResult.amount : -1n)).size !== 1) return false
+	
+	// can find a path
+	const edges = transaction.tokenResults.map((tokenResult) => ({ from: tokenResult.from.address, to: tokenResult.to.address, id: tokenResult.to }))
+	const transferRoute = findLongestPathFromStart(edges, transaction.transaction.from.address).map((x) => x.id)
+	if (transferRoute.length === 0 || transferRoute.length !== transaction.tokenResults.length) return false
+	return true
+}
+const getProxyTokenTransferOrUndefined = createGuard<SimulatedAndVisualizedTransaction, SimulatedAndVisualizedSimpleTokenTransferTransaction>((simTx) => isProxyTokenTransfer(simTx) ? simTx : undefined)
+
 export function identifyTransaction(simTx: SimulatedAndVisualizedTransaction): IdentifiedTransaction {
 	const identifiedSwap = identifySwap(simTx)
 	if (identifiedSwap) {
@@ -197,6 +240,22 @@ export function identifyTransaction(simTx: SimulatedAndVisualizedTransaction): I
 			simulationAction: `Simulate ${ symbol } Transfer`,
 			rejectAction: `Reject ${ symbol } Transfer`,
 			identifiedTransaction: simTx,
+		}
+	}
+
+	if (getProxyTokenTransferOrUndefined(simTx)) {
+		const tokenResult = simTx.tokenResults[0]
+		if (tokenResult === undefined) throw new Error('token result were undefined')
+		const symbol = tokenResult.token.symbol
+		const edges = simTx.tokenResults.map((tokenResult) => ({ from: tokenResult.from.address, to: tokenResult.to.address, id: tokenResult.to }))
+		const transferRoute = findLongestPathFromStart(edges, simTx.transaction.from.address).map((x) => x.id)
+		return {
+			type: 'ProxyTokenTransfer',
+			title: `${ symbol } Transfer via Proxy`,
+			signingAction: `Transfer ${ symbol } via Proxy`,
+			simulationAction: `Simulate ${ symbol } Transfer via Proxy`,
+			rejectAction: `Reject ${ symbol } Transfer via Proxy`,
+			identifiedTransaction: {...simTx, transferRoute },
 		}
 	}
 
