@@ -20,10 +20,11 @@ export const getFullLogoUri = (logoURI: string) => pathJoin([LOGO_URI_PREFIX, lo
 
 export async function getActiveAddressEntry(address: bigint): Promise<AddressBookEntry> {
 	const identifiedAddress = await identifyAddressWithoutNode(address, undefined)
-	if (identifiedAddress !== undefined && identifiedAddress.type === 'activeAddress') return identifiedAddress
+	if (identifiedAddress !== undefined && identifiedAddress.useForActiveAddress) return identifiedAddress
 	return {
-		type: 'activeAddress' as const,
+		type: 'contact' as const,
 		name: checksummedAddress(address),
+		useForActiveAddress: true,
 		address: address,
 		askForAddressAccess: false,
 		entrySource: 'FilledIn'

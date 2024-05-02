@@ -64,13 +64,13 @@ export function NetworkErrors({ rpcConnectionStatus } : NetworkErrorParams) {
 export function App() {
 	const [appPage, setAppPage] = useState<Page>({ page: 'Home' })
 	const [makeMeRich, setMakeMeRich] = useState(false)
-	const [activeAddresses, setActiveAddresses] = useState<readonly ActiveAddressEntry[]>(defaultActiveAddresses)
+	const [activeAddresses, setActiveAddresses] = useState<AddressBookEntries>(defaultActiveAddresses)
 	const [activeSimulationAddress, setActiveSimulationAddress] = useState<bigint | undefined>(undefined)
 	const [activeSigningAddress, setActiveSigningAddress] = useState<bigint | undefined>(undefined)
 	const [useSignersAddressAsActiveAddress, setUseSignersAddressAsActiveAddress] = useState(false)
 	const [simVisResults, setSimVisResults] = useState<SimulationAndVisualisationResults | undefined >(undefined)
 	const [websiteAccess, setWebsiteAccess] = useState<WebsiteAccessArray | undefined>(undefined)
-	const [websiteAccessAddressMetadata, setWebsiteAccessAddressMetadata] = useState<readonly ActiveAddressEntry[]>([])
+	const [websiteAccessAddressMetadata, setWebsiteAccessAddressMetadata] = useState<AddressBookEntries>([])
 	const [rpcNetwork, setSelectedNetwork] = useState<RpcNetwork | undefined>(undefined)
 	const [simulationMode, setSimulationMode] = useState<boolean>(true)
 	const [tabIconDetails, setTabConnection] = useState<TabIconDetails>(DEFAULT_TAB_CONNECTION)
@@ -239,12 +239,13 @@ export function App() {
 				symbol: undefined,
 				decimals: undefined,
 				logoUri: undefined,
-				type: 'activeAddress',
+				type: 'contact',
 				name: `Pasted ${ truncateAddr(addressString) }`,
 				address: checksummedAddress(bigIntReprentation),
 				askForAddressAccess: true,
 				entrySource: 'FilledIn',
 				abi: undefined,
+				useForActiveAddress: true,
 			}
 		} })
 	}
@@ -260,6 +261,7 @@ export function App() {
 				decimals: undefined,
 				logoUri: undefined,
 				abi: undefined,
+				useForActiveAddress: false,
 				...entry,
 				address: checksummedAddress(entry.address)
 			}
@@ -275,12 +277,13 @@ export function App() {
 				symbol: undefined,
 				decimals: undefined,
 				logoUri: undefined,
-				type: 'activeAddress',
+				type: 'contact',
 				name: undefined,
 				address: undefined,
 				askForAddressAccess: true,
 				entrySource: 'FilledIn',
 				abi: undefined,
+				useForActiveAddress: true,
 			}
 		} })
 	}

@@ -322,7 +322,7 @@ type SummarizeAddressParams = {
 }
 
 function SummarizeAddress(param: SummarizeAddressParams) {
-	const isOwnAddress = param.balanceSummary.summaryFor.type === 'activeAddress' || param.balanceSummary.summaryFor.address === param.simulationAndVisualisationResults.activeAddress
+	const isOwnAddress = param.balanceSummary.summaryFor.useForActiveAddress || param.balanceSummary.summaryFor.address === param.simulationAndVisualisationResults.activeAddress
 	const positiveNegativeColors = isOwnAddress
 		? {
 			textColor: 'var(--text-color)',
@@ -462,10 +462,10 @@ export function NonTokenLogAnalysisCard({ simTx, addressMetaData, renameAddressC
 
 function splitToOwnAndNotOwnAndCleanSummary(summary: SummaryOutcome[], activeAddress: bigint) {
 	const ownAddresses = Array.from(summary.entries()).filter( ([_index, balanceSummary]) =>
-		balanceSummary.summaryFor.type === 'activeAddress' || balanceSummary.summaryFor.address === activeAddress
+		balanceSummary.summaryFor.useForActiveAddress || balanceSummary.summaryFor.address === activeAddress
 	)
 	const notOwnAddresses = Array.from(summary.entries()).filter( ([_index, balanceSummary]) =>
-		balanceSummary.summaryFor.type !== 'activeAddress' && balanceSummary.summaryFor.address !== activeAddress
+		balanceSummary.summaryFor.useForActiveAddress && balanceSummary.summaryFor.address !== activeAddress
 	)
 	return [ownAddresses, notOwnAddresses]
 }

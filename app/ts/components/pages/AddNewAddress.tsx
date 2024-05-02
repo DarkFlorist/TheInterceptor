@@ -81,6 +81,7 @@ type RenderinCompleteAddressBookParams = {
 	setAddress: (address: string) => void
 	setSymbol: (symbol: string) => void
 	setAskForAddressAccess: (name: boolean) => void
+	setUseForActiveAddress: (useForActiveAddress: boolean) => void
 	setAbi: (abi: string) => void
 	canFetchFromEtherScan: boolean
 	fetchAbiAndNameFromEtherscan: () => Promise<void>
@@ -113,7 +114,7 @@ function AbiInput({ abiInput, setAbiInput, disabled }: AbiInputParams) {
 	/>
 }
 
-function RenderIncompleteAddressBookEntry({ incompleteAddressBookEntry, setName, setAddress, setSymbol, setAskForAddressAccess, setAbi, canFetchFromEtherScan, fetchAbiAndNameFromEtherscan }: RenderinCompleteAddressBookParams) {
+function RenderIncompleteAddressBookEntry({ incompleteAddressBookEntry, setName, setAddress, setSymbol, setAskForAddressAccess, setAbi, canFetchFromEtherScan, fetchAbiAndNameFromEtherscan, setUseForActiveAddress }: RenderinCompleteAddressBookParams) {
 	const Text = (param: { text: ComponentChildren }) => {
 		return <p class = 'paragraph' style = 'color: var(--subtitle-text-color); text-overflow: ellipsis; overflow: hidden; width:100%'>
 			{ param.text }
@@ -142,22 +143,22 @@ function RenderIncompleteAddressBookEntry({ incompleteAddressBookEntry, setName,
 						<CellElement element = { <Text text = { 'Decimals: ' }/> }/>
 						<CellElement element = { <input disabled = { true } className = 'input subtitle is-7 is-spaced' style = 'width: 100%' type = 'text' value = { incompleteAddressBookEntry.decimals !== undefined ? incompleteAddressBookEntry.decimals.toString() : incompleteAddressBookEntry.decimals } placeholder = { '...' } /> } />
 					</> : <></> }
-					{ incompleteAddressBookEntry.type !== 'activeAddress' ? <>
-						<CellElement element = { <Text text = { 'Abi: ' }/> }/>
-						<CellElement element = { <>
-							<AbiInput abiInput = { incompleteAddressBookEntry.abi } setAbiInput = { setAbi } disabled = { false }/>
-							<div style = 'padding-left: 5px'/>
-							<button class = 'button is-primary is-small' disabled = { stringToAddress(incompleteAddressBookEntry.address) === undefined || !canFetchFromEtherScan } onClick = { async  () => { fetchAbiAndNameFromEtherscan() } }> Fetch from Etherscan</button>
-						</> }/>
-					</> : <></> }
+					<CellElement element = { <Text text = { 'Abi: ' }/> }/>
+					<CellElement element = { <>
+						<AbiInput abiInput = { incompleteAddressBookEntry.abi } setAbiInput = { setAbi } disabled = { false }/>
+						<div style = 'padding-left: 5px'/>
+						<button class = 'button is-primary is-small' disabled = { stringToAddress(incompleteAddressBookEntry.address) === undefined || !canFetchFromEtherScan } onClick = { async  () => { fetchAbiAndNameFromEtherscan() } }> Fetch from Etherscan</button>
+					</> }/>
 				</span>
 			</div>
-			{ incompleteAddressBookEntry.type === 'activeAddress' ? <>
-				<label class = 'form-control'>
-					<input type = 'checkbox' disabled = { disableDueToSource } checked = { !incompleteAddressBookEntry.askForAddressAccess } onInput = { e => { if (e.target instanceof HTMLInputElement && e.target !== null) { setAskForAddressAccess(!e.target.checked) } } } />
-					<p class = 'paragraph checkbox-text'>Don't request for an access (insecure)</p>
-				</label>
-			</> : <></> }
+			<label class = 'form-control'>
+				<input type = 'checkbox' checked = { incompleteAddressBookEntry.useForActiveAddress } onInput = { e => { if (e.target instanceof HTMLInputElement && e.target !== null) { setUseForActiveAddress(e.target.checked) } } } />
+				<p class = 'paragraph checkbox-text'>Use for an active address</p>
+			</label>
+			<label class = 'form-control'>
+				<input type = 'checkbox' checked = { !incompleteAddressBookEntry.askForAddressAccess } onInput = { e => { if (e.target instanceof HTMLInputElement && e.target !== null) { setAskForAddressAccess(!e.target.checked) } } } />
+				<p class = 'paragraph checkbox-text'>Don't request for an access when used as active address(insecure)</p>
+			</label>
 			</div>
 	</div>
 }
@@ -172,6 +173,7 @@ export function AddNewAddress(param: AddAddressParam) {
 			const maybeParsed = MessageToPopup.safeParse(msg)
 			if (!maybeParsed.success) return // not a message we are interested in
 			const parsed = maybeParsed.value
+			console.log(parsed)
 			if (parsed.method === 'popup_fetchAbiAndNameFromEtherscanReply') {
 				setCanFetchFromEtherScan(true)
 				return setAddOrModifyAddressWindowState((previous) => {
@@ -265,15 +267,6 @@ export function AddNewAddress(param: AddAddressParam) {
 				entrySource: 'User',
 				abi,
 			}
-			case 'activeAddress': {
-				return {
-					type: 'activeAddress' as const,
-					name,
-					address: inputedAddressBigInt,
-					askForAddressAccess: incompleteAddressBookEntry.askForAddressAccess,
-					entrySource: 'User',
-				}
-			}
 			default: assertUnreachable(incompleteAddressBookEntry.type)
 		}
 	}
@@ -335,6 +328,14 @@ export function AddNewAddress(param: AddAddressParam) {
 		setAddOrModifyAddressWindowState((previous) => {
 			if (previous === undefined) return previous
 			const newState = modifyObject(previous, { incompleteAddressBookEntry: modifyObject(previous.incompleteAddressBookEntry, { symbol }) })
+			sendChangeRequest(newState)
+			return newState
+		})
+	}
+	const setUseForActiveAddress = async (useForActiveAddress: boolean) => {
+		setAddOrModifyAddressWindowState((previous) => {
+			if (previous === undefined) return previous
+			const newState = modifyObject(previous, { incompleteAddressBookEntry: modifyObject(previous.incompleteAddressBookEntry, { useForActiveAddress }) })
 			sendChangeRequest(newState)
 			return newState
 		})
@@ -406,6 +407,7 @@ export function AddNewAddress(param: AddAddressParam) {
 							setName = { setName }
 							setSymbol = { setSymbol }
 							setAbi = { setAbi }
+							setUseForActiveAddress = { setUseForActiveAddress }
 							setAskForAddressAccess = { setAskForAddressAccess }
 							canFetchFromEtherScan = { canFetchFromEtherScan }
 							fetchAbiAndNameFromEtherscan = { fetchAbiAndNameFromEtherscan }
