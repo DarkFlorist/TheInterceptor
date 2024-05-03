@@ -20,11 +20,11 @@ export const getFullLogoUri = (logoURI: string) => pathJoin([LOGO_URI_PREFIX, lo
 
 export async function getActiveAddressEntry(address: bigint): Promise<AddressBookEntry> {
 	const identifiedAddress = await identifyAddressWithoutNode(address, undefined)
-	if (identifiedAddress !== undefined && identifiedAddress.useForActiveAddress) return identifiedAddress
+	if (identifiedAddress !== undefined && identifiedAddress.useAsActiveAddress) return identifiedAddress
 	return {
 		type: 'contact' as const,
 		name: checksummedAddress(address),
-		useForActiveAddress: true,
+		useAsActiveAddress: true,
 		address: address,
 		askForAddressAccess: false,
 		entrySource: 'FilledIn'
@@ -32,7 +32,7 @@ export async function getActiveAddressEntry(address: bigint): Promise<AddressBoo
 }
 
 export async function getActiveAddresses() : Promise<AddressBookEntries> {
-	const activeAddresses = (await getUserAddressBookEntries()).filter((entry) => entry.useForActiveAddress)
+	const activeAddresses = (await getUserAddressBookEntries()).filter((entry) => entry.useAsActiveAddress)
 	return activeAddresses === undefined || activeAddresses.length === 0 ? defaultActiveAddresses : activeAddresses
 }
 async function identifyAddressWithoutNode(address: bigint, rpcEntry: RpcNetwork | undefined, useLocalStorage = true) : Promise<AddressBookEntry | undefined> {

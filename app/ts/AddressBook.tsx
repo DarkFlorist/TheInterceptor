@@ -383,7 +383,7 @@ export function AddressBook() {
 				askForAddressAccess: true,
 				entrySource: 'FilledIn',
 				abi: undefined,
-				useForActiveAddress: filter === 'My Active Addresses',
+				useAsActiveAddress: filter === 'My Active Addresses',
 			}
 		} })
 	}
@@ -403,10 +403,10 @@ export function AddressBook() {
 				symbol: undefined,
 				decimals: undefined,
 				logoUri: undefined,
+				useAsActiveAddress: false,
 				...entry,
 				abi: 'abi' in entry ? entry.abi : undefined,
 				address: checksummedAddress(entry.address),
-				useForActiveAddress: false
 			}
 		} })
 	}

@@ -88,7 +88,7 @@ async function filterAddressBookDataByCategoryAndSearchString(addressBookCategor
 			return search(entries, searchFunction)
 		}
 		case 'My Active Addresses': {
-			const entries = userEntries.filter((entry): entry is AddressBookEntry => entry.useForActiveAddress === true)
+			const entries = userEntries.filter((entry): entry is AddressBookEntry => entry.useAsActiveAddress === true)
 			if (searchingDisabled) return entries
 			const searchFunction = (entry: AddressBookEntry) => ({
 				comparison: fuzzyCompare(searchPattern, trimmedSearch, entry.name.toLowerCase(), addressString(entry.address)),

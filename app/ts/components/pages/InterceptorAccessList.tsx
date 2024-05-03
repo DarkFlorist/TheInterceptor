@@ -254,7 +254,7 @@ export function InterceptorAccessList(param: InterceptorAccessListParams) {
 																<SmallAddress
 																	addressBookEntry = { metadata.get(addressString(websiteAccessAddress.address)) || {
 																		type: 'contact',
-																		useForActiveAddress: true,
+																		useAsActiveAddress: true,
 																		name: checksummedAddress(websiteAccessAddress.address),
 																		address: websiteAccessAddress.address,
 																		askForAddressAccess: false,

@@ -19,7 +19,7 @@ import { checkIfInterceptorShouldSleep } from './sleeping.js'
 import { addWindowTabListeners } from '../components/ui-utils.js'
 import { onCloseWindowOrTab } from './windows/confirmTransaction.js'
 import { modifyObject } from '../utils/typescript.js'
-import { OldActiveAddressEntry, browserStorageLocalGet } from '../utils/storageUtils.js'
+import { OldActiveAddressEntry, browserStorageLocalGet, browserStorageLocalRemove } from '../utils/storageUtils.js'
 import { AddressBookEntries, AddressBookEntry } from '../types/addressBookTypes.js'
 import { getUniqueItemsByProperties } from '../utils/typed-arrays.js'
 
@@ -44,15 +44,16 @@ if (browser.runtime.getManifest().manifest_version === 2) {
 }
 
 async function migrateAddressInfoAndContacts() {
-	const results = (await browserStorageLocalGet(['userAddressBookEntries']))['userAddressBookEntries']
+	const userAddressBookEntries = (await browserStorageLocalGet(['userAddressBookEntries']))['userAddressBookEntries']
 	const convertOldActiveAddressToAddressBookEntry = (entry: AddressBookEntry | OldActiveAddressEntry): AddressBookEntry => {
 		if (entry.type !== 'activeAddress') return entry
-		return { ...entry, type: 'contact', useForActiveAddress: true }
+		return { ...entry, type: 'contact', useAsActiveAddress: true }
 	}
-	const updated: AddressBookEntries = (results ?? []).map((x) => convertOldActiveAddressToAddressBookEntry(x))
+	if (userAddressBookEntries === undefined) return
+	const updated: AddressBookEntries = userAddressBookEntries.map(convertOldActiveAddressToAddressBookEntry)
 	if (updated.length > 0) {
 		await updateUserAddressBookEntries((previousEntries) => getUniqueItemsByProperties(updated.concat(previousEntries), ['address']))
-		//await browserStorageLocalRemove(['userAddressBookEntries'])
+		await browserStorageLocalRemove(['userAddressBookEntries'])
 	}
 }
 migrateAddressInfoAndContacts()

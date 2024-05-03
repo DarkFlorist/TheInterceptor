@@ -21,7 +21,7 @@ export const Erc20TokenEntry = funtypes.ReadonlyObject({
 }).And(funtypes.Partial({
 	logoUri: funtypes.String,
 	abi: funtypes.String,
-	useForActiveAddress: funtypes.Boolean,
+	useAsActiveAddress: funtypes.Boolean,
 	askForAddressAccess: funtypes.Union(funtypes.Undefined, funtypes.Boolean),
 }))
 
@@ -36,7 +36,7 @@ export const Erc721Entry = funtypes.ReadonlyObject({
 	protocol: funtypes.String,
 	logoUri: funtypes.String,
 	abi: funtypes.String,
-	useForActiveAddress: funtypes.Boolean,
+	useAsActiveAddress: funtypes.Boolean,
 	askForAddressAccess: funtypes.Union(funtypes.Undefined, funtypes.Boolean),
 }))
 
@@ -52,7 +52,7 @@ export const Erc1155Entry = funtypes.ReadonlyObject({
 	protocol: funtypes.String,
 	logoUri: funtypes.String,
 	abi: funtypes.String,
-	useForActiveAddress: funtypes.Boolean,
+	useAsActiveAddress: funtypes.Boolean,
 	askForAddressAccess: funtypes.Union(funtypes.Undefined, funtypes.Boolean),
 }))
 
@@ -65,7 +65,7 @@ export const ContactEntry = funtypes.ReadonlyObject({
 }).And(funtypes.Partial({
 	logoUri: funtypes.String,
 	abi: funtypes.String,
-	useForActiveAddress: funtypes.Boolean,
+	useAsActiveAddress: funtypes.Boolean,
 	askForAddressAccess: funtypes.Union(funtypes.Undefined, funtypes.Boolean),
 }))
 
@@ -82,7 +82,7 @@ export const ContractEntry = funtypes.ReadonlyObject({
 	protocol: funtypes.String,
 	logoUri: funtypes.String,
 	abi: funtypes.String,
-	useForActiveAddress: funtypes.Boolean,
+	useAsActiveAddress: funtypes.Boolean,
 	askForAddressAccess: funtypes.Union(funtypes.Undefined, funtypes.Boolean),
 }))
 
@@ -112,5 +112,5 @@ export const IncompleteAddressBookEntry = funtypes.ReadonlyObject({
 	logoUri: funtypes.Union(funtypes.String, funtypes.Undefined),
 	entrySource: EntrySource,
 	abi: funtypes.Union(funtypes.String, funtypes.Undefined),
-	useForActiveAddress: funtypes.Union(funtypes.Undefined, funtypes.Boolean),
+	useAsActiveAddress: funtypes.Union(funtypes.Undefined, funtypes.Boolean),
 })

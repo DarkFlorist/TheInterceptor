@@ -245,7 +245,7 @@ export function App() {
 				askForAddressAccess: true,
 				entrySource: 'FilledIn',
 				abi: undefined,
-				useForActiveAddress: true,
+				useAsActiveAddress: true,
 			}
 		} })
 	}
@@ -261,7 +261,7 @@ export function App() {
 				decimals: undefined,
 				logoUri: undefined,
 				abi: undefined,
-				useForActiveAddress: false,
+				useAsActiveAddress: false,
 				...entry,
 				address: checksummedAddress(entry.address)
 			}
@@ -283,7 +283,7 @@ export function App() {
 				askForAddressAccess: true,
 				entrySource: 'FilledIn',
 				abi: undefined,
-				useForActiveAddress: true,
+				useAsActiveAddress: true,
 			}
 		} })
 	}

@@ -11,7 +11,7 @@ export function getActiveAddressEntry(addressToFind: bigint, activeAddresses: Ad
 	for (const info of activeAddresses) {
 		if (info.address === addressToFind) return info
 	}
-	return { name: checksummedAddress(addressToFind), address: addressToFind, askForAddressAccess: true, type: 'contact', useForActiveAddress: true, entrySource: 'User' }
+	return { name: checksummedAddress(addressToFind), address: addressToFind, askForAddressAccess: true, type: 'contact', useAsActiveAddress: true, entrySource: 'User' }
 }
 
 type AddressIconParams = {

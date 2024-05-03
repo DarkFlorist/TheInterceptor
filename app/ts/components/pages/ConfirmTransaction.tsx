@@ -453,7 +453,7 @@ export function ConfirmTransaction() {
 				symbol: undefined,
 				decimals: undefined,
 				logoUri: undefined,
-				useForActiveAddress: false,
+				useAsActiveAddress: false,
 				...entry,
 				address: checksummedAddress(entry.address),
 				abi: 'abi' in entry ? entry.abi : undefined

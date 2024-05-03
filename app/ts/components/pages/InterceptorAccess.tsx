@@ -245,7 +245,7 @@ export function InterceptorAccess() {
 				symbol: undefined,
 				decimals: undefined,
 				logoUri: undefined,
-				useForActiveAddress: false,
+				useAsActiveAddress: false,
 				...entry,
 				address: checksummedAddress(entry.address),
 				abi: 'abi' in entry ? entry.abi : undefined
@@ -313,7 +313,7 @@ export function InterceptorAccess() {
 				decimals: undefined,
 				logoUri: undefined,
 				type: 'contact',
-				useForActiveAddress: true,
+				useAsActiveAddress: true,
 				entrySource: 'FilledIn',
 				address: undefined,
 				abi: undefined

@@ -96,7 +96,7 @@ export async function addOrModifyAddressBookEntry(simulator: Simulator, websiteT
 		}
 		return previousContacts.concat([entry.data])
 	})
-	if (entry.data.useForActiveAddress) updateWebsiteApprovalAccesses(simulator, websiteTabConnections, await getSettings())
+	if (entry.data.useAsActiveAddress) updateWebsiteApprovalAccesses(simulator, websiteTabConnections, await getSettings())
 	return await sendPopupMessageToOpenWindows({ method: 'popup_addressBookEntriesChanged' })
 }
 

@@ -81,7 +81,7 @@ type RenderinCompleteAddressBookParams = {
 	setAddress: (address: string) => void
 	setSymbol: (symbol: string) => void
 	setAskForAddressAccess: (name: boolean) => void
-	setUseForActiveAddress: (useForActiveAddress: boolean) => void
+	setUseAsActiveAddress: (useAsActiveAddress: boolean) => void
 	setAbi: (abi: string) => void
 	canFetchFromEtherScan: boolean
 	fetchAbiAndNameFromEtherscan: () => Promise<void>
@@ -114,7 +114,7 @@ function AbiInput({ abiInput, setAbiInput, disabled }: AbiInputParams) {
 	/>
 }
 
-function RenderIncompleteAddressBookEntry({ incompleteAddressBookEntry, setName, setAddress, setSymbol, setAskForAddressAccess, setAbi, canFetchFromEtherScan, fetchAbiAndNameFromEtherscan, setUseForActiveAddress }: RenderinCompleteAddressBookParams) {
+function RenderIncompleteAddressBookEntry({ incompleteAddressBookEntry, setName, setAddress, setSymbol, setAskForAddressAccess, setAbi, canFetchFromEtherScan, fetchAbiAndNameFromEtherscan, setUseAsActiveAddress }: RenderinCompleteAddressBookParams) {
 	const Text = (param: { text: ComponentChildren }) => {
 		return <p class = 'paragraph' style = 'color: var(--subtitle-text-color); text-overflow: ellipsis; overflow: hidden; width:100%'>
 			{ param.text }
@@ -152,14 +152,14 @@ function RenderIncompleteAddressBookEntry({ incompleteAddressBookEntry, setName,
 				</span>
 			</div>
 			<label class = 'form-control'>
-				<input type = 'checkbox' checked = { incompleteAddressBookEntry.useForActiveAddress } onInput = { e => { if (e.target instanceof HTMLInputElement && e.target !== null) { setUseForActiveAddress(e.target.checked) } } } />
-				<p class = 'paragraph checkbox-text'>Use for an active address</p>
+				<input type = 'checkbox' checked = { incompleteAddressBookEntry.useAsActiveAddress } onInput = { e => { if (e.target instanceof HTMLInputElement && e.target !== null) { setUseAsActiveAddress(e.target.checked) } } } />
+				<p class = 'paragraph checkbox-text'>Use as active address</p>
 			</label>
 			<label class = 'form-control'>
 				<input type = 'checkbox' checked = { !incompleteAddressBookEntry.askForAddressAccess } onInput = { e => { if (e.target instanceof HTMLInputElement && e.target !== null) { setAskForAddressAccess(!e.target.checked) } } } />
 				<p class = 'paragraph checkbox-text'>Don't request for an access when used as active address(insecure)</p>
 			</label>
-			</div>
+		</div>
 	</div>
 }
 
@@ -228,6 +228,7 @@ export function AddNewAddress(param: AddAddressParam) {
 					address: inputedAddressBigInt,
 					symbol: incompleteAddressBookEntry.symbol,
 					logoUri: incompleteAddressBookEntry.logoUri,
+					useAsActiveAddress: incompleteAddressBookEntry.useAsActiveAddress,
 					entrySource: 'User',
 					abi,
 				}
@@ -240,6 +241,7 @@ export function AddNewAddress(param: AddAddressParam) {
 					address: inputedAddressBigInt,
 					symbol: incompleteAddressBookEntry.symbol,
 					logoUri: incompleteAddressBookEntry.logoUri,
+					useAsActiveAddress: incompleteAddressBookEntry.useAsActiveAddress,
 					decimals: undefined,
 					entrySource: 'User',
 					abi,
@@ -254,6 +256,7 @@ export function AddNewAddress(param: AddAddressParam) {
 					symbol: incompleteAddressBookEntry.symbol,
 					decimals: incompleteAddressBookEntry.decimals,
 					logoUri: incompleteAddressBookEntry.logoUri,
+					useAsActiveAddress: incompleteAddressBookEntry.useAsActiveAddress,
 					entrySource: 'User',
 					abi,
 				}
@@ -264,6 +267,7 @@ export function AddNewAddress(param: AddAddressParam) {
 				name,
 				address: inputedAddressBigInt,
 				logoUri: incompleteAddressBookEntry.logoUri,
+				useAsActiveAddress: incompleteAddressBookEntry.useAsActiveAddress,
 				entrySource: 'User',
 				abi,
 			}
@@ -332,10 +336,10 @@ export function AddNewAddress(param: AddAddressParam) {
 			return newState
 		})
 	}
-	const setUseForActiveAddress = async (useForActiveAddress: boolean) => {
+	const setUseAsActiveAddress = async (useAsActiveAddress: boolean) => {
 		setAddOrModifyAddressWindowState((previous) => {
 			if (previous === undefined) return previous
-			const newState = modifyObject(previous, { incompleteAddressBookEntry: modifyObject(previous.incompleteAddressBookEntry, { useForActiveAddress }) })
+			const newState = modifyObject(previous, { incompleteAddressBookEntry: modifyObject(previous.incompleteAddressBookEntry, { useAsActiveAddress }) })
 			sendChangeRequest(newState)
 			return newState
 		})
@@ -407,7 +411,7 @@ export function AddNewAddress(param: AddAddressParam) {
 							setName = { setName }
 							setSymbol = { setSymbol }
 							setAbi = { setAbi }
-							setUseForActiveAddress = { setUseForActiveAddress }
+							setUseAsActiveAddress = { setUseAsActiveAddress }
 							setAskForAddressAccess = { setAskForAddressAccess }
 							canFetchFromEtherScan = { canFetchFromEtherScan }
 							fetchAbiAndNameFromEtherscan = { fetchAbiAndNameFromEtherscan }
