@@ -15,7 +15,7 @@ async function setInterceptorIcon(tabId: number, icon: TabIcon, iconReason: stri
 	const tabIconDetails = { icon, iconReason }
 	await updateTabState(tabId, (previousState: TabState) => modifyObject(previousState, { tabIconDetails }))
 	if (await getLastKnownCurrentTabId() === tabId) await sendPopupMessageToOpenWindows({ method: 'popup_websiteIconChanged', data: tabIconDetails })
-	return await setExtensionIcon({ path: { 128: icon }, tabId: tabId })
+	await setExtensionIcon({ path: { 128: icon }, tabId })
 }
 
 export async function updateExtensionIcon(tabId: number, websiteOrigin: string) {
@@ -70,18 +70,16 @@ export async function retrieveWebsiteDetails(tabId: number) {
 	try {
 		browser.tabs.onUpdated.addListener(listener)
 		const tab = await safeGetTab(tabId)
-		if (tab !== undefined && tab.status === 'complete') {
-			waitForLoadedFuture.resolve()
+		if (tab !== undefined && tab.status === 'complete') waitForLoadedFuture.resolve()
+		let timeout = undefined
+		try {
+			timeout = setTimeout(() => waitForLoadedFuture.reject(new Error('timed out')), 60000)
+			await waitForLoadedFuture
+		} finally {
+			clearTimeout(timeout)
 		}
-		const timeout = setTimeout(() => waitForLoadedFuture.reject(new Error('timed out')), 60000)
-		await waitForLoadedFuture
-		clearTimeout(timeout)
 	} catch(error) {
-		if (error instanceof Error) {
-			waitForLoadedFuture.reject(error)
-		} else {
-			waitForLoadedFuture.reject(new Error('Unknown error'))
-		}
+		return { title: undefined, icon: undefined }
 	} finally {
 		browser.tabs.onUpdated.removeListener(listener)
 		checkAndPrintRuntimeLastError()

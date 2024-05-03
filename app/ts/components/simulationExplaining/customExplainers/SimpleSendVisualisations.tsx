@@ -81,10 +81,10 @@ export function SimpleSend({ transaction, asset, sender, receiver, renameAddress
 		<span class = 'log-table' style = 'grid-template-columns: min-content min-content min-content; margin-top: 5px;'>
 			<GasFee tx = { transaction } rpcNetwork = { transaction.rpcNetwork } />
 		</span>
-		{ viaProxypath === undefined ? <></> : <span style = 'display: flex;'>
+		{ viaProxypath === undefined ? <></> : <div style = 'display: flex;'>
 			<p class = 'paragraph' style = { 'color: var(--subtitle-text-color)' }> Via proxy:&nbsp;</p>
 			<> { interleave(viaProxypath.map((addressBookEntry) => <SmallAddress addressBookEntry = { addressBookEntry } renameAddressCallBack = { renameAddressCallBack }/>), <p class = 'paragraph' style = { 'color: var(--subtitle-text-color)' }>&nbsp;{ '-> '}&nbsp;</p>) } </>
-		</span> }
+		</div> }
 	</div>
 }
 
