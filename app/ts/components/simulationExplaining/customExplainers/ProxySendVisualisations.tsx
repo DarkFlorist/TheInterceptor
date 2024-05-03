@@ -71,11 +71,11 @@ export function ProxyTokenTransferVisualisation({ simTx, renameAddressCallBack }
 			asset = { { ...asset, useFullTokenName: false, fontSize: 'normal' } }
 			sender = { {
 				address: transfer.from,
-				beforeAndAfter : senderAfter === undefined || !('amount' in asset) ? undefined : { before: senderAfter + asset.amount + senderGasFees, after: senderAfter },
+				beforeAndAfter: senderAfter === undefined || !('amount' in asset) ? undefined : { before: senderAfter + asset.amount + senderGasFees, after: senderAfter },
 			} }
 			receiver = { {
 				address: receiver,
-				beforeAndAfter : receiverAfter === undefined || !('amount' in asset) ? undefined : { before: receiverAfter + receiverGasFees - asset.amount, after: receiverAfter },
+				beforeAndAfter: receiverAfter === undefined || !('amount' in asset) ? undefined : { before: receiverAfter + receiverGasFees - asset.amount, after: receiverAfter },
 			} }
 			renameAddressCallBack = { renameAddressCallBack }
 		/>
