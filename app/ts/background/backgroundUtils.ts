@@ -35,7 +35,6 @@ export async function sendPopupMessageToOpenWindows(message: MessageToPopup) {
 
 export async function sendPopupMessageToBackgroundPage(message: PopupMessage) {
 	await browser.runtime.sendMessage(serialize(PopupMessage, message))
-	checkAndThrowRuntimeLastError()
 }
 
 export const INTERNAL_CHANNEL_NAME = 'internalChannel'
@@ -64,7 +63,8 @@ export async function setExtensionIcon(details: browser.action._SetIconDetails) 
 		if (manifest.manifest_version === 2) {
 			await browser.browserAction.setIcon(details)
 		} else {
-			await browser.action.setIcon(details)
+			// see https://issues.chromium.org/issues/337214677
+			await (browser.action.setIcon as unknown as ((details: browser.action._SetIconDetails, callback: () => void) => Promise<void>))(details, () => { browser.runtime.lastError })
 		}
 		checkAndThrowRuntimeLastError()
 	} catch {
@@ -79,7 +79,8 @@ export async function setExtensionBadgeText(details: browser.browserAction._SetB
 		if (manifest.manifest_version === 2) {
 			await browser.browserAction.setBadgeText(details)
 		} else {
-			await browser.action.setBadgeText(details)
+			// see https://issues.chromium.org/issues/337214677
+			await (browser.action.setBadgeText as unknown as ((details: browser.browserAction._SetBadgeTextDetails, callback: () => void) => Promise<void>))(details, () => { browser.runtime.lastError })
 		}
 		checkAndThrowRuntimeLastError()
 	} catch {
@@ -94,7 +95,8 @@ export async function setExtensionBadgeBackgroundColor(details: browser.action._
 		if (manifest.manifest_version === 2) {
 			await browser.browserAction.setBadgeBackgroundColor(details)
 		} else {
-			await browser.action.setBadgeBackgroundColor(details)
+			// see https://issues.chromium.org/issues/337214677
+			await (browser.action.setBadgeBackgroundColor as unknown as ((details: browser.action._SetBadgeBackgroundColorDetails, callback: () => void) => Promise<void>))(details, () => { browser.runtime.lastError })
 		}
 		checkAndThrowRuntimeLastError()
 	} catch {

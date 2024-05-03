@@ -1,6 +1,6 @@
 import { useSignal } from '@preact/signals'
 import { getTokenAmountsWorth } from '../../simulation/priceEstimator.js'
-import { abs, bigintToDecimalString, bigintToRoundedPrettyDecimalString, checksummedAddress } from '../../utils/bigint.js'
+import { abs, bigintToDecimalString, checksummedAddress } from '../../utils/bigint.js'
 import { TokenPriceEstimate } from '../../types/visualizer-types.js'
 import { CopyToClipboard } from './CopyToClipboard.js'
 import { JSX } from 'preact/jsx-runtime'
@@ -10,6 +10,7 @@ import { RenameAddressCallBack } from '../../types/user-interface-types.js'
 import { BIG_FONT_SIZE, ETHEREUM_COIN_ICON, ETHEREUM_LOGS_LOGGER_ADDRESS, NORMAL_FONT_SIZE } from '../../utils/constants.js'
 import { RpcNetwork } from '../../types/rpc.js'
 import { Blockie } from './SVGBlockie.js'
+import { AbbreviatedValue } from './AbbreviatedValue.js'
 
 type EtherParams = {
 	amount: bigint
@@ -38,7 +39,6 @@ type EtherAmountParams = {
 }
 
 export function EtherAmount(param: EtherAmountParams) {
-	const sign = param.showSign ? (param.amount >= 0 ? ' + ' : ' - '): ''
 	const style = {
 		display: 'inline-flex',
 		overflow: 'hidden',
@@ -50,7 +50,9 @@ export function EtherAmount(param: EtherAmountParams) {
 	}
 	return <>
 		<CopyToClipboard content = { bigintToDecimalString(abs(param.amount), 18n) } copyMessage = 'Ether amount copied!' >
-			<p class = 'noselect nopointer' style = { style }>{ `${ sign }${ bigintToRoundedPrettyDecimalString(abs(param.amount), 18n ) }` } </p>
+			<p class = 'noselect nopointer' style = { style }>
+				<AbbreviatedValue amount = { param.amount } />
+			</p>
 		</CopyToClipboard>
 	</>
 }
@@ -109,7 +111,7 @@ type TokenSymbolParams = (
 		tokenEntry: Erc1155Entry | Erc721Entry
 		tokenId: bigint | undefined
 		tokenIdName?: string
-	} | { 
+	} | {
 		tokenEntry: Erc20TokenEntry
 	}
 ) & {
@@ -203,7 +205,9 @@ export function TokenAmount(param: TokenAmountParams) {
 	}
 	return <>
 		<CopyToClipboard content = { bigintToDecimalString(abs(param.amount), param.tokenEntry.decimals) } copyMessage = 'Token amount copied!' >
-			<p class = 'noselect nopointer' style = { style }>{ `${ sign }${ bigintToRoundedPrettyDecimalString(abs(param.amount), param.tokenEntry.decimals ) }` }&nbsp; </p>
+			<p class = 'noselect nopointer' style = { style }>
+				<AbbreviatedValue amount = { param.amount } decimals = { param.tokenEntry.decimals } />
+			</p>
 		</CopyToClipboard>
 	</>
 }

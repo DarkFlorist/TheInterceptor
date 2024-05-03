@@ -57,7 +57,7 @@ export function ProxyTokenTransferVisualisation({ simTx, renameAddressCallBack }
 	if (transfer === undefined) throw new Error('transfer was undefined')
 	const asset = getAsset(transfer, renameAddressCallBack)
 	const senderAfter = simTx.tokenBalancesAfter.find((change) => change.owner === transfer.from.address && change.token === asset.tokenEntry.address && change.tokenId === asset.tokenId)?.balance
-	const senderGasFees = (asset.tokenEntry.address === ETHEREUM_LOGS_LOGGER_ADDRESS && asset.tokenEntry.type === 'ERC20' && transfer.from.address === simTx.transaction.from.address ? simTx.gasSpent * simTx.realizedGasPrice : 0n)
+	const senderGasFees = asset.tokenEntry.address === ETHEREUM_LOGS_LOGGER_ADDRESS && asset.tokenEntry.type === 'ERC20' && transfer.from.address === simTx.transaction.from.address ? simTx.gasSpent * simTx.realizedGasPrice : 0n
 	
 	if (simTx.transferedTo.length === 1) {
 		// proxy send to a single address
@@ -86,7 +86,7 @@ export function ProxyTokenTransferVisualisation({ simTx, renameAddressCallBack }
 		asset = { { ...asset, useFullTokenName: false, fontSize: 'normal' } }
 		sender = { {
 			address: transfer.from,
-			beforeAndAfter : senderAfter === undefined || !('amount' in asset) ? undefined : { before: senderAfter + asset.amount + senderGasFees, after: senderAfter },
+			beforeAndAfter: senderAfter === undefined || !('amount' in asset) ? undefined : { before: senderAfter + asset.amount + senderGasFees, after: senderAfter },
 		} }
 		receivers = { simTx.transferedTo.map((destination) => {
 			const receiverAfter = simTx.tokenBalancesAfter.find((change) => change.owner === destination.entry.address && change.token === asset.tokenEntry.address && change.tokenId === asset.tokenId)?.balance
