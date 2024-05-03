@@ -229,6 +229,7 @@ export function AddNewAddress(param: AddAddressParam) {
 					symbol: incompleteAddressBookEntry.symbol,
 					logoUri: incompleteAddressBookEntry.logoUri,
 					useAsActiveAddress: incompleteAddressBookEntry.useAsActiveAddress,
+					askForAddressAccess: incompleteAddressBookEntry.askForAddressAccess,
 					entrySource: 'User',
 					abi,
 				}
@@ -242,6 +243,7 @@ export function AddNewAddress(param: AddAddressParam) {
 					symbol: incompleteAddressBookEntry.symbol,
 					logoUri: incompleteAddressBookEntry.logoUri,
 					useAsActiveAddress: incompleteAddressBookEntry.useAsActiveAddress,
+					askForAddressAccess: incompleteAddressBookEntry.askForAddressAccess,
 					decimals: undefined,
 					entrySource: 'User',
 					abi,
@@ -257,6 +259,7 @@ export function AddNewAddress(param: AddAddressParam) {
 					decimals: incompleteAddressBookEntry.decimals,
 					logoUri: incompleteAddressBookEntry.logoUri,
 					useAsActiveAddress: incompleteAddressBookEntry.useAsActiveAddress,
+					askForAddressAccess: incompleteAddressBookEntry.askForAddressAccess,
 					entrySource: 'User',
 					abi,
 				}
@@ -268,6 +271,7 @@ export function AddNewAddress(param: AddAddressParam) {
 				address: inputedAddressBigInt,
 				logoUri: incompleteAddressBookEntry.logoUri,
 				useAsActiveAddress: incompleteAddressBookEntry.useAsActiveAddress,
+				askForAddressAccess: incompleteAddressBookEntry.askForAddressAccess,
 				entrySource: 'User',
 				abi,
 			}

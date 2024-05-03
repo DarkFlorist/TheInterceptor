@@ -257,7 +257,7 @@ export function InterceptorAccessList(param: InterceptorAccessListParams) {
 																		useAsActiveAddress: true,
 																		name: checksummedAddress(websiteAccessAddress.address),
 																		address: websiteAccessAddress.address,
-																		askForAddressAccess: false,
+																		askForAddressAccess: true,
 																		entrySource: 'FilledIn',
 																	}}
 																	renameAddressCallBack = { param.renameAddressCallBack }
