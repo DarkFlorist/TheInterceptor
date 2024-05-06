@@ -96,7 +96,7 @@ export async function addOrModifyAddressBookEntry(simulator: Simulator, websiteT
 		}
 		return previousContacts.concat([entry.data])
 	})
-	if (entry.data.type === 'activeAddress') updateWebsiteApprovalAccesses(simulator, websiteTabConnections, await getSettings())
+	if (entry.data.useAsActiveAddress) updateWebsiteApprovalAccesses(simulator, websiteTabConnections, await getSettings())
 	return await sendPopupMessageToOpenWindows({ method: 'popup_addressBookEntriesChanged' })
 }
 
@@ -389,7 +389,7 @@ const getErrorIfAnyWithIncompleteAddressBookEntry = async (ethereum: EthereumCli
 	// check for duplicates
 	const duplicateEntry = await findEntryWithSymbolOrName(incompleteAddressBookEntry.symbol, incompleteAddressBookEntry.name)
 	if (duplicateEntry !== undefined && duplicateEntry.address !== stringToAddress(incompleteAddressBookEntry.address)) {
-		return `There already exists ${ duplicateEntry.type === 'activeAddress' ? 'an address' : duplicateEntry.type } with ${ 'symbol' in duplicateEntry ? `the symbol "${ duplicateEntry.symbol }" and` : '' } the name "${ duplicateEntry.name }".`
+		return `There already exists ${ duplicateEntry.type } with ${ 'symbol' in duplicateEntry ? `the symbol "${ duplicateEntry.symbol }" and` : '' } the name "${ duplicateEntry.name }".`
 	}
 
 	// check that address is valid
@@ -401,9 +401,6 @@ const getErrorIfAnyWithIncompleteAddressBookEntry = async (ethereum: EthereumCli
 				const identifiedAddress = await identifyAddress(ethereum, undefined, address)
 				if (identifiedAddress.entrySource !== 'OnChain' && identifiedAddress.entrySource !== 'FilledIn') {
 					return 'The address already exists. Edit the existing record instead trying to add it again.'
-				}
-				if (identifiedAddress.type !== incompleteAddressBookEntry.type && !(incompleteAddressBookEntry.type === 'activeAddress' && identifiedAddress.type === 'contact') ) {
-					return `The address is a ${ identifiedAddress.type } while you are trying to add ${ incompleteAddressBookEntry.type }.`
 				}
 			}
 		}

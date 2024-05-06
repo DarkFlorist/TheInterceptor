@@ -1,8 +1,8 @@
 import * as funtypes from 'funtypes'
-import { EthereumAddressOrMissing, serialize } from '../types/wire-types.js'
+import { EthereumAddress, EthereumAddressOrMissing, LiteralConverterParserFactory, serialize } from '../types/wire-types.js'
 import { PendingChainChangeConfirmationPromise, RpcConnectionStatus, TabState } from '../types/user-interface-types.js'
 import { CompleteVisualizedSimulation, EthereumSubscriptionsAndFilters } from '../types/visualizer-types.js'
-import { AddressBookEntries, ActiveAddressArray, ContactEntries } from '../types/addressBookTypes.js'
+import { AddressBookEntries, AddressBookEntry, ContactEntries, EntrySource } from '../types/addressBookTypes.js'
 import { Page } from '../types/exportedSettingsTypes.js'
 import { WebsiteAccessArray } from '../types/websiteAccessTypes.js'
 import { SignerName } from '../types/signerTypes.js'
@@ -22,12 +22,21 @@ export const PartialIdsOfOpenedTabs = funtypes.ReadonlyPartial({
 	settingsView: funtypes.Union(funtypes.Undefined, funtypes.Number),
 })
 
+export type OldActiveAddressEntry = funtypes.Static<typeof OldActiveAddressEntry>
+export const OldActiveAddressEntry = funtypes.ReadonlyObject({
+	type: funtypes.Literal('activeAddress'),
+	name: funtypes.String,
+	address: EthereumAddress,
+	askForAddressAccess: funtypes.Union(funtypes.Boolean, funtypes.Literal(undefined).withParser(LiteralConverterParserFactory(undefined, true))),
+	entrySource: EntrySource,
+})
+
 type LocalStorageItems = funtypes.Static<typeof LocalStorageItems>
 const LocalStorageItems = funtypes.ReadonlyPartial({
 	activeSigningAddress: EthereumAddressOrMissing,
 	activeSimulationAddress: EthereumAddressOrMissing,
-	addressInfos: ActiveAddressArray,
-	openedPage: Page,
+	addressInfos: AddressBookEntries,
+	openedPageV2: Page,
 	useSignersAddressAsActiveAddress: funtypes.Boolean,
 	websiteAccess: WebsiteAccessArray,
 	currentRpcNetwork: RpcNetwork,
@@ -45,7 +54,8 @@ const LocalStorageItems = funtypes.ReadonlyPartial({
 	useTabsInsteadOfPopup: funtypes.Boolean,
 	rpcEntries: RpcEntries,
 	metamaskCompatibilityMode: funtypes.Boolean,
-	userAddressBookEntries: AddressBookEntries,
+	userAddressBookEntries: funtypes.ReadonlyArray(funtypes.Union(AddressBookEntry, OldActiveAddressEntry)),
+	userAddressBookEntriesV2: AddressBookEntries,
 	idsOfOpenedTabs: IdsOfOpenedTabs,
 	interceptorDisabled: funtypes.Boolean,
 	interceptorStartSleepingTimestamp: funtypes.Number,
@@ -57,7 +67,7 @@ const LocalStorageKey = funtypes.Union(
 	funtypes.Literal('activeSigningAddress'),
 	funtypes.Literal('activeSimulationAddress'),
 	funtypes.Literal('addressInfos'),
-	funtypes.Literal('openedPage'),
+	funtypes.Literal('openedPageV2'),
 	funtypes.Literal('useSignersAddressAsActiveAddress'),
 	funtypes.Literal('websiteAccess'),
 	funtypes.Literal('currentRpcNetwork'),
@@ -76,6 +86,7 @@ const LocalStorageKey = funtypes.Union(
 	funtypes.Literal('rpcEntries'),
 	funtypes.Literal('metamaskCompatibilityMode'),
 	funtypes.Literal('userAddressBookEntries'),
+	funtypes.Literal('userAddressBookEntriesV2'),
 	funtypes.Literal('idsOfOpenedTabs'),
 	funtypes.Literal('interceptorStartSleepingTimestamp'),
 	funtypes.Literal('latestUnexpectedError'),

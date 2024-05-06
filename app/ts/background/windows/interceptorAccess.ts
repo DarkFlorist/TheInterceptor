@@ -13,9 +13,9 @@ import { getTabState, updatePendingAccessRequests, getPendingAccessRequests, cle
 import { InterceptedRequest, WebsiteSocket } from '../../utils/requests.js'
 import { replyToInterceptedRequest, sendSubscriptionReplyOrCallBack } from '../messageSending.js'
 import { Simulator } from '../../simulation/simulator.js'
-import { ActiveAddressEntry } from '../../types/addressBookTypes.js'
 import { PopupOrTabId, Website, WebsiteAccessArray } from '../../types/websiteAccessTypes.js'
 import { PendingAccessRequest, PendingAccessRequests } from '../../types/accessRequest.js'
+import { AddressBookEntries, AddressBookEntry } from '../../types/addressBookTypes.js'
 
 type OpenedDialogWithListeners = {
 	popupOrTab: PopupOrTab
@@ -51,7 +51,7 @@ export async function resolveInterceptorAccess(simulator: Simulator, websiteTabC
 	return await resolve(simulator, websiteTabConnections, reply, pendingRequest.request, pendingRequest.website)
 }
 
-export async function getAddressMetadataForAccess(websiteAccess: WebsiteAccessArray): Promise<readonly ActiveAddressEntry[]> {
+export async function getAddressMetadataForAccess(websiteAccess: WebsiteAccessArray): Promise<AddressBookEntries> {
 	const addresses = websiteAccess.flatMap((x) => x.addressAccess === undefined ? [] : x.addressAccess?.map((addr) => addr.address))
 	const addressSet = new Set(addresses)
 	return await Promise.all(Array.from(addressSet).map((x) => getActiveAddressEntry(x)))
@@ -98,7 +98,7 @@ export async function requestAccessFromUser(
 	socket: WebsiteSocket,
 	website: Website,
 	request: InterceptedRequest | undefined,
-	requestAccessToAddress: ActiveAddressEntry | undefined,
+	requestAccessToAddress: AddressBookEntry | undefined,
 	settings: Settings,
 	activeAddress: bigint | undefined,
 ) {

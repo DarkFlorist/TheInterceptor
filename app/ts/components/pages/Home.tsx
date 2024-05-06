@@ -11,17 +11,17 @@ import { ToolTip } from '../subcomponents/CopyToClipboard.js'
 import { sendPopupMessageToBackgroundPage } from '../../background/backgroundUtils.js'
 import { TransactionsAndSignedMessages } from '../simulationExplaining/Transactions.js'
 import { DinoSays } from '../subcomponents/DinoSays.js'
-import { ActiveAddress, ActiveAddressEntry } from '../../types/addressBookTypes.js'
 import { RpcEntries, RpcEntry, RpcNetwork } from '../../types/rpc.js'
 import { Website } from '../../types/websiteAccessTypes.js'
 import { TransactionOrMessageIdentifier } from '../../types/interceptor-messages.js'
+import { AddressBookEntries, AddressBookEntry } from '../../types/addressBookTypes.js'
 
 async function enableMakeMeRich(enabled: boolean) {
 	sendPopupMessageToBackgroundPage( { method: 'popup_changeMakeMeRich', data: enabled } )
 }
 
 type SignerExplanationParams = {
-	activeAddress: ActiveAddress | undefined
+	activeAddress: AddressBookEntry | undefined
 	simulationMode: boolean
 	tabState: TabState | undefined
 	useSignersAddressAsActiveAddress: boolean
@@ -115,7 +115,7 @@ function FirstCard(param: FirstCardParams) {
 				}
 
 				<ActiveAddressComponent
-					activeAddress = { param.activeAddress !== undefined ? { type: 'activeAddress', ...param.activeAddress, entrySource: 'User' } : undefined }
+					activeAddress = { param.activeAddress }
 					buttonText = { 'Change' }
 					disableButton = { !param.simulationMode }
 					changeActiveAddress = { param.changeActiveAddress }
@@ -199,8 +199,8 @@ function SimulationResults(param: SimulationStateParam) {
 }
 
 export function Home(param: HomeParams) {
-	const [activeSimulationAddress, setActiveSimulationAddress] = useState<ActiveAddress | undefined>(undefined)
-	const [activeSigningAddress, setActiveSigningAddress] = useState<ActiveAddress | undefined>(undefined)
+	const [activeSimulationAddress, setActiveSimulationAddress] = useState<AddressBookEntry | undefined>(undefined)
+	const [activeSigningAddress, setActiveSigningAddress] = useState<AddressBookEntry | undefined>(undefined)
 	const [useSignersAddressAsActiveAddress, setUseSignersAddressAsActiveAddress] = useState(false)
 	const [simulationAndVisualisationResults, setSimulationAndVisualisationResults] = useState<SimulationAndVisualisationResults | undefined>(undefined)
 	const [rpcNetwork, setSelectedNetwork] = useState<RpcNetwork | undefined>()
@@ -209,7 +209,7 @@ export function Home(param: HomeParams) {
 	const [tabState, setTabState] = useState<TabState | undefined>(undefined)
 	const [isLoaded, setLoaded] = useState<boolean>(false)
 	const [currentBlockNumber, setCurrentBlockNumber] = useState<bigint | undefined>(undefined)
-	const [activeAddresses, setActiveAddresss] = useState<readonly ActiveAddressEntry[] | undefined>(undefined)
+	const [activeAddresses, setActiveAddresses] = useState<AddressBookEntries>([])
 	const [makeMeRich, setMakeMeRich] = useState<boolean>(false)
 	const [disableReset, setDisableReset] = useState<boolean>(false)
 	const [removedTransactionOrSignedMessages, setRemovedTransactionOrSignedMessages] = useState<readonly TransactionOrMessageIdentifier[]>([])
@@ -229,7 +229,7 @@ export function Home(param: HomeParams) {
 		setTabConnection(param.tabIconDetails)
 		setTabState(param.tabState)
 		setCurrentBlockNumber(param.currentBlockNumber)
-		setActiveAddresss(param.activeAddresses)
+		setActiveAddresses(param.activeAddresses)
 		setLoaded(true)
 		setMakeMeRich(param.makeMeRich)
 		setDisableReset(false)

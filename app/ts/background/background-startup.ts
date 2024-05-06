@@ -5,7 +5,7 @@ import { retrieveWebsiteDetails, updateExtensionBadge, updateExtensionIcon } fro
 import { clearTabStates, getPrimaryRpcForChain, getSimulationResults, removeTabState, setRpcConnectionStatus, updateTabState, updateUserAddressBookEntries } from './storageVariables.js'
 import { Simulator } from '../simulation/simulator.js'
 import { TabConnection, TabState, WebsiteTabConnections } from '../types/user-interface-types.js'
-import { EthereumAddress, EthereumBlockHeader } from '../types/wire-types.js'
+import { EthereumBlockHeader } from '../types/wire-types.js'
 import { EthereumClientService } from '../simulation/services/EthereumClientService.js'
 import { getSocketFromPort, sendPopupMessageToOpenWindows, websiteSocketToString } from './backgroundUtils.js'
 import { sendSubscriptionMessagesForNewBlock } from '../simulation/services/EthereumSubscriptionService.js'
@@ -14,14 +14,14 @@ import { Semaphore } from '../utils/semaphore.js'
 import { RawInterceptedRequest, checkAndThrowRuntimeLastError } from '../utils/requests.js'
 import { ICON_NOT_ACTIVE } from '../utils/constants.js'
 import { handleUnexpectedError } from '../utils/errors.js'
-import { browserStorageLocalGet, browserStorageLocalRemove } from '../utils/storageUtils.js'
-import { ActiveAddress, AddressBookEntries } from '../types/addressBookTypes.js'
-import { getUniqueItemsByProperties } from '../utils/typed-arrays.js'
 import { updateContentScriptInjectionStrategyManifestV2 } from '../utils/contentScriptsUpdating.js'
 import { checkIfInterceptorShouldSleep } from './sleeping.js'
 import { addWindowTabListeners } from '../components/ui-utils.js'
 import { onCloseWindowOrTab } from './windows/confirmTransaction.js'
 import { modifyObject } from '../utils/typescript.js'
+import { OldActiveAddressEntry, browserStorageLocalGet, browserStorageLocalRemove } from '../utils/storageUtils.js'
+import { AddressBookEntries, AddressBookEntry } from '../types/addressBookTypes.js'
+import { getUniqueItemsByProperties } from '../utils/typed-arrays.js'
 
 const websiteTabConnections = new Map<number, TabConnection>()
 
@@ -44,22 +44,17 @@ if (browser.runtime.getManifest().manifest_version === 2) {
 }
 
 async function migrateAddressInfoAndContacts() {
-	const results = await browserStorageLocalGet(['addressInfos', 'contacts'])
-	const convertActiveAddressToAddressBookEntry = (info: ActiveAddress) => ({ ...info, type: 'activeAddress' as const, entrySource: 'User' as const })
-	const addressInfos: AddressBookEntries = (results.addressInfos ?? []).map((x) => convertActiveAddressToAddressBookEntry(x))
-	const contacts: AddressBookEntries = results.contacts ?? []
-	if (addressInfos.length > 0 || contacts.length > 0) {
-		await updateUserAddressBookEntries((previousEntries) => getUniqueItemsByProperties(addressInfos.concat(contacts).concat(previousEntries), ['address']))
-		await browserStorageLocalRemove(['addressInfos', 'contacts'])
+	const userAddressBookEntries = (await browserStorageLocalGet(['userAddressBookEntries']))['userAddressBookEntries']
+	const convertOldActiveAddressToAddressBookEntry = (entry: AddressBookEntry | OldActiveAddressEntry): AddressBookEntry => {
+		if (entry.type !== 'activeAddress') return entry
+		return { ...entry, type: 'contact', useAsActiveAddress: true }
 	}
-	await updateUserAddressBookEntries((oldEntries) => {
-		return oldEntries.map((entry) => {
-			const nameAddress = EthereumAddress.safeParse(entry.name)
-			// there used to be a bug that when you renamed address, it did not convert from 'OnChain' to 'User' This fixes it. 
-			if (entry.entrySource === 'OnChain' && !nameAddress.success) return modifyObject(entry, { entrySource: 'User' })
-			return entry
-		})
-	})
+	if (userAddressBookEntries === undefined) return
+	const updated: AddressBookEntries = userAddressBookEntries.map(convertOldActiveAddressToAddressBookEntry)
+	if (updated.length > 0) {
+		await updateUserAddressBookEntries((previousEntries) => getUniqueItemsByProperties(updated.concat(previousEntries), ['address']))
+		await browserStorageLocalRemove(['userAddressBookEntries'])
+	}
 }
 migrateAddressInfoAndContacts()
 

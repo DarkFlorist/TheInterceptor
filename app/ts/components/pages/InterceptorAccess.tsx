@@ -10,7 +10,7 @@ import { ChangeActiveAddress } from './ChangeActiveAddress.js'
 import { DinoSays, DinoSaysNotification } from '../subcomponents/DinoSays.js'
 import { getPrettySignerName } from '../subcomponents/signers.js'
 import { addressString, checksummedAddress } from '../../utils/bigint.js'
-import { ActiveAddressEntry, AddressBookEntry } from '../../types/addressBookTypes.js'
+import { AddressBookEntries, AddressBookEntry } from '../../types/addressBookTypes.js'
 import { Website } from '../../types/websiteAccessTypes.js'
 import { PendingAccessRequest, PendingAccessRequests } from '../../types/accessRequest.js'
 import { Page } from '../../types/exportedSettingsTypes.js'
@@ -52,7 +52,7 @@ function UnderAccesses(param: UnderTransactionsParams) {
 	</div>
 }
 
-function AssociatedTogether({ associatedAddresses, renameAddressCallBack }: { associatedAddresses: readonly ActiveAddressEntry[], renameAddressCallBack: RenameAddressCallBack } ) {
+function AssociatedTogether({ associatedAddresses, renameAddressCallBack }: { associatedAddresses: AddressBookEntries, renameAddressCallBack: RenameAddressCallBack } ) {
 	const [showLogs, setShowLogs] = useState<boolean>(associatedAddresses.length > 1)
 
 	return <>
@@ -171,7 +171,7 @@ const DISABLED_DELAY_MS = 3000
 
 export function InterceptorAccess() {
 	const [pendingAccessRequestArray, setAccessRequest] = useState<PendingAccessRequests>([])
-	const [activeAddresses, setActiveAddresses] = useState<readonly ActiveAddressEntry[]>([])
+	const [activeAddresses, setActiveAddresses] = useState<AddressBookEntries>([])
 	const [appPage, setAppPage] = useState<Page>({ page: 'Home' })
 	const [informationUpdatedTimestamp, setInformationUpdatedTimestamp] = useState(0)
 	const [, setTimeSinceInformationUpdate] = useState(0)
@@ -241,10 +241,11 @@ export function InterceptorAccess() {
 			errorState: undefined,
 			incompleteAddressBookEntry: {
 				addingAddress: false,
-				askForAddressAccess: false,
+				askForAddressAccess: true,
 				symbol: undefined,
 				decimals: undefined,
 				logoUri: undefined,
+				useAsActiveAddress: false,
 				...entry,
 				address: checksummedAddress(entry.address),
 				abi: 'abi' in entry ? entry.abi : undefined
@@ -311,7 +312,8 @@ export function InterceptorAccess() {
 				symbol: undefined,
 				decimals: undefined,
 				logoUri: undefined,
-				type: 'activeAddress',
+				type: 'contact',
+				useAsActiveAddress: true,
 				entrySource: 'FilledIn',
 				address: undefined,
 				abi: undefined

@@ -1,5 +1,5 @@
 import { addressString } from '../utils/bigint.js'
-import { AddressBookEntries, AddressBookEntry, ActiveAddressEntry, ContactEntry, ContractEntry, Erc1155Entry, Erc20TokenEntry, Erc721Entry } from '../types/addressBookTypes.js'
+import { AddressBookEntries, AddressBookEntry, ContactEntry, ContractEntry, Erc1155Entry, Erc20TokenEntry, Erc721Entry } from '../types/addressBookTypes.js'
 import { tokenMetadata, contractMetadata, ContractDefinition, TokenDefinition, Erc721Definition, erc721Metadata, erc1155Metadata, Erc1155Definition } from '@darkflorist/address-metadata'
 import { AddressBookCategory, GetAddressBookDataFilter } from '../types/interceptor-messages.js'
 import { getFullLogoUri } from './metadataUtils.js'
@@ -88,9 +88,9 @@ async function filterAddressBookDataByCategoryAndSearchString(addressBookCategor
 			return search(entries, searchFunction)
 		}
 		case 'My Active Addresses': {
-			const entries = userEntries.filter((entry): entry is ActiveAddressEntry => entry.type === 'activeAddress')
+			const entries = userEntries.filter((entry) => entry.useAsActiveAddress === true)
 			if (searchingDisabled) return entries
-			const searchFunction = (entry: ActiveAddressEntry) => ({
+			const searchFunction = (entry: AddressBookEntry) => ({
 				comparison: fuzzyCompare(searchPattern, trimmedSearch, entry.name.toLowerCase(), addressString(entry.address)),
 				entry,
 			})

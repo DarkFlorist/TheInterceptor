@@ -4,7 +4,7 @@ import { EthereumAddress, EthereumBlockHeader, EthereumQuantity, EthereumTimesta
 import { SimulatedAndVisualizedTransaction, SimulationAndVisualisationResults, SimulationUpdatingState, SimulationResultState, MaybeParsedEvents, ModifyAddressWindowState } from './visualizer-types.js'
 import { IdentifiedSwapWithMetadata } from '../components/simulationExplaining/SwapTransactions.js'
 import { InterceptedRequest, WebsiteSocket } from '../utils/requests.js'
-import { ActiveAddress, ActiveAddressEntry, AddressBookEntry } from './addressBookTypes.js'
+import { AddressBookEntries, AddressBookEntry } from './addressBookTypes.js'
 import { Page } from './exportedSettingsTypes.js'
 import { PopupOrTabId, Website, WebsiteAccessArray } from './websiteAccessTypes.js'
 import { SignerName } from './signerTypes.js'
@@ -16,7 +16,7 @@ export type InterceptorAccessListParams = {
 	setAndSaveAppPage: (page: Page) => void,
 	setWebsiteAccess: StateUpdater<WebsiteAccessArray | undefined>,
 	websiteAccess: WebsiteAccessArray | undefined,
-	websiteAccessAddressMetadata: readonly ActiveAddressEntry[],
+	websiteAccessAddressMetadata: AddressBookEntries,
 	renameAddressCallBack: RenameAddressCallBack,
 }
 
@@ -30,7 +30,7 @@ export type AddAddressParam = {
 export type HomeParams = {
 	setAndSaveAppPage: (page: Page) => void,
 	makeMeRich: boolean,
-	activeAddresses: readonly ActiveAddressEntry[],
+	activeAddresses: AddressBookEntries,
 	tabState: TabState | undefined,
 	activeSimulationAddress: bigint | undefined,
 	activeSigningAddress: bigint | undefined,
@@ -50,7 +50,7 @@ export type HomeParams = {
 }
 
 export type ChangeActiveAddressParam = {
-	activeAddresses: readonly ActiveAddressEntry[]
+	activeAddresses: AddressBookEntries
 	setAndSaveAppPage: (page: Page) => void,
 	setActiveAddressAndInformAboutIt: (address: bigint | 'signer') => void,
 	signerAccounts: readonly bigint[] | undefined,
@@ -60,10 +60,10 @@ export type ChangeActiveAddressParam = {
 }
 
 export type FirstCardParams = {
-	activeAddress: ActiveAddress | undefined,
+	activeAddress: AddressBookEntry | undefined,
 	enableSimulationMode: (x: boolean) => void,
 	useSignersAddressAsActiveAddress: boolean,
-	activeAddresses: readonly ActiveAddressEntry[] | undefined,
+	activeAddresses: AddressBookEntries | undefined,
 	changeActiveRpc: (rpcEntry: RpcEntry) => void,
 	rpcNetwork: RpcNetwork,
 	simulationMode: boolean,

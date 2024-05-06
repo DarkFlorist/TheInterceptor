@@ -1,6 +1,6 @@
 import * as funtypes from 'funtypes'
 import { PopupOrTabId, Website } from './websiteAccessTypes.js'
-import { ActiveAddressEntry, AddressBookEntry } from './addressBookTypes.js'
+import { AddressBookEntry } from './addressBookTypes.js'
 import { EthereumAddress, EthereumQuantity, EthereumTimestamp, OptionalEthereumAddress } from './wire-types.js'
 import { SignerName } from './signerTypes.js'
 import { InterceptedRequest, UniqueRequestIdentifier, WebsiteSocket } from '../utils/requests.js'
@@ -12,9 +12,9 @@ import { SignMessageParams } from './jsonRpc-signing-types.js'
 export type PendingAccessRequest = funtypes.Static<typeof PendingAccessRequest>
 export const PendingAccessRequest = funtypes.ReadonlyObject({
 	website: Website,
-	requestAccessToAddress: funtypes.Union(ActiveAddressEntry, funtypes.Undefined),
-	originalRequestAccessToAddress: funtypes.Union(ActiveAddressEntry, funtypes.Undefined),
-	associatedAddresses: funtypes.ReadonlyArray(ActiveAddressEntry),
+	requestAccessToAddress: funtypes.Union(AddressBookEntry, funtypes.Undefined),
+	originalRequestAccessToAddress: funtypes.Union(AddressBookEntry, funtypes.Undefined),
+	associatedAddresses: funtypes.ReadonlyArray(AddressBookEntry),
 	signerAccounts: funtypes.ReadonlyArray(EthereumAddress),
 	signerName: SignerName,
 	simulationMode: funtypes.Boolean,

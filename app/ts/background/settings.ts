@@ -1,5 +1,5 @@
 import { ETHEREUM_COIN_ICON, MOCK_PRIVATE_KEYS_ADDRESS } from '../utils/constants.js'
-import { ExportedSettings, Page } from '../types/exportedSettingsTypes.js'
+import { ActiveAddress, ExportedSettings, Page } from '../types/exportedSettingsTypes.js'
 import { Settings } from '../types/interceptor-messages.js'
 import { Semaphore } from '../utils/semaphore.js'
 import { EthereumAddress } from '../types/wire-types.js'
@@ -7,23 +7,25 @@ import { WebsiteAccessArray } from '../types/websiteAccessTypes.js'
 import { RpcNetwork } from '../types/rpc.js'
 import { browserStorageLocalGet, browserStorageLocalSet } from '../utils/storageUtils.js'
 import { getUserAddressBookEntries, updateUserAddressBookEntries } from './storageVariables.js'
-import { ActiveAddress } from '../types/addressBookTypes.js'
 import { getUniqueItemsByProperties } from '../utils/typed-arrays.js'
+import { AddressBookEntries, AddressBookEntry } from '../types/addressBookTypes.js'
 
-export const defaultActiveAddresses = [
+export const defaultActiveAddresses: AddressBookEntries = [
 	{
-		type: 'activeAddress' as const,
+		type: 'contact' as const,
 		entrySource: 'User' as const,
 		name: 'vitalik.eth',
 		address: 0xd8da6bf26964af9d7eed9e03e53415d37aa96045n,
 		askForAddressAccess: false,
+		useAsActiveAddress: true,
 	},
 	{
-		type: 'activeAddress' as const,
+		type: 'contact' as const,
 		entrySource: 'User' as const,
 		name: 'Public private key',
 		address: MOCK_PRIVATE_KEYS_ADDRESS,
 		askForAddressAccess: false,
+		useAsActiveAddress: true,
 	}
 ]
 
@@ -92,7 +94,7 @@ export const getWethForChainId = (chainId: bigint) => wethForChainId.get(chainId
 export async function getSettings() : Promise<Settings> {
 	const results = await browserStorageLocalGet([
 		'activeSimulationAddress',
-		'openedPage',
+		'openedPageV2',
 		'useSignersAddressAsActiveAddress',
 		'websiteAccess',
 		'currentRpcNetwork',
@@ -101,7 +103,7 @@ export async function getSettings() : Promise<Settings> {
 	if (defaultRpcs[0] === undefined || defaultActiveAddresses[0] === undefined) throw new Error('default rpc or default address was missing')
 	return {
 		activeSimulationAddress: 'activeSimulationAddress' in results ? results.activeSimulationAddress : defaultActiveAddresses[0].address,
-		openedPage: results.openedPage ?? { page: 'Home' },
+		openedPage: results.openedPageV2 ?? { page: 'Home' },
 		useSignersAddressAsActiveAddress: results.useSignersAddressAsActiveAddress ?? false,
 		websiteAccess: results.websiteAccess ?? [],
 		currentRpcNetwork: results.currentRpcNetwork !== undefined ? results.currentRpcNetwork : defaultRpcs[0],
@@ -113,8 +115,8 @@ export function getInterceptorDisabledSites(settings: Settings): string[] {
 	return settings.websiteAccess.filter((site) => site.interceptorDisabled === true).map((site) => site.website.websiteOrigin)
 }
 
-export const setPage = async (openedPage: Page) => await browserStorageLocalSet({ openedPage })
-export const getPage = async() => (await browserStorageLocalGet('openedPage'))?.openedPage ?? { page: 'Home' }
+export const setPage = async (openedPageV2: Page) => await browserStorageLocalSet({ openedPageV2 })
+export const getPage = async() => (await browserStorageLocalGet('openedPageV2'))?.openedPageV2 ?? { page: 'Home' }
 
 export const setMakeMeRich = async (makeMeRich: boolean) => await browserStorageLocalSet({ makeMeRich })
 export const getMakeMeRich = async() => (await browserStorageLocalGet('makeMeRich'))?.makeMeRich ?? false
@@ -199,7 +201,7 @@ export async function importSettingsAndAddressBook(exportedSetings: ExportedSett
 		await updateUserAddressBookEntries(() => exportedSetings.settings.addressBookEntries)
 	} else {
 		await updateUserAddressBookEntries((previousEntries) => {
-			const convertActiveAddressToAddressBookEntry = (info: ActiveAddress) => ({ ...info, type: 'activeAddress' as const, entrySource: 'User' as const })
+			const convertActiveAddressToAddressBookEntry = (info: ActiveAddress): AddressBookEntry => ({ ...info, type: 'contact' as const, useAsActiveAddress: true,entrySource: 'User' as const })
 			return getUniqueItemsByProperties(previousEntries.concat(exportedSetings.settings.addressInfos.map((x) => convertActiveAddressToAddressBookEntry(x))).concat(exportedSetings.settings.contacts ?? []), ['address'])
 		})
 	}

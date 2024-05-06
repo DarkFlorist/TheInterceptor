@@ -449,10 +449,11 @@ export function ConfirmTransaction() {
 			errorState: undefined,
 			incompleteAddressBookEntry: {
 				addingAddress: false,
-				askForAddressAccess: false,
+				askForAddressAccess: true,
 				symbol: undefined,
 				decimals: undefined,
 				logoUri: undefined,
+				useAsActiveAddress: false,
 				...entry,
 				address: checksummedAddress(entry.address),
 				abi: 'abi' in entry ? entry.abi : undefined

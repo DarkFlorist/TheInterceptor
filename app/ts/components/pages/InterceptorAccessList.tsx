@@ -4,9 +4,9 @@ import { SmallAddress } from '../subcomponents/address.js'
 import { CopyToClipboard } from '../subcomponents/CopyToClipboard.js'
 import { addressString, checksummedAddress } from '../../utils/bigint.js'
 import { sendPopupMessageToBackgroundPage } from '../../background/backgroundUtils.js'
-import { ActiveAddressEntry } from '../../types/addressBookTypes.js'
 import { WebsiteAccess, WebsiteAccessArray, WebsiteAddressAccess } from '../../types/websiteAccessTypes.js'
 import { modifyObject } from '../../utils/typescript.js'
+import { AddressBookEntry } from '../../types/addressBookTypes.js'
 
 interface ModifiedAddressAccess {
 	address: bigint,
@@ -25,7 +25,7 @@ interface EditableAccess {
 
 export function InterceptorAccessList(param: InterceptorAccessListParams) {
 	const [editableAccessList, setEditableAccessList] = useState<readonly EditableAccess[] | undefined>(undefined)
-	const [metadata, setMetadata] = useState<Map<string, ActiveAddressEntry>>(new Map())
+	const [metadata, setMetadata] = useState<Map<string, AddressBookEntry>>(new Map())
 
 	function updateEditableAccessList(newList: WebsiteAccessArray | undefined) {
 		if (newList === undefined) return setEditableAccessList(undefined)
@@ -253,10 +253,11 @@ export function InterceptorAccessList(param: InterceptorAccessListParams) {
 															<div style = 'display: flex; width: 100%; overflow: hidden;'>
 																<SmallAddress
 																	addressBookEntry = { metadata.get(addressString(websiteAccessAddress.address)) || {
-																		type: 'activeAddress',
+																		type: 'contact',
+																		useAsActiveAddress: true,
 																		name: checksummedAddress(websiteAccessAddress.address),
 																		address: websiteAccessAddress.address,
-																		askForAddressAccess: false,
+																		askForAddressAccess: true,
 																		entrySource: 'FilledIn',
 																	}}
 																	renameAddressCallBack = { param.renameAddressCallBack }

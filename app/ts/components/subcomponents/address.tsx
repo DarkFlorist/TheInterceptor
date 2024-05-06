@@ -2,20 +2,16 @@ import { checksummedAddress } from '../../utils/bigint.js'
 import { RenameAddressCallBack } from '../../types/user-interface-types.js'
 import { CopyToClipboard } from './CopyToClipboard.js'
 import { JSX } from 'preact/jsx-runtime'
-import { AddressBookEntry, ActiveAddressEntry } from '../../types/addressBookTypes.js'
+import { AddressBookEntries, AddressBookEntry } from '../../types/addressBookTypes.js'
 import { Website } from '../../types/websiteAccessTypes.js'
 import { Blockie } from './SVGBlockie.js'
 import { ComponentChildren } from 'preact'
 
-export function getActiveAddressEntry(addressToFind: bigint, activeAddresses: readonly ActiveAddressEntry[]) {
+export function getActiveAddressEntry(addressToFind: bigint, activeAddresses: AddressBookEntries): AddressBookEntry {
 	for (const info of activeAddresses) {
 		if (info.address === addressToFind) return info
 	}
-	return {
-		name: checksummedAddress(addressToFind),
-		address: addressToFind,
-		askForAddressAccess: true,
-	}
+	return { name: checksummedAddress(addressToFind), address: addressToFind, askForAddressAccess: true, type: 'contact', useAsActiveAddress: true, entrySource: 'User' }
 }
 
 type AddressIconParams = {

@@ -359,7 +359,7 @@ export function AddressBook() {
 	function openNewAddress(filter: ActiveFilter) {
 		const getTypeFromFilter = (filter: ActiveFilter) => {
 			switch(filter) {
-				case 'My Active Addresses': return 'activeAddress'
+				case 'My Active Addresses': return 'contact'
 				case 'My Contacts': return 'contact'
 				case 'ERC20 Tokens': return 'ERC20'
 				case 'ERC1155 Tokens': return 'ERC1155'
@@ -383,6 +383,7 @@ export function AddressBook() {
 				askForAddressAccess: true,
 				entrySource: 'FilledIn',
 				abi: undefined,
+				useAsActiveAddress: filter === 'My Active Addresses',
 			}
 		} })
 	}
@@ -398,13 +399,14 @@ export function AddressBook() {
 			errorState: undefined,
 			incompleteAddressBookEntry: {
 				addingAddress: false,
-				askForAddressAccess: false,
+				askForAddressAccess: true,
 				symbol: undefined,
 				decimals: undefined,
 				logoUri: undefined,
+				useAsActiveAddress: false,
 				...entry,
 				abi: 'abi' in entry ? entry.abi : undefined,
-				address: checksummedAddress(entry.address)
+				address: checksummedAddress(entry.address),
 			}
 		} })
 	}
