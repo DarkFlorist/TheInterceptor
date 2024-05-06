@@ -342,7 +342,7 @@ export function AddNewAddress(param: AddAddressParam) {
 	}
 	const setUseAsActiveAddress = async (useAsActiveAddress: boolean) => {
 		setAddOrModifyAddressWindowState((previous) => {
-			if (previous === undefined) return previous
+			if (previous === undefined) return undefined
 			const newState = modifyObject(previous, { incompleteAddressBookEntry: modifyObject(previous.incompleteAddressBookEntry, { useAsActiveAddress }) })
 			sendChangeRequest(newState)
 			return newState
