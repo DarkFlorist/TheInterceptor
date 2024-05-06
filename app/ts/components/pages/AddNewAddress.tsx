@@ -173,7 +173,6 @@ export function AddNewAddress(param: AddAddressParam) {
 			const maybeParsed = MessageToPopup.safeParse(msg)
 			if (!maybeParsed.success) return // not a message we are interested in
 			const parsed = maybeParsed.value
-			console.log(parsed)
 			if (parsed.method === 'popup_fetchAbiAndNameFromEtherscanReply') {
 				setCanFetchFromEtherScan(true)
 				return setAddOrModifyAddressWindowState((previous) => {
