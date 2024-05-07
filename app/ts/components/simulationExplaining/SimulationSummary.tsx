@@ -15,6 +15,7 @@ import { EthereumTimestamp } from '../../types/wire-types.js'
 import { RpcNetwork } from '../../types/rpc.js'
 import { AddressBookEntry, Erc1155Entry, Erc20TokenEntry, Erc721Entry } from '../../types/addressBookTypes.js'
 import { Website } from '../../types/websiteAccessTypes.js'
+import { extractTokenEvents } from '../../background/metadataUtils.js'
 
 type Erc20BalanceChangeParams = {
 	erc20TokenBalanceChanges: Erc20TokenBalanceChange[]
@@ -406,11 +407,12 @@ export function TokenLogAnalysisCard({ simTx, renameAddressCallBack }: TokenLogA
 	if (simTx === undefined) return <></>
 	const tokenEventsPlural = 'token events or ETH transactions'
 	const tokenEventsSingular = 'One token event or an ETH transaction'
+	const tokenResults = extractTokenEvents(simTx.events)
 	return <>
 		<div class = 'card' style = 'margin-top: 10px; margin-bottom: 10px'>
 			<header class = 'card-header noselect' style = 'cursor: pointer; height: 30px;' onClick = { () => setShowLogs((prevValue) => !prevValue) }>
 				<p class = 'card-header-title' style = 'font-weight: unset; font-size: 0.8em;'>
-					{ simTx.tokenResults.length === 0 ? `No ${ tokenEventsPlural }` : `${ simTx.tokenResults.length > 1 ? `${ upperCaseFirstCharacter(convertNumberToCharacterRepresentationIfSmallEnough(simTx.tokenResults.length)) } ${ tokenEventsPlural }` : tokenEventsSingular }` }
+					{ tokenResults.length === 0 ? `No ${ tokenEventsPlural }` : `${ tokenResults.length > 1 ? `${ upperCaseFirstCharacter(convertNumberToCharacterRepresentationIfSmallEnough(tokenResults.length)) } ${ tokenEventsPlural }` : tokenEventsSingular }` }
 				</p>
 				<div class = 'card-header-icon'>
 					<span class = 'icon' style = 'color: var(--text-color); font-weight: unset; font-size: 0.8em;'> V </span>

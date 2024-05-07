@@ -6,6 +6,7 @@ import { TokenAmount, TokenOrEthValue, TokenSymbol } from '../subcomponents/coin
 import { AddressBookEntry, Erc1155Entry, Erc20TokenEntry, Erc721Entry } from '../../types/addressBookTypes.js'
 import { assertNever, getWithDefault } from '../../utils/typescript.js'
 import { RenameAddressCallBack } from '../../types/user-interface-types.js'
+import { extractTokenEvents } from '../../background/metadataUtils.js'
 
 type BeforeAfterBalance = funtypes.Static<typeof SwapAsset>
 const BeforeAfterBalance = funtypes.ReadonlyObject({
@@ -57,8 +58,8 @@ interface SwapVisualizationParams {
 
 export function identifySwap(simTransaction: SimulatedAndVisualizedTransaction): IdentifiedSwapWithMetadata {
 	const sender = simTransaction.transaction.from.address
-
-	for (const tokenTransaction of simTransaction.tokenResults) {
+	const tokenEvents = extractTokenEvents(simTransaction.events)
+	for (const tokenTransaction of tokenEvents) {
 		if (tokenTransaction.isApproval && tokenTransaction.from.address === sender) return false // if the transaction includes us approving something, its not a simple swap
 	}
 
@@ -84,7 +85,7 @@ export function identifySwap(simTransaction: SimulatedAndVisualizedTransaction):
 		})
 	}
 
-	for (const logEntry of simTransaction.tokenResults) {
+	for (const logEntry of tokenEvents) {
 		if (logEntry.isApproval) continue // Skip approval entries
 
 		if (logEntry.from.address === sender) {
@@ -154,14 +155,14 @@ function *findSwapRoutes(graph: Graph, currentState: State, goalState: State, pa
 }
 
 export function identifyRoutes(simulatedAndVisualizedTransaction: SimulatedAndVisualizedTransaction, identifiedSwap: IdentifiedSwapWithMetadata) : false | TokenVisualizerResultWithMetadata[] {
-	if ( identifiedSwap === false ) return false
-	const tokenResults = simulatedAndVisualizedTransaction.tokenResults
-	if ( tokenResults.length > 10 ) return false // too complex
+	if (identifiedSwap === false) return false
+	const tokenEvents = extractTokenEvents(simulatedAndVisualizedTransaction.events)
+	if (tokenEvents.length > 10) return false // too complex
 
 	const graph: Graph = new Map()
 
 	// build search graph
-	for (const [tokenResultIndex, result] of tokenResults.entries()) {
+	for (const [tokenResultIndex, result] of tokenEvents.entries()) {
 		const fromAddress = addressString(result.from.address)
 		const toAddress = addressString(result.to.address)
 		const tokenAddress = addressString(result.token.address)
@@ -180,7 +181,7 @@ export function identifyRoutes(simulatedAndVisualizedTransaction: SimulatedAndVi
 	// traverse chain
 	const startToken = addressString(identifiedSwap.sendAsset.token.address)
 	const endToken = addressString(identifiedSwap.receiveAsset.token.address)
-	const lastIndex = endToken !== undefined ? tokenResults.findIndex((x) => (x.to.address === identifiedSwap.sender.address && addressString(x.token.address) === endToken ) ) : -1
+	const lastIndex = endToken !== undefined ? tokenEvents.findIndex((x) => (x.to.address === identifiedSwap.sender.address && addressString(x.token.address) === endToken)) : -1
 	const routes = [...findSwapRoutes(graph,
 		{
 			fromAddress: addressString(identifiedSwap.sender.address),
@@ -206,16 +207,16 @@ export function identifyRoutes(simulatedAndVisualizedTransaction: SimulatedAndVi
 	}
 	const route = uniqueByKeepFirst(routes.flat())
 
-	if ( route.length === 0) return false
+	if (route.length === 0) return false
 
 	function sortAccordingArrayIfNotMaintainOrder(a: TokenVisualizerResultWithMetadata, b: TokenVisualizerResultWithMetadata) {
-		const indexOfA = route.findIndex( (x) => a.from.address === BigInt(x.fromAddress) && BigInt(x.toAddress) === a.to.address && addressString(a.token.address) === x.currentTokenAddress )
-		const indexOfB = route.findIndex( (x) => b.from.address === BigInt(x.fromAddress) && BigInt(x.toAddress) === b.to.address && addressString(b.token.address) === x.currentTokenAddress )
-		const v = (indexOfA >= 0 ? indexOfA : route.length + tokenResults.indexOf(a) ) - (indexOfB >= 0 ? indexOfB : route.length + tokenResults.indexOf(b))
+		const indexOfA = route.findIndex((x) => a.from.address === BigInt(x.fromAddress) && BigInt(x.toAddress) === a.to.address && addressString(a.token.address) === x.currentTokenAddress)
+		const indexOfB = route.findIndex((x) => b.from.address === BigInt(x.fromAddress) && BigInt(x.toAddress) === b.to.address && addressString(b.token.address) === x.currentTokenAddress)
+		const v = (indexOfA >= 0 ? indexOfA : route.length + tokenEvents.indexOf(a) ) - (indexOfB >= 0 ? indexOfB : route.length + tokenEvents.indexOf(b))
 		return v
 	}
 
-	const sorted = [ ...tokenResults ].sort(sortAccordingArrayIfNotMaintainOrder)
+	const sorted = [ ...tokenEvents ].sort(sortAccordingArrayIfNotMaintainOrder)
 
 	return sorted
 }

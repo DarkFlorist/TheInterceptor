@@ -30,8 +30,15 @@ export const DEPOSIT_LOG = ethers.keccak256(ethers.toUtf8Bytes('Deposit(address,
 export const WITHDRAWAL_LOG = ethers.keccak256(ethers.toUtf8Bytes('Withdrawal(address,uint256)'))
 export const ERC1155_TRANSFERBATCH_LOG = ethers.keccak256(ethers.toUtf8Bytes('TransferBatch(address,address,address,uint256[],uint256[])'))
 export const ERC1155_TRANSFERSINGLE_LOG = ethers.keccak256(ethers.toUtf8Bytes('TransferSingle(address,address,address,uint256,uint256)'))
+
+// ENS event signatures
+export const ENS_ADDR_CHANGED = ethers.keccak256(ethers.toUtf8Bytes('AddrChanged(bytes32,address)'))
+export const ENS_ADDRESS_CHANGED = ethers.keccak256(ethers.toUtf8Bytes('AddressChanged(bytes32,uint256,bytes)'))
+
 // Other
 export const MOCK_ADDRESS = 0xdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefn
+export const ENS_PUBLIC_RESOLVER = 0x231b0Ee14048e9dCcD1d247744d114a4EB5E8E63n
+export const ENS_TOKEN_WRAPPER = 0xD4416b13d2b3a9aBae7AcD5D6C2BbDBE25686401n //mainnet only
 
 // https://blog.logrocket.com/understanding-resolving-metamask-error-codes/#4001
 export const METAMASK_ERROR_USER_REJECTED_REQUEST = 4001

@@ -1,7 +1,7 @@
 import { ethers } from 'ethers'
 import { EthereumClientService } from '../simulation/services/EthereumClientService.js'
 import { bytes32String, stringToUint8Array } from './bigint.js'
-import { MOCK_ADDRESS } from './constants.js'
+import { ENS_TOKEN_WRAPPER, MOCK_ADDRESS } from './constants.js'
 
 // parses ens string, eg vitalik.eth from the wrapped ens names() return value
 function encodeEthereumNameServiceString(data: string): string | undefined {
@@ -23,14 +23,13 @@ function encodeEthereumNameServiceString(data: string): string | undefined {
 	return encodedData.map((part) => new TextDecoder().decode(stringToUint8Array(`0x${ part }`))).join('.')
 }
 
-export const EthereumNameServiceTokenWrapper = 0xD4416b13d2b3a9aBae7AcD5D6C2BbDBE25686401n //mainnet only
 export const getEthereumNameServiceNameFromTokenId = async (ethereumMainnet: EthereumClientService, requestAbortController: AbortController | undefined, tokenId: bigint) : Promise<string | undefined> => {
 	if (ethereumMainnet.getChainId() !== 1n) return undefined
 	const wrappedEthereumNameService1155TokenInterface = new ethers.Interface(['function names(bytes32) public view returns (bytes)'])
 	const tx = {
 		type: '1559' as const,
 		from: MOCK_ADDRESS,
-		to: EthereumNameServiceTokenWrapper,
+		to: ENS_TOKEN_WRAPPER,
 		value: 0n,
 		maxFeePerGas: 0n,
 		maxPriorityFeePerGas: 0n,

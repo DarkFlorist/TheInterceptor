@@ -13,6 +13,7 @@ import { GovernanceVoteInputParameters } from '../../types/interceptor-messages.
 import { UniqueRequestIdentifier } from '../../utils/requests.js'
 import { findDeadEnds } from '../../utils/findDeadEnds.js'
 import { EthereumAddress, EthereumQuantity } from '../../types/wire-types.js'
+import { extractTokenEvents } from '../../background/metadataUtils.js'
 
 type IdentifiedTransactionBase = {
 	title: string
@@ -33,7 +34,8 @@ type IdentifiedTransaction =
 
 function identifySimpleApproval(simTx: SimulatedAndVisualizedTransaction) {
 	if (getSimpleTokenApprovalOrUndefined(simTx)) {
-		const tokenResult = simTx.tokenResults[0]
+		const tokenResults = extractTokenEvents(simTx.events)
+		const tokenResult = tokenResults[0]
 		if (tokenResult === undefined) throw new Error('token result were undefined')
 		const symbol = tokenResult.token.symbol
 		switch (tokenResult.type) {
@@ -136,10 +138,11 @@ const SimulatedAndVisualizedSimpleApprovalTransaction = funtypes.Intersect(
 )
 
 function isSimpleTokenApproval(simTx: SimulatedAndVisualizedTransaction): simTx is SimulatedAndVisualizedSimpleApprovalTransaction {
-	const tokenResult = simTx.tokenResults[0]
+	const tokenResults = extractTokenEvents(simTx.events)
+	const tokenResult = tokenResults[0]
 	if (tokenResult === undefined) return false
 	if (!(simTx.transaction.value === 0n
-		&& simTx.tokenResults.length === 1
+		&& tokenResults.length === 1
 		&& tokenResult.isApproval === true
 		&& tokenResult.from.address !== tokenResult.to.address
 		&& tokenResult.from === simTx.transaction.from
@@ -166,9 +169,10 @@ export const SimulatedAndVisualizedSimpleTokenTransferTransaction = funtypes.Int
 )
 
 function isSimpleTokenTransfer(transaction: SimulatedAndVisualizedTransaction): transaction is SimulatedAndVisualizedSimpleTokenTransferTransaction {
-	const tokenResult = transaction.tokenResults[0]
+	const tokenResults = extractTokenEvents(transaction.events)
+	const tokenResult = tokenResults[0]
 	if (tokenResult === undefined) return false
-	if (transaction.tokenResults.length === 1
+	if (tokenResults.length === 1
 		&& tokenResult.isApproval === false
 		&& tokenResult.from.address !== tokenResult.to.address
 		&& tokenResult.from.address === transaction.transaction.from.address) return true
@@ -205,22 +209,23 @@ const getNetSums = (edges: readonly { from: EthereumAddress, to: EthereumAddress
 }
 
 function isProxyTokenTransfer(transaction: SimulatedAndVisualizedTransaction): transaction is SimulatedAndVisualizedProxyTokenTransferTransaction {
+	const tokenResults = extractTokenEvents(transaction.events)
 	// there need to be atleast two logs (otherwise its a simple send)
-	if (transaction.tokenResults.length < 2) return false
+	if (tokenResults.length < 2) return false
 	// no approvals allowed
-	if (transaction.tokenResults.filter((result) => result.isApproval).length !== 0) return false
+	if (tokenResults.filter((result) => result.isApproval).length !== 0) return false
 	// sender has only one token leaving by logs (gas fees are not in logs)
-	const senderLogs = transaction.tokenResults.filter((result) => result.from.address === transaction.transaction.from.address)
+	const senderLogs = tokenResults.filter((result) => result.from.address === transaction.transaction.from.address)
 	const senderLog = senderLogs[0]
 	if (senderLogs.length !== 1 || senderLog === undefined) return false
 	// sender does not receive any tokens
-	if (transaction.tokenResults.filter((result) => result.to.address === transaction.transaction.from.address).length !== 0) return false
+	if (tokenResults.filter((result) => result.to.address === transaction.transaction.from.address).length !== 0) return false
 	// only one token of specific address is being transacted in the logs
-	if (transaction.tokenResults.filter((result) => result.token.address !== senderLog.token.address).length !== 0) return false
+	if (tokenResults.filter((result) => result.token.address !== senderLog.token.address).length !== 0) return false
 	// only one token id (or undefined) is mentioned inte the logs
-	if (new Set(transaction.tokenResults.map((result) => 'tokenId' in result ? result.tokenId : undefined)).size !== 1) return false
+	if (new Set(tokenResults.map((result) => 'tokenId' in result ? result.tokenId : undefined)).size !== 1) return false
 	// can find a path
-	const edges = transaction.tokenResults.map((tokenResult) => ({ from: tokenResult.from.address, to: tokenResult.to.address, data: tokenResult.to, amount: !tokenResult.isApproval && tokenResult.type !== 'ERC721' ? tokenResult.amount : 1n }))
+	const edges = tokenResults.map((tokenResult) => ({ from: tokenResult.from.address, to: tokenResult.to.address, data: tokenResult.to, amount: !tokenResult.isApproval && tokenResult.type !== 'ERC721' ? tokenResult.amount : 1n }))
 	const deadEnds = findDeadEnds(edges, transaction.transaction.from.address)
 	if (deadEnds.size === 0) return false
 

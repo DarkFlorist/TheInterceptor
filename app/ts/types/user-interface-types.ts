@@ -1,7 +1,7 @@
 import { StateUpdater } from 'preact/hooks'
 import * as funtypes from 'funtypes'
 import { EthereumAddress, EthereumBlockHeader, EthereumQuantity, EthereumTimestamp, OptionalEthereumAddress } from './wire-types.js'
-import { SimulatedAndVisualizedTransaction, SimulationAndVisualisationResults, SimulationUpdatingState, SimulationResultState, MaybeParsedEvents, ModifyAddressWindowState } from './visualizer-types.js'
+import { SimulatedAndVisualizedTransaction, SimulationAndVisualisationResults, SimulationUpdatingState, SimulationResultState, ModifyAddressWindowState, EnrichedEthereumEventWithMetadata } from './visualizer-types.js'
 import { IdentifiedSwapWithMetadata } from '../components/simulationExplaining/SwapTransactions.js'
 import { InterceptedRequest, WebsiteSocket } from '../utils/requests.js'
 import { AddressBookEntries, AddressBookEntry } from './addressBookTypes.js'
@@ -95,7 +95,7 @@ export type LogAnalysisParams = {
 }
 
 export type NonLogAnalysisParams = {
-	nonTokenLogs: MaybeParsedEvents
+	nonTokenLogs: readonly EnrichedEthereumEventWithMetadata[]
 	addressMetaData: readonly AddressBookEntry[]
 	renameAddressCallBack: RenameAddressCallBack
 }

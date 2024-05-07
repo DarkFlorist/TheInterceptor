@@ -11,6 +11,7 @@ import { PendingAccessRequests, PendingTransactionOrSignableMessage } from '../t
 import { RpcEntries, RpcNetwork } from '../types/rpc.js'
 import { replaceElementInReadonlyArray } from '../utils/typed-arrays.js'
 import { UnexpectedErrorOccured } from '../types/interceptor-messages.js'
+import { ENSNameHash } from '../types/ens.js'
 
 export const getIdsOfOpenedTabs = async () => (await browserStorageLocalGet('idsOfOpenedTabs'))?.idsOfOpenedTabs ?? { settingsView: undefined, addressBook: undefined}
 export const setIdsOfOpenedTabs = async (ids: PartialIdsOfOpenedTabs) => await browserStorageLocalSet({ idsOfOpenedTabs: { ...await getIdsOfOpenedTabs(), ...ids } })
@@ -247,3 +248,14 @@ export async function setLatestUnexpectedError(latestUnexpectedError: Unexpected
 }
 
 export const getLatestUnexpectedError = async () => (await browserStorageLocalGet('latestUnexpectedError'))?.latestUnexpectedError
+
+export const getEnsNodeHashes = async () => (await browserStorageLocalGet('ensNameHashes'))?.ensNameHashes ?? []
+
+const ensNodeHashesSemaphore = new Semaphore(1)
+export async function addEnsNodeHash(entry: ENSNameHash) {
+	await ensNodeHashesSemaphore.execute(async () => {
+		const oldEntries = await getEnsNodeHashes() || []
+		if (oldEntries.find((old) => old.nameHash === entry.nameHash)) return
+		return await browserStorageLocalSet({ ensNameHashes: [...oldEntries, entry] })
+	})
+}

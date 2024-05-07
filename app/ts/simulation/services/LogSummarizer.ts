@@ -2,6 +2,7 @@ import { addressString } from '../../utils/bigint.js'
 import { Erc721TokenApprovalChange, SimulatedAndVisualizedTransaction, ERC20TokenApprovalChange, Erc20TokenBalanceChange, TokenPriceEstimate, TokenVisualizerResultWithMetadata, NamedTokenId } from '../../types/visualizer-types.js'
 import { AddressBookEntry, Erc1155Entry, Erc721Entry } from '../../types/addressBookTypes.js'
 import { ETHEREUM_LOGS_LOGGER_ADDRESS } from '../../utils/constants.js'
+import { extractTokenEvents } from '../../background/metadataUtils.js'
 export type BalanceChangeSummary = {
 	erc20TokenBalanceChanges: Map<string, bigint>, // token address, amount
 	erc20TokenApprovalChanges: Map<string, Map<string, bigint > > // token address, approved address, amount
@@ -157,7 +158,7 @@ export class LogSummarizer {
 	}
 
 	private updateTokenChanges = (result: SimulatedAndVisualizedTransaction) => {
-		for (const change of result.tokenResults) {
+		for (const change of extractTokenEvents(result.events)) {
 			const from = addressString(change.from.address)
 			const to = addressString(change.to.address)
 			const tokenAddress = addressString(change.token.address)
