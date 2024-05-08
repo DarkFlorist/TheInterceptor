@@ -113,7 +113,6 @@ export function handleERC1155TransferSingle(eventLog: EthereumEvent): TokenVisua
 
 // event AddressChanged(bytes32 indexed node, uint coinType, bytes newAddress)
 export function handleEnsAddressChanged(eventLog: ParsedEvent) {
-	console.log(eventLog)
 	if (eventLog.args[0]?.typeValue.type !== 'fixedBytes' || eventLog.args[1]?.typeValue.type !== 'unsignedInteger' || eventLog.args[2]?.typeValue.type !== 'bytes') throw new Error('Malformed ENS AddrChanged Event')
 	return {
 		node: EthereumBytes32.parse(dataStringWith0xStart(eventLog.args[0].typeValue.value)),
