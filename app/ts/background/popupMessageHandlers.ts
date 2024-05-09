@@ -9,7 +9,7 @@ import { resolveChainChange } from './windows/changeChain.js'
 import { sendMessageToApprovedWebsitePorts, setInterceptorDisabledForWebsite, updateWebsiteApprovalAccesses } from './accessManagement.js'
 import { getHtmlFile, sendPopupMessageToOpenWindows } from './backgroundUtils.js'
 import { findEntryWithSymbolOrName, getMetadataForAddressBookData } from './medataSearch.js'
-import { getActiveAddresses, getAddressBookEntriesForVisualiser, identifyAddress, nameTokenIds, retrieveEnsNodeHashes } from './metadataUtils.js'
+import { getActiveAddresses, getAddressBookEntriesForVisualiser, identifyAddress, nameTokenIds, retrieveEnsLabelHashes, retrieveEnsNodeHashes } from './metadataUtils.js'
 import { WebsiteTabConnections } from '../types/user-interface-types.js'
 import { EthereumClientService } from '../simulation/services/EthereumClientService.js'
 import { refreshSimulationState, removeSignedMessageFromSimulation, removeTransactionAndUpdateTransactionNonces, resetSimulationState } from '../simulation/services/SimulationModeEthereumClientService.js'
@@ -175,8 +175,9 @@ export async function refreshPopupConfirmTransactionMetadata(ethereumClientServi
 	const eventsForEachTransaction = await Promise.all(data.eventsForEachTransaction.map(async(transactionsEvents) => await parseEvents(transactionsEvents.map((event) => event), ethereumClientService, requestAbortController)))
 	const allEvents = eventsForEachTransaction.flat()
 	const addressBookEntriesPromise = getAddressBookEntriesForVisualiser(ethereumClientService, requestAbortController, allEvents, data.simulationState)
-	const namedTokenIdsPromise = nameTokenIds(ethereumClientService, requestAbortController, allEvents)
+	const namedTokenIdsPromise = nameTokenIds(ethereumClientService, allEvents)
 	const ensNameHashesPromise = retrieveEnsNodeHashes(ethereumClientService, allEvents)
+	const ensLabelHashesPromise = retrieveEnsLabelHashes(allEvents)
 	const addressBookEntries = await addressBookEntriesPromise
 	const namedTokenIds = await namedTokenIdsPromise
 	if (first === undefined || (first.transactionOrMessageCreationStatus !== 'Simulated' && first.transactionOrMessageCreationStatus !== 'FailedToSimulate') || first.simulationResults === undefined || first.simulationResults.statusCode !== 'success') return
@@ -190,7 +191,7 @@ export async function refreshPopupConfirmTransactionMetadata(ethereumClientServi
 				{ simulationResults: {
 					statusCode: 'success',
 					data: modifyObject(first.simulationResults.data, {
-						simulatedAndVisualizedTransactions: formSimulatedAndVisualizedTransaction(first.simulationResults.data.simulationState, eventsForEachTransaction, first.simulationResults.data.protectors, addressBookEntries, namedTokenIds, await ensNameHashesPromise),
+						simulatedAndVisualizedTransactions: formSimulatedAndVisualizedTransaction(first.simulationResults.data.simulationState, eventsForEachTransaction, first.simulationResults.data.protectors, addressBookEntries, namedTokenIds, { ensNameHashes: await ensNameHashesPromise, ensLabelHashes: await ensLabelHashesPromise }),
 						addressBookEntries,
 						eventsForEachTransaction,
 					})

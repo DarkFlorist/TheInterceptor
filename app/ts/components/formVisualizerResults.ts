@@ -3,9 +3,9 @@ import { EnrichedEthereumEventWithMetadata, EnrichedEthereumEvents, NamedTokenId
 import { AddressBookEntry } from '../types/addressBookTypes.js'
 import { Interface } from 'ethers'
 import { decodeEthereumError } from '../utils/errorDecoding.js'
-import { MaybeENSNameHashes } from '../types/ens.js'
+import { MaybeENSLabelHashes, MaybeENSNameHashes } from '../types/ens.js'
 
-export function formSimulatedAndVisualizedTransaction(simState: SimulationState, eventsForEachTransaction: readonly EnrichedEthereumEvents[], protectorResults: readonly ProtectorResults[], addressBookEntries: readonly AddressBookEntry[], namedTokenIds: readonly NamedTokenId[], ensNameHashes: MaybeENSNameHashes): readonly SimulatedAndVisualizedTransaction[] {
+export function formSimulatedAndVisualizedTransaction(simState: SimulationState, eventsForEachTransaction: readonly EnrichedEthereumEvents[], protectorResults: readonly ProtectorResults[], addressBookEntries: readonly AddressBookEntry[], namedTokenIds: readonly NamedTokenId[], ens: { ensNameHashes: MaybeENSNameHashes, ensLabelHashes: MaybeENSLabelHashes }): readonly SimulatedAndVisualizedTransaction[] {
 	const addressMetaData = new Map(addressBookEntries.map((x) => [addressString(x.address), x]))
 	return simState.simulatedTransactions.map((simulatedTx, index) => {
 		const from = addressMetaData.get(addressString(simulatedTx.signedTransaction.from))
@@ -47,12 +47,20 @@ export function formSimulatedAndVisualizedTransaction(simState: SimulationState,
 				case 'ENSAddrChanged': {
 					const to = addressMetaData.get(addressString(event.logInformation.to))
 					if (to === undefined) throw new Error('missing metadata')
-					const node = ensNameHashes.find((nameHash) => nameHash.nameHash === event.logInformation.node) ?? { nameHash: event.logInformation.node, name: undefined }
+					const node = ens.ensNameHashes.find((nameHash) => nameHash.nameHash === event.logInformation.node) ?? { nameHash: event.logInformation.node, name: undefined }
 					return { ...event, logInformation: { ...event.logInformation, to, node } }
 				}
 				case 'ENSAddressChanged': {
-					const node = ensNameHashes.find((nameHash) => nameHash.nameHash === event.logInformation.node) ?? { nameHash: event.logInformation.node, name: undefined }
+					const node = ens.ensNameHashes.find((nameHash) => nameHash.nameHash === event.logInformation.node) ?? { nameHash: event.logInformation.node, name: undefined }
 					return { ...event, logInformation: { ...event.logInformation, node } }
+				}
+				case 'ENSRegistrarNameRenewed': {
+					const labelHash = ens.ensLabelHashes.find((nameHash) => nameHash.labelHash === event.logInformation.labelHash) ?? { labelHash: event.logInformation.labelHash, label: undefined }
+					return { ...event, logInformation: { ...event.logInformation, labelHash } }
+				}
+				case 'ENSNameRenewed': {
+					const labelHash = ens.ensLabelHashes.find((nameHash) => nameHash.labelHash === event.logInformation.labelHash) ?? { labelHash: event.logInformation.labelHash, label: undefined }
+					return { ...event, logInformation: { ...event.logInformation, labelHash } }
 				}
 				default: return event
 			}
@@ -63,7 +71,7 @@ export function formSimulatedAndVisualizedTransaction(simState: SimulationState,
 			return otherFields
 		}
 		const otherFields = removeFromAndToFromSignedTransaction()
-		const availableAbis = addressBookEntries.map((entry) => 'abi' in entry && entry.abi !== undefined ? new Interface(entry.abi) : undefined).filter((abiOrUndefined): abiOrUndefined is Interface => abiOrUndefined !== undefined)
+		const availableAbis = addressBookEntries.map((entry) => 'abi' in entry && entry.abi !== undefined && entry.abi !== '' ?  new Interface(entry.abi) : undefined).filter((abiOrUndefined): abiOrUndefined is Interface => abiOrUndefined !== undefined)
 		return {
 			transaction: { from, to, rpcNetwork: simState.rpcNetwork, ...otherFields },
 			...(to !== undefined ? { to } : {}),

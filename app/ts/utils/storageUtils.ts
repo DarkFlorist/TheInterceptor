@@ -9,7 +9,7 @@ import { SignerName } from '../types/signerTypes.js'
 import { PendingAccessRequests, PendingTransactionOrSignableMessage } from '../types/accessRequest.js'
 import { RpcEntries, RpcNetwork } from '../types/rpc.js'
 import { UnexpectedErrorOccured } from '../types/interceptor-messages.js'
-import { ENSNameHashes } from '../types/ens.js'
+import { ENSLabelHashes, ENSNameHashes } from '../types/ens.js'
 
 type IdsOfOpenedTabs = funtypes.Static<typeof IdsOfOpenedTabs>
 const IdsOfOpenedTabs = funtypes.ReadonlyObject({
@@ -60,6 +60,7 @@ const LocalStorageItems = funtypes.ReadonlyPartial({
 	interceptorStartSleepingTimestamp: funtypes.Number,
 	latestUnexpectedError: UnexpectedErrorOccured,
 	ensNameHashes: ENSNameHashes,
+	ensLabelHashes: ENSLabelHashes,
 })
 
 type LocalStorageKey = funtypes.Static<typeof LocalStorageKey>
@@ -89,6 +90,7 @@ const LocalStorageKey = funtypes.Union(
 	funtypes.Literal('interceptorStartSleepingTimestamp'),
 	funtypes.Literal('latestUnexpectedError'),
 	funtypes.Literal('ensNameHashes'),
+	funtypes.Literal('ensLabelHashes'),
 )
 
 export async function browserStorageLocalGet(keys: LocalStorageKey | LocalStorageKey[]): Promise<LocalStorageItems> {

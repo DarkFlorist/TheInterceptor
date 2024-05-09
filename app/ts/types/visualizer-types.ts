@@ -12,7 +12,7 @@ import { SignMessageParams } from './jsonRpc-signing-types.js'
 import { PureGroupedSolidityType } from './solidityType.js'
 import { TransactionOrMessageIdentifier } from './interceptor-messages.js'
 import { EthSimulateV1CallResult } from './ethSimulate-types.js'
-import { MaybeENSNameHash } from './ens.js'
+import { MaybeENSLabelHash, MaybeENSNameHash } from './ens.js'
 
 type SolidityVariable = funtypes.Static<typeof SolidityVariable>
 const SolidityVariable = funtypes.ReadonlyObject({
@@ -102,7 +102,23 @@ export const EnrichedEthereumEvent = funtypes.Union(
 			funtypes.ReadonlyObject({
 				type: funtypes.Literal('TokenEvent'),
 				logInformation: TokenVisualizerResult
-			})
+			}),
+			funtypes.ReadonlyObject({
+				type: funtypes.Literal('ENSRegistrarNameRenewed'),
+				logInformation: funtypes.ReadonlyObject({
+					name: funtypes.String,
+					labelHash: EthereumBytes32,
+					cost: EthereumQuantity,
+					expires: EthereumQuantity,
+				}),
+			}),
+			funtypes.ReadonlyObject({
+				type: funtypes.Literal('ENSNameRenewed'),
+				logInformation: funtypes.ReadonlyObject({
+					labelHash: EthereumBytes32,
+					expires: EthereumQuantity
+				}),
+			}),
 		)
 	)
 )
@@ -210,6 +226,22 @@ export const EnrichedEthereumEventWithMetadata = funtypes.Union(
 					node: MaybeENSNameHash,
 					to: EthereumData,
 					coinType: EthereumQuantity,
+				}),
+			}),
+			funtypes.ReadonlyObject({
+				type: funtypes.Literal('ENSRegistrarNameRenewed'),
+				logInformation: funtypes.ReadonlyObject({
+					name: funtypes.String,
+					labelHash: MaybeENSLabelHash,
+					cost: EthereumQuantity,
+					expires: EthereumQuantity,
+				}),
+			}),
+			funtypes.ReadonlyObject({
+				type: funtypes.Literal('ENSNameRenewed'),
+				logInformation: funtypes.ReadonlyObject({
+					labelHash: MaybeENSLabelHash,
+					expires: EthereumQuantity
 				}),
 			}),
 		)

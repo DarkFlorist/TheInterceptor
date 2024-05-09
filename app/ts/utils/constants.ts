@@ -34,11 +34,15 @@ export const ERC1155_TRANSFERSINGLE_LOG = ethers.keccak256(ethers.toUtf8Bytes('T
 // ENS event signatures
 export const ENS_ADDR_CHANGED = ethers.keccak256(ethers.toUtf8Bytes('AddrChanged(bytes32,address)'))
 export const ENS_ADDRESS_CHANGED = ethers.keccak256(ethers.toUtf8Bytes('AddressChanged(bytes32,uint256,bytes)'))
+export const ENS_REGISTRAR_NAME_RENEWED = ethers.keccak256(ethers.toUtf8Bytes('NameRenewed(string,bytes32,uint256,uint256)'))
+export const ENS_NAME_RENEWED = ethers.keccak256(ethers.toUtf8Bytes('NameRenewed(uint256,uint256)'))
 
 // Other
 export const MOCK_ADDRESS = 0xdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefn
 export const ENS_PUBLIC_RESOLVER = 0x231b0Ee14048e9dCcD1d247744d114a4EB5E8E63n
 export const ENS_TOKEN_WRAPPER = 0xD4416b13d2b3a9aBae7AcD5D6C2BbDBE25686401n //mainnet only
+export const ENS_ETH_REGISTRAR_CONTROLLER = 0x253553366Da8546fC250F225fe3d25d0C782303bn
+export const ENS_ETHEREUM_NAME_SERVICE = 0x57f1887a8BF19b14fC0dF6Fd9B2acc9Af147eA85n
 
 // https://blog.logrocket.com/understanding-resolving-metamask-error-codes/#4001
 export const METAMASK_ERROR_USER_REJECTED_REQUEST = 4001

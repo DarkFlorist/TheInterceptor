@@ -9,8 +9,8 @@ import { eoaCalldata } from './protectors/eoaCalldata.js'
 import { tokenToContract } from './protectors/tokenToContract.js'
 import { WebsiteCreatedEthereumUnsignedTransaction, SimulationState, TokenVisualizerResult, EnrichedEthereumEvent, ParsedEvent } from '../types/visualizer-types.js'
 import { EthereumJSONRpcRequestHandler } from './services/EthereumJSONRpcRequestHandler.js'
-import { APPROVAL_LOG, DEPOSIT_LOG, ENS_ADDRESS_CHANGED, ENS_ADDR_CHANGED, ENS_PUBLIC_RESOLVER, ERC1155_TRANSFERBATCH_LOG, ERC1155_TRANSFERSINGLE_LOG, ERC721_APPROVAL_FOR_ALL_LOG, TRANSFER_LOG, WITHDRAWAL_LOG } from '../utils/constants.js'
-import { handleApprovalLog, handleDepositLog, handleERC1155TransferBatch, handleERC1155TransferSingle, handleERC20TransferLog, handleEnsAddrChanged, handleEnsAddressChanged, handleErc721ApprovalForAllLog, handleWithdrawalLog } from './logHandlers.js'
+import { APPROVAL_LOG, DEPOSIT_LOG, ENS_ADDRESS_CHANGED, ENS_ADDR_CHANGED, ENS_ETHEREUM_NAME_SERVICE, ENS_ETH_REGISTRAR_CONTROLLER, ENS_NAME_RENEWED, ENS_PUBLIC_RESOLVER, ENS_REGISTRAR_NAME_RENEWED, ERC1155_TRANSFERBATCH_LOG, ERC1155_TRANSFERSINGLE_LOG, ERC721_APPROVAL_FOR_ALL_LOG, TRANSFER_LOG, WITHDRAWAL_LOG } from '../utils/constants.js'
+import { handleApprovalLog, handleDepositLog, handleERC1155TransferBatch, handleERC1155TransferSingle, handleERC20TransferLog, handleEnsAddrChanged, handleEnsAddressChanged, handleEnsRegistrarNameRenewed, handleErc721ApprovalForAllLog, handleNameRenewed, handleWithdrawalLog } from './logHandlers.js'
 import { RpcEntry } from '../types/rpc.js'
 import { AddressBookEntryCategory } from '../types/addressBookTypes.js'
 import { parseEventIfPossible } from './services/SimulationModeEthereumClientService.js'
@@ -67,10 +67,18 @@ const getTokenEventHandler = (type: AddressBookEntryCategory, logSignature: stri
 }
 
 const ensEventHandler = (parsedEvent: ParsedEvent) => {
-	if (parsedEvent.loggersAddressBookEntry.address === ENS_PUBLIC_RESOLVER && parsedEvent.topics[0] !== undefined) {
+	if (parsedEvent.topics[0] !== undefined) {
 		const logSignature = bytes32String(parsedEvent.topics[0])
-		if (logSignature === ENS_ADDRESS_CHANGED) return { logInformation: handleEnsAddressChanged(parsedEvent), type: 'ENSAddressChanged' as const }
-		if (logSignature === ENS_ADDR_CHANGED) return { logInformation: handleEnsAddrChanged(parsedEvent), type: 'ENSAddrChanged' as const }
+		if (parsedEvent.loggersAddressBookEntry.address === ENS_PUBLIC_RESOLVER) {
+			if (logSignature === ENS_ADDRESS_CHANGED) return { logInformation: handleEnsAddressChanged(parsedEvent), type: 'ENSAddressChanged' as const }
+			if (logSignature === ENS_ADDR_CHANGED) return { logInformation: handleEnsAddrChanged(parsedEvent), type: 'ENSAddrChanged' as const }
+		}
+		else if (parsedEvent.loggersAddressBookEntry.address === ENS_ETH_REGISTRAR_CONTROLLER) {
+			if (logSignature === ENS_REGISTRAR_NAME_RENEWED) return { logInformation: handleEnsRegistrarNameRenewed(parsedEvent), type: 'ENSRegistrarNameRenewed' as const }
+		}
+		else if(parsedEvent.loggersAddressBookEntry.address === ENS_ETHEREUM_NAME_SERVICE) {
+			if (logSignature === ENS_NAME_RENEWED) return { logInformation: handleNameRenewed(parsedEvent), type: 'ENSNameRenewed' as const }
+		}
 	}
 	return undefined
 }
