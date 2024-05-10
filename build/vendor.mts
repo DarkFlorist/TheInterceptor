@@ -15,13 +15,13 @@ const dependencyPaths = [
 	{ packageName: '@preact/signals', subfolderToVendor: 'dist', entrypointFile: 'signals.module.js' },
 	{ packageName: '@preact/signals-core', subfolderToVendor: 'dist', entrypointFile: 'signals-core.module.js', },
 	{ packageName: 'funtypes', subfolderToVendor: 'lib', entrypointFile: 'index.mjs' },
-	{ packageName: '@noble/hashes/crypto', packageToVendor: '@noble/hashes', subfolderToVendor: 'esm', entrypointFile: 'cryptoBrowser.js' },
 	{ packageName: '@noble/hashes/sha3', packageToVendor: '@noble/hashes', subfolderToVendor: 'esm', entrypointFile: 'sha3.js' },
 	{ packageName: '@noble/hashes/sha256', packageToVendor: '@noble/hashes', subfolderToVendor: 'esm', entrypointFile: 'sha256.js' },
 	{ packageName: '@noble/hashes/sha512', packageToVendor: '@noble/hashes', subfolderToVendor: 'esm', entrypointFile: 'sha512.js' },
 	{ packageName: '@noble/hashes/blake2s', packageToVendor: '@noble/hashes', subfolderToVendor: 'esm', entrypointFile: 'blake2s.js' },
 	{ packageName: '@noble/hashes/utils', packageToVendor: '@noble/hashes', subfolderToVendor: 'esm', entrypointFile: 'utils.js' },
 	{ packageName: '@noble/hashes/hmac', packageToVendor: '@noble/hashes', subfolderToVendor: 'esm', entrypointFile: 'hmac.js' },
+	{ packageName: '@noble/hashes/crypto', packageToVendor: '@noble/hashes', subfolderToVendor: 'esm', entrypointFile: 'crypto.js' },
 	{ packageName: '@noble/curves/stark', packageToVendor: '@noble/curves', subfolderToVendor: '', entrypointFile: 'stark.js' },
 	{ packageName: '@darkflorist/address-metadata', subfolderToVendor: 'lib', entrypointFile: 'index.js' },
 ]
@@ -29,7 +29,7 @@ const dependencyPaths = [
 async function vendorDependencies(files: string[]) {
 	for (const { packageName, packageToVendor, subfolderToVendor } of dependencyPaths) {
 		const sourceDirectoryPath = path.join(directoryOfThisFile, '..', 'node_modules', packageToVendor || packageName, subfolderToVendor)
-		const destinationDirectoryPath = path.join(directoryOfThisFile, '..', 'app', 'vendor', packageName)
+		const destinationDirectoryPath = path.join(directoryOfThisFile, '..', 'app', 'vendor', packageToVendor || packageName)
 		async function inclusionPredicate(path: string, fileType: FileType) {
 			if (path.endsWith('.js')) return true
 			if (path.endsWith('.ts')) return true
@@ -45,8 +45,8 @@ async function vendorDependencies(files: string[]) {
 		await recursiveDirectoryCopy(sourceDirectoryPath, destinationDirectoryPath, inclusionPredicate, rewriteSourceMapSourcePath.bind(undefined, packageName))
 	}
 
-	const importmap = dependencyPaths.reduce((importmap, { packageName, entrypointFile }) => {
-		importmap.imports[packageName] = `../${path.join('.', 'vendor', packageName, entrypointFile).replace(/\\/g, '/') }`
+	const importmap = dependencyPaths.reduce((importmap, { packageName, entrypointFile, packageToVendor }) => {
+		importmap.imports[packageName] = `../${path.join('.', 'vendor', packageToVendor || packageName, entrypointFile).replace(/\\/g, '/') }`
 		return importmap
 	}, { imports: {} as Record<string, string> })
 	const importmapJson = `\n${JSON.stringify(importmap, undefined, '\t')
