@@ -161,3 +161,19 @@ export function handleEnsTransfer(eventLog: ParsedEvent) {
 	if (eventLog.args[0]?.typeValue.type !== 'fixedBytes' || eventLog.args[1]?.typeValue.type !== 'address') throw new Error('Malformed ENS Transfe Event')
 	return { node: EthereumBytes32.parse(dataStringWith0xStart(eventLog.args[0].typeValue.value)) }
 }
+
+
+// event NewOwner(bytes32 indexed node, bytes32 indexed label, address owner)
+export function handleEnsNewOwner(eventLog: ParsedEvent) {
+	if (eventLog.args[0]?.typeValue.type !== 'fixedBytes' || eventLog.args[1]?.typeValue.type !== 'fixedBytes' || eventLog.args[2]?.typeValue.type !== 'address') throw new Error('Malformed ENS Transfe Event')
+	return {
+		node: EthereumBytes32.parse(dataStringWith0xStart(eventLog.args[0].typeValue.value)),
+		labelHash: bytesToUnsigned(eventLog.args[1].typeValue.value)
+	}
+}
+
+// event NewResolver(bytes32 indexed node, address resolver)
+export function handleEnsNewResolver(eventLog: ParsedEvent) {
+	if (eventLog.args[0]?.typeValue.type !== 'fixedBytes' || eventLog.args[1]?.typeValue.type !== 'address') throw new Error('Malformed ENS Transfe Event')
+	return { node: EthereumBytes32.parse(dataStringWith0xStart(eventLog.args[0].typeValue.value)) }
+}

@@ -44,10 +44,16 @@ export function formSimulatedAndVisualizedTransaction(simState: SimulationState,
 					}
 					return({ ...event, type: 'Parsed' })
 				}
+				case 'ENSNewResolver':
 				case 'ENSTransfer':
 				case 'ENSTextChanged': {
 					const node = ens.ensNameHashes.find((nameHash) => nameHash.nameHash === event.logInformation.node) ?? { nameHash: event.logInformation.node, name: undefined }
 					return { ...event, logInformation: { ...event.logInformation, node } }
+				}
+				case 'ENSNewOwner': {
+					const labelHash = ens.ensLabelHashes.find((nameHash) => nameHash.labelHash === event.logInformation.labelHash) ?? { labelHash: event.logInformation.labelHash, label: undefined }
+					const node = ens.ensNameHashes.find((nameHash) => nameHash.nameHash === event.logInformation.node) ?? { nameHash: event.logInformation.node, name: undefined }
+					return { ...event, logInformation: { ...event.logInformation, node, labelHash } }
 				}
 				case 'ENSAddrChanged': {
 					const to = addressMetaData.get(addressString(event.logInformation.to))

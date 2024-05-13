@@ -9,8 +9,8 @@ import { eoaCalldata } from './protectors/eoaCalldata.js'
 import { tokenToContract } from './protectors/tokenToContract.js'
 import { WebsiteCreatedEthereumUnsignedTransaction, SimulationState, TokenVisualizerResult, EnrichedEthereumEvent, ParsedEvent, ParsedEnsEvent } from '../types/visualizer-types.js'
 import { EthereumJSONRpcRequestHandler } from './services/EthereumJSONRpcRequestHandler.js'
-import { APPROVAL_LOG, DEPOSIT_LOG, ENS_ADDRESS_CHANGED, ENS_ADDR_CHANGED, ENS_ETHEREUM_NAME_SERVICE, ENS_ETH_REGISTRAR_CONTROLLER, ENS_NAME_RENEWED, ENS_PUBLIC_RESOLVER, ENS_PUBLIC_RESOLVER_2, ENS_REGISTRAR_NAME_RENEWED, ENS_REGISTRY_WITH_FALLBACK, ENS_TEXT_CHANGED, ENS_TRANSFER, ERC1155_TRANSFERBATCH_LOG, ERC1155_TRANSFERSINGLE_LOG, ERC721_APPROVAL_FOR_ALL_LOG, TRANSFER_LOG, WITHDRAWAL_LOG } from '../utils/constants.js'
-import { handleApprovalLog, handleDepositLog, handleERC1155TransferBatch, handleERC1155TransferSingle, handleERC20TransferLog, handleEnsAddrChanged, handleEnsAddressChanged, handleEnsRegistrarNameRenewed, handleEnsTextChanged, handleEnsTransfer, handleErc721ApprovalForAllLog, handleNameRenewed, handleWithdrawalLog } from './logHandlers.js'
+import { APPROVAL_LOG, DEPOSIT_LOG, ENS_ADDRESS_CHANGED, ENS_ADDR_CHANGED, ENS_ETHEREUM_NAME_SERVICE, ENS_ETH_REGISTRAR_CONTROLLER, ENS_NAME_RENEWED, ENS_NEW_OWNER, ENS_NEW_RESOLVER, ENS_PUBLIC_RESOLVER, ENS_PUBLIC_RESOLVER_2, ENS_REGISTRAR_NAME_RENEWED, ENS_REGISTRY_WITH_FALLBACK, ENS_TEXT_CHANGED, ENS_TRANSFER, ERC1155_TRANSFERBATCH_LOG, ERC1155_TRANSFERSINGLE_LOG, ERC721_APPROVAL_FOR_ALL_LOG, TRANSFER_LOG, WITHDRAWAL_LOG } from '../utils/constants.js'
+import { handleApprovalLog, handleDepositLog, handleERC1155TransferBatch, handleERC1155TransferSingle, handleERC20TransferLog, handleEnsAddrChanged, handleEnsAddressChanged, handleEnsNewOwner, handleEnsNewResolver, handleEnsRegistrarNameRenewed, handleEnsTextChanged, handleEnsTransfer, handleErc721ApprovalForAllLog, handleNameRenewed, handleWithdrawalLog } from './logHandlers.js'
 import { RpcEntry } from '../types/rpc.js'
 import { AddressBookEntryCategory } from '../types/addressBookTypes.js'
 import { parseEventIfPossible } from './services/SimulationModeEthereumClientService.js'
@@ -82,6 +82,8 @@ const ensEventHandler = (parsedEvent: ParsedEvent): ParsedEnsEvent | undefined =
 		}
 		else if(parsedEvent.loggersAddressBookEntry.address === ENS_REGISTRY_WITH_FALLBACK) {
 			if (logSignature === ENS_TRANSFER) return { logInformation: handleEnsTransfer(parsedEvent), type: 'ENSTransfer' as const }
+			if (logSignature === ENS_NEW_OWNER) return { logInformation: handleEnsNewOwner(parsedEvent), type: 'ENSNewOwner' as const }
+			if (logSignature === ENS_NEW_RESOLVER) return { logInformation: handleEnsNewResolver(parsedEvent), type: 'ENSNewResolver' as const }
 		}
 	}
 	return undefined
