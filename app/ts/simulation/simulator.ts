@@ -69,18 +69,16 @@ const getTokenEventHandler = (type: AddressBookEntryCategory, logSignature: stri
 const ensEventHandler = (parsedEvent: ParsedEvent): ParsedEnsEvent | undefined => {
 	if (parsedEvent.topics[0] !== undefined) {
 		const logSignature = bytes32String(parsedEvent.topics[0])
-		if (parsedEvent.loggersAddressBookEntry.address === ENS_PUBLIC_RESOLVER) {
+		if (parsedEvent.loggersAddressBookEntry.address === ENS_PUBLIC_RESOLVER || parsedEvent.loggersAddressBookEntry.address === ENS_PUBLIC_RESOLVER_2) {
 			if (logSignature === ENS_ADDRESS_CHANGED) return { logInformation: handleEnsAddressChanged(parsedEvent), type: 'ENSAddressChanged' as const }
 			if (logSignature === ENS_ADDR_CHANGED) return { logInformation: handleEnsAddrChanged(parsedEvent), type: 'ENSAddrChanged' as const }
+			if (logSignature === ENS_TEXT_CHANGED) return { logInformation: handleEnsTextChanged(parsedEvent), type: 'ENSTextChanged' as const }
 		}
 		else if (parsedEvent.loggersAddressBookEntry.address === ENS_ETH_REGISTRAR_CONTROLLER) {
 			if (logSignature === ENS_REGISTRAR_NAME_RENEWED) return { logInformation: handleEnsRegistrarNameRenewed(parsedEvent), type: 'ENSRegistrarNameRenewed' as const }
 		}
 		else if(parsedEvent.loggersAddressBookEntry.address === ENS_ETHEREUM_NAME_SERVICE) {
 			if (logSignature === ENS_NAME_RENEWED) return { logInformation: handleNameRenewed(parsedEvent), type: 'ENSNameRenewed' as const }
-		}
-		else if(parsedEvent.loggersAddressBookEntry.address === ENS_PUBLIC_RESOLVER_2) {
-			if (logSignature === ENS_TEXT_CHANGED) return { logInformation: handleEnsTextChanged(parsedEvent), type: 'ENSTextChanged' as const }
 		}
 		else if(parsedEvent.loggersAddressBookEntry.address === ENS_REGISTRY_WITH_FALLBACK) {
 			if (logSignature === ENS_TRANSFER) return { logInformation: handleEnsTransfer(parsedEvent), type: 'ENSTransfer' as const }
