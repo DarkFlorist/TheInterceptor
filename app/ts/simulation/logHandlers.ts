@@ -155,3 +155,9 @@ export function handleEnsTextChanged(eventLog: ParsedEvent) {
 	if (eventLog.args[0]?.typeValue.type !== 'fixedBytes' || eventLog.args[1]?.typeValue.type !== 'fixedBytes' || eventLog.args[2]?.typeValue.type !== 'string') throw new Error('Malformed ENS TextChanged Event')
 	return { node: EthereumBytes32.parse(dataStringWith0xStart(eventLog.args[0].typeValue.value)) }
 }
+
+// event Transfer(bytes32 indexed node, address owner)
+export function handleEnsTransfer(eventLog: ParsedEvent) {
+	if (eventLog.args[0]?.typeValue.type !== 'fixedBytes' || eventLog.args[1]?.typeValue.type !== 'address') throw new Error('Malformed ENS Transfe Event')
+	return { node: EthereumBytes32.parse(dataStringWith0xStart(eventLog.args[0].typeValue.value)) }
+}

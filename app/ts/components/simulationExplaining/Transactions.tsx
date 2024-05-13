@@ -339,7 +339,7 @@ function NonTokenLogEvent(params: NonTokenLogEventParams) {
 		<div class = 'log-cell' style = { { 'grid-column-start': 2, 'grid-column-end': 4, display: 'flex', 'flex-wrap': 'wrap' } }>
 			<p class = 'paragraph' style = { textStyle }> { `${ params.nonTokenLog.name }(` } </p>
 			{ insertBetweenElements(params.nonTokenLog.args.map((arg) => {
-				if (arg.paramName === 'node' && (params.nonTokenLog.type === 'ENSAddrChanged' || params.nonTokenLog.type === 'ENSAddressChanged' || params.nonTokenLog.type === 'ENSTextChanged') && params.nonTokenLog.logInformation.node.name !== undefined) {
+				if (arg.paramName === 'node' && 'logInformation' in params.nonTokenLog && 'node' in params.nonTokenLog.logInformation && params.nonTokenLog.logInformation.node.name !== undefined) {
 					return <>
 						<p style = { textStyle } class = 'paragraph'> { `${ arg.paramName } =` }&nbsp;</p>
 						<StringElement text = { params.nonTokenLog.logInformation.node.name } />

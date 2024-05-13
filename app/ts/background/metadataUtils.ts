@@ -199,7 +199,7 @@ export const extractTokenEvents = (events: readonly EnrichedEthereumEventWithMet
 }
 
 export async function retrieveEnsNodeHashes(ethereumClientService: EthereumClientService, events: EnrichedEthereumEvents) {
-	const hashes = events.map((event) => event.type === 'ENSAddrChanged' || event.type === 'ENSAddressChanged' || event.type === 'ENSTextChanged' ? event.logInformation.node : undefined).filter((maybeNodeHash): maybeNodeHash is bigint => maybeNodeHash !== undefined)
+	const hashes = events.map((event) => event.type === 'ENSAddrChanged' || event.type === 'ENSAddressChanged' || event.type === 'ENSTextChanged' || event.type === 'ENSTransfer'  ? event.logInformation.node : undefined).filter((maybeNodeHash): maybeNodeHash is bigint => maybeNodeHash !== undefined)
 	const deduplicatedHashes = Array.from(new Set(hashes))
 	return await Promise.all(deduplicatedHashes.map((hash) => getAndCacheEnsNodeHash(ethereumClientService, hash)))
 }

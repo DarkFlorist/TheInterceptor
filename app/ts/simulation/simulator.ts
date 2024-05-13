@@ -7,10 +7,10 @@ import { commonTokenOops } from './protectors/commonTokenOops.js'
 import { eoaApproval } from './protectors/eoaApproval.js'
 import { eoaCalldata } from './protectors/eoaCalldata.js'
 import { tokenToContract } from './protectors/tokenToContract.js'
-import { WebsiteCreatedEthereumUnsignedTransaction, SimulationState, TokenVisualizerResult, EnrichedEthereumEvent, ParsedEvent } from '../types/visualizer-types.js'
+import { WebsiteCreatedEthereumUnsignedTransaction, SimulationState, TokenVisualizerResult, EnrichedEthereumEvent, ParsedEvent, ParsedEnsEvent } from '../types/visualizer-types.js'
 import { EthereumJSONRpcRequestHandler } from './services/EthereumJSONRpcRequestHandler.js'
-import { APPROVAL_LOG, DEPOSIT_LOG, ENS_ADDRESS_CHANGED, ENS_ADDR_CHANGED, ENS_ETHEREUM_NAME_SERVICE, ENS_ETH_REGISTRAR_CONTROLLER, ENS_NAME_RENEWED, ENS_PUBLIC_RESOLVER, ENS_PUBLIC_RESOLVER_2, ENS_REGISTRAR_NAME_RENEWED, ENS_TEXT_CHANGED, ERC1155_TRANSFERBATCH_LOG, ERC1155_TRANSFERSINGLE_LOG, ERC721_APPROVAL_FOR_ALL_LOG, TRANSFER_LOG, WITHDRAWAL_LOG } from '../utils/constants.js'
-import { handleApprovalLog, handleDepositLog, handleERC1155TransferBatch, handleERC1155TransferSingle, handleERC20TransferLog, handleEnsAddrChanged, handleEnsAddressChanged, handleEnsRegistrarNameRenewed, handleEnsTextChanged, handleErc721ApprovalForAllLog, handleNameRenewed, handleWithdrawalLog } from './logHandlers.js'
+import { APPROVAL_LOG, DEPOSIT_LOG, ENS_ADDRESS_CHANGED, ENS_ADDR_CHANGED, ENS_ETHEREUM_NAME_SERVICE, ENS_ETH_REGISTRAR_CONTROLLER, ENS_NAME_RENEWED, ENS_PUBLIC_RESOLVER, ENS_PUBLIC_RESOLVER_2, ENS_REGISTRAR_NAME_RENEWED, ENS_REGISTRY_WITH_FALLBACK, ENS_TEXT_CHANGED, ENS_TRANSFER, ERC1155_TRANSFERBATCH_LOG, ERC1155_TRANSFERSINGLE_LOG, ERC721_APPROVAL_FOR_ALL_LOG, TRANSFER_LOG, WITHDRAWAL_LOG } from '../utils/constants.js'
+import { handleApprovalLog, handleDepositLog, handleERC1155TransferBatch, handleERC1155TransferSingle, handleERC20TransferLog, handleEnsAddrChanged, handleEnsAddressChanged, handleEnsRegistrarNameRenewed, handleEnsTextChanged, handleEnsTransfer, handleErc721ApprovalForAllLog, handleNameRenewed, handleWithdrawalLog } from './logHandlers.js'
 import { RpcEntry } from '../types/rpc.js'
 import { AddressBookEntryCategory } from '../types/addressBookTypes.js'
 import { parseEventIfPossible } from './services/SimulationModeEthereumClientService.js'
@@ -66,7 +66,7 @@ const getTokenEventHandler = (type: AddressBookEntryCategory, logSignature: stri
 	} 
 }
 
-const ensEventHandler = (parsedEvent: ParsedEvent) => {
+const ensEventHandler = (parsedEvent: ParsedEvent): ParsedEnsEvent | undefined => {
 	if (parsedEvent.topics[0] !== undefined) {
 		const logSignature = bytes32String(parsedEvent.topics[0])
 		if (parsedEvent.loggersAddressBookEntry.address === ENS_PUBLIC_RESOLVER) {
@@ -81,6 +81,9 @@ const ensEventHandler = (parsedEvent: ParsedEvent) => {
 		}
 		else if(parsedEvent.loggersAddressBookEntry.address === ENS_PUBLIC_RESOLVER_2) {
 			if (logSignature === ENS_TEXT_CHANGED) return { logInformation: handleEnsTextChanged(parsedEvent), type: 'ENSTextChanged' as const }
+		}
+		else if(parsedEvent.loggersAddressBookEntry.address === ENS_REGISTRY_WITH_FALLBACK) {
+			if (logSignature === ENS_TRANSFER) return { logInformation: handleEnsTransfer(parsedEvent), type: 'ENSTransfer' as const }
 		}
 	}
 	return undefined
