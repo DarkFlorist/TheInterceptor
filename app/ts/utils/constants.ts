@@ -39,7 +39,7 @@ export const ENS_NAME_RENEWED = ethers.keccak256(ethers.toUtf8Bytes('NameRenewed
 export const ENS_TEXT_CHANGED = ethers.keccak256(ethers.toUtf8Bytes('TextChanged(bytes32,string,string)'))
 export const ENS_TRANSFER = ethers.keccak256(ethers.toUtf8Bytes('Transfer(bytes32,address)'))
 export const ENS_NEW_OWNER = ethers.keccak256(ethers.toUtf8Bytes('NewOwner(bytes32,bytes32,address)'))
-export const ENS_NEW_RESOLVER = ethers.keccak256(ethers.toUtf8Bytes('NewResolver(bytes32,resolver)'))
+export const ENS_NEW_RESOLVER = ethers.keccak256(ethers.toUtf8Bytes('NewResolver(bytes32,address)'))
 
 // Other
 export const MOCK_ADDRESS = 0xdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefn
