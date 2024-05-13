@@ -46,6 +46,8 @@ export function formSimulatedAndVisualizedTransaction(simState: SimulationState,
 				}
 				case 'ENSNewResolver':
 				case 'ENSTransfer':
+				case 'ENSTextChangedKeyValue':
+				case 'ENSContentHashChanged':
 				case 'ENSTextChanged': {
 					const node = ens.ensNameHashes.find((nameHash) => nameHash.nameHash === event.logInformation.node) ?? { nameHash: event.logInformation.node, name: undefined }
 					return { ...event, logInformation: { ...event.logInformation, node } }

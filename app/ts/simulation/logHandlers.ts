@@ -158,14 +158,14 @@ export function handleEnsTextChanged(eventLog: ParsedEvent) {
 
 // event Transfer(bytes32 indexed node, address owner)
 export function handleEnsTransfer(eventLog: ParsedEvent) {
-	if (eventLog.args[0]?.typeValue.type !== 'fixedBytes' || eventLog.args[1]?.typeValue.type !== 'address') throw new Error('Malformed ENS Transfe Event')
+	if (eventLog.args[0]?.typeValue.type !== 'fixedBytes' || eventLog.args[1]?.typeValue.type !== 'address') throw new Error('Malformed ENS Transfer Event')
 	return { node: EthereumBytes32.parse(dataStringWith0xStart(eventLog.args[0].typeValue.value)) }
 }
 
 
 // event NewOwner(bytes32 indexed node, bytes32 indexed label, address owner)
 export function handleEnsNewOwner(eventLog: ParsedEvent) {
-	if (eventLog.args[0]?.typeValue.type !== 'fixedBytes' || eventLog.args[1]?.typeValue.type !== 'fixedBytes' || eventLog.args[2]?.typeValue.type !== 'address') throw new Error('Malformed ENS Transfe Event')
+	if (eventLog.args[0]?.typeValue.type !== 'fixedBytes' || eventLog.args[1]?.typeValue.type !== 'fixedBytes' || eventLog.args[2]?.typeValue.type !== 'address') throw new Error('Malformed ENS New Owner Event')
 	return {
 		node: EthereumBytes32.parse(dataStringWith0xStart(eventLog.args[0].typeValue.value)),
 		labelHash: bytesToUnsigned(eventLog.args[1].typeValue.value)
@@ -174,6 +174,18 @@ export function handleEnsNewOwner(eventLog: ParsedEvent) {
 
 // event NewResolver(bytes32 indexed node, address resolver)
 export function handleEnsNewResolver(eventLog: ParsedEvent) {
-	if (eventLog.args[0]?.typeValue.type !== 'fixedBytes' || eventLog.args[1]?.typeValue.type !== 'address') throw new Error('Malformed ENS Transfe Event')
+	if (eventLog.args[0]?.typeValue.type !== 'fixedBytes' || eventLog.args[1]?.typeValue.type !== 'address') throw new Error('Malformed ENS New Resolver Event')
+	return { node: EthereumBytes32.parse(dataStringWith0xStart(eventLog.args[0].typeValue.value)) }
+}
+
+// event TextChanged(bytes32 indexed node, string indexed indexedKey, string key, string value);
+export function handleEnsTextChangedKeyValue(eventLog: ParsedEvent) {
+	if (eventLog.args[0]?.typeValue.type !== 'fixedBytes' || eventLog.args[1]?.typeValue.type !== 'fixedBytes' || eventLog.args[2]?.typeValue.type !== 'string' || eventLog.args[3]?.typeValue.type !== 'string') throw new Error('Malformed ENS Text changed Event')
+	return { node: EthereumBytes32.parse(dataStringWith0xStart(eventLog.args[0].typeValue.value)) }
+}
+
+// event ContenthashChanged(bytes32 indexed node, bytes hash);
+export function handleEnsContentHashChanged(eventLog: ParsedEvent) {
+	if (eventLog.args[0]?.typeValue.type !== 'fixedBytes' || eventLog.args[1]?.typeValue.type !== 'bytes') throw new Error('Malformed ENS Content Hash Changed Event')
 	return { node: EthereumBytes32.parse(dataStringWith0xStart(eventLog.args[0].typeValue.value)) }
 }
