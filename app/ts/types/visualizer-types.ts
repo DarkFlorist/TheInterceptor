@@ -100,6 +100,12 @@ export const EnrichedEthereumEvent = funtypes.Union(
 				}),
 			}),
 			funtypes.ReadonlyObject({
+				type: funtypes.Literal('ENSTextChanged'),
+				logInformation: funtypes.ReadonlyObject({
+					node: EthereumBytes32,
+				}),
+			}),
+			funtypes.ReadonlyObject({
 				type: funtypes.Literal('TokenEvent'),
 				logInformation: TokenVisualizerResult
 			}),
@@ -226,6 +232,12 @@ export const EnrichedEthereumEventWithMetadata = funtypes.Union(
 					node: MaybeENSNameHash,
 					to: EthereumData,
 					coinType: EthereumQuantity,
+				}),
+			}),
+			funtypes.ReadonlyObject({
+				type: funtypes.Literal('ENSTextChanged'),
+				logInformation: funtypes.ReadonlyObject({
+					node: MaybeENSNameHash,
 				}),
 			}),
 			funtypes.ReadonlyObject({

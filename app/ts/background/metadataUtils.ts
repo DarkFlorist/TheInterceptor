@@ -199,7 +199,7 @@ export const extractTokenEvents = (events: readonly EnrichedEthereumEventWithMet
 }
 
 export async function retrieveEnsNodeHashes(ethereumClientService: EthereumClientService, events: EnrichedEthereumEvents) {
-	const hashes = events.map((event) => event.type === 'ENSAddrChanged' || event.type === 'ENSAddressChanged' ? event.logInformation.node : undefined).filter((maybeNodeHash): maybeNodeHash is bigint => maybeNodeHash !== undefined)
+	const hashes = events.map((event) => event.type === 'ENSAddrChanged' || event.type === 'ENSAddressChanged' || event.type === 'ENSTextChanged' ? event.logInformation.node : undefined).filter((maybeNodeHash): maybeNodeHash is bigint => maybeNodeHash !== undefined)
 	const deduplicatedHashes = Array.from(new Set(hashes))
 	return await Promise.all(deduplicatedHashes.map((hash) => getAndCacheEnsNodeHash(ethereumClientService, hash)))
 }
@@ -208,10 +208,10 @@ export async function retrieveEnsLabelHashes(events: EnrichedEthereumEvents) {
 	const labelHashesToRetrieve = events.map((event) => event.type === 'ENSNameRenewed' || event.type === 'ENSRegistrarNameRenewed' ? event.logInformation.labelHash : undefined).filter((labelHash): labelHash is bigint => labelHash !== undefined)
 	const newLabels = events.map((event) => event.type === 'ENSRegistrarNameRenewed' ? event.logInformation.name : undefined).filter((label): label is string => label !== undefined)
 	
-	// update the maping if we have new labels
+	// update the mappings if we have new labels
 	const deduplicatedLabels = Array.from(new Set(newLabels))
-	await Promise.all(deduplicatedLabels.map(async (label) => await addEnsLabelHash(label)))
-	
+	await Promise.all(deduplicatedLabels.map(async (label) => Promise.all([await addEnsLabelHash(label), await addEnsNodeHash(`${ label }.eth`)])))
+
 	// return the label hashes that we have now available
 	const currentLabelHashes = await getEnsLabelHashes()
 	return Array.from(new Set(labelHashesToRetrieve)).map((labelHash) => {
