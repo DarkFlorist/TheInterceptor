@@ -42,6 +42,7 @@ export const ENS_NEW_RESOLVER = ethers.keccak256(ethers.toUtf8Bytes('NewResolver
 export const ENS_TEXT_CHANGED = ethers.keccak256(ethers.toUtf8Bytes('TextChanged(bytes32,string,string)'))
 export const ENS_TEXT_CHANGED_KEY_VALUE = ethers.keccak256(ethers.toUtf8Bytes('TextChanged(bytes32,string,string,string)'))
 export const ENS_CONTENT_HASH_CHANGED = ethers.keccak256(ethers.toUtf8Bytes('ContenthashChanged(bytes32,bytes)'))
+export const ENS_FUSES_SET = ethers.keccak256(ethers.toUtf8Bytes('FusesSet(bytes32,uint32)'))
 
 // Other
 export const MOCK_ADDRESS = 0xdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefn
@@ -51,6 +52,19 @@ export const ENS_ETH_REGISTRAR_CONTROLLER = 0x253553366Da8546fC250F225fe3d25d0C7
 export const ENS_ETHEREUM_NAME_SERVICE = 0x57f1887a8BF19b14fC0dF6Fd9B2acc9Af147eA85n
 export const ENS_PUBLIC_RESOLVER_2 = 0x4976fb03C32e5B8cfe2b6cCB31c09Ba78EBaBa41n
 export const ENS_REGISTRY_WITH_FALLBACK = 0x00000000000C2E074eC69A0dFb2997BA6C7d2e1en
+
+// ENS Fuses
+export const CANNOT_UNWRAP = 1n
+export const CANNOT_BURN_FUSES = 2n
+export const CANNOT_TRANSFER = 4n
+export const CANNOT_SET_RESOLVER = 8n
+export const CANNOT_SET_TTL = 16n
+export const CANNOT_CREATE_SUBDOMAIN = 32n
+export const CANNOT_APPROVE = 64n
+export const PARENT_CANNOT_CONTROL = 1n << 16n
+export const IS_DOT_ETH = 1n << 17n
+export const CAN_EXTEND_EXPIRY = 1n << 18n
+export const CAN_DO_EVERYTHING = 0n
 
 // https://blog.logrocket.com/understanding-resolving-metamask-error-codes/#4001
 export const METAMASK_ERROR_USER_REJECTED_REQUEST = 4001

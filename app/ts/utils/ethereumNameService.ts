@@ -1,7 +1,7 @@
 import { ethers } from 'ethers'
 import { EthereumClientService } from '../simulation/services/EthereumClientService.js'
 import { bytes32String, stringToUint8Array } from './bigint.js'
-import { ENS_TOKEN_WRAPPER, MOCK_ADDRESS } from './constants.js'
+import { CANNOT_APPROVE, CANNOT_BURN_FUSES, CANNOT_CREATE_SUBDOMAIN, CANNOT_SET_RESOLVER, CANNOT_SET_TTL, CANNOT_TRANSFER, CANNOT_UNWRAP, CAN_DO_EVERYTHING, CAN_EXTEND_EXPIRY, ENS_TOKEN_WRAPPER, IS_DOT_ETH, MOCK_ADDRESS, PARENT_CANNOT_CONTROL } from './constants.js'
 
 // parses ens string, eg vitalik.eth from the wrapped ens names() return value
 function encodeEthereumNameServiceString(data: string): string | undefined {
@@ -41,4 +41,47 @@ export const getEthereumNameServiceNameFromTokenId = async (ethereumMainnet: Eth
 	}
 	const nameString: string = wrappedEthereumNameService1155TokenInterface.decodeFunctionResult('names', stringToUint8Array(await ethereumMainnet.call(tx, 'latest', requestAbortController)))[0]
 	return encodeEthereumNameServiceString(nameString)
+}
+
+type EnsFuseName = 
+  | 'CANNOT_UNWRAP'
+  | 'CANNOT_BURN_FUSES'
+  | 'CANNOT_TRANSFER'
+  | 'CANNOT_SET_RESOLVER'
+  | 'CANNOT_SET_TTL'
+  | 'CANNOT_CREATE_SUBDOMAIN'
+  | 'PARENT_CANNOT_CONTROL'
+  | 'CANNOT_APPROVE'
+  | 'IS_DOT_ETH'
+  | 'CAN_EXTEND_EXPIRY'
+  | 'CAN_DO_EVERYTHING'
+
+type EnsFuseFlag = {
+	name: EnsFuseName
+	value: bigint
+}
+
+const flags: EnsFuseFlag[] = [
+	{ name: 'CANNOT_UNWRAP', value: CANNOT_UNWRAP },
+	{ name: 'CANNOT_BURN_FUSES', value: CANNOT_BURN_FUSES },
+	{ name: 'CANNOT_TRANSFER', value: CANNOT_TRANSFER },
+	{ name: 'CANNOT_SET_RESOLVER', value: CANNOT_SET_RESOLVER },
+	{ name: 'CANNOT_SET_TTL', value: CANNOT_SET_TTL },
+	{ name: 'CANNOT_CREATE_SUBDOMAIN', value: CANNOT_CREATE_SUBDOMAIN },
+	{ name: 'CANNOT_APPROVE', value: CANNOT_APPROVE },
+	{ name: 'PARENT_CANNOT_CONTROL', value: PARENT_CANNOT_CONTROL },
+	{ name: 'IS_DOT_ETH', value: IS_DOT_ETH },
+	{ name: 'CAN_EXTEND_EXPIRY', value: CAN_EXTEND_EXPIRY },
+	{ name: 'CAN_DO_EVERYTHING', value: CAN_DO_EVERYTHING },
+]
+
+export const extractENSFuses = (uint: bigint): readonly EnsFuseName[] => {
+	if (uint === CAN_DO_EVERYTHING) return ['CAN_DO_EVERYTHING']
+	const result: EnsFuseName[] = []
+	for (const flag of flags) {
+		if ((uint & flag.value) === flag.value && flag.value !== CAN_DO_EVERYTHING) {
+			result.push(flag.name)
+		}
+	}
+	return result
 }
