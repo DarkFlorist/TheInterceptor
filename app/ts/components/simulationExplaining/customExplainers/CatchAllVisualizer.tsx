@@ -7,6 +7,7 @@ import { SmallAddress } from '../../subcomponents/address.js'
 import { assertNever } from '../../../utils/typescript.js'
 import { getDeployedContractAddress } from '../../../simulation/services/SimulationModeEthereumClientService.js'
 import { addressString } from '../../../utils/bigint.js'
+import { extractTokenEvents } from '../../../background/metadataUtils.js'
 
 type SendOrReceiveTokensImportanceBoxParams = {
 	sending: boolean,
@@ -79,29 +80,20 @@ function SendOrReceiveTokensImportanceBox(param: SendOrReceiveTokensImportanceBo
 
 export function CatchAllVisualizer(param: TransactionImportanceBlockParams) {
 	const msgSender = param.simTx.transaction.from.address
-	const sendingTokenResults = param.simTx.tokenResults.filter((x) => x.from.address === msgSender)
-	const receivingTokenResults = param.simTx.tokenResults.filter((x) => x.to.address === msgSender)
+	const tokenResults = extractTokenEvents(param.simTx.events)
+	const sendingTokenResults = tokenResults.filter((x) => x.from.address === msgSender)
+	const receivingTokenResults = tokenResults.filter((x) => x.to.address === msgSender)
 	const erc20TokenApprovalChanges: ERC20TokenApprovalChange[] = sendingTokenResults.filter((x): x is TokenVisualizerErc20Event  => x.isApproval && x.type === 'ERC20').map((entry) => {
-		return {
-			...entry.token,
-			approvals: [ {...entry.to, change: entry.amount } ]
-		}
+		return { ...entry.token, approvals: [ {...entry.to, change: entry.amount } ] }
 	})
 
 	const operatorChanges: (Erc721OperatorChange | Erc1155OperatorChange)[] = sendingTokenResults.filter((x): x is TokenVisualizerNFTAllApprovalEvent  => x.type === 'NFT All approval').map((entry) => {
-		return {
-			...entry.token,
-			operator: 'allApprovalAdded' in entry && entry.allApprovalAdded ? entry.to : undefined
-		}
+		return { ...entry.token, operator: 'allApprovalAdded' in entry && entry.allApprovalAdded ? entry.to : undefined }
 	})
 
 	// token address, tokenId, approved address
 	const tokenIdApprovalChanges: Erc721TokenApprovalChange[] = sendingTokenResults.filter((x): x is TokenVisualizerErc721Event  => 'tokenId' in x && x.isApproval).map((entry) => {
-		return {
-			tokenEntry: entry.token,
-			tokenId: entry.tokenId,
-			approvedEntry: entry.to
-		}
+		return { tokenEntry: entry.token, tokenId: entry.tokenId, approvedEntry: entry.to }
 	})
 
 	if (param.simTx.transaction.to !== undefined

@@ -1,9 +1,10 @@
-import { bytesToUnsigned } from '../utils/bigint.js'
-import { TokenVisualizerResult } from '../types/visualizer-types.js'
+import { bytesToUnsigned, dataStringWith0xStart } from '../utils/bigint.js'
+import { ParsedEvent, TokenVisualizerResult } from '../types/visualizer-types.js'
 import { parseEventIfPossible } from './services/SimulationModeEthereumClientService.js'
 import { Erc1155ABI } from '../utils/abi.js'
 import { Interface } from 'ethers'
 import { EthereumEvent } from '../types/ethSimulate-types.js'
+import { EthereumBytes32 } from '../types/wire-types.js'
 
 export function handleERC20TransferLog(eventLog: EthereumEvent): TokenVisualizerResult[] {
 	if (eventLog.topics[1] === undefined || eventLog.topics[2] === undefined) throw new Error('unknown log')
@@ -108,4 +109,23 @@ export function handleERC1155TransferSingle(eventLog: EthereumEvent): TokenVisua
 		tokenId: bytesToUnsigned(eventLog.data.slice(0, 32)),
 		amount: bytesToUnsigned(eventLog.data.slice(32, 64)),
 	}]
+}
+
+// event AddressChanged(bytes32 indexed node, uint coinType, bytes newAddress)
+export function handleEnsAddressChanged(eventLog: ParsedEvent) {
+	if (eventLog.args[0]?.typeValue.type !== 'fixedBytes' || eventLog.args[1]?.typeValue.type !== 'unsignedInteger' || eventLog.args[2]?.typeValue.type !== 'bytes') throw new Error('Malformed ENS AddrChanged Event')
+	return {
+		node: EthereumBytes32.parse(dataStringWith0xStart(eventLog.args[0].typeValue.value)),
+		coinType: eventLog.args[1].typeValue.value,
+		to: eventLog.args[2].typeValue.value
+	}
+}
+
+// event AddrChanged(bytes32 indexed node, address a)
+export function handleEnsAddrChanged(eventLog: ParsedEvent) {
+	if (eventLog.args[0]?.typeValue.type !== 'fixedBytes' || eventLog.args[1]?.typeValue.type !== 'address') throw new Error('Malformed ENS AddrChanged Event')
+	return {
+		node: EthereumBytes32.parse(dataStringWith0xStart(eventLog.args[0].typeValue.value)),
+		to: eventLog.args[1].typeValue.value
+	}
 }

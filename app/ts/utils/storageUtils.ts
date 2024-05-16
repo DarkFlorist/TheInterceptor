@@ -2,13 +2,14 @@ import * as funtypes from 'funtypes'
 import { EthereumAddress, EthereumAddressOrMissing, LiteralConverterParserFactory, serialize } from '../types/wire-types.js'
 import { PendingChainChangeConfirmationPromise, RpcConnectionStatus, TabState } from '../types/user-interface-types.js'
 import { CompleteVisualizedSimulation, EthereumSubscriptionsAndFilters } from '../types/visualizer-types.js'
-import { AddressBookEntries, AddressBookEntry, ContactEntries, EntrySource } from '../types/addressBookTypes.js'
+import { AddressBookEntries, AddressBookEntry, EntrySource } from '../types/addressBookTypes.js'
 import { Page } from '../types/exportedSettingsTypes.js'
 import { WebsiteAccessArray } from '../types/websiteAccessTypes.js'
 import { SignerName } from '../types/signerTypes.js'
 import { PendingAccessRequests, PendingTransactionOrSignableMessage } from '../types/accessRequest.js'
 import { RpcEntries, RpcNetwork } from '../types/rpc.js'
 import { UnexpectedErrorOccured } from '../types/interceptor-messages.js'
+import { ENSNameHashes } from '../types/ens.js'
 
 type IdsOfOpenedTabs = funtypes.Static<typeof IdsOfOpenedTabs>
 const IdsOfOpenedTabs = funtypes.ReadonlyObject({
@@ -35,14 +36,12 @@ type LocalStorageItems = funtypes.Static<typeof LocalStorageItems>
 const LocalStorageItems = funtypes.ReadonlyPartial({
 	activeSigningAddress: EthereumAddressOrMissing,
 	activeSimulationAddress: EthereumAddressOrMissing,
-	addressInfos: AddressBookEntries,
 	openedPageV2: Page,
 	useSignersAddressAsActiveAddress: funtypes.Boolean,
 	websiteAccess: WebsiteAccessArray,
 	currentRpcNetwork: RpcNetwork,
 	simulationMode: funtypes.Boolean,
 	pendingInterceptorAccessRequests: PendingAccessRequests,
-	contacts: ContactEntries,
 	makeMeRich: funtypes.Boolean,
 	pendingTransactionsAndMessages: funtypes.ReadonlyArray(PendingTransactionOrSignableMessage),
 	ChainChangeConfirmationPromise: funtypes.Union(funtypes.Undefined, PendingChainChangeConfirmationPromise),
@@ -60,20 +59,19 @@ const LocalStorageItems = funtypes.ReadonlyPartial({
 	interceptorDisabled: funtypes.Boolean,
 	interceptorStartSleepingTimestamp: funtypes.Number,
 	latestUnexpectedError: UnexpectedErrorOccured,
+	ensNameHashes: ENSNameHashes,
 })
 
 type LocalStorageKey = funtypes.Static<typeof LocalStorageKey>
 const LocalStorageKey = funtypes.Union(
 	funtypes.Literal('activeSigningAddress'),
 	funtypes.Literal('activeSimulationAddress'),
-	funtypes.Literal('addressInfos'),
 	funtypes.Literal('openedPageV2'),
 	funtypes.Literal('useSignersAddressAsActiveAddress'),
 	funtypes.Literal('websiteAccess'),
 	funtypes.Literal('currentRpcNetwork'),
 	funtypes.Literal('simulationMode'),
 	funtypes.Literal('pendingInterceptorAccessRequests'),
-	funtypes.Literal('contacts'),
 	funtypes.Literal('makeMeRich'),
 	funtypes.Literal('pendingTransactionsAndMessages'),
 	funtypes.Literal('ChainChangeConfirmationPromise'),
@@ -90,6 +88,7 @@ const LocalStorageKey = funtypes.Union(
 	funtypes.Literal('idsOfOpenedTabs'),
 	funtypes.Literal('interceptorStartSleepingTimestamp'),
 	funtypes.Literal('latestUnexpectedError'),
+	funtypes.Literal('ensNameHashes'),
 )
 
 export async function browserStorageLocalGet(keys: LocalStorageKey | LocalStorageKey[]): Promise<LocalStorageItems> {

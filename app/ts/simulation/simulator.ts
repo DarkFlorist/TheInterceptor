@@ -7,10 +7,10 @@ import { commonTokenOops } from './protectors/commonTokenOops.js'
 import { eoaApproval } from './protectors/eoaApproval.js'
 import { eoaCalldata } from './protectors/eoaCalldata.js'
 import { tokenToContract } from './protectors/tokenToContract.js'
-import { WebsiteCreatedEthereumUnsignedTransaction, SimulationState, TokenVisualizerResult, EnrichedEthereumEvent } from '../types/visualizer-types.js'
+import { WebsiteCreatedEthereumUnsignedTransaction, SimulationState, TokenVisualizerResult, EnrichedEthereumEvent, ParsedEvent } from '../types/visualizer-types.js'
 import { EthereumJSONRpcRequestHandler } from './services/EthereumJSONRpcRequestHandler.js'
-import { APPROVAL_LOG, DEPOSIT_LOG, ERC1155_TRANSFERBATCH_LOG, ERC1155_TRANSFERSINGLE_LOG, ERC721_APPROVAL_FOR_ALL_LOG, TRANSFER_LOG, WITHDRAWAL_LOG } from '../utils/constants.js'
-import { handleApprovalLog, handleDepositLog, handleERC1155TransferBatch, handleERC1155TransferSingle, handleERC20TransferLog, handleErc721ApprovalForAllLog, handleWithdrawalLog } from './logHandlers.js'
+import { APPROVAL_LOG, DEPOSIT_LOG, ENS_ADDRESS_CHANGED, ENS_ADDR_CHANGED, ENS_PUBLIC_RESOLVER, ERC1155_TRANSFERBATCH_LOG, ERC1155_TRANSFERSINGLE_LOG, ERC721_APPROVAL_FOR_ALL_LOG, TRANSFER_LOG, WITHDRAWAL_LOG } from '../utils/constants.js'
+import { handleApprovalLog, handleDepositLog, handleERC1155TransferBatch, handleERC1155TransferSingle, handleERC20TransferLog, handleEnsAddrChanged, handleEnsAddressChanged, handleErc721ApprovalForAllLog, handleWithdrawalLog } from './logHandlers.js'
 import { RpcEntry } from '../types/rpc.js'
 import { AddressBookEntryCategory } from '../types/addressBookTypes.js'
 import { parseEventIfPossible } from './services/SimulationModeEthereumClientService.js'
@@ -66,6 +66,15 @@ const getTokenEventHandler = (type: AddressBookEntryCategory, logSignature: stri
 	} 
 }
 
+const ensEventHandler = (parsedEvent: ParsedEvent) => {
+	if (parsedEvent.loggersAddressBookEntry.address === ENS_PUBLIC_RESOLVER && parsedEvent.topics[0] !== undefined) {
+		const logSignature = bytes32String(parsedEvent.topics[0])
+		if (logSignature === ENS_ADDRESS_CHANGED) return { logInformation: handleEnsAddressChanged(parsedEvent), type: 'ENSAddressChanged' as const }
+		if (logSignature === ENS_ADDR_CHANGED) return { logInformation: handleEnsAddrChanged(parsedEvent), type: 'ENSAddrChanged' as const }
+	}
+	return undefined
+}
+
 export const parseEvents = async (events: readonly EthereumEvent[], ethereumClientService: EthereumClientService, requestAbortController: AbortController | undefined): Promise<readonly EnrichedEthereumEvent[]> => {
 	const parsedEvents = await Promise.all(events.map(async (event) => {
 		// todo, we should do this parsing earlier, to be able to add possible addresses to addressMetaData set
@@ -107,8 +116,11 @@ export const parseEvents = async (events: readonly EthereumEvent[], ethereumClie
 		const logSignature = parsedEvent.topics[0]
 		if (logSignature === undefined) return [{ ...parsedEvent, type: 'Parsed' }]
 		const tokenEventhandler = getTokenEventHandler(parsedEvent.loggersAddressBookEntry.type, bytes32String(logSignature))
-		if (tokenEventhandler === undefined) return [{ ...parsedEvent, type: 'Parsed' }]
-		return tokenEventhandler(parsedEvent).map((tokenInformation) => ({ ...parsedEvent, type: 'TokenEvent', tokenInformation }))
+		if (tokenEventhandler !== undefined) return tokenEventhandler(parsedEvent).map((logInformation) => ({ ...parsedEvent, type: 'TokenEvent', logInformation }))
+	
+		const handledEnsEvent = ensEventHandler(parsedEvent)
+		if (handledEnsEvent !== undefined) return [{ ...parsedEvent, ...handledEnsEvent }]
+		return [{ ...parsedEvent, type: 'Parsed' }]
 	})
 	return maybeParsedEvents.flat()
 }

@@ -12,6 +12,7 @@ import { SignMessageParams } from './jsonRpc-signing-types.js'
 import { PureGroupedSolidityType } from './solidityType.js'
 import { TransactionOrMessageIdentifier } from './interceptor-messages.js'
 import { EthSimulateV1CallResult } from './ethSimulate-types.js'
+import { MaybeENSNameHash } from './ens.js'
 
 type SolidityVariable = funtypes.Static<typeof SolidityVariable>
 const SolidityVariable = funtypes.ReadonlyObject({
@@ -19,8 +20,8 @@ const SolidityVariable = funtypes.ReadonlyObject({
 	paramName: funtypes.String
 })
 
-type ParsedEvent = funtypes.Static<typeof ParsedEvent>
-const ParsedEvent = funtypes.ReadonlyObject({
+export type ParsedEvent = funtypes.Static<typeof ParsedEvent>
+export const ParsedEvent = funtypes.ReadonlyObject({
 	isParsed: funtypes.Literal('Parsed'),
 	name: funtypes.String, // eg. 'Transfer'
 	signature: funtypes.String, // eg. 'Transfer(address,address,uint256)'
@@ -40,59 +41,74 @@ const NonParsedEvent = funtypes.ReadonlyObject({
 	topics: funtypes.ReadonlyArray(EthereumBytes32),
 })
 
+export type TokenVisualizerResult = funtypes.Static<typeof TokenVisualizerResult>
+export const TokenVisualizerResult = funtypes.Intersect(
+	funtypes.ReadonlyObject({
+		from: EthereumAddress,
+		to: EthereumAddress,
+		tokenAddress: EthereumAddress,
+	}),
+	funtypes.Union(
+		funtypes.ReadonlyObject({ // ERC20 transfer / approval
+			amount: EthereumQuantity,
+			type: funtypes.Literal('ERC20'),
+			isApproval: funtypes.Boolean,
+		}),
+		funtypes.ReadonlyObject({ // ERC721 transfer / approval
+			tokenId: EthereumQuantity,
+			type: funtypes.Literal('ERC721'),
+			isApproval: funtypes.Boolean,
+		}),
+		funtypes.ReadonlyObject({ // ERC721 all approval // all approval removal
+			type: funtypes.Literal('NFT All approval'),
+			allApprovalAdded: funtypes.Boolean, // true if approval is added, and false if removed
+			isApproval: funtypes.Literal(true),
+		}),
+		funtypes.ReadonlyObject({
+			type: funtypes.Literal('ERC1155'),
+			operator: EthereumAddress,
+			tokenId: EthereumQuantity,
+			amount: EthereumQuantity,
+			isApproval: funtypes.Literal(false),
+		})
+	)
+)
+
 export type EnrichedEthereumEvent = funtypes.Static<typeof EnrichedEthereumEvent>
 export const EnrichedEthereumEvent = funtypes.Union(
-	funtypes.Union(
-		funtypes.Intersect(
-			NonParsedEvent,
-			funtypes.ReadonlyObject({ type: funtypes.Literal('NonParsed') })
-		),
-		funtypes.Intersect(
-			ParsedEvent,
-			funtypes.ReadonlyObject({ type: funtypes.Literal('Parsed') })
-		),
-		funtypes.Intersect(
-			ParsedEvent,
+	funtypes.Intersect(
+		NonParsedEvent,
+		funtypes.ReadonlyObject({ type: funtypes.Literal('NonParsed') })
+	),
+	funtypes.Intersect(
+		ParsedEvent,
+		funtypes.Union(
+			funtypes.ReadonlyObject({ type: funtypes.Literal('Parsed') }),
+			funtypes.ReadonlyObject({
+				type: funtypes.Literal('ENSAddrChanged'),
+				logInformation: funtypes.ReadonlyObject({
+					node: EthereumBytes32,
+					to: EthereumAddress,
+				}),
+			}),
+			funtypes.ReadonlyObject({
+				type: funtypes.Literal('ENSAddressChanged'),
+				logInformation: funtypes.ReadonlyObject({
+					node: EthereumBytes32,
+					to: EthereumData,
+					coinType: EthereumQuantity,
+				}),
+			}),
 			funtypes.ReadonlyObject({
 				type: funtypes.Literal('TokenEvent'),
-				tokenInformation: funtypes.Intersect(
-					funtypes.ReadonlyObject( {
-						from: EthereumAddress,
-						to: EthereumAddress,
-						tokenAddress: EthereumAddress,
-					}),
-					funtypes.Union(
-						funtypes.ReadonlyObject({ // ERC20 transfer / approval
-							amount: EthereumQuantity,
-							type: funtypes.Literal('ERC20'),
-							isApproval: funtypes.Boolean,
-						}),
-						funtypes.ReadonlyObject({ // ERC721 transfer / approval
-							tokenId: EthereumQuantity,
-							type: funtypes.Literal('ERC721'),
-							isApproval: funtypes.Boolean,
-						}),
-						funtypes.ReadonlyObject({ // ERC721 all approval // all approval removal
-							type: funtypes.Literal('NFT All approval'),
-							allApprovalAdded: funtypes.Boolean, // true if approval is added, and false if removed
-							isApproval: funtypes.Literal(true),
-						}),
-						funtypes.ReadonlyObject({
-							type: funtypes.Literal('ERC1155'),
-							operator: EthereumAddress,
-							tokenId: EthereumQuantity,
-							amount: EthereumQuantity,
-							isApproval: funtypes.Literal(false),
-						})
-					)
-				)
+				logInformation: TokenVisualizerResult
 			})
 		)
 	)
 )
 
-export type GeneralEnrichedEthereumEvents = funtypes.Static<typeof GeneralEnrichedEthereumEvents>
-export const GeneralEnrichedEthereumEvents = funtypes.ReadonlyArray(EnrichedEthereumEvent)
+export type EnrichedEthereumEvents = funtypes.Static<typeof EnrichedEthereumEvents>
+export const EnrichedEthereumEvents = funtypes.ReadonlyArray(EnrichedEthereumEvent)
 
 export type TokenVisualizerErc20Event  = funtypes.Static<typeof TokenVisualizerErc20Event>
 export const TokenVisualizerErc20Event = funtypes.ReadonlyObject({
@@ -162,18 +178,56 @@ export const TokenBalancesAfter = funtypes.ReadonlyArray(funtypes.ReadonlyObject
 	balance: funtypes.Union(EthereumQuantity, funtypes.Undefined),
 }))
 
+export type TokenEvent = funtypes.Static<typeof TokenEvent>
+export const TokenEvent = funtypes.Intersect(
+	ParsedEvent,
+	funtypes.ReadonlyObject({
+		type: funtypes.Literal('TokenEvent'),
+		logInformation: TokenVisualizerResultWithMetadata
+	})
+)
+
+export type EnrichedEthereumEventWithMetadata = funtypes.Static<typeof EnrichedEthereumEventWithMetadata>
+export const EnrichedEthereumEventWithMetadata = funtypes.Union(
+	funtypes.Intersect(
+		NonParsedEvent,
+		funtypes.ReadonlyObject({ type: funtypes.Literal('NonParsed') })
+	),
+	funtypes.Intersect(
+		ParsedEvent,
+		funtypes.Union(
+			funtypes.ReadonlyObject({ type: funtypes.Literal('Parsed') }),
+			funtypes.ReadonlyObject({
+				type: funtypes.Literal('ENSAddrChanged'),
+				logInformation: funtypes.ReadonlyObject({
+					node: MaybeENSNameHash,
+					to: AddressBookEntry,
+				}),
+			}),
+			funtypes.ReadonlyObject({
+				type: funtypes.Literal('ENSAddressChanged'),
+				logInformation: funtypes.ReadonlyObject({
+					node: MaybeENSNameHash,
+					to: EthereumData,
+					coinType: EthereumQuantity,
+				}),
+			}),
+		)
+	),
+	TokenEvent
+)
+
 export type SimulatedAndVisualizedTransactionBase = funtypes.Static<typeof SimulatedAndVisualizedTransactionBase>
 export const SimulatedAndVisualizedTransactionBase = funtypes.Intersect(
 	funtypes.ReadonlyObject({
 		tokenBalancesAfter: TokenBalancesAfter,
-		tokenResults: funtypes.ReadonlyArray(TokenVisualizerResultWithMetadata),
 		website: Website,
 		created: EthereumTimestamp,
 		gasSpent: EthereumQuantity,
 		realizedGasPrice: EthereumQuantity,
 		quarantine: funtypes.Boolean,
 		quarantineReasons: funtypes.ReadonlyArray(funtypes.String),
-		events: funtypes.ReadonlyArray(EnrichedEthereumEvent),
+		events: funtypes.ReadonlyArray(EnrichedEthereumEventWithMetadata),
 		transactionIdentifier: EthereumQuantity,
 	}),
 	funtypes.Union(
@@ -187,39 +241,6 @@ export const SimulatedAndVisualizedTransactionBase = funtypes.Intersect(
 				message: funtypes.String,
 				decodedErrorMessage: funtypes.String,
 			})
-		})
-	)
-)
-
-export type TokenVisualizerResult = funtypes.Static<typeof TokenVisualizerResult>
-export const TokenVisualizerResult = funtypes.Intersect(
-	funtypes.ReadonlyObject( {
-		from: EthereumAddress,
-		to: EthereumAddress,
-		tokenAddress: EthereumAddress,
-	}),
-	funtypes.Union(
-		funtypes.ReadonlyObject({ // ERC20 transfer / approval
-			amount: EthereumQuantity,
-			type: funtypes.Literal('ERC20'),
-			isApproval: funtypes.Boolean,
-		}),
-		funtypes.ReadonlyObject({ // ERC721 transfer / approval
-			tokenId: EthereumQuantity,
-			type: funtypes.Literal('ERC721'),
-			isApproval: funtypes.Boolean,
-		}),
-		funtypes.ReadonlyObject({ // ERC721 all approval // all approval removal
-			type: funtypes.Literal('NFT All approval'),
-			allApprovalAdded: funtypes.Boolean, // true if approval is added, and false if removed
-			isApproval: funtypes.Literal(true),
-		}),
-		funtypes.ReadonlyObject({
-			type: funtypes.Literal('ERC1155'),
-			operator: EthereumAddress,
-			tokenId: EthereumQuantity,
-			amount: EthereumQuantity,
-			isApproval: funtypes.Literal(false),
 		})
 	)
 )
