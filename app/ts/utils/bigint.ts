@@ -60,9 +60,8 @@ export function nanoString(value: bigint): string {
 	return bigintToDecimalString(value, 9n)
 }
 
-export function addressString(address: bigint) {
-	return `0x${address.toString(16).padStart(40, '0')}`
-}
+export const addressString = (address: bigint) => `0x${ address.toString(16).padStart(40, '0') }`
+export const addressStringWithout0x = (address: bigint) => address.toString(16).padStart(40, '0')
 
 export function checksummedAddress(address: bigint) {
 	return ethers.getAddress(addressString(address))

@@ -115,6 +115,8 @@ export const ParsedEnsEvent = funtypes.Union(
 			funtypes.Literal('ENSTextChangedKeyValue'),
 			funtypes.Literal('ENSContentHashChanged'),
 			funtypes.Literal('ENSNameUnwrapped'),
+			funtypes.Literal('ENSNameChanged'),
+			funtypes.Literal('ENSReverseClaimed'),
 		),
 		logInformation: funtypes.ReadonlyObject({
 			node: EthereumBytes32,
@@ -281,6 +283,8 @@ export const EnrichedEthereumEventWithMetadata = funtypes.Union(
 					funtypes.Literal('ENSTextChangedKeyValue'),
 					funtypes.Literal('ENSContentHashChanged'),
 					funtypes.Literal('ENSNameUnwrapped'),
+					funtypes.Literal('ENSNameChanged'),
+					funtypes.Literal('ENSReverseClaimed'),
 				),
 				logInformation: funtypes.ReadonlyObject({
 					node: MaybeENSNameHash,

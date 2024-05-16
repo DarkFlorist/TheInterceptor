@@ -1,7 +1,8 @@
-import { ethers } from 'ethers'
+import { ethers, namehash } from 'ethers'
 import { EthereumClientService } from '../simulation/services/EthereumClientService.js'
-import { bytes32String, stringToUint8Array } from './bigint.js'
+import { addressStringWithout0x, bytes32String, stringToUint8Array } from './bigint.js'
 import { CANNOT_APPROVE, CANNOT_BURN_FUSES, CANNOT_CREATE_SUBDOMAIN, CANNOT_SET_RESOLVER, CANNOT_SET_TTL, CANNOT_TRANSFER, CANNOT_UNWRAP, CAN_DO_EVERYTHING, CAN_EXTEND_EXPIRY, ENS_TOKEN_WRAPPER, IS_DOT_ETH, MOCK_ADDRESS, PARENT_CANNOT_CONTROL } from './constants.js'
+import { EthereumAddress } from '../types/wire-types.js'
 
 // parses ens string, eg vitalik.eth from the wrapped ens names() return value
 function encodeEthereumNameServiceString(data: string): string | undefined {
@@ -84,4 +85,9 @@ export const extractENSFuses = (uint: bigint): readonly EnsFuseName[] => {
 		}
 	}
 	return result
+}
+
+export const getEnsReverseNodeHash = (address: EthereumAddress) => {
+	const name = `${ addressStringWithout0x(address) }.addr.reverse`
+	return { nameHash: BigInt(namehash(name)), name }
 }
