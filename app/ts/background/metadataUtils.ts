@@ -7,7 +7,7 @@ import { ENS_TOKEN_WRAPPER, ETHEREUM_COIN_ICON, ETHEREUM_LOGS_LOGGER_ADDRESS, MO
 import { EthereumClientService } from '../simulation/services/EthereumClientService.js'
 import { IdentifiedAddress, itentifyAddressViaOnChainInformation } from '../utils/tokenIdentification.js'
 import { assertNever } from '../utils/typescript.js'
-import { addEnsNodeHash, addUserAddressBookEntryIfItDoesNotExist, getEnsNodeHashes, getUserAddressBookEntries } from './storageVariables.js'
+import { addEnsLabelHash, addEnsNodeHash, addUserAddressBookEntryIfItDoesNotExist, getEnsLabelHashes, getEnsNodeHashes, getUserAddressBookEntries } from './storageVariables.js'
 import { getUniqueItemsByProperties } from '../utils/typed-arrays.js'
 import { getEthereumNameServiceNameFromTokenId } from '../utils/ethereumNameService.js'
 import { defaultActiveAddresses } from './settings.js'
@@ -175,7 +175,7 @@ export async function getAddressBookEntriesForVisualiser(ethereumClientService: 
 	return await Promise.all(addressIdentificationPromises)
 }
 
-export async function nameTokenIds(ethereumClientService: EthereumClientService, requestAbortController: AbortController | undefined, events: EnrichedEthereumEvents) {
+export async function nameTokenIds(ethereumClientService: EthereumClientService, events: EnrichedEthereumEvents) {
 	type TokenAddressTokenIdPair = { tokenAddress: bigint, tokenId: bigint }
 	const tokenAddresses = events.map((event) => {
 		if (event.type !== 'TokenEvent' || event.logInformation.type !== 'ERC1155') return undefined
@@ -185,7 +185,7 @@ export async function nameTokenIds(ethereumClientService: EthereumClientService,
 	const pairs = getUniqueItemsByProperties(tokenAddresses, ['tokenAddress', 'tokenId'])
 	const namedPairs = (await Promise.all(pairs.map(async (pair) => {
 		if (pair.tokenAddress === ENS_TOKEN_WRAPPER && ethereumClientService.getChainId() === 1n) {
-			const tokenIdName = await getEthereumNameServiceNameFromTokenId(ethereumClientService, requestAbortController, pair.tokenId)
+			const tokenIdName = (await getAndCacheEnsNodeHash(ethereumClientService, pair.tokenId)).name
 			if (tokenIdName === undefined) return undefined
 			return { ...pair, tokenIdName }
 		}
@@ -200,15 +200,35 @@ export const extractTokenEvents = (events: readonly EnrichedEthereumEventWithMet
 
 export async function retrieveEnsNodeHashes(ethereumClientService: EthereumClientService, events: EnrichedEthereumEvents) {
 	const hashes = events.map((event) => event.type === 'ENSAddrChanged' || event.type === 'ENSAddressChanged' ? event.logInformation.node : undefined).filter((maybeNodeHash): maybeNodeHash is bigint => maybeNodeHash !== undefined)
-	const deduplicated = Array.from(new Set(hashes))
-	return Promise.all(deduplicated.map((hash) => getAndCacheEnsNodeHash(ethereumClientService, hash)))
+	const deduplicatedHashes = Array.from(new Set(hashes))
+	return await Promise.all(deduplicatedHashes.map((hash) => getAndCacheEnsNodeHash(ethereumClientService, hash)))
 }
 
-export const getAndCacheEnsNodeHash = async (ethereumClientService: EthereumClientService, nameHash: EthereumBytes32) => {
+export async function retrieveEnsLabelHashes(events: EnrichedEthereumEvents) {
+	const labelHashesToRetrieve = events.map((event) => event.type === 'ENSNameRenewed' || event.type === 'ENSRegistrarNameRenewed' ? event.logInformation.labelHash : undefined).filter((labelHash): labelHash is bigint => labelHash !== undefined)
+	const newLabels = events.map((event) => event.type === 'ENSRegistrarNameRenewed' ? event.logInformation.name : undefined).filter((label): label is string => label !== undefined)
+	
+	// update the maping if we have new labels
+	const deduplicatedLabels = Array.from(new Set(newLabels))
+	await Promise.all(deduplicatedLabels.map(async (label) => await addEnsLabelHash(label)))
+	
+	// return the label hashes that we have now available
+	const currentLabelHashes = await getEnsLabelHashes()
+	return Array.from(new Set(labelHashesToRetrieve)).map((labelHash) => {
+		const found = currentLabelHashes.find((entry) => entry.labelHash === labelHash)
+		return { labelHash, label: found?.label }
+	})
+}
+
+export const getAndCacheEnsNodeHash = async (ethereumClientService: EthereumClientService, ensNameHash: EthereumBytes32) => {
 	const currentHashes = await getEnsNodeHashes()
-	const entry = currentHashes.find((entry) => entry.nameHash === nameHash)
+	const entry = currentHashes.find((entry) => entry.nameHash === ensNameHash)
 	if (entry !== undefined) return entry
-	const name = await getEthereumNameServiceNameFromTokenId(ethereumClientService, undefined, nameHash)
-	if (name !== undefined) await addEnsNodeHash({ nameHash, name })
-	return { nameHash, name }
+	const name = await getEthereumNameServiceNameFromTokenId(ethereumClientService, undefined, ensNameHash)
+	if (name !== undefined) { // 
+		const [label, _] = name.split('.')
+		if (label !== undefined) await addEnsLabelHash(label)
+		await addEnsNodeHash(name)
+	}
+	return { nameHash: ensNameHash, name }
 }

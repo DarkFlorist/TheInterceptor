@@ -129,3 +129,23 @@ export function handleEnsAddrChanged(eventLog: ParsedEvent) {
 		to: eventLog.args[1].typeValue.value
 	}
 }
+
+// event NameRenewed(string name, bytes32 indexed label, uint cost, uint expires)
+export function handleEnsRegistrarNameRenewed(eventLog: ParsedEvent) {
+	if (eventLog.args[0]?.typeValue.type !== 'string' || eventLog.args[1]?.typeValue.type !== 'fixedBytes' || eventLog.args[2]?.typeValue.type !== 'unsignedInteger' || eventLog.args[3]?.typeValue.type !== 'unsignedInteger') throw new Error('Malformed ENS AddrChanged Event')
+	return {
+		name: eventLog.args[0].typeValue.value,
+		labelHash: bytesToUnsigned(eventLog.args[1].typeValue.value),
+		cost: eventLog.args[2].typeValue.value,
+		expires: eventLog.args[3].typeValue.value,
+	}
+}
+
+// event NameRenewed(uint256 indexed hash, uint expires)
+export function handleNameRenewed(eventLog: ParsedEvent) {
+	if (eventLog.args[0]?.typeValue.type !== 'unsignedInteger' || eventLog.args[1]?.typeValue.type !== 'unsignedInteger') throw new Error('Malformed ENS NameRenewed Event')
+	return {
+		labelHash: eventLog.args[0].typeValue.value,
+		expires: eventLog.args[1].typeValue.value,
+	}
+}

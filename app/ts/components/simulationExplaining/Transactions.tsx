@@ -345,6 +345,12 @@ function NonTokenLogEvent(params: NonTokenLogEventParams) {
 						<StringElement text = { params.nonTokenLog.logInformation.node.name } />
 					</>
 				}
+				else if (arg.paramName === 'id' && params.nonTokenLog.type === 'ENSNameRenewed' && params.nonTokenLog.logInformation.labelHash.label !== undefined) {
+					return <>
+						<p style = { textStyle } class = 'paragraph'> { `${ arg.paramName } =` }&nbsp;</p>
+						<StringElement text = { params.nonTokenLog.logInformation.labelHash.label } />
+					</>
+				}
 				return <>
 					<p style = { textStyle } class = 'paragraph'> { `${ arg.paramName } =` }&nbsp;</p>
 					<EnrichedSolidityTypeComponentWithAddressBook valueType = { arg.typeValue } addressMetaData = { params.addressMetaData } renameAddressCallBack = { params.renameAddressCallBack } />
