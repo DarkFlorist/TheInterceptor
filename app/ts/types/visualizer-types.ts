@@ -93,15 +93,16 @@ export const ParsedEnsEvent = funtypes.Union(
 		}),
 	}),
 	funtypes.ReadonlyObject({
-		type: funtypes.Literal('ENSTextChanged'),
+		type: funtypes.Union(funtypes.Literal('ENSTextChanged'), funtypes.Literal('ENSTransfer'), funtypes.Literal('ENSNewResolver')),
 		logInformation: funtypes.ReadonlyObject({
 			node: EthereumBytes32,
 		}),
 	}),
 	funtypes.ReadonlyObject({
-		type: funtypes.Literal('ENSTransfer'),
+		type: funtypes.Union(funtypes.Literal('ENSNewOwner')),
 		logInformation: funtypes.ReadonlyObject({
 			node: EthereumBytes32,
+			labelHash: EthereumBytes32,
 		}),
 	}),
 	funtypes.ReadonlyObject({
@@ -244,13 +245,7 @@ export const EnrichedEthereumEventWithMetadata = funtypes.Union(
 				}),
 			}),
 			funtypes.ReadonlyObject({
-				type: funtypes.Literal('ENSTextChanged'),
-				logInformation: funtypes.ReadonlyObject({
-					node: MaybeENSNameHash,
-				}),
-			}),
-			funtypes.ReadonlyObject({
-				type: funtypes.Literal('ENSTransfer'),
+				type: funtypes.Union(funtypes.Literal('ENSTextChanged'), funtypes.Literal('ENSTransfer'), funtypes.Literal('ENSNewResolver')),
 				logInformation: funtypes.ReadonlyObject({
 					node: MaybeENSNameHash,
 				}),
@@ -269,6 +264,13 @@ export const EnrichedEthereumEventWithMetadata = funtypes.Union(
 				logInformation: funtypes.ReadonlyObject({
 					labelHash: MaybeENSLabelHash,
 					expires: EthereumQuantity
+				}),
+			}),	
+			funtypes.ReadonlyObject({
+				type: funtypes.Union(funtypes.Literal('ENSNewOwner')),
+				logInformation: funtypes.ReadonlyObject({
+					node: MaybeENSNameHash,
+					labelHash: MaybeENSLabelHash,
 				}),
 			}),
 		)

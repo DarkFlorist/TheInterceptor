@@ -345,7 +345,7 @@ function NonTokenLogEvent(params: NonTokenLogEventParams) {
 						<StringElement text = { params.nonTokenLog.logInformation.node.name } />
 					</>
 				}
-				else if (arg.paramName === 'id' && params.nonTokenLog.type === 'ENSNameRenewed' && params.nonTokenLog.logInformation.labelHash.label !== undefined) {
+				else if ((arg.paramName === 'id' || arg.paramName === 'label') && 'logInformation' in params.nonTokenLog && 'labelHash' in params.nonTokenLog.logInformation && params.nonTokenLog.logInformation.labelHash.label !== undefined) {
 					return <>
 						<p style = { textStyle } class = 'paragraph'> { `${ arg.paramName } =` }&nbsp;</p>
 						<StringElement text = { params.nonTokenLog.logInformation.labelHash.label } />
