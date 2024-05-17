@@ -149,3 +149,9 @@ export function handleNameRenewed(eventLog: ParsedEvent) {
 		expires: eventLog.args[1].typeValue.value,
 	}
 }
+
+// event TextChanged(bytes32 indexed node, string indexed indexedKey, string key)
+export function handleEnsTextChanged(eventLog: ParsedEvent) {
+	if (eventLog.args[0]?.typeValue.type !== 'fixedBytes' || eventLog.args[1]?.typeValue.type !== 'fixedBytes' || eventLog.args[2]?.typeValue.type !== 'string') throw new Error('Malformed ENS TextChanged Event')
+	return { node: EthereumBytes32.parse(dataStringWith0xStart(eventLog.args[0].typeValue.value)) }
+}

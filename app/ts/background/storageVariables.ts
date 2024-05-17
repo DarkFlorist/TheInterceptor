@@ -12,8 +12,8 @@ import { RpcEntries, RpcNetwork } from '../types/rpc.js'
 import { replaceElementInReadonlyArray } from '../utils/typed-arrays.js'
 import { UnexpectedErrorOccured } from '../types/interceptor-messages.js'
 import { namehash } from 'ethers'
-import { keccak_256 } from '@noble/hashes/sha3'
 import { bytesToUnsigned } from '../utils/bigint.js'
+import { keccak_256 } from '@noble/hashes/sha3'
 
 export const getIdsOfOpenedTabs = async () => (await browserStorageLocalGet('idsOfOpenedTabs'))?.idsOfOpenedTabs ?? { settingsView: undefined, addressBook: undefined}
 export const setIdsOfOpenedTabs = async (ids: PartialIdsOfOpenedTabs) => await browserStorageLocalSet({ idsOfOpenedTabs: { ...await getIdsOfOpenedTabs(), ...ids } })
