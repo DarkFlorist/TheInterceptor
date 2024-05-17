@@ -56,7 +56,7 @@ const getPendingTransactionOrMessageByidentifier = async (uniqueRequestIdentifie
 
 export async function resolvePendingTransactionOrMessage(simulator: Simulator, websiteTabConnections: WebsiteTabConnections, confirmation: TransactionConfirmation) {
 	const pendingTransactionOrMessage = await getPendingTransactionOrMessageByidentifier(confirmation.data.uniqueRequestIdentifier)
-	if (pendingTransactionOrMessage === undefined) throw new Error('Tried to resolve pending transaction that did not exist anymore')
+	if (pendingTransactionOrMessage === undefined) return // no need to resolve as it doesn't exist anymore
 	
 	const reply = (message: { type: 'forwardToSigner' } | { type: 'result', error: { code: number, message: string } } | { type: 'result', result: unknown }) => {
 		if (message.type === 'result' && !('error' in message)) {

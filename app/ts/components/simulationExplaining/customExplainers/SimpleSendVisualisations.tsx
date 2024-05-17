@@ -3,12 +3,14 @@ import { RenameAddressCallBack } from '../../../types/user-interface-types.js'
 import { BigAddress, SmallAddress } from '../../subcomponents/address.js'
 import { TokenOrEth, TokenOrEtherParams } from '../../subcomponents/coins.js'
 import { GasFee, TransactionGasses } from '../SimulationSummary.js'
-import { SimulatedAndVisualizedSimpleTokenTransferTransaction, TokenResult } from '../identifyTransaction.js'
+import { SimulatedAndVisualizedSimpleTokenTransferTransaction } from '../identifyTransaction.js'
 import { AddressBookEntry } from '../../../types/addressBookTypes.js'
 import { tokenEventToTokenSymbolParams } from './CatchAllVisualizer.js'
 import { RpcNetwork } from '../../../types/rpc.js'
 import { ETHEREUM_LOGS_LOGGER_ADDRESS } from '../../../utils/constants.js'
 import { interleave } from '../../../utils/typed-arrays.js'
+import { extractTokenEvents } from '../../../background/metadataUtils.js'
+import { TokenVisualizerResultWithMetadata } from '../../../types/visualizer-types.js'
 
 export type BeforeAfterAddress = {
 	address: AddressBookEntry
@@ -88,19 +90,21 @@ export function SimpleSend({ transaction, asset, sender, receiver, renameAddress
 	</div>
 }
 
-export const getAsset = (transfer: TokenResult, renameAddressCallBack: RenameAddressCallBack) => {
+export const getAsset = (transfer: TokenVisualizerResultWithMetadata, renameAddressCallBack: RenameAddressCallBack) => {
 	switch (transfer.type) {
 		case 'ERC1155': return { ...tokenEventToTokenSymbolParams(transfer), amount: transfer.amount, renameAddressCallBack }
 		case 'ERC20': return { ...tokenEventToTokenSymbolParams(transfer), amount: transfer.amount, renameAddressCallBack }
 		case 'ERC721': return { ...tokenEventToTokenSymbolParams(transfer), received: false, renameAddressCallBack }
+		case 'NFT All approval': return undefined
 		default: assertNever(transfer)
 	}
 }
 
 export function SimpleTokenTransferVisualisation({ simTx, renameAddressCallBack }: { simTx: SimulatedAndVisualizedSimpleTokenTransferTransaction, renameAddressCallBack: RenameAddressCallBack }) {
-	const transfer = simTx.tokenResults[0]
+	const transfer = extractTokenEvents(simTx.events)[0]
 	if (transfer === undefined) throw new Error('transfer was undefined')
 	const asset = getAsset(transfer, renameAddressCallBack)
+	if (asset === undefined) throw new Error('asset was undefined')
 	const senderAfter = simTx.tokenBalancesAfter.find((change) => change.owner === transfer.from.address && change.token === asset.tokenEntry.address && change.tokenId === asset.tokenId)?.balance
 	const receiverAfter = simTx.tokenBalancesAfter.find((change) => change.owner === transfer.to.address && change.token === asset.tokenEntry.address && change.tokenId === asset.tokenId)?.balance
 	const senderGasFees = (asset.tokenEntry.address === ETHEREUM_LOGS_LOGGER_ADDRESS && asset.tokenEntry.type === 'ERC20' && transfer.from.address === simTx.transaction.from.address ? simTx.gasSpent * simTx.realizedGasPrice : 0n)

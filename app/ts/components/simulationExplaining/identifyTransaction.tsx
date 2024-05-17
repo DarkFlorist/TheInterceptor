@@ -1,7 +1,7 @@
 import { get4Byte, get4ByteString } from '../../utils/calldata.js'
 import { FourByteExplanations } from '../../utils/constants.js'
 import { assertNever, createGuard } from '../../utils/typescript.js'
-import { SimulatedAndVisualizedTransaction, SimulatedAndVisualizedTransactionBase, TokenVisualizerErc1155Event, TokenVisualizerErc20Event, TokenVisualizerErc721Event, TokenVisualizerResultWithMetadata, TransactionWithAddressBookEntries } from '../../types/visualizer-types.js'
+import { SimulatedAndVisualizedTransaction, SimulatedAndVisualizedTransactionBase, TokenVisualizerErc1155Event, TokenVisualizerErc20Event, TokenVisualizerErc721Event, TransactionWithAddressBookEntries } from '../../types/visualizer-types.js'
 import { getSwapName, identifySwap } from './SwapTransactions.js'
 import * as funtypes from 'funtypes'
 import { AddressBookEntry } from '../../types/addressBookTypes.js'
@@ -127,13 +127,7 @@ const SimulatedAndVisualizedSimpleApprovalTransaction = funtypes.Intersect(
 	SimulatedAndVisualizedTransactionBase,
 	funtypes.ReadonlyObject({
 		uniqueRequestIdentifier: UniqueRequestIdentifier,
-		transaction: funtypes.Intersect(
-			TransactionWithAddressBookEntries,
-			funtypes.ReadonlyObject({
-				to: AddressBookEntry,
-				tokenResults: funtypes.ReadonlyArray(funtypes.Union(TokenVisualizerResultWithMetadata, funtypes.ReadonlyObject({ isApproval: funtypes.Literal(true) })))
-			}),
-		),
+		transaction: TransactionWithAddressBookEntries
 	})
 )
 
@@ -156,12 +150,7 @@ export const TokenResult = funtypes.Intersect(funtypes.Union(TokenVisualizerErc2
 
 export type SimulatedAndVisualizedSimpleTokenTransferTransaction = funtypes.Static<typeof SimulatedAndVisualizedSimpleTokenTransferTransaction>
 export const SimulatedAndVisualizedSimpleTokenTransferTransaction = funtypes.Intersect(
-	funtypes.Intersect(
-		SimulatedAndVisualizedTransactionBase,
-		funtypes.ReadonlyObject({
-			tokenResults: funtypes.ReadonlyArray(TokenResult)
-		})
-	),
+	SimulatedAndVisualizedTransactionBase,
 	funtypes.ReadonlyObject({
 		uniqueRequestIdentifier: UniqueRequestIdentifier,
 		transaction: funtypes.Intersect(TransactionWithAddressBookEntries, funtypes.ReadonlyObject({ to: AddressBookEntry })),
@@ -185,12 +174,7 @@ const EntryAmount = funtypes.ReadonlyObject({ entry: AddressBookEntry, amountDel
 
 export type SimulatedAndVisualizedProxyTokenTransferTransaction = funtypes.Static<typeof SimulatedAndVisualizedProxyTokenTransferTransaction>
 export const SimulatedAndVisualizedProxyTokenTransferTransaction = funtypes.Intersect(
-	funtypes.Intersect(
-		SimulatedAndVisualizedTransactionBase,
-		funtypes.ReadonlyObject({
-			tokenResults: funtypes.ReadonlyArray(TokenResult)
-		})
-	),
+	SimulatedAndVisualizedTransactionBase,
 	funtypes.ReadonlyObject({
 		uniqueRequestIdentifier: UniqueRequestIdentifier,
 		transaction: funtypes.Intersect(TransactionWithAddressBookEntries, funtypes.ReadonlyObject({ to: AddressBookEntry })),
@@ -238,6 +222,7 @@ function isProxyTokenTransfer(transaction: SimulatedAndVisualizedTransaction): t
 const getProxyTokenTransferOrUndefined = createGuard<SimulatedAndVisualizedTransaction, SimulatedAndVisualizedSimpleTokenTransferTransaction>((simTx) => isProxyTokenTransfer(simTx) ? simTx : undefined)
 
 export function identifyTransaction(simTx: SimulatedAndVisualizedTransaction): IdentifiedTransaction {
+	const tokenResults = extractTokenEvents(simTx.events)
 	const identifiedSwap = identifySwap(simTx)
 	if (identifiedSwap) {
 		const swapname = getSwapName(identifiedSwap)
@@ -251,7 +236,7 @@ export function identifyTransaction(simTx: SimulatedAndVisualizedTransaction): I
 	}
 
 	if (getSimpleTokenTransferOrUndefined(simTx)) {
-		const tokenResult = simTx.tokenResults[0]
+		const tokenResult = tokenResults[0]
 		if (tokenResult === undefined) throw new Error('token result were undefined')
 		const symbol = tokenResult.token.symbol
 		return {
@@ -265,10 +250,10 @@ export function identifyTransaction(simTx: SimulatedAndVisualizedTransaction): I
 	}
 
 	if (getProxyTokenTransferOrUndefined(simTx)) {
-		const tokenResult = simTx.tokenResults[0]
+		const tokenResult = tokenResults[0]
 		if (tokenResult === undefined) throw new Error('token result were undefined')
 		const symbol = tokenResult.token.symbol
-		const edges = simTx.tokenResults.map((tokenResult) => ({ from: tokenResult.from.address, to: tokenResult.to.address, data: tokenResult.to, amount: !tokenResult.isApproval && tokenResult.type !== 'ERC721' ? tokenResult.amount : 1n }))
+		const edges = tokenResults.map((tokenResult) => ({ from: tokenResult.from.address, to: tokenResult.to.address, data: tokenResult.to, amount: !tokenResult.isApproval && tokenResult.type !== 'ERC721' ? tokenResult.amount : 1n }))
 		const deadEnds = findDeadEnds(edges, simTx.transaction.from.address)
 
 		function removeDuplicates(entries: AddressBookEntry[]): AddressBookEntry[] {

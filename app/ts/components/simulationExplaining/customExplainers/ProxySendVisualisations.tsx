@@ -8,6 +8,7 @@ import { RpcNetwork } from '../../../types/rpc.js'
 import { AddressBookEntry } from '../../../types/addressBookTypes.js'
 import { interleave } from '../../../utils/typed-arrays.js'
 import { SmallAddress } from '../../subcomponents/address.js'
+import { extractTokenEvents } from '../../../background/metadataUtils.js'
 
 type BeforeAfterAddressWithAmount = BeforeAfterAddress & { amount: bigint }
 
@@ -53,9 +54,10 @@ function ProxyMultiSend({ transaction, asset, sender, receivers, renameAddressCa
 
 export function ProxyTokenTransferVisualisation({ simTx, renameAddressCallBack }: { simTx: SimulatedAndVisualizedProxyTokenTransferTransaction, renameAddressCallBack: RenameAddressCallBack }) {
 	// proxy send to multiple addresses
-	const transfer = simTx.tokenResults[0]
+	const transfer = extractTokenEvents(simTx.events)[0]
 	if (transfer === undefined) throw new Error('transfer was undefined')
 	const asset = getAsset(transfer, renameAddressCallBack)
+	if (asset === undefined) throw new Error('asset was undefined')
 	const senderAfter = simTx.tokenBalancesAfter.find((change) => change.owner === transfer.from.address && change.token === asset.tokenEntry.address && change.tokenId === asset.tokenId)?.balance
 	const senderGasFees = asset.tokenEntry.address === ETHEREUM_LOGS_LOGGER_ADDRESS && asset.tokenEntry.type === 'ERC20' && transfer.from.address === simTx.transaction.from.address ? simTx.gasSpent * simTx.realizedGasPrice : 0n
 	
