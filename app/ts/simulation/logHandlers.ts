@@ -5,6 +5,7 @@ import { Erc1155ABI } from '../utils/abi.js'
 import { Interface } from 'ethers'
 import { EthereumEvent } from '../types/ethSimulate-types.js'
 import { EthereumBytes32 } from '../types/wire-types.js'
+import { extractENSFuses } from '../utils/ethereumNameService.js'
 
 export function handleERC20TransferLog(eventLog: EthereumEvent): TokenVisualizerResult[] {
 	if (eventLog.topics[1] === undefined || eventLog.topics[2] === undefined) throw new Error('unknown log')
@@ -188,4 +189,13 @@ export function handleEnsTextChangedKeyValue(eventLog: ParsedEvent) {
 export function handleEnsContentHashChanged(eventLog: ParsedEvent) {
 	if (eventLog.args[0]?.typeValue.type !== 'fixedBytes' || eventLog.args[1]?.typeValue.type !== 'bytes') throw new Error('Malformed ENS Content Hash Changed Event')
 	return { node: EthereumBytes32.parse(dataStringWith0xStart(eventLog.args[0].typeValue.value)) }
+}
+
+// event FusesSet(bytes32 indexed node, uint32 fuses)
+export function handleEnsFusesSet(eventLog: ParsedEvent) {
+	if (eventLog.args[0]?.typeValue.type !== 'fixedBytes' || eventLog.args[1]?.typeValue.type !== 'unsignedInteger') throw new Error('Malformed ENS Fuses Set Event')
+	return {
+		node: EthereumBytes32.parse(dataStringWith0xStart(eventLog.args[0].typeValue.value)),
+		fuses: extractENSFuses(eventLog.args[1]?.typeValue.value)
+	}
 }

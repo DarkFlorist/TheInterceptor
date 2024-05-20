@@ -74,6 +74,21 @@ export const TokenVisualizerResult = funtypes.Intersect(
 	)
 )
 
+export type EnsFuseName = funtypes.Static<typeof EnsFuseName>
+export const EnsFuseName = funtypes.Union(
+	funtypes.Literal('CANNOT_UNWRAP'),
+	funtypes.Literal('CANNOT_BURN_FUSES'),
+	funtypes.Literal('CANNOT_TRANSFER'),
+	funtypes.Literal('CANNOT_SET_RESOLVER'),
+	funtypes.Literal('CANNOT_SET_TTL'),
+	funtypes.Literal('CANNOT_CREATE_SUBDOMAIN'),
+	funtypes.Literal('PARENT_CANNOT_CONTROL'),
+	funtypes.Literal('CANNOT_APPROVE'),
+	funtypes.Literal('IS_DOT_ETH'),
+	funtypes.Literal('CAN_EXTEND_EXPIRY'),
+	funtypes.Literal('CAN_DO_EVERYTHING')
+)
+
 export type ParsedEnsEvent = funtypes.Static<typeof ParsedEnsEvent>
 export const ParsedEnsEvent = funtypes.Union(
 	funtypes.ReadonlyObject({ type: funtypes.Literal('Parsed') }),
@@ -129,6 +144,13 @@ export const ParsedEnsEvent = funtypes.Union(
 		logInformation: funtypes.ReadonlyObject({
 			labelHash: EthereumBytes32,
 			expires: EthereumQuantity
+		}),
+	}),
+	funtypes.ReadonlyObject({
+		type: funtypes.Literal('ENSFusesSet'),
+		logInformation: funtypes.ReadonlyObject({
+			node: EthereumBytes32,
+			fuses: funtypes.ReadonlyArray(EnsFuseName),
 		}),
 	}),
 )
@@ -260,6 +282,13 @@ export const EnrichedEthereumEventWithMetadata = funtypes.Union(
 				),
 				logInformation: funtypes.ReadonlyObject({
 					node: MaybeENSNameHash,
+				}),
+			}),
+			funtypes.ReadonlyObject({
+				type: funtypes.Literal('ENSFusesSet'),
+				logInformation: funtypes.ReadonlyObject({
+					node: MaybeENSNameHash,
+					fuses: funtypes.ReadonlyArray(EnsFuseName),
 				}),
 			}),
 			funtypes.ReadonlyObject({
