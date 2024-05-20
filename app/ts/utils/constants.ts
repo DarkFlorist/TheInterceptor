@@ -1,4 +1,4 @@
-import { ethers } from 'ethers'
+import { ethers, namehash } from 'ethers'
 import { CHAIN_NAMES } from './chainNames.js'
 
 // common contract addresses
@@ -44,6 +44,8 @@ export const ENS_TEXT_CHANGED_KEY_VALUE = ethers.keccak256(ethers.toUtf8Bytes('T
 export const ENS_CONTENT_HASH_CHANGED = ethers.keccak256(ethers.toUtf8Bytes('ContenthashChanged(bytes32,bytes)'))
 export const ENS_FUSES_SET = ethers.keccak256(ethers.toUtf8Bytes('FusesSet(bytes32,uint32)'))
 export const ENS_NAME_UNWRAPPED = ethers.keccak256(ethers.toUtf8Bytes('NameUnwrapped(bytes32,address)'))
+export const ENS_NAME_CHANGED = ethers.keccak256(ethers.toUtf8Bytes('NameChanged(bytes32,string)'))
+export const ENS_REVERSE_CLAIMED = ethers.keccak256(ethers.toUtf8Bytes('ReverseClaimed(address,bytes32)'))
 
 // Other
 export const MOCK_ADDRESS = 0xdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefn
@@ -53,6 +55,10 @@ export const ENS_ETH_REGISTRAR_CONTROLLER = 0x253553366Da8546fC250F225fe3d25d0C7
 export const ENS_ETHEREUM_NAME_SERVICE = 0x57f1887a8BF19b14fC0dF6Fd9B2acc9Af147eA85n
 export const ENS_PUBLIC_RESOLVER_2 = 0x4976fb03C32e5B8cfe2b6cCB31c09Ba78EBaBa41n
 export const ENS_REGISTRY_WITH_FALLBACK = 0x00000000000C2E074eC69A0dFb2997BA6C7d2e1en
+export const ENS_REVERSE_REGISTRAR = 0xa58E81fe9b61B5c3fE2AFD33CF304c454AbFc7Cbn
+
+// ENS Nodes
+export const ENS_ADDR_REVERSE_NODE = { name: 'addr.reverse', nameHash: BigInt(namehash('addr.reverse')) }
 
 // ENS Fuses
 export const CANNOT_UNWRAP = 1n

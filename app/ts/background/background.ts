@@ -43,11 +43,11 @@ async function updateMetadataForSimulation(simulationState: SimulationState, eth
 	const settingsPromise = getSettings()
 	const settings = await settingsPromise
 	const allEvents = eventsForEachTransaction.flat()
-	const ensLabelHashesPromise = retrieveEnsLabelHashes(allEvents)
-	const ensNameHashesPromise = retrieveEnsNodeHashes(ethereum, allEvents)
 	const addressBookEntryPromises = getAddressBookEntriesForVisualiser(ethereum, requestAbortController, allEvents, simulationState)
 	const namedTokenIdPromises = nameTokenIds(ethereum, allEvents)
 	const addressBookEntries = await addressBookEntryPromises
+	const ensNameHashesPromise = retrieveEnsNodeHashes(ethereum, allEvents, addressBookEntries)
+	const ensLabelHashesPromise = retrieveEnsLabelHashes(allEvents, addressBookEntries)
 	const namedTokenIds = await namedTokenIdPromises
 	const simulatedAndVisualizedTransactions = formSimulatedAndVisualizedTransaction(simulationState, eventsForEachTransaction, protectorResults, addressBookEntries, namedTokenIds, { ensNameHashes: await ensNameHashesPromise, ensLabelHashes: await ensLabelHashesPromise })
 	const VisualizedPersonalSignRequest = simulationState.signedMessages.map((signedMessage) => craftPersonalSignPopupMessage(ethereum, requestAbortController, signedMessage, settings.currentRpcNetwork))

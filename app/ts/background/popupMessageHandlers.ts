@@ -176,10 +176,10 @@ export async function refreshPopupConfirmTransactionMetadata(ethereumClientServi
 	const allEvents = eventsForEachTransaction.flat()
 	const addressBookEntriesPromise = getAddressBookEntriesForVisualiser(ethereumClientService, requestAbortController, allEvents, data.simulationState)
 	const namedTokenIdsPromise = nameTokenIds(ethereumClientService, allEvents)
-	const ensNameHashesPromise = retrieveEnsNodeHashes(ethereumClientService, allEvents)
-	const ensLabelHashesPromise = retrieveEnsLabelHashes(allEvents)
 	const addressBookEntries = await addressBookEntriesPromise
+	const ensNameHashesPromise = retrieveEnsNodeHashes(ethereumClientService, allEvents, addressBookEntries)
 	const namedTokenIds = await namedTokenIdsPromise
+	const ensLabelHashesPromise = retrieveEnsLabelHashes(allEvents, addressBookEntries)
 	if (first === undefined || (first.transactionOrMessageCreationStatus !== 'Simulated' && first.transactionOrMessageCreationStatus !== 'FailedToSimulate') || first.simulationResults === undefined || first.simulationResults.statusCode !== 'success') return
 	return await sendPopupMessageToOpenWindows({
 		method: 'popup_update_confirm_transaction_dialog',

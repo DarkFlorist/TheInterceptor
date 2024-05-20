@@ -205,3 +205,18 @@ export function handleEnsNameUnWrapped(eventLog: ParsedEvent) {
 	if (eventLog.args[0]?.typeValue.type !== 'fixedBytes' || eventLog.args[1]?.typeValue.type !== 'address') throw new Error('Malformed ENS Name Unwrapped Event')
 	return { node: EthereumBytes32.parse(dataStringWith0xStart(eventLog.args[0].typeValue.value)) }
 }
+
+// event NameChanged(bytes32 indexed node, string name); // 0x231b0Ee14048e9dCcD1d247744d114a4EB5E8E63
+export function handleEnsNameChanged(eventLog: ParsedEvent) {
+	if (eventLog.args[0]?.typeValue.type !== 'fixedBytes' || eventLog.args[1]?.typeValue.type !== 'string') throw new Error('Malformed ENS Name Unwrapped Event')
+	return { node: EthereumBytes32.parse(dataStringWith0xStart(eventLog.args[0].typeValue.value)) }
+}
+
+// event ReverseClaimed(address indexed addr, bytes32 indexed node) // 0xa58E81fe9b61B5c3fE2AFD33CF304c454AbFc7Cb
+export function handleEnsReverseClaimed(eventLog: ParsedEvent) {
+	if (eventLog.args[0]?.typeValue.type !== 'address' || eventLog.args[1]?.typeValue.type !== 'fixedBytes') throw new Error('Malformed ENS Name Unwrapped Event')
+	return {
+		addr: eventLog.args[0]?.typeValue.value,
+		node: EthereumBytes32.parse(dataStringWith0xStart(eventLog.args[1].typeValue.value))
+	}
+}
