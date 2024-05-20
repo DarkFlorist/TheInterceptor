@@ -199,3 +199,9 @@ export function handleEnsFusesSet(eventLog: ParsedEvent) {
 		fuses: extractENSFuses(eventLog.args[1]?.typeValue.value)
 	}
 }
+
+// event NameUnwrapped(bytes32 indexed node, address owner)
+export function handleEnsNameUnWrapped(eventLog: ParsedEvent) {
+	if (eventLog.args[0]?.typeValue.type !== 'fixedBytes' || eventLog.args[1]?.typeValue.type !== 'address') throw new Error('Malformed ENS Name Unwrapped Event')
+	return { node: EthereumBytes32.parse(dataStringWith0xStart(eventLog.args[0].typeValue.value)) }
+}
