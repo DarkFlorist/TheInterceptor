@@ -349,18 +349,16 @@ const getTransactionQueue = (simulationState: SimulationState | undefined) => {
 	return simulationState.simulatedTransactions.map((x) => x.signedTransaction)
 }
 
-export const getEmptySimulationStateWithRichAddress = (ethereumClientService: EthereumClientService, addressToMakeRich: EthereumAddress | undefined, oldSimulationState: SimulationState | undefined): SimulationState => {
-	return {
-		addressToMakeRich,
-		simulatedTransactions: [],
-		blockNumber: oldSimulationState?.blockNumber || 0n,
-		blockTimestamp: new Date(),
-		rpcNetwork: ethereumClientService.getRpcEntry(),
-		simulationConductedTimestamp: new Date(),
-		signedMessages: [],
-		baseFeePerGas: 0n,
-	}
-}
+export const getEmptySimulationStateWithRichAddress = (ethereumClientService: EthereumClientService, addressToMakeRich: EthereumAddress | undefined, oldSimulationState: SimulationState | undefined): SimulationState => ({
+	addressToMakeRich,
+	simulatedTransactions: [],
+	blockNumber: oldSimulationState?.blockNumber || 0n,
+	blockTimestamp: new Date(),
+	rpcNetwork: ethereumClientService.getRpcEntry(),
+	simulationConductedTimestamp: new Date(),
+	signedMessages: [],
+	baseFeePerGas: 0n,
+})
 
 export const removeSignedMessageFromSimulation = async (ethereumClientService: EthereumClientService, requestAbortController: AbortController | undefined, simulationState: SimulationState, messageIdentifier: EthereumQuantity): Promise<SimulationState>  => {
 	const numberOfMessages = simulationState.signedMessages.length
