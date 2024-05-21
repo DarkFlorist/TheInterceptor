@@ -907,7 +907,7 @@ button:not(.button):is(.btn) {
 
 details {
 	--s-text-size: var(--text-size, 0.85rem);
-	--s-base-color: color(from var(--text-color) srgb 0.4 0.4 0.4);
+	--s-base-color: color(srgb .4 .4 .4);
 	--s-icon-order: var(--icon-order);
 	--s-rule-color: transparent;
 	outline: none;
@@ -924,7 +924,7 @@ summary {
 }
 
 summary:hover {
-	--s-base-color: color(from var(--text-color) srgb 0.6 0.6 0.6);
+	--s-base-color: color( srgb .6 .6 .6);
 	--s-rule-color: currentColor;
 }
 
@@ -987,8 +987,8 @@ summary:where(details[open] > *) {
 	--grid-cols: 1fr max-content;
 	--gap-x: 1rem;
 	--hl-color: white;
-	background-color: color(from var(--bg-color) srgb .3 .3 .3);
-	color: color(from var(--text-color) srgb .6 .6 .6);
+	background-color: color(srgb .3 .3 .3);
+	color: color(srgb .6 .6 .6);
 	font-size: var(--text-size, inherit);
 	font-weight: var(--font-weight, normal);
 	padding: 0.5rem 1em;
@@ -1019,8 +1019,8 @@ summary:where(details[open] > *) {
 
 .text-input {
 	--text-size: 1em;
-	--label-color: color(from var(--text-color) srgb .3 .3 .3);
-	--border-color: color(from var(--text-color) srgb .4 .4 .4);
+	--label-color: color(srgb .3 .3 .3);
+	--border-color: color(srgb .4 .4 .4);
 	--columns: 1fr min-content;
 	display: grid;
 	grid-template-columns: var(--columns);
@@ -1061,7 +1061,7 @@ summary:where(details[open] > *) {
 
 :where(.text-input:focus-within span, .text-input input:not(:placeholder-shown) + span) {
 	transform: translateY(0) scale(0.75);
-	--label-color: color(from var(--text-color) srgb .5 .5 .5);
+	--label-color: color(srgb .5 .5 .5);
 }
 
 .spin {
