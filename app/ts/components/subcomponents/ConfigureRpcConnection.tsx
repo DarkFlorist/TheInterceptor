@@ -3,8 +3,9 @@ import { Signal, useComputed, useSignal, useSignalEffect } from '@preact/signals
 import { useContext, useRef } from 'preact/hooks'
 import { AsyncStates, useAsyncState } from '../../utils/preact-utilities.js'
 import { TextInput } from './TextField.js'
-import { RpcEntry } from '../../types/rpc.js'
+import { RpcEntries, RpcEntry } from '../../types/rpc.js'
 import { CHAIN_NAMES } from '../../utils/chainNames.js'
+import { sendPopupMessageToBackgroundPage } from '../../background/backgroundUtils.js'
 
 type ParsedData = { success: true, value: RpcEntry } | { message: string }
 
@@ -53,7 +54,7 @@ function useConfigureRpc() {
 	return context
 }
 
-export const ConfigureRpcConnection = ({ rpcInfo }: { rpcInfo?: RpcEntry | undefined }) => {
+export const ConfigureRpcConnection = ({ rpcEntries, rpcInfo }: { rpcEntries: RpcEntries ,rpcInfo?: RpcEntry | undefined }) => {
 	const modalRef = useRef<HTMLDialogElement>(null)
 
 	const verifyInputsAndSave = (event: Event) => {
@@ -61,13 +62,23 @@ export const ConfigureRpcConnection = ({ rpcInfo }: { rpcInfo?: RpcEntry | undef
 		if (!(event instanceof SubmitEvent)) return
 
 		// abort if dialog submitter was a cancel request
-		if (event.submitter instanceof HTMLButtonElement && event.submitter.value === 'cancel') {
-			// reset the form to it's previous state
-			if (event.target instanceof HTMLFormElement) {
-				event.target.reset()
+		if (event.submitter instanceof HTMLButtonElement) {
+			if (event.submitter.value === 'cancel') {
+				// reset the form to it's previous state
+				if (event.target instanceof HTMLFormElement) event.target.reset()
+				modalRef.current?.close()
+				return
 			}
-			modalRef.current?.close()
-			return
+
+			if (event.submitter.value === 'remove') {
+				console.log('submitter is remove', rpcEntries.filter(entry => entry.httpsRpc !== rpcInfo?.httpsRpc))
+				// remove current rpc
+				sendPopupMessageToBackgroundPage({
+					method: 'popup_set_rpc_list',
+					data: rpcEntries.filter(entry => entry.httpsRpc !== rpcInfo?.httpsRpc)
+				})
+				return
+			}
 		}
 
 		// handle form validation and submission
@@ -93,9 +104,10 @@ export const ConfigureRpcConnection = ({ rpcInfo }: { rpcInfo?: RpcEntry | undef
 				return
 			}
 
-			console.log(parsedRpcData.value)
-
-			// update rpc list
+			sendPopupMessageToBackgroundPage({
+				method: 'popup_set_rpc_list',
+				data: rpcEntries.filter(entry => entry.httpsRpc !== parsedRpcData.value.httpsRpc).concat([parsedRpcData.value])
+			})
 		}
 	}
 
@@ -164,7 +176,7 @@ const ConfigureRpcForm = ({ defaultValues }: { defaultValues?: RpcEntry }) => {
 								<p>You are about to remove this server permanently. Are you sure you want to proceed?</p>
 							</div>
 							<button type = 'button' class = 'btn btn--ghost' style = '--area: 2 / 2' onClick = { () => confirmRemoval.value = false }>No</button>
-							<button type = 'button' value = 'cancel' class = 'btn btn--destructive' style = '--area: 2 / 3' formNoValidate>Yes, Confirm Remove</button>
+							<button type = 'submit' value = 'remove' class = 'btn btn--destructive' style = '--area: 2 / 3' formNoValidate>Yes, Confirm Remove</button>
 						</div>
 					) : (
 						<>
@@ -181,6 +193,7 @@ const ConfigureRpcForm = ({ defaultValues }: { defaultValues?: RpcEntry }) => {
 	)
 }
 
+const RPC_URL_FETCH_DEBOUNCE = 600
 const RpcUrlField = ({ defaultValue }: { defaultValue?: string }) => {
 	const { rpcUrlQuery, rpcUrl } = useConfigureRpc()
 	const inputRef = useRef<HTMLInputElement>(null)
@@ -192,7 +205,7 @@ const RpcUrlField = ({ defaultValue }: { defaultValue?: string }) => {
 		const httpsRpc = event.target.value
 		timeout.value = setTimeout(() => {
 			rpcUrl.value = httpsRpc
-		}, 600)
+		}, RPC_URL_FETCH_DEBOUNCE)
 	}
 
 	useSignalEffect(() => {

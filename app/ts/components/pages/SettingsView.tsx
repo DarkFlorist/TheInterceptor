@@ -179,7 +179,7 @@ export function SettingsView() {
 						<Collapsible summary = 'RPC Connections' defaultOpen = { true }>
 							<div class = 'grid' style = '--gap-y: 0.5rem; padding: 0.5rem 0'>
 							<RpcList rpcEntries = { rpcEntries } />
-							<ConfigureRpcConnection />
+							<ConfigureRpcConnection rpcEntries = { rpcEntries } />
 							</div>
 						</Collapsible>
 					</li>
@@ -192,12 +192,12 @@ export function SettingsView() {
 const RpcList = ({ rpcEntries }: { rpcEntries: RpcEntries }) => {
 	return (
 		<ul class = 'grid' style = '--gap-y: 0.5rem'>
-			{ rpcEntries.map(entry => <RpcSummary info = { entry } />) }
+			{ rpcEntries.map(entry => <RpcSummary entries = { rpcEntries } info = { entry } />) }
 		</ul>
 	)
 }
 
-const RpcSummary = ({ info }: { info: RpcEntry }) => {
+const RpcSummary = ({ entries, info }: { entries: RpcEntries, info: RpcEntry }) => {
 	const networkName = CHAIN_NAMES.get(info.chainId.toString())
 	return (
 		<li class = 'grid brief'>
@@ -207,7 +207,7 @@ const RpcSummary = ({ info }: { info: RpcEntry }) => {
 				<div>{ info.httpsRpc }</div>
 			</div>
 			<div class = 'actions'>
-				<ConfigureRpcConnection rpcInfo = { info } />
+				<ConfigureRpcConnection rpcEntries = { entries } rpcInfo = { info } />
 			</div>
 		</li>
 	)
