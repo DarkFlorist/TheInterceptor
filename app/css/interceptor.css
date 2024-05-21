@@ -1,5 +1,7 @@
 @charset "utf-8";
 
+html { font-size: 100%; }
+
 :root {
 	--bg-color: #303030;
 	--card-bg-color: #424242;
@@ -46,7 +48,7 @@ button:where(:not(.btn)):hover {
 	background-color: var(--highlighted-primary-color);
 }
 
-button:where(:not(.btn):disabled, button[disabled]) {
+button:not(.btn):disabled, button[disabled]) {
 	background-color: var(--disabled-primary-color);
 	border-color: transparent;
 }
@@ -842,115 +844,11 @@ svg.spinner > circle {
 	background-color: var(--window-header-bg-color);
 }
 
-.button.button--ghost {
-	background: transparent;
-	border: 0 none;
-}
 
-.button.button--ghost:hover {
-	color: var(--text-color)
-}
+/* TODO: remove bulma dependency */
+strong { color: inherit }
 
-.button.button--inset {
-    background: #00000007;
-    color: #ffffff99;
-    box-shadow: #00000082 0px 0px 2px inset;
-    text-shadow: #232323 0px 1px;
-    border: 1px dashed #ffffff33;
-    width: 100%;
-}
-
-.button.button--inset:hover {
-	color: #ffffff;
-    border-color: #ffffff70;
-    background: #ffffff08;
-}
-
-.button-icon {
-	display: block;
-	line-height: 1;
-}
-
-.dialog {
-	background: var(--bg-color);
-    padding: 0;
-    border: 0;
-}
-
-.dialog::backdrop {
-	background-color: rgba(0, 0, 0, 0.75);
-}
-
-.dialog-header {
-    background: var(--window-header-bg-color);
-	color: var(--text-color);
-    padding-left: 16px;
-    padding-right: 16px;
-    border-radius: 6px 6px 0 0;
-	display: grid;
-	grid-template-columns: repeat(2, max-content);
-	height: 3rem;
-	align-items: center;
-	justify-content: space-between;
-}
-
-.dialog-main {
-	display: grid;
-	padding: 12px;
-	row-gap: 12px;
-}
-
-.dialog-footer {
-    background: var(--window-header-bg-color);
-	color: var(--text-color);
-    padding: 8px;
-
-    display: grid;
-    grid-template-columns: min-content min-content;
-    gap: 8px;
-    justify-content: end;
-    border-radius: 6px;
-}
-
-.fieldslist {
-    padding: 20px 24px;
-    background: var(--card-bg-color);
-    box-shadow: 0 2px 4px #00000060;
-    border-radius: 6px;
-	display: grid;
-	row-gap: 10px;
-}
-
-.input-field {
-	display: flex;
-	flex-direction: column-reverse;
-}
-
-.input-field label {
-	font-size: 0.75em;
-	line-height: 1;
-	color: #ffffff50;
-	transition-duration: 200ms;
-	transform-origin: top left;
-}
-
-.input-field input {
-	background: transparent;
-	color: white;
-	border-width: 0 0 1px 0;
-	outline: none;
-	padding: 4px 0;
-}
-
-.input-field input::placeholder {
-	color: #ffffff00;
-}
-
-.input-field input:placeholder-shown ~ label {
-    transform: scale(1.1) translate(0, 1.3em);
-}
-
-button:is(:not(.button), .btn) {
+button:not(.button):is(.btn) {
 	--s-justify: var(--btn-justify, center);
 	--s-bg: var(--btn-bg-color, gray);
 	--s-fg: var(--btn-text-color, var(--text-color));
@@ -959,10 +857,10 @@ button:is(:not(.button), .btn) {
 	--s-brightness: var(--btn-brightness, 1);
 	--s-saturation: var(--btn-saturation, 1);
 	--s-contrast: var(--btn-contrast, 1);
-	/* reset some library button styles */
+	font: inherit;
 	background-color: var(--s-bg);
 	color: var(--s-fg, var(--text-color));
-	font-size: var(--s-size);
+	font-size: var(--s-size, inherit);
 	border: var(--s-outline);
 	filter: saturate(var(--s-saturation)) brightness(var(--s-brightness));
 	justify-content: var(--s-justify);
@@ -977,40 +875,35 @@ button:is(:not(.button), .btn) {
 
 .btn:disabled { cursor: not-allowed; --btn-brightness: 0.6; --btn-saturation: 0.2 }
 .btn:not(:disabled):hover { --btn-brightness: 1.25 }
-.btn:not(:disabled):focus { --btn-outline: 1px solid var(--o-fg) }
+.btn:not(:disabled):focus { --btn-outline: 1px solid var(--s-fg) }
 
 /* Primary Button */
-.btn.btn--primary { --btn-bg-color: var(--primary-color) }
-.btn.btn--primary:not(:disabled):hover { --btn-saturation: 1.5 }
+.btn--primary { --btn-bg-color: var(--primary-color) }
+.btn--primary:not(:disabled):hover { --btn-saturation: 1.5 }
 
 /* Danger Button */
-.btn.btn--destructive { --btn-bg-color: var(--negative-color) }
-.btn.btn--destructive:not(:disabled):hover { --btn-saturation: 1.5 }
+.btn--destructive { --btn-bg-color: var(--negative-color) }
+.btn--destructive:not(:disabled):hover { --btn-saturation: 1.5 }
 
-.btn.btn--outline {
+.btn--outline {
 	--btn-bg-color: transparent;
 	--btn-outline: 1px solid #ffffff20;
 }
 
-.btn.btn--outline:hover:not(:disabled) { --btn-bg-color: #ffffff10 }
+.btn--outline:hover:not(:disabled) { --btn-bg-color: #ffffff10 }
+.btn--ghost { --btn-bg-color: transparent; }
+.btn--ghost:hover:not(:disabled) { --btn-bg-color: #ffffff10; }
 
-.actions:has(.btn) {
-	column-gap: var(--button-gaps, 0.5rem);
+
+:where(.actions:has(.btn), .flex) {
+	--gap-x: 0.5rem;
+	--justify: end;
+	column-gap: var(--gap-x);
+	justify-content: var(--justify);
 	display: flex;
 }
 
-:where(.actions > .btn) { font-size: var(--s-button-size); }
-
-.dialog {
-  padding: 1em;
-  border-radius: 6px;
-}
-
-.dialog-actions {
-  display: grid;
-  place-items: end;
-  grid-template-columns: max-content max-content;
-}
+/* Default styles for details element */
 
 details {
 	--s-text-size: var(--text-size, 0.85rem);
@@ -1068,31 +961,125 @@ summary:where(details[open] > *) {
 
 .svg-icon:where(details:not([open]) .details--arrow) { --icon-rotate: -90deg }
 
-.grid {
-	display: grid;
-	grid-template-columns: var(--grid-cols, auto);
-	align-items: var(--vertical-align, center);
-	row-gap: var(--gap-y, 0);
-	column-gap: var(--gap-x, 0);
+:where(.grid, .flex) {
+	--gap-y: 0;
+	--gap-x: 0;
+	--align-items: center;
+	align-items: var(--align-items, center);
+	column-gap: var(--gap-x);
 }
 
-:where(.grid > *:not(.cell)) { display: none; }
+:where(.grid) {
+	--grid-cols: auto;
+	display: grid;
+	row-gap: var(--gap-y);
+	grid-template-columns: var(--grid-cols);
+}
 
-.cell:where(.grid > *) {
-	color: var(--text-color);
-	font-size: var(--text-size, 0.9rem);
-	font-weight: var(--font-weight, normal);
-	grid-area: var(--grid-area, auto);
+:where(.flex) { display: flex }
+
+:where(.grid > *) {
+	--area: auto;
+	grid-area: var(--area);
 }
 
 .brief {
 	--grid-cols: 1fr max-content;
 	--gap-x: 1rem;
-	background: #ffffff10;
+	--hl-color: white;
+	background-color: color(from var(--bg-color) srgb .3 .3 .3);
+	color: color(from var(--text-color) srgb .6 .6 .6);
+	font-size: var(--text-size, inherit);
+	font-weight: var(--font-weight, normal);
 	padding: 0.5rem 1em;
 	border-radius: 4px;
+	margin: 0;
 }
 
-.brief .grid:where(.brief > *) { --grid-cols: 1fr max-content; }
-.brief .cell { --text-color: gray }
-.brief .actions { --btn-text-size: 0.8rem; }
+.brief strong { color: var(--hl-color) }
+
+.brief .actions > .btn { --s-size: 0.8rem; }
+
+.dialog {
+	background: var(--bg-color);
+	color: var(--text-color);
+	border: 0 none;
+  padding: 1em;
+  border-radius: 6px;
+	width: calc(100vw - 4em);
+	max-width: 36em;
+}
+
+.dialog header, .dialog footer { display: grid; }
+
+.dialog::backdrop {
+	background: #00000090;
+	backdrop-filter: blur(1px);
+}
+
+.text-input {
+	--text-size: 1em;
+	--label-color: color(from var(--text-color) srgb .3 .3 .3);
+	--border-color: color(from var(--text-color) srgb .4 .4 .4);
+	--columns: 1fr min-content;
+	display: grid;
+	grid-template-columns: var(--columns);
+	border-bottom: 1px solid var(--border-color);
+	align-items: center;
+}
+
+.text-input:focus-within { --border-color: white }
+
+.text-input > input {
+	font: inherit;
+	grid-area: 2 / 1;
+	background-color: var(--bg-color, transparent);
+	color: var(--text-color);
+	outline: none;
+	padding: 0.2em 0;
+	border: 0 none;
+}
+
+/* remove browser autofill styles */
+.text-input > input:where(:-internal-autofill-selected, :autofill) {
+	background-clip: text;
+	-webkit-text-fill-color: var(--text-color, initial);
+}
+
+.text-input > input::placeholder { color: transparent; }
+
+.text-input > input:where(:disabled, :read-only) { --text-color: var(--border-color) }
+.text-input > input:where(:invalid) { --text-color: var(--negative-color) }
+
+:where(.text-input:has(input) > span) {
+	grid-area: 1 / span 2;
+	color: var(--label-color);
+	transform-origin: bottom left;
+	transition: transform 150ms;
+	transform: translateY(1.525em);
+}
+
+:where(.text-input:focus-within span, .text-input input:not(:placeholder-shown) + span) {
+	transform: translateY(0) scale(0.75);
+	--label-color: color(from var(--text-color) srgb .5 .5 .5);
+}
+
+.spin {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  0% {
+    transform: rotate(0deg);
+  }
+  100% {
+    transform: rotate(360deg);
+  }
+}
+
+.disclosure {
+	border: 1px dashed var(--negative-color);
+	color: var(--negative-color);
+	padding: 1rem;
+	border-radius: 6px;
+}

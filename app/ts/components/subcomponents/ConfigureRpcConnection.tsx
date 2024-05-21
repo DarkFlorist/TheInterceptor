@@ -89,7 +89,7 @@ export const ConfigureRpcConnection = ({ rpcInfo }: { rpcInfo?: RpcEntry | undef
 
 			if (!parsedRpcData.success) {
 				event.preventDefault()
-				console.log('parse error', parsedRpcData)
+				console.error('RPC Info Parse', parsedRpcData)
 				return
 			}
 
@@ -103,7 +103,10 @@ export const ConfigureRpcConnection = ({ rpcInfo }: { rpcInfo?: RpcEntry | undef
 
 	return (
 		<ConfigureRpcProvider>
-			<button type = 'button' onClick = { showConfigurationModal } class = 'btn btn--outline'>{ rpcInfo ? 'Edit' : '+ New RPC Connection' }</button>
+			{ rpcInfo
+				? <button type = 'button' onClick = { showConfigurationModal } class = 'btn btn--outline'>Edit</button>
+				: <button type = 'button' onClick = { showConfigurationModal } class = 'btn btn--outline' style = 'border-style: dashed'>+ New RPC Connection</button>
+			}
 			<dialog class = 'dialog' ref = { modalRef } onSubmit = { verifyInputsAndSave }>
 				<ConfigureRpcForm defaultValues = { rpcInfo } />
 			</dialog>
@@ -133,7 +136,7 @@ const ConfigureRpcForm = ({ defaultValues }: { defaultValues?: RpcEntry }) => {
 	})
 
 	return (
-		<form method = 'dialog' class = 'grid' style = '--gap-y: 1.5rem' onSubmit = { e => console.log('submit', e)}>
+		<form method = 'dialog' class = 'grid' style = '--gap-y: 1.5rem'>
 			<header class = 'grid' style = '--grid-cols: 1fr auto'>
 				<span style = { { fontWeight: 'bold', color: 'white' } }>Configure RPC Connection</span>
 				<button type = 'submit' value = 'cancel' class = 'btn btn--ghost' aria-label = 'close' formNoValidate>
@@ -142,17 +145,14 @@ const ConfigureRpcForm = ({ defaultValues }: { defaultValues?: RpcEntry }) => {
 			</header>
 
 			<main class = 'grid' style = '--gap-y: 0.5rem'>
-				<p>Interceptor will automatically verify the RPC URL you provide and attempt to fill relevant information. Feel free to adjust the pre-populated details to your preference.</p>
-
+				<p>Interceptor will automatically verify the RPC URL you provide and attempt to fill relevant information. Adjust the pre-populated details to your liking.</p>
 				<div class = 'grid' style = '--grid-cols: 1fr 1fr; --gap-x: 1rem; --gap-y: 0' >
 					<RpcUrlField defaultValue = { defaultValues?.httpsRpc } />
-					<TextInput label = 'Label *' name = 'name' style = '--area: 3 / span 2' required />
-					<TextInput label = 'Network Name *' name = 'network' defaultValue = { networkNameDefault.value } style = '--area: 5 / span 1' required />
+					<TextInput label = 'Network Name *' name = 'name' defaultValue = { networkNameDefault.value } style = '--area: 5 / span 1' required />
 					<TextInput label = 'Chain ID' name = 'chainId' style = '--area: 5 / span 1' defaultValue = { chainIdDefault.value } required readOnly />
 					<TextInput label = 'Currency Name *' name = 'currencyName' defaultValue = { currencyNameDefault.value } style = '--area: 7 / span 1' required />
 					<TextInput label = 'Currency Ticker *' name = 'currencyTicker' defaultValue = { currencyTickerDefault.value } style = '--area: 7 / span 1' required />
 				</div>
-
 				<p style = '--text-color: gray'><small>* Fields marked with an asterisk (*) are required.</small></p>
 			</main>
 
@@ -211,26 +211,26 @@ const RpcUrlField = ({ defaultValue }: { defaultValue?: string }) => {
 export const StatusIcon = ({ state }: { state: AsyncStates }) => {
 	switch (state) {
 		case 'inactive': return <></>
-		case 'pending': return <Spinner />
-		case 'rejected': return <XMark />
-		case 'resolved': return <Check />
+		case 'pending': return <SpinnerIcon />
+		case 'rejected': return <XMarkIcon />
+		case 'resolved': return <CheckIcon />
 	}
 }
 
-export const Spinner = () => (
+export const SpinnerIcon = () => (
 	<svg class = 'spin' width = '1em' height = '1em' viewBox = '0 0 16 16' fill = 'none' xmlns = 'http://www.w3.org/2000/svg'>
 		<circle cx = '8' cy = '8' r = '6.5' stroke = 'var(--text-color, currentColor)' stroke-opacity = '.5' stroke-width = '3' />
 		<path d = 'M8 0a8 8 0 1 0 8 8h-3a5 5 0 1 1-5-5z' fill = 'var(--text-color, currentColor)' fill-opacity = '.4' />
 	</svg>
 )
 
-export const Check = () => (
+export const CheckIcon = () => (
 	<svg width = '1em' height = '1em' viewBox = '0 0 16 16' fill = 'none' xmlns = 'http://www.w3.org/2000/svg' >
 		<path d = 'M15 3L5.64686 12.5524L1 7.84615' stroke = 'var(--positive-color, currentColor)' strokeWidth = { 2 } />
 	</svg>
 )
 
-export const XMark = () => (
+export const XMarkIcon = () => (
 	<svg width = '1em' height = '1em' viewBox = '0 0 16 16' fill = 'none' xmlns = 'http://www.w3.org/2000/svg' >
 		<path d = 'M15 1 8 8m0 0L1 1m7 7-7 7m7-7 7 7' stroke = 'var(--negative-color, currentColor)' strokeWidth = { 2 } />
 	</svg>
