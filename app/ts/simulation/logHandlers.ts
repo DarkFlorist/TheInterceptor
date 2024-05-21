@@ -114,7 +114,7 @@ export function handleERC1155TransferSingle(eventLog: EthereumEvent): TokenVisua
 
 // event AddressChanged(bytes32 indexed node, uint coinType, bytes newAddress)
 export function handleEnsAddressChanged(eventLog: ParsedEvent) {
-	if (eventLog.args[0]?.typeValue.type !== 'fixedBytes' || eventLog.args[1]?.typeValue.type !== 'unsignedInteger' || eventLog.args[2]?.typeValue.type !== 'bytes') throw new Error('Malformed ENS AddrChanged Event')
+	if (eventLog.args[0]?.typeValue.type !== 'fixedBytes' || eventLog.args[1]?.typeValue.type !== 'unsignedInteger' || eventLog.args[2]?.typeValue.type !== 'bytes') throw new Error('Malformed ENS AddressChanged Event')
 	return {
 		node: EthereumBytes32.parse(dataStringWith0xStart(eventLog.args[0].typeValue.value)),
 		coinType: eventLog.args[1].typeValue.value,
@@ -133,7 +133,18 @@ export function handleEnsAddrChanged(eventLog: ParsedEvent) {
 
 // event NameRenewed(string name, bytes32 indexed label, uint cost, uint expires)
 export function handleEnsRegistrarNameRenewed(eventLog: ParsedEvent) {
-	if (eventLog.args[0]?.typeValue.type !== 'string' || eventLog.args[1]?.typeValue.type !== 'fixedBytes' || eventLog.args[2]?.typeValue.type !== 'unsignedInteger' || eventLog.args[3]?.typeValue.type !== 'unsignedInteger') throw new Error('Malformed ENS AddrChanged Event')
+	if (eventLog.args[0]?.typeValue.type !== 'string' || eventLog.args[1]?.typeValue.type !== 'fixedBytes' || eventLog.args[2]?.typeValue.type !== 'unsignedInteger' || eventLog.args[3]?.typeValue.type !== 'unsignedInteger') throw new Error('Malformed ENS NameRenewed Event')
+	return {
+		name: eventLog.args[0].typeValue.value,
+		labelHash: bytesToUnsigned(eventLog.args[1].typeValue.value),
+		cost: eventLog.args[2].typeValue.value,
+		expires: eventLog.args[3].typeValue.value,
+	}
+}
+
+// event NameRegistered(string name, bytes32 indexed label, address indexed owner, uint cost, uint expires)
+export function handleNameRegistered(eventLog: ParsedEvent) {
+	if (eventLog.args[0]?.typeValue.type !== 'string' || eventLog.args[1]?.typeValue.type !== 'fixedBytes' || eventLog.args[2]?.typeValue.type !== 'unsignedInteger' || eventLog.args[3]?.typeValue.type !== 'unsignedInteger') throw new Error('Malformed ENS Name Registered Event')
 	return {
 		name: eventLog.args[0].typeValue.value,
 		labelHash: bytesToUnsigned(eventLog.args[1].typeValue.value),
@@ -218,5 +229,21 @@ export function handleEnsReverseClaimed(eventLog: ParsedEvent) {
 	return {
 		addr: eventLog.args[0]?.typeValue.value,
 		node: EthereumBytes32.parse(dataStringWith0xStart(eventLog.args[1].typeValue.value))
+	}
+}
+
+// event NewTTL(bytes32 indexed node, uint64 ttl)
+export function handleEnsNewTtl(eventLog: ParsedEvent) {
+	if (eventLog.args[0]?.typeValue.type !== 'fixedBytes' || eventLog.args[1]?.typeValue.type !== 'unsignedInteger') throw new Error('Malformed ENS New TTL Event')
+	return {
+		node: EthereumBytes32.parse(dataStringWith0xStart(eventLog.args[0].typeValue.value))
+	}
+}
+
+// event ExpiryExtended(bytes32 indexed node, uint64 expiry)
+export function handleEnsExpiryExtended(eventLog: ParsedEvent) {
+	if (eventLog.args[0]?.typeValue.type !== 'fixedBytes' || eventLog.args[1]?.typeValue.type !== 'unsignedInteger') throw new Error('Malformed ENS ExpiryExtended Event')
+	return {
+		node: EthereumBytes32.parse(dataStringWith0xStart(eventLog.args[0].typeValue.value))
 	}
 }

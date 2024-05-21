@@ -46,6 +46,9 @@ export const ENS_FUSES_SET = ethers.keccak256(ethers.toUtf8Bytes('FusesSet(bytes
 export const ENS_NAME_UNWRAPPED = ethers.keccak256(ethers.toUtf8Bytes('NameUnwrapped(bytes32,address)'))
 export const ENS_NAME_CHANGED = ethers.keccak256(ethers.toUtf8Bytes('NameChanged(bytes32,string)'))
 export const ENS_REVERSE_CLAIMED = ethers.keccak256(ethers.toUtf8Bytes('ReverseClaimed(address,bytes32)'))
+export const ENS_NAME_REGISTERED = ethers.keccak256(ethers.toUtf8Bytes('NameRegistered(string,bytes32,address,uint256,uint256)'))
+export const ENS_NEW_TTL = ethers.keccak256(ethers.toUtf8Bytes('NewTTL(bytes32,uint64)'))
+export const ENS_EXPIRY_EXTENDED = ethers.keccak256(ethers.toUtf8Bytes('ExpiryExtended(bytes32,uint64)'))
 
 // Other
 export const MOCK_ADDRESS = 0xdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefn
