@@ -1,4 +1,4 @@
-import { addressString, addressStringWithout0x, checksummedAddress } from '../utils/bigint.js'
+import { addressString, addressStringWithout0x, bytesToUnsigned, checksummedAddress } from '../utils/bigint.js'
 import { AddressBookEntries, AddressBookEntry } from '../types/addressBookTypes.js'
 import { EnrichedEthereumEventWithMetadata, EnrichedEthereumEvents, NamedTokenId, SimulationState, TokenEvent, TokenVisualizerResultWithMetadata } from '../types/visualizer-types.js'
 import { tokenMetadata, contractMetadata, erc721Metadata, erc1155Metadata } from '@darkflorist/address-metadata'
@@ -14,6 +14,7 @@ import { defaultActiveAddresses } from './settings.js'
 import { RpcNetwork } from '../types/rpc.js'
 import { EthereumBytes32 } from '../types/wire-types.js'
 import { ENSNameHashes } from '../types/ens.js'
+import { keccak_256 } from '@noble/hashes/sha3'
 const LOGO_URI_PREFIX = '../vendor/@darkflorist/address-metadata'
 
 const pathJoin = (parts: string[], sep = '/') => parts.join(sep).replace(new RegExp(sep + '{1,}', 'g'), sep)
@@ -208,17 +209,18 @@ export async function retrieveEnsNodeHashes(ethereumClientService: EthereumClien
 
 export async function retrieveEnsLabelHashes(events: EnrichedEthereumEvents, addressBookEntriesToMatchReverseResolutions: readonly AddressBookEntry[]) {
 	const labelHashesToRetrieve = events.map((event) => 'logInformation' in event && 'labelHash' in event.logInformation ? event.logInformation.labelHash : undefined).filter((labelHash): labelHash is bigint => labelHash !== undefined)
-	const reverseEnsLabels = addressBookEntriesToMatchReverseResolutions.map((entry) => addressStringWithout0x(entry.address))
-	const newLabels = [...reverseEnsLabels, ...events.map((event) => 'logInformation' in event && 'name' in event.logInformation ? event.logInformation.name : undefined).filter((label): label is string => label !== undefined)]
+	const reverseEnsLabelHashes = addressBookEntriesToMatchReverseResolutions.map((entry) => addressStringWithout0x(entry.address)).map((label) => ({ label, labelHash: bytesToUnsigned(keccak_256(label)) }))
+	const newLabels = [...events.map((event) => 'logInformation' in event && 'name' in event.logInformation ? event.logInformation.name : undefined).filter((label): label is string => label !== undefined)]
 	
 	// update the mappings if we have new labels
 	const deduplicatedLabels = Array.from(new Set(newLabels))
 	await Promise.all(deduplicatedLabels.map(async (label) => Promise.all([await addEnsLabelHash(label), await addEnsNodeHash(`${ label }.eth`)])))
 
 	// return the label hashes that we have now available
-	const currentLabelHashes = await getEnsLabelHashes()
+	const currentLabelHashes = [...reverseEnsLabelHashes, ...await getEnsLabelHashes()]
 	return Array.from(new Set(labelHashesToRetrieve)).map((labelHash) => {
 		const found = currentLabelHashes.find((entry) => entry.labelHash === labelHash)
+		if (found) addEnsLabelHash(found.label) // if we actally use the label, add to our cache. This should already be there unless it was a reverse ens label hash that we guessed
 		return { labelHash, label: found?.label }
 	})
 }
