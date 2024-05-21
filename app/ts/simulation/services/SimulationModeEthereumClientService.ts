@@ -231,7 +231,7 @@ export const appendTransaction = async (ethereumClientService: EthereumClientSer
 	if (parentBaseFeePerGas === undefined) throw new Error(CANNOT_SIMULATE_OFF_LEGACY_BLOCK)
 	const signedMessages = getSignedMessagesWithFakeSigner(simulationState)
 	const signedTxs = getSignedTransactions()
-	const addressToMakeRich = await getAddressToMakeRich()
+	const addressToMakeRich = typeof browser === 'undefined' ? simulationState?.addressToMakeRich : await getAddressToMakeRich()
 	const makeMeRich = getMakeMeRichStateOverride(addressToMakeRich)
 	const ethSimulateV1CallResult = await ethereumClientService.simulateTransactionsAndSignatures(signedTxs, signedMessages, parentBlock.number, requestAbortController, makeMeRich)
 	const transactionWebsiteData = { website: transaction.website, created: transaction.created, originalRequestParameters: transaction.originalRequestParameters, transactionIdentifier: transaction.transactionIdentifier }
