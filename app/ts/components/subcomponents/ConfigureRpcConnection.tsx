@@ -71,7 +71,6 @@ export const ConfigureRpcConnection = ({ rpcEntries, rpcInfo }: { rpcEntries: Rp
 			}
 
 			if (event.submitter.value === 'remove') {
-				console.log('submitter is remove', rpcEntries.filter(entry => entry.httpsRpc !== rpcInfo?.httpsRpc))
 				// remove current rpc
 				sendPopupMessageToBackgroundPage({
 					method: 'popup_set_rpc_list',
