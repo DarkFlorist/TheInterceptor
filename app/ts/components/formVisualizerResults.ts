@@ -44,6 +44,10 @@ export function formSimulatedAndVisualizedTransaction(simState: SimulationState,
 					}
 					return({ ...event, type: 'Parsed' })
 				}
+				case 'ENSNameWrapped': {
+					const node = ens.ensNameHashes.find((nameHash) => nameHash.nameHash === event.logInformation.node) ?? { nameHash: event.logInformation.node, name: undefined }
+					return { ...event, logInformation: { ...event.logInformation, node } }
+				}
 				case 'ENSFusesSet': {
 					const node = ens.ensNameHashes.find((nameHash) => nameHash.nameHash === event.logInformation.node) ?? { nameHash: event.logInformation.node, name: undefined }
 					return { ...event, logInformation: { ...event.logInformation, node } }
@@ -76,12 +80,13 @@ export function formSimulatedAndVisualizedTransaction(simState: SimulationState,
 					const node = ens.ensNameHashes.find((nameHash) => nameHash.nameHash === event.logInformation.node) ?? { nameHash: event.logInformation.node, name: undefined }
 					return { ...event, logInformation: { ...event.logInformation, node } }
 				}
-				case 'ENSNameRegistered':
-				case 'ENSRegistrarNameRenewed': {
+				case 'ENSControllerNameRegistered':
+				case 'ENSControllerNameRenewed': {
 					const labelHash = ens.ensLabelHashes.find((nameHash) => nameHash.labelHash === event.logInformation.labelHash) ?? { labelHash: event.logInformation.labelHash, label: undefined }
 					return { ...event, logInformation: { ...event.logInformation, labelHash } }
 				}
-				case 'ENSNameRenewed': {
+				case 'ENSBaseRegistrarNameRegistered':
+				case 'ENSBaseRegistrarNameRenewed': {
 					const labelHash = ens.ensLabelHashes.find((nameHash) => nameHash.labelHash === event.logInformation.labelHash) ?? { labelHash: event.logInformation.labelHash, label: undefined }
 					return { ...event, logInformation: { ...event.logInformation, labelHash } }
 				}

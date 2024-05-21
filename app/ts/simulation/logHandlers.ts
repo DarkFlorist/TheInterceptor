@@ -132,7 +132,7 @@ export function handleEnsAddrChanged(eventLog: ParsedEvent) {
 }
 
 // event NameRenewed(string name, bytes32 indexed label, uint cost, uint expires)
-export function handleEnsRegistrarNameRenewed(eventLog: ParsedEvent) {
+export function handleEnsControllerNameRenewed(eventLog: ParsedEvent) {
 	if (eventLog.args[0]?.typeValue.type !== 'string' || eventLog.args[1]?.typeValue.type !== 'fixedBytes' || eventLog.args[2]?.typeValue.type !== 'unsignedInteger' || eventLog.args[3]?.typeValue.type !== 'unsignedInteger') throw new Error('Malformed ENS NameRenewed Event')
 	return {
 		name: eventLog.args[0].typeValue.value,
@@ -143,7 +143,7 @@ export function handleEnsRegistrarNameRenewed(eventLog: ParsedEvent) {
 }
 
 // event NameRegistered(string name, bytes32 indexed label, address indexed owner, uint cost, uint expires)
-export function handleNameRegistered(eventLog: ParsedEvent) {
+export function handleControllerNameRegistered(eventLog: ParsedEvent) {
 	if (eventLog.args[0]?.typeValue.type !== 'string' || eventLog.args[1]?.typeValue.type !== 'fixedBytes' || eventLog.args[2]?.typeValue.type !== 'unsignedInteger' || eventLog.args[3]?.typeValue.type !== 'unsignedInteger') throw new Error('Malformed ENS Name Registered Event')
 	return {
 		name: eventLog.args[0].typeValue.value,
@@ -154,8 +154,17 @@ export function handleNameRegistered(eventLog: ParsedEvent) {
 }
 
 // event NameRenewed(uint256 indexed hash, uint expires)
-export function handleNameRenewed(eventLog: ParsedEvent) {
-	if (eventLog.args[0]?.typeValue.type !== 'unsignedInteger' || eventLog.args[1]?.typeValue.type !== 'unsignedInteger') throw new Error('Malformed ENS NameRenewed Event')
+export function handleBaseRegistrarNameRenewed(eventLog: ParsedEvent) {
+	if (eventLog.args[0]?.typeValue.type !== 'unsignedInteger' || eventLog.args[1]?.typeValue.type !== 'unsignedInteger') throw new Error('Malformed ENS Name Renewed Event')
+	return {
+		labelHash: eventLog.args[0].typeValue.value,
+		expires: eventLog.args[1].typeValue.value,
+	}
+}
+
+// event NameRegistered(uint256 indexed hash, address indexed owner, uint expires)
+export function handleBaseRegistrarNameRegistered(eventLog: ParsedEvent) {
+	if (eventLog.args[0]?.typeValue.type !== 'unsignedInteger' || eventLog.args[1]?.typeValue.type !== 'address' || eventLog.args[2]?.typeValue.type !== 'unsignedInteger') throw new Error('Malformed ENS Name Registered Event')
 	return {
 		labelHash: eventLog.args[0].typeValue.value,
 		expires: eventLog.args[1].typeValue.value,
@@ -173,7 +182,6 @@ export function handleEnsTransfer(eventLog: ParsedEvent) {
 	if (eventLog.args[0]?.typeValue.type !== 'fixedBytes' || eventLog.args[1]?.typeValue.type !== 'address') throw new Error('Malformed ENS Transfer Event')
 	return { node: EthereumBytes32.parse(dataStringWith0xStart(eventLog.args[0].typeValue.value)) }
 }
-
 
 // event NewOwner(bytes32 indexed node, bytes32 indexed label, address owner)
 export function handleEnsNewOwner(eventLog: ParsedEvent) {
@@ -245,5 +253,16 @@ export function handleEnsExpiryExtended(eventLog: ParsedEvent) {
 	if (eventLog.args[0]?.typeValue.type !== 'fixedBytes' || eventLog.args[1]?.typeValue.type !== 'unsignedInteger') throw new Error('Malformed ENS ExpiryExtended Event')
 	return {
 		node: EthereumBytes32.parse(dataStringWith0xStart(eventLog.args[0].typeValue.value))
+	}
+}
+
+// event NameWrapped(bytes32 indexed node, bytes name, address owner, uint32 fuses, uint64 expiry)
+export function handleNameWrapped(eventLog: ParsedEvent) {
+	if (eventLog.args[0]?.typeValue.type !== 'fixedBytes' || eventLog.args[1]?.typeValue.type !== 'string' || eventLog.args[2]?.typeValue.type !== 'address' || eventLog.args[3]?.typeValue.type !== 'unsignedInteger' || eventLog.args[4]?.typeValue.type !== 'unsignedInteger') throw new Error('Malformed ENS ExpiryExtended Event')
+	return {
+		node: EthereumBytes32.parse(dataStringWith0xStart(eventLog.args[0].typeValue.value)),
+		name: eventLog.args[1].typeValue.value,
+		fuses: extractENSFuses(eventLog.args[3]?.typeValue.value),
+		expiry: eventLog.args[4].typeValue.value,
 	}
 }

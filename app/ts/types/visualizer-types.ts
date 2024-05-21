@@ -136,7 +136,7 @@ export const ParsedEnsEvent = funtypes.Union(
 		logInformation: TokenVisualizerResult
 	}),
 	funtypes.ReadonlyObject({
-		type: funtypes.Union(funtypes.Literal('ENSRegistrarNameRenewed'), funtypes.Literal('ENSNameRegistered')),
+		type: funtypes.Union(funtypes.Literal('ENSControllerNameRenewed'), funtypes.Literal('ENSControllerNameRegistered')),
 		logInformation: funtypes.ReadonlyObject({
 			name: funtypes.String,
 			labelHash: EthereumBytes32,
@@ -145,7 +145,7 @@ export const ParsedEnsEvent = funtypes.Union(
 		}),
 	}),
 	funtypes.ReadonlyObject({
-		type: funtypes.Literal('ENSNameRenewed'),
+		type: funtypes.Union(funtypes.Literal('ENSBaseRegistrarNameRenewed'), funtypes.Literal('ENSBaseRegistrarNameRegistered')),
 		logInformation: funtypes.ReadonlyObject({
 			labelHash: EthereumBytes32,
 			expires: EthereumQuantity
@@ -156,6 +156,15 @@ export const ParsedEnsEvent = funtypes.Union(
 		logInformation: funtypes.ReadonlyObject({
 			node: EthereumBytes32,
 			fuses: funtypes.ReadonlyArray(EnsFuseName),
+		}),
+	}),
+	funtypes.ReadonlyObject({
+		type: funtypes.Literal('ENSNameWrapped'),
+		logInformation: funtypes.ReadonlyObject({
+			node: EthereumBytes32,
+			fuses: funtypes.ReadonlyArray(EnsFuseName),
+			name: funtypes.String,
+			expiry: EthereumQuantity
 		}),
 	}),
 )
@@ -302,7 +311,7 @@ export const EnrichedEthereumEventWithMetadata = funtypes.Union(
 				}),
 			}),
 			funtypes.ReadonlyObject({
-				type: funtypes.Literal('ENSRegistrarNameRenewed'),
+				type: funtypes.Union(funtypes.Literal('ENSControllerNameRenewed'), funtypes.Literal('ENSControllerNameRegistered')),
 				logInformation: funtypes.ReadonlyObject({
 					name: funtypes.String,
 					labelHash: MaybeENSLabelHash,
@@ -310,18 +319,28 @@ export const EnrichedEthereumEventWithMetadata = funtypes.Union(
 					expires: EthereumQuantity,
 				}),
 			}),
+
 			funtypes.ReadonlyObject({
-				type: funtypes.Union(funtypes.Literal('ENSNameRenewed'), funtypes.Literal('ENSNameRegistered')),
+				type: funtypes.Union(funtypes.Literal('ENSBaseRegistrarNameRenewed'), funtypes.Literal('ENSBaseRegistrarNameRegistered')),
 				logInformation: funtypes.ReadonlyObject({
 					labelHash: MaybeENSLabelHash,
 					expires: EthereumQuantity
 				}),
-			}),	
+			}),
 			funtypes.ReadonlyObject({
 				type: funtypes.Union(funtypes.Literal('ENSNewOwner')),
 				logInformation: funtypes.ReadonlyObject({
 					node: MaybeENSNameHash,
 					labelHash: MaybeENSLabelHash,
+				}),
+			}),
+			funtypes.ReadonlyObject({
+				type: funtypes.Literal('ENSNameWrapped'),
+				logInformation: funtypes.ReadonlyObject({
+					node: MaybeENSNameHash,
+					fuses: funtypes.ReadonlyArray(EnsFuseName),
+					name: funtypes.String,
+					expiry: EthereumQuantity
 				}),
 			}),
 		)
