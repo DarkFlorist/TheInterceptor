@@ -6,7 +6,7 @@ import { useEffect, useState } from 'preact/hooks'
 import { ErrorComponent } from '../subcomponents/Error.js'
 import { DinoSaysNotification } from '../subcomponents/DinoSays.js'
 import { ConfigureRpcConnection } from '../subcomponents/ConfigureRpcConnection.js'
-import { Collapsible } from '../ui/Collapsible.js'
+import { Collapsible } from '../subcomponents/Collapsible.js'
 import { CHAIN_NAMES } from '../../utils/chainNames.js'
 
 type CheckBoxSettingParam = {
