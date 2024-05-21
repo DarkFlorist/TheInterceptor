@@ -6,7 +6,7 @@ import { useEffect, useState } from 'preact/hooks'
 import { ErrorComponent } from '../subcomponents/Error.js'
 import { DinoSaysNotification } from '../subcomponents/DinoSays.js'
 import { modifyObject } from '../../utils/typescript.js'
-import { SetupNewRpc } from '../subcomponents/RpcConnectionSetup.js'
+import { ConfigureRpcConnection } from '../subcomponents/ConfigureRpcConnection.js'
 
 type CheckBoxSettingParam = {
 	text: string
@@ -255,7 +255,7 @@ export function SettingsView() {
 					<li>
 							<p className = 'paragraph'>RPC Connections</p>
 						<Rpcs rpcEntries = { rpcEntries } />
-						<SetupNewRpc rpcEntries = { rpcEntries } />
+						<ConfigureRpcConnection />
 					</li>
 				</ul>
 			</section>
