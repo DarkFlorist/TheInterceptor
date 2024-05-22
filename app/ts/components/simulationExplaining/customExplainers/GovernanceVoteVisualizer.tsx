@@ -7,6 +7,7 @@ import { EthereumQuantity } from '../../../types/wire-types.js'
 import { checksummedAddress, dataStringWith0xStart } from '../../../utils/bigint.js'
 import { BIG_FONT_SIZE } from '../../../utils/constants.js'
 import { ErrorComponent } from '../../subcomponents/Error.js'
+import { EditEnsNamedHashCallBack } from '../../subcomponents/ens.js'
 import { CellElement } from '../../ui-utils.js'
 import { Transaction } from '../Transactions.js'
 import { useEffect, useState } from 'preact/hooks'
@@ -80,11 +81,12 @@ type ShowSuccessOrFailureParams = {
 	activeAddress: bigint
 	simulateGovernanceContractExecutionReply: SimulateGovernanceContractExecutionReply | undefined
 	renameAddressCallBack: RenameAddressCallBack
+	editEnsNamedHashCallBack: EditEnsNamedHashCallBack
 }
 
 const simulateGovernanceVote = (transactionIdentifier: EthereumQuantity) => sendPopupMessageToBackgroundPage({ method: 'popup_simulateGovernanceContractExecution', data: { transactionIdentifier } })
 
-const ShowSuccessOrFailure = ({ simulateGovernanceContractExecutionReply, simTx, activeAddress, renameAddressCallBack }: ShowSuccessOrFailureParams) => {
+const ShowSuccessOrFailure = ({ simulateGovernanceContractExecutionReply, simTx, activeAddress, renameAddressCallBack, editEnsNamedHashCallBack }: ShowSuccessOrFailureParams) => {
 	const missingAbiText = 'The governance contract is missing an ABI. Add an ABI to simulate execution of this proposal.'
 	if (simulateGovernanceContractExecutionReply === undefined) {
 		return <div style = 'display: flex; justify-content: center;'>
@@ -133,6 +135,7 @@ const ShowSuccessOrFailure = ({ simulateGovernanceContractExecutionReply, simTx,
 			removeTransactionOrSignedMessage = { undefined }
 			activeAddress = { activeAddress }
 			renameAddressCallBack = { renameAddressCallBack }
+			editEnsNamedHashCallBack = { editEnsNamedHashCallBack }
 			addressMetaData = { simulateGovernanceContractExecutionReply.data.result.addressBookEntries }
 		/>
 	</div>
@@ -142,6 +145,7 @@ type GovernanceVoteVisualizerParams = {
 	simTx: SimulatedAndVisualizedTransaction
 	activeAddress: bigint
 	renameAddressCallBack: RenameAddressCallBack
+	editEnsNamedHashCallBack: EditEnsNamedHashCallBack
 	governanceVoteInputParameters: GovernanceVoteInputParameters
 }
 
@@ -202,6 +206,7 @@ export function GovernanceVoteVisualizer(param: GovernanceVoteVisualizerParams) 
 				rpcConnectionStatus = { rpcConnectionStatus }
 				simulateGovernanceContractExecutionReply = { simulateGovernanceContractExecutionReply }
 				renameAddressCallBack = { param.renameAddressCallBack }
+				editEnsNamedHashCallBack = { param.editEnsNamedHashCallBack }
 				simTx = { simTx }
 				activeAddress = { activeAddress }
 			/>

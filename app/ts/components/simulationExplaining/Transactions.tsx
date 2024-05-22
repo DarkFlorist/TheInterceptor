@@ -22,6 +22,7 @@ import { TransactionOrMessageIdentifier } from '../../types/interceptor-messages
 import { RpcNetwork } from '../../types/rpc.js'
 import { ProxyTokenTransferVisualisation } from './customExplainers/ProxySendVisualisations.js'
 import { extractTokenEvents } from '../../background/metadataUtils.js'
+import { EditEnsNamedHashCallBack, EnsNamedHashComponent } from '../subcomponents/ens.js'
 
 function isPositiveEvent(visResult: TokenVisualizerResultWithMetadata, ourAddressInReferenceFrame: bigint) {
 	if (visResult.type === 'ERC20') {
@@ -53,6 +54,7 @@ export type TransactionImportanceBlockParams = {
 	simTx: SimulatedAndVisualizedTransaction
 	activeAddress: bigint
 	renameAddressCallBack: RenameAddressCallBack
+	editEnsNamedHashCallBack: EditEnsNamedHashCallBack
 	addressMetadata: readonly AddressBookEntry[]
 	rpcNetwork: RpcNetwork
 }
@@ -148,7 +150,7 @@ export function Transaction(param: TransactionVisualizationParameters) {
 					namedTokenIds = { param.simulationAndVisualisationResults.namedTokenIds }
 				/>
 				<TokenLogAnalysisCard simTx = { param.simTx } renameAddressCallBack = { param.renameAddressCallBack } />
-				<NonTokenLogAnalysisCard simTx = { param.simTx } renameAddressCallBack = { param.renameAddressCallBack } addressMetaData = { param.addressMetaData } />
+				<NonTokenLogAnalysisCard simTx = { param.simTx } renameAddressCallBack = { param.renameAddressCallBack } addressMetaData = { param.addressMetaData } editEnsNamedHashCallBack = { param.editEnsNamedHashCallBack }/>
 				<RawTransactionDetailsCard transaction = { param.simTx.transaction } renameAddressCallBack = { param.renameAddressCallBack } gasSpent = { param.simTx.gasSpent } />
 				<SenderReceiver from = { param.simTx.transaction.from } to = { param.simTx.transaction.to } renameAddressCallBack = { param.renameAddressCallBack }/>
 
@@ -170,6 +172,7 @@ type TransactionsAndSignedMessagesParams = {
 	removeTransactionOrSignedMessage: (transactionOrMessageIdentifier: TransactionOrMessageIdentifier) => void
 	activeAddress: bigint
 	renameAddressCallBack: RenameAddressCallBack
+	editEnsNamedHashCallBack: EditEnsNamedHashCallBack
 	removedTransactionOrSignedMessages: readonly TransactionOrMessageIdentifier[]
 	addressMetaData: readonly AddressBookEntry[]
 }
@@ -196,6 +199,7 @@ export function TransactionsAndSignedMessages(param: TransactionsAndSignedMessag
 						activeAddress = { param.activeAddress }
 						renameAddressCallBack = { param.renameAddressCallBack }
 						addressMetaData = { param.addressMetaData }
+						editEnsNamedHashCallBack = { param.editEnsNamedHashCallBack }
 					/>
 				</> }
 			</li>
@@ -287,12 +291,6 @@ export function TokenLogAnalysis(param: LogAnalysisParams) {
 	} </span>
 }
 
-type NonTokenLogEventParams = {
-	nonTokenLog: EnrichedEthereumEventWithMetadata
-	addressMetaData: readonly AddressBookEntry[]
-	renameAddressCallBack: RenameAddressCallBack
-}
-
 function insertBetweenElements<T>(array: readonly T[], elementToInsert: T): readonly T[] {
 	if (array[0] === undefined) return []
 	const newArray: T[] = [array[0]]
@@ -302,6 +300,13 @@ function insertBetweenElements<T>(array: readonly T[], elementToInsert: T): read
 		newArray.push(elementToInsert, entry)
 	}
 	return newArray
+}
+
+type NonTokenLogEventParams = {
+	nonTokenLog: EnrichedEthereumEventWithMetadata
+	addressMetaData: readonly AddressBookEntry[]
+	renameAddressCallBack: RenameAddressCallBack
+	readonly editEnsNamedHashCallBack: EditEnsNamedHashCallBack
 }
 
 function NonTokenLogEvent(params: NonTokenLogEventParams) {
@@ -339,16 +344,17 @@ function NonTokenLogEvent(params: NonTokenLogEventParams) {
 		<div class = 'log-cell' style = { { 'grid-column-start': 2, 'grid-column-end': 4, display: 'flex', 'flex-wrap': 'wrap' } }>
 			<p class = 'paragraph' style = { textStyle }> { `${ params.nonTokenLog.name }(` } </p>
 			{ insertBetweenElements(params.nonTokenLog.args.map((arg) => {
-				if (arg.paramName === 'node' && 'logInformation' in params.nonTokenLog && 'node' in params.nonTokenLog.logInformation && params.nonTokenLog.logInformation.node.name !== undefined) {
+				if (arg.paramName === 'node' && 'logInformation' in params.nonTokenLog && 'node' in params.nonTokenLog.logInformation) {
 					return <>
 						<p style = { textStyle } class = 'paragraph'> { `${ arg.paramName } =` }&nbsp;</p>
-						<StringElement text = { params.nonTokenLog.logInformation.node.name } />
+						<EnsNamedHashComponent type = { 'nameHash' } nameHash = { params.nonTokenLog.logInformation.node.nameHash } name = { params.nonTokenLog.logInformation.node.name } editEnsNamedHashCallBack = { params.editEnsNamedHashCallBack }/>
 					</>
 				}
-				else if ((arg.paramName === 'id' || arg.paramName === 'label') && 'logInformation' in params.nonTokenLog && 'labelHash' in params.nonTokenLog.logInformation && params.nonTokenLog.logInformation.labelHash.label !== undefined) {
+				else if ((arg.paramName === 'id' || arg.paramName === 'label') && 'logInformation' in params.nonTokenLog && 'labelHash' in params.nonTokenLog.logInformation) {
 					return <>
 						<p style = { textStyle } class = 'paragraph'> { `${ arg.paramName } =` }&nbsp;</p>
-						<StringElement text = { params.nonTokenLog.logInformation.labelHash.label } />
+						<EnsNamedHashComponent type = { 'labelHash' } nameHash = { params.nonTokenLog.logInformation.labelHash.labelHash } name = { params.nonTokenLog.logInformation.labelHash.label } editEnsNamedHashCallBack = { params.editEnsNamedHashCallBack }/>
+					
 					</>
 				}
 				else if (arg.paramName === 'fuses' && 'logInformation' in params.nonTokenLog && 'fuses' in params.nonTokenLog.logInformation) {
@@ -370,6 +376,6 @@ function NonTokenLogEvent(params: NonTokenLogEventParams) {
 export function NonTokenLogAnalysis(param: NonLogAnalysisParams) {
 	if (param.nonTokenLogs.length === 0) return <p class = 'paragraph'> No non-token events </p>
 	return <span class = 'log-table-3' style = 'justify-content: center; column-gap: 5px; row-gap: 5px;'>
-		{ param.nonTokenLogs.map((nonTokenLog) => <NonTokenLogEvent nonTokenLog = { nonTokenLog } addressMetaData = { param.addressMetaData } renameAddressCallBack = { param.renameAddressCallBack} />) }
+		{ param.nonTokenLogs.map((nonTokenLog) => <NonTokenLogEvent nonTokenLog = { nonTokenLog } addressMetaData = { param.addressMetaData } renameAddressCallBack = { param.renameAddressCallBack } editEnsNamedHashCallBack = { param.editEnsNamedHashCallBack }/> ) }
 	</span>
 }

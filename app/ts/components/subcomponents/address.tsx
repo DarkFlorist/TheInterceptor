@@ -30,7 +30,7 @@ export function AddressIcon(param: AddressIconParams) {
 	if (param.address !== undefined && param.logoUri === undefined) {
 		return (
 			<AddressIconFrame isBig = { param.isBig }>
-				< Blockie address = { param.address } style = { { display: 'block' } } />
+				<Blockie address = { param.address } style = { { display: 'block' } } />
 			</AddressIconFrame>
 		)
 	}
