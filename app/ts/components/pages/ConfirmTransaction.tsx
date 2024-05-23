@@ -539,7 +539,7 @@ export function ConfirmTransaction() {
 					<div class = { `modal ${ modalState.page !== 'noModal' ? 'is-active' : ''}` }>
 						{ modalState.page === 'editEns' ? 
 							<EditEnsLabelHash
-								close = { () => { setModalState({ page: 'noModal'}) } }
+								close = { () => { setModalState({ page: 'noModal' }) } }
 								editEnsNamedHashWindowState = { modalState.state }
 							/>
 						: <></> }
@@ -547,7 +547,7 @@ export function ConfirmTransaction() {
 							<AddNewAddress
 								setActiveAddressAndInformAboutIt = { undefined }
 								modifyAddressWindowState = { modalState.state }
-								close = { () => { setModalState({ page: 'noModal'}) } }
+								close = { () => { setModalState({ page: 'noModal' }) } }
 								activeAddress = { undefined }
 							/>
 						: <></> }
@@ -571,7 +571,7 @@ export function ConfirmTransaction() {
 				<div class = { `modal ${ modalState.page !== 'noModal' ? 'is-active' : ''}` }>
 					{ modalState.page === 'editEns' ? 
 						<EditEnsLabelHash
-							close = { () => { setModalState({ page: 'noModal'}) } }
+							close = { () => { setModalState({ page: 'noModal' }) } }
 							editEnsNamedHashWindowState = { modalState.state }
 						/>
 					: <></> }
@@ -579,7 +579,7 @@ export function ConfirmTransaction() {
 						<AddNewAddress
 							setActiveAddressAndInformAboutIt = { undefined }
 							modifyAddressWindowState = { modalState.state }
-							close = { () => { setModalState({ page: 'noModal'}) } }
+							close = { () => { setModalState({ page: 'noModal' }) } }
 							activeAddress = { undefined }
 						/>
 					: <></> }
