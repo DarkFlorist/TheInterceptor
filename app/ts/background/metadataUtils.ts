@@ -209,7 +209,7 @@ export async function retrieveEnsNodeHashes(ethereumClientService: EthereumClien
 export async function retrieveEnsLabelHashes(events: EnrichedEthereumEvents, addressBookEntriesToMatchReverseResolutions: readonly AddressBookEntry[]) {
 	const labelHashesToRetrieve = events.map((event) => 'logInformation' in event && 'labelHash' in event.logInformation ? event.logInformation.labelHash : undefined).filter((labelHash): labelHash is bigint => labelHash !== undefined)
 	const reverseEnsLabels = addressBookEntriesToMatchReverseResolutions.map((entry) => addressStringWithout0x(entry.address))
-	const newLabels = [...reverseEnsLabels, ...events.map((event) => event.type === 'ENSRegistrarNameRenewed' ? event.logInformation.name : undefined).filter((label): label is string => label !== undefined)]
+	const newLabels = [...reverseEnsLabels, ...events.map((event) => 'logInformation' in event && 'name' in event.logInformation ? event.logInformation.name : undefined).filter((label): label is string => label !== undefined)]
 	
 	// update the mappings if we have new labels
 	const deduplicatedLabels = Array.from(new Set(newLabels))

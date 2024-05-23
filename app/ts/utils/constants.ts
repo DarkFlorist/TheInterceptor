@@ -34,8 +34,9 @@ export const ERC1155_TRANSFERSINGLE_LOG = ethers.keccak256(ethers.toUtf8Bytes('T
 // ENS event signatures
 export const ENS_ADDR_CHANGED = ethers.keccak256(ethers.toUtf8Bytes('AddrChanged(bytes32,address)'))
 export const ENS_ADDRESS_CHANGED = ethers.keccak256(ethers.toUtf8Bytes('AddressChanged(bytes32,uint256,bytes)'))
-export const ENS_REGISTRAR_NAME_RENEWED = ethers.keccak256(ethers.toUtf8Bytes('NameRenewed(string,bytes32,uint256,uint256)'))
-export const ENS_NAME_RENEWED = ethers.keccak256(ethers.toUtf8Bytes('NameRenewed(uint256,uint256)'))
+export const ENS_CONTROLLER_NAME_RENEWED = ethers.keccak256(ethers.toUtf8Bytes('NameRenewed(string,bytes32,uint256,uint256)'))
+export const ENS_BASE_REGISTRAR_NAME_RENEWED = ethers.keccak256(ethers.toUtf8Bytes('NameRenewed(uint256,uint256)'))
+export const ENS_BASE_REGISTRAR_NAME_REGISTERED = ethers.keccak256(ethers.toUtf8Bytes('NameRegistered(uint256,address,uint256)'))
 export const ENS_TRANSFER = ethers.keccak256(ethers.toUtf8Bytes('Transfer(bytes32,address)'))
 export const ENS_NEW_OWNER = ethers.keccak256(ethers.toUtf8Bytes('NewOwner(bytes32,bytes32,address)'))
 export const ENS_NEW_RESOLVER = ethers.keccak256(ethers.toUtf8Bytes('NewResolver(bytes32,address)'))
@@ -44,9 +45,10 @@ export const ENS_TEXT_CHANGED_KEY_VALUE = ethers.keccak256(ethers.toUtf8Bytes('T
 export const ENS_CONTENT_HASH_CHANGED = ethers.keccak256(ethers.toUtf8Bytes('ContenthashChanged(bytes32,bytes)'))
 export const ENS_FUSES_SET = ethers.keccak256(ethers.toUtf8Bytes('FusesSet(bytes32,uint32)'))
 export const ENS_NAME_UNWRAPPED = ethers.keccak256(ethers.toUtf8Bytes('NameUnwrapped(bytes32,address)'))
+export const ENS_NAME_WRAPPED = ethers.keccak256(ethers.toUtf8Bytes('NameWrapped(bytes32,bytes,address,uint32,uint64)'))
 export const ENS_NAME_CHANGED = ethers.keccak256(ethers.toUtf8Bytes('NameChanged(bytes32,string)'))
 export const ENS_REVERSE_CLAIMED = ethers.keccak256(ethers.toUtf8Bytes('ReverseClaimed(address,bytes32)'))
-export const ENS_NAME_REGISTERED = ethers.keccak256(ethers.toUtf8Bytes('NameRegistered(string,bytes32,address,uint256,uint256)'))
+export const ENS_CONTROLLER_NAME_REGISTERED = ethers.keccak256(ethers.toUtf8Bytes('NameRegistered(string,bytes32,address,uint256,uint256)'))
 export const ENS_NEW_TTL = ethers.keccak256(ethers.toUtf8Bytes('NewTTL(bytes32,uint64)'))
 export const ENS_EXPIRY_EXTENDED = ethers.keccak256(ethers.toUtf8Bytes('ExpiryExtended(bytes32,uint64)'))
 

@@ -351,7 +351,7 @@ function NonTokenLogEvent(params: NonTokenLogEventParams) {
 						<StringElement text = { params.nonTokenLog.logInformation.labelHash.label } />
 					</>
 				}
-				else if (arg.paramName === 'fuses' && params.nonTokenLog.type === 'ENSFusesSet') {
+				else if (arg.paramName === 'fuses' && 'logInformation' in params.nonTokenLog && 'fuses' in params.nonTokenLog.logInformation) {
 					return <>
 						<p style = { textStyle } class = 'paragraph'> { `${ arg.paramName } =` }&nbsp;</p>
 						<StringElement text = { params.nonTokenLog.logInformation.fuses.join(', ') } />
