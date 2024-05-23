@@ -1,8 +1,8 @@
 import { JSX } from 'preact/jsx-runtime'
 import { EthereumBytes32 } from '../../types/wire-types.js'
-import { bytes32String } from '../../utils/bigint.js'
+import { bytes32String, stringToUint8Array } from '../../utils/bigint.js'
 import { CopyToClipboard } from './CopyToClipboard.js'
-import { keccak256 } from 'ethers'
+import { zorbImageDataURI } from './EnsGradient.js'
 
 export type EditEnsNamedHashCallBack = (type: 'nameHash' | 'labelHash', nameHash: EthereumBytes32, name: string | undefined) => void
 
@@ -23,9 +23,7 @@ export const EnsNamedHashComponent = (params: NameHashComponentParams) => {
 				<span class = 'small-address-baggage-tag vertical-center' style = { params.style }>
 					<span style = 'margin-right: 5px'>
 						<CopyToClipboard content = { name } copyMessage = 'Copied!'>
-							<div style = { { backgroundColor: `#${ keccak256(bytes32String(params.nameHash)).substring(2,8) }`, fontSize: '1.5em', borderRadius: '50%' } } class = 'noselect nopointer'>
-								<div style = { { display: 'block', width: '1em', height: '1em' } }/>
-							</div>
+							<img style = { { display: 'block', width: '1em', height: '1em' } } src = { zorbImageDataURI(stringToUint8Array(`0x${ params.nameHash.toString(16) }`)) }/>
 						</CopyToClipboard>
 					</span>
 					<CopyToClipboard content = { name } copyMessage = 'Copied!' style = { { 'text-overflow': 'ellipsis', overflow: 'hidden' } }>
