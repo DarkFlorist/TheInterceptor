@@ -4,7 +4,7 @@ import { Simulator, parseEvents, runProtectorsForTransaction } from '../simulati
 import { getSimulationResults, getTabState, setLatestUnexpectedError, updateSimulationResults, updateSimulationResultsWithCallBack } from './storageVariables.js'
 import { changeSimulationMode, getSettings, getMakeMeRich, getWethForChainId } from './settings.js'
 import { blockNumber, call, chainId, estimateGas, gasPrice, getAccounts, getBalance, getBlockByNumber, getCode, getLogs, getPermissions, getSimulationStack, getTransactionByHash, getTransactionCount, getTransactionReceipt, netVersion, personalSign, sendTransaction, subscribe, switchEthereumChain, unsubscribe, web3ClientVersion, getBlockByHash, feeHistory, installNewFilter, uninstallNewFilter, getFilterChanges, getFilterLogs, handleIterceptorError } from './simulationModeHanders.js'
-import { changeActiveAddress, changeMakeMeRich, changePage, resetSimulation, confirmDialog, refreshSimulation, removeTransactionOrSignedMessage, requestAccountsFromSigner, refreshPopupConfirmTransactionSimulation, confirmRequestAccess, changeInterceptorAccess, changeChainDialog, popupChangeActiveRpc, enableSimulationMode, addOrModifyAddressBookEntry, getAddressBookData, removeAddressBookEntry, refreshHomeData, interceptorAccessChangeAddressOrRefresh, refreshPopupConfirmTransactionMetadata, changeSettings, importSettings, exportSettings, setNewRpcList, simulateGovernanceContractExecutionOnPass, openNewTab, settingsOpened, changeAddOrModifyAddressWindowState, popupFetchAbiAndNameFromEtherscan, openWebPage, disableInterceptor, requestNewHomeData, setEnsNameForHash } from './popupMessageHandlers.js'
+import { changeActiveAddress, changeMakeMeRich, changePage, confirmDialog, refreshSimulation, removeTransactionOrSignedMessage, requestAccountsFromSigner, refreshPopupConfirmTransactionSimulation, confirmRequestAccess, changeInterceptorAccess, changeChainDialog, popupChangeActiveRpc, enableSimulationMode, addOrModifyAddressBookEntry, getAddressBookData, removeAddressBookEntry, refreshHomeData, interceptorAccessChangeAddressOrRefresh, refreshPopupConfirmTransactionMetadata, changeSettings, importSettings, exportSettings, setNewRpcList, simulateGovernanceContractExecutionOnPass, openNewTab, settingsOpened, changeAddOrModifyAddressWindowState, popupFetchAbiAndNameFromEtherscan, openWebPage, disableInterceptor, requestNewHomeData, setEnsNameForHash } from './popupMessageHandlers.js'
 import { CompleteVisualizedSimulation, EnrichedEthereumEvents, ProtectorResults, SimulationState, VisualizedSimulatorState, WebsiteCreatedEthereumUnsignedTransactionOrFailed } from '../types/visualizer-types.js'
 import { WebsiteTabConnections } from '../types/user-interface-types.js'
 import { askForSignerAccountsFromSignerIfNotAvailable, interceptorAccessMetadataRefresh, requestAccessFromUser, updateInterceptorAccessViewWithPendingRequests } from './windows/interceptorAccess.js'
@@ -244,7 +244,7 @@ export async function refreshConfirmTransactionSimulation(
 		const noncefixed = await getNonceFixedSimulatedTransactions(ethereumClientService, undefined, simulationStateWithNewTransaction.simulatedTransactions)
 		if (noncefixed === 'NoNonceErrors') return { statusCode: 'success' as const, data: { ...info, ...await visualizeSimulatorState(simulationStateWithNewTransaction, simulator.ethereum, undefined) } }
 		const noncefixedNotPrepended = getWebsiteCreatedEthereumUnsignedTransactions(noncefixed)
-		const nonceFixedState = await setSimulationTransactionsAndSignedMessages(ethereumClientService, undefined, simulationStateWithNewTransaction, noncefixedNotPrepended, simulationStateWithNewTransaction.signedMessages)
+		const nonceFixedState = await setSimulationTransactionsAndSignedMessages(ethereumClientService, undefined, simulationStateWithNewTransaction.blockNumber, noncefixedNotPrepended, simulationStateWithNewTransaction.signedMessages, simulationStateWithNewTransaction.blockNumber)
 		const lastNonceFixed = noncefixed[noncefixed.length - 1]
 		if (lastNonceFixed === undefined) throw new Error('last nonce fixed was undefined')
 		const visualizedSimulatorState = await visualizeSimulatorState(nonceFixedState, simulator.ethereum, thisConfirmTransactionAbortController)
@@ -410,8 +410,8 @@ async function handleRPCRequest(
 
 export async function resetSimulatorStateFromConfig(ethereumClientService: EthereumClientService) {
 	const settings = await getSettings()
-	await updateSimulationState(ethereumClientService, async (simulationState) => {
-		return await getEmptySimulationStateWithRichAddress(ethereumClientService, await getMakeMeRich() ? settings.activeSimulationAddress : undefined, simulationState)
+	return await updateSimulationState(ethereumClientService, async (simulationState) => {
+		return getEmptySimulationStateWithRichAddress(ethereumClientService, await getMakeMeRich() ? settings.activeSimulationAddress : undefined, simulationState)
 	}, settings.activeSimulationAddress, true)
 }
 
@@ -578,10 +578,10 @@ export async function popupMessageHandler(
 		switch (parsedRequest.method) {
 			case 'popup_confirmDialog': return await confirmDialog(simulator, websiteTabConnections, parsedRequest)
 			case 'popup_changeActiveAddress': return await changeActiveAddress(simulator, websiteTabConnections, parsedRequest)
-			case 'popup_changeMakeMeRich': return await changeMakeMeRich(simulator, simulator.ethereum, parsedRequest, settings)
+			case 'popup_changeMakeMeRich': return await changeMakeMeRich(simulator.ethereum, parsedRequest)
 			case 'popup_changePage': return await changePage(parsedRequest)
 			case 'popup_requestAccountsFromSigner': return await requestAccountsFromSigner(websiteTabConnections, parsedRequest)
-			case 'popup_resetSimulation': return await resetSimulation(simulator, settings)
+			case 'popup_resetSimulation': return await resetSimulatorStateFromConfig(simulator.ethereum)
 			case 'popup_removeTransactionOrSignedMessage': return await removeTransactionOrSignedMessage(simulator, simulator.ethereum, parsedRequest, settings)
 			case 'popup_refreshSimulation': return await refreshSimulation(simulator, settings, false)
 			case 'popup_refreshConfirmTransactionDialogSimulation': return await refreshPopupConfirmTransactionSimulation(simulator, simulator.ethereum)

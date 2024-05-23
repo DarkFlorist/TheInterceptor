@@ -226,7 +226,7 @@ export async function retrieveEnsLabelHashes(events: EnrichedEthereumEvents, add
 }
 
 const addNewEnsNameEntry = async (name: string) => {
-	const [label, _] = name.split('.')
+	const [label] = name.split('.')
 	if (label !== undefined) await addEnsLabelHash(label)
 	await addEnsNodeHash(name)
 }

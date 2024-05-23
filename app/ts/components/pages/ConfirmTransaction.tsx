@@ -92,7 +92,7 @@ const TransactionNames = (param: TransactionNamesParams) => {
 	if (param.completeVisualizedSimulation === undefined || param.completeVisualizedSimulation.simulationResultState !== 'done') return <></>
 	const transactionsAndMessages: readonly (VisualizedPersonalSignRequest | SimulatedAndVisualizedTransaction)[] = [...param.completeVisualizedSimulation.visualizedPersonalSignRequests, ...param.completeVisualizedSimulation.simulatedAndVisualizedTransactions].sort((n1, n2) => n1.created.getTime() - n2.created.getTime())
 	const names = transactionsAndMessages.map((transactionOrMessage) => 'transaction' in transactionOrMessage ? identifyTransaction(transactionOrMessage).title : identifySignature(transactionOrMessage).title)
-	const makingRich = param.completeVisualizedSimulation?.simulationState?.addressToMakeRich !== undefined
+	const makingRich = param.completeVisualizedSimulation.simulationState?.addressToMakeRich !== undefined
 	const titleOfCurrentPendingTransaction = () => {
 		const currentPendingTransactionOrSignableMessage = param.currentPendingTransaction
 		if (currentPendingTransactionOrSignableMessage === undefined) return 'Loading...'
