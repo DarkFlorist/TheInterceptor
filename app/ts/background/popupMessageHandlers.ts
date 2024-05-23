@@ -1,4 +1,4 @@
-import { changeActiveAddressAndChainAndResetSimulation, changeActiveRpc, refreshConfirmTransactionSimulation, updateSimulationState, updateSimulationMetadata, simulateGovernanceContractExecution } from './background.js'
+import { changeActiveAddressAndChainAndResetSimulation, changeActiveRpc, refreshConfirmTransactionSimulation, updateSimulationState, updateSimulationMetadata, simulateGovernanceContractExecution, resetSimulatorStateFromConfig } from './background.js'
 import { getSettings, setUseTabsInsteadOfPopup, setMakeMeRich, setPage, setUseSignersAddressAsActiveAddress, updateWebsiteAccess, exportSettingsAndAddressBook, importSettingsAndAddressBook, getMakeMeRich, getUseTabsInsteadOfPopup, getMetamaskCompatibilityMode, setMetamaskCompatibilityMode, getPage } from './settings.js'
 import { getPendingTransactionsAndMessages, getCurrentTabId, getTabState, saveCurrentTabId, setRpcList, getRpcList, getPrimaryRpcForChain, getRpcConnectionStatus, updateUserAddressBookEntries, getSimulationResults, setIdsOfOpenedTabs, getIdsOfOpenedTabs, updatePendingTransactionOrMessage, getLatestUnexpectedError } from './storageVariables.js'
 import { Simulator, parseEvents } from '../simulation/simulator.js'
@@ -12,7 +12,7 @@ import { findEntryWithSymbolOrName, getMetadataForAddressBookData } from './meda
 import { getActiveAddresses, getAddressBookEntriesForVisualiser, identifyAddress, nameTokenIds, retrieveEnsLabelHashes, retrieveEnsNodeHashes } from './metadataUtils.js'
 import { WebsiteTabConnections } from '../types/user-interface-types.js'
 import { EthereumClientService } from '../simulation/services/EthereumClientService.js'
-import { refreshSimulationState, removeSignedMessageFromSimulation, removeTransactionAndUpdateTransactionNonces, resetSimulationState } from '../simulation/services/SimulationModeEthereumClientService.js'
+import { refreshSimulationState, removeSignedMessageFromSimulation, removeTransactionAndUpdateTransactionNonces } from '../simulation/services/SimulationModeEthereumClientService.js'
 import { formSimulatedAndVisualizedTransaction } from '../components/formVisualizerResults.js'
 import { CompleteVisualizedSimulation, ModifyAddressWindowState, SimulationState } from '../types/visualizer-types.js'
 import { ExportedSettings } from '../types/exportedSettingsTypes.js'
@@ -75,12 +75,9 @@ export async function changeActiveAddress(simulator: Simulator, websiteTabConnec
 	}
 }
 
-export async function changeMakeMeRich(simulator: Simulator, ethereumClientService: EthereumClientService, makeMeRichChange: ChangeMakeMeRich, settings: Settings) {
+export async function changeMakeMeRich(ethereumClientService: EthereumClientService, makeMeRichChange: ChangeMakeMeRich) {
 	await setMakeMeRich(makeMeRichChange.data)
-	await updateSimulationState(simulator.ethereum, async (simulationState) => {
-		if (simulationState === undefined) return undefined
-		return await resetSimulationState(ethereumClientService, { ...simulationState, addressToMakeRich: makeMeRichChange.data ? settings.activeSimulationAddress : undefined })
-	}, settings.activeSimulationAddress, true)
+	await resetSimulatorStateFromConfig(ethereumClientService)
 }
 
 export async function removeAddressBookEntry(simulator: Simulator, websiteTabConnections: WebsiteTabConnections, removeAddressBookEntry: RemoveAddressBookEntry) {
@@ -127,13 +124,6 @@ export async function requestAccountsFromSigner(websiteTabConnections: WebsiteTa
 		sendMessageToApprovedWebsitePorts(websiteTabConnections, { method: 'request_signer_to_eth_requestAccounts', result: [] })
 		sendMessageToApprovedWebsitePorts(websiteTabConnections, { method: 'request_signer_chainId', result: [] })
 	}
-}
-
-export async function resetSimulation(simulator: Simulator, settings: Settings) {
-	await updateSimulationState(simulator.ethereum, async (simulationState) => {
-		if (simulationState === undefined) return undefined
-		return await resetSimulationState(simulator.ethereum, simulationState)
-	}, settings.activeSimulationAddress, true)
 }
 
 export async function removeTransactionOrSignedMessage(simulator: Simulator, ethereumClientService: EthereumClientService, params: RemoveTransaction, settings: Settings) {
