@@ -845,7 +845,7 @@ svg.spinner > circle {
 }
 
 
-/* TODO: remove bulma dependency */
+/* TODO: remove override once bulma dependency is minimized */
 strong { color: inherit }
 
 button:not(.button):is(.btn) {
