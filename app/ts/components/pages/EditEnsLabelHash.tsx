@@ -25,7 +25,7 @@ export function EditEnsLabelHash(param: EditEnsNamedHashParams) {
 	const [errorString, setErrorString] = useState<string>('')
 	
 	const Text = (param: { text: ComponentChildren }) => {
-		return <p class = 'paragraph' style = 'color: var(--subtitle-text-color); text-overflow: ellipsis; overflow: hidden; width:100%'>
+		return <p class = 'paragraph' style = 'color: var(--subtitle-text-color); text-overflow: ellipsis; overflow: hidden; width: 100%'>
 			{ param.text }
 		</p>
 	}
@@ -41,13 +41,13 @@ export function EditEnsLabelHash(param: EditEnsNamedHashParams) {
 		if (param.editEnsNamedHashWindowState.type === 'labelHash') {
 			const hash = bytesToUnsigned(keccak_256(name))
 			if (hash !== param.editEnsNamedHashWindowState.nameHash) return setErrorString(`The label corresponds to a hash: ${ bytes32String(hash) } which doesn't match!`) 
-		
+			setErrorString('Correct label found!')
 		} else {
 			const hash = BigInt(namehash(name))
 			if (hash !== param.editEnsNamedHashWindowState.nameHash) return setErrorString(`The name corresponds to a hash: ${ bytes32String(hash) } which doesn't match!`) 
+			setErrorString('Correct name found!')
 		}
 		setInputDisabled(true)
-		setErrorString('Correct name found!')
 		await sendPopupMessageToBackgroundPage({ method: 'popup_setEnsNameForHash', data: { ...param.editEnsNamedHashWindowState, name } } )
 	}
 

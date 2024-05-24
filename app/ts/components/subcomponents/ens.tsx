@@ -16,7 +16,6 @@ type NameHashComponentParams = {
 
 export const EnsNamedHashComponent = (params: NameHashComponentParams) => {
 	const name = params.name !== undefined ? params.name : bytes32String(params.nameHash)
-	const textColor = 'var(--text-color)'
 	return (
 		<span className = 'small-address-container' data-value = { name }>
 			<span class = 'address-text-holder'>
@@ -27,7 +26,7 @@ export const EnsNamedHashComponent = (params: NameHashComponentParams) => {
 						</CopyToClipboard>
 					</span>
 					<CopyToClipboard content = { name } copyMessage = 'Copied!' style = { { 'text-overflow': 'ellipsis', overflow: 'hidden' } }>
-						<p class = 'address-text noselect nopointer' style = { `color: ${ textColor }` }>{ name }</p>
+						<p class = 'address-text noselect nopointer' style = 'color: var(--text-color)'>{ name }</p>
 					</CopyToClipboard>
 					<button className = 'button is-primary is-small rename-address-button' onClick = { () => { params.editEnsNamedHashCallBack(params.type, params.nameHash, params.name) } }>
 						<span class = 'icon'>
