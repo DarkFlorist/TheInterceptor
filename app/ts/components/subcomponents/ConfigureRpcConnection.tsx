@@ -149,7 +149,7 @@ const ConfigureRpcForm = ({ defaultValues, onCancel, onSave, onRemove }: Configu
 	})
 
 	const currencyNameDefault = useComputed(() => {
-		if (rpcUrlQuery.value.state === 'resolved') return defaultValues?.currencyName || 'Ethers'
+		if (rpcUrlQuery.value.state === 'resolved') return defaultValues?.currencyName || 'Ether'
 		return defaultValues?.currencyName || ''
 	})
 
