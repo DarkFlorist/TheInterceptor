@@ -1,20 +1,16 @@
 import { ethers } from 'ethers'
 
 export function bigintToDecimalString(value: bigint, power: bigint): string {
-	if ( value >= 0n ) {
+	if (value >= 0n) {
 		const integerPart = value / 10n**power
 		const fractionalPart = value % 10n**power
-		if (fractionalPart === 0n) {
-			return integerPart.toString(10)
-		}
-		return `${integerPart.toString(10)}.${fractionalPart.toString(10).padStart(Number(power), '0').replace(/0+$/, '')}`
+		if (fractionalPart === 0n) return integerPart.toString(10)
+		return `${ integerPart.toString(10) }.${ fractionalPart.toString(10).padStart(Number(power), '0').replace(/0+$/, '') }`
 	}
 	const integerPart = -value / 10n**power
 	const fractionalPart = -value % 10n**power
-	if (fractionalPart === 0n) {
-		return `-${integerPart.toString(10)}`
-	}
-	return `-${integerPart.toString(10)}.${fractionalPart.toString(10).padStart(Number(power), '0').replace(/0+$/, '')}`
+	if (fractionalPart === 0n) return `-${ integerPart.toString(10) }`
+	return `-${ integerPart.toString(10) }.${ fractionalPart.toString(10).padStart(Number(power), '0').replace(/0+$/, '') }`
 }
 
 export const bigintToNumberFormatParts = (amount: bigint, decimals = 18n, maximumSignificantDigits = 4) => {
@@ -50,22 +46,14 @@ export const bigintToNumberFormatParts = (amount: bigint, decimals = 18n, maximu
 export const bigintToRoundedPrettyDecimalString = (amount: bigint, decimals?: bigint, maximumSignificantDigits = 4) => {
 	const numberParts = bigintToNumberFormatParts(amount, decimals, maximumSignificantDigits)
 	let numberString = ''
-
 	for (const [_type, value] of numberParts) numberString += value
-
 	return numberString
 }
 
-export function nanoString(value: bigint): string {
-	return bigintToDecimalString(value, 9n)
-}
-
+export const nanoString = (value: bigint) => bigintToDecimalString(value, 9n)
 export const addressString = (address: bigint) => `0x${ address.toString(16).padStart(40, '0') }`
 export const addressStringWithout0x = (address: bigint) => address.toString(16).padStart(40, '0')
-
-export function checksummedAddress(address: bigint) {
-	return ethers.getAddress(addressString(address))
-}
+export const checksummedAddress = (address: bigint) => ethers.getAddress(addressString(address))
 
 export function stringToAddress(addressString: string | undefined) {
 	if (addressString === undefined) return undefined
@@ -74,9 +62,7 @@ export function stringToAddress(addressString: string | undefined) {
 	return BigInt(trimmedAddress)
 }
 
-export function bytes32String(bytes32: bigint) {
-	return `0x${bytes32.toString(16).padStart(64, '0')}`
-}
+export const bytes32String = (bytes32: bigint) => `0x${ bytes32.toString(16).padStart(64, '0') }`
 
 export function stringToUint8Array(data: string) {
 	const dataLength = (data.length - 2) / 2
@@ -86,7 +72,7 @@ export function stringToUint8Array(data: string) {
 
 export function dataString(data: Uint8Array | null) {
 	if (data === null) return ''
-	return Array.from(data).map(x => x.toString(16).padStart(2,'0')).join('')
+	return Array.from(data).map(x => x.toString(16).padStart(2, '0')).join('')
 }
 
 export function dataStringWith0xStart(data: Uint8Array | null) {
@@ -96,7 +82,7 @@ export function dataStringWith0xStart(data: Uint8Array | null) {
 
 export function bigintToUint8Array(value: bigint, numberOfBytes: number) {
 	if (typeof value === 'number') value = BigInt(value)
-	if (value >= 2n ** BigInt(numberOfBytes * 8) || value < 0n) throw new Error(`Cannot fit ${value} into a ${numberOfBytes}-byte unsigned integer.`)
+	if (value >= 2n ** BigInt(numberOfBytes * 8) || value < 0n) throw new Error(`Cannot fit ${ value } into a ${ numberOfBytes }-byte unsigned integer.`)
 	const result = new Uint8Array(numberOfBytes)
 	for (let i = 0; i < result.length; ++i) {
 		result[i] = Number((value >> BigInt(numberOfBytes - i - 1) * 8n) & 0xffn)
@@ -106,9 +92,7 @@ export function bigintToUint8Array(value: bigint, numberOfBytes: number) {
 
 // biome-ignore lint/suspicious/noExplicitAny: matches JSON.stringify signature
 export function stringifyJSONWithBigInts(value: any, space?: string | number | undefined): string {
-	return JSON.stringify(value, (_key, value) => {
-		return typeof value === 'bigint' ? `0x${ value.toString(16) }` : value
-	}, space)
+	return JSON.stringify(value, (_key, value) => { return typeof value === 'bigint' ? `0x${ value.toString(16) }` : value }, space)
 }
 
 export function bytesToUnsigned(bytes: Uint8Array): bigint {
@@ -119,17 +103,9 @@ export function bytesToUnsigned(bytes: Uint8Array): bigint {
 	return value
 }
 
-export function min(left: bigint, right: bigint): bigint {
-	return left < right ? left : right
-}
-
-export function max(left: bigint, right: bigint): bigint {
-	return left > right ? left : right
-}
-
-export function abs(x: bigint): bigint {
-	return (x < 0n) ? -1n * x : x
-}
+export const min = (left: bigint, right: bigint) => left < right ? left : right
+export const max = (left: bigint, right: bigint) => left > right ? left : right
+export const abs = (x: bigint) => (x < 0n) ? -1n * x : x
 
 export function isHexEncodedNumber(input: string): boolean {
 	const hexNumberRegex = /^(0x)?[0-9a-fA-F]+$/
