@@ -1,11 +1,11 @@
 import { useState, useEffect } from 'preact/hooks'
 import { MessageToPopup, UnexpectedErrorOccured, UpdateConfirmTransactionDialog } from '../../types/interceptor-messages.js'
-import { CompleteVisualizedSimulation, ModifyAddressWindowState, SimulatedAndVisualizedTransaction } from '../../types/visualizer-types.js'
+import { CompleteVisualizedSimulation, EditEnsNamedHashWindowState, ModifyAddressWindowState, SimulatedAndVisualizedTransaction } from '../../types/visualizer-types.js'
 import Hint from '../subcomponents/Hint.js'
 import { RawTransactionDetailsCard, GasFee, TokenLogAnalysisCard, SimulatedInBlockNumber, TransactionCreated, TransactionHeader, TransactionHeaderForFailedToSimulate, TransactionsAccountChangesCard, NonTokenLogAnalysisCard } from '../simulationExplaining/SimulationSummary.js'
 import { CenterToPageTextSpinner, Spinner } from '../subcomponents/Spinner.js'
 import { AddNewAddress } from './AddNewAddress.js'
-import { RpcConnectionStatus } from '../../types/user-interface-types.js'
+import { RenameAddressCallBack, RpcConnectionStatus } from '../../types/user-interface-types.js'
 import { sendPopupMessageToBackgroundPage } from '../../background/backgroundUtils.js'
 import { SignerLogoText, SignersLogoName } from '../subcomponents/signers.js'
 import { ErrorCheckBox, UnexpectedError } from '../subcomponents/Error.js'
@@ -17,7 +17,7 @@ import { addressString, checksummedAddress, stringifyJSONWithBigInts } from '../
 import { AddressBookEntry } from '../../types/addressBookTypes.js'
 import { PendingTransactionOrSignableMessage, SimulatedPendingTransaction } from '../../types/accessRequest.js'
 import { WebsiteOriginText } from '../subcomponents/address.js'
-import { serialize } from '../../types/wire-types.js'
+import { EthereumBytes32, serialize } from '../../types/wire-types.js'
 import { OriginalSendRequestParameters } from '../../types/JsonRpc-types.js'
 import { Website } from '../../types/websiteAccessTypes.js'
 import { getWebsiteWarningMessage } from '../../utils/websiteData.js'
@@ -27,6 +27,8 @@ import { Link } from '../subcomponents/link.js'
 import { NetworkErrors } from '../App.js'
 import { SignatureCard, SignatureHeader, identifySignature, isPossibleToSignMessage } from './PersonalSign.js'
 import { VisualizedPersonalSignRequest } from '../../types/personal-message-definitions.js'
+import { EditEnsNamedHashCallBack } from '../subcomponents/ens.js'
+import { EditEnsLabelHash } from './EditEnsLabelHash.js'
 
 type UnderTransactionsParams = {
 	pendingTransactionsAndSignableMessages: PendingTransactionOrSignableMessage[]
@@ -124,7 +126,8 @@ const TransactionNames = (param: TransactionNamesParams) => {
 type TransactionCardParams = {
 	currentPendingTransaction: SimulatedPendingTransaction,
 	pendingTransactionsAndSignableMessages: readonly PendingTransactionOrSignableMessage[],
-	renameAddressCallBack: (entry: AddressBookEntry) => void,
+	renameAddressCallBack: RenameAddressCallBack,
+	editEnsNamedHashCallBack: EditEnsNamedHashCallBack,
 	currentBlockNumber: bigint | undefined,
 	rpcConnectionStatus: RpcConnectionStatus,
 	numberOfUnderTransactions: number,
@@ -206,6 +209,7 @@ function TransactionCard(param: TransactionCardParams) {
 						activeAddress = { simulationAndVisualisationResults.activeAddress }
 						rpcNetwork = { simulationAndVisualisationResults.rpcNetwork }
 						renameAddressCallBack = { param.renameAddressCallBack }
+						editEnsNamedHashCallBack = { param.editEnsNamedHashCallBack }
 						addressMetadata = { simulationAndVisualisationResults.addressBookEntries }
 					/>
 				</div>
@@ -224,6 +228,7 @@ function TransactionCard(param: TransactionCardParams) {
 				<NonTokenLogAnalysisCard
 					simTx = { simTx }
 					renameAddressCallBack = { param.renameAddressCallBack }
+					editEnsNamedHashCallBack = { param.editEnsNamedHashCallBack }
 					addressMetaData = { simulationAndVisualisationResults.addressBookEntries }
 				/>
 
@@ -315,13 +320,18 @@ const WebsiteErrors = ({ website, websiteSocket, simulationMode }: NetworkErrorP
 	return <ErrorComponent warning = { true } text = { <> { message.message } <Link url = { message.suggestedAlternative } text = { 'Suggested alternative' } websiteSocket = { websiteSocket } /> </> }/>
 }
 
+type ModalState = 
+	{ page: 'modifyAddress', state: ModifyAddressWindowState } |
+	{ page: 'editEns', state: EditEnsNamedHashWindowState } | 
+	{ page: 'noModal' }
+
 export function ConfirmTransaction() {
 	const [currentPendingTransactionOrSignableMessage, setCurrentPendingTransactionOrSignableMessage] = useState<PendingTransactionOrSignableMessage | undefined>(undefined)
 	const [pendingTransactionsAndSignableMessages, setPendingTransactionsAndSignableMessages] = useState<readonly PendingTransactionOrSignableMessage[]>([])
 	const [completeVisualizedSimulation, setCompleteVisualizedSimulation] = useState<CompleteVisualizedSimulation | undefined>(undefined)
 	const [forceSend, setForceSend] = useState<boolean>(false)
 	const [currentBlockNumber, setCurrentBlockNumber] = useState<undefined | bigint>(undefined)
-	const [addingNewAddress, setAddingNewAddress] = useState<ModifyAddressWindowState | 'renameAddressModalClosed'> ('renameAddressModalClosed')
+	const [modalState, setModalState] = useState<ModalState>({ page: 'noModal' })
 	const [rpcConnectionStatus, setRpcConnectionStatus] = useState<RpcConnectionStatus>(undefined)
 	const [pendingTransactionAddedNotification, setPendingTransactionAddedNotification] = useState<boolean>(false)
 	const [unexpectedError, setUnexpectedError] = useState<undefined | UnexpectedErrorOccured>(undefined)
@@ -444,20 +454,30 @@ export function ConfirmTransaction() {
 	}
 
 	function renameAddressCallBack(entry: AddressBookEntry) {
-		setAddingNewAddress({
-			windowStateId: addressString(entry.address),
-			errorState: undefined,
-			incompleteAddressBookEntry: {
-				addingAddress: false,
-				askForAddressAccess: true,
-				symbol: undefined,
-				decimals: undefined,
-				logoUri: undefined,
-				useAsActiveAddress: false,
-				...entry,
-				address: checksummedAddress(entry.address),
-				abi: 'abi' in entry ? entry.abi : undefined
+		setModalState({
+			page: 'modifyAddress',
+			state: {
+				windowStateId: addressString(entry.address),
+				errorState: undefined,
+				incompleteAddressBookEntry: {
+					addingAddress: false,
+					askForAddressAccess: true,
+					symbol: undefined,
+					decimals: undefined,
+					logoUri: undefined,
+					useAsActiveAddress: false,
+					...entry,
+					address: checksummedAddress(entry.address),
+					abi: 'abi' in entry ? entry.abi : undefined
+				}
 			}
+		})
+	}
+
+	function editEnsNamedHashCallBack(type: 'nameHash' | 'labelHash', nameHash: EthereumBytes32, name: string | undefined) {
+		setModalState({
+			page: 'editEns',
+			state: { type, nameHash, name }
 		})
 	}
 
@@ -516,16 +536,21 @@ export function ConfirmTransaction() {
 		return <> 
 			<main>
 				<Hint>
-					<div class = { `modal ${ addingNewAddress !== 'renameAddressModalClosed' ? 'is-active' : ''}` }>
-						{ addingNewAddress === 'renameAddressModalClosed'
-							? <></>
-							: <AddNewAddress
+					<div class = { `modal ${ modalState.page !== 'noModal' ? 'is-active' : ''}` }>
+						{ modalState.page === 'editEns' ? 
+							<EditEnsLabelHash
+								close = { () => { setModalState({ page: 'noModal' }) } }
+								editEnsNamedHashWindowState = { modalState.state }
+							/>
+						: <></> }
+						{ modalState.page === 'modifyAddress' ?
+							<AddNewAddress
 								setActiveAddressAndInformAboutIt = { undefined }
-								modifyAddressWindowState = { addingNewAddress }
-								close = { () => { setAddingNewAddress('renameAddressModalClosed') } }
+								modifyAddressWindowState = { modalState.state }
+								close = { () => { setModalState({ page: 'noModal' }) } }
 								activeAddress = { undefined }
 							/>
-						}
+						: <></> }
 					</div>
 					<div class = 'block popup-block popup-block-scroll' style = 'padding: 0px'>
 						<UnexpectedError close = { clearUnexpectedError } unexpectedError = { unexpectedError }/>
@@ -543,16 +568,21 @@ export function ConfirmTransaction() {
 	return (
 		<main>
 			<Hint>
-				<div class = { `modal ${ addingNewAddress !== 'renameAddressModalClosed' ? 'is-active' : ''}` }>
-					{ addingNewAddress === 'renameAddressModalClosed'
-						? <></>
-						: <AddNewAddress
+				<div class = { `modal ${ modalState.page !== 'noModal' ? 'is-active' : ''}` }>
+					{ modalState.page === 'editEns' ? 
+						<EditEnsLabelHash
+							close = { () => { setModalState({ page: 'noModal' }) } }
+							editEnsNamedHashWindowState = { modalState.state }
+						/>
+					: <></> }
+					{ modalState.page === 'modifyAddress' ?
+						<AddNewAddress
 							setActiveAddressAndInformAboutIt = { undefined }
-							modifyAddressWindowState = { addingNewAddress }
-							close = { () => { setAddingNewAddress('renameAddressModalClosed') } }
+							modifyAddressWindowState = { modalState.state }
+							close = { () => { setModalState({ page: 'noModal' }) } }
 							activeAddress = { undefined }
 						/>
-					}
+					: <></> }
 				</div>
 				<div class = 'block popup-block popup-block-scroll' style = 'padding: 0px'>
 					<div style = 'position: sticky; top: 0; z-index:1'>
@@ -586,6 +616,7 @@ export function ConfirmTransaction() {
 									currentPendingTransaction = { currentPendingTransactionOrSignableMessage }
 									pendingTransactionsAndSignableMessages = { pendingTransactionsAndSignableMessages }
 									renameAddressCallBack = { renameAddressCallBack }
+									editEnsNamedHashCallBack = { editEnsNamedHashCallBack }
 									currentBlockNumber = { currentBlockNumber }
 									rpcConnectionStatus = { rpcConnectionStatus }
 									numberOfUnderTransactions = { underTransactions.length }

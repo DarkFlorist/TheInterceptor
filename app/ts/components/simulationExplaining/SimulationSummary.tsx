@@ -16,6 +16,7 @@ import { RpcNetwork } from '../../types/rpc.js'
 import { AddressBookEntry, Erc1155Entry, Erc20TokenEntry, Erc721Entry } from '../../types/addressBookTypes.js'
 import { Website } from '../../types/websiteAccessTypes.js'
 import { extractTokenEvents } from '../../background/metadataUtils.js'
+import { EditEnsNamedHashCallBack } from '../subcomponents/ens.js'
 
 type Erc20BalanceChangeParams = {
 	erc20TokenBalanceChanges: Erc20TokenBalanceChange[]
@@ -435,10 +436,11 @@ export function TokenLogAnalysisCard({ simTx, renameAddressCallBack }: TokenLogA
 type NonTokenLogAnalysisCardParams = {
 	simTx: SimulatedAndVisualizedTransaction
 	renameAddressCallBack: RenameAddressCallBack
+	editEnsNamedHashCallBack: EditEnsNamedHashCallBack
 	addressMetaData: readonly AddressBookEntry[]
 }
 
-export function NonTokenLogAnalysisCard({ simTx, addressMetaData, renameAddressCallBack }: NonTokenLogAnalysisCardParams) {
+export function NonTokenLogAnalysisCard({ simTx, addressMetaData, renameAddressCallBack, editEnsNamedHashCallBack }: NonTokenLogAnalysisCardParams) {
 	const [showLogs, setShowLogs] = useState<boolean>(false)
 	if (simTx === undefined) return <></>
 	const nonTokenLogs = simTx.events.filter((event) => event.type !== 'TokenEvent')
@@ -455,7 +457,7 @@ export function NonTokenLogAnalysisCard({ simTx, addressMetaData, renameAddressC
 			{ !showLogs
 				? <></>
 				: <div class = 'card-content' style = 'border-bottom-left-radius: 0.25rem; border-bottom-right-radius: 0.25rem; border-left: 2px solid var(--card-bg-color); border-right: 2px solid var(--card-bg-color); border-bottom: 2px solid var(--card-bg-color);'>
-					<NonTokenLogAnalysis nonTokenLogs = { nonTokenLogs } addressMetaData = { addressMetaData } renameAddressCallBack = { renameAddressCallBack }/>
+					<NonTokenLogAnalysis nonTokenLogs = { nonTokenLogs } addressMetaData = { addressMetaData } renameAddressCallBack = { renameAddressCallBack } editEnsNamedHashCallBack = { editEnsNamedHashCallBack }/>
 				</div>
 			}
 		</div>

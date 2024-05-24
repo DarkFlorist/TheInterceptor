@@ -738,6 +738,16 @@ const DisableInterceptorReply = funtypes.ReadonlyObject({
 	})
 }).asReadonly()
 
+export type SetEnsNameForHash = funtypes.Static<typeof SetEnsNameForHash>
+export const SetEnsNameForHash = funtypes.ReadonlyObject({
+	method: funtypes.Literal('popup_setEnsNameForHash'),
+	data: funtypes.ReadonlyObject({
+		type: funtypes.Union(funtypes.Literal('nameHash'), funtypes.Literal('labelHash')),
+		nameHash: EthereumBytes32,
+		name: funtypes.String
+	})
+}).asReadonly()
+
 export type PopupMessage = funtypes.Static<typeof PopupMessage>
 export const PopupMessage = funtypes.Union(
 	TransactionConfirmation,
@@ -779,6 +789,7 @@ export const PopupMessage = funtypes.Union(
 	FetchAbiAndNameFromEtherscan,
 	OpenWebPage,
 	DisableInterceptor,
+	SetEnsNameForHash,
 )
 
 export type MessageToPopup = funtypes.Static<typeof MessageToPopup>

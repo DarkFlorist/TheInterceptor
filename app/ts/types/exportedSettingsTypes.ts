@@ -3,7 +3,7 @@ import { RpcNetwork } from './rpc.js'
 import { EthereumAddress, EthereumQuantity, LiteralConverterParserFactory, OptionalEthereumAddress } from './wire-types.js'
 import { AddressBookEntries, ContactEntries } from './addressBookTypes.js'
 import { WebsiteAccessArray } from './websiteAccessTypes.js'
-import { ModifyAddressWindowState } from './visualizer-types.js'
+import { EditEnsNamedHashWindowState, ModifyAddressWindowState } from './visualizer-types.js'
 
 export type Page = funtypes.Static<typeof Page>
 export const Page = funtypes.Union(
@@ -13,6 +13,7 @@ export const Page = funtypes.Union(
 	funtypes.ReadonlyObject({ page: funtypes.Literal('ChangeActiveAddress') }),
 	funtypes.ReadonlyObject({ page: funtypes.Literal('AccessList') }),
 	funtypes.ReadonlyObject({ page: funtypes.Literal('Settings') }),
+	funtypes.ReadonlyObject({ page: funtypes.Literal('EditEnsNamedHash'), state: EditEnsNamedHashWindowState }),
 )
 
 export type ActiveAddress = funtypes.Static<typeof ActiveAddress>

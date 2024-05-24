@@ -13,6 +13,7 @@ import { PureGroupedSolidityType } from './solidityType.js'
 import { TransactionOrMessageIdentifier } from './interceptor-messages.js'
 import { EthSimulateV1CallResult } from './ethSimulate-types.js'
 import { MaybeENSLabelHash, MaybeENSNameHash } from './ens.js'
+import { EditEnsNamedHashCallBack } from '../components/subcomponents/ens.js'
 
 type SolidityVariable = funtypes.Static<typeof SolidityVariable>
 const SolidityVariable = funtypes.ReadonlyObject({
@@ -517,6 +518,7 @@ export type TransactionVisualizationParameters = {
 	activeAddress: bigint
 	renameAddressCallBack: RenameAddressCallBack
 	addressMetaData: readonly AddressBookEntry[]
+	editEnsNamedHashCallBack: EditEnsNamedHashCallBack
 }
 
 export type Erc20TokenBalanceChange = Erc20TokenEntry & {
@@ -603,4 +605,11 @@ export const ModifyAddressWindowState = funtypes.ReadonlyObject({
 	windowStateId: funtypes.String,
 	incompleteAddressBookEntry: IncompleteAddressBookEntry,
 	errorState: ModifyAddressWindowStateError,
+})
+
+export type EditEnsNamedHashWindowState = funtypes.Static<typeof EditEnsNamedHashWindowState>
+export const EditEnsNamedHashWindowState = funtypes.ReadonlyObject({
+	type: funtypes.Union(funtypes.Literal('nameHash'), funtypes.Literal('labelHash')),
+	nameHash: EthereumBytes32,
+	name: funtypes.Union(funtypes.Undefined, funtypes.String)
 })
