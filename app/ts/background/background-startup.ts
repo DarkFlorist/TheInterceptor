@@ -44,7 +44,7 @@ if (browser.runtime.getManifest().manifest_version === 2) {
 }
 
 async function migrateAddressInfoAndContacts() {
-	const userAddressBookEntries = (await browserStorageLocalGet(['userAddressBookEntries']))['userAddressBookEntries']
+	const userAddressBookEntries = (await browserStorageLocalGet(['userAddressBookEntries'])).userAddressBookEntries
 	const convertOldActiveAddressToAddressBookEntry = (entry: AddressBookEntry | OldActiveAddressEntry): AddressBookEntry => {
 		if (entry.type !== 'activeAddress') return entry
 		return { ...entry, type: 'contact', useAsActiveAddress: true }
