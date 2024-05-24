@@ -10,7 +10,7 @@ type TextInputProps = JSX.HTMLAttributes<HTMLInputElement> & {
 export const TextInput = forwardRef<HTMLInputElement, TextInputProps>(({ label, name, statusIcon, style, ...props }: TextInputProps, ref) => {
 	return (
 		<label class = 'text-input' style = { style }>
-			<input ref={ref} id={ name } name={ name } placeholder={ label } { ...props } />
+			<input ref = { ref } id = { name } name = { name } placeholder = { label } { ...props } />
 			<span>{ label }</span>
 			{ statusIcon }
 		</label>
