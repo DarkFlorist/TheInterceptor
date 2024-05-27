@@ -363,7 +363,7 @@ export function ConfirmTransaction() {
 				return setRpcConnectionStatus(parsed.data.rpcConnectionStatus)
 			}
 			if (parsed.method === 'popup_confirm_transaction_dialog_pending_changed') {
-				updatePendingTransactionsAndSignableMessages(parsed)
+				updatePendingTransactionsAndSignableMessages(UpdateConfirmTransactionDialog.parse(parsed))
 				setPendingTransactionAddedNotification(true)
 				try {
 					const currentWindowId = (await browser.windows.getCurrent()).id
@@ -379,7 +379,7 @@ export function ConfirmTransaction() {
 				return
 			}
 			if (parsed.method !== 'popup_update_confirm_transaction_dialog') return
-			return updatePendingTransactionsAndSignableMessages(parsed)
+			return updatePendingTransactionsAndSignableMessages(UpdateConfirmTransactionDialog.parse(parsed))
 		}
 		browser.runtime.onMessage.addListener(popupMessageListener)
 		return () => browser.runtime.onMessage.removeListener(popupMessageListener)

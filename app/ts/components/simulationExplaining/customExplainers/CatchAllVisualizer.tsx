@@ -7,7 +7,8 @@ import { SmallAddress } from '../../subcomponents/address.js'
 import { assertNever } from '../../../utils/typescript.js'
 import { getDeployedContractAddress } from '../../../simulation/services/SimulationModeEthereumClientService.js'
 import { addressString } from '../../../utils/bigint.js'
-import { extractTokenEvents } from '../../../background/metadataUtils.js'
+import { extractEnsEvents, extractTokenEvents } from '../../../background/metadataUtils.js'
+import { EnsEventsExplainer } from './EnsEventExplainer.js'
 
 type SendOrReceiveTokensImportanceBoxParams = {
 	sending: boolean,
@@ -81,6 +82,7 @@ function SendOrReceiveTokensImportanceBox(param: SendOrReceiveTokensImportanceBo
 export function CatchAllVisualizer(param: TransactionImportanceBlockParams) {
 	const msgSender = param.simTx.transaction.from.address
 	const tokenResults = extractTokenEvents(param.simTx.events)
+	const ensEvents = extractEnsEvents(param.simTx.events)
 	const sendingTokenResults = tokenResults.filter((x) => x.from.address === msgSender)
 	const receivingTokenResults = tokenResults.filter((x) => x.to.address === msgSender)
 	const erc20TokenApprovalChanges: ERC20TokenApprovalChange[] = sendingTokenResults.filter((x): x is TokenVisualizerErc20Event  => x.isApproval && x.type === 'ERC20').map((entry) => {
@@ -100,6 +102,7 @@ export function CatchAllVisualizer(param: TransactionImportanceBlockParams) {
 		&& param.simTx.transaction.value === 0n
 		&& sendingTokenResults.length === 0
 		&& receivingTokenResults.length === 0
+		&& ensEvents.length === 0
 	) {
 		return <div class = 'notification transaction-importance-box'>
 			<p class = 'paragraph'> { param.simTx.events.length === 0 ? 'The transaction does no visible important changes to your accounts.' : `The transaction does no visible important changes to your accounts, HOWEVER, it produces ${ param.simTx.events.length } event${ param.simTx.events.length === 1 ? '' : 's' }.`}</p>
@@ -119,7 +122,7 @@ export function CatchAllVisualizer(param: TransactionImportanceBlockParams) {
 
 			<div class = 'log-cell' style = 'justify-content: left; display: grid;'>
 				<SendOrReceiveTokensImportanceBox
-					tokenVisualizerResults = { sendingTokenResults.filter( (x) => !x.isApproval) }
+					tokenVisualizerResults = { sendingTokenResults.filter((x) => !x.isApproval) }
 					sending = { true }
 					textColor = { textColor }
 					renameAddressCallBack = { param.renameAddressCallBack }
@@ -158,10 +161,21 @@ export function CatchAllVisualizer(param: TransactionImportanceBlockParams) {
 			{ /* receiving tokens */ }
 			<div class = 'log-cell' style = 'justify-content: left; display: grid;'>
 				<SendOrReceiveTokensImportanceBox
-					tokenVisualizerResults = { receivingTokenResults.filter( (x) => !x.isApproval) }
+					tokenVisualizerResults = { receivingTokenResults.filter((x) => !x.isApproval) }
 					sending = { false }
 					textColor = { textColor }
 					renameAddressCallBack = { param.renameAddressCallBack }
+				/>
+			</div>
+
+			{ /* ENS events */ }
+			<div class = 'log-cell' style = 'justify-content: left; display: grid;'>
+				<EnsEventsExplainer
+					ensEvents = { ensEvents }
+					textColor = { textColor }
+					renameAddressCallBack = { param.renameAddressCallBack }
+					editEnsNamedHashCallBack = { param.editEnsNamedHashCallBack }
+					rpcNetwork = { param.rpcNetwork }
 				/>
 			</div>
 		</div>

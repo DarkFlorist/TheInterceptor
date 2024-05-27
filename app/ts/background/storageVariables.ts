@@ -1,7 +1,7 @@
 import { DEFAULT_TAB_CONNECTION, getChainName } from '../utils/constants.js'
 import { Semaphore } from '../utils/semaphore.js'
 import { PendingChainChangeConfirmationPromise, RpcConnectionStatus, TabState } from '../types/user-interface-types.js'
-import { PartialIdsOfOpenedTabs, browserStorageLocalGet, browserStorageLocalRemove, browserStorageLocalSet, getTabStateFromStorage, removeTabStateFromStorage, setTabStateToStorage } from '../utils/storageUtils.js'
+import { PartialIdsOfOpenedTabs, browserStorageLocalGet, browserStorageLocalGet2, browserStorageLocalRemove, browserStorageLocalSet, browserStorageLocalSet2, getTabStateFromStorage, removeTabStateFromStorage, setTabStateToStorage } from '../utils/storageUtils.js'
 import { CompleteVisualizedSimulation, EthereumSubscriptionsAndFilters } from '../types/visualizer-types.js'
 import { defaultRpcs } from './settings.js'
 import { UniqueRequestIdentifier, doesUniqueRequestIdentifiersMatch } from '../utils/requests.js'
@@ -21,11 +21,11 @@ export const setIdsOfOpenedTabs = async (ids: PartialIdsOfOpenedTabs) => await b
 const pendingTransactionsSemaphore = new Semaphore(1)
 export async function getPendingTransactionsAndMessages(): Promise<readonly PendingTransactionOrSignableMessage[]> {
 	try {
-		return (await browserStorageLocalGet('pendingTransactionsAndMessages'))?.pendingTransactionsAndMessages ?? []
+		return (await browserStorageLocalGet2('pendingTransactionsAndMessages'))?.pendingTransactionsAndMessages ?? []
 	} catch(e) {
 		console.warn('Pending transactions were corrupt:')
 		console.warn(e)
-		await pendingTransactionsSemaphore.execute(async () => await browserStorageLocalSet({ pendingTransactionsAndMessages: [] }))
+		await pendingTransactionsSemaphore.execute(async () => await browserStorageLocalSet2({ pendingTransactionsAndMessages: [] }))
 		return []
 	}
 }
@@ -34,7 +34,7 @@ export const clearPendingTransactions = async () => await updatePendingTransacti
 async function updatePendingTransactionOrMessages(update: (pendingTransactionsOrMessages: readonly PendingTransactionOrSignableMessage[]) => Promise<readonly PendingTransactionOrSignableMessage[]>) {
 	return await pendingTransactionsSemaphore.execute(async () => {
 		const pendingTransactionsAndMessages = await update(await getPendingTransactionsAndMessages())
-		await browserStorageLocalSet({ pendingTransactionsAndMessages })
+		await browserStorageLocalSet2({ pendingTransactionsAndMessages })
 	})
 }
 

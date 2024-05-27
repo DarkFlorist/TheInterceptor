@@ -43,7 +43,6 @@ const LocalStorageItems = funtypes.ReadonlyPartial({
 	simulationMode: funtypes.Boolean,
 	pendingInterceptorAccessRequests: PendingAccessRequests,
 	makeMeRich: funtypes.Boolean,
-	pendingTransactionsAndMessages: funtypes.ReadonlyArray(PendingTransactionOrSignableMessage),
 	ChainChangeConfirmationPromise: funtypes.Union(funtypes.Undefined, PendingChainChangeConfirmationPromise),
 	simulationResults: funtypes.Union(funtypes.Undefined, CompleteVisualizedSimulation),
 	signerName: SignerName,
@@ -74,7 +73,6 @@ const LocalStorageKey = funtypes.Union(
 	funtypes.Literal('simulationMode'),
 	funtypes.Literal('pendingInterceptorAccessRequests'),
 	funtypes.Literal('makeMeRich'),
-	funtypes.Literal('pendingTransactionsAndMessages'),
 	funtypes.Literal('ChainChangeConfirmationPromise'),
 	funtypes.Literal('simulationResults'),
 	funtypes.Literal('signerName'),
@@ -93,13 +91,32 @@ const LocalStorageKey = funtypes.Union(
 	funtypes.Literal('ensLabelHashes'),
 )
 
+type LocalStorageItems2 = funtypes.Static<typeof LocalStorageItems2>
+const LocalStorageItems2 = funtypes.ReadonlyPartial({
+	pendingTransactionsAndMessages: funtypes.ReadonlyArray(PendingTransactionOrSignableMessage)
+})
+
+type LocalStorageKey2 = funtypes.Static<typeof LocalStorageKey2>
+const LocalStorageKey2 = funtypes.Union(
+	funtypes.Literal('pendingTransactionsAndMessages'),
+)
+
+export async function browserStorageLocalGet2(keys: LocalStorageKey2 | LocalStorageKey2[]): Promise<LocalStorageItems2> {
+	return LocalStorageItems2.parse(await browser.storage.local.get(Array.isArray(keys) ? keys : [keys]))
+}
+export async function browserStorageLocalRemove2(keys: LocalStorageKey2 | LocalStorageKey2[]) {
+	return await browser.storage.local.remove(Array.isArray(keys) ? keys : [keys])
+}
+export async function browserStorageLocalSet2(items: LocalStorageItems2) {
+	return await browser.storage.local.set(serialize(LocalStorageItems2, items))
+}
+
 export async function browserStorageLocalGet(keys: LocalStorageKey | LocalStorageKey[]): Promise<LocalStorageItems> {
 	return LocalStorageItems.parse(await browser.storage.local.get(Array.isArray(keys) ? keys : [keys]))
 }
 export async function browserStorageLocalRemove(keys: LocalStorageKey | LocalStorageKey[]) {
 	return await browser.storage.local.remove(Array.isArray(keys) ? keys : [keys])
 }
-
 export async function browserStorageLocalSet(items: LocalStorageItems) {
 	return await browser.storage.local.set(serialize(LocalStorageItems, items))
 }

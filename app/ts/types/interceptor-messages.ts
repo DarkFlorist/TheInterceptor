@@ -384,17 +384,14 @@ const OpenAddressBook = funtypes.ReadonlyObject({
 	method: funtypes.Literal('popup_openAddressBook'),
 }).asReadonly()
 
-type GetAddressBookDataReplyData = funtypes.Static<typeof GetAddressBookDataReplyData>
-const GetAddressBookDataReplyData = funtypes.ReadonlyObject({
-	data: GetAddressBookDataFilter,
-	entries: AddressBookEntries,
-	maxDataLength: funtypes.Number,
-}).asReadonly()
-
 export type GetAddressBookDataReply = funtypes.Static<typeof GetAddressBookDataReply>
 export const GetAddressBookDataReply = funtypes.ReadonlyObject({
 	method: funtypes.Literal('popup_getAddressBookDataReply'),
-	data: GetAddressBookDataReplyData,
+	data: funtypes.ReadonlyObject({
+		data: GetAddressBookDataFilter,
+		entries: AddressBookEntries,
+		maxDataLength: funtypes.Number,
+	}),
 }).asReadonly()
 
 type NewBlockArrivedOrFailedToArrive = funtypes.Static<typeof NewBlockArrivedOrFailedToArrive>
@@ -437,6 +434,12 @@ export const UpdateConfirmTransactionDialog = funtypes.ReadonlyObject({
 		pendingTransactionAndSignableMessages: funtypes.ReadonlyArray(PendingTransactionOrSignableMessage),
 		currentBlockNumber: EthereumQuantity,
 	})
+}).asReadonly()
+
+export type UpdateConfirmTransactionDialogPartial = funtypes.Static<typeof UpdateConfirmTransactionDialogPartial>
+export const UpdateConfirmTransactionDialogPartial = funtypes.ReadonlyObject({
+	method: funtypes.Union(funtypes.Literal('popup_confirm_transaction_dialog_pending_changed'), funtypes.Literal('popup_update_confirm_transaction_dialog')),
+	data: funtypes.Unknown,
 }).asReadonly()
 
 export type InterceptorAccessReply = funtypes.Static<typeof InterceptorAccessReply>
@@ -801,7 +804,7 @@ export const MessageToPopup = funtypes.Union(
 	InterceptorAccessDialog,
 	NewBlockArrivedOrFailedToArrive,
 	SettingsUpdated,
-	UpdateConfirmTransactionDialog,
+	UpdateConfirmTransactionDialogPartial,
 	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_initiate_export_settings'), data: funtypes.ReadonlyObject({ fileContents: funtypes.String }) }),
 	ImportSettingsReply,
 	ActiveSigningAddressChanged,
