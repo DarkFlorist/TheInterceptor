@@ -173,7 +173,7 @@ export function SettingsView() {
 					</li>
 					<li>
 						<p className = 'paragraph'>Export & Import</p>
-						<ImportExport />
+						<ImportExport/>
 					</li>
 					<li>
 						<Collapsible summary = 'RPC Connections' defaultOpen = { true }>
