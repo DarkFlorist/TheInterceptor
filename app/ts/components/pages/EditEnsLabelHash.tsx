@@ -97,7 +97,7 @@ export function EditEnsLabelHash(param: EditEnsNamedHashParams) {
 					</div>
 				</div>
 				<div style = 'padding-left: 10px; padding-right: 10px; margin-bottom: 10px; min-height: 80px'>
-					{ errorString == undefined ? <></> : <Notice text = { errorString } /> }
+					{ errorString === undefined ? <></> : <Notice text = { errorString } /> }
 				</div>
 			</section>
 			<footer class = 'modal-card-foot window-footer' style = 'border-bottom-left-radius: unset; border-bottom-right-radius: unset; border-top: unset; padding: 10px;'>
