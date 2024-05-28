@@ -125,7 +125,7 @@ const ConfigureRpcForm = ({ defaultValues, onCancel, onSave, onRemove }: Configu
 
 		const newRpcEntry = {
 			name: formData.get('name')?.toString() || '',
-			chainId: chainIdFromForm ? `0x${BigInt(chainIdFromForm).toString(16)}` : '',
+			chainId: chainIdFromForm ? `0x${ BigInt(chainIdFromForm).toString(16) }` : '',
 			httpsRpc: formData.get('httpsRpc')?.toString() || '',
 			currencyName: formData.get('currencyName')?.toString() || '',
 			currencyTicker: formData.get('currencyTicker')?.toString() || '',
