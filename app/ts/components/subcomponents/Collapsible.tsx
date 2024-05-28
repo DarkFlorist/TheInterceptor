@@ -12,7 +12,7 @@ export const Collapsible = (props: CollapsibleProps) => {
 	return (
 		<details class = { props.class } open = { props.defaultOpen } style = { props.style }>
 			<summary onMouseLeave = { e => e.currentTarget.blur() }>
-				<Indicator />
+				<Indicator/>
 				<span>{ props.summary }</span>
 			</summary>
 			<article>{ props.children }</article>
