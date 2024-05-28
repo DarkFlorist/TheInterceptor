@@ -428,7 +428,7 @@ const MessageToPopupSimple = funtypes.ReadonlyObject({
 
 export type UpdateConfirmTransactionDialog = funtypes.Static<typeof UpdateConfirmTransactionDialog>
 export const UpdateConfirmTransactionDialog = funtypes.ReadonlyObject({
-	method: funtypes.Union(funtypes.Literal('popup_confirm_transaction_dialog_pending_changed'), funtypes.Literal('popup_update_confirm_transaction_dialog')),
+	method: funtypes.Literal('popup_update_confirm_transaction_dialog'),
 	data: funtypes.ReadonlyObject({
 		visualizedSimulatorState: funtypes.Union(CompleteVisualizedSimulation, funtypes.Undefined),
 		pendingTransactionAndSignableMessages: funtypes.ReadonlyArray(PendingTransactionOrSignableMessage),
@@ -438,8 +438,8 @@ export const UpdateConfirmTransactionDialog = funtypes.ReadonlyObject({
 
 export type UpdateConfirmTransactionDialogPartial = funtypes.Static<typeof UpdateConfirmTransactionDialogPartial>
 export const UpdateConfirmTransactionDialogPartial = funtypes.ReadonlyObject({
-	method: funtypes.Union(funtypes.Literal('popup_confirm_transaction_dialog_pending_changed'), funtypes.Literal('popup_update_confirm_transaction_dialog')),
-	data: funtypes.Unknown,
+	method: funtypes.Literal('popup_update_confirm_transaction_dialog'),
+	data: funtypes.Unknown
 }).asReadonly()
 
 export type InterceptorAccessReply = funtypes.Static<typeof InterceptorAccessReply>

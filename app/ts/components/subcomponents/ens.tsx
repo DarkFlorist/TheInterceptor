@@ -15,6 +15,9 @@ type NameHashComponentParams = {
 }
 
 export const EnsNamedHashComponent = (params: NameHashComponentParams) => {
+	console.log('EnsNamedHashComponent')
+	console.log(params.name)
+	console.log(params.nameHash)
 	const name = params.name !== undefined ? params.name : bytes32String(params.nameHash)
 	return (
 		<span className = 'small-address-container' data-value = { name }>

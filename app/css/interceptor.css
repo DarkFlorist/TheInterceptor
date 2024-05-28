@@ -552,6 +552,18 @@ svg.spinner > circle {
 	vertical-align: middle;
 }
 
+.priority-line {
+	text-overflow: ellipsis;
+	overflow: hidden;
+	white-space: nowrap;
+	display: flex;
+	-ms-flex-align: center;
+	-webkit-align-items: center;
+	-webkit-box-align: center;
+	align-items: center;
+	vertical-align: middle;
+}
+
 .log-cell-flexless {
 	text-overflow: ellipsis;
 	overflow: hidden;
@@ -598,6 +610,7 @@ svg.spinner > circle {
 	display: flex;
 	flex-direction: column;
 	overflow: hidden;
+	margin: 0 0.2em; 
 }
 
 .small-address-container::after {
