@@ -209,7 +209,7 @@ const VisualizeEnsEvent = ({ ensEvent, textColor, editEnsNamedHashCallBack, rena
 				<SmallAddress addressBookEntry = { ensEvent.logInformation.owner } renameAddressCallBack = { renameAddressCallBack }/>
 			</div>
 		</div>
-		case 'ENSNameWrapped': return <div class = 'log-table-4'>
+		case 'ENSNameWrapped': return <div class = 'log-table-6'>
 			<div class = 'log-cell'>
 				<p class = 'ellipsis paragraph' style = { textStyle }>
 					{ `Wrap ${ ensEvent.logInformation.name }` } 
@@ -217,6 +217,14 @@ const VisualizeEnsEvent = ({ ensEvent, textColor, editEnsNamedHashCallBack, rena
 			</div>
 			<div class = 'log-cell'>
 				<EnsNamedHashComponent type = { 'nameHash' } nameHash = { ensEvent.logInformation.node.nameHash } name = { ensEvent.logInformation.node.name } editEnsNamedHashCallBack = { editEnsNamedHashCallBack }/>
+			</div>
+			<div class = 'log-cell'>
+				<p class = 'ellipsis paragraph' style = { textStyle }>
+					to
+				</p>
+			</div>
+			<div class = 'log-cell'>
+				<SmallAddress addressBookEntry = { ensEvent.logInformation.owner } renameAddressCallBack = { renameAddressCallBack }/>
 			</div>
 			<div class = 'log-cell'>
 				<p class = 'ellipsis paragraph' style = { textStyle }>
@@ -417,7 +425,7 @@ export function EnsEventsExplainer(param: EnsEvenExplainerParams) {
 	return <>
 		{ param.ensEvents.filter((ensEvent) => ensEvent.subType !== 'ENSAddressChanged').map((ensEvent) =>
 			<div class = 'vertical-center'>
-				<div class = { `box token-box vertical-center positive-box` } style = 'display: inline-block'>
+				<div class = { 'box token-box vertical-center positive-box' } style = 'display: inline-block'>
 					<VisualizeEnsEvent ensEvent = { ensEvent } textColor = { param.textColor } editEnsNamedHashCallBack = { param.editEnsNamedHashCallBack } renameAddressCallBack = { param.renameAddressCallBack } rpcNetwork = { param.rpcNetwork }/>
 				</div>
 			</div>

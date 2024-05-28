@@ -101,6 +101,7 @@ const LocalStorageKey2 = funtypes.Union(
 	funtypes.Literal('pendingTransactionsAndMessages'),
 )
 
+// these methods are split to 1 and 2 to make the funtypes types simpler
 export async function browserStorageLocalGet2(keys: LocalStorageKey2 | LocalStorageKey2[]): Promise<LocalStorageItems2> {
 	return LocalStorageItems2.parse(await browser.storage.local.get(Array.isArray(keys) ? keys : [keys]))
 }

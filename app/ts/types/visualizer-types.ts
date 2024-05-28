@@ -237,6 +237,7 @@ export const ParsedEnsEvent = funtypes.Intersect(
 			logInformation: funtypes.ReadonlyObject({
 				node: EthereumBytes32,
 				fuses: funtypes.ReadonlyArray(EnsFuseName),
+				owner: EthereumAddress,
 				name: funtypes.String,
 				expires: EthereumQuantity
 			}),
@@ -487,6 +488,7 @@ export const EnsEvent = funtypes.Intersect(
 			logInformation: funtypes.ReadonlyObject({
 				node: MaybeENSNameHash,
 				fuses: funtypes.ReadonlyArray(EnsFuseName),
+				owner: AddressBookEntry,
 				name: funtypes.String,
 				expires: EthereumQuantity
 			}),

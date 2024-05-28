@@ -11,7 +11,11 @@ const enrichEnsEvent = (event: ParsedEnsEvent, ens: { ensNameHashes: MaybeENSNam
 	const getLabelHash = (labelHash: bigint) => ens.ensLabelHashes.find((nameHash) => nameHash.labelHash === labelHash) ?? { labelHash: labelHash, label: undefined }
 	
 	switch (event.subType) {
-		case 'ENSNameWrapped': return { ...event, logInformation: { ...event.logInformation, node: getNameHash(event.logInformation.node) } }
+		case 'ENSNameWrapped': {
+			const owner = addressMetaData.get(addressString(event.logInformation.owner))
+			if (owner === undefined) throw new Error('missing metadata')
+			return { ...event, logInformation: { ...event.logInformation, owner, node: getNameHash(event.logInformation.node) } }
+		}
 		case 'ENSFusesSet': return { ...event, logInformation: { ...event.logInformation, node: getNameHash(event.logInformation.node) } }
 		case 'ENSExpiryExtended': return { ...event, logInformation: { ...event.logInformation, node: getNameHash(event.logInformation.node) } }
 		case 'ENSNameChanged': return { ...event, logInformation: { ...event.logInformation, node: getNameHash(event.logInformation.node) } }

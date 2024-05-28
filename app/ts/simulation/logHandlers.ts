@@ -291,6 +291,7 @@ export function handleNameWrapped(eventLog: ParsedEvent) {
 	return {
 		node: EthereumBytes32.parse(dataStringWith0xStart(eventLog.args[0].typeValue.value)),
 		name: eventLog.args[1].typeValue.value,
+		owner: eventLog.args[2].typeValue.value,
 		fuses: extractENSFuses(eventLog.args[3]?.typeValue.value),
 		expires: eventLog.args[4].typeValue.value,
 	}
