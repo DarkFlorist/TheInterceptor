@@ -501,27 +501,27 @@ svg.spinner > circle {
 }
 .log-table-9 {
 	display: grid;
-	grid-template-columns: max-content auto auto auto;
+	grid-template-columns: max-content auto auto auto auto auto auto auto auto;
 	width: 100%;
 }
 .log-table-8 {
 	display: grid;
-	grid-template-columns: max-content auto auto auto;
+	grid-template-columns: max-content auto auto auto auto auto auto auto;
 	width: 100%;
 }
 .log-table-7 {
 	display: grid;
-	grid-template-columns: max-content auto auto auto;
+	grid-template-columns: max-content auto auto auto auto auto auto;
 	width: 100%;
 }
 .log-table-6 {
 	display: grid;
-	grid-template-columns: max-content auto auto auto;
+	grid-template-columns: max-content auto auto auto auto auto;
 	width: 100%;
 }
 .log-table-5 {
 	display: grid;
-	grid-template-columns: max-content auto auto auto;
+	grid-template-columns: max-content auto auto auto auto;
 	width: 100%;
 }
 .log-table-4 {
@@ -541,18 +541,6 @@ svg.spinner > circle {
 }
 
 .log-cell {
-	text-overflow: ellipsis;
-	overflow: hidden;
-	white-space: nowrap;
-	display: flex;
-	-ms-flex-align: center;
-	-webkit-align-items: center;
-	-webkit-box-align: center;
-	align-items: center;
-	vertical-align: middle;
-}
-
-.priority-line {
 	text-overflow: ellipsis;
 	overflow: hidden;
 	white-space: nowrap;

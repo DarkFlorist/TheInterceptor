@@ -15,9 +15,6 @@ type NameHashComponentParams = {
 }
 
 export const EnsNamedHashComponent = (params: NameHashComponentParams) => {
-	console.log('EnsNamedHashComponent')
-	console.log(params.name)
-	console.log(params.nameHash)
 	const name = params.name !== undefined ? params.name : bytes32String(params.nameHash)
 	return (
 		<span className = 'small-address-container' data-value = { name }>
@@ -25,7 +22,7 @@ export const EnsNamedHashComponent = (params: NameHashComponentParams) => {
 				<span class = 'small-address-baggage-tag vertical-center' style = { params.style }>
 					<span style = 'margin-right: 5px'>
 						<CopyToClipboard content = { name } copyMessage = 'Copied!'>
-							<img style = { { display: 'block', width: '1em', height: '1em' } } src = { zorbImageDataURI(stringToUint8Array(`0x${ params.nameHash.toString(16) }`)) }/>
+							<img style = { { display: 'block', width: '1em', height: '1em', 'min-width': '1em', 'max-height': '1em' } } src = { zorbImageDataURI(stringToUint8Array(bytes32String(params.nameHash))) }/>
 						</CopyToClipboard>
 					</span>
 					<CopyToClipboard content = { name } copyMessage = 'Copied!' style = { { 'text-overflow': 'ellipsis', overflow: 'hidden' } }>
