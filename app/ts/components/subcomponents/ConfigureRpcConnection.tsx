@@ -166,7 +166,7 @@ const ConfigureRpcForm = ({ defaultValues, onCancel, onSave, onRemove }: Configu
 				<p>Interceptor will automatically verify the RPC URL you provide and attempt to fill relevant information. Adjust the pre-populated details to your liking.</p>
 				<div class = 'grid' style = '--grid-cols: 1fr 1fr; --gap-x: 1rem; --gap-y: 0' >
 					<RpcUrlField defaultValue = { defaultValues?.httpsRpc } />
-					<TextInput label = 'Network Name *' name = 'name' defaultValue = { networkNameDefault.value } style = '--area: 5 / span 1' required />
+					<TextInput label = 'RPC Connection Name *' name = 'name' defaultValue = { networkNameDefault.value } style = '--area: 5 / span 1' required />
 					<TextInput label = 'Chain ID' name = 'chainId' style = '--area: 5 / span 1' defaultValue = { chainIdDefault.value } required readOnly />
 					<TextInput label = 'Currency Name *' name = 'currencyName' defaultValue = { currencyNameDefault.value } style = '--area: 7 / span 1' required />
 					<TextInput label = 'Currency Ticker *' name = 'currencyTicker' defaultValue = { currencyTickerDefault.value } style = '--area: 7 / span 1' required />
