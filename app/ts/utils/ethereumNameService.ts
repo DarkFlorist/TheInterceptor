@@ -41,7 +41,13 @@ export const getEthereumNameServiceNameFromTokenId = async (ethereumMainnet: Eth
 		input: stringToUint8Array(wrappedEthereumNameService1155TokenInterface.encodeFunctionData('names', [bytes32String(tokenId)])),
 	}
 	const nameString: string = wrappedEthereumNameService1155TokenInterface.decodeFunctionResult('names', stringToUint8Array(await ethereumMainnet.call(tx, 'latest', requestAbortController)))[0]
-	return encodeEthereumNameServiceString(nameString)
+	const name = encodeEthereumNameServiceString(nameString)
+	if (name === undefined) return undefined
+	if (tokenId !== BigInt(namehash(name))) {
+		console.error(`Querying RPC ${ ethereumMainnet.getRpcEntry().httpsRpc } returned invalid name for hash: ${ tokenId }.`)
+		return undefined
+	}
+	return name
 }
 
 type EnsFuseName = 
