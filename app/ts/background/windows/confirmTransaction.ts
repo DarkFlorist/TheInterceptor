@@ -2,7 +2,7 @@ import { closePopupOrTabById, getPopupOrTabById, openPopupOrTab, tryFocusingTabO
 import { EthereumClientService } from '../../simulation/services/EthereumClientService.js'
 import { appendSignedMessage, appendTransaction, getInputFieldFromDataOrInput, getSimulatedTransactionCount, simulateEstimateGas, simulatePersonalSign } from '../../simulation/services/SimulationModeEthereumClientService.js'
 import { CANNOT_SIMULATE_OFF_LEGACY_BLOCK, ERROR_INTERCEPTOR_NO_ACTIVE_ADDRESS, METAMASK_ERROR_NOT_CONNECTED_TO_CHAIN, METAMASK_ERROR_USER_REJECTED_REQUEST } from '../../utils/constants.js'
-import { TransactionConfirmation, UpdateConfirmTransactionDialog } from '../../types/interceptor-messages.js'
+import { TransactionConfirmation, UpdateConfirmTransactionDialog, UpdateConfirmTransactionDialogPendingTransactions } from '../../types/interceptor-messages.js'
 import { Semaphore } from '../../utils/semaphore.js'
 import { WebsiteTabConnections } from '../../types/user-interface-types.js'
 import { WebsiteCreatedEthereumUnsignedTransaction, WebsiteCreatedEthereumUnsignedTransactionOrFailed } from '../../types/visualizer-types.js'
@@ -34,11 +34,20 @@ export async function updateConfirmTransactionView(ethereumClientService: Ethere
 	const pendingTransactionAndSignableMessages = await getPendingTransactionsAndMessages()
 	if (pendingTransactionAndSignableMessages.length === 0) return false
 	const message: UpdateConfirmTransactionDialog = { method: 'popup_update_confirm_transaction_dialog', data: {
-		pendingTransactionAndSignableMessages,
 		currentBlockNumber: await currentBlockNumberPromise,
 		visualizedSimulatorState: (await settings).simulationMode ? await visualizedSimulatorStatePromise : undefined,
-   } }
-	await sendPopupMessageToOpenWindows(serialize(UpdateConfirmTransactionDialog, message))
+	} }
+	const messagePendingTransactions: UpdateConfirmTransactionDialogPendingTransactions = {
+		method: 'popup_update_confirm_transaction_dialog_pending_transactions' as const,
+		data: {
+			pendingTransactionAndSignableMessages,
+			currentBlockNumber: await currentBlockNumberPromise,
+		}
+	}
+	await Promise.all([
+		sendPopupMessageToOpenWindows(messagePendingTransactions),
+		sendPopupMessageToOpenWindows(serialize(UpdateConfirmTransactionDialog, message))
+	])
 	return true
 }
 
