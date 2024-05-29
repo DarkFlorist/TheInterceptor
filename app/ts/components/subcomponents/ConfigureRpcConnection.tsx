@@ -1,5 +1,5 @@
 import { createContext, type ComponentChildren } from 'preact'
-import { Signal, useComputed, useSignal, useSignalEffect } from '@preact/signals'
+import { useComputed, useSignal, useSignalEffect } from '@preact/signals'
 import { useContext, useRef } from 'preact/hooks'
 import { Network, JsonRpcProvider } from 'ethers'
 import { AsyncStates, useAsyncState } from '../../utils/preact-utilities.js'
@@ -9,36 +9,27 @@ import { CHAIN_NAMES } from '../../utils/chainNames.js'
 import { sendPopupMessageToBackgroundPage } from '../../background/backgroundUtils.js'
 
 type ConfigureRpcContext = {
-	rpcUrl: Signal<string>
-	rpcUrlQuery: ReturnType<typeof useAsyncState<Network>>['value']
-	resetQuery: () => void
+	queryRpcInfo: (url:string) => void
+	rpcQuery: ReturnType<typeof useAsyncState<Network>>['value']
+	resetRpcQuery: () => void
 }
 
 const ConfigureRpcContext = createContext<ConfigureRpcContext | undefined>(undefined)
 
-const ConfigureRpcProvider = ({ children }: { children: ComponentChildren, defaultRpcInfo?: RpcEntry }) => {
-	const rpcUrl = useSignal('')
-	const { value: rpcUrlQuery, waitFor, reset: resetQuery } = useAsyncState<Network>()
+const RpcQueryProvider = ({ children }: { children: ComponentChildren }) => {
+	const { value: rpcQuery, waitFor, reset: resetRpcQuery } = useAsyncState<Network>()
 
-	const fetchRpcInfo = (url: string) => waitFor(async () => {
+	const queryRpcInfo = (url: string) => waitFor(async () => {
 		const provider = new JsonRpcProvider(url)
 		return await provider.getNetwork()
 	})
 
-	useSignalEffect(() => {
-		if (!rpcUrl.value) {
-			resetQuery()
-			return
-		}
-		fetchRpcInfo(rpcUrl.value)
-	})
-
-	return <ConfigureRpcContext.Provider value = { { rpcUrl, rpcUrlQuery, resetQuery } }>{ children }</ConfigureRpcContext.Provider>
+	return <ConfigureRpcContext.Provider value = { { queryRpcInfo, rpcQuery, resetRpcQuery } }>{ children }</ConfigureRpcContext.Provider>
 }
 
-function useConfigureRpc() {
+function useQueryRpc() {
 	const context = useContext(ConfigureRpcContext)
-	if (!context) throw new Error('useConfigureRpc can only be used within children of ConfigureRpcProvider')
+	if (!context) throw new Error('useQueryRpc can only be used within children of RpcQueryProvider')
 	return context
 }
 
@@ -64,7 +55,7 @@ export const ConfigureRpcConnection = ({ rpcEntries, rpcInfo }: { rpcEntries: Rp
 	}
 
 	return (
-		<ConfigureRpcProvider>
+		<RpcQueryProvider>
 			{ rpcInfo
 				? <button type = 'button' onClick = { showConfigurationModal } class = 'btn btn--outline'>Edit</button>
 				: <button type = 'button' onClick = { showConfigurationModal } class = 'btn btn--outline' style = 'border-style: dashed'>+ New RPC Connection</button>
@@ -72,7 +63,7 @@ export const ConfigureRpcConnection = ({ rpcEntries, rpcInfo }: { rpcEntries: Rp
 			<dialog class = 'dialog' ref = { modalRef }>
 				<ConfigureRpcForm defaultValues = { rpcInfo } onCancel = { cancelAndCloseModal } onSave = { saveRpcEntry } onRemove = { removeRpcEntryByUrl } />
 			</dialog>
-		</ConfigureRpcProvider>
+		</RpcQueryProvider>
 	)
 }
 
@@ -85,20 +76,18 @@ type ConfigureRpcFormProps = {
 
 const ConfigureRpcForm = ({ defaultValues, onCancel, onSave, onRemove }: ConfigureRpcFormProps) => {
 	const confirmRemoval = useSignal(false)
-	const { rpcUrlQuery, resetQuery } = useConfigureRpc()
+	const { rpcQuery, resetRpcQuery } = useQueryRpc()
 
 	const handleFormSubmit = (event: Event) => {
 		// TODO: current version preact don't ship with SubmitEvent type
 		if (!(event instanceof SubmitEvent)) return
 		if (!(event.target instanceof HTMLFormElement)) return
 
-		// abort if dialog submitter was a cancel request
 		if (event.submitter instanceof HTMLButtonElement) {
 			switch (event.submitter.value) {
 				case 'cancel':
-					// reset the form to initial state
 					event.target.reset()
-					resetQuery()
+					resetRpcQuery()
 					onCancel()
 					return
 
@@ -112,7 +101,7 @@ const ConfigureRpcForm = ({ defaultValues, onCancel, onSave, onRemove }: Configu
 
 					if (parsedData.success) {
 						onSave(parsedData.value)
-						resetQuery()
+						resetRpcQuery()
 						event.target.reset()
 						return
 					}
@@ -137,19 +126,19 @@ const ConfigureRpcForm = ({ defaultValues, onCancel, onSave, onRemove }: Configu
 	}
 
 	const chainIdDefault = useComputed(() => {
-		if (rpcUrlQuery.value.state === 'resolved') return BigInt(rpcUrlQuery.value.value.chainId).toString()
+		if (rpcQuery.value.state === 'resolved') return BigInt(rpcQuery.value.value.chainId).toString()
 		return defaultValues?.chainId?.toString() || ''
 	})
 
 	const networkNameDefault = useComputed(() => CHAIN_NAMES.get(chainIdDefault.value) || defaultValues?.name || '')
 
 	const currencyTickerDefault = useComputed(() => {
-		if (rpcUrlQuery.value.state === 'resolved') return defaultValues?.currencyTicker || 'ETH'
+		if (rpcQuery.value.state === 'resolved') return defaultValues?.currencyTicker || 'ETH'
 		return defaultValues?.currencyTicker || ''
 	})
 
 	const currencyNameDefault = useComputed(() => {
-		if (rpcUrlQuery.value.state === 'resolved') return defaultValues?.currencyName || 'Ether'
+		if (rpcQuery.value.state === 'resolved') return defaultValues?.currencyName || 'Ether'
 		return defaultValues?.currencyName || ''
 	})
 
@@ -200,23 +189,22 @@ const ConfigureRpcForm = ({ defaultValues, onCancel, onSave, onRemove }: Configu
 }
 
 const RPC_URL_FETCH_DEBOUNCE = 600
+
 const RpcUrlField = ({ defaultValue }: { defaultValue?: string }) => {
-	const { rpcUrlQuery, rpcUrl } = useConfigureRpc()
+	const { rpcQuery, queryRpcInfo } = useQueryRpc()
 	const inputRef = useRef<HTMLInputElement>(null)
 	const timeout = useSignal<ReturnType<typeof setTimeout> | undefined>(undefined)
 
-	const verifyUrlFromInput = (event: Event) => {
-		if (!(event.target instanceof HTMLInputElement)) return
+	const deferredQueryAnRpcUrl = (url: string) => {
 		if (timeout.value) clearTimeout(timeout.value)
-		const inputValue = event.target.value.trim()
 		timeout.value = setTimeout(() => {
-			rpcUrl.value = inputValue
+			queryRpcInfo(url)
 		}, RPC_URL_FETCH_DEBOUNCE)
 	}
 
 	useSignalEffect(() => {
 		if (!inputRef.current) return
-		switch (rpcUrlQuery.value.state) {
+		switch (rpcQuery.value.state) {
 			case 'inactive':
 				if (defaultValue) inputRef.current.setCustomValidity('')
 				return
@@ -233,7 +221,7 @@ const RpcUrlField = ({ defaultValue }: { defaultValue?: string }) => {
 		}
 	})
 
-	return <TextInput ref = { inputRef } label = 'RPC URL *' name = 'httpsRpc' defaultValue = { defaultValue } onInput = { verifyUrlFromInput } statusIcon = { <StatusIcon state = { rpcUrlQuery.value.state } /> } style = '--area: 1 / span 2' autoFocus required />
+	return <TextInput ref = { inputRef } label = 'RPC URL *' name = 'httpsRpc' defaultValue = { defaultValue } onInput = { (e) => deferredQueryAnRpcUrl(e.currentTarget.value) } statusIcon = { <StatusIcon state = { rpcQuery.value.state } /> } style = '--area: 1 / span 2' autoFocus required />
 }
 
 export const StatusIcon = ({ state }: { state: AsyncStates }) => {
