@@ -54,7 +54,6 @@ type VisualizeOpenSeaConsiderationAssetParams = {
 }
 
 function VisualizeOpenSeaAsset(param: VisualizeOpenSeaConsiderationAssetParams) {
-	const textColor = 'var(--text-color)'
 	return <>
 		<div class = 'log-cell' style = 'justify-content: right;'>
 			<ValueField orderOrConsideration = { param.consideration } />
@@ -65,7 +64,7 @@ function VisualizeOpenSeaAsset(param: VisualizeOpenSeaConsiderationAssetParams) 
 			: <TokenOrEthSymbol { ...param.consideration.token } rpcNetwork = { param.rpcNetwork } style = { tokenStyle } fontSize = 'big'/> }
 		</div>
 		<div class = 'log-cell' style = 'padding-right: 0.2em; padding-left: 0.2em'>
-			{ <ArrowIcon color = { textColor } /> }
+			{ <ArrowIcon color = 'var(--text-color)' /> }
 		</div>
 		<div class = 'log-cell-flexless' style = 'margin: 2px;'>
 			<SmallAddress addressBookEntry = { param.consideration.recipient } renameAddressCallBack = { param.renameAddressCallBack } />

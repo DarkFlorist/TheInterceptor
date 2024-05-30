@@ -1,9 +1,74 @@
 import { addressString, dataStringWith0xStart } from '../utils/bigint.js'
-import { EnrichedEthereumEventWithMetadata, EnrichedEthereumEvents, NamedTokenId, ProtectorResults, SimulatedAndVisualizedTransaction, SimulationState } from '../types/visualizer-types.js'
+import { EnrichedEthereumEventWithMetadata, EnrichedEthereumEvents, NamedTokenId, ParsedEnsEvent, ProtectorResults, SimulatedAndVisualizedTransaction, SimulationState } from '../types/visualizer-types.js'
 import { AddressBookEntry } from '../types/addressBookTypes.js'
 import { Interface } from 'ethers'
 import { decodeEthereumError } from '../utils/errorDecoding.js'
 import { MaybeENSLabelHashes, MaybeENSNameHashes } from '../types/ens.js'
+import { assertNever } from '../utils/typescript.js'
+
+const enrichEnsEvent = (event: ParsedEnsEvent, ens: { ensNameHashes: MaybeENSNameHashes, ensLabelHashes: MaybeENSLabelHashes }, addressMetaData: Map<string, AddressBookEntry>) => {
+	const getNameHash = (node: bigint) => ens.ensNameHashes.find((nameHash) => nameHash.nameHash === node) ?? { nameHash: node, name: undefined }
+	const getLabelHash = (labelHash: bigint) => ens.ensLabelHashes.find((nameHash) => nameHash.labelHash === labelHash) ?? { labelHash: labelHash, label: undefined }
+	
+	switch (event.subType) {
+		case 'ENSNameWrapped': {
+			const owner = addressMetaData.get(addressString(event.logInformation.owner))
+			if (owner === undefined) throw new Error('missing metadata')
+			return { ...event, logInformation: { ...event.logInformation, owner, node: getNameHash(event.logInformation.node) } }
+		}
+		case 'ENSFusesSet': return { ...event, logInformation: { ...event.logInformation, node: getNameHash(event.logInformation.node) } }
+		case 'ENSExpiryExtended': return { ...event, logInformation: { ...event.logInformation, node: getNameHash(event.logInformation.node) } }
+		case 'ENSNameChanged': return { ...event, logInformation: { ...event.logInformation, node: getNameHash(event.logInformation.node) } }
+		case 'ENSNewTTL': return { ...event, logInformation: { ...event.logInformation, node: getNameHash(event.logInformation.node) } }
+		case 'ENSNewResolver': {
+			const address = addressMetaData.get(addressString(event.logInformation.address))
+			if (address === undefined) throw new Error('missing metadata')
+			return { ...event, logInformation: { ...event.logInformation, node: getNameHash(event.logInformation.node), address } }
+		}
+		case 'ENSReverseClaimed': {
+			const address = addressMetaData.get(addressString(event.logInformation.address))
+			if (address === undefined) throw new Error('missing metadata')
+			return { ...event, logInformation: { ...event.logInformation, node: getNameHash(event.logInformation.node), address } }
+		}
+		case 'ENSTextChangedKeyValue': return { ...event, logInformation: { ...event.logInformation, node: getNameHash(event.logInformation.node) } }
+		case 'ENSContentHashChanged': return { ...event, logInformation: { ...event.logInformation, node: getNameHash(event.logInformation.node) } }
+		case 'ENSTextChanged': return { ...event, logInformation: { ...event.logInformation, node: getNameHash(event.logInformation.node) } }
+		case 'ENSTransfer': {
+			const owner = addressMetaData.get(addressString(event.logInformation.owner))
+			if (owner === undefined) throw new Error('missing metadata')
+			return { ...event, logInformation: { ...event.logInformation, node: getNameHash(event.logInformation.node), owner } }
+		}
+		case 'ENSNewOwner': {
+			const owner = addressMetaData.get(addressString(event.logInformation.owner))
+			if (owner === undefined) throw new Error('missing metadata')
+			return { ...event, logInformation: { ...event.logInformation, node: getNameHash(event.logInformation.node), labelHash: getLabelHash(event.logInformation.labelHash), owner } }
+		}
+		case 'ENSAddressChanged': return { ...event, logInformation: { ...event.logInformation, node: getNameHash(event.logInformation.node) } }
+		case 'ENSNameUnwrapped': {
+			const owner = addressMetaData.get(addressString(event.logInformation.owner))
+			if (owner === undefined) throw new Error('missing metadata')
+			return { ...event, logInformation: { ...event.logInformation, owner, node: getNameHash(event.logInformation.node) } }
+		}
+		case 'ENSAddrChanged': {
+			const to = addressMetaData.get(addressString(event.logInformation.to))
+			if (to === undefined) throw new Error('missing metadata')
+			return { ...event, logInformation: { ...event.logInformation, to, node: getNameHash(event.logInformation.node) } }
+		}
+		case 'ENSControllerNameRegistered': {
+			const owner = addressMetaData.get(addressString(event.logInformation.owner))
+			if (owner === undefined) throw new Error('missing metadata')
+			return { ...event, logInformation: { ...event.logInformation, owner, labelHash: getLabelHash(event.logInformation.labelHash)} }
+		}
+		case 'ENSControllerNameRenewed': return { ...event, logInformation: { ...event.logInformation, labelHash: getLabelHash(event.logInformation.labelHash) } }
+		case 'ENSBaseRegistrarNameRegistered': {
+			const owner = addressMetaData.get(addressString(event.logInformation.owner))
+			if (owner === undefined) throw new Error('missing metadata')
+			return { ...event, logInformation: { ...event.logInformation, owner, labelHash: getLabelHash(event.logInformation.labelHash) } }
+		}
+		case 'ENSBaseRegistrarNameRenewed': return { ...event, logInformation: { ...event.logInformation, labelHash: getLabelHash(event.logInformation.labelHash) } }
+		default: assertNever(event)
+	}
+}
 
 export function formSimulatedAndVisualizedTransaction(simState: SimulationState, eventsForEachTransaction: readonly EnrichedEthereumEvents[], protectorResults: readonly ProtectorResults[], addressBookEntries: readonly AddressBookEntry[], namedTokenIds: readonly NamedTokenId[], ens: { ensNameHashes: MaybeENSNameHashes, ensLabelHashes: MaybeENSLabelHashes }): readonly SimulatedAndVisualizedTransaction[] {
 	const addressMetaData = new Map(addressBookEntries.map((x) => [addressString(x.address), x]))
@@ -44,45 +109,10 @@ export function formSimulatedAndVisualizedTransaction(simState: SimulationState,
 					}
 					return({ ...event, type: 'Parsed' })
 				}
-				case 'ENSFusesSet': {
-					const node = ens.ensNameHashes.find((nameHash) => nameHash.nameHash === event.logInformation.node) ?? { nameHash: event.logInformation.node, name: undefined }
-					return { ...event, logInformation: { ...event.logInformation, node } }
-				}
-				case 'ENSReverseClaimed':
-				case 'ENSNameChanged':
-				case 'ENSNameUnwrapped':
-				case 'ENSNewResolver':
-				case 'ENSTransfer':
-				case 'ENSTextChangedKeyValue':
-				case 'ENSContentHashChanged':
-				case 'ENSTextChanged': {
-					const node = ens.ensNameHashes.find((nameHash) => nameHash.nameHash === event.logInformation.node) ?? { nameHash: event.logInformation.node, name: undefined }
-					return { ...event, logInformation: { ...event.logInformation, node } }
-				}
-				case 'ENSNewOwner': {
-					const labelHash = ens.ensLabelHashes.find((nameHash) => nameHash.labelHash === event.logInformation.labelHash) ?? { labelHash: event.logInformation.labelHash, label: undefined }
-					const node = ens.ensNameHashes.find((nameHash) => nameHash.nameHash === event.logInformation.node) ?? { nameHash: event.logInformation.node, name: undefined }
-					return { ...event, logInformation: { ...event.logInformation, node, labelHash } }
-				}
-				case 'ENSAddrChanged': {
-					const to = addressMetaData.get(addressString(event.logInformation.to))
-					if (to === undefined) throw new Error('missing metadata')
-					const node = ens.ensNameHashes.find((nameHash) => nameHash.nameHash === event.logInformation.node) ?? { nameHash: event.logInformation.node, name: undefined }
-					return { ...event, logInformation: { ...event.logInformation, to, node } }
-				}
-				case 'ENSAddressChanged': {
-					const node = ens.ensNameHashes.find((nameHash) => nameHash.nameHash === event.logInformation.node) ?? { nameHash: event.logInformation.node, name: undefined }
-					return { ...event, logInformation: { ...event.logInformation, node } }
-				}
-				case 'ENSRegistrarNameRenewed': {
-					const labelHash = ens.ensLabelHashes.find((nameHash) => nameHash.labelHash === event.logInformation.labelHash) ?? { labelHash: event.logInformation.labelHash, label: undefined }
-					return { ...event, logInformation: { ...event.logInformation, labelHash } }
-				}
-				case 'ENSNameRenewed': {
-					const labelHash = ens.ensLabelHashes.find((nameHash) => nameHash.labelHash === event.logInformation.labelHash) ?? { labelHash: event.logInformation.labelHash, label: undefined }
-					return { ...event, logInformation: { ...event.logInformation, labelHash } }
-				}
-				default: return event
+				case 'ENS': return enrichEnsEvent(event, ens, addressMetaData)
+				case 'Parsed': return({ ...event, type: 'Parsed' })
+				case 'NonParsed': return({ ...event, type: 'NonParsed' })
+				default: assertNever(event)
 			}
 		})
 		

@@ -180,6 +180,7 @@ function SimulationResults(param: SimulationStateParam) {
 					removeTransactionOrSignedMessage = { param.removeTransactionOrSignedMessage }
 					activeAddress = { param.simulationAndVisualisationResults.activeAddress }
 					renameAddressCallBack = { param.renameAddressCallBack }
+					editEnsNamedHashCallBack = { param.editEnsNamedHashCallBack }
 					removedTransactionOrSignedMessages = { param.removedTransactionOrSignedMessages }
 					addressMetaData = { param.simulationAndVisualisationResults.addressBookEntries }
 				/>
@@ -311,6 +312,7 @@ export function Home(param: HomeParams) {
 			resetSimulation = { resetSimulation }
 			currentBlockNumber = { currentBlockNumber }
 			renameAddressCallBack = { param.renameAddressCallBack }
+			editEnsNamedHashCallBack = { param.editEnsNamedHashCallBack }
 			removedTransactionOrSignedMessages = { removedTransactionOrSignedMessages }
 			rpcConnectionStatus = { rpcConnectionStatus }
 			simulationUpdatingState = { simulationUpdatingState }

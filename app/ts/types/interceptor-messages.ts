@@ -384,17 +384,14 @@ const OpenAddressBook = funtypes.ReadonlyObject({
 	method: funtypes.Literal('popup_openAddressBook'),
 }).asReadonly()
 
-type GetAddressBookDataReplyData = funtypes.Static<typeof GetAddressBookDataReplyData>
-const GetAddressBookDataReplyData = funtypes.ReadonlyObject({
-	data: GetAddressBookDataFilter,
-	entries: AddressBookEntries,
-	maxDataLength: funtypes.Number,
-}).asReadonly()
-
 export type GetAddressBookDataReply = funtypes.Static<typeof GetAddressBookDataReply>
 export const GetAddressBookDataReply = funtypes.ReadonlyObject({
 	method: funtypes.Literal('popup_getAddressBookDataReply'),
-	data: GetAddressBookDataReplyData,
+	data: funtypes.ReadonlyObject({
+		data: GetAddressBookDataFilter,
+		entries: AddressBookEntries,
+		maxDataLength: funtypes.Number,
+	}),
 }).asReadonly()
 
 type NewBlockArrivedOrFailedToArrive = funtypes.Static<typeof NewBlockArrivedOrFailedToArrive>
@@ -431,13 +428,28 @@ const MessageToPopupSimple = funtypes.ReadonlyObject({
 
 export type UpdateConfirmTransactionDialog = funtypes.Static<typeof UpdateConfirmTransactionDialog>
 export const UpdateConfirmTransactionDialog = funtypes.ReadonlyObject({
-	method: funtypes.Union(funtypes.Literal('popup_confirm_transaction_dialog_pending_changed'), funtypes.Literal('popup_update_confirm_transaction_dialog')),
+	method: funtypes.Literal('popup_update_confirm_transaction_dialog'),
 	data: funtypes.ReadonlyObject({
 		visualizedSimulatorState: funtypes.Union(CompleteVisualizedSimulation, funtypes.Undefined),
+		currentBlockNumber: EthereumQuantity,
+	})
+}).asReadonly()
+
+export type UpdateConfirmTransactionDialogPartial = funtypes.Static<typeof UpdateConfirmTransactionDialogPartial>
+export const UpdateConfirmTransactionDialogPartial = funtypes.ReadonlyObject({
+	method: funtypes.Literal('popup_update_confirm_transaction_dialog'),
+	data: funtypes.Unknown
+}).asReadonly()
+
+export type UpdateConfirmTransactionDialogPendingTransactions = funtypes.Static<typeof UpdateConfirmTransactionDialogPendingTransactions>
+export const UpdateConfirmTransactionDialogPendingTransactions = funtypes.ReadonlyObject({
+	method: funtypes.Literal('popup_update_confirm_transaction_dialog_pending_transactions'),
+	data: funtypes.ReadonlyObject({
 		pendingTransactionAndSignableMessages: funtypes.ReadonlyArray(PendingTransactionOrSignableMessage),
 		currentBlockNumber: EthereumQuantity,
 	})
 }).asReadonly()
+
 
 export type InterceptorAccessReply = funtypes.Static<typeof InterceptorAccessReply>
 export const InterceptorAccessReply = funtypes.ReadonlyObject({
@@ -738,6 +750,16 @@ const DisableInterceptorReply = funtypes.ReadonlyObject({
 	})
 }).asReadonly()
 
+export type SetEnsNameForHash = funtypes.Static<typeof SetEnsNameForHash>
+export const SetEnsNameForHash = funtypes.ReadonlyObject({
+	method: funtypes.Literal('popup_setEnsNameForHash'),
+	data: funtypes.ReadonlyObject({
+		type: funtypes.Union(funtypes.Literal('nameHash'), funtypes.Literal('labelHash')),
+		nameHash: EthereumBytes32,
+		name: funtypes.String
+	})
+}).asReadonly()
+
 export type PopupMessage = funtypes.Static<typeof PopupMessage>
 export const PopupMessage = funtypes.Union(
 	TransactionConfirmation,
@@ -779,6 +801,7 @@ export const PopupMessage = funtypes.Union(
 	FetchAbiAndNameFromEtherscan,
 	OpenWebPage,
 	DisableInterceptor,
+	SetEnsNameForHash,
 )
 
 export type MessageToPopup = funtypes.Static<typeof MessageToPopup>
@@ -790,7 +813,8 @@ export const MessageToPopup = funtypes.Union(
 	InterceptorAccessDialog,
 	NewBlockArrivedOrFailedToArrive,
 	SettingsUpdated,
-	UpdateConfirmTransactionDialog,
+	UpdateConfirmTransactionDialogPartial,
+	UpdateConfirmTransactionDialogPendingTransactions,
 	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_initiate_export_settings'), data: funtypes.ReadonlyObject({ fileContents: funtypes.String }) }),
 	ImportSettingsReply,
 	ActiveSigningAddressChanged,

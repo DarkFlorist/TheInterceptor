@@ -11,6 +11,7 @@ import { SignerName } from './signerTypes.js'
 import { ICON_ACCESS_DENIED, ICON_ACTIVE, ICON_INTERCEPTOR_DISABLED, ICON_NOT_ACTIVE, ICON_SIGNING, ICON_SIGNING_NOT_SUPPORTED, ICON_SIMULATING } from '../utils/constants.js'
 import { CodeMessageError, RpcEntries, RpcEntry, RpcNetwork } from './rpc.js'
 import { TransactionOrMessageIdentifier } from './interceptor-messages.js'
+import { EditEnsNamedHashCallBack } from '../components/subcomponents/ens.js'
 
 export type InterceptorAccessListParams = {
 	setAndSaveAppPage: (page: Page) => void,
@@ -42,6 +43,7 @@ export type HomeParams = {
 	tabIconDetails: TabIconDetails,
 	currentBlockNumber: bigint | undefined,
 	renameAddressCallBack: RenameAddressCallBack,
+	editEnsNamedHashCallBack: EditEnsNamedHashCallBack,
 	rpcConnectionStatus: RpcConnectionStatus,
 	rpcEntries: RpcEntries,
 	simulationUpdatingState: SimulationUpdatingState | undefined,
@@ -80,6 +82,7 @@ export type SimulationStateParam = {
 	removeTransactionOrSignedMessage: (transactionOrMessageIdentifier: TransactionOrMessageIdentifier) => void
 	currentBlockNumber: bigint | undefined
 	renameAddressCallBack: RenameAddressCallBack
+	editEnsNamedHashCallBack: EditEnsNamedHashCallBack
 	disableReset: boolean
 	resetSimulation: () => void
 	removedTransactionOrSignedMessages: readonly TransactionOrMessageIdentifier[]
@@ -98,6 +101,7 @@ export type NonLogAnalysisParams = {
 	nonTokenLogs: readonly EnrichedEthereumEventWithMetadata[]
 	addressMetaData: readonly AddressBookEntry[]
 	renameAddressCallBack: RenameAddressCallBack
+	editEnsNamedHashCallBack: EditEnsNamedHashCallBack
 }
 
 export type RenameAddressCallBack = (addressBookEntry: AddressBookEntry) => void

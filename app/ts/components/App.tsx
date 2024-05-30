@@ -14,7 +14,7 @@ import { DEFAULT_TAB_CONNECTION, METAMASK_ERROR_ALREADY_PENDING, METAMASK_ERROR_
 import { UpdateHomePage, Settings, MessageToPopup, UnexpectedErrorOccured } from '../types/interceptor-messages.js'
 import { version, gitCommitSha } from '../version.js'
 import { sendPopupMessageToBackgroundPage } from '../background/backgroundUtils.js'
-import { EthereumAddress } from '../types/wire-types.js'
+import { EthereumAddress, EthereumBytes32 } from '../types/wire-types.js'
 import { checksummedAddress } from '../utils/bigint.js'
 import { AddressBookEntry, AddressBookEntries } from '../types/addressBookTypes.js'
 import { WebsiteAccessArray } from '../types/websiteAccessTypes.js'
@@ -27,6 +27,7 @@ import { useSignal } from '@preact/signals'
 import { SomeTimeAgo } from './subcomponents/SomeTimeAgo.js'
 import { noNewBlockForOverTwoMins } from '../background/iconHandler.js'
 import { humanReadableDate } from './ui-utils.js'
+import { EditEnsLabelHash } from './pages/EditEnsLabelHash.js'
 
 type ProviderErrorsParam = {
 	tabState: TabState | undefined
@@ -288,6 +289,10 @@ export function App() {
 		} })
 	}
 
+	function editEnsNamedHashCallBack(type: 'nameHash' | 'labelHash', nameHash: EthereumBytes32, name: string | undefined) {
+		setAndSaveAppPage({ page: 'EditEnsNamedHash', state: { type, nameHash, name } })
+	}
+
 	async function openAddressBook() {
 		await sendPopupMessageToBackgroundPage( { method: 'popup_openAddressBook' } )
 		return globalThis.close() // close extension popup, chrome closes it by default, but firefox does not
@@ -341,6 +346,7 @@ export function App() {
 							currentBlockNumber = { currentBlockNumber }
 							tabState = { tabState }
 							renameAddressCallBack = { renameAddressCallBack }
+							editEnsNamedHashCallBack = { editEnsNamedHashCallBack }
 							rpcConnectionStatus = { rpcConnectionStatus }
 							rpcEntries = { rpcEntries }
 							simulationUpdatingState = { simulationUpdatingState }
@@ -349,6 +355,12 @@ export function App() {
 						/>
 
 						<div class = { `modal ${ appPage.page !== 'Home' ? 'is-active' : ''}` }>
+							{ appPage.page === 'EditEnsNamedHash' ? 
+								<EditEnsLabelHash
+									close = { () => setAndSaveAppPage({ page: 'Home' }) }
+									editEnsNamedHashWindowState = { appPage.state }
+								/>
+							: <></> }
 							{ appPage.page === 'AccessList' ?
 								<InterceptorAccessList
 									setAndSaveAppPage = { setAndSaveAppPage }
