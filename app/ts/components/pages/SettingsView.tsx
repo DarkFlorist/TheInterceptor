@@ -191,6 +191,8 @@ export function SettingsView() {
 }
 
 const RpcList = ({ rpcEntries }: { rpcEntries: RpcEntries }) => {
+	const [lastEntry] = rpcEntries
+
 	const loadDefaultRpcs = () => {
 		sendPopupMessageToBackgroundPage({
 			method: 'popup_set_rpc_list',
@@ -198,13 +200,19 @@ const RpcList = ({ rpcEntries }: { rpcEntries: RpcEntries }) => {
 		})
 	}
 
-	if (!rpcEntries.length) return (
-		<aside class = 'report' style = {{ display: 'grid', height: '12rem', textAlign: 'center', rowGap: '0.5rem'}}>
-			<h1 style = {{ fontSize: '1.1rem', color: 'white', lineHeight: 1.1 }}>No RPC connections configured</h1>
-			<p style = {{ color: '#ffffff80' }}>Do you want to load Interceptor's default list?</p>
-			<button class = 'btn btn--outline' style = 'font-weight: 600' onClick = { loadDefaultRpcs }>Yes, load default RPC list</button>
-		</aside>
-	)
+	if (rpcEntries.length < 2 && lastEntry) {
+		return (
+			<>
+				<aside class = 'report' style = { { display: 'grid', height: '9rem', textAlign: 'center', rowGap: '0.5rem'} }>
+					<p style = { { color: '#ffffff80' } }>Interceptor requires at least 1 active RPC connection to work, did you want to reset to the default list instead?</p>
+					<button class = 'btn btn--outline' style = 'font-weight: 600' onClick = { loadDefaultRpcs }>Yes, load default RPC list</button>
+				</aside>
+				<ul class = 'grid' style = '--gap-y: 0.5rem'>
+					<RpcSummary entries = { rpcEntries } info = { lastEntry } />
+				</ul>
+			</>
+		)
+	}
 
 	return (
 		<ul class = 'grid' style = '--gap-y: 0.5rem'>

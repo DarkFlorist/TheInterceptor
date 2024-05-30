@@ -61,7 +61,7 @@ export const ConfigureRpcConnection = ({ rpcEntries, rpcInfo }: { rpcEntries: Rp
 				: <button type = 'button' onClick = { showConfigurationModal } class = 'btn btn--outline' style = 'border-style: dashed'>+ New RPC Connection</button>
 			}
 			<dialog class = 'dialog' ref = { modalRef }>
-				<ConfigureRpcForm defaultValues = { rpcInfo } onCancel = { cancelAndCloseModal } onSave = { saveRpcEntry } onRemove = { removeRpcEntryByUrl } />
+				<ConfigureRpcForm key = { rpcInfo?.httpsRpc } defaultValues = { rpcInfo } onCancel = { cancelAndCloseModal } onSave = { saveRpcEntry } onRemove = { rpcEntries.length > 1 ? removeRpcEntryByUrl : undefined } />
 			</dialog>
 		</RpcQueryProvider>
 	)
@@ -71,7 +71,7 @@ type ConfigureRpcFormProps = {
 	defaultValues?: RpcEntry,
 	onCancel: () => void
 	onSave: (rpcEntry: RpcEntry) => void
-	onRemove: (rpcUrl: string) => void
+	onRemove?: (rpcUrl: string) => void
 }
 
 const ConfigureRpcForm = ({ defaultValues, onCancel, onSave, onRemove }: ConfigureRpcFormProps) => {
@@ -92,7 +92,7 @@ const ConfigureRpcForm = ({ defaultValues, onCancel, onSave, onRemove }: Configu
 					return
 
 				case 'remove':
-					if (defaultValues !== undefined) onRemove(defaultValues.httpsRpc)
+					if (defaultValues !== undefined) onRemove?.(defaultValues.httpsRpc)
 					return
 
 				case 'save':
@@ -160,7 +160,6 @@ const ConfigureRpcForm = ({ defaultValues, onCancel, onSave, onRemove }: Configu
 					<TextInput label = 'Currency Name *' name = 'currencyName' defaultValue = { currencyNameDefault.value } style = '--area: 7 / span 1' required />
 					<TextInput label = 'Currency Ticker *' name = 'currencyTicker' defaultValue = { currencyTickerDefault.value } style = '--area: 7 / span 1' required />
 				</div>
-				<p style = '--text-color: gray'><small>* Fields marked with an asterisk (*) are required.</small></p>
 			</main>
 
 			<footer class = 'grid' style = '--grid-cols: max-content 1fr max-content max-content; --gap-x: 1rem; --btn-text-size: 0.9rem'>
@@ -177,7 +176,7 @@ const ConfigureRpcForm = ({ defaultValues, onCancel, onSave, onRemove }: Configu
 						<>
 							<button type = 'submit' value = 'cancel' class = 'btn btn--ghost' style = '--area: 1 / 3' formNoValidate>Cancel</button>
 							<button type = 'submit' value = 'save' class = 'btn btn--primary' style = '--area: 1 / 4'>Save RPC Connection</button>
-							{ defaultValues ? (
+							{ defaultValues && onRemove ? (
 								<button type = 'button' class = 'btn btn--ghost' style = '--area: 1 / 1; --btn-text-color: var(--negative-color)' onClick = { () => confirmRemoval.value = true }><span class = 'grid' style = '--grid-cols: max-content 1fr; --gap-x: 0.5rem; --text-color: var(--negative-color)'><Trash /> Remove</span></button>
 							) : <></> }
 						</>
