@@ -43,7 +43,7 @@ export const ConfigureRpcConnection = ({ rpcEntries, rpcInfo }: { rpcEntries: Rp
 	const saveRpcEntry = (rpcEntry: RpcEntry) => {
 		sendPopupMessageToBackgroundPage({
 			method: 'popup_set_rpc_list',
-			data: rpcEntries.filter(entry => entry.httpsRpc !== rpcEntry.httpsRpc).concat([rpcEntry])
+			data: [rpcEntry].concat(rpcEntries.filter(entry => entry.httpsRpc !== rpcEntry.httpsRpc))
 		})
 	}
 

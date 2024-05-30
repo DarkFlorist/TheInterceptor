@@ -1083,3 +1083,11 @@ summary:where(details[open] > *) {
 	padding: 1rem;
 	border-radius: 6px;
 }
+
+.report {
+    padding: 0 2rem;
+    border-radius: 6px;
+    background: #3e3e3e;
+    place-content: center;
+	justify-items: center;
+}

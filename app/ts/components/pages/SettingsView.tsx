@@ -8,6 +8,7 @@ import { DinoSaysNotification } from '../subcomponents/DinoSays.js'
 import { ConfigureRpcConnection } from '../subcomponents/ConfigureRpcConnection.js'
 import { Collapsible } from '../subcomponents/Collapsible.js'
 import { CHAIN_NAMES } from '../../utils/chainNames.js'
+import { defaultRpcs } from '../../background/settings.js'
 
 type CheckBoxSettingParam = {
 	text: string
@@ -178,8 +179,8 @@ export function SettingsView() {
 					<li>
 						<Collapsible summary = 'RPC Connections' defaultOpen = { true }>
 							<div class = 'grid' style = '--gap-y: 0.5rem; padding: 0.5rem 0'>
-							<RpcList rpcEntries = { rpcEntries } />
-							<ConfigureRpcConnection rpcEntries = { rpcEntries } />
+								<RpcList rpcEntries = { rpcEntries } />
+								<ConfigureRpcConnection rpcEntries = { rpcEntries } />
 							</div>
 						</Collapsible>
 					</li>
@@ -190,6 +191,21 @@ export function SettingsView() {
 }
 
 const RpcList = ({ rpcEntries }: { rpcEntries: RpcEntries }) => {
+	const loadDefaultRpcs = () => {
+		sendPopupMessageToBackgroundPage({
+			method: 'popup_set_rpc_list',
+			data: defaultRpcs
+		})
+	}
+
+	if (!rpcEntries.length) return (
+		<aside class = 'report' style = {{ display: 'grid', height: '12rem', textAlign: 'center', rowGap: '0.5rem'}}>
+			<h1 style = {{ fontSize: '1.1rem', color: 'white', lineHeight: 1.1 }}>No RPC connections configured</h1>
+			<p style = {{ color: '#ffffff80' }}>Do you want to load Interceptor's default list?</p>
+			<button class = 'btn btn--outline' style = 'font-weight: 600' onClick = { loadDefaultRpcs }>Yes, load default RPC list</button>
+		</aside>
+	)
+
 	return (
 		<ul class = 'grid' style = '--gap-y: 0.5rem'>
 			{ rpcEntries.map(entry => <RpcSummary entries = { rpcEntries } info = { entry } />) }
