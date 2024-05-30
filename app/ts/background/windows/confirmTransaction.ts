@@ -2,7 +2,7 @@ import { closePopupOrTabById, getPopupOrTabById, openPopupOrTab, tryFocusingTabO
 import { EthereumClientService } from '../../simulation/services/EthereumClientService.js'
 import { appendSignedMessage, appendTransaction, getInputFieldFromDataOrInput, getSimulatedTransactionCount, simulateEstimateGas, simulatePersonalSign } from '../../simulation/services/SimulationModeEthereumClientService.js'
 import { CANNOT_SIMULATE_OFF_LEGACY_BLOCK, ERROR_INTERCEPTOR_NO_ACTIVE_ADDRESS, METAMASK_ERROR_NOT_CONNECTED_TO_CHAIN, METAMASK_ERROR_USER_REJECTED_REQUEST } from '../../utils/constants.js'
-import { TransactionConfirmation } from '../../types/interceptor-messages.js'
+import { TransactionConfirmation, UpdateConfirmTransactionDialog, UpdateConfirmTransactionDialogPendingTransactions } from '../../types/interceptor-messages.js'
 import { Semaphore } from '../../utils/semaphore.js'
 import { WebsiteTabConnections } from '../../types/user-interface-types.js'
 import { WebsiteCreatedEthereumUnsignedTransaction, WebsiteCreatedEthereumUnsignedTransactionOrFailed } from '../../types/visualizer-types.js'
@@ -15,7 +15,7 @@ import { replyToInterceptedRequest } from '../messageSending.js'
 import { Simulator } from '../../simulation/simulator.js'
 import { ethers, keccak256, toUtf8Bytes } from 'ethers'
 import { dataStringWith0xStart, stringToUint8Array } from '../../utils/bigint.js'
-import { EthereumAddress, EthereumBytes32, EthereumQuantity } from '../../types/wire-types.js'
+import { EthereumAddress, EthereumBytes32, EthereumQuantity, serialize } from '../../types/wire-types.js'
 import { PopupOrTabId, Website } from '../../types/websiteAccessTypes.js'
 import { JsonRpcResponseError, handleUnexpectedError, printError } from '../../utils/errors.js'
 import { PendingTransactionOrSignableMessage } from '../../types/accessRequest.js'
@@ -33,11 +33,21 @@ export async function updateConfirmTransactionView(ethereumClientService: Ethere
 	const currentBlockNumberPromise = ethereumClientService.getBlockNumber(undefined)
 	const pendingTransactionAndSignableMessages = await getPendingTransactionsAndMessages()
 	if (pendingTransactionAndSignableMessages.length === 0) return false
-	await sendPopupMessageToOpenWindows({ method: 'popup_update_confirm_transaction_dialog', data: {
-		 pendingTransactionAndSignableMessages,
-		 currentBlockNumber: await currentBlockNumberPromise,
-		 visualizedSimulatorState: (await settings).simulationMode ? await visualizedSimulatorStatePromise : undefined,
-	} })
+	const message: UpdateConfirmTransactionDialog = { method: 'popup_update_confirm_transaction_dialog', data: {
+		currentBlockNumber: await currentBlockNumberPromise,
+		visualizedSimulatorState: (await settings).simulationMode ? await visualizedSimulatorStatePromise : undefined,
+	} }
+	const messagePendingTransactions: UpdateConfirmTransactionDialogPendingTransactions = {
+		method: 'popup_update_confirm_transaction_dialog_pending_transactions' as const,
+		data: {
+			pendingTransactionAndSignableMessages,
+			currentBlockNumber: await currentBlockNumberPromise,
+		}
+	}
+	await Promise.all([
+		sendPopupMessageToOpenWindows(messagePendingTransactions),
+		sendPopupMessageToOpenWindows(serialize(UpdateConfirmTransactionDialog, message))
+	])
 	return true
 }
 

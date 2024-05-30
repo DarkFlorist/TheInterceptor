@@ -22,7 +22,7 @@ import { OriginalSendRequestParameters } from '../../types/JsonRpc-types.js'
 import { Website } from '../../types/websiteAccessTypes.js'
 import { getWebsiteWarningMessage } from '../../utils/websiteData.js'
 import { ErrorComponent } from '../subcomponents/Error.js'
-import { WebsiteSocket, checkAndThrowRuntimeLastError, updateTabIfExists, updateWindowIfExists } from '../../utils/requests.js'
+import { WebsiteSocket, checkAndThrowRuntimeLastError } from '../../utils/requests.js'
 import { Link } from '../subcomponents/link.js'
 import { NetworkErrors } from '../App.js'
 import { SignatureCard, SignatureHeader, identifySignature, isPossibleToSignMessage } from './PersonalSign.js'
@@ -337,15 +337,8 @@ export function ConfirmTransaction() {
 	const [unexpectedError, setUnexpectedError] = useState<undefined | UnexpectedErrorOccured>(undefined)
 
 	const updatePendingTransactionsAndSignableMessages = (message: UpdateConfirmTransactionDialog) => {
-		setPendingTransactionsAndSignableMessages(message.data.pendingTransactionAndSignableMessages)
 		setCompleteVisualizedSimulation(message.data.visualizedSimulatorState)
 		setCurrentBlockNumber(message.data.currentBlockNumber)
-		const firstMessage = message.data.pendingTransactionAndSignableMessages[0]
-		if (firstMessage === undefined) throw new Error('message data was undefined')
-		setCurrentPendingTransactionOrSignableMessage(firstMessage)
-		if (firstMessage.type === 'Transaction' && (firstMessage.transactionOrMessageCreationStatus === 'Simulated' || firstMessage.transactionOrMessageCreationStatus === 'FailedToSimulate') && firstMessage.simulationResults !== undefined && firstMessage.simulationResults.statusCode === 'success' && (currentBlockNumber === undefined || firstMessage.simulationResults.data.simulationState.blockNumber > currentBlockNumber)) {
-			setCurrentBlockNumber(firstMessage.simulationResults.data.simulationState.blockNumber)
-		}
 	}
 	useEffect(() => {
 		async function popupMessageListener(msg: unknown) {
@@ -362,24 +355,18 @@ export function ConfirmTransaction() {
 			if (parsed.method === 'popup_failed_to_get_block') {
 				return setRpcConnectionStatus(parsed.data.rpcConnectionStatus)
 			}
-			if (parsed.method === 'popup_confirm_transaction_dialog_pending_changed') {
-				updatePendingTransactionsAndSignableMessages(parsed)
-				setPendingTransactionAddedNotification(true)
-				try {
-					const currentWindowId = (await browser.windows.getCurrent()).id
-					if (currentWindowId === undefined) throw new Error('could not get current window Id!')
-					const currentTabId = (await browser.tabs.getCurrent()).id
-					if (currentTabId === undefined) throw new Error('could not get current tab Id!')
-					await updateWindowIfExists(currentWindowId, { focused: true })
-					await updateTabIfExists(currentTabId, { active: true })
-				} catch(e) {
-					console.warn('failed to focus window')
-					console.warn(e)
-				}
-				return
+			if (parsed.method === 'popup_update_confirm_transaction_dialog') {
+				return updatePendingTransactionsAndSignableMessages(UpdateConfirmTransactionDialog.parse(parsed))
 			}
-			if (parsed.method !== 'popup_update_confirm_transaction_dialog') return
-			return updatePendingTransactionsAndSignableMessages(parsed)
+			if (parsed.method === 'popup_update_confirm_transaction_dialog_pending_transactions') {
+				setPendingTransactionsAndSignableMessages(parsed.data.pendingTransactionAndSignableMessages)
+				const firstMessage = parsed.data.pendingTransactionAndSignableMessages[0]
+				if (firstMessage === undefined) throw new Error('message data was undefined')
+				setCurrentPendingTransactionOrSignableMessage(firstMessage)
+				if (firstMessage.type === 'Transaction' && (firstMessage.transactionOrMessageCreationStatus === 'Simulated' || firstMessage.transactionOrMessageCreationStatus === 'FailedToSimulate') && firstMessage.simulationResults !== undefined && firstMessage.simulationResults.statusCode === 'success' && (currentBlockNumber === undefined || firstMessage.simulationResults.data.simulationState.blockNumber > currentBlockNumber)) {
+					setCurrentBlockNumber(firstMessage.simulationResults.data.simulationState.blockNumber)
+				}
+			}
 		}
 		browser.runtime.onMessage.addListener(popupMessageListener)
 		return () => browser.runtime.onMessage.removeListener(popupMessageListener)

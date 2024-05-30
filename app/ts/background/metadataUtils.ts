@@ -1,6 +1,6 @@
 import { addressString, addressStringWithout0x, bytesToUnsigned, checksummedAddress } from '../utils/bigint.js'
 import { AddressBookEntries, AddressBookEntry } from '../types/addressBookTypes.js'
-import { EnrichedEthereumEventWithMetadata, EnrichedEthereumEvents, NamedTokenId, SimulationState, TokenEvent, TokenVisualizerResultWithMetadata } from '../types/visualizer-types.js'
+import { EnrichedEthereumEventWithMetadata, EnrichedEthereumEvents, EnsEvent, NamedTokenId, SimulationState, TokenEvent, TokenVisualizerResultWithMetadata } from '../types/visualizer-types.js'
 import { tokenMetadata, contractMetadata, erc721Metadata, erc1155Metadata } from '@darkflorist/address-metadata'
 import { ethers } from 'ethers'
 import { ENS_ADDR_REVERSE_NODE, ENS_TOKEN_WRAPPER, ETHEREUM_COIN_ICON, ETHEREUM_LOGS_LOGGER_ADDRESS, MOCK_ADDRESS } from '../utils/constants.js'
@@ -196,8 +196,11 @@ export async function nameTokenIds(ethereumClientService: EthereumClientService,
 	return namedPairs
 }
 
-export const extractTokenEvents = (events: readonly EnrichedEthereumEventWithMetadata[]): readonly TokenVisualizerResultWithMetadata[] =>{
+export const extractTokenEvents = (events: readonly EnrichedEthereumEventWithMetadata[]): readonly TokenVisualizerResultWithMetadata[] => {
 	return events.filter((tokenEvent): tokenEvent is TokenEvent => tokenEvent.type === 'TokenEvent').map((token) => token.logInformation)
+}
+export const extractEnsEvents = (events: readonly EnrichedEthereumEventWithMetadata[]): readonly EnsEvent[] => {
+	return events.filter((tokenEvent): tokenEvent is EnsEvent => tokenEvent.type === 'ENS')
 }
 
 export async function retrieveEnsNodeHashes(ethereumClientService: EthereumClientService, events: EnrichedEthereumEvents, addressBookEntriesToMatchReverseResolutions: readonly AddressBookEntry[]) {

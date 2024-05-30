@@ -494,25 +494,39 @@ svg.spinner > circle {
 	background-image: url("data:image/svg+xml;utf8, <svg xmlns = 'http://www.w3.org/2000/svg' width = '100' height = '100' fill = 'var(--window-header-bg-color)'><polygon points = '0,0 0,100 50,50'/></svg>");
 }
 
+.ens-table {
+	display: grid;
+	grid-template-columns: max-content;
+	grid-auto-columns: auto;
+	grid-auto-flow: column;
+	width: 100%;
+	margin: 0 0.2em;
+}
+
 .log-table {
 	display: grid;
 	grid-template-columns: max-content auto auto auto auto;
 	width: 100%;
+	margin: 0 0.2em;
 }
+
 .log-table-4 {
 	display: grid;
 	grid-template-columns: max-content auto auto auto;
 	width: 100%;
+	margin: 0 0.2em;
 }
 .log-table-3 {
 	display: grid;
 	grid-template-columns: max-content auto auto;
 	width: 100%;
+	margin: 0 0.2em;
 }
 .log-table-1 {
 	display: grid;
 	grid-template-columns: auto;
 	width: 100%;
+	margin: 0 0.2em;
 }
 
 .log-cell {
@@ -573,6 +587,7 @@ svg.spinner > circle {
 	display: flex;
 	flex-direction: column;
 	overflow: hidden;
+	margin: 0 0.2em; 
 }
 
 .small-address-container::after {

@@ -144,12 +144,13 @@ export function handleEnsControllerNameRenewed(eventLog: ParsedEvent) {
 
 // event NameRegistered(string name, bytes32 indexed label, address indexed owner, uint cost, uint expires)
 export function handleControllerNameRegistered(eventLog: ParsedEvent) {
-	if (eventLog.args[0]?.typeValue.type !== 'string' || eventLog.args[1]?.typeValue.type !== 'fixedBytes' || eventLog.args[2]?.typeValue.type !== 'unsignedInteger' || eventLog.args[3]?.typeValue.type !== 'unsignedInteger') throw new Error('Malformed ENS Name Registered Event')
+	if (eventLog.args[0]?.typeValue.type !== 'string' || eventLog.args[1]?.typeValue.type !== 'fixedBytes' || eventLog.args[2]?.typeValue.type !== 'address' || eventLog.args[3]?.typeValue.type !== 'unsignedInteger' || eventLog.args[4]?.typeValue.type !== 'unsignedInteger') throw new Error('Malformed ENS Name Registered Event')
 	return {
 		name: eventLog.args[0].typeValue.value,
 		labelHash: bytesToUnsigned(eventLog.args[1].typeValue.value),
-		cost: eventLog.args[2].typeValue.value,
-		expires: eventLog.args[3].typeValue.value,
+		owner: eventLog.args[2].typeValue.value,
+		cost: eventLog.args[3].typeValue.value,
+		expires: eventLog.args[4].typeValue.value,
 	}
 }
 
@@ -167,20 +168,28 @@ export function handleBaseRegistrarNameRegistered(eventLog: ParsedEvent) {
 	if (eventLog.args[0]?.typeValue.type !== 'unsignedInteger' || eventLog.args[1]?.typeValue.type !== 'address' || eventLog.args[2]?.typeValue.type !== 'unsignedInteger') throw new Error('Malformed ENS Name Registered Event')
 	return {
 		labelHash: eventLog.args[0].typeValue.value,
-		expires: eventLog.args[1].typeValue.value,
+		owner: eventLog.args[1].typeValue.value,
+		expires: eventLog.args[2].typeValue.value,
 	}
 }
 
 // event TextChanged(bytes32 indexed node, string indexed indexedKey, string key)
 export function handleEnsTextChanged(eventLog: ParsedEvent) {
 	if (eventLog.args[0]?.typeValue.type !== 'fixedBytes' || eventLog.args[1]?.typeValue.type !== 'fixedBytes' || eventLog.args[2]?.typeValue.type !== 'string') throw new Error('Malformed ENS TextChanged Event')
-	return { node: EthereumBytes32.parse(dataStringWith0xStart(eventLog.args[0].typeValue.value)) }
+	return {
+		node: EthereumBytes32.parse(dataStringWith0xStart(eventLog.args[0].typeValue.value)),
+		indexedKey: eventLog.args[1]?.typeValue.value,
+		key: eventLog.args[2]?.typeValue.value,
+	}
 }
 
 // event Transfer(bytes32 indexed node, address owner)
 export function handleEnsTransfer(eventLog: ParsedEvent) {
 	if (eventLog.args[0]?.typeValue.type !== 'fixedBytes' || eventLog.args[1]?.typeValue.type !== 'address') throw new Error('Malformed ENS Transfer Event')
-	return { node: EthereumBytes32.parse(dataStringWith0xStart(eventLog.args[0].typeValue.value)) }
+	return {
+		node: EthereumBytes32.parse(dataStringWith0xStart(eventLog.args[0].typeValue.value)),
+		owner: eventLog.args[1].typeValue.value,
+	}
 }
 
 // event NewOwner(bytes32 indexed node, bytes32 indexed label, address owner)
@@ -188,26 +197,38 @@ export function handleEnsNewOwner(eventLog: ParsedEvent) {
 	if (eventLog.args[0]?.typeValue.type !== 'fixedBytes' || eventLog.args[1]?.typeValue.type !== 'fixedBytes' || eventLog.args[2]?.typeValue.type !== 'address') throw new Error('Malformed ENS New Owner Event')
 	return {
 		node: EthereumBytes32.parse(dataStringWith0xStart(eventLog.args[0].typeValue.value)),
-		labelHash: bytesToUnsigned(eventLog.args[1].typeValue.value)
+		labelHash: bytesToUnsigned(eventLog.args[1].typeValue.value),
+		owner: eventLog.args[2].typeValue.value,
 	}
 }
 
 // event NewResolver(bytes32 indexed node, address resolver)
 export function handleEnsNewResolver(eventLog: ParsedEvent) {
 	if (eventLog.args[0]?.typeValue.type !== 'fixedBytes' || eventLog.args[1]?.typeValue.type !== 'address') throw new Error('Malformed ENS New Resolver Event')
-	return { node: EthereumBytes32.parse(dataStringWith0xStart(eventLog.args[0].typeValue.value)) }
+	return {
+		node: EthereumBytes32.parse(dataStringWith0xStart(eventLog.args[0].typeValue.value)),
+		address: eventLog.args[1].typeValue.value,
+	}
 }
 
 // event TextChanged(bytes32 indexed node, string indexed indexedKey, string key, string value);
 export function handleEnsTextChangedKeyValue(eventLog: ParsedEvent) {
 	if (eventLog.args[0]?.typeValue.type !== 'fixedBytes' || eventLog.args[1]?.typeValue.type !== 'fixedBytes' || eventLog.args[2]?.typeValue.type !== 'string' || eventLog.args[3]?.typeValue.type !== 'string') throw new Error('Malformed ENS Text changed Event')
-	return { node: EthereumBytes32.parse(dataStringWith0xStart(eventLog.args[0].typeValue.value)) }
+	return {
+		node: EthereumBytes32.parse(dataStringWith0xStart(eventLog.args[0].typeValue.value)),
+		indexedKey: eventLog.args[1].typeValue.value,
+		key: eventLog.args[2].typeValue.value,
+		value: eventLog.args[3].typeValue.value
+	}
 }
 
 // event ContenthashChanged(bytes32 indexed node, bytes hash);
 export function handleEnsContentHashChanged(eventLog: ParsedEvent) {
 	if (eventLog.args[0]?.typeValue.type !== 'fixedBytes' || eventLog.args[1]?.typeValue.type !== 'bytes') throw new Error('Malformed ENS Content Hash Changed Event')
-	return { node: EthereumBytes32.parse(dataStringWith0xStart(eventLog.args[0].typeValue.value)) }
+	return {
+		node: EthereumBytes32.parse(dataStringWith0xStart(eventLog.args[0].typeValue.value)),
+		hash: eventLog.args[1].typeValue.value
+	}
 }
 
 // event FusesSet(bytes32 indexed node, uint32 fuses)
@@ -222,20 +243,26 @@ export function handleEnsFusesSet(eventLog: ParsedEvent) {
 // event NameUnwrapped(bytes32 indexed node, address owner)
 export function handleEnsNameUnWrapped(eventLog: ParsedEvent) {
 	if (eventLog.args[0]?.typeValue.type !== 'fixedBytes' || eventLog.args[1]?.typeValue.type !== 'address') throw new Error('Malformed ENS Name Unwrapped Event')
-	return { node: EthereumBytes32.parse(dataStringWith0xStart(eventLog.args[0].typeValue.value)) }
+	return {
+		node: EthereumBytes32.parse(dataStringWith0xStart(eventLog.args[0].typeValue.value)),
+		owner: eventLog.args[1].typeValue.value,
+	}
 }
 
 // event NameChanged(bytes32 indexed node, string name); // 0x231b0Ee14048e9dCcD1d247744d114a4EB5E8E63
 export function handleEnsNameChanged(eventLog: ParsedEvent) {
 	if (eventLog.args[0]?.typeValue.type !== 'fixedBytes' || eventLog.args[1]?.typeValue.type !== 'string') throw new Error('Malformed ENS Name Unwrapped Event')
-	return { node: EthereumBytes32.parse(dataStringWith0xStart(eventLog.args[0].typeValue.value)) }
+	return {
+		node: EthereumBytes32.parse(dataStringWith0xStart(eventLog.args[0].typeValue.value)),
+		name: eventLog.args[1].typeValue.value
+	}
 }
 
 // event ReverseClaimed(address indexed addr, bytes32 indexed node) // 0xa58E81fe9b61B5c3fE2AFD33CF304c454AbFc7Cb
 export function handleEnsReverseClaimed(eventLog: ParsedEvent) {
 	if (eventLog.args[0]?.typeValue.type !== 'address' || eventLog.args[1]?.typeValue.type !== 'fixedBytes') throw new Error('Malformed ENS Name Unwrapped Event')
 	return {
-		addr: eventLog.args[0]?.typeValue.value,
+		address: eventLog.args[0]?.typeValue.value,
 		node: EthereumBytes32.parse(dataStringWith0xStart(eventLog.args[1].typeValue.value))
 	}
 }
@@ -244,7 +271,8 @@ export function handleEnsReverseClaimed(eventLog: ParsedEvent) {
 export function handleEnsNewTtl(eventLog: ParsedEvent) {
 	if (eventLog.args[0]?.typeValue.type !== 'fixedBytes' || eventLog.args[1]?.typeValue.type !== 'unsignedInteger') throw new Error('Malformed ENS New TTL Event')
 	return {
-		node: EthereumBytes32.parse(dataStringWith0xStart(eventLog.args[0].typeValue.value))
+		node: EthereumBytes32.parse(dataStringWith0xStart(eventLog.args[0].typeValue.value)),
+		ttl: eventLog.args[1].typeValue.value
 	}
 }
 
@@ -252,7 +280,8 @@ export function handleEnsNewTtl(eventLog: ParsedEvent) {
 export function handleEnsExpiryExtended(eventLog: ParsedEvent) {
 	if (eventLog.args[0]?.typeValue.type !== 'fixedBytes' || eventLog.args[1]?.typeValue.type !== 'unsignedInteger') throw new Error('Malformed ENS ExpiryExtended Event')
 	return {
-		node: EthereumBytes32.parse(dataStringWith0xStart(eventLog.args[0].typeValue.value))
+		node: EthereumBytes32.parse(dataStringWith0xStart(eventLog.args[0].typeValue.value)),
+		expires: eventLog.args[1].typeValue.value,
 	}
 }
 
@@ -262,7 +291,8 @@ export function handleNameWrapped(eventLog: ParsedEvent) {
 	return {
 		node: EthereumBytes32.parse(dataStringWith0xStart(eventLog.args[0].typeValue.value)),
 		name: eventLog.args[1].typeValue.value,
+		owner: eventLog.args[2].typeValue.value,
 		fuses: extractENSFuses(eventLog.args[3]?.typeValue.value),
-		expiry: eventLog.args[4].typeValue.value,
+		expires: eventLog.args[4].typeValue.value,
 	}
 }

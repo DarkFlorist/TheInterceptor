@@ -5,7 +5,7 @@ import { getSimulationResults, getTabState, setLatestUnexpectedError, updateSimu
 import { changeSimulationMode, getSettings, getMakeMeRich, getWethForChainId } from './settings.js'
 import { blockNumber, call, chainId, estimateGas, gasPrice, getAccounts, getBalance, getBlockByNumber, getCode, getLogs, getPermissions, getSimulationStack, getTransactionByHash, getTransactionCount, getTransactionReceipt, netVersion, personalSign, sendTransaction, subscribe, switchEthereumChain, unsubscribe, web3ClientVersion, getBlockByHash, feeHistory, installNewFilter, uninstallNewFilter, getFilterChanges, getFilterLogs, handleIterceptorError } from './simulationModeHanders.js'
 import { changeActiveAddress, changeMakeMeRich, changePage, confirmDialog, refreshSimulation, removeTransactionOrSignedMessage, requestAccountsFromSigner, refreshPopupConfirmTransactionSimulation, confirmRequestAccess, changeInterceptorAccess, changeChainDialog, popupChangeActiveRpc, enableSimulationMode, addOrModifyAddressBookEntry, getAddressBookData, removeAddressBookEntry, refreshHomeData, interceptorAccessChangeAddressOrRefresh, refreshPopupConfirmTransactionMetadata, changeSettings, importSettings, exportSettings, setNewRpcList, simulateGovernanceContractExecutionOnPass, openNewTab, settingsOpened, changeAddOrModifyAddressWindowState, popupFetchAbiAndNameFromEtherscan, openWebPage, disableInterceptor, requestNewHomeData, setEnsNameForHash } from './popupMessageHandlers.js'
-import { CompleteVisualizedSimulation, EnrichedEthereumEvents, ProtectorResults, SimulationState, VisualizedSimulatorState, WebsiteCreatedEthereumUnsignedTransactionOrFailed } from '../types/visualizer-types.js'
+import { CompleteVisualizedSimulation, EnrichedEthereumEvents, EventsForEachTransaction, ProtectorResults, SimulationState, VisualizedSimulatorState, WebsiteCreatedEthereumUnsignedTransactionOrFailed } from '../types/visualizer-types.js'
 import { WebsiteTabConnections } from '../types/user-interface-types.js'
 import { askForSignerAccountsFromSignerIfNotAvailable, interceptorAccessMetadataRefresh, requestAccessFromUser, updateInterceptorAccessViewWithPendingRequests } from './windows/interceptorAccess.js'
 import { FourByteExplanations, METAMASK_ERROR_FAILED_TO_PARSE_REQUEST, METAMASK_ERROR_NOT_AUTHORIZED, METAMASK_ERROR_NOT_CONNECTED_TO_CHAIN, ERROR_INTERCEPTOR_DISABLED, NEW_BLOCK_ABORT, ETHEREUM_LOGS_LOGGER_ADDRESS } from '../utils/constants.js'
@@ -142,7 +142,7 @@ export const updateSimulationMetadata = async (ethereum: EthereumClientService, 
 	return await updateSimulationResultsWithCallBack(async (prevState) => {
 		if (prevState?.simulationState === undefined) return prevState
 		try {
-			const metadata = await updateMetadataForSimulation(prevState.simulationState, ethereum, requestAbortController, prevState.eventsForEachTransaction, prevState.protectors)
+			const metadata = await updateMetadataForSimulation(prevState.simulationState, ethereum, requestAbortController, EventsForEachTransaction.parse(prevState.eventsForEachTransaction), prevState.protectors)
 			return { ...prevState, ...metadata }
 		} catch (error) {
 			if (error instanceof Error && isNewBlockAbort(error)) return prevState
