@@ -19,7 +19,7 @@
 		"lint": "npx @biomejs/biome@1.6.1 lint ."
 	},
 	"dependencies": {
-		"@darkflorist/address-metadata": "0.6.0",
+		"@darkflorist/address-metadata": "0.8.0",
 		"@noble/curves": "0.8.0",
 		"@noble/hashes": "1.4.0",
 		"@preact/signals": "1.1.3",
