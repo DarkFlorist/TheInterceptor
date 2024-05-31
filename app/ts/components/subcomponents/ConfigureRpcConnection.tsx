@@ -7,6 +7,7 @@ import { TextInput } from './TextField.js'
 import { RpcEntries, RpcEntry } from '../../types/rpc.js'
 import { CHAIN_NAMES } from '../../utils/chainNames.js'
 import { sendPopupMessageToBackgroundPage } from '../../background/backgroundUtils.js'
+import { getSettings } from '../../background/settings.js'
 
 type ConfigureRpcContext = {
 	queryRpcInfo: (url:string) => void
@@ -47,11 +48,20 @@ export const ConfigureRpcConnection = ({ rpcEntries, rpcInfo }: { rpcEntries: Rp
 		})
 	}
 
-	const removeRpcEntryByUrl = (url: string) => {
-		sendPopupMessageToBackgroundPage({
-			method: 'popup_set_rpc_list',
-			data: rpcEntries.filter(entry => entry.httpsRpc !== url)
-		})
+	const removeRpcEntryByUrl = async (url: string) => {
+		const { currentRpcNetwork } = await getSettings()
+
+		const reducedRpcEntries = rpcEntries.filter(entry => entry.httpsRpc !== url)
+
+		await sendPopupMessageToBackgroundPage({ method: 'popup_set_rpc_list', data: reducedRpcEntries })
+
+		// switch rpc when the active one is being removed
+		if (url !== currentRpcNetwork.httpsRpc || reducedRpcEntries[0] === undefined) return
+		console.warn('Switching RPC as a result of the removal of the currently active connection')
+
+		// at least find a connection of the same chainId
+		const rpcToSwitchTo = reducedRpcEntries.find(entry => entry.chainId === currentRpcNetwork.chainId) || reducedRpcEntries[0]
+		await sendPopupMessageToBackgroundPage({ method: 'popup_changeActiveRpc', data: rpcToSwitchTo })
 	}
 
 	return (
