@@ -77,17 +77,17 @@ export const TokenVisualizerResult = funtypes.Intersect(
 
 export type EnsFuseName = funtypes.Static<typeof EnsFuseName>
 export const EnsFuseName = funtypes.Union(
-	funtypes.Literal('CANNOT_UNWRAP'),
-	funtypes.Literal('CANNOT_BURN_FUSES'),
-	funtypes.Literal('CANNOT_TRANSFER'),
-	funtypes.Literal('CANNOT_SET_RESOLVER'),
-	funtypes.Literal('CANNOT_SET_TTL'),
-	funtypes.Literal('CANNOT_CREATE_SUBDOMAIN'),
-	funtypes.Literal('PARENT_CANNOT_CONTROL'),
-	funtypes.Literal('CANNOT_APPROVE'),
-	funtypes.Literal('IS_DOT_ETH'),
-	funtypes.Literal('CAN_EXTEND_EXPIRY'),
-	funtypes.Literal('CAN_DO_EVERYTHING')
+	funtypes.Literal('Cannot Unwrap Name'),
+	funtypes.Literal('Cannot Burn Fuses'),
+	funtypes.Literal('Cannot Transfer'),
+	funtypes.Literal('Cannot Set Resolver'),
+	funtypes.Literal('Cannot Set Time To Live'),
+	funtypes.Literal('Cannot Create Subdomain'),
+	funtypes.Literal('Parent Domain Cannot Control'),
+	funtypes.Literal('Cannot Approve'),
+	funtypes.Literal('Is .eth domain'),
+	funtypes.Literal('Can Extend Expiry'),
+	funtypes.Literal('Can Do Everything')
 )
 
 export type ParsedEnsEvent = funtypes.Static<typeof ParsedEnsEvent>
