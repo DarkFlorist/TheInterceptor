@@ -589,7 +589,7 @@ svg.spinner > circle {
 	display: flex;
 	flex-direction: column;
 	overflow: hidden;
-	margin: 0 0.2em; 
+	margin: 0 0.2em;
 }
 
 .small-address-container::after {
@@ -843,9 +843,9 @@ svg.spinner > circle {
 
 .dashed-notification {
 	border-style: dashed;
-    background: unset;
-    border-width: medium;
-    border-color: white;
+		background: unset;
+		border-width: medium;
+		border-color: white;
 }
 
 .popup-footer {
@@ -1019,8 +1019,8 @@ summary:where(details[open] > *) {
 	background: var(--bg-color);
 	color: var(--text-color);
 	border: 0 none;
-  padding: 1em;
-  border-radius: 6px;
+	padding: 1em;
+	border-radius: 6px;
 	width: calc(100vw - 4em);
 	max-width: 36em;
 }
@@ -1080,16 +1080,16 @@ summary:where(details[open] > *) {
 }
 
 .spin {
-  animation: spin 1s linear infinite;
+	animation: spin 1s linear infinite;
 }
 
 @keyframes spin {
-  0% {
-    transform: rotate(0deg);
-  }
-  100% {
-    transform: rotate(360deg);
-  }
+	0% {
+		transform: rotate(0deg);
+	}
+	100% {
+		transform: rotate(360deg);
+	}
 }
 
 .disclosure {
@@ -1100,9 +1100,9 @@ summary:where(details[open] > *) {
 }
 
 .report {
-    padding: 0 2rem;
-    border-radius: 6px;
-    background: #3e3e3e;
-    place-content: center;
+	padding: 0 2rem;
+	border-radius: 6px;
+	background: #3e3e3e;
+	place-content: center;
 	justify-items: center;
 }
