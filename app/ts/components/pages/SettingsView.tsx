@@ -7,8 +7,8 @@ import { ErrorComponent } from '../subcomponents/Error.js'
 import { DinoSaysNotification } from '../subcomponents/DinoSays.js'
 import { ConfigureRpcConnection } from '../subcomponents/ConfigureRpcConnection.js'
 import { Collapsible } from '../subcomponents/Collapsible.js'
-import { CHAIN_NAMES } from '../../utils/chainNames.js'
 import { defaultRpcs } from '../../background/settings.js'
+import { getChainName } from '../../utils/constants.js'
 
 type CheckBoxSettingParam = {
 	text: string
@@ -222,7 +222,7 @@ const RpcList = ({ rpcEntries }: { rpcEntries: RpcEntries }) => {
 }
 
 const RpcSummary = ({ entries, info }: { entries: RpcEntries, info: RpcEntry }) => {
-	const networkName = CHAIN_NAMES.get(info.chainId.toString())
+	const networkName = getChainName(info.chainId)
 	return (
 		<li class = 'grid brief'>
 			<div class = 'grid' style = '--grid-cols: 1fr max-content; --text-color: gray'>

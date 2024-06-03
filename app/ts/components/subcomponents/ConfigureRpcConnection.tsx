@@ -5,9 +5,9 @@ import { Network, JsonRpcProvider } from 'ethers'
 import { AsyncStates, useAsyncState } from '../../utils/preact-utilities.js'
 import { TextInput } from './TextField.js'
 import { RpcEntries, RpcEntry } from '../../types/rpc.js'
-import { CHAIN_NAMES } from '../../utils/chainNames.js'
 import { sendPopupMessageToBackgroundPage } from '../../background/backgroundUtils.js'
 import { getSettings } from '../../background/settings.js'
+import { getChainName } from '../../utils/constants.js'
 
 type ConfigureRpcContext = {
 	queryRpcInfo: (url:string) => void
@@ -140,7 +140,10 @@ const ConfigureRpcForm = ({ defaultValues, onCancel, onSave, onRemove }: Configu
 		return defaultValues?.chainId?.toString() || ''
 	})
 
-	const networkNameDefault = useComputed(() => CHAIN_NAMES.get(chainIdDefault.value) || defaultValues?.name || '')
+	const networkNameDefault = useComputed(() => {
+		if (rpcQuery.value.state !== 'resolved') return defaultValues?.name || ''
+		return getChainName(rpcQuery.value.value.chainId)
+	})
 
 	const currencyTickerDefault = useComputed(() => {
 		if (rpcQuery.value.state === 'resolved') return defaultValues?.currencyTicker || 'ETH'
