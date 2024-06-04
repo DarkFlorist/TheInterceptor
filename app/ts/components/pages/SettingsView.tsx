@@ -1,11 +1,14 @@
 
 import { sendPopupMessageToBackgroundPage } from '../../background/backgroundUtils.js'
 import { MessageToPopup, ImportSettingsReply } from '../../types/interceptor-messages.js'
-import { RpcEntries } from '../../types/rpc.js'
+import { RpcEntries, RpcEntry } from '../../types/rpc.js'
 import { useEffect, useState } from 'preact/hooks'
 import { ErrorComponent } from '../subcomponents/Error.js'
 import { DinoSaysNotification } from '../subcomponents/DinoSays.js'
-import { modifyObject } from '../../utils/typescript.js'
+import { ConfigureRpcConnection } from '../subcomponents/ConfigureRpcConnection.js'
+import { Collapsible } from '../subcomponents/Collapsible.js'
+import { defaultRpcs } from '../../background/settings.js'
+import { getChainName } from '../../utils/constants.js'
 
 type CheckBoxSettingParam = {
 	text: string
@@ -81,103 +84,25 @@ function ImportExport() {
 
 	return <>
 		{ settingsReply !== undefined && settingsReply.data.success === false ?
-			<ErrorComponent warning = { true } text = { settingsReply.data.errorMessage }/>
-		: <></> }
+			<ErrorComponent warning = { true } text = { settingsReply.data.errorMessage } />
+			: <></> }
 		{ settingsReply !== undefined && settingsReply.data.success === true && dismissedNotification === false ?
 			<DinoSaysNotification
 				text = { 'Settings and address book loaded!' }
-				close = { () => setdDismissedNotification(true)}
+				close = { () => setdDismissedNotification(true) }
 			/>
-		: <></> }
+			: <></> }
 		<div class = 'popup-button-row'>
 			<div style = 'display: flex; flex-direction: row;'>
 				<label className = 'button is-primary is-danger' style = 'flex-grow: 1; margin-left: 5px; margin-right: 5px;'>
 					Import settings
-					<input type = 'file' accept = '.json' onInput = { importSettings } style = 'position: absolute; width: 100%; height: 100%; opacity: 0;'/>
+					<input type = 'file' accept = '.json' onInput = { importSettings } style = 'position: absolute; width: 100%; height: 100%; opacity: 0;' />
 				</label>
 				<button className = 'button is-primary' style = 'flex-grow: 1; margin-left: 5px; margin-right: 5px;' onClick = { exportSettings }>
 					Export settings
 				</button>
 			</div>
 		</div>
-	</>
-}
-
-type InputParams = {
-	input: string
-}
-function TextField({ input }: InputParams) {
-	return <input
-		className = 'input title is-5 is-spaced'
-		type = 'text'
-		value = { input }
-		maxLength = { 42 }
-		disabled = { true }
-	/>
-}
-
-function Rpcs({ rpcEntries }: { rpcEntries: RpcEntries }) {
-
-	const expandMinimize = (rpcUrl: string, minimize: boolean) => {
-		if (rpcEntries === undefined) return
-		sendPopupMessageToBackgroundPage({
-			method: 'popup_set_rpc_list',
-			data: rpcEntries.map((rpc) => modifyObject(rpc, { minimized: rpcUrl === rpc.httpsRpc ? minimize : rpc.minimized, }))
-		})
-	}
-
-	const setAsPrimary = (rpcUrl: string) => {
-		if (rpcEntries === undefined) return
-		const rpcInQuestion = rpcEntries.find((rpc) => rpcUrl === rpc.httpsRpc)
-		if (rpcInQuestion === undefined) return
-		if (rpcInQuestion.primary) return // already primary
-		sendPopupMessageToBackgroundPage({
-			method: 'popup_set_rpc_list',
-			data: rpcEntries.map((rpc) => {
-				if (rpcUrl === rpc.httpsRpc) return modifyObject(rpc, { primary: true })
-				if (rpcInQuestion.chainId === rpc.chainId) return modifyObject(rpc, { primary: false })
-				return rpc
-			})
-		})
-	}
-
-	return <>
-		<ul> { rpcEntries.map((rpc) => <li>
-			<div class = 'card'>
-				<header class = 'card-header'>
-					<div class = 'card-header-icon unset-cursor'>
-						<input type = 'checkbox' checked = { rpc.primary } onInput = { () => { setAsPrimary(rpc.httpsRpc) } } />
-					</div>
-					<div class = 'card-header-title' style = 'white-space: nowrap; overflow: hidden;'>
-						<p className = 'paragraph' style = 'text-overflow: ellipsis; overflow: hidden; overflow: hidden;'> { rpc.name } </p>
-					</div>
-					<button class = 'card-header-icon' aria-label = 'remove' onClick = { () => expandMinimize(rpc.httpsRpc, !rpc.minimized) }>
-						<span class = 'icon' style = 'color: var(--text-color);'> V </span>
-					</button>
-				</header>
-				{ rpc.minimized ? <></> :
-					<div class = 'card-content'>
-						<div class = 'paragraph'>Network</div>
-						<TextField input = { rpc.name }/>
-						<div class = 'paragraph'>RPC URL</div>
-						<TextField input = { rpc.httpsRpc }/>
-						<div class = 'paragraph'>Chain ID</div>
-						<TextField input = { String(rpc.chainId) }/>
-						<div class = 'paragraph'>Currency Name</div>
-						<TextField input = { rpc.currencyName }/>
-						<div class = 'paragraph'>Currency Ticker</div>
-						<TextField input = { rpc.currencyTicker }/>
-						<div class = 'paragraph'>{ `Primary RPC for Chain ID ${ String(rpc.chainId) }` }</div>
-						<CheckBoxSetting
-							text = ''
-							checked = { rpc.primary }
-							onInput = { () => { setAsPrimary(rpc.httpsRpc) } }
-						/>
-					</div>
-				}
-			</div>
-		</li>)
-		} </ul>
 	</>
 }
 
@@ -223,7 +148,7 @@ export function SettingsView() {
 			<header class = 'card-head card-header window-header'>
 				<div class = 'card-header-icon unset-cursor'>
 					<span class = 'icon'>
-						<img src = '../img/settings.svg'/>
+						<img src = '../img/settings.svg' />
 					</span>
 				</div>
 				<div class = 'card-header-title'>
@@ -252,11 +177,62 @@ export function SettingsView() {
 						<ImportExport/>
 					</li>
 					<li>
-						<p className = 'paragraph'>RPC Connections</p>
-						<Rpcs rpcEntries = { rpcEntries } />
+						<Collapsible summary = 'RPC Connections' defaultOpen = { true }>
+							<div class = 'grid' style = '--gap-y: 0.5rem; padding: 0.5rem 0'>
+								<RpcList rpcEntries = { rpcEntries } />
+								<ConfigureRpcConnection rpcEntries = { rpcEntries } />
+							</div>
+						</Collapsible>
 					</li>
 				</ul>
 			</section>
 		</div>
 	</main>
+}
+
+const RpcList = ({ rpcEntries }: { rpcEntries: RpcEntries }) => {
+	const [lastEntry] = rpcEntries
+
+	const loadDefaultRpcs = () => {
+		sendPopupMessageToBackgroundPage({
+			method: 'popup_set_rpc_list',
+			data: defaultRpcs
+		})
+	}
+
+	if (rpcEntries.length < 2 && lastEntry) {
+		return (
+			<>
+				<aside class = 'report' style = { { display: 'grid', height: '9rem', textAlign: 'center', rowGap: '0.5rem'} }>
+					<p style = { { color: '#ffffff80' } }>Interceptor requires at least 1 active RPC connection to work, do you want to reset to the default list instead?</p>
+					<button class = 'btn btn--outline' style = 'font-weight: 600' onClick = { loadDefaultRpcs }>Yes, load the default RPC list</button>
+				</aside>
+				<ul class = 'grid' style = '--gap-y: 0.5rem'>
+					<RpcSummary entries = { rpcEntries } info = { lastEntry } />
+				</ul>
+			</>
+		)
+	}
+
+	return (
+		<ul class = 'grid' style = '--gap-y: 0.5rem'>
+			{ rpcEntries.map(entry => <RpcSummary entries = { rpcEntries } info = { entry } />) }
+		</ul>
+	)
+}
+
+const RpcSummary = ({ entries, info }: { entries: RpcEntries, info: RpcEntry }) => {
+	const networkName = getChainName(info.chainId)
+	return (
+		<li class = 'grid brief'>
+			<div class = 'grid' style = '--grid-cols: 1fr max-content; --text-color: gray'>
+				<div style = '--area: 1 / 1'><strong>{ info.name }</strong></div>
+				<div style = '--area: span 2 / 2'>{ networkName }</div>
+				<div>{ info.httpsRpc }</div>
+			</div>
+			<div class = 'actions'>
+				<ConfigureRpcConnection rpcEntries = { entries } rpcInfo = { info } />
+			</div>
+		</li>
+	)
 }

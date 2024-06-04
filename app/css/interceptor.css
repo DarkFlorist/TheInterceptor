@@ -1,5 +1,7 @@
 @charset "utf-8";
 
+html { font-size: 100%; }
+
 :root {
 	--bg-color: #303030;
 	--card-bg-color: #424242;
@@ -38,15 +40,15 @@
 	--modal-background-color: rgba(10, 10, 10, .7)
 }
 
-button {
+button:where(:not(.btn)) {
 	background-color: var(--primary-color);
 }
 
-button:hover {
+button:where(:not(.btn)):hover {
 	background-color: var(--highlighted-primary-color);
 }
 
-button:disabled, button[disabled]{
+button:not(.btn):disabled, button[disabled]) {
 	background-color: var(--disabled-primary-color);
 	border-color: transparent;
 }
@@ -587,7 +589,7 @@ svg.spinner > circle {
 	display: flex;
 	flex-direction: column;
 	overflow: hidden;
-	margin: 0 0.2em; 
+	margin: 0 0.2em;
 }
 
 .small-address-container::after {
@@ -841,9 +843,9 @@ svg.spinner > circle {
 
 .dashed-notification {
 	border-style: dashed;
-    background: unset;
-    border-width: medium;
-    border-color: white;
+		background: unset;
+		border-width: medium;
+		border-color: white;
 }
 
 .popup-footer {
@@ -855,4 +857,252 @@ svg.spinner > circle {
 	border-top-left-radius: 0.25rem;
 	border-top-right-radius: 0.25rem;
 	background-color: var(--window-header-bg-color);
+}
+
+
+/* TODO: remove override once bulma dependency is minimized */
+strong { color: inherit }
+
+button:not(.button):is(.btn) {
+	--s-justify: var(--btn-justify, center);
+	--s-bg: var(--btn-bg-color, gray);
+	--s-fg: var(--btn-text-color, var(--text-color));
+	--s-size: var(--btn-text-size , 1em);
+	--s-outline: var(--btn-outline, 1px solid transparent);
+	--s-brightness: var(--btn-brightness, 1);
+	--s-saturation: var(--btn-saturation, 1);
+	--s-contrast: var(--btn-contrast, 1);
+	font: inherit;
+	background-color: var(--s-bg);
+	color: var(--s-fg, var(--text-color));
+	font-size: var(--s-size, inherit);
+	border: var(--s-outline);
+	filter: saturate(var(--s-saturation)) brightness(var(--s-brightness));
+	justify-content: var(--s-justify);
+	height: 2.25em;
+	padding: 0 0.75em;
+	border-radius: 4px;
+	cursor: pointer;
+	outline: none;
+	display: flex;
+	align-items: center;
+}
+
+.btn:disabled { cursor: not-allowed; --btn-brightness: 0.6; --btn-saturation: 0.2 }
+.btn:not(:disabled):hover { --btn-brightness: 1.25 }
+.btn:not(:disabled):focus { --btn-outline: 1px solid var(--s-fg) }
+
+/* Primary Button */
+.btn--primary { --btn-bg-color: var(--primary-color) }
+.btn--primary:not(:disabled):hover { --btn-saturation: 1.5 }
+
+/* Danger Button */
+.btn--destructive { --btn-bg-color: var(--negative-color) }
+.btn--destructive:not(:disabled):hover { --btn-saturation: 1.5 }
+
+.btn--outline {
+	--btn-bg-color: transparent;
+	--btn-outline: 1px solid #ffffff20;
+}
+
+.btn--outline:hover:not(:disabled) { --btn-bg-color: #ffffff10 }
+.btn--ghost { --btn-bg-color: transparent; }
+.btn--ghost:hover:not(:disabled) { --btn-bg-color: #ffffff10; }
+
+
+:where(.actions:has(.btn), .flex) {
+	--gap-x: 0.5rem;
+	--justify: end;
+	column-gap: var(--gap-x);
+	justify-content: var(--justify);
+	display: flex;
+}
+
+/* Default styles for details element */
+
+details {
+	--s-text-size: var(--text-size, 0.85rem);
+	--s-base-color: color(srgb .4 .4 .4);
+	--s-icon-order: var(--icon-order);
+	--s-rule-color: transparent;
+	outline: none;
+}
+
+summary {
+	color: var(--s-base-color);
+	font-size: var(--s-text-size);
+	display: flex;
+	align-items: center;
+	gap: 0.5rem;
+	cursor: pointer;
+	outline: none;
+}
+
+summary:hover {
+	--s-base-color: color( srgb .6 .6 .6);
+	--s-rule-color: currentColor;
+}
+
+summary:focus {
+	--s-base-color: var(--text-color);
+}
+
+summary:after {
+	content: ' ';
+	margin: 0;
+	flex-grow: 1;
+	border-bottom: 1px solid var(--s-rule-color);
+}
+
+summary:where(details[open] > *) {
+	--s-rule-color: currentColor;
+}
+
+.svg-icon {
+	--s-rotate: var(--icon-rotate, 0deg);
+	--s-size: var(--icon-size, 1em);
+	/* avoid conflicts with other .icon classes */
+	all: revert;
+	fill: none;
+	display: block;
+	transition: transform 150ms;
+	width: var(--s-size);
+	height: var(--s-size);
+	transform: rotate(var(--s-rotate));
+}
+
+/* Fix svg sub-pixel rendering for icons */
+.svg-icon *:where(path, rect) { shape-rendering: geometicprecision }
+
+.svg-icon:where(details:not([open]) .details--arrow) { --icon-rotate: -90deg }
+
+:where(.grid, .flex) {
+	--gap-y: 0;
+	--gap-x: 0;
+	--align-items: center;
+	align-items: var(--align-items, center);
+	column-gap: var(--gap-x);
+}
+
+:where(.grid) {
+	--grid-cols: auto;
+	display: grid;
+	row-gap: var(--gap-y);
+	grid-template-columns: var(--grid-cols);
+}
+
+:where(.flex) { display: flex }
+
+:where(.grid > *) {
+	--area: auto;
+	grid-area: var(--area);
+}
+
+.brief {
+	--grid-cols: 1fr max-content;
+	--gap-x: 1rem;
+	--hl-color: white;
+	background-color: color(srgb .3 .3 .3);
+	color: color(srgb .6 .6 .6);
+	font-size: var(--text-size, inherit);
+	font-weight: var(--font-weight, normal);
+	padding: 0.5rem 1em;
+	border-radius: 4px;
+	margin: 0;
+}
+
+.brief strong { color: var(--hl-color) }
+
+.brief .actions > .btn { --s-size: 0.8rem; }
+
+.dialog {
+	background: var(--bg-color);
+	color: var(--text-color);
+	border: 0 none;
+	padding: 1em;
+	border-radius: 6px;
+	width: calc(100vw - 4em);
+	max-width: 36em;
+}
+
+.dialog header, .dialog footer { display: grid; }
+
+.dialog::backdrop {
+	background: #00000090;
+	backdrop-filter: blur(1px);
+}
+
+.text-input {
+	--text-size: 1em;
+	--label-color: color(srgb .3 .3 .3);
+	--border-color: color(srgb .4 .4 .4);
+	--columns: 1fr min-content;
+	display: grid;
+	grid-template-columns: var(--columns);
+	border-bottom: 1px solid var(--border-color);
+	align-items: center;
+}
+
+.text-input:focus-within { --border-color: white }
+
+.text-input > input {
+	font: inherit;
+	grid-area: 2 / 1;
+	background-color: var(--bg-color, transparent);
+	color: var(--text-color);
+	outline: none;
+	padding: 0.2em 0;
+	border: 0 none;
+}
+
+/* remove browser autofill styles */
+.text-input > input:where(:-internal-autofill-selected, :autofill) {
+	background-clip: text;
+	-webkit-text-fill-color: var(--text-color, initial);
+}
+
+.text-input > input::placeholder { color: transparent; }
+
+.text-input > input:where(:disabled, :read-only) { --text-color: var(--border-color) }
+.text-input > input:where(:invalid) { --text-color: var(--negative-color) }
+
+:where(.text-input:has(input) > span) {
+	grid-area: 1 / span 2;
+	color: var(--label-color);
+	transform-origin: bottom left;
+	transition: transform 150ms;
+	transform: translateY(1.525em);
+}
+
+:where(.text-input:focus-within span, .text-input input:not(:placeholder-shown) + span) {
+	transform: translateY(0) scale(0.75);
+	--label-color: color(srgb .5 .5 .5);
+}
+
+.spin {
+	animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+	0% {
+		transform: rotate(0deg);
+	}
+	100% {
+		transform: rotate(360deg);
+	}
+}
+
+.disclosure {
+	border: 1px dashed var(--negative-color);
+	color: var(--negative-color);
+	padding: 1rem;
+	border-radius: 6px;
+}
+
+.report {
+	padding: 0 2rem;
+	border-radius: 6px;
+	background: #3e3e3e;
+	place-content: center;
+	justify-items: center;
 }
