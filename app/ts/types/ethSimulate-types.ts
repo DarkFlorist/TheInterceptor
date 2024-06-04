@@ -123,10 +123,8 @@ const ethSimulateV1BlockResult = funtypes.ReadonlyObject({
     number: EthereumQuantity,
     hash: EthereumBytes32,
     timestamp: EthereumQuantity,
-    prevRandao: EthereumQuantity,
     gasLimit: EthereumQuantitySmall,
     gasUsed: EthereumQuantitySmall,
-    feeRecipient: EthereumAddress,
     baseFeePerGas: EthereumQuantity,
     calls: EthSimulateV1CallResults,
 })
