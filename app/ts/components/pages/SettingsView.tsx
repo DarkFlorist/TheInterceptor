@@ -221,8 +221,6 @@ const RpcSummary = ({ info }: { info: RpcEntry }) => {
 
 	// rerender form if entry is updated in the background by specifying a unique key
 	const infoHash = Object.values(info).join('')
-	// let infoHash = ''
-	// for (const [_, value] of Object.entries(info)) { infoHash+=value }
 
 	return (
 		<li class = 'grid brief'>
