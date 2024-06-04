@@ -59,26 +59,22 @@ interface SwapVisualizationParams {
 export function identifySwap(simTransaction: SimulatedAndVisualizedTransaction): IdentifiedSwapWithMetadata {
 	const sender = simTransaction.transaction.from.address
 	const tokenEvents = extractTokenEvents(simTransaction.events)
-	for (const tokenTransaction of tokenEvents) {
-		if (tokenTransaction.isApproval && tokenTransaction.from.address === sender) return false // if the transaction includes us approving something, its not a simple swap
-	}
-
 	// aggregate sent and received assets
-	const aggregatedSentAssets = new Map<string, SwapAsset>()
-	const aggregatedReceivedAssets = new Map<string, SwapAsset>()
-	const aggregate = (aggregateTo: Map<string, SwapAsset>, logEntry: TokenVisualizerResultWithMetadata) => {
+	const aggregatedAssets = new Map<string, SwapAsset>()
+	const aggregate = (logEntry: TokenVisualizerResultWithMetadata, toUs: boolean) => {
 		if (logEntry.isApproval) throw new Error('the log entry included an approval even thought it never should as we check it before')
 		const identifier = getUniqueSwapAssetIdentifier(logEntry)
-		const previousValue = getWithDefault(aggregateTo, identifier, {
+		const previousValue = getWithDefault(aggregatedAssets, identifier, {
 			...logEntry,
 			amount: 0n,
 			tokenId: 'tokenId' in logEntry ? logEntry.tokenId : undefined,
 			...logEntry.type === 'ERC1155' ? { tokenIdName: logEntry.tokenIdName } : {},
 			beforeAfterBalance: undefined,
 		})
-		aggregateTo.set(identifier, {
+		const multiplier = toUs ? 1n : -1n
+		aggregatedAssets.set(identifier, {
 			...logEntry,
-			amount: previousValue.amount + ('amount' in logEntry ? logEntry.amount : 1n),
+			amount: previousValue.amount + ('amount' in logEntry ? logEntry.amount : 1n) * multiplier,
 			tokenId: 'tokenId' in logEntry ? logEntry.tokenId : undefined,
 			...logEntry.type === 'ERC1155' ? { tokenIdName: logEntry.tokenIdName } : {},
 			beforeAfterBalance: undefined,
@@ -86,39 +82,36 @@ export function identifySwap(simTransaction: SimulatedAndVisualizedTransaction):
 	}
 
 	for (const logEntry of tokenEvents) {
-		if (logEntry.isApproval) continue // Skip approval entries
+		if (logEntry.isApproval) return false // if there's approvals its not a swap
 
 		if (logEntry.from.address === sender) {
-			aggregate(aggregatedSentAssets, logEntry)
+			aggregate(logEntry, false)
 		} else if (logEntry.to.address === sender) {
-			aggregate(aggregatedReceivedAssets, logEntry)
+			aggregate(logEntry, true)
 		}
 	}
 
-	const sentAssets = Array.from(aggregatedSentAssets, (entry) => { return { identifier: entry[0], value: entry[1] } })
-	const receivedAssets = Array.from(aggregatedReceivedAssets, (entry) => { return { identifier: entry[0], value: entry[1] } })
+	const sentAssets = Array.from(aggregatedAssets).filter((asset) => asset[1].amount < 0).map((entry) => { return { identifier: entry[0], value: entry[1] } })
+	const receivedAssets = Array.from(aggregatedAssets).filter((asset) => asset[1].amount > 0).map((entry) => { return { identifier: entry[0], value: entry[1] } })
 
-	if (aggregatedSentAssets.size > 1 || aggregatedReceivedAssets.size > 1) return false // its not a pure 1 to 1 swap if we receive or send multiple assets
-
-	if (sentAssets.length === 1 && receivedAssets.length === 1) {
-		// user swapped one token to another and eth didn't change more than gas fees
-		const sentToken = sentAssets[0]
-		const receiveToken = receivedAssets[0]
-		if (sentToken === undefined || receiveToken === undefined) throw new Error('sent token or receive token was undefined')
-		if (sentToken.identifier !== receiveToken.identifier) {
-			const sendBalanceAfter = simTransaction.tokenBalancesAfter.find((balance) => balance.owner === simTransaction.transaction.from.address && balance.token === sentToken.value.token?.address && balance.tokenId === sentToken.value.tokenId)?.balance
-			const receiveBalanceAfter = simTransaction.tokenBalancesAfter.find((balance) => balance.owner === simTransaction.transaction.from.address && balance.token === receiveToken.value.token?.address && balance.tokenId === receiveToken.value.tokenId)?.balance
-			return {
-				sender: simTransaction.transaction.from,
-				sendAsset: { ...sentToken.value, beforeAfterBalance: sendBalanceAfter !== undefined
-					? { beforeBalance: sendBalanceAfter + sentToken.value.amount, afterBalance: sendBalanceAfter }
-					: undefined
-				},
-				receiveAsset: { ...receiveToken.value, beforeAfterBalance: receiveBalanceAfter !== undefined
-					? { beforeBalance: receiveBalanceAfter - receiveToken.value.amount, afterBalance: receiveBalanceAfter }
-					: undefined
-				},
-			}
+	if (sentAssets.length !== 1 || receivedAssets.length !== 1) return false // its not a pure 1 to 1 swap if we receive or send multiple assets
+	const sentToken = sentAssets[0]
+	const receiveToken = receivedAssets[0]
+	if (sentToken === undefined || receiveToken === undefined) throw new Error('sent token or receive token was undefined')
+	if (sentToken.identifier !== receiveToken.identifier) {
+		const sendBalanceAfter = simTransaction.tokenBalancesAfter.find((balance) => balance.owner === simTransaction.transaction.from.address && balance.token === sentToken.value.token?.address && balance.tokenId === sentToken.value.tokenId)?.balance
+		const receiveBalanceAfter = simTransaction.tokenBalancesAfter.find((balance) => balance.owner === simTransaction.transaction.from.address && balance.token === receiveToken.value.token?.address && balance.tokenId === receiveToken.value.tokenId)?.balance
+		return {
+			sender: simTransaction.transaction.from,
+			sendAsset: {
+				...sentToken.value,
+				amount: sentToken.value.amount * -1n,
+				beforeAfterBalance: sendBalanceAfter !== undefined ? { beforeBalance: sendBalanceAfter + sentToken.value.amount, afterBalance: sendBalanceAfter } : undefined
+			},
+			receiveAsset: {
+				...receiveToken.value,
+				beforeAfterBalance: receiveBalanceAfter !== undefined ? { beforeBalance: receiveBalanceAfter - receiveToken.value.amount, afterBalance: receiveBalanceAfter } : undefined
+			},
 		}
 	}
 	return false
