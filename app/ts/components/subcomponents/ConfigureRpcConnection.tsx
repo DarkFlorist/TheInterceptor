@@ -9,6 +9,7 @@ import { sendPopupMessageToBackgroundPage } from '../../background/backgroundUti
 import { getSettings } from '../../background/settings.js'
 import { getChainName } from '../../utils/constants.js'
 import { useRpcConnectionsList } from '../pages/SettingsView.js'
+import { EthSimulateV1CallResults } from '../../types/ethSimulate-types.js'
 
 type ConfigureRpcContext = {
 	queryRpcInfo: (url:string) => void
@@ -21,10 +22,43 @@ const ConfigureRpcContext = createContext<ConfigureRpcContext | undefined>(undef
 const RpcQueryProvider = ({ children }: { children: ComponentChildren }) => {
 	const { value: rpcQuery, waitFor, reset: resetRpcQuery } = useAsyncState<Network>()
 
+	const ethSimulateV1Params = [
+        {
+            "blockStateCalls": [
+                {
+                    "blockOverrides": {
+                        "baseFeePerGas": "0x9"
+                    },
+                    "stateOverrides": {
+                        "0xc000000000000000000000000000000000000000": {
+                            "balance": "0x1312d0000"
+                        }
+                    },
+                    "calls": [
+                        {
+                            "from": "0xc000000000000000000000000000000000000000",
+                            "to": "0xc000000000000000000000000000000000000000",
+                            "value": "0x1",
+                            "maxFeePerGas": "0xf"
+                        }
+                    ]
+                }
+            ],
+            "validation": true,
+            "traceTransfers": true
+        },
+        "latest"
+    ]
+
 	const queryRpcInfo = (url: string) => waitFor(async () => {
 		const provider = new JsonRpcProvider(url)
-		return await provider.getNetwork()
+		const network = await provider.getNetwork()
+		const ethSimulateResult = await provider.send('eth_simulateV1', ethSimulateV1Params)
+		const parsed = EthSimulateV1CallResults.safeParse(ethSimulateResult)
+		if (!parsed.success) throw new Error('RPC Server does not support eth_simulateV1')
+		return network
 	})
+
 
 	return <ConfigureRpcContext.Provider value = { { queryRpcInfo, rpcQuery, resetRpcQuery } }>{ children }</ConfigureRpcContext.Provider>
 }
