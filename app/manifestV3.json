@@ -20,7 +20,8 @@
 	"permissions": [
 		"activeTab",
 		"storage",
-		"scripting"
+		"scripting",
+		"declarativeNetRequest",
 	],
 	"web_accessible_resources": [
 		{

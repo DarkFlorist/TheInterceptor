@@ -29,7 +29,7 @@
 		"webextension-polyfill": "0.10.0"
 	},
 	"devDependencies": {
-		"@types/firefox-webext-browser": "109.0.0",
+		"@types/firefox-webext-browser": "120.0.3",
 		"typescript": "5.4.5"
 	}
 }
