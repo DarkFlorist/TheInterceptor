@@ -51,17 +51,17 @@ export const getEthereumNameServiceNameFromTokenId = async (ethereumMainnet: Eth
 }
 
 type EnsFuseName = 
-  | 'CANNOT_UNWRAP'
-  | 'CANNOT_BURN_FUSES'
-  | 'CANNOT_TRANSFER'
-  | 'CANNOT_SET_RESOLVER'
-  | 'CANNOT_SET_TTL'
-  | 'CANNOT_CREATE_SUBDOMAIN'
-  | 'PARENT_CANNOT_CONTROL'
-  | 'CANNOT_APPROVE'
-  | 'IS_DOT_ETH'
-  | 'CAN_EXTEND_EXPIRY'
-  | 'CAN_DO_EVERYTHING'
+  | 'Cannot Unwrap Name'
+  | 'Cannot Burn Fuses'
+  | 'Cannot Transfer'
+  | 'Cannot Set Resolver'
+  | 'Cannot Set Time To Live'
+  | 'Cannot Create Subdomain'
+  | 'Parent Domain Cannot Control'
+  | 'Cannot Approve'
+  | 'Is .eth domain'
+  | 'Can Extend Expiry'
+  | 'Can Do Everything'
 
 type EnsFuseFlag = {
 	name: EnsFuseName
@@ -69,21 +69,21 @@ type EnsFuseFlag = {
 }
 
 const flags: EnsFuseFlag[] = [
-	{ name: 'CANNOT_UNWRAP', value: CANNOT_UNWRAP },
-	{ name: 'CANNOT_BURN_FUSES', value: CANNOT_BURN_FUSES },
-	{ name: 'CANNOT_TRANSFER', value: CANNOT_TRANSFER },
-	{ name: 'CANNOT_SET_RESOLVER', value: CANNOT_SET_RESOLVER },
-	{ name: 'CANNOT_SET_TTL', value: CANNOT_SET_TTL },
-	{ name: 'CANNOT_CREATE_SUBDOMAIN', value: CANNOT_CREATE_SUBDOMAIN },
-	{ name: 'CANNOT_APPROVE', value: CANNOT_APPROVE },
-	{ name: 'PARENT_CANNOT_CONTROL', value: PARENT_CANNOT_CONTROL },
-	{ name: 'IS_DOT_ETH', value: IS_DOT_ETH },
-	{ name: 'CAN_EXTEND_EXPIRY', value: CAN_EXTEND_EXPIRY },
-	{ name: 'CAN_DO_EVERYTHING', value: CAN_DO_EVERYTHING },
+	{ name: 'Cannot Unwrap Name', value: CANNOT_UNWRAP },
+	{ name: 'Cannot Burn Fuses', value: CANNOT_BURN_FUSES },
+	{ name: 'Cannot Transfer', value: CANNOT_TRANSFER },
+	{ name: 'Cannot Set Resolver', value: CANNOT_SET_RESOLVER },
+	{ name: 'Cannot Set Time To Live', value: CANNOT_SET_TTL },
+	{ name: 'Cannot Create Subdomain', value: CANNOT_CREATE_SUBDOMAIN },
+	{ name: 'Cannot Approve', value: CANNOT_APPROVE },
+	{ name: 'Parent Domain Cannot Control', value: PARENT_CANNOT_CONTROL },
+	{ name: 'Is .eth domain', value: IS_DOT_ETH },
+	{ name: 'Can Extend Expiry', value: CAN_EXTEND_EXPIRY },
+	{ name: 'Can Do Everything', value: CAN_DO_EVERYTHING },
 ]
 
 export const extractENSFuses = (uint: bigint): readonly EnsFuseName[] => {
-	if (uint === CAN_DO_EVERYTHING) return ['CAN_DO_EVERYTHING']
+	if (uint === CAN_DO_EVERYTHING) return ['Can Do Everything']
 	const result: EnsFuseName[] = []
 	for (const flag of flags) {
 		if ((uint & flag.value) === flag.value && flag.value !== CAN_DO_EVERYTHING) {
