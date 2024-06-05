@@ -225,7 +225,7 @@ export async function updateDeclarativeNetRequest() {
 				id: 1,
 				priority: 1,
 				action : { "type" : "block" },
-				condition: { initiatorDomains: sitesToBlock }
+				condition: { initiatorDomains: sitesToBlock, domainType: 'thirdParty' }
 			}]
 		})
 		// enable `declarativeNetRequestFeedback` permission and uncmoment to enable debugging
