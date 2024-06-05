@@ -9,10 +9,11 @@ import { sendPopupMessageToBackgroundPage } from '../../background/backgroundUti
 import { getSettings } from '../../background/settings.js'
 import { getChainName } from '../../utils/constants.js'
 import { useRpcConnectionsList } from '../pages/SettingsView.js'
-import { EthSimulateV1CallResults } from '../../types/ethSimulate-types.js'
+import { EthereumClientService } from '../../simulation/services/EthereumClientService.js'
+import { EthereumJSONRpcRequestHandler } from '../../simulation/services/EthereumJSONRpcRequestHandler.js'
 
 type ConfigureRpcContext = {
-	queryRpcInfo: (url:string) => void
+	queryRpcInfo: (url: string) => void
 	rpcQuery: ReturnType<typeof useAsyncState<Network>>['value']
 	resetRpcQuery: () => void
 }
@@ -22,43 +23,44 @@ const ConfigureRpcContext = createContext<ConfigureRpcContext | undefined>(undef
 const RpcQueryProvider = ({ children }: { children: ComponentChildren }) => {
 	const { value: rpcQuery, waitFor, reset: resetRpcQuery } = useAsyncState<Network>()
 
-	const ethSimulateV1Params = [
-        {
-            "blockStateCalls": [
-                {
-                    "blockOverrides": {
-                        "baseFeePerGas": "0x9"
-                    },
-                    "stateOverrides": {
-                        "0xc000000000000000000000000000000000000000": {
-                            "balance": "0x1312d0000"
-                        }
-                    },
-                    "calls": [
-                        {
-                            "from": "0xc000000000000000000000000000000000000000",
-                            "to": "0xc000000000000000000000000000000000000000",
-                            "value": "0x1",
-                            "maxFeePerGas": "0xf"
-                        }
-                    ]
-                }
-            ],
-            "validation": true,
-            "traceTransfers": true
-        },
-        "latest"
-    ]
+	const validateEthSimulateSupport = async (url: string) => {
+		try {
+			const interimRpc: RpcEntry = { httpsRpc: url, name: '', chainId: 0n, currencyName: '', currencyTicker: '', primary: false, minimized: false, }
+			const requestHandler = new EthereumJSONRpcRequestHandler(interimRpc, true)
+			const service = new EthereumClientService(requestHandler, async () => { }, async () => { })
+			const ethSimulateV1Request: Parameters<typeof service.ethSimulateV1> = [
+				[
+					{
+						stateOverrides: {
+							'0xc000000000000000000000000000000000000000': {
+								balance: 5120000000n
+							}
+						},
+						calls: [
+							{
+								from: 1096126227998177188652763624537212264741949407232n,
+								to: 1096126227998177188652763624537212264741949407232n,
+								value: 1n,
+								'maxFeePerGas': 15n
+							}
+						]
+					}
+				], 'latest', undefined
+			]
+
+			await service.ethSimulateV1(...ethSimulateV1Request)
+		} catch(error) {
+			console.log(error)
+			throw new Error('Server does not support eth_simulateV1')
+		}
+	}
 
 	const queryRpcInfo = (url: string) => waitFor(async () => {
 		const provider = new JsonRpcProvider(url)
 		const network = await provider.getNetwork()
-		const ethSimulateResult = await provider.send('eth_simulateV1', ethSimulateV1Params)
-		const parsed = EthSimulateV1CallResults.safeParse(ethSimulateResult)
-		if (!parsed.success) throw new Error('RPC Server does not support eth_simulateV1')
+		await validateEthSimulateSupport(url)
 		return network
 	})
-
 
 	return <ConfigureRpcContext.Provider value = { { queryRpcInfo, rpcQuery, resetRpcQuery } }>{ children }</ConfigureRpcContext.Provider>
 }
@@ -77,7 +79,7 @@ export const ConfigureRpcConnection = ({ rpcInfo }: { rpcInfo?: RpcEntry | undef
 
 	const cancelAndCloseModal = () => modalRef.current?.close()
 
-	const saveRpcEntry = async  (rpcEntry: RpcEntry) => {
+	const saveRpcEntry = async (rpcEntry: RpcEntry) => {
 		const { currentRpcNetwork } = await getSettings()
 
 		await sendPopupMessageToBackgroundPage({
@@ -166,7 +168,7 @@ const ConfigureRpcForm = ({ defaultValues, onCancel, onSave, onRemove }: Configu
 
 		const newRpcEntry = {
 			name: formData.get('name')?.toString() || '',
-			chainId: chainIdFromForm ? `0x${ BigInt(chainIdFromForm).toString(16) }` : '',
+			chainId: chainIdFromForm ? `0x${BigInt(chainIdFromForm).toString(16)}` : '',
 			httpsRpc: formData.get('httpsRpc')?.toString() || '',
 			currencyName: formData.get('currencyName')?.toString() || '',
 			currencyTicker: formData.get('currencyTicker')?.toString() || '',
@@ -266,7 +268,7 @@ const RpcUrlField = ({ defaultValue }: { defaultValue?: string }) => {
 				inputRef.current.setCustomValidity('RPC is not yet verified')
 				return
 			case 'rejected':
-				inputRef.current.setCustomValidity('RPC URL should be reachable')
+				inputRef.current.setCustomValidity(rpcQuery.value.error.message)
 				inputRef.current.reportValidity()
 				return
 			case 'resolved':
@@ -275,7 +277,7 @@ const RpcUrlField = ({ defaultValue }: { defaultValue?: string }) => {
 		}
 	})
 
-	return <TextInput ref = { inputRef } label = 'RPC URL *' name = 'httpsRpc' defaultValue = { defaultValue } onInput = { (e) => deferredQueryAnRpcUrl(e.currentTarget.value) } statusIcon = { <StatusIcon state = { rpcQuery.value.state } /> } style = '--area: 1 / span 2'  required autoComplete = 'off' autoFocus = { defaultValue === undefined } readOnly = { defaultValue !== undefined } />
+	return <TextInput ref = { inputRef } label = 'RPC URL *' name = 'httpsRpc' defaultValue = { defaultValue } onInput = { (e) => deferredQueryAnRpcUrl(e.currentTarget.value) } statusIcon = { <StatusIcon state = { rpcQuery.value.state } /> } style = '--area: 1 / span 2' required autoComplete = 'off' autoFocus = { defaultValue === undefined } readOnly = { defaultValue !== undefined } />
 }
 
 export const StatusIcon = ({ state }: { state: AsyncStates }) => {
