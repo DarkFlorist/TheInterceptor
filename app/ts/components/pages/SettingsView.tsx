@@ -240,10 +240,8 @@ export function useRpcConnectionsList() {
 	const entries = useSignal<RpcEntries>([])
 
 	const trackRpcListChanges = (message: unknown) => {
-		const maybeParsed = MessageToPopup.safeParse(message)
-		if (!maybeParsed.success) throw new Error('Popup message is malformed')
-		const parsed = maybeParsed.value
-		if (parsed.method === 'popup_update_rpc_list') { entries.value = parsed.data }
+		const parsedMessage = MessageToPopup.parse(message)
+		if (parsedMessage.method === 'popup_update_rpc_list') { entries.value = parsedMessage.data }
 	}
 
 	const initiallyLoadEntriesFromStorage = async () => { entries.value = await getRpcList() }
