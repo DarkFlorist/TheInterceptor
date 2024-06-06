@@ -9,6 +9,8 @@ import { ConfigureRpcConnection } from '../subcomponents/ConfigureRpcConnection.
 import { Collapsible } from '../subcomponents/Collapsible.js'
 import { defaultRpcs } from '../../background/settings.js'
 import { getChainName } from '../../utils/constants.js'
+import { getRpcList } from '../../background/storageVariables.js'
+import { useComputed, useSignal } from '@preact/signals'
 
 type CheckBoxSettingParam = {
 	text: string
@@ -109,7 +111,6 @@ function ImportExport() {
 export function SettingsView() {
 	const [useTabsInsteadOfPopup, setUseTabsInsteadOfPopup] = useState<boolean>(false)
 	const [metamaskCompatibilityMode, setMetamaskCompatibilityMode] = useState<boolean>(false)
-	const [rpcEntries, setRpcEntries] = useState<RpcEntries>([])
 
 	useEffect(() => {
 		const popupMessageListener = async (msg: unknown) => {
@@ -117,11 +118,9 @@ export function SettingsView() {
 			if (!maybeParsed.success) return // not a message we are interested in
 			const parsed = maybeParsed.value
 			if (parsed.method === 'popup_settingsUpdated') return sendPopupMessageToBackgroundPage({ method: 'popup_settingsOpened' })
-			if (parsed.method === 'popup_update_rpc_list') return setRpcEntries(parsed.data)
 			if (parsed.method !== 'popup_settingsOpenedReply') return
 			setMetamaskCompatibilityMode(parsed.data.metamaskCompatibilityMode)
 			setUseTabsInsteadOfPopup(parsed.data.useTabsInsteadOfPopup)
-			setRpcEntries(parsed.data.rpcEntries)
 			return
 		}
 		browser.runtime.onMessage.addListener(popupMessageListener)
@@ -179,8 +178,8 @@ export function SettingsView() {
 					<li>
 						<Collapsible summary = 'RPC Connections' defaultOpen = { true }>
 							<div class = 'grid' style = '--gap-y: 0.5rem; padding: 0.5rem 0'>
-								<RpcList rpcEntries = { rpcEntries } />
-								<ConfigureRpcConnection rpcEntries = { rpcEntries } />
+								<RpcListings />
+								<ConfigureRpcConnection />
 							</div>
 						</Collapsible>
 					</li>
@@ -190,17 +189,13 @@ export function SettingsView() {
 	</main>
 }
 
-const RpcList = ({ rpcEntries }: { rpcEntries: RpcEntries }) => {
-	const [lastEntry] = rpcEntries
+const RpcListings = () => {
+	const rpcEntries = useRpcConnectionsList()
+	const latestEntry = useComputed(() => rpcEntries.value.at(0))
 
-	const loadDefaultRpcs = () => {
-		sendPopupMessageToBackgroundPage({
-			method: 'popup_set_rpc_list',
-			data: defaultRpcs
-		})
-	}
+	const loadDefaultRpcs = () => sendPopupMessageToBackgroundPage({ method: 'popup_set_rpc_list', data: defaultRpcs })
 
-	if (rpcEntries.length < 2 && lastEntry) {
+	if (rpcEntries.value.length < 2 && latestEntry.value !== undefined) {
 		return (
 			<>
 				<aside class = 'report' style = { { display: 'grid', height: '9rem', textAlign: 'center', rowGap: '0.5rem'} }>
@@ -208,7 +203,7 @@ const RpcList = ({ rpcEntries }: { rpcEntries: RpcEntries }) => {
 					<button class = 'btn btn--outline' style = 'font-weight: 600' onClick = { loadDefaultRpcs }>Yes, load the default RPC list</button>
 				</aside>
 				<ul class = 'grid' style = '--gap-y: 0.5rem'>
-					<RpcSummary entries = { rpcEntries } info = { lastEntry } />
+					<RpcSummary info = { latestEntry.value } />
 				</ul>
 			</>
 		)
@@ -216,13 +211,17 @@ const RpcList = ({ rpcEntries }: { rpcEntries: RpcEntries }) => {
 
 	return (
 		<ul class = 'grid' style = '--gap-y: 0.5rem'>
-			{ rpcEntries.map(entry => <RpcSummary entries = { rpcEntries } info = { entry } />) }
+			{ rpcEntries.value.map(entry => <RpcSummary info = { entry } />) }
 		</ul>
 	)
 }
 
-const RpcSummary = ({ entries, info }: { entries: RpcEntries, info: RpcEntry }) => {
+const RpcSummary = ({ info }: { info: RpcEntry }) => {
 	const networkName = getChainName(info.chainId)
+
+	// rerender form if entry is updated in the background by specifying a unique key
+	const infoKey = Object.values(info).join('|')
+
 	return (
 		<li class = 'grid brief'>
 			<div class = 'grid' style = '--grid-cols: 1fr max-content; --text-color: gray'>
@@ -231,8 +230,27 @@ const RpcSummary = ({ entries, info }: { entries: RpcEntries, info: RpcEntry }) 
 				<div>{ info.httpsRpc }</div>
 			</div>
 			<div class = 'actions'>
-				<ConfigureRpcConnection rpcEntries = { entries } rpcInfo = { info } />
+				<ConfigureRpcConnection key = { infoKey } rpcInfo = { info } />
 			</div>
 		</li>
 	)
+}
+
+export function useRpcConnectionsList() {
+	const entries = useSignal<RpcEntries>([])
+
+	const trackRpcListChanges = (message: unknown) => {
+		const parsedMessage = MessageToPopup.parse(message)
+		if (parsedMessage.method === 'popup_update_rpc_list') { entries.value = parsedMessage.data }
+	}
+
+	const initiallyLoadEntriesFromStorage = async () => { entries.value = await getRpcList() }
+
+	useEffect(() => {
+		initiallyLoadEntriesFromStorage()
+		browser.runtime.onMessage.addListener(trackRpcListChanges)
+		return () => browser.runtime.onMessage.removeListener(trackRpcListChanges)
+	}, [])
+
+	return entries
 }

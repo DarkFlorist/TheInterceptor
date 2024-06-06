@@ -12,7 +12,7 @@ COPY ./package-lock.json /package-lock.json
 WORKDIR /
 RUN npm ci
 
-COPY tsconfig.json tsconfig-inpage.json tsconfig-inpage-output.json tsconfig-inpage-create-injection-script.json /
+COPY tsconfig.json tsconfig-inpage.json /
 COPY app/*.png app/*.jpg app/*.json app/*.ico /app/
 COPY app/html/ /app/html/
 COPY app/html3/ /app/html3/
