@@ -4,10 +4,11 @@ import { useContext, useRef } from 'preact/hooks'
 import { Network, JsonRpcProvider } from 'ethers'
 import { AsyncStates, useAsyncState } from '../../utils/preact-utilities.js'
 import { TextInput } from './TextField.js'
-import { RpcEntries, RpcEntry } from '../../types/rpc.js'
+import { RpcEntry } from '../../types/rpc.js'
 import { sendPopupMessageToBackgroundPage } from '../../background/backgroundUtils.js'
 import { getSettings } from '../../background/settings.js'
 import { getChainName } from '../../utils/constants.js'
+import { useRpcConnectionsList } from '../pages/SettingsView.js'
 
 type ConfigureRpcContext = {
 	queryRpcInfo: (url:string) => void
@@ -34,24 +35,31 @@ function useQueryRpc() {
 	return context
 }
 
-export const ConfigureRpcConnection = ({ rpcEntries, rpcInfo }: { rpcEntries: RpcEntries, rpcInfo?: RpcEntry | undefined }) => {
+export const ConfigureRpcConnection = ({ rpcInfo }: { rpcInfo?: RpcEntry | undefined }) => {
+	const rpcEntries = useRpcConnectionsList()
 	const modalRef = useRef<HTMLDialogElement>(null)
 
 	const showConfigurationModal = () => modalRef.current?.showModal()
 
 	const cancelAndCloseModal = () => modalRef.current?.close()
 
-	const saveRpcEntry = (rpcEntry: RpcEntry) => {
-		sendPopupMessageToBackgroundPage({
+	const saveRpcEntry = async  (rpcEntry: RpcEntry) => {
+		const { currentRpcNetwork } = await getSettings()
+
+		await sendPopupMessageToBackgroundPage({
 			method: 'popup_set_rpc_list',
-			data: [rpcEntry].concat(rpcEntries.filter(entry => entry.httpsRpc !== rpcEntry.httpsRpc))
+			data: [rpcEntry].concat(rpcEntries.value.filter(entry => entry.httpsRpc !== rpcEntry.httpsRpc))
 		})
+
+		if (currentRpcNetwork.httpsRpc !== rpcEntry.httpsRpc) return
+		console.warn(`Automatically switched to recently added or modified RPC (${ rpcEntry.httpsRpc })`)
+		sendPopupMessageToBackgroundPage({ method: 'popup_changeActiveRpc', data: rpcEntry })
 	}
 
 	const removeRpcEntryByUrl = async (url: string) => {
 		const { currentRpcNetwork } = await getSettings()
 
-		const reducedRpcEntries = rpcEntries.filter(entry => entry.httpsRpc !== url)
+		const reducedRpcEntries = rpcEntries.value.filter(entry => entry.httpsRpc !== url)
 
 		await sendPopupMessageToBackgroundPage({ method: 'popup_set_rpc_list', data: reducedRpcEntries })
 
@@ -61,7 +69,7 @@ export const ConfigureRpcConnection = ({ rpcEntries, rpcInfo }: { rpcEntries: Rp
 
 		// at least find a connection of the same chainId
 		const rpcToSwitchTo = reducedRpcEntries.find(entry => entry.chainId === currentRpcNetwork.chainId) || reducedRpcEntries[0]
-		await sendPopupMessageToBackgroundPage({ method: 'popup_changeActiveRpc', data: rpcToSwitchTo })
+		sendPopupMessageToBackgroundPage({ method: 'popup_changeActiveRpc', data: rpcToSwitchTo })
 	}
 
 	return (
@@ -71,7 +79,7 @@ export const ConfigureRpcConnection = ({ rpcEntries, rpcInfo }: { rpcEntries: Rp
 				: <button type = 'button' onClick = { showConfigurationModal } class = 'btn btn--outline' style = 'border-style: dashed'>+ New RPC Connection</button>
 			}
 			<dialog class = 'dialog' ref = { modalRef }>
-				<ConfigureRpcForm key = { rpcInfo?.httpsRpc } defaultValues = { rpcInfo } onCancel = { cancelAndCloseModal } onSave = { saveRpcEntry } onRemove = { rpcEntries.length > 1 ? removeRpcEntryByUrl : undefined } />
+				<ConfigureRpcForm defaultValues = { rpcInfo } onCancel = { cancelAndCloseModal } onSave = { saveRpcEntry } onRemove = { rpcEntries.value.length > 1 ? removeRpcEntryByUrl : undefined } />
 			</dialog>
 		</RpcQueryProvider>
 	)
@@ -96,9 +104,9 @@ const ConfigureRpcForm = ({ defaultValues, onCancel, onSave, onRemove }: Configu
 		if (event.submitter instanceof HTMLButtonElement) {
 			switch (event.submitter.value) {
 				case 'cancel':
-					event.target.reset()
-					resetRpcQuery()
 					onCancel()
+					resetRpcQuery()
+					event.target.reset()
 					return
 
 				case 'remove':
@@ -168,7 +176,7 @@ const ConfigureRpcForm = ({ defaultValues, onCancel, onSave, onRemove }: Configu
 				<p>Interceptor will automatically verify the RPC URL you provide and attempt to fill relevant information. Adjust the pre-populated details to your liking.</p>
 				<div class = 'grid' style = '--grid-cols: 1fr 1fr; --gap-x: 1rem; --gap-y: 0' >
 					<RpcUrlField defaultValue = { defaultValues?.httpsRpc } />
-					<TextInput label = 'RPC Connection Name *' name = 'name' defaultValue = { networkNameDefault.value } style = '--area: 5 / span 1' required />
+					<TextInput label = 'RPC Connection Name *' name = 'name' defaultValue = { networkNameDefault.value } style = '--area: 5 / span 1' required autoFocus />
 					<TextInput label = 'Chain ID' name = 'chainId' style = '--area: 5 / span 1' defaultValue = { chainIdDefault.value } required readOnly />
 					<TextInput label = 'Currency Name *' name = 'currencyName' defaultValue = { currencyNameDefault.value } style = '--area: 7 / span 1' required />
 					<TextInput label = 'Currency Ticker *' name = 'currencyTicker' defaultValue = { currencyTickerDefault.value } style = '--area: 7 / span 1' required />
@@ -233,7 +241,7 @@ const RpcUrlField = ({ defaultValue }: { defaultValue?: string }) => {
 		}
 	})
 
-	return <TextInput ref = { inputRef } label = 'RPC URL *' name = 'httpsRpc' defaultValue = { defaultValue } onInput = { (e) => deferredQueryAnRpcUrl(e.currentTarget.value) } statusIcon = { <StatusIcon state = { rpcQuery.value.state } /> } style = '--area: 1 / span 2' autoFocus required autoComplete="off" />
+	return <TextInput ref = { inputRef } label = 'RPC URL *' name = 'httpsRpc' defaultValue = { defaultValue } onInput = { (e) => deferredQueryAnRpcUrl(e.currentTarget.value) } statusIcon = { <StatusIcon state = { rpcQuery.value.state } /> } style = '--area: 1 / span 2'  required autoComplete = 'off' autoFocus = { defaultValue === undefined } readOnly = { defaultValue !== undefined } />
 }
 
 export const StatusIcon = ({ state }: { state: AsyncStates }) => {
