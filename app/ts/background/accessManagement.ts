@@ -236,15 +236,22 @@ export async function updateDeclarativeNetRequest() {
 		webRequestListener = (details: browser.webRequest._OnBeforeRequestDetails) => {
 			if (details.originUrl === undefined) return {}
 			if (details.type === 'main_frame') return {}
-			const origin = (new URL(details.originUrl)).hostname
+			const websiteOrigin = (new URL(details.originUrl)).hostname
 			const destinationHost = (new URL(details.url)).hostname
-			if (destinationHost === origin) return {}
-			if (sitesToBlock.find((blockUrl) => blockUrl === origin) !== undefined) return { cancel: true }
+			if (destinationHost === websiteOrigin) return {}
+			if (sitesToBlock.find((blockUrl) => blockUrl === websiteOrigin) !== undefined) return { cancel: true }
 			return {}
 		}
 		if (sitesToBlock.length === 0) return
 		browser.webRequest.onBeforeRequest.addListener(webRequestListener, { urls: ['http://*/*', 'https://*/*'] }, ['blocking'])
 	}
+}
+
+export const areWeBlocking = async (websiteOrigin: string) => {
+	const accesses = await getWebsiteAccess()
+	const sitesToBlock = accesses.filter((access) => access.declarativeNetRequestBlockMode === 'block-all').map((acccess) => acccess.website.websiteOrigin)
+	if (sitesToBlock.find((blockUrl) => blockUrl === websiteOrigin) !== undefined) return true
+	return false
 }
 
 export function updateWebsiteApprovalAccesses(simulator: Simulator, websiteTabConnections: WebsiteTabConnections, settings: Settings, promptForAccessesIfNeeded = true) {
