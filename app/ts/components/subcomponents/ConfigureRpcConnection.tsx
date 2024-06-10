@@ -9,10 +9,9 @@ import { sendPopupMessageToBackgroundPage } from '../../background/backgroundUti
 import { getSettings } from '../../background/settings.js'
 import { getChainName } from '../../utils/constants.js'
 import { useRpcConnectionsList } from '../pages/SettingsView.js'
-import { EthereumClientService } from '../../simulation/services/EthereumClientService.js'
 import { EthereumJSONRpcRequestHandler } from '../../simulation/services/EthereumJSONRpcRequestHandler.js'
-import { BlockCalls, ethSimulateV1Result } from '../../types/ethSimulate-types.js'
-import { serialize } from '../../types/wire-types.js'
+import { EthSimulateV1Params, ethSimulateV1Result } from '../../types/ethSimulate-types.js'
+import { JsonRpcResponseError } from '../../utils/errors.js'
 
 type ConfigureRpcContext = {
 	queryRpcInfo: (url: string) => void
@@ -34,45 +33,52 @@ const RpcQueryProvider = ({ children }: { children: ComponentChildren }) => {
 		}
 	}
 
-	const validateEthSimulateSupport = async (url: string) => {
-		// create temporary rpc server from an RPC URL
-		const interimRpc: RpcEntry = { httpsRpc: url, name: '', chainId: 0n, currencyName: '', currencyTicker: '', primary: false, minimized: false, }
-
+	const validateEthSimulateSupport = async (rpcEntry: RpcEntry) => {
 		// test eth_simulate request
-		const requestHandler = new EthereumJSONRpcRequestHandler(interimRpc, true)
-		const ethClient = new EthereumClientService(requestHandler, async () => { }, async () => { })
-		ethClient.getChainId
-		const testBlockCall = {
-			stateOverrides: {
-				'0xc000000000000000000000000000000000000000': {
-					balance: 5120000000n
-				}
-			},
-			calls: [
-				{
-					from: 0xc000000000000000000000000000000000000000n,
-					to: 0x1000000000000000000000000000000000000000n,
-					value: 1n,
-					maxFeePerGas: 15n
-				}
-			]
-		} satisfies BlockCalls
+		const requestHandler = new EthereumJSONRpcRequestHandler(rpcEntry, true)
+		const ethSimulateV1ParamObject: EthSimulateV1Params['params'][0] = {
+			blockStateCalls: [{
+				blockOverrides: {
+					baseFeePerGas: 0x9n
+				},
+				stateOverrides: {
+					'0xc000000000000000000000000000000000000000': {
+						balance: 0x1312d0000n,
+					}
+				},
+				calls: [
+					{
+						from: 0xc000000000000000000000000000000000000000n,
+						to: 0xc000000000000000000000000000000000000000n,
+						value: 0x1n,
+						maxFeePerGas: 0xfn,
+					}
+				]
+			}],
+			validation: true,
+			traceTransfers: true
+		}
 
 		try {
-			const simulationResult = await ethClient.ethSimulateV1([testBlockCall], 'latest', undefined)
-			const serializedResult = serialize(ethSimulateV1Result, simulationResult)
+			const serializedResult = await requestHandler.jsonRpcRequest({
+				method: 'eth_simulateV1',
+				params: [ethSimulateV1ParamObject, 'latest']
+			})
+
 			ethSimulateV1Result.parse(serializedResult)
 		} catch (error) {
-			let errorMessage = 'Error encountered while validating eth_simulateV1 support'
-			if (error instanceof Error) errorMessage = `${errorMessage} (${error.message})`
-			console.warn(errorMessage)
+			let errorMessage = 'RPC eth_simulateV1 validation error'
+			console.warn(errorMessage, error)
+			if (error instanceof Error) errorMessage = `${ errorMessage } (${ error.message })`
+			if (error instanceof JsonRpcResponseError) errorMessage = error.message
 			throw new Error('RPC server should support eth_simulateV1')
 		}
 	}
 
 	const queryRpcInfo = (url: string) => waitFor(async () => {
 		const network = await checkServerAvailability(url)
-		await validateEthSimulateSupport(url)
+		const interimRpc: RpcEntry = { httpsRpc: url, chainId: network.chainId, name: '', currencyName: '', currencyTicker: '', primary: false, minimized: false }
+		await validateEthSimulateSupport(interimRpc)
 		return network
 	})
 

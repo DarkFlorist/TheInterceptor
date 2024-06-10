@@ -12,14 +12,14 @@ const AccountOverride = funtypes.ReadonlyPartial({
 })
 
 type BlockOverride = funtypes.Static<typeof BlockOverride>
-const BlockOverride = funtypes.ReadonlyObject({
+const BlockOverride = funtypes.Partial({
     number: EthereumQuantity,
     prevRandao: EthereumQuantity,
     time: EthereumTimestamp,
     gasLimit: EthereumQuantitySmall,
     feeRecipient: EthereumAddress,
     baseFeePerGas: EthereumQuantity,
-})
+}).asReadonly()
 
 type BlockCall = funtypes.Static<typeof BlockCall>
 const BlockCall = funtypes.Partial({
@@ -52,12 +52,12 @@ export const BlockCalls = funtypes.Intersect(
 	}),
 	funtypes.ReadonlyPartial({
 		stateOverrides: StateOverrides,
-		blockOverride: BlockOverride,
+		blockOverrides: BlockOverride,
 	})
 )
 
-type  ethSimulateV1ParamObject = funtypes.Static<typeof ethSimulateV1ParamObject>
-const  ethSimulateV1ParamObject = funtypes.ReadonlyObject({
+export type ethSimulateV1ParamObject = funtypes.Static<typeof ethSimulateV1ParamObject>
+const ethSimulateV1ParamObject = funtypes.ReadonlyObject({
 	blockStateCalls: funtypes.ReadonlyArray(BlockCalls),
 	traceTransfers: funtypes.Boolean,
 	validation: funtypes.Boolean,
