@@ -715,7 +715,7 @@ export const EventsForEachTransaction = funtypes.ReadonlyArray(funtypes.Readonly
 
 export type CompleteVisualizedSimulation = funtypes.Static<typeof CompleteVisualizedSimulation>
 export const CompleteVisualizedSimulation = funtypes.ReadonlyObject({
-	eventsForEachTransaction: funtypes.ReadonlyArray(funtypes.ReadonlyArray(funtypes.Unknown)),
+	eventsForEachTransaction: EventsForEachTransaction,
 	protectors: funtypes.ReadonlyArray(ProtectorResults),
 	addressBookEntries: funtypes.ReadonlyArray(AddressBookEntry),
 	tokenPrices: funtypes.ReadonlyArray(TokenPriceEstimate),
