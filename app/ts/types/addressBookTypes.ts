@@ -23,6 +23,7 @@ export const Erc20TokenEntry = funtypes.ReadonlyObject({
 	abi: funtypes.String,
 	useAsActiveAddress: funtypes.Boolean,
 	askForAddressAccess: funtypes.Union(funtypes.Boolean, funtypes.Literal(undefined).withParser(LiteralConverterParserFactory(undefined, true))),
+	declarativeNetRequestBlockMode: funtypes.Union(funtypes.Literal('block-all'), funtypes.Literal('disabled'))
 }))
 
 export type Erc721Entry = funtypes.Static<typeof Erc721Entry>
@@ -38,6 +39,7 @@ export const Erc721Entry = funtypes.ReadonlyObject({
 	abi: funtypes.String,
 	useAsActiveAddress: funtypes.Boolean,
 	askForAddressAccess: funtypes.Union(funtypes.Boolean, funtypes.Literal(undefined).withParser(LiteralConverterParserFactory(undefined, true))),
+	declarativeNetRequestBlockMode: funtypes.Union(funtypes.Literal('block-all'), funtypes.Literal('disabled'))
 }))
 
 export type Erc1155Entry = funtypes.Static<typeof Erc1155Entry>
@@ -54,6 +56,7 @@ export const Erc1155Entry = funtypes.ReadonlyObject({
 	abi: funtypes.String,
 	useAsActiveAddress: funtypes.Boolean,
 	askForAddressAccess: funtypes.Union(funtypes.Boolean, funtypes.Literal(undefined).withParser(LiteralConverterParserFactory(undefined, true))),
+	declarativeNetRequestBlockMode: funtypes.Union(funtypes.Literal('block-all'), funtypes.Literal('disabled'))
 }))
 
 export type ContactEntry = funtypes.Static<typeof ContactEntry>
@@ -67,6 +70,7 @@ export const ContactEntry = funtypes.ReadonlyObject({
 	abi: funtypes.String,
 	useAsActiveAddress: funtypes.Boolean,
 	askForAddressAccess: funtypes.Union(funtypes.Boolean, funtypes.Literal(undefined).withParser(LiteralConverterParserFactory(undefined, true))),
+	declarativeNetRequestBlockMode: funtypes.Union(funtypes.Literal('block-all'), funtypes.Literal('disabled'))
 }))
 
 export type ContactEntries = funtypes.Static<typeof ContactEntries>
@@ -84,6 +88,7 @@ export const ContractEntry = funtypes.ReadonlyObject({
 	abi: funtypes.String,
 	useAsActiveAddress: funtypes.Boolean,
 	askForAddressAccess: funtypes.Union(funtypes.Boolean, funtypes.Literal(undefined).withParser(LiteralConverterParserFactory(undefined, true))),
+	declarativeNetRequestBlockMode: funtypes.Union(funtypes.Literal('block-all'), funtypes.Literal('disabled'))
 }))
 
 export type AddressBookEntryCategory = 'contact' | 'activeAddress' | 'ERC20' | 'ERC721' | 'contract' | 'ERC1155'

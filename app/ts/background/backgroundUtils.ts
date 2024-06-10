@@ -13,6 +13,18 @@ export async function getActiveAddress(settings: Settings, tabId: number) {
 	return await getActiveAddressEntry(signingAddr)
 }
 
+export async function getActiveAddressesForAllTabs(_settings: Settings) {
+	/*const tabStates = await getAllTabStates()
+	if (settings.simulationMode && !settings.useSignersAddressAsActiveAddress) {
+		return tabStates.map((state) => { state.})
+		return settings.activeSimulationAddress !== undefined ? await getActiveAddressEntry(settings.activeSimulationAddress) : undefined
+	}
+	const tabStates = (await getAllTabStates()).map((state) state)
+	const signingAddr = (await getTabState(tabId)).activeSigningAddress
+	if (signingAddr === undefined) return undefined
+	return await getActiveAddressEntry(signingAddr)*/
+}
+
 export async function sendPopupMessageToOpenWindows(message: MessageToPopup) {
 	try {
 		await browser.runtime.sendMessage(serialize(MessageToPopup, message))
