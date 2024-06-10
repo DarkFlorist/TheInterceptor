@@ -108,7 +108,7 @@ export const ConfigureRpcConnection = ({ rpcInfo }: { rpcInfo?: RpcEntry | undef
 		})
 
 		if (currentRpcNetwork.httpsRpc !== rpcEntry.httpsRpc) return
-		console.warn(`Automatically switched to recently added or modified RPC (${rpcEntry.httpsRpc})`)
+		console.warn(`Automatically switched to recently added or modified RPC (${ rpcEntry.httpsRpc })`)
 		sendPopupMessageToBackgroundPage({ method: 'popup_changeActiveRpc', data: rpcEntry })
 	}
 

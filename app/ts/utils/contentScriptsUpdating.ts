@@ -39,7 +39,7 @@ const injectLogic = async (content: browser.webNavigation._OnCommittedDetails) =
 	if (!noMatches) return
 	try {
 		await browser.tabs.executeScript(content.tabId, { file: '/vendor/webextension-polyfill/browser-polyfill.js', allFrames: false, runAt: 'document_start' })
-		await browser.tabs.executeScript(content.tabId, { file: '/inpage/output/injected_document_start.js', allFrames: false, runAt: 'document_start' })
+		await browser.tabs.executeScript(content.tabId, { file: '/inpage/js/document_start.js', allFrames: false, runAt: 'document_start' })
 		checkAndThrowRuntimeLastError()
 	} catch(error) {
 		if (error instanceof Error && error.message.startsWith('No tab with id')) return

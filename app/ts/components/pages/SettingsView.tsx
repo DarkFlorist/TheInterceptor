@@ -220,7 +220,7 @@ const RpcSummary = ({ info }: { info: RpcEntry }) => {
 	const networkName = getChainName(info.chainId)
 
 	// rerender form if entry is updated in the background by specifying a unique key
-	const infoHash = Object.values(info).join('')
+	const infoKey = Object.values(info).join('|')
 
 	return (
 		<li class = 'grid brief'>
@@ -230,7 +230,7 @@ const RpcSummary = ({ info }: { info: RpcEntry }) => {
 				<div>{ info.httpsRpc }</div>
 			</div>
 			<div class = 'actions'>
-				<ConfigureRpcConnection key = { infoHash } rpcInfo = { info } />
+				<ConfigureRpcConnection key = { infoKey } rpcInfo = { info } />
 			</div>
 		</li>
 	)
@@ -240,10 +240,8 @@ export function useRpcConnectionsList() {
 	const entries = useSignal<RpcEntries>([])
 
 	const trackRpcListChanges = (message: unknown) => {
-		const maybeParsed = MessageToPopup.safeParse(message)
-		if (!maybeParsed.success) return
-		const parsed = maybeParsed.value
-		if (parsed.method === 'popup_update_rpc_list') { entries.value = parsed.data }
+		const parsedMessage = MessageToPopup.parse(message)
+		if (parsedMessage.method === 'popup_update_rpc_list') { entries.value = parsedMessage.data }
 	}
 
 	const initiallyLoadEntriesFromStorage = async () => { entries.value = await getRpcList() }

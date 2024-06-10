@@ -231,12 +231,12 @@ export class LogSummarizer {
 			if (metadata === undefined || metadata.type !== 'ERC20') throw new Error(`Missing metadata for token: ${ tokenAddress }`)
 			return {
 				...metadata,
-				changeAmount: changeAmount,
+				changeAmount,
 				tokenPriceEstimate: tokenPrices.find((x) => addressString(x.token.address) === tokenAddress)
 			}
 		})
 
-		const erc20TokenApprovalChanges: ERC20TokenApprovalChange[] = Array.from(addressSummary.erc20TokenApprovalChanges).map( ([tokenAddress, approvals]) => {
+		const erc20TokenApprovalChanges: ERC20TokenApprovalChange[] = Array.from(addressSummary.erc20TokenApprovalChanges).map(([tokenAddress, approvals]) => {
 			const metadata = addressMetaData.get(tokenAddress)
 			if (metadata === undefined || metadata.type !== 'ERC20') throw new Error(`Missing metadata for token: ${ tokenAddress }`)
 			return {
