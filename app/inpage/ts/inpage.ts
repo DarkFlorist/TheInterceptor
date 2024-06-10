@@ -624,7 +624,7 @@ class InterceptorMessageListener {
 		}
 
 		if (signerName !== 'NoSigner') {
-			this.waitForAccountsFromWallet = new InterceptorFuture()
+			if (this.waitForAccountsFromWallet === undefined && this.signerAccounts.length === 0) this.waitForAccountsFromWallet = new InterceptorFuture()
 			this.enableMetamaskCompatibilityMode((await connectToSigner()).metamaskCompatibilityMode)
 			await this.requestChainIdFromSigner()
 			await this.getAccountsFromSigner()
