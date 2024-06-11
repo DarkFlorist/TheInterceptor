@@ -65,7 +65,13 @@ const RpcQueryProvider = ({ children }: { children: ComponentChildren }) => {
 				params: [ethSimulateV1ParamObject, 'latest']
 			})
 
-			ethSimulateV1Result.parse(serializedResult)
+			const parsedResult = ethSimulateV1Result.parse(serializedResult)
+
+			for (const { calls } of parsedResult) {
+				for (const call of calls) {
+					if (call.status !== 'success' || call.logs.length < 1) throw new Error('A block call failed during eth_simulateV1 validation')
+				}
+			}
 		} catch (error) {
 			let errorMessage = 'RPC eth_simulateV1 validation error'
 			console.warn(errorMessage, error)
