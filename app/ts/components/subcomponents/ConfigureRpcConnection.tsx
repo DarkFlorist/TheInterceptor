@@ -77,7 +77,7 @@ const RpcQueryProvider = ({ children }: { children: ComponentChildren }) => {
 			console.warn(errorMessage, error)
 			if (error instanceof Error) errorMessage = `${ errorMessage } (${ error.message })`
 			if (error instanceof JsonRpcResponseError) errorMessage = error.message
-			throw new Error('RPC server should support eth_simulateV1')
+			throw new Error('The RPC server does not have a support for eth_simulateV1. The Interceptor requires this feature to function.')
 		}
 	}
 
