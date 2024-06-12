@@ -25,8 +25,8 @@ export class EthereumClientService {
 		this.onErrorBlockCallback = onErrorBlockCallback
     }
 
-	public readonly getRpcEntry = () => this.requestHandler.getRpcEntry()
-	
+	public readonly getRpcEntry = () => this.requestHandler.rpcEntry
+
 	public readonly getNewBlockAttemptCallback = () => this.newBlockAttemptCallback
 	public readonly getOnErrorBlockCallback = () => this.onErrorBlockCallback
 
@@ -64,7 +64,7 @@ export class EthereumClientService {
 			const response = await this.requestHandler.jsonRpcRequest({ method: 'eth_getBlockByNumber', params: ['latest', true] }, undefined, true, 6000)
 			if (this.cacheRefreshTimer === undefined) return
 			const newBlock = EthereumBlockHeader.parse(response)
-			console.info(`Current block number: ${ newBlock.number } on ${ this.requestHandler.getRpcEntry().name }`)
+			console.info(`Current block number: ${ newBlock.number } on ${ this.requestHandler.rpcEntry.name }`)
 			const gotNewBlock = this.cachedBlock?.number !== newBlock.number
 			if (gotNewBlock) this.requestHandler.clearCache()
 			this.newBlockAttemptCallback(newBlock, this, gotNewBlock)
@@ -133,7 +133,7 @@ export class EthereumClientService {
 		return EthereumBlockHeader.parse(await this.requestHandler.jsonRpcRequest({ method: 'eth_getBlockByHash', params: [blockHash, fullObjects] }, requestAbortController))
 	}
 
-	public readonly getChainId = () => this.requestHandler.getRpcEntry().chainId
+	public readonly getChainId = () => this.requestHandler.rpcEntry.chainId
 
 	public readonly getLogs = async (logFilter: EthGetLogsRequest, requestAbortController: AbortController | undefined) => {
 		const response = await this.requestHandler.jsonRpcRequest({ method: 'eth_getLogs', params: [logFilter] }, requestAbortController)

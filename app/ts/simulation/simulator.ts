@@ -175,7 +175,7 @@ export class Simulator {
 	public constructor(rpcNetwork: RpcEntry, newBlockAttemptCallback: NewBlockCallBack, onErrorBlockCallback: (ethereumClientService: EthereumClientService) => Promise<void>) {
 		this.newBlockAttemptCallback = newBlockAttemptCallback
 		this.ethereum = new EthereumClientService(
-			new EthereumJSONRpcRequestHandler(rpcNetwork, true),
+			new EthereumJSONRpcRequestHandler(rpcNetwork.httpsRpc, true),
 			async (blockHeader: EthereumBlockHeader, ethereumClientService: EthereumClientService, isNewBlock: boolean) => await newBlockAttemptCallback(blockHeader, ethereumClientService, isNewBlock, this),
 			onErrorBlockCallback
 		)
@@ -186,7 +186,7 @@ export class Simulator {
 	public reset = (rpcNetwork: RpcEntry) => {
 		this.cleanup()
 		this.ethereum = new EthereumClientService(
-			new EthereumJSONRpcRequestHandler(rpcNetwork, true),
+			new EthereumJSONRpcRequestHandler(rpcNetwork.httpsRpc, true),
 			async (blockHeader: EthereumBlockHeader, ethereumClientService: EthereumClientService, isNewBlock: boolean) => await this.newBlockAttemptCallback(blockHeader, ethereumClientService, isNewBlock, this),
 			this.ethereum.getOnErrorBlockCallback()
 		)
