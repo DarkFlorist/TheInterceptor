@@ -65,13 +65,13 @@ const RpcQueryProvider = ({ children }: { children: ComponentChildren }) => {
 				params: [ethSimulateV1ParamObject, 'latest']
 			})
 
-			const parsedResult = ethSimulateV1Result.parse(serializedResult)
-
-			for (const { calls } of parsedResult) {
-				for (const call of calls) {
-					if (call.status !== 'success' || call.logs.length < 1) throw new Error('A block call failed during eth_simulateV1 validation')
-				}
+			function resultContainsLog(result: ReturnType<typeof ethSimulateV1Result.safeParse>) {
+				return Boolean(result.success && result.value && result.value[0] && result.value[0].calls[0] && result.value[0].calls[0].status === 'success' && result.value[0].calls[0].logs.length === 1)
 			}
+
+			const parsedResult = ethSimulateV1Result.safeParse(serializedResult)
+
+			if (!resultContainsLog(parsedResult)) throw new Error('The RPC server did not return the expected log')
 		} catch (error) {
 			let errorMessage = 'RPC eth_simulateV1 validation error'
 			console.warn(errorMessage, error)
