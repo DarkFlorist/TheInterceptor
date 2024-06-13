@@ -357,6 +357,12 @@ export const GetFilterLogs = funtypes.ReadonlyObject({
 	params: funtypes.ReadonlyTuple(funtypes.String)
 })
 
+export type EthChainId = funtypes.Static<typeof EthChainId>
+export const EthChainId = funtypes.ReadonlyObject({
+	method: funtypes.Literal('eth_chainId'),
+	params: funtypes.ReadonlyArray(funtypes.Never),
+})
+
 export type InterceptorError = funtypes.Static<typeof InterceptorError>
 export const InterceptorError = funtypes.ReadonlyObject({
 	method: funtypes.Literal('InterceptorError'),
@@ -402,6 +408,7 @@ export const EthereumJsonRpcRequest = funtypes.Union(
 	UninstallFilter,
 	GetFilterChanges,
 	GetFilterLogs,
+	EthChainId,
 	InterceptorError,
 )
 

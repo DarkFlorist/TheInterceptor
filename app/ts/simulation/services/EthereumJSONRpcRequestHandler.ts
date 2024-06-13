@@ -4,8 +4,7 @@ import { serialize } from '../../types/wire-types.js'
 import { keccak256, toUtf8Bytes } from 'ethers'
 import { fetchWithTimeout } from '../../utils/requests.js'
 import { Future } from '../../utils/future.js'
-import { RpcEntry } from '../../types/rpc.js'
-import { getRpcList } from '../../background/storageVariables.js'
+import * as funtypes from 'funtypes'
 
 type ResolvedResponse = { responseState: 'failed', response: Response } | { responseState: 'success', response: unknown }
 
@@ -16,27 +15,12 @@ export class EthereumJSONRpcRequestHandler {
 	private pendingCache: Map<string, Future<ResolvedResponse>>
 	private cache: Map<string, ResolvedResponse>
 	private rpcUrl: string
-	private cachedRpcEntry: RpcEntry | undefined = undefined
 
 	constructor(rpcUrl: string, caching = false) {
 		this.rpcUrl = rpcUrl
 		this.caching = caching
 		this.cache = new Map()
 		this.pendingCache = new Map()
-		this.getRpcEntryFromStorage()
-	}
-
-
-	private getRpcEntryFromStorage = async () => {
-		const rpcEntries = await getRpcList()
-		const matchedEntry = rpcEntries.find(entry => entry.httpsRpc === this.rpcUrl)
-		if (matchedEntry === undefined) throw new Error(`Unrecognized RPC server ${this.rpcUrl}`)
-		this.cachedRpcEntry = matchedEntry
-	}
-
-	public get rpcEntry() {
-		if (this.cachedRpcEntry === undefined) throw new Error('Accessing property rpcEntry that is not yet initialized')
-		return this.cachedRpcEntry
 	}
 
 	public readonly clearCache = () => { this.cache = new Map() }
@@ -72,6 +56,11 @@ export class EthereumJSONRpcRequestHandler {
 		} finally {
 			this.pendingCache.delete(hash)
 		}
+	}
+
+	public getChainId = async () => {
+		const response = await this.jsonRpcRequest({ method: 'eth_chainId', params: [] })
+		return funtypes.BigInt.parse(response)
 	}
 
 	public readonly jsonRpcRequest = async (rpcRequest: EthereumJsonRpcRequest, requestAbortController: AbortController | undefined = undefined, bypassCache = false, timeoutMs = 60000) => {
