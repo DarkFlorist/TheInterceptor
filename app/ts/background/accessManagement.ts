@@ -228,7 +228,7 @@ export async function updateDeclarativeNetRequest() {
 				condition: { initiatorDomains: sitesToBlock, domainType: 'thirdParty' }
 			}]
 		})
-		// enable `declarativeNetRequestFeedback` permission and uncmoment to enable debugging
+		// enable `declarativeNetRequestFeedback` permission to manifest and uncomment to enable debugging
 		// const a = (data: any) => { console.log(data) }
 		// (browser.declarativeNetRequest as any).onRuleMatchedDebug.addListener(a)
 	} else {
