@@ -119,7 +119,7 @@ async function onContentScriptConnected(simulator: Simulator, port: browser.runt
 				tabIconDetails: { icon: ICON_NOT_ACTIVE, iconReason: 'No active address selected.' },
 			})
 		})
-		updateExtensionIcon(socket.tabId, websiteOrigin)
+		updateExtensionIcon(websiteTabConnections, socket.tabId, websiteOrigin)
 	} else {
 		tabConnection.connections[identifier] = newConnection
 	}
@@ -190,8 +190,8 @@ async function startup() {
 			const websiteOrigin = (new URL(tab.url)).hostname
 			const website = { websiteOrigin, ...await retrieveWebsiteDetails(tabId) }
 			await updateTabState(tabId, (previousState: TabState) => modifyObject(previousState, { website }))
-			await updateDeclarativeNetRequestBlocks()
-			await updateExtensionIcon(tabId, websiteOrigin)
+			await updateDeclarativeNetRequestBlocks(websiteTabConnections)
+			await updateExtensionIcon(websiteTabConnections, tabId, websiteOrigin)
 		})
 	})
 	browser.runtime.onConnect.addListener(async (port) => await catchAllErrorsAndCall(() => onContentScriptConnected(simulator, port, websiteTabConnections)))
@@ -210,7 +210,7 @@ async function startup() {
 	const onCloseWindow = async (id: number) => await catchAllErrorsAndCall(async () => await onCloseWindowOrTab({ type: 'popup' as const, id }, simulator, websiteTabConnections))
 	const onCloseTab = async (id: number) => await catchAllErrorsAndCall(async () => await onCloseWindowOrTab({ type: 'tab' as const, id }, simulator, websiteTabConnections))
 	addWindowTabListeners(onCloseWindow, onCloseTab)
-	await updateDeclarativeNetRequestBlocks()
+	await updateDeclarativeNetRequestBlocks(websiteTabConnections)
 }
 
 startup()

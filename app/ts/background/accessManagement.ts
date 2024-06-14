@@ -153,7 +153,7 @@ async function getActiveAddressForDomain(websiteOrigin: string, settings: Settin
 
 function connectToPort(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, websiteOrigin: string, settings: Settings, connectWithActiveAddress: bigint | undefined): true {
 	setWebsitePortApproval(websiteTabConnections, socket, true)
-	updateExtensionIcon(socket.tabId, websiteOrigin)
+	updateExtensionIcon(websiteTabConnections, socket.tabId, websiteOrigin)
 
 	sendSubscriptionReplyOrCallBack(websiteTabConnections, socket, { type: 'result' as const, method: 'connect', result: [settings.currentRpcNetwork.chainId] })
 
@@ -171,7 +171,7 @@ function connectToPort(websiteTabConnections: WebsiteTabConnections, socket: Web
 
 function disconnectFromPort(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, websiteOrigin: string): false {
 	setWebsitePortApproval(websiteTabConnections, socket, false)
-	updateExtensionIcon(socket.tabId, websiteOrigin)
+	updateExtensionIcon(websiteTabConnections, socket.tabId, websiteOrigin)
 	sendSubscriptionReplyOrCallBack(websiteTabConnections, socket, { type: 'result' as const, method: 'disconnect', result: [] })
 	return false
 }
@@ -196,7 +196,7 @@ async function updateTabConnections(simulator: Simulator, websiteTabConnections:
 		const connection = tabConnection.connections[key]
 		if (connection === undefined) throw new Error('missing connection')
 		const currentActiveAddress = await getActiveAddress(settings, connection.socket.tabId)
-		updateExtensionIcon(connection.socket.tabId, connection.websiteOrigin)
+		updateExtensionIcon(websiteTabConnections, connection.socket.tabId, connection.websiteOrigin)
 		const access = currentActiveAddress ? hasAddressAccess(settings.websiteAccess, connection.websiteOrigin, currentActiveAddress) : hasAccess(settings.websiteAccess, connection.websiteOrigin)
 
 		if (access !== 'hasAccess' && connection.approved) {
@@ -212,14 +212,35 @@ async function updateTabConnections(simulator: Simulator, websiteTabConnections:
 	}
 }
 
+const getApprovedTabs = (websiteTabConnections: WebsiteTabConnections) => {
+	const approvedTabs = new Set<number>()
+	for (const [tab, tabConnection] of websiteTabConnections.entries() ) {
+		for (const key in tabConnection.connections) {
+			const connection = tabConnection.connections[key]
+			if (connection?.approved) {
+				approvedTabs.add(tab)
+				continue
+			}
+		}
+	}
+	return approvedTabs
+}
+const getTabsAndAddressesToBlock = async (websiteTabConnections: WebsiteTabConnections) => {
+	const approvedTabIds = getApprovedTabs(websiteTabConnections)
+	const tabIdsToBlock = (await getActiveAddressesForAllTabs(await getSettings())).filter((tabData) => approvedTabIds.has(tabData.tabId)).filter((tabData) => tabData.activeAddress?.declarativeNetRequestBlockMode === 'block-all').map((tabData) => tabData.tabId)
+	const sitesToBlock = (await getWebsiteAccess()).filter((access) => access.declarativeNetRequestBlockMode === 'block-all').map((acccess) => acccess.website.websiteOrigin)
+	return {
+		tabIdsToBlock,
+		sitesToBlock
+	}
+}
+
 let webRequestListener: (details: browser.webRequest._OnBeforeRequestDetails) => void = () => {}
 let previousDecralativeNetRequestBlockIdentifier = ''
 const updateDeclarativeNetRequestBlocksSemaphore = new Semaphore(1)
-export async function updateDeclarativeNetRequestBlocks() {
+export async function updateDeclarativeNetRequestBlocks(websiteTabConnections: WebsiteTabConnections) {
 	return await updateDeclarativeNetRequestBlocksSemaphore.execute(async () => {
-		const tabIdsToBlock = (await getActiveAddressesForAllTabs(await getSettings())).filter((tabData) => tabData.activeAddress?.declarativeNetRequestBlockMode === 'block-all').map((tabData) => tabData.tabId)
-		const sitesToBlock = (await getWebsiteAccess()).filter((access) => access.declarativeNetRequestBlockMode === 'block-all').map((acccess) => acccess.website.websiteOrigin)
-		
+		const { tabIdsToBlock, sitesToBlock } = await getTabsAndAddressesToBlock(websiteTabConnections)
 		// check if the rules would change, if not, just bail out
 		const decralativeNetRequestBlockIdentifier = `${ tabIdsToBlock.join('|') }|a|${ sitesToBlock.join('|') }`
 		if (decralativeNetRequestBlockIdentifier === previousDecralativeNetRequestBlockIdentifier) return
@@ -270,24 +291,22 @@ export async function updateDeclarativeNetRequestBlocks() {
 				return {}
 			}
 			if (sitesToBlock.length === 0 && tabIdsToBlock.length === 0) return
-			browser.webRequest.onBeforeRequest.addListener(webRequestListener, { urls: ['http://*/*', 'https://*/*'] }, ['blocking'])
+			browser.webRequest.onBeforeRequest.addListener(webRequestListener, { urls: ['<all_urls>'] }, ['blocking'])
 		}
 	})
 }
 
-export const areWeBlocking = async (tabId: number, websiteOrigin: string) => {
-	const tabIdsToBlock = (await getActiveAddressesForAllTabs(await getSettings())).filter((tabData) => tabData.activeAddress?.declarativeNetRequestBlockMode === 'block-all').map((tabData) => tabData.tabId)
-	const accesses = await getWebsiteAccess()
-	const sitesToBlock = accesses.filter((access) => access.declarativeNetRequestBlockMode === 'block-all').map((acccess) => acccess.website.websiteOrigin)
+export const areWeBlocking = async (websiteTabConnections: WebsiteTabConnections, tabId: number, websiteOrigin: string) => {
+	const { tabIdsToBlock, sitesToBlock } = await getTabsAndAddressesToBlock(websiteTabConnections)
 	if (sitesToBlock.find((blockUrl) => blockUrl === websiteOrigin) !== undefined) return true
 	if (tabIdsToBlock.find((blockTab) => blockTab === tabId) !== undefined) return true
 	return false
 }
 
 export function updateWebsiteApprovalAccesses(simulator: Simulator, websiteTabConnections: WebsiteTabConnections, settings: Settings, promptForAccessesIfNeeded = true) {
-	updateDeclarativeNetRequestBlocks()
+	updateDeclarativeNetRequestBlocks(websiteTabConnections)
 	// update port connections and disconnect from ports that should not have access anymore
-	for (const [_tab, tabConnection] of websiteTabConnections.entries() ) {
+	for (const [_tab, tabConnection] of websiteTabConnections.entries()) {
 		updateTabConnections(simulator, websiteTabConnections, tabConnection, promptForAccessesIfNeeded, settings)
 	}
 }
