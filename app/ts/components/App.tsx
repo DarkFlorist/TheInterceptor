@@ -264,9 +264,9 @@ export function App() {
 				logoUri: undefined,
 				abi: undefined,
 				useAsActiveAddress: false,
+				declarativeNetRequestBlockMode: undefined,
 				...entry,
 				address: checksummedAddress(entry.address),
-				declarativeNetRequestBlockMode: undefined,
 			}
 		} })
 	}

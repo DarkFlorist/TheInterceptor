@@ -405,10 +405,10 @@ export function AddressBook() {
 				decimals: undefined,
 				logoUri: undefined,
 				useAsActiveAddress: false,
+				declarativeNetRequestBlockMode: undefined,
 				...entry,
 				abi: 'abi' in entry ? entry.abi : undefined,
 				address: checksummedAddress(entry.address),
-				declarativeNetRequestBlockMode: undefined,
 			}
 		} })
 	}

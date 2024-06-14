@@ -19,7 +19,7 @@ async function setInterceptorIcon(tabId: number, icon: TabIcon, iconReason: stri
 }
 
 export async function updateExtensionIcon(tabId: number, websiteOrigin: string) {
-	const blockingWebsitePromise = areWeBlocking(websiteOrigin)
+	const blockingWebsitePromise = areWeBlocking(tabId, websiteOrigin)
 	const addShieldIfNeeded = async (icon: TabIcon): Promise<TabIcon> => await blockingWebsitePromise && icon !== ICON_INTERCEPTOR_DISABLED ? TabIcon.parse(icon.replace('.png', '-shield.png')) : icon
 	const setIcon = async (icon: TabIcon, iconReason: string) => setInterceptorIcon(tabId, await addShieldIfNeeded(icon), await blockingWebsitePromise ? `${ iconReason }. The Interceptor is blocking external requests made by the website.` : iconReason)
 	

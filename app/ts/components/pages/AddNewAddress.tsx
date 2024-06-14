@@ -223,60 +223,53 @@ export function AddNewAddress(param: AddAddressParam) {
 		if (inputedAddressBigInt === undefined) return undefined
 		const name = incompleteAddressBookEntry.name ? incompleteAddressBookEntry.name : checksummedAddress(inputedAddressBigInt)
 		const abi = incompleteAddressBookEntry.abi || undefined
+		const base = {
+			name,
+			address: inputedAddressBigInt,
+			declarativeNetRequestBlockMode: incompleteAddressBookEntry.declarativeNetRequestBlockMode,
+			useAsActiveAddress: incompleteAddressBookEntry.useAsActiveAddress,
+			askForAddressAccess: incompleteAddressBookEntry.askForAddressAccess,
+			entrySource: 'User' as const,
+		}
+		
 		switch(incompleteAddressBookEntry.type) {
 			case 'ERC721': {
 				if (incompleteAddressBookEntry.symbol === undefined) return undefined
 				return {
+					...base,
 					type: 'ERC721' as const,
-					name,
-					address: inputedAddressBigInt,
 					symbol: incompleteAddressBookEntry.symbol,
 					logoUri: incompleteAddressBookEntry.logoUri,
-					useAsActiveAddress: incompleteAddressBookEntry.useAsActiveAddress,
-					askForAddressAccess: incompleteAddressBookEntry.askForAddressAccess,
-					entrySource: 'User',
 					abi,
 				}
 			}
 			case 'ERC1155': {
 				if (incompleteAddressBookEntry.symbol === undefined) return undefined
 				return {
+					...base,
 					type: 'ERC1155' as const,
-					name,
-					address: inputedAddressBigInt,
 					symbol: incompleteAddressBookEntry.symbol,
 					logoUri: incompleteAddressBookEntry.logoUri,
-					useAsActiveAddress: incompleteAddressBookEntry.useAsActiveAddress,
-					askForAddressAccess: incompleteAddressBookEntry.askForAddressAccess,
 					decimals: undefined,
-					entrySource: 'User',
 					abi,
 				}
 			}
 			case 'ERC20': {
 				if (incompleteAddressBookEntry.symbol === undefined || incompleteAddressBookEntry.decimals === undefined) return undefined
 				return {
+					...base,
 					type: 'ERC20' as const,
-					name,
-					address: inputedAddressBigInt,
 					symbol: incompleteAddressBookEntry.symbol,
 					decimals: incompleteAddressBookEntry.decimals,
 					logoUri: incompleteAddressBookEntry.logoUri,
-					useAsActiveAddress: incompleteAddressBookEntry.useAsActiveAddress,
-					askForAddressAccess: incompleteAddressBookEntry.askForAddressAccess,
-					entrySource: 'User',
 					abi,
 				}
 			}
 			case 'contact':
 			case 'contract': return {
+				...base,
 				type: incompleteAddressBookEntry.type,
-				name,
-				address: inputedAddressBigInt,
 				logoUri: incompleteAddressBookEntry.logoUri,
-				useAsActiveAddress: incompleteAddressBookEntry.useAsActiveAddress,
-				askForAddressAccess: incompleteAddressBookEntry.askForAddressAccess,
-				entrySource: 'User',
 				abi,
 			}
 			default: assertUnreachable(incompleteAddressBookEntry.type)

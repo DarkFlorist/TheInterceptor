@@ -213,31 +213,47 @@ async function updateTabConnections(simulator: Simulator, websiteTabConnections:
 }
 
 let webRequestListener: (details: browser.webRequest._OnBeforeRequestDetails) => void = () => {}
-
-const updateDeclarativeNetRequestSemaphore = new Semaphore(1)
-export async function updateDeclarativeNetRequest() {
-	return await updateDeclarativeNetRequestSemaphore.execute(async () => {
+let previousDecralativeNetRequestBlockIdentifier = ''
+const updateDeclarativeNetRequestBlocksSemaphore = new Semaphore(1)
+export async function updateDeclarativeNetRequestBlocks() {
+	return await updateDeclarativeNetRequestBlocksSemaphore.execute(async () => {
 		const tabIdsToBlock = (await getActiveAddressesForAllTabs(await getSettings())).filter((tabData) => tabData.activeAddress?.declarativeNetRequestBlockMode === 'block-all').map((tabData) => tabData.tabId)
 		const sitesToBlock = (await getWebsiteAccess()).filter((access) => access.declarativeNetRequestBlockMode === 'block-all').map((acccess) => acccess.website.websiteOrigin)
+		
+		// check if the rules would change, if not, just bail out
+		const decralativeNetRequestBlockIdentifier = `${ tabIdsToBlock.join('|') }|a|${ sitesToBlock.join('|') }`
+		if (decralativeNetRequestBlockIdentifier === previousDecralativeNetRequestBlockIdentifier) return
+		previousDecralativeNetRequestBlockIdentifier = decralativeNetRequestBlockIdentifier
+
 		if (browser.runtime.getManifest().manifest_version === 3) {
-			await browser.declarativeNetRequest.updateDynamicRules({ removeRuleIds: [1, 2] })
-			const rules: browser.declarativeNetRequest.Rule[] = [
-				...sitesToBlock.length !== 0 ? [{
-					id: 1,
-					priority: 1,
-					action : { type: 'block' as const },
-					condition: { initiatorDomains: sitesToBlock, domainType: 'thirdParty' as const }
-				}] : [],
-				...tabIdsToBlock.length !== 0 ? [{
-					id: 2,
-					priority: 2,
-					action : { type: 'block' as const },
-					condition: { tabIds: tabIdsToBlock, domainType: 'thirdParty' as const }
-				}] : []
-			]
-			console.log(rules)
-			if (rules.length === 0) return
-			await browser.declarativeNetRequest.updateDynamicRules({ addRules: rules })
+			const dynamicRuleIds = (await browser.declarativeNetRequest.getDynamicRules()).map((rule) => rule.id)
+			const sessionRuleIds = (await browser.declarativeNetRequest.getSessionRules()).map((rule) => rule.id)
+			if (sitesToBlock.length !== 0) {
+				await browser.declarativeNetRequest.updateDynamicRules({
+					removeRuleIds: dynamicRuleIds,
+					addRules: [{
+						id: dynamicRuleIds.length == 0 ? 1 : Math.max.apply(null, dynamicRuleIds) + 1,
+						priority: 1,
+						action : { type: 'block' as const },
+						condition: { initiatorDomains: sitesToBlock, domainType: 'thirdParty' as const }
+					}]
+				})
+			} else {
+				await browser.declarativeNetRequest.updateDynamicRules({ removeRuleIds: dynamicRuleIds })
+			}
+			if (tabIdsToBlock.length !== 0) {
+				await browser.declarativeNetRequest.updateSessionRules({
+					removeRuleIds: sessionRuleIds,
+					addRules: [{
+						id: sessionRuleIds.length == 0 ? 1 : Math.max.apply(null, sessionRuleIds) + 1,
+						priority: 2,
+						action : { type: 'block' as const },
+						condition: { tabIds: tabIdsToBlock, domainType: 'thirdParty' as const }
+					}]
+				})
+			} else {
+				await browser.declarativeNetRequest.updateSessionRules({ removeRuleIds: sessionRuleIds })
+			}
 			// enable `declarativeNetRequestFeedback` permission to manifest and uncomment to enable debugging
 			// const a = (data: any) => { console.log(data) }
 			// (browser.declarativeNetRequest as any).onRuleMatchedDebug.addListener(a)
@@ -259,15 +275,17 @@ export async function updateDeclarativeNetRequest() {
 	})
 }
 
-export const areWeBlocking = async (websiteOrigin: string) => {
+export const areWeBlocking = async (tabId: number, websiteOrigin: string) => {
+	const tabIdsToBlock = (await getActiveAddressesForAllTabs(await getSettings())).filter((tabData) => tabData.activeAddress?.declarativeNetRequestBlockMode === 'block-all').map((tabData) => tabData.tabId)
 	const accesses = await getWebsiteAccess()
 	const sitesToBlock = accesses.filter((access) => access.declarativeNetRequestBlockMode === 'block-all').map((acccess) => acccess.website.websiteOrigin)
 	if (sitesToBlock.find((blockUrl) => blockUrl === websiteOrigin) !== undefined) return true
+	if (tabIdsToBlock.find((blockTab) => blockTab === tabId) !== undefined) return true
 	return false
 }
 
 export function updateWebsiteApprovalAccesses(simulator: Simulator, websiteTabConnections: WebsiteTabConnections, settings: Settings, promptForAccessesIfNeeded = true) {
-	updateDeclarativeNetRequest()
+	updateDeclarativeNetRequestBlocks()
 	// update port connections and disconnect from ports that should not have access anymore
 	for (const [_tab, tabConnection] of websiteTabConnections.entries() ) {
 		updateTabConnections(simulator, websiteTabConnections, tabConnection, promptForAccessesIfNeeded, settings)

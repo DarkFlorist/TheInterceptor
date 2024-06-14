@@ -22,7 +22,7 @@ import { modifyObject } from '../utils/typescript.js'
 import { OldActiveAddressEntry, browserStorageLocalGet, browserStorageLocalRemove } from '../utils/storageUtils.js'
 import { AddressBookEntries, AddressBookEntry } from '../types/addressBookTypes.js'
 import { getUniqueItemsByProperties } from '../utils/typed-arrays.js'
-import { updateDeclarativeNetRequest } from './accessManagement.js'
+import { updateDeclarativeNetRequestBlocks } from './accessManagement.js'
 
 const websiteTabConnections = new Map<number, TabConnection>()
 
@@ -190,6 +190,7 @@ async function startup() {
 			const websiteOrigin = (new URL(tab.url)).hostname
 			const website = { websiteOrigin, ...await retrieveWebsiteDetails(tabId) }
 			await updateTabState(tabId, (previousState: TabState) => modifyObject(previousState, { website }))
+			await updateDeclarativeNetRequestBlocks()
 			await updateExtensionIcon(tabId, websiteOrigin)
 		})
 	})
@@ -209,7 +210,7 @@ async function startup() {
 	const onCloseWindow = async (id: number) => await catchAllErrorsAndCall(async () => await onCloseWindowOrTab({ type: 'popup' as const, id }, simulator, websiteTabConnections))
 	const onCloseTab = async (id: number) => await catchAllErrorsAndCall(async () => await onCloseWindowOrTab({ type: 'tab' as const, id }, simulator, websiteTabConnections))
 	addWindowTabListeners(onCloseWindow, onCloseTab)
-	await updateDeclarativeNetRequest()
+	await updateDeclarativeNetRequestBlocks()
 }
 
 startup()

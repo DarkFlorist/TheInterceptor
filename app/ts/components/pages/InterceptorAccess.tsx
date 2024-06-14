@@ -246,10 +246,10 @@ export function InterceptorAccess() {
 				decimals: undefined,
 				logoUri: undefined,
 				useAsActiveAddress: false,
+				abi: undefined,
+				declarativeNetRequestBlockMode: undefined,
 				...entry,
 				address: checksummedAddress(entry.address),
-				abi: 'abi' in entry ? entry.abi : undefined,
-				declarativeNetRequestBlockMode: undefined,
 			}
 		} })
 	}
