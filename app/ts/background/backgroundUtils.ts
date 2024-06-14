@@ -1,7 +1,7 @@
 import { MessageToPopup, PopupMessage, Settings, WindowMessage } from '../types/interceptor-messages.js'
 import { WebsiteSocket, checkAndThrowRuntimeLastError } from '../utils/requests.js'
 import { EthereumQuantity, serialize } from '../types/wire-types.js'
-import { getTabState } from './storageVariables.js'
+import { getAllTabStates, getTabState } from './storageVariables.js'
 import { getActiveAddressEntry } from './metadataUtils.js'
 
 export async function getActiveAddress(settings: Settings, tabId: number) {
@@ -13,16 +13,13 @@ export async function getActiveAddress(settings: Settings, tabId: number) {
 	return await getActiveAddressEntry(signingAddr)
 }
 
-export async function getActiveAddressesForAllTabs(_settings: Settings) {
-	/*const tabStates = await getAllTabStates()
+export async function getActiveAddressesForAllTabs(settings: Settings) {
+	const tabStates = await getAllTabStates()
 	if (settings.simulationMode && !settings.useSignersAddressAsActiveAddress) {
-		return tabStates.map((state) => { state.})
-		return settings.activeSimulationAddress !== undefined ? await getActiveAddressEntry(settings.activeSimulationAddress) : undefined
+		const addressEntry = settings.activeSimulationAddress !== undefined ? await getActiveAddressEntry(settings.activeSimulationAddress) : undefined
+		return tabStates.map((state) => ({ tabId: state.tabId, activeAddress: addressEntry }))
 	}
-	const tabStates = (await getAllTabStates()).map((state) state)
-	const signingAddr = (await getTabState(tabId)).activeSigningAddress
-	if (signingAddr === undefined) return undefined
-	return await getActiveAddressEntry(signingAddr)*/
+	return Promise.all(tabStates.map(async (state) => ({ tabId: state.tabId, activeAddress: state.activeSigningAddress === undefined ? undefined : await getActiveAddressEntry(state.activeSigningAddress) })))
 }
 
 export async function sendPopupMessageToOpenWindows(message: MessageToPopup) {

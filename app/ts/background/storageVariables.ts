@@ -118,6 +118,7 @@ const getDefaultSignerName = async () => (await browserStorageLocalGet('signerNa
 
 export async function getTabState(tabId: number) : Promise<TabState> {
 	return await getTabStateFromStorage(tabId) ?? {
+		tabId,
 		website: undefined,
 		signerConnected: false,
 		signerName: await getDefaultSignerName(),
@@ -136,7 +137,7 @@ const getTabAllStateKeys = async () => {
 }
 
 export const clearTabStates = async () => await browser.storage.local.remove(await getTabAllStateKeys())
-export const getAllTabStates = async () => Object.values(TabStateItems.parse(await browser.storage.local.get(await getTabAllStateKeys())))
+export const getAllTabStates = async () => Object.values(TabStateItems.parse(await browser.storage.local.get(await getTabAllStateKeys()))).filter((state): state is TabState => state !== undefined)
 
 const tabStateSemaphore = new Semaphore(1)
 export async function updateTabState(tabId: number, updateFunc: (prevState: TabState) => TabState) {

@@ -1,10 +1,10 @@
-import { getActiveAddress, websiteSocketToString } from './backgroundUtils.js'
+import { getActiveAddress, getActiveAddressesForAllTabs, websiteSocketToString } from './backgroundUtils.js'
 import { getActiveAddressEntry, getActiveAddresses } from './metadataUtils.js'
 import { requestAccessFromUser } from './windows/interceptorAccess.js'
 import { retrieveWebsiteDetails, updateExtensionIcon } from './iconHandler.js'
 import { TabConnection, WebsiteTabConnections } from '../types/user-interface-types.js'
 import { InpageScriptCallBack, Settings } from '../types/interceptor-messages.js'
-import { getWebsiteAccess, updateWebsiteAccess } from './settings.js'
+import { getSettings, getWebsiteAccess, updateWebsiteAccess } from './settings.js'
 import { sendSubscriptionReplyOrCallBack } from './messageSending.js'
 import { Simulator } from '../simulation/simulator.js'
 import { WebsiteSocket } from '../utils/requests.js'
@@ -12,6 +12,7 @@ import { Website, WebsiteAccessArray, WebsiteAddressAccess } from '../types/webs
 import { getUniqueItemsByProperties, replaceElementInReadonlyArray } from '../utils/typed-arrays.js'
 import { modifyObject } from '../utils/typescript.js'
 import { AddressBookEntries, AddressBookEntry } from '../types/addressBookTypes.js'
+import { Semaphore } from '../utils/semaphore.js'
 
 function getConnectionDetails(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket) {
 	const identifier = websiteSocketToString(socket)
@@ -213,38 +214,49 @@ async function updateTabConnections(simulator: Simulator, websiteTabConnections:
 
 let webRequestListener: (details: browser.webRequest._OnBeforeRequestDetails) => void = () => {}
 
+const updateDeclarativeNetRequestSemaphore = new Semaphore(1)
 export async function updateDeclarativeNetRequest() {
-	const accesses = await getWebsiteAccess()
-	const sitesToBlock = accesses.filter((access) => access.declarativeNetRequestBlockMode === 'block-all').map((acccess) => acccess.website.websiteOrigin)
-	if (browser.runtime.getManifest().manifest_version === 3) {
-		await browser.declarativeNetRequest.updateDynamicRules({ removeRuleIds: [1] })
-
-		if (sitesToBlock.length === 0) return
-		await browser.declarativeNetRequest.updateDynamicRules({
-			addRules: [{
-				id: 1,
-				priority: 1,
-				action : { "type" : "block" },
-				condition: { initiatorDomains: sitesToBlock, domainType: 'thirdParty' }
-			}]
-		})
-		// enable `declarativeNetRequestFeedback` permission to manifest and uncomment to enable debugging
-		// const a = (data: any) => { console.log(data) }
-		// (browser.declarativeNetRequest as any).onRuleMatchedDebug.addListener(a)
-	} else {
-		browser.webRequest.onBeforeRequest.removeListener(webRequestListener)
-		webRequestListener = (details: browser.webRequest._OnBeforeRequestDetails) => {
-			if (details.originUrl === undefined) return {}
-			if (details.type === 'main_frame') return {}
-			const websiteOrigin = (new URL(details.originUrl)).hostname
-			const destinationHost = (new URL(details.url)).hostname
-			if (destinationHost === websiteOrigin) return {}
-			if (sitesToBlock.find((blockUrl) => blockUrl === websiteOrigin) !== undefined) return { cancel: true }
-			return {}
+	return await updateDeclarativeNetRequestSemaphore.execute(async () => {
+		const tabIdsToBlock = (await getActiveAddressesForAllTabs(await getSettings())).filter((tabData) => tabData.activeAddress?.declarativeNetRequestBlockMode === 'block-all').map((tabData) => tabData.tabId)
+		const sitesToBlock = (await getWebsiteAccess()).filter((access) => access.declarativeNetRequestBlockMode === 'block-all').map((acccess) => acccess.website.websiteOrigin)
+		if (browser.runtime.getManifest().manifest_version === 3) {
+			await browser.declarativeNetRequest.updateDynamicRules({ removeRuleIds: [1, 2] })
+			const rules: browser.declarativeNetRequest.Rule[] = [
+				...sitesToBlock.length !== 0 ? [{
+					id: 1,
+					priority: 1,
+					action : { type: 'block' as const },
+					condition: { initiatorDomains: sitesToBlock, domainType: 'thirdParty' as const }
+				}] : [],
+				...tabIdsToBlock.length !== 0 ? [{
+					id: 2,
+					priority: 2,
+					action : { type: 'block' as const },
+					condition: { tabIds: tabIdsToBlock, domainType: 'thirdParty' as const }
+				}] : []
+			]
+			console.log(rules)
+			if (rules.length === 0) return
+			await browser.declarativeNetRequest.updateDynamicRules({ addRules: rules })
+			// enable `declarativeNetRequestFeedback` permission to manifest and uncomment to enable debugging
+			// const a = (data: any) => { console.log(data) }
+			// (browser.declarativeNetRequest as any).onRuleMatchedDebug.addListener(a)
+		} else {
+			browser.webRequest.onBeforeRequest.removeListener(webRequestListener)
+			webRequestListener = (details: browser.webRequest._OnBeforeRequestDetails) => {
+				if (tabIdsToBlock.find((tabId) => tabId === details.tabId) !== undefined) return { cancel: true }
+				if (details.originUrl === undefined) return {}
+				if (details.type === 'main_frame') return {}
+				const websiteOrigin = (new URL(details.originUrl)).hostname
+				const destinationHost = (new URL(details.url)).hostname
+				if (destinationHost === websiteOrigin) return {}
+				if (sitesToBlock.find((blockUrl) => blockUrl === websiteOrigin) !== undefined) return { cancel: true }
+				return {}
+			}
+			if (sitesToBlock.length === 0 && tabIdsToBlock.length === 0) return
+			browser.webRequest.onBeforeRequest.addListener(webRequestListener, { urls: ['http://*/*', 'https://*/*'] }, ['blocking'])
 		}
-		if (sitesToBlock.length === 0) return
-		browser.webRequest.onBeforeRequest.addListener(webRequestListener, { urls: ['http://*/*', 'https://*/*'] }, ['blocking'])
-	}
+	})
 }
 
 export const areWeBlocking = async (websiteOrigin: string) => {

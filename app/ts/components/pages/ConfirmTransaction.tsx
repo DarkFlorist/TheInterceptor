@@ -455,7 +455,8 @@ export function ConfirmTransaction() {
 					useAsActiveAddress: false,
 					...entry,
 					address: checksummedAddress(entry.address),
-					abi: 'abi' in entry ? entry.abi : undefined
+					abi: 'abi' in entry ? entry.abi : undefined,
+					declarativeNetRequestBlockMode: undefined,
 				}
 			}
 		})

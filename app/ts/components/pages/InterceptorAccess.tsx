@@ -248,7 +248,8 @@ export function InterceptorAccess() {
 				useAsActiveAddress: false,
 				...entry,
 				address: checksummedAddress(entry.address),
-				abi: 'abi' in entry ? entry.abi : undefined
+				abi: 'abi' in entry ? entry.abi : undefined,
+				declarativeNetRequestBlockMode: undefined,
 			}
 		} })
 	}
@@ -316,7 +317,8 @@ export function InterceptorAccess() {
 				useAsActiveAddress: true,
 				entrySource: 'FilledIn',
 				address: undefined,
-				abi: undefined
+				abi: undefined,
+				declarativeNetRequestBlockMode: undefined,
 			}
 		} })
 	}

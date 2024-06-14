@@ -384,6 +384,7 @@ export function AddressBook() {
 				entrySource: 'FilledIn',
 				abi: undefined,
 				useAsActiveAddress: filter === 'My Active Addresses',
+				declarativeNetRequestBlockMode: undefined,
 			}
 		} })
 	}
@@ -407,6 +408,7 @@ export function AddressBook() {
 				...entry,
 				abi: 'abi' in entry ? entry.abi : undefined,
 				address: checksummedAddress(entry.address),
+				declarativeNetRequestBlockMode: undefined,
 			}
 		} })
 	}
