@@ -71,7 +71,7 @@ const RpcQueryProvider = ({ children }: { children: ComponentChildren }) => {
 
 			const parsedResult = ethSimulateV1Result.safeParse(serializedResult)
 
-			if (!resultContainsLog(parsedResult)) throw new Error('The RPC server did not return the expected log')
+			if (!resultContainsLog(parsedResult)) throw new Error(`The RPC server does not have a support for eth_simulateV1 (it doesn't return ETH logs). The Interceptor requires this feature to function.`)
 		} catch (error) {
 			let errorMessage = 'RPC eth_simulateV1 validation error'
 			console.warn(errorMessage, error)
