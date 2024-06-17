@@ -33,9 +33,9 @@ const RpcQueryProvider = ({ children }: { children: ComponentChildren }) => {
 		}
 	}
 
-	const validateEthSimulateSupport = async (rpcEntry: RpcEntry) => {
+	const validateEthSimulateSupport = async (url: string) => {
 		// test eth_simulate request
-		const requestHandler = new EthereumJSONRpcRequestHandler(rpcEntry, true)
+		const requestHandler = new EthereumJSONRpcRequestHandler(url)
 		const ethSimulateV1ParamObject: EthSimulateV1Params['params'][0] = {
 			blockStateCalls: [{
 				blockOverrides: {
@@ -83,8 +83,7 @@ const RpcQueryProvider = ({ children }: { children: ComponentChildren }) => {
 
 	const queryRpcInfo = (url: string) => waitFor(async () => {
 		const network = await checkServerAvailability(url)
-		const interimRpc: RpcEntry = { httpsRpc: url, chainId: network.chainId, name: '', currencyName: '', currencyTicker: '', primary: false, minimized: false }
-		await validateEthSimulateSupport(interimRpc)
+		await validateEthSimulateSupport(url)
 		return network
 	})
 
