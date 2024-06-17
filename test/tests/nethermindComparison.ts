@@ -16,6 +16,8 @@ function parseRequest(data: string) {
 }
 
 class MockEthereumJSONRpcRequestHandler {
+	public rpcUrl = 'https://rpc.dark.florist/flipcardtrustone'
+
 	public clearCache = () => {}
 
 	public getChainId = async () => 5n
