@@ -26,6 +26,8 @@ export class EthereumClientService {
 		this.newBlockAttemptCallback = newBlockAttemptCallback
 		this.onErrorBlockCallback = onErrorBlockCallback
 		this.rpcEntry = rpcEntry
+
+		if (this.rpcEntry.httpsRpc !== requestHandler.rpcUrl) throw new Error('The URL values for rpcEntry and requestHander must match')
     }
 
 	public readonly getRpcEntry = () => this.rpcEntry

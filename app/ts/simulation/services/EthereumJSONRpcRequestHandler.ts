@@ -1,10 +1,9 @@
 import { EthereumJsonRpcRequest, JsonRpcResponse } from '../../types/JsonRpc-types.js'
 import { JsonRpcResponseError } from '../../utils/errors.js'
-import { serialize } from '../../types/wire-types.js'
+import { EthereumQuantity, serialize } from '../../types/wire-types.js'
 import { keccak256, toUtf8Bytes } from 'ethers'
 import { fetchWithTimeout } from '../../utils/requests.js'
 import { Future } from '../../utils/future.js'
-import * as funtypes from 'funtypes'
 
 type ResolvedResponse = { responseState: 'failed', response: Response } | { responseState: 'success', response: unknown }
 
@@ -14,7 +13,7 @@ export class EthereumJSONRpcRequestHandler {
 	private caching: boolean
 	private pendingCache: Map<string, Future<ResolvedResponse>>
 	private cache: Map<string, ResolvedResponse>
-	private rpcUrl: string
+	public rpcUrl: string
 
 	constructor(rpcUrl: string, caching = false) {
 		this.rpcUrl = rpcUrl
@@ -59,7 +58,7 @@ export class EthereumJSONRpcRequestHandler {
 	}
 
 	public getChainId = async () => {
-		const response = await this.jsonRpcRequest({ method: 'eth_chainId', params: [] })
+		const response = await this.jsonRpcRequest({ method: 'eth_chainId' })
 		return EthereumQuantity.parse(response)
 	}
 
