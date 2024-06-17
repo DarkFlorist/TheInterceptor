@@ -8,5 +8,5 @@ export class MockRequestHandler {
 
 	public clearCache = () => {}
 
-	public getChainId = async () => 0n
+	public getChainId = async () => 5n
 }

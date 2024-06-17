@@ -18,7 +18,7 @@ function parseRequest(data: string) {
 class MockEthereumJSONRpcRequestHandler {
 	public clearCache = () => {}
 
-	public getChainId = async () => 0n
+	public getChainId = async () => 5n
 
 	public readonly jsonRpcRequest = async (rpcRequest: EthereumJsonRpcRequest) => {
 		switch (rpcRequest.method) {
