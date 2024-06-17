@@ -60,7 +60,7 @@ export class EthereumJSONRpcRequestHandler {
 
 	public getChainId = async () => {
 		const response = await this.jsonRpcRequest({ method: 'eth_chainId', params: [] })
-		return funtypes.BigInt.parse(response)
+		return EthereumQuantity.parse(response)
 	}
 
 	public readonly jsonRpcRequest = async (rpcRequest: EthereumJsonRpcRequest, requestAbortController: AbortController | undefined = undefined, bypassCache = false, timeoutMs = 60000) => {
