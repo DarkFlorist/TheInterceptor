@@ -83,6 +83,7 @@ export async function getSimulationResults() {
 		protectors: [],
 		simulatedAndVisualizedTransactions: [],
 		visualizedPersonalSignRequests: [],
+		parsedInputData: [],
 	}
 	try {
 		return (await browserStorageLocalGet('simulationResults'))?.simulationResults ?? emptyResults

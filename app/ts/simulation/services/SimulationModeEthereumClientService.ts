@@ -879,6 +879,14 @@ export const parseEventIfPossible = (ethersInterface: ethers.Interface, log: Eth
 	}
 }
 
+export const parseTransactionInputIfPossible = (ethersInterface: ethers.Interface, data: EthereumData, value: EthereumQuantity) => {
+	try {
+		return ethersInterface.parseTransaction({ data: dataStringWith0xStart(data), value })
+	} catch (error) {
+		return null
+	}
+}
+
 const getAddressesInteractedWithErc20s = (events: readonly EthereumEvent[]): { token: bigint, owner: bigint, tokenId: undefined, type: 'ERC20' }[] => {
 	const erc20ABI = [
 		'event Withdrawal(address indexed src, uint wad)', // weth withdraw function

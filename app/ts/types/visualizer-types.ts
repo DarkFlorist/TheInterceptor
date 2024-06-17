@@ -261,6 +261,20 @@ export const EnrichedEthereumEvent = funtypes.Union(
 	),
 )
 
+export type EnrichedEthereumInputData = funtypes.Static<typeof EnrichedEthereumInputData>
+export const EnrichedEthereumInputData = funtypes.Union(
+	funtypes.ReadonlyObject({
+		input: EthereumInput,
+		type: funtypes.Literal('NonParsed')
+	}),
+	funtypes.ReadonlyObject({
+		input: EthereumInput,
+		type: funtypes.Literal('Parsed'),
+		name: funtypes.String, // eg. 'Transfer'
+		args: funtypes.ReadonlyArray(SolidityVariable), // TODO: add support for structs (abiV2)
+	}),
+)
+
 export type EnrichedEthereumEvents = funtypes.Static<typeof EnrichedEthereumEvents>
 export const EnrichedEthereumEvents = funtypes.ReadonlyArray(EnrichedEthereumEvent)
 
@@ -521,6 +535,7 @@ export const SimulatedAndVisualizedTransactionBase = funtypes.Intersect(
 		quarantine: funtypes.Boolean,
 		quarantineReasons: funtypes.ReadonlyArray(funtypes.String),
 		events: funtypes.ReadonlyArray(EnrichedEthereumEventWithMetadata),
+		parsedInputData: EnrichedEthereumInputData,
 		transactionIdentifier: EthereumQuantity,
 	}),
 	funtypes.Union(
@@ -716,6 +731,7 @@ export const EventsForEachTransaction = funtypes.ReadonlyArray(funtypes.Readonly
 export type CompleteVisualizedSimulation = funtypes.Static<typeof CompleteVisualizedSimulation>
 export const CompleteVisualizedSimulation = funtypes.ReadonlyObject({
 	eventsForEachTransaction: EventsForEachTransaction,
+	parsedInputData: funtypes.ReadonlyArray(EnrichedEthereumInputData),
 	protectors: funtypes.ReadonlyArray(ProtectorResults),
 	addressBookEntries: funtypes.ReadonlyArray(AddressBookEntry),
 	tokenPrices: funtypes.ReadonlyArray(TokenPriceEstimate),
@@ -752,6 +768,7 @@ export const EthereumSubscriptionsAndFilters = funtypes.ReadonlyArray(funtypes.U
 export type VisualizedSimulatorState = funtypes.Static<typeof VisualizedSimulatorState>
 export const VisualizedSimulatorState = funtypes.ReadonlyObject({
 	eventsForEachTransaction: funtypes.ReadonlyArray(funtypes.ReadonlyArray(EnrichedEthereumEvent)),
+	parsedInputData: funtypes.ReadonlyArray(EnrichedEthereumInputData),
 	protectors: funtypes.ReadonlyArray(ProtectorResults),
 	addressBookEntries: funtypes.ReadonlyArray(AddressBookEntry),
 	tokenPrices: funtypes.ReadonlyArray(TokenPriceEstimate),

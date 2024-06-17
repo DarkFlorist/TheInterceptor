@@ -1,7 +1,7 @@
 import * as funtypes from 'funtypes'
 import { PendingChainChangeConfirmationPromise, RpcConnectionStatus, TabIconDetails, TabState } from './user-interface-types.js'
 import { EthereumAddress, EthereumBlockHeaderWithTransactionHashes, EthereumBytes32, EthereumData, EthereumQuantity, EthereumSignedTransactionWithBlockData, EthereumTimestamp, NonHexBigInt, OptionalEthereumAddress } from './wire-types.js'
-import { ModifyAddressWindowState, CompleteVisualizedSimulation, NamedTokenId, ProtectorResults, SimulatedAndVisualizedTransaction, SimulationState, TokenPriceEstimate, EnrichedEthereumEvent } from './visualizer-types.js'
+import { ModifyAddressWindowState, CompleteVisualizedSimulation, NamedTokenId, ProtectorResults, SimulatedAndVisualizedTransaction, SimulationState, TokenPriceEstimate, EnrichedEthereumEvent, EnrichedEthereumInputData } from './visualizer-types.js'
 import { VisualizedPersonalSignRequest } from './personal-message-definitions.js'
 import { UniqueRequestIdentifier, WebsiteSocket } from '../utils/requests.js'
 import { EthGetFeeHistoryResponse, EthGetLogsResponse, EthGetStorageAtParams, EthTransactionReceiptResponse, GetBlockReturn, SendRawTransactionParams, SendTransactionParams, WalletAddEthereumChain } from './JsonRpc-types.js'
@@ -652,6 +652,7 @@ export const SimulateGovernanceContractExecutionReply = funtypes.ReadonlyObject(
 				visualizedPersonalSignRequests: funtypes.ReadonlyArray(VisualizedPersonalSignRequest),
 				tokenPrices: funtypes.ReadonlyArray(TokenPriceEstimate),
 				eventsForEachTransaction: funtypes.ReadonlyArray(funtypes.ReadonlyArray(EnrichedEthereumEvent)),
+				parsedInputData: funtypes.ReadonlyArray(EnrichedEthereumInputData),
 				protectors: funtypes.ReadonlyArray(ProtectorResults),
 				simulationState: funtypes.Union(SimulationState),
 			})

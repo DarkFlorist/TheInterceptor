@@ -1,9 +1,9 @@
 import { Erc1155TokenBalanceChange, Erc721and1155OperatorChange, LogSummarizer, SummaryOutcome } from '../../simulation/services/LogSummarizer.js'
 import { RenameAddressCallBack, RpcConnectionStatus } from '../../types/user-interface-types.js'
-import { Erc721TokenApprovalChange, SimulatedAndVisualizedTransaction, SimulationAndVisualisationResults, ERC20TokenApprovalChange, Erc20TokenBalanceChange, TransactionWithAddressBookEntries, NamedTokenId } from '../../types/visualizer-types.js'
+import { Erc721TokenApprovalChange, SimulatedAndVisualizedTransaction, SimulationAndVisualisationResults, ERC20TokenApprovalChange, Erc20TokenBalanceChange, TransactionWithAddressBookEntries, NamedTokenId, EnrichedEthereumInputData } from '../../types/visualizer-types.js'
 import { BigAddress, SmallAddress, WebsiteOriginText } from '../subcomponents/address.js'
 import { Ether, EtherAmount, EtherSymbol, TokenWithAmount, TokenAmount, TokenPrice, TokenSymbol, TokenOrEth } from '../subcomponents/coins.js'
-import { NonTokenLogAnalysis, TokenLogAnalysis } from './Transactions.js'
+import { NonTokenLogAnalysis, ParsedInputData, TokenLogAnalysis } from './Transactions.js'
 import { CopyToClipboard } from '../subcomponents/CopyToClipboard.js'
 import { SomeTimeAgo, humanReadableDateDeltaLessDetailed } from '../subcomponents/SomeTimeAgo.js'
 import { addressString, bytes32String, dataStringWith0xStart, nanoString } from '../../utils/bigint.js'
@@ -722,11 +722,13 @@ export function SimulationSummary(param: SimulationSummaryParams) {
 }
 
 type RawTransactionDetailsCardParams = {
+	addressMetaData: readonly AddressBookEntry[]
+	parsedInputData: EnrichedEthereumInputData | undefined
 	transaction: TransactionWithAddressBookEntries
 	renameAddressCallBack: RenameAddressCallBack
 	gasSpent: bigint
 }
-export function RawTransactionDetailsCard({ transaction, renameAddressCallBack, gasSpent }: RawTransactionDetailsCardParams) {
+export function RawTransactionDetailsCard({ transaction, renameAddressCallBack, gasSpent, parsedInputData, addressMetaData }: RawTransactionDetailsCardParams) {
 	const [showSummary, setShowSummary] = useState<boolean>(false)
 
 	return <div class = 'card' style = 'margin-top: 10px; margin-bottom: 10px'>
@@ -779,6 +781,8 @@ export function RawTransactionDetailsCard({ transaction, renameAddressCallBack, 
 					<div class = 'textbox'>
 						<p class = 'paragraph' style = 'color: var(--subtitle-text-color)'>{ dataStringWith0xStart(transaction.input) }</p>
 					</div>
+					<p class = 'paragraph' style = 'color: var(--subtitle-text-color)'>Parsed transaction input: </p>
+					{ parsedInputData?.type !== 'Parsed' ? <></> : <ParsedInputData inputData = { parsedInputData } addressMetaData = { addressMetaData } renameAddressCallBack = { renameAddressCallBack }/> }
 				</div>
 			</div>
 		}
