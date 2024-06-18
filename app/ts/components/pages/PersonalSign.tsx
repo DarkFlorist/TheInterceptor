@@ -15,7 +15,7 @@ import { AddressBookEntry } from '../../types/addressBookTypes.js'
 import { EnrichedEIP712, EnrichedEIP712Message, TypeEnrichedEIP712MessageRecord } from '../../types/eip721.js'
 import { TransactionCreated } from '../simulationExplaining/SimulationSummary.js'
 import { EnrichedSolidityTypeComponent } from '../subcomponents/solidityType.js'
-import { QuarantineReasons } from '../simulationExplaining/Transactions.js'
+import { ParsedInputData, QuarantineReasons } from '../simulationExplaining/Transactions.js'
 
 type SignatureCardParams = {
 	visualizedPersonalSignRequest: VisualizedPersonalSignRequest
@@ -226,10 +226,12 @@ function SafeTx({ visualizedPersonalSignRequestSafeTx, renameAddressCallBack }: 
 			<CellElement text = 'value: '/>
 			<CellElement text = { <Ether amount = { visualizedPersonalSignRequestSafeTx.message.message.value } rpcNetwork = { visualizedPersonalSignRequestSafeTx.rpcNetwork } fontSize = 'normal'/>  }/>
 		</span>
-		<p class = 'paragraph' style = 'color: var(--subtitle-text-color)'>Raw transaction input: </p>
+		<p class = 'paragraph' style = 'color: var(--subtitle-text-color)'>Gnosis Safe meta transaction input: </p>
 		<div class = 'textbox'>
 			<p class = 'paragraph' style = 'color: var(--subtitle-text-color)'>{ dataStringWith0xStart(visualizedPersonalSignRequestSafeTx.message.message.data) }</p>
 		</div>
+		<p class = 'paragraph' style = 'color: var(--subtitle-text-color)'>Parsed Gnosis Safe meta transaction: </p>
+		{ visualizedPersonalSignRequestSafeTx.parsedMessageData?.type !== 'Parsed' ? <p class = 'paragraph' style = 'color: var(--subtitle-text-color)'>No ABI available</p> : <ParsedInputData inputData = { visualizedPersonalSignRequestSafeTx.parsedMessageData } addressMetaData = { visualizedPersonalSignRequestSafeTx.parsedMessageDataAddressBookEntries } renameAddressCallBack = { renameAddressCallBack }/> }
 	</>
 }
 

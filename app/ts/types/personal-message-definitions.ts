@@ -6,6 +6,7 @@ import { AddressBookEntry } from './addressBookTypes.js'
 import { Website } from './websiteAccessTypes.js'
 import { SignerName } from './signerTypes.js'
 import { EnrichedEIP712 } from './eip721.js'
+import { EnrichedEthereumInputData } from './EnrichedEthereumData.js'
 
 type EIP2612Message = funtypes.Static<typeof EIP2612Message>
 const EIP2612Message = funtypes.ReadonlyObject({
@@ -453,7 +454,7 @@ export const SafeTx = funtypes.ReadonlyObject({
     primaryType: funtypes.Literal('SafeTx'),
     domain: funtypes.Intersect(
 		funtypes.Partial({
-			chainId: NonHexBigInt,
+			chainId: funtypes.Union(EthereumQuantity, NonHexBigInt)
 		}),
 		funtypes.ReadonlyObject({
         	verifyingContract: EthereumAddress,
@@ -480,6 +481,8 @@ export const VisualizedPersonalSignRequestSafeTx = funtypes.Intersect(
 		method: EthSignTyped,
 		type: funtypes.Literal('SafeTx'),
 		message: SafeTx,
+		parsedMessageDataAddressBookEntries: funtypes.ReadonlyArray(AddressBookEntry),
+		parsedMessageData: EnrichedEthereumInputData,
 		gasToken: AddressBookEntry,
 		to: AddressBookEntry,
 		refundReceiver: AddressBookEntry,

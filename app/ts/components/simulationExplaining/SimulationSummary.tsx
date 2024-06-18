@@ -1,6 +1,6 @@
 import { Erc1155TokenBalanceChange, Erc721and1155OperatorChange, LogSummarizer, SummaryOutcome } from '../../simulation/services/LogSummarizer.js'
 import { RenameAddressCallBack, RpcConnectionStatus } from '../../types/user-interface-types.js'
-import { Erc721TokenApprovalChange, SimulatedAndVisualizedTransaction, SimulationAndVisualisationResults, ERC20TokenApprovalChange, Erc20TokenBalanceChange, TransactionWithAddressBookEntries, NamedTokenId, EnrichedEthereumInputData } from '../../types/visualizer-types.js'
+import { Erc721TokenApprovalChange, SimulatedAndVisualizedTransaction, SimulationAndVisualisationResults, ERC20TokenApprovalChange, Erc20TokenBalanceChange, TransactionWithAddressBookEntries, NamedTokenId } from '../../types/visualizer-types.js'
 import { BigAddress, SmallAddress, WebsiteOriginText } from '../subcomponents/address.js'
 import { Ether, EtherAmount, EtherSymbol, TokenWithAmount, TokenAmount, TokenPrice, TokenSymbol, TokenOrEth } from '../subcomponents/coins.js'
 import { NonTokenLogAnalysis, ParsedInputData, TokenLogAnalysis } from './Transactions.js'
@@ -17,6 +17,7 @@ import { AddressBookEntry, Erc1155Entry, Erc20TokenEntry, Erc721Entry } from '..
 import { Website } from '../../types/websiteAccessTypes.js'
 import { extractTokenEvents } from '../../background/metadataUtils.js'
 import { EditEnsNamedHashCallBack } from '../subcomponents/ens.js'
+import { EnrichedEthereumInputData } from '../../types/EnrichedEthereumData.js'
 
 type Erc20BalanceChangeParams = {
 	erc20TokenBalanceChanges: Erc20TokenBalanceChange[]
@@ -723,7 +724,7 @@ export function SimulationSummary(param: SimulationSummaryParams) {
 
 type RawTransactionDetailsCardParams = {
 	addressMetaData: readonly AddressBookEntry[]
-	parsedInputData: EnrichedEthereumInputData | undefined
+	parsedInputData: EnrichedEthereumInputData
 	transaction: TransactionWithAddressBookEntries
 	renameAddressCallBack: RenameAddressCallBack
 	gasSpent: bigint
@@ -782,7 +783,7 @@ export function RawTransactionDetailsCard({ transaction, renameAddressCallBack, 
 						<p class = 'paragraph' style = 'color: var(--subtitle-text-color)'>{ dataStringWith0xStart(transaction.input) }</p>
 					</div>
 					<p class = 'paragraph' style = 'color: var(--subtitle-text-color)'>Parsed transaction input: </p>
-					{ parsedInputData?.type !== 'Parsed' ? <></> : <ParsedInputData inputData = { parsedInputData } addressMetaData = { addressMetaData } renameAddressCallBack = { renameAddressCallBack }/> }
+					{ parsedInputData?.type !== 'Parsed' ? <p class = 'paragraph' style = 'color: var(--subtitle-text-color)'>No ABI available</p> : <ParsedInputData inputData = { parsedInputData } addressMetaData = { addressMetaData } renameAddressCallBack = { renameAddressCallBack }/> }
 				</div>
 			</div>
 		}

@@ -2,9 +2,9 @@ import { RenameAddressCallBack } from '../../../types/user-interface-types.js'
 import { BigAddress } from '../../subcomponents/address.js'
 import { AllApproval, TokenAmount, TokenSymbol } from '../../subcomponents/coins.js'
 import { GasFee, TransactionGasses } from '../SimulationSummary.js'
-import { TokenVisualizerResultWithMetadata } from '../../../types/visualizer-types.js'
 import { tokenEventToTokenSymbolParams } from './CatchAllVisualizer.js'
 import { RpcNetwork } from '../../../types/rpc.js'
+import { TokenVisualizerResultWithMetadata } from '../../../types/EnrichedEthereumData.js'
 
 type SimpleTokenApprovalVisualisation = {
 	approval: TokenVisualizerResultWithMetadata

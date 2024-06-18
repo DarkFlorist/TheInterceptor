@@ -1,11 +1,11 @@
 import { bytesToUnsigned, dataStringWith0xStart } from '../utils/bigint.js'
-import { ParsedEvent, TokenVisualizerResult } from '../types/visualizer-types.js'
 import { parseEventIfPossible } from './services/SimulationModeEthereumClientService.js'
 import { Erc1155ABI } from '../utils/abi.js'
 import { Interface } from 'ethers'
 import { EthereumEvent } from '../types/ethSimulate-types.js'
 import { EthereumBytes32 } from '../types/wire-types.js'
 import { extractENSFuses } from '../utils/ethereumNameService.js'
+import { ParsedEvent, TokenVisualizerResult } from '../types/EnrichedEthereumData.js'
 
 export function handleERC20TransferLog(eventLog: EthereumEvent): TokenVisualizerResult[] {
 	if (eventLog.topics[1] === undefined || eventLog.topics[2] === undefined) throw new Error('unknown log')

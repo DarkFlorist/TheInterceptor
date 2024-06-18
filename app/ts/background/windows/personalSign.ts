@@ -4,11 +4,12 @@ import { OpenSeaOrderMessage, PersonalSignRequestIdentifiedEIP712Message, Visual
 import { assertNever } from '../../utils/typescript.js'
 import { extractEIP712Message, validateEIP712Types } from '../../utils/eip712Parsing.js'
 import { getRpcNetworkForChain, getTabState } from '../storageVariables.js'
-import { identifyAddress } from '../metadataUtils.js'
+import { getAddressesForSolidityTypes, identifyAddress } from '../metadataUtils.js'
 import { AddressBookEntry } from '../../types/addressBookTypes.js'
 import { SignedMessageTransaction } from '../../types/visualizer-types.js'
 import { RpcNetwork } from '../../types/rpc.js'
 import { getChainName } from '../../utils/constants.js'
+import { parseInputData } from '../../simulation/simulator.js'
 
 async function addMetadataToOpenSeaOrder(ethereumClientService: EthereumClientService, requestAbortController: AbortController | undefined, openSeaOrder: OpenSeaOrderMessage) {
 	return {
@@ -123,20 +124,29 @@ export async function craftPersonalSignPopupMessage(ethereumClientService: Ether
 				rawMessage: stringifyJSONWithBigInts(parsed, 4),
 			}
 		}
-		case 'SafeTx': return {
-			method: originalParams.originalRequestParameters.method,
-			...basicParams,
-			rpcNetwork: parsed.domain.chainId !== undefined && rpcNetwork.chainId !== parsed.domain.chainId ? await getRpcNetworkForChain(parsed.domain.chainId) : rpcNetwork,
-			type: 'SafeTx' as const,
-			message: parsed,
-			account,
-			to: await identifyAddress(ethereumClientService, requestAbortController, parsed.message.to),
-			gasToken: await identifyAddress(ethereumClientService, requestAbortController, parsed.message.gasToken),
-			refundReceiver: await identifyAddress(ethereumClientService, requestAbortController, parsed.message.refundReceiver),
-			verifyingContract: await identifyAddress(ethereumClientService, requestAbortController, parsed.domain.verifyingContract),
-			quarantine: false,
-			quarantineReasons: [],
-			rawMessage: stringifyJSONWithBigInts(parsed, 4),
+		case 'SafeTx': {
+			const addresses = {
+				to: await identifyAddress(ethereumClientService, requestAbortController, parsed.message.to),
+				gasToken: await identifyAddress(ethereumClientService, requestAbortController, parsed.message.gasToken),
+				refundReceiver: await identifyAddress(ethereumClientService, requestAbortController, parsed.message.refundReceiver),
+				verifyingContract: await identifyAddress(ethereumClientService, requestAbortController, parsed.domain.verifyingContract),
+			}
+			const parsedMessageData = await parseInputData({ to: parsed.message.to, value: 0n, input: parsed.message.data }, ethereumClientService, requestAbortController)
+			const addressesInEventsAndInputData = getAddressesForSolidityTypes(parsedMessageData.type === 'Parsed' ? parsedMessageData.args : [])
+			return {
+				method: originalParams.originalRequestParameters.method,
+				...basicParams,
+				rpcNetwork: parsed.domain.chainId !== undefined && rpcNetwork.chainId !== parsed.domain.chainId ? await getRpcNetworkForChain(parsed.domain.chainId) : rpcNetwork,
+				type: 'SafeTx' as const,
+				message: parsed,
+				account,
+				...addresses,
+				quarantine: false,
+				quarantineReasons: [],
+				rawMessage: stringifyJSONWithBigInts(parsed, 4),
+				parsedMessageData,
+				parsedMessageDataAddressBookEntries: await Promise.all(addressesInEventsAndInputData.map((address) => identifyAddress(ethereumClientService, requestAbortController, address)))
+			}
 		}
 		case 'OrderComponents': return {
 			method: originalParams.originalRequestParameters.method,

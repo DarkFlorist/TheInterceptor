@@ -1,7 +1,7 @@
 import { StateUpdater } from 'preact/hooks'
 import * as funtypes from 'funtypes'
 import { EthereumAddress, EthereumBlockHeader, EthereumQuantity, EthereumTimestamp, OptionalEthereumAddress } from './wire-types.js'
-import { SimulatedAndVisualizedTransaction, SimulationAndVisualisationResults, SimulationUpdatingState, SimulationResultState, ModifyAddressWindowState, EnrichedEthereumEventWithMetadata } from './visualizer-types.js'
+import { SimulatedAndVisualizedTransaction, SimulationAndVisualisationResults, SimulationUpdatingState, SimulationResultState, ModifyAddressWindowState } from './visualizer-types.js'
 import { IdentifiedSwapWithMetadata } from '../components/simulationExplaining/SwapTransactions.js'
 import { InterceptedRequest, WebsiteSocket } from '../utils/requests.js'
 import { AddressBookEntries, AddressBookEntry } from './addressBookTypes.js'
@@ -12,6 +12,7 @@ import { ICON_ACCESS_DENIED, ICON_ACTIVE, ICON_INTERCEPTOR_DISABLED, ICON_NOT_AC
 import { CodeMessageError, RpcEntries, RpcEntry, RpcNetwork } from './rpc.js'
 import { TransactionOrMessageIdentifier } from './interceptor-messages.js'
 import { EditEnsNamedHashCallBack } from '../components/subcomponents/ens.js'
+import { EnrichedEthereumEventWithMetadata } from './EnrichedEthereumData.js'
 
 export type InterceptorAccessListParams = {
 	setAndSaveAppPage: (page: Page) => void,

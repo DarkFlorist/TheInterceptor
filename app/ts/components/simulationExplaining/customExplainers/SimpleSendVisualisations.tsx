@@ -10,7 +10,7 @@ import { RpcNetwork } from '../../../types/rpc.js'
 import { ETHEREUM_LOGS_LOGGER_ADDRESS } from '../../../utils/constants.js'
 import { interleave } from '../../../utils/typed-arrays.js'
 import { extractTokenEvents } from '../../../background/metadataUtils.js'
-import { TokenVisualizerResultWithMetadata } from '../../../types/visualizer-types.js'
+import { TokenVisualizerResultWithMetadata } from '../../../types/EnrichedEthereumData.js'
 
 export type BeforeAfterAddress = {
 	address: AddressBookEntry

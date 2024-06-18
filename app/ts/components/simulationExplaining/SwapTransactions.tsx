@@ -1,4 +1,4 @@
-import { SimulatedAndVisualizedTransaction, TokenVisualizerResultWithMetadata } from '../../types/visualizer-types.js'
+import { SimulatedAndVisualizedTransaction } from '../../types/visualizer-types.js'
 import * as funtypes from 'funtypes'
 import { EthereumQuantity } from '../../types/wire-types.js'
 import { addressString } from '../../utils/bigint.js'
@@ -7,6 +7,7 @@ import { AddressBookEntry, Erc1155Entry, Erc20TokenEntry, Erc721Entry } from '..
 import { assertNever, getWithDefault } from '../../utils/typescript.js'
 import { RenameAddressCallBack } from '../../types/user-interface-types.js'
 import { extractTokenEvents } from '../../background/metadataUtils.js'
+import { TokenVisualizerResultWithMetadata } from '../../types/EnrichedEthereumData.js'
 
 type BeforeAfterBalance = funtypes.Static<typeof SwapAsset>
 const BeforeAfterBalance = funtypes.ReadonlyObject({
