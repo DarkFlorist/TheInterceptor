@@ -445,7 +445,17 @@ export async function main() {
 		}
 	}`
 
-	const ethereum = new EthereumClientService(new MockRequestHandler(), async () => {}, async () => {})
+	const rpcEntry = {
+		name: 'Goerli',
+		chainId: 5n,
+		httpsRpc: 'https://rpc-goerli.dark.florist/flipcardtrustone',
+		currencyName: 'Goerli Testnet ETH',
+		currencyTicker: 'GÖETH',
+		primary: true,
+		minimized: true,
+	}
+
+	const ethereum = new EthereumClientService(new MockRequestHandler(), async () => {}, async () => {}, rpcEntry)
 
 	describe('EIP712', () => {
 		should('can parse EIP712 message', () => {
@@ -457,7 +467,7 @@ export async function main() {
 		should('can parse safeTx message', () => {
 			SafeTx.parse(JSON.parse(safeTx))
 		})
-		
+
 		should('can validate safeTx message', () => {
 			const parsed = EIP712Message.parse(safeTx)
 			assert.equal(validateEIP712Types(parsed), true)
@@ -477,7 +487,7 @@ export async function main() {
 			assert.equal(enrichedMessage, expected)
 		})
 		const expectedPermit2 = `{"primaryType":"PermitSingle","message":{"details":{"type":"record","value":{"token":{"type":"address","value":{"name":"Tether","symbol":"USDT","decimals":"0x6","logoUri":"../vendor/@darkflorist/address-metadata/images/tokens/0xdac17f958d2ee523a2206206994597c13d831ec7.png","address":"0xdac17f958d2ee523a2206206994597c13d831ec7","type":"ERC20","entrySource":"DarkFloristMetadata"}},"amount":{"type":"unsignedInteger","value":"0xffffffffffffffffffffffffffffffffffffffff"},"expiration":{"type":"unsignedInteger","value":"0x63fa1b6f"},"nonce":{"type":"unsignedInteger","value":"0x0"}}},"spender":{"type":"address","value":{"address":"0xef1c6e67703c7bd7107eed8303fbe6ec2554bf6b","name":"0xEf1c6E67703c7BD7107eed8303Fbe6EC2554BF6B","type":"contact","entrySource":"OnChain"}},"sigDeadline":{"type":"unsignedInteger","value":"0x63d29577"}},"domain":{"name":{"type":"string","value":"Permit2"},"chainId":{"type":"unsignedInteger","value":"0x1"},"verifyingContract":{"type":"address","value":{"name":"Uniswap Permit2","protocol":"Uniswap","logoUri":"../vendor/@darkflorist/address-metadata/images/contracts/uniswap.svg","address":"0x22d473030f116ddee9f6b43ac78ba3","type":"contract","entrySource":"DarkFloristMetadata"}}}}`
-			
+
 		should('can extract permit2Message message', async () => {
 			const parsed = EIP712Message.parse(permit2Message)
 			const enrichedMessage = stringifyJSONWithBigInts(await extractEIP712Message(ethereum, undefined, parsed, false))
