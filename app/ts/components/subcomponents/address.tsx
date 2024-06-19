@@ -38,7 +38,7 @@ export function AddressIcon(param: AddressIconParams) {
 	if (param.logoUri !== undefined) {
 		return (
 			<AddressIconFrame isBig = { param.isBig }>
-				<img src = { param.logoUri } style = { { display: 'block', width: '1em', 'min-width': '1em', height: '1em' } }/>
+				<img src = { param.logoUri } style = { { display: 'block', width: '1em', minWidth: '1em', height: '1em' } }/>
 			</AddressIconFrame>
 		)
 	}
