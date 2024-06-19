@@ -247,6 +247,7 @@ export function App() {
 				entrySource: 'FilledIn',
 				abi: undefined,
 				useAsActiveAddress: true,
+				declarativeNetRequestBlockMode: undefined,
 			}
 		} })
 	}
@@ -263,8 +264,9 @@ export function App() {
 				logoUri: undefined,
 				abi: undefined,
 				useAsActiveAddress: false,
+				declarativeNetRequestBlockMode: undefined,
 				...entry,
-				address: checksummedAddress(entry.address)
+				address: checksummedAddress(entry.address),
 			}
 		} })
 	}
@@ -285,6 +287,7 @@ export function App() {
 				entrySource: 'FilledIn',
 				abi: undefined,
 				useAsActiveAddress: true,
+				declarativeNetRequestBlockMode: undefined,
 			}
 		} })
 	}
