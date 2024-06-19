@@ -21,6 +21,14 @@ interface EditableAccess {
 	access: boolean | undefined,
 	interceptorDisabled: boolean | undefined,
 	removed: boolean,
+	declarativeNetRequestBlockMode: 'block-all' | 'disabled' | undefined
+}
+
+interface AccessChanges {
+	access?: boolean,
+	removed?: boolean,
+	interceptorDisabled?: boolean,
+	declarativeNetRequestBlockMode?: 'block-all' | 'disabled'
 }
 
 export function InterceptorAccessList(param: InterceptorAccessListParams) {
@@ -42,6 +50,7 @@ export function InterceptorAccessList(param: InterceptorAccessListParams) {
 					access: x.access,
 					interceptorDisabled: x.interceptorDisabled,
 					removed: false,
+					declarativeNetRequestBlockMode: x.declarativeNetRequestBlockMode,
 				}))
 			}
 			// update only the changed entities
@@ -59,6 +68,7 @@ export function InterceptorAccessList(param: InterceptorAccessListParams) {
 						access: newAccess.access,
 						interceptorDisabled: newAccess.interceptorDisabled,
 						removed: false,
+						declarativeNetRequestBlockMode: newAccess.declarativeNetRequestBlockMode,
 					}
 				}
 				// we need to merge edited and new updated access rights together
@@ -94,7 +104,7 @@ export function InterceptorAccessList(param: InterceptorAccessListParams) {
 
 	const goHome = () => param.setAndSaveAppPage({ page: 'Home' })
 
-	function setWebsiteAccess(index: number, changes: { access?: boolean, removed?: boolean, interceptorDisabled?: boolean }) {
+	function setWebsiteAccess(index: number, changes: AccessChanges) {
 		if (editableAccessList === undefined) return
 		setEditableAccessList(editableAccessList.map((x , i) => {
 			if (index === i) {
@@ -105,13 +115,14 @@ export function InterceptorAccessList(param: InterceptorAccessListParams) {
 					access: changes.access === undefined ? x.access : changes.access,
 					interceptorDisabled: changes.interceptorDisabled === undefined ? x.interceptorDisabled : changes.interceptorDisabled,
 					removed: changes.removed === undefined ? x.removed : changes.removed,
+					declarativeNetRequestBlockMode: changes.declarativeNetRequestBlockMode ?? x.declarativeNetRequestBlockMode
 				}
 			}
 			return x
 		}))
 	}
 
-	function setAddressAccess(index: number, addressIndex: number, changes: { access?: boolean, removed?: boolean, interceptorDisabled?: boolean } ) {
+	function setAddressAccess(index: number, addressIndex: number, changes: AccessChanges ) {
 		if (editableAccessList === undefined) return
 		setEditableAccessList(editableAccessList.map((x , i) => {
 			if(index === i ) {
@@ -125,7 +136,8 @@ export function InterceptorAccessList(param: InterceptorAccessListParams) {
 					})),
 					access: x.access,
 					interceptorDisabled: changes.interceptorDisabled === undefined ? x.interceptorDisabled : changes.interceptorDisabled,
-					removed: x.removed
+					removed: x.removed,
+					declarativeNetRequestBlockMode: changes.declarativeNetRequestBlockMode ?? x.declarativeNetRequestBlockMode
 				}
 			}
 			return x
@@ -133,7 +145,11 @@ export function InterceptorAccessList(param: InterceptorAccessListParams) {
 	}
 
 	function hasChanged(state: EditableAccess) {
-		if (state.removed || state.access !== state.websiteAccess.access || state.interceptorDisabled !== state.websiteAccess.interceptorDisabled) return true
+		if (state.removed
+			|| state.access !== state.websiteAccess.access
+			|| state.interceptorDisabled !== state.websiteAccess.interceptorDisabled
+			|| state.declarativeNetRequestBlockMode !== state.websiteAccess.declarativeNetRequestBlockMode
+		) return true
 		for (const [index, access] of state.addressAccessModified.entries()) {
 			const addressAccessAtIndex = state.addressAccess[index]
 			if (addressAccessAtIndex === undefined) throw new Error('addressAccessAtIndex was undefined')
@@ -165,6 +181,7 @@ export function InterceptorAccessList(param: InterceptorAccessListParams) {
 						access: addr.access,
 					})),
 					interceptorDisabled: editable.interceptorDisabled,
+					declarativeNetRequestBlockMode: editable.declarativeNetRequestBlockMode,
 				},
 				removed: editable.removed,
 			}
@@ -245,6 +262,10 @@ export function InterceptorAccessList(param: InterceptorAccessListParams) {
 											<label class = 'form-control' style = 'margin: auto'>
 												<input type = 'checkbox' checked = { access.interceptorDisabled } onInput = { e => { if (e.target instanceof HTMLInputElement) { setWebsiteAccess(accessListIndex, { interceptorDisabled: e.target.checked }) } } } />
 												<p class = 'paragraph checkbox-text' style = 'white-space: nowrap;'>Disable Interceptor for the site (not recommended). </p>
+											</label>
+											<label class = 'form-control' style = 'margin: auto'>
+												<input type = 'checkbox' checked = { access.declarativeNetRequestBlockMode === 'block-all' } onInput = { e => { if (e.target instanceof HTMLInputElement) { setWebsiteAccess(accessListIndex, { declarativeNetRequestBlockMode: e.target.checked ? 'block-all' : 'disabled' }) } } } />
+												<p class = 'paragraph checkbox-text' style = 'white-space: nowrap;'>Block all external requests made by the site (not recommended). </p>
 											</label>
 											{ access.addressAccess.length === 0 ? <p className = 'paragraph'> No individual address accesses given </p> : <>
 												{ access.addressAccessModified.map((websiteAccessAddress, addressIndex) => (

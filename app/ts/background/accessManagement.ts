@@ -4,7 +4,7 @@ import { requestAccessFromUser } from './windows/interceptorAccess.js'
 import { retrieveWebsiteDetails, updateExtensionIcon } from './iconHandler.js'
 import { TabConnection, WebsiteTabConnections } from '../types/user-interface-types.js'
 import { InpageScriptCallBack, Settings } from '../types/interceptor-messages.js'
-import { updateWebsiteAccess } from './settings.js'
+import { getWebsiteAccess, updateWebsiteAccess } from './settings.js'
 import { sendSubscriptionReplyOrCallBack } from './messageSending.js'
 import { Simulator } from '../simulation/simulator.js'
 import { WebsiteSocket } from '../utils/requests.js'
@@ -211,7 +211,51 @@ async function updateTabConnections(simulator: Simulator, websiteTabConnections:
 	}
 }
 
+let webRequestListener: (details: browser.webRequest._OnBeforeRequestDetails) => void = () => {}
+
+export async function updateDeclarativeNetRequest() {
+	const accesses = await getWebsiteAccess()
+	const sitesToBlock = accesses.filter((access) => access.declarativeNetRequestBlockMode === 'block-all').map((acccess) => acccess.website.websiteOrigin)
+	if (browser.runtime.getManifest().manifest_version === 3) {
+		await browser.declarativeNetRequest.updateDynamicRules({ removeRuleIds: [1] })
+
+		if (sitesToBlock.length === 0) return
+		await browser.declarativeNetRequest.updateDynamicRules({
+			addRules: [{
+				id: 1,
+				priority: 1,
+				action : { "type" : "block" },
+				condition: { initiatorDomains: sitesToBlock, domainType: 'thirdParty' }
+			}]
+		})
+		// enable `declarativeNetRequestFeedback` permission and uncmoment to enable debugging
+		// const a = (data: any) => { console.log(data) }
+		// (browser.declarativeNetRequest as any).onRuleMatchedDebug.addListener(a)
+	} else {
+		browser.webRequest.onBeforeRequest.removeListener(webRequestListener)
+		webRequestListener = (details: browser.webRequest._OnBeforeRequestDetails) => {
+			if (details.originUrl === undefined) return {}
+			if (details.type === 'main_frame') return {}
+			const websiteOrigin = (new URL(details.originUrl)).hostname
+			const destinationHost = (new URL(details.url)).hostname
+			if (destinationHost === websiteOrigin) return {}
+			if (sitesToBlock.find((blockUrl) => blockUrl === websiteOrigin) !== undefined) return { cancel: true }
+			return {}
+		}
+		if (sitesToBlock.length === 0) return
+		browser.webRequest.onBeforeRequest.addListener(webRequestListener, { urls: ['http://*/*', 'https://*/*'] }, ['blocking'])
+	}
+}
+
+export const areWeBlocking = async (websiteOrigin: string) => {
+	const accesses = await getWebsiteAccess()
+	const sitesToBlock = accesses.filter((access) => access.declarativeNetRequestBlockMode === 'block-all').map((acccess) => acccess.website.websiteOrigin)
+	if (sitesToBlock.find((blockUrl) => blockUrl === websiteOrigin) !== undefined) return true
+	return false
+}
+
 export function updateWebsiteApprovalAccesses(simulator: Simulator, websiteTabConnections: WebsiteTabConnections, settings: Settings, promptForAccessesIfNeeded = true) {
+	updateDeclarativeNetRequest()
 	// update port connections and disconnect from ports that should not have access anymore
 	for (const [_tab, tabConnection] of websiteTabConnections.entries() ) {
 		updateTabConnections(simulator, websiteTabConnections, tabConnection, promptForAccessesIfNeeded, settings)
