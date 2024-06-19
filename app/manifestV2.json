@@ -1,6 +1,6 @@
 {
-	"name": "Interceptor",
-	"description": "Interceptor",
+	"name": "The Interceptor",
+	"description": "Gain a clearer understanding of your Ethereum transactions with The Interceptor browser extension",
 	"version": "0.0.0",
 	"manifest_version": 2,
 	"browser_action": {
