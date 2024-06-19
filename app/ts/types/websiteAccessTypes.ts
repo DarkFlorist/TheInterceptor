@@ -23,6 +23,8 @@ export const WebsiteAccess = funtypes.Intersect(
 	funtypes.ReadonlyPartial({
 		access: funtypes.Boolean,
 		interceptorDisabled: funtypes.Boolean,
+		declarativeNetRequestBlockMode: funtypes.Union(funtypes.Literal('block-all'), funtypes.Literal('disabled'))
+		
 	})
 )
 
