@@ -8,21 +8,12 @@
 }
 
 @font-face {
-    font-family: "Atkinson";
-    src: url("../fonts/Atkinson-Hyperlegible-Bold-102a.woff2") format("woff2");
-    font-weight: bold;
-    font-style: normal;
-}
-
-@font-face {
-    font-family: "Atkinson";
-    src: url("../fonts/Atkinson-Hyperlegible-Italic-102a.woff2") format("woff2");
-    font-weight: normal;
-    font-style: italic;
+    font-family: "Inter";
+    src: url("../fonts/Inter-VariableFont.ttf") format("ttf");
 }
 
 html { font-size: 100%; }
-body { font-family: "Atkinson" }
+body { font-family: "Inter" }
 
 :root {
 	--bg-color: #303030;
@@ -63,7 +54,7 @@ body { font-family: "Atkinson" }
 }
 
 button:where(:not(.btn)) {
-	font-family: "Atkinson";
+	font-family: "Inter";
 	background-color: var(--primary-color);
 }
 
@@ -1070,7 +1061,6 @@ summary:where(details[open] > *) {
 
 .text-input > input {
 	font: inherit;
-	font-family: "Atkinson";
 	grid-area: 2 / 1;
 	background-color: var(--bg-color, transparent);
 	color: var(--text-color);
@@ -1129,4 +1119,8 @@ summary:where(details[open] > *) {
 	background: #3e3e3e;
 	place-content: center;
 	justify-items: center;
+}
+
+[data-hint="Address copied!"] {
+	font-family: 'Atkinson';
 }
