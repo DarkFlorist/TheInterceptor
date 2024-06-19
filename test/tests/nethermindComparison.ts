@@ -6,7 +6,6 @@ import { eth_getBlockByNumber_goerli_8443561_false, eth_getBlockByNumber_goerli_
 import { describe, should } from '../micro-should.js'
 import * as assert from 'assert'
 import { assertIsObject } from '../../app/ts/utils/typescript.js'
-import { RpcEntry } from '../../app/ts/types/rpc.js'
 import { stringToUint8Array } from '../../app/ts/utils/bigint.js'
 import { areEqualUint8Arrays } from '../../app/ts/utils/typed-arrays.js'
 
@@ -17,12 +16,11 @@ function parseRequest(data: string) {
 }
 
 class MockEthereumJSONRpcRequestHandler {
-	private rpcEntry: RpcEntry
-	constructor(rpcEntry: RpcEntry, _caching = false) {
-		this.rpcEntry = rpcEntry
-	}
+	public rpcUrl = 'https://rpc.dark.florist/flipcardtrustone'
 
 	public clearCache = () => {}
+
+	public getChainId = async () => 5n
 
 	public readonly jsonRpcRequest = async (rpcRequest: EthereumJsonRpcRequest) => {
 		switch (rpcRequest.method) {
@@ -49,7 +47,6 @@ class MockEthereumJSONRpcRequestHandler {
 		}
 		return
 	}
-	public readonly getRpcEntry = () => this.rpcEntry
 }
 
 export async function main() {
@@ -64,7 +61,9 @@ export async function main() {
 		minimized: true,
 		weth: 0xb4fbf271143f4fbf7b91a5ded31805e42b2208d6n,
 	}
-	const ethereum = new EthereumClientService(new MockEthereumJSONRpcRequestHandler(rpcNetwork), async () => {}, async () => {})
+
+	const ethereum = new EthereumClientService(new MockEthereumJSONRpcRequestHandler(), async () => {}, async () => {}, rpcNetwork)
+
 	const simulationState = {
 		addressToMakeRich: undefined,
 		simulatedTransactions: [],
