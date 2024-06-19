@@ -1121,6 +1121,6 @@ summary:where(details[open] > *) {
 	justify-items: center;
 }
 
-[data-hint="Address copied!"] {
+.text-legible {
 	font-family: 'Atkinson';
 }

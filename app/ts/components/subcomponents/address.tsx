@@ -101,12 +101,12 @@ export function BigAddress(params: BigAddressParams) {
 			</span>
 			{ !params.noCopying && addrString !== undefined ?
 				<CopyToClipboard content = { addrString } copyMessage = 'Address copied!'>
-					<p class = 'subtitle is-7 noselect nopointer' style = 'text-overflow: ellipsis; white-space: nowrap;'>
+					<p class = 'subtitle is-7 noselect nopointer text-legible' style = 'text-overflow: ellipsis; white-space: nowrap;'>
 						{ subTitle }
 					</p>
 				</CopyToClipboard>
 				:
-				<p class = 'subtitle is-7 noselect nopointer' style = 'text-overflow: ellipsis; white-space: nowrap;'>
+				<p class = 'subtitle is-7 noselect nopointer text-legible' style = 'text-overflow: ellipsis; white-space: nowrap;'>
 					{ subTitle }
 				</p>
 			}
