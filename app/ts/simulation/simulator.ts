@@ -1,21 +1,21 @@
 import { EthereumClientService } from './services/EthereumClientService.js'
 import { selfTokenOops } from './protectors/selfTokenOops.js'
-import { EthereumBlockHeader, EthereumData } from '../types/wire-types.js'
+import { EthereumAddress, EthereumBlockHeader, EthereumData, EthereumQuantity } from '../types/wire-types.js'
 import { bytes32String } from '../utils/bigint.js'
 import { feeOops } from './protectors/feeOops.js'
 import { commonTokenOops } from './protectors/commonTokenOops.js'
 import { eoaApproval } from './protectors/eoaApproval.js'
 import { eoaCalldata } from './protectors/eoaCalldata.js'
 import { tokenToContract } from './protectors/tokenToContract.js'
-import { WebsiteCreatedEthereumUnsignedTransaction, SimulationState, TokenVisualizerResult, EnrichedEthereumEvent, ParsedEvent } from '../types/visualizer-types.js'
+import { WebsiteCreatedEthereumUnsignedTransaction, SimulationState, TokenVisualizerResult, EnrichedEthereumEvent, ParsedEvent, EnrichedEthereumInputData } from '../types/visualizer-types.js'
 import { EthereumJSONRpcRequestHandler } from './services/EthereumJSONRpcRequestHandler.js'
 import { APPROVAL_LOG, DEPOSIT_LOG, ENS_ADDRESS_CHANGED, ENS_ADDR_CHANGED, ENS_CONTENT_HASH_CHANGED, ENS_ETHEREUM_NAME_SERVICE, ENS_ETH_REGISTRAR_CONTROLLER, ENS_EXPIRY_EXTENDED, ENS_FUSES_SET, ENS_NAME_CHANGED, ENS_CONTROLLER_NAME_REGISTERED, ENS_BASE_REGISTRAR_NAME_RENEWED, ENS_NAME_UNWRAPPED, ENS_NEW_OWNER, ENS_NEW_RESOLVER, ENS_NEW_TTL, ENS_PUBLIC_RESOLVER, ENS_PUBLIC_RESOLVER_2, ENS_CONTROLLER_NAME_RENEWED, ENS_REGISTRY_WITH_FALLBACK, ENS_REVERSE_CLAIMED, ENS_REVERSE_REGISTRAR, ENS_TEXT_CHANGED, ENS_TEXT_CHANGED_KEY_VALUE, ENS_TOKEN_WRAPPER, ENS_TRANSFER, ERC1155_TRANSFERBATCH_LOG, ERC1155_TRANSFERSINGLE_LOG, ERC721_APPROVAL_FOR_ALL_LOG, TRANSFER_LOG, WITHDRAWAL_LOG, ENS_BASE_REGISTRAR_NAME_REGISTERED, ENS_NAME_WRAPPED } from '../utils/constants.js'
 import { handleApprovalLog, handleDepositLog, handleERC1155TransferBatch, handleERC1155TransferSingle, handleERC20TransferLog, handleEnsAddrChanged, handleEnsAddressChanged, handleEnsContentHashChanged, handleEnsExpiryExtended, handleEnsFusesSet, handleEnsNameChanged, handleEnsNameUnWrapped, handleEnsNewOwner, handleEnsNewResolver, handleEnsNewTtl, handleEnsControllerNameRenewed, handleEnsReverseClaimed, handleEnsTextChanged, handleEnsTextChangedKeyValue, handleEnsTransfer, handleErc721ApprovalForAllLog, handleControllerNameRegistered, handleBaseRegistrarNameRenewed, handleWithdrawalLog, handleBaseRegistrarNameRegistered, handleNameWrapped } from './logHandlers.js'
 import { RpcEntry } from '../types/rpc.js'
 import { AddressBookEntryCategory } from '../types/addressBookTypes.js'
-import { parseEventIfPossible } from './services/SimulationModeEthereumClientService.js'
+import { parseEventIfPossible, parseTransactionInputIfPossible } from './services/SimulationModeEthereumClientService.js'
 import { Interface } from 'ethers'
-import { extractAbi, extractFunctionArgumentTypes, removeTextBetweenBrackets } from '../utils/abi.js'
+import { getAbi, extractFunctionArgumentTypes, removeTextBetweenBrackets } from '../utils/abi.js'
 import { SolidityType } from '../types/solidityType.js'
 import { parseSolidityValueByTypePure } from '../utils/solidityTypes.js'
 import { identifyAddress } from '../background/metadataUtils.js'
@@ -108,11 +108,44 @@ const ensEventHandler = (parsedEvent: ParsedEvent) => {
 	return undefined
 }
 
+export const parseInputData = async (transaction: { to: EthereumAddress | undefined | null, value: EthereumQuantity, input: EthereumData}, ethereumClientService: EthereumClientService, requestAbortController: AbortController | undefined): Promise<EnrichedEthereumInputData> => {
+	const nonParsed = { input: transaction.input, type: 'NonParsed' as const }
+	if (transaction.to === undefined || transaction.to === null) return nonParsed
+	const addressBookEntry = await identifyAddress(ethereumClientService, requestAbortController, transaction.to)
+	const abi = getAbi(addressBookEntry)
+	if (!abi) return nonParsed
+	const parsed = parseTransactionInputIfPossible(new Interface(abi), transaction.input, transaction.value)
+	if (parsed === null) return nonParsed
+	const argTypes = extractFunctionArgumentTypes(parsed.signature)
+	if (argTypes === undefined) return nonParsed
+	if (parsed.args.length !== argTypes.length) return nonParsed
+	const valuesWithTypes = parsed.args.map((value, index) => {
+		const solidityType = argTypes[index]
+		const paramName = parsed.fragment.inputs[index]?.name
+		if (paramName === undefined) throw new Error('missing parameter name')
+		if (solidityType === undefined) throw new Error(`unknown solidity type: ${ solidityType }`)
+		const isArray = solidityType.includes('[')
+		const verifiedSolidityType = SolidityType.safeParse(removeTextBetweenBrackets(solidityType))
+		if (verifiedSolidityType.success === false) throw new Error(`unknown solidity type: ${ solidityType }`)
+		if (typeof value === 'object' && value !== null && 'hash' in value) {
+			// this field is stored as a hash instead as an original object
+			return { paramName, typeValue: { type: 'fixedBytes' as const, value: EthereumData.parse(value.hash) } }
+		}
+		return { paramName, typeValue: parseSolidityValueByTypePure(verifiedSolidityType.value, value, isArray) }
+	})
+	return {
+		input: transaction.input, 
+		type: 'Parsed' as const,
+		name: parsed.name,
+		args: valuesWithTypes,
+	}
+}
+
 export const parseEvents = async (events: readonly EthereumEvent[], ethereumClientService: EthereumClientService, requestAbortController: AbortController | undefined): Promise<readonly EnrichedEthereumEvent[]> => {
 	const parsedEvents = await Promise.all(events.map(async (event) => {
 		// todo, we should do this parsing earlier, to be able to add possible addresses to addressMetaData set
 		const loggersAddressBookEntry = await identifyAddress(ethereumClientService, requestAbortController, event.address)
-		const abi = extractAbi(loggersAddressBookEntry, event.address)
+		const abi = getAbi(loggersAddressBookEntry)
 		const nonParsed = { ...event, isParsed: 'NonParsed' as const, loggersAddressBookEntry }
 		if (!abi) return nonParsed
 		const parsed = parseEventIfPossible(new Interface(abi), event)

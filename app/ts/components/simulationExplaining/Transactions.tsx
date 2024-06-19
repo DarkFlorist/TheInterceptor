@@ -1,4 +1,4 @@
-import { EnrichedEthereumEventWithMetadata, SimulatedAndVisualizedTransaction, SimulationAndVisualisationResults, TokenVisualizerResultWithMetadata, TransactionVisualizationParameters } from '../../types/visualizer-types.js'
+import { EnrichedEthereumEventWithMetadata, EnrichedEthereumInputData, SimulatedAndVisualizedTransaction, SimulationAndVisualisationResults, TokenVisualizerResultWithMetadata, TransactionVisualizationParameters } from '../../types/visualizer-types.js'
 import { SmallAddress } from '../subcomponents/address.js'
 import { TokenSymbol, TokenAmount, AllApproval } from '../subcomponents/coins.js'
 import { LogAnalysisParams, NonLogAnalysisParams, RenameAddressCallBack } from '../../types/user-interface-types.js'
@@ -23,6 +23,7 @@ import { RpcNetwork } from '../../types/rpc.js'
 import { ProxyTokenTransferVisualisation } from './customExplainers/ProxySendVisualisations.js'
 import { extractTokenEvents } from '../../background/metadataUtils.js'
 import { EditEnsNamedHashCallBack, EnsNamedHashComponent } from '../subcomponents/ens.js'
+import { insertBetweenElements } from '../subcomponents/misc.js'
 
 function isPositiveEvent(visResult: TokenVisualizerResultWithMetadata, ourAddressInReferenceFrame: bigint) {
 	if (visResult.type === 'ERC20') {
@@ -151,7 +152,7 @@ export function Transaction(param: TransactionVisualizationParameters) {
 				/>
 				<TokenLogAnalysisCard simTx = { param.simTx } renameAddressCallBack = { param.renameAddressCallBack } />
 				<NonTokenLogAnalysisCard simTx = { param.simTx } renameAddressCallBack = { param.renameAddressCallBack } addressMetaData = { param.addressMetaData } editEnsNamedHashCallBack = { param.editEnsNamedHashCallBack }/>
-				<RawTransactionDetailsCard transaction = { param.simTx.transaction } renameAddressCallBack = { param.renameAddressCallBack } gasSpent = { param.simTx.gasSpent } />
+				<RawTransactionDetailsCard transaction = { param.simTx.transaction } parsedInputData = { param.simTx.parsedInputData } renameAddressCallBack = { param.renameAddressCallBack } gasSpent = { param.simTx.gasSpent } addressMetaData = { param.simulationAndVisualisationResults.addressBookEntries } />
 				<SenderReceiver from = { param.simTx.transaction.from } to = { param.simTx.transaction.to } renameAddressCallBack = { param.renameAddressCallBack }/>
 
 				<span class = 'log-table' style = 'margin-top: 10px; grid-template-columns: auto auto;'>
@@ -291,17 +292,6 @@ export function TokenLogAnalysis(param: LogAnalysisParams) {
 	} </span>
 }
 
-function insertBetweenElements<T>(array: readonly T[], elementToInsert: T): readonly T[] {
-	if (array[0] === undefined) return []
-	const newArray: T[] = [array[0]]
-	for (let i = 1; i < array.length; ++i) {
-		const entry = array[i]
-		if (entry === undefined) throw new Error('array index overflow')
-		newArray.push(elementToInsert, entry)
-	}
-	return newArray
-}
-
 type NonTokenLogEventParams = {
 	nonTokenLog: EnrichedEthereumEventWithMetadata
 	addressMetaData: readonly AddressBookEntry[]
@@ -377,4 +367,32 @@ export function NonTokenLogAnalysis(param: NonLogAnalysisParams) {
 	return <span class = 'log-table-3' style = 'justify-content: center; column-gap: 5px; row-gap: 5px;'>
 		{ param.nonTokenLogs.map((nonTokenLog) => <NonTokenLogEvent nonTokenLog = { nonTokenLog } addressMetaData = { param.addressMetaData } renameAddressCallBack = { param.renameAddressCallBack } editEnsNamedHashCallBack = { param.editEnsNamedHashCallBack }/> ) }
 	</span>
+}
+
+
+type ParsedInputDataParams = {
+	inputData: EnrichedEthereumInputData
+	addressMetaData: readonly AddressBookEntry[]
+	renameAddressCallBack: RenameAddressCallBack
+}
+
+export function ParsedInputData(params: ParsedInputDataParams) {
+	const textStyle = 'text-overflow: ellipsis; overflow: hidden;'
+	if (params.inputData.type === 'NonParsed') {
+		return <div class = 'textbox'>
+			<p class = 'paragraph' style = 'color: var(--subtitle-text-color)'>{ dataStringWith0xStart(params.inputData.input) }</p>
+		</div>
+	}
+	return <>
+		<div class = 'log-cell' style = { { 'grid-column-start': 2, 'grid-column-end': 4, display: 'flex', 'flex-wrap': 'wrap' } }>
+			<p class = 'paragraph' style = { textStyle }> { `${ params.inputData.name }(` } </p>
+			{ insertBetweenElements(params.inputData.args.map((arg) => {
+				return <>
+					<p style = { textStyle } class = 'paragraph'> { `${ arg.paramName } =` }&nbsp;</p>
+					<EnrichedSolidityTypeComponentWithAddressBook valueType = { arg.typeValue } addressMetaData = { params.addressMetaData } renameAddressCallBack = { params.renameAddressCallBack } />
+				</>
+			}), <p style = { textStyle } class = 'paragraph'>,&nbsp;</p>) }
+			<p class = 'paragraph' style = { textStyle }> { ')' } </p>
+		</div>
+	</>
 }

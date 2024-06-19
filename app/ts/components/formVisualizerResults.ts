@@ -1,5 +1,5 @@
 import { addressString, dataStringWith0xStart } from '../utils/bigint.js'
-import { EnrichedEthereumEventWithMetadata, EnrichedEthereumEvents, NamedTokenId, ParsedEnsEvent, ProtectorResults, SimulatedAndVisualizedTransaction, SimulationState } from '../types/visualizer-types.js'
+import { EnrichedEthereumEventWithMetadata, EnrichedEthereumEvents, EnrichedEthereumInputData, NamedTokenId, ParsedEnsEvent, ProtectorResults, SimulatedAndVisualizedTransaction, SimulationState } from '../types/visualizer-types.js'
 import { AddressBookEntry } from '../types/addressBookTypes.js'
 import { Interface } from 'ethers'
 import { decodeEthereumError } from '../utils/errorDecoding.js'
@@ -70,7 +70,7 @@ const enrichEnsEvent = (event: ParsedEnsEvent, ens: { ensNameHashes: MaybeENSNam
 	}
 }
 
-export function formSimulatedAndVisualizedTransaction(simState: SimulationState, eventsForEachTransaction: readonly EnrichedEthereumEvents[], protectorResults: readonly ProtectorResults[], addressBookEntries: readonly AddressBookEntry[], namedTokenIds: readonly NamedTokenId[], ens: { ensNameHashes: MaybeENSNameHashes, ensLabelHashes: MaybeENSLabelHashes }): readonly SimulatedAndVisualizedTransaction[] {
+export function formSimulatedAndVisualizedTransaction(simState: SimulationState, eventsForEachTransaction: readonly EnrichedEthereumEvents[], parsedInputData: readonly EnrichedEthereumInputData[], protectorResults: readonly ProtectorResults[], addressBookEntries: readonly AddressBookEntry[], namedTokenIds: readonly NamedTokenId[], ens: { ensNameHashes: MaybeENSNameHashes, ensLabelHashes: MaybeENSLabelHashes }): readonly SimulatedAndVisualizedTransaction[] {
 	const addressMetaData = new Map(addressBookEntries.map((x) => [addressString(x.address), x]))
 	return simState.simulatedTransactions.map((simulatedTx, index) => {
 		const from = addressMetaData.get(addressString(simulatedTx.signedTransaction.from))
@@ -82,6 +82,8 @@ export function formSimulatedAndVisualizedTransaction(simState: SimulationState,
 		if (transactionEvents === undefined) throw new Error('visualizer result was undefined')
 		const protectorResult = protectorResults[index]
 		if (protectorResult === undefined) throw new Error('protector result was undefined')
+		const singleParsedInputData	= parsedInputData[index]
+		if (singleParsedInputData === undefined) throw new Error('parsedInputData was undefined')
 
 		// if we have identified a token event, but its emitted by non-token contract, do not parse it as token event
 		const modifiedTransactionEvents: EnrichedEthereumEventWithMetadata[] = transactionEvents.map((event): EnrichedEthereumEventWithMetadata => {
@@ -146,6 +148,7 @@ export function formSimulatedAndVisualizedTransaction(simState: SimulationState,
 			website: simulatedTx.website,
 			created: simulatedTx.created,
 			transactionIdentifier: simulatedTx.transactionIdentifier,
+			parsedInputData: singleParsedInputData,
 		}
 	})
 }
