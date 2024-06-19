@@ -1,11 +1,11 @@
 import { InpageScriptRequest, PopupMessage, RPCReply, Settings } from '../types/interceptor-messages.js'
 import 'webextension-polyfill'
-import { Simulator, parseEvents, runProtectorsForTransaction } from '../simulation/simulator.js'
+import { Simulator, parseEvents, parseInputData, runProtectorsForTransaction } from '../simulation/simulator.js'
 import { getSimulationResults, getTabState, setLatestUnexpectedError, updateSimulationResults, updateSimulationResultsWithCallBack } from './storageVariables.js'
 import { changeSimulationMode, getSettings, getMakeMeRich, getWethForChainId } from './settings.js'
 import { blockNumber, call, chainId, estimateGas, gasPrice, getAccounts, getBalance, getBlockByNumber, getCode, getLogs, getPermissions, getSimulationStack, getTransactionByHash, getTransactionCount, getTransactionReceipt, netVersion, personalSign, sendTransaction, subscribe, switchEthereumChain, unsubscribe, web3ClientVersion, getBlockByHash, feeHistory, installNewFilter, uninstallNewFilter, getFilterChanges, getFilterLogs, handleIterceptorError } from './simulationModeHanders.js'
 import { changeActiveAddress, changeMakeMeRich, changePage, confirmDialog, refreshSimulation, removeTransactionOrSignedMessage, requestAccountsFromSigner, refreshPopupConfirmTransactionSimulation, confirmRequestAccess, changeInterceptorAccess, changeChainDialog, popupChangeActiveRpc, enableSimulationMode, addOrModifyAddressBookEntry, getAddressBookData, removeAddressBookEntry, refreshHomeData, interceptorAccessChangeAddressOrRefresh, refreshPopupConfirmTransactionMetadata, changeSettings, importSettings, exportSettings, setNewRpcList, simulateGovernanceContractExecutionOnPass, openNewTab, settingsOpened, changeAddOrModifyAddressWindowState, popupFetchAbiAndNameFromEtherscan, openWebPage, disableInterceptor, requestNewHomeData, setEnsNameForHash } from './popupMessageHandlers.js'
-import { CompleteVisualizedSimulation, EnrichedEthereumEvents, ProtectorResults, SimulationState, VisualizedSimulatorState, WebsiteCreatedEthereumUnsignedTransactionOrFailed } from '../types/visualizer-types.js'
+import { CompleteVisualizedSimulation, EnrichedEthereumEvents, EnrichedEthereumInputData, ProtectorResults, SimulationState, VisualizedSimulatorState, WebsiteCreatedEthereumUnsignedTransactionOrFailed } from '../types/visualizer-types.js'
 import { WebsiteTabConnections } from '../types/user-interface-types.js'
 import { askForSignerAccountsFromSignerIfNotAvailable, interceptorAccessMetadataRefresh, requestAccessFromUser, updateInterceptorAccessViewWithPendingRequests } from './windows/interceptorAccess.js'
 import { FourByteExplanations, METAMASK_ERROR_FAILED_TO_PARSE_REQUEST, METAMASK_ERROR_NOT_AUTHORIZED, METAMASK_ERROR_NOT_CONNECTED_TO_CHAIN, ERROR_INTERCEPTOR_DISABLED, NEW_BLOCK_ABORT, ETHEREUM_LOGS_LOGGER_ADDRESS } from '../utils/constants.js'
@@ -39,17 +39,17 @@ import { makeSureInterceptorIsNotSleeping } from './sleeping.js'
 import { decodeEthereumError } from '../utils/errorDecoding.js'
 import { estimateEthereumPricesForTokens } from '../simulation/priceEstimator.js'
 
-async function updateMetadataForSimulation(simulationState: SimulationState, ethereum: EthereumClientService, requestAbortController: AbortController | undefined, eventsForEachTransaction: readonly EnrichedEthereumEvents[], protectorResults: readonly ProtectorResults[]) {
+async function updateMetadataForSimulation(simulationState: SimulationState, ethereum: EthereumClientService, requestAbortController: AbortController | undefined, eventsForEachTransaction: readonly EnrichedEthereumEvents[], inputData: readonly EnrichedEthereumInputData[], protectorResults: readonly ProtectorResults[]) {
 	const settingsPromise = getSettings()
 	const settings = await settingsPromise
 	const allEvents = eventsForEachTransaction.flat()
-	const addressBookEntryPromises = getAddressBookEntriesForVisualiser(ethereum, requestAbortController, allEvents, simulationState)
+	const addressBookEntryPromises = getAddressBookEntriesForVisualiser(ethereum, requestAbortController, allEvents, inputData, simulationState)
 	const namedTokenIdPromises = nameTokenIds(ethereum, allEvents)
 	const addressBookEntries = await addressBookEntryPromises
 	const ensNameHashesPromise = retrieveEnsNodeHashes(ethereum, allEvents, addressBookEntries)
 	const ensLabelHashesPromise = retrieveEnsLabelHashes(allEvents, addressBookEntries)
 	const namedTokenIds = await namedTokenIdPromises
-	const simulatedAndVisualizedTransactions = formSimulatedAndVisualizedTransaction(simulationState, eventsForEachTransaction, protectorResults, addressBookEntries, namedTokenIds, { ensNameHashes: await ensNameHashesPromise, ensLabelHashes: await ensLabelHashesPromise })
+	const simulatedAndVisualizedTransactions = formSimulatedAndVisualizedTransaction(simulationState, eventsForEachTransaction, inputData, protectorResults, addressBookEntries, namedTokenIds, { ensNameHashes: await ensNameHashesPromise, ensLabelHashes: await ensLabelHashesPromise })
 	const VisualizedPersonalSignRequest = simulationState.signedMessages.map((signedMessage) => craftPersonalSignPopupMessage(ethereum, requestAbortController, signedMessage, settings.currentRpcNetwork))
 	return {
 		namedTokenIds,
@@ -125,9 +125,10 @@ async function visualizeSimulatorState(simulationState: SimulationState, ethereu
 	const transactions = getWebsiteCreatedEthereumUnsignedTransactions(simulationState.simulatedTransactions)
 	const eventsForEachTransactionPromise = Promise.all(simulationState.simulatedTransactions.map(async (simulatedTransaction) => simulatedTransaction.ethSimulateV1CallResult.status === 'failure' ? [] : await parseEvents(simulatedTransaction.ethSimulateV1CallResult.logs, ethereum, requestAbortController)))
 	const protectorPromises = Promise.all(transactions.map(async (transaction) => await runProtectorsForTransaction(simulationState, transaction, ethereum, requestAbortController)))
+	const parsedInputData = await Promise.all(transactions.map((transaction) => parseInputData({ to: transaction.transaction.to, input: transaction.transaction.input, value: transaction.transaction.value }, ethereum, requestAbortController)))
 	const protectors = await protectorPromises
 	const eventsForEachTransaction = await eventsForEachTransactionPromise
-	const updatedMetadataPromise = updateMetadataForSimulation(simulationState, ethereum, requestAbortController, eventsForEachTransaction, protectors)
+	const updatedMetadataPromise = updateMetadataForSimulation(simulationState, ethereum, requestAbortController, eventsForEachTransaction, parsedInputData, protectors)
 
 	function onlyTokensAndTokensWithKnownDecimals(metadata: AddressBookEntry): metadata is AddressBookEntry & { type: 'ERC20', decimals: `0x${ string }` } {
 		return metadata.type === 'ERC20' && metadata.decimals !== undefined && metadata.address !== ETHEREUM_LOGS_LOGGER_ADDRESS
@@ -135,14 +136,14 @@ async function visualizeSimulatorState(simulationState: SimulationState, ethereu
 	const metadataRestructure = (metadata: AddressBookEntry & { type: 'ERC20', decimals: bigint }) => ({ address: metadata.address, decimals: metadata.decimals })
 	const updatedMetadata = await updatedMetadataPromise
 	const tokenPrices = await estimateEthereumPricesForTokens(ethereum, requestAbortController, getWethForChainId(ethereum.getRpcEntry().chainId), updatedMetadata.addressBookEntries.filter(onlyTokensAndTokensWithKnownDecimals).map(metadataRestructure))
-	return { ...updatedMetadata, tokenPrices, eventsForEachTransaction, protectors, simulationState }
+	return { ...updatedMetadata, tokenPrices, eventsForEachTransaction, parsedInputData, protectors, simulationState }
 }
 
 export const updateSimulationMetadata = async (ethereum: EthereumClientService, requestAbortController: AbortController | undefined) => {
 	return await updateSimulationResultsWithCallBack(async (prevState) => {
 		if (prevState?.simulationState === undefined) return prevState
 		try {
-			const metadata = await updateMetadataForSimulation(prevState.simulationState, ethereum, requestAbortController, prevState.eventsForEachTransaction, prevState.protectors)
+			const metadata = await updateMetadataForSimulation(prevState.simulationState, ethereum, requestAbortController, prevState.eventsForEachTransaction, prevState.parsedInputData, prevState.protectors)
 			return { ...prevState, ...metadata }
 		} catch (error) {
 			if (error instanceof Error && isNewBlockAbort(error)) return prevState
@@ -182,6 +183,7 @@ export async function updateSimulationState(ethereum: EthereumClientService, get
 			simulationState: undefined,
 			simulatedAndVisualizedTransactions: [],
 			visualizedPersonalSignRequests: [],
+			parsedInputData: [],
 		}
 		try {
 			const updatedSimulationState = await getUpdatedSimulationState(simulationResults.simulationState)

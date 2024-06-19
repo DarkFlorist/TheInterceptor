@@ -1,6 +1,6 @@
 import { addressString, addressStringWithout0x, bytesToUnsigned, checksummedAddress } from '../utils/bigint.js'
 import { AddressBookEntries, AddressBookEntry } from '../types/addressBookTypes.js'
-import { EnrichedEthereumEventWithMetadata, EnrichedEthereumEvents, EnsEvent, NamedTokenId, SimulationState, TokenEvent, TokenVisualizerResultWithMetadata } from '../types/visualizer-types.js'
+import { EnrichedEthereumEventWithMetadata, EnrichedEthereumEvents, EnrichedEthereumInputData, EnsEvent, NamedTokenId, SimulationState, TokenEvent, TokenVisualizerResultWithMetadata } from '../types/visualizer-types.js'
 import { tokenMetadata, contractMetadata, erc721Metadata, erc1155Metadata } from '@darkflorist/address-metadata'
 import { ethers } from 'ethers'
 import { ENS_ADDR_REVERSE_NODE, ENS_TOKEN_WRAPPER, ETHEREUM_COIN_ICON, ETHEREUM_LOGS_LOGGER_ADDRESS, MOCK_ADDRESS } from '../utils/constants.js'
@@ -157,14 +157,14 @@ export async function identifyAddress(ethereumClientService: EthereumClientServi
 	return entry
 }
 
-export async function getAddressBookEntriesForVisualiser(ethereumClientService: EthereumClientService, requestAbortController: AbortController | undefined, events: EnrichedEthereumEvents, simulationState: SimulationState): Promise<AddressBookEntry[]> {
-	const eventArguments = events.flatMap((event) => event.type !== 'NonParsed' ? event.args : [])
-	const addressesInEvents = eventArguments.flatMap((event) => {
-		if (event.typeValue.type === 'address') return event.typeValue.value
-		if (event.typeValue.type === 'address[]') return event.typeValue.value
+export async function getAddressBookEntriesForVisualiser(ethereumClientService: EthereumClientService, requestAbortController: AbortController | undefined, events: EnrichedEthereumEvents, inputData: readonly EnrichedEthereumInputData[], simulationState: SimulationState): Promise<AddressBookEntry[]> {
+	const eventAndTransactionArguments = [...events.flatMap((event) => event.type !== 'NonParsed' ? event.args : []), ...inputData.flatMap((event) => event.type !== 'NonParsed' ? event.args : [])]
+	const addressesInEventsAndInputData = eventAndTransactionArguments.flatMap((argumentVariable) => {
+		if (argumentVariable.typeValue.type === 'address') return argumentVariable.typeValue.value
+		if (argumentVariable.typeValue.type === 'address[]') return argumentVariable.typeValue.value
 		return undefined
 	}).filter((address): address is bigint => address !== undefined)
-	const addressesToFetchMetadata = [...addressesInEvents, ...events.map((event) => event.address)]
+	const addressesToFetchMetadata = [...addressesInEventsAndInputData, ...events.map((event) => event.address)]
 
 	for (const tx of simulationState.simulatedTransactions) {
 		addressesToFetchMetadata.push(tx.signedTransaction.from)

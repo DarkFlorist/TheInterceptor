@@ -1,10 +1,10 @@
 import { getPrettySignerName } from '../components/subcomponents/signers.js'
 import { ICON_ACCESS_DENIED, ICON_INTERCEPTOR_DISABLED, ICON_NOT_ACTIVE, ICON_SIGNING, ICON_SIGNING_NOT_SUPPORTED, ICON_SIMULATING, PRIMARY_COLOR, TIME_BETWEEN_BLOCKS, WARNING_COLOR } from '../utils/constants.js'
-import { hasAccess, hasAddressAccess } from './accessManagement.js'
+import { areWeBlocking, hasAccess, hasAddressAccess } from './accessManagement.js'
 import { getActiveAddress, sendPopupMessageToOpenWindows, setExtensionBadgeBackgroundColor, setExtensionBadgeText, setExtensionIcon } from './backgroundUtils.js'
 import { imageToUri } from '../utils/imageToUri.js'
 import { Future } from '../utils/future.js'
-import { RpcConnectionStatus, TabIcon, TabState } from '../types/user-interface-types.js'
+import { RpcConnectionStatus, TabIcon, TabState, WebsiteTabConnections } from '../types/user-interface-types.js'
 import { getSettings } from './settings.js'
 import { getRpcConnectionStatus, getTabState, updateTabState } from './storageVariables.js'
 import { getLastKnownCurrentTabId } from './popupMessageHandlers.js'
@@ -18,23 +18,27 @@ async function setInterceptorIcon(tabId: number, icon: TabIcon, iconReason: stri
 	await setExtensionIcon({ path: { 128: icon }, tabId })
 }
 
-export async function updateExtensionIcon(tabId: number, websiteOrigin: string) {
+export async function updateExtensionIcon(websiteTabConnections: WebsiteTabConnections, tabId: number, websiteOrigin: string) {
+	const blockingWebsitePromise = areWeBlocking(websiteTabConnections, tabId, websiteOrigin)
+	const addShieldIfNeeded = async (icon: TabIcon): Promise<TabIcon> => await blockingWebsitePromise && icon !== ICON_INTERCEPTOR_DISABLED ? TabIcon.parse(icon.replace('.png', '-shield.png')) : icon
+	const setIcon = async (icon: TabIcon, iconReason: string) => setInterceptorIcon(tabId, await addShieldIfNeeded(icon), await blockingWebsitePromise ? `${ iconReason } The Interceptor is blocking external requests made by the website.` : iconReason)
+	
 	const settings = await getSettings()
-	if (hasAccess(settings.websiteAccess, websiteOrigin) === 'interceptorDisabled') return setInterceptorIcon(tabId, ICON_INTERCEPTOR_DISABLED, `The Interceptor is disabled for ${ websiteOrigin } by user request.`)
+	if (hasAccess(settings.websiteAccess, websiteOrigin) === 'interceptorDisabled') return setIcon(ICON_INTERCEPTOR_DISABLED, `The Interceptor is disabled for ${ websiteOrigin } by user request.`)
 	const activeAddress = await getActiveAddress(settings, tabId)
-	if (activeAddress === undefined) return setInterceptorIcon(tabId, ICON_NOT_ACTIVE, 'No active address selected.')
+	if (activeAddress === undefined) return setIcon(ICON_NOT_ACTIVE, 'No active address selected.')
 	const addressAccess = hasAddressAccess(settings.websiteAccess, websiteOrigin, activeAddress)
-	if (addressAccess === 'notFound') return setInterceptorIcon(tabId, ICON_NOT_ACTIVE, `${ websiteOrigin } has PENDING access request for ${ activeAddress.name }!`)
+	if (addressAccess === 'notFound') return setIcon(ICON_NOT_ACTIVE, `${ websiteOrigin } has PENDING access request for ${ activeAddress.name }!`)
 	if (addressAccess !== 'hasAccess') {
 		if (hasAccess(settings.websiteAccess, websiteOrigin) === 'noAccess') {
-			return setInterceptorIcon(tabId, ICON_ACCESS_DENIED, `The access for ${ websiteOrigin } has been DENIED!`)
+			return setIcon(ICON_ACCESS_DENIED, `The access for ${ websiteOrigin } has been DENIED!`)
 		}
-		return setInterceptorIcon(tabId, ICON_ACCESS_DENIED, `The access to ${ activeAddress.name } for ${ websiteOrigin } has been DENIED!`)
+		return setIcon(ICON_ACCESS_DENIED, `The access to ${ activeAddress.name } for ${ websiteOrigin } has been DENIED!`)
 	}
-	if (settings.simulationMode) return setInterceptorIcon(tabId, ICON_SIMULATING, 'The Interceptor simulates your sent transactions.')
-	if (settings.currentRpcNetwork.httpsRpc === undefined) return setInterceptorIcon(tabId, ICON_SIGNING_NOT_SUPPORTED, 'Interceptor is on an unsupported network and simulation mode is disabled.')
+	if (settings.simulationMode) return setIcon(ICON_SIMULATING, 'The Interceptor simulates your sent transactions.')
+	if (settings.currentRpcNetwork.httpsRpc === undefined) return setIcon(ICON_SIGNING_NOT_SUPPORTED, 'Interceptor is on an unsupported network and simulation mode is disabled.')
 	const tabState = await getTabState(tabId)
-	return setInterceptorIcon(tabId, ICON_SIGNING, `The Interceptor forwards your transactions to ${ getPrettySignerName(tabState.signerName) } once sent.`)
+	return setIcon(ICON_SIGNING, `The Interceptor forwards your transactions to ${ getPrettySignerName(tabState.signerName) } once sent.`)
 }
 
 export function noNewBlockForOverTwoMins(connectionStatus: RpcConnectionStatus) {

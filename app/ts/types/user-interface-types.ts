@@ -8,7 +8,7 @@ import { AddressBookEntries, AddressBookEntry } from './addressBookTypes.js'
 import { Page } from './exportedSettingsTypes.js'
 import { PopupOrTabId, Website, WebsiteAccessArray } from './websiteAccessTypes.js'
 import { SignerName } from './signerTypes.js'
-import { ICON_ACCESS_DENIED, ICON_ACTIVE, ICON_INTERCEPTOR_DISABLED, ICON_NOT_ACTIVE, ICON_SIGNING, ICON_SIGNING_NOT_SUPPORTED, ICON_SIMULATING } from '../utils/constants.js'
+import { ICON_ACCESS_DENIED, ICON_ACCESS_DENIED_WITH_SHIELD, ICON_ACTIVE, ICON_ACTIVE_WITH_SHIELD, ICON_INTERCEPTOR_DISABLED, ICON_NOT_ACTIVE, ICON_NOT_ACTIVE_WITH_SHIELD, ICON_SIGNING, ICON_SIGNING_NOT_SUPPORTED, ICON_SIGNING_NOT_SUPPORTED_WITH_SHIELD, ICON_SIGNING_WITH_SHIELD, ICON_SIMULATING, ICON_SIMULATING_WITH_SHIELD } from '../utils/constants.js'
 import { CodeMessageError, RpcEntries, RpcEntry, RpcNetwork } from './rpc.js'
 import { TransactionOrMessageIdentifier } from './interceptor-messages.js'
 import { EditEnsNamedHashCallBack } from '../components/subcomponents/ens.js'
@@ -123,6 +123,13 @@ export const TabIcon = funtypes.Union(
 	funtypes.Literal(ICON_SIGNING),
 	funtypes.Literal(ICON_SIGNING_NOT_SUPPORTED),
 	funtypes.Literal(ICON_INTERCEPTOR_DISABLED),
+
+	funtypes.Literal(ICON_ACTIVE_WITH_SHIELD),
+	funtypes.Literal(ICON_ACCESS_DENIED_WITH_SHIELD),
+	funtypes.Literal(ICON_NOT_ACTIVE_WITH_SHIELD),
+	funtypes.Literal(ICON_SIMULATING_WITH_SHIELD),
+	funtypes.Literal(ICON_SIGNING_WITH_SHIELD),
+	funtypes.Literal(ICON_SIGNING_NOT_SUPPORTED_WITH_SHIELD),
 )
 
 export type TabIconDetails = funtypes.Static<typeof TabIconDetails>
@@ -139,6 +146,7 @@ export type WebsiteTabConnections = Map<number, TabConnection>
 
 export type TabState = funtypes.Static<typeof TabState>
 export const TabState = funtypes.ReadonlyObject({
+	tabId: funtypes.Number,
 	website: funtypes.Union(Website, funtypes.Undefined),
 	signerConnected: funtypes.Boolean,
 	signerName: SignerName,
