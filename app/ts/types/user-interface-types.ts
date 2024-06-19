@@ -146,6 +146,7 @@ export type WebsiteTabConnections = Map<number, TabConnection>
 
 export type TabState = funtypes.Static<typeof TabState>
 export const TabState = funtypes.ReadonlyObject({
+	tabId: funtypes.Number,
 	website: funtypes.Union(Website, funtypes.Undefined),
 	signerConnected: funtypes.Boolean,
 	signerName: SignerName,

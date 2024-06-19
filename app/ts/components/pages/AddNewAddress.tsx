@@ -7,7 +7,7 @@ import { sendPopupMessageToBackgroundPage } from '../../background/backgroundUti
 import { AddressIcon } from '../subcomponents/address.js'
 import { assertUnreachable, modifyObject } from '../../utils/typescript.js'
 import { ComponentChildren, createRef } from 'preact'
-import { AddressBookEntry, IncompleteAddressBookEntry } from '../../types/addressBookTypes.js'
+import { AddressBookEntry, DeclarativeNetRequestBlockMode, IncompleteAddressBookEntry } from '../../types/addressBookTypes.js'
 import { isValidAbi } from '../../simulation/services/EtherScanAbiFetcher.js'
 import { ModifyAddressWindowState } from '../../types/visualizer-types.js'
 import { MessageToPopup } from '../../types/interceptor-messages.js'
@@ -82,6 +82,7 @@ type RenderinCompleteAddressBookParams = {
 	setSymbol: (symbol: string) => void
 	setAskForAddressAccess: (name: boolean) => void
 	setUseAsActiveAddress: (useAsActiveAddress: boolean) => void
+	setDeclarativeNetRequestBlockMode: (declarativeNetRequestBlockMode: DeclarativeNetRequestBlockMode) => void
 	setAbi: (abi: string) => void
 	canFetchFromEtherScan: boolean
 	fetchAbiAndNameFromEtherscan: () => Promise<void>
@@ -114,7 +115,7 @@ function AbiInput({ abiInput, setAbiInput, disabled }: AbiInputParams) {
 	/>
 }
 
-function RenderIncompleteAddressBookEntry({ incompleteAddressBookEntry, setName, setAddress, setSymbol, setAskForAddressAccess, setAbi, canFetchFromEtherScan, fetchAbiAndNameFromEtherscan, setUseAsActiveAddress }: RenderinCompleteAddressBookParams) {
+function RenderIncompleteAddressBookEntry({ incompleteAddressBookEntry, setName, setAddress, setSymbol, setAskForAddressAccess, setAbi, canFetchFromEtherScan, fetchAbiAndNameFromEtherscan, setUseAsActiveAddress, setDeclarativeNetRequestBlockMode }: RenderinCompleteAddressBookParams) {
 	const Text = (param: { text: ComponentChildren }) => {
 		return <p class = 'paragraph' style = 'color: var(--subtitle-text-color); text-overflow: ellipsis; overflow: hidden; width: 100%'>
 			{ param.text }
@@ -158,6 +159,10 @@ function RenderIncompleteAddressBookEntry({ incompleteAddressBookEntry, setName,
 			<label class = 'form-control'>
 				<input type = 'checkbox' checked = { !incompleteAddressBookEntry.askForAddressAccess } onInput = { e => { if (e.target instanceof HTMLInputElement && e.target !== null) { setAskForAddressAccess(!e.target.checked) } } } />
 				<p class = 'paragraph checkbox-text'>Don't request for an access when used as active address(insecure)</p>
+			</label>
+			<label class = 'form-control'>
+				<input type = 'checkbox' checked = { 'declarativeNetRequestBlockMode' in incompleteAddressBookEntry && incompleteAddressBookEntry.declarativeNetRequestBlockMode === 'block-all' } onInput = { e => { if (e.target instanceof HTMLInputElement && e.target !== null) { setDeclarativeNetRequestBlockMode(e.target.checked ? 'block-all' : 'disabled') } } } />
+				<p class = 'paragraph checkbox-text'>Block all external requests on site when this address is active (not recommended).</p>
 			</label>
 		</div>
 	</div>
@@ -218,60 +223,53 @@ export function AddNewAddress(param: AddAddressParam) {
 		if (inputedAddressBigInt === undefined) return undefined
 		const name = incompleteAddressBookEntry.name ? incompleteAddressBookEntry.name : checksummedAddress(inputedAddressBigInt)
 		const abi = incompleteAddressBookEntry.abi || undefined
+		const base = {
+			name,
+			address: inputedAddressBigInt,
+			declarativeNetRequestBlockMode: incompleteAddressBookEntry.declarativeNetRequestBlockMode,
+			useAsActiveAddress: incompleteAddressBookEntry.useAsActiveAddress,
+			askForAddressAccess: incompleteAddressBookEntry.askForAddressAccess,
+			entrySource: 'User' as const,
+		}
+		
 		switch(incompleteAddressBookEntry.type) {
 			case 'ERC721': {
 				if (incompleteAddressBookEntry.symbol === undefined) return undefined
 				return {
+					...base,
 					type: 'ERC721' as const,
-					name,
-					address: inputedAddressBigInt,
 					symbol: incompleteAddressBookEntry.symbol,
 					logoUri: incompleteAddressBookEntry.logoUri,
-					useAsActiveAddress: incompleteAddressBookEntry.useAsActiveAddress,
-					askForAddressAccess: incompleteAddressBookEntry.askForAddressAccess,
-					entrySource: 'User',
 					abi,
 				}
 			}
 			case 'ERC1155': {
 				if (incompleteAddressBookEntry.symbol === undefined) return undefined
 				return {
+					...base,
 					type: 'ERC1155' as const,
-					name,
-					address: inputedAddressBigInt,
 					symbol: incompleteAddressBookEntry.symbol,
 					logoUri: incompleteAddressBookEntry.logoUri,
-					useAsActiveAddress: incompleteAddressBookEntry.useAsActiveAddress,
-					askForAddressAccess: incompleteAddressBookEntry.askForAddressAccess,
 					decimals: undefined,
-					entrySource: 'User',
 					abi,
 				}
 			}
 			case 'ERC20': {
 				if (incompleteAddressBookEntry.symbol === undefined || incompleteAddressBookEntry.decimals === undefined) return undefined
 				return {
+					...base,
 					type: 'ERC20' as const,
-					name,
-					address: inputedAddressBigInt,
 					symbol: incompleteAddressBookEntry.symbol,
 					decimals: incompleteAddressBookEntry.decimals,
 					logoUri: incompleteAddressBookEntry.logoUri,
-					useAsActiveAddress: incompleteAddressBookEntry.useAsActiveAddress,
-					askForAddressAccess: incompleteAddressBookEntry.askForAddressAccess,
-					entrySource: 'User',
 					abi,
 				}
 			}
 			case 'contact':
 			case 'contract': return {
+				...base,
 				type: incompleteAddressBookEntry.type,
-				name,
-				address: inputedAddressBigInt,
 				logoUri: incompleteAddressBookEntry.logoUri,
-				useAsActiveAddress: incompleteAddressBookEntry.useAsActiveAddress,
-				askForAddressAccess: incompleteAddressBookEntry.askForAddressAccess,
-				entrySource: 'User',
 				abi,
 			}
 			default: assertUnreachable(incompleteAddressBookEntry.type)
@@ -347,6 +345,14 @@ export function AddNewAddress(param: AddAddressParam) {
 			return newState
 		})
 	}
+	const setDeclarativeNetRequestBlockMode = async (declarativeNetRequestBlockMode: DeclarativeNetRequestBlockMode) => {
+		setAddOrModifyAddressWindowState((previous) => {
+			if (previous === undefined) return undefined
+			const newState = modifyObject(previous, { incompleteAddressBookEntry: modifyObject(previous.incompleteAddressBookEntry, { declarativeNetRequestBlockMode }) })
+			sendChangeRequest(newState)
+			return newState
+		})
+	}
 	const setAskForAddressAccess = async (askForAddressAccess: boolean) => {
 		setAddOrModifyAddressWindowState((previous) => {
 			if (previous === undefined) return previous
@@ -415,6 +421,7 @@ export function AddNewAddress(param: AddAddressParam) {
 							setSymbol = { setSymbol }
 							setAbi = { setAbi }
 							setUseAsActiveAddress = { setUseAsActiveAddress }
+							setDeclarativeNetRequestBlockMode = { setDeclarativeNetRequestBlockMode }
 							setAskForAddressAccess = { setAskForAddressAccess }
 							canFetchFromEtherScan = { canFetchFromEtherScan }
 							fetchAbiAndNameFromEtherscan = { fetchAbiAndNameFromEtherscan }

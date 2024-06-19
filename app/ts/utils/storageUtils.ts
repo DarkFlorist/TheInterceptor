@@ -125,7 +125,7 @@ export async function browserStorageLocalSet(items: LocalStorageItems) {
 const getTabStateKey = (tabId: number): `tabState_${ number }` => `tabState_${ tabId }`
 
 type TabStateItems = funtypes.Static<typeof TabStateItems>
-const TabStateItems = funtypes.Record(funtypes.String, TabState)
+export const TabStateItems = funtypes.Record(funtypes.String, TabState)
 
 export async function getTabStateFromStorage(tabId: number) {
 	return TabStateItems.parse(await browser.storage.local.get(getTabStateKey(tabId)))?.[getTabStateKey(tabId)] ?? undefined
