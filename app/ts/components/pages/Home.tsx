@@ -39,10 +39,10 @@ function SignerExplanation(param: SignerExplanationParams) {
 
 function FirstCardHeader(param: FirstCardParams) {
 	return <>
-		<header class = 'px-3 py-2' style = {{ display: 'grid', gridTemplateColumns: 'max-content max-content minmax(0,1fr)', columnGap: '1rem', alignItems: 'center' }}>
+		<header class = 'px-3 py-2' style = { { display: 'grid', gridTemplateColumns: 'max-content max-content minmax(0, 1fr)', columnGap: '1rem', alignItems: 'center' } }>
 			<div>
 				<ToolTip content = {  param.tabIconDetails.iconReason }>
-					<img className = 'noselect nopointer' src = { param.tabIconDetails.icon } style = {{ display: 'block', width: '3rem', height: '3rem' }} />
+					<img className = 'noselect nopointer' src = { param.tabIconDetails.icon } style = { { display: 'block', width: '3rem', height: '3rem' } } />
 				</ToolTip>
 			</div>
 			<div>

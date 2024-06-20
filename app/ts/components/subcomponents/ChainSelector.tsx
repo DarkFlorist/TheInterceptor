@@ -19,18 +19,18 @@ export function ChainSelector(params: ChainSelectorParams) {
 		setIsOpen(false)
 	}
 
-	return <div ref = { wrapperRef } class = { `dropdown ${isOpen ? 'is-active' : ''}` } style = { { justifyContent: 'end', width: '100%' } }>
+	return <div ref = { wrapperRef } class = { `dropdown ${ isOpen ? 'is-active' : '' }` } style = { { justifyContent: 'end', width: '100%' } }>
 		<div class = 'dropdown-trigger' style = { { maxWidth: '100%' } }>
 			<button className = { `button is-primary is-reveal ${ params.rpcNetwork.httpsRpc === undefined ? 'is-danger' : ''}` } aria-haspopup = 'true' aria-controls = 'dropdown-menu' onClick = { () => setIsOpen(!isOpen) } title = { params.rpcNetwork.name } style = { { width: '100%', columnGap: '0.5em' } }>
 				<span class = 'truncate'>{ params.rpcNetwork.name }</span>
 			</button>
 		</div>
-		<div class = 'dropdown-menu' id = 'dropdown-menu' role = 'menu' style = {{ left: 'unset' }}>
+		<div class = 'dropdown-menu' id = 'dropdown-menu' role = 'menu' style = { { left: 'unset' } }>
 			<div class = 'dropdown-content'>
 				{
 					params.rpcEntries.map((rpcEntry) => {
 						return (
-							<button type = 'button' class = { `dropdown-item ${rpcEntry.httpsRpc === params.rpcNetwork.httpsRpc ? 'is-active' : ''}` } onClick = { () => changeRpc(rpcEntry) } >
+							<button type = 'button' class = { `dropdown-item ${ rpcEntry.httpsRpc === params.rpcNetwork.httpsRpc ? 'is-active' : '' }` } onClick = { () => changeRpc(rpcEntry) } >
 								{ rpcEntry.name }
 							</button>
 						)
