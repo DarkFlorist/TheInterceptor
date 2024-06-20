@@ -648,7 +648,7 @@ export async function popupMessageHandler(
 			case 'popup_get_export_settings': return await exportSettings()
 			case 'popup_set_rpc_list': return await setNewRpcList(simulator, parsedRequest, settings)
 			case 'popup_simulateGovernanceContractExecution': return await simulateGovernanceContractExecutionOnPass(simulator.ethereum, parsedRequest)
-			case 'popup_simulateGnosisSafeTransaction': return await simulateGnosisSafeTransactionOnPass(simulator.ethereum, parsedRequest)
+			case 'popup_simulateGnosisSafeTransaction': return await simulateGnosisSafeTransactionOnPass(simulator.ethereum, parsedRequest.data.gnosisSafeMessage)
 			case 'popup_changeAddOrModifyAddressWindowState': return await changeAddOrModifyAddressWindowState(simulator.ethereum, parsedRequest)
 			case 'popup_fetchAbiAndNameFromEtherscan': return await popupFetchAbiAndNameFromEtherscan(parsedRequest)
 			case 'popup_openWebPage': return await openWebPage(parsedRequest)
