@@ -343,8 +343,37 @@ li {
 	flex-direction: column;
 }
 
-.dropdown-trigger button:after {
-	content: '▼';
+.button.is-reveal:after {
+	content: '';
+	border-style: solid;
+	border-width: 2px 2px 0 0;
+	display: inline-block;
+	height: 0.6em;
+	width: 0.6em;
+	position: relative;
+	top: 6%;
+	transform: rotate(135deg);
+	transform-origin: 66% 33%;
+	transition: transform 150ms;
+	flex-shrink: 0;
+}
+
+.dropdown.is-active > .dropdown-trigger > button:after {
+	transform: rotate(-45deg);
+}
+
+.dropdown-trigger > button.is-danger:before {
+	content: '!';
+	width: 1.1em;
+	height: 1.1em;
+	font-size: 0.9em;
+	background: white;
+	color: var(--negative-color);
+	flex: 0 0 auto;
+	align-items: center;
+	display: flex;
+	justify-content: center;
+	border-radius: 100%;
 }
 
 .dropdown-content {
@@ -354,6 +383,9 @@ li {
 
 .dropdown-item {
 	color: var(--text-color);
+	background: transparent;
+	border: initial;
+	cursor: pointer;
 }
 
 a.dropdown-item.is-active, button.dropdown-item.is-active {
@@ -1125,4 +1157,11 @@ summary:where(details[open] > *) {
 
 .text-legible {
 	font-family: 'Atkinson';
+}
+
+.truncate {
+	display: block;
+	white-space: nowrap;
+	text-overflow: ellipsis;
+	overflow: hidden;
 }
