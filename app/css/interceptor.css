@@ -262,6 +262,7 @@ li {
 }
 
 .card-header {
+	column-gap: 1rem;
 	background-color: var(--card-header-bg-color);
 }
 
@@ -342,6 +343,10 @@ li {
 	flex-direction: column;
 }
 
+.dropdown-trigger button:after {
+	content: '▼';
+}
+
 .dropdown-content {
 	background-color: var(--card-content-bg-color);
 	box-shadow: 0px 8px 16px 0px rgb(0 0 0 / 20%);
@@ -356,9 +361,6 @@ a.dropdown-item.is-active, button.dropdown-item.is-active {
 }
 
 .card-header-icon {
-	padding: 0;
-	padding-left: 0.75rem;
-	padding-right: 0.75rem;
 	background-color: transparent;
 }
 

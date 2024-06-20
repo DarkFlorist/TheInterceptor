@@ -39,16 +39,16 @@ function SignerExplanation(param: SignerExplanationParams) {
 
 function FirstCardHeader(param: FirstCardParams) {
 	return <>
-		<header class = 'card-header'>
-			<div class = 'card-header-icon unset-cursor'>
+		<header style = {{ display: 'grid', gridTemplateColumns: 'min-content minmax(max-content,1fr) min-content', columnGap: '1rem', alignItems: 'center' }}>
+			<div>
 				<span class = 'icon' style = 'height: 3rem; width: 3rem;'>
 					<ToolTip content = {  param.tabIconDetails.iconReason }>
 						<img className = 'noselect nopointer' src = { param.tabIconDetails.icon } />
 					</ToolTip>
 				</span>
 			</div>
-			<div class = 'card-header-title px-0 is-justify-content-center'>
-				<div class = 'buttons has-addons' style = 'border-style: solid; border-color: var(--primary-color); border-radius: 4px; padding: 1px; border-width: 1px; margin-bottom: 0px; flex-wrap: nowrap;' >
+			<div>
+				<div class = 'buttons has-addons' style = 'border-style: solid; border-color: var(--primary-color); border-radius: 6px; padding: 1px; border-width: 1px; display: inline-flex; margin-bottom: 0;' >
 					<button
 						class = { `button is-primary ${ param.simulationMode ? '' : 'is-outlined' }` }
 						style = { `margin-bottom: 0px; ${ param.simulationMode ? 'opacity: 1;' : 'border-style: none;' }` }
@@ -65,7 +65,7 @@ function FirstCardHeader(param: FirstCardParams) {
 					</button>
 				</div>
 			</div>
-			<div class = 'card-header-icon unset-cursor'>
+			<div>
 				<ChainSelector rpcEntries = { param.rpcEntries } rpcNetwork = { param.rpcNetwork } changeRpc = { (entry: RpcEntry) => { param.changeActiveRpc(entry) } }/>
 			</div>
 		</header>
