@@ -154,7 +154,7 @@ export async function tryFocusingTabOrWindow(popupOrTab: PopupOrTabId) {
 
 export const CellElement = (param: { text: ComponentChildren, useLegibleFont?: boolean }) => {
 	return <div class = 'log-cell' style = 'justify-content: right;'>
-		<p class = { `paragraph${ param.useLegibleFont ? ' text-legible' : ''}` } style = 'color: var(--subtitle-text-color); text-overflow: ellipsis; overflow: hidden;'>{ param.text }</p>
+		<p class = { `paragraph${ param.useLegibleFont ? ' text-legible' : '' }` } style = 'color: var(--subtitle-text-color); text-overflow: ellipsis; overflow: hidden;'>{ param.text }</p>
 	</div>
 }
 
