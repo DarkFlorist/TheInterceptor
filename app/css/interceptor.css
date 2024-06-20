@@ -1,6 +1,19 @@
 @charset "utf-8";
 
+@font-face {
+    font-family: "Atkinson";
+    src: url("../fonts/Atkinson-Hyperlegible-Regular-102a.woff2") format("woff2");
+    font-weight: normal;
+    font-style: normal;
+}
+
+@font-face {
+    font-family: "Inter";
+    src: url("../fonts/Inter-VariableFont.ttf") format("ttf");
+}
+
 html { font-size: 100%; }
+body { font-family: "Inter" }
 
 :root {
 	--bg-color: #303030;
@@ -41,6 +54,7 @@ html { font-size: 100%; }
 }
 
 button:where(:not(.btn)) {
+	font-family: "Inter";
 	background-color: var(--primary-color);
 }
 
@@ -1105,4 +1119,8 @@ summary:where(details[open] > *) {
 	background: #3e3e3e;
 	place-content: center;
 	justify-items: center;
+}
+
+.text-legible {
+	font-family: 'Atkinson';
 }

@@ -762,8 +762,8 @@ export function RawTransactionDetailsCard({ transaction, renameAddressCallBack, 
 						<CellElement text = 'Chain: '/>
 						<CellElement text = { transaction.rpcNetwork.name }/>
 						<CellElement text = 'Unsigned transaction hash: '/>
-						<CellElement text = { bytes32String(transaction.hash) }/>
-						
+						<CellElement text = { bytes32String(transaction.hash) } useLegibleFont />
+
 
 						{ transaction.type !== '1559'
 							? <></>
