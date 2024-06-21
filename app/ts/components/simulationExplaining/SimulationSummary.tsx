@@ -780,6 +780,10 @@ export function RawTransactionDetailsCard({ transaction, renameAddressCallBack, 
 					<div>
 						<p class = 'paragraph' style = 'color: var(--subtitle-text-color)'>Raw transaction input</p>
 						<pre>{ dataStringWith0xStart(transaction.input) }</pre>
+						<RadioGroup name = 'display_view' onSelect = { console.log }>
+							<Radio label = 'View Parsed' value = 'parsed' checked />
+							<Radio label = 'View Raw' value = 'raw' />
+						</RadioGroup>
 					</div>
 					<p class = 'paragraph' style = 'color: var(--subtitle-text-color)'>Parsed transaction input: </p>
 					{ parsedInputData?.type !== 'Parsed' ? <p class = 'paragraph' style = 'color: var(--subtitle-text-color)'>No ABI available</p> : <ParsedInputData inputData = { parsedInputData } addressMetaData = { addressMetaData } renameAddressCallBack = { renameAddressCallBack }/> }
