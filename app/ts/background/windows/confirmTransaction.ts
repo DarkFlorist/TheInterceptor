@@ -24,6 +24,7 @@ import { craftPersonalSignPopupMessage } from './personalSign.js'
 import { getSettings } from '../settings.js'
 import * as funtypes from 'funtypes'
 import { modifyObject } from '../../utils/typescript.js'
+import { simulateGnosisSafeTransactionOnPass } from '../popupMessageHandlers.js'
 
 const pendingConfirmationSemaphore = new Semaphore(1)
 
@@ -289,6 +290,9 @@ export async function openConfirmTransactionDialogForMessage(
 			await updateConfirmTransactionView(ethereumClientService)
 			
 			await tryFocusingTabOrWindow(openedDialog)
+			if (visualizedPersonalSignRequest.type === 'SafeTx') {
+				await simulateGnosisSafeTransactionOnPass(simulator.ethereum, visualizedPersonalSignRequest)
+			}
 		})
 	} catch(e) {
 		await handleUnexpectedError(e)

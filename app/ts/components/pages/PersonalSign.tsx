@@ -138,11 +138,11 @@ function SignRequest({ visualizedPersonalSignRequest, renameAddressCallBack, edi
 				<p class = 'paragraph' style = 'color: var(--subtitle-text-color)'>{ visualizedPersonalSignRequest.message }</p>
 			</div>
 		}
-		case 'SafeTx': return <SafeTx
-		editEnsNamedHashCallBack = { editEnsNamedHashCallBack }
+		case 'SafeTx': return <GnosisSafeVisualizer
+			gnosisSafeMessage = { visualizedPersonalSignRequest }
 			activeAddress = { visualizedPersonalSignRequest.activeAddress.address }
-			visualizedPersonalSignRequestSafeTx = { visualizedPersonalSignRequest }
 			renameAddressCallBack = { renameAddressCallBack }
+			editEnsNamedHashCallBack = { editEnsNamedHashCallBack }
 		/>
 		case 'EIP712': {
 			return <ArbitaryEIP712 enrichedEIP712 = { visualizedPersonalSignRequest.message } renameAddressCallBack = { renameAddressCallBack } />
@@ -190,60 +190,6 @@ function SignRequest({ visualizedPersonalSignRequest, renameAddressCallBack, edi
 		}
 		default: assertNever(visualizedPersonalSignRequest)
 	}
-}
-
-function SafeTx({ visualizedPersonalSignRequestSafeTx, renameAddressCallBack, activeAddress, editEnsNamedHashCallBack }: { visualizedPersonalSignRequestSafeTx: VisualizedPersonalSignRequestSafeTx, renameAddressCallBack: RenameAddressCallBack, activeAddress: bigint, editEnsNamedHashCallBack: EditEnsNamedHashCallBack }) {
-	return <>
-		<GnosisSafeVisualizer
-			gnosisSafeMessage = { visualizedPersonalSignRequestSafeTx }
-			activeAddress = { activeAddress }
-			renameAddressCallBack = { renameAddressCallBack }
-			editEnsNamedHashCallBack = { editEnsNamedHashCallBack }
-		/>
-		<span class = 'log-table' style = 'justify-content: center; column-gap: 5px; grid-template-columns: auto auto'>
-			{ visualizedPersonalSignRequestSafeTx.message.domain.chainId !== undefined
-				? <>
-					<CellElement text = 'Chain: '/>
-					<CellElement text = { getChainName(BigInt(visualizedPersonalSignRequestSafeTx.message.domain.chainId)) }/>
-				</>
-				: <></>
-			}
-			<CellElement text = 'baseGas: '/>
-			<CellElement text = { visualizedPersonalSignRequestSafeTx.message.message.baseGas }/>
-			<CellElement text = 'gasPrice: '/>
-			<CellElement text = { visualizedPersonalSignRequestSafeTx.message.message.gasPrice }/>
-			{ visualizedPersonalSignRequestSafeTx.message.message.gasToken !== 0n
-				? <>
-					<CellElement text = 'gasToken: '/>
-					<CellElement text = { <SmallAddress addressBookEntry = { visualizedPersonalSignRequestSafeTx.gasToken } renameAddressCallBack = { renameAddressCallBack } /> }/>
-				</>
-				: <></>
-			}
-			<CellElement text = 'nonce: '/>
-			<CellElement text = { visualizedPersonalSignRequestSafeTx.message.message.nonce }/>
-			<CellElement text = 'operation: '/>
-			<CellElement text = { visualizedPersonalSignRequestSafeTx.message.message.operation }/>
-			{ visualizedPersonalSignRequestSafeTx.message.message.refundReceiver !== 0n ?
-				<>
-					<CellElement text = 'refundReceiver: '/>
-					<CellElement text = { <SmallAddress addressBookEntry = { visualizedPersonalSignRequestSafeTx.refundReceiver } renameAddressCallBack = { renameAddressCallBack } /> }/>
-				</>
-				: <></>
-			}
-			<CellElement text = 'safeTxGas: '/>
-			<CellElement text = { visualizedPersonalSignRequestSafeTx.message.message.safeTxGas }/>
-			<CellElement text = 'to: '/>
-			<CellElement text = { <SmallAddress addressBookEntry = { visualizedPersonalSignRequestSafeTx.to } renameAddressCallBack = { renameAddressCallBack } /> }/>
-			<CellElement text = 'value: '/>
-			<CellElement text = { <Ether amount = { visualizedPersonalSignRequestSafeTx.message.message.value } rpcNetwork = { visualizedPersonalSignRequestSafeTx.rpcNetwork } fontSize = 'normal'/>  }/>
-		</span>
-		<p class = 'paragraph' style = 'color: var(--subtitle-text-color)'>Gnosis Safe meta transaction input: </p>
-		<div class = 'textbox'>
-			<p class = 'paragraph' style = 'color: var(--subtitle-text-color)'>{ dataStringWith0xStart(visualizedPersonalSignRequestSafeTx.message.message.data) }</p>
-		</div>
-		<p class = 'paragraph' style = 'color: var(--subtitle-text-color)'>Parsed Gnosis Safe meta transaction: </p>
-		{ visualizedPersonalSignRequestSafeTx.parsedMessageData?.type !== 'Parsed' ? <p class = 'paragraph' style = 'color: var(--subtitle-text-color)'>No ABI available</p> : <ParsedInputData inputData = { visualizedPersonalSignRequestSafeTx.parsedMessageData } addressMetaData = { visualizedPersonalSignRequestSafeTx.parsedMessageDataAddressBookEntries } renameAddressCallBack = { renameAddressCallBack }/> }
-	</>
 }
 
 type EIP712Table = {
@@ -334,11 +280,66 @@ type ExtraDetailsCardParams = {
 	renameAddressCallBack: RenameAddressCallBack
 }
 
+
+type GnosisSafeExtraDetailsParams = {
+	visualizedPersonalSignRequestSafeTx: VisualizedPersonalSignRequestSafeTx
+	renameAddressCallBack: RenameAddressCallBack
+}
+
+function GnosisSafeExtraDetails({ visualizedPersonalSignRequestSafeTx, renameAddressCallBack }: GnosisSafeExtraDetailsParams) {
+	return <>
+		<span class = 'log-table' style = 'justify-content: center; column-gap: 5px; grid-template-columns: auto auto'>			
+			{ visualizedPersonalSignRequestSafeTx.message.domain.chainId !== undefined
+				? <>
+					<CellElement text = 'Chain: '/>
+					<CellElement text = { getChainName(BigInt(visualizedPersonalSignRequestSafeTx.message.domain.chainId)) }/>
+				</>
+				: <></>
+			}
+			<CellElement text = 'baseGas: '/>
+			<CellElement text = { visualizedPersonalSignRequestSafeTx.message.message.baseGas }/>
+			<CellElement text = 'gasPrice: '/>
+			<CellElement text = { visualizedPersonalSignRequestSafeTx.message.message.gasPrice }/>
+			{ visualizedPersonalSignRequestSafeTx.message.message.gasToken !== 0n
+				? <>
+					<CellElement text = 'gasToken: '/>
+					<CellElement text = { <SmallAddress addressBookEntry = { visualizedPersonalSignRequestSafeTx.gasToken } renameAddressCallBack = { renameAddressCallBack } /> }/>
+				</>
+				: <></>
+			}
+			<CellElement text = 'nonce: '/>
+			<CellElement text = { visualizedPersonalSignRequestSafeTx.message.message.nonce }/>
+			<CellElement text = 'operation: '/>
+			<CellElement text = { visualizedPersonalSignRequestSafeTx.message.message.operation }/>
+			{ visualizedPersonalSignRequestSafeTx.message.message.refundReceiver !== 0n ?
+				<>
+					<CellElement text = 'refundReceiver: '/>
+					<CellElement text = { <SmallAddress addressBookEntry = { visualizedPersonalSignRequestSafeTx.refundReceiver } renameAddressCallBack = { renameAddressCallBack } /> }/>
+				</>
+				: <></>
+			}
+			<CellElement text = 'safeTxGas: '/>
+			<CellElement text = { visualizedPersonalSignRequestSafeTx.message.message.safeTxGas }/>
+			<CellElement text = 'to: '/>
+			<CellElement text = { <SmallAddress addressBookEntry = { visualizedPersonalSignRequestSafeTx.to } renameAddressCallBack = { renameAddressCallBack } /> }/>
+			<CellElement text = 'value: '/>
+			<CellElement text = { <Ether amount = { visualizedPersonalSignRequestSafeTx.message.message.value } rpcNetwork = { visualizedPersonalSignRequestSafeTx.rpcNetwork } fontSize = 'normal'/>  }/>
+		</span>
+		<p class = 'paragraph' style = 'color: var(--subtitle-text-color)'>Gnosis Safe meta transaction input: </p>
+		<div class = 'textbox'>
+			<p class = 'paragraph' style = 'color: var(--subtitle-text-color)'>{ dataStringWith0xStart(visualizedPersonalSignRequestSafeTx.message.message.data) }</p>
+		</div>
+		<p class = 'paragraph' style = 'color: var(--subtitle-text-color)'>Parsed Gnosis Safe meta transaction: </p>
+		{ visualizedPersonalSignRequestSafeTx.parsedMessageData?.type !== 'Parsed' ? <p class = 'paragraph' style = 'color: var(--subtitle-text-color)'>No ABI available</p> : <ParsedInputData inputData = { visualizedPersonalSignRequestSafeTx.parsedMessageData } addressMetaData = { visualizedPersonalSignRequestSafeTx.parsedMessageDataAddressBookEntries } renameAddressCallBack = { renameAddressCallBack }/> }
+	</>
+}
+
 function ExtraDetails({ visualizedPersonalSignRequest, renameAddressCallBack }: ExtraDetailsCardParams) {
 	const [showSummary, setShowSummary] = useState<boolean>(false)
 	if (visualizedPersonalSignRequest.type !== 'Permit2'
 		&& visualizedPersonalSignRequest.type !== 'Permit'
-		&& visualizedPersonalSignRequest.type !== 'OrderComponents') {
+		&& visualizedPersonalSignRequest.type !== 'OrderComponents'
+		&& visualizedPersonalSignRequest.type !== 'SafeTx') {
 		return <></>
 	}
 
@@ -361,6 +362,7 @@ function ExtraDetails({ visualizedPersonalSignRequest, renameAddressCallBack }: 
 							{ visualizedPersonalSignRequest.type !== 'Permit' ? <></> : <PermitExtraDetails permit = { visualizedPersonalSignRequest }/> }
 							{ visualizedPersonalSignRequest.type !== 'OrderComponents' ? <></> : <OrderComponentsExtraDetails orderComponents = { visualizedPersonalSignRequest.message } renameAddressCallBack = { renameAddressCallBack }/> }
 						</span>
+						{ visualizedPersonalSignRequest.type !== 'SafeTx' ? <></> : <GnosisSafeExtraDetails visualizedPersonalSignRequestSafeTx = { visualizedPersonalSignRequest } renameAddressCallBack = { renameAddressCallBack }/> }
 					</div>
 				</div>
 			</>
