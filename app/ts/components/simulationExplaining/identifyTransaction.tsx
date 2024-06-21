@@ -1,7 +1,7 @@
 import { get4Byte, get4ByteString } from '../../utils/calldata.js'
 import { FourByteExplanations } from '../../utils/constants.js'
 import { assertNever, createGuard } from '../../utils/typescript.js'
-import { SimulatedAndVisualizedTransaction, SimulatedAndVisualizedTransactionBase, TokenVisualizerErc1155Event, TokenVisualizerErc20Event, TokenVisualizerErc721Event, TransactionWithAddressBookEntries } from '../../types/visualizer-types.js'
+import { SimulatedAndVisualizedTransaction, SimulatedAndVisualizedTransactionBase, TransactionWithAddressBookEntries } from '../../types/visualizer-types.js'
 import { getSwapName, identifySwap } from './SwapTransactions.js'
 import * as funtypes from 'funtypes'
 import { AddressBookEntry } from '../../types/addressBookTypes.js'
@@ -14,6 +14,7 @@ import { UniqueRequestIdentifier } from '../../utils/requests.js'
 import { findDeadEnds } from '../../utils/findDeadEnds.js'
 import { EthereumAddress, EthereumQuantity } from '../../types/wire-types.js'
 import { extractTokenEvents } from '../../background/metadataUtils.js'
+import { TokenVisualizerErc1155Event, TokenVisualizerErc20Event, TokenVisualizerErc721Event } from '../../types/EnrichedEthereumData.js'
 
 type IdentifiedTransactionBase = {
 	title: string
