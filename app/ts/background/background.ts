@@ -1,20 +1,20 @@
-import { InpageScriptRequest, PopupMessage, RPCReply, Settings } from '../types/interceptor-messages.js'
+import { InpageScriptRequest, PopupMessage, RPCReply, Settings, SimulateExecutionReplyData } from '../types/interceptor-messages.js'
 import 'webextension-polyfill'
 import { Simulator, parseEvents, parseInputData, runProtectorsForTransaction } from '../simulation/simulator.js'
 import { getSimulationResults, getTabState, setLatestUnexpectedError, updateSimulationResults, updateSimulationResultsWithCallBack } from './storageVariables.js'
 import { changeSimulationMode, getSettings, getMakeMeRich, getWethForChainId } from './settings.js'
 import { blockNumber, call, chainId, estimateGas, gasPrice, getAccounts, getBalance, getBlockByNumber, getCode, getLogs, getPermissions, getSimulationStack, getTransactionByHash, getTransactionCount, getTransactionReceipt, netVersion, personalSign, sendTransaction, subscribe, switchEthereumChain, unsubscribe, web3ClientVersion, getBlockByHash, feeHistory, installNewFilter, uninstallNewFilter, getFilterChanges, getFilterLogs, handleIterceptorError } from './simulationModeHanders.js'
-import { changeActiveAddress, changeMakeMeRich, changePage, confirmDialog, refreshSimulation, removeTransactionOrSignedMessage, requestAccountsFromSigner, refreshPopupConfirmTransactionSimulation, confirmRequestAccess, changeInterceptorAccess, changeChainDialog, popupChangeActiveRpc, enableSimulationMode, addOrModifyAddressBookEntry, getAddressBookData, removeAddressBookEntry, refreshHomeData, interceptorAccessChangeAddressOrRefresh, refreshPopupConfirmTransactionMetadata, changeSettings, importSettings, exportSettings, setNewRpcList, simulateGovernanceContractExecutionOnPass, openNewTab, settingsOpened, changeAddOrModifyAddressWindowState, popupFetchAbiAndNameFromEtherscan, openWebPage, disableInterceptor, requestNewHomeData, setEnsNameForHash } from './popupMessageHandlers.js'
-import { CompleteVisualizedSimulation, EnrichedEthereumEvents, EnrichedEthereumInputData, ProtectorResults, SimulationState, VisualizedSimulatorState, WebsiteCreatedEthereumUnsignedTransactionOrFailed } from '../types/visualizer-types.js'
+import { changeActiveAddress, changeMakeMeRich, changePage, confirmDialog, refreshSimulation, removeTransactionOrSignedMessage, requestAccountsFromSigner, refreshPopupConfirmTransactionSimulation, confirmRequestAccess, changeInterceptorAccess, changeChainDialog, popupChangeActiveRpc, enableSimulationMode, addOrModifyAddressBookEntry, getAddressBookData, removeAddressBookEntry, refreshHomeData, interceptorAccessChangeAddressOrRefresh, refreshPopupConfirmTransactionMetadata, changeSettings, importSettings, exportSettings, setNewRpcList, simulateGovernanceContractExecutionOnPass, openNewTab, settingsOpened, changeAddOrModifyAddressWindowState, popupFetchAbiAndNameFromEtherscan, openWebPage, disableInterceptor, requestNewHomeData, setEnsNameForHash, simulateGnosisSafeTransactionOnPass } from './popupMessageHandlers.js'
+import { CompleteVisualizedSimulation, ProtectorResults, SimulationState, VisualizedSimulatorState, WebsiteCreatedEthereumUnsignedTransaction, WebsiteCreatedEthereumUnsignedTransactionOrFailed } from '../types/visualizer-types.js'
 import { WebsiteTabConnections } from '../types/user-interface-types.js'
 import { askForSignerAccountsFromSignerIfNotAvailable, interceptorAccessMetadataRefresh, requestAccessFromUser, updateInterceptorAccessViewWithPendingRequests } from './windows/interceptorAccess.js'
 import { FourByteExplanations, METAMASK_ERROR_FAILED_TO_PARSE_REQUEST, METAMASK_ERROR_NOT_AUTHORIZED, METAMASK_ERROR_NOT_CONNECTED_TO_CHAIN, ERROR_INTERCEPTOR_DISABLED, NEW_BLOCK_ABORT, ETHEREUM_LOGS_LOGGER_ADDRESS } from '../utils/constants.js'
 import { sendActiveAccountChangeToApprovedWebsitePorts, sendMessageToApprovedWebsitePorts, updateWebsiteApprovalAccesses, verifyAccess } from './accessManagement.js'
 import { getActiveAddressEntry, getAddressBookEntriesForVisualiser, identifyAddress, nameTokenIds, retrieveEnsLabelHashes, retrieveEnsNodeHashes } from './metadataUtils.js'
 import { getActiveAddress, sendPopupMessageToOpenWindows } from './backgroundUtils.js'
-import { assertNever, assertUnreachable, modifyObject } from '../utils/typescript.js'
+import { DistributiveOmit, assertNever, assertUnreachable, modifyObject } from '../utils/typescript.js'
 import { EthereumClientService } from '../simulation/services/EthereumClientService.js'
-import { appendTransaction, calculateGasPrice, copySimulationState, getEmptySimulationStateWithRichAddress, getNonceFixedSimulatedTransactions, getTokenBalancesAfter, getWebsiteCreatedEthereumUnsignedTransactions, mockSignTransaction, setSimulationTransactionsAndSignedMessages } from '../simulation/services/SimulationModeEthereumClientService.js'
+import { appendTransaction, calculateGasPrice, copySimulationState, getEmptySimulationStateWithRichAddress, getNonceFixedSimulatedTransactions, getTokenBalancesAfter, getWebsiteCreatedEthereumUnsignedTransactions, mockSignTransaction, setSimulationTransactionsAndSignedMessages, simulateEstimateGas } from '../simulation/services/SimulationModeEthereumClientService.js'
 import { Semaphore } from '../utils/semaphore.js'
 import { JsonRpcResponseError, handleUnexpectedError, isFailedToFetchError, isNewBlockAbort } from '../utils/errors.js'
 import { formSimulatedAndVisualizedTransaction } from '../components/formVisualizerResults.js'
@@ -38,6 +38,8 @@ import { connectedToSigner, ethAccountsReply, signerChainChanged, signerReply, w
 import { makeSureInterceptorIsNotSleeping } from './sleeping.js'
 import { decodeEthereumError } from '../utils/errorDecoding.js'
 import { estimateEthereumPricesForTokens } from '../simulation/priceEstimator.js'
+import { EnrichedEthereumEvents, EnrichedEthereumInputData } from '../types/EnrichedEthereumData.js'
+import { VisualizedPersonalSignRequestSafeTx } from '../types/personal-message-definitions.js'
 
 async function updateMetadataForSimulation(simulationState: SimulationState, ethereum: EthereumClientService, requestAbortController: AbortController | undefined, eventsForEachTransaction: readonly EnrichedEthereumEvents[], inputData: readonly EnrichedEthereumInputData[], protectorResults: readonly ProtectorResults[]) {
 	const settingsPromise = getSettings()
@@ -59,8 +61,8 @@ async function updateMetadataForSimulation(simulationState: SimulationState, eth
 	}
 }
 
-export const simulateGovernanceContractExecution = async (pendingTransaction: PendingTransaction, ethereum: EthereumClientService) => {
-	const returnError = (text: string) => ({ success: false as const, error: { type: 'Other' as const, message: text } })
+export const simulateGovernanceContractExecution = async (pendingTransaction: PendingTransaction, ethereum: EthereumClientService): Promise<DistributiveOmit<SimulateExecutionReplyData, 'transactionOrMessageIdentifier'>> => {
+	const returnError = (errorMessage: string) => ({ success: false as const, errorType: 'Other' as const, errorMessage })
 	try {
 		// identifies compound governane call and performs simulation if the vote passes
 		if (pendingTransaction.transactionOrMessageCreationStatus !== 'Simulated') return returnError('Still simulating the voting transaction')
@@ -84,7 +86,7 @@ export const simulateGovernanceContractExecution = async (pendingTransaction: Pe
 		if (pendingTransaction.transactionToSimulate.transaction.to === null) return returnError('The transaction creates a contract instead of casting a vote')
 		const params = governanceContractInterface.decodeFunctionData(voteFunction, dataStringWith0xStart(pendingTransaction.transactionToSimulate.transaction.input))
 		const addr = await identifyAddress(ethereum, undefined, pendingTransaction.transactionToSimulate.transaction.to)
-		if (!('abi' in addr) || addr.abi === undefined) return { success: false as const, error: { type: 'MissingAbi' as const, message: 'ABi for the governance contract is missing', addressBookEntry: addr } }
+		if (!('abi' in addr) || addr.abi === undefined) return { success: false as const, errorType: 'MissingAbi' as const, errorMessage: 'ABi for the governance contract is missing', errorAddressBookEntry: addr }
 		const contractExecutionResult = await simulateCompoundGovernanceExecution(ethereum, addr, params[0])
 		if (contractExecutionResult === undefined) return returnError('Failed to simulate governance execution')
 		const parentBlock = await ethereum.getBlock(undefined)
@@ -114,6 +116,40 @@ export const simulateGovernanceContractExecution = async (pendingTransaction: Pe
 			signedMessages: [],
 		}
 		return { success: true as const, result: await visualizeSimulatorState(governanceContractSimulationState, ethereum, undefined) }
+	} catch(error) {
+		console.warn(error)
+		if (error instanceof Error) return returnError(error.message)
+		return returnError('Unknown error occured')
+	}
+}
+
+export const simulateGnosisSafeMetaTransaction = async (gnosisSafeMessage: VisualizedPersonalSignRequestSafeTx, simulationState: SimulationState | undefined, ethereumClientService: EthereumClientService): Promise<DistributiveOmit<SimulateExecutionReplyData, 'transactionOrMessageIdentifier'>> => {
+	const returnError = (errorMessage: string) => ({ success: false as const, errorType: 'Other' as const, errorMessage })
+	try {
+		const transactionWithoutGas = {
+			value: gnosisSafeMessage.message.message.value,
+			to: gnosisSafeMessage.to.address,
+			maxPriorityFeePerGas: 0n,
+			maxFeePerGas: 0n,
+			input: gnosisSafeMessage.parsedMessageData.input,
+			type: '1559' as const,
+			from: gnosisSafeMessage.verifyingContract.address,
+			nonce: 0n,
+			chainId: ethereumClientService.getChainId(),
+		}
+		const gasLimit = gnosisSafeMessage.message.message.baseGas !== 0n ? { gas: gnosisSafeMessage.message.message.baseGas } : await simulateEstimateGas(ethereumClientService, undefined, simulationState, transactionWithoutGas)
+		if ('error' in gasLimit) return returnError(gasLimit.error.message)
+		const transaction = { ...transactionWithoutGas, gas: gasLimit.gas }
+		const metaTransaction: WebsiteCreatedEthereumUnsignedTransaction = {
+			website: gnosisSafeMessage.website,
+			created: new Date(),
+			originalRequestParameters: { method: 'eth_sendTransaction', params: [transaction] },
+			transactionIdentifier: gnosisSafeMessage.messageIdentifier,
+			success: true,
+			transaction,
+		}
+		const simulationStateAfterGnosisSafeMetaTransaction = await appendTransaction(ethereumClientService, undefined, simulationState, metaTransaction)
+		return { success: true as const, result: await visualizeSimulatorState(simulationStateAfterGnosisSafeMetaTransaction, ethereumClientService, undefined) }
 	} catch(error) {
 		console.warn(error)
 		if (error instanceof Error) return returnError(error.message)
@@ -612,6 +648,7 @@ export async function popupMessageHandler(
 			case 'popup_get_export_settings': return await exportSettings()
 			case 'popup_set_rpc_list': return await setNewRpcList(simulator, parsedRequest, settings)
 			case 'popup_simulateGovernanceContractExecution': return await simulateGovernanceContractExecutionOnPass(simulator.ethereum, parsedRequest)
+			case 'popup_simulateGnosisSafeTransaction': return await simulateGnosisSafeTransactionOnPass(simulator.ethereum, parsedRequest)
 			case 'popup_changeAddOrModifyAddressWindowState': return await changeAddOrModifyAddressWindowState(simulator.ethereum, parsedRequest)
 			case 'popup_fetchAbiAndNameFromEtherscan': return await popupFetchAbiAndNameFromEtherscan(parsedRequest)
 			case 'popup_openWebPage': return await openWebPage(parsedRequest)

@@ -317,7 +317,7 @@ export async function openConfirmTransactionDialogForTransaction(
 		const openedDialog = await getPendingTransactionWindow(simulator, websiteTabConnections)
 		if (openedDialog === undefined) throw new Error('Failed to get pending transaction window!')
 
-		const pendingTransaction =  {
+		const pendingTransaction = {
 			type: 'Transaction' as const,
 			popupOrTabId: openedDialog,
 			originalRequestParameters: transactionParams,
