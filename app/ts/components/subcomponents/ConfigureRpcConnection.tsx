@@ -9,9 +9,12 @@ import { sendPopupMessageToBackgroundPage } from '../../background/backgroundUti
 import { getSettings } from '../../background/settings.js'
 import { getChainName } from '../../utils/constants.js'
 import { useRpcConnectionsList } from '../pages/SettingsView.js'
+import { EthereumJSONRpcRequestHandler } from '../../simulation/services/EthereumJSONRpcRequestHandler.js'
+import { EthSimulateV1Params, ethSimulateV1Result } from '../../types/ethSimulate-types.js'
+import { JsonRpcResponseError } from '../../utils/errors.js'
 
 type ConfigureRpcContext = {
-	queryRpcInfo: (url:string) => void
+	queryRpcInfo: (url: string) => void
 	rpcQuery: ReturnType<typeof useAsyncState<Network>>['value']
 	resetRpcQuery: () => void
 }
@@ -21,9 +24,67 @@ const ConfigureRpcContext = createContext<ConfigureRpcContext | undefined>(undef
 const RpcQueryProvider = ({ children }: { children: ComponentChildren }) => {
 	const { value: rpcQuery, waitFor, reset: resetRpcQuery } = useAsyncState<Network>()
 
+	const checkServerAvailability = async (url: string) => {
+		try {
+			const provider = new JsonRpcProvider(url)
+			return await provider.getNetwork()
+		} catch {
+			throw new Error('Server should be reachable')
+		}
+	}
+
+	const validateEthSimulateSupport = async (url: string) => {
+		// test eth_simulate request
+		const requestHandler = new EthereumJSONRpcRequestHandler(url)
+		const ethSimulateV1ParamObject: EthSimulateV1Params['params'][0] = {
+			blockStateCalls: [{
+				blockOverrides: {
+					baseFeePerGas: 0x9n
+				},
+				stateOverrides: {
+					'0xc000000000000000000000000000000000000000': {
+						balance: 0x1312d0000n,
+					}
+				},
+				calls: [
+					{
+						from: 0xc000000000000000000000000000000000000000n,
+						to: 0xc000000000000000000000000000000000000000n,
+						value: 0x1n,
+						maxFeePerGas: 0xfn,
+					}
+				]
+			}],
+			validation: true,
+			traceTransfers: true
+		}
+
+		try {
+			const serializedResult = await requestHandler.jsonRpcRequest({
+				method: 'eth_simulateV1',
+				params: [ethSimulateV1ParamObject, 'latest']
+			})
+
+			function resultContainsLog(result: ReturnType<typeof ethSimulateV1Result.safeParse>) {
+				return Boolean(result.success && result.value && result.value[0] && result.value[0].calls[0] && result.value[0].calls[0].status === 'success' && result.value[0].calls[0].logs.length === 1)
+			}
+
+			const parsedResult = ethSimulateV1Result.safeParse(serializedResult)
+
+			if (!resultContainsLog(parsedResult)) throw new Error(`The RPC server does not have a support for eth_simulateV1 (it doesn't return ETH logs). The Interceptor requires this feature to function.`)
+		} catch (error) {
+			let errorMessage = 'RPC eth_simulateV1 validation error'
+			console.warn(errorMessage, error)
+			if (error instanceof Error) errorMessage = `${ errorMessage } (${ error.message })`
+			if (error instanceof JsonRpcResponseError) errorMessage = error.message
+			throw new Error('The RPC server does not have a support for eth_simulateV1. The Interceptor requires this feature to function.')
+		}
+	}
+
 	const queryRpcInfo = (url: string) => waitFor(async () => {
-		const provider = new JsonRpcProvider(url)
-		return await provider.getNetwork()
+		const network = await checkServerAvailability(url)
+		await validateEthSimulateSupport(url)
+		return network
 	})
 
 	return <ConfigureRpcContext.Provider value = { { queryRpcInfo, rpcQuery, resetRpcQuery } }>{ children }</ConfigureRpcContext.Provider>
@@ -43,7 +104,7 @@ export const ConfigureRpcConnection = ({ rpcInfo }: { rpcInfo?: RpcEntry | undef
 
 	const cancelAndCloseModal = () => modalRef.current?.close()
 
-	const saveRpcEntry = async  (rpcEntry: RpcEntry) => {
+	const saveRpcEntry = async (rpcEntry: RpcEntry) => {
 		const { currentRpcNetwork } = await getSettings()
 
 		await sendPopupMessageToBackgroundPage({
@@ -232,7 +293,7 @@ const RpcUrlField = ({ defaultValue }: { defaultValue?: string }) => {
 				inputRef.current.setCustomValidity('RPC is not yet verified')
 				return
 			case 'rejected':
-				inputRef.current.setCustomValidity('RPC URL should be reachable')
+				inputRef.current.setCustomValidity(rpcQuery.value.error.message)
 				inputRef.current.reportValidity()
 				return
 			case 'resolved':
@@ -241,7 +302,7 @@ const RpcUrlField = ({ defaultValue }: { defaultValue?: string }) => {
 		}
 	})
 
-	return <TextInput ref = { inputRef } label = 'RPC URL *' name = 'httpsRpc' defaultValue = { defaultValue } onInput = { (e) => deferredQueryAnRpcUrl(e.currentTarget.value) } statusIcon = { <StatusIcon state = { rpcQuery.value.state } /> } style = '--area: 1 / span 2'  required autoComplete = 'off' autoFocus = { defaultValue === undefined } readOnly = { defaultValue !== undefined } />
+	return <TextInput ref = { inputRef } label = 'RPC URL *' name = 'httpsRpc' defaultValue = { defaultValue } onInput = { (e) => deferredQueryAnRpcUrl(e.currentTarget.value) } statusIcon = { <StatusIcon state = { rpcQuery.value.state } /> } style = '--area: 1 / span 2' required autoComplete = 'off' autoFocus = { defaultValue === undefined } readOnly = { defaultValue !== undefined } />
 }
 
 export const StatusIcon = ({ state }: { state: AsyncStates }) => {

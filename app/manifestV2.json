@@ -26,7 +26,9 @@
 		"activeTab",
 		"<all_urls>",
 		"storage",
-		"webNavigation"
+		"webNavigation",
+		"webRequest",
+		"webRequestBlocking"
 	],
 	"web_accessible_resources": ["vendor/*", "js/*", "inpage/*"],
 	// all hashes except the first one are from .html files `<script type = 'module'>import '../js/popup.js'</script>` part

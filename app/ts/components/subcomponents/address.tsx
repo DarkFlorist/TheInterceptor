@@ -38,7 +38,7 @@ export function AddressIcon(param: AddressIconParams) {
 	if (param.logoUri !== undefined) {
 		return (
 			<AddressIconFrame isBig = { param.isBig }>
-				<img src = { param.logoUri } style = { { display: 'block', width: '1em', height: '1em' } }/>
+				<img src = { param.logoUri } style = { { display: 'block', width: '1em', minWidth: '1em', height: '1em' } }/>
 			</AddressIconFrame>
 		)
 	}
@@ -85,9 +85,10 @@ export function BigAddress(params: BigAddressParams) {
 				<span class = 'address-text-holder'>
 					{ !params.noCopying && addrString !== undefined ?
 						<CopyToClipboard content = { addrString } copyMessage = 'Address copied!' style = { { 'text-overflow': 'ellipsis', overflow: 'hidden' } }>
-							<p class = 'title is-5 is-spaced address-text noselect nopointer'>{ title }</p>
+							<AddressTitle content = { title } useLegibleFont = { title === addrString } />
 						</CopyToClipboard>
-						: <p class = 'title is-5 is-spaced address-text noselect nopointer'>{ title }</p> }
+						: <AddressTitle content = { title } useLegibleFont = { title === addrString } />
+					}
 					<button
 						className = 'button is-primary is-small rename-address-button'
 						onClick = { () => params.addressBookEntry && params.renameAddressCallBack(params.addressBookEntry) }
@@ -99,19 +100,24 @@ export function BigAddress(params: BigAddressParams) {
 					</button>
 				</span>
 			</span>
-			{ !params.noCopying && addrString !== undefined ?
+			{ !params.noCopying && addrString !== undefined && subTitle !== undefined ?
 				<CopyToClipboard content = { addrString } copyMessage = 'Address copied!'>
-					<p class = 'subtitle is-7 noselect nopointer' style = 'text-overflow: ellipsis; white-space: nowrap;'>
-						{ subTitle }
-					</p>
+					<AddressSubTitle content = { subTitle } />
 				</CopyToClipboard>
-				:
-				<p class = 'subtitle is-7 noselect nopointer' style = 'text-overflow: ellipsis; white-space: nowrap;'>
-					{ subTitle }
-				</p>
+				: <AddressSubTitle content = { subTitle } />
+
 			}
 		</div>
 	</div>
+}
+
+const AddressTitle = ({ content, useLegibleFont  }: { content: string, useLegibleFont?: boolean }) => {
+	return <p class = {  `title is-5 is-spaced address-text noselect nopointer${ useLegibleFont ? ' text-legible' : '' }` }>{ content }</p>
+}
+
+const AddressSubTitle = ({ content }: { content?: string }) => {
+	if (!content) return <></>
+	return <p class = 'subtitle is-7 noselect nopointer text-legible' style = { { textOverflow: 'ellipsis', whiteSpace: 'nowrap' } }>{ content }</p>
 }
 
 type ActiveAddressParams = {
@@ -163,7 +169,7 @@ export function SmallAddress(params: SmallAddressParams) {
 						</CopyToClipboard>
 					</span>
 					<CopyToClipboard content = { checksummedAddress(params.addressBookEntry.address) } copyMessage = 'Address copied!' style = { { 'text-overflow': 'ellipsis', overflow: 'hidden' } }>
-						<p class = 'address-text noselect nopointer' style = { `color: ${ textColor }` }>{ params.addressBookEntry.name }</p>
+						<p class = 'address-text noselect nopointer text-legible' style = { `color: ${ textColor }` }>{ params.addressBookEntry.name }</p>
 					</CopyToClipboard>
 					<button className = 'button is-primary is-small rename-address-button' onClick = { () => params.renameAddressCallBack(params.addressBookEntry) }>
 						<span class = 'icon'>

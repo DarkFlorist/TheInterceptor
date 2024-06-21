@@ -89,9 +89,7 @@ export function GnosisSafeVisualizer(param: GnosisSafeVisualizerParams) {
 				return setCurrentBlockNumber(parsed.data.rpcConnectionStatus?.latestBlock?.number)
 			}
 			if (parsed.method !== 'popup_simulateExecutionReply') return
-			console.log(parsed.method)
 			const reply = SimulateExecutionReply.parse(parsed)
-			console.log(reply)
 			if (reply.data.transactionOrMessageIdentifier !== param.gnosisSafeMessage.messageIdentifier) return
 			return setSimulateExecutionReply(reply)
 		}
