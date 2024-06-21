@@ -536,7 +536,7 @@ export function ConfirmTransaction() {
 								setActiveAddressAndInformAboutIt = { undefined }
 								modifyAddressWindowState = { modalState.state }
 								close = { () => { setModalState({ page: 'noModal' }) } }
-								activeAddress = { undefined }
+								activeAddress = { currentPendingTransactionOrSignableMessage?.activeAddress }
 							/>
 						: <></> }
 					</div>
@@ -568,7 +568,7 @@ export function ConfirmTransaction() {
 							setActiveAddressAndInformAboutIt = { undefined }
 							modifyAddressWindowState = { modalState.state }
 							close = { () => { setModalState({ page: 'noModal' }) } }
-							activeAddress = { undefined }
+							activeAddress = { currentPendingTransactionOrSignableMessage?.activeAddress }
 						/>
 					: <></> }
 				</div>
@@ -615,6 +615,7 @@ export function ConfirmTransaction() {
 									renameAddressCallBack = { renameAddressCallBack }
 									removeTransactionOrSignedMessage = { undefined }
 									numberOfUnderTransactions = { underTransactions.length }
+									editEnsNamedHashCallBack = { editEnsNamedHashCallBack }
 								/>
 							</> }
 						</div>

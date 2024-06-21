@@ -1,8 +1,8 @@
 import * as funtypes from 'funtypes'
 import { PendingChainChangeConfirmationPromise, RpcConnectionStatus, TabIconDetails, TabState } from './user-interface-types.js'
 import { EthereumAddress, EthereumBlockHeaderWithTransactionHashes, EthereumBytes32, EthereumData, EthereumQuantity, EthereumSignedTransactionWithBlockData, EthereumTimestamp, NonHexBigInt, OptionalEthereumAddress } from './wire-types.js'
-import { ModifyAddressWindowState, CompleteVisualizedSimulation, NamedTokenId, ProtectorResults, SimulatedAndVisualizedTransaction, SimulationState, TokenPriceEstimate, EnrichedEthereumEvent, EnrichedEthereumInputData } from './visualizer-types.js'
-import { VisualizedPersonalSignRequest } from './personal-message-definitions.js'
+import { ModifyAddressWindowState, CompleteVisualizedSimulation, NamedTokenId, ProtectorResults, SimulatedAndVisualizedTransaction, SimulationState, TokenPriceEstimate } from './visualizer-types.js'
+import { VisualizedPersonalSignRequest, VisualizedPersonalSignRequestSafeTx } from './personal-message-definitions.js'
 import { UniqueRequestIdentifier, WebsiteSocket } from '../utils/requests.js'
 import { EthGetFeeHistoryResponse, EthGetLogsResponse, EthGetStorageAtParams, EthTransactionReceiptResponse, GetBlockReturn, SendRawTransactionParams, SendTransactionParams, WalletAddEthereumChain } from './JsonRpc-types.js'
 import { AddressBookEntries, AddressBookEntry } from './addressBookTypes.js'
@@ -13,6 +13,7 @@ import { ConfirmTransactionDialogState, PendingAccessRequests, PendingTransactio
 import { CodeMessageError, RpcEntries, RpcEntry, RpcNetwork } from './rpc.js'
 import { OldSignTypedDataParams, PersonalSignParams, SignTypedDataParams } from './jsonRpc-signing-types.js'
 import { GetSimulationStackOldReply, GetSimulationStackReply } from './simulationStackTypes.js'
+import { EnrichedEthereumEvent, EnrichedEthereumInputData } from './EnrichedEthereumData.js'
 
 export type WalletSwitchEthereumChainReply = funtypes.Static<typeof WalletSwitchEthereumChainReply>
 export const WalletSwitchEthereumChainReply = funtypes.ReadonlyObject({
@@ -601,69 +602,71 @@ const SettingsUpdated = funtypes.ReadonlyObject({
 	data: Settings
 })
 
-type PartiallyParsedSimulateGovernanceContractExecutionReply = funtypes.Static<typeof PartiallyParsedSimulateGovernanceContractExecutionReply>
-const PartiallyParsedSimulateGovernanceContractExecutionReply = funtypes.ReadonlyObject({
-	method: funtypes.Literal('popup_simulateGovernanceContractExecutionReply'),
+type PartiallyParsedSimulateExecutionReply = funtypes.Static<typeof PartiallyParsedSimulateExecutionReply>
+const PartiallyParsedSimulateExecutionReply = funtypes.ReadonlyObject({
+	method: funtypes.Literal('popup_simulateExecutionReply'),
 	data: funtypes.Unknown,
 }).asReadonly()
 
 export type GovernanceVoteInputParameters = funtypes.Static<typeof GovernanceVoteInputParameters>
 export const GovernanceVoteInputParameters = funtypes.ReadonlyObject({
 	proposalId: EthereumQuantity,
-	support:  funtypes.Union(funtypes.Boolean, EthereumQuantity),
+	support: funtypes.Union(funtypes.Boolean, EthereumQuantity),
 	reason: funtypes.Union(funtypes.Undefined, funtypes.String),
 	params: funtypes.Union(funtypes.Undefined, EthereumData),
 	signature: funtypes.Union(funtypes.Undefined, EthereumData),
 	voter: funtypes.Union(funtypes.Undefined, EthereumAddress),
 })
 
-export type SimulateGovernanceContractExecutionReply = funtypes.Static<typeof SimulateGovernanceContractExecutionReply>
-export const SimulateGovernanceContractExecutionReply = funtypes.ReadonlyObject({
-	method: funtypes.Literal('popup_simulateGovernanceContractExecutionReply'),
-	data: funtypes.Union(
-		funtypes.ReadonlyObject({
-			transactionIdentifier: EthereumQuantity,
-			success: funtypes.Literal(false),
-			error: funtypes.Union(
-				funtypes.ReadonlyObject({
-					type: funtypes.Literal('MissingAbi'),
-					message: funtypes.String,
-					addressBookEntry: AddressBookEntry,
-				}),
-			)
-		}),
-		funtypes.ReadonlyObject({
-			transactionIdentifier: EthereumQuantity,
-			success: funtypes.Literal(false),
-			error: funtypes.Union(
-				funtypes.ReadonlyObject({
-					type: funtypes.Literal('Other'),
-					message: funtypes.String,
-				}),
-			)
-		}),
-		funtypes.ReadonlyObject({
-			transactionIdentifier: EthereumQuantity,
-			success: funtypes.Literal(true),
-			result: funtypes.ReadonlyObject({
-				namedTokenIds: funtypes.ReadonlyArray(NamedTokenId),
-				addressBookEntries: funtypes.ReadonlyArray(AddressBookEntry),
-				simulatedAndVisualizedTransactions: funtypes.ReadonlyArray(SimulatedAndVisualizedTransaction),
-				visualizedPersonalSignRequests: funtypes.ReadonlyArray(VisualizedPersonalSignRequest),
-				tokenPrices: funtypes.ReadonlyArray(TokenPriceEstimate),
-				eventsForEachTransaction: funtypes.ReadonlyArray(funtypes.ReadonlyArray(EnrichedEthereumEvent)),
-				parsedInputData: funtypes.ReadonlyArray(EnrichedEthereumInputData),
-				protectors: funtypes.ReadonlyArray(ProtectorResults),
-				simulationState: funtypes.Union(SimulationState),
-			})
+export type SimulateExecutionReplyData = funtypes.Static<typeof SimulateExecutionReplyData>
+export const SimulateExecutionReplyData = funtypes.Union(
+	funtypes.ReadonlyObject({
+		success: funtypes.Literal(false),
+		errorType: funtypes.Literal('Other'),
+		transactionOrMessageIdentifier: EthereumQuantity,
+		errorMessage: funtypes.String,
+	}),
+	funtypes.ReadonlyObject({
+		success: funtypes.Literal(false),
+		errorType: funtypes.Literal('MissingAbi'),
+		transactionOrMessageIdentifier: EthereumQuantity,
+		errorMessage: funtypes.String,
+		errorAddressBookEntry: AddressBookEntry,
+	}),
+	funtypes.ReadonlyObject({
+		success: funtypes.Literal(true),
+		transactionOrMessageIdentifier: EthereumQuantity,
+		result: funtypes.ReadonlyObject({
+			namedTokenIds: funtypes.ReadonlyArray(NamedTokenId),
+			addressBookEntries: funtypes.ReadonlyArray(AddressBookEntry),
+			simulatedAndVisualizedTransactions: funtypes.ReadonlyArray(SimulatedAndVisualizedTransaction),
+			visualizedPersonalSignRequests: funtypes.ReadonlyArray(VisualizedPersonalSignRequest),
+			tokenPrices: funtypes.ReadonlyArray(TokenPriceEstimate),
+			eventsForEachTransaction: funtypes.ReadonlyArray(funtypes.ReadonlyArray(EnrichedEthereumEvent)),
+			parsedInputData: funtypes.ReadonlyArray(EnrichedEthereumInputData),
+			protectors: funtypes.ReadonlyArray(ProtectorResults),
+			simulationState: funtypes.Union(SimulationState),
 		})
-	)
+	})
+)
+
+export type SimulateExecutionReply = funtypes.Static<typeof SimulateExecutionReply>
+export const SimulateExecutionReply = funtypes.ReadonlyObject({
+	method: funtypes.Literal('popup_simulateExecutionReply'),
+	data: SimulateExecutionReplyData
 }).asReadonly()
 
 export type SimulateGovernanceContractExecution = funtypes.Static<typeof SimulateGovernanceContractExecution>
 export const SimulateGovernanceContractExecution = funtypes.ReadonlyObject({
 	method: funtypes.Literal('popup_simulateGovernanceContractExecution'),
 	data: funtypes.ReadonlyObject({ transactionIdentifier: EthereumQuantity })
+})
+export type SimulateGnosisSafeTransaction = funtypes.Static<typeof SimulateGnosisSafeTransaction>
+export const SimulateGnosisSafeTransaction = funtypes.ReadonlyObject({
+	method: funtypes.Literal('popup_simulateGnosisSafeTransaction'),
+	data: funtypes.ReadonlyObject({
+		gnosisSafeMessage: VisualizedPersonalSignRequestSafeTx,
+	})
 })
 
 type SettingsOpenedReply = funtypes.Static<typeof SettingsOpenedReply>
@@ -795,6 +798,7 @@ export const PopupMessage = funtypes.Union(
 	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_import_settings'), data: funtypes.ReadonlyObject({ fileContents: funtypes.String }) }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_get_export_settings') }),
 	SimulateGovernanceContractExecution,
+	SimulateGnosisSafeTransaction,
 	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_settingsOpened') }),
 	ChangeSettings,
 	SetRpcList,
@@ -822,7 +826,7 @@ export const MessageToPopup = funtypes.Union(
 	UpdateRPCList,
 	SimulationUpdateStartedOrEnded,
 	PartialUpdateHomePage,
-	PartiallyParsedSimulateGovernanceContractExecutionReply,
+	PartiallyParsedSimulateExecutionReply,
 	SettingsOpenedReply,
 	PopupAddOrModifyAddressWindowStateInfomation,
 	FetchAbiAndNameFromEtherscanReply,

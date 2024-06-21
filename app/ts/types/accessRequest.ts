@@ -4,10 +4,11 @@ import { AddressBookEntry } from './addressBookTypes.js'
 import { EthereumAddress, EthereumQuantity, EthereumTimestamp, OptionalEthereumAddress } from './wire-types.js'
 import { SignerName } from './signerTypes.js'
 import { InterceptedRequest, UniqueRequestIdentifier, WebsiteSocket } from '../utils/requests.js'
-import { FailedToCreateWebsiteCreatedEthereumUnsignedTransaction, EnrichedEthereumEvent, NamedTokenId, ProtectorResults, SignedMessageTransaction, SimulatedAndVisualizedTransaction, SimulationState, TokenPriceEstimate, WebsiteCreatedEthereumUnsignedTransaction, WebsiteCreatedEthereumUnsignedTransactionOrFailed } from './visualizer-types.js'
+import { FailedToCreateWebsiteCreatedEthereumUnsignedTransaction, NamedTokenId, ProtectorResults, SignedMessageTransaction, SimulatedAndVisualizedTransaction, SimulationState, TokenPriceEstimate, WebsiteCreatedEthereumUnsignedTransaction, WebsiteCreatedEthereumUnsignedTransactionOrFailed } from './visualizer-types.js'
 import { VisualizedPersonalSignRequest } from './personal-message-definitions.js'
 import { OriginalSendRequestParameters } from './JsonRpc-types.js'
 import { SignMessageParams } from './jsonRpc-signing-types.js'
+import { EnrichedEthereumEvent } from './EnrichedEthereumData.js'
 
 export type PendingAccessRequest = funtypes.Static<typeof PendingAccessRequest>
 export const PendingAccessRequest = funtypes.ReadonlyObject({

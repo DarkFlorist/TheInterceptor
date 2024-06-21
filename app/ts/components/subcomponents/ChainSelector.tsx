@@ -11,31 +11,30 @@ interface ChainSelectorParams {
 export function ChainSelector(params: ChainSelectorParams) {
 	const [isOpen, setIsOpen] = useState(false)
 
-	const wrapperRef = useRef<HTMLDivElement>(null);
-	clickOutsideAlerter(wrapperRef, () => setIsOpen(false));
+	const wrapperRef = useRef<HTMLDivElement>(null)
+	clickOutsideAlerter(wrapperRef, () => setIsOpen(false))
 
 	function changeRpc(entry: RpcEntry) {
 		params.changeRpc(entry)
 		setIsOpen(false)
 	}
 
-	return <div ref = { wrapperRef } class = { `dropdown ${ isOpen ? 'is-active' : '' }` }  style = 'width: 160px; text-align: end;'>
-		<div class = 'dropdown-trigger' style = 'width: 100%;'>
-			<button className = { `button is-primary ${ params.rpcNetwork.httpsRpc === undefined ? 'is-danger' : '' }` } style = 'padding-left: 6px; padding-right: 6px;' aria-haspopup = 'true' aria-controls = 'dropdown-menu' onClick = { () => setIsOpen(!isOpen) }>
-				{ params.rpcNetwork.httpsRpc === undefined ? <span class = 'icon' style = 'margin-left: 0em; margin-right: 0.5em;'>
-					<img src = '../img/warning-sign-white.svg' />
-				</span> : <></> }
-				<p style = 'overflow: hidden; white-space: nowrap; display: block; max-width: 160px; text-overflow: ellipsis;'>{ params.rpcNetwork.name } ▼ </p>
+	return <div ref = { wrapperRef } class = { `dropdown ${ isOpen ? 'is-active' : '' }` } style = { { justifyContent: 'end', width: '100%' } }>
+		<div class = 'dropdown-trigger' style = { { maxWidth: '100%' } }>
+			<button className = { `button is-primary is-reveal ${ params.rpcNetwork.httpsRpc === undefined ? 'is-danger' : ''}` } aria-haspopup = 'true' aria-controls = 'dropdown-menu' onClick = { () => setIsOpen(!isOpen) } title = { params.rpcNetwork.name } style = { { width: '100%', columnGap: '0.5em' } }>
+				<span class = 'truncate'>{ params.rpcNetwork.name }</span>
 			</button>
 		</div>
-		<div class = 'dropdown-menu' id = 'dropdown-menu' role = 'menu' style = 'right: -10px; min-width: 160px; left: unset'>
+		<div class = 'dropdown-menu' id = 'dropdown-menu' role = 'menu' style = { { left: 'unset' } }>
 			<div class = 'dropdown-content'>
 				{
-					params.rpcEntries.map((rpcEntry) => { return (
-						<a href = '#' class = { `dropdown-item ${ rpcEntry.httpsRpc === params.rpcNetwork.httpsRpc ? 'is-active' : '' }` } onClick = { () => changeRpc(rpcEntry) } >
-							{ rpcEntry.name }
-						</a>
-					)})
+					params.rpcEntries.map((rpcEntry) => {
+						return (
+							<button type = 'button' class = { `dropdown-item ${ rpcEntry.httpsRpc === params.rpcNetwork.httpsRpc ? 'is-active' : '' }` } onClick = { () => changeRpc(rpcEntry) } >
+								{ rpcEntry.name }
+							</button>
+						)
+					})
 				}
 			</div>
 		</div>
