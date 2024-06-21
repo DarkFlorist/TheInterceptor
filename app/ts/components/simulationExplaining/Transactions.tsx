@@ -191,6 +191,7 @@ export function TransactionsAndSignedMessages(param: TransactionsAndSignedMessag
 						visualizedPersonalSignRequest = { simTx }
 						renameAddressCallBack = { param.renameAddressCallBack }
 						removeTransactionOrSignedMessage = { param.removeTransactionOrSignedMessage }
+						editEnsNamedHashCallBack = { param.editEnsNamedHashCallBack }
 						numberOfUnderTransactions = { 0 }
 					/>
 				</> : <>

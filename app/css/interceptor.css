@@ -62,7 +62,7 @@ button:where(:not(.btn)):hover {
 	background-color: var(--highlighted-primary-color);
 }
 
-button:not(.btn):disabled, button[disabled]) {
+button:not(.btn):disabled, button:not(.btn)[disabled] {
 	background-color: var(--disabled-primary-color);
 	border-color: transparent;
 }

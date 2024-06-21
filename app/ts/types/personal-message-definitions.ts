@@ -176,18 +176,18 @@ const SeaPortSingleConsideration = funtypes.ReadonlyObject({
 
 export type OpenSeaOrderMessage = funtypes.Static<typeof OpenSeaOrderMessage>
 export const OpenSeaOrderMessage = funtypes.ReadonlyObject({
-    offerer: EthereumAddress,
-    offer: funtypes.ReadonlyArray(SeaPortSingleOffer),
-    consideration: funtypes.ReadonlyArray(SeaPortSingleConsideration),
-    startTime: NonHexBigInt,
-    endTime: NonHexBigInt,
-    orderType: SeaPortOrderType,
-    zone: EthereumAddress,
-    zoneHash: EthereumBytes32,
-    salt: NonHexBigInt,
-    conduitKey: EthereumBytes32,
-    totalOriginalConsiderationItems: NonHexBigInt,
-    counter: NonHexBigInt,
+	offerer: EthereumAddress,
+	offer: funtypes.ReadonlyArray(SeaPortSingleOffer),
+	consideration: funtypes.ReadonlyArray(SeaPortSingleConsideration),
+	startTime: NonHexBigInt,
+	endTime: NonHexBigInt,
+	orderType: SeaPortOrderType,
+	zone: EthereumAddress,
+	zoneHash: EthereumBytes32,
+	salt: NonHexBigInt,
+	conduitKey: EthereumBytes32,
+	totalOriginalConsiderationItems: NonHexBigInt,
+	counter: NonHexBigInt,
 })
 
 type OpenSeaOrder = funtypes.Static<typeof OpenSeaOrder>
@@ -337,18 +337,18 @@ export const SeaPortSingleConsiderationWithAddressBookEntries  = funtypes.Readon
 
 export type OpenSeaOrderMessageWithAddressBookEntries = funtypes.Static<typeof OpenSeaOrderMessageWithAddressBookEntries>
 export const OpenSeaOrderMessageWithAddressBookEntries = funtypes.ReadonlyObject({
-    offerer: AddressBookEntry,
-    offer: funtypes.ReadonlyArray(SeaPortSingleOfferWithAddressBookEntries),
-    consideration: funtypes.ReadonlyArray(SeaPortSingleConsiderationWithAddressBookEntries),
-    startTime: NonHexBigInt,
-    endTime: NonHexBigInt,
-    orderType: SeaPortOrderType,
-    zone: AddressBookEntry,
-    zoneHash: EthereumBytes32,
-    salt: NonHexBigInt,
-    conduitKey: EthereumBytes32,
-    totalOriginalConsiderationItems: NonHexBigInt,
-    counter: NonHexBigInt,
+	offerer: AddressBookEntry,
+	offer: funtypes.ReadonlyArray(SeaPortSingleOfferWithAddressBookEntries),
+	consideration: funtypes.ReadonlyArray(SeaPortSingleConsiderationWithAddressBookEntries),
+	startTime: NonHexBigInt,
+	endTime: NonHexBigInt,
+	orderType: SeaPortOrderType,
+	zone: AddressBookEntry,
+	zoneHash: EthereumBytes32,
+	salt: NonHexBigInt,
+	conduitKey: EthereumBytes32,
+	totalOriginalConsiderationItems: NonHexBigInt,
+	counter: NonHexBigInt,
 })
 
 type PersonalSignRequestBase = funtypes.Static<typeof PersonalSignRequestBase>
@@ -435,43 +435,43 @@ export type SafeTx = funtypes.Static<typeof SafeTx>
 export const SafeTx = funtypes.ReadonlyObject({
 	types: funtypes.ReadonlyObject({
 		SafeTx: funtypes.ReadonlyTuple(
-            funtypes.ReadonlyObject({ name: funtypes.Literal('to'), type: funtypes.Literal('address') }),
-            funtypes.ReadonlyObject({ name: funtypes.Literal('value'), type: funtypes.Literal('uint256') }),
-            funtypes.ReadonlyObject({ name: funtypes.Literal('data'), type: funtypes.Literal('bytes') }),
-            funtypes.ReadonlyObject({ name: funtypes.Literal('operation'), type: funtypes.Literal('uint8') }),
-            funtypes.ReadonlyObject({ name: funtypes.Literal('safeTxGas'), type: funtypes.Literal('uint256') }),
-            funtypes.ReadonlyObject({ name: funtypes.Literal('baseGas'), type: funtypes.Literal('uint256') }),
-            funtypes.ReadonlyObject({ name: funtypes.Literal('gasPrice'), type: funtypes.Literal('uint256') }),
-            funtypes.ReadonlyObject({ name: funtypes.Literal('gasToken'), type: funtypes.Literal('address') }),
-            funtypes.ReadonlyObject({ name: funtypes.Literal('refundReceiver'), type: funtypes.Literal('address') }),
-            funtypes.ReadonlyObject({ name: funtypes.Literal('nonce'), type: funtypes.Literal('uint256') })
+			funtypes.ReadonlyObject({ name: funtypes.Literal('to'), type: funtypes.Literal('address') }),
+			funtypes.ReadonlyObject({ name: funtypes.Literal('value'), type: funtypes.Literal('uint256') }),
+			funtypes.ReadonlyObject({ name: funtypes.Literal('data'), type: funtypes.Literal('bytes') }),
+			funtypes.ReadonlyObject({ name: funtypes.Literal('operation'), type: funtypes.Literal('uint8') }),
+			funtypes.ReadonlyObject({ name: funtypes.Literal('safeTxGas'), type: funtypes.Literal('uint256') }),
+			funtypes.ReadonlyObject({ name: funtypes.Literal('baseGas'), type: funtypes.Literal('uint256') }),
+			funtypes.ReadonlyObject({ name: funtypes.Literal('gasPrice'), type: funtypes.Literal('uint256') }),
+			funtypes.ReadonlyObject({ name: funtypes.Literal('gasToken'), type: funtypes.Literal('address') }),
+			funtypes.ReadonlyObject({ name: funtypes.Literal('refundReceiver'), type: funtypes.Literal('address') }),
+			funtypes.ReadonlyObject({ name: funtypes.Literal('nonce'), type: funtypes.Literal('uint256') })
 		),
-        EIP712Domain: funtypes.ReadonlyTuple(
+		EIP712Domain: funtypes.ReadonlyTuple(
 			funtypes.Partial({ name: funtypes.Literal('chainId'), type: funtypes.Literal('uint256') }),
 			funtypes.ReadonlyObject({ name: funtypes.Literal('verifyingContract'), type: funtypes.Literal('address') })
 		),
-    }),
-    primaryType: funtypes.Literal('SafeTx'),
-    domain: funtypes.Intersect(
+	}),
+	primaryType: funtypes.Literal('SafeTx'),
+	domain: funtypes.Intersect(
 		funtypes.Partial({
 			chainId: funtypes.Union(EthereumQuantity, NonHexBigInt)
 		}),
 		funtypes.ReadonlyObject({
-        	verifyingContract: EthereumAddress,
+			verifyingContract: EthereumAddress,
 		})
 	),
-    message: funtypes.ReadonlyObject({
-        to: EthereumAddress,
-        value: NonHexBigInt,
-        data: EthereumInput,
-        operation: NonHexBigInt,
-        safeTxGas: NonHexBigInt,
-        baseGas: NonHexBigInt,
-        gasPrice: NonHexBigInt,
-        gasToken: EthereumAddress,
-        refundReceiver: EthereumAddress,
-        nonce: NonHexBigInt,
-    })
+	message: funtypes.ReadonlyObject({
+		to: EthereumAddress,
+		value: NonHexBigInt,
+		data: EthereumInput,
+		operation: NonHexBigInt,
+		safeTxGas: NonHexBigInt,
+		baseGas: NonHexBigInt,
+		gasPrice: NonHexBigInt,
+		gasToken: EthereumAddress,
+		refundReceiver: EthereumAddress,
+		nonce: NonHexBigInt,
+	})
 })
 
 export type VisualizedPersonalSignRequestSafeTx = funtypes.Static<typeof VisualizedPersonalSignRequestSafeTx>

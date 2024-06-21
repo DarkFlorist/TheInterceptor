@@ -16,12 +16,15 @@ import { EnrichedEIP712, EnrichedEIP712Message, TypeEnrichedEIP712MessageRecord 
 import { TransactionCreated } from '../simulationExplaining/SimulationSummary.js'
 import { EnrichedSolidityTypeComponent } from '../subcomponents/solidityType.js'
 import { ParsedInputData, QuarantineReasons } from '../simulationExplaining/Transactions.js'
+import { GnosisSafeVisualizer } from '../simulationExplaining/customExplainers/GnosisSafeVisualizer.js'
+import { EditEnsNamedHashCallBack } from '../subcomponents/ens.js'
 
 type SignatureCardParams = {
 	visualizedPersonalSignRequest: VisualizedPersonalSignRequest
 	renameAddressCallBack: RenameAddressCallBack
 	removeTransactionOrSignedMessage: ((transactionOrMessageIdentifier: TransactionOrMessageIdentifier) => void) | undefined
-	numberOfUnderTransactions: number,
+	numberOfUnderTransactions: number
+	editEnsNamedHashCallBack: EditEnsNamedHashCallBack
 }
 
 type SignatureHeaderParams = {
@@ -38,7 +41,7 @@ export function identifySignature(data: VisualizedPersonalSignRequest) {
 			signingAction: 'Sign Opensea order',
 		}
 		case 'SafeTx': return {
-			title: 'Arbitary Gnosis Safe message',
+			title: 'Gnosis Safe message',
 			rejectAction: 'Reject Gnosis Safe message',
 			simulationAction: 'Simulate Gnosis Safe message',
 			signingAction: 'Sign Gnosis Safe message',
@@ -108,6 +111,7 @@ export function SignatureHeader(params: SignatureHeaderParams) {
 type SignRequestParams = {
 	visualizedPersonalSignRequest: VisualizedPersonalSignRequest
 	renameAddressCallBack: RenameAddressCallBack
+	editEnsNamedHashCallBack: EditEnsNamedHashCallBack
 }
 
 const decodeMessage = (message: string) => {
@@ -115,7 +119,7 @@ const decodeMessage = (message: string) => {
 	return message
 }
 
-function SignRequest({ visualizedPersonalSignRequest, renameAddressCallBack }: SignRequestParams) {
+function SignRequest({ visualizedPersonalSignRequest, renameAddressCallBack, editEnsNamedHashCallBack }: SignRequestParams) {
 	switch (visualizedPersonalSignRequest.type) {
 		case 'NotParsed': {
 			if (visualizedPersonalSignRequest.method === 'personal_sign') {
@@ -134,8 +138,9 @@ function SignRequest({ visualizedPersonalSignRequest, renameAddressCallBack }: S
 				<p class = 'paragraph' style = 'color: var(--subtitle-text-color)'>{ visualizedPersonalSignRequest.message }</p>
 			</div>
 		}
-		
 		case 'SafeTx': return <SafeTx
+		editEnsNamedHashCallBack = { editEnsNamedHashCallBack }
+			activeAddress = { visualizedPersonalSignRequest.activeAddress.address }
 			visualizedPersonalSignRequestSafeTx = { visualizedPersonalSignRequest }
 			renameAddressCallBack = { renameAddressCallBack }
 		/>
@@ -187,8 +192,14 @@ function SignRequest({ visualizedPersonalSignRequest, renameAddressCallBack }: S
 	}
 }
 
-function SafeTx({ visualizedPersonalSignRequestSafeTx, renameAddressCallBack }: { visualizedPersonalSignRequestSafeTx: VisualizedPersonalSignRequestSafeTx, renameAddressCallBack: RenameAddressCallBack }) {
+function SafeTx({ visualizedPersonalSignRequestSafeTx, renameAddressCallBack, activeAddress, editEnsNamedHashCallBack }: { visualizedPersonalSignRequestSafeTx: VisualizedPersonalSignRequestSafeTx, renameAddressCallBack: RenameAddressCallBack, activeAddress: bigint, editEnsNamedHashCallBack: EditEnsNamedHashCallBack }) {
 	return <>
+		<GnosisSafeVisualizer
+			gnosisSafeMessage = { visualizedPersonalSignRequestSafeTx }
+			activeAddress = { activeAddress }
+			renameAddressCallBack = { renameAddressCallBack }
+			editEnsNamedHashCallBack = { editEnsNamedHashCallBack }
+		/>
 		<span class = 'log-table' style = 'justify-content: center; column-gap: 5px; grid-template-columns: auto auto'>
 			{ visualizedPersonalSignRequestSafeTx.message.domain.chainId !== undefined
 				? <>
