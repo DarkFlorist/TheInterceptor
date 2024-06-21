@@ -2,7 +2,7 @@ import { changeActiveAddressAndChainAndResetSimulation, changeActiveRpc, refresh
 import { getSettings, setUseTabsInsteadOfPopup, setMakeMeRich, setPage, setUseSignersAddressAsActiveAddress, updateWebsiteAccess, exportSettingsAndAddressBook, importSettingsAndAddressBook, getMakeMeRich, getUseTabsInsteadOfPopup, getMetamaskCompatibilityMode, setMetamaskCompatibilityMode, getPage } from './settings.js'
 import { getPendingTransactionsAndMessages, getCurrentTabId, getTabState, saveCurrentTabId, setRpcList, getRpcList, getPrimaryRpcForChain, getRpcConnectionStatus, updateUserAddressBookEntries, getSimulationResults, setIdsOfOpenedTabs, getIdsOfOpenedTabs, updatePendingTransactionOrMessage, getLatestUnexpectedError, addEnsLabelHash, addEnsNodeHash } from './storageVariables.js'
 import { Simulator, parseEvents, parseInputData } from '../simulation/simulator.js'
-import { ChangeActiveAddress, ChangeMakeMeRich, ChangePage, RemoveTransaction, RequestAccountsFromSigner, TransactionConfirmation, InterceptorAccess, ChangeInterceptorAccess, ChainChangeConfirmation, EnableSimulationMode, ChangeActiveChain, AddOrEditAddressBookEntry, GetAddressBookData, RemoveAddressBookEntry, InterceptorAccessRefresh, InterceptorAccessChangeAddress, Settings, RefreshConfirmTransactionMetadata, ChangeSettings, ImportSettings, SetRpcList, UpdateHomePage, SimulateGovernanceContractExecution, ChangeAddOrModifyAddressWindowState, FetchAbiAndNameFromEtherscan, OpenWebPage, DisableInterceptor, SetEnsNameForHash, UpdateConfirmTransactionDialog, UpdateConfirmTransactionDialogPendingTransactions, SimulateGnosisSafeTransaction, SimulateExecutionReply } from '../types/interceptor-messages.js'
+import { ChangeActiveAddress, ChangeMakeMeRich, ChangePage, RemoveTransaction, RequestAccountsFromSigner, TransactionConfirmation, InterceptorAccess, ChangeInterceptorAccess, ChainChangeConfirmation, EnableSimulationMode, ChangeActiveChain, AddOrEditAddressBookEntry, GetAddressBookData, RemoveAddressBookEntry, InterceptorAccessRefresh, InterceptorAccessChangeAddress, Settings, RefreshConfirmTransactionMetadata, ChangeSettings, ImportSettings, SetRpcList, UpdateHomePage, SimulateGovernanceContractExecution, ChangeAddOrModifyAddressWindowState, FetchAbiAndNameFromEtherscan, OpenWebPage, DisableInterceptor, SetEnsNameForHash, UpdateConfirmTransactionDialog, UpdateConfirmTransactionDialogPendingTransactions, SimulateExecutionReply } from '../types/interceptor-messages.js'
 import { formEthSendTransaction, formSendRawTransaction, resolvePendingTransactionOrMessage, updateConfirmTransactionView } from './windows/confirmTransaction.js'
 import { getAddressMetadataForAccess, requestAddressChange, resolveInterceptorAccess } from './windows/interceptorAccess.js'
 import { resolveChainChange } from './windows/changeChain.js'
@@ -29,6 +29,7 @@ import { makeSureInterceptorIsNotSleeping } from './sleeping.js'
 import { craftPersonalSignPopupMessage } from './windows/personalSign.js'
 import { checkAndThrowRuntimeLastError, updateTabIfExists } from '../utils/requests.js'
 import { modifyObject } from '../utils/typescript.js'
+import { VisualizedPersonalSignRequestSafeTx } from '../types/personal-message-definitions.js'
 
 export async function confirmDialog(simulator: Simulator, websiteTabConnections: WebsiteTabConnections, confirmation: TransactionConfirmation) {
 	await resolvePendingTransactionOrMessage(simulator, websiteTabConnections, confirmation)
@@ -389,12 +390,12 @@ export async function simulateGovernanceContractExecutionOnPass(ethereum: Ethere
 	}))
 }
 
-export async function simulateGnosisSafeTransactionOnPass(ethereum: EthereumClientService, request: SimulateGnosisSafeTransaction) {
+export async function simulateGnosisSafeTransactionOnPass(ethereum: EthereumClientService, gnosisSafeMessage: VisualizedPersonalSignRequestSafeTx) {
 	const simulationResults = await getSimulationResults()
-	const gnosisTransactionExecutionVisualisation = await simulateGnosisSafeMetaTransaction(request.data.gnosisSafeMessage, simulationResults.simulationState, ethereum)
+	const gnosisTransactionExecutionVisualisation = await simulateGnosisSafeMetaTransaction(gnosisSafeMessage, simulationResults.simulationState, ethereum)
 	return await sendPopupMessageToOpenWindows(serialize(SimulateExecutionReply, {
 		method: 'popup_simulateExecutionReply' as const,
-		data: { ...gnosisTransactionExecutionVisualisation, transactionOrMessageIdentifier: request.data.gnosisSafeMessage.messageIdentifier }
+		data: { ...gnosisTransactionExecutionVisualisation, transactionOrMessageIdentifier: gnosisSafeMessage.messageIdentifier }
 	}))
 }
 

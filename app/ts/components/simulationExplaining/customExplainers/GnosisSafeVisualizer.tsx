@@ -3,6 +3,7 @@ import { MessageToPopup, SimulateExecutionReply } from '../../../types/intercept
 import { VisualizedPersonalSignRequestSafeTx } from '../../../types/personal-message-definitions.js'
 import { RenameAddressCallBack, RpcConnectionStatus } from '../../../types/user-interface-types.js'
 import { ErrorComponent } from '../../subcomponents/Error.js'
+import { SmallAddress } from '../../subcomponents/address.js'
 import { EditEnsNamedHashCallBack } from '../../subcomponents/ens.js'
 import { Transaction } from '../Transactions.js'
 import { useEffect, useState } from 'preact/hooks'
@@ -18,7 +19,6 @@ type ShowSuccessOrFailureParams = {
 }
 
 const requestToSimulate = (gnosisSafeMessage: VisualizedPersonalSignRequestSafeTx) => sendPopupMessageToBackgroundPage({ method: 'popup_simulateGnosisSafeTransaction', data: { gnosisSafeMessage } })
-
 
 const ShowSuccessOrFailure = ({ simulateExecutionReply, activeAddress, renameAddressCallBack, editEnsNamedHashCallBack, gnosisSafeMessage }: ShowSuccessOrFailureParams) => {
 	if (simulateExecutionReply === undefined) {
@@ -103,20 +103,16 @@ export function GnosisSafeVisualizer(param: GnosisSafeVisualizerParams) {
 	}, [param.activeAddress, param.gnosisSafeMessage.messageIdentifier])
 
 	if (activeAddress === undefined) return <></>
-	return <>
-		<div style = 'display: grid; grid-template-rows: max-content max-content'>
-			<span class = 'log-table' style = 'padding-bottom: 10px; grid-template-columns: auto auto;'>
-				<div class = 'log-cell'>
-					<p class = 'paragraph'>Simulation of this transaction should the multisig approve the transaction:</p>
-				</div>
-				<div class = 'log-cell' style = 'justify-content: right;'>
-					{ simulateExecutionReply === undefined ? <></> :
-						<button class = { 'button is-primary is-small' } onClick = { () => requestToSimulate(param.gnosisSafeMessage) }>Refresh</button>
-					}
-				</div>
+		return <>
+		<div class = 'notification transaction-importance-box'>
+			<span class = 'log-table' style = 'justify-content: center; grid-template-columns: auto auto auto'>	
+				<div class = 'log-cell'> <p class = 'paragraph'>Approves Gnosis Safe</p> </div>
+				<div class = 'log-cell'> <SmallAddress addressBookEntry = { param.gnosisSafeMessage.verifyingContract } renameAddressCallBack = { param.renameAddressCallBack } /> </div>
+				<div class = 'log-cell'> <p class = 'paragraph'>message</p> </div>
 			</span>
 		</div>
-		<div class = 'notification dashed-notification'>
+		<fieldset class = 'notification dashed-notification'>
+			<legend class = 'paragraph'>Outcome of the message, should the multisig approve it</legend>
 			<ShowSuccessOrFailure
 				gnosisSafeMessage = { param.gnosisSafeMessage }
 				currentBlockNumber = { currentBlockNumber }
@@ -126,6 +122,11 @@ export function GnosisSafeVisualizer(param: GnosisSafeVisualizerParams) {
 				editEnsNamedHashCallBack = { param.editEnsNamedHashCallBack }
 				activeAddress = { activeAddress }
 			/>
-		</div>
+		</fieldset>
+		{ simulateExecutionReply === undefined ? <></> :
+			<div class = 'log-cell' style = 'justify-content: right; margin-top: 10px;'>
+				<button class = { 'button is-primary is-small' } onClick = { () => requestToSimulate(param.gnosisSafeMessage) }>Refresh simulation</button>
+			</div>
+		}
 	</>
 }

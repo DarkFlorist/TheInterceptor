@@ -891,9 +891,9 @@ svg.spinner > circle {
 
 .dashed-notification {
 	border-style: dashed;
-		background: unset;
-		border-width: medium;
-		border-color: white;
+	background: unset;
+	border-width: medium;
+	border-color: white;
 }
 
 .popup-footer {
