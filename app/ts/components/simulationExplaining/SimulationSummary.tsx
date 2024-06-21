@@ -10,7 +10,7 @@ import { addressString, bytes32String, dataStringWith0xStart, nanoString } from 
 import { identifyTransaction } from './identifyTransaction.js'
 import { identifySwap } from './SwapTransactions.js'
 import { useState } from 'preact/hooks'
-import { CellElement, convertNumberToCharacterRepresentationIfSmallEnough, upperCaseFirstCharacter } from '../ui-utils.js'
+import { convertNumberToCharacterRepresentationIfSmallEnough, upperCaseFirstCharacter } from '../ui-utils.js'
 import { EthereumTimestamp } from '../../types/wire-types.js'
 import { RpcNetwork } from '../../types/rpc.js'
 import { AddressBookEntry, Erc1155Entry, Erc20TokenEntry, Erc721Entry } from '../../types/addressBookTypes.js'
@@ -489,7 +489,7 @@ export function TransactionsAccountChangesCard({ simTx, renameAddressCallBack, a
 	const originalSummary = logSummarizer.getSummary(addressMetaDataMap, simulationAndVisualisationResults.tokenPrices, namedTokenIds)
 	const [showSummary, setShowSummary] = useState<boolean>(false)
 	const [ownAddresses, notOwnAddresses] = splitToOwnAndNotOwnAndCleanSummary(originalSummary, simulationAndVisualisationResults.activeAddress)
-	
+
 	if (notOwnAddresses === undefined || ownAddresses === undefined) throw new Error('addresses were undefined')
 	const numberOfChanges = notOwnAddresses.length + ownAddresses.length
 
@@ -708,7 +708,7 @@ export function SimulationSummary(param: SimulationSummaryParams) {
 						</div>
 					}
 				</div>
-				
+
 				<span style = 'color: var(--subtitle-text-color); line-height: 28px; display: flex; margin: 0 0 0 auto; width: fit-content; margin-top: 10px'>
 					<SimulatedInBlockNumber
 						simulationBlockNumber = { param.simulationAndVisualisationResults.blockNumber }
@@ -744,43 +744,42 @@ export function RawTransactionDetailsCard({ transaction, renameAddressCallBack, 
 		{ !showSummary
 			? <></>
 			: <div class = 'card-content'>
-				<div class = 'container' style = 'margin-bottom: 10px;'>
-					<span class = 'log-table' style = 'justify-content: center; column-gap: 5px; row-gap: 5px; grid-template-columns: auto auto'>
-						<CellElement text = 'Transaction type: '/>
-						<CellElement text =  { transaction.type }/>
-						<CellElement text = 'From: '/>
-						<CellElement text = { <SmallAddress addressBookEntry = { transaction.from } renameAddressCallBack = { renameAddressCallBack } textColor = { 'var(--subtitle-text-color)' } /> } />
-						<CellElement text = 'To: '/>
-						<CellElement text = { transaction.to === undefined ? 'No receiving Address' : <SmallAddress addressBookEntry = { transaction.to } renameAddressCallBack = { renameAddressCallBack } textColor = { 'var(--subtitle-text-color)' }/> } />
-						<CellElement text = 'Value: '/>
-						<CellElement text = { <Ether amount = { transaction.value } useFullTokenName = { true } rpcNetwork = { transaction.rpcNetwork } style = { { color: 'var(--subtitle-text-color)' } } fontSize = 'normal'/> } />
-						<CellElement text = 'Gas used: '/>
-						<CellElement text = { `${ gasSpent.toString(10) } gas (${ Number(gasSpent * 10000n / transaction.gas) / 100 }%)` }/>
-						<CellElement text = 'Gas limit: '/>
-						<CellElement text = { `${ transaction.gas.toString(10) } gas` }/>
-						<CellElement text = 'Nonce: '/>
-						<CellElement text = { transaction.nonce.toString(10) }/>
-						<CellElement text = 'Chain: '/>
-						<CellElement text = { transaction.rpcNetwork.name }/>
-						<CellElement text = 'Unsigned transaction hash: '/>
-						<CellElement text = { bytes32String(transaction.hash) } useLegibleFont />
+				<div style = { { display: 'flex', flexDirection: 'column', rowGap: '1rem' } } >
+					<dl class = 'grid columnar'>
+						<dt>Transaction type</dt>
+						<dd>{ transaction.type }</dd>
+						<dt>From</dt>
+						<dd>{ <SmallAddress addressBookEntry = { transaction.from } renameAddressCallBack = { renameAddressCallBack } textColor = { 'var(--subtitle-text-color)' } /> }</dd>
+						<dt>To</dt>
+						<dd>{ transaction.to === undefined ? 'No receiving Address' : <SmallAddress addressBookEntry = { transaction.to } renameAddressCallBack = { renameAddressCallBack } textColor = { 'var(--subtitle-text-color)' }/> }</dd>
+						<dt>Value</dt>
+						<dd>{ <Ether amount = { transaction.value } useFullTokenName = { true } rpcNetwork = { transaction.rpcNetwork } style = { { color: 'var(--subtitle-text-color)' } } fontSize = 'normal'/> }</dd>
+						<dt>Gas used</dt>
+						<dd>{ `${ gasSpent.toString(10) } gas (${ Number(gasSpent * 10000n / transaction.gas) / 100 }%)` }</dd>
+						<dt>Gas limit</dt>
+						<dd>{ `${ transaction.gas.toString(10) } gas` }</dd>
+						<dt>Nonce: </dt>
+						<dd>{ transaction.nonce.toString(10) }</dd>
+						<dt>Chain</dt>
+						<dd>{ transaction.rpcNetwork.name }</dd>
+						<dt>Unsigned transaction hash</dt>
+						<dd><span class = 'text-legible truncate'>{ bytes32String(transaction.hash) }</span></dd>
 
 
 						{ transaction.type !== '1559'
 							? <></>
 							: <>
-								<CellElement text = 'Max Fee Per Gas: '/>
-								<CellElement text = { `${ nanoString(transaction.maxFeePerGas) } nanoeth/gas` }/>
-								<CellElement text = 'Max Priority Fee Per Gas: '/>
-								<CellElement text = { `${ nanoString(transaction.maxPriorityFeePerGas) } nanoeth/gas` }/>
+								<dt>Max Fee Per Gas</dt>
+								<dd>{ `${ nanoString(transaction.maxFeePerGas) } nanoeth/gas` }</dd>
+								<dt>Max Priority Fee Per Gas</dt>
+								<dd>{ `${ nanoString(transaction.maxPriorityFeePerGas) } nanoeth/gas` }</dd>
 							</>
 						}
-					</span>
+					</dl>
 
-					<p class = 'paragraph' style = 'color: var(--subtitle-text-color)'>Raw transaction input: </p>
-
-					<div class = 'textbox'>
-						<p class = 'paragraph' style = 'color: var(--subtitle-text-color)'>{ dataStringWith0xStart(transaction.input) }</p>
+					<div>
+						<p class = 'paragraph' style = 'color: var(--subtitle-text-color)'>Raw transaction input</p>
+						<pre>{ dataStringWith0xStart(transaction.input) }</pre>
 					</div>
 					<p class = 'paragraph' style = 'color: var(--subtitle-text-color)'>Parsed transaction input: </p>
 					{ parsedInputData?.type !== 'Parsed' ? <p class = 'paragraph' style = 'color: var(--subtitle-text-color)'>No ABI available</p> : <ParsedInputData inputData = { parsedInputData } addressMetaData = { addressMetaData } renameAddressCallBack = { renameAddressCallBack }/> }
