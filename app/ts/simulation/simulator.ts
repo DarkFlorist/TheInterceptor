@@ -64,7 +64,7 @@ const getTokenEventHandler = (type: AddressBookEntryCategory, logSignature: stri
 		case 'contact':
 		case 'contract': return undefined
 		default: assertNever(type)
-	} 
+	}
 }
 
 const ensEventHandler = (parsedEvent: ParsedEvent) => {
@@ -177,14 +177,14 @@ export const parseEvents = async (events: readonly EthereumEvent[], ethereumClie
 			loggersAddressBookEntry,
 		}
 	}))
-	
+
 	const maybeParsedEvents: EnrichedEthereumEvent[][] = parsedEvents.map((parsedEvent) => {
 		if (parsedEvent.isParsed === 'NonParsed') return [{ ...parsedEvent, type: 'NonParsed' }]
 		const logSignature = parsedEvent.topics[0]
 		if (logSignature === undefined) return [{ ...parsedEvent, type: 'Parsed' }]
 		const tokenEventhandler = getTokenEventHandler(parsedEvent.loggersAddressBookEntry.type, bytes32String(logSignature))
 		if (tokenEventhandler !== undefined) return tokenEventhandler(parsedEvent).map((logInformation) => ({ ...parsedEvent, type: 'TokenEvent', logInformation }))
-	
+
 		const handledEnsEvent = ensEventHandler(parsedEvent)
 		if (handledEnsEvent !== undefined) return [{ ...parsedEvent, ...handledEnsEvent }]
 		return [{ ...parsedEvent, type: 'Parsed' }]
@@ -209,9 +209,10 @@ export class Simulator {
 	public constructor(rpcNetwork: RpcEntry, newBlockAttemptCallback: NewBlockCallBack, onErrorBlockCallback: (ethereumClientService: EthereumClientService) => Promise<void>) {
 		this.newBlockAttemptCallback = newBlockAttemptCallback
 		this.ethereum = new EthereumClientService(
-			new EthereumJSONRpcRequestHandler(rpcNetwork, true),
+			new EthereumJSONRpcRequestHandler(rpcNetwork.httpsRpc, true),
 			async (blockHeader: EthereumBlockHeader, ethereumClientService: EthereumClientService, isNewBlock: boolean) => await newBlockAttemptCallback(blockHeader, ethereumClientService, isNewBlock, this),
-			onErrorBlockCallback
+			onErrorBlockCallback,
+			rpcNetwork
 		)
 	}
 
@@ -220,9 +221,10 @@ export class Simulator {
 	public reset = (rpcNetwork: RpcEntry) => {
 		this.cleanup()
 		this.ethereum = new EthereumClientService(
-			new EthereumJSONRpcRequestHandler(rpcNetwork, true),
+			new EthereumJSONRpcRequestHandler(rpcNetwork.httpsRpc, true),
 			async (blockHeader: EthereumBlockHeader, ethereumClientService: EthereumClientService, isNewBlock: boolean) => await this.newBlockAttemptCallback(blockHeader, ethereumClientService, isNewBlock, this),
-			this.ethereum.getOnErrorBlockCallback()
+			this.ethereum.getOnErrorBlockCallback(),
+			rpcNetwork
 		)
 	}
 }
