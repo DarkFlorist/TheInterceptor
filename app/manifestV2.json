@@ -1,6 +1,6 @@
 {
-	"name": "Interceptor",
-	"description": "Interceptor",
+	"name": "The Interceptor",
+	"description": "Gain a clearer understanding of your Ethereum transactions before any of your assets are at risk. Simulate a series of transactions to see what will happen before signing anything. Get warned of common scams and mistakes to avoid them.",
 	"version": "0.0.0",
 	"manifest_version": 2,
 	"browser_action": {
