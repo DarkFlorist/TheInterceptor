@@ -1167,7 +1167,7 @@ summary:where(details[open] > *) {
 }
 
 .columnar {
-	--grid-cols: minmax(min-content,max-content) minmax(50%,1fr);
+	--grid-cols: minmax(min-content, max-content) minmax(50%, 1fr);
 	--gap-x: 1rem;
 	--gap-y: 0.5rem;
 	font-size: 0.875rem;
