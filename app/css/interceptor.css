@@ -1166,7 +1166,7 @@ summary:where(details[open] > *) {
 	overflow: hidden;
 }
 
-.columnar {
+.key-value-pair {
 	--grid-cols: minmax(min-content, max-content) minmax(50%, 1fr);
 	--gap-x: 1rem;
 	--gap-y: 0.5rem;
@@ -1176,18 +1176,18 @@ summary:where(details[open] > *) {
 	margin: 0 auto;
 }
 
-.columnar > * {
+.key-value-pair > * {
 	max-width: 100%;
 	min-width: 0;
 }
 
-.columnar dt {
+.key-value-pair dt {
 	justify-self: end;
 	text-align: right;
 	color: var(--subtitle-text-color);
 }
 
-.columnar dd {
+.key-value-pair dd {
 	justify-self: start;
 	text-align: left;
 	color: white;

@@ -745,7 +745,7 @@ export function RawTransactionDetailsCard({ transaction, renameAddressCallBack, 
 			? <></>
 			: <div class = 'card-content'>
 				<div style = { { display: 'flex', flexDirection: 'column', rowGap: '1rem' } } >
-					<dl class = 'grid columnar'>
+					<dl class = 'grid key-value-pair'>
 						<dt>Transaction type</dt>
 						<dd>{ transaction.type }</dd>
 						<dt>From</dt>
