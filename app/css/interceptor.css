@@ -1210,9 +1210,6 @@ pre {
 fieldset:has([type='radio']) {
 	display: flex;
 	column-gap: 0.5rem;
-	border: 0;
-	padding: 0;
-	margin: 0;
 }
 
 label:has([type=radio]) {
