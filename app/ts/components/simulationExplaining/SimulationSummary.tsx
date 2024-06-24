@@ -18,6 +18,7 @@ import { Website } from '../../types/websiteAccessTypes.js'
 import { extractTokenEvents } from '../../background/metadataUtils.js'
 import { EditEnsNamedHashCallBack } from '../subcomponents/ens.js'
 import { EnrichedEthereumInputData } from '../../types/EnrichedEthereumData.js'
+import { ViewSelector } from '../subcomponents/ViewSelector.js'
 
 type Erc20BalanceChangeParams = {
 	erc20TokenBalanceChanges: Erc20TokenBalanceChange[]
@@ -70,7 +71,7 @@ function Erc20ApprovalChange(param: Erc20ApprovalChangeParams) {
 	return <div class = { param.isImportant ? `box token-box ${ param.change > 0 ? 'negative-box' : 'positive-box' }`: '' } style = 'display: inline-flex'>
 		<table class = 'log-table'>
 			<div class = 'log-cell'>
-				<p class = 'ellipsis' style = {`color: ${ textColor };` }> Allow&nbsp;</p>
+				<p class = 'ellipsis' style = { `color: ${ textColor };` }> Allow&nbsp;</p>
 			</div>
 			<div class = 'log-cell'>
 				<SmallAddress
@@ -80,11 +81,11 @@ function Erc20ApprovalChange(param: Erc20ApprovalChangeParams) {
 				/>
 			</div>
 			<div class = 'log-cell'>
-				<p class = 'ellipsis' style = {`color: ${ textColor };` }> &nbsp;to spend&nbsp; </p>
+				<p class = 'ellipsis' style = { `color: ${ textColor };` }> &nbsp;to spend&nbsp; </p>
 			</div>
 			<div class = 'log-cell' style = 'justify-content: right;'>
 				{ param.change > 2n ** 100n ?
-					<p class = 'ellipsis' style = {`color: ${ textColor };` }> <b>ALL</b>&nbsp;</p>
+					<p class = 'ellipsis' style = { `color: ${ textColor };` }> <b>ALL</b>&nbsp;</p>
 					:
 					<TokenAmount
 						tokenEntry = { param }
@@ -213,7 +214,7 @@ export function Erc721or1155OperatorChanges(param: Erc721Or1155OperatorChangesPa
 							</div>
 						</table>
 					</div>
-				:
+					:
 					<div class = { param.isImportant ? 'box token-box positive-box': '' } >
 						<table class = 'log-table'>
 							<div class = 'log-cell'>
@@ -253,7 +254,7 @@ export function Erc721TokenIdApprovalChanges(param: Erc721TokenIdApprovalChanges
 					<div class = { param.isImportant ? 'box token-box negative-box': '' } style = 'display: flex'>
 						<table class = 'log-table'>
 							<div class = 'log-cell'>
-								<p class = 'ellipsis' style = {`color: ${ param.negativeColor }` }> Approve&nbsp;</p>
+								<p class = 'ellipsis' style = { `color: ${ param.negativeColor }` }> Approve&nbsp;</p>
 							</div>
 							<div class = 'log-cell'>
 								<SmallAddress
@@ -263,7 +264,7 @@ export function Erc721TokenIdApprovalChanges(param: Erc721TokenIdApprovalChanges
 								/>
 							</div>
 							<div class = 'log-cell'>
-								<p class = 'ellipsis' style = {`color: ${ param.negativeColor }` }>&nbsp;for&nbsp;</p>
+								<p class = 'ellipsis' style = { `color: ${ param.negativeColor }` }>&nbsp;for&nbsp;</p>
 							</div>
 							<div class = 'log-cell'>
 								<TokenOrEth
@@ -628,7 +629,7 @@ export function SimulatedInBlockNumber({ simulationBlockNumber, currentBlockNumb
 			{ 'Simulated ' }
 			<span style = { `font-weight: bold; font-family: monospace; color: ${
 				simulationBlockNumber === currentBlockNumber && (rpcConnectionStatus?.isConnected || rpcConnectionStatus === undefined) ? 'var(--positive-color)' :
-				currentBlockNumber !== undefined && simulationBlockNumber + 1n === currentBlockNumber ? 'var(--warning-color)' : 'var(--negative-color)'
+					currentBlockNumber !== undefined && simulationBlockNumber + 1n === currentBlockNumber ? 'var(--warning-color)' : 'var(--negative-color)'
 			} ` }>
 				<SomeTimeAgo priorTimestamp = { simulationConductedTimestamp }/>
 			</span>
@@ -778,15 +779,23 @@ export function RawTransactionDetailsCard({ transaction, renameAddressCallBack, 
 					</dl>
 
 					<div>
-						<p class = 'paragraph' style = 'color: var(--subtitle-text-color)'>Raw transaction input</p>
-						<pre>{ dataStringWith0xStart(transaction.input) }</pre>
-						<RadioGroup name = 'display_view' onSelect = { console.log }>
-							<Radio label = 'View Parsed' value = 'parsed' checked />
-							<Radio label = 'View Raw' value = 'raw' />
-						</RadioGroup>
+						<p class = 'paragraph' style = { {  color: 'var(--subtitle-text-color)', marginBottom: '0.25rem'} }>Transaction Input</p>
+						{ parsedInputData?.type !== 'Parsed' ? (
+							<p class = 'paragraph' style = 'color: var(--subtitle-text-color)'>No ABI available</p>
+						) : (
+							<ViewSelector id = 'transaction_input'>
+								<ViewSelector.List>
+									<ViewSelector.View title = 'View Parsed' value = 'parsed'>
+										<ParsedInputData inputData = { parsedInputData } addressMetaData = { addressMetaData } renameAddressCallBack = { renameAddressCallBack }/>
+									</ViewSelector.View>
+									<ViewSelector.View title = 'View Raw' value = 'raw'>
+										<pre>{ dataStringWith0xStart(transaction.input) }</pre>
+									</ViewSelector.View>
+								</ViewSelector.List>
+								<ViewSelector.Triggers />
+							</ViewSelector>
+						) }
 					</div>
-					<p class = 'paragraph' style = 'color: var(--subtitle-text-color)'>Parsed transaction input: </p>
-					{ parsedInputData?.type !== 'Parsed' ? <p class = 'paragraph' style = 'color: var(--subtitle-text-color)'>No ABI available</p> : <ParsedInputData inputData = { parsedInputData } addressMetaData = { addressMetaData } renameAddressCallBack = { renameAddressCallBack }/> }
 				</div>
 			</div>
 		}
