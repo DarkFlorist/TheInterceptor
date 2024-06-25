@@ -18,6 +18,7 @@ import { EnrichedSolidityTypeComponent } from '../subcomponents/solidityType.js'
 import { ParsedInputData, QuarantineReasons } from '../simulationExplaining/Transactions.js'
 import { GnosisSafeVisualizer } from '../simulationExplaining/customExplainers/GnosisSafeVisualizer.js'
 import { EditEnsNamedHashCallBack } from '../subcomponents/ens.js'
+import { ViewSelector as Viewer } from '../subcomponents/ViewSelector.js'
 
 type SignatureCardParams = {
 	visualizedPersonalSignRequest: VisualizedPersonalSignRequest
@@ -122,18 +123,23 @@ const decodeMessage = (message: string) => {
 function SignRequest({ visualizedPersonalSignRequest, renameAddressCallBack, editEnsNamedHashCallBack }: SignRequestParams) {
 	switch (visualizedPersonalSignRequest.type) {
 		case 'NotParsed': {
-			if (visualizedPersonalSignRequest.method === 'personal_sign') {
-				return <>
-					<p class = 'paragraph'>Raw message: </p>
-					<div class = 'textbox'>
-						<p class = 'paragraph' style = 'color: var(--subtitle-text-color)'>{ visualizedPersonalSignRequest.message }</p>
-					</div>
-					<p class = 'paragraph'>Text decoded message: </p>
-					<div class = 'textbox'>
-						<p class = 'paragraph' style = 'color: var(--subtitle-text-color)'>{ decodeMessage(visualizedPersonalSignRequest.message) }</p>
-					</div>
-				</>
-			}
+			if (visualizedPersonalSignRequest.method === 'personal_sign') return (
+				<Viewer id = 'personal_sign'>
+					<Viewer.List>
+						<Viewer.View title = 'View Raw' value = 'raw'>
+							<div class = 'textbox'>
+								<p class = 'paragraph' style = 'color: var(--subtitle-text-color)'>{ visualizedPersonalSignRequest.message }</p>
+							</div>
+						</Viewer.View>
+						<Viewer.View title = 'View Parsed' value = 'parsed'>
+							<div class = 'textbox'>
+								<p class = 'paragraph' style = 'color: var(--subtitle-text-color)'>{ decodeMessage(visualizedPersonalSignRequest.message) }</p>
+							</div>
+						</Viewer.View>
+					</Viewer.List>
+					<Viewer.Triggers />
+				</Viewer>
+			)
 			return <div class = 'textbox'>
 				<p class = 'paragraph' style = 'color: var(--subtitle-text-color)'>{ visualizedPersonalSignRequest.message }</p>
 			</div>
@@ -235,12 +241,12 @@ type ArbitaryEIP712Params = {
 
 function ArbitaryEIP712({ enrichedEIP712, renameAddressCallBack }: ArbitaryEIP712Params) {
 	return <>
-		<EIP712Table 
+		<EIP712Table
 			enrichedEIP712Message = { enrichedEIP712.domain }
 			renameAddressCallBack = { renameAddressCallBack }
 			isSubTable = { false }
 		/>
-		<EIP712Table 
+		<EIP712Table
 			enrichedEIP712Message = { enrichedEIP712.message }
 			renameAddressCallBack = { renameAddressCallBack }
 			isSubTable = { false }
@@ -271,7 +277,7 @@ function PermitExtraDetails({ permit }: { permit: VisualizedPersonalSignRequestP
 		<CellElement text = 'Nonce: '/>
 		<CellElement text = { permit.message.message.nonce.toString(10) }/>
 		<CellElement text = 'Signature expires in:'/>
-		<CellElement text = { <SomeTimeAgo priorTimestamp = { new Date(Number(permit.message.message.deadline) * 1000) } countBackwards = { true }/> }/>		
+		<CellElement text = { <SomeTimeAgo priorTimestamp = { new Date(Number(permit.message.message.deadline) * 1000) } countBackwards = { true }/> }/>
 	</>
 }
 
@@ -288,7 +294,7 @@ type GnosisSafeExtraDetailsParams = {
 
 function GnosisSafeExtraDetails({ visualizedPersonalSignRequestSafeTx, renameAddressCallBack }: GnosisSafeExtraDetailsParams) {
 	return <>
-		<span class = 'log-table' style = 'justify-content: center; column-gap: 5px; grid-template-columns: auto auto'>			
+		<span class = 'log-table' style = 'justify-content: center; column-gap: 5px; grid-template-columns: auto auto'>
 			{ visualizedPersonalSignRequestSafeTx.message.domain.chainId !== undefined
 				? <>
 					<CellElement text = 'Chain: '/>
@@ -423,7 +429,7 @@ export function SignatureCard(params: SignatureCardParams) {
 			<QuarantineReasons quarantineReasons = { params.visualizedPersonalSignRequest.quarantineReasons }/>
 			<ExtraDetails { ...params }/>
 			<RawMessage { ...params }/>
-			
+
 			<Signer
 				signer = { params.visualizedPersonalSignRequest.activeAddress }
 				renameAddressCallBack = { params.renameAddressCallBack }
