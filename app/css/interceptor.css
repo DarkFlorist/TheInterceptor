@@ -1165,3 +1165,45 @@ summary:where(details[open] > *) {
 	text-overflow: ellipsis;
 	overflow: hidden;
 }
+
+.key-value-pair {
+	--grid-cols: minmax(min-content, max-content) minmax(50%, 1fr);
+	--gap-x: 1rem;
+	--gap-y: 0.5rem;
+	font-size: 0.875rem;
+	line-height: 1.2;
+	width: fit-content;
+	margin: 0 auto;
+}
+
+.key-value-pair > * {
+	max-width: 100%;
+	min-width: 0;
+}
+
+.key-value-pair dt {
+	justify-self: end;
+	text-align: right;
+	color: var(--subtitle-text-color);
+}
+
+.key-value-pair dd {
+	justify-self: start;
+	text-align: left;
+	color: white;
+}
+
+pre {
+	display: inline-block;
+	font: inherit;
+	font-family: 'Atkinson';
+	font-size: 0.875rem;
+	line-height: 1.2;
+	padding: 0.15rem 0.5rem;
+	border-radius: 4px;
+	background-color: var(--alpha-005);
+	color: var(--subtitle-text-color);
+	word-break: break-all;
+	white-space: pre-wrap;
+}
+
