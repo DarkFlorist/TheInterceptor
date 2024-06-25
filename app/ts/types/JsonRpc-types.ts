@@ -131,6 +131,14 @@ export const EthTransactionReceiptResponse = funtypes.Union(
 export type GetBlockReturn = funtypes.Static<typeof GetBlockReturn>
 export const GetBlockReturn = funtypes.Union(EthereumBlockHeader, EthereumBlockHeaderWithTransactionHashes)
 
+export type JsonRpcRequest = funtypes.Static<typeof JsonRpcRequest>
+export const JsonRpcRequest = funtypes.ReadonlyObject({
+	jsonrpc: funtypes.Literal('2.0'),
+	id: funtypes.Number,
+	method: funtypes.String,
+	params: funtypes.ReadonlyTuple(funtypes.Unknown),
+}).asReadonly()
+
 type JsonRpcSuccessResponse = funtypes.Static<typeof JsonRpcSuccessResponse>
 const JsonRpcSuccessResponse = funtypes.ReadonlyObject({
 	jsonrpc: funtypes.Literal('2.0'),

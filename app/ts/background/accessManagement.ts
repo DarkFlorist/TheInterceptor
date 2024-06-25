@@ -13,6 +13,9 @@ import { getUniqueItemsByProperties, replaceElementInReadonlyArray } from '../ut
 import { modifyObject } from '../utils/typescript.js'
 import { AddressBookEntries, AddressBookEntry } from '../types/addressBookTypes.js'
 import { Semaphore } from '../utils/semaphore.js'
+import { JsonRpcRequest } from '../types/JsonRpc-types.js'
+import { handleInterceptedRequest, handleRPCRequest } from './background.js'
+import { getSimulationResults } from './storageVariables.js'
 
 function getConnectionDetails(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket) {
 	const identifier = websiteSocketToString(socket)
@@ -238,7 +241,7 @@ const getTabsAndAddressesToBlock = async (websiteTabConnections: WebsiteTabConne
 let webRequestListener: (details: browser.webRequest._OnBeforeRequestDetails) => void = () => {}
 let previousDecralativeNetRequestBlockIdentifier = ''
 const updateDeclarativeNetRequestBlocksSemaphore = new Semaphore(1)
-export async function updateDeclarativeNetRequestBlocks(websiteTabConnections: WebsiteTabConnections) {
+export async function updateDeclarativeNetRequestBlocks(websiteTabConnections: WebsiteTabConnections, simulator: Simulator) {
 	return await updateDeclarativeNetRequestBlocksSemaphore.execute(async () => {
 		const { tabIdsToBlock, sitesToBlock } = await getTabsAndAddressesToBlock(websiteTabConnections)
 		// check if the rules would change, if not, just bail out
@@ -281,6 +284,51 @@ export async function updateDeclarativeNetRequestBlocks(websiteTabConnections: W
 		} else {
 			browser.webRequest.onBeforeRequest.removeListener(webRequestListener)
 			webRequestListener = (details: browser.webRequest._OnBeforeRequestDetails) => {
+				if (details !== undefined && details.requestBody && details.requestBody.raw) {
+					const raw = details.requestBody.raw[0]?.bytes
+					if (raw === undefined) return
+					function arrayBufferToString(buffer: ArrayBuffer): string {
+						const uint8Array = new Uint8Array(buffer);
+						const decoder = new TextDecoder('utf-8');
+						return decoder.decode(uint8Array);
+					}
+					// Convert the raw ArrayBuffer to a string
+					const requestBodyString = arrayBufferToString(raw);
+					
+					// Try to parse the string as JSON (if applicable)
+					let parsedData;
+					try {
+						parsedData = JSON.parse(requestBodyString)
+						const jsonRpc = JsonRpcRequest.safeParse(parsedData)
+						if (jsonRpc.success === false) return 
+						const connection = websiteTabConnections.get(details.tabId)
+						if (connection === undefined) return
+						const socket = connection.connections[0]?.socket
+						if (socket === undefined) return
+						const websiteOrigin = (new URL('initiator' in details ? details.initiator as any as string : '')).hostname
+						const website = { websiteOrigin, ...await retrieveWebsiteDetails(details.tabId) }
+						const settings = await getSettings()
+						const simulationState = settings.simulationMode ? (await getSimulationResults()).simulationState : undefined
+						handleRPCRequest(
+							simulator,
+							simulationState,
+							websiteTabConnections,
+							socket,
+							website,
+							{ ...jsonRpc.value,
+								interceptorRequest: true,
+								usingInterceptorWithoutSigner: true,
+								uniqueRequestIdentifier: { requestId: -jsonRpc.value.id, requestSocket: socket }
+							},
+							settings,
+							undefined,
+						)
+					} catch (e) {}
+
+					console.log(details.url)
+				}
+
+
 				if (tabIdsToBlock.find((tabId) => tabId === details.tabId) !== undefined) return { cancel: true }
 				if (details.originUrl === undefined) return {}
 				if (details.type === 'main_frame') return {}
@@ -290,8 +338,8 @@ export async function updateDeclarativeNetRequestBlocks(websiteTabConnections: W
 				if (sitesToBlock.find((blockUrl) => blockUrl === websiteOrigin) !== undefined) return { cancel: true }
 				return {}
 			}
-			if (sitesToBlock.length === 0 && tabIdsToBlock.length === 0) return
-			browser.webRequest.onBeforeRequest.addListener(webRequestListener, { urls: ['<all_urls>'] }, ['blocking'])
+			//if (sitesToBlock.length === 0 && tabIdsToBlock.length === 0) return
+			browser.webRequest.onBeforeRequest.addListener(webRequestListener, { urls: ['<all_urls>'] }, ['blocking', 'requestBody'])
 		}
 	})
 }
