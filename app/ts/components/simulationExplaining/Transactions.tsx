@@ -85,7 +85,7 @@ export function TransactionImportanceBlock(param: TransactionImportanceBlockPara
 		case 'ProxyTokenTransfer': return <ProxyTokenTransferVisualisation simTx = { transactionIdentification.identifiedTransaction } renameAddressCallBack = { param.renameAddressCallBack }/>
 		case 'ContractDeployment':
 		case 'ContractFallbackMethod':
-		case 'ArbitaryContractExecution': return <CatchAllVisualizer { ...param } />
+		case 'ArbitraryContractExecution': return <CatchAllVisualizer { ...param } />
 		case 'GovernanceVote': return <GovernanceVoteVisualizer { ...param } governanceVoteInputParameters = { transactionIdentification.governanceVoteInputParameters }/>
 		default: assertNever(transactionIdentification)
 	}
