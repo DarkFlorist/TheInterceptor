@@ -23,7 +23,7 @@ export const ViewSelector = ({ children, id }: { children: ComponentChildren, id
 	}
 	return (
 		<ViewSelectorContext.Provider value = { { id, views, setActiveView } }>
-			<div class = 'grid' style = { { gridTemplateColumns: '1fr', alignItems: 'start', rowGap: '0.25rem' } }>{ children }</div>
+			<div class = 'grid view-selector'>{ children }</div>
 		</ViewSelectorContext.Provider>
 	)
 }
