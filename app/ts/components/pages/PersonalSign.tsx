@@ -47,7 +47,7 @@ export function identifySignature(data: VisualizedPersonalSignRequest) {
 			signingAction: 'Sign Gnosis Safe message',
 		}
 		case 'EIP712': {
-			const name = data.message.domain.name?.type === 'string' ? `${ data.message.domain.name.value } - ${ data.message.primaryType }` : 'Arbitary EIP712 message'
+			const name = data.message.domain.name?.type === 'string' ? `${ data.message.domain.name.value } - ${ data.message.primaryType }` : 'Arbitrary EIP712 message'
 			return {
 				title: `${ name } signing request`,
 				rejectAction: `Reject ${ name }`,
@@ -56,10 +56,10 @@ export function identifySignature(data: VisualizedPersonalSignRequest) {
 			}
 		}
 		case 'NotParsed': return {
-			title: 'Arbitary Ethereum message',
-			rejectAction: 'Reject arbitary message',
-			simulationAction: 'Simulate arbitary message',
-			signingAction: 'Sign arbitary message',
+			title: 'Arbitrary Ethereum message',
+			rejectAction: 'Reject arbitrary message',
+			simulationAction: 'Simulate arbitrary message',
+			signingAction: 'Sign arbitrary message',
 		}
 		case 'Permit': {
 			const symbol = data.verifyingContract
@@ -145,7 +145,7 @@ function SignRequest({ visualizedPersonalSignRequest, renameAddressCallBack, edi
 			editEnsNamedHashCallBack = { editEnsNamedHashCallBack }
 		/>
 		case 'EIP712': {
-			return <ArbitaryEIP712 enrichedEIP712 = { visualizedPersonalSignRequest.message } renameAddressCallBack = { renameAddressCallBack } />
+			return <ArbitraryEIP712 enrichedEIP712 = { visualizedPersonalSignRequest.message } renameAddressCallBack = { renameAddressCallBack } />
 		}
 		case 'OrderComponents': {
 			return <OrderComponents
@@ -228,12 +228,12 @@ function EIP712Table({ enrichedEIP712Message, renameAddressCallBack, isSubTable 
 	</span>
 }
 
-type ArbitaryEIP712Params = {
+type ArbitraryEIP712Params = {
 	enrichedEIP712: EnrichedEIP712
 	renameAddressCallBack: RenameAddressCallBack
 }
 
-function ArbitaryEIP712({ enrichedEIP712, renameAddressCallBack }: ArbitaryEIP712Params) {
+function ArbitraryEIP712({ enrichedEIP712, renameAddressCallBack }: ArbitraryEIP712Params) {
 	return <>
 		<EIP712Table 
 			enrichedEIP712Message = { enrichedEIP712.domain }

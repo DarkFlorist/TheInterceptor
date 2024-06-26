@@ -29,7 +29,7 @@ type IdentifiedTransaction =
 	| IdentifiedTransactionBase & { type: 'ProxyTokenTransfer', identifiedTransaction: SimulatedAndVisualizedProxyTokenTransferTransaction }
 	| IdentifiedTransactionBase & { type: 'Swap' }
 	| IdentifiedTransactionBase & { type: 'ContractFallbackMethod' }
-	| IdentifiedTransactionBase & { type: 'ArbitaryContractExecution' }
+	| IdentifiedTransactionBase & { type: 'ArbitraryContractExecution' }
 	| IdentifiedTransactionBase & { type: 'ContractDeployment' }
 	| IdentifiedTransactionBase & { type: 'GovernanceVote', governanceVoteInputParameters: GovernanceVoteInputParameters }
 
@@ -315,7 +315,7 @@ export function identifyTransaction(simTx: SimulatedAndVisualizedTransaction): I
 
 	const fourByte = get4Byte(simTx.transaction.input)
 	if (fourByte === undefined) return {
-		type: 'ArbitaryContractExecution',
+		type: 'ArbitraryContractExecution',
 		title: 'Contract Fallback Method',
 		signingAction: 'Execute Contract',
 		simulationAction: 'Simulate Contract Execution',
@@ -326,7 +326,7 @@ export function identifyTransaction(simTx: SimulatedAndVisualizedTransaction): I
 
 	if (explanation === undefined) {
 		return {
-			type: 'ArbitaryContractExecution',
+			type: 'ArbitraryContractExecution',
 			title: 'Contract Execution',
 			signingAction: 'Execute Contract',
 			simulationAction: 'Simulate Contract Execution',
@@ -334,7 +334,7 @@ export function identifyTransaction(simTx: SimulatedAndVisualizedTransaction): I
 		}
 	}
 	return {
-		type: 'ArbitaryContractExecution',
+		type: 'ArbitraryContractExecution',
 		title: explanation === undefined ? 'Contract Execution' : explanation,
 		signingAction: `Sign ${ explanation }`,
 		simulationAction: `Simulate ${ explanation }`,
