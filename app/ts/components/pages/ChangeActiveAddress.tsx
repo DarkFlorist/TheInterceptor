@@ -1,6 +1,7 @@
 
 import { ChangeActiveAddressParam } from '../../types/user-interface-types.js'
 import { BigAddress } from '../subcomponents/address.js'
+import { XMarkIcon } from '../subcomponents/icons.js'
 import { getSignerLogo, getPrettySignerName, SignerLogoText } from '../subcomponents/signers.js'
 
 export function ChangeActiveAddress(param: ChangeActiveAddressParam) {
@@ -45,7 +46,7 @@ export function ChangeActiveAddress(param: ChangeActiveAddressParam) {
 					</p>
 				</div>
 				<button class = 'card-header-icon' aria-label = 'close' onClick = { goHome }>
-					<span class = 'icon' style = 'color: var(--text-color);'> X </span>
+					<XMarkIcon />
 				</button>
 			</header>
 			<section class = 'modal-card-body'>

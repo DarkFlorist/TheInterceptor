@@ -401,6 +401,7 @@ a.dropdown-item.is-active, button.dropdown-item.is-active {
 
 .card-header-icon {
 	background-color: transparent;
+	color: var(--text-color);
 }
 
 .card-header-icon:disabled {

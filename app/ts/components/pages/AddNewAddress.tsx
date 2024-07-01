@@ -11,6 +11,7 @@ import { AddressBookEntry, DeclarativeNetRequestBlockMode, IncompleteAddressBook
 import { isValidAbi } from '../../simulation/services/EtherScanAbiFetcher.js'
 import { ModifyAddressWindowState } from '../../types/visualizer-types.js'
 import { MessageToPopup } from '../../types/interceptor-messages.js'
+import { XMarkIcon } from '../subcomponents/icons.js'
 
 const readableAddressType = {
 	contact: 'Contact',
@@ -408,7 +409,7 @@ export function AddNewAddress(param: AddAddressParam) {
 					<p className = 'paragraph'> { getCardTitle() } </p>
 				</div>
 				<button class = 'card-header-icon' aria-label = 'close' onClick = { param.close }>
-					<span class = 'icon' style = 'color: var(--text-color);'> X </span>
+					<XMarkIcon />
 				</button>
 			</header>
 			<section class = 'modal-card-body' style = 'overflow: visible;'>
