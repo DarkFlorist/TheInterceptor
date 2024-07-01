@@ -1,3 +1,5 @@
+import { XMarkIcon } from "./icons.js"
+
 export function DinoSays( { text } : { text: string }) {
 	return <div class = 'media'>
 		<div class = 'media-left' style = 'margin-right: 0.2rem;'>
@@ -13,9 +15,9 @@ export function DinoSaysNotification( { text, close } : { text: string, close?: 
 	return <div style = 'display: flex; align-items: center; justify-content: center;'>
 		<div class = 'notification notification-importance-box' style = 'padding: 10px; display: flex;'>
 			<DinoSays text = { text }/>
-			{ close !== undefined ? 
+			{ close !== undefined ?
 				<button class = 'card-header-icon' aria-label = 'remove' onClick = { close }>
-					<span class = 'icon' style = 'color: var(--text-color);'> X </span>
+					<XMarkIcon />
 				</button>
 			: <></> }
 		</div>

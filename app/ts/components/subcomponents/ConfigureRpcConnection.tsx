@@ -12,6 +12,7 @@ import { useRpcConnectionsList } from '../pages/SettingsView.js'
 import { EthereumJSONRpcRequestHandler } from '../../simulation/services/EthereumJSONRpcRequestHandler.js'
 import { EthSimulateV1Params, ethSimulateV1Result } from '../../types/ethSimulate-types.js'
 import { JsonRpcResponseError } from '../../utils/errors.js'
+import { XMarkIcon } from './icons.js'
 
 type ConfigureRpcContext = {
 	queryRpcInfo: (url: string) => void
@@ -309,7 +310,7 @@ export const StatusIcon = ({ state }: { state: AsyncStates }) => {
 	switch (state) {
 		case 'inactive': return <></>
 		case 'pending': return <SpinnerIcon />
-		case 'rejected': return <XMarkIcon />
+		case 'rejected': return <i style = {{ color: 'var(--negative-color)' }} ><XMarkIcon /></i>
 		case 'resolved': return <CheckIcon />
 	}
 }
@@ -324,12 +325,6 @@ export const SpinnerIcon = () => (
 export const CheckIcon = () => (
 	<svg width = '1em' height = '1em' viewBox = '0 0 16 16' fill = 'none' xmlns = 'http://www.w3.org/2000/svg' >
 		<path d = 'M15 3L5.64686 12.5524L1 7.84615' stroke = 'var(--positive-color, currentColor)' strokeWidth = { 2 } />
-	</svg>
-)
-
-export const XMarkIcon = () => (
-	<svg width = '1em' height = '1em' viewBox = '0 0 16 16' fill = 'none' xmlns = 'http://www.w3.org/2000/svg' >
-		<path d = 'M15 1 8 8m0 0L1 1m7 7-7 7m7-7 7 7' stroke = 'var(--negative-color, currentColor)' strokeWidth = { 2 } />
 	</svg>
 )
 

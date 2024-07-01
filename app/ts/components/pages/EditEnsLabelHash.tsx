@@ -7,6 +7,7 @@ import { useEffect, useState } from 'preact/hooks'
 import { keccak_256 } from '@noble/hashes/sha3'
 import { sendPopupMessageToBackgroundPage } from '../../background/backgroundUtils.js'
 import { namehash } from 'ethers'
+import { XMarkIcon } from '../subcomponents/icons.js'
 
 type EditEnsNamedHashParams = {
 	close: () => void,
@@ -80,7 +81,7 @@ export function EditEnsLabelHash(param: EditEnsNamedHashParams) {
 					<p className = 'paragraph'> { param.editEnsNamedHashWindowState.type === 'labelHash' ? 'What is the correct ENS label for this hash?' : 'What is the correct ENS name for this hash?' } </p>
 				</div>
 				<button class = 'card-header-icon' aria-label = 'close' onClick = { param.close }>
-					<span class = 'icon' style = 'color: var(--text-color);'> X </span>
+					<XMarkIcon />
 				</button>
 			</header>
 			<section class = 'modal-card-body' style = 'overflow: visible;'>

@@ -7,6 +7,7 @@ import { sendPopupMessageToBackgroundPage } from '../../background/backgroundUti
 import { WebsiteAccess, WebsiteAccessArray, WebsiteAddressAccess } from '../../types/websiteAccessTypes.js'
 import { modifyObject } from '../../utils/typescript.js'
 import { AddressBookEntry } from '../../types/addressBookTypes.js'
+import { XMarkIcon } from '../subcomponents/icons.js'
 
 interface ModifiedAddressAccess {
 	address: bigint,
@@ -209,7 +210,7 @@ export function InterceptorAccessList(param: InterceptorAccessListParams) {
 					</p>
 				</div>
 				<button class = 'card-header-icon' aria-label = 'close' onClick = { goHome }>
-					<span class = 'icon' style = 'color: var(--text-color);'> X </span>
+					<XMarkIcon />
 				</button>
 			</header>
 			<section class = 'modal-card-body'>
@@ -253,7 +254,7 @@ export function InterceptorAccessList(param: InterceptorAccessListParams) {
 												<p class = 'paragraph checkbox-text'>Allow access</p>
 											</label>
 											<button class = 'card-header-icon' style = 'padding: 0px;' aria-label = 'forget' onClick = { () => setWebsiteAccess(accessListIndex, { removed: true }) }>
-												<span class = 'icon' style = 'color: var(--text-color);'> X </span>
+												<XMarkIcon />
 											</button>
 										</div>
 									</div>
@@ -289,7 +290,7 @@ export function InterceptorAccessList(param: InterceptorAccessListParams) {
 																		<p class = 'paragraph checkbox-text' style = 'white-space: nowrap;'>Allow access</p>
 																	</label>
 																	<button class = 'card-header-icon' style = 'padding: 0px;' aria-label = 'forget' onClick = { () => setAddressAccess(accessListIndex, addressIndex, { removed: true }) }>
-																		<span class = 'icon' style = 'color: var(--text-color);'> X </span>
+																		<XMarkIcon />
 																	</button>
 																</div>
 															</div>

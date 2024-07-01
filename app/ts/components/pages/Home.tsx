@@ -15,6 +15,7 @@ import { RpcEntries, RpcEntry, RpcNetwork } from '../../types/rpc.js'
 import { Website } from '../../types/websiteAccessTypes.js'
 import { TransactionOrMessageIdentifier } from '../../types/interceptor-messages.js'
 import { AddressBookEntries, AddressBookEntry } from '../../types/addressBookTypes.js'
+import { BroomIcon } from '../subcomponents/icons.js'
 
 async function enableMakeMeRich(enabled: boolean) {
 	sendPopupMessageToBackgroundPage( { method: 'popup_changeMakeMeRich', data: enabled } )
@@ -160,12 +161,10 @@ function SimulationResults(param: SimulationStateParam) {
 			</div>
 			<div class = 'log-cell' style = 'justify-content: right;'>
 				<button className = 'button is-small is-danger' disabled = { param.disableReset } onClick = { param.resetSimulation } >
-					<span class = 'icon'>
-						<img src = '../../img/broom.svg'/>
+					<span style = {{ marginRight: '0.25rem', fontSize: '1rem' }}>
+						<BroomIcon />
 					</span>
-					<span>
-						Clear
-					</span>
+					<span>Clear</span>
 				</button>
 			</div>
 		</div>
