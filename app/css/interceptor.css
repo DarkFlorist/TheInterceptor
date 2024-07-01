@@ -70,6 +70,10 @@ button:not(.btn):disabled, button:not(.btn)[disabled] {
 	border-color: transparent;
 }
 
+svg[role="img"] {
+	display: block;
+}
+
 .form-control {
 	display: grid;
 	grid-template-columns: 1em auto;
