@@ -321,7 +321,9 @@ export function AddressBook() {
 		setCurrentPage(0)
 		setActiveFilter(filter)
 		setSearchString(undefined)
-		sendQuery(filter, undefined, 0, LOAD_DISTANCE + 1)
+		setTimeout(() => {
+			sendQuery(filter, undefined, 0, LOAD_DISTANCE + 1)
+		}, 100)
 	}
 
 	function search(searchString: string | undefined) {
