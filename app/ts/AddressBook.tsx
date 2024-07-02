@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'preact/hooks'
+import { useCallback, useEffect, useRef, useState } from 'preact/hooks'
 import { RenameAddressCallBack } from './types/user-interface-types.js'
 import { GetAddressBookDataReply, MessageToPopup } from './types/interceptor-messages.js'
 import { arrayToChunks } from './utils/typed-arrays.js'
@@ -43,7 +43,7 @@ function FilterLink(param: { name: ActiveFilter, currentFilter: ActiveFilter, se
 	return <a
 		class = { param.currentFilter === param.name ? 'is-active' : '' }
 		onClick = { () => param.setActiveFilter(param.name) }>
-			{ param.name }
+		{ param.name }
 	</a>
 }
 
@@ -186,7 +186,7 @@ function AddressList({ addressBookEntries, numberOfEntries, startIndex, listName
 			{ ...entry }
 			removeEntry = { removeEntry }
 			category = { filter }
-			listKey = { `${ (startIndex + index).toString() } ${ listName }`}
+			listKey = { `${ (startIndex + index).toString() } ${ listName }` }
 			renameAddressCallBack = { renameAddressCallBack }
 		/> ) }
 	</>
@@ -200,23 +200,19 @@ type AddressBookState = {
 	activeFilter: ActiveFilter,
 }
 
+type Filter = {
+	activeFilter: ActiveFilter
+	searchString: string | undefined
+	currentPage: number
+}
+
 export function AddressBook() {
-	const [activeFilter, setActiveFilter] = useState<ActiveFilter>('My Active Addresses')
-	const [searchString, setSearchString] = useState<string | undefined>(undefined)
-	const [currentPage, setCurrentPage] = useState<number>(0)
+	const [filter, setFilter] = useState<Filter>({ activeFilter: 'My Active Addresses', searchString: undefined, currentPage: 0 })
 	const [modalState, setModalState] = useState<Modals>({ page: 'noModal' })
 	const [addressBookState, setAddressBookState] = useState<AddressBookState | undefined>(undefined)
 	const [addressBookEntryToBeRemoved, setAddressBookEntryToBeRemoved] = useState<AddressBookEntry | undefined>(undefined)
 
-	const activeFilterRef = useRef<ActiveFilter>(activeFilter)
-	const searchStringRef = useRef<string | undefined>(searchString)
-	const currentPageRef = useRef<number>(currentPage)
-
 	const scrollTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
-
-	useEffect(() => { activeFilterRef.current = activeFilter }, [activeFilter])
-	useEffect(() => { searchStringRef.current = searchString }, [searchString])
-	useEffect(() => { currentPageRef.current = currentPage }, [currentPage])
 
 	function unloadExtra(pages: Map<number, AddressBookEntries | 'fetching'>, currentPage: number) {
 		// unloads pages that are not in viewing distance
@@ -232,82 +228,6 @@ export function AddressBook() {
 		return new Map(pages)
 	}
 
-	useEffect(() => {
-		const popupMessageListener = async (msg: unknown) => {
-			const maybeParsed = MessageToPopup.safeParse(msg)
-			if (!maybeParsed.success) return // not a message we are interested in
-			const parsed = maybeParsed.value
-			if (parsed.method === 'popup_addressBookEntriesChanged') {
-				// fields updated, refresh
-				changeFilter(activeFilterRef.current)
-				return
-			}
-			if (parsed.method !== 'popup_getAddressBookDataReply') return
-			const reply = GetAddressBookDataReply.parse(msg)
-			setAddressBookState((previousState) => {
-				if ( activeFilterRef.current !== reply.data.data.filter || searchStringRef.current !== reply.data.data.searchString) return previousState
-
-				const startPageIndex = Math.ceil(reply.data.data.startIndex / PAGE_SIZE)
-				const chunkedresults = arrayToChunks(reply.data.entries, PAGE_SIZE)
-
-				const newPages: Map<number, AddressBookEntries | 'fetching'> = (previousState !== undefined
-					&& reply.data.data.filter === previousState.activeFilter
-					&& reply.data.data.searchString === previousState.searchString ? new Map(previousState.pages) : new Map())
-
-				Array.from(chunkedresults).forEach((entries, pageOffset) => newPages.set(startPageIndex + pageOffset, entries))
-				const newData = {
-					pages: newPages,
-					maxIndex: reply.data.maxDataLength,
-					maxPages: Math.ceil((reply.data.maxDataLength) / PAGE_SIZE),
-					searchString: reply.data.data.searchString,
-					activeFilter: reply.data.data.filter,
-				}
-				return newData
-			})
-		}
-		changeFilter(activeFilter)
-		browser.runtime.onMessage.addListener(popupMessageListener)
-		const scrollListener = () => update()
-		globalThis.addEventListener('scroll', scrollListener)
-
-		return () => {
-			browser.runtime.onMessage.removeListener(popupMessageListener)
-			globalThis.removeEventListener('scroll', scrollListener)
-		}
-	}, [])
-
-	function update() {
-		if (scrollTimer.current !== undefined) clearTimeout(scrollTimer.current);
-		scrollTimer.current = setTimeout(() => { // batch calls together if user is scrolling fast
-			setAddressBookState((previousState) => {
-				if (previousState === undefined) return previousState
-				const pageSizePx = PAGE_SIZE * (ELEMENT_SIZE_PX[previousState.activeFilter] + ELEMENT_PADDING_PX)
-				const newPage = Math.min(Math.floor(globalThis.scrollY / pageSizePx + 0.5), previousState.maxPages)
-				if (currentPageRef.current === newPage) return previousState
-
-				setCurrentPage(newPage)
-				// load pages that are in loading distance
-				const pagesToQuery = Array.from(new Array(2 * LOAD_DISTANCE + 1), (_, pageDiff) => newPage + pageDiff - LOAD_DISTANCE).filter((pageToLoad) => {
-					return previousState && pageToLoad >= 0 && previousState.pages.get(pageToLoad) === undefined
-				})
-
-				const newPages = unloadExtra(previousState.pages, newPage)
-				if ( Math.max(...pagesToQuery) - Math.min(...pagesToQuery) === pagesToQuery.length - 1 ) {
-					sendQuery(activeFilterRef.current, searchStringRef.current, Math.min(...pagesToQuery), Math.max(...pagesToQuery))
-				} else {
-					for (const page of pagesToQuery) {
-						newPages.set(page, 'fetching')
-						sendQuery(activeFilterRef.current, searchStringRef.current, page, page)
-					}
-				}
-				return {
-					...previousState,
-					pages: newPages
-				}
-			})
-		}, 10)
-	}
-
 	function sendQuery(filter: ActiveFilter, searchString: string | undefined, startPage: number, endPage: number) {
 		sendPopupMessageToBackgroundPage({ method: 'popup_getAddressBookData', data: {
 			filter: filter,
@@ -318,23 +238,16 @@ export function AddressBook() {
 	}
 
 	function changeFilter(filter: ActiveFilter) {
-		setCurrentPage(0)
-		setActiveFilter(filter)
-		setSearchString(undefined)
-		setTimeout(() => {
-			sendQuery(filter, undefined, 0, LOAD_DISTANCE + 1)
-		}, 100)
+		setFilter(prev => ({ ...prev, currentPage: 0, activeFilter: filter, searchString: undefined }))
 	}
 
 	function search(searchString: string | undefined) {
-		setCurrentPage(0)
-		setSearchString(searchString)
-		sendQuery(activeFilterRef.current, searchString, 0, LOAD_DISTANCE + 1)
+		setFilter(prev => ({ ...prev, currentPage: 0, searchString }))
 	}
 
 	function getNoResultsError() {
-		if (searchString && searchString.trim().length > 0 ) return `No entries found for "${ searchString }" in ${ activeFilter }`
-		return `No cute dinosaurs in ${ activeFilter }`
+		if (filter.searchString && filter.searchString.trim().length > 0 ) return `No entries found for "${ filter.searchString }" in ${ filter.activeFilter }`
+		return `No cute dinosaurs in ${ filter.activeFilter }`
 	}
 
 	function renderAddressList(currentPage: number) {
@@ -421,10 +334,92 @@ export function AddressBook() {
 			method: 'popup_removeAddressBookEntry',
 			data: {
 				address: entry.address,
-				addressBookCategory: activeFilter,
+				addressBookCategory: filter.activeFilter,
 			}
 		})
 	}
+
+	const popupMessageListener = useCallback((msg: unknown) => {
+		const maybeParsed = MessageToPopup.safeParse(msg)
+		if (!maybeParsed.success) return // not a message we are interested in
+		const parsed = maybeParsed.value
+		// if (parsed.method === 'popup_addressBookEntriesChanged') {
+		// 	// fields updated, refresh
+		// 	changeFilter(filter.activeFilter)
+		// 	return
+		// }
+		if (parsed.method !== 'popup_getAddressBookDataReply') return
+		const reply = GetAddressBookDataReply.parse(msg)
+		setAddressBookState((previousState) => {
+			// if ( filter.activeFilter !== reply.data.data.filter || filter.searchString !== reply.data.data.searchString) return previousState
+
+			const startPageIndex = Math.ceil(reply.data.data.startIndex / PAGE_SIZE)
+			const chunkedresults = arrayToChunks(reply.data.entries, PAGE_SIZE)
+
+			const newPages: Map<number, AddressBookEntries | 'fetching'> = (previousState !== undefined
+				&& reply.data.data.filter === previousState.activeFilter
+				&& reply.data.data.searchString === previousState.searchString ? new Map(previousState.pages) : new Map())
+
+			Array.from(chunkedresults).forEach((entries, pageOffset) => newPages.set(startPageIndex + pageOffset, entries))
+
+			return {
+				pages: newPages,
+				maxIndex: reply.data.maxDataLength,
+				maxPages: Math.ceil((reply.data.maxDataLength) / PAGE_SIZE),
+				searchString: reply.data.data.searchString,
+				activeFilter: reply.data.data.filter,
+			}
+		})
+	}, [filter])
+
+	const update = useCallback(() => {
+		if (scrollTimer.current !== undefined) clearTimeout(scrollTimer.current)
+		scrollTimer.current = setTimeout(() => { // batch calls together if user is scrolling fast
+			setAddressBookState((previousState) => {
+				if (previousState === undefined) return previousState
+				const pageSizePx = PAGE_SIZE * (ELEMENT_SIZE_PX[previousState.activeFilter] + ELEMENT_PADDING_PX)
+				const newPage = Math.min(Math.floor(globalThis.scrollY / pageSizePx + 0.5), previousState.maxPages)
+				if (filter.currentPage === newPage) return previousState
+
+				setFilter(prev => ({ ...prev, currentPage: newPage }))
+				// load pages that are in loading distance
+				const pagesToQuery = Array.from(new Array(2 * LOAD_DISTANCE + 1), (_, pageDiff) => newPage + pageDiff - LOAD_DISTANCE).filter((pageToLoad) => {
+					return previousState && pageToLoad >= 0 && previousState.pages.get(pageToLoad) === undefined
+				})
+
+				const newPages = unloadExtra(previousState.pages, newPage)
+				if ( Math.max(...pagesToQuery) - Math.min(...pagesToQuery) === pagesToQuery.length - 1 ) {
+					sendQuery(filter.activeFilter, filter.searchString, Math.min(...pagesToQuery), Math.max(...pagesToQuery))
+				} else {
+					for (const page of pagesToQuery) {
+						newPages.set(page, 'fetching')
+						sendQuery(filter.activeFilter, filter.searchString, page, page)
+					}
+				}
+				return {
+					...previousState,
+					pages: newPages
+				}
+			})
+		}, 10)
+	}, [filter.searchString, filter.activeFilter, filter.currentPage])
+
+
+	useEffect(() => {
+		changeFilter(filter.activeFilter)
+		browser.runtime.onMessage.addListener(popupMessageListener)
+		const scrollListener = () => update()
+		globalThis.addEventListener('scroll', scrollListener)
+
+		return () => {
+			browser.runtime.onMessage.removeListener(popupMessageListener)
+			globalThis.removeEventListener('scroll', scrollListener)
+		}
+	}, [])
+
+	useEffect(() => {
+		sendQuery(filter.activeFilter, filter.searchString, 0, LOAD_DISTANCE + 1)
+	}, [filter])
 
 	return (
 		<main>
@@ -435,17 +430,17 @@ export function AddressBook() {
 							<ul class = 'menu-list'>
 								<p class = 'paragraph' style = 'color: var(--disabled-text-color)'> My Addresses </p>
 								<ul>
-									<li> <FilterLink name = 'My Active Addresses' currentFilter = { activeFilter } setActiveFilter = { changeFilter }/> </li>
-									<li> <FilterLink name = 'My Contacts' currentFilter = { activeFilter } setActiveFilter = { changeFilter }/> </li>
+									<li> <FilterLink name = 'My Active Addresses' currentFilter = { filter.activeFilter } setActiveFilter = { changeFilter }/> </li>
+									<li> <FilterLink name = 'My Contacts' currentFilter = { filter.activeFilter } setActiveFilter = { changeFilter }/> </li>
 								</ul>
 							</ul>
 							<ul class = 'menu-list'>
 								<p class = 'paragraph' style = 'color: var(--disabled-text-color)'> Contracts </p>
 								<ul>
-									<li> <FilterLink name = 'ERC20 Tokens' currentFilter = { activeFilter } setActiveFilter = { changeFilter }/> </li>
-									<li> <FilterLink name = 'Non Fungible Tokens' currentFilter = { activeFilter } setActiveFilter = { changeFilter }/> </li>
-									<li> <FilterLink name = 'ERC1155 Tokens' currentFilter = { activeFilter } setActiveFilter = { changeFilter }/> </li>
-									<li> <FilterLink name = 'Other Contracts' currentFilter = { activeFilter } setActiveFilter = { changeFilter }/> </li>
+									<li> <FilterLink name = 'ERC20 Tokens' currentFilter = { filter.activeFilter } setActiveFilter = { changeFilter }/> </li>
+									<li> <FilterLink name = 'Non Fungible Tokens' currentFilter = { filter.activeFilter } setActiveFilter = { changeFilter }/> </li>
+									<li> <FilterLink name = 'ERC1155 Tokens' currentFilter = { filter.activeFilter } setActiveFilter = { changeFilter }/> </li>
+									<li> <FilterLink name = 'Other Contracts' currentFilter = { filter.activeFilter } setActiveFilter = { changeFilter }/> </li>
 								</ul>
 							</ul>
 						</aside>
@@ -454,7 +449,7 @@ export function AddressBook() {
 						<div style = 'display: flex; padding-bottom: 10px'>
 							<div class = 'field is-grouped' style = 'max-width: 400px; margin: 10px'>
 								<div class = 'control is-expanded'>
-									<input class = 'input' type = 'text' placeholder = 'Search In Category' value = { searchString === undefined ? '' : searchString } onInput = { e => search((e.target as HTMLInputElement).value) } />
+									<input class = 'input' type = 'text' placeholder = 'Search In Category' value = { filter.searchString === undefined ? '' : filter.searchString } onInput = { e => search((e.target as HTMLInputElement).value) } />
 								</div>
 							</div>
 							<div style = 'margin-left: auto;'>
@@ -463,8 +458,8 @@ export function AddressBook() {
 										class = 'button is-primary'
 										onClick = { () => openNewAddress(addressBookState.activeFilter) }
 									>
-									{ `Add New ${ ActiveFilterSingle[addressBookState.activeFilter] }` }
-								</button> : <></> }
+										{ `Add New ${ ActiveFilterSingle[addressBookState.activeFilter] }` }
+									</button> : <></> }
 							</div>
 						</div>
 						{ addressBookState === undefined
@@ -472,8 +467,8 @@ export function AddressBook() {
 							: <>
 								{ addressBookState.maxIndex === 0 ? <p class = 'paragraph'> { getNoResultsError() } </p> : <></> }
 								<ul style = { `height: ${ addressBookState.maxIndex * (ELEMENT_SIZE_PX[addressBookState.activeFilter] + ELEMENT_PADDING_PX) }px; overflow: hidden;` }>
-									<li style = { `margin: 0px; height: ${ getPageSizeInPixels(addressBookState.activeFilter) * Math.max(0, currentPage - getWindowSizeInPages(addressBookState.activeFilter) ) }px` } key = { -1 }> </li>
-									{ Array(2 * getWindowSizeInPages(addressBookState.activeFilter) + 1).fill(0).map((_, i) => renderAddressList(currentPage + ( i - getWindowSizeInPages(addressBookState.activeFilter) ))) }
+									<li style = { `margin: 0px; height: ${ getPageSizeInPixels(addressBookState.activeFilter) * Math.max(0, filter.currentPage - getWindowSizeInPages(addressBookState.activeFilter) ) }px` } key = { -1 }> </li>
+									{ Array(2 * getWindowSizeInPages(addressBookState.activeFilter) + 1).fill(0).map((_, i) => renderAddressList(filter.currentPage + ( i - getWindowSizeInPages(addressBookState.activeFilter) ))) }
 								</ul>
 							</>
 						}
@@ -488,16 +483,16 @@ export function AddressBook() {
 							close = { () => setModalState({ page: 'noModal' }) }
 							activeAddress = { undefined }
 						/>
-					: <></> }
+						: <></> }
 					{ modalState.page === 'confirmaddressBookEntryToBeRemoved' && addressBookEntryToBeRemoved !== undefined ?
 						<ConfirmaddressBookEntryToBeRemoved
-							category = { activeFilter }
+							category = { filter.activeFilter }
 							addressBookEntry = { addressBookEntryToBeRemoved }
 							removeEntry = { removeAddressBookEntry }
 							close = { () => setModalState({ page: 'noModal' }) }
 							renameAddressCallBack = { renameAddressCallBack }
 						/>
-					: <></> }
+						: <></> }
 				</div>
 			</Hint>
 		</main>
