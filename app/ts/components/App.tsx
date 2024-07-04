@@ -295,6 +295,10 @@ export function App() {
 		setAndSaveAppPage({ page: 'EditEnsNamedHash', state: { type, nameHash, name } })
 	}
 
+	async function openWebsiteAccess() {
+		await sendPopupMessageToBackgroundPage( { method: 'popup_openWebsiteAccess' } )
+		return globalThis.close() // close extension popup, chrome closes it by default, but firefox does not
+	}
 	async function openAddressBook() {
 		await sendPopupMessageToBackgroundPage( { method: 'popup_openAddressBook' } )
 		return globalThis.close() // close extension popup, chrome closes it by default, but firefox does not
@@ -323,7 +327,7 @@ export function App() {
 									</p>
 								</a>
 								<a class = 'navbar-item' style = 'margin-left: auto; margin-right: 0;'>
-									<img src = '../img/internet.svg' width = '32' onClick = { () => setAndSaveAppPage({ page: 'AccessList' }) }/>
+									<img src = '../img/internet.svg' width = '32' onClick = { openWebsiteAccess }/>
 									<img src = '../img/address-book.svg' width = '32' onClick = { openAddressBook }/>
 									<img src = '../img/settings.svg' width = '32' onClick = { openSettings }/>
 								</a>

@@ -715,6 +715,7 @@ export async function popupMessageHandler(
 			case 'popup_interceptorAccessRefresh': return await interceptorAccessChangeAddressOrRefresh(websiteTabConnections, parsedRequest)
 			case 'popup_ChangeSettings': return await changeSettings(simulator, parsedRequest, simulationAbortController)
 			case 'popup_openSettings': return await openNewTab('settingsView')
+			case 'popup_openWebsiteAccess': return await openNewTab('websiteAccess')
 			case 'popup_import_settings': return await importSettings(parsedRequest)
 			case 'popup_get_export_settings': return await exportSettings()
 			case 'popup_set_rpc_list': return await setNewRpcList(simulator, parsedRequest, settings)
