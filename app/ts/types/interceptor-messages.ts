@@ -366,10 +366,10 @@ export type GetAddressBookDataFilter = funtypes.Static<typeof GetAddressBookData
 export const GetAddressBookDataFilter = funtypes.Intersect(
 	funtypes.ReadonlyObject({
 		filter: AddressBookCategory,
-		startIndex: funtypes.Number,
-		maxIndex: funtypes.Number,
 	}).asReadonly(),
 	funtypes.Partial({
+		startIndex: funtypes.Number,
+		maxIndex: funtypes.Number,
 		searchString: funtypes.String,
 	}).asReadonly()
 )
