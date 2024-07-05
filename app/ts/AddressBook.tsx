@@ -10,6 +10,7 @@ import { assertNever } from './utils/typescript.js'
 import { checksummedAddress } from './utils/bigint.js'
 import { AddressBookEntries, AddressBookEntry } from './types/addressBookTypes.js'
 import { ModifyAddressWindowState } from './types/visualizer-types.js'
+import { XMarkIcon } from './components/subcomponents/icons.js'
 
 type Modals =  { page: 'noModal' }
 	| { page: 'addNewAddress', state: ModifyAddressWindowState }
@@ -72,7 +73,7 @@ function ConfirmaddressBookEntryToBeRemoved(param: ConfirmaddressBookEntryToBeRe
 					<p className = 'paragraph'> { `Remove ${ ActiveFilterSingle[param.category] }` } </p>
 				</div>
 				<button class = 'card-header-icon' aria-label = 'close' onClick = { param.close }>
-					<span class = 'icon' style = 'color: var(--text-color);'> X </span>
+					<XMarkIcon />
 				</button>
 			</header>
 			<section class = 'modal-card-body' style = 'overflow: visible;'>
@@ -154,7 +155,7 @@ function ListElement(entry: ListElementParam) {
 
 					<div class = 'content' style = 'color: var(--text-color); display: flex; height: 100%; flex-direction: column; justify-content: space-between;'>
 						<button class = 'card-header-icon' style = 'padding: 0px; margin-left: auto;' aria-label = 'delete' disabled = { entry.type === 'empty' || (entry.entrySource !== 'User' && entry.entrySource !== 'OnChain') } onClick = { () => entry.type !== 'empty' ? entry.removeEntry(entry) : undefined }>
-							<p class = 'icon'> X </p>
+							<XMarkIcon />
 						</button>
 						<button class = 'button is-primary is-small' onClick = { entry.type !== 'empty' ? () => entry.renameAddressCallBack(entry) : () => {} }>Edit</button>
 					</div>

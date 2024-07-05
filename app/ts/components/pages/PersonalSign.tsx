@@ -19,6 +19,7 @@ import { ParsedInputData, QuarantineReasons } from '../simulationExplaining/Tran
 import { GnosisSafeVisualizer } from '../simulationExplaining/customExplainers/GnosisSafeVisualizer.js'
 import { EditEnsNamedHashCallBack } from '../subcomponents/ens.js'
 import { ViewSelector as Viewer } from '../subcomponents/ViewSelector.js'
+import { XMarkIcon } from '../subcomponents/icons.js'
 
 type SignatureCardParams = {
 	visualizedPersonalSignRequest: VisualizedPersonalSignRequest
@@ -102,7 +103,7 @@ export function SignatureHeader(params: SignatureHeaderParams) {
 		</p>
 		{ removeSignedMessage !== undefined
 			? <button class = 'card-header-icon' aria-label = 'remove' onClick = { () => removeSignedMessage({ type: 'SignedMessage', messageIdentifier: params.visualizedPersonalSignRequest.messageIdentifier }) }>
-				<span class = 'icon' style = 'color: var(--text-color);'> X </span>
+				<XMarkIcon />
 			</button>
 			: <></>
 		}

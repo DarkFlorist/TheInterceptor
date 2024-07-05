@@ -19,3 +19,15 @@ export function ApproveIcon(param: { color: string }) {
 		</svg>
 	</>
 }
+
+export const BroomIcon = () => {
+	return <svg role = 'img' width = '1em' height = '1em' viewBox = '0 0 100 100' fill = 'none' xmlns = 'http://www.w3.org/2000/svg'>
+		<path d = 'M50.8339 47.7216C44.9583 43.6222 36.25 40.4333 30.75 49.5444M50.8339 47.7216C58.7083 54.1 56.4166 60.4778 54.5833 65.9444M50.8339 47.7216L83.9167 9M30.75 49.5444C22.0416 63.6667 14.25 70.5 6 76.4222C12.4167 84.1667 21.125 86.9 21.125 86.9M30.75 49.5444L54.5833 65.9444M54.5833 65.9444C52.7499 74.1444 56.4166 85.5333 57.3333 91H38.9999M21.125 86.9C21.125 86.9 27.0833 76.8778 29.8333 72.3222M21.125 86.9C29.375 90.5444 38.9999 91 38.9999 91M38.9999 91C38.9999 91 41.2916 85.5333 41.7499 83.7111M74.2404 73.6888H87.125M75.6154 60.0221H81.6249M74.6988 87.3554H94' stroke = 'currentColor' stroke-width = '7' stroke-linecap = 'round' />
+	</svg>
+}
+
+export const XMarkIcon = () => {
+	return <svg width = '1em' height = '1em' viewBox = '0 0 16 16' fill = 'none' xmlns = 'http://www.w3.org/2000/svg'>
+		<path d = 'M3 3L13 13M13 3L3 13' stroke = 'currentColor' stroke-width = '2' stroke-linecap = 'round'/>
+	</svg>
+}

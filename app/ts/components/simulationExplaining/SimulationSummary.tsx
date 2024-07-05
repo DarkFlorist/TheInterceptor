@@ -19,6 +19,7 @@ import { extractTokenEvents } from '../../background/metadataUtils.js'
 import { EditEnsNamedHashCallBack } from '../subcomponents/ens.js'
 import { EnrichedEthereumInputData } from '../../types/EnrichedEthereumData.js'
 import { ViewSelector } from '../subcomponents/ViewSelector.js'
+import { XMarkIcon } from '../subcomponents/icons.js'
 
 type Erc20BalanceChangeParams = {
 	erc20TokenBalanceChanges: Erc20TokenBalanceChange[]
@@ -590,9 +591,7 @@ export function TransactionHeader({ simTx, removeTransactionOrSignedMessage } : 
 			</p>
 		}
 		{ removeTransactionOrSignedMessage !== undefined
-			? <button class = 'card-header-icon' aria-label = 'remove' onClick = { removeTransactionOrSignedMessage }>
-				<span class = 'icon' style = 'color: var(--text-color);'> X </span>
-			</button>
+			? <button class = 'card-header-icon' aria-label = 'remove' onClick = { removeTransactionOrSignedMessage }><XMarkIcon /></button>
 			: <></>
 		}
 	</header>

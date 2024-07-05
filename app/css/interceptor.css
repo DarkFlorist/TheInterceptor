@@ -70,6 +70,10 @@ button:not(.btn):disabled, button:not(.btn)[disabled] {
 	border-color: transparent;
 }
 
+svg[role="img"] {
+	display: block;
+}
+
 .form-control {
 	display: grid;
 	grid-template-columns: 1em auto;
@@ -397,6 +401,7 @@ a.dropdown-item.is-active, button.dropdown-item.is-active {
 
 .card-header-icon {
 	background-color: transparent;
+	color: var(--text-color);
 }
 
 .card-header-icon:disabled {
