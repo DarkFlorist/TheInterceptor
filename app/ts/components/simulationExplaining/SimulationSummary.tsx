@@ -779,21 +779,21 @@ export function RawTransactionDetailsCard({ transaction, renameAddressCallBack, 
 
 					<div>
 						<p class = 'paragraph' style = { {  color: 'var(--subtitle-text-color)', marginBottom: '0.25rem'} }>Transaction Input</p>
-						{ parsedInputData?.type !== 'Parsed' ? (
-							<p class = 'paragraph' style = 'color: var(--subtitle-text-color)'>No ABI available</p>
-						) : (
-							<ViewSelector id = 'transaction_input'>
-								<ViewSelector.List>
-									<ViewSelector.View title = 'View Parsed' value = 'parsed'>
-										<ParsedInputData inputData = { parsedInputData } addressMetaData = { addressMetaData } renameAddressCallBack = { renameAddressCallBack }/>
-									</ViewSelector.View>
-									<ViewSelector.View title = 'View Raw' value = 'raw'>
-										<pre>{ dataStringWith0xStart(transaction.input) }</pre>
-									</ViewSelector.View>
-								</ViewSelector.List>
-								<ViewSelector.Triggers />
-							</ViewSelector>
-						) }
+						<ViewSelector id = 'transaction_input'>
+							{ parsedInputData?.type === 'Parsed' ? (
+								<>
+									<ViewSelector.List>
+										<ViewSelector.View title = 'View Parsed' value = 'parsed'>
+											<ParsedInputData inputData = { parsedInputData } addressMetaData = { addressMetaData } renameAddressCallBack = { renameAddressCallBack }/>
+										</ViewSelector.View>
+										<ViewSelector.View title = 'View Raw' value = 'raw'>
+											<pre>{ dataStringWith0xStart(transaction.input) }</pre>
+										</ViewSelector.View>
+									</ViewSelector.List>
+									<ViewSelector.Triggers />
+								</>
+							) : <p class = 'paragraph' style = 'color: var(--subtitle-text-color)'>No ABI available</p> }
+						</ViewSelector>
 					</div>
 				</div>
 			</div>
