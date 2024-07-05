@@ -687,6 +687,15 @@ export const ChangeAddOrModifyAddressWindowState = funtypes.ReadonlyObject({
 	})
 })
 
+type RetrieveWebsiteAccessReply = funtypes.Static<typeof RetrieveWebsiteAccessReply>
+const RetrieveWebsiteAccessReply = funtypes.ReadonlyObject({
+	method: funtypes.Literal('popup_retrieveWebsiteAccessReply'),
+	data: funtypes.ReadonlyObject({
+		websiteAccess: WebsiteAccessArray,
+		addressAccess: AddressBookEntries
+	})
+}).asReadonly()
+
 type PopupAddOrModifyAddressWindowStateInfomation = funtypes.Static<typeof PopupAddOrModifyAddressWindowStateInfomation>
 const PopupAddOrModifyAddressWindowStateInfomation = funtypes.ReadonlyObject({
 	method: funtypes.Literal('popup_addOrModifyAddressWindowStateInformation'),
@@ -796,7 +805,6 @@ export const PopupMessage = funtypes.Union(
 	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_clearUnexpectedError') }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_import_settings'), data: funtypes.ReadonlyObject({ fileContents: funtypes.String }) }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_get_export_settings') }),
-	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_openWebsiteAccess') }),
 	SimulateGovernanceContractExecution,
 	SimulateGnosisSafeTransaction,
 	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_settingsOpened') }),
@@ -807,6 +815,8 @@ export const PopupMessage = funtypes.Union(
 	OpenWebPage,
 	DisableInterceptor,
 	SetEnsNameForHash,
+	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_openWebsiteAccess') }),
+	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_retrieveWebsiteAccess') })
 )
 
 export type MessageToPopup = funtypes.Static<typeof MessageToPopup>
@@ -832,4 +842,5 @@ export const MessageToPopup = funtypes.Union(
 	FetchAbiAndNameFromEtherscanReply,
 	DisableInterceptorReply,
 	UnexpectedErrorOccured,
+	RetrieveWebsiteAccessReply,
 )

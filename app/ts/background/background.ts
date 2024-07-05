@@ -4,7 +4,7 @@ import { Simulator, parseEvents, parseInputData, runProtectorsForTransaction } f
 import { getSimulationResults, getTabState, getTransactionStack, promoteRpcAsPrimary, setLatestUnexpectedError, updateSimulationResults, updateSimulationResultsWithCallBack, updateTransactionStack } from './storageVariables.js'
 import { changeSimulationMode, getSettings, getWethForChainId } from './settings.js'
 import { blockNumber, call, chainId, estimateGas, gasPrice, getAccounts, getBalance, getBlockByNumber, getCode, getLogs, getPermissions, getSimulationStack, getTransactionByHash, getTransactionCount, getTransactionReceipt, netVersion, personalSign, sendTransaction, subscribe, switchEthereumChain, unsubscribe, web3ClientVersion, getBlockByHash, feeHistory, installNewFilter, uninstallNewFilter, getFilterChanges, getFilterLogs, handleIterceptorError } from './simulationModeHanders.js'
-import { changeActiveAddress, changeMakeMeRich, changePage, confirmDialog, refreshSimulation, removeTransactionOrSignedMessage, requestAccountsFromSigner, refreshPopupConfirmTransactionSimulation, confirmRequestAccess, changeInterceptorAccess, changeChainDialog, popupChangeActiveRpc, enableSimulationMode, addOrModifyAddressBookEntry, getAddressBookData, removeAddressBookEntry, refreshHomeData, interceptorAccessChangeAddressOrRefresh, refreshPopupConfirmTransactionMetadata, changeSettings, importSettings, exportSettings, setNewRpcList, simulateGovernanceContractExecutionOnPass, openNewTab, settingsOpened, changeAddOrModifyAddressWindowState, popupFetchAbiAndNameFromEtherscan, openWebPage, disableInterceptor, requestNewHomeData, setEnsNameForHash, simulateGnosisSafeTransactionOnPass } from './popupMessageHandlers.js'
+import { changeActiveAddress, changeMakeMeRich, changePage, confirmDialog, refreshSimulation, removeTransactionOrSignedMessage, requestAccountsFromSigner, refreshPopupConfirmTransactionSimulation, confirmRequestAccess, changeInterceptorAccess, changeChainDialog, popupChangeActiveRpc, enableSimulationMode, addOrModifyAddressBookEntry, getAddressBookData, removeAddressBookEntry, refreshHomeData, interceptorAccessChangeAddressOrRefresh, refreshPopupConfirmTransactionMetadata, changeSettings, importSettings, exportSettings, setNewRpcList, simulateGovernanceContractExecutionOnPass, openNewTab, settingsOpened, changeAddOrModifyAddressWindowState, popupFetchAbiAndNameFromEtherscan, openWebPage, disableInterceptor, requestNewHomeData, setEnsNameForHash, simulateGnosisSafeTransactionOnPass, retrieveWebsiteAccess } from './popupMessageHandlers.js'
 import { CompleteVisualizedSimulation, SimulationState, VisualizedSimulatorState, WebsiteCreatedEthereumUnsignedTransaction, WebsiteCreatedEthereumUnsignedTransactionOrFailed } from '../types/visualizer-types.js'
 import { WebsiteTabConnections } from '../types/user-interface-types.js'
 import { askForSignerAccountsFromSignerIfNotAvailable, interceptorAccessMetadataRefresh, requestAccessFromUser, updateInterceptorAccessViewWithPendingRequests } from './windows/interceptorAccess.js'
@@ -86,7 +86,7 @@ export const simulateGovernanceContractExecution = async (pendingTransaction: Pe
 			&& explanation !== 'Cast Vote with Reason and Additional Info'
 			&& explanation !== 'Cast Vote with Reason And Additional Info by Signature')
 			|| pendingResults.data.simulatedAndVisualizedTransactions[0]?.events.length !== 1) return returnError('Could not identify the transaction as a vote')
-		
+
 		const governanceContractInterface = new Interface(CompoundGovernanceAbi)
 		const voteFunction = governanceContractInterface.getFunction(fourByteString)
 		if (voteFunction === null) return returnError('Could not find the voting function')
@@ -170,7 +170,7 @@ async function visualizeSimulatorState(simulationState: SimulationState, ethereu
 	const transactions = getWebsiteCreatedEthereumUnsignedTransactions(simulationState.simulatedTransactions)
 	const eventsForEachTransactionPromise = Promise.all(simulationState.simulatedTransactions.map(async (simulatedTransaction) => simulatedTransaction.ethSimulateV1CallResult.status === 'failure' ? [] : await parseEvents(simulatedTransaction.ethSimulateV1CallResult.logs, ethereum, requestAbortController)))
 	const protectorPromises = Promise.all(transactions.map(async (transaction) => await runProtectorsForTransaction(simulationState, transaction, ethereum, requestAbortController)))
-	
+
 	const getWeth = async (): Promise<Erc20TokenEntry | undefined> => {
 		const wethAddr = getWethForChainId(ethereum.getRpcEntry().chainId)
 		if (wethAddr === undefined) return undefined
@@ -181,16 +181,16 @@ async function visualizeSimulatorState(simulationState: SimulationState, ethereu
 	const weth = await getWeth()
 	const parsedInputData = await Promise.all(transactions.map((transaction) => parseInputData({ to: transaction.transaction.to, input: transaction.transaction.input, value: transaction.transaction.value }, ethereum, requestAbortController)))
 	const eventsForEachTransaction = await eventsForEachTransactionPromise
-	
+
 	const metadataRestructure = (metadata: AddressBookEntry & { type: 'ERC20', decimals: bigint }) => ({ address: metadata.address, decimals: metadata.decimals })
-	
+
 	const updatedMetadata = await updateMetadataForSimulation(simulationState, ethereum, requestAbortController, eventsForEachTransaction, parsedInputData)
-	
+
 	const tokenPriceEstimates = weth === undefined ? [] : await tokenPriceService.estimateEthereumPricesForTokens(requestAbortController, weth, updatedMetadata.addressBookEntries.filter(onlyTokensAndTokensWithKnownDecimals).map(metadataRestructure))
 	const protectors = await protectorPromises
-	
+
 	const simulatedAndVisualizedTransactions = formSimulatedAndVisualizedTransaction(simulationState, eventsForEachTransaction, parsedInputData, protectors, updatedMetadata.addressBookEntries, updatedMetadata.namedTokenIds, updatedMetadata.ens, tokenPriceEstimates, weth)
-	
+
 	function onlyTokensAndTokensWithKnownDecimals(metadata: AddressBookEntry): metadata is AddressBookEntry & { type: 'ERC20', decimals: `0x${ string }` } {
 		return metadata.type === 'ERC20' && metadata.decimals !== undefined && metadata.address !== ETHEREUM_LOGS_LOGGER_ADDRESS
 	}
@@ -285,7 +285,7 @@ export async function updateSimulationState(ethereum: EthereumClientService, tok
 					return await fixedPromise
 				}
 				const updatedSimulationState = await updateSimulationState()
-				
+
 				if (updatedSimulationState !== undefined && ethereum.getChainId() === updatedSimulationState?.rpcNetwork.chainId) {
 					await updateSimulationResults({ ...await visualizeSimulatorState(updatedSimulationState, ethereum, tokenPriceService, thisSimulationsController), ...doneState })
 				} else {
@@ -377,7 +377,7 @@ export async function refreshConfirmTransactionSimulation(
 		if (error instanceof Error && isNewBlockAbort(error)) return undefined
 		if (error instanceof Error && isFailedToFetchError(error)) return undefined
 		if (!(error instanceof JsonRpcResponseError)) throw error
-	
+
 		const extractToAbi = async () => {
 			const params = transactionToSimulate.originalRequestParameters.params[0]
 			if (!('to' in params)) return []
@@ -395,7 +395,7 @@ export async function refreshConfirmTransactionSimulation(
 			...info,
 			error: { ...baseError, decodedErrorMessage: decodeEthereumError(await extractToAbi(), baseError).reason },
 			simulationState: {
-				blockNumber: simState?.blockNumber || 0n, 
+				blockNumber: simState?.blockNumber || 0n,
 				simulationConductedTimestamp: new Date()
 			}
 		} }
@@ -638,7 +638,7 @@ async function handleContentScriptMessage(simulator: Simulator, websiteTabConnec
 		}
 		handleUnexpectedError(error)
 		return replyToInterceptedRequest(websiteTabConnections, {
-			type: 'result', 
+			type: 'result',
 			...request,
 			error: {
 				code: 123456,
@@ -650,7 +650,7 @@ async function handleContentScriptMessage(simulator: Simulator, websiteTabConnec
 
 export function refuseAccess(websiteTabConnections: WebsiteTabConnections, request: InterceptedRequest) {
 	return replyToInterceptedRequest(websiteTabConnections, {
-		type: 'result', 
+		type: 'result',
 		...request,
 		error: {
 			code: METAMASK_ERROR_NOT_AUTHORIZED,
@@ -715,7 +715,6 @@ export async function popupMessageHandler(
 			case 'popup_interceptorAccessRefresh': return await interceptorAccessChangeAddressOrRefresh(websiteTabConnections, parsedRequest)
 			case 'popup_ChangeSettings': return await changeSettings(simulator, parsedRequest, simulationAbortController)
 			case 'popup_openSettings': return await openNewTab('settingsView')
-			case 'popup_openWebsiteAccess': return await openNewTab('websiteAccess')
 			case 'popup_import_settings': return await importSettings(parsedRequest)
 			case 'popup_get_export_settings': return await exportSettings()
 			case 'popup_set_rpc_list': return await setNewRpcList(simulator, parsedRequest, settings)
@@ -727,6 +726,8 @@ export async function popupMessageHandler(
 			case 'popup_setDisableInterceptor': return await disableInterceptor(simulator, websiteTabConnections, parsedRequest)
 			case 'popup_clearUnexpectedError': return await setLatestUnexpectedError(undefined)
 			case 'popup_setEnsNameForHash': return await setEnsNameForHash(parsedRequest)
+			case 'popup_openWebsiteAccess': return await openNewTab('websiteAccess')
+			case 'popup_retrieveWebsiteAccess': return await retrieveWebsiteAccess()
 			default: assertUnreachable(parsedRequest)
 		}
 	} catch(error: unknown) {

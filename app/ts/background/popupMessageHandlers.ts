@@ -488,7 +488,7 @@ export async function changeAddOrModifyAddressWindowState(ethereum: EthereumClie
 		}
 	}
 	await updatePage(parsedRequest.data.newState)
-	
+
 	const identifyAddressCandidate = async (addressCandidate: string | undefined) => {
 		if (addressCandidate === undefined) return undefined
 		const address = EthereumAddress.safeParse(addressCandidate.trim())
@@ -497,7 +497,7 @@ export async function changeAddOrModifyAddressWindowState(ethereum: EthereumClie
 	}
 	const identifyPromise = identifyAddressCandidate(parsedRequest.data.newState.incompleteAddressBookEntry.address)
 	const message = await getErrorIfAnyWithIncompleteAddressBookEntry(ethereum, parsedRequest.data.newState.incompleteAddressBookEntry)
-	
+
 	const errorState = message === undefined ? undefined : { blockEditing: true, message }
 	if (errorState?.message !== parsedRequest.data.newState.errorState?.message) await updatePage({ ...parsedRequest.data.newState, errorState })
 	return await sendPopupMessageToOpenWindows({ method: 'popup_addOrModifyAddressWindowStateInformation',
@@ -580,4 +580,17 @@ export async function setEnsNameForHash(parsedRequest: SetEnsNameForHash) {
 		await addEnsNodeHash(parsedRequest.data.name)
 	}
 	return await sendPopupMessageToOpenWindows({ method: 'popup_addressBookEntriesChanged' })
+}
+
+export async function retrieveWebsiteAccess() {
+	const settings = await getSettings()
+	const addressAccess = await getAddressMetadataForAccess(settings.websiteAccess)
+
+	await sendPopupMessageToOpenWindows({
+		method: 'popup_retrieveWebsiteAccessReply' as const,
+		data: {
+			websiteAccess: settings.websiteAccess,
+			addressAccess
+		}
+	})
 }

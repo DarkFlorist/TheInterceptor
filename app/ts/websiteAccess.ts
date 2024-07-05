@@ -1,9 +1,11 @@
 import * as preact from 'preact'
-import { WebsiteAccess } from './components/pages/WebsiteAccess.js'
+import { WebsiteAccessView } from './components/pages/WebsiteAccess.js'
 
 function rerender() {
-	const element = preact.createElement(WebsiteAccess, {})
-	preact.render(element, document.body)
+	const body = document.body
+	const main = document.querySelector('main')!
+	const app = preact.createElement(WebsiteAccessView, {})
+	preact.render(app, body, main)
 }
 
 rerender()
