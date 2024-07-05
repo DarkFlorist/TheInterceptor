@@ -43,7 +43,7 @@ export const DynamicScroller = <T extends {}>({ items, renderItem, }: DynamicScr
 
 	return (
 		<div ref = { scrollViewRef } style = { { overflowY: 'scroll', maxHeight: '100%' } } onScroll = { recalculateStartIndex }>
-			<div style = { { height: `${scrollAreaHeight}px`, '--virtual-scroll-offset': `${scrollOffset}px` } }>
+			<div style = { { height: `${ scrollAreaHeight }px`, '--virtual-scroll-offset': `${ scrollOffset }px` } }>
 				{ visibleItems.value.map((item) => (
 					<div ref = { itemRef } style = { {  contain: 'layout', transform: 'translateY(var(--virtual-scroll-offset))' } }>
 						{ renderItem(item) }
