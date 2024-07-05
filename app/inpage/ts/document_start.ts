@@ -70,7 +70,6 @@ function injectScript(_content: string) {
 
 	try {
 		const container = document.head || document.documentElement
-		console.log(container)
 		const scriptTag = document.createElement('script')
 		scriptTag.setAttribute('async', 'false')
 		scriptTag.src = browser.runtime.getURL('inpage/js/inpage.js')
