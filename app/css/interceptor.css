@@ -1,19 +1,22 @@
 @charset "utf-8";
 
 @font-face {
-    font-family: "Atkinson";
-    src: url("../fonts/Atkinson-Hyperlegible-Regular-102a.woff2") format("woff2");
-    font-weight: normal;
-    font-style: normal;
+	font-family: "Atkinson";
+	src: url("../fonts/Atkinson-Hyperlegible-Regular-102a.woff2") format("woff2");
+	font-weight: normal;
+	font-style: normal;
 }
 
 @font-face {
-    font-family: "Inter";
-    src: url("../fonts/Inter-VariableFont.ttf") format("ttf");
+	font-family: "Inter";
+	src: url("../fonts/InterVariable.woff2") format("woff2");
+	font-weight: 100 900;
+	font-display: swap;
+	font-style: normal;
 }
 
 html { font-size: 100%; }
-body { font-family: "Inter" }
+body { font-family: "Inter" !important; }
 
 :root {
 	--bg-color: #303030;
@@ -1207,3 +1210,51 @@ pre {
 	white-space: pre-wrap;
 }
 
+fieldset:has([type='radio']) {
+	display: flex;
+	column-gap: 0.5rem;
+}
+
+label:has([type=radio]) {
+	display: flex;
+	align-items: center;
+	column-gap: 0.3125rem;
+	font-size: 0.875rem;
+	padding: 0.25rem 0.4375rem;
+	border-radius: 0.25rem;
+	color: var(--subtitle-text-color);
+}
+
+label:has([type=radio]):focus-within {
+	background: #ffffff10;
+}
+
+label:has([type=radio]):before {
+	content: '';
+	background: transparent;
+	width: 0.3125rem;
+	height: 0.3125rem;
+	border-radius: 100%;
+	outline: 1px solid white;
+	outline-offset: 0.1875rem;
+	margin: 0.1875rem;
+}
+
+label:has([type=radio]:checked):before {
+	background: white;
+}
+
+[type=radio]:where(label > *) {
+	position: absolute;
+	opacity: 0;
+}
+
+.view-selector {
+	display: grid;
+	--grid-cols: 1fr;
+	--gap-y: 0.5rem;
+	border: 1px solid #ffffff20;
+	border-radius: 0.25rem;
+	padding: 0.5rem;
+	align-items: start;
+}
