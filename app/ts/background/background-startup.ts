@@ -150,7 +150,7 @@ async function newBlockAttemptCallback(blockheader: EthereumBlockHeader, ethereu
 			const settings = await getSettings()
 			if (settings.simulationMode) {
 				const simulationResults = await getSimulationResults()
-				if (simulationResults.simulationResultState === 'corrupted') await resetSimulatorStateFromConfig(ethereumClientService)
+				if (simulationResults.simulationResultState === 'corrupted') await resetSimulatorStateFromConfig(ethereumClientService, simulator.tokenPriceService)
 				const simulationState = await refreshSimulation(simulator, settings, false)
 				if (simulationState === undefined)
 				return await sendSubscriptionMessagesForNewBlock(blockheader.number, ethereumClientService, simulationState, websiteTabConnections)
@@ -182,7 +182,7 @@ async function startup() {
 	const settings = await getSettings()
 	const userSpecifiedSimulatorNetwork = settings.currentRpcNetwork.httpsRpc === undefined ? await getPrimaryRpcForChain(1n) : settings.currentRpcNetwork
 	const simulatorNetwork = userSpecifiedSimulatorNetwork === undefined ? defaultRpcs[0] : userSpecifiedSimulatorNetwork
-	const simulator = new Simulator(simulatorNetwork, newBlockAttemptCallback, onErrorBlockCallback)
+	const simulator = new Simulator(simulatorNetwork, newBlockAttemptCallback, onErrorBlockCallback, 60000)
 	browser.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
 		await catchAllErrorsAndCall(async () => {
 			if (changeInfo.status !== 'complete') return

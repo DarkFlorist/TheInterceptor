@@ -1,5 +1,5 @@
 import { useSignal } from '@preact/signals'
-import { getTokenAmountsWorth } from '../../simulation/priceEstimator.js'
+import { getTokenAmountsWorth } from '../../simulation/services/priceEstimator.js'
 import { abs, bigintToDecimalString, checksummedAddress } from '../../utils/bigint.js'
 import { TokenPriceEstimate } from '../../types/visualizer-types.js'
 import { CopyToClipboard } from './CopyToClipboard.js'

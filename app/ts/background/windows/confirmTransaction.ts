@@ -95,7 +95,7 @@ export async function resolvePendingTransactionOrMessage(simulator: Simulator, w
 		return reply({ type: 'forwardToSigner' })
 	}
 	if (confirmation.data.action === 'signerIncluded') throw new Error('Signer included transaction that was in simulation')
-	const newState = await updateSimulationState(simulator.ethereum, async (simulationState) => {
+	const newState = await updateSimulationState(simulator.ethereum, simulator.tokenPriceService, async (simulationState) => {
 		if (simulationState === undefined) return undefined
 		if (pendingTransactionOrMessage.type !== 'Transaction') return await appendSignedMessage(simulationState, pendingTransactionOrMessage.signedMessageTransaction)
 		return await appendTransaction(simulator.ethereum, undefined, simulationState, pendingTransactionOrMessage.transactionToSimulate)
@@ -291,7 +291,7 @@ export async function openConfirmTransactionDialogForMessage(
 			
 			await tryFocusingTabOrWindow(openedDialog)
 			if (visualizedPersonalSignRequest.type === 'SafeTx') {
-				await simulateGnosisSafeTransactionOnPass(simulator.ethereum, visualizedPersonalSignRequest)
+				await simulateGnosisSafeTransactionOnPass(simulator.ethereum, simulator.tokenPriceService, visualizedPersonalSignRequest)
 			}
 		})
 	} catch(e) {
@@ -304,7 +304,6 @@ export async function openConfirmTransactionDialogForMessage(
 
 export async function openConfirmTransactionDialogForTransaction(
 	simulator: Simulator,
-	ethereumClientService: EthereumClientService,
 	request: InterceptedRequest,
 	transactionParams: SendTransactionParams | SendRawTransactionParams,
 	simulationMode: boolean,
@@ -315,7 +314,7 @@ export async function openConfirmTransactionDialogForTransaction(
 	const uniqueRequestIdentifierString = getUniqueRequestIdentifierString(request.uniqueRequestIdentifier)
 	const transactionIdentifier = EthereumQuantity.parse(keccak256(toUtf8Bytes(uniqueRequestIdentifierString)))
 	const created = new Date()
-	const transactionToSimulatePromise = transactionParams.method === 'eth_sendTransaction' ? formEthSendTransaction(ethereumClientService, undefined, activeAddress, website, transactionParams, created, transactionIdentifier, simulationMode) : formSendRawTransaction(ethereumClientService, transactionParams, website, created, transactionIdentifier)
+	const transactionToSimulatePromise = transactionParams.method === 'eth_sendTransaction' ? formEthSendTransaction(simulator.ethereum, undefined, activeAddress, website, transactionParams, created, transactionIdentifier, simulationMode) : formSendRawTransaction(simulator.ethereum, transactionParams, website, created, transactionIdentifier)
 	if (activeAddress === undefined) return { type: 'result' as const, ...ERROR_INTERCEPTOR_NO_ACTIVE_ADDRESS }
 	await pendingConfirmationSemaphore.execute(async () => {
 		const openedDialog = await getPendingTransactionWindow(simulator, websiteTabConnections)
@@ -335,13 +334,13 @@ export async function openConfirmTransactionDialogForTransaction(
 			approvalStatus: { status: 'WaitingForUser' as const }
 		}
 		await appendPendingTransactionOrMessage(pendingTransaction)
-		await updateConfirmTransactionView(ethereumClientService)
+		await updateConfirmTransactionView(simulator.ethereum)
 
 		const transactionToSimulate = await transactionToSimulatePromise
-		const simulationResultsPromise = refreshConfirmTransactionSimulation(simulator, ethereumClientService, activeAddress, simulationMode, request.uniqueRequestIdentifier, transactionToSimulate)
+		const simulationResultsPromise = refreshConfirmTransactionSimulation(simulator, activeAddress, simulationMode, request.uniqueRequestIdentifier, transactionToSimulate)
 		if (transactionToSimulate.success) {
 			await updatePendingTransactionOrMessage(pendingTransaction.uniqueRequestIdentifier, async (transaction) => ({ ...transaction, transactionToSimulate: transactionToSimulate, transactionOrMessageCreationStatus: 'Simulating' as const }))
-			await updateConfirmTransactionView(ethereumClientService)
+			await updateConfirmTransactionView(simulator.ethereum)
 		}
 		await updatePendingTransactionOrMessage(pendingTransaction.uniqueRequestIdentifier, async (transaction) => {
 			if (transaction.type !== 'Transaction') return transaction
@@ -350,7 +349,7 @@ export async function openConfirmTransactionDialogForTransaction(
 			if (transactionToSimulate.success) return { ...transaction, transactionToSimulate, simulationResults, transactionOrMessageCreationStatus: 'Simulated' }
 			return { ...transaction, transactionToSimulate, simulationResults, transactionOrMessageCreationStatus: 'FailedToSimulate' }
 		})
-		await updateConfirmTransactionView(ethereumClientService)
+		await updateConfirmTransactionView(simulator.ethereum)
 		await tryFocusingTabOrWindow(openedDialog)
 	})
 

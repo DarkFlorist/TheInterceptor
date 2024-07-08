@@ -36,14 +36,13 @@ export async function getTransactionReceipt(ethereumClientService: EthereumClien
 export async function sendTransaction(
 	simulator: Simulator,
 	activeAddress: bigint | undefined,
-	ethereumClientService: EthereumClientService,
 	transactionParams: SendTransactionParams | SendRawTransactionParams,
 	request: InterceptedRequest,
 	website: Website,
 	websiteTabConnections: WebsiteTabConnections,
 	simulationMode = true,
 ) {
-	const action = await openConfirmTransactionDialogForTransaction(simulator, ethereumClientService, request, transactionParams, simulationMode, activeAddress, website, websiteTabConnections)
+	const action = await openConfirmTransactionDialogForTransaction(simulator, request, transactionParams, simulationMode, activeAddress, website, websiteTabConnections)
 	if (action.type === 'doNotReply') return action
 	return { method: transactionParams.method, ...action }
 }
