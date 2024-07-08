@@ -85,22 +85,25 @@ export function EtherSymbol(param: EtherSymbolParams) {
 
 type TokenPriceParams = {
 	amount: bigint,
-	rpcNetwork: RpcNetwork
+	quoteTokenEntry: Erc20TokenEntry | undefined
 	tokenPriceEstimate: TokenPriceEstimate | undefined
 	style?: JSX.CSSProperties
+	renameAddressCallBack: RenameAddressCallBack
 }
 
 export function TokenPrice(param: TokenPriceParams) {
-	if (param.tokenPriceEstimate === undefined) return <></>
+	if (param.tokenPriceEstimate === undefined || param.quoteTokenEntry === undefined) return <></>
 	const value = getTokenAmountsWorth(param.amount, param.tokenPriceEstimate)
 	const style = (param.style === undefined ? {} : param.style)
 	return <>
 		<p style = { style }>&nbsp;(</p>
-		<Ether
+		<TokenWithAmount 
 			amount = { value }
-			rpcNetwork = { param.rpcNetwork }
+			tokenEntry = { param.quoteTokenEntry }
 			style = { style }
 			fontSize = 'normal'
+			renameAddressCallBack = { param.renameAddressCallBack }
+			showSign = { true }
 		/>
 		<p style = { style }>)</p>
 	</>

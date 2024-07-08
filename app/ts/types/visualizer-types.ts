@@ -197,6 +197,7 @@ export type TransactionVisualizationParameters = {
 
 export type Erc20TokenBalanceChange = Erc20TokenEntry & {
 	changeAmount: bigint
+	tokenPriceEstimateQuoteToken: Erc20TokenEntry | undefined
 	tokenPriceEstimate: TokenPriceEstimate | undefined
 }
 

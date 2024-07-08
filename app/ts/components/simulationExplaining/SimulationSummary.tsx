@@ -26,7 +26,6 @@ type Erc20BalanceChangeParams = {
 	textColor: string,
 	negativeColor: string,
 	isImportant: boolean,
-	rpcNetwork: RpcNetwork,
 	renameAddressCallBack: RenameAddressCallBack
 }
 
@@ -49,7 +48,8 @@ function Erc20BalanceChange(param: Erc20BalanceChangeParams) {
 						amount = { erc20TokenBalanceChange.changeAmount }
 						tokenPriceEstimate = { erc20TokenBalanceChange.tokenPriceEstimate }
 						style = { { color: erc20TokenBalanceChange.changeAmount > 0n ? param.textColor : param.negativeColor } }
-						rpcNetwork = { param.rpcNetwork }
+						quoteTokenEntry = { erc20TokenBalanceChange.tokenPriceEstimateQuoteToken }
+						renameAddressCallBack = { param.renameAddressCallBack }
 					/>
 				</div>
 			</div>
@@ -357,7 +357,6 @@ function SummarizeAddress(param: SummarizeAddressParams) {
 				textColor = { positiveNegativeColors.textColor }
 				negativeColor = { positiveNegativeColors.negativeColor }
 				isImportant = { isOwnAddress }
-				rpcNetwork = { param.simulationAndVisualisationResults.rpcNetwork }
 				renameAddressCallBack = { param.renameAddressCallBack }
 			/>
 			<Erc20ApprovalChanges
