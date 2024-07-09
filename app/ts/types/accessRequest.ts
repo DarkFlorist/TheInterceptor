@@ -45,7 +45,7 @@ export const ConfirmTransactionDialogState = funtypes.Intersect(
 		eventsForEachTransaction: funtypes.ReadonlyArray(funtypes.ReadonlyArray(EnrichedEthereumEvent)),
 		protectors: funtypes.ReadonlyArray(ProtectorResults),
 		addressBookEntries: funtypes.ReadonlyArray(AddressBookEntry),
-		tokenPrices: funtypes.ReadonlyArray(TokenPriceEstimate),
+		tokenPriceEstimates: funtypes.ReadonlyArray(TokenPriceEstimate),
 		namedTokenIds: funtypes.ReadonlyArray(NamedTokenId),
 		simulationState: SimulationState,
 		activeAddress: OptionalEthereumAddress,

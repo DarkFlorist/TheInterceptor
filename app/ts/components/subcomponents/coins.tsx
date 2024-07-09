@@ -95,18 +95,14 @@ export function TokenPrice(param: TokenPriceParams) {
 	if (param.tokenPriceEstimate === undefined || param.quoteTokenEntry === undefined) return <></>
 	const value = getTokenAmountsWorth(param.amount, param.tokenPriceEstimate)
 	const style = (param.style === undefined ? {} : param.style)
-	return <>
-		<p style = { style }>&nbsp;(</p>
-		<TokenWithAmount 
-			amount = { value }
-			tokenEntry = { param.quoteTokenEntry }
-			style = { style }
-			fontSize = 'normal'
-			renameAddressCallBack = { param.renameAddressCallBack }
-			showSign = { true }
-		/>
-		<p style = { style }>)</p>
-	</>
+	return <TokenWithAmount 
+		amount = { value }
+		tokenEntry = { param.quoteTokenEntry }
+		style = { style }
+		fontSize = 'normal'
+		renameAddressCallBack = { param.renameAddressCallBack }
+		showSign = { true }
+	/>
 }
 
 type TokenSymbolParams = (

@@ -174,6 +174,7 @@ export async function refreshPopupConfirmTransactionMetadata(ethereumClientServi
 	const namedTokenIds = await namedTokenIdsPromise
 	const ensLabelHashesPromise = retrieveEnsLabelHashes(allEvents, addressBookEntries)
 	if (first === undefined || (first.transactionOrMessageCreationStatus !== 'Simulated' && first.transactionOrMessageCreationStatus !== 'FailedToSimulate') || first.simulationResults === undefined || first.simulationResults.statusCode !== 'success') return
+	const visualizedSimulatorState = await visualizedSimulatorStatePromise
 	const messagePendingTransactions: UpdateConfirmTransactionDialogPendingTransactions = {
 		method: 'popup_update_confirm_transaction_dialog_pending_transactions' as const,
 		data: {
@@ -182,7 +183,16 @@ export async function refreshPopupConfirmTransactionMetadata(ethereumClientServi
 				{ simulationResults: {
 					statusCode: 'success',
 					data: modifyObject(first.simulationResults.data, {
-						simulatedAndVisualizedTransactions: formSimulatedAndVisualizedTransaction(first.simulationResults.data.simulationState, eventsForEachTransaction, parsedInputData, first.simulationResults.data.protectors, addressBookEntries, namedTokenIds, { ensNameHashes: await ensNameHashesPromise, ensLabelHashes: await ensLabelHashesPromise }),
+						simulatedAndVisualizedTransactions: formSimulatedAndVisualizedTransaction(
+							first.simulationResults.data.simulationState,
+							eventsForEachTransaction,
+							parsedInputData, first.simulationResults.data.protectors,
+							addressBookEntries,
+							namedTokenIds,
+							{ ensNameHashes: await ensNameHashesPromise, ensLabelHashes: await ensLabelHashesPromise },
+							visualizedSimulatorState.tokenPriceEstimates,
+							visualizedSimulatorState.tokenPriceQuoteToken
+						),
 						addressBookEntries,
 						eventsForEachTransaction,
 					})

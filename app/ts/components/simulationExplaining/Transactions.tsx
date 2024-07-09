@@ -80,7 +80,7 @@ export function TransactionImportanceBlock(param: TransactionImportanceBlockPara
 		case 'Swap': {
 			const identifiedSwap = identifySwap(param.simTx)
 			if (identifiedSwap === undefined) throw new Error('Not a swap!')
-			return <SwapVisualization identifiedSwap = { identifiedSwap } renameAddressCallBack = { param.renameAddressCallBack } />
+			return <SwapVisualization identifiedSwap = { identifiedSwap } renameAddressCallBack = { param.renameAddressCallBack }/>
 		}
 		case 'ProxyTokenTransfer': return <ProxyTokenTransferVisualisation simTx = { transactionIdentification.identifiedTransaction } renameAddressCallBack = { param.renameAddressCallBack }/>
 		case 'ContractDeployment':

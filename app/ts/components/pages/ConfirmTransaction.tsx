@@ -190,7 +190,7 @@ function TransactionCard(param: TransactionCardParams) {
 		simulationConductedTimestamp: simulationResults.data.simulationState.simulationConductedTimestamp,
 		addressBookEntries: simulationResults.data.addressBookEntries,
 		rpcNetwork: simulationResults.data.simulationState.rpcNetwork,
-		tokenPrices: simulationResults.data.tokenPrices,
+		tokenPriceEstimates: simulationResults.data.tokenPriceEstimates,
 		activeAddress: simulationResults.data.activeAddress,
 		simulatedAndVisualizedTransactions: simulationResults.data.simulatedAndVisualizedTransactions,
 		visualizedPersonalSignRequests: simulationResults.data.visualizedPersonalSignRequests,

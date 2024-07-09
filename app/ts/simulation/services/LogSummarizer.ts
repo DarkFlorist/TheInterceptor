@@ -211,10 +211,10 @@ export class LogSummarizer {
 		}
 	}
 
-	public getSummary = (addressMetaData: Map<string, AddressBookEntry>, tokenPrices: readonly TokenPriceEstimate[], namedTokenIds: readonly NamedTokenId[]) => {
+	public getSummary = (addressMetaData: Map<string, AddressBookEntry>, tokenPriceEstimates: readonly TokenPriceEstimate[], namedTokenIds: readonly NamedTokenId[]) => {
 		const summaries: SummaryOutcome[] = []
 		for (const [address, _summary] of this.summary.entries()) {
-			const summary = this.getSummaryForAddr(address, addressMetaData, tokenPrices, namedTokenIds)
+			const summary = this.getSummaryForAddr(address, addressMetaData, tokenPriceEstimates, namedTokenIds)
 			if (summary === undefined) continue
 			const summaryFor = addressMetaData.get(address)
 			if (summaryFor === undefined) throw new Error(`Missing metadata for address: ${ address }`)
@@ -223,14 +223,14 @@ export class LogSummarizer {
 		return summaries
 	}
 
-	public readonly getSummaryForAddr = (address: string, addressMetaData: Map<string, AddressBookEntry>, tokenPrices: readonly TokenPriceEstimate[], namedTokenIds: readonly NamedTokenId[]): Omit<SummaryOutcome, 'summaryFor'> | undefined => {
+	public readonly getSummaryForAddr = (address: string, addressMetaData: Map<string, AddressBookEntry>, tokenPriceEstimates: readonly TokenPriceEstimate[], namedTokenIds: readonly NamedTokenId[]): Omit<SummaryOutcome, 'summaryFor'> | undefined => {
 		const addressSummary = this.summary.get(address)
 		if (addressSummary === undefined) return undefined
 
 		const erc20TokenBalanceChanges: Erc20TokenBalanceChange[] = Array.from(addressSummary.erc20TokenBalanceChanges).map(([tokenAddress, changeAmount]) => {
 			const metadata = addressMetaData.get(tokenAddress)
 			if (metadata === undefined || metadata.type !== 'ERC20') throw new Error(`Missing metadata for token: ${ tokenAddress }`)
-			const tokenPriceEstimate = tokenPrices.find((x) => addressString(x.token.address) === tokenAddress)
+			const tokenPriceEstimate = tokenPriceEstimates.find((x) => addressString(x.token.address) === tokenAddress)
 			const quoteTokenAddress = tokenPriceEstimate?.quoteToken.address
 			const tokenPriceEstimateQuoteTokenAddressEntry = quoteTokenAddress === undefined ? undefined : addressMetaData.get(addressString(quoteTokenAddress))
 			const tokenPriceEstimateQuoteToken = tokenPriceEstimateQuoteTokenAddressEntry?.type === 'ERC20' ? tokenPriceEstimateQuoteTokenAddressEntry : undefined
