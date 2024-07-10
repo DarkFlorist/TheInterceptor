@@ -15,7 +15,7 @@ import { useSignal, useSignalEffect } from '@preact/signals'
 
 type Modals =  { page: 'noModal' }
 	| { page: 'addNewAddress', state: ModifyAddressWindowState }
-	| { page: 'confirmaddressBookEntryToBeRemoved', item: AddressBookEntry }
+	| { page: 'confirmaddressBookEntryToBeRemoved', addressBookEntry: AddressBookEntry }
 
 const filterDefs = {
 	'My Active Addresses': 'Active Address',
@@ -314,8 +314,8 @@ export function AddressBook() {
 								? <DynamicScroller
 									key = { [Object.values(viewFilter.value)].join('_') }
 									items = { addressBookEntries }
-									renderItem = { item => (
-										<AddressBookEntryCard { ...item } category = { viewFilter.value.activeFilter } removeEntry = { () => setModalState({ page: 'confirmaddressBookEntryToBeRemoved', item }) } renameAddressCallBack = { renameAddressCallBack } />
+									renderItem = { addressBookEntry => (
+										<AddressBookEntryCard { ...addressBookEntry } category = { viewFilter.value.activeFilter } removeEntry = { () => setModalState({ page: 'confirmaddressBookEntryToBeRemoved', addressBookEntry }) } renameAddressCallBack = { renameAddressCallBack } />
 									) }
 								/>
 								: getNoResultsError()
@@ -336,7 +336,7 @@ export function AddressBook() {
 					{ modalState.page === 'confirmaddressBookEntryToBeRemoved'  ?
 						<ConfirmaddressBookEntryToBeRemoved
 							category = { viewFilter.value.activeFilter }
-							addressBookEntry = { modalState.item }
+							addressBookEntry = { modalState.addressBookEntry }
 							removeEntry = { removeAddressBookEntry }
 							close = { () => setModalState({ page: 'noModal' }) }
 							renameAddressCallBack = { renameAddressCallBack }
