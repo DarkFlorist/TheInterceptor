@@ -1,7 +1,6 @@
-import { useEffect, useRef, useState } from 'preact/hooks'
+import { useEffect, useState } from 'preact/hooks'
 import { RenameAddressCallBack } from './types/user-interface-types.js'
 import { GetAddressBookDataReply, MessageToPopup } from './types/interceptor-messages.js'
-import { arrayToChunks } from './utils/typed-arrays.js'
 import { AddNewAddress } from './components/pages/AddNewAddress.js'
 import { BigAddress } from './components/subcomponents/address.js'
 import Hint from './components/subcomponents/Hint.js'
@@ -11,13 +10,14 @@ import { checksummedAddress } from './utils/bigint.js'
 import { AddressBookEntries, AddressBookEntry } from './types/addressBookTypes.js'
 import { ModifyAddressWindowState } from './types/visualizer-types.js'
 import { XMarkIcon } from './components/subcomponents/icons.js'
+import { DynamicScroller } from './components/subcomponents/DynamicScroller.js'
+import { useSignal, useSignalEffect } from '@preact/signals'
 
 type Modals =  { page: 'noModal' }
 	| { page: 'addNewAddress', state: ModifyAddressWindowState }
-	| { page: 'confirmaddressBookEntryToBeRemoved' }
+	| { page: 'confirmaddressBookEntryToBeRemoved', addressBookEntry: AddressBookEntry }
 
-type ActiveFilter = 'My Active Addresses' | 'My Contacts' | 'ERC20 Tokens' | 'ERC1155 Tokens' | 'Non Fungible Tokens' | 'Other Contracts'
-const ActiveFilterSingle = {
+const filterDefs = {
 	'My Active Addresses': 'Active Address',
 	'My Contacts': 'Contact',
 	'ERC20 Tokens': 'ERC20 Token',
@@ -25,30 +25,18 @@ const ActiveFilterSingle = {
 	'Non Fungible Tokens': 'Non Fungible Token',
 	'Other Contracts': 'contract',
 }
+type FilterKey = keyof typeof filterDefs
 
-const PAGE_SIZE = 20
-const ELEMENT_SIZE_PX = {
-	'My Active Addresses': 105,
-	'My Contacts': 120,
-	'ERC20 Tokens': 129,
-	'ERC1155 Tokens': 129,
-	'Non Fungible Tokens': 129,
-	'Other Contracts': 131,
-}
-const ELEMENT_PADDING_PX = 10
-const UNLOAD_DISTANCE = 8
-const LOAD_DISTANCE = 4
-
-function FilterLink(param: { name: ActiveFilter, currentFilter: ActiveFilter, setActiveFilter: (activeFilter: ActiveFilter) => void }) {
+function FilterLink(param: { name: FilterKey, currentFilter: FilterKey, setActiveFilter: (activeFilter: FilterKey) => void }) {
 	return <a
 		class = { param.currentFilter === param.name ? 'is-active' : '' }
 		onClick = { () => param.setActiveFilter(param.name) }>
-			{ param.name }
+		{ param.name }
 	</a>
 }
 
 type ConfirmaddressBookEntryToBeRemovedParams = {
-	category: ActiveFilter,
+	category: FilterKey,
 	addressBookEntry: AddressBookEntry,
 	removeEntry: (entry: AddressBookEntry) => void,
 	close: () => void,
@@ -70,7 +58,7 @@ function ConfirmaddressBookEntryToBeRemoved(param: ConfirmaddressBookEntryToBeRe
 					</span>
 				</div>
 				<div class = 'card-header-title'>
-					<p className = 'paragraph'> { `Remove ${ ActiveFilterSingle[param.category] }` } </p>
+					<p className = 'paragraph'> { `Remove ${ filterDefs[param.category] }` } </p>
 				</div>
 				<button class = 'card-header-icon' aria-label = 'close' onClick = { param.close }>
 					<XMarkIcon />
@@ -95,25 +83,34 @@ function ConfirmaddressBookEntryToBeRemoved(param: ConfirmaddressBookEntryToBeRe
 }
 
 type ListElementParam = (AddressBookEntry | { type: 'empty' }) & {
-	listKey: string,
-	category: ActiveFilter,
-	removeEntry: (entry: AddressBookEntry) => void,
+	category: FilterKey,
+	removeEntry : (entry: AddressBookEntry) => void,
 	renameAddressCallBack: RenameAddressCallBack,
 }
 
-function ListElement(entry: ListElementParam) {
-	return <li style = { `margin: 0px; padding-bottom: ${ ELEMENT_PADDING_PX }px` } key = { entry.listKey }>
-		<div class = 'card' style = { `height: ${ ELEMENT_SIZE_PX[entry.category] }px` }>
-			<div class = 'card-content' style = 'height: 100%; width: 500px;'>
-				<div class = 'media' style = 'height: 100%;'>
-					<div class = 'media-content' style = 'overflow-y: visible; overflow-x: unset; height: 100%; display: flex; flex-direction: column;'>
+function AddressBookEntryCard({ removeEntry, renameAddressCallBack, ...entry }: ListElementParam) {
+	const conditionallyRemoveEntry = () => {
+		if (entry.type === 'empty') return
+		removeEntry(entry)
+	}
+
+	const conditionallyEditEntry = () => {
+		if (entry.type === 'empty') return
+		renameAddressCallBack(entry)
+	}
+
+	return (
+		<div class = 'card' style = { { marginLeft: '1rem', marginRight: '1rem', marginBottom: '1rem' } }>
+			<div class = 'card-content' style = 'width: 500px;'>
+				<div class = 'media' style = { { alignItems: 'stretch' } }>
+					<div class = 'media-content' style = {{ overflowY: 'visible', overflowX: 'unset', display: 'flex', flexDirection: 'column', minWidth: 0 }}>
 						<div style = 'padding-bottom: 10px; height: 40px'>
 							{ entry.type === 'empty'
 								? <></>
 								: <BigAddress
 									addressBookEntry = { { ...entry, ...{ name: `${ entry.name }${ 'symbol' in entry ? ` (${ entry.symbol })` : '' }`} } }
 									noCopying = { false }
-									renameAddressCallBack = { entry.renameAddressCallBack }
+									renameAddressCallBack = { renameAddressCallBack }
 								/>
 							}
 						</div>
@@ -153,84 +150,27 @@ function ListElement(entry: ListElementParam) {
 						</div>
 					</div>
 
-					<div class = 'content' style = 'color: var(--text-color); display: flex; height: 100%; flex-direction: column; justify-content: space-between;'>
-						<button class = 'card-header-icon' style = 'padding: 0px; margin-left: auto;' aria-label = 'delete' disabled = { entry.type === 'empty' || (entry.entrySource !== 'User' && entry.entrySource !== 'OnChain') } onClick = { () => entry.type !== 'empty' ? entry.removeEntry(entry) : undefined }>
+					<div class = 'content' style = 'color: var(--text-color); display: flex; flex-direction: column; justify-content: space-between;'>
+						<button class = 'card-header-icon' style = 'padding: 0px; margin-left: auto;' aria-label = 'delete' disabled = { entry.type === 'empty' || (entry.entrySource !== 'User' && entry.entrySource !== 'OnChain') } onClick = { conditionallyRemoveEntry }>
 							<XMarkIcon />
 						</button>
-						<button class = 'button is-primary is-small' onClick = { entry.type !== 'empty' ? () => entry.renameAddressCallBack(entry) : () => {} }>Edit</button>
+						<button class = 'button is-primary is-small' onClick = { conditionallyEditEntry }>Edit</button>
 					</div>
 				</div>
 			</div>
 		</div>
-	</li>
+	)
 }
 
-type AddressList = {
-	addressBookEntries: AddressBookEntries | undefined | 'fetching',
-	numberOfEntries: number,
-	startIndex: number,
-	listName: string,
-	filter: ActiveFilter,
-	removeEntry: (entry: AddressBookEntry) => void,
-	renameAddressCallBack: RenameAddressCallBack,
-}
-
-function AddressList({ addressBookEntries, numberOfEntries, startIndex, listName, filter, removeEntry, renameAddressCallBack }: AddressList) {
-	const entries = addressBookEntries === undefined || addressBookEntries === 'fetching'
-		? Array.from(new Array(numberOfEntries + 1)).map(() => ({
-			type: 'empty' as const
-		}))
-		: addressBookEntries
-	return <>
-		{ entries.map( (entry, index) => <ListElement
-			{ ...entry }
-			removeEntry = { removeEntry }
-			category = { filter }
-			listKey = { `${ (startIndex + index).toString() } ${ listName }`}
-			renameAddressCallBack = { renameAddressCallBack }
-		/> ) }
-	</>
-}
-
-type AddressBookState = {
-	pages: Map<number, AddressBookEntries | 'fetching'>,
-	maxIndex: number,
-	maxPages: number,
-	searchString: string | undefined,
-	activeFilter: ActiveFilter,
+type ViewFilter = {
+	activeFilter: FilterKey
+	searchString: string
 }
 
 export function AddressBook() {
-	const [activeFilter, setActiveFilter] = useState<ActiveFilter>('My Active Addresses')
-	const [searchString, setSearchString] = useState<string | undefined>(undefined)
-	const [currentPage, setCurrentPage] = useState<number>(0)
+	const addressBookEntries = useSignal<AddressBookEntries>([])
+	const viewFilter = useSignal<ViewFilter>({ activeFilter: 'My Active Addresses', searchString: ''})
 	const [modalState, setModalState] = useState<Modals>({ page: 'noModal' })
-	const [addressBookState, setAddressBookState] = useState<AddressBookState | undefined>(undefined)
-	const [addressBookEntryToBeRemoved, setAddressBookEntryToBeRemoved] = useState<AddressBookEntry | undefined>(undefined)
-
-	const activeFilterRef = useRef<ActiveFilter>(activeFilter)
-	const searchStringRef = useRef<string | undefined>(searchString)
-	const currentPageRef = useRef<number>(currentPage)
-
-	const scrollTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
-
-	useEffect(() => { activeFilterRef.current = activeFilter }, [activeFilter])
-	useEffect(() => { searchStringRef.current = searchString }, [searchString])
-	useEffect(() => { currentPageRef.current = currentPage }, [currentPage])
-
-	function unloadExtra(pages: Map<number, AddressBookEntries | 'fetching'>, currentPage: number) {
-		// unloads pages that are not in viewing distance
-		const pagesToUnload = Array.from(pages.entries()).filter(([page, _]) => Math.abs(currentPage - page) > UNLOAD_DISTANCE)
-
-		if (pagesToUnload.length > 0) {
-			const unloadedPages = new Map(pages)
-			for (const [page] of pagesToUnload) {
-				unloadedPages.delete(page)
-			}
-			return unloadedPages
-		}
-		return new Map(pages)
-	}
 
 	useEffect(() => {
 		const popupMessageListener = async (msg: unknown) => {
@@ -238,127 +178,42 @@ export function AddressBook() {
 			if (!maybeParsed.success) return // not a message we are interested in
 			const parsed = maybeParsed.value
 			if (parsed.method === 'popup_addressBookEntriesChanged') {
-				// fields updated, refresh
-				changeFilter(activeFilterRef.current)
-				return
+				sendQuery(viewFilter.value.activeFilter, viewFilter.value.searchString)
 			}
 			if (parsed.method !== 'popup_getAddressBookDataReply') return
 			const reply = GetAddressBookDataReply.parse(msg)
-			setAddressBookState((previousState) => {
-				if ( activeFilterRef.current !== reply.data.data.filter || searchStringRef.current !== reply.data.data.searchString) return previousState
-
-				const startPageIndex = Math.ceil(reply.data.data.startIndex / PAGE_SIZE)
-				const chunkedresults = arrayToChunks(reply.data.entries, PAGE_SIZE)
-
-				const newPages: Map<number, AddressBookEntries | 'fetching'> = (previousState !== undefined
-					&& reply.data.data.filter === previousState.activeFilter
-					&& reply.data.data.searchString === previousState.searchString ? new Map(previousState.pages) : new Map())
-
-				Array.from(chunkedresults).forEach((entries, pageOffset) => newPages.set(startPageIndex + pageOffset, entries))
-				const newData = {
-					pages: newPages,
-					maxIndex: reply.data.maxDataLength,
-					maxPages: Math.ceil((reply.data.maxDataLength) / PAGE_SIZE),
-					searchString: reply.data.data.searchString,
-					activeFilter: reply.data.data.filter,
-				}
-				return newData
-			})
+			addressBookEntries.value = reply.data.entries
 		}
-		changeFilter(activeFilter)
 		browser.runtime.onMessage.addListener(popupMessageListener)
-		const scrollListener = () => update()
-		globalThis.addEventListener('scroll', scrollListener)
-
 		return () => {
 			browser.runtime.onMessage.removeListener(popupMessageListener)
-			globalThis.removeEventListener('scroll', scrollListener)
 		}
 	}, [])
 
-	function update() {
-		if (scrollTimer.current !== undefined) clearTimeout(scrollTimer.current);
-		scrollTimer.current = setTimeout(() => { // batch calls together if user is scrolling fast
-			setAddressBookState((previousState) => {
-				if (previousState === undefined) return previousState
-				const pageSizePx = PAGE_SIZE * (ELEMENT_SIZE_PX[previousState.activeFilter] + ELEMENT_PADDING_PX)
-				const newPage = Math.min(Math.floor(globalThis.scrollY / pageSizePx + 0.5), previousState.maxPages)
-				if (currentPageRef.current === newPage) return previousState
-
-				setCurrentPage(newPage)
-				// load pages that are in loading distance
-				const pagesToQuery = Array.from(new Array(2 * LOAD_DISTANCE + 1), (_, pageDiff) => newPage + pageDiff - LOAD_DISTANCE).filter((pageToLoad) => {
-					return previousState && pageToLoad >= 0 && previousState.pages.get(pageToLoad) === undefined
-				})
-
-				const newPages = unloadExtra(previousState.pages, newPage)
-				if ( Math.max(...pagesToQuery) - Math.min(...pagesToQuery) === pagesToQuery.length - 1 ) {
-					sendQuery(activeFilterRef.current, searchStringRef.current, Math.min(...pagesToQuery), Math.max(...pagesToQuery))
-				} else {
-					for (const page of pagesToQuery) {
-						newPages.set(page, 'fetching')
-						sendQuery(activeFilterRef.current, searchStringRef.current, page, page)
-					}
-				}
-				return {
-					...previousState,
-					pages: newPages
-				}
-			})
-		}, 10)
-	}
-
-	function sendQuery(filter: ActiveFilter, searchString: string | undefined, startPage: number, endPage: number) {
+	function sendQuery(filter: FilterKey, searchString: string | undefined) {
 		sendPopupMessageToBackgroundPage({ method: 'popup_getAddressBookData', data: {
 			filter: filter,
 			searchString: searchString,
-			startIndex: startPage * PAGE_SIZE,
-			maxIndex: endPage * PAGE_SIZE + PAGE_SIZE,
 		} })
 	}
 
-	function changeFilter(filter: ActiveFilter) {
-		setCurrentPage(0)
-		setActiveFilter(filter)
-		setSearchString(undefined)
-		sendQuery(filter, undefined, 0, LOAD_DISTANCE + 1)
+	function changeFilter(activeFilter: FilterKey) {
+		viewFilter.value = { ...viewFilter.peek(), activeFilter }
 	}
 
-	function search(searchString: string | undefined) {
-		setCurrentPage(0)
-		setSearchString(searchString)
-		sendQuery(activeFilterRef.current, searchString, 0, LOAD_DISTANCE + 1)
+	function search(searchString: string) {
+		viewFilter.value = { ...viewFilter.peek(), searchString }
 	}
 
 	function getNoResultsError() {
-		if (searchString && searchString.trim().length > 0 ) return `No entries found for "${ searchString }" in ${ activeFilter }`
-		return `No cute dinosaurs in ${ activeFilter }`
+		const errorMessage = (viewFilter.value.searchString && viewFilter.value.searchString.trim().length > 0 )
+			? `No entries found for "${ viewFilter.value.searchString }" in ${ viewFilter.value.activeFilter }`
+			: `No cute dinosaurs in ${ viewFilter.value.activeFilter }`
+		return <div style = { { width: 500, padding: '0 1rem', margin: '0 1rem' } }>{ errorMessage }</div>
 	}
 
-	function renderAddressList(currentPage: number) {
-		return <> { addressBookState !== undefined && currentPage >= 0 && currentPage < addressBookState.maxPages ?
-			<AddressList
-				addressBookEntries = { addressBookState.pages.get(currentPage) }
-				numberOfEntries = { currentPage === addressBookState.maxPages - 1 ? addressBookState.maxIndex % PAGE_SIZE : PAGE_SIZE }
-				startIndex = { currentPage * PAGE_SIZE }
-				filter = { addressBookState.activeFilter }
-				listName = { `${ addressBookState.searchString }|${ addressBookState.activeFilter }` }
-				removeEntry = { openConfirmaddressBookEntryToBeRemoved }
-				renameAddressCallBack = { renameAddressCallBack }
-			/> : <></>
-		} </>
-	}
-
-	function getPageSizeInPixels(filter: ActiveFilter) {
-		return PAGE_SIZE * (ELEMENT_SIZE_PX[filter] + ELEMENT_PADDING_PX)
-	}
-
-	function getWindowSizeInPages(filter: ActiveFilter) {
-		return Math.ceil(globalThis.innerHeight / getPageSizeInPixels(filter) )
-	}
-
-	function openNewAddress(filter: ActiveFilter) {
-		const getTypeFromFilter = (filter: ActiveFilter) => {
+	function openNewAddress(filter: FilterKey) {
+		const getTypeFromFilter = (filter: FilterKey) => {
 			switch(filter) {
 				case 'My Active Addresses': return 'contact'
 				case 'My Contacts': return 'contact'
@@ -390,11 +245,6 @@ export function AddressBook() {
 		} })
 	}
 
-	function openConfirmaddressBookEntryToBeRemoved(entry: AddressBookEntry) {
-		setAddressBookEntryToBeRemoved(entry)
-		setModalState({ page: 'confirmaddressBookEntryToBeRemoved' })
-	}
-
 	function renameAddressCallBack(entry: AddressBookEntry) {
 		return setModalState({ page: 'addNewAddress', state: {
 			windowStateId: 'AddressBookRename',
@@ -419,62 +269,58 @@ export function AddressBook() {
 			method: 'popup_removeAddressBookEntry',
 			data: {
 				address: entry.address,
-				addressBookCategory: activeFilter,
+				addressBookCategory: viewFilter.value.activeFilter,
 			}
 		})
 	}
 
+	useSignalEffect(() => {
+		sendQuery(viewFilter.value.activeFilter, viewFilter.value.searchString)
+	})
+
 	return (
 		<main>
 			<Hint>
-				<div class = 'columns' style = 'margin: 10px; width: fit-content; margin: auto;'>
-					<div style = 'padding: 10px'>
+				<div class = 'columns' style = { { width: 'fit-content', margin: 'auto', padding: '0 1rem' } }>
+					<div style = { { padding: '1rem 0'} }>
 						<aside class = 'menu'>
 							<ul class = 'menu-list'>
 								<p class = 'paragraph' style = 'color: var(--disabled-text-color)'> My Addresses </p>
 								<ul>
-									<li> <FilterLink name = 'My Active Addresses' currentFilter = { activeFilter } setActiveFilter = { changeFilter }/> </li>
-									<li> <FilterLink name = 'My Contacts' currentFilter = { activeFilter } setActiveFilter = { changeFilter }/> </li>
+									<li> <FilterLink name = 'My Active Addresses' currentFilter = { viewFilter.value.activeFilter } setActiveFilter = { changeFilter }/> </li>
+									<li> <FilterLink name = 'My Contacts' currentFilter = { viewFilter.value.activeFilter } setActiveFilter = { changeFilter }/> </li>
 								</ul>
 							</ul>
 							<ul class = 'menu-list'>
 								<p class = 'paragraph' style = 'color: var(--disabled-text-color)'> Contracts </p>
 								<ul>
-									<li> <FilterLink name = 'ERC20 Tokens' currentFilter = { activeFilter } setActiveFilter = { changeFilter }/> </li>
-									<li> <FilterLink name = 'Non Fungible Tokens' currentFilter = { activeFilter } setActiveFilter = { changeFilter }/> </li>
-									<li> <FilterLink name = 'ERC1155 Tokens' currentFilter = { activeFilter } setActiveFilter = { changeFilter }/> </li>
-									<li> <FilterLink name = 'Other Contracts' currentFilter = { activeFilter } setActiveFilter = { changeFilter }/> </li>
+									<li> <FilterLink name = 'ERC20 Tokens' currentFilter = { viewFilter.value.activeFilter } setActiveFilter = { changeFilter }/> </li>
+									<li> <FilterLink name = 'Non Fungible Tokens' currentFilter = { viewFilter.value.activeFilter } setActiveFilter = { changeFilter }/> </li>
+									<li> <FilterLink name = 'ERC1155 Tokens' currentFilter = { viewFilter.value.activeFilter } setActiveFilter = { changeFilter }/> </li>
+									<li> <FilterLink name = 'Other Contracts' currentFilter = { viewFilter.value.activeFilter } setActiveFilter = { changeFilter }/> </li>
 								</ul>
 							</ul>
 						</aside>
 					</div>
-					<div style = 'padding: 10px; width: 520px;'>
-						<div style = 'display: flex; padding-bottom: 10px'>
-							<div class = 'field is-grouped' style = 'max-width: 400px; margin: 10px'>
-								<div class = 'control is-expanded'>
-									<input class = 'input' type = 'text' placeholder = 'Search In Category' value = { searchString === undefined ? '' : searchString } onInput = { e => search((e.target as HTMLInputElement).value) } />
-								</div>
-							</div>
-							<div style = 'margin-left: auto;'>
-								{ addressBookState !== undefined ?
-									<button
-										class = 'button is-primary'
-										onClick = { () => openNewAddress(addressBookState.activeFilter) }
-									>
-									{ `Add New ${ ActiveFilterSingle[addressBookState.activeFilter] }` }
-								</button> : <></> }
-							</div>
+					<div style = { { display: 'grid', gridTemplateRows: 'min-content 1fr', rowGap: '1rem', height: '100vh', paddingTop: '1rem' } }>
+						<div style = { { display: 'grid', gridTemplateColumns: '1fr max-content', columnGap: '1rem', padding: '0 1rem', alignItems: 'center' } }>
+							<input class = 'input' type = 'text' placeholder = 'Search In Category' value = { viewFilter.value.searchString } onInput = { e => search(e.currentTarget.value) } />
+							<button class = 'button is-primary' onClick = { () => openNewAddress(viewFilter.value.activeFilter) }>
+								{ `Add New ${ filterDefs[viewFilter.value.activeFilter] }` }
+							</button>
 						</div>
-						{ addressBookState === undefined
-							? <></>
-							: <>
-								{ addressBookState.maxIndex === 0 ? <p class = 'paragraph'> { getNoResultsError() } </p> : <></> }
-								<ul style = { `height: ${ addressBookState.maxIndex * (ELEMENT_SIZE_PX[addressBookState.activeFilter] + ELEMENT_PADDING_PX) }px; overflow: hidden;` }>
-									<li style = { `margin: 0px; height: ${ getPageSizeInPixels(addressBookState.activeFilter) * Math.max(0, currentPage - getWindowSizeInPages(addressBookState.activeFilter) ) }px` } key = { -1 }> </li>
-									{ Array(2 * getWindowSizeInPages(addressBookState.activeFilter) + 1).fill(0).map((_, i) => renderAddressList(currentPage + ( i - getWindowSizeInPages(addressBookState.activeFilter) ))) }
-								</ul>
-							</>
-						}
+						<div style = { { minHeight: 0 } }>
+							{ addressBookEntries.value.length
+								? <DynamicScroller
+									key = { [Object.values(viewFilter.value)].join('_') }
+									items = { addressBookEntries }
+									renderItem = { addressBookEntry => (
+										<AddressBookEntryCard { ...addressBookEntry } category = { viewFilter.value.activeFilter } removeEntry = { () => setModalState({ page: 'confirmaddressBookEntryToBeRemoved', addressBookEntry }) } renameAddressCallBack = { renameAddressCallBack } />
+									) }
+								/>
+								: getNoResultsError()
+							}
+						</div>
 					</div>
 				</div>
 
@@ -486,16 +332,16 @@ export function AddressBook() {
 							close = { () => setModalState({ page: 'noModal' }) }
 							activeAddress = { undefined }
 						/>
-					: <></> }
-					{ modalState.page === 'confirmaddressBookEntryToBeRemoved' && addressBookEntryToBeRemoved !== undefined ?
+						: <></> }
+					{ modalState.page === 'confirmaddressBookEntryToBeRemoved'  ?
 						<ConfirmaddressBookEntryToBeRemoved
-							category = { activeFilter }
-							addressBookEntry = { addressBookEntryToBeRemoved }
+							category = { viewFilter.value.activeFilter }
+							addressBookEntry = { modalState.addressBookEntry }
 							removeEntry = { removeAddressBookEntry }
 							close = { () => setModalState({ page: 'noModal' }) }
 							renameAddressCallBack = { renameAddressCallBack }
 						/>
-					: <></> }
+						: <></> }
 				</div>
 			</Hint>
 		</main>
