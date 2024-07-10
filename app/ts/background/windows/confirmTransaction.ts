@@ -1,15 +1,15 @@
 import { closePopupOrTabById, getPopupOrTabById, openPopupOrTab, tryFocusingTabOrWindow } from '../../components/ui-utils.js'
 import { EthereumClientService } from '../../simulation/services/EthereumClientService.js'
-import { appendSignedMessage, appendTransaction, getInputFieldFromDataOrInput, getSimulatedTransactionCount, simulateEstimateGas, simulatePersonalSign } from '../../simulation/services/SimulationModeEthereumClientService.js'
-import { CANNOT_SIMULATE_OFF_LEGACY_BLOCK, ERROR_INTERCEPTOR_NO_ACTIVE_ADDRESS, METAMASK_ERROR_NOT_CONNECTED_TO_CHAIN, METAMASK_ERROR_USER_REJECTED_REQUEST } from '../../utils/constants.js'
+import { getInputFieldFromDataOrInput, getSimulatedTransactionCount, mockSignTransaction, simulateEstimateGas, simulatePersonalSign } from '../../simulation/services/SimulationModeEthereumClientService.js'
+import { CANNOT_SIMULATE_OFF_LEGACY_BLOCK, ERROR_INTERCEPTOR_NO_ACTIVE_ADDRESS, METAMASK_ERROR_USER_REJECTED_REQUEST } from '../../utils/constants.js'
 import { TransactionConfirmation, UpdateConfirmTransactionDialog, UpdateConfirmTransactionDialogPendingTransactions } from '../../types/interceptor-messages.js'
 import { Semaphore } from '../../utils/semaphore.js'
 import { WebsiteTabConnections } from '../../types/user-interface-types.js'
-import { WebsiteCreatedEthereumUnsignedTransaction, WebsiteCreatedEthereumUnsignedTransactionOrFailed } from '../../types/visualizer-types.js'
+import { TransactionStack, WebsiteCreatedEthereumUnsignedTransaction, WebsiteCreatedEthereumUnsignedTransactionOrFailed } from '../../types/visualizer-types.js'
 import { SendRawTransactionParams, SendTransactionParams } from '../../types/JsonRpc-types.js'
 import { refreshConfirmTransactionSimulation, updateSimulationState } from '../background.js'
 import { getHtmlFile, sendPopupMessageToOpenWindows } from '../backgroundUtils.js'
-import { appendPendingTransactionOrMessage, clearPendingTransactions, getPendingTransactionsAndMessages, getSimulationResults, removePendingTransactionOrMessage, updatePendingTransactionOrMessage } from '../storageVariables.js'
+import { appendPendingTransactionOrMessage, clearPendingTransactions, getPendingTransactionsAndMessages, getSimulationResults, removePendingTransactionOrMessage, updatePendingTransactionOrMessage, updateTransactionStack } from '../storageVariables.js'
 import { InterceptedRequest, UniqueRequestIdentifier, doesUniqueRequestIdentifiersMatch, getUniqueRequestIdentifierString } from '../../utils/requests.js'
 import { replyToInterceptedRequest } from '../messageSending.js'
 import { Simulator } from '../../simulation/simulator.js'
@@ -23,7 +23,7 @@ import { SignMessageParams } from '../../types/jsonRpc-signing-types.js'
 import { craftPersonalSignPopupMessage } from './personalSign.js'
 import { getSettings } from '../settings.js'
 import * as funtypes from 'funtypes'
-import { modifyObject } from '../../utils/typescript.js'
+import { assertNever, modifyObject } from '../../utils/typescript.js'
 import { simulateGnosisSafeTransactionOnPass } from '../popupMessageHandlers.js'
 
 const pendingConfirmationSemaphore = new Semaphore(1)
@@ -95,21 +95,22 @@ export async function resolvePendingTransactionOrMessage(simulator: Simulator, w
 		return reply({ type: 'forwardToSigner' })
 	}
 	if (confirmation.data.action === 'signerIncluded') throw new Error('Signer included transaction that was in simulation')
-	const newState = await updateSimulationState(simulator.ethereum, simulator.tokenPriceService, async (simulationState) => {
-		if (simulationState === undefined) return undefined
-		if (pendingTransactionOrMessage.type !== 'Transaction') return await appendSignedMessage(simulationState, pendingTransactionOrMessage.signedMessageTransaction)
-		return await appendTransaction(simulator.ethereum, undefined, simulationState, pendingTransactionOrMessage.transactionToSimulate)
-	}, pendingTransactionOrMessage.activeAddress, true)
-	if (newState === undefined) return reply({ type: 'result', ...METAMASK_ERROR_NOT_CONNECTED_TO_CHAIN })
-
-	if (pendingTransactionOrMessage.type === 'Transaction') {
-		const simulatedTransaction = newState.simulatedTransactions.find((x) => x.transactionIdentifier === pendingTransactionOrMessage.transactionIdentifier)
-		if (simulatedTransaction === undefined) return reply(formRejectMessage('Could not find submited transaction in the simulation'))
-		return reply({ type: 'result', result: EthereumBytes32.serialize(simulatedTransaction.signedTransaction.hash) })
-	}	
-	const simulatedMessage = newState.signedMessages.find((x) => x.messageIdentifier === pendingTransactionOrMessage.signedMessageTransaction.messageIdentifier)
-	if (simulatedMessage === undefined) return reply(formRejectMessage('Could not find submited message in the simulation'))
-	return reply({ type: 'result', result: (await simulatePersonalSign(simulatedMessage.originalRequestParameters, simulatedMessage.fakeSignedFor)).signature })
+	
+	switch (pendingTransactionOrMessage.type) {
+		case 'SignableMessage': {
+			await updateTransactionStack((prevStack: TransactionStack) => ({...prevStack, signedMessages: [...prevStack.signedMessages, pendingTransactionOrMessage.signedMessageTransaction] }))
+			updateSimulationState(simulator.ethereum, simulator.tokenPriceService, pendingTransactionOrMessage.activeAddress, true)
+			return reply({ type: 'result', result: (await simulatePersonalSign(pendingTransactionOrMessage.originalRequestParameters, pendingTransactionOrMessage.signedMessageTransaction.fakeSignedFor)).signature })
+		}
+		case 'Transaction': {
+			const signedTransaction = mockSignTransaction(pendingTransactionOrMessage.transactionToSimulate.transaction)
+			const transaction = { ...pendingTransactionOrMessage.transactionToSimulate, signedTransaction }
+			await updateTransactionStack((prevStack: TransactionStack) => ({ ...prevStack, transactions: [...prevStack.transactions, transaction] }))
+			updateSimulationState(simulator.ethereum, simulator.tokenPriceService, pendingTransactionOrMessage.activeAddress, true)
+			return reply({ type: 'result', result: EthereumBytes32.serialize(mockSignTransaction(pendingTransactionOrMessage.transactionToSimulate.transaction).hash) })
+		}
+		default: assertNever(pendingTransactionOrMessage)
+	}
 }
 
 export const onCloseWindowOrTab = async (popupOrTabs: PopupOrTabId, simulator: Simulator, websiteTabConnections: WebsiteTabConnections) => { // check if user has closed the window on their own, if so, reject all signatures

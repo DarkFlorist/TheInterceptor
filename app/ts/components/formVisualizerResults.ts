@@ -74,11 +74,11 @@ const enrichEnsEvent = (event: ParsedEnsEvent, ens: { ensNameHashes: MaybeENSNam
 export function formSimulatedAndVisualizedTransaction(simState: SimulationState, eventsForEachTransaction: readonly EnrichedEthereumEvents[], parsedInputData: readonly EnrichedEthereumInputData[], protectorResults: readonly ProtectorResults[], addressBookEntries: readonly AddressBookEntry[], namedTokenIds: readonly NamedTokenId[], ens: { ensNameHashes: MaybeENSNameHashes, ensLabelHashes: MaybeENSLabelHashes }, tokenPriceEstimates: readonly TokenPriceEstimate[], tokenPriceQuoteToken: Erc20TokenEntry | undefined): readonly SimulatedAndVisualizedTransaction[] {
 	const addressMetaData = new Map(addressBookEntries.map((x) => [addressString(x.address), x]))
 	return simState.simulatedTransactions.map((simulatedTx, index) => {
-		const from = addressMetaData.get(addressString(simulatedTx.signedTransaction.from))
+		const from = addressMetaData.get(addressString(simulatedTx.preSimulationTransaction.signedTransaction.from))
 		if (from === undefined) throw new Error('missing metadata')
 
-		const to = simulatedTx.signedTransaction.to !== null ? addressMetaData.get(addressString(simulatedTx.signedTransaction.to)) : undefined
-		if (simulatedTx.signedTransaction.to !== null && to === undefined) throw new Error('missing metadata')
+		const to = simulatedTx.preSimulationTransaction.signedTransaction.to !== null ? addressMetaData.get(addressString(simulatedTx.preSimulationTransaction.signedTransaction.to)) : undefined
+		if (simulatedTx.preSimulationTransaction.signedTransaction.to !== null && to === undefined) throw new Error('missing metadata')
 		const transactionEvents = eventsForEachTransaction[index]
 		if (transactionEvents === undefined) throw new Error('visualizer result was undefined')
 		const protectorResult = protectorResults[index]
@@ -120,7 +120,7 @@ export function formSimulatedAndVisualizedTransaction(simState: SimulationState,
 		})
 		
 		const removeFromAndToFromSignedTransaction = () => {
-			const { from, to, ...otherFields } = simulatedTx.signedTransaction
+			const { from, to, ...otherFields } = simulatedTx.preSimulationTransaction.signedTransaction
 			return otherFields
 		}
 		const otherFields = removeFromAndToFromSignedTransaction()
@@ -148,9 +148,9 @@ export function formSimulatedAndVisualizedTransaction(simState: SimulationState,
 					statusCode: simulatedTx.ethSimulateV1CallResult.status,
 				}
 			),
-			website: simulatedTx.website,
-			created: simulatedTx.created,
-			transactionIdentifier: simulatedTx.transactionIdentifier,
+			website: simulatedTx.preSimulationTransaction.website,
+			created: simulatedTx.preSimulationTransaction.created,
+			transactionIdentifier: simulatedTx.preSimulationTransaction.transactionIdentifier,
 			parsedInputData: singleParsedInputData,
 		}
 	})

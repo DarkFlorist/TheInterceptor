@@ -72,16 +72,21 @@ export const ProtectorResults = funtypes.ReadonlyObject( {
 	quarantineReasons: funtypes.ReadonlyArray(funtypes.String),
 })
 
-export type SimulatedTransaction = funtypes.Static<typeof SimulatedTransaction>
-export const SimulatedTransaction = funtypes.ReadonlyObject({
-	ethSimulateV1CallResult: EthSimulateV1CallResult,
+export type PreSimulationTransaction = funtypes.Static<typeof PreSimulationTransaction>
+export const PreSimulationTransaction = funtypes.ReadonlyObject({
 	signedTransaction: EthereumSignedTransaction,
-	realizedGasPrice: EthereumQuantity,
 	website: Website,
 	created: EthereumTimestamp,
-	tokenBalancesAfter: TokenBalancesAfter,
 	originalRequestParameters: funtypes.Union(SendTransactionParams, SendRawTransactionParams),
 	transactionIdentifier: EthereumQuantity,
+})
+
+export type SimulatedTransaction = funtypes.Static<typeof SimulatedTransaction>
+export const SimulatedTransaction = funtypes.ReadonlyObject({
+	realizedGasPrice: EthereumQuantity,
+	preSimulationTransaction: PreSimulationTransaction,
+	ethSimulateV1CallResult: EthSimulateV1CallResult,
+	tokenBalancesAfter: TokenBalancesAfter,
 })
 
 export type EstimateGasError = funtypes.Static<typeof EstimateGasError>
@@ -296,4 +301,10 @@ export const EditEnsNamedHashWindowState = funtypes.ReadonlyObject({
 	type: funtypes.Union(funtypes.Literal('nameHash'), funtypes.Literal('labelHash')),
 	nameHash: EthereumBytes32,
 	name: funtypes.Union(funtypes.Undefined, funtypes.String)
+})
+
+export type TransactionStack = funtypes.Static<typeof TransactionStack>
+export const TransactionStack = funtypes.ReadonlyObject({
+	transactions: funtypes.ReadonlyArray(PreSimulationTransaction),
+	signedMessages: funtypes.ReadonlyArray(SignedMessageTransaction)
 })

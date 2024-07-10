@@ -1,7 +1,7 @@
 import * as funtypes from 'funtypes'
 import { EthereumAddress, EthereumAddressOrMissing, LiteralConverterParserFactory, serialize } from '../types/wire-types.js'
 import { PendingChainChangeConfirmationPromise, RpcConnectionStatus, TabState } from '../types/user-interface-types.js'
-import { CompleteVisualizedSimulation, EthereumSubscriptionsAndFilters } from '../types/visualizer-types.js'
+import { CompleteVisualizedSimulation, EthereumSubscriptionsAndFilters, TransactionStack } from '../types/visualizer-types.js'
 import { AddressBookEntries, AddressBookEntry, EntrySource } from '../types/addressBookTypes.js'
 import { Page } from '../types/exportedSettingsTypes.js'
 import { WebsiteAccessArray } from '../types/websiteAccessTypes.js'
@@ -44,6 +44,7 @@ const LocalStorageItems = funtypes.ReadonlyPartial({
 	pendingInterceptorAccessRequests: PendingAccessRequests,
 	makeMeRich: funtypes.Boolean,
 	ChainChangeConfirmationPromise: funtypes.Union(funtypes.Undefined, PendingChainChangeConfirmationPromise),
+	transactionStack: funtypes.Union(funtypes.Undefined, TransactionStack),
 	simulationResults: funtypes.Union(funtypes.Undefined, CompleteVisualizedSimulation),
 	signerName: SignerName,
 	currentTabId: funtypes.Union(funtypes.Undefined, funtypes.Number),
@@ -74,6 +75,7 @@ const LocalStorageKey = funtypes.Union(
 	funtypes.Literal('pendingInterceptorAccessRequests'),
 	funtypes.Literal('makeMeRich'),
 	funtypes.Literal('ChainChangeConfirmationPromise'),
+	funtypes.Literal('transactionStack'),
 	funtypes.Literal('simulationResults'),
 	funtypes.Literal('signerName'),
 	funtypes.Literal('currentTabId'),
