@@ -303,7 +303,7 @@ export function AddressBook() {
 						</aside>
 					</div>
 					<div style = { { display: 'grid', gridTemplateRows: 'min-content 1fr', rowGap: '1rem', height: '100vh', paddingTop: '1rem' } }>
-						<div style = { { display:'grid', gridTemplateColumns: '1fr max-content', columnGap: '1rem', padding: '0 1rem', alignItems: 'center' } }>
+						<div style = { { display: 'grid', gridTemplateColumns: '1fr max-content', columnGap: '1rem', padding: '0 1rem', alignItems: 'center' } }>
 							<input class = 'input' type = 'text' placeholder = 'Search In Category' value = { viewFilter.value.searchString } onInput = { e => search(e.currentTarget.value) } />
 							<button class = 'button is-primary' onClick = { () => openNewAddress(viewFilter.value.activeFilter) }>
 								{ `Add New ${ filterDefs[viewFilter.value.activeFilter] }` }
