@@ -252,7 +252,7 @@ const ConfigureRpcForm = ({ defaultValues, onCancel, onSave, onRemove }: Configu
 							<div style = '--area: 1 / span 3'>
 								<p>You are about to remove this server permanently. Are you sure you want to proceed?</p>
 							</div>
-							<button type = 'button' class = 'btn btn--ghost' style = '--area: 2 / 2' onClick = { () => confirmRemoval.value = false }>No</button>
+							<button type = 'button' class = 'btn btn--ghost' style = '--area: 2 / 2' onClick = { () => { confirmRemoval.value = false } }>No</button>
 							<button type = 'submit' value = 'remove' class = 'btn btn--destructive' style = '--area: 2 / 3' formNoValidate>Yes, Confirm Remove</button>
 						</div>
 					) : (
@@ -260,7 +260,7 @@ const ConfigureRpcForm = ({ defaultValues, onCancel, onSave, onRemove }: Configu
 							<button type = 'submit' value = 'cancel' class = 'btn btn--ghost' style = '--area: 1 / 3' formNoValidate>Cancel</button>
 							<button type = 'submit' value = 'save' class = 'btn btn--primary' style = '--area: 1 / 4'>Save RPC Connection</button>
 							{ defaultValues && onRemove ? (
-								<button type = 'button' class = 'btn btn--ghost' style = '--area: 1 / 1; --btn-text-color: var(--negative-color)' onClick = { () => confirmRemoval.value = true }><span class = 'grid' style = '--grid-cols: max-content 1fr; --gap-x: 0.5rem; --text-color: var(--negative-color)'><Trash /> Remove</span></button>
+								<button type = 'button' class = 'btn btn--ghost' style = '--area: 1 / 1; --btn-text-color: var(--negative-color)' onClick = { () => { confirmRemoval.value = true } }><span class = 'grid' style = '--grid-cols: max-content 1fr; --gap-x: 0.5rem; --text-color: var(--negative-color)'><Trash /> Remove</span></button>
 							) : <></> }
 						</>
 					)

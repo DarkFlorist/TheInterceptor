@@ -253,7 +253,7 @@ export async function updateDeclarativeNetRequestBlocks(websiteTabConnections: W
 				await browser.declarativeNetRequest.updateDynamicRules({
 					removeRuleIds: dynamicRuleIds,
 					addRules: [{
-						id: dynamicRuleIds.length == 0 ? 1 : Math.max.apply(null, dynamicRuleIds) + 1,
+						id: dynamicRuleIds.length === 0 ? 1 : Math.max.apply(null, dynamicRuleIds) + 1,
 						priority: 1,
 						action : { type: 'block' as const },
 						condition: { initiatorDomains: sitesToBlock, domainType: 'thirdParty' as const }
@@ -266,7 +266,7 @@ export async function updateDeclarativeNetRequestBlocks(websiteTabConnections: W
 				await browser.declarativeNetRequest.updateSessionRules({
 					removeRuleIds: sessionRuleIds,
 					addRules: [{
-						id: sessionRuleIds.length == 0 ? 1 : Math.max.apply(null, sessionRuleIds) + 1,
+						id: sessionRuleIds.length === 0 ? 1 : Math.max.apply(null, sessionRuleIds) + 1,
 						priority: 2,
 						action : { type: 'block' as const },
 						condition: { tabIds: tabIdsToBlock, domainType: 'thirdParty' as const }
