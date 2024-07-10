@@ -150,7 +150,7 @@ async function newBlockAttemptCallback(blockheader: EthereumBlockHeader, ethereu
 			const settings = await getSettings()
 			if (settings.simulationMode) {
 				const simulationResults = await getSimulationResults()
-				if (simulationResults.simulationResultState === 'corrupted') await resetSimulatorStateFromConfig(ethereumClientService)
+				if (simulationResults.simulationResultState === 'corrupted') await resetSimulatorStateFromConfig(ethereumClientService, simulator.tokenPriceService)
 				const simulationState = await refreshSimulation(simulator, settings, false)
 				if (simulationState === undefined)
 				return await sendSubscriptionMessagesForNewBlock(blockheader.number, ethereumClientService, simulationState, websiteTabConnections)

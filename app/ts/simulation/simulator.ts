@@ -24,6 +24,7 @@ import { assertNever } from '../utils/typescript.js'
 import { EthereumEvent } from '../types/ethSimulate-types.js'
 import { chainIdMismatch } from './protectors/chainIdMismatch.js'
 import { EnrichedEthereumEvent, EnrichedEthereumInputData, ParsedEvent, TokenVisualizerResult } from '../types/EnrichedEthereumData.js'
+import { TokenPriceService } from './services/priceEstimator.js'
 
 const PROTECTORS = [
 	selfTokenOops,
@@ -205,8 +206,9 @@ export const runProtectorsForTransaction = async (simulationState: SimulationSta
 type NewBlockCallBack = (blockHeader: EthereumBlockHeader, ethereumClientService: EthereumClientService, isNewBlock: boolean, simulator: Simulator) => Promise<void>
 export class Simulator {
 	public ethereum: EthereumClientService
+	public tokenPriceService: TokenPriceService
 	private newBlockAttemptCallback: NewBlockCallBack
-	public constructor(rpcNetwork: RpcEntry, newBlockAttemptCallback: NewBlockCallBack, onErrorBlockCallback: (ethereumClientService: EthereumClientService) => Promise<void>) {
+	public constructor(rpcNetwork: RpcEntry, newBlockAttemptCallback: NewBlockCallBack, onErrorBlockCallback: (ethereumClientService: EthereumClientService) => Promise<void>, tokenPriceCacheAge = 60000) {
 		this.newBlockAttemptCallback = newBlockAttemptCallback
 		this.ethereum = new EthereumClientService(
 			new EthereumJSONRpcRequestHandler(rpcNetwork.httpsRpc, true),
@@ -214,6 +216,7 @@ export class Simulator {
 			onErrorBlockCallback,
 			rpcNetwork
 		)
+		this.tokenPriceService = new TokenPriceService(this.ethereum, tokenPriceCacheAge)
 	}
 
 	public cleanup = () => this.ethereum.cleanup()
@@ -226,5 +229,6 @@ export class Simulator {
 			this.ethereum.getOnErrorBlockCallback(),
 			rpcNetwork
 		)
+		this.tokenPriceService = new TokenPriceService(this.ethereum, this.tokenPriceService.cacheAge)
 	}
 }

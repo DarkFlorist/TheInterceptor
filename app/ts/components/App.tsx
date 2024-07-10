@@ -136,7 +136,7 @@ export function App() {
 				simulatedAndVisualizedTransactions,
 				visualizedPersonalSignRequests: personalSignRequests,
 				rpcNetwork: simState.rpcNetwork,
-				tokenPrices: tokenPrices,
+				tokenPrices,
 				activeAddress: activeSimulationAddress,
 				addressBookEntries: addressBookEntries,
 				namedTokenIds,

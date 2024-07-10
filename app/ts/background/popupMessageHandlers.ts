@@ -30,6 +30,7 @@ import { craftPersonalSignPopupMessage } from './windows/personalSign.js'
 import { checkAndThrowRuntimeLastError, updateTabIfExists } from '../utils/requests.js'
 import { assertNever, modifyObject } from '../utils/typescript.js'
 import { VisualizedPersonalSignRequestSafeTx } from '../types/personal-message-definitions.js'
+import { TokenPriceService } from '../simulation/services/priceEstimator.js'
 
 export async function confirmDialog(simulator: Simulator, websiteTabConnections: WebsiteTabConnections, confirmation: TransactionConfirmation) {
 	await resolvePendingTransactionOrMessage(simulator, websiteTabConnections, confirmation)
@@ -76,9 +77,9 @@ export async function changeActiveAddress(simulator: Simulator, websiteTabConnec
 	}
 }
 
-export async function changeMakeMeRich(ethereumClientService: EthereumClientService, makeMeRichChange: ChangeMakeMeRich) {
+export async function changeMakeMeRich(ethereumClientService: EthereumClientService, tokenPriceService: TokenPriceService, makeMeRichChange: ChangeMakeMeRich) {
 	await setMakeMeRich(makeMeRichChange.data)
-	await resetSimulatorStateFromConfig(ethereumClientService)
+	await resetSimulatorStateFromConfig(ethereumClientService, tokenPriceService)
 }
 
 export async function removeAddressBookEntry(simulator: Simulator, websiteTabConnections: WebsiteTabConnections, removeAddressBookEntry: RemoveAddressBookEntry) {
@@ -127,16 +128,16 @@ export async function requestAccountsFromSigner(websiteTabConnections: WebsiteTa
 	}
 }
 
-export async function removeTransactionOrSignedMessage(simulator: Simulator, ethereumClientService: EthereumClientService, params: RemoveTransaction, settings: Settings) {
-	await updateSimulationState(simulator.ethereum, async (simulationState) => {
+export async function removeTransactionOrSignedMessage(simulator: Simulator, params: RemoveTransaction, settings: Settings) {
+	await updateSimulationState(simulator.ethereum, simulator.tokenPriceService, async (simulationState) => {
 		if (simulationState === undefined) return
-		if (params.data.type === 'Transaction') return await removeTransactionAndUpdateTransactionNonces(ethereumClientService, simulationState, params.data.transactionIdentifier)
-		return await removeSignedMessageFromSimulation(ethereumClientService, undefined, simulationState, params.data.messageIdentifier)
+		if (params.data.type === 'Transaction') return await removeTransactionAndUpdateTransactionNonces(simulator.ethereum, simulationState, params.data.transactionIdentifier)
+		return await removeSignedMessageFromSimulation(simulator.ethereum, undefined, simulationState, params.data.messageIdentifier)
 	}, settings.activeSimulationAddress, true)
 }
 
 export async function refreshSimulation(simulator: Simulator, settings: Settings, refreshOnlyIfNotAlreadyUpdatingSimulation: boolean): Promise<SimulationState | undefined> {
-	return await updateSimulationState(simulator.ethereum, async (simulationState) => {
+	return await updateSimulationState(simulator.ethereum, simulator.tokenPriceService, async (simulationState) => {
 		if (simulationState === undefined) return
 		return await refreshSimulationState(simulator.ethereum, undefined, simulationState)
 	}, settings.activeSimulationAddress, false, refreshOnlyIfNotAlreadyUpdatingSimulation)
@@ -222,14 +223,14 @@ export async function refreshPopupConfirmTransactionMetadata(ethereumClientServi
 	}
 }
 
-export async function refreshPopupConfirmTransactionSimulation(simulator: Simulator, ethereumClientService: EthereumClientService) {
+export async function refreshPopupConfirmTransactionSimulation(simulator: Simulator) {
 	const [firstTxn] = await getPendingTransactionsAndMessages()
 	if (firstTxn === undefined || firstTxn.type !== 'Transaction' || (firstTxn.transactionOrMessageCreationStatus !== 'Simulated' && firstTxn.transactionOrMessageCreationStatus !== 'FailedToSimulate')) return
-	const transactionToSimulate = firstTxn.originalRequestParameters.method === 'eth_sendTransaction' ? await formEthSendTransaction(ethereumClientService, undefined, firstTxn.activeAddress, firstTxn.transactionToSimulate.website, firstTxn.originalRequestParameters, firstTxn.created, firstTxn.transactionIdentifier, firstTxn.simulationMode) : await formSendRawTransaction(ethereumClientService, firstTxn.originalRequestParameters, firstTxn.transactionToSimulate.website, firstTxn.created, firstTxn.transactionIdentifier)
-	const refreshMessage = await refreshConfirmTransactionSimulation(simulator, ethereumClientService, firstTxn.activeAddress, firstTxn.simulationMode, firstTxn.uniqueRequestIdentifier, transactionToSimulate)
+	const transactionToSimulate = firstTxn.originalRequestParameters.method === 'eth_sendTransaction' ? await formEthSendTransaction(simulator.ethereum, undefined, firstTxn.activeAddress, firstTxn.transactionToSimulate.website, firstTxn.originalRequestParameters, firstTxn.created, firstTxn.transactionIdentifier, firstTxn.simulationMode) : await formSendRawTransaction(simulator.ethereum, firstTxn.originalRequestParameters, firstTxn.transactionToSimulate.website, firstTxn.created, firstTxn.transactionIdentifier)
+	const refreshMessage = await refreshConfirmTransactionSimulation(simulator, firstTxn.activeAddress, firstTxn.simulationMode, firstTxn.uniqueRequestIdentifier, transactionToSimulate)
 	if (refreshMessage === undefined) return
 	await updatePendingTransactionOrMessage(firstTxn.uniqueRequestIdentifier, async (transaction) => ({...transaction, simulationResults: refreshMessage }))
-	await updateConfirmTransactionView(ethereumClientService)
+	await updateConfirmTransactionView(simulator.ethereum)
 }
 
 export async function popupChangeActiveRpc(simulator: Simulator, websiteTabConnections: WebsiteTabConnections, params: ChangeActiveChain, settings: Settings) {
@@ -398,20 +399,20 @@ export async function setNewRpcList(simulator: Simulator, request: SetRpcList, s
 	}
 }
 
-export async function simulateGovernanceContractExecutionOnPass(ethereum: EthereumClientService, request: SimulateGovernanceContractExecution) {
+export async function simulateGovernanceContractExecutionOnPass(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, request: SimulateGovernanceContractExecution) {
 	const pendingTransactions = await getPendingTransactionsAndMessages()
 	const transaction = pendingTransactions.find((tx) => tx.type === 'Transaction' && tx.transactionIdentifier === request.data.transactionIdentifier)
 	if (transaction === undefined || transaction.type !== 'Transaction') throw new Error(`Could not find transactionIdentifier: ${ request.data.transactionIdentifier }`)
-	const governanceContractExecutionVisualisation = await simulateGovernanceContractExecution(transaction, ethereum)
+	const governanceContractExecutionVisualisation = await simulateGovernanceContractExecution(transaction, ethereum, tokenPriceService)
 	return await sendPopupMessageToOpenWindows(serialize(SimulateExecutionReply, {
 		method: 'popup_simulateExecutionReply' as const,
 		data: { ...governanceContractExecutionVisualisation, transactionOrMessageIdentifier: request.data.transactionIdentifier }
 	}))
 }
 
-export async function simulateGnosisSafeTransactionOnPass(ethereum: EthereumClientService, gnosisSafeMessage: VisualizedPersonalSignRequestSafeTx) {
+export async function simulateGnosisSafeTransactionOnPass(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, gnosisSafeMessage: VisualizedPersonalSignRequestSafeTx) {
 	const simulationResults = await getSimulationResults()
-	const gnosisTransactionExecutionVisualisation = await simulateGnosisSafeMetaTransaction(gnosisSafeMessage, simulationResults.simulationState, ethereum)
+	const gnosisTransactionExecutionVisualisation = await simulateGnosisSafeMetaTransaction(gnosisSafeMessage, simulationResults.simulationState, ethereum, tokenPriceService)
 	return await sendPopupMessageToOpenWindows(serialize(SimulateExecutionReply, {
 		method: 'popup_simulateExecutionReply' as const,
 		data: { ...gnosisTransactionExecutionVisualisation, transactionOrMessageIdentifier: gnosisSafeMessage.messageIdentifier }
