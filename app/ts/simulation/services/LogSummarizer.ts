@@ -230,10 +230,15 @@ export class LogSummarizer {
 		const erc20TokenBalanceChanges: Erc20TokenBalanceChange[] = Array.from(addressSummary.erc20TokenBalanceChanges).map(([tokenAddress, changeAmount]) => {
 			const metadata = addressMetaData.get(tokenAddress)
 			if (metadata === undefined || metadata.type !== 'ERC20') throw new Error(`Missing metadata for token: ${ tokenAddress }`)
+			const tokenPriceEstimate = tokenPrices.find((x) => addressString(x.token.address) === tokenAddress)
+			const quoteTokenAddress = tokenPriceEstimate?.quoteToken.address
+			const tokenPriceEstimateQuoteTokenAddressEntry = quoteTokenAddress === undefined ? undefined : addressMetaData.get(addressString(quoteTokenAddress))
+			const tokenPriceEstimateQuoteToken = tokenPriceEstimateQuoteTokenAddressEntry?.type === 'ERC20' ? tokenPriceEstimateQuoteTokenAddressEntry : undefined
 			return {
 				...metadata,
 				changeAmount,
-				tokenPriceEstimate: tokenPrices.find((x) => addressString(x.token.address) === tokenAddress)
+				tokenPriceEstimate,
+				tokenPriceEstimateQuoteToken
 			}
 		})
 
