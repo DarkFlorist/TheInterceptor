@@ -38,7 +38,6 @@ const ShowSuccessOrFailure = ({ simulateExecutionReply, activeAddress, renameAdd
 			<ErrorComponent text = { simulateExecutionReply.data.errorMessage }/>
 		</div>
 	}
-	console.log(simulateExecutionReply.data.result.simulatedAndVisualizedTransactions)
 	const simTx = simulateExecutionReply.data.result.simulatedAndVisualizedTransactions.at(-1)
 	if (simTx === undefined) return <></>
 	return <div style = 'display: grid; grid-template-rows: max-content' >
