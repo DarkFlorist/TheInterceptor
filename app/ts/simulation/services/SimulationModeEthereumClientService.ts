@@ -387,7 +387,7 @@ export const getBaseFeeAdjustedTransactions = (parentBlock: EthereumBlockHeader,
 	return unsignedTxts.map((transaction) => {
 		if (transaction.originalRequestParameters.method !== 'eth_sendTransaction') return transaction
 		if (transaction.signedTransaction.type !== '1559') return transaction
-		return modifyObject(transaction, { signedTransaction: modifyObject(transaction.signedTransaction, { maxFeePerGas: parentBaseFeePerGas * 2n }) })
+		return modifyObject(transaction, { signedTransaction: modifyObject(transaction.signedTransaction, { maxFeePerGas: parentBaseFeePerGas * 2n + transaction.signedTransaction.maxPriorityFeePerGas }) })
 	})
 }
 
