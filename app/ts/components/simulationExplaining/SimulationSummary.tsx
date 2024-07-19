@@ -753,11 +753,11 @@ export function RawTransactionDetailsCard({ transaction, renameAddressCallBack, 
 						<dt>Transaction type</dt>
 						<dd>{ transaction.type }</dd>
 						<dt>From</dt>
-						<dd>{ <SmallAddress addressBookEntry = { transaction.from } renameAddressCallBack = { renameAddressCallBack } textColor = { 'var(--subtitle-text-color)' } /> }</dd>
+						<dd>{ <SmallAddress addressBookEntry = { transaction.from } renameAddressCallBack = { renameAddressCallBack }/> }</dd>
 						<dt>To</dt>
-						<dd>{ transaction.to === undefined ? 'No receiving Address' : <SmallAddress addressBookEntry = { transaction.to } renameAddressCallBack = { renameAddressCallBack } textColor = { 'var(--subtitle-text-color)' }/> }</dd>
+						<dd>{ transaction.to === undefined ? 'No receiving Address' : <SmallAddress addressBookEntry = { transaction.to } renameAddressCallBack = { renameAddressCallBack }/> }</dd>
 						<dt>Value</dt>
-						<dd>{ <Ether amount = { transaction.value } useFullTokenName = { true } rpcNetwork = { transaction.rpcNetwork } style = { { color: 'var(--subtitle-text-color)' } } fontSize = 'normal'/> }</dd>
+						<dd>{ <Ether amount = { transaction.value } useFullTokenName = { true } rpcNetwork = { transaction.rpcNetwork } fontSize = 'normal'/> }</dd>
 						<dt>Gas used</dt>
 						<dd>{ `${ gasSpent.toString(10) } gas (${ Number(gasSpent * 10000n / transaction.gas) / 100 }%)` }</dd>
 						<dt>Gas limit</dt>

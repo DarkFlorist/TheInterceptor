@@ -94,7 +94,7 @@ type TokenPriceParams = {
 export function TokenPrice(param: TokenPriceParams) {
 	const value = getTokenAmountsWorth(param.amount, param.tokenPriceEstimate)
 	const style = (param.style === undefined ? {} : param.style)
-	return <TokenWithAmount 
+	return <TokenWithAmount
 		amount = { value }
 		tokenEntry = { param.quoteTokenEntry }
 		style = { style }
@@ -218,6 +218,7 @@ type TokenWithAmountParams = TokenSymbolParams & {
 export function TokenWithAmount(param: TokenWithAmountParams) {
 	return <div style = 'width: fit-content; display: flex'>
 		<TokenAmount { ...param } />
+		<p>&nbsp;</p>
 		<TokenSymbol { ...param }/>
 	</div>
 }
