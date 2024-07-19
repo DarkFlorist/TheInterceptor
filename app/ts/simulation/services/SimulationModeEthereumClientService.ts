@@ -185,10 +185,9 @@ export const simulateEstimateGas = async (ethereumClientService: EthereumClientS
 }
 
 // calculates gas price for receipts
-export const calculateGasPrice = (transaction: EthereumUnsignedTransaction, gasUsed: bigint, gasLimit: bigint, oldBaseFeePerGas: bigint) => {
+export const calculateRealizedEffectiveGasPrice = (transaction: EthereumUnsignedTransaction, blocksBaseFeePerGas: bigint) => {
 	if ('gasPrice' in transaction) return transaction.gasPrice
-	const baseFeePerGas = getNextBaseFeePerGas(gasUsed, gasLimit, oldBaseFeePerGas)
-	return min(baseFeePerGas + transaction.maxPriorityFeePerGas, transaction.maxFeePerGas)
+	return min(blocksBaseFeePerGas + transaction.maxPriorityFeePerGas, transaction.maxFeePerGas)
 }
 
 export const mockSignTransaction = (transaction: EthereumUnsignedTransaction) : EthereumSignedTransaction => {
@@ -249,7 +248,7 @@ export const appendTransaction = async (ethereumClientService: EthereumClientSer
 				type: 'transaction',
 				ethSimulateV1CallResult: singleResult,
 				tokenBalancesAfter: tokenBalancesAfterForIndex,
-				realizedGasPrice: calculateGasPrice(signedTx, parentBlock.gasUsed, parentBlock.gasLimit, parentBaseFeePerGas),
+				realizedGasPrice: calculateRealizedEffectiveGasPrice(signedTx, ethSimulateV1CallResult.baseFeePerGas),
 				preSimulationTransaction: {
 					signedTransaction: signedTx,
 					...transactionDataForIndex,
@@ -322,7 +321,7 @@ export const setSimulationTransactionsAndSignedMessages = async (ethereumClientS
 				},
 				ethSimulateV1CallResult: singleResult,
 				tokenBalancesAfter: after,
-				realizedGasPrice: calculateGasPrice(newTransaction.signedTransaction, parentBlock.gasUsed, parentBlock.gasLimit, parentBaseFeePerGas),
+				realizedGasPrice: calculateRealizedEffectiveGasPrice(newTransaction.signedTransaction, multicallResult.baseFeePerGas)
 			}
 		})),
 		blockNumber: parentBlock.number,
@@ -447,7 +446,7 @@ export const getSimulatedTransactionReceipt = async (ethereumClientService: Ethe
 				contractAddress: simulatedTransaction.preSimulationTransaction.signedTransaction.to !== null ? null : getDeployedContractAddress(simulatedTransaction.preSimulationTransaction.signedTransaction.from, simulatedTransaction.preSimulationTransaction.signedTransaction.nonce),
 				cumulativeGasUsed: cumGas,
 				gasUsed: simulatedTransaction.ethSimulateV1CallResult.gasUsed,
-				effectiveGasPrice: 0x2n,
+				effectiveGasPrice: calculateRealizedEffectiveGasPrice(simulatedTransaction.preSimulationTransaction.signedTransaction, simulationState.baseFeePerGas),
 				from: simulatedTransaction.preSimulationTransaction.signedTransaction.from,
 				to: simulatedTransaction.preSimulationTransaction.signedTransaction.to,
 				logs: simulatedTransaction.ethSimulateV1CallResult.status === 'success'

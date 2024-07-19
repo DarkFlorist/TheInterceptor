@@ -14,7 +14,7 @@ import { getActiveAddressEntry, getAddressBookEntriesForVisualiser, identifyAddr
 import { getActiveAddress, sendPopupMessageToOpenWindows } from './backgroundUtils.js'
 import { DistributiveOmit, assertNever, assertUnreachable, modifyObject } from '../utils/typescript.js'
 import { EthereumClientService } from '../simulation/services/EthereumClientService.js'
-import { appendTransaction, calculateGasPrice, copySimulationState, fixNonceErrorsIfNeeded, getAddressToMakeRich, getBaseFeeAdjustedTransactions, getNonceFixedSimulatedTransactions, getTokenBalancesAfter, getWebsiteCreatedEthereumUnsignedTransactions, mockSignTransaction, setSimulationTransactionsAndSignedMessages, simulateEstimateGas } from '../simulation/services/SimulationModeEthereumClientService.js'
+import { appendTransaction, calculateRealizedEffectiveGasPrice, copySimulationState, fixNonceErrorsIfNeeded, getAddressToMakeRich, getBaseFeeAdjustedTransactions, getNonceFixedSimulatedTransactions, getTokenBalancesAfter, getWebsiteCreatedEthereumUnsignedTransactions, mockSignTransaction, setSimulationTransactionsAndSignedMessages, simulateEstimateGas } from '../simulation/services/SimulationModeEthereumClientService.js'
 import { Semaphore } from '../utils/semaphore.js'
 import { JsonRpcResponseError, handleUnexpectedError, isFailedToFetchError, isNewBlockAbort, printError } from '../utils/errors.js'
 import { formSimulatedAndVisualizedTransaction } from '../components/formVisualizerResults.js'
@@ -113,7 +113,7 @@ export const simulateGovernanceContractExecution = async (pendingTransaction: Pe
 					originalRequestParameters: pendingTransaction.originalRequestParameters,
 					transactionIdentifier: pendingTransaction.transactionIdentifier,
 				},
-				realizedGasPrice: calculateGasPrice(signedExecutionTransaction, parentBlock.gasUsed, parentBlock.gasLimit, parentBlock.baseFeePerGas),
+				realizedGasPrice: calculateRealizedEffectiveGasPrice(signedExecutionTransaction, parentBlock.baseFeePerGas),
 				ethSimulateV1CallResult: contractExecutionResult.ethSimulateV1CallResult,
 				tokenBalancesAfter: tokenBalancesAfter[0],
 			}],
@@ -629,11 +629,7 @@ async function handleContentScriptMessage(simulator: Simulator, websiteTabConnec
 		return replyToInterceptedRequest(websiteTabConnections, { ...request, ...resolved })
 	} catch (error) {
 		if (error instanceof Error && isFailedToFetchError(error)) {
-			return replyToInterceptedRequest(websiteTabConnections, {
-				type: 'result', 
-				...request,
-				...METAMASK_ERROR_NOT_CONNECTED_TO_CHAIN,
-			})
+			return replyToInterceptedRequest(websiteTabConnections, { type: 'result', ...request, ...METAMASK_ERROR_NOT_CONNECTED_TO_CHAIN })
 		}
 		handleUnexpectedError(error)
 		return replyToInterceptedRequest(websiteTabConnections, {
