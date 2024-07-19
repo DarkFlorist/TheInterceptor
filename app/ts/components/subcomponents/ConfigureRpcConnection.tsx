@@ -10,7 +10,7 @@ import { getSettings } from '../../background/settings.js'
 import { getChainName } from '../../utils/constants.js'
 import { useRpcConnectionsList } from '../pages/SettingsView.js'
 import { EthereumJSONRpcRequestHandler } from '../../simulation/services/EthereumJSONRpcRequestHandler.js'
-import { EthSimulateV1Params, ethSimulateV1Result } from '../../types/ethSimulate-types.js'
+import { EthSimulateV1Params, EthSimulateV1Result } from '../../types/ethSimulate-types.js'
 import { JsonRpcResponseError } from '../../utils/errors.js'
 import { XMarkIcon } from './icons.js'
 
@@ -66,11 +66,11 @@ const RpcQueryProvider = ({ children }: { children: ComponentChildren }) => {
 				params: [ethSimulateV1ParamObject, 'latest']
 			})
 
-			function resultContainsLog(result: ReturnType<typeof ethSimulateV1Result.safeParse>) {
+			function resultContainsLog(result: ReturnType<typeof EthSimulateV1Result.safeParse>) {
 				return Boolean(result.success && result.value && result.value[0] && result.value[0].calls[0] && result.value[0].calls[0].status === 'success' && result.value[0].calls[0].logs.length === 1)
 			}
 
-			const parsedResult = ethSimulateV1Result.safeParse(serializedResult)
+			const parsedResult = EthSimulateV1Result.safeParse(serializedResult)
 
 			if (!resultContainsLog(parsedResult)) throw new Error(`The RPC server does not have a support for eth_simulateV1 (it doesn't return ETH logs). The Interceptor requires this feature to function.`)
 		} catch (error) {
